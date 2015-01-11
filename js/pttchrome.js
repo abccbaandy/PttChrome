@@ -554,6 +554,10 @@ pttchrome.App.prototype.doSearchGoogle = function(searchTerm) {
   window.open('http://google.com/search?q='+searchTerm);
 };
 
+pttchrome.App.prototype.doSearchPIXIV = function(searchTerm) {
+  window.open('http://www.pixiv.net/member_illust.php?mode=medium&illust_id='+searchTerm);
+};
+
 pttchrome.App.prototype.doOpenUrlNewTab = function(a) {
   var e = document.createEvent('MouseEvents');
   e.initMouseEvent("click", true, true, window, 0, 0, 0, 0, 0, true, false, false, false, 0, null);
@@ -1500,7 +1504,7 @@ pttchrome.App.prototype.setupContextMenus = function() {
         $('.contextUrl').hide();
         $('.contextSel').show();
         $('.contextNormal').hide();
-        $('#cmenuSearchContent').text("'"+selectedText+"'");
+        $('.cmenuSearchContent').text("'"+selectedText+"'");
       }
     }
 
@@ -1617,7 +1621,8 @@ pttchrome.App.prototype.setupContextMenus = function() {
   $('#cmenu_copyAnsi a').text(i18n('cmenu_copyAnsi'));
   $('#cmenu_paste a').html(i18n('cmenu_paste')+'<span class="cmenuHotkey">Ctrl+Shift+V</span>');
   $('#cmenu_selectAll a').html(i18n('cmenu_selectAll')+'<span class="cmenuHotkey">Ctrl+A</span>');
-  $('#cmenu_searchGoogle a').html(i18n('cmenu_searchGoogle')+' <span id="cmenuSearchContent"></span>');
+  $('#cmenu_searchGoogle a').html(i18n('cmenu_searchGoogle')+' <span class="cmenuSearchContent"></span>');
+  $('#cmenu_searchPIXIV a').html(i18n('cmenu_searchPIXIV')+' <span class="cmenuSearchContent"></span>');
   $('#cmenu_openUrlNewTab a').text(i18n('cmenu_openUrlNewTab'));
   $('#cmenu_copyLinkUrl a').text(i18n('cmenu_copyLinkUrl'));
   $('#cmenu_mouseBrowsing a').text(i18n('cmenu_mouseBrowsing'));
@@ -1650,6 +1655,11 @@ pttchrome.App.prototype.setupContextMenus = function() {
   });
   $('#cmenu_searchGoogle').click(function(e) {
     self.doSearchGoogle(selectedText);
+    e.stopPropagation();
+    hideContextMenu();
+  });
+  $('#cmenu_searchPIXIV').click(function(e) {
+    self.doSearchPIXIV(selectedText);
     e.stopPropagation();
     hideContextMenu();
   });
