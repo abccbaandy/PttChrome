@@ -189,8 +189,7 @@ pttchrome.App = function(onInitializedCallback, from) {
   this.setupConnectionAlert();
   this.setupLiveHelper();
   this.setupOtherSiteInput();
-  this.setupContextMenus();
-  this.contextMenuShown = false;
+  
 
   this.pref = new PttChromePref(this, onInitializedCallback);
   this.appConn = null;
@@ -201,6 +200,10 @@ pttchrome.App = function(onInitializedCallback, from) {
     self.pref.getStorage();
   });
 
+  //setup context menus after setup pref
+  this.setupContextMenus();
+  this.contextMenuShown = false;
+  
   // init touch only if chrome is higher than version 36
   if (this.chromeVersion && this.chromeVersion >= 37) {
     this.touch = new pttchrome.TouchController(this);
@@ -556,6 +559,15 @@ pttchrome.App.prototype.doSearchGoogle = function(searchTerm) {
 
 pttchrome.App.prototype.doSearchPIXIV = function(searchTerm) {
   window.open('http://www.pixiv.net/member_illust.php?mode=medium&illust_id='+searchTerm);
+};
+
+
+pttchrome.App.prototype.doSearch = function(searchTerm, index) {
+  //TODO get url from pref?
+  // var url = ["http://ppt.cc/", "http://0rz.tw/", "http://www.pixiv.net/member_illust.php?mode=medium&illust_id="];
+  var url = this.pref.searchUrl;
+  window.open(url[index]+searchTerm);
+  console.log(url[index]+searchTerm);
 };
 
 pttchrome.App.prototype.doOpenUrlNewTab = function(a) {
@@ -1633,6 +1645,18 @@ pttchrome.App.prototype.setupContextMenus = function() {
   $('#cmenu_removeBlacklistUserId a').html(i18n('cmenu_removeBlacklistUserId')+' <span id="cmenuRemoveBlacklistUserIdContent"></span>');
   $('#cmenu_settings a').text(i18n('cmenu_settings'));
 
+  //TODO get url name from pref?
+  // var url_name = ["ppt", "0rz", "pixiv"];
+  var url_name = this.pref.searchName;  
+  var size = url_name.length;
+  $('#cmenu_copyAnsi').after('<li class="cmenu_search cmenuItem contextSel"><a></a></li>');
+  for (var i = 0; i < size-1; i++) {
+    $('.cmenu_search').after('<li class="cmenu_search cmenuItem contextSel"><a></a></li>');
+  };
+  for (var i = 0; i < size; i++) {
+    $('.cmenu_search a').eq(i).html(url_name[i]+' <span class="cmenuSearchContent"></span>');
+  };
+
   $('#cmenu_copy').click(function(e) {
     self.doCopy(selectedText);
     e.stopPropagation();
@@ -1660,6 +1684,13 @@ pttchrome.App.prototype.setupContextMenus = function() {
   });
   $('#cmenu_searchPIXIV').click(function(e) {
     self.doSearchPIXIV(selectedText);
+    e.stopPropagation();
+    hideContextMenu();
+  });
+  $('.cmenu_search').click(function(e) {
+    //0 is Copy, 1 is Copy with ANSI colors, so we need - 2
+    var index = $(this).index()-2;
+    self.doSearch(selectedText, index);
     e.stopPropagation();
     hideContextMenu();
   });
