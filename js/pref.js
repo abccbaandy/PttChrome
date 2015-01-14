@@ -6,6 +6,8 @@ function PttChromePref(app, onInitializedCallback) {
 
   this.enableBlacklist = false;
   this.blacklistedUserIds = {};
+  this.searchUrl = ["http://ppt.cc/", "http://0rz.tw/", "http://www.pixiv.net/member_illust.php?mode=medium&illust_id="];
+  this.searchName = ["Search ppt.cc for", "Search 0rz.tw for", "Search PIXIV for"];
 
   this.quickSearches = [];
 

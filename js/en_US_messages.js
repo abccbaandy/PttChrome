@@ -44,6 +44,9 @@ locale.en_US = {
   "cmenu_searchGoogle": {
     "message": "Search Google for"
   },
+  "cmenu_searchPIXIV": {
+    "message": "Search PIXIV for"
+  },
   "cmenu_openUrlNewTab": {
     "message": "Open link in new tab"
   },

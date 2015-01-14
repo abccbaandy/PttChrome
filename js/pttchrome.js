@@ -189,8 +189,7 @@ pttchrome.App = function(onInitializedCallback, from) {
   this.setupConnectionAlert();
   this.setupLiveHelper();
   this.setupOtherSiteInput();
-  this.setupContextMenus();
-  this.contextMenuShown = false;
+  
 
   this.pref = new PttChromePref(this, onInitializedCallback);
   this.appConn = null;
@@ -201,6 +200,10 @@ pttchrome.App = function(onInitializedCallback, from) {
     self.pref.getStorage();
   });
 
+  //setup context menus after setup pref
+  this.setupContextMenus();
+  this.contextMenuShown = false;
+  
   // init touch only if chrome is higher than version 36
   if (this.chromeVersion && this.chromeVersion >= 37) {
     this.touch = new pttchrome.TouchController(this);
@@ -552,6 +555,19 @@ pttchrome.App.prototype.doSelectAll = function() {
 
 pttchrome.App.prototype.doSearchGoogle = function(searchTerm) {
   window.open('http://google.com/search?q='+searchTerm);
+};
+
+pttchrome.App.prototype.doSearchPIXIV = function(searchTerm) {
+  window.open('http://www.pixiv.net/member_illust.php?mode=medium&illust_id='+searchTerm);
+};
+
+
+pttchrome.App.prototype.doSearch = function(searchTerm, index) {
+  //TODO get url from pref?
+  // var url = ["http://ppt.cc/", "http://0rz.tw/", "http://www.pixiv.net/member_illust.php?mode=medium&illust_id="];
+  var url = this.pref.searchUrl;
+  window.open(url[index]+searchTerm);
+  console.log(url[index]+searchTerm);
 };
 
 pttchrome.App.prototype.doOpenUrlNewTab = function(a) {
@@ -1494,7 +1510,7 @@ pttchrome.App.prototype.setupContextMenus = function() {
         $('.contextUrl').hide();
         $('.contextSel').show();
         $('.contextNormal').hide();
-        $('#cmenuSearchContent').text("'"+selectedText+"'");
+        $('.cmenuSearchContent').text("'"+selectedText+"'");
       }
     }
 
@@ -1611,7 +1627,8 @@ pttchrome.App.prototype.setupContextMenus = function() {
   $('#cmenu_copyAnsi a').text(i18n('cmenu_copyAnsi'));
   $('#cmenu_paste a').html(i18n('cmenu_paste')+'<span class="cmenuHotkey">Ctrl+Shift+V</span>');
   $('#cmenu_selectAll a').html(i18n('cmenu_selectAll')+'<span class="cmenuHotkey">Ctrl+A</span>');
-  $('#cmenu_searchGoogle a').html(i18n('cmenu_searchGoogle')+' <span id="cmenuSearchContent"></span>');
+  $('#cmenu_searchGoogle a').html(i18n('cmenu_searchGoogle')+' <span class="cmenuSearchContent"></span>');
+  $('#cmenu_searchPIXIV a').html(i18n('cmenu_searchPIXIV')+' <span class="cmenuSearchContent"></span>');
   $('#cmenu_openUrlNewTab a').text(i18n('cmenu_openUrlNewTab'));
   $('#cmenu_copyLinkUrl a').text(i18n('cmenu_copyLinkUrl'));
   $('#cmenu_mouseBrowsing a').text(i18n('cmenu_mouseBrowsing'));
@@ -1621,6 +1638,18 @@ pttchrome.App.prototype.setupContextMenus = function() {
   $('#cmenu_addBlacklistUserId a').html(i18n('cmenu_addBlacklistUserId')+' <span id="cmenuAddBlacklistUserIdContent"></span>');
   $('#cmenu_removeBlacklistUserId a').html(i18n('cmenu_removeBlacklistUserId')+' <span id="cmenuRemoveBlacklistUserIdContent"></span>');
   $('#cmenu_settings a').text(i18n('cmenu_settings'));
+
+  //TODO get url name from pref?
+  // var url_name = ["ppt", "0rz", "pixiv"];
+  var url_name = this.pref.searchName;  
+  var size = url_name.length;
+  $('#cmenu_copyAnsi').after('<li class="cmenu_search cmenuItem contextSel"><a></a></li>');
+  for (var i = 0; i < size-1; i++) {
+    $('.cmenu_search').after('<li class="cmenu_search cmenuItem contextSel"><a></a></li>');
+  };
+  for (var i = 0; i < size; i++) {
+    $('.cmenu_search a').eq(i).html(url_name[i]+' <span class="cmenuSearchContent"></span>');
+  };
 
   $('#cmenu_copy').click(function(e) {
     self.doCopy(selectedText);
@@ -1644,6 +1673,18 @@ pttchrome.App.prototype.setupContextMenus = function() {
   });
   $('#cmenu_searchGoogle').click(function(e) {
     self.doSearchGoogle(selectedText);
+    e.stopPropagation();
+    hideContextMenu();
+  });
+  $('#cmenu_searchPIXIV').click(function(e) {
+    self.doSearchPIXIV(selectedText);
+    e.stopPropagation();
+    hideContextMenu();
+  });
+  $('.cmenu_search').click(function(e) {
+    //0 is Copy, 1 is Copy with ANSI colors, so we need - 2
+    var index = $(this).index()-2;
+    self.doSearch(selectedText, index);
     e.stopPropagation();
     hideContextMenu();
   });
