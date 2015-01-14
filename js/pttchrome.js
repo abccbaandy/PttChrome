@@ -565,9 +565,12 @@ pttchrome.App.prototype.doSearchPIXIV = function(searchTerm) {
 pttchrome.App.prototype.doSearch = function(searchTerm, index) {
   //TODO get url from pref?
   // var url = ["http://ppt.cc/", "http://0rz.tw/", "http://www.pixiv.net/member_illust.php?mode=medium&illust_id="];
-  var url = this.pref.searchUrl;
-  window.open(url[index]+searchTerm);
-  console.log(url[index]+searchTerm);
+  // var url = this.pref.searchUrl;
+  var url = this.pref.quickSearches[index].url.replace("%s", searchTerm);
+  // window.open(url[index].url+searchTerm);
+  // console.log(url[index].url+searchTerm);
+  window.open(url);
+  console.log(url);
 };
 
 pttchrome.App.prototype.doOpenUrlNewTab = function(a) {
@@ -1641,14 +1644,15 @@ pttchrome.App.prototype.setupContextMenus = function() {
 
   //TODO get url name from pref?
   // var url_name = ["ppt", "0rz", "pixiv"];
-  var url_name = this.pref.searchName;  
-  var size = url_name.length;
+  // var url_name = this.pref.searchName;
+  var quickSearches = this.pref.quickSearches;
+  var size = quickSearches.length;
   $('#cmenu_copyAnsi').after('<li class="cmenu_search cmenuItem contextSel"><a></a></li>');
   for (var i = 0; i < size-1; i++) {
     $('.cmenu_search').after('<li class="cmenu_search cmenuItem contextSel"><a></a></li>');
   };
   for (var i = 0; i < size; i++) {
-    $('.cmenu_search a').eq(i).html(url_name[i]+' <span class="cmenuSearchContent"></span>');
+    $('.cmenu_search a').eq(i).html(quickSearches[i].name+' <span class="cmenuSearchContent"></span>');
   };
 
   $('#cmenu_copy').click(function(e) {
