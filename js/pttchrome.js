@@ -198,11 +198,13 @@ pttchrome.App = function(onInitializedCallback, from) {
     self.appConn.appPort.postMessage({ action: 'getSymFont' });
     // call getStorage to trigger load setting
     self.pref.getStorage();
+
+    //setup context menus after setup pref
+    // self.setupContextMenus();
+    // self.contextMenuShown = false;
   });
 
-  //setup context menus after setup pref
-  this.setupContextMenus();
-  this.contextMenuShown = false;
+  
   
   // init touch only if chrome is higher than version 36
   if (this.chromeVersion && this.chromeVersion >= 37) {
@@ -563,7 +565,6 @@ pttchrome.App.prototype.doSearchPIXIV = function(searchTerm) {
 
 
 pttchrome.App.prototype.doSearch = function(searchTerm, index) {
-  //TODO get url from pref?
   // var url = ["http://ppt.cc/", "http://0rz.tw/", "http://www.pixiv.net/member_illust.php?mode=medium&illust_id="];
   // var url = this.pref.searchUrl;
   var url = this.pref.quickSearches[index].url.replace("%s", searchTerm);
@@ -1171,6 +1172,11 @@ pttchrome.App.prototype.onPrefChange = function(pref, name) {
     case 'deleteDupLogin':
       this.buf.deleteDupLogin = pref.get(name);
       break;
+    case 'quickSearchList':
+      //setup context menus after setup pref
+      this.setupContextMenus();
+      this.contextMenuShown = false;
+      break;
     default:
       break;
     }
@@ -1437,6 +1443,7 @@ pttchrome.App.prototype.mouse_scroll = function(e) {
 };
 
 pttchrome.App.prototype.setupContextMenus = function() {
+  console.log("setupContextMenus called!");
   var self = this;
   var menuSelector = '#contextMenus';
   var selectedText = '';
@@ -1642,14 +1649,14 @@ pttchrome.App.prototype.setupContextMenus = function() {
   $('#cmenu_removeBlacklistUserId a').html(i18n('cmenu_removeBlacklistUserId')+' <span id="cmenuRemoveBlacklistUserIdContent"></span>');
   $('#cmenu_settings a').text(i18n('cmenu_settings'));
 
-  //TODO get url name from pref?
   // var url_name = ["ppt", "0rz", "pixiv"];
   // var url_name = this.pref.searchName;
   var quickSearches = this.pref.quickSearches;
   var size = quickSearches.length;
+  $('.cmenu_search').remove();
   $('#cmenu_copyAnsi').after('<li class="cmenu_search cmenuItem contextSel"><a></a></li>');
   for (var i = 0; i < size-1; i++) {
-    $('.cmenu_search').after('<li class="cmenu_search cmenuItem contextSel"><a></a></li>');
+    $('.cmenu_search').eq(i).after('<li class="cmenu_search cmenuItem contextSel"><a></a></li>');
   };
   for (var i = 0; i < size; i++) {
     $('.cmenu_search a').eq(i).html(quickSearches[i].name+' <span class="cmenuSearchContent"></span>');
