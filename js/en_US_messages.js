@@ -44,6 +44,9 @@ locale.en_US = {
   "cmenu_searchGoogle": {
     "message": "Search Google for"
   },
+  "cmenu_quickSearch": {
+    "message": "Quick Search"
+  },
   "cmenu_openUrlNewTab": {
     "message": "Open link in new tab"
   },
@@ -84,6 +87,9 @@ locale.en_US = {
   },
   "options_blacklist": {
     "message": "Blacklist"
+  },
+  "options_extensions": {
+    "message": "Extensions"
   },
   "options_about": {
     "message": "About"
@@ -236,6 +242,17 @@ locale.en_US = {
     "message": "Done!"
   },
 
+  // extensions
+  "ext_quickSearch": {
+    "message": "Quick Search"
+  },
+  "ext_addQuickSearchNamePlaceholder": {
+    "message": "Add search engine"
+  },
+  "ext_addQuickSearchQueryPlaceholder": {
+    "message": "URL with %s in place of query"
+  },
+
   // about page
   "about_review": {
     "message": "Review app"
@@ -253,13 +270,14 @@ locale.en_US = {
     "message": "Version"
   },
   "about_version": {
-    "message": "1.4.* webapp9 10/14/2014"
+    "message": "webapp12 6/2/2015"
   },
   "about_new_title": {
     "message": "What's new"
   },
   "about_new_content": {
     "message": [
+      'Allow setting keepAlive from url, append ?keepAlive=[SECONDS] to the URL',
       'Added SSH connection to PTT, append ?ssh=true to the URL',
       'Limited easy reading mode to ptt.cc only',
       'Added features to load/backup blacklist with Google Drive',
@@ -274,7 +292,8 @@ locale.en_US = {
       'Added setting to send right arrow key to left mouse button',
       'Added option to turn on live update with END',
       'Middle mouse button click has new option to do paste',
-      'Added option to enable copy on select'
+      'Added option to enable copy on select',
+      'Added Quick Search in settings and context menu (thanks to abccbaandy)'
     ]
   },
 

@@ -50,7 +50,7 @@ function TermView(rowCount) {
   this.curBlink = false;
   this.openSpan = false;
 
-  this.useEasyReadingMode = true;
+  this.useEasyReadingMode = false;
   this.easyReadingTurnPageLines = 22;
   this.easyReadingKeyDownKeyCode = 0;
 
@@ -109,7 +109,7 @@ function TermView(rowCount) {
 
   var lastRowDiv = document.createElement('div');
   lastRowDiv.setAttribute('id', 'easyReadingLastRow');
-  this.lastRowDivContent = '<span align="left"><span class="q0 b7">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="q1 b7">(y)</span><span class="q0 b7">回應</span><span class="q1 b7">(X%)</span><span class="q0 b7">推文</span><span class="q1 b7">(←)</span><span class="q0 b7">離開&nbsp;</span>&nbsp;</span>';
+  this.lastRowDivContent = '<span align="left"><span class="q0 b7">                                                       </span><span class="q1 b7">(y)</span><span class="q0 b7">回應</span><span class="q1 b7">(X%)</span><span class="q0 b7">推文</span><span class="q1 b7">(←)</span><span class="q0 b7">離開 </span> </span>';
   lastRowDiv.innerHTML = this.lastRowDivContent;
   this.lastRowDiv = lastRowDiv;
   this.BBSWin.appendChild(lastRowDiv);
@@ -195,7 +195,7 @@ function TermView(rowCount) {
       return;
     if (self.useEasyReadingMode && self.buf.startedEasyReading && 
         !self.buf.easyReadingShowReplyText && !self.buf.easyReadingShowPushInitText &&
-        self.easyReadingKeyDownKeyCode == 229) { // only use on chinese IME
+        self.easyReadingKeyDownKeyCode == 229 && e.target.value != 'X') { // only use on chinese IME
       e.target.value = '';
       return;
     }
@@ -254,6 +254,7 @@ TermView.prototype = {
 
   setFontFace: function(fontFace) {
     this.fontFace = fontFace;
+    this.input.style.setProperty('font-family', this.fontFace, 'important');
     this.mainDisplay.style.setProperty('font-family', this.fontFace, 'important');
     this.lastRowDiv.style.setProperty('font-family', this.fontFace, 'important');
     this.replyRowDiv.style.setProperty('font-family', this.fontFace, 'important');
@@ -766,6 +767,11 @@ TermView.prototype = {
         e.preventDefault();
         e.stopPropagation();
         return;
+      } else if (e.keyCode == 84) { // alt+t
+        conn.send('^T'.unescapeStr());
+        e.preventDefault();
+        e.stopPropagation();
+        return;
       }
     } else if (e.ctrlKey && !e.altKey && e.shiftKey) {
       switch(e.keyCode) {
@@ -799,8 +805,6 @@ TermView.prototype = {
       } else if (charCode == 3) { //copy
         if (!window.getSelection().isCollapsed) //no anything be select
           return;
-      } else if(charCode == 5) { //e
-        sendCode = false;
       }
 
       if (sendCode)
@@ -1047,6 +1051,14 @@ TermView.prototype = {
     var rowCol = { row: 0, col: 0 };
     var parent = elem.parentNode;
     var parentType = parent.getAttribute('type');
+    // TODO this was to fix context menu not showing up, but breaks copy ansi
+    /*if (parentType === null) {
+      // if i am outside of bbswin, pick the first elem
+      elem = $('#mainContainer')[0].childNodes[0].childNodes[0];
+      parent = elem.parentNode;
+      parentType = parent.getAttribute('type');
+    }*/
+
     while (!(parentType == 'bbsrow' || parentType == 'highlight' || parent.tagName == 'A')) {
       parent = parent.parentNode; 
       parentType = parent.getAttribute('type');
@@ -1110,7 +1122,7 @@ TermView.prototype = {
 
   getHtmlEntitySafe: function(inputChar) {
     if (inputChar <= ' ' || inputChar == '\x80') // only display visible chars to speed up
-      return '&nbsp;';
+      return ' ';
     else if (inputChar == '\x3c')
       return '&lt;';
     else if (inputChar == '\x3e')
@@ -1187,9 +1199,12 @@ TermView.prototype = {
       var result = lastRowText.parseStatusRow();
       if (result) {
         // row index start with 4 or below will cause duplicated first row of next page
+        // 2015-07-04: better way is to view the row 3 and row 4 as one wrapped line
+        /*
         if (result.rowIndexStart < 5) {
           result.rowIndexStart -= 1;
         }
+        */
         var rowOffset = this.buf.pageLines.length-1;
         var beginIndex = 1;
         var atLastPage = false;
@@ -1231,7 +1246,7 @@ TermView.prototype = {
       if (this.buf.pageState == 3) {
         var lastRowText = this.buf.getRowText(23, 0, this.buf.cols);
         for (var i = 0; i < this.htmlRowStrArray.length-1; ++i) {
-          if (i == 4 || i > 0 && this.buf.isTextWrappedRow(i-1)) {
+          if (i == 4 || i > 0 && this.buf.isTextWrappedRow(i-1)) { // row with i == 4 and the i == 3 is the wrapped line
             this.buf.pageWrappedLines[this.actualRowIndex] += 1;
           } else {
             this.buf.pageWrappedLines[++this.actualRowIndex] = 1;
@@ -1334,7 +1349,7 @@ TermView.prototype = {
         var divNode = document.createElement('div');
         divNode.setAttribute('class', 'easyReadingVideo');
         divNode.style.webkitTransform = 'scale('+Math.floor(1/this.scaleX*100)/100+','+Math.floor(1/this.scaleY*100)/100+')';
-        divNode.innerHTML = '<iframe width="640" height="385" src="//www.youtube-nocookie.com/embed/'+youtubeShortCode+'?rel=0" frameborder="0" allowfullscreen></iframe>';
+        divNode.innerHTML = '<iframe width="640" height="385" src="//www.youtube.com/embed/'+youtubeShortCode+'?rel=0" frameborder="0" allowfullscreen></iframe>';
         vNode.parentNode.appendChild(divNode);
       }
 
@@ -1554,6 +1569,11 @@ TermView.prototype = {
         return;
       } else if (e.keyCode == 82) { // alt+r
         this.bbscore.onLiveHelperEnableClicked(false);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      } else if (e.keyCode == 84) { // alt+t
+        conn.send('^T'.unescapeStr());
         e.preventDefault();
         e.stopPropagation();
         return;

@@ -20,6 +20,11 @@
     <script type="text/javascript" src="https://apis.google.com/js/client.js"></script>
 
     <script type="text/javascript" src="js/pttchrome.min.js"></script>
+    <script type="text/javascript">
+      if (window.location.protocol != "https:") {
+        window.location.href = "https:" + window.location.href.substring(window.location.protocol.length);
+      }
+    </script>
   </head>
 
   <body>
@@ -40,6 +45,11 @@
       <li id="cmenu_openUrlNewTab" class="cmenuItem contextUrl"><a></a></li>
       <li id="cmenu_copyLinkUrl" class="cmenuItem contextUrl"><a></a></li>
       <li id="cmenu_divider1" class="divider"></li>
+      <li id="cmenu_quickSearch" class="cmenuItem contextQuickSearch"><a></a>
+        <ul id="quickSearchMenus" class="dropdown-menu" role="menu">
+        </ul>
+      </li>
+      <li id="cmenu_divider2" class="divider contextQuickSearch"></li>
       <li id="cmenu_selectAll" class="cmenuItem contextNormal"><a></a></li>
       <li id="cmenu_mouseBrowsing" class="cmenuItem contextNormal"><a></a></li>
       <li id="cmenu_goToOtherSite" class="cmenuItem contextNormal"><a></a></li>
@@ -47,12 +57,12 @@
       <li id="cmenu_showLiveArticleHelper" class="cmenuItem contextNormal"><a></a></li>
       <li id="cmenu_addBlacklistUserId" class="cmenuItem"><a></a></li>
       <li id="cmenu_removeBlacklistUserId" class="cmenuItem"><a></a></li>
-      <li id="cmenu_divider2" class="divider contextNormal"></li>
+      <li id="cmenu_divider3" class="divider contextNormal"></li>
       <li id="cmenu_settings" class="cmenuItem"><a></a></li>
     </ul>
 
     <div id="BBSWindow" style="display:none">
-      <input id="t" type="text" autocomplete="off" style="box-sizing:content-box; color:initial; border: none; width: 200px; height: 24px; position:absolute; left:-10000px; top:0px; z-index:2;resize: none; font-family:symmingliu,monospace;" autofocus/>
+      <input id="t" type="text" autocomplete="off" style="box-sizing:content-box; color:initial; border: none; width: 200px; height: 24px; position:absolute; left:-10000px; top:0px; z-index:2;resize: none; font-family:inherit !important;" autofocus/>
       <div id="cursor" class="terminal_display">_</div>
     </div> <!--BBSWindow end-->
     <div id="hideobj" style="display: none;">
@@ -73,7 +83,7 @@
     </div>
 
     <!--Preferences Modal-->
-    <div id="prefModal" class="modal fade" style="color:black;overflow-y:auto">
+    <div id="prefModal" class="modal fade" style="color:black;overflow-y:auto;z-index:2;">
       <div class="modal-dialog">
         <div class="modal-content">
           <div id="modalNav">
@@ -84,6 +94,7 @@
               <li><a id="optNav_general" href="#tabContentGeneral" name="general" data-toggle="pill">General</a></li>
               <li><a id="optNav_autologin" href="#tabContentAutologin" name="autologin" data-toggle="pill">Auto login</a></li>
               <li><a id="optNav_blacklist" href="#tabContentBlacklist" name="blacklist" data-toggle="pill">Blacklist</a></li>
+              <li><a id="optNav_extensions" href="#tabContentExtensions" name="extensions" data-toggle="pill">Extensions</a></li>
               <li><a id="optNav_about" href="#tabContentAbout" name="about" data-toggle="pill">About</a></li>
             </ul>
 
@@ -204,6 +215,18 @@
                 <!-- blacklist item start -->
                 <textarea id="opt_blacklistedUsers" class="form-control"></textarea>
                 <!-- blacklist item end -->
+              </div>
+
+              <div class="tab-pane" id="tabContentExtensions">
+                <div class="group">
+                  <div class="list-group">
+                    <h4 id="ext_quickSearch" class="list-group-item-heading"></h4>
+                    <div class="list-group-item-text" style="margin-top:15px;">
+                      <ul id="ext_quickSearchList" class="form-group" style="padding:0px">
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div class="tab-pane" id="tabContentAbout">

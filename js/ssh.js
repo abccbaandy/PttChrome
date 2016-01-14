@@ -3,6 +3,8 @@ function SecureShellConnection(app) {
 
   this.host = 'ptt.cc';
   this.port = 22;
+  this.keepAlive = null;
+
   this.login = 'bbs';
   this.password = '';
 
@@ -15,14 +17,7 @@ function SecureShellConnection(app) {
   this.client = null;
   this.shell = null;
 
-  // read-only variables
-  this.socket = chrome.socket;
   this.isConnected = false;         // are we connected?
-
-  this.outBuffer = '';
-
-  this.keepAliveMode = true;
-  setTimeout(this.keepAlive.bind(this), 60000);
 
   this.EscChar = '\x15'; // Ctrl-U
   this.termType = 'VT100';
@@ -88,7 +83,7 @@ SecureShellConnection.prototype.connect = function(host, port) {
       write, auth_success, this.host, this.port, 
       this.login, this.password, null, this.privatekey);
 
-  this.app.appConn.connectTcp(this.host, this.port);
+  this.app.appConn.connectTcp(this.host, this.port, this.keepAlive);
 };
 
 SecureShellConnection.prototype.onDataAvailable = function(str) {
@@ -125,14 +120,6 @@ SecureShellConnection.prototype.onDataAvailable = function(str) {
   if (data) {
     this.app.onData(data);
   }
-};
-
-SecureShellConnection.prototype.keepAlive = function() {
-  if (this.isConnected && this.keepAliveMode) {
-    this.client._transport.global_request('keepalive@lag.net', null, false);
-  }
-
-  setTimeout(this.keepAlive.bind(this), 60000);
 };
 
 // from cli to paramikojs

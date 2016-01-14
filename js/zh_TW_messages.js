@@ -44,6 +44,9 @@
   "cmenu_searchGoogle": {
     "message": "在 Google 上搜尋"
   },
+  "cmenu_quickSearch": {
+    "message": "快速搜尋"
+  },
   "cmenu_openUrlNewTab": {
     "message": "在新分頁中開啟連結"
   },
@@ -84,6 +87,9 @@
   },
   "options_blacklist": {
     "message": "黑名單"
+  },
+  "options_extensions": {
+    "message": "額外功能"
   },
   "options_about": {
     "message": "關於"
@@ -233,6 +239,17 @@
     "message": "完成!"
   },
 
+  // extensions
+  "ext_quickSearch": {
+    "message": "快速搜尋"
+  },
+  "ext_addQuickSearchNamePlaceholder": {
+    "message": "新增搜尋引擎"
+  },
+  "ext_addQuickSearchQueryPlaceholder": {
+    "message": "網址以 %s 取代網址中的搜尋字詞"
+  },
+
   // about page
   "about_review": {
     "message": "給評分"
@@ -250,13 +267,14 @@
     "message": "版本"
   },
   "about_version": {
-    "message": "1.4.* webapp9 10/14/2014"
+    "message": "webapp12 6/2/2015"
   },
   "about_new_title": {
     "message": "新功能"
   },
   "about_new_content": {
     "message": [
+      '網址設定 keepAlive 參數, 只要在網址後面加上 ?keepAlive=[幾秒]',
       '加入了 SSH 連到 PTT 的功能, 只要在網址後面加上 ?ssh=true',
       '好讀模式只限於 ptt.cc 上使用',
       '黑名單可用 Google Drive 來讀取或備份',
@@ -271,7 +289,8 @@
       '加入了滑鼠左鍵送出右方向鍵的選項',
       '加入了 END 啟用即時更新的選項',
       '滑鼠中鍵可以設定執行貼上功能',
-      '加入了選取自動複製文字的選項'
+      '加入了選取自動複製文字的選項',
+      '新增了快速搜尋的功能 (感謝abccbaandy)'
     ]
   },
 

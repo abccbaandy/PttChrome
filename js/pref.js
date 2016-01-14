@@ -7,6 +7,8 @@ function PttChromePref(app, onInitializedCallback) {
   this.enableBlacklist = false;
   this.blacklistedUserIds = {};
 
+  this.quickSearches = [];
+
   //this.loadDefault(onInitializedCallback);
   this.onInitializedCallback = onInitializedCallback;
   this.initCallbackCalled = false;
@@ -32,8 +34,13 @@ PttChromePref.prototype = {
       $('#opt_'+i).empty();
       var val = this.values[i];
 
-      // for blacklisted userids
+      // for blacklisted userids 
       if (i === 'blacklistedUserIds') {
+        continue;
+      }
+      if (i === 'quickSearchList') {
+        this.setupQuickSearchUiList();
+        this.setupQuickSearchUiHandlers();
         continue;
       }
 
@@ -154,6 +161,8 @@ PttChromePref.prototype = {
 
     // blacklist
     $('#opt_blacklistInstruction').text(i18n('options_blacklistInstruction'));
+
+    this.setupExtensionsPage();
 
     this.setupAboutPage();
     
@@ -281,6 +290,7 @@ PttChromePref.prototype = {
         self.clearStorage();
         self.values = JSON.parse(JSON.stringify(DEFAULT_PREFS));
         self.blacklistedUserIds = {};
+        self.quickSearches = JSON.parse(DEFAULT_PREFS.quickSearchList);
         self.logins = ['',''];
         self.updateSettingsToUi();
         self.app.view.redraw(true);
@@ -292,6 +302,122 @@ PttChromePref.prototype = {
       self.saveAndDoneWithIt();
       self.app.switchToEasyReadingMode(self.app.view.useEasyReadingMode);
     });
+  },
+
+  setupQuickSearchUiList: function() {
+    var self = this;
+    $('#ext_quickSearch').text(i18n('ext_quickSearch'));
+    var addNewSearchHtml = '<input type="text" class="form-control qSearchItemName" placeholder="' + i18n('ext_addQuickSearchNamePlaceholder') + '" /><input type="text" class="form-control qSearchItemQuery" placeholder="' + i18n('ext_addQuickSearchQueryPlaceholder') + '" />';
+    var buttonCloseHtml = '<button type="button" class="close">&times;</button>';
+    var buttonAddHtml = '<button type="button" class="close" data="add">&#43;</button>';
+    var quickSearchListHtml = '';
+
+    for (var i = 0; i < this.quickSearches.length; ++i) {
+      var qSearch = this.quickSearches[i];
+      quickSearchListHtml += '<li class="list-group-item">';
+      quickSearchListHtml += '<div class="qSearchItemName"><span>'+qSearch.name+'</span><input type="text" class="form-control" value="'+qSearch.name+'" /></div>';
+      quickSearchListHtml += '<div class="qSearchItemQuery"><span>'+qSearch.url+'</span><input type="text" class="form-control" value="'+qSearch.url+'" /></div>';
+      quickSearchListHtml += buttonCloseHtml + '</li>';
+    }
+    quickSearchListHtml += '<li class="list-group-item">' + addNewSearchHtml + buttonAddHtml + '</li>';
+    $('#ext_quickSearchList').html(quickSearchListHtml);
+  },
+
+  validateQuickSearchInput: function(node) {
+    var val = node.val();
+    if (val === '') {
+      node.addClass('has-error');
+      return;
+    }
+    var isQuery = node.hasClass('qSearchItemQuery') || node.parent().hasClass('qSearchItemQuery');
+    if (isQuery && val.indexOf('%s') < 0) {
+      node.addClass('has-error');
+    } else {
+      node.removeClass('has-error');
+    }
+  },
+
+  setupQuickSearchUiHandlers: function() {
+    var self = this;
+    $('#ext_quickSearchList li input').on('input', function(e) {
+      var node = $(this);
+      if (node.parent().is('li')) {
+        // is at the add new node, check if other node is also empty
+        var inputs = node.parent().find('input');
+        for (var i = 0; i < inputs.length; ++i) {
+          node = $(inputs[i]);
+          self.validateQuickSearchInput(node);
+        }
+      } else {
+        self.validateQuickSearchInput(node);
+      }
+    });
+
+    $('#ext_quickSearchList li button').click(function(e) {
+      if ($(this).attr('data') == 'add') {
+        var parent = $(this.parentNode);
+        var nameNode = parent.find('input.qSearchItemName');
+        var queryNode = parent.find('input.qSearchItemQuery');
+        var nameVal = nameNode.val();
+        var queryVal = queryNode.val();
+        // validate input
+        if (nameNode.hasClass('has-error') || queryNode.hasClass('has-error') ||
+            nameVal === '' || queryVal === '') {
+          return;
+        }
+
+        // add
+        self.quickSearches.push({ name: nameVal, url: queryVal });
+        self.setupQuickSearchUiList();
+        self.setupQuickSearchUiHandlers();
+      } else {
+        // update quickSearches then remove
+        var ind = $('#ext_quickSearchList li').index(this.parentNode);
+        if (ind > -1) {
+          self.quickSearches.splice(ind, 1);
+        }
+        $(this).parent().remove();
+      }
+    });
+
+    $('#ext_quickSearchList li div').click(function(e) {
+      $(this).parent().addClass('editMode');
+      var inputToSelect = $(this).find('input');
+      inputToSelect[0].select();
+    }).focusout(function(e) {
+      if (e.relatedTarget && e.relatedTarget.parentNode && 
+          this.parentNode == e.relatedTarget.parentNode.parentNode) {
+        return;
+      }
+
+      var parent = $(this).parent();
+      if (parent.find('.has-error').length) {
+        return;
+      }
+
+      if ($(this).is('input') && parent.is('li')) {
+        // focus out from add new
+      } else {
+        parent.removeClass('editMode');
+        // update on span
+        var nameVal = parent.find('.qSearchItemName input').val();
+        var queryVal = parent.find('.qSearchItemQuery input').val();
+        parent.find('.qSearchItemName span').text(nameVal);
+        parent.find('.qSearchItemQuery span').text(queryVal);
+
+        // save this now
+        var ind = $('#ext_quickSearchList li').index(this.parentNode);
+        if (ind > -1) {
+          self.quickSearches[ind] = { name: nameVal, url: queryVal };
+          // update the context menu as well
+        }
+      }
+    });
+  },
+
+  setupExtensionsPage: function() {
+    this.setupQuickSearchUiList();
+    this.setupQuickSearchUiHandlers();
   },
 
   setupAboutPage: function() {
@@ -349,6 +475,10 @@ PttChromePref.prototype = {
     var selectedVal;
     for (var i in this.values) {
       if (i === 'blacklistedUserIds') {
+        continue;
+      }
+      if (i === 'quickSearchList') {
+        this.values[i] = JSON.stringify(this.quickSearches);
         continue;
       }
 
@@ -434,9 +564,16 @@ PttChromePref.prototype = {
       for (var i in DEFAULT_PREFS) {
         if (!(i in msg.data.values) || msg.data.values[i] === null) {
           this.values[i] = DEFAULT_PREFS[i];
+          if (i === 'quickSearchList') {
+            this.quickSearches = JSON.parse(this.values[i]);
+          }
         } else {
           if (i === 'blacklistedUserIds') {
             this.blacklistedUserIds = JSON.parse(msg.data.values[i]);
+          } else if (i === 'quickSearchList') {
+            var val = msg.data.values[i];
+            this.quickSearches = JSON.parse(val);
+            this.values[i] = val;
           } else {
             this.values[i] = msg.data.values[i];
           }

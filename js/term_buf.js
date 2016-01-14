@@ -739,7 +739,19 @@ TermBuf.prototype = {
 
       this.setPageState();
       if (this.useMouseBrowsing) {
-        this.resetMousePos();
+        // clear highlight and reset cursor on page change
+        // without the redraw being called here
+        if (this.highlightCursor) {
+          var rows = this.rows;
+          var lines = this.lines;
+          if (this.nowHighlight != -1) {
+            var line = lines[this.nowHighlight];
+            for (var i = 0; i < this.cols; ++i)
+              line[i].needUpdate = true;
+          }
+        }
+        this.nowHighlight = -1;
+        this.mouseCursor = 0;
       }
 
       // support for url specified navigation
@@ -783,8 +795,12 @@ TermBuf.prototype = {
 
       // make sure to come back to easy reading mode
       if (this.prevPageState == 2 && this.pageState == 3 && 
-          !this.view.useEasyReadingMode && this.view.bbscore.pref.values.enableEasyReading) {
+          !this.view.useEasyReadingMode && 
+          this.view.bbscore.pref.values.enableEasyReading &&
+          this.view.bbscore.connectedUrl.site == 'ptt.cc') {
         this.view.useEasyReadingMode = true;
+      } else if (!this.view.bbscore.pref.values.enableEasyReading) {
+        this.view.useEasyReadingMode = false;
       }
 
       if (this.view.useEasyReadingMode) {
@@ -1068,93 +1084,6 @@ TermBuf.prototype = {
     return false;
   },
 
-  loadFile: function(toClipboard) {
-    /*
-    var nsIFilePicker = Components.interfaces.nsIFilePicker;
-    var fp = Components.classes["@mozilla.org/filepicker;1"]
-              .createInstance(nsIFilePicker);
-    fp.init(window, null, nsIFilePicker.modeOpen);
-    fp.appendFilters(nsIFilePicker.filterAll);
-    if (fp.show() == nsIFilePicker.returnCancel) return;
-    if(!fp.file.exists()) return;
-
-    var fstream = Components.classes["@mozilla.org/network/file-input-stream;1"]
-                  .createInstance(Components.interfaces.nsIFileInputStream);
-
-    // Read data without bicolor DBCS to Clipboard
-    if(toClipboard) {
-      var cstream = Components.classes["@mozilla.org/intl/converter-input-stream;1"]
-                    .createInstance(Components.interfaces.nsIConverterInputStream);
-      fstream.init(fp.file, -1, 0, 0);
-      cstream.init(fstream, this.view.charset, 0, 0);
-
-      var data = '', str = {};
-      // read as much as we can and put it in str.value
-      while(cstream.readString(0xffffffff, str))
-        data += str.value;
-      cstream.close(); // this closes fstream
-      this.view.conn.listener.doCopy(data);
-    } else {
-      // Read data with bicolor DBCS and send directly
-      fstream.init(fp.file, -1, -1, false);
-
-      var bstream = Components.classes["@mozilla.org/binaryinputstream;1"]
-                    .createInstance(Components.interfaces.nsIBinaryInputStream);
-      bstream.setInputStream(fstream);
-      var bytes = bstream.readBytes(bstream.available());
-
-      //FIXME: convert bytes to UTF-8 compatible format and copy to clipboard
-
-      var escChar = this.view.conn.EscChar;
-      this.view.conn.send(bytes.replace(/\x1b/g, escChar?escChar:'\x1b'));
-    }
-    */
-  },
-
-  saveFile: function(data, noConv) {
-    /*
-    if(!data) {
-      //if(this.view.selection) this.view.conn.listener.ansiCopy(false,true);
-      data = this.view.conn.listener.doPaste(true);
-    }
-    var nsIFilePicker = Components.interfaces.nsIFilePicker;
-    var fp = Components.classes["@mozilla.org/filepicker;1"].createInstance(nsIFilePicker);
-    fp.init(window, null, nsIFilePicker.modeSave);
-    if(data.substr(0,5)=='<?xml')
-    {
-      fp.defaultExtension = 'html';
-      fp.defaultString = 'newhtml';
-      fp.appendFilters(nsIFilePicker.filterHTML);
-    }
-    else
-    {
-      fp.defaultExtension = 'ans';
-      fp.defaultString = 'newansi';
-      fp.appendFilters(nsIFilePicker.filterAll);
-    }
-    if (fp.show() == nsIFilePicker.returnCancel) return;
-
-    var foStream = Components.classes["@mozilla.org/network/file-output-stream;1"]
-                    .createInstance(Components.interfaces.nsIFileOutputStream);
-    foStream.init(fp.file, 0x02 | 0x08 | 0x20, 0666, 0);
-
-    if(noConv) {
-      var converter = Components.classes["@mozilla.org/intl/converter-output-stream;1"]
-                      .createInstance(Components.interfaces.nsIConverterOutputStream);
-      converter.init(foStream, this.view.charset, 0, 0);
-      converter.writeString(data);
-      converter.close(); // this closes foStream
-    } else {
-      data = this.view.conn.convSend(data, this.view.charset, true);
-      foStream.write(data, data.length);
-      if (foStream instanceof Components.interfaces.nsISafeOutputStream)
-        foStream.finish();
-      else
-        foStream.close();
-    }
-    */
-  },
-
   setPageState: function() {
     //this.pageState = 0; //NORMAL
     var m_ColsPerPage = 80;
@@ -1169,7 +1098,6 @@ TermBuf.prototype = {
       return;
     }
     if (lastRowText.parseStatusRow()) {
-      //console.log('pageState = 3 (READING)');
       this.pageState = 3; // READING
       return;
     }
@@ -1423,8 +1351,9 @@ TermBuf.prototype = {
   },
 
   resetMousePos: function() {
-    if (this.useMouseBrowsing)
+    if (this.useMouseBrowsing) {
       this.onMouse_move(this.tempMouseCol, this.tempMouseRow, true);
+    }
   },
 
   clearHighlight: function(){

@@ -1,3 +1,62 @@
+@font-face {
+  font-family: SymMingLiu;
+  src: url('../fonts/symmingliu.woff');
+}
+@font-face {
+  font-family: DFHeiLightB5;
+  src: url('../fonts/DFHeiLightB5.woff');
+}
+
+#ext_quickSearchList > .list-group-item {
+  height: 56px;
+}
+
+#ext_quickSearchList .qSearchItemName {
+  float: left;
+  width: 28%;
+}
+#ext_quickSearchList .editMode div span {
+  display: none;
+}
+#ext_quickSearchList .editMode div input {
+  display: block;
+}
+#ext_quickSearchList div span {
+  display: block;
+}
+#ext_quickSearchList div input {
+  display: none;
+}
+
+#ext_quickSearchList .qSearchItemQuery {
+  margin-left: 5px;
+  float: left;
+  width: 65%;
+}
+#ext_quickSearchList .qSearchItemQuery > span,
+#ext_quickSearchList .qSearchItemName > span {
+  height: 34px;
+  padding: 6px 12px;
+  font-size: 14px;
+  line-height: 1.42857143;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#ext_quickSearchList .qSearchItemName input,
+#ext_quickSearchList .qSearchItemQuery input {
+  width: 100%;
+}
+
+#ext_quickSearchList input.has-error {
+  background-color: #f2dede;
+}
+
+#ext_quickSearchList > li:hover{
+  background-color: #f5f5f5;
+}
+
 #colorHelperInstruction {
   font-size: 12px;
 }
@@ -19,7 +78,7 @@
   box-shadow: 0 0 15px 0 rgba(0, 0, 0, 0.4);
 }
 #colorHelperPreview {
-  font-family: MingLiU, symmingliu, monospace;
+  font-family: MingLiU, MingLiUNoGlyph, monospace;
   font-size: 22px;
   line-height: 22px;
 }
@@ -41,7 +100,7 @@
   margin-top: 5px;
 }
 .symList > li {
-  font-family: MingLiU, symmingliu, monospace;
+  font-family: MingLiU, MingLiUNoGlyph, monospace;
   width: 100%;
   border: 1px solid #ccc;
   font-size: 30px;
@@ -62,7 +121,7 @@
 }
 
 .emoList > li {
-  font-family: MingLiU, symmingliu, monospace;
+  font-family: MingLiU, MingLiUNoGlyph, monospace;
   width: 100%;
   border: 1px solid #ccc;
   font-size: 21px;
@@ -234,6 +293,36 @@
   color: white;
 }
 
+#cmenu_quickSearch {
+  position: relative;
+}
+.cmenuGoesUp {
+  top: initial !important;
+  bottom: 0px;
+  margin-top: 0px !important;
+  margin-bottom: -5px;
+}
+.cmenuGoesLeft {
+  right: 100%;
+  left: initial !important;
+  margin-left: 0px !important;
+  margin-right: -5px;
+}
+
+#quickSearchMenus {
+  left: 100%;
+  top: 0px;
+  margin-top: -5px;
+  margin-left: -5px;
+}
+
+#cmenu_quickSearch > ul {
+  display: none;
+}
+#cmenu_quickSearch:hover > ul {
+  display: block;
+}
+
 .cmenuHotkey {
   float: right;
   font-size: 14px;
@@ -390,6 +479,8 @@
   left:0px;
   overflow:hidden;
   z-index:1;
+
+  -webkit-user-select: none;
 }
 
 .main, #easyReadingLastRow, #easyReadingReplyRow {
@@ -698,4 +789,8 @@ span {
 @-webkit-keyframes spin {
   from { -webkit-transform: rotate(0deg); }
   to { -webkit-transform: rotate(360deg); }
+}
+
+.modal-backdrop {
+  z-index: 1 !important;
 }

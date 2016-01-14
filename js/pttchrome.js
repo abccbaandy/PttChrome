@@ -2,7 +2,7 @@
 
 var pttchrome = {};
 
-pttchrome.App = function(onInitializedCallback, from) {
+pttchrome.App = function(onInitializedCallback, options) {
 
   this.CmdHandler = document.getElementById('cmdHandler');
   this.CmdHandler.setAttribute('useMouseBrowsing', '1');
@@ -47,6 +47,8 @@ pttchrome.App = function(onInitializedCallback, from) {
   } else {
     this.conn = new TelnetConnection(this);
   }
+  this.conn.keepAlive = options.keepAlive;
+
   this.view = new TermView(24);
   this.buf = new TermBuf(80, 24);
   this.buf.setView(this.view);
@@ -168,7 +170,7 @@ pttchrome.App = function(onInitializedCallback, from) {
     }
   });
 
-  this.isFromApp = (from === 'app');
+  this.isFromApp = (options.from === 'app');
   window.addEventListener('message', function(e) {
     var msg = e.data;
     if (self.isFromApp && msg.action === 'newwindow' && self.appConn && self.appConn.isConnected) {
@@ -210,8 +212,6 @@ pttchrome.App = function(onInitializedCallback, from) {
 pttchrome.App.prototype.setupAppConnection = function(callback) {
   var self = this;
   this.appConn = new lib.AppConnection({
-    host: self.conn.host,
-    port: self.conn.port,
     onConnect: self.onConnect.bind(self),
     onDisconnect: self.onClose.bind(self),
     onReceive: self.conn.onDataAvailable.bind(self.conn),
@@ -284,8 +284,12 @@ pttchrome.App.prototype.onData = function(data) {
 
 pttchrome.App.prototype.onClose = function() {
   dumpLog(DUMP_TYPE_LOG, "pttchrome onClose");
-  this.timerEverySec.cancel();
-  this.view.cursorBlinkTimer.cancel();
+  if (this.timerEverySec) {
+    this.timerEverySec.cancel();
+  }
+  if (this.view.cursorBlinkTimer) {
+    this.view.cursorBlinkTimer.cancel();
+  }
   this.conn.isConnected = false;
 
   this.cancelMbTimer();
@@ -539,7 +543,7 @@ pttchrome.App.prototype.onPasteDone = function(content) {
 };
 
 pttchrome.App.prototype.onSymFont = function(content) {
-  var css = '@font-face { font-family: "symmingliu"; src: url('+content.data+'); }';
+  var css = '@font-face { font-family: MingLiUNoGlyph; src: url('+content.data+'); }';
   var style = document.createElement('style');
   style.type = 'text/css';
   style.innerHTML = css;
@@ -1011,12 +1015,6 @@ pttchrome.App.prototype.overlayCommandListener = function (e) {
           if (this.picViewerMgr)
             this.picViewerMgr.openPicture(param);
           break;
-        case "doLoadFile":
-          this.buf.loadFile();
-          break;
-        case "doSaveFile":
-          this.buf.saveFile();
-          break;
         case "checkPrefExist":
           this.doSiteSettingCheck(250);
           break;
@@ -1113,11 +1111,11 @@ pttchrome.App.prototype.onPrefChange = function(pref, name) {
       this.view.enableNotifications = pref.get(name);
       break;
     case 'enableEasyReading':
-      if (this.connectedUrl.site == 'ptt.cc') {
+      /*if (this.connectedUrl.site == 'ptt.cc') {
         this.view.useEasyReadingMode = this.pref.get('enableEasyReading');
       } else {
         this.view.useEasyReadingMode = false;
-      }
+      }*/
       break;
     case 'antiIdleTime':
       this.antiIdleTime = pref.get(name) * 1000;
@@ -1423,6 +1421,41 @@ pttchrome.App.prototype.mouse_scroll = function(e) {
   }
 };
 
+pttchrome.App.prototype.showQuickSearchMenus = function(e, selectedText, hideContextMenu) {
+  var self = this;
+  if (this.pref.quickSearches.length === 0) return;
+
+  var menuSelector = '#quickSearchMenus';
+  var menuHtml = '';
+  for (var i = 0; i < this.pref.quickSearches.length; ++i) {
+    var q = this.pref.quickSearches[i];
+    menuHtml += '<li class="cmenuItem"><a data-url="'+q.url+'">'+q.name+'</a></li>';
+  }
+  $(menuSelector).html(menuHtml);
+  
+  $('#quickSearchMenus a').off();
+  $('#quickSearchMenus a').click(function(e) {
+    var url = $(this).data('url');
+    url = url.replace('%s', selectedText);
+    window.open(url);
+    e.stopPropagation();
+    hideContextMenu();
+  });
+
+  var pageHeight = $(window).height();
+  var pageWidth = $(window).width();
+  if (e.pageY > pageHeight/2) {
+    $(menuSelector).addClass('cmenuGoesUp');
+  } else {
+    $(menuSelector).removeClass('cmenuGoesUp');
+  }
+  if (e.pageX > pageWidth * 0.8) {
+    $(menuSelector).addClass('cmenuGoesLeft');
+  } else {
+    $(menuSelector).removeClass('cmenuGoesLeft');
+  }
+};
+
 pttchrome.App.prototype.setupContextMenus = function() {
   var self = this;
   var menuSelector = '#contextMenus';
@@ -1487,11 +1520,13 @@ pttchrome.App.prototype.setupContextMenus = function() {
     selectedText = window.getSelection().toString().replace(/\u00a0/g, " ");
 
     if (contextOnUrl) {
+      $('.contextQuickSearch').hide();
       $('.contextUrl').show();
       $('.contextSel').hide();
       $('.contextNormal').hide();
     } else {
       if (window.getSelection().isCollapsed) { 
+        $('.contextQuickSearch').hide();
         $('.contextUrl').hide();
         $('.contextSel').hide();
         $('.contextNormal').show();
@@ -1500,7 +1535,19 @@ pttchrome.App.prototype.setupContextMenus = function() {
         $('.contextUrl').hide();
         $('.contextSel').show();
         $('.contextNormal').hide();
-        $('#cmenuSearchContent').text("'"+selectedText+"'");
+        var clipedText = selectedText;
+        if (clipedText.length > 15) {
+          clipedText = clipedText.substr(0, 15) + ' ... ';
+        }
+        $('#cmenuSearchContent').text("'"+clipedText+"'");
+        if (self.pref.quickSearches.length > 0) {
+          self.showQuickSearchMenus(e, selectedText, function() {
+            hideContextMenu();
+          });
+          $('.contextQuickSearch').show();
+        } else {
+          $('.contextQuickSearch').hide();
+        }
       }
     }
 
@@ -1514,7 +1561,7 @@ pttchrome.App.prototype.setupContextMenus = function() {
         $('#cmenu_addBlacklistUserId').show();
         $('#cmenu_removeBlacklistUserId').hide();
       }
-      $('#cmenu_divider2').show();
+      $('#cmenu_divider3').show();
     } else {
       $('#cmenu_addBlacklistUserId').hide();
       $('#cmenu_removeBlacklistUserId').hide();
@@ -1618,6 +1665,7 @@ pttchrome.App.prototype.setupContextMenus = function() {
   $('#cmenu_paste a').html(i18n('cmenu_paste')+'<span class="cmenuHotkey">Ctrl+Shift+V</span>');
   $('#cmenu_selectAll a').html(i18n('cmenu_selectAll')+'<span class="cmenuHotkey">Ctrl+A</span>');
   $('#cmenu_searchGoogle a').html(i18n('cmenu_searchGoogle')+' <span id="cmenuSearchContent"></span>');
+  $('#cmenu_quickSearch a').html(i18n('cmenu_quickSearch')+' <span style="float:right;">&#9658;</span>');
   $('#cmenu_openUrlNewTab a').text(i18n('cmenu_openUrlNewTab'));
   $('#cmenu_copyLinkUrl a').text(i18n('cmenu_copyLinkUrl'));
   $('#cmenu_mouseBrowsing a').text(i18n('cmenu_mouseBrowsing'));
@@ -1628,73 +1676,56 @@ pttchrome.App.prototype.setupContextMenus = function() {
   $('#cmenu_removeBlacklistUserId a').html(i18n('cmenu_removeBlacklistUserId')+' <span id="cmenuRemoveBlacklistUserIdContent"></span>');
   $('#cmenu_settings a').text(i18n('cmenu_settings'));
 
-  $('#cmenu_copy').click(function(e) {
-    self.doCopy(selectedText);
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_copyAnsi').click(function(e) {
-    self.doCopyAnsi();
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_paste').click(function(e) {
-    self.doPaste();
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_selectAll').click(function(e) {
-    self.doSelectAll();
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_searchGoogle').click(function(e) {
-    self.doSearchGoogle(selectedText);
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_openUrlNewTab').click(function(e) {
-    self.doOpenUrlNewTab(aElement);
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_copyLinkUrl').click(function(e) {
-    self.doCopy(contextOnUrl);
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_mouseBrowsing').click(function(e) {
-    self.switchMouseBrowsing();
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_goToOtherSite').click(function(e) {
-    self.doGoToOtherSite();
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_showInputHelper').click(function(e) {
-    self.inputHelper.showHelper();
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_showLiveArticleHelper').click(function(e) {
-    $('#liveHelper').show();
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_addBlacklistUserId').click(function(e) {
-    self.doAddBlacklistUserId(contextOnUserId);
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_removeBlacklistUserId').click(function(e) {
-    self.doRemoveBlacklistUserId(contextOnUserId);
-    e.stopPropagation();
-    hideContextMenu();
-  });
-  $('#cmenu_settings').click(function(e) {
-    self.doSettings();
+  var contextMenuItemOnClickHandler = {
+    'cmenu_copy': function() { 
+      self.doCopy(selectedText); 
+    },
+    'cmenu_copyAnsi': function() { 
+      self.doCopyAnsi(); 
+    },
+    'cmenu_paste': function() { 
+      self.doPaste(); 
+    },
+    'cmenu_selectAll': function() { 
+      self.doSelectAll(); 
+    },
+    'cmenu_searchGoogle': function() { 
+      self.doSearchGoogle(selectedText); 
+    },
+    'cmenu_openUrlNewTab': function() { 
+      self.doOpenUrlNewTab(aElement); 
+    },
+    'cmenu_copyLinkUrl': function() {
+      self.doCopy(contextOnUrl); 
+    },
+    'cmenu_mouseBrowsing': function() { 
+      self.switchMouseBrowsing(); 
+    },
+    'cmenu_goToOtherSite': function() { 
+      self.doGoToOtherSite(); 
+    },
+    'cmenu_showInputHelper': function() { 
+      self.inputHelper.showHelper(); 
+    },
+    'cmenu_showLiveArticleHelper': function() { 
+      $('#liveHelper').show(); 
+    },
+    'cmenu_addBlacklistUserId': function() { 
+      self.doAddBlacklistUserId(contextOnUserId); 
+    },
+    'cmenu_removeBlacklistUserId': function() { 
+      self.doRemoveBlacklistUserId(contextOnUserId); 
+    },
+    'cmenu_settings': function() { 
+      self.doSettings(); 
+    }
+  };
+
+  $('.cmenuItem').click(function(e) {
+    var id = $(this).attr('id');
+    if (id in contextMenuItemOnClickHandler) {
+      contextMenuItemOnClickHandler[id]();
+    }
     e.stopPropagation();
     hideContextMenu();
   });
