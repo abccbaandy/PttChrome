@@ -1,6 +1,14 @@
 node_modules
 **/*.concat.*
 
+# yarn 專案，勿用 npm
+package-lock.json
+
+# Playwright E2E
+test-results/
+playwright-report/
+tests/e2e/__screenshots__/
+
 js/constants_local.js
 dist/*
 !dist/.gitkeep

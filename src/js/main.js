@@ -7,6 +7,8 @@ function startApp() {
   setupI18n();
 
   const app = new App();
+  // Expose the app for e2e inspection only in developer/dev builds.
+  if (process.env.DEVELOPER_MODE) window.__app = app;
 
   (process.env.DEVELOPER_MODE ? import('../components/DeveloperModeAlert')
     .then(({DeveloperModeAlert}) => new Promise((resolve, reject) => {

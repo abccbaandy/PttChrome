@@ -1,6 +1,7 @@
 {
   "name": "pttchrome",
   "version": "1.2.0",
+  "packageManager": "yarn@1.22.22",
   "dependencies": {
     "base58": "^1.0.1",
     "bootstrap": "^3.3.7",
@@ -15,6 +16,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.8.7",
+    "@playwright/test": "^1.49.0",
     "@babel/plugin-proposal-class-properties": "^7.8.3",
     "@babel/plugin-proposal-object-rest-spread": "^7.8.3",
     "@babel/plugin-syntax-dynamic-import": "^7.8.3",
@@ -100,6 +102,9 @@
     "prebuild": "npm run clean",
     "build": "cross-env webpack",
     "prestart": "npm run clean",
-    "start": "cross-env NODE_ENV=development webpack-dev-server"
+    "start": "cross-env NODE_ENV=development webpack-dev-server",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui"
   }
 }

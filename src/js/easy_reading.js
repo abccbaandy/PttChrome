@@ -142,6 +142,29 @@ EasyReading.prototype._send = function(data) {
   this._view.conn.send(data);
 };
 
+// Temporarily leave easy reading: switch back to native rendering and jump to
+// the bottom of the post. Auto-paging stops, so the native in-post search ('/')
+// and navigation become usable. Easy reading is re-enabled automatically by
+// _onChanged when entering the next post (prevPageState==2 && pageState==3).
+EasyReading.prototype.switchToNativeAtBottom = function() {
+  console.log('switch to native at bottom');
+  // stop any pending/in-flight auto page down
+  this.sendCommandAfterUpdate = '';
+  // jump to the bottom of the post with native End
+  this._send('\x1b[4~');
+  // Switch off easy reading and restore the native view. switchToEasyReadingMode()
+  // restores the DOM (last/reply rows, padding, pageLines) and forces a full
+  // redraw via Ctrl-L.
+  this._enabled = false;
+  this._core.switchToEasyReadingMode();
+  // Easy reading mutates #mainContainer directly (innerHTML='' + appendRows),
+  // which desyncs React's virtual DOM: the Screen component still references its
+  // detached Row nodes, so the next renderScreen() updates those instead of the
+  // stale accumulated rows on screen, leaving the view frozen. Unmount the React
+  // tree so the Ctrl-L redraw mounts a fresh, clean #mainContainer.
+  ReactDOM.unmountComponentAtNode(this._view.mainDisplay);
+};
+
 EasyReading.prototype._onKeyDown = function(e) {
   if (!this._enabled || !this.startedEasyReading)
     return;
@@ -184,11 +207,6 @@ EasyReading.prototype._scrollBy = function(lines) {
       this._view.chh * this._termBuf.rows)
     return false;
   cont.scrollTop += this._view.chh * lines;
-  return true;
-};
-
-EasyReading.prototype._scrollEnd = function() {
-  this._view.mainDisplay.scrollTop = this._view.mainContainer.clientHeight;
   return true;
 };
 
@@ -251,7 +269,8 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
       case 'End':
       case '$':
       case 'G':
-        stop = this._scrollEnd();
+        this.switchToNativeAtBottom();
+        stop = true;
         break;
       case 'Tab':
         stop = true;
@@ -315,7 +334,7 @@ EasyReading.prototype._onMouseClick = function(e) {
       stop = true;
       break;
     case 5: // End
-      this._scrollEnd();
+      this.switchToNativeAtBottom();
       stop = true;
       break;
     case 6:
