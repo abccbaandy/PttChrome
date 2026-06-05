@@ -6,6 +6,7 @@ import { renderRowHtml, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
+import { rowToText, parseComment, parseListAuthor, FloorCounter } from './comment_parse';
 
 const ENTER_CHAR = '\r';
 const ESC_CHAR = '\x15'; // Ctrl-U
@@ -40,6 +41,13 @@ export function TermView() {
   // TODO Move this into easy_reading.js
   this.useEasyReadingMode = false;
   this.easyReadingKeyDownKeyCode = 0;
+
+  // Enhanced Add-on: comment blacklist (lower-cased Set) + floor numbering.
+  // Set from prefs via App.onPrefChange. _floorCounter persists across page-downs
+  // within one article (reset when a new post is entered, see populateEasyReadingPage).
+  this.blacklist = new Set();
+  this.showFloorNumbers = true;
+  this._floorCounter = new FloorCounter();
 
   this.curRow = 0;
   this.curCol = 0;
@@ -284,7 +292,12 @@ TermView.prototype = {
           this.chh,
           /* showsLinkPreview */false,
           this.enablePicPreview,
-          this.mainDisplay
+          this.mainDisplay,
+          {
+            blacklist: this.blacklist,
+            showFloorNumbers: this.showFloorNumbers,
+            pageState: this.buf.pageState
+          }
         )
         this.setHighlightedRow(this.buf.nowHighlight)
       }
@@ -766,8 +779,10 @@ TermView.prototype = {
             this.buf.pageWrappedLines[++this.actualRowIndex] = 1;
           }
         }
-        this.appendRows(this.buf.lines.slice(beginIndex, -1), true);
-        // deep clone lines for selection (getRowText and get ansi color)
+        this.appendRows(this.buf.lines.slice(beginIndex, -1), true, true);
+        // deep clone lines for selection (getRowText and get ansi color).
+        // NOTE: pageLines keeps the full lines even for blacklisted (skipped) rows,
+        // so text selection/copy still contains the original content.
         this.buf.pageLines = this.buf.pageLines.concat(JSON.parse(JSON.stringify(this.buf.lines.slice(beginIndex, -1))));
       }
       this.buf.prevPageState = 3;
@@ -775,6 +790,8 @@ TermView.prototype = {
       this.mainContainer.style.paddingBottom = '';
       this.actualRowIndex = 0;
       this.buf.pageWrappedLines = [];
+      // New article entered → restart floor numbering from 1.
+      this._floorCounter.reset();
       if (this.buf.pageState == 3) {
         var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
         for (var i = 0; i < this.buf.rows-1; ++i) {
@@ -785,7 +802,7 @@ TermView.prototype = {
           }
         }
         this.clearRows();
-        this.appendRows(this.buf.lines.slice(0, -1), true);
+        this.appendRows(this.buf.lines.slice(0, -1), true, true);
         this.lastRowDiv.innerHTML = this.lastRowDivContent;
         this.lastRowDiv.style.display = 'block';
         // deep clone lines for selection (getRowText and get ansi color)
@@ -801,16 +818,45 @@ TermView.prototype = {
     this.mainContainer.innerHTML = '';
   },
 
-  appendRows: function(lines, showsLinkPreview) {
+  appendRows: function(lines, showsLinkPreview, enhance) {
+    // When easy reading is enabled, ALL screens are rebuilt here (articles via
+    // populateEasyReadingPage, lists/menus via hideEasyReading), so the Enhanced
+    // Add-on filtering must live here too — not only in the native Screen path.
+    var hasBlacklist = this.blacklist && this.blacklist.size > 0;
     for (var i in lines) {
       var line = lines[i];
+      var floor;
+      var hidden = false;
+      if (enhance) {
+        if (this.buf.pageState === 3) {
+          // Article: count every comment (blacklisted still occupy a floor),
+          // then drop blacklisted rows entirely (no blank line — it is a flow).
+          var comment = parseComment(rowToText(line));
+          if (comment) {
+            if (this.showFloorNumbers) {
+              floor = this._floorCounter.next(comment.type);
+            }
+            if (hasBlacklist && this.blacklist.has(comment.userid)) {
+              continue;
+            }
+          }
+        } else if (this.buf.pageState === 2 && hasBlacklist) {
+          // Board list: hide blacklisted authors' posts. The list is a fixed grid
+          // here, so hide (visibility) rather than remove to keep alignment.
+          var author = parseListAuthor(rowToText(line));
+          if (author && this.blacklist.has(author)) {
+            hidden = true;
+          }
+        }
+      }
       var el = document.createElement('span');
       el.setAttribute('type', 'bbsrow');
       el.setAttribute('srow', this.mainContainer.childNodes.length);
+      if (hidden) el.style.visibility = 'hidden';
       this.mainContainer.appendChild(el);
       renderRowHtml(
         line, this.mainContainer.childNodes.length, this.chh,
-        showsLinkPreview, el);
+        showsLinkPreview, el, floor);
     }
   },
 
@@ -828,7 +874,8 @@ TermView.prototype = {
     // clear the deep cloned copy of lines
     this.buf.pageLines = [];
     this.clearRows();
-    this.appendRows(this.buf.lines, false);
+    // enhance=true so list/menu screens rebuilt here also get blacklist filtering.
+    this.appendRows(this.buf.lines, false, true);
   },
 
   updateEasyReadingReplyRow: function(row) {

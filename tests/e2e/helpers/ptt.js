@@ -143,4 +143,4 @@ function attachConsole(page) {
   return logs;
 }
 
-module.exports = { readScreen, waitForScreen, typeLine, sendKey, login, attachConsole };
+module.exports = { readScreen, waitForScreen, typeLine, sendKey, login, attachConsole, dismissDeveloperModeAlert };

@@ -76,6 +76,47 @@
   "options_about": {
     "message": "關於"
   },
+  "options_enhance": {
+    "message": "增強功能"
+  },
+
+  // enhanced add-on options
+  "options_showFloorNumbers": {
+    "message": "文章內推文顯示樓層編號 (需開啟好讀模式才會跨頁連續)"
+  },
+  "options_blacklist": {
+    "message": "黑名單 (一行一個帳號)"
+  },
+  "tooltip_blacklist": {
+    "message": "一行一個帳號；隱藏其推文與看板列表發文"
+  },
+  "options_autoLogin": {
+    "message": "記憶帳密／自動登入"
+  },
+  "options_autoLoginEnable": {
+    "message": "開啟網頁時自動登入"
+  },
+  "tooltip_autoLogin": {
+    "message": "帳密以明文儲存在本機瀏覽器 (localStorage)，請僅在個人裝置使用。"
+  },
+  "options_autoLoginUser": {
+    "message": "帳號"
+  },
+  "options_autoLoginPassword": {
+    "message": "密碼"
+  },
+  "options_autoLoginDupConn": {
+    "message": "偵測到重複登入時"
+  },
+  "options_autoLoginDupConnNo": {
+    "message": "不刪除其他連線 (N)"
+  },
+  "options_autoLoginDupConnYes": {
+    "message": "刪除其他連線 (Y)"
+  },
+  "options_autoLoginSkipWelcome": {
+    "message": "自動跳過歡迎畫面／按任意鍵提示"
+  },
 
   // options
   "options_enablePicPreview": {

@@ -12,3 +12,5 @@ tests/e2e/__screenshots__/
 js/constants_local.js
 dist/*
 !dist/.gitkeep
+
+3rd_script/

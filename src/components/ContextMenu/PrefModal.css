@@ -69,3 +69,14 @@
   -moz-appearance: none;
   appearance: none;
 }
+
+.PrefModal__warning {
+  color: #e0a040;
+  font-size: 12px;
+  margin: 4px 0 8px;
+}
+
+.PrefModal__Grid__Col--right__Fieldset textarea {
+  width: 100%;
+  font-family: monospace;
+}

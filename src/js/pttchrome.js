@@ -7,6 +7,8 @@ import { TermBuf } from './term_buf';
 import { TelnetConnection } from './telnet';
 import { Websocket } from './websocket';
 import { EasyReading } from './easy_reading';
+import { AutoLogin } from './auto_login';
+import { parseBlacklist } from './comment_parse';
 import { TouchController } from './touch_controller';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball } from './string_util';
@@ -36,6 +38,7 @@ export const App = function() {
   this.view.setCore(this);
   this.parser = new AnsiParser(this.buf);
   this.easyReading = new EasyReading(this, this.view, this.buf);
+  this.autoLogin = new AutoLogin(this);
 
   //new pref - start
   this.antiIdleTime = 0;
@@ -241,6 +244,9 @@ App.prototype.onConnect = function() {
     self.view.onBlink();
     self.incrementCountToUpdatePushthread();
   }, 1000);
+
+  // Enhanced Add-on: kick off auto login (no-op unless enabled with credentials).
+  this.autoLogin.start();
 };
 
 App.prototype.onData = function(data) {
@@ -829,6 +835,14 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     case 'enableNotifications':
       this.view.enableNotifications = value;
+      break;
+    case 'showFloorNumbers':
+      this.view.showFloorNumbers = value;
+      this.view.redraw(true);
+      break;
+    case 'blacklist':
+      this.view.blacklist = parseBlacklist(value);
+      this.view.redraw(true);
       break;
     case 'enableEasyReading':
       /*if (this.connectedUrl.site == 'ptt.cc') {

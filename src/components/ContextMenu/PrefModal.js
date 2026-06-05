@@ -46,7 +46,16 @@ const DEFAULT_PREFS = {
   fontSize: 20,
   termSize: { cols: 80, rows: 24 },
   termSizeMode: "fixed-term-size",
-  bbsMargin: 0
+  bbsMargin: 0,
+
+  // enhanced add-on
+  showFloorNumbers: true,
+  blacklist: "", // newline-separated user ids
+  autoLogin: false,
+  autoLoginUser: "",
+  autoLoginPassword: "",
+  autoLoginDupConn: "N", // 'Y' | 'N': answer when a duplicate login is detected
+  autoLoginSkipWelcome: true
 };
 
 const PREF_STORAGE_KEY = "pttchrome.pref.v1";
@@ -194,6 +203,7 @@ export const PrefModal = ({
             <h3>{i18n("menu_settings")}</h3>
             <Nav bsStyle="pills" stacked>
               <NavItem eventKey="general">{i18n("options_general")}</NavItem>
+              <NavItem eventKey="enhance">{i18n("options_enhance")}</NavItem>
               <NavItem eventKey="about">{i18n("options_about")}</NavItem>
             </Nav>
             <Button
@@ -538,6 +548,98 @@ export const PrefModal = ({
                       ))}
                     </FormControl>
                   </FormGroup>
+                </fieldset>
+              </Tab.Pane>
+              <Tab.Pane eventKey="enhance">
+                <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                  <legend>
+                    {i18n("options_enhance")}
+                    <button
+                      type="button"
+                      className="close"
+                      onClick={onCloseClick}
+                    >
+                      &times;
+                    </button>
+                  </legend>
+                  <Checkbox
+                    name="showFloorNumbers"
+                    checked={values.showFloorNumbers}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_showFloorNumbers")}
+                  </Checkbox>
+                  <FormGroup controlId="blacklist">
+                    <ControlLabel>{i18n("options_blacklist")}</ControlLabel>
+                    <FormControl
+                      componentClass="textarea"
+                      name="blacklist"
+                      rows={6}
+                      value={values.blacklist}
+                      placeholder={i18n("tooltip_blacklist")}
+                      onChange={onTextInputChange}
+                    />
+                  </FormGroup>
+                </fieldset>
+                <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                  <legend>{i18n("options_autoLogin")}</legend>
+                  <Checkbox
+                    name="autoLogin"
+                    checked={values.autoLogin}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_autoLoginEnable")}
+                  </Checkbox>
+                  <p className="PrefModal__warning">
+                    {i18n("tooltip_autoLogin")}
+                  </p>
+                  <FormGroup controlId="autoLoginUser">
+                    <ControlLabel>{i18n("options_autoLoginUser")}</ControlLabel>
+                    <FormControl
+                      name="autoLoginUser"
+                      type="text"
+                      autoComplete="off"
+                      value={values.autoLoginUser}
+                      onChange={onTextInputChange}
+                    />
+                  </FormGroup>
+                  <FormGroup controlId="autoLoginPassword">
+                    <ControlLabel>
+                      {i18n("options_autoLoginPassword")}
+                    </ControlLabel>
+                    <FormControl
+                      name="autoLoginPassword"
+                      type="password"
+                      autoComplete="new-password"
+                      value={values.autoLoginPassword}
+                      onChange={onTextInputChange}
+                    />
+                  </FormGroup>
+                  <FormGroup controlId="autoLoginDupConn">
+                    <ControlLabel>
+                      {i18n("options_autoLoginDupConn")}
+                    </ControlLabel>
+                    <FormControl
+                      componentClass="select"
+                      name="autoLoginDupConn"
+                      value={values.autoLoginDupConn}
+                      onChange={onTextInputChange}
+                    >
+                      <option value="N">
+                        {i18n("options_autoLoginDupConnNo")}
+                      </option>
+                      <option value="Y">
+                        {i18n("options_autoLoginDupConnYes")}
+                      </option>
+                    </FormControl>
+                  </FormGroup>
+                  <Checkbox
+                    name="autoLoginSkipWelcome"
+                    checked={values.autoLoginSkipWelcome}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_autoLoginSkipWelcome")}
+                  </Checkbox>
                 </fieldset>
               </Tab.Pane>
               <Tab.Pane eventKey="about">

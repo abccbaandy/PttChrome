@@ -76,6 +76,47 @@ export const en_US = {
   "options_about": {
     "message": "About"
   },
+  "options_enhance": {
+    "message": "Enhanced"
+  },
+
+  // enhanced add-on options
+  "options_showFloorNumbers": {
+    "message": "Show comment floor numbers (continuous across pages only in easy reading)"
+  },
+  "options_blacklist": {
+    "message": "Blacklist (one user id per line)"
+  },
+  "tooltip_blacklist": {
+    "message": "One user id per line; hides their comments and board-list posts"
+  },
+  "options_autoLogin": {
+    "message": "Remember credentials / Auto login"
+  },
+  "options_autoLoginEnable": {
+    "message": "Log in automatically when the page opens"
+  },
+  "tooltip_autoLogin": {
+    "message": "Credentials are stored in plain text in this browser (localStorage). Use only on a personal device."
+  },
+  "options_autoLoginUser": {
+    "message": "Account"
+  },
+  "options_autoLoginPassword": {
+    "message": "Password"
+  },
+  "options_autoLoginDupConn": {
+    "message": "When a duplicate login is detected"
+  },
+  "options_autoLoginDupConnNo": {
+    "message": "Keep other connections (N)"
+  },
+  "options_autoLoginDupConnYes": {
+    "message": "Remove other connections (Y)"
+  },
+  "options_autoLoginSkipWelcome": {
+    "message": "Auto-skip welcome / press-any-key screens"
+  },
 
   // options
   "options_enablePicPreview": {

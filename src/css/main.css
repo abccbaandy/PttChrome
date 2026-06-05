@@ -357,6 +357,23 @@ span {
   background: rgba(255, 255, 255, 0.5);
 }
 
+/* Comment floor number badge (Enhanced Add-on). Sits in the gap between the
+   推/噓/→ marker and the user id, as a small raised superscript. width:0 keeps
+   the monospace grid aligned; the number overflows to the right into the gap. */
+.floorBadge {
+  display: inline-block;
+  width: 0;
+  overflow: visible;
+  font-size: 0.55em;
+  line-height: 1;
+  font-weight: bold;
+  vertical-align: super;
+  color: #ffd34d;
+  cursor: default;
+  -webkit-user-select: none;
+  white-space: pre;
+}
+
 .glyphicon-refresh-animate {
   -webkit-animation: spin .7s infinite linear;
 }

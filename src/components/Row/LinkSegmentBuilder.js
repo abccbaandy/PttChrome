@@ -3,6 +3,11 @@ import HyperLink from "./HyperLink";
 import ColorSegmentBuilder from "./ColorSegmentBuilder";
 import ImagePreviewer, { of, resolveSrcToImageUrl } from "../ImagePreviewer";
 
+// Comment lines are "推 userid: ...". The marker (推/噓/→) is a 2-column DBCS
+// char (cols 0-1) and col 2 is the space before the user id — that gap is where
+// the floor number is shown (matching the original script).
+const FLOOR_BADGE_COL = 2;
+
 export class LinkSegmentBuilder {
   constructor(
     row,
@@ -10,13 +15,15 @@ export class LinkSegmentBuilder {
     forceWidth,
     highlighted,
     onHyperLinkMouseOver,
-    onHyperLinkMouseOut
+    onHyperLinkMouseOut,
+    floor
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
     this.highlighted = highlighted;
     this.onHyperLinkMouseOver = onHyperLinkMouseOver;
     this.onHyperLinkMouseOut = onHyperLinkMouseOut;
+    this.floor = floor;
     //
     this.segs = [];
     this.inlineLinkPreviews = enableLinkInlinePreview ? [] : false;
@@ -56,7 +63,27 @@ export class LinkSegmentBuilder {
     this.colorSegBuilder = null;
   }
 
+  floorBadge() {
+    const f = this.floor;
+    return (
+      <span
+        key="floor"
+        className="floorBadge"
+        data-floor
+        title={`第${f.seq}樓 ${f.type}${f.sub}`}
+      >
+        {f.seq}
+      </span>
+    );
+  }
+
   readChar(ch, i) {
+    // Insert the floor number into the gap before the user id (inside the line).
+    if (this.floor && i === FLOOR_BADGE_COL && !this._floorInserted) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this.segs.push(this.floorBadge());
+      this._floorInserted = true;
+    }
     if (this.colorSegBuilder !== null && ch.isStartOfURL()) {
       this.saveSegment();
     }
@@ -75,7 +102,6 @@ export class LinkSegmentBuilder {
     if (this.colorSegBuilder !== null) {
       this.saveSegment();
     }
-    // TODO: Detect userid and apply class "blu_$userid".
     return (
       <div>
         <span
