@@ -840,6 +840,10 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.showFloorNumbers = value;
       this.view.redraw(true);
       break;
+    case 'highlightAuthorComments':
+      this.view.highlightAuthorComments = value;
+      this.view.redraw(true);
+      break;
     case 'blacklist':
       this.view.blacklist = parseBlacklist(value);
       this.view.redraw(true);
@@ -900,6 +904,15 @@ App.prototype.mouse_click = function(e) {
       return;
     }
     if (window.getSelection().isCollapsed) { //no anything be select
+      // Pusher highlight: clicking anywhere on a comment row toggles a whole-row
+      // highlight of all comments by that pusher. Runs regardless of mouse
+      // browsing; return early to suppress browsing nav / left-button command.
+      var pusherEl = e.target && e.target.closest && e.target.closest('[data-pusher]');
+      if (pusherEl) {
+        this.view.togglePusherHighlight(pusherEl.getAttribute('data-pusher'));
+        e.preventDefault();
+        return;
+      }
       if (this.buf.useMouseBrowsing) {
         var doMouseCommand = true;
         if (e.target.className)

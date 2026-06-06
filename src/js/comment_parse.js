@@ -36,11 +36,65 @@ export function rowToText(chars) {
 // lower case so blacklist matching is case-insensitive.
 const COMMENT_RE = /^(推|噓|→)\s+([0-9A-Za-z]+)\s*:/;
 
+// The user id starts at col 3: the 推/噓/→ marker is a 2-col DBCS char (cols 0-1)
+// and col 2 is the single space before the id (same gap the floor badge uses).
+// So the id occupies cols [COMMENT_USERID_COL, COMMENT_USERID_COL + userid.length).
+export const COMMENT_USERID_COL = 3;
+
 export function parseComment(text) {
   if (!text) return null;
   const m = text.match(COMMENT_RE);
   if (!m) return null;
   return { type: m[1], userid: m[2].toLowerCase() };
+}
+
+// Per-comment-row annotation shared by BOTH render paths (native Screen grid and
+// easy-reading appendRows) so they can never diverge. Returns null for non-comment
+// rows. `floor` advances even for blacklisted rows (they still occupy a floor).
+//
+// ctx = {
+//   blacklist:      Set<lower id> | undefined
+//   showFloorNumbers: bool
+//   floorCounter:   FloorCounter   (mutated; caller owns its lifetime/reset)
+//   highlightAuthor: bool
+//   articleAuthor:  lower id | null   (原PO)
+//   selectedPusher: lower id | null   (clicked pusher)
+// }
+// Result: { type, userid, floor?, hidden, pusher,
+//           authorIdStart?, authorIdEnd?, pusherHighlight? }
+export function annotateComment(text, ctx) {
+  const c = parseComment(text);
+  if (!c) return null;
+  const floor =
+    ctx.showFloorNumbers && ctx.floorCounter
+      ? ctx.floorCounter.next(c.type)
+      : undefined;
+  const hidden = !!(ctx.blacklist && ctx.blacklist.has(c.userid));
+  const result = { type: c.type, userid: c.userid, floor, hidden, pusher: c.userid };
+  if (!hidden) {
+    // 原PO comment → highlight only the user-id columns [start, end).
+    if (ctx.highlightAuthor && ctx.articleAuthor && c.userid === ctx.articleAuthor) {
+      result.authorIdStart = COMMENT_USERID_COL;
+      result.authorIdEnd = COMMENT_USERID_COL + c.userid.length;
+    }
+    // Selected pusher → whole-row highlight.
+    if (ctx.selectedPusher && c.userid === ctx.selectedPusher) {
+      result.pusherHighlight = true;
+    }
+  }
+  return result;
+}
+
+// Article header (first line of a post): "作者  userid (nickname) 看板 board".
+// Returns the 原PO id in lower case (for same-author comment highlighting), or
+// null when the line is not an author header (e.g. a later page of the article).
+const ARTICLE_AUTHOR_RE = /^\s*作者\s+([0-9A-Za-z]+)/;
+
+export function parseArticleAuthor(text) {
+  if (!text) return null;
+  const m = text.match(ARTICLE_AUTHOR_RE);
+  if (!m) return null;
+  return m[1].toLowerCase();
 }
 
 // Board list author column. Calibrated against live PTT (C_Chat, 2026-06), e.g.:

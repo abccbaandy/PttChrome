@@ -19,7 +19,7 @@ export class ColorState {
 /**
  * @deprecated
  */
-export function renderRowHtml(chars, row, forceWidth, enableLinkInlinePreview, cont, floor) {
+export function renderRowHtml(chars, row, forceWidth, enableLinkInlinePreview, cont, floor, authorIdStart, authorIdEnd) {
   return ReactDOM.render(
     <Row
       chars={chars}
@@ -27,6 +27,8 @@ export function renderRowHtml(chars, row, forceWidth, enableLinkInlinePreview, c
       forceWidth={forceWidth}
       enableLinkInlinePreview={enableLinkInlinePreview}
       floor={floor}
+      authorIdStart={authorIdStart}
+      authorIdEnd={authorIdEnd}
     />,
     cont
   );

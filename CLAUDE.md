@@ -23,10 +23,12 @@ webpack4 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - 純邏輯（無 DOM/網路，易測）：`src/js/string_util.js`(Big5轉碼需全域 `window.lib.*`)、`symbol_table.js`、`event.js`、`ansi_parser.js`。
 - 緊耦合 DOM/React：`term_view.js`、`term_ui.js`、`pttchrome.js`、`components/`。
 
-## 測試（E2E，連真 PTT）
-- `yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（guest 名額常滿會 fast-fail）。
-- 失敗自動截圖/錄影 + console dump。可重用 helper：`tests/e2e/helpers/ptt.js`（`login`/`readScreen`/`waitForScreen`/`typeLine`）。
-- 細節與擴充見 `tests/e2e/README.md`。
+## 測試
+- **Unit（首選，穩定）**：`yarn test:unit`（jest，node env，不連網/不需 DOM）。`tests/unit/`：純邏輯
+  (`comment_parse.test.js`) + Row 渲染 (`row_render.test.js`，react-test-renderer + 假 ASCII TermChar)。
+  增強功能的逐列判斷一律放 `comment_parse.annotateComment` 並在此回歸守護（e2e 素材不穩，純邏輯先測）。
+- **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額常滿會 fast-fail）。
+  失敗自動截圖/錄影 + console dump。helper：`tests/e2e/helpers/ptt.js`。細節見 `tests/e2e/README.md`。
 
 ## 隱私（務必遵守）
 - 這是公開 fork repo。**禁止**把以下寫進任何 `.md`、原始碼、commit message：

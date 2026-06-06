@@ -16,7 +16,9 @@ export class LinkSegmentBuilder {
     highlighted,
     onHyperLinkMouseOver,
     onHyperLinkMouseOut,
-    floor
+    floor,
+    authorIdStart,
+    authorIdEnd
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -24,6 +26,13 @@ export class LinkSegmentBuilder {
     this.onHyperLinkMouseOver = onHyperLinkMouseOver;
     this.onHyperLinkMouseOut = onHyperLinkMouseOut;
     this.floor = floor;
+    // Same-author (原PO) highlight: wrap cols [authorIdStart, authorIdEnd) — the
+    // pusher's user id — in a .commentByAuthor span so only the id is tinted.
+    // undefined → not a 原PO comment, skip all wrap logic.
+    this.authorIdStart = authorIdStart;
+    this.authorIdEnd = authorIdEnd;
+    this._inAuthor = false;
+    this._authorWrap = null;
     //
     this.segs = [];
     this.inlineLinkPreviews = enableLinkInlinePreview ? [] : false;
@@ -33,10 +42,29 @@ export class LinkSegmentBuilder {
     this.href = null;
   }
 
+  // Push a built segment to the current target: the author-id wrapper while
+  // inside the user-id range, otherwise the row's top-level segment list.
+  _pushSeg(node) {
+    if (this._inAuthor) this._authorWrap.push(node);
+    else this.segs.push(node);
+  }
+
+  _flushAuthorWrap() {
+    if (this._authorWrap && this._authorWrap.length) {
+      this.segs.push(
+        <span key="authorId" className="commentByAuthor">
+          {this._authorWrap}
+        </span>
+      );
+    }
+    this._authorWrap = null;
+    this._inAuthor = false;
+  }
+
   saveSegment() {
     const element = this.colorSegBuilder.build();
     if (this.href) {
-      this.segs.push(
+      this._pushSeg(
         <HyperLink
           key={this.col}
           href={this.href}
@@ -58,7 +86,7 @@ export class LinkSegmentBuilder {
         );
       }
     } else {
-      this.segs.push(<span key={this.col}>{element}</span>);
+      this._pushSeg(<span key={this.col}>{element}</span>);
     }
     this.colorSegBuilder = null;
   }
@@ -78,10 +106,22 @@ export class LinkSegmentBuilder {
   }
 
   readChar(ch, i) {
+    // Open the 原PO id wrapper at the first column of the user id. floor (col 2)
+    // is inserted before this, so it stays outside the wrapper.
+    if (this.authorIdStart !== undefined && i === this.authorIdStart) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._inAuthor = true;
+      this._authorWrap = [];
+    }
+    // Close it once we move past the id (this column is no longer the user id).
+    if (this._inAuthor && i === this.authorIdEnd) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._flushAuthorWrap();
+    }
     // Insert the floor number into the gap before the user id (inside the line).
     if (this.floor && i === FLOOR_BADGE_COL && !this._floorInserted) {
       if (this.colorSegBuilder !== null) this.saveSegment();
-      this.segs.push(this.floorBadge());
+      this._pushSeg(this.floorBadge());
       this._floorInserted = true;
     }
     if (this.colorSegBuilder !== null && ch.isStartOfURL()) {
@@ -102,6 +142,9 @@ export class LinkSegmentBuilder {
     if (this.colorSegBuilder !== null) {
       this.saveSegment();
     }
+    // Safety net: a user id running to the end of the line never gets its close
+    // boundary, so flush any still-open wrapper here.
+    if (this._inAuthor) this._flushAuthorWrap();
     return (
       <div>
         <span

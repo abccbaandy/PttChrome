@@ -6,7 +6,7 @@ import { renderRowHtml, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
-import { rowToText, parseComment, parseListAuthor, FloorCounter } from './comment_parse';
+import { rowToText, annotateComment, parseListAuthor, parseArticleAuthor, FloorCounter } from './comment_parse';
 
 const ENTER_CHAR = '\r';
 const ESC_CHAR = '\x15'; // Ctrl-U
@@ -48,6 +48,14 @@ export function TermView() {
   this.blacklist = new Set();
   this.showFloorNumbers = true;
   this._floorCounter = new FloorCounter();
+  // Same-author comment highlighting: tint comments written by the 原PO.
+  // _articleAuthor is parsed from the article header (first page only) and kept
+  // across page-downs; see redraw().
+  this.highlightAuthorComments = true;
+  this._articleAuthor = null;
+  // Pusher highlight: lower-cased id of the pusher whose comments are currently
+  // highlighted (whole row), or null. Set by togglePusherHighlight on click.
+  this._selectedPusher = null;
 
   this.curRow = 0;
   this.curCol = 0;
@@ -253,6 +261,16 @@ TermView.prototype = {
     var changedRows = [];
 
     var lines = this.buf.lines;
+    // Track the 原PO id for same-author comment highlighting. The "作者" header
+    // only appears on the first page of an article, so keep the last parsed value
+    // across page-downs; a new article's first page overwrites it.
+    if (this.buf.pageState === 3) {
+      var parsedAuthor = parseArticleAuthor(rowToText(lines[0]));
+      if (parsedAuthor) this._articleAuthor = parsedAuthor;
+    } else {
+      // Leaving the article clears any pusher highlight selection.
+      this._selectedPusher = null;
+    }
     for (var row = 0; row < rows; ++row) {
       var chh = this.chh;
       this.curRow = row;
@@ -296,6 +314,9 @@ TermView.prototype = {
           {
             blacklist: this.blacklist,
             showFloorNumbers: this.showFloorNumbers,
+            highlightAuthor: this.highlightAuthorComments,
+            articleAuthor: this._articleAuthor,
+            selectedPusher: this._selectedPusher,
             pageState: this.buf.pageState
           }
         )
@@ -790,8 +811,9 @@ TermView.prototype = {
       this.mainContainer.style.paddingBottom = '';
       this.actualRowIndex = 0;
       this.buf.pageWrappedLines = [];
-      // New article entered → restart floor numbering from 1.
+      // New article entered → restart floor numbering and clear pusher highlight.
       this._floorCounter.reset();
+      this._selectedPusher = null;
       if (this.buf.pageState == 3) {
         var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
         for (var i = 0; i < this.buf.rows-1; ++i) {
@@ -823,22 +845,32 @@ TermView.prototype = {
     // populateEasyReadingPage, lists/menus via hideEasyReading), so the Enhanced
     // Add-on filtering must live here too — not only in the native Screen path.
     var hasBlacklist = this.blacklist && this.blacklist.size > 0;
+    // Per-row enhance context (shared pure logic with the native path → the two
+    // can't diverge). _floorCounter persists across page-downs within an article.
+    var ctx = {
+      blacklist: this.blacklist,
+      showFloorNumbers: this.showFloorNumbers,
+      floorCounter: this._floorCounter,
+      highlightAuthor: this.highlightAuthorComments,
+      articleAuthor: this._articleAuthor,
+      selectedPusher: this._selectedPusher
+    };
     for (var i in lines) {
       var line = lines[i];
+      // IMPORTANT: re-init every iteration. These were a function-scoped `var`
+      // bleed bug before — non-matching rows inherited the previous row's author
+      // range and highlighted a whole column in easy reading.
       var floor;
       var hidden = false;
+      var ann = null;
       if (enhance) {
         if (this.buf.pageState === 3) {
-          // Article: count every comment (blacklisted still occupy a floor),
-          // then drop blacklisted rows entirely (no blank line — it is a flow).
-          var comment = parseComment(rowToText(line));
-          if (comment) {
-            if (this.showFloorNumbers) {
-              floor = this._floorCounter.next(comment.type);
-            }
-            if (hasBlacklist && this.blacklist.has(comment.userid)) {
-              continue;
-            }
+          ann = annotateComment(rowToText(line), ctx);
+          if (ann) {
+            // Article: blacklisted rows are dropped entirely (no blank line — it
+            // is a flow). The floor was already counted inside annotateComment.
+            if (ann.hidden) continue;
+            floor = ann.floor;
           }
         } else if (this.buf.pageState === 2 && hasBlacklist) {
           // Board list: hide blacklisted authors' posts. The list is a fixed grid
@@ -853,10 +885,44 @@ TermView.prototype = {
       el.setAttribute('type', 'bbsrow');
       el.setAttribute('srow', this.mainContainer.childNodes.length);
       if (hidden) el.style.visibility = 'hidden';
+      // data-pusher lets a click reselect this pusher; .pusherHighlight is toggled
+      // here (so re-appended pages keep the highlight) and by _applyPusherHighlightDOM.
+      if (ann && ann.pusher) el.setAttribute('data-pusher', ann.pusher);
+      if (ann && ann.pusherHighlight) el.classList.add('pusherHighlight');
       this.mainContainer.appendChild(el);
       renderRowHtml(
         line, this.mainContainer.childNodes.length, this.chh,
-        showsLinkPreview, el, floor);
+        showsLinkPreview, el, floor,
+        ann && ann.authorIdStart, ann && ann.authorIdEnd);
+    }
+  },
+
+  // Toggle whole-row highlight for all comments by `userid` (click handler).
+  // Clicking the selected pusher again clears it; clicking another switches.
+  togglePusherHighlight: function(userid) {
+    if (!userid) return;
+    this._selectedPusher = this._selectedPusher === userid ? null : userid;
+    if (this.useEasyReadingMode) {
+      this._applyPusherHighlightDOM();
+    } else {
+      // Native path re-renders from buf; computeAnnotations re-applies the class.
+      this.redraw(true);
+    }
+  },
+
+  // Easy reading rows are persistent DOM (append model), so toggle the class
+  // directly instead of re-rendering.
+  _applyPusherHighlightDOM: function() {
+    var rows = this.mainContainer.childNodes;
+    for (var i = 0; i < rows.length; ++i) {
+      var el = rows[i];
+      if (!el.getAttribute) continue;
+      var p = el.getAttribute('data-pusher');
+      if (p && this._selectedPusher && p === this._selectedPusher) {
+        el.classList.add('pusherHighlight');
+      } else {
+        el.classList.remove('pusherHighlight');
+      }
     }
   },
 

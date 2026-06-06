@@ -1,7 +1,8 @@
 # Enhanced Add-on（黑名單／樓層／自動登入）
 
 原生整合自 `3rd_script/PttChrome ...Enhanced Add-on`（原為 DOM-scraping userscript）。功能改用內部
-`TermChar[]` 結構，不爬 DOM。對應 e2e：`tests/e2e/enhance.spec.js`（連真 PTT，需好讀模式）。
+`TermChar[]` 結構，不爬 DOM。測試：`yarn test:unit`（jest，純邏輯+Row 渲染，不連網/不需 DOM，見
+`tests/unit/`）；`yarn test:e2e`（Playwright，連真 PTT，需好讀模式）。
 
 ## 純邏輯核心：`src/js/comment_parse.js`
 - `rowToText(chars)`：`TermChar[]`→Unicode（DBCS 合併，比照 `term_buf.getRowText`）。
@@ -11,6 +12,11 @@
   守護測試：`enhance.spec.js` 「看板列表作者欄位常數仍正確」，PTT 改版位移會先紅。
 - `FloorCounter`：`seq`(總樓)、`sub`(該 type 分項)；每篇文章 reset。
 - `parseBlacklist(str)`→lower-case Set（換行分隔）。
+- `parseArticleAuthor(text)`→原PO id(lower)|null，正則 `/^\s*作者\s+([0-9A-Za-z]+)/`。**僅文章首頁首行**（作者列）解析得到；翻頁後 lines[0] 是內文→null。
+- **`annotateComment(text, ctx)`→逐列判斷的單一真相**（floor/hidden/pusher/authorId 範圍/pusherHighlight）。
+  `ctx={blacklist,showFloorNumbers,floorCounter,highlightAuthor,articleAuthor,selectedPusher}`。**兩條渲染路徑
+  都呼叫它**（Screen `computeAnnotations`、term_view `appendRows`），避免邏輯各複製一份而發散（曾因此出 bug，見踩坑 #8）。
+  floor 對黑名單列仍 +1（樓號絕對正確）；hidden 短路其餘高亮。回 null=非推文列。守護測試 `tests/unit/comment_parse.test.js`。
 
 ## 渲染整合（雙路徑收斂到 `<Row>`）
 - `<Row>`(`components/Row/index.js`) 新增 props `floor`/`hidden`。`floor`→`LinkSegmentBuilder.readChar`
@@ -31,6 +37,32 @@
 - 測試讀列：好讀模式外層 el 包住 Row 自身的 bbsrow（多一層巢狀）；讀推文用 `[data-type="bbsline"]` 的
   **textContent**（`visibility:hidden` 列 innerText 為空），推文正則需容忍徽章數字：`/^(推|噓|→)\d*\s+/`。
 
+## 原PO 推文高亮（same-author，只高亮 userid 區塊）
+- 推文者 == 原PO id → **只**把 userid 欄位 `[3, 3+len)` 包成 `<span class="commentByAuthor">`（`main.css`
+  `#103a5c`）。userid 起始欄 `COMMENT_USERID_COL=3`（marker 2 欄 DBCS + col2 空格；同 floorBadge 假設）。
+  char span `b0`(transparent) 透出底色、不蓋 ANSI。
+- wrap 在 `LinkSegmentBuilder`（兩路徑共用）：`readChar` 在 `i===authorIdStart` 開 wrap（`_inAuthor=true`、
+  segs 改 push 進 `_authorWrap`），`i===authorIdEnd` 收尾包成一個 span；`build()` 對「userid 到行尾」收尾。
+  `authorIdStart/End` 任一 undefined→完全跳過。
+- 原PO id 由 `view._articleAuthor` 跨頁持久：`redraw` 開頭 `pageState==3` 時 `parseArticleAuthor(lines[0])`，**有值才覆蓋**
+  （翻頁 null 沿用上次；新文章首頁覆蓋）。**勿** reset，靠覆蓋即可。
+- 逐列判斷由 `annotateComment` 統一（見上）。兩路徑只負責「把回傳值畫出來」：原生 `Screen#computeAnnotations`
+  →`ann.authorIdStart/End`→Row props；好讀 `appendRows`→`renderRowHtml(...,authorIdStart,authorIdEnd)`→Row。
+- pref `highlightAuthorComments`(true)；`pttchrome.onPrefChange`→`view.*`+`redraw(true)`。i18n `options_highlightAuthorComments`。
+
+## 點選推文者高亮（pusher highlight，整列）
+- 左鍵點推文列任一處 → 高亮該推文者**本篇所有推文列**（整列 navy `.pusherHighlight` `#000080`；`#mainContainer>span`
+  為 block→整行寬）。再點同一人取消、點別人切換。
+- 觸發：`pttchrome.mouse_click`（**非** `onMouse_click`——後者只在 mouse browsing 開時跑）。在 `getSelection().isCollapsed`
+  分支最前面：`e.target.closest('[data-pusher]')` 命中→`view.togglePusherHighlight(id)`+`preventDefault`+`return`
+  （抑制 browsing 導航/leftButtonFunction）。`useMouseBrowsing` 預設 false。
+- 偵測一律走 DOM（**好讀畫面是重排長卷、不對應 buf 24 列網格**，不能用 `clientToPos`/`getRowText`）。推文列兩路徑都掛
+  `data-pusher`(lower id)：原生 Row 外層 span（prop `pusher`）、好讀 `appendRows` 的 `el`。
+- 狀態 `view._selectedPusher`（傳入 `annotateComment` ctx）；`togglePusherHighlight`：原生→`redraw(true)`（重算
+  `ann.pusherHighlight`）；好讀→`_applyPusherHighlightDOM`（遍歷 `mainContainer` 子節點 toggle class，不重繪）。
+- 清除：好讀新文章在 `populateEasyReadingPage` else 分支 reset；原生 `redraw` `pageState!==3` 時 reset。
+- 無 pref/i18n（點擊驅動、恆可用）。
+
 ## 設定（`PrefModal.js` 「增強功能」分頁）
 pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）：
 `showFloorNumbers`(true)、`blacklist`("" 換行)、`autoLogin`(false)、`autoLoginUser/Password`("")、
@@ -46,8 +78,8 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）：
 e2e：`enhance.spec.js`「自動登入：開頁自動到主選單（不需按鍵）」（需 env PTT_USER/PTT_PASS）。
 
 ## 未移植（原腳本失效/越界）
-axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠瀏覽友善模式、右鍵搜尋作者選單、
-原PO 高亮（與專案既有功能重疊）。
+axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠瀏覽友善模式、右鍵搜尋作者選單。
+（add-on (B) 原PO 推文高亮、(C) 點推文者高亮所有推文 皆已移植，見上方兩節。）
 
 ## 踩坑筆記（本次整合，CONFIRMED）
 
@@ -69,6 +101,12 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 6. **`parseListAuthor` 欄位需實機校準**（目前 cols 17–28 @ C_Chat），已加守護測試；PTT 改版位移會先紅。
 7. **e2e flake**：最新文章常無推文（測樓層/黑名單要從 End 往舊文找）；guest 名額滿時用 env `PTT_USER/PTT_PASS`；
    連線偶發 403/ECONNRESET（PTT 端）。
+8. **好讀路徑 `var` 作用域滲漏**：`appendRows` 早期版本對「原PO id 範圍」用 `var authorIdStart/End` 但**未每圈重設**
+   （JS `var` 是函式作用域、非 block）。第一個原PO 列設了範圍後，後續非原PO 列因不符 `userid===_articleAuthor`
+   而不重新賦值 → 沿用上一列的值 → **每列都套固定 col 3~N 高亮，畫成一條直條色塊**（原生路徑用 `const ann={}`
+   每圈新物件故無此症 → 只在好讀爆）。⇒ 根因是**踩坑 #1 的「逐列加工複製兩份」導致發散**；已把判斷抽成
+   `comment_parse.annotateComment` 單一純函式，兩路徑共用，並加 `tests/unit/comment_parse.test.js` 回歸守護
+   「非原PO 列不得繼承 author 範圍」。教訓：凡兩路徑共用的逐列邏輯，一律走 `annotateComment`，勿再各寫一份。
 
 ## 工作流偏好（FEEDBACK）
 - **不要開新功能分支**：直接在現有分支（`dev`）修改與 commit。本次誤開 `feat/enhanced-addon` 已併回 `dev`。

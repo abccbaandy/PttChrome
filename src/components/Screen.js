@@ -6,10 +6,14 @@ import ImagePreviewer, {
 } from "./ImagePreviewer";
 import {
   rowToText,
-  parseComment,
+  annotateComment,
   parseListAuthor,
   FloorCounter
 } from "../js/comment_parse";
+
+// NOTE: articleAuthor (原PO id) is tracked by term_view across page-downs and
+// passed in via enhance — the "作者" header only appears on the first page, so we
+// cannot re-derive it from `lines` here on later pages.
 
 // PttChrome pageState (see term_buf.js#setPageState): 2 = board list, 3 = reading.
 const PAGE_LIST = 2;
@@ -22,20 +26,28 @@ const PAGE_READING = 3;
 function computeAnnotations(lines, enhance) {
   const result = new Array(lines.length);
   if (!enhance) return result;
-  const { blacklist, showFloorNumbers, pageState } = enhance;
+  const {
+    blacklist,
+    showFloorNumbers,
+    highlightAuthor,
+    articleAuthor,
+    selectedPusher,
+    pageState
+  } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   if (pageState === PAGE_READING) {
-    const counter = new FloorCounter();
+    // Floor numbers here count only within the visible page; cross-page numbering
+    // needs the easy-reading path (its FloorCounter persists across page-downs).
+    const ctx = {
+      blacklist,
+      showFloorNumbers,
+      floorCounter: new FloorCounter(),
+      highlightAuthor,
+      articleAuthor,
+      selectedPusher
+    };
     for (let row = 0; row < lines.length; ++row) {
-      const c = parseComment(rowToText(lines[row]));
-      if (!c) continue;
-      // Count every comment first (blacklisted ones still occupy a floor).
-      const floor = showFloorNumbers ? counter.next(c.type) : undefined;
-      if (hasBlacklist && blacklist.has(c.userid)) {
-        result[row] = { hidden: true };
-      } else if (floor) {
-        result[row] = { floor };
-      }
+      result[row] = annotateComment(rowToText(lines[row]), ctx) || undefined;
     }
   } else if (pageState === PAGE_LIST && hasBlacklist) {
     for (let row = 0; row < lines.length; ++row) {
@@ -106,6 +118,12 @@ export class Screen extends React.Component {
             highlighted={this.state.currentHighlighted === row}
             floor={annotations[row] && annotations[row].floor}
             hidden={annotations[row] && annotations[row].hidden}
+            pusher={annotations[row] && annotations[row].pusher}
+            pusherHighlight={
+              annotations[row] && annotations[row].pusherHighlight
+            }
+            authorIdStart={annotations[row] && annotations[row].authorIdStart}
+            authorIdEnd={annotations[row] && annotations[row].authorIdEnd}
             onHyperLinkMouseOver={this.handleHyperLinkMouseOver}
             onHyperLinkMouseOut={this.handleHyperLinkMouseOut}
           />

@@ -50,6 +50,7 @@ const DEFAULT_PREFS = {
 
   // enhanced add-on
   showFloorNumbers: true,
+  highlightAuthorComments: true,
   blacklist: "", // newline-separated user ids
   autoLogin: false,
   autoLoginUser: "",
@@ -568,6 +569,13 @@ export const PrefModal = ({
                     onChange={onCheckboxChange}
                   >
                     {i18n("options_showFloorNumbers")}
+                  </Checkbox>
+                  <Checkbox
+                    name="highlightAuthorComments"
+                    checked={values.highlightAuthorComments}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_highlightAuthorComments")}
                   </Checkbox>
                   <FormGroup controlId="blacklist">
                     <ControlLabel>{i18n("options_blacklist")}</ControlLabel>

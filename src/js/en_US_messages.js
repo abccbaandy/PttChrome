@@ -84,6 +84,9 @@ export const en_US = {
   "options_showFloorNumbers": {
     "message": "Show comment floor numbers (continuous across pages only in easy reading)"
   },
+  "options_highlightAuthorComments": {
+    "message": "Highlight comments by the original poster"
+  },
   "options_blacklist": {
     "message": "Blacklist (one user id per line)"
   },

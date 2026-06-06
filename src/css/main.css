@@ -374,6 +374,20 @@ span {
   white-space: pre;
 }
 
+/* Same-author (原PO) comment highlight (Enhanced Add-on). Wraps just the user-id
+   columns inside a comment line (see LinkSegmentBuilder); the id's char spans are
+   b0/transparent so this tint shows through without overriding ANSI colours. */
+.commentByAuthor {
+  background-color: #103a5c;
+}
+
+/* Pusher highlight (Enhanced Add-on): click a comment row to tint EVERY row by the
+   same pusher. Applied to the whole bbsrow (#mainContainer > span is display:block
+   → a full-width band); transparent char spans let the navy show through. */
+.pusherHighlight {
+  background-color: #000080;
+}
+
 .glyphicon-refresh-animate {
   -webkit-animation: spin .7s infinite linear;
 }

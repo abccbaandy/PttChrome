@@ -84,6 +84,9 @@
   "options_showFloorNumbers": {
     "message": "文章內推文顯示樓層編號 (需開啟好讀模式才會跨頁連續)"
   },
+  "options_highlightAuthorComments": {
+    "message": "高亮原PO本人的推文"
+  },
   "options_blacklist": {
     "message": "黑名單 (一行一個帳號)"
   },
