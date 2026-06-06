@@ -2,7 +2,7 @@
 
 對象：`3rd_script/ptt-imgur-fix`（userscript, eight04）、`3rd_script/ptt-media-preview`（瀏覽器擴充, mingc00）。
 兩者用途皆為「PTT 連結自動顯示圖片/影片 + 修正 imgur referer 封鎖」。
-**本次僅研究，不實作整合。** 結論狀態：CONFIRMED＝已讀原始碼實證；guess＝推論。
+**路線 B（原生整合）已實作**，見 §9。結論狀態：CONFIRMED＝已讀原始碼實證；guess＝推論。
 
 **關鍵前提（CONFIRMED）**：`term.ptt.cc` 跑的就是 PttChrome，本專案 fork 自 PttChrome ⇒
 兩套件針對的 DOM＝**我們自己會產出的 DOM**。耦合高，但方向對我們有利（不需逆向，照搬即合）。
@@ -150,3 +150,20 @@
 再決定路線 B 的範圍。第三方保留為「零 code 替代方案 / 穩健去 referer 的 fallback 參考實作」。
 
 唯一路線 B 無法完全自解者：imgur referer 封鎖在「連線重用」極端情況下需網路層處理；屬邊界，先用 `referrerPolicy` + 文件化擴充/proxy fallback 即可。
+
+---
+
+## 9. 實作狀態（路線 B 已實作，CONFIRMED）
+
+於 `src/components/ImagePreviewer.js` 完成原生整合（commit `702c4d2`）：
+
+- **descriptor 泛化**：`resolveSrcToImageUrl()` 回 media descriptor `{type:'image'|'video'|'iframe'|'album', src, srcset?, images?}`（缺 `type` 視為 image，向後相容）。
+- **`imageUrlResolvers` 陣列**（most-specific→generic，`.find` 取首個 `test()` 真）：imgur 相簿→imgur 單圖→twitter→meee→youtube→twitch→flickr→**generic 影片副檔名→generic 圖片副檔名**→default(reject)。新增 host＝加一筆 entry。
+- **generic 副檔名 resolver**（`RE_IMAGE_EXT`/`RE_VIDEO_EXT`）：零 per-host 即涵蓋任意圖床/影片直連——補上「§5 缺口 1：一般圖片不預覽」。
+- **render**：`ImagePreviewer.Inline` 依 type 出 `FallbackImage`(img，載入失敗逐一試 `srcset` 候選) / `<video class=easyReadingVideo controls>` / iframe 容器；album 展開多圖。`OnHover` 僅對 image 顯示，其餘回 false。
+- **referer**：`FallbackImage` 與 hover img 一律 `referrerPolicy="no-referrer"`，`needsReferer()` 對 `*.verb.tw` 例外（其圖床需 referer）。imgur 相簿 `resolveImgurAlbum()` 用多 client_id 隨機 + `fetch(mode:cors)`。
+- 接線未改：仍走既有 `Row/LinkSegmentBuilder.js`（好讀內嵌）與 `Screen.js`（hover）。**不需** GM_*/sentinel/MutationObserver。
+
+驗證：`yarn build` 通過（webpack production）；resolver dispatch+URL 組裝以 Node 實測 15 代表性 URL 全數正確。
+**未做**：對真 PTT 的實際 render（img/video/iframe 顯示）屬手動/e2e（flaky+需帳密），待後續驗證。
+已知小瑕：twitter `?format=` 形式的 `srcset` 首兩項可能重複（無害，FallbackImage 重試同 URL）。
