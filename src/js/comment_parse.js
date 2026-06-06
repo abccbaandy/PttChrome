@@ -8,7 +8,7 @@
 // Mirrors the DBCS handling in src/js/term_buf.js#getRowText and
 // src/components/Row/ColorSegmentBuilder.js.
 
-import { b2u } from './string_util';
+import { b2u, COMMENT_TIME_RE } from './string_util';
 
 // Reconstruct the Unicode text of a row from its TermChar[] (one screen line).
 // A DBCS character is stored as a lead byte followed by its second byte; combine
@@ -32,9 +32,19 @@ export function rowToText(chars) {
 }
 
 // A PTT comment line looks like: "推 userid: text ...   MM/DD HH:MM"
-// (噓 / → for boo / arrow). userid is ASCII alphanumeric. Returns the pusher in
-// lower case so blacklist matching is case-insensitive.
-const COMMENT_RE = /^(推|噓|→)\s+([0-9A-Za-z]+)\s*:/;
+// (噓 / → for boo / arrow). userid is ASCII alphanumeric. The id field may be
+// space-padded before ':' on some boards (Stock: "推 diefishfish : …"; C_Chat:
+// "推 Haruna1998: …"). Returns the pusher in lower case so blacklist matching is
+// case-insensitive.
+//
+// The trailing " MM/DD HH:MM" timestamp (COMMENT_TIME_RE) is REQUIRED: it is what
+// distinguishes a real comment from body text written in comment shape (no
+// timestamp — e.g. an OP quoting "→ tony :" in the body) and from a "※ 編輯: …"
+// line (leading ※, and a MM/DD/YYYY HH:MM:SS time). Without it those rows were
+// wrongly numbered as floors. See docs/enhanced-addon.md.
+const COMMENT_RE = new RegExp(
+  /^(推|噓|→)\s+([0-9A-Za-z]+)\s*:.*/.source + COMMENT_TIME_RE.source
+);
 
 // The user id starts at col 3: the 推/噓/→ marker is a 2-col DBCS char (cols 0-1)
 // and col 2 is the single space before the id (same gap the floor badge uses).

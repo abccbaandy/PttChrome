@@ -70,6 +70,17 @@ test('樓層編號：好讀模式推文出現遞增序號', async ({ page }) => 
     for (let i = 1; i < floors.length; i++) {
       expect(floors[i]).toBe(floors[i - 1] + 1);
     }
+
+    // 每個樓層徽章都必須落在「真推文列」上：該列文字結尾有 MM/DD HH:MM 時間戳。
+    // 守護偵測太鬆的回歸：內文推文格式文字 / ※編輯 / 空白列皆無時間戳，不該拿到徽章。
+    const badgeRows = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('#mainContainer [data-floor]')).map((el) => {
+        const row = el.closest('[data-type="bbsline"]') || el.closest('[type="bbsrow"]');
+        return row ? row.textContent : '';
+      })
+    );
+    console.log('BADGE ROW SAMPLE:', JSON.stringify(badgeRows.slice(0, 5)));
+    badgeRows.forEach((t) => expect(t).toMatch(/\d{1,2}\/\d{2}\s+\d{2}:\d{2}/));
   } catch (err) {
     console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
     await page.screenshot({ path: 'tests/e2e/__screenshots__/enhance-floor-error.png', fullPage: true });

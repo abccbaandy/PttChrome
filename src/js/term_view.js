@@ -792,7 +792,7 @@ TermView.prototype = {
         for (var i = beginIndex; i < this.buf.rows-1; ++i) {
           if (i > 0 && this.buf.isTextWrappedRow(i-1)) {
             this.buf.pageWrappedLines[this.actualRowIndex] += 1;
-            // if the second row is the wrapped line from first row 
+            // if the second row is the wrapped line from first row
             if (!atLastPage && i == beginIndex) {
               beginIndex++;
             }
@@ -857,10 +857,14 @@ TermView.prototype = {
     };
     for (var i in lines) {
       var line = lines[i];
-      // IMPORTANT: re-init every iteration. These were a function-scoped `var`
-      // bleed bug before — non-matching rows inherited the previous row's author
-      // range and highlighted a whole column in easy reading.
-      var floor;
+      // IMPORTANT: re-init every iteration. `var` is function-scoped, so a bare
+      // `var floor;` does NOT reset between iterations — it keeps the previous
+      // value. That made every non-comment row AFTER a comment (blank rows below
+      // the last push, ※ lines, body) inherit the previous comment's floor badge
+      // (e.g. an article with 2 pushes showed "2" on every trailing blank row).
+      // Must assign each iteration. (authorId range avoids this by reading from
+      // `ann`, which is reset to null below.)
+      var floor = undefined;
       var hidden = false;
       var ann = null;
       if (enhance) {

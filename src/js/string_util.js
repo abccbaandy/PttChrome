@@ -119,9 +119,20 @@ export function parseReplyText(it) {
       it.indexOf('請選擇暫存檔 (0-9)[0]:') === 0);
 };
 
+// Trailing PTT comment timestamp " MM/DD HH:MM" (right-aligned at the end of the
+// row, always preceded by whitespace). A finished comment row ends with it; body
+// text written in comment shape, the "→ id:" input prompt, and "※ 編輯: … ,
+// MM/DD/YYYY HH:MM:SS" (different format) do NOT. Shared by parseComment (in
+// comment_parse.js) and parsePushInitText to tell real comments apart.
+export const COMMENT_TIME_RE = /\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/;
+
 export function parsePushInitText(it) {
-  return (it.indexOf('您覺得這篇文章 ') === 0 || 
-      it.search(/→ \w+ *: +/) === 0 ||
+  // The "→ id: " clause is the comment INPUT prompt (the row you type into), which
+  // has no timestamp. Exclude finished arrow comments (they end with a timestamp):
+  // matching them made easy reading mistake the first arrow comment for the input
+  // row and drop it from the scroll (e.g. a leading "→ user:" comment went missing).
+  return (it.indexOf('您覺得這篇文章 ') === 0 ||
+      (it.search(/→ \w+ *: +/) === 0 && !COMMENT_TIME_RE.test(it)) ||
       it.indexOf('很抱歉, 本板不開放回覆文章，要改回信給作者嗎？ [y/N]:') === 0);
 };
 

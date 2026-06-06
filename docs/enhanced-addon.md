@@ -6,7 +6,9 @@
 
 ## 純邏輯核心：`src/js/comment_parse.js`
 - `rowToText(chars)`：`TermChar[]`→Unicode（DBCS 合併，比照 `term_buf.getRowText`）。
-- `parseComment(text)`→`{type:'推'|'噓'|'→', userid(lower)}|null`，正則 `/^(推|噓|→)\s+([0-9A-Za-z]+)\s*:/`。
+- `parseComment(text)`→`{type:'推'|'噓'|'→', userid(lower)}|null`，正則 `/^(推|噓|→)\s+([0-9A-Za-z]+)\s*:.*<COMMENT_TIME_RE>/`。
+  **必須**結尾有時間戳 `COMMENT_TIME_RE=/\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/`（定義在 `string_util.js`，與 `parsePushInitText` 共用）。
+  用以排除「內文中的推文格式文字（無時間戳）」與「`※ 編輯: … MM/DD/YYYY HH:MM:SS`（格式不同+前綴※）」被誤計樓層。
 - `parseListAuthor(text)`→userid|null。**欄位常數 cols 17~28**（CONFIRMED 2026-06 對 C_Chat 校準）。
   fail-safe：非 userid→null→不隱藏。`●`(編輯過) 列有全形字位移→fall through（可接受的 under-hide）。
   守護測試：`enhance.spec.js` 「看板列表作者欄位常數仍正確」，PTT 改版位移會先紅。
@@ -107,6 +109,23 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
    每圈新物件故無此症 → 只在好讀爆）。⇒ 根因是**踩坑 #1 的「逐列加工複製兩份」導致發散**；已把判斷抽成
    `comment_parse.annotateComment` 單一純函式，兩路徑共用，並加 `tests/unit/comment_parse.test.js` 回歸守護
    「非原PO 列不得繼承 author 範圍」。教訓：凡兩路徑共用的逐列邏輯，一律走 `annotateComment`，勿再各寫一份。
+
+9. **`appendRows` 的 `var floor;` 滲漏 → 非推文列繼承前一樓號（樓層 bug 主因，2026-06，CONFIRMED 實機）**。
+   迴圈內 `var floor;`（**無初值**）不會每圈重設（JS `var` 函式作用域）：最後一則推文設 `floor=ann.floor` 後，
+   後續**非推文列**（推文下方空白、`※ 編輯`、內文）`ann=null` 不重新賦值 → 沿用上一樓號 → `renderRowHtml` 給它畫徽章。
+   實機 dump：只有 2 推文的文章，推文下方 7 個空白列全標「2」。同 #8 那一類（`var` 未每圈重設），只是換成 `floor`。
+   修法：`var floor = undefined;`（`term_view.js` appendRows）。驗證：空白處/※編輯/內文混雜 3 篇 SUSPECT 清空。
+   ⇒ 這是使用者回報「空白處/※編輯/內文被標樓層」的**真正成因**（非偵測太鬆；原生用 `const ann` 每圈新物件故正常）。
+10. **推文偵測加錨定結尾時間戳（次要：內文推文格式 case）**。`COMMENT_RE` 結尾加
+    `COMMENT_TIME_RE=/\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/`（`string_util.js`），排除**內文中的推文格式文字**
+    （`→ tony :`、`推 bbignose :`，**無時間戳**、在 `※ 發信站:` 前；例 M.1780738427）被當真推文。`※ 編輯: …
+    MM/DD/YYYY HH:MM:SS` 也因格式不同+前綴 ※ 排除。守護：`comment_parse.test.js` + `tests/unit/fixtures/*.txt`
+    （5 篇真實文章逐列標 `C`/`N`）；e2e `enhance.spec.js` 斷言每個 `[data-floor]` 徽章所屬列含時間戳。
+11. **`parsePushInitText` 收緊（安全強化，非「推文不見」修法）**。`/→ \w+ *: +/` 會把已完成的箭頭推文也當「推文
+    輸入提示列」；改 `it.search(/→ \w+ *: +/)===0 && !COMMENT_TIME_RE.test(it)`（真推文有時間戳→排除；只收緊、對
+    合法輸入列無害）。守護：`comment_parse.test.js`「parsePushInitText」。**注意：這不是 `→ BlueBird5566` 不見的
+    根因**——實機 ERDBG 證實是 `populateEasyReadingPage` 的 `i==4` 首頁 hack 造成跨頁去重 `beginIndex` 多跳 1 列
+    （內文→第一則推文邊界 over-skip）。詳見 `docs/easy-reading-missing-comment-handoff.md`（尚未修，待續）。
 
 ## 工作流偏好（FEEDBACK）
 - **不要開新功能分支**：直接在現有分支（`dev`）修改與 commit。本次誤開 `feat/enhanced-addon` 已併回 `dev`。

@@ -1,0 +1,11 @@
+# Source: https://www.ptt.cc/bbs/C_Chat/M.1780732757.A.681.html
+# Bug: 只有少量推文 (2)，空白處被標樓層。
+# 內文/空白/※ 行皆 N；只有 2 則真推文為 C。空白列必須不占樓。
+N	https://x.com/hews__/status/2063113069614780831 https://imgpoi.com/i/37ABDD.jpg
+N	伊馮你在幹嘛？
+N	※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 36.230.29.25 (臺灣)
+N	※ 文章網址: https://www.ptt.cc/bbs/C_Chat/M.1780732757.A.681.html
+N
+N
+C	推 Rhiner18: 粉紅奶龍可愛                                            06/06 16:00
+C	推 qazw222: 製造塔塔                                                 06/06 16:10

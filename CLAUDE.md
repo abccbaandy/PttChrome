@@ -32,7 +32,7 @@ webpack4 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 
 ## 隱私（務必遵守）
 - 這是公開 fork repo。**禁止**把以下寫進任何 `.md`、原始碼、commit message：
-  - 本機絕對路徑（如 `C:\Users\<name>\...`）、作業系統使用者名稱、個人 PATH/工具安裝位置、機器專屬環境細節。
+  - 本機絕對路徑（如 `C:\Users\<name>\...`）、作業系統使用者名稱、PTT帳號、個人 PATH/工具安裝位置、機器專屬環境細節。
 - 文件示範路徑用通用佔位，如 `<專案根目錄>`；指令只寫相對動作（`cd <專案根目錄>`、`yarn start`）。
 - commit 前 `git diff` 自查，確認不含上述隱私再提交。
 
