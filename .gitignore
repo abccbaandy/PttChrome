@@ -13,4 +13,5 @@ js/constants_local.js
 dist/*
 !dist/.gitkeep
 
+.idea/
 3rd_script/
