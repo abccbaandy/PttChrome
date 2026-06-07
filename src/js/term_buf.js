@@ -241,7 +241,6 @@ export function TermBuf(cols, rows) {
   this.lines = new Array(rows);
 
   this.pageLines = [];
-  this.pageWrappedLines = [];
 
   this.lineChangeds = new Array(rows);
 
@@ -959,6 +958,9 @@ TermBuf.prototype = {
     }
   },
 
+  // NOTE: no longer called — the easy-reading cross-page de-dup switched from
+  // wrapped-line arithmetic to pure content comparison (comment_parse.findPageOverlap).
+  // Kept for now in case other logic needs wrapped-row detection.
   isTextWrappedRow: function(row) {
     // determine whether it is wrapped by looking for the ending "\"
     var rowText = this.getRowText(row, 0, this.cols);

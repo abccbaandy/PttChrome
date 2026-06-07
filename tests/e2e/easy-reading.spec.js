@@ -1,5 +1,84 @@
 const { test, expect } = require('@playwright/test');
-const { readScreen, login, sendKey, typeLine, attachConsole } = require('./helpers/ptt');
+const { readScreen, waitForScreen, login, sendKey, typeLine, attachConsole } = require('./helpers/ptt');
+
+const PREF_KEY = 'pttchrome.pref.v1';
+const setPrefs = (page, extra) =>
+  page.addInitScript((args) => {
+    try {
+      const cur = JSON.parse(window.localStorage.getItem(args.KEY) || '{}');
+      const values = Object.assign({}, cur.values, args.extra);
+      window.localStorage.setItem(args.KEY, JSON.stringify({ values }));
+    } catch (e) {}
+  }, { KEY: PREF_KEY, extra });
+
+// REGRESSION: 好讀模式「第一則推文消失」。跨頁去重改成純內容比對(comment_parse.findPageOverlap)後,
+// 第一則(常為箭頭)推文不再被當重疊跳掉。樣本 Stock #1g8znzQ3:第一則 → BlueBird5566 曾整列消失、
+// 後續樓號少 1。文章會過期 → 找不到就 skip(非失敗)。修法前此測試會因 BlueBird5566 缺席而紅。
+test('好讀模式第一則推文不消失 (Stock #1g8znzQ3)', async ({ page }) => {
+  test.setTimeout(150000);
+  const logs = attachConsole(page);
+  try {
+    await setPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+    await page.goto('/');
+    console.log(await login(page));
+
+    // s 搜尋看板 → Stock
+    await sendKey(page, 's');
+    await page.waitForTimeout(500);
+    await typeLine(page, 'Stock');
+    await page.waitForTimeout(1500);
+    for (let i = 0; i < 6; i++) {
+      const s = await readScreen(page);
+      if (s.includes('看板') && (s.includes('標題') || s.includes('人氣'))) break;
+      if (s.includes('加入') || s.includes('訂閱') || s.includes('我的最愛')) await typeLine(page, 'y');
+      else await sendKey(page, 'Space');
+      await page.waitForTimeout(800);
+    }
+
+    // '/' 標題搜尋 → 跳到該篇。找不到(已過期)就 skip。
+    await sendKey(page, 'Slash');
+    await page.waitForTimeout(800);
+    await typeLine(page, '黃仁勳喊話增產成功');
+    await page.waitForTimeout(1500);
+    const listScreen = await readScreen(page);
+    test.skip(!listScreen.includes('黃仁勳喊話增產成功'), '樣本文章已過期，跳過');
+
+    // 開啟並等好讀累積整篇(多翻幾頁)
+    await sendKey(page, 'Enter');
+    await page.waitForTimeout(4000);
+    for (let i = 0; i < 8; i++) {
+      await sendKey(page, 'Space');
+      await page.waitForTimeout(1000);
+    }
+
+    const rows = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('#mainContainer [data-type="bbsline"]')).map(
+        (el) => el.textContent
+      )
+    );
+    const comments = rows.filter((t) => /^(推|噓|→)\d*\s+[0-9A-Za-z]+\s*:/.test(t));
+    console.log('TOTAL ROWS', rows.length, 'COMMENTS', comments.length);
+    console.log('FIRST COMMENTS:', JSON.stringify(comments.slice(0, 4)));
+
+    // 核心斷言:被吃掉的第一則推文必須重現。
+    const hasBlueBird = rows.some((t) => t.includes('BlueBird5566'));
+    expect(hasBlueBird).toBe(true);
+
+    // 第一則推文應為第 1 樓(樓號不再因吃列而錯位)。
+    expect(comments[0]).toMatch(/^(推|噓|→)1\s/);
+
+    // 跨頁去重不可造成「整列重複」:相鄰非空白列不應完全相同。
+    for (let i = 1; i < rows.length; i++) {
+      const a = rows[i - 1].replace(/\s+$/, '');
+      const b = rows[i].replace(/\s+$/, '');
+      if (a.trim() !== '') expect(b).not.toBe(a);
+    }
+  } catch (err) {
+    console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
+    await page.screenshot({ path: 'tests/e2e/__screenshots__/er-missing-comment-error.png', fullPage: true });
+    throw err;
+  }
+});
 
 // 驗證好讀模式按 End：暫時切回原生、跳到文章最底、不卡住，且原生搜尋可用；
 // 按左鍵離開後，進下一篇自動恢復好讀模式。

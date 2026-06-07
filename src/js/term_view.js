@@ -6,7 +6,7 @@ import { renderRowHtml, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
-import { rowToText, annotateComment, parseListAuthor, parseArticleAuthor, FloorCounter } from './comment_parse';
+import { rowToText, annotateComment, parseListAuthor, parseArticleAuthor, FloorCounter, findPageOverlap } from './comment_parse';
 
 const ENTER_CHAR = '\r';
 const ESC_CHAR = '\x15'; // Ctrl-U
@@ -59,8 +59,6 @@ export function TermView() {
 
   this.curRow = 0;
   this.curCol = 0;
-
-  this.actualRowIndex = 0;
 
   this.lineWrap = 78;
 
@@ -765,64 +763,36 @@ TermView.prototype = {
     if (this.buf.pageState == 3 && this.buf.prevPageState == 3) {
       this.mainContainer.style.paddingBottom = '1em';
       var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
+      // parseStatusRow is now only a gate: a valid status row confirms we are on an
+      // article reading page. Its numeric fields (rowIndexStart/pageIndex/…) are NOT
+      // used for de-duplication any more — see findPageOverlap for why.
       var result = parseStatusRow(lastRowText);
       if (result) {
-        // row index start with 4 or below will cause duplicated first row of next page
-        // 2015-07-04: better way is to view the row 3 and row 4 as one wrapped line
-        /*
-        if (result.rowIndexStart < 5) {
-          result.rowIndexStart -= 1;
-        }
-        */
-        var rowOffset = this.buf.pageLines.length-1;
-        var beginIndex = 1;
-        var atLastPage = false;
-        if ((result.pageIndex == result.pageTotal && result.pagePercent == 100) || 
-            result.rowIndexStart != this.actualRowIndex) { // at last page
-          atLastPage = result.rowIndexStart != this.actualRowIndex;
-          // find num of rows between actualRowIndex and rowIndexStart
-          var numRows = 0;
-          for (var i = result.rowIndexStart; i < this.actualRowIndex + 1; ++i) {
-            numRows += this.buf.pageWrappedLines[i];
-          }
-          beginIndex = numRows;
-          rowOffset -= beginIndex-1;
-        }
-
-        for (var i = beginIndex; i < this.buf.rows-1; ++i) {
-          if (i > 0 && this.buf.isTextWrappedRow(i-1)) {
-            this.buf.pageWrappedLines[this.actualRowIndex] += 1;
-            // if the second row is the wrapped line from first row
-            if (!atLastPage && i == beginIndex) {
-              beginIndex++;
-            }
-          } else {
-            this.buf.pageWrappedLines[++this.actualRowIndex] = 1;
-          }
-        }
-        this.appendRows(this.buf.lines.slice(beginIndex, -1), true, true);
+        // Pure content-based cross-page de-dup. When PTT pages down, the top of the
+        // new screen re-displays the bottom of the previous one; only append what is
+        // genuinely new. This replaces the old status-line arithmetic (rowIndexStart
+        // vs a self-counted actualRowIndex + the 首頁 `i==4` hack) that mis-counted
+        // by 1 and dropped the first comment. Same philosophy as BePTT (which carries
+        // no status-line parsing). See docs/enhanced-addon.md.
+        var newRows = this.buf.lines.slice(0, -1); // drop the status row
+        // Only the last `newRows.length` accumulated rows can possibly overlap, so we
+        // map just the tail to text (keeps it O(screen), not O(article)).
+        var accTail = this.buf.pageLines.slice(-newRows.length).map(rowToText);
+        var beginIndex = findPageOverlap(accTail, newRows.map(rowToText));
+        this.appendRows(newRows.slice(beginIndex), true, true);
         // deep clone lines for selection (getRowText and get ansi color).
         // NOTE: pageLines keeps the full lines even for blacklisted (skipped) rows,
         // so text selection/copy still contains the original content.
-        this.buf.pageLines = this.buf.pageLines.concat(JSON.parse(JSON.stringify(this.buf.lines.slice(beginIndex, -1))));
+        this.buf.pageLines = this.buf.pageLines.concat(JSON.parse(JSON.stringify(newRows.slice(beginIndex))));
       }
       this.buf.prevPageState = 3;
     } else {
       this.mainContainer.style.paddingBottom = '';
-      this.actualRowIndex = 0;
-      this.buf.pageWrappedLines = [];
       // New article entered → restart floor numbering and clear pusher highlight.
       this._floorCounter.reset();
       this._selectedPusher = null;
       if (this.buf.pageState == 3) {
-        var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
-        for (var i = 0; i < this.buf.rows-1; ++i) {
-          if (i == 4 || i > 0 && this.buf.isTextWrappedRow(i-1)) { // row with i == 4 and the i == 3 is the wrapped line
-            this.buf.pageWrappedLines[this.actualRowIndex] += 1;
-          } else {
-            this.buf.pageWrappedLines[++this.actualRowIndex] = 1;
-          }
-        }
+        // First page of the article: append the whole screen, no de-dup needed.
         this.clearRows();
         this.appendRows(this.buf.lines.slice(0, -1), true, true);
         this.lastRowDiv.innerHTML = this.lastRowDivContent;

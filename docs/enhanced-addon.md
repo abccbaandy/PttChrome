@@ -125,7 +125,20 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     輸入提示列」；改 `it.search(/→ \w+ *: +/)===0 && !COMMENT_TIME_RE.test(it)`（真推文有時間戳→排除；只收緊、對
     合法輸入列無害）。守護：`comment_parse.test.js`「parsePushInitText」。**注意：這不是 `→ BlueBird5566` 不見的
     根因**——實機 ERDBG 證實是 `populateEasyReadingPage` 的 `i==4` 首頁 hack 造成跨頁去重 `beginIndex` 多跳 1 列
-    （內文→第一則推文邊界 over-skip）。詳見 `docs/easy-reading-missing-comment-handoff.md`（尚未修，待續）。
+    （內文→第一則推文邊界 over-skip）。已於 #12 根治（改純內容比對去重）。
+12. **好讀跨頁去重改純內容比對，捨棄狀態列行號算術（「第一則推文消失」根治，2026-06，CONFIRMED 實機）**。
+    舊 `populateEasyReadingPage` 去重靠 PTT 狀態列 `parseStatusRow` 的 `rowIndexStart` vs 自累積 `actualRowIndex`/
+    `pageWrappedLines`，外加首頁 `i==4` hack（強制把 buffer 第 4 列併入第 3 列當 wrapped 續行，卻仍 append 全部
+    23 列）→ `actualRowIndex` 比 PTT 行號多算 1 → 後續頁邊界 `beginIndex` over-skip 1 列，把第一則推文（尤其 `→`）
+    當重疊跳掉、後續樓號少 1。改法：新增純邏輯 `comment_parse.findPageOverlap(accText, newText)`，**逐螢幕列比對**
+    新畫面頂端與已累積尾端的實際重疊量（取最大重疊 + 要求重疊區至少 1 列非空白；尾隨空白正規化），只 append
+    重疊之後的列。完全不讀狀態列數值（`parseStatusRow` 僅留作「這是文章頁」gate）。同步移除 `actualRowIndex`、
+    `buf.pageWrappedLines`（僅此函式用），`term_buf.isTextWrappedRow` 變孤兒（留定義）。**借鑒 BePTT**：反編譯
+    `3rd_script/BePTT` 確認它連同一個 `wss://ws.ptt.cc/bbs` telnet gateway、同樣逐頁讀終端機畫面，但程式裡**完全
+    沒有「目前顯示/瀏覽 第 N 頁」字串**——它不信狀態列行號，正指向內容比對路線。守護：`comment_parse.test.js`
+    新增 `findPageOverlap` 單元測試（含「重疊後第一則推文不得被跳過」回歸）；e2e `easy-reading.spec.js`
+    「好讀模式第一則推文不消失」實機驗證 `→ BlueBird5566` 重現為第 1 樓（文章過期則 skip）。
+    教訓：跨頁拼接寧可信內容、勿信脆弱的行號算術；折行續行用逐螢幕列比對自然處理，無需 wrapped-line 記帳。
 
 ## 工作流偏好（FEEDBACK）
 - **不要開新功能分支**：直接在現有分支（`dev`）修改與 commit。本次誤開 `feat/enhanced-addon` 已併回 `dev`。

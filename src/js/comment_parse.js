@@ -151,6 +151,43 @@ export class FloorCounter {
   }
 }
 
+// Cross-page de-duplication for easy reading. When PTT pages down, the top of the
+// new screen re-displays the bottom rows of the previous screen (the overlap);
+// genuinely new content follows. Returns how many top rows of `newText` are that
+// re-display (= rows to skip before appending).
+//
+// PURE CONTENT COMPARISON — deliberately does NOT use PTT's status-line row numbers
+// ("目前顯示: 第 N~M 行"). The old arithmetic (rowIndexStart vs a self-counted
+// actualRowIndex, plus the首頁 `i==4` hack) mis-counted by 1 and dropped the first
+// comment. BePTT (same ws.ptt.cc/bbs telnet client) likewise carries no status-line
+// parsing — content overlap is the robust signal. See docs/enhanced-addon.md.
+//
+// Both inputs are arrays of row text (caller maps TermChar[] via rowToText). Trailing
+// whitespace is normalised so padding differences don't break a match.
+export function findPageOverlap(accText, newText) {
+  const maxK = Math.min(accText.length, newText.length);
+  // Largest plausible overlap first: PTT only re-shows the overlap region, so rows
+  // above it are absent from the new screen — a k larger than the true overlap would
+  // need coincidentally-repeated content across the boundary (rare).
+  for (let k = maxK; k >= 1; --k) {
+    let ok = true;
+    let hasContent = false;
+    for (let i = 0; i < k; ++i) {
+      const a = accText[accText.length - k + i].replace(/\s+$/, '');
+      const b = newText[i].replace(/\s+$/, '');
+      if (a !== b) {
+        ok = false;
+        break;
+      }
+      if (b.trim() !== '') hasContent = true;
+    }
+    // Require ≥1 non-blank row in the matched block: a purely-blank "overlap" is
+    // ambiguous, so fall through to 0 (append all) rather than risk eating content.
+    if (ok && hasContent) return k;
+  }
+  return 0; // no overlap → append the whole screen
+}
+
 // Build a lower-cased Set from the newline-separated blacklist textarea value.
 export function parseBlacklist(str) {
   const set = new Set();

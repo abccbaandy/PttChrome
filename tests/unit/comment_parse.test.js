@@ -19,6 +19,7 @@ import {
   parseBlacklist,
   FloorCounter,
   annotateComment,
+  findPageOverlap,
   COMMENT_USERID_COL
 } from "../../src/js/comment_parse";
 import { parsePushInitText } from "../../src/js/string_util";
@@ -90,6 +91,59 @@ describe("FloorCounter", () => {
     expect(c.next("→")).toEqual({ seq: 4, sub: 1, type: "→" });
     c.reset();
     expect(c.next("推")).toEqual({ seq: 1, sub: 1, type: "推" });
+  });
+});
+
+// REGRESSION: easy-reading "first comment disappears". The cross-page de-dup used to
+// rely on PTT status-line arithmetic (+ a 首頁 `i==4` hack) that over-skipped by 1 and
+// ate the first comment. It is now pure content comparison — findPageOverlap returns
+// how many top rows of the new screen are a re-display of the accumulated tail, so the
+// caller appends newRows.slice(overlap). The dropped comment must NOT be in the skipped
+// region.
+describe("findPageOverlap", () => {
+  test("typical 1-row overlap", () => {
+    const acc = ["line A", "line B", "line C"];
+    const neu = ["line C", "line D", "line E"];
+    expect(findPageOverlap(acc, neu)).toBe(1); // only "line C" repeats
+  });
+
+  test("multi-row overlap returns the full k", () => {
+    const acc = ["a", "b", "c", "d"];
+    const neu = ["c", "d", "e", "f"];
+    expect(findPageOverlap(acc, neu)).toBe(2);
+  });
+
+  test("regression: the first comment after the overlap is NOT skipped", () => {
+    // Mirrors Stock #1g8znzQ3: body/url rows overlap, then the first arrow comment.
+    const acc = ["body text", "※ 文章網址: ...M.1780735101..."];
+    const neu = [
+      "※ 文章網址: ...M.1780735101...", // the only re-displayed (overlap) row
+      "→ BlueBird5566: 才生2個也在增產成功  06/06 16:38", // first comment — must survive
+      "→ galleon2000 : 增產是利多嗎?  06/06 16:39"
+    ];
+    const k = findPageOverlap(acc, neu);
+    expect(k).toBe(1);
+    expect(neu.slice(k)).toContain(
+      "→ BlueBird5566: 才生2個也在增產成功  06/06 16:38"
+    );
+  });
+
+  test("purely-blank overlap → 0 (append all, never eat content)", () => {
+    const acc = ["x", "   ", "   "];
+    const neu = ["   ", "   ", "new line"];
+    expect(findPageOverlap(acc, neu)).toBe(0);
+  });
+
+  test("no overlap → 0", () => {
+    expect(findPageOverlap(["a", "b"], ["c", "d"])).toBe(0);
+  });
+
+  test("trailing whitespace differences still match", () => {
+    expect(findPageOverlap(["row one  "], ["row one"])).toBe(1);
+  });
+
+  test("empty accumulated tail → 0", () => {
+    expect(findPageOverlap([], ["a", "b"])).toBe(0);
   });
 });
 
