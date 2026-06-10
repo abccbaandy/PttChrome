@@ -92,6 +92,66 @@ describe("FloorCounter", () => {
     c.reset();
     expect(c.next("推")).toEqual({ seq: 1, sub: 1, type: "推" });
   });
+
+  // BePTT meta-latch rule (decompiled 7.0.9 login-mode telnet parser): fake
+  // comments in the body DO take transient floors, but any non-comment row
+  // before the "※ 發信站:"/"※ 文章網址:" latch zeroes the counters, so the
+  // real comments (always after those meta lines) start at 1.
+  describe("BePTT meta-latch rule (nonComment)", () => {
+    test("non-comment row before the latch zeroes the counters", () => {
+      const c = new FloorCounter();
+      c.next("推"); // fake comment in the body
+      c.next("推");
+      c.nonComment("--"); // signature separator
+      expect(c.next("→").seq).toBe(1);
+    });
+
+    test("blank rows reset too (pre-latch)", () => {
+      const c = new FloorCounter();
+      c.next("推");
+      c.nonComment("");
+      expect(c.next("推")).toEqual({ seq: 1, sub: 1, type: "推" });
+    });
+
+    test("the meta row itself resets first, then latches", () => {
+      const c = new FloorCounter();
+      c.next("推"); // fake comment immediately above ※ 發信站
+      c.nonComment("※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4 (臺灣)");
+      expect(c.metaSeen).toBe(true);
+      expect(c.next("→").seq).toBe(1);
+    });
+
+    test("after the latch, non-comment rows (※ 編輯 / blank) never reset", () => {
+      const c = new FloorCounter();
+      c.nonComment("※ 文章網址: https://www.ptt.cc/bbs/C_Chat/M.1.A.1.html");
+      c.next("→");
+      c.next("→");
+      c.nonComment("※ 編輯: someone (1.2.3.4 臺灣), 06/06/2026 16:13:24");
+      c.nonComment("");
+      expect(c.next("推").seq).toBe(3);
+    });
+
+    test("no-meta article: trailing consecutive comments still count from 1", () => {
+      // Test #1g9GI-Zh case — no 發信站/文章網址 lines at all. The reset only
+      // fires on non-comment rows, so the trailing comment block accumulates.
+      const c = new FloorCounter();
+      c.nonComment("內文最後一行");
+      expect(c.next("推").seq).toBe(1);
+      expect(c.next("→").seq).toBe(2);
+    });
+
+    test("reset() clears the latch (per-article lifecycle)", () => {
+      const c = new FloorCounter();
+      c.nonComment("※ 發信站: 批踢踢實業坊(ptt.cc)");
+      expect(c.metaSeen).toBe(true);
+      c.reset();
+      expect(c.metaSeen).toBe(false);
+      // next article: pre-latch reset behavior is back
+      c.next("推");
+      c.nonComment("body row");
+      expect(c.next("推").seq).toBe(1);
+    });
+  });
 });
 
 // REGRESSION: easy-reading "first comment disappears". The cross-page de-dup used to
@@ -175,6 +235,28 @@ describe("annotateComment", () => {
     expect(annotateComment(ts("推 kidla : x"), ctx).floor.seq).toBe(1);
   });
 
+  // REGRESSION (#1g8zcjhj): fake comments WITH fake timestamps match COMMENT_RE
+  // (no per-row signal survives — even the colors were faked with ANSI). The
+  // BePTT meta-latch rule must bring the real comments back to floor 1.
+  test("fake comments with fake timestamps: real comments restart at 1", () => {
+    const ctx = baseCtx();
+    expect(annotateComment(ts("推 fakeghost: 假推文"), ctx).floor.seq).toBe(1);
+    expect(annotateComment(ts("推 fakeghost: 假推文二"), ctx).floor.seq).toBe(2);
+    annotateComment("--", ctx); // signature separator resets (pre-latch)
+    annotateComment("※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4 (臺灣)", ctx);
+    annotateComment("※ 文章網址: https://www.ptt.cc/...", ctx);
+    expect(annotateComment(ts("→ joy82926: 真推文"), ctx).floor.seq).toBe(1);
+    annotateComment("※ 編輯: somebody (1.2.3.4 臺灣), 06/06/2026 16:13:24", ctx);
+    expect(annotateComment(ts("→ error405: 真推文二"), ctx).floor.seq).toBe(2);
+  });
+
+  test("showFloorNumbers off → non-comment rows don't touch the counter", () => {
+    const ctx = baseCtx();
+    ctx.showFloorNumbers = false;
+    annotateComment("※ 發信站: 批踢踢實業坊(ptt.cc)", ctx);
+    expect(ctx.floorCounter.metaSeen).toBe(false);
+  });
+
   test("原PO comment → author id range = exactly the user id columns", () => {
     const ann = annotateComment(ts("→ wowbenny: hi"), baseCtx());
     expect(ann.userid).toBe("wowbenny");
@@ -229,14 +311,18 @@ describe("annotateComment", () => {
 });
 
 // Saved articles (tests/unit/fixtures/) that exposed the floor bugs. Each labelled
-// row: C = real comment (one floor), N = must not be a comment / take a floor.
+// row: C = real comment (one floor), N = must not be a comment / take a floor,
+// F = fake comment in the body (full comment shape incl. fake timestamp — parses
+// as a comment and takes a TRANSIENT floor, but the BePTT meta-latch rule must
+// keep it out of the final numbering: the C rows still count 1..N).
 const FIX_DIR = path.join(__dirname, "fixtures");
 const FIXTURES = [
   "Stock_M.1780738427.txt", // 內文推文格式被當真推文
   "C_Chat_M.1780733372.txt", // ※ 編輯被當樓層
   "C_Chat_M.1780732757.txt", // 少量推文，空白被標樓層
   "Stock_M.1780733590.txt", // 內文/推文混雜
-  "Stock_M.1780735101.txt" // → BlueBird5566 不見 (偵測層面須為合法推文)
+  "Stock_M.1780735101.txt", // → BlueBird5566 不見 (偵測層面須為合法推文)
+  "C_Chat_M.1780734381.txt" // #1g8zcjhj 假推文帶假時間戳 (BePTT meta-latch 規則)
 ];
 
 function loadFixture(name) {
@@ -258,20 +344,25 @@ describe("floor fixtures (saved articles)", () => {
     describe(name, () => {
       const rows = loadFixture(name);
 
-      test("C rows are comments; N rows are not", () => {
+      test("C/F rows are comments; N rows are not", () => {
         rows.forEach(({ label, text }) => {
-          if (label === "C") expect(parseComment(text)).not.toBeNull();
+          if (label === "C" || label === "F")
+            expect(parseComment(text)).not.toBeNull();
           else expect(parseComment(text)).toBeNull();
         });
       });
 
-      test("only C rows take a floor, sequential from 1", () => {
+      test("C rows number 1..N despite F fakes (BePTT meta-latch rule)", () => {
         const ctx = { showFloorNumbers: true, floorCounter: new FloorCounter() };
         let seq = 0;
         rows.forEach(({ label, text }) => {
           const ann = annotateComment(text, ctx);
           if (label === "C") {
             expect(ann.floor.seq).toBe(++seq);
+          } else if (label === "F") {
+            // fake comment: parses and takes a transient floor — but a later
+            // pre-latch reset keeps it out of the real numbering.
+            expect(ann.floor.seq).toBeGreaterThan(0);
           } else {
             expect(ann).toBeNull();
           }

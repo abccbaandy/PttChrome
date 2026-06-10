@@ -772,8 +772,9 @@ TermView.prototype = {
         // new screen re-displays the bottom of the previous one; only append what is
         // genuinely new. This replaces the old status-line arithmetic (rowIndexStart
         // vs a self-counted actualRowIndex + the 首頁 `i==4` hack) that mis-counted
-        // by 1 and dropped the first comment. Same philosophy as BePTT (which carries
-        // no status-line parsing). See docs/enhanced-addon.md.
+        // by 1 and dropped the first comment. Same philosophy as BePTT, whose de-dup
+        // also compares row CONTENT (a ring buffer of recent rows incl. colors),
+        // not status-line numbers. See docs/enhanced-addon.md.
         var newRows = this.buf.lines.slice(0, -1); // drop the status row
         // Only the last `newRows.length` accumulated rows can possibly overlap, so we
         // map just the tail to text (keeps it O(screen), not O(article)).

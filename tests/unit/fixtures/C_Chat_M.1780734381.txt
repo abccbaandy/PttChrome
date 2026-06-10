@@ -1,0 +1,22 @@
+# Source: https://www.ptt.cc/bbs/C_Chat/M.1780734381.A.AED.html (#1g8zcjhj 「辨識能力測試」)
+# Bug: 內文/簽名檔的假推文帶「假時間戳」(連 ANSI 顏色都仿造)，逐列無任何信號可判別 →
+#      被當真推文計樓，真推文 joy82926 不是第 1 樓。docs/handoff/floor-numbering-pollution.md。
+# 修法 = BePTT meta-latch 規則: F(假推文)可拿暫時樓號，但 meta 行前的非推文列會歸零計數;
+#      ※ 發信站/※ 文章網址 是單向 latch，之後 ※ 編輯 不再打斷編號。斷言重點: C 列 1..N。
+# 列內容為依 handoff 版面結構重建 (原文假推文 id/文字未存檔)，格式與真實終端機列一致。
+N	這篇文章測試各家 PTT client 的推文辨識能力，以下是內文裡的假推文:
+F	推 fakeghost: 這是內文裡的假推文一                                   06/06 16:30
+F	推 fakeghost: 這是內文裡的假推文二                                   06/06 16:30
+F	推 mimicuser: 假推文三，時間戳也是假的                               06/06 16:31
+F	推 mimicuser: 假推文四                                               06/06 16:31
+F	推 copycatxx: 假推文五                                               06/06 16:32
+F	推 copycatxx: 假推文六，顏色也用 ANSI 仿造                           06/06 16:32
+N	--
+N	※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 114.45.32.116 (臺灣)
+N	※ 文章網址: https://www.ptt.cc/bbs/C_Chat/M.1780734381.A.AED.html
+C	→ joy82926: 第一則真推文，必須是第 1 樓                              06/06 16:35
+C	→ error405: 第二則真推文                                             06/06 16:36
+N	※ 編輯: somebody (114.45.32.116 臺灣), 06/06/2026 16:37:10
+C	→ joy82926: 編輯列之後編號要接續，不可重來                           06/06 16:38
+C	推 pusherone: 真推文四                                               06/06 16:39
+C	推 pushertwo: 真推文五                                               06/06 16:40

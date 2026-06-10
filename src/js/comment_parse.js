@@ -42,6 +42,11 @@ export function rowToText(chars) {
 // timestamp — e.g. an OP quoting "→ tony :" in the body) and from a "※ 編輯: …"
 // line (leading ※, and a MM/DD/YYYY HH:MM:SS time). Without it those rows were
 // wrongly numbered as floors. See docs/enhanced-addon.md.
+//
+// Body text CAN still fake the full shape including the timestamp (C_Chat
+// #1g8zcjhj even copies the comment colors with ANSI codes — no per-row signal
+// survives). Those fakes are handled by the FloorCounter meta-latch rule below
+// (BePTT's algorithm), not by this regex.
 const COMMENT_RE = new RegExp(
   /^(推|噓|→)\s+([0-9A-Za-z]+)\s*:.*/.source + COMMENT_TIME_RE.source
 );
@@ -62,6 +67,10 @@ export function parseComment(text) {
 // easy-reading appendRows) so they can never diverge. Returns null for non-comment
 // rows. `floor` advances even for blacklisted rows (they still occupy a floor).
 //
+// Non-comment rows are NOT a no-op: they feed FloorCounter.nonComment (the BePTT
+// reset/latch rule), so every article row must flow through here in order — both
+// callers already do that.
+//
 // ctx = {
 //   blacklist:      Set<lower id> | undefined
 //   showFloorNumbers: bool
@@ -74,7 +83,12 @@ export function parseComment(text) {
 //           authorIdStart?, authorIdEnd?, pusherHighlight? }
 export function annotateComment(text, ctx) {
   const c = parseComment(text);
-  if (!c) return null;
+  if (!c) {
+    if (ctx.showFloorNumbers && ctx.floorCounter) {
+      ctx.floorCounter.nonComment(text);
+    }
+    return null;
+  }
   const floor =
     ctx.showFloorNumbers && ctx.floorCounter
       ? ctx.floorCounter.next(c.type)
@@ -127,8 +141,24 @@ export function parseListAuthor(text) {
   return author.toLowerCase();
 }
 
+// PTT appends these lines between the article body (incl. signature) and the
+// real comments. BePTT latches on them — see FloorCounter.nonComment.
+const META_LATCH_RE = /※ (發信站|文章網址): /;
+
 // Running floor counter for an article. seq = overall floor number; sub = ordinal
 // within the same type (推/噓/→). Reset per article (new post entered).
+//
+// Implements BePTT's floor algorithm (decompiled 7.0.9, login-mode telnet parser —
+// the behavior the user verified; see docs/enhanced-addon.md):
+//   - comment rows take the next floor (next), fake ones in the body included;
+//   - until the article's "※ 發信站:"/"※ 文章網址:" line is seen, every
+//     non-comment row (blank ones too) zeroes the counters (nonComment);
+//   - that meta line is a one-way latch (cleared per article by reset): after it,
+//     non-comment rows like "※ 編輯:" never interrupt the numbering.
+// Net effect: body/signature fake comments get transient numbers but the meta
+// lines always sit between them and the real comments, so real floors start at 1.
+// Known BePTT-identical limits: a quoted "※ 發信站" inside a 轉錄 body latches
+// early; in articles with no meta lines, a blank row between comments re-counts.
 export class FloorCounter {
   constructor() {
     this.reset();
@@ -139,6 +169,20 @@ export class FloorCounter {
     this.push = 0;
     this.shu = 0;
     this.arrow = 0;
+    this.metaSeen = false;
+  }
+
+  // Called (via annotateComment) for every article row that is NOT a comment.
+  nonComment(text) {
+    if (!this.metaSeen) {
+      this.seq = 0;
+      this.push = 0;
+      this.shu = 0;
+      this.arrow = 0;
+    }
+    if (text && META_LATCH_RE.test(text)) {
+      this.metaSeen = true;
+    }
   }
 
   next(type) {

@@ -12,7 +12,9 @@
 - `parseListAuthor(text)`→userid|null。**欄位常數 cols 17~28**（CONFIRMED 2026-06 對 C_Chat 校準）。
   fail-safe：非 userid→null→不隱藏。`●`(編輯過) 列有全形字位移→fall through（可接受的 under-hide）。
   守護測試：`enhance.spec.js` 「看板列表作者欄位常數仍正確」，PTT 改版位移會先紅。
-- `FloorCounter`：`seq`(總樓)、`sub`(該 type 分項)；每篇文章 reset。
+- `FloorCounter`：`seq`(總樓)、`sub`(該 type 分項)；每篇文章 reset。含 **BePTT meta-latch 規則**
+  （`nonComment(text)`，見踩坑 #14）：非推文列在 `※ 發信站/※ 文章網址` latch 前一律歸零計數
+  → 內文/簽名檔「帶假時間戳的假推文」拿到的暫時樓號被清掉，真推文從 1 起算。
 - `parseBlacklist(str)`→lower-case Set（換行分隔）。
 - `parseArticleAuthor(text)`→原PO id(lower)|null，正則 `/^\s*作者\s+([0-9A-Za-z]+)/`。**僅文章首頁首行**（作者列）解析得到；翻頁後 lines[0] 是內文→null。
 - **`annotateComment(text, ctx)`→逐列判斷的單一真相**（floor/hidden/pusher/authorId 範圍/pusherHighlight）。
@@ -143,9 +145,10 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     當重疊跳掉、後續樓號少 1。改法：新增純邏輯 `comment_parse.findPageOverlap(accText, newText)`，**逐螢幕列比對**
     新畫面頂端與已累積尾端的實際重疊量（取最大重疊 + 要求重疊區至少 1 列非空白；尾隨空白正規化），只 append
     重疊之後的列。完全不讀狀態列數值（`parseStatusRow` 僅留作「這是文章頁」gate）。同步移除 `actualRowIndex`、
-    `buf.pageWrappedLines`（僅此函式用），`term_buf.isTextWrappedRow` 變孤兒（留定義）。**借鑒 BePTT**：反編譯
-    `3rd_script/BePTT` 確認它連同一個 `wss://ws.ptt.cc/bbs` telnet gateway、同樣逐頁讀終端機畫面，但程式裡**完全
-    沒有「目前顯示/瀏覽 第 N 頁」字串**——它不信狀態列行號，正指向內容比對路線。守護：`comment_parse.test.js`
+    `buf.pageWrappedLines`（僅此函式用），`term_buf.isTextWrappedRow` 變孤兒（留定義）。**借鑒 BePTT**：它同樣
+    連 `wss://ws.ptt.cc/bbs` 逐頁讀終端機畫面，跨頁去重用「近 40 列含顏色的內容 ring buffer」比對（`f3959j3`）
+    ——同為內容比對路線。（更正：#14 全反編譯後發現它**有** regex 文章頁 footer 的 `(\d+)%`/頁數/行數，
+    用於進度與分頁控制；「完全不解析狀態列」是第一輪字串搜尋的誤判，惟去重確實不靠行號算術。）守護：`comment_parse.test.js`
     新增 `findPageOverlap` 單元測試（含「重疊後第一則推文不得被跳過」回歸）；e2e `easy-reading.spec.js`
     「好讀模式第一則推文不消失」實機驗證 `→ BlueBird5566` 重現為第 1 樓（文章過期則 skip）。
     教訓：跨頁拼接寧可信內容、勿信脆弱的行號算術；折行續行用逐螢幕列比對自然處理，無需 wrapped-line 記帳。
@@ -155,4 +158,33 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     （`start()` 重置）+ 兩者 gate 在 `_sentPass` 之後（提示只出現在密碼後）。另收緊鬆散比對：歡迎 banner 可能
     殘留「重複登入」字樣，loose match 須同時命中 `[Y/n]`/`(Y/N)`。守護：e2e「自動登入」test 已改為**不關**
     共用 session（刻意留另一條連線重現 dup-conn 提示頁）。
+14. **假推文污染樓層 → 移植 BePTT meta-latch 規則（2026-06-11，CONFIRMED 反編譯源碼級）**。
+    症狀：內文/簽名檔偽裝推文列**連假時間戳、ANSI 仿色都有**（C_Chat `#1g8zcjhj`「辨識能力測試」），
+    逐列層面無任何信號可判別（文字/時間戳/顏色全仿）→ 真推文不從 1 起算。
+    解法 = BePTT 7.0.9 登入模式 telnet parser 的原版演算法（jadx 反編譯確證，使用者實測過行為）：
+    - 推文列照常 `++` 計數（假推文**會**短暫拿到樓號，BePTT 同款行為）；
+    - **latch 前非推文列（含空白列）一律歸零**：`※ 發信站: `/`※ 文章網址: ` 尚未出現過時，
+      遇任何非推文列把 seq/推/噓/→ 全清 0；
+    - **meta latch 單向**（每篇文章 reset 時清回）：見過 `※ 發信站/※ 文章網址` 後永不再歸零
+      （真推文間的 `※ 編輯:` 不打斷編號）。
+    - 效果：假推文 1..6 → `--`/空白列歸零 → meta 列先歸零再 latch → 真推文 1..N。
+      無 meta 行文章（`Test #1g9GI-Zh`）文末連續推文照常 1..N（歸零只在非推文列觸發）。
+      已知同款邊緣（與 BePTT 一致=目標行為）：轉錄文內複製的 `※ 發信站` 提早 latch；
+      無 meta 文章推文間夾空白列會重計；原生（非好讀）模式每頁新 FloorCounter，latch 不跨頁。
+    實作：`comment_parse.js` `FloorCounter.nonComment(text)` + `annotateComment` 對非推文列呼叫之
+    （兩渲染路徑自動共用，呼叫端零改動）。守護：`comment_parse.test.js`「BePTT meta-latch rule」
+    + fixture `C_Chat_M.1780734381.txt`（label `F`=假推文，斷言 C 列 1..N；fixture README 有 label 表）。
+    **BePTT 架構結論**（反編譯 `3rd_script/BePTT` xapk，`tw.ystudio.beptt` 7.0.9）：文章閱讀依登入分流
+    （`N7/C0632k.java`=ArticleContentFragment，`n8()`）——免登入走 www.ptt.cc HTML（AID→URL 還原在
+    `Z7/b.java`=AidConverter；okhttp `over18=1`；只有 `div.push` 計樓，結構天然排除假推文）；登入走
+    telnet 逐頁解析（`I3()` 等多個 parser 變體，規則同上，grep 錨點 `f3943g1`）。「檢查新推文」=telnet
+    重進文章（AID+`$$00`）增量解析共用計數器——這就是「網頁版未同步仍能算最新推文樓層」的原因。
+    反編譯配方：xapk(zip)→`y_studio.ka5983.ptt2.apk`→portable Temurin JRE21 zip + jadx 1.5.1 到
+    `3rd_script/tools/`（gitignored 免安裝），`jadx --no-res --no-debug-info -j 6 -d <out> <apk>` ~3 分。
+    **踩坑**：①jadx 保留 `/* compiled from: Xxx.java */` 原始檔名註解，混淆單字母類名可還原
+    （androguard 字串層看不到，是前一輪「無法確證演算法」的主因）；②**大方法反編譯失敗會被整個略過**
+    （`I3()` 的樓層邏輯就在失敗方法裡，第一輪因此誤判「只有網頁路線」）——補救
+    `--single-class "N7.k`$h" --show-bad-code --single-class-output <dir>`（PowerShell 對 `$` 用 backtick
+    escape；bad-code 條件式可能顛倒，以結構/字串為準，跨 parser 變體交叉比對）；③androguard 路線僅夠
+    字串/xref：dex 內 Big5 位元組字串 MUTF-8 解碼會損壞，UTF-16 中文常數正常。
 - **不要開新功能分支**：直接在現有分支（`dev`）修改與 commit。本次誤開 `feat/enhanced-addon` 已併回 `dev`。
