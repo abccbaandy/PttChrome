@@ -149,6 +149,10 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     新增 `findPageOverlap` 單元測試（含「重疊後第一則推文不得被跳過」回歸）；e2e `easy-reading.spec.js`
     「好讀模式第一則推文不消失」實機驗證 `→ BlueBird5566` 重現為第 1 樓（文章過期則 skip）。
     教訓：跨頁拼接寧可信內容、勿信脆弱的行號算術；折行續行用逐螢幕列比對自然處理，無需 wrapped-line 記帳。
-
-## 工作流偏好（FEEDBACK）
+13. **auto_login「重複登入」/「錯誤嘗試」回應需 one-shot guard（2026-06，CONFIRMED 實機）**。`_tick` 的 #3/#4
+    原本只靠 `ACTION_COOLDOWN_MS`(900ms) 節流，畫面過場慢於 cooldown 時重複送 `N\r`/`n\r`，雜鍵流到後續
+    歡迎頁/主功能表 → 畫面帶離主選單（實測停在看板列表）。修法：`_answeredDup`/`_answeredErr` 旗標
+    （`start()` 重置）+ 兩者 gate 在 `_sentPass` 之後（提示只出現在密碼後）。另收緊鬆散比對：歡迎 banner 可能
+    殘留「重複登入」字樣，loose match 須同時命中 `[Y/n]`/`(Y/N)`。守護：e2e「自動登入」test 已改為**不關**
+    共用 session（刻意留另一條連線重現 dup-conn 提示頁）。
 - **不要開新功能分支**：直接在現有分支（`dev`）修改與 commit。本次誤開 `feat/enhanced-addon` 已併回 `dev`。

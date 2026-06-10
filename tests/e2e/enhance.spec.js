@@ -251,18 +251,17 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
 
 // 自動登入：開頁後完全不按任何鍵，應自動送帳密、跳過提示，進到主選單。
 // 本質測登入流程 → 不共用 session，獨立 page + addInitScript（autoLogin 只在 connect 時啟動）。
-// 注意：須先關掉共用 session（本 test 是整包最後一個）。帳號掛著另一條連線時，PTT 會多出
-// 「重複登入」等提示頁，auto_login 的 polling 腳本對其無防重送，雜鍵會把畫面帶離主選單
-//（實測停在看板列表）。
+// 刻意「不」先關掉共用 session：帳號掛著另一條連線時 PTT 會多出「重複登入」提示頁，
+// 正好回歸 auto_login 的 one-shot guard（_answeredDup/_answeredErr）——guard 失效時
+// 重送的雜鍵會把畫面帶離主選單（實測停在看板列表）。
 test('自動登入：開頁自動到主選單（不需按鍵）', async ({ shared, page }) => {
   const user = process.env.PTT_USER;
   const pass = process.env.PTT_PASS;
   test.skip(!user || !pass, '需 env PTT_USER/PTT_PASS 才能測自動登入');
   test.setTimeout(120000);
   const logs = attachConsole(page);
+  void shared; // 引用 fixture 讓共用連線保持存活（製造重複登入情境）
   try {
-    await shared.page.context().close(); // 結束共用連線（worker teardown 再 close 是 no-op）
-    await page.waitForTimeout(3000); // 等 PTT 端清掉舊連線，避免殘留重複登入提示
     await page.addInitScript((args) => {
       try {
         const cur = JSON.parse(window.localStorage.getItem(args.KEY) || '{}');

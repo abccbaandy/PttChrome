@@ -32,6 +32,8 @@ AutoLogin.prototype.start = function() {
   this._done = false;
   this._sentUser = false;
   this._sentPass = false;
+  this._answeredDup = false;
+  this._answeredErr = false;
   this._lastActionAt = 0;
   this._deadline = Date.now() + MAX_DURATION_MS;
   this._poll();
@@ -106,15 +108,23 @@ AutoLogin.prototype._tick = function() {
     return;
   }
 
-  // 3. Duplicate login → answer per preference.
-  if (screen.includes('您想刪除其他重複登入') || screen.includes('重複登入')) {
+  // 3. Duplicate login → answer per preference. One-shot: the prompt appears at
+  // most once per login, and welcome banners may still contain「重複登入」after
+  // it's answered — re-sending would leak keys into later screens. The loose
+  // 「重複登入」match additionally requires a y/n indicator for the same reason.
+  if (this._sentPass && !this._answeredDup &&
+      (screen.includes('您想刪除其他重複登入') ||
+       (screen.includes('重複登入') && /\[Y\/n\]|\(Y\/N\)/i.test(screen)))) {
+    this._answeredDup = true;
     this._send(this._dupConn + '\r');
     return;
   }
 
-  // 4. Keep/clear error-attempt prompts → default no.
-  if (screen.includes('您要刪除以上錯誤嘗試') || screen.includes('是否保留') ||
-      screen.includes('保留上次') || screen.includes('清除錯誤嘗試')) {
+  // 4. Keep/clear error-attempt prompts → default no. One-shot, same as #3.
+  if (this._sentPass && !this._answeredErr &&
+      (screen.includes('您要刪除以上錯誤嘗試') || screen.includes('是否保留') ||
+       screen.includes('保留上次') || screen.includes('清除錯誤嘗試'))) {
+    this._answeredErr = true;
     this._send('n\r');
     return;
   }
