@@ -121,6 +121,15 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     （`→ tony :`、`推 bbignose :`，**無時間戳**、在 `※ 發信站:` 前；例 M.1780738427）被當真推文。`※ 編輯: …
     MM/DD/YYYY HH:MM:SS` 也因格式不同+前綴 ※ 排除。守護：`comment_parse.test.js` + `tests/unit/fixtures/*.txt`
     （5 篇真實文章逐列標 `C`/`N`）；e2e `enhance.spec.js` 斷言每個 `[data-floor]` 徽章所屬列含時間戳。
+11. **直接設 `useEasyReadingMode=false` ⇒ 畫面永久凍結（2026-06，CONFIRMED 實機）**。好讀期間 `appendRows`/
+    `clearRows` 直接竄改 `#mainContainer`，React 樹（`componentScreen`）的 Row nodes 已 detached。此時把
+    `view.useEasyReadingMode` 直接設 false，渲染切回 React `renderScreen` 路徑 → 更新全打在 detached nodes →
+    **畫面從此不動**（按鍵有送、server 有回、`page state` log 正常，但 innerText 凍住；連動態看板都停格）。
+    症狀極易誤判成「連線死了/按鍵被吃」。正規關閉配方見 `easy_reading.js` `switchToNativeAtBottom`：
+    `useEasyReadingMode=false` → `core.switchToEasyReadingMode()`（還原 lastRow/replyRow/pageLines + 送 Ctrl-L）
+    → `ReactDOM.unmountComponentAtNode(view.mainDisplay)`（下次 render 重掛新樹）。e2e `helpers/ptt.js`
+    `applyPrefs` 已照此實作。注意：PrefModal 關好讀走 `easy_reading._onChanged` 的 `_enabled=false`，**同樣
+    沒做 unmount**，理論上有相同風險（使用者在好讀文章內關 pref）。
 11. **`parsePushInitText` 收緊（安全強化，非「推文不見」修法）**。`/→ \w+ *: +/` 會把已完成的箭頭推文也當「推文
     輸入提示列」；改 `it.search(/→ \w+ *: +/)===0 && !COMMENT_TIME_RE.test(it)`（真推文有時間戳→排除；只收緊、對
     合法輸入列無害）。守護：`comment_parse.test.js`「parsePushInitText」。**注意：這不是 `→ BlueBird5566` 不見的
