@@ -128,8 +128,9 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     症狀極易誤判成「連線死了/按鍵被吃」。正規關閉配方見 `easy_reading.js` `switchToNativeAtBottom`：
     `useEasyReadingMode=false` → `core.switchToEasyReadingMode()`（還原 lastRow/replyRow/pageLines + 送 Ctrl-L）
     → `ReactDOM.unmountComponentAtNode(view.mainDisplay)`（下次 render 重掛新樹）。e2e `helpers/ptt.js`
-    `applyPrefs` 已照此實作。注意：PrefModal 關好讀走 `easy_reading._onChanged` 的 `_enabled=false`，**同樣
-    沒做 unmount**，理論上有相同風險（使用者在好讀文章內關 pref）。
+    `applyPrefs` 已照此實作。**已修（2026-06）**：退出配方抽成 `easy_reading.js` `exitEasyReading()`，
+    `switchToNativeAtBottom`、`_onChanged` 的 pref 關閉路徑（僅在原 `_enabled===true` 時觸發）、e2e
+    `applyPrefs` 三處共用。任何新的關好讀路徑一律呼叫 `exitEasyReading()`。
 11. **`parsePushInitText` 收緊（安全強化，非「推文不見」修法）**。`/→ \w+ *: +/` 會把已完成的箭頭推文也當「推文
     輸入提示列」；改 `it.search(/→ \w+ *: +/)===0 && !COMMENT_TIME_RE.test(it)`（真推文有時間戳→排除；只收緊、對
     合法輸入列無害）。守護：`comment_parse.test.js`「parsePushInitText」。**注意：這不是 `→ BlueBird5566` 不見的

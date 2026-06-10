@@ -179,14 +179,11 @@ async function applyPrefs(page, extra) {
         const v = args.extra[k];
         if (k === 'enableEasyReading') {
           // onPrefChange('enableEasyReading') 是 no-op；開啟交給 easy_reading live 讀。
-          // 關閉時不能只設 useEasyReadingMode=false：渲染會切回 React 路徑，但好讀期間
-          // #mainContainer 被直接 DOM 改寫，React 樹已 desync → 畫面從此凍結（按鍵有送、
-          // server 有回、畫面不動）。必須照 switchToNativeAtBottom 的配方完整復原：
-          // 還原 DOM/pageLines + 送 Ctrl-L 重畫 + unmount React 樹讓下次 render 重掛。
+          // 關閉時不能只設 useEasyReadingMode=false（React 樹 desync → 畫面凍結），
+          // 必須走完整退出配方：easy_reading.js 的 exitEasyReading()
+          // （還原 DOM/pageLines + Ctrl-L 重畫 + unmount React 樹）。
           if (!v && app.view.useEasyReadingMode) {
-            app.view.useEasyReadingMode = false;
-            app.switchToEasyReadingMode(); // 無參數＝還原模式：復原 DOM + Ctrl-L
-            window.ReactDOM.unmountComponentAtNode(app.view.mainDisplay);
+            app.easyReading.exitEasyReading();
           }
         } else {
           app.onPrefChange(k, v);

@@ -44,8 +44,13 @@ EasyReading.prototype._onChanged = function(e) {
       this._core.connectedUrl.easyReadingSupported)
   {
     this._enabled = true;
-  } else if (!values.enableEasyReading) {
-    this._enabled = false;
+  } else if (!values.enableEasyReading && this._enabled) {
+    // Pref turned off mid-post (e.g. PrefModal). Only when currently in easy
+    // reading rendering state: flipping _enabled alone would switch back to the
+    // React renderScreen path while #mainContainer still holds the DOM that easy
+    // reading mutated directly, so React keeps updating detached Row nodes and
+    // the view freezes. Run the full exit recipe instead.
+    this.exitEasyReading();
   }
 
   if (!this._enabled)
@@ -148,10 +153,17 @@ EasyReading.prototype._send = function(data) {
 // _onChanged when entering the next post (prevPageState==2 && pageState==3).
 EasyReading.prototype.switchToNativeAtBottom = function() {
   console.log('switch to native at bottom');
-  // stop any pending/in-flight auto page down
-  this.sendCommandAfterUpdate = '';
   // jump to the bottom of the post with native End
   this._send('\x1b[4~');
+  this.exitEasyReading();
+};
+
+// Full recipe to leave easy reading rendering. Every code path that turns easy
+// reading off mid-post MUST go through this; see docs/enhanced-addon.md 踩坑 #11.
+EasyReading.prototype.exitEasyReading = function() {
+  console.log('exit easy reading');
+  // stop any pending/in-flight auto page down
+  this.sendCommandAfterUpdate = '';
   // Switch off easy reading and restore the native view. switchToEasyReadingMode()
   // restores the DOM (last/reply rows, padding, pageLines) and forces a full
   // redraw via Ctrl-L.
