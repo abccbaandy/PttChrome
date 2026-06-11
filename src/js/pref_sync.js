@@ -96,8 +96,16 @@ const detachSnapshotListener = () => {
   if (snapshotUnsub) {
     snapshotUnsub();
     snapshotUnsub = null;
+    console.info("pref_sync: snapshot listener detached");
   }
 };
+
+// Key names whose values changed between two pref objects — log-friendly
+// (names only; never the values, credentials included).
+const changedKeys = (a, b) =>
+  Object.keys(b).filter(
+    k => JSON.stringify(a && a[k]) !== JSON.stringify(b[k])
+  );
 
 // Attach the realtime listener on users/{uid} and reconcile every snapshot
 // (see classifySnapshot for the case split). This is what propagates changes
@@ -107,6 +115,8 @@ const detachSnapshotListener = () => {
 // ones on a first-sign-in push) so signIn can refresh the modal form.
 const attachSnapshotListener = () => {
   detachSnapshotListener();
+  console.info("pref_sync: attaching snapshot listener (users/" +
+    currentUser.uid + ")");
   return new Promise(resolve => {
     let resolved = false;
     const resolveOnce = values => {
@@ -122,19 +132,28 @@ const attachSnapshotListener = () => {
         // Re-read on every snapshot: the local copy moves underneath us
         // (PrefModal saves, credential cleanup).
         const local = readValuesWithDefault();
-        switch (
-          classifySnapshot({
-            exists: snap.exists,
-            hasPendingWrites: snap.metadata.hasPendingWrites,
-            fromCache: snap.metadata.fromCache,
-            hasPrefs: !!(data && data.prefs)
-          })
-        ) {
+        const action = classifySnapshot({
+          exists: snap.exists,
+          hasPendingWrites: snap.metadata.hasPendingWrites,
+          fromCache: snap.metadata.fromCache,
+          hasPrefs: !!(data && data.prefs)
+        });
+        console.info(
+          "pref_sync: snapshot action=" + action +
+            " exists=" + snap.exists +
+            " fromCache=" + snap.metadata.fromCache +
+            " pendingWrites=" + snap.metadata.hasPendingWrites
+        );
+        switch (action) {
           case "push-local":
             savePrefs(local).then(resolveOnce);
             break;
           case "merge": {
             const merged = mergeCloudPrefs(DEFAULT_PREFS, local, data.prefs);
+            console.info(
+              "pref_sync: cloud merge applied, changed keys: " +
+                (changedKeys(local, merged).join(", ") || "(none)")
+            );
             writeValues(merged);
             if (cloudValuesCallback) cloudValuesCallback(merged);
             resolveOnce(merged);
@@ -193,7 +212,12 @@ export const startIfPreviouslySignedIn = () => {
           });
         })
     )
-    .then(user => user && attachSnapshotListener())
+    .then(user => {
+      console.info(
+        "pref_sync: startup auth " + (user ? "restored" : "expired/revoked")
+      );
+      return user && attachSnapshotListener();
+    })
     .catch(e => console.warn("pref_sync: startup sync failed", e));
 };
 
@@ -236,6 +260,7 @@ export const signOut = () => {
 export const savePrefs = values => {
   if (!currentUser) return Promise.resolve(values);
   const FieldValue = window.firebase.firestore.FieldValue;
+  console.info("pref_sync: uploading prefs");
   return userDocRef(currentUser.uid)
     .set(
       {
@@ -248,7 +273,10 @@ export const savePrefs = values => {
       },
       { merge: true }
     )
-    .then(() => values)
+    .then(() => {
+      console.info("pref_sync: upload acknowledged by server");
+      return values;
+    })
     .catch(e => {
       console.warn("pref_sync: save failed", e);
       return values;

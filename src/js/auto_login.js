@@ -52,31 +52,44 @@ AutoLogin.prototype.setSessionCredential = function(user, pass) {
 // Promise-based (no async/await: this webpack4/babel setup has no
 // regenerator-runtime — async syntax breaks the whole bundle at load).
 AutoLogin.prototype._resolveCredential = function(v) {
-  if (sessionCred) return Promise.resolve(sessionCred);
+  if (sessionCred) {
+    console.info('auto_login: credential source = session cache');
+    return Promise.resolve(sessionCred);
+  }
 
   const legacy = () => {
     if (v.autoLoginUser && v.autoLoginPassword) {
+      console.info('auto_login: credential source = legacy localStorage');
       sessionCred = { user: v.autoLoginUser, pass: v.autoLoginPassword, legacy: true };
       return sessionCred;
     }
+    console.info('auto_login: no credential available');
     return null;
   };
 
-  if (!credentialApiAvailable()) return Promise.resolve(legacy());
+  if (!credentialApiAvailable()) {
+    console.info('auto_login: Credential Management API unavailable');
+    return Promise.resolve(legacy());
+  }
 
   return navigator.credentials
     .get({ password: true, mediation: 'optional' })
     .then(cred => {
       if (cred && cred.password) {
+        console.info('auto_login: credential source = browser store');
         // The browser store is now the source of truth → drop any leftover
         // plaintext credentials (username included — useless without the
         // password) from prefs.
         if (v.autoLoginPassword || v.autoLoginUser) {
+          console.info(
+            'auto_login: clearing legacy plaintext credentials from prefs'
+          );
           clearLegacyAutoLoginCredential();
         }
         sessionCred = { user: cred.id, pass: cred.password, legacy: false };
         return sessionCred;
       }
+      console.info('auto_login: browser store returned no credential');
       return legacy();
     })
     .catch(legacy);

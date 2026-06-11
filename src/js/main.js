@@ -5,6 +5,15 @@ import { readValuesWithDefault } from './pref_storage';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
 
 function startApp() {
+  // Build identity first thing: lets a user/console dump prove which bundle
+  // is actually running (stale deploy / cached JS debugging).
+  console.info(
+    "pttchrome build " +
+      process.env.GIT_COMMIT +
+      " (" +
+      process.env.BUILD_TIME +
+      ")"
+  );
   setupI18n();
 
   const app = new App();

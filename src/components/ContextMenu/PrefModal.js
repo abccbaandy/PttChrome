@@ -188,6 +188,18 @@ const enhance = compose(
         this.props.setSyncUser(user)
       );
     },
+    componentDidUpdate(prevProps) {
+      // The modal is mounted once at app startup and toggled via `show`, so
+      // the form state captured back then goes stale: cloud snapshots and the
+      // auto-login credential cleanup rewrite localStorage underneath it.
+      // Without this re-read, closing the dialog would save (and upload)
+      // those stale values — undoing the cleanup and overwriting newer cloud
+      // prefs from another device.
+      if (this.props.show && !prevProps.show) {
+        console.info("PrefModal: open → re-read prefs from storage");
+        this.props.setValues(readValuesWithDefault());
+      }
+    },
     componentWillUnmount() {
       if (this.unsubAuth) this.unsubAuth();
     }
@@ -727,6 +739,10 @@ export const PrefModal = ({
                     </li>
                     <li>
                       {replaceI18n("about_version_original", replacements)}
+                    </li>
+                    <li>
+                      build: <code>{process.env.GIT_COMMIT}</code> (
+                      {process.env.BUILD_TIME})
                     </li>
                   </ul>
                 </div>

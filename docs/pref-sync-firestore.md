@@ -55,6 +55,7 @@ firebase deploy --only firestore:rules
 ## 已知限制
 
 - `signInWithPopup` 在嚴格擋第三方 storage 的瀏覽器（Safari/Brave）可能失敗；fallback 可改 `signInWithRedirect`（未實作）。
-- PrefModal 開啟中的表單 state 不吃 snapshot（開啟當下讀一次）；兩端**同時**編輯仍 last-write-wins，realtime 只縮小不消滅此窗口。
+- PrefModal 表單 state 每次**開啟**時重讀 localStorage，但開啟期間不吃 snapshot；兩端**同時**編輯仍 last-write-wins，realtime 只縮小不消滅此窗口。
+- 踩坑（2026-06）：PrefModal 由 ContextMenu mount **一次**、靠 `show` prop 切換，`withStateHandlers` 的初始 `values: readValuesWithDefault()` 只在 app 啟動時跑一次 → 表單 state 永遠是啟動瞬間的舊值，關閉時 `writeValues`+`savePrefs` 會把舊值寫回，**復原憑證清除、蓋掉雲端新偏好**（realtime listener 寫進 localStorage 也救不了）。修法：`componentDidUpdate` 偵測 `show` false→true 時 `setValues(readValuesWithDefault())`。debug 線索：About 分頁與 console 啟動行有 build commit id（webpack DefinePlugin `GIT_COMMIT`/`BUILD_TIME`），可排除舊 bundle。
 - 帳號改 local-only 後，新裝置（尤其無 credential API 的 Firefox/Safari）不再從雲端拿到 `autoLoginUser`，需手動重填帳密一次。
 - 清瀏覽器資料只清掉同步旗標與快取；偏好仍在雲端，重新登入即拉回。

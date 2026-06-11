@@ -11,6 +11,17 @@ const WebpackCdnPlugin = require('webpack-cdn-plugin');
 const DEVELOPER_MODE = process.env.NODE_ENV === 'development'
 const PRODUCTION_MODE = process.env.NODE_ENV !== 'development'
 
+// Build identity, surfaced in the About tab and the startup console line so a
+// running page can be matched to a commit (stale-deploy debugging).
+let GIT_COMMIT = 'unknown';
+try {
+  GIT_COMMIT = require('child_process')
+    .execSync('git rev-parse --short HEAD')
+    .toString()
+    .trim();
+} catch (e) {}
+const BUILD_TIME = new Date().toISOString();
+
 module.exports = {
   entry: {
     'pttchrome': './src/entry.js',
@@ -64,6 +75,8 @@ module.exports = {
       'process.env.DEFAULT_SITE': JSON.stringify(PRODUCTION_MODE ? 'wsstelnet://ws.ptt.cc/bbs' : 'wstelnet://localhost:8080/bbs'),
       'process.env.ALLOW_SITE_IN_QUERY': JSON.stringify(process.env.ALLOW_SITE_IN_QUERY === 'yes'),
       'process.env.DEVELOPER_MODE': JSON.stringify(DEVELOPER_MODE),
+      'process.env.GIT_COMMIT': JSON.stringify(GIT_COMMIT),
+      'process.env.BUILD_TIME': JSON.stringify(BUILD_TIME),
     }),
     new MiniCssExtractPlugin({
       filename: '[name].[chunkhash].css',
