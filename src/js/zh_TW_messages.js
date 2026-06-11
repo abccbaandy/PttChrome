@@ -100,7 +100,13 @@
     "message": "開啟網頁時自動登入"
   },
   "tooltip_autoLogin": {
-    "message": "帳密以明文儲存在本機瀏覽器 (localStorage)，請僅在個人裝置使用。"
+    "message": "密碼會儲存到瀏覽器的密碼管理員 (如 Google 密碼管理員)，不以明文存在本機。儲存時請在瀏覽器跳出的提示按「儲存」。"
+  },
+  "tooltip_autoLoginPlaintext": {
+    "message": "此瀏覽器不支援密碼管理員 API，帳密將以明文儲存在本機 (localStorage)，請僅在個人裝置使用。"
+  },
+  "placeholder_autoLoginPassword": {
+    "message": "留空＝沿用瀏覽器已儲存的密碼"
   },
   "options_autoLoginUser": {
     "message": "帳號"

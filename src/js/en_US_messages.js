@@ -100,7 +100,13 @@ export const en_US = {
     "message": "Log in automatically when the page opens"
   },
   "tooltip_autoLogin": {
-    "message": "Credentials are stored in plain text in this browser (localStorage). Use only on a personal device."
+    "message": "The password is saved to the browser's password manager (e.g. Google Password Manager), not stored locally in plain text. Accept the browser's save prompt when it appears."
+  },
+  "tooltip_autoLoginPlaintext": {
+    "message": "This browser lacks the password manager API; credentials are stored in plain text in localStorage. Use only on a personal device."
+  },
+  "placeholder_autoLoginPassword": {
+    "message": "Leave empty to keep the password saved in the browser"
   },
   "options_autoLoginUser": {
     "message": "Account"

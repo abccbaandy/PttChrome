@@ -4,39 +4,119 @@
 // current screen straight from the term buffer (getRowText — always up to date,
 // unlike #mainContainer.innerText which lags one frame because the 'change' event
 // fires before the React re-render) and responds to login prompts, mirroring the
-// proven flow in tests/e2e/helpers/ptt.js#login. Credentials come from prefs
-// (localStorage only, never committed). Account/password are sent via
+// proven flow in tests/e2e/helpers/ptt.js#login. Account/password are sent via
 // app.sendData (Big5-converted). Stops once the main menu is reached or after a
 // max duration, so it never interferes with normal use.
+//
+// Credential sources, in order (see _resolveCredential):
+//   1. session cache — set when PrefModal saves, or by an earlier resolution;
+//      keeps reconnects from re-prompting the browser chooser.
+//   2. browser credential store (Credential Management API / PasswordCredential,
+//      e.g. Google Password Manager). mediation 'optional': silent once the user
+//      enables auto sign-in, otherwise shows the account chooser on page load.
+//   3. legacy plaintext prefs in localStorage (pre-migration data, unsupported
+//      browsers like Firefox/Safari, and e2e injection).
+// Migration is self-healing and never drops credentials: a legacy login that
+// reaches the main menu triggers credentials.store() (browser save prompt), but
+// the plaintext copy is only wiped once a later get() proves the browser really
+// has it (store() resolving does not mean the user accepted the prompt).
 
-import { readValuesWithDefault } from '../components/ContextMenu/PrefModal';
+import {
+  readValuesWithDefault,
+  clearLegacyAutoLoginPassword
+} from '../components/ContextMenu/PrefModal';
 
 const MAIN_MENU = ['主功能表', '【主功能表】'];
 const POLL_MS = 500;
 const ACTION_COOLDOWN_MS = 900;
 const MAX_DURATION_MS = 90000;
 
+// Page-lifetime cache: { user, pass, legacy }.
+let sessionCred = null;
+
+const credentialApiAvailable = () =>
+  typeof window !== 'undefined' && !!window.PasswordCredential &&
+  !!(navigator.credentials && navigator.credentials.get);
+
 export function AutoLogin(app) {
   this._app = app;
 }
 
-AutoLogin.prototype.start = function() {
-  const v = readValuesWithDefault();
-  if (!v.autoLogin || !v.autoLoginUser || !v.autoLoginPassword) return;
-  this._user = v.autoLoginUser;
-  this._pass = v.autoLoginPassword;
-  this._dupConn = v.autoLoginDupConn === 'Y' ? 'Y' : 'N';
-  this._skipWelcome = !!v.autoLoginSkipWelcome;
+// Called when PrefModal saves with credentials filled in, so they take effect
+// this session even though the password is no longer persisted to localStorage.
+AutoLogin.prototype.setSessionCredential = function(user, pass) {
+  if (user && pass) sessionCred = { user, pass, legacy: false };
+};
 
+// Promise-based (no async/await: this webpack4/babel setup has no
+// regenerator-runtime — async syntax breaks the whole bundle at load).
+AutoLogin.prototype._resolveCredential = function(v) {
+  if (sessionCred) return Promise.resolve(sessionCred);
+
+  const legacy = () => {
+    if (v.autoLoginUser && v.autoLoginPassword) {
+      sessionCred = { user: v.autoLoginUser, pass: v.autoLoginPassword, legacy: true };
+      return sessionCred;
+    }
+    return null;
+  };
+
+  if (!credentialApiAvailable()) return Promise.resolve(legacy());
+
+  return navigator.credentials
+    .get({ password: true, mediation: 'optional' })
+    .then(cred => {
+      if (cred && cred.password) {
+        // The browser store is now the source of truth → drop any leftover
+        // plaintext copy from prefs.
+        if (v.autoLoginPassword) clearLegacyAutoLoginPassword();
+        sessionCred = { user: cred.id, pass: cred.password, legacy: false };
+        return sessionCred;
+      }
+      return legacy();
+    })
+    .catch(legacy);
+};
+
+// Login succeeded with legacy plaintext creds → offer to save them into the
+// browser's password manager. Plaintext is wiped later, on a successful get().
+AutoLogin.prototype._maybeMigrate = function() {
+  if (!this._usedLegacy || !credentialApiAvailable()) return;
+  try {
+    navigator.credentials
+      .store(new PasswordCredential({
+        id: this._user,
+        password: this._pass,
+        name: 'PTT'
+      }))
+      .catch(() => {});
+  } catch (e) {}
+};
+
+AutoLogin.prototype.start = function() {
   this.stop(); // clear any previous run (reconnect)
-  this._done = false;
-  this._sentUser = false;
-  this._sentPass = false;
-  this._answeredDup = false;
-  this._answeredErr = false;
-  this._lastActionAt = 0;
-  this._deadline = Date.now() + MAX_DURATION_MS;
-  this._poll();
+  const seq = (this._seq = (this._seq || 0) + 1);
+
+  const v = readValuesWithDefault();
+  if (!v.autoLogin) return;
+  this._resolveCredential(v).then(cred => {
+    // A newer start() may have begun while the credential chooser was open.
+    if (!cred || seq !== this._seq) return;
+    this._user = cred.user;
+    this._pass = cred.pass;
+    this._usedLegacy = !!cred.legacy;
+    this._dupConn = v.autoLoginDupConn === 'Y' ? 'Y' : 'N';
+    this._skipWelcome = !!v.autoLoginSkipWelcome;
+
+    this._done = false;
+    this._sentUser = false;
+    this._sentPass = false;
+    this._answeredDup = false;
+    this._answeredErr = false;
+    this._lastActionAt = 0;
+    this._deadline = Date.now() + MAX_DURATION_MS;
+    this._poll();
+  });
 };
 
 AutoLogin.prototype.stop = function() {
@@ -86,6 +166,7 @@ AutoLogin.prototype._tick = function() {
 
   // Reached the main menu → login finished, detach.
   if (MAIN_MENU.some(m => screen.includes(m))) {
+    this._maybeMigrate();
     this.stop();
     return;
   }

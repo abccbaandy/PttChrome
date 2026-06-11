@@ -69,17 +69,38 @@
 
 ## 設定（`PrefModal.js` 「增強功能」分頁）
 pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）：
-`showFloorNumbers`(true)、`blacklist`("" 換行)、`autoLogin`(false)、`autoLoginUser/Password`("")、
+`showFloorNumbers`(true)、`blacklist`("" 換行)、`autoLogin`(false)、`autoLoginUser/Password`(""；
+**password 在支援 Credential API 的瀏覽器不落地**，見「自動登入」節)、
 `autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true)。套用見 `pttchrome.onPrefChange`
 （`showFloorNumbers`/`blacklist`→`view.*`+`redraw(true)`）。i18n 鍵在 zh_TW/en_US `options_*`。
 
 ## 自動登入：`src/js/auto_login.js`
-`App` constructor `new AutoLogin(this)`；`onConnect` 末尾 `start()`。**自走 polling**（setTimeout 每
-500ms），每 tick 直接從 `buf.getRowText` 讀整頁（**勿用 `#mainContainer.innerText`**：`'change'` 事件
-在 React re-render **之前** 觸發 → DOM 慢一幀，導致「要按鍵才動」）。比對提示字串沿用
-`tests/e2e/helpers/ptt.js#login` 流程，帳密用 `app.sendData`(Big5)、空白/Y/N 同。到主功能表即 `stop()`；
-逾時 90s 自停；reconnect 時 `start()` 重置。憑證明文存 localStorage（僅本機、不進 git；預設空）。
+`App` constructor `new AutoLogin(this)`；`onConnect` 末尾 `start()`（promise-based fire-and-forget；
+**勿用 async/await**，見踩坑 #15）。**自走
+polling**（setTimeout 每 500ms），每 tick 直接從 `buf.getRowText` 讀整頁（**勿用
+`#mainContainer.innerText`**：`'change'` 事件在 React re-render **之前** 觸發 → DOM 慢一幀，導致
+「要按鍵才動」）。比對提示字串沿用 `tests/e2e/helpers/ptt.js#login` 流程，帳密用 `app.sendData`(Big5)、
+空白/Y/N 同。到主功能表即 `stop()`；逾時 90s 自停；reconnect 時 `start()` 重置（`_seq` 防 async 重入）。
 e2e：`enhance.spec.js`「自動登入：開頁自動到主選單（不需按鍵）」（需 env PTT_USER/PTT_PASS）。
+
+### 憑證儲存（Credential Management API，2026-06 改版）
+密碼**不再明文落地 localStorage**（支援的瀏覽器）。解析順序（`_resolveCredential`）：
+1. **session cache**（module-level `sessionCred`；PrefModal 存檔經 `onValuesPrefChange` →
+   `setSessionCredential` 寫入，reconnect 不重跳 chooser）
+2. **瀏覽器密碼管理員**：`navigator.credentials.get({password:true, mediation:'optional'})`——
+   使用者開啟 auto sign-in 後無聲取回，否則 page load 跳帳號選擇器（取消→走 3）
+3. **legacy localStorage 明文**（舊資料、Firefox/Safari 等無 `PasswordCredential` 的 fallback、
+   e2e addInitScript 注入路徑）
+
+寫入端（`PrefModal.storeCredentialAndStrip`）：存檔時若支援 API 且帳密齊 →
+`credentials.store(new PasswordCredential(...))` 觸發瀏覽器「儲存密碼？」提示，localStorage 只寫
+**清空 `autoLoginPassword` 的副本**；`onSave` 仍傳完整 values（in-memory 即時生效）。不支援 → 照舊明文。
+
+遷移（自我修復、不弄丟憑證）：legacy 明文登入成功（到主選單）→ `_maybeMigrate()` 呼叫 `store()`
+（**此時不清明文**：store resolve ≠ 使用者按了儲存）；之後某次 `get()` 真取回 → 才
+`clearLegacyAutoLoginPassword()` 清掉 prefs 明文。UI 警語/placeholder 依 `window.PasswordCredential`
+切換（i18n `tooltip_autoLogin` / `tooltip_autoLoginPlaintext` / `placeholder_autoLoginPassword`）。
+需 secure context（localhost/HTTPS）。
 
 ## 未移植（原腳本失效/越界）
 axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠瀏覽友善模式、右鍵搜尋作者選單。
@@ -187,4 +208,9 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     `--single-class "N7.k`$h" --show-bad-code --single-class-output <dir>`（PowerShell 對 `$` 用 backtick
     escape；bad-code 條件式可能顛倒，以結構/字串為準，跨 parser 變體交叉比對）；③androguard 路線僅夠
     字串/xref：dex 內 Big5 位元組字串 MUTF-8 解碼會損壞，UTF-16 中文常數正常。
-- **不要開新功能分支**：直接在現有分支（`dev`）修改與 commit。本次誤開 `feat/enhanced-addon` 已併回 `dev`。
+15. **src 內禁用 async/await：無 regenerator-runtime，整包 bundle 載入即炸（2026-06-11，CONFIRMED 實機）**。
+    babel 把 async fn 轉成 `regeneratorRuntime.mark(...)`（module 評估期就呼叫），本專案 webpack4/babel
+    沒帶 regenerator-runtime → 頁面 `pageerror: regeneratorRuntime is not defined`、app bootstrap 全掛
+    （**空白畫面、連 Developer Mode modal 都不出現**；e2e 症狀 = `waitForScreen` 40s 等不到首畫面且
+    「當前畫面」全空）。webpack **編譯不會報錯**，純 runtime 炸。修法：非同步邏輯一律寫 Promise chain
+    （`auto_login._resolveCredential`/`start`）。診斷捷徑：Playwright 開頁掛 `page.on('pageerror')`。

@@ -738,6 +738,16 @@ App.prototype.onValuesPrefChange = function(values) {
     this.onPrefChange(name, values[name]);
   }
 
+  // Enhanced Add-on: PrefModal hands us the un-stripped values (the persisted
+  // copy has no password when the browser credential store is used), so cache
+  // them for this session's reconnects.
+  if (values.autoLogin && values.autoLoginUser && values.autoLoginPassword) {
+    this.autoLogin.setSessionCredential(
+      values.autoLoginUser,
+      values.autoLoginPassword
+    );
+  }
+
   // These prefs have to be processed as a whole.
   try {
     this.resizer = null;

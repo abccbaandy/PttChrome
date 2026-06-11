@@ -86,6 +86,43 @@ const writeValues = values => {
   return values;
 };
 
+// Auto-login migration (see src/js/auto_login.js): wipe the legacy plaintext
+// password once the browser credential store has been confirmed to hold it.
+export const clearLegacyAutoLoginPassword = () => {
+  const v = readValuesWithDefault();
+  if (v.autoLoginPassword) writeValues({ ...v, autoLoginPassword: "" });
+};
+
+// With credentials filled in on a supporting browser, persist the password to
+// the browser's password manager (Google Password Manager etc.) instead of
+// localStorage. Returns the values to persist; the caller still hands the
+// original (with password) to onSave so it takes effect this session.
+const storeCredentialAndStrip = values => {
+  if (
+    !values.autoLogin ||
+    !values.autoLoginUser ||
+    !values.autoLoginPassword ||
+    !window.PasswordCredential ||
+    !(navigator.credentials && navigator.credentials.store)
+  ) {
+    return values; // unsupported browser → legacy plaintext behavior
+  }
+  try {
+    navigator.credentials
+      .store(
+        new PasswordCredential({
+          id: values.autoLoginUser,
+          password: values.autoLoginPassword,
+          name: "PTT"
+        })
+      )
+      .catch(() => {});
+  } catch (e) {
+    return values;
+  }
+  return { ...values, autoLoginPassword: "" };
+};
+
 const normalizeSec = value => {
   const sec = parseInt(value, 10);
   return sec > 1 ? sec : 1;
@@ -154,8 +191,10 @@ const enhance = compose(
       }
     }),
     {
-      onCloseClick: ({ values }, { onSave }) => () =>
-        onSave(writeValues(values)),
+      onCloseClick: ({ values }, { onSave }) => () => {
+        writeValues(storeCredentialAndStrip(values));
+        return onSave(values);
+      },
 
       onResetClick: (state, { onReset }) => () =>
         onReset(
@@ -599,7 +638,9 @@ export const PrefModal = ({
                     {i18n("options_autoLoginEnable")}
                   </Checkbox>
                   <p className="PrefModal__warning">
-                    {i18n("tooltip_autoLogin")}
+                    {window.PasswordCredential
+                      ? i18n("tooltip_autoLogin")
+                      : i18n("tooltip_autoLoginPlaintext")}
                   </p>
                   <FormGroup controlId="autoLoginUser">
                     <ControlLabel>{i18n("options_autoLoginUser")}</ControlLabel>
@@ -619,6 +660,11 @@ export const PrefModal = ({
                       name="autoLoginPassword"
                       type="password"
                       autoComplete="new-password"
+                      placeholder={
+                        window.PasswordCredential
+                          ? i18n("placeholder_autoLoginPassword")
+                          : undefined
+                      }
                       value={values.autoLoginPassword}
                       onChange={onTextInputChange}
                     />
