@@ -2,7 +2,7 @@
 import { setupI18n } from './i18n';
 import { getQueryVariable } from './util';
 import { readValuesWithDefault } from './pref_storage';
-import { startIfPreviouslySignedIn } from './pref_sync';
+import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
 
 function startApp() {
   setupI18n();
@@ -31,11 +31,13 @@ function startApp() {
     // TODO: Call onSymFont for font data when it's implemented.
     console.log("load pref from storage");
     app.onValuesPrefChange(readValuesWithDefault());
-    // Cloud prefs (Firestore) arrive later and are re-applied on top; no-op
-    // unless the user enabled sync by signing in before (see pref_sync.js).
-    startIfPreviouslySignedIn({
-      onCloudValues: values => app.onValuesPrefChange(values)
-    });
+    // Cloud prefs (Firestore) arrive later — and keep arriving via the
+    // realtime listener — and are re-applied on top; no-op unless the user
+    // enabled sync by signing in before (see pref_sync.js). The callback is
+    // registered unconditionally so a sign-in from PrefModal reaches the app
+    // too; registering alone never loads Firebase.
+    registerOnCloudValues(values => app.onValuesPrefChange(values));
+    startIfPreviouslySignedIn();
     app.setInputAreaFocus();
     $('#BBSWindow').show();
     //$('#sideMenus').show();

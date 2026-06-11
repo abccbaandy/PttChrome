@@ -18,12 +18,13 @@
 //      browsers like Firefox/Safari, and e2e injection).
 // Migration is self-healing and never drops credentials: a legacy login that
 // reaches the main menu triggers credentials.store() (browser save prompt), but
-// the plaintext copy is only wiped once a later get() proves the browser really
-// has it (store() resolving does not mean the user accepted the prompt).
+// the plaintext copy (username AND password) is only wiped once a later get()
+// proves the browser really has it (store() resolving does not mean the user
+// accepted the prompt).
 
 import {
   readValuesWithDefault,
-  clearLegacyAutoLoginPassword
+  clearLegacyAutoLoginCredential
 } from './pref_storage';
 
 const MAIN_MENU = ['主功能表', '【主功能表】'];
@@ -68,8 +69,11 @@ AutoLogin.prototype._resolveCredential = function(v) {
     .then(cred => {
       if (cred && cred.password) {
         // The browser store is now the source of truth → drop any leftover
-        // plaintext copy from prefs.
-        if (v.autoLoginPassword) clearLegacyAutoLoginPassword();
+        // plaintext credentials (username included — useless without the
+        // password) from prefs.
+        if (v.autoLoginPassword || v.autoLoginUser) {
+          clearLegacyAutoLoginCredential();
+        }
         sessionCred = { user: cred.id, pass: cred.password, legacy: false };
         return sessionCred;
       }

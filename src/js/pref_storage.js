@@ -70,8 +70,12 @@ export const writeValues = values => {
 };
 
 // Auto-login migration (see src/js/auto_login.js): wipe the legacy plaintext
-// password once the browser credential store has been confirmed to hold it.
-export const clearLegacyAutoLoginPassword = () => {
+// credentials once the browser credential store has been confirmed to hold
+// them. The username goes too — it serves no purpose without the password
+// (the browser store supplies both via cred.id/cred.password).
+export const clearLegacyAutoLoginCredential = () => {
   const v = readValuesWithDefault();
-  if (v.autoLoginPassword) writeValues({ ...v, autoLoginPassword: "" });
+  if (v.autoLoginPassword || v.autoLoginUser) {
+    writeValues({ ...v, autoLoginUser: "", autoLoginPassword: "" });
+  }
 };

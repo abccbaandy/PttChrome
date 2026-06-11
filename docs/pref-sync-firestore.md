@@ -5,14 +5,27 @@
 | 層 | 檔案 | 職責 |
 |---|---|---|
 | 儲存層 | `src/js/pref_storage.js` | `DEFAULT_PREFS` / localStorage 讀寫（自 PrefModal 抽出） |
-| 純邏輯 | `src/js/pref_sync_logic.js` | `sanitizeForCloud`（剝密碼）/ `mergeCloudPrefs`（cloud wins）— unit tested |
+| 純邏輯 | `src/js/pref_sync_logic.js` | `sanitizeForCloud`（剝帳密）/ `mergeCloudPrefs`（cloud wins）/ `classifySnapshot`（snapshot 分類）— unit tested |
 | 副作用 | `src/js/pref_sync.js` | SDK lazy-load、Google 登入、Firestore 讀寫 |
 | config | `src/js/firebase_config.js` | web config（非機密，安全靠 rules + authorized domains） |
 
-- 同步策略：localStorage = 本地快取，啟動先套用（不阻塞 BBS 連線）；曾登入者背景從 Firestore 拉取後二次套用（`main.js` → `startIfPreviouslySignedIn`）。儲存時雙寫（PrefModal `onCloseClick`/`onResetClick` → `prefSync.savePrefs`）。
+- 同步策略：localStorage = 本地快取，啟動先套用（不阻塞 BBS 連線）；曾登入者背景 attach Firestore **onSnapshot realtime listener**，每個 snapshot merge 後二次套用（`main.js` → `registerOnCloudValues` + `startIfPreviouslySignedIn`）。儲存時雙寫（PrefModal `onCloseClick`/`onResetClick` → `prefSync.savePrefs`）。
 - 資料模型：`users/{uid}` 單一 doc `{ prefs, updatedAt: serverTimestamp, schemaVersion: 1 }`。
 - 衝突：cloud wins；首次登入雲端無 doc → push local up；登出只清旗標（`pttchrome.prefsync.enabled`），localStorage 保留。
-- **`autoLoginPassword` 絕不上雲**：上傳前 `sanitizeForCloud` 剝除、下載 merge 強制取本地值；密碼仍走瀏覽器 PasswordCredential（見 `src/js/auto_login.js`）。
+- **`autoLoginPassword`、`autoLoginUser` 絕不上雲**：上傳前 `sanitizeForCloud` 剝除、下載 merge 強制取本地值；憑證走瀏覽器 PasswordCredential（見 `src/js/auto_login.js`）。帳號 local-only 的理由：裝置在瀏覽器存好憑證後會清空 local 帳密，若帳號同步，清空的 `""` 會上雲洗掉其他裝置（無 credential API 的 Firefox/Safari legacy 登入會壞）。`savePrefs` 另以 `FieldValue.delete()` 自癒刪除舊 doc 殘留的 `prefs.autoLoginUser`。
+
+## Realtime listener（onSnapshot，2026-06 改版）
+
+一次性 `get()` 的問題：分頁 B 開著時收不到裝置 A 的修改，B 下次存檔把舊值蓋回雲端（last-write-wins 蓋掉 A）。改 `onSnapshot` 後 A 的修改即時推到 B。
+
+- 每個 snapshot 經 `classifySnapshot`（純函式，unit tested）分四類：
+  - `skip-echo`：`metadata.hasPendingWrites` — 本機 `set()` 的 latency-compensation echo，跳過。
+  - `skip-offline-missing`：cache 回報「無 doc」但 `metadata.fromCache` — **不可**誤判首次登入去 push local，否則連線恢復後 queue 的寫入會蓋掉雲端真資料；等 server snapshot。
+  - `push-local`：server 證實無 doc/無 prefs → 首次登入，上傳本機。
+  - `merge`：`mergeCloudPrefs` → `writeValues` → app callback（`onValuesPrefChange`）。
+- handler 每次重讀 `readValuesWithDefault()`（local 會被 PrefModal/憑證清除移動，勿閉包舊值）。
+- 生命週期：attach 前先 unsub 舊 listener；`signOut` **先 unsub 再** `auth.signOut()`（否則 stream 噴 permission-denied）；`onAuthStateChanged` 收到 null（token 過期/撤銷）也 unsub；onSnapshot error callback 觸發後 listener 自停 → 清掉 handle。
+- callback 走註冊制：`main.js` 啟動時無條件 `registerOnCloudValues(app.onValuesPrefChange)`（純 JS 不觸發 SDK 載入），PrefModal `signIn` 建立的 listener 也打得到 app；`signIn(onCloudValues)` 的參數 callback 只在首個 snapshot 處理完打一次（更新 modal 表單）。
 
 ## 為什麼用 compat CDN lazy-load 而不是 npm（踩坑）
 
@@ -42,5 +55,6 @@ firebase deploy --only firestore:rules
 ## 已知限制
 
 - `signInWithPopup` 在嚴格擋第三方 storage 的瀏覽器（Safari/Brave）可能失敗；fallback 可改 `signInWithRedirect`（未實作）。
-- 多分頁不做即時同步（無 onSnapshot），last-write-wins。
+- PrefModal 開啟中的表單 state 不吃 snapshot（開啟當下讀一次）；兩端**同時**編輯仍 last-write-wins，realtime 只縮小不消滅此窗口。
+- 帳號改 local-only 後，新裝置（尤其無 credential API 的 Firefox/Safari）不再從雲端拿到 `autoLoginUser`，需手動重填帳密一次。
 - 清瀏覽器資料只清掉同步旗標與快取；偏好仍在雲端，重新登入即拉回。

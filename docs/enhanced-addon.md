@@ -98,7 +98,10 @@ e2e：`enhance.spec.js`「自動登入：開頁自動到主選單（不需按鍵
 
 遷移（自我修復、不弄丟憑證）：legacy 明文登入成功（到主選單）→ `_maybeMigrate()` 呼叫 `store()`
 （**此時不清明文**：store resolve ≠ 使用者按了儲存）；之後某次 `get()` 真取回 → 才
-`clearLegacyAutoLoginPassword()` 清掉 prefs 明文。UI 警語/placeholder 依 `window.PasswordCredential`
+`clearLegacyAutoLoginCredential()` 清掉 prefs 明文**帳號+密碼**（帳號沒密碼也沒用，瀏覽器 store 的
+cred.id/cred.password 兩者都供）。連動：`autoLoginUser` 同步改 local-only（不上雲，見
+`docs/pref-sync-firestore.md`），否則清空的 `""` 會經雲端洗掉其他裝置的 legacy 帳號。
+UI 警語/placeholder 依 `window.PasswordCredential`
 切換（i18n `tooltip_autoLogin` / `tooltip_autoLoginPlaintext` / `placeholder_autoLoginPassword`）。
 需 secure context（localhost/HTTPS）。
 

@@ -1,6 +1,7 @@
 // Preference cloud sync: Google sign-in (Firebase Auth) + per-user Firestore
-// doc (users/{uid}). localStorage stays the source applied at startup; the
-// cloud copy is fetched in the background and re-applied on top (cloud wins).
+// doc (users/{uid}). localStorage stays the source applied at startup; a
+// realtime listener (onSnapshot) then keeps re-applying the cloud copy on
+// top (cloud wins), so edits made on another device/tab land here live.
 //
 // SDK loading: the Firebase *compat* builds are injected from gstatic at
 // runtime instead of npm. webpack 4's parser (acorn) cannot parse the ES2020
@@ -17,7 +18,11 @@ import {
   readValuesWithDefault,
   writeValues
 } from "./pref_storage";
-import { sanitizeForCloud, mergeCloudPrefs } from "./pref_sync_logic";
+import {
+  sanitizeForCloud,
+  mergeCloudPrefs,
+  classifySnapshot
+} from "./pref_sync_logic";
 
 const FIREBASE_VERSION = "10.14.1"; // pinned: compat API surface is frozen
 const COMPAT_SCRIPTS = [
@@ -34,6 +39,13 @@ const SYNC_FLAG_KEY = "pttchrome.prefsync.enabled";
 let loadPromise = null;
 let currentUser = null;
 const authStateListeners = [];
+// App-level "cloud prefs arrived" callback (main.js registers
+// app.onValuesPrefChange). Registration is plain JS — it never triggers the
+// SDK download. Kept module-level so listeners attached from any entry point
+// (startup restore or PrefModal sign-in) reach the running app.
+let cloudValuesCallback = null;
+// Active onSnapshot unsubscribe; null when not listening.
+let snapshotUnsub = null;
 
 const loadScript = src =>
   new Promise((resolve, reject) => {
@@ -64,6 +76,9 @@ const init = () => {
     window.firebase.initializeApp(FIREBASE_CONFIG);
     window.firebase.auth().onAuthStateChanged(user => {
       currentUser = user;
+      // Session gone (sign-out, token expired/revoked) → stop listening
+      // before Firestore starts rejecting the stream with permission-denied.
+      if (!user) detachSnapshotListener();
       authStateListeners.forEach(cb => cb(user));
     });
     return window.firebase;
@@ -77,26 +92,74 @@ const userDocRef = uid =>
     .collection("users")
     .doc(uid);
 
-// Fetch the cloud doc and reconcile: no doc yet → first sign-in on this
-// account, push local prefs up; doc exists → cloud wins, write the merged
-// result back to localStorage and hand it to the caller to apply.
-const fetchAndApply = onCloudValues => {
-  const local = readValuesWithDefault();
-  return userDocRef(currentUser.uid)
-    .get()
-    .then(snap => {
-      const data = snap.exists && snap.data();
-      if (!data || !data.prefs) {
-        return savePrefs(local);
+const detachSnapshotListener = () => {
+  if (snapshotUnsub) {
+    snapshotUnsub();
+    snapshotUnsub = null;
+  }
+};
+
+// Attach the realtime listener on users/{uid} and reconcile every snapshot
+// (see classifySnapshot for the case split). This is what propagates changes
+// made on another device/tab into this one — without it, a stale tab would
+// keep old prefs and overwrite the cloud on its next save.
+// Resolves once with the first applied values (merged prefs, or the local
+// ones on a first-sign-in push) so signIn can refresh the modal form.
+const attachSnapshotListener = () => {
+  detachSnapshotListener();
+  return new Promise(resolve => {
+    let resolved = false;
+    const resolveOnce = values => {
+      if (!resolved) {
+        resolved = true;
+        resolve(values);
       }
-      const merged = mergeCloudPrefs(DEFAULT_PREFS, local, data.prefs);
-      writeValues(merged);
-      if (onCloudValues) onCloudValues(merged);
-      return merged;
-    });
+    };
+    snapshotUnsub = userDocRef(currentUser.uid).onSnapshot(
+      snap => {
+        if (!currentUser) return;
+        const data = snap.exists && snap.data();
+        // Re-read on every snapshot: the local copy moves underneath us
+        // (PrefModal saves, credential cleanup).
+        const local = readValuesWithDefault();
+        switch (
+          classifySnapshot({
+            exists: snap.exists,
+            hasPendingWrites: snap.metadata.hasPendingWrites,
+            fromCache: snap.metadata.fromCache,
+            hasPrefs: !!(data && data.prefs)
+          })
+        ) {
+          case "push-local":
+            savePrefs(local).then(resolveOnce);
+            break;
+          case "merge": {
+            const merged = mergeCloudPrefs(DEFAULT_PREFS, local, data.prefs);
+            writeValues(merged);
+            if (cloudValuesCallback) cloudValuesCallback(merged);
+            resolveOnce(merged);
+            break;
+          }
+          // skip-echo / skip-offline-missing: wait for the next snapshot.
+        }
+      },
+      e => {
+        // The listener auto-stops after an error; drop the handle so a later
+        // attach doesn't assume it's still alive.
+        console.warn("pref_sync: snapshot listener error", e);
+        snapshotUnsub = null;
+      }
+    );
+  });
 };
 
 export const getUser = () => currentUser;
+
+// main.js registers the app-level apply callback here once at startup.
+// Plain assignment — safe to call before (or without) any Firebase load.
+export const registerOnCloudValues = cb => {
+  cloudValuesCallback = cb;
+};
 
 // cb fires immediately with the current state, then on every change.
 // Returns an unsubscribe function.
@@ -110,8 +173,9 @@ export const onAuthState = cb => {
 };
 
 // Startup hook (main.js). No-op unless the user signed in previously, so the
-// e2e/guest path stays free of any Firebase network traffic.
-export const startIfPreviouslySignedIn = ({ onCloudValues }) => {
+// e2e/guest path stays free of any Firebase network traffic. Cloud values are
+// delivered through the callback registered via registerOnCloudValues.
+export const startIfPreviouslySignedIn = () => {
   try {
     if (window.localStorage.getItem(SYNC_FLAG_KEY) !== "1") return;
   } catch (e) {
@@ -129,12 +193,13 @@ export const startIfPreviouslySignedIn = ({ onCloudValues }) => {
           });
         })
     )
-    .then(user => user && fetchAndApply(onCloudValues))
+    .then(user => user && attachSnapshotListener())
     .catch(e => console.warn("pref_sync: startup sync failed", e));
 };
 
-// Interactive sign-in from PrefModal. Resolves with the merged values after
-// the first sync so the modal can refresh its form state.
+// Interactive sign-in from PrefModal. onCloudValues fires once with the
+// values from the first sync so the modal can refresh its form state;
+// subsequent snapshots go to the registered app-level callback.
 export const signIn = onCloudValues =>
   init()
     .then(firebase => {
@@ -145,12 +210,17 @@ export const signIn = onCloudValues =>
       try {
         window.localStorage.setItem(SYNC_FLAG_KEY, "1");
       } catch (e) {}
-      return fetchAndApply(onCloudValues);
+      return attachSnapshotListener().then(values => {
+        if (onCloudValues) onCloudValues(values);
+        return values;
+      });
     });
 
 // Sign out and stop syncing. localStorage prefs are kept: the app keeps
-// working offline with the last-known values.
+// working offline with the last-known values. Listener must go down before
+// auth does, or the open stream errors with permission-denied.
 export const signOut = () => {
+  detachSnapshotListener();
   try {
     window.localStorage.removeItem(SYNC_FLAG_KEY);
   } catch (e) {}
@@ -158,15 +228,22 @@ export const signOut = () => {
   return init().then(firebase => firebase.auth().signOut());
 };
 
-// Upload prefs (password stripped). No-op when signed out. Errors are
+// Upload prefs (credentials stripped). No-op when signed out. Errors are
 // swallowed: the local copy is already saved, next save retries.
+// autoLoginUser is actively deleted (not just omitted): docs written before
+// it became local-only still carry the PTT username, and set(merge:true)
+// never drops a field on its own — each save self-heals the leftover.
 export const savePrefs = values => {
   if (!currentUser) return Promise.resolve(values);
+  const FieldValue = window.firebase.firestore.FieldValue;
   return userDocRef(currentUser.uid)
     .set(
       {
-        prefs: sanitizeForCloud(values),
-        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+        prefs: {
+          ...sanitizeForCloud(values),
+          autoLoginUser: FieldValue.delete()
+        },
+        updatedAt: FieldValue.serverTimestamp(),
         schemaVersion: 1
       },
       { merge: true }
