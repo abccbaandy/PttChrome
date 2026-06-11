@@ -26,6 +26,8 @@
 - handler 每次重讀 `readValuesWithDefault()`（local 會被 PrefModal/憑證清除移動，勿閉包舊值）。
 - 生命週期：attach 前先 unsub 舊 listener；`signOut` **先 unsub 再** `auth.signOut()`（否則 stream 噴 permission-denied）；`onAuthStateChanged` 收到 null（token 過期/撤銷）也 unsub；onSnapshot error callback 觸發後 listener 自停 → 清掉 handle。
 - callback 走註冊制：`main.js` 啟動時無條件 `registerOnCloudValues(app.onValuesPrefChange)`（純 JS 不觸發 SDK 載入），PrefModal `signIn` 建立的 listener 也打得到 app；`signIn(onCloudValues)` 的參數 callback 只在首個 snapshot 處理完打一次（更新 modal 表單）。
+- 啟動還原等 auth 用 `waitForFirstAuthState()`（`authStateKnown` 旗標 + waiter queue）。踩坑（2026-06）：舊 pattern `const unsub = onAuthState(cb)` 且 cb 內呼叫 `unsub()` 會炸 `TypeError: unsub is not a function` —— `onAuthState` **同步立即**呼叫 cb，`const` 還沒賦值（TDZ）→ 啟動還原從未成功掛上 listener。
+- 測試：`tests/unit/pref_sync.test.js`（jsdom + 模擬 firebase，攔 `document.head.appendChild` 餵假 SDK）重播啟動還原/他機推播/echo skip/offline 守門/signIn/signOut 全流程；上述 TDZ bug 有回歸測試。
 
 ## 為什麼用 compat CDN lazy-load 而不是 npm（踩坑）
 

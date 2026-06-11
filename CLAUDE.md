@@ -25,8 +25,10 @@ webpack4 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，Firebase compat CDN lazy-load；**勿 `yarn add firebase`**，webpack4 會炸；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。詳見 `docs/pref-sync-firestore.md`。
 
 ## 測試
-- **Unit（首選，穩定）**：`yarn test:unit`（jest，node env，不連網/不需 DOM）。`tests/unit/`：純邏輯
-  (`comment_parse.test.js`) + Row 渲染 (`row_render.test.js`，react-test-renderer + 假 ASCII TermChar)。
+- **Unit（首選，穩定）**：`yarn test:unit`（jest，預設 node env，不連網）。`tests/unit/`：純邏輯
+  (`comment_parse.test.js`) + Row 渲染 (`row_render.test.js`，react-test-renderer + 假 ASCII TermChar)
+  + 雲端同步 (`pref_sync.test.js`，jsdom env + **模擬 firebase**：假 `window.firebase` 重播
+  auth/onSnapshot/set 全流程；e2e 不連 Firebase，同步邏輯只能在這驗)。
   增強功能的逐列判斷一律放 `comment_parse.annotateComment` 並在此回歸守護（e2e 素材不穩，純邏輯先測）。
 - **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額常滿會 fast-fail）。
   失敗自動截圖/錄影 + console dump。helper：`tests/e2e/helpers/ptt.js`。細節見 `tests/e2e/README.md`。

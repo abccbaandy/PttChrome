@@ -38,6 +38,10 @@ const SYNC_FLAG_KEY = "pttchrome.prefsync.enabled";
 
 let loadPromise = null;
 let currentUser = null;
+// False until Firebase answers the first onAuthStateChanged — before that,
+// currentUser === null only means "don't know yet", not "signed out".
+let authStateKnown = false;
+const authStateWaiters = [];
 const authStateListeners = [];
 // App-level "cloud prefs arrived" callback (main.js registers
 // app.onValuesPrefChange). Registration is plain JS — it never triggers the
@@ -76,10 +80,12 @@ const init = () => {
     window.firebase.initializeApp(FIREBASE_CONFIG);
     window.firebase.auth().onAuthStateChanged(user => {
       currentUser = user;
+      authStateKnown = true;
       // Session gone (sign-out, token expired/revoked) → stop listening
       // before Firestore starts rejecting the stream with permission-denied.
       if (!user) detachSnapshotListener();
       authStateListeners.forEach(cb => cb(user));
+      authStateWaiters.splice(0).forEach(resolve => resolve(user));
     });
     return window.firebase;
   });
@@ -180,6 +186,16 @@ export const registerOnCloudValues = cb => {
   cloudValuesCallback = cb;
 };
 
+// Resolves with the user from Firebase's first auth answer (immediately if
+// it already arrived). Unlike onAuthState below, this never fires early with
+// the pre-answer null.
+const waitForFirstAuthState = () =>
+  authStateKnown
+    ? Promise.resolve(currentUser)
+    : new Promise(resolve => {
+        authStateWaiters.push(resolve);
+      });
+
 // cb fires immediately with the current state, then on every change.
 // Returns an unsubscribe function.
 export const onAuthState = cb => {
@@ -201,17 +217,11 @@ export const startIfPreviouslySignedIn = () => {
     return;
   }
   init()
-    .then(
-      () =>
-        new Promise(resolve => {
-          // First onAuthStateChanged fire tells us whether the session
-          // survived; null here means it expired or was revoked.
-          const unsub = onAuthState(user => {
-            unsub();
-            resolve(user);
-          });
-        })
-    )
+    // Wait for Firebase's first onAuthStateChanged before deciding: null
+    // there means the session expired/was revoked. (The old pattern —
+    // `const unsub = onAuthState(cb)` with cb calling unsub() — crashed:
+    // onAuthState invokes cb synchronously, before unsub is assigned.)
+    .then(waitForFirstAuthState)
     .then(user => {
       console.info(
         "pref_sync: startup auth " + (user ? "restored" : "expired/revoked")
