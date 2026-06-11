@@ -25,6 +25,18 @@ export const mergeCloudPrefs = (defaults, localValues, cloudPrefs) => ({
   autoLoginPassword: (localValues && localValues.autoLoginPassword) || ""
 });
 
+// Deep equality that ignores object key order. JSON.stringify comparison
+// false-positives here: Firestore returns map fields with unspecified key
+// order, so a round-tripped termSize {cols,rows} can come back {rows,cols}.
+export const deepEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every(k => deepEqual(a[k], b[k]));
+};
+
 // Decide what to do with a Firestore snapshot (realtime listener in
 // pref_sync.js). Pure so the offline/echo edge cases stay unit-testable:
 //   skip-echo            — our own set() reflected back (latency compensation)

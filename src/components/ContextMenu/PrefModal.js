@@ -23,6 +23,7 @@ import {
   writeValues
 } from "../../js/pref_storage";
 import * as prefSync from "../../js/pref_sync";
+import { deepEqual } from "../../js/pref_sync_logic";
 import "./PrefModal.css";
 
 // With credentials filled in on a supporting browser, persist the password to
@@ -126,8 +127,12 @@ const enhance = compose(
     }),
     {
       onCloseClick: ({ values }, { onSave }) => () => {
-        writeValues(storeCredentialAndStrip(values));
-        prefSync.savePrefs(values);
+        // Untouched form → nothing to persist or upload; uploading anyway
+        // would bump updatedAt and ping every other device for nothing.
+        if (!deepEqual(values, readValuesWithDefault())) {
+          writeValues(storeCredentialAndStrip(values));
+          prefSync.savePrefs(values);
+        }
         return onSave(values);
       },
 

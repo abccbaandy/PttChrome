@@ -24,6 +24,7 @@
   - `push-local`：server 證實無 doc/無 prefs → 首次登入，上傳本機。
   - `merge`：`mergeCloudPrefs` → `writeValues` → app callback（`onValuesPrefChange`）。
 - handler 每次重讀 `readValuesWithDefault()`（local 會被 PrefModal/憑證清除移動，勿閉包舊值）。
+- 變更比對用 `deepEqual`（key 順序無關，`pref_sync_logic.js`），**勿用 `JSON.stringify`**：Firestore 回傳 map 欄位 key 順序不保證（`termSize` 會 `{cols,rows}` ↔ `{rows,cols}` 假變更）。merge 後無實質變更 → 不 writeValues、不打 app callback（`onValuesPrefChange` 會觸發 resize 等實際動作）；PrefModal 關閉時表單與 storage `deepEqual` → 跳過寫入與上傳（避免空上傳 bump `updatedAt` 吵醒所有裝置）。
 - 生命週期：attach 前先 unsub 舊 listener；`signOut` **先 unsub 再** `auth.signOut()`（否則 stream 噴 permission-denied）；`onAuthStateChanged` 收到 null（token 過期/撤銷）也 unsub；onSnapshot error callback 觸發後 listener 自停 → 清掉 handle。
 - callback 走註冊制：`main.js` 啟動時無條件 `registerOnCloudValues(app.onValuesPrefChange)`（純 JS 不觸發 SDK 載入），PrefModal `signIn` 建立的 listener 也打得到 app；`signIn(onCloudValues)` 的參數 callback 只在首個 snapshot 處理完打一次（更新 modal 表單）。
 - 啟動還原等 auth 用 `waitForFirstAuthState()`（`authStateKnown` 旗標 + waiter queue）。踩坑（2026-06）：舊 pattern `const unsub = onAuthState(cb)` 且 cb 內呼叫 `unsub()` 會炸 `TypeError: unsub is not a function` —— `onAuthState` **同步立即**呼叫 cb，`const` 還沒賦值（TDZ）→ 啟動還原從未成功掛上 listener。

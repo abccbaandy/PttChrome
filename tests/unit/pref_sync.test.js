@@ -236,6 +236,18 @@ describe("realtime propagation", () => {
       });
   });
 
+  it("does not re-apply when cloud equals local (Firestore key-order noise)", () => {
+    writeStoredPrefs({ fontSize: 16, termSize: { cols: 80, rows: 24 } });
+    // Same values, different map key order — as Firestore returns them.
+    fake.setCloudDoc({ prefs: { termSize: { rows: 24, cols: 80 }, fontSize: 16 } });
+    const onCloudValues = jest.fn();
+
+    return startupWithUser(onCloudValues).then(() => {
+      expect(onCloudValues).not.toHaveBeenCalled();
+      expect(readStoredPrefs().termSize).toEqual({ cols: 80, rows: 24 });
+    });
+  });
+
   it("does NOT mistake an offline cache miss for a first sign-in", () => {
     writeStoredPrefs({ fontSize: 16 });
     fake.setCloudDoc({ prefs: { fontSize: 18 } });

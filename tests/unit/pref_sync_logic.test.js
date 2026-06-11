@@ -1,7 +1,8 @@
 import {
   sanitizeForCloud,
   mergeCloudPrefs,
-  classifySnapshot
+  classifySnapshot,
+  deepEqual
 } from "../../src/js/pref_sync_logic";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 
@@ -82,6 +83,38 @@ describe("mergeCloudPrefs", () => {
     expect(Object.keys(out).sort()).toEqual(
       Object.keys(DEFAULT_PREFS).sort()
     );
+  });
+});
+
+describe("deepEqual", () => {
+  it("ignores object key order (Firestore map round-trip)", () => {
+    expect(
+      deepEqual(
+        { termSize: { cols: 80, rows: 24 }, fontSize: 16 },
+        { fontSize: 16, termSize: { rows: 24, cols: 80 } }
+      )
+    ).toBe(true);
+  });
+
+  it("detects nested value differences", () => {
+    expect(
+      deepEqual({ termSize: { cols: 80, rows: 24 } }, { termSize: { cols: 80, rows: 25 } })
+    ).toBe(false);
+  });
+
+  it("detects missing/extra keys", () => {
+    expect(deepEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+    expect(deepEqual({ a: 1, b: 2 }, { a: 1 })).toBe(false);
+  });
+
+  it("handles primitives, null and arrays", () => {
+    expect(deepEqual("x", "x")).toBe(true);
+    expect(deepEqual(1, "1")).toBe(false);
+    expect(deepEqual(null, null)).toBe(true);
+    expect(deepEqual(null, {})).toBe(false);
+    expect(deepEqual([1, 2], [1, 2])).toBe(true);
+    expect(deepEqual([1, 2], [2, 1])).toBe(false);
+    expect(deepEqual([1, 2], { 0: 1, 1: 2 })).toBe(false);
   });
 });
 

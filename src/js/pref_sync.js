@@ -21,7 +21,8 @@ import {
 import {
   sanitizeForCloud,
   mergeCloudPrefs,
-  classifySnapshot
+  classifySnapshot,
+  deepEqual
 } from "./pref_sync_logic";
 
 const FIREBASE_VERSION = "10.14.1"; // pinned: compat API surface is frozen
@@ -107,11 +108,10 @@ const detachSnapshotListener = () => {
 };
 
 // Key names whose values changed between two pref objects — log-friendly
-// (names only; never the values, credentials included).
+// (names only; never the values, credentials included). deepEqual, not
+// JSON.stringify: Firestore map key order would false-positive (termSize).
 const changedKeys = (a, b) =>
-  Object.keys(b).filter(
-    k => JSON.stringify(a && a[k]) !== JSON.stringify(b[k])
-  );
+  Object.keys(b).filter(k => !deepEqual(a && a[k], b[k]));
 
 // Attach the realtime listener on users/{uid} and reconcile every snapshot
 // (see classifySnapshot for the case split). This is what propagates changes
@@ -156,12 +156,19 @@ const attachSnapshotListener = () => {
             break;
           case "merge": {
             const merged = mergeCloudPrefs(DEFAULT_PREFS, local, data.prefs);
-            console.info(
-              "pref_sync: cloud merge applied, changed keys: " +
-                (changedKeys(local, merged).join(", ") || "(none)")
-            );
-            writeValues(merged);
-            if (cloudValuesCallback) cloudValuesCallback(merged);
+            const changed = changedKeys(local, merged);
+            if (changed.length) {
+              console.info(
+                "pref_sync: cloud merge applied, changed keys: " +
+                  changed.join(", ")
+              );
+              writeValues(merged);
+              if (cloudValuesCallback) cloudValuesCallback(merged);
+            } else {
+              // Nothing actually changed (e.g. the ack of our own upload) —
+              // skip the re-apply, onValuesPrefChange does real work (resize).
+              console.info("pref_sync: cloud merge: no effective change");
+            }
             resolveOnce(merged);
             break;
           }
