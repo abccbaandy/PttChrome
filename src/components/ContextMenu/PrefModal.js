@@ -1,6 +1,6 @@
 import cx from "classnames";
 import React from "react";
-import { compose, withStateHandlers, withHandlers } from "recompose";
+import { compose, withStateHandlers, withHandlers, lifecycle } from "recompose";
 import {
   Modal,
   Tab,
@@ -17,81 +17,13 @@ import {
   Popover
 } from "react-bootstrap";
 import { i18n } from "../../js/i18n";
+import {
+  DEFAULT_PREFS,
+  readValuesWithDefault,
+  writeValues
+} from "../../js/pref_storage";
+import * as prefSync from "../../js/pref_sync";
 import "./PrefModal.css";
-
-const DEFAULT_PREFS = {
-  // general
-  //dbcsDetect    : false,
-  enablePicPreview: true,
-  enableNotifications: true,
-  enableEasyReading: false,
-  endTurnsOnLiveUpdate: false,
-  copyOnSelect: false,
-  antiIdleTime: 0,
-  lineWrap: 78,
-
-  // mouse browsing
-  useMouseBrowsing: false,
-  mouseBrowsingHighlight: true,
-  mouseBrowsingHighlightColor: 2,
-  mouseLeftFunction: 0,
-  mouseMiddleFunction: 0,
-  mouseWheelFunction1: 1,
-  mouseWheelFunction2: 2,
-  mouseWheelFunction3: 3,
-
-  // displays
-  fontFitWindowWidth: false,
-  fontFace: "MingLiu,SymMingLiu,monospace",
-  fontSize: 20,
-  termSize: { cols: 80, rows: 24 },
-  termSizeMode: "fixed-term-size",
-  bbsMargin: 0,
-
-  // enhanced add-on
-  showFloorNumbers: true,
-  highlightAuthorComments: true,
-  blacklist: "", // newline-separated user ids
-  autoLogin: false,
-  autoLoginUser: "",
-  autoLoginPassword: "",
-  autoLoginDupConn: "N", // 'Y' | 'N': answer when a duplicate login is detected
-  autoLoginSkipWelcome: true
-};
-
-const PREF_STORAGE_KEY = "pttchrome.pref.v1";
-
-export const readValuesWithDefault = () => {
-  try {
-    return {
-      ...DEFAULT_PREFS,
-      ...JSON.parse(window.localStorage.getItem(PREF_STORAGE_KEY)).values
-    };
-  } catch (e) {
-    return {
-      ...DEFAULT_PREFS
-    };
-  }
-};
-
-const writeValues = values => {
-  try {
-    window.localStorage.setItem(
-      PREF_STORAGE_KEY,
-      JSON.stringify({
-        values
-      })
-    );
-  } catch (e) {}
-  return values;
-};
-
-// Auto-login migration (see src/js/auto_login.js): wipe the legacy plaintext
-// password once the browser credential store has been confirmed to hold it.
-export const clearLegacyAutoLoginPassword = () => {
-  const v = readValuesWithDefault();
-  if (v.autoLoginPassword) writeValues({ ...v, autoLoginPassword: "" });
-};
 
 // With credentials filled in on a supporting browser, persist the password to
 // the browser's password manager (Google Password Manager etc.) instead of
@@ -167,6 +99,8 @@ const enhance = compose(
     () => ({
       navActiveKey: "general",
       values: readValuesWithDefault(),
+      syncUser: null,
+      syncStatus: "idle", // idle | syncing | synced | error
       replacements: {
         link_github_iamchucky: link(
           "Chuck Yang",
@@ -193,15 +127,24 @@ const enhance = compose(
     {
       onCloseClick: ({ values }, { onSave }) => () => {
         writeValues(storeCredentialAndStrip(values));
+        prefSync.savePrefs(values);
         return onSave(values);
       },
 
-      onResetClick: (state, { onReset }) => () =>
-        onReset(
+      onResetClick: (state, { onReset }) => () => {
+        prefSync.savePrefs(DEFAULT_PREFS);
+        return onReset(
           writeValues({
             ...DEFAULT_PREFS
           })
-        ),
+        );
+      },
+
+      setSyncUser: () => syncUser => ({ syncUser }),
+
+      setSyncStatus: () => syncStatus => ({ syncStatus }),
+
+      setValues: () => values => ({ values }),
 
       onNavSelect: () => activeKey => ({
         navActiveKey: activeKey
@@ -219,7 +162,36 @@ const enhance = compose(
         values: changeNestedValue(values, name, value)
       })
     }
-  )
+  ),
+  withHandlers({
+    // Cloud values land in modal state only; the app applies them through the
+    // regular onSave chain when the modal closes.
+    onSyncSignInClick: ({ setSyncStatus, setValues }) => () => {
+      setSyncStatus("syncing");
+      prefSync
+        .signIn(merged => setValues(merged))
+        .then(() => setSyncStatus("synced"))
+        .catch(e => {
+          console.warn("pref_sync: sign-in failed", e);
+          setSyncStatus("error");
+        });
+    },
+
+    onSyncSignOutClick: ({ setSyncStatus }) => () => {
+      setSyncStatus("idle");
+      prefSync.signOut().catch(() => {});
+    }
+  }),
+  lifecycle({
+    componentDidMount() {
+      this.unsubAuth = prefSync.onAuthState(user =>
+        this.props.setSyncUser(user)
+      );
+    },
+    componentWillUnmount() {
+      if (this.unsubAuth) this.unsubAuth();
+    }
+  })
 );
 
 export const PrefModal = ({
@@ -233,7 +205,11 @@ export const PrefModal = ({
   onCheckboxChange,
   onNumberInputChange,
   onTextInputChange,
-  replacements
+  replacements,
+  syncUser,
+  syncStatus,
+  onSyncSignInClick,
+  onSyncSignOutClick
 }) => (
   <Modal show={show} onHide={onCloseClick} className="PrefModal">
     <Modal.Body>
@@ -588,6 +564,39 @@ export const PrefModal = ({
                       ))}
                     </FormControl>
                   </FormGroup>
+                </fieldset>
+                <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                  <legend>{i18n("options_sync")}</legend>
+                  <p className="PrefModal__warning">{i18n("tooltip_sync")}</p>
+                  {syncUser ? (
+                    <div>
+                      <p>
+                        {i18n("options_syncSignedInAs")}
+                        {syncUser.email}
+                      </p>
+                      <Button onClick={onSyncSignOutClick}>
+                        {i18n("options_syncSignOut")}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={onSyncSignInClick}
+                      disabled={syncStatus === "syncing"}
+                    >
+                      {i18n("options_syncSignIn")}
+                    </Button>
+                  )}
+                  {syncStatus !== "idle" && (
+                    <p>
+                      {i18n(
+                        {
+                          syncing: "options_syncStatusSyncing",
+                          synced: "options_syncStatusSynced",
+                          error: "options_syncStatusError"
+                        }[syncStatus]
+                      )}
+                    </p>
+                  )}
                 </fieldset>
               </Tab.Pane>
               <Tab.Pane eventKey="enhance">

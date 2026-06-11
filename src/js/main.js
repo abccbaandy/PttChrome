@@ -1,7 +1,8 @@
 ﻿import { App } from './pttchrome';
 import { setupI18n } from './i18n';
 import { getQueryVariable } from './util';
-import { readValuesWithDefault } from '../components/ContextMenu/PrefModal';
+import { readValuesWithDefault } from './pref_storage';
+import { startIfPreviouslySignedIn } from './pref_sync';
 
 function startApp() {
   setupI18n();
@@ -30,6 +31,11 @@ function startApp() {
     // TODO: Call onSymFont for font data when it's implemented.
     console.log("load pref from storage");
     app.onValuesPrefChange(readValuesWithDefault());
+    // Cloud prefs (Firestore) arrive later and are re-applied on top; no-op
+    // unless the user enabled sync by signing in before (see pref_sync.js).
+    startIfPreviouslySignedIn({
+      onCloudValues: values => app.onValuesPrefChange(values)
+    });
     app.setInputAreaFocus();
     $('#BBSWindow').show();
     //$('#sideMenus').show();

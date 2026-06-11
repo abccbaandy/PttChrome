@@ -22,6 +22,7 @@ webpack4 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - DOM：隱藏 input `#t` 收鍵盤（`src/dev.html`、`term_view.js`）；畫面每列渲染進 `#mainContainer`（`src/components/Screen.js`），`innerText` 可讀整頁文字。
 - 純邏輯（無 DOM/網路，易測）：`src/js/string_util.js`(Big5轉碼需全域 `window.lib.*`)、`symbol_table.js`、`event.js`、`ansi_parser.js`。
 - 緊耦合 DOM/React：`term_view.js`、`term_ui.js`、`pttchrome.js`、`components/`。
+- 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，Firebase compat CDN lazy-load；**勿 `yarn add firebase`**，webpack4 會炸；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。詳見 `docs/pref-sync-firestore.md`。
 
 ## 測試
 - **Unit（首選，穩定）**：`yarn test:unit`（jest，node env，不連網/不需 DOM）。`tests/unit/`：純邏輯
@@ -39,7 +40,7 @@ webpack4 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 ## 慣例
 - 編碼：PTT 是 Big5，內部轉 Unicode（`string_util.js` 的 `b2u`/`u2b`，查 `window.lib.b2uArray/u2bArray`）。
 - 改 `src/components/**` 會被 husky + lint-staged 跑 prettier。
-- docs：`docs/run-local.md`(啟動)、`docs/pttchrome-research.md`(來源驗證)、`docs/origin-rewrite-extension.md`(部署 Origin 改寫)、`docs/enhanced-addon.md`(黑名單/樓層/自動登入整合 + 踩坑)、`docs/media-preview-addons.md`(第三方圖片/媒體預覽套件研究 + 整合分析)。
+- docs：`docs/run-local.md`(啟動)、`docs/pttchrome-research.md`(來源驗證)、`docs/origin-rewrite-extension.md`(部署 Origin 改寫)、`docs/enhanced-addon.md`(黑名單/樓層/自動登入整合 + 踩坑)、`docs/media-preview-addons.md`(第三方圖片/媒體預覽套件研究 + 整合分析)、`docs/pref-sync-firestore.md`(偏好雲端同步 + Firebase 設定踩坑)。
 - 待辦交接：`docs/handoff/`，一個 `.md` = 一個尚未完成的功能/修復；挑一個做完即**刪掉該 md**。詳見 `docs/handoff/README.md`。
 - git：**不開新功能分支**，直接在現有分支（`dev`）修改與 commit。
 - 增強功能整合的渲染雙路徑/事件時序等踩坑見 `docs/enhanced-addon.md`「踩坑筆記」。

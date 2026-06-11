@@ -24,7 +24,7 @@
 import {
   readValuesWithDefault,
   clearLegacyAutoLoginPassword
-} from '../components/ContextMenu/PrefModal';
+} from './pref_storage';
 
 const MAIN_MENU = ['主功能表', '【主功能表】'];
 const POLL_MS = 500;

@@ -126,6 +126,30 @@ export const en_US = {
   "options_autoLoginSkipWelcome": {
     "message": "Auto-skip welcome / press-any-key screens"
   },
+  "options_sync": {
+    "message": "Preference Cloud Sync"
+  },
+  "tooltip_sync": {
+    "message": "Sign in with Google to sync preferences across browsers and devices. Your PTT password is never uploaded."
+  },
+  "options_syncSignIn": {
+    "message": "Sign in with Google to sync"
+  },
+  "options_syncSignOut": {
+    "message": "Sign out"
+  },
+  "options_syncSignedInAs": {
+    "message": "Signed in as: "
+  },
+  "options_syncStatusSyncing": {
+    "message": "Syncing…"
+  },
+  "options_syncStatusSynced": {
+    "message": "Synced"
+  },
+  "options_syncStatusError": {
+    "message": "Sync failed (popup blocked or network error)"
+  },
 
   // options
   "options_enablePicPreview": {

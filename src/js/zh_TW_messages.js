@@ -126,6 +126,30 @@
   "options_autoLoginSkipWelcome": {
     "message": "自動跳過歡迎畫面／按任意鍵提示"
   },
+  "options_sync": {
+    "message": "偏好設定雲端同步"
+  },
+  "tooltip_sync": {
+    "message": "登入 Google 後，偏好設定會同步到雲端，換瀏覽器或裝置不會遺失。PTT 密碼絕不會上傳。"
+  },
+  "options_syncSignIn": {
+    "message": "使用 Google 登入並同步"
+  },
+  "options_syncSignOut": {
+    "message": "登出"
+  },
+  "options_syncSignedInAs": {
+    "message": "已登入："
+  },
+  "options_syncStatusSyncing": {
+    "message": "同步中…"
+  },
+  "options_syncStatusSynced": {
+    "message": "已同步"
+  },
+  "options_syncStatusError": {
+    "message": "同步失敗 (可能是彈出視窗被攔截或網路問題)"
+  },
 
   // options
   "options_enablePicPreview": {
