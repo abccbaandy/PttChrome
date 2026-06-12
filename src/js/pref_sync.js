@@ -8,7 +8,7 @@
 // has signed in before — see SYNC_FLAG_KEY). Tests run the real SDK against
 // the local Firebase Emulator Suite (yarn test:integration), not a fake.
 
-import { FIREBASE_CONFIG } from "./firebase_config";
+import { FIREBASE_CONFIG, RECAPTCHA_SITE_KEY } from "./firebase_config";
 import {
   DEFAULT_PREFS,
   readValuesWithDefault,
@@ -51,8 +51,9 @@ const init = () => {
   loadPromise = Promise.all([
     import(/* webpackChunkName: "firebase" */ "firebase/app"),
     import(/* webpackChunkName: "firebase" */ "firebase/auth"),
-    import(/* webpackChunkName: "firebase" */ "firebase/firestore")
-  ]).then(([appM, authM, fsM]) => {
+    import(/* webpackChunkName: "firebase" */ "firebase/firestore"),
+    import(/* webpackChunkName: "firebase" */ "firebase/app-check")
+  ]).then(([appM, authM, fsM, acM]) => {
     // Test-only: route to the local emulator suite when run under
     // `firebase emulators:exec` (it sets these env vars, incl. the demo
     // project id). DefinePlugin pins all three to undefined in webpack
@@ -63,6 +64,34 @@ const init = () => {
         ? { ...FIREBASE_CONFIG, projectId: emuProject }
         : FIREBASE_CONFIG
     );
+    // App Check (reCAPTCHA Enterprise): once enforcement is on, Firestore
+    // only accepts requests carrying a token minted for our deployed domain,
+    // so the public web config can't be used to burn quota from scripts.
+    // Skipped under the emulator suite (node env has no DOM, and the
+    // emulator doesn't verify tokens anyway).
+    if (!emuProject) {
+      if (process.env.DEVELOPER_MODE) {
+        // localhost isn't on the reCAPTCHA key's domain allow-list; dev
+        // builds exchange a debug token instead. APPCHECK_DEBUG_TOKEN is a
+        // registered token injected from the developer's machine env (see
+        // webpack.config.js — never committed); without it the SDK
+        // auto-generates one per browser profile and prints it to the
+        // console for manual registration. Dead-code eliminated in
+        // production builds.
+        self.FIREBASE_APPCHECK_DEBUG_TOKEN =
+          process.env.APPCHECK_DEBUG_TOKEN || true;
+      }
+      try {
+        acM.initializeAppCheck(app, {
+          provider: new acM.ReCaptchaEnterpriseProvider(RECAPTCHA_SITE_KEY),
+          isTokenAutoRefreshEnabled: true
+        });
+      } catch (e) {
+        // e.g. the recaptcha script is blocked by an ad-blocker. Sync calls
+        // get rejected once enforcement is on; the rest of the app works.
+        console.warn("pref_sync: App Check init failed", e);
+      }
+    }
     const auth = authM.getAuth(app);
     const db = fsM.getFirestore(app);
     if (process.env.FIREBASE_AUTH_EMULATOR_HOST) {

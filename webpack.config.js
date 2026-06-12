@@ -79,6 +79,11 @@ module.exports = {
       'process.env.DEFAULT_SITE': JSON.stringify(PRODUCTION_MODE ? 'wsstelnet://ws.ptt.cc/bbs' : 'wstelnet://localhost:8080/bbs'),
       'process.env.ALLOW_SITE_IN_QUERY': JSON.stringify(process.env.ALLOW_SITE_IN_QUERY === 'yes'),
       'process.env.DEVELOPER_MODE': JSON.stringify(DEVELOPER_MODE),
+      // App Check debug token for local dev (pref_sync.js). Comes from the
+      // developer's machine env, never from the repo — a registered debug
+      // token bypasses reCAPTCHA, so committing it would defeat App Check.
+      // Unset → undefined → pref_sync falls back to per-profile auto tokens.
+      'process.env.APPCHECK_DEBUG_TOKEN': JSON.stringify(process.env.APPCHECK_DEBUG_TOKEN) || 'undefined',
       'process.env.GIT_COMMIT': JSON.stringify(GIT_COMMIT),
       'process.env.BUILD_TIME': JSON.stringify(BUILD_TIME),
       // Emulator hookup in pref_sync.js is test-only (set by `firebase

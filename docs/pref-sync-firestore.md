@@ -7,7 +7,7 @@
 | 儲存層 | `src/js/pref_storage.js` | `DEFAULT_PREFS` / localStorage 讀寫（自 PrefModal 抽出） |
 | 純邏輯 | `src/js/pref_sync_logic.js` | `sanitizeForCloud`（剝帳密）/ `mergeCloudPrefs`（cloud wins）/ `classifySnapshot`（snapshot 分類）— unit tested |
 | 副作用 | `src/js/pref_sync.js` | SDK lazy-load（dynamic import 拆 chunk）、Google 登入、Firestore 讀寫 |
-| config | `src/js/firebase_config.js` | web config（非機密，安全靠 rules + authorized domains） |
+| config | `src/js/firebase_config.js` | web config + reCAPTCHA site key（皆非機密，安全靠 rules + authorized domains + App Check） |
 
 - 同步策略：localStorage = 本地快取，啟動先套用（不阻塞 BBS 連線）；曾登入者背景 attach Firestore **onSnapshot realtime listener**，每個 snapshot merge 後二次套用（`main.js` → `registerOnCloudValues` + `startIfPreviouslySignedIn`）。儲存時雙寫（PrefModal `onCloseClick`/`onResetClick` → `prefSync.savePrefs`）。
 - 資料模型：`users/{uid}` 單一 doc `{ prefs, updatedAt: serverTimestamp, schemaVersion: 1 }`。
@@ -73,6 +73,23 @@ firebase deploy --only firestore:rules
 - **部署網域（如 GitHub Pages 的 `<user>.github.io`）必須加進 Auth authorized domains**，否則線上登入報 `auth/unauthorized-domain`（只看網域不看 path）。Console 手動加，或 REST：`PATCH https://identitytoolkit.googleapis.com/admin/v2/projects/<project-id>/config?updateMask=authorizedDomains`（body 帶完整清單，會整組覆蓋）。
 - rules / indexes 檔在 repo 根目錄（`firestore.rules`、`firestore.indexes.json`、`firebase.json`、`.firebaserc`），rules 只允許 `request.auth.uid == uid` 讀寫 `users/{uid}`。
 
+## App Check（reCAPTCHA Enterprise，2026-06）
+
+威脅模型：web config（apiKey 等）公開是設計使然 → 任何人可用 script 直打 Firestore/Auth REST 燒 Spark 免費額度（額度盡 → 服務停）。App Check enforce 後 Firestore 只收帶有效 token 的請求（= 在 key 允許網域上跑的真 client）。**defense-in-depth**：擋不了在允許網域上跑 headless browser，但擋掉最廉價的直打 API 濫用。
+
+- client：`pref_sync.js` `init()` 第 4 個 `import("firebase/app-check")`（同 `webpackChunkName: "firebase"`，未登入照樣零下載）→ `!emuProject` 才 `initializeAppCheck`（emulator/node 跳過：無 DOM、emulator 不驗 token）→ `ReCaptchaEnterpriseProvider(RECAPTCHA_SITE_KEY)` + `isTokenAutoRefreshEnabled: true`，包 try/catch（ad-blocker 擋 recaptcha script 時 app 不死，僅同步失效）。
+- key：reCAPTCHA Enterprise **score-based** key（GCP 同專案），allowedDomains 只有正式部署網域（GitHub Pages），**不含 localhost**（加了等於任何人可在本機鑄 token）。site key = `firebase_config.js` `RECAPTCHA_SITE_KEY`（公開無妨，域名限制在 key 上）。
+- App Check 註冊：provider config `tokenTtl: 86400s`（預設；每活躍裝置每天 ~1 次 assessment，Enterprise 免費額 10k/月）、`minValidScore: 0.5`（預設）。
+- **dev（localhost）走 debug token**：`DEVELOPER_MODE` 時 `self.FIREBASE_APPCHECK_DEBUG_TOKEN = process.env.APPCHECK_DEBUG_TOKEN || true`。`APPCHECK_DEBUG_TOKEN` 來自**開發機環境變數**（webpack DefinePlugin 注入，見 `webpack.config.js`）——已註冊的 debug token 可繞過 reCAPTCHA，**絕不可進 repo**。沒設環境變數時 SDK 每瀏覽器 profile 自產一組印在 console，需逐一註冊（Console → App Check → Apps → Manage debug tokens，或 REST `POST /v1/projects/{p}/apps/{appId}/debugTokens`）。
+- enforcement：`firestore.googleapis.com` 的 `enforcementMode`（UNENFORCED ↔ ENFORCED）。**enforce 當下未帶 token 的舊 client 立即被拒** → 順序必須：部署新 client → 驗證 → 再 enforce。Auth（`identitytoolkit.googleapis.com`）enforce 需升級 Identity Platform，未做（Google 登入非計量資源，濫用主戰場是 Firestore）。
+- 無 gcloud 的 REST 管理做法（同上方 serviceusage 踩坑）：firebase CLI 的 refresh token（`~/.config/configstore/firebase-tools.json`，含 `cloud-platform` scope）＋ firebase-tools 內嵌公開 OAuth client id/secret（`node_modules/firebase-tools/lib/api.js`）→ `POST oauth2.googleapis.com/token` 換 access token。重建時依序：
+  1. serviceusage `services:batchEnable`：`recaptchaenterprise.googleapis.com` + `firebaseappcheck.googleapis.com`
+  2. `POST recaptchaenterprise.googleapis.com/v1/projects/{p}/keys`（webSettings: SCORE + allowedDomains）→ site key 貼進 `firebase_config.js`
+  3. `PATCH firebaseappcheck.googleapis.com/v1/projects/{p}/apps/{appId}/recaptchaEnterpriseConfig?updateMask=siteKey,tokenTtl`
+  4. 註冊 debug token（上述）＋ 開發機 `setx APPCHECK_DEBUG_TOKEN <token>`
+  5. 部署驗證後 `PATCH .../v1/projects/{p}/services/firestore.googleapis.com`（`enforcementMode: ENFORCED`）
+- 驗證 pointer：dev 下 console 應見 `App Check debug token: ...`、`exchangeDebugToken` 回 200（未註冊 → 403）；正式站 network 應見 `exchangeRecaptchaEnterpriseToken` 200。
+
 ## 已知限制
 
 - `signInWithPopup` 在嚴格擋第三方 storage 的瀏覽器（Safari/Brave）可能失敗；fallback 可改 `signInWithRedirect`（未實作）。
@@ -80,3 +97,4 @@ firebase deploy --only firestore:rules
 - 踩坑（2026-06）：PrefModal 由 ContextMenu mount **一次**、靠 `show` prop 切換，`withStateHandlers` 的初始 `values: readValuesWithDefault()` 只在 app 啟動時跑一次 → 表單 state 永遠是啟動瞬間的舊值，關閉時 `writeValues`+`savePrefs` 會把舊值寫回，**復原憑證清除、蓋掉雲端新偏好**（realtime listener 寫進 localStorage 也救不了）。修法：`componentDidUpdate` 偵測 `show` false→true 時 `setValues(readValuesWithDefault())`。debug 線索：About 分頁與 console 啟動行有 build commit id（webpack DefinePlugin `GIT_COMMIT`/`BUILD_TIME`），可排除舊 bundle。
 - 帳號改 local-only 後，新裝置（尤其無 credential API 的 Firefox/Safari）不再從雲端拿到 `autoLoginUser`，需手動重填帳密一次。
 - 清瀏覽器資料只清掉同步旗標與快取；偏好仍在雲端，重新登入即拉回。
+- ad-blocker 擋 `google.com/recaptcha` 時 App Check 拿不到 token：enforce 後該瀏覽器同步全掛（permission-denied），BBS 其餘功能正常（`initializeAppCheck` 有 try/catch）。
