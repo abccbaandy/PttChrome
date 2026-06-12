@@ -9,6 +9,11 @@ test-results/
 playwright-report/
 tests/e2e/__screenshots__/
 
+# Firebase emulator（yarn test:integration）
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
 js/constants_local.js
 dist/*
 !dist/.gitkeep

@@ -81,6 +81,11 @@ module.exports = {
       'process.env.DEVELOPER_MODE': JSON.stringify(DEVELOPER_MODE),
       'process.env.GIT_COMMIT': JSON.stringify(GIT_COMMIT),
       'process.env.BUILD_TIME': JSON.stringify(BUILD_TIME),
+      // Emulator hookup in pref_sync.js is test-only (set by `firebase
+      // emulators:exec` under jest); pin to undefined so terser drops it.
+      'process.env.FIRESTORE_EMULATOR_HOST': 'undefined',
+      'process.env.FIREBASE_AUTH_EMULATOR_HOST': 'undefined',
+      'process.env.GCLOUD_PROJECT': 'undefined',
     }),
     new MiniCssExtractPlugin({
       filename: '[name].[contenthash].css',

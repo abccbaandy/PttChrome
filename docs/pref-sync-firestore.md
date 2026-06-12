@@ -6,7 +6,7 @@
 |---|---|---|
 | 儲存層 | `src/js/pref_storage.js` | `DEFAULT_PREFS` / localStorage 讀寫（自 PrefModal 抽出） |
 | 純邏輯 | `src/js/pref_sync_logic.js` | `sanitizeForCloud`（剝帳密）/ `mergeCloudPrefs`（cloud wins）/ `classifySnapshot`（snapshot 分類）— unit tested |
-| 副作用 | `src/js/pref_sync.js` | SDK lazy-load、Google 登入、Firestore 讀寫 |
+| 副作用 | `src/js/pref_sync.js` | SDK lazy-load（dynamic import 拆 chunk）、Google 登入、Firestore 讀寫 |
 | config | `src/js/firebase_config.js` | web config（非機密，安全靠 rules + authorized domains） |
 
 - 同步策略：localStorage = 本地快取，啟動先套用（不阻塞 BBS 連線）；曾登入者背景 attach Firestore **onSnapshot realtime listener**，每個 snapshot merge 後二次套用（`main.js` → `registerOnCloudValues` + `startIfPreviouslySignedIn`）。儲存時雙寫（PrefModal `onCloseClick`/`onResetClick` → `prefSync.savePrefs`）。
@@ -28,14 +28,32 @@
 - 生命週期：attach 前先 unsub 舊 listener；`signOut` **先 unsub 再** `auth.signOut()`（否則 stream 噴 permission-denied）；`onAuthStateChanged` 收到 null（token 過期/撤銷）也 unsub；onSnapshot error callback 觸發後 listener 自停 → 清掉 handle。
 - callback 走註冊制：`main.js` 啟動時無條件 `registerOnCloudValues(app.onValuesPrefChange)`（純 JS 不觸發 SDK 載入），PrefModal `signIn` 建立的 listener 也打得到 app；`signIn(onCloudValues)` 的參數 callback 只在首個 snapshot 處理完打一次（更新 modal 表單）。
 - 啟動還原等 auth 用 `waitForFirstAuthState()`（`authStateKnown` 旗標 + waiter queue）。踩坑（2026-06）：舊 pattern `const unsub = onAuthState(cb)` 且 cb 內呼叫 `unsub()` 會炸 `TypeError: unsub is not a function` —— `onAuthState` **同步立即**呼叫 cb，`const` 還沒賦值（TDZ）→ 啟動還原從未成功掛上 listener。
-- 測試：`tests/unit/pref_sync.test.js`（jsdom + 模擬 firebase，攔 `document.head.appendChild` 餵假 SDK）重播啟動還原/他機推播/echo skip/offline 守門/signIn/signOut 全流程；上述 TDZ bug 有回歸測試。
+- 測試：`tests/integration/pref_sync.test.js`（`yarn test:integration`，官方 Firebase Emulator Suite——真 modular SDK + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）重播啟動還原/他機推播/echo skip/offline 守門/signIn/signOut/憑證去敏全流程；上述 TDZ bug 走相同 startup 路徑回歸。細節見下方「測試」章節。
 
-## 為什麼用 compat CDN lazy-load 而不是 npm（踩坑）
+## SDK 載入：npm modular + dynamic import()（2026-06 回遷）
 
-- （歷史成因）webpack 4 的 acorn parser 不認 ES2020（`?.` / `??`），且 babel-loader 只轉譯 `src/`；firebase v9+ npm 發行檔含這些語法 → 當時 `yarn add firebase` 直接炸 build。
-- 解法：`pref_sync.js` 在 runtime 動態注入 gstatic compat scripts（`firebase-{app,auth,firestore}-compat.js`，pin `10.14.1`），全域 `window.firebase`，完全不經 webpack。
-- Lazy：只在「曾登入（localStorage 旗標）」或「使用者按登入鈕」時載入 → 未登入者（含 e2e/guest）零額外下載、零 Firebase 網路請求。
-- **現況（2026-06）**：build toolchain 已升 webpack5，炸 build 的限制已解除，但仍走 compat CDN；modular SDK 回遷待辦見 `docs/handoff/firebase-modular-sdk-migration.md`（含單元測試 mock 改寫）。
+- 歷史成因：webpack 4 acorn 不認 ES2020（`?.` / `??`）→ `yarn add firebase` 炸 build → 曾改 runtime 注入 gstatic compat scripts（pin 10.14.1、全域 `window.firebase`）。webpack5 升級後限制解除，2026-06 回遷 npm modular SDK（v12，版本歸 lockfile 管、不依賴 gstatic）。
+- `init()` 用 `import("firebase/app"|"firebase/auth"|"firebase/firestore")`（同 `webpackChunkName: "firebase"`）→ webpack 拆成獨立 lazy chunk（~500KB），只在「曾登入（localStorage 旗標）」或「按登入鈕」時下載 → 未登入者（含 e2e/guest）零下載、零 Firebase 請求（Playwright 兩個方向驗證過：無旗標零流量；有旗標 chunk 正常載入）。
+- compat → modular 對應踩坑：
+  - `snap.exists` compat 是屬性、modular 是**方法** `snap.exists()` —— 漏改不報錯，只會永遠 truthy。
+  - modular 的 `onAuthStateChanged` 通知在 sign-in promise resolve 之後的 microtask 才到 → `signIn` attach listener 前要等模組層 `currentUser` 就緒（`waitForUser`）；compat 年代此通知是同步的，沒踩過。
+- emulator hookup（test-only）：`init()` 讀 `process.env.FIRESTORE_EMULATOR_HOST` / `FIREBASE_AUTH_EMULATOR_HOST` / `GCLOUD_PROJECT`（`firebase emulators:exec` 自動設給子行程）→ `connectAuthEmulator`/`connectFirestoreEmulator` + projectId 覆寫。webpack DefinePlugin 把三鍵 pin 成 `undefined` → production bundle 整段被 terser DCE（entry chunk grep 不到 `EMULATOR_HOST`）。
+
+## 測試（官方 Firebase Emulator Suite）
+
+`yarn test:integration` = `firebase emulators:exec --only auth,firestore --project demo-pttchrome "jest -c jest.integration.config.js"`。真 modular SDK 連本機 emulator、`firestore.rules` 實際 enforce，**無 mock/假 firebase**；latency compensation（`hasPendingWrites`）、離線快取（`fromCache`）、permission-denied 都由真 SDK 產生。
+
+- 前置：**Java 11+**（Firestore emulator 是 jar）：`winget install EclipseAdoptium.Temurin.21.JRE`。首跑自動下載 emulator jar（需網路）。
+- port：firestore **8089**（預設 8080 與 dev server 衝突）、auth 9099（`firebase.json` emulators 段）。
+- `demo-` 前綴 project id：firebase-tools 保證純離線、不需 `firebase login`、不可能打到正式專案。
+- 登入：auth emulator 接受**假 unsigned Google ID token**（官方功能）——`signInWithCredential(auth, GoogleAuthProvider.credential('{"sub":...,"email":...}'))`。`signInWithPopup` 需要真瀏覽器 UI，headless 不可行 → `prefSync.signIn(onCloudValues, authenticate)` 第二參數是測試注入縫；production 呼叫端不傳（走 popup），流程其餘部分（旗標、attach、merge、callback）全是真路徑。
+- 隔離策略：**每個測試換新 uid**（token 換 `sub`）而非清庫——(1) REST 清庫清不掉主 client 的 in-memory cache，殘留 doc 會污染下個測試的 fromCache snapshot；(2) 刪 auth 帳號會讓另一個 client 的 token 失效。換 uid 兩個都繞開。
+- 「另一台裝置」= 第二個 SDK app instance（`initializeApp(cfg, "seeder")`）以同 `sub` 登入（同 uid → 過 rules）讀寫 `users/{uid}`。
+- jest 用 **node env 不用 jsdom**：jsdom 下 Firestore 走 WebChannel/XHR（無真瀏覽器不穩）；node env 解析到 SDK 的 node build 走 gRPC。`window.localStorage` 用 Map shim（`tests/integration/setup.js`）。
+- babel **test env** 需 `babel-plugin-dynamic-import-node`（jest CJS 跑不動原生 `import()`）；dev/production env **不可加**（要留給 webpack 拆 chunk）。
+- 等待用確定性訊號：spy `console.info` 輪詢 `snapshot action=<x>` 日誌（= listener 已掛上且 snapshot 已分類），不瞎 sleep。
+- 收尾：afterAll `terminate(db)` + `deleteApp(app)`（main + seeder 都要），否則 gRPC channel / auth token timer 讓 jest 掛著不退。
+- emulator 產物 `firestore-debug.log` / `firebase-debug.log` 已 gitignore。
 
 ## Firebase 專案設定（一次性，已完成）
 

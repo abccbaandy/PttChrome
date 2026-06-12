@@ -21,14 +21,16 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - DOM：隱藏 input `#t` 收鍵盤（`src/dev.html`、`term_view.js`）；畫面每列渲染進 `#mainContainer`（`src/components/Screen.js`），`innerText` 可讀整頁文字。
 - 純邏輯（無 DOM/網路，易測）：`src/js/string_util.js`(Big5轉碼需全域 `window.lib.*`)、`symbol_table.js`、`event.js`、`ansi_parser.js`。
 - 緊耦合 DOM/React：`term_view.js`、`term_ui.js`、`pttchrome.js`、`components/`。
-- 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，Firebase compat CDN lazy-load；webpack5 已可改 modular SDK，回遷待辦見 `docs/handoff/firebase-modular-sdk-migration.md`；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。詳見 `docs/pref-sync-firestore.md`。
+- 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，npm modular SDK 走 dynamic `import()` 拆 lazy chunk，未登入零下載；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。詳見 `docs/pref-sync-firestore.md`。
 
 ## 測試
 - **Unit（首選，穩定）**：`yarn test:unit`（jest，預設 node env，不連網）。`tests/unit/`：純邏輯
-  (`comment_parse.test.js`) + Row 渲染 (`row_render.test.js`，react-test-renderer + 假 ASCII TermChar)
-  + 雲端同步 (`pref_sync.test.js`，jsdom env + **模擬 firebase**：假 `window.firebase` 重播
-  auth/onSnapshot/set 全流程；e2e 不連 Firebase，同步邏輯只能在這驗)。
+  (`comment_parse.test.js`、`pref_sync_logic.test.js`) + Row 渲染 (`row_render.test.js`，react-test-renderer + 假 ASCII TermChar)。
   增強功能的逐列判斷一律放 `comment_parse.annotateComment` 並在此回歸守護（e2e 素材不穩，純邏輯先測）。
+- **Integration（雲端同步流程）**：`yarn test:integration`（jest + 官方 **Firebase Emulator Suite**：真 modular SDK
+  + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）。需 **Java 11+**（Firestore emulator 是 jar）。
+  `tests/integration/pref_sync.test.js`：啟動還原/他機推播/echo skip/offline 守門/signIn/signOut/憑證去敏；
+  e2e 不連 Firebase，同步流程只能在這驗。細節見 `docs/pref-sync-firestore.md`。
 - **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額常滿會 fast-fail）。
   失敗自動截圖/錄影 + console dump。helper：`tests/e2e/helpers/ptt.js`。細節見 `tests/e2e/README.md`。
 
