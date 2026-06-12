@@ -1,12 +1,11 @@
 # pttchrome — 專案指引
 
 PTT BBS 瀏覽器終端機 client。fork 自 `robertabcd/PttChrome @ dev`，是 term.ptt.cc 的原始碼。
-webpack4 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
+webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 
 ## 跑起來（踩雷點，務必照做）
-- 啟動 dev server：`$env:NODE_OPTIONS="--openssl-legacy-provider"; yarn start` → http://localhost:8080
-  - **必須**設 `NODE_OPTIONS`，否則 Node17+ 報 `error:0308010C ...unsupported`（webpack4 OpenSSL）。
-  - 用 **Node**（17+，建議 v18/v20/v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
+- 啟動 dev server：`yarn start` → http://localhost:8080（= `webpack serve`；**不再需要** `NODE_OPTIONS=--openssl-legacy-provider`）
+  - 用 **Node**（≥20.9，建議 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
   - 套件管理用 **yarn**（`yarn.lock` v1）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定）。**勿用 npm**（會產生多餘 `package-lock.json`）。
 - dev server 內建 `/bbs` WebSocket proxy，改寫 Origin→term.ptt.cc，直連 `wss://ws.ptt.cc/bbs`。開頁即自動連真 PTT，**不需任何中繼**。
 - dev 預設站台 `wstelnet://localhost:8080/bbs`（webpack.config.js `DefinePlugin` → `DEFAULT_SITE`）。
@@ -22,7 +21,7 @@ webpack4 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - DOM：隱藏 input `#t` 收鍵盤（`src/dev.html`、`term_view.js`）；畫面每列渲染進 `#mainContainer`（`src/components/Screen.js`），`innerText` 可讀整頁文字。
 - 純邏輯（無 DOM/網路，易測）：`src/js/string_util.js`(Big5轉碼需全域 `window.lib.*`)、`symbol_table.js`、`event.js`、`ansi_parser.js`。
 - 緊耦合 DOM/React：`term_view.js`、`term_ui.js`、`pttchrome.js`、`components/`。
-- 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，Firebase compat CDN lazy-load；**勿 `yarn add firebase`**，webpack4 會炸；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。詳見 `docs/pref-sync-firestore.md`。
+- 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，Firebase compat CDN lazy-load；webpack5 已可改 modular SDK，回遷待辦見 `docs/handoff/firebase-modular-sdk-migration.md`；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。詳見 `docs/pref-sync-firestore.md`。
 
 ## 測試
 - **Unit（首選，穩定）**：`yarn test:unit`（jest，預設 node env，不連網）。`tests/unit/`：純邏輯

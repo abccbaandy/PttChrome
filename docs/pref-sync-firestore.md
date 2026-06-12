@@ -32,10 +32,10 @@
 
 ## 為什麼用 compat CDN lazy-load 而不是 npm（踩坑）
 
-- webpack 4 的 acorn parser 不認 ES2020（`?.` / `??`），且 babel-loader 只轉譯 `src/`；firebase v9+ npm 發行檔含這些語法 → **`yarn add firebase` 直接炸 build**。
+- （歷史成因）webpack 4 的 acorn parser 不認 ES2020（`?.` / `??`），且 babel-loader 只轉譯 `src/`；firebase v9+ npm 發行檔含這些語法 → 當時 `yarn add firebase` 直接炸 build。
 - 解法：`pref_sync.js` 在 runtime 動態注入 gstatic compat scripts（`firebase-{app,auth,firestore}-compat.js`，pin `10.14.1`），全域 `window.firebase`，完全不經 webpack。
 - Lazy：只在「曾登入（localStorage 旗標）」或「使用者按登入鈕」時載入 → 未登入者（含 e2e/guest）零額外下載、零 Firebase 網路請求。
-- 升級路徑：webpack ≥5 後改 modular SDK，見 `docs/handoff/upgrade-webpack5-build-toolchain.md`。
+- **現況（2026-06）**：build toolchain 已升 webpack5，炸 build 的限制已解除，但仍走 compat CDN；modular SDK 回遷待辦見 `docs/handoff/firebase-modular-sdk-migration.md`（含單元測試 mock 改寫）。
 
 ## Firebase 專案設定（一次性，已完成）
 

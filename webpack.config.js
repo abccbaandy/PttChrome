@@ -1,9 +1,7 @@
 const path = require('path');
 const webpack = require('webpack');
-const UglifyJSPlugin = require('uglifyjs-webpack-plugin');
-const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin');
+const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
-const CssUrlRelativePlugin = require('css-url-relative-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const HtmlWebpackHarddiskPlugin = require('html-webpack-harddisk-plugin');
 const WebpackCdnPlugin = require('webpack-cdn-plugin');
@@ -23,6 +21,7 @@ try {
 const BUILD_TIME = new Date().toISOString();
 
 module.exports = {
+  mode: PRODUCTION_MODE ? 'production' : 'development',
   entry: {
     'pttchrome': './src/entry.js',
   },
@@ -30,7 +29,7 @@ module.exports = {
     path: path.join(__dirname, 'dist/assets/'),
     publicPath: 'assets/',
     pathinfo: DEVELOPER_MODE,
-    filename: `[name]${ PRODUCTION_MODE ? '.[chunkhash]' : '' }.js`
+    filename: `[name]${ PRODUCTION_MODE ? '.[contenthash]' : '' }.js`
   },
   module: {
     rules: [
@@ -41,25 +40,29 @@ module.exports = {
       },
       {
         test: /\.css$/,
-        use: [MiniCssExtractPlugin.loader, 'css-loader'],
+        use: [
+          {
+            loader: MiniCssExtractPlugin.loader,
+            // CSS and the fonts/icons it references both live in dist/assets/;
+            // emit url()s relative to the CSS file instead of output.publicPath
+            // (which would double up as assets/assets/...).
+            options: { publicPath: '' },
+          },
+          'css-loader',
+        ],
       },
       {
         test: /\.(bin|bmp|png|woff)$/,
         oneOf: [
           {
             resourceQuery: /inline/,
-            use: 'url-loader'
+            type: 'asset/inline',
           },
           {
-            use: [
-              {
-                loader: 'file-loader',
-                options: {
-                  name: '[name].[hash].[ext]',
-                  esModule: false,
-                }
-              }
-            ]
+            type: 'asset/resource',
+            generator: {
+              filename: '[name].[hash][ext]',
+            },
           }
         ]
       }
@@ -67,7 +70,8 @@ module.exports = {
   },
   devtool: 'source-map',
   optimization: {
-    minimizer: [new OptimizeCSSAssetsPlugin({})],
+    // '...' keeps webpack's built-in terser for JS alongside the CSS minimizer.
+    minimizer: ['...', new CssMinimizerPlugin()],
   },
   plugins: [
     new webpack.DefinePlugin({
@@ -79,10 +83,9 @@ module.exports = {
       'process.env.BUILD_TIME': JSON.stringify(BUILD_TIME),
     }),
     new MiniCssExtractPlugin({
-      filename: '[name].[chunkhash].css',
+      filename: '[name].[contenthash].css',
       chunkFilename: '[id].css',
     }),
-    new CssUrlRelativePlugin(),
     new HtmlWebpackPlugin({
       alwaysWriteToDisk: DEVELOPER_MODE,
       minify: {
@@ -125,18 +128,20 @@ module.exports = {
         },
       ],
     })
-  ].concat(PRODUCTION_MODE ? [
-    new UglifyJSPlugin({
-      sourceMap: true,
-      parallel: true
-    }),
-  ] : [
+  ].concat(PRODUCTION_MODE ? [] : [
     new HtmlWebpackHarddiskPlugin()
   ]),
   devServer: {
-    contentBase: path.join(__dirname, './dist'),
-    proxy: {
-      '/bbs': {
+    static: path.join(__dirname, './dist'),
+    port: 8080,
+    devMiddleware: {
+      // output.publicPath is relative ('assets/') for the static deploy;
+      // dev-middleware v5+ no longer normalizes it, so serve explicitly.
+      publicPath: '/assets/',
+    },
+    proxy: [
+      {
+        context: ['/bbs'],
         target: 'https://ws.ptt.cc',
         secure: true,
         ws: true,
@@ -146,6 +151,6 @@ module.exports = {
           proxyReq.setHeader('origin', 'https://term.ptt.cc');
         }
       }
-    }
+    ]
   }
 };

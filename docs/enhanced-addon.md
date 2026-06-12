@@ -212,8 +212,8 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     escape；bad-code 條件式可能顛倒，以結構/字串為準，跨 parser 變體交叉比對）；③androguard 路線僅夠
     字串/xref：dex 內 Big5 位元組字串 MUTF-8 解碼會損壞，UTF-16 中文常數正常。
 15. **src 內禁用 async/await：無 regenerator-runtime，整包 bundle 載入即炸（2026-06-11，CONFIRMED 實機）**。
-    babel 把 async fn 轉成 `regeneratorRuntime.mark(...)`（module 評估期就呼叫），本專案 webpack4/babel
-    沒帶 regenerator-runtime → 頁面 `pageerror: regeneratorRuntime is not defined`、app bootstrap 全掛
+    babel 把 async fn 轉成 `regeneratorRuntime.mark(...)`（module 評估期就呼叫），本專案 babel 設定
+    沒帶 regenerator-runtime（webpack5 升級後依然如此）→ 頁面 `pageerror: regeneratorRuntime is not defined`、app bootstrap 全掛
     （**空白畫面、連 Developer Mode modal 都不出現**；e2e 症狀 = `waitForScreen` 40s 等不到首畫面且
     「當前畫面」全空）。webpack **編譯不會報錯**，純 runtime 炸。修法：非同步邏輯一律寫 Promise chain
     （`auto_login._resolveCredential`/`start`）。診斷捷徑：Playwright 開頁掛 `page.on('pageerror')`。

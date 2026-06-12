@@ -21,8 +21,7 @@ module.exports = defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: {
-    command: 'npx cross-env NODE_ENV=development webpack-dev-server',
-    env: { NODE_OPTIONS: '--openssl-legacy-provider' },
+    command: 'npx cross-env NODE_ENV=development webpack serve',
     url: 'http://localhost:8080',
     timeout: 180000,
     reuseExistingServer: true,

@@ -43,7 +43,6 @@ ReactDOM.unmountComponentAtNode(_view.mainDisplay)  // 破解坑1
 
 ## e2e 測試要點（tests/e2e/easy-reading.spec.js）
 
-- dev build 須 `NODE_OPTIONS=--openssl-legacy-provider`(webpack4+Node24)。
 - **好讀預設 false**：測試須在 `page.addInitScript` 寫 localStorage `pttchrome.pref.v1`→`{values:{enableEasyReading:true}}` 才會啟動，否則 End 只是原生（測不到）。
 - app 未掛全域：`main.js` 僅 `DEVELOPER_MODE`(dev build 有)下 `window.__app=app`(`:9`)供測試讀 `view.useEasyReadingMode`/`buf.pageState`。
 - 判好讀 vs 原生：好讀 `mainContainer` 累積 >24 列且 `#easyReadingLastRow` display:block；原生 24 列、lastRow display:none、畫面含「說明」狀態列。
