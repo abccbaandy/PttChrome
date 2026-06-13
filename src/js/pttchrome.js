@@ -342,6 +342,9 @@ App.prototype.onToggleLiveHelperModalState = noop;
 App.prototype.onDisableLiveHelperModalState = noop;
 
 App.prototype.switchToEasyReadingMode = function(doSwitch) {
+  // NOTE: this resets per-post easy-reading state via leaveCurrentPost(). Callers
+  // (onPrefSaveImpl, and transitively easyReading.exitEasyReading()) rely on it —
+  // an easy hop to miss when tracing the exit path.
   this.easyReading.leaveCurrentPost();
   if (doSwitch) {
     this.onDisableLiveHelperModalState();

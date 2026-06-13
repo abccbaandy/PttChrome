@@ -6,28 +6,101 @@ import {
 } from './string_util';
 import { readValuesWithDefault } from './pref_storage';
 
-// Pure state transition for auto-enabling easy reading. Kept side-effect free so
-// the transient-frame race that this guards against can be regression-tested in
-// tests/unit/easy_reading_logic.test.js.
+// Pure decision for auto-enabling easy reading, evaluated once per settle edge
+// (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
+// can be regression-tested in tests/unit/easy_reading_logic.test.js.
 //
-// `cameFromList` latches once we pass through an article list (pageState 2) and
-// clears the moment easy reading turns on (here) or when leaving a post
-// (EasyReading.leaveCurrentPost). We must NOT use a raw
-// `prevPageState == 2` check: PTT paints an article over several 30ms redraw
-// windows, and the half-drawn frames (empty last row) report pageState 0, which
-// overwrites prevPageState and would leave the first/slowest-loading article
-// stuck in native mode. The latch survives those transient frames. We also must
-// NOT relax to `prevPageState != 3`: after switchToNativeAtBottom (_enabled=false
-// while still on pageState 3) a transient 0->3 flicker inside the same post would
-// wrongly re-enable easy reading against the user's choice. See docs/easy-reading.md.
-export function nextEasyReadingState({ pageState, cameFromList, enabled, enablePref, supported }) {
-  let nextCameFromList = cameFromList || pageState === 2;
-  let enable = enabled;
-  if (pageState === 3 && nextCameFromList && !enabled && enablePref && supported) {
-    enable = true;
-    nextCameFromList = false;
+// It operates on term_buf's DEBOUNCED pageState stream: settledPageState only
+// advances once the screen has been quiet for SETTLE_MS, so the transient
+// half-painted frames (empty last row -> pageState 0) that PTT emits while
+// painting an article never appear here. That lets us use the clean, edge-correct
+// `prevSettled == 2 (list) && settled == 3 (article)` check — the original
+// `prevPageState == 2` intent, minus the transient-frame race that the old
+// `cameFromList` latch had to work around. Because it is edge-triggered (the
+// caller only invokes it on a settle transition), the in-post flicker after
+// switchToNativeAtBottom (still pageState 3, settled stays 3 → no new edge) can no
+// longer re-enable against the user's choice. See docs/easy-reading.md.
+export function nextEasyReadingState({ settledPageState, prevSettledPageState, enabled, enablePref, supported }) {
+  return settledPageState === 3 && prevSettledPageState === 2 &&
+    !enabled && enablePref && supported;
+}
+
+// Pure per-frame row-state machine for _onChanged: given the current pageState,
+// cursor position and which kind of status/push/reply row the screen shows (the
+// parse results are computed by the caller and passed in as booleans, keeping this
+// free of string_util/DOM), decide the next easy-reading render flags. Returns the
+// next flag values plus three control signals: `pageStateOverride` (5 when a
+// non-article "press any key" screen is detected, else null), `consumeIgnoreOneUpdate`
+// (clear the one-shot suppression), and `halt` (the caller had an early return here —
+// purely informational now since nothing follows the apply). Side-effect free so the
+// branchy logic is regression-tested in tests/unit/easy_reading_logic.test.js.
+export function nextEasyReadingRowState({
+  pageState, startedEasyReading, showReplyText, showPushInitText,
+  reachedPageEnd, sendCommandAfterUpdate, ignoreOneUpdate,
+  curX, curY, lastRowNum, lastColNum,
+  isReqNotMetRow, isStatusRow, isPushInitRow, isReplyRow,
+  lastRowFirstChFg, lastRowFirstChBg
+}) {
+  let pageStateOverride = null;
+  let consumeIgnoreOneUpdate = false;
+  let halt = false;
+
+  // dealing with page state jump to 0 because last row wasn't updated fully
+  if (pageState == 3) {
+    startedEasyReading = true;
+  } else if (startedEasyReading && isReqNotMetRow) {
+    showPushInitText = true;
+  } else {
+    showReplyText = false;
+    showPushInitText = false;
+    startedEasyReading = false;
   }
-  return { enabled: enable, cameFromList: nextCameFromList };
+
+  if (startedEasyReading) {
+    if (curY == lastRowNum && curX == lastColNum) {
+      if (ignoreOneUpdate) {
+        consumeIgnoreOneUpdate = true;
+        halt = true;
+      } else if (isStatusRow) {
+        if (lastRowFirstChBg == 4 && lastRowFirstChFg == 7) {
+          reachedPageEnd = true;
+        } else {
+          reachedPageEnd = false;
+          if (!sendCommandAfterUpdate) {
+            // send page down
+            sendCommandAfterUpdate = '\x1b[6~';
+          }
+        }
+      } else if (!showPushInitText) { // only if not showing last row text
+        pageStateOverride = 5;
+        startedEasyReading = false;
+      }
+    } else if (curY == lastRowNum) {
+      if (!showPushInitText) {
+        if (isPushInitRow) {
+          showPushInitText = true;
+        } else {
+          showPushInitText = false;
+          halt = true;
+        }
+      }
+    } else if (curY == 22) {
+      if (isReplyRow) {
+        showReplyText = true;
+      } else {
+        showReplyText = false;
+        halt = true;
+      }
+    } else {
+      // last line hasn't changed
+      halt = true;
+    }
+  }
+
+  return {
+    startedEasyReading, showReplyText, showPushInitText, reachedPageEnd,
+    sendCommandAfterUpdate, pageStateOverride, consumeIgnoreOneUpdate, halt
+  };
 }
 
 export function EasyReading(core, view, termBuf) {
@@ -40,9 +113,6 @@ export function EasyReading(core, view, termBuf) {
   this.easyReadingReachedPageEnd = false;
   this.sendCommandAfterUpdate = '';
   this.ignoreOneUpdate = false;
-  // Latch for nextEasyReadingState(): set when we see an article list (pageState
-  // 2), cleared when easy reading turns on. Survives transient mid-load frames.
-  this._cameFromList = false;
 
   function bindProperty(target, name, obj, prop) {
     if (!prop) prop = name;
@@ -58,95 +128,77 @@ export function EasyReading(core, view, termBuf) {
 
   this._termBuf.addEventListener('change', this._onChanged.bind(this));
   this._termBuf.addEventListener('viewUpdate', this._onViewUpdated.bind(this));
+  // Auto re-enable is driven by the debounced pageState (see nextEasyReadingState),
+  // fired once per settle edge — not by every per-frame 'change'.
+  this._termBuf.addEventListener('pageStateSettled', this._onPageStateSettled.bind(this));
+};
+
+// Fired once per term_buf settle edge. Auto-enable easy reading when we have just
+// settled from a board list (2) into an article (3) with the pref on.
+EasyReading.prototype._onPageStateSettled = function() {
+  const values = readValuesWithDefault();
+  const shouldEnable = nextEasyReadingState({
+    settledPageState: this._termBuf.settledPageState,
+    prevSettledPageState: this._termBuf.prevSettledPageState,
+    enabled: this._enabled,
+    enablePref: values.enableEasyReading,
+    supported: this._core.connectedUrl.easyReadingSupported
+  });
+  if (shouldEnable) {
+    this.enterEasyReading();
+  }
 };
 
 EasyReading.prototype._onChanged = function(e) {
   console.log("page state: " + this._termBuf.prevPageState + "->" + this._termBuf.pageState);
   const values = readValuesWithDefault()
-  // make sure to come back to easy reading mode (latch-based, see nextEasyReadingState)
-  const next = nextEasyReadingState({
-    pageState: this._termBuf.pageState,
-    cameFromList: this._cameFromList,
-    enabled: this._enabled,
-    enablePref: values.enableEasyReading,
-    supported: this._core.connectedUrl.easyReadingSupported
-  });
-  this._cameFromList = next.cameFromList;
-  if (next.enabled && !this._enabled) {
-    this._enabled = true;
-  } else if (!values.enableEasyReading && this._enabled) {
-    // Pref turned off mid-post (e.g. PrefModal). Only when currently in easy
-    // reading rendering state: flipping _enabled alone would switch back to the
-    // React renderScreen path while #mainContainer still holds the DOM that easy
-    // reading mutated directly, so React keeps updating detached Row nodes and
-    // the view freezes. Run the full exit recipe instead.
+  // Auto-enable is handled on the settle edge (_onPageStateSettled, see
+  // nextEasyReadingState). Here we only react to the pref being turned off
+  // mid-post: flipping _enabled alone would switch back to the React renderScreen
+  // path while #mainContainer still holds the DOM that easy reading mutated
+  // directly, so React keeps updating detached Row nodes and the view freezes.
+  // Run the full exit recipe instead.
+  if (!values.enableEasyReading && this._enabled) {
     this.exitEasyReading();
   }
 
   if (!this._enabled)
     return;
 
-  let lastColNum = this._termBuf.cols - 1;
-  let lastRowNum = this._termBuf.rows - 1;
-  var lastRowText = this._termBuf.getRowText(lastRowNum, 0, this._termBuf.cols);
-  // dealing with page state jump to 0 because last row wasn't updated fully 
-  if (this._termBuf.pageState == 3) {
-    this.startedEasyReading = true;
-  } else if (this.startedEasyReading && parseReqNotMetText(lastRowText)) {
-    this.easyReadingShowPushInitText = true;
-  } else {
-    this.easyReadingShowReplyText = false;
-    this.easyReadingShowPushInitText = false;
-    this.startedEasyReading = false;
-  }
-  if (this.startedEasyReading) {
-    console.log('easy reading cursor pos: ' + this._termBuf.cur_y + ':' + this._termBuf.cur_x);
-    if (this._termBuf.cur_y == lastRowNum && this._termBuf.cur_x == lastColNum) {
-      if (this.ignoreOneUpdate) {
-        this.ignoreOneUpdate = false;
-        return;
-      }
-      var result = parseStatusRow(lastRowText);
-      if (result) {
-        var lastRowFirstCh = this._termBuf.lines[lastRowNum][0];
-        if (lastRowFirstCh.getBg() == 4 && lastRowFirstCh.getFg() == 7) {
-          this.easyReadingReachedPageEnd = true;
-        } else {
-          this.easyReadingReachedPageEnd = false;
-          if (!this.sendCommandAfterUpdate) {
-            // send page down
-            this.sendCommandAfterUpdate = '\x1b[6~';
-          }
-        }
-      } else if (!this.easyReadingShowPushInitText) { // only if not showing last row text
-        this._termBuf.pageState = 5;
-        this.startedEasyReading = false;
-      }
-    } else if (this._termBuf.cur_y == lastRowNum) {
-      if (!this.easyReadingShowPushInitText) {
-        var lastRowText = this._termBuf.getRowText(lastRowNum, 0, this._termBuf.cols);
-        var result = parsePushInitText(lastRowText);
-        if (result) {
-          this.easyReadingShowPushInitText = true;
-        } else {
-          this.easyReadingShowPushInitText = false;
-          return;
-        }
-      }
-    } else if (this._termBuf.cur_y == 22) {
-      var secondToLastRowText = this._termBuf.getRowText(22, 0, this._termBuf.cols);
-      var result = parseReplyText(secondToLastRowText);
-      if (result) {
-        this.easyReadingShowReplyText = true;
-      } else {
-        this.easyReadingShowReplyText = false;
-        return;
-      }
-    } else {
-      // last line hasn't changed
-      return;
-    }
-  }
+  const lastColNum = this._termBuf.cols - 1;
+  const lastRowNum = this._termBuf.rows - 1;
+  const lastRowText = this._termBuf.getRowText(lastRowNum, 0, this._termBuf.cols);
+  const row22Text = this._termBuf.getRowText(22, 0, this._termBuf.cols);
+  const lastRowFirstCh = this._termBuf.lines[lastRowNum][0];
+  const rowState = nextEasyReadingRowState({
+    pageState: this._termBuf.pageState,
+    startedEasyReading: this.startedEasyReading,
+    showReplyText: this.easyReadingShowReplyText,
+    showPushInitText: this.easyReadingShowPushInitText,
+    reachedPageEnd: this.easyReadingReachedPageEnd,
+    sendCommandAfterUpdate: this.sendCommandAfterUpdate,
+    ignoreOneUpdate: this.ignoreOneUpdate,
+    curX: this._termBuf.cur_x,
+    curY: this._termBuf.cur_y,
+    lastRowNum,
+    lastColNum,
+    isReqNotMetRow: !!parseReqNotMetText(lastRowText),
+    isStatusRow: !!parseStatusRow(lastRowText),
+    isPushInitRow: !!parsePushInitText(lastRowText),
+    isReplyRow: !!parseReplyText(row22Text),
+    lastRowFirstChFg: lastRowFirstCh.getFg(),
+    lastRowFirstChBg: lastRowFirstCh.getBg()
+  });
+
+  this.startedEasyReading = rowState.startedEasyReading;
+  this.easyReadingShowReplyText = rowState.showReplyText;
+  this.easyReadingShowPushInitText = rowState.showPushInitText;
+  this.easyReadingReachedPageEnd = rowState.reachedPageEnd;
+  this.sendCommandAfterUpdate = rowState.sendCommandAfterUpdate;
+  if (rowState.consumeIgnoreOneUpdate)
+    this.ignoreOneUpdate = false;
+  if (rowState.pageStateOverride !== null)
+    this._termBuf.pageState = rowState.pageStateOverride;
 };
 
 EasyReading.prototype._onViewUpdated = function(e) {
@@ -160,21 +212,20 @@ EasyReading.prototype._onViewUpdated = function(e) {
   }
 };
 
+// "Leaving this post" hook: stays in easy reading (does NOT touch _enabled) but
+// resets the per-post render state. Called directly by the in-post key/mouse
+// handlers, and transitively by switchToEasyReadingMode (pttchrome.js:344) on every
+// manual exit. Zeroing prevPageState forces the next article down
+// populateEasyReadingPage's "new article" branch (clearRows) even on a direct
+// article->article jump with no list in between. Auto re-enable is now edge-triggered
+// on the settle stream (nextEasyReadingState), so there is no latch to clear here.
+// See docs/easy-reading.md.
 EasyReading.prototype.leaveCurrentPost = function() {
   console.log('leave curent post');
   if (!this.easyReadingReachedPageEnd) {
     this.ignoreOneUpdate = true;
   }
   this._termBuf.prevPageState = 0;
-  // Also clear the latch. leaveCurrentPost is the explicit "we are leaving this
-  // post" hook (also run by switchToEasyReadingMode, i.e. every manual exit such
-  // as End / ContextMenu 取消好讀 / pref-off). Zeroing prevPageState used to be
-  // what suppressed an auto re-enable inside the same post; the latch must do the
-  // same, otherwise the post-exit ^L redraw (pageState 3) would re-enable easy
-  // reading after exitEasyReading already unmounted #mainContainer → crash in
-  // populateEasyReadingPage. A real next-post re-enable still works because the
-  // intervening article list (pageState 2) re-sets the latch. See docs/easy-reading.md.
-  this._cameFromList = false;
 };
 
 EasyReading.prototype.stopEasyReading = function() {
@@ -189,7 +240,7 @@ EasyReading.prototype._send = function(data) {
 // Temporarily leave easy reading: switch back to native rendering and jump to
 // the bottom of the post. Auto-paging stops, so the native in-post search ('/')
 // and navigation become usable. Easy reading is re-enabled automatically by
-// _onChanged when entering the next post (prevPageState==2 && pageState==3).
+// _onPageStateSettled when the next post settles in from a list (settled 2 -> 3).
 EasyReading.prototype.switchToNativeAtBottom = function() {
   console.log('switch to native at bottom');
   // jump to the bottom of the post with native End
@@ -197,8 +248,34 @@ EasyReading.prototype.switchToNativeAtBottom = function() {
   this.exitEasyReading();
 };
 
-// Full recipe to leave easy reading rendering. Every code path that turns easy
-// reading off mid-post MUST go through this; see docs/enhanced-addon.md 踩坑 #11.
+// Single entry point that turns easy reading ON for the current article, symmetric
+// with exitEasyReading(). Driven by _onPageStateSettled (the settle edge), which
+// fires AFTER the first page has painted and the screen went quiet — i.e. outside
+// the normal per-frame 'change' loop. So, unlike the old inline `_enabled = true`,
+// we must replay one render+viewUpdate cycle ourselves to (a) repaint the
+// already-drawn page in easy-reading mode and (b) kick off the auto page-down loop.
+EasyReading.prototype.enterEasyReading = function() {
+  console.log('enter easy reading');
+  this._enabled = true;
+  // Force populateEasyReadingPage down its "new article" branch (clearRows + append
+  // the whole screen) instead of the same-article continuation branch, and start
+  // page accumulation from empty.
+  this._termBuf.prevPageState = 0;
+  this._termBuf.pageLines = [];
+  // Mark every row dirty so the forced redraw actually paints (update() only redraws
+  // changed rows), then replay a full notify so 'change' (_onChanged sets the first
+  // page-down) and 'viewUpdate' (_onViewUpdated sends it) both fire.
+  this._termBuf.lineChangeds.fill(true);
+  this._termBuf.changed = true;
+  this._termBuf.notify();
+};
+
+// Full recipe to leave easy reading rendering. Single exit point: every code path
+// that turns easy reading off mid-post (End/$/G, ContextMenu 取消好讀, pref-off)
+// MUST go through this; see docs/enhanced-addon.md 踩坑 #11. NOTE the transitive
+// chain: this -> _core.switchToEasyReadingMode() -> easyReading.leaveCurrentPost()
+// (pttchrome.js:344), which resets per-post render state. Easy to miss — that
+// hidden hop is what an earlier bug tripped on.
 EasyReading.prototype.exitEasyReading = function() {
   console.log('exit easy reading');
   // stop any pending/in-flight auto page down

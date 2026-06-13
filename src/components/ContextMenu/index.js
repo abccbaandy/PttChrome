@@ -223,9 +223,10 @@ const enhance = compose(
     },
     onLiveHelperChange: (state, { pttchrome }) => nextState => {
       if (nextState.enabled) {
-        // cancel easy reading mode first
-        pttchrome.view.useEasyReadingMode = false;
-        pttchrome.switchToEasyReadingMode();
+        // cancel easy reading mode first — go through the single exit recipe so the
+        // React tree is unmounted too (the old useEasyReadingMode=false +
+        // switchToEasyReadingMode() pair skipped that → latent freeze, 坑 1).
+        pttchrome.easyReading.exitEasyReading();
         pttchrome.setAutoPushthreadUpdate(nextState.sec);
       } else {
         pttchrome.setAutoPushthreadUpdate(-1);

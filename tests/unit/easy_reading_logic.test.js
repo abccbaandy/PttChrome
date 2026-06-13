@@ -1,87 +1,194 @@
-import { nextEasyReadingState, EasyReading } from "../../src/js/easy_reading";
+import {
+  nextEasyReadingState,
+  nextEasyReadingRowState,
+  EasyReading
+} from "../../src/js/easy_reading";
 
-// Fold a sequence of pageStates through nextEasyReadingState, mimicking how
-// _onChanged is invoked once per term_buf 'change' event. Returns the final
-// {enabled, cameFromList}. enablePref/supported are held constant per run.
-const run = (pageStates, { enabled = false, cameFromList = false, enablePref = true, supported = true } = {}) => {
-  let state = { enabled, cameFromList };
-  for (const pageState of pageStates) {
-    const next = nextEasyReadingState({
-      pageState,
-      cameFromList: state.cameFromList,
-      enabled: state.enabled,
-      enablePref,
-      supported
-    });
-    state = { enabled: next.enabled, cameFromList: next.cameFromList };
-  }
-  return state;
-};
-
+// nextEasyReadingState now decides auto-enable from term_buf's DEBOUNCED pageState
+// stream (settledPageState / prevSettledPageState), evaluated once per settle edge
+// by _onPageStateSettled — not per redraw frame. The transient-frame race that the
+// old _cameFromList latch worked around is handled upstream by the settle debounce,
+// so the check is the clean, edge-correct `prevSettled == 2 && settled == 3`.
 describe("nextEasyReadingState", () => {
-  it("enables on list -> article (2 -> 3)", () => {
-    expect(run([2, 3]).enabled).toBe(true);
+  const decide = (o = {}) => nextEasyReadingState({
+    settledPageState: 3,
+    prevSettledPageState: 2,
+    enabled: false,
+    enablePref: true,
+    supported: true,
+    ...o
   });
 
-  // The actual bug: PTT paints the article over several redraw windows; a
-  // half-drawn frame reports pageState 0 between the list (2) and the finished
-  // article (3). The old raw prevPageState==2 check broke here.
-  it("enables despite a transient pageState 0 between list and article (2 -> 0 -> 3)", () => {
-    expect(run([2, 0, 3]).enabled).toBe(true);
+  it("enables on a settled list -> article edge (2 -> 3)", () => {
+    expect(decide()).toBe(true);
   });
 
-  it("clears the latch once enabled so re-entry is independent", () => {
-    expect(run([2, 0, 3]).cameFromList).toBe(false);
+  it("does not enable unless the previous settled state was a list (2)", () => {
+    expect(decide({ prevSettledPageState: 0 })).toBe(false);
+    expect(decide({ prevSettledPageState: 3 })).toBe(false);
   });
 
-  // Regression guard for switchToNativeAtBottom: user pressed End to leave easy
-  // reading but stays on the same post (pageState 3, enabled already false,
-  // cameFromList already false). A transient 0->3 flicker must NOT re-enable.
-  it("does not re-enable on an in-post flicker after manual native switch (3 -> 0 -> 3, no list seen)", () => {
-    expect(run([3, 0, 3], { enabled: false, cameFromList: false }).enabled).toBe(false);
+  it("does not enable unless the current settled state is an article (3)", () => {
+    expect(decide({ settledPageState: 2 })).toBe(false);
+  });
+
+  it("does not re-enable when already enabled", () => {
+    expect(decide({ enabled: true })).toBe(false);
   });
 
   it("never enables when the preference is off", () => {
-    expect(run([2, 0, 3], { enablePref: false }).enabled).toBe(false);
+    expect(decide({ enablePref: false })).toBe(false);
   });
 
   it("never enables when the connection does not support easy reading", () => {
-    expect(run([2, 0, 3], { supported: false }).enabled).toBe(false);
+    expect(decide({ supported: false })).toBe(false);
   });
 
-  it("stays enabled across in-post redraws once on (3 -> 0 -> 3)", () => {
-    expect(run([3, 0, 3], { enabled: true }).enabled).toBe(true);
+  // Regression guard for switchToNativeAtBottom: after the user pressed End the post
+  // stays on pageState 3, so settledPageState stays 3 (no new 2 -> 3 edge). A transient
+  // 0 -> 3 flicker never settles, so prevSettled is never 2 again -> no re-enable.
+  it("does not re-enable on an in-post flicker after manual native switch (settled stays 3)", () => {
+    expect(decide({ settledPageState: 3, prevSettledPageState: 3 })).toBe(false);
   });
 });
 
-// leaveCurrentPost is the explicit "leaving this post" hook and is also called by
-// switchToEasyReadingMode on every manual exit (End / 取消好讀 / pref-off). It must
-// clear the latch, otherwise the post-exit ^L redraw re-enables easy reading after
-// the DOM was torn down -> crash in populateEasyReadingPage (Cannot read 'style').
+// nextEasyReadingRowState is the per-frame row-state machine extracted from
+// _onChanged. The caller (EasyReading._onChanged) computes the parse booleans and
+// applies the returned flags back onto term_buf. Defaults below describe an
+// article-reading frame with the cursor parked on the bottom-right status row.
+describe("nextEasyReadingRowState", () => {
+  const rowInput = (o = {}) => ({
+    pageState: 3,
+    startedEasyReading: false,
+    showReplyText: false,
+    showPushInitText: false,
+    reachedPageEnd: false,
+    sendCommandAfterUpdate: "",
+    ignoreOneUpdate: false,
+    curX: 0,
+    curY: 0,
+    lastRowNum: 23,
+    lastColNum: 79,
+    isReqNotMetRow: false,
+    isStatusRow: false,
+    isPushInitRow: false,
+    isReplyRow: false,
+    lastRowFirstChFg: 7,
+    lastRowFirstChBg: 0,
+    ...o
+  });
+
+  it("marks startedEasyReading once on an article page (pageState 3)", () => {
+    expect(nextEasyReadingRowState(rowInput({ pageState: 3 })).startedEasyReading).toBe(true);
+  });
+
+  it("clears easy-reading flags when leaving the article (not started, pageState != 3)", () => {
+    const r = nextEasyReadingRowState(rowInput({ pageState: 0, startedEasyReading: false }));
+    expect(r.startedEasyReading).toBe(false);
+    expect(r.showReplyText).toBe(false);
+    expect(r.showPushInitText).toBe(false);
+  });
+
+  it("keeps started + shows push-init when a 'request not met' row appears off-article", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      pageState: 0, startedEasyReading: true, isReqNotMetRow: true, curY: 23, curX: 79
+    }));
+    expect(r.startedEasyReading).toBe(true);
+    expect(r.showPushInitText).toBe(true);
+  });
+
+  it("sends a page-down on a status row that is not yet at the bottom", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 23, curX: 79, isStatusRow: true,
+      lastRowFirstChBg: 0, lastRowFirstChFg: 7
+    }));
+    expect(r.sendCommandAfterUpdate).toBe("\x1b[6~");
+    expect(r.reachedPageEnd).toBe(false);
+  });
+
+  it("stops paging and marks page end on a bottom status row (bg 4 / fg 7)", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 23, curX: 79, isStatusRow: true,
+      lastRowFirstChBg: 4, lastRowFirstChFg: 7
+    }));
+    expect(r.reachedPageEnd).toBe(true);
+    expect(r.sendCommandAfterUpdate).toBe("");
+  });
+
+  it("does not overwrite a queued command (skipOne) with a page-down", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 23, curX: 79, isStatusRow: true,
+      lastRowFirstChBg: 0, sendCommandAfterUpdate: "skipOne"
+    }));
+    expect(r.sendCommandAfterUpdate).toBe("skipOne");
+  });
+
+  it("consumes ignoreOneUpdate and halts without sending anything", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 23, curX: 79, ignoreOneUpdate: true, isStatusRow: true
+    }));
+    expect(r.consumeIgnoreOneUpdate).toBe(true);
+    expect(r.halt).toBe(true);
+    expect(r.sendCommandAfterUpdate).toBe("");
+  });
+
+  it("overrides pageState to 5 (pass screen) on a non-status bottom row", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 23, curX: 79, isStatusRow: false, showPushInitText: false
+    }));
+    expect(r.pageStateOverride).toBe(5);
+    expect(r.startedEasyReading).toBe(false);
+  });
+
+  it("shows push-init text when the cursor sits on a push-init last row", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 23, curX: 10, isPushInitRow: true, showPushInitText: false
+    }));
+    expect(r.showPushInitText).toBe(true);
+    expect(r.halt).toBe(false);
+  });
+
+  it("halts on a last row that is neither status nor push-init", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 23, curX: 10, isPushInitRow: false, showPushInitText: false
+    }));
+    expect(r.halt).toBe(true);
+    expect(r.showPushInitText).toBe(false);
+  });
+
+  it("shows reply text when the cursor sits on a reply row (row 22)", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 22, curX: 5, isReplyRow: true
+    }));
+    expect(r.showReplyText).toBe(true);
+    expect(r.halt).toBe(false);
+  });
+
+  it("halts on row 22 when it is not a reply row", () => {
+    const r = nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 22, isReplyRow: false
+    }));
+    expect(r.halt).toBe(true);
+    expect(r.showReplyText).toBe(false);
+  });
+
+  it("halts when the cursor is on an unchanged interior line", () => {
+    const r = nextEasyReadingRowState(rowInput({ startedEasyReading: true, curY: 5 }));
+    expect(r.halt).toBe(true);
+  });
+});
+
+// leaveCurrentPost stays in easy reading (does not touch _enabled) and only resets
+// per-post render state. It no longer clears a latch (auto re-enable is now
+// edge-triggered on the settle stream), but it still zeroes prevPageState so the next
+// article renders via populateEasyReadingPage's "new article" branch.
 describe("EasyReading.leaveCurrentPost", () => {
   const makeER = () => {
     const termBuf = { addEventListener() {}, prevPageState: 0, pageState: 0 };
     return new EasyReading(/* core */ {}, /* view */ {}, termBuf);
   };
 
-  it("clears the cameFromList latch so a same-post 0->3 redraw cannot re-enable", () => {
-    const er = makeER();
-    er._cameFromList = true;
-    er.leaveCurrentPost();
-    expect(er._cameFromList).toBe(false);
-
-    // The redraw that follows a manual exit: still pageState 3, latch now cleared.
-    const next = nextEasyReadingState({
-      pageState: 3,
-      cameFromList: er._cameFromList,
-      enabled: false,
-      enablePref: true,
-      supported: true
-    });
-    expect(next.enabled).toBe(false);
-  });
-
-  it("still resets prevPageState to 0 (unchanged behavior)", () => {
+  it("resets prevPageState to 0", () => {
     const er = makeER();
     er._termBuf.prevPageState = 3;
     er.leaveCurrentPost();

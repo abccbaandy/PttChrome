@@ -4,6 +4,14 @@ import { Event } from './event';
 import { ColorState } from './term_ui';
 import { u2b, b2u, parseStatusRow, parseListRow } from './string_util';
 
+// Quiet period (ms) after the last redraw window before pageState is promoted to
+// `settledPageState`. Must exceed the 30ms notify debounce so a transient
+// half-painted frame (empty last row → pageState 0) re-arms the timer instead of
+// settling: while data keeps arriving every ~30ms the timer never fires, so it
+// only captures the final stable value once PTT stops sending. See
+// docs/easy-reading.md (settle 後判斷). Tunable; raise if slow links premature-settle.
+const SETTLE_MS = 50;
+
 const termColors = [
   // dark
   '#000000', // black
@@ -237,6 +245,12 @@ export function TermBuf(cols, rows) {
   this.easyReadingShowReplyText = false;
   this.easyReadingShowPushInitText = false;
   this.prevPageState = 0;
+  // Debounced pageState: updated only once the screen has been quiet for
+  // SETTLE_MS, so transient half-painted frames never pollute it. EasyReading's
+  // auto re-enable keys off the clean 2 (list) -> 3 (article) settled transition.
+  this.settledPageState = 0;
+  this.prevSettledPageState = 0;
+  this._settleTimer = null;
 
   this.lines = new Array(rows);
 
@@ -790,6 +804,20 @@ TermBuf.prototype = {
       this.updateCharAttr();
 
       this.setPageState();
+      // Re-arm the settle timer on every changed redraw window. While data keeps
+      // streaming in (~30ms apart) this never fires; SETTLE_MS after the last
+      // window — i.e. once the screen is truly quiet — it promotes the current
+      // pageState to settledPageState and notifies. Transient frames in between
+      // are skipped because they always have a later window re-arming the timer.
+      clearTimeout(this._settleTimer);
+      this._settleTimer = setTimeout(() => {
+        this._settleTimer = null;
+        if (this.pageState !== this.settledPageState) {
+          this.prevSettledPageState = this.settledPageState;
+          this.settledPageState = this.pageState;
+          this.dispatchEvent(new CustomEvent('pageStateSettled'));
+        }
+      }, SETTLE_MS);
       if (this.useMouseBrowsing) {
         // clear highlight and reset cursor on page change
         // without the redraw being called here
