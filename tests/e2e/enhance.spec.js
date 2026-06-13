@@ -247,6 +247,85 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       throw err;
     }
   });
+
+  // pusher 高亮（點推文者整列高亮）。統一渲染後 togglePusherHighlight 兩模式都走 redraw(true)
+  // → computeAnnotations 套 .pusherHighlight（舊好讀走 _applyPusherHighlightDOM，已刪）。
+  // 守護：高亮列全屬該推文者、不誤傷他人、forced redraw 不重複 append（列數不變）、再點清除。
+  // 直接呼叫 view.togglePusherHighlight（測渲染路徑；mouse_click→closest('[data-pusher]') 接線未改）。
+  test('pusher 高亮：點推文者整列高亮、不重複 append、再點清除', async ({ shared }) => {
+    test.setTimeout(180000);
+    const { page, logs } = shared;
+    logs.length = 0;
+    // 真推文 id（小寫）。好讀進文章後自動翻頁到底已累積整篇，不按 Space（避免捲到底離開文章）。
+    const pushers = () =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll('#mainContainer [data-type="bbsline"]'))
+          .map((el) => {
+            const m = el.textContent.match(/^(推|噓|→)\d*\s+([0-9A-Za-z]+)\s*:/);
+            return m ? m[2].toLowerCase() : null;
+          })
+          .filter(Boolean)
+      );
+    const childCount = () =>
+      page.evaluate(() => document.querySelectorAll('#mainContainer [data-type="bbsline"]').length);
+    const highlighted = () =>
+      page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll('#mainContainer > span[type="bbsrow"].pusherHighlight')
+        ).map((el) => el.getAttribute('data-pusher'))
+      );
+
+    try {
+      await resetSession(page);
+      await applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+      await gotoBoard(page, 'C_Chat');
+      await sendKey(page, 'End');
+      await page.waitForTimeout(800);
+
+      let before = [];
+      for (let attempt = 0; attempt < 6; attempt++) {
+        await sendKey(page, 'Enter');
+        await page.waitForTimeout(5000); // 等好讀自動翻頁累積整篇
+        before = await pushers();
+        if (before.length > 0) break;
+        await sendKey(page, 'ArrowLeft');
+        await page.waitForTimeout(1300);
+        await sendKey(page, 'ArrowUp');
+        await page.waitForTimeout(500);
+      }
+      test.skip(before.length === 0, '找不到有推文的文章，跳過 pusher 高亮驗證');
+
+      const freq = {};
+      before.forEach((p) => (freq[p] = (freq[p] || 0) + 1));
+      const target = Object.keys(freq).sort((a, b) => freq[b] - freq[a])[0];
+      console.log('PUSHER TARGET:', target, 'x', freq[target]);
+
+      const c0 = await childCount();
+
+      // 點選該推文者
+      await page.evaluate((t) => window.__app.view.togglePusherHighlight(t), target);
+      await page.waitForTimeout(500);
+      const hl1 = await highlighted();
+      const c1 = await childCount();
+      console.log('AFTER HL:', hl1.length, 'rows; childRows', c0, '->', c1);
+
+      // 高亮列至少 1 列、且全屬該推文者（不誤傷他人）
+      expect(hl1.length).toBeGreaterThan(0);
+      expect(hl1.every((p) => p === target)).toBe(true);
+      // forced redraw 不重複 append（findPageOverlap 去重）：列數不變
+      expect(c1).toBe(c0);
+
+      // 再點同一人 → 清除，列數仍不變
+      await page.evaluate((t) => window.__app.view.togglePusherHighlight(t), target);
+      await page.waitForTimeout(500);
+      expect((await highlighted()).length).toBe(0);
+      expect(await childCount()).toBe(c0);
+    } catch (err) {
+      console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
+      await page.screenshot({ path: 'tests/e2e/__screenshots__/enhance-pusher-error.png', fullPage: true });
+      throw err;
+    }
+  });
 });
 
 // 自動登入：開頁後完全不按任何鍵，應自動送帳密、跳過提示，進到主選單。

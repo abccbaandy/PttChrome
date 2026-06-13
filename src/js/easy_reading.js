@@ -216,7 +216,7 @@ EasyReading.prototype._onViewUpdated = function(e) {
 // resets the per-post render state. Called directly by the in-post key/mouse
 // handlers, and transitively by switchToEasyReadingMode (pttchrome.js:344) on every
 // manual exit. Zeroing prevPageState forces the next article down
-// populateEasyReadingPage's "new article" branch (clearRows) even on a direct
+// accumulatePageLines' "new article" branch (restart pageLines) even on a direct
 // article->article jump with no list in between. Auto re-enable is now edge-triggered
 // on the settle stream (nextEasyReadingState), so there is no latch to clear here.
 // See docs/easy-reading.md.
@@ -257,7 +257,7 @@ EasyReading.prototype.switchToNativeAtBottom = function() {
 EasyReading.prototype.enterEasyReading = function() {
   console.log('enter easy reading');
   this._enabled = true;
-  // Force populateEasyReadingPage down its "new article" branch (clearRows + append
+  // Force accumulatePageLines down its "new article" branch (restart pageLines as
   // the whole screen) instead of the same-article continuation branch, and start
   // page accumulation from empty.
   this._termBuf.prevPageState = 0;
@@ -281,16 +281,14 @@ EasyReading.prototype.exitEasyReading = function() {
   // stop any pending/in-flight auto page down
   this.sendCommandAfterUpdate = '';
   // Switch off easy reading and restore the native view. switchToEasyReadingMode()
-  // restores the DOM (last/reply rows, padding, pageLines) and forces a full
-  // redraw via Ctrl-L.
+  // restores the overlay rows / padding / pageLines and forces a full redraw via
+  // Ctrl-L. Both modes now render through <Screen> (React owns #mainContainer), so
+  // turning easy reading off just re-renders with the 24-row screen and React
+  // reconciles the long accumulated page down — no unmount hack needed any more
+  // (the old vdom-desync freeze is gone now that nothing mutates #mainContainer
+  // by hand).
   this._enabled = false;
   this._core.switchToEasyReadingMode();
-  // Easy reading mutates #mainContainer directly (innerHTML='' + appendRows),
-  // which desyncs React's virtual DOM: the Screen component still references its
-  // detached Row nodes, so the next renderScreen() updates those instead of the
-  // stale accumulated rows on screen, leaving the view frozen. Unmount the React
-  // tree so the Ctrl-L redraw mounts a fresh, clean #mainContainer.
-  ReactDOM.unmountComponentAtNode(this._view.mainDisplay);
 };
 
 EasyReading.prototype._onKeyDown = function(e) {

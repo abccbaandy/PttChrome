@@ -17,30 +17,38 @@
 → **舊治標**（commit 77d49df，已移除）：`_cameFromList` latch 繞過 transient frame；但 latch 需在 `leaveCurrentPost` 同步清除，否則按 End→`exitEasyReading`(unmount React)→其 `^L` 重繪(pageState 3)→latch 仍真→重啟好讀→`populateEasyReadingPage` 讀失效的 `mainContainer.style`→crash。
 → **現治本**（settle debounce）：上面三條。re-enable 改吃 `settledPageState`（transient 0 永不入串流），latch 整個移除；crash 路徑隨之消失（settle 不升級就不重啟）。`prevPageState` 仍逐 frame，只服務渲染（見下）。
 
-## render 雙軌（這是最大坑）
+## render 單軌（2026-06 統一，舊雙軌坑已消除）
 
-| 模式 | 路徑 | 寫入 |
+兩模式都走 `renderScreen()`=`ReactDOM.render(<Screen lines/>, mainDisplay)`(`term_ui.js`)，**React 單一擁有 `#mainContainer`**（Screen owns，Row `key={row}`）。差別只在傳給 `<Screen>` 的 `lines`：
+
+| 模式 | `lines` 來源 | 黑名單列 |
 |---|---|---|
-| 原生 | `renderScreen()`=`ReactDOM.render(<Screen lines/>, mainDisplay)`(`term_ui.js:34`) | React 管理 `#mainContainer`(Screen 元件 owns，`Screen.js:51`，Row `key={row}`) |
-| 好讀 | `populateEasyReadingPage`→`clearRows()`(`mainContainer.innerHTML=''`)+`appendRows`(`term_view.js:800-815`) | **直接竄改** `#mainContainer`，繞過 React |
+| 原生 / 好讀列表選單(pageState≠3) | `buf.lines`（單頁 24 列） | `visibility:hidden`（保固定格線，`enhance.dropHidden=false`） |
+| 好讀文章(pageState 3) | `buf.pageLines`（累積長頁，`term_view.accumulatePageLines` 純 JS `findPageOverlap` 去重） | 整列移除（Screen render `null`，`dropHidden=true`，長卷無空行） |
 
-**坑 1（凍結根因）**：好讀直接 `innerHTML=''`+appendRows 後，React 的 vdom 仍記得它建立的 Row（已 detached）。之後再 `renderScreen()` React 只更新那些 detached 節點，**不會清掉螢幕上累積的手工列** → 畫面凍結（DOM 仍 N 列、非原生 24 列）。
-→ 解法：切原生前 `ReactDOM.unmountComponentAtNode(mainDisplay)` 強制丟棄 stale vdom，下次 render 乾淨重掛。
+- 逐列加工（blacklist/樓層/作者高亮/pusher 高亮）統一在 `Screen#computeAnnotations` 一處。好讀文章因 `lines=完整 pageLines`，`new FloorCounter()` 一次走完整篇 → 跨頁樓號自然正確（已**無** view 端持久計數器 `_floorCounter`）。
+- `dropHidden` 移除的列**不位移**其餘列 `data-row`（=pageLines 絕對索引）；`getText` 用絕對 index → 選取/複製跨缺口仍對齊（順帶修掉舊 `appendRows` 的 `srow`/`data-row` off-by-one）。
+- pusher 高亮：`togglePusherHighlight` 只設 `_selectedPusher`+`redraw(true)`（兩模式同；好讀重繪重入 `accumulatePageLines` 同畫面，`findPageOverlap` 去重成 no-op append，只有 render 反映變更）。
+- 好讀兩個 overlay 列（footer `#easyReadingLastRow`、reply `#easyReadingReplyRow`）是 `BBSWin` 下獨立 div、非 `#mainContainer`，仍 imperative 畫（`term_ui.renderOverlayRow` 單列），不涉所有權衝突。
+- **圖片預覽（`_renderScreenLines` 的 `inlinePreview`/`hoverPreview` 兩參數，CONFIRMED e2e）**：好讀文章 `inlinePreview=true`+`hoverPreview=false`（自動行內開圖，每個連結旁掛 `<ImagePreviewer Inline>`，等同舊 `appendRows(showsLinkPreview=true)`，**不**受 `enablePicPreview` pref 約束）；原生 `inlinePreview=false`+`hoverPreview=enablePicPreview`（hover 才開）；好讀列表/選單兩者皆 false。**統一時若兩參數寫死 false → 好讀完全不開圖（regression，已修）**。守護：unit `image_preview.test.js`（Screen→Row→builder 接線）+ e2e `easy-reading.spec.js`「好讀模式自動行內開圖」。
+- **踩坑（統一時 CONFIRMED 實機，`ch.isStartOfURL is not a function` 一進文章即炸）**：`buf.pageLines` 既是 render source 又是選取 source。**不可用 `JSON.parse(JSON.stringify())` 克隆**——序列化會剝掉 TermChar 的 prototype 方法（`isStartOfURL`/`getColor`/`getFg`…），舊路徑只拿 pageLines 做選取（只讀資料屬性）故沒事，但統一後它要餵 `<Row>`→`LinkSegmentBuilder` 會呼叫那些方法。改用 `term_view.cloneRow`（`Object.assign(Object.create(Object.getPrototypeOf(ch)), ch)`）：資料快照（與 live 24 列 buffer 解除別名）+ 保留 prototype，選取與渲染都能用。
 
-**坑 2**：好讀已自動翻頁到**底**時，實際游標在最後頁，再送原生 End(`\x1b[4~`)是 **no-op、PTT 不回應不重繪** → 必須另送 `^L`(`\x0c`, Ctrl-L)強制全頁重繪。`switchToEasyReadingMode()`(無參數)已內含 `^L`(`pttchrome.js:354`)。
+**舊雙軌坑（已消除）**：好讀曾 `clearRows()`(`innerHTML=''`)+手工 `appendRows` 竄改 `#mainContainer`，與 React vdom 失同步 → 切原生凍結（坑1，曾需 `unmountComponentAtNode` 治標）、unmount 後 `mainContainer` getter 回 undefined → 讀 `.style` crash。統一後 React 恆擁有 `#mainContainer`，互切只是 `lines` 長度變化由 reconcile 處理，**無 unmount、無 crash**。詳見 `docs/enhanced-addon.md` 踩坑 #1/#11。
+
+**坑 2（仍有效）**：好讀已自動翻頁到**底**時，實際游標在最後頁，再送原生 End(`\x1b[4~`)是 **no-op、PTT 不回應不重繪** → 必須另送 `^L`(`\x0c`, Ctrl-L)強制全頁重繪。`switchToEasyReadingMode()`(無參數)已內含 `^L`(`pttchrome.js:354`)。
 
 ## 切換：三個對稱入口（CONFIRMED 純邏輯/手動驗）
 
 好讀的進/退/離篇收斂到三個語意明確的入口（`easy_reading.js`），新路徑只呼叫入口、不各自設旗標：
 - **`enterEasyReading()`**：唯一開好讀點，由 `_onPageStateSettled` 在 settled 2→3 邊緣驅動。`_enabled=true` + `prevPageState=0`/`pageLines=[]`（強制 `populateEasyReadingPage` 新文章 clearRows 分支）+ 全列 dirty + `changed=true` + `notify()` 重播一輪 render/viewUpdate（settle 在 'change' 迴圈外觸發，故需自行重播以啟動翻頁）。
 - **`leaveCurrentPost()`**：仍在好讀、離開本篇 → 重置 per-post（`ignoreOneUpdate`、`prevPageState=0`），**不改 `_enabled`**。鍵/滑鼠多處直接呼叫；`switchToEasyReadingMode`(`pttchrome.js:344`) 內部也呼叫它（**隱藏傳遞鏈**，已加註解標出）。
-- **`exitEasyReading()`**：唯一關好讀點。`sendCommandAfterUpdate=''` + `_enabled=false` + `_core.switchToEasyReadingMode()`（還原 DOM(last/reply row, padding, pageLines)+送 `^L`）+ `ReactDOM.unmountComponentAtNode(_view.mainDisplay)`（破解坑1）。
+- **`exitEasyReading()`**：唯一關好讀點。`sendCommandAfterUpdate=''` + `_enabled=false` + `_core.switchToEasyReadingMode()`（還原 overlay 列/padding/pageLines+送 `^L`）。**已無** `unmountComponentAtNode`（統一渲染後 React 恆擁有 `#mainContainer`，切原生由 reconcile 把長頁收回 24 列，舊坑1 凍結消失）。
 
 `EasyReading.switchToNativeAtBottom`（End/$/G 與滑鼠 End）= `_send('\x1b[4~')`（原生 End 導到底）+ `exitEasyReading()`。
 
 所有手動關好讀路徑都走 `exitEasyReading()`：End、pref 關閉（`_onChanged` 偵測 `!enableEasyReading && _enabled`）、LiveHelper「取消好讀」(`ContextMenu/index.js:226`，**2026-06 修**：原 `useEasyReadingMode=false`+`switchToEasyReadingMode()` 漏 unmount→坑1 latent freeze，已改呼叫 `pttchrome.easyReading.exitEasyReading()`)、e2e `applyPrefs`。
 - `ReactDOM` 在 `easy_reading.js` 可直接用（webpack externals 全域，`webpack.config.js:110`），免 import。
-- `switchToEasyReadingMode(doSwitch)`：無參/falsy→還原 DOM+`^L`；truthy→進好讀。`hideEasyReading()`(`term_view.js:825`)是另一條「以 appendRows 重建原生單頁」的退出路徑（pageState≠3 時用）。
+- `switchToEasyReadingMode(doSwitch)`：無參/falsy→還原 DOM+`^L`；truthy→進好讀。好讀開但畫面是列表/選單(pageState≠3)時，`redraw` 走 `hideEasyReadingOverlays()`（只還原 overlay 列+清 pageLines）後以 `_renderScreenLines(buf.lines)` 畫單頁（同原生路徑）。
 
 ## 鍵流（CONFIRMED）
 

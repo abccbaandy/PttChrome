@@ -1,9 +1,9 @@
 // Pure logic for the Enhanced Add-on features (no DOM / no network → easy to test).
 //
-// Used by both render paths to detect blacklisted authors/pushers and to number
-// comment floors:
-//   - native grid  : src/components/Screen.js
-//   - easy reading : src/js/term_view.js (appendRows)
+// Used to detect blacklisted authors/pushers and to number comment floors. Both
+// render modes (native 24-row screen and the easy-reading accumulated long page)
+// now draw through src/components/Screen.js#computeAnnotations — there is a single
+// render path, so this logic is applied in exactly one place.
 //
 // Mirrors the DBCS handling in src/js/term_buf.js#getRowText and
 // src/components/Row/ColorSegmentBuilder.js.
@@ -63,13 +63,13 @@ export function parseComment(text) {
   return { type: m[1], userid: m[2].toLowerCase() };
 }
 
-// Per-comment-row annotation shared by BOTH render paths (native Screen grid and
-// easy-reading appendRows) so they can never diverge. Returns null for non-comment
-// rows. `floor` advances even for blacklisted rows (they still occupy a floor).
+// Per-comment-row annotation used by the single render path (Screen#computeAnnotations,
+// for both native and easy-reading modes). Returns null for non-comment rows. `floor`
+// advances even for blacklisted rows (they still occupy a floor).
 //
 // Non-comment rows are NOT a no-op: they feed FloorCounter.nonComment (the BePTT
-// reset/latch rule), so every article row must flow through here in order — both
-// callers already do that.
+// reset/latch rule), so every article row must flow through here in order — the
+// caller (computeAnnotations) walks the whole `lines` array in sequence.
 //
 // ctx = {
 //   blacklist:      Set<lower id> | undefined

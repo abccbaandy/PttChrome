@@ -160,4 +160,66 @@ test.describe.serial('好讀模式', () => {
       throw err;
     }
   });
+
+  // 自動行內開圖（inline image preview）。好讀文章走 <Screen enableLinkInlinePreview=true>
+  // → Row → LinkSegmentBuilder 在每個連結旁掛 <ImagePreviewer Inline>。統一渲染時曾把
+  // 此旗標寫死 false → 圖片全不顯示（regression）。守護：找到「可預覽連結」的文章後，
+  // 行內預覽節點必須出現；找不到可預覽連結（內容相依）才 skip。
+  test('好讀模式自動行內開圖', async ({ shared }) => {
+    test.setTimeout(180000);
+    const { page, logs } = shared;
+    logs.length = 0;
+    // 行內預覽渲染出的媒體節點（見 ImagePreviewer.Inline）：圖片 / 影片 / iframe。
+    const PREVIEW_SEL =
+      '#mainContainer img.hyperLinkPreview, #mainContainer video.easyReadingVideo, #mainContainer iframe';
+    // 會被 ImagePreviewer 解析成非錯誤描述子的連結（imgur/twitter/youtube/直連圖影）。
+    const previewableLinks = () =>
+      page.evaluate(() => {
+        const re = /(\.(?:jpe?g|png|gif|webp|bmp|apng|avif|mp4|webm|ogg)(?:$|[?#]))|imgur\.com|pbs\.twimg\.com|youtu\.?be|youtube\.com|meee\.com\.tw|clips\.twitch\.tv|flic\.kr|flickr\.com/i;
+        return Array.from(document.querySelectorAll('#mainContainer a[href]'))
+          .map((a) => a.getAttribute('href'))
+          .filter((h) => re.test(h));
+      });
+
+    try {
+      await resetSession(page);
+      await applyPrefs(page, { enableEasyReading: true });
+      await gotoBoard(page, 'C_Chat');
+      await sendKey(page, 'End');
+      await page.waitForTimeout(800);
+
+      let found = false;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        await sendKey(page, 'Enter');
+        await page.waitForTimeout(4500); // 好讀自動翻頁累積整篇 + 連結解析
+        const inER = await page.evaluate(
+          () => window.__app.view.useEasyReadingMode && window.__app.buf.pageState === 3
+        );
+        if (inER) {
+          const links = await previewableLinks();
+          console.log(`attempt ${attempt}: previewable links = ${links.length}`, JSON.stringify(links.slice(0, 3)));
+          if (links.length > 0) {
+            // 有可預覽連結 → 行內預覽節點必須出現（壞掉就會 timeout → 測試紅）。
+            await page.waitForSelector(PREVIEW_SEL, { timeout: 10000 });
+            const previews = await page.evaluate((sel) => document.querySelectorAll(sel).length, PREVIEW_SEL);
+            console.log('PREVIEW NODES:', previews);
+            expect(previews).toBeGreaterThan(0);
+            found = true;
+            break;
+          }
+        }
+        // 本篇無可預覽連結 → 回列表往上一篇（較舊）再試
+        await sendKey(page, 'ArrowLeft');
+        await page.waitForTimeout(1300);
+        await sendKey(page, 'ArrowUp');
+        await page.waitForTimeout(500);
+      }
+      test.skip(!found, '連續多篇都沒有可預覽的圖片連結，跳過（內容相依）');
+      expect(found).toBe(true);
+    } catch (err) {
+      console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
+      await page.screenshot({ path: 'tests/e2e/__screenshots__/er-image-preview-error.png', fullPage: true });
+      throw err;
+    }
+  });
 });

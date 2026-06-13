@@ -18,28 +18,31 @@
 - `parseBlacklist(str)`→lower-case Set（換行分隔）。
 - `parseArticleAuthor(text)`→原PO id(lower)|null，正則 `/^\s*作者\s+([0-9A-Za-z]+)/`。**僅文章首頁首行**（作者列）解析得到；翻頁後 lines[0] 是內文→null。
 - **`annotateComment(text, ctx)`→逐列判斷的單一真相**（floor/hidden/pusher/authorId 範圍/pusherHighlight）。
-  `ctx={blacklist,showFloorNumbers,floorCounter,highlightAuthor,articleAuthor,selectedPusher}`。**兩條渲染路徑
-  都呼叫它**（Screen `computeAnnotations`、term_view `appendRows`），避免邏輯各複製一份而發散（曾因此出 bug，見踩坑 #8）。
+  `ctx={blacklist,showFloorNumbers,floorCounter,highlightAuthor,articleAuthor,selectedPusher}`。**單一渲染路徑
+  呼叫它**（`Screen#computeAnnotations`，兩模式共用），不再有第二份接線可發散（2026-06 統一前好讀另有 `appendRows`
+  各複製一份，曾因此出 bug，見踩坑 #8）。
   floor 對黑名單列仍 +1（樓號絕對正確）；hidden 短路其餘高亮。回 null=非推文列。守護測試 `tests/unit/comment_parse.test.js`。
 
-## 渲染整合（雙路徑收斂到 `<Row>`）
-- `<Row>`(`components/Row/index.js`) 新增 props `floor`/`hidden`。`floor`→`LinkSegmentBuilder.readChar`
+## 渲染整合（單一路徑 `<Screen>`→`<Row>`，2026-06 統一）
+- `<Row>`(`components/Row/index.js`) 有 props `floor`/`hidden`。`floor`→`LinkSegmentBuilder.readChar`
   在 **col 2**（marker 與 userid 間的空格）插入 `.floorBadge`（CSS `main.css`：`display:inline-block;
   width:0;vertical-align:super` 小字上標，不位移等寬格線；`user-select:none` 故不污染複製）。`hidden`→
   外層 bbsrow `visibility:hidden`（保留行高、不破壞固定格線）。樓層計數：黑名單推文 **仍 +1 樓**（先
   `counter.next` 再決定隱藏/移除），故編號維持絕對正確。
-- **關鍵：渲染路徑取決於 `view.useEasyReadingMode`**：
-  - 好讀**關**：所有畫面走原生 `renderScreen`→`Screen.js#computeAnnotations`。
-    `pageState==3`→`parseComment`(floor／黑名單 hidden)；`pageState==2`→`parseListAuthor`(黑名單 hidden)。
-    `renderScreen`(`term_ui.js`) 多傳 `enhance={blacklist,showFloorNumbers,pageState}`(`term_view.redraw`)。
-  - 好讀**開**：**所有**畫面走 `appendRows`（文章=`populateEasyReadingPage`，列表/選單=`hideEasyReading`），
-    **繞過 Screen**。故 `appendRows(lines,preview,enhance=true)` 內需自行依 pageState 過濾：
-    `pageState==3`→黑名單推文 **直接不 append**（真正不占行，解決舊版 opacity:0）；
-    `pageState==2`→黑名單發文設 `el.style.visibility='hidden'`（固定格線只能隱藏不移除）。
-    floor 用 `view._floorCounter`（跨頁持久，新文章在 `populateEasyReadingPage` else 分支 reset）。
-    `hideEasyReading` 也必須帶 `enhance=true`（否則列表黑名單失效——曾是 bug）。
-- 測試讀列：好讀模式外層 el 包住 Row 自身的 bbsrow（多一層巢狀）；讀推文用 `[data-type="bbsline"]` 的
-  **textContent**（`visibility:hidden` 列 innerText 為空），推文正則需容忍徽章數字：`/^(推|噓|→)\d*\s+/`。
+- **單一渲染路徑（兩模式都走 `renderScreen`→`Screen.js#computeAnnotations`）**：逐列加工只有一處，無法發散。
+  `term_view.redraw`/`_renderScreenLines` 傳 `enhance={blacklist,showFloorNumbers,highlightAuthor,
+  articleAuthor,selectedPusher,pageState,dropHidden}`。`computeAnnotations`：`pageState==3`→`annotateComment`
+  (floor／黑名單 hidden／作者高亮／pusher 高亮)；`pageState==2`→`parseListAuthor`(黑名單 hidden)。
+  - 兩模式差別只在傳給 `<Screen>` 的 `lines`：原生/好讀列表選單=`buf.lines`(單頁)；好讀文章=`buf.pageLines`
+    (累積長頁，`term_view.accumulatePageLines` 純 JS `findPageOverlap` 去重)。
+  - **黑名單列移除 vs 隱藏由 `enhance.dropHidden` 決定**：好讀文章 `dropHidden=true`→Screen render `null`
+    （整列移除、長卷無空行）；原生/列表 `dropHidden=false`→`visibility:hidden`（固定格線只能隱藏不移除）。
+    render `null` **不位移**其餘列 `data-row`(=pageLines 絕對索引)，故選取/複製跨缺口仍對齊。
+  - floor 跨頁：好讀文章 `lines=完整 pageLines`，`computeAnnotations` 每次 `new FloorCounter()` 走完整篇
+    → 樓號自然正確。**已無** `view._floorCounter` 持久欄位（舊 `appendRows` 路徑才需要）。
+- 測試讀列：`#mainContainer > span[type="bbsrow"]`(Row 外層) > `div` > `span[data-type="bbsline"]`(連結/徽章在此)。
+  讀推文用 `[data-type="bbsline"]` 的 **textContent**（`visibility:hidden` 列 innerText 為空），推文正則需容忍
+  徽章數字：`/^(推|噓|→)\d*\s+/`。好讀文章黑名單列已 render `null`→DOM 無該列（childCount 下降）。
 
 ## 原PO 推文高亮（same-author，只高亮 userid 區塊）
 - 推文者 == 原PO id → **只**把 userid 欄位 `[3, 3+len)` 包成 `<span class="commentByAuthor">`（`main.css`
@@ -51,7 +54,7 @@
 - 原PO id 由 `view._articleAuthor` 跨頁持久：`redraw` 開頭 `pageState==3` 時 `parseArticleAuthor(lines[0])`，**有值才覆蓋**
   （翻頁 null 沿用上次；新文章首頁覆蓋）。**勿** reset，靠覆蓋即可。
 - 逐列判斷由 `annotateComment` 統一（見上）。兩路徑只負責「把回傳值畫出來」：原生 `Screen#computeAnnotations`
-  →`ann.authorIdStart/End`→Row props；好讀 `appendRows`→`renderRowHtml(...,authorIdStart,authorIdEnd)`→Row。
+  →`ann.authorIdStart/End`→Row props（兩模式同走 `<Screen>`→`<Row>`，2026-06 統一後無第二條接線）。
 - pref `highlightAuthorComments`(true)；`pttchrome.onPrefChange`→`view.*`+`redraw(true)`。i18n `options_highlightAuthorComments`。
 
 ## 點選推文者高亮（pusher highlight，整列）
@@ -60,11 +63,13 @@
 - 觸發：`pttchrome.mouse_click`（**非** `onMouse_click`——後者只在 mouse browsing 開時跑）。在 `getSelection().isCollapsed`
   分支最前面：`e.target.closest('[data-pusher]')` 命中→`view.togglePusherHighlight(id)`+`preventDefault`+`return`
   （抑制 browsing 導航/leftButtonFunction）。`useMouseBrowsing` 預設 false。
-- 偵測一律走 DOM（**好讀畫面是重排長卷、不對應 buf 24 列網格**，不能用 `clientToPos`/`getRowText`）。推文列兩路徑都掛
-  `data-pusher`(lower id)：原生 Row 外層 span（prop `pusher`）、好讀 `appendRows` 的 `el`。
-- 狀態 `view._selectedPusher`（傳入 `annotateComment` ctx）；`togglePusherHighlight`：原生→`redraw(true)`（重算
-  `ann.pusherHighlight`）；好讀→`_applyPusherHighlightDOM`（遍歷 `mainContainer` 子節點 toggle class，不重繪）。
-- 清除：好讀新文章在 `populateEasyReadingPage` else 分支 reset；原生 `redraw` `pageState!==3` 時 reset。
+- 偵測一律走 DOM（**好讀畫面是重排長卷、不對應 buf 24 列網格**，不能用 `clientToPos`/`getRowText`）。推文列
+  `data-pusher`(lower id) 由 `<Row>` 外層 span（prop `pusher`，來自 `ann.pusher`）統一掛上，兩模式同。
+- 狀態 `view._selectedPusher`（傳入 `annotateComment` ctx）；`togglePusherHighlight` 兩模式同：設 `_selectedPusher`
+  + `redraw(true)` → `computeAnnotations` 重算 `ann.pusherHighlight`，`<Screen>` 重繪套 class。（2026-06 統一前好讀
+  另走 `_applyPusherHighlightDOM` 直接 toggle class，已刪。好讀重繪會重入 `accumulatePageLines` 同畫面，
+  `findPageOverlap` 去重成 no-op append，故無重複列。）
+- 清除：好讀新文章在 `accumulatePageLines` else（新文章）分支 reset；原生 `redraw` `pageState!==3` 時 reset。
 - 無 pref/i18n（點擊驅動、恆可用）。
 
 ## 設定（`PrefModal.js` 「增強功能」分頁）
@@ -111,10 +116,12 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 
 ## 踩坑筆記（本次整合，CONFIRMED）
 
-1. **渲染雙路徑：好讀開啟時所有畫面繞過 Screen**。`view.useEasyReadingMode==true` 時，redraw 對「任何」
-   pageState 都走好讀分支：文章→`populateEasyReadingPage`、列表/選單→`hideEasyReading`，全都 `appendRows`
-   直接竄改 DOM，**不經 `Screen.js`**。⇒ 任何「逐列加工」必須**同時**做在 `Screen#computeAnnotations`(原生)
-   與 `appendRows`(好讀) 兩處，且 `hideEasyReading` 也要傳 `enhance=true`。← 「列表黑名單沒作用」根因。
+1. **渲染雙路徑：好讀開啟時所有畫面繞過 Screen**。**[已消除 2026-06 統一渲染]** 好讀文章改走
+   `<Screen lines={buf.pageLines}>`、列表選單與原生同走 `<Screen lines={buf.lines}>`，逐列加工只剩
+   `Screen#computeAnnotations` 一處（見「渲染整合」段）。以下為歷史脈絡：`view.useEasyReadingMode==true` 時，
+   redraw 對「任何」pageState 都走好讀分支：文章→`populateEasyReadingPage`、列表/選單→`hideEasyReading`，全都
+   `appendRows` 直接竄改 DOM，**不經 `Screen.js`**。⇒ 任何「逐列加工」必須**同時**做在 `Screen#computeAnnotations`
+   (原生) 與 `appendRows`(好讀) 兩處，且 `hideEasyReading` 也要傳 `enhance=true`。← 「列表黑名單沒作用」根因。
 2. **`'change'` 事件早於 React 重繪**：`term_buf.notify()` 先 `dispatchEvent('change')` 才 `view.update()`
    (`term_buf.js:800/803`)。要讀「當前畫面文字」一律用 `buf.getRowText`，**勿讀 `#mainContainer.innerText`**
    （慢一幀、需下一次更新才追上）。← auto-login「要按鍵才會動」根因；改自走 polling + getRowText 解決。
@@ -147,7 +154,9 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     （`→ tony :`、`推 bbignose :`，**無時間戳**、在 `※ 發信站:` 前；例 M.1780738427）被當真推文。`※ 編輯: …
     MM/DD/YYYY HH:MM:SS` 也因格式不同+前綴 ※ 排除。守護：`comment_parse.test.js` + `tests/unit/fixtures/*.txt`
     （5 篇真實文章逐列標 `C`/`N`）；e2e `enhance.spec.js` 斷言每個 `[data-floor]` 徽章所屬列含時間戳。
-11. **直接設 `useEasyReadingMode=false` ⇒ 畫面永久凍結（2026-06，CONFIRMED 實機）**。好讀期間 `appendRows`/
+11. **直接設 `useEasyReadingMode=false` ⇒ 畫面永久凍結（2026-06，CONFIRMED 實機）**。**[已消除 2026-06 統一
+    渲染]** React 現恆擁有 `#mainContainer`（兩模式都走 `<Screen>`），切原生只是 `lines` 由長頁 reconcile 回 24 列，
+    `exitEasyReading` 已移除 `unmountComponentAtNode`，凍結路徑不復存在。以下為歷史脈絡：好讀期間 `appendRows`/
     `clearRows` 直接竄改 `#mainContainer`，React 樹（`componentScreen`）的 Row nodes 已 detached。此時把
     `view.useEasyReadingMode` 直接設 false，渲染切回 React `renderScreen` 路徑 → 更新全打在 detached nodes →
     **畫面從此不動**（按鍵有送、server 有回、`page state` log 正常，但 innerText 凍住；連動態看板都停格）。

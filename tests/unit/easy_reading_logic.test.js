@@ -181,7 +181,7 @@ describe("nextEasyReadingRowState", () => {
 // leaveCurrentPost stays in easy reading (does not touch _enabled) and only resets
 // per-post render state. It no longer clears a latch (auto re-enable is now
 // edge-triggered on the settle stream), but it still zeroes prevPageState so the next
-// article renders via populateEasyReadingPage's "new article" branch.
+// article renders via accumulatePageLines' "new article" branch.
 describe("EasyReading.leaveCurrentPost", () => {
   const makeER = () => {
     const termBuf = { addEventListener() {}, prevPageState: 0, pageState: 0 };

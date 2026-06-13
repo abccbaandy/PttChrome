@@ -2,15 +2,28 @@
 
 import { TermKeyboard } from './term_keyboard';
 import { termInvColors } from './term_buf';
-import { renderRowHtml, renderScreen } from './term_ui';
+import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
-import { rowToText, annotateComment, parseListAuthor, parseArticleAuthor, FloorCounter, findPageOverlap } from './comment_parse';
+import { rowToText, parseArticleAuthor, findPageOverlap } from './comment_parse';
 
 const ENTER_CHAR = '\r';
 const ESC_CHAR = '\x15'; // Ctrl-U
 const DEFINE_INPUT_BUFFER_SIZE = 12;
+
+// Snapshot-clone a screen row (TermChar[]) for retention in buf.pageLines. The live
+// 24-row buffer is overwritten as PTT repaints, so accumulated rows must be copied.
+// A JSON clone would strip the TermChar PROTOTYPE methods (isStartOfURL / getColor /
+// getFg…) that <Row>/LinkSegmentBuilder call at render time — the easy-reading page
+// is now drawn through <Screen>, so those methods must survive. Copy each char's own
+// (primitive) data props onto a fresh object that keeps the same prototype: a real
+// content snapshot that is still a method-bearing TermChar.
+function cloneRow(row) {
+  return row.map(function(ch) {
+    return Object.assign(Object.create(Object.getPrototypeOf(ch)), ch);
+  });
+}
 
 export function TermView() {
   //new pref - start
@@ -43,11 +56,12 @@ export function TermView() {
   this.easyReadingKeyDownKeyCode = 0;
 
   // Enhanced Add-on: comment blacklist (lower-cased Set) + floor numbering.
-  // Set from prefs via App.onPrefChange. _floorCounter persists across page-downs
-  // within one article (reset when a new post is entered, see populateEasyReadingPage).
+  // Set from prefs via App.onPrefChange. Floor numbers are computed at render time
+  // by Screen#computeAnnotations (a fresh FloorCounter walks the whole `lines`); in
+  // easy reading `lines` is the full accumulated pageLines, so cross-page numbering
+  // falls out naturally — no persistent counter on the view is needed.
   this.blacklist = new Set();
   this.showFloorNumbers = true;
-  this._floorCounter = new FloorCounter();
   // Same-author comment highlighting: tint comments written by the 原PO.
   // _articleAuthor is parsed from the article header (first page only) and kept
   // across page-downs; see redraw().
@@ -294,37 +308,70 @@ TermView.prototype = {
       }
     }
     if (changedLineHtmlStrs.length > 0) {
-      if (this.useEasyReadingMode) {
-        if (this.buf.startedEasyReading && this.buf.easyReadingShowReplyText) {
-          this.updateEasyReadingReplyRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
-        } else if (this.buf.startedEasyReading && this.buf.easyReadingShowPushInitText) {
-          this.updateEasyReadingPushInitRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
-        } else {
-          this.populateEasyReadingPage();
-        }
+      // Single render path: BOTH modes draw through <Screen> (React owns
+      // #mainContainer). The only difference is which `lines` we hand it — a single
+      // fixed screen (native, or a list/menu while easy reading is on) or the
+      // growing accumulated article page (easy reading, pageState 3). The two
+      // easy-reading overlay rows (footer / reply preview) are separate divs and
+      // are still drawn imperatively below.
+      if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowReplyText) {
+        this.updateEasyReadingReplyRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
+      } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowPushInitText) {
+        this.updateEasyReadingPushInitRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
+      } else if (this.useEasyReadingMode && this.buf.pageState == 3) {
+        // Easy-reading article: accumulate the long page into buf.pageLines (pure
+        // JS de-dup, no DOM) then render the whole thing. Blacklisted comment rows
+        // are dropped entirely (dropHidden) instead of left as a blank gap.
+        // Auto-open images INLINE (the long scroll page) — matches the old
+        // appendRows(showsLinkPreview=true) behaviour. Hover preview off (inline
+        // already shows them; avoids a duplicate floating popup).
+        this.accumulatePageLines();
+        this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false);
       } else {
-        this.componentScreen = renderScreen(
-          /* For Screen#componentWillReceiveProps */lines.slice(),
-          this.chh,
-          /* showsLinkPreview */false,
-          this.enablePicPreview,
-          this.mainDisplay,
-          {
-            blacklist: this.blacklist,
-            showFloorNumbers: this.showFloorNumbers,
-            highlightAuthor: this.highlightAuthorComments,
-            articleAuthor: this._articleAuthor,
-            selectedPusher: this._selectedPusher,
-            pageState: this.buf.pageState
-          }
-        )
-        this.setHighlightedRow(this.buf.nowHighlight)
+        // Native screen, OR easy reading sitting on a list/menu (pageState != 3):
+        // one fixed screen. Hide the easy-reading overlay rows first when on.
+        // Native shows images on HOVER (per enablePicPreview pref), no inline; the
+        // easy-reading list/menu shows neither (matches the old hideEasyReading path).
+        if (this.useEasyReadingMode) this.hideEasyReadingOverlays();
+        this._renderScreenLines(
+          /* a fresh copy for componentWillReceiveProps */ lines.slice(),
+          /* dropHidden */ false,
+          /* inlinePreview */ false,
+          /* hoverPreview */ this.useEasyReadingMode ? false : this.enablePicPreview
+        );
+        this.setHighlightedRow(this.buf.nowHighlight);
       }
       this.buf.prevPageState = this.buf.pageState;
     }
     //var time = new Date().getTime() - start;
     //console.log(time);
 
+  },
+
+  // Render `lines` into #mainContainer via <Screen>. dropHidden=true removes
+  // blacklisted rows from the layout (easy-reading long page); false keeps them as
+  // visibility:hidden to preserve the fixed native grid. inlinePreview auto-opens
+  // image links inline (easy-reading article); hoverPreview shows them on hover
+  // (native, per enablePicPreview). The per-row enhance logic (blacklist / floor /
+  // author / pusher highlight) lives entirely in Screen#computeAnnotations now,
+  // shared by both modes.
+  _renderScreenLines: function(lines, dropHidden, inlinePreview, hoverPreview) {
+    this.componentScreen = renderScreen(
+      lines,
+      this.chh,
+      inlinePreview,
+      hoverPreview,
+      this.mainDisplay,
+      {
+        blacklist: this.blacklist,
+        showFloorNumbers: this.showFloorNumbers,
+        highlightAuthor: this.highlightAuthorComments,
+        articleAuthor: this._articleAuthor,
+        selectedPusher: this._selectedPusher,
+        pageState: this.buf.pageState,
+        dropHidden: dropHidden
+      }
+    );
   },
 
   setHighlightedRow: function(row) {
@@ -759,170 +806,74 @@ TermView.prototype = {
     };
   },
 
-  populateEasyReadingPage: function() {
-    if (this.buf.pageState == 3 && this.buf.prevPageState == 3) {
-      this.mainContainer.style.paddingBottom = '1em';
+  // Accumulate the easy-reading scroll page into buf.pageLines (pure JS, no DOM).
+  // Called only for article pages (pageState 3) from redraw; the actual draw is done
+  // by the caller via _renderScreenLines(buf.pageLines). Cross-page de-dup compares
+  // row CONTENT (findPageOverlap), never PTT status-line row numbers — see
+  // comment_parse.findPageOverlap and docs/enhanced-addon.md.
+  accumulatePageLines: function() {
+    if (this.buf.prevPageState == 3) {
+      // Same article, paged down: append only the genuinely new tail. PTT re-shows
+      // the previous screen's bottom at the top of the new one; findPageOverlap
+      // measures that overlap so we skip re-adding it.
+      if (this.mainContainer) this.mainContainer.style.paddingBottom = '1em';
       var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
-      // parseStatusRow is now only a gate: a valid status row confirms we are on an
-      // article reading page. Its numeric fields (rowIndexStart/pageIndex/…) are NOT
-      // used for de-duplication any more — see findPageOverlap for why.
+      // parseStatusRow is only a gate here: it confirms an article reading page. Its
+      // numeric fields are NOT used for de-duplication — see findPageOverlap.
       var result = parseStatusRow(lastRowText);
       if (result) {
-        // Pure content-based cross-page de-dup. When PTT pages down, the top of the
-        // new screen re-displays the bottom of the previous one; only append what is
-        // genuinely new. This replaces the old status-line arithmetic (rowIndexStart
-        // vs a self-counted actualRowIndex + the 首頁 `i==4` hack) that mis-counted
-        // by 1 and dropped the first comment. Same philosophy as BePTT, whose de-dup
-        // also compares row CONTENT (a ring buffer of recent rows incl. colors),
-        // not status-line numbers. See docs/enhanced-addon.md.
         var newRows = this.buf.lines.slice(0, -1); // drop the status row
-        // Only the last `newRows.length` accumulated rows can possibly overlap, so we
-        // map just the tail to text (keeps it O(screen), not O(article)).
+        // Only the last `newRows.length` accumulated rows can overlap, so map just
+        // the tail to text (keeps it O(screen), not O(article)).
         var accTail = this.buf.pageLines.slice(-newRows.length).map(rowToText);
         var beginIndex = findPageOverlap(accTail, newRows.map(rowToText));
-        this.appendRows(newRows.slice(beginIndex), true, true);
-        // deep clone lines for selection (getRowText and get ansi color).
-        // NOTE: pageLines keeps the full lines even for blacklisted (skipped) rows,
-        // so text selection/copy still contains the original content.
-        this.buf.pageLines = this.buf.pageLines.concat(JSON.parse(JSON.stringify(newRows.slice(beginIndex))));
+        // Snapshot-clone the new tail (see cloneRow). pageLines is BOTH the render
+        // source (<Screen lines={pageLines}>) and the selection source (getText reads
+        // it, incl. ANSI colours). It keeps the FULL rows even for blacklisted ones,
+        // so copy still has the original text — the blacklist drop happens only at
+        // render time (Screen dropHidden). A forced redraw (pref/pusher toggle)
+        // re-enters here with the same screen; findPageOverlap then matches the whole
+        // screen so beginIndex == newRows.length and nothing is double-appended.
+        this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(beginIndex).map(cloneRow));
       }
-      this.buf.prevPageState = 3;
     } else {
-      this.mainContainer.style.paddingBottom = '';
-      // New article entered → restart floor numbering and clear pusher highlight.
-      this._floorCounter.reset();
+      // First page of a (new) article: restart the accumulated page as this whole
+      // screen and clear the per-article pusher selection.
+      if (this.mainContainer) this.mainContainer.style.paddingBottom = '';
       this._selectedPusher = null;
-      if (this.buf.pageState == 3) {
-        // First page of the article: append the whole screen, no de-dup needed.
-        this.clearRows();
-        this.appendRows(this.buf.lines.slice(0, -1), true, true);
-        this.lastRowDiv.innerHTML = this.lastRowDivContent;
-        this.lastRowDiv.style.display = 'block';
-        // deep clone lines for selection (getRowText and get ansi color)
-        this.buf.pageLines = this.buf.pageLines.concat(JSON.parse(JSON.stringify(this.buf.lines.slice(0, -1))));
-      } else {
-        this.hideEasyReading();
-      }
-      this.buf.prevPageState = this.buf.pageState;
-    }
-  },
-
-  clearRows: function() {
-    this.mainContainer.innerHTML = '';
-  },
-
-  appendRows: function(lines, showsLinkPreview, enhance) {
-    // When easy reading is enabled, ALL screens are rebuilt here (articles via
-    // populateEasyReadingPage, lists/menus via hideEasyReading), so the Enhanced
-    // Add-on filtering must live here too — not only in the native Screen path.
-    var hasBlacklist = this.blacklist && this.blacklist.size > 0;
-    // Per-row enhance context (shared pure logic with the native path → the two
-    // can't diverge). _floorCounter persists across page-downs within an article.
-    var ctx = {
-      blacklist: this.blacklist,
-      showFloorNumbers: this.showFloorNumbers,
-      floorCounter: this._floorCounter,
-      highlightAuthor: this.highlightAuthorComments,
-      articleAuthor: this._articleAuthor,
-      selectedPusher: this._selectedPusher
-    };
-    for (var i in lines) {
-      var line = lines[i];
-      // IMPORTANT: re-init every iteration. `var` is function-scoped, so a bare
-      // `var floor;` does NOT reset between iterations — it keeps the previous
-      // value. That made every non-comment row AFTER a comment (blank rows below
-      // the last push, ※ lines, body) inherit the previous comment's floor badge
-      // (e.g. an article with 2 pushes showed "2" on every trailing blank row).
-      // Must assign each iteration. (authorId range avoids this by reading from
-      // `ann`, which is reset to null below.)
-      var floor = undefined;
-      var hidden = false;
-      var ann = null;
-      if (enhance) {
-        if (this.buf.pageState === 3) {
-          ann = annotateComment(rowToText(line), ctx);
-          if (ann) {
-            // Article: blacklisted rows are dropped entirely (no blank line — it
-            // is a flow). The floor was already counted inside annotateComment.
-            if (ann.hidden) continue;
-            floor = ann.floor;
-          }
-        } else if (this.buf.pageState === 2 && hasBlacklist) {
-          // Board list: hide blacklisted authors' posts. The list is a fixed grid
-          // here, so hide (visibility) rather than remove to keep alignment.
-          var author = parseListAuthor(rowToText(line));
-          if (author && this.blacklist.has(author)) {
-            hidden = true;
-          }
-        }
-      }
-      var el = document.createElement('span');
-      el.setAttribute('type', 'bbsrow');
-      el.setAttribute('srow', this.mainContainer.childNodes.length);
-      if (hidden) el.style.visibility = 'hidden';
-      // data-pusher lets a click reselect this pusher; .pusherHighlight is toggled
-      // here (so re-appended pages keep the highlight) and by _applyPusherHighlightDOM.
-      if (ann && ann.pusher) el.setAttribute('data-pusher', ann.pusher);
-      if (ann && ann.pusherHighlight) el.classList.add('pusherHighlight');
-      this.mainContainer.appendChild(el);
-      renderRowHtml(
-        line, this.mainContainer.childNodes.length, this.chh,
-        showsLinkPreview, el, floor,
-        ann && ann.authorIdStart, ann && ann.authorIdEnd);
+      this.lastRowDiv.innerHTML = this.lastRowDivContent;
+      this.lastRowDiv.style.display = 'block';
+      this.buf.pageLines = this.buf.lines.slice(0, -1).map(cloneRow);
     }
   },
 
   // Toggle whole-row highlight for all comments by `userid` (click handler).
-  // Clicking the selected pusher again clears it; clicking another switches.
+  // Clicking the selected pusher again clears it; clicking another switches. Both
+  // render paths re-apply the .pusherHighlight class from _selectedPusher inside
+  // Screen#computeAnnotations now, so a single forced redraw suffices. (In easy
+  // reading the redraw re-enters accumulatePageLines on the same screen, which
+  // findPageOverlap dedups to a no-op append; only the render reflects the change.)
   togglePusherHighlight: function(userid) {
     if (!userid) return;
     this._selectedPusher = this._selectedPusher === userid ? null : userid;
-    if (this.useEasyReadingMode) {
-      this._applyPusherHighlightDOM();
-    } else {
-      // Native path re-renders from buf; computeAnnotations re-applies the class.
-      this.redraw(true);
-    }
+    this.redraw(true);
   },
 
-  // Easy reading rows are persistent DOM (append model), so toggle the class
-  // directly instead of re-rendering.
-  _applyPusherHighlightDOM: function() {
-    var rows = this.mainContainer.childNodes;
-    for (var i = 0; i < rows.length; ++i) {
-      var el = rows[i];
-      if (!el.getAttribute) continue;
-      var p = el.getAttribute('data-pusher');
-      if (p && this._selectedPusher && p === this._selectedPusher) {
-        el.classList.add('pusherHighlight');
-      } else {
-        el.classList.remove('pusherHighlight');
-      }
-    }
-  },
-
-  renderSingleRow: function(target, row) {
-    var el = document.createElement('span');
-    el.setAttribute('type', 'bbsrow');
-    el.setAttribute('srow', '0');
-    target.appendChild(el);
-    return renderRowHtml(row, 0, this.chh, false, el);
-  },
-
-  hideEasyReading: function() {
+  // Restore the easy-reading overlay rows (footer + reply preview) to their hidden
+  // CSS default and clear the accumulated page. Called when easy reading is on but
+  // the current screen is a list/menu (pageState != 3); the screen itself is drawn
+  // by the caller via _renderScreenLines(buf.lines) — the same single-screen path
+  // the native mode uses.
+  hideEasyReadingOverlays: function() {
     this.lastRowDiv.style.display = '';
     this.replyRowDiv.style.display = '';
-    // clear the deep cloned copy of lines
     this.buf.pageLines = [];
-    this.clearRows();
-    // enhance=true so list/menu screens rebuilt here also get blacklist filtering.
-    this.appendRows(this.buf.lines, false, true);
   },
 
   updateEasyReadingReplyRow: function(row) {
     var el = document.createElement('span');
     el.style = "background-color:black;";
-    this.renderSingleRow(el, row);
+    renderOverlayRow(row, this.chh, el);
     this.setSingleChild(this.replyRowDiv.childNodes[0], el);
     this.replyRowDiv.style.display = 'block';
   },
@@ -930,7 +881,7 @@ TermView.prototype = {
   updateEasyReadingPushInitRow: function(row) {
     var el = document.createElement('span');
     el.style = "background-color:black;";
-    this.renderSingleRow(el, row);
+    renderOverlayRow(row, this.chh, el);
     this.setSingleChild(this.lastRowDiv.childNodes[0], el);
   },
 

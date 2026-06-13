@@ -33,6 +33,10 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
   e2e 不連 Firebase，同步流程只能在這驗。細節見 `docs/pref-sync-firestore.md`。
 - **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額常滿會 fast-fail）。
   失敗自動截圖/錄影 + console dump。helper：`tests/e2e/helpers/ptt.js`。細節見 `tests/e2e/README.md`。
+- **強制規範：改到渲染/畫面這類易壞 code，提交前必跑 e2e**（`yarn test:e2e`，至少 `easy-reading.spec.js`+`enhance.spec.js`）。
+  適用 `term_view.js`、`term_ui.js`、`src/components/**`、`easy_reading.js`、`pttchrome.js` 渲染/切換路徑、`term_buf.js` 渲染相關等。
+  理由：unit（node env，react-test-renderer）**不載入** DOM/React/WebSocket 耦合模組，捕捉不到「一進文章即炸」這類 runtime 崩潰
+  （例：`pageLines` 用 `JSON` 克隆剝掉 TermChar prototype 方法 → `ch.isStartOfURL is not a function`）。不可只靠 unit + build 綠就交付。
 
 ## 隱私（務必遵守）
 - 這是公開 fork repo。**禁止**把以下寫進任何 `.md`、原始碼、commit message：
@@ -47,4 +51,6 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - 待辦交接：`docs/handoff/`，一個 `.md` = 一個尚未完成的功能/修復；挑一個做完即**刪掉該 md**。詳見 `docs/handoff/README.md`。
 - git：**不開新功能分支**，直接在現有分支（`dev`）修改與 commit。
 - 增強功能整合的渲染雙路徑/事件時序等踩坑見 `docs/enhanced-addon.md`「踩坑筆記」。
+- 渲染已統一單路徑（兩模式都走 `<Screen>`）見 `docs/easy-reading.md`「render 單軌」。改渲染路徑前先讀它。
+- 改渲染/畫面易壞 code 必跑 e2e（見「測試」段強制規範）。
 - 每次踩坑都要把值得紀錄的細節寫進md

@@ -16,20 +16,14 @@ export class ColorState {
   }
 }
 
-/**
- * @deprecated
- */
-export function renderRowHtml(chars, row, forceWidth, enableLinkInlinePreview, cont, floor, authorIdStart, authorIdEnd) {
+// Render a single row into an overlay container that is NOT #mainContainer
+// (the easy-reading footer #easyReadingLastRow and reply preview
+// #easyReadingReplyRow). Those are standalone divs under BBSWindow, so a tiny
+// per-row ReactDOM.render here does not fight React for #mainContainer ownership
+// (that container is rendered solely via renderScreen / <Screen>).
+export function renderOverlayRow(chars, forceWidth, cont) {
   return ReactDOM.render(
-    <Row
-      chars={chars}
-      row={row}
-      forceWidth={forceWidth}
-      enableLinkInlinePreview={enableLinkInlinePreview}
-      floor={floor}
-      authorIdStart={authorIdStart}
-      authorIdEnd={authorIdEnd}
-    />,
+    <Row chars={chars} row={0} forceWidth={forceWidth} />,
     cont
   );
 }

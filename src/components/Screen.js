@@ -106,28 +106,38 @@ export class Screen extends React.Component {
       this.props.lines,
       this.props.enhance
     );
+    // dropHidden: easy-reading accumulates a single growing scroll page, so a
+    // blacklisted comment is removed entirely (render null → no DOM node, no blank
+    // line). The fixed native grid instead keeps the row and hides it
+    // (visibility:hidden via <Row hidden>) so the terminal alignment is preserved.
+    // Rendering null does NOT shift the map index, so surviving rows keep their
+    // absolute pageLines index in `row`/`data-row` and selection across the gap
+    // (term_buf.getText uses the absolute row index) stays correct.
+    const dropHidden = !!(this.props.enhance && this.props.enhance.dropHidden);
     return (
       <div id="mainContainer" onMouseMove={this.handleMouseMove}>
-        {this.props.lines.map((chars, row) => (
-          <Row
-            key={row}
-            chars={chars}
-            row={row}
-            forceWidth={this.props.forceWidth}
-            enableLinkInlinePreview={this.props.enableLinkInlinePreview}
-            highlighted={this.state.currentHighlighted === row}
-            floor={annotations[row] && annotations[row].floor}
-            hidden={annotations[row] && annotations[row].hidden}
-            pusher={annotations[row] && annotations[row].pusher}
-            pusherHighlight={
-              annotations[row] && annotations[row].pusherHighlight
-            }
-            authorIdStart={annotations[row] && annotations[row].authorIdStart}
-            authorIdEnd={annotations[row] && annotations[row].authorIdEnd}
-            onHyperLinkMouseOver={this.handleHyperLinkMouseOver}
-            onHyperLinkMouseOut={this.handleHyperLinkMouseOut}
-          />
-        ))}
+        {this.props.lines.map((chars, row) => {
+          const ann = annotations[row];
+          if (dropHidden && ann && ann.hidden) return null;
+          return (
+            <Row
+              key={row}
+              chars={chars}
+              row={row}
+              forceWidth={this.props.forceWidth}
+              enableLinkInlinePreview={this.props.enableLinkInlinePreview}
+              highlighted={this.state.currentHighlighted === row}
+              floor={ann && ann.floor}
+              hidden={ann && ann.hidden}
+              pusher={ann && ann.pusher}
+              pusherHighlight={ann && ann.pusherHighlight}
+              authorIdStart={ann && ann.authorIdStart}
+              authorIdEnd={ann && ann.authorIdEnd}
+              onHyperLinkMouseOver={this.handleHyperLinkMouseOver}
+              onHyperLinkMouseOut={this.handleHyperLinkMouseOut}
+            />
+          );
+        })}
         {this.state.currentImagePreview && (
           <ImagePreviewer
             request={this.state.currentImagePreview}
