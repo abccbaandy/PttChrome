@@ -1,14 +1,21 @@
+jest.mock("../../src/js/pref_storage", () => ({
+  readValuesWithDefault: jest.fn(() => ({ enableEasyReading: true }))
+}));
+
 import {
   nextEasyReadingState,
   nextEasyReadingRowState,
   EasyReading
 } from "../../src/js/easy_reading";
+import { readValuesWithDefault } from "../../src/js/pref_storage";
 
 // nextEasyReadingState now decides auto-enable from term_buf's DEBOUNCED pageState
 // stream (settledPageState / prevSettledPageState), evaluated once per settle edge
 // by _onPageStateSettled — not per redraw frame. The transient-frame race that the
 // old _cameFromList latch worked around is handled upstream by the settle debounce,
-// so the check is the clean, edge-correct `prevSettled == 2 && settled == 3`.
+// so the check is the clean, edge-correct "settled into an article (3) from a
+// list(2)/menu(1)". The menu(1) source covers 精華區 (essence) so that after the
+// user switched to native at the bottom, the next 精華 article still re-engages.
 describe("nextEasyReadingState", () => {
   const decide = (o = {}) => nextEasyReadingState({
     settledPageState: 3,
@@ -23,8 +30,17 @@ describe("nextEasyReadingState", () => {
     expect(decide()).toBe(true);
   });
 
-  it("does not enable unless the previous settled state was a list (2)", () => {
+  // 精華區: top level settles to MENU(1), sub-folders to MENU(1) or LIST(2); opening
+  // an article from there is a 1 -> 3 edge. Without this, easy reading stayed off
+  // after switchToNativeAtBottom until the user backed out to a real board list (2).
+  it("enables on a settled menu -> article edge (1 -> 3), covering 精華區", () => {
+    expect(decide({ prevSettledPageState: 1 })).toBe(true);
+  });
+
+  it("does not enable from a non-list/menu previous state (pass/edit/normal)", () => {
     expect(decide({ prevSettledPageState: 0 })).toBe(false);
+    expect(decide({ prevSettledPageState: 5 })).toBe(false);
+    expect(decide({ prevSettledPageState: 6 })).toBe(false);
     expect(decide({ prevSettledPageState: 3 })).toBe(false);
   });
 
@@ -45,8 +61,8 @@ describe("nextEasyReadingState", () => {
   });
 
   // Regression guard for switchToNativeAtBottom: after the user pressed End the post
-  // stays on pageState 3, so settledPageState stays 3 (no new 2 -> 3 edge). A transient
-  // 0 -> 3 flicker never settles, so prevSettled is never 2 again -> no re-enable.
+  // stays on pageState 3, so settledPageState stays 3 (no new list/menu -> 3 edge). A
+  // transient 0 -> 3 flicker never settles, so prevSettled stays 3 -> no re-enable.
   it("does not re-enable on an in-post flicker after manual native switch (settled stays 3)", () => {
     expect(decide({ settledPageState: 3, prevSettledPageState: 3 })).toBe(false);
   });
@@ -193,5 +209,77 @@ describe("EasyReading.leaveCurrentPost", () => {
     er._termBuf.prevPageState = 3;
     er.leaveCurrentPost();
     expect(er._termBuf.prevPageState).toBe(0);
+  });
+});
+
+// Wiring guard for the 精華區 fix. The pure nextEasyReadingState case above proves
+// the DECISION (1 -> 3 enables); this proves the PLUMBING: _onPageStateSettled must
+// read the settle edge off term_buf, feed it through nextEasyReadingState (with the
+// live pref + connection support), and actually call enterEasyReading. A refactor
+// could keep the pure function correct yet break this hop (e.g. re-inline the old
+// `=== 2` check, drop the pref/supported lookup), silently regressing 精華區 — so
+// guard the integration, not just the predicate.
+describe("EasyReading._onPageStateSettled", () => {
+  const makeER = ({ settled, prevSettled, enabled = false, supported = true } = {}) => {
+    const termBuf = {
+      addEventListener() {},
+      settledPageState: settled,
+      prevSettledPageState: prevSettled,
+      startedEasyReading: false,
+      easyReadingShowReplyText: false,
+      easyReadingShowPushInitText: false
+    };
+    const view = { useEasyReadingMode: enabled };
+    const core = { connectedUrl: { easyReadingSupported: supported } };
+    const er = new EasyReading(core, view, termBuf);
+    er.enterEasyReading = jest.fn(); // stub the side-effecting entry point
+    return er;
+  };
+
+  beforeEach(() => {
+    readValuesWithDefault.mockReturnValue({ enableEasyReading: true });
+  });
+
+  it("enters easy reading on a settled menu -> article edge (1 -> 3), covering 精華區", () => {
+    const er = makeER({ settled: 3, prevSettled: 1 });
+    er._onPageStateSettled();
+    expect(er.enterEasyReading).toHaveBeenCalledTimes(1);
+  });
+
+  it("enters easy reading on a settled list -> article edge (2 -> 3)", () => {
+    const er = makeER({ settled: 3, prevSettled: 2 });
+    er._onPageStateSettled();
+    expect(er.enterEasyReading).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not enter on an in-post flicker after manual native switch (3 -> 3)", () => {
+    const er = makeER({ settled: 3, prevSettled: 3 });
+    er._onPageStateSettled();
+    expect(er.enterEasyReading).not.toHaveBeenCalled();
+  });
+
+  it("does not enter from a pass-screen edge (5 -> 3)", () => {
+    const er = makeER({ settled: 3, prevSettled: 5 });
+    er._onPageStateSettled();
+    expect(er.enterEasyReading).not.toHaveBeenCalled();
+  });
+
+  it("does not enter when easy reading is already enabled", () => {
+    const er = makeER({ settled: 3, prevSettled: 1, enabled: true });
+    er._onPageStateSettled();
+    expect(er.enterEasyReading).not.toHaveBeenCalled();
+  });
+
+  it("does not enter when the preference is off", () => {
+    readValuesWithDefault.mockReturnValue({ enableEasyReading: false });
+    const er = makeER({ settled: 3, prevSettled: 1 });
+    er._onPageStateSettled();
+    expect(er.enterEasyReading).not.toHaveBeenCalled();
+  });
+
+  it("does not enter when the connection does not support easy reading", () => {
+    const er = makeER({ settled: 3, prevSettled: 1, supported: false });
+    er._onPageStateSettled();
+    expect(er.enterEasyReading).not.toHaveBeenCalled();
   });
 });

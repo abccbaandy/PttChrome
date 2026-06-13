@@ -12,16 +12,27 @@ import { readValuesWithDefault } from './pref_storage';
 //
 // It operates on term_buf's DEBOUNCED pageState stream: settledPageState only
 // advances once the screen has been quiet for SETTLE_MS, so the transient
-// half-painted frames (empty last row -> pageState 0) that PTT emits while
-// painting an article never appear here. That lets us use the clean, edge-correct
-// `prevSettled == 2 (list) && settled == 3 (article)` check — the original
-// `prevPageState == 2` intent, minus the transient-frame race that the old
-// `cameFromList` latch had to work around. Because it is edge-triggered (the
-// caller only invokes it on a settle transition), the in-post flicker after
+// half-painted frames (empty last row -> pageState 0) that PTT emits while painting
+// an article never appear here. That lets us use a clean, edge-correct "settled into
+// an article (3) from a list/menu" check without the transient-frame race the old
+// `cameFromList` latch had to work around. Because it is edge-triggered (the caller
+// only invokes it on a settle transition), the in-post flicker after
 // switchToNativeAtBottom (still pageState 3, settled stays 3 → no new edge) can no
-// longer re-enable against the user's choice. See docs/easy-reading.md.
+// longer re-enable against the user's choice; likewise a pass/edit/normal screen
+// (5/6/0) is excluded, so e.g. returning from in-article help does not re-enable.
+// See docs/easy-reading.md.
 export function nextEasyReadingState({ settledPageState, prevSettledPageState, enabled, enablePref, supported }) {
-  return settledPageState === 3 && prevSettledPageState === 2 &&
+  // Re-enable when we settled INTO an article (3) FROM a screen you open articles
+  // from: a board LIST (2) or a MENU (1). The 1 covers 精華區 (essence): its top
+  // level (首列【精華文章】) settles to MENU(1) and sub-folder listings to MENU(1)
+  // or LIST(2) — both let you Enter straight into an article. Without the 1, after
+  // switchToNativeAtBottom inside 精華區 the next article arrives on a 1->3 (not
+  // 2->3) edge, so easy reading never re-enabled — stuck native until you backed out
+  // to a real board list. 主功能表/分類看板 are also MENU(1) but you can't open an
+  // article directly from them (you pass through a board LIST first), so a 1->3 edge
+  // in practice only comes from 精華區.
+  return settledPageState === 3 &&
+    (prevSettledPageState === 2 || prevSettledPageState === 1) &&
     !enabled && enablePref && supported;
 }
 
