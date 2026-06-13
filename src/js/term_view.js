@@ -867,6 +867,12 @@ TermView.prototype = {
   hideEasyReadingOverlays: function() {
     this.lastRowDiv.style.display = '';
     this.replyRowDiv.style.display = '';
+    // 清掉好讀累積翻頁時加在 #mainContainer 的 1em 底部 padding（accumulatePageLines），
+    // 否則 .main 仍可捲動，殘留 scrollTop 會把列表列捲上約一格，而絕對定位的 #cursor
+    // （用固定 firstGridOffset 算位置、不受 scrollTop 影響）不會跟著動 → 游標低高亮列一格。
+    // 與原生退出路徑 (switchToEasyReadingMode(false), pttchrome.js:355) 保持一致。
+    if (this.mainContainer) this.mainContainer.style.paddingBottom = '';
+    this.mainDisplay.scrollTop = 0;
     this.buf.pageLines = [];
   },
 

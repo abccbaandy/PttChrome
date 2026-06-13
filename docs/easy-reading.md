@@ -41,6 +41,8 @@
 
 **坑 2（仍有效）**：好讀已自動翻頁到**底**時，實際游標在最後頁，再送原生 End(`\x1b[4~`)是 **no-op、PTT 不回應不重繪** → 必須另送 `^L`(`\x0c`, Ctrl-L)強制全頁重繪。`switchToEasyReadingMode()`(無參數)已內含 `^L`(`pttchrome.js:354`)。
 
+**坑 3（看完文章回列表游標低高亮列約一格，2026-06 修，CONFIRMED e2e）**：症狀=好讀看完文章按 ← 回列表，滑鼠高亮列（圓點）與閃爍 `#cursor` 約差一格、游標在下；在文章按 End 切原生再回列表則暫時正常。根因=`accumulatePageLines` 同篇翻頁分支對 `#mainContainer` 設 `paddingBottom='1em'`（≈1 列高，`term_view.js:819`）撐高內容→`.main`(`overflowY:auto`)可捲動殘留 `scrollTop`。回列表時好讀仍 `_enabled=true`，走 native 分支的 `hideEasyReadingOverlays()` 原本**只清 overlay 列+pageLines，未重置 padding/scrollTop**→列表列被捲上約一格，而絕對定位 `#cursor`（用固定 `firstGridOffset` 算 top，不受 scrollTop 影響）不動→游標低一格。間歇性源於殘留捲動量＋瀏覽器 clamp。按 End 暫時正常因 `switchToEasyReadingMode(false)` 有 `paddingBottom=''`（`pttchrome.js:355`），列表路徑缺此步。→ **修**：`hideEasyReadingOverlays()` 補 `mainContainer.style.paddingBottom=''`＋`mainDisplay.scrollTop=0`，與原生退出路徑一致。守護：e2e `easy-reading.spec.js`+`enhance.spec.js`（全綠）。
+
 ## 切換：三個對稱入口（CONFIRMED 純邏輯/手動驗）
 
 好讀的進/退/離篇收斂到三個語意明確的入口（`easy_reading.js`），新路徑只呼叫入口、不各自設旗標：
