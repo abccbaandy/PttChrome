@@ -124,6 +124,11 @@ export function EasyReading(core, view, termBuf) {
   this.easyReadingReachedPageEnd = false;
   this.sendCommandAfterUpdate = '';
   this.ignoreOneUpdate = false;
+  // Identity ("第 a~b 行" range) of the page we last issued a PageDown FROM. Used by
+  // the settle-driven recovery (_onScreenSettled) to dedup against the per-frame fast
+  // path so a slow PTT response never gets a double page-down (which would skip a
+  // page). Reset per article (enterEasyReading / leaveCurrentPost).
+  this._lastPagedDownSignature = null;
 
   function bindProperty(target, name, obj, prop) {
     if (!prop) prop = name;
@@ -142,6 +147,11 @@ export function EasyReading(core, view, termBuf) {
   // Auto re-enable is driven by the debounced pageState (see nextEasyReadingState),
   // fired once per settle edge — not by every per-frame 'change'.
   this._termBuf.addEventListener('pageStateSettled', this._onPageStateSettled.bind(this));
+  // Settle-driven page-down recovery: 'screenSettled' fires every quiet window (even
+  // while pageState stays 3), catching the case where the per-frame loop stalled
+  // because the cursor parked on the status row in a content-less (changed=false)
+  // frame _onChanged never sees. See _onScreenSettled and docs/easy-reading.md.
+  this._termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
 };
 
 // Fired once per term_buf settle edge. Auto-enable easy reading when we have just
@@ -176,12 +186,20 @@ EasyReading.prototype._onChanged = function(e) {
   if (!this._enabled)
     return;
 
+  this._applyRowState(this._computeRowState());
+};
+
+// Run the pure per-frame row-state machine against the CURRENT term_buf state.
+// Reads the live cursor / last-row parse, returns the rowState the caller applies.
+// Shared by _onChanged (fast path, per redraw frame) and _onScreenSettled (recovery,
+// per quiet window) so both drive the exact same decision.
+EasyReading.prototype._computeRowState = function() {
   const lastColNum = this._termBuf.cols - 1;
   const lastRowNum = this._termBuf.rows - 1;
   const lastRowText = this._termBuf.getRowText(lastRowNum, 0, this._termBuf.cols);
   const row22Text = this._termBuf.getRowText(22, 0, this._termBuf.cols);
   const lastRowFirstCh = this._termBuf.lines[lastRowNum][0];
-  const rowState = nextEasyReadingRowState({
+  return nextEasyReadingRowState({
     pageState: this._termBuf.pageState,
     startedEasyReading: this.startedEasyReading,
     showReplyText: this.easyReadingShowReplyText,
@@ -200,7 +218,10 @@ EasyReading.prototype._onChanged = function(e) {
     lastRowFirstChFg: lastRowFirstCh.getFg(),
     lastRowFirstChBg: lastRowFirstCh.getBg()
   });
+};
 
+// Apply a computed rowState back onto term_buf / this. Idempotent on a stable frame.
+EasyReading.prototype._applyRowState = function(rowState) {
   this.startedEasyReading = rowState.startedEasyReading;
   this.easyReadingShowReplyText = rowState.showReplyText;
   this.easyReadingShowPushInitText = rowState.showPushInitText;
@@ -212,11 +233,58 @@ EasyReading.prototype._onChanged = function(e) {
     this._termBuf.pageState = rowState.pageStateOverride;
 };
 
+// Identity of the article page currently shown, taken from the status row's
+// "目前顯示: 第 a~b 行" range (unique per page; advances on every page-down). Returns
+// null off a status row. Used to dedup the per-frame send against the settle recovery.
+EasyReading.prototype._currentPageSignature = function() {
+  const lastRowText = this._termBuf.getRowText(this._termBuf.rows - 1, 0, this._termBuf.cols);
+  const s = parseStatusRow(lastRowText);
+  return s ? (s.rowIndexStart + '~' + s.rowIndexEnd) : null;
+};
+
+// Settle-driven page-down recovery. Fired once per quiet window (term_buf 'screenSettled'),
+// i.e. after BOTH content and the cursor have stopped. The per-frame fast path
+// (_onChanged) can stall: PTT parks the cursor on the bottom status row in a
+// content-less (changed=false) notify, so the 'change'/'viewUpdate' events never fire
+// for that frame and the next PageDown is never queued, truncating the accumulated
+// page (most often on the heavy first article after login). When the screen is stable
+// we re-evaluate the SAME pure decision and, if a page-down is warranted AND we have
+// not already paged down from THIS exact page, send it — the page signature dedups
+// against the fast path so a slow PTT response cannot trigger a double page-down (which
+// would skip a page). See docs/easy-reading.md.
+EasyReading.prototype._onScreenSettled = function() {
+  if (!this._enabled)
+    return;
+  if (this._termBuf.pageState !== 3)
+    return;
+  if (this.sendCommandAfterUpdate)  // a command is mid-flight (incl. skipOne) — let the frame loop drive
+    return;
+  if (this.easyReadingReachedPageEnd)
+    return;
+
+  const rowState = this._computeRowState();
+  this._applyRowState(rowState);  // fix any cursor-dependent flag against the now-stable cursor
+
+  if (rowState.sendCommandAfterUpdate && rowState.sendCommandAfterUpdate !== 'skipOne') {
+    const sig = this._currentPageSignature();
+    if (sig && sig !== this._lastPagedDownSignature) {
+      this._lastPagedDownSignature = sig;
+      this._send(rowState.sendCommandAfterUpdate);
+    }
+    // A settle-path send has no following 'viewUpdate' to flush the queue, so never
+    // leave the command queued — it would re-fire on the next frame's viewUpdate.
+    this.sendCommandAfterUpdate = '';
+  }
+};
+
 EasyReading.prototype._onViewUpdated = function(e) {
   console.log('view update');
   if (this.sendCommandAfterUpdate) {
     console.log("send:" + this.sendCommandAfterUpdate);
     if (this.sendCommandAfterUpdate != 'skipOne') {
+      // Record which page this PageDown was issued from so the settle recovery
+      // (_onScreenSettled) knows this page is already handled and won't double-send.
+      this._lastPagedDownSignature = this._currentPageSignature();
       this._send(this.sendCommandAfterUpdate);
     }
     this.sendCommandAfterUpdate = '';
@@ -237,6 +305,9 @@ EasyReading.prototype.leaveCurrentPost = function() {
     this.ignoreOneUpdate = true;
   }
   this._termBuf.prevPageState = 0;
+  // New post → forget the previous post's page identity so its first page-down is
+  // never suppressed as a "same page" by the settle recovery.
+  this._lastPagedDownSignature = null;
 };
 
 EasyReading.prototype.stopEasyReading = function() {
@@ -273,6 +344,8 @@ EasyReading.prototype.enterEasyReading = function() {
   // page accumulation from empty.
   this._termBuf.prevPageState = 0;
   this._termBuf.pageLines = [];
+  // Fresh article → no page has been paged-down from yet (see settle recovery dedup).
+  this._lastPagedDownSignature = null;
   // Mark every row dirty so the forced redraw actually paints (update() only redraws
   // changed rows), then replay a full notify so 'change' (_onChanged sets the first
   // page-down) and 'viewUpdate' (_onViewUpdated sends it) both fire.

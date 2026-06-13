@@ -804,20 +804,7 @@ TermBuf.prototype = {
       this.updateCharAttr();
 
       this.setPageState();
-      // Re-arm the settle timer on every changed redraw window. While data keeps
-      // streaming in (~30ms apart) this never fires; SETTLE_MS after the last
-      // window — i.e. once the screen is truly quiet — it promotes the current
-      // pageState to settledPageState and notifies. Transient frames in between
-      // are skipped because they always have a later window re-arming the timer.
-      clearTimeout(this._settleTimer);
-      this._settleTimer = setTimeout(() => {
-        this._settleTimer = null;
-        if (this.pageState !== this.settledPageState) {
-          this.prevSettledPageState = this.settledPageState;
-          this.settledPageState = this.pageState;
-          this.dispatchEvent(new CustomEvent('pageStateSettled'));
-        }
-      }, SETTLE_MS);
+      this._armSettleTimer();
       if (this.useMouseBrowsing) {
         // clear highlight and reset cursor on page change
         // without the redraw being called here
@@ -839,6 +826,13 @@ TermBuf.prototype = {
         this.view.updateCursorPos();
       }
       this.posChanged=false;
+      // Cursor-only frames re-arm the settle timer too: PTT parks the cursor on the
+      // bottom status row as a SEPARATE escape (posChanged, NOT changed) that can land
+      // in its own notify window. "Quiet" must mean content AND cursor have both
+      // stopped, otherwise the settle fires before the cursor is parked and the
+      // easy-reading page-down recovery (EasyReading._onScreenSettled) reads a stale
+      // cursor. See docs/easy-reading.md.
+      this._armSettleTimer();
     }
 
     if (this.view.blinkOn) {
@@ -846,6 +840,28 @@ TermBuf.prototype = {
 
       document.body.classList.toggle('blink--active')
     }
+  },
+
+  // Re-arm the quiet-period timer. Called on every changed OR cursor-only redraw
+  // window: while data/cursor keep arriving (~30ms apart) it keeps resetting and
+  // never fires; SETTLE_MS after the LAST window — i.e. once the screen is truly
+  // quiet — it (a) promotes the current pageState to settledPageState and dispatches
+  // 'pageStateSettled' ONLY on an actual state change (auto-enable edge, see
+  // EasyReading.nextEasyReadingState), and (b) ALWAYS dispatches 'screenSettled' so
+  // mid-article consumers (the easy-reading page-down recovery) get a "screen is
+  // stable now" signal even while pageState stays 3. Transient half-painted frames
+  // never settle because a later window always re-arms the timer.
+  _armSettleTimer: function() {
+    clearTimeout(this._settleTimer);
+    this._settleTimer = setTimeout(() => {
+      this._settleTimer = null;
+      if (this.pageState !== this.settledPageState) {
+        this.prevSettledPageState = this.settledPageState;
+        this.settledPageState = this.pageState;
+        this.dispatchEvent(new CustomEvent('pageStateSettled'));
+      }
+      this.dispatchEvent(new CustomEvent('screenSettled'));
+    }, SETTLE_MS);
   },
 
   getText: function(row, colStart, colEnd, color, isutf8, reset, lines) {

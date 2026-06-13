@@ -2,12 +2,30 @@ jest.mock("../../src/js/pref_storage", () => ({
   readValuesWithDefault: jest.fn(() => ({ enableEasyReading: true }))
 }));
 
+// The settle-recovery path (_onScreenSettled / _computeRowState / _currentPageSignature)
+// runs the four string_util parsers on getRowText output. Mock them so these wiring
+// tests control isStatusRow / the page signature directly — parser correctness has its
+// own tests (string_util / comment_parse). The pure nextEasyReading* functions below
+// take booleans and never touch string_util, so the mock does not affect them.
+jest.mock("../../src/js/string_util", () => ({
+  parseStatusRow: jest.fn(),
+  parseReplyText: jest.fn(() => false),
+  parsePushInitText: jest.fn(() => false),
+  parseReqNotMetText: jest.fn(() => false)
+}));
+
 import {
   nextEasyReadingState,
   nextEasyReadingRowState,
   EasyReading
 } from "../../src/js/easy_reading";
 import { readValuesWithDefault } from "../../src/js/pref_storage";
+import {
+  parseStatusRow,
+  parseReplyText,
+  parsePushInitText,
+  parseReqNotMetText
+} from "../../src/js/string_util";
 
 // nextEasyReadingState now decides auto-enable from term_buf's DEBOUNCED pageState
 // stream (settledPageState / prevSettledPageState), evaluated once per settle edge
@@ -281,5 +299,105 @@ describe("EasyReading._onPageStateSettled", () => {
     const er = makeER({ settled: 3, prevSettled: 1, supported: false });
     er._onPageStateSettled();
     expect(er.enterEasyReading).not.toHaveBeenCalled();
+  });
+});
+
+// Settle-driven page-down recovery (the truncated-pushes fix). The per-frame loop
+// (_onChanged/_onViewUpdated) only fires on content ('changed') frames, but PTT parks
+// the cursor on the bottom status row in a SEPARATE cursor-only ('posChanged') frame
+// that can land on its own — so on a heavy first article the deciding frame is missed,
+// no further PageDown is queued, and the accumulated page is truncated. 'screenSettled'
+// fires once the screen is truly quiet (content AND cursor stopped); _onScreenSettled
+// re-runs the SAME pure decision and re-sends the missed PageDown, deduped by the page
+// signature so a slow PTT response cannot double-send (which would skip a page). The
+// decision itself is covered by nextEasyReadingRowState above; this guards the PLUMBING.
+describe("EasyReading._onScreenSettled", () => {
+  const makeER = ({
+    enabled = true,
+    pageState = 3,
+    sendCommandAfterUpdate = "",
+    reachedPageEnd = false,
+    curX = 79,
+    curY = 23,
+    lastRowFirstChBg = 0,
+    lastRowFirstChFg = 7,
+    lastPagedSig = null
+  } = {}) => {
+    const lastRowNum = 23;
+    const lastChar = { getFg: () => lastRowFirstChFg, getBg: () => lastRowFirstChBg };
+    const termBuf = {
+      addEventListener() {},
+      cols: 80,
+      rows: 24,
+      cur_x: curX,
+      cur_y: curY,
+      pageState,
+      prevPageState: 0,
+      lines: { [lastRowNum]: [lastChar] },
+      getRowText: () => "status-row-text",
+      startedEasyReading: true,
+      easyReadingShowReplyText: false,
+      easyReadingShowPushInitText: false
+    };
+    const view = { useEasyReadingMode: enabled };
+    const er = new EasyReading(/* core */ {}, view, termBuf);
+    er._send = jest.fn(); // stub the network send
+    er.easyReadingReachedPageEnd = reachedPageEnd;
+    er.sendCommandAfterUpdate = sendCommandAfterUpdate;
+    er._lastPagedDownSignature = lastPagedSig;
+    return er;
+  };
+
+  beforeEach(() => {
+    // Default: a non-bottom status row showing "第 1~23 行".
+    parseStatusRow.mockReturnValue({ pagePercent: 33, rowIndexStart: 1, rowIndexEnd: 23 });
+    parseReplyText.mockReturnValue(false);
+    parsePushInitText.mockReturnValue(false);
+    parseReqNotMetText.mockReturnValue(false);
+  });
+
+  it("re-sends the missed page-down on a settled non-bottom status row", () => {
+    const er = makeER();
+    er._onScreenSettled();
+    expect(er._send).toHaveBeenCalledTimes(1);
+    expect(er._send).toHaveBeenCalledWith("\x1b[6~");
+    expect(er._lastPagedDownSignature).toBe("1~23"); // records the page it paged from
+  });
+
+  it("does not double-send when this exact page was already paged down (signature match)", () => {
+    const er = makeER({ lastPagedSig: "1~23" });
+    er._onScreenSettled();
+    expect(er._send).not.toHaveBeenCalled();
+  });
+
+  it("does not send on the bottom 100% status row, and marks page end", () => {
+    const er = makeER({ lastRowFirstChBg: 4, lastRowFirstChFg: 7 });
+    er._onScreenSettled();
+    expect(er._send).not.toHaveBeenCalled();
+    expect(er.easyReadingReachedPageEnd).toBe(true);
+  });
+
+  it("does not send once page end has already been reached", () => {
+    const er = makeER({ reachedPageEnd: true });
+    er._onScreenSettled();
+    expect(er._send).not.toHaveBeenCalled();
+  });
+
+  it("does not send while a command is already in flight (lets the frame loop drive)", () => {
+    const er = makeER({ sendCommandAfterUpdate: "\x1b[6~" });
+    er._onScreenSettled();
+    expect(er._send).not.toHaveBeenCalled();
+  });
+
+  it("does not send when not on an article page (pageState != 3)", () => {
+    const er = makeER({ pageState: 2 });
+    er._onScreenSettled();
+    expect(er._send).not.toHaveBeenCalled();
+  });
+
+  it("does not send when easy reading is disabled", () => {
+    const er = makeER({ enabled: false });
+    er._onScreenSettled();
+    expect(er._send).not.toHaveBeenCalled();
   });
 });
