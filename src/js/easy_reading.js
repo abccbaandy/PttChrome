@@ -6,6 +6,30 @@ import {
 } from './string_util';
 import { readValuesWithDefault } from './pref_storage';
 
+// Pure state transition for auto-enabling easy reading. Kept side-effect free so
+// the transient-frame race that this guards against can be regression-tested in
+// tests/unit/easy_reading_logic.test.js.
+//
+// `cameFromList` latches once we pass through an article list (pageState 2) and
+// clears the moment easy reading turns on (here) or when leaving a post
+// (EasyReading.leaveCurrentPost). We must NOT use a raw
+// `prevPageState == 2` check: PTT paints an article over several 30ms redraw
+// windows, and the half-drawn frames (empty last row) report pageState 0, which
+// overwrites prevPageState and would leave the first/slowest-loading article
+// stuck in native mode. The latch survives those transient frames. We also must
+// NOT relax to `prevPageState != 3`: after switchToNativeAtBottom (_enabled=false
+// while still on pageState 3) a transient 0->3 flicker inside the same post would
+// wrongly re-enable easy reading against the user's choice. See docs/easy-reading.md.
+export function nextEasyReadingState({ pageState, cameFromList, enabled, enablePref, supported }) {
+  let nextCameFromList = cameFromList || pageState === 2;
+  let enable = enabled;
+  if (pageState === 3 && nextCameFromList && !enabled && enablePref && supported) {
+    enable = true;
+    nextCameFromList = false;
+  }
+  return { enabled: enable, cameFromList: nextCameFromList };
+}
+
 export function EasyReading(core, view, termBuf) {
   this._core = core;
   this._view = view;
@@ -16,6 +40,9 @@ export function EasyReading(core, view, termBuf) {
   this.easyReadingReachedPageEnd = false;
   this.sendCommandAfterUpdate = '';
   this.ignoreOneUpdate = false;
+  // Latch for nextEasyReadingState(): set when we see an article list (pageState
+  // 2), cleared when easy reading turns on. Survives transient mid-load frames.
+  this._cameFromList = false;
 
   function bindProperty(target, name, obj, prop) {
     if (!prop) prop = name;
@@ -36,13 +63,16 @@ export function EasyReading(core, view, termBuf) {
 EasyReading.prototype._onChanged = function(e) {
   console.log("page state: " + this._termBuf.prevPageState + "->" + this._termBuf.pageState);
   const values = readValuesWithDefault()
-  // make sure to come back to easy reading mode
-  if (this._termBuf.prevPageState == 2 &&
-      this._termBuf.pageState == 3 &&
-      !this._enabled && 
-      values.enableEasyReading &&
-      this._core.connectedUrl.easyReadingSupported)
-  {
+  // make sure to come back to easy reading mode (latch-based, see nextEasyReadingState)
+  const next = nextEasyReadingState({
+    pageState: this._termBuf.pageState,
+    cameFromList: this._cameFromList,
+    enabled: this._enabled,
+    enablePref: values.enableEasyReading,
+    supported: this._core.connectedUrl.easyReadingSupported
+  });
+  this._cameFromList = next.cameFromList;
+  if (next.enabled && !this._enabled) {
     this._enabled = true;
   } else if (!values.enableEasyReading && this._enabled) {
     // Pref turned off mid-post (e.g. PrefModal). Only when currently in easy
@@ -136,6 +166,15 @@ EasyReading.prototype.leaveCurrentPost = function() {
     this.ignoreOneUpdate = true;
   }
   this._termBuf.prevPageState = 0;
+  // Also clear the latch. leaveCurrentPost is the explicit "we are leaving this
+  // post" hook (also run by switchToEasyReadingMode, i.e. every manual exit such
+  // as End / ContextMenu 取消好讀 / pref-off). Zeroing prevPageState used to be
+  // what suppressed an auto re-enable inside the same post; the latch must do the
+  // same, otherwise the post-exit ^L redraw (pageState 3) would re-enable easy
+  // reading after exitEasyReading already unmounted #mainContainer → crash in
+  // populateEasyReadingPage. A real next-post re-enable still works because the
+  // intervening article list (pageState 2) re-sets the latch. See docs/easy-reading.md.
+  this._cameFromList = false;
 };
 
 EasyReading.prototype.stopEasyReading = function() {

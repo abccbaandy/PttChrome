@@ -8,7 +8,12 @@
 - 啟用條件：pref `enableEasyReading`(預設 **false**, `PrefModal.js:27`) && `connectedUrl.easyReadingSupported`(`pttchrome.js:185` true)。使用者自己開，存 localStorage `pttchrome.pref.v1`。
 - 啟用旗標：`view.useEasyReadingMode`，由 `bindProperty` 綁成 `EasyReading._enabled`（`easy_reading.js:27`）。
 - 進文章(pageState 3)後 `_onChanged` 持續送 PageDown(`\x1b[6~`)把整篇累積成可捲動長頁：`sendCommandAfterUpdate='\x1b[6~'`(`:83`) → `_onViewUpdated` 實際送出(`:117-126`)。長文章(精華區索引)因此自動翻頁久、攔截 `/` 等鍵 → 原生搜尋不可用。
-- 自動「重新啟用」：`_onChanged` 條件 `prevPageState==2 && pageState==3 && !_enabled && enableEasyReading && supported`(`:40-44`)。離開文章回列表(2)→進下篇(3)自然觸發，**不需手動 re-enable**。`prevPageState` 由 `term_view` 每次 render 後設 `buf.prevPageState=buf.pageState`(`:291/796`)。
+- 自動「重新啟用」：`_onChanged` 呼叫純函式 `nextEasyReadingState({pageState,cameFromList,enabled,enablePref,supported})`（`easy_reading.js` 頂部 export，unit test `tests/unit/easy_reading_logic.test.js`）。條件 `pageState==3 && cameFromList && !enabled && enableEasyReading && supported`。`cameFromList`=latch：看到列表(pageState 2)時置位、啟用好讀時清除。離開文章回列表(2)→進下篇(3)自然觸發，**不需手動 re-enable**。
+
+**踩坑 #12（登入後第一篇偶發走原生）**：原條件用 `prevPageState==2`，但 PTT 把文章分多個 30ms redraw 視窗畫出，半畫好的 frame 末列還空 → `setPageState` 落到 `pageState=0`（`term_buf.js:1016`，且 982 行 `//pageState=0` 已註解→無匹配時保留前值），而 `prevPageState` 每輪 render 都被覆寫成當輪值(`term_view.js:323`)→列表(2)→半畫(0)→文章(3) 使 `prevPageState` 在進文章瞬間是 0 非 2，整篇卡原生。登入後第一篇未快取、最易跨多視窗故機率最高；退出重進畫得快(單視窗)即正常。
+→ 解法：改用 `cameFromList` latch，可跨越 transient `pageState=0` frame。**不可**改成 `prevPageState!=3`：`switchToNativeAtBottom` 後 `_enabled=false` 仍在 pageState 3，文章內 `0→3` 閃動會誤判重開好讀；latch 只在 pageState==2 置位，文章內不置位故無此 regression。
+→ **隨之而來的 crash（必修，否則按 End 必當）**：原 `prevPageState==2` 的「同篇內不重啟」其實是靠 `leaveCurrentPost` 把 `prevPageState=0` 來抑制（`switchToEasyReadingMode` 內會呼叫 `leaveCurrentPost`，`pttchrome.js:345`，且**不**改 `useEasyReadingMode`）。改用 latch 後若沒同步清 latch，按 End→`switchToNativeAtBottom`→`exitEasyReading`(unmount React、`#mainContainer` 失效)→其送出的 `^L` 重繪文章(pageState 3)→latch 仍為真→重啟好讀→`populateEasyReadingPage` 讀已失效的 `mainContainer.style` → `Cannot read properties of undefined (reading 'style')`。
+→ 解法：`leaveCurrentPost` 一併 `this._cameFromList = false`（對應原 `prevPageState=0` 的抑制）。所有手動退出路徑(End/`取消好讀`/pref 關閉)都經 `switchToEasyReadingMode → leaveCurrentPost`，故此一處涵蓋全部；下一篇正常重啟仍 OK，因中間會經文章列表(pageState 2)重新置位 latch。
 
 ## render 雙軌（這是最大坑）
 
