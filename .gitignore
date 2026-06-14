@@ -8,6 +8,8 @@ package-lock.json
 test-results/
 playwright-report/
 tests/e2e/__screenshots__/
+# 录制 cassette 用的 PTT 凭证（绝不入 repo）
+tests/e2e/.ptt-creds.json
 
 # Firebase emulator（yarn test:integration）
 firebase-debug.log

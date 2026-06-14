@@ -17,8 +17,27 @@ module.exports = defineConfig({
     video: 'retain-on-failure',
     trace: 'on-first-retry',
   },
+  // 三个 project 共用同一个 webServer（webpack dev server）：
+  // - live   ：连真实 PTT 的 e2e（现有 spec），排除 offline/ 与 tools/。
+  // - offline：离线重放（tests/e2e/offline/**），用 stub WebSocket + cassette，零网络。
+  // - record ：一次性录制器（tools/record-cassette.spec.js），连真实 PTT(guest) 产出 cassette。
+  // 见 docs/offline-replay-testing.md。
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'live',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: ['offline/**', 'tools/**'],
+    },
+    {
+      name: 'offline',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: 'offline/**/*.spec.js',
+    },
+    {
+      name: 'record',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: 'tools/record-cassette.spec.js',
+    },
   ],
   webServer: {
     command: 'npx cross-env NODE_ENV=development webpack serve',

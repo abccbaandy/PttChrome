@@ -120,8 +120,10 @@
     "start": "cross-env NODE_ENV=development webpack serve",
     "test:unit": "jest",
     "test:integration": "firebase emulators:exec --only auth,firestore --project demo-pttchrome \"jest -c jest.integration.config.js\"",
-    "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e": "playwright test --project=live",
+    "test:e2e:offline": "playwright test --project=offline",
+    "test:e2e:headed": "playwright test --project=live --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "record:cassette": "cross-env RECORD_CASSETTE=1 playwright test --project=record"
   }
 }

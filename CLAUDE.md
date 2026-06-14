@@ -37,6 +37,9 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
   適用 `term_view.js`、`term_ui.js`、`src/components/**`、`easy_reading.js`、`pttchrome.js` 渲染/切換路徑、`term_buf.js` 渲染相關等。
   理由：unit（node env，react-test-renderer）**不載入** DOM/React/WebSocket 耦合模組，捕捉不到「一進文章即炸」這類 runtime 崩潰
   （例：`pageLines` 用 `JSON` 克隆剝掉 TermChar prototype 方法 → `ch.isStartOfURL is not a function`）。不可只靠 unit + build 綠就交付。
+- **離線重放（不連真實 PTT 也能驗依賴特定文章的 case）**：`yarn test:e2e:offline`（stub WebSocket 重放 byte cassette，
+  真瀏覽器/真渲染）；Layer2 `tests/unit/replay_fixture.test.js` 用真實 `findPageOverlap` 純 node 重建跨頁去重。
+  素材一次性錄製：`yarn record:cassette`（**guest-only**，capture 為 article-scoped 不含帳號）。細節見 `docs/offline-replay-testing.md`。
 
 ## 隱私（務必遵守）
 - 這是公開 fork repo。**禁止**把以下寫進任何 `.md`、原始碼、commit message：
