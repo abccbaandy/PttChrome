@@ -7,6 +7,7 @@
 
 import renderer from "react-test-renderer";
 import Row from "../../src/components/Row";
+import ImagePreviewer from "../../src/components/ImagePreviewer";
 
 // One shared color so all cells coalesce; equals() is identity-based.
 const COLOR = {
@@ -31,6 +32,27 @@ function cell(c) {
 // "PU wowbenny: hi" → cols: P=0 U=1 (marker stand-in) space=2 user id from col 3.
 function chars(str) {
   return str.split("").map(cell);
+}
+
+// A URL cell: start/end mark the URL boundary, getFullURL returns it on the start.
+function urlCell(c, { start = false, end = false, url = null } = {}) {
+  return {
+    ch: c,
+    isStartOfURL: () => start,
+    isEndOfURL: () => end,
+    getFullURL: () => url,
+    getColor: () => COLOR
+  };
+}
+
+// "PU wowbenny: <url>" — plain prefix cells then the url marked as a hyperlink.
+function urlChars(url) {
+  const cells = chars("PU wowbenny: ");
+  const u = url.split("");
+  u.forEach((c, i) =>
+    cells.push(urlCell(c, { start: i === 0, end: i === u.length - 1, url }))
+  );
+  return cells;
 }
 
 // Depth-first search over react-test-renderer's toJSON() tree.
@@ -98,5 +120,22 @@ describe("Row pusher highlight", () => {
       .toJSON();
     expect(json.props["data-pusher"]).toBe("wowbenny");
     expect(json.props.className).toBeUndefined();
+  });
+});
+
+// Regression: a row re-render (e.g. on pusherHighlight toggle) must reuse the
+// same preview request Promise for an unchanged href. A fresh Promise each
+// render would reset ImagePreviewer (PureComponent) state to undefined and
+// remount the media element — reloading YouTube iframes and flashing them.
+describe("Row inline preview request identity", () => {
+  test("same href → referentially stable request prop across renders", () => {
+    const url = "https://youtu.be/aYIdRD_Gvz0";
+    const make = () =>
+      renderer.create(
+        <Row chars={urlChars(url)} row={0} enableLinkInlinePreview={true} />
+      );
+    const reqA = make().root.findByType(ImagePreviewer).props.request;
+    const reqB = make().root.findByType(ImagePreviewer).props.request;
+    expect(reqA).toBe(reqB);
   });
 });

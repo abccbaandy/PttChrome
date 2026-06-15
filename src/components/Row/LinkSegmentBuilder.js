@@ -1,7 +1,7 @@
 import cx from "classnames";
 import HyperLink from "./HyperLink";
 import ColorSegmentBuilder from "./ColorSegmentBuilder";
-import ImagePreviewer, { of, resolveSrcToImageUrl } from "../ImagePreviewer";
+import ImagePreviewer, { requestPreview } from "../ImagePreviewer";
 
 // Comment lines are "推 userid: ...". The marker (推/噓/→) is a 2-column DBCS
 // char (cols 0-1) and col 2 is the space before the user id — that gap is where
@@ -80,7 +80,7 @@ export class LinkSegmentBuilder {
         this.inlineLinkPreviews.push(
           <ImagePreviewer
             key={`${this.col}-${this.href}`}
-            request={of(this.href).then(resolveSrcToImageUrl)}
+            request={requestPreview(this.href)}
             component={ImagePreviewer.Inline}
           />
         );

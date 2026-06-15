@@ -4,6 +4,18 @@ const noop = () => {};
 
 export const of = src => Promise.resolve({ src });
 
+const previewRequestCache = new Map();
+// 同一 href 永遠回傳同一個 Promise 參考，讓 <ImagePreviewer>（PureComponent）
+// 在整列重繪（如 pusherHighlight 切換）時 props 穩定、跳過更新，避免 iframe 重掛閃爍。
+export const requestPreview = href => {
+  let p = previewRequestCache.get(href);
+  if (p === undefined) {
+    p = of(href).then(resolveSrcToImageUrl);
+    previewRequestCache.set(href, p);
+  }
+  return p;
+};
+
 // resolveSrcToImageUrl turns a link into a *media descriptor*:
 //   { type: "image", src, srcset? } | { type: "video", src }
 //   | { type: "iframe", src }       | { type: "album", images: [url] }
