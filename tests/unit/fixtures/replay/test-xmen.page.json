@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "mode": "article",
+    "board": "Test",
+    "recordedAs": "account",
+    "recordedAt": "2026-06-15T13:58:04.445Z",
+    "pages": 1,
+    "commentCount": 1,
+    "firstCommentAuthor": "jojonium"
+  },
+  "pageScreens": [
+    [
+      " 作者  xxxxxxxxxx (敏)                                             看板  Test   ",
+      " 標題  Fw: [情報] X戰警97 第二季角色宣傳片                                      ",
+      " 時間  Mon Jun 15 21:22:05 2026                                                 ",
+      "───────────────────────────────────────  ",
+      "                                                                                ",
+      "※ [本文轉錄自 C_Chat 看板 #1gBxF2LW ]                                          ",
+      "                                                                                ",
+      "作者: j0o0h0n0 (亞馬遜企鵝) 看板: C_Chat                                        ",
+      "標題: [情報] X戰警97 第二季角色宣傳片                                           ",
+      "時間: Mon Jun 15 16:11:44 2026                                                  ",
+      "                                                                                ",
+      "https://youtu.be/1m2KVNX4DhI?si=_7Y8SayV6tDYdZfq                                ",
+      "相較第一季回歸更多92老熟人了                                                    ",
+      "X因子小隊貌似整隊都來了                                                         ",
+      "片尾打天啓的老萬不知為啥已經長鬍子了，明明隔壁教授都沒長                        ",
+      "                                                                                ",
+      "--                                                                              ",
+      "※ 發信站: 批踢踢實業坊(ptt.cc), 來自: xxxxxxxxxxxx (臺灣)                      ",
+      "※ 文章網址: https://www.ptt.cc/bbs/C_Chat/M.1781511106.A.560.html              ",
+      "推 JoJonium: 問就是時空時差                                        06/15 18:01  ",
+      "                                                                                ",
+      "※ 發信站: 批踢踢實業坊(ptt.cc)                                                 ",
+      "※ 轉錄者: xxxxxxxxxx (xxxxxxxxxxx 臺灣), 06/15/2026 21:22:05                   ",
+      "  瀏覽 第 1/1 頁 (100%)  目前顯示: 第 01~22 行  (y)回應(X%)推文(h)說明(←)離開  "
+    ]
+  ],
+  "golden": {
+    "comments": [
+      "推 JoJonium: 問就是時空時差                                        06/15 18:01  "
+    ],
+    "commentCount": 1,
+    "firstCommentAuthor": "jojonium"
+  }
+}

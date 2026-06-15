@@ -41,7 +41,9 @@
 
 **坑 2（仍有效）**：好讀已自動翻頁到**底**時，實際游標在最後頁，再送原生 End(`\x1b[4~`)是 **no-op、PTT 不回應不重繪** → 必須另送 `^L`(`\x0c`, Ctrl-L)強制全頁重繪。`switchToEasyReadingMode()`(無參數)已內含 `^L`(`pttchrome.js:354`)。
 
-**坑 3（看完文章回列表游標低高亮列約一格，2026-06 修，CONFIRMED e2e）**：症狀=好讀看完文章按 ← 回列表，滑鼠高亮列（圓點）與閃爍 `#cursor` 約差一格、游標在下；在文章按 End 切原生再回列表則暫時正常。根因=`accumulatePageLines` 同篇翻頁分支對 `#mainContainer` 設 `paddingBottom='1em'`（≈1 列高，`term_view.js:819`）撐高內容→`.main`(`overflowY:auto`)可捲動殘留 `scrollTop`。回列表時好讀仍 `_enabled=true`，走 native 分支的 `hideEasyReadingOverlays()` 原本**只清 overlay 列+pageLines，未重置 padding/scrollTop**→列表列被捲上約一格，而絕對定位 `#cursor`（用固定 `firstGridOffset` 算 top，不受 scrollTop 影響）不動→游標低一格。間歇性源於殘留捲動量＋瀏覽器 clamp。按 End 暫時正常因 `switchToEasyReadingMode(false)` 有 `paddingBottom=''`（`pttchrome.js:355`），列表路徑缺此步。→ **修**：`hideEasyReadingOverlays()` 補 `mainContainer.style.paddingBottom=''`＋`mainDisplay.scrollTop=0`，與原生退出路徑一致。守護：e2e `easy-reading.spec.js`+`enhance.spec.js`（全綠）。
+**坑 3（看完文章回列表游標低高亮列約一格，2026-06 修，CONFIRMED e2e）**：症狀=好讀看完文章按 ← 回列表，滑鼠高亮列（圓點）與閃爍 `#cursor` 約差一格、游標在下；在文章按 End 切原生再回列表則暫時正常。根因=`accumulatePageLines` 對 `#mainContainer` 設 `paddingBottom='1em'`（≈1 列高）撐高內容→`.main`(`overflowY:auto`)可捲動殘留 `scrollTop`。回列表時好讀仍 `_enabled=true`，走 native 分支的 `hideEasyReadingOverlays()` 原本**只清 overlay 列+pageLines，未重置 padding/scrollTop**→列表列被捲上約一格，而絕對定位 `#cursor`（用固定 `firstGridOffset` 算 top，不受 scrollTop 影響）不動→游標低一格。間歇性源於殘留捲動量＋瀏覽器 clamp。按 End 暫時正常因 `switchToEasyReadingMode(false)` 有 `paddingBottom=''`（`pttchrome.js:355`），列表路徑缺此步。→ **修**：`hideEasyReadingOverlays()` 補 `mainContainer.style.paddingBottom=''`＋`mainDisplay.scrollTop=0`，與原生退出路徑一致。守護：e2e `easy-reading.spec.js`+`enhance.spec.js`（全綠）。
+
+**坑 4（好讀單頁文章「最後一行」被底部狀態列 overlay 遮住，2026-06 修，CONFIRMED live 量測+offline 回歸）**：症狀=好讀模式下，PTT **一頁即 100%（無 page-down）的單頁文章**，捲到底時「最後一行」看不到——常是 Fw 轉錄文末行 `※ 轉錄者:` 或末則推文。**末行其實在 `pageLines` 裡（非掉列/非跳頁），純渲染遮擋**（推文/replyer overlay 移開時可瞥見）。文章含行內媒體（圖、youtu.be→iframe）使內容變高可捲時最明顯（純文短文不捲、末行本在 overlay 上方故無感）。根因=`#easyReadingLastRow`（footer overlay，CSS `margin-top:-1em` 固定蓋在 `.main` 視窗**最底列**）。`accumulatePageLines` 舊碼只在**翻頁分支(prevPageState==3)** 設 `mainContainer.paddingBottom='1em'` 給 overlay 讓位，**首頁分支設 `''`(=0px)**；單頁文只走首頁分支→無底部 padding→捲到底時末行貼底落在 overlay 下。多頁文因翻頁分支有 padding 故無此問題（這也是為何「同一篇」推文變多→需翻頁後反而自己好了）。→ **修**：把 `paddingBottom='1em'` 上移到 `accumulatePageLines` **開頭統一設**（兩分支都是文章頁、都顯示 overlay）；回列表/選單仍由 `hideEasyReadingOverlays` 清回 ''（坑3，不衝突）。live 量測：末行 rect.bottom 由 == overlay.top（遮）變為 <= overlay.top（不遮）。守護：offline `easy-reading.offline.spec.js`「末行不被底部狀態列 overlay 遮住」=(a) 進好讀文章後 `mainContainer` paddingBottom≠0px；(b) 有行內媒體可捲時捲到底斷言末行 rect 不被 overlay rect 蓋。素材 `tests/.../test-xmen`（單頁+youtu.be 行內媒體+1 推文；account 錄製，登入帳號/`轉錄者 id`(RECORD_REDACT_EXTRA)/IPv4 皆已 redact）。teeth：暫把首頁分支還原成 '' → 僅 test-xmen 變紅、多頁卷仍綠，證明回歸有效且 bug 專屬單頁文。
 
 ## 切換：三個對稱入口（CONFIRMED 純邏輯/手動驗）
 
@@ -65,7 +67,7 @@
 
 - **好讀預設 false**：測試須在 `page.addInitScript` 寫 localStorage `pttchrome.pref.v1`→`{values:{enableEasyReading:true}}` 才會啟動，否則 End 只是原生（測不到）。
 - app 未掛全域：`main.js` 僅 `DEVELOPER_MODE`(dev build 有)下 `window.__app=app`(`:9`)供測試讀 `view.useEasyReadingMode`/`buf.pageState`。
-- 判好讀 vs 原生：好讀 `mainContainer` 累積 >24 列且 `#easyReadingLastRow` display:block；原生 24 列、lastRow display:none、畫面含「說明」狀態列。
+- 判好讀 vs 原生：好讀 `mainContainer` 累積 >24 列且 `#easyReadingLastRow` display:block；原生 24 列、lastRow display:none、畫面含原生狀態列「瀏覽 第 N 頁…」。注意**勿斷言含「說明」**：文章到底(100%)時 PTT 狀態列顯示「(y)回應(X%)推文(←)離開」而**省略「(h)說明」**，故認原生特徵「瀏覽 第 N 頁」（好讀 overlay 只有「(y)回應…(←)離開」、不含「瀏覽 第」）。
 - 取消 PTT 搜尋提示用**空 Enter**，勿用 Escape（pmore 把 `\x1b` 當逃逸序列開頭，導覽錯亂）。
 - 連線偶發 403/ECONNRESET（PTT 端 flake）；勿與 `yarn build` 並行跑（clean 會擾動）。
-- 驗證序列：好讀啟動(useEasyReadingMode=true,~41列)→End(false,≤24列,lastRow none,「說明」+「100%」)→`/`(搜尋提示)→左鍵(pageState 2)→進下篇(true)。
+- 驗證序列：好讀啟動(useEasyReadingMode=true,~41列)→End(false,≤24列,lastRow none,「瀏覽 第 N 頁」+「100%」)→`/`(搜尋提示)→左鍵(pageState 2)→進下篇(true)。

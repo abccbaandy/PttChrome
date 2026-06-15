@@ -40,7 +40,8 @@ fixture（`tests/unit/fixtures/replay/<name>.page.json`）：
 ## 录制（一次性，连真实 PTT）
 环境变量：`RECORD_MODE`(article|list)、`RECORD_BOARD`、`RECORD_NAME`、`RECORD_MAX_PAGES`(预设 12，0=不限)、
 `RECORD_SEARCH`(article：'/' 标题搜寻指定文章，过期则抛错)、`RECORD_END`(article：加录 End→原生的 'end' step)、
-`RECORD_ALLOW_LOGIN`(用 env 帐密登入)。
+`RECORD_ALLOW_LOGIN`(用 env 帐密登入)、`RECORD_REDACT_EXTRA`("id1,id2" 额外要等长遮蔽的 id，
+用于 Fw 转录文「※ 转录者: <自己另一个 id>」≠ 登入帐号的情形)。
 ```
 # 指定文章（如黃仁勳那篇 #1g8znzQ3，golden 首推 bluebird5566）+ 加录 End 场景
 $env:RECORD_ALLOW_LOGIN="1"; $env:RECORD_MODE="article"; $env:RECORD_BOARD="Stock"
@@ -65,6 +66,9 @@ offline spec 遍历所有 article cassette 逐卷守门；End 测试自动挑带
 - 用真实帐号登入时（guest 名額满 "太多 guest 在站上"）：写档前对 recv + fixture 文字做
   **登入帐号等长 redact**（`(?<![0-9A-Za-z])id(?![0-9A-Za-z])` → `xxxx`，保 byte/栏位对齐）+ `assertNoLeak`
   把关（解码全部 recv/文字，含帐号即抛错不写）。`meta.recordedAs` 只记 `guest`/`account`，不存帐号名。
+- **额外遮蔽（2026-06）**：`RECORD_REDACT_EXTRA="id1,id2"` 等长遮蔽「登入帐号以外、文章里出现的自己其他 id」
+  （典型：Fw 转录文「※ 转录者: <另一 id>」），`assertNoLeak` 一并把关；并自动等长遮蔽所有 **IPv4**
+  （转录者/「来自: <IP>」会带发文者个资）。`test-xmen` 卷即用此录制（账号 + 转录者 id + IP 皆已 redact 成 x）。
 - redact 是手动扫描（`redactUser`）：id 须右侧非英数边界；左侧认「非英数 / 字串开头 / Big5 尾位元组」
   （前一位元组 0x40-0x7E 且其前 ≥0x80）。故 article 的「→ 你的id:」「推 你的id:」与 list 状态列
   「我是<id>」（id 紧贴 Big5「是」0xAC4F，trail 0x4F='O'）都能正确遮成 xxxx → **article / list 用真实帐号皆可**。

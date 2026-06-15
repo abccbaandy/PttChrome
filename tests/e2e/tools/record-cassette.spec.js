@@ -88,11 +88,30 @@ function redactUser(str, user) {
   return out;
 }
 
+// 额外要遮的 id（env RECORD_REDACT_EXTRA="id1,id2"）：用于「登入帐号 != 文章里出现的自己
+// 其他 id」的情形——典型是 Fw 转录文的「※ 转录者: <自己另一个 id>」。等长遮蔽同 redactUser。
+function extraRedactIds() {
+  return (process.env.RECORD_REDACT_EXTRA || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+// 遮 IPv4（转录者 / 「※ 发信站: …, 来自: <IP>」会带发文者 IP，属个资）。等长替换保栏位对齐。
+function redactIPs(str) {
+  return str.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, (m) => 'x'.repeat(m.length));
+}
+
+// 对一段文字套用所有遮蔽：登入帐号 + 额外 id + IPv4。
+function scrubText(str, user) {
+  let out = redactUser(str, user);
+  for (const id of extraRedactIds()) out = redactUser(out, id);
+  return redactIPs(out);
+}
+
 // 对整卷 cassette 的 recv（base64 latin1）逐段 redact。
 function redactCassette(cassette, user) {
   cassette.steps = cassette.steps.map((s) => ({
     on: s.on,
-    recv: Buffer.from(redactUser(Buffer.from(s.recv, 'base64').toString('latin1'), user), 'latin1').toString('base64'),
+    recv: Buffer.from(scrubText(Buffer.from(s.recv, 'base64').toString('latin1'), user), 'latin1').toString('base64'),
   }));
   return cassette;
 }
@@ -100,12 +119,12 @@ function redactCassette(cassette, user) {
 // 对 fixture 的文字（pageScreens / golden）redact。
 function redactFixture(fixture, user) {
   if (Array.isArray(fixture.pageScreens))
-    fixture.pageScreens = fixture.pageScreens.map((page) => page.map((t) => redactUser(t, user)));
+    fixture.pageScreens = fixture.pageScreens.map((page) => page.map((t) => scrubText(t, user)));
   if (fixture.golden) {
     if (Array.isArray(fixture.golden.comments))
-      fixture.golden.comments = fixture.golden.comments.map((t) => redactUser(t, user));
+      fixture.golden.comments = fixture.golden.comments.map((t) => scrubText(t, user));
     if (fixture.golden.firstCommentAuthor)
-      fixture.golden.firstCommentAuthor = redactUser(fixture.golden.firstCommentAuthor, user);
+      fixture.golden.firstCommentAuthor = scrubText(fixture.golden.firstCommentAuthor, user);
   }
   return fixture;
 }
@@ -113,17 +132,19 @@ function redactFixture(fixture, user) {
 // 写档前最后把关：解码所有 recv + fixture 文字，确认不含登入帐号（case-insensitive）。
 // 命中 → 抛错不写（请改录别篇，或该 id 是你自己公开发的内容时人工确认）。
 function assertNoLeak({ cassette, fixture, user }) {
-  if (!user || user === 'guest') return;
-  const u = user.toLowerCase();
-  const hit = (s) => s && s.toLowerCase().includes(u);
+  const ids = [];
+  if (user && user !== 'guest') ids.push(user.toLowerCase());
+  for (const id of extraRedactIds()) ids.push(id.toLowerCase());
+  if (!ids.length) return;
+  const hit = (s) => s && ids.some((id) => s.toLowerCase().includes(id));
   for (const s of cassette.steps)
     if (hit(Buffer.from(s.recv, 'base64').toString('latin1')))
-      throw new Error(`隐私把关失败：cassette recv 仍含登入帐号「${user}」。请改录其他文章或检查 redact。`);
+      throw new Error(`隐私把关失败：cassette recv 仍含帐号 [${ids.join(', ')}] 之一。请检查 redact / RECORD_REDACT_EXTRA。`);
   const texts = []
     .concat(...(fixture.pageScreens || []))
     .concat((fixture.golden && fixture.golden.comments) || []);
   for (const t of texts)
-    if (hit(t)) throw new Error(`隐私把关失败：fixture 文字仍含登入帐号「${user}」。`);
+    if (hit(t)) throw new Error(`隐私把关失败：fixture 文字仍含帐号 [${ids.join(', ')}] 之一。`);
 }
 
 test.describe('cassette 录制器', () => {

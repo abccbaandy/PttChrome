@@ -85,6 +85,56 @@ test.describe('好读模式翻页（离线重放）', () => {
       const previews = await page.evaluate((sel) => document.querySelectorAll(sel).length, PREVIEW_SEL);
       expect(previews).toBeGreaterThan(0);
     });
+
+    // REGRESSION: 单页文章（只走 accumulatePageLines 首页分支）在好读模式下，文章「最后一行」
+    // 被底部状态列 overlay(#easyReadingLastRow, margin-top:-1em 固定盖在 .main 视窗最底列)遮住。
+    // 成因：首页分支漏设 #mainContainer paddingBottom（旧 code 设 ''=0px），而翻页分支有设 1em；
+    // 当内容因行内媒体（如 youtu.be → iframe）变高可卷，卷到底时末行贴底被 overlay 盖住——末行
+    // 其实在 pageLines 里（非掉列），纯属渲染遮挡。修法：两分支统一 paddingBottom='1em'。
+    // 守门：(a) 进好读文章后 mainContainer 必有非零 bottom padding（旧 code 单页文=0px → 红）；
+    //       (b) 若该卷有行内媒体（内容够高可卷）卷到底后，末行 rect 不被 overlay rect 盖住。
+    // 素材 test-xmen 即单页(第 1/1 页 100%)+youtu.be 行内媒体+1 推文，正中此 case。
+    test(`末行不被底部状态列 overlay 遮住（单页 paddingBottom）[${cassette.__file}]`, async ({ page }) => {
+      test.setTimeout(90000);
+      const MEDIA_SEL = '#mainContainer img.hyperLinkPreview, #mainContainer video.easyReadingVideo, #mainContainer iframe';
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, { enableEasyReading: true });
+      await replayCassette(page, cassette, { easyReading: true });
+
+      // (a) padding 不变式：好读文章页 mainContainer 必有非零 bottom padding（给底部 overlay 让位）。
+      const pad = await page.evaluate(() => {
+        const mc = document.querySelector('#mainContainer');
+        return mc ? getComputedStyle(mc).paddingBottom : null;
+      });
+      console.log(`[occlude] ${cassette.__file}: paddingBottom=${pad}`);
+      expect(pad).toBeTruthy();
+      expect(pad).not.toBe('0px');
+
+      // (b) 行内媒体让内容变高 → 卷到底断言末行未被 overlay 遮住。等媒体异步渲染。
+      await page.waitForTimeout(1500);
+      const m = await page.evaluate(async (sel) => {
+        const scroller = document.querySelector('.main');
+        const overlay = document.querySelector('#easyReadingLastRow');
+        if (scroller) scroller.scrollTop = scroller.scrollHeight;
+        await new Promise((r) => setTimeout(r, 300));
+        const lines = Array.from(document.querySelectorAll('#mainContainer [data-type="bbsline"]'));
+        const nonBlank = lines.filter((el) => el.textContent.replace(/\s+$/, '') !== '');
+        const last = nonBlank[nonBlank.length - 1];
+        const rect = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; };
+        const ov = overlay ? getComputedStyle(overlay) : null;
+        return {
+          media: document.querySelectorAll(sel).length,
+          scrollable: scroller ? scroller.scrollHeight > scroller.clientHeight + 2 : false,
+          lastText: last ? last.textContent.replace(/\s+$/, '') : null,
+          lastRect: rect(last), overlayRect: rect(overlay), overlayDisplay: ov ? ov.display : null,
+        };
+      }, MEDIA_SEL);
+      console.log(`[occlude] ${cassette.__file}: media=${m.media} scrollable=${m.scrollable} last=|${m.lastText}|`);
+      // 仅在「内容可卷且 overlay 显示」时检查遮挡：非可卷的纯文单页不卷，末行本就在 overlay 上方。
+      if (m.scrollable && m.overlayDisplay !== 'none' && m.lastRect && m.overlayRect) {
+        expect(m.lastRect.bottom).toBeLessThanOrEqual(m.overlayRect.top + 2);
+      }
+    });
   }
 });
 

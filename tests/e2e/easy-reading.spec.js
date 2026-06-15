@@ -131,7 +131,10 @@ test.describe.serial('好讀模式', () => {
       expect(after.useEasyReadingMode).toBe(false);
       expect(after.mcChildren).toBeLessThanOrEqual(24);
       expect(after.lastRowDisplay).toBe('none');
-      expect(afterScreen).toContain('說明'); // 原生狀態列
+      // 原生狀態列特徵：「瀏覽 第 N 頁 … 目前顯示: 第 a~b 行」。好讀 overlay 只有
+      // 「(y)回應(X%)推文(←)離開」、不含「瀏覽 第」，故以此區分。註：文章到底(100%)時
+      // PTT 狀態列顯示「(y)回應(X%)推文(←)離開」而省略「(h)說明」，故不可斷言含「說明」。
+      expect(afterScreen).toMatch(/瀏覽 第 .+頁/);
       expect(afterScreen).toContain('100%'); // 在最底
 
       // 原生搜尋可用：'/' 跳出搜尋提示（好讀模式會攔截 '/'）

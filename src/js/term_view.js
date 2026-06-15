@@ -812,11 +812,19 @@ TermView.prototype = {
   // row CONTENT (findPageOverlap), never PTT status-line row numbers — see
   // comment_parse.findPageOverlap and docs/enhanced-addon.md.
   accumulatePageLines: function() {
+    // The bottom status-row overlay (#easyReadingLastRow, margin-top:-1em) sits over the
+    // last viewport row. Reserve one line of bottom padding so the article's last line can
+    // scroll clear of it. Critical for a SHORT (single PTT-page) article whose RENDERED
+    // height still exceeds the viewport — e.g. an inline image makes it scrollable — which
+    // only ever takes the first-page branch below: without padding its last line stays
+    // hidden behind the overlay (user sees the final line/最後一行 "disappear", though it
+    // IS in pageLines). Both branches are article pages that show the overlay;
+    // hideEasyReadingOverlays clears the padding again when we return to a list/menu.
+    if (this.mainContainer) this.mainContainer.style.paddingBottom = '1em';
     if (this.buf.prevPageState == 3) {
       // Same article, paged down: append only the genuinely new tail. PTT re-shows
       // the previous screen's bottom at the top of the new one; findPageOverlap
       // measures that overlap so we skip re-adding it.
-      if (this.mainContainer) this.mainContainer.style.paddingBottom = '1em';
       var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
       // parseStatusRow is only a gate here: it confirms an article reading page. Its
       // numeric fields are NOT used for de-duplication — see findPageOverlap.
@@ -839,7 +847,6 @@ TermView.prototype = {
     } else {
       // First page of a (new) article: restart the accumulated page as this whole
       // screen and clear the per-article pusher selection.
-      if (this.mainContainer) this.mainContainer.style.paddingBottom = '';
       this._selectedPusher = null;
       this.lastRowDiv.innerHTML = this.lastRowDivContent;
       this.lastRowDiv.style.display = 'block';
