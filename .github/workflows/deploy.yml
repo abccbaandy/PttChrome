@@ -47,7 +47,7 @@ jobs:
 
       # Firestore emulator 是 jar，需 Java（emulator jar 由 firebase-tools 執行時自抓）
       # firebase-tools 要求 JDK 21+
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
