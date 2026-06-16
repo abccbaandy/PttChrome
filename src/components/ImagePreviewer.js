@@ -144,6 +144,19 @@ ImagePreviewer.OnHover = ({ left, top, value, error }) => {
   }
 };
 
+// 「讀取中」指示器：「URL 解析中」與「媒體下載中」兩階段共用，外觀一致。
+// <img>/<video> 無法回報真實下載進度，故用不定式（indeterminate）動畫進度條；
+// 樣式定義於 src/css/main.css。
+const LoadingOverlay = () => (
+  <div className="previewLoading">
+    <i className="glyphicon glyphicon-refresh glyphicon-refresh-animate" />
+    <span className="previewLoadingText">讀取中…</span>
+    <span className="previewLoadingBar">
+      <span className="previewLoadingBarFill" />
+    </span>
+  </div>
+);
+
 // Some hosts only accept requests without a referer (imgur, twitter, …); a few
 // require it (verb.tw). Strip the referer everywhere except the latter.
 const needsReferer = src => {
@@ -158,9 +171,12 @@ const needsReferer = src => {
 // One candidate (the resolved src) is the common case; twitter/meee supply
 // fallbacks (e.g. :orig → .png:orig → :large → plain).
 class FallbackImage extends React.PureComponent {
-  state = { index: 0 };
+  state = { index: 0, loaded: false };
 
-  handleError = () => this.setState(s => ({ index: s.index + 1 }));
+  // 換下一個候選網址時 loaded 一併重設，避免沿用上一張的已載入狀態。
+  handleError = () =>
+    this.setState(s => ({ index: s.index + 1, loaded: false }));
+  handleLoad = () => this.setState({ loaded: true });
 
   render() {
     const { candidates, ...rest } = this.props;
@@ -168,13 +184,61 @@ class FallbackImage extends React.PureComponent {
     if (src == null) {
       return false;
     }
+    const { loaded } = this.state;
     return (
-      <img
-        {...rest}
-        {...(needsReferer(src) ? {} : { referrerPolicy: "no-referrer" })}
-        src={src}
-        onError={this.handleError}
-      />
+      <React.Fragment>
+        {!loaded && <LoadingOverlay />}
+        <img
+          {...rest}
+          {...(needsReferer(src) ? {} : { referrerPolicy: "no-referrer" })}
+          src={src}
+          onLoad={this.handleLoad}
+          onError={this.handleError}
+          style={loaded ? null : { display: "none" }}
+        />
+      </React.Fragment>
+    );
+  }
+}
+
+// <video>/<iframe> 內嵌：載入完成前疊 LoadingOverlay，避免網路慢時空白像壞掉。
+class InlineVideo extends React.PureComponent {
+  state = { loaded: false };
+  handleLoad = () => this.setState({ loaded: true });
+  render() {
+    const { loaded } = this.state;
+    return (
+      <React.Fragment>
+        {!loaded && <LoadingOverlay />}
+        <video
+          className="easyReadingVideo"
+          src={this.props.src}
+          controls
+          onLoadedData={this.handleLoad}
+          style={loaded ? null : { display: "none" }}
+        />
+      </React.Fragment>
+    );
+  }
+}
+
+class InlineIframe extends React.PureComponent {
+  state = { loaded: false };
+  handleLoad = () => this.setState({ loaded: true });
+  render() {
+    const { loaded } = this.state;
+    return (
+      <div style={{ margin: "0.5em auto", maxWidth: "800px", height: "450px" }}>
+        {!loaded && <LoadingOverlay />}
+        <iframe
+          type="text/html"
+          src={this.props.src}
+          allowFullScreen
+          referrerPolicy="origin-when-cross-origin"
+          onLoad={this.handleLoad}
+          style={{ border: "none", width: "100%", height: "100%" }}
+        />
+      </div>
     );
   }
 }
@@ -187,24 +251,9 @@ const inlineImage = (descriptor, key) => (
   />
 );
 
-const inlineVideo = (src, key) => (
-  <video key={key} className="easyReadingVideo" src={src} controls />
-);
+const inlineVideo = (src, key) => <InlineVideo key={key} src={src} />;
 
-const inlineIframe = (src, key) => (
-  <div
-    key={key}
-    style={{ margin: "0.5em auto", maxWidth: "800px", height: "450px" }}
-  >
-    <iframe
-      type="text/html"
-      src={src}
-      allowFullScreen
-      referrerPolicy="origin-when-cross-origin"
-      style={{ border: "none", width: "100%", height: "100%" }}
-    />
-  </div>
-);
+const inlineIframe = (src, key) => <InlineIframe key={key} src={src} />;
 
 ImagePreviewer.Inline = ({ value, error }) => {
   if (error) {
@@ -225,9 +274,7 @@ ImagePreviewer.Inline = ({ value, error }) => {
         return inlineImage(value, undefined);
     }
   } else {
-    return (
-      <i className="glyphicon glyphicon-refresh glyphicon-refresh-animate" />
-    );
+    return <LoadingOverlay />;
   }
 };
 
