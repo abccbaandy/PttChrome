@@ -857,6 +857,10 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.highlightAuthorComments = value;
       this.view.redraw(true);
       break;
+    case 'enableAutoFixUrl':
+      this.view.enableAutoFixUrl = value;
+      this.view.redraw(true);
+      break;
     case 'blacklist':
       this.view.blacklist = parseBlacklist(value);
       this.view.redraw(true);

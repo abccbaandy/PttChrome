@@ -87,6 +87,9 @@ export const en_US = {
   "options_highlightAuthorComments": {
     "message": "Highlight comments by the original poster"
   },
+  "options_enableAutoFixUrl": {
+    "message": "Auto-fix broken URLs (fixed link shown only in easy-reading mode)"
+  },
   "options_blacklist": {
     "message": "Blacklist (one user id per line)"
   },

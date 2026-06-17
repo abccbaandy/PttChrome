@@ -642,6 +642,13 @@ export const PrefModal = ({
                   >
                     {i18n("options_highlightAuthorComments")}
                   </Checkbox>
+                  <Checkbox
+                    name="enableAutoFixUrl"
+                    checked={values.enableAutoFixUrl}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_enableAutoFixUrl")}
+                  </Checkbox>
                   <FormGroup controlId="blacklist">
                     <ControlLabel>{i18n("options_blacklist")}</ControlLabel>
                     <FormControl

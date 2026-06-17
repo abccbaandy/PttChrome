@@ -10,6 +10,7 @@ import {
   parseListAuthor,
   FloorCounter
 } from "../js/comment_parse";
+import { detectFixableUrls } from "../js/url_fix";
 
 // NOTE: articleAuthor (原PO id) is tracked by term_view across page-downs and
 // passed in via enhance — the "作者" header only appears on the first page, so we
@@ -32,7 +33,8 @@ function computeAnnotations(lines, enhance) {
     highlightAuthor,
     articleAuthor,
     selectedPusher,
-    pageState
+    pageState,
+    autoFixUrl
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   if (pageState === PAGE_READING) {
@@ -47,7 +49,18 @@ function computeAnnotations(lines, enhance) {
       selectedPusher
     };
     for (let row = 0; row < lines.length; ++row) {
-      result[row] = annotateComment(rowToText(lines[row]), ctx) || undefined;
+      const text = rowToText(lines[row]);
+      const ann = annotateComment(text, ctx) || undefined;
+      // Auto-fix runs on every row (article body included), independent of the
+      // comment annotation. The fixed-URL line only renders in easy-reading mode
+      // (see LinkSegmentBuilder); detection itself is cheap and returns [] for
+      // almost every row.
+      let fixedUrls;
+      if (autoFixUrl) {
+        const fixes = detectFixableUrls(text);
+        if (fixes.length) fixedUrls = fixes;
+      }
+      result[row] = fixedUrls ? { ...(ann || {}), fixedUrls } : ann;
     }
   } else if (pageState === PAGE_LIST && hasBlacklist) {
     for (let row = 0; row < lines.length; ++row) {
@@ -133,6 +146,7 @@ export class Screen extends React.Component {
               pusherHighlight={ann && ann.pusherHighlight}
               authorIdStart={ann && ann.authorIdStart}
               authorIdEnd={ann && ann.authorIdEnd}
+              fixedUrls={ann && ann.fixedUrls}
               onHyperLinkMouseOver={this.handleHyperLinkMouseOver}
               onHyperLinkMouseOut={this.handleHyperLinkMouseOut}
             />

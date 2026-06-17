@@ -2,6 +2,7 @@ import cx from "classnames";
 import HyperLink from "./HyperLink";
 import ColorSegmentBuilder from "./ColorSegmentBuilder";
 import ImagePreviewer, { requestPreview } from "../ImagePreviewer";
+import FixedUrlLine from "./FixedUrlLine";
 
 // Comment lines are "推 userid: ...". The marker (推/噓/→) is a 2-column DBCS
 // char (cols 0-1) and col 2 is the space before the user id — that gap is where
@@ -18,7 +19,8 @@ export class LinkSegmentBuilder {
     onHyperLinkMouseOut,
     floor,
     authorIdStart,
-    authorIdEnd
+    authorIdEnd,
+    fixedUrls
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -35,6 +37,11 @@ export class LinkSegmentBuilder {
     this._authorWrap = null;
     //
     this.segs = [];
+    // Auto-fixed URLs (src/js/url_fix.js) render on extra lines below the article
+    // line — only in easy-reading (inline-preview) mode, so the fixed 24-row native
+    // grid keeps its alignment, identical to the auto-open-image gate.
+    this.enableLinkInlinePreview = enableLinkInlinePreview;
+    this.fixedUrls = fixedUrls;
     this.inlineLinkPreviews = enableLinkInlinePreview ? [] : false;
     //
     this.colorSegBuilder = null;
@@ -155,6 +162,17 @@ export class LinkSegmentBuilder {
           {this.segs}
         </span>
         <div>{this.inlineLinkPreviews}</div>
+        {this.enableLinkInlinePreview &&
+          this.fixedUrls &&
+          this.fixedUrls.length > 0 &&
+          this.fixedUrls.map(({ fixed }, i) => (
+            <FixedUrlLine
+              key={`fix-${i}-${fixed}`}
+              href={fixed}
+              onMouseOver={this.onHyperLinkMouseOver}
+              onMouseOut={this.onHyperLinkMouseOut}
+            />
+          ))}
       </div>
     );
   }

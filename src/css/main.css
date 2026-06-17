@@ -388,6 +388,22 @@ span {
   background-color: #000080;
 }
 
+/* 自動修復斷掉的 URL：在原文那一行下方加一行可點的修復版連結（不改寫原文）。
+   只在好讀模式（inline preview）渲染，見 Row/LinkSegmentBuilder + Row/FixedUrlLine。 */
+.fixedUrlLine {
+  padding-left: 2em;
+  font-size: 0.9em;
+  opacity: 0.85;
+}
+.fixedUrlLine a {
+  word-break: break-all;
+}
+.fixedUrlLabel {
+  margin-right: 0.3em;
+  opacity: 0.6;
+  -webkit-user-select: none;
+}
+
 .glyphicon-refresh-animate {
   -webkit-animation: spin .7s infinite linear;
 }

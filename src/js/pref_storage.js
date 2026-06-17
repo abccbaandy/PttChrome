@@ -34,6 +34,7 @@ export const DEFAULT_PREFS = {
   // enhanced add-on
   showFloorNumbers: true,
   highlightAuthorComments: true,
+  enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
   blacklist: "", // newline-separated user ids
   autoLogin: false,
   autoLoginUser: "",

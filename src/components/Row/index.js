@@ -23,6 +23,7 @@ export const Row = ({
   pusherHighlight,
   authorIdStart,
   authorIdEnd,
+  fixedUrls,
   onHyperLinkMouseOver,
   onHyperLinkMouseOut
 }) => (
@@ -45,7 +46,8 @@ export const Row = ({
           onHyperLinkMouseOut,
           floor,
           authorIdStart,
-          authorIdEnd
+          authorIdEnd,
+          fixedUrls
         )
       )
       .build()}

@@ -139,3 +139,37 @@ describe("Row inline preview request identity", () => {
     expect(reqA).toBe(reqB);
   });
 });
+
+// Auto-fixed URL line (src/js/url_fix.js detects; LinkSegmentBuilder renders below).
+describe("Row fixed-URL line", () => {
+  const fixed = "https://www.google.com/";
+
+  test("easy-reading (inline preview) → renders a clickable .fixedUrlLine", () => {
+    const json = renderer
+      .create(
+        <Row
+          chars={chars("broken url above")}
+          row={0}
+          enableLinkInlinePreview={true}
+          fixedUrls={[{ original: "www . google .com/", fixed }]}
+        />
+      )
+      .toJSON();
+    const line = findByClass(json, "fixedUrlLine");
+    expect(line).not.toBeNull();
+    expect(textOf(line)).toContain(fixed);
+  });
+
+  test("native grid (no inline preview) → fixed-URL line is NOT rendered", () => {
+    const json = renderer
+      .create(
+        <Row
+          chars={chars("broken url above")}
+          row={0}
+          fixedUrls={[{ original: "www . google .com/", fixed }]}
+        />
+      )
+      .toJSON();
+    expect(findByClass(json, "fixedUrlLine")).toBeNull();
+  });
+});

@@ -72,9 +72,37 @@
 - 清除：好讀新文章在 `accumulatePageLines` else（新文章）分支 reset；原生 `redraw` `pageState!==3` 時 reset。
 - 無 pref/i18n（點擊驅動、恆可用）。
 
+## 自動修復斷掉的 URL（`src/js/url_fix.js`）
+作者把 URL 弄壞（插空白／漏 scheme／副檔名被空白斷開）→ 既有 `TermBuf.uriRegEx`（要求 scheme、不容空白）
+**完全偵測不到** → 不可點、不自動開圖。本功能**不改寫原文**，偵測後在原文那一列**下方加一行**修復版可點連結；
+修復後 URL 是圖/影片且好讀模式開著時，沿用既有 `<ImagePreviewer>` 自動開圖。
+- 純邏輯：`detectFixableUrls(text)->[{original,fixed}]`（無 DOM/網路，守護測試 `tests/unit/url_fix.test.js`）。
+  策略=**TLD 錨定掃描**（非單一全域 regex，避免中文散文誤判）：host `label(\s*\.\s*label)*\s*\.\s*TLD\b`，
+  **最後一段須屬封閉 TLD 允許清單**（主要防誤判閘門；全形句號 `。`U+3002 非 ASCII `.` → 中文句子天然免疫；
+  `版本 3.5` 因 `5` 非 TLD 不中）。可選 scheme（容忍 `https : //`）、可選 :port、可選 path。
+  - **path 內只容忍「斷開的副檔名」這一個空白**（`name. png`／`name .png`，EXT 清單與 `ImagePreviewer.js`
+    `RE_IMAGE_EXT/RE_VIDEO_EXT` 對齊）；**禁止**一般「空白+單字」合併（否則 `http://a.com/b here` 會被吃成 `bhere`
+    ——這是開發時實際踩到的 bug，見 `url_fix.test.js` 守護）。host/path 字元類純 ASCII → CJK 字自然終止 match。
+  - 去重既有有效 URL：候選**在原文中字面**已被 `uriRegEx` verbatim 命中 → 跳過（`https://yahoo.com` 不重複）。
+  - **裸網域提及守門**：候選**既無注入空白、又無路徑**→ 跳過（`if(!hasSpace&&!hasPath)continue`）。
+    這擋掉 prose 裡的網域提及（如 `※ 發信站: …(ptt.cc)`）被補 scheme 成連結。但**有路徑/檔案的 scheme-less
+    深連結仍修**（如 `i.imgur.com/ajHklmb.jpeg` → `https://…`，值得可點＋自動開圖）。
+    兩次踩坑：先漏判 `(ptt.cc)`（改成「須含空白」太嚴）→ 又誤殺無空白圖片連結 → 最終定為「空白 OR 路徑」。
+    守護測試 `url_fix.test.js`「發信站 line」「scheme-less deep link」「imgur 同列去重」。
+  - 重建 fixed=移除所有 ASCII 空白（真 URL 不含空白）；無 scheme 則前置 `https://`（既有 scheme 不改寫）。
+  - 取捨：保守設計，漏冷門 TLD／跨列斷開 URL（逐列偵測，**out of scope**）換取近零誤判。
+- 渲染：`Screen#computeAnnotations` **逐列**（含內文非推文列，獨立於 `annotateComment`）算 `fixedUrls` 掛進 ann →
+  `<Row>` prop → `LinkSegmentBuilder.build()` 在 inline-preview 區塊後 map 出 `<FixedUrlLine>`
+  （`components/Row/FixedUrlLine.js`：`<HyperLink>`＋恆掛 `<ImagePreviewer Inline>` 讓 resolver 自判可否開圖）。
+  **僅當 `enableLinkInlinePreview`（好讀模式）才渲染**——原生固定 24 列 grid 加行會破壞對齊，故不加，與自動開圖一致。
+  CSS `.fixedUrlLine/.fixedUrlLabel`(`main.css`)。守護測試 `tests/unit/row_render.test.js`「Row fixed-URL line」。
+- pref `enableAutoFixUrl`(true)；`pttchrome.onPrefChange`→`view.enableAutoFixUrl`+`redraw(true)`；
+  傳入 `enhance.autoFixUrl`。i18n `options_enableAutoFixUrl`。
+
 ## 設定（`PrefModal.js` 「增強功能」分頁）
 pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）：
-`showFloorNumbers`(true)、`blacklist`("" 換行)、`autoLogin`(false)、`autoLoginUser/Password`(""；
+`showFloorNumbers`(true)、`highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`blacklist`("" 換行)、
+`autoLogin`(false)、`autoLoginUser/Password`(""；
 **password 在支援 Credential API 的瀏覽器不落地**，見「自動登入」節)、
 `autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true)。套用見 `pttchrome.onPrefChange`
 （`showFloorNumbers`/`blacklist`→`view.*`+`redraw(true)`）。i18n 鍵在 zh_TW/en_US `options_*`。

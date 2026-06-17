@@ -66,6 +66,9 @@ export function TermView() {
   // _articleAuthor is parsed from the article header (first page only) and kept
   // across page-downs; see redraw().
   this.highlightAuthorComments = true;
+  // Auto-fix broken URLs: detect URLs broken by injected spaces / missing scheme /
+  // split file extension and show a repaired clickable link below (src/js/url_fix.js).
+  this.enableAutoFixUrl = true;
   this._articleAuthor = null;
   // Pusher highlight: lower-cased id of the pusher whose comments are currently
   // highlighted (whole row), or null. Set by togglePusherHighlight on click.
@@ -368,6 +371,7 @@ TermView.prototype = {
         highlightAuthor: this.highlightAuthorComments,
         articleAuthor: this._articleAuthor,
         selectedPusher: this._selectedPusher,
+        autoFixUrl: this.enableAutoFixUrl,
         pageState: this.buf.pageState,
         dropHidden: dropHidden
       }
