@@ -55,7 +55,7 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - git：**不開新功能分支**，直接在現有分支（`dev`）修改與 commit。
 - **push 後必查 CI**：每次 push 完都要確認 GitHub Actions（`Deploy to GitHub Pages` workflow，含 unit／integration／offline-e2e）有 pass，不能 push 完就收工。無 `gh` CLI，用 GitHub API + env `GH_TOKEN` 查：
   `GET /repos/abccbaandy/PttChrome/actions/runs?branch=dev&per_page=3`（看最新 run 的 `conclusion`）→ 失敗再 `.../actions/runs/{id}/jobs` 找失敗 job/step → `.../actions/jobs/{id}/logs` 抓 log。
-  - **integration 工作（Firebase Emulator）偶發 timeout** 是已知 flaky：CI 冷啟動會臨時下載 ~192MB emulator，第一次 Firestore 寫入可能超過測試的 10s deadline（典型症狀 `waitForCloud timeout: upload`）。先本機 `yarn test:integration`（需 Java 11+，本機通常 <5s 全綠）確認非真錯，再 `POST /repos/.../actions/runs/{id}/rerun-failed-jobs` 重跑失敗 job。
+  - **integration 工作（Firebase Emulator）偶發 timeout** 是已知 flaky 根因：CI 冷啟動臨時下載 ~192MB emulator jar，第一次 Firestore 寫入超過測試 poll deadline（典型症狀 `waitForCloud timeout: upload`）。**已做三層緩解**（`deploy.yml` test-integration + `tests/integration/pref_sync.test.js` + `jest.integration.config.js`）：(1) `actions/cache` 快取 `~/.cache/firebase/emulators` ＋ `firebase setup:emulators:firestore` 預抓 jar（消根因）；(2) poll deadline env 化 `INTEGRATION_TIMEOUT_MS`，CI 30s／本機 10s（成功會即時 resolve，放寬上限不拖慢 happy path）；(3) CI `jest.retryTimes(2)` in-run 自動重試。若仍紅：先本機 `yarn test:integration`（需 Java 21+，<5s 全綠）確認非真錯，再 `POST /repos/.../actions/runs/{id}/rerun-failed-jobs`。
 - 增強功能整合的渲染雙路徑/事件時序等踩坑見 `docs/enhanced-addon.md`「踩坑筆記」。
 - 渲染已統一單路徑（兩模式都走 `<Screen>`）見 `docs/easy-reading.md`「render 單軌」。改渲染路徑前先讀它。
 - 改渲染/畫面易壞 code 必跑 e2e（見「測試」段強制規範）。

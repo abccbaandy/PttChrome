@@ -52,10 +52,28 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      # Cache the emulator jars (~/.cache/firebase/emulators). The cold ~192MB
+      # download is the root cause of the flaky `waitForCloud timeout`: on a miss
+      # the first Firestore write warms up while the test's poll deadline ticks.
+      - name: Cache Firebase emulator binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            firebase-emulators-${{ runner.os }}-
+
       - name: Integration tests (Firebase Emulator)
+        env:
+          # Cushion the in-test poll deadline against cold-start latency; the test
+          # also auto-retries (jest.retryTimes) on CI. See tests/integration/.
+          INTEGRATION_TIMEOUT_MS: "30000"
         run: |
           corepack enable
           yarn install --frozen-lockfile
+          # Pre-fetch the Firestore emulator jar so a cache miss doesn't eat into
+          # the test deadline (no-op on a cache hit — binary already present).
+          yarn firebase setup:emulators:firestore
           yarn test:integration
 
   test-e2e-offline:

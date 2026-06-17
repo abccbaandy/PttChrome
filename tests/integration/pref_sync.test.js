@@ -50,6 +50,17 @@ const SYNC_FLAG_KEY = "pttchrome.prefsync.enabled";
 const PREF_KEY = "pttchrome.pref.v1";
 const PROJECT_ID = process.env.GCLOUD_PROJECT;
 
+// CI cold-starts the emulator (jar download + JVM warmup), so the first Firestore
+// round-trip can be slow. Give the polls more headroom on CI and auto-retry a flaky
+// test there. A successful poll resolves as soon as its condition holds (~200ms
+// locally), so a bigger ceiling NEVER slows the happy path — it only absorbs the
+// cold-start tail. Locally the deadline stays tight so a real hang fails fast.
+// (jest.integration.config.js#testTimeout derives its outer guard from the same env.)
+const POLL_DEADLINE_MS =
+  Number(process.env.INTEGRATION_TIMEOUT_MS) ||
+  (process.env.CI ? 30000 : 10000);
+if (process.env.CI) jest.retryTimes(2, { logErrorsBeforeRetry: true });
+
 // ---- helpers ---------------------------------------------------------------
 
 let seq = 0;
@@ -62,7 +73,7 @@ const tokenFor = sub =>
 const flush = ms => new Promise(resolve => setTimeout(resolve, ms || 0));
 
 const waitFor = (cond, what) => {
-  const deadline = Date.now() + 10000;
+  const deadline = Date.now() + POLL_DEADLINE_MS;
   const tick = () => {
     if (cond()) return Promise.resolve();
     if (Date.now() > deadline)
@@ -128,7 +139,7 @@ const readCloudDoc = () =>
 // Poll the cloud doc through the seeder until cond(doc) holds; resolves with
 // the doc.
 const waitForCloud = (cond, what) => {
-  const deadline = Date.now() + 10000;
+  const deadline = Date.now() + POLL_DEADLINE_MS;
   const tick = () =>
     readCloudDoc().then(d => {
       if (cond(d)) return d;
