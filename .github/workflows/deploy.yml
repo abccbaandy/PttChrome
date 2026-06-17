@@ -56,7 +56,7 @@ jobs:
       # download is the root cause of the flaky `waitForCloud timeout`: on a miss
       # the first Firestore write warms up while the test's poll deadline ticks.
       - name: Cache Firebase emulator binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/firebase/emulators
           key: firebase-emulators-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
