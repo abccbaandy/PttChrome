@@ -4,7 +4,7 @@ PTT BBS 瀏覽器終端機 client。fork 自 `robertabcd/PttChrome @ dev`，是 
 webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 
 ## 跑起來（踩雷點，務必照做）
-- 啟動 dev server：`yarn start` → http://localhost:8080（= `webpack serve`；**不再需要** `NODE_OPTIONS=--openssl-legacy-provider`）
+- 啟動 dev server：`yarn start` → http://localhost:8080（= `webpack serve`）
   - 用 **Node**（≥20.9，建議 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
   - 套件管理用 **yarn**（`yarn.lock` v1）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定）。**勿用 npm**（會產生多餘 `package-lock.json`）。
 - dev server 內建 `/bbs` WebSocket proxy，改寫 Origin→term.ptt.cc，直連 `wss://ws.ptt.cc/bbs`。開頁即自動連真 PTT，**不需任何中繼**。
@@ -55,8 +55,9 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - git：**不開新功能分支**，直接在現有分支（`dev`）修改與 commit。
 - **push 後必查 CI**：每次 push 完都要確認 GitHub Actions（`Deploy to GitHub Pages` workflow，含 unit／integration／offline-e2e）有 pass，不能 push 完就收工。無 `gh` CLI，用 GitHub API + env `GH_TOKEN` 查：
   `GET /repos/abccbaandy/PttChrome/actions/runs?branch=dev&per_page=3`（看最新 run 的 `conclusion`）→ 失敗再 `.../actions/runs/{id}/jobs` 找失敗 job/step → `.../actions/jobs/{id}/logs` 抓 log。
-  - **integration 工作（Firebase Emulator）偶發 timeout** 是已知 flaky 根因：CI 冷啟動臨時下載 ~192MB emulator jar，第一次 Firestore 寫入超過測試 poll deadline（典型症狀 `waitForCloud timeout: upload`）。**已做三層緩解**（`deploy.yml` test-integration + `tests/integration/pref_sync.test.js` + `jest.integration.config.js`）：(1) `actions/cache` 快取 `~/.cache/firebase/emulators` ＋ `firebase setup:emulators:firestore` 預抓 jar（消根因）；(2) poll deadline env 化 `INTEGRATION_TIMEOUT_MS`，CI 30s／本機 10s（成功會即時 resolve，放寬上限不拖慢 happy path）；(3) CI `jest.retryTimes(2)` in-run 自動重試。若仍紅：先本機 `yarn test:integration`（需 Java 21+，<5s 全綠）確認非真錯，再 `POST /repos/.../actions/runs/{id}/rerun-failed-jobs`。
-- 增強功能整合的渲染雙路徑/事件時序等踩坑見 `docs/enhanced-addon.md`「踩坑筆記」。
+  - **integration job（Firebase Emulator）偶發 timeout** 是已知 flaky（CI 冷啟動下載 emulator jar，首次 Firestore 寫入超過 poll deadline，症狀 `waitForCloud timeout: upload`）。已三層緩解：`actions/cache` 快取 jar、poll deadline env 化（`INTEGRATION_TIMEOUT_MS`）、CI `jest.retryTimes(2)`。若仍紅：先本機 `yarn test:integration`（需 Java 21+，<5s 全綠）確認非真錯，再 `POST /repos/.../actions/runs/{id}/rerun-failed-jobs`。
+- 增強功能整合的活躍陷阱（async/await 禁用、讀畫面用 `buf.getRowText` 而非 innerText 等）見 `docs/enhanced-addon.md`「踩坑筆記」A 段。
 - 渲染已統一單路徑（兩模式都走 `<Screen>`）見 `docs/easy-reading.md`「render 單軌」。改渲染路徑前先讀它。
 - 改渲染/畫面易壞 code 必跑 e2e（見「測試」段強制規範）。
-- 每次踩坑都要把值得紀錄的細節寫進md
+- 每次踩坑如果後續session也會踩，就要寫進md
+- 每次commit前都要檢查本次更動是否含新功能，如果有的話要更新README.md新功能列表，新功能定義：以一般使用者角度，所以優化、修bug都不算

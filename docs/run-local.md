@@ -1,7 +1,7 @@
 # 官方版（robertabcd/PttChrome）本機啟動
 
 > 基底：`robertabcd/PttChrome @ dev`（React16）。這就是 term.ptt.cc 的原始碼，也是本 repo。
-> build toolchain 已升級 webpack5（2026-06，原 webpack4）。
+> build toolchain：webpack5。
 
 ## TL;DR
 
@@ -27,7 +27,7 @@ yarn start
 
 | 項目 | 說明 |
 |---|---|
-| Node ≥ 20.9 | webpack-cli 7 的下限（建議 v24）。webpack5 起**不再需要** `NODE_OPTIONS=--openssl-legacy-provider`。 |
+| Node ≥ 20.9 | webpack-cli 7 的下限（建議 v24）。 |
 | 用 **Node** 跑，不要用 bun | bun 跑 webpack-dev-server 的 ws proxy 不轉發 upgrade。確認 `node` 已在 PATH。 |
 | 套件管理用 **yarn** | repo 為 yarn 專案（`yarn.lock` v1）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（已由 `package.json` 的 `packageManager` 鎖定 1.22.x）。 |
 | `node_modules` | 已存在直接用。需重裝時 `yarn install`。 |
@@ -60,15 +60,3 @@ production build（`yarn build`）預設站台是 `wsstelnet://ws.ptt.cc/bbs`，
 ```
 https://<部署網址>/?site=wstelnet://your-proxy.example.com/bbs
 ```
-
-## webpack5 升級踩坑（2026-06）
-
-| 坑 | 處置 |
-|---|---|
-| dev server 起來但頁面全白、`/assets/pttchrome.js` 404 | webpack-dev-middleware v5+ **不再正規化相對 `output.publicPath`**（`'assets/'`）。修：`devServer.devMiddleware.publicPath: '/assets/'`（production 仍用相對路徑，供子路徑部署）。 |
-| build 報 `Can't resolve 'querystring'` | webpack5 不再 polyfill Node core modules。`ImagePreviewer.js` 的 `stringify` 改用原生 `URLSearchParams`，不裝 polyfill。 |
-| `devServer.proxy` 語法 | v5 須為**陣列**：`[{ context: ['/bbs'], ... }]`；dev-server 5.2.x 用 http-proxy-middleware **v2**，WS handler 仍是頂層 `onProxyReqWs`（非 hpm v3 的 `on.proxyReqWs`）。 |
-| CSS 內 url() 變 `assets/assets/x` | 移除 css-url-relative-plugin，改 `MiniCssExtractPlugin.loader` 的 `options.publicPath: ''`。 |
-| hwp5 注入的 script 帶 `defer` | 行為等價（defer 保證依序執行 jquery→bootstrap→…→bundle），無需處理。 |
-| `<%= require('./icon/logo.png') %>`（dev.html template） | hwp5 default loader 仍支援，favicon 正常。 |
-| asset modules 的 `require()` | `asset/resource` 的 `require()` 回傳 URL 字串，與舊 file-loader `esModule:false` 相容，使用端（main.js/term_buf/pttchrome/term_view）免改。 |

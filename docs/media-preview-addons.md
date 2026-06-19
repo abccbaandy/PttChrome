@@ -2,7 +2,7 @@
 
 對象：`3rd_script/ptt-imgur-fix`（userscript, eight04）、`3rd_script/ptt-media-preview`（瀏覽器擴充, mingc00）。
 兩者用途皆為「PTT 連結自動顯示圖片/影片 + 修正 imgur referer 封鎖」。
-**路線 B（原生整合）已實作**，見 §9。結論狀態：CONFIRMED＝已讀原始碼實證；guess＝推論。
+**路線 B（原生整合）已實作**，見 §7。結論狀態：CONFIRMED＝已讀原始碼實證；guess＝推論。
 
 **關鍵前提（CONFIRMED）**：`term.ptt.cc` 跑的就是 PttChrome，本專案 fork 自 PttChrome ⇒
 兩套件針對的 DOM＝**我們自己會產出的 DOM**。耦合高，但方向對我們有利（不需逆向，照搬即合）。
@@ -101,59 +101,15 @@
 
 ---
 
-## 6. 近期 git log 分析（回答「新功能 vs bug fix」）
+## 6. 決策：採路線 B（原生整合）
 
-近 25 commit 實查（CONFIRMED）：
-- **ptt-imgur-fix**：多為 bug fix（video stream 改用非串流、video CORS #31、youtube iframe 版面、no-referer fetch、twitter url 容錯）；新功能僅零星——meee(2025-06)、srcset loader(2025-06)、meee sniff 副檔名(2025-06)。
-- **ptt-media-preview**：多為 fix（meee heuristic、verb.tw no-referrer、config 檢查、ptt web match pattern、surge 背景）；新增僅 webp(2025-12)、verb.tw(2025-03)、meee(2025-06)、twitch(2024-03)。
+兩條路線曾評估：A=沿用第三方（retarget `@match`/manifest host，零 code，但需使用者自裝、與本 fork 內建預覽衝突、追上游 bug fix）；B=擴充既有 `imageUrlResolvers` registry（一次性純加法 code、內建免安裝、無衝突，但需自行回補上游 bug fix）。
 
-**結論：圖床 roster 穩定，近一年無大型新功能，以 bug fix + 偶發新增單一圖床為主。**
-⇒ 一次性整合「追不上上游」的風險低；但**仍會錯過未來各圖床改版時的 bug fix**（imgur API/twitter URL 格式最常變）。
+**採 B**：泛型 registry 已就位（加 host＝加一筆 entry），一條 generic 副檔名 resolver 即補上「§5 缺口 1：一般圖片直連不預覽」這個主要痛點；git log 顯示兩套件圖床 roster 穩定、近一年以 bug fix + 偶發單一圖床為主，自行回補成本低。第三方保留為「零 code 替代 / 穩健去 referer 的 fallback 參考」。實作見 §7。
 
 ---
 
-## 7. 整合設計（若日後選擇原生整合；本次不實作）
-
-**核心理念，直接回應「支援所有圖床、非每圖床各寫一套」：** 沿用並擴充既有 `imageUrlResolvers` registry
-——它本就是「一條解析鏈 + 資料化 host 條目」的泛型設計，加 host＝加一筆 entry，不是新寫一套開圖邏輯。
-
-1. **一條 generic 副檔名 resolver**：match 任意 URL 結尾 `\.(jpe?g|png|gif|webp|apng|avif|svg|…)`（圖）/ `\.(mp4|webm|ogg)`（影片）。**零 per-host 程式碼即涵蓋所有直連圖床/影片**——「支援所有圖床」的主力。
-2. **少數 host-specific resolver 條目**：imgur 單圖/相簿、twitter `:orig`、meee、youtube、twitch。這些 host 不給直連 URL（需轉址/查 API/嵌 iframe），**本質無法泛化**，但集中為同一 registry 的資料條目。
-3. **泛化 resolver 輸出**：`{src}` → media descriptor `{type:'image'|'video'|'iframe', src, srcset?}`；
-   `ImagePreviewer.Inline` 依 `type` render `<img>/<video>/<iframe>`。referrerPolicy、lazy 等 cross-cutting 在 render 端一次處理，不散落各 host。
-4. **referer 修正**：預覽 img 一律 `referrerPolicy="no-referrer"`（Chromium 多數情況已足夠）。穩健 fallback＝網路層去 referer 擴充 / dev server 代抓圖（沿用 `docs/origin-rewrite-extension.md` 思路），記入 doc 不強制。
-5. **不需** GM_*/sentinel.js/MutationObserver——本 fork 直接掌控 render path（`LinkSegmentBuilder`/`appendRows`）；album 用原生 `fetch`（imgur API 有 CORS，media-preview `imgur.js` 已證可行）。
-
-可能改動檔：`src/components/ImagePreviewer.js`（擴充 resolver + 泛化 render）、視需要 `Row/LinkSegmentBuilder.js`（descriptor 對應）、`src/css/main.css`（既有 `hyperLinkPreview` 規則）。
-
----
-
-## 8. 兩條路線比較 + 建議
-
-| | 路線 A：沿用第三方 | 路線 B：原生整合 |
-|---|---|---|
-| 改動量 | 僅 retarget `@match`/manifest host（零 code） | 擴充 `imageUrlResolvers`（一次性 code，純加法） |
-| 使用者安裝 | 需自裝 userscript/擴充 | 內建，免安裝 |
-| referer 修正 | media-preview 擴充（網路層）最穩 | img `referrerPolicy`（多數足夠）+ 文件化 fallback |
-| 上游維護 | 自動同步 bug fix | 需自行回補（風險低，roster 穩定） |
-| 與本 fork 既有預覽 | 重疊/衝突，需擇一停用 | 統一在自家機制，無衝突 |
-| 涵蓋廣度 | 兩套件成熟、邊界 case 多 | 初期需自行補齊 host 與容錯 |
-
-### 建議（傾向路線 B，但非現在就做）
-理由：
-1. 泛型 registry（`imageUrlResolvers`）**已就位**，整合是純加法、風險可控。
-2. **目前一般圖片直連根本不預覽**（§5 缺口 1）是實質痛點，路線 B 一條 generic resolver 即解。
-3. git log 顯示 roster 穩定、回補成本低（§6）——「追不上上游」的疑慮在實證後變小。
-4. 沿用第三方需使用者自裝，且會與本 fork 內建預覽衝突（須先停用內建，反而更亂）。
-
-但**不急於現在實作**：可先以路線 A（retarget host 後掛 media-preview 擴充）驗證實際體驗與 referer 行為，
-再決定路線 B 的範圍。第三方保留為「零 code 替代方案 / 穩健去 referer 的 fallback 參考實作」。
-
-唯一路線 B 無法完全自解者：imgur referer 封鎖在「連線重用」極端情況下需網路層處理；屬邊界，先用 `referrerPolicy` + 文件化擴充/proxy fallback 即可。
-
----
-
-## 9. 實作狀態（路線 B 已實作，CONFIRMED）
+## 7. 實作狀態（路線 B 已實作，CONFIRMED）
 
 於 `src/components/ImagePreviewer.js` 完成原生整合（commit `702c4d2`）：
 

@@ -27,16 +27,14 @@
 - 變更比對用 `deepEqual`（key 順序無關，`pref_sync_logic.js`），**勿用 `JSON.stringify`**：Firestore 回傳 map 欄位 key 順序不保證（`termSize` 會 `{cols,rows}` ↔ `{rows,cols}` 假變更）。merge 後無實質變更 → 不 writeValues、不打 app callback（`onValuesPrefChange` 會觸發 resize 等實際動作）；PrefModal 關閉時表單與 storage `deepEqual` → 跳過寫入與上傳（避免空上傳 bump `updatedAt` 吵醒所有裝置）。
 - 生命週期：attach 前先 unsub 舊 listener；`signOut` **先 unsub 再** `auth.signOut()`（否則 stream 噴 permission-denied）；`onAuthStateChanged` 收到 null（token 過期/撤銷）也 unsub；onSnapshot error callback 觸發後 listener 自停 → 清掉 handle。
 - callback 走註冊制：`main.js` 啟動時無條件 `registerOnCloudValues(app.onValuesPrefChange)`（純 JS 不觸發 SDK 載入），PrefModal `signIn` 建立的 listener 也打得到 app；`signIn(onCloudValues)` 的參數 callback 只在首個 snapshot 處理完打一次（更新 modal 表單）。
-- 啟動還原等 auth 用 `waitForFirstAuthState()`（`authStateKnown` 旗標 + waiter queue）。踩坑（2026-06）：舊 pattern `const unsub = onAuthState(cb)` 且 cb 內呼叫 `unsub()` 會炸 `TypeError: unsub is not a function` —— `onAuthState` **同步立即**呼叫 cb，`const` 還沒賦值（TDZ）→ 啟動還原從未成功掛上 listener。
-- 測試：`tests/integration/pref_sync.test.js`（`yarn test:integration`，官方 Firebase Emulator Suite——真 modular SDK + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）重播啟動還原/他機推播/echo skip/offline 守門/signIn/signOut/憑證去敏全流程；上述 TDZ bug 走相同 startup 路徑回歸。細節見下方「測試」章節。
+- 啟動還原等 auth 用 `waitForFirstAuthState()`（`authStateKnown` 旗標 + waiter queue）。注意 `onAuthStateChanged` **同步立即**呼叫 cb → cb 內勿依賴尚未賦值的 `unsub`（TDZ）。
+- 測試：`tests/integration/pref_sync.test.js`（`yarn test:integration`，官方 Firebase Emulator Suite——真 modular SDK + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）重播啟動還原/他機推播/echo skip/offline 守門/signIn/signOut/憑證去敏全流程。細節見下方「測試」章節。
 
-## SDK 載入：npm modular + dynamic import()（2026-06 回遷）
+## SDK 載入：npm modular + dynamic import()
 
-- 歷史成因：webpack 4 acorn 不認 ES2020（`?.` / `??`）→ `yarn add firebase` 炸 build → 曾改 runtime 注入 gstatic compat scripts（pin 10.14.1、全域 `window.firebase`）。webpack5 升級後限制解除，2026-06 回遷 npm modular SDK（v12，版本歸 lockfile 管、不依賴 gstatic）。
+- npm modular SDK（firebase v12，版本歸 lockfile 管）。
 - `init()` 用 `import("firebase/app"|"firebase/auth"|"firebase/firestore")`（同 `webpackChunkName: "firebase"`）→ webpack 拆成獨立 lazy chunk（~500KB），只在「曾登入（localStorage 旗標）」或「按登入鈕」時下載 → 未登入者（含 e2e/guest）零下載、零 Firebase 請求（Playwright 兩個方向驗證過：無旗標零流量；有旗標 chunk 正常載入）。
-- compat → modular 對應踩坑：
-  - `snap.exists` compat 是屬性、modular 是**方法** `snap.exists()` —— 漏改不報錯，只會永遠 truthy。
-  - modular 的 `onAuthStateChanged` 通知在 sign-in promise resolve 之後的 microtask 才到 → `signIn` attach listener 前要等模組層 `currentUser` 就緒（`waitForUser`）；compat 年代此通知是同步的，沒踩過。
+- modular API 注意：`snap.exists` 是**方法** `snap.exists()`（非屬性）；`onAuthStateChanged` 通知在 sign-in promise resolve 後的 microtask 才到 → `signIn` attach listener 前要等模組層 `currentUser` 就緒（`waitForUser`）。
 - emulator hookup（test-only）：`init()` 讀 `process.env.FIRESTORE_EMULATOR_HOST` / `FIREBASE_AUTH_EMULATOR_HOST` / `GCLOUD_PROJECT`（`firebase emulators:exec` 自動設給子行程）→ `connectAuthEmulator`/`connectFirestoreEmulator` + projectId 覆寫。webpack DefinePlugin 把三鍵 pin 成 `undefined` → production bundle 整段被 terser DCE（entry chunk grep 不到 `EMULATOR_HOST`）。
 
 ## 測試（官方 Firebase Emulator Suite）
@@ -93,8 +91,7 @@ firebase deploy --only firestore:rules
 ## 已知限制
 
 - `signInWithPopup` 在嚴格擋第三方 storage 的瀏覽器（Safari/Brave）可能失敗；fallback 可改 `signInWithRedirect`（未實作）。
-- PrefModal 表單 state 每次**開啟**時重讀 localStorage，但開啟期間不吃 snapshot；兩端**同時**編輯仍 last-write-wins，realtime 只縮小不消滅此窗口。
-- 踩坑（2026-06）：PrefModal 由 ContextMenu mount **一次**、靠 `show` prop 切換，`withStateHandlers` 的初始 `values: readValuesWithDefault()` 只在 app 啟動時跑一次 → 表單 state 永遠是啟動瞬間的舊值，關閉時 `writeValues`+`savePrefs` 會把舊值寫回，**復原憑證清除、蓋掉雲端新偏好**（realtime listener 寫進 localStorage 也救不了）。修法：`componentDidUpdate` 偵測 `show` false→true 時 `setValues(readValuesWithDefault())`。debug 線索：About 分頁與 console 啟動行有 build commit id（webpack DefinePlugin `GIT_COMMIT`/`BUILD_TIME`），可排除舊 bundle。
+- PrefModal 由 ContextMenu mount 一次、靠 `show` prop 切換；表單 state 在每次**開啟**時 `componentDidUpdate` 重讀 localStorage（見 `PrefModal.js` 該處註解），但開啟期間不吃 snapshot → 兩端**同時**編輯仍 last-write-wins，realtime 只縮小不消滅此窗口。
 - 帳號改 local-only 後，新裝置（尤其無 credential API 的 Firefox/Safari）不再從雲端拿到 `autoLoginUser`，需手動重填帳密一次。
 - 清瀏覽器資料只清掉同步旗標與快取；偏好仍在雲端，重新登入即拉回。
 - ad-blocker 擋 `google.com/recaptcha` 時 App Check 拿不到 token：enforce 後該瀏覽器同步全掛（permission-denied），BBS 其餘功能正常（`initializeAppCheck` 有 try/catch）。

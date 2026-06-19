@@ -115,7 +115,7 @@ polling**（setTimeout 每 500ms），每 tick 直接從 `buf.getRowText` 讀整
 `#mainContainer.innerText`**：`'change'` 事件在 React re-render **之前** 觸發 → DOM 慢一幀，導致
 「要按鍵才動」）。比對提示字串沿用 `tests/e2e/helpers/ptt.js#login` 流程，帳密用 `app.sendData`(Big5)、
 空白/Y/N 同。到主功能表即 `stop()`；逾時 90s 自停；reconnect 時 `start()` 重置（`_seq` 防 async 重入）。
-e2e：`enhance.spec.js`「自動登入：開頁自動到主選單（不需按鍵）」（需 env PTT_USER/PTT_PASS）。
+守護：`tests/unit/auto_login_logic.test.js`（假 app 驅動 `_tick`：帳號/密碼順序、dup/err one-shot、loose「重複登入」需 `[Y/n]`/`(Y/N)`、主選單 stop、密碼錯誤 stop）；e2e shared 登入 fixture 亦間接走此路徑（需 env PTT_USER/PTT_PASS）。
 
 ### 憑證儲存（Credential Management API，2026-06 改版）
 密碼**不再明文落地 localStorage**（支援的瀏覽器）。解析順序（`_resolveCredential`）：
@@ -145,7 +145,7 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 
 ## 踩坑筆記
 
-維護原則：本節只留**對後續 session 有前瞻價值**的內容——(A) 動到相關 code 仍會踩的活躍陷阱；(B) 已修正且有回歸守護者只留一行指標（lesson + 守護測試，post-mortem 敘事去 git）；(C) 不可由本專案 code 反推的外部參考。一次性 bug 修掉即不再列敘事，只在仍有可重用教訓時併入 A。引用以標題為準（勿用流水號）。
+維護原則：本節只留**對後續 session 有前瞻價值**的內容——(A) 動到相關 code 仍會踩的活躍陷阱；(B) 不可由本專案 code 反推的外部參考。**已修正的 bug 不列敘事**（靠回歸測試 + git 守護），只在仍有可重用教訓時併入 A。引用以標題為準（勿用流水號）。
 
 ### A. 活躍陷阱（動到相關 code 前先讀）
 
@@ -159,15 +159,7 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 `enhance.spec.js` 紅。
 - **e2e flake 常態**：最新文章常無推文（測樓層/黑名單從 End 往舊文找）；guest 名額滿用 env `PTT_USER/PTT_PASS`；偶發 403/ECONNRESET（PTT 端）。
 
-### B. 已修正（regression-guarded，只留指標）
-
-- **假推文污染樓層**（內文/簽名檔仿推文連假時間戳+ANSI 仿色，逐列無信號可判別）→ `FloorCounter.nonComment` BePTT meta-latch：latch 前非推文列歸零，見過 `※ 發信站/※ 文章網址` 後單向 latch（`※ 編輯:` 不打斷）。守護 `comment_parse.test.js`「BePTT meta-latch rule」+ fixture `C_Chat_M.1780734381.txt`。演算法來源見 C。
-- **好讀「第一則推文消失」**（尤其 `→`，後續樓號少 1）→ 跨頁去重改 `comment_parse.findPageOverlap` 純內容比對（逐螢幕列比對重疊量），捨棄狀態列行號算術。教訓：跨頁拼接信內容、勿信脆弱行號算術。守護 `comment_parse.test.js` + e2e `easy-reading.spec.js`。
-- **auto_login 重複送鍵帶離主選單** → `_answeredDup/_answeredErr` one-shot guard，gate 在 `_sentPass` 後；loose match 須同時命中 `[Y/n]`/`(Y/N)`。守護 e2e「自動登入」。
-- **`parsePushInitText` 把完成的箭頭推文當輸入提示列** → 加 `!COMMENT_TIME_RE.test(it)`。守護 `comment_parse.test.js`「parsePushInitText」。
-- **已消除的舊路徑**（2026-06 統一渲染，兩模式同走 `<Screen>`→`computeAnnotations` 單一逐列加工）：好讀繞過 Screen 直接竄改 DOM 的「渲染雙路徑」、以及 `useEasyReadingMode=false` 把更新打在 detached nodes 致**畫面永久凍結**——皆不復存在。關好讀統一走 `easy_reading.js#exitEasyReading()`。
-
-### C. BePTT 反編譯（外部參考，不可由本專案 code 反推）
+### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）
 
 樓層演算法移植自 BePTT 7.0.9（`tw.ystudio.beptt`，jadx 反編譯確證、使用者實測過行為）。架構：文章閱讀依登入分流——免登入走 www.ptt.cc HTML（AID→URL 在 `Z7/b.java`，okhttp `over18=1`，`div.push` 計樓天然排除假推文）；登入走 telnet 逐頁解析（`I3()` 等變體，grep 錨點 `f3943g1`/`f3959j3`），跨頁去重用近 40 列含色 ring buffer 內容比對。「檢查新推文」= telnet 重進文章（AID+`$$00`）增量解析共用計數器。
 反編譯 recipe：xapk(zip)→apk→portable Temurin JRE21 + jadx 1.5.1（置 `3rd_script/tools/`，gitignored），`jadx --no-res --no-debug-info -j 6 -d <out> <apk>`。踩坑：① jadx 留 `/* compiled from: Xxx.java */` 可還原混淆類名（androguard 字串層看不到）；② **大方法反編譯失敗會被整個略過**（樓層邏輯所在方法曾因此被誤判「不存在」）→ 補 `--single-class … --show-bad-code`（bad-code 條件式可能顛倒，以結構/字串為準）；③ dex 內 Big5 字串 MUTF-8 解碼會損壞，UTF-16 中文常數正常。
