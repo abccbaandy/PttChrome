@@ -1,0 +1,10 @@
+# Source: Ptt-official-app/pttbbs-backend/queue/testcase/M.1644506392.A.03C.utf8.recommend
+# Cross-validation: FORWARD (轉錄) lines lead with ※ and carry a trailing MM/DD HH:MM,
+# but are NOT 推文 — they must stay N (no floor). Only the real 推 row is C, so the
+# single C row numbers to 1 regardless of how many 轉錄 lines surround it.
+N	※ PttACT:轉錄至看板 OriginalSong                                  01/26 17:19
+N	※ simons:轉錄至看板 Gossiping                                     01/26 22:25
+N	※ jasome:轉錄至某隱形看板                                         01/29 02:39
+C	推 fennyccc: 讚                                     115.82.149.161 01/28 12:34
+N	※ a6234709:轉錄至看板 movie                                       01/29 10:53
+N	※ gogin:轉錄至看板 Wanted                                         01/30 08:56

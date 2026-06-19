@@ -322,7 +322,9 @@ const FIXTURES = [
   "C_Chat_M.1780732757.txt", // 少量推文，空白被標樓層
   "Stock_M.1780733590.txt", // 內文/推文混雜
   "Stock_M.1780735101.txt", // → BlueBird5566 不見 (偵測層面須為合法推文)
-  "C_Chat_M.1780734381.txt" // #1g8zcjhj 假推文帶假時間戳 (BePTT meta-latch 規則)
+  "C_Chat_M.1780734381.txt", // #1g8zcjhj 假推文帶假時間戳 (BePTT meta-latch 規則)
+  "IpComment_M.1621089154.txt", // 官方 fixture：BRD_IPLOGRECMD 看板 IP 行
+  "Forward_M.1644506392.txt" // 官方 fixture：FORWARD 轉錄行不計樓
 ];
 
 function loadFixture(name) {
@@ -370,6 +372,52 @@ describe("floor fixtures (saved articles)", () => {
         expect(seq).toBe(rows.filter(r => r.label === "C").length);
       });
     });
+  });
+});
+
+// REGRESSION: official cross-validation against Ptt-official-app's real-PTT testcases
+// (go-pttbbs comment format + go-bbs parse rules). The fixtures IpComment_M.1621089154 /
+// Forward_M.1644506392 carry the two row shapes our own saved articles never had: an
+// IP-logging board (BRD_IPLOGRECMD) and 轉錄 (FORWARD) lines. See comment_parse.js's
+// "Official cross-validation" note for the byte/format spec these guard.
+describe("official cross-validation (Ptt-official-app fixtures)", () => {
+  test("IP-bearing comment (BRD_IPLOGRECMD): IP not eaten into userid", () => {
+    expect(
+      parseComment("推 ericf129: 辛苦了 ><                 1.200.29.12 05/16 22:57")
+    ).toEqual({ type: "推", userid: "ericf129" });
+    expect(
+      parseComment("推 Japan2001: 謝謝活動部             180.214.183.155 05/18 18:57")
+    ).toEqual({ type: "推", userid: "japan2001" });
+  });
+
+  test("FORWARD (轉錄) line → null, takes no floor (mirrors BePTT terminal numbering)", () => {
+    expect(
+      parseComment("※ PttACT:轉錄至看板 OriginalSong                01/26 17:19")
+    ).toBeNull();
+    expect(
+      parseComment("※ jasome:轉錄至某隱形看板                       01/29 02:39")
+    ).toBeNull();
+  });
+
+  test("轉錄 after the meta-latch does NOT reset numbering between real comments", () => {
+    // The raw fixture has no 發信站/文章網址 lines; this covers the real-article case
+    // where a 轉錄 row sits between two real comments past the latch (post-latch
+    // non-comment rows must be no-ops, so bob stays floor 2).
+    const ctx = { showFloorNumbers: true, floorCounter: new FloorCounter() };
+    annotateComment("※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4 (臺灣)", ctx);
+    annotateComment("※ 文章網址: https://www.ptt.cc/...", ctx);
+    expect(annotateComment(ts("推 alice: 1"), ctx).floor.seq).toBe(1);
+    annotateComment("※ PttACT:轉錄至看板 OriginalSong                01/26 17:19", ctx);
+    expect(annotateComment(ts("推 bob: 2"), ctx).floor.seq).toBe(2);
+  });
+
+  // BORROWED from go-bbs/user_comment_record.go regex `[a-zA-Z][a-zA-Z0-9]+`: a userid
+  // must start with a letter and be ≥2 chars (the PTT account rule). A leading-digit or
+  // single-char "id" is body text, not a comment — even with a real-looking timestamp.
+  test("userid must start with a letter, ≥2 chars (official id pattern)", () => {
+    expect(parseComment(ts("推 1: x"))).toBeNull();
+    expect(parseComment(ts("推 a: x"))).toBeNull();
+    expect(parseComment(ts("推 a1: x"))).toEqual({ type: "推", userid: "a1" });
   });
 });
 

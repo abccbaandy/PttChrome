@@ -1,0 +1,7 @@
+# Source: Ptt-official-app/pttbbs-backend/dbcs/testcase/M.1621089154.A.B39.utf8.recommend
+# Cross-validation: BRD_IPLOGRECMD boards put an IP before the timestamp
+# (推 id: text <IP> MM/DD HH:MM). The IP must NOT be parsed into the userid/content,
+# and each real 推 still takes one floor (1..N).
+C	推 ericf129: 辛苦了 ><                                 1.200.29.12 05/16 22:57
+C	推 zhibb: 謝謝活動部 :)                              140.113.0.229 05/17 09:49
+C	推 Japan2001: 謝謝活動部                            180.214.183.155 05/18 18:57

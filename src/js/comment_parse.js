@@ -32,10 +32,11 @@ export function rowToText(chars) {
 }
 
 // A PTT comment line looks like: "推 userid: text ...   MM/DD HH:MM"
-// (噓 / → for boo / arrow). userid is ASCII alphanumeric. The id field may be
-// space-padded before ':' on some boards (Stock: "推 diefishfish : …"; C_Chat:
-// "推 Haruna1998: …"). Returns the pusher in lower case so blacklist matching is
-// case-insensitive.
+// (噓 / → for boo / arrow). userid starts with a letter then alphanumerics, ≥2
+// chars (mirrors official go-bbs `[a-zA-Z][a-zA-Z0-9]+` + the PTT account rule —
+// see the cross-validation note below). The id field may be space-padded before
+// ':' on some boards (Stock: "推 diefishfish : …"; C_Chat: "推 Haruna1998: …").
+// Returns the pusher in lower case so blacklist matching is case-insensitive.
 //
 // The trailing " MM/DD HH:MM" timestamp (COMMENT_TIME_RE) is REQUIRED: it is what
 // distinguishes a real comment from body text written in comment shape (no
@@ -47,8 +48,26 @@ export function rowToText(chars) {
 // #1g8zcjhj even copies the comment colors with ANSI codes — no per-row signal
 // survives). Those fakes are handled by the FloorCounter meta-latch rule below
 // (BePTT's algorithm), not by this regex.
+//
+// Official cross-validation (Ptt-official-app — CONFIRMED terminal byte/format spec
+// this scrape逆-parses; sources are GPLv3 so we borrow the format knowledge, not code):
+//   - Type prefix bytes — go-pttbbs/ptttype/comment_type.go CommentType.Bytes():
+//       推 = ESC[1;37m \xb1\xc0   噓 = ESC[1;31m \xbcN   → = ESC[1;31m \xa1\xf7
+//   - Row layout — go-pttbbs/ptt/comments.go FormatCommentString():
+//       <typeBytes> <space> ESC[33m<id>ESC[m: <content><padding>ESC[m <IP?> MM/DD HH:MM
+//     IP appears iff the board has BRD_IPLOGRECMD; the id is fixed-width iff
+//     BRD_ALIGNEDCMT (explains why id alignment / the IP column differ per board).
+//     We strip the ANSI upstream (rowToText), so the regex sees plain text; the IP,
+//     when present, is absorbed by ".*" before the timestamp.
+//   - Floor = record order — go-bbs/user_comment_record.go CommentOrder() (樓層即序號);
+//     its id regex `[a-zA-Z][a-zA-Z0-9]+` is what we mirror above.
+//   - Official also defines FORWARD/REPLY/EDIT/DELETED types, but on the terminal a
+//     轉錄 ("※ id:轉錄至看板 X … MM/DD HH:MM") and 編輯 line lead with ※, so they stay
+//     non-comment here and take no floor — matches BePTT's terminal numbering.
+//   Regression: tests/unit/comment_parse.test.js "official cross-validation" + fixtures
+//   IpComment_M.1621089154.txt / Forward_M.1644506392.txt.
 const COMMENT_RE = new RegExp(
-  /^(推|噓|→)\s+([0-9A-Za-z]+)\s*:.*/.source + COMMENT_TIME_RE.source
+  /^(推|噓|→)\s+([A-Za-z][0-9A-Za-z]+)\s*:.*/.source + COMMENT_TIME_RE.source
 );
 
 // The user id starts at col 3: the 推/噓/→ marker is a 2-col DBCS char (cols 0-1)
