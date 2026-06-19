@@ -1,6 +1,6 @@
 ﻿import { App } from './pttchrome';
 import { setupI18n } from './i18n';
-import { getQueryVariable } from './util';
+import { getQueryVariable, proxySiteFromPrefs } from './util';
 import { readValuesWithDefault } from './pref_storage';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
 
@@ -33,13 +33,16 @@ function startApp() {
       )
     })) : Promise.resolve()
   ).then(() => {
-    // connect.
+    // connect. Priority: ?site override (off by default, see webpack ALLOW_SITE_IN_QUERY)
+    // -> user proxy from prefs -> the built-in DEFAULT_SITE.
+    const prefs = readValuesWithDefault();
     app.connect(
-      process.env.ALLOW_SITE_IN_QUERY && getQueryVariable('site')
+      (process.env.ALLOW_SITE_IN_QUERY && getQueryVariable('site'))
+      || proxySiteFromPrefs(prefs)
       || process.env.DEFAULT_SITE);
     // TODO: Call onSymFont for font data when it's implemented.
     console.log("load pref from storage");
-    app.onValuesPrefChange(readValuesWithDefault());
+    app.onValuesPrefChange(prefs);
     // Cloud prefs (Firestore) arrive later — and keep arriving via the
     // realtime listener — and are re-applied on top; no-op unless the user
     // enabled sync by signing in before (see pref_sync.js). The callback is

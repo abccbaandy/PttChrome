@@ -82,7 +82,7 @@
 
   // enhanced add-on options
   "options_showFloorNumbers": {
-    "message": "文章內推文顯示樓層編號 (需開啟好讀模式才會跨頁連續)"
+    "message": "文章內推文顯示樓層編號 (僅好讀模式，跨頁連續準確)"
   },
   "options_highlightAuthorComments": {
     "message": "高亮原PO本人的推文"
@@ -164,8 +164,29 @@
   "options_enableEasyReading": {
     "message": "啟用文章好讀模式 (實驗性)"
   },
+  "options_easyReadingEndSwitchNative": {
+    "message": "好讀模式按熱鍵跳到文末並切回原生模式"
+  },
+  "options_easyReadingEndSwitchKey": {
+    "message": "切回原生模式的熱鍵"
+  },
+  "tooltip_easyReadingEndSwitchKey": {
+    "message": "點此後按任意鍵設定 (預設 End)"
+  },
   "options_endTurnsOnLiveUpdate": {
     "message": "END 啟用推文即時更新 (如 Alt + r)"
+  },
+  "options_connection": {
+    "message": "連線"
+  },
+  "options_useProxy": {
+    "message": "透過 proxy 連線 (重新整理後生效)"
+  },
+  "options_proxyUrl": {
+    "message": "Proxy 位址"
+  },
+  "tooltip_proxyUrl": {
+    "message": "如 ptt-proxy.example.workers.dev，或完整 wsstelnet:// 位址"
   },
   "options_copyOnSelect": {
     "message": "選取文字時自動複製文字"

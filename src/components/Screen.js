@@ -34,16 +34,20 @@ function computeAnnotations(lines, enhance) {
     articleAuthor,
     selectedPusher,
     pageState,
-    autoFixUrl
+    autoFixUrl,
+    easyReading
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   if (pageState === PAGE_READING) {
-    // Floor numbers here count only within the visible page; cross-page numbering
-    // needs the easy-reading path (its FloorCounter persists across page-downs).
+    // Floor numbers are shown only in easy reading, where the FloorCounter walks
+    // the whole accumulated article (accurate). The native per-page counter resets
+    // every page-down → inaccurate, so no floorCounter is passed there and
+    // annotateComment skips floors entirely (see comment_parse.js). Auto-fix URL
+    // detection below still runs on every row regardless of mode.
     const ctx = {
       blacklist,
       showFloorNumbers,
-      floorCounter: new FloorCounter(),
+      floorCounter: easyReading ? new FloorCounter() : undefined,
       highlightAuthor,
       articleAuthor,
       selectedPusher

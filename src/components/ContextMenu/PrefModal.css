@@ -70,6 +70,13 @@
   appearance: none;
 }
 
+/* 關於分頁：解除 modal 整體的 user-select:none，讓 build hash／版本資訊可選取複製 */
+.PrefModal__about-selectable,
+.PrefModal__about-selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .PrefModal__warning {
   color: #e0a040;
   font-size: 12px;

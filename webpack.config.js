@@ -18,7 +18,12 @@ try {
     .toString()
     .trim();
 } catch (e) {}
-const BUILD_TIME = new Date().toISOString();
+// Display in UTC+8 (台灣時間) — the user base is in Taiwan, so a +8 timestamp is
+// what people expect to see in the About tab / startup console.
+const BUILD_TIME = new Date(Date.now() + 8 * 3600 * 1000)
+  .toISOString()
+  .replace('T', ' ')
+  .replace(/\..+$/, '') + ' (UTC+8)';
 
 module.exports = {
   mode: PRODUCTION_MODE ? 'production' : 'development',
@@ -77,6 +82,10 @@ module.exports = {
     new webpack.DefinePlugin({
       'process.env.PTTCHROME_PAGE_TITLE': JSON.stringify(process.env.PTTCHROME_PAGE_TITLE || 'PttChrome'),
       'process.env.DEFAULT_SITE': JSON.stringify(PRODUCTION_MODE ? 'wsstelnet://ws.ptt.cc/bbs' : 'wstelnet://localhost:8080/bbs'),
+      // Default OFF: ignore ?site= in the URL (a page-author/link could otherwise
+      // point the client at an arbitrary WebSocket host). Users who want a custom
+      // proxy set it in Preferences instead (useProxy + proxyUrl, see pref_storage.js).
+      // Set ALLOW_SITE_IN_QUERY=yes to re-enable the query override.
       'process.env.ALLOW_SITE_IN_QUERY': JSON.stringify(process.env.ALLOW_SITE_IN_QUERY === 'yes'),
       'process.env.DEVELOPER_MODE': JSON.stringify(DEVELOPER_MODE),
       // App Check debug token for local dev (pref_sync.js). Comes from the

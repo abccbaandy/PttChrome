@@ -302,6 +302,80 @@ describe("EasyReading._onPageStateSettled", () => {
   });
 });
 
+// End-key behavior in easy reading is gated by the easyReadingEndSwitchNative pref
+// and a configurable switch key. Two cases must hold:
+//  - pref ON  + key matches  -> switchToNativeAtBottom(), preventDefault, stop early
+//  - pref OFF (or key !=)     -> scroll the easy-reading view to the bottom and STAY
+//    in easy reading (official-term behavior). Regression guard: a prior version let
+//    End fall through to the native terminal, so the view never scrolled to the
+//    article bottom when the pref was off.
+describe("EasyReading._onKeyDownProcessUI End handling", () => {
+  const makeER = (prefs) => {
+    readValuesWithDefault.mockReturnValue(prefs);
+    const termBuf = { addEventListener() {} };
+    const mainDisplay = { scrollTop: 0, scrollHeight: 5000 };
+    const er = new EasyReading(/* core */ {}, /* view */ { mainDisplay }, termBuf);
+    er.switchToNativeAtBottom = jest.fn();
+    return { er, mainDisplay };
+  };
+  const keyEvent = key => ({
+    key, ctrlKey: false, altKey: false, preventDefault: jest.fn()
+  });
+
+  it("switches to native on End when the pref is on and key matches", () => {
+    const { er, mainDisplay } = makeER({
+      easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "End"
+    });
+    const e = keyEvent("End");
+    er._onKeyDownProcessUI(e);
+    expect(er.switchToNativeAtBottom).toHaveBeenCalledTimes(1);
+    expect(e.preventDefault).toHaveBeenCalled();
+    expect(mainDisplay.scrollTop).toBe(0); // did not scroll; switched instead
+  });
+
+  it("scrolls to bottom (stays in easy reading) on End when the pref is off", () => {
+    const { er, mainDisplay } = makeER({
+      easyReadingEndSwitchNative: false, easyReadingEndSwitchKey: "End"
+    });
+    const e = keyEvent("End");
+    er._onKeyDownProcessUI(e);
+    expect(er.switchToNativeAtBottom).not.toHaveBeenCalled();
+    expect(mainDisplay.scrollTop).toBe(mainDisplay.scrollHeight);
+    expect(e.preventDefault).toHaveBeenCalled();
+  });
+
+  it("scrolls to bottom on End when the configured switch key is something else", () => {
+    const { er, mainDisplay } = makeER({
+      easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "q"
+    });
+    const e = keyEvent("End");
+    er._onKeyDownProcessUI(e);
+    expect(er.switchToNativeAtBottom).not.toHaveBeenCalled();
+    expect(mainDisplay.scrollTop).toBe(mainDisplay.scrollHeight);
+  });
+
+  it("$ / G still switch to native when the pref is on (fixed vi aliases)", () => {
+    for (const key of ["$", "G"]) {
+      const { er } = makeER({
+        easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "End"
+      });
+      er._onKeyDownProcessUI(keyEvent(key));
+      expect(er.switchToNativeAtBottom).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("$ / G scroll to bottom (stay in easy reading) when the pref is off", () => {
+    for (const key of ["$", "G"]) {
+      const { er, mainDisplay } = makeER({
+        easyReadingEndSwitchNative: false, easyReadingEndSwitchKey: "End"
+      });
+      er._onKeyDownProcessUI(keyEvent(key));
+      expect(er.switchToNativeAtBottom).not.toHaveBeenCalled();
+      expect(mainDisplay.scrollTop).toBe(mainDisplay.scrollHeight);
+    }
+  });
+});
+
 // Settle-driven page-down recovery (the truncated-pushes fix). The per-frame loop
 // (_onChanged/_onViewUpdated) only fires on content ('changed') frames, but PTT parks
 // the cursor on the bottom status row in a SEPARATE cursor-only ('posChanged') frame

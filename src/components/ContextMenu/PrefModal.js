@@ -165,7 +165,26 @@ const enhance = compose(
 
       onTextInputChange: ({ values }) => ({ target: { name, value } }) => ({
         values: changeNestedValue(values, name, value)
-      })
+      }),
+
+      // Hotkey capture: record the pressed key (e.key) into the named pref.
+      // Ignore bare modifier/Tab presses so the field can't be set to them.
+      onHotkeyCapture: ({ values }) => e => {
+        e.preventDefault();
+        const key = e.key;
+        // Use e.target (NOT e.currentTarget): recompose's withStateHandlers runs this
+        // inside a setState updater, i.e. AFTER React's executeDispatch force-nulls
+        // event.currentTarget at the end of the listener. e.target survives (same as
+        // the sibling onCheckboxChange/onTextInputChange handlers). Reading
+        // e.currentTarget here throws "Cannot read properties of null (reading 'name')".
+        const name = e.target.name;
+        if (["Shift", "Control", "Alt", "Meta", "Tab"].indexOf(key) >= 0) {
+          return {};
+        }
+        return {
+          values: changeNestedValue(values, name, key)
+        };
+      }
     }
   ),
   withHandlers({
@@ -222,6 +241,7 @@ export const PrefModal = ({
   onCheckboxChange,
   onNumberInputChange,
   onTextInputChange,
+  onHotkeyCapture,
   replacements,
   syncUser,
   syncStatus,
@@ -282,6 +302,27 @@ export const PrefModal = ({
                     {i18n("options_enableEasyReading")}
                   </Checkbox>
                   <Checkbox
+                    name="easyReadingEndSwitchNative"
+                    checked={values.easyReadingEndSwitchNative}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_easyReadingEndSwitchNative")}
+                  </Checkbox>
+                  <FormGroup controlId="easyReadingEndSwitchKey">
+                    <ControlLabel>
+                      {i18n("options_easyReadingEndSwitchKey")}
+                    </ControlLabel>
+                    <FormControl
+                      name="easyReadingEndSwitchKey"
+                      type="text"
+                      readOnly
+                      disabled={!values.easyReadingEndSwitchNative}
+                      value={values.easyReadingEndSwitchKey}
+                      placeholder={i18n("tooltip_easyReadingEndSwitchKey")}
+                      onKeyDown={onHotkeyCapture}
+                    />
+                  </FormGroup>
+                  <Checkbox
                     name="endTurnsOnLiveUpdate"
                     checked={values.endTurnsOnLiveUpdate}
                     onChange={onCheckboxChange}
@@ -321,6 +362,27 @@ export const PrefModal = ({
                       type="number"
                       value={values.lineWrap}
                       onChange={onNumberInputChange}
+                    />
+                  </FormGroup>
+                </fieldset>
+                <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                  <legend>{i18n("options_connection")}</legend>
+                  <Checkbox
+                    name="useProxy"
+                    checked={values.useProxy}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_useProxy")}
+                  </Checkbox>
+                  <FormGroup controlId="proxyUrl">
+                    <ControlLabel>{i18n("options_proxyUrl")}</ControlLabel>
+                    <FormControl
+                      name="proxyUrl"
+                      type="text"
+                      disabled={!values.useProxy}
+                      value={values.proxyUrl}
+                      placeholder={i18n("tooltip_proxyUrl")}
+                      onChange={onTextInputChange}
                     />
                   </FormGroup>
                 </fieldset>
@@ -729,7 +791,10 @@ export const PrefModal = ({
                   </Checkbox>
                 </fieldset>
               </Tab.Pane>
-              <Tab.Pane eventKey="about">
+              <Tab.Pane
+                eventKey="about"
+                className="PrefModal__about-selectable"
+              >
                 <div>
                   <legend>
                     PttChrome<small> - {i18n("about_appName_subtitle")}</small>

@@ -82,7 +82,7 @@ export const en_US = {
 
   // enhanced add-on options
   "options_showFloorNumbers": {
-    "message": "Show comment floor numbers (continuous across pages only in easy reading)"
+    "message": "Show comment floor numbers (easy reading only; continuous and accurate across pages)"
   },
   "options_highlightAuthorComments": {
     "message": "Highlight comments by the original poster"
@@ -164,8 +164,29 @@ export const en_US = {
   "options_enableEasyReading": {
     "message": "Enable easy reading article view. (experimental)"
   },
+  "options_easyReadingEndSwitchNative": {
+    "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."
+  },
+  "options_easyReadingEndSwitchKey": {
+    "message": "Hotkey to switch back to native mode"
+  },
+  "tooltip_easyReadingEndSwitchKey": {
+    "message": "Click then press any key to set (default End)"
+  },
   "options_endTurnsOnLiveUpdate": {
     "message": "Press END turns on thread live update."
+  },
+  "options_connection": {
+    "message": "Connection"
+  },
+  "options_useProxy": {
+    "message": "Connect through a proxy (takes effect after reload)"
+  },
+  "options_proxyUrl": {
+    "message": "Proxy address"
+  },
+  "tooltip_proxyUrl": {
+    "message": "e.g. ptt-proxy.example.workers.dev, or a full wsstelnet:// URL"
   },
   "options_copyOnSelect": {
     "message": "Copy text when selected."

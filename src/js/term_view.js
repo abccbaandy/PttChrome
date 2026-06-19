@@ -373,6 +373,10 @@ TermView.prototype = {
         selectedPusher: this._selectedPusher,
         autoFixUrl: this.enableAutoFixUrl,
         pageState: this.buf.pageState,
+        // Floor numbers only count correctly across page-downs in easy reading
+        // (its FloorCounter persists). The native per-page counter resets every
+        // page → inaccurate, so floors are hidden in native mode (see Screen.js).
+        easyReading: this.useEasyReadingMode,
         dropHidden: dropHidden
       }
     );

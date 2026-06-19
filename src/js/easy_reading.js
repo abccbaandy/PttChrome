@@ -425,8 +425,25 @@ EasyReading.prototype._scrollTop = function() {
   return true;
 };
 
+EasyReading.prototype._scrollBottom = function() {
+  this._view.mainDisplay.scrollTop = this._view.mainDisplay.scrollHeight;
+  return true;
+};
+
 EasyReading.prototype._onKeyDownProcessUI = function(e) {
   var stop = false;
+  // Configurable "switch to native at bottom" key (default End; $/G kept as fixed
+  // vi aliases). When the pref is off we don't preventDefault, so the key falls
+  // through to the native terminal (term_view.onKeyDown continues past us).
+  if (!e.ctrlKey && !e.altKey) {
+    const prefs = readValuesWithDefault();
+    if (prefs.easyReadingEndSwitchNative &&
+        (e.key === prefs.easyReadingEndSwitchKey || e.key === '$' || e.key === 'G')) {
+      this.switchToNativeAtBottom();
+      e.preventDefault();
+      return;
+    }
+  }
   if (!e.ctrlKey && !e.altKey) {
     switch (e.key) {
       case 'Backspace':
@@ -476,11 +493,15 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
       case 'g':
         stop = this._scrollTop();
         break;
+      // "Switch to native at bottom" is handled at the top of this function
+      // (configurable key + on/off pref). When that did NOT fire (pref off, or the
+      // pressed key isn't the configured switch key), End/$/G still jump to the
+      // article bottom — but stay in easy reading, like the official term. Symmetric
+      // with Home/0/g (_scrollTop).
       case 'End':
       case '$':
       case 'G':
-        this.switchToNativeAtBottom();
-        stop = true;
+        stop = this._scrollBottom();
         break;
       case 'Tab':
         stop = true;
@@ -544,7 +565,12 @@ EasyReading.prototype._onMouseClick = function(e) {
       stop = true;
       break;
     case 5: // End
-      this.switchToNativeAtBottom();
+      if (readValuesWithDefault().easyReadingEndSwitchNative) {
+        this.switchToNativeAtBottom();
+      } else {
+        // pref off → jump to bottom but stay in easy reading (official term behavior)
+        this._scrollBottom();
+      }
       stop = true;
       break;
     case 6:

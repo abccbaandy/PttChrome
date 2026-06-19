@@ -12,6 +12,18 @@ export const DEFAULT_PREFS = {
   copyOnSelect: false,
   antiIdleTime: 0,
   lineWrap: 78,
+  // Easy reading: pressing this key jumps to the post bottom and switches back to
+  // native mode (so native in-post search '/' becomes usable). Toggle off to let the
+  // key fall through to the native terminal instead. Key value is an e.key string.
+  easyReadingEndSwitchNative: true,
+  easyReadingEndSwitchKey: "End",
+
+  // Connection proxy: when on, connect through proxyUrl instead of DEFAULT_SITE so
+  // users behind a block can reach PTT without installing anything. proxyUrl may be a
+  // bare host (a wsstelnet:// scheme and /bbs path are filled in, see main.js) or a
+  // full ws(s)telnet:// URL. Default off; the default host is a public CF Worker relay.
+  useProxy: false,
+  proxyUrl: "ptt-proxy.ptt-relay-8xquy.workers.dev",
 
   // mouse browsing
   useMouseBrowsing: false,
