@@ -20,7 +20,8 @@ export class LinkSegmentBuilder {
     floor,
     authorIdStart,
     authorIdEnd,
-    fixedUrls
+    fixedUrls,
+    mentions
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -35,6 +36,19 @@ export class LinkSegmentBuilder {
     this.authorIdEnd = authorIdEnd;
     this._inAuthor = false;
     this._authorWrap = null;
+    // X(Twitter) @handle auto-links: cols [startCol, endCol) of each VERIFIED
+    // mention (src/js/mention_parse.js + x_handle_verify.js). Indexed by start
+    // column; _mention holds the one currently being consumed so saveSegment wraps
+    // it in an <a>. Like the URL href, a mention closes the current segment at its
+    // boundaries — but it gets a plain .xMention link, no hover/inline preview.
+    this._mentionStart = null;
+    if (mentions && mentions.length) {
+      this._mentionStart = new Map();
+      for (let k = 0; k < mentions.length; ++k) {
+        this._mentionStart.set(mentions[k].startCol, mentions[k]);
+      }
+    }
+    this._mention = null;
     //
     this.segs = [];
     // Auto-fixed URLs (src/js/url_fix.js) render on extra lines below the article
@@ -70,7 +84,20 @@ export class LinkSegmentBuilder {
 
   saveSegment() {
     const element = this.colorSegBuilder.build();
-    if (this.href) {
+    if (this._mention) {
+      // X mention → plain external link (X-blue via .xMention), no ImagePreviewer.
+      this._pushSeg(
+        <a
+          key={`m${this.col}`}
+          className="xMention"
+          href={this._mention.href}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {element}
+        </a>
+      );
+    } else if (this.href) {
       this._pushSeg(
         <HyperLink
           key={this.col}
@@ -130,6 +157,19 @@ export class LinkSegmentBuilder {
       if (this.colorSegBuilder !== null) this.saveSegment();
       this._pushSeg(this.floorBadge());
       this._floorInserted = true;
+    }
+    // X mention boundaries: close the current segment when leaving a mention range
+    // (so it gets wrapped as <a>) and again when entering one (so the prefix text
+    // doesn't). _mention stays set through the handle's columns; saveSegment reads
+    // it. Mentions live in body/comment text, away from the floor/author columns,
+    // so they don't overlap those wrappers.
+    if (this._mention && i === this._mention.endCol) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._mention = null;
+    }
+    if (this._mentionStart !== null && this._mentionStart.has(i)) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._mention = this._mentionStart.get(i);
     }
     if (this.colorSegBuilder !== null && ch.isStartOfURL()) {
       this.saveSegment();

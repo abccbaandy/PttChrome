@@ -24,6 +24,7 @@ export const Row = ({
   authorIdStart,
   authorIdEnd,
   fixedUrls,
+  mentions,
   onHyperLinkMouseOver,
   onHyperLinkMouseOut
 }) => (
@@ -47,7 +48,8 @@ export const Row = ({
           floor,
           authorIdStart,
           authorIdEnd,
-          fixedUrls
+          fixedUrls,
+          mentions
         )
       )
       .build()}

@@ -90,6 +90,9 @@
   "options_enableAutoFixUrl": {
     "message": "自動修復斷掉的連結 (需開好讀模式才會顯示修復後連結)"
   },
+  "options_enableXMentionLink": {
+    "message": "自動連結 @帳號 到 X/Twitter"
+  },
   "options_blacklist": {
     "message": "黑名單 (一行一個帳號)"
   },

@@ -90,6 +90,9 @@ export const en_US = {
   "options_enableAutoFixUrl": {
     "message": "Auto-fix broken URLs (fixed link shown only in easy-reading mode)"
   },
+  "options_enableXMentionLink": {
+    "message": "Auto-link @handle to X/Twitter"
+  },
   "options_blacklist": {
     "message": "Blacklist (one user id per line)"
   },

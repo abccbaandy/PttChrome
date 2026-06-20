@@ -388,6 +388,17 @@ span {
   background-color: #000080;
 }
 
+/* X(Twitter) @handle auto-link (Enhanced Add-on). Only rendered for handles whose
+   X account was verified to exist (see Row/LinkSegmentBuilder + x_handle_verify).
+   Styled exactly like a normal URL link (.y in color.css): the orange underline is
+   a repeat-x http.bmp background, and the text keeps its original ANSI colour, so a
+   linked @handle looks just like any other link on the page. */
+.xMention {
+  background-image: url(../icon/http.bmp?inline);
+  background-repeat: repeat-x;
+  background-position: 0% 90%;
+}
+
 /* 自動修復斷掉的 URL：在原文那一行下方加一行可點的修復版連結（不改寫原文）。
    只在好讀模式（inline preview）渲染，見 Row/LinkSegmentBuilder + Row/FixedUrlLine。 */
 .fixedUrlLine {

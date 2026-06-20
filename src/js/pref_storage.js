@@ -47,6 +47,7 @@ export const DEFAULT_PREFS = {
   showFloorNumbers: true,
   highlightAuthorComments: true,
   enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
+  enableXMentionLink: true, // auto-link @handle to x.com when the X account exists
   blacklist: "", // newline-separated user ids
   autoLogin: false,
   autoLoginUser: "",

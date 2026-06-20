@@ -69,6 +69,9 @@ export function TermView() {
   // Auto-fix broken URLs: detect URLs broken by injected spaces / missing scheme /
   // split file extension and show a repaired clickable link below (src/js/url_fix.js).
   this.enableAutoFixUrl = true;
+  // Auto-link X(Twitter) @handles (format-valid ones) in article body/comments.
+  // Existence verification is currently off — see Screen.js / docs/enhanced-addon.md.
+  this.enableXMention = true;
   this._articleAuthor = null;
   // Pusher highlight: lower-cased id of the pusher whose comments are currently
   // highlighted (whole row), or null. Set by togglePusherHighlight on click.
@@ -372,6 +375,7 @@ TermView.prototype = {
         articleAuthor: this._articleAuthor,
         selectedPusher: this._selectedPusher,
         autoFixUrl: this.enableAutoFixUrl,
+        enableXMention: this.enableXMention,
         pageState: this.buf.pageState,
         // Floor numbers only count correctly across page-downs in easy reading
         // (its FloorCounter persists). The native per-page counter resets every

@@ -711,6 +711,13 @@ export const PrefModal = ({
                   >
                     {i18n("options_enableAutoFixUrl")}
                   </Checkbox>
+                  <Checkbox
+                    name="enableXMentionLink"
+                    checked={values.enableXMentionLink}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_enableXMentionLink")}
+                  </Checkbox>
                   <FormGroup controlId="blacklist">
                     <ControlLabel>{i18n("options_blacklist")}</ControlLabel>
                     <FormControl

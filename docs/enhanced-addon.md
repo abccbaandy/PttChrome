@@ -100,9 +100,21 @@
 - pref `enableAutoFixUrl`(true)；`pttchrome.onPrefChange`→`view.enableAutoFixUrl`+`redraw(true)`；
   傳入 `enhance.autoFixUrl`。i18n `options_enableAutoFixUrl`。
 
+## X(Twitter) @帳號自動連結（`src/js/mention_parse.js`）
+內文/推文出現 `@帳號`→做成連 `https://x.com/帳號` 的連結。**存在性驗證目前 OFF**（見下「驗證」）：所有格式合格 `@handle` 一律連結，可能連到不存在帳號。
+- **偵測（純邏輯，無 DOM/網路）`detectMentions(chars)->[{startCol,endCol,handle}]`**（守護 `tests/unit/mention_parse.test.js`）。
+  規則：`@`+1–15 個 `[A-Za-z0-9_]`；`@` 前須非單詞字元/非 `@`（擋 email `a@b`、`@@`）；後接單詞字元則截斷（16+ 連續→不連）；全數字 `@123` 排除。`endCol` exclusive（同 `authorIdStart/End` 慣例）。
+  - **走 `TermChar[]`（cols）而非 `rowToText` 字串**：Big5 DBCS **trail byte 可能=0x40(`@`)**，掃字串會誤判中文內的假 `@`；逐列遇 `isLeadByte` 跳 2 格、只在單 byte ASCII 偵測，回傳的 col 就是 `LinkSegmentBuilder.readChar(ch,i)` 比對的 index。守護有「trail byte 0x40 不誤判」case。
+- 渲染：`Screen#computeAnnotations`（`pageState=READING`、非 hidden、非原PO-id 列）`detectMentions`→掛 `ann.mentions`→`<Row>` prop→`LinkSegmentBuilder` 比照 URL href 邊界，在 `[startCol,endCol)` 包 `<a className="xMention" target=_blank rel=noreferrer>`（**不掛 `ImagePreviewer`**，與 URL 的 `HyperLink` 區隔）。CSS `.xMention`(`main.css`) 比照 `.y`(color.css)：橘色 `http.bmp` 底線、文字保留 ANSI 原色，外觀同一般連結。守護 `row_render.test.js`「Row X mention link」。
+- pref `enableXMentionLink`(true)；`pttchrome.onPrefChange`→`view.enableXMention`+`redraw(true)`；傳入 `enhance.enableXMention`。i18n `options_enableXMentionLink`。
+- **驗證為何 OFF + 未來怎麼做（CONFIRMED 2026-06 實測）**：
+  - 曾實作 unavatar `<img>` 探測（`unavatar.io/x/<h>?fallback=false`，存在 200/不存在 404），但**免費版每日上限僅 25 次**（`X-Rate-Limit-Limit:25`，打爆 `Retry-After`≈23h），且 **`<img>` `onerror` 無法區分 404(不存在) vs 429(限流)** → 限流期把存在帳號誤標 invalid 並毒化快取 → 整個方案不可用，已移除（`x_handle_verify.js`）。
+  - 直連 x.com 判斷不可行：x.com 是 SPA，存在/不存在 HTTP **都回 200**（CORS 反而不擋、反射 Origin）。X 官方 API 需付費 bearer＋無瀏覽器 CORS、token 不可入前端；syndication 端點 ACAO 鎖 `platform.twitter.com`→github.io 被擋。
+  - **可行路＝自建 worker**：server-side 用**一般瀏覽器 UA** `fetch('https://x.com/<handle>')`（`--compressed`），存在帳號 HTML `<title>Name (@handle) / X`、不存在 title 空（facebookexternalhit/Twitterbot UA 一律回 404，**勿用**）。worker 解析後回小 JSON＋Cloudflare KV 快取（免費 100k/day）；前端改 `fetch` worker、只快取明確「不存在」、429/錯誤不快取（修掉毒化）。風險：X 對 Cloudflare 出口 IP 可能另眼相待，部署後需實測。
+
 ## 設定（`PrefModal.js` 「增強功能」分頁）
 pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）：
-`showFloorNumbers`(true)、`highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`blacklist`("" 換行)、
+`showFloorNumbers`(true)、`highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、`blacklist`("" 換行)、
 `autoLogin`(false)、`autoLoginUser/Password`(""；
 **password 在支援 Credential API 的瀏覽器不落地**，見「自動登入」節)、
 `autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true)。套用見 `pttchrome.onPrefChange`
@@ -157,6 +169,7 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **dev server production-mode 陷阱**。Playwright `reuseExistingServer:true` 可能重用到 production server → `DEFAULT_SITE` 直連、Origin 未改寫 → WebSocket **403**。啟動務必 `NODE_ENV=development`；驗證 `curl .../assets/pttchrome.js | grep DEFAULT_SITE` 應為 `wstelnet://localhost:8080/bbs`。
 - **recompose `withStateHandlers` 事件 handler 內勿讀 `e.currentTarget`**（讀 `e.target`）。handler 是在 `setState(updater)` 的 updater 內**延遲**執行的；React 的 `executeDispatch` 在 listener 一返回就把 `event.currentTarget = null`（早於 batched flush）→ 延遲讀必 `Cannot read properties of null (reading 'name')`。`e.target`／`e.key` 等到 event pool 回收（flush 之後）才清，仍可讀，與同檔 `onCheckboxChange`/`onTextInputChange` 一致。實例：`PrefModal.js#onHotkeyCapture`（自訂熱鍵欄位）。
 - **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 `enhance.spec.js` 紅。
+- **要算「逐列欄位位置（col）」一律走 `TermChar[]`，勿掃 `rowToText` 後字串**。Big5 DBCS **trail byte 可能=0x40(`@`)**（其他 ASCII 標點同理）→ 掃字串會在中文內誤命中、且 string index ≠ TermChar col（DBCS 佔 2 cols）。逐列遇 `isLeadByte` 跳 2 格、只在單 byte ASCII 比對（同 `rowToText` 走訪）。實例：`mention_parse.detectMentions`（X @帳號），守護有「trail byte 0x40 不誤判」case。
 - **e2e flake 常態**：最新文章常無推文（測樓層/黑名單從 End 往舊文找）；guest 名額滿用 env `PTT_USER/PTT_PASS`；偶發 403/ECONNRESET（PTT 端）。
 
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）

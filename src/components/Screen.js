@@ -11,6 +11,7 @@ import {
   FloorCounter
 } from "../js/comment_parse";
 import { detectFixableUrls } from "../js/url_fix";
+import { detectMentions } from "../js/mention_parse";
 
 // NOTE: articleAuthor (原PO id) is tracked by term_view across page-downs and
 // passed in via enhance — the "作者" header only appears on the first page, so we
@@ -35,7 +36,8 @@ function computeAnnotations(lines, enhance) {
     selectedPusher,
     pageState,
     autoFixUrl,
-    easyReading
+    easyReading,
+    enableXMention
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   if (pageState === PAGE_READING) {
@@ -64,7 +66,33 @@ function computeAnnotations(lines, enhance) {
         const fixes = detectFixableUrls(text);
         if (fixes.length) fixedUrls = fixes;
       }
-      result[row] = fixedUrls ? { ...(ann || {}), fixedUrls } : ann;
+      // X(Twitter) @handle auto-links. Detect on the raw TermChar[] (DBCS-aware —
+      // see mention_parse.js) and link every format-valid @handle. Existence
+      // verification is currently OFF (unavatar's 25/day cap made it unusable; see
+      // docs/enhanced-addon.md for the worker approach to bring it back), so a
+      // mention that points at a non-existent account is still linked. Skip hidden
+      // (blacklisted) rows, and same-author comment rows whose id is already
+      // wrapped by authorIdStart/End (an overlapping mention <a> would fight it).
+      let mentions;
+      if (
+        enableXMention &&
+        !(ann && (ann.hidden || ann.authorIdStart !== undefined))
+      ) {
+        const found = detectMentions(lines[row]);
+        for (let k = 0; k < found.length; ++k) {
+          const m = found[k];
+          (mentions || (mentions = [])).push({
+            startCol: m.startCol,
+            endCol: m.endCol,
+            handle: m.handle,
+            href: "https://x.com/" + m.handle
+          });
+        }
+      }
+      let r = ann;
+      if (fixedUrls) r = { ...(r || {}), fixedUrls };
+      if (mentions) r = { ...(r || {}), mentions };
+      result[row] = r;
     }
   } else if (pageState === PAGE_LIST && hasBlacklist) {
     for (let row = 0; row < lines.length; ++row) {
@@ -151,6 +179,7 @@ export class Screen extends React.Component {
               authorIdStart={ann && ann.authorIdStart}
               authorIdEnd={ann && ann.authorIdEnd}
               fixedUrls={ann && ann.fixedUrls}
+              mentions={ann && ann.mentions}
               onHyperLinkMouseOver={this.handleHyperLinkMouseOver}
               onHyperLinkMouseOut={this.handleHyperLinkMouseOut}
             />

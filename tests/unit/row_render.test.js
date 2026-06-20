@@ -173,3 +173,54 @@ describe("Row fixed-URL line", () => {
     expect(findByClass(json, "fixedUrlLine")).toBeNull();
   });
 });
+
+// X(Twitter) @handle auto-link. Screen decides which handles are verified and
+// passes their [startCol, endCol) ranges; Row/LinkSegmentBuilder wraps them.
+describe("Row X mention link", () => {
+  test("verified mention → .xMention <a> wrapping exactly @handle, opens new tab", () => {
+    // h0 i1 sp2 @3 j4 a5 c6 k7 sp8 y9 a10
+    const json = renderer
+      .create(
+        <Row
+          chars={chars("hi @jack ya")}
+          row={0}
+          mentions={[
+            { startCol: 3, endCol: 8, handle: "jack", href: "https://x.com/jack" }
+          ]}
+        />
+      )
+      .toJSON();
+    const a = findByClass(json, "xMention");
+    expect(a).not.toBeNull();
+    expect(a.props.href).toBe("https://x.com/jack");
+    expect(a.props.target).toBe("_blank");
+    expect(a.props.rel).toBe("noreferrer");
+    expect(textOf(a)).toBe("@jack");
+  });
+
+  test("no mentions prop → plain text, no .xMention", () => {
+    const json = renderer
+      .create(<Row chars={chars("hi @jack ya")} row={0} />)
+      .toJSON();
+    expect(findByClass(json, "xMention")).toBeNull();
+    expect(textOf(json)).toBe("hi @jack ya");
+  });
+
+  test("mention reaching the end of the line is still wrapped", () => {
+    // a0 t1 sp2 @3 b4 o5 b6  → endCol 7 == line length
+    const json = renderer
+      .create(
+        <Row
+          chars={chars("at @bob")}
+          row={0}
+          mentions={[
+            { startCol: 3, endCol: 7, handle: "bob", href: "https://x.com/bob" }
+          ]}
+        />
+      )
+      .toJSON();
+    const a = findByClass(json, "xMention");
+    expect(a).not.toBeNull();
+    expect(textOf(a)).toBe("@bob");
+  });
+});
