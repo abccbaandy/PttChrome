@@ -49,6 +49,7 @@ export const DEFAULT_PREFS = {
   enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
   enableXMentionLink: true, // auto-link @handle to x.com when the X account exists
   blacklist: "", // newline-separated user ids
+  titleBlacklist: "", // newline-separated title keywords (board-list only)
   autoLogin: false,
   autoLoginUser: "",
   autoLoginPassword: "",

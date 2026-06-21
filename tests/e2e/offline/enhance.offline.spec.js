@@ -142,4 +142,37 @@ test.describe('增强 · 看板列表（离线重放）', () => {
     const after = await hiddenCount();
     expect(after).toBeGreaterThan(before); // 至少多隐藏一列
   });
+
+  test('标题黑名单：标题含关键字的列被隐藏', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await replayCassette(page, list, { easyReading: false });
+    await page.waitForTimeout(500);
+
+    // 从渲染出的列表抓一列标题（col 29 起），取其中一个中文/英数字片段当关键字。
+    const keyword = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"]'));
+      for (const el of rows) {
+        const title = el.textContent.substring(29).trim();
+        const m = title.match(/[0-9A-Za-z一-鿿]{2,}/);
+        if (m) return m[0].toLowerCase();
+      }
+      return null;
+    });
+    test.skip(!keyword, '列表没抓到可用标题关键字');
+
+    const hiddenCount = () =>
+      page.evaluate(
+        () =>
+          Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"]')).filter(
+            (el) => el.style && el.style.visibility === 'hidden'
+          ).length
+      );
+
+    const before = await hiddenCount();
+    await ptt.applyPrefs(page, { titleBlacklist: keyword });
+    await page.waitForTimeout(800);
+    const after = await hiddenCount();
+    expect(after).toBeGreaterThan(before); // 至少多隐藏一列
+  });
 });

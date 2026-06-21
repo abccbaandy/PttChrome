@@ -8,7 +8,7 @@ import { TelnetConnection } from './telnet';
 import { Websocket } from './websocket';
 import { EasyReading } from './easy_reading';
 import { AutoLogin } from './auto_login';
-import { parseBlacklist } from './comment_parse';
+import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
 import { TouchController } from './touch_controller';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball } from './string_util';
@@ -867,6 +867,10 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     case 'blacklist':
       this.view.blacklist = parseBlacklist(value);
+      this.view.redraw(true);
+      break;
+    case 'titleBlacklist':
+      this.view.titleBlacklist = parseTitleBlacklist(value);
       this.view.redraw(true);
       break;
     case 'enableEasyReading':

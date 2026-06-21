@@ -99,6 +99,12 @@
   "tooltip_blacklist": {
     "message": "一行一個帳號；隱藏其推文與看板列表發文"
   },
+  "options_title_blacklist": {
+    "message": "標題黑名單 (一行一個關鍵字)"
+  },
+  "tooltip_title_blacklist": {
+    "message": "一行一個關鍵字；看板列表隱藏標題含此關鍵字的文章"
+  },
   "options_autoLogin": {
     "message": "記憶帳密／自動登入"
   },

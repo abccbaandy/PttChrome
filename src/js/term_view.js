@@ -61,6 +61,9 @@ export function TermView() {
   // easy reading `lines` is the full accumulated pageLines, so cross-page numbering
   // falls out naturally — no persistent counter on the view is needed.
   this.blacklist = new Set();
+  // Title keyword blacklist (lower-cased keyword array). Board-list only: hides any
+  // post whose title contains one of the keywords. Set via App.onPrefChange.
+  this.titleBlacklist = [];
   this.showFloorNumbers = true;
   // Same-author comment highlighting: tint comments written by the 原PO.
   // _articleAuthor is parsed from the article header (first page only) and kept
@@ -370,6 +373,7 @@ TermView.prototype = {
       this.mainDisplay,
       {
         blacklist: this.blacklist,
+        titleBlacklist: this.titleBlacklist,
         showFloorNumbers: this.showFloorNumbers,
         highlightAuthor: this.highlightAuthorComments,
         articleAuthor: this._articleAuthor,

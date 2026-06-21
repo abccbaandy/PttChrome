@@ -8,6 +8,8 @@ import {
   rowToText,
   annotateComment,
   parseListAuthor,
+  parseListTitle,
+  matchTitleBlacklist,
   FloorCounter
 } from "../js/comment_parse";
 import { detectFixableUrls } from "../js/url_fix";
@@ -30,6 +32,7 @@ function computeAnnotations(lines, enhance) {
   if (!enhance) return result;
   const {
     blacklist,
+    titleBlacklist,
     showFloorNumbers,
     highlightAuthor,
     articleAuthor,
@@ -40,6 +43,7 @@ function computeAnnotations(lines, enhance) {
     enableXMention
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
+  const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
   if (pageState === PAGE_READING) {
     // Floor numbers are shown only in easy reading, where the FloorCounter walks
     // the whole accumulated article (accurate). The native per-page counter resets
@@ -94,12 +98,19 @@ function computeAnnotations(lines, enhance) {
       if (mentions) r = { ...(r || {}), mentions };
       result[row] = r;
     }
-  } else if (pageState === PAGE_LIST && hasBlacklist) {
+  } else if (pageState === PAGE_LIST && (hasBlacklist || hasTitleBlacklist)) {
     for (let row = 0; row < lines.length; ++row) {
-      const author = parseListAuthor(rowToText(lines[row]));
-      if (author && blacklist.has(author)) {
-        result[row] = { hidden: true };
+      const text = rowToText(lines[row]);
+      let hide = false;
+      if (hasBlacklist) {
+        const author = parseListAuthor(text);
+        if (author && blacklist.has(author)) hide = true;
       }
+      if (!hide && hasTitleBlacklist) {
+        if (matchTitleBlacklist(parseListTitle(text), titleBlacklist))
+          hide = true;
+      }
+      if (hide) result[row] = { hidden: true };
     }
   }
   return result;

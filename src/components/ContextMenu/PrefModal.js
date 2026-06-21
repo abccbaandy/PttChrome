@@ -729,6 +729,19 @@ export const PrefModal = ({
                       onChange={onTextInputChange}
                     />
                   </FormGroup>
+                  <FormGroup controlId="titleBlacklist">
+                    <ControlLabel>
+                      {i18n("options_title_blacklist")}
+                    </ControlLabel>
+                    <FormControl
+                      componentClass="textarea"
+                      name="titleBlacklist"
+                      rows={6}
+                      value={values.titleBlacklist}
+                      placeholder={i18n("tooltip_title_blacklist")}
+                      onChange={onTextInputChange}
+                    />
+                  </FormGroup>
                 </fieldset>
                 <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                   <legend>{i18n("options_autoLogin")}</legend>

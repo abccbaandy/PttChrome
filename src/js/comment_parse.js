@@ -146,18 +146,53 @@ export function parseArticleAuthor(text) {
 // The id column starts at 17 (after "index pushcount M/DD ") and the author field
 // is 12 chars wide. Fail-safe: if the extracted text is not a plain userid we
 // return null and the row is NOT hidden, so we never hide a legitimate post by
-// mistake. Pinned/marked rows ("★") contain a full-width char before the author,
-// which shifts the position — those are announcements, rarely blacklist targets,
-// and simply fall through to the fail-safe.
+// mistake. The cursor row (●) and pinned rows (★) carry a leading full-width char
+// that shifts the columns; realignListColumns below compensates for it.
 const LIST_AUTHOR_COL_START = 17;
 const LIST_AUTHOR_COL_END = 29;
 const USERID_RE = /^[0-9A-Za-z]+$/;
 
+// The keyboard-cursor row in the board list carries a full-width cursor bullet (●)
+// at its head, and pinned rows a full-width ★. rowToText collapses each 2-cell DBCS
+// glyph to ONE Unicode char, so such a leading wide marker shifts every later
+// column LEFT by one — col 17-28 then yields a truncated author (e.g. "jhengkunlin"
+// → "hengkunlin"), so the blacklist match (and thus the hidden state) silently
+// drops on whichever row the cursor is sitting on. Re-pad one space per leading wide
+// char (codepoint > 0x7F within the ASCII prefix region) to restore the fixed-column
+// alignment before slicing. Normal rows have an all-ASCII prefix → no padding.
+function realignListColumns(text) {
+  let pad = 0;
+  for (let i = 0; i < text.length && i < LIST_AUTHOR_COL_START; ++i) {
+    if (text.charCodeAt(i) > 0x7f) pad++;
+  }
+  return pad ? ' '.repeat(pad) + text : text;
+}
+
 export function parseListAuthor(text) {
   if (!text || text.length < LIST_AUTHOR_COL_START) return null;
-  const author = text.substring(LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END).trim();
+  const row = realignListColumns(text);
+  const author = row.substring(LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END).trim();
   if (!author || !USERID_RE.test(author)) return null;
   return author.toLowerCase();
+}
+
+// Board list title column. Same calibration as parseListAuthor: the author field
+// ends at LIST_AUTHOR_COL_END (col 29) and the title region (incl. the "R:" reply
+// marker / "□"/"轉" state glyph) follows to end of line, e.g.:
+//   " 350024 + 2 6/14 a0930307148  R: [閒聊] 烙印勇士384 …"
+//   "                              ^29(title region)"
+// Returns the title lower-cased for case-insensitive keyword matching, or '' when
+// the row is too short. Unlike the author we do NOT validate the shape — any text
+// in this region is a candidate for substring keyword matching, and a non-matching
+// row is simply never hidden (fail-safe).
+export function parseListTitle(text) {
+  if (!text || text.length <= LIST_AUTHOR_COL_END) return '';
+  // realign so the cursor/pinned row's leading wide marker doesn't shift the title
+  // region (keyword matching is substring-tolerant, but keep it consistent).
+  return realignListColumns(text)
+    .substring(LIST_AUTHOR_COL_END)
+    .trim()
+    .toLowerCase();
 }
 
 // PTT appends these lines between the article body (incl. signature) and the
@@ -261,4 +296,22 @@ export function parseBlacklist(str) {
     .filter(Boolean)
     .forEach(id => set.add(id));
   return set;
+}
+
+// Build a lower-cased keyword list from the newline-separated title-blacklist
+// textarea value. Unlike parseBlacklist (exact userid match) these are substring
+// keywords matched against the post title, so order/duplicates don't matter — a
+// plain array is enough.
+export function parseTitleBlacklist(str) {
+  if (!str) return [];
+  return str
+    .split(/\r?\n/)
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// True iff the (already lower-cased) title contains any of the keywords.
+export function matchTitleBlacklist(title, keywords) {
+  if (!title || !keywords || !keywords.length) return false;
+  return keywords.some(k => title.includes(k));
 }

@@ -103,3 +103,61 @@ describe("Screen blacklist dropHidden", () => {
     expect(hidden.length).toBe(1);
   });
 });
+
+// Board list (pageState 2) title keyword blacklist. Author at col 17-28, title from
+// col 29 (same calibration as parseListAuthor). The middle row's title contains a
+// blacklisted keyword and must be hidden, even with an empty author blacklist.
+const IDX_PREFIX = " 350024 + 2 6/14 "; // length 17 → author starts at col 17
+const listRow = (author, title) =>
+  line(IDX_PREFIX + (author + " ".repeat(12)).slice(0, 12) + title);
+
+const listLines = [
+  listRow("gooduser", "R: [情報] 普通文章"),
+  listRow("anyuser", "□ [閒聊] 這是廣告貼文"),
+  listRow("gooduser", "□ [心得] 另一篇")
+];
+
+function renderList(titleBlacklist, dropHidden) {
+  return renderer
+    .create(
+      <Screen
+        lines={listLines}
+        forceWidth={50}
+        enableLinkInlinePreview={false}
+        enableLinkHoverPreview={false}
+        enhance={{
+          blacklist: new Set(),
+          titleBlacklist,
+          pageState: 2,
+          dropHidden
+        }}
+      />
+    )
+    .toJSON();
+}
+
+describe("Screen board-list title blacklist", () => {
+  test("titleBlacklist keyword hides the matching row (native grid, visibility:hidden)", () => {
+    const json = renderList(["廣告"], false);
+    expect(bbsrows(json).length).toBe(3);
+    const hidden = bbsrows(json).filter(
+      n => n.props.style && n.props.style.visibility === "hidden"
+    );
+    expect(hidden.length).toBe(1);
+  });
+
+  test("works with empty author blacklist; dropHidden removes the matching row", () => {
+    const json = renderList(["廣告"], true);
+    const rows = bbslines(json);
+    expect(rows.length).toBe(2);
+    expect(rows.map(n => n.props["data-row"])).toEqual([0, 2]);
+  });
+
+  test("no keyword match → nothing hidden", () => {
+    const json = renderList(["不存在"], false);
+    const hidden = bbsrows(json).filter(
+      n => n.props.style && n.props.style.visibility === "hidden"
+    );
+    expect(hidden.length).toBe(0);
+  });
+});

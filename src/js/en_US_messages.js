@@ -99,6 +99,12 @@ export const en_US = {
   "tooltip_blacklist": {
     "message": "One user id per line; hides their comments and board-list posts"
   },
+  "options_title_blacklist": {
+    "message": "Title blacklist (one keyword per line)"
+  },
+  "tooltip_title_blacklist": {
+    "message": "One keyword per line; hides board-list posts whose title contains it"
+  },
   "options_autoLogin": {
     "message": "Remember credentials / Auto login"
   },

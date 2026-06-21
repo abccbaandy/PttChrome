@@ -16,7 +16,10 @@ import {
   parseComment,
   parseArticleAuthor,
   parseListAuthor,
+  parseListTitle,
   parseBlacklist,
+  parseTitleBlacklist,
+  matchTitleBlacklist,
   FloorCounter,
   annotateComment,
   findPageOverlap,
@@ -79,6 +82,31 @@ describe("parseListAuthor", () => {
   });
   test("fail-safe → null when not a plain id", () => {
     expect(parseListAuthor("       ")).toBeNull();
+  });
+  test("cursor row (leading full-width ●) realigns → full author kept", () => {
+    // The keyboard-cursor row starts with a full-width bullet that rowToText
+    // collapses 2 cells → 1 char, shifting columns left. Without realignment the
+    // author was truncated (jhengkunlin → hengkunlin) and the blacklist missed.
+    const cursorRow = "●50039 + 1 6/14 JHENGKUNLIN  □ [母雞] foo";
+    const normalRow = " 350039 + 1 6/14 JHENGKUNLIN  □ [母雞] foo";
+    expect(parseListAuthor(cursorRow)).toBe("jhengkunlin");
+    expect(parseListAuthor(cursorRow)).toBe(parseListAuthor(normalRow));
+  });
+});
+
+describe("parseListTitle", () => {
+  test("title region after the author column, lower-cased", () => {
+    // Same row layout as parseListAuthor: author at col 17-28, title follows.
+    const row = " 350024 + 2 6/14 a0930307148  R: [閒聊] 烙印勇士384";
+    expect(parseListTitle(row)).toBe("r: [閒聊] 烙印勇士384".toLowerCase());
+  });
+  test("short author keeps title aligned", () => {
+    const row = " 350029 +17 6/14 GTES         □ [討論] 醫師：把猛健樂當減肥藥賣";
+    expect(parseListTitle(row)).toContain("[討論]".toLowerCase());
+  });
+  test("fail-safe → '' when row too short", () => {
+    expect(parseListTitle("       ")).toBe("");
+    expect(parseListTitle(null)).toBe("");
   });
 });
 
@@ -211,6 +239,32 @@ describe("parseBlacklist", () => {
   test("newline-separated, lower-cased, trimmed", () => {
     const set = parseBlacklist("Foo\n  bar \n\nBAZ");
     expect([...set].sort()).toEqual(["bar", "baz", "foo"]);
+  });
+});
+
+describe("parseTitleBlacklist", () => {
+  test("newline-separated keyword array, lower-cased, trimmed, empties dropped", () => {
+    expect(parseTitleBlacklist("代Po\n  廣告 \n\n閒聊")).toEqual([
+      "代po",
+      "廣告",
+      "閒聊"
+    ]);
+  });
+  test("empty input → []", () => {
+    expect(parseTitleBlacklist("")).toEqual([]);
+    expect(parseTitleBlacklist(null)).toEqual([]);
+  });
+});
+
+describe("matchTitleBlacklist", () => {
+  test("substring contains (title already lower-cased)", () => {
+    const kws = parseTitleBlacklist("代po\n廣告");
+    expect(matchTitleBlacklist("r: [閒聊] 代po 一篇文章", kws)).toBe(true);
+    expect(matchTitleBlacklist("□ [情報] 純情報", kws)).toBe(false);
+  });
+  test("empty keyword list / empty title → false", () => {
+    expect(matchTitleBlacklist("任何標題", [])).toBe(false);
+    expect(matchTitleBlacklist("", ["代po"])).toBe(false);
   });
 });
 
