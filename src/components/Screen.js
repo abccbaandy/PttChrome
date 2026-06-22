@@ -132,13 +132,18 @@ export class Screen extends React.Component {
     currentHighlighted: undefined,
     currentImagePreview: undefined,
     left: undefined,
-    top: undefined
+    top: undefined,
+    // 追蹤上一次的 lines reference，供 getDerivedStateFromProps 偵測換頁
+    prevLines: undefined
   };
 
-  componentWillReceiveProps(nextProps) {
-    if (this.props.lines !== nextProps.lines) {
-      this.setState({ currentImagePreview: undefined });
+  // lines reference 改變（換頁/重渲染）即關掉開啟中的圖片預覽。
+  // 取代舊的 componentWillReceiveProps（React 16 已 deprecated）。
+  static getDerivedStateFromProps(props, state) {
+    if (props.lines !== state.prevLines) {
+      return { prevLines: props.lines, currentImagePreview: undefined };
     }
+    return null;
   }
 
   handleMouseMove = ({ clientX, clientY }) => {

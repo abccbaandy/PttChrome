@@ -74,6 +74,16 @@ module.exports = {
     ]
   },
   devtool: 'source-map',
+  performance: {
+    hints: PRODUCTION_MODE ? 'warning' : false,
+    // source-map 檔（devtool: 'source-map' 產生）不計入體積判斷
+    assetFilter: (assetFilename) => !assetFilename.endsWith('.map'),
+    // firebase modular SDK 的 lazy chunk 屬刻意設計（未登入零下載），
+    // 門檻調到實際合理值以濾掉雜訊，但仍保留 'warning' 偵測真正異常肥大。
+    // firebase lazy chunk 實測約 517 KiB，給餘裕設 600 KiB
+    maxAssetSize: 614400,
+    maxEntrypointSize: 614400,
+  },
   optimization: {
     // '...' keeps webpack's built-in terser for JS alongside the CSS minimizer.
     minimizer: ['...', new CssMinimizerPlugin()],
