@@ -16,7 +16,7 @@ export const DEFAULT_PREFS = {
   // native mode (so native in-post search '/' becomes usable). Toggle off to let the
   // key fall through to the native terminal instead. Key value is an e.key string.
   easyReadingEndSwitchNative: true,
-  easyReadingEndSwitchKey: "End",
+  easyReadingEndSwitchKey: "F8",
 
   // Connection proxy: when on, connect through proxyUrl instead of DEFAULT_SITE so
   // users behind a block can reach PTT without installing anything. proxyUrl may be a

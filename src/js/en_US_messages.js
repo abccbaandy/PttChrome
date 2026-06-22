@@ -180,7 +180,7 @@ export const en_US = {
     "message": "Hotkey to switch back to native mode"
   },
   "tooltip_easyReadingEndSwitchKey": {
-    "message": "Click then press any key to set (default End)"
+    "message": "Click then press any key to set (default F8)"
   },
   "options_endTurnsOnLiveUpdate": {
     "message": "Press END turns on thread live update."
