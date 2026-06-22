@@ -253,6 +253,9 @@ const enhance = compose(
           enabled: !state.enabled,
           sec: state.sec
         });
+        // Signal to term_view's End handler that the key was consumed; the noop
+        // bound below (helper inactive) returns undefined so End falls through.
+        return true;
       };
       pttchrome.onDisableLiveHelperModalState = () => {
         onLiveHelperChange({

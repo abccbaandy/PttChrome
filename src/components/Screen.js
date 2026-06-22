@@ -40,7 +40,8 @@ function computeAnnotations(lines, enhance) {
     pageState,
     autoFixUrl,
     easyReading,
-    enableXMention
+    enableXMention,
+    inListContext
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
@@ -98,7 +99,13 @@ function computeAnnotations(lines, enhance) {
       if (mentions) r = { ...(r || {}), mentions };
       result[row] = r;
     }
-  } else if (pageState === PAGE_LIST && (hasBlacklist || hasTitleBlacklist)) {
+  } else if (
+    (pageState === PAGE_LIST || inListContext) &&
+    (hasBlacklist || hasTitleBlacklist)
+  ) {
+    // inListContext keeps list blacklist hiding alive across overlay prompts (e.g.
+    // the v 設定已讀未讀記錄 sub-screen) whose status row stops parsing as LIST(2).
+    // READING is the preceding `if`, so this never runs while reading an article.
     for (let row = 0; row < lines.length; ++row) {
       const text = rowToText(lines[row]);
       let hide = false;

@@ -55,6 +55,14 @@ export function TermView() {
   this.useEasyReadingMode = false;
   this.easyReadingKeyDownKeyCode = 0;
 
+  // Sticky "we are in a board-list context" flag for blacklist hiding. Pressing v
+  // (設定已讀未讀記錄) overlays a prompt on the list whose status row no longer
+  // parses as LIST(2), so the per-frame pageState gate alone would un-hide every
+  // blacklisted row for the whole duration of that prompt. Updated in
+  // _renderScreenLines: true on LIST(2), false on MENU(1)/READING(3), unchanged on
+  // transient/overlay states (0/5/6) so list hiding survives across them.
+  this._inBoardListContext = false;
+
   // Enhanced Add-on: comment blacklist (lower-cased Set) + floor numbering.
   // Set from prefs via App.onPrefChange. Floor numbers are computed at render time
   // by Screen#computeAnnotations (a fresh FloorCounter walks the whole `lines`); in
@@ -365,6 +373,12 @@ TermView.prototype = {
   // author / pusher highlight) lives entirely in Screen#computeAnnotations now,
   // shared by both modes.
   _renderScreenLines: function(lines, dropHidden, inlinePreview, hoverPreview) {
+    // Maintain the sticky board-list context (see constructor). LIST enters it,
+    // MENU/READING leave it, everything else (overlay prompts, transient frames)
+    // keeps the previous value so blacklist hiding persists across e.g. the v prompt.
+    const ps = this.buf.pageState;
+    if (ps === 2) this._inBoardListContext = true;
+    else if (ps === 1 || ps === 3) this._inBoardListContext = false;
     this.componentScreen = renderScreen(
       lines,
       this.chh,
@@ -385,7 +399,8 @@ TermView.prototype = {
         // (its FloorCounter persists). The native per-page counter resets every
         // page → inaccurate, so floors are hidden in native mode (see Screen.js).
         easyReading: this.useEasyReadingMode,
-        dropHidden: dropHidden
+        dropHidden: dropHidden,
+        inListContext: this._inBoardListContext
       }
     );
   },
@@ -449,9 +464,14 @@ TermView.prototype = {
     if (!e.ctrlKey && !e.altKey) {
       switch (e.key) {
         case 'End': //End
+          // Only swallow End when the live-update helper actually handles it
+          // (onToggleLiveHelperModalState returns true). When the helper isn't
+          // running it's a noop returning undefined → fall through to native End,
+          // so End keeps jumping to the bottom in list/article (see bug: End dead
+          // in list/article whenever endTurnsOnLiveUpdate was enabled).
           if ((this.bbscore.buf.pageState == 2 || this.bbscore.buf.pageState == 3) &&
-            this.bbscore.endTurnsOnLiveUpdate) {
-            this.bbscore.onToggleLiveHelperModalState();
+            this.bbscore.endTurnsOnLiveUpdate &&
+            this.bbscore.onToggleLiveHelperModalState()) {
             stop = true;
           }
           break;

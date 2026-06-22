@@ -161,3 +161,61 @@ describe("Screen board-list title blacklist", () => {
     expect(hidden.length).toBe(0);
   });
 });
+
+// REGRESSION (bug: 按 v 設定已讀未讀記錄時黑名單持續失效). The v prompt overlays a
+// question on the board list whose status row no longer parses as LIST(2), so the
+// per-frame pageState would be e.g. NORMAL(0) and un-hide every blacklisted row for
+// the whole prompt. term_view keeps a sticky `inListContext` flag that survives such
+// overlay screens; computeAnnotations must keep hiding list rows when it is set even
+// though pageState !== 2.
+function renderListCtx(enhanceExtra) {
+  return renderer
+    .create(
+      <Screen
+        lines={listLines}
+        forceWidth={50}
+        enableLinkInlinePreview={false}
+        enableLinkHoverPreview={false}
+        enhance={Object.assign(
+          { blacklist: new Set(), dropHidden: false },
+          enhanceExtra
+        )}
+      />
+    )
+    .toJSON();
+}
+
+const hiddenCount = json =>
+  bbsrows(json).filter(
+    n => n.props.style && n.props.style.visibility === "hidden"
+  ).length;
+
+describe("Screen list blacklist sticky inListContext (v prompt)", () => {
+  test("pageState 0 + inListContext → author blacklist still hides the row", () => {
+    const json = renderListCtx({
+      blacklist: new Set(["anyuser"]),
+      pageState: 0,
+      inListContext: true
+    });
+    expect(hiddenCount(json)).toBe(1);
+  });
+
+  test("pageState 0 + inListContext → title blacklist still hides the row", () => {
+    const json = renderListCtx({
+      titleBlacklist: ["廣告"],
+      pageState: 0,
+      inListContext: true
+    });
+    expect(hiddenCount(json)).toBe(1);
+  });
+
+  test("pageState 0 without inListContext → nothing hidden (no over-hiding)", () => {
+    const json = renderListCtx({
+      blacklist: new Set(["anyuser"]),
+      titleBlacklist: ["廣告"],
+      pageState: 0,
+      inListContext: false
+    });
+    expect(hiddenCount(json)).toBe(0);
+  });
+});
