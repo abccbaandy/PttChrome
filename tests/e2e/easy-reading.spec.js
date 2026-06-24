@@ -72,7 +72,7 @@ test.describe.serial('好讀模式', () => {
   // 驗證好讀模式按 End：暫時切回原生、跳到文章最底、不卡住，且原生搜尋可用；
   // 按左鍵離開後，進下一篇自動恢復好讀模式。
   // 對應 src/js/easy_reading.js 的 switchToNativeAtBottom。
-  test('好讀模式 End 切回原生跳到底', async ({ shared }) => {
+  test('好讀模式 F8 切回原生跳到底', async ({ shared }) => {
     const { page, logs } = shared;
     logs.length = 0;
     const dumpLogs = (tag) => {
@@ -116,9 +116,9 @@ test.describe.serial('好讀模式', () => {
       console.log('STATE BEFORE END:', JSON.stringify(before));
       expect(before.useEasyReadingMode).toBe(true); // 確認好讀模式真的啟動
 
-      // 關鍵動作：按 End
+      // 關鍵動作：按切回原生熱鍵（預設 F8，見 pref easyReadingEndSwitchKey）
       logs.length = 0;
-      await sendKey(page, 'End');
+      await sendKey(page, 'F8');
       await page.waitForTimeout(3000);
       await page.screenshot({ path: 'tests/e2e/__screenshots__/er-after-end.png', fullPage: true });
 
