@@ -247,10 +247,16 @@ async function gotoBoard(page, board) {
 }
 
 // 收集 console 與 pageerror，測試失敗時可印出。回傳 logs 陣列。
-function attachConsole(page) {
+// opts.echo（或 env E2E_ECHO_CONSOLE）為真時即時印到 stdout，debug 免再自行 filter/join。
+function attachConsole(page, opts = {}) {
   const logs = [];
-  page.on('console', (msg) => logs.push(`[console.${msg.type()}] ${msg.text()}`));
-  page.on('pageerror', (err) => logs.push(`[pageerror] ${err.message}`));
+  const echo = opts.echo != null ? opts.echo : !!process.env.E2E_ECHO_CONSOLE;
+  const push = (line) => {
+    logs.push(line);
+    if (echo) console.log(line);
+  };
+  page.on('console', (msg) => push(`[console.${msg.type()}] ${msg.text()}`));
+  page.on('pageerror', (err) => push(`[pageerror] ${err.message}`));
   return logs;
 }
 

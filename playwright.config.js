@@ -40,9 +40,16 @@ module.exports = defineConfig({
     },
   ],
   webServer: {
-    command: 'npx cross-env NODE_ENV=development webpack serve',
+    // 直接跑單一 node 進程（webpack bin 自動委派 webpack-cli），不經 npx/cross-env 多層 wrapper，
+    // teardown 才殺得乾淨、不留孤兒。NODE_ENV 改走 Playwright 內建 env（會 merge 進 process.env）。
+    command: 'node node_modules/webpack/bin/webpack.js serve',
+    env: { NODE_ENV: 'development' },
     url: 'http://localhost:8080',
     timeout: 180000,
+    // teardown 先送 SIGTERM 讓 dev server 自己收掉 socket，再強制收。
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
+    // 直接 npx playwright test（不走 yarn 前置 kill:dev）時仍能附到手動 dev server；
+    // 走 yarn 腳本時前置已 kill:dev 清空 8080，等於每次全新，杜絕 stale bundle。
     reuseExistingServer: true,
   },
 });
