@@ -17,6 +17,20 @@ yarn test:e2e:ui       # Playwright UI 模式
 
 dev server 由 `playwright.config.js` 的 `webServer` 自動啟動（已手動 `yarn start` 時 `reuseExistingServer` 會重用）。
 
+## 孤兒進程 / stale bundle
+
+以前常見坑：`webpack serve` 被中斷後殘留孤兒 `node` 佔住 8080，`reuseExistingServer` 又重用到 stale bundle。
+現在所有 e2e 腳本（`test:e2e`、`test:e2e:offline`、`headed`、`ui`、`record:cassette`）跑之前都會先
+`yarn kill:dev` 自動清掉佔 8080 的 dev server，再讓 Playwright 起全新 server：
+
+- **每次指令只清/起一次**（非每個 test），不增加 PTT 登入次數。
+- `kill:dev` 只砍「佔 8080 且確實是 node+webpack」的進程，**不會誤殺**佔 8080 的其他服務（如 java）。
+- **會**連帶殺掉你手動 `yarn start` 的 dev server（Playwright 會自己重啟一個）。
+- 手動清理：`yarn kill:dev`（`scripts/kill-dev-server.js`，跨平台、永不 fail）。
+
+debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_ECHO_CONSOLE="1"`，或對需要的 case 用
+`attachConsole(page, { echo: true })`（預設仍只存不印，避免正常跑測試時刷屏）。
+
 ## 失敗產物
 
 - `test-results/.../test-failed-1.png`、`video.webm`：失敗當下畫面/錄影
@@ -50,6 +64,23 @@ dev server 由 `playwright.config.js` 的 `webServer` 自動啟動（已手動 `
   - `login`：env 有帳密用真實帳號否則 guest，容錯迴圈處理 PTT 中間提示頁 + 節流退避
   - `attachConsole`：收集 console / pageerror
   - `applyPrefs` / `resetSession` / `gotoBoard`：共用 session 專用（runtime prefs、回主選單復位、進看板）
+  - `getPref(page, key)`：runtime 讀「有效 pref 值」（`DEFAULT_PREFS` 疊 localStorage），見下方規範
+
+## 規範：可設定的快捷鍵不准 hardcode
+
+凡是「使用者可在偏好設定改的鍵」（住在 `src/js/pref_storage.js` 的 `DEFAULT_PREFS`，目前唯一一個是
+`easyReadingEndSwitchKey`），測試**一律用 `getPref(page, 'xxxKey')` 動態取值再按**，不准寫死字面。
+
+理由：寫死 = 複製了「預設鍵 = ?」這個唯一真相。預設一改（實例：好讀切原生鍵 `End`→`F8`，commit `d04c7e6`）
+測試就 stale 整段壞掉（`4c308a2` 事後補修）。`getPref` 讀的是 app runtime 真正用的值，預設再改測試免動。
+
+```js
+const switchKey = await getPref(page, 'easyReadingEndSwitchKey');
+await sendKey(page, switchKey);
+```
+
+底層：dev build 由 `src/js/main.js` 暴露 `window.__readPrefs = readValuesWithDefault`（與 `window.__app` 同 gate，
+production 不洩漏）。**例外**：PTT 原生熱鍵（`End`/`Enter`/`Space`/`ArrowLeft`/`Slash` 等）非本 app 設定項，照常寫死。
 - `helpers/fixtures.js`：共用登入 session fixture（見上）
 - `connect-login.spec.js`：登入到主選單（獨立登入）
 

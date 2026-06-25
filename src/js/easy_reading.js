@@ -114,6 +114,22 @@ export function nextEasyReadingRowState({
   };
 }
 
+// Pure decision for leaving functionMode, evaluated on each settle (screenSettled)
+// while functionMode is on. Side-effect free so it can be regression-tested.
+//   'resume' — back to a clean article reading page (status row at the bottom with the
+//              cursor parked on it): turn functionMode off and resume the accumulated
+//              long page (same article).
+//   'leave'  — the screen settled into a board LIST (2) or MENU (1): the user navigated
+//              out of the post; drop easy-reading per-post state and let the normal
+//              settle re-enable pick up the next article.
+//   'stay'   — anything else (the prompt/menu is still up, or an editor/pass screen
+//              5/6/0, or a transient): keep mirroring native.
+export function functionModeExitDecision({ pageState, isStatusRow, curY, lastRowNum }) {
+  if (pageState === 3 && isStatusRow && curY === lastRowNum) return 'resume';
+  if (pageState === 1 || pageState === 2) return 'leave';
+  return 'stay';
+}
+
 export function EasyReading(core, view, termBuf) {
   this._core = core;
   this._view = view;
@@ -129,6 +145,15 @@ export function EasyReading(core, view, termBuf) {
   // path so a slow PTT response never gets a double page-down (which would skip a
   // page). Reset per article (enterEasyReading / leaveCurrentPost).
   this._lastPagedDownSignature = null;
+  // functionMode: while the user is interacting with a native PTT prompt/menu/editor
+  // triggered from inside the article (r 回應、X/% 推文、y 收暫存檔…), we stop the
+  // easy-reading accumulation/overlay illusion and mirror the native 24-row screen
+  // LIVE so whatever PTT draws appears exactly as native. Entered key-driven
+  // (_onKeyDownProcessUI default → _enterFunctionMode), exited by content judgement on
+  // settle (_evalFunctionModeExit). buf.pageLines is preserved throughout so the
+  // accumulated long page resumes without re-paging. See docs/easy-reading.md.
+  this._functionMode = false;
+  this._savedScrollTop = null;
 
   function bindProperty(target, name, obj, prop) {
     if (!prop) prop = name;
@@ -141,6 +166,9 @@ export function EasyReading(core, view, termBuf) {
   bindProperty(this._termBuf, 'startedEasyReading', this);
   bindProperty(this._termBuf, 'easyReadingShowReplyText', this);
   bindProperty(this._termBuf, 'easyReadingShowPushInitText', this);
+  // Exposed on term_buf so term_view.redraw / onKeyDown can read it (mirrors the
+  // show*Text flags above). Setting this._functionMode writes buf.easyReadingFunctionMode.
+  bindProperty(this._termBuf, 'easyReadingFunctionMode', this, '_functionMode');
 
   this._termBuf.addEventListener('change', this._onChanged.bind(this));
   this._termBuf.addEventListener('viewUpdate', this._onViewUpdated.bind(this));
@@ -184,6 +212,12 @@ EasyReading.prototype._onChanged = function(e) {
   }
 
   if (!this._enabled)
+    return;
+
+  // functionMode mirrors the native screen LIVE (term_view.redraw handles rendering);
+  // the auto-paging row-state machine must NOT run here (no page-downs while a prompt
+  // is up). Exit is decided on settle by _evalFunctionModeExit.
+  if (this._functionMode)
     return;
 
   this._applyRowState(this._computeRowState());
@@ -255,6 +289,13 @@ EasyReading.prototype._currentPageSignature = function() {
 EasyReading.prototype._onScreenSettled = function() {
   if (!this._enabled)
     return;
+  // While mirroring native (functionMode), the only thing settle decides is whether to
+  // leave functionMode — never a page-down. Handle it first (the pageState !== 3 guard
+  // below would otherwise skip the editor/menu screens we need to evaluate).
+  if (this._functionMode) {
+    this._evalFunctionModeExit();
+    return;
+  }
   if (this._termBuf.pageState !== 3)
     return;
   if (this.sendCommandAfterUpdate)  // a command is mid-flight (incl. skipOne) — let the frame loop drive
@@ -275,6 +316,60 @@ EasyReading.prototype._onScreenSettled = function() {
     // leave the command queued — it would re-fire on the next frame's viewUpdate.
     this.sendCommandAfterUpdate = '';
   }
+};
+
+// Enter functionMode: stop the easy-reading illusion and mirror the native 24-row
+// screen LIVE. Called from _onKeyDownProcessUI when the user presses a key that falls
+// through to native and may open a prompt/menu (r/X/%/y…). Saves the current scroll so
+// _evalFunctionModeExit('resume') can restore the reading position, then forces one
+// repaint so the native screen shows immediately (before PTT's response arrives).
+EasyReading.prototype._enterFunctionMode = function() {
+  if (this._functionMode)
+    return;
+  console.log('enter function mode');
+  // Drop any in-flight auto page-down so it can't fire (via _onViewUpdated) while we
+  // are mirroring a native prompt.
+  this.sendCommandAfterUpdate = '';
+  this._savedScrollTop = this._view.mainDisplay.scrollTop;
+  this._functionMode = true;
+  this._termBuf.lineChangeds.fill(true);
+  this._termBuf.changed = true;
+  this._termBuf.notify();
+};
+
+// Decide (pure functionModeExitDecision) and act when functionMode settles. 'resume'
+// turns it off and replays one render so accumulatePageLines continues the SAME article
+// (prevPageState=3 → continuation branch; findPageOverlap dedups the unchanged screen to
+// a no-op append), then restores the saved scroll. 'leave' drops per-post state so the
+// normal settle re-enable handles the next article. 'stay' keeps mirroring native.
+EasyReading.prototype._evalFunctionModeExit = function() {
+  const lastRowNum = this._termBuf.rows - 1;
+  const lastRowText = this._termBuf.getRowText(lastRowNum, 0, this._termBuf.cols);
+  const decision = functionModeExitDecision({
+    pageState: this._termBuf.pageState,
+    isStatusRow: !!parseStatusRow(lastRowText),
+    curY: this._termBuf.cur_y,
+    lastRowNum
+  });
+  if (decision === 'stay')
+    return;
+  console.log('exit function mode: ' + decision);
+  this._functionMode = false;
+  if (decision === 'resume') {
+    this._termBuf.prevPageState = 3;  // force accumulatePageLines continuation branch
+    this._termBuf.lineChangeds.fill(true);
+    this._termBuf.changed = true;
+    this._termBuf.notify();
+    if (this._savedScrollTop != null)
+      this._view.mainDisplay.scrollTop = this._savedScrollTop;
+  } else {  // 'leave'
+    this.startedEasyReading = false;
+    this.leaveCurrentPost();
+    this._termBuf.lineChangeds.fill(true);
+    this._termBuf.changed = true;
+    this._termBuf.notify();
+  }
+  this._savedScrollTop = null;
 };
 
 EasyReading.prototype._onViewUpdated = function(e) {
@@ -308,6 +403,8 @@ EasyReading.prototype.leaveCurrentPost = function() {
   // New post → forget the previous post's page identity so its first page-down is
   // never suppressed as a "same page" by the settle recovery.
   this._lastPagedDownSignature = null;
+  this._functionMode = false;
+  this._savedScrollTop = null;
 };
 
 EasyReading.prototype.stopEasyReading = function() {
@@ -339,6 +436,8 @@ EasyReading.prototype.switchToNativeAtBottom = function() {
 EasyReading.prototype.enterEasyReading = function() {
   console.log('enter easy reading');
   this._enabled = true;
+  this._functionMode = false;
+  this._savedScrollTop = null;
   // Force accumulatePageLines down its "new article" branch (restart pageLines as
   // the whole screen) instead of the same-article continuation branch, and start
   // page accumulation from empty.
@@ -364,6 +463,8 @@ EasyReading.prototype.exitEasyReading = function() {
   console.log('exit easy reading');
   // stop any pending/in-flight auto page down
   this.sendCommandAfterUpdate = '';
+  this._functionMode = false;
+  this._savedScrollTop = null;
   // Switch off easy reading and restore the native view. switchToEasyReadingMode()
   // restores the overlay rows / padding / pageLines and forces a full redraw via
   // Ctrl-L. Both modes now render through <Screen> (React owns #mainContainer), so
@@ -511,10 +612,23 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
           this.leaveCurrentPost();
           break;
         }
-        if ("123456789hops;,./\\H#OP:<>".indexOf(e.key) >= 0) {
-          stop = true;
-          break;
+        // Any other key falls through to native PTT and may open an in-post prompt /
+        // menu / editor (r 回應、X/% 推文、y 收暫存檔、h 說明、o 選項、p 播放、\ 色彩、
+        // / 搜尋、; 指定頁、: 指定行、# 文章代碼、s 切換看板、數字 指定頁、左右捲 ,.<>…).
+        // Switch to functionMode so we mirror whatever PTT draws LIVE (no hardcoded
+        // overlay, no per-prompt parsing); do NOT preventDefault — the key still reaches
+        // PTT. Exit is content-judged on settle (_evalFunctionModeExit).
+        //
+        // NOTE: there used to be a `"123456789hops;,./\\H#OP:<>"` swallow list here (an
+        // upstream pre-functionMode leftover, robertabcd b346f46) that preventDefault'd
+        // all those pmore function keys to a no-op, because the old self-drawn long page
+        // had no way to show the native in-place menu they open and would cover it. With
+        // functionMode that's solved — those keys now fall through here like any other.
+        // Removed so 說明(h)/選單/搜尋/指定頁… work again. See docs/easy-reading.md.
+        if (e.key.length === 1) {
+          this._enterFunctionMode();
         }
+        break;
     }
   } else if (e.ctrlKey && !e.altKey) {
     switch (e.key) {

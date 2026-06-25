@@ -326,6 +326,81 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       throw err;
     }
   });
+
+  // 好讀模式按 r 回文：functionMode 應接管，鏡像原生「回應至」選單（舊 bug：選單被好讀
+  // footer overlay 蓋住不顯示）。按 q 取消（不真的發文）後應無痕回到好讀長頁。
+  // 需真實帳號（guest 多半不能回文）。對應 easy_reading.js functionMode + term_view.redraw。
+  test('好讀模式回文選單：functionMode 鏡像原生「回應至」、取消後回長頁', async ({ shared }) => {
+    test.skip(!process.env.PTT_USER || !process.env.PTT_PASS, '需 env PTT_USER/PTT_PASS（guest 不能回文）');
+    test.setTimeout(180000);
+    const { page, logs } = shared;
+    logs.length = 0;
+    const fnMode = () => page.evaluate(() => window.__app.buf.easyReadingFunctionMode);
+    const lastRowDisplay = () =>
+      page.evaluate(() => {
+        const lr = document.getElementById('easyReadingLastRow');
+        return lr ? getComputedStyle(lr).display : 'no-el';
+      });
+    try {
+      await resetSession(page);
+      await applyPrefs(page, { enableEasyReading: true });
+      await gotoBoard(page, 'C_Chat');
+
+      // 開最新一篇，等好讀自動翻頁累積
+      await sendKey(page, 'End');
+      await page.waitForTimeout(800);
+      await sendKey(page, 'Enter');
+      await page.waitForTimeout(5000);
+      expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);
+      expect(await fnMode()).toBeFalsy();
+
+      // 按 r → 觸發 PTT 回文選單。functionMode 接管 → #mainContainer 渲染原生 24 列含選單。
+      await sendKey(page, 'r');
+      // 等「回應至」出現（部分文章不可回覆 → 出現別的提示，此時跳過驗證）
+      let replyShown = false;
+      for (let i = 0; i < 16; i++) {
+        const s = await readScreen(page);
+        if (s.includes('回應至') || s.includes('回覆文章')) { replyShown = true; break; }
+        if (s.includes('無法回應') || s.includes('未達') || s.includes('不開放')) break;
+        await page.waitForTimeout(400);
+      }
+      console.log('REPLY MENU SHOWN:', replyShown, 'fnMode:', await fnMode());
+      test.skip(!replyShown, '此文章不可回覆 / 看板限制，跳過回文選單驗證');
+
+      // 核心斷言：選單真的顯示在當前畫面（舊 bug 是被好讀 footer 蓋住不顯示）+ functionMode 開啟
+      expect(await readScreen(page)).toContain('回應至');
+      expect(await fnMode()).toBe(true);
+
+      // 取消（不發文）：「回應至…[F]」是 getdata 欄位（需 Enter 送出），typeLine('q') 打 q 再
+      // Enter 選「取消」。取消後 PTT 回到文章(pageState 3)→ functionMode 'resume' 回好讀長頁；於
+      // 文末取消常被帶回看板列表(pageState 2)→ 'leave'。兩者都是內容判定的合法乾淨退出，核心
+      // 保證：functionMode 必須退出、不卡死（舊 bug 的反面：選單不顯示/被 footer 蓋住）。
+      await typeLine(page, 'q');
+      let exited = false;
+      for (let i = 0; i < 16; i++) {
+        await page.waitForTimeout(500);
+        if (!(await fnMode())) { exited = true; break; }
+      }
+      const ps = await page.evaluate(() => window.__app.buf.pageState);
+      console.log('EXITED:', exited, 'pageState:', ps, 'lastRowDisplay:', await lastRowDisplay());
+      expect(exited).toBe(true);            // functionMode 乾淨退出（舊 bug 的反面：選單不顯示/卡死）
+      expect(await fnMode()).toBeFalsy();
+      if (ps === 3) {
+        // 'resume'：回好讀長頁——footer overlay 復現、mainContainer 累積 >24 列。
+        expect(await lastRowDisplay()).toBe('block');
+        expect(
+          await page.evaluate(() => document.getElementById('mainContainer').childNodes.length)
+        ).toBeGreaterThan(24);
+      } else {
+        // 'leave'：退回原生看板列表（footer 隱藏），由既有 settle 機制重新啟動好讀。
+        expect(await lastRowDisplay()).toBe('none');
+      }
+    } catch (err) {
+      console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
+      await page.screenshot({ path: 'tests/e2e/__screenshots__/enhance-reply-error.png', fullPage: true });
+      throw err;
+    }
+  });
 });
 
 // 自動登入：開頁後完全不按任何鍵，應自動送帳密、跳過提示，進到主選單。

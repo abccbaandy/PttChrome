@@ -18,7 +18,10 @@ function startApp() {
 
   const app = new App();
   // Expose the app for e2e inspection only in developer/dev builds.
-  if (process.env.DEVELOPER_MODE) window.__app = app;
+  if (process.env.DEVELOPER_MODE) {
+    window.__app = app;
+    window.__readPrefs = readValuesWithDefault; // e2e dynamic pref lookup
+  }
 
   (process.env.DEVELOPER_MODE ? import('../components/DeveloperModeAlert')
     .then(({DeveloperModeAlert}) => new Promise((resolve, reject) => {

@@ -1,0 +1,82 @@
+name: Test
+
+# Reusable workflow：三個測試 job（不含 live e2e）。
+# 由 deploy.yml（push dev，後接 build/deploy）與 pr.yml（pull_request，只跑 test）共用。
+on:
+  workflow_call:
+
+jobs:
+  # 三個測試 job 平行跑。不含 live e2e：連真實 PTT、guest 名額常滿會 fast-fail，不適合當 gate。
+  test-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Unit tests
+        run: |
+          corepack enable
+          yarn install --frozen-lockfile
+          yarn test:unit
+
+  test-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: yarn
+
+      # Firestore emulator 是 jar，需 Java（emulator jar 由 firebase-tools 執行時自抓）
+      # firebase-tools 要求 JDK 21+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Cache the emulator jars (~/.cache/firebase/emulators). The cold ~192MB
+      # download is the root cause of the flaky `waitForCloud timeout`: on a miss
+      # the first Firestore write warms up while the test's poll deadline ticks.
+      - name: Cache Firebase emulator binaries
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            firebase-emulators-${{ runner.os }}-
+
+      - name: Integration tests (Firebase Emulator)
+        env:
+          # Cushion the in-test poll deadline against cold-start latency; the test
+          # also auto-retries (jest.retryTimes) on CI. See tests/integration/.
+          INTEGRATION_TIMEOUT_MS: "30000"
+        run: |
+          corepack enable
+          yarn install --frozen-lockfile
+          # Pre-fetch the Firestore emulator jar so a cache miss doesn't eat into
+          # the test deadline (no-op on a cache hit — binary already present).
+          yarn firebase setup:emulators:firestore
+          yarn test:integration
+
+  test-e2e-offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Offline E2E tests (Playwright replay)
+        run: |
+          corepack enable
+          yarn install --frozen-lockfile
+          npx playwright install --with-deps chromium
+          yarn test:e2e:offline

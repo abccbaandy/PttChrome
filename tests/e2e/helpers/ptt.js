@@ -194,6 +194,12 @@ async function applyPrefs(page, extra) {
   );
 }
 
+// 動態讀取「有效 pref 值」（DEFAULT_PREFS 疊 localStorage），避免在測試裡 hardcode 可設定的快捷鍵。
+// 預設鍵改動（如 easyReadingEndSwitchKey: End→F8）時測試免改。dev build 由 main.js 暴露 window.__readPrefs。
+async function getPref(page, key) {
+  return page.evaluate((k) => window.__readPrefs()[k], key);
+}
+
 // 共用 session 的每個 case 開頭呼叫：容錯迴圈回主選單 + prefs 重設 baseline，避免狀態污染。
 async function resetSession(page) {
   const deadline = Date.now() + 25000;
@@ -241,10 +247,16 @@ async function gotoBoard(page, board) {
 }
 
 // 收集 console 與 pageerror，測試失敗時可印出。回傳 logs 陣列。
-function attachConsole(page) {
+// opts.echo（或 env E2E_ECHO_CONSOLE）為真時即時印到 stdout，debug 免再自行 filter/join。
+function attachConsole(page, opts = {}) {
   const logs = [];
-  page.on('console', (msg) => logs.push(`[console.${msg.type()}] ${msg.text()}`));
-  page.on('pageerror', (err) => logs.push(`[pageerror] ${err.message}`));
+  const echo = opts.echo != null ? opts.echo : !!process.env.E2E_ECHO_CONSOLE;
+  const push = (line) => {
+    logs.push(line);
+    if (echo) console.log(line);
+  };
+  page.on('console', (msg) => push(`[console.${msg.type()}] ${msg.text()}`));
+  page.on('pageerror', (err) => push(`[pageerror] ${err.message}`));
   return logs;
 }
 
@@ -259,4 +271,5 @@ module.exports = {
   applyPrefs,
   resetSession,
   gotoBoard,
+  getPref,
 };

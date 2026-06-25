@@ -17,6 +17,7 @@ jest.mock("../../src/js/string_util", () => ({
 import {
   nextEasyReadingState,
   nextEasyReadingRowState,
+  functionModeExitDecision,
   EasyReading
 } from "../../src/js/easy_reading";
 import { readValuesWithDefault } from "../../src/js/pref_storage";
@@ -212,6 +213,41 @@ describe("nextEasyReadingRowState", () => {
   });
 });
 
+// functionModeExitDecision drives leaving functionMode (native-LIVE mirroring) on each
+// settle. While functionMode is on, the user is interacting with a native PTT prompt /
+// menu / editor opened from inside the article (r 回應、X/% 推文、y 收暫存檔…); we mirror
+// whatever PTT draws verbatim and decide here when to stop.
+describe("functionModeExitDecision", () => {
+  it("resumes when back on a clean article page (status row + cursor parked on it)", () => {
+    expect(functionModeExitDecision({
+      pageState: 3, isStatusRow: true, curY: 23, lastRowNum: 23
+    })).toBe("resume");
+  });
+
+  it("stays while the reply menu is up (status on row 23 but cursor on the menu row 22)", () => {
+    expect(functionModeExitDecision({
+      pageState: 3, isStatusRow: true, curY: 22, lastRowNum: 23
+    })).toBe("stay");
+  });
+
+  it("stays on an editor / pass screen (pageState 6/5/0), not a list or menu", () => {
+    expect(functionModeExitDecision({ pageState: 6, isStatusRow: false, curY: 0, lastRowNum: 23 })).toBe("stay");
+    expect(functionModeExitDecision({ pageState: 5, isStatusRow: false, curY: 0, lastRowNum: 23 })).toBe("stay");
+    expect(functionModeExitDecision({ pageState: 0, isStatusRow: false, curY: 0, lastRowNum: 23 })).toBe("stay");
+  });
+
+  it("leaves when the screen settled into a board list (2) or menu (1)", () => {
+    expect(functionModeExitDecision({ pageState: 2, isStatusRow: false, curY: 23, lastRowNum: 23 })).toBe("leave");
+    expect(functionModeExitDecision({ pageState: 1, isStatusRow: false, curY: 0, lastRowNum: 23 })).toBe("leave");
+  });
+
+  it("does not resume on a pageState-3 frame whose last row is not a status row", () => {
+    expect(functionModeExitDecision({
+      pageState: 3, isStatusRow: false, curY: 23, lastRowNum: 23
+    })).toBe("stay");
+  });
+});
+
 // leaveCurrentPost stays in easy reading (does not touch _enabled) and only resets
 // per-post render state. It no longer clears a latch (auto re-enable is now
 // edge-triggered on the settle stream), but it still zeroes prevPageState so the next
@@ -372,6 +408,42 @@ describe("EasyReading._onKeyDownProcessUI End handling", () => {
       er._onKeyDownProcessUI(keyEvent(key));
       expect(er.switchToNativeAtBottom).not.toHaveBeenCalled();
       expect(mainDisplay.scrollTop).toBe(mainDisplay.scrollHeight);
+    }
+  });
+
+  // pmore function keys (說明/選單/搜尋/指定頁/左右捲…) used to be swallowed by an
+  // upstream pre-functionMode "123456789hops;,./\H#OP:<>" list (preventDefault → no-op,
+  // 說明(h) etc. dead in easy reading). That list is removed: they now fall through to
+  // functionMode like r/X/%/y, so PTT draws the native menu/help and we mirror it LIVE.
+  // Guard: each enters functionMode and is NOT preventDefault'd (the key must reach PTT).
+  it("pmore function keys enter functionMode and reach PTT (no preventDefault)", () => {
+    for (const key of ["h", "H", "o", "p", "\\", "/", ";", ":", "#", "s", "1", "9", ",", ".", "<", ">"]) {
+      const { er } = makeER({
+        easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "End"
+      });
+      er._enterFunctionMode = jest.fn();
+      er.leaveCurrentPost = jest.fn();
+      const e = keyEvent(key);
+      er._onKeyDownProcessUI(e);
+      expect(er._enterFunctionMode).toHaveBeenCalledTimes(1);
+      expect(er.leaveCurrentPost).not.toHaveBeenCalled();
+      expect(e.preventDefault).not.toHaveBeenCalled();
+    }
+  });
+
+  // Leave-post keys (next/prev article, same-thread, same-author) stay on the OTHER
+  // branch: they navigate out of the post (leaveCurrentPost) and must NOT enter
+  // functionMode. Guards the two key classes don't get crossed.
+  it("article-navigation keys leave the post, not functionMode", () => {
+    for (const key of ["a", "b", "f", "[", "]", "=", "A", "B", "F"]) {
+      const { er } = makeER({
+        easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "End"
+      });
+      er._enterFunctionMode = jest.fn();
+      er.leaveCurrentPost = jest.fn();
+      er._onKeyDownProcessUI(keyEvent(key));
+      expect(er.leaveCurrentPost).toHaveBeenCalledTimes(1);
+      expect(er._enterFunctionMode).not.toHaveBeenCalled();
     }
   });
 });

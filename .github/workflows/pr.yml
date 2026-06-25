@@ -1,0 +1,13 @@
+name: PR Test
+
+# PR 只跑 test 確保沒問題，不 build/deploy。test 定義共用 test.yml（reusable workflow）。
+on:
+  pull_request:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
