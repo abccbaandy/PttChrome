@@ -4,7 +4,7 @@
   "packageManager": "yarn@1.22.22",
   "dependencies": {
     "base58": "^1.0.1",
-    "bootstrap": "^5.0.0",
+    "bootstrap": "^3.3.7",
     "classnames": "^2.2.5",
     "firebase": "^12.14.0",
     "hammerjs": "^2.0.8",
