@@ -612,15 +612,19 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
           this.leaveCurrentPost();
           break;
         }
-        if ("123456789hops;,./\\H#OP:<>".indexOf(e.key) >= 0) {
-          stop = true;
-          break;
-        }
         // Any other key falls through to native PTT and may open an in-post prompt /
-        // menu / editor (r 回應、X/% 推文、y 收暫存檔…). Switch to functionMode so we
-        // mirror whatever PTT draws LIVE (no hardcoded overlay, no per-prompt parsing);
-        // do NOT preventDefault — the key still reaches PTT. Exit is content-judged on
-        // settle (_evalFunctionModeExit).
+        // menu / editor (r 回應、X/% 推文、y 收暫存檔、h 說明、o 選項、p 播放、\ 色彩、
+        // / 搜尋、; 指定頁、: 指定行、# 文章代碼、s 切換看板、數字 指定頁、左右捲 ,.<>…).
+        // Switch to functionMode so we mirror whatever PTT draws LIVE (no hardcoded
+        // overlay, no per-prompt parsing); do NOT preventDefault — the key still reaches
+        // PTT. Exit is content-judged on settle (_evalFunctionModeExit).
+        //
+        // NOTE: there used to be a `"123456789hops;,./\\H#OP:<>"` swallow list here (an
+        // upstream pre-functionMode leftover, robertabcd b346f46) that preventDefault'd
+        // all those pmore function keys to a no-op, because the old self-drawn long page
+        // had no way to show the native in-place menu they open and would cover it. With
+        // functionMode that's solved — those keys now fall through here like any other.
+        // Removed so 說明(h)/選單/搜尋/指定頁… work again. See docs/easy-reading.md.
         if (e.key.length === 1) {
           this._enterFunctionMode();
         }

@@ -410,6 +410,42 @@ describe("EasyReading._onKeyDownProcessUI End handling", () => {
       expect(mainDisplay.scrollTop).toBe(mainDisplay.scrollHeight);
     }
   });
+
+  // pmore function keys (說明/選單/搜尋/指定頁/左右捲…) used to be swallowed by an
+  // upstream pre-functionMode "123456789hops;,./\H#OP:<>" list (preventDefault → no-op,
+  // 說明(h) etc. dead in easy reading). That list is removed: they now fall through to
+  // functionMode like r/X/%/y, so PTT draws the native menu/help and we mirror it LIVE.
+  // Guard: each enters functionMode and is NOT preventDefault'd (the key must reach PTT).
+  it("pmore function keys enter functionMode and reach PTT (no preventDefault)", () => {
+    for (const key of ["h", "H", "o", "p", "\\", "/", ";", ":", "#", "s", "1", "9", ",", ".", "<", ">"]) {
+      const { er } = makeER({
+        easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "End"
+      });
+      er._enterFunctionMode = jest.fn();
+      er.leaveCurrentPost = jest.fn();
+      const e = keyEvent(key);
+      er._onKeyDownProcessUI(e);
+      expect(er._enterFunctionMode).toHaveBeenCalledTimes(1);
+      expect(er.leaveCurrentPost).not.toHaveBeenCalled();
+      expect(e.preventDefault).not.toHaveBeenCalled();
+    }
+  });
+
+  // Leave-post keys (next/prev article, same-thread, same-author) stay on the OTHER
+  // branch: they navigate out of the post (leaveCurrentPost) and must NOT enter
+  // functionMode. Guards the two key classes don't get crossed.
+  it("article-navigation keys leave the post, not functionMode", () => {
+    for (const key of ["a", "b", "f", "[", "]", "=", "A", "B", "F"]) {
+      const { er } = makeER({
+        easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "End"
+      });
+      er._enterFunctionMode = jest.fn();
+      er.leaveCurrentPost = jest.fn();
+      er._onKeyDownProcessUI(keyEvent(key));
+      expect(er.leaveCurrentPost).toHaveBeenCalledTimes(1);
+      expect(er._enterFunctionMode).not.toHaveBeenCalled();
+    }
+  });
 });
 
 // Settle-driven page-down recovery (the truncated-pushes fix). The per-frame loop

@@ -225,4 +225,67 @@ test.describe.serial('好讀模式', () => {
       throw err;
     }
   });
+
+  // REGRESSION: 好讀模式按 h（pmore 說明）無反應。default 分支有 upstream 遺留的吞鍵清單
+  // "123456789hops;,./\H#OP:<>" 把 h/說明、o/選項、/搜尋… 全 preventDefault 成 no-op。
+  // 移除後這些鍵改走 functionMode（鏡像原生），h 應顯示 pmore 說明畫面。guest 即可。
+  test('好讀模式按 h 顯示說明（functionMode 鏡像原生）、空白鍵離開回長頁', async ({ shared }) => {
+    test.setTimeout(150000);
+    const { page, logs } = shared;
+    logs.length = 0;
+    const fnMode = () => page.evaluate(() => window.__app.buf.easyReadingFunctionMode);
+    try {
+      await resetSession(page);
+      await applyPrefs(page, { enableEasyReading: true });
+      await gotoBoard(page, 'C_Chat');
+
+      // 開最新一篇，等好讀自動翻頁累積
+      await sendKey(page, 'End');
+      await page.waitForTimeout(800);
+      await sendKey(page, 'Enter');
+      await page.waitForTimeout(4500);
+      expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);
+      expect(await fnMode()).toBeFalsy();
+
+      // 按 h → functionMode 接管，鏡像原生 pmore 說明畫面（舊 bug：被吞掉完全沒反應）
+      await sendKey(page, 'h');
+      let helpShown = false;
+      for (let i = 0; i < 12; i++) {
+        const s = await readScreen(page);
+        if (/說明|瀏覽程式|空白鍵/.test(s)) { helpShown = true; break; }
+        await page.waitForTimeout(400);
+      }
+      console.log('HELP SHOWN:', helpShown, 'fnMode:', await fnMode());
+      // 核心斷言：說明畫面真的顯示 + functionMode 開啟（舊 bug 的反面：h 沒反應）
+      expect(helpShown).toBe(true);
+      expect(await fnMode()).toBe(true);
+      expect(await readScreen(page)).toMatch(/說明|瀏覽程式|空白鍵/);
+
+      // 空白鍵離開說明 → 回乾淨文章頁 → functionMode 'resume' 回好讀長頁
+      await sendKey(page, 'Space');
+      let exited = false;
+      for (let i = 0; i < 12; i++) {
+        await page.waitForTimeout(500);
+        if (!(await fnMode())) { exited = true; break; }
+      }
+      const ps = await page.evaluate(() => window.__app.buf.pageState);
+      console.log('EXITED:', exited, 'pageState:', ps);
+      expect(exited).toBe(true);
+      expect(await fnMode()).toBeFalsy();
+      if (ps === 3) {
+        // 'resume'：回好讀長頁——footer overlay 復現、mainContainer 累積 >24 列。
+        expect(
+          await page.evaluate(() => {
+            const lr = document.getElementById('easyReadingLastRow');
+            return lr ? getComputedStyle(lr).display : 'no-el';
+          })
+        ).toBe('block');
+        expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);
+      }
+    } catch (err) {
+      console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
+      await page.screenshot({ path: 'tests/e2e/__screenshots__/er-help-error.png', fullPage: true });
+      throw err;
+    }
+  });
 });
