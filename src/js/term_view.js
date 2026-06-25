@@ -331,7 +331,18 @@ TermView.prototype = {
       // growing accumulated article page (easy reading, pageState 3). The two
       // easy-reading overlay rows (footer / reply preview) are separate divs and
       // are still drawn imperatively below.
-      if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowReplyText) {
+      if (this.useEasyReadingMode && this.buf.easyReadingFunctionMode) {
+        // functionMode: mirror the native 24-row screen LIVE so any PTT prompt / menu /
+        // editor triggered from inside the article (回應至選單、推文、收暫存檔、編輯器…)
+        // shows EXACTLY as native — no hardcoded overlay, no per-prompt parsing. Hide
+        // the easy-reading overlays but KEEP buf.pageLines intact (do NOT clear) so
+        // _evalFunctionModeExit('resume') can resume the accumulated long page without
+        // re-paging. Reset scroll so the 24-row screen is visible at the top (the long
+        // page may have been scrolled down). See easy_reading.js functionMode + docs.
+        this.hideEasyReadingOverlaysKeepPage();
+        this.mainDisplay.scrollTop = 0;
+        this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false);
+      } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowReplyText) {
         this.updateEasyReadingReplyRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
       } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowPushInitText) {
         this.updateEasyReadingPushInitRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
@@ -451,8 +462,9 @@ TermView.prototype = {
   },
 
   onKeyDown: function(e) {
-    if (this.useEasyReadingMode && this.buf.startedEasyReading && 
-        !this.buf.easyReadingShowReplyText && !this.buf.easyReadingShowPushInitText) {
+    if (this.useEasyReadingMode && this.buf.startedEasyReading &&
+        !this.buf.easyReadingShowReplyText && !this.buf.easyReadingShowPushInitText &&
+        !this.buf.easyReadingFunctionMode) {
       this.easyReadingKeyDownKeyCode = e.keyCode;
       this.bbscore.easyReading._onKeyDown(e);
       if (e.defaultPrevented)
@@ -884,10 +896,26 @@ TermView.prototype = {
       // First page of a (new) article: restart the accumulated page as this whole
       // screen and clear the per-article pusher selection.
       this._selectedPusher = null;
-      this.lastRowDiv.innerHTML = this.lastRowDivContent;
-      this.lastRowDiv.style.display = 'block';
       this.buf.pageLines = this.buf.lines.slice(0, -1).map(cloneRow);
     }
+    // Footer overlay = a LIVE mirror of the REAL bottom status row (page X/Y, %,
+    // (h)說明…, with the genuine colours) instead of a hardcoded string, so it always
+    // matches what native shows. See _mirrorStatusRowToFooter.
+    this._mirrorStatusRowToFooter();
+  },
+
+  // Render the real bottom status row (buf.lines[rows-1]) into the footer overlay
+  // (#easyReadingLastRow). Guarded by parseStatusRow so a transient half-painted frame
+  // (empty last row) never blanks the footer — we keep the previous content then.
+  _mirrorStatusRowToFooter: function() {
+    var statusText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
+    if (parseStatusRow(statusText)) {
+      var el = document.createElement('span');
+      el.style = "background-color:black;";
+      renderOverlayRow(this.buf.lines[this.buf.rows-1], this.chh, el);
+      this.setSingleChild(this.lastRowDiv.childNodes[0], el);
+    }
+    this.lastRowDiv.style.display = 'block';
   },
 
   // Toggle whole-row highlight for all comments by `userid` (click handler).
@@ -900,6 +928,15 @@ TermView.prototype = {
     if (!userid) return;
     this._selectedPusher = this._selectedPusher === userid ? null : userid;
     this.redraw(true);
+  },
+
+  // Like hideEasyReadingOverlays but does NOT clear buf.pageLines / padding / scroll.
+  // Used by the functionMode native-LIVE render: we only want the overlay rows out of
+  // the way while mirroring the native screen; the accumulated long page must survive
+  // so _evalFunctionModeExit('resume') can restore it without re-paging the article.
+  hideEasyReadingOverlaysKeepPage: function() {
+    this.lastRowDiv.style.display = '';
+    this.replyRowDiv.style.display = '';
   },
 
   // Restore the easy-reading overlay rows (footer + reply preview) to their hidden

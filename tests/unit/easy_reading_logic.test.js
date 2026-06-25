@@ -17,6 +17,7 @@ jest.mock("../../src/js/string_util", () => ({
 import {
   nextEasyReadingState,
   nextEasyReadingRowState,
+  functionModeExitDecision,
   EasyReading
 } from "../../src/js/easy_reading";
 import { readValuesWithDefault } from "../../src/js/pref_storage";
@@ -209,6 +210,41 @@ describe("nextEasyReadingRowState", () => {
   it("halts when the cursor is on an unchanged interior line", () => {
     const r = nextEasyReadingRowState(rowInput({ startedEasyReading: true, curY: 5 }));
     expect(r.halt).toBe(true);
+  });
+});
+
+// functionModeExitDecision drives leaving functionMode (native-LIVE mirroring) on each
+// settle. While functionMode is on, the user is interacting with a native PTT prompt /
+// menu / editor opened from inside the article (r 回應、X/% 推文、y 收暫存檔…); we mirror
+// whatever PTT draws verbatim and decide here when to stop.
+describe("functionModeExitDecision", () => {
+  it("resumes when back on a clean article page (status row + cursor parked on it)", () => {
+    expect(functionModeExitDecision({
+      pageState: 3, isStatusRow: true, curY: 23, lastRowNum: 23
+    })).toBe("resume");
+  });
+
+  it("stays while the reply menu is up (status on row 23 but cursor on the menu row 22)", () => {
+    expect(functionModeExitDecision({
+      pageState: 3, isStatusRow: true, curY: 22, lastRowNum: 23
+    })).toBe("stay");
+  });
+
+  it("stays on an editor / pass screen (pageState 6/5/0), not a list or menu", () => {
+    expect(functionModeExitDecision({ pageState: 6, isStatusRow: false, curY: 0, lastRowNum: 23 })).toBe("stay");
+    expect(functionModeExitDecision({ pageState: 5, isStatusRow: false, curY: 0, lastRowNum: 23 })).toBe("stay");
+    expect(functionModeExitDecision({ pageState: 0, isStatusRow: false, curY: 0, lastRowNum: 23 })).toBe("stay");
+  });
+
+  it("leaves when the screen settled into a board list (2) or menu (1)", () => {
+    expect(functionModeExitDecision({ pageState: 2, isStatusRow: false, curY: 23, lastRowNum: 23 })).toBe("leave");
+    expect(functionModeExitDecision({ pageState: 1, isStatusRow: false, curY: 0, lastRowNum: 23 })).toBe("leave");
+  });
+
+  it("does not resume on a pageState-3 frame whose last row is not a status row", () => {
+    expect(functionModeExitDecision({
+      pageState: 3, isStatusRow: false, curY: 23, lastRowNum: 23
+    })).toBe("stay");
   });
 });
 

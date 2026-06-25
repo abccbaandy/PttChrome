@@ -131,9 +131,9 @@ test.describe.serial('好讀模式', () => {
       expect(after.useEasyReadingMode).toBe(false);
       expect(after.mcChildren).toBeLessThanOrEqual(24);
       expect(after.lastRowDisplay).toBe('none');
-      // 原生狀態列特徵：「瀏覽 第 N 頁 … 目前顯示: 第 a~b 行」。好讀 overlay 只有
-      // 「(y)回應(X%)推文(←)離開」、不含「瀏覽 第」，故以此區分。註：文章到底(100%)時
-      // PTT 狀態列顯示「(y)回應(X%)推文(←)離開」而省略「(h)說明」，故不可斷言含「說明」。
+      // 切回原生後 #mainContainer 是原生 24 列，含原生狀態列「瀏覽 第 N 頁 … 目前顯示:
+      // 第 a~b 行」。好讀 footer overlay 雖也鏡像狀態列，但它是 BBSWin 下獨立 div、非
+      // #mainContainer，故 readScreen(#mainContainer) 在好讀時不含狀態列、原生時才含。
       expect(afterScreen).toMatch(/瀏覽 第 .+頁/);
       expect(afterScreen).toContain('100%'); // 在最底
 
