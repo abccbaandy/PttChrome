@@ -194,6 +194,12 @@ async function applyPrefs(page, extra) {
   );
 }
 
+// 動態讀取「有效 pref 值」（DEFAULT_PREFS 疊 localStorage），避免在測試裡 hardcode 可設定的快捷鍵。
+// 預設鍵改動（如 easyReadingEndSwitchKey: End→F8）時測試免改。dev build 由 main.js 暴露 window.__readPrefs。
+async function getPref(page, key) {
+  return page.evaluate((k) => window.__readPrefs()[k], key);
+}
+
 // 共用 session 的每個 case 開頭呼叫：容錯迴圈回主選單 + prefs 重設 baseline，避免狀態污染。
 async function resetSession(page) {
   const deadline = Date.now() + 25000;
@@ -259,4 +265,5 @@ module.exports = {
   applyPrefs,
   resetSession,
   gotoBoard,
+  getPref,
 };
