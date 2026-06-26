@@ -24,6 +24,26 @@ SCOPE: 上一輪（commit e9bd09e + 本輪 js-yaml/picomatch lock refresh）已�
 
 ## 建議實作方向 + 順序
 
+### 0.（最高 CP，先評估）firebase-tools 隔離 / 移出 lockfile —— 治本
+**為何最高 CP**：firebase-tools 是 dev 依賴裡最大膨脹源，也是 #3/#43/#44/#10 的母套件；升級（step 1）只是治標（這批清完還會再噴新的）。
+**用途盤點（精準，已查）**：本專案 firebase-tools **只**做兩件事，皆 dev/CI，**絕不進 production bundle**：
+- `firebase emulators:exec --only auth,firestore`（`package.json:128` 的 `test:integration`，跑 Auth+Firestore emulator）
+- 偶爾手動 `firebase deploy --only firestore:rules`（`docs/pref-sync-firestore.md:65`，部署 `firestore.rules`，非自動化）
+→ 所有 firebase-tools alert 都是 **dev/CI-only 低風險**，被 dependabot 掃到多屬「雜訊」（從不出貨）。
+
+**「純 emulator、棄用 firebase-tools npm」的可能性（已查證）**：
+- ⚠️ **Emulator Suite 官方只透過 firebase-tools 發布**，沒有獨立的 emulator npm 套件。emulator 本體是 Java jar，由 firebase-tools 啟動時自抓。無法「只裝 emulator 不裝 firebase-tools」。
+- `@firebase/rules-unit-testing`：只簡化「測試端 glue」（連 emulator、套 rules），**仍需 emulator 在跑** → **不移除** firebase-tools。對本專案測試碼精簡有限（現用真 modular SDK + `emulators:exec`，見 `docs/pref-sync-firestore.md`）。
+- 真正能「讓 firebase-tools 離開 committed lockfile → dependabot 不再掃其子樹」的路：
+  - **(A) Docker 容器跑 emulator**（CI 用含 emulator 的映像，如社群 `andreysenov/firebase-tools` 或自建）：firebase-tools 完全移出 `package.json`/lockfile → #3/#43/#44/#10 **連同未來 firebase-tools 漏洞一次消失**。代價：CI 改用 service container；**本機跑 integration 需 Docker**（或本機仍 `npx firebase-tools` 留 local-only）。
+  - **(B) 改 `npx firebase-tools@15 emulators:exec ...`，從 devDeps 移除**：不進 lockfile → dependabot 噤聲。代價：失去 lockfile pin（用 `@15` 半 pin）、CI 每次下載（**需自建 cache**，否則變慢）、與現行「yarn 管全部」慣例略衝突。
+  - **(C) 移進獨立 `tests/integration/package.json` 或 `optionalDependencies`**：主 `yarn install`（dev/build）不拉 firebase-tools；但只要它仍在**任一 committed lockfile**，dependabot 照掃 → **對消 alert 無效**，僅減少日常 install 體積。要消 alert 必須讓它**完全離開所有 committed lockfile**（即 A 或 B）。
+
+**取捨結論**：emulator 無更輕的官方替身；棄用 firebase-tools = 把「dev 套件漏洞掃描雜訊」換成「多一層 Docker infra」或「CI 變慢+失 pin」。
+- 若覺得 firebase-tools alert 反覆噴很煩、且 CI 已有/願加 Docker → **(A) 最乾淨**（治本，含未來）。
+- 若只想止血又不想動 infra → 先 step 1 升版治標即可，**別為了消 dev-only alert 引入 Docker/失 pin**（同 ROI 邏輯）。
+- **務必保留**：`demo-` 前綴 project id（保證離線、不打正式專案）、`firestore.rules` 實際 enforce、真 SDK 無 mock 這幾個 integration 測試的核心性質（見 `docs/pref-sync-firestore.md`）。換任何方案後，`yarn test:integration` 等價行為（啟動還原/他機推播/permission-denied）必須照舊全綠。
+
 ### 1.（低風險、優先）升 firebase-tools `^15.20.0 → ^15.22.3`
 一次清掉 firebase-tools 子樹的 transitive 漏洞（**#43 uuid、#3 node-fetch 的 2.x 那批、#37/#44 類**），15.22.3 已宣告 `js-yaml ^4.2.0` 等較新範圍。
 - 動作：改 package.json devDeps → `yarn install` 重解子樹。
@@ -44,10 +64,10 @@ SCOPE: 上一輪（commit e9bd09e + 本輪 js-yaml/picomatch lock refresh）已�
   - `.yarnrc.yml`（`nodeLinker: node-modules`、`enableGlobalCache` 等）。
   - `package.json` `packageManager` → `yarn@4.x`；CI workflow（`deploy.yml`）的 `corepack enable` / install 步驟。
   - husky/lint-staged、所有 `yarn xxx` script 行為差異複查。
-- **建議順序**：先把 1.（firebase-tools）和 2.（移 cdn-plugin）能清的清掉，**剩下真的非 yarn4 不可的才評估遷移**。多數剩餘 alert 是 dev-only 低風險，遷 yarn4 的 churn/風險很可能**不划算** → 先確認「還剩哪些、嚴重度、是否 runtime」再決定，不要為了湊綠而遷。
+- **建議順序**：先 0.（firebase-tools 升版治標，或評估隔離/Docker 治本）+ 2.（移 cdn-plugin）能清的清掉，**剩下真的非 yarn4 不可的才評估遷移**。多數剩餘 alert 是 dev-only 低風險，遷 yarn4 的 churn/風險很可能**不划算** → 先確認「還剩哪些、嚴重度、是否 runtime」再決定，不要為了湊綠而遷。
 - 遷移本身做法：`corepack prepare yarn@4.x --activate` → `yarn set version 4.x` → 建 `.yarnrc.yml`（`nodeLinker: node-modules`）→ `yarn install` 重生 lock → 全測試矩陣（unit/integration/offline-e2e/live-e2e）+ build + 本機 `yarn start` 連真 PTT 冒煙 → 改 CI。**改後務必跑 live e2e**（渲染/連線路徑）。
 
 ## 完成定義
-- 做完 1（或 1+2）後，更新本 md 的決策表（移除已關 alert）；若所有剩餘 alert 都關閉或確認 won't-fix，刪掉本 md。
+- 做完每步後，更新本 md 的決策表（移除已關 alert）；若所有剩餘 alert 都關閉或確認 won't-fix，刪掉本 md。
 - 每步 push 後查 CI（`deploy.yml` 全綠，integration flaky 處置見 CLAUDE.md）。
 - 純安全修補、無使用者可見新功能 → **不需動 README**。
