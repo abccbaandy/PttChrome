@@ -20,7 +20,7 @@
 | 1 | `dist/index.html` 結構（`#cmdHandler`/`#cmenuReact`/`#BBSWindow`+`id="t"` input／`#cursor.terminal_display`/`#reactAlert`）與線上 body 逐字相符 | 線上 curl ↔ `src/dev.html`（模板）/ build 後 `dist/index.html` |
 | 2 | **建置產物雜湊吻合**：本機 build 的 `assets/logo.c8fa42175331bab52f24fd5e64cf69bb.png` == 線上 | `dist/assets/` ↔ 線上首頁 |
 | 3 | bundle 命名 `assets/pttchrome.<hash>.js/.css`；`package.json` `name:"pttchrome"` | 線上首頁 ↔ `package.json` |
-| 4 | 從 unpkg 載入 react@16.14 / jquery / bootstrap@3.4.1 / hammerjs（external）由 `webpack-cdn-plugin` 產生 | 線上 `<script src=unpkg…>` ↔ devDeps |
+| 4 | 從 unpkg 載入 react@16.14 / jquery / bootstrap@3.4.1 / hammerjs（external）由 `src/dev.html` template 注入（版本取自 installed package；前身 `webpack-cdn-plugin` 已移除）| 線上 `<script src=unpkg…>` ↔ deps |
 | 5 | repo `homepage` 欄位 = `https://term.ptt.cc` | GitHub API repo metadata |
 
 > JS bundle 雜湊（線上 vs 本機）不同屬正常 —— minify/依賴版本漂移會變動 JS 雜湊；靜態圖片 asset 位元相同已足證來源。

@@ -6,6 +6,23 @@
 
     <meta name="viewport" content="user-scalable=no, width=device-width, initial-scale=1, maximum-scale=1">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+
+    <!--
+      Third-party libs from CDN (unpkg) instead of bundling. webpack `externals`
+      maps the react/react-dom/jquery imports to these globals; bootstrap (a
+      jQuery plugin) and hammerjs are global-only. Versions are read from the
+      installed packages (require(...).version) so the CDN URL can't drift from
+      package.json/yarn.lock. Replaces the removed webpack-cdn-plugin (dropped to
+      clear its transitive request/tough-cookie Dependabot alerts). Order: jQuery
+      before bootstrap; all execute at parse time, before the webpack bundle
+      (html-webpack-plugin injects it after, as a deferred script).
+    -->
+    <link rel="stylesheet" crossorigin="anonymous" href="https://unpkg.com/bootstrap@<%= require('bootstrap/package.json').version %>/dist/css/bootstrap.min.css">
+    <script crossorigin="anonymous" src="https://unpkg.com/jquery@<%= require('jquery/package.json').version %>/dist/jquery.min.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/bootstrap@<%= require('bootstrap/package.json').version %>/dist/js/bootstrap.min.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/hammerjs@<%= require('hammerjs/package.json').version %>/hammer.min.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/react@<%= require('react/package.json').version %>/umd/react.production.min.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/react-dom@<%= require('react-dom/package.json').version %>/umd/react-dom.production.min.js"></script>
   </head>
 
   <body>

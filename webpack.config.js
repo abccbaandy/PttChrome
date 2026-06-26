@@ -4,7 +4,6 @@ const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const HtmlWebpackHarddiskPlugin = require('html-webpack-harddisk-plugin');
-const WebpackCdnPlugin = require('webpack-cdn-plugin');
 
 const DEVELOPER_MODE = process.env.NODE_ENV === 'development'
 const PRODUCTION_MODE = process.env.NODE_ENV !== 'development'
@@ -29,6 +28,16 @@ module.exports = {
   mode: PRODUCTION_MODE ? 'production' : 'development',
   entry: {
     'pttchrome': './src/entry.js',
+  },
+  // React/jQuery are imported in source but provided as CDN globals (loaded by
+  // <script> tags in src/dev.html) rather than bundled. bootstrap (a jQuery
+  // plugin) and hammerjs are global-only (no import) so they need no entry here.
+  // Replaces webpack-cdn-plugin, removed to clear its transitive request/
+  // tough-cookie Dependabot alerts (#9/#10). See docs/handoff.
+  externals: {
+    react: 'React',
+    'react-dom': 'ReactDOM',
+    jquery: 'jQuery',
   },
   output: {
     path: path.join(__dirname, 'dist/assets/'),
@@ -124,38 +133,6 @@ module.exports = {
       inject: 'head',
       template: './src/dev.html',
       filename: '../index.html'
-    }),
-    new WebpackCdnPlugin({
-      crossOrigin: 'anonymous',
-      modules: [
-        {
-          // jQuery must be loaded before bootstrap.
-          name: 'jquery',
-          var: 'jQuery',
-          path: 'dist/jquery.min.js',
-        },
-        {
-          name: 'bootstrap',
-          var: 'bootstrap',
-          path: 'dist/js/bootstrap.min.js',
-          style: 'dist/css/bootstrap.min.css',
-        },
-        {
-          name: 'hammerjs',
-          var: 'Hammer',
-          path: 'hammer.min.js',
-        },
-        {
-          name: 'react',
-          var: 'React',
-          path: 'umd/react.production.min.js',
-        },
-        {
-          name: 'react-dom',
-          var: 'ReactDOM',
-          path: 'umd/react-dom.production.min.js',
-        },
-      ],
     })
   ].concat(PRODUCTION_MODE ? [] : [
     new HtmlWebpackHarddiskPlugin()

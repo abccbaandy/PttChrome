@@ -1,8 +1,8 @@
 # 收尾剩餘 Dependabot alerts（yarn1 限制 → 建議遷 yarn4）
 
-STATUS: TODO（step 0 DONE；剩 step 2/3 + bootstrap）
+STATUS: TODO（step 0+2 DONE；剩 step 3 + bootstrap）
 SCOPE: 上一輪（commit e9bd09e + js-yaml/picomatch lock refresh）已關 #13/#1/#8/#21/#34/#45/#46/#25/#37。
-本輪 **step 0 DONE**：移除 firebase-tools devDep、emulator 改 Docker（見下方 step 0）。
+本輪 **step 0 DONE**（移除 firebase-tools、emulator 改 Docker）+ **step 2 DONE**（移除 webpack-cdn-plugin → 清 #9/#10/uuid@3.4.0）。
 本 md 處理**剩餘**且**無法用 yarn1 乾淨修**的 alert。全部 dev/build scope 或 runtime-但無修補版，**實際風險低**。
 
 ## 核心限制（先讀，否則會重蹈覆轍）
@@ -18,13 +18,15 @@ step 0 移除 firebase-tools 後，用 `yarn why` 重新確認來源（已驗證
 | # | 套件 | sev/scope | 來源（移除 fb-tools 後） | 為何難修 | 建議 |
 |---|---|---|---|---|---|
 | #3 | node-fetch <2.6.7 | high / 名義 runtime | `recompose#fbjs#isomorphic-fetch@2.2.1#node-fetch@1.7.3`（fb-tools 的 node-fetch 2/3 已隨移除消失，僅剩此 1.x）| isomorphic-fetch@2 綁 node-fetch@^1.0.1（無 1.x 修補版，跨 major resolution 會破壞）| **實質不可達**：isomorphic-fetch 的 browser field→whatwg-fetch，node-fetch **不進 browser bundle**（grep entry chunk 無）。真要消：移/換 recompose（0.26.0 已停更）或 yarn4 override |
-| #43 | uuid <11.1.1 | med / dev | `webpack-dev-server#sockjs#uuid@8.3.2` + `webpack-cdn-plugin#sri-create#request#uuid@3.4.0`（fb-tools 的 gaxios#uuid@9 已消失）| 多 major 並存 | uuid@3.4.0 隨 step 2 消；uuid@8.3.2（dev-server）待 yarn4 override |
+| #43 | uuid <11.1.1 | med / dev | step 2 後**僅剩** `webpack-dev-server#sockjs#uuid@8.3.2`（uuid@3.4.0/9 已消失）| 多 major 並存 | uuid@8.3.2（dev-server）待 yarn4 override |
 | #44 | js-yaml ≤4.1.1 | med / dev | 4.x 線（tree 已 **4.2.0** 修補）| — | 等下次掃描自動關；未關再查 |
-| #10 | tough-cookie <4.1.3 | med / dev | `webpack-cdn-plugin#sri-create#request#tough-cookie@2.5.0` | request 上 2.x→4.x major，破壞風險 | 隨 step 2 消滅 |
-| #9 | request ≤2.88.2 | med / dev | `webpack-cdn-plugin@3.3.1 → sri-create → request@2.88.2` | request **無任何修補版**（2.88.2 已是 last、deprecated）| 只能**移除 webpack-cdn-plugin**（step 2）|
+| ~~#10~~ | ~~tough-cookie <4.1.3~~ | — | **step 2 已消滅**（來源 webpack-cdn-plugin#request 已移除；剩 tough-cookie@^4.1.2 patched）| — | ✅ DONE |
+| ~~#9~~ | ~~request ≤2.88.2~~ | — | **step 2 已消滅**（移除 webpack-cdn-plugin → request/sri-create 整條離開 lockfile）| — | ✅ DONE |
 | #22/#23 | bootstrap 3.4.1 | med / runtime | 直接 dep | **無修補版**（3.x 全系列受影響），UI 綁 BS3（見 `bootstrap_css_guard.offline.spec.js`）| out of scope，除非遷 BS4/5（大工程）|
 
-**step 0 對 alert 的實際效果**：firebase-tools 整棵子樹（node-fetch 2/3、gaxios#uuid@9、update-notifier-cjs、tough-cookie@4.x 那批的 fb-tools 來源等）連同**未來 firebase-tools 漏洞**一次離開 lockfile。但 #3/#43 **不會全關**——node-fetch@1.7.3、uuid@8.3.2/3.4.0 另有 recompose/webpack 來源。push 後以下次 dependabot 掃描為準確認哪些真關閉。
+**step 0 對 alert 的實際效果**：firebase-tools 整棵子樹（node-fetch 2/3、gaxios#uuid@9、update-notifier-cjs 等）連同**未來 firebase-tools 漏洞**一次離開 lockfile。但 #3/#43 **不會全關**——node-fetch@1.7.3 另有 recompose/fbjs 來源、uuid@8.3.2 另有 webpack-dev-server 來源。
+**step 2 對 alert 的實際效果**：移除 webpack-cdn-plugin → `request`/`sri-create`/`tough-cookie@~2.5.0`/`uuid@3.4.0` 整批離開 lockfile → **#9/#10 關閉**、#43 的 uuid@3.4.0 路徑消失（僅餘 dev-server 的 uuid@8.3.2）。
+push 後以下次 dependabot 掃描為準確認哪些真關閉。
 
 ## 建議實作方向 + 順序
 
@@ -71,11 +73,14 @@ step 0 移除 firebase-tools 後，用 `yarn why` 重新確認來源（已驗證
 - 註：#3 的 `isomorphic-fetch@1.x` 那條可能仍殘留（深埋 update-notifier-cjs），升完再查 `dependabot/alerts/3` 是否真關。
 </details>
 
-### 2.（中風險、可選，下一步）移除 `webpack-cdn-plugin` → 清 #9 + #10 + uuid@3.4.0
-- 現況：`webpack.config.js:128` 用它把 React/jQuery/Bootstrap externalize 到 CDN（見 `new WebpackCdnPlugin({...})`）。
-- 替代：改用 webpack 原生 `externals`（map `react→React` 等）+ 在 HTML template 手動注入對應 CDN `<script>`（含 SRI 可選）。或改本地打包（會變大、失去 CDN 快取，不建議）。
-- **影響部署 bundle 與首屏載入** → 改後**必跑 e2e**（live + offline），確認 React/jQuery/Bootstrap 仍正確載入、畫面不爆。
-- 收益僅 #9 + #10（皆 med、dev-only），ROI 偏低 → 排在 firebase-tools 之後，視意願做。
+### 2. ✅ DONE（2026-06）：移除 `webpack-cdn-plugin` → 清 #9 + #10 + uuid@3.4.0
+**已實作**：
+- `webpack.config.js`：移除 `WebpackCdnPlugin`，改 webpack 原生 `externals`（`react→React`、`react-dom→ReactDOM`、`jquery→jQuery`；bootstrap/hammerjs 無 import 故不需 externals）。
+- `src/dev.html`：head 手動注入 CDN `<script>`/`<link>`（unpkg），版本用 `require('<pkg>/package.json').version` 取（單一來源＝installed 版本，免 drift）。順序 jQuery→bootstrap→hammer→react→react-dom，皆 parse-time，在 deferred bundle 之前。`crossorigin=anonymous`（同原 plugin；SRI 未加＝維持原行為，原 plugin 也沒開）。
+- `package.json`：移除 `webpack-cdn-plugin` devDep → `request`/`sri-create`/`tough-cookie@~2.5.0`/`uuid@3.4.0` 整批離開 lockfile。
+- 文件：`docs/pttchrome-research.md` 驗證表第 4 列更新。
+- **驗證全綠**：build ✅、unit 223 ✅、offline-e2e 23 ✅、live-e2e 11 ✅（easy-reading+enhance，連真 PTT 自動登入，React/jQuery/bootstrap/hammer CDN 全域正常）。
+- 註：offline-e2e 首跑曾單發 flaky（dev server 冷啟動 bundle 未完成時測 layout），隔離重跑+完整重跑皆綠，非本變更所致。
 
 ### 3.（戰略、最後）yarn1 → yarn4 遷移
 **動機**：上面 #3/#43 等「多 major 並存」漏洞，yarn1 無法 surgical 修（bare resolution 跨 major 壓制、scoped path 不生效）。yarn3/4 的 `resolutions`＋npm 風格 `overrides` 支援**可靠的巢狀/路徑指定**，能「只把 request 的 form-data 釘 2.5.6、其餘走 4.0.6」這種精準操作，根治本類問題。
