@@ -1,9 +1,22 @@
 # 收尾剩餘 Dependabot alerts（yarn1 限制 → 建議遷 yarn4）
 
-STATUS: TODO（step 0+2 DONE；剩 step 3 + bootstrap）
+STATUS: 近完成（step 0+2 DONE + #3/#43/#44 已用 resolution 修，待 dependabot 重掃確認）；**僅剩 bootstrap #22/#23 won't-fix**。step 3（yarn4）已不需要。
 SCOPE: 上一輪（commit e9bd09e + js-yaml/picomatch lock refresh）已關 #13/#1/#8/#21/#34/#45/#46/#25/#37。
-本輪 **step 0 DONE**（移除 firebase-tools、emulator 改 Docker）+ **step 2 DONE**（移除 webpack-cdn-plugin → 清 #9/#10/uuid@3.4.0）。
-本 md 處理**剩餘**且**無法用 yarn1 乾淨修**的 alert。全部 dev/build scope 或 runtime-但無修補版，**實際風險低**。
+本輪：**step 0 DONE**（移除 firebase-tools、emulator 改 Docker）+ **step 2 DONE**（移除 webpack-cdn-plugin → 清 #9/#10）+ **step 2.5 DONE**（#3/#43/#44 用 yarn1 resolution 修，見下）。
+
+## ⭐ 關鍵領悟（推翻原 plan 的「非 yarn4 不可」結論）
+handoff 原本判定 #3/#43/#44 必須遷 yarn4 才能 surgical 修，理由是「yarn1 bare resolution 跨 major 壓制」。
+**但那是當時多 major 並存才危險**。step 0+2 移除 firebase-tools/webpack-cdn-plugin 後，這三個套件**各只剩單一 major/消費者**：
+- `node-fetch@1.7.3` ← `recompose#fbjs#isomorphic-fetch`（單一）
+- `uuid@8.3.2` ← `webpack-dev-server#sockjs`（單一）
+- `js-yaml@3.14.2` ← `@istanbuljs/load-nyc-config`（單一；注意 handoff 舊記錄誤寫「已 4.2.0」，實為 3.14.2，故 #44 一直沒自動關）
+
+→ 此時 bare resolution **自動變精準手術**（只有一個版本可壓）。逐一核對消費者 source 確認 API 相容後直接壓版：
+```json
+"resolutions": { "node-fetch": "^2.6.7", "uuid": "^11.1.1", "js-yaml": "^4.2.0" }
+```
+相容性核對（已讀消費者 source）：isomorphic-fetch 用 `require('node-fetch')`+`.Response`（2.x 同 API，且不進 browser bundle）；sockjs 用 `require('uuid').v4`（11 具名匯出相容）；load-nyc-config 用 `require('js-yaml').load()`（3/4 都有，4 的 load=舊 safeLoad）。
+驗證：build/unit(223)/offline-e2e(23，dev-server+sockjs 用 uuid11 正常啟動) 全綠。resolved：js-yaml 4.2.0 / node-fetch 2.7.0 / uuid 11.1.1。
 
 ## 核心限制（先讀，否則會重蹈覆轍）
 **yarn1 的 bare `resolutions` 會把該套件「所有 major」壓成同一版本**，不是只動目標那條 major line。
@@ -17,9 +30,9 @@ SCOPE: 上一輪（commit e9bd09e + js-yaml/picomatch lock refresh）已關 #13/
 step 0 移除 firebase-tools 後，用 `yarn why` 重新確認來源（已驗證，2026-06）：
 | # | 套件 | sev/scope | 來源（移除 fb-tools 後） | 為何難修 | 建議 |
 |---|---|---|---|---|---|
-| #3 | node-fetch <2.6.7 | high / 名義 runtime | `recompose#fbjs#isomorphic-fetch@2.2.1#node-fetch@1.7.3`（fb-tools 的 node-fetch 2/3 已隨移除消失，僅剩此 1.x）| isomorphic-fetch@2 綁 node-fetch@^1.0.1（無 1.x 修補版，跨 major resolution 會破壞）| **實質不可達**：isomorphic-fetch 的 browser field→whatwg-fetch，node-fetch **不進 browser bundle**（grep entry chunk 無）。真要消：移/換 recompose（0.26.0 已停更）或 yarn4 override |
-| #43 | uuid <11.1.1 | med / dev | step 2 後**僅剩** `webpack-dev-server#sockjs#uuid@8.3.2`（uuid@3.4.0/9 已消失）| 多 major 並存 | uuid@8.3.2（dev-server）待 yarn4 override |
-| #44 | js-yaml ≤4.1.1 | med / dev | 4.x 線（tree 已 **4.2.0** 修補）| — | 等下次掃描自動關；未關再查 |
+| ~~#3~~ | ~~node-fetch <2.6.7~~ | high | **step 2.5 已修**：resolution `node-fetch:^2.6.7` → 2.7.0（單一消費者 isomorphic-fetch，API 相容，且本就不進 browser bundle）| — | ✅ DONE（待重掃）|
+| ~~#43~~ | ~~uuid <11.1.1~~ | med / dev | **step 2.5 已修**：resolution `uuid:^11.1.1` → 11.1.1（單一消費者 sockjs，`require('uuid').v4` 相容）| — | ✅ DONE（待重掃）|
+| ~~#44~~ | ~~js-yaml ≤4.1.1~~ | med / dev | **step 2.5 已修**：resolution `js-yaml:^4.2.0` → 4.2.0（單一消費者 load-nyc-config，`.load()` 相容；原為 3.14.2）| — | ✅ DONE（待重掃）|
 | ~~#10~~ | ~~tough-cookie <4.1.3~~ | — | **step 2 已消滅**（來源 webpack-cdn-plugin#request 已移除；剩 tough-cookie@^4.1.2 patched）| — | ✅ DONE |
 | ~~#9~~ | ~~request ≤2.88.2~~ | — | **step 2 已消滅**（移除 webpack-cdn-plugin → request/sri-create 整條離開 lockfile）| — | ✅ DONE |
 | #22/#23 | bootstrap 3.4.1 | med / runtime | 直接 dep | **無修補版**（3.x 全系列受影響），UI 綁 BS3（見 `bootstrap_css_guard.offline.spec.js`）| out of scope，除非遷 BS4/5（大工程）|
@@ -82,17 +95,18 @@ push 後以下次 dependabot 掃描為準確認哪些真關閉。
 - **驗證全綠**：build ✅、unit 223 ✅、offline-e2e 23 ✅、live-e2e 11 ✅（easy-reading+enhance，連真 PTT 自動登入，React/jQuery/bootstrap/hammer CDN 全域正常）。
 - 註：offline-e2e 首跑曾單發 flaky（dev server 冷啟動 bundle 未完成時測 layout），隔離重跑+完整重跑皆綠，非本變更所致。
 
-### 3.（戰略、最後）yarn1 → yarn4 遷移
-**動機**：上面 #3/#43 等「多 major 並存」漏洞，yarn1 無法 surgical 修（bare resolution 跨 major 壓制、scoped path 不生效）。yarn3/4 的 `resolutions`＋npm 風格 `overrides` 支援**可靠的巢狀/路徑指定**，能「只把 request 的 form-data 釘 2.5.6、其餘走 4.0.6」這種精準操作，根治本類問題。
-- **但這是大工程，且抵觸現行慣例**：CLAUDE.md 明訂用 yarn1、`yarn.lock` v1、`packageManager: yarn@1.22.22`、corepack。遷移要動：
-  - lockfile 格式（v1 → berry `yarn.lock` 不同語法）、linker 選 `node-modules`（**勿用 PnP**，webpack5/babel/jest/playwright 對 PnP 相容性雷多）。
-  - `.yarnrc.yml`（`nodeLinker: node-modules`、`enableGlobalCache` 等）。
-  - `package.json` `packageManager` → `yarn@4.x`；CI workflow（`deploy.yml`）的 `corepack enable` / install 步驟。
-  - husky/lint-staged、所有 `yarn xxx` script 行為差異複查。
-- **建議順序**：先 0.（firebase-tools 升版治標，或評估隔離/Docker 治本）+ 2.（移 cdn-plugin）能清的清掉，**剩下真的非 yarn4 不可的才評估遷移**。多數剩餘 alert 是 dev-only 低風險，遷 yarn4 的 churn/風險很可能**不划算** → 先確認「還剩哪些、嚴重度、是否 runtime」再決定，不要為了湊綠而遷。
-- 遷移本身做法：`corepack prepare yarn@4.x --activate` → `yarn set version 4.x` → 建 `.yarnrc.yml`（`nodeLinker: node-modules`）→ `yarn install` 重生 lock → 全測試矩陣（unit/integration/offline-e2e/live-e2e）+ build + 本機 `yarn start` 連真 PTT 冒煙 → 改 CI。**改後務必跑 live e2e**（渲染/連線路徑）。
+### 3. ⊘ 不需要：yarn1 → yarn4 遷移
+原 plan 把 yarn4 當作 #3/#43/#44 的唯一解，但 step 2.5 已用 yarn1 resolution 修掉（多 major 並存消失後 bare resolution 即精準）。
+**剩餘唯一 alert 是 bootstrap #22/#23，yarn4 也修不了（無修補版）** → 遷 yarn4 的 churn/風險毫無收益，**放棄**。
+（若未來又出現「多 major 並存且需 path-specific override」的 alert，再重新評估遷移；做法見 git 歷史此段舊版。）
+
+## bootstrap #22/#23（唯一剩餘，won't-fix）
+- bootstrap 3.4.1，advisory 範圍涵蓋整個 1.4.0~3.4.1，**無修補版**（fixed=None）。
+- UI 綁 BS3（`bootstrap_css_guard.offline.spec.js` 守護），升 BS4/5 是大工程（class 重命名、JS plugin API 變更、jQuery 解耦）。
+- 結論：out of scope。要消除只能遷 BS4/5 或拔掉 bootstrap，皆屬獨立功能級任務，非本 dependabot 收尾範圍。
 
 ## 完成定義
-- 做完每步後，更新本 md 的決策表（移除已關 alert）；若所有剩餘 alert 都關閉或確認 won't-fix，刪掉本 md。
+- #3/#43/#44 待 dependabot 重掃確認關閉（resolution 已 push）。確認後本 md 只剩 bootstrap won't-fix 記錄。
+- bootstrap #22/#23 確認 won't-fix（已記錄上方）→ 屆時可刪本 md，或保留 bootstrap 段當未來 BS 升級的起點。
 - 每步 push 後查 CI（`deploy.yml` 全綠，integration flaky 處置見 CLAUDE.md）。
 - 純安全修補、無使用者可見新功能 → **不需動 README**。
