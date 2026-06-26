@@ -31,7 +31,7 @@ step 0 移除 firebase-tools 後，用 `yarn why` 重新確認來源（已驗證
 ### 0. ✅ DONE（2026-06）：firebase-tools 移出 lockfile，emulator 改 Docker —— 治本
 **已實作（方案 A）**：
 - `package.json`：移除 `firebase-tools` devDep；`test:integration` → `node scripts/run-integration.mjs`。
-- `scripts/run-integration.mjs`（新）：`docker run -d` pinned image `andreysenov/firebase-tools:15.22.3-node-22`（內含 firebase-tools+OpenJDK），掛 `firebase.json`/`firestore.rules`/`firestore.indexes.json`（ro）→ `waitPort` 輪詢 auth:9099/firestore:8089 → host 跑 jest（注入 `*_EMULATOR_HOST` env）→ `finally` 拆容器。
+- `scripts/run-integration.mjs`（新）：`docker run -d` pinned image `andreysenov/firebase-tools:15.22.3-node-22`（內含 firebase-tools+OpenJDK），掛 `firebase.json`/`firestore.rules`/`firestore.indexes.json`（ro）→ `waitHttp`（HTTP 健康檢查，非 TCP） 輪詢 auth:9099/firestore:8089 → host 跑 jest（注入 `*_EMULATOR_HOST` env）→ `finally` 拆容器。
 - `firebase.json`：auth/firestore emulator 加 `host: 0.0.0.0`（容器埠映射用）。
 - `.github/workflows/test.yml`：integration job 移除 setup-java + jar cache + `setup:emulators:firestore`，改靠 Docker（ubuntu runner 預裝 Docker）。
 - 文件：CLAUDE.md「測試/CI」段、`docs/pref-sync-firestore.md`「測試」「為何 Docker」「deploy 改 npx」更新。

@@ -55,7 +55,7 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - git：**不開新功能分支**，直接在現有分支（`dev`）修改與 commit。
 - **push 後必查 CI**：每次 push 完都要確認 GitHub Actions（`Deploy to GitHub Pages` workflow，含 unit／integration／offline-e2e）有 pass，不能 push 完就收工。無 `gh` CLI，用 GitHub API + env `GH_TOKEN` 查：
   `GET /repos/abccbaandy/PttChrome/actions/runs?branch=dev&per_page=3`（看最新 run 的 `conclusion`）→ 失敗再 `.../actions/runs/{id}/jobs` 找失敗 job/step → `.../actions/jobs/{id}/logs` 抓 log。
-  - **integration job（Firebase Emulator in Docker）偶發 timeout** 是已知 flaky（CI 冷啟動拉 Docker image + 首次 Firestore 寫入超過 poll deadline，症狀 `waitForCloud timeout: upload`）。緩解：poll deadline env 化（`INTEGRATION_TIMEOUT_MS`）、CI `jest.retryTimes(2)`、emulator 就緒輪詢（`scripts/run-integration.mjs` `waitPort`）。若仍紅：本機需 **Docker** 才能 `yarn test:integration`（無 Docker 則只能靠 CI），確認非真錯後再 `POST /repos/.../actions/runs/{id}/rerun-failed-jobs`。
+  - **integration job（Firebase Emulator in Docker）偶發 timeout** 是已知 flaky（CI 冷啟動拉 Docker image + 首次 Firestore 寫入超過 poll deadline，症狀 `waitForCloud timeout: upload`）。緩解：poll deadline env 化（`INTEGRATION_TIMEOUT_MS`）、CI `jest.retryTimes(2)`、emulator 就緒輪詢（`scripts/run-integration.mjs` `waitHttp`（HTTP 健康檢查，非 TCP））。若仍紅：本機需 **Docker** 才能 `yarn test:integration`（無 Docker 則只能靠 CI），確認非真錯後再 `POST /repos/.../actions/runs/{id}/rerun-failed-jobs`。
 - 增強功能整合的活躍陷阱（async/await 禁用、讀畫面用 `buf.getRowText` 而非 innerText 等）見 `docs/enhanced-addon.md`「踩坑筆記」A 段。
 - 渲染已統一單路徑（兩模式都走 `<Screen>`）見 `docs/easy-reading.md`「render 單軌」。改渲染路徑前先讀它。
 - 改渲染/畫面易壞 code 必跑 e2e（見「測試」段強制規範）。

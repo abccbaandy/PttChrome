@@ -10,7 +10,6 @@
 // mounted (read-only) into the image's home dir, so the emulator's debug logs
 // write inside the container (no repo pollution, no mount-permission issues).
 import { spawnSync } from "node:child_process";
-import net from "node:net";
 
 const IMAGE = "andreysenov/firebase-tools:15.22.3-node-22"; // bundles OpenJDK
 const CONTAINER = "ptt-fb-emu";
@@ -23,23 +22,26 @@ function rmContainer() {
   spawnSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
 }
 
-function waitPort(port, timeoutMs) {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Poll an HTTP endpoint until it answers 200. A bare TCP check is unreliable
+// here: Docker's port proxy accepts connections on the published host port
+// *before* the emulator inside the container starts listening, so a connect
+// check passes instantly and jest then races a not-yet-ready emulator. The
+// emulators answer real HTTP only once booted (auth root -> {"authEmulator":
+// {"ready":true}}, firestore root -> "Ok").
+async function waitHttp(label, url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
-  return new Promise((resolve, reject) => {
-    const tryOnce = () => {
-      const sock = net.connect(port, "127.0.0.1");
-      sock.once("connect", () => {
-        sock.destroy();
-        resolve();
-      });
-      sock.once("error", () => {
-        sock.destroy();
-        if (Date.now() > deadline) reject(new Error(`port ${port} not ready in ${timeoutMs}ms`));
-        else setTimeout(tryOnce, 500);
-      });
-    };
-    tryOnce();
-  });
+  for (;;) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) return;
+    } catch {
+      // not up yet
+    }
+    if (Date.now() > deadline) throw new Error(`${label} not ready in ${timeoutMs}ms (${url})`);
+    await sleep(500);
+  }
 }
 
 async function main() {
@@ -73,8 +75,8 @@ async function main() {
   }
 
   try {
-    await waitPort(AUTH_PORT, 120000);
-    await waitPort(FIRESTORE_PORT, 120000);
+    await waitHttp("auth emulator", `http://127.0.0.1:${AUTH_PORT}/`, 120000);
+    await waitHttp("firestore emulator", `http://127.0.0.1:${FIRESTORE_PORT}/`, 120000);
   } catch (e) {
     console.error("Emulator failed to become ready:", e.message);
     spawnSync("docker", ["logs", CONTAINER], { stdio: "inherit" });
