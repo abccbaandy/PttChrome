@@ -1,6 +1,6 @@
 # 收尾剩餘 Dependabot alerts（yarn1 限制 → 建議遷 yarn4）
 
-STATUS: 近完成（step 0+2 DONE + #3/#43/#44 已用 resolution 修，待 dependabot 重掃確認）；**僅剩 bootstrap #22/#23 won't-fix**。step 3（yarn4）已不需要。
+STATUS: 完成（step 0+2 DONE + #3/#43/#44 已用 resolution 修，**dependabot 重掃已確認關閉**，2026-06）；**open 只剩 bootstrap #22/#23 won't-fix**。step 3（yarn4）已不需要。本 md 僅保留 bootstrap 段當未來 BS 升級起點。
 SCOPE: 上一輪（commit e9bd09e + js-yaml/picomatch lock refresh）已關 #13/#1/#8/#21/#34/#45/#46/#25/#37。
 本輪：**step 0 DONE**（移除 firebase-tools、emulator 改 Docker）+ **step 2 DONE**（移除 webpack-cdn-plugin → 清 #9/#10）+ **step 2.5 DONE**（#3/#43/#44 用 yarn1 resolution 修，見下）。
 
