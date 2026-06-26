@@ -39,11 +39,12 @@
 
 ## 測試（官方 Firebase Emulator Suite）
 
-`yarn test:integration` = `firebase emulators:exec --only auth,firestore --project demo-pttchrome "jest -c jest.integration.config.js"`。真 modular SDK 連本機 emulator、`firestore.rules` 實際 enforce，**無 mock/假 firebase**；latency compensation（`hasPendingWrites`）、離線快取（`fromCache`）、permission-denied 都由真 SDK 產生。
+`yarn test:integration` = `node scripts/run-integration.mjs`：在 **Docker** 跑 emulator（auth+firestore），jest 在 host 連容器埠。真 modular SDK 連本機 emulator、`firestore.rules` 實際 enforce，**無 mock/假 firebase**；latency compensation（`hasPendingWrites`）、離線快取（`fromCache`）、permission-denied 都由真 SDK 產生。
 
-- 前置：**Java 11+**（Firestore emulator 是 jar）：`winget install EclipseAdoptium.Temurin.21.JRE`。首跑自動下載 emulator jar（需網路）。
-- port：firestore **8089**（預設 8080 與 dev server 衝突）、auth 9099（`firebase.json` emulators 段）。
-- `demo-` 前綴 project id：firebase-tools 保證純離線、不需 `firebase login`、不可能打到正式專案。
+- **為何 Docker**：`firebase-tools` 反覆把 transitive Dependabot alert（node-fetch/uuid/tough-cookie）拖進 committed lockfile。改用 pinned image `andreysenov/firebase-tools:15.22.3-node-22`（內含 firebase-tools + OpenJDK），firebase-tools 完全移出 `package.json`/`yarn.lock` → 整棵子樹的 alert 連同未來漏洞一次消失。prod 設定同步用的是 `firebase`（client SDK，`dependencies`），與 firebase-tools 無關，不受影響。
+- 前置：**Docker**（本機跑 integration 必需；無 Docker 則只能靠 CI 驗）。emulator 設定檔（`firebase.json`/`firestore.rules`/`firestore.indexes.json`）以 read-only 掛進容器 `/home/node`；jest 透過 `FIRESTORE_EMULATOR_HOST`/`FIREBASE_AUTH_EMULATOR_HOST` env 連線（`tests/integration/setup.js`）。orchestration 細節：`scripts/run-integration.mjs`（拉起容器 → `waitPort` 輪詢就緒 → 跑 jest → `finally` 拆容器）。
+- port：firestore **8089**（預設 8080 與 dev server 衝突）、auth 9099（`firebase.json` emulators 段，已設 `host: 0.0.0.0` 供容器埠映射）。
+- `demo-` 前綴 project id：保證純離線、不需 `firebase login`、不可能打到正式專案。
 - 登入：auth emulator 接受**假 unsigned Google ID token**（官方功能）——`signInWithCredential(auth, GoogleAuthProvider.credential('{"sub":...,"email":...}'))`。`signInWithPopup` 需要真瀏覽器 UI，headless 不可行 → `prefSync.signIn(onCloudValues, authenticate)` 第二參數是測試注入縫；production 呼叫端不傳（走 popup），流程其餘部分（旗標、attach、merge、callback）全是真路徑。
 - 隔離策略：**每個測試換新 uid**（token 換 `sub`）而非清庫——(1) REST 清庫清不掉主 client 的 in-memory cache，殘留 doc 會污染下個測試的 fromCache snapshot；(2) 刪 auth 帳號會讓另一個 client 的 token 失效。換 uid 兩個都繞開。
 - 「另一台裝置」= 第二個 SDK app instance（`initializeApp(cfg, "seeder")`）以同 `sub` 登入（同 uid → 過 rules）讀寫 `users/{uid}`。
@@ -64,6 +65,8 @@ firebase apps:sdkconfig web --project <project-id>      # 貼進 src/js/firebase
 firebase firestore:databases:create "(default)" --location=asia-east1 --project <project-id>
 firebase deploy --only firestore:rules
 ```
+
+> firebase-tools 已不在 repo deps（見上方「為何 Docker」）。這些一次性手動指令改用 `npx firebase-tools@15 <cmd>`（需 `firebase login`）或進 Docker image 跑。日常 integration 測試不需要這些（emulator 走 `demo-` 離線 project）。
 
 踩坑：
 - `firestore:databases:create` 首次會 403（Cloud Firestore API 未啟用）；啟用後要等 1–3 分鐘傳播再重試。無 gcloud 時可用 firebase CLI 的 OAuth token 呼叫 serviceusage REST 啟用。

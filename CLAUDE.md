@@ -28,7 +28,7 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
   (`comment_parse.test.js`、`pref_sync_logic.test.js`) + Row 渲染 (`row_render.test.js`，react-test-renderer + 假 ASCII TermChar)。
   增強功能的逐列判斷一律放 `comment_parse.annotateComment` 並在此回歸守護（e2e 素材不穩，純邏輯先測）。
 - **Integration（雲端同步流程）**：`yarn test:integration`（jest + 官方 **Firebase Emulator Suite**：真 modular SDK
-  + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）。需 **Java 11+**（Firestore emulator 是 jar）。
+  + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）。emulator 跑在 **Docker**（pinned `andreysenov/firebase-tools`，內含 firebase-tools+JDK；jest 在 host 連容器埠），所以**本機跑需 Docker**（不再需本機裝 Java/firebase-tools）。orchestration 見 `scripts/run-integration.mjs`。
   `tests/integration/pref_sync.test.js`：啟動還原/他機推播/echo skip/offline 守門/signIn/signOut/憑證去敏；
   e2e 不連 Firebase，同步流程只能在這驗。細節見 `docs/pref-sync-firestore.md`。
 - **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額常滿會 fast-fail）。
@@ -55,7 +55,7 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - git：**不開新功能分支**，直接在現有分支（`dev`）修改與 commit。
 - **push 後必查 CI**：每次 push 完都要確認 GitHub Actions（`Deploy to GitHub Pages` workflow，含 unit／integration／offline-e2e）有 pass，不能 push 完就收工。無 `gh` CLI，用 GitHub API + env `GH_TOKEN` 查：
   `GET /repos/abccbaandy/PttChrome/actions/runs?branch=dev&per_page=3`（看最新 run 的 `conclusion`）→ 失敗再 `.../actions/runs/{id}/jobs` 找失敗 job/step → `.../actions/jobs/{id}/logs` 抓 log。
-  - **integration job（Firebase Emulator）偶發 timeout** 是已知 flaky（CI 冷啟動下載 emulator jar，首次 Firestore 寫入超過 poll deadline，症狀 `waitForCloud timeout: upload`）。已三層緩解：`actions/cache` 快取 jar、poll deadline env 化（`INTEGRATION_TIMEOUT_MS`）、CI `jest.retryTimes(2)`。若仍紅：先本機 `yarn test:integration`（需 Java 21+，<5s 全綠）確認非真錯，再 `POST /repos/.../actions/runs/{id}/rerun-failed-jobs`。
+  - **integration job（Firebase Emulator in Docker）偶發 timeout** 是已知 flaky（CI 冷啟動拉 Docker image + 首次 Firestore 寫入超過 poll deadline，症狀 `waitForCloud timeout: upload`）。緩解：poll deadline env 化（`INTEGRATION_TIMEOUT_MS`）、CI `jest.retryTimes(2)`、emulator 就緒輪詢（`scripts/run-integration.mjs` `waitPort`）。若仍紅：本機需 **Docker** 才能 `yarn test:integration`（無 Docker 則只能靠 CI），確認非真錯後再 `POST /repos/.../actions/runs/{id}/rerun-failed-jobs`。
 - 增強功能整合的活躍陷阱（async/await 禁用、讀畫面用 `buf.getRowText` 而非 innerText 等）見 `docs/enhanced-addon.md`「踩坑筆記」A 段。
 - 渲染已統一單路徑（兩模式都走 `<Screen>`）見 `docs/easy-reading.md`「render 單軌」。改渲染路徑前先讀它。
 - 改渲染/畫面易壞 code 必跑 e2e（見「測試」段強制規範）。

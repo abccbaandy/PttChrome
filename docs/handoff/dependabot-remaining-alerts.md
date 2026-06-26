@@ -1,7 +1,8 @@
 # 收尾剩餘 Dependabot alerts（yarn1 限制 → 建議遷 yarn4）
 
-STATUS: TODO
-SCOPE: 上一輪（commit e9bd09e + 本輪 js-yaml/picomatch lock refresh）已關 #13/#1/#8/#21/#34/#45/#46/#25/#37。
+STATUS: TODO（step 0 DONE；剩 step 2/3 + bootstrap）
+SCOPE: 上一輪（commit e9bd09e + js-yaml/picomatch lock refresh）已關 #13/#1/#8/#21/#34/#45/#46/#25/#37。
+本輪 **step 0 DONE**：移除 firebase-tools devDep、emulator 改 Docker（見下方 step 0）。
 本 md 處理**剩餘**且**無法用 yarn1 乾淨修**的 alert。全部 dev/build scope 或 runtime-但無修補版，**實際風險低**。
 
 ## 核心限制（先讀，否則會重蹈覆轍）
@@ -13,18 +14,32 @@ SCOPE: 上一輪（commit e9bd09e + 本輪 js-yaml/picomatch lock refresh）已�
 - #25/#37 之所以能修，是因為它們的 vulnerable copy 與 patched copy **同 major**，靠「讓 stale `^` 範圍自然重解到同 major 最新 patch」達成（lock refresh，非 resolution）。多 major 並存的就沒這條路。
 
 ## 剩餘 alerts（決策表）
-| # | 套件 | sev/scope | 來源 | 為何難修 | 建議 |
+step 0 移除 firebase-tools 後，用 `yarn why` 重新確認來源（已驗證，2026-06）：
+| # | 套件 | sev/scope | 來源（移除 fb-tools 後） | 為何難修 | 建議 |
 |---|---|---|---|---|---|
-| #3 | node-fetch <2.6.7 | high / runtime | `firebase-tools → update-notifier-cjs → isomorphic-fetch@1.x → node-fetch@1.7.3` | tree 有 node-fetch 1/2/3 三 major 並存；isomorphic-fetch@1.x 綁 node-fetch@1.x | 升 firebase-tools 或 yarn4 scoped override |
-| #43 | uuid <11.1.1 | med / dev | `firebase-tools#gaxios#uuid@9.0.1`（及 8.3.2/3.4.0）| uuid 3/8/9/11/14 五 major 並存 | 升 firebase-tools / yarn4 override |
-| #44 | js-yaml ≤4.1.1 | med / dev | 4.x 線 | tree 已是 **4.2.0**（已修補）→ 應**下次掃描自動關**，無需動作 | 等自動關；未關再查 |
-| #10 | tough-cookie <4.1.3 | med / dev | `request#tough-cookie@2.5.0` | request 上 2.x→4.x 是 **major**，破壞風險 | 隨「移除 webpack-cdn-plugin」一起消滅 |
-| #9 | request ≤2.88.2 | med / dev | `webpack-cdn-plugin@3.3.1 → sri-create → request@2.88.2` | request **無任何修補版**（2.88.2 已是 last、deprecated）| 只能**移除 webpack-cdn-plugin** |
+| #3 | node-fetch <2.6.7 | high / 名義 runtime | `recompose#fbjs#isomorphic-fetch@2.2.1#node-fetch@1.7.3`（fb-tools 的 node-fetch 2/3 已隨移除消失，僅剩此 1.x）| isomorphic-fetch@2 綁 node-fetch@^1.0.1（無 1.x 修補版，跨 major resolution 會破壞）| **實質不可達**：isomorphic-fetch 的 browser field→whatwg-fetch，node-fetch **不進 browser bundle**（grep entry chunk 無）。真要消：移/換 recompose（0.26.0 已停更）或 yarn4 override |
+| #43 | uuid <11.1.1 | med / dev | `webpack-dev-server#sockjs#uuid@8.3.2` + `webpack-cdn-plugin#sri-create#request#uuid@3.4.0`（fb-tools 的 gaxios#uuid@9 已消失）| 多 major 並存 | uuid@3.4.0 隨 step 2 消；uuid@8.3.2（dev-server）待 yarn4 override |
+| #44 | js-yaml ≤4.1.1 | med / dev | 4.x 線（tree 已 **4.2.0** 修補）| — | 等下次掃描自動關；未關再查 |
+| #10 | tough-cookie <4.1.3 | med / dev | `webpack-cdn-plugin#sri-create#request#tough-cookie@2.5.0` | request 上 2.x→4.x major，破壞風險 | 隨 step 2 消滅 |
+| #9 | request ≤2.88.2 | med / dev | `webpack-cdn-plugin@3.3.1 → sri-create → request@2.88.2` | request **無任何修補版**（2.88.2 已是 last、deprecated）| 只能**移除 webpack-cdn-plugin**（step 2）|
 | #22/#23 | bootstrap 3.4.1 | med / runtime | 直接 dep | **無修補版**（3.x 全系列受影響），UI 綁 BS3（見 `bootstrap_css_guard.offline.spec.js`）| out of scope，除非遷 BS4/5（大工程）|
+
+**step 0 對 alert 的實際效果**：firebase-tools 整棵子樹（node-fetch 2/3、gaxios#uuid@9、update-notifier-cjs、tough-cookie@4.x 那批的 fb-tools 來源等）連同**未來 firebase-tools 漏洞**一次離開 lockfile。但 #3/#43 **不會全關**——node-fetch@1.7.3、uuid@8.3.2/3.4.0 另有 recompose/webpack 來源。push 後以下次 dependabot 掃描為準確認哪些真關閉。
 
 ## 建議實作方向 + 順序
 
-### 0.（最高 CP，先評估）firebase-tools 隔離 / 移出 lockfile —— 治本
+### 0. ✅ DONE（2026-06）：firebase-tools 移出 lockfile，emulator 改 Docker —— 治本
+**已實作（方案 A）**：
+- `package.json`：移除 `firebase-tools` devDep；`test:integration` → `node scripts/run-integration.mjs`。
+- `scripts/run-integration.mjs`（新）：`docker run -d` pinned image `andreysenov/firebase-tools:15.22.3-node-22`（內含 firebase-tools+OpenJDK），掛 `firebase.json`/`firestore.rules`/`firestore.indexes.json`（ro）→ `waitPort` 輪詢 auth:9099/firestore:8089 → host 跑 jest（注入 `*_EMULATOR_HOST` env）→ `finally` 拆容器。
+- `firebase.json`：auth/firestore emulator 加 `host: 0.0.0.0`（容器埠映射用）。
+- `.github/workflows/test.yml`：integration job 移除 setup-java + jar cache + `setup:emulators:firestore`，改靠 Docker（ubuntu runner 預裝 Docker）。
+- 文件：CLAUDE.md「測試/CI」段、`docs/pref-sync-firestore.md`「測試」「為何 Docker」「deploy 改 npx」更新。
+- **prod 確認**：設定同步用 `firebase`（client SDK，`dependencies` ^12.14.0，`pref_sync.js` dynamic import），與 firebase-tools 無關 → 移除零影響。
+- **本機限制**：本機無 Docker → 本機無法跑 integration，靠 CI 驗（已與使用者確認）。本機驗過 build+unit(223) 綠。
+- **效果**：見上方決策表「step 0 對 alert 的實際效果」。
+
+<details><summary>原始評估（保留備查）</summary>
 **為何最高 CP**：firebase-tools 是 dev 依賴裡最大膨脹源，也是 #3/#43/#44/#10 的母套件；升級（step 1）只是治標（這批清完還會再噴新的）。
 **用途盤點（精準，已查）**：本專案 firebase-tools **只**做兩件事，皆 dev/CI，**絕不進 production bundle**：
 - `firebase emulators:exec --only auth,firestore`（`package.json:128` 的 `test:integration`，跑 Auth+Firestore emulator）
@@ -44,14 +59,19 @@ SCOPE: 上一輪（commit e9bd09e + 本輪 js-yaml/picomatch lock refresh）已�
 - 若只想止血又不想動 infra → 先 step 1 升版治標即可，**別為了消 dev-only alert 引入 Docker/失 pin**（同 ROI 邏輯）。
 - **務必保留**：`demo-` 前綴 project id（保證離線、不打正式專案）、`firestore.rules` 實際 enforce、真 SDK 無 mock 這幾個 integration 測試的核心性質（見 `docs/pref-sync-firestore.md`）。換任何方案後，`yarn test:integration` 等價行為（啟動還原/他機推播/permission-denied）必須照舊全綠。
 
-### 1.（低風險、優先）升 firebase-tools `^15.20.0 → ^15.22.3`
+</details>
+
+### 1. ~~升 firebase-tools~~ —— MOOT（step 0 已整個移除 firebase-tools，不再升版）
+<details><summary>原始 step 1（保留備查）</summary>
+升 firebase-tools `^15.20.0 → ^15.22.3`
 一次清掉 firebase-tools 子樹的 transitive 漏洞（**#43 uuid、#3 node-fetch 的 2.x 那批、#37/#44 類**），15.22.3 已宣告 `js-yaml ^4.2.0` 等較新範圍。
 - 動作：改 package.json devDeps → `yarn install` 重解子樹。
 - **風險**：firebase-tools 子樹龐大，重解會大幅改 lock；且 **integration emulator CI 本來就 flaky**（見 CLAUDE.md「integration job 偶發 timeout」）。
 - **驗證（必跑）**：本機 `yarn test:integration`（需 Java 21+，<5s 全綠才算過）→ build → unit → offline-e2e → push 後盯 integration job 兩三次 run 確認沒被搖出 flaky。
 - 註：#3 的 `isomorphic-fetch@1.x` 那條可能仍殘留（深埋 update-notifier-cjs），升完再查 `dependabot/alerts/3` 是否真關。
+</details>
 
-### 2.（中風險、可選）移除 `webpack-cdn-plugin` → 清 #9 + #10
+### 2.（中風險、可選，下一步）移除 `webpack-cdn-plugin` → 清 #9 + #10 + uuid@3.4.0
 - 現況：`webpack.config.js:128` 用它把 React/jQuery/Bootstrap externalize 到 CDN（見 `new WebpackCdnPlugin({...})`）。
 - 替代：改用 webpack 原生 `externals`（map `react→React` 等）+ 在 HTML template 手動注入對應 CDN `<script>`（含 SRI 可選）。或改本地打包（會變大、失去 CDN 快取，不建議）。
 - **影響部署 bundle 與首屏載入** → 改後**必跑 e2e**（live + offline），確認 React/jQuery/Bootstrap 仍正確載入、畫面不爆。
