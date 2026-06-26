@@ -54,8 +54,8 @@ export function wrapText(it, maxLen, enterChar) {
     // Convert special characters to spaces with the same width
     // and then we can get the width by the length of the converted string
     var grouplen = splited[i].replace(/[^\x00-\x7f]/g,"  ")
-                             .replace(/\t/,"    ")
-                             .replace(/\r|\n/,"")
+                             .replace(/\t/g,"    ")
+                             .replace(/\r|\n/g,"")
                              .length;
 
     if (splited[i] == '\r' || splited[i] == '\n')
