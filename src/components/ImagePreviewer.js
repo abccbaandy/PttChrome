@@ -1,3 +1,4 @@
+import React from "react";
 import { decode } from "base58";
 
 const noop = () => {};

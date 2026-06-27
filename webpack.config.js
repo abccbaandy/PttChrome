@@ -115,14 +115,6 @@ module.exports = {
     minimizer: ['...', new CssMinimizerPlugin()],
   },
   plugins: [
-    // Supplies a bundled `React` to every module that references the bare global
-    // (classic JSX runtime output, React.Component/createRef/Fragment, ...) now
-    // that React is no longer a CDN UMD global. ReactDOM is NOT provided here:
-    // React 19 moved createRoot to "react-dom/client", so react_root.js imports
-    // it explicitly instead.
-    new webpack.ProvidePlugin({
-      React: 'react',
-    }),
     new webpack.DefinePlugin({
       'process.env.PTTCHROME_PAGE_TITLE': JSON.stringify(process.env.PTTCHROME_PAGE_TITLE || 'PttChrome'),
       'process.env.DEFAULT_SITE': JSON.stringify(PRODUCTION_MODE ? 'wsstelnet://ws.ptt.cc/bbs' : 'wstelnet://localhost:8080/bbs'),
