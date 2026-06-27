@@ -5,6 +5,11 @@ const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const HtmlWebpackHarddiskPlugin = require('html-webpack-harddisk-plugin');
 
+// 真 react 的進入點絕對路徑，給 react_compat.js 取用（見下方 resolve.alias）。
+// 直接指檔案路徑可繞過 react@19 package.json `exports` 不允許 `react/index.js`
+// 子路徑的限制。
+const REACT_REAL = require.resolve('react');
+
 const DEVELOPER_MODE = process.env.NODE_ENV === 'development'
 const PRODUCTION_MODE = process.env.NODE_ENV !== 'development'
 
@@ -29,16 +34,27 @@ module.exports = {
   entry: {
     'pttchrome': './src/entry.js',
   },
-  // React/jQuery are imported in source but provided as CDN globals (loaded by
-  // <script> tags in src/dev.html) rather than bundled. hammerjs is global-only
-  // (no import) so it needs no entry here. bootstrap provides CSS only (CDN
-  // <link>); react-bootstrap 2 is a bundled import and needs no global.
-  // Replaces webpack-cdn-plugin, removed to clear its transitive request/
-  // tough-cookie Dependabot alerts (#9/#10). See docs/handoff.
+  // jQuery is imported in source but provided as a CDN global (loaded by a
+  // <script> tag in src/dev.html) rather than bundled; hammerjs is global-only
+  // (no import). React/react-dom are now BUNDLED (React 19 dropped the UMD
+  // build, so the old CDN-global + externals path is no longer viable). Source
+  // files that reference a bare `React` (classic JSX runtime, React.Component,
+  // React.createRef, ...) get it from the ProvidePlugin below instead of
+  // window.React. bootstrap provides CSS only (CDN <link>); react-bootstrap 2
+  // is a bundled import and needs no global.
   externals: {
-    react: 'React',
-    'react-dom': 'ReactDOM',
     jquery: 'jQuery',
+  },
+  resolve: {
+    alias: {
+      // 把裸 `react` 導到相容層，補回 React 19 移除的 createFactory（recompose@0.26
+      // 仍依賴它）。精確比對 `react$`：只攔 import "react"，不攔 react-dom/
+      // react/jsx-runtime 等子路徑。相容層自身從 react/index.js 取真 react，故無迴圈。
+      // 過渡橋接，recompose 改寫成 hooks 後（階段三）可連同移除。
+      react$: path.resolve(__dirname, 'src/js/react_compat.js'),
+      // 相容層用此 alias 取真 react，避免 react$ 把自身的 import 也攔成迴圈。
+      'react-real$': REACT_REAL,
+    },
   },
   output: {
     path: path.join(__dirname, 'dist/assets/'),
@@ -99,6 +115,14 @@ module.exports = {
     minimizer: ['...', new CssMinimizerPlugin()],
   },
   plugins: [
+    // Supplies a bundled `React` to every module that references the bare global
+    // (classic JSX runtime output, React.Component/createRef/Fragment, ...) now
+    // that React is no longer a CDN UMD global. ReactDOM is NOT provided here:
+    // React 19 moved createRoot to "react-dom/client", so react_root.js imports
+    // it explicitly instead.
+    new webpack.ProvidePlugin({
+      React: 'react',
+    }),
     new webpack.DefinePlugin({
       'process.env.PTTCHROME_PAGE_TITLE': JSON.stringify(process.env.PTTCHROME_PAGE_TITLE || 'PttChrome'),
       'process.env.DEFAULT_SITE': JSON.stringify(PRODUCTION_MODE ? 'wsstelnet://ws.ptt.cc/bbs' : 'wstelnet://localhost:8080/bbs'),
