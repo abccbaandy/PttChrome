@@ -39,7 +39,22 @@
 
 驗證全綠：`yarn build`（零警告，firebase lazy chunk 仍切出）+ `test:unit`(223，零 act 警告) + `test:e2e:offline`(27) + live e2e(12＝easy-reading 4＋enhance 7＋自動登入 1)。
 
-**未做（本輪外，另開一輪）**：`prettier ^1.19.1`→3.x（reformat 大量檔）、`husky ^4.2.3`→9.x、`lint-staged ^10`→15.x、`url.parse()` DEP0169（隨工具鏈升版才消）。
+## 階段二.5b（工具鏈升版，CONFIRMED 已完成）
+
+階段二.5 留的工具鏈尾巴已清，2 commit（dev 分支）：
+
+| # | 項 | 治本（已做） | commit |
+|---|---|---|---|
+| 1 | prettier `^1.19.1`→`^3.0.0`、husky `^4.2.3`→`^9.0.0`、lint-staged `^10`→`^15` | husky v4 `husky.hooks` 區塊 → `scripts.prepare:"husky"` + `.husky/pre-commit`（單行 `yarn lint-staged`，v9 免 `husky.sh` boilerplate；`yarn install` 自動設 `core.hooksPath=.husky/_`）。lint-staged 移除兩個 `git add`（v15 自動 re-stage）。prettier 採 v3 預設，**不加 `.prettierrc`**。 | `a656ac7` |
+| 2 | prettier v3 一次性 reformat | 跑 `prettier --write` 於 lint-staged 範圍（`src/components/**`、16 檔，純空白／逗號／arrow parens），churn 收進單 commit。 | `c2ee868` |
+
+驗證全綠：`test:unit`(223) + `build`(零警告) + `test:e2e:offline`(27) + live `enhance`(7) + `connect-login` 重跑綠 + husky hook 實測（故意弄亂 `PasteShortcutAlert.js` → commit 時 lint-staged 自動格式化並 re-stage）。
+
+**`url.parse()` DEP0169（查證結論，不改 code）**：
+- 真正呼叫者 = `http-proxy@1.18.1`（`node-http-proxy`，2020 後停更最終版，永不移除 `url.parse`）。build / dev-server 啟動皆無，僅 `/bbs` proxy 實際處理連線時 lazy 觸發。
+- 依賴鏈：`webpack-dev-server@5.2.5`（已最新）→ `http-proxy-middleware:^2.0.9` → `http-proxy@1.18.1`，結構性 pin。
+- `http-proxy-middleware@3` 已丟 legacy http-proxy，但 wds5 內部針對 v2 API；強升風險高（`/bbs` WS upgrade proxy 是命脈）。
+- 決策：僅 `yarn start` 開發期出現、build/CI/prod 零影響 → **不強改**，待 wds 上游升 hpm@3 自然消。
 
 下列原始評估內容保留供階段三參考。
 
