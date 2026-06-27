@@ -1,5 +1,5 @@
 ﻿import { App } from './pttchrome';
-import { setupI18n } from './i18n';
+import { setupI18n, i18n } from './i18n';
 import { getQueryVariable, proxySiteFromPrefs } from './util';
 import { readValuesWithDefault } from './pref_storage';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
@@ -21,6 +21,7 @@ function startApp() {
   if (process.env.DEVELOPER_MODE) {
     window.__app = app;
     window.__readPrefs = readValuesWithDefault; // e2e dynamic pref lookup
+    window.__i18n = i18n; // e2e locale-independent label lookup (UI behavior tests)
   }
 
   (process.env.DEVELOPER_MODE ? import('../components/DeveloperModeAlert')
