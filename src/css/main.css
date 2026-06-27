@@ -467,6 +467,21 @@ span {
   to { left: 100%; }
 }
 
+/* 自動開圖載入失敗（重試耗盡）：可見、可點重試的提示，取代靜默空白 */
+.previewError {
+  display: inline-flex;
+  align-items: center;
+  margin: 0.5em auto;
+  padding: 0.15em 0.5em;
+  font-size: 0.9em;
+  color: #e06666;
+  cursor: pointer;
+  user-select: none;
+}
+.previewError:hover {
+  text-decoration: underline;
+}
+
 .modal-backdrop {
   z-index: 1 !important;
 }

@@ -168,28 +168,94 @@ const needsReferer = (src) => {
   }
 };
 
-// <img> that walks a list of candidate URLs, advancing on each load error.
-// One candidate (the resolved src) is the common case; twitter/meee supply
-// fallbacks (e.g. :orig → .png:orig → :large → plain).
+// 暫時性載入失敗（host hotlink/rate-limit/5xx）會讓 <img> onError，舊版單次 error
+// 就跳下一候選、候選耗盡即 render false（讀取動畫消失、無圖、無提示）→ 看起來跟
+// 「沒在讀取」一模一樣，正是這功能本要防的誤判。故每個候選先 bounded 重試（backoff
+// 內維持讀取動畫），全部耗盡才顯示可見的「載入失敗，點擊重試」。
+const MAX_RETRIES_PER_CANDIDATE = 2;
+const RETRY_BASE_MS = 300; // 退避：300ms, 600ms（每候選 1+2 次嘗試）
+
+// <img> that walks a list of candidate URLs. Each candidate is retried a few
+// times with backoff before advancing; one candidate (the resolved src) is the
+// common case, twitter/meee supply fallbacks (:orig → .png:orig → :large → plain).
 class FallbackImage extends React.PureComponent {
-  state = { index: 0, loaded: false };
+  // attempt 只用來換 <img> 的 key 觸發重掛（瀏覽器重發請求），不竄改 URL，
+  // 避免破壞帶簽章的網址（如 twitter :orig）。
+  state = { index: 0, loaded: false, retries: 0, attempt: 0, failed: false };
+  _retryTimer = null;
+
+  componentWillUnmount() {
+    if (this._retryTimer) clearTimeout(this._retryTimer);
+  }
+
+  handleError = () => {
+    const { retries } = this.state;
+    if (retries < MAX_RETRIES_PER_CANDIDATE) {
+      // 退避後重掛同一候選；等待期間維持 loaded:false → 讀取動畫不閃掉。
+      const delay = RETRY_BASE_MS * Math.pow(2, retries);
+      this._retryTimer = setTimeout(() => {
+        this._retryTimer = null;
+        this.setState((s) => ({
+          retries: s.retries + 1,
+          attempt: s.attempt + 1,
+          loaded: false,
+        }));
+      }, delay);
+      return;
+    }
+    // 此候選重試用罄 → 換下一候選；沒有下一個就進可見的失敗態。
+    this.setState((s, props) => {
+      const nextIndex = s.index + 1;
+      if (props.candidates[nextIndex] == null) {
+        return { failed: true };
+      }
+      return {
+        index: nextIndex,
+        retries: 0,
+        attempt: s.attempt + 1,
+        loaded: false,
+      };
+    });
+  };
 
   // 換下一個候選網址時 loaded 一併重設，避免沿用上一張的已載入狀態。
-  handleError = () =>
-    this.setState((s) => ({ index: s.index + 1, loaded: false }));
   handleLoad = () => this.setState({ loaded: true });
+
+  // 點擊失敗提示 → 從頭重跑整串候選。
+  handleRetry = () => {
+    if (this._retryTimer) {
+      clearTimeout(this._retryTimer);
+      this._retryTimer = null;
+    }
+    this.setState((s) => ({
+      index: 0,
+      retries: 0,
+      attempt: s.attempt + 1,
+      loaded: false,
+      failed: false,
+    }));
+  };
 
   render() {
     const { candidates, ...rest } = this.props;
-    const src = candidates[this.state.index];
-    if (src == null) {
-      return false;
+    const { index, loaded, attempt, failed } = this.state;
+    const src = candidates[index];
+    if (failed || src == null) {
+      return (
+        <div
+          className="previewError"
+          onClick={this.handleRetry}
+          title="點擊重試"
+        >
+          圖片載入失敗，點擊重試
+        </div>
+      );
     }
-    const { loaded } = this.state;
     return (
       <React.Fragment>
         {!loaded && <LoadingOverlay />}
         <img
+          key={`${index}-${attempt}`}
           {...rest}
           {...(needsReferer(src) ? {} : { referrerPolicy: "no-referrer" })}
           src={src}
