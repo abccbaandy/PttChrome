@@ -31,12 +31,12 @@
     "css-minimizer-webpack-plugin": "^8.0.0",
     "html-webpack-harddisk-plugin": "^2.0.0",
     "html-webpack-plugin": "^5.6.0",
-    "husky": "^4.2.3",
+    "husky": "^9.0.0",
     "jest": "^29",
     "jest-environment-jsdom": "29",
-    "lint-staged": "^10.0.8",
+    "lint-staged": "^15.0.0",
     "mini-css-extract-plugin": "^2.9.0",
-    "prettier": "^1.19.1",
+    "prettier": "^3.0.0",
     "rimraf": "^3.0.2",
     "webpack": "^5.107.0",
     "webpack-cli": "^7.0.0",
@@ -52,14 +52,8 @@
     "js-yaml": "^4.2.0"
   },
   "lint-staged": {
-    "*.json": [
-      "prettier --write",
-      "git add"
-    ],
-    "src/components/**/*.{js,json,css}": [
-      "prettier --write",
-      "git add"
-    ]
+    "*.json": "prettier --write",
+    "src/components/**/*.{js,json,css}": "prettier --write"
   },
   "babel": {
     "env": {
@@ -120,12 +114,8 @@
       }
     }
   },
-  "husky": {
-    "hooks": {
-      "pre-commit": "lint-staged"
-    }
-  },
   "scripts": {
+    "prepare": "husky",
     "clean": "rimraf dist/assets dist/index.html",
     "prebuild": "npm run clean",
     "build": "cross-env webpack",
