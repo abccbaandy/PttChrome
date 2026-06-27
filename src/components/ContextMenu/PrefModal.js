@@ -20,8 +20,16 @@ const ControlLabel = Form.Label;
 const FormControl = ({ componentClass, ...props }) => (
   <Form.Control as={componentClass} {...props} />
 );
-const Checkbox = ({ children, ...props }) => (
-  <Form.Check type="checkbox" {...props} label={children} />
+// BS5 Form.Check 需要 id 才會在 <label> 上掛 htmlFor，label 與 input 關聯後點文字
+// 才能切換勾選。無 id 時 label 不關聯 → 只有點到方框本身才有效。由 name 衍生唯一 id。
+const Checkbox = ({ children, name, ...props }) => (
+  <Form.Check
+    type="checkbox"
+    id={`pref-check-${name}`}
+    name={name}
+    {...props}
+    label={children}
+  />
 );
 const NavItem = ({ children, ...props }) => (
   <Nav.Item>

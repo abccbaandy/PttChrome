@@ -61,3 +61,4 @@ webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
 - 改渲染/畫面易壞 code 必跑 e2e（見「測試」段強制規範）。
 - 每次踩坑如果後續session也會踩，就要寫進md
 - 每次commit前都要檢查本次更動是否含新功能，如果有的話要更新README.md新功能列表，新功能定義：以一般使用者角度，所以優化、修bug都不算
+- **這專案古老，遇坑優先升級／換套件，別一直繞**：發現過時依賴、API 已棄用、BS3/RB0.31 殘留樣式等，優先評估升版或換現代套件（並提報使用者），不要堆疊 workaround／`!important` 硬調。穩定性與現代化優先於最小改動。

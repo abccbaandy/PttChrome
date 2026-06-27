@@ -103,7 +103,12 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     const checkbox = page.locator('.PrefModal input[name="showFloorNumbers"]');
     await expect(checkbox).toBeVisible();
     const before = await checkbox.isChecked();
-    await checkbox.click();
+    // 點 label 文字（非方框）切換 → 守 BS5 Form.Check 的 id/htmlFor 關聯不脫落
+    // （無 id 時 label 不關聯 input，點文字無反應；見 PrefModal.js Checkbox adapter）。
+    await page
+      .locator('.PrefModal label[for="pref-check-showFloorNumbers"]')
+      .click();
+    await expect(checkbox).toBeChecked({ checked: !before });
 
     // 用當前（enhance）分頁 legend 的 × 關閉（onCloseClick → 寫入 + onSave）。
     // 每個分頁各有一個 .close，只有 active 分頁的可見。

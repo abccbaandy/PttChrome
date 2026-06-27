@@ -15,6 +15,7 @@
 
 /* Boostrap overrides -- BEGIN */
 .DropdownMenu--reset > li > a {
+  display: block; /* inline→block：hover 藍條填滿整列寬，非只包文字 */
   padding: 3px 20px 3px 30px;
   cursor: default;
   -webkit-user-select: none;

@@ -5,6 +5,9 @@
 
 .PrefModal > .modal-dialog {
   height: 90%;
+  /* 覆寫 BS5 ≥576px 鎖死的 max-width:500px，改成 RWD：窄視窗跟 92vw 縮，寬視窗最多到 820px 不再長（避免留白）。BS5 <576px 仍沿用其近全寬＋margin auto。 */
+  width: auto;
+  max-width: min(820px, 92vw);
   -webkit-user-select: none;
 }
 
@@ -26,10 +29,18 @@
 .PrefModal__Grid__Col--left {
   height: 100%;
   width: 160px;
+  flex-shrink: 0; /* 永不被右側內容擠壓 → 三分頁左欄寬度一致、切換不跳動 */
   display: flex;
   flex-direction: column;
   padding: 0 20px;
-  box-shadow: -10px 0 180px -60px #949494 inset;
+  /* 乾淨的現代 sidebar：實心淺灰底＋右側細線。取代舊的大面積 inset box-shadow
+     漸層——那個漸層在窄欄會把邊緣染灰、中間留一塊軟白（詭異「白色色塊」）。 */
+  background: #f4f5f6;
+  border-right: 1px solid #e3e5e8;
+}
+
+.PrefModal__Grid__Col--left .nav-link {
+  white-space: nowrap; /* 導航文字不逐字換行 */
 }
 
 .PrefModal__Grid__Col--left__Reset {
