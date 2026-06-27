@@ -754,8 +754,12 @@ TermView.prototype = {
   },
 
   fixedResize: function(fontSizePx) {
-    let chw = fontSizePx / 2;
-    let chh = fontSizePx;
+    // 把列高對齊整數裝置像素，避免小數 devicePixelRatio（如 Windows 顯示縮放 125%
+    // → DPR 1.25）下各列邊界被獨立四捨五入而漏出列間黑縫（ASCII 進版圖裂痕）。
+    // floor 確保不超出原本 fontResize 算出的可容納高度而裁切末列；DPR=1 時不變。
+    var dpr = window.devicePixelRatio || 1;
+    let chh = Math.floor(fontSizePx * dpr) / dpr;
+    let chw = chh / 2;
 
     this.setTermFontSize(chw, chh);
 
