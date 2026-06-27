@@ -28,7 +28,7 @@ export class WordSegmentBuilder {
         key={this.inner.length}
         inner={text}
         forceWidth={forceWidth}
-      />
+      />,
     );
   }
 
@@ -40,7 +40,7 @@ export class WordSegmentBuilder {
         colorLead={colorLead}
         colorTail={colorTail}
         forceWidth={forceWidth}
-      />
+      />,
     );
   }
 
@@ -62,7 +62,7 @@ WordSegmentBuilder.NullObject = {
 
   build() {
     return false;
-  }
+  },
 };
 
 export default WordSegmentBuilder;

@@ -61,7 +61,7 @@ export class ColorSegmentBuilder {
         text,
         leadColor,
         ch.getColor(),
-        this.forceWidth
+        this.forceWidth,
       );
       return;
     }

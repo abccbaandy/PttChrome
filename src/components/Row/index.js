@@ -26,7 +26,7 @@ export const Row = ({
   fixedUrls,
   mentions,
   onHyperLinkMouseOver,
-  onHyperLinkMouseOut
+  onHyperLinkMouseOut,
 }) => (
   <span
     type="bbsrow"
@@ -49,8 +49,8 @@ export const Row = ({
           authorIdStart,
           authorIdEnd,
           fixedUrls,
-          mentions
-        )
+          mentions,
+        ),
       )
       .build()}
   </span>

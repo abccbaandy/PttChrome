@@ -9,7 +9,7 @@ import {
   NavDropdown,
   Dropdown,
   Form,
-  SplitButton
+  SplitButton,
 } from "react-bootstrap";
 import ColorSpan from "../Row/WordSegmentBuilder/ColorSpan";
 import { i18n } from "../../js/i18n";
@@ -49,7 +49,7 @@ const SYMBOLS = {
     "〞",
     "‵",
     "′",
-    "〃"
+    "〃",
   ],
 
   lineBorders: [
@@ -97,7 +97,7 @@ const SYMBOLS = {
     "╡",
     "╘",
     "╧",
-    "╛"
+    "╛",
   ],
 
   blocks: [
@@ -121,7 +121,7 @@ const SYMBOLS = {
     "◢",
     "◣",
     "◥",
-    "◤"
+    "◤",
   ],
 
   lines: [
@@ -151,7 +151,7 @@ const SYMBOLS = {
     "╱",
     "╲",
     "／",
-    "＼"
+    "＼",
   ],
 
   special: [
@@ -186,7 +186,7 @@ const SYMBOLS = {
     "￡",
     "※",
     "♀",
-    "♂"
+    "♂",
   ],
 
   brackets: [
@@ -231,7 +231,7 @@ const SYMBOLS = {
     "﹁",
     "﹂",
     "﹃",
-    "﹄"
+    "﹄",
   ],
 
   greek: [
@@ -282,7 +282,7 @@ const SYMBOLS = {
     "φ",
     "χ",
     "ψ",
-    "ω"
+    "ω",
   ],
 
   phonetic: [
@@ -326,7 +326,7 @@ const SYMBOLS = {
     "˙",
     "ˊ",
     "ˇ",
-    "ˋ"
+    "ˋ",
   ],
 
   math: [
@@ -356,7 +356,7 @@ const SYMBOLS = {
     "≦",
     "≧",
     "∩",
-    "∪"
+    "∪",
   ],
 
   hiragana: [
@@ -430,7 +430,7 @@ const SYMBOLS = {
     "よ",
     "わ",
     "ん",
-    "を"
+    "を",
   ],
 
   katakana: [
@@ -504,8 +504,8 @@ const SYMBOLS = {
     "ヨ",
     "ワ",
     "ン",
-    "ヲ"
-  ]
+    "ヲ",
+  ],
 };
 
 const EMOTICONS = {
@@ -519,7 +519,7 @@ const EMOTICONS = {
     "(o一-一)=○# (￣#)3￣)",
     "╰(‵皿′＊)╯",
     "○(#‵︿′ㄨ)○",
-    "◢▆▅▄▃-崩╰(〒皿〒)╯潰-▃▄▅▆◣"
+    "◢▆▅▄▃-崩╰(〒皿〒)╯潰-▃▄▅▆◣",
   ],
 
   meh: [
@@ -532,7 +532,7 @@ const EMOTICONS = {
     "︿(￣︶￣)︿",
     "..╮(﹋﹏﹌)╭..",
     "╮(╯_╰)╭",
-    "╮(╯▽╰)/"
+    "╮(╯▽╰)/",
   ],
 
   sweat: [
@@ -544,7 +544,7 @@ const EMOTICONS = {
     "╭ ﹀◇﹀〣",
     "ˋ(′_‵||)ˊ",
     "●( ¯▽¯；●",
-    "o(＞＜；)o o"
+    "o(＞＜；)o o",
   ],
 
   happy: [
@@ -556,7 +556,7 @@ const EMOTICONS = {
     "﹨(╯▽╰)∕",
     "\\(@^0^@)/",
     "\\(^▽^)/",
-    "\\⊙▽⊙/"
+    "\\⊙▽⊙/",
   ],
 
   other: [
@@ -569,8 +569,8 @@ const EMOTICONS = {
     "(⊙o⊙)",
     "(≧<>≦)",
     "(☆_☆)",
-    'o(‧"‧)o'
-  ]
+    'o(‧"‧)o',
+  ],
 };
 
 function sendColorCommand({ fg, bg, isBlink }, onCmdSend, type) {
@@ -601,18 +601,25 @@ export const InputHelperModal = ({
   onReset,
   onHide,
   onCmdSend,
-  onConvSend
+  onConvSend,
 }) => {
   const [fg, setFg] = useState(7);
   const [bg, setBg] = useState(0);
   const [isBlink, setIsBlink] = useState(false);
 
-  const onColorClick = useCallback(({ target: { dataset: { fg } } }) => {
-    setFg(parseInt(fg, 10));
-  }, []);
-  const onColorContextMenu = useCallback(event => {
+  const onColorClick = useCallback(
+    ({
+      target: {
+        dataset: { fg },
+      },
+    }) => {
+      setFg(parseInt(fg, 10));
+    },
+    [],
+  );
+  const onColorContextMenu = useCallback((event) => {
     const {
-      target: { dataset }
+      target: { dataset },
     } = event;
     event.preventDefault();
     event.stopPropagation();
@@ -625,15 +632,15 @@ export const InputHelperModal = ({
   }, []);
   const onSendClick = useCallback(
     () => sendColorCommand({ fg, bg, isBlink }, onCmdSend),
-    [fg, bg, isBlink, onCmdSend]
+    [fg, bg, isBlink, onCmdSend],
   );
   const onSendSelect = useCallback(
-    eventKey => sendColorCommand({ fg, bg, isBlink }, onCmdSend, eventKey),
-    [fg, bg, isBlink, onCmdSend]
+    (eventKey) => sendColorCommand({ fg, bg, isBlink }, onCmdSend, eventKey),
+    [fg, bg, isBlink, onCmdSend],
   );
   const onSymEmoClick = useCallback(
     ({ target: { textContent } }) => onConvSend(textContent),
-    [onConvSend]
+    [onConvSend],
   );
 
   const onMouseDown = useCallback(
@@ -642,7 +649,7 @@ export const InputHelperModal = ({
       dataset.dragLastX = clientX;
       dataset.dragLastY = clientY;
     },
-    []
+    [],
   );
   const onMouseMove = useCallback(
     ({ currentTarget: { dataset, style }, clientX, clientY }) => {
@@ -656,7 +663,7 @@ export const InputHelperModal = ({
         dataset.dragLastY = clientY;
       }
     },
-    []
+    [],
   );
   const onMouseUp = useCallback(({ currentTarget: { dataset } }) => {
     dataset.dragActive = false;
@@ -684,14 +691,14 @@ export const InputHelperModal = ({
                   <Nav.Link eventKey="colors">{i18n("colorTitle")}</Nav.Link>
                 </Nav.Item>
                 <NavDropdown id="inputHelperSymbols" title={i18n("symTitle")}>
-                  {Object.keys(SYMBOLS).map(group => (
+                  {Object.keys(SYMBOLS).map((group) => (
                     <NavDropdown.Item key={group} eventKey={`symbols.${group}`}>
                       {i18n(`symTitle_${group}`)}
                     </NavDropdown.Item>
                   ))}
                 </NavDropdown>
                 <NavDropdown id="inputHelperEmoticons" title={i18n("emoTitle")}>
-                  {Object.keys(EMOTICONS).map(group => (
+                  {Object.keys(EMOTICONS).map((group) => (
                     <NavDropdown.Item
                       key={group}
                       eventKey={`emoticons.${group}`}
@@ -826,7 +833,7 @@ export const InputHelperModal = ({
                       colorState={{
                         fg,
                         bg,
-                        blink: isBlink
+                        blink: isBlink,
                       }}
                       inner={i18n("colorHelperPreview")}
                     />
@@ -849,7 +856,7 @@ export const InputHelperModal = ({
                         variant="secondary"
                         title={i18n("colorHelperSend")}
                         onClick={onSendClick}
-                        onSelect={eventKey => {
+                        onSelect={(eventKey) => {
                           if (eventKey === "reset") {
                             onReset();
                           } else {
@@ -871,7 +878,7 @@ export const InputHelperModal = ({
                     </Col>
                   </Row>
                 </Tab.Pane>
-                {Object.keys(SYMBOLS).map(group => (
+                {Object.keys(SYMBOLS).map((group) => (
                   <Tab.Pane key={group} eventKey={`symbols.${group}`}>
                     <ul className="InputHelperModal__SymbolList">
                       {SYMBOLS[group].map((it, index) => (
@@ -882,7 +889,7 @@ export const InputHelperModal = ({
                     </ul>
                   </Tab.Pane>
                 ))}
-                {Object.keys(EMOTICONS).map(group => (
+                {Object.keys(EMOTICONS).map((group) => (
                   <Tab.Pane key={group} eventKey={`emoticons.${group}`}>
                     <ul className="InputHelperModal__EmoticonList">
                       {EMOTICONS[group].map((it, index) => (

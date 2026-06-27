@@ -7,7 +7,7 @@ import {
   Button,
   Form,
   OverlayTrigger,
-  Popover
+  Popover,
 } from "react-bootstrap";
 import { i18n } from "../../js/i18n";
 
@@ -38,7 +38,7 @@ const NavItem = ({ children, ...props }) => (
 import {
   DEFAULT_PREFS,
   readValuesWithDefault,
-  writeValues
+  writeValues,
 } from "../../js/pref_storage";
 import * as prefSync from "../../js/pref_sync";
 import { deepEqual } from "../../js/pref_sync_logic";
@@ -48,7 +48,7 @@ import "./PrefModal.css";
 // the browser's password manager (Google Password Manager etc.) instead of
 // localStorage. Returns the values to persist; the caller still hands the
 // original (with password) to onSave so it takes effect this session.
-const storeCredentialAndStrip = values => {
+const storeCredentialAndStrip = (values) => {
   if (
     !values.autoLogin ||
     !values.autoLoginUser ||
@@ -64,8 +64,8 @@ const storeCredentialAndStrip = values => {
         new PasswordCredential({
           id: values.autoLoginUser,
           password: values.autoLoginPassword,
-          name: "PTT"
-        })
+          name: "PTT",
+        }),
       )
       .catch(() => {});
   } catch (e) {
@@ -74,7 +74,7 @@ const storeCredentialAndStrip = values => {
   return { ...values, autoLoginPassword: "" };
 };
 
-const normalizeSec = value => {
+const normalizeSec = (value) => {
   const sec = parseInt(value, 10);
   return sec > 1 ? sec : 1;
 };
@@ -104,12 +104,12 @@ const changeNestedValue = (obj, key, newValue) => {
     let subKey = key.substring(i + 1);
     return {
       ...obj,
-      [parentKey]: changeNestedValue(obj[parentKey], subKey, newValue)
+      [parentKey]: changeNestedValue(obj[parentKey], subKey, newValue),
     };
   }
   return {
     ...obj,
-    [key]: newValue
+    [key]: newValue,
   };
 };
 
@@ -120,16 +120,16 @@ const replacements = {
   link_github_robertabcd: link("robertabcd", "https://github.com/robertabcd"),
   link_robertabcd_PttChrome: link(
     "robertabcd/PttChrome",
-    "https://github.com/robertabcd/PttChrome"
+    "https://github.com/robertabcd/PttChrome",
   ),
   link_iamchucky_PttChrome: link(
     "iamchucky/PttChrome",
-    "https://github.com/iamchucky/PttChrome"
+    "https://github.com/iamchucky/PttChrome",
   ),
   link_GPL20: link(
     "General Public License v2.0",
-    "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html"
-  )
+    "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
+  ),
 };
 
 export const PrefModal = ({ show, onSave, onReset }) => {
@@ -153,23 +153,26 @@ export const PrefModal = ({ show, onSave, onReset }) => {
     onReset(writeValues({ ...DEFAULT_PREFS }));
   }, [onReset]);
 
-  const onNavSelect = useCallback(activeKey => setNavActiveKey(activeKey), []);
+  const onNavSelect = useCallback(
+    (activeKey) => setNavActiveKey(activeKey),
+    [],
+  );
 
   const onCheckboxChange = useCallback(({ target: { name, checked } }) => {
-    setValues(v => changeNestedValue(v, name, !!checked));
+    setValues((v) => changeNestedValue(v, name, !!checked));
   }, []);
 
   const onNumberInputChange = useCallback(({ target: { name, value } }) => {
-    setValues(v => changeNestedValue(v, name, parseInt(value, 10)));
+    setValues((v) => changeNestedValue(v, name, parseInt(value, 10)));
   }, []);
 
   const onTextInputChange = useCallback(({ target: { name, value } }) => {
-    setValues(v => changeNestedValue(v, name, value));
+    setValues((v) => changeNestedValue(v, name, value));
   }, []);
 
   // Hotkey capture: record the pressed key (e.key) into the named pref.
   // Ignore bare modifier/Tab presses so the field can't be set to them.
-  const onHotkeyCapture = useCallback(e => {
+  const onHotkeyCapture = useCallback((e) => {
     e.preventDefault();
     const key = e.key;
     // Use e.target (NOT e.currentTarget): this fires from a key handler, and by
@@ -180,7 +183,7 @@ export const PrefModal = ({ show, onSave, onReset }) => {
     if (["Shift", "Control", "Alt", "Meta", "Tab"].indexOf(key) >= 0) {
       return;
     }
-    setValues(v => changeNestedValue(v, name, key));
+    setValues((v) => changeNestedValue(v, name, key));
   }, []);
 
   // Cloud values land in modal state only; the app applies them through the
@@ -188,9 +191,9 @@ export const PrefModal = ({ show, onSave, onReset }) => {
   const onSyncSignInClick = useCallback(() => {
     setSyncStatus("syncing");
     prefSync
-      .signIn(merged => setValues(merged))
+      .signIn((merged) => setValues(merged))
       .then(() => setSyncStatus("synced"))
-      .catch(e => {
+      .catch((e) => {
         console.warn("pref_sync: sign-in failed", e);
         setSyncStatus("error");
       });
@@ -202,7 +205,7 @@ export const PrefModal = ({ show, onSave, onReset }) => {
   }, []);
 
   useEffect(() => {
-    const unsub = prefSync.onAuthState(user => setSyncUser(user));
+    const unsub = prefSync.onAuthState((user) => setSyncUser(user));
     return () => {
       if (unsub) unsub();
     };
@@ -496,7 +499,7 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                         componentClass="select"
                         className={cx(
                           `b${values.mouseBrowsingHighlightColor}`,
-                          `b${values.mouseBrowsingHighlightColor}`
+                          `b${values.mouseBrowsingHighlightColor}`,
                         )}
                         name="mouseBrowsingHighlightColor"
                         value={values.mouseBrowsingHighlightColor}
@@ -509,7 +512,7 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                               key={i}
                               value={i}
                               className={cx(
-                                `b${i}` /* FIXME: Existing bug: Not working for Chrome */
+                                `b${i}` /* FIXME: Existing bug: Not working for Chrome */,
                               )}
                             />
                           ))}
@@ -528,7 +531,7 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                         {[
                           "options_none",
                           "options_enterKey",
-                          "options_rightKey"
+                          "options_rightKey",
                         ].map((key, index) => (
                           <option key={key} value={index}>
                             {i18n(key)}
@@ -550,7 +553,7 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                           "options_none",
                           "options_enterKey",
                           "options_leftKey",
-                          "options_doPaste"
+                          "options_doPaste",
                         ].map((key, index) => (
                           <option key={key} value={index}>
                             {i18n(key)}
@@ -572,7 +575,7 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                           "options_none",
                           "options_upDown",
                           "options_pageUpDown",
-                          "options_threadLastNext"
+                          "options_threadLastNext",
                         ].map((key, index) => (
                           <option key={key} value={index}>
                             {i18n(key)}
@@ -594,7 +597,7 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                           "options_none",
                           "options_upDown",
                           "options_pageUpDown",
-                          "options_threadLastNext"
+                          "options_threadLastNext",
                         ].map((key, index) => (
                           <option key={key} value={index}>
                             {i18n(key)}
@@ -616,7 +619,7 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                           "options_none",
                           "options_upDown",
                           "options_pageUpDown",
-                          "options_threadLastNext"
+                          "options_threadLastNext",
                         ].map((key, index) => (
                           <option key={key} value={index}>
                             {i18n(key)}
@@ -656,8 +659,8 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                           {
                             syncing: "options_syncStatusSyncing",
                             synced: "options_syncStatusSynced",
-                            error: "options_syncStatusError"
-                          }[syncStatus]
+                            error: "options_syncStatusError",
+                          }[syncStatus],
                         )}
                       </p>
                     )}

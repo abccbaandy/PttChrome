@@ -15,12 +15,12 @@ const MenuItem = ({
   onClick,
   divider,
   className,
-  children
+  children,
 }) => {
   if (divider) {
     return <li role="separator" className="DropdownMenu__Divider" />;
   }
-  const handleClick = e => {
+  const handleClick = (e) => {
     if (onClick) onClick(e);
     if (onSelect) onSelect(eventKey, e);
   };
@@ -29,7 +29,7 @@ const MenuItem = ({
       <a
         role="menuitem"
         href="#"
-        onClick={e => {
+        onClick={(e) => {
           e.preventDefault();
           handleClick(e);
         }}
@@ -60,7 +60,7 @@ const left = (mouseWidth, menuWidth) => {
   return mouseWidth;
 };
 
-const normalizeSelectedText = selectedText => {
+const normalizeSelectedText = (selectedText) => {
   if (selectedText.length > 15) {
     return `${selectedText.substr(0, 15)} …`;
   }
@@ -71,9 +71,9 @@ const QUICK_SEARCH = {
   providers: [
     {
       name: "goo.gl",
-      url: "https://goo.gl/%s"
-    }
-  ]
+      url: "https://goo.gl/%s",
+    },
+  ],
 };
 
 export const DropdownMenu = ({
@@ -88,7 +88,7 @@ export const DropdownMenu = ({
   onInputHelperClick,
   onLiveArticleHelperClick,
   onSettingsClick,
-  onQuickSearchSelect
+  onQuickSearchSelect,
 }) => {
   const dropdownMenuRef = useRef(null);
 
@@ -103,7 +103,7 @@ export const DropdownMenu = ({
         `;
   }, [pageX, pageY]);
 
-  const onContextMenu = useCallback(event => {
+  const onContextMenu = useCallback((event) => {
     event.stopPropagation();
     event.preventDefault();
   }, []);
@@ -160,12 +160,12 @@ export const DropdownMenu = ({
                 "QuickSearchMenu",
                 {
                   "QuickSearchMenu--up": pageY > window.innerHeight / 2,
-                  "QuickSearchMenu--left": pageX > window.innerWidth * 0.7
-                }
+                  "QuickSearchMenu--left": pageX > window.innerWidth * 0.7,
+                },
               )}
               role="menu"
             >
-              {QUICK_SEARCH.providers.map(p => (
+              {QUICK_SEARCH.providers.map((p) => (
                 <MenuItem
                   key={p.url}
                   eventKey={p.url}
@@ -189,7 +189,7 @@ export const DropdownMenu = ({
             eventKey="mouseBrowsing"
             onSelect={onMenuSelect}
             className={cx({
-              "DropdownMenu__Item--checked": mouseBrowsingEnabled
+              "DropdownMenu__Item--checked": mouseBrowsingEnabled,
             })}
           >
             {i18n("cmenu_mouseBrowsing")}

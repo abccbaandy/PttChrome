@@ -21,7 +21,7 @@ export class LinkSegmentBuilder {
     authorIdStart,
     authorIdEnd,
     fixedUrls,
-    mentions
+    mentions,
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -75,7 +75,7 @@ export class LinkSegmentBuilder {
       this.segs.push(
         <span key="authorId" className="commentByAuthor">
           {this._authorWrap}
-        </span>
+        </span>,
       );
     }
     this._authorWrap = null;
@@ -95,7 +95,7 @@ export class LinkSegmentBuilder {
           target="_blank"
         >
           {element}
-        </a>
+        </a>,
       );
     } else if (this.href) {
       this._pushSeg(
@@ -107,7 +107,7 @@ export class LinkSegmentBuilder {
           data-srow={this.row}
           onMouseOver={this.onHyperLinkMouseOver}
           onMouseOut={this.onHyperLinkMouseOut}
-        />
+        />,
       );
       // TODO: Modularize this.
       if (this.inlineLinkPreviews) {
@@ -116,7 +116,7 @@ export class LinkSegmentBuilder {
             key={`${this.col}-${this.href}`}
             request={requestPreview(this.href)}
             component={ImagePreviewer.Inline}
-          />
+          />,
         );
       }
     } else {

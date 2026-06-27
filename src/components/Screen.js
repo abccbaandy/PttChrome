@@ -3,7 +3,7 @@ import Row from "./Row";
 import ImagePreviewer, {
   of,
   resolveSrcToImageUrl,
-  resolveWithImageDOM
+  resolveWithImageDOM,
 } from "./ImagePreviewer";
 import {
   rowToText,
@@ -11,7 +11,7 @@ import {
   parseListAuthor,
   parseListTitle,
   matchTitleBlacklist,
-  FloorCounter
+  FloorCounter,
 } from "../js/comment_parse";
 import { detectFixableUrls } from "../js/url_fix";
 import { detectMentions } from "../js/mention_parse";
@@ -42,7 +42,7 @@ function computeAnnotations(lines, enhance) {
     autoFixUrl,
     easyReading,
     enableXMention,
-    inListContext
+    inListContext,
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
@@ -58,7 +58,7 @@ function computeAnnotations(lines, enhance) {
       floorCounter: easyReading ? new FloorCounter() : undefined,
       highlightAuthor,
       articleAuthor,
-      selectedPusher
+      selectedPusher,
     };
     for (let row = 0; row < lines.length; ++row) {
       const text = rowToText(lines[row]);
@@ -91,7 +91,7 @@ function computeAnnotations(lines, enhance) {
             startCol: m.startCol,
             endCol: m.endCol,
             handle: m.handle,
-            href: "https://x.com/" + m.handle
+            href: "https://x.com/" + m.handle,
           });
         }
       }
@@ -125,7 +125,7 @@ function computeAnnotations(lines, enhance) {
 }
 
 export class Screen extends React.Component {
-  setCurrentHighlighted = currentHighlighted => {
+  setCurrentHighlighted = (currentHighlighted) => {
     this.setState({ currentHighlighted });
   };
 
@@ -135,7 +135,7 @@ export class Screen extends React.Component {
     left: undefined,
     top: undefined,
     // 追蹤上一次的 lines reference，供 getDerivedStateFromProps 偵測換頁
-    prevLines: undefined
+    prevLines: undefined,
   };
 
   // lines reference 改變（換頁/重渲染）即關掉開啟中的圖片預覽。
@@ -151,7 +151,7 @@ export class Screen extends React.Component {
     if (this.state.currentImagePreview) {
       this.setState({
         left: clientX,
-        top: clientY
+        top: clientY,
       });
     }
   };
@@ -161,7 +161,7 @@ export class Screen extends React.Component {
       this.setState({
         currentImagePreview: of(href)
           .then(resolveSrcToImageUrl)
-          .then(resolveWithImageDOM)
+          .then(resolveWithImageDOM),
       });
     }
   };
@@ -173,7 +173,7 @@ export class Screen extends React.Component {
   render() {
     const annotations = computeAnnotations(
       this.props.lines,
-      this.props.enhance
+      this.props.enhance,
     );
     // dropHidden: easy-reading accumulates a single growing scroll page, so a
     // blacklisted comment is removed entirely (render null → no DOM node, no blank

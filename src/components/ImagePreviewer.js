@@ -3,12 +3,12 @@ import { decode } from "base58";
 
 const noop = () => {};
 
-export const of = src => Promise.resolve({ src });
+export const of = (src) => Promise.resolve({ src });
 
 const previewRequestCache = new Map();
 // 同一 href 永遠回傳同一個 Promise 參考，讓 <ImagePreviewer>（PureComponent）
 // 在整列重繪（如 pusherHighlight 切換）時 props 穩定、跳過更新，避免 iframe 重掛閃爍。
-export const requestPreview = href => {
+export const requestPreview = (href) => {
   let p = previewRequestCache.get(href);
   if (p === undefined) {
     p = of(href).then(resolveSrcToImageUrl);
@@ -22,12 +22,12 @@ export const requestPreview = href => {
 //   | { type: "iframe", src }       | { type: "album", images: [url] }
 // `type` defaults to "image" when omitted (back-compat with bare { src }).
 export const resolveSrcToImageUrl = ({ src }) =>
-  imageUrlResolvers.find(r => r.test(src)).request(src);
+  imageUrlResolvers.find((r) => r.test(src)).request(src);
 
 // Hover preview only deals with still images: measure height for positioning.
 // Non-image descriptors (video/iframe/album) pass through unchanged — OnHover
 // renders nothing for them.
-export const resolveWithImageDOM = descriptor => {
+export const resolveWithImageDOM = (descriptor) => {
   if (descriptor.type && descriptor.type !== "image") {
     return Promise.resolve(descriptor);
   }
@@ -44,7 +44,7 @@ export class ImagePreviewer extends React.PureComponent {
   state = {
     pending: undefined,
     value: undefined,
-    error: undefined
+    error: undefined,
   };
 
   componentDidMount() {
@@ -63,12 +63,12 @@ export class ImagePreviewer extends React.PureComponent {
       return {
         pending: request,
         value: undefined,
-        error: undefined
+        error: undefined,
       };
     });
   }
 
-  handleResolve = value => {
+  handleResolve = (value) => {
     this.setState(({ pending }, { request }) => {
       if (pending !== request) {
         return;
@@ -77,7 +77,7 @@ export class ImagePreviewer extends React.PureComponent {
     });
   };
 
-  handleReject = error => {
+  handleReject = (error) => {
     this.setState(({ pending }, { request }) => {
       if (pending !== request) {
         return;
@@ -92,7 +92,7 @@ export class ImagePreviewer extends React.PureComponent {
       component: undefined,
       request: undefined,
       value: this.state.value,
-      error: this.state.error
+      error: this.state.error,
     });
   }
 }
@@ -126,7 +126,7 @@ ImagePreviewer.OnHover = ({ left, top, value, error }) => {
           top: getTop(top, value.height),
           maxHeight: "80%",
           maxWidth: "90%",
-          zIndex: 2
+          zIndex: 2,
         }}
       />
     );
@@ -138,7 +138,7 @@ ImagePreviewer.OnHover = ({ left, top, value, error }) => {
           position: "absolute",
           left: left + 20,
           top: top,
-          zIndex: 2
+          zIndex: 2,
         }}
       />
     );
@@ -160,7 +160,7 @@ const LoadingOverlay = () => (
 
 // Some hosts only accept requests without a referer (imgur, twitter, …); a few
 // require it (verb.tw). Strip the referer everywhere except the latter.
-const needsReferer = src => {
+const needsReferer = (src) => {
   try {
     return /(^|\.)verb\.tw$/i.test(new URL(src, location.href).hostname);
   } catch (e) {
@@ -176,7 +176,7 @@ class FallbackImage extends React.PureComponent {
 
   // 換下一個候選網址時 loaded 一併重設，避免沿用上一張的已載入狀態。
   handleError = () =>
-    this.setState(s => ({ index: s.index + 1, loaded: false }));
+    this.setState((s) => ({ index: s.index + 1, loaded: false }));
   handleLoad = () => this.setState({ loaded: true });
 
   render() {
@@ -269,7 +269,7 @@ ImagePreviewer.Inline = ({ value, error }) => {
         return value.images.map((url, i) =>
           RE_VIDEO_EXT.test(url)
             ? inlineVideo(url, i)
-            : inlineImage({ src: url }, i)
+            : inlineImage({ src: url }, i),
         );
       default:
         return inlineImage(value, undefined);
@@ -279,7 +279,8 @@ ImagePreviewer.Inline = ({ value, error }) => {
   }
 };
 
-const RE_IMAGE_EXT = /\.(?:jpe?g|png|gif|webp|apng|avif|jfif|pjpeg|pjp|svg|bmp|ico)(?:$|[?#])/i;
+const RE_IMAGE_EXT =
+  /\.(?:jpe?g|png|gif|webp|apng|avif|jfif|pjpeg|pjp|svg|bmp|ico)(?:$|[?#])/i;
 const RE_VIDEO_EXT = /\.(?:mp4|webm|ogg)(?:$|[?#])/i;
 
 // Multiple client ids, picked at random, to spread imgur API quota.
@@ -288,18 +289,20 @@ const IMGUR_CLIENT_IDS = [
   "ca7108e04622b7a",
   "e83ef0f75467fbf",
   "8683d4c3edf9f8f",
-  "88f07b92270c5f2"
+  "88f07b92270c5f2",
 ];
 
-const resolveImgurAlbum = hash => {
+const resolveImgurAlbum = (hash) => {
   const clientId =
     IMGUR_CLIENT_IDS[Math.floor(Math.random() * IMGUR_CLIENT_IDS.length)];
   return fetch(`https://api.imgur.com/3/album/${hash}?client_id=${clientId}`, {
     mode: "cors",
-    referrerPolicy: "no-referrer"
+    referrerPolicy: "no-referrer",
   })
-    .then(r => r.json())
-    .then(j => (j.data && j.data.images ? j.data.images.map(i => i.link) : []))
+    .then((r) => r.json())
+    .then((j) =>
+      j.data && j.data.images ? j.data.images.map((i) => i.link) : [],
+    )
     .catch(() => []);
 };
 
@@ -315,11 +318,11 @@ const imageUrlResolvers = [
     },
     request(src) {
       const hash = src.match(this.regex)[1];
-      return resolveImgurAlbum(hash).then(images => ({
+      return resolveImgurAlbum(hash).then((images) => ({
         type: "album",
-        images
+        images,
       }));
-    }
+    },
   },
   {
     /* imgur single image (i.imgur.com/<id>.<ext> or imgur.com/<id>) */
@@ -333,13 +336,14 @@ const imageUrlResolvers = [
       if (e === "gifv") e = "gif";
       return Promise.resolve({
         type: "image",
-        src: `https://i.imgur.com/${id}.${e}`
+        src: `https://i.imgur.com/${id}.${e}`,
       });
-    }
+    },
   },
   {
     /* twitter / X — request :orig with png/large/plain fallbacks */
-    regex: /^https?:\/\/pbs\.twimg\.com\/media\/([\w-]+)(?:\.(\w+))?(?:\?.*?format=(\w+))?/i,
+    regex:
+      /^https?:\/\/pbs\.twimg\.com\/media\/([\w-]+)(?:\.(\w+))?(?:\?.*?format=(\w+))?/i,
     test(src) {
       return this.regex.test(src);
     },
@@ -355,10 +359,10 @@ const imageUrlResolvers = [
           `${base}.${ext}:orig`,
           `${base}.png:orig`,
           `${base}.${ext}:large`,
-          `${base}.${ext}`
-        ]
+          `${base}.${ext}`,
+        ],
       });
-    }
+    },
   },
   {
     /* meee.com.tw — real extension is unknown, try common ones */
@@ -372,19 +376,20 @@ const imageUrlResolvers = [
         ...new Set(
           [ext, "jpg", "jpeg", "png", "gif"]
             .filter(Boolean)
-            .map(e => e.toLowerCase())
-        )
+            .map((e) => e.toLowerCase()),
+        ),
       ];
       return Promise.resolve({
         type: "image",
         src: `https://i.meee.com.tw/${id}.${exts[0]}`,
-        srcset: exts.map(e => `https://i.meee.com.tw/${id}.${e}`)
+        srcset: exts.map((e) => `https://i.meee.com.tw/${id}.${e}`),
       });
-    }
+    },
   },
   {
     /* youtube (watch / youtu.be / embed / shorts / live) */
-    regex: /(?:youtube\.com\/watch\?[^#]*[?&]?v=|youtu\.be\/|youtube\.com\/(?:embed|shorts|live)\/)([\w-]{9,12})/i,
+    regex:
+      /(?:youtube\.com\/watch\?[^#]*[?&]?v=|youtu\.be\/|youtube\.com\/(?:embed|shorts|live)\/)([\w-]{9,12})/i,
     test(src) {
       return this.regex.test(src);
     },
@@ -398,7 +403,7 @@ const imageUrlResolvers = [
         // ignore malformed url
       }
       return Promise.resolve({ type: "iframe", src: embed });
-    }
+    },
   },
   {
     /* twitch clips */
@@ -410,9 +415,9 @@ const imageUrlResolvers = [
       const id = src.match(this.regex)[1];
       return Promise.resolve({
         type: "iframe",
-        src: `https://clips.twitch.tv/embed?clip=${id}&parent=${location.hostname}`
+        src: `https://clips.twitch.tv/embed?clip=${id}&parent=${location.hostname}`,
       });
-    }
+    },
   },
   {
     /* flickr */
@@ -430,22 +435,22 @@ const imageUrlResolvers = [
           api_key: "c8c95356e465b8d7398ff2847152740e",
           photo_id: photoId,
           format: "json",
-          nojsoncallback: 1
-        }
+          nojsoncallback: 1,
+        },
       )}`;
       return fetch(apiURL, { mode: "cors" })
-        .then(r => r.json())
-        .then(data => {
+        .then((r) => r.json())
+        .then((data) => {
           if (!data.photo) {
             throw new Error("Not found");
           }
           const { farm, server: svr, id, secret } = data.photo;
           return {
             type: "image",
-            src: `https://farm${farm}.staticflickr.com/${svr}/${id}_${secret}.jpg`
+            src: `https://farm${farm}.staticflickr.com/${svr}/${id}_${secret}.jpg`,
           };
         });
-    }
+    },
   },
   {
     /* any direct video link */
@@ -454,7 +459,7 @@ const imageUrlResolvers = [
     },
     request(src) {
       return Promise.resolve({ type: "video", src });
-    }
+    },
   },
   {
     /* any direct image link — the generic catch-all that covers every host
@@ -464,7 +469,7 @@ const imageUrlResolvers = [
     },
     request(src) {
       return Promise.resolve({ type: "image", src });
-    }
+    },
   },
   {
     /* Default: not previewable */
@@ -473,8 +478,8 @@ const imageUrlResolvers = [
     },
     request() {
       return Promise.reject(new Error("Unimplemented"));
-    }
-  }
+    },
+  },
 ];
 
 export default ImagePreviewer;

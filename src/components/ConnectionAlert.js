@@ -5,7 +5,7 @@ import "./PageTopAlert.css";
 
 export const ConnectionAlert = ({ onDismiss }) => {
   useEffect(() => {
-    const handler = e => {
+    const handler = (e) => {
       if (e.keyCode == 13) {
         onDismiss();
       }

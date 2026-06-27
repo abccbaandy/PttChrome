@@ -3,7 +3,7 @@ import { Modal, OverlayTrigger, Tooltip, Button } from "react-bootstrap";
 import { i18n } from "../../js/i18n";
 import "./LiveHelperModal.css";
 
-const normalizeSec = value => {
+const normalizeSec = (value) => {
   const sec = parseInt(value, 10);
   return sec > 1 ? sec : 1;
 };
@@ -11,11 +11,11 @@ const normalizeSec = value => {
 export const LiveHelperModal = ({ show, onHide, enabled, sec, onChange }) => {
   const onEnabledClick = useCallback(
     () => onChange({ enabled: !enabled, sec }),
-    [enabled, sec, onChange]
+    [enabled, sec, onChange],
   );
   const onSecChange = useCallback(
     ({ target: { value } }) => onChange({ enabled, sec: normalizeSec(value) }),
-    [enabled, onChange]
+    [enabled, onChange],
   );
 
   return (
