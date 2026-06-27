@@ -15,6 +15,7 @@ import { setTimer } from './util';
 import PasteShortcutAlert from '../components/PasteShortcutAlert';
 import ConnectionAlert from '../components/ConnectionAlert';
 import ContextMenu from '../components/ContextMenu';
+import { renderInto, unmountFrom } from './react_root';
 
 function noop() {}
 
@@ -279,14 +280,11 @@ App.prototype.onClose = function() {
   this.idleTime = 0;
 
   const onDismiss = () => {
-    ReactDOM.unmountComponentAtNode(container);
+    unmountFrom(container);
     this.connect(this.connectedUrl.url);
   }
   const container = document.getElementById('reactAlert');
-  ReactDOM.render(
-    <ConnectionAlert onDismiss={onDismiss} />,
-    container
-  );
+  renderInto(container, <ConnectionAlert onDismiss={onDismiss} />);
   this.updateTabIcon('disconnect');
 };
 
@@ -426,17 +424,17 @@ App.prototype.doPaste = function() {
 App.prototype.showPasteUnimplemented = function() {
   const container = document.getElementById('reactAlert')
   const onDismiss = () => {
-    ReactDOM.unmountComponentAtNode(container)
+    unmountFrom(container)
     this.modalShown = false;
   }
   // react-bootstrap 2 取代了舊的 react-overlays BaseModal（已移除該直接 dep）。
   // 改用 RB2 Modal 提供 backdrop + ESC（onHide）；內容仍是 PasteShortcutAlert，
   // 其 × / 按鈕與 onHide 皆走 onDismiss → unmount 容器。
-  ReactDOM.render(
+  renderInto(
+    container,
     <Modal show onHide={onDismiss}>
       <PasteShortcutAlert onDismiss={onDismiss} />
-    </Modal>,
-    container
+    </Modal>
   )
   this.modalShown = true;
 };
@@ -1222,10 +1220,8 @@ App.prototype.setBBSCmd = function setBBSCmd(cmd) {
 }
 
 App.prototype.setupContextMenus = function() {
-  ReactDOM.render(
-    <ContextMenu
-      pttchrome={this}
-    />,
-    document.getElementById('cmenuReact')
+  renderInto(
+    document.getElementById('cmenuReact'),
+    <ContextMenu pttchrome={this} />
   );
 };

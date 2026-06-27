@@ -3,6 +3,7 @@ import { setupI18n, i18n } from './i18n';
 import { getQueryVariable, proxySiteFromPrefs } from './util';
 import { readValuesWithDefault } from './pref_storage';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
+import { renderInto, unmountFrom } from './react_root';
 
 function startApp() {
   // Build identity first thing: lets a user/console dump prove which bundle
@@ -28,13 +29,10 @@ function startApp() {
     .then(({DeveloperModeAlert}) => new Promise((resolve, reject) => {
       const container = document.getElementById('reactAlert')
       const onDismiss = () => {
-        ReactDOM.unmountComponentAtNode(container)
+        unmountFrom(container)
         resolve()
       }
-      ReactDOM.render(
-        <DeveloperModeAlert onDismiss={onDismiss} />,
-        container
-      )
+      renderInto(container, <DeveloperModeAlert onDismiss={onDismiss} />)
     })) : Promise.resolve()
   ).then(() => {
     // connect. Priority: ?site override (off by default, see webpack ALLOW_SITE_IN_QUERY)
