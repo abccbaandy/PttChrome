@@ -11,8 +11,7 @@
     "jquery": "^3.2.1",
     "react": "^19.2.0",
     "react-bootstrap": "^2.10.10",
-    "react-dom": "^19.2.0",
-    "recompose": "^0.26.0"
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.23",

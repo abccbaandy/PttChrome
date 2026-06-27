@@ -5,11 +5,6 @@ const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const HtmlWebpackHarddiskPlugin = require('html-webpack-harddisk-plugin');
 
-// 真 react 的進入點絕對路徑，給 react_compat.js 取用（見下方 resolve.alias）。
-// 直接指檔案路徑可繞過 react@19 package.json `exports` 不允許 `react/index.js`
-// 子路徑的限制。
-const REACT_REAL = require.resolve('react');
-
 const DEVELOPER_MODE = process.env.NODE_ENV === 'development'
 const PRODUCTION_MODE = process.env.NODE_ENV !== 'development'
 
@@ -44,17 +39,6 @@ module.exports = {
   // is a bundled import and needs no global.
   externals: {
     jquery: 'jQuery',
-  },
-  resolve: {
-    alias: {
-      // 把裸 `react` 導到相容層，補回 React 19 移除的 createFactory（recompose@0.26
-      // 仍依賴它）。精確比對 `react$`：只攔 import "react"，不攔 react-dom/
-      // react/jsx-runtime 等子路徑。相容層自身從 react/index.js 取真 react，故無迴圈。
-      // 過渡橋接，recompose 改寫成 hooks 後（階段三）可連同移除。
-      react$: path.resolve(__dirname, 'src/js/react_compat.js'),
-      // 相容層用此 alias 取真 react，避免 react$ 把自身的 import 也攔成迴圈。
-      'react-real$': REACT_REAL,
-    },
   },
   output: {
     path: path.join(__dirname, 'dist/assets/'),
