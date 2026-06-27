@@ -7,11 +7,11 @@
 //   - dropHidden:false (fixed native 24-row grid)           → row kept but hidden
 //     via visibility:hidden, so the terminal grid alignment is preserved.
 //
-// Uses react-test-renderer (no DOM/network). Cells are single-char (isLeadByte
+// @testing-library/react under jsdom (no network). Cells are single-char (isLeadByte
 // false) so rowToText just concatenates .ch — the Big5 b2u path (needs window.lib)
 // is never exercised, and the 推/噓/→ marker is a plain Unicode char here.
 
-import renderer from "react-test-renderer";
+import { render } from "@testing-library/react";
 import Screen from "../../src/components/Screen";
 
 const COLOR = {
@@ -38,16 +38,14 @@ function line(str) {
   return str.split("").map(cell);
 }
 
-// Depth-first collect of host nodes whose props match a predicate, in tree order.
-function collect(node, pred, out = []) {
-  if (!node || typeof node === "string") return out;
-  if (node.props && pred(node.props)) out.push(node);
-  for (const child of node.children || []) collect(child, pred, out);
-  return out;
-}
-
-const bbslines = json => collect(json, p => p["data-type"] === "bbsline");
-const bbsrows = json => collect(json, p => p.type === "bbsrow");
+// The bbsline span carries data-type/data-row; the bbsrow span carries the
+// per-row visibility toggle (<span type="bbsrow">).
+const bbslines = container =>
+  Array.from(container.querySelectorAll('[data-type="bbsline"]'));
+const bbsrows = container =>
+  Array.from(container.querySelectorAll('span[type="bbsrow"]'));
+const dataRows = container =>
+  bbslines(container).map(n => parseInt(n.getAttribute("data-row"), 10));
 
 // Three comment rows; the middle one (baduser) is blacklisted.
 const lines = [
@@ -65,40 +63,37 @@ const enhanceBase = {
   pageState: 3
 };
 
-function render(dropHidden) {
-  return renderer
-    .create(
-      <Screen
-        lines={lines}
-        forceWidth={20}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={Object.assign({}, enhanceBase, { dropHidden })}
-      />
-    )
-    .toJSON();
+function render_(dropHidden) {
+  return render(
+    <Screen
+      lines={lines}
+      forceWidth={20}
+      enableLinkInlinePreview={false}
+      enableLinkHoverPreview={false}
+      enhance={Object.assign({}, enhanceBase, { dropHidden })}
+    />
+  ).container;
 }
 
 describe("Screen blacklist dropHidden", () => {
   test("dropHidden:true → blacklisted row produces no node; survivors keep absolute data-row", () => {
-    const json = render(true);
-    const rows = bbslines(json);
+    const container = render_(true);
     // baduser row removed entirely → only 2 rows rendered.
-    expect(rows.length).toBe(2);
+    expect(bbslines(container).length).toBe(2);
     // Surviving rows keep their absolute index (0 and 2, NOT re-packed to 0 and 1),
     // so selection across the dropped gap (term_buf.getText uses the row index)
     // stays aligned.
-    expect(rows.map(n => n.props["data-row"])).toEqual([0, 2]);
+    expect(dataRows(container)).toEqual([0, 2]);
   });
 
   test("dropHidden:false → blacklisted row kept as visibility:hidden; grid preserved", () => {
-    const json = render(false);
+    const container = render_(false);
     // All three rows present (fixed grid, nothing removed).
-    expect(bbsrows(json).length).toBe(3);
-    expect(bbslines(json).map(n => n.props["data-row"])).toEqual([0, 1, 2]);
+    expect(bbsrows(container).length).toBe(3);
+    expect(dataRows(container)).toEqual([0, 1, 2]);
     // Exactly the middle bbsrow is hidden via style.visibility.
-    const hidden = bbsrows(json).filter(
-      n => n.props.style && n.props.style.visibility === "hidden"
+    const hidden = bbsrows(container).filter(
+      n => n.style && n.style.visibility === "hidden"
     );
     expect(hidden.length).toBe(1);
   });
@@ -118,45 +113,42 @@ const listLines = [
 ];
 
 function renderList(titleBlacklist, dropHidden) {
-  return renderer
-    .create(
-      <Screen
-        lines={listLines}
-        forceWidth={50}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={{
-          blacklist: new Set(),
-          titleBlacklist,
-          pageState: 2,
-          dropHidden
-        }}
-      />
-    )
-    .toJSON();
+  return render(
+    <Screen
+      lines={listLines}
+      forceWidth={50}
+      enableLinkInlinePreview={false}
+      enableLinkHoverPreview={false}
+      enhance={{
+        blacklist: new Set(),
+        titleBlacklist,
+        pageState: 2,
+        dropHidden
+      }}
+    />
+  ).container;
 }
 
 describe("Screen board-list title blacklist", () => {
   test("titleBlacklist keyword hides the matching row (native grid, visibility:hidden)", () => {
-    const json = renderList(["廣告"], false);
-    expect(bbsrows(json).length).toBe(3);
-    const hidden = bbsrows(json).filter(
-      n => n.props.style && n.props.style.visibility === "hidden"
+    const container = renderList(["廣告"], false);
+    expect(bbsrows(container).length).toBe(3);
+    const hidden = bbsrows(container).filter(
+      n => n.style && n.style.visibility === "hidden"
     );
     expect(hidden.length).toBe(1);
   });
 
   test("works with empty author blacklist; dropHidden removes the matching row", () => {
-    const json = renderList(["廣告"], true);
-    const rows = bbslines(json);
-    expect(rows.length).toBe(2);
-    expect(rows.map(n => n.props["data-row"])).toEqual([0, 2]);
+    const container = renderList(["廣告"], true);
+    expect(bbslines(container).length).toBe(2);
+    expect(dataRows(container)).toEqual([0, 2]);
   });
 
   test("no keyword match → nothing hidden", () => {
-    const json = renderList(["不存在"], false);
-    const hidden = bbsrows(json).filter(
-      n => n.props.style && n.props.style.visibility === "hidden"
+    const container = renderList(["不存在"], false);
+    const hidden = bbsrows(container).filter(
+      n => n.style && n.style.visibility === "hidden"
     );
     expect(hidden.length).toBe(0);
   });
@@ -169,53 +161,51 @@ describe("Screen board-list title blacklist", () => {
 // overlay screens; computeAnnotations must keep hiding list rows when it is set even
 // though pageState !== 2.
 function renderListCtx(enhanceExtra) {
-  return renderer
-    .create(
-      <Screen
-        lines={listLines}
-        forceWidth={50}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={Object.assign(
-          { blacklist: new Set(), dropHidden: false },
-          enhanceExtra
-        )}
-      />
-    )
-    .toJSON();
+  return render(
+    <Screen
+      lines={listLines}
+      forceWidth={50}
+      enableLinkInlinePreview={false}
+      enableLinkHoverPreview={false}
+      enhance={Object.assign(
+        { blacklist: new Set(), dropHidden: false },
+        enhanceExtra
+      )}
+    />
+  ).container;
 }
 
-const hiddenCount = json =>
-  bbsrows(json).filter(
-    n => n.props.style && n.props.style.visibility === "hidden"
+const hiddenCount = container =>
+  bbsrows(container).filter(
+    n => n.style && n.style.visibility === "hidden"
   ).length;
 
 describe("Screen list blacklist sticky inListContext (v prompt)", () => {
   test("pageState 0 + inListContext → author blacklist still hides the row", () => {
-    const json = renderListCtx({
+    const container = renderListCtx({
       blacklist: new Set(["anyuser"]),
       pageState: 0,
       inListContext: true
     });
-    expect(hiddenCount(json)).toBe(1);
+    expect(hiddenCount(container)).toBe(1);
   });
 
   test("pageState 0 + inListContext → title blacklist still hides the row", () => {
-    const json = renderListCtx({
+    const container = renderListCtx({
       titleBlacklist: ["廣告"],
       pageState: 0,
       inListContext: true
     });
-    expect(hiddenCount(json)).toBe(1);
+    expect(hiddenCount(container)).toBe(1);
   });
 
   test("pageState 0 without inListContext → nothing hidden (no over-hiding)", () => {
-    const json = renderListCtx({
+    const container = renderListCtx({
       blacklist: new Set(["anyuser"]),
       titleBlacklist: ["廣告"],
       pageState: 0,
       inListContext: false
     });
-    expect(hiddenCount(json)).toBe(0);
+    expect(hiddenCount(container)).toBe(0);
   });
 });

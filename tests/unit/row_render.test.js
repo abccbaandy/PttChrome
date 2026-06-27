@@ -1,13 +1,22 @@
 // Rendering test for the same-author / pusher highlight on a comment <Row>.
-// Uses react-test-renderer (no DOM/network). Fake TermChar cells are ASCII-only so
-// the DBCS path (which needs window.lib Big5 tables) is never exercised.
+// Uses @testing-library/react under jsdom (no network). Fake TermChar cells are
+// ASCII-only so the DBCS path (which needs window.lib Big5 tables) is never
+// exercised.
 //
 // The marker (推/噓/→) is a 2-col DBCS char in reality; here two placeholder ASCII
 // cells stand in for cols 0-1 so the column math (user id at col 3) still holds.
 
-import renderer from "react-test-renderer";
+import { render, act } from "@testing-library/react";
 import Row from "../../src/components/Row";
-import ImagePreviewer from "../../src/components/ImagePreviewer";
+import { requestPreview } from "../../src/components/ImagePreviewer";
+
+// Let any ImagePreviewer resolver promise (mounted by an inline preview / fixed-URL
+// line) settle inside act() so its trailing async setState doesn't log a "not
+// wrapped in act" warning. Non-previewable links reject via the default resolver.
+const flushPreviews = () =>
+  act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
 
 // One shared color so all cells coalesce; equals() is identity-based.
 const COLOR = {
@@ -55,71 +64,54 @@ function urlChars(url) {
   return cells;
 }
 
-// Depth-first search over react-test-renderer's toJSON() tree.
-function findByClass(node, className) {
-  if (!node || typeof node === "string") return null;
-  if (node.props && node.props.className === className) return node;
-  for (const child of node.children || []) {
-    const found = findByClass(child, className);
-    if (found) return found;
-  }
-  return null;
-}
-
-function textOf(node) {
-  if (node == null) return "";
-  if (typeof node === "string") return node;
-  return (node.children || []).map(textOf).join("");
-}
+// The outer node of a rendered <Row> is the bbsrow span (<span type="bbsrow">).
+const bbsrow = container => container.querySelector('span[type="bbsrow"]');
 
 describe("Row same-author highlight", () => {
   test("commentByAuthor wraps exactly the user id columns", () => {
-    const json = renderer
-      .create(
-        <Row
-          chars={chars("PU wowbenny: hi")}
-          row={0}
-          authorIdStart={3}
-          authorIdEnd={11}
-        />
-      )
-      .toJSON();
-    const authorSpan = findByClass(json, "commentByAuthor");
+    const { container } = render(
+      <Row
+        chars={chars("PU wowbenny: hi")}
+        row={0}
+        authorIdStart={3}
+        authorIdEnd={11}
+      />
+    );
+    const authorSpan = container.querySelector(".commentByAuthor");
     expect(authorSpan).not.toBeNull();
-    expect(textOf(authorSpan)).toBe("wowbenny"); // not "PU ", not the content
+    expect(authorSpan.textContent).toBe("wowbenny"); // not "PU ", not the content
   });
 
   test("no author range → no commentByAuthor span", () => {
-    const json = renderer
-      .create(<Row chars={chars("PU wowbenny: hi")} row={0} />)
-      .toJSON();
-    expect(findByClass(json, "commentByAuthor")).toBeNull();
+    const { container } = render(
+      <Row chars={chars("PU wowbenny: hi")} row={0} />
+    );
+    expect(container.querySelector(".commentByAuthor")).toBeNull();
   });
 });
 
 describe("Row pusher highlight", () => {
   test("pusherHighlight → whole-row class + data-pusher on the bbsrow", () => {
-    const json = renderer
-      .create(
-        <Row
-          chars={chars("PU wowbenny: hi")}
-          row={0}
-          pusher="wowbenny"
-          pusherHighlight={true}
-        />
-      )
-      .toJSON();
-    // Outer node is the bbsrow span.
-    expect(json.props.className).toBe("pusherHighlight");
-    expect(json.props["data-pusher"]).toBe("wowbenny");
+    const { container } = render(
+      <Row
+        chars={chars("PU wowbenny: hi")}
+        row={0}
+        pusher="wowbenny"
+        pusherHighlight={true}
+      />
+    );
+    const row = bbsrow(container);
+    expect(row.classList.contains("pusherHighlight")).toBe(true);
+    expect(row.getAttribute("data-pusher")).toBe("wowbenny");
   });
 
   test("data-pusher present but not highlighted when not selected", () => {
-    const json = renderer
-      .create(<Row chars={chars("PU wowbenny: hi")} row={0} pusher="wowbenny" />)
-      .toJSON();
-    expect(json.props["data-pusher"]).toBe("wowbenny");
-    expect(json.props.className).toBeUndefined();
+    const { container } = render(
+      <Row chars={chars("PU wowbenny: hi")} row={0} pusher="wowbenny" />
+    );
+    const row = bbsrow(container);
+    expect(row.getAttribute("data-pusher")).toBe("wowbenny");
+    expect(row.classList.contains("pusherHighlight")).toBe(false);
   });
 });
 
@@ -127,16 +119,12 @@ describe("Row pusher highlight", () => {
 // same preview request Promise for an unchanged href. A fresh Promise each
 // render would reset ImagePreviewer (PureComponent) state to undefined and
 // remount the media element — reloading YouTube iframes and flashing them.
+// The stability comes from requestPreview's href→Promise cache; assert it
+// directly (the request prop is internal and not observable in the DOM).
 describe("Row inline preview request identity", () => {
-  test("same href → referentially stable request prop across renders", () => {
+  test("same href → requestPreview returns the same Promise reference", () => {
     const url = "https://youtu.be/aYIdRD_Gvz0";
-    const make = () =>
-      renderer.create(
-        <Row chars={urlChars(url)} row={0} enableLinkInlinePreview={true} />
-      );
-    const reqA = make().root.findByType(ImagePreviewer).props.request;
-    const reqB = make().root.findByType(ImagePreviewer).props.request;
-    expect(reqA).toBe(reqB);
+    expect(requestPreview(url)).toBe(requestPreview(url));
   });
 });
 
@@ -144,33 +132,32 @@ describe("Row inline preview request identity", () => {
 describe("Row fixed-URL line", () => {
   const fixed = "https://www.google.com/";
 
-  test("easy-reading (inline preview) → renders a clickable .fixedUrlLine", () => {
-    const json = renderer
-      .create(
-        <Row
-          chars={chars("broken url above")}
-          row={0}
-          enableLinkInlinePreview={true}
-          fixedUrls={[{ original: "www . google .com/", fixed }]}
-        />
-      )
-      .toJSON();
-    const line = findByClass(json, "fixedUrlLine");
+  test("easy-reading (inline preview) → renders a clickable .fixedUrlLine", async () => {
+    const { container } = render(
+      <Row
+        chars={chars("broken url above")}
+        row={0}
+        enableLinkInlinePreview={true}
+        fixedUrls={[{ original: "www . google .com/", fixed }]}
+      />
+    );
+    const line = container.querySelector(".fixedUrlLine");
     expect(line).not.toBeNull();
-    expect(textOf(line)).toContain(fixed);
+    expect(line.textContent).toContain(fixed);
+    // FixedUrlLine always mounts an ImagePreviewer; google.com/ is non-previewable
+    // → the resolver rejects in a later microtask. Flush it under act().
+    await flushPreviews();
   });
 
   test("native grid (no inline preview) → fixed-URL line is NOT rendered", () => {
-    const json = renderer
-      .create(
-        <Row
-          chars={chars("broken url above")}
-          row={0}
-          fixedUrls={[{ original: "www . google .com/", fixed }]}
-        />
-      )
-      .toJSON();
-    expect(findByClass(json, "fixedUrlLine")).toBeNull();
+    const { container } = render(
+      <Row
+        chars={chars("broken url above")}
+        row={0}
+        fixedUrls={[{ original: "www . google .com/", fixed }]}
+      />
+    );
+    expect(container.querySelector(".fixedUrlLine")).toBeNull();
   });
 });
 
@@ -179,48 +166,44 @@ describe("Row fixed-URL line", () => {
 describe("Row X mention link", () => {
   test("verified mention → .xMention <a> wrapping exactly @handle, opens new tab", () => {
     // h0 i1 sp2 @3 j4 a5 c6 k7 sp8 y9 a10
-    const json = renderer
-      .create(
-        <Row
-          chars={chars("hi @jack ya")}
-          row={0}
-          mentions={[
-            { startCol: 3, endCol: 8, handle: "jack", href: "https://x.com/jack" }
-          ]}
-        />
-      )
-      .toJSON();
-    const a = findByClass(json, "xMention");
+    const { container } = render(
+      <Row
+        chars={chars("hi @jack ya")}
+        row={0}
+        mentions={[
+          { startCol: 3, endCol: 8, handle: "jack", href: "https://x.com/jack" }
+        ]}
+      />
+    );
+    const a = container.querySelector("a.xMention");
     expect(a).not.toBeNull();
-    expect(a.props.href).toBe("https://x.com/jack");
-    expect(a.props.target).toBe("_blank");
-    expect(a.props.rel).toBe("noreferrer");
-    expect(textOf(a)).toBe("@jack");
+    expect(a.getAttribute("href")).toBe("https://x.com/jack");
+    expect(a.getAttribute("target")).toBe("_blank");
+    expect(a.getAttribute("rel")).toBe("noreferrer");
+    expect(a.textContent).toBe("@jack");
   });
 
   test("no mentions prop → plain text, no .xMention", () => {
-    const json = renderer
-      .create(<Row chars={chars("hi @jack ya")} row={0} />)
-      .toJSON();
-    expect(findByClass(json, "xMention")).toBeNull();
-    expect(textOf(json)).toBe("hi @jack ya");
+    const { container } = render(
+      <Row chars={chars("hi @jack ya")} row={0} />
+    );
+    expect(container.querySelector(".xMention")).toBeNull();
+    expect(bbsrow(container).textContent).toBe("hi @jack ya");
   });
 
   test("mention reaching the end of the line is still wrapped", () => {
     // a0 t1 sp2 @3 b4 o5 b6  → endCol 7 == line length
-    const json = renderer
-      .create(
-        <Row
-          chars={chars("at @bob")}
-          row={0}
-          mentions={[
-            { startCol: 3, endCol: 7, handle: "bob", href: "https://x.com/bob" }
-          ]}
-        />
-      )
-      .toJSON();
-    const a = findByClass(json, "xMention");
+    const { container } = render(
+      <Row
+        chars={chars("at @bob")}
+        row={0}
+        mentions={[
+          { startCol: 3, endCol: 7, handle: "bob", href: "https://x.com/bob" }
+        ]}
+      />
+    );
+    const a = container.querySelector("a.xMention");
     expect(a).not.toBeNull();
-    expect(textOf(a)).toBe("@bob");
+    expect(a.textContent).toBe("@bob");
   });
 });
