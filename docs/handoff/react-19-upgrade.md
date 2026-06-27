@@ -1,6 +1,6 @@
 # React 16 → 19 升級評估（治本：解鎖現代 UI 元件庫）
 
-狀態：**階段一（16→18）、階段二（18→19）已完成**（commit 見 git log）。**階段二.5（清技術債）未動工**——階段二為暫留 recompose/react-test-renderer 留下 3 個過渡橋接，須在此階段治本清掉。階段三（UI 庫選型）未動工。動工前先讀本檔全文。
+狀態：**階段一（16→18）、階段二（18→19）、階段二.5（清技術債）已完成**（commit 見 git log）。**階段三（UI 庫選型）未動工**——這是 fork 後續真正的治本目標（換掉手刻 UI），動工前先讀本檔全文。
 
 > 階段順序：階段二.5（清債）**先於**階段三（UI）。理由：階段三是換 UI 元件庫（治本目標），不是清債；先把 deprecated 依賴與橋接 hack 清乾淨，階段三才不會在腐朽地基上疊加。符合 CLAUDE.md「遇坑優先升級換套件、別堆疊 workaround」。
 
@@ -24,28 +24,24 @@
 - **`react-test-renderer@19` 實測 render 成 null → setup.js 包 act()**。React 19 test-renderer 預設 concurrent，初次 mount 不同步 commit。`tests/unit/setup.js` 加 `global.IS_REACT_ACT_ENVIRONMENT=true` + monkeypatch `TestRenderer.create` 包 `renderer.act()`，3 個 render 測試零改動沿用。**這是過渡橋接，階段二.5 清。**
 - 驗證全綠：`yarn build`（零警告）+ `test:unit`(223) + `test:e2e:offline`(27) + live(12＝connect-login 1＋easy-reading 4＋enhance 7)。
 
-## 階段二.5（清技術債，CONFIRMED 待動工）
+## 階段二.5（清技術債，CONFIRMED 已完成）
 
-階段二為「暫留 deprecated 套件」留下的橋接須在此治本，並一併清其他過時依賴/寫法。**用升級/換套件治本，不再堆 workaround（CLAUDE.md 規範）。**
+階段二暫留的 3 個過渡橋接已治本清掉，連同輕量 dep。分 4 commit（dev 分支）：
 
-優先（階段二橋接的根因，三者連動）：
-
-| # | 債 | 現有橋接（要刪） | 治本 |
+| # | 債 | 治本（已做） | commit |
 |---|---|---|---|
-| 1 | **recompose@0.26 deprecated**（用 React 19 已移除的 `createFactory`；peer 僅 react^16） | `src/js/react_compat.js` + `webpack.config.js` `react$`/`react-real$` alias | 6 元件改 hooks（`PrefModal`/`ContextMenu/index`/`InputHelperModal`/`LiveHelperModal`/`DropdownMenu`/`ConnectionAlert`，`useState`/`useCallback`/`useEffect`）→ 移 recompose dep + 整個 compat shim + alias。`index.js` 的 `withProps` side-effect 反模式要轉 `useEffect`。守門：`ui_behavior.offline.spec.js`。 |
-| 2 | **react-test-renderer@19 deprecated**（且需 act() 才 render） | `tests/unit/setup.js` 的 `create` monkeypatch + `IS_REACT_ACT_ENVIRONMENT` | 遷 `@testing-library/react` + jsdom env（`jest.config.js` `testEnvironment` 改 jsdom 或 per-file docblock）→ 改寫 `row_render`/`image_preview`/`screen_dropHidden` → 移 test-renderer dep + setup patch。 |
-| 3 | **classic JSX runtime + ProvidePlugin（global React）** 為舊寫法 | `ProvidePlugin({React})` + 各檔靠 global `React` | babel `@babel/preset-react` 三段加 `runtime:"automatic"`；對用 `React.Component`/`createRef`/`Fragment`/`PureComponent` 的檔補顯式 import（`Screen.js`/`ImagePreviewer.js`/`term_ui.js` 等）→ 移 ProvidePlugin + setup.js 的 `global.React`。 |
+| 1 | recompose@0.26（用 React 19 已移除的 `createFactory`） | 6 元件改 hooks（`ConnectionAlert`/`LiveHelperModal`/`DropdownMenu`/`InputHelperModal`/`PrefModal`/`ContextMenu/index`）→ 刪 `react_compat.js`、webpack `react$`/`react-real$` alias、recompose dep。`index.js` 用單一 `useState`+`stateRef` 還原 withStateHandlers「永遠最新 state」語意；`withProps` side-effect → `useEffect`。 | `7e90b5d` |
+| 2 | react-test-renderer@19（deprecated、需 act()） | 遷 `@testing-library/react` + jsdom env（`jest.config.js`）；改寫 `row_render`/`image_preview`/`screen_dropHidden`（toJSON 樹 → DOM 查詢；「request 參考穩定」改測 `requestPreview` cache）→ 移 test-renderer + setup patch。 | `33db47f` |
+| 3 | classic JSX runtime + ProvidePlugin（global React） | babel `preset-react` 三段加 `runtime:"automatic"`；`term_ui.js`/`Screen.js`/`ImagePreviewer.js` 補 `import React`（仍用 `React.Component`/`createRef`/`PureComponent`）→ 移 ProvidePlugin + setup.js `global.React`。 | `6d8be20` |
+| — | @popperjs/core peer 缺、冗餘 babel dynamic-import plugin | 補 `@popperjs/core` devDep；移 `@babel/plugin-syntax-dynamic-import`+`babel-plugin-dynamic-import-node`（preset-env 已原生支援 `import()`，實測 test env 仍轉 CJS require）。 | `83eb2f1` |
 
-其他過時依賴/警告（同階段一併清，動工前各自確認版本與 breaking change）：
+順手修掉的 3 個既有 latent bug（見 `7e90b5d` commit message）：`index.js` withProps 參照 out-of-scope `state.enabled`（toggle 一觸發即 ReferenceError）、`onQuickSearchSelect` 從不存在的 prop 取 `selectedText`（永遠 undefined）、監聽 cleanup 用錯元素/事件名。
 
-- `prettier ^1.19.1`（current 3.x；升版會改格式 → 需一次 reformat + 對 lint-staged）。
-- `husky ^4.2.3`（current 9.x，設定格式大改）、`lint-staged ^10`（current 15.x）。
-- `bootstrap` peer 缺 `@popperjs/core@^2`（yarn install warning）→ 補 devDep（RB 用到 Popper 定位）。
-- `@babel/plugin-syntax-dynamic-import` + `babel-plugin-dynamic-import-node`：dynamic import 早已原生，preset-env 已含 → 可移。
-- yarn install 的 `url.parse()` DEP0169：來自某工具鏈，升級相依後應消。
-- 動工前重跑 `yarn build` 收集當下所有 webpack warning、`yarn install` 收集所有 peer warning，逐條歸零或記錄為已知。
+驗證全綠：`yarn build`（零警告，firebase lazy chunk 仍切出）+ `test:unit`(223，零 act 警告) + `test:e2e:offline`(27) + live e2e(12＝easy-reading 4＋enhance 7＋自動登入 1)。
 
-下列原始評估內容保留供階段二.5/三參考。
+**未做（本輪外，另開一輪）**：`prettier ^1.19.1`→3.x（reformat 大量檔）、`husky ^4.2.3`→9.x、`lint-staged ^10`→15.x、`url.parse()` DEP0169（隨工具鏈升版才消）。
+
+下列原始評估內容保留供階段三參考。
 
 ## 動機（why）
 
@@ -69,9 +65,10 @@ React 16 是那道關著的門。故「換掉手刻 UI」與「升 React」是**
 |---|---|---|
 | react / react-dom | `^19.2.0`（階段二已升） | `package.json` |
 | 載入機制 | **bundled**（階段二已換）：webpack bundle + `ProvidePlugin({React})`；`externals` 只剩 jquery；dev.html 只剩 jQuery/hammer CDN | `webpack.config.js`、`src/dev.html` |
-| react-bootstrap | `^2.10.10`（bundled import；× React 19 已 CONFIRMED ok） | `package.json:13` |
-| recompose | `^0.26.0`（**deprecated**；React 19 需 `react_compat.js` 補 `createFactory` 才跑；階段二.5 清） | `package.json:15`、`src/js/react_compat.js` |
-| 單元測試渲染器 | `react-test-renderer ^19.2.0`（deprecated；需 setup.js act() patch；階段二.5 遷 testing-library） | `package.json`、`tests/unit/setup.js` |
+| react-bootstrap | `^2.10.10`（bundled import；× React 19 已 CONFIRMED ok） | `package.json` |
+| recompose | **已移除**（階段二.5：6 元件改 hooks，shim/alias 一併刪） | — |
+| 單元測試渲染器 | `@testing-library/react`（階段二.5 遷移，jsdom env；react-test-renderer 已移除） | `package.json`、`tests/unit/setup.js` |
+| JSX runtime | `automatic`（階段二.5；無 global React／ProvidePlugin） | `package.json` babel |
 | 渲染入口 | `createRoot`（`src/js/react_root.js` 集中，已改 `react-dom/client` 顯式 import） | `term_ui.js`、`pttchrome.js`、`main.js` |
 
 良性現況：自家 code **無** `findDOMNode`、**無** 舊式 lifecycle（`componentWillReceiveProps` 等已遷走，見 `Screen.js:141`）、**無** string ref。遷移面比典型 React 16 專案乾淨。
@@ -82,11 +79,11 @@ React 16 是那道關著的門。故「換掉手刻 UI」與「升 React」是**
 
 2. ~~**`ReactDOM.render` → `createRoot`**~~ **階段一已完成**：集中到 `src/js/react_root.js`（WeakMap cache root per container + `flushSync` 同步契約）。`unmountComponentAtNode` → `unmountFrom`（unmount 後 delete cache）。
 
-3. **`react-test-renderer` 在 React 19 deprecated**（且需 act()）→ 階段二暫以 setup.js act() patch 橋接；**階段二.5** 改寫 `row_render`/`image_preview`/`screen_dropHidden` 到 `@testing-library/react`（+ jsdom env）。
+3. ~~**`react-test-renderer` deprecated**~~ **階段二.5 已清**：遷 `@testing-library/react` + jsdom env，改寫 `row_render`/`image_preview`/`screen_dropHidden`，移除 setup.js act() patch（commit `33db47f`）。
 
 4. ~~**react-bootstrap 2 × React 19 相容性 `unknown`**~~ **階段二已查證 CONFIRMED ok**：RB2 在 React 19 無 `findDOMNode` 崩潰（`ui_behavior.offline.spec.js` 跑通全部 RB 元件），不需升 RB。
 
-5. **`recompose` deprecated**（且用 React 19 已移除的 `createFactory`）→ 階段二暫以 `react_compat.js` createFactory shim 橋接；**階段二.5** 把 6 元件改寫成 hooks 後移除 shim。pointer：各檔 `from "recompose"`。
+5. ~~**`recompose` deprecated**~~ **階段二.5 已清**：6 元件改 hooks，移除 `react_compat.js` shim + alias + recompose dep（commit `7e90b5d`）。
 
 ## 相容性待查清單（動工前各打一個 CONFIRMED/紅）
 
@@ -99,7 +96,7 @@ React 16 是那道關著的門。故「換掉手刻 UI」與「升 React」是**
 
 - ~~**階段一 16→18**（風險低）：升 react/react-dom 18；`ReactDOM.render`→`createRoot`（阻點 2）；UMD 仍在、載入機制不動；`react-test-renderer` 18 仍可用暫留。~~ **已完成**（見頂部完成紀錄；額外需 `flushSync` 還原同步契約）。
 - ~~**階段二 18→19**：處理阻點 1（bundle React、改載入）、3（測試遷移）、4（RB 相容）。~~ **已完成**（見「階段二完成紀錄」；阻點 1/4 清，3 暫以 act() patch 橋接留階段二.5；recompose 以 createFactory shim 橋接留階段二.5）。
-- **階段二.5 清技術債**：見上「階段二.5」段。清 3 個橋接（recompose→hooks、test-renderer→testing-library、JSX automatic runtime）+ 過時依賴（prettier/husky/lint-staged 升版、補 @popperjs/core peer、移冗餘 babel dynamic-import plugin）。**先於階段三**。
+- ~~**階段二.5 清技術債**~~ **已完成**（見上「階段二.5」段）：3 個橋接清掉 + 補 @popperjs/core peer + 移冗餘 babel dynamic-import plugin。prettier/husky/lint-staged 升版另開一輪。
 - **階段三 選型 + 試點**：選一套元件庫（Mantine/MUI/Chakra，皆 React 18+），**以 `PrefModal` 為第一個試點**（最痛、最受益、e2e 守門已備：`tests/e2e/offline/ui_behavior.offline.spec.js`），逐步替換手刻 UI。
 
 ## 決策點（`guess`/`unknown`，動工時與使用者確認）
