@@ -1,9 +1,45 @@
 import cx from "classnames";
 import React from "react";
 import { compose, lifecycle, withHandlers } from "recompose";
-import { MenuItem } from "react-bootstrap";
 import { i18n } from "../../js/i18n";
 import "./DropdownMenu.css";
+
+// 這個右鍵選單是手刻的 <ul class="dropdown-menu">（非 react-bootstrap Dropdown），
+// 原本只借 react-bootstrap@0.31 的 MenuItem 來吐 <li><a role="menuitem"> 與 onSelect。
+// react-bootstrap 2 的 Dropdown.Item 不在 Dropdown context 外觸發 onSelect，且改吐
+// <a class="dropdown-item">（破壞本檔 .DropdownMenu--reset > li > a 的 CSS）。
+// 故就地實作等價的 MenuItem，保留 <li><a> 結構與 onSelect(eventKey, event) 契約，
+// 同時徹底脫離 react-bootstrap（這個選單不需要它）。
+const MenuItem = ({
+  eventKey,
+  onSelect,
+  onClick,
+  divider,
+  className,
+  children
+}) => {
+  if (divider) {
+    return <li role="separator" className="DropdownMenu__Divider" />;
+  }
+  const handleClick = e => {
+    if (onClick) onClick(e);
+    if (onSelect) onSelect(eventKey, e);
+  };
+  return (
+    <li role="presentation" className={className}>
+      <a
+        role="menuitem"
+        href="#"
+        onClick={e => {
+          e.preventDefault();
+          handleClick(e);
+        }}
+      >
+        {children}
+      </a>
+    </li>
+  );
+};
 
 const top = (mouseHeight, menuHeight) => {
   const pageHeight = window.innerHeight;

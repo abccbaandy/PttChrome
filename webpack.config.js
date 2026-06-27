@@ -30,8 +30,9 @@ module.exports = {
     'pttchrome': './src/entry.js',
   },
   // React/jQuery are imported in source but provided as CDN globals (loaded by
-  // <script> tags in src/dev.html) rather than bundled. bootstrap (a jQuery
-  // plugin) and hammerjs are global-only (no import) so they need no entry here.
+  // <script> tags in src/dev.html) rather than bundled. hammerjs is global-only
+  // (no import) so it needs no entry here. bootstrap provides CSS only (CDN
+  // <link>); react-bootstrap 2 is a bundled import and needs no global.
   // Replaces webpack-cdn-plugin, removed to clear its transitive request/
   // tough-cookie Dependabot alerts (#9/#10). See docs/handoff.
   externals: {

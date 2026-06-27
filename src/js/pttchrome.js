@@ -1,6 +1,5 @@
 ﻿// Main Program
-import BaseModal from 'react-overlays/lib/Modal';
-import { Fade, Modal } from "react-bootstrap";
+import { Modal } from "react-bootstrap";
 import { AnsiParser } from './ansi_parser';
 import { TermView } from './term_view';
 import { TermBuf } from './term_buf';
@@ -430,18 +429,13 @@ App.prototype.showPasteUnimplemented = function() {
     ReactDOM.unmountComponentAtNode(container)
     this.modalShown = false;
   }
+  // react-bootstrap 2 取代了舊的 react-overlays BaseModal（已移除該直接 dep）。
+  // 改用 RB2 Modal 提供 backdrop + ESC（onHide）；內容仍是 PasteShortcutAlert，
+  // 其 × / 按鈕與 onHide 皆走 onDismiss → unmount 容器。
   ReactDOM.render(
-    <BaseModal
-      show
-      onExited={onDismiss}
-      backdropClassName="modal-backdrop"
-      containerClassName="modal-open"
-      transition={Fade}
-      dialogTransitionTimeout={Modal.TRANSITION_DURATION}
-      backdropTransitionTimeout={Modal.BACKDROP_TRANSITION_DURATION}
-    >
+    <Modal show onHide={onDismiss}>
       <PasteShortcutAlert onDismiss={onDismiss} />
-    </BaseModal>,
+    </Modal>,
     container
   )
   this.modalShown = true;

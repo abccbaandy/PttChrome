@@ -1,3 +1,18 @@
+/* Bootstrap 5 沒有 BS3 的 `.open > .dropdown-menu { display:block }` 規則
+   （BS5 改用 `.dropdown-menu.show`）。本選單靠外層 div 的 `.open` class 控制顯示，
+   故在此自行補回，避免升 BS5 後選單永遠 display:none 不出現。 */
+.open > .dropdown-menu {
+  display: block;
+}
+
+/* 自繪分隔線（取代 BS3 的 `.dropdown-menu .divider`，BS5 已移除該 class）。 */
+.DropdownMenu__Divider {
+  height: 0;
+  margin: 4px 0;
+  border-top: 1px solid #e5e5e5;
+  overflow: hidden;
+}
+
 /* Boostrap overrides -- BEGIN */
 .DropdownMenu--reset > li > a {
   padding: 3px 20px 3px 30px;
@@ -30,9 +45,9 @@
   margin-left: 15px;
 }
 
+/* BS5 移除 Glyphicons（"\e013" + "Glyphicons Halflings"）→ 改用 unicode 勾號。 */
 .DropdownMenu__Item--checked::before {
-  content: "\e013";
-  font-family: "Glyphicons Halflings";
+  content: "\2713";
   position: absolute;
   left: 10px;
   color: black;

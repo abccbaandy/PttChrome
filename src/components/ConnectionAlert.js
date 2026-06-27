@@ -24,12 +24,17 @@ const enhance = compose(
 );
 
 export const ConnectionAlert = ({ onDismiss }) => (
-  <Fade in>
-    <Alert bsStyle="danger" className="PageTopAlert" onDismiss={onDismiss}>
+  <Fade in appear>
+    <Alert
+      variant="danger"
+      className="PageTopAlert"
+      dismissible
+      onClose={onDismiss}
+    >
       <h4>{i18n("alert_connectionHeader")}</h4>
       <p>{i18n("alert_connectionText")}</p>
       <p>
-        <Button bsStyle="danger" onClick={onDismiss}>
+        <Button variant="danger" onClick={onDismiss}>
           {i18n("alert_connectionReconnect")}
         </Button>
       </p>

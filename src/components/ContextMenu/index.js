@@ -2,7 +2,6 @@ import $ from "jquery";
 import cx from "classnames";
 import React from "react";
 import { compose, withStateHandlers, withProps, lifecycle } from "recompose";
-import { MenuItem } from "react-bootstrap";
 import { i18n } from "../../js/i18n";
 import DropdownMenu from "./DropdownMenu";
 import InputHelperModal from "./InputHelperModal";

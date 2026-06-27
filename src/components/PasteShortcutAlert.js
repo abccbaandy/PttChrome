@@ -5,15 +5,16 @@ import "./PageTopAlert.css";
 
 export const PasteShortcutAlert = ({ onDismiss }) => (
   <Alert
-    bsStyle="info"
+    variant="info"
     className="PageTopAlert"
     tabIndex={-1}
-    onDismiss={onDismiss}
+    dismissible
+    onClose={onDismiss}
   >
     <h4>{i18n("alert_pasteShortcutHeader")}</h4>
     <p>{i18n("alert_pasteShortcutText")}</p>
     <p>
-      <Button bsStyle="primary" onClick={onDismiss}>
+      <Button variant="primary" onClick={onDismiss}>
         {i18n("alert_pasteShortcutClose")}
       </Button>
     </p>

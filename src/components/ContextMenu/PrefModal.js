@@ -4,19 +4,30 @@ import { compose, withStateHandlers, withHandlers, lifecycle } from "recompose";
 import {
   Modal,
   Tab,
-  Row,
-  Col,
   Nav,
-  NavItem,
   Button,
-  Checkbox,
-  FormGroup,
-  ControlLabel,
-  FormControl,
+  Form,
   OverlayTrigger,
   Popover
 } from "react-bootstrap";
 import { i18n } from "../../js/i18n";
+
+// react-bootstrap 2 把這些 form 元件改名/改 API（Checkbox→Form.Check 用 label prop、
+// FormControl 的 componentClass→as、ControlLabel→Form.Label、NavItem→Nav.Item+Nav.Link）。
+// 本檔表單欄位非常多，為降低改動面與維持可讀性，於此就地適配回原本命名，行為等價。
+const FormGroup = Form.Group;
+const ControlLabel = Form.Label;
+const FormControl = ({ componentClass, ...props }) => (
+  <Form.Control as={componentClass} {...props} />
+);
+const Checkbox = ({ children, ...props }) => (
+  <Form.Check type="checkbox" {...props} label={children} />
+);
+const NavItem = ({ children, ...props }) => (
+  <Nav.Item>
+    <Nav.Link {...props}>{children}</Nav.Link>
+  </Nav.Item>
+);
 import {
   DEFAULT_PREFS,
   readValuesWithDefault,
@@ -254,12 +265,13 @@ export const PrefModal = ({
         <div className="PrefModal__Grid">
           <div className="PrefModal__Grid__Col--left">
             <h3>{i18n("menu_settings")}</h3>
-            <Nav bsStyle="pills" stacked>
+            <Nav variant="pills" className="flex-column">
               <NavItem eventKey="general">{i18n("options_general")}</NavItem>
               <NavItem eventKey="enhance">{i18n("options_enhance")}</NavItem>
               <NavItem eventKey="about">{i18n("options_about")}</NavItem>
             </Nav>
             <Button
+              variant="secondary"
               className="PrefModal__Grid__Col--left__Reset"
               onClick={onResetClick}
             >
@@ -267,7 +279,7 @@ export const PrefModal = ({
             </Button>
           </div>
           <div className="PrefModal__Grid__Col--right">
-            <Tab.Content animation>
+            <Tab.Content>
               <Tab.Pane eventKey="general">
                 <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                   <legend>
@@ -343,7 +355,9 @@ export const PrefModal = ({
                       placement="right"
                       overlay={
                         <Popover id="tooltip_antiIdleTime">
-                          {i18n("tooltip_antiIdleTime")}
+                          <Popover.Body>
+                            {i18n("tooltip_antiIdleTime")}
+                          </Popover.Body>
                         </Popover>
                       }
                     >
@@ -395,7 +409,9 @@ export const PrefModal = ({
                       placement="right"
                       overlay={
                         <Popover id="tooltip_fontFace">
-                          {i18n("tooltip_fontFace")}
+                          <Popover.Body>
+                            {i18n("tooltip_fontFace")}
+                          </Popover.Body>
                         </Popover>
                       }
                     >
@@ -653,12 +669,13 @@ export const PrefModal = ({
                         {i18n("options_syncSignedInAs")}
                         {syncUser.email}
                       </p>
-                      <Button onClick={onSyncSignOutClick}>
+                      <Button variant="secondary" onClick={onSyncSignOutClick}>
                         {i18n("options_syncSignOut")}
                       </Button>
                     </div>
                   ) : (
                     <Button
+                      variant="secondary"
                       onClick={onSyncSignInClick}
                       disabled={syncStatus === "syncing"}
                     >

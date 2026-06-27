@@ -31,8 +31,11 @@ export const LiveHelperModal = ({
 }) => (
   <Modal show={show} backdrop={false}>
     <Modal.Body className="LiveHelperModal__Body">
-      <OverlayTrigger placement="top" overlay={<Tooltip>Alt + r</Tooltip>}>
-        <Button active={enabled} onClick={onEnabledClick}>
+      <OverlayTrigger
+        placement="top"
+        overlay={<Tooltip id="liveHelperShortcut">Alt + r</Tooltip>}
+      >
+        <Button variant="secondary" active={enabled} onClick={onEnabledClick}>
           {i18n("liveHelperEnable")}
         </Button>
       </OverlayTrigger>

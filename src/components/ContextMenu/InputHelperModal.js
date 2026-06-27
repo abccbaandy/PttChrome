@@ -3,15 +3,13 @@ import React from "react";
 import { compose, withStateHandlers, withHandlers } from "recompose";
 import {
   Modal,
-  Button,
   Tab,
   Row,
   Col,
   Nav,
-  NavItem,
   NavDropdown,
-  MenuItem,
-  Checkbox,
+  Dropdown,
+  Form,
   SplitButton
 } from "react-bootstrap";
 import ColorSpan from "../Row/WordSegmentBuilder/ColorSpan";
@@ -683,38 +681,41 @@ export const InputHelperModal = ({
   <Modal
     show={show}
     backdrop={false}
+    onHide={onHide}
     className="InputHelperModal__Dialog"
     onMouseDown={onMouseDown}
     onMouseMove={onMouseMove}
     onMouseUp={onMouseUp}
   >
-    <Modal.Header closeButton onHide={onHide}>
+    <Modal.Header closeButton>
       <Modal.Title>{i18n("inputHelperTitle")}</Modal.Title>
     </Modal.Header>
     <Modal.Body>
       <Tab.Container defaultActiveKey="colors">
         <Row className="clearfix">
           <Col sm={12}>
-            <Nav bsStyle="tabs">
-              <NavItem eventKey="colors">{i18n("colorTitle")}</NavItem>
-              <NavDropdown eventKey="symbols" title={i18n("symTitle")}>
+            <Nav variant="tabs">
+              <Nav.Item>
+                <Nav.Link eventKey="colors">{i18n("colorTitle")}</Nav.Link>
+              </Nav.Item>
+              <NavDropdown id="inputHelperSymbols" title={i18n("symTitle")}>
                 {Object.keys(SYMBOLS).map(group => (
-                  <MenuItem eventKey={`symbols.${group}`}>
+                  <NavDropdown.Item key={group} eventKey={`symbols.${group}`}>
                     {i18n(`symTitle_${group}`)}
-                  </MenuItem>
+                  </NavDropdown.Item>
                 ))}
               </NavDropdown>
-              <NavDropdown eventKey="emoticons" title={i18n("emoTitle")}>
+              <NavDropdown id="inputHelperEmoticons" title={i18n("emoTitle")}>
                 {Object.keys(EMOTICONS).map(group => (
-                  <MenuItem eventKey={`emoticons.${group}`}>
+                  <NavDropdown.Item key={group} eventKey={`emoticons.${group}`}>
                     {i18n(`emoTitle_${group}`)}
-                  </MenuItem>
+                  </NavDropdown.Item>
                 ))}
               </NavDropdown>
             </Nav>
           </Col>
           <Col sm={12}>
-            <Tab.Content animation>
+            <Tab.Content>
               <Tab.Pane eventKey="colors">
                 <Row>
                   <Col xs={12} sm={7}>
@@ -844,31 +845,43 @@ export const InputHelperModal = ({
                 </div>
                 <Row>
                   <Col xs={4}>
-                    <Checkbox checked={isBlink} onChange={onBlinkChange}>
-                      {i18n("colorHelperBlink")}
-                    </Checkbox>
+                    <Form.Check
+                      type="checkbox"
+                      checked={isBlink}
+                      onChange={onBlinkChange}
+                      label={i18n("colorHelperBlink")}
+                    />
                   </Col>
                   <Col xs={8} className="InputHelperModal__SendButtonContainer">
                     <SplitButton
+                      id="inputHelperSend"
+                      variant="secondary"
                       title={i18n("colorHelperSend")}
                       onClick={onSendClick}
+                      onSelect={eventKey => {
+                        if (eventKey === "reset") {
+                          onReset();
+                        } else {
+                          onSendSelect(eventKey);
+                        }
+                      }}
                     >
-                      <MenuItem eventKey="foreground" onSelect={onSendSelect}>
+                      <Dropdown.Item eventKey="foreground">
                         {i18n("colorHelperSendMenuFore")}
-                      </MenuItem>
-                      <MenuItem eventKey="background" onSelect={onSendSelect}>
+                      </Dropdown.Item>
+                      <Dropdown.Item eventKey="background">
                         {i18n("colorHelperSendMenuBack")}
-                      </MenuItem>
-                      <MenuItem divider />
-                      <MenuItem eventKey="reset" onSelect={onReset}>
+                      </Dropdown.Item>
+                      <Dropdown.Divider />
+                      <Dropdown.Item eventKey="reset">
                         {i18n("colorHelperSendMenuReset")}
-                      </MenuItem>
+                      </Dropdown.Item>
                     </SplitButton>
                   </Col>
                 </Row>
               </Tab.Pane>
               {Object.keys(SYMBOLS).map(group => (
-                <Tab.Pane eventKey={`symbols.${group}`}>
+                <Tab.Pane key={group} eventKey={`symbols.${group}`}>
                   <ul className="InputHelperModal__SymbolList">
                     {SYMBOLS[group].map((it, index) => (
                       <li key={index} onClick={onSymEmoClick}>
@@ -879,7 +892,7 @@ export const InputHelperModal = ({
                 </Tab.Pane>
               ))}
               {Object.keys(EMOTICONS).map(group => (
-                <Tab.Pane eventKey={`emoticons.${group}`}>
+                <Tab.Pane key={group} eventKey={`emoticons.${group}`}>
                   <ul className="InputHelperModal__EmoticonList">
                     {EMOTICONS[group].map((it, index) => (
                       <li key={index} onClick={onSymEmoClick}>
