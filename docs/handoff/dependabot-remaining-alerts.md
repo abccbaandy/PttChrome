@@ -1,6 +1,6 @@
 # 收尾剩餘 Dependabot alerts（yarn1 限制 → 建議遷 yarn4）
 
-STATUS: 完成（step 0+2 DONE + #3/#43/#44 已用 resolution 修，**dependabot 重掃已確認關閉**，2026-06）；**open 只剩 bootstrap #22/#23 won't-fix**。step 3（yarn4）已不需要。本 md 僅保留 bootstrap 段當未來 BS 升級起點。
+STATUS: 完成（step 0+2 DONE + #3/#43/#44 已用 resolution 修，**dependabot 重掃已確認關閉**，2026-06）。**bootstrap #22/#23 已於 2026-06 遷 bootstrap 5 + react-bootstrap 2 修掉**（見下方「bootstrap #22/#23」段），待 dependabot 重掃確認關閉後本檔可整刪。step 3（yarn4）已不需要。
 SCOPE: 上一輪（commit e9bd09e + js-yaml/picomatch lock refresh）已關 #13/#1/#8/#21/#34/#45/#46/#25/#37。
 本輪：**step 0 DONE**（移除 firebase-tools、emulator 改 Docker）+ **step 2 DONE**（移除 webpack-cdn-plugin → 清 #9/#10）+ **step 2.5 DONE**（#3/#43/#44 用 yarn1 resolution 修，見下）。
 
@@ -35,7 +35,7 @@ step 0 移除 firebase-tools 後，用 `yarn why` 重新確認來源（已驗證
 | ~~#44~~ | ~~js-yaml ≤4.1.1~~ | med / dev | **step 2.5 已修**：resolution `js-yaml:^4.2.0` → 4.2.0（單一消費者 load-nyc-config，`.load()` 相容；原為 3.14.2）| — | ✅ DONE（待重掃）|
 | ~~#10~~ | ~~tough-cookie <4.1.3~~ | — | **step 2 已消滅**（來源 webpack-cdn-plugin#request 已移除；剩 tough-cookie@^4.1.2 patched）| — | ✅ DONE |
 | ~~#9~~ | ~~request ≤2.88.2~~ | — | **step 2 已消滅**（移除 webpack-cdn-plugin → request/sri-create 整條離開 lockfile）| — | ✅ DONE |
-| #22/#23 | bootstrap 3.4.1 | med / runtime | 直接 dep | **無修補版**（3.x 全系列受影響），UI 綁 BS3（見 `bootstrap_css_guard.offline.spec.js`）| out of scope，除非遷 BS4/5（大工程）|
+| ~~#22/#23~~ | ~~bootstrap 3.4.1~~ | med / runtime | 直接 dep | 無修補版 → 改遷 bootstrap 5 + react-bootstrap 2（2026-06）| ✅ DONE（待重掃）|
 
 **step 0 對 alert 的實際效果**：firebase-tools 整棵子樹（node-fetch 2/3、gaxios#uuid@9、update-notifier-cjs 等）連同**未來 firebase-tools 漏洞**一次離開 lockfile。但 #3/#43 **不會全關**——node-fetch@1.7.3 另有 recompose/fbjs 來源、uuid@8.3.2 另有 webpack-dev-server 來源。
 **step 2 對 alert 的實際效果**：移除 webpack-cdn-plugin → `request`/`sri-create`/`tough-cookie@~2.5.0`/`uuid@3.4.0` 整批離開 lockfile → **#9/#10 關閉**、#43 的 uuid@3.4.0 路徑消失（僅餘 dev-server 的 uuid@8.3.2）。
@@ -100,10 +100,13 @@ push 後以下次 dependabot 掃描為準確認哪些真關閉。
 **剩餘唯一 alert 是 bootstrap #22/#23，yarn4 也修不了（無修補版）** → 遷 yarn4 的 churn/風險毫無收益，**放棄**。
 （若未來又出現「多 major 並存且需 path-specific override」的 alert，再重新評估遷移；做法見 git 歷史此段舊版。）
 
-## bootstrap #22/#23（唯一剩餘，won't-fix）
-- bootstrap 3.4.1，advisory 範圍涵蓋整個 1.4.0~3.4.1，**無修補版**（fixed=None）。
-- UI 綁 BS3（`bootstrap_css_guard.offline.spec.js` 守護），升 BS4/5 是大工程（class 重命名、JS plugin API 變更、jQuery 解耦）。
-- 結論：out of scope。要消除只能遷 BS4/5 或拔掉 bootstrap，皆屬獨立功能級任務，非本 dependabot 收尾範圍。
+## bootstrap #22/#23（✅ 2026-06 已修：遷 bootstrap 5 + react-bootstrap 2）
+- bootstrap 3.4.1 advisory 範圍涵蓋整個 1.4.0~3.4.1、**無修補版**（fixed=None）→ 唯一解是離開 BS3。
+- 真正的耦合是 `react-bootstrap@0.31`（棄維、鎖死 React16、吐 BS3 class），bootstrap 只是 class 的樣式來源、其 JS 是 dead weight（無 jQuery plugin 呼叫）。
+- 已實作（commit a90bf01）：react/react-dom `^16.2→^16.14`、bootstrap `^3→^5.3`、react-bootstrap `^0.31→^2.10`，移除 react-overlays 直接 dep；8 個元件 API 遷移；dev.html 刪 bootstrap JS（只留 BS5 CSS）。
+- 守門：刪 `bootstrap_css_guard.offline.spec.js`（BS3 版本釘樁），改由 `tests/e2e/offline/ui_behavior.offline.spec.js`（行為型、框架無關）承接。
+- 驗證：build / unit 223 / offline-e2e 27 / live-e2e 12 全綠。
+- 待 dependabot 重掃確認 #22/#23 關閉 → 屆時本檔已無 open alert，可整刪。
 
 ## 完成定義
 - #3/#43/#44 待 dependabot 重掃確認關閉（resolution 已 push）。確認後本 md 只剩 bootstrap won't-fix 記錄。
