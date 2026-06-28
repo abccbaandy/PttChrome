@@ -1,29 +1,33 @@
-#tooltip_antiIdleTime,
-#tooltip_fontFace {
-  color: black;
+/* .PrefModal = mantine-Modal-content（marker 放在 content 上）。內容撐高、分左右
+   兩欄。暗色用 Mantine 變數，不再硬編顏色。 */
+.PrefModal {
+  display: flex;
+  flex-direction: column;
 }
 
-.PrefModal > .modal-dialog {
-  height: 90%;
-  /* 覆寫 BS5 ≥576px 鎖死的 max-width:500px，改成 RWD：窄視窗跟 92vw 縮，寬視窗最多到 820px 不再長（避免留白）。BS5 <576px 仍沿用其近全寬＋margin auto。 */
-  width: auto;
-  max-width: min(820px, 92vw);
-  -webkit-user-select: none;
+.PrefModal .mantine-Modal-header {
+  min-height: 0;
+  padding: 4px 8px;
 }
 
-.PrefModal .modal-content {
-  height: 100%;
-}
-
-.PrefModal .modal-body {
-  height: 100%;
+.PrefModal .mantine-Modal-body {
+  flex: 1;
+  overflow: hidden;
   padding: 0;
 }
 
+.PrefModal__Tabs {
+  height: 100%;
+  width: 100%;
+}
+
+/* flex:1 撐滿 Tabs（vertical orientation = flex row）的整個寬度。否則 grid 寬度會
+   是「內容寬度」→ 不同分頁內容寬窄不一 → 右欄沒填滿、捲動條內縮。 */
 .PrefModal__Grid {
   height: 100%;
+  width: 100%;
+  flex: 1;
   display: flex;
-  color: black;
 }
 
 .PrefModal__Grid__Col--left {
@@ -32,53 +36,39 @@
   flex-shrink: 0; /* 永不被右側內容擠壓 → 三分頁左欄寬度一致、切換不跳動 */
   display: flex;
   flex-direction: column;
-  padding: 0 20px;
-  /* 乾淨的現代 sidebar：實心淺灰底＋右側細線。取代舊的大面積 inset box-shadow
-     漸層——那個漸層在窄欄會把邊緣染灰、中間留一塊軟白（詭異「白色色塊」）。 */
-  background: #f4f5f6;
-  border-right: 1px solid #e3e5e8;
+  padding: 0 16px 16px;
+  background: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-dark-8)
+  );
+  border-right: 1px solid var(--mantine-color-default-border);
 }
 
-.PrefModal__Grid__Col--left .nav-link {
-  white-space: nowrap; /* 導航文字不逐字換行 */
+/* 左欄垂直分頁：去掉 Mantine 預設的整列邊框（左欄自己已有 border-right）。 */
+.PrefModal__Grid__Col--left .mantine-Tabs-list {
+  border-inline-end: none;
 }
 
 .PrefModal__Grid__Col--left__Reset {
   margin-top: auto;
-  margin-bottom: 30px;
 }
 
 .PrefModal__Grid__Col--right {
   flex-grow: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px 20px;
 }
 
-.PrefModal__Grid__Col--right__Fieldset > :not(legend) {
-  padding-left: 20px;
+.PrefModal__Grid__Col--right__Fieldset {
+  border: none;
+  margin: 0 0 12px;
+  padding: 0;
 }
 
-.PrefModal__Grid__Col--right__Fieldset input[type="text"],
-.PrefModal__Grid__Col--right__Fieldset input[type="number"],
-.PrefModal__Grid__Col--right__Fieldset input[type="password"],
-.PrefModal__Grid__Col--right__Fieldset select {
-  width: 250px;
-}
-
-.PrefModal__Grid__Col--right__Fieldset select {
-  margin-top: 5px;
-}
-
-.PrefModal__Grid__Col--right__MouseBrowsingHighlightColor {
-  margin-left: 30px;
-}
-
-.PrefModal__Grid__Col--right__MouseBrowsingHighlightColor > select {
-  margin: 5px 0 10px;
-  width: 70px;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
+.PrefModal__Grid__Col--right__Fieldset > legend {
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 0;
 }
 
 /* 關於分頁：解除 modal 整體的 user-select:none，讓 build hash／版本資訊可選取複製 */
@@ -89,12 +79,7 @@
 }
 
 .PrefModal__warning {
-  color: #e0a040;
+  color: var(--mantine-color-yellow-6);
   font-size: 12px;
   margin: 4px 0 8px;
-}
-
-.PrefModal__Grid__Col--right__Fieldset textarea {
-  width: 100%;
-  font-family: monospace;
 }

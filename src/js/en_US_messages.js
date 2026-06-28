@@ -215,6 +215,18 @@ export const en_US = {
   "options_appearance": {
     "message": "Appearance"
   },
+  "options_theme": {
+    "message": "Theme"
+  },
+  "options_themeLight": {
+    "message": "Light"
+  },
+  "options_themeDark": {
+    "message": "Dark"
+  },
+  "options_themeAuto": {
+    "message": "Auto"
+  },
   "options_bbsMargin": {
     "message": "Margins around BBS view (px)"
   },

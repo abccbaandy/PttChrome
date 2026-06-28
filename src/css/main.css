@@ -3,6 +3,14 @@
   src: url('../fonts/symmingliu.woff') format("woff");
 }
 
+/* 全域 border-box：原本由 bootstrap CDN 提供（終端機逐列排版以此為前提）；
+   bootstrap 拔除後在此自備，維持像素契約不變。 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 #picPreview {
   position: absolute;
   display: none;
@@ -186,6 +194,18 @@ body {
   background-color: black;
   margin: 0px;
   overflow:hidden;
+}
+
+/* Mantine 浮層（Modal/Menu/Popover/Paper/Tooltip）會 portal 到 <body>，因此會繼承
+   上面 body 的 color:white（那是給終端機畫面用的）。Mantine 元件本身會自帶顏色，但
+   純 HTML 子元素（<legend>/<li>/<code>/<small> 等）沒有 → 淺色主題下變白字白底。
+   這裡讓 Mantine 表面明確採用主題文字色，後代一律繼承正確顏色（深淺主題皆可讀）。 */
+.mantine-Modal-content,
+.mantine-Menu-dropdown,
+.mantine-Popover-dropdown,
+.mantine-Paper-root,
+.mantine-Tooltip-tooltip {
+  color: var(--mantine-color-text);
 }
 
 span [link="true"] {
@@ -415,13 +435,25 @@ span {
   -webkit-user-select: none;
 }
 
-.glyphicon-refresh-animate {
+/* 自動開圖「讀取中」轉圈（取代舊的 bootstrap glyphicon-refresh，BS5 已無該字型）。 */
+.previewSpinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #5b8de4;
+  border-radius: 50%;
   -webkit-animation: spin .7s infinite linear;
+  animation: spin .7s infinite linear;
 }
 
 @-webkit-keyframes spin {
   from { -webkit-transform: rotate(0deg); }
   to { -webkit-transform: rotate(360deg); }
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* 自動開圖「讀取中」指示器：解析中 + 媒體下載中共用。
@@ -480,8 +512,4 @@ span {
 }
 .previewError:hover {
   text-decoration: underline;
-}
-
-.modal-backdrop {
-  z-index: 1 !important;
 }

@@ -38,7 +38,9 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
     await openContextMenu(page);
 
-    const menu = page.locator('#cmenuReact .dropdown-menu').first();
+    // 右鍵選單改用 Mantine Menu（classNames.dropdown="DropdownMenu"），dropdown 在
+    // portal（document.body 下），不再位於 #cmenuReact 內。
+    const menu = page.locator('.DropdownMenu').first();
     await expect(menu).toBeVisible();
     // 選單含預期項目（無選取時：Settings 一定在）。
     const settings = await label(page, 'cmenu_settings');
@@ -58,7 +60,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
     await openContextMenu(page);
     const settings = await label(page, 'cmenu_settings');
-    await page.locator('#cmenuReact .dropdown-menu').first()
+    await page.locator('.DropdownMenu').first()
       .getByText(settings, { exact: true }).click();
     await expect(page.locator('.PrefModal')).toBeVisible();
 
@@ -93,7 +95,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
     await openContextMenu(page);
     const settings = await label(page, 'cmenu_settings');
-    await page.locator('#cmenuReact .dropdown-menu').first()
+    await page.locator('.DropdownMenu').first()
       .getByText(settings, { exact: true }).click();
     await expect(page.locator('.PrefModal')).toBeVisible();
 
@@ -110,9 +112,9 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
       .click();
     await expect(checkbox).toBeChecked({ checked: !before });
 
-    // 用當前（enhance）分頁 legend 的 × 關閉（onCloseClick → 寫入 + onSave）。
-    // 每個分頁各有一個 .close，只有 active 分頁的可見。
-    await page.locator('.PrefModal button.close').filter({ visible: true }).first().click();
+    // 用 Mantine Modal 內建關閉鈕（aria-label="Close"）關閉（onClose → onCloseClick
+    // → 寫入 + onSave）。
+    await page.locator('.PrefModal button[aria-label="Close"]').click();
     await expect(page.locator('.PrefModal')).toBeHidden();
 
     // localStorage 應持久化新值。
@@ -134,7 +136,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
     await openContextMenu(page);
     const inputHelper = await label(page, 'cmenu_showInputHelper');
-    await page.locator('#cmenuReact .dropdown-menu').first()
+    await page.locator('.DropdownMenu').first()
       .getByText(inputHelper, { exact: true }).click();
 
     // InputHelperModal 出現（顏色盤 + 送出 SplitButton 為 marker）。
@@ -146,5 +148,166 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(
       page.locator('.InputHelperModal__Dialog').getByText(sendText, { exact: true })
     ).toBeVisible();
+  });
+
+  // ===== 基本 UI 不變式：換任何 UI 庫／CSS 都該維持，故以行為斷言守門 =====
+
+  // 開啟設定（PrefModal），回傳左欄 nav locator。
+  async function openSettings(page) {
+    await ptt.dismissDeveloperModeAlert(page);
+    await waitConnected(page);
+    await openContextMenu(page);
+    await page.locator('.DropdownMenu').first()
+      .getByText(await label(page, 'cmenu_settings'), { exact: true }).click();
+    await expect(page.locator('.PrefModal')).toBeVisible();
+    return page.locator('.PrefModal__Grid__Col--left');
+  }
+
+  const modalWidth = async (page) =>
+    Math.round((await page.locator('.PrefModal').boundingBox()).width);
+
+  test('設定頁：切換分頁寬度不變', async ({ page }) => {
+    await installReplay(page);
+    await page.goto('/');
+    const nav = await openSettings(page);
+
+    const wGeneral = await modalWidth(page);
+    await nav.getByText(await label(page, 'options_enhance'), { exact: true }).click();
+    await expect(page.locator('.PrefModal input[name="autoLoginUser"]')).toBeVisible();
+    const wEnhance = await modalWidth(page);
+    await nav.getByText(await label(page, 'options_about'), { exact: true }).click();
+    const wAbout = await modalWidth(page);
+
+    expect(Math.abs(wEnhance - wGeneral)).toBeLessThanOrEqual(1);
+    expect(Math.abs(wAbout - wGeneral)).toBeLessThanOrEqual(1);
+  });
+
+  test('設定頁：視窗變寬 → 對話框變寬，且有上限', async ({ page }) => {
+    await installReplay(page);
+    await page.goto('/');
+    await page.setViewportSize({ width: 700, height: 800 });
+    await openSettings(page);
+
+    const wNarrow = await modalWidth(page);
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.waitForTimeout(100);
+    const wWide = await modalWidth(page);
+
+    expect(wWide).toBeGreaterThan(wNarrow); // 空間夠就變寬
+    expect(wWide).toBeLessThanOrEqual(920); // 但有上限（size=900px + 邊距餘裕）
+  });
+
+  test('設定頁：點空白處（overlay）關閉', async ({ page }) => {
+    await installReplay(page);
+    await page.goto('/');
+    await openSettings(page);
+
+    await page.locator('.mantine-Modal-overlay').click({ position: { x: 5, y: 5 } });
+    await expect(page.locator('.PrefModal')).toBeHidden();
+  });
+
+  // 文字色 ≠ 實際可見底色（往上找第一個非透明祖先）→ 防白底白字／黑底黑字。
+  async function expectReadable(locator) {
+    const { color, bg } = await locator.evaluate((el) => {
+      const transparent = (c) =>
+        !c || c === 'transparent' || /^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(c);
+      let node = el;
+      let bg = 'rgb(0, 0, 0)';
+      while (node) {
+        const c = getComputedStyle(node).backgroundColor;
+        if (!transparent(c)) { bg = c; break; }
+        node = node.parentElement;
+      }
+      return { color: getComputedStyle(el).color, bg };
+    });
+    expect(color).not.toBe(bg);
+  }
+
+  test('UI 文字：輸入小幫手符號格文字色 ≠ 底色（防白底白字）', async ({ page }) => {
+    await installReplay(page);
+    await page.goto('/');
+    await ptt.dismissDeveloperModeAlert(page);
+    await waitConnected(page);
+
+    await openContextMenu(page);
+    await page.locator('.DropdownMenu').first()
+      .getByText(await label(page, 'cmenu_showInputHelper'), { exact: true }).click();
+    const dialog = page.locator('.InputHelperModal__Dialog');
+    await expect(page.locator('.InputHelperModal__ColorList')).toBeVisible();
+
+    // 開「符號」群組下拉 → 選「一般」→ 出現符號格
+    await dialog.getByText(await label(page, 'symTitle'), { exact: true }).click();
+    await page.getByText(await label(page, 'symTitle_general'), { exact: true }).click();
+    const cell = page.locator('.InputHelperModal__SymbolList > li').first();
+    await expect(cell).toBeVisible();
+    await expectReadable(cell);
+  });
+
+  // 之前的「防白底白字」只查 InputHelper 一個元素、且只在預設「暗色」主題跑 → 抓不到
+  // 「淺色主題下純 HTML 繼承 body 白字」這種破法（白字白底只在淺色才現形）。這條補上：
+  // 強制淺色主題，逐一檢查 PrefModal 代表性純文字（legend/label/nav/about code）皆可讀。
+  test('UI 文字：淺色主題下設定頁文字可讀（防 body 白字 hardcode 繼承）', async ({ page }) => {
+    await page.addInitScript(() =>
+      window.localStorage.setItem('mantine-color-scheme-value', 'light'),
+    );
+    await installReplay(page);
+    await page.goto('/');
+    const nav = await openSettings(page);
+
+    await expectReadable(page.locator('.PrefModal legend').first()); // 區段標題
+    await expectReadable(page.locator('.PrefModal label').first()); // 欄位標籤
+    await expectReadable(
+      nav.getByText(await label(page, 'options_general'), { exact: true }),
+    ); // 左欄分頁
+
+    // about 分頁的純 HTML（<li>/<code>）也要可讀
+    await nav.getByText(await label(page, 'options_about'), { exact: true }).click();
+    await expectReadable(page.locator('.PrefModal__about-selectable li').first());
+  });
+
+  // 回歸：Mantine 圖示是 <svg>，其 className 是 SVGAnimatedString（物件），App.mouse_down
+  // → checkClass 直接 .indexOf 會 `cn.indexOf is not a function`。mouse_down 綁在 window 且
+  // 有 `if (modalShown) return`，故要用「非 modal」的浮層（InputHelper Paper）來觸發。
+  test('滑鼠事件：點到 Mantine 圖示(SVG) 不崩潰（checkClass 守門）', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (e) => {
+      if (!/ResizeObserver loop/.test(e.message)) errors.push(e.message);
+    });
+    await installReplay(page);
+    await page.goto('/');
+    await ptt.dismissDeveloperModeAlert(page);
+    await waitConnected(page);
+
+    await openContextMenu(page);
+    await page.locator('.DropdownMenu').first()
+      .getByText(await label(page, 'cmenu_showInputHelper'), { exact: true }).click();
+    await expect(page.locator('.InputHelperModal__ColorList')).toBeVisible();
+
+    // 直接在 SVG 上派發 mousedown（e.target=SVG）→ window mousedown → App.mouse_down
+    // → checkClass(SVGAnimatedString)。修正前會 throw（pageerror）。
+    await page.evaluate(() => {
+      const svg = document.querySelector('.InputHelperModal__Dialog svg');
+      if (!svg) throw new Error('InputHelper 內找不到 SVG，測試前提失效');
+      svg.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    await page.waitForTimeout(50);
+    expect(errors, errors.join('\n')).toHaveLength(0);
+  });
+
+  // 新功能：主題切換（PrefModal 外觀區 SegmentedControl）實際改變 color scheme。
+  test('設定頁：主題切換改變 color scheme（淺/暗）', async ({ page }) => {
+    await installReplay(page);
+    await page.goto('/');
+    const modal = page.locator('.PrefModal');
+    await openSettings(page);
+    const scheme = () =>
+      page.evaluate(() =>
+        document.documentElement.getAttribute('data-mantine-color-scheme'),
+      );
+
+    await modal.getByText(await label(page, 'options_themeLight'), { exact: true }).click();
+    await expect.poll(scheme).toBe('light');
+    await modal.getByText(await label(page, 'options_themeDark'), { exact: true }).click();
+    await expect.poll(scheme).toBe('dark');
   });
 });

@@ -4,6 +4,7 @@ import { getQueryVariable, proxySiteFromPrefs } from './util';
 import { readValuesWithDefault } from './pref_storage';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
 import { renderInto, unmountFrom } from './react_root';
+import { MantineRoot } from '../components/MantineRoot';
 
 function startApp() {
   // Build identity first thing: lets a user/console dump prove which bundle
@@ -32,7 +33,7 @@ function startApp() {
         unmountFrom(container)
         resolve()
       }
-      renderInto(container, <DeveloperModeAlert onDismiss={onDismiss} />)
+      renderInto(container, <MantineRoot><DeveloperModeAlert onDismiss={onDismiss} /></MantineRoot>)
     })) : Promise.resolve()
   ).then(() => {
     // connect. Priority: ?site override (off by default, see webpack ALLOW_SITE_IN_QUERY)

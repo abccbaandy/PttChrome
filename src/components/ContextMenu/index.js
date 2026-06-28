@@ -1,5 +1,4 @@
 import $ from "jquery";
-import cx from "classnames";
 import { Fragment, useState, useRef, useCallback, useEffect } from "react";
 import { i18n } from "../../js/i18n";
 import DropdownMenu from "./DropdownMenu";
@@ -125,10 +124,24 @@ export const ContextMenu = ({ pttchrome }) => {
     [pttchrome, update],
   );
 
+  // Close ONLY the context menu — never the modal flags. Mantine Menu's
+  // closeOnItemClick/closeOnClickOutside fire onChange(false) → onHide after a
+  // menu item runs, so resetting the whole state here (old initialState reset,
+  // which relied on the items' event.stopPropagation to suppress it) would wipe
+  // the showsSettings/showsInputHelper flag the click just set and the modal
+  // would never open. The modals have their own hide handlers.
   const onHide = useCallback(() => {
     if (stateRef.current.open) {
       pttchrome.contextMenuShown = false;
-      update(initialState);
+      update({
+        open: false,
+        contextOnUrl: "",
+        aElement: undefined,
+        selectedText: "",
+        urlEnabled: false,
+        normalEnabled: false,
+        selEnabled: false,
+      });
     }
   }, [pttchrome, update]);
 
@@ -363,26 +376,22 @@ export const ContextMenu = ({ pttchrome }) => {
 
   return (
     <Fragment>
-      <div
-        className={cx({
-          open,
-        })}
-      >
-        <DropdownMenu
-          pageX={pageX}
-          pageY={pageY}
-          urlEnabled={urlEnabled}
-          normalEnabled={normalEnabled}
-          selEnabled={selEnabled}
-          mouseBrowsingEnabled={pttchrome.buf.useMouseBrowsing}
-          selectedText={selectedText}
-          onMenuSelect={onMenuSelect}
-          onInputHelperClick={onInputHelperClick}
-          onLiveArticleHelperClick={onLiveArticleHelperClick}
-          onSettingsClick={onSettingsClick}
-          onQuickSearchSelect={onQuickSearchSelect}
-        />
-      </div>
+      <DropdownMenu
+        open={open}
+        onHide={onHide}
+        pageX={pageX}
+        pageY={pageY}
+        urlEnabled={urlEnabled}
+        normalEnabled={normalEnabled}
+        selEnabled={selEnabled}
+        mouseBrowsingEnabled={pttchrome.buf.useMouseBrowsing}
+        selectedText={selectedText}
+        onMenuSelect={onMenuSelect}
+        onInputHelperClick={onInputHelperClick}
+        onLiveArticleHelperClick={onLiveArticleHelperClick}
+        onSettingsClick={onSettingsClick}
+        onQuickSearchSelect={onQuickSearchSelect}
+      />
       <InputHelperModal
         show={showsInputHelper}
         onHide={onInputHelperHide}

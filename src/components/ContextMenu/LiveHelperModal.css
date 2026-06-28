@@ -1,17 +1,16 @@
+/* 浮動於畫面頂端置中，不阻擋底下終端機（容器只在自身範圍接收指標事件）。 */
+.LiveHelperModal {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+}
+
 .LiveHelperModal__Body {
-  display: flex;
-  line-height: 34px;
-  color: black;
+  align-items: center;
 }
 
 .LiveHelperModal__Body__Text {
-  margin: 0 5px;
-}
-
-.LiveHelperModal__Body__Input {
-  width: 10%;
-}
-
-.LiveHelperModal__Body__Close {
-  margin-left: auto;
+  white-space: nowrap;
 }

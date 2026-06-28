@@ -132,8 +132,8 @@ ImagePreviewer.OnHover = ({ left, top, value, error }) => {
     );
   } else {
     return (
-      <i
-        className="glyphicon glyphicon-refresh glyphicon-refresh-animate"
+      <span
+        className="previewSpinner"
         style={{
           position: "absolute",
           left: left + 20,
@@ -150,7 +150,7 @@ ImagePreviewer.OnHover = ({ left, top, value, error }) => {
 // 樣式定義於 src/css/main.css。
 const LoadingOverlay = () => (
   <div className="previewLoading">
-    <i className="glyphicon glyphicon-refresh glyphicon-refresh-animate" />
+    <span className="previewSpinner" />
     <span className="previewLoadingText">讀取中…</span>
     <span className="previewLoadingBar">
       <span className="previewLoadingBarFill" />

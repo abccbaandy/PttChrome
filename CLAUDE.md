@@ -1,7 +1,7 @@
 # pttchrome — 專案指引
 
 PTT BBS 瀏覽器終端機 client。fork 自 `robertabcd/PttChrome @ dev`，是 term.ptt.cc 的原始碼。
-webpack5 + React16（React/jQuery/Bootstrap 走 CDN，非 import）。
+webpack5 + React19（bundled，非 CDN）。UI 元件用 Mantine（暗色預設，`@mantine/core/styles.css` 由 entry.js 載；postcss-preset-mantine）；jQuery/hammerjs 仍走 CDN。bootstrap／react-bootstrap 已移除。
 
 ## 跑起來（踩雷點，務必照做）
 - 啟動 dev server：`yarn start` → http://localhost:8080（= `webpack serve`）

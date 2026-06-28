@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html>
+<!-- data-mantine-color-scheme：暗色預設的 FOUC guard（JS 跑前先套暗色，
+     MantineProvider 掛載後再與 localStorage 對帳）。 -->
+<html data-mantine-color-scheme="dark">
   <head>
     <title><%= process.env.PTTCHROME_PAGE_TITLE %></title>
     <link rel="icon" type="image/png" href="<%= require('./icon/logo.png') %>">
@@ -11,16 +13,11 @@
       jQuery and hammerjs come from CDN (unpkg) instead of bundling: webpack
       `externals` maps the jquery import to the global; hammerjs is global-only.
       Versions are read from the installed packages (require(...).version) so the
-      CDN URL can't drift from package.json/yarn.lock. React/react-dom are NO
-      longer here — React 19 dropped the UMD build, so they are bundled by
-      webpack (a ProvidePlugin supplies the bare `React` global to source). These
-      scripts execute at parse time, before the webpack bundle (html-webpack-plugin
-      injects it after, as a deferred script). Only bootstrap's CSS is loaded:
-      react-bootstrap 2 reimplements all modal/dropdown/tooltip behaviour in React
-      (no jQuery plugin), so bootstrap's JS bundle is dead weight and is
-      intentionally not loaded.
+      CDN URL can't drift from package.json/yarn.lock. React/react-dom are
+      bundled by webpack (React 19 dropped the UMD build). UI components use
+      Mantine (bundled import + @mantine/core/styles.css via entry.js); bootstrap
+      / react-bootstrap have been removed entirely.
     -->
-    <link rel="stylesheet" crossorigin="anonymous" href="https://unpkg.com/bootstrap@<%= require('bootstrap/package.json').version %>/dist/css/bootstrap.min.css">
     <script crossorigin="anonymous" src="https://unpkg.com/jquery@<%= require('jquery/package.json').version %>/dist/jquery.min.js"></script>
     <script crossorigin="anonymous" src="https://unpkg.com/hammerjs@<%= require('hammerjs/package.json').version %>/hammer.min.js"></script>
   </head>

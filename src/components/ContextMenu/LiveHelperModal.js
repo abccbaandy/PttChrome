@@ -1,5 +1,13 @@
 import { useCallback } from "react";
-import { Modal, OverlayTrigger, Tooltip, Button } from "react-bootstrap";
+import {
+  Paper,
+  Tooltip,
+  Button,
+  NumberInput,
+  Text,
+  CloseButton,
+  Group,
+} from "@mantine/core";
 import { i18n } from "../../js/i18n";
 import "./LiveHelperModal.css";
 
@@ -8,48 +16,52 @@ const normalizeSec = (value) => {
   return sec > 1 ? sec : 1;
 };
 
+// 實況助手是「邊讀文章邊自動更新」的浮動控制列，**不可阻擋**底下終端機操作。
+// 舊版 RB Modal backdrop=false 靠 bootstrap 的 pointer-events 穿透；改用浮動 Paper
+// （fixed 定位、CSS 控 pointer-events），語意更正確也免 focus-trap。
 export const LiveHelperModal = ({ show, onHide, enabled, sec, onChange }) => {
   const onEnabledClick = useCallback(
     () => onChange({ enabled: !enabled, sec }),
     [enabled, sec, onChange],
   );
   const onSecChange = useCallback(
-    ({ target: { value } }) => onChange({ enabled, sec: normalizeSec(value) }),
+    (value) => onChange({ enabled, sec: normalizeSec(value) }),
     [enabled, onChange],
   );
 
+  if (!show) return null;
+
   return (
-    <Modal show={show} backdrop={false}>
-      <Modal.Body className="LiveHelperModal__Body">
-        <OverlayTrigger
-          placement="top"
-          overlay={<Tooltip id="liveHelperShortcut">Alt + r</Tooltip>}
-        >
-          <Button variant="secondary" active={enabled} onClick={onEnabledClick}>
+    <Paper shadow="md" p="sm" withBorder className="LiveHelperModal">
+      <Group gap="xs" wrap="nowrap" className="LiveHelperModal__Body">
+        <Tooltip label="Alt + r" position="top">
+          <Button
+            variant={enabled ? "filled" : "default"}
+            onClick={onEnabledClick}
+          >
             {i18n("liveHelperEnable")}
           </Button>
-        </OverlayTrigger>
-        <span className="LiveHelperModal__Body__Text nomouse_command">
+        </Tooltip>
+        <Text className="LiveHelperModal__Body__Text nomouse_command">
           {i18n("liveHelperSpan")}
-        </span>
-        <input
-          type="number"
-          className="LiveHelperModal__Body__Input form-control nomouse_command"
+        </Text>
+        <NumberInput
+          className="LiveHelperModal__Body__Input nomouse_command"
+          w={70}
+          min={1}
           value={sec}
           onChange={onSecChange}
         />
-        <span className="LiveHelperModal__Body__Text nomouse_command">
+        <Text className="LiveHelperModal__Body__Text nomouse_command">
           {i18n("liveHelperSpanSec")}
-        </span>
-        <button
-          type="button"
-          className="LiveHelperModal__Body__Close close nomouse_command"
+        </Text>
+        <CloseButton
+          className="LiveHelperModal__Body__Close nomouse_command"
           onClick={onHide}
-        >
-          &times;
-        </button>
-      </Modal.Body>
-    </Modal>
+          ml="auto"
+        />
+      </Group>
+    </Paper>
   );
 };
 

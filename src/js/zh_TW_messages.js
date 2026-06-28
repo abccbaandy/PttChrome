@@ -215,6 +215,18 @@
   "options_appearance": {
     "message": "介面"
   },
+  "options_theme": {
+    "message": "主題"
+  },
+  "options_themeLight": {
+    "message": "淺色"
+  },
+  "options_themeDark": {
+    "message": "暗色"
+  },
+  "options_themeAuto": {
+    "message": "跟隨系統"
+  },
   "options_bbsMargin": {
     "message": "BBS 周圍邊距 (像素)"
   },

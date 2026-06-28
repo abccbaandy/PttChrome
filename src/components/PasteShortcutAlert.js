@@ -1,24 +1,18 @@
-import React from "react";
-import { Alert, Button } from "react-bootstrap";
+import { Modal, Button } from "@mantine/core";
 import { i18n } from "../js/i18n";
-import "./PageTopAlert.css";
 
-export const PasteShortcutAlert = ({ onDismiss }) => (
-  <Alert
-    variant="info"
-    className="PageTopAlert"
-    tabIndex={-1}
-    dismissible
-    onClose={onDismiss}
+// 與 Developer/Connection 兩個頂部橫幅 alert 不同，貼上提示是個對話框（需 backdrop +
+// ESC）。直接用 Mantine Modal 自帶；掛載端（pttchrome.showPasteUnimplemented）傳
+// opened/onClose，× / 按鈕 / ESC 皆走 onClose → unmount 容器。
+export const PasteShortcutAlert = ({ opened, onClose }) => (
+  <Modal
+    opened={opened}
+    onClose={onClose}
+    title={i18n("alert_pasteShortcutHeader")}
   >
-    <h4>{i18n("alert_pasteShortcutHeader")}</h4>
     <p>{i18n("alert_pasteShortcutText")}</p>
-    <p>
-      <Button variant="primary" onClick={onDismiss}>
-        {i18n("alert_pasteShortcutClose")}
-      </Button>
-    </p>
-  </Alert>
+    <Button onClick={onClose}>{i18n("alert_pasteShortcutClose")}</Button>
+  </Modal>
 );
 
 export default PasteShortcutAlert;

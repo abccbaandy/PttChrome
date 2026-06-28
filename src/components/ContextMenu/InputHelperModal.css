@@ -1,11 +1,23 @@
+/* 可拖曳浮動面板（非阻擋，邊打字邊插入色彩/符號）。位置由 JS 拖曳改寫 inline
+   top/left；初始值在元件 style 設定。 */
+/* top/left 由元件 state 以 inline style 控制（拖曳）；此處只定 fixed 與尺寸。
+   寬度 RWD：空間夠就變寬，但有上下限（min 340 / max 560），符號格會自動多排幾欄。 */
 .InputHelperModal__Dialog {
-  color: black;
-  right: auto;
-  bottom: auto;
-  overflow: visible;
+  position: fixed;
+  z-index: 1000;
+  width: clamp(340px, 40vw, 560px);
 }
-.InputHelperModal__Dialog .modal-dialog {
-  margin: 0;
+
+.InputHelperModal__Header {
+  cursor: move;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.InputHelperModal__Content {
+  padding: 8px;
+  /* 符號／表情清單可能很長 → 限高並捲動，避免面板撐到超出畫面。 */
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
 .InputHelperModal__ColorList {
@@ -48,12 +60,11 @@
 }
 .InputHelperModal__SymbolList > li {
   font-family: MingLiU, MingLiUNoGlyph, monospace;
-  width: 100%;
-  border: 1px solid #ccc;
+  /* 不指定底色/字色：交給暗色主題（Paper 黑底白字），格線用主題邊框色。 */
+  border: 1px solid var(--mantine-color-default-border);
   font-size: 30px;
   line-height: 30px;
   padding: 2px;
-  background-color: white;
   margin-bottom: -1px;
   height: 37px;
   cursor: pointer;
@@ -64,17 +75,16 @@
 }
 .InputHelperModal__SymbolList > li:hover {
   -webkit-transform: scale(1.4, 1.4);
-  border: 2px solid black;
+  border: 2px solid var(--mantine-color-bright);
 }
 
 .InputHelperModal__EmoticonList > li {
   font-family: MingLiU, MingLiUNoGlyph, monospace;
   width: 100%;
-  border: 1px solid #ccc;
+  border: 1px solid var(--mantine-color-default-border);
   font-size: 21px;
   line-height: 21px;
   padding: 2px;
-  background-color: white;
   margin-bottom: -1px;
   height: 28px;
   cursor: pointer;
@@ -84,7 +94,7 @@
 }
 .InputHelperModal__EmoticonList > li:hover {
   -webkit-transform: scale(1.1, 1.1);
-  border: 2px solid black;
+  border: 2px solid var(--mantine-color-bright);
 }
 
 .InputHelperModal__SendButtonContainer > div {

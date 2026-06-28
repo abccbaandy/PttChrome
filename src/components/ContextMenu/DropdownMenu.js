@@ -1,64 +1,7 @@
-import cx from "classnames";
-import { Fragment, useRef, useCallback, useEffect } from "react";
+import { Fragment } from "react";
+import { Menu } from "@mantine/core";
 import { i18n } from "../../js/i18n";
 import "./DropdownMenu.css";
-
-// 這個右鍵選單是手刻的 <ul class="dropdown-menu">（非 react-bootstrap Dropdown），
-// 原本只借 react-bootstrap@0.31 的 MenuItem 來吐 <li><a role="menuitem"> 與 onSelect。
-// react-bootstrap 2 的 Dropdown.Item 不在 Dropdown context 外觸發 onSelect，且改吐
-// <a class="dropdown-item">（破壞本檔 .DropdownMenu--reset > li > a 的 CSS）。
-// 故就地實作等價的 MenuItem，保留 <li><a> 結構與 onSelect(eventKey, event) 契約，
-// 同時徹底脫離 react-bootstrap（這個選單不需要它）。
-const MenuItem = ({
-  eventKey,
-  onSelect,
-  onClick,
-  divider,
-  className,
-  children,
-}) => {
-  if (divider) {
-    return <li role="separator" className="DropdownMenu__Divider" />;
-  }
-  const handleClick = (e) => {
-    if (onClick) onClick(e);
-    if (onSelect) onSelect(eventKey, e);
-  };
-  return (
-    <li role="presentation" className={className}>
-      <a
-        role="menuitem"
-        href="#"
-        onClick={(e) => {
-          e.preventDefault();
-          handleClick(e);
-        }}
-      >
-        {children}
-      </a>
-    </li>
-  );
-};
-
-const top = (mouseHeight, menuHeight) => {
-  const pageHeight = window.innerHeight;
-
-  // opening menu would pass the bottom of the page
-  if (mouseHeight + menuHeight > pageHeight && menuHeight < mouseHeight) {
-    return mouseHeight - menuHeight;
-  }
-  return mouseHeight;
-};
-
-const left = (mouseWidth, menuWidth) => {
-  const pageWidth = window.innerWidth;
-
-  // opening menu would pass the side of the page
-  if (mouseWidth + menuWidth > pageWidth && menuWidth < mouseWidth) {
-    return mouseWidth - menuWidth;
-  }
-  return mouseWidth;
-};
 
 const normalizeSelectedText = (selectedText) => {
   if (selectedText.length > 15) {
@@ -76,7 +19,12 @@ const QUICK_SEARCH = {
   ],
 };
 
+// 右鍵 context menu。改用 Mantine Menu（受控 opened，由 index.js 的 open 狀態驅動）：
+// Menu.Target 是定位於游標 (pageX,pageY) 的零尺寸元素，floating-ui 自動處理超出邊界
+// 翻轉（取代舊的手算 top()/left()）。QuickSearch 子選單用 Menu.Sub。
 export const DropdownMenu = ({
+  open,
+  onHide,
   pageX,
   pageY,
   urlEnabled,
@@ -90,121 +38,116 @@ export const DropdownMenu = ({
   onSettingsClick,
   onQuickSearchSelect,
 }) => {
-  const dropdownMenuRef = useRef(null);
-
-  // Position the menu at the cursor on mount and whenever the click point moves
-  // (replaces the old componentDidMount + componentDidUpdate pageX/pageY compare).
-  useEffect(() => {
-    const el = dropdownMenuRef.current;
-    if (!el) return;
-    el.style.cssText += `
-          top:${top(pageY, el.clientHeight)}px;
-          left:${left(pageX, el.clientWidth)}px;
-        `;
-  }, [pageX, pageY]);
-
-  const onContextMenu = useCallback((event) => {
-    event.stopPropagation();
-    event.preventDefault();
-  }, []);
-
   return (
-    <ul
-      className="dropdown-menu DropdownMenu--reset"
-      ref={dropdownMenuRef}
-      onContextMenu={onContextMenu}
+    <Menu
+      opened={open}
+      onChange={(opened) => {
+        if (!opened) onHide();
+      }}
+      position="bottom-start"
+      offset={0}
+      shadow="md"
+      width={220}
+      trapFocus={false}
+      classNames={{ dropdown: "DropdownMenu" }}
     >
-      {selEnabled && (
-        <Fragment>
-          <MenuItem eventKey="copy" onSelect={onMenuSelect}>
-            {i18n("cmenu_copy")}
-            <span className="DropdownMenu__Item__HotKey">Ctrl+C</span>
-          </MenuItem>
-          <MenuItem eventKey="copyAnsi" onSelect={onMenuSelect}>
-            {i18n("cmenu_copyAnsi")}
-          </MenuItem>
-        </Fragment>
-      )}
-      {normalEnabled && (
-        <MenuItem eventKey="paste" onSelect={onMenuSelect}>
-          {i18n("cmenu_paste")}
-          <span className="DropdownMenu__Item__HotKey">Shift+Insert</span>
-        </MenuItem>
-      )}
-      {selEnabled && (
-        <MenuItem eventKey="searchGoogle" onSelect={onMenuSelect}>
-          {i18n("cmenu_searchGoogle")}{" "}
-          <span>'{normalizeSelectedText(selectedText)}'</span>
-        </MenuItem>
-      )}
-      {urlEnabled && (
-        <Fragment>
-          <MenuItem eventKey="openUrlNewTab" onSelect={onMenuSelect}>
-            {i18n("cmenu_openUrlNewTab")}
-          </MenuItem>
-          <MenuItem eventKey="copyLinkUrl" onSelect={onMenuSelect}>
-            {i18n("cmenu_copyLinkUrl")}
-          </MenuItem>
-        </Fragment>
-      )}
-      <MenuItem divider />
-      {selEnabled && (
-        <Fragment>
-          <MenuItem className="DropdownMenu__Item--quickSearch">
-            {i18n("cmenu_quickSearch")}{" "}
-            <span style={{ float: "right" }}>&#9658;</span>
-            <ul
-              className={cx(
-                "dropdown-menu",
-                "DropdownMenu--reset",
-                "QuickSearchMenu",
-                {
-                  "QuickSearchMenu--up": pageY > window.innerHeight / 2,
-                  "QuickSearchMenu--left": pageX > window.innerWidth * 0.7,
-                },
-              )}
-              role="menu"
+      <Menu.Target>
+        <div
+          style={{
+            position: "fixed",
+            top: pageY,
+            left: pageX,
+            width: 0,
+            height: 0,
+          }}
+        />
+      </Menu.Target>
+      <Menu.Dropdown>
+        {selEnabled && (
+          <Fragment>
+            <Menu.Item
+              onClick={(e) => onMenuSelect("copy", e)}
+              rightSection={<span>Ctrl+C</span>}
             >
-              {QUICK_SEARCH.providers.map((p) => (
-                <MenuItem
-                  key={p.url}
-                  eventKey={p.url}
-                  onSelect={onQuickSearchSelect}
-                >
-                  {p.name}
-                </MenuItem>
-              ))}
-            </ul>
-          </MenuItem>
-          <MenuItem divider />
-        </Fragment>
-      )}
-      {normalEnabled && (
-        <Fragment>
-          <MenuItem eventKey="selectAll" onSelect={onMenuSelect}>
-            {i18n("cmenu_selectAll")}
-            <span className="DropdownMenu__Item__HotKey">Ctrl+A</span>
-          </MenuItem>
-          <MenuItem
-            eventKey="mouseBrowsing"
-            onSelect={onMenuSelect}
-            className={cx({
-              "DropdownMenu__Item--checked": mouseBrowsingEnabled,
-            })}
+              {i18n("cmenu_copy")}
+            </Menu.Item>
+            <Menu.Item onClick={(e) => onMenuSelect("copyAnsi", e)}>
+              {i18n("cmenu_copyAnsi")}
+            </Menu.Item>
+          </Fragment>
+        )}
+        {normalEnabled && (
+          <Menu.Item
+            onClick={(e) => onMenuSelect("paste", e)}
+            rightSection={<span>Shift+Insert</span>}
           >
-            {i18n("cmenu_mouseBrowsing")}
-          </MenuItem>
-          <MenuItem onClick={onInputHelperClick}>
-            {i18n("cmenu_showInputHelper")}
-          </MenuItem>
-          <MenuItem onClick={onLiveArticleHelperClick}>
-            {i18n("cmenu_showLiveArticleHelper")}
-          </MenuItem>
-          <MenuItem divider />
-        </Fragment>
-      )}
-      <MenuItem onClick={onSettingsClick}>{i18n("cmenu_settings")}</MenuItem>
-    </ul>
+            {i18n("cmenu_paste")}
+          </Menu.Item>
+        )}
+        {selEnabled && (
+          <Menu.Item onClick={(e) => onMenuSelect("searchGoogle", e)}>
+            {i18n("cmenu_searchGoogle")} '{normalizeSelectedText(selectedText)}'
+          </Menu.Item>
+        )}
+        {urlEnabled && (
+          <Fragment>
+            <Menu.Item onClick={(e) => onMenuSelect("openUrlNewTab", e)}>
+              {i18n("cmenu_openUrlNewTab")}
+            </Menu.Item>
+            <Menu.Item onClick={(e) => onMenuSelect("copyLinkUrl", e)}>
+              {i18n("cmenu_copyLinkUrl")}
+            </Menu.Item>
+          </Fragment>
+        )}
+        <Menu.Divider />
+        {selEnabled && (
+          <Fragment>
+            <Menu.Sub>
+              <Menu.Sub.Target>
+                <Menu.Sub.Item>{i18n("cmenu_quickSearch")}</Menu.Sub.Item>
+              </Menu.Sub.Target>
+              <Menu.Sub.Dropdown>
+                {QUICK_SEARCH.providers.map((p) => (
+                  <Menu.Item
+                    key={p.url}
+                    onClick={(e) => onQuickSearchSelect(p.url, e)}
+                  >
+                    {p.name}
+                  </Menu.Item>
+                ))}
+              </Menu.Sub.Dropdown>
+            </Menu.Sub>
+            <Menu.Divider />
+          </Fragment>
+        )}
+        {normalEnabled && (
+          <Fragment>
+            <Menu.Item
+              onClick={(e) => onMenuSelect("selectAll", e)}
+              rightSection={<span>Ctrl+A</span>}
+            >
+              {i18n("cmenu_selectAll")}
+            </Menu.Item>
+            <Menu.Item
+              onClick={(e) => onMenuSelect("mouseBrowsing", e)}
+              leftSection={<span>{mouseBrowsingEnabled ? "✓" : ""}</span>}
+            >
+              {i18n("cmenu_mouseBrowsing")}
+            </Menu.Item>
+            <Menu.Item onClick={onInputHelperClick}>
+              {i18n("cmenu_showInputHelper")}
+            </Menu.Item>
+            <Menu.Item onClick={onLiveArticleHelperClick}>
+              {i18n("cmenu_showLiveArticleHelper")}
+            </Menu.Item>
+            <Menu.Divider />
+          </Fragment>
+        )}
+        <Menu.Item onClick={onSettingsClick}>
+          {i18n("cmenu_settings")}
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
   );
 };
 

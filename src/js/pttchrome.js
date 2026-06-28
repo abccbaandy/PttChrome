@@ -1,5 +1,4 @@
 ﻿// Main Program
-import { Modal } from "react-bootstrap";
 import { AnsiParser } from './ansi_parser';
 import { TermView } from './term_view';
 import { TermBuf } from './term_buf';
@@ -16,6 +15,7 @@ import PasteShortcutAlert from '../components/PasteShortcutAlert';
 import ConnectionAlert from '../components/ConnectionAlert';
 import ContextMenu from '../components/ContextMenu';
 import { renderInto, unmountFrom } from './react_root';
+import { MantineRoot } from '../components/MantineRoot';
 
 function noop() {}
 
@@ -284,7 +284,7 @@ App.prototype.onClose = function() {
     this.connect(this.connectedUrl.url);
   }
   const container = document.getElementById('reactAlert');
-  renderInto(container, <ConnectionAlert onDismiss={onDismiss} />);
+  renderInto(container, <MantineRoot><ConnectionAlert onDismiss={onDismiss} /></MantineRoot>);
   this.updateTabIcon('disconnect');
 };
 
@@ -427,14 +427,13 @@ App.prototype.showPasteUnimplemented = function() {
     unmountFrom(container)
     this.modalShown = false;
   }
-  // react-bootstrap 2 取代了舊的 react-overlays BaseModal（已移除該直接 dep）。
-  // 改用 RB2 Modal 提供 backdrop + ESC（onHide）；內容仍是 PasteShortcutAlert，
-  // 其 × / 按鈕與 onHide 皆走 onDismiss → unmount 容器。
+  // PasteShortcutAlert 本身即 Mantine Modal（backdrop + ESC 由 Mantine 提供）；
+  // × / 按鈕 / onClose 皆走 onDismiss → unmount 容器。
   renderInto(
     container,
-    <Modal show onHide={onDismiss}>
-      <PasteShortcutAlert onDismiss={onDismiss} />
-    </Modal>
+    <MantineRoot>
+      <PasteShortcutAlert opened onClose={onDismiss} />
+    </MantineRoot>
   )
   this.modalShown = true;
 };
@@ -902,7 +901,12 @@ App.prototype.onPrefChange = function(name, value) {
 };
 
 App.prototype.checkClass = function(cn) {
-  return (  cn.indexOf("closeSI") >= 0  || cn.indexOf("EPbtn") >= 0 || 
+  // SVG 元素（Mantine 圖示如關閉鈕的 ✕、chevron 等）的 className 是
+  // SVGAnimatedString（物件、truthy，故會通過呼叫端的 `if (e.target.className)`
+  // 守門）而非字串 → 直接 .indexOf 會丟 TypeError。取其 baseVal 字串。
+  if (cn && typeof cn !== "string") cn = cn.baseVal || "";
+  if (!cn) return false;
+  return (  cn.indexOf("closeSI") >= 0  || cn.indexOf("EPbtn") >= 0 ||
       cn.indexOf("closePP") >= 0 || cn.indexOf("picturePreview") >= 0 || 
       cn.indexOf("drag") >= 0    || cn.indexOf("floatWindowClientArea") >= 0 || 
       cn.indexOf("WinBtn") >= 0  || cn.indexOf("sBtn") >= 0 || 
@@ -1222,6 +1226,6 @@ App.prototype.setBBSCmd = function setBBSCmd(cmd) {
 App.prototype.setupContextMenus = function() {
   renderInto(
     document.getElementById('cmenuReact'),
-    <ContextMenu pttchrome={this} />
+    <MantineRoot><ContextMenu pttchrome={this} /></MantineRoot>
   );
 };
