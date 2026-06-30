@@ -158,6 +158,21 @@ a:link,a:visited,a:active,a:hover {
   margin: 0.5em auto;
   display: block;
 }
+/* 自動開圖：點圖切換放大。預設小圖呈 zoom-in，放大態呈 zoom-out。
+   .main 整體經 transform scaleX/Y 縮放填滿視窗，故 width:100%（相對 #mainContainer
+   = .main 寬）放大後即填滿視窗寬度，height:auto 維持等比。 */
+.easyReadingImg.hyperLinkPreview {
+  cursor: zoom-in;
+}
+#mainContainer.imagesEnlarged .easyReadingImg.hyperLinkPreview {
+  cursor: zoom-out;
+}
+#mainContainer.imagesEnlarged .easyReadingImg {
+  max-width: 100%;
+  max-height: none;
+  width: 100%;
+  height: auto;
+}
 .easyReadingVideo {
   margin: 0.5em auto;
   width: 640px;

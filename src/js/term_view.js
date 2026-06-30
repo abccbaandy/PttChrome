@@ -87,6 +87,12 @@ export function TermView() {
   // Pusher highlight: lower-cased id of the pusher whose comments are currently
   // highlighted (whole row), or null. Set by togglePusherHighlight on click.
   this._selectedPusher = null;
+  // Monotonic id bumped only when a NEW article's first page starts accumulating
+  // (accumulatePageLines new-article branch). Stable across same-article page-downs
+  // and forced redraws, so Screen can reset the "enlarge all images" toggle on
+  // article change / re-entry WITHOUT resetting on every concat'd page-down (which
+  // would happen if it keyed off the `lines` reference). See Screen.js.
+  this._articleInstanceId = 0;
 
   this.curRow = 0;
   this.curCol = 0;
@@ -411,7 +417,10 @@ TermView.prototype = {
         // page → inaccurate, so floors are hidden in native mode (see Screen.js).
         easyReading: this.useEasyReadingMode,
         dropHidden: dropHidden,
-        inListContext: this._inBoardListContext
+        inListContext: this._inBoardListContext,
+        // Stable per-article id; Screen resets the enlarge-images toggle when it
+        // changes (new article / re-entry), not on every page-down.
+        articleId: this._articleInstanceId
       }
     );
   },
@@ -900,6 +909,9 @@ TermView.prototype = {
       // First page of a (new) article: restart the accumulated page as this whole
       // screen and clear the per-article pusher selection.
       this._selectedPusher = null;
+      // New article (or re-entry into the same article): bump the instance id so
+      // Screen resets the enlarge-images toggle back to default small images.
+      ++this._articleInstanceId;
       this.buf.pageLines = this.buf.lines.slice(0, -1).map(cloneRow);
     }
     // Footer overlay = a LIVE mirror of the REAL bottom status row (page X/Y, %,

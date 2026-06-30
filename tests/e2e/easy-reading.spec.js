@@ -209,6 +209,42 @@ test.describe.serial('好讀模式', () => {
             const previews = await page.evaluate((sel) => document.querySelectorAll(sel).length, PREVIEW_SEL);
             console.log('PREVIEW NODES:', previews);
             expect(previews).toBeGreaterThan(0);
+
+            // 點圖放大全部圖片至視窗寬度（再點縮回）。僅在本篇實際有已載入的內嵌圖片
+            // 時驗（youtube/影片等 iframe-only 文章無 img，跳過此段，內容相依）。
+            const hasImg = await page.evaluate(() => {
+              const imgs = document.querySelectorAll('#mainContainer img.hyperLinkPreview');
+              return Array.from(imgs).some((im) => im.offsetWidth > 0);
+            });
+            if (hasImg) {
+              const enlarged = await page.evaluate(() => {
+                const im = Array.from(
+                  document.querySelectorAll('#mainContainer img.hyperLinkPreview')
+                ).find((x) => x.offsetWidth > 0);
+                const before = im.getBoundingClientRect().width;
+                im.click();
+                const mc = document.getElementById('mainContainer');
+                const after = im.getBoundingClientRect().width;
+                return {
+                  cls: mc.classList.contains('imagesEnlarged'),
+                  before,
+                  after,
+                };
+              });
+              console.log('ENLARGE:', JSON.stringify(enlarged));
+              expect(enlarged.cls).toBe(true);
+              expect(enlarged.after).toBeGreaterThanOrEqual(enlarged.before);
+              // 再點一次 → 縮回（class 移除）。
+              const collapsed = await page.evaluate(() => {
+                const im = Array.from(
+                  document.querySelectorAll('#mainContainer img.hyperLinkPreview')
+                ).find((x) => x.offsetWidth > 0);
+                im.click();
+                return document.getElementById('mainContainer').classList.contains('imagesEnlarged');
+              });
+              expect(collapsed).toBe(false);
+            }
+
             found = true;
             break;
           }
