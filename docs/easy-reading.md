@@ -22,7 +22,7 @@
 | 模式 | `lines` 來源 | 黑名單列 |
 |---|---|---|
 | 原生 / 好讀列表選單(pageState≠3) | `buf.lines`（單頁 24 列） | `visibility:hidden`（保固定格線，`enhance.dropHidden=false`） |
-| 好讀文章(pageState 3) | `buf.pageLines`（累積長頁，`term_view.accumulatePageLines` 純 JS `findPageOverlap` 去重） | 整列移除（Screen render `null`，`dropHidden=true`，長卷無空行） |
+| 好讀文章(pageState 3) | `buf.pageLines`（累積長頁，`term_view.accumulatePageLines` 純 JS 去重：`comment_parse.resolvePageOverlap`＝狀態列行號為主、`findPageOverlap` 內文比對為輔） | 整列移除（Screen render `null`，`dropHidden=true`，長卷無空行） |
 
 - 逐列加工（blacklist/樓層/作者高亮/pusher 高亮）統一在 `Screen#computeAnnotations` 一處。好讀文章因 `lines=完整 pageLines`，`new FloorCounter()` 一次走完整篇 → 跨頁樓號自然正確（已**無** view 端持久計數器 `_floorCounter`）。
 - `dropHidden` 移除的列**不位移**其餘列 `data-row`（=pageLines 絕對索引）；`getText` 用絕對 index → 選取/複製跨缺口仍對齊（順帶修掉舊 `appendRows` 的 `srow`/`data-row` off-by-one）。
@@ -30,6 +30,7 @@
 - 好讀兩個 overlay 列（footer `#easyReadingLastRow`、reply `#easyReadingReplyRow`）是 `BBSWin` 下獨立 div、非 `#mainContainer`，仍 imperative 畫（`term_ui.renderOverlayRow` 單列），不涉所有權衝突。
 - **圖片預覽（`_renderScreenLines` 的 `inlinePreview`/`hoverPreview` 兩參數，CONFIRMED e2e）**：好讀文章 `inlinePreview=true`+`hoverPreview=false`（自動行內開圖，每個連結旁掛 `<ImagePreviewer Inline>`，等同舊 `appendRows(showsLinkPreview=true)`，**不**受 `enablePicPreview` pref 約束）；原生 `inlinePreview=false`+`hoverPreview=enablePicPreview`（hover 才開）；好讀列表/選單兩者皆 false。守護：unit `image_preview.test.js`（Screen→Row→builder 接線）+ e2e `easy-reading.spec.js`「好讀模式自動行內開圖」。
 - **`buf.pageLines` 既是 render source 又是選取 source，clone 用 `term_view.cloneRow`**（`Object.assign(Object.create(Object.getPrototypeOf(ch)), ch)`），保留 TermChar prototype 方法（`isStartOfURL`/`getColor`…）；勿用 `JSON.parse(JSON.stringify())`（剝 prototype → render 即炸）。WHY 見 `term_view.js#cloneRow` 註解。
+- **跨頁去重 `resolvePageOverlap`（狀態列行號為主，2026-07，治「重複區塊」race，CONFIRMED unit+offline/live e2e 守護）**：`findPageOverlap` 取最大內文相符 `k`，在半畫好中間 frame（重疊區某列未 settle）會 lock 到偏小 `k` → 少跳 → 重複追加 → 畫面重複段落（難重現、非特定文章）。改以狀態列 `目前顯示: 第 S~E 行`（`parseStatusRow` 的 `rowIndexStart/End`）算重疊：`kStatus = accEndRow - statusStart + 1`（`accEndRow` = `pageLines` 末列文章行號＝上頁 rowIndexEnd，`term_view._accEndRow` 追蹤；首頁 seed、`hideEasyReadingOverlays` 重置）。規則：**content 為重疊下界**（`findPageOverlap` 找到的相符列確定重複、必跳，`kStatus<=kContent` 用 `kContent`；長「行」可 wrap 成 2 顯示列使 kStatus 偏小，故不得低於 content）；僅 `kStatus>kContent`（content 因 race 少算）時用 `kStatus` 補回，並過 **drift guard**（該重疊區與 accTail 非空列相符率 <0.5 視為 `accEndRow` 漂移 → 退回 `kContent`）。純函式在 `comment_parse.resolvePageOverlap`，守護 `tests/unit/comment_parse.test.js` `describe("resolvePageOverlap")` + offline `replay_fixture.test.js` 鏡像同路徑。
 - **底部 padding**：`accumulatePageLines` 開頭統一設 `mainContainer.paddingBottom='1em'`（讓位給 footer overlay）；回列表/選單由 `hideEasyReadingOverlays` 清回 ''＋`scrollTop=0`（守護 `tests/unit/easy_reading_overlay_reset.test.js`；單頁文末行不被 overlay 遮的回歸見 offline `easy-reading.offline.spec.js`「末行不被底部狀態列 overlay 遮住」）。
 - **footer 鏡像（CONFIRMED 讀碼）**：footer overlay (`#easyReadingLastRow`) **不** hardcode 文字，而是每次 `accumulatePageLines` 末由 `_mirrorStatusRowToFooter` 把**真實狀態列** `buf.lines[rows-1]`（含「瀏覽 第 X/Y 頁 (n%)…(h)說明(←)離開」、真實顏色）以 `renderOverlayRow` 畫進去（`parseStatusRow` 守門，transient 空列不洗掉）。WHY：原 hardcode `(y)回應(X%)推文(←)離開` 少「(h)說明」、頁數/% 永遠靜止，與原生不一致（原生 100%／非 100% 都有 (h)說明，差別只在頁數反白）。
 

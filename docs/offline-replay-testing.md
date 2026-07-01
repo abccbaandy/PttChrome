@@ -5,7 +5,7 @@
 
 ## 為什麼不是單一靜態快照
 好讀模式是**互動式翻頁**：靠 `EasyReading._send('\x1b[6~')`（`src/js/easy_reading.js:82,318`）主動向 server 要下一頁，
-逐頁累進 `termBuf.pageLines`（`src/js/term_view.js:814 accumulatePageLines` + `comment_parse.findPageOverlap` 去重）。
+逐頁累進 `termBuf.pageLines`（`src/js/term_view.js accumulatePageLines` + `comment_parse.resolvePageOverlap` 去重：狀態列行號為主、`findPageOverlap` 內文為輔）。
 「第一則推文消失 / 樓號錯位」是跨頁累積產生 → 必須忠實重放逐頁節奏。
 
 ## 架構（單一錄製源，兩層消費）
@@ -18,8 +18,9 @@
   `App.onData`（`src/js/pttchrome.js:252`，= 真實 parser→termBuf→`<Screen>`）；以好讀自己送出的
   `\x1b[6~`/`\x1b[4~` 當「放下一頁」門控。見 `tests/e2e/helpers/replay.js`。
 - **Layer1**：產出真實 DOM → 可跑現有全部斷言（翻頁回歸 / 樓層 / 黑名單 / pusher / 列表）。
-- **Layer2**：用 *真實* `findPageOverlap` 從「每頁文字快照」重建累積（鏡像 accumulatePageLines），
-  純 node 守護去重 off-by-one + FloorCounter + blacklist。見 `tests/unit/replay_fixture.test.js`。
+- **Layer2**：用 *真實* `resolvePageOverlap`（狀態列行號為主＋`findPageOverlap` 為輔）從「每頁文字快照」
+  重建累積（鏡像 accumulatePageLines；快照末列即原始狀態列，可解析行號），純 node 守護去重 off-by-one
+  + 重複區塊 + FloorCounter + blacklist。見 `tests/unit/replay_fixture.test.js`。
 
 ## 檔案格式
 cassette（`tests/e2e/cassettes/<name>.json`）：

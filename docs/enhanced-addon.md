@@ -35,7 +35,7 @@
   articleAuthor,selectedPusher,pageState,dropHidden}`。`computeAnnotations`：`pageState==3`→`annotateComment`
   (floor／黑名單 hidden／作者高亮／pusher 高亮)；`pageState==2`→`parseListAuthor`(黑名單 hidden)。
   - 兩模式差別只在傳給 `<Screen>` 的 `lines`：原生/好讀列表選單=`buf.lines`(單頁)；好讀文章=`buf.pageLines`
-    (累積長頁，`term_view.accumulatePageLines` 純 JS `findPageOverlap` 去重)。
+    (累積長頁，`term_view.accumulatePageLines` 純 JS 去重：`resolvePageOverlap`＝狀態列行號為主、`findPageOverlap` 內文為輔，見 `docs/easy-reading.md`)。
   - **黑名單列移除 vs 隱藏由 `enhance.dropHidden` 決定**：好讀文章 `dropHidden=true`→Screen render `null`
     （整列移除、長卷無空行）；原生/列表 `dropHidden=false`→`visibility:hidden`（固定格線只能隱藏不移除）。
     render `null` **不位移**其餘列 `data-row`(=pageLines 絕對索引)，故選取/複製跨缺口仍對齊。

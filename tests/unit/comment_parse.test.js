@@ -23,6 +23,7 @@ import {
   FloorCounter,
   annotateComment,
   findPageOverlap,
+  resolvePageOverlap,
   COMMENT_USERID_COL
 } from "../../src/js/comment_parse";
 import { parsePushInitText } from "../../src/js/string_util";
@@ -232,6 +233,87 @@ describe("findPageOverlap", () => {
 
   test("empty accumulated tail → 0", () => {
     expect(findPageOverlap([], ["a", "b"])).toBe(0);
+  });
+});
+
+// REGRESSION: easy-reading "duplicate block" bug. On a half-painted intermediate frame a
+// row inside the true overlap hasn't settled, so findPageOverlap (largest text match)
+// returns a SMALLER k than the real overlap → the caller re-appends already-accumulated
+// rows → a duplicate block. PTT's status-line row numbers ("目前顯示: 第 S~E 行") give the
+// exact overlap regardless of paint state, so resolvePageOverlap prefers them.
+describe("resolvePageOverlap", () => {
+  test("status and content agree → that value", () => {
+    expect(
+      resolvePageOverlap({ accEndRow: 90, statusStart: 89, kContent: 2, maxK: 23 })
+    ).toBe(2); // 90 - 89 + 1 = 2
+  });
+
+  test("race: content under-counts, status recovers the true overlap", () => {
+    // Prev screen ended at article line 113; new screen shows 111~133 → true overlap 3
+    // rows (111,112,113). But a half-painted frame left row 112 mismatching, so content
+    // only matched the top run and returned 1. The duplicate must be prevented → use 3.
+    const accTail = ["line 111", "line 112", "line 113"];
+    const newTexts = ["line 111", "line 112 (half-painted)", "line 113"];
+    expect(
+      resolvePageOverlap({
+        accEndRow: 113,
+        statusStart: 111,
+        kContent: 1,
+        maxK: 3,
+        accTail,
+        newTexts
+      })
+    ).toBe(3);
+  });
+
+  test("status under-counts (wrapped line) → never go below content's proven overlap", () => {
+    // A long article 行 can wrap across 2 display rows, so the arithmetic kStatus can be
+    // SMALLER than the true display-row overlap. content already matched more rows (they
+    // genuinely re-appear) — trusting the smaller kStatus would re-append real duplicates.
+    // Regression for the Stock 5-page replay fixture "相鄰非空白列不重複" failure.
+    expect(
+      resolvePageOverlap({ accEndRow: 100, statusStart: 99, kContent: 3, maxK: 23 })
+    ).toBe(3); // kStatus = 2 < kContent 3 → keep 3
+  });
+
+  test("no status numbers → fall back to content", () => {
+    expect(
+      resolvePageOverlap({ accEndRow: null, statusStart: null, kContent: 2, maxK: 23 })
+    ).toBe(2);
+  });
+
+  test("drift guard: status region shares ~nothing with tail → fall back to content", () => {
+    // accEndRow drifted way ahead so kStatus is large, but the implied overlap rows do
+    // not match the accumulated tail at all → distrust status, keep content's k.
+    const accTail = ["aaa", "bbb", "ccc", "ddd"];
+    const newTexts = ["zzz", "yyy", "xxx", "www"];
+    expect(
+      resolvePageOverlap({
+        accEndRow: 200,
+        statusStart: 197,
+        kContent: 0,
+        maxK: 4,
+        accTail,
+        newTexts
+      })
+    ).toBe(0);
+  });
+
+  test("forced redraw of the same screen → skip whole screen (no double-append)", () => {
+    // pref/pusher toggle re-enters with the identical screen: accEndRow still equals this
+    // screen's rowIndexEnd, so kStatus = accEndRow - statusStart + 1 = maxK → append none.
+    expect(
+      resolvePageOverlap({ accEndRow: 113, statusStart: 91, kContent: 23, maxK: 23 })
+    ).toBe(23); // 113 - 91 + 1 = 23
+  });
+
+  test("kStatus is clamped to [0, maxK]", () => {
+    expect(
+      resolvePageOverlap({ accEndRow: 500, statusStart: 91, kContent: 5, maxK: 23 })
+    ).toBe(23); // would be 410, clamped to maxK
+    expect(
+      resolvePageOverlap({ accEndRow: 10, statusStart: 91, kContent: 0, maxK: 23 })
+    ).toBe(0); // negative → clamped to 0
   });
 });
 

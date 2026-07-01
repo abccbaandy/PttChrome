@@ -3,18 +3,22 @@
 // 那个 off-by-one bug）+ FloorCounter 楼层 + blacklist，全部不连网、秒级。
 //
 // 镜像 src/js/term_view.js#accumulatePageLines：第一页 = screen.slice(0,-1)（去状态列）；
-// 后续 = acc.concat(newRows.slice(findPageOverlap(accTail, newRows)))。
+// 后续去重以状态列行号（parseStatusRow）为主、findPageOverlap 内文比对为辅
+// （resolvePageOverlap），= acc.concat(newRows.slice(begin))。
 //
 // fixture 由 `yarn record:cassette` 产出 tests/unit/fixtures/replay/<name>.page.json。
+// 每页最后一列是原始状态列文字（"目前显示: 第 S~E 行"），可解析出绝对行号。
 // 还没录过 → skip（非失败）。
 const fs = require("fs");
 const path = require("path");
 const {
   findPageOverlap,
+  resolvePageOverlap,
   annotateComment,
   FloorCounter,
   parseComment
 } = require("../../src/js/comment_parse");
+const { parseStatusRow } = require("../../src/js/string_util");
 
 const FIX_DIR = path.join(__dirname, "fixtures", "replay");
 const COMMENT_RE = /^(推|噓|→)\s+([0-9A-Za-z]+)\s*:/;
@@ -29,17 +33,31 @@ function loadArticleFixtures() {
     .map((f, i, arr) => Object.assign(f, { __name: f.meta && f.meta.board }));
 }
 
-// 重建好读累积页（text 行阵列），用真实 findPageOverlap 去重。
+// 重建好读累积页（text 行阵列），镜像 accumulatePageLines：状态列行号为主、
+// findPageOverlap 内文比对为辅（resolvePageOverlap）。
 function reconstruct(pageScreens) {
   let acc = [];
+  let accEndRow = null; // pageLines 末列对应的文章行号（上一页 rowIndexEnd）
   for (let p = 0; p < pageScreens.length; p++) {
+    const statusRow = pageScreens[p][pageScreens[p].length - 1];
+    const status = parseStatusRow(statusRow);
     const newRows = pageScreens[p].slice(0, -1); // 去掉最后的状态列（accumulatePageLines 同）
     if (p === 0) {
       acc = newRows.slice();
+      accEndRow = status ? status.rowIndexEnd : null;
     } else {
       const accTail = acc.slice(-newRows.length);
-      const k = findPageOverlap(accTail, newRows.map(r => r));
-      acc = acc.concat(newRows.slice(k));
+      const kContent = findPageOverlap(accTail, newRows);
+      const begin = resolvePageOverlap({
+        accEndRow,
+        statusStart: status ? status.rowIndexStart : null,
+        kContent,
+        maxK: Math.min(accTail.length, newRows.length),
+        accTail,
+        newTexts: newRows
+      });
+      acc = acc.concat(newRows.slice(begin));
+      if (status) accEndRow = status.rowIndexEnd;
     }
   }
   return acc;

@@ -6,7 +6,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
-import { rowToText, parseArticleAuthor, findPageOverlap } from './comment_parse';
+import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap } from './comment_parse';
 
 const ENTER_CHAR = '\r';
 const ESC_CHAR = '\x15'; // Ctrl-U
@@ -93,6 +93,11 @@ export function TermView() {
   // article change / re-entry WITHOUT resetting on every concat'd page-down (which
   // would happen if it keyed off the `lines` reference). See Screen.js.
   this._articleInstanceId = 0;
+  // Article-line number ("目前顯示: 第 S~E 行") of the LAST row currently in buf.pageLines
+  // (= previous accumulated screen's rowIndexEnd), or null when not tracking. Used by
+  // accumulatePageLines to size cross-page overlap from PTT's absolute row numbers
+  // instead of purely from content — see comment_parse.resolvePageOverlap.
+  this._accEndRow = null;
 
   this.curRow = 0;
   this.curCol = 0;
@@ -869,9 +874,10 @@ TermView.prototype = {
 
   // Accumulate the easy-reading scroll page into buf.pageLines (pure JS, no DOM).
   // Called only for article pages (pageState 3) from redraw; the actual draw is done
-  // by the caller via _renderScreenLines(buf.pageLines). Cross-page de-dup compares
-  // row CONTENT (findPageOverlap), never PTT status-line row numbers — see
-  // comment_parse.findPageOverlap and docs/enhanced-addon.md.
+  // by the caller via _renderScreenLines(buf.pageLines). Cross-page de-dup sizes the
+  // overlap from PTT's status-line row numbers ("目前顯示: 第 S~E 行") when available,
+  // with row-CONTENT comparison (findPageOverlap) as cross-check / fallback — see
+  // comment_parse.resolvePageOverlap and docs/enhanced-addon.md.
   accumulatePageLines: function() {
     // The bottom status-row overlay (#easyReadingLastRow, margin-top:-1em) sits over the
     // last viewport row. Reserve one line of bottom padding so the article's last line can
@@ -884,26 +890,42 @@ TermView.prototype = {
     if (this.mainContainer) this.mainContainer.style.paddingBottom = '1em';
     if (this.buf.prevPageState == 3) {
       // Same article, paged down: append only the genuinely new tail. PTT re-shows
-      // the previous screen's bottom at the top of the new one; findPageOverlap
+      // the previous screen's bottom at the top of the new one; resolvePageOverlap
       // measures that overlap so we skip re-adding it.
       var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
-      // parseStatusRow is only a gate here: it confirms an article reading page. Its
-      // numeric fields are NOT used for de-duplication — see findPageOverlap.
+      // parseStatusRow gates this to an article reading page AND supplies the absolute
+      // row numbers (rowIndexStart/End) that drive de-duplication — see resolvePageOverlap.
       var result = parseStatusRow(lastRowText);
       if (result) {
         var newRows = this.buf.lines.slice(0, -1); // drop the status row
         // Only the last `newRows.length` accumulated rows can overlap, so map just
         // the tail to text (keeps it O(screen), not O(article)).
         var accTail = this.buf.pageLines.slice(-newRows.length).map(rowToText);
-        var beginIndex = findPageOverlap(accTail, newRows.map(rowToText));
+        var newTexts = newRows.map(rowToText);
+        var maxK = Math.min(accTail.length, newTexts.length);
+        // Primary overlap = status-line row numbers (exact regardless of paint state, so
+        // a half-painted frame can't shrink k → no duplicate block). findPageOverlap's
+        // content result is the cross-check / fallback + drift guard. this._accEndRow is
+        // the article-line number of pageLines' last row (prev screen's rowIndexEnd).
+        var kContent = findPageOverlap(accTail, newTexts);
+        var beginIndex = resolvePageOverlap({
+          accEndRow: this._accEndRow,
+          statusStart: result.rowIndexStart,
+          kContent: kContent,
+          maxK: maxK,
+          accTail: accTail,
+          newTexts: newTexts
+        });
         // Snapshot-clone the new tail (see cloneRow). pageLines is BOTH the render
         // source (<Screen lines={pageLines}>) and the selection source (getText reads
         // it, incl. ANSI colours). It keeps the FULL rows even for blacklisted ones,
         // so copy still has the original text — the blacklist drop happens only at
         // render time (Screen dropHidden). A forced redraw (pref/pusher toggle)
-        // re-enters here with the same screen; findPageOverlap then matches the whole
-        // screen so beginIndex == newRows.length and nothing is double-appended.
+        // re-enters here with the same screen; kStatus then equals maxK so beginIndex ==
+        // newRows.length and nothing is double-appended.
         this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(beginIndex).map(cloneRow));
+        // Advance the tracked article-line position to this screen's end.
+        this._accEndRow = result.rowIndexEnd;
       }
     } else {
       // First page of a (new) article: restart the accumulated page as this whole
@@ -913,6 +935,12 @@ TermView.prototype = {
       // Screen resets the enlarge-images toggle back to default small images.
       ++this._articleInstanceId;
       this.buf.pageLines = this.buf.lines.slice(0, -1).map(cloneRow);
+      // Seed overlap tracking from this first screen's status row (null if it's a
+      // transient non-article frame — resolvePageOverlap then falls back to content).
+      var firstStatus = parseStatusRow(
+        this.buf.getRowText(this.buf.rows - 1, 0, this.buf.cols)
+      );
+      this._accEndRow = firstStatus ? firstStatus.rowIndexEnd : null;
     }
     // Footer overlay = a LIVE mirror of the REAL bottom status row (page X/Y, %,
     // (h)說明…, with the genuine colours) instead of a hardcoded string, so it always
@@ -970,6 +998,9 @@ TermView.prototype = {
     if (this.mainContainer) this.mainContainer.style.paddingBottom = '';
     this.mainDisplay.scrollTop = 0;
     this.buf.pageLines = [];
+    // Left the article: drop overlap tracking so a stale row number can't bias the next
+    // article's first page-down (see accumulatePageLines / resolvePageOverlap).
+    this._accEndRow = null;
   },
 
   updateEasyReadingReplyRow: function(row) {

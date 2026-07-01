@@ -286,6 +286,56 @@ export function findPageOverlap(accText, newText) {
   return 0; // no overlap → append the whole screen
 }
 
+// Resolve how many top rows of the new screen to skip when accumulating an easy-reading
+// page, using PTT's status-line row numbers ("目前顯示: 第 S~E 行") as the PRIMARY signal
+// and findPageOverlap's content result (kContent) as cross-check / fallback.
+//
+// Why status-primary: content comparison returns the LARGEST text-matching run, so on a
+// half-painted intermediate frame (a row in the true overlap not yet settled) it locks
+// onto a SMALLER k → the caller re-appends already-accumulated rows → a duplicate block
+// on screen (hard to reproduce, not article-specific — it's a render/timing race). The
+// status numbers are PTT's absolute article-line numbers: as long as parseStatusRow
+// matched, they are exact regardless of paint state, so they recover the true overlap.
+//
+// The status numbers had historically been mis-used (off-by-1 floor counting, 首頁 i==4
+// hack — see findPageOverlap comment). Here we only use them for overlap sizing, bounded
+// to [0, maxK], with a drift guard against a wrong (discontinuous) accEndRow.
+//
+// accEndRow  = article-line number of the last accumulated row (prev screen's rowIndexEnd)
+// statusStart = new screen's rowIndexStart. maxK = min(accTail.length, newTexts.length).
+// accTail/newTexts (optional) = the row texts findPageOverlap compared, for the guard.
+export function resolvePageOverlap({ accEndRow, statusStart, kContent, maxK, accTail, newTexts }) {
+  if (accEndRow == null || statusStart == null) return kContent; // no tracking → content
+  const kStatus = Math.max(0, Math.min(maxK, accEndRow - statusStart + 1));
+
+  // kContent is the LARGEST text-matching run, i.e. a proven lower bound of the overlap:
+  // those rows genuinely re-appear and MUST be skipped, so never go below it (going below
+  // re-appends real duplicates — long article "行" can wrap across display rows, making the
+  // arithmetic kStatus smaller than the true display-row overlap). Status only helps in the
+  // OTHER direction: a half-painted frame left a row in the overlap unsettled so content
+  // under-counted — then kStatus > kContent recovers the rows content missed.
+  if (kStatus <= kContent) return kContent;
+
+  // kStatus > kContent. Trust status UNLESS accEndRow drifted (tracking lost continuity),
+  // which would make kStatus point at rows that share ~nothing with the accumulated tail →
+  // trusting it could eat genuinely-new content. Distinguish a paint glitch (a few overlap
+  // rows differ, most still match) from drift (almost none match).
+  if (accTail && newTexts) {
+    let nonBlank = 0;
+    let matched = 0;
+    for (let i = 0; i < kStatus; ++i) {
+      const b = (newTexts[i] || '').replace(/\s+$/, '');
+      if (b.trim() === '') continue;
+      ++nonBlank;
+      const a = (accTail[accTail.length - kStatus + i] || '').replace(/\s+$/, '');
+      if (a === b) ++matched;
+    }
+    // ratio < 0.5 → the status-implied region barely matches → treat as drift, fall back.
+    if (nonBlank > 0 && matched / nonBlank < 0.5) return kContent;
+  }
+  return kStatus;
+}
+
 // Build a lower-cased Set from the newline-separated blacklist textarea value.
 export function parseBlacklist(str) {
   const set = new Set();
