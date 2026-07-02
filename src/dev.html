@@ -10,14 +10,11 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 
     <!--
-      hammerjs comes from CDN (unpkg) instead of bundling (global-only). The
-      version is read from the installed package (require(...).version) so the
-      CDN URL can't drift from package.json/yarn.lock. React/react-dom and every
-      other dependency are bundled by webpack (React 19 dropped the UMD build).
-      UI components use Mantine (bundled import + @mantine/core/styles.css via
-      entry.js); jquery / bootstrap / react-bootstrap have been removed entirely.
+      React/react-dom and every dependency are bundled by webpack (React 19
+      dropped the UMD build); no runtime CDN <script> deps remain. UI components
+      use Mantine (bundled import + @mantine/core/styles.css via entry.js);
+      jquery / hammerjs / bootstrap / react-bootstrap have been removed entirely.
     -->
-    <script crossorigin="anonymous" src="https://unpkg.com/hammerjs@<%= require('hammerjs/package.json').version %>/hammer.min.js"></script>
   </head>
 
   <body>
