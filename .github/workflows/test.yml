@@ -20,7 +20,7 @@ jobs:
       - name: Unit tests
         run: |
           corepack enable
-          yarn install --frozen-lockfile
+          yarn install --immutable
           yarn test:unit
 
   test-integration:
@@ -45,7 +45,7 @@ jobs:
           INTEGRATION_TIMEOUT_MS: "30000"
         run: |
           corepack enable
-          yarn install --frozen-lockfile
+          yarn install --immutable
           yarn test:integration
 
   test-e2e-offline:
@@ -61,6 +61,6 @@ jobs:
       - name: Offline E2E tests (Playwright replay)
         run: |
           corepack enable
-          yarn install --frozen-lockfile
+          yarn install --immutable
           npx playwright install --with-deps chromium
           yarn test:e2e:offline

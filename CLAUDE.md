@@ -6,7 +6,7 @@ webpack5 + React19（bundled，非 CDN）。UI 元件用 Mantine（暗色預設�
 ## 跑起來（踩雷點，務必照做）
 - 啟動 dev server：`yarn start` → http://localhost:8080（= `webpack serve`）
   - 用 **Node**（≥20.9，建議 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
-  - 套件管理用 **yarn**（`yarn.lock` v1）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定）。**勿用 npm**（會產生多餘 `package-lock.json`）。
+  - 套件管理用 **yarn**（Yarn v4，`node-modules` linker，設定於 `.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。**勿用 npm**（會產生多餘 `package-lock.json`）。CI 安裝用 `yarn install --immutable`。Yarn v4 不跑自訂 `pre*`/`post*` script，故 `build`/`start` 已在 script 內顯式 `yarn clean &&`。
 - dev server 內建 `/bbs` WebSocket proxy，改寫 Origin→term.ptt.cc，直連 `wss://ws.ptt.cc/bbs`。開頁即自動連真 PTT，**不需任何中繼**。
 - dev 預設站台 `wstelnet://localhost:8080/bbs`（webpack.config.js `DefinePlugin` → `DEFAULT_SITE`）。
 - 詳見 `docs/run-local.md`。

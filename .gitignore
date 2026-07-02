@@ -1,6 +1,11 @@
 node_modules
 **/*.concat.*
 
+# Yarn v4（node-modules linker；cache 走全域）
+.yarn/*
+!.yarn/patches
+.pnp.*
+
 # yarn 專案，勿用 npm
 package-lock.json
 

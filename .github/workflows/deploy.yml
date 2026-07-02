@@ -35,7 +35,7 @@ jobs:
       - name: Build
         run: |
           corepack enable
-          yarn install --frozen-lockfile
+          yarn install --immutable
           yarn build
 
       - uses: actions/configure-pages@v6

@@ -29,7 +29,7 @@ yarn start
 |---|---|
 | Node ≥ 20.9 | webpack-cli 7 的下限（建議 v24）。 |
 | 用 **Node** 跑，不要用 bun | bun 跑 webpack-dev-server 的 ws proxy 不轉發 upgrade。確認 `node` 已在 PATH。 |
-| 套件管理用 **yarn** | repo 為 yarn 專案（`yarn.lock` v1）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（已由 `package.json` 的 `packageManager` 鎖定 1.22.x）。 |
+| 套件管理用 **yarn** | repo 為 yarn 專案（Yarn v4，`node-modules` linker，`.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。CI 用 `yarn install --immutable`（非 `--frozen-lockfile`）。 |
 | `node_modules` | 已存在直接用。需重裝時 `yarn install`。 |
 | 連外網 | 需能連到 `wss://ws.ptt.cc/bbs`。 |
 

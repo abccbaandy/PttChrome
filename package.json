@@ -1,7 +1,7 @@
 {
   "name": "pttchrome",
   "version": "1.2.0",
-  "packageManager": "yarn@1.22.22",
+  "packageManager": "yarn@4.17.0",
   "dependencies": {
     "@mantine/core": "^9",
     "@mantine/hooks": "^9",
@@ -131,10 +131,8 @@
   "scripts": {
     "prepare": "husky",
     "clean": "rimraf dist/assets dist/index.html",
-    "prebuild": "npm run clean",
-    "build": "cross-env webpack",
-    "prestart": "npm run clean",
-    "start": "cross-env NODE_ENV=development webpack serve",
+    "build": "yarn clean && cross-env webpack",
+    "start": "yarn clean && cross-env NODE_ENV=development webpack serve",
     "test:unit": "jest",
     "test:integration": "node scripts/run-integration.mjs",
     "kill:dev": "node scripts/kill-dev-server.js",
