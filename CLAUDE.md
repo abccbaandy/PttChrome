@@ -56,7 +56,7 @@ webpack5 + React19（bundled，非 CDN）。UI 元件用 Mantine（暗色預設�
 ## 慣例
 - 編碼：PTT 是 Big5，內部轉 Unicode（`string_util.js` 的 `b2u`/`u2b`，查 `window.lib.b2uArray/u2bArray`）。
 - 改 `src/components/**` 會被 husky + lint-staged 跑 prettier。
-- docs：`docs/run-local.md`(啟動)、`docs/pttchrome-research.md`(來源驗證)、`docs/origin-rewrite-extension.md`(部署 Origin 改寫)、`docs/enhanced-addon.md`(黑名單/樓層/自動登入整合 + 踩坑)、`docs/media-preview-addons.md`(第三方圖片/媒體預覽套件研究 + 整合分析)、`docs/pref-sync-firestore.md`(偏好雲端同步 + Firebase 設定踩坑)、`docs/ptt-official-app-research.md`(Ptt-official-app 官方組織各專案盤點 + 對本專案可參考性分析)。
+- docs：`docs/run-local.md`(啟動)、`docs/pttchrome-research.md`(來源驗證)、`docs/origin-rewrite-extension.md`(部署 Origin 改寫)、`docs/enhanced-addon.md`(黑名單/樓層/自動登入整合 + 踩坑)、`docs/media-preview-addons.md`(第三方圖片/媒體預覽套件研究 + 整合分析)、`docs/pref-sync-firestore.md`(偏好雲端同步 + Firebase 設定踩坑)、`docs/ptt-official-app-research.md`(Ptt-official-app 官方組織各專案盤點 + 對本專案可參考性分析)、`docs/pttbbs-screen-protocol.md`(PTT server 畫面更新協定不變量，pttbbs source 逆向；畫面偵測規則依據)。
 - 待辦交接：`docs/handoff/`，一個 `.md` = 一個尚未完成的功能/修復；挑一個做完即**刪掉該 md**。詳見 `docs/handoff/README.md`。
 - git：**不開新功能分支**，直接在現有分支（`dev`）修改與 commit。
 - **push 後必查 CI**：每次 push 完都要確認 GitHub Actions（`Deploy to GitHub Pages` workflow，含 unit／integration／offline-e2e）有 pass，不能 push 完就收工。無 `gh` CLI，用 GitHub API + env `GH_TOKEN` 查：
