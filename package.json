@@ -58,6 +58,12 @@
     "*.json": "prettier --write",
     "src/components/**/*.{js,json,css}": "prettier --write"
   },
+  "browserslist": [
+    "Chrome >= 90",
+    "Edge >= 90",
+    "Firefox >= 90",
+    "Safari >= 15"
+  ],
   "babel": {
     "env": {
       "development": {
@@ -102,7 +108,14 @@
       },
       "test": {
         "presets": [
-          "@babel/preset-env",
+          [
+            "@babel/preset-env",
+            {
+              "targets": {
+                "node": "current"
+              }
+            }
+          ],
           [
             "@babel/preset-react",
             {
