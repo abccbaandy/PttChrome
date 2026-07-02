@@ -1,4 +1,3 @@
-import $ from "jquery";
 import { Fragment, useState, useRef, useCallback, useEffect } from "react";
 import { i18n } from "../../js/i18n";
 import DropdownMenu from "./DropdownMenu";
@@ -62,13 +61,12 @@ const initialState = {
 
 export const ContextMenu = ({ pttchrome }) => {
   const [state, setState] = useState(initialState);
-  // recompose's withStateHandlers always handed handlers the LATEST state; several
-  // handlers both read state for a side-effect AND set it, so we mirror state into
-  // a ref (synced every render) and read stateRef.current in callbacks to avoid
-  // stale closures.
+  // Several handlers both read state for a side-effect AND set it, so we mirror
+  // state into a ref (synced every render) and read stateRef.current in
+  // callbacks to avoid stale closures.
   const stateRef = useRef(state);
   stateRef.current = state;
-  // Shallow-merge a partial into state (withStateHandlers semantics); undefined → no-op.
+  // Shallow-merge a partial into state; undefined → no-op.
   const update = useCallback((partial) => {
     if (partial !== undefined) setState((s) => ({ ...s, ...partial }));
   }, []);
@@ -92,15 +90,15 @@ export const ContextMenu = ({ pttchrome }) => {
         pttchrome.lastSelection = pttchrome.view.getSelectionColRow();
       }
 
-      const target = $(event.target);
+      const target = event.target;
       let contextOnUrl = "";
       let aElement;
-      if (target.is("a")) {
-        contextOnUrl = target.attr("href");
-        aElement = target[0];
-      } else if (target.parent().is("a")) {
-        contextOnUrl = target.parent().attr("href");
-        aElement = target[0].parentNode;
+      if (target.tagName === "A") {
+        contextOnUrl = target.getAttribute("href");
+        aElement = target;
+      } else if (target.parentElement && target.parentElement.tagName === "A") {
+        contextOnUrl = target.parentElement.getAttribute("href");
+        aElement = target.parentElement;
       }
 
       // replace the &nbsp;

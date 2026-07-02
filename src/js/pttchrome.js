@@ -19,6 +19,13 @@ import { MantineRoot } from '../components/MantineRoot';
 
 function noop() {}
 
+// True when the click landed on a link (the <a> itself or its immediate
+// parent), so link clicks bypass the terminal's own mouse handling.
+function isAnchorTarget(el) {
+  return !!el && (el.tagName === 'A' ||
+    (!!el.parentElement && el.parentElement.tagName === 'A'));
+}
+
 const ANTI_IDLE_STR = '\x1b\x1b';
 
 export const App = function() {
@@ -84,12 +91,12 @@ export const App = function() {
     self.mouse_down(e);
   }, false);
 
-  $(window).mousedown(function(e) {
+  window.addEventListener('mousedown', function(e) {
     var ret = self.middleMouse_down(e);
     if (ret === false) {
-      return false;
+      e.preventDefault();
     }
-  });
+  }, false);
 
   window.addEventListener('mouseup', function(e) {
     self.mouse_up(e);
@@ -594,7 +601,7 @@ App.prototype.getWindowInnerBounds = function() {
 };
 
 App.prototype.getFirstGridOffsets = function() {
-  var container = $(".main")[0];
+  var container = document.querySelector(".main");
   return {
     top: container.offsetTop,
     left: container.offsetLeft
@@ -771,10 +778,11 @@ App.prototype.onValuesPrefChange = function(values) {
         break;
     }
 
+    var mainEls = document.querySelectorAll('.main');
     if (this.view.fontFitWindowWidth) {
-      $('.main').addClass('trans-fix');
+      mainEls.forEach(function(el) { el.classList.add('trans-fix'); });
     } else {
-      $('.main').removeClass('trans-fix');
+      mainEls.forEach(function(el) { el.classList.remove('trans-fix'); });
     }
   } catch (e) {}
 };
@@ -921,7 +929,7 @@ App.prototype.mouse_click = function(e) {
 
   if (e.button == 2) { //right button
   } else if (e.button === 0) { //left button
-    if ($(e.target).is('a') || $(e.target).parent().is('a')) {
+    if (isAnchorTarget(e.target)) {
       return;
     }
     if (window.getSelection().isCollapsed) { //no anything be select
@@ -971,9 +979,8 @@ App.prototype.mouse_click = function(e) {
 };
 
 App.prototype.middleMouse_down = function(e) {
-  // moved to here because middle click works better with jquery
   if (e.button == 1) {
-    if ($(e.target).is('a') || $(e.target).parent().is('a')) {
+    if (isAnchorTarget(e.target)) {
       return;
     }
     if (this.view.middleButtonFunction == 1) {

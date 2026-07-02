@@ -37,9 +37,6 @@ module.exports = {
   // React.createRef, ...) get it from the ProvidePlugin below instead of
   // window.React. bootstrap provides CSS only (CDN <link>); react-bootstrap 2
   // is a bundled import and needs no global.
-  externals: {
-    jquery: 'jQuery',
-  },
   output: {
     path: path.join(__dirname, 'dist/assets/'),
     publicPath: 'assets/',

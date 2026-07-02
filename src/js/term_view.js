@@ -134,7 +134,7 @@ export function TermView() {
   this.notif = null;
 
   Object.defineProperty(this, 'mainContainer', {
-    get: function() { return $('#mainContainer')[0] },
+    get: function() { return document.getElementById('mainContainer') },
   });
 
   var mainDisplay = document.createElement('div');

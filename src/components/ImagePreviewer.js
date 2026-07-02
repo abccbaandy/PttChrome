@@ -98,7 +98,7 @@ export class ImagePreviewer extends React.PureComponent {
 }
 
 const getTop = (top, height) => {
-  const pageHeight = $(window).height();
+  const pageHeight = window.innerHeight;
 
   // opening image would pass the bottom of the page
   if (top + height / 2 > pageHeight - 20) {
