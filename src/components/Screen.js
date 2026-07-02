@@ -124,130 +124,124 @@ function computeAnnotations(lines, enhance) {
   return result;
 }
 
-export class Screen extends React.Component {
-  setCurrentHighlighted = (currentHighlighted) => {
-    this.setState({ currentHighlighted });
-  };
+export const Screen = React.forwardRef(function Screen(props, ref) {
+  const {
+    lines,
+    enhance,
+    forceWidth,
+    enableLinkInlinePreview,
+    enableLinkHoverPreview,
+  } = props;
 
-  state = {
-    currentHighlighted: undefined,
-    currentImagePreview: undefined,
-    left: undefined,
-    top: undefined,
-    // 追蹤上一次的 lines reference，供 getDerivedStateFromProps 偵測換頁
-    prevLines: undefined,
-    // 好讀自動開圖「一鍵放大全部圖片至視窗寬度」開關；點任一張內嵌預覽圖切換。
-    imagesEnlarged: false,
-    // 追蹤上一次的 article 實例 id（term_view._articleInstanceId），用來在換文章 /
-    // 退出再進時重置 imagesEnlarged，而非每次 page-down concat 都重置。
-    prevArticleId: undefined,
-  };
+  const [currentHighlighted, setCurrentHighlighted] = React.useState(undefined);
+  const [currentImagePreview, setCurrentImagePreview] =
+    React.useState(undefined);
+  const [pos, setPos] = React.useState({ left: undefined, top: undefined });
+  // 好讀自動開圖「一鍵放大全部圖片至視窗寬度」開關；點任一張內嵌預覽圖切換。
+  const [imagesEnlarged, setImagesEnlarged] = React.useState(false);
 
+  // 命令式 API：term_view 經 term_ui 的 ref.current.setCurrentHighlighted(row)
+  // 設高亮列（鍵盤操作時）。取代 class instance method。
+  React.useImperativeHandle(ref, () => ({ setCurrentHighlighted }), []);
+
+  // 取代 getDerivedStateFromProps（render 期比較上一次 ref，React 官方 pattern）：
   // lines reference 改變（換頁/重渲染）即關掉開啟中的 hover 圖片預覽。
   // imagesEnlarged 改以 enhance.articleId 為準：好讀同篇 page-down 會 concat 出新
-  // lines reference，但 articleId 不變，故放大狀態在同篇捲動載入時得以保留。
-  // 取代舊的 componentWillReceiveProps（React 16 已 deprecated）。
-  static getDerivedStateFromProps(props, state) {
-    const patch = {};
-    if (props.lines !== state.prevLines) {
-      patch.prevLines = props.lines;
-      patch.currentImagePreview = undefined;
-    }
-    const articleId = props.enhance && props.enhance.articleId;
-    if (articleId !== state.prevArticleId) {
-      patch.prevArticleId = articleId;
-      patch.imagesEnlarged = false;
-    }
-    return Object.keys(patch).length ? patch : null;
+  // lines reference，但 articleId 不變，故放大狀態在同篇捲動載入時得以保留；換文章 /
+  // 退出再進（articleId 變）才重置。
+  const prevLinesRef = React.useRef(lines);
+  const prevArticleIdRef = React.useRef(enhance && enhance.articleId);
+  if (lines !== prevLinesRef.current) {
+    prevLinesRef.current = lines;
+    if (currentImagePreview !== undefined) setCurrentImagePreview(undefined);
+  }
+  const articleId = enhance && enhance.articleId;
+  if (articleId !== prevArticleIdRef.current) {
+    prevArticleIdRef.current = articleId;
+    if (imagesEnlarged) setImagesEnlarged(false);
   }
 
   // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
   // hover 預覽的 OnHover img 無此 class，不受影響。
-  handleImageClick = (e) => {
+  const handleImageClick = React.useCallback((e) => {
     const t = e.target;
     if (t && t.tagName === "IMG" && t.classList.contains("hyperLinkPreview")) {
-      this.setState((s) => ({ imagesEnlarged: !s.imagesEnlarged }));
+      setImagesEnlarged((v) => !v);
     }
-  };
+  }, []);
 
-  handleMouseMove = ({ clientX, clientY }) => {
-    if (this.state.currentImagePreview) {
-      this.setState({
-        left: clientX,
-        top: clientY,
-      });
-    }
-  };
+  const handleMouseMove = React.useCallback(
+    ({ clientX, clientY }) => {
+      if (currentImagePreview) setPos({ left: clientX, top: clientY });
+    },
+    [currentImagePreview],
+  );
 
-  handleHyperLinkMouseOver = ({ currentTarget: { href } }) => {
-    if (this.props.enableLinkHoverPreview) {
-      this.setState({
-        currentImagePreview: of(href)
-          .then(resolveSrcToImageUrl)
-          .then(resolveWithImageDOM),
-      });
-    }
-  };
+  const handleHyperLinkMouseOver = React.useCallback(
+    ({ currentTarget: { href } }) => {
+      if (enableLinkHoverPreview) {
+        setCurrentImagePreview(
+          of(href).then(resolveSrcToImageUrl).then(resolveWithImageDOM),
+        );
+      }
+    },
+    [enableLinkHoverPreview],
+  );
 
-  handleHyperLinkMouseOut = () => {
-    this.setState({ currentImagePreview: undefined });
-  };
+  const handleHyperLinkMouseOut = React.useCallback(() => {
+    setCurrentImagePreview(undefined);
+  }, []);
 
-  render() {
-    const annotations = computeAnnotations(
-      this.props.lines,
-      this.props.enhance,
-    );
-    // dropHidden: easy-reading accumulates a single growing scroll page, so a
-    // blacklisted comment is removed entirely (render null → no DOM node, no blank
-    // line). The fixed native grid instead keeps the row and hides it
-    // (visibility:hidden via <Row hidden>) so the terminal alignment is preserved.
-    // Rendering null does NOT shift the map index, so surviving rows keep their
-    // absolute pageLines index in `row`/`data-row` and selection across the gap
-    // (term_buf.getText uses the absolute row index) stays correct.
-    const dropHidden = !!(this.props.enhance && this.props.enhance.dropHidden);
-    return (
-      <div
-        id="mainContainer"
-        className={this.state.imagesEnlarged ? "imagesEnlarged" : undefined}
-        onMouseMove={this.handleMouseMove}
-        onClick={this.handleImageClick}
-      >
-        {this.props.lines.map((chars, row) => {
-          const ann = annotations[row];
-          if (dropHidden && ann && ann.hidden) return null;
-          return (
-            <Row
-              key={row}
-              chars={chars}
-              row={row}
-              forceWidth={this.props.forceWidth}
-              enableLinkInlinePreview={this.props.enableLinkInlinePreview}
-              highlighted={this.state.currentHighlighted === row}
-              floor={ann && ann.floor}
-              hidden={ann && ann.hidden}
-              pusher={ann && ann.pusher}
-              pusherHighlight={ann && ann.pusherHighlight}
-              authorIdStart={ann && ann.authorIdStart}
-              authorIdEnd={ann && ann.authorIdEnd}
-              fixedUrls={ann && ann.fixedUrls}
-              mentions={ann && ann.mentions}
-              onHyperLinkMouseOver={this.handleHyperLinkMouseOver}
-              onHyperLinkMouseOut={this.handleHyperLinkMouseOut}
-            />
-          );
-        })}
-        {this.state.currentImagePreview && (
-          <ImagePreviewer
-            request={this.state.currentImagePreview}
-            component={ImagePreviewer.OnHover}
-            left={this.state.left}
-            top={this.state.top}
+  const annotations = computeAnnotations(lines, enhance);
+  // dropHidden: easy-reading accumulates a single growing scroll page, so a
+  // blacklisted comment is removed entirely (render null → no DOM node, no blank
+  // line). The fixed native grid instead keeps the row and hides it
+  // (visibility:hidden via <Row hidden>) so the terminal alignment is preserved.
+  // Rendering null does NOT shift the map index, so surviving rows keep their
+  // absolute pageLines index in `row`/`data-row` and selection across the gap
+  // (term_buf.getText uses the absolute row index) stays correct.
+  const dropHidden = !!(enhance && enhance.dropHidden);
+  return (
+    <div
+      id="mainContainer"
+      className={imagesEnlarged ? "imagesEnlarged" : undefined}
+      onMouseMove={handleMouseMove}
+      onClick={handleImageClick}
+    >
+      {lines.map((chars, row) => {
+        const ann = annotations[row];
+        if (dropHidden && ann && ann.hidden) return null;
+        return (
+          <Row
+            key={row}
+            chars={chars}
+            row={row}
+            forceWidth={forceWidth}
+            enableLinkInlinePreview={enableLinkInlinePreview}
+            highlighted={currentHighlighted === row}
+            floor={ann && ann.floor}
+            hidden={ann && ann.hidden}
+            pusher={ann && ann.pusher}
+            pusherHighlight={ann && ann.pusherHighlight}
+            authorIdStart={ann && ann.authorIdStart}
+            authorIdEnd={ann && ann.authorIdEnd}
+            fixedUrls={ann && ann.fixedUrls}
+            mentions={ann && ann.mentions}
+            onHyperLinkMouseOver={handleHyperLinkMouseOver}
+            onHyperLinkMouseOut={handleHyperLinkMouseOut}
           />
-        )}
-      </div>
-    );
-  }
-}
+        );
+      })}
+      {currentImagePreview && (
+        <ImagePreviewer
+          request={currentImagePreview}
+          component={ImagePreviewer.OnHover}
+          left={pos.left}
+          top={pos.top}
+        />
+      )}
+    </div>
+  );
+});
 
 export default Screen;

@@ -40,62 +40,40 @@ export const resolveWithImageDOM = (descriptor) => {
   });
 };
 
-export class ImagePreviewer extends React.PureComponent {
-  state = {
-    pending: undefined,
+// <request> is a Promise (memoized per-href in requestPreview) resolving to a
+// media descriptor. React.memo keeps the old PureComponent shallow-compare so a
+// stable request prop skips re-render (no iframe/video remount flicker; see
+// requestPreview above). On a request change we reset, subscribe, and ignore a
+// late resolve from a superseded request via the effect-cleanup `active` flag.
+export const ImagePreviewer = React.memo(function ImagePreviewer(props) {
+  const { component, request, ...rest } = props;
+  const [state, setState] = React.useState({
     value: undefined,
     error: undefined,
-  };
+  });
 
-  componentDidMount() {
-    this.handleStart();
-  }
+  React.useEffect(() => {
+    let active = true;
+    setState({ value: undefined, error: undefined });
+    request.then(
+      (value) => {
+        if (active) setState({ value, error: undefined });
+      },
+      (error) => {
+        if (active) setState({ value: undefined, error });
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [request]);
 
-  componentDidUpdate(prevProps) {
-    if (this.props.request !== prevProps.request) {
-      this.handleStart();
-    }
-  }
-
-  handleStart(props) {
-    this.setState((state, { request }) => {
-      request.then(this.handleResolve, this.handleReject);
-      return {
-        pending: request,
-        value: undefined,
-        error: undefined,
-      };
-    });
-  }
-
-  handleResolve = (value) => {
-    this.setState(({ pending }, { request }) => {
-      if (pending !== request) {
-        return;
-      }
-      return { value };
-    });
-  };
-
-  handleReject = (error) => {
-    this.setState(({ pending }, { request }) => {
-      if (pending !== request) {
-        return;
-      }
-      return { error };
-    });
-  };
-
-  render() {
-    return React.createElement(this.props.component, {
-      ...this.props,
-      component: undefined,
-      request: undefined,
-      value: this.state.value,
-      error: this.state.error,
-    });
-  }
-}
+  return React.createElement(component, {
+    ...rest,
+    value: state.value,
+    error: state.error,
+  });
+});
 
 const getTop = (top, height) => {
   const pageHeight = window.innerHeight;
@@ -178,24 +156,40 @@ const RETRY_BASE_MS = 300; // 退避：300ms, 600ms（每候選 1+2 次嘗試）
 // <img> that walks a list of candidate URLs. Each candidate is retried a few
 // times with backoff before advancing; one candidate (the resolved src) is the
 // common case, twitter/meee supply fallbacks (:orig → .png:orig → :large → plain).
-class FallbackImage extends React.PureComponent {
+const FallbackImage = React.memo(function FallbackImage({
+  candidates,
+  ...rest
+}) {
   // attempt 只用來換 <img> 的 key 觸發重掛（瀏覽器重發請求），不竄改 URL，
   // 避免破壞帶簽章的網址（如 twitter :orig）。
-  state = { index: 0, loaded: false, retries: 0, attempt: 0, failed: false };
-  _retryTimer = null;
+  const [state, setState] = React.useState({
+    index: 0,
+    loaded: false,
+    retries: 0,
+    attempt: 0,
+    failed: false,
+  });
+  // 讀最新 state（避免同一 render 多次 onError 讀到 stale 閉包），比照 class this.state。
+  const stateRef = React.useRef(state);
+  stateRef.current = state;
+  const retryTimerRef = React.useRef(null);
 
-  componentWillUnmount() {
-    if (this._retryTimer) clearTimeout(this._retryTimer);
-  }
+  React.useEffect(
+    () => () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    },
+    [],
+  );
 
-  handleError = () => {
-    const { retries } = this.state;
+  const handleError = React.useCallback(() => {
+    const { retries } = stateRef.current;
     if (retries < MAX_RETRIES_PER_CANDIDATE) {
       // 退避後重掛同一候選；等待期間維持 loaded:false → 讀取動畫不閃掉。
       const delay = RETRY_BASE_MS * Math.pow(2, retries);
-      this._retryTimer = setTimeout(() => {
-        this._retryTimer = null;
-        this.setState((s) => ({
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        setState((s) => ({
+          ...s,
           retries: s.retries + 1,
           attempt: s.attempt + 1,
           loaded: false,
@@ -204,111 +198,101 @@ class FallbackImage extends React.PureComponent {
       return;
     }
     // 此候選重試用罄 → 換下一候選；沒有下一個就進可見的失敗態。
-    this.setState((s, props) => {
+    setState((s) => {
       const nextIndex = s.index + 1;
-      if (props.candidates[nextIndex] == null) {
-        return { failed: true };
+      if (candidates[nextIndex] == null) {
+        return { ...s, failed: true };
       }
       return {
+        ...s,
         index: nextIndex,
         retries: 0,
         attempt: s.attempt + 1,
         loaded: false,
       };
     });
-  };
+  }, [candidates]);
 
   // 換下一個候選網址時 loaded 一併重設，避免沿用上一張的已載入狀態。
-  handleLoad = () => this.setState({ loaded: true });
+  const handleLoad = React.useCallback(
+    () => setState((s) => ({ ...s, loaded: true })),
+    [],
+  );
 
   // 點擊失敗提示 → 從頭重跑整串候選。
-  handleRetry = () => {
-    if (this._retryTimer) {
-      clearTimeout(this._retryTimer);
-      this._retryTimer = null;
+  const handleRetry = React.useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
     }
-    this.setState((s) => ({
+    setState((s) => ({
+      ...s,
       index: 0,
       retries: 0,
       attempt: s.attempt + 1,
       loaded: false,
       failed: false,
     }));
-  };
+  }, []);
 
-  render() {
-    const { candidates, ...rest } = this.props;
-    const { index, loaded, attempt, failed } = this.state;
-    const src = candidates[index];
-    if (failed || src == null) {
-      return (
-        <div
-          className="previewError"
-          onClick={this.handleRetry}
-          title="點擊重試"
-        >
-          圖片載入失敗，點擊重試
-        </div>
-      );
-    }
+  const { index, loaded, attempt, failed } = state;
+  const src = candidates[index];
+  if (failed || src == null) {
     return (
-      <React.Fragment>
-        {!loaded && <LoadingOverlay />}
-        <img
-          key={`${index}-${attempt}`}
-          {...rest}
-          {...(needsReferer(src) ? {} : { referrerPolicy: "no-referrer" })}
-          src={src}
-          onLoad={this.handleLoad}
-          onError={this.handleError}
-          style={loaded ? null : { display: "none" }}
-        />
-      </React.Fragment>
-    );
-  }
-}
-
-// <video>/<iframe> 內嵌：載入完成前疊 LoadingOverlay，避免網路慢時空白像壞掉。
-class InlineVideo extends React.PureComponent {
-  state = { loaded: false };
-  handleLoad = () => this.setState({ loaded: true });
-  render() {
-    const { loaded } = this.state;
-    return (
-      <React.Fragment>
-        {!loaded && <LoadingOverlay />}
-        <video
-          className="easyReadingVideo"
-          src={this.props.src}
-          controls
-          onLoadedData={this.handleLoad}
-          style={loaded ? null : { display: "none" }}
-        />
-      </React.Fragment>
-    );
-  }
-}
-
-class InlineIframe extends React.PureComponent {
-  state = { loaded: false };
-  handleLoad = () => this.setState({ loaded: true });
-  render() {
-    const { loaded } = this.state;
-    return (
-      <div style={{ margin: "0.5em auto", maxWidth: "800px", height: "450px" }}>
-        {!loaded && <LoadingOverlay />}
-        <iframe
-          type="text/html"
-          src={this.props.src}
-          allowFullScreen
-          referrerPolicy="origin-when-cross-origin"
-          onLoad={this.handleLoad}
-          style={{ border: "none", width: "100%", height: "100%" }}
-        />
+      <div className="previewError" onClick={handleRetry} title="點擊重試">
+        圖片載入失敗，點擊重試
       </div>
     );
   }
-}
+  return (
+    <React.Fragment>
+      {!loaded && <LoadingOverlay />}
+      <img
+        key={`${index}-${attempt}`}
+        {...rest}
+        {...(needsReferer(src) ? {} : { referrerPolicy: "no-referrer" })}
+        src={src}
+        onLoad={handleLoad}
+        onError={handleError}
+        style={loaded ? null : { display: "none" }}
+      />
+    </React.Fragment>
+  );
+});
+
+// <video>/<iframe> 內嵌：載入完成前疊 LoadingOverlay，避免網路慢時空白像壞掉。
+const InlineVideo = React.memo(function InlineVideo({ src }) {
+  const [loaded, setLoaded] = React.useState(false);
+  return (
+    <React.Fragment>
+      {!loaded && <LoadingOverlay />}
+      <video
+        className="easyReadingVideo"
+        src={src}
+        controls
+        onLoadedData={() => setLoaded(true)}
+        style={loaded ? null : { display: "none" }}
+      />
+    </React.Fragment>
+  );
+});
+
+const InlineIframe = React.memo(function InlineIframe({ src }) {
+  const [loaded, setLoaded] = React.useState(false);
+  return (
+    <div style={{ margin: "0.5em auto", maxWidth: "800px", height: "450px" }}>
+      {!loaded && <LoadingOverlay />}
+      <iframe
+        type="text/html"
+        src={src}
+        allowFullScreen
+        referrerPolicy="origin-when-cross-origin"
+        onLoad={() => setLoaded(true)}
+        style={{ border: "none", width: "100%", height: "100%" }}
+      />
+    </div>
+  );
+});
 
 const inlineImage = (descriptor, key) => (
   <FallbackImage
