@@ -121,8 +121,7 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）：
 （`showFloorNumbers`/`blacklist`→`view.*`+`redraw(true)`）。i18n 鍵在 zh_TW/en_US `options_*`。
 
 ## 自動登入：`src/js/auto_login.js`
-`App` constructor `new AutoLogin(this)`；`onConnect` 末尾 `start()`（promise-based fire-and-forget；
-**勿用 async/await**，見踩坑 A「禁用 async/await」）。**自走
+`App` constructor `new AutoLogin(this)`；`onConnect` 末尾 `start()`（async fire-and-forget）。**自走
 polling**（setTimeout 每 500ms），每 tick 直接從 `buf.getRowText` 讀整頁（**勿用
 `#mainContainer.innerText`**：`'change'` 事件在 React re-render **之前** 觸發 → DOM 慢一幀，導致
 「要按鍵才動」）。比對提示字串沿用 `tests/e2e/helpers/ptt.js#login` 流程，帳密用 `app.sendData`(Big5)、
@@ -161,7 +160,7 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 
 ### A. 活躍陷阱（動到相關 code 前先讀）
 
-- **禁用 async/await**（src 內）。無 regenerator-runtime：babel 轉 `regeneratorRuntime.mark`（module 評估期即呼叫）→ `regeneratorRuntime is not defined`、整包 bundle **載入即炸**（空白畫面、連 Developer Mode modal 都不出現；**webpack 編譯不報錯**，純 runtime）。非同步一律寫 Promise chain。診斷捷徑：Playwright `page.on('pageerror')`。
+- **async/await 已可用**（`package.json` browserslist = Chrome≥90 等；preset-env 原生輸出 async/await）。**勿把 target 降回舊瀏覽器**：preset-env 會改用 `regeneratorRuntime.mark`（module 評估期即呼叫、本專案無 regenerator-runtime 依賴）→ `regeneratorRuntime is not defined`、整包 bundle **載入即炸**（空白畫面、連 Developer Mode modal 都不出現；**webpack 編譯不報錯**，純 runtime）。診斷捷徑：Playwright `page.on('pageerror')`。
 - **讀「當前畫面文字」用 `buf.getRowText`，勿讀 `#mainContainer.innerText`**。`term_buf.notify` 先 `dispatchEvent('change')` 才 `view.update()` → DOM 慢一幀（下次更新才追上）。← auto-login「要按鍵才動」根因。
 - **DOM scraping 容錯**（測試/外部讀畫面）：① `visibility:hidden` 列 `innerText` 回空字串（Chromium）→ 改讀 `textContent`；② floorBadge 插在 bbsline 內污染文字（`推9 userid`）→ 推文正則須容忍 `/^(推|噓|→)\d*\s+/`。app 邏輯讀 buf、複製有 `user-select:none`，皆不受影響。
 - **傳給 `React.PureComponent` 的 prop 勿在 render 內現生新物件/Promise**。否則 shallow-compare 永遠不等 → PureComponent 形同失效、子樹每次重掛。實例：`ImagePreviewer` 的 `request` 曾每 render `of(href).then(resolveSrcToImageUrl)` 新 Promise → pusherHighlight 重繪時 value 重置、YouTube iframe 卸載重掛**閃爍**（img 有快取無感）；改 `ImagePreviewer.js#requestPreview(href)` 以 href memoize（module `Map`），同 href 同參考。守護 `tests/unit/row_render.test.js`「same href → request prop 參考相等」。

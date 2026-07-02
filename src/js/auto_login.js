@@ -49,12 +49,10 @@ AutoLogin.prototype.setSessionCredential = function(user, pass) {
   if (user && pass) sessionCred = { user, pass, legacy: false };
 };
 
-// Promise-based (no async/await: this webpack4/babel setup has no
-// regenerator-runtime — async syntax breaks the whole bundle at load).
-AutoLogin.prototype._resolveCredential = function(v) {
+AutoLogin.prototype._resolveCredential = async function(v) {
   if (sessionCred) {
     console.info('auto_login: credential source = session cache');
-    return Promise.resolve(sessionCred);
+    return sessionCred;
   }
 
   const legacy = () => {
@@ -69,30 +67,33 @@ AutoLogin.prototype._resolveCredential = function(v) {
 
   if (!credentialApiAvailable()) {
     console.info('auto_login: Credential Management API unavailable');
-    return Promise.resolve(legacy());
+    return legacy();
   }
 
-  return navigator.credentials
-    .get({ password: true, mediation: 'optional' })
-    .then(cred => {
-      if (cred && cred.password) {
-        console.info('auto_login: credential source = browser store');
-        // The browser store is now the source of truth → drop any leftover
-        // plaintext credentials (username included — useless without the
-        // password) from prefs.
-        if (v.autoLoginPassword || v.autoLoginUser) {
-          console.info(
-            'auto_login: clearing legacy plaintext credentials from prefs'
-          );
-          clearLegacyAutoLoginCredential();
-        }
-        sessionCred = { user: cred.id, pass: cred.password, legacy: false };
-        return sessionCred;
+  try {
+    const cred = await navigator.credentials.get({
+      password: true,
+      mediation: 'optional'
+    });
+    if (cred && cred.password) {
+      console.info('auto_login: credential source = browser store');
+      // The browser store is now the source of truth → drop any leftover
+      // plaintext credentials (username included — useless without the
+      // password) from prefs.
+      if (v.autoLoginPassword || v.autoLoginUser) {
+        console.info(
+          'auto_login: clearing legacy plaintext credentials from prefs'
+        );
+        clearLegacyAutoLoginCredential();
       }
-      console.info('auto_login: browser store returned no credential');
-      return legacy();
-    })
-    .catch(legacy);
+      sessionCred = { user: cred.id, pass: cred.password, legacy: false };
+      return sessionCred;
+    }
+    console.info('auto_login: browser store returned no credential');
+    return legacy();
+  } catch (e) {
+    return legacy();
+  }
 };
 
 // Login succeeded with legacy plaintext creds → offer to save them into the
@@ -110,30 +111,29 @@ AutoLogin.prototype._maybeMigrate = function() {
   } catch (e) {}
 };
 
-AutoLogin.prototype.start = function() {
+AutoLogin.prototype.start = async function() {
   this.stop(); // clear any previous run (reconnect)
   const seq = (this._seq = (this._seq || 0) + 1);
 
   const v = readValuesWithDefault();
   if (!v.autoLogin) return;
-  this._resolveCredential(v).then(cred => {
-    // A newer start() may have begun while the credential chooser was open.
-    if (!cred || seq !== this._seq) return;
-    this._user = cred.user;
-    this._pass = cred.pass;
-    this._usedLegacy = !!cred.legacy;
-    this._dupConn = v.autoLoginDupConn === 'Y' ? 'Y' : 'N';
-    this._skipWelcome = !!v.autoLoginSkipWelcome;
+  const cred = await this._resolveCredential(v);
+  // A newer start() may have begun while the credential chooser was open.
+  if (!cred || seq !== this._seq) return;
+  this._user = cred.user;
+  this._pass = cred.pass;
+  this._usedLegacy = !!cred.legacy;
+  this._dupConn = v.autoLoginDupConn === 'Y' ? 'Y' : 'N';
+  this._skipWelcome = !!v.autoLoginSkipWelcome;
 
-    this._done = false;
-    this._sentUser = false;
-    this._sentPass = false;
-    this._answeredDup = false;
-    this._answeredErr = false;
-    this._lastActionAt = 0;
-    this._deadline = Date.now() + MAX_DURATION_MS;
-    this._poll();
-  });
+  this._done = false;
+  this._sentUser = false;
+  this._sentPass = false;
+  this._answeredDup = false;
+  this._answeredErr = false;
+  this._lastActionAt = 0;
+  this._deadline = Date.now() + MAX_DURATION_MS;
+  this._poll();
 };
 
 AutoLogin.prototype.stop = function() {

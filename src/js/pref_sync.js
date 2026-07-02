@@ -48,12 +48,13 @@ let snapshotUnsub = null;
 // webpack async chunk (same chunk name), kept out of the entry bundle.
 const init = () => {
   if (loadPromise) return loadPromise;
-  loadPromise = Promise.all([
-    import(/* webpackChunkName: "firebase" */ "firebase/app"),
-    import(/* webpackChunkName: "firebase" */ "firebase/auth"),
-    import(/* webpackChunkName: "firebase" */ "firebase/firestore"),
-    import(/* webpackChunkName: "firebase" */ "firebase/app-check")
-  ]).then(([appM, authM, fsM, acM]) => {
+  loadPromise = (async () => {
+    const [appM, authM, fsM, acM] = await Promise.all([
+      import(/* webpackChunkName: "firebase" */ "firebase/app"),
+      import(/* webpackChunkName: "firebase" */ "firebase/auth"),
+      import(/* webpackChunkName: "firebase" */ "firebase/firestore"),
+      import(/* webpackChunkName: "firebase" */ "firebase/app-check")
+    ]);
     // Test-only: route to the local emulator suite when run under
     // `firebase emulators:exec` (it sets these env vars, incl. the demo
     // project id). DefinePlugin pins all three to undefined in webpack
@@ -116,7 +117,7 @@ const init = () => {
     });
     fb = { app, auth, db, authM, fsM };
     return fb;
-  });
+  })();
   return loadPromise;
 };
 
@@ -270,19 +271,20 @@ export const startIfPreviouslySignedIn = () => {
   } catch (e) {
     return;
   }
-  init()
-    // Wait for Firebase's first onAuthStateChanged before deciding: null
-    // there means the session expired/was revoked. (The old pattern —
-    // `const unsub = onAuthState(cb)` with cb calling unsub() — crashed:
-    // onAuthState invokes cb synchronously, before unsub is assigned.)
-    .then(waitForFirstAuthState)
-    .then(user => {
+  (async () => {
+    try {
+      await init();
+      // Wait for Firebase's first onAuthStateChanged before deciding: null
+      // there means the session expired/was revoked.
+      const user = await waitForFirstAuthState();
       console.info(
         "pref_sync: startup auth " + (user ? "restored" : "expired/revoked")
       );
-      return user && attachSnapshotListener();
-    })
-    .catch(e => console.warn("pref_sync: startup sync failed", e));
+      if (user) await attachSnapshotListener();
+    } catch (e) {
+      console.warn("pref_sync: startup sync failed", e);
+    }
+  })();
 };
 
 // Interactive sign-in from PrefModal. onCloudValues fires once with the
@@ -291,34 +293,31 @@ export const startIfPreviouslySignedIn = () => {
 // authenticate is an injection seam for the emulator tests (signInWithPopup
 // needs a browser UI; tests pass a signInWithCredential step instead) —
 // production callers omit it.
-export const signIn = (onCloudValues, authenticate) =>
-  init()
-    .then(
-      authenticate ||
-        (f => f.authM.signInWithPopup(f.auth, new f.authM.GoogleAuthProvider()))
-    )
-    .then(() => {
-      try {
-        window.localStorage.setItem(SYNC_FLAG_KEY, "1");
-      } catch (e) {}
-      return waitForUser()
-        .then(attachSnapshotListener)
-        .then(values => {
-          if (onCloudValues) onCloudValues(values);
-          return values;
-        });
-    });
+export const signIn = async (onCloudValues, authenticate) => {
+  const f = await init();
+  await (authenticate
+    ? authenticate(f)
+    : f.authM.signInWithPopup(f.auth, new f.authM.GoogleAuthProvider()));
+  try {
+    window.localStorage.setItem(SYNC_FLAG_KEY, "1");
+  } catch (e) {}
+  await waitForUser();
+  const values = await attachSnapshotListener();
+  if (onCloudValues) onCloudValues(values);
+  return values;
+};
 
 // Sign out and stop syncing. localStorage prefs are kept: the app keeps
 // working offline with the last-known values. Listener must go down before
 // auth does, or the open stream errors with permission-denied.
-export const signOut = () => {
+export const signOut = async () => {
   detachSnapshotListener();
   try {
     window.localStorage.removeItem(SYNC_FLAG_KEY);
   } catch (e) {}
-  if (!loadPromise) return Promise.resolve();
-  return init().then(f => f.authM.signOut(f.auth));
+  if (!loadPromise) return;
+  const f = await init();
+  return f.authM.signOut(f.auth);
 };
 
 // Upload prefs (credentials stripped). No-op when signed out. Errors are
@@ -326,11 +325,11 @@ export const signOut = () => {
 // autoLoginUser is actively deleted (not just omitted): docs written before
 // it became local-only still carry the PTT username, and set(merge:true)
 // never drops a field on its own — each save self-heals the leftover.
-export const savePrefs = values => {
-  if (!currentUser) return Promise.resolve(values);
+export const savePrefs = async values => {
+  if (!currentUser) return values;
   console.info("pref_sync: uploading prefs");
-  return fb.fsM
-    .setDoc(
+  try {
+    await fb.fsM.setDoc(
       userDocRef(currentUser.uid),
       {
         prefs: {
@@ -341,13 +340,11 @@ export const savePrefs = values => {
         schemaVersion: 1
       },
       { merge: true }
-    )
-    .then(() => {
-      console.info("pref_sync: upload acknowledged by server");
-      return values;
-    })
-    .catch(e => {
-      console.warn("pref_sync: save failed", e);
-      return values;
-    });
+    );
+    console.info("pref_sync: upload acknowledged by server");
+    return values;
+  } catch (e) {
+    console.warn("pref_sync: save failed", e);
+    return values;
+  }
 };
