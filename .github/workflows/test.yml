@@ -12,6 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Yarn v4 走 corepack：須先 enable，setup-node 的 cache:yarn 偵測（yarn cache dir）
+      # 才會用 4.x；否則落到 runner 內建 yarn 1.22，遇 packageManager: yarn@4 直接報錯。
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: corepack enable
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -19,7 +27,6 @@ jobs:
 
       - name: Unit tests
         run: |
-          corepack enable
           yarn install --immutable
           yarn test:unit
 
@@ -27,6 +34,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      # Yarn v4/corepack：先 enable 再讓 setup-node 做 cache:yarn（詳見 test-unit 註解）。
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: corepack enable
 
       - uses: actions/setup-node@v6
         with:
@@ -44,7 +58,6 @@ jobs:
           # also auto-retries (jest.retryTimes) on CI. See tests/integration/.
           INTEGRATION_TIMEOUT_MS: "30000"
         run: |
-          corepack enable
           yarn install --immutable
           yarn test:integration
 
@@ -53,6 +66,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Yarn v4/corepack：先 enable 再讓 setup-node 做 cache:yarn（詳見 test-unit 註解）。
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: corepack enable
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -60,7 +80,6 @@ jobs:
 
       - name: Offline E2E tests (Playwright replay)
         run: |
-          corepack enable
           yarn install --immutable
           npx playwright install --with-deps chromium
           yarn test:e2e:offline

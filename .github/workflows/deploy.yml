@@ -27,6 +27,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Yarn v4/corepack：先 enable 再讓 setup-node 做 cache:yarn（詳見 test.yml 註解）。
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: corepack enable
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -34,7 +41,6 @@ jobs:
 
       - name: Build
         run: |
-          corepack enable
           yarn install --immutable
           yarn build
 
