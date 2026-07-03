@@ -70,7 +70,22 @@ async function installReplay(page) {
         if (typeof on === 'function') on(ev);
       }
       // 吞掉 telnet 协商 / NAWS / 一切键盘送出 —— 离线重放不需要真的送回 server。
-      send() {}
+      // 但把送出的 bytes 转回 latin1 字串交给 window.__stubWSSent（若测试装了）：
+      // list 重放的门控在「WS 送出层」而非 er._send —— 这样 CommandQueue 的机器键
+      // 和使用者键盘键（都走 conn→WS）用同一个 hook 就全捕捉得到。
+      send(data) {
+        if (window.__stubWSSent) {
+          let s = data;
+          if (typeof s !== 'string') {
+            try {
+              s = String.fromCharCode.apply(String, new Uint8Array(s));
+            } catch (e) {
+              s = '';
+            }
+          }
+          window.__stubWSSent(s);
+        }
+      }
       close() {
         this.readyState = 3; // CLOSED
         this._emit('close', {});
@@ -164,6 +179,57 @@ async function replayCassette(page, cassette, opts = {}) {
   await page.waitForTimeout(300); // 让最后一页 settle/render flush
 }
 
+// 重放一卷「list 多 step」cassette（tools/record-cassette.spec.js 的
+// RECORD_LIST_SCRIPT 产物）。与 replayCassette 的差异：门控不在 er._send，而在
+// stub WS 的送出层（见 StubWebSocket.send）——list 好读 v4 的机器键由 CommandQueue
+// 送、导航键由使用者键盘送，都汇流到 conn→WS，同一个 hook 全包。
+// 门控 map：依 step.on 匹配送出的 bytes，按 cassette 顺序逐步喂。
+//   pageup/pagedown: 翻页键     jump: 整串「数字+\r」（跳号开文第一段）
+//   open/cancel: 单独 '\r'      back: ←    slash: '/'
+// 送出的所有 bytes 也记进 window.__replay.sent，供「本地导航不送键」类断言用。
+async function replayListCassette(page, cassette) {
+  await page.evaluate(
+    ({ cassette }) => {
+      const app = window.__app;
+      const steps = cassette.steps || [];
+      let idx = 0;
+      window.__replay = { done: false, fed: 0, total: steps.length, sent: [] };
+      const feed = () => {
+        const step = steps[idx++];
+        app.onData(atob(step.recv));
+        window.__replay.fed = idx;
+        if (idx >= steps.length) window.__replay.done = true;
+      };
+      while (idx < steps.length && steps[idx].on === 'start') feed();
+      if (idx >= steps.length) window.__replay.done = true;
+
+      const PATTERNS = {
+        pageup: (d) => d.indexOf('\x1b[5~') >= 0,
+        pagedown: (d) => d.indexOf('\x1b[6~') >= 0,
+        // jump 只在「序号完全一致」时喂：锚定预读/开文都会送「数字+\r」，若不比
+        // 对目标，跑到别处的跳号会吃错 step、后续全歪（宁可让不匹配的跳号
+        // timeout —— runtime 把它当良性到边）。旧 cassette 没记 num 时退回宽松。
+        jump: (d, step) =>
+          step.num != null ? d === String(step.num) + '\r' : /^\d+\r$/.test(d),
+        jumpsame: (d, step) =>
+          step.num != null ? d === String(step.num) + '\r' : /^\d+\r$/.test(d),
+        open: (d) => d === '\r',
+        back: (d) => d.indexOf('\x1b[D') >= 0,
+        slash: (d) => d === '/',
+        cancel: (d) => d === '\r',
+      };
+      window.__stubWSSent = (data) => {
+        window.__replay.sent.push(data);
+        if (idx >= steps.length) return;
+        const next = steps[idx];
+        const match = PATTERNS[next.on];
+        if (match && match(data, next)) feed();
+      };
+    },
+    { cassette }
+  );
+}
+
 // offline spec 共用：装 stub WS、开页、关掉 Developer modal、等离线连上。
 async function bootOffline(page, ptt) {
   await installReplay(page);
@@ -181,5 +247,6 @@ module.exports = {
   waitConnected,
   feedRaw,
   replayCassette,
+  replayListCassette,
   bootOffline,
 };

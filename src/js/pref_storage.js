@@ -8,6 +8,15 @@ export const DEFAULT_PREFS = {
   enablePicPreview: true,
   enableNotifications: true,
   enableEasyReading: false,
+  // List easy reading (v4): accumulate the board article list across pages into
+  // one scrollable ASCENDING list (older→newer, like native) so blacklisted rows
+  // can be removed entirely (no blank gaps). Engages on entering a board list.
+  // Default OFF while the feature matures (same policy as enableEasyReading).
+  enableEasyReadingList: false,
+  // Target number of VISIBLE (non-blacklisted) rows the background prefetch
+  // accumulates before stopping; continuation is demand-driven (navigate near
+  // an edge). 0 disables the background fill (current page + demand only).
+  easyReadingListPrefetchCount: 200,
   endTurnsOnLiveUpdate: false,
   copyOnSelect: false,
   antiIdleTime: 0,

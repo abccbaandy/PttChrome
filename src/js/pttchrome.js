@@ -5,6 +5,8 @@ import { TermBuf } from './term_buf';
 import { TelnetConnection } from './telnet';
 import { Websocket } from './websocket';
 import { EasyReading } from './easy_reading';
+import { ListSession } from './list_session';
+import { CommandQueue } from './command_queue';
 import { AutoLogin } from './auto_login';
 import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
 import { TouchController } from './touch_controller';
@@ -45,6 +47,15 @@ export const App = function() {
   this.view.setCore(this);
   this.parser = new AnsiParser(this.buf);
   this.easyReading = new EasyReading(this, this.view, this.buf);
+  // List easy reading (v4): serialized machine keys + explicit state machine.
+  // The queue only ever talks to the live connection; a dropped link makes the
+  // send a no-op and the command dies by its own timeout (benign by design).
+  this.commandQueue = new CommandQueue({
+    send: (d) => {
+      if (this.conn && this.conn.isConnected) this.conn.send(d);
+    }
+  });
+  this.listSession = new ListSession(this, this.view, this.buf, this.commandQueue);
   this.autoLogin = new AutoLogin(this);
 
   //new pref - start
@@ -280,6 +291,10 @@ App.prototype.onClose = function() {
     this.timerEverySec.cancel();
   }
   this.conn.isConnected = false;
+
+  // Connection gone: the list buffer is stale by definition — hard reset to
+  // idle/native so the reconnect starts clean.
+  this.listSession.disable();
 
   this.cancelMbTimer();
 
@@ -879,6 +894,16 @@ App.prototype.onPrefChange = function(name, value) {
         this.view.useEasyReadingMode = false;
       }*/
       break;
+    case 'enableEasyReadingList':
+      // ON while already sitting on a settled board list: no settle will come,
+      // so evaluate the current screen immediately (e2e applyPrefs relies on
+      // this). OFF: single-exit cleanup back to native.
+      if (value) {
+        this.listSession.evaluateNow();
+      } else {
+        this.listSession.disable();
+      }
+      break;
     case 'antiIdleTime':
       this.antiIdleTime = value * 1000;
       break;
@@ -940,6 +965,13 @@ App.prototype.mouse_click = function(e) {
       if (pusherEl) {
         this.view.togglePusherHighlight(pusherEl.getAttribute('data-pusher'));
         e.preventDefault();
+        return;
+      }
+      // List easy reading buffer/frozen render: mouse-browsing click coordinates
+      // map to the 24-row native buffer, not the accumulated long list — click
+      // navigation is disabled (v1); wheel scrolling is plain DOM scroll and
+      // keeps working.
+      if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
         return;
       }
       if (this.buf.useMouseBrowsing) {

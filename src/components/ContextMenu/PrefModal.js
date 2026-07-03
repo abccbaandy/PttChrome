@@ -284,6 +284,13 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                   {i18n("options_enableEasyReading")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="enableEasyReadingList"
+                  checked={values.enableEasyReadingList}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableEasyReadingList")}
+                </PrefCheckbox>
+                <PrefCheckbox
                   name="easyReadingEndSwitchNative"
                   checked={values.easyReadingEndSwitchNative}
                   onChange={onCheckboxChange}

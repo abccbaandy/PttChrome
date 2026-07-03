@@ -17,6 +17,10 @@ import {
   parseArticleAuthor,
   parseListAuthor,
   parseListTitle,
+  parseListArticleNum,
+  isPinnedListRow,
+  recoverCursorArticleNum,
+  pageArticleNums,
   parseBlacklist,
   parseTitleBlacklist,
   matchTitleBlacklist,
@@ -108,6 +112,112 @@ describe("parseListTitle", () => {
   test("fail-safe → '' when row too short", () => {
     expect(parseListTitle("       ")).toBe("");
     expect(parseListTitle(null)).toBe("");
+  });
+});
+
+describe("parseListArticleNum", () => {
+  test("leading article number", () => {
+    expect(parseListArticleNum(" 352960 + 4 6/05 HarunoYukino R: foo")).toBe(
+      352960
+    );
+  });
+  test("cursor row (leading ● covers the top digit) → null (not recoverable)", () => {
+    // The full-width ● overwrites the leading space + first digit, so the number is
+    // obscured. We return null rather than the wrong partial number (50039) — the
+    // accumulator recovers it from the same article on a cursor-free page.
+    const cursorRow = "●50039 + 1 6/14 JHENGKUNLIN  □ [母雞] foo";
+    expect(parseListArticleNum(cursorRow)).toBeNull();
+    // A normal (non-cursor) row of the same article reads the full number.
+    expect(parseListArticleNum(" 350039 + 1 6/14 JHENGKUNLIN  □ [母雞] foo")).toBe(
+      350039
+    );
+  });
+  test("★pinned / separator / status / empty rows → null", () => {
+    expect(parseListArticleNum("★      6/14 SYSOP        ◇ [公告] 板規")).toBeNull();
+    expect(parseListArticleNum("       ")).toBeNull();
+    expect(parseListArticleNum("")).toBeNull();
+    expect(parseListArticleNum(null)).toBeNull();
+    expect(
+      parseListArticleNum("【板主】abc 看板《C_Chat》線上1234人, 我是guest")
+    ).toBeNull();
+  });
+});
+
+describe("isPinnedListRow", () => {
+  test("★pinned/置底 row (no number but a valid author) → true", () => {
+    // Real captured C_Chat ★pinned rows (fixtures/replay/cchat-list.page.json).
+    expect(isPinnedListRow("    ★  m 1 6/01 arrenwu      轉 [公告] 不當連結相關申訴")).toBe(true);
+    expect(isPinnedListRow("    ★  M 3 6/13 SaberTheBest □ [26夏] 夏番各作品首播時間")).toBe(true);
+  });
+  test("normal numbered article row → false (has a number)", () => {
+    expect(isPinnedListRow(" 352960 + 4 6/05 HarunoYukino R: foo")).toBe(false);
+  });
+  test("status / separator / blank rows → false (no valid author)", () => {
+    expect(isPinnedListRow("【板主】abc 看板《C_Chat》線上1234人, 我是guest")).toBe(false);
+    expect(isPinnedListRow("       ")).toBe(false);
+    expect(isPinnedListRow("")).toBe(false);
+    expect(isPinnedListRow(null)).toBe(false);
+  });
+});
+
+describe("recoverCursorArticleNum", () => {
+  test("restores the digit the cursor ● covered, from a neighbour", () => {
+    // Live C_Chat: cursor row "●49886", neighbour row 349887 → 349886.
+    expect(recoverCursorArticleNum(49886, 349887)).toBe(349886);
+    expect(recoverCursorArticleNum(49866, 349867)).toBe(349866);
+  });
+  test("correct across a high-digit boundary", () => {
+    expect(recoverCursorArticleNum(49999, 350000)).toBe(349999);
+    expect(recoverCursorArticleNum(50000, 349999)).toBe(350000);
+  });
+  test("null inputs → null", () => {
+    expect(recoverCursorArticleNum(null, 1)).toBeNull();
+    expect(recoverCursorArticleNum(1, null)).toBeNull();
+  });
+});
+
+describe("pageArticleNums", () => {
+  // Captured live C_Chat page after a PgUp: header rows 0-2, articles 3-22, cursor on
+  // row 3 (the ● covers its leading digit). Numbers ascend top→bottom, consecutive.
+  const page = [
+    "",
+    "",
+    "   編號    日 期 作  者       文  章  標  題                        人氣:2571",
+    "●49886 + 5 6/21 AoyamaNagisa □ [蔚藍] 哇幹 乳牛比基尼莉央",
+    " 349887 + 1 6/21 someoneA     □ [閒聊] 標題二",
+    " 349888 +10 6/21 someoneB     □ [問題] 標題三"
+  ];
+  test("recovers the cursor row's number; nulls for header rows", () => {
+    const nums = pageArticleNums(page, 3);
+    expect(nums.slice(0, 3)).toEqual([null, null, null]);
+    expect(nums[3]).toBe(349886); // ●49886 recovered from neighbour 349887
+    expect(nums[4]).toBe(349887);
+    expect(nums[5]).toBe(349888);
+  });
+  test("no cursor / cursor on a numberless row → that row stays null", () => {
+    expect(pageArticleNums(page, 0)).toEqual([
+      null, null, null, null, 349887, 349888
+    ]);
+  });
+  test("monotonicity repair: a row whose leading digit cell was left blank (partial redraw → \"  51903\") is recovered from the previous number", () => {
+    // Real artifact: the newest article 351903 painted as "  51903" after the cursor moved
+    // off it; not the cursor row, so the cursor-recovery above misses it. The ascending
+    // monotonic repair fixes it from the prior confirmed number.
+    const p = [
+      "   編號    日 期 作  者       文  章  標  題                        人氣:3160",
+      " 351901 + 2 6/24 qk123        □ [閒聊] 標題一",
+      " 351902 +   6/24 sakurammsrx  R: 標題二",
+      "  51903 +   6/24 chopper594   □ [PTCGP] 標題三", // leading "3" blanked
+    ];
+    expect(pageArticleNums(p, 0)).toEqual([null, 351901, 351902, 351903]);
+  });
+  test("monotonicity repair does NOT touch genuine ascending numbers", () => {
+    const p = [
+      " 351901 + 2 6/24 a            □ t1",
+      " 351902 +   6/24 b            □ t2",
+      " 351903 +   6/24 c            □ t3",
+    ];
+    expect(pageArticleNums(p, 0)).toEqual([351901, 351902, 351903]);
   });
 });
 

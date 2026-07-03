@@ -173,6 +173,9 @@
   "options_enableEasyReading": {
     "message": "啟用文章好讀模式 (實驗性)"
   },
+  "options_enableEasyReadingList": {
+    "message": "啟用文章列表好讀模式 (實驗性，黑名單真正隱藏)"
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "好讀模式按熱鍵跳到文末並切回原生模式"
   },

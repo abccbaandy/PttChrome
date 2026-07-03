@@ -195,6 +195,111 @@ export function parseListTitle(text) {
     .toLowerCase();
 }
 
+// Board list article sequence number (the leading numeric column, e.g.
+// " 352960 + 4 6/05 author title" → 352960). It is monotonic across the board, so
+// list easy reading uses it as the stable de-dup key when accumulating pages and as
+// the jump target when opening an article (type the number → cursor jumps there).
+// Returns the int, or null for rows where it is not readable: the ★pinned rows
+// (公告/置底) which PTT shows as "★" instead of a number, separators, the bottom
+// status row, AND the keyboard-cursor row — its leading full-width ●(cursor) glyph
+// overwrites the first 2 cells (the leading space + the number's top digit), so the
+// number is genuinely obscured (e.g. " 350039" → "●50039"). realignListColumns only
+// re-pads the lost cell to keep the LATER columns (author col 17-28) aligned; the
+// covered digit cannot be recovered from text. Returning null on the cursor row is
+// deliberate — list easy reading hides the PTT cursor and recovers that one row's
+// number from the same article on an adjacent (cursor-free) page (see term_view
+// accumulateListLines); a wrong number would corrupt de-dup and jump-to-open.
+export function parseListArticleNum(text) {
+  if (!text) return null;
+  const m = realignListColumns(text).match(/^\s*(\d+)\s/);
+  if (!m) return null;
+  return parseInt(m[1], 10);
+}
+
+// A board-list ★pinned (置底/公告) row: it carries normal article columns (a valid
+// author, hence a real article) but PTT prints a ★ instead of a sequence number. List
+// easy reading accumulates these as ordinary rows keyed by their title (no number to key
+// on) instead of dropping them — they live at the very bottom of the board (below the
+// newest article), so they naturally end up as the last rows of the ascending buffer.
+//
+// Distinguishes pinned rows from: status / separator / blank rows (no valid author →
+// false) and normal/cursor article rows (a number is present). IMPORTANT: only call this
+// on rows whose RECOVERED number (pageArticleNums) is null — the keyboard-cursor row also
+// has no readable number from text alone (the ● covers it) but pageArticleNums recovers
+// it from a neighbour, so the caller classifies it as numbered before reaching here.
+export function isPinnedListRow(text) {
+  if (!text) return false;
+  if (parseListArticleNum(text) != null) return false;
+  return parseListAuthor(text) != null;
+}
+
+// Loose variant: the VISIBLE leading digits even on a cursor row, where the leading
+// full-width ●/★ glyph covers the top digit (e.g. "●49886" → 49886, missing the
+// top "3"). Strips a leading ●/★/space run, then reads the digit run. Returns null
+// when no digits follow (header / a pinned ★ row PTT shows with no number / status
+// row). Only meaningful when paired with recoverCursorArticleNum to restore the
+// covered high-order digit from a neighbour.
+function parseListArticleNumLoose(text) {
+  if (!text) return null;
+  const m = text.replace(/^[\s●★]+/, '').match(/^(\d+)\b/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// Recover a cursor row's full article number from its visible suffix and a clean
+// neighbour's number. The cursor ● covers only the high-order digit(s); board numbers
+// are monotonic and neighbours are numerically close, so the covered high part equals
+// the neighbour's value rounded to the suffix's magnitude. P = 10^(suffix digit count):
+//   recover = round((neighbour - suffix) / P) * P + suffix
+// e.g. suffix 49886 (5 digits, P=100000), neighbour 349887 → round(3.00001)*100000+49886
+// = 349886. Correct across a high-digit boundary too (suffix 49999, neighbour 350000 →
+// 349999). The user's insight: the obscured leading digits match the neighbour's.
+export function recoverCursorArticleNum(suffix, neighbor) {
+  if (suffix == null || neighbor == null) return null;
+  const P = Math.pow(10, String(suffix).length);
+  return Math.round((neighbor - suffix) / P) * P + suffix;
+}
+
+// Per-row article numbers for one painted board-list page. `rowTexts` are the rows'
+// getRowText output (DBCS collapsed), `cursorY` the buf.cur_y of the ●cursor row.
+// Returns an array parallel to rowTexts: the article number for real article rows
+// (the cursor row recovered from its nearest numbered neighbour), or null for
+// header / pinned-★ / status / blank rows. Pure; regression-tested against captured
+// live rows in tests/unit. Used by accumulateListLines for monotonic-number de-dup.
+export function pageArticleNums(rowTexts, cursorY) {
+  const nums = rowTexts.map(parseListArticleNum);
+  if (
+    cursorY != null && cursorY >= 0 && cursorY < rowTexts.length &&
+    nums[cursorY] == null
+  ) {
+    const suffix = parseListArticleNumLoose(rowTexts[cursorY]);
+    if (suffix != null) {
+      let neighbor = null;
+      for (let d = 1; d < rowTexts.length && neighbor == null; ++d) {
+        if (nums[cursorY + d] != null) neighbor = nums[cursorY + d];
+        else if (nums[cursorY - d] != null) neighbor = nums[cursorY - d];
+      }
+      if (neighbor != null) nums[cursorY] = recoverCursorArticleNum(suffix, neighbor);
+    }
+  }
+  // Monotonicity repair: a board list ascends top→bottom, so a numbered row can never be
+  // SMALLER than a confirmed earlier one. When PTT leaves the leading digit cell of a row
+  // blank (a partial-redraw artifact after the keyboard cursor moves off it — e.g. the
+  // newest article 351903 painted as "  51903"), parseListArticleNum reads the truncated
+  // value, which is NOT the cursor row so the recovery above misses it. Recover any such
+  // drop from the previous confirmed number; recoverCursorArticleNum is a no-op when the
+  // value isn't actually truncated (fewer digits → smaller P → real fix; same digits → 0).
+  let prev = null;
+  for (let i = 0; i < nums.length; ++i) {
+    if (nums[i] == null) continue;
+    if (prev != null && nums[i] < prev) {
+      const fixed = recoverCursorArticleNum(nums[i], prev);
+      if (fixed > nums[i]) nums[i] = fixed;
+    }
+    prev = nums[i];
+  }
+  return nums;
+}
+
 // PTT appends these lines between the article body (incl. signature) and the
 // real comments. BePTT latches on them — see FloorCounter.nonComment.
 const META_LATCH_RE = /※ (發信站|文章網址): /;

@@ -2,6 +2,7 @@
 import { setupI18n, i18n } from './i18n';
 import { getQueryVariable, proxySiteFromPrefs } from './util';
 import { readValuesWithDefault } from './pref_storage';
+import { pageArticleNums } from './comment_parse';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
 import { renderInto, unmountFrom } from './react_root';
 import { MantineRoot } from '../components/MantineRoot';
@@ -24,6 +25,10 @@ function startApp() {
     window.__app = app;
     window.__readPrefs = readValuesWithDefault; // e2e dynamic pref lookup
     window.__i18n = i18n; // e2e locale-independent label lookup (UI behavior tests)
+    // Cassette recorder: pick jump anchors with the SAME cursor-digit recovery
+    // the runtime uses (bufferEdgeNum over pageArticleNums), so recorded jump
+    // nums match what ListSession will actually send during replay.
+    window.__pageArticleNums = pageArticleNums;
   }
 
   (process.env.DEVELOPER_MODE ? import('../components/DeveloperModeAlert')

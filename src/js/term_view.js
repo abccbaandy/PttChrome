@@ -6,7 +6,8 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
-import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap } from './comment_parse';
+import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap, pageArticleNums, isPinnedListRow } from './comment_parse';
+import { mergeListPage, flattenListBuffer, pinnedRowKey } from './list_session';
 
 const ENTER_CHAR = '\r';
 const ESC_CHAR = '\x15'; // Ctrl-U
@@ -23,6 +24,35 @@ function cloneRow(row) {
   return row.map(function(ch) {
     return Object.assign(Object.create(Object.getPrototypeOf(ch)), ch);
   });
+}
+
+// Repaint a cloned board-list cursor row's leading cells so it shows the full article
+// number instead of the ●cursor bullet that covers its top digit. The full-width ●
+// occupies cells [0,1]; the visible digits start at cell 2. Given the recovered full
+// number, fill [0,1] right-aligned with the missing high-order prefix (e.g. recovered
+// 349886, visible "49886" → prefix "3" → cells become " 3", yielding " 349886"). Only
+// touches the two bullet cells; everything after is the row's own text.
+function relabelListCursorRow(row, fullNum) {
+  if (fullNum == null || row.length < 3) return;
+  var vis = '';
+  for (var j = 2; j < row.length && row[j].ch >= '0' && row[j].ch <= '9'; ++j) vis += row[j].ch;
+  var full = String(fullNum);
+  var prefix = full.length > vis.length ? full.slice(0, full.length - vis.length) : '';
+  var fill = ('  ' + prefix).slice(-2); // right-align into the 2 bullet cells
+  for (var c = 0; c < 2; ++c) {
+    row[c].ch = fill[c];
+    row[c].isLeadByte = false;
+  }
+}
+
+// Restore a cloned cursor-on-★pinned row's two bullet cells to the spaces they
+// covered (a pinned row has no number to relabel — the ● sat over plain
+// padding), so the accumulated row renders identically to its cursor-free form.
+function blankListCursorBullet(row) {
+  for (var c = 0; c < 2 && c < row.length; ++c) {
+    row[c].ch = ' ';
+    row[c].isLeadByte = false;
+  }
 }
 
 export function TermView() {
@@ -54,6 +84,10 @@ export function TermView() {
   // TODO Move this into easy_reading.js
   this.useEasyReadingMode = false;
   this.easyReadingKeyDownKeyCode = 0;
+
+  // List easy reading hides the PTT cursor while the buffer render owns the
+  // screen (the real cursor points into the 24-row buffer, not the long list).
+  this._cursorHidden = false;
 
   // Sticky "we are in a board-list context" flag for blacklist hiding. Pressing v
   // (設定已讀未讀記錄) overlays a prompt on the list whose status row no longer
@@ -353,6 +387,48 @@ TermView.prototype = {
         this.hideEasyReadingOverlaysKeepPage();
         this.mainDisplay.scrollTop = 0;
         this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false);
+      } else if (
+        (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') &&
+        this.buf.pageState !== 3
+      ) {
+        // List easy reading (v4, ListSession owns the mode; see list_session.js).
+        // pageState 3 (article) frames MUST fall through to the article branches
+        // below even while frozen: during opening→suspended there is a settle-lag
+        // window in which a latched article easy reading is ALREADY fast-path
+        // paging — if frozen shadowed those frames, accumulatePageLines would
+        // miss the article's first pages forever (v4-stabilize bug 1: 進文章只剩
+        // 底部 1~2 頁). Non-article transients (jump prompt echoes) still render
+        // the frozen buffer, which is the whole point of frozen.
+        //   buffer: accumulate the currently painted board page into buf.listLines
+        //           (ascending by article number, overwrite-per-repaint) and render
+        //           the whole scrollable list — blacklisted rows dropped entirely
+        //           (dropHidden, no blank line).
+        //   frozen: an article open is in flight — render the EXISTING buffer
+        //           untouched so the jump-prompt/clear transients never pollute it
+        //           (v3's "進出文章瞬間版面亂").
+        // Keep the scroll position (unlike the article→list path): the list grows
+        // while prefetching and must not jump. enhance pageState is pinned to 2 so
+        // list annotations (blacklist) apply even on transient frames.
+        this.hideEasyReadingOverlaysKeepPage();
+        if (this.buf.listRenderMode === 'buffer') {
+          // Scroll-anchor: an UPWARD prefetch prepends older rows above the
+          // viewport, which would shove the visible content down. Record the
+          // pre-render top number + scrollHeight; if the top number got smaller
+          // (older rows arrived), push scrollTop down by the added height.
+          var prevH = this.mainDisplay ? this.mainDisplay.scrollHeight : 0;
+          var prevTop = (this.buf.listLineNums && this.buf.listLineNums.length) ? this.buf.listLineNums[0] : null;
+          this.accumulateListLines();
+          this._renderScreenLines(this.buf.listLines, /* dropHidden */ true, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2 });
+          var newTop = (this.buf.listLineNums && this.buf.listLineNums.length) ? this.buf.listLineNums[0] : null;
+          if (this.mainDisplay && prevTop != null && newTop != null && newTop < prevTop) {
+            this.mainDisplay.scrollTop += this.mainDisplay.scrollHeight - prevH;
+          }
+        } else {
+          this._renderScreenLines(this.buf.listLines || [], /* dropHidden */ true, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2 });
+        }
+        // Re-apply the JS selection highlight (renderScreen made a fresh component).
+        // scroll=false: never yank the user's scroll while pages stream in.
+        if (this.bbscore.listSession) this.bbscore.listSession.applyHighlight(false);
       } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowReplyText) {
         this.updateEasyReadingReplyRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
       } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowPushInitText) {
@@ -394,7 +470,7 @@ TermView.prototype = {
   // (native, per enablePicPreview). The per-row enhance logic (blacklist / floor /
   // author / pusher highlight) lives entirely in Screen#computeAnnotations now,
   // shared by both modes.
-  _renderScreenLines: function(lines, dropHidden, inlinePreview, hoverPreview) {
+  _renderScreenLines: function(lines, dropHidden, inlinePreview, hoverPreview, enhanceOverrides) {
     // Maintain the sticky board-list context (see constructor). LIST enters it,
     // MENU/READING leave it, everything else (overlay prompts, transient frames)
     // keeps the previous value so blacklist hiding persists across e.g. the v prompt.
@@ -407,26 +483,31 @@ TermView.prototype = {
       inlinePreview,
       hoverPreview,
       this.mainDisplay,
-      {
-        blacklist: this.blacklist,
-        titleBlacklist: this.titleBlacklist,
-        showFloorNumbers: this.showFloorNumbers,
-        highlightAuthor: this.highlightAuthorComments,
-        articleAuthor: this._articleAuthor,
-        selectedPusher: this._selectedPusher,
-        autoFixUrl: this.enableAutoFixUrl,
-        enableXMention: this.enableXMention,
-        pageState: this.buf.pageState,
-        // Floor numbers only count correctly across page-downs in easy reading
-        // (its FloorCounter persists). The native per-page counter resets every
-        // page → inaccurate, so floors are hidden in native mode (see Screen.js).
-        easyReading: this.useEasyReadingMode,
-        dropHidden: dropHidden,
-        inListContext: this._inBoardListContext,
-        // Stable per-article id; Screen resets the enlarge-images toggle when it
-        // changes (new article / re-entry), not on every page-down.
-        articleId: this._articleInstanceId
-      }
+      Object.assign(
+        {
+          blacklist: this.blacklist,
+          titleBlacklist: this.titleBlacklist,
+          showFloorNumbers: this.showFloorNumbers,
+          highlightAuthor: this.highlightAuthorComments,
+          articleAuthor: this._articleAuthor,
+          selectedPusher: this._selectedPusher,
+          autoFixUrl: this.enableAutoFixUrl,
+          enableXMention: this.enableXMention,
+          pageState: this.buf.pageState,
+          // Floor numbers only count correctly across page-downs in easy reading
+          // (its FloorCounter persists). The native per-page counter resets every
+          // page → inaccurate, so floors are hidden in native mode (see Screen.js).
+          easyReading: this.useEasyReadingMode,
+          dropHidden: dropHidden,
+          inListContext: this._inBoardListContext,
+          // Stable per-article id; Screen resets the enlarge-images toggle when it
+          // changes (new article / re-entry), not on every page-down.
+          articleId: this._articleInstanceId
+        },
+        // List easy reading pins pageState:2 so computeAnnotations applies list
+        // blacklist rules to the accumulated buffer even on transient frames.
+        enhanceOverrides || {}
+      )
     );
   },
 
@@ -481,6 +562,17 @@ TermView.prototype = {
         !this.buf.easyReadingFunctionMode) {
       this.easyReadingKeyDownKeyCode = e.keyCode;
       this.bbscore.easyReading._onKeyDown(e);
+      if (e.defaultPrevented)
+        return;
+    }
+
+    // List easy reading (v4): only the buffer/frozen render owns keys — in
+    // native (idle / list functionMode) this hook never fires, so every key
+    // (Enter included) reaches PTT unchanged, which is what makes the native
+    // mirror correct by construction.
+    if ((this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') &&
+        this.bbscore.listSession) {
+      this.bbscore.listSession.onKeyDown(e);
       if (e.defaultPrevented)
         return;
     }
@@ -640,8 +732,24 @@ TermView.prototype = {
     return false;
   },
 
+  // Hide the blinking PTT cursor while the list buffer render owns the screen:
+  // the real cursor tracks the 24-row buffer (wherever the last prefetch left
+  // it), which is meaningless — and misleading — on the accumulated long list.
+  // showCursor restores it and repaints the position.
+  hideCursor: function() {
+    this._cursorHidden = true;
+    this.bbsCursor.style.display = 'none';
+  },
+
+  showCursor: function() {
+    this._cursorHidden = false;
+    this.bbsCursor.style.display = '';
+    this.updateCursorPos();
+  },
+
   // Cursor
   updateCursorPos: function() {
+    if (this._cursorHidden) return;
 
     var pos = this.convertMN2XYEx(this.buf.cur_x, this.buf.cur_y);
     // if you want to set cursor color by now background, use this.
@@ -972,6 +1080,68 @@ TermView.prototype = {
     if (!userid) return;
     this._selectedPusher = this._selectedPusher === userid ? null : userid;
     this.redraw(true);
+  },
+
+  // Accumulate the currently painted board page into buf.listLines for list easy
+  // reading. ASCENDING (matches native top→bottom: oldest at top, newest at the bottom,
+  // ★pinned rows last). Accumulation is keyed in two maps on the view (reset via
+  // resetListAccumulation on fresh board entry; kept across an article open/return so
+  // restore is instant):
+  //   _listNumMap    number → row — numbered articles, OVERWRITTEN per re-paint so a
+  //                                 re-shown page's live changes (推文數 / `v` 已讀標記)
+  //                                 replace the stale clone.
+  //   _listPinnedMap title  → row — ★pinned/置底 rows. Keyed by the TITLE slice, not the
+  //                                 whole row text: the push-count column changes live
+  //                                 and a text key would duplicate the row (v3 bug).
+  // flattenListBuffer rebuilds buf.listLines/buf.listLineNums (ascending + pinned tail).
+  // pageArticleNums recovers the ●cursor row's covered digit; cloneRow (not JSON) keeps
+  // TermChar methods. The caller (redraw) handles scroll-anchoring when older rows prepend.
+  accumulateListLines: function() {
+    var buf = this.buf;
+    if (!this._listNumMap) this._listNumMap = new Map();
+    if (!this._listPinnedMap) this._listPinnedMap = new Map();
+    var rowTexts = [];
+    for (var r = 0; r < buf.rows; ++r) rowTexts.push(buf.getRowText(r, 0, buf.cols));
+    var nums = pageArticleNums(rowTexts, buf.cur_y);
+    var entries = [];
+    for (var i = 0; i < buf.rows; ++i) {
+      if (nums[i] != null) {
+        var row = cloneRow(buf.lines[i]);
+        // The ●cursor row's leading 2 cells (the bullet) cover the article number's top
+        // digit; repaint them from the recovered number so the row renders like the rest
+        // (e.g. "●49886" → " 349886") instead of a stray bullet + truncated number.
+        if (i === buf.cur_y) relabelListCursorRow(row, nums[i]);
+        entries.push({ num: nums[i], key: null, row: row });
+      } else if (
+        isPinnedListRow(rowTexts[i]) &&
+        (i !== buf.cur_y || rowTexts[i].indexOf('★') >= 0)
+      ) {
+        // ★pinned/置底 row. A cursor row with an UNRECOVERABLE number (no numbered
+        // neighbour) also matches the pinned signature (no number + valid author) but
+        // carries no ★ — keep excluding those (v3 trap #4: stray ● misfiled as pinned).
+        // A genuine pinned row under the cursor still shows its ★ (the ● only covers
+        // the two leading padding cells), so it IS collected — otherwise a cursor
+        // parked on a pinned row keeps that announcement out of the buffer forever
+        // (v4-stabilize bug 2b: 置底文少一篇). Restore the bullet cells to spaces.
+        var prow = cloneRow(buf.lines[i]);
+        if (i === buf.cur_y) blankListCursorBullet(prow);
+        entries.push({
+          num: null,
+          key: pinnedRowKey(rowTexts[i]),
+          row: prow
+        });
+      }
+    }
+    mergeListPage(this._listNumMap, this._listPinnedMap, entries);
+    var flat = flattenListBuffer(this._listNumMap, this._listPinnedMap);
+    buf.listLines = flat.lines;
+    buf.listLineNums = flat.nums;
+  },
+
+  // Clear the list-accumulation maps (fresh board entry / board switch rebuild).
+  resetListAccumulation: function() {
+    this._listNumMap = null;
+    this._listPinnedMap = null;
   },
 
   // Like hideEasyReadingOverlays but does NOT clear buf.pageLines / padding / scroll.

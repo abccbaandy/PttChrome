@@ -173,6 +173,9 @@ export const en_US = {
   "options_enableEasyReading": {
     "message": "Enable easy reading article view. (experimental)"
   },
+  "options_enableEasyReadingList": {
+    "message": "Enable easy reading board list. (experimental, truly hides blacklisted rows)"
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."
   },

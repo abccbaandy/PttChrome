@@ -258,6 +258,17 @@ export function TermBuf(cols, rows) {
 
   this.lineChangeds = new Array(rows);
 
+  // Per-settle-window accumulation of the rows the SERVER wrote (puts/clear/
+  // erase/scroll — see _touchRows call sites), frozen into settleSnapshot when
+  // the settle timer fires (_armSettleTimer). Deliberately NOT derived from
+  // lineChangeds/needUpdate: those flags are never cleared per window (needUpdate
+  // is sticky, updateCharAttr re-marks every ever-touched row on each notify), so
+  // they cannot tell "this response's dirty rows" apart — which is exactly what
+  // list-session burst classification needs. Local forced repaints
+  // (lineChangeds.fill(true)) never feed it either.
+  this._settleChangedRows = new Set();
+  this.settleSnapshot = null;
+
   this.viewBufferTimer = 30;
 
   while (--rows >= 0) {
@@ -366,6 +377,7 @@ TermBuf.prototype = {
           ++this.cur_x;
           // assume server will handle mouse moving on full-width char
         }
+        this._settleChangedRows.add(this.cur_y);
         this.changed = true;
         this.posChanged = true;
       }
@@ -508,6 +520,7 @@ TermBuf.prototype = {
 
     switch (param) {
     case 0:
+      this._touchRows(this.cur_y, this.rows - 1);
       var line = lines[this.cur_y];
       var col, row;
       for (col = this.cur_x; col < cols; ++col) {
@@ -523,6 +536,7 @@ TermBuf.prototype = {
       }
       break;
     case 1:
+      this._touchRows(0, this.cur_y);
       var line;
       var col, row;
       for (row = 0; row < this.cur_y; ++row) {
@@ -539,6 +553,7 @@ TermBuf.prototype = {
       }
       break;
     case 2:
+      this._touchRows(0, this.rows - 1);
       while (--rows >= 0) {
         var col = cols;
         var line = lines[rows];
@@ -602,6 +617,7 @@ TermBuf.prototype = {
       for (var col = cur_x; col < cols; ++col)
         line[col].needUpdate = true;
     }
+    this._settleChangedRows.add(this.cur_y);
     this.changed = true;
     this.queueUpdate();
   },
@@ -626,6 +642,7 @@ TermBuf.prototype = {
       for (var col = cur_x; col < cols; ++col)
         line[col].needUpdate = true;
     }
+    this._settleChangedRows.add(this.cur_y);
     this.changed = true;
     this.queueUpdate();
   },
@@ -641,6 +658,7 @@ TermBuf.prototype = {
       line[col].copyFromNewChar();
       line[col].needUpdate = true;
     }
+    this._settleChangedRows.add(this.cur_y);
     this.changed = true;
     this.queueUpdate();
   },
@@ -671,6 +689,7 @@ TermBuf.prototype = {
     default:
       return;
     }
+    this._settleChangedRows.add(this.cur_y);
     this.changed = true;
     this.queueUpdate();
   },
@@ -750,6 +769,7 @@ TermBuf.prototype = {
         }
       }
     }
+    this._touchRows(scrollStart, scrollEnd);
     this.changed = true;
     this.queueUpdate();
   },
@@ -842,6 +862,12 @@ TermBuf.prototype = {
     }
   },
 
+  // Mark rows [start, end] as server-written for the current settle window
+  // (see the _settleChangedRows comment in the constructor).
+  _touchRows: function(start, end) {
+    for (var r = start; r <= end; ++r) this._settleChangedRows.add(r);
+  },
+
   // Re-arm the quiet-period timer. Called on every changed OR cursor-only redraw
   // window: while data/cursor keep arriving (~30ms apart) it keeps resetting and
   // never fires; SETTLE_MS after the LAST window — i.e. once the screen is truly
@@ -855,6 +881,18 @@ TermBuf.prototype = {
     clearTimeout(this._settleTimer);
     this._settleTimer = setTimeout(() => {
       this._settleTimer = null;
+      // Freeze the settle snapshot BEFORE dispatching: a listener may send keys /
+      // force repaints that start filling the NEXT window's set — swapping first
+      // keeps each snapshot scoped to exactly one quiet period. The screen is
+      // quiet here (content AND cursor stopped), so cur_x/cur_y are the server's
+      // final cursor park position for this response.
+      this.settleSnapshot = {
+        changedRows: this._settleChangedRows,
+        curX: this.cur_x,
+        curY: this.cur_y,
+        pageState: this.pageState
+      };
+      this._settleChangedRows = new Set();
       if (this.pageState !== this.settledPageState) {
         this.prevSettledPageState = this.settledPageState;
         this.settledPageState = this.pageState;

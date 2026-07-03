@@ -107,10 +107,10 @@ function scrubText(str, user) {
   return redactIPs(out);
 }
 
-// 对整卷 cassette 的 recv（base64 latin1）逐段 redact。
+// 对整卷 cassette 的 recv（base64 latin1）逐段 redact。保留 step 的其余栏位
+// （如 list jump step 的 num —— 离线测试要知道跳的目标序号）。
 function redactCassette(cassette, user) {
-  cassette.steps = cassette.steps.map((s) => ({
-    on: s.on,
+  cassette.steps = cassette.steps.map((s) => Object.assign({}, s, {
     recv: Buffer.from(scrubText(Buffer.from(s.recv, 'base64').toString('latin1'), user), 'latin1').toString('base64'),
   }));
   return cassette;
@@ -166,33 +166,117 @@ test.describe('cassette 录制器', () => {
     await gotoBoard(page, BOARD);
 
     if (MODE === 'list') {
-      // 看板列表：单页静态画面（pageState 2），不进好读。
-      await page.waitForTimeout(1500);
-      const rec = await page.evaluate(() => {
-        const app = window.__app;
-        const buf = app.buf;
-        const rows = [];
-        for (let r = 0; r < buf.rows; r++) rows.push(buf.getRowText(r, 0, buf.cols));
-        // 整页 recv 不易事后取得，list 模式用「重画一次」抓 bytes：Ctrl-L 触发 server 全页重送。
-        return { rows, pageState: buf.pageState };
-      });
-      // 用 Ctrl-L 触发整页重画并录下 recv（作为 list cassette 的 start step）。
-      const recv = await captureRedraw(page);
-      const cassette = {
-        meta: {
-          mode: 'list',
-          board: BOARD,
-          recordedAs: loginUser === 'guest' ? 'guest' : 'account',
-          recordedAt: new Date().toISOString(),
-        },
-        cols: 80,
-        rows: 24,
-        steps: [{ on: 'start', recv }],
+      // 看板列表。RECORD_LIST_SCRIPT 未设 → 单页静态（旧行为，pageState 2，仅 start step）。
+      // 设了 → 多 step 脚本：每个动作直接 app.conn.send(bytes)（不经键盘映射，边界确定），
+      // 等回应静止后 flush 成一个 step —— 与 list 好读 v4 的 CommandQueue「一命令一回应」
+      // 模型一一对应（重放时 tests/e2e/helpers/replay.js#replayListCassette 依 on 门控喂）。
+      const LIST_SCRIPTS = {
+        '': [],
+        // 导航卷（对应 v4 锚定预读的「jump 到缓冲边缘 + PgUp」命令对 + 开文 + 返回
+        // + 返回后再深卷一对——jump 目标一律取当前画面最上方可读序号，与 runtime
+        // bufferEdgeNum(up) 的选择一致，重放门控按 step.num 精确比对）：
+        //   fill 对×2 → 开文 jump+Enter → ← 返回 → restore 后 demand 对×1。
+        nav: ['jump', 'pageup', 'jump', 'pageup', 'jump', 'open', 'back', 'jumpsame', 'pageup'],
+        // prompt 卷：'/' 开标题搜寻 prompt、空 Enter 取消（prompt 误判回归素材）。
+        prompt: ['slash', 'cancel'],
       };
+      const scriptName = process.env.RECORD_LIST_SCRIPT || '';
+      const script = LIST_SCRIPTS[scriptName];
+      if (!script) throw new Error(`未知 RECORD_LIST_SCRIPT="${scriptName}"（可用: nav / prompt）`);
+
+      await page.waitForTimeout(1500);
+      // 装 onData 累积 hook + flush 工具（此时才装：登入/进板 recv 不进素材，article-scoped 同理）。
+      await page.evaluate(() => {
+        const app = window.__app;
+        window.__rl = { cur: [], steps: [], pageScreens: [] };
+        const orig = app.onData.bind(app);
+        app.onData = (d) => {
+          window.__rl.cur.push(d);
+          return orig(d);
+        };
+        window.__rlFlush = (on, extra) => {
+          const recv = window.__rl.cur.join('');
+          window.__rl.cur = [];
+          const buf = app.buf;
+          const rows = [];
+          for (let r = 0; r < buf.rows; r++) rows.push(buf.getRowText(r, 0, buf.cols));
+          window.__rl.steps.push(Object.assign({ on, recv: btoa(recv) }, extra || {}));
+          window.__rl.pageScreens.push(rows);
+        };
+      });
+
+      // start step：Ctrl-L 触发 server 全页重送。
+      await page.evaluate(() => {
+        window.__rl.cur = [];
+        window.__app.conn.send('\x0c');
+      });
+      await waitRecvQuiet(page);
+      await page.evaluate(() => window.__rlFlush('start'));
+
+      // 脚本动作：清 cur → 送 bytes → 等回应静止 → flush 为一个 step。
+      let lastJumpNum = null;
+      for (const action of script) {
+        const info = await page.evaluate(({ action, lastJumpNum }) => {
+          const app = window.__app;
+          let keys;
+          let extra = null;
+          if (action === 'pageup') keys = '\x1b[5~';
+          else if (action === 'pagedown') keys = '\x1b[6~';
+          else if (action === 'back') keys = '\x1b[D';
+          else if (action === 'slash') keys = '/';
+          else if (action === 'open' || action === 'cancel') keys = '\r';
+          else if (action === 'jump' || action === 'jumpsame') {
+            let num = null;
+            if (action === 'jumpsame') {
+              // 与上一个 jump 同目标（对应 runtime「restore 后 demand-up 的锚点
+              // = 缓冲最旧序号 = 开文那篇」）。
+              num = lastJumpNum;
+            } else {
+              // 当前页「最上方文章序号」——用与 runtime 相同的 pageArticleNums
+              // （含游标列 ● 盖头的邻居回推），对齐 bufferEdgeNum(up) 的选择。
+              const buf = app.buf;
+              const rowTexts = [];
+              for (let r = 0; r < buf.rows; r++) rowTexts.push(buf.getRowText(r, 0, buf.cols));
+              const nums = window.__pageArticleNums(rowTexts, buf.cur_y);
+              for (let r = 3; r <= buf.rows - 2 && num == null; r++) {
+                if (nums[r] != null) num = nums[r];
+              }
+            }
+            if (num == null) throw new Error(action + ': 找不到跳号目标');
+            keys = String(num) + '\r';
+            extra = { num };
+          } else throw new Error('未知 action: ' + action);
+          window.__rl.cur = [];
+          app.conn.send(keys);
+          return { keys, extra };
+        }, { action, lastJumpNum });
+        if (info.extra && info.extra.num != null) lastJumpNum = info.extra.num;
+        await waitRecvQuiet(page);
+        await page.evaluate(
+          ({ action, extra }) => window.__rlFlush(action, extra),
+          { action, extra: info.extra }
+        );
+        console.log(`[record] list step ${action}${info.extra ? ' num=' + info.extra.num : ''}`);
+      }
+
+      const rec = await page.evaluate(() => ({
+        steps: window.__rl.steps,
+        pageScreens: window.__rl.pageScreens,
+        pageState: window.__app.buf.pageState,
+      }));
+      const meta = {
+        mode: 'list',
+        board: BOARD,
+        recordedAs: loginUser === 'guest' ? 'guest' : 'account',
+        recordedAt: new Date().toISOString(),
+      };
+      if (scriptName) meta.script = scriptName;
+      const cassette = { meta, cols: 80, rows: 24, steps: rec.steps };
       const fixture = {
-        meta: cassette.meta,
+        meta,
         pageState: rec.pageState,
-        pageScreens: [rec.rows],
+        pageScreens: rec.pageScreens,
+        actions: ['start'].concat(script),
       };
       // 列表画面状态列含「我是<id>」→ 真实帐号录制必含登入帐号：redact + 把关。
       redactCassette(cassette, loginUser);
@@ -200,7 +284,9 @@ test.describe('cassette 录制器', () => {
       assertNoLeak({ cassette, fixture, user: loginUser });
       writeJson(path.join(CASSETTE_DIR, `${NAME}.json`), cassette);
       writeJson(path.join(FIXTURE_DIR, `${NAME}.page.json`), fixture);
-      console.log(`[record] list → ${NAME}: ${rec.rows.filter((t) => t.trim()).length} 非空列`);
+      console.log(
+        `[record] list → ${NAME}: ${rec.steps.length} step (${['start'].concat(script).join('/')})`
+      );
       return;
     }
 
@@ -358,6 +444,28 @@ test.describe('cassette 录制器', () => {
     expect(accComments.length).toBeGreaterThan(0); // 没推文的文章不适合当素材
   });
 });
+
+// 等 list 录制的当前动作回应静止：__rl.cur 累积 byte 数连续 3 次轮询（~1.2s）不再
+// 增长即认定回应完毕。内容谓词才是重放侧的完成判定；录制侧只要边界「宽松地晚」——
+// 多等无害（recv 不会混入下一动作，因为下一动作 send 前会先 flush）。
+async function waitRecvQuiet(page, timeout = 15000) {
+  const deadline = Date.now() + timeout;
+  let last = -1;
+  let stable = 0;
+  while (Date.now() < deadline) {
+    const n = await page.evaluate(() =>
+      window.__rl.cur.reduce((a, s) => a + s.length, 0)
+    );
+    if (n === last && n > 0) {
+      if (++stable >= 3) return;
+    } else {
+      stable = 0;
+      last = n;
+    }
+    await page.waitForTimeout(400);
+  }
+  console.log('[record] waitRecvQuiet 超时（继续 flush 当前累积）');
+}
 
 // 触发整页重画并录下 server 回送的 recv（list 模式用）。Ctrl-L = '\x0c'。
 async function captureRedraw(page) {
