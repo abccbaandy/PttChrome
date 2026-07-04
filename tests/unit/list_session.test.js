@@ -207,11 +207,15 @@ describe("transitionListSession (full table)", () => {
     T("active", settle("article"), "suspended", ["handoff-article"]);
     // catch-all self-heal (waterball / 動態看板 / misclassification):
     T("active", settle("prompt"), "functionMode", ["enter-function-mode"]);
-    T("active", settle("menu"), "functionMode", ["enter-function-mode"]);
+    // menu = 已離板，直接 idle（走 functionMode 需要再一個 settle 才能到 idle，
+    // 靜止的選單畫面永遠不會再 settle → 卡死 —— live soak 回歸）:
+    T("active", settle("menu"), "idle", ["cleanup"]);
     T("active", settle("transient"), "functionMode", ["enter-function-mode"]);
     // ... but a half-settled frame is EXPECTED while a command is in flight:
     T("active", settle("transient", { inFlightKind: "prefetch-up" }), "active", []);
     T("active", settle("prompt", { inFlightKind: "prefetch-up" }), "active", []);
+    // menu 出口不受 in-flight 抑制（離板優先於任何殘留 prefetch）:
+    T("active", settle("menu", { inFlightKind: "prefetch-up" }), "idle", ["cleanup"]);
   });
 
   test("active: keys", () => {
@@ -456,5 +460,17 @@ describe("visibleListIndices (mirrors Screen#computeAnnotations PAGE_LIST)", () 
   });
   it("no blacklists → everything visible", () => {
     expect(visibleListIndices(rows, new Set(), [])).toEqual([0, 1, 2]);
+  });
+  it("刪除文（作者欄 -）即使無黑名單也隱藏（開文會 wedge，比照黑名單）", () => {
+    const withDeleted = [
+      rows[0],
+      " 350025     7/04 -            □ (本文已被刪除) <wh40917>",
+      rows[2],
+    ];
+    expect(visibleListIndices(withDeleted, new Set(), [])).toEqual([0, 2]);
+    // 黑名單同時生效時規則疊加
+    expect(
+      visibleListIndices(withDeleted, new Set(["harunoyukino"]), [])
+    ).toEqual([0]);
   });
 });

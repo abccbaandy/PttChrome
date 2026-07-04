@@ -383,6 +383,12 @@ test.describe('文章列表好读模式（离线）', () => {
 
       // restore 后继续往旧深卷：demand-up 锚定对（jumpsame + pageup）让缓冲
       // 最旧序号变小 —— 真游标曾被开文流程移走，锚定必须先跳回缓冲顶。
+      // 前面 demand chain 的第三对（刪除文隱藏縮短 seq 觸發）其 PgUp 在
+      // cassette 无素材 → soft timeout → 良性到边把 _edgeUp 锁住（真 server
+      // 会有回应，不会锁）。清掉旗标模拟 evict 清边的情境，让 demand 重试。
+      await page.evaluate(() => {
+        window.__app.listSession._edgeUp = false;
+      });
       const beforeMin = Math.min(...s.nums.filter((n) => n != null));
       await page.keyboard.press('PageUp');
       s = await waitState(page, (x) => x.queueIdle && x.listLen > 70, 15000);

@@ -35,10 +35,16 @@ function cloneRow(row) {
 // touches the two bullet cells; everything after is the row's own text.
 function relabelListCursorRow(row, fullNum) {
   if (fullNum == null || row.length < 3) return;
+  // Short numbers are right-aligned deeper into the column (e.g. "   531"), so
+  // the ● only covered padding — cell 2 is then a space, no digit was lost, and
+  // the bullet cells must become spaces. Deriving a prefix from vis='' would
+  // instead stamp the number's last two digits into cells [0,1] (the "/搜尋後
+  // 行首出現數字" bug: 531 → "31  531").
   var vis = '';
   for (var j = 2; j < row.length && row[j].ch >= '0' && row[j].ch <= '9'; ++j) vis += row[j].ch;
   var full = String(fullNum);
-  var prefix = full.length > vis.length ? full.slice(0, full.length - vis.length) : '';
+  var prefix =
+    vis && full.length > vis.length ? full.slice(0, full.length - vis.length) : '';
   var fill = ('  ' + prefix).slice(-2); // right-align into the 2 bullet cells
   for (var c = 0; c < 2; ++c) {
     row[c].ch = fill[c];

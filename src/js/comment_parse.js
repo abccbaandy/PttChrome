@@ -216,6 +216,18 @@ export function parseListArticleNum(text) {
   return parseInt(m[1], 10);
 }
 
+// A deleted-article row: pttbbs paints "-" in the author column for both
+// self-deleted 「(本文已被刪除) [author]」 and mod-deleted 「(已被xxx刪除)
+// <author>」 rows. parseListAuthor deliberately rejects it (USERID_RE), so slice
+// the same realigned column here. These rows cannot be opened (Enter never
+// yields an article → the serialized open would time out), so list hiding
+// treats them exactly like blacklisted rows.
+export function isDeletedListRow(text) {
+  if (!text || text.length < LIST_AUTHOR_COL_START) return false;
+  const row = realignListColumns(text);
+  return row.substring(LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END).trim() === '-';
+}
+
 // A board-list ★pinned (置底/公告) row: it carries normal article columns (a valid
 // author, hence a real article) but PTT prints a ★ instead of a sequence number. List
 // easy reading accumulates these as ordinary rows keyed by their title (no number to key

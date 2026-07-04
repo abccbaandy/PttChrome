@@ -268,6 +268,18 @@ export function TermBuf(cols, rows) {
   // (lineChangeds.fill(true)) never feed it either.
   this._settleChangedRows = new Set();
   this.settleSnapshot = null;
+  // True iff the SERVER produced activity (content write or cursor escape) since
+  // the settle timer was last (re-)armed. notify() re-arms the timer only when
+  // this is set: purely LOCAL repaints (list easy reading's _forceRedraw on every
+  // held-down nav key ~30ms apart) must not keep postponing a pending settle, or
+  // the CommandQueue expects starve and prefetch wedges while a key is held.
+  this._serverActivity = false;
+  // True iff a server cursor escape moved the cursor during the current settle
+  // window. Frozen into settleSnapshot.cursorMoved: a response whose content
+  // window and final cursor-park window straddle a >SETTLE_MS gap settles
+  // TWICE, and the second (cursor-only, zero content rows) settle must still
+  // reach the ListSession/CommandQueue — its screen is the complete response.
+  this._settleCursorMoved = false;
 
   this.viewBufferTimer = 30;
 
@@ -377,7 +389,7 @@ TermBuf.prototype = {
           ++this.cur_x;
           // assume server will handle mouse moving on full-width char
         }
-        this._settleChangedRows.add(this.cur_y);
+        this._touchRows(this.cur_y, this.cur_y);
         this.changed = true;
         this.posChanged = true;
       }
@@ -617,7 +629,7 @@ TermBuf.prototype = {
       for (var col = cur_x; col < cols; ++col)
         line[col].needUpdate = true;
     }
-    this._settleChangedRows.add(this.cur_y);
+    this._touchRows(this.cur_y, this.cur_y);
     this.changed = true;
     this.queueUpdate();
   },
@@ -642,7 +654,7 @@ TermBuf.prototype = {
       for (var col = cur_x; col < cols; ++col)
         line[col].needUpdate = true;
     }
-    this._settleChangedRows.add(this.cur_y);
+    this._touchRows(this.cur_y, this.cur_y);
     this.changed = true;
     this.queueUpdate();
   },
@@ -658,7 +670,7 @@ TermBuf.prototype = {
       line[col].copyFromNewChar();
       line[col].needUpdate = true;
     }
-    this._settleChangedRows.add(this.cur_y);
+    this._touchRows(this.cur_y, this.cur_y);
     this.changed = true;
     this.queueUpdate();
   },
@@ -689,7 +701,7 @@ TermBuf.prototype = {
     default:
       return;
     }
-    this._settleChangedRows.add(this.cur_y);
+    this._touchRows(this.cur_y, this.cur_y);
     this.changed = true;
     this.queueUpdate();
   },
@@ -824,7 +836,17 @@ TermBuf.prototype = {
       this.updateCharAttr();
 
       this.setPageState();
-      this._armSettleTimer();
+      // Re-arm the settle timer only when the SERVER wrote in this window. A
+      // purely local repaint (list easy reading _forceRedraw: lineChangeds.fill
+      // + changed=true, no _touchRows / no cursor escape) must not postpone a
+      // pending settle — holding a nav key repaints every ~30ms and would
+      // starve the CommandQueue expects forever. The posChanged branch below
+      // stays unconditional: posChanged is only ever set by server cursor
+      // escapes, never by local paints.
+      if (this._serverActivity) {
+        this._serverActivity = false;
+        this._armSettleTimer();
+      }
       if (this.useMouseBrowsing) {
         // clear highlight and reset cursor on page change
         // without the redraw being called here
@@ -846,6 +868,7 @@ TermBuf.prototype = {
         this.view.updateCursorPos();
       }
       this.posChanged=false;
+      this._settleCursorMoved = true;
       // Cursor-only frames re-arm the settle timer too: PTT parks the cursor on the
       // bottom status row as a SEPARATE escape (posChanged, NOT changed) that can land
       // in its own notify window. "Quiet" must mean content AND cursor have both
@@ -866,6 +889,7 @@ TermBuf.prototype = {
   // (see the _settleChangedRows comment in the constructor).
   _touchRows: function(start, end) {
     for (var r = start; r <= end; ++r) this._settleChangedRows.add(r);
+    this._serverActivity = true;
   },
 
   // Re-arm the quiet-period timer. Called on every changed OR cursor-only redraw
@@ -888,11 +912,13 @@ TermBuf.prototype = {
       // final cursor park position for this response.
       this.settleSnapshot = {
         changedRows: this._settleChangedRows,
+        cursorMoved: this._settleCursorMoved,
         curX: this.cur_x,
         curY: this.cur_y,
         pageState: this.pageState
       };
       this._settleChangedRows = new Set();
+      this._settleCursorMoved = false;
       if (this.pageState !== this.settledPageState) {
         this.prevSettledPageState = this.settledPageState;
         this.settledPageState = this.pageState;

@@ -18,6 +18,7 @@ import {
   matchTitleBlacklist,
   pageArticleNums,
   isPinnedListRow,
+  isDeletedListRow,
   rowToText,
 } from './comment_parse';
 import { parseStatusRow, parseListRow } from './string_util';
@@ -199,8 +200,16 @@ export function transitionListSession(state, event) {
             // independently — zero new coupling; without it the native article
             // renders).
             return { next: 'suspended', actions: ['handoff-article'] };
+          case 'menu':
+            // A settled menu = we left the board. Exit directly: routing it
+            // through functionMode (the old catch-all) needs ANOTHER settle to
+            // reach idle, and a static menu screen never produces one — the ←
+            // 離板 response can interleave with an in-flight prefetch's jump
+            // repaint (jump settle → resume bounce → menu settle lands here),
+            // wedging functionMode forever (live soak).
+            return { next: 'idle', actions: ['cleanup'] };
           default:
-            // prompt/menu/transient: explainable while a serialized command is
+            // prompt/transient: explainable while a serialized command is
             // mid-flight (a slow multi-write response can settle half-painted);
             // otherwise catch-all self-heal to the native mirror (waterball,
             // 動態看板, misclassification — everything lands here).
@@ -400,6 +409,10 @@ const FILL_MAX_PAGES = 3;
 // Total-row cap: bounds the map / flatten / visibleListIndices cost. The end
 // FARTHEST from the selection is evicted; demand re-fetches it later.
 export const MAX_LIST_ROWS = 300;
+// Passthrough keys that act RELATIVE to the server cursor and therefore get a
+// jump-to-selection prefix first (see _syncServerCursor). Deliberately NOT all
+// other-keys: absolute/leaving commands (←/q/s/digits) must go out alone.
+const RELATIVE_COMMAND_KEYS = ['[', ']', '='];
 
 // Owner of list easy reading. Subscribes to term_buf 'screenSettled' and runs:
 //   settle → snapshot+facts → queue.onSettle (command completion first)
@@ -442,12 +455,20 @@ ListSession.prototype = {
 
   _onScreenSettled: function() {
     const snap = this._termBuf.settleSnapshot;
-    // A settle window with ZERO server-written rows is a purely local repaint
-    // (our own _forceRedraw / highlight refresh re-arms the settle timer with
-    // nothing from the wire). Local paints must never drive state transitions
-    // (e.g. bounce functionMode→active before the server's prompt arrives) nor
-    // feed the queue's expects — only real responses do.
-    if (snap && snap.changedRows && snap.changedRows.size === 0) return;
+    // A settle window with ZERO server-written rows AND no server cursor move
+    // is a purely local repaint — those must never drive state transitions nor
+    // feed the queue's expects. A cursor-only window (cursorMoved, zero rows)
+    // IS a real response tail: when a response's content window and its final
+    // cursor-park escape straddle a >SETTLE_MS gap, the response settles twice
+    // and the second settle carries the authoritative park position — dropping
+    // it starves the queue (the offline jump-anchor wedge).
+    if (
+      snap &&
+      snap.changedRows &&
+      snap.changedRows.size === 0 &&
+      !snap.cursorMoved
+    )
+      return;
     const facts = this._collectFacts(snap);
     // Command completion first, so the reducer sees inFlightKind post-account
     // and a completed open/prefetch can chain its next command before we act.
@@ -573,6 +594,8 @@ ListSession.prototype = {
 
     const key = this._classifyKey(e);
     if (key.class !== 'other') e.preventDefault();
+    else if (RELATIVE_COMMAND_KEYS.indexOf(e.key) !== -1)
+      this._syncServerCursor();
 
     const r = transitionListSession(this.state, { type: 'key', keyClass: key.class });
     this.state = r.next;
@@ -583,6 +606,21 @@ ListSession.prototype = {
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
       else this._runAction(a, null);
     }
+  },
+
+  // Local navigation is zero-network, so the server's REAL cursor lags behind
+  // the local selection. Before a CURSOR-RELATIVE passthrough command reaches
+  // the server ([ ] = 同標題上/下篇, = 同標題首篇), re-home the real cursor
+  // with a number jump to the selected article; the key's own bytes follow in
+  // the same tick and the server processes them in order. ONLY these keys get
+  // the prefix: prefixing e.g. ← (leave board) inserts an extra list-repaint
+  // response between the key and the menu — its clean-list settle bounces
+  // functionMode→active and the later menu settle then has no exit (live soak
+  // regression). Pinned selections have no number — skip (native behavior).
+  _syncServerCursor: function() {
+    if (this._selectedNum == null) return;
+    if (this._core && this._core.conn && this._core.conn.isConnected)
+      this._core.conn.send(String(this._selectedNum) + '\r');
   },
 
   // Key → native read.c op (executed by moveListCursorWindow).
@@ -1367,8 +1405,11 @@ export function visibleListIndices(rowTexts, blacklistSet, titleKeywords) {
   const out = [];
   for (let i = 0; i < rowTexts.length; ++i) {
     const text = rowTexts[i];
-    let hide = false;
-    if (hasBlacklist) {
+    // Deleted articles ((本文已被刪除) / (已被xxx刪除), author column "-") are
+    // hidden unconditionally: they cannot be opened (the serialized open would
+    // wedge on them) — treated exactly like a blacklist hit.
+    let hide = isDeletedListRow(text);
+    if (!hide && hasBlacklist) {
       const author = parseListAuthor(text);
       if (author && blacklistSet.has(author)) hide = true;
     }

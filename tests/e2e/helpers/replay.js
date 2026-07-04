@@ -224,12 +224,28 @@ async function replayListCassette(page, cassette) {
         slash: (d) => d === '/',
         cancel: (d) => d === '\r',
       };
+      // 冪等 jump 重播：真 server 對「跳同一序號」永遠回同一畫面。demand 的
+      // 隱藏列（刪除文）會讓錨定鏈多消耗一個 jump step，之後開文的 open-jump
+      // 跳同一序號時，重喂已消耗的 jump 回應（不推進 step 指標）＝與真 server
+      // 行為一致。只登記有 num 的絕對定位步（jump/jumpsame/jumpmax）。
+      const servedJumps = new Map();
       window.__stubWSSent = (data) => {
         window.__replay.sent.push(data);
-        if (idx >= steps.length) return;
-        const next = steps[idx];
-        const match = PATTERNS[next.on];
-        if (match && match(data, next)) feed();
+        if (idx < steps.length) {
+          const next = steps[idx];
+          const match = PATTERNS[next.on];
+          if (match && match(data, next)) {
+            if (
+              (next.on === 'jump' || next.on === 'jumpsame' || next.on === 'jumpmax') &&
+              next.num != null
+            )
+              servedJumps.set(String(next.num) + '\r', next.recv);
+            feed();
+            return;
+          }
+        }
+        const replayed = servedJumps.get(data);
+        if (replayed) app.onData(atob(replayed));
       };
     },
     { cassette }

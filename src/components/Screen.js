@@ -11,6 +11,7 @@ import {
   parseListAuthor,
   parseListTitle,
   matchTitleBlacklist,
+  isDeletedListRow,
   FloorCounter,
 } from "../js/comment_parse";
 import { detectFixableUrls } from "../js/url_fix";
@@ -100,17 +101,17 @@ function computeAnnotations(lines, enhance) {
       if (mentions) r = { ...(r || {}), mentions };
       result[row] = r;
     }
-  } else if (
-    (pageState === PAGE_LIST || inListContext) &&
-    (hasBlacklist || hasTitleBlacklist)
-  ) {
+  } else if (pageState === PAGE_LIST || inListContext) {
     // inListContext keeps list blacklist hiding alive across overlay prompts (e.g.
     // the v 設定已讀未讀記錄 sub-screen) whose status row stops parsing as LIST(2).
     // READING is the preceding `if`, so this never runs while reading an article.
+    // Deleted-article rows are hidden unconditionally (they cannot be opened),
+    // so this branch runs even with an empty blacklist. MUST stay in sync with
+    // list_session.js#visibleListIndices (invariant 10).
     for (let row = 0; row < lines.length; ++row) {
       const text = rowToText(lines[row]);
-      let hide = false;
-      if (hasBlacklist) {
+      let hide = isDeletedListRow(text);
+      if (!hide && hasBlacklist) {
         const author = parseListAuthor(text);
         if (author && blacklist.has(author)) hide = true;
       }

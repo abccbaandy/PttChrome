@@ -19,6 +19,7 @@ import {
   parseListTitle,
   parseListArticleNum,
   isPinnedListRow,
+  isDeletedListRow,
   recoverCursorArticleNum,
   pageArticleNums,
   parseBlacklist,
@@ -157,6 +158,31 @@ describe("isPinnedListRow", () => {
     expect(isPinnedListRow("       ")).toBe(false);
     expect(isPinnedListRow("")).toBe(false);
     expect(isPinnedListRow(null)).toBe(false);
+  });
+});
+
+describe("isDeletedListRow", () => {
+  test("自刪/被刪列（作者欄 -）→ true（實錄 Stock/測試板樣本）", () => {
+    expect(
+      isDeletedListRow(" 203599     7/04 -            □ (本文已被刪除) <wh40917>")
+    ).toBe(true);
+    expect(
+      isDeletedListRow("    343     7/04 -            □ (本文已被刪除) [sogou]")
+    ).toBe(true);
+  });
+  test("游標壓在刪除列（● 蓋頭）仍 → true", () => {
+    expect(
+      isDeletedListRow("●03599     7/04 -            □ (本文已被刪除) <wh40917>")
+    ).toBe(true);
+  });
+  test("一般文章列 / 置底列 / 狀態列 → false", () => {
+    expect(isDeletedListRow(" 352960 + 4 6/05 HarunoYukino R: foo")).toBe(false);
+    expect(
+      isDeletedListRow("    ★  m 1 6/01 arrenwu      轉 [公告] 不當連結相關申訴")
+    ).toBe(false);
+    expect(isDeletedListRow(" 文章選讀  (y)回應(X)推文")).toBe(false);
+    expect(isDeletedListRow("")).toBe(false);
+    expect(isDeletedListRow(null)).toBe(false);
   });
 });
 

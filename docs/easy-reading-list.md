@@ -42,7 +42,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 `listRenderMode` 映射：active→buffer、opening→frozen、其餘→native。
 
 - idle：clean-list ∧ pref ∧ rows==24 ∧ `!buf.startedEasyReading` → active（seed＋start-fill）。engage 守門不用 `view.useEasyReadingMode`（article ER 離篇後仍 latch true）。
-- active：clean-list 板名同→continue-fill；異→rebuild；article→suspended；prompt/menu/transient ∧ 無 in-flight→functionMode；有 in-flight→stay。
+- active：clean-list 板名同→continue-fill；異→rebuild；article→suspended；**menu→idle cleanup**（離板可與 in-flight prefetch 的 jump 重繪交錯：jump settle 先把 functionMode 彈回 active，menu settle 若走 catch-all 進 functionMode 會因靜止畫面無下一個 settle 而卡死）；prompt/transient ∧ 無 in-flight→functionMode；有 in-flight→stay。
 - key（active）：nav（↑↓jk/PgUp/PgDn/Home/End → read.c op）；Enter/→＝opening（selectedNum 有值→begin-open；null＝pinned→begin-open-pinned）；其他鍵＝functionMode（不 preventDefault）。
 - opening：settle 等 article；timeout→functionMode 自癒；期間吞所有鍵。
 - functionMode：clean-list→active（landedNum∈buffer ∧ 板名同→resume；否則＋rebuild）；article→suspended；menu→idle cleanup。
@@ -52,7 +52,8 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 ## 關鍵不變量（違反即復發）
 
 1. **零內容 settle 不驅動轉移**：`_onScreenSettled` 開頭 `changedRows.size===0 → return`（本地 `_forceRedraw` 也 re-arm settle）。
-2. **`_settleChangedRows` 只在 server 寫入點 add**（六處＋`_touchRows`），不可掛 `lineChangeds`。
+2. **`_settleChangedRows` 只在 server 寫入點 add**（統一走 `_touchRows`），不可掛 `lineChangeds`。
+2b. **settle timer 只由 server 活動 re-arm**（`_serverActivity`：`_touchRows`＋游標 escape 的 posChanged；notify 的 changed 分支 gated）。本地 `_forceRedraw` 不得推遲 pending settle——否則按住 nav 鍵（~30ms 一次重繪）永遠不 settle → queue expect 餓死 → prefetch timeout →「按住 PgUp 無效」＋ markEdge 假邊界（置底文顯示異常的來源）。守護：`settle_gating.test.js`。
 3. **跳號回應 settle 底列是空的**（classify=transient 永不 clean-list）→ jump 類 expect 用「park 在 entry 區 col≤1 ∧ 游標列=目標序號」。`_requestEnd` 落點可為置底列（cursorRowNum null 也接受）。
 4. demand 只朝移動方向。
 5. pinned map key＝`pinnedRowKey`（author|title）；`_pinnedKeyAt` 必須同函式。游標停置底列（有★）仍收錄、● 兩格還原空白；無★游標列排除。
@@ -62,7 +63,9 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 7. 預讀 timeout＝良性到邊；開文 timeout＝functionMode 自癒；flush 靜默（**flush 不觸發 onFail → `_prunePivotOverride` 要在 flush 出口手動重置**）。
 8. CommandQueue timer 要包 wrapper（Illegal invocation）。
 9. `_renderScreenLines` list 分支傳 `{pageState:2}`；**dropHidden=false**（黑名單已在 `visibleListIndices` 前置過濾，視窗切片本來就不含隱藏列）。
-10. `visibleListIndices` 與 `Screen#computeAnnotations` PAGE_LIST 分支同規則。
+10. `visibleListIndices` 與 `Screen#computeAnnotations` PAGE_LIST 分支同規則（含**刪除文無條件隱藏**：`isDeletedListRow`＝作者欄 `-`；刪除文開文永無 article → 必 wedge，故比照黑名單隱藏）。
+12. **相對命令鍵（`[` `]` `=`，RELATIVE_COMMAND_KEYS）passthrough 前先 `_syncServerCursor`**（送 `選取序號\r` 歸位 server 真游標）——本地導航零網路，同標題跳文否則從舊游標起算（亂跳）。**只限這組鍵**：對 ←/q 等離板鍵加前綴會在鍵與 menu 回應間多插一個列表重繪回應，其 clean-list settle 把 functionMode 彈回 active、隨後 menu settle 在 active 無出口 → 卡死（live soak 實測）。pinned 選取無序號則跳過。守護：`list_keys.test.js`。
+13. `relabelListCursorRow` 只在 cell 2 起有數字（● 真的蓋到數字）時回填 prefix；短序號（`/` 搜尋結果）● 蓋的是 padding，必須填空白——否則序號末兩位灌進行首並存進 map（污染跨頁殘留）。
 11. edge 確認（markEdge/_requestEnd）後要 `_forceRedraw`——pinned 門控開啟需要重繪才可見。
 
 ## 已知限制

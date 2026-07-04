@@ -103,6 +103,59 @@ describe("accumulateListLines（置底文收录）", () => {
     expect(v.buf.listLines.length).toBe(0);
   });
 
+  test("游标在短序号列：relabel 不得把序号末两位写进行首（/搜寻 bug 回归）", () => {
+    // MODE_SELECT 搜寻结果序号短（3 位数），数字右对齐、离 ● 有空格 —— ● 盖住的
+    // 是 padding 而非数字。旧 relabel 读 cell2 起的数字得 vis=''、prefix=整个序号，
+    // 把末两位（"31"）灌进 cells[0,1]，即「行首出现数字」bug。
+    const clean530 = "    530 + 7 6/18 Winux        □ [情報] 萬代新TCG品牌";
+    const clean531 = "    531 + 4 6/21 turndown4wat □ [情報] 火影忍者進軍卡牌";
+    // 真实 DBCS：● 佔 cells[0,1]（lead+trail），其余 cells 与干净列相同。
+    const cursorCells = chRow(clean531);
+    cursorCells[0] = { ch: "●", isLeadByte: true };
+    cursorCells[1] = { ch: "", isLeadByte: false };
+    const cursorText = "●" + clean531.slice(2); // rowToText 折叠后的样子
+    const texts = header.concat([clean530, cursorText, feeter]);
+    const v = fakeView(texts, 4);
+    v.buf.lines[4] = cursorCells;
+    v.accumulateListLines();
+    const idx = v.buf.listLineNums.indexOf(531);
+    expect(idx).not.toBe(-1);
+    expect(rowToStr(v.buf.listLines[idx])).toBe(clean531.replace(/\s+$/, ""));
+  });
+
+  test("游标在 6 位序号列：relabel 仍回填被盖的最高位（原行为不回归）", () => {
+    const clean34 = " 353434 +13 7/04 basala5417   □ [閒聊] 一般文章甲";
+    const clean35 = " 353435 +18 7/04 owo0204      □ [閒聊] 一般文章乙";
+    const cursorCells = chRow(clean35);
+    cursorCells[0] = { ch: "●", isLeadByte: true };
+    cursorCells[1] = { ch: "", isLeadByte: false };
+    const cursorText = "●" + clean35.slice(2);
+    const texts = header.concat([clean34, cursorText, feeter]);
+    const v = fakeView(texts, 4);
+    v.buf.lines[4] = cursorCells;
+    v.accumulateListLines();
+    const idx = v.buf.listLineNums.indexOf(353435);
+    expect(idx).not.toBe(-1);
+    expect(rowToStr(v.buf.listLines[idx])).toBe(clean35.replace(/\s+$/, ""));
+  });
+
+  test("真实 C_Chat 置底页：四篇置底全数收录且 key 互异（置底文少显示排查）", () => {
+    // 列文字取自 cchat-list-pinned 离线素材（4 篇置底：arrenwu ×3 + SaberTheBest）。
+    const pinnedRows = [
+      "    ★  m 5 6/01 arrenwu      □ [公告] 版務新聞欄提訴",
+      "    ★  m 1 6/09 arrenwu      □ [公告] C_Chat板規 v.17.3 加好文清單",
+      "    ★  m26 6/09 arrenwu      □ [公告] C_Chat板規 v.17.3 版務內容",
+      "    ★  = 6 6/13 SaberTheBest □ [26天] 接力活動",
+    ];
+    const texts = header.concat([article], pinnedRows, [feeter]);
+    const v = fakeView(texts, 3);
+    v.accumulateListLines();
+    const pinned = v.buf.listLineNums.filter((n) => n == null).length;
+    expect(pinned).toBe(4);
+    const keys = new Set(pinnedRows.map(pinnedRowKey));
+    expect(keys.size).toBe(4);
+  });
+
   test("推文数变动的置底再累积不产生重复列（v3 bug 5a 不回归）", () => {
     const mk = (cnt) =>
       header.concat([
