@@ -179,6 +179,11 @@ test.describe('cassette 录制器', () => {
         nav: ['jump', 'pageup', 'jump', 'pageup', 'jump', 'open', 'back', 'jumpsame', 'pageup'],
         // prompt 卷：'/' 开标题搜寻 prompt、空 Enter 取消（prompt 误判回归素材）。
         prompt: ['slash', 'cancel'],
+        // 置底文开启卷（对应 _beginOpenPinned 的序列化命令）：jump 到画面最大
+        // 序号（游标已在底端时单发 End 无回应，先跳号保证每步有回应）→ End →
+        // ↑×2（要求看板置底 ≥3 篇；离线测试以 End 停驻列往上数 2 列为目标）
+        // → Enter 开文 → ← 返回。
+        pinned: ['jumpmax', 'end', 'up', 'up', 'open', 'back'],
       };
       const scriptName = process.env.RECORD_LIST_SCRIPT || '';
       const script = LIST_SCRIPTS[scriptName];
@@ -222,12 +227,24 @@ test.describe('cassette 录制器', () => {
           let extra = null;
           if (action === 'pageup') keys = '\x1b[5~';
           else if (action === 'pagedown') keys = '\x1b[6~';
+          else if (action === 'end') keys = '\x1b[4~';
+          else if (action === 'up') keys = '\x1b[A';
           else if (action === 'back') keys = '\x1b[D';
           else if (action === 'slash') keys = '/';
           else if (action === 'open' || action === 'cancel') keys = '\r';
-          else if (action === 'jump' || action === 'jumpsame') {
+          else if (action === 'jump' || action === 'jumpsame' || action === 'jumpmax') {
             let num = null;
-            if (action === 'jumpsame') {
+            if (action === 'jumpmax') {
+              // 画面「最下方文章序号」＝最大序号——对齐 _beginOpenPinned 的
+              // bufferEdgeNum(down) 锚点选择。
+              const buf = app.buf;
+              const rowTexts = [];
+              for (let r = 0; r < buf.rows; r++) rowTexts.push(buf.getRowText(r, 0, buf.cols));
+              const nums = window.__pageArticleNums(rowTexts, buf.cur_y);
+              for (let r = buf.rows - 2; r >= 3 && num == null; r--) {
+                if (nums[r] != null) num = nums[r];
+              }
+            } else if (action === 'jumpsame') {
               // 与上一个 jump 同目标（对应 runtime「restore 后 demand-up 的锚点
               // = 缓冲最旧序号 = 开文那篇」）。
               num = lastJumpNum;

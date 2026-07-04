@@ -7,7 +7,7 @@ import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
 import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap, pageArticleNums, isPinnedListRow } from './comment_parse';
-import { mergeListPage, flattenListBuffer, pinnedRowKey } from './list_session';
+import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS } from './list_session';
 
 const ENTER_CHAR = '\r';
 const ESC_CHAR = '\x15'; // Ctrl-U
@@ -412,15 +412,16 @@ TermView.prototype = {
         this.hideEasyReadingOverlaysKeepPage();
         if (this.buf.listRenderMode === 'buffer') {
           // Scroll-anchor: an UPWARD prefetch prepends older rows above the
-          // viewport, which would shove the visible content down. Record the
-          // pre-render top number + scrollHeight; if the top number got smaller
-          // (older rows arrived), push scrollTop down by the added height.
+          // viewport (shoving content down), and a top-end EVICT removes rows
+          // above it (yanking content up). Record the pre-render top number +
+          // scrollHeight; any top-number change compensates by the height
+          // delta — positive for a prepend, negative for a top evict.
           var prevH = this.mainDisplay ? this.mainDisplay.scrollHeight : 0;
           var prevTop = (this.buf.listLineNums && this.buf.listLineNums.length) ? this.buf.listLineNums[0] : null;
           this.accumulateListLines();
           this._renderScreenLines(this.buf.listLines, /* dropHidden */ true, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2 });
           var newTop = (this.buf.listLineNums && this.buf.listLineNums.length) ? this.buf.listLineNums[0] : null;
-          if (this.mainDisplay && prevTop != null && newTop != null && newTop < prevTop) {
+          if (this.mainDisplay && prevTop != null && newTop != null && newTop !== prevTop) {
             this.mainDisplay.scrollTop += this.mainDisplay.scrollHeight - prevH;
           }
         } else {
@@ -1133,6 +1134,13 @@ TermView.prototype = {
       }
     }
     mergeListPage(this._listNumMap, this._listPinnedMap, entries);
+    // Row cap: evict the end farthest from the selection so redraw cost stays
+    // bounded (a few hundred rows ≈ the native feel). The session must clear
+    // the matching edge flag — demand re-fetches an evicted segment later.
+    var ls = this.bbscore && this.bbscore.listSession;
+    var ev = evictListBuffer(this._listNumMap, ls ? ls._selectedNum : null, MAX_LIST_ROWS);
+    if (ls && ev.evictedUp) ls.noteEvicted(-1);
+    if (ls && ev.evictedDown) ls.noteEvicted(1);
     var flat = flattenListBuffer(this._listNumMap, this._listPinnedMap);
     buf.listLines = flat.lines;
     buf.listLineNums = flat.nums;

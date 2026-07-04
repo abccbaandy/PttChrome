@@ -23,7 +23,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 
 - idle：clean-list ∧ pref ∧ rows==24 ∧ `!buf.startedEasyReading` → active（seed＋start-fill）。**engage 守門不用 `view.useEasyReadingMode`**——article ER 離篇後該旗標仍 latch true。
 - active：clean-list 板名同→continue-fill；板名異→rebuild（`s` 跳板/MODE_SELECT aliasing）；article→suspended 交棒；prompt/menu/transient ∧ 無 in-flight→functionMode（catch-all）；有 in-flight→stay（慢回應半畫 settle 是預期）。
-- key（active）：nav（↑↓jk/PgUp/PgDn/Home/End）＝本地 moveListSelection＋方向性 demand；Enter/→＝opening（selectedNum null＝pinned → no-op，v1 限制）；其他鍵＝functionMode（**不 preventDefault**，鍵照送）。
+- key（active）：nav（↑↓jk/PgUp/PgDn/Home/End）＝本地 moveListSelection＋方向性 demand；Enter/→＝opening（selectedNum 有值→begin-open；null＝pinned→begin-open-pinned）；其他鍵＝functionMode（**不 preventDefault**，鍵照送）。
 - opening：settle 一律等 article（jump prompt 亂 settle 是預期）；timeout→functionMode 自癒；期間吞所有鍵（preventDefault）。
 - functionMode：clean-list→active（landedNum∈buffer ∧ 板名同→只 resume；否則＋rebuild）；article→suspended；menu→idle cleanup；prompt/transient→stay。鍵盤 hook 不觸發＝全鍵直通。
 - suspended：clean-list→restore（maps 不重建、重選 restoreNum）；menu→idle。
@@ -44,11 +44,20 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 9. `_renderScreenLines` 第 5 參 `enhanceOverrides`：list 分支傳 `{pageState:2}`，transient 幀也走 LIST 黑名單註記。
 10. `visibleListIndices` 必須與 `Screen#computeAnnotations` PAGE_LIST 分支同規則（兩處都有互指註解）。
 
+## 體驗層（optimize 輪，list_session.js 常數為準）
+
+- **fill cap**：初始背景 fill 上限 `FILL_MAX_PAGES=3`（多了＝進板閃動）；其餘靠 demand。`easyReadingListPrefetchCount` 只是 target 上界。
+- **總量 cap**：`MAX_LIST_ROWS=300`。`evictListBuffer(numMap, selectedNum, cap)`（純函式，unit 有測）丟離選取最遠端；`accumulateListLines` 於 merge 後呼叫，evict 過的向呼 `session.noteEvicted(dir)` 清 `_edgeUp/_edgeDown`（demand 可重抓）。redraw 捲動補償條件是 `newTop !== prevTop`（prepend 為正、頂端 evict 為負，同一公式）。`_restore` 對被 evict 的 restore 目標 fallback `_selectLastNumbered`。
+- **demand 三來源，鏈式不跨來源**（跨了 offline 門控與停止條件都不可決定）：`fill`→`_maybeFill`；`key`（`_maybeDemand`，margin `DEMAND_MARGIN=10`）；`wheel`（`_maybeDemandViewport`，視口距邊 <2 視口高即抓）。
+- **wheel listener 掛 `mainDisplay` 的 `wheel` 事件、非 `scroll`**：prepend 補償/scrollIntoView 會發 `scroll`，用它會讓程式化捲動觸發 demand（offline 門控炸、真游標亂跑）。另 `pttchrome.js mouse_scroll`（window capture）在 buffer/frozen **必須早退**——否則滾輪被轉成 doArrowUp/Down bytes 送 server＋stopPropagation 吃掉事件（實測就是這樣壞的）。
+- **置底文開啟 `_beginOpenPinned`**：`jump 最大序號`（序號是穩定身分，新文不影響；跳號必有回應）→ `End`（**不可單發**：游標已在底端時 server 零回應必 timeout，live 實測）expect＝park ∧ 目標 pinned 列在畫面上（`isPinnedListRow`＋`pinnedRowKey` 內容定位，非盲數步數）→ `↑/↓`×n 逐步 expect curY，末步再驗 key → Enter expect article。失敗全走 open-timeout 自癒。restore 用 `_restorePinnedKey`。
+
 ## 已知限制（v1）
 
-rows≠24 不 engage（謂詞仍 rows-relative）；Enter-on-pinned no-op；buffer 模式滑鼠點擊瀏覽停用（滾輪＝DOM 捲動照常）；MODE_SELECT（`/` 篩選）以板名一致＋∈buffer/rebuild 涵蓋（篩選空間序號會 rebuild，離開篩選再 rebuild）。
+rows≠24 不 engage（謂詞仍 rows-relative）；buffer 模式滑鼠點擊瀏覽停用（滾輪＝DOM 捲動照常）；MODE_SELECT（`/` 篩選）以板名一致＋∈buffer/rebuild 涵蓋（篩選空間序號會 rebuild，離開篩選再 rebuild）。
 
 ## 素材再錄
 
 `$env:RECORD_MODE='list'; $env:RECORD_BOARD='C_Chat'; $env:RECORD_NAME='cchat-list-nav'; $env:RECORD_LIST_SCRIPT='nav'; yarn record:cassette`（guest 滿加 `RECORD_ALLOW_LOGIN=1`，有等長 redact＋assertNoLeak）。
+pinned 卷＝`RECORD_NAME='cchat-list-pinned' RECORD_LIST_SCRIPT='pinned'`（jumpmax/end/up/up/open/back，要求該板置底 ≥3 篇；offline 測試取 pinned tail 倒數第 3 為目標）。
 nav 腳本＝10 step（start/jump/pageup/jump/pageup/jump/open/back/jumpsame/pageup），對應「錨定 fill 對×2 → 開文兩段 → back → restore 後 demand 對」；jump 目標由 `window.__pageArticleNums`（dev build 曝露）取當前頁最上方序號，與 runtime `bufferEdgeNum(up)` 一致。重放門控 map 在 `tests/e2e/helpers/replay.js#replayListCassette`（gating 掛 stub WS send 層；**jump/jumpsame 按 step.num 精確比對**——不匹配的跳號寧可 timeout（runtime 視為良性到邊）也不吃錯 step）。offline 編排與 runtime 決策耦合：改 fill/demand 邏輯時，測試裡的 prefetchCount／按鍵序列要跟著重算（見 spec 內註解）。

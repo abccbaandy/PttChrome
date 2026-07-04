@@ -11,6 +11,7 @@ const {
 
 const nav = loadCassette('cchat-list-nav');
 const prompt = loadCassette('cchat-list-prompt');
+const pinned = loadCassette('cchat-list-pinned');
 
 async function dumpListState(page) {
   return await page.evaluate(() => {
@@ -307,6 +308,64 @@ test.describe('文章列表好读模式（离线）', () => {
       // prepend 锚定：选取列的视口位置不因上方插入而位移（容忍 2px 取整）。
       expect(before.selTop).not.toBeNull();
       expect(Math.abs(after.selTop - before.selTop)).toBeLessThanOrEqual(2);
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+});
+
+test.describe('置底文 Enter 开启（离线，pinned 卷）', () => {
+  test.skip(!pinned, '缺 cchat-list-pinned cassette');
+
+  test('选取置底列 Enter → End+↑×2 序列化开文 → 返回还原 pinned 选取', async ({ page }) => {
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, pinned);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: true,
+        easyReadingListPrefetchCount: 0
+      });
+      await waitState(page, (x) => x.state === 'active' && x.queueIdle);
+
+      // 目标：pinned tail 倒数第 3 列（cassette 录的是 End 停驻列往上 2 列）。
+      // flatten 保插入序 = 画面序，End 停在最后一列置底。
+      const targetKey = await page.evaluate(() => {
+        const app = window.__app;
+        const nums = app.buf.listLineNums;
+        const pinnedIdx = [];
+        for (let i = 0; i < nums.length; i++) if (nums[i] == null) pinnedIdx.push(i);
+        if (pinnedIdx.length < 3) return null;
+        const ls = app.listSession;
+        const idx = pinnedIdx[pinnedIdx.length - 3];
+        const key = ls._pinnedKeyAt(idx);
+        ls._selectedNum = null;
+        ls._selectedPinnedKey = key;
+        ls.applyHighlight(true);
+        return key;
+      });
+      expect(targetKey).toBeTruthy();
+
+      // Enter → opening(frozen) → End + ↑×2（逐步 expect）→ Enter → 文章。
+      await page.locator('#t').focus();
+      await page.keyboard.press('Enter');
+      let s = await waitState(page, (x) => x.state === 'suspended', 20000);
+      expect(s.pageState).toBe(3);
+      expect(s.renderMode).toBe('native');
+
+      // ← 返回 → restore：还原 pinned 选取（key 相同）。
+      await page.keyboard.press('ArrowLeft');
+      s = await waitState(page, (x) => x.state === 'active', 20000);
+      expect(s.renderMode).toBe('buffer');
+      expect(s.selectedNum).toBeNull();
+      const restoredKey = await page.evaluate(
+        () => window.__app.listSession._selectedPinnedKey
+      );
+      expect(restoredKey).toBe(targetKey);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);

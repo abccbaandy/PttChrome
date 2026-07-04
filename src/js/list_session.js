@@ -17,6 +17,7 @@ import {
   parseListTitle,
   matchTitleBlacklist,
   pageArticleNums,
+  isPinnedListRow,
   rowToText,
 } from './comment_parse';
 import { parseStatusRow, parseListRow } from './string_util';
@@ -210,10 +211,11 @@ export function transitionListSession(state, event) {
           case 'open':
             return { next: 'opening', actions: ['begin-open'] };
           case 'open-pinned':
-            // v1 limitation: ★pinned rows have no article number to jump to —
-            // opening by number is the only serialized-safe path, so Enter on a
-            // pinned row is a no-op (documented in README).
-            return stay;
+            // Pinned rows have no number to jump to; the serialized-safe path
+            // is End (last page, deterministic regardless of new arrivals) →
+            // locate the target pinned row by CONTENT on the settled screen →
+            // arrow steps → Enter (see _beginOpenPinned).
+            return { next: 'opening', actions: ['begin-open-pinned'] };
           default:
             // Any other key: native passthrough (the key itself is NOT
             // preventDefaulted — it goes to the server, we just mirror).
@@ -388,8 +390,21 @@ function bindProperty(target, name, obj, prop) {
 
 const NAV_PAGE = 20; // one native list page of entries
 const NAV_END = 1e9; // Home/End: clamped by moveListSelection
-const DEMAND_MARGIN = 5; // selection within N visible rows of an edge → demand-prefetch
-const PREFETCH_MAX_PAGES = 15;
+const DEMAND_MARGIN = 10; // selection within N visible rows of an edge → demand-prefetch
+// Initial background fill is capped LOW: every prefetched page re-renders the
+// whole list + re-anchors scroll, so a long fill right after entering a board
+// reads as flicker. 2-3 pages cover the first screens; demand (keyboard,
+// wheel) fetches the rest as the user actually scrolls.
+const FILL_MAX_PAGES = 3;
+// Total-row cap: past a few hundred rows every redraw rebuilds the lines array
+// + computeAnnotations O(n) + React reconcile and scrolling turns to sludge.
+// The end FARTHEST from the selection is evicted; demand re-fetches it later.
+export const MAX_LIST_ROWS = 300;
+// Viewport-based demand: the wheel scrolls the DOM without moving the
+// selection, so when the viewport edge comes within N viewport-heights of the
+// buffer edge we prefetch (see _maybeDemandViewport).
+const DEMAND_VIEWPORT_FACTOR = 2;
+const SCROLL_DEMAND_THROTTLE_MS = 200;
 
 // Owner of list easy reading. Subscribes to term_buf 'screenSettled' and runs:
 //   settle → snapshot+facts → queue.onSettle (command completion first)
@@ -410,6 +425,8 @@ export function ListSession(core, view, termBuf, queue) {
   this._selectedNum = null; // numbered selection (article number)
   this._selectedPinnedKey = null; // pinned-row selection (title key)
   this._restoreNum = null; // selection to restore after an article
+  this._restorePinnedKey = null; // ditto for a pinned selection
+  this._scrollHooked = false; // wheel-demand listener attached (once, lazily)
   this._fillTarget = 0;
   this._fillPages = 0;
   this._edgeUp = false;
@@ -512,9 +529,10 @@ ListSession.prototype = {
         return this._restore();
       case 'cleanup':
         return this._cleanup();
-      // 'move-selection' / 'begin-open' carry key context; executed in onKeyDown.
+      // 'move-selection' / 'begin-open*' carry key context; executed in onKeyDown.
       case 'move-selection':
       case 'begin-open':
+      case 'begin-open-pinned':
         return;
       default:
         return;
@@ -561,6 +579,7 @@ ListSession.prototype = {
       const a = r.actions[i];
       if (a === 'move-selection') this._moveSelection(key.delta);
       else if (a === 'begin-open') this._beginOpen();
+      else if (a === 'begin-open-pinned') this._beginOpenPinned();
       else this._runAction(a, null);
     }
   },
@@ -604,9 +623,34 @@ ListSession.prototype = {
     this._fillPages = 0;
     this._renderMode = 'buffer';
     this._view.hideCursor();
+    this._hookScroll();
     this._forceRedraw(); // synchronous: accumulates this page into the buffer
     if (this._selectedNum == null) this._selectLastNumbered();
     this.applyHighlight(true);
+  },
+
+  // Wheel scrolling is pure DOM — the selection never moves, so keyboard-side
+  // demand never fires and the user hits a dead edge. Attach ONE throttled
+  // WHEEL listener (lazily, on first seed; mainDisplay is stable for the app's
+  // lifetime, and the buffer-mode guard makes it inert otherwise — no unhook
+  // needed, no leak). Deliberately 'wheel' and NOT 'scroll': our own prepend
+  // compensation / scrollIntoView fire 'scroll' too, and a programmatic-scroll
+  // trigger would fire demand pairs nondeterministically (breaking the offline
+  // cassette gating and racing the queue) — only real user input may demand.
+  _hookScroll: function() {
+    if (this._scrollHooked) return;
+    const md = this._view.mainDisplay;
+    if (!md) return;
+    this._scrollHooked = true;
+    const self = this;
+    let last = 0;
+    md.addEventListener('wheel', function() {
+      if (self._renderMode !== 'buffer') return;
+      const now = Date.now();
+      if (now - last < SCROLL_DEMAND_THROTTLE_MS) return;
+      last = now;
+      self._maybeDemandViewport();
+    });
   },
 
   _rebuild: function(facts) {
@@ -643,11 +687,11 @@ ListSession.prototype = {
         visibleCount: this._visibleIndices().length,
         target: this._fillTarget,
         pageCount: this._fillPages,
-        maxPages: PREFETCH_MAX_PAGES
+        maxPages: FILL_MAX_PAGES
       })
     )
       return;
-    this._enqueuePrefetch(true);
+    this._enqueuePrefetch(true, 'fill');
   },
 
   // Demand prefetch: the selection walked near an edge of the buffer — but only
@@ -661,13 +705,36 @@ ListSession.prototype = {
     const pos = vis.indexOf(idx);
     if (pos === -1) return;
     if (direction < 0 && pos <= DEMAND_MARGIN && !this._edgeUp)
-      this._enqueuePrefetch(true);
+      this._enqueuePrefetch(true, 'key');
     else if (
       direction > 0 &&
       pos >= vis.length - 1 - DEMAND_MARGIN &&
       !this._edgeDown
     )
-      this._enqueuePrefetch(false);
+      this._enqueuePrefetch(false, 'key');
+  },
+
+  // Viewport-position demand variant for wheel scrolling (see _hookScroll):
+  // when the visible window is within DEMAND_VIEWPORT_FACTOR viewport-heights
+  // of a buffer edge, extend that edge. Same guards as _maybeDemand.
+  _maybeDemandViewport: function() {
+    if (this.state !== 'active' || !this._queue.idle) return;
+    const md = this._view.mainDisplay;
+    if (!md || !md.clientHeight) return;
+    const near = md.clientHeight * DEMAND_VIEWPORT_FACTOR;
+    if (md.scrollTop < near && !this._edgeUp) this._enqueuePrefetch(true, 'wheel');
+    else if (
+      md.scrollHeight - md.scrollTop - md.clientHeight < near &&
+      !this._edgeDown
+    )
+      this._enqueuePrefetch(false, 'wheel');
+  },
+
+  // term_view.accumulateListLines evicted rows past MAX_LIST_ROWS on this end:
+  // clear the edge flag so demand can re-fetch the dropped segment.
+  noteEvicted: function(direction) {
+    if (direction < 0) this._edgeUp = false;
+    else this._edgeDown = false;
   },
 
   // ANCHORED prefetch (v4-stabilize bug 3: 往上讀卡住/亂跳頁). The single real
@@ -683,7 +750,13 @@ ListSession.prototype = {
   //      growth guaranteed contiguous), unchanged = the board edge.
   // Always jump (no already-there fast path): a same-position jump still gets a
   // deterministic response, and determinism beats the saved roundtrip.
-  _enqueuePrefetch: function(up) {
+  // origin picks the CHAIN rule for the next page (each is self-bounding, so a
+  // chain never crosses triggers — that would make the offline gating and the
+  // stop condition nondeterministic):
+  //   'fill'  → _maybeFill (target / page-cap bounded)
+  //   'key'   → _maybeDemand (stops once the selection clears DEMAND_MARGIN)
+  //   'wheel' → _maybeDemandViewport (stops once the viewport has headroom)
+  _enqueuePrefetch: function(up, origin) {
     const anchor = bufferEdgeNum(this._termBuf.listLineNums, up ? -1 : 1);
     if (anchor == null) return;
     const self = this;
@@ -725,6 +798,8 @@ ListSession.prototype = {
       onDone: function(r) {
         self._fillPages++;
         if (r.edge) markEdge();
+        else if (origin === 'key') self._maybeDemand(up ? -1 : 1);
+        else if (origin === 'wheel') self._maybeDemandViewport();
         else self._maybeFill();
       },
       // Prefetch timeout is BENIGN: treat as the edge and stop paging that way
@@ -742,6 +817,7 @@ ListSession.prototype = {
     this._renderMode = 'frozen';
     this._clearHighlight();
     this._restoreNum = num;
+    this._restorePinnedKey = null;
     this._queue.flush(); // drop any prefetch; content predicates absorb the seam
     const self = this;
     this._queue.enqueue({
@@ -780,12 +856,131 @@ ListSession.prototype = {
     });
   },
 
+  // Serialized open for a ★pinned row (no article number to jump to).
+  //   1. jump to the buffer's LARGEST article number (an article number is a
+  //      stable identity — new arrivals don't move it — and a number jump
+  //      always gets a deterministic response; the existing park fingerprint);
+  //   2. End → the bottom-most row of the last page. NOT sent standalone:
+  //      when the real cursor is ALREADY at the bottom, End gets no server
+  //      response at all and the open would always time out (live-tested) —
+  //      after step 1 the cursor sits on a numbered row above the pinned tail,
+  //      so End always moves = always answers. Its expect also requires the
+  //      TARGET pinned row on screen (located by CONTENT: isPinnedListRow +
+  //      pinnedRowKey equality — never a counted offset);
+  //   3. one arrow per row toward it, each step expecting the exact curY, the
+  //      last step ALSO re-verifying the cursor row's pinned key;
+  //   4. Enter → expect article.
+  // Any mismatch waits out the step timeout → _openFailed → functionMode
+  // self-heal, same as the numbered open.
+  _beginOpenPinned: function() {
+    const key = this._selectedPinnedKey;
+    const anchor = bufferEdgeNum(this._termBuf.listLineNums, 1);
+    if (key == null || anchor == null) {
+      this._openFailed();
+      return;
+    }
+    this._renderMode = 'frozen';
+    this._clearHighlight();
+    this._restoreNum = null;
+    this._restorePinnedKey = key;
+    this._queue.flush();
+    const self = this;
+    let parkY = -1;
+    let targetY = -1;
+    const fail = function() {
+      self._openFailed();
+    };
+    const enqueueEnter = function() {
+      self._queue.enqueue({
+        keys: '\r',
+        kind: 'open-enter',
+        expect: function(snap, facts) {
+          return facts.kind === 'article';
+        },
+        timeoutMs: 4000,
+        onFail: fail
+      });
+    };
+    const enqueueSteps = function() {
+      if (targetY === parkY) {
+        enqueueEnter();
+        return;
+      }
+      const delta = targetY > parkY ? 1 : -1;
+      for (let y = parkY + delta; ; y += delta) {
+        const stepY = y;
+        const isLast = stepY === targetY;
+        self._queue.enqueue({
+          keys: delta > 0 ? '\x1b[B' : '\x1b[A',
+          kind: 'open-pinned-step',
+          expect: function(snap, facts) {
+            if (facts.curY !== stepY || facts.curX > 1) return false;
+            // Final verification before Enter: the cursor row must BE the
+            // target pinned row (content identity, not position arithmetic).
+            if (isLast && pinnedRowKey(facts.rowTexts[stepY] || '') !== key)
+              return false;
+            return true;
+          },
+          timeoutMs: 3000,
+          onDone: isLast ? enqueueEnter : undefined,
+          onFail: fail
+        });
+        if (isLast) break;
+      }
+    };
+    const enqueueEnd = function() {
+      self._queue.enqueue({
+        keys: '\x1b[4~', // End: park on the last page (pinned rows included)
+        kind: 'open-pinned-end',
+        expect: function(snap, facts) {
+          if (facts.curY < 3 || facts.curY > facts.rows - 2 || facts.curX > 1)
+            return false;
+          for (let r = 3; r <= facts.rows - 2; ++r) {
+            const text = facts.rowTexts[r] || '';
+            if (isPinnedListRow(text) && pinnedRowKey(text) === key) {
+              parkY = facts.curY;
+              targetY = r;
+              return true;
+            }
+          }
+          return false; // target not on the last page → timeout → self-heal
+        },
+        timeoutMs: 4000,
+        onDone: enqueueSteps,
+        onFail: fail
+      });
+    };
+    this._queue.enqueue({
+      keys: String(anchor) + '\r',
+      kind: 'open-pinned-jump',
+      expect: function(snap, facts) {
+        // Same jump-landing fingerprint as open-jump / prefetch anchors
+        // (protocol §4 ✚: the bottom row stays empty → never clean-list).
+        return (
+          facts.cursorRowNum === anchor &&
+          facts.curY >= 3 &&
+          facts.curY <= facts.rows - 2 &&
+          facts.curX <= 1
+        );
+      },
+      timeoutMs: 4000,
+      onDone: enqueueEnd,
+      onFail: fail
+    });
+  },
+
   _openFailed: function() {
     this._dispatch({ type: 'open-timeout' }, null);
   },
 
   _handoffArticle: function() {
-    if (this._selectedNum != null) this._restoreNum = this._selectedNum;
+    if (this._selectedNum != null) {
+      this._restoreNum = this._selectedNum;
+      this._restorePinnedKey = null;
+    } else if (this._selectedPinnedKey != null) {
+      this._restorePinnedKey = this._selectedPinnedKey;
+      this._restoreNum = null;
+    }
     this._queue.flush();
     this._renderMode = 'native';
     this._clearHighlight();
@@ -818,6 +1013,13 @@ ListSession.prototype = {
     if (this._restoreNum != null) {
       this._selectedNum = this._restoreNum;
       this._selectedPinnedKey = null;
+      // The restore target may have been evicted by the row cap while we were
+      // away — fall back to the newest row instead of a dangling selection.
+      if (this._resolveSelectedIndex() === -1) this._selectLastNumbered();
+    } else if (this._restorePinnedKey != null) {
+      this._selectedNum = null;
+      this._selectedPinnedKey = this._restorePinnedKey;
+      if (this._resolveSelectedIndex() === -1) this._selectLastNumbered();
     }
     this._forceRedraw();
     this.applyHighlight(true);
@@ -830,6 +1032,7 @@ ListSession.prototype = {
     this._selectedNum = null;
     this._selectedPinnedKey = null;
     this._restoreNum = null;
+    this._restorePinnedKey = null;
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
@@ -939,6 +1142,32 @@ export function pinnedRowKey(text) {
   const author = parseListAuthor(text) || '';
   const title = parseListTitle(text) || text || '';
   return author + '|' + title;
+}
+
+// Evict numbered rows over the cap, dropping from the end FARTHEST from the
+// selection (the selection itself always survives; a null selection = pinned
+// tail = bottom, so the top is farthest). Mutates numMap in place; the pinned
+// map is never evicted (a handful of rows at most). Returns which end(s) got
+// dropped so the session can clear the matching _edgeUp/_edgeDown flag —
+// demand must be able to re-fetch an evicted segment.
+export function evictListBuffer(numMap, selectedNum, cap) {
+  const r = { evictedUp: false, evictedDown: false };
+  if (!numMap || numMap.size <= cap) return r;
+  const nums = Array.from(numMap.keys()).sort((a, b) => a - b);
+  const sel = selectedNum == null ? Infinity : selectedNum;
+  let lo = 0;
+  let hi = nums.length - 1;
+  let excess = nums.length - cap;
+  while (excess-- > 0) {
+    if (sel - nums[lo] >= nums[hi] - sel) {
+      numMap.delete(nums[lo++]);
+      r.evictedUp = true;
+    } else {
+      numMap.delete(nums[hi--]);
+      r.evictedDown = true;
+    }
+  }
+  return r;
 }
 
 // The article number at a buffer edge: smallest (direction<0, the "older" top)

@@ -1133,6 +1133,13 @@ App.prototype.mouse_scroll = function(e) {
   if (this.view.useEasyReadingMode && this.buf.pageState == 3) {
     return;
   }
+  // List easy reading buffer/frozen render: the wheel is plain DOM scrolling
+  // over the accumulated list — never a BBS nav command (the hidden real
+  // cursor must not move), and the event must bubble down to the ListSession
+  // wheel-demand listener (list_session.js _hookScroll).
+  if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
+    return;
+  }
 
   // scroll = up/down
   // hold right mouse key + scroll = page up/down

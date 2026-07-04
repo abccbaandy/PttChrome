@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 import {
   bufferEdgeNum,
+  evictListBuffer,
   parseBoardName,
   classifyListScreen,
   classifyListBurst,
@@ -216,7 +217,7 @@ describe("transitionListSession (full table)", () => {
   test("active: keys", () => {
     T("active", key("nav"), "active", ["move-selection"]);
     T("active", key("open"), "opening", ["begin-open"]);
-    T("active", key("open-pinned"), "active", []); // v1: no number to jump to
+    T("active", key("open-pinned"), "opening", ["begin-open-pinned"]); // End+內容定位序列
     T("active", key("other"), "functionMode", ["enter-function-mode"]);
     T("active", { type: "pref-off" }, "idle", ["cleanup"]);
   });
@@ -344,6 +345,43 @@ describe("mergeListPage + flattenListBuffer", () => {
     flat = flattenListBuffer(numMap, pinnedMap);
     expect(flat.nums).toEqual([298, 299, 300, 301]);
     expect(flat.nums.indexOf(selNum)).toBe(2); // index moved, number stable
+  });
+});
+
+describe("evictListBuffer (total-row cap)", () => {
+  const mapOf = nums => new Map(nums.map(n => [n, "r" + n]));
+  it("no-op under the cap", () => {
+    const m = mapOf([1, 2, 3]);
+    expect(evictListBuffer(m, 2, 3)).toEqual({
+      evictedUp: false,
+      evictedDown: false,
+    });
+    expect(m.size).toBe(3);
+  });
+  it("evicts the end FARTHEST from the selection (selection kept)", () => {
+    // selection near the bottom → the old top gets dropped.
+    const m = mapOf([10, 11, 12, 13, 14]);
+    const r = evictListBuffer(m, 14, 3);
+    expect(r).toEqual({ evictedUp: true, evictedDown: false });
+    expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([12, 13, 14]);
+  });
+  it("evicts the bottom when the selection sits at the top", () => {
+    const m = mapOf([10, 11, 12, 13, 14]);
+    const r = evictListBuffer(m, 10, 3);
+    expect(r).toEqual({ evictedUp: false, evictedDown: true });
+    expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([10, 11, 12]);
+  });
+  it("mid selection evicts both ends, keeping the window around it", () => {
+    const m = mapOf([1, 2, 3, 4, 5, 6, 7]);
+    const r = evictListBuffer(m, 4, 3);
+    expect(r).toEqual({ evictedUp: true, evictedDown: true });
+    expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([3, 4, 5]);
+  });
+  it("null selection (pinned tail selected) is treated as bottom → evicts the top", () => {
+    const m = mapOf([10, 11, 12, 13]);
+    const r = evictListBuffer(m, null, 2);
+    expect(r).toEqual({ evictedUp: true, evictedDown: false });
+    expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([12, 13]);
   });
 });
 

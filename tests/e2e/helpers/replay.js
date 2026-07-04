@@ -215,6 +215,12 @@ async function replayListCassette(page, cassette) {
           step.num != null ? d === String(step.num) + '\r' : /^\d+\r$/.test(d),
         open: (d) => d === '\r',
         back: (d) => d.indexOf('\x1b[D') >= 0,
+        // 置底文开启序列（list_session._beginOpenPinned）：jump 最大序号 →
+        // End 锚定最后一页 → ↑ 逐列走到目标置底列（内容定位，非盲数步数）。
+        jumpmax: (d, step) =>
+          step.num != null ? d === String(step.num) + '\r' : /^\d+\r$/.test(d),
+        end: (d) => d.indexOf('\x1b[4~') >= 0,
+        up: (d) => d === '\x1b[A',
         slash: (d) => d === '/',
         cancel: (d) => d === '\r',
       };

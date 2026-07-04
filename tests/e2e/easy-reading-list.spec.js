@@ -266,6 +266,88 @@ test.describe('文章列表好讀模式（live）', () => {
     }
   });
 
+  test('置底文 Enter 開啟（End+內容定位序列）＋ ← 返回還原 pinned 選取', async ({ page }) => {
+    test.setTimeout(120000);
+    const logs = attachConsole(page);
+    try {
+      await page.goto('/');
+      await dismissDeveloperModeAlert(page);
+      await login(page);
+      await resetSession(page);
+      const s = await enterBoardWithListER(page, 'C_Chat', {
+        easyReadingListPrefetchCount: 0,
+      });
+      expect(s.state).toBe('active');
+      test.skip(!s.nums.includes(null), '此板目前無置底文');
+
+      // End：本地導覽到最底 → 選取落在最後一列置底文（pinned key 選取）。
+      await page.locator('#t').focus();
+      await page.keyboard.press('End');
+      await page.waitForTimeout(300);
+      const pinnedKey = await page.evaluate(
+        () => window.__app.listSession._selectedPinnedKey
+      );
+      console.log('pinned target:', pinnedKey);
+      expect(pinnedKey).toBeTruthy();
+
+      // Enter → opening(frozen) → End+↑…+Enter 序列化 → article → suspended。
+      await page.keyboard.press('Enter');
+      const opened = await waitFor(page, (x) => x.state === 'suspended', 25000);
+      expect(opened.pageState).toBe(3);
+      expect(opened.renderMode).toBe('native');
+
+      // ← 返回 → restore 還原 pinned 選取。
+      await page.locator('#t').focus();
+      await page.keyboard.press('ArrowLeft');
+      const back = await waitFor(page, (x) => x.state === 'active', 25000);
+      expect(back.renderMode).toBe('buffer');
+      expect(back.selectedNum).toBeNull();
+      const restored = await page.evaluate(
+        () => window.__app.listSession._selectedPinnedKey
+      );
+      expect(restored).toBe(pinnedKey);
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
+  test('滾輪捲近頂端觸發 viewport demand 續抓（不按任何鍵）', async ({ page }) => {
+    test.setTimeout(120000);
+    const logs = attachConsole(page);
+    try {
+      await page.goto('/');
+      await dismissDeveloperModeAlert(page);
+      await login(page);
+      await resetSession(page);
+      const s = await enterBoardWithListER(page, 'C_Chat', {
+        easyReadingListPrefetchCount: 20,
+      });
+      expect(s.state).toBe('active');
+      const initial = s.listLen;
+
+      // 滾輪往上（wheel 事件 → _maybeDemandViewport；視口近頂即應抓更舊頁）。
+      const main = page.locator('#mainContainer');
+      await main.hover();
+      let grown = initial;
+      for (let i = 0; i < 8 && grown <= initial; i++) {
+        await page.mouse.wheel(0, -600);
+        await page.waitForTimeout(1200);
+        grown = (await dumpListState(page)).listLen;
+      }
+      console.log('wheel demand listLen:', initial, '→', grown);
+      expect(grown).toBeGreaterThan(initial);
+      const after = await waitListSettled(page);
+      expect(after.state).toBe('active');
+      assertAscending(after);
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
   test('原生功能直通：/ → functionMode 原生 LIVE，取消回乾淨列表', async ({ page }) => {
     test.setTimeout(120000);
     const logs = attachConsole(page);
