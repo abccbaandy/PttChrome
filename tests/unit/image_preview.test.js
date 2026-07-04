@@ -92,3 +92,29 @@ describe("inline image preview wiring", () => {
     ).toBe(0);
   });
 });
+
+// 進文章報錯回歸：requestPreview 在 render 期就建立 promise，不可預覽的一般連結
+// （default resolver）立即 reject("Unimplemented")，而 <ImagePreviewer> 的
+// rejection handler 要等 useEffect（commit 後）才掛上 —— 中間會觸發
+// unhandledrejection（dev overlay 彈 ERROR）。requestPreview 必須在建立時就標記
+// handled，且消費端仍照常收到 reject。
+describe("requestPreview 不可預覽連結不產生 unhandled rejection", () => {
+  const { requestPreview } = require("../../src/components/ImagePreviewer");
+
+  test("建立後放置一輪 event loop：無 unhandledRejection；消費端仍收到 reject", async () => {
+    const events = [];
+    const onUnhandled = (reason) => events.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const p = requestPreview("https://example.com/not-media-page.html");
+      // 故意先不掛 handler，跨一輪 macrotask 讓 node 有機會回報 unhandled。
+      await new Promise((res) => setTimeout(res, 0));
+      await new Promise((res) => setTimeout(res, 0));
+      expect(events).toEqual([]);
+      // 消費端照常收到 reject（ImagePreviewer 的 state.error 路徑不變）。
+      await expect(p).rejects.toThrow("Unimplemented");
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+  });
+});

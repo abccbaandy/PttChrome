@@ -12,6 +12,12 @@ export const requestPreview = (href) => {
   let p = previewRequestCache.get(href);
   if (p === undefined) {
     p = of(href).then(resolveSrcToImageUrl);
+    // 不可預覽的一般連結（default resolver）在 render 期就 reject，而
+    // <ImagePreviewer> 的 rejection handler 要到 useEffect（commit 後）才掛上
+    // —— 中間隔著 microtask checkpoint，瀏覽器先射 unhandledrejection
+    // （dev overlay 彈「Unimplemented」）。先掛一個 no-op catch 標記 handled；
+    // 回傳的仍是原 promise，消費端照常收到 reject（state.error 路徑不變）。
+    p.catch(noop);
     previewRequestCache.set(href, p);
   }
   return p;

@@ -1,11 +1,14 @@
-// 「[ ] 同標題跳文偶爾失效/亂跳」回歸：buffer 模式本地導航是零網路，server 端
-// 真游標停在舊位置；[ ] t y 等相對命令 passthrough 後 server 從舊游標起算 → 亂跳。
-// 修法：other 鍵放行前先送「選取序號\r」把真游標歸位（_syncServerCursor），
-// 鍵本身照舊 passthrough（不 preventDefault）→ functionMode 鏡像。
-import { ListSession } from "../../src/js/list_session";
+// 「[ ] 同標題跳文偶爾失效/亂跳/卡住」回歸：buffer 模式本地導航是零網路，server
+// 端真游標停在舊位置；[ ] = 等相對命令需要先跳回選取列。且 jump＋key 不能同 tick
+// 直送 —— pttbbs typeahead 會跳過重繪（協定 §2），畫面卡死但 server 已跳。
+// 修法：preventDefault 後走 CommandQueue 序列化（relative-sync-jump → 完成才送
+// relative-command），functionMode 鏡像期間 clean-list settle 被 in-flight 吸收，
+// 配對完成的 settle 才 resume（採用落點游標）。
+import { ListSession, transitionListSession } from "../../src/js/list_session";
 
 function makeSession() {
   const sent = [];
+  const enqueued = [];
   const core = { conn: { isConnected: true, send: (d) => sent.push(d) } };
   const view = {
     hideCursor() {},
@@ -28,15 +31,17 @@ function makeSession() {
     idle: true,
     inFlightKind: null,
     flush() {},
-    enqueue() {},
+    enqueue(cmd) {
+      enqueued.push(cmd);
+    },
     onSettle() {},
   };
   const s = new ListSession(core, view, termBuf, queue);
-  return { s, sent };
+  return { s, sent, enqueued };
 }
 
 function keyEvent(key) {
-  const e = {
+  return {
     key,
     ctrlKey: false,
     altKey: false,
@@ -46,71 +51,110 @@ function keyEvent(key) {
       this.defaultPrevented = true;
     },
   };
-  return e;
 }
 
-describe("ListSession other-key server 游標歸位（[ ] 亂跳回歸）", () => {
-  test("active＋數字選取：按 [ → 先送『序號\\r』、鍵不 preventDefault、轉 functionMode", () => {
-    const { s, sent } = makeSession();
+describe("ListSession 相對命令序列化（[ ] 卡住/亂跳回歸）", () => {
+  test("active＋數字選取：按 [ → preventDefault、佇列先跳選取序號、完成才送 [", () => {
+    const { s, sent, enqueued } = makeSession();
     s.state = "active";
     s._selectedNum = 42;
     const e = keyEvent("[");
     s.onKeyDown(e);
-    expect(sent).toEqual(["42\r"]);
-    expect(e.defaultPrevented).toBe(false); // 鍵本身照舊 passthrough
+    // 鍵本身不得 passthrough（同 tick 直送會觸發 typeahead 卡畫面）
+    expect(e.defaultPrevented).toBe(true);
+    expect(sent).toEqual([]); // 不走裸 conn.send
     expect(s.state).toBe("functionMode");
+    expect(enqueued.length).toBe(1);
+    expect(enqueued[0].keys).toBe("42\r");
+    expect(enqueued[0].kind).toBe("relative-sync-jump");
+    // jump 完成 → 才鏈出 key 命令
+    enqueued[0].onDone();
+    expect(enqueued.length).toBe(2);
+    expect(enqueued[1].keys).toBe("[");
+    expect(enqueued[1].kind).toBe("relative-command");
+    // key 命令：任一 settle 即完成（回應可能是 clean-list 或訊息列）
+    expect(enqueued[1].expect()).toBe(true);
   });
 
-  test("pinned 選取（無序號）：other 鍵不送前綴", () => {
-    const { s, sent } = makeSession();
+  test("= 同標題首篇同路徑", () => {
+    const { s, enqueued } = makeSession();
+    s.state = "active";
+    s._selectedNum = 7;
+    s.onKeyDown(keyEvent("="));
+    expect(enqueued[0].keys).toBe("7\r");
+    enqueued[0].onDone();
+    expect(enqueued[1].keys).toBe("=");
+  });
+
+  test("pinned 選取（無序號）：[ 走原 passthrough，不佇列", () => {
+    const { s, sent, enqueued } = makeSession();
     s.state = "active";
     s._selectedNum = null;
     s._selectedPinnedKey = "arrenwu|[公告] 板規";
-    s.onKeyDown(keyEvent("]"));
+    const e = keyEvent("]");
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(false);
+    expect(enqueued).toEqual([]);
     expect(sent).toEqual([]);
     expect(s.state).toBe("functionMode");
   });
 
-  test("非相對命令的 other 鍵（← 離板 / q）不送前綴（live soak 回歸：前綴會多插一個列表回應，menu settle 卡 functionMode）", () => {
-    const { s, sent } = makeSession();
+  test("非相對命令的 other 鍵（← 離板 / q）不佇列、照舊 passthrough（live soak 回歸）", () => {
+    const { s, sent, enqueued } = makeSession();
     s.state = "active";
     s._selectedNum = 42;
     const e = keyEvent("ArrowLeft");
     s.onKeyDown(e);
-    expect(sent).toEqual([]);
     expect(e.defaultPrevented).toBe(false);
+    expect(enqueued).toEqual([]);
+    expect(sent).toEqual([]);
     expect(s.state).toBe("functionMode");
     s.state = "active";
     s.onKeyDown(keyEvent("q"));
-    expect(sent).toEqual([]);
+    expect(enqueued).toEqual([]);
   });
 
-  test("= 同標題首篇也送前綴", () => {
-    const { s, sent } = makeSession();
-    s.state = "active";
-    s._selectedNum = 7;
-    s.onKeyDown(keyEvent("="));
-    expect(sent).toEqual(["7\r"]);
-  });
-
-  test("nav 鍵不送前綴（本地導航維持零網路）", () => {
-    const { s, sent } = makeSession();
+  test("nav 鍵不佇列不送（本地導航維持零網路）", () => {
+    const { s, sent, enqueued } = makeSession();
     s.state = "active";
     s._selectedNum = 42;
     const e = keyEvent("ArrowDown");
     s.onKeyDown(e);
     expect(sent).toEqual([]);
+    expect(enqueued).toEqual([]);
     expect(e.defaultPrevented).toBe(true);
     expect(s.state).toBe("active");
   });
+});
 
-  test("斷線時 other 鍵不送前綴（不丟例外）", () => {
-    const { s, sent } = makeSession();
-    s._core.conn.isConnected = false;
-    s.state = "active";
-    s._selectedNum = 42;
-    s.onKeyDown(keyEvent("["));
-    expect(sent).toEqual([]);
-    expect(s.state).toBe("functionMode");
+describe("functionMode clean-list settle 的 in-flight 吸收（相對命令配對期間不彈回）", () => {
+  const settle = (kind, extra = {}) => ({
+    type: "settle",
+    kind,
+    boardNameMatch: true,
+    inFlightKind: null,
+    landedNumInBuffer: true,
+    engageEligible: false,
+    ...extra,
+  });
+  test("in-flight（relative-sync-jump/relative-command）→ stay 鏡像", () => {
+    expect(
+      transitionListSession(
+        "functionMode",
+        settle("clean-list", { inFlightKind: "relative-sync-jump" })
+      )
+    ).toEqual({ next: "functionMode", actions: [] });
+    expect(
+      transitionListSession(
+        "functionMode",
+        settle("clean-list", { inFlightKind: "relative-command" })
+      )
+    ).toEqual({ next: "functionMode", actions: [] });
+  });
+  test("配對完成（無 in-flight）→ resume 採用落點游標", () => {
+    expect(transitionListSession("functionMode", settle("clean-list"))).toEqual({
+      next: "active",
+      actions: ["resume-buffer"],
+    });
   });
 });

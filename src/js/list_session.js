@@ -243,6 +243,11 @@ export function transitionListSession(state, event) {
       if (event.type === 'settle') {
         switch (event.kind) {
           case 'clean-list':
+            // A serialized relative command ([ ] = jump→key pair) is mid-flight:
+            // its own jump-landing settle must not bounce us back to active —
+            // keep mirroring until the pair completes (the completing settle
+            // reads inFlightKind null and resumes with the LANDED cursor).
+            if (event.inFlightKind) return stay;
             // Content-decided exit. If the landed cursor row is an article we
             // already hold AND we are on the same board, the page overwrite (in
             // redraw) is enough; otherwise rebuild from the current page
@@ -593,9 +598,14 @@ ListSession.prototype = {
     if (this.state !== 'active') return;
 
     const key = this._classifyKey(e);
-    if (key.class !== 'other') e.preventDefault();
-    else if (RELATIVE_COMMAND_KEYS.indexOf(e.key) !== -1)
-      this._syncServerCursor();
+    // Cursor-relative commands with a numbered selection are serialized (jump →
+    // key via the queue): we own the bytes, so the key itself must NOT pass
+    // through (typeahead would swallow the repaints — the「[ 卡住」bug).
+    const relative =
+      key.class === 'other' &&
+      RELATIVE_COMMAND_KEYS.indexOf(e.key) !== -1 &&
+      this._selectedNum != null;
+    if (key.class !== 'other' || relative) e.preventDefault();
 
     const r = transitionListSession(this.state, { type: 'key', keyClass: key.class });
     this.state = r.next;
@@ -606,21 +616,57 @@ ListSession.prototype = {
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
       else this._runAction(a, null);
     }
+    // After enter-function-mode ran (queue flushed, native mirror up): enqueue
+    // the serialized jump→key pair.
+    if (relative) this._beginRelativeCommand(e.key);
   },
 
-  // Local navigation is zero-network, so the server's REAL cursor lags behind
-  // the local selection. Before a CURSOR-RELATIVE passthrough command reaches
-  // the server ([ ] = 同標題上/下篇, = 同標題首篇), re-home the real cursor
-  // with a number jump to the selected article; the key's own bytes follow in
-  // the same tick and the server processes them in order. ONLY these keys get
-  // the prefix: prefixing e.g. ← (leave board) inserts an extra list-repaint
-  // response between the key and the menu — its clean-list settle bounces
-  // functionMode→active and the later menu settle then has no exit (live soak
-  // regression). Pinned selections have no number — skip (native behavior).
-  _syncServerCursor: function() {
-    if (this._selectedNum == null) return;
-    if (this._core && this._core.conn && this._core.conn.isConnected)
-      this._core.conn.send(String(this._selectedNum) + '\r');
+  // Cursor-relative commands ([ ] = 同標題上/下篇/首篇) act from the server's
+  // REAL cursor, which local zero-network navigation leaves behind — so the key
+  // needs a jump-to-selection first. The pair MUST be serialized through the
+  // queue: sending "N\r[" in one tick trips pttbbs typeahead (input buffer
+  // non-empty → repaints skipped, protocol §2) and the screen freezes while the
+  // server state moves (the「[ 卡住但其實跳了」bug). Flow: enter-function-mode
+  // already ran (flush + native mirror) → jump (expect the park fingerprint) →
+  // key (any settle = its response) → that settle's reducer pass sees
+  // inFlightKind null and resumes with the LANDED cursor (native parity).
+  // Failures stay in the functionMode mirror — native behavior, self-healing.
+  // ONLY RELATIVE_COMMAND_KEYS take this path: serializing e.g. ← (leave
+  // board) would delay/duplicate responses around the menu exit (live soak).
+  _beginRelativeCommand: function(keyChar) {
+    const num = this._selectedNum;
+    if (num == null) return;
+    const self = this;
+    this._queue.enqueue({
+      keys: String(num) + '\r',
+      kind: 'relative-sync-jump',
+      expect: function(snap, facts) {
+        // Jump-landing park fingerprint (protocol §4 ✚, same as open-jump).
+        return (
+          facts.cursorRowNum === num &&
+          facts.curY >= 3 &&
+          facts.curY <= facts.rows - 2 &&
+          facts.curX <= 1
+        );
+      },
+      timeoutMs: 4000,
+      onDone: function() {
+        self._queue.enqueue({
+          keys: keyChar,
+          kind: 'relative-command',
+          // Any settle IS the response: a same-title hit repaints the list
+          // (clean-list), a miss paints a bottom-row message (prompt/transient)
+          // — both leave functionMode's normal settle handling to route it.
+          expect: function() {
+            return true;
+          },
+          timeoutMs: 3000
+          // onFail (zero response): keep mirroring — native shows nothing too.
+        });
+      }
+      // onFail: jump failed (deleted target / weird screen) — do NOT send the
+      // key from an unknown cursor position (that was the original bug).
+    });
   },
 
   // Key → native read.c op (executed by moveListCursorWindow).

@@ -181,9 +181,13 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   const handleHyperLinkMouseOver = React.useCallback(
     ({ currentTarget: { href } }) => {
       if (enableLinkHoverPreview) {
-        setCurrentImagePreview(
-          of(href).then(resolveSrcToImageUrl).then(resolveWithImageDOM),
-        );
+        const preview = of(href)
+          .then(resolveSrcToImageUrl)
+          .then(resolveWithImageDOM);
+        // 同 requestPreview：不可預覽連結立即 reject，消費端（ImagePreviewer
+        // effect）晚一拍才掛 handler —— 先標記 handled，避免 unhandledrejection。
+        preview.catch(() => {});
+        setCurrentImagePreview(preview);
       }
     },
     [enableLinkHoverPreview],
