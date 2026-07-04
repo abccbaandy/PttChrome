@@ -230,6 +230,14 @@ export function transitionListSession(state, event) {
             // locate the target pinned row by CONTENT on the settled screen →
             // arrow steps → Enter (see _beginOpenPinned).
             return { next: 'opening', actions: ['begin-open-pinned'] };
+          case 'relative':
+            // [ ] = with a numbered selection: serialized jump→key pair over a
+            // FROZEN window snapshot (not the native mirror — flashing the raw
+            // screen un-hides blacklist/deleted rows for the pair's duration).
+            // Settle semantics stay functionMode's: in-flight settles are
+            // absorbed, the completing clean-list resumes with the landed
+            // cursor, and _resumeAfterRelative handles the miss/timeout ends.
+            return { next: 'functionMode', actions: ['begin-relative'] };
           default:
             // Any other key: native passthrough (the key itself is NOT
             // preventDefaulted — it goes to the server, we just mirror).
@@ -419,6 +427,18 @@ export const MAX_LIST_ROWS = 300;
 // other-keys: absolute/leaving commands (←/q/s/digits) must go out alone.
 const RELATIVE_COMMAND_KEYS = ['[', ']', '='];
 
+// Adaptive soft timeout for the SECOND leg of a serialized pair, seeded by the
+// first (jump) leg's measured round-trip. A miss with ZERO server response can
+// only end by timeout (a repeated bottom-row message is a zero-content settle,
+// gated by invariant 1) — a fixed 3000ms reads as「按了沒反應」on a fast link.
+// 4×rtt keeps a wide safety factor; the floor absorbs jitter, the ceiling is
+// the old fixed value (slow links keep the old behavior).
+export function adaptiveTimeoutMs(rttMs) {
+  const t = 4 * rttMs;
+  if (!(t >= 800)) return 800; // also catches NaN/negative
+  return t > 3000 ? 3000 : t;
+}
+
 // Owner of list easy reading. Subscribes to term_buf 'screenSettled' and runs:
 //   settle → snapshot+facts → queue.onSettle (command completion first)
 //          → event booleans → transitionListSession → execute actions.
@@ -450,6 +470,16 @@ export function ListSession(core, view, termBuf, queue) {
   // prune must keep the TARGET segment, not the one the cursor came from.
   // undefined = no override (prune around the selection).
   this._prunePivotOverride = undefined;
+  // Prefetch chain: after a completed same-direction prefetch page command the
+  // server cursor position is KNOWN (the landed row) — the next prefetch may
+  // skip the anchor-jump leg and send PgUp/PgDn directly (halving the
+  // round-trips). ANY other server interaction invalidates the knowledge →
+  // _breakChain() at every such point (flush callers, other enqueues, settles
+  // with no in-flight command, buffer rebuilds). null = must anchor.
+  this._chainState = null; // { dir: -1|1, lastLanded: number }
+  // Last measured prefetch round-trip (ms) — seeds the adaptive page timeout
+  // so the final "no more pages" probe fails fast instead of waiting 3s.
+  this._lastPrefetchRtt = null;
 
   bindProperty(this, '_renderMode', termBuf, 'listRenderMode');
   termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
@@ -475,6 +505,12 @@ ListSession.prototype = {
     )
       return;
     const facts = this._collectFacts(snap);
+    // Server activity with NO command of ours in flight = external interaction
+    // (user key passthrough, server-initiated repaint): the server cursor may
+    // have moved — the prefetch chain's landed position is no longer trusted.
+    // Checked BEFORE onSettle so a completing command's own settle (inFlight
+    // still set here) never breaks the chain it is about to extend.
+    if (!this._queue.inFlightKind) this._breakChain();
     // Command completion first, so the reducer sees inFlightKind post-account
     // and a completed open/prefetch can chain its next command before we act.
     this._queue.onSettle(snap, facts);
@@ -595,17 +631,17 @@ ListSession.prototype = {
       e.preventDefault();
       return;
     }
+    if (this.state === 'functionMode' && this._renderMode === 'frozen') {
+      // A relative-command pair is in flight behind the frozen snapshot:
+      // swallow user keys, same as 'opening' — letting them through would race
+      // the serialized jump/key bytes (typeahead, protocol §2).
+      e.preventDefault();
+      return;
+    }
     if (this.state !== 'active') return;
 
     const key = this._classifyKey(e);
-    // Cursor-relative commands with a numbered selection are serialized (jump →
-    // key via the queue): we own the bytes, so the key itself must NOT pass
-    // through (typeahead would swallow the repaints — the「[ 卡住」bug).
-    const relative =
-      key.class === 'other' &&
-      RELATIVE_COMMAND_KEYS.indexOf(e.key) !== -1 &&
-      this._selectedNum != null;
-    if (key.class !== 'other' || relative) e.preventDefault();
+    if (key.class !== 'other') e.preventDefault();
 
     const r = transitionListSession(this.state, { type: 'key', keyClass: key.class });
     this.state = r.next;
@@ -614,11 +650,24 @@ ListSession.prototype = {
       if (a === 'move-selection') this._moveSelection(key.op);
       else if (a === 'begin-open') this._beginOpen();
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
+      else if (a === 'begin-relative') this._beginRelative(e.key);
       else this._runAction(a, null);
     }
-    // After enter-function-mode ran (queue flushed, native mirror up): enqueue
-    // the serialized jump→key pair.
-    if (relative) this._beginRelativeCommand(e.key);
+  },
+
+  // 'begin-relative' executor: freeze the window snapshot (no native flash —
+  // the raw mirror would un-hide blacklist/deleted rows), flush any prefetch,
+  // then enqueue the serialized jump→key pair. The cursor stays hidden (we
+  // never left our render). Exits: hit → resume-buffer; miss/timeout →
+  // _resumeAfterRelative; article/menu → handoff/cleanup set their own modes.
+  _beginRelative: function(keyChar) {
+    this._breakChain();
+    this._prunePivotOverride = undefined; // flush is silent — reset here
+    this._queue.flush();
+    this._renderMode = 'frozen';
+    this._view.hideCursor();
+    this._forceRedraw();
+    this._beginRelativeCommand(keyChar);
   },
 
   // Cursor-relative commands ([ ] = 同標題上/下篇/首篇) act from the server's
@@ -626,17 +675,18 @@ ListSession.prototype = {
   // needs a jump-to-selection first. The pair MUST be serialized through the
   // queue: sending "N\r[" in one tick trips pttbbs typeahead (input buffer
   // non-empty → repaints skipped, protocol §2) and the screen freezes while the
-  // server state moves (the「[ 卡住但其實跳了」bug). Flow: enter-function-mode
-  // already ran (flush + native mirror) → jump (expect the park fingerprint) →
-  // key (any settle = its response) → that settle's reducer pass sees
+  // server state moves (the「[ 卡住但其實跳了」bug). Flow: _beginRelative
+  // already ran (flush + frozen snapshot) → jump (expect the park fingerprint)
+  // → key (any settle = its response) → that settle's reducer pass sees
   // inFlightKind null and resumes with the LANDED cursor (native parity).
-  // Failures stay in the functionMode mirror — native behavior, self-healing.
+  // Failures fall back through _resumeAfterRelative — self-healing.
   // ONLY RELATIVE_COMMAND_KEYS take this path: serializing e.g. ← (leave
   // board) would delay/duplicate responses around the menu exit (live soak).
   _beginRelativeCommand: function(keyChar) {
     const num = this._selectedNum;
     if (num == null) return;
     const self = this;
+    const t0 = Date.now();
     this._queue.enqueue({
       keys: String(num) + '\r',
       kind: 'relative-sync-jump',
@@ -664,7 +714,9 @@ ListSession.prototype = {
           expect: function() {
             return true;
           },
-          timeoutMs: 3000,
+          // A zero-response miss can only end by this timeout — scale it to
+          // the link speed measured on the jump leg we just completed.
+          timeoutMs: adaptiveTimeoutMs(Date.now() - t0),
           // onDone runs BEFORE the same settle's reducer dispatch — defer the
           // check one tick so a clean-list resume wins first.
           onDone: function() {
@@ -721,6 +773,15 @@ ListSession.prototype = {
       case 'ArrowRight':
         return { class: this._selectedNum == null ? 'open-pinned' : 'open' };
       default:
+        // Cursor-relative commands with a numbered selection are serialized
+        // (jump → key via the queue): we own the bytes, so the key itself must
+        // NOT pass through (typeahead would swallow the repaints — the「[ 卡住」
+        // bug). A pinned selection has no number to jump to → passthrough.
+        if (
+          RELATIVE_COMMAND_KEYS.indexOf(e.key) !== -1 &&
+          this._selectedNum != null
+        )
+          return { class: 'relative' };
         return { class: 'other' };
     }
   },
@@ -735,6 +796,7 @@ ListSession.prototype = {
   // ---- actions ---------------------------------------------------------------
 
   _seed: function(facts) {
+    this._breakChain();
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
@@ -752,6 +814,7 @@ ListSession.prototype = {
   },
 
   _rebuild: function(facts) {
+    this._breakChain();
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
@@ -826,11 +889,12 @@ ListSession.prototype = {
     this._enqueuePrefetch(true, 'fill');
   },
 
-  // Demand prefetch: keep at least ONE full page of rows buffered beyond the
-  // window in the direction of travel, so the next PgUp/PgDn is always local
-  // and instant (this replaces the old selection-margin rule: the window is
-  // the unit of navigation now). Only the direction of travel is extended —
-  // in a one-page buffer everything is "near" both edges.
+  // Demand prefetch: keep TWO full pages of rows buffered beyond the window in
+  // the direction of travel (one page was too late — the fetch only started
+  // once the user was about to hit the edge, so every boundary crossing waited
+  // out the full serialized round-trips; two pages of headroom lets the chain
+  // finish before the user gets there). Only the direction of travel is
+  // extended — in a small buffer everything is "near" both edges.
   _maybeDemand: function(direction) {
     if (this.state !== 'active' || !this._queue.idle) return;
     const seq = this._sequence();
@@ -838,21 +902,31 @@ ListSession.prototype = {
     const pos = this._windowPos(seq);
     if (!pos) return;
     const B = this._bodyRows();
-    if (direction < 0 && pos.top < B && !this._edgeUp)
+    if (direction < 0 && pos.top < 2 * B && !this._edgeUp)
       this._enqueuePrefetch(true, 'key');
     else if (
       direction > 0 &&
-      seq.length - (pos.top + B) < B &&
+      seq.length - (pos.top + B) < 2 * B &&
       !this._edgeDown
     )
       this._enqueuePrefetch(false, 'key');
   },
 
   // term_view.accumulateListLines evicted rows past MAX_LIST_ROWS on this end:
-  // clear the edge flag so demand can re-fetch the dropped segment.
+  // clear the edge flag so demand can re-fetch the dropped segment. The buffer
+  // edge moved under the chain → its landed reference may now be discontiguous
+  // with the surviving segment: re-anchor.
   noteEvicted: function(direction) {
     if (direction < 0) this._edgeUp = false;
     else this._edgeDown = false;
+    this._chainState = null;
+  },
+
+  // Invalidate the prefetch chain: the server cursor is no longer where the
+  // last prefetch left it (another command went out / an external response
+  // arrived / the buffer was rebuilt). The next prefetch re-anchors (two legs).
+  _breakChain: function() {
+    this._chainState = null;
   },
 
   // Pivot for pruneListToSegment (term_view.accumulateListLines): normally the
@@ -876,43 +950,60 @@ ListSession.prototype = {
   //      row stays EMPTY until the next response, protocol doc §4 ✚);
   //   2. PgUp/PgDn — cursor number moving past the anchor = a new page (edge
   //      growth guaranteed contiguous), unchanged = the board edge.
-  // Always jump (no already-there fast path): a same-position jump still gets a
-  // deterministic response, and determinism beats the saved roundtrip.
+  // CHAINED same-direction prefetch skips leg 1: the previous page command's
+  // landed cursor is a confirmed server position (nothing else touched the
+  // server since — _breakChain() guards every such point), so a direct
+  // PgUp/PgDn extends the edge contiguously with ONE round-trip. The reference
+  // point for moved/edge is then the last landed row instead of the anchor
+  // (a PgDn parks the cursor on the NEW page's TOP, not the buffer's bottom
+  // edge — anchor equality would misread every chained page as edge).
   // origin picks the CHAIN rule for the next page (each is self-bounding, so a
   // chain never crosses triggers — that would make the offline gating and the
   // stop condition nondeterministic):
   //   'fill' → _maybeFill (target / page-cap bounded)
-  //   'key'  → _maybeDemand (stops once a full page is buffered past the window)
+  //   'key'  → _maybeDemand (stops once the headroom margin is buffered)
   _enqueuePrefetch: function(up, origin) {
-    const anchor = bufferEdgeNum(this._termBuf.listLineNums, up ? -1 : 1);
-    if (anchor == null) return;
+    const dir = up ? -1 : 1;
+    const chained = this._chainState !== null && this._chainState.dir === dir;
+    const base = chained
+      ? this._chainState.lastLanded
+      : bufferEdgeNum(this._termBuf.listLineNums, dir);
+    if (base == null) return;
     const self = this;
     const markEdge = function() {
       if (up) self._edgeUp = true;
       else self._edgeDown = true;
+      self._chainState = null;
       // A confirmed bottom edge un-gates the pinned tail (windowVisibleSequence)
       // — repaint so 置底文 appear, exactly like native's last page.
       self._forceRedraw();
     };
-    this._queue.enqueue({
-      keys: String(anchor) + '\r',
-      kind: up ? 'prefetch-anchor-up' : 'prefetch-anchor-down',
-      expect: function(snap, facts) {
-        return (
-          facts.cursorRowNum === anchor &&
-          facts.curY >= 3 &&
-          facts.curY <= facts.rows - 2 &&
-          facts.curX <= 1
-        );
-      },
-      timeoutMs: 4000,
-      // Anchor failed (article deleted / weird screen): drop the queued page
-      // command too — paging from an unknown position is exactly the bug.
-      onFail: function() {
-        markEdge();
-        self._queue.flush();
-      }
-    });
+    if (!chained) {
+      const t0 = Date.now();
+      this._queue.enqueue({
+        keys: String(base) + '\r',
+        kind: up ? 'prefetch-anchor-up' : 'prefetch-anchor-down',
+        expect: function(snap, facts) {
+          return (
+            facts.cursorRowNum === base &&
+            facts.curY >= 3 &&
+            facts.curY <= facts.rows - 2 &&
+            facts.curX <= 1
+          );
+        },
+        timeoutMs: 4000,
+        onDone: function() {
+          self._lastPrefetchRtt = Date.now() - t0;
+        },
+        // Anchor failed (article deleted / weird screen): drop the queued page
+        // command too — paging from an unknown position is exactly the bug.
+        onFail: function() {
+          markEdge();
+          self._queue.flush();
+        }
+      });
+    }
+    const t0p = Date.now();
     this._queue.enqueue({
       keys: up ? '\x1b[5~' : '\x1b[6~',
       kind: up ? 'prefetch-up' : 'prefetch-down',
@@ -920,16 +1011,27 @@ ListSession.prototype = {
         if (facts.kind !== 'clean-list') return false;
         const now = facts.cursorRowNum;
         if (now == null) return false;
-        if (up ? now < anchor : now > anchor) return { moved: true };
-        if (now === anchor) return { edge: true };
+        if (up ? now < base : now > base) return { moved: true, landed: now };
+        if (now === base) return { edge: true, landed: now };
         return false;
       },
-      timeoutMs: 3000,
+      // The board-edge probe gets ZERO response (cursor already at the end,
+      // live-tested) and can only end by this timeout — adapt it to the link
+      // speed measured on the previous leg (the fixed 3s was the「近置底更慢」
+      // stall). No measurement yet → keep the old conservative value.
+      timeoutMs:
+        this._lastPrefetchRtt != null
+          ? adaptiveTimeoutMs(this._lastPrefetchRtt)
+          : 3000,
       onDone: function(r) {
         self._fillPages++;
+        self._lastPrefetchRtt = Date.now() - t0p;
         if (r.edge) markEdge();
-        else if (origin === 'key') self._maybeDemand(up ? -1 : 1);
-        else self._maybeFill();
+        else {
+          self._chainState = { dir: dir, lastLanded: r.landed };
+          if (origin === 'key') self._maybeDemand(dir);
+          else self._maybeFill();
+        }
       },
       // Prefetch timeout is BENIGN: treat as the edge and stop paging that way
       // — never flips the mode (the user keeps scrolling what we have).
@@ -947,6 +1049,7 @@ ListSession.prototype = {
     this._restoreNum = num;
     this._restorePinnedKey = null;
     this._restoreTopNum = this._topNum;
+    this._breakChain();
     this._queue.flush(); // drop any prefetch; content predicates absorb the seam
     const self = this;
     this._queue.enqueue({
@@ -1012,6 +1115,7 @@ ListSession.prototype = {
     this._restoreNum = null;
     this._restorePinnedKey = key;
     this._restoreTopNum = this._topNum;
+    this._breakChain();
     this._queue.flush();
     const self = this;
     let parkY = -1;
@@ -1111,6 +1215,7 @@ ListSession.prototype = {
       this._restoreNum = null;
     }
     this._restoreTopNum = this._topNum;
+    this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();
     this._renderMode = 'native';
@@ -1122,6 +1227,7 @@ ListSession.prototype = {
   },
 
   _enterFunctionMode: function() {
+    this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();
     this._renderMode = 'native';
@@ -1130,6 +1236,7 @@ ListSession.prototype = {
   },
 
   _resumeBuffer: function(facts) {
+    this._breakChain();
     this._renderMode = 'buffer';
     this._view.hideCursor();
     if (facts && facts.cursorRowNum != null) {
@@ -1156,6 +1263,7 @@ ListSession.prototype = {
   },
 
   _restore: function() {
+    this._breakChain();
     this._renderMode = 'buffer';
     this._view.hideCursor();
     if (this._restoreNum != null) {
@@ -1177,6 +1285,7 @@ ListSession.prototype = {
   },
 
   _cleanup: function() {
+    this._breakChain();
     this._queue.flush();
     this._renderMode = 'native';
     this._boardName = null;
@@ -1299,6 +1408,7 @@ ListSession.prototype = {
     if (!this._queue.idle) return;
     const anchor = bufferEdgeNum(this._termBuf.listLineNums, 1);
     if (anchor == null) return;
+    this._breakChain(); // a non-prefetch command moves the server cursor
     const self = this;
     this._prunePivotOverride = null; // keep the landing (max-number) segment
     this._queue.enqueue({
@@ -1342,6 +1452,7 @@ ListSession.prototype = {
   // answers — one command, then apply Home locally.
   _requestHome: function() {
     if (!this._queue.idle) return;
+    this._breakChain(); // a non-prefetch command moves the server cursor
     const self = this;
     this._prunePivotOverride = 1; // keep article 1's (landing) segment
     this._queue.enqueue({

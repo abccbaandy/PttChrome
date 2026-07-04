@@ -6,6 +6,7 @@
 import fs from "fs";
 import path from "path";
 import {
+  ListSession,
   bufferEdgeNum,
   evictListBuffer,
   parseBoardName,
@@ -223,6 +224,8 @@ describe("transitionListSession (full table)", () => {
     T("active", key("open"), "opening", ["begin-open"]);
     T("active", key("open-pinned"), "opening", ["begin-open-pinned"]); // End+內容定位序列
     T("active", key("other"), "functionMode", ["enter-function-mode"]);
+    // [ ] = 相對命令（有序號選取）＝一級公民：frozen 配對，不走 native 鏡像
+    T("active", key("relative"), "functionMode", ["begin-relative"]);
     T("active", { type: "pref-off" }, "idle", ["cleanup"]);
   });
 
@@ -443,6 +446,166 @@ describe("bufferEdgeNum (anchored prefetch targets)", () => {
     expect(bufferEdgeNum(null, 1)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// demand prefetch（session 層：邊距與鏈式）
+// ---------------------------------------------------------------------------
+
+// 最小 ListSession stub：buffer 內 count 篇（numStart 起連號），無黑名單。
+// 列文字給 rowToText 用（_visibleIndices），格式取自真實列。
+function demandSession({ numStart = 100, count = 60 } = {}) {
+  const enqueued = [];
+  const view = {
+    hideCursor() {},
+    showCursor() {},
+    resetListAccumulation() {},
+    blacklist: new Set(),
+    titleBlacklist: [],
+  };
+  const mkRow = (n) => {
+    const text = ` ${String(n)} + 2 6/14 someoneA     □ [閒聊] 文章 ${n}`.padEnd(80);
+    return [...text].map((ch) => ({ ch, isLeadByte: false }));
+  };
+  const nums = [];
+  const lines = [];
+  for (let i = 0; i < count; ++i) {
+    nums.push(numStart + i);
+    lines.push(mkRow(numStart + i));
+  }
+  const termBuf = {
+    rows: 24,
+    cols: 80,
+    listLines: lines,
+    listLineNums: nums,
+    lineChangeds: new Array(24).fill(false),
+    changed: false,
+    addEventListener() {},
+    notify() {},
+  };
+  const queue = {
+    idle: true,
+    inFlightKind: null,
+    flush() {
+      this.flushed = (this.flushed || 0) + 1;
+    },
+    enqueue(cmd) {
+      enqueued.push(cmd);
+    },
+    onSettle() {},
+  };
+  const s = new ListSession({ conn: { send() {} } }, view, termBuf, queue);
+  s.state = "active";
+  s._boardName = "C_Chat";
+  return { s, enqueued, queue, nums };
+}
+
+describe("demand 邊距（提早預補隱藏 round-trip 延遲）", () => {
+  // bodyRows B = 20。視窗距 buffer 邊 < 2B 就該補（舊規則 < B 太晚：使用者
+  // 已貼近邊緣才開始抓，每次都吃滿兩個 round-trip 的等待）。
+  test("向下：視窗底距 buffer 底 1.5 頁（< 2B）→ 觸發 demand（舊 <B 不觸發 → 紅）", () => {
+    const { s, enqueued } = demandSession({ count: 60 }); // 60 列
+    // 視窗 top=第10列 → 底下剩 60-(10+20)=30 列 = 1.5B
+    s._topNum = 110;
+    s._selectedNum = 115;
+    s._maybeDemand(1);
+    expect(enqueued.length).toBeGreaterThan(0);
+    expect(enqueued[enqueued.length - 1].kind).toBe("prefetch-down");
+  });
+  test("向下：距邊 ≥ 2B → 不觸發", () => {
+    const { s, enqueued } = demandSession({ count: 80 }); // 80-(10+20)=50 ≥ 40
+    s._topNum = 110;
+    s._selectedNum = 115;
+    s._maybeDemand(1);
+    expect(enqueued).toEqual([]);
+  });
+  test("向上：top 距 buffer 頂 1.5 頁 → 觸發 prefetch-up", () => {
+    const { s, enqueued } = demandSession({ count: 80 });
+    s._topNum = 130; // top pos = 30 < 2B
+    s._selectedNum = 135;
+    s._maybeDemand(-1);
+    expect(enqueued.length).toBeGreaterThan(0);
+    expect(enqueued[enqueued.length - 1].kind).toBe("prefetch-up");
+  });
+  test("已確認到邊 → 不觸發", () => {
+    const { s, enqueued } = demandSession({ count: 60 });
+    s._topNum = 110;
+    s._selectedNum = 115;
+    s._edgeDown = true;
+    s._maybeDemand(1);
+    expect(enqueued).toEqual([]);
+  });
+});
+
+describe("鏈式 prefetch（同方向連補免重複錨定 jump，round-trip 減半）", () => {
+  // 錨定命令對＝jump＋PgDn 兩個序列化 round-trip。同方向連續補頁時 server
+  // 游標位置已知（上一 PgDn 的落點），直送 PgDn 即可；任何外部活動（flush／
+  // 其他命令／非 in-flight settle）都必須打斷鏈、回到兩腿錨定。
+  function firstDemand() {
+    const ctx = demandSession({ count: 60 });
+    ctx.s._topNum = 110;
+    ctx.s._selectedNum = 115;
+    ctx.s._maybeDemand(1);
+    expect(ctx.enqueued.length).toBe(2); // anchor + page（首次照舊）
+    expect(ctx.enqueued[0].kind).toBe("prefetch-anchor-down");
+    expect(ctx.enqueued[1].kind).toBe("prefetch-down");
+    return ctx;
+  }
+
+  test("同方向第二次 demand → 只 enqueue 一個 page 命令（無 anchor 腿；現行兩腿 → 紅）", () => {
+    const { s, enqueued } = firstDemand();
+    // page 完成（游標落新頁頂 160）→ onDone 遞迴 _maybeDemand，鏈上直送
+    enqueued[1].onDone({ moved: true, landed: 160 });
+    expect(enqueued.length).toBe(3);
+    expect(enqueued[2].kind).toBe("prefetch-down");
+  });
+
+  test("鏈上 page 的 expect：越過上次落點=moved、等於=edge", () => {
+    const { s, enqueued } = firstDemand();
+    enqueued[1].onDone({ moved: true, landed: 160 });
+    const chained = enqueued[2];
+    expect(chained.expect(null, factsWithCursor(165))).toEqual(
+      expect.objectContaining({ moved: true })
+    );
+    expect(chained.expect(null, factsWithCursor(160))).toEqual(
+      expect.objectContaining({ edge: true })
+    );
+  });
+
+  test("鏈上到邊（edge）→ markEdge 且鏈清空（下次 demand 回兩腿）", () => {
+    const { s, enqueued } = firstDemand();
+    enqueued[1].onDone({ moved: true, landed: 160 });
+    enqueued[2].onDone({ edge: true, landed: 160 });
+    expect(s._edgeDown).toBe(true);
+    expect(s._chainState).toBeNull();
+  });
+
+  test("插入其他佇列命令（開文 flush）→ 鏈失效，下次 demand 回兩腿", () => {
+    const { s, enqueued } = firstDemand();
+    enqueued[1].onDone({ moved: true, landed: 160 });
+    expect(enqueued.length).toBe(3);
+    s.state = "active";
+    s._beginOpen(); // flush + open 命令 → server 游標將被動走
+    const n = enqueued.length;
+    s._maybeDemand(1);
+    // 重新錨定：anchor 腿必須回來
+    expect(enqueued[n].kind).toBe("prefetch-anchor-down");
+  });
+
+  test("方向反轉 → 鏈失效（向下鏈不能拿來直送 PgUp）", () => {
+    const { s, enqueued } = firstDemand();
+    enqueued[1].onDone({ moved: true, landed: 160 });
+    const n = enqueued.length;
+    s._topNum = 130; // top pos = 30 < 2B → 向上觸發
+    s._selectedNum = 135;
+    s._maybeDemand(-1);
+    expect(enqueued[n].kind).toBe("prefetch-anchor-up");
+  });
+});
+
+// 最小 facts：只有鏈式 expect 讀的欄位。
+function factsWithCursor(num) {
+  return { kind: "clean-list", cursorRowNum: num, curY: 5, curX: 0, rows: 24 };
+}
 
 describe("visibleListIndices (mirrors Screen#computeAnnotations PAGE_LIST)", () => {
   const rows = [

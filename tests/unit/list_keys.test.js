@@ -127,6 +127,46 @@ describe("ListSession 相對命令序列化（[ ] 卡住/亂跳回歸）", () =>
   });
 });
 
+describe("相對命令配對期間 frozen（不得閃現原生畫面）", () => {
+  test("按 [ 後 render mode 應為 frozen（非 native）、游標保持隱藏", () => {
+    const { s } = makeSession();
+    const calls = { hide: 0, show: 0 };
+    s._view.hideCursor = () => calls.hide++;
+    s._view.showCursor = () => calls.show++;
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._selectedNum = 42;
+    s.onKeyDown(keyEvent("["));
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("frozen"); // 舊行為 native = 閃現一幀原生
+    expect(calls.show).toBe(0); // showCursor = 原生游標露出
+  });
+
+  test("frozen 配對期間按任意鍵 → 吞掉（preventDefault、不佇列不送）", () => {
+    const { s, sent, enqueued } = makeSession();
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._selectedNum = 42;
+    s.onKeyDown(keyEvent("["));
+    const n = enqueued.length;
+    const e = keyEvent("x");
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(enqueued.length).toBe(n);
+    expect(sent).toEqual([]);
+  });
+
+  test("非 relative 的 other 鍵照舊 native 鏡像（enter-function-mode 不受影響）", () => {
+    const { s } = makeSession();
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._selectedNum = 42;
+    s.onKeyDown(keyEvent("ArrowLeft"));
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("native");
+  });
+});
+
 describe("相對命令沒命中後自動回 buffer（黑名單/刪除文不得裸露到下次轉移）", () => {
   function begin(s, enqueued) {
     s.state = "active";
@@ -184,6 +224,33 @@ describe("相對命令沒命中後自動回 buffer（黑名單/刪除文不得�
     expect(enqueued.length).toBe(1); // key 未入列
     expect(s.state).toBe("active");
     expect(s._renderMode).toBe("buffer");
+  });
+});
+
+describe("相對命令第二腿 timeout RTT 自適應（沒命中不再固定等 3 秒）", () => {
+  // 沒命中且 server 零回應時只能靠 soft timeout 收尾；固定 3000ms 對快速鏈路
+  // 體感就是「按 [ 沒反應要等三秒」。jump 腿剛完成一個 round-trip，拿它的
+  // 耗時當 RTT 估計：timeoutMs = clamp(4×rtt, 800, 3000)。
+  function beginWithRtt(rttMs) {
+    const { s, enqueued } = makeSession();
+    s.state = "active";
+    s._selectedNum = 42;
+    s.onKeyDown(keyEvent("["));
+    jest.advanceTimersByTime(rttMs); // jump 腿的 round-trip 耗時
+    enqueued[0].onDone();
+    return enqueued[1];
+  }
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  test("快鏈路（rtt 150ms）→ 第二腿 timeout 取下限 800ms（現行固定 3000 → 紅）", () => {
+    expect(beginWithRtt(150).timeoutMs).toBe(800);
+  });
+  test("中速（rtt 400ms）→ 4×rtt = 1600ms", () => {
+    expect(beginWithRtt(400).timeoutMs).toBe(1600);
+  });
+  test("慢鏈路（rtt 2000ms）→ 上限 3000ms 不放大", () => {
+    expect(beginWithRtt(2000).timeoutMs).toBe(3000);
   });
 });
 

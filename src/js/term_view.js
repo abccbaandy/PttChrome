@@ -6,7 +6,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
-import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap, pageArticleNums, isPinnedListRow } from './comment_parse';
+import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS } from './list_session';
 import { labelListCursorBullet, pruneListToSegment } from './list_window';
 
@@ -1121,7 +1121,16 @@ TermView.prototype = {
         entries.push({ num: nums[i], key: null, row: row });
       } else if (
         isPinnedListRow(rowTexts[i]) &&
-        (i !== buf.cur_y || rowTexts[i].indexOf('★') >= 0)
+        (i !== buf.cur_y || rowTexts[i].indexOf('★') >= 0) &&
+        // A mid-response frame can paint the server's ● on a row that is NOT
+        // buf.cur_y (jump response: bullet drawn, cursor not parked yet) — no
+        // neighbour recovery runs, so nums[i] is null and the author column is
+        // valid, which matches the pinned signature. Loose-parse tells them
+        // apart: digits behind the bullet = a covered NUMBERED row; a genuine
+        // pinned row has no leading digits at all. Without this guard the row
+        // is stored (bullet included) in the pinned map forever (the「●52880
+        // 殘留在置底尾巴」bug).
+        parseListArticleNumLoose(rowTexts[i]) == null
       ) {
         // ★pinned/置底 row. A cursor row with an UNRECOVERABLE number (no numbered
         // neighbour) also matches the pinned signature (no number + valid author) but

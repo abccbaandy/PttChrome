@@ -243,6 +243,24 @@ async function replayListCassette(page, cassette) {
             feed();
             return;
           }
+          // 鏈式預讀（list_session._enqueuePrefetch chained）：同方向連補時
+          // runtime 省略錨定 jump 直送 PgUp/PgDn（server 游標位置已知）。
+          // cassette 是舊兩腿協定錄的：若下一步是帶 num 的 jump、下下步是與
+          // 本次按鍵相符的翻頁，視為「同位置錨定被省略」——先餵 jump 回應
+          //（等價於真 server 對同位置跳號的重繪，冪等）再餵翻頁回應。
+          const after = steps[idx + 1];
+          if (
+            (next.on === 'jump' || next.on === 'jumpsame') &&
+            next.num != null &&
+            after &&
+            (after.on === 'pageup' || after.on === 'pagedown') &&
+            PATTERNS[after.on](data)
+          ) {
+            servedJumps.set(String(next.num) + '\r', next.recv);
+            feed();
+            feed();
+            return;
+          }
         }
         const replayed = servedJumps.get(data);
         if (replayed) app.onData(atob(replayed));

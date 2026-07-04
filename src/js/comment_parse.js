@@ -250,8 +250,11 @@ export function isPinnedListRow(text) {
 // top "3"). Strips a leading ●/★/space run, then reads the digit run. Returns null
 // when no digits follow (header / a pinned ★ row PTT shows with no number / status
 // row). Only meaningful when paired with recoverCursorArticleNum to restore the
-// covered high-order digit from a neighbour.
-function parseListArticleNumLoose(text) {
+// covered high-order digit from a neighbour. Exported ALSO as the pinned-map
+// guard in accumulateListLines: a row with visible digits after stripping ●/★
+// is a bullet-covered NUMBERED row (a mid-response frame can paint the ● on a
+// row that is not buf.cur_y — no neighbour recovery), never a pinned row.
+export function parseListArticleNumLoose(text) {
   if (!text) return null;
   const m = text.replace(/^[\s●★]+/, '').match(/^(\d+)\b/);
   return m ? parseInt(m[1], 10) : null;

@@ -18,6 +18,7 @@ import {
   parseListAuthor,
   parseListTitle,
   parseListArticleNum,
+  parseListArticleNumLoose,
   isPinnedListRow,
   isDeletedListRow,
   recoverCursorArticleNum,
@@ -158,6 +159,22 @@ describe("isPinnedListRow", () => {
     expect(isPinnedListRow("       ")).toBe(false);
     expect(isPinnedListRow("")).toBe(false);
     expect(isPinnedListRow(null)).toBe(false);
+  });
+});
+
+describe("parseListArticleNumLoose（pinned-map guard）", () => {
+  test("● 盖头的编号列 → 可见数字（判为编号列，不进 pinned map）", () => {
+    expect(parseListArticleNumLoose("●52880 +17 7/03 RoaringWolf  □ [星原] 藍色星原")).toBe(52880);
+    expect(parseListArticleNumLoose("●50039 + 1 6/14 JHENGKUNLIN  □ [母雞] foo")).toBe(50039);
+  });
+  test("真置底列（★ / 游标压★变体）→ null", () => {
+    expect(parseListArticleNumLoose("    ★  m 1 6/01 arrenwu      轉 [公告] 板規")).toBeNull();
+    expect(parseListArticleNumLoose("●  ★  m 1 6/01 arrenwu      轉 [公告] 板規")).toBeNull();
+  });
+  test("header / 空列 → null", () => {
+    expect(parseListArticleNumLoose("   編號    日 期 作  者")).toBeNull();
+    expect(parseListArticleNumLoose("")).toBeNull();
+    expect(parseListArticleNumLoose(null)).toBeNull();
   });
 });
 

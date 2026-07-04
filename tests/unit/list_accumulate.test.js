@@ -139,6 +139,23 @@ describe("accumulateListLines（置底文收录）", () => {
     expect(rowToStr(v.buf.listLines[idx])).toBe(clean35.replace(/\s+$/, ""));
   });
 
+  test("● 画在非 cur_y 列（mid-response 帧）不得存进 pinned map（●52880 污染回归）", () => {
+    // prefetch jump 回应写入中的中间帧：server 已把 ● 画在锚定列，但终端游标
+    // （buf.cur_y）还停在别处（如底部输入区）。该列 pageArticleNums 不回推
+    // （只回推 cur_y 列）→ num null；strict parse 对 "●52880…" 也 null；作者栏
+    // 有效 → 旧逻辑误档成置底存进 _listPinnedMap，bullet 未还原，永久残留
+    // 在置底尾巴（使用者实测：置底列后多一行「●52880 RoaringWolf …」）。
+    const texts = header.concat([
+      article,
+      "●52880 +17 7/03 RoaringWolf  □ [星原] 藍色星原 C108出展決定",
+      feeter,
+    ]);
+    const v = fakeView(texts, texts.length - 1); // 游标 park 在底列，不在 ● 列
+    v.accumulateListLines();
+    const pinned = v.buf.listLineNums.filter((n) => n == null).length;
+    expect(pinned).toBe(0);
+  });
+
   test("真实 C_Chat 置底页：四篇置底全数收录且 key 互异（置底文少显示排查）", () => {
     // 列文字取自 cchat-list-pinned 离线素材（4 篇置底：arrenwu ×3 + SaberTheBest）。
     const pinnedRows = [
