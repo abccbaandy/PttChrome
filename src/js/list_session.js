@@ -655,18 +655,49 @@ ListSession.prototype = {
           keys: keyChar,
           kind: 'relative-command',
           // Any settle IS the response: a same-title hit repaints the list
-          // (clean-list), a miss paints a bottom-row message (prompt/transient)
-          // — both leave functionMode's normal settle handling to route it.
+          // (clean-list) and the reducer resumes with the landed cursor; a
+          // miss paints only a bottom-row message (prompt/transient) which
+          // leaves the reducer in functionMode — the deferred check below
+          // pulls us back to the buffer render (the screen would otherwise
+          // sit in the native mirror, un-hiding blacklist/deleted rows, until
+          // some future transition).
           expect: function() {
             return true;
           },
-          timeoutMs: 3000
-          // onFail (zero response): keep mirroring — native shows nothing too.
+          timeoutMs: 3000,
+          // onDone runs BEFORE the same settle's reducer dispatch — defer the
+          // check one tick so a clean-list resume wins first.
+          onDone: function() {
+            setTimeout(function() {
+              self._resumeAfterRelative();
+            }, 0);
+          },
+          // Zero response (server ignored the key): back to the buffer view.
+          onFail: function() {
+            self._resumeAfterRelative();
+          }
         });
+      },
+      // Jump failed (deleted target / weird screen): do NOT send the key from
+      // an unknown cursor position (the original bug) — just resume the view.
+      onFail: function() {
+        self._resumeAfterRelative();
       }
-      // onFail: jump failed (deleted target / weird screen) — do NOT send the
-      // key from an unknown cursor position (that was the original bug).
     });
+  },
+
+  // A relative-command pair ended without a clean-list settle to resume on
+  // (same-title miss = message row only, or timeout). The jump leg already
+  // parked the real cursor on our selection, so the buffer view is consistent
+  // — re-enter it with unchanged anchors instead of idling in the native
+  // mirror (where hidden rows reappear). The bottom-row message is dropped
+  // (the cached feeter renders instead) — native shows it until the next key.
+  _resumeAfterRelative: function() {
+    if (this.state !== 'functionMode') return; // reducer already routed us
+    this.state = 'active';
+    this._renderMode = 'buffer';
+    this._view.hideCursor();
+    this._forceRedraw();
   },
 
   // Key → native read.c op (executed by moveListCursorWindow).

@@ -64,7 +64,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 8. CommandQueue timer 要包 wrapper（Illegal invocation）。
 9. `_renderScreenLines` list 分支傳 `{pageState:2}`；**dropHidden=false**（黑名單已在 `visibleListIndices` 前置過濾，視窗切片本來就不含隱藏列）。
 10. `visibleListIndices` 與 `Screen#computeAnnotations` PAGE_LIST 分支同規則（含**刪除文無條件隱藏**：`isDeletedListRow`＝作者欄 `-`；刪除文開文永無 article → 必 wedge，故比照黑名單隱藏）。
-12. **相對命令鍵（`[` `]` `=`，RELATIVE_COMMAND_KEYS）＝preventDefault＋佇列序列化**（`_beginRelativeCommand`：jump 到選取序號（park 指紋）→ 完成才送 key → 任一 settle＝回應）——本地導航零網路，同標題跳文否則從舊游標起算（亂跳）；且 jump＋key **不可同 tick 直送**：pttbbs typeahead 會跳過重繪（協定 §2），畫面卡死但 server 已跳。配對期間 functionMode 的 clean-list settle 被 in-flight 吸收（reducer `event.inFlightKind → stay`），完成的 settle 才 resume（採落點游標）。**只限這組鍵**：←/q 等離板鍵照舊 passthrough（多插回應會卡 menu 出口，live soak 實測）。pinned 選取無序號＝原 passthrough。守護：`list_keys.test.js`。
+12. **相對命令鍵（`[` `]` `=`，RELATIVE_COMMAND_KEYS）＝preventDefault＋佇列序列化**（`_beginRelativeCommand`：jump 到選取序號（park 指紋）→ 完成才送 key → 任一 settle＝回應）——本地導航零網路，同標題跳文否則從舊游標起算（亂跳）；且 jump＋key **不可同 tick 直送**：pttbbs typeahead 會跳過重繪（協定 §2），畫面卡死但 server 已跳。配對期間 functionMode 的 clean-list settle 被 in-flight 吸收（reducer `event.inFlightKind → stay`），完成的 settle 才 resume（採落點游標）。**只限這組鍵**：←/q 等離板鍵照舊 passthrough（多插回應會卡 menu 出口，live soak 實測）。pinned 選取無序號＝原 passthrough。**配對結束若 reducer 仍在 functionMode（沒命中＝只回訊息列，或 timeout）→ `_resumeAfterRelative` 強制回 buffer**——否則畫面停在 native 鏡像直到下次轉移，黑名單/刪除文裸露。守護：`list_keys.test.js`。
 13. `relabelListCursorRow` 只在 cell 2 起有數字（● 真的蓋到數字）時回填 prefix；短序號（`/` 搜尋結果）● 蓋的是 padding，必須填空白——否則序號末兩位灌進行首並存進 map（污染跨頁殘留）。
 11. edge 確認（markEdge/_requestEnd）後要 `_forceRedraw`——pinned 門控開啟需要重繪才可見。
 

@@ -127,6 +127,66 @@ describe("ListSession 相對命令序列化（[ ] 卡住/亂跳回歸）", () =>
   });
 });
 
+describe("相對命令沒命中後自動回 buffer（黑名單/刪除文不得裸露到下次轉移）", () => {
+  function begin(s, enqueued) {
+    s.state = "active";
+    s._selectedNum = 42;
+    s.onKeyDown(keyEvent("["));
+    expect(s.state).toBe("functionMode");
+    return enqueued;
+  }
+
+  test("key 命令 timeout（零回應）→ 立即 resume 回 buffer", () => {
+    const { s, enqueued } = makeSession();
+    begin(s, enqueued);
+    enqueued[0].onDone(); // jump 完成 → key 命令入列
+    enqueued[1].onFail("timeout");
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer");
+  });
+
+  test("key 命令完成但 reducer 停在 functionMode（訊息列回應）→ 下一 tick resume", () => {
+    jest.useFakeTimers();
+    try {
+      const { s, enqueued } = makeSession();
+      begin(s, enqueued);
+      enqueued[0].onDone();
+      enqueued[1].onDone(true); // settle=訊息列，reducer 未 resume
+      expect(s.state).toBe("functionMode"); // 先讓 reducer（同 settle）有機會跑
+      jest.runAllTimers();
+      expect(s.state).toBe("active");
+      expect(s._renderMode).toBe("buffer");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("reducer 已 resume（clean-list 命中）→ 延遲檢查不重複動作", () => {
+    jest.useFakeTimers();
+    try {
+      const { s, enqueued } = makeSession();
+      begin(s, enqueued);
+      enqueued[0].onDone();
+      enqueued[1].onDone(true);
+      s.state = "active"; // 模擬同 settle 的 reducer resume
+      s._renderMode = "buffer";
+      jest.runAllTimers();
+      expect(s.state).toBe("active");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("jump 段失敗（目標被刪/怪畫面）→ 不送 key、resume 回 buffer", () => {
+    const { s, enqueued } = makeSession();
+    begin(s, enqueued);
+    enqueued[0].onFail("timeout");
+    expect(enqueued.length).toBe(1); // key 未入列
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer");
+  });
+});
+
 describe("functionMode clean-list settle 的 in-flight 吸收（相對命令配對期間不彈回）", () => {
   const settle = (kind, extra = {}) => ({
     type: "settle",
