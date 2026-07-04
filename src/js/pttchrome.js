@@ -1133,11 +1133,25 @@ App.prototype.mouse_scroll = function(e) {
   if (this.view.useEasyReadingMode && this.buf.pageState == 3) {
     return;
   }
-  // List easy reading buffer/frozen render: the wheel is plain DOM scrolling
-  // over the accumulated list — never a BBS nav command (the hidden real
-  // cursor must not move), and the event must bubble down to the ListSession
-  // wheel-demand listener (list_session.js _hookScroll).
+  // List easy reading buffer/frozen render (native-parity window): the wheel
+  // performs the SAME action mapping as native (plain scroll = arrow,
+  // right-hold = page, left-hold = thread) but executes LOCALLY on the window
+  // — the hidden real cursor must not move and no bytes go to the server.
+  // Thread ops have no local meaning → ignored. Frozen (an open is in flight)
+  // swallows the wheel entirely, mirroring the keyboard's opening behavior.
   if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
+    if (this.buf.listRenderMode === 'buffer' && this.listSession) {
+      var lup = e.deltaY < 0 || e.wheelDelta > 0;
+      var lpref = this.mouseRightButtonDown
+        ? this.view.mouseWheelFunction2
+        : this.mouseLeftButtonDown
+          ? this.view.mouseWheelFunction3
+          : this.view.mouseWheelFunction1;
+      var lop = ['none', lup ? 'up' : 'down', lup ? 'pgup' : 'pgdn', 'none'][lpref] || 'none';
+      if (lop !== 'none') this.listSession.onWheel(lop);
+    }
+    e.stopPropagation();
+    e.preventDefault();
     return;
   }
 

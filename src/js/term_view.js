@@ -8,6 +8,7 @@ import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
 import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap, pageArticleNums, isPinnedListRow } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS } from './list_session';
+import { labelListCursorBullet, pruneListToSegment } from './list_window';
 
 const ENTER_CHAR = '\r';
 const ESC_CHAR = '\x15'; // Ctrl-U
@@ -399,37 +400,36 @@ TermView.prototype = {
         // miss the article's first pages forever (v4-stabilize bug 1: 進文章只剩
         // 底部 1~2 頁). Non-article transients (jump prompt echoes) still render
         // the frozen buffer, which is the whole point of frozen.
-        //   buffer: accumulate the currently painted board page into buf.listLines
-        //           (ascending by article number, overwrite-per-repaint) and render
-        //           the whole scrollable list — blacklisted rows dropped entirely
-        //           (dropHidden, no blank line).
-        //   frozen: an article open is in flight — render the EXISTING buffer
-        //           untouched so the jump-prompt/clear transients never pollute it
-        //           (v3's "進出文章瞬間版面亂").
-        // Keep the scroll position (unlike the article→list path): the list grows
-        // while prefetching and must not jump. enhance pageState is pinned to 2 so
-        // list annotations (blacklist) apply even on transient frames.
+        //
+        // NATIVE-PARITY WINDOW render (core principle, docs/easy-reading-list.md):
+        //   buffer: accumulate the currently painted board page into the maps,
+        //           then render a fixed 24-row page — cached header/footer +
+        //           the session's 20-row window slice over the blacklist-
+        //           filtered buffer, cursor row decorated with the native ●.
+        //           No DOM scrolling, no highlight bar, no scroll anchoring:
+        //           buffer growth cannot move the window (number anchors).
+        //   frozen: an article open is in flight — render the LAST window
+        //           untouched so the jump-prompt/clear transients never pollute
+        //           it (v3's "進出文章瞬間版面亂").
+        // enhance pageState is pinned to 2 so list annotations apply even on
+        // transient frames. dropHidden=false: the window slice is already
+        // blacklist-filtered (visibleListIndices), nothing left to hide.
         this.hideEasyReadingOverlaysKeepPage();
+        if (this.mainDisplay) this.mainDisplay.scrollTop = 0;
+        var windowLines = null;
         if (this.buf.listRenderMode === 'buffer') {
-          // Scroll-anchor: an UPWARD prefetch prepends older rows above the
-          // viewport (shoving content down), and a top-end EVICT removes rows
-          // above it (yanking content up). Record the pre-render top number +
-          // scrollHeight; any top-number change compensates by the height
-          // delta — positive for a prepend, negative for a top evict.
-          var prevH = this.mainDisplay ? this.mainDisplay.scrollHeight : 0;
-          var prevTop = (this.buf.listLineNums && this.buf.listLineNums.length) ? this.buf.listLineNums[0] : null;
           this.accumulateListLines();
-          this._renderScreenLines(this.buf.listLines, /* dropHidden */ true, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2 });
-          var newTop = (this.buf.listLineNums && this.buf.listLineNums.length) ? this.buf.listLineNums[0] : null;
-          if (this.mainDisplay && prevTop != null && newTop != null && newTop !== prevTop) {
-            this.mainDisplay.scrollTop += this.mainDisplay.scrollHeight - prevH;
-          }
+          windowLines = this.buildListWindowLines();
         } else {
-          this._renderScreenLines(this.buf.listLines || [], /* dropHidden */ true, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2 });
+          windowLines = this._listWindowLines || null;
         }
-        // Re-apply the JS selection highlight (renderScreen made a fresh component).
-        // scroll=false: never yank the user's scroll while pages stream in.
-        if (this.bbscore.listSession) this.bbscore.listSession.applyHighlight(false);
+        if (windowLines) {
+          this._renderScreenLines(windowLines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2 });
+        } else {
+          // No window yet (header cache / buffer still empty — engage races):
+          // mirror the native screen; the next clean-list settle re-renders.
+          this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2 });
+        }
       } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowReplyText) {
         this.updateEasyReadingReplyRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
       } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowPushInitText) {
@@ -1141,15 +1141,92 @@ TermView.prototype = {
     var ev = evictListBuffer(this._listNumMap, ls ? ls._selectedNum : null, MAX_LIST_ROWS);
     if (ls && ev.evictedUp) ls.noteEvicted(-1);
     if (ls && ev.evictedDown) ls.noteEvicted(1);
+    // Contiguity guard: the window must never span pages we skipped over (far
+    // jumps: End / Home / open-pinned). Keep only the pivot's segment; the
+    // dropped side's edge flag is cleared so demand can re-fetch it.
+    var pr = pruneListToSegment(this._listNumMap, ls ? ls.prunePivot() : null);
+    if (ls && pr.prunedUp) ls.noteEvicted(-1);
+    if (ls && pr.prunedDown) ls.noteEvicted(1);
     var flat = flattenListBuffer(this._listNumMap, this._listPinnedMap);
     buf.listLines = flat.lines;
     buf.listLineNums = flat.nums;
+    // Cache the surrounding chrome for the window render off clean-list-shaped
+    // live frames only (a jump response blanks the bottom row — protocol §4 ✚ —
+    // and must not poison the footer cache).
+    if (
+      (rowTexts[0] || '').indexOf('《') >= 0 &&
+      (rowTexts[2] || '').indexOf('編號') >= 0
+    ) {
+      this._listHeaderRows = [
+        cloneRow(buf.lines[0]),
+        cloneRow(buf.lines[1]),
+        cloneRow(buf.lines[2])
+      ];
+    }
+    if ((rowTexts[buf.rows - 1] || '').indexOf('文章選讀') >= 0) {
+      this._listFooterRow = cloneRow(buf.lines[buf.rows - 1]);
+    }
+  },
+
+  // Assemble the fixed 24-row native-parity list page: cached header (3 rows) +
+  // the session's window slice (20 body rows; blank filler past the end, same
+  // as a native short page) + cached footer. The cursor row is a clone with the
+  // native full-width ● painted over cells [0,1] (labelListCursorBullet — the
+  // inverse of relabelListCursorRow; bytes from u2b so DBCS rendering treats it
+  // exactly like a server-drawn bullet). Returns null until the header/footer
+  // caches and the buffer exist (caller falls back to the native mirror).
+  // Also snapshots the result for the frozen render.
+  buildListWindowLines: function() {
+    var ls = this.bbscore && this.bbscore.listSession;
+    if (!ls || !this._listHeaderRows || !this._listFooterRow) return null;
+    var win = ls.getWindowView();
+    if (!win) return null;
+    var listLines = this.buf.listLines || [];
+    var bullet = u2b('●'); // two Big5 bytes
+    var out = [
+      this._listHeaderRows[0],
+      this._listHeaderRows[1],
+      this._listHeaderRows[2]
+    ];
+    for (var i = 0; i < win.body.length; ++i) {
+      var abs = win.body[i];
+      if (abs == null || !listLines[abs]) {
+        out.push(this._blankListRow());
+      } else if (abs === win.cursorAbs) {
+        var cur = cloneRow(listLines[abs]);
+        labelListCursorBullet(cur, bullet.charAt(0), bullet.charAt(1));
+        out.push(cur);
+      } else {
+        out.push(listLines[abs]);
+      }
+    }
+    out.push(this._listFooterRow);
+    this._listWindowLines = out;
+    return out;
+  },
+
+  // One shared blank TermChar row (default attrs) for short-page filler.
+  _blankListRow: function() {
+    if (this._listBlankRow) return this._listBlankRow;
+    var src = this._listHeaderRows[0];
+    var row = cloneRow(src);
+    for (var i = 0; i < row.length; ++i) {
+      row[i].ch = ' ';
+      row[i].isLeadByte = false;
+      row[i].resetAttr();
+    }
+    this._listBlankRow = row;
+    return row;
   },
 
   // Clear the list-accumulation maps (fresh board entry / board switch rebuild).
   resetListAccumulation: function() {
     this._listNumMap = null;
     this._listPinnedMap = null;
+    this._listHeaderRows = null;
+    this._listFooterRow = null;
+    this._listWindowLines = null;
+    this._listBlankRow = null;
   },
 
   // Like hideEasyReadingOverlays but does NOT clear buf.pageLines / padding / scroll.

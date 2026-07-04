@@ -22,6 +22,11 @@ import {
 } from './comment_parse';
 import { parseStatusRow, parseListRow } from './string_util';
 import { readValuesWithDefault } from './pref_storage';
+import {
+  moveListCursorWindow,
+  normalizeListWindow,
+  windowVisibleSequence,
+} from './list_window';
 
 // ---------------------------------------------------------------------------
 // Screen classification (pure)
@@ -388,23 +393,13 @@ function bindProperty(target, name, obj, prop) {
   });
 }
 
-const NAV_PAGE = 20; // one native list page of entries
-const NAV_END = 1e9; // Home/End: clamped by moveListSelection
-const DEMAND_MARGIN = 10; // selection within N visible rows of an edge → demand-prefetch
-// Initial background fill is capped LOW: every prefetched page re-renders the
-// whole list + re-anchors scroll, so a long fill right after entering a board
-// reads as flicker. 2-3 pages cover the first screens; demand (keyboard,
-// wheel) fetches the rest as the user actually scrolls.
+// Initial background fill is capped LOW: the window render is cheap, but every
+// prefetch is still two server roundtrips — 2-3 pages cover the first screens;
+// demand fetches the rest as the user actually navigates.
 const FILL_MAX_PAGES = 3;
-// Total-row cap: past a few hundred rows every redraw rebuilds the lines array
-// + computeAnnotations O(n) + React reconcile and scrolling turns to sludge.
-// The end FARTHEST from the selection is evicted; demand re-fetches it later.
+// Total-row cap: bounds the map / flatten / visibleListIndices cost. The end
+// FARTHEST from the selection is evicted; demand re-fetches it later.
 export const MAX_LIST_ROWS = 300;
-// Viewport-based demand: the wheel scrolls the DOM without moving the
-// selection, so when the viewport edge comes within N viewport-heights of the
-// buffer edge we prefetch (see _maybeDemandViewport).
-const DEMAND_VIEWPORT_FACTOR = 2;
-const SCROLL_DEMAND_THROTTLE_MS = 200;
 
 // Owner of list easy reading. Subscribes to term_buf 'screenSettled' and runs:
 //   settle → snapshot+facts → queue.onSettle (command completion first)
@@ -424,13 +419,19 @@ export function ListSession(core, view, termBuf, queue) {
   this._boardName = null;
   this._selectedNum = null; // numbered selection (article number)
   this._selectedPinnedKey = null; // pinned-row selection (title key)
+  this._topNum = null; // window-top anchor (article number; native top_ln)
   this._restoreNum = null; // selection to restore after an article
   this._restorePinnedKey = null; // ditto for a pinned selection
-  this._scrollHooked = false; // wheel-demand listener attached (once, lazily)
+  this._restoreTopNum = null; // window top to restore (native getkeep top_ln)
   this._fillTarget = 0;
   this._fillPages = 0;
   this._edgeUp = false;
   this._edgeDown = false;
+  // Contiguity-prune pivot override while a far jump is in flight (End/Home):
+  // the jump's landing page is DISCONTIGUOUS with the buffer by design, and the
+  // prune must keep the TARGET segment, not the one the cursor came from.
+  // undefined = no override (prune around the selection).
+  this._prunePivotOverride = undefined;
 
   bindProperty(this, '_renderMode', termBuf, 'listRenderMode');
   termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
@@ -577,35 +578,43 @@ ListSession.prototype = {
     this.state = r.next;
     for (let i = 0; i < r.actions.length; ++i) {
       const a = r.actions[i];
-      if (a === 'move-selection') this._moveSelection(key.delta);
+      if (a === 'move-selection') this._moveSelection(key.op);
       else if (a === 'begin-open') this._beginOpen();
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
       else this._runAction(a, null);
     }
   },
 
+  // Key → native read.c op (executed by moveListCursorWindow).
   _classifyKey: function(e) {
     switch (e.key) {
       case 'ArrowUp':
       case 'k':
-        return { class: 'nav', delta: -1 };
+        return { class: 'nav', op: 'up' };
       case 'ArrowDown':
       case 'j':
-        return { class: 'nav', delta: 1 };
+        return { class: 'nav', op: 'down' };
       case 'PageUp':
-        return { class: 'nav', delta: -NAV_PAGE };
+        return { class: 'nav', op: 'pgup' };
       case 'PageDown':
-        return { class: 'nav', delta: NAV_PAGE };
+        return { class: 'nav', op: 'pgdn' };
       case 'Home':
-        return { class: 'nav', delta: -NAV_END };
+        return { class: 'nav', op: 'home' };
       case 'End':
-        return { class: 'nav', delta: NAV_END };
+        return { class: 'nav', op: 'end' };
       case 'Enter':
       case 'ArrowRight':
         return { class: this._selectedNum == null ? 'open-pinned' : 'open' };
       default:
         return { class: 'other' };
     }
+  },
+
+  // Wheel (routed from App.mouse_scroll with the native pref mapping already
+  // applied): execute the op through the SAME nav path as the keyboard.
+  onWheel: function(op) {
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return;
+    this._moveSelection(op);
   },
 
   // ---- actions ---------------------------------------------------------------
@@ -615,42 +624,16 @@ ListSession.prototype = {
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
     this._boardName = facts.boardName;
-    this._selectedNum = facts.cursorRowNum; // native cursor position = selection
-    this._selectedPinnedKey = null;
     this._restoreNum = null;
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
     this._renderMode = 'buffer';
     this._view.hideCursor();
-    this._hookScroll();
+    this._seedAnchors(facts);
     this._forceRedraw(); // synchronous: accumulates this page into the buffer
-    if (this._selectedNum == null) this._selectLastNumbered();
-    this.applyHighlight(true);
-  },
-
-  // Wheel scrolling is pure DOM — the selection never moves, so keyboard-side
-  // demand never fires and the user hits a dead edge. Attach ONE throttled
-  // WHEEL listener (lazily, on first seed; mainDisplay is stable for the app's
-  // lifetime, and the buffer-mode guard makes it inert otherwise — no unhook
-  // needed, no leak). Deliberately 'wheel' and NOT 'scroll': our own prepend
-  // compensation / scrollIntoView fire 'scroll' too, and a programmatic-scroll
-  // trigger would fire demand pairs nondeterministically (breaking the offline
-  // cassette gating and racing the queue) — only real user input may demand.
-  _hookScroll: function() {
-    if (this._scrollHooked) return;
-    const md = this._view.mainDisplay;
-    if (!md) return;
-    this._scrollHooked = true;
-    const self = this;
-    let last = 0;
-    md.addEventListener('wheel', function() {
-      if (self._renderMode !== 'buffer') return;
-      const now = Date.now();
-      if (now - last < SCROLL_DEMAND_THROTTLE_MS) return;
-      last = now;
-      self._maybeDemandViewport();
-    });
+    if (this._selectedNum == null && this._selectedPinnedKey == null)
+      this._selectLastNumbered();
   },
 
   _rebuild: function(facts) {
@@ -658,15 +641,49 @@ ListSession.prototype = {
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
     this._boardName = facts ? facts.boardName : this._boardName;
-    this._selectedNum = facts ? facts.cursorRowNum : null;
-    this._selectedPinnedKey = null;
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
+    this._seedAnchors(facts);
     this._forceRedraw();
-    if (this._selectedNum == null) this._selectLastNumbered();
-    this.applyHighlight(true);
+    if (this._selectedNum == null && this._selectedPinnedKey == null)
+      this._selectLastNumbered();
     this._maybeFill();
+  },
+
+  // Adopt the native screen's cursor + window top as our anchors (facts from a
+  // clean-list settle): the window then renders EXACTLY what native shows.
+  // The bottom edge is confirmed when a ★pinned row is on screen — 置底文 exist
+  // only on the board's last page (read.c bottom_line..last_line); without any
+  // pinned row the edge stays unknown and demand discovers it later.
+  _seedAnchors: function(facts) {
+    this._selectedNum = facts ? facts.cursorRowNum : null;
+    this._selectedPinnedKey = null;
+    this._topNum = null;
+    if (facts) {
+      for (let r = 3; r <= facts.rows - 2; ++r) {
+        if (facts.nums[r] != null) {
+          this._topNum = facts.nums[r];
+          break;
+        }
+      }
+      let hasPinned = false;
+      for (let r = 3; r <= facts.rows - 2; ++r) {
+        const t = facts.rowTexts[r] || '';
+        if (t.indexOf('★') >= 0 && isPinnedListRow(t)) {
+          hasPinned = true;
+          break;
+        }
+      }
+      if (hasPinned) this._edgeDown = true;
+      if (this._selectedNum == null) {
+        const ct = facts.rowTexts[facts.curY] || '';
+        if (isPinnedListRow(ct) && ct.indexOf('★') >= 0) {
+          this._selectedPinnedKey = pinnedRowKey(ct);
+          return;
+        }
+      }
+    }
   },
 
   _startFill: function() {
@@ -694,40 +711,26 @@ ListSession.prototype = {
     this._enqueuePrefetch(true, 'fill');
   },
 
-  // Demand prefetch: the selection walked near an edge of the buffer — but only
-  // in the DIRECTION of travel (moving up near the bottom margin must not fire
-  // a downward fetch; in a one-page buffer everything is "near" both edges).
+  // Demand prefetch: keep at least ONE full page of rows buffered beyond the
+  // window in the direction of travel, so the next PgUp/PgDn is always local
+  // and instant (this replaces the old selection-margin rule: the window is
+  // the unit of navigation now). Only the direction of travel is extended —
+  // in a one-page buffer everything is "near" both edges.
   _maybeDemand: function(direction) {
     if (this.state !== 'active' || !this._queue.idle) return;
-    const vis = this._visibleIndices();
-    if (!vis.length) return;
-    const idx = this._resolveSelectedIndex();
-    const pos = vis.indexOf(idx);
-    if (pos === -1) return;
-    if (direction < 0 && pos <= DEMAND_MARGIN && !this._edgeUp)
+    const seq = this._sequence();
+    if (!seq.length) return;
+    const pos = this._windowPos(seq);
+    if (!pos) return;
+    const B = this._bodyRows();
+    if (direction < 0 && pos.top < B && !this._edgeUp)
       this._enqueuePrefetch(true, 'key');
     else if (
       direction > 0 &&
-      pos >= vis.length - 1 - DEMAND_MARGIN &&
+      seq.length - (pos.top + B) < B &&
       !this._edgeDown
     )
       this._enqueuePrefetch(false, 'key');
-  },
-
-  // Viewport-position demand variant for wheel scrolling (see _hookScroll):
-  // when the visible window is within DEMAND_VIEWPORT_FACTOR viewport-heights
-  // of a buffer edge, extend that edge. Same guards as _maybeDemand.
-  _maybeDemandViewport: function() {
-    if (this.state !== 'active' || !this._queue.idle) return;
-    const md = this._view.mainDisplay;
-    if (!md || !md.clientHeight) return;
-    const near = md.clientHeight * DEMAND_VIEWPORT_FACTOR;
-    if (md.scrollTop < near && !this._edgeUp) this._enqueuePrefetch(true, 'wheel');
-    else if (
-      md.scrollHeight - md.scrollTop - md.clientHeight < near &&
-      !this._edgeDown
-    )
-      this._enqueuePrefetch(false, 'wheel');
   },
 
   // term_view.accumulateListLines evicted rows past MAX_LIST_ROWS on this end:
@@ -735,6 +738,16 @@ ListSession.prototype = {
   noteEvicted: function(direction) {
     if (direction < 0) this._edgeUp = false;
     else this._edgeDown = false;
+  },
+
+  // Pivot for pruneListToSegment (term_view.accumulateListLines): normally the
+  // selection's segment survives; while an End jump is in flight the override
+  // is null (= keep the LARGEST-number segment, the landing page), while a
+  // Home jump keeps article 1's segment.
+  prunePivot: function() {
+    return this._prunePivotOverride !== undefined
+      ? this._prunePivotOverride
+      : this._selectedNum;
   },
 
   // ANCHORED prefetch (v4-stabilize bug 3: 往上讀卡住/亂跳頁). The single real
@@ -753,9 +766,8 @@ ListSession.prototype = {
   // origin picks the CHAIN rule for the next page (each is self-bounding, so a
   // chain never crosses triggers — that would make the offline gating and the
   // stop condition nondeterministic):
-  //   'fill'  → _maybeFill (target / page-cap bounded)
-  //   'key'   → _maybeDemand (stops once the selection clears DEMAND_MARGIN)
-  //   'wheel' → _maybeDemandViewport (stops once the viewport has headroom)
+  //   'fill' → _maybeFill (target / page-cap bounded)
+  //   'key'  → _maybeDemand (stops once a full page is buffered past the window)
   _enqueuePrefetch: function(up, origin) {
     const anchor = bufferEdgeNum(this._termBuf.listLineNums, up ? -1 : 1);
     if (anchor == null) return;
@@ -763,6 +775,9 @@ ListSession.prototype = {
     const markEdge = function() {
       if (up) self._edgeUp = true;
       else self._edgeDown = true;
+      // A confirmed bottom edge un-gates the pinned tail (windowVisibleSequence)
+      // — repaint so 置底文 appear, exactly like native's last page.
+      self._forceRedraw();
     };
     this._queue.enqueue({
       keys: String(anchor) + '\r',
@@ -799,7 +814,6 @@ ListSession.prototype = {
         self._fillPages++;
         if (r.edge) markEdge();
         else if (origin === 'key') self._maybeDemand(up ? -1 : 1);
-        else if (origin === 'wheel') self._maybeDemandViewport();
         else self._maybeFill();
       },
       // Prefetch timeout is BENIGN: treat as the edge and stop paging that way
@@ -815,9 +829,9 @@ ListSession.prototype = {
     const num = this._selectedNum;
     if (num == null) return;
     this._renderMode = 'frozen';
-    this._clearHighlight();
     this._restoreNum = num;
     this._restorePinnedKey = null;
+    this._restoreTopNum = this._topNum;
     this._queue.flush(); // drop any prefetch; content predicates absorb the seam
     const self = this;
     this._queue.enqueue({
@@ -880,9 +894,9 @@ ListSession.prototype = {
       return;
     }
     this._renderMode = 'frozen';
-    this._clearHighlight();
     this._restoreNum = null;
     this._restorePinnedKey = key;
+    this._restoreTopNum = this._topNum;
     this._queue.flush();
     const self = this;
     let parkY = -1;
@@ -981,9 +995,10 @@ ListSession.prototype = {
       this._restorePinnedKey = this._selectedPinnedKey;
       this._restoreNum = null;
     }
+    this._restoreTopNum = this._topNum;
+    this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();
     this._renderMode = 'native';
-    this._clearHighlight();
     this._view.showCursor();
     // Paint the article: the article easy reading's own settled edge fires on
     // the same settle (pageStateSettled precedes screenSettled) — when it is
@@ -992,9 +1007,9 @@ ListSession.prototype = {
   },
 
   _enterFunctionMode: function() {
+    this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();
     this._renderMode = 'native';
-    this._clearHighlight();
     this._view.showCursor();
     this._forceRedraw();
   },
@@ -1002,9 +1017,27 @@ ListSession.prototype = {
   _resumeBuffer: function(facts) {
     this._renderMode = 'buffer';
     this._view.hideCursor();
-    if (facts && facts.cursorRowNum != null) this._selectedNum = facts.cursorRowNum;
+    if (facts && facts.cursorRowNum != null) {
+      // Adopt the native screen's cursor AND window top so the buffer render
+      // shows exactly the page the user just saw in the mirror (native parity:
+      // the mode switch itself must be invisible).
+      this._selectedNum = facts.cursorRowNum;
+      this._selectedPinnedKey = null;
+      for (let r = 3; r <= facts.rows - 2; ++r) {
+        if (facts.nums[r] != null) {
+          this._topNum = facts.nums[r];
+          break;
+        }
+      }
+      for (let r = 3; r <= facts.rows - 2; ++r) {
+        const t = facts.rowTexts[r] || '';
+        if (t.indexOf('★') >= 0 && isPinnedListRow(t)) {
+          this._edgeDown = true;
+          break;
+        }
+      }
+    }
     this._forceRedraw();
-    this.applyHighlight(true);
   },
 
   _restore: function() {
@@ -1021,8 +1054,11 @@ ListSession.prototype = {
       this._selectedPinnedKey = this._restorePinnedKey;
       if (this._resolveSelectedIndex() === -1) this._selectLastNumbered();
     }
+    // Native getkeep parity: restore the window top too, so leaving the
+    // article shows the list EXACTLY as it was (the article must not appear
+    // to have moved to the bottom of the page).
+    this._topNum = this._restoreTopNum;
     this._forceRedraw();
-    this.applyHighlight(true);
   },
 
   _cleanup: function() {
@@ -1031,34 +1067,192 @@ ListSession.prototype = {
     this._boardName = null;
     this._selectedNum = null;
     this._selectedPinnedKey = null;
+    this._topNum = null;
     this._restoreNum = null;
     this._restorePinnedKey = null;
+    this._restoreTopNum = null;
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
+    this._prunePivotOverride = undefined;
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
-    this._clearHighlight();
     this._view.showCursor();
     this._forceRedraw();
   },
 
-  // ---- selection -------------------------------------------------------------
+  // ---- window navigation ------------------------------------------------------
 
-  // Local navigation: zero network. Moves over the VISIBLE rows only, then
-  // demand-prefetches when近 an edge.
-  _moveSelection: function(delta) {
-    const vis = this._visibleIndices();
-    const cur = this._resolveSelectedIndex();
-    const next = moveListSelection(vis, cur === -1 ? -1 : cur, delta);
-    if (next === -1) return;
+  // The window's body row count: the native list body (rows 3..rows-2 on a
+  // 24-row screen = 20 entries, pttbbs p_lines).
+  _bodyRows: function() {
+    return this._termBuf.rows - 4;
+  },
+
+  // The navigable sequence: blacklist-filtered absolute listLines indices,
+  // pinned tail gated behind a confirmed bottom edge (native parity: 置底文
+  // exist only on the board's last page).
+  _sequence: function() {
+    return windowVisibleSequence(
+      this._visibleIndices(),
+      this._termBuf.listLineNums || [],
+      this._edgeDown
+    );
+  },
+
+  // Resolve the persisted (topNum, selection) anchors into sequence positions,
+  // normalized to the native cursor-in-window invariant. Returns null when the
+  // sequence is empty.
+  _windowPos: function(seq) {
+    if (!seq.length) return null;
     const nums = this._termBuf.listLineNums || [];
-    this._selectedNum = nums[next];
+    let cursorAbs = this._resolveSelectedIndex();
+    let cursor = seq.indexOf(cursorAbs);
+    if (cursor === -1) {
+      // Selection lost (blacklisted / evicted / pinned re-gated): snap to the
+      // nearest surviving row, same rule as moveListSelection.
+      const snapped = moveListSelection(seq, cursorAbs, 0);
+      cursor = snapped === -1 ? seq.length - 1 : seq.indexOf(snapped);
+    }
+    let top = -1;
+    if (this._topNum != null) {
+      const topAbs = nums.indexOf(this._topNum);
+      if (topAbs !== -1) top = seq.indexOf(topAbs);
+    }
+    return normalizeListWindow(top, cursor, seq.length, this._bodyRows());
+  },
+
+  // Persist window positions back as content anchors (number / pinned key):
+  // anchors survive prepends and evictions, positions don't.
+  _setWindow: function(seq, top, cursor) {
+    const nums = this._termBuf.listLineNums || [];
+    const cursorAbs = seq[cursor];
+    this._selectedNum = nums[cursorAbs];
     this._selectedPinnedKey =
-      nums[next] == null ? this._pinnedKeyAt(next) : null;
-    this.applyHighlight(true);
-    this._maybeDemand(delta < 0 ? -1 : 1);
+      nums[cursorAbs] == null ? this._pinnedKeyAt(cursorAbs) : null;
+    const topAbs = seq[top];
+    this._topNum = topAbs != null ? nums[topAbs] : null;
+  },
+
+  // The render contract with term_view.buildListWindowLines(): the 20 body
+  // slots as absolute listLines indices (null = blank filler row, native
+  // short-page parity) + the cursor row's absolute index.
+  getWindowView: function() {
+    const seq = this._sequence();
+    const pos = this._windowPos(seq);
+    if (!pos) return null;
+    this._setWindow(seq, pos.top, pos.cursor);
+    const B = this._bodyRows();
+    const body = [];
+    for (let i = pos.top; i < pos.top + B; ++i) {
+      body.push(i < seq.length ? seq[i] : null);
+    }
+    return { body: body, cursorAbs: seq[pos.cursor] };
+  },
+
+  // Local navigation (zero network when the rows are buffered): one native
+  // read.c op over the window, then directional demand keeps a page of
+  // headroom. Ops that need rows beyond a confirmed edge go to the server
+  // (serverOp), exactly like native would.
+  _moveSelection: function(op) {
+    const seq = this._sequence();
+    const pos = this._windowPos(seq);
+    if (!pos) return;
+    const r = moveListCursorWindow(pos, op, {
+      len: seq.length,
+      bodyRows: this._bodyRows(),
+      atTop: this._edgeUp,
+      atBottom: this._edgeDown
+    });
+    if (r.serverOp === 'end') return this._requestEnd();
+    if (r.serverOp === 'home') return this._requestHome();
+    this._setWindow(seq, r.top, r.cursor);
+    this._forceRedraw();
+    const direction = op === 'up' || op === 'pgup' || op === 'home' ? -1 : 1;
+    this._maybeDemand(direction);
+  },
+
+  // Native End (read.c KEY_END: new_ln = last_line, which INCLUDES the pinned
+  // tail). We don't hold the board end yet — fetch it with a single always-
+  // answered command: a number jump far past the newest article lands the real
+  // cursor on last_line (search_num clamps to max, read.c:190-210), pulling
+  // the last page (pinned rows included) into the buffer. Then apply End
+  // locally. (A bare End times out when the cursor is already at the bottom —
+  // zero response, live-tested — the over-jump always answers.)
+  _requestEnd: function() {
+    if (!this._queue.idle) return;
+    const anchor = bufferEdgeNum(this._termBuf.listLineNums, 1);
+    if (anchor == null) return;
+    const self = this;
+    this._prunePivotOverride = null; // keep the landing (max-number) segment
+    this._queue.enqueue({
+      keys: '99999999\r',
+      kind: 'jump-end',
+      expect: function(snap, facts) {
+        // Jump landing fingerprint (protocol §4 ✚: bottom row stays empty →
+        // transient, never clean-list): parked in the entry area, on a row at
+        // or past our previous bottom edge (a pinned row parses as null num).
+        return (
+          facts.curY >= 3 &&
+          facts.curY <= facts.rows - 2 &&
+          facts.curX <= 1 &&
+          (facts.cursorRowNum == null || facts.cursorRowNum >= anchor)
+        );
+      },
+      timeoutMs: 4000,
+      onDone: function() {
+        // The landed page IS the board end (last_line): confirm the edge, then
+        // land the local cursor there like native End.
+        self._prunePivotOverride = undefined;
+        self._edgeDown = true;
+        const seq = self._sequence();
+        if (!seq.length) return;
+        const B = self._bodyRows();
+        let top = seq.length - B;
+        if (top < 0) top = 0;
+        self._setWindow(seq, top, seq.length - 1);
+        self._forceRedraw();
+      },
+      // Benign failure: keep the window where it was (native would too if the
+      // server didn't answer).
+      onFail: function() {
+        self._prunePivotOverride = undefined;
+      }
+    });
+  },
+
+  // Native Home (read.c KEY_HOME: new_ln = 0 → clamped to line 1). Article 1
+  // always exists (numbers re-compact on deletion) and a number jump always
+  // answers — one command, then apply Home locally.
+  _requestHome: function() {
+    if (!this._queue.idle) return;
+    const self = this;
+    this._prunePivotOverride = 1; // keep article 1's (landing) segment
+    this._queue.enqueue({
+      keys: '1\r',
+      kind: 'jump-home',
+      expect: function(snap, facts) {
+        return (
+          facts.cursorRowNum === 1 &&
+          facts.curY >= 3 &&
+          facts.curY <= facts.rows - 2 &&
+          facts.curX <= 1
+        );
+      },
+      timeoutMs: 4000,
+      onDone: function() {
+        self._prunePivotOverride = undefined;
+        self._edgeUp = true;
+        const seq = self._sequence();
+        if (!seq.length) return;
+        self._setWindow(seq, 0, 0);
+        self._forceRedraw();
+      },
+      onFail: function() {
+        self._prunePivotOverride = undefined;
+      }
+    });
   },
 
   // Absolute listLines index of the current selection. Numbered selections
@@ -1098,28 +1292,6 @@ ListSession.prototype = {
     const texts = [];
     for (let i = 0; i < lines.length; ++i) texts.push(rowToText(lines[i]));
     return visibleListIndices(texts, this._view.blacklist, this._view.titleBlacklist);
-  },
-
-  // Selection highlight via the Screen component (green bar). scroll=true keeps
-  // the selected row in view (block:nearest — no jumps); redraw passes false so
-  // streaming prefetch pages never yank the viewport.
-  applyHighlight: function(scroll) {
-    if (this._renderMode !== 'buffer') return;
-    const screen = this._view.componentScreen;
-    if (!screen) return;
-    const idx = this._resolveSelectedIndex();
-    screen.setCurrentHighlighted(idx === -1 ? undefined : idx);
-    if (scroll && idx !== -1 && this._view.mainContainer) {
-      const el = this._view.mainContainer.querySelector('[data-row="' + idx + '"]');
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
-    }
-  },
-
-  _clearHighlight: function() {
-    // Stale green bars survive re-renders (React state) — always clear on any
-    // transition away from the buffer (v3 trap #6).
-    const screen = this._view.componentScreen;
-    if (screen) screen.setCurrentHighlighted(undefined);
   },
 
   // ---- misc -------------------------------------------------------------------

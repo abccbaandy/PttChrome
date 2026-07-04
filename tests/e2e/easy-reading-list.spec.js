@@ -1,7 +1,7 @@
-// 文章列表好讀模式 v4 e2e（連真 PTT）。驗證：進看板啟用、多頁累積、序號**嚴格遞增**
-// (ascending：舊上新下)、置底文最底、黑名單列從 DOM 真移除（無空行）、原生游標隱藏、
-// demand 續抓、開文(序列化跳號)/返回還原、原生功能(`/`)functionMode 直通，以及
-// v3 不穩重現法的 soak 自動化（進退板×5、預讀中連打導覽）。
+// 文章列表好讀模式 e2e（連真 PTT）。原生視窗仿真（24 行固定、● 游標、read.c 語意）：
+// 驗證進看板啟用、多頁累積、序號**嚴格遞增**(ascending：舊上新下)、置底文最底、
+// 黑名單列被隱藏且視窗補滿、PgUp 游標停新頁頂、demand 續抓、開文(序列化跳號)/返回
+// 還原、原生功能(`/`)functionMode 直通，以及 v3 不穩重現法的 soak 自動化。
 //
 // 斷言讀 v4 狀態機欄位：app.listSession.state（idle/active/functionMode/opening/
 // suspended）、buf.listRenderMode（native/buffer/frozen）、listSession._selectedNum。
@@ -126,7 +126,7 @@ function assertAscending(s) {
 }
 
 test.describe('文章列表好讀模式（live）', () => {
-  test('進看板啟用 + 多頁累積 + 序號遞增 + 置底最底 + 游標隱藏 + 無殘留●', async ({ page }) => {
+  test('進看板啟用 + 多頁累積 + 序號遞增 + 置底最底 + 24行視窗 + ●游標', async ({ page }) => {
     test.setTimeout(120000);
     const logs = attachConsole(page);
     try {
@@ -146,14 +146,18 @@ test.describe('文章列表好讀模式（live）', () => {
       expect(s.listLen).toBeGreaterThan(20);
       const numbered = assertAscending(s);
       expect(numbered.length).toBeGreaterThan(20);
-      // 無黑名單時 DOM 列數 == listLen；游標 ● 已補號。
-      expect(s.domRows).toBe(s.listLen);
-      const hasBullet = await page.evaluate(() =>
+      // 原生視窗仿真：DOM 固定 24 行；游標 = 恰一列行首 ●（body 區內）。
+      expect(s.domRows).toBe(24);
+      const bulletRows = await page.evaluate(() =>
         Array.from(
           document.querySelectorAll('#mainContainer [data-type="bbsline"]')
-        ).some((el) => el.textContent.includes('●'))
+        )
+          .map((el, i) => (el.textContent.includes('●') ? i : -1))
+          .filter((i) => i !== -1)
       );
-      expect(hasBullet).toBe(false);
+      expect(bulletRows.length).toBe(1);
+      expect(bulletRows[0]).toBeGreaterThanOrEqual(3);
+      expect(bulletRows[0]).toBeLessThanOrEqual(22);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -179,12 +183,20 @@ test.describe('文章列表好讀模式（live）', () => {
       await page.locator('#t').focus();
       let grown = initial;
       for (let i = 0; i < 8 && grown <= initial; i++) {
-        await page.keyboard.press('PageUp'); // 本地翻頁，近頂觸發 demand-up
+        await page.keyboard.press('PageUp'); // 本地翻頁，視窗近頂觸發 demand-up
         await page.waitForTimeout(1200);
         grown = (await dumpListState(page)).listLen;
       }
       console.log('listLen:', initial, '→', grown);
       expect(grown).toBeGreaterThan(initial);
+      // read.c 語意：PgUp 後游標停在新頁「頂」（DOM row 3）——prepend 的新頁
+      // 不得把游標往下擠（使用者症狀鎖）。
+      const cursorRow = await page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+        ).findIndex((el) => el.textContent.includes('●'))
+      );
+      expect(cursorRow).toBe(3);
       const after = await waitListSettled(page);
       expect(after.state).toBe('active'); // 不掉 native
       assertAscending(after);
@@ -313,7 +325,7 @@ test.describe('文章列表好讀模式（live）', () => {
     }
   });
 
-  test('滾輪捲近頂端觸發 viewport demand 續抓（不按任何鍵）', async ({ page }) => {
+  test('滾輪＝原生映射本地執行：游標上移＋demand 續抓（不按任何鍵）', async ({ page }) => {
     test.setTimeout(120000);
     const logs = attachConsole(page);
     try {
@@ -327,19 +339,22 @@ test.describe('文章列表好讀模式（live）', () => {
       expect(s.state).toBe('active');
       const initial = s.listLen;
 
-      // 滾輪往上（wheel 事件 → _maybeDemandViewport；視口近頂即應抓更舊頁）。
+      // 滾輪往上：mouse_scroll 依原生偏好映射（素滾＝↑）本地移動游標，
+      // 視窗近緩衝頂即觸發 demand-up 抓更舊頁 —— 與鍵盤同一路徑。
+      const selBefore = s.selectedNum;
       const main = page.locator('#mainContainer');
       await main.hover();
       let grown = initial;
-      for (let i = 0; i < 8 && grown <= initial; i++) {
-        await page.mouse.wheel(0, -600);
-        await page.waitForTimeout(1200);
+      for (let i = 0; i < 25 && grown <= initial; i++) {
+        await page.mouse.wheel(0, -120);
+        await page.waitForTimeout(400);
         grown = (await dumpListState(page)).listLen;
       }
       console.log('wheel demand listLen:', initial, '→', grown);
       expect(grown).toBeGreaterThan(initial);
       const after = await waitListSettled(page);
       expect(after.state).toBe('active');
+      expect(after.selectedNum).toBeLessThan(selBefore); // 游標真的往上走
       assertAscending(after);
     } catch (e) {
       console.log('--- console tail ---');
@@ -428,7 +443,8 @@ test.describe('文章列表好讀模式（live）', () => {
       }, targetAuthor);
       console.log('after blacklist:', JSON.stringify(res));
       expect(res.hasAuthor).toBe(false);
-      expect(res.domRows).toBeLessThan(res.listLen);
+      expect(res.domRows).toBe(24); // 視窗由鄰近列補滿，不缺行
+      expect(res.listLen).toBeGreaterThanOrEqual(20); // 緩衝仍保留隱藏列
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
