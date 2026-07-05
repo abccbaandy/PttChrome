@@ -130,7 +130,10 @@ test.describe('replayListCassette 门控机制', () => {
 test.describe('文章列表好读模式（离线）', () => {
   test.skip(!nav, '缺 cchat-list-nav cassette（yarn record:cassette 先录一次）');
 
-  test('双模 engage 比对：开启好读瞬间 24 行画面与原生逐行相同（核心原则）', async ({ page }) => {
+  // v5 退役中（M5 移除）：parity 合约已废弃（docs/easy-reading-list.md 核心原则 v5 版）。
+  // 直接触发点：新录 cassette 首页含删除文 → 好读无条件隐藏（不变量 10）→ 逐行必不同，
+  // 这正是「隐藏功能与 parity 本质冲突」的实例。
+  test.skip('双模 engage 比对：开启好读瞬间 24 行画面与原生逐行相同（核心原则）', async ({ page }) => {
     test.setTimeout(60000);
     const logs = ptt.attachConsole(page);
     try {

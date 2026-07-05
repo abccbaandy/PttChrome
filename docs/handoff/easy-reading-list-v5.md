@@ -47,7 +47,7 @@
 | # | 內容 | 驗證 |
 |---|---|---|
 | M0 | 協定補課（上五項）＋**改寫 easy-reading-list.md 核心原則**＋錄 `v`/`/` cassette（`RECORD_LIST_SCRIPT` 擴充） | 錄製跑通＋protocol doc 更新 |
-| M1 | 交易核心：queue 交易泛化（`\f` 收尾＋探針復原）；退役 timeout-as-signal 族（不變量 3 特例、7 自適應、12 第二腿 timeout）→ 一律 clean-list/全幅謂詞 | unit＋offline |
+| M1 | 交易核心：queue 交易泛化（`fullRepaint` 選項＋timeout→`\f` 探針復原）；退役 timeout-as-signal（7 自適應退役；**3 不退役**——`\f` 重繪不補 feeter、jump 落點恆 transient，見 protocol §6 M1 更正；12 第二腿 M3 處理） | unit＋offline |
 | M2 | 互動封閉：keyClass 改枚舉白名單（未列鍵 no-op＋提示）；functionMode catch-all 縮到 T4；T3 顯式選單入口；點擊選取解禁 | unit（keyClass 表）＋offline |
 | M3 | T2 交易化：`/`（對話框收參→MODE_SELECT 子狀態→退出對）、`v`（四選項選單）、`[` `]` `=`（沿用配對改 `\f` 收尾、刪 RTT timeout） | offline（每操作一案）＋live |
 | M4 | 體驗：到邊讀取中/骨架列；退文回列表改 re-seed（`←` 交易＋`\f`，順帶刷新推文數；退役 restore 逐行 parity）；T4 banner | offline diff 案改寫＋人工 |

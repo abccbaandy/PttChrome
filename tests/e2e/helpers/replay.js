@@ -203,22 +203,26 @@ async function replayListCassette(page, cassette) {
       while (idx < steps.length && steps[idx].on === 'start') feed();
       if (idx >= steps.length) window.__replay.done = true;
 
+      // v5：跳号交易尾附 \f（Ctrl+L 确定性收尾，protocol §6）——比对前剥掉，
+      // cassette 的 num 门控语义不变（录制侧同样附 \f，recv 已含全幅重绘）。
+      const stripFF = (d) => (d.charAt(d.length - 1) === '\x0c' ? d.slice(0, -1) : d);
+      const jumpMatch = (d, step) => {
+        const b = stripFF(d);
+        return step.num != null ? b === String(step.num) + '\r' : /^\d+\r$/.test(b);
+      };
       const PATTERNS = {
         pageup: (d) => d.indexOf('\x1b[5~') >= 0,
         pagedown: (d) => d.indexOf('\x1b[6~') >= 0,
         // jump 只在「序号完全一致」时喂：锚定预读/开文都会送「数字+\r」，若不比
         // 对目标，跑到别处的跳号会吃错 step、后续全歪（宁可让不匹配的跳号
         // timeout —— runtime 把它当良性到边）。旧 cassette 没记 num 时退回宽松。
-        jump: (d, step) =>
-          step.num != null ? d === String(step.num) + '\r' : /^\d+\r$/.test(d),
-        jumpsame: (d, step) =>
-          step.num != null ? d === String(step.num) + '\r' : /^\d+\r$/.test(d),
+        jump: jumpMatch,
+        jumpsame: jumpMatch,
         open: (d) => d === '\r',
         back: (d) => d.indexOf('\x1b[D') >= 0,
         // 置底文开启序列（list_session._beginOpenPinned）：jump 最大序号 →
         // End 锚定最后一页 → ↑ 逐列走到目标置底列（内容定位，非盲数步数）。
-        jumpmax: (d, step) =>
-          step.num != null ? d === String(step.num) + '\r' : /^\d+\r$/.test(d),
+        jumpmax: jumpMatch,
         end: (d) => d.indexOf('\x1b[4~') >= 0,
         up: (d) => d === '\x1b[A',
         slash: (d) => d === '/',
@@ -245,9 +249,12 @@ async function replayListCassette(page, cassette) {
           }
           // 鏈式預讀（list_session._enqueuePrefetch chained）：同方向連補時
           // runtime 省略錨定 jump 直送 PgUp/PgDn（server 游標位置已知）。
-          // cassette 是舊兩腿協定錄的：若下一步是帶 num 的 jump、下下步是與
-          // 本次按鍵相符的翻頁，視為「同位置錨定被省略」——先餵 jump 回應
-          //（等價於真 server 對同位置跳號的重繪，冪等）再餵翻頁回應。
+          // cassette 是兩腿協定錄的：若下一步是帶 num 的 jump、下下步是與
+          // 本次按鍵相符的翻頁，視為「同位置錨定被省略」——jump step 只登記
+          // 進 servedJumps（供之後真正跳同序號的開文重播）、**跳過不餵**：
+          // v5 的 jump recv 尾附 \f 全幅重繪＝clean-list 且游標未動，餵進去
+          // 會被翻頁腿的 expect 誤讀成「游標未動＝到邊」（假邊界）。鏈上
+          // server 游標本來就在該位置，略過它畫面語義不變；直接餵翻頁回應。
           const after = steps[idx + 1];
           if (
             (next.on === 'jump' || next.on === 'jumpsame') &&
@@ -257,12 +264,13 @@ async function replayListCassette(page, cassette) {
             PATTERNS[after.on](data)
           ) {
             servedJumps.set(String(next.num) + '\r', next.recv);
-            feed();
-            feed();
+            idx++; // skip the jump step (not fed)
+            window.__replay.fed = idx;
+            feed(); // the page-turn response
             return;
           }
         }
-        const replayed = servedJumps.get(data);
+        const replayed = servedJumps.get(stripFF(data));
         if (replayed) app.onData(atob(replayed));
       };
     },

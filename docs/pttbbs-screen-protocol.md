@@ -72,6 +72,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c:641-840`）：
 - **read.c 列表層再保險**：`i_read_key` 自己也有 `case Ctrl('L'): redrawwin()+refresh()`（`mbbsd/read.c:735`）。
 - typeahead 交互（BePTT 實證＋§2 推論）：`指令+\f` 同送 → 中間增量重繪被跳繪吞 → client 恰見一幀全幅畫面。單獨 `\f`＝零副作用「我在哪」探針。
 - `\f` 不取代 settle：全幅重繪仍拆包（OBUFSIZE 3072），settle 判「何時看」、`\f` 保證「必有得看」。
+- **重要限制（M1 實測，cchat-list-nav `\f` 版卷）：`redrawwin` 重繪的是 server 虛擬螢幕「現狀」，不會推進畫面狀態**——跳號完成後 server 虛擬螢幕的底列本來就空（§4 ✚：feeter 要到下一個 PARTUPDATE 才重畫），`跳號+\f` 的全幅重繪底列**仍空**＝classify 仍 transient、永非 clean-list。⇒ jump 落點判定必須維持 park 指紋（§4/§5），「jump 尾附 `\f` 換 clean-list expect」不成立。`\f` 的真實價值＝**零回應情境的確定性化**：timeout 探針（強制產生一幀可判定畫面）、相對命令 miss（`鍵+\f` 保證有回應）。
 
 ## 7. `v` 已讀設定交易（`b_mark_read_unread`，CONFIRMED）
 

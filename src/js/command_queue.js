@@ -9,13 +9,23 @@
 //
 // Completion is decided by CONTENT (the expect predicate over the settle
 // snapshot/facts), never by timing or packet boundaries (§3 of the protocol
-// doc: frame boundaries are unreliable). Timing is only used to give up:
+// doc: frame boundaries are unreliable). Timing is only used to trigger the
+// v5 PROBE, never to conclude:
 //   - soft timeout: re-armed on EVERY settle while the command is in flight
 //     (a settle that doesn't satisfy expect still proves the link is alive —
 //     a slow multi-write response keeps extending its own deadline);
 //   - hard timeout: armed once at send, absolute cap.
-// What a timeout MEANS is the caller's business (prefetch → benign "treat as
-// end of board"; open-article → self-heal to functionMode).
+// v5 deterministic-transaction contract (protocol §6):
+//   - cmd.fullRepaint: append \f (Ctrl+L) to the sent keys — igetch's global
+//     hotkey forces ONE full-frame repaint after the command's response, so
+//     the expect always gets a complete screen to judge (zero-response
+//     ambiguity gone). Safe even if the server is mid-getdata/pmore (§6).
+//   - timeout → PROBE: instead of failing, send a bare \f (zero-side-effect
+//     "where am I" probe) and give expect ONE more look at the guaranteed
+//     full frame. Truthy → onDone as usual (the response was just slow/lost);
+//     falsy → onFail('miss', facts) — a REAL answer, the caller reclassifies
+//     the known-complete screen. A second silent timeout (probe unanswered =
+//     link dead) → onFail('timeout'). Opt out with cmd.probe === false.
 //
 // Zero dependencies: send and the timer functions are injected so unit tests
 // drive it with jest fake timers and the app binds it to conn.send.
@@ -47,9 +57,16 @@ CommandQueue.prototype = {
   //   expect(snapshot, facts): truthy when the settled screen IS the response —
   //                  the truthy value is passed to onDone (so an expect can
   //                  report HOW it completed, e.g. { edge: true }),
-  //   timeoutMs:     soft timeout (default 3000),
-  //   hardTimeoutMs: absolute cap (default 10000),
-  //   onDone(result), onFail(reason),
+  //   fullRepaint:   append \f to keys — response ends in a guaranteed full
+  //                  frame (protocol §6), for transactions whose bare response
+  //                  is ambiguous (jump landings, zero-response edges),
+  //   probe:         default true — on timeout send a bare \f and let expect
+  //                  judge the full frame before failing; false = fail direct,
+  //   timeoutMs:     soft timeout (default 3000) — triggers the probe, not
+  //                  the failure,
+  //   hardTimeoutMs: absolute cap per wait (default 10000),
+  //   onDone(result), onFail(reason, facts) — reason 'miss' carries the
+  //                  probed full frame's facts; 'timeout' = link silent,
   // }
   enqueue: function(cmd) {
     this._pending.push(cmd);
@@ -66,6 +83,13 @@ CommandQueue.prototype = {
     if (result) {
       this._finish();
       if (cmd.onDone) cmd.onDone(result);
+      this._maybeSendNext();
+    } else if (cmd._probed) {
+      // The probe's full frame arrived and expect still says no — that is a
+      // definitive MISS, not a maybe: hand the known-complete screen's facts
+      // to the caller for reclassification (v5: failures are explicit).
+      this._finish();
+      if (cmd.onFail) cmd.onFail('miss', facts);
       this._maybeSendNext();
     } else {
       // Response still in progress — the settle proves activity, extend.
@@ -93,24 +117,38 @@ CommandQueue.prototype = {
     if (this._inFlight || this._pending.length === 0) return;
     const cmd = this._pending.shift();
     this._inFlight = cmd;
+    cmd._probed = false;
+    this._armBoth(cmd);
+    this._send(cmd.fullRepaint ? cmd.keys + '\f' : cmd.keys);
+  },
+
+  _armBoth: function(cmd) {
     this._armSoft(cmd);
+    this._clearTimeout(this._hardTimer);
     this._hardTimer = this._setTimeout(() => {
-      this._fail(cmd, 'timeout');
+      this._timedOut(cmd);
     }, cmd.hardTimeoutMs || 10000);
-    this._send(cmd.keys);
   },
 
   _armSoft: function(cmd) {
     this._clearTimeout(this._softTimer);
     this._softTimer = this._setTimeout(() => {
-      this._fail(cmd, 'timeout');
+      this._timedOut(cmd);
     }, cmd.timeoutMs || 3000);
   },
 
-  _fail: function(cmd, reason) {
+  // Quiet link. First time (probe allowed): force a full frame with a bare \f
+  // and let onSettle's expect judge it. Second time / probe opted out: fail.
+  _timedOut: function(cmd) {
     if (this._inFlight !== cmd) return; // already completed/flushed
+    if (cmd.probe !== false && !cmd._probed) {
+      cmd._probed = true;
+      this._armBoth(cmd);
+      this._send('\f');
+      return;
+    }
     this._finish();
-    if (cmd.onFail) cmd.onFail(reason);
+    if (cmd.onFail) cmd.onFail('timeout');
     this._maybeSendNext();
   },
 

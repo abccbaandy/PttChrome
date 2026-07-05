@@ -607,6 +607,58 @@ function factsWithCursor(num) {
   return { kind: "clean-list", cursorRowNum: num, curY: 5, curX: 0, rows: 24 };
 }
 
+describe("v5 確定性交易（timeout=探針觸發，非訊號；jump 腿維持 park 指紋）", () => {
+  // 協定事實（§6）：\f 的 redrawwin 重繪 server 虛擬螢幕「現狀」——跳號後底列
+  // 在 server 端本來就空，\f 不會補畫 feeter → jump 落點永遠 transient。
+  // 所以 jump 腿不掛 fullRepaint（裸跳號必回應，\f 只是流量×2），expect 維持
+  // park 指紋；零回應歧義（板尾探測）交給 queue 的 timeout→\f 探針解決。
+  test("錨定 jump 腿：無 fullRepaint，expect＝park 指紋（transient 落點即完成）", () => {
+    const { s, enqueued } = demandSession({ count: 60 });
+    s._topNum = 110;
+    s._selectedNum = 115;
+    s._maybeDemand(1);
+    const anchor = enqueued[0];
+    expect(anchor.kind).toBe("prefetch-anchor-down");
+    expect(anchor.fullRepaint).toBeUndefined();
+    const base = 159; // bufferEdgeNum(down) = 最大序號
+    expect(
+      anchor.expect(null, { kind: "transient", cursorRowNum: base, curY: 5, curX: 0, rows: 24 })
+    ).toBe(true);
+    expect(
+      anchor.expect(null, { kind: "transient", cursorRowNum: base, curY: 23, curX: 10, rows: 24 })
+    ).toBe(false);
+  });
+
+  test("翻頁腿：短固定 timeout（800ms）觸發 queue 探針；探針幀游標未動＝內容判到邊", () => {
+    const { s, enqueued } = demandSession({ count: 60 });
+    s._topNum = 110;
+    s._selectedNum = 115;
+    s._maybeDemand(1);
+    const page = enqueued[1];
+    expect(page.kind).toBe("prefetch-down");
+    expect(page.fullRepaint).toBeUndefined();
+    expect(page.timeoutMs).toBe(800); // 舊 RTT 自適應（不變量 7）退役
+    // 探針全幅畫面（feeter 在）上游標仍在錨點 → {edge}（確定性到邊）。
+    expect(page.expect(null, factsWithCursor(159))).toEqual(
+      expect.objectContaining({ edge: true })
+    );
+  });
+
+  test("開文 jump 腿：park 指紋＋目標序號（不因 v5 改動而變）", () => {
+    const { s, enqueued } = demandSession({ count: 60 });
+    s._selectedNum = 115;
+    s._beginOpen();
+    const jump = enqueued.find((c) => c.kind === "open-jump");
+    expect(jump.fullRepaint).toBeUndefined();
+    expect(
+      jump.expect(null, { kind: "transient", cursorRowNum: 115, curY: 5, curX: 0, rows: 24 })
+    ).toBe(true);
+    expect(
+      jump.expect(null, { kind: "prompt", cursorRowNum: 115, curY: 23, curX: 10, rows: 24 })
+    ).toBe(false);
+  });
+});
+
 describe("visibleListIndices (mirrors Screen#computeAnnotations PAGE_LIST)", () => {
   const rows = [
     " 350024 + 2 6/14 a0930307148  R: [閒聊] 烙印勇士384",

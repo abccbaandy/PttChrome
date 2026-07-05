@@ -43,40 +43,85 @@ describe("CommandQueue", () => {
     expect(q.idle).toBe(true);
   });
 
-  test("soft timeout fires when no settle arrives, then the next command runs", () => {
+  test("fullRepaint appends \\f to the sent keys (v5 deterministic tail)", () => {
+    const { q, sent } = makeQueue();
+    q.enqueue(cmd("123\r", { fullRepaint: true }));
+    expect(sent).toEqual(["123\r\f"]);
+  });
+
+  test("timeout → \\f probe first; a truthy expect on the probed frame completes normally", () => {
+    const { q, sent } = makeQueue();
+    const done = jest.fn();
+    const fail = jest.fn();
+    q.enqueue(cmd("A", { timeoutMs: 3000, onDone: done, onFail: fail }));
+    jest.advanceTimersByTime(2999);
+    expect(sent).toEqual(["A"]);
+    jest.advanceTimersByTime(1); // soft timeout → probe, not failure
+    expect(sent).toEqual(["A", "\f"]);
+    expect(fail).not.toHaveBeenCalled();
+    expect(q.inFlightKind).toBe("test"); // still in flight, awaiting the frame
+    settleWith(q, { edge: true }); // e.g. zero-response board edge, judged by content
+    expect(done).toHaveBeenCalledWith({ edge: true });
+    expect(fail).not.toHaveBeenCalled();
+    expect(q.idle).toBe(true);
+  });
+
+  test("probe frame arrives but expect stays falsy → onFail('miss', facts) — a real answer", () => {
+    const { q } = makeQueue();
+    const fail = jest.fn();
+    q.enqueue(cmd("A", { timeoutMs: 3000, onFail: fail }));
+    jest.advanceTimersByTime(3000); // probe sent
+    q.onSettle({}, { __result: false, kind: "clean-list" });
+    expect(fail).toHaveBeenCalledWith("miss", { __result: false, kind: "clean-list" });
+    expect(q.idle).toBe(true);
+  });
+
+  test("probe unanswered (second silent window) → onFail('timeout'); the next command runs", () => {
     const { q, sent } = makeQueue();
     const fail = jest.fn();
     q.enqueue(cmd("A", { timeoutMs: 3000, onFail: fail }));
     q.enqueue(cmd("B"));
-    jest.advanceTimersByTime(2999);
+    jest.advanceTimersByTime(3000); // probe
     expect(fail).not.toHaveBeenCalled();
-    jest.advanceTimersByTime(1);
+    jest.advanceTimersByTime(3000); // probe itself timed out → link dead
     expect(fail).toHaveBeenCalledWith("timeout");
-    expect(sent).toEqual(["A", "B"]); // queue continues after a failure
+    expect(sent).toEqual(["A", "\f", "B"]); // queue continues after a failure
+  });
+
+  test("probe: false → timeout fails directly (no \\f sent)", () => {
+    const { q, sent } = makeQueue();
+    const fail = jest.fn();
+    q.enqueue(cmd("A", { timeoutMs: 3000, probe: false, onFail: fail }));
+    jest.advanceTimersByTime(3000);
+    expect(fail).toHaveBeenCalledWith("timeout");
+    expect(sent).toEqual(["A"]);
   });
 
   test("every settle re-arms the soft timeout (a slow response keeps itself alive)", () => {
-    const { q } = makeQueue();
-    const fail = jest.fn();
-    q.enqueue(cmd("A", { timeoutMs: 3000, onFail: fail }));
+    const { q, sent } = makeQueue();
+    q.enqueue(cmd("A", { timeoutMs: 3000 }));
     jest.advanceTimersByTime(2000);
     settleWith(q, false); // activity at t=2s
     jest.advanceTimersByTime(2000); // t=4s — old deadline (3s) must NOT have fired
-    expect(fail).not.toHaveBeenCalled();
-    jest.advanceTimersByTime(1000); // t=5s = 2s + fresh 3s window
-    expect(fail).toHaveBeenCalledWith("timeout");
+    expect(sent).toEqual(["A"]); // no probe yet
+    jest.advanceTimersByTime(1000); // t=5s = 2s + fresh 3s window → probe
+    expect(sent).toEqual(["A", "\f"]);
   });
 
-  test("hard timeout caps a command that keeps re-arming via settles", () => {
+  test("hard timeout caps a command that keeps re-arming via settles (probe, then fail)", () => {
     const { q } = makeQueue();
     const fail = jest.fn();
     q.enqueue(cmd("A", { timeoutMs: 3000, hardTimeoutMs: 10000, onFail: fail }));
-    for (let t = 0; t < 5; ++t) {
+    for (let t = 0; t < 4; ++t) {
       jest.advanceTimersByTime(2000);
       settleWith(q, false); // settles every 2s forever
     }
-    // t=10s: the absolute cap fires even though the soft window never expired.
-    expect(fail).toHaveBeenCalledWith("timeout");
+    // t=10s: the absolute cap fires even though the soft window never expired
+    // → probe goes out; the next unsatisfying settle (a full frame) means MISS.
+    expect(fail).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(2000);
+    settleWith(q, false);
+    expect(fail).toHaveBeenCalledWith("miss", { __result: false });
     expect(q.idle).toBe(true);
   });
 

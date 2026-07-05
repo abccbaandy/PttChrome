@@ -477,9 +477,6 @@ export function ListSession(core, view, termBuf, queue) {
   // _breakChain() at every such point (flush callers, other enqueues, settles
   // with no in-flight command, buffer rebuilds). null = must anchor.
   this._chainState = null; // { dir: -1|1, lastLanded: number }
-  // Last measured prefetch round-trip (ms) — seeds the adaptive page timeout
-  // so the final "no more pages" probe fails fast instead of waiting 3s.
-  this._lastPrefetchRtt = null;
 
   bindProperty(this, '_renderMode', termBuf, 'listRenderMode');
   termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
@@ -692,6 +689,9 @@ ListSession.prototype = {
       kind: 'relative-sync-jump',
       expect: function(snap, facts) {
         // Jump-landing park fingerprint (protocol §4 ✚, same as open-jump).
+        // NOT clean-list: the post-jump bottom row stays empty even through a
+        // \f redraw (redrawwin repaints the server's CURRENT virtual screen —
+        // protocol §6 M1 correction). Timeout recovery = the queue's \f probe.
         return (
           facts.cursorRowNum === num &&
           facts.curY >= 3 &&
@@ -979,11 +979,12 @@ ListSession.prototype = {
       self._forceRedraw();
     };
     if (!chained) {
-      const t0 = Date.now();
       this._queue.enqueue({
         keys: String(base) + '\r',
         kind: up ? 'prefetch-anchor-up' : 'prefetch-anchor-down',
         expect: function(snap, facts) {
+          // Jump-landing park fingerprint (protocol §4 ✚: bottom row stays
+          // empty → never clean-list; a \f redraw would not change that, §6).
           return (
             facts.cursorRowNum === base &&
             facts.curY >= 3 &&
@@ -992,9 +993,6 @@ ListSession.prototype = {
           );
         },
         timeoutMs: 4000,
-        onDone: function() {
-          self._lastPrefetchRtt = Date.now() - t0;
-        },
         // Anchor failed (article deleted / weird screen): drop the queued page
         // command too — paging from an unknown position is exactly the bug.
         onFail: function() {
@@ -1003,7 +1001,6 @@ ListSession.prototype = {
         }
       });
     }
-    const t0p = Date.now();
     this._queue.enqueue({
       keys: up ? '\x1b[5~' : '\x1b[6~',
       kind: up ? 'prefetch-up' : 'prefetch-down',
@@ -1016,16 +1013,14 @@ ListSession.prototype = {
         return false;
       },
       // The board-edge probe gets ZERO response (cursor already at the end,
-      // live-tested) and can only end by this timeout — adapt it to the link
-      // speed measured on the previous leg (the fixed 3s was the「近置底更慢」
-      // stall). No measurement yet → keep the old conservative value.
-      timeoutMs:
-        this._lastPrefetchRtt != null
-          ? adaptiveTimeoutMs(this._lastPrefetchRtt)
-          : 3000,
+      // live-tested). v5: the short quiet window only TRIGGERS the queue's \f
+      // probe — the probed full frame then answers deterministically (cursor
+      // still on base → {edge:true} judged by CONTENT, old invariant 7's
+      // RTT-adaptive timeout retired). No \f on the page key itself: a moved
+      // page already responds deterministically (doubling traffic buys nothing).
+      timeoutMs: 800,
       onDone: function(r) {
         self._fillPages++;
-        self._lastPrefetchRtt = Date.now() - t0p;
         if (r.edge) markEdge();
         else {
           self._chainState = { dir: dir, lastLanded: r.landed };
@@ -1056,11 +1051,10 @@ ListSession.prototype = {
       keys: String(num) + '\r',
       kind: 'open-jump',
       expect: function(snap, facts) {
-        // Recorded protocol fact (cchat-list-nav 'jump' step): after a number
-        // jump PTT clears the prompt line and does NOT repaint the feeter until
-        // the next response — the settled screen classifies as transient, never
-        // clean-list. Accept the landing by the cursor PARK position (entry
-        // area, col ≤ 1, protocol §5) on the target number instead.
+        // Recorded protocol fact (protocol §4 ✚): after a number jump the
+        // bottom row stays EMPTY until the next response — transient, never
+        // clean-list (a \f redraw repaints that same virtual screen, §6).
+        // Accept the landing by the cursor PARK position on the target.
         return (
           facts.cursorRowNum === num &&
           facts.curY >= 3 &&
