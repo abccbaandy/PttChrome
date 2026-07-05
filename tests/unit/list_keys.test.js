@@ -86,32 +86,42 @@ describe("ListSession 相對命令序列化（[ ] 卡住/亂跳回歸）", () =>
     expect(enqueued[1].keys).toBe("=");
   });
 
-  test("pinned 選取（無序號）：[ 走原 passthrough，不佇列", () => {
+  test("pinned 選取（無序號）：[ 無跳號可用 → v5 noop（吞鍵＋不佇列，不再 passthrough）", () => {
     const { s, sent, enqueued } = makeSession();
     s.state = "active";
     s._selectedNum = null;
     s._selectedPinnedKey = "arrenwu|[公告] 板規";
     const e = keyEvent("]");
     s.onKeyDown(e);
-    expect(e.defaultPrevented).toBe(false);
+    expect(e.defaultPrevented).toBe(true);
     expect(enqueued).toEqual([]);
     expect(sent).toEqual([]);
-    expect(s.state).toBe("functionMode");
+    expect(s.state).toBe("active"); // 封閉互動：不墜落
   });
 
-  test("非相對命令的 other 鍵（← 離板 / q）不佇列、照舊 passthrough（live soak 回歸）", () => {
+  test("←/q/e 離板 → v5 交易化：frozen＋佇列 leave-board（不再 passthrough 閃原生）", () => {
     const { s, sent, enqueued } = makeSession();
     s.state = "active";
     s._selectedNum = 42;
     const e = keyEvent("ArrowLeft");
     s.onKeyDown(e);
-    expect(e.defaultPrevented).toBe(false);
-    expect(enqueued).toEqual([]);
-    expect(sent).toEqual([]);
+    expect(e.defaultPrevented).toBe(true);
+    expect(sent).toEqual([]); // 不裸送——經 CommandQueue
     expect(s.state).toBe("functionMode");
-    s.state = "active";
-    s.onKeyDown(keyEvent("q"));
-    expect(enqueued).toEqual([]);
+    expect(s._renderMode).toBe("frozen");
+    expect(enqueued.length).toBe(1);
+    expect(enqueued[0].kind).toBe("leave-board");
+    expect(enqueued[0].keys).toBe("\x1b[D");
+    // expect：menu（離板）或 clean-list（MODE_SELECT 退出/回列表）都算完成
+    expect(enqueued[0].expect(null, { kind: "menu" })).toBe(true);
+    expect(enqueued[0].expect(null, { kind: "clean-list" })).toBe(true);
+    expect(enqueued[0].expect(null, { kind: "transient" })).toBe(false);
+    // q 同路徑
+    const { s: s2, enqueued: q2 } = makeSession();
+    s2.state = "active";
+    s2.onKeyDown(keyEvent("q"));
+    expect(q2.length).toBe(1);
+    expect(q2[0].kind).toBe("leave-board");
   });
 
   test("nav 鍵不佇列不送（本地導航維持零網路）", () => {
@@ -156,14 +166,147 @@ describe("相對命令配對期間 frozen（不得閃現原生畫面）", () => 
     expect(sent).toEqual([]);
   });
 
-  test("非 relative 的 other 鍵照舊 native 鏡像（enter-function-mode 不受影響）", () => {
+  test("← 離板同樣 frozen（v5 交易化：離板回應在途也不得閃現原生）", () => {
     const { s } = makeSession();
     s.state = "active";
     s._renderMode = "buffer";
     s._selectedNum = 42;
     s.onKeyDown(keyEvent("ArrowLeft"));
     expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("frozen");
+  });
+});
+
+describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣閘", () => {
+  // 枚舉即合約（docs/easy-reading-list.md §操作分類）：白名單外一律 no-op。
+  const WHITELIST_BEHAVIOR = [
+    // [key, 預期 state, 預期佇列 kind（null=不佇列）]
+    ["ArrowUp", "active", null],
+    ["ArrowDown", "active", null],
+    ["k", "active", null],
+    ["j", "active", null],
+    ["PageUp", "active", null],
+    ["PageDown", "active", null],
+    ["ArrowLeft", "functionMode", "leave-board"],
+    ["q", "functionMode", "leave-board"],
+    ["e", "functionMode", "leave-board"],
+    ["[", "functionMode", "relative-sync-jump"],
+    ["]", "functionMode", "relative-sync-jump"],
+    ["=", "functionMode", "relative-sync-jump"],
+  ];
+  test.each(WHITELIST_BEHAVIOR)("白名單 %s → state=%s", (key, state, kind) => {
+    const { s, enqueued } = makeSession();
+    s.state = "active";
+    s._selectedNum = 42;
+    const e = keyEvent(key);
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(s.state).toBe(state);
+    if (kind) expect(enqueued[0].kind).toBe(kind);
+    else expect(enqueued).toEqual([]); // 空 buffer：nav 本地 no-op、零佇列
+  });
+
+  test.each([["z"], ["i"], ["b"], ["y"], ["X"], ["/"], ["v"], ["1"], ["s"]])(
+    "未列鍵 %s → no-op（吞鍵、不佇列、不轉態、提示）",
+    (key) => {
+      const { s, sent, enqueued } = makeSession();
+      const hints = [];
+      s._view.flashListHint = (m) => hints.push(m);
+      s.state = "active";
+      s._renderMode = "buffer";
+      s._selectedNum = 42;
+      const e = keyEvent(key);
+      s.onKeyDown(e);
+      expect(e.defaultPrevented).toBe(true);
+      expect(enqueued).toEqual([]);
+      expect(sent).toEqual([]);
+      expect(s.state).toBe("active");
+      expect(s._renderMode).not.toBe("native"); // 不裸露
+      expect(hints.length).toBe(1);
+    }
+  );
+
+  test("T3 氣閘：同鍵二連擊 → 顯式切原生（第二擊 passthrough、enter-function-mode）", () => {
+    const { s, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._selectedNum = 42;
+    const e1 = keyEvent("z");
+    s.onKeyDown(e1);
+    expect(e1.defaultPrevented).toBe(true);
+    expect(s.state).toBe("active");
+    const e2 = keyEvent("z");
+    s.onKeyDown(e2);
+    expect(e2.defaultPrevented).toBe(false); // 第二擊放行 → 原生送出
+    expect(s.state).toBe("functionMode");
     expect(s._renderMode).toBe("native");
+    expect(enqueued).toEqual([]);
+  });
+
+  test("氣閘不跨鍵：z 後按 i → 仍是第一擊提示（不誤觸切換）", () => {
+    const { s } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._selectedNum = 42;
+    s.onKeyDown(keyEvent("z"));
+    const e = keyEvent("i");
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(s.state).toBe("active");
+  });
+
+  test("Ctrl-P（發文）→ noop 氣閘，不再漏送 server（v4 key-leak 回歸）", () => {
+    const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._selectedNum = 42;
+    const e = keyEvent("p");
+    e.ctrlKey = true;
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(enqueued).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(s.state).toBe("active");
+  });
+
+  test("剪貼簿組合鍵（Ctrl-C/A/V/X）放行給 app 層（不吞、不轉態）", () => {
+    const { s } = makeSession();
+    s.state = "active";
+    for (const k of ["c", "a", "v", "x"]) {
+      const e = keyEvent(k);
+      e.ctrlKey = true;
+      s.onKeyDown(e);
+      expect(e.defaultPrevented).toBe(false);
+      expect(s.state).toBe("active");
+    }
+  });
+
+  test("點擊選取（T1 解禁）：點 body 列 → 本地選取移動、零佇列", () => {
+    const { s, enqueued } = makeSession();
+    s.state = "active";
+    s._renderMode = "buffer";
+    const mkRow = (num) =>
+      Array.from(String(num).padStart(7) + "  + 7/05 someone      □ title").map(
+        (ch) => ({ ch, isLeadByte: false })
+      );
+    const nums = [];
+    const lines = [];
+    for (let i = 0; i < 30; i++) {
+      nums.push(100 + i);
+      lines.push(mkRow(100 + i));
+    }
+    s._termBuf.listLineNums = nums;
+    s._termBuf.listLines = lines;
+    s._selectedNum = 129;
+    s._topNum = 110;
+    // row 5 = body slot 2 → seq top+2
+    expect(s.onClick(5)).toBe(true);
+    expect(s._selectedNum).toBe(112);
+    expect(enqueued).toEqual([]);
+    // header/footer 列不吃
+    expect(s.onClick(2)).toBe(false);
+    expect(s.onClick(23)).toBe(false);
   });
 });
 

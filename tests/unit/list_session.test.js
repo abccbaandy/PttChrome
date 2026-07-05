@@ -223,7 +223,13 @@ describe("transitionListSession (full table)", () => {
     T("active", key("nav"), "active", ["move-selection"]);
     T("active", key("open"), "opening", ["begin-open"]);
     T("active", key("open-pinned"), "opening", ["begin-open-pinned"]); // End+內容定位序列
-    T("active", key("other"), "functionMode", ["enter-function-mode"]);
+    // v5 封閉互動：未列鍵（含舊 'other'）＝no-op stay，不再任意鍵墜落 native
+    T("active", key("other"), "active", []);
+    T("active", key("noop"), "active", []);
+    // ←/q/e 離板＝交易化（frozen＋leave-board 佇列）
+    T("active", key("leave"), "functionMode", ["begin-leave"]);
+    // T3 氣閘二連擊＝顯式切原生
+    T("active", key("airlock"), "functionMode", ["enter-function-mode"]);
     // [ ] = 相對命令（有序號選取）＝一級公民：frozen 配對，不走 native 鏡像
     T("active", key("relative"), "functionMode", ["begin-relative"]);
     T("active", { type: "pref-off" }, "idle", ["cleanup"]);

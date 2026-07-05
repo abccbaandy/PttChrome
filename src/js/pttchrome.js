@@ -967,11 +967,18 @@ App.prototype.mouse_click = function(e) {
         e.preventDefault();
         return;
       }
-      // List easy reading buffer/frozen render: mouse-browsing click coordinates
-      // map to the 24-row native buffer, not the accumulated long list — click
-      // navigation is disabled (v1); wheel scrolling is plain DOM scroll and
-      // keeps working.
+      // List easy reading buffer render: a click on a window body row moves
+      // the LOCAL selection (v5 T1, zero server interaction — the rendered
+      // 24-row window rows map 1:1 to the session's window slice). frozen
+      // swallows clicks (a serialized transaction is in flight).
       if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
+        if (this.buf.listRenderMode === 'buffer' && this.listSession) {
+          var lpos = this.clientToPos(e.clientX, e.clientY);
+          if (lpos && this.listSession.onClick(lpos.row)) {
+            e.preventDefault();
+            this.setInputAreaFocus();
+          }
+        }
         return;
       }
       if (this.buf.useMouseBrowsing) {

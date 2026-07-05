@@ -238,10 +238,21 @@ export function transitionListSession(state, event) {
             // absorbed, the completing clean-list resumes with the landed
             // cursor, and _resumeAfterRelative handles the miss/timeout ends.
             return { next: 'functionMode', actions: ['begin-relative'] };
-          default:
-            // Any other key: native passthrough (the key itself is NOT
-            // preventDefaulted — it goes to the server, we just mirror).
+          case 'leave':
+            // ←/q/e: leave-board as a serialized TRANSACTION over the frozen
+            // snapshot (v5: no native flash) — the response settle routes
+            // through functionMode's own table (menu → cleanup, clean-list →
+            // resume: MODE_SELECT exit / thread hops land back on a list).
+            return { next: 'functionMode', actions: ['begin-leave'] };
+          case 'airlock':
+            // Second press of a non-whitelisted key = explicit consent to
+            // operate natively (T3 airlock). The key itself passes through.
             return { next: 'functionMode', actions: ['enter-function-mode'] };
+          default:
+            // v5 closed interaction: any non-whitelisted key is a NO-OP (the
+            // session hints; the airlock above is the explicit way out). The
+            // old catch-all「任意鍵直通→functionMode」is retired.
+            return stay;
         }
       }
       return stay;
@@ -477,6 +488,12 @@ export function ListSession(core, view, termBuf, queue) {
   // _breakChain() at every such point (flush callers, other enqueues, settles
   // with no in-flight command, buffer rebuilds). null = must anchor.
   this._chainState = null; // { dir: -1|1, lastLanded: number }
+  // T3 airlock (v5 closed interaction): a non-whitelisted key is a no-op with
+  // a hint; pressing the SAME key again within the window is the explicit
+  // consent to leave for native ("切原生操作") — the second press passes
+  // through natively and the session mirrors (enter-function-mode).
+  this._airlockKey = null;
+  this._airlockAt = 0;
 
   bindProperty(this, '_renderMode', termBuf, 'listRenderMode');
   termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
@@ -617,9 +634,17 @@ ListSession.prototype = {
   // Keyboard, called from term_view.onKeyDown ONLY while renderMode is
   // buffer/frozen (native modes never route here — full passthrough).
   onKeyDown: function(e) {
-    // Modifier combos (copy/paste/select-all…) belong to the app-level handlers
-    // right after this hook; never intercept them.
-    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    // Browser/app-level clipboard combos stay with the handlers right after
+    // this hook (term_view: Ctrl-C copy / Ctrl-A select-all / Ctrl-Shift-V
+    // paste); Alt/Meta combos are browser shortcuts. Everything ELSE — Ctrl-P
+    // 發文 included — falls through to the closed-interaction whitelist below
+    // (v4 let all ctrl combos reach the server: an open key-leak).
+    const clipboard =
+      e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      ['c', 'a', 'v', 'x'].indexOf((e.key || '').toLowerCase()) !== -1;
+    if (clipboard || e.altKey || e.metaKey) return;
 
     if (this.state === 'opening') {
       // Serialized open in flight: swallow everything (sub-second; the open
@@ -629,16 +654,38 @@ ListSession.prototype = {
       return;
     }
     if (this.state === 'functionMode' && this._renderMode === 'frozen') {
-      // A relative-command pair is in flight behind the frozen snapshot:
-      // swallow user keys, same as 'opening' — letting them through would race
-      // the serialized jump/key bytes (typeahead, protocol §2).
+      // A serialized transaction (relative pair / leave) is in flight behind
+      // the frozen snapshot: swallow user keys — letting them through would
+      // race the serialized bytes (typeahead, protocol §2).
       e.preventDefault();
       return;
     }
     if (this.state !== 'active') return;
 
     const key = this._classifyKey(e);
-    if (key.class !== 'other') e.preventDefault();
+    if (key.class === 'noop') {
+      // v5 closed interaction: not on the whitelist → no-op + hint; the same
+      // key pressed twice within the window = explicit airlock to native
+      // (the second press is NOT preventDefaulted — it goes out natively).
+      const id = (e.ctrlKey ? 'C-' : '') + e.key;
+      if (this._airlockKey === id && Date.now() - this._airlockAt < 2500) {
+        this._airlockKey = null;
+        const r0 = transitionListSession(this.state, { type: 'key', keyClass: 'airlock' });
+        this.state = r0.next;
+        for (let i = 0; i < r0.actions.length; ++i) this._runAction(r0.actions[i], null);
+        return; // passthrough: the key reaches the server, we mirror
+      }
+      this._airlockKey = id;
+      this._airlockAt = Date.now();
+      e.preventDefault();
+      if (this._view.flashListHint)
+        this._view.flashListHint(
+          '好讀列表：「' + id + '」未支援 — 再按一次切至原生操作'
+        );
+      return;
+    }
+    this._airlockKey = null;
+    e.preventDefault();
 
     const r = transitionListSession(this.state, { type: 'key', keyClass: key.class });
     this.state = r.next;
@@ -648,8 +695,27 @@ ListSession.prototype = {
       else if (a === 'begin-open') this._beginOpen();
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
       else if (a === 'begin-relative') this._beginRelative(e.key);
+      else if (a === 'begin-leave') this._beginLeave();
       else this._runAction(a, null);
     }
+  },
+
+  // Click selection (v5 T1, un-banned): a click on a body row of the rendered
+  // window moves the LOCAL selection there — zero server interaction. Returns
+  // true when handled (caller preventDefaults). `row` is the 24-row screen row
+  // from clientToPos; body rows are 3..rows-2 (buildListWindowLines layout).
+  onClick: function(row) {
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return false;
+    if (row < 3 || row > this._termBuf.rows - 2) return false;
+    const view = this.getWindowView();
+    if (!view) return false;
+    const abs = view.body[row - 3];
+    if (abs == null) return false;
+    const nums = this._termBuf.listLineNums || [];
+    this._selectedNum = nums[abs];
+    this._selectedPinnedKey = nums[abs] == null ? this._pinnedKeyAt(abs) : null;
+    this._forceRedraw();
+    return true;
   },
 
   // 'begin-relative' executor: freeze the window snapshot (no native flash —
@@ -752,8 +818,40 @@ ListSession.prototype = {
     this._forceRedraw();
   },
 
-  // Key → native read.c op (executed by moveListCursorWindow).
+  // 'begin-leave' executor (v5 T2): ←/q/e as a serialized transaction over the
+  // frozen snapshot — no native flash (blacklist/deleted rows stay hidden while
+  // the response is on the wire). The completing settle routes through the
+  // functionMode table: menu → cleanup (left the board), clean-list → resume
+  // (MODE_SELECT exit / thread hop landed back on a list). Timeout/miss =
+  // explicit degrade to the native mirror (v5: failures are visible).
+  _beginLeave: function() {
+    this._breakChain();
+    this._prunePivotOverride = undefined; // flush is silent — reset here
+    this._queue.flush();
+    this._renderMode = 'frozen';
+    this._view.hideCursor();
+    this._forceRedraw();
+    const self = this;
+    this._queue.enqueue({
+      keys: '\x1b[D',
+      kind: 'leave-board',
+      expect: function(snap, facts) {
+        return facts.kind === 'menu' || facts.kind === 'clean-list';
+      },
+      timeoutMs: 3000,
+      // onDone: nothing — the SAME settle's reducer pass (inFlightKind already
+      // null) performs cleanup/resume.
+      onFail: function() {
+        self._enterFunctionMode();
+      }
+    });
+  },
+
+  // Key → whitelist class (v5 closed interaction; the enumeration IS the
+  // contract — docs/easy-reading-list.md §操作分類). Anything not matched is
+  // 'noop' (hint + airlock double-press), never a silent passthrough.
   _classifyKey: function(e) {
+    if (e.ctrlKey) return { class: 'noop' }; // Ctrl-P 發文 etc. → airlock
     switch (e.key) {
       case 'ArrowUp':
       case 'k':
@@ -772,17 +870,23 @@ ListSession.prototype = {
       case 'Enter':
       case 'ArrowRight':
         return { class: this._selectedNum == null ? 'open-pinned' : 'open' };
+      case 'ArrowLeft':
+      case 'q':
+      case 'e':
+        // Leave-board family (read.c:712 q/e/KEY_LEFT) — high-frequency, so a
+        // first-class serialized transaction rather than an airlock.
+        return { class: 'leave' };
       default:
         // Cursor-relative commands with a numbered selection are serialized
         // (jump → key via the queue): we own the bytes, so the key itself must
         // NOT pass through (typeahead would swallow the repaints — the「[ 卡住」
-        // bug). A pinned selection has no number to jump to → passthrough.
+        // bug). A pinned selection has no number to jump to → noop.
         if (
           RELATIVE_COMMAND_KEYS.indexOf(e.key) !== -1 &&
           this._selectedNum != null
         )
           return { class: 'relative' };
-        return { class: 'other' };
+        return { class: 'noop' };
     }
   },
 

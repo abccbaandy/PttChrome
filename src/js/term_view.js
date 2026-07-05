@@ -754,6 +754,30 @@ TermView.prototype = {
     this.updateCursorPos();
   },
 
+  // Lightweight fading toast for the list easy-reading closed interaction
+  // (v5: a non-whitelisted key is a no-op with a hint — list_session.js
+  // onKeyDown). One reusable fixed div, inline-styled so it needs no CSS file
+  // and cannot leak into the terminal layout.
+  flashListHint: function(msg) {
+    var el = this._listHintEl;
+    if (!el) {
+      el = document.createElement('div');
+      el.style.cssText =
+        'position:fixed;left:50%;bottom:48px;transform:translateX(-50%);' +
+        'background:rgba(20,20,20,.88);color:#eee;padding:6px 14px;' +
+        'border-radius:6px;font-size:14px;z-index:2000;pointer-events:none;' +
+        'transition:opacity .4s;opacity:0;max-width:80%;';
+      document.body.appendChild(el);
+      this._listHintEl = el;
+    }
+    el.textContent = msg;
+    el.style.opacity = '1';
+    if (this._listHintTimer) clearTimeout(this._listHintTimer);
+    this._listHintTimer = setTimeout(function() {
+      el.style.opacity = '0';
+    }, 1800);
+  },
+
   // Cursor
   updateCursorPos: function() {
     if (this._cursorHidden) return;

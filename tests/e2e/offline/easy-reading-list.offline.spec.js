@@ -217,6 +217,35 @@ test.describe('文章列表好读模式（离线）', () => {
     }
   });
 
+  test('v5 封闭互动：未列键（z/i/b/v//）no-op 吞键——零送键、不转态、不裸露原生', async ({ page }) => {
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, nav);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: true,
+        easyReadingListPrefetchCount: 0
+      });
+      const before = await waitState(page, (x) => x.state === 'active' && x.queueIdle);
+
+      await page.locator('#t').focus();
+      for (const k of ['z', 'i', 'b', 'v', '/']) {
+        await page.keyboard.press(k);
+        await page.waitForTimeout(60);
+      }
+      const after = await dumpListState(page);
+      expect(after.state).toBe('active');
+      expect(after.renderMode).toBe('buffer'); // 不裸露（原生鏡像會顯示黑名單/刪除文）
+      expect(after.sentCount).toBe(before.sentCount); // 零送鍵（封閉互動）
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
   test('本地导航即时：↑ 立即移动游标（不等 server），demand 背景补页', async ({ page }) => {
     test.setTimeout(60000);
     const logs = ptt.attachConsole(page);
@@ -471,7 +500,9 @@ test.describe('置底文 Enter 开启（离线，pinned 卷）', () => {
 test.describe('原生功能直通（离线，prompt 卷）', () => {
   test.skip(!prompt, '缺 cchat-list-prompt cassette');
 
-  test('/ → functionMode 原生 LIVE（游标出现），取消 → 回 buffer', async ({ page }) => {
+  // v5 M2 起 '/' 不再直通（封闭互动 no-op）；M3 交易化后本案改写为「/ 对话框
+  // 收参 → MODE_SELECT 交易」案（cchat-list-search 卷）。暂 skip。
+  test.skip('/ → functionMode 原生 LIVE（游标出现），取消 → 回 buffer', async ({ page }) => {
     test.setTimeout(60000);
     const logs = ptt.attachConsole(page);
     try {
