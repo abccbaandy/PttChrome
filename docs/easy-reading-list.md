@@ -1,9 +1,25 @@
-# 文章列表好讀模式 — 架構（原生視窗仿真）
+# 文章列表好讀模式 — 架構（v5：封閉互動＋確定性交易）
 
 ## 核心原則（最高優先，違反＝方向錯誤）
 
-**好讀列表的使用體驗必須與原生模式完全一致，唯一差異＝黑名單列（及後續隱藏功能）被隱藏；無黑名單生效時，兩模式應無可感知差異。**
-所有體驗決策以 pttbbs `mbbsd/read.c` 語意為準（`3rd_script/pttbbs`），**不自創互動模型**（無限捲動 DOM／綠色高亮條／scrollIntoView 皆為已廢棄的錯誤方向）。逐步比對守護：`tests/unit/list_window.test.js`（read.c 參考模擬器 lockstep）＋ offline「雙模 engage 比對」案。
+**v5 合約（2026-07-05 拍板，取代舊 parity 合約；論證見 `docs/easy-reading-list-research.md` §2/§4）：**
+
+1. **外觀近似**原生（24 行視窗＋游標 `●`＋鍵盤習慣近似），**不再承諾**「與原生無可感知差異」。
+2. **封閉互動**：好讀中無任意鍵直通 server；操作集合＝白名單枚舉（T1 本地／T2 交易／T3 氣閘，見 §操作分類）；未列鍵 no-op（淡出提示）。
+3. **確定性交易**：server 互動一律 CommandQueue 交易；高風險交易尾附 `\f`（Ctrl+L，igetch 全域熱鍵→全幅重繪，協定 §2）→ 必得一幀全幅畫面，timeout 降為真異常。
+4. 交易期間 render=frozen＋吞鍵＋讀取中指示。
+5. **失敗顯性化**：timeout → 單獨 `\f` 探針拿全幅畫面重分類 → 恢復或 banner＋切原生。禁止靜默墜落。
+
+舊 parity 合約（「與原生完全一致、read.c 逐格對齊」）**已廢棄**——「測試全綠 ≠ 實測穩」跨 v3/v4 兩代重現，失敗面積在素材之外，屬結構性成本。`list_window.js` 視窗數學保留但允許偏離 read.c（web 慣例優先）；`tests/unit/list_window.test.js` lockstep 與 offline「雙模 engage 比對」案＝**退役中**（M5 移除）。
+
+## 操作分類（枚舉即合約）
+
+| 類 | 操作 | 處置 |
+|---|---|---|
+| T1 本地 | ↑↓ jk／PgUp PgDn／Home End（buffer 內）／滾輪／點擊選取 | 零 server。視窗/游標語意＝web 慣例，不再 read.c 逐格對齊 |
+| T2 列表內交易 | 開文、數字跳號、`[` `]` `=`、`/` 搜尋、`v` 已讀設定、End/Home 邊界確認 | 腳本交易；要參數的（`/`、`v`）web UI 收參後代打 |
+| T3 顯式氣閘 | Ctrl-P 發文、`z` 精華區、`i` 板設、`b` 進板畫面、`y`/`X` 推文、其餘一切 | 顯式「切原生操作」→ 原生模式 → 回 clean-list 再 re-engage。不再任意鍵自動墜落 |
+| T4 非請自來 | 水球/廣播（server 主動寫入） | 唯一自動切原生路徑：banner 明示＋氣閘 |
 
 pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（預設 200，0=停背景 fill）。
 三原則：**A 內容判定**（settle 只定何時評估；是什麼靠指紋謂詞，`docs/pttbbs-screen-protocol.md` §3-5）、**B 顯式狀態機**（ListSession 單一擁有者）、**C 命令序列化**（CommandQueue 單一 in-flight；typeahead 跳繪 §2）。誤判永遠往 native 降級（catch-all functionMode）。

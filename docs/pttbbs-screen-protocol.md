@@ -64,7 +64,37 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c:641-840`）：
 - **prompt**：底列輸入點。
 ⇒ `park 在 entry 區` vs `park 在底列` 是「乾淨列表 vs 文章/prompt」的廉價判別式。client 端 settle 時的 `term_buf.cur_x/cur_y` 即 park 位置（settle 已定義為內容＋游標皆靜，`src/js/term_buf.js` `_armSettleTimer` 前註解）。
 
-## 6. 版本與未知
+## 6. `\f`（Ctrl+L）確定性交易依據（v5 新增，全部 CONFIRMED）
+
+- **igetch 全域熱鍵**：`Ctrl('L')` → `redrawwin()+refresh()` 後 `continue`（`mbbsd/io.c` igetch switch）——`\f` 永不回傳給呼叫者，等同「插入一幀全幅重繪」。`vkey()`＝`igetch()`（io.c `vkey`），故**所有走 vkey 的輸入點都吃這條**。
+- **getdata/vget 中途誤送安全**：`getdata` → `vgets` → `vgetstring`（`mbbsd/stuff.c:372`→`mbbsd/vtuikit.c:1154`）主迴圈 `c = vkey()` → `\f` 在 igetch 層就被攔掉，不進輸入 buffer、不炸，且照樣觸發全幅重繪（游標 park 回輸入點）。即使未被攔，content filter `c < ' '` 也只 `bell(); continue`。
+- **pmore 內安全**：pmore 主迴圈 `ch = vkey()`（`mbbsd/pmore.c:2537`）→ 同樣被 igetch 攔截全幅重繪。開文/退文交易尾附 `\f` 可行。
+- **read.c 列表層再保險**：`i_read_key` 自己也有 `case Ctrl('L'): redrawwin()+refresh()`（`mbbsd/read.c:735`）。
+- typeahead 交互（BePTT 實證＋§2 推論）：`指令+\f` 同送 → 中間增量重繪被跳繪吞 → client 恰見一幀全幅畫面。單獨 `\f`＝零副作用「我在哪」探針。
+- `\f` 不取代 settle：全幅重繪仍拆包（OBUFSIZE 3072），settle 判「何時看」、`\f` 保證「必有得看」。
+
+## 7. `v` 已讀設定交易（`b_mark_read_unread`，CONFIRMED）
+
+`mbbsd/bbs.c:4223`（鍵表 flag 1）：
+- 畫面：`move(b_lines-4,0); clrtobot()` → 空行＋提示行「設定已讀未讀記錄 (注意: …'~')」→ `getdata(b_lines-1, 0, "設定所有文章 (U)未讀 (V)已讀 (W)前已讀後未讀 (Q)取消？[Q] ", ans, 3, LCECHO)`。
+- **prompt 指紋**：底 4 列被清、b_lines-3 起提示文字、游標 park 在底列 prompt 輸入點。
+- **LCECHO＝`VGET_LOWERCASE` 多字元 getdata（`stuff.c:340`），單字元後必須送 `\r` 收尾**；空輸入（直接 `\r`）＝取消（default 分支）。
+- 完成後 `return FULLUPDATE` → server 自行全幅重繪＝交易天生確定性收尾，**免附 `\f`**。W 以游標文章檔名時間戳（`filename+2`）為分界；時間戳無效時 `vmsg`（按任意鍵 prompt）——client 送 `\r` 收掉再等 FULLUPDATE。
+
+## 8. MODE_SELECT（`/` 搜尋）交易進出對（CONFIRMED）
+
+- 進入：`/` → `select_read(locmem, RS_KEYWORD)`（`mbbsd/read.c:776`）→ `getdata(b_lines, 0, "搜尋標題: ", …, DOECHO)`（Enter 收尾；空字串→`READ_REDRAW` 回原列表）→ 命中 count>0：`currmode |= MODE_SELECT` ＋ `NEWDIRECT`（全幅重建搜尋清單，序號空間獨立、無置底，見 §3）；count==0：`READ_REDRAW`（回原列表全幅重繪，底列 vmsg 類訊息）。
+- 已在 MODE_SELECT 再 `/`＝「增加條件」疊加篩選。
+- **退出：`q`／`e`／`←`**（`read.c:712-725`）→ `board_select()` 回主 directory ＋ `NEWDIRECT` 全幅重建主列表；游標落在原文（`crs_ln=refer`）、**top=crs-p_lines+1（游標在視窗底列）**。
+- client 判準：進/出皆為全幅重建 clean-list；select 清單期間板名（row0）不變——區分靠 client 自身交易狀態，非畫面指紋。
+
+## 9. 水球/廣播指紋（T4 非請自來，CONFIRMED）
+
+- 路徑：SIGUSR2 → `write_request`（`mbbsd/mbbsd.c:493`）→ `show_call_in`（:392）→ `outmsg`（`mbbsd/kaede.c:128`）＝ `move(b_lines - msg_occupied, 0); clrtoeol(); outs(msg)`。
+- 格式：`ESC[1;33;46m ◆userid ESC[37;45m 訊息內容 ESC[0m`（水球）；廣播/aloha 同走 outmsg 家族。
+- **client 指紋**：無 in-flight ∧ 非使用者觸發的 settle，髒列集合 ⊆ {底列}（msg_occupied>0 時上移一列），且該列以反白 `◆`（Big5 `A1BB` 系）帶 `1;33;46`/`37;45` 色起頭。dogetch 等待中即時觸發（`io.c:460`），可出現在任何畫面。
+
+## 10. 版本與未知
 
 - 以 HEAD 讀碼；term.ptt.cc 實跑版本未知但此區域程式碼古老穩定。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。
 - unknown：ws.ptt.cc 的 WS proxy 是否保留 server write 邊界（proxy 不在本 repo）。

@@ -184,15 +184,27 @@ test.describe('cassette 录制器', () => {
         // ↑×2（要求看板置底 ≥3 篇；离线测试以 End 停驻列往上数 2 列为目标）
         // → Enter 开文 → ← 返回。
         pinned: ['jumpmax', 'end', 'up', 'up', 'open', 'back'],
+        // v 已读设定卷（v5 T2 交易素材）：'v' 开 prompt（底 4 列清 + getdata 提示，
+        // 协定 §7）→ 空 Enter 取消 —— 取消同样 return FULLUPDATE（server 全幅重绘
+        // 收尾），一卷同时覆盖 prompt 指纹与确定性收尾，且零副作用（不真改已读记录）。
+        mark: ['mark', 'cancel'],
+        // '/' 搜寻进出对卷（v5 MODE_SELECT 交易素材，协定 §8）：'/' 开 prompt →
+        // 键入关键字 + Enter（RECORD_QUERY，默认 'Re'——标题含 Re: 常见，保证命中）
+        // → NEWDIRECT 全幅重建搜寻清单 → ← 退出 → NEWDIRECT 回主列表。
+        search: ['slash', 'query', 'back'],
       };
       const scriptName = process.env.RECORD_LIST_SCRIPT || '';
       const script = LIST_SCRIPTS[scriptName];
-      if (!script) throw new Error(`未知 RECORD_LIST_SCRIPT="${scriptName}"（可用: nav / prompt）`);
+      if (!script)
+        throw new Error(
+          `未知 RECORD_LIST_SCRIPT="${scriptName}"（可用: ${Object.keys(LIST_SCRIPTS).filter(Boolean).join(' / ')}）`
+        );
 
       await page.waitForTimeout(1500);
       // 装 onData 累积 hook + flush 工具（此时才装：登入/进板 recv 不进素材，article-scoped 同理）。
-      await page.evaluate(() => {
+      await page.evaluate((recordQuery) => {
         const app = window.__app;
+        window.__recordQuery = recordQuery;
         window.__rl = { cur: [], steps: [], pageScreens: [] };
         const orig = app.onData.bind(app);
         app.onData = (d) => {
@@ -208,7 +220,7 @@ test.describe('cassette 录制器', () => {
           window.__rl.steps.push(Object.assign({ on, recv: btoa(recv) }, extra || {}));
           window.__rl.pageScreens.push(rows);
         };
-      });
+      }, process.env.RECORD_QUERY || 'Re');
 
       // start step：Ctrl-L 触发 server 全页重送。
       await page.evaluate(() => {
@@ -231,7 +243,12 @@ test.describe('cassette 录制器', () => {
           else if (action === 'up') keys = '\x1b[A';
           else if (action === 'back') keys = '\x1b[D';
           else if (action === 'slash') keys = '/';
-          else if (action === 'open' || action === 'cancel') keys = '\r';
+          else if (action === 'mark') keys = 'v';
+          else if (action === 'query') {
+            const q = window.__recordQuery || 'Re';
+            keys = q + '\r';
+            extra = { query: q };
+          } else if (action === 'open' || action === 'cancel') keys = '\r';
           else if (action === 'jump' || action === 'jumpsame' || action === 'jumpmax') {
             let num = null;
             if (action === 'jumpmax') {
