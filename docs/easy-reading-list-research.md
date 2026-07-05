@@ -172,6 +172,10 @@ BePTT 式是換掉整個合約：資料層（文章條目陣列）與呈現層�
      每階段獨立可驗收，中途砍掉不傷原生模式。
 4. **不建議**：在 parity 方向繼續修／補／優化。兩代「測試綠仍實測不穩」已經證明失敗面積在素材之外；每輪修復的產出是又一條不變量，而不變量清單本身就是維護負債。
 
+## 後記（2026-07-05 決策）
+
+使用者拍板：走「封閉互動＋確定性交易」路線（介於 C 與 D：保留終端外觀與鍵盤習慣，互動合約封閉化、交易尾附 Ctrl+L）。實作藍圖：`docs/handoff/easy-reading-list-v5.md`（完工後該檔刪除、新合約併入 `docs/easy-reading-list.md`）。
+
 ## 7. 附錄：證據索引
 
 - 架構與不變量：`docs/easy-reading-list.md`；協定逆向：`docs/pttbbs-screen-protocol.md`；黑名單整合：`docs/enhanced-addon.md`。
