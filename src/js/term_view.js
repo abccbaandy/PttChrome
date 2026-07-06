@@ -221,7 +221,16 @@ export function TermView() {
     this.onInput(e);
   }, false);
 
-  let shouldAcceptInput = () => !this.bbscore.modalShown && !this.bbscore.contextMenuShown;
+  // _listInputWrap: while the list T2 input overlay (search keyword / jump
+  // number) is open it OWNS the keyboard — the global handlers must not touch
+  // events (keypress would leak chars to the server) and, critically, the
+  // keyup handler below must not steal focus back to #t (that wedge ate every
+  // keystroke: first keyup refocused #t, all further keys hit the frozen
+  // swallow — the「/ 搜尋打不了字」bug).
+  let shouldAcceptInput = () =>
+    !this.bbscore.modalShown &&
+    !this.bbscore.contextMenuShown &&
+    !this._listInputWrap;
   let keyEventFilter = (e) => {
     // On both Mac and Windows, control/alt+key will be sent as original key
     // code even under IME.

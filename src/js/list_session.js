@@ -935,6 +935,9 @@ ListSession.prototype = {
       },
       timeoutMs: 3000,
       onDone: function() {
+        // Parameter wait: the transaction is waiting on the USER, not the
+        // server — the loading indicator goes dark until the commit leg.
+        self._setLoading(false);
         self._paramMode = { type: 'mark' };
         if (self._view.showListOverlay)
           self._view.showListOverlay(
@@ -950,6 +953,7 @@ ListSession.prototype = {
   _onMarkParamKey: function(k) {
     this._paramMode = null;
     if (this._view.hideListOverlay) this._view.hideListOverlay();
+    this._setLoading(true); // commit leg: waiting on the server again
     const choice = k === 'u' || k === 'v' || k === 'w' ? k : '';
     const self = this;
     this._queue.enqueue({
@@ -994,6 +998,8 @@ ListSession.prototype = {
           self._commitSearch(null);
           return;
         }
+        // Parameter wait (see _beginMark): loading off while the user types.
+        self._setLoading(false);
         self._view.promptListInput('搜尋標題：', '', function(kw) {
           self._commitSearch(kw);
         });
@@ -1006,6 +1012,7 @@ ListSession.prototype = {
 
   _commitSearch: function(kw) {
     const self = this;
+    this._setLoading(true); // commit leg: waiting on the server again
     if (!kw) {
       // Cancel: close the getdata; READ_REDRAW repaints the same clean list.
       this._queue.enqueue({

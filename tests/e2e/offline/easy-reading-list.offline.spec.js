@@ -526,10 +526,19 @@ test.describe('T2 交易（离线，search/mark 卷）', () => {
       await page.locator('#t').focus();
       await page.keyboard.press('/');
       await waitState(page, (x) => x.renderMode === 'frozen' || x.state === 'active');
-      // 输入框出现 → 键入卷内关键字并 Enter（query step 门控精确比对）。
+      // 输入框出现 → 用「真实逐键」输入（不可用 fill 绕过键盘事件——回归：
+      // 全域 keyup handler 每键把 focus 抢回 #t，输入框一个字都吃不到，且
+      // keypress 泄漏进终端键盘）。收参等待期间「读取中」必须熄灭（交易并
+      // 不在等 server）。
       const q = (search.steps.find((st) => st.on === 'query') || {}).query || 'Re';
       await page.waitForSelector('input[data-list-input]');
-      await page.locator('input[data-list-input]').fill(q);
+      const loadingWhilePrompt = await page.evaluate(() => {
+        const el = window.__app.view._listLoadingEl;
+        return !!el && el.style.display !== 'none';
+      });
+      expect(loadingWhilePrompt).toBe(false);
+      await page.keyboard.type(q, { delay: 30 });
+      await expect(page.locator('input[data-list-input]')).toHaveValue(q);
       await page.keyboard.press('Enter');
 
       // 提交完成 → MODE_SELECT 清单 rebuild（序号空间独立、缓冲重建）。
