@@ -145,6 +145,24 @@ export function classifyListBurst({ changedRows, curY, rows }) {
   return 'other';
 }
 
+// T4 non-solicited message fingerprint (v5/M4; protocol §9 CONFIRMED): a
+// waterball/broadcast is outmsg writing ONLY the bottom row (one row up when
+// msg_occupied>0), the row starting with the reversed ◆ marker. The caller
+// must already have excluded in-flight transactions — this only inspects the
+// settle's dirty-row shape and content. Used to pick the banner wording when
+// the active-state catch-all degrades to native.
+export function isWaterballSettle({ changedRows, rowTexts, rows }) {
+  if (!changedRows || changedRows.size === 0 || changedRows.size > 2)
+    return false;
+  let bottomOnly = true;
+  let marker = false;
+  changedRows.forEach(r => {
+    if (r < rows - 2) bottomOnly = false;
+    else if (((rowTexts[r] || '').trimStart()).indexOf('◆') === 0) marker = true;
+  });
+  return bottomOnly && marker;
+}
+
 // ---------------------------------------------------------------------------
 // State machine (pure reducer)
 // ---------------------------------------------------------------------------
@@ -323,9 +341,16 @@ export function transitionListSession(state, event) {
       if (event.type === 'settle') {
         switch (event.kind) {
           case 'clean-list':
-            // Back from the article: the maps were kept — no rebuild, restore
-            // the selection to the article we opened.
-            return { next: 'active', actions: ['restore'] };
+            // Back from the article (v5/M4 re-seed): the server repaints the
+            // full list on article exit (READ_REDRAW) with its own getkeep
+            // window and cursor — adopt that landing as the truth (push counts
+            // on the repainted page refresh via the redraw merge) instead of
+            // replaying saved anchors (the retired _restore parity family).
+            // Same rule as functionMode: landed outside the buffer (pinned
+            // cursor parses null num) or board changed → rebuild.
+            return event.landedNumInBuffer && event.boardNameMatch
+              ? { next: 'active', actions: ['resume-buffer'] }
+              : { next: 'active', actions: ['resume-buffer', 'rebuild'] };
           case 'menu':
             return { next: 'idle', actions: ['cleanup'] };
           default:
@@ -475,9 +500,6 @@ export function ListSession(core, view, termBuf, queue) {
   this._selectedNum = null; // numbered selection (article number)
   this._selectedPinnedKey = null; // pinned-row selection (title key)
   this._topNum = null; // window-top anchor (article number; native top_ln)
-  this._restoreNum = null; // selection to restore after an article
-  this._restorePinnedKey = null; // ditto for a pinned selection
-  this._restoreTopNum = null; // window top to restore (native getkeep top_ln)
   this._fillTarget = 0;
   this._fillPages = 0;
   this._edgeUp = false;
@@ -565,6 +587,8 @@ ListSession.prototype = {
     const cls = classifyListScreen(facts);
     facts.kind = cls.kind;
     facts.boardName = cls.boardName;
+    // T4 banner wording (isWaterballSettle) reads the settle's dirty-row shape.
+    facts.changedRows = snap ? snap.changedRows : null;
     facts.nums = pageArticleNums(rowTexts, facts.curY);
     facts.cursorRowNum =
       facts.curY >= 0 && facts.curY < facts.nums.length ? facts.nums[facts.curY] : null;
@@ -615,11 +639,9 @@ ListSession.prototype = {
       case 'handoff-article':
         return this._handoffArticle();
       case 'enter-function-mode':
-        return this._enterFunctionMode();
+        return this._enterFunctionMode(facts);
       case 'resume-buffer':
         return this._resumeBuffer(facts);
-      case 'restore':
-        return this._restore();
       case 'cleanup':
         return this._cleanup();
       // 'move-selection' / 'begin-open*' carry key context; executed in onKeyDown.
@@ -757,15 +779,7 @@ ListSession.prototype = {
   // never left our render). Exits: hit → resume-buffer; miss/timeout →
   // _resumeAfterRelative; article/menu → handoff/cleanup set their own modes.
   _beginRelative: function(keyChar) {
-    this._breakChain();
-    this._prunePivotOverride = undefined; // flush is silent — reset here
-    // flushPending, NOT flush: an in-flight prefetch stays PAIRED so its
-    // on-the-wire response can't become an ownerless settle that prematurely
-    // satisfies our expect (live race) — the transaction serializes behind it.
-    this._queue.flushPending();
-    this._renderMode = 'frozen';
-    this._view.hideCursor();
-    this._forceRedraw();
+    this._freezeForTransaction();
     this._beginRelativeCommand(keyChar);
   },
 
@@ -848,6 +862,7 @@ ListSession.prototype = {
     if (this.state !== 'functionMode') return; // reducer already routed us
     this.state = 'active';
     this._renderMode = 'buffer';
+    this._setLoading(false);
     this._view.hideCursor();
     this._forceRedraw();
   },
@@ -859,14 +874,7 @@ ListSession.prototype = {
   // (MODE_SELECT exit / thread hop landed back on a list). Timeout/miss =
   // explicit degrade to the native mirror (v5: failures are visible).
   _beginLeave: function() {
-    this._breakChain();
-    this._prunePivotOverride = undefined; // flush is silent — reset here
-    // flushPending: keep an in-flight prefetch paired (see _beginRelative) —
-    // the exact live race was THIS expect eating a prefetch anchor's landing.
-    this._queue.flushPending();
-    this._renderMode = 'frozen';
-    this._view.hideCursor();
-    this._forceRedraw();
+    this._freezeForTransaction();
     const self = this;
     this._queue.enqueue({
       keys: '\x1b[D',
@@ -885,7 +893,7 @@ ListSession.prototype = {
         }
       },
       onFail: function() {
-        self._enterFunctionMode();
+        self._degradeToNative('離開列表逾時，已切至原生模式');
       }
     });
   },
@@ -893,13 +901,16 @@ ListSession.prototype = {
   // ---- T2 transactions (v5, M3) ---------------------------------------------
 
   // Freeze the window snapshot and clear the pipeline — shared preamble of
-  // every T2 transaction (same as _beginRelative's).
+  // every serialized transaction (relative pair / leave / T2). flushPending,
+  // NOT flush: an in-flight prefetch stays PAIRED so its on-the-wire response
+  // can't become an ownerless settle that prematurely satisfies our expect
+  // (live race) — the transaction serializes behind it.
   _freezeForTransaction: function() {
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
-    // flushPending: keep an in-flight prefetch paired (see _beginRelative).
     this._queue.flushPending();
     this._renderMode = 'frozen';
+    this._setLoading(true);
     this._view.hideCursor();
     this._forceRedraw();
   },
@@ -931,7 +942,7 @@ ListSession.prototype = {
           );
       },
       onFail: function() {
-        self._enterFunctionMode(); // 顯性降級
+        self._degradeToNative('已讀設定逾時，已切至原生模式'); // 顯性降級
       }
     });
   },
@@ -952,7 +963,7 @@ ListSession.prototype = {
       timeoutMs: 4000,
       // The completing settle's reducer pass resumes the buffer.
       onFail: function() {
-        self._enterFunctionMode();
+        self._degradeToNative('已讀設定逾時，已切至原生模式');
       }
     });
   },
@@ -988,7 +999,7 @@ ListSession.prototype = {
         });
       },
       onFail: function() {
-        self._enterFunctionMode();
+        self._degradeToNative('搜尋逾時，已切至原生模式');
       }
     });
   },
@@ -1005,7 +1016,7 @@ ListSession.prototype = {
         },
         timeoutMs: 4000,
         onFail: function() {
-          self._enterFunctionMode();
+          self._degradeToNative('搜尋取消逾時，已切至原生模式');
         }
       });
       return;
@@ -1027,7 +1038,7 @@ ListSession.prototype = {
         self._boardName = null;
       },
       onFail: function() {
-        self._enterFunctionMode();
+        self._degradeToNative('搜尋逾時，已切至原生模式');
       }
     });
   },
@@ -1072,12 +1083,13 @@ ListSession.prototype = {
         self._prunePivotOverride = undefined;
         self.state = 'active';
         self._renderMode = 'buffer';
+        self._setLoading(false);
         self._view.hideCursor();
         self._rebuild(landed);
       },
       onFail: function() {
         self._prunePivotOverride = undefined;
-        self._enterFunctionMode();
+        self._degradeToNative('跳號逾時，已切至原生模式');
       }
     });
   },
@@ -1149,7 +1161,6 @@ ListSession.prototype = {
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
     this._boardName = facts.boardName;
-    this._restoreNum = null;
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
@@ -1322,6 +1333,7 @@ ListSession.prototype = {
       if (up) self._edgeUp = true;
       else self._edgeDown = true;
       self._chainState = null;
+      self._setLoading(false); // an edge-waiting user has their answer
       // A confirmed bottom edge un-gates the pinned tail (windowVisibleSequence)
       // — repaint so 置底文 appear, exactly like native's last page.
       self._forceRedraw();
@@ -1375,6 +1387,7 @@ ListSession.prototype = {
         self._fillPages++;
         if (r.edge) markEdge();
         else {
+          self._setLoading(false); // new rows arrived — edge wait (if any) over
           self._chainState = { dir: dir, lastLanded: r.landed };
           if (origin === 'key') self._maybeDemand(dir);
           else self._maybeFill();
@@ -1393,9 +1406,7 @@ ListSession.prototype = {
     const num = this._selectedNum;
     if (num == null) return;
     this._renderMode = 'frozen';
-    this._restoreNum = num;
-    this._restorePinnedKey = null;
-    this._restoreTopNum = this._topNum;
+    this._setLoading(true);
     this._breakChain();
     // flushPending: drop queued prefetch but keep an in-flight one paired
     // (see _beginRelative); content predicates absorb the seam.
@@ -1460,9 +1471,7 @@ ListSession.prototype = {
       return;
     }
     this._renderMode = 'frozen';
-    this._restoreNum = null;
-    this._restorePinnedKey = key;
-    this._restoreTopNum = this._topNum;
+    this._setLoading(true);
     this._breakChain();
     // flushPending: keep an in-flight prefetch paired (see _beginRelative).
     this._queue.flushPending();
@@ -1552,18 +1561,18 @@ ListSession.prototype = {
   },
 
   _openFailed: function() {
+    // v5 contract #5: failures are visible — banner, then the reducer routes
+    // opening → functionMode (native mirror).
+    if (this._view.flashListHint)
+      this._view.flashListHint('開啟文章失敗，已切至原生模式', 4000);
     this._dispatch({ type: 'open-timeout' }, null);
   },
 
+  // Article open confirmed: hand the screen to the article renderers. The
+  // buffer maps are KEPT — coming back re-seeds from the server's landing
+  // (suspended → clean-list → resume-buffer), no saved anchors needed (v5/M4).
   _handoffArticle: function() {
-    if (this._selectedNum != null) {
-      this._restoreNum = this._selectedNum;
-      this._restorePinnedKey = null;
-    } else if (this._selectedPinnedKey != null) {
-      this._restorePinnedKey = this._selectedPinnedKey;
-      this._restoreNum = null;
-    }
-    this._restoreTopNum = this._topNum;
+    this._setLoading(false);
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();
@@ -1575,18 +1584,48 @@ ListSession.prototype = {
     this._forceRedraw();
   },
 
-  _enterFunctionMode: function() {
+  // Switch to the native LIVE mirror. `facts` present = the reducer's settle
+  // catch-all routed us here (T4 non-solicited / misclassification) — v5
+  // failures are VISIBLE: show a banner naming why (waterball fingerprint gets
+  // the specific wording). facts null = an explicit entry (airlock consent,
+  // internal callers) — no banner.
+  _enterFunctionMode: function(facts) {
+    this._setLoading(false);
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();
     this._renderMode = 'native';
     this._view.showCursor();
     this._forceRedraw();
+    if (facts && this._view.flashListHint) {
+      this._view.flashListHint(
+        isWaterballSettle(facts)
+          ? '收到水球／廣播，已切至原生模式（回到列表畫面自動恢復好讀）'
+          : '畫面偏離列表格式，已切至原生模式（回到列表畫面自動恢復好讀）',
+        4000
+      );
+    }
+  },
+
+  // Explicit visible degrade for transaction failures (timeout after the \f
+  // probe, unexpected screens): banner + native mirror. v5 contract #5 — no
+  // silent falls.
+  _degradeToNative: function(msg) {
+    if (this._view.flashListHint) this._view.flashListHint(msg, 4000);
+    this._enterFunctionMode();
+  },
+
+  // Reusable "loading" indicator (v5 contract #4): shown while a serialized
+  // transaction freezes the render, and while a demand prefetch is filling
+  // past a window edge the user is pressing against. View-optional (tests).
+  _setLoading: function(on) {
+    if (this._view.setListLoading) this._view.setListLoading(on);
   },
 
   _resumeBuffer: function(facts) {
     this._breakChain();
     this._renderMode = 'buffer';
+    this._setLoading(false);
     this._view.hideCursor();
     if (facts && facts.cursorRowNum != null) {
       // Adopt the native screen's cursor AND window top so the buffer render
@@ -1611,31 +1650,10 @@ ListSession.prototype = {
     this._forceRedraw();
   },
 
-  _restore: function() {
-    this._breakChain();
-    this._renderMode = 'buffer';
-    this._view.hideCursor();
-    if (this._restoreNum != null) {
-      this._selectedNum = this._restoreNum;
-      this._selectedPinnedKey = null;
-      // The restore target may have been evicted by the row cap while we were
-      // away — fall back to the newest row instead of a dangling selection.
-      if (this._resolveSelectedIndex() === -1) this._selectLastNumbered();
-    } else if (this._restorePinnedKey != null) {
-      this._selectedNum = null;
-      this._selectedPinnedKey = this._restorePinnedKey;
-      if (this._resolveSelectedIndex() === -1) this._selectLastNumbered();
-    }
-    // Native getkeep parity: restore the window top too, so leaving the
-    // article shows the list EXACTLY as it was (the article must not appear
-    // to have moved to the bottom of the page).
-    this._topNum = this._restoreTopNum;
-    this._forceRedraw();
-  },
-
   _cleanup: function() {
     this._breakChain();
     this._queue.flush();
+    this._setLoading(false);
     this._paramMode = null;
     this._selectMode = false;
     if (this._view.hideListOverlay) this._view.hideListOverlay();
@@ -1644,9 +1662,6 @@ ListSession.prototype = {
     this._selectedNum = null;
     this._selectedPinnedKey = null;
     this._topNum = null;
-    this._restoreNum = null;
-    this._restorePinnedKey = null;
-    this._restoreTopNum = null;
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
@@ -1747,6 +1762,13 @@ ListSession.prototype = {
     this._forceRedraw();
     const direction = op === 'up' || op === 'pgup' || op === 'home' ? -1 : 1;
     this._maybeDemand(direction);
+    // 到邊讀取中 (v5/M4): the cursor is pressed against the buffer edge, more
+    // rows exist server-side, and a prefetch is in flight (the demand above or
+    // an earlier chain) — show the loading indicator until rows arrive
+    // (prefetch onDone/markEdge clear it).
+    const atEdge = direction > 0 ? r.cursor === seq.length - 1 : r.cursor === 0;
+    const moreExpected = direction > 0 ? !this._edgeDown : !this._edgeUp;
+    if (atEdge && moreExpected && !this._queue.idle) this._setLoading(true);
   },
 
   // Native End (read.c KEY_END: new_ln = last_line, which INCLUDES the pinned

@@ -18,6 +18,7 @@ import {
   shouldStopListPrefetch,
   moveListSelection,
   visibleListIndices,
+  isWaterballSettle,
 } from "../../src/js/list_session";
 
 const fixture = JSON.parse(
@@ -172,6 +173,59 @@ describe("classifyListBurst", () => {
   });
 });
 
+// v5/M4 T4：水球/廣播指紋（protocol §9 outmsg：只寫底列（msg_occupied>0 時
+// 上移一列），該列以反白 ◆ 起頭）。caller 先排除 in-flight 交易再問。
+describe("isWaterballSettle (T4 非請自來指紋)", () => {
+  const rows = 24;
+  const texts = msgRow => {
+    const t = new Array(rows).fill("");
+    Object.keys(msgRow).forEach(r => (t[r] = msgRow[r]));
+    return t;
+  };
+  test("底列 ◆userid 訊息 → true", () => {
+    expect(
+      isWaterballSettle({
+        changedRows: new Set([23]),
+        rowTexts: texts({ 23: " ◆someuser 安安你好" }),
+        rows,
+      })
+    ).toBe(true);
+  });
+  test("msg_occupied 上移一列（rows-2）也認", () => {
+    expect(
+      isWaterballSettle({
+        changedRows: new Set([22, 23]),
+        rowTexts: texts({ 22: "◆other 第二顆", 23: " ◆someuser 第一顆" }),
+        rows,
+      })
+    ).toBe(true);
+  });
+  test("髒列超出底部兩列 → false（頁面重繪不是水球）", () => {
+    expect(
+      isWaterballSettle({
+        changedRows: new Set([5, 23]),
+        rowTexts: texts({ 23: "◆someuser hi" }),
+        rows,
+      })
+    ).toBe(false);
+  });
+  test("底列非 ◆ 起頭 → false（一般 vmsg 訊息列）", () => {
+    expect(
+      isWaterballSettle({
+        changedRows: new Set([23]),
+        rowTexts: texts({ 23: "【功能鍵】按任意鍵繼續" }),
+        rows,
+      })
+    ).toBe(false);
+    expect(
+      isWaterballSettle({ changedRows: new Set(), rowTexts: texts({}), rows })
+    ).toBe(false);
+    expect(isWaterballSettle({ changedRows: null, rowTexts: texts({}), rows })).toBe(
+      false
+    );
+  });
+});
+
 describe("transitionListSession (full table)", () => {
   const settle = (kind, extra = {}) => ({
     type: "settle",
@@ -274,7 +328,22 @@ describe("transitionListSession (full table)", () => {
   });
 
   test("suspended", () => {
-    T("suspended", settle("clean-list"), "active", ["restore"]);
+    // v5/M4 re-seed：退文回列表不再逐行 parity 還原（_restore 家族退役），
+    // 與 functionMode 同規則——server 落點權威，落點在緩衝內續用 buffer，
+    // 否則 rebuild（pinned 落點 cursorRowNum=null → landedNumInBuffer=false）。
+    T(
+      "suspended",
+      settle("clean-list", { landedNumInBuffer: true }),
+      "active",
+      ["resume-buffer"]
+    );
+    T("suspended", settle("clean-list"), "active", ["resume-buffer", "rebuild"]);
+    T(
+      "suspended",
+      settle("clean-list", { landedNumInBuffer: true, boardNameMatch: false }),
+      "active",
+      ["resume-buffer", "rebuild"]
+    );
     T("suspended", settle("menu"), "idle", ["cleanup"]);
     T("suspended", settle("article"), "suspended", []); // page turns inside the article
     T("suspended", settle("prompt"), "suspended", []);

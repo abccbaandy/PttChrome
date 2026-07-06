@@ -758,7 +758,9 @@ TermView.prototype = {
   // (v5: a non-whitelisted key is a no-op with a hint — list_session.js
   // onKeyDown). One reusable fixed div, inline-styled so it needs no CSS file
   // and cannot leak into the terminal layout.
-  flashListHint: function(msg) {
+  // `ms` optional: banners (T4 waterball / transaction degrade) linger longer
+  // than the default key-hint fade.
+  flashListHint: function(msg, ms) {
     var el = this._listHintEl;
     if (!el) {
       el = document.createElement('div');
@@ -775,7 +777,26 @@ TermView.prototype = {
     if (this._listHintTimer) clearTimeout(this._listHintTimer);
     this._listHintTimer = setTimeout(function() {
       el.style.opacity = '0';
-    }, 1800);
+    }, ms || 1800);
+  },
+
+  // Reusable list "loading" indicator (v5/M4, contract #4): shown while a
+  // serialized transaction freezes the render and while a demand prefetch is
+  // filling past a window edge (list_session._setLoading). Small fixed pill in
+  // the bottom-right corner — the frozen 24-row screen itself stays untouched.
+  setListLoading: function(on) {
+    var el = this._listLoadingEl;
+    if (on && !el) {
+      el = document.createElement('div');
+      el.style.cssText =
+        'position:fixed;right:16px;bottom:16px;background:rgba(20,20,20,.85);' +
+        'color:#ffd;padding:4px 12px;border-radius:12px;font-size:13px;' +
+        'z-index:2000;pointer-events:none;';
+      el.textContent = '讀取中…';
+      document.body.appendChild(el);
+      this._listLoadingEl = el;
+    }
+    if (el) el.style.display = on ? 'block' : 'none';
   },
 
   // Persistent (non-fading) overlay line for T2 parameter collection (`v`

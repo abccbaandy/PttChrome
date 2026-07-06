@@ -47,8 +47,8 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
 - **邊未確認的大跳走 server**（serverOp）：End→`_requestEnd`（送 `99999999\r`——jump 超過最大序號 server clamp 到 last_line 含置底，**必有回應**；單發 End 在游標已於底端時零回應必 timeout）；Home→`_requestHome`（`1\r`，序號 1 恆存在）。onDone 確認 edge → 本地套 End/Home。
 - **pinned 門控**：置底列只在 `_edgeDown`（已確認板尾）時進導航序列（native：置底只存在 last page）→ 舊文區往下讀不會先看到置底文。seed/resume 時畫面含 ★ ⇒ `_edgeDown=true`。
 - **缺口 prune**：序號是連續整數，`pruneListToSegment` 在 accumulate（merge→evict 後）只留 pivot 所在連續段，視窗永不跨缺口。pivot＝`session.prunePivot()`：平常＝selection；End jump 在途＝null（留最大段）；Home jump＝1。**far-jump 必設 `_prunePivotOverride`，否則 prune 會把剛抓到的目標頁丟掉**。
-- demand：視窗頂/底距 buffer 邊 **< 2×bodyRows（兩頁）** 即補（方向性、chain 不跨來源 fill/key），提早補頁把 round-trip 藏在使用者到邊之前。到邊等待＝視窗 clamp、鍵 no-op（體感＝native 等 server）。
-- restore（退文章）＝native getkeep：還原 `(_restoreTopNum, _restoreNum/_restorePinnedKey)`，畫面與離開前逐行相同（offline 有 diff 案）。resume（functionMode 出口）＝採 native 畫面的 top+cursor。
+- demand：視窗頂/底距 buffer 邊 **< 2×bodyRows（兩頁）** 即補（方向性、chain 不跨來源 fill/key），提早補頁把 round-trip 藏在使用者到邊之前。到邊等待＝視窗 clamp、鍵 no-op＋右下「讀取中…」指示（`view.setListLoading`，v5/M4；prefetch onDone/markEdge 清除）。
+- 退文回列表＝**re-seed**（v5/M4，`_restore` 逐行 parity 家族已退役）：suspended 的 clean-list settle 走 functionMode 同規則——server 落點權威（READ_REDRAW 重繪的 getkeep top＋游標直接採用，順帶刷新推文數）；落點在緩衝內→resume-buffer 保留 maps，否則（pinned 落點 num=null／板名異）＋rebuild。resume（functionMode 出口）同＝採 native 畫面的 top+cursor。
 - 滾輪＝原生偏好映射本地執行（`mouse_scroll`：素滾=↑↓、右鍵滾=PgUp/PgDn、左鍵滾=thread→list 無意義 no-op）；frozen 吞滾輪。
 - header/footer 快取：accumulate 時從「像 clean-list 的 live 幀」更新（row0 含《＋row2 含 編號 → header；底列含 文章選讀 → footer）——跳號空底列不會污染 footer 快取。
 
@@ -58,11 +58,11 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 `listRenderMode` 映射：active→buffer、opening→frozen、其餘→native。**例外：相對命令配對（begin-relative）期間 state=functionMode 但 render=frozen**（不變量 12）——frozen∧functionMode 時 onKeyDown 吞所有鍵。
 
 - idle：clean-list ∧ pref ∧ rows==24 ∧ `!buf.startedEasyReading` → active（seed＋start-fill）。engage 守門不用 `view.useEasyReadingMode`（article ER 離篇後仍 latch true）。
-- active：clean-list 板名同→continue-fill；異→rebuild；article→suspended；**menu→idle cleanup**（離板可與 in-flight prefetch 的 jump 重繪交錯：jump settle 先把 functionMode 彈回 active，menu settle 若走 catch-all 進 functionMode 會因靜止畫面無下一個 settle 而卡死）；prompt/transient ∧ 無 in-flight→functionMode；有 in-flight→stay。
+- active：clean-list 板名同→continue-fill；異→rebuild；article→suspended；**menu→idle cleanup**（離板可與 in-flight prefetch 的 jump 重繪交錯：jump settle 先把 functionMode 彈回 active，menu settle 若走 catch-all 進 functionMode 會因靜止畫面無下一個 settle 而卡死）；prompt/transient ∧ 無 in-flight→functionMode **＋banner**（v5/M4 失敗顯性化：`isWaterballSettle` 命中（protocol §9 底列 ◆ 指紋）→水球專屬措辭，否則通用「畫面偏離列表」；氣閘等顯式入口不出 banner——`_enterFunctionMode(facts)` 只在 facts 非 null 時顯示）；有 in-flight→stay。交易 onFail 一律 `_degradeToNative(訊息)`＝banner＋原生鏡像。
 - key（active）：nav（↑↓jk/PgUp/PgDn/Home/End → read.c op）；Enter/→＝opening（selectedNum 有值→begin-open；null＝pinned→begin-open-pinned）；`[` `]` `=` ∧ 有序號選取＝relative（→functionMode＋begin-relative，見不變量 12）；`v`＝mark、`/`＝search、數字＝jump-digit（T2 交易，overlay 收參，M3）；`←`/q/e＝leave 交易；**其餘鍵＝no-op＋淡出提示，雙擊同鍵＝T3 氣閘切原生**（v5 封閉互動，M2 起無 passthrough）。
 - opening：settle 等 article；timeout→functionMode 自癒；期間吞所有鍵。
 - functionMode：clean-list→active（landedNum∈buffer ∧ 板名同→resume；否則＋rebuild）；article→suspended；menu→idle cleanup。
-- suspended：clean-list→restore；menu→idle。
+- suspended：clean-list→re-seed（resume-buffer；落點不在緩衝/板名異＋rebuild）；menu→idle。
 - 任意：pref-off/斷線→cleanup。
 
 ## 關鍵不變量（違反即復發）
@@ -74,7 +74,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 4. demand 只朝移動方向。
 5. pinned map key＝`pinnedRowKey`（author|title）；`_pinnedKeyAt` 必須同函式。游標停置底列（有★）仍收錄、● 兩格還原空白；無★游標列排除。**loose-parse guard**：`parseListArticleNumLoose`（strip ●★ 後有行首數字）非 null 的列永不進 pinned map——mid-response 幀（jump 回應寫入中）● 可畫在非 cur_y 列，該列 num 無法回推＋作者欄有效會誤檔成置底，bullet 未還原永久殘留（●52880 污染 bug）。
 5b. **frozen 讓位 pageState 3**（redraw list 分支條件 `pageState !== 3`）。
-5c. **預讀＝錨定命令對或鏈式單腿**：首次＝jump 到 `bufferEdgeNum(方向)` → PgUp/PgDn；同方向連補＝`_chainState={dir,lastLanded}` 跳過 jump 直送翻頁（moved/edge 判準改以 lastLanded 為基準——PgDn 落新頁**頂**、anchor 在新頁**底**，用 anchor 等值判 edge 會誤判）。**鏈失效點必須齊全**（漏一個＝錯位翻頁、v4 bug 3 復發）：所有 flush 呼叫點、任何非 prefetch enqueue（End/Home/open/relative）、無 in-flight 的 server settle（`_onScreenSettled` 在 `queue.onSettle` **前**檢查）、seed/rebuild/resume/restore/cleanup、markEdge、noteEvicted。錨定失敗 onFail flush。回退開關＝`_chainState` 恆 null。offline 門控支援省略的同位置 jump（replay.js「先餵 jump 回應再餵翻頁」分支）。
+5c. **預讀＝錨定命令對或鏈式單腿**：首次＝jump 到 `bufferEdgeNum(方向)` → PgUp/PgDn；同方向連補＝`_chainState={dir,lastLanded}` 跳過 jump 直送翻頁（moved/edge 判準改以 lastLanded 為基準——PgDn 落新頁**頂**、anchor 在新頁**底**，用 anchor 等值判 edge 會誤判）。**鏈失效點必須齊全**（漏一個＝錯位翻頁、v4 bug 3 復發）：所有 flush 呼叫點、任何非 prefetch enqueue（End/Home/open/relative）、無 in-flight 的 server settle（`_onScreenSettled` 在 `queue.onSettle` **前**檢查）、seed/rebuild/resume/cleanup、markEdge、noteEvicted。錨定失敗 onFail flush。回退開關＝`_chainState` 恆 null。offline 門控支援省略的同位置 jump（replay.js「先餵 jump 回應再餵翻頁」分支）。
 6. 選取以序號為身分；pinned 選取以標題 key；**視窗頂同理以 `_topNum` 錨定**——prepend/evict 不動視窗（PgUp 不被新文往下擠的機制）。
 7. 預讀 timeout＝良性到邊；開文 timeout＝functionMode 自癒；flush 靜默（**flush 不觸發 onFail → `_prunePivotOverride` 要在 flush 出口手動重置**）。（v5/M1 起）timeout 一律只是 **\f 探針觸發器**（`command_queue.js`），非訊號；`adaptiveTimeoutMs` 已刪。**交易前導用 `flushPending`（保留 in-flight 配對，序列化排隊）**；全量 `flush` 只准在退原生鏡像路徑（`_enterFunctionMode`/`_handoffArticle`/`_cleanup`）——flush 掉 in-flight 會讓在線回應變無主 settle、提早滿足下一交易的 expect（live race）。prefetch anchor onFail 用 `flushPendingKind('prefetch')`，不誤殺排隊中的交易。
 8. CommandQueue timer 要包 wrapper（Illegal invocation）。

@@ -2,10 +2,11 @@
 // 真浏览器/真渲染，零网络）。CI gate：这里锁的是「进板即用」的最小闭环行为；
 // 依赖特定文章/看板状态的部分留在 live e2e。
 //
-// 核心原则（docs/easy-reading-list.md）：好读列表体验必须与原生一致，唯一差异
-// 是黑名单列被隐藏。渲染是固定 24 行的「原生视窗仿真」（非无限卷动 DOM）：
-// 游标 = 行首 ●、PgUp 游标停新页顶、restore 还原 (top, cursor)。本档的
-// 「双模 engage 比对」与「restore 画面不变」两案直接锁这条原则。
+// v5 合约（docs/easy-reading-list.md）：外观近似原生（固定 24 行视窗、行首 ●
+// 游标）、封闭互动、server 互动一律确定性交易。退文回列表 = re-seed（v5/M4）：
+// server 落点权威（READ_REDRAW 全幅重绘的 getkeep 视窗与游标被直接采用，顺带
+// 刷新推文数），不再逐行 parity 还原 —— 「退文画面不变」案锁的是 server 落点
+// 与离开前一致这一 pttbbs 事实链，非 client 端保存的锚点。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const {
@@ -382,8 +383,9 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(s.renderMode).toBe('native');
       expect(s.cursorHidden).toBe(false);
 
-      // ← 返回列表 → restore：maps 不重建（listLen 不缩水）、选回原文，
-      // 且 24 行画面与离开前完全相同（使用者症状：退出文章列表不得变动）。
+      // ← 返回列表 → re-seed（v5/M4）：server 落点（游标停在刚读的文章）在
+      // 缓冲内 → resume-buffer，maps 不重建（listLen 不缩水）、选取采落点，
+      // 且 24 行画面与离开前完全相同（server getkeep 重绘同一页）。
       await page.keyboard.press('ArrowLeft');
       s = await waitState(page, (x) => x.state === 'active', 20000);
       expect(s.renderMode).toBe('buffer');
@@ -481,7 +483,8 @@ test.describe('置底文 Enter 开启（离线，pinned 卷）', () => {
       expect(s.pageState).toBe(3);
       expect(s.renderMode).toBe('native');
 
-      // ← 返回 → restore：还原 pinned 选取（key 相同）。
+      // ← 返回 → re-seed：pinned 落点 cursorRowNum=null → rebuild 路径，
+      // _seedAnchors 从 server 游标列取 pinned key（与开文目标相同）。
       await page.keyboard.press('ArrowLeft');
       s = await waitState(page, (x) => x.state === 'active', 20000);
       expect(s.renderMode).toBe('buffer');

@@ -311,7 +311,8 @@ test.describe('文章列表好讀模式（live）', () => {
       expect(opened.pageState).toBe(3);
       expect(opened.renderMode).toBe('native');
 
-      // ← 返回 → restore 還原 pinned 選取。
+      // ← 返回 → re-seed（v5/M4）：server 游標仍停在該置底列 → rebuild 路徑
+      // 的 _seedAnchors 取回同一 pinned key。
       await page.locator('#t').focus();
       await page.keyboard.press('ArrowLeft');
       const back = await waitFor(page, (x) => x.state === 'active', 25000);
