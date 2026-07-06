@@ -631,6 +631,31 @@ describe("v 已讀設定 commit（v5/M4 fix）", () => {
   // 當前一頁——緩衝裡其餘幾百列的 '+' 標記全是舊 clone。commit 完成必須
   // 觸發 rebuild（同 '/' 搜尋：清 _boardName → 完成 settle 的 reducer 走
   // boardNameMatch=false → resume-buffer + rebuild），否則「v 沒效果」。
+  // b_mark_read_unread 以「server 真游標」所在文章為操作基準（W 用游標文章
+  // 檔名時間戳當分界，protocol §7）。本地導航零網路 → server 游標停在上次
+  // 互動處——不先 jump 同步就送 v，W 分界會是舊位置（「w 位置不對/沒跳到
+  // 該文章」bug）。與 [ ] = 相對命令同規則：jump-to-selection 前置腿。
+  test("begin-mark 先同步 server 游標（jump→v），選取序號＝jump 目標", () => {
+    const { s, enqueued } = demandSession({ count: 60 });
+    s._selectedNum = 115;
+    s._beginMark();
+    expect(enqueued.length).toBe(1);
+    expect(enqueued[0].kind).toBe("mark-sync-jump");
+    expect(enqueued[0].keys).toBe("115\r");
+    // jump 落點指紋（park 在 entry 區、游標列＝目標序號；§4 ✚ 底列空）
+    expect(
+      enqueued[0].expect(null, { cursorRowNum: 115, curY: 5, curX: 1, rows: 24 })
+    ).toBeTruthy();
+    expect(
+      enqueued[0].expect(null, { cursorRowNum: 114, curY: 5, curX: 1, rows: 24 })
+    ).toBeFalsy();
+    // jump 完成 → 才送 v（getdata prompt 交易）
+    enqueued[0].onDone();
+    expect(enqueued.length).toBe(2);
+    expect(enqueued[1].kind).toBe("mark-prompt");
+    expect(enqueued[1].keys).toBe("v");
+  });
+
   test("commit 送 <choice>\\r，onDone 清 _boardName 強制 rebuild", () => {
     const { s, enqueued } = demandSession({ count: 60 });
     s.state = "functionMode";

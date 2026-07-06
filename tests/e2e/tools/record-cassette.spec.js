@@ -184,10 +184,12 @@ test.describe('cassette 录制器', () => {
         // ↑×2（要求看板置底 ≥3 篇；离线测试以 End 停驻列往上数 2 列为目标）
         // → Enter 开文 → ← 返回。
         pinned: ['jumpmax', 'end', 'up', 'up', 'open', 'back'],
-        // v 已读设定卷（v5 T2 交易素材）：'v' 开 prompt（底 4 列清 + getdata 提示，
-        // 协定 §7）→ 空 Enter 取消 —— 取消同样 return FULLUPDATE（server 全幅重绘
+        // v 已读设定卷（v5 T2 交易素材）：jump 同步游标（runtime _beginMark 的
+        // mark-sync-jump 前置腿——b_mark_read_unread 以 server 游标为基准，W 用
+        // 游标文章时间戳当分界，协定 §7）→ 'v' 开 prompt（底 4 列清 + getdata
+        // 提示）→ 空 Enter 取消 —— 取消同样 return FULLUPDATE（server 全幅重绘
         // 收尾），一卷同时覆盖 prompt 指纹与确定性收尾，且零副作用（不真改已读记录）。
-        mark: ['mark', 'cancel'],
+        mark: ['jump', 'mark', 'cancel'],
         // '/' 搜寻进出对卷（v5 MODE_SELECT 交易素材，协定 §8）：'/' 开 prompt →
         // 键入关键字 + Enter（RECORD_QUERY，默认 'Re'——标题含 Re: 常见，保证命中）
         // → NEWDIRECT 全幅重建搜寻清单 → ← 退出 → NEWDIRECT 回主列表。

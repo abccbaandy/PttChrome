@@ -199,7 +199,8 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     ["[", "functionMode", "relative-sync-jump"],
     ["]", "functionMode", "relative-sync-jump"],
     ["=", "functionMode", "relative-sync-jump"],
-    ["v", "functionMode", "mark-prompt"],
+    // v 先同步 server 游標（W 分界＝游標文章，protocol §7）再開 prompt
+    ["v", "functionMode", "mark-sync-jump"],
     ["/", "functionMode", "search-prompt"],
   ];
   test.each(WHITELIST_BEHAVIOR)("白名單 %s → state=%s", (key, state, kind) => {
@@ -301,8 +302,13 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     s.onKeyDown(keyEvent("v"));
     expect(s.state).toBe("functionMode");
     expect(s._renderMode).toBe("frozen");
-    expect(enqueued[0].kind).toBe("mark-prompt");
-    expect(enqueued[0].keys).toBe("v");
+    // 第一腿：jump 同步 server 游標到選取（W 分界＝游標文章，protocol §7）
+    expect(enqueued[0].kind).toBe("mark-sync-jump");
+    expect(enqueued[0].keys).toBe("42\r");
+    enqueued[0].onDone();
+    expect(enqueued[1].kind).toBe("mark-prompt");
+    expect(enqueued[1].keys).toBe("v");
+    enqueued.shift(); // 後續斷言以 mark-prompt 為 [0]
     // prompt 指紋（protocol §7）
     const promptFacts = {
       rows: 24,

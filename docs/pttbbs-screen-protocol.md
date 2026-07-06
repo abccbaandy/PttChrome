@@ -81,6 +81,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c:641-840`）：
 - **prompt 指紋**：底 4 列被清、b_lines-3 起提示文字、游標 park 在底列 prompt 輸入點。
 - **LCECHO＝`VGET_LOWERCASE` 多字元 getdata（`stuff.c:340`），單字元後必須送 `\r` 收尾**；空輸入（直接 `\r`）＝取消（default 分支）。
 - 完成後 `return FULLUPDATE` → server 自行全幅重繪＝交易天生確定性收尾，**免附 `\f`**。W 以游標文章檔名時間戳（`filename+2`）為分界；時間戳無效時 `vmsg`（按任意鍵 prompt）——client 送 `\r` 收掉再等 FULLUPDATE。
+- **交易以 server 真游標為基準** ⇒ client 交易形＝`跳選取序號\r`（sync-jump，park 指紋）→ `v` → expect prompt → `u/v/w/\r`。本地導航零網路、真游標停在上次互動處——漏掉 sync-jump 腿，W 分界會是舊游標位置（v5/M4 實錯）。
 
 ## 8. MODE_SELECT（`/` 搜尋）交易進出對（CONFIRMED）
 

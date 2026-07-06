@@ -921,13 +921,50 @@ ListSession.prototype = {
     this._forceRedraw();
   },
 
-  // `v` 已讀設定: send `v` immediately (server opens its getdata prompt behind
-  // the frozen snapshot — protocol §7) and collect the choice via overlay.
-  // u/v/w commits `<c>\r`; anything else cancels with `\r` (the getdata MUST
-  // be closed server-side either way). Both ends return FULLUPDATE → the
-  // completing clean-list settle resumes via the reducer.
+  // `v` 已讀設定 (protocol §7): b_mark_read_unread operates FROM THE SERVER
+  // CURSOR — `w` uses the cursor article's filename timestamp as the boundary.
+  // Local navigation is zero-network, so the real cursor sits wherever the
+  // last interaction left it: sync it to the selection with a jump leg first
+  // (same rule as the [ ] = relative pair), THEN open the getdata prompt with
+  // `v` and collect the choice via overlay. u/v/w commits `<c>\r`; anything
+  // else cancels with `\r` (the getdata MUST be closed server-side either
+  // way). Both ends return FULLUPDATE → the completing clean-list settle
+  // resumes via the reducer.
   _beginMark: function() {
     this._freezeForTransaction();
+    const self = this;
+    const num = this._selectedNum;
+    if (num == null) {
+      // Pinned selection: no number to jump to. u/v (whole-board) still make
+      // sense from wherever the cursor is; w's boundary is undefined for a
+      // pinned row anyway — proceed without the sync leg.
+      this._enqueueMarkPrompt();
+      return;
+    }
+    this._queue.enqueue({
+      keys: String(num) + '\r',
+      kind: 'mark-sync-jump',
+      expect: function(snap, facts) {
+        // Jump-landing park fingerprint (protocol §4 ✚: bottom row stays
+        // empty → never clean-list), same as the relative/open jump legs.
+        return (
+          facts.cursorRowNum === num &&
+          facts.curY >= 3 &&
+          facts.curY <= facts.rows - 2 &&
+          facts.curX <= 1
+        );
+      },
+      timeoutMs: 4000,
+      onDone: function() {
+        self._enqueueMarkPrompt();
+      },
+      onFail: function() {
+        self._degradeToNative('已讀設定逾時，已切至原生模式');
+      }
+    });
+  },
+
+  _enqueueMarkPrompt: function() {
     const self = this;
     this._queue.enqueue({
       keys: 'v',

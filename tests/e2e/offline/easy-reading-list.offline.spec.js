@@ -582,7 +582,19 @@ test.describe('T2 交易（离线，search/mark 卷）', () => {
       let s = await waitState(page, (x) => x.state === 'active' && x.queueIdle);
       const before = s.listLen;
 
-      // 'v' → mark-prompt 交易（mark step 喂 prompt 画面）→ overlay 出现。
+      // 选取设为卷内 jump 目标：runtime 的 mark-sync-jump（先同步 server 游标
+      // 到选取，W 分界＝游标文章）序号必须与录制 jump step 一致，门控才会喂。
+      const markJumpNum = (mark.steps.find((st) => st.on === 'jump') || {}).num;
+      expect(markJumpNum).toBeTruthy();
+      await page.evaluate((n) => {
+        const ls = window.__app.listSession;
+        ls._selectedNum = n;
+        ls._selectedPinnedKey = null;
+        ls._forceRedraw();
+      }, markJumpNum);
+
+      // 'v' → mark-sync-jump（jump step）→ mark-prompt（mark step 喂 prompt
+      // 画面）→ overlay 出现。
       await page.locator('#t').focus();
       await page.keyboard.press('v');
       // 等 prompt 交易完成、overlay 收参就绪（paramMode 设定）再操作——过早按键
