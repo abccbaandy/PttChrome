@@ -99,7 +99,16 @@ describe("classifyListScreen", () => {
   });
 
   test("top-level menus by title marker → menu", () => {
-    for (const title of ["【主功能表】", "【分類看板】", "【精華文章】"]) {
+    // 【看板列表】/【我的最愛】：從看板列表/最愛進板再 ← 離板的落點畫面——
+    // 不認得會讓 leave-board 交易 expect 永不滿足（timeout→探針→顯性降級，
+    // 「退到看板列表卡很久然後切原生」bug）。
+    for (const title of [
+      "【主功能表】",
+      "【分類看板】",
+      "【精華文章】",
+      "【看板列表】",
+      "【我的最愛】",
+    ]) {
       const rows = listRows.slice();
       rows[0] = title + " 批踢踢實業坊";
       rows[rows.length - 1] = "  選擇看板";
@@ -614,6 +623,34 @@ describe("demand 邊距（提早預補隱藏 round-trip 延遲）", () => {
     s._edgeDown = true;
     s._maybeDemand(1);
     expect(enqueued).toEqual([]);
+  });
+});
+
+describe("v 已讀設定 commit（v5/M4 fix）", () => {
+  // b_mark_read_unread 改的是「整個看板」的未讀旗標，但 FULLUPDATE 只重繪
+  // 當前一頁——緩衝裡其餘幾百列的 '+' 標記全是舊 clone。commit 完成必須
+  // 觸發 rebuild（同 '/' 搜尋：清 _boardName → 完成 settle 的 reducer 走
+  // boardNameMatch=false → resume-buffer + rebuild），否則「v 沒效果」。
+  test("commit 送 <choice>\\r，onDone 清 _boardName 強制 rebuild", () => {
+    const { s, enqueued } = demandSession({ count: 60 });
+    s.state = "functionMode";
+    s._paramMode = { type: "mark" };
+    s._onMarkParamKey("u");
+    expect(enqueued.length).toBe(1);
+    expect(enqueued[0].kind).toBe("mark-commit");
+    expect(enqueued[0].keys).toBe("u\r");
+    expect(typeof enqueued[0].onDone).toBe("function");
+    enqueued[0].onDone();
+    expect(s._boardName).toBeNull();
+  });
+  test("取消（非 u/v/w）只送 \\r 收 getdata，不 rebuild", () => {
+    const { s, enqueued } = demandSession({ count: 60 });
+    s.state = "functionMode";
+    s._paramMode = { type: "mark" };
+    s._onMarkParamKey("escape");
+    expect(enqueued[0].keys).toBe("\r");
+    if (enqueued[0].onDone) enqueued[0].onDone();
+    expect(s._boardName).toBe("C_Chat");
   });
 });
 

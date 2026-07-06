@@ -84,10 +84,16 @@ export function classifyListScreen(facts) {
   // Menus: top-level 【主功能表】/【分類看板】/【精華文章】 titles, or the
   // board-MENU footer parseListRow matches (the thing clean-list must NOT use).
   const row0 = rowTexts[0] || '';
+  // 【看板列表】/【我的最愛】: the landing screens of a ← leave-board when the
+  // board was entered from a board list / favourites (not an `s` jump) — must
+  // classify as menu or the leave transaction's expect never completes
+  // (timeout → probe → visible degrade: the「退到看板列表卡住」bug, v5/M4).
   if (
     row0.indexOf('【主功能表】') === 0 ||
     row0.indexOf('【分類看板】') === 0 ||
     row0.indexOf('【精華文章】') === 0 ||
+    row0.indexOf('【看板列表】') === 0 ||
+    row0.indexOf('【我的最愛】') === 0 ||
     parseListRow(lastRowText)
   ) {
     return { kind: 'menu', boardName };
@@ -965,7 +971,17 @@ ListSession.prototype = {
         return facts.kind === 'clean-list';
       },
       timeoutMs: 4000,
-      // The completing settle's reducer pass resumes the buffer.
+      // A committed choice flips the read flags of the WHOLE board, but the
+      // FULLUPDATE only repaints the current page — every other buffered row
+      // still clones the old '+' marks. Force a rebuild on the completing
+      // settle (same trick as search-commit: cleared _boardName → the reducer
+      // path adds 'rebuild'), or the change looks like a no-op (v5/M4 fix).
+      // A cancel (bare \r) changed nothing — resume the buffer untouched.
+      onDone: choice
+        ? function() {
+            self._boardName = null;
+          }
+        : undefined,
       onFail: function() {
         self._degradeToNative('已讀設定逾時，已切至原生模式');
       }
