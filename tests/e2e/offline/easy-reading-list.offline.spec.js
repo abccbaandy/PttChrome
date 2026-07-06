@@ -217,7 +217,7 @@ test.describe('文章列表好读模式（离线）', () => {
     }
   });
 
-  test('v5 封闭互动：未列键（z/i/b/v//）no-op 吞键——零送键、不转态、不裸露原生', async ({ page }) => {
+  test('v5 封闭互动：未列键（z/i/b/y/s）no-op 吞键——零送键、不转态、不裸露原生', async ({ page }) => {
     test.setTimeout(60000);
     const logs = ptt.attachConsole(page);
     try {
@@ -231,7 +231,8 @@ test.describe('文章列表好读模式（离线）', () => {
       const before = await waitState(page, (x) => x.state === 'active' && x.queueIdle);
 
       await page.locator('#t').focus();
-      for (const k of ['z', 'i', 'b', 'v', '/']) {
+      // v、/ 已於 M3 交易化，不再屬未列鍵
+      for (const k of ['z', 'i', 'b', 'y', 's']) {
         await page.keyboard.press(k);
         await page.waitForTimeout(60);
       }
@@ -497,49 +498,96 @@ test.describe('置底文 Enter 开启（离线，pinned 卷）', () => {
   });
 });
 
-test.describe('原生功能直通（离线，prompt 卷）', () => {
-  test.skip(!prompt, '缺 cchat-list-prompt cassette');
+// v5/M3：'/' 与 'v' 交易化（封闭互动——键不直通，走 CommandQueue 序列化＋
+// overlay 收参；frozen 期间不裸露原生画面）。
+test.describe('T2 交易（离线，search/mark 卷）', () => {
+  const search = loadCassette('cchat-list-search');
+  const mark = loadCassette('cchat-list-mark');
 
-  // v5 M2 起 '/' 不再直通（封闭互动 no-op）；M3 交易化后本案改写为「/ 对话框
-  // 收参 → MODE_SELECT 交易」案（cchat-list-search 卷）。暂 skip。
-  test.skip('/ → functionMode 原生 LIVE（游标出现），取消 → 回 buffer', async ({ page }) => {
+  test('/ 搜寻交易：prompt→输入框→提交→MODE_SELECT rebuild→← 退回主列表 rebuild', async ({ page }) => {
+    test.skip(!search, '缺 cchat-list-search cassette');
     test.setTimeout(60000);
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
-      await replayListCassette(page, prompt);
+      await replayListCassette(page, search);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
         enableEasyReadingList: true,
         easyReadingListPrefetchCount: 0
       });
       let s = await waitState(page, (x) => x.state === 'active' && x.queueIdle);
-      expect(s.cursorHidden).toBe(true);
+      const mainNums = s.nums.filter((n) => n != null);
 
-      // '/'：非导航键 → functionMode（键照送 → 门控喂 slash step → 原生 prompt）。
+      // '/' → search-prompt 交易（frozen，不裸露）→ slash step 喂 prompt。
       await page.locator('#t').focus();
       await page.keyboard.press('/');
-      s = await waitState(page, (x) => x.state === 'functionMode');
-      expect(s.renderMode).toBe('native');
-      expect(s.cursorHidden).toBe(false);
-      // 等 server 回应画完 prompt（notify 30ms timer 跑完、isLeadByte 标好才能
-      // b2u —— 立即读会拿到 Big5 单 byte 乱码）。
-      await page.waitForFunction(
-        () => {
-          const buf = window.__app.buf;
-          const t = buf.getRowText(buf.rows - 1, 0, buf.cols);
-          return /搜尋|尋找|標題/.test(t);
-        },
-        null,
-        { timeout: 5000 }
-      );
-
-      // 空 Enter 取消 → cancel step → clean-list settle → 内容判定 exit 回 active。
+      await waitState(page, (x) => x.renderMode === 'frozen' || x.state === 'active');
+      // 输入框出现 → 键入卷内关键字并 Enter（query step 门控精确比对）。
+      const q = (search.steps.find((st) => st.on === 'query') || {}).query || 'Re';
+      await page.waitForSelector('input[data-list-input]');
+      await page.locator('input[data-list-input]').fill(q);
       await page.keyboard.press('Enter');
-      s = await waitState(page, (x) => x.state === 'active');
+
+      // 提交完成 → MODE_SELECT 清单 rebuild（序号空间独立、缓冲重建）。
+      s = await waitState(page, (x) => x.state === 'active' && x.queueIdle, 15000);
       expect(s.renderMode).toBe('buffer');
+      const selNums = s.nums.filter((n) => n != null);
+      expect(selNums.length).toBeGreaterThan(0);
+      // 搜寻清单序号空间独立（远小于主列表 35 万级序号）。
+      expect(Math.max(...selNums)).toBeLessThan(Math.min(...mainNums));
+
+      // ← 退出 select → back step 喂主列表 → rebuild 回主序号空间。
+      await page.keyboard.press('ArrowLeft');
+      s = await waitState(
+        page,
+        (x) =>
+          x.state === 'active' &&
+          x.queueIdle &&
+          x.nums.some((n) => n != null && n >= Math.min(...mainNums)),
+        15000
+      );
+      expect(s.renderMode).toBe('buffer');
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
+  test('v 已读设定交易：v→prompt→overlay→Esc 取消（送 \\r 收 getdata）→FULLUPDATE resume', async ({ page }) => {
+    test.skip(!mark, '缺 cchat-list-mark cassette');
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, mark);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: true,
+        easyReadingListPrefetchCount: 0
+      });
+      let s = await waitState(page, (x) => x.state === 'active' && x.queueIdle);
+      const before = s.listLen;
+
+      // 'v' → mark-prompt 交易（mark step 喂 prompt 画面）→ overlay 出现。
+      await page.locator('#t').focus();
+      await page.keyboard.press('v');
+      // 等 prompt 交易完成、overlay 收参就绪（paramMode 设定）再操作——过早按键
+      // 会被 frozen 吞掉（序列化保护，符合设计）。
+      await page.waitForFunction(
+        () => window.__app.listSession._paramMode && window.__app.listSession._paramMode.type === 'mark'
+      );
+      // frozen 快照期间：画面仍是 24 行列表视窗（不显示 server 的 prompt 画面）。
+      const rows = await dumpScreenRows(page);
+      expect(rows.some((t) => t.includes('文章選讀'))).toBe(true);
+
+      // Esc 取消 → mark-commit '\r'（cancel step 喂 FULLUPDATE）→ resume buffer。
+      await page.keyboard.press('Escape');
+      s = await waitState(page, (x) => x.state === 'active' && x.queueIdle, 15000);
+      expect(s.renderMode).toBe('buffer');
+      expect(s.listLen).toBeGreaterThanOrEqual(before);
       expect(s.cursorHidden).toBe(true);
-      expect(s.listLen).toBeGreaterThan(15);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);

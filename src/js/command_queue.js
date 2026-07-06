@@ -105,6 +105,26 @@ CommandQueue.prototype = {
     this._pending = [];
   },
 
+  // Drop only the queued-but-unsent commands, keeping the in-flight one so its
+  // response stays PAIRED (v5): flushing an in-flight command turns its
+  // still-on-the-wire response into an ownerless settle that can prematurely
+  // satisfy the next transaction's expect (live race: the leave-board expect
+  // ate a prefetch anchor's landing). A T2 transaction enqueued after this
+  // waits its turn behind the in-flight command — serialization is the fix.
+  flushPending: function() {
+    this._pending = [];
+  },
+
+  // Drop only the pending commands whose kind starts with `prefix` — a failed
+  // prefetch anchor must cancel its paired page command but never a user
+  // transaction serialized behind it (the preamble's flushPending may have
+  // already replaced the page command with the transaction).
+  flushPendingKind: function(prefix) {
+    this._pending = this._pending.filter(function(c) {
+      return (c.kind || '').indexOf(prefix) !== 0;
+    });
+  },
+
   get inFlightKind() {
     return this._inFlight ? this._inFlight.kind : null;
   },

@@ -248,6 +248,18 @@ export function transitionListSession(state, event) {
             // Second press of a non-whitelisted key = explicit consent to
             // operate natively (T3 airlock). The key itself passes through.
             return { next: 'functionMode', actions: ['enter-function-mode'] };
+          case 'mark':
+            // `v` 已讀設定 (T2): serialized v→prompt→choice transaction over
+            // the frozen snapshot; the choice/cancel is collected via overlay
+            // while the server prompt is already up (native-aligned order).
+            return { next: 'functionMode', actions: ['begin-mark'] };
+          case 'search':
+            // `/` title search (T2): '/' →prompt→keyword\r → MODE_SELECT list.
+            return { next: 'functionMode', actions: ['begin-search'] };
+          case 'transact':
+            // A locally-collected parameter transaction commits (number jump):
+            // the caller runs the specific begin* right after this dispatch.
+            return { next: 'functionMode', actions: [] };
           default:
             // v5 closed interaction: any non-whitelisted key is a NO-OP (the
             // session hints; the airlock above is the explicit way out). The
@@ -438,17 +450,11 @@ export const MAX_LIST_ROWS = 300;
 // other-keys: absolute/leaving commands (←/q/s/digits) must go out alone.
 const RELATIVE_COMMAND_KEYS = ['[', ']', '='];
 
-// Adaptive soft timeout for the SECOND leg of a serialized pair, seeded by the
-// first (jump) leg's measured round-trip. A miss with ZERO server response can
-// only end by timeout (a repeated bottom-row message is a zero-content settle,
-// gated by invariant 1) — a fixed 3000ms reads as「按了沒反應」on a fast link.
-// 4×rtt keeps a wide safety factor; the floor absorbs jitter, the ceiling is
-// the old fixed value (slow links keep the old behavior).
-export function adaptiveTimeoutMs(rttMs) {
-  const t = 4 * rttMs;
-  if (!(t >= 800)) return 800; // also catches NaN/negative
-  return t > 3000 ? 3000 : t;
-}
+// (v5/M3) adaptiveTimeoutMs retired: the relative pair's second leg now ends
+// deterministically — its \f tail forces a full repaint even on a miss, so a
+// zero-response wait no longer exists (old invariant 12's RTT-adaptive timeout
+// and old invariant 7 both gone; timeouts everywhere are probe TRIGGERS, not
+// signals — see command_queue.js).
 
 // Owner of list easy reading. Subscribes to term_buf 'screenSettled' and runs:
 //   settle → snapshot+facts → queue.onSettle (command completion first)
@@ -494,6 +500,16 @@ export function ListSession(core, view, termBuf, queue) {
   // through natively and the session mirrors (enter-function-mode).
   this._airlockKey = null;
   this._airlockAt = 0;
+  // T2 parameter collection (v5, M3): a transaction that needs user input
+  // (`v` mark choice / `/` keyword / number jump digits) collects it through a
+  // lightweight overlay while the serialized first leg (if any) is already on
+  // the wire. {type:'mark'} routes keys via _onParamKey; search/jump use a DOM
+  // input overlay that owns its own keyboard.
+  this._paramMode = null;
+  // MODE_SELECT (`/` filtered list) sub-state: its article-number space is
+  // independent from the main list (protocol §8) — entering/leaving forces a
+  // rebuild (via _boardName=null) so numbers never alias.
+  this._selectMode = false;
 
   bindProperty(this, '_renderMode', termBuf, 'listRenderMode');
   termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
@@ -653,10 +669,18 @@ ListSession.prototype = {
       e.preventDefault();
       return;
     }
+    if (this._paramMode && this._paramMode.type === 'mark') {
+      // `v` choice collection: the server prompt is already up behind the
+      // frozen snapshot; u/v/w commits, anything else cancels (sends \r —
+      // the server-side getdata must be closed either way, zero side effect).
+      e.preventDefault();
+      this._onMarkParamKey((e.key || '').toLowerCase());
+      return;
+    }
     if (this.state === 'functionMode' && this._renderMode === 'frozen') {
-      // A serialized transaction (relative pair / leave) is in flight behind
-      // the frozen snapshot: swallow user keys — letting them through would
-      // race the serialized bytes (typeahead, protocol §2).
+      // A serialized transaction (relative pair / leave / T2) is in flight
+      // behind the frozen snapshot: swallow user keys — letting them through
+      // would race the serialized bytes (typeahead, protocol §2).
       e.preventDefault();
       return;
     }
@@ -687,6 +711,13 @@ ListSession.prototype = {
     this._airlockKey = null;
     e.preventDefault();
 
+    if (key.class === 'jump-digit') {
+      // Digits collect LOCALLY (no server prompt round-trip): overlay input
+      // pre-filled with the first digit; commit = one jump transaction.
+      this._beginJumpCollect(key.digit);
+      return;
+    }
+
     const r = transitionListSession(this.state, { type: 'key', keyClass: key.class });
     this.state = r.next;
     for (let i = 0; i < r.actions.length; ++i) {
@@ -696,6 +727,8 @@ ListSession.prototype = {
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
       else if (a === 'begin-relative') this._beginRelative(e.key);
       else if (a === 'begin-leave') this._beginLeave();
+      else if (a === 'begin-mark') this._beginMark();
+      else if (a === 'begin-search') this._beginSearch();
       else this._runAction(a, null);
     }
   },
@@ -726,7 +759,10 @@ ListSession.prototype = {
   _beginRelative: function(keyChar) {
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
-    this._queue.flush();
+    // flushPending, NOT flush: an in-flight prefetch stays PAIRED so its
+    // on-the-wire response can't become an ownerless settle that prematurely
+    // satisfies our expect (live race) — the transaction serializes behind it.
+    this._queue.flushPending();
     this._renderMode = 'frozen';
     this._view.hideCursor();
     this._forceRedraw();
@@ -749,7 +785,6 @@ ListSession.prototype = {
     const num = this._selectedNum;
     if (num == null) return;
     const self = this;
-    const t0 = Date.now();
     this._queue.enqueue({
       keys: String(num) + '\r',
       kind: 'relative-sync-jump',
@@ -770,19 +805,18 @@ ListSession.prototype = {
         self._queue.enqueue({
           keys: keyChar,
           kind: 'relative-command',
-          // Any settle IS the response: a same-title hit repaints the list
-          // (clean-list) and the reducer resumes with the landed cursor; a
-          // miss paints only a bottom-row message (prompt/transient) which
-          // leaves the reducer in functionMode — the deferred check below
-          // pulls us back to the buffer render (the screen would otherwise
-          // sit in the native mirror, un-hiding blacklist/deleted rows, until
-          // some future transition).
+          // v5: \f tail — a MISS used to be a ZERO-response (only endable by
+          // an RTT-adaptive timeout, old invariant 12); with the forced full
+          // repaint every outcome answers deterministically. Any settle IS
+          // the response: a hit repaints the list (clean-list, reducer
+          // resumes with the landed cursor); a miss full-repaints the same
+          // list + bottom message (reducer stays functionMode — the deferred
+          // check below pulls us back to the buffer render).
+          fullRepaint: true,
           expect: function() {
             return true;
           },
-          // A zero-response miss can only end by this timeout — scale it to
-          // the link speed measured on the jump leg we just completed.
-          timeoutMs: adaptiveTimeoutMs(Date.now() - t0),
+          timeoutMs: 3000,
           // onDone runs BEFORE the same settle's reducer dispatch — defer the
           // check one tick so a clean-list resume wins first.
           onDone: function() {
@@ -827,7 +861,9 @@ ListSession.prototype = {
   _beginLeave: function() {
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
-    this._queue.flush();
+    // flushPending: keep an in-flight prefetch paired (see _beginRelative) —
+    // the exact live race was THIS expect eating a prefetch anchor's landing.
+    this._queue.flushPending();
     this._renderMode = 'frozen';
     this._view.hideCursor();
     this._forceRedraw();
@@ -839,9 +875,208 @@ ListSession.prototype = {
         return facts.kind === 'menu' || facts.kind === 'clean-list';
       },
       timeoutMs: 3000,
-      // onDone: nothing — the SAME settle's reducer pass (inFlightKind already
-      // null) performs cleanup/resume.
+      // onDone runs BEFORE the same settle's reducer pass: leaving a
+      // MODE_SELECT list lands back on the MAIN list whose number space is
+      // different (§8) — clear _boardName so the reducer path rebuilds.
+      onDone: function() {
+        if (self._selectMode) {
+          self._selectMode = false;
+          self._boardName = null;
+        }
+      },
       onFail: function() {
+        self._enterFunctionMode();
+      }
+    });
+  },
+
+  // ---- T2 transactions (v5, M3) ---------------------------------------------
+
+  // Freeze the window snapshot and clear the pipeline — shared preamble of
+  // every T2 transaction (same as _beginRelative's).
+  _freezeForTransaction: function() {
+    this._breakChain();
+    this._prunePivotOverride = undefined; // flush is silent — reset here
+    // flushPending: keep an in-flight prefetch paired (see _beginRelative).
+    this._queue.flushPending();
+    this._renderMode = 'frozen';
+    this._view.hideCursor();
+    this._forceRedraw();
+  },
+
+  // `v` 已讀設定: send `v` immediately (server opens its getdata prompt behind
+  // the frozen snapshot — protocol §7) and collect the choice via overlay.
+  // u/v/w commits `<c>\r`; anything else cancels with `\r` (the getdata MUST
+  // be closed server-side either way). Both ends return FULLUPDATE → the
+  // completing clean-list settle resumes via the reducer.
+  _beginMark: function() {
+    this._freezeForTransaction();
+    const self = this;
+    this._queue.enqueue({
+      keys: 'v',
+      kind: 'mark-prompt',
+      expect: function(snap, facts) {
+        // Prompt fingerprint (protocol §7): the getdata line is on the screen.
+        for (let r = facts.rows - 5; r < facts.rows; ++r) {
+          if ((facts.rowTexts[r] || '').indexOf('(U)未讀') >= 0) return true;
+        }
+        return false;
+      },
+      timeoutMs: 3000,
+      onDone: function() {
+        self._paramMode = { type: 'mark' };
+        if (self._view.showListOverlay)
+          self._view.showListOverlay(
+            '設定已讀記錄：(u)全部未讀 (v)全部已讀 (w)前已讀後未讀 — 其他鍵取消'
+          );
+      },
+      onFail: function() {
+        self._enterFunctionMode(); // 顯性降級
+      }
+    });
+  },
+
+  _onMarkParamKey: function(k) {
+    this._paramMode = null;
+    if (this._view.hideListOverlay) this._view.hideListOverlay();
+    const choice = k === 'u' || k === 'v' || k === 'w' ? k : '';
+    const self = this;
+    this._queue.enqueue({
+      keys: choice + '\r',
+      kind: 'mark-commit',
+      // b_mark_read_unread returns FULLUPDATE regardless of the choice —
+      // a deterministic clean-list tail with no \f needed (protocol §7).
+      expect: function(snap, facts) {
+        return facts.kind === 'clean-list';
+      },
+      timeoutMs: 4000,
+      // The completing settle's reducer pass resumes the buffer.
+      onFail: function() {
+        self._enterFunctionMode();
+      }
+    });
+  },
+
+  // `/` title search: send '/' immediately (server opens the search getdata),
+  // collect the keyword via an input overlay, commit `<kw>\r` → NEWDIRECT full
+  // rebuild of the MODE_SELECT list (protocol §8). Its number space is
+  // independent → force a rebuild by clearing _boardName before the completing
+  // settle (reducer: boardNameMatch false → resume-buffer + rebuild). Cancel /
+  // empty keyword sends bare \r (READ_REDRAW back to the same list).
+  _beginSearch: function() {
+    this._freezeForTransaction();
+    const self = this;
+    this._queue.enqueue({
+      keys: '/',
+      kind: 'search-prompt',
+      expect: function(snap, facts) {
+        // getdata prompt at the bottom row (protocol §5/§8).
+        return (
+          facts.curY === facts.rows - 1 &&
+          (facts.rowTexts[facts.rows - 1] || '').indexOf('標題') >= 0
+        );
+      },
+      timeoutMs: 3000,
+      onDone: function() {
+        if (!self._view.promptListInput) {
+          // No UI available (tests/degraded): close the prompt server-side.
+          self._commitSearch(null);
+          return;
+        }
+        self._view.promptListInput('搜尋標題：', '', function(kw) {
+          self._commitSearch(kw);
+        });
+      },
+      onFail: function() {
+        self._enterFunctionMode();
+      }
+    });
+  },
+
+  _commitSearch: function(kw) {
+    const self = this;
+    if (!kw) {
+      // Cancel: close the getdata; READ_REDRAW repaints the same clean list.
+      this._queue.enqueue({
+        keys: '\r',
+        kind: 'search-cancel',
+        expect: function(snap, facts) {
+          return facts.kind === 'clean-list';
+        },
+        timeoutMs: 4000,
+        onFail: function() {
+          self._enterFunctionMode();
+        }
+      });
+      return;
+    }
+    this._queue.enqueue({
+      keys: kw + '\r',
+      kind: 'search-commit',
+      expect: function(snap, facts) {
+        // Hit: NEWDIRECT full rebuild (clean-list, independent numbers).
+        // Miss (no match): READ_REDRAW back to the original list — also
+        // clean-list; _selectMode only latches on the hit path below.
+        return facts.kind === 'clean-list';
+      },
+      timeoutMs: 5000,
+      onDone: function() {
+        // Force rebuild on the completing settle: the landed list's number
+        // space may be MODE_SELECT's (independent) — never merge (§8).
+        self._selectMode = true;
+        self._boardName = null;
+      },
+      onFail: function() {
+        self._enterFunctionMode();
+      }
+    });
+  },
+
+  // Number jump: digits collected locally (overlay input), one serialized
+  // jump transaction on commit. The landing page may be far outside the
+  // buffer → rebuild from the landed facts instead of resuming stale anchors.
+  _beginJumpCollect: function(firstDigit) {
+    const self = this;
+    if (!this._view.promptListInput) return; // no UI — stay put (tests)
+    this._view.promptListInput('跳至第幾項：', firstDigit, function(val) {
+      const num = val ? parseInt(val, 10) : NaN;
+      if (!num || num <= 0) return; // cancelled / not a number: zero server
+      const r = transitionListSession(self.state, { type: 'key', keyClass: 'transact' });
+      self.state = r.next;
+      self._beginJumpNumber(num);
+    });
+  },
+
+  _beginJumpNumber: function(num) {
+    this._freezeForTransaction();
+    this._prunePivotOverride = null; // far jump: keep the landing segment
+    const self = this;
+    let landed = null;
+    this._queue.enqueue({
+      keys: String(num) + '\r',
+      kind: 'jump-number',
+      expect: function(snap, facts) {
+        // Jump-landing park fingerprint. The server CLAMPS an over-large
+        // number to the last line (search_num) — accept any entry-area park
+        // (the landed page is authoritative, whatever row it chose).
+        if (facts.curY >= 3 && facts.curY <= facts.rows - 2 && facts.curX <= 1) {
+          landed = facts;
+          return true;
+        }
+        return false;
+      },
+      timeoutMs: 4000,
+      onDone: function() {
+        // Adopt the landed page wholesale (it may be discontiguous with the
+        // buffer): rebuild seeds anchors from the landed facts.
+        self._prunePivotOverride = undefined;
+        self.state = 'active';
+        self._renderMode = 'buffer';
+        self._view.hideCursor();
+        self._rebuild(landed);
+      },
+      onFail: function() {
+        self._prunePivotOverride = undefined;
         self._enterFunctionMode();
       }
     });
@@ -876,7 +1111,16 @@ ListSession.prototype = {
         // Leave-board family (read.c:712 q/e/KEY_LEFT) — high-frequency, so a
         // first-class serialized transaction rather than an airlock.
         return { class: 'leave' };
+      case 'v':
+        // 已讀設定 (b_mark_read_unread, protocol §7) — T2 transaction.
+        return { class: 'mark' };
+      case '/':
+        // Title search → MODE_SELECT (protocol §8) — T2 transaction.
+        return { class: 'search' };
       default:
+        // Number jump (T2): digits collect locally in an overlay; committing
+        // runs a single serialized jump transaction (_beginJumpNumber).
+        if (/^[0-9]$/.test(e.key)) return { class: 'jump-digit', digit: e.key };
         // Cursor-relative commands with a numbered selection are serialized
         // (jump → key via the queue): we own the bytes, so the key itself must
         // NOT pass through (typeahead would swallow the repaints — the「[ 卡住」
@@ -1101,7 +1345,11 @@ ListSession.prototype = {
         // command too — paging from an unknown position is exactly the bug.
         onFail: function() {
           markEdge();
-          self._queue.flush();
+          // Only cancel OUR paired page command: pending may already hold a
+          // user transaction (its preamble flushPending-ed the page command
+          // and queued itself behind this anchor) — a full flush would kill
+          // it silently and strand the session frozen.
+          self._queue.flushPendingKind('prefetch');
         }
       });
     }
@@ -1149,7 +1397,9 @@ ListSession.prototype = {
     this._restorePinnedKey = null;
     this._restoreTopNum = this._topNum;
     this._breakChain();
-    this._queue.flush(); // drop any prefetch; content predicates absorb the seam
+    // flushPending: drop queued prefetch but keep an in-flight one paired
+    // (see _beginRelative); content predicates absorb the seam.
+    this._queue.flushPending();
     const self = this;
     this._queue.enqueue({
       keys: String(num) + '\r',
@@ -1214,7 +1464,8 @@ ListSession.prototype = {
     this._restorePinnedKey = key;
     this._restoreTopNum = this._topNum;
     this._breakChain();
-    this._queue.flush();
+    // flushPending: keep an in-flight prefetch paired (see _beginRelative).
+    this._queue.flushPending();
     const self = this;
     let parkY = -1;
     let targetY = -1;
@@ -1385,6 +1636,9 @@ ListSession.prototype = {
   _cleanup: function() {
     this._breakChain();
     this._queue.flush();
+    this._paramMode = null;
+    this._selectMode = false;
+    if (this._view.hideListOverlay) this._view.hideListOverlay();
     this._renderMode = 'native';
     this._boardName = null;
     this._selectedNum = null;

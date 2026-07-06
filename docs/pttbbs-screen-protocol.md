@@ -86,8 +86,9 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c:641-840`）：
 
 - 進入：`/` → `select_read(locmem, RS_KEYWORD)`（`mbbsd/read.c:776`）→ `getdata(b_lines, 0, "搜尋標題: ", …, DOECHO)`（Enter 收尾；空字串→`READ_REDRAW` 回原列表）→ 命中 count>0：`currmode |= MODE_SELECT` ＋ `NEWDIRECT`（全幅重建搜尋清單，序號空間獨立、無置底，見 §3）；count==0：`READ_REDRAW`（回原列表全幅重繪，底列 vmsg 類訊息）。
 - 已在 MODE_SELECT 再 `/`＝「增加條件」疊加篩選。
-- **退出：`q`／`e`／`←`**（`read.c:712-725`）→ `board_select()` 回主 directory ＋ `NEWDIRECT` 全幅重建主列表；游標落在原文（`crs_ln=refer`）、**top=crs-p_lines+1（游標在視窗底列）**。
-- client 判準：進/出皆為全幅重建 clean-list；select 清單期間板名（row0）不變——區分靠 client 自身交易狀態，非畫面指紋。
+- **退出：`q`／`e`／`←`**（`read.c:712-725`）→ `board_select()` 回主 directory ＋ `NEWDIRECT` 全幅重建主列表；**top=crs-p_lines+1（游標在視窗底列）**。
+- **退出落點 = 帳號已讀進度，非進 select 前位置**（live CONFIRMED 2026-07-06，C_Chat 三次重測落點恆定於同一舊序號）：`crs_ln=refer` 的 refer 解析回主列表時採該板閱讀進度。⇒ client 不得假設退回畫面含進板時取樣的最新序號（re-seed 後 fill 只向上，buffer 可能整段低於進板頁）；測試判準用「序號回到主空間（> select 清單 max）」。
+- **select 清單 row0 指紋**：板名前綴由「看板」變「**系列**《板名》」（live CONFIRMED）——可做輔助指紋，但主要區分仍靠 client 自身交易狀態。
 
 ## 9. 水球/廣播指紋（T4 非請自來，CONFIRMED）
 

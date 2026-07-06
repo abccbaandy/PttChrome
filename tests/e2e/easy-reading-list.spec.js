@@ -35,6 +35,9 @@ async function dumpListState(page) {
       nums: (app.buf.listLineNums || []).slice(),
       selectedNum: ls._selectedNum,
       queueIdle: app.commandQueue.idle,
+      row0: app.buf.getRowText(0, 0, app.buf.cols),
+      rowLast: app.buf.getRowText(app.buf.rows - 1, 0, app.buf.cols),
+      selectMode: ls._selectMode,
       cursorHidden: document.getElementById('cursor').style.display === 'none',
       domRows: document.querySelectorAll('#mainContainer [data-type="bbsline"]')
         .length,
@@ -363,7 +366,7 @@ test.describe('文章列表好讀模式（live）', () => {
     }
   });
 
-  test('原生功能直通：/ → functionMode 原生 LIVE，取消回乾淨列表', async ({ page }) => {
+  test('v5 T2 搜尋交易：/ → frozen＋輸入框收參 → 提交進 MODE_SELECT → ← 退回主列表', async ({ page }) => {
     test.setTimeout(120000);
     const logs = attachConsole(page);
     try {
@@ -374,28 +377,89 @@ test.describe('文章列表好讀模式（live）', () => {
       const s = await enterBoardWithListER(page, 'C_Chat');
       expect(s.state).toBe('active');
       expect(s.cursorHidden).toBe(true);
+      // 等 buffer 有序號再取樣（enterBoard 的 dump 可能早於 seed 完成 → 空
+      // nums 會讓 mainMin=Infinity、後續斷言死等）。
+      const seeded = await waitFor(
+        page,
+        (x) => x.queueIdle && x.nums.some((n) => Number.isFinite(n)),
+        15000
+      );
+      const mainMin = Math.min(...seeded.nums.filter((n) => Number.isFinite(n)));
+      console.log('[test] mainMin=' + mainMin + ' seededLen=' + seeded.nums.length);
 
+      // '/'：v5 交易化——frozen 凍結（不裸露原生 prompt 畫面）＋輸入框收參。
       await page.locator('#t').focus();
       await page.keyboard.press('/');
+      await page.waitForSelector('input[data-list-input]', { timeout: 10000 });
       const fm = await waitFor(page, (x) => x.state === 'functionMode');
-      expect(fm.renderMode).toBe('native');
-      expect(fm.cursorHidden).toBe(false);
-      // 等 prompt 畫好再驗底列（notify timer + Big5 標記）。
-      await page.waitForFunction(
-        () => {
-          const buf = window.__app.buf;
-          return /搜尋|尋找|標題/.test(buf.getRowText(buf.rows - 1, 0, buf.cols));
-        },
-        null,
-        { timeout: 8000 }
-      );
-
-      // 空 Enter 取消 → 內容判定 exit 回 active buffer。
+      expect(fm.renderMode).toBe('frozen'); // 非 native——封閉互動
+      await page.locator('input[data-list-input]').fill('Re');
       await page.keyboard.press('Enter');
-      const back = await waitFor(page, (x) => x.state === 'active', 15000);
+
+      // NEWDIRECT 全幅重建 → rebuild 進 MODE_SELECT 清單（序號空間獨立）。
+      const sel = await waitFor(page, (x) => x.state === 'active' && x.queueIdle, 20000);
+      expect(sel.renderMode).toBe('buffer');
+      // MODE_SELECT 清單：畫面 header 板名前綴變「系列」、序號空間獨立（遠小
+      // 於主列表 35 萬級）。
+      expect(sel.row0).toContain('系列');
+      const selNums = sel.nums.filter((n) => Number.isFinite(n));
+      expect(selNums.length).toBeGreaterThan(0);
+      const selMax = Math.max(...selNums);
+      expect(selMax).toBeLessThan(mainMin);
+
+      // ← 退出 select（leave 交易）→ 回主列表 rebuild（主序號空間）。
+      // 注意：pttbbs 退出 select 後主列表游標落在「帳號已讀進度」處（不是進
+      // select 前的位置），v5 re-seed 忠實採用 server 落點、fill 只向上補——
+      // buffer 不保證含進板時取樣的最新序號（mainMin 可能在落點下方）。判準
+      // 改「序號回到主空間」：任一序號 > select 空間即回主列表。
+      await page.keyboard.press('ArrowLeft');
+      const back = await waitFor(
+        page,
+        (x) =>
+          x.state === 'active' &&
+          x.queueIdle &&
+          !x.selectMode &&
+          x.nums.some((n) => Number.isFinite(n) && n > selMax),
+        20000
+      );
       expect(back.renderMode).toBe('buffer');
       expect(back.cursorHidden).toBe(true);
-      expect(back.listLen).toBeGreaterThan(20);
+      expect(back.row0).not.toContain('系列');
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
+  test('v5 T2 已讀設定交易：v → frozen＋選單 → Esc 取消（\\r 收 getdata）→ resume', async ({ page }) => {
+    test.setTimeout(120000);
+    const logs = attachConsole(page);
+    try {
+      await page.goto('/');
+      await dismissDeveloperModeAlert(page);
+      await login(page);
+      await resetSession(page);
+      const s = await enterBoardWithListER(page, 'C_Chat');
+      expect(s.state).toBe('active');
+
+      await page.locator('#t').focus();
+      await page.keyboard.press('v');
+      await page.waitForFunction(
+        () =>
+          window.__app.listSession._paramMode &&
+          window.__app.listSession._paramMode.type === 'mark',
+        null,
+        { timeout: 10000 }
+      );
+      // frozen 快照：畫面仍是列表視窗（server prompt 不裸露）。
+      const fm = await waitFor(page, (x) => x.renderMode === 'frozen');
+      expect(fm.state).toBe('functionMode');
+
+      await page.keyboard.press('Escape'); // 取消 → \r 收 getdata → FULLUPDATE
+      const back = await waitFor(page, (x) => x.state === 'active' && x.queueIdle, 20000);
+      expect(back.renderMode).toBe('buffer');
+      expect(back.cursorHidden).toBe(true);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);

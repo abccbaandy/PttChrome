@@ -494,6 +494,12 @@ function demandSession({ numStart = 100, count = 60 } = {}) {
     flush() {
       this.flushed = (this.flushed || 0) + 1;
     },
+    flushPending() {
+      this.pendingFlushed = (this.pendingFlushed || 0) + 1;
+    },
+    flushPendingKind(prefix) {
+      this.pendingKindFlushed = prefix;
+    },
     enqueue(cmd) {
       enqueued.push(cmd);
     },
@@ -595,6 +601,16 @@ describe("鏈式 prefetch（同方向連補免重複錨定 jump，round-trip 減
     s._maybeDemand(1);
     // 重新錨定：anchor 腿必須回來
     expect(enqueued[n].kind).toBe("prefetch-anchor-down");
+  });
+
+  test("anchor onFail 只砍 prefetch pending（不得 flush 掉排隊在後的交易）", () => {
+    // 前導改 flushPending 後，anchor 失敗當下 pending 可能已是使用者的 T2
+    // 交易（page 命令早被前導清掉）——全量 flush 會無聲殺掉它、session 卡在
+    // frozen。onFail 只准砍自己配對的 prefetch 命令。
+    const { s, enqueued, queue } = firstDemand();
+    enqueued[0].onFail("timeout");
+    expect(queue.flushed || 0).toBe(0);
+    expect(queue.pendingKindFlushed).toBe("prefetch");
   });
 
   test("方向反轉 → 鏈失效（向下鏈不能拿來直送 PgUp）", () => {

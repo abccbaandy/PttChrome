@@ -148,6 +148,38 @@ describe("CommandQueue", () => {
     expect(sent).toEqual(["A", "C"]);
   });
 
+  test("flushPending 只清未送出命令，in-flight 保持配對（live race：leave expect 吃掉 anchor 落地）", () => {
+    // 症狀：T2 前導 flush() 砍掉 in-flight 的 prefetch anchor，其回應仍在線上
+    // → 變成無主 settle，直接滿足下一個交易（leave-board）的 expect → 交易
+    // 提早完成、真正的回應之後才到。修法＝flushPending：保留 in-flight，新交易
+    // 排在它後面（序列化即修復）。
+    const { q, sent } = makeQueue();
+    const anchorDone = jest.fn();
+    const leaveDone = jest.fn();
+    q.enqueue(cmd("42\r", { kind: "prefetch-anchor-down", onDone: anchorDone }));
+    q.enqueue(cmd("\x1b[6~", { kind: "prefetch-down" }));
+    q.flushPending(); // T2 交易前導：只砍未送出的 page 命令
+    q.enqueue(cmd("\x1b[D", { kind: "leave-board", onDone: leaveDone }));
+    expect(sent).toEqual(["42\r"]); // leave 排隊等 anchor，不得直送
+    settleWith(q, true); // anchor 的落地回應：配對給 anchor，不是 leave
+    expect(anchorDone).toHaveBeenCalled();
+    expect(leaveDone).not.toHaveBeenCalled();
+    expect(sent).toEqual(["42\r", "\x1b[D"]); // anchor 完成後 leave 才上線
+    settleWith(q, true);
+    expect(leaveDone).toHaveBeenCalled();
+    expect(q.idle).toBe(true);
+  });
+
+  test("flushPendingKind 只砍指定 kind 前綴的 pending（anchor onFail 不得誤殺排隊中的交易）", () => {
+    const { q, sent } = makeQueue();
+    q.enqueue(cmd("42\r", { kind: "prefetch-anchor-down" }));
+    q.enqueue(cmd("\x1b[6~", { kind: "prefetch-down" }));
+    q.enqueue(cmd("\x1b[D", { kind: "leave-board" }));
+    q.flushPendingKind("prefetch");
+    settleWith(q, true); // anchor 完成 → 下一個是 leave（page 已被砍）
+    expect(sent).toEqual(["42\r", "\x1b[D"]);
+  });
+
   test("onSettle with nothing in flight is a no-op", () => {
     const { q } = makeQueue();
     expect(() => settleWith(q, true)).not.toThrow();

@@ -227,6 +227,11 @@ async function replayListCassette(page, cassette) {
         up: (d) => d === '\x1b[A',
         slash: (d) => d === '/',
         cancel: (d) => d === '\r',
+        // v5 T2 交易（M3）：'v' 已读设定第一腿；query = 搜寻关键字提交
+        //（录制时 extra.query 记下关键字，精确比对；旧卷无 query 退宽松）。
+        mark: (d) => d === 'v',
+        query: (d, step) =>
+          step.query != null ? d === step.query + '\r' : /^[^\r]+\r$/.test(d),
       };
       // 冪等 jump 重播：真 server 對「跳同一序號」永遠回同一畫面。demand 的
       // 隱藏列（刪除文）會讓錨定鏈多消耗一個 jump step，之後開文的 open-jump

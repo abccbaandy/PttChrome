@@ -778,6 +778,82 @@ TermView.prototype = {
     }, 1800);
   },
 
+  // Persistent (non-fading) overlay line for T2 parameter collection (`v`
+  // choice menu). Same styling family as flashListHint; hidden explicitly.
+  showListOverlay: function(msg) {
+    var el = this._listOverlayEl;
+    if (!el) {
+      el = document.createElement('div');
+      el.style.cssText =
+        'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);' +
+        'background:rgba(20,40,70,.92);color:#fff;padding:8px 16px;' +
+        'border-radius:6px;font-size:14px;z-index:2000;pointer-events:none;' +
+        'max-width:80%;';
+      document.body.appendChild(el);
+      this._listOverlayEl = el;
+    }
+    el.textContent = msg;
+    el.style.display = 'block';
+  },
+
+  hideListOverlay: function() {
+    if (this._listOverlayEl) this._listOverlayEl.style.display = 'none';
+    if (this._listInputWrap) {
+      this._listInputWrap.remove();
+      this._listInputWrap = null;
+    }
+  },
+
+  // Modal-ish input overlay for T2 keyword/number collection (`/` search,
+  // number jump). Owns its own keyboard: Enter → cb(trimmed value or null),
+  // Esc → cb(null). Focus returns to the hidden terminal input afterwards.
+  promptListInput: function(label, initial, cb) {
+    var self = this;
+    if (this._listInputWrap) this._listInputWrap.remove();
+    var wrap = document.createElement('div');
+    wrap.style.cssText =
+      'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);' +
+      'background:rgba(20,40,70,.95);color:#fff;padding:10px 16px;' +
+      'border-radius:6px;font-size:14px;z-index:2001;display:flex;' +
+      'align-items:center;gap:8px;';
+    var lab = document.createElement('span');
+    lab.textContent = label;
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('data-list-input', '1');
+    input.value = initial || '';
+    input.style.cssText =
+      'background:#111;color:#fff;border:1px solid #557;border-radius:4px;' +
+      'padding:2px 8px;font-size:14px;width:180px;outline:none;';
+    wrap.appendChild(lab);
+    wrap.appendChild(input);
+    document.body.appendChild(wrap);
+    this._listInputWrap = wrap;
+    var finish = function(val) {
+      if (self._listInputWrap !== wrap) return; // already closed
+      wrap.remove();
+      self._listInputWrap = null;
+      if (self.bbscore && self.bbscore.setInputAreaFocus)
+        self.bbscore.setInputAreaFocus();
+      cb(val);
+    };
+    input.addEventListener('keydown', function(ev) {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        var v = input.value.trim();
+        finish(v.length ? v : null);
+      } else if (ev.key === 'Escape') {
+        ev.preventDefault();
+        finish(null);
+      }
+    });
+    setTimeout(function() {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }, 0);
+  },
+
   // Cursor
   updateCursorPos: function() {
     if (this._cursorHidden) return;

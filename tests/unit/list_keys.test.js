@@ -30,14 +30,20 @@ function makeSession() {
   const queue = {
     idle: true,
     inFlightKind: null,
-    flush() {},
+    flush() {
+      this.flushed = (this.flushed || 0) + 1;
+    },
+    flushPending() {
+      this.pendingFlushed = (this.pendingFlushed || 0) + 1;
+    },
+    flushPendingKind() {},
     enqueue(cmd) {
       enqueued.push(cmd);
     },
     onSettle() {},
   };
   const s = new ListSession(core, view, termBuf, queue);
-  return { s, sent, enqueued };
+  return { s, sent, enqueued, queue };
 }
 
 function keyEvent(key) {
@@ -193,6 +199,8 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     ["[", "functionMode", "relative-sync-jump"],
     ["]", "functionMode", "relative-sync-jump"],
     ["=", "functionMode", "relative-sync-jump"],
+    ["v", "functionMode", "mark-prompt"],
+    ["/", "functionMode", "search-prompt"],
   ];
   test.each(WHITELIST_BEHAVIOR)("白名單 %s → state=%s", (key, state, kind) => {
     const { s, enqueued } = makeSession();
@@ -206,7 +214,7 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     else expect(enqueued).toEqual([]); // 空 buffer：nav 本地 no-op、零佇列
   });
 
-  test.each([["z"], ["i"], ["b"], ["y"], ["X"], ["/"], ["v"], ["1"], ["s"]])(
+  test.each([["z"], ["i"], ["b"], ["y"], ["X"], ["s"], ["Z"], ["#"]])(
     "未列鍵 %s → no-op（吞鍵、不佇列、不轉態、提示）",
     (key) => {
       const { s, sent, enqueued } = makeSession();
@@ -279,6 +287,169 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
       s.onKeyDown(e);
       expect(e.defaultPrevented).toBe(false);
       expect(s.state).toBe("active");
+    }
+  });
+
+  test("T2 `v` 交易：v→prompt 指紋→overlay 收參；u 提交 u\\r、其他鍵取消 \\r（getdata 必收尾）", () => {
+    const { s, sent, enqueued } = makeSession();
+    const overlays = [];
+    s._view.showListOverlay = (m) => overlays.push(m);
+    s._view.hideListOverlay = () => {};
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._selectedNum = 42;
+    s.onKeyDown(keyEvent("v"));
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("frozen");
+    expect(enqueued[0].kind).toBe("mark-prompt");
+    expect(enqueued[0].keys).toBe("v");
+    // prompt 指紋（protocol §7）
+    const promptFacts = {
+      rows: 24,
+      rowTexts: Object.assign(new Array(24).fill(""), {
+        22: "設定所有文章 (U)未讀 (V)已讀 (W)前已讀後未讀 (Q)取消？[Q]",
+      }),
+    };
+    expect(enqueued[0].expect(null, promptFacts)).toBe(true);
+    enqueued[0].onDone();
+    expect(overlays.length).toBe(1); // 選單顯示
+    // 收參：u → 提交
+    s.onKeyDown(keyEvent("u"));
+    expect(enqueued[1].kind).toBe("mark-commit");
+    expect(enqueued[1].keys).toBe("u\r");
+    expect(enqueued[1].expect(null, { kind: "clean-list" })).toBe(true); // FULLUPDATE 收尾
+    expect(sent).toEqual([]); // 全程走 queue，不裸送
+    // 取消路徑：非 u/v/w 一律送 \r（server getdata 必須收掉）
+    const { s: s2, enqueued: q2 } = makeSession();
+    s2._view.showListOverlay = () => {};
+    s2._view.hideListOverlay = () => {};
+    s2.state = "active";
+    s2.onKeyDown(keyEvent("v"));
+    q2[0].onDone();
+    s2.onKeyDown(keyEvent("Escape"));
+    expect(q2[1].keys).toBe("\r");
+  });
+
+  test("T2 `/` 交易：/→prompt→輸入框收參→kw\\r 提交＋強制 rebuild（序號空間獨立）；取消送 \\r", () => {
+    const { s, enqueued } = makeSession();
+    let inputCb = null;
+    s._view.promptListInput = (label, init, cb) => {
+      inputCb = cb;
+    };
+    s.state = "active";
+    s._boardName = "C_Chat";
+    s.onKeyDown(keyEvent("/"));
+    expect(enqueued[0].kind).toBe("search-prompt");
+    expect(enqueued[0].keys).toBe("/");
+    expect(
+      enqueued[0].expect(null, {
+        rows: 24,
+        curY: 23,
+        rowTexts: Object.assign(new Array(24).fill(""), { 23: "搜尋標題:" }),
+      })
+    ).toBe(true);
+    enqueued[0].onDone();
+    expect(typeof inputCb).toBe("function");
+    inputCb("Re");
+    expect(enqueued[1].kind).toBe("search-commit");
+    expect(enqueued[1].keys).toBe("Re\r");
+    enqueued[1].onDone();
+    expect(s._selectMode).toBe(true);
+    expect(s._boardName).toBeNull(); // 完成 settle 的 reducer 將 rebuild
+    // 取消：空輸入 → \r 收 getdata
+    const { s: s2, enqueued: q2 } = makeSession();
+    let cb2 = null;
+    s2._view.promptListInput = (l, i, cb) => (cb2 = cb);
+    s2.state = "active";
+    s2.onKeyDown(keyEvent("/"));
+    q2[0].onDone();
+    cb2(null);
+    expect(q2[1].kind).toBe("search-cancel");
+    expect(q2[1].keys).toBe("\r");
+  });
+
+  test("select 清單離開（←）：leave onDone 清 _selectMode＋_boardName（回主列表必 rebuild）", () => {
+    const { s, enqueued } = makeSession();
+    s.state = "active";
+    s._selectMode = true;
+    s._boardName = "C_Chat";
+    s.onKeyDown(keyEvent("ArrowLeft"));
+    expect(enqueued[0].kind).toBe("leave-board");
+    enqueued[0].onDone();
+    expect(s._selectMode).toBe(false);
+    expect(s._boardName).toBeNull();
+  });
+
+  test("T2 數字跳號：digit→輸入框（預填）→確認＝jump-number 交易→落地 rebuild；取消零 server", () => {
+    const { s, enqueued } = makeSession();
+    let inputArgs = null;
+    let inputCb = null;
+    s._view.promptListInput = (label, init, cb) => {
+      inputArgs = { label, init };
+      inputCb = cb;
+    };
+    s.state = "active";
+    s._renderMode = "buffer";
+    s.onKeyDown(keyEvent("5"));
+    expect(s.state).toBe("active"); // 收參純本地
+    expect(enqueued).toEqual([]);
+    expect(inputArgs.init).toBe("5");
+    inputCb("523");
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("frozen");
+    expect(enqueued[0].kind).toBe("jump-number");
+    expect(enqueued[0].keys).toBe("523\r");
+    // 落地（park 指紋）→ onDone rebuild 回 active/buffer
+    expect(
+      enqueued[0].expect(null, {
+        rows: 24,
+        curY: 5,
+        curX: 0,
+        cursorRowNum: 523,
+        nums: new Array(24).fill(null),
+        rowTexts: new Array(24).fill(""),
+      })
+    ).toBe(true);
+    enqueued[0].onDone();
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer");
+    // 取消路徑
+    const { s: s2, enqueued: q2 } = makeSession();
+    let cb2 = null;
+    s2._view.promptListInput = (l, i, cb) => (cb2 = cb);
+    s2.state = "active";
+    s2.onKeyDown(keyEvent("7"));
+    cb2(null);
+    expect(q2).toEqual([]);
+    expect(s2.state).toBe("active");
+  });
+
+  test("交易前導只清 pending、保留 in-flight（[/←/v///Enter 開文——防 ownerless settle 誤配對）", () => {
+    // live race：前導 flush() 砍掉 in-flight prefetch anchor → 其在線回應變
+    // 無主 settle，提早滿足新交易的 expect（leave-board 吃掉 anchor 落地）。
+    // 前導必須 flushPending（序列化修復），全量 flush 只准出現在退回原生鏡像
+    // 的路徑（_enterFunctionMode/_handoffArticle/_cleanup——那裡沒有後續 expect）。
+    const begins = [
+      ["[", (s) => s.onKeyDown(keyEvent("["))],
+      ["ArrowLeft", (s) => s.onKeyDown(keyEvent("ArrowLeft"))],
+      ["v", (s) => s.onKeyDown(keyEvent("v"))],
+      ["/", (s) => s.onKeyDown(keyEvent("/"))],
+      ["Enter開文", (s) => s.onKeyDown(keyEvent("Enter"))],
+    ];
+    for (const [label, fire] of begins) {
+      const { s, queue } = makeSession();
+      s._view.showListOverlay = () => {};
+      s._view.hideListOverlay = () => {};
+      s._view.promptListInput = () => {};
+      s.state = "active";
+      s._renderMode = "buffer";
+      s._selectedNum = 42;
+      fire(s);
+      expect({ label, flushed: queue.flushed || 0 }).toEqual({ label, flushed: 0 });
+      expect({ label, pendingFlushed: queue.pendingFlushed || 0 }).toEqual({
+        label,
+        pendingFlushed: 1,
+      });
     }
   });
 
@@ -370,30 +541,21 @@ describe("相對命令沒命中後自動回 buffer（黑名單/刪除文不得�
   });
 });
 
-describe("相對命令第二腿 timeout RTT 自適應（沒命中不再固定等 3 秒）", () => {
-  // 沒命中且 server 零回應時只能靠 soft timeout 收尾；固定 3000ms 對快速鏈路
-  // 體感就是「按 [ 沒反應要等三秒」。jump 腿剛完成一個 round-trip，拿它的
-  // 耗時當 RTT 估計：timeoutMs = clamp(4×rtt, 800, 3000)。
-  function beginWithRtt(rttMs) {
+describe("v5/M3：相對命令第二腿 \\f 確定性收尾（RTT 自適應 timeout 退役）", () => {
+  // 舊：沒命中＝零回應，只能靠 RTT 自適應 timeout 收尾（不變量 12）。
+  // v5：第二腿掛 fullRepaint（keys 尾附 \f）→ 沒命中也必得一幀全幅重繪 →
+  // 任一 settle 即回應，timeout 僅剩 queue 探針的觸發器（固定值即可）。
+  test("第二腿掛 fullRepaint、timeout 固定（不再 RTT 計算）", () => {
     const { s, enqueued } = makeSession();
     s.state = "active";
     s._selectedNum = 42;
     s.onKeyDown(keyEvent("["));
-    jest.advanceTimersByTime(rttMs); // jump 腿的 round-trip 耗時
     enqueued[0].onDone();
-    return enqueued[1];
-  }
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
-
-  test("快鏈路（rtt 150ms）→ 第二腿 timeout 取下限 800ms（現行固定 3000 → 紅）", () => {
-    expect(beginWithRtt(150).timeoutMs).toBe(800);
-  });
-  test("中速（rtt 400ms）→ 4×rtt = 1600ms", () => {
-    expect(beginWithRtt(400).timeoutMs).toBe(1600);
-  });
-  test("慢鏈路（rtt 2000ms）→ 上限 3000ms 不放大", () => {
-    expect(beginWithRtt(2000).timeoutMs).toBe(3000);
+    const leg2 = enqueued[1];
+    expect(leg2.kind).toBe("relative-command");
+    expect(leg2.fullRepaint).toBe(true);
+    expect(leg2.timeoutMs).toBe(3000);
+    expect(leg2.expect()).toBe(true); // 任一 settle 即完成
   });
 });
 
