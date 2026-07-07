@@ -1,11 +1,8 @@
-// Native-parity window math (src/js/list_window.js).
+// Window math (src/js/list_window.js) — v5 behavior-level guards.
 //
-// The heart of this suite is the read.c REFERENCE SIMULATOR: a direct 1-based
-// transcription of pttbbs mbbsd/read.c cursor_pos (read.c:170-195) + the key
-// ops (read.c:842-880). moveListCursorWindow must match it step-for-step over
-// every op sequence — with no blacklist the visible sequence equals the native
-// line space, so this IS the "無黑名單時兩模式無可感知差異" guarantee at the
-// navigation-logic layer (core principle, docs/easy-reading-list.md).
+// v5 合約下 read.c lockstep 參考模擬器與全枚舉比對已退役（parity 合約廢棄，
+// docs/easy-reading-list.md 核心原則）。此處只鎖使用者可感知的行為症狀：
+// PgUp 游標停新頁頂、頂端 wrap、底端 clamp、邊未確認時交給 server。
 import {
   listCursorPos,
   moveListCursorWindow,
@@ -16,66 +13,8 @@ import {
   LIST_FROM_TOP,
 } from '../../src/js/list_window';
 
-// ---------------------------------------------------------------------------
-// read.c reference simulator (1-based, exactly the C code shape)
-// ---------------------------------------------------------------------------
-
-// cursor_pos(locmem, val, from_top): read.c:170-195 minus the paint calls.
-function refCursorPos(mem, val, fromTop, lastLine) {
-  if (!lastLine) return;
-  if (val > lastLine) val = lastLine;
-  if (val <= 0) val = 1;
-  if (val >= mem.top && val < mem.top + mem.pLines) {
-    mem.crs = val;
-    return;
-  }
-  mem.top = val - fromTop;
-  if (mem.top <= 0) mem.top = 1;
-  mem.crs = val;
-}
-
-// One i_read_key nav op: read.c:842-880 (new_top defaults to 10).
-function refOp(mem, op, lastLine) {
-  let val;
-  let fromTop = 10;
-  switch (op) {
-    case 'up':
-      if (mem.crs <= 1) {
-        val = lastLine;
-        fromTop = mem.pLines - 1;
-      } else {
-        val = mem.crs - 1;
-        fromTop = mem.pLines - 2;
-      }
-      break;
-    case 'down':
-      val = mem.crs + 1;
-      fromTop = 1;
-      break;
-    case 'pgup':
-      val = mem.top - mem.pLines;
-      fromTop = 0;
-      break;
-    case 'pgdn':
-      val = mem.top + mem.pLines;
-      fromTop = 0;
-      break;
-    case 'home':
-      val = 0;
-      fromTop = 0;
-      break;
-    case 'end':
-      val = lastLine;
-      fromTop = mem.pLines - 1;
-      break;
-    default:
-      return;
-  }
-  refCursorPos(mem, val, fromTop, lastLine);
-}
-
 // Drive moveListCursorWindow (0-based) with both edges confirmed (= the whole
-// board is buffered, the no-blacklist native-parity setup).
+// board is buffered).
 function ours(state, op, len, B) {
   return moveListCursorWindow(state, op, {
     len,
@@ -85,46 +24,7 @@ function ours(state, op, len, B) {
   });
 }
 
-describe('moveListCursorWindow ≡ read.c reference (dual-mode parity)', () => {
-  const OPS = ['up', 'down', 'pgup', 'pgdn', 'home', 'end'];
-
-  function compareSequence(len, B, seq, startTop, startCrs) {
-    const mem = { top: startTop + 1, crs: startCrs + 1, pLines: B };
-    let st = { top: startTop, cursor: startCrs };
-    seq.forEach((op, step) => {
-      refOp(mem, op, len);
-      st = ours(st, op, len, B);
-      expect({ step, op, top: st.top, cursor: st.cursor }).toEqual({
-        step,
-        op,
-        top: mem.top - 1,
-        cursor: mem.crs - 1,
-      });
-    });
-  }
-
-  test('every single op from every window state (exhaustive, len=55 B=20)', () => {
-    const len = 55;
-    const B = 20;
-    for (let top = 0; top < len; ++top) {
-      for (let crs = top; crs < Math.min(top + B, len); ++crs) {
-        for (const op of OPS) compareSequence(len, B, [op], top, crs);
-      }
-    }
-  });
-
-  test('long pseudo-random op walks stay in lockstep', () => {
-    // Deterministic LCG so failures reproduce.
-    let s = 42;
-    const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
-    for (const len of [1, 5, 19, 20, 21, 60, 300]) {
-      const B = 20;
-      const seq = [];
-      for (let i = 0; i < 400; ++i) seq.push(OPS[Math.floor(rnd() * OPS.length)]);
-      compareSequence(len, B, seq, 0, 0);
-    }
-  });
-
+describe('moveListCursorWindow（v5 行為級守護）', () => {
   test('pgup lands the cursor on the new page TOP (the reported symptom)', () => {
     // top=40, cursor=45 → PgUp: top=20, cursor=20 (read.c: new_top=0).
     const r = ours({ top: 40, cursor: 45 }, 'pgup', 100, 20);

@@ -131,44 +131,8 @@ test.describe('replayListCassette 门控机制', () => {
 test.describe('文章列表好读模式（离线）', () => {
   test.skip(!nav, '缺 cchat-list-nav cassette（yarn record:cassette 先录一次）');
 
-  // v5 退役中（M5 移除）：parity 合约已废弃（docs/easy-reading-list.md 核心原则 v5 版）。
-  // 直接触发点：新录 cassette 首页含删除文 → 好读无条件隐藏（不变量 10）→ 逐行必不同，
-  // 这正是「隐藏功能与 parity 本质冲突」的实例。
-  test.skip('双模 engage 比对：开启好读瞬间 24 行画面与原生逐行相同（核心原则）', async ({ page }) => {
-    test.setTimeout(60000);
-    const logs = ptt.attachConsole(page);
-    try {
-      await bootOffline(page, ptt);
-      await replayListCassette(page, nav);
-      await page.waitForFunction(() => window.__app.buf.pageState === 2);
-      await page.waitForTimeout(400); // 原生画面 settle/render flush
-
-      const nativeRows = await dumpScreenRows(page);
-      const nativeCursor = await cursorRowIndex(page);
-      expect(nativeRows.length).toBe(24);
-      expect(nativeCursor).toBeGreaterThanOrEqual(3);
-
-      // 预读 0：engage 只 seed 当前页，无任何网络 —— 画面必须一模一样。
-      await ptt.applyPrefs(page, {
-        enableEasyReadingList: true,
-        easyReadingListPrefetchCount: 0
-      });
-      await waitState(page, (x) => x.state === 'active' && x.renderMode === 'buffer');
-      await page.waitForTimeout(300);
-
-      const erRows = await dumpScreenRows(page);
-      const erCursor = await cursorRowIndex(page);
-      expect(erRows.length).toBe(24);
-      for (let r = 0; r < 24; r++) {
-        expect({ row: r, text: erRows[r] }).toEqual({ row: r, text: nativeRows[r] });
-      }
-      expect(erCursor).toBe(nativeCursor);
-    } catch (e) {
-      console.log('--- console tail ---');
-      for (const l of logs.slice(-25)) console.log(l);
-      throw e;
-    }
-  });
+  // 双模 engage 逐行比对案已退役（v5/M5）：parity 合约废弃，隐藏功能（黑名单/
+  // 删除文）与逐行相同本质冲突（docs/easy-reading-list.md 核心原则 v5 版）。
 
   test('进板启用：固定 24 行视窗、预读累积、序号严格递增、游标 ● 单一、实体游标隐藏', async ({ page }) => {
     test.setTimeout(60000);

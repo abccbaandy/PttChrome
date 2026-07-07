@@ -517,9 +517,11 @@ test.describe('文章列表好讀模式（live）', () => {
     }
   });
 
-  // v3 不穩重現法自動化（handoff 驗收 1、2）：這兩條是 v4 的核心回歸。
-  test('soak：進退板×5 模式保持、無亂版；預讀中連打導覽不掉 native', async ({ page }) => {
-    test.setTimeout(240000);
+  // v5/M5 soak＝枚舉操作輪播：白名單操作（T1 本地/T2 交易/未列鍵 no-op/離板重進/
+  // 連打）逐一走一輪，每步驗「模式保持＋序號遞增」。操作集合＝合約
+  // （docs/easy-reading-list.md §操作分類），新增白名單操作時此輪播同步補站。
+  test('soak：白名單操作輪播——每站模式保持、無亂版、不掉 native', async ({ page }) => {
+    test.setTimeout(300000);
     const logs = attachConsole(page);
     try {
       await page.goto('/');
@@ -528,29 +530,98 @@ test.describe('文章列表好讀模式（live）', () => {
       await resetSession(page);
       let s = await enterBoardWithListER(page, 'C_Chat');
       expect(s.state).toBe('active');
-
       await page.locator('#t').focus();
-      for (let round = 1; round <= 5; round++) {
-        // ← 離板（other 鍵 → functionMode → 選單 settle → idle cleanup）。
-        await page.keyboard.press('ArrowLeft');
-        await waitFor(page, (x) => x.state === 'idle', 20000);
-        // 重新進板（離板後停在選單，游標未必在原板上 → 回主選單再 s 搜尋進板；
-        // resetSession 會把 prefs 重設 baseline，故在主選單重開 pref —— 此時
-        // evaluateNow 對選單是 no-op，進板時走自然 clean-list settle engage）。
-        await resetSession(page);
-        await applyPrefs(page, {
-          enableEasyReadingList: true,
-          easyReadingListPrefetchCount: 60,
+
+      const settledActive = async (station) => {
+        const st = await waitListSettled(page);
+        expect({ station, state: st.state, mode: st.renderMode }).toEqual({
+          station,
+          state: 'active',
+          mode: 'buffer',
         });
-        await gotoBoardListEROn(page, 'C_Chat');
-        s = await waitFor(page, (x) => x.state === 'active' && x.renderMode === 'buffer', 30000);
-        expect(s.cursorHidden).toBe(true);
-        assertAscending(s); // 無亂版：序號恆嚴格遞增
-        console.log(`round ${round}: listLen=${s.listLen}`);
-        await page.locator('#t').focus();
+        assertAscending(st);
+        console.log(`station ${station}: listLen=${st.listLen} sel=${st.selectedNum}`);
+        return st;
+      };
+
+      // 站 1：T1 鍵盤導覽（↑↓ j k PgUp PgDn，零 server）。
+      for (const k of ['ArrowUp', 'ArrowUp', 'j', 'k', 'PageUp', 'PageDown']) {
+        await page.keyboard.press(k);
+        await page.waitForTimeout(150);
+      }
+      s = await settledActive('T1-nav');
+
+      // 站 2：End 邊界確認（邊未確認 → server 交易；已確認 → 本地）。
+      await page.keyboard.press('End');
+      s = await settledActive('End');
+
+      // 站 3：滾輪（原生映射本地執行）。
+      const selBeforeWheel = s.selectedNum;
+      await page.locator('#mainContainer').hover();
+      for (let i = 0; i < 3; i++) {
+        await page.mouse.wheel(0, -120);
+        await page.waitForTimeout(250);
+      }
+      s = await settledActive('wheel');
+      if (selBeforeWheel != null && s.selectedNum != null) {
+        expect(s.selectedNum).toBeLessThan(selBeforeWheel);
       }
 
-      // 預讀中連打導覽（v3 最易掉 native 的重現法）：重進板觸發 fill，立刻連打。
+      // 站 4：點擊選取（T1 純本地）——點 body 第一列。
+      const rowBox = await page
+        .locator('#mainContainer [data-type="bbsline"]')
+        .nth(5)
+        .boundingBox();
+      await page.mouse.click(rowBox.x + rowBox.width / 2, rowBox.y + rowBox.height / 2);
+      await page.waitForTimeout(300);
+      s = await settledActive('click');
+
+      // 站 5：未列鍵 no-op（單按 x：淡出提示、狀態不動、不裸露原生）。
+      await page.keyboard.press('x');
+      await page.waitForTimeout(400);
+      s = await settledActive('noop-key');
+
+      // 站 6：相對命令 ]（T2 交易：jump→key 配對＋\f 收尾）。
+      await page.keyboard.press(']');
+      s = await settledActive('relative');
+
+      // 站 7：數字跳號 overlay——Esc 取消（零 server）。
+      await page.keyboard.press('5');
+      await page.waitForSelector('input[data-list-input]', { timeout: 5000 });
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('input[data-list-input]', { state: 'detached', timeout: 5000 });
+      s = await settledActive('jump-cancel');
+
+      // 站 8：v 已讀設定——Esc 取消（\r 收 getdata → resume）。
+      await page.keyboard.press('v');
+      await page.waitForFunction(
+        () =>
+          window.__app.listSession._paramMode &&
+          window.__app.listSession._paramMode.type === 'mark',
+        null,
+        { timeout: 10000 }
+      );
+      await page.keyboard.press('Escape');
+      s = await settledActive('mark-cancel');
+
+      // 站 9：/ 搜尋 overlay——Esc 取消（\r 收 getdata → resume）。
+      await page.keyboard.press('/');
+      await page.waitForSelector('input[data-list-input]', { timeout: 10000 });
+      await page.keyboard.press('Escape');
+      s = await settledActive('search-cancel');
+
+      // 站 10：Enter 開文 → ← 返回（re-seed）。
+      for (let i = 0; i < 2; i++) {
+        await page.keyboard.press('ArrowUp'); // 避開置底列，落在有序號的文章
+        await page.waitForTimeout(150);
+      }
+      await page.keyboard.press('Enter');
+      await waitFor(page, (x) => x.state === 'suspended', 25000);
+      await page.locator('#t').focus();
+      await page.keyboard.press('ArrowLeft');
+      s = await settledActive('open-back');
+
+      // 站 11：← 離板（leave 交易）→ 重進板 engage。
       await page.keyboard.press('ArrowLeft');
       await waitFor(page, (x) => x.state === 'idle', 20000);
       await resetSession(page);
@@ -559,15 +630,17 @@ test.describe('文章列表好讀模式（live）', () => {
         easyReadingListPrefetchCount: 60,
       });
       await gotoBoardListEROn(page, 'C_Chat');
+      s = await waitFor(page, (x) => x.state === 'active' && x.renderMode === 'buffer', 30000);
+      expect(s.cursorHidden).toBe(true);
+      assertAscending(s);
+
+      // 站 12：預讀中連打導覽（v3 最易掉 native 的重現法）。
       await page.locator('#t').focus();
       for (let i = 0; i < 12; i++) {
         await page.keyboard.press(i % 3 === 2 ? 'PageUp' : 'ArrowUp');
         await page.waitForTimeout(120);
       }
-      s = await waitListSettled(page);
-      expect(s.state).toBe('active'); // 模式保持，不掉 native
-      expect(s.renderMode).toBe('buffer');
-      assertAscending(s);
+      s = await settledActive('burst-nav');
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);

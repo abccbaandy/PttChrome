@@ -10,7 +10,7 @@
 4. 交易期間 render=frozen＋吞鍵＋讀取中指示。
 5. **失敗顯性化**：timeout → 單獨 `\f` 探針拿全幅畫面重分類 → 恢復或 banner＋切原生。禁止靜默墜落。
 
-舊 parity 合約（「與原生完全一致、read.c 逐格對齊」）**已廢棄**——「測試全綠 ≠ 實測穩」跨 v3/v4 兩代重現，失敗面積在素材之外，屬結構性成本。`list_window.js` 視窗數學保留但允許偏離 read.c（web 慣例優先）；`tests/unit/list_window.test.js` lockstep 與 offline「雙模 engage 比對」案＝**退役中**（M5 移除）。
+舊 parity 合約（「與原生完全一致、read.c 逐格對齊」）**已廢棄**——「測試全綠 ≠ 實測穩」跨 v3/v4 兩代重現，失敗面積在素材之外，屬結構性成本。`list_window.js` 視窗數學保留但允許偏離 read.c（web 慣例優先）；`tests/unit/list_window.test.js` read.c lockstep 全枚舉與 offline「雙模 engage 比對」案＝**已退役**（M5 移除，只留行為級守護）。
 
 ## 操作分類（枚舉即合約）
 
@@ -28,7 +28,7 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
 
 | 物件 | 位置 |
 |---|---|
-| 視窗數學（read.c 移植，純函式）：`listCursorPos`/`moveListCursorWindow`/`normalizeListWindow`/`windowVisibleSequence`/`pruneListToSegment`/`labelListCursorBullet`/`LIST_FROM_TOP` | `src/js/list_window.js`（unit：`list_window.test.js`，含 read.c 參考模擬器全枚舉） |
+| 視窗數學（read.c 移植，純函式）：`listCursorPos`/`moveListCursorWindow`/`normalizeListWindow`/`windowVisibleSequence`/`pruneListToSegment`/`labelListCursorBullet`/`LIST_FROM_TOP` | `src/js/list_window.js`（unit：`list_window.test.js`，行為級守護；read.c lockstep 已退役） |
 | 純函式層：`classifyListScreen`/`classifyListBurst`/`transitionListSession`/`mergeListPage`/`flattenListBuffer`/`moveListSelection`/`visibleListIndices`/`parseBoardName`/`evictListBuffer`/`bufferEdgeNum` | `src/js/list_session.js` 上半（unit：`list_session.test.js`） |
 | class `ListSession(core,view,termBuf,queue)`：狀態機＋視窗錨（`_topNum`/`_selectedNum`）＋demand＋`getWindowView` | 同檔下半；`pttchrome.js` App constructor 接線 |
 | `CommandQueue`（注入 send/timer、soft/hard timeout、flush 靜默） | `src/js/command_queue.js` |
@@ -36,7 +36,7 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
 | settle snapshot | `src/js/term_buf.js` `_armSettleTimer` |
 | render：redraw buffer/frozen 分支＝24 行視窗（`buildListWindowLines`＝header/footer 快取＋`getWindowView` 切片＋● 裝飾）、`accumulateListLines`（merge→evict→prune→flatten→chrome 快取）、`relabelListCursorRow` | `src/js/term_view.js` |
 | 鍵盤 hook（僅 buffer/frozen；native 全直通）；滾輪：`pttchrome.js mouse_scroll` buffer 分支 → `ListSession.onWheel` | `term_view.js onKeyDown`／`pttchrome.js` |
-| 測試 | offline `tests/e2e/offline/easy-reading-list.offline.spec.js`（CI gate，含雙模比對）；live `tests/e2e/easy-reading-list.spec.js`；素材 `cchat-list-nav/prompt/pinned` |
+| 測試 | offline `tests/e2e/offline/easy-reading-list.offline.spec.js`（CI gate）；live `tests/e2e/easy-reading-list.spec.js`（soak＝白名單操作輪播，新增白名單操作時同步補站）；素材 `cchat-list-nav/prompt/pinned/mark/search` |
 
 ## 視窗模型（render 層，取代舊無限捲動）
 
