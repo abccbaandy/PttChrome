@@ -80,13 +80,13 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 8. CommandQueue timer 要包 wrapper（Illegal invocation）。
 9. `_renderScreenLines` list 分支傳 `{pageState:2}`；**dropHidden=false**（黑名單已在 `visibleListIndices` 前置過濾，視窗切片本來就不含隱藏列）。
 10. `visibleListIndices` 與 `Screen#computeAnnotations` PAGE_LIST 分支同規則（含**刪除文無條件隱藏**：`isDeletedListRow`＝作者欄 `-`；刪除文開文永無 article → 必 wedge，故比照黑名單隱藏）。
-12. **相對命令鍵（`[` `]` `=`，RELATIVE_COMMAND_KEYS）＝keyClass 'relative' 一級公民**：reducer active+relative → functionMode＋begin-relative（flush → **render=frozen**（非 native！閃現原生一幀＝黑名單/刪除文裸露）→ enqueue jump→key 配對）。frozen∧functionMode 期間 onKeyDown 吞所有鍵（序列化保護）。jump＋key **不可同 tick 直送**：pttbbs typeahead 會跳過重繪（協定 §2）。配對期間 functionMode 的 clean-list settle 被 in-flight 吸收（reducer `event.inFlightKind → stay`），完成的 settle 才 resume（採落點游標）。（v5/M3）**第二腿掛 `fullRepaint`（keys 尾附 \f）**：沒命中也必得一幀全幅重繪 → 任一 settle 即回應，RTT 自適應 timeout 退役。**只限這組鍵**：←/q/e 離板＝獨立 leave 交易（M2）。pinned 選取無序號＝no-op。**配對結束若 reducer 仍在 functionMode（沒命中＝只回訊息列，或 timeout）→ `_resumeAfterRelative` 強制回 buffer**。底列訊息不顯示（快取 feeter 蓋掉）＝與 native 已知小差異。守護：`list_keys.test.js`。
+12. **相對命令鍵（`[` `]` `=`，RELATIVE_COMMAND_KEYS）＝keyClass 'relative' 一級公民**：reducer active+relative → functionMode＋begin-relative（flush → **render=frozen**（非 native！閃現原生一幀＝黑名單/刪除文裸露）→ enqueue jump→key 配對）。**`_serverNum` 快路徑（2026-07-07 體感修復）**：session 追蹤「server 真游標已知序號」（seed/re-seed/resume facts、prefetch 落地、jump 腿落點都會教；native 出走/article/探針 fail/End 落點置底＝null），選取＝`_serverNum` 時 relative／`v` mark **跳過 sync-jump 腿**（單腿 key＋`\f`，round-trip 減半）；本地 T1 導覽不動 server 游標故一移動即不相等、自動回兩腿。frozen∧functionMode 期間 onKeyDown 吞所有鍵（序列化保護）。jump＋key **不可同 tick 直送**：pttbbs typeahead 會跳過重繪（協定 §2）。配對期間 functionMode 的 clean-list settle 被 in-flight 吸收（reducer `event.inFlightKind → stay`），完成的 settle 才 resume（採落點游標）。（v5/M3）**第二腿掛 `fullRepaint`（keys 尾附 \f）**：沒命中也必得一幀全幅重繪 → 任一 settle 即回應，RTT 自適應 timeout 退役。**只限這組鍵**：←/q/e 離板＝獨立 leave 交易（M2）。pinned 選取無序號＝no-op。**配對結束若 reducer 仍在 functionMode（沒命中＝只回訊息列，或 timeout）→ `_resumeAfterRelative` 強制回 buffer**。底列訊息不顯示（快取 feeter 蓋掉）＝與 native 已知小差異。守護：`list_keys.test.js`。
 13. `relabelListCursorRow` 只在 cell 2 起有數字（● 真的蓋到數字）時回填 prefix；短序號（`/` 搜尋結果）● 蓋的是 padding，必須填空白——否則序號末兩位灌進行首並存進 map（污染跨頁殘留）。
 11. edge 確認（markEdge/_requestEnd）後要 `_forceRedraw`——pinned 門控開啟需要重繪才可見。
 
 ## 已知限制
 
-rows≠24 不 engage。點擊選取已解禁（M2，`onClick` 純本地 T1）。MODE_SELECT（`/` 搜尋清單）＝`_selectMode` 子狀態（M3）：序號空間獨立（協定 §8），進出各強制 rebuild（`_boardName=null`）；**退出落點＝帳號已讀進度，非進 select 前位置**（協定 §8 live 事實）——fill 只向上，退回後 buffer 可能整段低於進板頁。
+rows≠24 不 engage。點擊選取已解禁（M2，`onClick` 純本地 T1）。MODE_SELECT（`/` 搜尋清單）＝`_selectMode` 子狀態（M3）：序號空間獨立（協定 §8），進出各強制 rebuild（`_boardName=null`）；**退出落點＝帳號已讀進度，非進 select 前位置**（協定 §8 live 事實）——fill 只向上，退回後 buffer 可能整段低於進板頁；**rebuild 落點頁不滿版（下方空白列）時自動 demand-down 補頁**（2026-07-07；滿版落點**不得**探測——板尾零回應 PgDn 的 timeout→`\f` 探針會與 hard timeout race 出無主 settle → 誤入 functionMode，live 實測）。搜尋 commit 腿 keys 必須 `u2b(kw)`（queue send＝raw `conn.send`，非 convSend；中文 kw 不轉＝亂碼搜不到）。
 
 ## 素材再錄
 

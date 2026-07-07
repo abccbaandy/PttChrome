@@ -394,7 +394,9 @@ test.describe('文章列表好讀模式（live）', () => {
       await page.waitForSelector('input[data-list-input]', { timeout: 10000 });
       const fm = await waitFor(page, (x) => x.state === 'functionMode');
       expect(fm.renderMode).toBe('frozen'); // 非 native——封閉互動
-      await page.locator('input[data-list-input]').fill('Re');
+      // 中文關鍵字：commit 腿必須 u2b 轉 Big5（raw UTF-16 = 亂碼、搜不到——
+      // 2026-07-07 使用者回報 bug 的 live 鎖）。[閒聊] 分類屬標題一部分，恆有命中。
+      await page.locator('input[data-list-input]').fill('閒聊');
       await page.keyboard.press('Enter');
 
       // NEWDIRECT 全幅重建 → rebuild 進 MODE_SELECT 清單（序號空間獨立）。

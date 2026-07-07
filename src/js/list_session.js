@@ -21,7 +21,7 @@ import {
   isDeletedListRow,
   rowToText,
 } from './comment_parse';
-import { parseStatusRow, parseListRow } from './string_util';
+import { parseStatusRow, parseListRow, u2b } from './string_util';
 import { readValuesWithDefault } from './pref_storage';
 import {
   moveListCursorWindow,
@@ -522,6 +522,13 @@ export function ListSession(core, view, termBuf, queue) {
   // _breakChain() at every such point (flush callers, other enqueues, settles
   // with no in-flight command, buffer rebuilds). null = must anchor.
   this._chainState = null; // { dir: -1|1, lastLanded: number }
+  // Last KNOWN server cursor article number (v5 speed fix): local T1 nav never
+  // moves the real cursor, so after any landing that parked it on a known
+  // number (seed/re-seed/resume facts, prefetch landings, relative resume)
+  // a cursor-relative transaction ([ ] = / v) whose selection ALREADY equals
+  // it can skip the sync-jump leg — one round-trip instead of two. null =
+  // unknown (native excursion / probe timeout / article) → always sync first.
+  this._serverNum = null;
   // T3 airlock (v5 closed interaction): a non-whitelisted key is a no-op with
   // a hint; pressing the SAME key again within the window is the explicit
   // consent to leave for native ("切原生操作") — the second press passes
@@ -805,6 +812,13 @@ ListSession.prototype = {
     const num = this._selectedNum;
     if (num == null) return;
     const self = this;
+    if (num === this._serverNum) {
+      // The real cursor is ALREADY on the selection (seed/re-seed/resume
+      // landing, or a previous relative hit) — the sync-jump leg would be a
+      // wasted round-trip. Send the key directly (v5 speed fix: native feel).
+      this._enqueueRelativeKey(keyChar);
+      return;
+    }
     this._queue.enqueue({
       keys: String(num) + '\r',
       kind: 'relative-sync-jump',
@@ -822,36 +836,47 @@ ListSession.prototype = {
       },
       timeoutMs: 4000,
       onDone: function() {
-        self._queue.enqueue({
-          keys: keyChar,
-          kind: 'relative-command',
-          // v5: \f tail — a MISS used to be a ZERO-response (only endable by
-          // an RTT-adaptive timeout, old invariant 12); with the forced full
-          // repaint every outcome answers deterministically. Any settle IS
-          // the response: a hit repaints the list (clean-list, reducer
-          // resumes with the landed cursor); a miss full-repaints the same
-          // list + bottom message (reducer stays functionMode — the deferred
-          // check below pulls us back to the buffer render).
-          fullRepaint: true,
-          expect: function() {
-            return true;
-          },
-          timeoutMs: 3000,
-          // onDone runs BEFORE the same settle's reducer dispatch — defer the
-          // check one tick so a clean-list resume wins first.
-          onDone: function() {
-            setTimeout(function() {
-              self._resumeAfterRelative();
-            }, 0);
-          },
-          // Zero response (server ignored the key): back to the buffer view.
-          onFail: function() {
-            self._resumeAfterRelative();
-          }
-        });
+        self._serverNum = num;
+        self._enqueueRelativeKey(keyChar);
       },
       // Jump failed (deleted target / weird screen): do NOT send the key from
       // an unknown cursor position (the original bug) — just resume the view.
+      onFail: function() {
+        self._serverNum = null;
+        self._resumeAfterRelative();
+      }
+    });
+  },
+
+  // The [ ] = key itself (second leg / the ONLY leg when the server cursor is
+  // already synced). v5: \f tail — a MISS used to be a ZERO-response (only
+  // endable by an RTT-adaptive timeout, old invariant 12); with the forced
+  // full repaint every outcome answers deterministically. Any settle IS the
+  // response: a hit repaints the list (clean-list, reducer resumes with the
+  // landed cursor — _resumeBuffer re-learns _serverNum); a miss full-repaints
+  // the same list + bottom message (reducer stays functionMode — the deferred
+  // check pulls us back to the buffer render).
+  _enqueueRelativeKey: function(keyChar) {
+    const self = this;
+    // The key moves the real cursor to wherever the thread search lands —
+    // unknown until the completing settle's facts re-teach it.
+    this._serverNum = null;
+    this._queue.enqueue({
+      keys: keyChar,
+      kind: 'relative-command',
+      fullRepaint: true,
+      expect: function() {
+        return true;
+      },
+      timeoutMs: 3000,
+      // onDone runs BEFORE the same settle's reducer dispatch — defer the
+      // check one tick so a clean-list resume wins first.
+      onDone: function() {
+        setTimeout(function() {
+          self._resumeAfterRelative();
+        }, 0);
+      },
+      // Zero response (server ignored the key): back to the buffer view.
       onFail: function() {
         self._resumeAfterRelative();
       }
@@ -882,6 +907,7 @@ ListSession.prototype = {
   _beginLeave: function() {
     this._freezeForTransaction();
     const self = this;
+    this._serverNum = null; // the landing (menu / main list) re-teaches it
     this._queue.enqueue({
       keys: '\x1b[D',
       kind: 'leave-board',
@@ -941,6 +967,12 @@ ListSession.prototype = {
       this._enqueueMarkPrompt();
       return;
     }
+    if (num === this._serverNum) {
+      // Real cursor already on the selection — skip the sync leg (one
+      // round-trip; same rule as the relative pair).
+      this._enqueueMarkPrompt();
+      return;
+    }
     this._queue.enqueue({
       keys: String(num) + '\r',
       kind: 'mark-sync-jump',
@@ -956,9 +988,11 @@ ListSession.prototype = {
       },
       timeoutMs: 4000,
       onDone: function() {
+        self._serverNum = num;
         self._enqueueMarkPrompt();
       },
       onFail: function() {
+        self._serverNum = null;
         self._degradeToNative('已讀設定逾時，已切至原生模式');
       }
     });
@@ -1082,7 +1116,11 @@ ListSession.prototype = {
       return;
     }
     this._queue.enqueue({
-      keys: kw + '\r',
+      // The queue's send is the RAW conn.send (bytes on the wire) — a non-ASCII
+      // keyword must be converted to Big5 here (typed input goes through
+      // conn.convSend which does the same u2b; raw UTF-16 chars = mojibake and
+      // the search silently matches nothing).
+      keys: u2b(kw) + '\r',
       kind: 'search-commit',
       expect: function(snap, facts) {
         // Hit: NEWDIRECT full rebuild (clean-list, independent numbers).
@@ -1245,6 +1283,25 @@ ListSession.prototype = {
     this._forceRedraw();
     if (this._selectedNum == null && this._selectedPinnedKey == null)
       this._selectLastNumbered();
+    // The landing page may sit mid-board with NOTHING buffered below (e.g. a
+    // MODE_SELECT exit lands on the account's read cursor over a PARTIAL
+    // server frame) — the window would render blank rows until the user
+    // happens to press a key. Fill the visible window downward FIRST, then the
+    // upward background fill takes over (the demand chain's onDone falls back
+    // to _maybeFill). ONLY when rows are actually missing (window taller than
+    // the buffer below the top anchor): an unconditional demand would probe
+    // past a full landing page — at a board/select end that is a ZERO-response
+    // PgDn whose timeout→\f probe races the hard timeout live (ownerless
+    // settle → spurious functionMode banner).
+    const seq = this._sequence();
+    const pos = seq.length ? this._windowPos(seq) : null;
+    if (
+      pos &&
+      seq.length < pos.top + this._bodyRows() &&
+      !this._edgeDown &&
+      this._queue.idle
+    )
+      this._enqueuePrefetch(false, 'key');
     this._maybeFill();
   },
 
@@ -1254,6 +1311,7 @@ ListSession.prototype = {
   // only on the board's last page (read.c bottom_line..last_line); without any
   // pinned row the edge stays unknown and demand discovers it later.
   _seedAnchors: function(facts) {
+    this._serverNum = facts ? facts.cursorRowNum : null;
     this._selectedNum = facts ? facts.cursorRowNum : null;
     this._selectedPinnedKey = null;
     this._topNum = null;
@@ -1413,9 +1471,13 @@ ListSession.prototype = {
           );
         },
         timeoutMs: 4000,
+        onDone: function() {
+          self._serverNum = base;
+        },
         // Anchor failed (article deleted / weird screen): drop the queued page
         // command too — paging from an unknown position is exactly the bug.
         onFail: function() {
+          self._serverNum = null;
           markEdge();
           // Only cancel OUR paired page command: pending may already hold a
           // user transaction (its preamble flushPending-ed the page command
@@ -1445,17 +1507,26 @@ ListSession.prototype = {
       timeoutMs: 800,
       onDone: function(r) {
         self._fillPages++;
+        self._serverNum = r.landed;
         if (r.edge) markEdge();
         else {
           self._setLoading(false); // new rows arrived — edge wait (if any) over
           self._chainState = { dir: dir, lastLanded: r.landed };
-          if (origin === 'key') self._maybeDemand(dir);
-          else self._maybeFill();
+          if (origin === 'key') {
+            self._maybeDemand(dir);
+            // Demand satisfied (nothing enqueued → queue idle): hand back to
+            // the background fill so a rebuild's up-fill isn't starved by the
+            // window-first demand pass (_maybeFill no-ops while busy).
+            self._maybeFill();
+          } else self._maybeFill();
         }
       },
       // Prefetch timeout is BENIGN: treat as the edge and stop paging that way
       // — never flips the mode (the user keeps scrolling what we have).
-      onFail: markEdge
+      onFail: function() {
+        self._serverNum = null;
+        markEdge();
+      }
     });
   },
 
@@ -1633,6 +1704,7 @@ ListSession.prototype = {
   // (suspended → clean-list → resume-buffer), no saved anchors needed (v5/M4).
   _handoffArticle: function() {
     this._setLoading(false);
+    this._serverNum = null;
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();
@@ -1651,6 +1723,7 @@ ListSession.prototype = {
   // internal callers) — no banner.
   _enterFunctionMode: function(facts) {
     this._setLoading(false);
+    this._serverNum = null; // native excursion: the cursor goes wherever
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();
@@ -1687,6 +1760,7 @@ ListSession.prototype = {
     this._renderMode = 'buffer';
     this._setLoading(false);
     this._view.hideCursor();
+    this._serverNum = facts ? facts.cursorRowNum : null;
     if (facts && facts.cursorRowNum != null) {
       // Adopt the native screen's cursor AND window top so the buffer render
       // shows exactly the page the user just saw in the mirror (native parity:
@@ -1711,6 +1785,7 @@ ListSession.prototype = {
   },
 
   _cleanup: function() {
+    this._serverNum = null;
     this._breakChain();
     this._queue.flush();
     this._setLoading(false);
@@ -1862,7 +1937,9 @@ ListSession.prototype = {
       timeoutMs: 4000,
       onDone: function() {
         // The landed page IS the board end (last_line): confirm the edge, then
-        // land the local cursor there like native End.
+        // land the local cursor there like native End. The landed row may be a
+        // pinned one (no number) — the cheap safe answer is "unknown".
+        self._serverNum = null;
         self._prunePivotOverride = undefined;
         self._edgeDown = true;
         const seq = self._sequence();
@@ -1902,6 +1979,7 @@ ListSession.prototype = {
       },
       timeoutMs: 4000,
       onDone: function() {
+        self._serverNum = 1;
         self._prunePivotOverride = undefined;
         self._edgeUp = true;
         const seq = self._sequence();
