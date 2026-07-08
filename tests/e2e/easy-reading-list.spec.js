@@ -569,14 +569,17 @@ test.describe('文章列表好讀模式（live）', () => {
         expect(s.selectedNum).toBeLessThan(selBeforeWheel);
       }
 
-      // 站 4：點擊選取（T1 純本地）——點 body 第一列。
+      // 站 4：點擊＝no-op（點擊選取已移除 2026-07-08）——點 body 列後選取不動、
+      // 不發鍵給 server（吞掉，防 useMouseBrowsing 對虛擬視窗座標發鍵）。
+      const selBeforeClick = s.selectedNum;
       const rowBox = await page
         .locator('#mainContainer [data-type="bbsline"]')
         .nth(5)
         .boundingBox();
       await page.mouse.click(rowBox.x + rowBox.width / 2, rowBox.y + rowBox.height / 2);
       await page.waitForTimeout(300);
-      s = await settledActive('click');
+      s = await settledActive('click-noop');
+      expect(s.selectedNum).toBe(selBeforeClick);
 
       // 站 5：未列鍵 no-op（單按 x：淡出提示、狀態不動、不裸露原生）。
       await page.keyboard.press('x');

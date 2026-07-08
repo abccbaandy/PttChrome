@@ -861,23 +861,53 @@ TermView.prototype = {
     this._listInputWrap = wrap;
     var finish = function(val) {
       if (self._listInputWrap !== wrap) return; // already closed
+      window.removeEventListener('keydown', onWindowKey, true);
       wrap.remove();
       self._listInputWrap = null;
       if (self.bbscore && self.bbscore.setInputAreaFocus)
         self.bbscore.setInputAreaFocus();
       cb(val);
     };
-    input.addEventListener('keydown', function(ev) {
-      ev.stopPropagation();
+    var handleKey = function(ev) {
       if (ev.key === 'Enter') {
         ev.preventDefault();
         var v = input.value.trim();
         finish(v.length ? v : null);
-      } else if (ev.key === 'Escape') {
+        return true;
+      }
+      if (ev.key === 'Escape') {
         ev.preventDefault();
         finish(null);
+        return true;
       }
+      return false;
+    };
+    input.addEventListener('keydown', function(ev) {
+      ev.stopPropagation();
+      handleKey(ev);
     });
+    // Focus-independent net (window CAPTURE): the input grabs focus in a
+    // setTimeout — a key arriving before that (fast typist / Playwright) lands
+    // on #t where the global handlers deliberately ignore everything while the
+    // overlay is open, so an early Escape/Enter would vanish and the overlay
+    // wedge open. Catch them here regardless of focus; any other key just
+    // pulls focus onto the input so the typed char lands in it (finish is
+    // guarded, double-handling with the input's own listener is harmless).
+    var onWindowKey = function(ev) {
+      if (ev.target === input) return; // input's own listener handles it
+      if (handleKey(ev)) {
+        ev.stopPropagation();
+        return;
+      }
+      if (
+        document.activeElement !== input &&
+        !ev.ctrlKey &&
+        !ev.altKey &&
+        !ev.metaKey
+      )
+        input.focus();
+    };
+    window.addEventListener('keydown', onWindowKey, true);
     setTimeout(function() {
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);

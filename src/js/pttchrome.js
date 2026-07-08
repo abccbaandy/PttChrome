@@ -967,18 +967,13 @@ App.prototype.mouse_click = function(e) {
         e.preventDefault();
         return;
       }
-      // List easy reading buffer render: a click on a window body row moves
-      // the LOCAL selection (v5 T1, zero server interaction — the rendered
-      // 24-row window rows map 1:1 to the session's window slice). frozen
-      // swallows clicks (a serialized transaction is in flight).
+      // List easy reading buffer/frozen render: swallow clicks entirely.
+      // Click-selection was removed (2026-07-08, user-rejected: it moved the
+      // selection without opening the article — useless). Never fall through
+      // to useMouseBrowsing here: it would fire keys at the server from
+      // virtual-window coordinates (violates the v5 closed-interaction rule).
       if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
-        if (this.buf.listRenderMode === 'buffer' && this.listSession) {
-          var lpos = this.clientToPos(e.clientX, e.clientY);
-          if (lpos && this.listSession.onClick(lpos.row)) {
-            e.preventDefault();
-            this.setInputAreaFocus();
-          }
-        }
+        e.preventDefault();
         return;
       }
       if (this.buf.useMouseBrowsing) {

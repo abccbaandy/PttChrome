@@ -768,24 +768,6 @@ ListSession.prototype = {
     }
   },
 
-  // Click selection (v5 T1, un-banned): a click on a body row of the rendered
-  // window moves the LOCAL selection there — zero server interaction. Returns
-  // true when handled (caller preventDefaults). `row` is the 24-row screen row
-  // from clientToPos; body rows are 3..rows-2 (buildListWindowLines layout).
-  onClick: function(row) {
-    if (this.state !== 'active' || this._renderMode !== 'buffer') return false;
-    if (row < 3 || row > this._termBuf.rows - 2) return false;
-    const view = this.getWindowView();
-    if (!view) return false;
-    const abs = view.body[row - 3];
-    if (abs == null) return false;
-    const nums = this._termBuf.listLineNums || [];
-    this._selectedNum = nums[abs];
-    this._selectedPinnedKey = nums[abs] == null ? this._pinnedKeyAt(abs) : null;
-    this._forceRedraw();
-    return true;
-  },
-
   // 'begin-relative' executor: freeze the window snapshot (no native flash —
   // the raw mirror would un-hide blacklist/deleted rows), flush any prefetch,
   // then enqueue the serialized jump→key pair. The cursor stays hidden (we
@@ -806,8 +788,6 @@ ListSession.prototype = {
   // → key (any settle = its response) → that settle's reducer pass sees
   // inFlightKind null and resumes with the LANDED cursor (native parity).
   // Failures fall back through _resumeAfterRelative — self-healing.
-  // ONLY RELATIVE_COMMAND_KEYS take this path: serializing e.g. ← (leave
-  // board) would delay/duplicate responses around the menu exit (live soak).
   _beginRelativeCommand: function(keyChar) {
     const num = this._selectedNum;
     if (num == null) return;
@@ -819,14 +799,34 @@ ListSession.prototype = {
       this._enqueueRelativeKey(keyChar);
       return;
     }
+    this._enqueueCursorSyncJump(
+      'relative-sync-jump',
+      function() {
+        self._enqueueRelativeKey(keyChar);
+      },
+      // Jump failed (deleted target / weird screen): do NOT send the key from
+      // an unknown cursor position (the original bug) — just resume the view.
+      function() {
+        self._resumeAfterRelative();
+      }
+    );
+  },
+
+  // Shared sync-jump leg: park the server's REAL cursor on the local selection
+  // before a command that acts FROM the cursor ([ ] = / v mark / ← leave —
+  // pttbbs remembers the board position via the real cursor, getkeep). Expect
+  // = jump-landing park fingerprint (protocol §4 ✚, same as open-jump). NOT
+  // clean-list: the post-jump bottom row stays empty even through a \f redraw
+  // (redrawwin repaints the server's CURRENT virtual screen — protocol §6 M1
+  // correction). Timeout recovery = the queue's \f probe. Callers gate on
+  // `_selectedNum != null` and the `_serverNum` fast path themselves.
+  _enqueueCursorSyncJump: function(kind, onSynced, onFail) {
+    const num = this._selectedNum;
+    const self = this;
     this._queue.enqueue({
       keys: String(num) + '\r',
-      kind: 'relative-sync-jump',
+      kind: kind,
       expect: function(snap, facts) {
-        // Jump-landing park fingerprint (protocol §4 ✚, same as open-jump).
-        // NOT clean-list: the post-jump bottom row stays empty even through a
-        // \f redraw (redrawwin repaints the server's CURRENT virtual screen —
-        // protocol §6 M1 correction). Timeout recovery = the queue's \f probe.
         return (
           facts.cursorRowNum === num &&
           facts.curY >= 3 &&
@@ -837,13 +837,11 @@ ListSession.prototype = {
       timeoutMs: 4000,
       onDone: function() {
         self._serverNum = num;
-        self._enqueueRelativeKey(keyChar);
+        onSynced();
       },
-      // Jump failed (deleted target / weird screen): do NOT send the key from
-      // an unknown cursor position (the original bug) — just resume the view.
       onFail: function() {
         self._serverNum = null;
-        self._resumeAfterRelative();
+        onFail();
       }
     });
   },
@@ -906,6 +904,26 @@ ListSession.prototype = {
   // explicit degrade to the native mirror (v5: failures are visible).
   _beginLeave: function() {
     this._freezeForTransaction();
+    const num = this._selectedNum;
+    if (num == null || num === this._serverNum) {
+      // Pinned/no selection (nothing to jump to) or the real cursor is
+      // already on the selection — skip the sync leg (one round-trip).
+      this._enqueueLeaveKey();
+      return;
+    }
+    // Sync the REAL cursor to the selection first: pttbbs stores the board's
+    // re-entry position from the real cursor on exit (getkeep) — leaving from
+    // a stale cursor makes the NEXT board entry land somewhere else entirely
+    // (local T1 navigation is zero-network; 2026-07-08 report).
+    const self = this;
+    this._enqueueCursorSyncJump('leave-sync-jump', function() {
+      self._enqueueLeaveKey();
+    }, function() {
+      self._degradeToNative('離開列表逾時，已切至原生模式');
+    });
+  },
+
+  _enqueueLeaveKey: function() {
     const self = this;
     this._serverNum = null; // the landing (menu / main list) re-teaches it
     this._queue.enqueue({
@@ -1493,7 +1511,14 @@ ListSession.prototype = {
       expect: function(snap, facts) {
         if (facts.kind !== 'clean-list') return false;
         const now = facts.cursorRowNum;
-        if (now == null) return false;
+        // A PgDn on the TRUE last page parks the cursor on a 置底 row (no
+        // number → null): that IS the board edge (same precedent as
+        // _requestEnd, invariant 3). Without this the response never matches,
+        // the leg dies as a hard-timeout miss, and the \f probe's late frame
+        // becomes an ownerless settle that the catch-all degrades on (live
+        // 2026-07-08「畫面偏離列表格式」誤降級). Pinned rows only exist on the
+        // last page, so an UP leg can never legitimately land there.
+        if (now == null) return up ? false : { edge: true, landed: null };
         if (up ? now < base : now > base) return { moved: true, landed: now };
         if (now === base) return { edge: true, landed: now };
         return false;

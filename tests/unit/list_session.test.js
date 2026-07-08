@@ -797,6 +797,40 @@ describe("v5 確定性交易（timeout=探針觸發，非訊號；jump 腿維持
     );
   });
 
+  test("翻頁腿（向下）：真板尾 PgDn 游標落置底列（cursorRowNum null）＝edge，不 miss", () => {
+    // live 2026-07-08：落點在板尾的 demand-down，PgDn 回應把游標推到置底文列
+    // （無序號 → cursorRowNum null）。舊 expect 對 null 一律 false → hard
+    // timeout miss → 稍後 \f 探針回應變無主 settle → catch-all 誤降級 native
+    //（「畫面偏離列表格式」banner）。同 _requestEnd 前例（不變量 3）：向下翻頁
+    // 落在置底列＝板尾確認。
+    const { s, enqueued } = demandSession({ count: 60 });
+    s._topNum = 110;
+    s._selectedNum = 115;
+    s._maybeDemand(1);
+    const page = enqueued[1];
+    expect(page.kind).toBe("prefetch-down");
+    const pinnedFacts = { kind: "clean-list", cursorRowNum: null, curY: 22, curX: 0, rows: 24 };
+    expect(page.expect(null, pinnedFacts)).toEqual(
+      expect.objectContaining({ edge: true })
+    );
+    // onDone：landed null → _serverNum null、markEdge
+    page.onDone({ edge: true, landed: null });
+    expect(s._edgeDown).toBe(true);
+    expect(s._serverNum).toBeNull();
+  });
+
+  test("翻頁腿（向上）：cursorRowNum null 不得判 edge（置底列只存在板尾）", () => {
+    const { s, enqueued } = demandSession({ count: 60 });
+    s._topNum = 110;
+    s._selectedNum = 115;
+    s._maybeDemand(-1);
+    const page = enqueued[1];
+    expect(page.kind).toBe("prefetch-up");
+    expect(
+      page.expect(null, { kind: "clean-list", cursorRowNum: null, curY: 22, curX: 0, rows: 24 })
+    ).toBe(false);
+  });
+
   test("開文 jump 腿：park 指紋＋目標序號（不因 v5 改動而變）", () => {
     const { s, enqueued } = demandSession({ count: 60 });
     s._selectedNum = 115;

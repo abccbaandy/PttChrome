@@ -105,10 +105,12 @@ describe("ListSession 相對命令序列化（[ ] 卡住/亂跳回歸）", () =>
     expect(s.state).toBe("active"); // 封閉互動：不墜落
   });
 
-  test("←/q/e 離板 → v5 交易化：frozen＋佇列 leave-board（不再 passthrough 閃原生）", () => {
+  test("←/q/e 離板 → v5 交易化：frozen＋先同步 server 游標再送離板鍵", () => {
+    // pttbbs 離板記住的是 REAL cursor（getkeep）——本地導覽零網路，離板前不
+    // sync 的話再進板落點會跳去 server 游標殘留的位置（2026-07-08 回報）。
     const { s, sent, enqueued } = makeSession();
     s.state = "active";
-    s._selectedNum = 42;
+    s._selectedNum = 42; // 本地導覽後選取 ≠ server 游標（_serverNum null）
     const e = keyEvent("ArrowLeft");
     s.onKeyDown(e);
     expect(e.defaultPrevented).toBe(true);
@@ -116,18 +118,55 @@ describe("ListSession 相對命令序列化（[ ] 卡住/亂跳回歸）", () =>
     expect(s.state).toBe("functionMode");
     expect(s._renderMode).toBe("frozen");
     expect(enqueued.length).toBe(1);
+    expect(enqueued[0].kind).toBe("leave-sync-jump");
+    expect(enqueued[0].keys).toBe("42\r");
+    // park 指紋（同 mark/relative sync 腿）
+    expect(
+      enqueued[0].expect(null, { cursorRowNum: 42, curY: 5, curX: 0, rows: 24 })
+    ).toBe(true);
+    // sync 完成 → 才送離板鍵
+    enqueued[0].onDone();
+    // _serverNum 在 leave 腿入列時清空（落點 menu/主列表重新教），不斷言
+    expect(enqueued.length).toBe(2);
+    expect(enqueued[1].kind).toBe("leave-board");
+    expect(enqueued[1].keys).toBe("\x1b[D");
+    // expect：menu（離板）或 clean-list（MODE_SELECT 退出/回列表）都算完成
+    expect(enqueued[1].expect(null, { kind: "menu" })).toBe(true);
+    expect(enqueued[1].expect(null, { kind: "clean-list" })).toBe(true);
+    expect(enqueued[1].expect(null, { kind: "transient" })).toBe(false);
+  });
+
+  test("← 離板：server 游標已同步（_serverNum===選取）→ 跳過 sync 腿直送", () => {
+    const { s, enqueued } = makeSession();
+    s.state = "active";
+    s._selectedNum = 42;
+    s._serverNum = 42;
+    s.onKeyDown(keyEvent("ArrowLeft"));
+    expect(enqueued.length).toBe(1);
     expect(enqueued[0].kind).toBe("leave-board");
     expect(enqueued[0].keys).toBe("\x1b[D");
-    // expect：menu（離板）或 clean-list（MODE_SELECT 退出/回列表）都算完成
-    expect(enqueued[0].expect(null, { kind: "menu" })).toBe(true);
-    expect(enqueued[0].expect(null, { kind: "clean-list" })).toBe(true);
-    expect(enqueued[0].expect(null, { kind: "transient" })).toBe(false);
-    // q 同路徑
-    const { s: s2, enqueued: q2 } = makeSession();
-    s2.state = "active";
-    s2.onKeyDown(keyEvent("q"));
-    expect(q2.length).toBe(1);
-    expect(q2[0].kind).toBe("leave-board");
+  });
+
+  test("← 離板：pinned/無選取（num null）→ 無跳號可同步，直送離板鍵", () => {
+    const { s, enqueued } = makeSession();
+    s.state = "active";
+    s._selectedNum = null;
+    s.onKeyDown(keyEvent("q"));
+    expect(enqueued.length).toBe(1);
+    expect(enqueued[0].kind).toBe("leave-board");
+  });
+
+  test("← 離板：sync 腿失敗 → 不送離板鍵、顯性降級原生", () => {
+    const { s, enqueued } = makeSession();
+    const banners = [];
+    s._view.showListBanner = (m) => banners.push(m);
+    s.state = "active";
+    s._selectedNum = 42;
+    s.onKeyDown(keyEvent("ArrowLeft"));
+    enqueued[0].onFail("timeout");
+    expect(enqueued.length).toBe(1); // 離板鍵未入列
+    expect(s._serverNum).toBeNull();
+    expect(s._renderMode).toBe("native"); // 顯性降級，不靜默卡 frozen
   });
 
   test("nav 鍵不佇列不送（本地導航維持零網路）", () => {
@@ -193,9 +232,10 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     ["j", "active", null],
     ["PageUp", "active", null],
     ["PageDown", "active", null],
-    ["ArrowLeft", "functionMode", "leave-board"],
-    ["q", "functionMode", "leave-board"],
-    ["e", "functionMode", "leave-board"],
+    // 離板先同步 server 游標（pttbbs getkeep 記 REAL cursor，再進板落點才對）
+    ["ArrowLeft", "functionMode", "leave-sync-jump"],
+    ["q", "functionMode", "leave-sync-jump"],
+    ["e", "functionMode", "leave-sync-jump"],
     ["[", "functionMode", "relative-sync-jump"],
     ["]", "functionMode", "relative-sync-jump"],
     ["=", "functionMode", "relative-sync-jump"],
@@ -459,31 +499,11 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     }
   });
 
-  test("點擊選取（T1 解禁）：點 body 列 → 本地選取移動、零佇列", () => {
-    const { s, enqueued } = makeSession();
-    s.state = "active";
-    s._renderMode = "buffer";
-    const mkRow = (num) =>
-      Array.from(String(num).padStart(7) + "  + 7/05 someone      □ title").map(
-        (ch) => ({ ch, isLeadByte: false })
-      );
-    const nums = [];
-    const lines = [];
-    for (let i = 0; i < 30; i++) {
-      nums.push(100 + i);
-      lines.push(mkRow(100 + i));
-    }
-    s._termBuf.listLineNums = nums;
-    s._termBuf.listLines = lines;
-    s._selectedNum = 129;
-    s._topNum = 110;
-    // row 5 = body slot 2 → seq top+2
-    expect(s.onClick(5)).toBe(true);
-    expect(s._selectedNum).toBe(112);
-    expect(enqueued).toEqual([]);
-    // header/footer 列不吃
-    expect(s.onClick(2)).toBe(false);
-    expect(s.onClick(23)).toBe(false);
+  test("點擊選取已移除（2026-07-08）：session 無點擊入口（buffer 點擊＝no-op）", () => {
+    // 點擊只移選取、不開文，使用者認定無用；接線層（pttchrome.js mouse_click）
+    // 在 buffer/frozen 一律吞掉點擊（防 useMouseBrowsing 對虛擬視窗座標發鍵）。
+    const { s } = makeSession();
+    expect(s.onClick).toBeUndefined();
   });
 });
 

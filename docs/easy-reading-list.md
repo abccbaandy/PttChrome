@@ -16,7 +16,7 @@
 
 | 類 | 操作 | 處置 |
 |---|---|---|
-| T1 本地 | ↑↓ jk／PgUp PgDn／Home End（buffer 內）／滾輪／點擊選取 | 零 server。視窗/游標語意＝web 慣例，不再 read.c 逐格對齊 |
+| T1 本地 | ↑↓ jk／PgUp PgDn／Home End（buffer 內）／滾輪 | 零 server。視窗/游標語意＝web 慣例，不再 read.c 逐格對齊。點擊＝no-op（2026-07-08 移除點擊選取；buffer/frozen 一律吞點擊防 useMouseBrowsing 對虛擬視窗發鍵） |
 | T2 列表內交易 | 開文、數字跳號、`[` `]` `=`、`/` 搜尋、`v` 已讀設定、End/Home 邊界確認 | 腳本交易；要參數的（`/`、`v`）web UI 收參後代打 |
 | T3 顯式氣閘 | Ctrl-P 發文、`z` 精華區、`i` 板設、`b` 進板畫面、`y`/`X` 推文、其餘一切 | 顯式「切原生操作」→ 原生模式 → 回 clean-list 再 re-engage。不再任意鍵自動墜落 |
 | T4 非請自來 | 水球/廣播（server 主動寫入） | 唯一自動切原生路徑：banner 明示＋氣閘 |
@@ -59,7 +59,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 
 - idle：clean-list ∧ pref ∧ rows==24 ∧ `!buf.startedEasyReading` → active（seed＋start-fill）。engage 守門不用 `view.useEasyReadingMode`（article ER 離篇後仍 latch true）。
 - active：clean-list 板名同→continue-fill；異→rebuild；article→suspended；**menu→idle cleanup**（離板可與 in-flight prefetch 的 jump 重繪交錯：jump settle 先把 functionMode 彈回 active，menu settle 若走 catch-all 進 functionMode 會因靜止畫面無下一個 settle 而卡死）；prompt/transient ∧ 無 in-flight→functionMode **＋banner**（v5/M4 失敗顯性化：`isWaterballSettle` 命中（protocol §9 底列 ◆ 指紋）→水球專屬措辭，否則通用「畫面偏離列表」；氣閘等顯式入口不出 banner——`_enterFunctionMode(facts)` 只在 facts 非 null 時顯示）；有 in-flight→stay。交易 onFail 一律 `_degradeToNative(訊息)`＝banner＋原生鏡像。
-- key（active）：nav（↑↓jk/PgUp/PgDn/Home/End → read.c op）；Enter/→＝opening（selectedNum 有值→begin-open；null＝pinned→begin-open-pinned）；`[` `]` `=` ∧ 有序號選取＝relative（→functionMode＋begin-relative，見不變量 12）；`v`＝mark、`/`＝search、數字＝jump-digit（T2 交易，overlay 收參，M3）；`←`/q/e＝leave 交易；**其餘鍵＝no-op＋淡出提示，雙擊同鍵＝T3 氣閘切原生**（v5 封閉互動，M2 起無 passthrough）。
+- key（active）：nav（↑↓jk/PgUp/PgDn/Home/End → read.c op）；Enter/→＝opening（selectedNum 有值→begin-open；null＝pinned→begin-open-pinned）；`[` `]` `=` ∧ 有序號選取＝relative（→functionMode＋begin-relative，見不變量 12）；`v`＝mark、`/`＝search、數字＝jump-digit（T2 交易，overlay 收參，M3）；`←`/q/e＝leave 交易（**先 sync-jump 同步 server 游標再送離板鍵**——pttbbs getkeep 記 REAL cursor，不 sync 則再進板落點錯，2026-07-08；`_serverNum` 快路徑同 relative/mark，共用 `_enqueueCursorSyncJump`）；**其餘鍵＝no-op＋淡出提示，雙擊同鍵＝T3 氣閘切原生**（v5 封閉互動，M2 起無 passthrough）。
 - opening：settle 等 article；timeout→functionMode 自癒；期間吞所有鍵。
 - functionMode：clean-list→active（landedNum∈buffer ∧ 板名同→resume；否則＋rebuild）；article→suspended；menu→idle cleanup。
 - suspended：clean-list→re-seed（resume-buffer；落點不在緩衝/板名異＋rebuild）；menu→idle。
@@ -70,7 +70,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 1. **零內容 settle 不驅動轉移**：`_onScreenSettled` 開頭 `changedRows.size===0 → return`（本地 `_forceRedraw` 也 re-arm settle）。
 2. **`_settleChangedRows` 只在 server 寫入點 add**（統一走 `_touchRows`），不可掛 `lineChangeds`。
 2b. **settle timer 只由 server 活動 re-arm**（`_serverActivity`：`_touchRows`＋游標 escape 的 posChanged；notify 的 changed 分支 gated）。本地 `_forceRedraw` 不得推遲 pending settle——否則按住 nav 鍵（~30ms 一次重繪）永遠不 settle → queue expect 餓死 → prefetch timeout →「按住 PgUp 無效」＋ markEdge 假邊界（置底文顯示異常的來源）。守護：`settle_gating.test.js`。
-3. **跳號回應 settle 底列是空的**（classify=transient 永不 clean-list）→ jump 類 expect 用「park 在 entry 區 col≤1 ∧ 游標列=目標序號」。`_requestEnd` 落點可為置底列（cursorRowNum null 也接受）。
+3. **跳號回應 settle 底列是空的**（classify=transient 永不 clean-list）→ jump 類 expect 用「park 在 entry 區 col≤1 ∧ 游標列=目標序號」。`_requestEnd` 落點可為置底列（cursorRowNum null 也接受）；**prefetch 向下翻頁腿同理**：真板尾 PgDn 游標落置底列（cursorRowNum null ∧ clean-list）＝`{edge, landed:null}`，不可 miss——miss 的 hard timeout 會讓 \f 探針回應變無主 settle → catch-all 誤降級「畫面偏離列表格式」（2026-07-08 live）。向上腿 null 仍 false（置底只在板尾）。
 4. demand 只朝移動方向。
 5. pinned map key＝`pinnedRowKey`（author|title）；`_pinnedKeyAt` 必須同函式。游標停置底列（有★）仍收錄、● 兩格還原空白；無★游標列排除。**loose-parse guard**：`parseListArticleNumLoose`（strip ●★ 後有行首數字）非 null 的列永不進 pinned map——mid-response 幀（jump 回應寫入中）● 可畫在非 cur_y 列，該列 num 無法回推＋作者欄有效會誤檔成置底，bullet 未還原永久殘留（●52880 污染 bug）。
 5b. **frozen 讓位 pageState 3**（redraw list 分支條件 `pageState !== 3`）。
@@ -83,10 +83,11 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 12. **相對命令鍵（`[` `]` `=`，RELATIVE_COMMAND_KEYS）＝keyClass 'relative' 一級公民**：reducer active+relative → functionMode＋begin-relative（flush → **render=frozen**（非 native！閃現原生一幀＝黑名單/刪除文裸露）→ enqueue jump→key 配對）。**`_serverNum` 快路徑（2026-07-07 體感修復）**：session 追蹤「server 真游標已知序號」（seed/re-seed/resume facts、prefetch 落地、jump 腿落點都會教；native 出走/article/探針 fail/End 落點置底＝null），選取＝`_serverNum` 時 relative／`v` mark **跳過 sync-jump 腿**（單腿 key＋`\f`，round-trip 減半）；本地 T1 導覽不動 server 游標故一移動即不相等、自動回兩腿。frozen∧functionMode 期間 onKeyDown 吞所有鍵（序列化保護）。jump＋key **不可同 tick 直送**：pttbbs typeahead 會跳過重繪（協定 §2）。配對期間 functionMode 的 clean-list settle 被 in-flight 吸收（reducer `event.inFlightKind → stay`），完成的 settle 才 resume（採落點游標）。（v5/M3）**第二腿掛 `fullRepaint`（keys 尾附 \f）**：沒命中也必得一幀全幅重繪 → 任一 settle 即回應，RTT 自適應 timeout 退役。**只限這組鍵**：←/q/e 離板＝獨立 leave 交易（M2）。pinned 選取無序號＝no-op。**配對結束若 reducer 仍在 functionMode（沒命中＝只回訊息列，或 timeout）→ `_resumeAfterRelative` 強制回 buffer**。底列訊息不顯示（快取 feeter 蓋掉）＝與 native 已知小差異。守護：`list_keys.test.js`。
 13. `relabelListCursorRow` 只在 cell 2 起有數字（● 真的蓋到數字）時回填 prefix；短序號（`/` 搜尋結果）● 蓋的是 padding，必須填空白——否則序號末兩位灌進行首並存進 map（污染跨頁殘留）。
 11. edge 確認（markEdge/_requestEnd）後要 `_forceRedraw`——pinned 門控開啟需要重繪才可見。
+14. **T2 輸入 overlay（`promptListInput`）鍵收束要焦點無關**：input.focus() 在 setTimeout，focus 生效前的 Esc/Enter 落在 `#t`、被全域 handler 的 overlay 守門整個忽略（防鍵漏 server）→ overlay 卡死。修法＝overlay 期間掛 window **capture** keydown：Esc/Enter 直接 finish、其他鍵導焦點回 input（`term_view.js`；soak 站 7 曾穩定踩中）。
 
 ## 已知限制
 
-rows≠24 不 engage。點擊選取已解禁（M2，`onClick` 純本地 T1）。MODE_SELECT（`/` 搜尋清單）＝`_selectMode` 子狀態（M3）：序號空間獨立（協定 §8），進出各強制 rebuild（`_boardName=null`）；**退出落點＝帳號已讀進度，非進 select 前位置**（協定 §8 live 事實）——fill 只向上，退回後 buffer 可能整段低於進板頁；**rebuild 落點頁不滿版（下方空白列）時自動 demand-down 補頁**（2026-07-07；滿版落點**不得**探測——板尾零回應 PgDn 的 timeout→`\f` 探針會與 hard timeout race 出無主 settle → 誤入 functionMode，live 實測）。搜尋 commit 腿 keys 必須 `u2b(kw)`（queue send＝raw `conn.send`，非 convSend；中文 kw 不轉＝亂碼搜不到）。
+rows≠24 不 engage。點擊＝no-op（2026-07-08 移除 M2 點擊選取——只移選取不開文被判無用；`pttchrome.js mouse_click` 在 buffer/frozen 吞掉點擊，不放行 useMouseBrowsing）。MODE_SELECT（`/` 搜尋清單）＝`_selectMode` 子狀態（M3）：序號空間獨立（協定 §8），進出各強制 rebuild（`_boardName=null`）；**退出落點＝帳號已讀進度，非進 select 前位置**（協定 §8 live 事實）——fill 只向上，退回後 buffer 可能整段低於進板頁；**rebuild 落點頁不滿版（下方空白列）時自動 demand-down 補頁**（2026-07-07；滿版落點**不得**探測——板尾零回應 PgDn 的 timeout→`\f` 探針會與 hard timeout race 出無主 settle → 誤入 functionMode，live 實測）。搜尋 commit 腿 keys 必須 `u2b(kw)`（queue send＝raw `conn.send`，非 convSend；中文 kw 不轉＝亂碼搜不到）。
 
 ## 素材再錄
 
