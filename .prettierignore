@@ -1,0 +1,17 @@
+# Prettier is scoped to *.json and src/components/** ONLY (see the "lint-staged"
+# block in package.json). The rest of the tree is intentionally NOT prettier-managed
+# and must keep its original hand-written style — listing it here stops an accidental
+# `prettier --write .` (or on a specific file) from reformatting it:
+#
+#   src/js/**  — legacy code inherited from the robertabcd/PttChrome fork. A mass
+#                reformat wipes git blame on the fragile render / BBS-protocol core
+#                (term_view / term_buf / pttchrome / ansi_parser …) and risks silent
+#                behaviour changes in code with thin (e2e-only) test coverage.
+#   src/css/** — hand-maintained stylesheets.
+#   dist/**    — build output.
+#
+# If src/js ever really needs unifying, do it as ONE isolated "prettier all of src/js"
+# commit (no logic changes) so the churn is quarantined — never mixed into a feature diff.
+src/js/
+src/css/
+dist/
