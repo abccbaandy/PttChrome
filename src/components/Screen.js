@@ -12,6 +12,7 @@ import {
   parseListTitle,
   matchTitleBlacklist,
   isDeletedListRow,
+  blacklistNoticeText,
   FloorCounter,
 } from "../js/comment_parse";
 import { detectFixableUrls } from "../js/url_fix";
@@ -44,6 +45,7 @@ function computeAnnotations(lines, enhance) {
     easyReading,
     enableXMention,
     inListContext,
+    listEasyReading,
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
@@ -102,24 +104,39 @@ function computeAnnotations(lines, enhance) {
       result[row] = r;
     }
   } else if (pageState === PAGE_LIST || inListContext) {
-    // inListContext keeps list blacklist hiding alive across overlay prompts (e.g.
-    // the v 設定已讀未讀記錄 sub-screen) whose status row stops parsing as LIST(2).
+    // inListContext keeps list treatment alive across overlay prompts (e.g. the
+    // v 設定已讀未讀記錄 sub-screen) whose status row stops parsing as LIST(2).
     // READING is the preceding `if`, so this never runs while reading an article.
-    // Deleted-article rows are hidden unconditionally (they cannot be opened),
-    // so this branch runs even with an empty blacklist. MUST stay in sync with
-    // list_session.js#visibleListIndices (invariant 10).
+    //
+    // Two modes, keyed by listEasyReading (term_view passes it ONLY on the
+    // buffer/frozen easy-reading WINDOW render calls; the native / functionMode
+    // mirror paths omit it so a temporary switch back to native inside easy reading
+    // looks the same as pure native mode — user request 2026-07):
+    //   - easy-reading window (listEasyReading): deleted + blacklist rows are HIDDEN.
+    //     MUST stay in sync with list_session.js#visibleListIndices (invariant 10).
+    //     The window is already pre-filtered there, so this is belt-and-braces.
+    //   - native list (no flag): deleted rows render as-is (native display, no hide /
+    //     no invert); blacklisted rows render a deleted-style「（本文已被黑名單）」notice
+    //     line instead of being hidden. (User rule 2026-07: 原生模式刪除文不動、黑名單
+    //     改被刪除樣式；好讀暫時切回原生也走此路 → 不再變回反黑.)
     for (let row = 0; row < lines.length; ++row) {
       const text = rowToText(lines[row]);
-      let hide = isDeletedListRow(text);
-      if (!hide && hasBlacklist) {
+      const deleted = isDeletedListRow(text);
+      let blacklisted = false;
+      if (!deleted && hasBlacklist) {
         const author = parseListAuthor(text);
-        if (author && blacklist.has(author)) hide = true;
+        if (author && blacklist.has(author)) blacklisted = true;
       }
-      if (!hide && hasTitleBlacklist) {
+      if (!deleted && !blacklisted && hasTitleBlacklist) {
         if (matchTitleBlacklist(parseListTitle(text), titleBlacklist))
-          hide = true;
+          blacklisted = true;
       }
-      if (hide) result[row] = { hidden: true };
+      if (listEasyReading) {
+        if (deleted || blacklisted) result[row] = { hidden: true };
+      } else if (blacklisted) {
+        result[row] = { blacklistNotice: blacklistNoticeText(text) };
+      }
+      // native + deleted → no annotation (render exactly as the server sent it).
     }
   }
   return result;
@@ -232,6 +249,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
             authorIdEnd={ann && ann.authorIdEnd}
             fixedUrls={ann && ann.fixedUrls}
             mentions={ann && ann.mentions}
+            blacklistNotice={ann && ann.blacklistNotice}
             onHyperLinkMouseOver={handleHyperLinkMouseOver}
             onHyperLinkMouseOut={handleHyperLinkMouseOut}
           />

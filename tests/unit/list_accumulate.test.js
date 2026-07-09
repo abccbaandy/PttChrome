@@ -173,6 +173,22 @@ describe("accumulateListLines（置底文收录）", () => {
     expect(keys.size).toBe(4);
   });
 
+  test("纯数字推文数的置底列（★ 后接 4/35）全数收录（部分消失主因回归）", () => {
+    // 使用者实测：EZsoft/PC_Shopping 公告推文数是纯数字「4」「35」，旧 loose-parse
+    // strip ★ 后露出推文数被误判为编号列 → 被排除 → 固定消失。★ 屏蔽推文数后应全收。
+    // 由既有 fixture 列替换推文数 token（同宽，作者栏不动）以保欄位精確对齐；
+    // 两列作者/标题互异以免 pinnedRowKey 相同被合并。
+    const pinnedRows = [
+      "    ★  m 5 6/01 arrenwu      □ [公告] 版務新聞欄提訴".replace("m 5", "  4"),
+      "    ★  M 3 6/13 SaberTheBest □ [公告] 電蝦板板規 V4.1a".replace("M 3", " 35"),
+    ];
+    const texts = header.concat([article], pinnedRows, [feeter]);
+    const v = fakeView(texts, 3);
+    v.accumulateListLines();
+    const pinned = v.buf.listLineNums.filter((n) => n == null).length;
+    expect(pinned).toBe(2);
+  });
+
   test("推文数变动的置底再累积不产生重复列（v3 bug 5a 不回归）", () => {
     const mk = (cnt) =>
       header.concat([

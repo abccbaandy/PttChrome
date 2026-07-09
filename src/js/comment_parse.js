@@ -228,6 +228,36 @@ export function isDeletedListRow(text) {
   return row.substring(LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END).trim() === '-';
 }
 
+// Native-mode blacklisted list row → a deleted-article-style notice line, structured
+// to match the way pttbbs paints a deleted row so it lines up in the grid:
+//   "  62349 + 6 7/09 -            □ （本文已被黑名單） someone"
+// The author column is blanked to '-' (12-wide field), then a space + □ state glyph
+// at the title column, then the FULL-WIDTH-parenthesised 「（本文已被黑名單）」 (half-
+// width ASCII parens break the 2-cell CJK rhythm and skew every following glyph — the
+// 「排版歪掉」 bug) and the original author (kept in its original case).
+//
+// The PREFIX is the RAW (un-realigned) text: on the keyboard-cursor row the leading
+// full-width ● covers cells [0,1] and rowToText collapses it to one char, so a
+// realigned prefix would insert a padding space and shift the whole line right (the
+// cursor-moves-and-layout-jumps bug). Keeping the raw prefix preserves the ● exactly
+// where the server drew it. Only the AUTHOR is read from the realigned text (the ●
+// shifts that column, so realign is needed to slice it). rawPrefixLen = author column
+// minus the count of leading wide glyphs realign would have padded.
+export function blacklistNoticeText(text) {
+  const raw = text || '';
+  let wide = 0;
+  for (let i = 0; i < raw.length && i < LIST_AUTHOR_COL_START; ++i)
+    if (raw.charCodeAt(i) > 0x7f) wide++;
+  const prefix = raw.substring(0, LIST_AUTHOR_COL_START - wide); // seq + date (+● if cursor)
+  const author = realignListColumns(raw)
+    .substring(LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END)
+    .trim();
+  // '-' at the author column, then pad to the title column (the □ sits one cell past
+  // the 12-wide author field, exactly like a deleted row).
+  const gap = ' '.repeat(LIST_AUTHOR_COL_END - LIST_AUTHOR_COL_START);
+  return prefix + '-' + gap + '□ （本文已被黑名單） ' + author;
+}
+
 // A board-list ★pinned (置底/公告) row: it carries normal article columns (a valid
 // author, hence a real article) but PTT prints a ★ instead of a sequence number. List
 // easy reading accumulates these as ordinary rows keyed by their title (no number to key
@@ -245,18 +275,27 @@ export function isPinnedListRow(text) {
   return parseListAuthor(text) != null;
 }
 
-// Loose variant: the VISIBLE leading digits even on a cursor row, where the leading
-// full-width ●/★ glyph covers the top digit (e.g. "●49886" → 49886, missing the
-// top "3"). Strips a leading ●/★/space run, then reads the digit run. Returns null
-// when no digits follow (header / a pinned ★ row PTT shows with no number / status
-// row). Only meaningful when paired with recoverCursorArticleNum to restore the
-// covered high-order digit from a neighbour. Exported ALSO as the pinned-map
-// guard in accumulateListLines: a row with visible digits after stripping ●/★
-// is a bullet-covered NUMBERED row (a mid-response frame can paint the ● on a
-// row that is not buf.cur_y — no neighbour recovery), never a pinned row.
+// Loose variant: the VISIBLE leading digits on a cursor row, where the leading
+// full-width ● glyph covers the top digit (e.g. "●49886" → 49886, missing the
+// top "3"). Strips a leading ●/space run, then reads the digit run. Returns null
+// when no digits follow (header / a pinned ★ row / status row). Only meaningful
+// when paired with recoverCursorArticleNum to restore the covered high-order digit
+// from a neighbour. Exported ALSO as the pinned-map guard in accumulateListLines:
+// a row with visible digits after stripping ● is a bullet-covered NUMBERED row (a
+// mid-response frame can paint the ● on a row that is not buf.cur_y — no neighbour
+// recovery), never a pinned row.
+//
+// MUST NOT strip ★: unlike ●, ★ marks a genuine pinned row and NEVER covers an
+// article number (pinned rows have none — PTT prints ★ where the number would go).
+// The column right after ★ is the push-count (推文數), which is often a bare integer
+// (e.g. "★    4 …", "★   35 …" — announcements without an m/M/=/+ mark). Stripping
+// ★ exposed that push count → the guard misread the pinned row as a numbered one and
+// dropped it, so those announcements vanished from the buffer (user-reported「部分置底
+// 文固定消失」). Leaving ★ in place shields the push count: `^(\d+)` never matches a
+// row that still starts with ★.
 export function parseListArticleNumLoose(text) {
   if (!text) return null;
-  const m = text.replace(/^[\s●★]+/, '').match(/^(\d+)\b/);
+  const m = text.replace(/^[\s●]+/, '').match(/^(\d+)\b/);
   return m ? parseInt(m[1], 10) : null;
 }
 

@@ -439,11 +439,17 @@ TermView.prototype = {
           windowLines = this._listWindowLines || null;
         }
         if (windowLines) {
-          this._renderScreenLines(windowLines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2 });
+          // listEasyReading: THIS render IS the easy-reading window → deleted/blacklist
+          // rows are hidden (好讀模式全部隱藏; the window is already blacklist-filtered
+          // by visibleListIndices, so mostly belt-and-braces). The functionMode / native
+          // mirror paths below do NOT pass it → they use the native rules (deleted shown,
+          // blacklist → 通知列), so a temporary switch back to native inside easy reading
+          // stays consistent with pure native mode.
+          this._renderScreenLines(windowLines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2, listEasyReading: true });
         } else {
           // No window yet (header cache / buffer still empty — engage races):
           // mirror the native screen; the next clean-list settle re-renders.
-          this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2 });
+          this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2, listEasyReading: true });
         }
       } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowReplyText) {
         this.updateEasyReadingReplyRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
@@ -1286,10 +1292,11 @@ TermView.prototype = {
         // buf.cur_y (jump response: bullet drawn, cursor not parked yet) — no
         // neighbour recovery runs, so nums[i] is null and the author column is
         // valid, which matches the pinned signature. Loose-parse tells them
-        // apart: digits behind the bullet = a covered NUMBERED row; a genuine
-        // pinned row has no leading digits at all. Without this guard the row
-        // is stored (bullet included) in the pinned map forever (the「●52880
-        // 殘留在置底尾巴」bug).
+        // apart: digits behind the ● bullet = a covered NUMBERED row. It does NOT
+        // strip ★ (see parseListArticleNumLoose), so a genuine pinned row — whose
+        // ★ is followed by a bare-integer push-count like "★    4 …" — still reads
+        // null and is collected. Without this guard the ●-row is stored (bullet
+        // included) in the pinned map forever (the「●52880 殘留在置底尾巴」bug).
         parseListArticleNumLoose(rowTexts[i]) == null
       ) {
         // ★pinned/置底 row. A cursor row with an UNRECOVERABLE number (no numbered

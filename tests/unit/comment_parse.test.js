@@ -21,6 +21,7 @@ import {
   parseListArticleNumLoose,
   isPinnedListRow,
   isDeletedListRow,
+  blacklistNoticeText,
   recoverCursorArticleNum,
   pageArticleNums,
   parseBlacklist,
@@ -171,6 +172,14 @@ describe("parseListArticleNumLoose（pinned-map guard）", () => {
     expect(parseListArticleNumLoose("    ★  m 1 6/01 arrenwu      轉 [公告] 板規")).toBeNull();
     expect(parseListArticleNumLoose("●  ★  m 1 6/01 arrenwu      轉 [公告] 板規")).toBeNull();
   });
+  test("置底列推文数为纯数字（无 m/+/= 前缀）→ null（★ 屏蔽推文数，不得误判为编号）", () => {
+    // 使用者实测部分置底文固定消失的主因：★ 后紧接推文数栏，纯数字推文数
+    // （EZsoft「4」、PC_Shopping「35」）被旧 strip ★ 逻辑露出、误判为编号列 →
+    // 被 accumulateListLines 的 pinned guard 排除 → 该公告永远收不进 buffer。
+    expect(parseListArticleNumLoose("★    4 9/21 alicekey     □ [公告] 小軟體板的精神")).toBeNull();
+    expect(parseListArticleNumLoose("★   35 3/07 AreLies      □ [公告] 電蝦板板規 V4.1a")).toBeNull();
+    expect(parseListArticleNumLoose("★  +12 6/05 AreLies      □ [公告] 本板菜單文")).toBeNull();
+  });
   test("header / 空列 → null", () => {
     expect(parseListArticleNumLoose("   編號    日 期 作  者")).toBeNull();
     expect(parseListArticleNumLoose("")).toBeNull();
@@ -200,6 +209,29 @@ describe("isDeletedListRow", () => {
     expect(isDeletedListRow(" 文章選讀  (y)回應(X)推文")).toBe(false);
     expect(isDeletedListRow("")).toBe(false);
     expect(isDeletedListRow(null)).toBe(false);
+  });
+});
+
+describe("blacklistNoticeText（原生模式黑名單列 → 被刪除樣式通知）", () => {
+  test("保留序號/日期欄，作者欄改 '-'，標題放全形括號「（本文已被黑名單） <原作者>」", () => {
+    const out = blacklistNoticeText(
+      " 352960 + 4 6/05 HarunoYukino R: [閒聊] 廣告貼文"
+    );
+    // 序號/日期欄（col 0-16）原樣保留
+    expect(out.startsWith(" 352960 + 4 6/05 ")).toBe(true);
+    // 作者欄變 '-'
+    expect(out.substring(17, 18)).toBe("-");
+    // 全形括號（避免半形破壞 2 格節奏）+ 原作者（原始大小寫）
+    expect(out).toContain("（本文已被黑名單） HarunoYukino");
+    expect(out).not.toContain("(本文已被黑名單)"); // 不得是半形括號
+  });
+  test("游標列（● 蓋頭）：raw 前綴保留 ●、作者仍由 realign 正確取出", () => {
+    const out = blacklistNoticeText(
+      "●52960 + 4 6/05 HarunoYukino R: [閒聊] 廣告貼文"
+    );
+    // raw 前綴保留 ●（不 realign 墊空白 → 游標列不位移）
+    expect(out.startsWith("●52960 + 4 6/05 -")).toBe(true);
+    expect(out).toContain("（本文已被黑名單） HarunoYukino");
   });
 });
 

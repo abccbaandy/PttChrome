@@ -207,3 +207,31 @@ describe("Row X mention link", () => {
     expect(a.textContent).toBe("@bob");
   });
 });
+
+describe("Row blacklistNotice (原生列表黑名單通知列)", () => {
+  test("blacklistNotice → 內容即通知字串（含 bbsline 結構）、不走原始 char cells", () => {
+    const notice = "  62349 + 6 7/09 -            □ （本文已被黑名單） someone";
+    const { container } = render(
+      <Row
+        chars={chars("PU baduser: spam")}
+        row={7}
+        forceWidth={20}
+        blacklistNotice={notice}
+      />
+    );
+    const row = bbsrow(container);
+    expect(row).not.toBeNull();
+    expect(row.textContent).toBe(notice);
+    // 有 bbsline 結構（供選取/getText 對齊），非原始 char cells
+    expect(container.querySelector('[data-type="bbsline"]')).not.toBeNull();
+    // 原始 chars 內容（baduser: spam）不得外洩
+    expect(row.textContent).not.toContain("baduser");
+  });
+
+  test("無 blacklistNotice → 照常走 char-span 渲染", () => {
+    const { container } = render(
+      <Row chars={chars("PU wowbenny: hi")} row={0} />
+    );
+    expect(bbsrow(container).textContent).toBe("PU wowbenny: hi");
+  });
+});

@@ -626,6 +626,36 @@ describe("demand 邊距（提早預補隱藏 round-trip 延遲）", () => {
   });
 });
 
+describe("_seed 落點短頁向下補頁（問題1：進版中段空白不補；2b：置底文整條被門控）", () => {
+  // 進版 engage 若落點頁不滿一版（視窗下方有空白列），背景 fill 只往上、向下補頁
+  // 只由 _moveSelection 觸發 → 使用者不按鍵就沒任何機制抓落點下方的列（下方空白）；
+  // 且永不觸發向下 prefetch 的 markEdge → _edgeDown 停 false → 置底文整條被門控隱藏。
+  // _seed 需比照 _rebuild 補「落點短頁→向下 demand」(_demandDownIfWindowShort)。
+  test("短頁落點（seq.length < top+bodyRows）→ enqueue 向下 prefetch", () => {
+    const { s, enqueued } = demandSession({ count: 5 }); // buffer 只 5 列 < 一版(20)
+    s._topNum = 100;
+    s._selectedNum = 104;
+    s._demandDownIfWindowShort();
+    expect(enqueued.length).toBeGreaterThan(0);
+    expect(enqueued.some((c) => c.kind === "prefetch-anchor-down")).toBe(true);
+  });
+  test("滿版落點（buffer ≥ 視窗底）→ 不 enqueue（守護『滿版不探測』避免板尾零回應 race）", () => {
+    const { s, enqueued } = demandSession({ count: 60 });
+    s._topNum = 100;
+    s._selectedNum = 105;
+    s._demandDownIfWindowShort();
+    expect(enqueued).toEqual([]);
+  });
+  test("已確認板尾（_edgeDown）→ 不 enqueue", () => {
+    const { s, enqueued } = demandSession({ count: 5 });
+    s._topNum = 100;
+    s._selectedNum = 104;
+    s._edgeDown = true;
+    s._demandDownIfWindowShort();
+    expect(enqueued).toEqual([]);
+  });
+});
+
 describe("v 已讀設定 commit（v5/M4 fix）", () => {
   // b_mark_read_unread 改的是「整個看板」的未讀旗標，但 FULLUPDATE 只重繪
   // 當前一頁——緩衝裡其餘幾百列的 '+' 標記全是舊 clone。commit 完成必須

@@ -99,9 +99,11 @@ describe("Screen blacklist dropHidden", () => {
   });
 });
 
-// Board list (pageState 2) title keyword blacklist. Author at col 17-28, title from
-// col 29 (same calibration as parseListAuthor). The middle row's title contains a
-// blacklisted keyword and must be hidden, even with an empty author blacklist.
+// Board list (pageState 2). Author at col 17-28, title from col 29 (same calibration
+// as parseListAuthor). Two modes keyed by enhance.listEasyReading:
+//   - easy-reading (listEasyReading:true): deleted + blacklist rows HIDDEN.
+//   - native (listEasyReading absent): deleted rows render as-is; blacklist rows
+//     render a「(本文已被黑名單)」notice line, NOT hidden.
 const IDX_PREFIX = " 350024 + 2 6/14 "; // length 17 → author starts at col 17
 const listRow = (author, title) =>
   line(IDX_PREFIX + (author + " ".repeat(12)).slice(0, 12) + title);
@@ -112,45 +114,91 @@ const listLines = [
   listRow("gooduser", "□ [心得] 另一篇")
 ];
 
-function renderList(titleBlacklist, dropHidden) {
+function renderList(enhanceExtra) {
   return render(
     <Screen
       lines={listLines}
       forceWidth={50}
       enableLinkInlinePreview={false}
       enableLinkHoverPreview={false}
-      enhance={{
-        blacklist: new Set(),
-        titleBlacklist,
-        pageState: 2,
-        dropHidden
-      }}
+      enhance={Object.assign(
+        { blacklist: new Set(), titleBlacklist: [], pageState: 2, dropHidden: false },
+        enhanceExtra
+      )}
     />
   ).container;
 }
 
-describe("Screen board-list title blacklist", () => {
-  test("titleBlacklist keyword hides the matching row (native grid, visibility:hidden)", () => {
-    const container = renderList(["廣告"], false);
+const hiddenRows = container =>
+  bbsrows(container).filter(n => n.style && n.style.visibility === "hidden");
+const noticeRows = container =>
+  bbsrows(container).filter(n => (n.textContent || "").includes("（本文已被黑名單）"));
+
+describe("Screen board-list easy-reading mode (listEasyReading:true → 全部隱藏)", () => {
+  test("titleBlacklist keyword hides the matching row (visibility:hidden)", () => {
+    const container = renderList({ titleBlacklist: ["廣告"], listEasyReading: true });
     expect(bbsrows(container).length).toBe(3);
-    const hidden = bbsrows(container).filter(
-      n => n.style && n.style.visibility === "hidden"
-    );
-    expect(hidden.length).toBe(1);
+    expect(hiddenRows(container).length).toBe(1);
+    expect(noticeRows(container).length).toBe(0);
   });
 
-  test("works with empty author blacklist; dropHidden removes the matching row", () => {
-    const container = renderList(["廣告"], true);
+  test("dropHidden removes the matching row entirely", () => {
+    const container = renderList({
+      titleBlacklist: ["廣告"],
+      listEasyReading: true,
+      dropHidden: true
+    });
     expect(bbslines(container).length).toBe(2);
     expect(dataRows(container)).toEqual([0, 2]);
   });
 
-  test("no keyword match → nothing hidden", () => {
-    const container = renderList(["不存在"], false);
-    const hidden = bbsrows(container).filter(
-      n => n.style && n.style.visibility === "hidden"
-    );
-    expect(hidden.length).toBe(0);
+  test("author blacklist hides the row", () => {
+    const container = renderList({
+      blacklist: new Set(["anyuser"]),
+      listEasyReading: true
+    });
+    expect(hiddenRows(container).length).toBe(1);
+  });
+});
+
+describe("Screen board-list native mode (無 listEasyReading → 黑名單通知列/刪除文原生)", () => {
+  test("author blacklist → 通知列「(本文已被黑名單) <作者>」，非隱藏", () => {
+    const container = renderList({ blacklist: new Set(["anyuser"]) });
+    expect(hiddenRows(container).length).toBe(0);
+    const notices = noticeRows(container);
+    expect(notices.length).toBe(1);
+    expect(notices[0].textContent).toContain("（本文已被黑名單） anyuser");
+  });
+
+  test("titleBlacklist → 通知列，非隱藏", () => {
+    const container = renderList({ titleBlacklist: ["廣告"] });
+    expect(hiddenRows(container).length).toBe(0);
+    expect(noticeRows(container).length).toBe(1);
+  });
+
+  test("被刪除文（作者欄 -）→ 原生顯示，不隱藏、不轉通知", () => {
+    const deletedLines = [
+      listRow("gooduser", "R: [情報] 普通文章"),
+      line(IDX_PREFIX + ("-" + " ".repeat(12)).slice(0, 12) + "□ (本文已被刪除) [someone]"),
+      listRow("gooduser", "□ [心得] 另一篇")
+    ];
+    const container = render(
+      <Screen
+        lines={deletedLines}
+        forceWidth={50}
+        enableLinkInlinePreview={false}
+        enableLinkHoverPreview={false}
+        enhance={{ blacklist: new Set(), titleBlacklist: [], pageState: 2, dropHidden: false }}
+      />
+    ).container;
+    expect(hiddenRows(container).length).toBe(0);
+    expect(noticeRows(container).length).toBe(0);
+  });
+
+  test("no match → nothing hidden, no notice", () => {
+    const container = renderList({ titleBlacklist: ["不存在"] });
+    expect(hiddenRows(container).length).toBe(0);
+    expect(noticeRows(container).length).toBe(0);
   });
 });
 
@@ -180,21 +228,26 @@ const hiddenCount = container =>
     n => n.style && n.style.visibility === "hidden"
   ).length;
 
-describe("Screen list blacklist sticky inListContext (v prompt)", () => {
-  test("pageState 0 + inListContext → author blacklist still hides the row", () => {
+// The v prompt is an easy-reading (listEasyReading) T2 transaction → listEasyReading
+// stays true (derived from the engaged session state), so blacklist rows behind the
+// overlay stay HIDDEN even when the overlay frame stops parsing as LIST(2).
+describe("Screen list blacklist sticky inListContext (easy-reading v prompt)", () => {
+  test("pageState 0 + inListContext + listEasyReading → author blacklist still hides", () => {
     const container = renderListCtx({
       blacklist: new Set(["anyuser"]),
       pageState: 0,
-      inListContext: true
+      inListContext: true,
+      listEasyReading: true
     });
     expect(hiddenCount(container)).toBe(1);
   });
 
-  test("pageState 0 + inListContext → title blacklist still hides the row", () => {
+  test("pageState 0 + inListContext + listEasyReading → title blacklist still hides", () => {
     const container = renderListCtx({
       titleBlacklist: ["廣告"],
       pageState: 0,
-      inListContext: true
+      inListContext: true,
+      listEasyReading: true
     });
     expect(hiddenCount(container)).toBe(1);
   });
@@ -204,7 +257,8 @@ describe("Screen list blacklist sticky inListContext (v prompt)", () => {
       blacklist: new Set(["anyuser"]),
       titleBlacklist: ["廣告"],
       pageState: 0,
-      inListContext: false
+      inListContext: false,
+      listEasyReading: true
     });
     expect(hiddenCount(container)).toBe(0);
   });

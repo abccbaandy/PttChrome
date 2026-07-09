@@ -1,4 +1,42 @@
+import cx from "classnames";
 import LinkSegmentBuilder from "./LinkSegmentBuilder";
+import { shouldForceWidth } from "./ColorSegmentBuilder";
+import { forceWidthStyle } from "./WordSegmentBuilder/ForceWidthWord";
+
+// Render a plain notice string (blacklistNotice) into the same monospace grid the
+// normal char path uses: ASCII/narrow chars flow as text, full-width glyphs (●, □,
+// CJK …) get an explicit inline-block of `forceWidth` px so they occupy exactly two
+// cells and line up with every other row. Narrow runs are grouped into one span to
+// keep the node count small.
+function noticeSegments(text, forceWidth) {
+  const out = [];
+  let run = "";
+  const flush = () => {
+    if (run) {
+      out.push(<span key={out.length}>{run}</span>);
+      run = "";
+    }
+  };
+  for (let i = 0; i < text.length; ++i) {
+    const ch = text[i];
+    if (shouldForceWidth(ch)) {
+      flush();
+      out.push(
+        <span
+          key={out.length}
+          className="wpadding"
+          style={forceWidthStyle(forceWidth)}
+        >
+          {ch}
+        </span>,
+      );
+    } else {
+      run += ch;
+    }
+  }
+  flush();
+  return out;
+}
 
 // floor: { seq, sub, type } | undefined  → render a floor badge before the line.
 // hidden: true → blacklisted row; keep the bbsrow (so the fixed terminal grid
@@ -11,6 +49,12 @@ import LinkSegmentBuilder from "./LinkSegmentBuilder";
 //   tint shows through without overriding any ANSI colours).
 // authorIdStart/authorIdEnd: cols [start, end) of the user id when this comment is
 //   by the 原PO → wrap just the id in .commentByAuthor (see LinkSegmentBuilder).
+// blacklistNotice: native-list blacklisted row → render this deleted-style notice
+//   「(本文已被黑名單) <作者>」instead of the original char cells (see
+//   Screen#computeAnnotations). Bypasses LinkSegmentBuilder (no links / colours), but
+//   still forces full-width glyphs to two cells (noticeSegments) so it lines up with
+//   the rest of the grid, cursor row included. Easy-reading list hides such rows
+//   instead, so this only fires natively.
 export const Row = ({
   chars,
   row,
@@ -25,35 +69,52 @@ export const Row = ({
   authorIdEnd,
   fixedUrls,
   mentions,
+  blacklistNotice,
   onHyperLinkMouseOver,
   onHyperLinkMouseOut,
-}) => (
-  <span
-    type="bbsrow"
-    srow={row}
-    data-pusher={pusher}
-    className={pusherHighlight ? "pusherHighlight" : undefined}
-    style={hidden ? { visibility: "hidden" } : undefined}
-  >
-    {chars
-      .reduce(
-        LinkSegmentBuilder.accumulator,
-        new LinkSegmentBuilder(
-          row,
-          enableLinkInlinePreview,
-          forceWidth,
-          highlighted,
-          onHyperLinkMouseOver,
-          onHyperLinkMouseOut,
-          floor,
-          authorIdStart,
-          authorIdEnd,
-          fixedUrls,
-          mentions,
-        ),
-      )
-      .build()}
-  </span>
-);
+}) => {
+  if (blacklistNotice)
+    return (
+      <span type="bbsrow" srow={row}>
+        {/* keep the native mouse-browse highlight (b2 green bar) on hover, same as
+            every other native list row */}
+        <span
+          className={cx({ b2: highlighted })}
+          data-type="bbsline"
+          data-row={row}
+        >
+          {noticeSegments(blacklistNotice, forceWidth)}
+        </span>
+      </span>
+    );
+  return (
+    <span
+      type="bbsrow"
+      srow={row}
+      data-pusher={pusher}
+      className={pusherHighlight ? "pusherHighlight" : undefined}
+      style={hidden ? { visibility: "hidden" } : undefined}
+    >
+      {chars
+        .reduce(
+          LinkSegmentBuilder.accumulator,
+          new LinkSegmentBuilder(
+            row,
+            enableLinkInlinePreview,
+            forceWidth,
+            highlighted,
+            onHyperLinkMouseOver,
+            onHyperLinkMouseOut,
+            floor,
+            authorIdStart,
+            authorIdEnd,
+            fixedUrls,
+            mentions,
+          ),
+        )
+        .build()}
+    </span>
+  );
+};
 
 export default Row;

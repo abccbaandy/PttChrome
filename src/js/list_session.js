@@ -1286,6 +1286,34 @@ ListSession.prototype = {
     this._forceRedraw(); // synchronous: accumulates this page into the buffer
     if (this._selectedNum == null && this._selectedPinnedKey == null)
       this._selectLastNumbered();
+    // Same as _rebuild: an engage landing mid-board (getkeep restored the read
+    // cursor above the newest article) leaves the window short — blank rows below
+    // and NOTHING buffered there. Background fill only pages UP; without this the
+    // gap never fills until the user presses ↓ (問題1), and the down-prefetch's
+    // markEdge never fires so _edgeDown stays false → the whole pinned tail is
+    // gated out (問題2b). Fill the visible window downward first; start-fill's
+    // upward _maybeFill runs right after (defers while this leg is in flight, then
+    // the demand chain's onDone falls back to it).
+    this._demandDownIfWindowShort();
+  },
+
+  // Fill the visible window downward when the landing page is short (window taller
+  // than the buffer below the top anchor = real blank rows), the bottom edge is not
+  // yet confirmed, and the queue is idle. Shared by _seed and _rebuild. Guard is
+  // intentional: an unconditional demand would probe past a FULL landing page — at
+  // a board end that is a zero-response PgDn whose timeout→\f probe races the hard
+  // timeout into an ownerless settle (spurious functionMode banner). See
+  // docs/easy-reading-list.md 已知限制「滿版落點不得探測」.
+  _demandDownIfWindowShort: function() {
+    const seq = this._sequence();
+    const pos = seq.length ? this._windowPos(seq) : null;
+    if (
+      pos &&
+      seq.length < pos.top + this._bodyRows() &&
+      !this._edgeDown &&
+      this._queue.idle
+    )
+      this._enqueuePrefetch(false, 'key');
   },
 
   _rebuild: function(facts) {
@@ -1304,22 +1332,10 @@ ListSession.prototype = {
     // The landing page may sit mid-board with NOTHING buffered below (e.g. a
     // MODE_SELECT exit lands on the account's read cursor over a PARTIAL
     // server frame) — the window would render blank rows until the user
-    // happens to press a key. Fill the visible window downward FIRST, then the
-    // upward background fill takes over (the demand chain's onDone falls back
-    // to _maybeFill). ONLY when rows are actually missing (window taller than
-    // the buffer below the top anchor): an unconditional demand would probe
-    // past a full landing page — at a board/select end that is a ZERO-response
-    // PgDn whose timeout→\f probe races the hard timeout live (ownerless
-    // settle → spurious functionMode banner).
-    const seq = this._sequence();
-    const pos = seq.length ? this._windowPos(seq) : null;
-    if (
-      pos &&
-      seq.length < pos.top + this._bodyRows() &&
-      !this._edgeDown &&
-      this._queue.idle
-    )
-      this._enqueuePrefetch(false, 'key');
+    // happens to press a key. Fill the visible window downward FIRST (shared
+    // guard with _seed), then the upward background fill takes over (the demand
+    // chain's onDone falls back to _maybeFill).
+    this._demandDownIfWindowShort();
     this._maybeFill();
   },
 

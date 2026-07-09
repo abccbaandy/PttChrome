@@ -6,7 +6,7 @@ function isBadDBCS(u) {
   return symbolTable["x" + u.charCodeAt(0).toString(16)] == 3;
 }
 
-function shouldForceWidth(u) {
+export function shouldForceWidth(u) {
   const code = symbolTable["x" + u.charCodeAt(0).toString(16)];
   return code == 1 || code == 2;
 }

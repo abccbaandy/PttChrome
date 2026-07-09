@@ -111,7 +111,9 @@ test.describe('增强 · 文章（离线重放）', () => {
 test.describe('增强 · 看板列表（离线重放）', () => {
   test.skip(!list, '尚无 list cassette；先 yarn record:cassette（RECORD_MODE=list）');
 
-  test('列表黑名单：黑名单作者的列被隐藏', async ({ page }) => {
+  // 原生模式（easyReading:false）：黑名单列不隐藏、不反黑，改渲染成被删除样式的
+  // 「(本文已被黑名单) <作者>」通知列（2026-07 使用者定案）。好读模式才全部隐藏。
+  test('列表黑名单：黑名单作者的列 → 原生显示「(本文已被黑名单)」通知列（不隐藏）', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await replayCassette(page, list, { easyReading: false });
@@ -128,22 +130,24 @@ test.describe('增强 · 看板列表（离线重放）', () => {
     });
     test.skip(!target, '列表没抓到可辨识作者栏');
 
-    const hiddenCount = () =>
-      page.evaluate(
-        () =>
-          Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"]')).filter(
-            (el) => el.style && el.style.visibility === 'hidden'
-          ).length
-      );
+    const counts = () =>
+      page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"]'));
+        return {
+          hidden: rows.filter((el) => el.style && el.style.visibility === 'hidden').length,
+          notice: rows.filter((el) => (el.textContent || '').includes("（本文已被黑名單）")).length
+        };
+      });
 
-    const before = await hiddenCount();
+    const before = await counts();
     await ptt.applyPrefs(page, { blacklist: target });
     await page.waitForTimeout(800);
-    const after = await hiddenCount();
-    expect(after).toBeGreaterThan(before); // 至少多隐藏一列
+    const after = await counts();
+    expect(after.notice).toBeGreaterThan(before.notice); // 至少多一列通知
+    expect(after.hidden).toBe(before.hidden); // 原生模式不隐藏
   });
 
-  test('标题黑名单：标题含关键字的列被隐藏', async ({ page }) => {
+  test('标题黑名单：标题含关键字的列 → 通知列（不隐藏）', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await replayCassette(page, list, { easyReading: false });
@@ -161,18 +165,18 @@ test.describe('增强 · 看板列表（离线重放）', () => {
     });
     test.skip(!keyword, '列表没抓到可用标题关键字');
 
-    const hiddenCount = () =>
+    const noticeCnt = () =>
       page.evaluate(
         () =>
           Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"]')).filter(
-            (el) => el.style && el.style.visibility === 'hidden'
+            (el) => (el.textContent || '').includes("（本文已被黑名單）")
           ).length
       );
 
-    const before = await hiddenCount();
+    const before = await noticeCnt();
     await ptt.applyPrefs(page, { titleBlacklist: keyword });
     await page.waitForTimeout(800);
-    const after = await hiddenCount();
-    expect(after).toBeGreaterThan(before); // 至少多隐藏一列
+    const after = await noticeCnt();
+    expect(after).toBeGreaterThan(before); // 至少多一列通知
   });
 });
