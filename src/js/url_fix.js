@@ -55,7 +55,9 @@ const CANDIDATE_RE = new RegExp(
     '(?:\\s*\\.\\s*' + LABEL + ')*' + // sub-labels
     '\\s*\\.\\s*(?:' + TLD_ALT + ')\\b' + // final dot + TLD
     '(?::\\d+)?' + // optional port
-    '(?:[ ]?/(?:' + PATH + ')*(?:[ ]+\\.?[ ]*(?:' + EXT + ')\\b)?)?', // path + opt. broken ext
+    // path + opt. broken ext, OR opt. single space + digits-only tail
+    // ("https://x.com/i/status/ 1933827730166178100" — the X status-ID pattern)
+    '(?:[ ]?/(?:' + PATH + ')*(?:[ ]+\\.?[ ]*(?:' + EXT + ')\\b|[ ]\\d+\\b)?)?',
   'ig'
 );
 

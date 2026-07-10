@@ -28,6 +28,31 @@ describe('detectFixableUrls — repairs the 5 broken sample lines', () => {
   });
 });
 
+describe('detectFixableUrls — path 後單一空白 + 純數字尾段（X status ID 型態）', () => {
+  test('slash 後空白 + 數字 ID → 修好', () => {
+    expect(fixedOf('https://x.com/i/status/ 1933827730166178100'))
+      .toEqual(['https://x.com/i/status/1933827730166178100']);
+  });
+
+  test('行尾帶多餘空白的變體 → 修好', () => {
+    expect(fixedOf('https://x.com/i/status/ 1917164977988997361 '))
+      .toEqual(['https://x.com/i/status/1917164977988997361']);
+  });
+
+  test('數字尾段後的第二個數字段不被併入', () => {
+    expect(fixedOf('version https://a.com/ 123 456'))
+      .toEqual(['https://a.com/123']);
+  });
+
+  test('slash 後空白 + 英文單字 → 不修（散文）', () => {
+    expect(detectFixableUrls('see https://site.com/ here')).toEqual([]);
+  });
+
+  test('雙空白 + 數字 → 不併（真正的字距）', () => {
+    expect(detectFixableUrls('看 https://a.com/  123 這個')).toEqual([]);
+  });
+});
+
 describe('detectFixableUrls — false-positive guards', () => {
   test('CJK sentence with full-width period → none', () => {
     expect(detectFixableUrls('測試。下一句也沒問題，這只是中文。')).toEqual([]);
