@@ -1,5 +1,9 @@
 # PttChrome（增強版）
 
+[![Deploy to GitHub Pages](../../actions/workflows/deploy.yml/badge.svg?branch=dev)](../../actions/workflows/deploy.yml)
+[![CodeQL](../../actions/workflows/dynamic/github-code-scanning/codeql/badge.svg)](../../actions/workflows/dynamic/github-code-scanning/codeql)
+[![Dependabot Updates](../../actions/workflows/dynamic/dependabot/dependabot-updates/badge.svg)](../../actions/workflows/dynamic/dependabot/dependabot-updates)
+
 在瀏覽器上直接連 PTT 的網頁版終端機，fork 自 [robertabcd/PttChrome](https://github.com/robertabcd/PttChrome)，並加上一系列閱讀與使用體驗的增強功能。
 
 ---
