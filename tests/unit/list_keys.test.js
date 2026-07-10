@@ -585,6 +585,88 @@ describe("v5/M3：相對命令第二腿 \\f 確定性收尾（RTT 自適應 time
   });
 });
 
+describe("native excursion 一律拋棄 cache（多輪搜尋/過濾汙染回歸，2026-07-10）", () => {
+  // 症狀：movie 板 `/` 搜尋後再 Z（airlock→原生）過濾推文數，回列表時板名相同
+  // ＋落點序號恰在舊 buffer 內 → 走 resume-buffer 不 rebuild → 舊搜尋條目混雜
+  // 顯示（>15 篇、日期錯亂），點舊序號開文 jump expect 永遠不中 → timeout。
+  // 合約：進 functionMode（原生 excursion——airlock/自癒/降級）＝清單不再可信，
+  // 回 clean-list settle 必 rebuild（丟 view 層 _listNumMap 重建）。
+  // 構造「同板名＋落點序號在舊 buffer 內」的 clean-list settle facts —— 修前
+  // 這正是漏 rebuild 的組合。
+  function cleanListFacts(boardName, num) {
+    const rowTexts = new Array(24).fill("");
+    const nums = new Array(24).fill(null);
+    nums[5] = num;
+    return {
+      kind: "clean-list",
+      boardName,
+      rowTexts,
+      nums,
+      rows: 24,
+      curY: 5,
+      curX: 0,
+      cursorRowNum: num,
+    };
+  }
+
+  test("airlock 二連擊（Z 過濾情境）→ 回 clean-list settle 必 rebuild（丟舊 buffer）", () => {
+    const { s } = makeSession();
+    let resets = 0;
+    s._view.flashListHint = () => {};
+    s._view.resetListAccumulation = () => resets++;
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._boardName = "movie";
+    s._selectedNum = 42;
+    s._termBuf.listLineNums = [41, 42, 43]; // 舊搜尋殘留 buffer
+    s.onKeyDown(keyEvent("Z"));
+    s.onKeyDown(keyEvent("Z")); // 氣閘 → functionMode（原生過濾）
+    expect(s.state).toBe("functionMode");
+    // 原生 Z 過濾完成，回到同板名清單、落點序號恰在舊 buffer 內
+    const facts = cleanListFacts("movie", 42);
+    s._dispatch(s._settleEvent(facts), facts);
+    expect(s.state).toBe("active");
+    expect(resets).toBeGreaterThanOrEqual(1); // 必 rebuild，不得只 resume
+  });
+
+  test("開文 timeout 自癒（open-timeout→functionMode）→ 回列表同樣必 rebuild", () => {
+    const { s } = makeSession();
+    let resets = 0;
+    s._view.resetListAccumulation = () => resets++;
+    s._view.flashListHint = () => {};
+    s.state = "opening";
+    s._boardName = "movie";
+    s._selectedNum = 42;
+    s._termBuf.listLineNums = [41, 42, 43];
+    s._dispatch({ type: "open-timeout" }, null);
+    expect(s.state).toBe("functionMode");
+    const facts = cleanListFacts("movie", 42);
+    s._dispatch(s._settleEvent(facts), facts);
+    expect(s.state).toBe("active");
+    expect(resets).toBeGreaterThanOrEqual(1);
+  });
+
+  test("反向守護：相對命令（[）配對完成的 resume 不 rebuild（快路徑不退化）", () => {
+    const { s, enqueued } = makeSession();
+    let resets = 0;
+    s._view.resetListAccumulation = () => resets++;
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._boardName = "movie";
+    s._selectedNum = 42;
+    s._termBuf.listLineNums = [41, 42, 43];
+    s.onKeyDown(keyEvent("[")); // begin-relative：frozen 交易，非原生 excursion
+    expect(s.state).toBe("functionMode");
+    enqueued[0].onDone(); // sync-jump 完成
+    enqueued[1].onDone(true); // key 命令完成
+    // 配對完成的 clean-list settle（同板名、落點在 buffer 內）→ 只 resume
+    const facts = cleanListFacts("movie", 43);
+    s._dispatch(s._settleEvent(facts), facts);
+    expect(s.state).toBe("active");
+    expect(resets).toBe(0);
+  });
+});
+
 describe("functionMode clean-list settle 的 in-flight 吸收（相對命令配對期間不彈回）", () => {
   const settle = (kind, extra = {}) => ({
     type: "settle",

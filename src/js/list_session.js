@@ -307,6 +307,11 @@ export function transitionListSession(state, event) {
             // already hold AND we are on the same board, the page overwrite (in
             // redraw) is enough; otherwise rebuild from the current page
             // (covers `s` board jumps and `/` MODE_SELECT number aliasing).
+            // NOTE: entering functionMode via enter-function-mode（airlock/
+            // 自癒/降級）clears _boardName at the ACTION layer
+            // (_enterFunctionMode) — a native excursion always lands on the
+            // rebuild branch here. Only frozen transactions (relative/leave/
+            // mark) that keep _boardName can take the fast resume-only path.
             return event.landedNumInBuffer && event.boardNameMatch
               ? { next: 'active', actions: ['resume-buffer'] }
               : { next: 'active', actions: ['resume-buffer', 'rebuild'] };
@@ -1765,6 +1770,13 @@ ListSession.prototype = {
   _enterFunctionMode: function(facts) {
     this._setLoading(false);
     this._serverNum = null; // native excursion: the cursor goes wherever
+    // Native excursion = the LISTING is no longer trusted either: any native
+    // key can rewrite the list's content/number space (Z 推文數、a 作者、`/`
+    // 搜尋… MODE_SELECT numbers are an independent space, §8). Clearing the
+    // board name forces the returning clean-list settle down the rebuild
+    // branch — resume-buffer alone would merge stale rows into the new list
+    // (movie 板多輪搜尋混雜、點舊序號開文 timeout，2026-07-10).
+    this._boardName = null;
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();

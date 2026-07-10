@@ -168,9 +168,12 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
     }
   });
 
-  // 看板列表黑名單（好讀模式開啟時）：被封鎖作者的發文列應被隱藏。
-  // 此情境正是先前的 bug：好讀開啟時列表走 hideEasyReading→appendRows，需帶 enhance 才會過濾。
-  test('看板列表黑名單：好讀模式下隱藏被封鎖作者發文', async ({ shared }) => {
+  // 看板列表黑名單（原生列表規則，3409aea 起）：被封鎖作者的列渲染成
+  // 「（本文已被黑名單） <作者>」通知列，不再 visibility:hidden——隱藏只發生在
+  // 好讀列表視窗（enableEasyReadingList，見 docs/easy-reading-list.md 不變量 10；
+  // 通知列/隱藏雙模的離線守護在 enhance.offline.spec.js）。此 live 案鎖真 PTT
+  // 畫面下 onPrefChange('blacklist') → redraw 的端到端行為。
+  test('看板列表黑名單：原生列表渲染通知列（不隱藏）', async ({ shared }) => {
     test.setTimeout(120000);
     const { page, logs } = shared;
     logs.length = 0;
@@ -195,21 +198,27 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
         // 走真實 pref handler（會 parseBlacklist + redraw）
         app.onPrefChange('blacklist', target);
         const after = Array.from(document.querySelectorAll(sel)).map((el) => ({
-          author: authorCol(el),
+          text: el.textContent,
           vis: getComputedStyle(el).visibility,
         }));
+        const noticeRows = after.filter(
+          (x) => x.text.includes('（本文已被黑名單）') && x.text.includes(target)
+        );
         return {
           target,
           pageState: app.buf.pageState,
           hiddenCount: after.filter((x) => x.vis === 'hidden').length,
-          targetHidden: after.some((x) => x.author === target && x.vis === 'hidden'),
+          noticeCount: noticeRows.length,
+          noticeHidden: noticeRows.some((x) => x.vis === 'hidden'),
         };
       });
       console.log('LIST BLACKLIST:', JSON.stringify(r));
 
       expect(r.target).not.toBe('');
       expect(r.pageState).toBe(2);
-      expect(r.targetHidden).toBe(true);
+      expect(r.noticeCount).toBeGreaterThanOrEqual(1); // 通知列取代原列
+      expect(r.noticeHidden).toBe(false); // 原生規則：不隱藏
+      expect(r.hiddenCount).toBe(0); // 原生列表無任何列被 hidden
     } catch (err) {
       console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
       await page.screenshot({ path: 'tests/e2e/__screenshots__/enhance-list-bl-error.png', fullPage: true });
