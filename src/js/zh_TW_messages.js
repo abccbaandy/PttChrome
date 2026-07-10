@@ -329,12 +329,17 @@
     "message": "原版本：webapp12 6/2/2015, #link_iamchucky_PttChrome#, #link_GPL20#."
   },
   "about_new_title": {
-    "message": "新功能"
+    "message": "重大技術升級"
   },
   "about_new_content": {
     "message": [
-      '加入 Websocket 連線',
-      '部分使用 React 重構'
+      '升級 React 19（bundled、function component + hooks）',
+      '棄用 Bootstrap / react-bootstrap，UI 元件改用 Mantine（暗色預設、可切換主題）',
+      '建置工具：webpack 5、Yarn 4',
+      '移除 jQuery 與 hammerjs，全部原生 API，無 CDN 程式庫依賴',
+      'Firebase npm modular SDK（lazy chunk）＋ App Check 防護',
+      '測試基建：Playwright E2E、Firebase Emulator Suite（Docker）整合測試、離線 byte-cassette 重放測試',
+      'CI：GitHub Pages 部署以測試通過為前提；Dependabot / CodeQL 安全警示全數清除'
     ]
   },
 

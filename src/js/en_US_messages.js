@@ -332,12 +332,17 @@ export const en_US = {
     "message": "Original version: webapp12 6/2/2015, #link_iamchucky_PttChrome#, #link_GPL20#."
   },
   "about_new_title": {
-    "message": "What's new"
+    "message": "Major technical upgrades"
   },
   "about_new_content": {
     "message": [
-      'Add Websocket connection support.',
-      'Partially rewrote using React.'
+      'Upgraded to React 19 (bundled, function components + hooks).',
+      'Dropped Bootstrap / react-bootstrap; UI components migrated to Mantine (dark by default, switchable theme).',
+      'Build tooling: webpack 5, Yarn 4.',
+      'Removed jQuery and hammerjs in favor of native APIs; no CDN library dependencies left.',
+      'Firebase npm modular SDK (lazy chunk) + App Check protection.',
+      'Test infrastructure: Playwright E2E, Firebase Emulator Suite (Docker) integration tests, offline byte-cassette replay tests.',
+      'CI: GitHub Pages deploy gated on tests; all Dependabot / CodeQL alerts cleared.'
     ]
   },
 
