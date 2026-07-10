@@ -35,6 +35,26 @@ for (let i = 97; i <= 122; i++) {
   CtrlShiftMap[String.fromCharCode(i)] = i - 96;
 }
 
+// Single KeyboardEvent → the escape/byte sequence PTT expects, or null when
+// there is no sensible mapping (bare modifiers, F-keys, Alt/Meta combos).
+// Used by list_session's native passthrough to SEND THE KEY ITSELF after a
+// serialized cursor-sync leg (the event was preventDefaulted, so the normal
+// TermKeyboard path never sees it). Mirrors TermKeyboard._onKeyDown/onKeyPress
+// minus the double-byte cursor handling (list screens have no DB cursor).
+export function keyEventToBytes(e) {
+  if (e.altKey || e.metaKey) return null;
+  if (e.ctrlKey) {
+    if (e.shiftKey) return null;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const code = CtrlShiftMap[key];
+    return code ? String.fromCharCode(code) : null;
+  }
+  const mapped = KeyMap[e.key];
+  if (mapped) return mapped;
+  if (e.key.length === 1) return e.key;
+  return null;
+}
+
 // FIXME: Under Mac, IME inputs will be sent as key of modified char.
 // Need to use key code directly.
 

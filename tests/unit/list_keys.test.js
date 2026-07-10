@@ -1,9 +1,9 @@
-// 「[ ] 同標題跳文偶爾失效/亂跳/卡住」回歸：buffer 模式本地導航是零網路，server
-// 端真游標停在舊位置；[ ] = 等相對命令需要先跳回選取列。且 jump＋key 不能同 tick
-// 直送 —— pttbbs typeahead 會跳過重繪（協定 §2），畫面卡死但 server 已跳。
-// 修法：preventDefault 後走 CommandQueue 序列化（relative-sync-jump → 完成才送
-// relative-command），functionMode 鏡像期間 clean-list settle 被 in-flight 吸收，
-// 配對完成的 settle 才 resume（採用落點游標）。
+// 列表好讀鍵盤合約（2026-07-10 起）：白名單＝導覽/開文/跳號/離板；其餘鍵一律
+// 「一鍵切原生」——有序號選取且 server 游標未同步時先序列化 native-sync-jump
+//（buffer 本地導航零網路，真游標停在舊位置；jump＋key 不能同 tick 直送——pttbbs
+// typeahead 會跳過重繪，協定 §2），完成後 enter-function-mode（原生 excursion，
+// 不變量 15：拋 cache）＋raw 代送原鍵。舊 [ ] = / v / `/` 模擬交易與 airlock
+// 兩段式（同鍵二連擊）皆退役。
 import { ListSession, transitionListSession } from "../../src/js/list_session";
 
 function makeSession() {
@@ -59,50 +59,76 @@ function keyEvent(key) {
   };
 }
 
-describe("ListSession 相對命令序列化（[ ] 卡住/亂跳回歸）", () => {
-  test("active＋數字選取：按 [ → preventDefault、佇列先跳選取序號、完成才送 [", () => {
+describe("ListSession 非白名單鍵一鍵切原生（[ ] = 沒反應回歸，2026-07-10）", () => {
+  // 舊行為：[ ] = 走模擬 relative 交易（僅數字選取可用；pinned/無選取 noop 吞鍵，
+  // 要再按一次 airlock）→「按了沒反應也沒讀取中」。新合約：非導覽白名單鍵一律
+  // 「同步 server 游標（有序號且未同步時）→ 切原生鏡像 → 代送該鍵」——單按即生效。
+  test("active＋數字選取未同步：按 [ → preventDefault、先 sync-jump、完成後切原生＋代送 [", () => {
     const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
     s.state = "active";
     s._selectedNum = 42;
     const e = keyEvent("[");
     s.onKeyDown(e);
-    // 鍵本身不得 passthrough（同 tick 直送會觸發 typeahead 卡畫面）
+    // 鍵本身不得同 tick passthrough（sync 腿還在途，typeahead 會卡畫面）
     expect(e.defaultPrevented).toBe(true);
-    expect(sent).toEqual([]); // 不走裸 conn.send
-    expect(s.state).toBe("functionMode");
+    expect(sent).toEqual([]);
+    expect(s._renderMode).toBe("frozen"); // sync 腿期間不閃原生
     expect(enqueued.length).toBe(1);
     expect(enqueued[0].keys).toBe("42\r");
-    expect(enqueued[0].kind).toBe("relative-sync-jump");
-    // jump 完成 → 才鏈出 key 命令
+    expect(enqueued[0].kind).toBe("native-sync-jump");
+    // sync 完成 → 切原生鏡像＋代送該鍵（走 queue：in-flight 吸收 settle，
+    // 防 sync 落地的 clean-list settle 提早 resume——live soak race）
     enqueued[0].onDone();
-    expect(enqueued.length).toBe(2);
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("native");
+    expect(sent).toEqual([]); // 不裸送
+    expect(enqueued[1].kind).toBe("native-key");
     expect(enqueued[1].keys).toBe("[");
-    expect(enqueued[1].kind).toBe("relative-command");
-    // key 命令：任一 settle 即完成（回應可能是 clean-list 或訊息列）
-    expect(enqueued[1].expect()).toBe(true);
+    expect(enqueued[1].expect()).toBe(true); // 任一 settle 即回應
   });
 
-  test("= 同標題首篇同路徑", () => {
-    const { s, enqueued } = makeSession();
+  test("已同步（_serverNum===選取）→ 跳過 sync 腿，直接切原生＋代送", () => {
+    const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
     s.state = "active";
     s._selectedNum = 7;
+    s._serverNum = 7;
     s.onKeyDown(keyEvent("="));
-    expect(enqueued[0].keys).toBe("7\r");
-    enqueued[0].onDone();
-    expect(enqueued[1].keys).toBe("=");
+    expect(s.state).toBe("functionMode");
+    expect(enqueued.length).toBe(1); // 免 sync 腿，只有 native-key
+    expect(enqueued[0].kind).toBe("native-key");
+    expect(enqueued[0].keys).toBe("=");
+    expect(sent).toEqual([]);
   });
 
-  test("pinned 選取（無序號）：[ 無跳號可用 → v5 noop（吞鍵＋不佇列，不再 passthrough）", () => {
+  test("pinned 選取（無序號）：] 無跳號可同步 → 直接切原生＋代送（不再 noop 吞鍵）", () => {
     const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
     s.state = "active";
     s._selectedNum = null;
     s._selectedPinnedKey = "arrenwu|[公告] 板規";
     const e = keyEvent("]");
     s.onKeyDown(e);
     expect(e.defaultPrevented).toBe(true);
-    expect(enqueued).toEqual([]);
+    expect(s.state).toBe("functionMode");
+    expect(enqueued.length).toBe(1);
+    expect(enqueued[0].kind).toBe("native-key");
+    expect(enqueued[0].keys).toBe("]");
     expect(sent).toEqual([]);
-    expect(s.state).toBe("active"); // 封閉互動：不墜落
+  });
+
+  test("sync 腿失敗 → 仍切原生＋代送（降級路徑，不得無聲卡 frozen）", () => {
+    const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._selectedNum = 42;
+    s.onKeyDown(keyEvent("["));
+    enqueued[0].onFail("timeout");
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("native");
+    expect(enqueued[1].kind).toBe("native-key");
+    expect(enqueued[1].keys).toBe("[");
   });
 
   test("←/q/e 離板 → v5 交易化：frozen＋先同步 server 游標再送離板鍵", () => {
@@ -182,33 +208,50 @@ describe("ListSession 相對命令序列化（[ ] 卡住/亂跳回歸）", () =>
   });
 });
 
-describe("相對命令配對期間 frozen（不得閃現原生畫面）", () => {
-  test("按 [ 後 render mode 應為 frozen（非 native）、游標保持隱藏", () => {
+describe("passthrough sync 腿期間 frozen（不得閃現原生畫面）", () => {
+  test("按 [（未同步）sync 腿在途 → frozen、游標保持隱藏", () => {
     const { s } = makeSession();
     const calls = { hide: 0, show: 0 };
+    s._view.flashListHint = () => {};
     s._view.hideCursor = () => calls.hide++;
     s._view.showCursor = () => calls.show++;
     s.state = "active";
     s._renderMode = "buffer";
     s._selectedNum = 42;
     s.onKeyDown(keyEvent("["));
-    expect(s.state).toBe("functionMode");
-    expect(s._renderMode).toBe("frozen"); // 舊行為 native = 閃現一幀原生
+    expect(s._renderMode).toBe("frozen"); // sync 完成前不閃原生
     expect(calls.show).toBe(0); // showCursor = 原生游標露出
   });
 
-  test("frozen 配對期間按任意鍵 → 吞掉（preventDefault、不佇列不送）", () => {
+  test("frozen sync 腿期間按任意鍵 → 吞掉（preventDefault、不佇列不送）＋有讀取提示", () => {
     const { s, sent, enqueued } = makeSession();
+    const hints = [];
+    s._view.flashListHint = (m) => hints.push(m);
     s.state = "active";
     s._renderMode = "buffer";
     s._selectedNum = 42;
     s.onKeyDown(keyEvent("["));
+    s.state = "functionMode"; // sync 腿在途（reducer 尚未 resume）
     const n = enqueued.length;
+    const before = hints.length;
     const e = keyEvent("x");
     s.onKeyDown(e);
     expect(e.defaultPrevented).toBe(true);
     expect(enqueued.length).toBe(n);
     expect(sent).toEqual([]);
+    // 交易在途吞鍵不得無聲（3 秒 timeout 窗內「按了沒反應」回歸）
+    expect(hints.length).toBeGreaterThan(before);
+  });
+
+  test("opening（開文序列在途）吞鍵 → 有讀取提示（不得無聲）", () => {
+    const { s } = makeSession();
+    const hints = [];
+    s._view.flashListHint = (m) => hints.push(m);
+    s.state = "opening";
+    const e = keyEvent("x");
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(hints.length).toBe(1);
   });
 
   test("← 離板同樣 frozen（v5 交易化：離板回應在途也不得閃現原生）", () => {
@@ -222,8 +265,9 @@ describe("相對命令配對期間 frozen（不得閃現原生畫面）", () => 
   });
 });
 
-describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣閘", () => {
-  // 枚舉即合約（docs/easy-reading-list.md §操作分類）：白名單外一律 no-op。
+describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵一鍵切原生", () => {
+  // 枚舉即合約（docs/easy-reading-list.md §操作分類）：白名單＝導覽/開文/跳號/離板；
+  // 其餘一律 passthrough（sync＋切原生＋代送），airlock 兩段式已退役。
   const WHITELIST_BEHAVIOR = [
     // [key, 預期 state, 預期佇列 kind（null=不佇列）]
     ["ArrowUp", "active", null],
@@ -236,15 +280,18 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     ["ArrowLeft", "functionMode", "leave-sync-jump"],
     ["q", "functionMode", "leave-sync-jump"],
     ["e", "functionMode", "leave-sync-jump"],
-    ["[", "functionMode", "relative-sync-jump"],
-    ["]", "functionMode", "relative-sync-jump"],
-    ["=", "functionMode", "relative-sync-jump"],
-    // v 先同步 server 游標（W 分界＝游標文章，protocol §7）再開 prompt
-    ["v", "functionMode", "mark-sync-jump"],
-    ["/", "functionMode", "search-prompt"],
+    // 未列鍵（含舊模擬 [ ] = v /）→ passthrough：先 native-sync-jump 再代送
+    ["[", "functionMode", "native-sync-jump"],
+    ["]", "functionMode", "native-sync-jump"],
+    ["=", "functionMode", "native-sync-jump"],
+    ["v", "functionMode", "native-sync-jump"],
+    ["/", "functionMode", "native-sync-jump"],
+    ["z", "functionMode", "native-sync-jump"],
+    ["s", "functionMode", "native-sync-jump"],
   ];
   test.each(WHITELIST_BEHAVIOR)("白名單 %s → state=%s", (key, state, kind) => {
     const { s, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
     s.state = "active";
     s._selectedNum = 42;
     const e = keyEvent(key);
@@ -255,57 +302,26 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     else expect(enqueued).toEqual([]); // 空 buffer：nav 本地 no-op、零佇列
   });
 
-  test.each([["z"], ["i"], ["b"], ["y"], ["X"], ["s"], ["Z"], ["#"]])(
-    "未列鍵 %s → no-op（吞鍵、不佇列、不轉態、提示）",
-    (key) => {
-      const { s, sent, enqueued } = makeSession();
-      const hints = [];
-      s._view.flashListHint = (m) => hints.push(m);
-      s.state = "active";
-      s._renderMode = "buffer";
-      s._selectedNum = 42;
-      const e = keyEvent(key);
-      s.onKeyDown(e);
-      expect(e.defaultPrevented).toBe(true);
-      expect(enqueued).toEqual([]);
-      expect(sent).toEqual([]);
-      expect(s.state).toBe("active");
-      expect(s._renderMode).not.toBe("native"); // 不裸露
-      expect(hints.length).toBe(1);
-    }
-  );
-
-  test("T3 氣閘：同鍵二連擊 → 顯式切原生（第二擊 passthrough、enter-function-mode）", () => {
-    const { s, enqueued } = makeSession();
-    s._view.flashListHint = () => {};
+  test("單按未列鍵完整流程：z → sync → 切原生＋代送＋提示（airlock 二連擊退役）", () => {
+    const { s, sent, enqueued } = makeSession();
+    const hints = [];
+    s._view.flashListHint = (m) => hints.push(m);
     s.state = "active";
     s._renderMode = "buffer";
     s._selectedNum = 42;
-    const e1 = keyEvent("z");
-    s.onKeyDown(e1);
-    expect(e1.defaultPrevented).toBe(true);
-    expect(s.state).toBe("active");
-    const e2 = keyEvent("z");
-    s.onKeyDown(e2);
-    expect(e2.defaultPrevented).toBe(false); // 第二擊放行 → 原生送出
+    const e = keyEvent("z");
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true); // 代送模式：原事件不放行
+    expect(enqueued[0].kind).toBe("native-sync-jump");
+    enqueued[0].onDone();
     expect(s.state).toBe("functionMode");
     expect(s._renderMode).toBe("native");
-    expect(enqueued).toEqual([]);
+    expect(enqueued[1].kind).toBe("native-key");
+    expect(enqueued[1].keys).toBe("z");
+    expect(hints.length).toBeGreaterThan(0); // 事後告知已切原生
   });
 
-  test("氣閘不跨鍵：z 後按 i → 仍是第一擊提示（不誤觸切換）", () => {
-    const { s } = makeSession();
-    s._view.flashListHint = () => {};
-    s.state = "active";
-    s._selectedNum = 42;
-    s.onKeyDown(keyEvent("z"));
-    const e = keyEvent("i");
-    s.onKeyDown(e);
-    expect(e.defaultPrevented).toBe(true);
-    expect(s.state).toBe("active");
-  });
-
-  test("Ctrl-P（發文）→ noop 氣閘，不再漏送 server（v4 key-leak 回歸）", () => {
+  test("Ctrl-P（發文）→ 一鍵切原生、不代送（原事件放行給原生鍵盤路徑）", () => {
     const { s, sent, enqueued } = makeSession();
     s._view.flashListHint = () => {};
     s.state = "active";
@@ -313,10 +329,11 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     const e = keyEvent("p");
     e.ctrlKey = true;
     s.onKeyDown(e);
-    expect(e.defaultPrevented).toBe(true);
+    expect(e.defaultPrevented).toBe(false); // 放行 → 原生 TermKeyboard 送 Ctrl-P
     expect(enqueued).toEqual([]);
-    expect(sent).toEqual([]);
-    expect(s.state).toBe("active");
+    expect(sent).toEqual([]); // 不代送（Ctrl 組合由原生路徑轉 bytes）
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("native");
   });
 
   test("剪貼簿組合鍵（Ctrl-C/A/V/X）放行給 app 層（不吞、不轉態）", () => {
@@ -331,87 +348,23 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     }
   });
 
-  test("T2 `v` 交易：v→prompt 指紋→overlay 收參；u 提交 u\\r、其他鍵取消 \\r（getdata 必收尾）", () => {
-    const { s, sent, enqueued } = makeSession();
-    const overlays = [];
-    s._view.showListOverlay = (m) => overlays.push(m);
-    s._view.hideListOverlay = () => {};
-    s.state = "active";
-    s._renderMode = "buffer";
-    s._selectedNum = 42;
-    s.onKeyDown(keyEvent("v"));
-    expect(s.state).toBe("functionMode");
-    expect(s._renderMode).toBe("frozen");
-    // 第一腿：jump 同步 server 游標到選取（W 分界＝游標文章，protocol §7）
-    expect(enqueued[0].kind).toBe("mark-sync-jump");
-    expect(enqueued[0].keys).toBe("42\r");
-    enqueued[0].onDone();
-    expect(enqueued[1].kind).toBe("mark-prompt");
-    expect(enqueued[1].keys).toBe("v");
-    enqueued.shift(); // 後續斷言以 mark-prompt 為 [0]
-    // prompt 指紋（protocol §7）
-    const promptFacts = {
-      rows: 24,
-      rowTexts: Object.assign(new Array(24).fill(""), {
-        22: "設定所有文章 (U)未讀 (V)已讀 (W)前已讀後未讀 (Q)取消？[Q]",
-      }),
-    };
-    expect(enqueued[0].expect(null, promptFacts)).toBe(true);
-    enqueued[0].onDone();
-    expect(overlays.length).toBe(1); // 選單顯示
-    // 收參：u → 提交
-    s.onKeyDown(keyEvent("u"));
-    expect(enqueued[1].kind).toBe("mark-commit");
-    expect(enqueued[1].keys).toBe("u\r");
-    expect(enqueued[1].expect(null, { kind: "clean-list" })).toBe(true); // FULLUPDATE 收尾
-    expect(sent).toEqual([]); // 全程走 queue，不裸送
-    // 取消路徑：非 u/v/w 一律送 \r（server getdata 必須收掉）
-    const { s: s2, enqueued: q2 } = makeSession();
-    s2._view.showListOverlay = () => {};
-    s2._view.hideListOverlay = () => {};
-    s2.state = "active";
-    s2.onKeyDown(keyEvent("v"));
-    q2[0].onDone();
-    s2.onKeyDown(keyEvent("Escape"));
-    expect(q2[1].keys).toBe("\r");
-  });
-
-  test("T2 `/` 交易：/→prompt→輸入框收參→kw\\r 提交＋強制 rebuild（序號空間獨立）；取消送 \\r", () => {
-    const { s, enqueued } = makeSession();
-    let inputCb = null;
-    s._view.promptListInput = (label, init, cb) => {
-      inputCb = cb;
-    };
-    s.state = "active";
-    s._boardName = "C_Chat";
-    s.onKeyDown(keyEvent("/"));
-    expect(enqueued[0].kind).toBe("search-prompt");
-    expect(enqueued[0].keys).toBe("/");
-    expect(
-      enqueued[0].expect(null, {
-        rows: 24,
-        curY: 23,
-        rowTexts: Object.assign(new Array(24).fill(""), { 23: "搜尋標題:" }),
-      })
-    ).toBe(true);
-    enqueued[0].onDone();
-    expect(typeof inputCb).toBe("function");
-    inputCb("Re");
-    expect(enqueued[1].kind).toBe("search-commit");
-    expect(enqueued[1].keys).toBe("Re\r");
-    enqueued[1].onDone();
-    expect(s._selectMode).toBe(true);
-    expect(s._boardName).toBeNull(); // 完成 settle 的 reducer 將 rebuild
-    // 取消：空輸入 → \r 收 getdata
-    const { s: s2, enqueued: q2 } = makeSession();
-    let cb2 = null;
-    s2._view.promptListInput = (l, i, cb) => (cb2 = cb);
-    s2.state = "active";
-    s2.onKeyDown(keyEvent("/"));
-    q2[0].onDone();
-    cb2(null);
-    expect(q2[1].kind).toBe("search-cancel");
-    expect(q2[1].keys).toBe("\r");
+  test("v / `/`（舊 T2 模擬已拔除）→ 同 passthrough：sync 完成後代送、切原生", () => {
+    // 已讀設定/標題搜尋改由原生畫面接手（單按切原生），模擬 prompt/overlay 退役。
+    for (const key of ["v", "/"]) {
+      const { s, sent, enqueued } = makeSession();
+      s._view.flashListHint = () => {};
+      s.state = "active";
+      s._renderMode = "buffer";
+      s._selectedNum = 42;
+      s.onKeyDown(keyEvent(key));
+      expect(enqueued[0].kind).toBe("native-sync-jump");
+      expect(enqueued[0].keys).toBe("42\r");
+      enqueued[0].onDone();
+      expect(s.state).toBe("functionMode");
+      expect(s._renderMode).toBe("native");
+      expect(enqueued[1].kind).toBe("native-key");
+      expect(enqueued[1].keys).toBe(key);
+    }
   });
 
   test("select 清單離開（←）：leave onDone 清 _selectMode＋_boardName（回主列表必 rebuild）", () => {
@@ -470,22 +423,22 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
     expect(s2.state).toBe("active");
   });
 
-  test("交易前導只清 pending、保留 in-flight（[/←/v///Enter 開文——防 ownerless settle 誤配對）", () => {
+  test("交易前導只清 pending、保留 in-flight（sync 腿/←/Enter 開文——防 ownerless settle 誤配對）", () => {
     // live race：前導 flush() 砍掉 in-flight prefetch anchor → 其在線回應變
     // 無主 settle，提早滿足新交易的 expect（leave-board 吃掉 anchor 落地）。
     // 前導必須 flushPending（序列化修復），全量 flush 只准出現在退回原生鏡像
     // 的路徑（_enterFunctionMode/_handoffArticle/_cleanup——那裡沒有後續 expect）。
+    // passthrough 的 sync 腿（[ v …）在途時同規則；sync 完成後的 enter-function-mode
+    // 全量 flush 屬合法（之後無 expect），此處只驗「入列當下」。
     const begins = [
       ["[", (s) => s.onKeyDown(keyEvent("["))],
-      ["ArrowLeft", (s) => s.onKeyDown(keyEvent("ArrowLeft"))],
       ["v", (s) => s.onKeyDown(keyEvent("v"))],
-      ["/", (s) => s.onKeyDown(keyEvent("/"))],
+      ["ArrowLeft", (s) => s.onKeyDown(keyEvent("ArrowLeft"))],
       ["Enter開文", (s) => s.onKeyDown(keyEvent("Enter"))],
     ];
     for (const [label, fire] of begins) {
       const { s, queue } = makeSession();
-      s._view.showListOverlay = () => {};
-      s._view.hideListOverlay = () => {};
+      s._view.flashListHint = () => {};
       s._view.promptListInput = () => {};
       s.state = "active";
       s._renderMode = "buffer";
@@ -507,81 +460,84 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵 no-op＋T3 氣�
   });
 });
 
-describe("相對命令沒命中後自動回 buffer（黑名單/刪除文不得裸露到下次轉移）", () => {
-  function begin(s, enqueued) {
-    s.state = "active";
-    s._selectedNum = 42;
-    s.onKeyDown(keyEvent("["));
-    expect(s.state).toBe("functionMode");
-    return enqueued;
+describe("passthrough 黏性原生（2026-07-10 UX：不自動彈回好讀）", () => {
+  // 反覆按 [ ] 時「切原生→彈回好讀→再切原生」畫面閃動、圓點游標跳動，
+  // 且高流量板的殘餘 settle 易誤觸 catch-all banner。合約改為：passthrough
+  // 切原生後 HOLD——clean-list settle 一律 stay 鏡像；只有 article（開文，
+  // 文章好讀接手）或 menu（離板，重進板 re-engage）才解除。
+  function cleanList(boardName, num) {
+    const rowTexts = new Array(24).fill("");
+    const nums = new Array(24).fill(null);
+    nums[5] = num;
+    return {
+      kind: "clean-list",
+      boardName,
+      rowTexts,
+      nums,
+      rows: 24,
+      curY: 5,
+      curX: 0,
+      cursorRowNum: num,
+    };
   }
 
-  test("key 命令 timeout（零回應）→ 立即 resume 回 buffer", () => {
+  test("代送後的 clean-list settle → 停在原生鏡像（不彈回 buffer）", () => {
     const { s, enqueued } = makeSession();
-    begin(s, enqueued);
-    enqueued[0].onDone(); // jump 完成 → key 命令入列
-    enqueued[1].onFail("timeout");
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._boardName = "C_Chat";
+    s._selectedNum = 42;
+    s._termBuf.listLineNums = [41, 42, 43];
+    s.onKeyDown(keyEvent("]"));
+    enqueued[0].onDone(); // sync 完成 → 切原生＋native-key 入列
+    enqueued[1].onDone && enqueued[1].onDone(); // key 回應完成
+    // 原生 ] 跳到下一篇同標題，列表重繪 settle → 必須 STAY（黏性）
+    const facts = cleanList("C_Chat", 87);
+    s._dispatch(s._settleEvent(facts), facts);
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("native");
+    // 連按多次 ] 也不再切換模式（穩定停原生）
+    const facts2 = cleanList("C_Chat", 90);
+    s._dispatch(s._settleEvent(facts2), facts2);
+    expect(s.state).toBe("functionMode");
+  });
+
+  test("開文 → 返回列表才解除 hold（resume＋rebuild：excursion 後 cache 不可信）", () => {
+    const { s, enqueued } = makeSession();
+    let resets = 0;
+    s._view.flashListHint = () => {};
+    s._view.resetListAccumulation = () => resets++;
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._boardName = "C_Chat";
+    s._selectedNum = 42;
+    s._termBuf.listLineNums = [41, 42, 43];
+    s.onKeyDown(keyEvent("]"));
+    enqueued[0].onDone();
+    // 原生開文 → article settle → suspended（文章好讀接手、hold 解除）
+    const articleFacts = { kind: "article", boardName: null, rowTexts: [], nums: [], rows: 24, curY: 23, curX: 0, cursorRowNum: null };
+    s._dispatch(s._settleEvent(articleFacts), articleFacts);
+    expect(s.state).toBe("suspended");
+    // ← 返回列表 → resume；_boardName 已被 excursion 清空 → 必 rebuild
+    const facts = cleanList("C_Chat", 87);
+    s._dispatch(s._settleEvent(facts), facts);
     expect(s.state).toBe("active");
     expect(s._renderMode).toBe("buffer");
+    expect(resets).toBeGreaterThanOrEqual(1);
   });
 
-  test("key 命令完成但 reducer 停在 functionMode（訊息列回應）→ 下一 tick resume", () => {
-    jest.useFakeTimers();
-    try {
-      const { s, enqueued } = makeSession();
-      begin(s, enqueued);
-      enqueued[0].onDone();
-      enqueued[1].onDone(true); // settle=訊息列，reducer 未 resume
-      expect(s.state).toBe("functionMode"); // 先讓 reducer（同 settle）有機會跑
-      jest.runAllTimers();
-      expect(s.state).toBe("active");
-      expect(s._renderMode).toBe("buffer");
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  test("reducer 已 resume（clean-list 命中）→ 延遲檢查不重複動作", () => {
-    jest.useFakeTimers();
-    try {
-      const { s, enqueued } = makeSession();
-      begin(s, enqueued);
-      enqueued[0].onDone();
-      enqueued[1].onDone(true);
-      s.state = "active"; // 模擬同 settle 的 reducer resume
-      s._renderMode = "buffer";
-      jest.runAllTimers();
-      expect(s.state).toBe("active");
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  test("jump 段失敗（目標被刪/怪畫面）→ 不送 key、resume 回 buffer", () => {
+  test("離板 → menu settle → idle；重進板 clean-list → 重新 engage 不受 hold 影響", () => {
     const { s, enqueued } = makeSession();
-    begin(s, enqueued);
-    enqueued[0].onFail("timeout");
-    expect(enqueued.length).toBe(1); // key 未入列
-    expect(s.state).toBe("active");
-    expect(s._renderMode).toBe("buffer");
-  });
-});
-
-describe("v5/M3：相對命令第二腿 \\f 確定性收尾（RTT 自適應 timeout 退役）", () => {
-  // 舊：沒命中＝零回應，只能靠 RTT 自適應 timeout 收尾（不變量 12）。
-  // v5：第二腿掛 fullRepaint（keys 尾附 \f）→ 沒命中也必得一幀全幅重繪 →
-  // 任一 settle 即回應，timeout 僅剩 queue 探針的觸發器（固定值即可）。
-  test("第二腿掛 fullRepaint、timeout 固定（不再 RTT 計算）", () => {
-    const { s, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
     s.state = "active";
     s._selectedNum = 42;
-    s.onKeyDown(keyEvent("["));
-    enqueued[0].onDone();
-    const leg2 = enqueued[1];
-    expect(leg2.kind).toBe("relative-command");
-    expect(leg2.fullRepaint).toBe(true);
-    expect(leg2.timeoutMs).toBe(3000);
-    expect(leg2.expect()).toBe(true); // 任一 settle 即完成
+    s.onKeyDown(keyEvent("z"));
+    enqueued[0].onDone(); // 切原生（hold）
+    const menuFacts = { kind: "menu", boardName: null, rowTexts: [], nums: [], rows: 24, curY: 5, curX: 0, cursorRowNum: null };
+    s._dispatch(s._settleEvent(menuFacts), menuFacts);
+    expect(s.state).toBe("idle");
+    expect(s._nativeHold).toBe(false); // cleanup 解除
   });
 });
 
@@ -609,8 +565,8 @@ describe("native excursion 一律拋棄 cache（多輪搜尋/過濾汙染回歸�
     };
   }
 
-  test("airlock 二連擊（Z 過濾情境）→ 回 clean-list settle 必 rebuild（丟舊 buffer）", () => {
-    const { s } = makeSession();
+  test("單按 Z 切原生（過濾情境）→ 開文返回後必 rebuild（丟舊 buffer）", () => {
+    const { s, enqueued } = makeSession();
     let resets = 0;
     s._view.flashListHint = () => {};
     s._view.resetListAccumulation = () => resets++;
@@ -619,17 +575,23 @@ describe("native excursion 一律拋棄 cache（多輪搜尋/過濾汙染回歸�
     s._boardName = "movie";
     s._selectedNum = 42;
     s._termBuf.listLineNums = [41, 42, 43]; // 舊搜尋殘留 buffer
-    s.onKeyDown(keyEvent("Z"));
-    s.onKeyDown(keyEvent("Z")); // 氣閘 → functionMode（原生過濾）
+    s.onKeyDown(keyEvent("Z")); // 單按 → passthrough（sync→原生過濾）
+    enqueued[0].onDone();
     expect(s.state).toBe("functionMode");
-    // 原生 Z 過濾完成，回到同板名清單、落點序號恰在舊 buffer 內
+    // 黏性 hold：原生過濾完成的 clean-list settle 停在鏡像（不彈回）
     const facts = cleanListFacts("movie", 42);
+    s._dispatch(s._settleEvent(facts), facts);
+    expect(s.state).toBe("functionMode");
+    // 開文 → 返回：hold 解除、_boardName 已清 → 必 rebuild，不得 merge 舊 buffer
+    const articleFacts = { kind: "article", boardName: null, rowTexts: [], nums: [], rows: 24, curY: 23, curX: 0, cursorRowNum: null };
+    s._dispatch(s._settleEvent(articleFacts), articleFacts);
+    expect(s.state).toBe("suspended");
     s._dispatch(s._settleEvent(facts), facts);
     expect(s.state).toBe("active");
     expect(resets).toBeGreaterThanOrEqual(1); // 必 rebuild，不得只 resume
   });
 
-  test("開文 timeout 自癒（open-timeout→functionMode）→ 回列表同樣必 rebuild", () => {
+  test("開文 timeout 自癒（open-timeout→functionMode）→ hold 停原生；開文返回後必 rebuild", () => {
     const { s } = makeSession();
     let resets = 0;
     s._view.resetListAccumulation = () => resets++;
@@ -642,11 +604,17 @@ describe("native excursion 一律拋棄 cache（多輪搜尋/過濾汙染回歸�
     expect(s.state).toBe("functionMode");
     const facts = cleanListFacts("movie", 42);
     s._dispatch(s._settleEvent(facts), facts);
+    expect(s.state).toBe("functionMode"); // 黏性
+    const articleFacts = { kind: "article", boardName: null, rowTexts: [], nums: [], rows: 24, curY: 23, curX: 0, cursorRowNum: null };
+    s._dispatch(s._settleEvent(articleFacts), articleFacts);
+    s._dispatch(s._settleEvent(facts), facts);
     expect(s.state).toBe("active");
     expect(resets).toBeGreaterThanOrEqual(1);
   });
 
-  test("反向守護：相對命令（[）配對完成的 resume 不 rebuild（快路徑不退化）", () => {
+  test("反向守護：← 離板交易（frozen、保留 _boardName）回 clean-list 只 resume 不 rebuild", () => {
+    // MODE_SELECT 退出/thread hop 落回列表：frozen 交易非原生 excursion，
+    // 快路徑（resume-buffer only）不得退化成全 rebuild。
     const { s, enqueued } = makeSession();
     let resets = 0;
     s._view.resetListAccumulation = () => resets++;
@@ -654,12 +622,11 @@ describe("native excursion 一律拋棄 cache（多輪搜尋/過濾汙染回歸�
     s._renderMode = "buffer";
     s._boardName = "movie";
     s._selectedNum = 42;
+    s._serverNum = 42; // 已同步 → 直送離板鍵
     s._termBuf.listLineNums = [41, 42, 43];
-    s.onKeyDown(keyEvent("[")); // begin-relative：frozen 交易，非原生 excursion
+    s.onKeyDown(keyEvent("ArrowLeft"));
     expect(s.state).toBe("functionMode");
-    enqueued[0].onDone(); // sync-jump 完成
-    enqueued[1].onDone(true); // key 命令完成
-    // 配對完成的 clean-list settle（同板名、落點在 buffer 內）→ 只 resume
+    enqueued[0].onDone(); // leave-board 完成（落回 clean-list）
     const facts = cleanListFacts("movie", 43);
     s._dispatch(s._settleEvent(facts), facts);
     expect(s.state).toBe("active");
@@ -677,24 +644,23 @@ describe("functionMode clean-list settle 的 in-flight 吸收（相對命令配�
     engageEligible: false,
     ...extra,
   });
-  test("in-flight（relative-sync-jump/relative-command）→ stay 鏡像", () => {
+  test("in-flight（native-sync-jump）→ stay 鏡像", () => {
     expect(
       transitionListSession(
         "functionMode",
-        settle("clean-list", { inFlightKind: "relative-sync-jump" })
-      )
-    ).toEqual({ next: "functionMode", actions: [] });
-    expect(
-      transitionListSession(
-        "functionMode",
-        settle("clean-list", { inFlightKind: "relative-command" })
+        settle("clean-list", { inFlightKind: "native-sync-jump" })
       )
     ).toEqual({ next: "functionMode", actions: [] });
   });
-  test("配對完成（無 in-flight）→ resume 採用落點游標", () => {
+  test("配對完成（無 in-flight、無 hold——leave/jump 交易）→ resume 採用落點游標", () => {
     expect(transitionListSession("functionMode", settle("clean-list"))).toEqual({
       next: "active",
       actions: ["resume-buffer"],
     });
+  });
+  test("nativeHold（passthrough/自癒 excursion）→ 一律 stay 鏡像（黏性原生）", () => {
+    expect(
+      transitionListSession("functionMode", settle("clean-list", { nativeHold: true }))
+    ).toEqual({ next: "functionMode", actions: [] });
   });
 });

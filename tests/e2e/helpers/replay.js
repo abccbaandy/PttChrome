@@ -227,11 +227,23 @@ async function replayListCassette(page, cassette) {
         up: (d) => d === '\x1b[A',
         slash: (d) => d === '/',
         cancel: (d) => d === '\r',
-        // v5 T2 交易（M3）：'v' 已读设定第一腿；query = 搜寻关键字提交
-        //（录制时 extra.query 记下关键字，精确比对；旧卷无 query 退宽松）。
+        // 'v' 已读设定（2026-07-10 起为 passthrough 代送，bytes 不变）。
         mark: (d) => d === 'v',
-        query: (d, step) =>
-          step.query != null ? d === step.query + '\r' : /^[^\r]+\r$/.test(d),
+        // query：搜寻关键字提交。passthrough 后关键字是「原生逐键打字」送出
+        //（一键一个 send，convSend 逐字 Big5），不再是旧交易的整串 kw+\r——
+        // 门控改为在 step 上累积，累到 \r 结尾且（有记录 query 时）与其 Big5
+        // 相符才喂。录制侧 recv 不变，只是匹配层聚合。
+        query: (d, step) => {
+          step.__acc = (step.__acc || '') + d;
+          if (step.__acc.charAt(step.__acc.length - 1) !== '\r') return false;
+          if (step.query == null) return step.__acc.length > 1;
+          const want = step.query + '\r';
+          const acc = step.__acc;
+          step.__acc = '';
+          // ASCII 关键字直接比；非 ASCII（送出的是 Big5 bytes，与录制的 UTF-16
+          // query 无法在此层直接比对）验到 \r 即喂——顺序门控已保证语境正确。
+          return /^[\x00-\x7f]*$/.test(want) ? acc === want : true;
+        },
       };
       // 冪等 jump 重播：真 server 對「跳同一序號」永遠回同一畫面。demand 的
       // 隱藏列（刪除文）會讓錨定鏈多消耗一個 jump step，之後開文的 open-jump

@@ -367,7 +367,7 @@ test.describe('文章列表好讀模式（live）', () => {
     }
   });
 
-  test('v5 T2 搜尋交易：/ → frozen＋輸入框收參 → 提交進 MODE_SELECT → ← 退回主列表', async ({ page }) => {
+  test('/ 一鍵切原生搜尋：黏性停原生（MODE_SELECT）→ 開文返回才恢復好讀', async ({ page }) => {
     test.setTimeout(120000);
     const logs = attachConsole(page);
     try {
@@ -388,46 +388,54 @@ test.describe('文章列表好讀模式（live）', () => {
       const mainMin = Math.min(...seeded.nums.filter((n) => Number.isFinite(n)));
       console.log('[test] mainMin=' + mainMin + ' seededLen=' + seeded.nums.length);
 
-      // '/'：v5 交易化——frozen 凍結（不裸露原生 prompt 畫面）＋輸入框收參。
+      // '/'：一鍵切原生（2026-07-10 passthrough）——sync 腿後切原生鏡像＋代送 '/'，
+      // server 的搜尋 prompt 直接在原生畫面顯示，關鍵字對終端打字。
+      // 關鍵字用 ASCII 'Re'（標題 Re: 常見恆有命中）：Playwright keyboard.type
+      // 對 CJK 不產生 keypress、打不進終端（中文輸入走原生 convSend u2b 打字
+      // 路徑，非列表功能特有，不在此鎖）。
       await page.locator('#t').focus();
       await page.keyboard.press('/');
-      await page.waitForSelector('input[data-list-input]', { timeout: 10000 });
-      const fm = await waitFor(page, (x) => x.state === 'functionMode');
-      expect(fm.renderMode).toBe('frozen'); // 非 native——封閉互動
-      // 中文關鍵字：commit 腿必須 u2b 轉 Big5（raw UTF-16 = 亂碼、搜不到——
-      // 2026-07-07 使用者回報 bug 的 live 鎖）。[閒聊] 分類屬標題一部分，恆有命中。
-      await page.locator('input[data-list-input]').fill('閒聊');
+      const fm = await waitFor(
+        page,
+        (x) => x.state === 'functionMode' && x.renderMode === 'native',
+        10000
+      );
+      expect(fm.renderMode).toBe('native');
+      await page.waitForTimeout(800); // 等 prompt 畫面到齊再打字
+      await page.keyboard.type('Re', { delay: 50 });
       await page.keyboard.press('Enter');
 
-      // NEWDIRECT 全幅重建 → rebuild 進 MODE_SELECT 清單（序號空間獨立）。
-      const sel = await waitFor(page, (x) => x.state === 'active' && x.queueIdle, 20000);
-      expect(sel.renderMode).toBe('buffer');
-      // MODE_SELECT 清單：畫面 header 板名前綴變「系列」、序號空間獨立（遠小
-      // 於主列表 35 萬級）。
-      expect(sel.row0).toContain('系列');
-      const selNums = sel.nums.filter((n) => Number.isFinite(n));
-      expect(selNums.length).toBeGreaterThan(0);
-      const selMax = Math.max(...selNums);
-      expect(selMax).toBeLessThan(mainMin);
+      // 黏性原生（2026-07-10 UX）：搜尋結果（MODE_SELECT）以原生鏡像顯示，
+      // 停在原生不彈回好讀（dump 的 nums 是 buffer 序號、hold 期間不更新，
+      // 以畫面 row0「系列」判定）。
+      const sel = await waitFor(
+        page,
+        (x) => x.state === 'functionMode' && x.row0.includes('系列'),
+        20000
+      );
+      expect(sel.renderMode).toBe('native');
 
-      // ← 退出 select（leave 交易）→ 回主列表 rebuild（主序號空間）。
-      // 注意：pttbbs 退出 select 後主列表游標落在「帳號已讀進度」處（不是進
-      // select 前的位置），v5 re-seed 忠實採用 server 落點、fill 只向上補——
-      // buffer 不保證含進板時取樣的最新序號（mainMin 可能在落點下方）。判準
-      // 改「序號回到主空間」：任一序號 > select 空間即回主列表。
+      // ← 原生退出 select → 回主列表，仍停原生（黏性）。
       await page.keyboard.press('ArrowLeft');
       const back = await waitFor(
         page,
-        (x) =>
-          x.state === 'active' &&
-          x.queueIdle &&
-          !x.selectMode &&
-          x.nums.some((n) => Number.isFinite(n) && n > selMax),
+        (x) => x.state === 'functionMode' && !x.row0.includes('系列'),
         20000
       );
-      expect(back.renderMode).toBe('buffer');
-      expect(back.cursorHidden).toBe(true);
-      expect(back.row0).not.toContain('系列');
+      expect(back.renderMode).toBe('native');
+
+      // 開文 → 返回列表：hold 解除、恢復好讀（rebuild，excursion 後 cache 不可信）。
+      await page.keyboard.press('Enter');
+      await waitFor(page, (x) => x.state === 'suspended', 25000);
+      await page.locator('#t').focus();
+      await page.keyboard.press('ArrowLeft');
+      const resumed = await waitFor(
+        page,
+        (x) => x.state === 'active' && x.queueIdle,
+        20000
+      );
+      expect(resumed.renderMode).toBe('buffer');
+      expect(resumed.cursorHidden).toBe(true);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -435,7 +443,7 @@ test.describe('文章列表好讀模式（live）', () => {
     }
   });
 
-  test('v5 T2 已讀設定交易：v → frozen＋選單 → Esc 取消（\\r 收 getdata）→ resume', async ({ page }) => {
+  test('v 一鍵切原生：v → 原生 prompt → Enter 取消 → 黏性停原生', async ({ page }) => {
     test.setTimeout(120000);
     const logs = attachConsole(page);
     try {
@@ -446,23 +454,22 @@ test.describe('文章列表好讀模式（live）', () => {
       const s = await enterBoardWithListER(page, 'C_Chat');
       expect(s.state).toBe('active');
 
+      // v（已讀設定）：passthrough——sync 腿後切原生，getdata prompt 由原生畫面接手。
       await page.locator('#t').focus();
       await page.keyboard.press('v');
-      await page.waitForFunction(
-        () =>
-          window.__app.listSession._paramMode &&
-          window.__app.listSession._paramMode.type === 'mark',
-        null,
-        { timeout: 10000 }
+      const fm = await waitFor(
+        page,
+        (x) => x.state === 'functionMode' && x.renderMode === 'native',
+        10000
       );
-      // frozen 快照：畫面仍是列表視窗（server prompt 不裸露）。
-      const fm = await waitFor(page, (x) => x.renderMode === 'frozen');
-      expect(fm.state).toBe('functionMode');
-
-      await page.keyboard.press('Escape'); // 取消 → \r 收 getdata → FULLUPDATE
-      const back = await waitFor(page, (x) => x.state === 'active' && x.queueIdle, 20000);
-      expect(back.renderMode).toBe('buffer');
-      expect(back.cursorHidden).toBe(true);
+      expect(fm.renderMode).toBe('native');
+      await page.waitForTimeout(800); // 等 prompt 畫面到齊
+      await page.keyboard.press('Enter'); // 空 Enter 取消 → FULLUPDATE 清單重繪
+      // 黏性 hold：取消後停在原生鏡像，不自動彈回好讀。
+      await page.waitForTimeout(2000);
+      const back = await dumpListState(page);
+      expect(back.state).toBe('functionMode');
+      expect(back.renderMode).toBe('native');
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -581,14 +588,31 @@ test.describe('文章列表好讀模式（live）', () => {
       s = await settledActive('click-noop');
       expect(s.selectedNum).toBe(selBeforeClick);
 
-      // 站 5：未列鍵 no-op（單按 x：淡出提示、狀態不動、不裸露原生）。
+      // 站 5：passthrough excursion——未列鍵單按切原生後「黏住」（2026-07-10 UX：
+      // 不自動彈回，反覆 [ ] 不再閃動）；原生下 ]、v、/ 全直通。
       await page.keyboard.press('x');
-      await page.waitForTimeout(400);
-      s = await settledActive('noop-key');
+      await waitFor(page, (x) => x.state === 'functionMode' && x.renderMode === 'native', 10000);
+      await page.keyboard.press(']'); // 原生直通：同標題跳文
+      await page.waitForTimeout(800);
+      let hold = await dumpListState(page);
+      expect(hold.state).toBe('functionMode'); // 黏住，不彈回
+      await page.keyboard.press('v'); // 原生 prompt
+      await page.waitForTimeout(800);
+      await page.keyboard.press('Enter'); // 取消
+      await page.waitForTimeout(800);
+      await page.keyboard.press('/'); // 原生搜尋 prompt
+      await page.waitForTimeout(800);
+      await page.keyboard.press('Enter'); // 取消
+      await page.waitForTimeout(800);
+      hold = await dumpListState(page);
+      expect(hold.state).toBe('functionMode'); // 全程停原生
 
-      // 站 6：相對命令 ]（T2 交易：jump→key 配對＋\f 收尾）。
-      await page.keyboard.press(']');
-      s = await settledActive('relative');
+      // 站 6：excursion 收尾——開文（article 解除 hold）→ ← 返回恢復好讀。
+      await page.keyboard.press('Enter');
+      await waitFor(page, (x) => x.state === 'suspended', 25000);
+      await page.locator('#t').focus();
+      await page.keyboard.press('ArrowLeft');
+      s = await settledActive('excursion-back');
 
       // 站 7：數字跳號 overlay——Esc 取消（零 server）。
       await page.keyboard.press('5');
@@ -596,24 +620,6 @@ test.describe('文章列表好讀模式（live）', () => {
       await page.keyboard.press('Escape');
       await page.waitForSelector('input[data-list-input]', { state: 'detached', timeout: 5000 });
       s = await settledActive('jump-cancel');
-
-      // 站 8：v 已讀設定——Esc 取消（\r 收 getdata → resume）。
-      await page.keyboard.press('v');
-      await page.waitForFunction(
-        () =>
-          window.__app.listSession._paramMode &&
-          window.__app.listSession._paramMode.type === 'mark',
-        null,
-        { timeout: 10000 }
-      );
-      await page.keyboard.press('Escape');
-      s = await settledActive('mark-cancel');
-
-      // 站 9：/ 搜尋 overlay——Esc 取消（\r 收 getdata → resume）。
-      await page.keyboard.press('/');
-      await page.waitForSelector('input[data-list-input]', { timeout: 10000 });
-      await page.keyboard.press('Escape');
-      s = await settledActive('search-cancel');
 
       // 站 10：Enter 開文 → ← 返回（re-seed）。
       for (let i = 0; i < 2; i++) {

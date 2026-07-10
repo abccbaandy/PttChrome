@@ -31,6 +31,7 @@ import {
   annotateComment,
   findPageOverlap,
   resolvePageOverlap,
+  decideAccumulateBranch,
   COMMENT_USERID_COL
 } from "../../src/js/comment_parse";
 import { parsePushInitText } from "../../src/js/string_util";
@@ -753,5 +754,64 @@ describe("parsePushInitText (easy-reading input-prompt detection)", () => {
   });
   test("rating prompt still detected", () => {
     expect(parsePushInitText("您覺得這篇文章 是好文嗎？")).toBe(true);
+  });
+});
+
+// [ ]（跳同標題上/下一篇）疊加回歸：leaveCurrentPost 的一次性 prevPageState=0 旗標
+// 被舊文章殘幀消費後，新文章第一頁走「續接」分支 → 兩篇串在同一長頁。
+// decideAccumulateBranch 是 accumulatePageLines 的分支決策純函式：
+// sticky pendingReset 只在「確認文章第一頁」時消費，另有身分自癒。
+describe("decideAccumulateBranch", () => {
+  const d = decideAccumulateBranch;
+  test("race 自癒：旗標已被舊幀吃掉，新文章第一頁（statusStart=1、零重疊、header 變了）→ rebuild", () => {
+    expect(
+      d({ prevPageState: 3, pendingReset: false, statusStart: 1, kContent: 0, hasAcc: true, headerChanged: true })
+    ).toBe("rebuild");
+  });
+  test("同篇第一頁半畫幀（零重疊但 header 未變）→ append（不得誤重建——stock-end 離線回歸）", () => {
+    expect(
+      d({ prevPageState: 3, pendingReset: false, statusStart: 1, kContent: 0, hasAcc: true, headerChanged: false })
+    ).toBe("append");
+  });
+  test("sticky 正常路徑：pendingReset 在舊文章中段幀不消費（append），到第一頁才 rebuild", () => {
+    expect(
+      d({ prevPageState: 3, pendingReset: true, statusStart: 57, kContent: 5, hasAcc: true })
+    ).toBe("append");
+    expect(
+      d({ prevPageState: 3, pendingReset: true, statusStart: 1, kContent: 0, hasAcc: true, headerChanged: true })
+    ).toBe("rebuild");
+  });
+  test("同篇強制重繪（第一頁、內容全重疊）→ append（no-op dedup 不變）", () => {
+    expect(
+      d({ prevPageState: 3, pendingReset: false, statusStart: 1, kContent: 22, hasAcc: true })
+    ).toBe("append");
+  });
+  test("functionMode resume（中段頁、有重疊）→ append", () => {
+    expect(
+      d({ prevPageState: 3, pendingReset: false, statusStart: 34, kContent: 8, hasAcc: true })
+    ).toBe("append");
+  });
+  test("transient 無狀態列：prevPageState=3 → skip；否則 rebuild", () => {
+    expect(
+      d({ prevPageState: 3, pendingReset: false, statusStart: null, kContent: 0, hasAcc: true })
+    ).toBe("skip");
+    expect(
+      d({ prevPageState: 0, pendingReset: true, statusStart: null, kContent: 0, hasAcc: false })
+    ).toBe("rebuild");
+  });
+  test("list→article 既有路徑（prevPageState!=3）→ rebuild", () => {
+    expect(
+      d({ prevPageState: 0, pendingReset: false, statusStart: 1, kContent: 0, hasAcc: false })
+    ).toBe("rebuild");
+  });
+  test("正常翻頁（statusStart>1、零重疊也一樣）→ append", () => {
+    expect(
+      d({ prevPageState: 3, pendingReset: false, statusStart: 24, kContent: 0, hasAcc: true })
+    ).toBe("append");
+  });
+  test("acc 空時第一頁零重疊（headerChanged 恆 false——無舊 header 可比）→ append（concat 到空陣列等價重建）", () => {
+    expect(
+      d({ prevPageState: 3, pendingReset: false, statusStart: 1, kContent: 0, hasAcc: false, headerChanged: false })
+    ).toBe("append");
   });
 });

@@ -495,6 +495,43 @@ export function resolvePageOverlap({ accEndRow, statusStart, kContent, maxK, acc
   return kStatus;
 }
 
+// Branch decision for term_view.accumulatePageLines — 'rebuild' (restart pageLines
+// as this screen) | 'append' (continuation de-dup) | 'skip' (transient frame).
+//
+// Fixes the [ ] same-title-jump pile-up: leaveCurrentPost's one-shot prevPageState=0
+// gets consumed by a stale old-article frame (redraw rewrites prevPageState=pageState
+// every frame), so the NEW article's first page took the continuation branch and got
+// concatenated under the old one — permanently, since accEndRow then tracks the new
+// pages. Two independent defences:
+//   sticky   — pendingReset (buf.easyReadingPendingReset) is only consumed on a
+//              CONFIRMED first article page (statusStart===1), so stale frames
+//              can't eat it;
+//   self-heal — first page (statusStart===1) with ZERO content overlap AND a
+//              CHANGED first row (the article header/author line) cannot be
+//              "the next page of the same article" → force rebuild even if some
+//              unknown path lost the flag. headerChanged is required: a
+//              half-painted repaint of the SAME article's first page also shows
+//              statusStart===1 with kContent 0 (rows not settled yet) — without
+//              the header check it would wrongly restart accumulation
+//              (stock-end offline regression). The caller compares row 0 texts
+//              (both non-blank and different).
+// statusStart==null (no status row = transient/half-painted frame): keep the current
+// behaviour — skip while continuing (prevPageState 3), rebuild otherwise.
+export function decideAccumulateBranch({
+  prevPageState,
+  pendingReset,
+  statusStart,
+  kContent,
+  hasAcc, // eslint-disable-line no-unused-vars -- kept for call-site readability
+  headerChanged
+}) {
+  if (prevPageState !== 3) return 'rebuild';
+  if (statusStart == null) return 'skip';
+  if (statusStart === 1 && (pendingReset || (kContent === 0 && headerChanged)))
+    return 'rebuild';
+  return 'append';
+}
+
 // Build a lower-cased Set from the newline-separated blacklist textarea value.
 export function parseBlacklist(str) {
   const set = new Set();

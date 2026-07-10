@@ -357,6 +357,9 @@ EasyReading.prototype._evalFunctionModeExit = function() {
   this._functionMode = false;
   if (decision === 'resume') {
     this._termBuf.prevPageState = 3;  // force accumulatePageLines continuation branch
+    // Resume = SAME article: a leftover pending-reset would make a short article's
+    // first page rebuild (drop accumulation) — clear it explicitly.
+    this._termBuf.easyReadingPendingReset = false;
     this._termBuf.lineChangeds.fill(true);
     this._termBuf.changed = true;
     this._termBuf.notify();
@@ -400,6 +403,13 @@ EasyReading.prototype.leaveCurrentPost = function() {
     this.ignoreOneUpdate = true;
   }
   this._termBuf.prevPageState = 0;
+  // Sticky companion to the one-shot prevPageState=0 above: redraw overwrites
+  // prevPageState every frame, so a stale old-article frame between here and the
+  // new article's first page can eat the one-shot and the new article would take
+  // the continuation branch (pile-up). This flag is only consumed by
+  // accumulatePageLines on a CONFIRMED first article page (statusStart===1) — see
+  // decideAccumulateBranch.
+  this._termBuf.easyReadingPendingReset = true;
   // New post → forget the previous post's page identity so its first page-down is
   // never suppressed as a "same page" by the settle recovery.
   this._lastPagedDownSignature = null;
@@ -442,6 +452,7 @@ EasyReading.prototype.enterEasyReading = function() {
   // the whole screen) instead of the same-article continuation branch, and start
   // page accumulation from empty.
   this._termBuf.prevPageState = 0;
+  this._termBuf.easyReadingPendingReset = true; // sticky twin — see leaveCurrentPost
   this._termBuf.pageLines = [];
   // Fresh article → no page has been paged-down from yet (see settle recovery dedup).
   this._lastPagedDownSignature = null;

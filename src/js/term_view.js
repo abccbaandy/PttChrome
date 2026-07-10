@@ -6,7 +6,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
-import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
+import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS } from './list_session';
 import { labelListCursorBullet, pruneListToSegment } from './list_window';
 
@@ -1169,60 +1169,86 @@ TermView.prototype = {
     // IS in pageLines). Both branches are article pages that show the overlay;
     // hideEasyReadingOverlays clears the padding again when we return to a list/menu.
     if (this.mainContainer) this.mainContainer.style.paddingBottom = '1em';
-    if (this.buf.prevPageState == 3) {
+    // parseStatusRow gates this to an article reading page AND supplies the absolute
+    // row numbers (rowIndexStart/End) that drive de-duplication — see resolvePageOverlap.
+    var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
+    var result = parseStatusRow(lastRowText);
+    var newRows = this.buf.lines.slice(0, -1); // drop the status row
+    // Only the last `newRows.length` accumulated rows can overlap, so map just
+    // the tail to text (keeps it O(screen), not O(article)).
+    var accTail = null, newTexts = null, maxK = 0, kContent = 0, headerChanged = false;
+    if (this.buf.prevPageState == 3 && result && this.buf.pageLines.length) {
+      accTail = this.buf.pageLines.slice(-newRows.length).map(rowToText);
+      newTexts = newRows.map(rowToText);
+      maxK = Math.min(accTail.length, newTexts.length);
+      kContent = findPageOverlap(accTail, newTexts);
+      // Article identity for the self-heal: accumulated first row (作者 header)
+      // vs this screen's first row — both non-blank and DIFFERENT ⇒ another
+      // article's first page (a half-painted repaint of the same first page has
+      // an equal or blank head and must not restart accumulation).
+      var accHead = rowToText(this.buf.pageLines[0]).replace(/\s+$/, '');
+      var newHead = (newTexts[0] || '').replace(/\s+$/, '');
+      headerChanged = accHead !== '' && newHead !== '' && accHead !== newHead;
+    }
+    // rebuild vs append vs skip lives in a pure function (unit-guarded): the sticky
+    // buf.easyReadingPendingReset ([ ]/leaveCurrentPost) is only consumed on a
+    // confirmed first article page, and a first page with zero content overlap
+    // plus a changed header self-heals to rebuild — both defend the
+    // same-title-jump pile-up race (prevPageState=0 eaten by a stale frame →
+    // new article concatenated under the old one). See decideAccumulateBranch.
+    var branch = decideAccumulateBranch({
+      prevPageState: this.buf.prevPageState,
+      pendingReset: !!this.buf.easyReadingPendingReset,
+      statusStart: result ? result.rowIndexStart : null,
+      kContent: kContent,
+      hasAcc: this.buf.pageLines.length > 0,
+      headerChanged: headerChanged
+    });
+    if (branch === 'append') {
       // Same article, paged down: append only the genuinely new tail. PTT re-shows
       // the previous screen's bottom at the top of the new one; resolvePageOverlap
       // measures that overlap so we skip re-adding it.
-      var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
-      // parseStatusRow gates this to an article reading page AND supplies the absolute
-      // row numbers (rowIndexStart/End) that drive de-duplication — see resolvePageOverlap.
-      var result = parseStatusRow(lastRowText);
-      if (result) {
-        var newRows = this.buf.lines.slice(0, -1); // drop the status row
-        // Only the last `newRows.length` accumulated rows can overlap, so map just
-        // the tail to text (keeps it O(screen), not O(article)).
-        var accTail = this.buf.pageLines.slice(-newRows.length).map(rowToText);
-        var newTexts = newRows.map(rowToText);
-        var maxK = Math.min(accTail.length, newTexts.length);
-        // Primary overlap = status-line row numbers (exact regardless of paint state, so
-        // a half-painted frame can't shrink k → no duplicate block). findPageOverlap's
-        // content result is the cross-check / fallback + drift guard. this._accEndRow is
-        // the article-line number of pageLines' last row (prev screen's rowIndexEnd).
-        var kContent = findPageOverlap(accTail, newTexts);
-        var beginIndex = resolvePageOverlap({
-          accEndRow: this._accEndRow,
-          statusStart: result.rowIndexStart,
-          kContent: kContent,
-          maxK: maxK,
-          accTail: accTail,
-          newTexts: newTexts
-        });
-        // Snapshot-clone the new tail (see cloneRow). pageLines is BOTH the render
-        // source (<Screen lines={pageLines}>) and the selection source (getText reads
-        // it, incl. ANSI colours). It keeps the FULL rows even for blacklisted ones,
-        // so copy still has the original text — the blacklist drop happens only at
-        // render time (Screen dropHidden). A forced redraw (pref/pusher toggle)
-        // re-enters here with the same screen; kStatus then equals maxK so beginIndex ==
-        // newRows.length and nothing is double-appended.
-        this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(beginIndex).map(cloneRow));
-        // Advance the tracked article-line position to this screen's end.
-        this._accEndRow = result.rowIndexEnd;
-      }
-    } else {
+      // Primary overlap = status-line row numbers (exact regardless of paint state, so
+      // a half-painted frame can't shrink k → no duplicate block). findPageOverlap's
+      // content result is the cross-check / fallback + drift guard. this._accEndRow is
+      // the article-line number of pageLines' last row (prev screen's rowIndexEnd).
+      var beginIndex = resolvePageOverlap({
+        accEndRow: this._accEndRow,
+        statusStart: result.rowIndexStart,
+        kContent: kContent,
+        maxK: maxK,
+        accTail: accTail || [],
+        newTexts: newTexts || newRows.map(rowToText)
+      });
+      // Snapshot-clone the new tail (see cloneRow). pageLines is BOTH the render
+      // source (<Screen lines={pageLines}>) and the selection source (getText reads
+      // it, incl. ANSI colours). It keeps the FULL rows even for blacklisted ones,
+      // so copy still has the original text — the blacklist drop happens only at
+      // render time (Screen dropHidden). A forced redraw (pref/pusher toggle)
+      // re-enters here with the same screen; kStatus then equals maxK so beginIndex ==
+      // newRows.length and nothing is double-appended.
+      this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(beginIndex).map(cloneRow));
+      // Advance the tracked article-line position to this screen's end.
+      this._accEndRow = result.rowIndexEnd;
+    } else if (branch === 'rebuild') {
       // First page of a (new) article: restart the accumulated page as this whole
       // screen and clear the per-article pusher selection.
+      // Consume the sticky flag only on a CONFIRMED first article page; a stale
+      // mid-article frame that lands here (prevPageState!=3) must not eat it, or
+      // the race the flag defends against re-opens.
+      if (result && result.rowIndexStart === 1)
+        this.buf.easyReadingPendingReset = false;
       this._selectedPusher = null;
       // New article (or re-entry into the same article): bump the instance id so
       // Screen resets the enlarge-images toggle back to default small images.
       ++this._articleInstanceId;
-      this.buf.pageLines = this.buf.lines.slice(0, -1).map(cloneRow);
+      this.buf.pageLines = newRows.map(cloneRow);
       // Seed overlap tracking from this first screen's status row (null if it's a
       // transient non-article frame — resolvePageOverlap then falls back to content).
-      var firstStatus = parseStatusRow(
-        this.buf.getRowText(this.buf.rows - 1, 0, this.buf.cols)
-      );
-      this._accEndRow = firstStatus ? firstStatus.rowIndexEnd : null;
+      this._accEndRow = result ? result.rowIndexEnd : null;
     }
+    // branch === 'skip': transient half-painted frame while continuing — leave the
+    // accumulated page untouched (footer mirror below still guards itself).
     // Footer overlay = a LIVE mirror of the REAL bottom status row (page X/Y, %,
     // (h)說明…, with the genuine colours) instead of a hardcoded string, so it always
     // matches what native shows. See _mirrorStatusRowToFooter.
@@ -1438,6 +1464,9 @@ TermView.prototype = {
     // Left the article: drop overlap tracking so a stale row number can't bias the next
     // article's first page-down (see accumulatePageLines / resolvePageOverlap).
     this._accEndRow = null;
+    // Back on a list/menu: the pending article reset (leaveCurrentPost) is moot —
+    // prevPageState!=3 already forces rebuild on the next article.
+    this.buf.easyReadingPendingReset = false;
   },
 
   updateEasyReadingReplyRow: function(row) {

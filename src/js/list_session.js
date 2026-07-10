@@ -22,6 +22,7 @@ import {
   rowToText,
 } from './comment_parse';
 import { parseStatusRow, parseListRow, u2b } from './string_util';
+import { keyEventToBytes } from './term_keyboard';
 import { readValuesWithDefault } from './pref_storage';
 import {
   moveListCursorWindow,
@@ -254,40 +255,25 @@ export function transitionListSession(state, event) {
             // locate the target pinned row by CONTENT on the settled screen →
             // arrow steps → Enter (see _beginOpenPinned).
             return { next: 'opening', actions: ['begin-open-pinned'] };
-          case 'relative':
-            // [ ] = with a numbered selection: serialized jump→key pair over a
-            // FROZEN window snapshot (not the native mirror — flashing the raw
-            // screen un-hides blacklist/deleted rows for the pair's duration).
-            // Settle semantics stay functionMode's: in-flight settles are
-            // absorbed, the completing clean-list resumes with the landed
-            // cursor, and _resumeAfterRelative handles the miss/timeout ends.
-            return { next: 'functionMode', actions: ['begin-relative'] };
           case 'leave':
             // ←/q/e: leave-board as a serialized TRANSACTION over the frozen
             // snapshot (v5: no native flash) — the response settle routes
             // through functionMode's own table (menu → cleanup, clean-list →
             // resume: MODE_SELECT exit / thread hops land back on a list).
             return { next: 'functionMode', actions: ['begin-leave'] };
-          case 'airlock':
-            // Second press of a non-whitelisted key = explicit consent to
-            // operate natively (T3 airlock). The key itself passes through.
-            return { next: 'functionMode', actions: ['enter-function-mode'] };
-          case 'mark':
-            // `v` 已讀設定 (T2): serialized v→prompt→choice transaction over
-            // the frozen snapshot; the choice/cancel is collected via overlay
-            // while the server prompt is already up (native-aligned order).
-            return { next: 'functionMode', actions: ['begin-mark'] };
-          case 'search':
-            // `/` title search (T2): '/' →prompt→keyword\r → MODE_SELECT list.
-            return { next: 'functionMode', actions: ['begin-search'] };
+          case 'passthrough':
+            // One-key native passthrough (2026-07-10, T3 airlock 退役): any
+            // non-whitelisted key switches to native in ONE press. The caller
+            // (_beginNativePassthrough) runs the optional cursor-sync leg and
+            // the actual enter-function-mode + key send — the reducer only
+            // moves the state so in-flight settles are absorbed and other keys
+            // are swallowed while the sync leg is on the wire.
+            return { next: 'functionMode', actions: [] };
           case 'transact':
             // A locally-collected parameter transaction commits (number jump):
             // the caller runs the specific begin* right after this dispatch.
             return { next: 'functionMode', actions: [] };
           default:
-            // v5 closed interaction: any non-whitelisted key is a NO-OP (the
-            // session hints; the airlock above is the explicit way out). The
-            // old catch-all「任意鍵直通→functionMode」is retired.
             return stay;
         }
       }
@@ -298,11 +284,18 @@ export function transitionListSession(state, event) {
       if (event.type === 'settle') {
         switch (event.kind) {
           case 'clean-list':
-            // A serialized relative command ([ ] = jump→key pair) is mid-flight:
+            // A serialized transaction (sync leg / leave / jump) is mid-flight:
             // its own jump-landing settle must not bounce us back to active —
-            // keep mirroring until the pair completes (the completing settle
-            // reads inFlightKind null and resumes with the LANDED cursor).
+            // keep mirroring until it completes (the completing settle reads
+            // inFlightKind null and resumes with the LANDED cursor).
             if (event.inFlightKind) return stay;
+            // Sticky native excursion (2026-07-10 UX): a passthrough/self-heal
+            // switch to native STAYS native — auto-resuming on every clean-list
+            // settle made repeated [ ] flash buffer↔native and mis-trip the
+            // catch-all banner. The hold is released only by a real context
+            // change: article (suspended → article ER takes over) or menu
+            // (idle → re-entering the board re-engages).
+            if (event.nativeHold) return stay;
             // Content-decided exit. If the landed cursor row is an article we
             // already hold AND we are on the same board, the page overwrite (in
             // redraw) is enough; otherwise rebuild from the current page
@@ -481,16 +474,8 @@ const FILL_MAX_PAGES = 3;
 // Total-row cap: bounds the map / flatten / visibleListIndices cost. The end
 // FARTHEST from the selection is evicted; demand re-fetches it later.
 export const MAX_LIST_ROWS = 300;
-// Passthrough keys that act RELATIVE to the server cursor and therefore get a
-// jump-to-selection prefix first (see _syncServerCursor). Deliberately NOT all
-// other-keys: absolute/leaving commands (←/q/s/digits) must go out alone.
-const RELATIVE_COMMAND_KEYS = ['[', ']', '='];
-
-// (v5/M3) adaptiveTimeoutMs retired: the relative pair's second leg now ends
-// deterministically — its \f tail forces a full repaint even on a miss, so a
-// zero-response wait no longer exists (old invariant 12's RTT-adaptive timeout
-// and old invariant 7 both gone; timeouts everywhere are probe TRIGGERS, not
-// signals — see command_queue.js).
+// (2026-07-10) [ ] = / v / `/` 模擬交易與 T3 airlock 皆退役：非白名單鍵一律
+// 走 _beginNativePassthrough（有序號選取先 sync-jump，再切原生鏡像＋代送）。
 
 // Owner of list easy reading. Subscribes to term_buf 'screenSettled' and runs:
 //   settle → snapshot+facts → queue.onSettle (command completion first)
@@ -534,18 +519,13 @@ export function ListSession(core, view, termBuf, queue) {
   // it can skip the sync-jump leg — one round-trip instead of two. null =
   // unknown (native excursion / probe timeout / article) → always sync first.
   this._serverNum = null;
-  // T3 airlock (v5 closed interaction): a non-whitelisted key is a no-op with
-  // a hint; pressing the SAME key again within the window is the explicit
-  // consent to leave for native ("切原生操作") — the second press passes
-  // through natively and the session mirrors (enter-function-mode).
-  this._airlockKey = null;
-  this._airlockAt = 0;
-  // T2 parameter collection (v5, M3): a transaction that needs user input
-  // (`v` mark choice / `/` keyword / number jump digits) collects it through a
-  // lightweight overlay while the serialized first leg (if any) is already on
-  // the wire. {type:'mark'} routes keys via _onParamKey; search/jump use a DOM
-  // input overlay that owns its own keyboard.
-  this._paramMode = null;
+  // (2026-07-10) T3 airlock（同鍵二連擊）與 T2 mark/search 模擬皆退役：非白名單
+  // 鍵一律走 _beginNativePassthrough（sync → 切原生 → 代送），單按即生效。
+  // Sticky native excursion: true from _enterFunctionMode until a context
+  // change (article handoff / board leave / resume) — while held, clean-list
+  // settles do NOT bounce back to the buffer render (reducer reads it via
+  // _settleEvent.nativeHold).
+  this._nativeHold = false;
   // MODE_SELECT (`/` filtered list) sub-state: its article-number space is
   // independent from the main list (protocol §8) — entering/leaving forces a
   // rebuild (via _boardName=null) so numbers never alias.
@@ -622,6 +602,7 @@ ListSession.prototype = {
       landedNumInBuffer:
         facts.cursorRowNum != null &&
         (this._termBuf.listLineNums || []).indexOf(facts.cursorRowNum) !== -1,
+      nativeHold: !!this._nativeHold,
       engageEligible: this._engageEligible()
     };
   },
@@ -705,50 +686,32 @@ ListSession.prototype = {
     if (this.state === 'opening') {
       // Serialized open in flight: swallow everything (sub-second; the open
       // timeout self-heals a wedged one). Letting keys through would race the
-      // jump/enter sequence — the exact v3 failure mode.
+      // jump/enter sequence — the exact v3 failure mode. Never silent: the
+      // user gets a hint instead of dead keys (2026-07-10「按了沒反應」).
       e.preventDefault();
-      return;
-    }
-    if (this._paramMode && this._paramMode.type === 'mark') {
-      // `v` choice collection: the server prompt is already up behind the
-      // frozen snapshot; u/v/w commits, anything else cancels (sends \r —
-      // the server-side getdata must be closed either way, zero side effect).
-      e.preventDefault();
-      this._onMarkParamKey((e.key || '').toLowerCase());
+      if (this._view.flashListHint)
+        this._view.flashListHint('好讀列表：開啟文章中，請稍候…');
       return;
     }
     if (this.state === 'functionMode' && this._renderMode === 'frozen') {
-      // A serialized transaction (relative pair / leave / T2) is in flight
-      // behind the frozen snapshot: swallow user keys — letting them through
-      // would race the serialized bytes (typeahead, protocol §2).
+      // A serialized transaction (sync leg / leave / jump) is in flight behind
+      // the frozen snapshot: swallow user keys — letting them through would
+      // race the serialized bytes (typeahead, protocol §2). A missed command
+      // can hold this for up to its timeout (~3s), so never swallow silently.
       e.preventDefault();
+      if (this._view.flashListHint)
+        this._view.flashListHint('好讀列表：指令處理中，請稍候…');
       return;
     }
     if (this.state !== 'active') return;
 
     const key = this._classifyKey(e);
-    if (key.class === 'noop') {
-      // v5 closed interaction: not on the whitelist → no-op + hint; the same
-      // key pressed twice within the window = explicit airlock to native
-      // (the second press is NOT preventDefaulted — it goes out natively).
-      const id = (e.ctrlKey ? 'C-' : '') + e.key;
-      if (this._airlockKey === id && Date.now() - this._airlockAt < 2500) {
-        this._airlockKey = null;
-        const r0 = transitionListSession(this.state, { type: 'key', keyClass: 'airlock' });
-        this.state = r0.next;
-        for (let i = 0; i < r0.actions.length; ++i) this._runAction(r0.actions[i], null);
-        return; // passthrough: the key reaches the server, we mirror
-      }
-      this._airlockKey = id;
-      this._airlockAt = Date.now();
-      e.preventDefault();
-      if (this._view.flashListHint)
-        this._view.flashListHint(
-          '好讀列表：「' + id + '」未支援 — 再按一次切至原生操作'
-        );
+    if (key.class === 'passthrough') {
+      // Non-whitelisted key: one-key switch to native (sync → mirror → send).
+      // preventDefault is decided inside (Ctrl/unmappable keys stay native).
+      this._beginNativePassthrough(e);
       return;
     }
-    this._airlockKey = null;
     e.preventDefault();
 
     if (key.class === 'jump-digit') {
@@ -765,56 +728,70 @@ ListSession.prototype = {
       if (a === 'move-selection') this._moveSelection(key.op);
       else if (a === 'begin-open') this._beginOpen();
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
-      else if (a === 'begin-relative') this._beginRelative(e.key);
       else if (a === 'begin-leave') this._beginLeave();
-      else if (a === 'begin-mark') this._beginMark();
-      else if (a === 'begin-search') this._beginSearch();
       else this._runAction(a, null);
     }
   },
 
-  // 'begin-relative' executor: freeze the window snapshot (no native flash —
-  // the raw mirror would un-hide blacklist/deleted rows), flush any prefetch,
-  // then enqueue the serialized jump→key pair. The cursor stays hidden (we
-  // never left our render). Exits: hit → resume-buffer; miss/timeout →
-  // _resumeAfterRelative; article/menu → handoff/cleanup set their own modes.
-  _beginRelative: function(keyChar) {
-    this._freezeForTransaction();
-    this._beginRelativeCommand(keyChar);
-  },
-
-  // Cursor-relative commands ([ ] = 同標題上/下篇/首篇) act from the server's
-  // REAL cursor, which local zero-network navigation leaves behind — so the key
-  // needs a jump-to-selection first. The pair MUST be serialized through the
-  // queue: sending "N\r[" in one tick trips pttbbs typeahead (input buffer
-  // non-empty → repaints skipped, protocol §2) and the screen freezes while the
-  // server state moves (the「[ 卡住但其實跳了」bug). Flow: _beginRelative
-  // already ran (flush + frozen snapshot) → jump (expect the park fingerprint)
-  // → key (any settle = its response) → that settle's reducer pass sees
-  // inFlightKind null and resumes with the LANDED cursor (native parity).
-  // Failures fall back through _resumeAfterRelative — self-healing.
-  _beginRelativeCommand: function(keyChar) {
-    const num = this._selectedNum;
-    if (num == null) return;
+  // One-key native passthrough (2026-07-10; replaces the [ ] = / v / `/`
+  // simulated transactions AND the T3 double-press airlock). Contract: any
+  // non-whitelisted key = sync the REAL cursor to the selection when needed
+  // (cursor-relative native commands act FROM it — [ ] = v; local T1 nav is
+  // zero-network so it lags), then enter-function-mode (native excursion:
+  // invariant 15 drops the cache via _boardName/_serverNum) and send the key
+  // itself. The sync leg is serialized: sending "N\r" + key in one tick trips
+  // pttbbs typeahead (protocol §2 — the old「[ 卡住但其實跳了」bug), so the
+  // key goes out raw only after the jump's park settle. While the leg is on
+  // the wire the reducer already sits in functionMode (keyClass 'passthrough')
+  // over the frozen snapshot — other keys are swallowed with a hint.
+  // Ctrl combos / unmappable keys are NOT resent: no sync (can't serialize a
+  // key we don't own), immediate mirror switch, and the event is left
+  // un-defaulted so the native keyboard path sends this very press.
+  _beginNativePassthrough: function(e) {
+    let bytes = e.ctrlKey ? null : keyEventToBytes(e);
+    // A printable non-ASCII char must go out as Big5 (raw UTF-16 = mojibake).
+    if (bytes && bytes.length === 1 && bytes.charCodeAt(0) > 127) bytes = u2b(bytes);
+    const r = transitionListSession(this.state, { type: 'key', keyClass: 'passthrough' });
+    this.state = r.next; // functionMode: absorbs settles / swallows keys meanwhile
     const self = this;
-    if (num === this._serverNum) {
-      // The real cursor is ALREADY on the selection (seed/re-seed/resume
-      // landing, or a previous relative hit) — the sync-jump leg would be a
-      // wasted round-trip. Send the key directly (v5 speed fix: native feel).
-      this._enqueueRelativeKey(keyChar);
+    const finish = function() {
+      self._enterFunctionMode(); // native excursion: flush + drop cache (inv. 15)
+      // The key goes through the QUEUE, not raw conn.send: the sync leg's own
+      // settle can be a clean-list (busy board full repaint) and the reducer
+      // runs right after queue.onSettle — with nothing in flight it would
+      // resume to the buffer immediately and the key's response would land in
+      // `active` (state churn; live soak). An in-flight 'native-key' keeps the
+      // absorption rule (functionMode + clean-list + inFlight → stay) until
+      // the key's OWN response settles; a dead key just times out and we stay
+      // in the native mirror (same picture, no harm).
+      self._queue.enqueue({
+        keys: bytes,
+        kind: 'native-key',
+        expect: function() {
+          return true; // any settle is the response
+        },
+        timeoutMs: 3000
+      });
+      if (self._view.flashListHint)
+        self._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
+    };
+    if (bytes == null) {
+      // Not resendable: switch the mirror now; the un-prevented event reaches
+      // the native keyboard handlers right after this hook returns.
+      this._enterFunctionMode();
+      if (this._view.flashListHint)
+        this._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
       return;
     }
-    this._enqueueCursorSyncJump(
-      'relative-sync-jump',
-      function() {
-        self._enqueueRelativeKey(keyChar);
-      },
-      // Jump failed (deleted target / weird screen): do NOT send the key from
-      // an unknown cursor position (the original bug) — just resume the view.
-      function() {
-        self._resumeAfterRelative();
-      }
-    );
+    e.preventDefault();
+    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+      this._freezeForTransaction();
+      // onFail too: still hand over to native + send (visible degrade — the
+      // native mirror shows whatever the server did; never a silent dead key).
+      this._enqueueCursorSyncJump('native-sync-jump', finish, finish);
+      return;
+    }
+    finish();
   },
 
   // Shared sync-jump leg: park the server's REAL cursor on the local selection
@@ -849,56 +826,6 @@ ListSession.prototype = {
         onFail();
       }
     });
-  },
-
-  // The [ ] = key itself (second leg / the ONLY leg when the server cursor is
-  // already synced). v5: \f tail — a MISS used to be a ZERO-response (only
-  // endable by an RTT-adaptive timeout, old invariant 12); with the forced
-  // full repaint every outcome answers deterministically. Any settle IS the
-  // response: a hit repaints the list (clean-list, reducer resumes with the
-  // landed cursor — _resumeBuffer re-learns _serverNum); a miss full-repaints
-  // the same list + bottom message (reducer stays functionMode — the deferred
-  // check pulls us back to the buffer render).
-  _enqueueRelativeKey: function(keyChar) {
-    const self = this;
-    // The key moves the real cursor to wherever the thread search lands —
-    // unknown until the completing settle's facts re-teach it.
-    this._serverNum = null;
-    this._queue.enqueue({
-      keys: keyChar,
-      kind: 'relative-command',
-      fullRepaint: true,
-      expect: function() {
-        return true;
-      },
-      timeoutMs: 3000,
-      // onDone runs BEFORE the same settle's reducer dispatch — defer the
-      // check one tick so a clean-list resume wins first.
-      onDone: function() {
-        setTimeout(function() {
-          self._resumeAfterRelative();
-        }, 0);
-      },
-      // Zero response (server ignored the key): back to the buffer view.
-      onFail: function() {
-        self._resumeAfterRelative();
-      }
-    });
-  },
-
-  // A relative-command pair ended without a clean-list settle to resume on
-  // (same-title miss = message row only, or timeout). The jump leg already
-  // parked the real cursor on our selection, so the buffer view is consistent
-  // — re-enter it with unchanged anchors instead of idling in the native
-  // mirror (where hidden rows reappear). The bottom-row message is dropped
-  // (the cached feeter renders instead) — native shows it until the next key.
-  _resumeAfterRelative: function() {
-    if (this.state !== 'functionMode') return; // reducer already routed us
-    this.state = 'active';
-    this._renderMode = 'buffer';
-    this._setLoading(false);
-    this._view.hideCursor();
-    this._forceRedraw();
   },
 
   // 'begin-leave' executor (v5 T2): ←/q/e as a serialized transaction over the
@@ -970,200 +897,6 @@ ListSession.prototype = {
     this._forceRedraw();
   },
 
-  // `v` 已讀設定 (protocol §7): b_mark_read_unread operates FROM THE SERVER
-  // CURSOR — `w` uses the cursor article's filename timestamp as the boundary.
-  // Local navigation is zero-network, so the real cursor sits wherever the
-  // last interaction left it: sync it to the selection with a jump leg first
-  // (same rule as the [ ] = relative pair), THEN open the getdata prompt with
-  // `v` and collect the choice via overlay. u/v/w commits `<c>\r`; anything
-  // else cancels with `\r` (the getdata MUST be closed server-side either
-  // way). Both ends return FULLUPDATE → the completing clean-list settle
-  // resumes via the reducer.
-  _beginMark: function() {
-    this._freezeForTransaction();
-    const self = this;
-    const num = this._selectedNum;
-    if (num == null) {
-      // Pinned selection: no number to jump to. u/v (whole-board) still make
-      // sense from wherever the cursor is; w's boundary is undefined for a
-      // pinned row anyway — proceed without the sync leg.
-      this._enqueueMarkPrompt();
-      return;
-    }
-    if (num === this._serverNum) {
-      // Real cursor already on the selection — skip the sync leg (one
-      // round-trip; same rule as the relative pair).
-      this._enqueueMarkPrompt();
-      return;
-    }
-    this._queue.enqueue({
-      keys: String(num) + '\r',
-      kind: 'mark-sync-jump',
-      expect: function(snap, facts) {
-        // Jump-landing park fingerprint (protocol §4 ✚: bottom row stays
-        // empty → never clean-list), same as the relative/open jump legs.
-        return (
-          facts.cursorRowNum === num &&
-          facts.curY >= 3 &&
-          facts.curY <= facts.rows - 2 &&
-          facts.curX <= 1
-        );
-      },
-      timeoutMs: 4000,
-      onDone: function() {
-        self._serverNum = num;
-        self._enqueueMarkPrompt();
-      },
-      onFail: function() {
-        self._serverNum = null;
-        self._degradeToNative('已讀設定逾時，已切至原生模式');
-      }
-    });
-  },
-
-  _enqueueMarkPrompt: function() {
-    const self = this;
-    this._queue.enqueue({
-      keys: 'v',
-      kind: 'mark-prompt',
-      expect: function(snap, facts) {
-        // Prompt fingerprint (protocol §7): the getdata line is on the screen.
-        for (let r = facts.rows - 5; r < facts.rows; ++r) {
-          if ((facts.rowTexts[r] || '').indexOf('(U)未讀') >= 0) return true;
-        }
-        return false;
-      },
-      timeoutMs: 3000,
-      onDone: function() {
-        // Parameter wait: the transaction is waiting on the USER, not the
-        // server — the loading indicator goes dark until the commit leg.
-        self._setLoading(false);
-        self._paramMode = { type: 'mark' };
-        if (self._view.showListOverlay)
-          self._view.showListOverlay(
-            '設定已讀記錄：(u)全部未讀 (v)全部已讀 (w)前已讀後未讀 — 其他鍵取消'
-          );
-      },
-      onFail: function() {
-        self._degradeToNative('已讀設定逾時，已切至原生模式'); // 顯性降級
-      }
-    });
-  },
-
-  _onMarkParamKey: function(k) {
-    this._paramMode = null;
-    if (this._view.hideListOverlay) this._view.hideListOverlay();
-    this._setLoading(true); // commit leg: waiting on the server again
-    const choice = k === 'u' || k === 'v' || k === 'w' ? k : '';
-    const self = this;
-    this._queue.enqueue({
-      keys: choice + '\r',
-      kind: 'mark-commit',
-      // b_mark_read_unread returns FULLUPDATE regardless of the choice —
-      // a deterministic clean-list tail with no \f needed (protocol §7).
-      expect: function(snap, facts) {
-        return facts.kind === 'clean-list';
-      },
-      timeoutMs: 4000,
-      // A committed choice flips the read flags of the WHOLE board, but the
-      // FULLUPDATE only repaints the current page — every other buffered row
-      // still clones the old '+' marks. Force a rebuild on the completing
-      // settle (same trick as search-commit: cleared _boardName → the reducer
-      // path adds 'rebuild'), or the change looks like a no-op (v5/M4 fix).
-      // A cancel (bare \r) changed nothing — resume the buffer untouched.
-      onDone: choice
-        ? function() {
-            self._boardName = null;
-          }
-        : undefined,
-      onFail: function() {
-        self._degradeToNative('已讀設定逾時，已切至原生模式');
-      }
-    });
-  },
-
-  // `/` title search: send '/' immediately (server opens the search getdata),
-  // collect the keyword via an input overlay, commit `<kw>\r` → NEWDIRECT full
-  // rebuild of the MODE_SELECT list (protocol §8). Its number space is
-  // independent → force a rebuild by clearing _boardName before the completing
-  // settle (reducer: boardNameMatch false → resume-buffer + rebuild). Cancel /
-  // empty keyword sends bare \r (READ_REDRAW back to the same list).
-  _beginSearch: function() {
-    this._freezeForTransaction();
-    const self = this;
-    this._queue.enqueue({
-      keys: '/',
-      kind: 'search-prompt',
-      expect: function(snap, facts) {
-        // getdata prompt at the bottom row (protocol §5/§8).
-        return (
-          facts.curY === facts.rows - 1 &&
-          (facts.rowTexts[facts.rows - 1] || '').indexOf('標題') >= 0
-        );
-      },
-      timeoutMs: 3000,
-      onDone: function() {
-        if (!self._view.promptListInput) {
-          // No UI available (tests/degraded): close the prompt server-side.
-          self._commitSearch(null);
-          return;
-        }
-        // Parameter wait (see _beginMark): loading off while the user types.
-        self._setLoading(false);
-        self._view.promptListInput('搜尋標題：', '', function(kw) {
-          self._commitSearch(kw);
-        });
-      },
-      onFail: function() {
-        self._degradeToNative('搜尋逾時，已切至原生模式');
-      }
-    });
-  },
-
-  _commitSearch: function(kw) {
-    const self = this;
-    this._setLoading(true); // commit leg: waiting on the server again
-    if (!kw) {
-      // Cancel: close the getdata; READ_REDRAW repaints the same clean list.
-      this._queue.enqueue({
-        keys: '\r',
-        kind: 'search-cancel',
-        expect: function(snap, facts) {
-          return facts.kind === 'clean-list';
-        },
-        timeoutMs: 4000,
-        onFail: function() {
-          self._degradeToNative('搜尋取消逾時，已切至原生模式');
-        }
-      });
-      return;
-    }
-    this._queue.enqueue({
-      // The queue's send is the RAW conn.send (bytes on the wire) — a non-ASCII
-      // keyword must be converted to Big5 here (typed input goes through
-      // conn.convSend which does the same u2b; raw UTF-16 chars = mojibake and
-      // the search silently matches nothing).
-      keys: u2b(kw) + '\r',
-      kind: 'search-commit',
-      expect: function(snap, facts) {
-        // Hit: NEWDIRECT full rebuild (clean-list, independent numbers).
-        // Miss (no match): READ_REDRAW back to the original list — also
-        // clean-list; _selectMode only latches on the hit path below.
-        return facts.kind === 'clean-list';
-      },
-      timeoutMs: 5000,
-      onDone: function() {
-        // Force rebuild on the completing settle: the landed list's number
-        // space may be MODE_SELECT's (independent) — never merge (§8).
-        self._selectMode = true;
-        self._boardName = null;
-      },
-      onFail: function() {
-        self._degradeToNative('搜尋逾時，已切至原生模式');
-      }
-    });
-  },
-
   // Number jump: digits collected locally (overlay input), one serialized
   // jump transaction on commit. The landing page may be far outside the
   // buffer → rebuild from the landed facts instead of resuming stale anchors.
@@ -1215,11 +948,13 @@ ListSession.prototype = {
     });
   },
 
-  // Key → whitelist class (v5 closed interaction; the enumeration IS the
-  // contract — docs/easy-reading-list.md §操作分類). Anything not matched is
-  // 'noop' (hint + airlock double-press), never a silent passthrough.
+  // Key → whitelist class (the enumeration IS the contract —
+  // docs/easy-reading-list.md §操作分類). Whitelist = navigation / open /
+  // number jump / leave; anything else is 'passthrough' (one-key switch to
+  // native + resend, _beginNativePassthrough) — never a SILENT passthrough,
+  // and never a swallowed dead key (the retired noop/airlock pair).
   _classifyKey: function(e) {
-    if (e.ctrlKey) return { class: 'noop' }; // Ctrl-P 發文 etc. → airlock
+    if (e.ctrlKey) return { class: 'passthrough' }; // Ctrl-P 發文 etc.
     switch (e.key) {
       case 'ArrowUp':
       case 'k':
@@ -1244,26 +979,11 @@ ListSession.prototype = {
         // Leave-board family (read.c:712 q/e/KEY_LEFT) — high-frequency, so a
         // first-class serialized transaction rather than an airlock.
         return { class: 'leave' };
-      case 'v':
-        // 已讀設定 (b_mark_read_unread, protocol §7) — T2 transaction.
-        return { class: 'mark' };
-      case '/':
-        // Title search → MODE_SELECT (protocol §8) — T2 transaction.
-        return { class: 'search' };
       default:
         // Number jump (T2): digits collect locally in an overlay; committing
         // runs a single serialized jump transaction (_beginJumpNumber).
         if (/^[0-9]$/.test(e.key)) return { class: 'jump-digit', digit: e.key };
-        // Cursor-relative commands with a numbered selection are serialized
-        // (jump → key via the queue): we own the bytes, so the key itself must
-        // NOT pass through (typeahead would swallow the repaints — the「[ 卡住」
-        // bug). A pinned selection has no number to jump to → noop.
-        if (
-          RELATIVE_COMMAND_KEYS.indexOf(e.key) !== -1 &&
-          this._selectedNum != null
-        )
-          return { class: 'relative' };
-        return { class: 'noop' };
+        return { class: 'passthrough' };
     }
   },
 
@@ -1277,6 +997,7 @@ ListSession.prototype = {
   // ---- actions ---------------------------------------------------------------
 
   _seed: function(facts) {
+    this._nativeHold = false;
     this._breakChain();
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];
@@ -1749,6 +1470,7 @@ ListSession.prototype = {
   // buffer maps are KEPT — coming back re-seeds from the server's landing
   // (suspended → clean-list → resume-buffer), no saved anchors needed (v5/M4).
   _handoffArticle: function() {
+    this._nativeHold = false; // context change: the article releases the hold
     this._setLoading(false);
     this._serverNum = null;
     this._breakChain();
@@ -1768,6 +1490,7 @@ ListSession.prototype = {
   // the specific wording). facts null = an explicit entry (airlock consent,
   // internal callers) — no banner.
   _enterFunctionMode: function(facts) {
+    this._nativeHold = true; // sticky: stay native until article/menu/resume
     this._setLoading(false);
     this._serverNum = null; // native excursion: the cursor goes wherever
     // Native excursion = the LISTING is no longer trusted either: any native
@@ -1786,8 +1509,8 @@ ListSession.prototype = {
     if (facts && this._view.flashListHint) {
       this._view.flashListHint(
         isWaterballSettle(facts)
-          ? '收到水球／廣播，已切至原生模式（回到列表畫面自動恢復好讀）'
-          : '畫面偏離列表格式，已切至原生模式（回到列表畫面自動恢復好讀）',
+          ? '收到水球／廣播，已切至原生模式（開啟文章或離開看板後恢復好讀）'
+          : '畫面偏離列表格式，已切至原生模式（開啟文章或離開看板後恢復好讀）',
         4000
       );
     }
@@ -1809,6 +1532,7 @@ ListSession.prototype = {
   },
 
   _resumeBuffer: function(facts) {
+    this._nativeHold = false;
     this._breakChain();
     this._renderMode = 'buffer';
     this._setLoading(false);
@@ -1838,11 +1562,11 @@ ListSession.prototype = {
   },
 
   _cleanup: function() {
+    this._nativeHold = false;
     this._serverNum = null;
     this._breakChain();
     this._queue.flush();
     this._setLoading(false);
-    this._paramMode = null;
     this._selectMode = false;
     if (this._view.hideListOverlay) this._view.hideListOverlay();
     this._renderMode = 'native';

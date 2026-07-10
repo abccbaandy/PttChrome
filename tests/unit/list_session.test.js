@@ -286,15 +286,13 @@ describe("transitionListSession (full table)", () => {
     T("active", key("nav"), "active", ["move-selection"]);
     T("active", key("open"), "opening", ["begin-open"]);
     T("active", key("open-pinned"), "opening", ["begin-open-pinned"]); // End+內容定位序列
-    // v5 封閉互動：未列鍵（含舊 'other'）＝no-op stay，不再任意鍵墜落 native
+    // 未知 keyClass（防禦）＝stay
     T("active", key("other"), "active", []);
-    T("active", key("noop"), "active", []);
     // ←/q/e 離板＝交易化（frozen＋leave-board 佇列）
     T("active", key("leave"), "functionMode", ["begin-leave"]);
-    // T3 氣閘二連擊＝顯式切原生
-    T("active", key("airlock"), "functionMode", ["enter-function-mode"]);
-    // [ ] = 相對命令（有序號選取）＝一級公民：frozen 配對，不走 native 鏡像
-    T("active", key("relative"), "functionMode", ["begin-relative"]);
+    // 非白名單鍵＝一鍵切原生（2026-07-10）：reducer 只轉態（sync 腿在途吸收
+    // settle/吞鍵），enter-function-mode＋代送由 _beginNativePassthrough 執行
+    T("active", key("passthrough"), "functionMode", []);
     T("active", { type: "pref-off" }, "idle", ["cleanup"]);
   });
 
@@ -656,59 +654,6 @@ describe("_seed 落點短頁向下補頁（問題1：進版中段空白不補；
   });
 });
 
-describe("v 已讀設定 commit（v5/M4 fix）", () => {
-  // b_mark_read_unread 改的是「整個看板」的未讀旗標，但 FULLUPDATE 只重繪
-  // 當前一頁——緩衝裡其餘幾百列的 '+' 標記全是舊 clone。commit 完成必須
-  // 觸發 rebuild（同 '/' 搜尋：清 _boardName → 完成 settle 的 reducer 走
-  // boardNameMatch=false → resume-buffer + rebuild），否則「v 沒效果」。
-  // b_mark_read_unread 以「server 真游標」所在文章為操作基準（W 用游標文章
-  // 檔名時間戳當分界，protocol §7）。本地導航零網路 → server 游標停在上次
-  // 互動處——不先 jump 同步就送 v，W 分界會是舊位置（「w 位置不對/沒跳到
-  // 該文章」bug）。與 [ ] = 相對命令同規則：jump-to-selection 前置腿。
-  test("begin-mark 先同步 server 游標（jump→v），選取序號＝jump 目標", () => {
-    const { s, enqueued } = demandSession({ count: 60 });
-    s._selectedNum = 115;
-    s._beginMark();
-    expect(enqueued.length).toBe(1);
-    expect(enqueued[0].kind).toBe("mark-sync-jump");
-    expect(enqueued[0].keys).toBe("115\r");
-    // jump 落點指紋（park 在 entry 區、游標列＝目標序號；§4 ✚ 底列空）
-    expect(
-      enqueued[0].expect(null, { cursorRowNum: 115, curY: 5, curX: 1, rows: 24 })
-    ).toBeTruthy();
-    expect(
-      enqueued[0].expect(null, { cursorRowNum: 114, curY: 5, curX: 1, rows: 24 })
-    ).toBeFalsy();
-    // jump 完成 → 才送 v（getdata prompt 交易）
-    enqueued[0].onDone();
-    expect(enqueued.length).toBe(2);
-    expect(enqueued[1].kind).toBe("mark-prompt");
-    expect(enqueued[1].keys).toBe("v");
-  });
-
-  test("commit 送 <choice>\\r，onDone 清 _boardName 強制 rebuild", () => {
-    const { s, enqueued } = demandSession({ count: 60 });
-    s.state = "functionMode";
-    s._paramMode = { type: "mark" };
-    s._onMarkParamKey("u");
-    expect(enqueued.length).toBe(1);
-    expect(enqueued[0].kind).toBe("mark-commit");
-    expect(enqueued[0].keys).toBe("u\r");
-    expect(typeof enqueued[0].onDone).toBe("function");
-    enqueued[0].onDone();
-    expect(s._boardName).toBeNull();
-  });
-  test("取消（非 u/v/w）只送 \\r 收 getdata，不 rebuild", () => {
-    const { s, enqueued } = demandSession({ count: 60 });
-    s.state = "functionMode";
-    s._paramMode = { type: "mark" };
-    s._onMarkParamKey("escape");
-    expect(enqueued[0].keys).toBe("\r");
-    if (enqueued[0].onDone) enqueued[0].onDone();
-    expect(s._boardName).toBe("C_Chat");
-  });
-});
-
 describe("鏈式 prefetch（同方向連補免重複錨定 jump，round-trip 減半）", () => {
   // 錨定命令對＝jump＋PgDn 兩個序列化 round-trip。同方向連續補頁時 server
   // 游標位置已知（上一 PgDn 的落點），直送 PgDn 即可；任何外部活動（flush／
@@ -937,33 +882,6 @@ function pageFacts(startNum, cursorNum, count = 20) {
   };
 }
 
-describe("bug：/ 搜尋中文關鍵字（queue 送鍵須轉 Big5）", () => {
-  // 一般打字走 conn.convSend（u2b），queue 的 send 是 raw conn.send——
-  // 中文 kw 直接以 UTF-16 charCode 出線＝亂碼，搜尋結果全錯。
-  // commit 腿必須先 u2b。ASCII 不受影響。
-  beforeEach(() => {
-    // string_util.u2b 查全域 lib.u2bArray：stub 一個「動」(U+52D5) 的映射。
-    global.lib = { u2bArray: [] };
-    global.lib.u2bArray[2 * 0x52d5] = 0xaa;
-    global.lib.u2bArray[2 * 0x52d5 + 1] = 0xbb;
-  });
-  afterEach(() => {
-    delete global.lib;
-  });
-  test("commit 中文 kw → keys 為 Big5 bytes＋\r（現行 raw UTF-16 → 紅）", () => {
-    const { s, enqueued } = demandSession({ count: 60 });
-    s._commitSearch("動");
-    expect(enqueued.length).toBe(1);
-    expect(enqueued[0].kind).toBe("search-commit");
-    expect(enqueued[0].keys).toBe("\xaa\xbb\r");
-  });
-  test("ASCII kw 原樣送出", () => {
-    const { s, enqueued } = demandSession({ count: 60 });
-    s._commitSearch("Re");
-    expect(enqueued[0].keys).toBe("Re\r");
-  });
-});
-
 describe("bug：rebuild 落點下方未緩衝 → 自動 demand-down（不等使用者按鍵）", () => {
   // 症狀：搜尋退出回主列表（rebuild），落點＝帳號已讀進度、fill 只向上，
   // 視窗下方整片空白，要動一下鍵盤才開始讀取。rebuild 後必須自動補下方。
@@ -1020,31 +938,47 @@ describe("bug：rebuild 落點下方未緩衝 → 自動 demand-down（不等使
   });
 });
 
-describe("bug：[ ] = 相對命令慢——server 游標已同步時跳過 sync-jump 腿", () => {
-  // 相對命令固定兩腿（jump→key）＝兩個 round-trip＋兩次 settle，體感遠慢於
-  // 原生單鍵。seed/re-seed/resume/交易落點後 server 游標＝選取序號（本地 T1
-  // 導覽不動 server 游標之前），此時 jump 腿是純浪費 → 單腿 key＋\f。
-  test("seed 落點（server 游標=選取）後按 ] → 只 enqueue relative-command 單腿（現行兩腿 → 紅）", () => {
+describe("passthrough 快路徑——server 游標已同步時跳過 sync-jump 腿", () => {
+  // 非白名單鍵的 passthrough（切原生＋代送）在游標已同步時不必再 jump——
+  // 一個 round-trip 都不花，直接切原生代送（保留舊 relative 快路徑語意）。
+  const pkey = (key) => ({
+    key,
+    ctrlKey: false,
+    altKey: false,
+    metaKey: false,
+    preventDefault() {},
+  });
+  test("seed 落點（server 游標=選取）後按 ] → 免 sync 腿、切原生＋native-key 單腿", () => {
     const { s, enqueued } = demandSession({ count: 20, numStart: 100 });
+    s._view.flashListHint = () => {};
     s._seed(pageFacts(100, 115)); // server 游標=115=選取
     enqueued.length = 0;
-    s._beginRelative("]");
+    s._beginNativePassthrough(pkey("]"));
     expect(enqueued.length).toBe(1);
-    expect(enqueued[0].kind).toBe("relative-command");
+    expect(enqueued[0].kind).toBe("native-key");
     expect(enqueued[0].keys).toBe("]");
-    expect(enqueued[0].fullRepaint).toBe(true);
+    expect(s._renderMode).toBe("native");
   });
-  test("本地導覽移動選取後（server 游標≠選取）→ 維持兩腿 sync-jump", () => {
+  test("本地導覽移動選取後（server 游標≠選取）→ 先 native-sync-jump 腿", () => {
     const { s, enqueued } = demandSession({ count: 20, numStart: 100 });
+    const sent = [];
+    s._core.conn.send = (d) => sent.push(d);
+    s._view.flashListHint = () => {};
     s._seed(pageFacts(100, 115));
     s._selectedNum = 110; // 本地移動，server 游標仍在 115
     enqueued.length = 0;
-    s._beginRelative("]");
-    expect(enqueued[0].kind).toBe("relative-sync-jump");
+    s._beginNativePassthrough(pkey("]"));
+    expect(enqueued[0].kind).toBe("native-sync-jump");
     expect(enqueued[0].keys).toBe("110\r");
+    expect(enqueued.length).toBe(1); // sync 完成前不得送鍵
+    enqueued[0].onDone();
+    expect(enqueued[1].kind).toBe("native-key");
+    expect(enqueued[1].keys).toBe("]");
+    expect(sent).toEqual([]); // 全程走 queue，不裸送
   });
-  test("prefetch 落地會移走 server 游標 → 之後的 ] 回到兩腿", () => {
+  test("prefetch 落地會移走 server 游標 → 之後的 ] 回到 sync 腿", () => {
     const { s, enqueued } = demandSession({ count: 60 });
+    s._view.flashListHint = () => {};
     s._seed(pageFacts(100, 115)); // _serverNum=115
     // _seed 清了 fake buffer（harness notify 不做 accumulate）——還原
     const buf = s._termBuf;
@@ -1058,15 +992,7 @@ describe("bug：[ ] = 相對命令慢——server 游標已同步時跳過 sync-
     const page = enqueued[enqueued.length - 1];
     page.onDone({ moved: true, landed: 160 }); // server 游標=160
     enqueued.length = 0;
-    s._beginRelative("]");
-    expect(enqueued[0].kind).toBe("relative-sync-jump");
-  });
-  test("v 已讀同理：server 游標已同步 → 直送 mark-prompt（免 sync-jump）", () => {
-    const { s, enqueued } = demandSession({ count: 20, numStart: 100 });
-    s._seed(pageFacts(100, 115));
-    enqueued.length = 0;
-    s._beginMark();
-    expect(enqueued.length).toBe(1);
-    expect(enqueued[0].kind).toBe("mark-prompt");
+    s._beginNativePassthrough(pkey("]"));
+    expect(enqueued[0].kind).toBe("native-sync-jump");
   });
 });

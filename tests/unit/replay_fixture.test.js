@@ -14,6 +14,7 @@ const path = require("path");
 const {
   findPageOverlap,
   resolvePageOverlap,
+  decideAccumulateBranch,
   annotateComment,
   FloorCounter,
   parseComment
@@ -62,6 +63,106 @@ function reconstruct(pageScreens) {
   }
   return acc;
 }
+
+// 完整镜像新版 accumulatePageLines（含 decideAccumulateBranch 三路分流 + sticky
+// pendingReset）。frames = [{screen, prevPageState, pendingReset?}]：pendingReset=true
+// 模拟 leaveCurrentPost 设 sticky 旗标；prevPageState 由呼叫端指定以重现 race
+//（redraw 每帧覆写 prevPageState=pageState 的时序）。
+function reconstructBranching(frames) {
+  let acc = [];
+  let accEndRow = null;
+  let pendingReset = false;
+  for (const f of frames) {
+    if (f.pendingReset) pendingReset = true;
+    const statusRow = f.screen[f.screen.length - 1];
+    const status = parseStatusRow(statusRow);
+    const newRows = f.screen.slice(0, -1);
+    let accTail = null, kContent = 0, headerChanged = false;
+    if (f.prevPageState === 3 && status && acc.length) {
+      accTail = acc.slice(-newRows.length);
+      kContent = findPageOverlap(accTail, newRows);
+      const accHead = (acc[0] || "").replace(/\s+$/, "");
+      const newHead = (newRows[0] || "").replace(/\s+$/, "");
+      headerChanged = accHead !== "" && newHead !== "" && accHead !== newHead;
+    }
+    const branch = decideAccumulateBranch({
+      prevPageState: f.prevPageState,
+      pendingReset,
+      statusStart: status ? status.rowIndexStart : null,
+      kContent,
+      hasAcc: acc.length > 0,
+      headerChanged
+    });
+    if (branch === "append") {
+      const begin = resolvePageOverlap({
+        accEndRow,
+        statusStart: status.rowIndexStart,
+        kContent,
+        maxK: Math.min((accTail || []).length, newRows.length),
+        accTail: accTail || [],
+        newTexts: newRows
+      });
+      acc = acc.concat(newRows.slice(begin));
+      accEndRow = status.rowIndexEnd;
+    } else if (branch === "rebuild") {
+      if (status && status.rowIndexStart === 1) pendingReset = false;
+      acc = newRows.slice();
+      accEndRow = status ? status.rowIndexEnd : null;
+    }
+  }
+  return acc;
+}
+
+// 合成两篇文章画面（22 内容列 + 状态列），行号连续、内容互不重叠。
+function makeScreen(tag, startLine, rows = 22) {
+  const s = [];
+  for (let i = 0; i < rows; i++) s.push(`${tag} 第${startLine + i}行 內文內文`);
+  s.push(
+    `  瀏覽 第 1/9 頁 ( 12%)  目前顯示: 第 ${startLine}~${startLine + rows - 1} 行  (y)回應(X%)推文(h)說明(←)離開 `
+  );
+  return s;
+}
+
+describe("[ ] 跳同标题：新文章不得叠加在旧文章后（race 回归）", () => {
+  // race 时序：文1 两页 → leaveCurrentPost（sticky）→ 夹一帧文1 旧画面
+  //（prevPageState 已被 redraw 覆写回 3）→ 文2 第一页（prevPageState 仍 3）。
+  // 旧逻辑：旧帧吃掉一次性旗标 → 文2 走续接 → 文1+文2 叠加。
+  test("夹旧帧后文2第一页 → acc 只含文2", () => {
+    const a1p1 = makeScreen("文一", 1);
+    const a1p2 = makeScreen("文一", 23);
+    const a2p1 = makeScreen("文二", 1);
+    const acc = reconstructBranching([
+      { screen: a1p1, prevPageState: 0 },
+      { screen: a1p2, prevPageState: 3 },
+      // [ ] 按下：leaveCurrentPost 设 sticky；随后旧画面又重绘一帧
+      { screen: a1p2, prevPageState: 3, pendingReset: true },
+      { screen: a2p1, prevPageState: 3 }
+    ]);
+    expect(acc.every(t => t.startsWith("文二"))).toBe(true);
+    expect(acc.length).toBe(22);
+  });
+
+  test("正常翻页不受影响（sticky 未设）", () => {
+    const acc = reconstructBranching([
+      { screen: makeScreen("文一", 1), prevPageState: 0 },
+      { screen: makeScreen("文一", 23), prevPageState: 3 },
+      { screen: makeScreen("文一", 45), prevPageState: 3 }
+    ]);
+    expect(acc.length).toBe(66);
+    expect(acc[0]).toContain("第1行");
+    expect(acc[65]).toContain("第66行");
+  });
+
+  test("同画面强制重绘（pref/pusher toggle）仍是 no-op append", () => {
+    const p2 = makeScreen("文一", 23);
+    const acc = reconstructBranching([
+      { screen: makeScreen("文一", 1), prevPageState: 0 },
+      { screen: p2, prevPageState: 3 },
+      { screen: p2, prevPageState: 3 }
+    ]);
+    expect(acc.length).toBe(44);
+  });
+});
 
 const fixtures = loadArticleFixtures();
 
