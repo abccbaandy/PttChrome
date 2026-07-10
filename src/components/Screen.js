@@ -123,18 +123,24 @@ function computeAnnotations(lines, enhance) {
       const text = rowToText(lines[row]);
       const deleted = isDeletedListRow(text);
       let blacklisted = false;
+      // Title-keyword hit → the matched keyword; notice line shows it instead of
+      // the author so the user knows WHICH rule fired. Author hit → null (the
+      // notice's default author display already names the reason).
+      let hitKeyword = null;
       if (!deleted && hasBlacklist) {
         const author = parseListAuthor(text);
         if (author && blacklist.has(author)) blacklisted = true;
       }
       if (!deleted && !blacklisted && hasTitleBlacklist) {
-        if (matchTitleBlacklist(parseListTitle(text), titleBlacklist))
-          blacklisted = true;
+        hitKeyword = matchTitleBlacklist(parseListTitle(text), titleBlacklist);
+        if (hitKeyword) blacklisted = true;
       }
       if (listEasyReading) {
         if (deleted || blacklisted) result[row] = { hidden: true };
       } else if (blacklisted) {
-        result[row] = { blacklistNotice: blacklistNoticeText(text) };
+        result[row] = {
+          blacklistNotice: blacklistNoticeText(text, hitKeyword),
+        };
       }
       // native + deleted → no annotation (render exactly as the server sent it).
     }

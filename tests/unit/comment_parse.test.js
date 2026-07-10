@@ -234,6 +234,22 @@ describe("blacklistNoticeText（原生模式黑名單列 → 被刪除樣式通�
     expect(out.startsWith("●52960 + 4 6/05 -")).toBe(true);
     expect(out).toContain("（本文已被黑名單） HarunoYukino");
   });
+  test("帶 label（標題關鍵字命中）→ 尾端顯示關鍵字而非作者", () => {
+    const out = blacklistNoticeText(
+      " 352960 + 4 6/05 HarunoYukino R: [閒聊] 廣告貼文",
+      "廣告"
+    );
+    expect(out.startsWith(" 352960 + 4 6/05 -")).toBe(true);
+    expect(out).toContain("（本文已被黑名單） 廣告");
+    expect(out).not.toContain("HarunoYukino");
+  });
+  test("label 為 null/undefined → 維持顯示作者（作者黑名單路徑不變）", () => {
+    const out = blacklistNoticeText(
+      " 352960 + 4 6/05 HarunoYukino R: [閒聊] 廣告貼文",
+      null
+    );
+    expect(out).toContain("（本文已被黑名單） HarunoYukino");
+  });
 });
 
 describe("recoverCursorArticleNum", () => {
@@ -525,14 +541,15 @@ describe("parseTitleBlacklist", () => {
 });
 
 describe("matchTitleBlacklist", () => {
-  test("substring contains (title already lower-cased)", () => {
+  test("substring contains → 回傳命中的關鍵字（truthy）；未命中 → null", () => {
     const kws = parseTitleBlacklist("代po\n廣告");
-    expect(matchTitleBlacklist("r: [閒聊] 代po 一篇文章", kws)).toBe(true);
-    expect(matchTitleBlacklist("□ [情報] 純情報", kws)).toBe(false);
+    expect(matchTitleBlacklist("r: [閒聊] 代po 一篇文章", kws)).toBe("代po");
+    expect(matchTitleBlacklist("q: 廣告 代po 都有", kws)).toBe("代po"); // 第一個命中者
+    expect(matchTitleBlacklist("□ [情報] 純情報", kws)).toBeNull();
   });
-  test("empty keyword list / empty title → false", () => {
-    expect(matchTitleBlacklist("任何標題", [])).toBe(false);
-    expect(matchTitleBlacklist("", ["代po"])).toBe(false);
+  test("empty keyword list / empty title → null", () => {
+    expect(matchTitleBlacklist("任何標題", [])).toBeNull();
+    expect(matchTitleBlacklist("", ["代po"])).toBeNull();
   });
 });
 

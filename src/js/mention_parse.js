@@ -33,15 +33,19 @@ export function detectMentions(chars) {
   const out = [];
   const n = chars.length;
   let i = 0;
-  // The previous single-byte char, or null right after a DBCS pair / at line start.
-  // '@' only starts a mention when the previous char is NOT a word char or '@'
+  // The previous two single-byte chars, or null right after a DBCS pair / at line
+  // start. '@' starts a mention when the previous char is NOT a word char or '@'
   // (so an email "a@b" and a stray "@@" are rejected; a Chinese char before it,
-  // which leaves prevCh = null, is a legal prefix → "作者@jack" works).
+  // which leaves prevCh = null, is a legal prefix → "作者@jack" works) — OR when
+  // the previous char is a STANDALONE 'X'/'x' (prevPrevCh not a word char/'@'),
+  // the PTT idiom "X@kaotaro12" for an x.com account. "aX@b" stays an email.
   let prevCh = null;
+  let prevPrevCh = null;
   while (i < n) {
     const cell = chars[i];
     if (!cell) {
       prevCh = null;
+      prevPrevCh = null;
       i++;
       continue;
     }
@@ -50,11 +54,16 @@ export function detectMentions(chars) {
       // may itself be 0x40 ('@') and must never be read as a mention start.
       i += 2;
       prevCh = null;
+      prevPrevCh = null;
       continue;
     }
     const ch = cell.ch;
+    const xPrefixOk =
+      (prevCh === 'X' || prevCh === 'x') &&
+      !(prevPrevCh && (isHandleChar(prevPrevCh) || prevPrevCh === '@'));
     const atOk =
-      ch === '@' && !(prevCh && (isHandleChar(prevCh) || prevCh === '@'));
+      ch === '@' &&
+      (!(prevCh && (isHandleChar(prevCh) || prevCh === '@')) || xPrefixOk);
     if (atOk) {
       let j = i + 1;
       let handle = '';
@@ -76,11 +85,14 @@ export function detectMentions(chars) {
         !/^[0-9]+$/.test(handle) // all-digits "@123" is almost never an X handle
       ) {
         out.push({ startCol: i, endCol: j, handle });
+        prevPrevCh =
+          handle.length >= 2 ? handle.charAt(handle.length - 2) : '@';
         prevCh = handle.charAt(handle.length - 1);
         i = j;
         continue;
       }
     }
+    prevPrevCh = prevCh;
     prevCh = ch;
     i++;
   }

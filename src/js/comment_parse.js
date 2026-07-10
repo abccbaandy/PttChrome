@@ -243,7 +243,10 @@ export function isDeletedListRow(text) {
 // where the server drew it. Only the AUTHOR is read from the realigned text (the ●
 // shifts that column, so realign is needed to slice it). rawPrefixLen = author column
 // minus the count of leading wide glyphs realign would have padded.
-export function blacklistNoticeText(text) {
+// Optional `label` overrides the trailing token: author-blacklist hits omit it
+// (show the author, the reason IS the author); title-keyword hits pass the
+// matched keyword so the notice tells the user WHICH keyword fired.
+export function blacklistNoticeText(text, label) {
   const raw = text || '';
   let wide = 0;
   for (let i = 0; i < raw.length && i < LIST_AUTHOR_COL_START; ++i)
@@ -255,7 +258,7 @@ export function blacklistNoticeText(text) {
   // '-' at the author column, then pad to the title column (the □ sits one cell past
   // the 12-wide author field, exactly like a deleted row).
   const gap = ' '.repeat(LIST_AUTHOR_COL_END - LIST_AUTHOR_COL_START);
-  return prefix + '-' + gap + '□ （本文已被黑名單） ' + author;
+  return prefix + '-' + gap + '□ （本文已被黑名單） ' + (label || author);
 }
 
 // A board-list ★pinned (置底/公告) row: it carries normal article columns (a valid
@@ -556,8 +559,10 @@ export function parseTitleBlacklist(str) {
     .filter(Boolean);
 }
 
-// True iff the (already lower-cased) title contains any of the keywords.
+// Returns the FIRST keyword the (already lower-cased) title contains, or null.
+// Truthy iff blacklisted, so boolean call sites (list_session hide check) keep
+// working; the keyword itself feeds the notice line (「命中的關鍵字」 display).
 export function matchTitleBlacklist(title, keywords) {
-  if (!title || !keywords || !keywords.length) return false;
-  return keywords.some(k => title.includes(k));
+  if (!title || !keywords || !keywords.length) return null;
+  return keywords.find(k => title.includes(k)) ?? null;
 }

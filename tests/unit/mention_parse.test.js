@@ -84,6 +84,33 @@ describe("detectMentions", () => {
     ]);
   });
 
+  test("X@handle: standalone X/x prefix is legal (PTT 慣用寫法)", () => {
+    // X0 @1 k2..10 sp11 → handle cols [1,11)
+    expect(detectMentions(ascii("X@kaotaro12 hi"))).toEqual([
+      { startCol: 1, endCol: 11, handle: "kaotaro12" }
+    ]);
+    expect(detectMentions(ascii("x@abc"))).toEqual([
+      { startCol: 1, endCol: 5, handle: "abc" }
+    ]);
+  });
+
+  test("X@handle: X preceded by a word char is NOT a prefix (email-like)", () => {
+    expect(detectMentions(ascii("aX@b"))).toEqual([]);
+    expect(detectMentions(ascii("FB@name"))).toEqual([]);
+  });
+
+  test("X@handle right after a DBCS (Chinese) char works", () => {
+    // DBCS cols 0-1, X at 2, @ at 3, jack 4-7.
+    const row = [...dbcs("\xa4", "\xa4"), ...ascii("X@jack")];
+    expect(detectMentions(row)).toEqual([
+      { startCol: 3, endCol: 8, handle: "jack" }
+    ]);
+  });
+
+  test("X@123 all-digit handle still rejected", () => {
+    expect(detectMentions(ascii("X@123"))).toEqual([]);
+  });
+
   test("empty / null input", () => {
     expect(detectMentions(null)).toEqual([]);
     expect(detectMentions([])).toEqual([]);

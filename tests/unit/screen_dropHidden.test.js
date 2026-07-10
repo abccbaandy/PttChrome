@@ -170,10 +170,13 @@ describe("Screen board-list native mode (無 listEasyReading → 黑名單通知
     expect(notices[0].textContent).toContain("（本文已被黑名單） anyuser");
   });
 
-  test("titleBlacklist → 通知列，非隱藏", () => {
+  test("titleBlacklist → 通知列，非隱藏，且尾端顯示命中的關鍵字而非作者", () => {
     const container = renderList({ titleBlacklist: ["廣告"] });
     expect(hiddenRows(container).length).toBe(0);
-    expect(noticeRows(container).length).toBe(1);
+    const notices = noticeRows(container);
+    expect(notices.length).toBe(1);
+    expect(notices[0].textContent).toContain("（本文已被黑名單） 廣告");
+    expect(notices[0].textContent).not.toContain("anyuser");
   });
 
   test("被刪除文（作者欄 -）→ 原生顯示，不隱藏、不轉通知", () => {
