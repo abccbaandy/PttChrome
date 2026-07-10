@@ -17,6 +17,7 @@ import {
 } from "../js/comment_parse";
 import { detectFixableUrls } from "../js/url_fix";
 import { detectMentions } from "../js/mention_parse";
+import { detectAids } from "../js/aid_parse";
 
 // NOTE: articleAuthor (原PO id) is tracked by term_view across page-downs and
 // passed in via enhance — the "作者" header only appears on the first page, so we
@@ -46,6 +47,7 @@ function computeAnnotations(lines, enhance) {
     enableXMention,
     inListContext,
     listEasyReading,
+    onAidClick,
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
@@ -98,9 +100,28 @@ function computeAnnotations(lines, enhance) {
           });
         }
       }
+      // PTT article-code (AID) links, easy reading only: clicking one drives a
+      // native key-sequence navigation (aid_navigation.js), which only makes
+      // sense from within easy reading. A boardless #AID falls back to the
+      // current article's board (tracked by term_view, like articleAuthor).
+      let aids;
+      if (easyReading && onAidClick && !(ann && ann.hidden)) {
+        const found = detectAids(lines[row]);
+        for (let k = 0; k < found.length; ++k) {
+          const a = found[k];
+          (aids || (aids = [])).push({
+            startCol: a.startCol,
+            endCol: a.endCol,
+            aid: a.aid,
+            board: a.board,
+            onClick: () => onAidClick(a.aid, a.board),
+          });
+        }
+      }
       let r = ann;
       if (fixedUrls) r = { ...(r || {}), fixedUrls };
       if (mentions) r = { ...(r || {}), mentions };
+      if (aids) r = { ...(r || {}), aids };
       result[row] = r;
     }
   } else if (pageState === PAGE_LIST || inListContext) {
@@ -255,6 +276,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
             authorIdEnd={ann && ann.authorIdEnd}
             fixedUrls={ann && ann.fixedUrls}
             mentions={ann && ann.mentions}
+            aids={ann && ann.aids}
             blacklistNotice={ann && ann.blacklistNotice}
             onHyperLinkMouseOver={handleHyperLinkMouseOver}
             onHyperLinkMouseOut={handleHyperLinkMouseOut}

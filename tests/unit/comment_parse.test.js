@@ -15,6 +15,7 @@ import path from "path";
 import {
   parseComment,
   parseArticleAuthor,
+  parseArticleBoard,
   parseListAuthor,
   parseListTitle,
   parseListArticleNum,
@@ -80,6 +81,20 @@ describe("parseArticleAuthor", () => {
   test("non-header lines → null", () => {
     expect(parseArticleAuthor(ts("推 wowbenny: hi"))).toBeNull();
     expect(parseArticleAuthor("標題  [問題] ...")).toBeNull();
+  });
+});
+
+describe("parseArticleBoard", () => {
+  test("header line → board name (case preserved)", () => {
+    expect(parseArticleBoard("作者  wowBenny (nick) 看板 C_Chat")).toBe(
+      "C_Chat"
+    );
+  });
+  test("non-header lines → null", () => {
+    expect(parseArticleBoard(ts("推 wowbenny: hi"))).toBeNull();
+    expect(parseArticleBoard("標題  [問題] ...")).toBeNull();
+    expect(parseArticleBoard("")).toBeNull();
+    expect(parseArticleBoard(null)).toBeNull();
   });
 });
 

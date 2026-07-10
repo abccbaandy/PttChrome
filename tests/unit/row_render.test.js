@@ -208,6 +208,38 @@ describe("Row X mention link", () => {
   });
 });
 
+// PTT article-code (AID) auto-link. Screen detects #XXXXXXXX ranges (aid_parse)
+// and passes them with an onClick; Row/LinkSegmentBuilder wraps them in a
+// .aidLink <a> that navigates in-app (preventDefault) instead of a new tab.
+describe("Row AID link", () => {
+  test("aid → .aidLink <a> wrapping exactly #AID, click calls onClick", () => {
+    // s0 e1 e2 sp3 #4..12 sp13
+    const onClick = jest.fn();
+    const { container } = render(
+      <Row
+        chars={chars("see #1gIeu-3A ok")}
+        row={0}
+        aids={[
+          { startCol: 4, endCol: 13, aid: "1gIeu-3A", board: "Android", onClick }
+        ]}
+      />
+    );
+    const a = container.querySelector("a.aidLink");
+    expect(a).not.toBeNull();
+    expect(a.textContent).toBe("#1gIeu-3A");
+    a.click();
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  test("no aids prop → plain text, no .aidLink", () => {
+    const { container } = render(
+      <Row chars={chars("see #1gIeu-3A ok")} row={0} />
+    );
+    expect(container.querySelector(".aidLink")).toBeNull();
+    expect(bbsrow(container).textContent).toBe("see #1gIeu-3A ok");
+  });
+});
+
 describe("Row blacklistNotice (原生列表黑名單通知列)", () => {
   test("blacklistNotice → 內容即通知字串（含 bbsline 結構）、不走原始 char cells", () => {
     const notice = "  62349 + 6 7/09 -            □ （本文已被黑名單） someone";

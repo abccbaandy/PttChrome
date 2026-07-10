@@ -434,6 +434,15 @@ span {
   background-position: 0% 90%;
 }
 
+/* 文章代碼 (AID) 自動連結：好讀模式偵測 #XXXXXXXX，點擊在站內自動導航到該文
+   （見 Row/LinkSegmentBuilder + aid_parse + aid_navigation）。外觀同一般連結。 */
+.aidLink {
+  background-image: url(../icon/http.bmp?inline);
+  background-repeat: repeat-x;
+  background-position: 0% 90%;
+  cursor: pointer;
+}
+
 /* 自動修復斷掉的 URL：在原文那一行下方加一行可點的修復版連結（不改寫原文）。
    只在好讀模式（inline preview）渲染，見 Row/LinkSegmentBuilder + Row/FixedUrlLine。 */
 .fixedUrlLine {

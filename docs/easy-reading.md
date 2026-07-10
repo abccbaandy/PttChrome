@@ -53,6 +53,12 @@
 
 **坑 2（仍有效）**：好讀已自動翻頁到**底**時，實際游標在最後頁，再送原生 End(`\x1b[4~`)是 **no-op、PTT 不回應不重繪** → 必須另送 `^L`(`\x0c`, Ctrl-L)強制全頁重繪。`switchToEasyReadingMode()`(無參數)已內含 `^L`(`pttchrome.js:354`)。
 
+## AID（#文章代碼）一鍵跳文（CONFIRMED unit）
+
+好讀讀文中偵測 `#XXXXXXXX`（固定 8 碼 `[0-9A-Za-z_-]`，pttbbs `aidu2aidc` base64 變體；可帶 `(Board)`/`@Board` 後綴，無後綴 fallback `term_view._articleBoard`，來源同列 header `看板 X`，`comment_parse.parseArticleBoard`）→ `.aidLink` 連結。鏈路：`aid_parse.detectAids`（TermChar columns，同 mention_parse DBCS 規則）→ `Screen.computeAnnotations`（僅 `easyReading && enhance.onAidClick`）→ `Row/LinkSegmentBuilder`（同 mention 邊界機制）→ `view.onAidClick`（pttchrome 掛）→ `aid_navigation.AidNavigation.start(aid, board)`。
+
+導航 = 共用 `commandQueue` 三步序列（每步 expect 內容判定、fullRepaint、失敗可見降級；`s`/`#` 在文章內直接可用，**不需先 `←` 退列表**）：`s<board>\r`(expect clean-list+boardName 不分大小寫) → `#<aid>\r`(expect boardName+cursorRowNum+curY 在 entry 區——**不可要求 kind==clean-list**：# 跳文落地 footer 列空白（\f probe 後仍空）→ classify 判 transient，live 驗證 2026-07-10；找不到→vmsg 游標停底列→cursorRowNum null→probe→miss) → `\r`(expect article|statusRow)。前置：`easyReading._enterFunctionMode()`（原生 LIVE 鏡像；離篇/進新文由既有 settle 邏輯收斂）＋ `listSession.beginExternalNavigation()`（強制 functionMode+nativeHold+flush，reducer 對中途 clean-list settle 一律 stay，最後 article settle 走 handoff）。**順序不變量：先 beginExternalNavigation（含 flush）再 enqueue**。導航中 `aidNavigation.active` 於 `term_view.onKeyDown`／`App.mouse_click`／`onMouse_click`／`mouse_scroll` 入口吞輸入（有 banner）。同板也不省略 `s` 切板（單一路徑）。unit：`tests/unit/aid_parse.test.js`、`aid_navigation.test.js`、`row_render.test.js`（aidLink render）。
+
 ## 切換：三個對稱入口（CONFIRMED 純邏輯/手動驗）
 
 好讀的進/退/離篇收斂到三個語意明確的入口（`easy_reading.js`），新路徑只呼叫入口、不各自設旗標：

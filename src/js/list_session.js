@@ -668,6 +668,19 @@ ListSession.prototype = {
     this._dispatch({ type: 'pref-off' }, null);
   },
 
+  // An external serialized navigation (aid_navigation.js) is about to drive
+  // the SHARED queue through list screens: park the session in functionMode
+  // (native mirror, sticky nativeHold, queue flushed) so the reducer absorbs
+  // the intermediate clean-list settles instead of resuming the buffer or
+  // enqueuing its own commands mid-sequence. Must be called BEFORE the
+  // external commands are enqueued (the flush here would drop them). The
+  // final article settle takes the normal handoff-article path.
+  beginExternalNavigation: function() {
+    if (this.state === 'idle') return;
+    this.state = 'functionMode';
+    this._enterFunctionMode();
+  },
+
   // Keyboard, called from term_view.onKeyDown ONLY while renderMode is
   // buffer/frozen (native modes never route here — full passthrough).
   onKeyDown: function(e) {

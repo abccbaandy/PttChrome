@@ -6,7 +6,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
-import { rowToText, parseArticleAuthor, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
+import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS } from './list_session';
 import { labelListCursorBullet, pruneListToSegment } from './list_window';
 
@@ -125,6 +125,10 @@ export function TermView() {
   // Existence verification is currently off — see Screen.js / docs/enhanced-addon.md.
   this.enableXMention = true;
   this._articleAuthor = null;
+  // Board of the article being read (same header line); fallback board for a
+  // boardless #AID link. Assigned by the App like flashListHint etc.
+  this._articleBoard = null;
+  this.onAidClick = null;
   // Pusher highlight: lower-cased id of the pusher whose comments are currently
   // highlighted (whole row), or null. Set by togglePusherHighlight on click.
   this._selectedPusher = null;
@@ -355,8 +359,13 @@ TermView.prototype = {
     // only appears on the first page of an article, so keep the last parsed value
     // across page-downs; a new article's first page overwrites it.
     if (this.buf.pageState === 3) {
-      var parsedAuthor = parseArticleAuthor(rowToText(lines[0]));
+      var row0Text = rowToText(lines[0]);
+      var parsedAuthor = parseArticleAuthor(row0Text);
       if (parsedAuthor) this._articleAuthor = parsedAuthor;
+      // The board name lives on the same first-page header ("作者 ... 看板 X");
+      // keep it across page-downs so a boardless AID link can fall back to it.
+      var parsedBoard = parseArticleBoard(row0Text);
+      if (parsedBoard) this._articleBoard = parsedBoard;
     } else {
       // Leaving the article clears any pusher highlight selection.
       this._selectedPusher = null;
@@ -520,6 +529,9 @@ TermView.prototype = {
           // (its FloorCounter persists). The native per-page counter resets every
           // page → inaccurate, so floors are hidden in native mode (see Screen.js).
           easyReading: this.useEasyReadingMode,
+          // AID auto-link click → in-app navigation (aid_navigation.js); the App
+          // assigns this.onAidClick at startup (view-optional callback pattern).
+          onAidClick: this.onAidClick,
           dropHidden: dropHidden,
           inListContext: this._inBoardListContext,
           // Stable per-article id; Screen resets the enlarge-images toggle when it
@@ -579,6 +591,13 @@ TermView.prototype = {
   },
 
   onKeyDown: function(e) {
+    // AID navigation in flight: serialized machine keys own the wire — a user
+    // key would race them (typeahead, protocol §2). Swallow with a banner.
+    if (this.bbscore.aidNavigation && this.bbscore.aidNavigation.active) {
+      e.preventDefault();
+      this.flashListHint('AID 跳文中，請稍候…');
+      return;
+    }
     if (this.useEasyReadingMode && this.buf.startedEasyReading &&
         !this.buf.easyReadingShowReplyText && !this.buf.easyReadingShowPushInitText &&
         !this.buf.easyReadingFunctionMode) {

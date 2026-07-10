@@ -22,6 +22,7 @@ export class LinkSegmentBuilder {
     authorIdEnd,
     fixedUrls,
     mentions,
+    aids,
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -49,6 +50,17 @@ export class LinkSegmentBuilder {
       }
     }
     this._mention = null;
+    // PTT article-code (AID) links: cols [startCol, endCol) of each #XXXXXXXX
+    // token (src/js/aid_parse.js). Same boundary mechanics as mentions, but the
+    // click navigates in-app (aid.onClick) instead of opening a new tab.
+    this._aidStart = null;
+    if (aids && aids.length) {
+      this._aidStart = new Map();
+      for (let k = 0; k < aids.length; ++k) {
+        this._aidStart.set(aids[k].startCol, aids[k]);
+      }
+    }
+    this._aid = null;
     //
     this.segs = [];
     // Auto-fixed URLs (src/js/url_fix.js) render on extra lines below the article
@@ -93,6 +105,23 @@ export class LinkSegmentBuilder {
           href={this._mention.href}
           rel="noreferrer"
           target="_blank"
+        >
+          {element}
+        </a>,
+      );
+    } else if (this._aid) {
+      // AID → in-app navigation link; preventDefault keeps the # href inert.
+      const aid = this._aid;
+      this._pushSeg(
+        <a
+          key={`a${this.col}`}
+          className="aidLink"
+          href="#"
+          title={`跳至文章 #${aid.aid}${aid.board ? ` (${aid.board})` : ""}`}
+          onClick={(e) => {
+            e.preventDefault();
+            if (aid.onClick) aid.onClick();
+          }}
         >
           {element}
         </a>,
@@ -170,6 +199,15 @@ export class LinkSegmentBuilder {
     if (this._mentionStart !== null && this._mentionStart.has(i)) {
       if (this.colorSegBuilder !== null) this.saveSegment();
       this._mention = this._mentionStart.get(i);
+    }
+    // AID link boundaries — same open/close dance as mentions above.
+    if (this._aid && i === this._aid.endCol) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._aid = null;
+    }
+    if (this._aidStart !== null && this._aidStart.has(i)) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._aid = this._aidStart.get(i);
     }
     if (this.colorSegBuilder !== null && ch.isStartOfURL()) {
       this.saveSegment();

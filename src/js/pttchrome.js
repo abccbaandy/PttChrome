@@ -7,6 +7,7 @@ import { Websocket } from './websocket';
 import { EasyReading } from './easy_reading';
 import { ListSession } from './list_session';
 import { CommandQueue } from './command_queue';
+import { AidNavigation } from './aid_navigation';
 import { AutoLogin } from './auto_login';
 import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
 import { TouchController } from './touch_controller';
@@ -56,6 +57,13 @@ export const App = function() {
     }
   });
   this.listSession = new ListSession(this, this.view, this.buf, this.commandQueue);
+  // AID (#文章代碼) link click → serialized native-key navigation to the target
+  // article. A boardless link falls back to the current article's board
+  // (tracked by term_view alongside articleAuthor).
+  this.aidNavigation = new AidNavigation(this, this.view, this.buf, this.commandQueue);
+  this.view.onAidClick = (aid, board) => {
+    this.aidNavigation.start(aid, board || this.view._articleBoard);
+  };
   this.autoLogin = new AutoLogin(this);
 
   //new pref - start
@@ -656,6 +664,14 @@ App.prototype.onMouse_click = function (e) {
   if (!this.conn || !this.conn.isConnected)
     return;
 
+  // AID navigation in flight: swallow clicks so a stray mouse-browsing action
+  // can't inject keys into the serialized sequence (never silent — banner).
+  if (this.aidNavigation.active) {
+    e.preventDefault();
+    this.view.flashListHint('AID 跳文中，請稍候…');
+    return;
+  }
+
   // disable auto update pushthread if any command is issued;
   this.onDisableLiveHelperModalState();
 
@@ -949,6 +965,12 @@ App.prototype.checkClass = function(cn) {
 App.prototype.mouse_click = function(e) {
   if (this.modalShown)
     return;
+  // AID navigation in flight: mouse-browsing must not inject keys. (The
+  // initiating link click never reaches here — anchors early-return below.)
+  if (this.aidNavigation.active) {
+    e.preventDefault();
+    return;
+  }
   var skipMouseClick = (this.CmdHandler.getAttribute('SkipMouseClick') == '1');
   this.CmdHandler.setAttribute('SkipMouseClick','0');
 
@@ -1129,8 +1151,13 @@ App.prototype.mouse_over = function(e) {
 };
 
 App.prototype.mouse_scroll = function(e) {
-  if (this.modalShown) 
+  if (this.modalShown)
     return;
+  // AID navigation in flight: no wheel-driven keys may hit the wire.
+  if (this.aidNavigation.active) {
+    e.preventDefault();
+    return;
+  }
   // if in easyreading, use it like webpage
   if (this.view.useEasyReadingMode && this.buf.pageState == 3) {
     return;

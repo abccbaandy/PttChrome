@@ -140,6 +140,17 @@ export function parseArticleAuthor(text) {
   return m[1].toLowerCase();
 }
 
+// Same header line also carries "看板 board"; the board name is what an AID
+// link without an explicit board falls back to. Returned as-is (PTT board
+// lookup is case-insensitive), or null when the line is not an author header.
+const ARTICLE_BOARD_RE = /看板\s+([0-9A-Za-z_-]+)/;
+
+export function parseArticleBoard(text) {
+  if (!text) return null;
+  const m = text.match(ARTICLE_BOARD_RE);
+  return m ? m[1] : null;
+}
+
 // Board list author column. Calibrated against live PTT (C_Chat, 2026-06), e.g.:
 //   " 352960 + 4 6/05 HarunoYukino R: ..."
 //   "  ^0          ^12 ^17(author, 12 wide)"
