@@ -114,6 +114,56 @@ describe("detectAids", () => {
     ]);
   });
 
+  // 轉錄 header：看板在 AID 前面，靠 rowText（Unicode）比對前綴。
+  describe("cross-post header board prefix (rowText)", () => {
+    // ※ [本文轉錄自 C_Chat 看板 #1gIx63RL ] — DBCS 部分用假 lead/trail cells，
+    // 欄位只要對得上 '#' 的位置即可（bytes 內容不影響 detectAids）。
+    const crossPostRow = [
+      ...dbcs("\xa1", "\xb0"), // ※
+      ...ascii(" ["),
+      ...dbcs("\xa5", "\xbb"), // 本
+      ...dbcs("\xa4", "\xe5"), // 文
+      ...dbcs("\xc2", "\xe0"), // 轉
+      ...dbcs("\xbf", "\xfd"), // 錄
+      ...dbcs("\xa6", "\xdb"), // 自
+      ...ascii(" C_Chat "),
+      ...dbcs("\xac", "\xdd"), // 看
+      ...dbcs("\xaa", "\xa9"), // 板
+      ...ascii(" #1gIx63RL ]")
+    ];
+    const crossPostText = "※ [本文轉錄自 C_Chat 看板 #1gIx63RL ]";
+
+    test("board taken from 本文轉錄自 prefix", () => {
+      // '#' col = 2+2+10+8+4+1 = 27
+      expect(detectAids(crossPostRow, crossPostText)).toEqual([
+        { startCol: 27, endCol: 36, aid: "1gIx63RL", board: "C_Chat" }
+      ]);
+    });
+
+    test("without rowText behaviour unchanged (board null)", () => {
+      expect(detectAids(crossPostRow)).toEqual([
+        { startCol: 27, endCol: 36, aid: "1gIx63RL", board: null }
+      ]);
+    });
+
+    test("suffix board wins over prefix", () => {
+      expect(
+        detectAids(
+          ascii("#1gIeu-3A (Android)"),
+          "本文轉錄自 C_Chat 看板 #1gIeu-3A (Android)"
+        )
+      ).toEqual([
+        { startCol: 0, endCol: 9, aid: "1gIeu-3A", board: "Android" }
+      ]);
+    });
+
+    test("rowText without the prefix leaves board null", () => {
+      expect(detectAids(ascii("#1gIeu-3A ok"), "#1gIeu-3A ok")).toEqual([
+        { startCol: 0, endCol: 9, aid: "1gIeu-3A", board: null }
+      ]);
+    });
+  });
+
   test("empty / null input", () => {
     expect(detectAids(null)).toEqual([]);
     expect(detectAids([])).toEqual([]);

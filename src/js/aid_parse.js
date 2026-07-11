@@ -58,10 +58,26 @@ function parseBoardSuffix(chars, j) {
   return null;
 }
 
+// pttbbs cross-post header puts the board BEFORE the AID:
+//   ※ [本文轉錄自 C_Chat 看板 #1gIx63RL ]
+// The Chinese words can't be matched on TermChar cells (they hold raw Big5
+// lead/trail bytes), so this takes the decoded row TEXT (rowToText/getRowText)
+// and only extracts the board name — no column mapping needed.
+const CROSS_POST_PREFIX_RE = /本文轉錄自\s+([0-9A-Za-z_-]{2,})\s+看板/;
+
+export function parseCrossPostBoardPrefix(rowText) {
+  if (!rowText) return null;
+  const m = CROSS_POST_PREFIX_RE.exec(rowText);
+  return m ? m[1] : null;
+}
+
 // Returns [{ startCol, endCol, aid, board }] where startCol is the '#' column
 // and endCol is exclusive (first column past the 8 AID chars). board is null
 // when no suffix parsed — the caller falls back to the current article board.
-export function detectAids(chars) {
+// Optional rowText (decoded Unicode of the same row) enables the cross-post
+// header prefix: a suffix-less AID on a 「本文轉錄自 X 看板」 line gets that
+// board (suffix still wins when both are present).
+export function detectAids(chars, rowText) {
   if (!chars) return [];
   const out = [];
   const n = chars.length;
@@ -108,6 +124,14 @@ export function detectAids(chars) {
     }
     prevCh = ch;
     i++;
+  }
+  if (out.length && rowText) {
+    const prefixBoard = parseCrossPostBoardPrefix(rowText);
+    if (prefixBoard) {
+      for (let k = 0; k < out.length; ++k) {
+        if (out[k].board === null) out[k].board = prefixBoard;
+      }
+    }
   }
   return out;
 }

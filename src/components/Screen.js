@@ -120,9 +120,11 @@ function computeAnnotations(lines, enhance, mergeCaption) {
       // native key-sequence navigation (aid_navigation.js), which only makes
       // sense from within easy reading. A boardless #AID falls back to the
       // current article's board (tracked by term_view, like articleAuthor).
+      // rowText lets aid_parse pick up the cross-post header board prefix
+      // (※ [本文轉錄自 X 看板 #AID ]) that cells alone can't match.
       let aids;
       if (easyReading && onAidClick && !(ann && ann.hidden)) {
-        const found = detectAids(lines[row]);
+        const found = detectAids(lines[row], rowToText(lines[row]));
         for (let k = 0; k < found.length; ++k) {
           const a = found[k];
           (aids || (aids = [])).push({
