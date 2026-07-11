@@ -2,7 +2,8 @@ import {
   sanitizeForCloud,
   mergeCloudPrefs,
   classifySnapshot,
-  deepEqual
+  deepEqual,
+  LOCAL_ONLY_PREF_KEYS
 } from "../../src/js/pref_sync_logic";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 
@@ -17,10 +18,19 @@ describe("sanitizeForCloud", () => {
     expect(out).not.toHaveProperty("autoLoginUser");
   });
 
+  it("strips every LOCAL_ONLY_PREF_KEYS entry (incl. enableWorkMode)", () => {
+    const out = sanitizeForCloud({ ...DEFAULT_PREFS, enableWorkMode: true });
+    for (const key of LOCAL_ONLY_PREF_KEYS) {
+      expect(out).not.toHaveProperty(key);
+    }
+    expect(LOCAL_ONLY_PREF_KEYS).toContain("enableWorkMode");
+  });
+
   it("keeps every other key untouched", () => {
     const input = { ...DEFAULT_PREFS, fontSize: 24, blacklist: "foo\nbar" };
     const out = sanitizeForCloud(input);
-    const { autoLoginPassword, autoLoginUser, ...expected } = input;
+    const expected = { ...input };
+    for (const key of LOCAL_ONLY_PREF_KEYS) delete expected[key];
     expect(out).toEqual(expected);
   });
 });
@@ -59,6 +69,20 @@ describe("mergeCloudPrefs", () => {
       autoLoginUser: "stale-from-cloud"
     });
     expect(out.autoLoginUser).toBe("");
+  });
+
+  it("cloud can never flip enableWorkMode (local-only, per machine)", () => {
+    const out = mergeCloudPrefs(
+      DEFAULT_PREFS,
+      { ...DEFAULT_PREFS, enableWorkMode: false },
+      { enableWorkMode: true } // a synced copy must not turn it on here
+    );
+    expect(out.enableWorkMode).toBe(false);
+  });
+
+  it("enableWorkMode falls back to the default when local has no value", () => {
+    const out = mergeCloudPrefs(DEFAULT_PREFS, {}, { enableWorkMode: true });
+    expect(out.enableWorkMode).toBe(DEFAULT_PREFS.enableWorkMode);
   });
 
   it("backfills keys missing from cloud with local then defaults", () => {

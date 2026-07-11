@@ -52,7 +52,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(page.locator('.PrefModal input[name="proxyUrl"]')).toBeVisible();
   });
 
-  test('PrefModal 分頁切換：general → enhance → about 內容對應切換', async ({ page }) => {
+  test('PrefModal 分頁切換：general → enhance → local → about 內容對應切換', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
     await ptt.dismissDeveloperModeAlert(page);
@@ -66,7 +66,8 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
     const nav = page.locator('.PrefModal__Grid__Col--left');
     const proxyUrl = page.locator('.PrefModal input[name="proxyUrl"]');     // general only
-    const autoLoginUser = page.locator('.PrefModal input[name="autoLoginUser"]'); // enhance only
+    const blacklist = page.locator('.PrefModal textarea[name="blacklist"]'); // enhance only
+    const autoLoginUser = page.locator('.PrefModal input[name="autoLoginUser"]'); // local only
 
     // 起始：general 可見
     await expect(proxyUrl).toBeVisible();
@@ -74,8 +75,17 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
     // → enhance
     await nav.getByText(await label(page, 'options_enhance'), { exact: true }).click();
-    await expect(autoLoginUser).toBeVisible();
+    await expect(blacklist).toBeVisible();
     await expect(proxyUrl).toBeHidden();
+    await expect(autoLoginUser).toBeHidden();
+
+    // → local（帳密 + 上班模式所在的本機設定分頁）
+    await nav.getByText(await label(page, 'options_local'), { exact: true }).click();
+    await expect(autoLoginUser).toBeVisible();
+    await expect(
+      page.locator('.PrefModal input[name="enableWorkMode"]')
+    ).toBeVisible();
+    await expect(blacklist).toBeHidden();
 
     // → about（含 PttChrome 版本字樣）
     await nav.getByText(await label(page, 'options_about'), { exact: true }).click();
@@ -128,6 +138,42 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     expect(saved.values && saved.values.showFloorNumbers).toBe(!before);
   });
 
+  test('上班模式：勾選後 body 掛 work-mode-active、q11 壓灰、值持久化', async ({ page }) => {
+    await installReplay(page);
+    await page.goto('/');
+    const nav = await openSettings(page);
+
+    await nav.getByText(await label(page, 'options_local'), { exact: true }).click();
+    await page
+      .locator('.PrefModal label[for="pref-check-enableWorkMode"]')
+      .click();
+    await page.locator('.PrefModal button[aria-label="Close"]').click();
+    await expect(page.locator('.PrefModal')).toBeHidden();
+
+    // 渲染層生效：body class + 亮黃(q11)被 override 成灰階（不再是 #ffff00）。
+    await expect(page.locator('body.work-mode-active')).toHaveCount(1);
+    const colors = await page.evaluate(() => {
+      const probe = (cls) => {
+        const el = document.createElement('span');
+        el.className = cls;
+        document.body.appendChild(el);
+        const c = getComputedStyle(el).color;
+        el.remove();
+        return c;
+      };
+      return { q11: probe('q11'), floorBadge: probe('floorBadge') };
+    });
+    expect(colors.q11).not.toBe('rgb(255, 255, 0)');
+    // 樓層編號（main.css 寫死 #ffd34d）也要壓灰
+    expect(colors.floorBadge).not.toBe('rgb(255, 211, 77)');
+
+    // 持久化：重新整理後 class 仍在（onValuesPrefChange 啟動即套用）。
+    const saved = await page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem('pttchrome.pref.v1')).values.enableWorkMode
+    );
+    expect(saved).toBe(true);
+  });
+
   test('InputHelper：從選單開啟並完成 render（顏色盤 + 送出鈕）', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
@@ -173,7 +219,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
     const wGeneral = await modalWidth(page);
     await nav.getByText(await label(page, 'options_enhance'), { exact: true }).click();
-    await expect(page.locator('.PrefModal input[name="autoLoginUser"]')).toBeVisible();
+    await expect(page.locator('.PrefModal textarea[name="blacklist"]')).toBeVisible();
     const wEnhance = await modalWidth(page);
     await nav.getByText(await label(page, 'options_about'), { exact: true }).click();
     const wAbout = await modalWidth(page);

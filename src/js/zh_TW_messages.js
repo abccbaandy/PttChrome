@@ -79,6 +79,18 @@
   "options_enhance": {
     "message": "增強功能"
   },
+  "options_local": {
+    "message": "本機設定"
+  },
+  "tooltip_local": {
+    "message": "此分頁的設定只存在這台裝置，不會雲端同步。"
+  },
+  "options_autoLoginCredentials": {
+    "message": "自動登入帳號密碼"
+  },
+  "options_enableWorkMode": {
+    "message": "啟用上班模式（把 BBS 高彩度顏色壓成低調灰階，偽裝成一般暗色網頁）"
+  },
 
   // debug 錄製模式（關於分頁，runtime-only）
   "options_debugMode_title": {

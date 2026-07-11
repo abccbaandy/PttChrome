@@ -79,6 +79,18 @@ export const en_US = {
   "options_enhance": {
     "message": "Enhanced"
   },
+  "options_local": {
+    "message": "This Device"
+  },
+  "tooltip_local": {
+    "message": "Settings on this tab stay on this device only and are never synced to the cloud."
+  },
+  "options_autoLoginCredentials": {
+    "message": "Auto-login credentials"
+  },
+  "options_enableWorkMode": {
+    "message": "Enable work mode (remap bright BBS colors to muted grays so the screen passes as an ordinary dark web page)"
+  },
 
   // debug recording mode (about tab, runtime-only)
   "options_debugMode_title": {

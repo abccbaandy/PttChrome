@@ -255,6 +255,7 @@ export const PrefModal = ({
             <Tabs.List>
               <Tabs.Tab value="general">{i18n("options_general")}</Tabs.Tab>
               <Tabs.Tab value="enhance">{i18n("options_enhance")}</Tabs.Tab>
+              <Tabs.Tab value="local">{i18n("options_local")}</Tabs.Tab>
               <Tabs.Tab value="about">{i18n("options_about")}</Tabs.Tab>
             </Tabs.List>
             <Button
@@ -671,6 +672,47 @@ export const PrefModal = ({
                 >
                   {i18n("options_autoLoginEnable")}
                 </PrefCheckbox>
+                <Select
+                  label={i18n("options_autoLoginDupConn")}
+                  name="autoLoginDupConn"
+                  value={values.autoLoginDupConn}
+                  allowDeselect={false}
+                  onChange={(val) => onSelectStr("autoLoginDupConn", val)}
+                  data={[
+                    { value: "N", label: i18n("options_autoLoginDupConnNo") },
+                    { value: "Y", label: i18n("options_autoLoginDupConnYes") },
+                  ]}
+                  mb="xs"
+                />
+                <PrefCheckbox
+                  name="autoLoginSkipWelcome"
+                  checked={values.autoLoginSkipWelcome}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_autoLoginSkipWelcome")}
+                </PrefCheckbox>
+              </fieldset>
+            </Tabs.Panel>
+            {/* local-only 分頁：這裡的設定僅存本機、絕不上雲（LOCAL_ONLY_PREF_KEYS
+                in pref_sync_logic.js）。之後新增的 local-only 設定一律放這。
+                注意：自動登入的開關/重複登入/跳過歡迎畫面「有」上雲，故留在增強
+                功能分頁；只有帳號密碼欄位是 local-only 放這裡。 */}
+            <Tabs.Panel value="local">
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_local")}</legend>
+                <Text className="PrefModal__warning">
+                  {i18n("tooltip_local")}
+                </Text>
+                <PrefCheckbox
+                  name="enableWorkMode"
+                  checked={values.enableWorkMode}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableWorkMode")}
+                </PrefCheckbox>
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_autoLoginCredentials")}</legend>
                 <Text className="PrefModal__warning">
                   {window.PasswordCredential
                     ? i18n("tooltip_autoLogin")
@@ -698,25 +740,6 @@ export const PrefModal = ({
                   onChange={onTextInputChange}
                   mb="xs"
                 />
-                <Select
-                  label={i18n("options_autoLoginDupConn")}
-                  name="autoLoginDupConn"
-                  value={values.autoLoginDupConn}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectStr("autoLoginDupConn", val)}
-                  data={[
-                    { value: "N", label: i18n("options_autoLoginDupConnNo") },
-                    { value: "Y", label: i18n("options_autoLoginDupConnYes") },
-                  ]}
-                  mb="xs"
-                />
-                <PrefCheckbox
-                  name="autoLoginSkipWelcome"
-                  checked={values.autoLoginSkipWelcome}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_autoLoginSkipWelcome")}
-                </PrefCheckbox>
               </fieldset>
             </Tabs.Panel>
             <Tabs.Panel value="about" className="PrefModal__about-selectable">

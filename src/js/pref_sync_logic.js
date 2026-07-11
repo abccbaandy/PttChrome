@@ -8,22 +8,38 @@
 // local-only too — devices clear it once the browser store is proven, so a
 // synced copy would propagate that "" and break legacy login on devices
 // without the Credential Management API (Firefox/Safari).
+// Every key here stays on this machine only: stripped before upload and the
+// local value always wins over a cloud doc. UI groups them in the "local"
+// prefs tab (PrefModal). enableWorkMode is per-machine by design (disguise
+// the office screen, not the home one).
+export const LOCAL_ONLY_PREF_KEYS = [
+  "autoLoginUser",
+  "autoLoginPassword",
+  "enableWorkMode"
+];
+
 export const sanitizeForCloud = values => {
-  const { autoLoginPassword, autoLoginUser, ...rest } = values;
+  const rest = { ...values };
+  for (const key of LOCAL_ONLY_PREF_KEYS) delete rest[key];
   return rest;
 };
 
 // Merge cloud prefs over local ones: cloud wins for every synced key, the
-// credentials always keep the local value (also neutralizes legacy cloud
+// local-only keys always keep the local value (also neutralizes legacy cloud
 // docs that still carry autoLoginUser), and defaults backfill keys missing
 // from both (schema evolution: an old cloud doc must not drop new prefs).
-export const mergeCloudPrefs = (defaults, localValues, cloudPrefs) => ({
-  ...defaults,
-  ...localValues,
-  ...cloudPrefs,
-  autoLoginUser: (localValues && localValues.autoLoginUser) || "",
-  autoLoginPassword: (localValues && localValues.autoLoginPassword) || ""
-});
+export const mergeCloudPrefs = (defaults, localValues, cloudPrefs) => {
+  const merged = {
+    ...defaults,
+    ...localValues,
+    ...cloudPrefs
+  };
+  for (const key of LOCAL_ONLY_PREF_KEYS) {
+    const local = localValues && localValues[key];
+    merged[key] = local !== undefined ? local : defaults[key];
+  }
+  return merged;
+};
 
 // Deep equality that ignores object key order. JSON.stringify comparison
 // false-positives here: Firestore returns map fields with unspecified key

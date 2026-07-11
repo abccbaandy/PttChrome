@@ -828,6 +828,12 @@ App.prototype.onValuesPrefChange = function(values) {
 App.prototype.onPrefChange = function(name, value) {
   try {
     switch (name) {
+    case 'enableWorkMode':
+      // CSS-only disguise: color.css maps the 16 ANSI colors (fg/bg/glow/blink)
+      // to muted grays under this class. body-level so the whole screen
+      // (including easy-reading overlay) is covered.
+      document.body.classList.toggle('work-mode-active', !!value);
+      break;
     case 'useMouseBrowsing':
       var useMouseBrowsing = value;
       this.CmdHandler.setAttribute('useMouseBrowsing', useMouseBrowsing?'1':'0');

@@ -63,7 +63,13 @@ export const DEFAULT_PREFS = {
   autoLoginUser: "",
   autoLoginPassword: "",
   autoLoginDupConn: "N", // 'Y' | 'N': answer when a duplicate login is detected
-  autoLoginSkipWelcome: true
+  autoLoginSkipWelcome: true,
+
+  // local-only (never synced to cloud — see LOCAL_ONLY_PREF_KEYS in
+  // pref_sync_logic.js; UI lives in the "local" prefs tab)
+  // Work mode: CSS-only remap of the 16 ANSI colors to muted grays so the
+  // screen passes as a mainstream dark-theme web page. Render-layer only.
+  enableWorkMode: false
 };
 
 const PREF_STORAGE_KEY = "pttchrome.pref.v1";
