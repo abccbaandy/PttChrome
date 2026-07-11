@@ -136,6 +136,41 @@ describe("classifyListScreen", () => {
     );
   });
 
+  // 2026-07-11 錄製檔誤降級：板尾最後一頁只有 1 列編號文章（游標壓在上面，
+  // ● 蓋掉最高位 → parseListArticleNum null、只有 loose 可讀）＋數列置底文＋
+  // 空白列。舊規則「≥3 列編號」判 transient → prefetch 腿 expect 永不滿足 →
+  // 探針幀 miss → 無主 settle → catch-all 誤降級 functionMode（使用者無按鍵）。
+  function boardTailRows() {
+    const rows = listRows.slice(0, 3);
+    rows[3] = "●53500 + 7/11 SaberMyWifi  □ [閒聊] 板尾文章";
+    for (let i = 4; i <= 7; ++i)
+      rows[i] = "  ★ 27 6/09     arrenwu     □ [公告] 板規與置底";
+    for (let i = 8; i <= 22; ++i) rows[i] = "";
+    rows[23] = listRows[listRows.length - 1];
+    return rows;
+  }
+
+  test("板尾短頁（游標在僅存編號列＋置底＋空白）→ clean-list", () => {
+    expect(
+      classifyListScreen(facts({ rowTexts: boardTailRows(), curY: 3, curX: 1 }))
+    ).toEqual({ kind: "clean-list", boardName: "C_Chat" });
+  });
+
+  test("板尾短頁但游標列是空白列 → 仍 transient（半繪防護）", () => {
+    expect(
+      classifyListScreen(facts({ rowTexts: boardTailRows(), curY: 10, curX: 0 }))
+        .kind
+    ).toBe("transient");
+  });
+
+  test("板尾短頁夾非列表形文字列（內文殘影）→ 仍 transient", () => {
+    const rows = boardTailRows();
+    rows[9] = "這是半繪的文章內文殘影，不是列表列";
+    expect(
+      classifyListScreen(facts({ rowTexts: rows, curY: 3, curX: 1 })).kind
+    ).toBe("transient");
+  });
+
   test("half-painted frame (blank bottom row, cursor mid-screen) → transient", () => {
     const rows = listRows.slice();
     rows[rows.length - 1] = "";
@@ -792,6 +827,31 @@ describe("v5 確定性交易（timeout=探針觸發，非訊號；jump 腿維持
     page.onDone({ edge: true, landed: null });
     expect(s._edgeDown).toBe(true);
     expect(s._serverNum).toBeNull();
+  });
+
+  test("翻頁腿（向下）：transient 幀但 park 指紋＋序號位移確定 → moved/edge（2026-07-11 錄製檔）", () => {
+    // 板尾短頁可能因編號列過少被分類 transient（classify 短頁規則已放寬，但
+    // 這裡是第二道防線）：游標停 entry 區 col≤1 且序號相對 base 位移已確定，
+    // 不必等 clean-list 也能收腿——否則 timeout→探針 miss→無主 settle→誤降級。
+    const { s, enqueued } = demandSession({ count: 60 });
+    s._topNum = 110;
+    s._selectedNum = 115;
+    s._maybeDemand(1);
+    const page = enqueued[1];
+    expect(page.kind).toBe("prefetch-down");
+    const base = 159;
+    const t = (over) =>
+      page.expect(null, { kind: "transient", curY: 5, curX: 0, rows: 24, ...over });
+    expect(t({ cursorRowNum: base + 6 })).toEqual(
+      expect.objectContaining({ moved: true, landed: base + 6 })
+    );
+    expect(t({ cursorRowNum: base })).toEqual(
+      expect.objectContaining({ edge: true })
+    );
+    // transient 的 null 可能只是半繪解析不到 → 不得判 edge，等探針幀。
+    expect(t({ cursorRowNum: null })).toBe(false);
+    // 沒 park（游標在底列打字區）→ 不是落點回應。
+    expect(t({ cursorRowNum: base + 6, curY: 23, curX: 10 })).toBe(false);
   });
 
   test("翻頁腿（向上）：cursorRowNum null 不得判 edge（置底列只存在板尾）", () => {

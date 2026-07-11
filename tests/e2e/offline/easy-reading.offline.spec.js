@@ -115,6 +115,17 @@ test.describe('好读模式翻页（离线重放）', () => {
       const m = await page.evaluate(async (sel) => {
         const scroller = document.querySelector('.main');
         const overlay = document.querySelector('#easyReadingLastRow');
+        // 外部行内图片异步载入会持续撑高内容：单次卷到底＋固定 sleep 会在图片载完前
+        // 量测（race，stock-end.json 图多曾稳定红——量测后又长高 165px，末行被推回
+        // overlay 下方）。改为每轮重新卷到底、直到 scrollHeight 连续两轮不变（上限 10s）。
+        let prevH = -1, stable = 0;
+        for (let i = 0; i < 20 && stable < 2; i++) {
+          if (scroller) scroller.scrollTop = scroller.scrollHeight;
+          await new Promise((r) => setTimeout(r, 500));
+          const h = scroller ? scroller.scrollHeight : 0;
+          if (h === prevH) stable++;
+          else { stable = 0; prevH = h; }
+        }
         if (scroller) scroller.scrollTop = scroller.scrollHeight;
         await new Promise((r) => setTimeout(r, 300));
         const lines = Array.from(document.querySelectorAll('#mainContainer [data-type="bbsline"]'));

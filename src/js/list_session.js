@@ -17,6 +17,7 @@ import {
   parseListTitle,
   matchTitleBlacklist,
   pageArticleNums,
+  parseListArticleNumLoose,
   isPinnedListRow,
   isDeletedListRow,
   rowToText,
@@ -54,8 +55,9 @@ export function parseBoardName(row0Text) {
 //
 // clean-list fingerprint (protocol doc §3/§5, all five must hold):
 //   row0 reversed title with a parsable 《board》, row2 reversed header with
-//   「編號」, ≥3 parsable article numbers in the entry area, the cursor parked
-//   in the entry area at col ≤ 1, and the bottom feeter containing 「文章選讀」.
+//   「編號」, ≥3 parsable article numbers in the entry area (or the board-tail
+//   short-page rule below), the cursor parked in the entry area at col ≤ 1,
+//   and the bottom feeter containing 「文章選讀」.
 // Deliberately NOT parseListRow — that matches the BOARD MENU footer (v3 trap
 // #3); and 「郵件選讀」 (mail) must not engage, hence the exact feeter text.
 export function classifyListScreen(facts) {
@@ -77,6 +79,26 @@ export function classifyListScreen(facts) {
     let count = 0;
     for (let i = 3; i <= rows - 2; ++i) if (nums[i] != null) ++count;
     if (count >= 3) return { kind: 'clean-list', boardName };
+    // 板尾短頁（2026-07-11 錄製檔誤降級）：最後一頁可能只剩 1-2 列編號文章
+    // （游標 ● 蓋掉最高位時連 parseListArticleNum 都是 null，只有 loose 可讀）
+    // ＋置底文＋空白列，湊不滿 3 列 → 永遠 transient → 板尾任何無主 settle 都
+    // 降級 functionMode 且無法自癒。放寬條件（半繪防護仍在）：游標列本身必須
+    // 是列表形列，且 entry 區每個非空列都是列表形（編號/置底/刪除），至少一列。
+    const listShapedRow = i =>
+      nums[i] != null ||
+      isPinnedListRow(rowTexts[i]) ||
+      isDeletedListRow(rowTexts[i]) ||
+      (i === curY && parseListArticleNumLoose(rowTexts[i]) != null);
+    if ((rowTexts[curY] || '').trim() && listShapedRow(curY)) {
+      let shaped = 0;
+      let foreign = false;
+      for (let i = 3; i <= rows - 2; ++i) {
+        if (!(rowTexts[i] || '').trim()) continue;
+        if (listShapedRow(i)) ++shaped;
+        else foreign = true;
+      }
+      if (!foreign && shaped >= 1) return { kind: 'clean-list', boardName };
+    }
   }
 
   // Article (pmore): the bottom status row 「瀏覽 第 x/y 頁 …」 is decisive.
@@ -1268,8 +1290,19 @@ ListSession.prototype = {
       keys: up ? '\x1b[5~' : '\x1b[6~',
       kind: up ? 'prefetch-up' : 'prefetch-down',
       expect: function(snap, facts) {
-        if (facts.kind !== 'clean-list') return false;
         const now = facts.cursorRowNum;
+        if (facts.kind !== 'clean-list') {
+          // 第二道防線（2026-07-11 錄製檔）：板尾短頁仍可能被分類 transient，
+          // 但 park 指紋（entry 區 col≤1）＋序號相對 base 的位移已足以確定
+          // 落點——不收腿就是 timeout→探針 miss→無主 settle→誤降級。null 在
+          // transient 幀可能只是半繪解析不到，不得判 edge（等探針的全幅幀）。
+          const parked =
+            facts.curY >= 3 && facts.curY <= facts.rows - 2 && facts.curX <= 1;
+          if (!parked || now == null) return false;
+          if (up ? now < base : now > base) return { moved: true, landed: now };
+          if (now === base) return { edge: true, landed: now };
+          return false;
+        }
         // A PgDn on the TRUE last page parks the cursor on a 置底 row (no
         // number → null): that IS the board edge (same precedent as
         // _requestEnd, invariant 3). Without this the response never matches,
