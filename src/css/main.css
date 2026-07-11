@@ -173,6 +173,50 @@ a:link,a:visited,a:active,a:hover {
   width: 100%;
   height: auto;
 }
+
+/* 好讀「圖左字右合併」（翻譯漫畫文；Screen.js mergeBlock）：圖行連同 inline 圖
+   佔左欄，其下說明/翻譯行搬進右欄。右欄 sticky（scroll ancestor = .main，中間無
+   overflow 阻斷）＋ flex 下需 align-self:flex-start（否則欄被拉伸等高、沒有可
+   sticky 的捲動空間）→ 捲動長圖時翻譯一直停在視野內。 */
+.mergedImageBlock {
+  display: flex;
+  align-items: flex-start;
+  gap: 1em;
+}
+.mergedImageCol {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* 右欄寬度由 Screen 依「最寬翻譯行」動態 inline 指定（不換行為原則）；
+   max-width 55% 守極端長行——被上限截到時退回 pre-wrap 換行。
+   margin-top ＝ 1 行行高（圖行的連結文字列）＋圖片 0.5em 上邊距，
+   讓翻譯第一行對齊「圖片」頂端而不是連結文字。sticky 生效（捲進畫面上緣）
+   後以 top:8px 貼齊，不受此 margin 影響。 */
+.mergedCaptionCol {
+  flex: 0 0 auto;
+  max-width: 55%;
+  min-width: 0;
+  position: sticky;
+  top: 8px;
+  align-self: flex-start;
+  margin-top: calc(1lh + 0.5em);
+}
+/* row span 的 display:block 與預設色原靠 #mainContainer > span 直系選擇器
+   （上方），包進 wrapper div 後不再是直系子層 → 補等效樣式。右欄改 pre-wrap
+   讓翻譯在窄欄自動換行。 */
+.mergedImageBlock span[type="bbsrow"] {
+  display: block;
+  color: #c0c0c0;
+  white-space: pre;
+}
+.mergedCaptionCol span[type="bbsrow"] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 全頁放大（imagesEnlarged）時左欄圖以欄寬為 100%，不撐爆兩欄版面。 */
+#mainContainer.imagesEnlarged .mergedImageCol .easyReadingImg {
+  max-width: 100%;
+}
 .easyReadingVideo {
   margin: 0.5em auto;
   width: 640px;

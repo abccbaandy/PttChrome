@@ -102,6 +102,12 @@ export const en_US = {
   "options_debugMode_desc": {
     "message": "Shows a record button on the main screen to capture connection traffic and app state for bug reports. This setting is never saved and resets to off on page reload."
   },
+  "mergeImageCaption_on": {
+    "message": "Merge captions"
+  },
+  "mergeImageCaption_off": {
+    "message": "Unmerge"
+  },
   "debugRecord_start": {
     "message": "Record"
   },

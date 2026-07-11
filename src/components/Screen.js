@@ -18,6 +18,11 @@ import {
 import { detectFixableUrls } from "../js/url_fix";
 import { detectMentions } from "../js/mention_parse";
 import { detectAids } from "../js/aid_parse";
+import {
+  groupImageCaptionBlocks,
+  maxCaptionCols,
+} from "../js/image_caption_group";
+import MergeImageCaptionButton from "./MergeImageCaptionButton";
 
 // NOTE: articleAuthor (原PO id) is tracked by term_view across page-downs and
 // passed in via enhance — the "作者" header only appears on the first page, so we
@@ -31,7 +36,7 @@ const PAGE_READING = 3;
 // is fixed-size, so a blacklisted row is hidden (visibility:hidden) rather than
 // removed — removing it would desync the terminal grid. Floor numbers here count
 // only within the visible page (cross-page numbering needs easy reading; see plan).
-function computeAnnotations(lines, enhance) {
+function computeAnnotations(lines, enhance, mergeCaption) {
   const result = new Array(lines.length);
   if (!enhance) return result;
   const {
@@ -65,8 +70,19 @@ function computeAnnotations(lines, enhance) {
       articleAuthor,
       selectedPusher,
     };
+    // 圖文合併（好讀限定）：先重建整篇純文字做跨行分組（per-row 的 annotateComment
+    // 看不到鄰列）。無論開關與否都要算——關閉時浮動按鈕的顯示條件也需要塊數。
+    const texts = new Array(lines.length);
     for (let row = 0; row < lines.length; ++row) {
-      const text = rowToText(lines[row]);
+      texts[row] = rowToText(lines[row]);
+    }
+    let captionBlocks;
+    if (easyReading) {
+      captionBlocks = groupImageCaptionBlocks(texts);
+      result.imageCaptionBlockCount = captionBlocks.length;
+    }
+    for (let row = 0; row < lines.length; ++row) {
+      const text = texts[row];
       const ann = annotateComment(text, ctx) || undefined;
       // Auto-fix runs on every row (article body included), independent of the
       // comment annotation. The fixed-URL line only renders in easy-reading mode
@@ -123,6 +139,19 @@ function computeAnnotations(lines, enhance) {
       if (mentions) r = { ...(r || {}), mentions };
       if (aids) r = { ...(r || {}), aids };
       result[row] = r;
+    }
+    // 開啟合併時把分組結果寫進 annotation：圖行掛 mergeBlock（render 成兩欄
+    // wrapper），說明行掛 mergedInto（頂層 render null，改巢狀進右欄）。
+    // captionMaxCols＝全部說明段最寬行的顯示欄數，右欄寬度據此動態決定（不換行）。
+    if (captionBlocks && mergeCaption) {
+      result.captionMaxCols = maxCaptionCols(texts, captionBlocks);
+      for (let k = 0; k < captionBlocks.length; ++k) {
+        const b = captionBlocks[k];
+        result[b.imageRow] = { ...(result[b.imageRow] || {}), mergeBlock: b };
+        for (let r = b.captionStart; r <= b.captionEnd; ++r) {
+          result[r] = { ...(result[r] || {}), mergedInto: b.imageRow };
+        }
+      }
     }
   } else if (pageState === PAGE_LIST || inListContext) {
     // inListContext keeps list treatment alive across overlay prompts (e.g. the
@@ -184,6 +213,10 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   const [pos, setPos] = React.useState({ left: undefined, top: undefined });
   // 好讀自動開圖「一鍵放大全部圖片至視窗寬度」開關；點任一張內嵌預覽圖切換。
   const [imagesEnlarged, setImagesEnlarged] = React.useState(false);
+  // 好讀「圖左字右合併」（翻譯漫畫文）：浮動按鈕切換。與 imagesEnlarged 同生命
+  // 週期——同篇 page-down 保留、換文章/退出再進（articleId 變）即重置回關，
+  // 所以不會發生「換到沒按鈕的文章卻還開著、關不掉」。
+  const [mergeCaption, setMergeCaption] = React.useState(false);
 
   // 命令式 API：term_view 經 term_ui 的 ref.current.setCurrentHighlighted(row)
   // 設高亮列（鍵盤操作時）。取代 class instance method。
@@ -204,6 +237,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   if (articleId !== prevArticleIdRef.current) {
     prevArticleIdRef.current = articleId;
     if (imagesEnlarged) setImagesEnlarged(false);
+    if (mergeCaption) setMergeCaption(false);
   }
 
   // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
@@ -241,7 +275,15 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     setCurrentImagePreview(undefined);
   }, []);
 
-  const annotations = computeAnnotations(lines, enhance);
+  // 按鈕切換純屬 Screen 內部 state；換回終端機輸入焦點（隱藏 input #t），
+  // 否則按鈕吃掉鍵盤、方向鍵失效。
+  const handleToggleMergeCaption = React.useCallback(() => {
+    setMergeCaption((v) => !v);
+    const input = document.getElementById("t");
+    if (input) input.focus();
+  }, []);
+
+  const annotations = computeAnnotations(lines, enhance, mergeCaption);
   // dropHidden: easy-reading accumulates a single growing scroll page, so a
   // blacklisted comment is removed entirely (render null → no DOM node, no blank
   // line). The fixed native grid instead keeps the row and hides it
@@ -250,6 +292,48 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   // absolute pageLines index in `row`/`data-row` and selection across the gap
   // (term_buf.getText uses the absolute row index) stays correct.
   const dropHidden = !!(enhance && enhance.dropHidden);
+  // 圖文合併（好讀）：renderRow 抽成可重用——說明行從頂層移巢狀進右欄時沿用同一
+  // render（row/data-row 保留絕對 pageLines index，term_buf.getText 的選取複製不壞）。
+  const renderRow = (row) => {
+    const ann = annotations[row];
+    return (
+      <Row
+        key={row}
+        chars={lines[row]}
+        row={row}
+        forceWidth={forceWidth}
+        enableLinkInlinePreview={enableLinkInlinePreview}
+        highlighted={currentHighlighted === row}
+        floor={ann && ann.floor}
+        hidden={ann && ann.hidden}
+        pusher={ann && ann.pusher}
+        pusherHighlight={ann && ann.pusherHighlight}
+        authorIdStart={ann && ann.authorIdStart}
+        authorIdEnd={ann && ann.authorIdEnd}
+        fixedUrls={ann && ann.fixedUrls}
+        mentions={ann && ann.mentions}
+        aids={ann && ann.aids}
+        blacklistNotice={ann && ann.blacklistNotice}
+        onHyperLinkMouseOver={handleHyperLinkMouseOver}
+        onHyperLinkMouseOut={handleHyperLinkMouseOut}
+      />
+    );
+  };
+  // 浮動「圖文並排」按鈕：好讀文章頁且偵測到 ≥2 個「圖＋說明」塊才出現。
+  // 純結構啟發式（見 image_caption_group.js），不確定那段字是不是翻譯 →
+  // opt-in 手動切換；state 在本元件、articleId 變即重置（見上）。
+  const showMergeButton = !!(
+    enhance &&
+    enhance.easyReading &&
+    enhance.pageState === PAGE_READING &&
+    (annotations.imageCaptionBlockCount || 0) >= 2
+  );
+  // 右欄不換行：寬度＝最寬翻譯行的顯示欄數（半形1/全形2）× 半形字寬。
+  // forceWidth 是全形字強制的像素寬 → 半形 ≈ forceWidth/2；+1 全形字寬當緩衝。
+  // 上限 55% 交給 CSS max-width 守（極長行時退回換行，見 main.css pre-wrap）。
+  const captionColStyle = annotations.captionMaxCols
+    ? { width: (annotations.captionMaxCols / 2 + 1) * forceWidth }
+    : undefined;
   return (
     <div
       id="mainContainer"
@@ -260,29 +344,33 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
       {lines.map((chars, row) => {
         const ann = annotations[row];
         if (dropHidden && ann && ann.hidden) return null;
-        return (
-          <Row
-            key={row}
-            chars={chars}
-            row={row}
-            forceWidth={forceWidth}
-            enableLinkInlinePreview={enableLinkInlinePreview}
-            highlighted={currentHighlighted === row}
-            floor={ann && ann.floor}
-            hidden={ann && ann.hidden}
-            pusher={ann && ann.pusher}
-            pusherHighlight={ann && ann.pusherHighlight}
-            authorIdStart={ann && ann.authorIdStart}
-            authorIdEnd={ann && ann.authorIdEnd}
-            fixedUrls={ann && ann.fixedUrls}
-            mentions={ann && ann.mentions}
-            aids={ann && ann.aids}
-            blacklistNotice={ann && ann.blacklistNotice}
-            onHyperLinkMouseOver={handleHyperLinkMouseOver}
-            onHyperLinkMouseOut={handleHyperLinkMouseOut}
-          />
-        );
+        // 說明行已併入所屬圖行的右欄（下方 mergeBlock 分支），頂層不重複 render。
+        if (ann && ann.mergedInto !== undefined) return null;
+        if (ann && ann.mergeBlock) {
+          const { captionStart, captionEnd } = ann.mergeBlock;
+          const captionRows = [];
+          for (let r = captionStart; r <= captionEnd; ++r) {
+            const cAnn = annotations[r];
+            if (dropHidden && cAnn && cAnn.hidden) continue;
+            captionRows.push(renderRow(r));
+          }
+          return (
+            <div key={row} className="mergedImageBlock">
+              <div className="mergedImageCol">{renderRow(row)}</div>
+              <div className="mergedCaptionCol" style={captionColStyle}>
+                {captionRows}
+              </div>
+            </div>
+          );
+        }
+        return renderRow(row);
       })}
+      {showMergeButton && (
+        <MergeImageCaptionButton
+          merged={mergeCaption}
+          onToggle={handleToggleMergeCaption}
+        />
+      )}
       {currentImagePreview && (
         <ImagePreviewer
           request={currentImagePreview}

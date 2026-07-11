@@ -102,6 +102,12 @@
   "options_debugMode_desc": {
     "message": "開啟後主畫面會出現錄製按鈕，可錄下連線收發資料與程式狀態供回報 bug 使用。此設定不會被儲存，重新整理後自動關閉。"
   },
+  "mergeImageCaption_on": {
+    "message": "圖文並排"
+  },
+  "mergeImageCaption_off": {
+    "message": "還原排版"
+  },
   "debugRecord_start": {
     "message": "錄製"
   },

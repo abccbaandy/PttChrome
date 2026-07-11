@@ -1,5 +1,13 @@
 import React from "react";
 import { decode } from "base58";
+import {
+  RE_IMAGE_EXT,
+  RE_VIDEO_EXT,
+  RE_IMGUR_ALBUM,
+  RE_IMGUR_SINGLE,
+  RE_TWIMG,
+  RE_MEEE,
+} from "../js/image_url_detect";
 
 const noop = () => {};
 
@@ -335,9 +343,8 @@ ImagePreviewer.Inline = ({ value, error }) => {
   }
 };
 
-const RE_IMAGE_EXT =
-  /\.(?:jpe?g|png|gif|webp|apng|avif|jfif|pjpeg|pjp|svg|bmp|ico)(?:$|[?#])/i;
-const RE_VIDEO_EXT = /\.(?:mp4|webm|ogg)(?:$|[?#])/i;
+// RE_IMAGE_EXT / RE_VIDEO_EXT 及各 host regex 移至 src/js/image_url_detect.js
+// （與圖文合併分組共用，見該檔說明）。
 
 // Multiple client ids, picked at random, to spread imgur API quota.
 const IMGUR_CLIENT_IDS = [
@@ -368,7 +375,7 @@ const resolveImgurAlbum = (hash) => {
 const imageUrlResolvers = [
   {
     /* imgur album / gallery */
-    regex: /^https?:\/\/(?:[mi]\.)?imgur\.com\/(?:a|gallery)\/(\w+)/i,
+    regex: RE_IMGUR_ALBUM,
     test(src) {
       return this.regex.test(src);
     },
@@ -382,7 +389,7 @@ const imageUrlResolvers = [
   },
   {
     /* imgur single image (i.imgur.com/<id>.<ext> or imgur.com/<id>) */
-    regex: /^https?:\/\/(?:[mi]\.)?imgur\.com\/([a-z0-9]+)(?:\.([a-z0-9]+))?/i,
+    regex: RE_IMGUR_SINGLE,
     test(src) {
       return this.regex.test(src) && !/\/(?:a|gallery)\//i.test(src);
     },
@@ -398,8 +405,7 @@ const imageUrlResolvers = [
   },
   {
     /* twitter / X — request :orig with png/large/plain fallbacks */
-    regex:
-      /^https?:\/\/pbs\.twimg\.com\/media\/([\w-]+)(?:\.(\w+))?(?:\?.*?format=(\w+))?/i,
+    regex: RE_TWIMG,
     test(src) {
       return this.regex.test(src);
     },
@@ -422,7 +428,7 @@ const imageUrlResolvers = [
   },
   {
     /* meee.com.tw — real extension is unknown, try common ones */
-    regex: /^https?:\/\/meee\.com\.tw\/(\w+)(?:\.(\w+))?/i,
+    regex: RE_MEEE,
     test(src) {
       return this.regex.test(src);
     },
