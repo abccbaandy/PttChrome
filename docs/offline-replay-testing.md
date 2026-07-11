@@ -87,6 +87,18 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 - 沒錄過任何 cassette/fixture：offline 文章/增強 spec 與 Layer2 unit **skip**（非失敗）；
   `harness.offline.spec.js` 永遠不需素材（驗離線 boot+onData 渲染）。
 
+## 使用者 Debug 錄製檔 → cassette
+使用者在「設定 → 關於」開 Debug 錄製模式錄下的檔（`ptt-debug-*.json`，schema 見
+`src/js/debug_recorder_logic.js`）內建 `cassette` 欄位（`meta.mode:'debug-derived'`）：
+- 直接取 `json.cassette`、把 `meta.mode` 改成 `article`/`list` 後存進 `tests/e2e/cassettes/`
+  即可被 offline spec 撿到重放（`debug-derived` 預設不會被 `findCassettes` 誤撿）。
+- `events` 為完整雙向時間序（send/recv/log + 每事件狀態快照），修 bug 時人工閱讀用。
+- 限制：導出用 send 反查鍵表（`classifySend`），非翻頁類按鍵會標 `on:'raw'`（replay.js
+  不認得，需人工裁剪或只取 start~pagedown 段）；下載前已自動 redact 已知帳密/IP，但
+  **手動鍵入的密碼無法偵測**，入 repo 前務必人工複查。
+- 守護測試：`tests/unit/redact.test.js`、`tests/unit/debug_recorder_logic.test.js`、
+  `tests/unit/debug_recorder.test.js`、`tests/e2e/offline/debug_record.offline.spec.js`。
+
 ## 回歸捕捉力驗證（關鍵，證明素材真能守門）
 錄好 cassette 後：臨時改壞 `comment_parse.findPageOverlap`（或 stash 第一則推文修復 commit），
 `yarn test:e2e:offline` + `yarn test:unit` 必須**變紅**（首推作者缺席 / commentCount 不符 / 樓號錯位）；

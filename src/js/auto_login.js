@@ -117,6 +117,7 @@ AutoLogin.prototype.start = async function() {
 
   const v = readValuesWithDefault();
   if (!v.autoLogin) return;
+  this._app.debugRecorder?.log('autoLogin.start');
   const cred = await this._resolveCredential(v);
   // A newer start() may have begun while the credential chooser was open.
   if (!cred || seq !== this._seq) return;

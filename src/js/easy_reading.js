@@ -445,6 +445,7 @@ EasyReading.prototype.switchToNativeAtBottom = function() {
 // already-drawn page in easy-reading mode and (b) kick off the auto page-down loop.
 EasyReading.prototype.enterEasyReading = function() {
   console.log('enter easy reading');
+  this._core.debugRecorder?.log('easyReading.enter');
   this._enabled = true;
   this._functionMode = false;
   this._savedScrollTop = null;
@@ -472,6 +473,7 @@ EasyReading.prototype.enterEasyReading = function() {
 // hidden hop is what an earlier bug tripped on.
 EasyReading.prototype.exitEasyReading = function() {
   console.log('exit easy reading');
+  this._core.debugRecorder?.log('easyReading.exit');
   // stop any pending/in-flight auto page down
   this.sendCommandAfterUpdate = '';
   this._functionMode = false;

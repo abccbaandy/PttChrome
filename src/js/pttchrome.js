@@ -66,6 +66,10 @@ export const App = function() {
   };
   this.autoLogin = new AutoLogin(this);
 
+  // Debug 錄製器（src/js/debug_recorder.js）：由 DebugRecordButton 掛上/卸下，
+  // 純 runtime、不落地。關鍵路徑用 this.debugRecorder?.log(tag, info) 留痕。
+  this.debugRecorder = null;
+
   //new pref - start
   this.antiIdleTime = 0;
   this.idleTime = 0;
@@ -261,6 +265,7 @@ App.prototype.onConnect = function() {
   this.conn.isConnected = true;
   this.view.setConn(this.conn);
   console.info("pttchrome onConnect");
+  this.debugRecorder?.log('app.onConnect');
   this.connectState = 1;
   this.updateTabIcon('connect');
   this.idleTime = 0;
@@ -295,6 +300,7 @@ App.prototype.onData = function(data) {
 
 App.prototype.onClose = function() {
   console.info("pttchrome onClose");
+  this.debugRecorder?.log('app.onClose');
   if (this.timerEverySec) {
     this.timerEverySec.cancel();
   }
@@ -369,6 +375,7 @@ App.prototype.onToggleLiveHelperModalState = noop;
 App.prototype.onDisableLiveHelperModalState = noop;
 
 App.prototype.switchToEasyReadingMode = function(doSwitch) {
+  this.debugRecorder?.log('app.switchToEasyReadingMode', { doSwitch: !!doSwitch });
   // NOTE: this resets per-post easy-reading state via leaveCurrentPost(). Callers
   // (onPrefSaveImpl, and transitively easyReading.exitEasyReading()) rely on it —
   // an easy hop to miss when tracing the exit path.

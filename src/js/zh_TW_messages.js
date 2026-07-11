@@ -80,6 +80,26 @@
     "message": "增強功能"
   },
 
+  // debug 錄製模式（關於分頁，runtime-only）
+  "options_debugMode_title": {
+    "message": "除錯"
+  },
+  "options_debugMode": {
+    "message": "Debug 錄製模式"
+  },
+  "options_debugMode_desc": {
+    "message": "開啟後主畫面會出現錄製按鈕，可錄下連線收發資料與程式狀態供回報 bug 使用。此設定不會被儲存，重新整理後自動關閉。"
+  },
+  "debugRecord_start": {
+    "message": "錄製"
+  },
+  "debugRecord_stop": {
+    "message": "停止錄製"
+  },
+  "debugRecord_downloaded_warning": {
+    "message": "已下載錄製檔。內容含你鍵入的所有按鍵（手動輸入的密碼無法自動遮蔽），分享前請自行檢查敏感資訊。"
+  },
+
   // enhanced add-on options
   "options_showFloorNumbers": {
     "message": "文章內推文顯示樓層編號 (僅好讀模式，跨頁連續準確)"

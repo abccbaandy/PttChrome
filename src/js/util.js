@@ -30,6 +30,19 @@ export function proxySiteFromPrefs(prefs) {
   return s;
 }
 
+// 觸發瀏覽器下載一段文字內容（Blob + a[download]）。
+export function downloadAsFile(filename, text, mime) {
+  var blob = new Blob([text], { type: mime || 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+}
+
 export function getQueryVariable(variable) {
   var query = window.location.search.substring(1);
   var vars = query.split("&");

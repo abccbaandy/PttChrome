@@ -80,6 +80,26 @@ export const en_US = {
     "message": "Enhanced"
   },
 
+  // debug recording mode (about tab, runtime-only)
+  "options_debugMode_title": {
+    "message": "Debug"
+  },
+  "options_debugMode": {
+    "message": "Debug recording mode"
+  },
+  "options_debugMode_desc": {
+    "message": "Shows a record button on the main screen to capture connection traffic and app state for bug reports. This setting is never saved and resets to off on page reload."
+  },
+  "debugRecord_start": {
+    "message": "Record"
+  },
+  "debugRecord_stop": {
+    "message": "Stop recording"
+  },
+  "debugRecord_downloaded_warning": {
+    "message": "Recording downloaded. It contains every key you typed (manually entered passwords cannot be auto-redacted); review before sharing."
+  },
+
   // enhanced add-on options
   "options_showFloorNumbers": {
     "message": "Show comment floor numbers (easy reading only; continuous and accurate across pages)"

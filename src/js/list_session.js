@@ -621,6 +621,10 @@ ListSession.prototype = {
 
   _dispatch: function(event, facts) {
     const r = transitionListSession(this.state, event);
+    if (r.next !== this.state)
+      this._core.debugRecorder?.log('listSession.transition', {
+        from: this.state, event, to: r.next,
+      });
     this.state = r.next;
     for (let i = 0; i < r.actions.length; ++i) this._runAction(r.actions[i], facts);
   },

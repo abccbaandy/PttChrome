@@ -4,6 +4,9 @@ import DropdownMenu from "./DropdownMenu";
 import InputHelperModal from "./InputHelperModal";
 import LiveHelperModal from "./LiveHelperModal";
 import PrefModal from "./PrefModal";
+import DebugRecordButton from "../DebugRecordButton";
+import { downloadAsFile } from "../../js/util";
+import { readValuesWithDefault } from "../../js/pref_storage";
 
 function noop() {}
 
@@ -61,6 +64,10 @@ const initialState = {
 
 export const ContextMenu = ({ pttchrome }) => {
   const [state, setState] = useState(initialState);
+  // Debug 模式（設定→關於）：獨立 useState、不進 initialState —— onMenuSelect 等
+  // 路徑會 update(initialState) 全量 reset，混進去會被誤關。runtime-only：不進
+  // pref_storage/pref_sync，重新整理即重設為關閉。
+  const [debugMode, setDebugMode] = useState(false);
   // Several handlers both read state for a side-effect AND set it, so we mirror
   // state into a ref (synced every render) and read stateRef.current in
   // callbacks to avoid stale closures.
@@ -274,6 +281,21 @@ export const ContextMenu = ({ pttchrome }) => {
     [pttchrome, update],
   );
 
+  // 關閉 debug 模式時若仍在錄製：先停止並下載（不丟資料），再卸下按鈕。
+  const onDebugModeChange = useCallback(
+    (enabled) => {
+      if (!enabled && pttchrome.debugRecorder?.isRecording) {
+        const json = pttchrome.debugRecorder.stop({
+          prefs: readValuesWithDefault(),
+        });
+        pttchrome.debugRecorder = null;
+        if (json) downloadAsFile("ptt-debug-" + Date.now() + ".json", json);
+      }
+      setDebugMode(enabled);
+    },
+    [pttchrome],
+  );
+
   const onPrefSave = useCallback(
     (values) => {
       update(onPrefSaveImpl(pttchrome, values));
@@ -408,7 +430,10 @@ export const ContextMenu = ({ pttchrome }) => {
         show={showsSettings}
         onSave={onPrefSave}
         onReset={onPrefReset}
+        debugMode={debugMode}
+        onDebugModeChange={onDebugModeChange}
       />
+      {debugMode && <DebugRecordButton pttchrome={pttchrome} />}
     </Fragment>
   );
 };

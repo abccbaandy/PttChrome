@@ -9,6 +9,7 @@ import {
   Select,
   Textarea,
   SegmentedControl,
+  Switch,
   Title,
   Text,
   Anchor,
@@ -124,7 +125,13 @@ const replacements = {
   ),
 };
 
-export const PrefModal = ({ show, onSave, onReset }) => {
+export const PrefModal = ({
+  show,
+  onSave,
+  onReset,
+  debugMode,
+  onDebugModeChange,
+}) => {
   const [navActiveKey, setNavActiveKey] = useState("general");
   const [values, setValues] = useState(readValuesWithDefault);
   const [syncUser, setSyncUser] = useState(null);
@@ -730,6 +737,19 @@ export const PrefModal = ({ show, onSave, onReset }) => {
                     {process.env.BUILD_TIME})
                   </li>
                 </ul>
+              </div>
+              <div>
+                <Title order={5}>{i18n("options_debugMode_title")}</Title>
+                {/* runtime-only：不進 values / DEFAULT_PREFS / pref_storage /
+                    pref_sync —— 不落地、不上雲，重新整理即重設為關閉。 */}
+                <Switch
+                  id="pref-debug-mode"
+                  checked={!!debugMode}
+                  onChange={(e) => onDebugModeChange(e.currentTarget.checked)}
+                  label={i18n("options_debugMode")}
+                  description={i18n("options_debugMode_desc")}
+                  mb="xs"
+                />
               </div>
               <div>
                 <Title order={5}>{i18n("about_new_title")}</Title>
