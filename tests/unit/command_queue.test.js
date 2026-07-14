@@ -43,6 +43,19 @@ describe("CommandQueue", () => {
     expect(q.idle).toBe(true);
   });
 
+  test("onSettle 回傳消費結果：done/miss/未消費（reducer 靠它辨識被指令擁有的 settle）", () => {
+    const { q } = makeQueue();
+    expect(settleWith(q, true)).toBeFalsy(); // 無 in-flight → 未消費
+
+    q.enqueue(cmd("A"));
+    expect(settleWith(q, false)).toBeFalsy(); // 半繪，指令仍在線 → 未消費
+    expect(settleWith(q, true)).toBe("done"); // 完成幀 → 消費
+
+    q.enqueue(cmd("B", { onFail: jest.fn() }));
+    jest.advanceTimersByTime(3000); // 探針上線
+    expect(settleWith(q, false)).toBe("miss"); // 探針幀仍不符 → miss 也算消費
+  });
+
   test("fullRepaint appends \\f to the sent keys (v5 deterministic tail)", () => {
     const { q, sent } = makeQueue();
     q.enqueue(cmd("123\r", { fullRepaint: true }));

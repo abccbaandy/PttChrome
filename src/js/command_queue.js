@@ -76,14 +76,22 @@ CommandQueue.prototype = {
   // Evaluate the in-flight command against a settled screen. Call on every
   // screenSettled BEFORE the state-machine reducer runs, so the reducer sees
   // inFlightKind AFTER completion is accounted for.
+  // Returns how the settle was CONSUMED by the in-flight command — 'done'
+  // (expect satisfied) or 'miss' (probe frame conclusively rejected) — else
+  // null. The caller must mark such settles as command-owned: a completing
+  // settle reads inFlightKind null right after, and a non-clean-list
+  // completion frame (board-tail probe, jump park) would otherwise look like
+  // an ownerless transient to the reducer's catch-all（2026-07-14 錄製檔：
+  // 整板一頁的 prefetch edge 探針幀誤降級 functionMode）.
   onSettle: function(snapshot, facts) {
     const cmd = this._inFlight;
-    if (!cmd) return;
+    if (!cmd) return null;
     const result = cmd.expect(snapshot, facts);
     if (result) {
       this._finish();
       if (cmd.onDone) cmd.onDone(result);
       this._maybeSendNext();
+      return 'done';
     } else if (cmd._probed) {
       // The probe's full frame arrived and expect still says no — that is a
       // definitive MISS, not a maybe: hand the known-complete screen's facts
@@ -91,10 +99,11 @@ CommandQueue.prototype = {
       this._finish();
       if (cmd.onFail) cmd.onFail('miss', facts);
       this._maybeSendNext();
-    } else {
-      // Response still in progress — the settle proves activity, extend.
-      this._armSoft(cmd);
+      return 'miss';
     }
+    // Response still in progress — the settle proves activity, extend.
+    this._armSoft(cmd);
+    return null;
   },
 
   // Drop everything, silently (no onFail): entering functionMode / pref off /

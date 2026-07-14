@@ -257,10 +257,16 @@ export function transitionListSession(state, event) {
             return { next: 'idle', actions: ['cleanup'] };
           default:
             // prompt/transient: explainable while a serialized command is
-            // mid-flight (a slow multi-write response can settle half-painted);
-            // otherwise catch-all self-heal to the native mirror (waterball,
-            // 動態看板, misclassification — everything lands here).
-            return event.inFlightKind
+            // mid-flight (a slow multi-write response can settle half-painted),
+            // OR when this very settle was consumed by the command that just
+            // completed on it (inFlightKind already null post-account; a
+            // board-tail edge probe's completion frame is transient — jump
+            // park keeps the bottom row empty, protocol §4✚/§6. Miss counts
+            // too: its onFail already handles the degrade — a catch-all here
+            // would double it). Otherwise catch-all self-heal to the native
+            // mirror (waterball, 動態看板, misclassification — everything
+            // lands here).
+            return event.inFlightKind || event.consumed
               ? stay
               : { next: 'functionMode', actions: ['enter-function-mode'] };
         }
@@ -585,8 +591,13 @@ ListSession.prototype = {
     if (!this._queue.inFlightKind) this._breakChain();
     // Command completion first, so the reducer sees inFlightKind post-account
     // and a completed open/prefetch can chain its next command before we act.
-    this._queue.onSettle(snap, facts);
-    this._dispatch(this._settleEvent(facts), facts);
+    // `consumed` marks a settle OWNED by the command that just completed on it
+    // (done or miss): its inFlightKind is already null here, and a completion
+    // frame that isn't clean-list (board-tail probe / jump park, protocol
+    // §4✚/§6) must not look ownerless to active's transient catch-all
+    //（2026-07-14 錄製檔誤降級）.
+    const consumed = this._queue.onSettle(snap, facts);
+    this._dispatch(this._settleEvent(facts, consumed), facts);
   },
 
   // One facts object per settle: everything the classifier, the queue expects
@@ -615,12 +626,13 @@ ListSession.prototype = {
     return facts;
   },
 
-  _settleEvent: function(facts) {
+  _settleEvent: function(facts, consumed) {
     return {
       type: 'settle',
       kind: facts.kind,
       boardNameMatch: facts.boardName != null && facts.boardName === this._boardName,
       inFlightKind: this._queue.inFlightKind,
+      consumed: !!consumed,
       landedNumInBuffer:
         facts.cursorRowNum != null &&
         (this._termBuf.listLineNums || []).indexOf(facts.cursorRowNum) !== -1,

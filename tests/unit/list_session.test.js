@@ -313,6 +313,14 @@ describe("transitionListSession (full table)", () => {
     // ... but a half-settled frame is EXPECTED while a command is in flight:
     T("active", settle("transient", { inFlightKind: "prefetch-up" }), "active", []);
     T("active", settle("prompt", { inFlightKind: "prefetch-up" }), "active", []);
+    // 2026-07-14 錄製檔：被剛完成的指令「消費」的 settle 不是無主——板尾
+    // prefetch 探針幀（jump-park 後底列空 → transient）滿足 expect 判 edge，
+    // queue 完成後 inFlightKind 已 null，同一 settle 進 reducer 不得 catch-all
+    // 降級（consumed 標記）。
+    T("active", settle("transient", { consumed: true }), "active", []);
+    T("active", settle("prompt", { consumed: true }), "active", []);
+    // menu/article/clean-list 出口不受 consumed 影響（照常轉移）
+    T("active", settle("menu", { consumed: true }), "idle", ["cleanup"]);
     // menu 出口不受 in-flight 抑制（離板優先於任何殘留 prefetch）:
     T("active", settle("menu", { inFlightKind: "prefetch-up" }), "idle", ["cleanup"]);
   });
@@ -878,6 +886,97 @@ describe("v5 確定性交易（timeout=探針觸發，非訊號；jump 腿維持
     expect(
       jump.expect(null, { kind: "prompt", cursorRowNum: 115, curY: 23, curX: 10, rows: 24 })
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-14 錄製檔：板尾（整板一頁）prefetch 探針幀被自己的腿消費後，同一個
+// settle 進 reducer 時 inFlightKind 已 null → 被 active 的 catch-all 當無主
+// transient 誤降級 functionMode（黏性 hold，不自動恢復）。真 CommandQueue 全鏈重現。
+// ---------------------------------------------------------------------------
+describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔）", () => {
+  afterEach(() => jest.useRealTimers());
+
+  test("板尾 prefetch-down 零回應 → 探針 transient 幀判 edge → state 停 active", async () => {
+    jest.useFakeTimers();
+    const { CommandQueue } = await import("../../src/js/command_queue");
+    const sent = [];
+    const queue = new CommandQueue({ send: (k) => sent.push(k) });
+
+    const rows = 24;
+    const numStart = 100;
+    const count = 60; // buffer 100..159，base = 159
+    const base = numStart + count - 1;
+    const mkRow = (n) =>
+      ` ${String(n)} + 2 6/14 someoneA     □ [閒聊] 文章 ${n}`.padEnd(80);
+    const lines = [];
+    const nums = [];
+    for (let i = 0; i < count; ++i) {
+      nums.push(numStart + i);
+      lines.push([...mkRow(numStart + i)].map((ch) => ({ ch, isLeadByte: false })));
+    }
+    // jump-park 後的畫面（協定 §4✚/§6）：底列空 → 永遠 transient；游標 park
+    // 在 base 序號列。\f 探針重繪同一虛擬螢幕 → 探針幀也是這個形狀。
+    const rowTexts = new Array(rows).fill("");
+    rowTexts[5] = mkRow(base);
+    const termBuf = {
+      rows,
+      cols: 80,
+      listLines: lines,
+      listLineNums: nums,
+      lineChangeds: new Array(rows).fill(false),
+      changed: false,
+      addEventListener() {},
+      notify() {},
+      getRowText: (r) => rowTexts[r],
+      isUnicolor: () => false,
+      settleSnapshot: null,
+    };
+    const banners = [];
+    const view = {
+      hideCursor() {},
+      showCursor() {},
+      resetListAccumulation() {},
+      flashListHint: (msg) => banners.push(msg),
+      blacklist: new Set(),
+      titleBlacklist: [],
+    };
+    const s = new ListSession({ conn: { send() {} } }, view, termBuf, queue);
+    s.state = "active";
+    s._boardName = "C_Chat";
+    s._topNum = 110;
+    s._selectedNum = 115;
+
+    s._maybeDemand(1); // anchor jump "159\r" 上線
+    expect(sent[0]).toBe(String(base) + "\r");
+
+    // settle #1：anchor 落點（transient park）→ anchor 完成、page 腿接棒上線
+    termBuf.settleSnapshot = {
+      changedRows: new Set([5, 23]),
+      cursorMoved: true,
+      curX: 0,
+      curY: 5,
+    };
+    s._onScreenSettled();
+    expect(sent[1]).toBe("\x1b[6~");
+    expect(s.state).toBe("active"); // page 腿 in flight → transient stay
+
+    // 板尾零回應 → soft timeout（800ms）→ \f 探針
+    jest.advanceTimersByTime(801);
+    expect(sent[2]).toBe("\f");
+
+    // settle #2：探針幀（同一 transient park，游標未動）→ expect 判 edge 完成。
+    // 同一個 settle 接著進 reducer——不得被當無主 transient 降級。
+    termBuf.settleSnapshot = {
+      changedRows: new Set([0, 5]),
+      cursorMoved: false,
+      curX: 0,
+      curY: 5,
+    };
+    s._onScreenSettled();
+    expect(s._edgeDown).toBe(true); // edge 有收（markEdge）
+    expect(s.state).toBe("active"); // 不降級
+    expect(banners).toEqual([]); // 無「畫面偏離列表格式」banner
   });
 });
 
