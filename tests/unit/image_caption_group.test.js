@@ -59,6 +59,22 @@ describe("groupImageCaptionBlocks", () => {
     ]);
   });
 
+  test("app 簽名檔（----- ＋ Sent from …）截斷：不被當成最後一張圖的翻譯", () => {
+    const rows = [
+      IMG1,
+      "翻譯",
+      IMG2,
+      "第二張翻譯",
+      "",
+      "-----",
+      "Sent from JPTT on my Samsung SM-S9380.",
+    ];
+    expect(groupImageCaptionBlocks(rows)).toEqual([
+      { imageRow: 0, captionStart: 1, captionEnd: 1 },
+      { imageRow: 2, captionStart: 3, captionEnd: 3 },
+    ]);
+  });
+
   test("第一條推文截斷（真推文＝行尾帶 MM/DD HH:MM 時間戳）", () => {
     const rows = [
       IMG1,
@@ -124,5 +140,88 @@ describe("groupImageCaptionBlocks", () => {
     expect(groupImageCaptionBlocks([IMG1, null, undefined, "字"])).toEqual([
       { imageRow: 0, captionStart: 3, captionEnd: 3 },
     ]);
+  });
+});
+
+describe("groupImageCaptionBlocks captionFirst（上文下圖）", () => {
+  const g = (rows) => groupImageCaptionBlocks(rows, "captionFirst");
+
+  test("典型上文下圖：圖行之前的文字 run 成塊；最後圖之後殘留文字丟棄", () => {
+    const rows = [
+      "翻譯第一句", // 0
+      "翻譯第二句", // 1
+      "", // 2
+      IMG1, // 3
+      "第二張的翻譯", // 4
+      IMG2, // 5
+      "後記文字（不屬於任何塊）", // 6
+    ];
+    expect(g(rows)).toEqual([
+      { imageRow: 3, captionStart: 0, captionEnd: 1 },
+      { imageRow: 5, captionStart: 4, captionEnd: 4 },
+    ]);
+  });
+
+  test("說明段去頭尾空白行、保留段內空行", () => {
+    const rows = ["", "段落一", "", "段落二", "", IMG1];
+    expect(g(rows)).toEqual([{ imageRow: 5, captionStart: 1, captionEnd: 3 }]);
+  });
+
+  test("連續兩張圖：前無文字 run 的圖不回傳塊", () => {
+    const rows = ["只有第一張有翻譯", IMG1, IMG2];
+    expect(g(rows)).toEqual([{ imageRow: 1, captionStart: 0, captionEnd: 0 }]);
+  });
+
+  test("中性 sole-URL 行：不成圖塊、不延伸 captionEnd、不重置 run", () => {
+    const rows = [
+      "翻譯",
+      "https://x.com/SomeAuthor/status/123456", // 來源連結
+      IMG1,
+      "字",
+      IMG2,
+    ];
+    expect(g(rows)).toEqual([
+      { imageRow: 2, captionStart: 0, captionEnd: 0 }, // x.com 行不在尾巴
+      { imageRow: 4, captionStart: 3, captionEnd: 3 },
+    ]);
+    // 夾在文字中間的中性行仍留在段內（範圍涵蓋）。
+    const rows2 = ["上文", "https://youtu.be/dQw4w9WgXcQ", "下文", IMG1];
+    expect(g(rows2)).toEqual([{ imageRow: 3, captionStart: 0, captionEnd: 2 }]);
+  });
+
+  test("-- 與真推文截斷", () => {
+    expect(g(["翻譯", "--", "簽名檔字", IMG1])).toEqual([]);
+    expect(g(["翻譯", "推 someuser: 推 06/13 12:01", "字", IMG1])).toEqual([]);
+    expect(g(["翻譯", IMG1, "--", "字", IMG2])).toEqual([
+      { imageRow: 1, captionStart: 0, captionEnd: 0 },
+    ]);
+  });
+
+  test("文章 header（作者/看板/標題/時間＋分隔線）不併入首圖的說明段", () => {
+    const rows = [
+      " 作者  boss0322 (山羊先生)", // 0
+      "看板  C_Chat", // 1
+      " 標題  [蛋頭] 可以介紹你哥給我認識嗎", // 2
+      " 時間  Mon Jul 13 21:35:07 2026", // 3
+      "═══════════════════════════", // 4 分隔線（同一全形字重複）
+      "", // 5
+      "https://x.com/i/status/123", // 6 中性來源連結
+      "", // 7
+      IMG1, // 8 → header 全被跳過，無 run → 首圖無塊
+      "「這是你哥？」", // 9
+      IMG2, // 10
+    ];
+    expect(g(rows)).toEqual([
+      { imageRow: 10, captionStart: 9, captionEnd: 9 },
+    ]);
+  });
+
+  test("無圖文章 → 空陣列；imageFirst 預設值不變", () => {
+    expect(g(["純文字", "還是文字"])).toEqual([]);
+    // 明確傳 "imageFirst" 與省略等價。
+    const rows = [IMG1, "翻譯"];
+    expect(groupImageCaptionBlocks(rows, "imageFirst")).toEqual(
+      groupImageCaptionBlocks(rows),
+    );
   });
 });

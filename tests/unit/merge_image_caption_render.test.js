@@ -98,10 +98,52 @@ describe("Screen 圖文合併 render", () => {
     // 右欄寬度＝(最寬 10 欄 / 2 + 1) × forceWidth = 120px（不換行）。
     expect(cols[0].style.width).toBe(`${(10 / 2 + 1) * FORCE_WIDTH}px`);
 
-    // 再點一次 → 還原。
+    // 再點一次 → 切「上文下圖」：圖行之前的文字歸該圖右欄。
+    fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
+    expect(c.querySelectorAll(".mergedImageBlock").length).toBe(2);
+    const cols2 = c.querySelectorAll(".mergedCaptionCol");
+    expect(
+      Array.from(cols2[0].querySelectorAll("[data-row]")).map((n) =>
+        parseInt(n.getAttribute("data-row"), 10),
+      ),
+    ).toEqual([0]); // 前導文字 → 圖1
+    expect(
+      Array.from(cols2[1].querySelectorAll("[data-row]")).map((n) =>
+        parseInt(n.getAttribute("data-row"), 10),
+      ),
+    ).toEqual([2, 3]); // 翻譯一/二 → 圖2
+    expect(dataRows(c).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+
+    // 第三次點 → 還原關閉。
     fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(0);
     expect(dataRows(c)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  test("純上文下圖文章：imageFirst 塊數 <2 但 captionFirst ≥2 → 按鈕仍顯示", () => {
+    const captionFirstLines = [
+      line("第一張翻譯"), // 0
+      line("https://i.imgur.com/aaa111.jpg"), // 1
+      line("第二張翻譯"), // 2
+      line("https://i.imgur.com/bbb222.jpg"), // 3
+    ];
+    const { container: c } = render(
+      <Screen
+        lines={captionFirstLines}
+        forceWidth={FORCE_WIDTH}
+        enableLinkInlinePreview={false}
+        enableLinkHoverPreview={false}
+        enhance={enhanceFor({})}
+      />,
+    );
+    const btn = c.querySelector("#mergeImageCaptionBtn");
+    expect(btn).not.toBeNull();
+    // imageFirst 只有 1 塊（圖2 之後無字）→ 第一次點只合併 1 塊。
+    fireEvent.click(btn);
+    expect(c.querySelectorAll(".mergedImageBlock").length).toBe(1);
+    // 第二次點 → captionFirst 合併 2 塊。
+    fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
+    expect(c.querySelectorAll(".mergedImageBlock").length).toBe(2);
   });
 
   test("articleId 變（換文章）→ 合併狀態重置回關", () => {

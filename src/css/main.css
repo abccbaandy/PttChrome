@@ -213,7 +213,10 @@ a:link,a:visited,a:active,a:hover {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* 全頁放大（imagesEnlarged）時左欄圖以欄寬為 100%，不撐爆兩欄版面。 */
+/* 左欄圖一律以欄寬為上限：.easyReadingImg 的 max-width:39em 是絕對值，
+   合併後左欄比 39em 窄時圖片會溢出壓到右欄文字 → 以 100%（=欄寬）收斂。
+   全頁放大（imagesEnlarged）沿用同值（width:100% 由上方放大規則給）。 */
+.mergedImageCol .easyReadingImg,
 #mainContainer.imagesEnlarged .mergedImageCol .easyReadingImg {
   max-width: 100%;
 }

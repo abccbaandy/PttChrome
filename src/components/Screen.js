@@ -72,14 +72,21 @@ function computeAnnotations(lines, enhance, mergeCaption) {
     };
     // 圖文合併（好讀限定）：先重建整篇純文字做跨行分組（per-row 的 annotateComment
     // 看不到鄰列）。無論開關與否都要算——關閉時浮動按鈕的顯示條件也需要塊數。
+    // 塊數取兩方向（上圖下文/上文下圖）的 max，讓純「上文下圖」文章也出得了按鈕。
     const texts = new Array(lines.length);
     for (let row = 0; row < lines.length; ++row) {
       texts[row] = rowToText(lines[row]);
     }
     let captionBlocks;
     if (easyReading) {
-      captionBlocks = groupImageCaptionBlocks(texts);
-      result.imageCaptionBlockCount = captionBlocks.length;
+      const imageFirstBlocks = groupImageCaptionBlocks(texts, "imageFirst");
+      const captionFirstBlocks = groupImageCaptionBlocks(texts, "captionFirst");
+      result.imageCaptionBlockCount = Math.max(
+        imageFirstBlocks.length,
+        captionFirstBlocks.length,
+      );
+      captionBlocks =
+        mergeCaption === "captionFirst" ? captionFirstBlocks : imageFirstBlocks;
     }
     for (let row = 0; row < lines.length; ++row) {
       const text = texts[row];
@@ -215,10 +222,11 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   const [pos, setPos] = React.useState({ left: undefined, top: undefined });
   // 好讀自動開圖「一鍵放大全部圖片至視窗寬度」開關；點任一張內嵌預覽圖切換。
   const [imagesEnlarged, setImagesEnlarged] = React.useState(false);
-  // 好讀「圖左字右合併」（翻譯漫畫文）：浮動按鈕切換。與 imagesEnlarged 同生命
-  // 週期——同篇 page-down 保留、換文章/退出再進（articleId 變）即重置回關，
-  // 所以不會發生「換到沒按鈕的文章卻還開著、關不掉」。
-  const [mergeCaption, setMergeCaption] = React.useState(false);
+  // 好讀「圖左字右合併」（翻譯漫畫文）：浮動按鈕三態循環
+  // null（關）→ "imageFirst"（上圖下文）→ "captionFirst"（上文下圖）→ null。
+  // 與 imagesEnlarged 同生命週期——同篇 page-down 保留、換文章/退出再進
+  // （articleId 變）即重置回關，所以不會發生「換到沒按鈕的文章卻還開著、關不掉」。
+  const [mergeCaption, setMergeCaption] = React.useState(null);
 
   // 命令式 API：term_view 經 term_ui 的 ref.current.setCurrentHighlighted(row)
   // 設高亮列（鍵盤操作時）。取代 class instance method。
@@ -239,7 +247,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   if (articleId !== prevArticleIdRef.current) {
     prevArticleIdRef.current = articleId;
     if (imagesEnlarged) setImagesEnlarged(false);
-    if (mergeCaption) setMergeCaption(false);
+    if (mergeCaption) setMergeCaption(null);
   }
 
   // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
@@ -280,7 +288,9 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   // 按鈕切換純屬 Screen 內部 state；換回終端機輸入焦點（隱藏 input #t），
   // 否則按鈕吃掉鍵盤、方向鍵失效。
   const handleToggleMergeCaption = React.useCallback(() => {
-    setMergeCaption((v) => !v);
+    setMergeCaption((v) =>
+      v === null ? "imageFirst" : v === "imageFirst" ? "captionFirst" : null,
+    );
     const input = document.getElementById("t");
     if (input) input.focus();
   }, []);
@@ -369,7 +379,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
       })}
       {showMergeButton && (
         <MergeImageCaptionButton
-          merged={mergeCaption}
+          mode={mergeCaption}
           onToggle={handleToggleMergeCaption}
         />
       )}

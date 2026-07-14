@@ -103,7 +103,10 @@ export const en_US = {
     "message": "Shows a record button on the main screen to capture connection traffic and app state for bug reports. This setting is never saved and resets to off on page reload."
   },
   "mergeImageCaption_on": {
-    "message": "Merge captions"
+    "message": "Merge captions (image above)"
+  },
+  "mergeImageCaption_captionFirst": {
+    "message": "Pair captions above images"
   },
   "mergeImageCaption_off": {
     "message": "Unmerge"
