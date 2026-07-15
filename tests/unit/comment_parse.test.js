@@ -18,6 +18,9 @@ import {
   parseArticleBoard,
   parseListAuthor,
   parseListTitle,
+  parseListTitleRaw,
+  listColRegion,
+  appendBlacklistEntry,
   parseListArticleNum,
   parseListArticleNumLoose,
   isPinnedListRow,
@@ -131,6 +134,58 @@ describe("parseListTitle", () => {
   test("fail-safe → '' when row too short", () => {
     expect(parseListTitle("       ")).toBe("");
     expect(parseListTitle(null)).toBe("");
+  });
+});
+
+describe("parseListTitleRaw（黑名單快速新增：Modal 預填用，保留大小寫）", () => {
+  test("title region kept in original case", () => {
+    const row = " 350024 + 2 6/14 a0930307148  R: [閒聊] 烙印勇士384";
+    expect(parseListTitleRaw(row)).toBe("R: [閒聊] 烙印勇士384");
+  });
+  test("cursor row (leading ●) realigns like parseListTitle", () => {
+    const cursorRow = "●50039 + 1 6/14 JHENGKUNLIN  □ [母雞] Foo";
+    const normalRow = " 350039 + 1 6/14 JHENGKUNLIN  □ [母雞] Foo";
+    expect(parseListTitleRaw(cursorRow)).toBe(parseListTitleRaw(normalRow));
+    expect(parseListTitleRaw(cursorRow)).toBe("□ [母雞] Foo");
+  });
+  test("fail-safe → '' when row too short / null", () => {
+    expect(parseListTitleRaw("       ")).toBe("");
+    expect(parseListTitleRaw(null)).toBe("");
+  });
+});
+
+describe("listColRegion（右鍵欄位判定）", () => {
+  test("boundaries: author field [17,29), title 29+", () => {
+    expect(listColRegion(16)).toBeNull();
+    expect(listColRegion(17)).toBe("author");
+    expect(listColRegion(28)).toBe("author");
+    expect(listColRegion(29)).toBe("title");
+    expect(listColRegion(79)).toBe("title");
+    expect(listColRegion(0)).toBeNull();
+  });
+});
+
+describe("appendBlacklistEntry（快速新增去重 append）", () => {
+  test("append to empty / existing list", () => {
+    expect(appendBlacklistEntry("", "foo")).toBe("foo");
+    expect(appendBlacklistEntry("foo", "bar")).toBe("foo\nbar");
+  });
+  test("already present (case-insensitive, trimmed) → null", () => {
+    expect(appendBlacklistEntry("foo\nbar", "FOO")).toBeNull();
+    expect(appendBlacklistEntry("  foo  \nbar", "foo")).toBeNull();
+    expect(appendBlacklistEntry("foo", "  foo ")).toBeNull();
+  });
+  test("empty / whitespace-only entry → null", () => {
+    expect(appendBlacklistEntry("foo", "")).toBeNull();
+    expect(appendBlacklistEntry("foo", "   ")).toBeNull();
+    expect(appendBlacklistEntry("foo", null)).toBeNull();
+  });
+  test("entry is trimmed and existing order/lines preserved", () => {
+    expect(appendBlacklistEntry("a\nb", "  c  ")).toBe("a\nb\nc");
+  });
+  test("trailing newlines in the stored pref don't create blank lines", () => {
+    expect(appendBlacklistEntry("a\nb\n", "c")).toBe("a\nb\nc");
+    expect(appendBlacklistEntry("\n", "c")).toBe("c");
   });
 });
 

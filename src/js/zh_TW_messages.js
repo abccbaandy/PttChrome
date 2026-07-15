@@ -68,6 +68,27 @@
   "cmenu_restartInTab": {
     "message": "在新分頁重新開啟 PttChrome"
   },
+  "cmenu_addAuthorBlacklist": {
+    "message": "加入作者黑名單"
+  },
+  "cmenu_authorBlacklistExists": {
+    "message": "已在黑名單"
+  },
+  "cmenu_addTitleBlacklist": {
+    "message": "加入標題黑名單 ..."
+  },
+  "titleBlacklistModal_title": {
+    "message": "加入標題黑名單"
+  },
+  "titleBlacklistModal_label": {
+    "message": "標題關鍵字（可編輯，比對方式為「包含」）"
+  },
+  "titleBlacklistModal_confirm": {
+    "message": "加入"
+  },
+  "titleBlacklistModal_cancel": {
+    "message": "取消"
+  },
 
   // options nav
   "options_general": {

@@ -44,6 +44,9 @@ function noticeSegments(text, forceWidth) {
 //   entirely instead of passing hidden, so there it occupies no space at all.
 // pusher: lower-cased comment author id (when this row is a 推/噓/→ line) →
 //   exposed as data-pusher so a click can highlight all rows by the same pusher.
+// listAuthor / listTitle: board-list row's author id / raw-case title (see
+//   Screen#computeAnnotations) → exposed as data-list-author / data-list-title so
+//   the right-click quick-add-blacklist menu can read the row under the cursor.
 // pusherHighlight: true → this comment is by the currently selected pusher; tint
 //   the WHOLE row via .pusherHighlight (char spans are b0/transparent, so the
 //   tint shows through without overriding any ANSI colours).
@@ -64,6 +67,8 @@ export const Row = ({
   floor,
   hidden,
   pusher,
+  listAuthor,
+  listTitle,
   pusherHighlight,
   authorIdStart,
   authorIdEnd,
@@ -93,6 +98,8 @@ export const Row = ({
       type="bbsrow"
       srow={row}
       data-pusher={pusher}
+      data-list-author={listAuthor}
+      data-list-title={listTitle}
       className={pusherHighlight ? "pusherHighlight" : undefined}
       style={hidden ? { visibility: "hidden" } : undefined}
     >

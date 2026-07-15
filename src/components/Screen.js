@@ -9,7 +9,7 @@ import {
   rowToText,
   annotateComment,
   parseListAuthor,
-  parseListTitle,
+  parseListTitleRaw,
   matchTitleBlacklist,
   isDeletedListRow,
   blacklistNoticeText,
@@ -181,27 +181,44 @@ function computeAnnotations(lines, enhance, mergeCaption) {
     for (let row = 0; row < lines.length; ++row) {
       const text = rowToText(lines[row]);
       const deleted = isDeletedListRow(text);
+      // Quick-add blacklist (right-click menu) needs every visible row's author
+      // and raw-case title, independent of whether any blacklist is set yet —
+      // exposed via Row as data-list-author / data-list-title.
+      const listAuthor = deleted ? null : parseListAuthor(text);
+      const listTitle = deleted ? "" : parseListTitleRaw(text);
       let blacklisted = false;
       // Title-keyword hit → the matched keyword; notice line shows it instead of
       // the author so the user knows WHICH rule fired. Author hit → null (the
       // notice's default author display already names the reason).
       let hitKeyword = null;
       if (!deleted && hasBlacklist) {
-        const author = parseListAuthor(text);
-        if (author && blacklist.has(author)) blacklisted = true;
+        if (listAuthor && blacklist.has(listAuthor)) blacklisted = true;
       }
       if (!deleted && !blacklisted && hasTitleBlacklist) {
-        hitKeyword = matchTitleBlacklist(parseListTitle(text), titleBlacklist);
+        hitKeyword = matchTitleBlacklist(
+          listTitle.toLowerCase(),
+          titleBlacklist,
+        );
         if (hitKeyword) blacklisted = true;
       }
       if (listEasyReading) {
-        if (deleted || blacklisted) result[row] = { hidden: true };
+        if (deleted || blacklisted) {
+          result[row] = { hidden: true };
+          continue;
+        }
       } else if (blacklisted) {
         result[row] = {
           blacklistNotice: blacklistNoticeText(text, hitKeyword),
         };
+        continue;
       }
       // native + deleted → no annotation (render exactly as the server sent it).
+      if (listAuthor || listTitle) {
+        result[row] = {
+          listAuthor: listAuthor || undefined,
+          listTitle: listTitle || undefined,
+        };
+      }
     }
   }
   return result;
@@ -319,6 +336,8 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
         floor={ann && ann.floor}
         hidden={ann && ann.hidden}
         pusher={ann && ann.pusher}
+        listAuthor={ann && ann.listAuthor}
+        listTitle={ann && ann.listTitle}
         pusherHighlight={ann && ann.pusherHighlight}
         authorIdStart={ann && ann.authorIdStart}
         authorIdEnd={ann && ann.authorIdEnd}

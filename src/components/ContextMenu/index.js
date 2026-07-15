@@ -4,9 +4,17 @@ import DropdownMenu from "./DropdownMenu";
 import InputHelperModal from "./InputHelperModal";
 import LiveHelperModal from "./LiveHelperModal";
 import PrefModal from "./PrefModal";
+import TitleBlacklistModal from "./TitleBlacklistModal";
 import DebugRecordButton from "../DebugRecordButton";
 import { downloadAsFile } from "../../js/util";
-import { readValuesWithDefault } from "../../js/pref_storage";
+import { readValuesWithDefault, writeValues } from "../../js/pref_storage";
+import * as prefSync from "../../js/pref_sync";
+import {
+  parseBlacklist,
+  listColRegion,
+  appendBlacklistEntry,
+  COMMENT_USERID_COL,
+} from "../../js/comment_parse";
 
 function noop() {}
 
@@ -18,7 +26,25 @@ const EVENT_KEY_BY_HOT_KEY = {
   ["T".charCodeAt(0)]: "openUrlNewTab",
 };
 
+// Quick-add one blacklist entry (author id or title keyword) through the SAME
+// persist pipeline the settings modal uses: localStorage → cloud sync (no-op when
+// signed out) → onValuesPrefChange (re-parse + redraw). NOT onPrefSaveImpl — that
+// carries settings-modal-only side effects (modalShown/easy-reading re-entry).
+// appendBlacklistEntry returns null when the entry is already present/empty →
+// skip the whole pipeline (no updatedAt bump pinging other devices for nothing).
+const quickAddBlacklist = (pttchrome, prefKey, entry) => {
+  const values = readValuesWithDefault();
+  const appended = appendBlacklistEntry(values[prefKey], entry);
+  if (appended === null) return;
+  const newValues = { ...values, [prefKey]: appended };
+  writeValues(newValues);
+  prefSync.savePrefs(newValues);
+  pttchrome.onValuesPrefChange(newValues);
+};
+
 const menuHandlerByEventKey = {
+  addAuthorBlacklist: (pttchrome, { blacklistAuthorTarget }) =>
+    quickAddBlacklist(pttchrome, "blacklist", blacklistAuthorTarget),
   copy: (pttchrome, { selectedText }) => pttchrome.doCopy(selectedText),
   copyAnsi: (pttchrome) => pttchrome.doCopyAnsi(),
   paste: (pttchrome) => pttchrome.doPaste(),
@@ -53,8 +79,14 @@ const initialState = {
   urlEnabled: false,
   normalEnabled: false,
   selEnabled: false,
+  // Quick-add blacklist targets under the right-click cursor (null → item hidden).
+  blacklistAuthorTarget: null,
+  blacklistAuthorExists: false,
+  blacklistTitleTarget: null,
   // --- Modal state ---
   showsInputHelper: false,
+  showsTitleBlacklist: false,
+  titleBlacklistDraft: "",
   showsLiveArticleHelper: false,
   showsSettings: false,
   // --- LiveHelper state ---
@@ -114,6 +146,46 @@ export const ContextMenu = ({ pttchrome }) => {
       const normalEnabled = !urlEnabled && window.getSelection().isCollapsed;
       const selEnabled = !normalEnabled;
 
+      // Quick-add blacklist: which author/title region (if any) sits under the
+      // cursor. The ROW comes from the DOM (data-pusher / data-list-author /
+      // data-list-title — easy reading is one long accumulated page, so a visual
+      // y→buf row mapping would be wrong there); the COLUMN comes from
+      // clientToPos (fixed screen cells, x is mode-independent). Comment rows:
+      // only the id cells [3, 3+id.length). List rows: author field vs title
+      // region per listColRegion.
+      let blacklistAuthorTarget = null;
+      let blacklistAuthorExists = false;
+      let blacklistTitleTarget = null;
+      const rowElement =
+        target.closest &&
+        target.closest("[data-pusher], [data-list-author], [data-list-title]");
+      if (rowElement && normalEnabled) {
+        const { col } = pttchrome.clientToPos(event.clientX, event.clientY);
+        const pusher = rowElement.getAttribute("data-pusher");
+        const listAuthor = rowElement.getAttribute("data-list-author");
+        const listTitle = rowElement.getAttribute("data-list-title");
+        if (pusher) {
+          if (
+            col >= COMMENT_USERID_COL &&
+            col < COMMENT_USERID_COL + pusher.length
+          ) {
+            blacklistAuthorTarget = pusher;
+          }
+        } else {
+          const region = listColRegion(col);
+          if (region === "author" && listAuthor) {
+            blacklistAuthorTarget = listAuthor;
+          } else if (region === "title" && listTitle) {
+            blacklistTitleTarget = listTitle;
+          }
+        }
+        if (blacklistAuthorTarget) {
+          blacklistAuthorExists = parseBlacklist(
+            readValuesWithDefault().blacklist,
+          ).has(blacklistAuthorTarget.toLowerCase());
+        }
+      }
+
       update({
         open: true,
         pageX: event.pageX,
@@ -124,6 +196,9 @@ export const ContextMenu = ({ pttchrome }) => {
         urlEnabled,
         normalEnabled,
         selEnabled,
+        blacklistAuthorTarget,
+        blacklistAuthorExists,
+        blacklistTitleTarget,
       });
     },
     [pttchrome, update],
@@ -146,6 +221,9 @@ export const ContextMenu = ({ pttchrome }) => {
         urlEnabled: false,
         normalEnabled: false,
         selEnabled: false,
+        blacklistAuthorTarget: null,
+        blacklistAuthorExists: false,
+        blacklistTitleTarget: null,
       });
     }
   }, [pttchrome, update]);
@@ -167,6 +245,35 @@ export const ContextMenu = ({ pttchrome }) => {
       update({ ...initialState, showsInputHelper: true });
     },
     [pttchrome, update],
+  );
+
+  // Title quick-add opens an editable prompt (prefilled with the full title)
+  // instead of writing immediately. modalShown gates the terminal keyboard
+  // handler so typing in the TextInput doesn't drive the BBS session.
+  const onTitleBlacklistClick = useCallback(
+    (event) => {
+      event.stopPropagation();
+      pttchrome.contextMenuShown = false;
+      pttchrome.modalShown = true;
+      update({
+        ...initialState,
+        showsTitleBlacklist: true,
+        titleBlacklistDraft: stateRef.current.blacklistTitleTarget || "",
+      });
+    },
+    [pttchrome, update],
+  );
+  const onTitleBlacklistHide = useCallback(() => {
+    pttchrome.modalShown = false;
+    pttchrome.setInputAreaFocus();
+    update({ showsTitleBlacklist: false, titleBlacklistDraft: "" });
+  }, [pttchrome, update]);
+  const onTitleBlacklistConfirm = useCallback(
+    (keyword) => {
+      quickAddBlacklist(pttchrome, "titleBlacklist", keyword);
+      onTitleBlacklistHide();
+    },
+    [pttchrome, onTitleBlacklistHide],
   );
 
   const onLiveArticleHelperClick = useCallback(
@@ -388,7 +495,12 @@ export const ContextMenu = ({ pttchrome }) => {
     normalEnabled,
     selEnabled,
     selectedText,
+    blacklistAuthorTarget,
+    blacklistAuthorExists,
+    blacklistTitleTarget,
     showsInputHelper,
+    showsTitleBlacklist,
+    titleBlacklistDraft,
     showsLiveArticleHelper,
     showsSettings,
     liveHelperSec,
@@ -406,6 +518,10 @@ export const ContextMenu = ({ pttchrome }) => {
         selEnabled={selEnabled}
         mouseBrowsingEnabled={pttchrome.buf.useMouseBrowsing}
         selectedText={selectedText}
+        authorBlacklistId={blacklistAuthorTarget}
+        authorBlacklistExists={blacklistAuthorExists}
+        titleBlacklistText={blacklistTitleTarget}
+        onTitleBlacklistClick={onTitleBlacklistClick}
         onMenuSelect={onMenuSelect}
         onInputHelperClick={onInputHelperClick}
         onLiveArticleHelperClick={onLiveArticleHelperClick}
@@ -425,6 +541,12 @@ export const ContextMenu = ({ pttchrome }) => {
         enabled={liveHelperEnabled}
         sec={liveHelperSec}
         onChange={onLiveHelperChange}
+      />
+      <TitleBlacklistModal
+        show={showsTitleBlacklist}
+        draft={titleBlacklistDraft}
+        onHide={onTitleBlacklistHide}
+        onConfirm={onTitleBlacklistConfirm}
       />
       <PrefModal
         show={showsSettings}

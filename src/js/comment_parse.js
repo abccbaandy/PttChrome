@@ -206,6 +206,40 @@ export function parseListTitle(text) {
     .toLowerCase();
 }
 
+// Raw-case variant of parseListTitle, for the quick-add-title-blacklist modal
+// prefill: the user edits the REAL title, so casing must be preserved (matching
+// itself is case-insensitive — parseTitleBlacklist lower-cases the keywords).
+export function parseListTitleRaw(text) {
+  if (!text || text.length <= LIST_AUTHOR_COL_END) return '';
+  return realignListColumns(text).substring(LIST_AUTHOR_COL_END).trim();
+}
+
+// Which quick-blacklist region a screen column falls in on a board-list row.
+// Columns are fixed screen cells (see parseListAuthor calibration): author field
+// [17, 29), title region 29+. Anything left of the author field (seq/push/date)
+// is neither.
+export function listColRegion(col) {
+  if (col >= LIST_AUTHOR_COL_END) return 'title';
+  if (col >= LIST_AUTHOR_COL_START) return 'author';
+  return null;
+}
+
+// Append one entry to a newline-separated blacklist pref string (works for both
+// `blacklist` and `titleBlacklist`). Dedup is case-insensitive on trimmed lines;
+// returns the new string, or null when nothing needs writing (already present /
+// empty entry) so callers can skip the whole persist+sync+redraw pipeline.
+export function appendBlacklistEntry(existing, entry) {
+  const trimmed = (entry || '').trim();
+  if (!trimmed) return null;
+  const lines = (existing || '').split('\n');
+  const lower = trimmed.toLowerCase();
+  for (let i = 0; i < lines.length; ++i) {
+    if (lines[i].trim().toLowerCase() === lower) return null;
+  }
+  const base = (existing || '').replace(/\n+$/, '');
+  return base ? base + '\n' + trimmed : trimmed;
+}
+
 // Board list article sequence number (the leading numeric column, e.g.
 // " 352960 + 4 6/05 author title" → 352960). It is monotonic across the board, so
 // list easy reading uses it as the stable de-dup key when accumulating pages and as

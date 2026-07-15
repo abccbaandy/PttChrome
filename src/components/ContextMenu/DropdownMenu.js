@@ -32,6 +32,10 @@ export const DropdownMenu = ({
   selEnabled,
   mouseBrowsingEnabled,
   selectedText,
+  authorBlacklistId,
+  authorBlacklistExists,
+  titleBlacklistText,
+  onTitleBlacklistClick,
   onMenuSelect,
   onInputHelperClick,
   onLiveArticleHelperClick,
@@ -63,6 +67,27 @@ export const DropdownMenu = ({
         />
       </Menu.Target>
       <Menu.Dropdown>
+        {/* 黑名單快速新增：右鍵落在作者/標題區塊才出現（見 index.js onContextMenu 的
+            區塊判定）。作者已在黑名單 → 反灰顯示「已在黑名單」不給點（不隱藏，避免
+            看起來像選項壞掉）。 */}
+        {normalEnabled && authorBlacklistId && (
+          <Menu.Item
+            disabled={authorBlacklistExists}
+            onClick={(e) => onMenuSelect("addAuthorBlacklist", e)}
+          >
+            {authorBlacklistExists
+              ? `'${authorBlacklistId}' ${i18n("cmenu_authorBlacklistExists")}`
+              : `${i18n("cmenu_addAuthorBlacklist")} '${authorBlacklistId}'`}
+          </Menu.Item>
+        )}
+        {normalEnabled && titleBlacklistText && (
+          <Menu.Item onClick={onTitleBlacklistClick}>
+            {i18n("cmenu_addTitleBlacklist")}
+          </Menu.Item>
+        )}
+        {normalEnabled && (authorBlacklistId || titleBlacklistText) && (
+          <Menu.Divider />
+        )}
         {selEnabled && (
           <Fragment>
             <Menu.Item

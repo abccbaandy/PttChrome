@@ -68,6 +68,27 @@ export const en_US = {
   "cmenu_restartInTab": {
     "message": "Restart PttChrome in a new tab"
   },
+  "cmenu_addAuthorBlacklist": {
+    "message": "Blacklist author"
+  },
+  "cmenu_authorBlacklistExists": {
+    "message": "is already blacklisted"
+  },
+  "cmenu_addTitleBlacklist": {
+    "message": "Blacklist title keyword ..."
+  },
+  "titleBlacklistModal_title": {
+    "message": "Add to title blacklist"
+  },
+  "titleBlacklistModal_label": {
+    "message": "Title keyword (editable, substring match)"
+  },
+  "titleBlacklistModal_confirm": {
+    "message": "Add"
+  },
+  "titleBlacklistModal_cancel": {
+    "message": "Cancel"
+  },
 
   // options nav
   "options_general": {
