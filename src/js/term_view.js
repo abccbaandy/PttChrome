@@ -7,7 +7,7 @@ import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
 import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
-import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS } from './list_session';
+import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow } from './list_session';
 import { labelListCursorBullet, pruneListToSegment } from './list_window';
 
 const ENTER_CHAR = '\r';
@@ -1321,6 +1321,7 @@ TermView.prototype = {
     var rowTexts = [];
     for (var r = 0; r < buf.rows; ++r) rowTexts.push(buf.getRowText(r, 0, buf.cols));
     var nums = pageArticleNums(rowTexts, buf.cur_y);
+    var ls = this.bbscore && this.bbscore.listSession;
     var entries = [];
     for (var i = 0; i < buf.rows; ++i) {
       if (nums[i] != null) {
@@ -1329,6 +1330,14 @@ TermView.prototype = {
         // digit; repaint them from the recovered number so the row renders like the rest
         // (e.g. "●49886" → " 349886") instead of a stray bullet + truncated number.
         if (i === buf.cur_y) relabelListCursorRow(row, nums[i]);
+        // Server-painted last-read styling (author 1;37 + title 1;31) is a moving
+        // server-side cursor — store the CLEAN row and teach the session which
+        // number carries it; render re-paints it (buildListWindowLines). Otherwise
+        // an off-frame red row stays red in the map forever (兩篇同時紅).
+        if (isLastReadStyledListRow(row)) {
+          normalizeLastReadListRow(row);
+          if (ls) ls.noteLastRead(nums[i]);
+        }
         entries.push({ num: nums[i], key: null, row: row });
       } else if (
         isPinnedListRow(rowTexts[i]) &&
@@ -1364,7 +1373,6 @@ TermView.prototype = {
     // Row cap: evict the end farthest from the selection so redraw cost stays
     // bounded (a few hundred rows ≈ the native feel). The session must clear
     // the matching edge flag — demand re-fetches an evicted segment later.
-    var ls = this.bbscore && this.bbscore.listSession;
     var ev = evictListBuffer(this._listNumMap, ls ? ls._selectedNum : null, MAX_LIST_ROWS);
     if (ls && ev.evictedUp) ls.noteEvicted(-1);
     if (ls && ev.evictedDown) ls.noteEvicted(1);
@@ -1415,14 +1423,27 @@ TermView.prototype = {
       this._listHeaderRows[1],
       this._listHeaderRows[2]
     ];
+    // Last-read decoration: the map stores CLEAN rows (normalizeLastReadListRow
+    // at accumulate); the server's red styling is re-painted here on a clone of
+    // the row whose number matches the session's frame-taught _lastReadNum —
+    // exactly the ● bullet pattern, so the red moves the instant a new article
+    // teaches a new number.
+    var listNums = this.buf.listLineNums || [];
+    var lastRead = ls._lastReadNum;
     for (var i = 0; i < win.body.length; ++i) {
       var abs = win.body[i];
+      var isLastRead = lastRead != null && listNums[abs] === lastRead;
       if (abs == null || !listLines[abs]) {
         out.push(this._blankListRow());
       } else if (abs === win.cursorAbs) {
         var cur = cloneRow(listLines[abs]);
         labelListCursorBullet(cur, bullet.charAt(0), bullet.charAt(1));
+        if (isLastRead) paintLastReadListRow(cur);
         out.push(cur);
+      } else if (isLastRead) {
+        var lr = cloneRow(listLines[abs]);
+        paintLastReadListRow(lr);
+        out.push(lr);
       } else {
         out.push(listLines[abs]);
       }

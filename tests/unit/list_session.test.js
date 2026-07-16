@@ -1097,6 +1097,32 @@ describe("bug：rebuild 落點下方未緩衝 → 自動 demand-down（不等使
   });
 });
 
+describe("_lastReadNum 生命週期（last-read 紅列 render 裝飾的錨）", () => {
+  // frame-taught：accumulate 偵測到 last-read 樣式列即 noteLastRead；
+  // seed/rebuild/cleanup 重置（序號空間可能已換，等新幀重教）；
+  // resume（退文回列表同板）保留——re-seed 幀馬上重教，殘值無害。
+  test("noteLastRead 更新；_seed/_rebuild/_cleanup 重置為 null", () => {
+    const { s } = demandSession({ count: 20 });
+    s.noteLastRead(351462);
+    expect(s._lastReadNum).toBe(351462);
+    s._seed(pageFacts(100, 115));
+    expect(s._lastReadNum).toBe(null);
+    s.noteLastRead(351462);
+    s._rebuild(pageFacts(100, 115));
+    expect(s._lastReadNum).toBe(null);
+    s.noteLastRead(351462);
+    s._view.hideListOverlay = null;
+    s._cleanup();
+    expect(s._lastReadNum).toBe(null);
+  });
+  test("_resumeBuffer 保留 _lastReadNum（同板殘值，re-seed 幀重教）", () => {
+    const { s } = demandSession({ count: 20 });
+    s.noteLastRead(351462);
+    s._resumeBuffer(pageFacts(100, 115));
+    expect(s._lastReadNum).toBe(351462);
+  });
+});
+
 describe("passthrough 快路徑——server 游標已同步時跳過 sync-jump 腿", () => {
   // 非白名單鍵的 passthrough（切原生＋代送）在游標已同步時不必再 jump——
   // 一個 round-trip 都不花，直接切原生代送（保留舊 relative 快路徑語意）。

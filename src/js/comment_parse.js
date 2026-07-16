@@ -159,8 +159,8 @@ export function parseArticleBoard(text) {
 // return null and the row is NOT hidden, so we never hide a legitimate post by
 // mistake. The cursor row (●) and pinned rows (★) carry a leading full-width char
 // that shifts the columns; realignListColumns below compensates for it.
-const LIST_AUTHOR_COL_START = 17;
-const LIST_AUTHOR_COL_END = 29;
+export const LIST_AUTHOR_COL_START = 17;
+export const LIST_AUTHOR_COL_END = 29;
 const USERID_RE = /^[0-9A-Za-z]+$/;
 
 // The keyboard-cursor row in the board list carries a full-width cursor bullet (●)
