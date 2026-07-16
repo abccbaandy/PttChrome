@@ -28,13 +28,27 @@ describe("groupImageCaptionBlocks", () => {
     ]);
   });
 
-  test("說明段去頭尾空白行、保留段內空行（多段翻譯）", () => {
+  test("就近段落：只取圖下方最近一段（空行封閉說明段），前導空行照跳", () => {
     const rows = [IMG1, "", "段落一", "", "段落二", "", IMG2, "字"];
     expect(groupImageCaptionBlocks(rows)[0]).toEqual({
       imageRow: 0,
       captionStart: 2,
-      captionEnd: 4, // 段內空行(3)保留在範圍內；頭尾空行(1,5)不算
+      captionEnd: 2, // 空行(3)封閉說明段；段落二(4)與 IMG1 無關，不併
     });
+  });
+
+  test("就近段落（imageFirst）：圖後緊貼段之後的無關結語不被吸進右欄", () => {
+    const rows = [
+      IMG1, // 0
+      "step: 35  mu: 0.0", // 1 緊貼段（相關文）
+      "", // 2
+      "整體心得結語與圖無關", // 3
+      "補充說明也無關", // 4
+      "--", // 5
+    ];
+    expect(groupImageCaptionBlocks(rows)).toEqual([
+      { imageRow: 0, captionStart: 1, captionEnd: 1 },
+    ]);
   });
 
   test("連續兩張圖：無說明的塊不回傳（照常 render）", () => {
@@ -162,9 +176,41 @@ describe("groupImageCaptionBlocks captionFirst（上文下圖）", () => {
     ]);
   });
 
-  test("說明段去頭尾空白行、保留段內空行", () => {
+  test("就近段落：只取圖上方最近一段；段與圖之間隔空行仍配對", () => {
     const rows = ["", "段落一", "", "段落二", "", IMG1];
-    expect(g(rows)).toEqual([{ imageRow: 5, captionStart: 1, captionEnd: 3 }]);
+    expect(g(rows)).toEqual([{ imageRow: 5, captionStart: 3, captionEnd: 3 }]);
+  });
+
+  test("就近段落（captionFirst）：多段無關前言不併進首圖，只取緊貼段（回報 case：AI_Art Ideogram 測試文）", () => {
+    const rows = [
+      "前言：模型介紹與工作流討論", // 0 無關
+      "所以工作流中的 Guider 可能需要改", // 1 無關
+      "", // 2
+      "在我的環境下 相同種子下各設定值的生成速度", // 3 無關
+      "*(時間為該設定值重複運行十次取最佳值)", // 4 無關
+      "", // 5
+      "原生Ideogram V4 NVFP4", // 6 ← 緊貼段（相關文）
+      "quality設定值 生成時間為Default的 194%時間", // 7
+      "  step: 35  mu: 0.0  std: 1.5", // 8
+      IMG1, // 9
+      "", // 10
+      "原生Ideogram V4 NVFP4", // 11 ← 第二張的緊貼段
+      "Default設定值 代表基準值 (100%)", // 12
+      IMG2, // 13
+    ];
+    expect(g(rows)).toEqual([
+      { imageRow: 9, captionStart: 6, captionEnd: 8 },
+      { imageRow: 13, captionStart: 11, captionEnd: 12 },
+    ]);
+  });
+
+  test("就近段落（captionFirst）：圖上方直接是空行且更上方無新段 → 沿用最近一段；全空則無塊", () => {
+    // 段落 → 空行 → 圖：常見排版，空行不斷開「最近一段」與圖的配對。
+    expect(g(["說明段", "", IMG1])).toEqual([
+      { imageRow: 2, captionStart: 0, captionEnd: 0 },
+    ]);
+    // 圖上方全是空行 → 無塊。
+    expect(g(["", "", IMG1])).toEqual([]);
   });
 
   test("連續兩張圖：前無文字 run 的圖不回傳塊", () => {

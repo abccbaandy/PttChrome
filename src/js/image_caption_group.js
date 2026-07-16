@@ -5,15 +5,18 @@
 // 這裡只做「純結構」判斷（無法語意確認那段字真的是翻譯）：
 //   - 圖行 = trim 後整行只有一個 URL，且 isImageLikeUrl 判定會解析成靜態圖/相簿。
 //     「來源：https://…」這種帶前綴的行不是圖行，自然歸入說明段。
-//   - 配對方向（direction 參數，兩種文章排版都有）：
-//     - "imageFirst"（預設，上圖下文）：說明段 = 圖行之後、到下一個圖行／停止
-//       條件為止的行。首圖之前的前導文不屬於任何塊，照常 render。
-//     - "captionFirst"（上文下圖）：說明段 = 圖行「之前」累積的文字 run；遇圖行
-//       即配對成塊、run 歸零。最後一張圖之後的殘留文字不屬於任何塊。
-//   - 說明段去頭尾空白行（captionStart/captionEnd 都指向非空行），保留段內空行。
-//     整行只有 URL 但「不是圖」的行（如下一張圖的 x.com 來源連結）視為中性：
-//     不開塊、不延伸 captionEnd、（captionFirst）不重置 run——避免來源連結被
-//     拖進右欄尾巴。
+//   - 配對方向（direction 參數，兩種文章排版都有），皆採「就近段落」原則
+//     （空行＝段落邊界；寧可少配不誤配——沒配到的行照常原位 render，零遺失）：
+//     - "imageFirst"（預設，上圖下文）：說明段 = 圖行之後最近的連續非空段落；
+//       圖行與段落間的前導空行照跳，段落後遇空行即封閉本塊（其後的無關結語
+//       不被吸進右欄）。首圖之前的前導文不屬於任何塊。
+//     - "captionFirst"（上文下圖）：說明段 = 圖行「之前」最近的連續非空段落。
+//       空行後又出現文字才重開新 run（段落 → 空行 → 圖 的常見排版仍配對）；
+//       遇圖行即配對成塊、run 歸零。多段無關前言只會留最後一段給圖，其餘照常
+//       render。最後一張圖之後的殘留文字不屬於任何塊。
+//   - 整行只有 URL 但「不是圖」的行（如下一張圖的 x.com 來源連結）視為中性：
+//     不開塊、不延伸 captionEnd、不當段落邊界、（captionFirst）不重置 run——
+//     避免來源連結被拖進右欄尾巴或斷開配對。
 //   - 停止條件（先到先停）：簽名檔分隔線（整行全是 -，≥2 個——涵蓋標準 "--"
 //     與 JPTT 等 app 的 "-----"）或第一條推文
 //     （parseComment 命中——真推文要求行尾 MM/DD HH:MM 時間戳）。
@@ -64,6 +67,9 @@ export function groupImageCaptionBlocks(rowTexts, direction = "imageFirst") {
   // imageFirst：current 由圖行開啟，其後文字填入。
   // captionFirst：current 先累積文字 run（imageRow 未定），遇圖行補上即成塊。
   let current = null;
+  // captionFirst 就近段落：空行只「標記」段落結束（parBreak），之後又出現文字
+  // 才重開新 run——這樣「段落 → 空行 → 圖」仍能配對，多段前言只留最後一段。
+  let parBreak = false;
   const finalize = () => {
     if (
       current &&
@@ -84,6 +90,7 @@ export function groupImageCaptionBlocks(rowTexts, direction = "imageFirst") {
         // 累積 run ＋ 本圖行配對成塊；run 為空則本圖無塊。
         if (current) current.imageRow = i;
         finalize();
+        parBreak = false;
       } else {
         finalize();
         current = {
@@ -92,8 +99,20 @@ export function groupImageCaptionBlocks(rowTexts, direction = "imageFirst") {
           captionEnd: undefined,
         };
       }
-    } else if (trimmed !== "" && !m && (captionFirst || current)) {
+    } else if (trimmed === "") {
+      if (captionFirst) {
+        if (current) parBreak = true;
+      } else if (current && current.captionStart !== undefined) {
+        // 就近段落：說明段已開始，遇空行即封閉本塊（其後文字與本圖無關）。
+        finalize();
+      }
+    } else if (!m && (captionFirst || current)) {
       // m 非空但非圖 ＝ 中性 sole-URL 行：不開新塊/不重置 run、不延伸 captionEnd。
+      if (captionFirst && parBreak) {
+        // 空行後的第一個文字行：重開新 run，丟棄較遠的舊段落。
+        current = null;
+        parBreak = false;
+      }
       if (!current) {
         current = {
           imageRow: undefined,
