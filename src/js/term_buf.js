@@ -3,6 +3,7 @@
 import { Event } from './event';
 import { ColorState } from './term_ui';
 import { u2b, b2u, parseStatusRow, parseListRow } from './string_util';
+import { cjkUrlExtension } from './url_cjk';
 
 // Quiet period (ms) after the last redraw window before pageState is promoted to
 // `settledPageState`. Must exceed the 30ms notify debounce so a transient
@@ -471,7 +472,21 @@ TermBuf.prototype = {
         // pairs of URI start and end positions are stored in line.uri.
         while ( (res = this.uriRegEx.exec(s)) !== null ) {
           if (!uris)   uris = [];
-          var uri = [res.index, res.index+res[0].length];
+          var uriEnd = res.index + res[0].length;
+          var cjkExt = '';
+          // CJK path extension (Big5 branch only: non-ASCII byte pairs were
+          // replaced by \xab\xcd above, so uriRegEx always stops right before
+          // a Chinese char — e.g. /wiki/戈黛娃夫人). Decode the raw tail and
+          // let url_cjk.js decide how far the URL really extends.
+          if (this.view.charset != 'UTF-8' && s.substr(uriEnd, 2) === '\xab\xcd') {
+            var rawTail = '';
+            for (var tc = uriEnd; tc < cols; ++tc)
+              rawTail += line[tc].ch;
+            cjkExt = cjkUrlExtension(s.charAt(uriEnd - 1), b2u(rawTail));
+            if (cjkExt)
+              uriEnd += u2b(cjkExt).length; // byte count == column count
+          }
+          var uri = [res.index, uriEnd, cjkExt];
           uris.push(uri);
           // dump('found URI: ' + res[0] + '\n');
         }
@@ -510,8 +525,11 @@ TermBuf.prototype = {
             if (urlTemp2.substr(0,6) == 'pid://') {
               line[uri[0]].fullurl='http://www.pixiv.net/member_illust.php?mode=big&illust_id='+urlTemp2.substr(6,15);
             } else {
-              //var g = encodeURI(u);
-              //line[uri[0]].fullurl=g;
+              // CJK extension: urlTemp's tail is raw Big5 bytes — swap it for
+              // the percent-encoded Unicode form so the link actually opens.
+              if (uri[2])
+                u = urlTemp.slice(0, urlTemp.length - u2b(uri[2]).length) +
+                    encodeURI(uri[2]);
               line[uri[0]].fullurl = u;
             }
             line[uri[1]-1].endOfURL = true;
