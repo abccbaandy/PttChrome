@@ -3,6 +3,8 @@
 來源：`3rd_script/pttbbs`（官方 github.com/ptt/pttbbs，checkout `c1ff72df` 2026-06-28）＝ term.ptt.cc 行為最佳近似。
 用途：client 畫面偵測以**確定性規則**取代 timing heuristic。本檔全部 CONFIRMED（讀碼驗證；標 ✚ 者另經 `tests/e2e/cassettes/cchat-list.json` 實錄交叉驗證）；unknown 另標。行號隨 upstream 演進會漂，函式名為準。
 
+**研究方法規範（強制）**：PTT 行為邏輯**一律先讀 `3rd_script/pttbbs` 原始碼**找出真實實作，**禁止**自行猜測或從錄製素材/畫面觀察反推規則——素材只用來**驗證**對 code 的理解是否有誤。反例教訓：last-read 高亮曾從實錄反推成「作者亮白＋標題紅的單列游標」模型，連修三版仍殘紅；讀 `readdoent` 十分鐘即知是 title-match 多列高亮＋作者亮白其實是 isonline（見 §10）。
+
 ## 1. 輸出層機制
 
 - 虛擬螢幕 buffer + 每列 dirty 追蹤（`mbbsd/screen.c` 頂部 `big_picture`，每列 mode/smod/emod/len/oldlen）。
@@ -97,7 +99,16 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c:641-840`）：
 - 格式：`ESC[1;33;46m ◆userid ESC[37;45m 訊息內容 ESC[0m`（水球）；廣播/aloha 同走 outmsg 家族。
 - **client 指紋**：無 in-flight ∧ 非使用者觸發的 settle，髒列集合 ⊆ {底列}（msg_occupied>0 時上移一列），且該列以反白 `◆`（Big5 `A1BB` 系）帶 `1;33;46`/`37;45` 色起頭。dogetch 等待中即時觸發（`io.c:460`），可出現在任何畫面。
 
-## 10. 版本與未知
+## 10. last-read 高亮（readdoent title-match，CONFIRMED）
+
+- 條件（`mbbsd/bbs.c` `readdoent:830`）：`strcmp(currtitle, subject_ex(ent->title)) == 0` → **同 subject 的每一列都亮**（多列同亮＝正常；實錄 20260717-224420 t=1937 兩列同紅）。
+- `currtitle`：per-login 全域（`mbbsd/var.c:137` 初始空），讀完文章設 `subject(fhdr->title)`（bbs.c:2424，緊接 `brc_addlist`）；回文時也設（bbs.c:1678/1696）。跨看板都比對。
+- `subject_ex`（`common/bbs/string.c:58`）：**loop** 剝 case-insensitive `Re:`/`Fw:` 前綴（各可跟一個空白）。列表顯示的標題已是剝完的。
+- 顏色：`ANSI_COLOR(1;3c)`，c＝該列自身 title_type（bbs.c:735-752）：`□`=1紅、`R:`=3黃、`轉`=6青、`鎖`=5紫、`ˇ`=2綠。範圍 mark→行尾（special=1 → 行尾才 RESET），**不含作者欄**。
+- **作者欄亮色與 last-read 無關**：`isonline`（作者在線上）→ 作者名 `ANSI_COLOR(1)` 亮（bbs.c:815-823；lightbar 使用者旗標則 36 青）。
+- client 對應：`src/js/list_session.js` `_lastReadTitle`／`subjectOfListRow`／`paintLastReadListRow`；不變量見 `docs/easy-reading-list.md` #16。
+
+## 11. 版本與未知
 
 - 以 HEAD 讀碼；term.ptt.cc 實跑版本未知但此區域程式碼古老穩定。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。
 - unknown：ws.ptt.cc 的 WS proxy 是否保留 server write 邊界（proxy 不在本 repo）。

@@ -54,6 +54,7 @@ webpack5 + React19（bundled，非 CDN）。UI 元件用 Mantine（暗色預設�
 - commit 前 `git diff` 自查，確認不含上述隱私再提交。
 
 ## 慣例
+- **PTT 邏輯不准猜**：PTT 行為邏輯一律先讀 `3rd_script/pttbbs` 原始碼找出真實實作，禁止自行猜測或從錄製素材/畫面觀察反推規則；素材只用來驗證對 code 的理解是否有誤。詳見 `docs/pttbbs-screen-protocol.md` 開頭「研究方法規範」。
 - 編碼：PTT 是 Big5，內部轉 Unicode（`string_util.js` 的 `b2u`/`u2b`，查 `window.lib.b2uArray/u2bArray`）。
 - 改 `src/components/**` 會被 husky + lint-staged 跑 prettier。
 - docs：`docs/run-local.md`(啟動)、`docs/pttchrome-research.md`(來源驗證)、`docs/origin-rewrite-extension.md`(部署 Origin 改寫)、`docs/enhanced-addon.md`(黑名單/樓層/自動登入整合 + 踩坑)、`docs/media-preview-addons.md`(第三方圖片/媒體預覽套件研究 + 整合分析)、`docs/pref-sync-firestore.md`(偏好雲端同步 + Firebase 設定踩坑)、`docs/ptt-official-app-research.md`(Ptt-official-app 官方組織各專案盤點 + 對本專案可參考性分析)、`docs/pttbbs-screen-protocol.md`(PTT server 畫面更新協定不變量，pttbbs source 逆向；畫面偵測規則依據)、`docs/easy-reading-list.md`(文章列表好讀模式 v4 架構：狀態機/關鍵不變量/測試地圖；改 list_session.js/command_queue.js/term_buf settle 前先讀)、`docs/easy-reading-list-research.md`(好讀列表困難點本質研究＋方向評估：黑名單替代方案階梯/BePTT 反編譯要點/App 式重設計；決定該功能方向前先讀)、`docs/merge-caption-ai-assist.md`(圖文並排裝置端 AI 輔助配對評估：暫緩＋重啟條件；想上 AI 校正前先讀)。

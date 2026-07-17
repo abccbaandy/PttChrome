@@ -21,7 +21,7 @@ import {
   isPinnedListRow,
   isDeletedListRow,
   rowToText,
-  LIST_AUTHOR_COL_START,
+  parseListTitleRaw,
   LIST_AUTHOR_COL_END,
 } from './comment_parse';
 import { parseStatusRow, parseListRow, u2b } from './string_util';
@@ -439,36 +439,67 @@ export function flattenListBuffer(numMap, pinnedMap) {
 }
 
 // ---- last-read row styling (normalize-on-store / decorate-on-render) -------
-// pttbbs paints the LAST-READ article's list row with a bold-white author column
-// (1;37) and a bold-red title region (1;31). That styling is a SERVER-side cursor:
-// it moves when another article is read, but our accumulated buffer only sees the
-// ~20 rows the server repaints — an off-frame red row would stay red in the map
-// forever (兩篇同時紅). So, like the ● bullet, the map always stores the CLEAN
-// (de-styled) row and the red is re-painted at render time on the row whose number
-// equals the session's _lastReadNum (frame-taught by isLastReadStyledListRow hits).
+// pttbbs 真實邏輯（mbbsd/bbs.c readdoent:830）：last-read 高亮是「標題比對」——
+// 讀完文章時 currtitle = subject(title)（bbs.c:2424，去 Re:/Fw: 前綴），列表上
+// 每一列凡 subject_ex(ent->title) == currtitle 就把 mark 起到行尾塗
+// ANSI_COLOR(1;3c)，c 依該列自身 title_type：□=1紅 R:=3黃 轉=6青 鎖=5紫 ˇ=2綠
+// （bbs.c:735-752）。所以【同主題多列同時亮是正常行為】，且高亮不含作者欄——
+// 作者亮白(1;37)是 isonline（作者在線上，bbs.c:815-823），與 last-read 無關。
+// 實錄驗證：debug 20260717-224420 t=1937（296/298 同紅、289 isonline 亮白）。
+// client 模型：map 永遠存 CLEAN（去色）列；session 記 _lastReadTitle（subject
+// 正規化字串），render 時對每列比對 subject，命中就以該列自身 mark 的顏色重繪。
 // The mark + push-count columns [8,12) keep their own legitimate colors (綠/黃/爆).
 const LASTREAD_EXEMPT_START = 8;
 const LASTREAD_EXEMPT_END = 12;
 
 // Detection is attribute-based: a non-blank bold cell in the title region (past
-// the author column) in one of the last-read colors. Returns the color fg (1=red
-// for an original article, 3=yellow when the article is a reply (R: title) — debug
-// capture 2026-07-17 21:17) or 0 for no hit; the caller re-paints the same color
-// at render time. The bold-white author column is NOT required — on pttbbs's
-// differential repaints a partial frame only repaints the title region and
-// leaves the author cells plain (and the yellow variant's author is plain even
-// then), and the old author∧title double condition missed those frames (styled
-// row stored un-normalized → 兩篇同時紅). Bold red/yellow never appears in a
-// list row's title region except for the last-read marker: "爆"/push-counts live
-// in cols [8,12) (exempt), and a deleted row's title carries no color. A miss
-// keeps today's behavior (fail-safe).
+// the author column) carrying one of the five last-read title colors
+// (□紅/R:黃/轉青/鎖紫/ˇ綠, readdoent's 1;3c). Returns true on hit; the caller
+// normalizes the row and teaches the session the row's SUBJECT. Bold colored
+// text never appears in a list row's title region except for the last-read
+// marker: "爆"/push-counts live in cols [8,12) (before the region), TN_ANNOUNCE
+// is bold WHITE (fg 7, not in the set), and a deleted row's title carries no
+// color. A miss keeps today's behavior (fail-safe).
+const LASTREAD_TITLE_FGS = [1, 2, 3, 5, 6];
 export function isLastReadStyledListRow(row) {
   for (let i = LIST_AUTHOR_COL_END; i < row.length; ++i) {
     const c = row[i];
     if (!c || c.ch === ' ' || !c.bright || c.bg !== 0) continue;
-    if (c.fg === 1 || c.fg === 3) return c.fg;
+    if (LASTREAD_TITLE_FGS.indexOf(c.fg) >= 0) return c.fg;
   }
   return 0;
+}
+
+// The subject key of a list row — pttbbs's strcmp(currtitle, subject_ex(title))
+// re-done client-side. The displayed title is ALREADY subject_ex-stripped by the
+// server (readdoent prints mark + stripped title), so the key is the title
+// region minus the leading type mark ("R:"/"□"/"轉"/"鎖"/"ˇ"); the defensive
+// Re:/Fw: loop-strip mirrors subject_ex (common/bbs/string.c:58, case-insensitive,
+// optional trailing space) in case a raw prefix ever leaks through. null = no
+// usable title (blank/short row) — never matches.
+const LIST_MARK_FG = { 'R': 3, '轉': 6, '鎖': 5, 'ˇ': 2 };
+export function subjectOfListRow(row) {
+  let t = parseListTitleRaw(rowToText(row));
+  if (!t) return null;
+  if (t.charAt(0) === 'R' && t.charAt(1) === ':') t = t.substring(2);
+  else if (t.charCodeAt(0) > 0x7f) t = t.substring(1); // □/轉/鎖/ˇ state glyph
+  t = t.trim();
+  let prev;
+  do {
+    prev = t;
+    t = t.replace(/^(re:|fw:) ?/i, '');
+  } while (t !== prev);
+  t = t.trim();
+  return t || null;
+}
+
+// Which 1;3c color THIS row's last-read highlight uses — from its own type mark
+// (readdoent's title_type switch): R:=3黃 轉=6青 鎖=5紫 ˇ=2綠, default □=1紅.
+export function listRowMarkFg(row) {
+  const t = parseListTitleRaw(rowToText(row));
+  if (!t) return 1;
+  const key = t.charAt(0) === 'R' && t.charAt(1) === ':' ? 'R' : t.charAt(0);
+  return LIST_MARK_FG[key] || 1;
 }
 
 // Strip the last-read styling back to a plain row (default attrs) — called on the
@@ -487,24 +518,18 @@ export function normalizeLastReadListRow(row) {
   }
 }
 
-// Inverse of normalizeLastReadListRow: re-paint the server's last-read styling on
-// a render-time clone. Red variant (fg=1): author bold-white + title bold-red.
-// Yellow variant (fg=3, reply article): title bold-yellow only — the server
-// leaves the author column plain there (capture 2026-07-17 21:17).
+// Inverse of normalizeLastReadListRow: re-paint the server's last-read styling
+// on a render-time clone — mark + title (col LIST_AUTHOR_COL_END →) bold in the
+// row's own mark color, author column untouched (readdoent paints from the mark
+// only; a bright author would be isonline, which we don't track).
 export function paintLastReadListRow(row, fg) {
-  if (fg == null) fg = 1;
-  for (let i = LIST_AUTHOR_COL_START; i < row.length; ++i) {
+  if (fg == null) fg = listRowMarkFg(row);
+  for (let i = LIST_AUTHOR_COL_END; i < row.length; ++i) {
     const c = row[i];
-    if (i < LIST_AUTHOR_COL_END) {
-      if (fg !== 1) continue;
-      c.bright = true;
-      c.bg = 0;
-      c.fg = 7;
-    } else {
-      c.bright = true;
-      c.bg = 0;
-      c.fg = fg;
-    }
+    if (!c) continue;
+    c.bright = true;
+    c.bg = 0;
+    c.fg = fg;
   }
 }
 
@@ -619,12 +644,15 @@ export function ListSession(core, view, termBuf, queue) {
   // it can skip the sync-jump leg — one round-trip instead of two. null =
   // unknown (native excursion / probe timeout / article) → always sync first.
   this._serverNum = null;
-  // Article number carrying the server's last-read styling (frame-taught by
-  // accumulateListLines via noteLastRead; render decorates that row). null =
-  // unknown; reset on seed/rebuild/cleanup (number space may have changed),
-  // kept across resume/handoff (same board, the re-seed frame re-teaches).
-  this._lastReadNum = null;
-  this._lastReadFg = null; // 1=red, 3=yellow (reply, R: title) — styling variant
+  // SUBJECT of the last-read article (pttbbs currtitle mirror; see the
+  // last-read styling block). Taught two ways: frame-taught when accumulate
+  // spots a server-styled row (covers native excursions / search jumps), and
+  // actively on our own serialized open (the client KNOWS what it just opened
+  // — closes the partial-frame detection hole). Render paints EVERY row whose
+  // subjectOfListRow matches, each in its own mark color. null = unknown;
+  // reset only on cleanup — currtitle is per-login global on the server, so
+  // seed/rebuild/board changes keep it (frames re-teach on any drift).
+  this._lastReadTitle = null;
   // (2026-07-10) T3 airlock（同鍵二連擊）與 T2 mark/search 模擬皆退役：非白名單
   // 鍵一律走 _beginNativePassthrough（sync → 切原生 → 代送），單按即生效。
   // Sticky native excursion: true from _enterFunctionMode until a context
@@ -1128,8 +1156,9 @@ ListSession.prototype = {
   _seed: function(facts) {
     this._nativeHold = false;
     this._breakChain();
-    this._lastReadNum = null; // before _forceRedraw: the seed frame re-teaches
-    this._lastReadFg = null;
+    // _lastReadTitle deliberately NOT reset: pttbbs's currtitle is per-login
+    // global (readdoent compares it in every board), and a title key doesn't
+    // depend on the number space. The seed frame re-teaches anyway.
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
@@ -1175,8 +1204,7 @@ ListSession.prototype = {
 
   _rebuild: function(facts) {
     this._breakChain();
-    this._lastReadNum = null; // number space may have changed (native excursion)
-    this._lastReadFg = null;
+    // _lastReadTitle kept: title keys are number-space independent (see _seed).
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
@@ -1292,12 +1320,11 @@ ListSession.prototype = {
     this._chainState = null;
   },
 
-  // Frame-taught last-read marker (accumulateListLines calls this when a stored
-  // row carried the server's last-read styling before normalization). The render
-  // window re-paints that styling on this number's row.
-  noteLastRead: function(num, fg) {
-    this._lastReadNum = num;
-    this._lastReadFg = fg == null ? 1 : fg;
+  // Teach the last-read SUBJECT (pttbbs currtitle mirror). Called frame-taught
+  // (accumulate spotted a server-styled row → its subject) and actively on our
+  // own serialized open. Render re-paints every row whose subject matches.
+  noteLastRead: function(title) {
+    if (title) this._lastReadTitle = title;
   },
 
   // Invalidate the prefetch chain: the server cursor is no longer where the
@@ -1455,6 +1482,12 @@ ListSession.prototype = {
   _beginOpen: function() {
     const num = this._selectedNum;
     if (num == null) return;
+    // Active last-read teaching: opening this article sets the server's
+    // currtitle to its subject (bbs.c:2424) — capture it now so the return
+    // frame needn't be relied on (partial frames may show no styled row).
+    const lrIdx = (this._termBuf.listLineNums || []).indexOf(num);
+    const lrSubject =
+      lrIdx >= 0 ? subjectOfListRow(this._termBuf.listLines[lrIdx]) : null;
     this._renderMode = 'frozen';
     this._setLoading(true);
     this._breakChain();
@@ -1486,6 +1519,9 @@ ListSession.prototype = {
             return facts.kind === 'article';
           },
           timeoutMs: 4000,
+          onDone: function() {
+            self.noteLastRead(lrSubject);
+          },
           onFail: function() {
             self._openFailed();
           }
@@ -1528,6 +1564,17 @@ ListSession.prototype = {
     const self = this;
     let parkY = -1;
     let targetY = -1;
+    // Active last-read teaching, same as _beginOpen: locate the pinned row in
+    // the buffer by its key and capture its subject before the open runs.
+    let lrSubject = null;
+    const lines = this._termBuf.listLines || [];
+    const nums = this._termBuf.listLineNums || [];
+    for (let i = 0; i < lines.length; ++i) {
+      if (nums[i] == null && this._pinnedKeyAt(i) === key) {
+        lrSubject = subjectOfListRow(lines[i]);
+        break;
+      }
+    }
     const fail = function() {
       self._openFailed();
     };
@@ -1539,6 +1586,9 @@ ListSession.prototype = {
           return facts.kind === 'article';
         },
         timeoutMs: 4000,
+        onDone: function() {
+          self.noteLastRead(lrSubject);
+        },
         onFail: fail
       });
     };
@@ -1729,8 +1779,7 @@ ListSession.prototype = {
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
-    this._lastReadNum = null;
-    this._lastReadFg = null;
+    this._lastReadTitle = null;
     this._prunePivotOverride = undefined;
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];

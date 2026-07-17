@@ -1097,33 +1097,30 @@ describe("bug：rebuild 落點下方未緩衝 → 自動 demand-down（不等使
   });
 });
 
-describe("_lastReadNum 生命週期（last-read 紅列 render 裝飾的錨）", () => {
-  // frame-taught：accumulate 偵測到 last-read 樣式列即 noteLastRead；
-  // seed/rebuild/cleanup 重置（序號空間可能已換，等新幀重教）；
-  // resume（退文回列表同板）保留——re-seed 幀馬上重教，殘值無害。
-  test("noteLastRead 更新；_seed/_rebuild/_cleanup 重置為 null", () => {
+describe("_lastReadTitle 生命週期（last-read 高亮的 currtitle 鏡像）", () => {
+  // pttbbs 的 currtitle 是 per-login 全域（bbs.c readdoent:830 跨板都比對），
+  // 且 title key 與序號空間無關 → seed/rebuild/resume 一律保留（新幀會重教），
+  // 只有 cleanup（功能關閉）歸零。noteLastRead(null) 不得清掉已知值（開文教學
+  // 找不到列時 fail-safe 保持現狀）。
+  test("noteLastRead 更新；seed/rebuild 保留；_cleanup 重置為 null", () => {
     const { s } = demandSession({ count: 20 });
-    s.noteLastRead(351462);
-    expect(s._lastReadNum).toBe(351462);
-    expect(s._lastReadFg).toBe(1); // 預設紅
-    s.noteLastRead(351461, 3); // 黃變體（回文 R: 標題）
-    expect(s._lastReadFg).toBe(3);
+    s.noteLastRead("[ON] MyGO全體SR卡面公布");
+    expect(s._lastReadTitle).toBe("[ON] MyGO全體SR卡面公布");
+    s.noteLastRead(null); // fail-safe：教不到就維持原值
+    expect(s._lastReadTitle).toBe("[ON] MyGO全體SR卡面公布");
     s._seed(pageFacts(100, 115));
-    expect(s._lastReadNum).toBe(null);
-    expect(s._lastReadFg).toBe(null);
-    s.noteLastRead(351462);
+    expect(s._lastReadTitle).toBe("[ON] MyGO全體SR卡面公布");
     s._rebuild(pageFacts(100, 115));
-    expect(s._lastReadNum).toBe(null);
-    s.noteLastRead(351462);
+    expect(s._lastReadTitle).toBe("[ON] MyGO全體SR卡面公布");
     s._view.hideListOverlay = null;
     s._cleanup();
-    expect(s._lastReadNum).toBe(null);
+    expect(s._lastReadTitle).toBe(null);
   });
-  test("_resumeBuffer 保留 _lastReadNum（同板殘值，re-seed 幀重教）", () => {
+  test("_resumeBuffer 保留 _lastReadTitle（re-seed 幀重教，殘值無害）", () => {
     const { s } = demandSession({ count: 20 });
-    s.noteLastRead(351462);
+    s.noteLastRead("[閒聊] 某篇");
     s._resumeBuffer(pageFacts(100, 115));
-    expect(s._lastReadNum).toBe(351462);
+    expect(s._lastReadTitle).toBe("[閒聊] 某篇");
   });
 });
 

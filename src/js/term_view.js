@@ -7,7 +7,7 @@ import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
 import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
-import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow } from './list_session';
+import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursorBullet, pruneListToSegment } from './list_window';
 
 const ENTER_CHAR = '\r';
@@ -1330,15 +1330,15 @@ TermView.prototype = {
         // digit; repaint them from the recovered number so the row renders like the rest
         // (e.g. "●49886" → " 349886") instead of a stray bullet + truncated number.
         if (i === buf.cur_y) relabelListCursorRow(row, nums[i]);
-        // Server-painted last-read styling (title bold-red, or bold-yellow for a
-        // reply article) is a moving server-side cursor — store the CLEAN row
-        // and teach the session which number carries it (and in which color);
-        // render re-paints it (buildListWindowLines). Otherwise an off-frame
-        // styled row stays colored in the map forever (兩篇同時紅).
-        var lrFg = isLastReadStyledListRow(row);
-        if (lrFg) {
+        // Server-painted last-read styling = title-match highlight (pttbbs
+        // readdoent: every row whose subject equals currtitle, in the row's own
+        // mark color — see list_session's styling block). Store the CLEAN row
+        // and teach the session the SUBJECT; render re-paints every matching
+        // row (buildListWindowLines). Otherwise an off-frame styled row stays
+        // colored in the map forever (殘紅).
+        if (isLastReadStyledListRow(row)) {
           normalizeLastReadListRow(row);
-          if (ls) ls.noteLastRead(nums[i], lrFg);
+          if (ls) ls.noteLastRead(subjectOfListRow(row));
         }
         entries.push({ num: nums[i], key: null, row: row });
       } else if (
@@ -1426,29 +1426,34 @@ TermView.prototype = {
       this._listHeaderRows[2]
     ];
     // Last-read decoration: the map stores CLEAN rows (normalizeLastReadListRow
-    // at accumulate); the server's red styling is re-painted here on a clone of
-    // the row whose number matches the session's frame-taught _lastReadNum —
-    // exactly the ● bullet pattern, so the red moves the instant a new article
-    // teaches a new number.
-    var listNums = this.buf.listLineNums || [];
-    var lastRead = ls._lastReadNum;
-    var lastReadFg = ls._lastReadFg;
+    // at accumulate); the highlight is re-painted here on a clone of EVERY row
+    // whose subject matches the session's _lastReadTitle (pttbbs readdoent's
+    // strcmp(currtitle, subject_ex(title)) — same-thread rows all light up),
+    // each in its own mark color. Subjects are memoized per stored row object
+    // (rows are replaced wholesale on re-accumulate, so the cache never goes
+    // stale).
+    var lastReadTitle = ls._lastReadTitle;
     for (var i = 0; i < win.body.length; ++i) {
       var abs = win.body[i];
-      var isLastRead = lastRead != null && listNums[abs] === lastRead;
-      if (abs == null || !listLines[abs]) {
+      var srcRow = abs == null ? null : listLines[abs];
+      var isLastRead = false;
+      if (srcRow && lastReadTitle != null) {
+        if (srcRow._subject === undefined) srcRow._subject = subjectOfListRow(srcRow);
+        isLastRead = srcRow._subject === lastReadTitle;
+      }
+      if (!srcRow) {
         out.push(this._blankListRow());
       } else if (abs === win.cursorAbs) {
-        var cur = cloneRow(listLines[abs]);
+        var cur = cloneRow(srcRow);
         labelListCursorBullet(cur, bullet.charAt(0), bullet.charAt(1));
-        if (isLastRead) paintLastReadListRow(cur, lastReadFg);
+        if (isLastRead) paintLastReadListRow(cur);
         out.push(cur);
       } else if (isLastRead) {
-        var lr = cloneRow(listLines[abs]);
-        paintLastReadListRow(lr, lastReadFg);
+        var lr = cloneRow(srcRow);
+        paintLastReadListRow(lr);
         out.push(lr);
       } else {
-        out.push(listLines[abs]);
+        out.push(srcRow);
       }
     }
     out.push(this._listFooterRow);
