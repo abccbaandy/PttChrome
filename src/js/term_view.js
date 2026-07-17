@@ -1330,13 +1330,15 @@ TermView.prototype = {
         // digit; repaint them from the recovered number so the row renders like the rest
         // (e.g. "●49886" → " 349886") instead of a stray bullet + truncated number.
         if (i === buf.cur_y) relabelListCursorRow(row, nums[i]);
-        // Server-painted last-read styling (author 1;37 + title 1;31) is a moving
-        // server-side cursor — store the CLEAN row and teach the session which
-        // number carries it; render re-paints it (buildListWindowLines). Otherwise
-        // an off-frame red row stays red in the map forever (兩篇同時紅).
-        if (isLastReadStyledListRow(row)) {
+        // Server-painted last-read styling (title bold-red, or bold-yellow for a
+        // reply article) is a moving server-side cursor — store the CLEAN row
+        // and teach the session which number carries it (and in which color);
+        // render re-paints it (buildListWindowLines). Otherwise an off-frame
+        // styled row stays colored in the map forever (兩篇同時紅).
+        var lrFg = isLastReadStyledListRow(row);
+        if (lrFg) {
           normalizeLastReadListRow(row);
-          if (ls) ls.noteLastRead(nums[i]);
+          if (ls) ls.noteLastRead(nums[i], lrFg);
         }
         entries.push({ num: nums[i], key: null, row: row });
       } else if (
@@ -1430,6 +1432,7 @@ TermView.prototype = {
     // teaches a new number.
     var listNums = this.buf.listLineNums || [];
     var lastRead = ls._lastReadNum;
+    var lastReadFg = ls._lastReadFg;
     for (var i = 0; i < win.body.length; ++i) {
       var abs = win.body[i];
       var isLastRead = lastRead != null && listNums[abs] === lastRead;
@@ -1438,11 +1441,11 @@ TermView.prototype = {
       } else if (abs === win.cursorAbs) {
         var cur = cloneRow(listLines[abs]);
         labelListCursorBullet(cur, bullet.charAt(0), bullet.charAt(1));
-        if (isLastRead) paintLastReadListRow(cur);
+        if (isLastRead) paintLastReadListRow(cur, lastReadFg);
         out.push(cur);
       } else if (isLastRead) {
         var lr = cloneRow(listLines[abs]);
-        paintLastReadListRow(lr);
+        paintLastReadListRow(lr, lastReadFg);
         out.push(lr);
       } else {
         out.push(listLines[abs]);

@@ -67,8 +67,10 @@ function fakeListSession() {
   return {
     _selectedNum: null,
     _lastReadNum: null,
-    noteLastRead: jest.fn(function (num) {
+    _lastReadFg: null,
+    noteLastRead: jest.fn(function (num, fg) {
       this._lastReadNum = num;
+      this._lastReadFg = fg == null ? 1 : fg;
     }),
     noteEvicted: jest.fn(),
     prunePivot: () => null,
@@ -243,7 +245,7 @@ describe("accumulateListLines（置底文收录）", () => {
     const v = fakeView(texts1, 3, ls);
     v.buf.lines[5] = chRowAttrs(rows1[2], lastReadSpans);
     v.accumulateListLines();
-    expect(ls.noteLastRead).toHaveBeenLastCalledWith(351462);
+    expect(ls.noteLastRead).toHaveBeenLastCalledWith(351462, 1);
     // 帧2：351457-351459（不含 351462），351459 变红。
     const rows2 = [
       " 351457 + 2 7/15 Katsuyuki118 □ [26夏] 與妳相戀到生命盡頭",
@@ -255,7 +257,7 @@ describe("accumulateListLines（置底文收录）", () => {
     v.buf.lines[5] = chRowAttrs(rows2[2], lastReadSpans);
     v.buf.getRowText = (r) => texts2[r];
     v.accumulateListLines();
-    expect(ls.noteLastRead).toHaveBeenLastCalledWith(351459);
+    expect(ls.noteLastRead).toHaveBeenLastCalledWith(351459, 1);
     // map 内两列（推文数栏外）attr 皆须为预设——旧行为 351462 残红即此断言红。
     for (const num of [351462, 351459]) {
       const row = v._listNumMap.get(num);
@@ -287,7 +289,7 @@ describe("accumulateListLines（置底文收录）", () => {
     v.buf.lines[4] = chRowAttrs(bao, [{ from: 9, to: 11, fg: 1, bright: true }]);
     v.accumulateListLines();
     expect(ls.noteLastRead).toHaveBeenCalledTimes(1);
-    expect(ls.noteLastRead).toHaveBeenCalledWith(351462);
+    expect(ls.noteLastRead).toHaveBeenCalledWith(351462, 1);
     const redRow = v._listNumMap.get(351462);
     expect(redRow[9].fg).toBe(3); // 推文数黄保留
     expect(redRow[9].bright).toBe(true);
@@ -297,6 +299,57 @@ describe("accumulateListLines（置底文收录）", () => {
     const baoRow = v._listNumMap.get(351463);
     expect(baoRow[9].fg).toBe(1); // 爆字原封不动
     expect(baoRow[9].bright).toBe(true);
+  });
+
+  test("partial repaint 帧：author 栏 plain、仅标题亮红 → 仍须命中去红＋教学", () => {
+    // debug 录制 20260717（ptt-debug-20260717-001556.json t=3477 / 015048 t=7008）：
+    // pttbbs 差分重绘的 partial 帧只重画标题区 1;31，author 栏维持 plain fg7（无 1;37）
+    // → 旧双条件（author 亮白∧标题亮红）不命中 → 带红列存 map＋_lastReadNum 不动
+    // → 两篇同时红重现。单条件（标题区亮红）即须命中。
+    const ls = fakeListSession();
+    const red = " 351891   7 7/16 laigeorge89  □ [閒聊] 感覺遮斷丟"; // 实录列
+    const texts = header.concat([red], [feeter]);
+    const v = fakeView(texts, 3, ls);
+    // 仅标题区亮红；author 栏 [17,29) 保持预设 plain fg7。
+    v.buf.lines[3] = chRowAttrs(red, [{ from: 29, to: 50, fg: 1, bright: true }]);
+    v.accumulateListLines();
+    expect(ls.noteLastRead).toHaveBeenCalledWith(351891, 1);
+    const row = v._listNumMap.get(351891);
+    expect(row[35].fg).toBe(7); // 标题去红
+    expect(row[35].bright).toBe(false);
+  });
+
+  test("黄变体（回文 R: 标题）：标题亮黄命中→去黄＋noteLastRead(num,3)；红→黄切换旧红不残留", () => {
+    // debug 录制 20260717-211732 t=4526：last-read 落在回文（R: 标题）时 server 用
+    // 1;33 亮黄（author 栏 plain、推文数栏也黄）。只认红 → 漏抓 → _lastReadNum
+    // 停在旧红 → 旧文残红。黄也须命中并教学（fg=3），render 端上黄。
+    const ls = fakeListSession();
+    const mkTexts = (rows) => header.concat(rows, [feeter]);
+    // 帧1：351935 红 last-read。
+    const red = " 351935   7 7/16 s386644187   □ [閒聊] 誰的皇帝夢最好";
+    const v = fakeView(mkTexts([red]), 3, ls);
+    v.buf.lines[3] = chRowAttrs(red, [{ from: 29, to: 60, fg: 1, bright: true }]);
+    v.accumulateListLines();
+    expect(ls.noteLastRead).toHaveBeenLastCalledWith(351935, 1);
+    // 帧2：351934 黄 last-read（实录属性：author plain、推文数 [9,11) 黄、标题黄）。
+    const yel = " 351934  29 7/16 jack0123nj   R: [討論] 敗北女角太多了";
+    const texts2 = mkTexts([yel]);
+    v.buf.lines = texts2.map((t) => chRow(t));
+    v.buf.lines[3] = chRowAttrs(yel, [
+      { from: 9, to: 11, fg: 3, bright: true },
+      { from: 30, to: 55, fg: 3, bright: true },
+    ]);
+    v.buf.getRowText = (r) => texts2[r];
+    v.accumulateListLines();
+    expect(ls.noteLastRead).toHaveBeenLastCalledWith(351934, 3);
+    expect(ls._lastReadFg).toBe(3);
+    const yelRow = v._listNumMap.get(351934);
+    expect(yelRow[35].fg).toBe(7); // 标题去黄
+    expect(yelRow[35].bright).toBe(false);
+    expect(yelRow[9].fg).toBe(3); // 推文数栏黄豁免保留
+    const redRow = v._listNumMap.get(351935);
+    expect(redRow[35].fg).toBe(7); // 旧红列仍是干净列
+    expect(redRow[35].bright).toBe(false);
   });
 
   test("游标（●盖头）停在 last-read 红列：relabel＋去红共存", () => {
@@ -311,7 +364,7 @@ describe("accumulateListLines（置底文收录）", () => {
     const v = fakeView(texts, 4, ls);
     v.buf.lines[4] = cursorCells;
     v.accumulateListLines();
-    expect(ls.noteLastRead).toHaveBeenCalledWith(351462);
+    expect(ls.noteLastRead).toHaveBeenCalledWith(351462, 1);
     const row = v._listNumMap.get(351462);
     expect(rowToStr(row)).toBe(clean62.replace(/\s+$/, ""));
     expect(row[0].bright).toBe(false); // 行首两格也一并归零
@@ -395,6 +448,17 @@ describe("buildListWindowLines（last-read decorate-on-render）", () => {
     expect(rendered[0].ch + rendered[1].ch).toBe(u2bBullet());
     expect(rendered[35].fg).toBe(1);
     expect(rendered[35].bright).toBe(true);
+  });
+
+  test("黄变体 render：_lastReadFg=3 → 标题亮黄、author 栏保持素色", () => {
+    const { v, ls } = renderView(351462, -1);
+    ls._lastReadFg = 3;
+    const out = v.buildListWindowLines();
+    const rendered = out[4];
+    expect(rendered[35].fg).toBe(3); // 标题亮黄
+    expect(rendered[35].bright).toBe(true);
+    expect(rendered[20].fg).toBe(7); // author 素色（黄变体 server 实录不亮白）
+    expect(rendered[20].bright).toBe(false);
   });
 
   test("_lastReadNum=null → 全部素色直出", () => {

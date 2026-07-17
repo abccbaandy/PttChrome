@@ -1105,8 +1105,12 @@ describe("_lastReadNum 生命週期（last-read 紅列 render 裝飾的錨）", 
     const { s } = demandSession({ count: 20 });
     s.noteLastRead(351462);
     expect(s._lastReadNum).toBe(351462);
+    expect(s._lastReadFg).toBe(1); // 預設紅
+    s.noteLastRead(351461, 3); // 黃變體（回文 R: 標題）
+    expect(s._lastReadFg).toBe(3);
     s._seed(pageFacts(100, 115));
     expect(s._lastReadNum).toBe(null);
+    expect(s._lastReadFg).toBe(null);
     s.noteLastRead(351462);
     s._rebuild(pageFacts(100, 115));
     expect(s._lastReadNum).toBe(null);

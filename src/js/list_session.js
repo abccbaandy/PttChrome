@@ -450,22 +450,25 @@ export function flattenListBuffer(numMap, pinnedMap) {
 const LASTREAD_EXEMPT_START = 8;
 const LASTREAD_EXEMPT_END = 12;
 
-// Detection is attribute-based and intentionally strict: a non-blank bold-white
-// cell in the author column AND a non-blank bold-red cell in the title region
-// must BOTH be present ("爆" is only a red push-count; a deleted row's author is
-// a plain '-' — neither matches). A miss just keeps today's behavior (fail-safe).
+// Detection is attribute-based: a non-blank bold cell in the title region (past
+// the author column) in one of the last-read colors. Returns the color fg (1=red
+// for an original article, 3=yellow when the article is a reply (R: title) — debug
+// capture 2026-07-17 21:17) or 0 for no hit; the caller re-paints the same color
+// at render time. The bold-white author column is NOT required — on pttbbs's
+// differential repaints a partial frame only repaints the title region and
+// leaves the author cells plain (and the yellow variant's author is plain even
+// then), and the old author∧title double condition missed those frames (styled
+// row stored un-normalized → 兩篇同時紅). Bold red/yellow never appears in a
+// list row's title region except for the last-read marker: "爆"/push-counts live
+// in cols [8,12) (exempt), and a deleted row's title carries no color. A miss
+// keeps today's behavior (fail-safe).
 export function isLastReadStyledListRow(row) {
-  let author = false;
-  let title = false;
-  for (let i = LIST_AUTHOR_COL_START; i < row.length; ++i) {
+  for (let i = LIST_AUTHOR_COL_END; i < row.length; ++i) {
     const c = row[i];
     if (!c || c.ch === ' ' || !c.bright || c.bg !== 0) continue;
-    if (i < LIST_AUTHOR_COL_END) {
-      if (c.fg === 7) author = true;
-    } else if (c.fg === 1) title = true;
-    if (author && title) return true;
+    if (c.fg === 1 || c.fg === 3) return c.fg;
   }
-  return false;
+  return 0;
 }
 
 // Strip the last-read styling back to a plain row (default attrs) — called on the
@@ -485,13 +488,23 @@ export function normalizeLastReadListRow(row) {
 }
 
 // Inverse of normalizeLastReadListRow: re-paint the server's last-read styling on
-// a render-time clone (author bold-white, title bold-red).
-export function paintLastReadListRow(row) {
+// a render-time clone. Red variant (fg=1): author bold-white + title bold-red.
+// Yellow variant (fg=3, reply article): title bold-yellow only — the server
+// leaves the author column plain there (capture 2026-07-17 21:17).
+export function paintLastReadListRow(row, fg) {
+  if (fg == null) fg = 1;
   for (let i = LIST_AUTHOR_COL_START; i < row.length; ++i) {
     const c = row[i];
-    c.bright = true;
-    c.bg = 0;
-    c.fg = i < LIST_AUTHOR_COL_END ? 7 : 1;
+    if (i < LIST_AUTHOR_COL_END) {
+      if (fg !== 1) continue;
+      c.bright = true;
+      c.bg = 0;
+      c.fg = 7;
+    } else {
+      c.bright = true;
+      c.bg = 0;
+      c.fg = fg;
+    }
   }
 }
 
@@ -611,6 +624,7 @@ export function ListSession(core, view, termBuf, queue) {
   // unknown; reset on seed/rebuild/cleanup (number space may have changed),
   // kept across resume/handoff (same board, the re-seed frame re-teaches).
   this._lastReadNum = null;
+  this._lastReadFg = null; // 1=red, 3=yellow (reply, R: title) — styling variant
   // (2026-07-10) T3 airlock（同鍵二連擊）與 T2 mark/search 模擬皆退役：非白名單
   // 鍵一律走 _beginNativePassthrough（sync → 切原生 → 代送），單按即生效。
   // Sticky native excursion: true from _enterFunctionMode until a context
@@ -1115,6 +1129,7 @@ ListSession.prototype = {
     this._nativeHold = false;
     this._breakChain();
     this._lastReadNum = null; // before _forceRedraw: the seed frame re-teaches
+    this._lastReadFg = null;
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
@@ -1161,6 +1176,7 @@ ListSession.prototype = {
   _rebuild: function(facts) {
     this._breakChain();
     this._lastReadNum = null; // number space may have changed (native excursion)
+    this._lastReadFg = null;
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
@@ -1279,8 +1295,9 @@ ListSession.prototype = {
   // Frame-taught last-read marker (accumulateListLines calls this when a stored
   // row carried the server's last-read styling before normalization). The render
   // window re-paints that styling on this number's row.
-  noteLastRead: function(num) {
+  noteLastRead: function(num, fg) {
     this._lastReadNum = num;
+    this._lastReadFg = fg == null ? 1 : fg;
   },
 
   // Invalidate the prefetch chain: the server cursor is no longer where the
@@ -1713,6 +1730,7 @@ ListSession.prototype = {
     this._edgeDown = false;
     this._fillPages = 0;
     this._lastReadNum = null;
+    this._lastReadFg = null;
     this._prunePivotOverride = undefined;
     this._view.resetListAccumulation();
     this._termBuf.listLines = [];
