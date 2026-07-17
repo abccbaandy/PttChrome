@@ -19,6 +19,10 @@ import { detectFixableUrls } from "../js/url_fix";
 import { detectMentions } from "../js/mention_parse";
 import { detectAids } from "../js/aid_parse";
 import {
+  articleHasSteamgifts,
+  detectGiveawayCodes,
+} from "../js/steamgifts_parse";
+import {
   groupImageCaptionBlocks,
   maxCaptionCols,
 } from "../js/image_caption_group";
@@ -88,6 +92,9 @@ function computeAnnotations(lines, enhance, mergeCaption) {
       captionBlocks =
         mergeCaption === "captionFirst" ? captionFirstBlocks : imageFirstBlocks;
     }
+    // Steamgifts giveaway 代碼連結：文章層 gate（整篇提到 steamgifts 才啟用，
+    // 見 steamgifts_parse.js），通過後逐列抓「獨立成列的 5 碼英數」。
+    const hasSteamgifts = articleHasSteamgifts(texts);
     for (let row = 0; row < lines.length; ++row) {
       const text = texts[row];
       const ann = annotateComment(text, ctx) || undefined;
@@ -143,10 +150,16 @@ function computeAnnotations(lines, enhance, mergeCaption) {
           });
         }
       }
+      let giveaways;
+      if (hasSteamgifts && !(ann && ann.hidden)) {
+        const found = detectGiveawayCodes(text);
+        if (found.length) giveaways = found;
+      }
       let r = ann;
       if (fixedUrls) r = { ...(r || {}), fixedUrls };
       if (mentions) r = { ...(r || {}), mentions };
       if (aids) r = { ...(r || {}), aids };
+      if (giveaways) r = { ...(r || {}), giveaways };
       result[row] = r;
     }
     // 開啟合併時把分組結果寫進 annotation：圖行掛 mergeBlock（render 成兩欄
@@ -344,6 +357,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
         fixedUrls={ann && ann.fixedUrls}
         mentions={ann && ann.mentions}
         aids={ann && ann.aids}
+        giveaways={ann && ann.giveaways}
         blacklistNotice={ann && ann.blacklistNotice}
         onHyperLinkMouseOver={handleHyperLinkMouseOver}
         onHyperLinkMouseOut={handleHyperLinkMouseOut}

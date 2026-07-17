@@ -23,6 +23,7 @@ export class LinkSegmentBuilder {
     fixedUrls,
     mentions,
     aids,
+    giveaways,
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -61,6 +62,17 @@ export class LinkSegmentBuilder {
       }
     }
     this._aid = null;
+    // Steamgifts giveaway 代碼連結：cols [startCol, endCol) of each stand-alone
+    // 5-char code (src/js/steamgifts_parse.js). Same boundary mechanics as
+    // mentions — plain external link, new tab.
+    this._giveawayStart = null;
+    if (giveaways && giveaways.length) {
+      this._giveawayStart = new Map();
+      for (let k = 0; k < giveaways.length; ++k) {
+        this._giveawayStart.set(giveaways[k].startCol, giveaways[k]);
+      }
+    }
+    this._giveaway = null;
     //
     this.segs = [];
     // Auto-fixed URLs (src/js/url_fix.js) render on extra lines below the article
@@ -122,6 +134,20 @@ export class LinkSegmentBuilder {
             e.preventDefault();
             if (aid.onClick) aid.onClick();
           }}
+        >
+          {element}
+        </a>,
+      );
+    } else if (this._giveaway) {
+      // Steamgifts giveaway 代碼 → 外部連結（無 slug，站方自動 redirect）。
+      this._pushSeg(
+        <a
+          key={`g${this.col}`}
+          className="sgGiveawayLink"
+          href={this._giveaway.href}
+          title="Steamgifts giveaway"
+          rel="noreferrer"
+          target="_blank"
         >
           {element}
         </a>,
@@ -208,6 +234,15 @@ export class LinkSegmentBuilder {
     if (this._aidStart !== null && this._aidStart.has(i)) {
       if (this.colorSegBuilder !== null) this.saveSegment();
       this._aid = this._aidStart.get(i);
+    }
+    // Steamgifts giveaway 代碼邊界 — same open/close dance as mentions above.
+    if (this._giveaway && i === this._giveaway.endCol) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._giveaway = null;
+    }
+    if (this._giveawayStart !== null && this._giveawayStart.has(i)) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._giveaway = this._giveawayStart.get(i);
     }
     if (this.colorSegBuilder !== null && ch.isStartOfURL()) {
       this.saveSegment();

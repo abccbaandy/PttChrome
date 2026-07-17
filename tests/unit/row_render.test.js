@@ -240,6 +240,41 @@ describe("Row AID link", () => {
   });
 });
 
+// Steamgifts giveaway 代碼自動連結。Screen 過文章層 gate 後偵測獨立成列的 5 碼
+// 代碼（steamgifts_parse），Row/LinkSegmentBuilder 包成 .sgGiveawayLink 外連。
+describe("Row Steamgifts giveaway link", () => {
+  test("giveaway → .sgGiveawayLink <a> 只包代碼、開新分頁、href 無 slug", () => {
+    // sp0 sp1 j2 Q3 t4 f5 0 6
+    const { container } = render(
+      <Row
+        chars={chars("  jQtf0")}
+        row={0}
+        giveaways={[
+          {
+            startCol: 2,
+            endCol: 7,
+            code: "jQtf0",
+            href: "https://www.steamgifts.com/giveaway/jQtf0/"
+          }
+        ]}
+      />
+    );
+    const a = container.querySelector("a.sgGiveawayLink");
+    expect(a).not.toBeNull();
+    expect(a.textContent).toBe("jQtf0");
+    expect(a.getAttribute("href")).toBe(
+      "https://www.steamgifts.com/giveaway/jQtf0/"
+    );
+    expect(a.getAttribute("target")).toBe("_blank");
+  });
+
+  test("no giveaways prop → plain text, no .sgGiveawayLink", () => {
+    const { container } = render(<Row chars={chars("jQtf0")} row={0} />);
+    expect(container.querySelector(".sgGiveawayLink")).toBeNull();
+    expect(bbsrow(container).textContent).toBe("jQtf0");
+  });
+});
+
 describe("Row blacklistNotice (原生列表黑名單通知列)", () => {
   test("blacklistNotice → 內容即通知字串（含 bbsline 結構）、不走原始 char cells", () => {
     const notice = "  62349 + 6 7/09 -            □ （本文已被黑名單） someone";
