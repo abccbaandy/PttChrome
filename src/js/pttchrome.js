@@ -1,4 +1,4 @@
-﻿// Main Program
+// Main Program
 import { AnsiParser } from './ansi_parser';
 import { TermView } from './term_view';
 import { TermBuf } from './term_buf';
@@ -11,6 +11,7 @@ import { AidNavigation } from './aid_navigation';
 import { AutoLogin } from './auto_login';
 import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
 import { TouchController } from './touch_controller';
+import { MouseButtonTracker } from './mouse_button_tracker';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball } from './string_util';
 import { setTimer } from './util';
@@ -86,8 +87,7 @@ export const App = function() {
   this.BBSWin.setAttribute("align", "center");
   this.view.mainDisplay.style.transformOrigin = 'center';
 
-  this.mouseLeftButtonDown = false;
-  this.mouseRightButtonDown = false;
+  this.mouseButtons = new MouseButtonTracker();
 
   this.inputAreaFocusTimer = null;
   this.modalShown = false;
@@ -155,6 +155,9 @@ export const App = function() {
 
   window.addEventListener('blur', function(e) {
     self.appFocused = false;
+    // A mouseup while unfocused never reaches us — clear held-button state
+    // or the wheel stays stuck in page-scroll mode until reload.
+    self.mouseButtons.reset();
   }, false);
 
   this.strToCopy = null;
@@ -1078,7 +1081,7 @@ App.prototype.mouse_down = function(e) {
       }
       this.setDblclickTimer();
     }
-    this.mouseLeftButtonDown = true;
+    this.mouseButtons.onMouseDown(e.button);
     //this.setInputAreaFocus();
     if (!(window.getSelection().isCollapsed))
       this.CmdHandler.setAttribute('SkipMouseClick','1');
@@ -1091,19 +1094,19 @@ App.prototype.mouse_down = function(e) {
       if (e.target.tagName.indexOf("menuitem") >= 0 )
         onbbsarea = false;
   } else if(e.button == 2) {
-    this.mouseRightButtonDown = true;
+    this.mouseButtons.onMouseDown(e.button);
   }
 };
 
 App.prototype.mouse_up = function(e) {
+  // Held-button state must clear even under a modal, or a right-click
+  // released over a dialog leaves the wheel stuck in page-scroll mode.
+  this.mouseButtons.onMouseUp(e.button);
   if (this.modalShown)
     return;
   //0=left button, 1=middle button, 2=right button
   if (e.button === 0) {
     this.setMbTimer();
-    this.mouseLeftButtonDown = false;
-  } else if (e.button == 2) {
-    this.mouseRightButtonDown = false;
   }
 
   if (e.button === 0 || e.button == 2) { //left or right button
@@ -1144,7 +1147,7 @@ App.prototype.mouse_up = function(e) {
 App.prototype.mouse_move = function(e) {
   if (this.buf.useMouseBrowsing) {
     if (window.getSelection().isCollapsed) {
-      if(!this.mouseLeftButtonDown)
+      if(!this.mouseButtons.left)
         this.onMouse_move(e.clientX, e.clientY);
     } else
       this.resetMouseCursor();
@@ -1159,11 +1162,14 @@ App.prototype.mouse_over = function(e) {
   this.curX = e.clientX;
   this.curY = e.clientY;
 
-  if(window.getSelection().isCollapsed && !this.mouseLeftButtonDown)
+  if(window.getSelection().isCollapsed && !this.mouseButtons.left)
     this.setInputAreaFocus();
 };
 
 App.prototype.mouse_scroll = function(e) {
+  // Self-heal: e.buttons is the browser's authoritative held-button state,
+  // recovering any flag stuck by a mouseup we never saw.
+  this.mouseButtons.syncFromButtons(e.buttons);
   if (this.modalShown)
     return;
   // AID navigation in flight: no wheel-driven keys may hit the wire.
@@ -1184,9 +1190,9 @@ App.prototype.mouse_scroll = function(e) {
   if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
     if (this.buf.listRenderMode === 'buffer' && this.listSession) {
       var lup = e.deltaY < 0 || e.wheelDelta > 0;
-      var lpref = this.mouseRightButtonDown
+      var lpref = this.mouseButtons.right
         ? this.view.mouseWheelFunction2
-        : this.mouseLeftButtonDown
+        : this.mouseButtons.left
           ? this.view.mouseWheelFunction3
           : this.view.mouseWheelFunction1;
       var lop = ['none', lup ? 'up' : 'down', lup ? 'pgup' : 'pgdn', 'none'][lpref] || 'none';
@@ -1204,10 +1210,10 @@ App.prototype.mouse_scroll = function(e) {
   var mouseWheelActionsDown = [ 'none', 'doArrowDown', 'doPageDown', 'nextThread' ];
 
   if (e.deltaY < 0 || e.wheelDelta > 0) { // scrolling up
-    if (this.mouseRightButtonDown) {
+    if (this.mouseButtons.right) {
       var action = mouseWheelActionsUp[this.view.mouseWheelFunction2];
       this.setBBSCmd(action);
-    } else if (this.mouseLeftButtonDown) {
+    } else if (this.mouseButtons.left) {
       var action = mouseWheelActionsUp[this.view.mouseWheelFunction3];
       this.setBBSCmd(action);
     } else {
@@ -1215,10 +1221,10 @@ App.prototype.mouse_scroll = function(e) {
       this.setBBSCmd(action);
     }
   } else { // scrolling down
-    if (this.mouseRightButtonDown) {
+    if (this.mouseButtons.right) {
       var action = mouseWheelActionsDown[this.view.mouseWheelFunction2];
       this.setBBSCmd(action);
-    } else if (this.mouseLeftButtonDown) {
+    } else if (this.mouseButtons.left) {
       var action = mouseWheelActionsDown[this.view.mouseWheelFunction3];
       this.setBBSCmd(action);
     } else {
@@ -1231,9 +1237,9 @@ App.prototype.mouse_scroll = function(e) {
   e.stopPropagation();
   e.preventDefault();
 
-  if (this.mouseRightButtonDown) //prevent context menu popup
+  if (this.mouseButtons.right) //prevent context menu popup
     this.CmdHandler.setAttribute('doDOMMouseScroll','1');
-  if (this.mouseLeftButtonDown) {
+  if (this.mouseButtons.left) {
     if (this.buf.useMouseBrowsing) {
       this.CmdHandler.setAttribute('SkipMouseClick','1');
     }
