@@ -397,7 +397,7 @@
     "message": [
       '升級 React 19（bundled、function component + hooks）',
       '棄用 Bootstrap / react-bootstrap，UI 元件改用 Mantine（暗色預設、可切換主題）',
-      '建置工具：webpack 5、Yarn 4',
+      '建置工具：webpack 5、Yarn 4、Babel 8（測試鏈 Jest 30）',
       '移除 jQuery 與 hammerjs，全部原生 API，無 CDN 程式庫依賴',
       'Firebase npm modular SDK（lazy chunk）＋ App Check 防護',
       '測試基建：Playwright E2E、Firebase Emulator Suite（Docker）整合測試、離線 byte-cassette 重放測試',
