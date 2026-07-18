@@ -23,7 +23,7 @@
     "@testing-library/react": "^16.3.2",
     "babel-jest": "^29",
     "babel-loader": "^10.0.0",
-    "cross-env": "^7.0.2",
+    "cross-env": "^10.1.0",
     "css-loader": "^7.1.2",
     "css-minimizer-webpack-plugin": "^8.0.0",
     "html-webpack-harddisk-plugin": "^2.0.0",
