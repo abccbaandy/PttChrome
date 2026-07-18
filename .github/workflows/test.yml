@@ -10,7 +10,7 @@ jobs:
   test-unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Yarn v4 走 corepack：須先 enable，setup-node 的 cache:yarn 偵測（yarn cache dir）
       # 才會用 4.x；否則落到 runner 內建 yarn 1.22，遇 packageManager: yarn@4 直接報錯。
@@ -33,7 +33,7 @@ jobs:
   test-integration:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Yarn v4/corepack：先 enable 再讓 setup-node 做 cache:yarn（詳見 test-unit 註解）。
       - uses: actions/setup-node@v7
@@ -64,7 +64,7 @@ jobs:
   test-e2e-offline:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Yarn v4/corepack：先 enable 再讓 setup-node 做 cache:yarn（詳見 test-unit 註解）。
       - uses: actions/setup-node@v7
