@@ -12,7 +12,7 @@
 ```
 一次真實錄製(guest) → recorder
    ├─ tests/e2e/cassettes/<name>.json        → Layer1 Playwright 離線重放（真瀏覽器/真渲染）
-   └─ tests/unit/fixtures/replay/<name>.page.json → Layer2 jest 純邏輯（node, 秒級）
+   └─ tests/unit/fixtures/replay/<name>.page.json → Layer2 vitest 純邏輯（node, 秒級）
 ```
 - **注入點**：stub `window.WebSocket`（不連網、吞 send）讓 app 離線 boot；把 cassette 每頁 recv 餵回
   `App.onData`（`src/js/pttchrome.js:252`，= 真實 parser→termBuf→`<Screen>`）；以好讀自己送出的

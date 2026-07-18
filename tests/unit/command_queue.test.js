@@ -1,6 +1,6 @@
 // CommandQueue guards (v4 principle C): single in-flight serialization,
 // content-decided completion, settle-re-armed soft timeout, absolute hard cap,
-// silent flush. All timing via jest fake timers.
+// silent flush. All timing via vitest fake timers.
 import { CommandQueue } from "../../src/js/command_queue";
 
 function makeQueue() {
@@ -17,8 +17,8 @@ const cmd = (keys, over = {}) => ({
 });
 
 describe("CommandQueue", () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
 
   test("sends immediately; a second command waits until the first completes", () => {
     const { q, sent } = makeQueue();
@@ -36,7 +36,7 @@ describe("CommandQueue", () => {
 
   test("onDone receives the expect result (e.g. edge detection payload)", () => {
     const { q } = makeQueue();
-    const done = jest.fn();
+    const done = vi.fn();
     q.enqueue(cmd("A", { onDone: done }));
     settleWith(q, { edge: true });
     expect(done).toHaveBeenCalledWith({ edge: true });
@@ -51,8 +51,8 @@ describe("CommandQueue", () => {
     expect(settleWith(q, false)).toBeFalsy(); // 半繪，指令仍在線 → 未消費
     expect(settleWith(q, true)).toBe("done"); // 完成幀 → 消費
 
-    q.enqueue(cmd("B", { onFail: jest.fn() }));
-    jest.advanceTimersByTime(3000); // 探針上線
+    q.enqueue(cmd("B", { onFail: vi.fn() }));
+    vi.advanceTimersByTime(3000); // 探針上線
     expect(settleWith(q, false)).toBe("miss"); // 探針幀仍不符 → miss 也算消費
   });
 
@@ -64,12 +64,12 @@ describe("CommandQueue", () => {
 
   test("timeout → \\f probe first; a truthy expect on the probed frame completes normally", () => {
     const { q, sent } = makeQueue();
-    const done = jest.fn();
-    const fail = jest.fn();
+    const done = vi.fn();
+    const fail = vi.fn();
     q.enqueue(cmd("A", { timeoutMs: 3000, onDone: done, onFail: fail }));
-    jest.advanceTimersByTime(2999);
+    vi.advanceTimersByTime(2999);
     expect(sent).toEqual(["A"]);
-    jest.advanceTimersByTime(1); // soft timeout → probe, not failure
+    vi.advanceTimersByTime(1); // soft timeout → probe, not failure
     expect(sent).toEqual(["A", "\f"]);
     expect(fail).not.toHaveBeenCalled();
     expect(q.inFlightKind).toBe("test"); // still in flight, awaiting the frame
@@ -81,9 +81,9 @@ describe("CommandQueue", () => {
 
   test("probe frame arrives but expect stays falsy → onFail('miss', facts) — a real answer", () => {
     const { q } = makeQueue();
-    const fail = jest.fn();
+    const fail = vi.fn();
     q.enqueue(cmd("A", { timeoutMs: 3000, onFail: fail }));
-    jest.advanceTimersByTime(3000); // probe sent
+    vi.advanceTimersByTime(3000); // probe sent
     q.onSettle({}, { __result: false, kind: "clean-list" });
     expect(fail).toHaveBeenCalledWith("miss", { __result: false, kind: "clean-list" });
     expect(q.idle).toBe(true);
@@ -91,21 +91,21 @@ describe("CommandQueue", () => {
 
   test("probe unanswered (second silent window) → onFail('timeout'); the next command runs", () => {
     const { q, sent } = makeQueue();
-    const fail = jest.fn();
+    const fail = vi.fn();
     q.enqueue(cmd("A", { timeoutMs: 3000, onFail: fail }));
     q.enqueue(cmd("B"));
-    jest.advanceTimersByTime(3000); // probe
+    vi.advanceTimersByTime(3000); // probe
     expect(fail).not.toHaveBeenCalled();
-    jest.advanceTimersByTime(3000); // probe itself timed out → link dead
+    vi.advanceTimersByTime(3000); // probe itself timed out → link dead
     expect(fail).toHaveBeenCalledWith("timeout");
     expect(sent).toEqual(["A", "\f", "B"]); // queue continues after a failure
   });
 
   test("probe: false → timeout fails directly (no \\f sent)", () => {
     const { q, sent } = makeQueue();
-    const fail = jest.fn();
+    const fail = vi.fn();
     q.enqueue(cmd("A", { timeoutMs: 3000, probe: false, onFail: fail }));
-    jest.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(3000);
     expect(fail).toHaveBeenCalledWith("timeout");
     expect(sent).toEqual(["A"]);
   });
@@ -113,26 +113,26 @@ describe("CommandQueue", () => {
   test("every settle re-arms the soft timeout (a slow response keeps itself alive)", () => {
     const { q, sent } = makeQueue();
     q.enqueue(cmd("A", { timeoutMs: 3000 }));
-    jest.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(2000);
     settleWith(q, false); // activity at t=2s
-    jest.advanceTimersByTime(2000); // t=4s — old deadline (3s) must NOT have fired
+    vi.advanceTimersByTime(2000); // t=4s — old deadline (3s) must NOT have fired
     expect(sent).toEqual(["A"]); // no probe yet
-    jest.advanceTimersByTime(1000); // t=5s = 2s + fresh 3s window → probe
+    vi.advanceTimersByTime(1000); // t=5s = 2s + fresh 3s window → probe
     expect(sent).toEqual(["A", "\f"]);
   });
 
   test("hard timeout caps a command that keeps re-arming via settles (probe, then fail)", () => {
     const { q } = makeQueue();
-    const fail = jest.fn();
+    const fail = vi.fn();
     q.enqueue(cmd("A", { timeoutMs: 3000, hardTimeoutMs: 10000, onFail: fail }));
     for (let t = 0; t < 4; ++t) {
-      jest.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(2000);
       settleWith(q, false); // settles every 2s forever
     }
     // t=10s: the absolute cap fires even though the soft window never expired
     // → probe goes out; the next unsatisfying settle (a full frame) means MISS.
     expect(fail).not.toHaveBeenCalled();
-    jest.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(2000);
     settleWith(q, false);
     expect(fail).toHaveBeenCalledWith("miss", { __result: false });
     expect(q.idle).toBe(true);
@@ -140,22 +140,22 @@ describe("CommandQueue", () => {
 
   test("completion cancels both timers", () => {
     const { q } = makeQueue();
-    const fail = jest.fn();
+    const fail = vi.fn();
     q.enqueue(cmd("A", { timeoutMs: 3000, hardTimeoutMs: 10000, onFail: fail }));
     settleWith(q, true);
-    jest.advanceTimersByTime(20000);
+    vi.advanceTimersByTime(20000);
     expect(fail).not.toHaveBeenCalled();
   });
 
   test("flush drops in-flight and pending silently; the queue stays usable", () => {
     const { q, sent } = makeQueue();
-    const fail = jest.fn();
+    const fail = vi.fn();
     q.enqueue(cmd("A", { onFail: fail }));
     q.enqueue(cmd("B", { onFail: fail }));
     q.flush();
     expect(q.idle).toBe(true);
     expect(q.inFlightKind).toBeNull();
-    jest.advanceTimersByTime(20000);
+    vi.advanceTimersByTime(20000);
     expect(fail).not.toHaveBeenCalled(); // silent: residue absorbed by native mirror
     q.enqueue(cmd("C"));
     expect(sent).toEqual(["A", "C"]);
@@ -167,8 +167,8 @@ describe("CommandQueue", () => {
     // 提早完成、真正的回應之後才到。修法＝flushPending：保留 in-flight，新交易
     // 排在它後面（序列化即修復）。
     const { q, sent } = makeQueue();
-    const anchorDone = jest.fn();
-    const leaveDone = jest.fn();
+    const anchorDone = vi.fn();
+    const leaveDone = vi.fn();
     q.enqueue(cmd("42\r", { kind: "prefetch-anchor-down", onDone: anchorDone }));
     q.enqueue(cmd("\x1b[6~", { kind: "prefetch-down" }));
     q.flushPending(); // T2 交易前導：只砍未送出的 page 命令

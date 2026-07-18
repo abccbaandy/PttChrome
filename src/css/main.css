@@ -252,7 +252,6 @@ img {
 
 body {
   color: white;
-  //background-color: #101010;
   background-color: black;
   margin: 0px;
   overflow:hidden;
@@ -476,7 +475,7 @@ span {
    a repeat-x http.bmp background, and the text keeps its original ANSI colour, so a
    linked @handle looks just like any other link on the page. */
 .xMention {
-  background-image: url(../icon/http.bmp?inline);
+  background-image: url(../icon/http.bmp);
   background-repeat: repeat-x;
   background-position: 0% 90%;
 }
@@ -484,7 +483,7 @@ span {
 /* Steamgifts giveaway 代碼自動連結：[抽獎] 文中獨立成列的 5 碼代碼連到
    steamgifts.com/giveaway/<code>/（見 steamgifts_parse.js）。外觀同一般連結。 */
 .sgGiveawayLink {
-  background-image: url(../icon/http.bmp?inline);
+  background-image: url(../icon/http.bmp);
   background-repeat: repeat-x;
   background-position: 0% 90%;
 }
@@ -492,7 +491,7 @@ span {
 /* 文章代碼 (AID) 自動連結：好讀模式偵測 #XXXXXXXX，點擊在站內自動導航到該文
    （見 Row/LinkSegmentBuilder + aid_parse + aid_navigation）。外觀同一般連結。 */
 .aidLink {
-  background-image: url(../icon/http.bmp?inline);
+  background-image: url(../icon/http.bmp);
   background-repeat: repeat-x;
   background-position: 0% 90%;
   cursor: pointer;

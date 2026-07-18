@@ -3,7 +3,7 @@
 // realtime listener (onSnapshot) then keeps re-applying the cloud copy on
 // top (cloud wins), so edits made on another device/tab land here live.
 //
-// SDK loading: npm modular SDK behind dynamic import() — webpack splits it
+// SDK loading: npm modular SDK behind dynamic import() — Vite/Rolldown splits it
 // into a lazy chunk, so nothing is downloaded until the user signs in (or
 // has signed in before — see SYNC_FLAG_KEY). Tests run the real SDK against
 // the local Firebase Emulator Suite (yarn test:integration), not a fake.
@@ -44,20 +44,20 @@ let cloudValuesCallback = null;
 // Active onSnapshot unsubscribe; null when not listening.
 let snapshotUnsub = null;
 
-// Load the modular SDK + initializeApp, once. The import()s land in one
-// webpack async chunk (same chunk name), kept out of the entry bundle.
+// Load the modular SDK + initializeApp, once. The dynamic import()s are
+// code-split into lazy chunks by Vite/Rolldown, kept out of the entry bundle.
 const init = () => {
   if (loadPromise) return loadPromise;
   loadPromise = (async () => {
     const [appM, authM, fsM, acM] = await Promise.all([
-      import(/* webpackChunkName: "firebase" */ "firebase/app"),
-      import(/* webpackChunkName: "firebase" */ "firebase/auth"),
-      import(/* webpackChunkName: "firebase" */ "firebase/firestore"),
-      import(/* webpackChunkName: "firebase" */ "firebase/app-check")
+      import("firebase/app"),
+      import("firebase/auth"),
+      import("firebase/firestore"),
+      import("firebase/app-check")
     ]);
-    // Test-only: route to the local emulator suite when run under
-    // `firebase emulators:exec` (it sets these env vars, incl. the demo
-    // project id). DefinePlugin pins all three to undefined in webpack
+    // Test-only: route to the local emulator suite when run under the
+    // integration runner (it sets these env vars, incl. the demo project
+    // id). vite.config.js `define` pins all three to undefined in app
     // builds, so this block is dead-code-eliminated there.
     const emuProject = process.env.GCLOUD_PROJECT;
     const app = appM.initializeApp(
@@ -75,7 +75,7 @@ const init = () => {
         // localhost isn't on the reCAPTCHA key's domain allow-list; dev
         // builds exchange a debug token instead. APPCHECK_DEBUG_TOKEN is a
         // registered token injected from the developer's machine env (see
-        // webpack.config.js — never committed); without it the SDK
+        // vite.config.js — never committed); without it the SDK
         // auto-generates one per browser profile and prints it to the
         // console for manual registration. Dead-code eliminated in
         // production builds.

@@ -56,15 +56,15 @@ function localRepaint(buf) {
 }
 
 describe("settle 只由 server 活動 re-arm（按住 nav 鍵不得餓死 settle）", () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
 
   test("server 回應後按住鍵連續本地重繪：settle 仍在 SETTLE_MS 內 fire", () => {
     const buf = makeBuf();
     serverWrite(buf, 5); // prefetch 回應到達
     // 使用者按住鍵：每 30ms 一次本地重繪，共 10 次（>> SETTLE_MS）
     for (let i = 0; i < 10; ++i) {
-      jest.advanceTimersByTime(30);
+      vi.advanceTimersByTime(30);
       localRepaint(buf);
     }
     expect(buf.events).toContain("screenSettled");
@@ -75,11 +75,11 @@ describe("settle 只由 server 活動 re-arm（按住 nav 鍵不得餓死 settle
   test("server 持續送資料時 settle 照舊被推遲（原不變量不回歸）", () => {
     const buf = makeBuf();
     serverWrite(buf, 5);
-    jest.advanceTimersByTime(30);
+    vi.advanceTimersByTime(30);
     serverWrite(buf, 6); // 30ms 後又一筆 → re-arm
-    jest.advanceTimersByTime(30); // 距第二筆僅 30ms < SETTLE_MS
+    vi.advanceTimersByTime(30); // 距第二筆僅 30ms < SETTLE_MS
     expect(buf.events).not.toContain("screenSettled");
-    jest.advanceTimersByTime(SETTLE_MS);
+    vi.advanceTimersByTime(SETTLE_MS);
     expect(buf.events).toContain("screenSettled");
     expect(Array.from(buf.settleSnapshot.changedRows).sort()).toEqual([5, 6]);
   });
@@ -91,7 +91,7 @@ describe("settle 只由 server 活動 re-arm（按住 nav 鍵不得餓死 settle
     const buf = makeBuf();
     buf.posChanged = true; // gotoPos 等 escape 只設 posChanged
     buf.notify();
-    jest.advanceTimersByTime(SETTLE_MS + 1);
+    vi.advanceTimersByTime(SETTLE_MS + 1);
     expect(buf.events).toContain("screenSettled");
     expect(buf.settleSnapshot.cursorMoved).toBe(true);
     expect(buf.settleSnapshot.changedRows.size).toBe(0);
@@ -102,7 +102,7 @@ describe("settle 只由 server 活動 re-arm（按住 nav 鍵不得餓死 settle
   test("純本地重繪自己不觸發 settle timer（沒有 server 活動就沒有 settle）", () => {
     const buf = makeBuf();
     localRepaint(buf);
-    jest.advanceTimersByTime(SETTLE_MS * 4);
+    vi.advanceTimersByTime(SETTLE_MS * 4);
     expect(buf.events).not.toContain("screenSettled");
   });
 });

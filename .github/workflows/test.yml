@@ -50,12 +50,12 @@ jobs:
       # The Firebase emulator (auth+firestore) runs inside a pinned Docker image
       # (bundles firebase-tools + OpenJDK) so firebase-tools stays out of the
       # committed lockfile — Docker & Java are preinstalled on ubuntu runners,
-      # and jest runs on the host against the container's exposed ports. See
+      # and vitest runs on the host against the container's exposed ports. See
       # scripts/run-integration.mjs / docs/pref-sync-firestore.md.
       - name: Integration tests (Firebase Emulator in Docker)
         env:
           # Cushion the in-test poll deadline against cold-start latency; the test
-          # also auto-retries (jest.retryTimes) on CI. See tests/integration/.
+          # also auto-retries (vitest retry) on CI. See tests/integration/.
           INTEGRATION_TIMEOUT_MS: "30000"
         run: |
           yarn install --immutable

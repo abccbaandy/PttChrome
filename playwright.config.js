@@ -1,7 +1,7 @@
 const { defineConfig, devices } = require('@playwright/test');
 
 // E2E 測試：用真實 Chromium 驅動 pttchrome 連真實 PTT。
-// dev server 由 webServer 自動啟動（已手動 npm start 時會 reuse）。
+// dev server 由 webServer 自動啟動（已手動 yarn start 時會 reuse）。
 module.exports = defineConfig({
   testDir: './tests/e2e',
   // BBS 連線/登入較慢，timeout 放寬
@@ -17,7 +17,7 @@ module.exports = defineConfig({
     video: 'retain-on-failure',
     trace: 'on-first-retry',
   },
-  // 三个 project 共用同一个 webServer（webpack dev server）：
+  // 三个 project 共用同一个 webServer（Vite dev server）：
   // - live   ：连真实 PTT 的 e2e（现有 spec），排除 offline/ 与 tools/。
   // - offline：离线重放（tests/e2e/offline/**），用 stub WebSocket + cassette，零网络。
   // - record ：一次性录制器（tools/record-cassette.spec.js），连真实 PTT(guest) 产出 cassette。
@@ -40,10 +40,9 @@ module.exports = defineConfig({
     },
   ],
   webServer: {
-    // 直接跑單一 node 進程（webpack bin 自動委派 webpack-cli），不經 npx/cross-env 多層 wrapper，
-    // teardown 才殺得乾淨、不留孤兒。NODE_ENV 改走 Playwright 內建 env（會 merge 進 process.env）。
-    command: 'node node_modules/webpack/bin/webpack.js serve',
-    env: { NODE_ENV: 'development' },
+    // 直接跑單一 node 進程（vite bin），不經 npx/yarn 多層 wrapper，
+    // teardown 才殺得乾淨、不留孤兒。vite serve 即 development mode，無需 NODE_ENV。
+    command: 'node node_modules/vite/bin/vite.js',
     url: 'http://localhost:8080',
     timeout: 180000,
     // teardown 先送 SIGTERM 讓 dev server 自己收掉 socket，再強制收。

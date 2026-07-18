@@ -1,12 +1,12 @@
 // Unit tests for AidNavigation (src/js/aid_navigation.js): the serialized
 // native-key sequence behind an AID link click. Drives a REAL CommandQueue
-// (fake send + jest fake timers) and feeds settle facts by hand — the same
+// (fake send + vitest fake timers) and feeds settle facts by hand — the same
 // harness style as command_queue.test.js / list_session.test.js.
 
 import { CommandQueue } from "../../src/js/command_queue";
 import { AidNavigation } from "../../src/js/aid_navigation";
 
-jest.useFakeTimers();
+vi.useFakeTimers();
 
 // Minimal facts object (shape of list_session._collectFacts).
 function facts(kind, over = {}) {
@@ -143,7 +143,7 @@ describe("AidNavigation", () => {
     // The vmsg press-any-key settle: not clean-list → expect false, timer re-armed.
     settle(queue, facts("prompt"));
     // Soft timeout → probe \f.
-    jest.advanceTimersByTime(4000);
+    vi.advanceTimersByTime(4000);
     expect(sent[2]).toBe("\f");
     // Probed full frame still shows the message → definitive miss.
     settle(queue, facts("prompt"));
@@ -177,9 +177,9 @@ describe("AidNavigation", () => {
     nav.start("1gIeu-3A", "Android");
     expect(sent[0]).toBe("sAndroid\r\f");
     // Silent link: soft timeout → probe, then hard silence → timeout fail.
-    jest.advanceTimersByTime(6000); // probe
+    vi.advanceTimersByTime(6000); // probe
     expect(sent[1]).toBe("\f");
-    jest.advanceTimersByTime(6000); // probe timeout
+    vi.advanceTimersByTime(6000); // probe timeout
     expect(nav.active).toBe(false);
     expect(hints.some(h => h.includes("切換看板"))).toBe(true);
     // The queued follow-up steps must not fire after the failure.

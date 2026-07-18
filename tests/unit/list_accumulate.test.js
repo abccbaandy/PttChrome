@@ -8,6 +8,8 @@
 // 直接以 stub buf 呼叫真的 TermView.prototype.accumulateListLines（逻辑不碰 DOM）。
 import { TermView } from "../../src/js/term_view";
 import { pinnedRowKey, subjectOfListRow, listRowMarkFg } from "../../src/js/list_session";
+import { u2b } from "../../src/js/string_util";
+import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 function chRow(text, cols = 80) {
   const padded = text.padEnd(cols);
@@ -67,10 +69,10 @@ function fakeListSession() {
   return {
     _selectedNum: null,
     _lastReadTitle: null,
-    noteLastRead: jest.fn(function (title) {
+    noteLastRead: vi.fn(function (title) {
       if (title) this._lastReadTitle = title;
     }),
-    noteEvicted: jest.fn(),
+    noteEvicted: vi.fn(),
     prunePivot: () => null,
   };
 }
@@ -409,7 +411,6 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
   beforeAll(() => {
     // buildListWindowLines 的 u2b('●') 需要真 Big5 表（string_util 读裸全域 lib）。
     globalThis.window = globalThis;
-    const { loadBig5Tables } = require("./helpers/load_big5_tables");
     loadBig5Tables();
   });
 
@@ -473,7 +474,6 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
   });
 
   function u2bBullet() {
-    const { u2b } = require("../../src/js/string_util");
     const b = u2b("●");
     return b.charAt(0) + b.charAt(1);
   }

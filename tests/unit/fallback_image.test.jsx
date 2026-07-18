@@ -25,13 +25,13 @@ const img = (c) => c.querySelector("img");
 const errorAndFlushBackoff = (c) => {
   fireEvent.error(img(c));
   act(() => {
-    jest.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
   });
 };
 
 describe("FallbackImage 載入失敗重試 + 可見錯誤態", () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
 
   test("初始：顯示讀取動畫 + 隱藏 img，無錯誤態", () => {
     const { container } = renderInline();
@@ -48,7 +48,7 @@ describe("FallbackImage 載入失敗重試 + 可見錯誤態", () => {
     expect(errorBox(container)).toBeNull();
     // 計時到 → 重掛 img 再次嘗試，動畫仍在。
     act(() => {
-      jest.runOnlyPendingTimers();
+      vi.runOnlyPendingTimers();
     });
     expect(loading(container)).toBe(1);
     expect(img(container)).not.toBeNull();

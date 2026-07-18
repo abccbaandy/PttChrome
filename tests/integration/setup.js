@@ -14,7 +14,7 @@ global.window = {
 };
 
 // `yarn test:integration` (firebase emulators:exec) sets these; the fallbacks
-// cover running `jest -c jest.integration.config.js` directly against an
+// cover running `vitest run --project integration` directly against an
 // already-running `firebase emulators:start`. Ports match firebase.json.
 process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || "demo-pttchrome";
 process.env.FIREBASE_AUTH_EMULATOR_HOST =

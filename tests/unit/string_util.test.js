@@ -1,4 +1,4 @@
-// Pure-logic unit tests for string_util.wrapText (jest, node env — no DOM/网路).
+// Pure-logic unit tests for string_util.wrapText (vitest, 纯逻辑 — no DOM/网路).
 //
 // Regression guard for the CodeQL "incomplete string escaping" fix: the group
 // width calculation in wrapText() must replace ALL tabs (and CR/LF), not just

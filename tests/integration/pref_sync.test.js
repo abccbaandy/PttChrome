@@ -22,20 +22,19 @@
  * pref_sync's view this equals a restored session (flag → init → first auth
  * state → attach), minus the async restore wait.
  *
- * Promise-style (no async/await): the babel test preset has no
- * regenerator-runtime, same constraint as src/.
+ * Promise-style (no async/await)：沿用 src/ 的既有風格。
  */
 
-const prefSync = require("../../src/js/pref_sync");
-const { FIREBASE_CONFIG } = require("../../src/js/firebase_config");
-const { initializeApp, deleteApp } = require("firebase/app");
-const {
+import * as prefSync from "../../src/js/pref_sync";
+import { FIREBASE_CONFIG } from "../../src/js/firebase_config";
+import { initializeApp, deleteApp } from "firebase/app";
+import {
   getAuth,
   connectAuthEmulator,
   signInWithCredential,
   GoogleAuthProvider
-} = require("firebase/auth");
-const {
+} from "firebase/auth";
+import {
   getFirestore,
   connectFirestoreEmulator,
   doc,
@@ -44,7 +43,7 @@ const {
   disableNetwork,
   enableNetwork,
   terminate
-} = require("firebase/firestore");
+} from "firebase/firestore";
 
 const SYNC_FLAG_KEY = "pttchrome.prefsync.enabled";
 const PREF_KEY = "pttchrome.pref.v1";
@@ -55,11 +54,12 @@ const PROJECT_ID = process.env.GCLOUD_PROJECT;
 // test there. A successful poll resolves as soon as its condition holds (~200ms
 // locally), so a bigger ceiling NEVER slows the happy path — it only absorbs the
 // cold-start tail. Locally the deadline stays tight so a real hang fails fast.
-// (jest.integration.config.js#testTimeout derives its outer guard from the same env.)
+// (vitest.config.js integration project testTimeout derives its outer guard from the same env.)
 const POLL_DEADLINE_MS =
   Number(process.env.INTEGRATION_TIMEOUT_MS) ||
   (process.env.CI ? 30000 : 10000);
-if (process.env.CI) jest.retryTimes(2, { logErrorsBeforeRetry: true });
+// CI flaky 重試改由 vitest.config.js integration project 的 `retry: 2` 承接
+//（Vitest 無 runtime retryTimes API）。
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -192,8 +192,8 @@ const startupWithUser = onCloudValues => {
 // ---- lifecycle ---------------------------------------------------------------
 
 beforeEach(() => {
-  infoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
-  warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+  warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   seq += 1;
   testSub = "it-" + Date.now().toString(36) + "-" + seq;
   uid = null;
@@ -209,10 +209,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
-// Close gRPC channels and auth token timers, or jest never exits.
+// Close gRPC channels and auth token timers, or vitest never exits.
 afterAll(() => {
   return prefSync
     .signOut()
@@ -234,7 +234,7 @@ describe("startup restore (previously signed in)", () => {
       autoLoginUser: "me",
       autoLoginPassword: "pw"
     });
-    const onCloudValues = jest.fn();
+    const onCloudValues = vi.fn();
 
     return seedDoc({ prefs: { fontSize: 18 } })
       .then(() => startupWithUser(onCloudValues))
@@ -258,7 +258,7 @@ describe("startup restore (previously signed in)", () => {
       autoLoginPassword: "pw"
     });
 
-    return startupWithUser(jest.fn())
+    return startupWithUser(vi.fn())
       .then(() => waitFor(actionLogged("push-local"), "push-local"))
       .then(() =>
         // Poll until the upload landed server-side.
@@ -276,7 +276,7 @@ describe("startup restore (previously signed in)", () => {
 describe("realtime propagation", () => {
   it("applies a change made on another device while this page is open", () => {
     writeStoredPrefs({ fontSize: 16 });
-    const onCloudValues = jest.fn();
+    const onCloudValues = vi.fn();
 
     return seedDoc({ prefs: { fontSize: 16 } })
       .then(() => startupWithUser(onCloudValues))
@@ -303,7 +303,7 @@ describe("realtime propagation", () => {
 
   it("skips the echo of its own pending write (latency compensation)", () => {
     writeStoredPrefs({ fontSize: 16 });
-    const onCloudValues = jest.fn();
+    const onCloudValues = vi.fn();
 
     return seedDoc({ prefs: { fontSize: 16 } })
       .then(() => startupWithUser(onCloudValues))
@@ -325,7 +325,7 @@ describe("realtime propagation", () => {
 
   it("does not re-apply when cloud equals local (Firestore key-order noise)", () => {
     writeStoredPrefs({ fontSize: 16, termSize: { cols: 80, rows: 24 } });
-    const onCloudValues = jest.fn();
+    const onCloudValues = vi.fn();
 
     // Same values; the emulator returns map fields in its own key order,
     // which is exactly the noise deepEqual (not JSON.stringify) absorbs.
@@ -340,7 +340,7 @@ describe("realtime propagation", () => {
 
   it("does NOT mistake an offline cache miss for a first sign-in", () => {
     writeStoredPrefs({ fontSize: 16 });
-    const onCloudValues = jest.fn();
+    const onCloudValues = vi.fn();
     let fb;
 
     // The other device already has prefs in the cloud. This device starts
@@ -377,7 +377,7 @@ describe("realtime propagation", () => {
 describe("lifecycle", () => {
   it("signOut detaches the listener before auth teardown", () => {
     writeStoredPrefs({ fontSize: 16 });
-    const onCloudValues = jest.fn();
+    const onCloudValues = vi.fn();
 
     return seedDoc({ prefs: { fontSize: 16 } })
       .then(() => startupWithUser(onCloudValues))
@@ -403,8 +403,8 @@ describe("lifecycle", () => {
 
   it("interactive signIn attaches the listener and resolves with merged values", () => {
     writeStoredPrefs({ fontSize: 16 });
-    const modalCb = jest.fn();
-    const appCb = jest.fn();
+    const modalCb = vi.fn();
+    const appCb = vi.fn();
     prefSync.registerOnCloudValues(appCb);
 
     return seedDoc({ prefs: { fontSize: 18 } })
@@ -433,7 +433,7 @@ describe("lifecycle", () => {
 
   it("savePrefs self-heals a legacy autoLoginUser left in old cloud docs", () => {
     writeStoredPrefs({ fontSize: 16, autoLoginUser: "me" });
-    const onCloudValues = jest.fn();
+    const onCloudValues = vi.fn();
 
     // Docs written before autoLoginUser became local-only still carry the
     // PTT username; set(merge:true) alone would keep it forever.

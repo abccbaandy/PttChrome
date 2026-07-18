@@ -1,7 +1,7 @@
 # Enhanced Add-on（黑名單／樓層／自動登入）
 
 原生整合自 `3rd_script/PttChrome ...Enhanced Add-on`（原為 DOM-scraping userscript）。功能改用內部
-`TermChar[]` 結構，不爬 DOM。測試：`yarn test:unit`（jest，純邏輯+Row 渲染，不連網/不需 DOM，見
+`TermChar[]` 結構，不爬 DOM。測試：`yarn test:unit`（vitest，純邏輯+Row 渲染，不連網，見
 `tests/unit/`）；`yarn test:e2e`（Playwright，連真 PTT，需好讀模式）。
 
 ## 純邏輯核心：`src/js/comment_parse.js`
@@ -160,10 +160,10 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 
 ### A. 活躍陷阱（動到相關 code 前先讀）
 
-- **async/await 已可用**（`package.json` browserslist = Chrome≥90 等；preset-env 原生輸出 async/await）。**勿把 target 降回舊瀏覽器**：preset-env 會改用 `regeneratorRuntime.mark`（module 評估期即呼叫、本專案無 regenerator-runtime 依賴）→ `regeneratorRuntime is not defined`、整包 bundle **載入即炸**（空白畫面、連 Developer Mode modal 都不出現；**webpack 編譯不報錯**，純 runtime）。診斷捷徑：Playwright `page.on('pageerror')`。
+- **async/await 已可用**（`vite.config.js` `build.target` = 現代桌機瀏覽器）。**勿把 target 降回舊瀏覽器**（歷史教訓，Babel 時代 preset-env 會注入 regenerator → 整包 bundle 載入即炸；現 esbuild/oxc 對過舊 target 直接報錯，仍不要降）。診斷捷徑：Playwright `page.on('pageerror')`。
 - **讀「當前畫面文字」用 `buf.getRowText`，勿讀 `#mainContainer.innerText`**。`term_buf.notify` 先 `dispatchEvent('change')` 才 `view.update()` → DOM 慢一幀（下次更新才追上）。← auto-login「要按鍵才動」根因。
 - **DOM scraping 容錯**（測試/外部讀畫面）：① `visibility:hidden` 列 `innerText` 回空字串（Chromium）→ 改讀 `textContent`；② floorBadge 插在 bbsline 內污染文字（`推9 userid`）→ 推文正則須容忍 `/^(推|噓|→)\d*\s+/`。app 邏輯讀 buf、複製有 `user-select:none`，皆不受影響。
-- **傳給 `React.PureComponent` 的 prop 勿在 render 內現生新物件/Promise**。否則 shallow-compare 永遠不等 → PureComponent 形同失效、子樹每次重掛。實例：`ImagePreviewer` 的 `request` 曾每 render `of(href).then(resolveSrcToImageUrl)` 新 Promise → pusherHighlight 重繪時 value 重置、YouTube iframe 卸載重掛**閃爍**（img 有快取無感）；改 `ImagePreviewer.js#requestPreview(href)` 以 href memoize（module `Map`），同 href 同參考。守護 `tests/unit/row_render.test.js`「same href → request prop 參考相等」。
+- **傳給 `React.PureComponent` 的 prop 勿在 render 內現生新物件/Promise**。否則 shallow-compare 永遠不等 → PureComponent 形同失效、子樹每次重掛。實例：`ImagePreviewer` 的 `request` 曾每 render `of(href).then(resolveSrcToImageUrl)` 新 Promise → pusherHighlight 重繪時 value 重置、YouTube iframe 卸載重掛**閃爍**（img 有快取無感）；改 `ImagePreviewer.jsx#requestPreview(href)` 以 href memoize（module `Map`），同 href 同參考。守護 `tests/unit/row_render.test.js`「same href → request prop 參考相等」。
 - **逐列加工走單一純函式 `comment_parse.annotateComment`**，勿為某路徑另寫一份（好讀/原生曾各複製一份而發散出 bug）。逐列狀態用每圈新物件 `const ann={}`，**勿用函式作用域 `var`**（JS `var` 不每圈重設 → 非推文列繼承前列 floor/authorId 範圍，畫出整條色塊或樓號溢出到空白/※編輯/內文）。守護 `comment_parse.test.js`。
 - **dev server production-mode 陷阱**。Playwright `reuseExistingServer:true` 可能重用到 production server → `DEFAULT_SITE` 直連、Origin 未改寫 → WebSocket **403**。啟動務必 `NODE_ENV=development`；驗證 `curl .../assets/pttchrome.js | grep DEFAULT_SITE` 應為 `wstelnet://localhost:8080/bbs`。
 - **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 `enhance.spec.js` 紅。

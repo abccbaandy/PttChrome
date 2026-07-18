@@ -1,7 +1,7 @@
 # 官方版（robertabcd/PttChrome）本機啟動
 
 > 基底：`robertabcd/PttChrome @ dev`（React16）。這就是 term.ptt.cc 的原始碼，也是本 repo。
-> build toolchain：webpack5。
+> build toolchain：Vite 8（Rolldown 核心；React plugin 走內建 oxc transform，無 Babel）。
 
 ## TL;DR
 
@@ -15,10 +15,10 @@ yarn start
 
 ## 為何只要一個指令
 
-`webpack serve`（dev server）**已內建** `/bbs` 的 WebSocket 反向代理，並把 `Origin` 改寫成 `https://term.ptt.cc` 以通過 PTT 白名單（見 `webpack.config.js` 的 `devServer.proxy`）。dev 模式預設連線站台正好是 `wstelnet://localhost:8080/bbs`（`webpack.config.js` 的 `DefinePlugin` → `process.env.DEFAULT_SITE`），剛好打到自己的 dev server proxy。
+`vite`（dev server）**已內建** `/bbs` 的 WebSocket 反向代理，並把 `Origin` 改寫成 `https://term.ptt.cc` 以通過 PTT 白名單（見 `vite.config.js` 的 `server.proxy`）。dev 模式預設連線站台正好是 `wstelnet://localhost:8080/bbs`（`vite.config.js` 的 `define` → `process.env.DEFAULT_SITE`），剛好打到自己的 dev server proxy。
 
 ```
-瀏覽器 :8080 ──ws /bbs──▶ webpack-dev-server proxy（改 Origin→term.ptt.cc）──▶ wss://ws.ptt.cc/bbs
+瀏覽器 :8080 ──ws /bbs──▶ Vite dev server proxy（改 Origin→term.ptt.cc）──▶ wss://ws.ptt.cc/bbs
 ```
 
 所以**直連真 PTT、不需要任何中繼或第三方 proxy**。
@@ -27,8 +27,8 @@ yarn start
 
 | 項目 | 說明 |
 |---|---|
-| Node ≥ 20.9 | webpack-cli 7 的下限（建議 v24）。 |
-| 用 **Node** 跑，不要用 bun | bun 跑 webpack-dev-server 的 ws proxy 不轉發 upgrade。確認 `node` 已在 PATH。 |
+| Node ≥ 20.19 | Vite 8 的下限（建議 v24）。 |
+| 用 **Node** 跑，不要用 bun | bun 跑 dev server 的 ws proxy 不轉發 upgrade。確認 `node` 已在 PATH。 |
 | 套件管理用 **yarn** | repo 為 yarn 專案（Yarn v4，`node-modules` linker，`.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。CI 用 `yarn install --immutable`（非 `--frozen-lockfile`）。 |
 | `node_modules` | 已存在直接用。需重裝時 `yarn install`。 |
 | 連外網 | 需能連到 `wss://ws.ptt.cc/bbs`。 |
@@ -37,9 +37,8 @@ yarn start
 
 | 動作 | 指令 |
 |---|---|
-| 啟動 dev server | `yarn start`（= `webpack serve`，dev-server v5 無獨立 bin） |
-| 打包 production | `yarn build` → 產出 `dist/` |
-| 清 build 產物 | `yarn clean` |
+| 啟動 dev server | `yarn start`（= `vite`） |
+| 打包 production | `yarn build`（= `vite build`，自帶 emptyOutDir 清舊產物） → 產出 `dist/` |
 
 production build（`yarn build`）預設站台是 `wsstelnet://ws.ptt.cc/bbs`，純靜態部署時瀏覽器**無法直連**（Origin 白名單），需自備會改寫 Origin 的反向代理、或部署在白名單網域、或用瀏覽器擴充改寫 Origin（見 `origin-rewrite-extension.md`）。本機開發用 `yarn start` 不受此限。
 
@@ -55,7 +54,7 @@ production build（`yarn build`）預設站台是 `wsstelnet://ws.ptt.cc/bbs`，
 
 #### `?site=` query 覆寫（預設關閉）
 
-`ALLOW_SITE_IN_QUERY` 預設為 **關閉**（`webpack.config.js`），網址的 `?site=` 會被忽略（避免被任意連結／頁面導向任意 WebSocket host）。需要時 build 設 `ALLOW_SITE_IN_QUERY=yes` 重新開啟：
+`ALLOW_SITE_IN_QUERY` 預設為 **關閉**（`vite.config.js`），網址的 `?site=` 會被忽略（避免被任意連結／頁面導向任意 WebSocket host）。需要時 build 設 `ALLOW_SITE_IN_QUERY=yes` 重新開啟：
 
 ```
 https://<部署網址>/?site=wstelnet://your-proxy.example.com/bbs

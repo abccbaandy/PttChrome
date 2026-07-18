@@ -1,5 +1,5 @@
 // Pure-logic unit tests for the Enhanced Add-on. These run without DOM/network
-// (jest, node env) so they are stable — unlike the live-PTT e2e specs.
+// (vitest, pure logic) so they are stable — unlike the live-PTT e2e specs.
 //
 // The headline regression here is the easy-reading "原PO 高亮 bleeds into a whole
 // column" bug: a non-author row must NEVER inherit the author id range. Both render

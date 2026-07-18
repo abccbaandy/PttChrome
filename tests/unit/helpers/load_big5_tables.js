@@ -6,11 +6,16 @@
 // throws. Reads the same .bin files the app fetches, synchronously from disk.
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 
 export function loadBig5Tables() {
   window.lib = window.lib || {};
   if (window.lib.b2uArray) return;
-  const dir = path.join(__dirname, "..", "..", "..", "src", "conv");
+  // ESM（Vitest）無 __dirname，從 import.meta.url 推回本檔所在目錄。
+  const dir = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..", "..", "..", "src", "conv"
+  );
   window.lib.b2uArray = new Uint8Array(
     fs.readFileSync(path.join(dir, "b2u_table.bin"))
   );

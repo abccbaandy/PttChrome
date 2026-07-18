@@ -1,4 +1,3 @@
-/** @jest-environment jsdom */
 // Guards the hammerjs → Pointer Events replacement (src/js/touch_controller.js):
 // tap vs pan discrimination and the "ignore non-touch pointers" rule. Uses a
 // fake app + fake BBSWin that just records addEventListener handlers, so no real
@@ -15,11 +14,11 @@ function makeApp() {
   };
   const app = {
     BBSWin,
-    inputArea: { blur: jest.fn(), focus: jest.fn() },
+    inputArea: { blur: vi.fn(), focus: vi.fn() },
     // pageState 2 = list-highlight state (where pan/tap act).
     buf: { pageState: 2, highlightCursor: false, nowHighlight: -1 },
-    onMouse_move: jest.fn(),
-    onMouse_click: jest.fn()
+    onMouse_move: vi.fn(),
+    onMouse_click: vi.fn()
   };
   return { app, listeners };
 }

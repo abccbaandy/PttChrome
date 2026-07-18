@@ -2,7 +2,7 @@
 // 已移除）集中到一處。React 對「同一 container 重複 createRoot」會發警告，且本
 // app 多個 modal 共用同一個 #reactAlert 容器，所以必須 cache root per container。
 //
-// React 19 起 React/react-dom 改為 webpack bundled（UMD build 已移除），故顯式
+// React 19 起 React/react-dom 改為 bundled（UMD build 已移除），故顯式
 // import：createRoot 在 react-dom/client（19 不再從 react-dom re-export），
 // flushSync 仍在 react-dom。
 //

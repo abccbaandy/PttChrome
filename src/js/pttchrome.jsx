@@ -20,6 +20,9 @@ import ConnectionAlert from '../components/ConnectionAlert';
 import ContextMenu from '../components/ContextMenu';
 import { renderInto, unmountFrom } from './react_root';
 import { MantineRoot } from '../components/MantineRoot';
+import logoIcon from '../icon/logo.png';
+import logoConnectIcon from '../icon/logo_connect.png';
+import logoDisconnectIcon from '../icon/logo_disconnect.png';
 
 function noop() {}
 
@@ -598,14 +601,14 @@ App.prototype.antiIdle = function() {
 };
 
 App.prototype.updateTabIcon = function(aStatus) {
-  var icon = require('../icon/logo.png');
+  var icon = logoIcon;
   switch (aStatus) {
     case 'connect':
-      icon = require('../icon/logo_connect.png');
+      icon = logoConnectIcon;
       this.setInputAreaFocus();
       break;
     case 'disconnect':
-      icon = require('../icon/logo_disconnect.png');
+      icon = logoDisconnectIcon;
       break;
     default:
       break;

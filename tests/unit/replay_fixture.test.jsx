@@ -9,19 +9,24 @@
 // fixture 由 `yarn record:cassette` 产出 tests/unit/fixtures/replay/<name>.page.json。
 // 每页最后一列是原始状态列文字（"目前显示: 第 S~E 行"），可解析出绝对行号。
 // 还没录过 → skip（非失败）。
-const fs = require("fs");
-const path = require("path");
-const {
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import {
   findPageOverlap,
   resolvePageOverlap,
   decideAccumulateBranch,
   annotateComment,
   FloorCounter,
   parseComment
-} = require("../../src/js/comment_parse");
-const { parseStatusRow } = require("../../src/js/string_util");
+} from "../../src/js/comment_parse";
+import { parseStatusRow } from "../../src/js/string_util";
 
-const FIX_DIR = path.join(__dirname, "fixtures", "replay");
+const FIX_DIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "fixtures",
+  "replay"
+);
 const COMMENT_RE = /^(推|噓|→)\s+([0-9A-Za-z]+)\s*:/;
 
 function loadArticleFixtures() {
@@ -168,7 +173,7 @@ const fixtures = loadArticleFixtures();
 
 describe("好读跨页累积重建（离线 fixture）", () => {
   if (!fixtures.length) {
-    // 还没录过任何 article fixture：保留一个 skip 占位（jest 要求每个 suite ≥1 test）。
+    // 还没录过任何 article fixture：保留一个 skip 占位（vitest 要求每个 suite ≥1 test）。
     test.skip("尚无 article fixture；先 yarn record:cassette（guest）", () => {});
     return;
   }

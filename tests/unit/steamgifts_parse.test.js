@@ -2,10 +2,10 @@
 // 行為鎖定：只有「文章內出現 steamgifts 字樣」時，獨立成列的 5 碼英數才連結到
 // https://www.steamgifts.com/giveaway/<code>/（無 slug，站方自動 redirect）。
 
-const {
+import {
   articleHasSteamgifts,
   detectGiveawayCodes,
-} = require("../../src/js/steamgifts_parse");
+} from "../../src/js/steamgifts_parse";
 
 // 使用者提供的實際 [抽獎] 文（Steam 板）
 const giveawayArticle = [

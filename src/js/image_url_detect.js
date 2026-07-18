@@ -28,3 +28,18 @@ export function isImageLikeUrl(src) {
     RE_IMAGE_EXT.test(src)
   );
 }
+
+// Flickr 短網址（flic.kr/p/<id>）的 base58 解碼。注意字母表是 Flickr 自家順序
+// （數字→小寫→大寫，去 0OIl），與 Bitcoin 系 bs58（數字→大寫→小寫）不同、不可混用。
+// 原依賴 npm `base58`（2014 年後未維護）內聯至此；行為與該套件 decode 一致。
+const FLICKR_B58_ALPHABET =
+  "123456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
+export function flickrBase58Decode(str) {
+  let num = 0;
+  for (const ch of str) {
+    const idx = FLICKR_B58_ALPHABET.indexOf(ch);
+    if (idx < 0) throw new Error("not a valid Base58 string: " + str);
+    num = num * 58 + idx;
+  }
+  return num;
+}

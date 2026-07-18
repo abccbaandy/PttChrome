@@ -49,8 +49,8 @@ describe("cjkUrlExtension (pure)", () => {
 
 describe("TermBuf URI detection with CJK path (Big5)", () => {
   beforeAll(() => loadBig5Tables());
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
 
   function paintRow(text) {
     const buf = new TermBuf(80, 24);
@@ -58,7 +58,7 @@ describe("TermBuf URI detection with CJK path (Big5)", () => {
     buf.useMouseBrowsing = false;
     const parser = new AnsiParser(buf);
     parser.feed(u2b(text)); // Big5 bytes, one char per byte
-    jest.advanceTimersByTime(300); // flush queueUpdate/notify
+    vi.advanceTimersByTime(300); // flush queueUpdate/notify
     return buf.lines[0];
   }
 

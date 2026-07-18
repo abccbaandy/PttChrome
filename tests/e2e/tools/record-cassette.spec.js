@@ -1,6 +1,6 @@
 // 一次性录制器（连真实 PTT，guest-only）：把一篇真实文章 / 一个看板列表录成永久素材。
 //   产出 1：tests/e2e/cassettes/<name>.json     —— 原始 recv 分页（Layer1 Playwright 离线重放）
-//   产出 2：tests/unit/fixtures/replay/<name>.page.json —— 每页文字快照 + golden 累积（Layer2 jest 纯逻辑）
+//   产出 2：tests/unit/fixtures/replay/<name>.page.json —— 每页文字快照 + golden 累积（Layer2 vitest 纯逻辑）
 //
 // 用法（PowerShell）：
 //   $env:RECORD_MODE="article"; $env:RECORD_BOARD="Stock"; $env:RECORD_NAME="stock-comments"; yarn record:cassette

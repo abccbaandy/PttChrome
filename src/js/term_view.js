@@ -9,6 +9,7 @@ import { wrapText, u2b, parseStatusRow } from './string_util';
 import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursorBullet, pruneListToSegment } from './list_window';
+import icon128 from '../icon/icon_128.png';
 
 const ENTER_CHAR = '\r';
 const ESC_CHAR = '\x15'; // Ctrl-U
@@ -1162,7 +1163,7 @@ TermView.prototype = {
       }
     }, 1500);
     var options = {
-      icon: require('../icon/icon_128.png'),
+      icon: icon128,
       body: app.waterball.message,
       tag: app.waterball.userId
     };

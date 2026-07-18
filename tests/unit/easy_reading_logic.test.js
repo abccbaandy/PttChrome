@@ -1,5 +1,5 @@
-jest.mock("../../src/js/pref_storage", () => ({
-  readValuesWithDefault: jest.fn(() => ({ enableEasyReading: true }))
+vi.mock("../../src/js/pref_storage", () => ({
+  readValuesWithDefault: vi.fn(() => ({ enableEasyReading: true }))
 }));
 
 // The settle-recovery path (_onScreenSettled / _computeRowState / _currentPageSignature)
@@ -7,11 +7,11 @@ jest.mock("../../src/js/pref_storage", () => ({
 // tests control isStatusRow / the page signature directly — parser correctness has its
 // own tests (string_util / comment_parse). The pure nextEasyReading* functions below
 // take booleans and never touch string_util, so the mock does not affect them.
-jest.mock("../../src/js/string_util", () => ({
-  parseStatusRow: jest.fn(),
-  parseReplyText: jest.fn(() => false),
-  parsePushInitText: jest.fn(() => false),
-  parseReqNotMetText: jest.fn(() => false)
+vi.mock("../../src/js/string_util", () => ({
+  parseStatusRow: vi.fn(),
+  parseReplyText: vi.fn(() => false),
+  parsePushInitText: vi.fn(() => false),
+  parseReqNotMetText: vi.fn(() => false)
 }));
 
 import {
@@ -286,7 +286,7 @@ describe("EasyReading._onPageStateSettled", () => {
     const view = { useEasyReadingMode: enabled };
     const core = { connectedUrl: { easyReadingSupported: supported } };
     const er = new EasyReading(core, view, termBuf);
-    er.enterEasyReading = jest.fn(); // stub the side-effecting entry point
+    er.enterEasyReading = vi.fn(); // stub the side-effecting entry point
     return er;
   };
 
@@ -351,11 +351,11 @@ describe("EasyReading._onKeyDownProcessUI End handling", () => {
     const termBuf = { addEventListener() {} };
     const mainDisplay = { scrollTop: 0, scrollHeight: 5000 };
     const er = new EasyReading(/* core */ {}, /* view */ { mainDisplay }, termBuf);
-    er.switchToNativeAtBottom = jest.fn();
+    er.switchToNativeAtBottom = vi.fn();
     return { er, mainDisplay };
   };
   const keyEvent = key => ({
-    key, ctrlKey: false, altKey: false, preventDefault: jest.fn()
+    key, ctrlKey: false, altKey: false, preventDefault: vi.fn()
   });
 
   it("switches to native on End when the pref is on and key matches", () => {
@@ -421,8 +421,8 @@ describe("EasyReading._onKeyDownProcessUI End handling", () => {
       const { er } = makeER({
         easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "End"
       });
-      er._enterFunctionMode = jest.fn();
-      er.leaveCurrentPost = jest.fn();
+      er._enterFunctionMode = vi.fn();
+      er.leaveCurrentPost = vi.fn();
       const e = keyEvent(key);
       er._onKeyDownProcessUI(e);
       expect(er._enterFunctionMode).toHaveBeenCalledTimes(1);
@@ -439,8 +439,8 @@ describe("EasyReading._onKeyDownProcessUI End handling", () => {
       const { er } = makeER({
         easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "End"
       });
-      er._enterFunctionMode = jest.fn();
-      er.leaveCurrentPost = jest.fn();
+      er._enterFunctionMode = vi.fn();
+      er.leaveCurrentPost = vi.fn();
       er._onKeyDownProcessUI(keyEvent(key));
       expect(er.leaveCurrentPost).toHaveBeenCalledTimes(1);
       expect(er._enterFunctionMode).not.toHaveBeenCalled();
@@ -487,7 +487,7 @@ describe("EasyReading._onScreenSettled", () => {
     };
     const view = { useEasyReadingMode: enabled };
     const er = new EasyReading(/* core */ {}, view, termBuf);
-    er._send = jest.fn(); // stub the network send
+    er._send = vi.fn(); // stub the network send
     er.easyReadingReachedPageEnd = reachedPageEnd;
     er.sendCommandAfterUpdate = sendCommandAfterUpdate;
     er._lastPagedDownSignature = lastPagedSig;

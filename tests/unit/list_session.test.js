@@ -895,10 +895,10 @@ describe("v5 確定性交易（timeout=探針觸發，非訊號；jump 腿維持
 // transient 誤降級 functionMode（黏性 hold，不自動恢復）。真 CommandQueue 全鏈重現。
 // ---------------------------------------------------------------------------
 describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔）", () => {
-  afterEach(() => jest.useRealTimers());
+  afterEach(() => vi.useRealTimers());
 
   test("板尾 prefetch-down 零回應 → 探針 transient 幀判 edge → state 停 active", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const { CommandQueue } = await import("../../src/js/command_queue");
     const sent = [];
     const queue = new CommandQueue({ send: (k) => sent.push(k) });
@@ -962,7 +962,7 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
     expect(s.state).toBe("active"); // page 腿 in flight → transient stay
 
     // 板尾零回應 → soft timeout（800ms）→ \f 探針
-    jest.advanceTimersByTime(801);
+    vi.advanceTimersByTime(801);
     expect(sent[2]).toBe("\f");
 
     // settle #2：探針幀（同一 transient park，游標未動）→ expect 判 edge 完成。

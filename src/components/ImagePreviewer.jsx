@@ -1,5 +1,4 @@
 import React from "react";
-import { decode } from "base58";
 import {
   RE_IMAGE_EXT,
   RE_VIDEO_EXT,
@@ -7,6 +6,7 @@ import {
   RE_IMGUR_SINGLE,
   RE_TWIMG,
   RE_MEEE,
+  flickrBase58Decode,
 } from "../js/image_url_detect";
 
 const noop = () => {};
@@ -489,7 +489,9 @@ const imageUrlResolvers = [
     },
     request(src) {
       const [, flickrBase58Id, flickrPhotoId] = src.match(this.regex);
-      const photoId = flickrBase58Id ? decode(flickrBase58Id) : flickrPhotoId;
+      const photoId = flickrBase58Id
+        ? flickrBase58Decode(flickrBase58Id)
+        : flickrPhotoId;
 
       const apiURL = `https://api.flickr.com/services/rest/?${new URLSearchParams(
         {

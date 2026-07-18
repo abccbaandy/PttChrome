@@ -28,7 +28,7 @@
 //     link dead) → onFail('timeout'). Opt out with cmd.probe === false.
 //
 // Zero dependencies: send and the timer functions are injected so unit tests
-// drive it with jest fake timers and the app binds it to conn.send.
+// drive it with vitest fake timers and the app binds it to conn.send.
 export function CommandQueue(opts) {
   this._send = opts.send;
   // Wrap the globals instead of storing them bare: calling a detached

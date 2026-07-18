@@ -5,7 +5,7 @@
 // the pinned image below. See docs/pref-sync-firestore.md.
 //
 // Layout: the emulator runs in the container, exposing auth:9099 / firestore:8089;
-// jest runs on the host and connects via the *_EMULATOR_HOST env that
+// vitest runs on the host and connects via the *_EMULATOR_HOST env that
 // tests/integration/setup.js keys off. Only the three Firebase config files are
 // mounted (read-only) into the image's home dir, so the emulator's debug logs
 // write inside the container (no repo pollution, no mount-permission issues).
@@ -27,7 +27,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Poll an HTTP endpoint until it answers 200. A bare TCP check is unreliable
 // here: Docker's port proxy accepts connections on the published host port
 // *before* the emulator inside the container starts listening, so a connect
-// check passes instantly and jest then races a not-yet-ready emulator. The
+// check passes instantly and vitest then races a not-yet-ready emulator. The
 // emulators answer real HTTP only once booted (auth root -> {"authEmulator":
 // {"ready":true}}, firestore root -> "Ok").
 async function waitHttp(label, url, timeoutMs) {
@@ -84,7 +84,7 @@ async function main() {
     process.exit(1);
   }
 
-  const jest = spawnSync("npx jest -c jest.integration.config.js", {
+  const vitest = spawnSync("npx vitest run --project integration", {
     stdio: "inherit",
     shell: true, // npx -> npx.cmd resolution on Windows
     env: {
@@ -96,7 +96,7 @@ async function main() {
   });
 
   rmContainer();
-  process.exit(jest.status || 0);
+  process.exit(vitest.status || 0);
 }
 
 main().catch(e => {

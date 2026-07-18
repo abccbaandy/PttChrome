@@ -20,7 +20,7 @@
 |---|---|---|
 | ① | Chrome 擴充（本文件）| 對 `ws.ptt.cc` 的 websocket 請求 set `Origin: https://term.ptt.cc` |
 | ② | `?site=wsstelnet://ws.ptt.cc/bbs` | 讓前端直連 PTT（`wsstelnet`→`wss:443`，見 `src/js/pttchrome.js:172,199`）|
-| ③ | build flag `ALLOW_SITE_IN_QUERY` | 否則 `?site=` 不生效（`src/js/main.js:26` + `webpack.config.js` 的 `DefinePlugin`）|
+| ③ | build flag `ALLOW_SITE_IN_QUERY` | 否則 `?site=` 不生效（`src/js/main.jsx` + `vite.config.js` 的 `define`）|
 
 ---
 
@@ -90,7 +90,7 @@ process.env.ALLOW_SITE_IN_QUERY && getQueryVariable('site')
   || process.env.DEFAULT_SITE
 ```
 
-`ALLOW_SITE_IN_QUERY` / `DEFAULT_SITE` 由 webpack 的 `DefinePlugin` 於 build 時注入（見 `webpack.config.js`）。要讓 `?site=` 生效，build 時需把 `ALLOW_SITE_IN_QUERY` 設為真值（例如在 `webpack.config.js` 的 `DefinePlugin` 把 `process.env.ALLOW_SITE_IN_QUERY` 定義成 `'yes'`，或由環境變數帶入）。
+`ALLOW_SITE_IN_QUERY` / `DEFAULT_SITE` 由 `vite.config.js` 的 `define` 於 build 時注入。要讓 `?site=` 生效，build 時設環境變數 `ALLOW_SITE_IN_QUERY=yes`。
 
 > 安全面：開了之後任何人可用 `?site=` 連任意站台。本服務本就是公開 PTT 前端，風險低，但要知道有這開放面。
 
@@ -120,5 +120,5 @@ https://<PAGES_URL>/?site=wsstelnet://ws.ptt.cc/bbs
 
 - 連線 URL / scheme 解析：`src/js/pttchrome.js:172,199`（`wsstelnet`→`wss:443`）
 - 站台來源優先序 / `?site=` 覆寫：`src/js/main.js:26-27`
-- build flag 注入（`DEFAULT_SITE` / `ALLOW_SITE_IN_QUERY`）：`webpack.config.js`（`DefinePlugin`）
+- build flag 注入（`DEFAULT_SITE` / `ALLOW_SITE_IN_QUERY`）：`vite.config.js`（`define`）
 - Origin 白名單根本約束：`pttchrome-research.md` §「Origin 白名單」

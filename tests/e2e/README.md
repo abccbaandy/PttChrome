@@ -19,12 +19,12 @@ dev server 由 `playwright.config.js` 的 `webServer` 自動啟動（已手動 `
 
 ## 孤兒進程 / stale bundle
 
-以前常見坑：`webpack serve` 被中斷後殘留孤兒 `node` 佔住 8080，`reuseExistingServer` 又重用到 stale bundle。
+以前常見坑：dev server 被中斷後殘留孤兒 `node` 佔住 8080，`reuseExistingServer` 又重用到 stale bundle。
 現在所有 e2e 腳本（`test:e2e`、`test:e2e:offline`、`headed`、`ui`、`record:cassette`）跑之前都會先
 `yarn kill:dev` 自動清掉佔 8080 的 dev server，再讓 Playwright 起全新 server：
 
 - **每次指令只清/起一次**（非每個 test），不增加 PTT 登入次數。
-- `kill:dev` 只砍「佔 8080 且確實是 node+webpack」的進程，**不會誤殺**佔 8080 的其他服務（如 java）。
+- `kill:dev` 只砍「佔 8080 且確實是 node+vite」的進程，**不會誤殺**佔 8080 的其他服務（如 java）。
 - **會**連帶殺掉你手動 `yarn start` 的 dev server（Playwright 會自己重啟一個）。
 - 手動清理：`yarn kill:dev`（`scripts/kill-dev-server.js`，跨平台、永不 fail）。
 

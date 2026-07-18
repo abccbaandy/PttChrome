@@ -13,6 +13,7 @@
 import { render, act } from "@testing-library/react";
 import Screen from "../../src/components/Screen";
 import Row from "../../src/components/Row";
+import { requestPreview } from "../../src/components/ImagePreviewer";
 
 const COLOR = {
   fg: 7,
@@ -99,8 +100,6 @@ describe("inline image preview wiring", () => {
 // unhandledrejection（dev overlay 彈 ERROR）。requestPreview 必須在建立時就標記
 // handled，且消費端仍照常收到 reject。
 describe("requestPreview 不可預覽連結不產生 unhandled rejection", () => {
-  const { requestPreview } = require("../../src/components/ImagePreviewer");
-
   test("建立後放置一輪 event loop：無 unhandledRejection；消費端仍收到 reject", async () => {
     const events = [];
     const onUnhandled = (reason) => events.push(reason);

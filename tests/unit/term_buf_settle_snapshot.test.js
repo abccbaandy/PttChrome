@@ -6,7 +6,7 @@
 //
 // Uses the REAL TermBuf + AnsiParser fed with the recorded C_Chat board-list
 // cassette (tests/e2e/cassettes/cchat-list.json), the real Big5 tables, and
-// jest fake timers to drive the 30ms notify + 50ms settle chain.
+// vitest fake timers to drive the 30ms notify + 50ms settle chain.
 import fs from "fs";
 import path from "path";
 import { TermBuf } from "../../src/js/term_buf";
@@ -30,7 +30,7 @@ function makeBuf() {
 
 function settle() {
   // 30ms queueUpdate -> notify -> _armSettleTimer(50ms) -> snapshot freeze.
-  jest.advanceTimersByTime(300);
+  vi.advanceTimersByTime(300);
 }
 
 describe("TermBuf settle snapshot", () => {
@@ -38,10 +38,10 @@ describe("TermBuf settle snapshot", () => {
     loadBig5Tables();
   });
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test("board-list paint settles into a snapshot with cursor parked in the entry area", () => {

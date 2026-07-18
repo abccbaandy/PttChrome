@@ -1,5 +1,5 @@
-// 殺掉殘留的 webpack dev server（佔 8080 的孤兒 node 進程）。
-// 雙重守門：先找佔 8080 的 PID，再驗該進程確實是 node+webpack 才砍，
+// 殺掉殘留的 Vite dev server（佔 8080 的孤兒 node 進程）。
+// 雙重守門：先找佔 8080 的 PID，再驗該進程確實是 node+vite 才砍，
 // 避免誤殺其他佔 8080 的服務（如 java）。永不 fail（一律 exit 0），CI 上無孤兒時是 no-op。
 //
 // 用法：node scripts/kill-dev-server.js（或 yarn kill:dev）。
@@ -40,16 +40,16 @@ function findListeningPids() {
   return [...pids];
 }
 
-// 驗 PID 是否為 node 跑 webpack 的進程。回傳 true 才砍。
+// 驗 PID 是否為 node 跑 vite 的進程。回傳 true 才砍。
 function isDevServer(pid) {
   if (isWin) {
     const out = sh(
       `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' | Select-Object -ExpandProperty CommandLine)"`
     );
-    return /node(\.exe)?\b/i.test(out) && /webpack/i.test(out);
+    return /node(\.exe)?\b/i.test(out) && /vite/i.test(out);
   }
   const out = sh(`ps -p ${pid} -o command=`);
-  return /node\b/i.test(out) && /webpack/i.test(out);
+  return /node\b/i.test(out) && /vite/i.test(out);
 }
 
 function kill(pid) {

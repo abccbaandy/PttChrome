@@ -41,7 +41,7 @@
 → 瀏覽器無法自設 `Origin`（forbidden header），故從 localhost/自有網域**直連必被擋**；必須有一個**會把 Origin 改寫成 `https://term.ptt.cc` 的反向代理**。
 
 官方版的因應：
-- **本機開發**：`webpack-dev-server` 內建 `/bbs` proxy 已改寫 Origin，`yarn start` 直連真 PTT（見 `run-local.md`）。
+- **本機開發**：dev server（現為 Vite，見 `run-local.md`；fork 驗證當時為 webpack-dev-server）內建 `/bbs` proxy 已改寫 Origin，`yarn start` 直連真 PTT。
 - **純靜態部署**：需自備改寫 Origin 的反向 proxy、部署於白名單網域，或用瀏覽器擴充於網路層改寫 Origin（見 `origin-rewrite-extension.md`）。
 
 ---

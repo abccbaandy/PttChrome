@@ -214,7 +214,7 @@ describe("Row X mention link", () => {
 describe("Row AID link", () => {
   test("aid → .aidLink <a> wrapping exactly #AID, click calls onClick", () => {
     // s0 e1 e2 sp3 #4..12 sp13
-    const onClick = jest.fn();
+    const onClick = vi.fn();
     const { container } = render(
       <Row
         chars={chars("see #1gIeu-3A ok")}

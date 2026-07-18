@@ -120,6 +120,6 @@
 - **referer**：`FallbackImage` 與 hover img 一律 `referrerPolicy="no-referrer"`，`needsReferer()` 對 `*.verb.tw` 例外（其圖床需 referer）。imgur 相簿 `resolveImgurAlbum()` 用多 client_id 隨機 + `fetch(mode:cors)`。
 - 接線未改：仍走既有 `Row/LinkSegmentBuilder.js`（好讀內嵌）與 `Screen.js`（hover）。**不需** GM_*/sentinel/MutationObserver。
 
-驗證：`yarn build` 通過（webpack production）；resolver dispatch+URL 組裝以 Node 實測 15 代表性 URL 全數正確。
+驗證：`yarn build` 通過（Vite production）；resolver dispatch+URL 組裝以 Node 實測 15 代表性 URL 全數正確。
 **未做**：對真 PTT 的實際 render（img/video/iframe 顯示）屬手動/e2e（flaky+需帳密），待後續驗證。
 已知小瑕：twitter `?format=` 形式的 `srcset` 首兩項可能重複（無害，FallbackImage 重試同 URL）。
