@@ -12,7 +12,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.23",
+    "@babel/core": "^8.0",
     "@babel/plugin-proposal-object-rest-spread": "^7.20.7",
     "@babel/plugin-transform-class-properties": "^7.27",
     "@babel/preset-env": "^7.29",
