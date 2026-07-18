@@ -25,7 +25,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Yarn v4/corepack：先 enable 再讓 setup-node 做 cache:yarn（詳見 test.yml 註解）。
       - uses: actions/setup-node@v6
