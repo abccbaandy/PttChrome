@@ -21,7 +21,7 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "babel-jest": "^29",
+    "babel-jest": "^30",
     "babel-loader": "^10.0.0",
     "cross-env": "^7.0.2",
     "css-loader": "^7.1.2",
