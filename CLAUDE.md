@@ -33,6 +33,8 @@ webpack5 + React19（bundled，非 CDN）。UI 元件用 Mantine（暗色預設�
   e2e 不連 Firebase，同步流程只能在這驗。細節見 `docs/pref-sync-firestore.md`。
 - **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額常滿會 fast-fail）。
   失敗自動截圖/錄影 + console dump。helper：`tests/e2e/helpers/ptt.js`。細節見 `tests/e2e/README.md`。
+  - **Playwright 升版後（含 Dependabot bump）本機必跑 `yarn playwright install chromium`**：新版綁新 browser binary，
+    沒裝會整批 e2e 秒掛（症狀：`browserType.launch: Executable doesn't exist`），與被測 code 無關。CI 每次都重裝所以不受影響。
 - **強制規範：改到渲染/畫面這類易壞 code，提交前必跑 e2e**（`yarn test:e2e`，至少 `easy-reading.spec.js`+`enhance.spec.js`）。
   適用 `term_view.js`、`term_ui.js`、`src/components/**`、`easy_reading.js`、`pttchrome.js` 渲染/切換路徑、`term_buf.js` 渲染相關等。
   理由：unit（node env，react-test-renderer）**不載入** DOM/React/WebSocket 耦合模組，捕捉不到「一進文章即炸」這類 runtime 崩潰
