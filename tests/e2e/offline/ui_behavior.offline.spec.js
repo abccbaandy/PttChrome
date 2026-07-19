@@ -356,4 +356,49 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await modal.getByText(await label(page, 'options_themeDark'), { exact: true }).click();
     await expect.poll(scheme).toBe('dark');
   });
+
+  // 回歸：doCopy 由 execCommand('copy')+DOM copy 事件攔截改為
+  // navigator.clipboard.writeText 後，真瀏覽器的「選取 → 右鍵複製 → 系統剪貼簿」
+  // 全鏈必須仍通。jsdom 驗不到 Clipboard API 的 secure context/權限行為，只能在此守。
+  test('右鍵選單「複製」：選取文字後寫入系統剪貼簿', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await installReplay(page);
+    await page.goto('/');
+    await ptt.dismissDeveloperModeAlert(page);
+    await waitConnected(page);
+
+    await feedRaw(page, '\x1b[2J\x1b[HCOPYSMOKE');
+    await page.waitForTimeout(200);
+
+    // 程式化選取畫面上的字，再直接派發 contextmenu（真滑鼠右鍵的 mousedown 落點
+    // 若在選取範圍外會先收合選取，headless 下座標對位太脆）。ContextMenu 的
+    // handler 讀的是事件當下的 window.getSelection()，與拖曳選取等價。
+    await page.evaluate(() => {
+      const walker = document.createTreeWalker(
+        document.getElementById('mainContainer'), NodeFilter.SHOW_TEXT);
+      for (let node; (node = walker.nextNode()); ) {
+        const idx = node.textContent.indexOf('COPYSMOKE');
+        if (idx < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, idx);
+        range.setEnd(node, idx + 'COPYSMOKE'.length);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        document.getElementById('BBSWindow').dispatchEvent(
+          new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 10 }));
+        return;
+      }
+      throw new Error('COPYSMOKE 未渲染到畫面，測試前提失效');
+    });
+
+    const menu = page.locator('.DropdownMenu').first();
+    await expect(menu).toBeVisible();
+    await menu.getByText(await label(page, 'cmenu_copy'), { exact: true }).click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => navigator.clipboard.readText().catch(() => '')))
+      .toContain('COPYSMOKE');
+  });
 });

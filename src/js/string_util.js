@@ -112,6 +112,17 @@ export function isDBCSLead(ch) {
   return code >= 0x81 && code <= 0xfe;
 };
 
+// Clipboard text normalization for doCopy: BBS-style line endings (\r) and no
+// trailing spaces before a break. ANSI text (contains \x1b) is passed through
+// untouched so colored copies keep their exact byte sequence.
+export function normalizeCopyText(it) {
+  if (it.indexOf('\x1b') >= 0) return it;
+  return it
+    .replace(/\r\n/g, '\r')
+    .replace(/\n/g, '\r')
+    .replace(/ +\r/g, '\r');
+};
+
 export function parseReplyText(it) {
   return (it.indexOf('▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] ') === 0 ||
       it.indexOf('▲ 無法回應至看板。 改回應至 (M)作者信箱 (Q)取消？[Q]') === 0 ||

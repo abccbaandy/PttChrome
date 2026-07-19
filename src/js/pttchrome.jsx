@@ -10,10 +10,9 @@ import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { AutoLogin } from './auto_login';
 import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
-import { TouchController } from './touch_controller';
 import { MouseButtonTracker } from './mouse_button_tracker';
 import { i18n } from './i18n';
-import { unescapeStr, b2u, parseWaterball } from './string_util';
+import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { setTimer } from './util';
 import PasteShortcutAlert from '../components/PasteShortcutAlert';
 import ConnectionAlert from '../components/ConnectionAlert';
@@ -102,10 +101,6 @@ export const App = function() {
 
   this.endTurnsOnLiveUpdate = false;
   this.copyOnSelect = false;
-  var version = window.navigator.userAgent.match(/Chrom(e|ium)\/(\d+)\./);
-  if (version && version.length > 2) {
-    this.chromeVersion = parseInt(version[2], 10);
-  }
 
   var self = this;
 
@@ -163,10 +158,6 @@ export const App = function() {
     self.mouseButtons.reset();
   }, false);
 
-  this.strToCopy = null;
-  document.addEventListener('copy', function(e) {
-    self.onDOMCopy(e);
-  });
   this.inputArea.addEventListener('paste', function(e) {
     self.onDOMPaste(e);
   });
@@ -192,11 +183,6 @@ export const App = function() {
   this.onWindowResize();
   this.setupContextMenus();
   this.contextMenuShown = false;
-
-  // init touch only if chrome is higher than version 36
-  if (this.chromeVersion && this.chromeVersion >= 37) {
-    this.touch = new TouchController(this);
-  }
 };
 
 App.prototype.isConnected = function() {
@@ -369,7 +355,7 @@ App.prototype.setDblclickTimer = function() {
 };
 
 App.prototype.setInputAreaFocus = function() {
-  if (this.modalShown || (this.touch && this.touch.touchStarted))
+  if (this.modalShown)
     return;
   //this.DocInputArea.disabled="";
   this.inputArea.focus();
@@ -404,13 +390,7 @@ App.prototype.switchToEasyReadingMode = function(doSwitch) {
 };
 
 App.prototype.doCopy = function(str) {
-  if (str.indexOf('\x1b') < 0) {
-    str = str.replace(/\r\n/g, '\r');
-    str = str.replace(/\n/g, '\r');
-    str = str.replace(/ +\r/g, '\r');
-  }
-  this.strToCopy = str;
-  document.execCommand('copy');
+  navigator.clipboard.writeText(normalizeCopyText(str));
 };
 
 App.prototype.doCopyAnsi = function() {
@@ -443,15 +423,6 @@ App.prototype.doCopyAnsi = function() {
   }
 
   this.doCopy(ansiText);
-};
-
-App.prototype.onDOMCopy = function(e) {
-  if (this.strToCopy) {
-    e.clipboardData.setData('text', this.strToCopy);
-    e.preventDefault();
-    console.log('copied: ', this.strToCopy);
-    this.strToCopy = null;
-  }
 };
 
 App.prototype.doPaste = function() {
@@ -513,9 +484,13 @@ App.prototype.doSearchGoogle = function(searchTerm) {
 };
 
 App.prototype.doOpenUrlNewTab = function(a) {
-  var e = document.createEvent('MouseEvents');
-  e.initMouseEvent("click", true, true, window, 0, 0, 0, 0, 0, true, false, false, false, 0, null);
-  a.dispatchEvent(e);
+  // ctrlKey opens the anchor in a new tab without stealing focus flow.
+  a.dispatchEvent(new MouseEvent('click', {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    ctrlKey: true,
+  }));
 };
 
 App.prototype.incrementCountToUpdatePushthread = function(interval) {

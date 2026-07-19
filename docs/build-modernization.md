@@ -43,6 +43,14 @@
 
 結論：掃描後**無其他「過時陣營」殘留**。未來新增依賴時比照：先查是否已有內建/主流替代，無維護小套件優先內聯。
 
+## Deprecated 瀏覽器 API 清理（2026-07，CONFIRMED）
+
+| 項目 | 處置 |
+|---|---|
+| `document.execCommand('copy')` + `strToCopy`/`onDOMCopy` DOM copy 事件攔截 | → `navigator.clipboard.writeText`（`pttchrome.jsx#doCopy`）。正規化抽純函式 `string_util.js#normalizeCopyText`（unit 守護 `tests/unit/string_util.test.js`；真瀏覽器全鏈守護 `ui_behavior.offline.spec.js` 複製冒煙測試）。paste 攔截（`onDOMPaste`）非 deprecated，保留 |
+| `document.createEvent('MouseEvents')`+`initMouseEvent` | → `new MouseEvent('click', {ctrlKey:true})`（`pttchrome.jsx#doOpenUrlNewTab`，等價替換） |
+| `touch_controller.js` + Chrome UA sniffing（`chromeVersion`） | **已移除**（目標＝桌機瀏覽器，觸控/UA 偵測皆死重；連帶刪 ContextMenu touchstart listener 與 touch_controller unit test） |
+
 ## 驗證紀錄（pointer）
 
 - unit：`yarn test:unit` 33 檔 632 測試綠（含新增 flickrBase58Decode 守護 `tests/unit/image_url_detect.test.js`）。

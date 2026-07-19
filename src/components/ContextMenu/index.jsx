@@ -455,14 +455,6 @@ export const ContextMenu = ({ pttchrome }) => {
     const clickHandler = () => onHide();
     window.addEventListener("click", clickHandler, false);
 
-    const touchStartHandler = (event) => {
-      if (event.target.getAttribute("role") === "menuitem") {
-        return;
-      }
-      onHide();
-    };
-    window.addEventListener("touchstart", touchStartHandler, false);
-
     const hotKeyUpHandler = (event) => {
       if (!stateRef.current.open) {
         return;
@@ -481,7 +473,6 @@ export const ContextMenu = ({ pttchrome }) => {
 
     return () => {
       window.removeEventListener("keyup", hotKeyUpHandler, false);
-      window.removeEventListener("touchstart", touchStartHandler, false);
       window.removeEventListener("click", clickHandler, false);
       bbsWindow.removeEventListener("contextmenu", contextMenuHandler, true);
     };
