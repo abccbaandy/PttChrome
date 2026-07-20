@@ -19,7 +19,7 @@
     "husky": "^9.0.0",
     "jsdom": "^29.1.1",
     "lint-staged": "^15.0.0",
-    "postcss": "^8.5.19",
+    "postcss": "^8.5.20",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
     "prettier": "^3.9.5",
