@@ -115,6 +115,9 @@ export function TermView() {
   // post whose title contains one of the keywords. Set via App.onPrefChange.
   this.titleBlacklist = [];
   this.showFloorNumbers = true;
+  // 好讀「連續同作者推文合併」：render 層合併（Screen#computeAnnotations +
+  // comment_merge.js），僅好讀文章頁生效。Set via App.onPrefChange.
+  this.mergeSameAuthorComments = true;
   // Same-author comment highlighting: tint comments written by the 原PO.
   // _articleAuthor is parsed from the article header (first page only) and kept
   // across page-downs; see redraw().
@@ -520,6 +523,7 @@ TermView.prototype = {
           blacklist: this.blacklist,
           titleBlacklist: this.titleBlacklist,
           showFloorNumbers: this.showFloorNumbers,
+          mergeSameAuthorComments: this.mergeSameAuthorComments,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,
           selectedPusher: this._selectedPusher,

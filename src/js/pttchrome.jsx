@@ -877,6 +877,10 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.showFloorNumbers = value;
       this.view.redraw(true);
       break;
+    case 'mergeSameAuthorComments':
+      this.view.mergeSameAuthorComments = value;
+      this.view.redraw(true);
+      break;
     case 'highlightAuthorComments':
       this.view.highlightAuthorComments = value;
       this.view.redraw(true);

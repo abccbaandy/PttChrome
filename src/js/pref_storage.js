@@ -54,6 +54,7 @@ export const DEFAULT_PREFS = {
 
   // enhanced add-on
   showFloorNumbers: true,
+  mergeSameAuthorComments: true, // 好讀：連續同作者推文合併成一段
   highlightAuthorComments: true,
   enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
   enableXMentionLink: true, // auto-link @handle to x.com when the X account exists

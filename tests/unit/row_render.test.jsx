@@ -275,6 +275,51 @@ describe("Row Steamgifts giveaway link", () => {
   });
 });
 
+// 好讀「連續同作者推文合併」的 Row 擴充：floorEnd → 樓層徽章顯示範圍「N-M」；
+// trailer → 時間範圍標籤附加在行內容（bbsline span）尾端。
+describe("Row merged-comment extensions", () => {
+  test("floor + floorEnd → 徽章顯示「N-M」", () => {
+    const { container } = render(
+      <Row
+        chars={chars("PU wowbenny: hi")}
+        row={0}
+        floor={{ seq: 12, sub: 3, type: "推" }}
+        floorEnd={{ seq: 14, sub: 5, type: "→" }}
+      />
+    );
+    const badge = container.querySelector("[data-floor]");
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toBe("12-14");
+  });
+
+  test("無 floorEnd（或同樓）→ 徽章維持單一樓號", () => {
+    const { container } = render(
+      <Row
+        chars={chars("PU wowbenny: hi")}
+        row={0}
+        floor={{ seq: 12, sub: 3, type: "推" }}
+      />
+    );
+    expect(container.querySelector("[data-floor]").textContent).toBe("12");
+  });
+
+  test("trailer 節點渲染在 bbsline span 內容尾端", () => {
+    const { container } = render(
+      <Row
+        chars={chars("PU wowbenny: hi")}
+        row={0}
+        trailer={<span className="mergedCommentTime">07/20 14:23 ~ 14:31</span>}
+      />
+    );
+    const line = container.querySelector('[data-type="bbsline"]');
+    const time = line.querySelector(".mergedCommentTime");
+    expect(time).not.toBeNull();
+    expect(time.textContent).toBe("07/20 14:23 ~ 14:31");
+    // 在內容之後（最後一個子節點）
+    expect(line.lastChild).toBe(time);
+  });
+});
+
 describe("Row blacklistNotice (原生列表黑名單通知列)", () => {
   test("blacklistNotice → 內容即通知字串（含 bbsline 結構）、不走原始 char cells", () => {
     const notice = "  62349 + 6 7/09 -            □ （本文已被黑名單） someone";

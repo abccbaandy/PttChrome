@@ -21,7 +21,13 @@ test.describe.serial('好讀模式', () => {
     logs.length = 0;
     try {
       await resetSession(page);
-      await applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+      // mergeSameAuthorComments:false —— 本測按逐列推文樓號斷言；
+      // 合併（預設開）的行為守護在 offline comment_merge spec。
+      await applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: true,
+        mergeSameAuthorComments: false,
+      });
 
       await gotoBoard(page, 'Stock');
 
@@ -217,12 +223,15 @@ test.describe.serial('好讀模式', () => {
               return Array.from(imgs).some((im) => im.offsetWidth > 0);
             });
             if (hasImg) {
-              const enlarged = await page.evaluate(() => {
+              // React 19：click 觸發的 setState 在事件 task 之後才 commit——
+              // 點完同步讀 classList 恆 false（假紅）。等一拍再讀。
+              const enlarged = await page.evaluate(async () => {
                 const im = Array.from(
                   document.querySelectorAll('#mainContainer img.hyperLinkPreview')
                 ).find((x) => x.offsetWidth > 0);
                 const before = im.getBoundingClientRect().width;
                 im.click();
+                await new Promise((r) => setTimeout(r, 300));
                 const mc = document.getElementById('mainContainer');
                 const after = im.getBoundingClientRect().width;
                 return {
@@ -234,12 +243,13 @@ test.describe.serial('好讀模式', () => {
               console.log('ENLARGE:', JSON.stringify(enlarged));
               expect(enlarged.cls).toBe(true);
               expect(enlarged.after).toBeGreaterThanOrEqual(enlarged.before);
-              // 再點一次 → 縮回（class 移除）。
-              const collapsed = await page.evaluate(() => {
+              // 再點一次 → 縮回（class 移除）。同上，等 commit 後再讀。
+              const collapsed = await page.evaluate(async () => {
                 const im = Array.from(
                   document.querySelectorAll('#mainContainer img.hyperLinkPreview')
                 ).find((x) => x.offsetWidth > 0);
                 im.click();
+                await new Promise((r) => setTimeout(r, 300));
                 return document.getElementById('mainContainer').classList.contains('imagesEnlarged');
               });
               expect(collapsed).toBe(false);

@@ -220,6 +220,29 @@ a:link,a:visited,a:active,a:hover {
 #mainContainer.imagesEnlarged .mergedImageCol .easyReadingImg {
   max-width: 100%;
 }
+/* 好讀「連續同作者推文合併」（Screen.jsx mergeCommentRun）：同作者連續推文的
+   內容串接成一段，pre-wrap 隨視窗寬自然換行。row span 包進 wrapper div 後不再
+   是 #mainContainer 直系子層 → 補等效樣式（同 mergedImageBlock 的作法）。 */
+.mergedCommentBlock span[type="bbsrow"] {
+  display: block;
+  color: #c0c0c0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 合併段是自然換行的段落、無格線可對齊：樓層範圍徽章（「12-14」比單一樓號寬）
+   改佔實際寬度，不用 width:0 的 overflow 疊字把戲。 */
+.mergedCommentBlock .floorBadge {
+  width: auto;
+  margin-right: 0.25em;
+}
+/* 時間範圍標籤（run 首~末則），淡色縮小、跟在段落尾端。 */
+.mergedCommentTime {
+  color: #808080;
+  font-size: 0.85em;
+  margin-left: 1em;
+  -webkit-user-select: none;
+}
+
 .easyReadingVideo {
   margin: 0.5em auto;
   width: 640px;

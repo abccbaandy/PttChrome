@@ -84,6 +84,14 @@ production 不洩漏）。**例外**：PTT 原生熱鍵（`End`/`Enter`/`Space`/
 - `helpers/fixtures.js`：共用登入 session fixture（見上）
 - `connect-login.spec.js`：登入到主選單（獨立登入）
 
+## 規範：evaluate 內點擊後不可同步讀 React 產物
+
+React 19 起，`el.click()` 觸發的 setState 在事件 task **之後**才 commit——同一個 `page.evaluate`
+內點完立刻讀 `classList`／DOM 恆讀到舊值（假紅，實例：點圖放大 `imagesEnlarged` 恆 false，2026-07）。
+點擊後 `await new Promise(r => setTimeout(r, 300))` 再讀（或拆兩次 evaluate）。
+
+另 live 內容相依測試（最新文章）遇熱門文（推文即時灌入）列數會在斷言間變動，偶發紅屬浮動，重跑即可。
+
 ## 擴充
 
 新 spec 用 `shared` fixture + `resetSession`/`applyPrefs`/`gotoBoard`（見「共用登入 session」規則），例如

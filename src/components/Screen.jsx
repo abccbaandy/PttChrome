@@ -26,6 +26,10 @@ import {
   groupImageCaptionBlocks,
   maxCaptionCols,
 } from "../js/image_caption_group";
+import {
+  groupSameAuthorRuns,
+  buildMergedCommentChars,
+} from "../js/comment_merge";
 import MergeImageCaptionButton from "./MergeImageCaptionButton";
 
 // NOTE: articleAuthor (原PO id) is tracked by term_view across page-downs and
@@ -35,6 +39,74 @@ import MergeImageCaptionButton from "./MergeImageCaptionButton";
 // PttChrome pageState (see term_buf.js#setPageState): 2 = board list, 3 = reading.
 const PAGE_LIST = 2;
 const PAGE_READING = 3;
+
+// 每列的附加偵測（auto-fix URL / X mention / AID / Steamgifts），逐列迴圈與
+// 「連續同作者推文合併」塊共用——合併後的 chars 是重組的新序列，原列偵測到的
+// col 範圍全部失效，必須對合併 chars 重跑一次。回傳值僅含有命中的鍵。
+function detectRowExtras(chars, text, ann, opts) {
+  const { autoFixUrl, enableXMention, easyReading, onAidClick, hasSteamgifts } =
+    opts;
+  // Auto-fix runs on every row (article body included), independent of the
+  // comment annotation. The fixed-URL line only renders in easy-reading mode
+  // (see LinkSegmentBuilder); detection itself is cheap and returns [] for
+  // almost every row.
+  let fixedUrls;
+  if (autoFixUrl) {
+    const fixes = detectFixableUrls(text);
+    if (fixes.length) fixedUrls = fixes;
+  }
+  // X(Twitter) @handle auto-links. Detect on the raw TermChar[] (DBCS-aware —
+  // see mention_parse.js) and link every format-valid @handle. Existence
+  // verification is currently OFF (unavatar's 25/day cap made it unusable; see
+  // docs/enhanced-addon.md for the worker approach to bring it back), so a
+  // mention that points at a non-existent account is still linked. Skip hidden
+  // (blacklisted) rows, and same-author comment rows whose id is already
+  // wrapped by authorIdStart/End (an overlapping mention <a> would fight it).
+  let mentions;
+  if (
+    enableXMention &&
+    !(ann && (ann.hidden || ann.authorIdStart !== undefined))
+  ) {
+    const found = detectMentions(chars);
+    for (let k = 0; k < found.length; ++k) {
+      const m = found[k];
+      (mentions || (mentions = [])).push({
+        startCol: m.startCol,
+        endCol: m.endCol,
+        handle: m.handle,
+        href: "https://x.com/" + m.handle,
+      });
+    }
+  }
+  // PTT article-code (AID) links, easy reading only: clicking one drives a
+  // native key-sequence navigation (aid_navigation.js), which only makes
+  // sense from within easy reading. A boardless #AID falls back to the
+  // current article's board (tracked by term_view, like articleAuthor).
+  // rowText lets aid_parse pick up the cross-post header board prefix
+  // (※ [本文轉錄自 X 看板 #AID ]) that cells alone can't match.
+  let aids;
+  if (easyReading && onAidClick && !(ann && ann.hidden)) {
+    const found = detectAids(chars, text);
+    for (let k = 0; k < found.length; ++k) {
+      const a = found[k];
+      (aids || (aids = [])).push({
+        startCol: a.startCol,
+        endCol: a.endCol,
+        aid: a.aid,
+        board: a.board,
+        onClick: () => onAidClick(a.aid, a.board),
+      });
+    }
+  }
+  // Steamgifts giveaway 代碼連結：文章層 gate（hasSteamgifts）通過後逐列抓
+  // 「獨立成列的 5 碼英數」。
+  let giveaways;
+  if (hasSteamgifts && !(ann && ann.hidden)) {
+    const found = detectGiveawayCodes(text);
+    if (found.length) giveaways = found;
+  }
+  return { fixedUrls, mentions, aids, giveaways };
+}
 
 // Per-row { floor } / { hidden } annotations for the Enhanced Add-on. Native grid
 // is fixed-size, so a blacklisted row is hidden (visibility:hidden) rather than
@@ -54,6 +126,7 @@ function computeAnnotations(lines, enhance, mergeCaption) {
     autoFixUrl,
     easyReading,
     enableXMention,
+    mergeSameAuthorComments,
     inListContext,
     listEasyReading,
     onAidClick,
@@ -92,69 +165,24 @@ function computeAnnotations(lines, enhance, mergeCaption) {
       captionBlocks =
         mergeCaption === "captionFirst" ? captionFirstBlocks : imageFirstBlocks;
     }
-    // Steamgifts giveaway 代碼連結：文章層 gate（整篇提到 steamgifts 才啟用，
-    // 見 steamgifts_parse.js），通過後逐列抓「獨立成列的 5 碼英數」。
-    const hasSteamgifts = articleHasSteamgifts(texts);
+    // Steamgifts giveaway 代碼連結的文章層 gate（整篇提到 steamgifts 才啟用，
+    // 見 steamgifts_parse.js）。偵測本體抽在 detectRowExtras（合併塊共用）。
+    const detectOpts = {
+      autoFixUrl,
+      enableXMention,
+      easyReading,
+      onAidClick,
+      hasSteamgifts: articleHasSteamgifts(texts),
+    };
     for (let row = 0; row < lines.length; ++row) {
       const text = texts[row];
       const ann = annotateComment(text, ctx) || undefined;
-      // Auto-fix runs on every row (article body included), independent of the
-      // comment annotation. The fixed-URL line only renders in easy-reading mode
-      // (see LinkSegmentBuilder); detection itself is cheap and returns [] for
-      // almost every row.
-      let fixedUrls;
-      if (autoFixUrl) {
-        const fixes = detectFixableUrls(text);
-        if (fixes.length) fixedUrls = fixes;
-      }
-      // X(Twitter) @handle auto-links. Detect on the raw TermChar[] (DBCS-aware —
-      // see mention_parse.js) and link every format-valid @handle. Existence
-      // verification is currently OFF (unavatar's 25/day cap made it unusable; see
-      // docs/enhanced-addon.md for the worker approach to bring it back), so a
-      // mention that points at a non-existent account is still linked. Skip hidden
-      // (blacklisted) rows, and same-author comment rows whose id is already
-      // wrapped by authorIdStart/End (an overlapping mention <a> would fight it).
-      let mentions;
-      if (
-        enableXMention &&
-        !(ann && (ann.hidden || ann.authorIdStart !== undefined))
-      ) {
-        const found = detectMentions(lines[row]);
-        for (let k = 0; k < found.length; ++k) {
-          const m = found[k];
-          (mentions || (mentions = [])).push({
-            startCol: m.startCol,
-            endCol: m.endCol,
-            handle: m.handle,
-            href: "https://x.com/" + m.handle,
-          });
-        }
-      }
-      // PTT article-code (AID) links, easy reading only: clicking one drives a
-      // native key-sequence navigation (aid_navigation.js), which only makes
-      // sense from within easy reading. A boardless #AID falls back to the
-      // current article's board (tracked by term_view, like articleAuthor).
-      // rowText lets aid_parse pick up the cross-post header board prefix
-      // (※ [本文轉錄自 X 看板 #AID ]) that cells alone can't match.
-      let aids;
-      if (easyReading && onAidClick && !(ann && ann.hidden)) {
-        const found = detectAids(lines[row], rowToText(lines[row]));
-        for (let k = 0; k < found.length; ++k) {
-          const a = found[k];
-          (aids || (aids = [])).push({
-            startCol: a.startCol,
-            endCol: a.endCol,
-            aid: a.aid,
-            board: a.board,
-            onClick: () => onAidClick(a.aid, a.board),
-          });
-        }
-      }
-      let giveaways;
-      if (hasSteamgifts && !(ann && ann.hidden)) {
-        const found = detectGiveawayCodes(text);
-        if (found.length) giveaways = found;
-      }
+      const { fixedUrls, mentions, aids, giveaways } = detectRowExtras(
+        lines[row],
+        text,
+        ann,
+        detectOpts,
+      );
       let r = ann;
       if (fixedUrls) r = { ...(r || {}), fixedUrls };
       if (mentions) r = { ...(r || {}), mentions };
@@ -172,6 +200,38 @@ function computeAnnotations(lines, enhance, mergeCaption) {
         result[b.imageRow] = { ...(result[b.imageRow] || {}), mergeBlock: b };
         for (let r = b.captionStart; r <= b.captionEnd; ++r) {
           result[r] = { ...(result[r] || {}), mergedInto: b.imageRow };
+        }
+      }
+    }
+    // 連續同作者推文合併（好讀限定；設定 mergeSameAuthorComments，預設開）：
+    // run 首列掛 mergeCommentRun（合併 chars＋時間範圍＋末則樓層＋對合併 chars
+    // 重跑的偵測），其餘列掛 mergedIntoComment（頂層 render null）。與圖文合併
+    // 天然不重疊（caption 分組遇第一則推文即停）。FloorCounter／黑名單完全不動
+    // ——樓層仍逐則計數，合併只是 render 層重組（見 comment_merge.js）。
+    if (easyReading && mergeSameAuthorComments) {
+      const runs = groupSameAuthorRuns(result);
+      for (let k = 0; k < runs.length; ++k) {
+        const run = runs[k];
+        const merged = buildMergedCommentChars(lines, run);
+        if (!merged) continue; // 任一列切不出邊界 → fail-safe 還原逐列
+        const first = run.rows[0];
+        const last = run.rows[run.rows.length - 1];
+        const firstAnn = result[first];
+        const mText = rowToText(merged.chars);
+        result[first] = {
+          ...firstAnn,
+          mergeCommentRun: {
+            chars: merged.chars,
+            timeLabel: merged.timeLabel,
+            floorEnd: result[last] && result[last].floor,
+            ...detectRowExtras(merged.chars, mText, firstAnn, detectOpts),
+          },
+        };
+        for (let n = 1; n < run.rows.length; ++n) {
+          result[run.rows[n]] = {
+            ...result[run.rows[n]],
+            mergedIntoComment: first,
+          };
         }
       }
     }
@@ -391,6 +451,40 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
         if (dropHidden && ann && ann.hidden) return null;
         // 說明行已併入所屬圖行的右欄（下方 mergeBlock 分支），頂層不重複 render。
         if (ann && ann.mergedInto !== undefined) return null;
+        // 連續同作者推文：後續列已併進 run 首列的合併段落，頂層不重複 render。
+        if (ann && ann.mergedIntoComment !== undefined) return null;
+        if (ann && ann.mergeCommentRun) {
+          const m = ann.mergeCommentRun;
+          // data-row＝run 首列的絕對 pageLines index。塊內複製以 DOM 選取為準
+          // （^C 走 window.getSelection().toString()，term_view.js）；getText 的
+          // col 對映在合併段內失真，已知取捨（同 mergedImageBlock 的脈絡）。
+          return (
+            <div key={row} className="mergedCommentBlock">
+              <Row
+                chars={m.chars}
+                row={row}
+                forceWidth={forceWidth}
+                enableLinkInlinePreview={enableLinkInlinePreview}
+                highlighted={currentHighlighted === row}
+                floor={ann.floor}
+                floorEnd={m.floorEnd}
+                trailer={
+                  <span className="mergedCommentTime">{m.timeLabel}</span>
+                }
+                pusher={ann.pusher}
+                pusherHighlight={ann.pusherHighlight}
+                authorIdStart={ann.authorIdStart}
+                authorIdEnd={ann.authorIdEnd}
+                fixedUrls={m.fixedUrls}
+                mentions={m.mentions}
+                aids={m.aids}
+                giveaways={m.giveaways}
+                onHyperLinkMouseOver={handleHyperLinkMouseOver}
+                onHyperLinkMouseOut={handleHyperLinkMouseOut}
+              />
+            </div>
+          );
+        }
         if (ann && ann.mergeBlock) {
           const { captionStart, captionEnd } = ann.mergeBlock;
           const captionRows = [];

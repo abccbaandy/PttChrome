@@ -32,7 +32,13 @@ test.describe('好读模式翻页（离线重放）', () => {
     test(`第一则推文不被吃 + 楼号从 1 + 跨页不重复列 [${cassette.__file}]`, async ({ page }) => {
       test.setTimeout(90000);
       await bootOffline(page, ptt);
-      await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+      // mergeSameAuthorComments:false —— 本测按逐列推文数比对 golden commentCount；
+      // 合并（预设开）的行为守护在 comment_merge.offline.spec.js。
+      await ptt.applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: true,
+        mergeSameAuthorComments: false,
+      });
       await replayCassette(page, cassette, { easyReading: true });
 
       const rows = await readBbsLines(page);

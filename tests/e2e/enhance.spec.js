@@ -22,7 +22,13 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
     logs.length = 0;
     try {
       await resetSession(page);
-      await applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+      // mergeSameAuthorComments:false —— 本測鎖「逐列樓號連增」舊行為；
+      // 合併（預設開）的行為守護在 offline comment_merge spec。
+      await applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: true,
+        mergeSameAuthorComments: false,
+      });
 
       await gotoBoard(page, 'C_Chat');
 
@@ -90,7 +96,12 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
 
     try {
       await resetSession(page);
-      await applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+      // 關合併：本測按逐列 pusher 列數與樓號缺口斷言（合併行為另測）。
+      await applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: true,
+        mergeSameAuthorComments: false,
+      });
       await gotoBoard(page, 'C_Chat');
 
       // 用與樓層測試相同的成功導航（End→Enter）；若該篇無推文，回列表往上一篇再試。
@@ -286,7 +297,12 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
 
     try {
       await resetSession(page);
-      await applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+      // 關合併：selector 是 #mainContainer 直系子層 bbsrow，合併塊包在 div 內會漏計。
+      await applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: true,
+        mergeSameAuthorComments: false,
+      });
       await gotoBoard(page, 'C_Chat');
       await sendKey(page, 'End');
       await page.waitForTimeout(800);

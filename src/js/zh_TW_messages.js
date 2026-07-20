@@ -146,6 +146,9 @@
   "options_showFloorNumbers": {
     "message": "文章內推文顯示樓層編號 (僅好讀模式，跨頁連續準確)"
   },
+  "options_mergeSameAuthorComments": {
+    "message": "合併連續同作者推文成一段 (僅好讀模式，顯示時間與樓層範圍)"
+  },
   "options_highlightAuthorComments": {
     "message": "高亮原PO本人的推文"
   },

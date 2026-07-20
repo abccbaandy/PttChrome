@@ -21,7 +21,13 @@ test.describe('增强 · 文章（离线重放）', () => {
     test(`楼层编号：好读推文出现从 1 递增的序号 ${tag}`, async ({ page }) => {
       test.setTimeout(90000);
       await bootOffline(page, ptt);
-      await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+      // mergeSameAuthorComments:false —— 本测锁「逐列楼号连增」旧行为；
+      // 合并（预设开）的行为守护在 comment_merge.offline.spec.js。
+      await ptt.applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: true,
+        mergeSameAuthorComments: false,
+      });
       await replayCassette(page, article, { easyReading: true });
 
       // 与 live enhance.spec.js 同写法：读徽章 textContent（楼号），过滤 NaN。
@@ -52,7 +58,12 @@ test.describe('增强 · 文章（离线重放）', () => {
       test.skip(!target, 'cassette 无 firstCommentAuthor');
 
       await bootOffline(page, ptt);
-      await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: false });
+      // 关合并：本测按「逐列 pusher 列数」计数（合并行为另测）。
+      await ptt.applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: false,
+        mergeSameAuthorComments: false,
+      });
       await replayCassette(page, article, { easyReading: true });
 
       const pushersOf = () =>
@@ -82,7 +93,12 @@ test.describe('增强 · 文章（离线重放）', () => {
       test.skip(!target, 'cassette 无 firstCommentAuthor');
 
       await bootOffline(page, ptt);
-      await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: false });
+      // 关合并：selector 是 #mainContainer 直系子层 bbsrow，合并块包在 div 内会漏计。
+      await ptt.applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: false,
+        mergeSameAuthorComments: false,
+      });
       await replayCassette(page, article, { easyReading: true });
 
       await page.evaluate((t) => window.__app.view.togglePusherHighlight(t), target);

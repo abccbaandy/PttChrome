@@ -146,6 +146,9 @@ export const en_US = {
   "options_showFloorNumbers": {
     "message": "Show comment floor numbers (easy reading only; continuous and accurate across pages)"
   },
+  "options_mergeSameAuthorComments": {
+    "message": "Merge consecutive comments by the same author into one paragraph (easy reading only; shows time and floor range)"
+  },
   "options_highlightAuthorComments": {
     "message": "Highlight comments by the original poster"
   },

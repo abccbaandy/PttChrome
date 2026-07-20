@@ -622,6 +622,13 @@ export const PrefModal = ({
                   {i18n("options_showFloorNumbers")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="mergeSameAuthorComments"
+                  checked={values.mergeSameAuthorComments}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_mergeSameAuthorComments")}
+                </PrefCheckbox>
+                <PrefCheckbox
                   name="highlightAuthorComments"
                   checked={values.highlightAuthorComments}
                   onChange={onCheckboxChange}
