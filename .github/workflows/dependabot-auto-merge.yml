@@ -1,0 +1,33 @@
+name: Dependabot auto-merge
+
+# Dependabot 的 minor/patch 更新自動合併（等分支保護的必跑 check 綠了才會真的併）。
+# major 更新（semver-major）不碰，留給人手動 review —— 這樣只需關注大版本 PR。
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      # 解析這個 Dependabot PR 的 update-type（patch/minor/major）。
+      # 分組 PR（minor-and-patch group）會回報組內最高的 bump 等級。
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 只有 patch / minor 才開啟 auto-merge。--auto 會等必跑 check 通過後才合併，
+      # 需 repo 已啟用 allow_auto_merge + 分支保護有 required checks（兩者皆已備）。
+      - name: Enable auto-merge for minor/patch
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
