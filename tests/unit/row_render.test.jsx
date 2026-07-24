@@ -275,24 +275,10 @@ describe("Row Steamgifts giveaway link", () => {
   });
 });
 
-// 好讀「連續同作者推文合併」的 Row 擴充：floorEnd → 樓層徽章顯示範圍「N-M」；
-// trailer → 時間範圍標籤附加在行內容（bbsline span）尾端。
+// 好讀「連續同作者推文合併」的 Row 擴充：合併塊樓層／時間都跟一般單則推文一致，
+// 只顯示 run 首則——樓層徽章維持單一樓號、trailer 時間標籤附加在 bbsline span 尾端。
 describe("Row merged-comment extensions", () => {
-  test("floor + floorEnd → 徽章顯示「N-M」", () => {
-    const { container } = render(
-      <Row
-        chars={chars("PU wowbenny: hi")}
-        row={0}
-        floor={{ seq: 12, sub: 3, type: "推" }}
-        floorEnd={{ seq: 14, sub: 5, type: "→" }}
-      />
-    );
-    const badge = container.querySelector("[data-floor]");
-    expect(badge).not.toBeNull();
-    expect(badge.textContent).toBe("12-14");
-  });
-
-  test("無 floorEnd（或同樓）→ 徽章維持單一樓號", () => {
+  test("合併塊徽章維持單一樓號（首則）", () => {
     const { container } = render(
       <Row
         chars={chars("PU wowbenny: hi")}
@@ -308,13 +294,13 @@ describe("Row merged-comment extensions", () => {
       <Row
         chars={chars("PU wowbenny: hi")}
         row={0}
-        trailer={<span className="mergedCommentTime">07/20 14:23 ~ 14:31</span>}
+        trailer={<span className="mergedCommentTime">07/20 14:23</span>}
       />
     );
     const line = container.querySelector('[data-type="bbsline"]');
     const time = line.querySelector(".mergedCommentTime");
     expect(time).not.toBeNull();
-    expect(time.textContent).toBe("07/20 14:23 ~ 14:31");
+    expect(time.textContent).toBe("07/20 14:23");
     // 在內容之後（最後一個子節點）
     expect(line.lastChild).toBe(time);
   });

@@ -204,8 +204,9 @@ function computeAnnotations(lines, enhance, mergeCaption) {
       }
     }
     // 連續同作者推文合併（好讀限定；設定 mergeSameAuthorComments，預設開）：
-    // run 首列掛 mergeCommentRun（合併 chars＋時間範圍＋末則樓層＋對合併 chars
-    // 重跑的偵測），其餘列掛 mergedIntoComment（頂層 render null）。與圖文合併
+    // run 首列掛 mergeCommentRun（合併 chars＋首則時間＋對合併 chars 重跑的偵測），
+    // 其餘列掛 mergedIntoComment（頂層 render null）。樓層／時間都只顯示首則（跟一般
+    // 單則推文一致）。與圖文合併
     // 天然不重疊（caption 分組遇第一則推文即停）。FloorCounter／黑名單完全不動
     // ——樓層仍逐則計數，合併只是 render 層重組（見 comment_merge.js）。
     if (easyReading && mergeSameAuthorComments) {
@@ -215,7 +216,6 @@ function computeAnnotations(lines, enhance, mergeCaption) {
         const merged = buildMergedCommentChars(lines, run);
         if (!merged) continue; // 任一列切不出邊界 → fail-safe 還原逐列
         const first = run.rows[0];
-        const last = run.rows[run.rows.length - 1];
         const firstAnn = result[first];
         const mText = rowToText(merged.chars);
         result[first] = {
@@ -223,7 +223,6 @@ function computeAnnotations(lines, enhance, mergeCaption) {
           mergeCommentRun: {
             chars: merged.chars,
             timeLabel: merged.timeLabel,
-            floorEnd: result[last] && result[last].floor,
             ...detectRowExtras(merged.chars, mText, firstAnn, detectOpts),
           },
         };
@@ -467,7 +466,6 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
                 enableLinkInlinePreview={enableLinkInlinePreview}
                 highlighted={currentHighlighted === row}
                 floor={ann.floor}
-                floorEnd={m.floorEnd}
                 trailer={
                   <span className="mergedCommentTime">{m.timeLabel}</span>
                 }

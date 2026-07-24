@@ -76,8 +76,8 @@
 ## 連續同作者推文合併（`src/js/comment_merge.js`，2026-07）
 - 規則（使用者定案）：**連續同 userid** 的推文列合成一段（A A A B A A → A B A）；跨型別（推/噓/→）照合
   （PTT 連推自動降 →）；hidden（黑名單）列**透明**（不斷 run、不入 run）；非推文列斷 run；≥2 才合併。
-  樓層徽章顯示範圍 `N-M`（floorBadge + Row prop `floorEnd`）；段尾 `.mergedCommentTime` 時間範圍
-  （同日省日期）。**FloorCounter／黑名單判定不動**——合併僅 render 層。
+  樓層徽章／時間都**只顯示 run 首則**（跟一般單則推文一致）：`floorBadge` 單一樓號、段尾
+  `.mergedCommentTime` 首則時間戳（Row prop `trailer`）。**FloorCounter／黑名單判定不動**——合併僅 render 層。
 - 排版（2026-07 使用者三輪定案）：`pre-wrap` 自然換行＋ **gap 斷行規則**（`BREAK_GAP_COLS=8`）——
   PTT 推文無自動折行（作者在輸入框打滿才切下一則），故「打滿的列（內容尾到右側欄位空白 <8 格）」
   ＝被切斷 → **直接相連、不插任何分隔**（「漲到120」+「0？」→「1200？」，插空格會壞成「120 0」）；
@@ -86,22 +86,22 @@
   `comment_merge_wettland.json`（打滿=3、全形餘裕=4、刻意斷句=8；門檻 4 曾誤斷使用者回報改嚴，
   誤差方向偏「多連少斷」）。
 - 純函式：`groupSameAuthorRuns(anns)`（走 computeAnnotations 的 per-row 結果）、`commentContentCells(chars)`
-  （cell 邊界：前綴/內容/時間戳/可選 IPv4，全 ASCII 區掃描故無 DBCS 對映問題）、`buildMergedCommentChars`、
-  `mergedTimeLabel`。**fail-safe**：run 中任一列切不出邊界 → 整組還原逐列（寧不合併不錯切）。
+  （cell 邊界：前綴/內容/時間戳/可選 IPv4，全 ASCII 區掃描故無 DBCS 對映問題）、`buildMergedCommentChars`
+  （`timeLabel` 取首則時間）。**fail-safe**：run 中任一列切不出邊界 → 整組還原逐列（寧不合併不錯切）。
 - 接線：pref `mergeSameAuthorComments`(true) → `pttchrome.onPrefChange`→`view.*`+`redraw(true)` →
   `term_view` enhance → `Screen#computeAnnotations` 好讀分支：run 首列掛 `mergeCommentRun`
-  （合併 chars＋timeLabel＋floorEnd＋**對合併 chars 重跑的 detectRowExtras**——原列偵測 col 全失效）、
+  （合併 chars＋首則 timeLabel＋**對合併 chars 重跑的 detectRowExtras**——原列偵測 col 全失效）、
   其餘列 `mergedIntoComment`（頂層 render null）。i18n `options_mergeSameAuthorComments`（zh/en）。
 - 關鍵不變量：合併 chars 的每個 cell **沿用原 TermChar 實例**（分隔空白重用 padding cell）——自造 plain
   object 會剝掉 prototype（`isStartOfURL` 崩潰，pageLines JSON-clone 事故同型）。前綴 `[0, start)` 原樣保留
   → `authorIdStart=3`、data-pusher、右鍵快速加黑名單的 col 數學全部照舊。
 - 已知取捨：合併塊內 `getText` col 對映失真（^C 複製走 `window.getSelection().toString()` 不受影響）；
   正文假推文（完整含時間戳 shape）若連續同作者也會被合併（罕見，寧簡）。
-- 測試：unit `tests/unit/comment_merge.test.js`（grouping/邊界/合併/時間標籤＋stock-end golden rz2x×7）、
-  `row_render.test.jsx`（floorEnd 徽章、trailer）；offline `comment_merge.offline.spec.js`（不變量：**相鄰
-  bbsrow 不得同 data-pusher**；stock-end 指名：7→1、徽章 `\d+-\d+`、內容零遺失、關開關還原）。
+- 測試：unit `tests/unit/comment_merge.test.js`（grouping/邊界/合併/首則時間＋stock-end golden rz2x×7）、
+  `row_render.test.jsx`（單一樓號徽章、trailer）；offline `comment_merge.offline.spec.js`（不變量：**相鄰
+  bbsrow 不得同 data-pusher**；stock-end 指名：7→1、徽章 `\d+`、內容零遺失、關開關還原）。
   依賴逐列斷言的既有 spec（enhance/easy-reading live+offline 樓層連號、pusher 計數）已顯式傳
-  `mergeSameAuthorComments:false` 鎖舊行為。**pusher 解析勿用 textContent 正則**（範圍徽章 `1-7` 會混進
+  `mergeSameAuthorComments:false` 鎖舊行為。**pusher 解析勿用 textContent 正則**（樓號徽章數字會混進
   文字），一律讀 `data-pusher`。
 
 ## 自動修復斷掉的 URL（`src/js/url_fix.js`）

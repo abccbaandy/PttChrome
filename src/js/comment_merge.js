@@ -98,17 +98,6 @@ export function groupSameAuthorRuns(anns) {
   return runs;
 }
 
-// 合併後的時間標籤：同日省日期（"07/20 14:23 ~ 14:31"）、跨日完整首尾、
-// 首尾相同顯示單一。times 為各則時間戳（"MM/DD HH:MM"）依列序。
-export function mergedTimeLabel(times) {
-  const first = times[0];
-  const last = times[times.length - 1];
-  if (!first || !last || first === last) return first || '';
-  const [d1] = first.split(' ');
-  const [d2, t2] = last.split(' ');
-  return d1 === d2 ? `${first} ~ ${t2}` : `${first} ~ ${last}`;
-}
-
 // 「這則打滿了沒」的斷行門檻：內容尾到右側欄位的空白 ≥ 此值＝作者刻意在此
 // 結束（保留換行）；< 此值＝打滿被切斷（直接相連）。PTT 推文無自動折行——作者
 // 在輸入框打滿才切下一則，打滿的列尾端只剩固定間隔＋DBCS 塞不下的餘裕。
@@ -120,8 +109,9 @@ export function mergedTimeLabel(times) {
 const BREAK_GAP_COLS = 8;
 
 // run → 合併後的 TermChar[]（首列前綴「推 id: 」保留原色；各列內容 slice 依
-// gap 規則直接相連或以換行 cell 分段）＋時間範圍標籤。回傳 { chars, timeLabel }；
-// run 中任一列切不出邊界回傳 null（caller 還原逐列渲染）。
+// gap 規則直接相連或以換行 cell 分段）＋首則時間標籤（跟一般單則推文一致：一段
+// 只顯示第一則的時間）。回傳 { chars, timeLabel }；run 中任一列切不出邊界回傳
+// null（caller 還原逐列渲染）。
 //
 // 內容 cell 都沿用 lines 內的既有 TermChar 實例——絕不可自造 plain object，
 // prototype 方法（isStartOfURL 等）一剝離 LinkSegmentBuilder 就 runtime 崩潰
@@ -146,16 +136,15 @@ export function buildMergedCommentChars(lines, run) {
     Object.assign(Object.create(Object.getPrototypeOf(spaceSrc)), spaceSrc, {
       ch: '\n',
     });
-  const times = [];
   let pendingBreak = false;
   for (let n = 0; n < run.rows.length; ++n) {
     const rowChars = lines[run.rows[n]];
     const info = infos[n];
-    times.push(info.time);
     if (info.end <= info.start) continue; // 空內容列：跳過
     if (out.length > prefixLen && pendingBreak) out.push(newlineCell());
     for (let c = info.start; c < info.end; ++c) out.push(rowChars[c]);
     pendingBreak = info.gap >= BREAK_GAP_COLS;
   }
-  return { chars: out, timeLabel: mergedTimeLabel(times) };
+  // 時間標籤只取首則（跟一般單則推文一致，不顯示首~末範圍）。
+  return { chars: out, timeLabel: infos[0].time };
 }

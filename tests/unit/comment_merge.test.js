@@ -11,7 +11,6 @@ import {
   groupSameAuthorRuns,
   commentContentCells,
   buildMergedCommentChars,
-  mergedTimeLabel,
 } from "../../src/js/comment_merge";
 import { parseComment } from "../../src/js/comment_parse";
 
@@ -115,7 +114,7 @@ describe("buildMergedCommentChars", () => {
     const r = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1] });
     expect(r).not.toBeNull();
     expect(textOf(r.chars)).toBe("PU aaa: price is 1200 ok");
-    expect(r.timeLabel).toBe("07/20 14:23 ~ 14:31");
+    expect(r.timeLabel).toBe("07/20 14:23"); // 只顯示首則時間
   });
 
   // 內容遠短於欄寬（後面一大段空白）＝作者刻意斷句 → 保留換行（\n cell，
@@ -172,22 +171,6 @@ describe("buildMergedCommentChars", () => {
     });
     // 原始 lines 的 cell 不得被改寫成 \n（clone 而非 mutate）
     lines.flat().forEach((c) => expect(c.ch).not.toBe("\n"));
-  });
-});
-
-describe("mergedTimeLabel", () => {
-  test("同日：日期一次＋時間範圍", () => {
-    expect(mergedTimeLabel(["07/20 14:23", "07/20 14:31"])).toBe(
-      "07/20 14:23 ~ 14:31",
-    );
-  });
-  test("跨日：完整首尾", () => {
-    expect(mergedTimeLabel(["07/20 23:58", "07/21 00:03"])).toBe(
-      "07/20 23:58 ~ 07/21 00:03",
-    );
-  });
-  test("首尾相同：單一", () => {
-    expect(mergedTimeLabel(["07/20 14:23", "07/20 14:23"])).toBe("07/20 14:23");
   });
 });
 

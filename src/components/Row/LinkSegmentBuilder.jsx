@@ -24,7 +24,6 @@ export class LinkSegmentBuilder {
     mentions,
     aids,
     giveaways,
-    floorEnd,
     trailer,
   ) {
     this.row = row;
@@ -33,9 +32,8 @@ export class LinkSegmentBuilder {
     this.onHyperLinkMouseOver = onHyperLinkMouseOver;
     this.onHyperLinkMouseOut = onHyperLinkMouseOut;
     this.floor = floor;
-    // 連續同作者推文合併塊（好讀）：floorEnd＝run 末則的樓層 → 徽章顯示範圍
-    // 「N-M」；trailer＝附加在行內容尾端的節點（時間範圍標籤）。
-    this.floorEnd = floorEnd;
+    // 連續同作者推文合併塊（好讀）：trailer＝附加在行內容尾端的節點（首則時間標籤）。
+    // 樓層與時間都跟一般單則推文一致，只顯示 run 首則。
     this.trailer = trailer;
     // Same-author (原PO) highlight: wrap cols [authorIdStart, authorIdEnd) — the
     // pusher's user id — in a .commentByAuthor span so only the id is tinted.
@@ -188,19 +186,14 @@ export class LinkSegmentBuilder {
 
   floorBadge() {
     const f = this.floor;
-    // 合併塊：floorEnd 與首則不同樓 → 顯示樓層範圍（如「12-14」）。
-    const e = this.floorEnd;
-    const range = e && e.seq !== f.seq;
     return (
       <span
         key="floor"
         className="floorBadge"
         data-floor
-        title={
-          range ? `第${f.seq}~${e.seq}樓` : `第${f.seq}樓 ${f.type}${f.sub}`
-        }
+        title={`第${f.seq}樓 ${f.type}${f.sub}`}
       >
-        {range ? `${f.seq}-${e.seq}` : f.seq}
+        {f.seq}
       </span>
     );
   }

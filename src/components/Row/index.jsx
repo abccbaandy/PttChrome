@@ -39,8 +39,7 @@ function noticeSegments(text, forceWidth) {
 }
 
 // floor: { seq, sub, type } | undefined  → render a floor badge before the line.
-// floorEnd: 合併塊末則的 floor（好讀「連續同作者推文合併」）→ 徽章顯示「N-M」。
-// trailer: 附加在行內容尾端（bbsline span 內）的節點——合併塊的時間範圍標籤。
+// trailer: 附加在行內容尾端（bbsline span 內）的節點——合併塊的首則時間標籤。
 // hidden: true → blacklisted row; keep the bbsrow (so the fixed terminal grid
 //   stays aligned) but hide its content. The easy-reading path drops the row
 //   entirely instead of passing hidden, so there it occupies no space at all.
@@ -67,7 +66,6 @@ export const Row = ({
   forceWidth,
   highlighted,
   floor,
-  floorEnd,
   trailer,
   hidden,
   pusher,
@@ -125,7 +123,6 @@ export const Row = ({
             mentions,
             aids,
             giveaways,
-            floorEnd,
             trailer,
           ),
         )

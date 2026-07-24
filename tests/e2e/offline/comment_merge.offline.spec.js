@@ -1,8 +1,8 @@
 // 好讀「連續同作者推文合併」（預設開）—— 離線重放守門。
 // 核心不變量：渲染後相鄰的推文列不得同 pusher（同作者連續列必已合併）。
-// 指名素材 stock-end（rz2x 連續 7 則）：七則合成一塊、樓層範圍徽章、內容零遺失、
-// 關開關即還原逐列。pusher 一律讀 data-pusher 屬性（樓層徽章「N-M」會混進
-// textContent，正則解析會誤判）。
+// 指名素材 stock-end（rz2x 連續 7 則）：七則合成一塊、首則樓號徽章、內容零遺失、
+// 關開關即還原逐列。pusher 一律讀 data-pusher 屬性（樓號徽章數字會混進 textContent，
+// 正則解析會誤判）。
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -50,7 +50,7 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
   const fixturePath = path.join(__dirname, '../../unit/fixtures/replay/stock-end.page.json');
   test.skip(!cassette || !fs.existsSync(fixturePath), '缺 stock-end cassette/fixture');
 
-  test('七則合成一塊：樓層範圍徽章、內容零遺失、時間範圍', async ({ page }) => {
+  test('七則合成一塊：首則樓號徽章、內容零遺失、首則時間', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
@@ -62,7 +62,7 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     expect(rz.length).toBe(1);
     expect(rz[0].merged).toBe(true);
 
-    // 樓層範圍徽章「N-M」＋時間範圍標籤。
+    // 首則樓號徽章＋首則時間標籤。
     const block = await page.evaluate(() => {
       const el = Array.from(document.querySelectorAll('.mergedCommentBlock')).find((b) => {
         const row = b.querySelector('span[type="bbsrow"]');
@@ -74,12 +74,16 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
       return {
         text: el.textContent,
         floor: floor ? floor.textContent : null,
+        floorWidth: floor ? floor.offsetWidth : null,
         time: time ? time.textContent : null,
       };
     });
     expect(block).not.toBeNull();
-    expect(block.floor).toMatch(/^\d+-\d+$/);
-    expect(block.time).toMatch(/\d{1,2}\/\d{2} \d{2}:\d{2}/);
+    expect(block.floor).toMatch(/^\d+$/);
+    // 徽章 width:0 疊字（不佔水平空間）→ 作者 id 與相鄰單則推文同起始欄、不被往右推。
+    // 若覆寫成 width:auto（舊範圍徽章作法）此值會 >0，作者歪掉。
+    expect(block.floorWidth).toBe(0);
+    expect(block.time).toMatch(/^\d{1,2}\/\d{2} \d{2}:\d{2}$/);
 
     // 內容零遺失：golden 七則 rz2x 的內容子字串皆須在塊內。
     const golden = JSON.parse(fs.readFileSync(fixturePath, 'utf8')).golden;
