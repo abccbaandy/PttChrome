@@ -37,11 +37,14 @@ function chRowAttrs(text, spans = [], cols = 80) {
   return row;
 }
 
-// server 的 last-read 标红样式：作者栏 [17,29) 1;37、标题区 [29..) 1;31。
-const lastReadSpans = [
-  { from: 17, to: 29, fg: 7, bright: true },
-  { from: 29, to: 80, fg: 1, bright: true },
-];
+// server 的 last-read 标红样式：mark→行尾（标题区 [29..)）1;31。
+// 【勿把作者栏塞进这里】——bbs.c readdoent:830 的 last-read 只涂 mark 起，
+// 作者栏亮白是另一件事（isonline，bbs.c:815-823），见 onlineAuthorSpan。
+const lastReadSpans = [{ from: 29, to: 80, fg: 1, bright: true }];
+
+// isonline（作者目前在线上）：作者栏 [17,29) 亮白（wire 上是 1;37）。与 last-read
+// 无关，可与之同列并存（实录 20260725-153131 t=2869）。
+const onlineAuthorSpan = { from: 17, to: 29, fg: 7, bright: true };
 
 function fakeView(texts, curY, listSession = null) {
   const lines = texts.map((t) => chRow(t));
@@ -293,12 +296,69 @@ describe("accumulateListLines（置底文收录）", () => {
     const redRow = v._listNumMap.get(351462);
     expect(redRow[9].fg).toBe(3); // 推文数黄保留
     expect(redRow[9].bright).toBe(true);
-    expect(redRow[20].fg).toBe(7); // 作者去红
+    expect(redRow[20].fg).toBe(7); // 作者栏素色（此列作者未上线）
     expect(redRow[20].bright).toBe(false);
     expect(redRow[35].fg).toBe(7); // 标题去红
     const baoRow = v._listNumMap.get(351463);
     expect(baoRow[9].fg).toBe(1); // 爆字原封不动
     expect(baoRow[9].bright).toBe(true);
+  });
+
+  test("isonline 亮白作者＋同列 last-read：去标题色但作者亮白须原封保留", () => {
+    // 使用者实测 bug（debug 录制 20260725-153131）：进一篇「作者在线上」的文章再
+    // 退回列表，该列作者名变灰＝看起来下线。根因＝normalize 把整列压回预设属性，
+    // 连作者栏 [17,29) 的 isonline 亮白一起抹掉，而 paintLastReadListRow 只重画
+    // col 29 之后 → 亮白永久消失（每次重绘再抹一次）。
+    // wire 实证 t=2869：`\x1b[1;37mLime5566     \x1b[31m□ [股票] …`
+    // ——server 仍回报上线，是 client 弄丢的。
+    const ls = fakeListSession();
+    const online = " 204881  18 7/25 Lime5566     □ [股票] Google開發者大會";
+    const texts = header.concat([online], [feeter]);
+    const v = fakeView(texts, 3, ls);
+    v.buf.lines[3] = chRowAttrs(online, [
+      { from: 9, to: 11, fg: 3, bright: true }, // 推文数黄
+      onlineAuthorSpan, // isonline
+      ...lastReadSpans, // last-read 标题亮红
+    ]);
+    v.accumulateListLines();
+    expect(ls.noteLastRead).toHaveBeenCalledWith("[股票] Google開發者大會");
+    const row = v._listNumMap.get(204881);
+    expect(row[35].fg).toBe(7); // 标题去红
+    expect(row[35].bright).toBe(false);
+    expect(row[9].fg).toBe(3); // 推文数栏豁免
+    expect(row[9].bright).toBe(true);
+    // 作者栏整段（含 padding 空白）保持 isonline 亮白
+    for (let i = 17; i < 29; ++i) {
+      expect({ i, fg: row[i].fg, bright: !!row[i].bright }).toEqual({
+        i,
+        fg: 7,
+        bright: true,
+      });
+    }
+    // 豁免不得外溢：日期栏 [12,17) 与序号栏仍归零
+    expect(row[16].bright).toBe(false);
+    expect(row[12].bright).toBe(false);
+  });
+
+  test("退文回列表实况：游标（●盖头）停在 isonline＋last-read 列 → relabel＋去红＋作者亮白", () => {
+    // 这就是使用者的操作序列：开文 → `←` 退出 → server 全幅重绘，游标正停在刚读的
+    // 那一列（录制 t=2869 该列即 ●04881），三件事必须同时成立。
+    const ls = fakeListSession();
+    const prev = " 204880 +39 7/25 googolplex   □ [股票] 每200億…"; // 序号回推的邻居
+    const online = " 204881  18 7/25 Lime5566     □ [股票] Google開發者大會";
+    const cells = chRowAttrs(online, [onlineAuthorSpan, ...lastReadSpans]);
+    cells[0] = { ch: "●", isLeadByte: true, fg: 7, bg: 0, bright: false };
+    cells[1] = { ch: "", isLeadByte: false, fg: 7, bg: 0, bright: false };
+    const cursorText = "●" + online.slice(2);
+    const texts = header.concat([prev, cursorText], [feeter]);
+    const v = fakeView(texts, 4, ls);
+    v.buf.lines[4] = cells;
+    v.accumulateListLines();
+    const row = v._listNumMap.get(204881);
+    expect(rowToStr(row)).toBe(online.replace(/\s+$/, "")); // ● 还原成序号
+    expect(row[35].bright).toBe(false); // 标题去红
+    expect(row[20].fg).toBe(7); // 作者仍亮白（bug 时会变 bright:false）
+    expect(row[20].bright).toBe(true);
   });
 
   test("partial repaint 帧：author 栏 plain、仅标题亮红 → 仍须命中去红＋教学", () => {
@@ -471,6 +531,26 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
     const { v } = renderView(null, -1);
     const out = v.buildListWindowLines();
     expect(out[4]).toBe(v.buf.listLines[1]);
+  });
+
+  test("isonline 列命中 last-read：标题上色但 author 栏亮白原封（render 端不覆盖）", () => {
+    // paintLastReadListRow 从 col 29 起画，作者栏必须原样带出 map 里的 isonline
+    // 亮白——否则退文回列表该列作者变灰（使用者实测，20260725-153131）。
+    const ls = fakeListSession();
+    const texts = header.concat([clean61, clean62, reply63], [feeter]);
+    const v = fakeView(texts, 3, ls);
+    v.buf.lines[4] = chRowAttrs(clean62, [onlineAuthorSpan, ...lastReadSpans]);
+    v.accumulateListLines();
+    ls.getWindowView = () => ({ body: [0, 1, 2], cursorAbs: 1 });
+    v.buildListWindowLines = TermView.prototype.buildListWindowLines;
+    v._listWindowLines = null;
+    const out = v.buildListWindowLines();
+    const rendered = out[4]; // 游标＋last-read＋isonline 三合一（退文实况）
+    expect(rendered[0].ch + rendered[1].ch).toBe(u2bBullet());
+    expect(rendered[35].fg).toBe(1); // 标题重上红
+    expect(rendered[35].bright).toBe(true);
+    expect(rendered[20].fg).toBe(7); // 作者仍亮白
+    expect(rendered[20].bright).toBe(true);
   });
 
   function u2bBullet() {

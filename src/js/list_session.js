@@ -22,6 +22,7 @@ import {
   isDeletedListRow,
   rowToText,
   parseListTitleRaw,
+  LIST_AUTHOR_COL_START,
   LIST_AUTHOR_COL_END,
 } from './comment_parse';
 import { parseStatusRow, parseListRow, u2b } from './string_util';
@@ -448,7 +449,17 @@ export function flattenListBuffer(numMap, pinnedMap) {
 // 實錄驗證：debug 20260717-224420 t=1937（296/298 同紅、289 isonline 亮白）。
 // client 模型：map 永遠存 CLEAN（去色）列；session 記 _lastReadTitle（subject
 // 正規化字串），render 時對每列比對 subject，命中就以該列自身 mark 的顏色重繪。
-// The mark + push-count columns [8,12) keep their own legitimate colors (綠/黃/爆).
+// 欄位切分（normalize 的處置，cell 索引）：
+//   [0,8)   序號 ─────── 清
+//   [8,12)  mark+推文數 ─ 豁免（綠/黃/爆是該欄自己的合法顏色）
+//   [12,17) 日期 ─────── 清
+//   [17,29) 作者 ─────── 豁免：此區的亮色【只可能】是 isonline（readdoent 在作者
+//           前後各包一次 ANSI_COLOR(1)/ANSI_RESET，bbs.c:815-823），last-read 從
+//           mark 才起塗（bbs.c:830）→ 這裡沒有 last-read 的色要 strip。曾一併清掉
+//           而 paintLastReadListRow 又只重畫 [29,) → 進文章再退回，該列作者永久
+//           變灰＝看起來下線（實測 + 錄製 20260725-153131 t=2869：server 明明仍送
+//           `ESC[1;37m<author>`）。
+//   [29,)   標題 ─────── 清（render 時由 paintLastReadListRow 重畫）
 const LASTREAD_EXEMPT_START = 8;
 const LASTREAD_EXEMPT_END = 12;
 
@@ -503,11 +514,15 @@ export function listRowMarkFg(row) {
 }
 
 // Strip the last-read styling back to a plain row (default attrs) — called on the
-// accumulate-time clone only when detection hit. Direct field writes, not
-// resetAttr(): the accumulate unit fixtures use plain-object cells.
+// accumulate-time clone only when detection hit. Two column ranges are exempt (see
+// the field map above): the push-count columns and the author column, whose colors
+// belong to the row itself (推文數 / isonline), not to the last-read highlight.
+// Direct field writes, not resetAttr(): the accumulate unit fixtures use
+// plain-object cells.
 export function normalizeLastReadListRow(row) {
   for (let i = 0; i < row.length; ++i) {
     if (i >= LASTREAD_EXEMPT_START && i < LASTREAD_EXEMPT_END) continue;
+    if (i >= LIST_AUTHOR_COL_START && i < LIST_AUTHOR_COL_END) continue;
     const c = row[i];
     c.fg = 7;
     c.bg = 0;
@@ -521,7 +536,8 @@ export function normalizeLastReadListRow(row) {
 // Inverse of normalizeLastReadListRow: re-paint the server's last-read styling
 // on a render-time clone — mark + title (col LIST_AUTHOR_COL_END →) bold in the
 // row's own mark color, author column untouched (readdoent paints from the mark
-// only; a bright author would be isonline, which we don't track).
+// only; a bright author is isonline, which the stored row keeps verbatim thanks
+// to normalize's author exemption).
 export function paintLastReadListRow(row, fg) {
   if (fg == null) fg = listRowMarkFg(row);
   for (let i = LIST_AUTHOR_COL_END; i < row.length; ++i) {
