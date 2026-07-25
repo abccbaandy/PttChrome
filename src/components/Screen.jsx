@@ -30,6 +30,7 @@ import {
   groupSameAuthorRuns,
   buildMergedCommentChars,
 } from "../js/comment_merge";
+import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import MergeImageCaptionButton from "./MergeImageCaptionButton";
 
 // NOTE: articleAuthor (原PO id) is tracked by term_view across page-downs and
@@ -341,12 +342,48 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
 
   // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
   // hover 預覽的 OnHover img 無此 class，不受影響。
+  //
+  // 縮放會讓整份內容高度驟變，而捲動容器（.main）的 scrollTop 不變 → 視窗相對文章
+  // 整個位移，被點的那張圖跑出視野。故點擊當下（React 19 的 setState 尚未 commit，
+  // 這裡讀到的是**舊 layout**，正是我們要的 before 值）先記下錨點，交給下方的
+  // useLayoutEffect 在 commit 後、paint 前補回捲動位置（無閃爍）。
+  // 量測一律用 offsetTop/offsetHeight，不可用 getBoundingClientRect——見
+  // scroll_anchor.js 開頭的座標系規則（.main 與 img 各有 transform scale）。
+  const containerRef = React.useRef(null);
+  const anchorRef = React.useRef(null);
   const handleImageClick = React.useCallback((e) => {
     const t = e.target;
     if (t && t.tagName === "IMG" && t.classList.contains("hyperLinkPreview")) {
+      const container = containerRef.current;
+      const scroller = container && container.closest(".main");
+      anchorRef.current = scroller
+        ? {
+            el: t,
+            scroller,
+            topBefore: offsetTopWithin(t, container),
+            heightBefore: t.offsetHeight,
+            scrollBefore: scroller.scrollTop,
+          }
+        : null; // 拿不到捲動容器就單純切換，不補償（不 crash）。
       setImagesEnlarged((v) => !v);
     }
   }, []);
+
+  // 錨點補償：只在「本次 render 由點圖觸發」時作用（anchorRef 有值），故不影響
+  // page-down concat lines、換文章重置、mergeCaption 切換等其他 render 路徑。
+  React.useLayoutEffect(() => {
+    const a = anchorRef.current;
+    anchorRef.current = null; // 無條件清空，避免殘留污染下一次 render。
+    if (!a || !a.el.isConnected || !containerRef.current) return;
+    a.scroller.scrollTop = computeAnchoredScrollTop({
+      topBefore: a.topBefore,
+      heightBefore: a.heightBefore,
+      scrollBefore: a.scrollBefore,
+      topAfter: offsetTopWithin(a.el, containerRef.current),
+      heightAfter: a.el.offsetHeight,
+      maxScroll: a.scroller.scrollHeight - a.scroller.clientHeight,
+    });
+  }, [imagesEnlarged]);
 
   const handleMouseMove = React.useCallback(
     ({ clientX, clientY }) => {
@@ -441,6 +478,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   return (
     <div
       id="mainContainer"
+      ref={containerRef}
       className={imagesEnlarged ? "imagesEnlarged" : undefined}
       onMouseMove={handleMouseMove}
       onClick={handleImageClick}

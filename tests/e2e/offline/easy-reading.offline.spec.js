@@ -152,6 +152,95 @@ test.describe('好读模式翻页（离线重放）', () => {
         expect(m.lastRect.bottom).toBeLessThanOrEqual(m.overlayRect.top + 2);
       }
     });
+
+    // REGRESSION: 好读点图切换「整页放大/缩小」后，捲动位置整个跑掉——放大态卷到
+    // 文章中段再点某张图缩小，内容总高骤减但 .main 的 scrollTop 不变 → 视窗落到文章
+    // 更后面，刚刚在看的那张图跑出视野。修法：点击当下以「被点的图」为锚点记下它相对
+    // 视窗的位置（offsetTop/offsetHeight，layout 座标；.main 与 img 各有 transform
+    // scale，rect 与 scrollTop 不同尺规不可混用），在 useLayoutEffect 里换算回新的
+    // scrollTop（见 src/js/scroll_anchor.js、Screen.jsx handleImageClick）。
+    // 守门：缩小后该图必须仍与 .main 视窗相交（旧 code 会整个卷过头 → 交集 <= 0）。
+    // 纯算式部分在 tests/unit/scroll_anchor.test.js；这里守真浏览器的真 layout。
+    test(`点图缩小后被点的图仍在视野内（捲动锚定）[${cassette.__file}]`, async ({ page }) => {
+      test.setTimeout(120000);
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, { enableEasyReading: true });
+      await replayCassette(page, cassette, { easyReading: true });
+
+      const r = await page.evaluate(async () => {
+        const SEL = '#mainContainer img.hyperLinkPreview';
+        const scroller = document.querySelector('.main');
+        const mc = document.getElementById('mainContainer');
+        if (!scroller || !mc) return { skip: 'no scroller/container' };
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        // 外部行内图片异步载入会持续撑高内容 → 量测前先等 scrollHeight 连续两轮不变
+        //（同本档「末行遮挡」测的作法；stock-end 图多，race 会假红）。
+        const settle = async () => {
+          let prev = -1, stable = 0;
+          for (let i = 0; i < 24 && stable < 2; i++) {
+            await sleep(400);
+            const h = scroller.scrollHeight;
+            if (h === prev) stable++;
+            else { stable = 0; prev = h; }
+          }
+        };
+        const loadedImgs = () =>
+          Array.from(document.querySelectorAll(SEL)).filter(
+            (im) => im.offsetWidth > 0 && im.offsetHeight > 0
+          );
+
+        // 先卷到底逼所有行内图开始载入，等稳定后回顶。
+        scroller.scrollTop = scroller.scrollHeight;
+        await settle();
+        scroller.scrollTop = 0;
+        await sleep(300);
+
+        let imgs = loadedImgs();
+        if (imgs.length < 2) return { skip: `loaded imgs = ${imgs.length}` };
+
+        // 点第一张 → 整页放大（内容变很长，正是位移最明显的场景）。
+        imgs[0].click();
+        await sleep(400);
+        await settle();
+        if (!mc.classList.contains('imagesEnlarged')) return { skip: 'enlarge did not apply' };
+        imgs = loadedImgs();
+        if (imgs.length < 2) return { skip: 'imgs vanished after enlarge' };
+
+        // 取中间那张当锚点（上方有大量被放大的内容 → 缩小时位移最大）。
+        const img = imgs[Math.floor(imgs.length / 2)];
+        const rel = () => img.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        const viewH = scroller.getBoundingClientRect().height;
+        const target = viewH * 0.3; // 卷到图顶位于视窗上方 30% 处（图顶在视窗内）
+        for (let i = 0; i < 30; i++) {
+          const d = rel() - target;
+          if (Math.abs(d) < 3) break;
+          scroller.scrollTop += d; // .main 有 scale 时收敛较慢但单调
+          await sleep(30);
+        }
+        const before = { rel: rel(), scrollTop: scroller.scrollTop, viewH };
+
+        // 点同一张图 → 缩小。React 19：click 的 setState 在事件 task 之后才 commit。
+        img.click();
+        await sleep(500);
+
+        const mr = scroller.getBoundingClientRect();
+        const ir = img.getBoundingClientRect();
+        return {
+          before,
+          after: { rel: ir.top - mr.top, scrollTop: scroller.scrollTop },
+          visible: Math.min(ir.bottom, mr.bottom) - Math.max(ir.top, mr.top),
+          enlarged: mc.classList.contains('imagesEnlarged'),
+        };
+      });
+
+      console.log(`[anchor] ${cassette.__file}: ${JSON.stringify(r)}`);
+      test.skip(!!r.skip, `此 cassette 无足够已载入的行内图（${r.skip}）`);
+      expect(r.enlarged).toBe(false);
+      // 核心症状：缩小后该图仍须与视窗相交（旧 code 会卷过头 → 交集 <= 0）。
+      expect(r.visible).toBeGreaterThan(0);
+      // 图顶原本在视窗内 → 应维持固定间距（容忍 layout 取整 / scale 误差）。
+      expect(Math.abs(r.after.rel - r.before.rel)).toBeLessThan(r.before.viewH * 0.15);
+    });
   }
 });
 
