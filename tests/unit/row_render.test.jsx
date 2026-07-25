@@ -306,6 +306,48 @@ describe("Row merged-comment extensions", () => {
   });
 });
 
+// 樓層徽章的 DOM 契約。徽章是零寬盒（不位移等寬格線），數字靠內層 .floorBadgeNum
+// 以 translateX(-100%) 對齊「作者 id 起始欄」向左生長 → 高樓層往標記字方向溢出，
+// 永遠不會蓋到作者 id。幾何只能在 e2e 量（jsdom 無 layout），這裡守 DOM 結構契約。
+describe("Row 樓層徽章", () => {
+  const renderFloor = seq =>
+    render(
+      <Row
+        chars={chars("PU wowbenny: hi")}
+        row={0}
+        floor={{ seq, sub: 3, type: "推" }}
+      />
+    );
+
+  test("樓號文字仍是 [data-floor] 的 textContent（scraping 契約）", () => {
+    const { container } = renderFloor(123);
+    const badge = container.querySelector("[data-floor]");
+    expect(badge.textContent).toBe("123");
+    expect(badge.querySelector(".floorBadgeNum").textContent).toBe("123");
+  });
+
+  test("徽章插在 col 2 空格之前，數字後仍留空格（推文正則 /^(推|噓|→)\\d*\\s+/）", () => {
+    const { container } = renderFloor(123);
+    expect(bbsrow(container).textContent).toBe("PU123 wowbenny: hi");
+  });
+
+  test("3 位數以上掛 floorBadge--wide（要補深色底壓住標記字筆劃）", () => {
+    const { container } = renderFloor(123);
+    expect(
+      container.querySelector("[data-floor]").classList.contains("floorBadge--wide")
+    ).toBe(true);
+  });
+
+  test("1~2 位數不掛 floorBadge--wide（仍落在空隙內，不需底色）", () => {
+    for (const seq of [1, 99]) {
+      const { container } = renderFloor(seq);
+      const badge = container.querySelector("[data-floor]");
+      expect(badge.classList.contains("floorBadge")).toBe(true);
+      expect(badge.classList.contains("floorBadge--wide")).toBe(false);
+    }
+  });
+});
+
 describe("Row blacklistNotice (原生列表黑名單通知列)", () => {
   test("blacklistNotice → 內容即通知字串（含 bbsline 結構）、不走原始 char cells", () => {
     const notice = "  62349 + 6 7/09 -            □ （本文已被黑名單） someone";

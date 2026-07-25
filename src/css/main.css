@@ -229,9 +229,9 @@ a:link,a:visited,a:active,a:hover {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* 樓號徽章不覆寫：沿用一般 .floorBadge 的 width:0 overflow 疊字，前綴
-   「marker＋空格＋id」照 col 對齊 → 合併塊作者 id 與相鄰單則推文（renderRow）
-   同一起始欄，不會被徽章往右推。 */
+/* 樓號徽章不覆寫：沿用一般 .floorBadge 的「零寬盒＋右對齊 id 起始欄向左長」疊字，
+   前綴「marker＋空格＋id」照 col 對齊 → 合併塊作者 id 與相鄰單則推文（renderRow）
+   同一起始欄，不會被徽章推移。 */
 /* 首則時間標籤，淡色縮小、跟在段落尾端。 */
 .mergedCommentTime {
   color: #808080;
@@ -458,14 +458,22 @@ span {
   background: rgba(255, 255, 255, 0.5);
 }
 
-/* Comment floor number badge (Enhanced Add-on). Sits in the gap between the
-   推/噓/→ marker and the user id, as a small raised superscript. width:0 keeps
-   the monospace grid aligned; the number overflows to the right into the gap. */
+/* 推文樓層徽章（Enhanced Add-on）：小字上標，插在 推/噓/→ 標記與作者 id 之間的空格
+   （col 2，見 Row/LinkSegmentBuilder）。
+   排版契約：盒寬 0 + position:relative 位移 → 對等寬格線的淨推進量為 0（不可破壞）。
+   定位：整個零寬盒右移 1 欄到「作者 id 起始欄邊界」，數字再以 translateX(-100%) 貼齊
+   該邊界向左生長 → 1~2 位數仍落在空隙內，3 位數以上往標記字方向溢出，作者 id 永遠不
+   被蓋（舊版是向右溢出，100 樓以上會壓住 id 第一個字）。
+   1 欄 = 半個行字級（term_view: chw = chh/2）；left 的 em 已是徽章自身字級，故除回
+   scale 換算回 1 欄。color 必須留在本層（上班模式 color.css 以 .floorBadge 覆寫）。 */
 .floorBadge {
+  --floor-scale: 0.55;
+  position: relative;
+  left: calc(0.5em / var(--floor-scale));
   display: inline-block;
   width: 0;
   overflow: visible;
-  font-size: 0.55em;
+  font-size: calc(1em * var(--floor-scale));
   line-height: 1;
   font-weight: bold;
   vertical-align: super;
@@ -473,6 +481,19 @@ span {
   cursor: default;
   -webkit-user-select: none;
   white-space: pre;
+  /* 溢出到標記字上方時仍要讀得清楚 */
+  text-shadow:
+    0 0 2px #000,
+    0 0 3px #000;
+}
+.floorBadgeNum {
+  display: inline-block;
+  transform: translateX(-100%);
+}
+/* 3 位數以上必定壓在標記字上 → 補半透明深底把底下筆劃壓下去（數字清楚，標記仍見輪廓）。 */
+.floorBadge--wide .floorBadgeNum {
+  background-color: rgba(0, 0, 0, 0.6);
+  border-radius: 2px;
 }
 
 /* Same-author (原PO) comment highlight (Enhanced Add-on). Wraps just the user-id

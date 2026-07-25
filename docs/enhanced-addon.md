@@ -27,7 +27,10 @@
 ## 渲染整合（單一路徑 `<Screen>`→`<Row>`，2026-06 統一）
 - `<Row>`(`components/Row/index.js`) 有 props `floor`/`hidden`。`floor`→`LinkSegmentBuilder.readChar`
   在 **col 2**（marker 與 userid 間的空格）插入 `.floorBadge`（CSS `main.css`：`display:inline-block;
-  width:0;vertical-align:super` 小字上標，不位移等寬格線；`user-select:none` 故不污染複製）。`hidden`→
+  width:0;vertical-align:super` 小字上標，不位移等寬格線；`user-select:none` 故不污染複製）。
+  **定位＝右對齊 userid 起始欄、向左生長**（零寬盒 `left:calc(0.5em/--floor-scale)` 右移 1 欄，內層
+  `.floorBadgeNum` 再 `translateX(-100%)`）：1~2 位數落在空隙內，3 位數以上（`floorBadge--wide`，另補
+  半透明深底）往 marker 方向溢出 → **作者 id 永不被蓋**。2026-07 前是向右溢出，100 樓以上會壓住 id 首字。`hidden`→
   外層 bbsrow `visibility:hidden`（保留行高、不破壞固定格線）。樓層計數：黑名單推文 **仍 +1 樓**（先
   `counter.next` 再決定隱藏/移除），故編號維持絕對正確。
 - **單一渲染路徑（兩模式都走 `renderScreen`→`Screen.js#computeAnnotations`）**：逐列加工只有一處，無法發散。
@@ -194,6 +197,7 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **async/await 已可用**（`vite.config.js` `build.target` = 現代桌機瀏覽器）。**勿把 target 降回舊瀏覽器**（歷史教訓，Babel 時代 preset-env 會注入 regenerator → 整包 bundle 載入即炸；現 esbuild/oxc 對過舊 target 直接報錯，仍不要降）。診斷捷徑：Playwright `page.on('pageerror')`。
 - **讀「當前畫面文字」用 `buf.getRowText`，勿讀 `#mainContainer.innerText`**。`term_buf.notify` 先 `dispatchEvent('change')` 才 `view.update()` → DOM 慢一幀（下次更新才追上）。← auto-login「要按鍵才動」根因。
 - **DOM scraping 容錯**（測試/外部讀畫面）：① `visibility:hidden` 列 `innerText` 回空字串（Chromium）→ 改讀 `textContent`；② floorBadge 插在 bbsline 內污染文字（`推9 userid`）→ 推文正則須容忍 `/^(推|噓|→)\d*\s+/`。app 邏輯讀 buf、複製有 `user-select:none`，皆不受影響。
+- **改樓層徽章必須守三個契約**（各有測試守護，破一個就紅）：① 對等寬格線**淨推進 0**（零寬盒 + `position:relative`/`transform` 位移，勿改用 margin/padding 撐位）；② `[data-floor]` 的 `textContent` 仍是純樓號數字（unit/e2e 皆以此讀樓號）；③ `color` 留在 `.floorBadge` 外層（上班模式 `color.css` 以 `.floorBadge` 覆寫壓灰，`ui_behavior.offline.spec.js` 直接探測該 class）。幾何回歸（不侵入 id 欄）只有真瀏覽器量得到 → 守在 `enhance.offline.spec.js`（含合成 4 位數樓號）。
 - **傳給 `React.PureComponent` 的 prop 勿在 render 內現生新物件/Promise**。否則 shallow-compare 永遠不等 → PureComponent 形同失效、子樹每次重掛。實例：`ImagePreviewer` 的 `request` 曾每 render `of(href).then(resolveSrcToImageUrl)` 新 Promise → pusherHighlight 重繪時 value 重置、YouTube iframe 卸載重掛**閃爍**（img 有快取無感）；改 `ImagePreviewer.jsx#requestPreview(href)` 以 href memoize（module `Map`），同 href 同參考。守護 `tests/unit/row_render.test.js`「same href → request prop 參考相等」。
 - **逐列加工走單一純函式 `comment_parse.annotateComment`**，勿為某路徑另寫一份（好讀/原生曾各複製一份而發散出 bug）。逐列狀態用每圈新物件 `const ann={}`，**勿用函式作用域 `var`**（JS `var` 不每圈重設 → 非推文列繼承前列 floor/authorId 範圍，畫出整條色塊或樓號溢出到空白/※編輯/內文）。守護 `comment_parse.test.js`。
 - **dev server production-mode 陷阱**。Playwright `reuseExistingServer:true` 可能重用到 production server → `DEFAULT_SITE` 直連、Origin 未改寫 → WebSocket **403**。啟動務必 `NODE_ENV=development`；驗證 `curl .../assets/pttchrome.js | grep DEFAULT_SITE` 應為 `wstelnet://localhost:8080/bbs`。

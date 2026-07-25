@@ -52,6 +52,99 @@ test.describe('增强 · 文章（离线重放）', () => {
       badgeRows.forEach((t) => expect(t).toMatch(/\d{1,2}\/\d{2}\s+\d{2}:\d{2}/));
     });
 
+    // 幾何守護（jsdom 量不到，必須真瀏覽器）：樓層徽章以「作者 id 起始欄」為右邊界
+    // 向左生長。舊版是向右溢出，100 樓以上（3 位數）會壓住 id 第一個字 → 樓號與作者
+    // 名都看不清。同時守「零寬盒不位移等寬格線」。
+    test(`樓層徽章不侵入作者 id 欄、且不位移格線 ${tag}`, async ({ page }) => {
+      test.setTimeout(90000);
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: true,
+        mergeSameAuthorComments: false,
+      });
+      await replayCassette(page, article, { easyReading: true });
+
+      // 量「數字實際佔的框」= .floorBadgeNum（帶 transform，rect 反映真實位置）；
+      // 外層 .floorBadge 是零寬盒，量它會恆真、測不到東西。
+      // mutateTo：把第一個徽章的數字改寫成指定字串（純 DOM 操作，不觸發 redraw）
+      // → cassette 未必有 100+ 樓，用它驗高位數。
+      const measure = (mutateTo) =>
+        page.evaluate((mutateTo) => {
+          // 取 bbsline 內第 index 個字元的 rect（跳過徽章自身的文字節點）。
+          const charRect = (line, index) => {
+            const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+            let n;
+            let seen = 0;
+            while ((n = walker.nextNode())) {
+              if (n.parentElement && n.parentElement.closest('[data-floor]')) continue;
+              const len = n.nodeValue.length;
+              if (seen + len > index) {
+                const r = document.createRange();
+                r.setStart(n, index - seen);
+                r.setEnd(n, index - seen + 1);
+                return r.getBoundingClientRect();
+              }
+              seen += len;
+            }
+            return null;
+          };
+          if (mutateTo) {
+            const first = document.querySelector('#mainContainer .floorBadgeNum');
+            if (first) {
+              first.textContent = mutateTo;
+              first.parentElement.classList.add('floorBadge--wide');
+            }
+          }
+          const out = [];
+          for (const line of document.querySelectorAll('#mainContainer [data-type="bbsline"]')) {
+            // 推文列：marker（1 個 JS 字元、佔 2 欄）+ 空格 → 作者 id 首字 = index 2
+            const id = charRect(line, 2);
+            if (!id) continue;
+            const num = line.querySelector('.floorBadgeNum');
+            const numRect = num ? num.getBoundingClientRect() : null;
+            out.push({
+              row: line.getAttribute('data-row'),
+              idLeft: id.left,
+              seq: num ? num.textContent : null,
+              numRight: numRect ? numRect.right : null,
+              numWidth: numRect ? numRect.width : null,
+            });
+          }
+          return out;
+        }, mutateTo);
+
+      const withFloors = await measure(null);
+      const badged = withFloors.filter((m) => m.seq !== null);
+      expect(badged.length).toBeGreaterThan(0);
+      for (const m of badged) {
+        expect(m.numWidth).toBeGreaterThan(0); // 真的畫出來（非 0 寬）
+        expect(m.numRight).toBeLessThanOrEqual(m.idLeft + 1); // 不越過 id 起始欄（1px 容差）
+      }
+
+      // 高位數（4 位）同樣不越界 —— 這正是舊版會壓到 id 的情境。
+      const wide = await measure('1234');
+      const mutated = wide.filter((m) => m.seq === '1234');
+      expect(mutated.length).toBe(1);
+      expect(mutated[0].numWidth).toBeGreaterThan(0);
+      expect(mutated[0].numRight).toBeLessThanOrEqual(mutated[0].idLeft + 1);
+
+      // 格線零位移：關掉樓號後，同一列的作者 id 首字 x 座標必須完全相同。
+      await ptt.applyPrefs(page, { showFloorNumbers: false });
+      await page.waitForTimeout(500);
+      const off = await measure(null);
+      expect(off.every((m) => m.seq === null)).toBe(true); // 徽章確實消失
+      const offByRow = new Map(off.map((m) => [m.row, m.idLeft]));
+      let compared = 0;
+      for (const m of badged) {
+        const x = offByRow.get(m.row);
+        if (x === undefined) continue;
+        expect(Math.abs(x - m.idLeft)).toBeLessThan(0.5);
+        compared++;
+      }
+      expect(compared).toBeGreaterThan(0);
+    });
+
     test(`黑名单：好读移除该 pusher 推文且不留空行 ${tag}`, async ({ page }) => {
       test.setTimeout(90000);
       const target = article.meta.firstCommentAuthor;

@@ -184,16 +184,20 @@ export class LinkSegmentBuilder {
     this.colorSegBuilder = null;
   }
 
+  // 徽章是零寬盒（不位移等寬格線），數字包一層 .floorBadgeNum 供 CSS 以
+  // translateX(-100%) 靠「作者 id 起始欄」向左生長 → 3 位數以上往推/噓/→ 標記字
+  // 方向溢出，作者 id 永遠不被蓋（見 main.css .floorBadge）。--wide 給高位數補深色底。
   floorBadge() {
     const f = this.floor;
+    const text = String(f.seq);
     return (
       <span
         key="floor"
-        className="floorBadge"
+        className={cx("floorBadge", { "floorBadge--wide": text.length >= 3 })}
         data-floor
         title={`第${f.seq}樓 ${f.type}${f.sub}`}
       >
-        {f.seq}
+        <span className="floorBadgeNum">{text}</span>
       </span>
     );
   }
