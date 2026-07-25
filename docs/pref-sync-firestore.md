@@ -9,14 +9,14 @@
 | 副作用 | `src/js/pref_sync.js` | SDK lazy-load（dynamic import 拆 chunk）、Google 登入、Firestore 讀寫 |
 | config | `src/js/firebase_config.js` | web config + reCAPTCHA site key（皆非機密，安全靠 rules + authorized domains + App Check） |
 
-- 同步策略：localStorage = 本地快取，啟動先套用（不阻塞 BBS 連線）；曾登入者背景 attach Firestore **onSnapshot realtime listener**，每個 snapshot merge 後二次套用（`main.js` → `registerOnCloudValues` + `startIfPreviouslySignedIn`）。儲存時雙寫（PrefModal `onCloseClick`/`onResetClick` → `prefSync.savePrefs`）。
+- 同步策略：localStorage = 本地快取，啟動先套用（不阻塞 BBS 連線）；曾登入者背景 attach Firestore **onSnapshot realtime listener**，每個 snapshot merge 後二次套用（`main.jsx` → `registerOnCloudValues` + `startIfPreviouslySignedIn`）。儲存時雙寫（PrefModal `onCloseClick`/`onResetClick` → `prefSync.savePrefs`）。
 - 資料模型：`users/{uid}` 單一 doc `{ prefs, updatedAt: serverTimestamp, schemaVersion: 1 }`。
 - 衝突：cloud wins；首次登入雲端無 doc → push local up；登出只清旗標（`pttchrome.prefsync.enabled`），localStorage 保留。
 - **`autoLoginPassword`、`autoLoginUser` 絕不上雲**：上傳前 `sanitizeForCloud` 剝除、下載 merge 強制取本地值；憑證走瀏覽器 PasswordCredential（見 `src/js/auto_login.js`）。帳號 local-only 的理由：裝置在瀏覽器存好憑證後會清空 local 帳密，若帳號同步，清空的 `""` 會上雲洗掉其他裝置（無 credential API 的 Firefox/Safari legacy 登入會壞）。`savePrefs` 另以 `FieldValue.delete()` 自癒刪除舊 doc 殘留的 `prefs.autoLoginUser`。
 
-## Realtime listener（onSnapshot，2026-06 改版）
+## Realtime listener（onSnapshot）
 
-一次性 `get()` 的問題：分頁 B 開著時收不到裝置 A 的修改，B 下次存檔把舊值蓋回雲端（last-write-wins 蓋掉 A）。改 `onSnapshot` 後 A 的修改即時推到 B。
+**為何不用一次性 `get()`**：分頁 B 開著時收不到裝置 A 的修改，B 下次存檔會把舊值蓋回雲端（last-write-wins 蓋掉 A）。`onSnapshot` 讓 A 的修改即時推到 B。
 
 - 每個 snapshot 經 `classifySnapshot`（純函式，unit tested）分四類：
   - `skip-echo`：`metadata.hasPendingWrites` — 本機 `set()` 的 latency-compensation echo，跳過。
@@ -26,7 +26,7 @@
 - handler 每次重讀 `readValuesWithDefault()`（local 會被 PrefModal/憑證清除移動，勿閉包舊值）。
 - 變更比對用 `deepEqual`（key 順序無關，`pref_sync_logic.js`），**勿用 `JSON.stringify`**：Firestore 回傳 map 欄位 key 順序不保證（`termSize` 會 `{cols,rows}` ↔ `{rows,cols}` 假變更）。merge 後無實質變更 → 不 writeValues、不打 app callback（`onValuesPrefChange` 會觸發 resize 等實際動作）；PrefModal 關閉時表單與 storage `deepEqual` → 跳過寫入與上傳（避免空上傳 bump `updatedAt` 吵醒所有裝置）。
 - 生命週期：attach 前先 unsub 舊 listener；`signOut` **先 unsub 再** `auth.signOut()`（否則 stream 噴 permission-denied）；`onAuthStateChanged` 收到 null（token 過期/撤銷）也 unsub；onSnapshot error callback 觸發後 listener 自停 → 清掉 handle。
-- callback 走註冊制：`main.js` 啟動時無條件 `registerOnCloudValues(app.onValuesPrefChange)`（純 JS 不觸發 SDK 載入），PrefModal `signIn` 建立的 listener 也打得到 app；`signIn(onCloudValues)` 的參數 callback 只在首個 snapshot 處理完打一次（更新 modal 表單）。
+- callback 走註冊制：`main.jsx` 啟動時無條件 `registerOnCloudValues(app.onValuesPrefChange)`（純 JS 不觸發 SDK 載入），PrefModal `signIn` 建立的 listener 也打得到 app；`signIn(onCloudValues)` 的參數 callback 只在首個 snapshot 處理完打一次（更新 modal 表單）。
 - 啟動還原等 auth 用 `waitForFirstAuthState()`（`authStateKnown` 旗標 + waiter queue）。注意 `onAuthStateChanged` **同步立即**呼叫 cb → cb 內勿依賴尚未賦值的 `unsub`（TDZ）。
 - 測試：`tests/integration/pref_sync.test.js`（`yarn test:integration`，官方 Firebase Emulator Suite——真 modular SDK + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）重播啟動還原/他機推播/echo skip/offline 守門/signIn/signOut/憑證去敏全流程。細節見下方「測試」章節。
 
@@ -49,7 +49,7 @@
 - 隔離策略：**每個測試換新 uid**（token 換 `sub`）而非清庫——(1) REST 清庫清不掉主 client 的 in-memory cache，殘留 doc 會污染下個測試的 fromCache snapshot；(2) 刪 auth 帳號會讓另一個 client 的 token 失效。換 uid 兩個都繞開。
 - 「另一台裝置」= 第二個 SDK app instance（`initializeApp(cfg, "seeder")`）以同 `sub` 登入（同 uid → 過 rules）讀寫 `users/{uid}`。
 - vitest integration project 用 **node env 不用 jsdom**（`vitest.config.js`）：jsdom 下 Firestore 走 WebChannel/XHR（無真瀏覽器不穩）；node env 解析到 SDK 的 node build 走 gRPC。`window.localStorage` 用 Map shim（`tests/integration/setup.js`）。
-- vitest 原生吃 ESM/`import()`，無需任何 transform plugin（舊 jest+babel 時代需 `babel-plugin-dynamic-import-node`，已隨遷移消滅）。
+- vitest 原生吃 ESM/`import()`，無需任何 transform plugin。
 - 等待用確定性訊號：spy `console.info` 輪詢 `snapshot action=<x>` 日誌（= listener 已掛上且 snapshot 已分類），不瞎 sleep。
 - 收尾：afterAll `terminate(db)` + `deleteApp(app)`（main + seeder 都要），否則 gRPC channel / auth token timer 讓 vitest 掛著不退。
 - emulator 產物 `firestore-debug.log` / `firebase-debug.log` 已 gitignore。
@@ -94,7 +94,7 @@ firebase deploy --only firestore:rules
 ## 已知限制
 
 - `signInWithPopup` 在嚴格擋第三方 storage 的瀏覽器（Safari/Brave）可能失敗；fallback 可改 `signInWithRedirect`（未實作）。
-- PrefModal 由 ContextMenu mount 一次、靠 `show` prop 切換；表單 state 在每次**開啟**時 `componentDidUpdate` 重讀 localStorage（見 `PrefModal.js` 該處註解），但開啟期間不吃 snapshot → 兩端**同時**編輯仍 last-write-wins，realtime 只縮小不消滅此窗口。
+- PrefModal 由 ContextMenu mount 一次、靠 `show` prop 切換；表單 state 在每次**開啟**時 `componentDidUpdate` 重讀 localStorage（見 `PrefModal.jsx` 該處註解），但開啟期間不吃 snapshot → 兩端**同時**編輯仍 last-write-wins，realtime 只縮小不消滅此窗口。
 - 帳號改 local-only 後，新裝置（尤其無 credential API 的 Firefox/Safari）不再從雲端拿到 `autoLoginUser`，需手動重填帳密一次。
 - 清瀏覽器資料只清掉同步旗標與快取；偏好仍在雲端，重新登入即拉回。
 - ad-blocker 擋 `google.com/recaptcha` 時 App Check 拿不到 token：enforce 後該瀏覽器同步全掛（permission-denied），BBS 其餘功能正常（`initializeAppCheck` 有 try/catch）。

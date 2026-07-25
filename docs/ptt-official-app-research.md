@@ -53,9 +53,9 @@
 - **真實素材 fixture**：`pttbbs-backend/queue/testcase/M.1644506392.A.03C.utf8.recommend`（utf8 轉碼版）
   - 同時含 `推 <id>: <內容> <IP> MM/DD HH:MM` 與 `※ <id>:轉錄至看板 <board> MM/DD HH:MM`（FORWARD）兩種行，可直接拿來核對本專案逐列判斷的邊界 case。
 
-**結論**：非 drop-in（官方吃 raw 檔案行；本專案吃**已渲染、會折行/上色**的終端 scrape），但可用來回歸守護本專案的型別分類與邊界（FORWARD/REPLY/EDIT/DELETED、IP 有無、純日期行）。建議把上述格式規則寫進 `comment_parse.js` 的 docstring 當依據。
+**結論**：非 drop-in（官方吃 raw 檔案行；本專案吃**已渲染、會折行/上色**的終端 scrape），但可用來回歸守護本專案的型別分類與邊界（FORWARD/REPLY/EDIT/DELETED、IP 有無、純日期行）。
 
-**DONE（2026-06-19）**：格式規則已內嵌 `src/js/comment_parse.js` 的 `COMMENT_RE`「Official cross-validation」docstring；userid 子樣式依官方 `[a-zA-Z][a-zA-Z0-9]+` 收緊（須字母開頭、≥2 字元）。回歸測試 `tests/unit/comment_parse.test.js` 的 `official cross-validation` describe + 兩個轉存 fixture（`tests/unit/fixtures/IpComment_M.1621089154.txt` IP 行、`Forward_M.1644506392.txt` 轉錄行）守護 IP 不混入 userid、FORWARD 不計樓、轉錄夾在推文間不重置編號。`3rd_script/` 被 gitignore，故 fixture 轉存進已提交目錄供 CI。
+已落地：格式規則內嵌 `src/js/comment_parse.js` 的 `COMMENT_RE`「Official cross-validation」docstring，userid 子樣式依官方 `[a-zA-Z][a-zA-Z0-9]+` 收緊；守護在 `tests/unit/comment_parse.test.js` 的 `official cross-validation` describe＋兩個轉存 fixture（`tests/unit/fixtures/IpComment_M.1621089154.txt`、`Forward_M.1644506392.txt`——`3rd_script/` 被 gitignore，故轉存進已提交目錄供 CI）。**再引入官方 fixture 時比照此作法轉存**。
 
 ### 連線繞過 origin header —— 可參考性：**策略性高、技術性低（負面結論）**
 
@@ -97,9 +97,9 @@
 
 ## 一句話總結各需求
 
-| 需求 | 官方有無可用資源 | 建議動作 |
-|------|------|------|
-| 推文樓層計算 | **有（格式/型別交叉驗證）** | **DONE**：格式規則進 `comment_parse.js` docstring、userid 收緊為官方 `[a-zA-Z][a-zA-Z0-9]+`、testcase fixture 轉存 `tests/unit/fixtures/` 補回歸（見上節 DONE） |
-| 連線繞 Origin | **無捷徑**（官方改用自家後端規避） | 維持現有 proxy / 擴充兩路；不必再找第三條 |
-| 自動開圖 | 低（原生 UI，不可移植） | 沿用既有 ptt-media-preview / ptt-imgur-fix |
-| 好讀模式 | 無對應 | 維持自有 `EasyReading` |
+| 需求 | 官方有無可用資源 |
+|------|------|
+| 推文樓層計算／格式 | **有（格式/型別交叉驗證，已落地見上節）**；日後推文格式有疑義時回來查 `go-pttbbs`／`go-bbs` |
+| 連線繞 Origin | **無捷徑**（官方改用自家後端規避）——維持 proxy／擴充兩路，不必再找第三條 |
+| 自動開圖 | 低（原生 SDK UI，不可移植）——沿用本專案 resolver registry |
+| 好讀模式 | 無對應（終端專屬問題）——維持自有 `EasyReading` |

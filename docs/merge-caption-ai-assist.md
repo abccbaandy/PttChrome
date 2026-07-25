@@ -24,7 +24,7 @@ recommendation: **暫緩**（旗標；重啟條件見文末）。現行純規則
 | transformers.js embedding 相似度（非生成式） | 跨瀏覽器 | 小模型數十 MB | 中 | 比的是「段落 vs 段落」相似度，但圖片本身無文字可比——只能比段落間主題斷裂，效果存疑 |
 
 共同架構性障礙（與方案無關）：
-- 分組目前在 **render 期同步計算**（`src/components/Screen.js` `computeAnnotations`，render 每次重算）。任何 AI 都是 async → 必須改為 settle 時預算＋per-article cache，AI 結果回來後觸發 re-render。架構改動不小。
+- 分組目前在 **render 期同步計算**（`src/components/Screen.jsx` `computeAnnotations`，render 每次重算）。任何 AI 都是 async → 必須改為 settle 時預算＋per-article cache，AI 結果回來後觸發 re-render。架構改動不小。
 - 每篇文章一次推論，長文 token 多、裝置端延遲秒級；使用者切三態按鈕時體感卡。
 - 不可用環境（手機、低配、非 Chrome）必須 fallback 純規則 → 永遠要維護兩套行為＋兩套測試，AI 路徑難以 unit 守護（輸出不定）。
 
@@ -36,19 +36,10 @@ recommendation: **暫緩**（旗標；重啟條件見文末）。現行純規則
 4. 結果 cache（key: 文章 AID 或 rowTexts hash），切三態/重render 不重推論。
 5. 測試：AI 層只能 e2e mock `LanguageModel` global 驗流程，語意品質不進 CI。
 
-## 結論
+## 結論與重啟條件
 
-- 純規則（就近段落）已修掉回報 case；殘餘誤判屬「無空行混排」少數文章，且 opt-in＋零遺失，風險低。
-- 重啟條件（任一）：(a) Prompt API 出現在 stable 且免大額下載（隨 Chrome 內建）、(b) 使用者再回報就近段落規則仍大量誤判的實例文章、(c) 專案已有其他功能引入裝置端模型（攤提架構成本）。
+純規則（就近段落）已修掉回報 case；殘餘誤判屬「無空行混排」少數文章，且 opt-in＋零遺失，風險低。
 
-## 附：推文合併排版 AI 評估（2026-07，同結論暫緩）
+**同一結論也適用「連續同作者推文合併」（`src/js/comment_merge.js`）的段落排版**（v1＝內容串接＋gap 斷行規則）：架構障礙同構（render 期同步計算），且語意增益更小——推文每則是作者**主動送出**的獨立單位，串接後自然換行已可讀，AI 只能猜「哪裡該斷行」，錯了反而破壞原意。
 
-「連續同作者推文合併」（`src/js/comment_merge.js`）的合併段落排版曾評估上裝置端 AI（語意重新斷行／
-分段）。結論同上：**暫緩、規則先行**（v1＝內容串接＋ `pre-wrap` 自然換行）。理由與本報告完全同構：
-
-- 架構障礙相同：分組在 render 期同步計算（`Screen#computeAnnotations`），AI async → settle 期預算
-  ＋per-article cache＋雙套 fallback，成本一樣大。
-- 語意增益更小：推文每則是作者**主動送出**的獨立單位（無自動換行訊號），串接後自然換行已可讀；
-  AI 只能猜「哪裡該斷行」，錯了反而破壞原意，且輸出不定無法 unit 守護。
-- 重啟條件**共用**上節 (a)(c)；(b) 對應版＝使用者回報串接排版明顯不可讀的實例文章。屆時架構照上節
-  「若未來做」：規則先出畫面、AI 只做二次校正、JSON schema 約束、結果 cache。
+重啟條件（任一）：(a) Prompt API 進 stable 且免大額下載（隨 Chrome 內建）、(b) 使用者回報現行規則仍大量誤判／排版不可讀的實例文章、(c) 專案已有其他功能引入裝置端模型（攤提架構成本）。

@@ -372,9 +372,10 @@ export const ContextMenu = ({ pttchrome }) => {
   const onLiveHelperChange = useCallback(
     (nextState) => {
       if (nextState.enabled) {
-        // cancel easy reading mode first — go through the single exit recipe so the
-        // React tree is unmounted too (the old useEasyReadingMode=false +
-        // switchToEasyReadingMode() pair skipped that → latent freeze, 坑 1).
+        // cancel easy reading mode first — always through the single exit entry point
+        // (exitEasyReading), never by flipping useEasyReadingMode by hand: the exit
+        // recipe also clears sendCommandAfterUpdate/pageLines and restores the overlay
+        // rows. Guarded by easy-reading.offline.spec.js「LiveHelper 启用 → 关好读单一出口」.
         pttchrome.easyReading.exitEasyReading();
         pttchrome.setAutoPushthreadUpdate(nextState.sec);
       } else {

@@ -4,7 +4,7 @@
 解決 `tests/e2e/*.spec.js` 依賴特定文章（過期就 `test.skip`、回歸失守）的問題。
 
 ## 為什麼不是單一靜態快照
-好讀模式是**互動式翻頁**：靠 `EasyReading._send('\x1b[6~')`（`src/js/easy_reading.js:82,318`）主動向 server 要下一頁，
+好讀模式是**互動式翻頁**：靠 `EasyReading._send('\x1b[6~')`（`src/js/easy_reading.js`）主動向 server 要下一頁，
 逐頁累進 `termBuf.pageLines`（`src/js/term_view.js accumulatePageLines` + `comment_parse.resolvePageOverlap` 去重：狀態列行號為主、`findPageOverlap` 內文為輔）。
 「第一則推文消失 / 樓號錯位」是跨頁累積產生 → 必須忠實重放逐頁節奏。
 
@@ -15,12 +15,12 @@
    └─ tests/unit/fixtures/replay/<name>.page.json → Layer2 vitest 純邏輯（node, 秒級）
 ```
 - **注入點**：stub `window.WebSocket`（不連網、吞 send）讓 app 離線 boot；把 cassette 每頁 recv 餵回
-  `App.onData`（`src/js/pttchrome.js:252`，= 真實 parser→termBuf→`<Screen>`）；以好讀自己送出的
+  `App.onData`（`src/js/pttchrome.jsx`，= 真實 parser→termBuf→`<Screen>`）；以好讀自己送出的
   `\x1b[6~`/`\x1b[4~` 當「放下一頁」門控。見 `tests/e2e/helpers/replay.js`。
 - **Layer1**：產出真實 DOM → 可跑現有全部斷言（翻頁回歸 / 樓層 / 黑名單 / pusher / 列表）。
 - **Layer2**：用 *真實* `resolvePageOverlap`（狀態列行號為主＋`findPageOverlap` 為輔）從「每頁文字快照」
   重建累積（鏡像 accumulatePageLines；快照末列即原始狀態列，可解析行號），純 node 守護去重 off-by-one
-  + 重複區塊 + FloorCounter + blacklist。見 `tests/unit/replay_fixture.test.js`。
+  + 重複區塊 + FloorCounter + blacklist。見 `tests/unit/replay_fixture.test.jsx`。
 
 ## 檔案格式
 cassette（`tests/e2e/cassettes/<name>.json`）：
@@ -54,7 +54,7 @@ $env:RECORD_BOARD="Stock"; $env:RECORD_NAME="stock-end"; yarn record:cassette
 $env:RECORD_ALLOW_LOGIN="1"; $env:RECORD_MODE="list"; $env:RECORD_BOARD="C_Chat"; $env:RECORD_NAME="cchat-list"; yarn record:cassette
 ```
 offline spec 遍歷所有 article cassette 逐卷守門；End 測試自動挑帶 'end' step 的那卷。
-- `record:cassette` = `cross-env RECORD_CASSETTE=1 playwright test --project=record`（無 RECORD_CASSETTE 會 skip）。
+- `record:cassette` = `RECORD_CASSETTE=1 playwright test --project=record`（無 RECORD_CASSETTE 會 skip；Yarn v4 portable shell 直接支援行內 env）。
 - 錄製器在 `tests/e2e/tools/record-cassette.spec.js`。
 - **憑證優先序**：`tests/e2e/.ptt-creds.json`（gitignored，`{"user","pass"}`）> env `RECORD_ALLOW_LOGIN=1` + env `PTT_USER`/`PTT_PASS` > 否則強制 guest。
 - 頁數上限在 hook 內吞掉超額 `\x1b[6~`（無 race：pageLines 停在已 flush 的頁），控制素材大小/重放時長。
@@ -106,7 +106,7 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 
 ## 踩坑
 - 必須先 `applyPrefs(enableEasyReading:true)` 寫 localStorage **再** `enterEasyReading()`，否則
-  `_onChanged` 讀到 pref off 會立刻 `exitEasyReading`（`easy_reading.js:182`）。
+  `easy_reading.js` 的 `_onChanged` 讀到 pref off 會立刻 `exitEasyReading`。
 - `installReplay()` 的 `addInitScript` 必須在 `page.goto` **之前**（覆寫 `window.WebSocket` 要早於 bundle）。
 - Layer2 重建要 `pageScreens[p].slice(0,-1)` 去掉狀態列（與 accumulatePageLines 一致）。
 - `getRowText(row,0,cols,pageLines)` 第 4 參傳 pageLines 才讀累積頁（不傳讀 24 列原生 buf）。
