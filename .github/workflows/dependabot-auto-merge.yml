@@ -4,9 +4,10 @@ name: Dependabot auto-merge
 # major 更新（semver-major）不碰，留給人手動 review —— 這樣只需關注大版本 PR。
 on: pull_request_target
 
+# GITHUB_TOKEN 只用來讀 metadata；merge 走 App token（見下方步驟註解）。
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
 
 jobs:
   auto-merge:
@@ -21,8 +22,28 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # 【務必用 App token，不可回頭用 GITHUB_TOKEN】
+      # GITHUB_TOKEN 做的寫入所產生的事件，GitHub 一律不再觸發新 workflow（防遞迴，
+      # 例外只有 workflow_dispatch / repository_dispatch）。用它 merge → 推上 dev 的 push
+      # 歸屬 github-actions[bot] → deploy.yml 的 on: push 靜默不跑，站台停在舊 commit
+      # （實例：PR #16 merge 成 19736fc，該 SHA 上只有 CodeQL 的 dynamic run，無 Deploy）。
+      # App installation token 是獨立 bot 身分而非 GITHUB_TOKEN，push 事件會正常觸發
+      # Deploy；且 token 每次現領、1 小時到期，沒有 PAT 需定期換發的問題。
+      # 需 repo secret：AUTOMERGE_APP_CLIENT_ID / AUTOMERGE_APP_PRIVATE_KEY（App 需
+      # Contents: write + Pull requests: write，並安裝到本 repo）。
+      - name: Mint GitHub App token
+        id: app-token
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.AUTOMERGE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
+
       # 只有 patch / minor 才開啟 auto-merge。--auto 會等必跑 check 通過後才合併，
       # 需 repo 已啟用 allow_auto_merge + 分支保護有 required checks（兩者皆已備）。
+      # 實際 merge 由 GitHub 事後代「登記者」執行，所以登記時用的 token 決定 merge 身分。
       - name: Enable auto-merge for minor/patch
         if: >-
           steps.meta.outputs.update-type == 'version-update:semver-patch' ||
@@ -30,4 +51,4 @@ jobs:
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
