@@ -7,22 +7,22 @@
     "@mantine/hooks": "^9",
     "classnames": "^2.5.1",
     "firebase": "^12.16.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.62.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@vitejs/plugin-react": "^6.0.3",
+    "@vitejs/plugin-react": "^6.0.4",
     "husky": "^9.0.0",
     "jsdom": "^29.1.1",
     "lint-staged": "^17.2.0",
-    "postcss": "^8.5.20",
+    "postcss": "^8.5.23",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
-    "prettier": "^3.9.5",
+    "prettier": "^3.9.6",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"
   },
