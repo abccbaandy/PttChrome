@@ -821,8 +821,8 @@ __metadata:
   linkType: hard
 
 "@mantine/core@npm:^9":
-  version: 9.4.1
-  resolution: "@mantine/core@npm:9.4.1"
+  version: 9.4.2
+  resolution: "@mantine/core@npm:9.4.2"
   dependencies:
     "@floating-ui/react": "npm:^0.27.19"
     clsx: "npm:^2.1.1"
@@ -830,19 +830,19 @@ __metadata:
     react-remove-scroll: "npm:^2.7.2"
     type-fest: "npm:^5.7.0"
   peerDependencies:
-    "@mantine/hooks": 9.4.1
+    "@mantine/hooks": 9.4.2
     react: ^19.2.0
     react-dom: ^19.2.0
-  checksum: 10c0/8aa77905e0bef7b634673a6bcbee058627cac4a6b7dc25f1d89e003718ef9f152519a5b606d85166060e0b2271b0371ff6777b2c6e0419d522591087c897feb5
+  checksum: 10c0/9ec599b68e6c611ea95c0a54c3d8bef97a8c87d6568d88a4c4b38a2c1b6d3744b6075c5a361d4b4bbb73eefff2331ea6d6770b75fd483b599653d3e8868b2a85
   languageName: node
   linkType: hard
 
 "@mantine/hooks@npm:^9":
-  version: 9.4.1
-  resolution: "@mantine/hooks@npm:9.4.1"
+  version: 9.4.2
+  resolution: "@mantine/hooks@npm:9.4.2"
   peerDependencies:
     react: ^19.2.0
-  checksum: 10c0/6b07258de2bed3aa62090e95f57095dbafcbdb293105ef4b46431dfb41c1cc56b5daaa279b440ffa9716d18cc3eeaaff8a73bedd52064f07d558ac831c92a1fc
+  checksum: 10c0/780c01be169ec6fecdb229f7e06a42dcee769b09a5158c7913677daf70336a0e643b857e70069d29a2c4a050f11b2ced2eb699483e4bd82651fc7e81e64e76ec
   languageName: node
   linkType: hard
 
@@ -865,14 +865,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@playwright/test@npm:^1.61.1":
-  version: 1.61.1
-  resolution: "@playwright/test@npm:1.61.1"
+"@playwright/test@npm:^1.62.0":
+  version: 1.62.0
+  resolution: "@playwright/test@npm:1.62.0"
   dependencies:
-    playwright: "npm:1.61.1"
+    playwright: "npm:1.62.0"
   bin:
     playwright: cli.js
-  checksum: 10c0/45004139eaa7c7ec8129e4ed77a9d734aa09ed40b69162b871e4123f1d70217b7b73651431a9343ed5090d5fed11c6df1bff2a56ff4b87dc7b0371b5da87cf9c
+  checksum: 10c0/1132666c5cc4955fb043d41447475b4947e6571bd390e1b7c9fdcc9381cb58563fa7f86509a4a61e572e9b0f7ff2d9d9027eb9ee8b1f24bea7423b52b4308436
   languageName: node
   linkType: hard
 
@@ -1163,9 +1163,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vitejs/plugin-react@npm:^6.0.3":
-  version: 6.0.3
-  resolution: "@vitejs/plugin-react@npm:6.0.3"
+"@vitejs/plugin-react@npm:^6.0.4":
+  version: 6.0.4
+  resolution: "@vitejs/plugin-react@npm:6.0.4"
   dependencies:
     "@rolldown/pluginutils": "npm:^1.0.1"
   peerDependencies:
@@ -1177,7 +1177,7 @@ __metadata:
       optional: true
     babel-plugin-react-compiler:
       optional: true
-  checksum: 10c0/592a93178c0eec420759d529a2c964a7103860808f549f72993b96a38c287c929a0d371cacbd932c37ee2118b830348db752cc01a31d688c71d19d74567251fa
+  checksum: 10c0/38446b54f51760b97d81abfa2fb9130bdc7a545183c97b26cfc7a5982fbcbeef431f482a3d44ef8225ca3e8c37e852a0843f8f84d0834391cab49b36a172dbf8
   languageName: node
   linkType: hard
 
@@ -2046,27 +2046,27 @@ __metadata:
   languageName: node
   linkType: hard
 
-"playwright-core@npm:1.61.1":
-  version: 1.61.1
-  resolution: "playwright-core@npm:1.61.1"
+"playwright-core@npm:1.62.0":
+  version: 1.62.0
+  resolution: "playwright-core@npm:1.62.0"
   bin:
     playwright-core: cli.js
-  checksum: 10c0/c28896ba82a602182e240ed4f9c467fb0dd9cb57d510f8aba9f25183fe1cde3a0105725a29baffa4157fe885bbb11e228032a2aad0424111584fde45303f07bd
+  checksum: 10c0/bc7c770cc4118a7ea65d2c357fc271aaef49af6b5b8964aa19d765d4ea3473e56af926f693123fd63ed6e580830059905722ac68fbf22a31a5b1533e11600228
   languageName: node
   linkType: hard
 
-"playwright@npm:1.61.1":
-  version: 1.61.1
-  resolution: "playwright@npm:1.61.1"
+"playwright@npm:1.62.0":
+  version: 1.62.0
+  resolution: "playwright@npm:1.62.0"
   dependencies:
     fsevents: "npm:2.3.2"
-    playwright-core: "npm:1.61.1"
+    playwright-core: "npm:1.62.0"
   dependenciesMeta:
     fsevents:
       optional: true
   bin:
     playwright: cli.js
-  checksum: 10c0/cea1bc4d2a64ec3ef683891606774029da7b8a8036ed98332565cec2f8e89549ca1fab9a89fbfba4e08e27e0d7e7d148031e965af66d5ff97bb3c34058cfcad0
+  checksum: 10c0/14d2d2c35e4ef88cf69d9e6c5bf351ff47fe9cd00da09da9f48da8aaf75ebdb266330c073cb217821785fb35d7e5d9d89789220b208329e4934aaaa43da260f3
   languageName: node
   linkType: hard
 
@@ -2148,23 +2148,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss@npm:^8.5.20":
-  version: 8.5.20
-  resolution: "postcss@npm:8.5.20"
+"postcss@npm:^8.5.23":
+  version: 8.5.23
+  resolution: "postcss@npm:8.5.23"
   dependencies:
     nanoid: "npm:^3.3.16"
     picocolors: "npm:^1.1.1"
     source-map-js: "npm:^1.2.1"
-  checksum: 10c0/9c7a0e32c77ac54c5613f974e6ccc97d4a70fdb3bf242617f3fb4d652e5c62a37c86c589e6e7a2d1e7120f80bc169cdf673482b88bd75020d2a44899fa569c13
+  checksum: 10c0/ed714e635b330bb42666ecdd0c0b4f30224ded15b0b0052d6bc2b92832f2cf17d1c1141359453f96f0a84f8fbf4c405a74df187f559163b8f31131b2535455aa
   languageName: node
   linkType: hard
 
-"prettier@npm:^3.9.5":
-  version: 3.9.5
-  resolution: "prettier@npm:3.9.5"
+"prettier@npm:^3.9.6":
+  version: 3.9.6
+  resolution: "prettier@npm:3.9.6"
   bin:
     prettier: bin/prettier.cjs
-  checksum: 10c0/0349dd9e6d8010965de6f69e6b6ee2484b8caf78c66675afced6c75ad60ff24c3a2a4f41153fb8adeaee4d8f539641b48cebc71d283cec4d146e9962126c5ceb
+  checksum: 10c0/9f7ddae234035868f3daab3dc34e6de7e54622185afb017378029f0c09a9c023248ccf6f34def0b17a0538e18c47aa1b3188bab72965d1bf735919baa0747e99
   languageName: node
   linkType: hard
 
@@ -2211,22 +2211,22 @@ __metadata:
   dependencies:
     "@mantine/core": "npm:^9"
     "@mantine/hooks": "npm:^9"
-    "@playwright/test": "npm:^1.61.1"
+    "@playwright/test": "npm:^1.62.0"
     "@testing-library/dom": "npm:^10.4.1"
     "@testing-library/jest-dom": "npm:^6.9.1"
     "@testing-library/react": "npm:^16.3.2"
-    "@vitejs/plugin-react": "npm:^6.0.3"
+    "@vitejs/plugin-react": "npm:^6.0.4"
     classnames: "npm:^2.5.1"
     firebase: "npm:^12.16.0"
     husky: "npm:^9.0.0"
     jsdom: "npm:^29.1.1"
     lint-staged: "npm:^17.2.0"
-    postcss: "npm:^8.5.20"
+    postcss: "npm:^8.5.23"
     postcss-preset-mantine: "npm:^1.18.0"
     postcss-simple-vars: "npm:^7.0.1"
-    prettier: "npm:^3.9.5"
-    react: "npm:^19.2.0"
-    react-dom: "npm:^19.2.0"
+    prettier: "npm:^3.9.6"
+    react: "npm:^19.2.8"
+    react-dom: "npm:^19.2.8"
     vite: "npm:^8.1.5"
     vitest: "npm:^4.1.10"
   languageName: unknown
@@ -2246,14 +2246,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-dom@npm:^19.2.0":
-  version: 19.2.7
-  resolution: "react-dom@npm:19.2.7"
+"react-dom@npm:^19.2.8":
+  version: 19.2.8
+  resolution: "react-dom@npm:19.2.8"
   dependencies:
     scheduler: "npm:^0.27.0"
   peerDependencies:
-    react: ^19.2.7
-  checksum: 10c0/970ff600f6e80d47d39e2f226f12f226173b3cba3382efc97c5f0cd663de9af38c7a4c11c213fb936094faeac83060d660247accaa96b752180d5b951b9cfecb
+    react: ^19.2.8
+  checksum: 10c0/41ba2247b76f687fcfe5bbc99f514d6b851d8c8041c2f5ded36ed05bd7fdc5208cacbac9de51e3e6633e77f96f44cec9f0d4a5a55184dba4e00738f224439134
   languageName: node
   linkType: hard
 
@@ -2325,10 +2325,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react@npm:^19.2.0":
-  version: 19.2.7
-  resolution: "react@npm:19.2.7"
-  checksum: 10c0/0bd0e2f1bbd4ba97561c6597bf8a5fec05e6476fe61e165c1065598d16668efc6715205599c94d3ddd49d36cb0f21cbf1b9bcc18ee840b805ce222c3e8d558ac
+"react@npm:^19.2.8":
+  version: 19.2.8
+  resolution: "react@npm:19.2.8"
+  checksum: 10c0/5f86bdb56426652fd6d989d30a6f2e603c057272c47c9ca3a3fbe190a3a39ee9ccce937d63cfc039717abed1b8891d6a499134bc35311acc07eafdacd86537cd
   languageName: node
   linkType: hard
 
