@@ -23,6 +23,7 @@
 | 一般圖片副檔名 jpg/png/gif/jpeg/webp/apng/avif/jfif/svg | ✅ 完整 | ⚠️ 僅 imgur 路徑＋`.webp`＋twimg | `<img>` |
 | 一般影片 mp4/webm/ogg | ✅ | ⚠️ 僅 imgur mp4 | `<video controls>` |
 | imgur 單圖 hash | ✅ 依副檔名(預設 .jpg) | ✅ 壞圖修復／查 `image/<hash>` API 判型別 | `i.imgur.com/<id>.<ext>` |
+| imgur **webp 優先**（見下節） | ❌ | ❌ | 本專案獨有 |
 | imgur gif→mp4（省流量） | ✅ option `imgurVideo` | ✅ 一律轉 | `<video>` |
 | imgur 相簿 `/a/`、`/gallery/` | ✅ | ✅ | 展開多圖 |
 | twitter `pbs.twimg.com/media` | ✅ `:orig`，png/large/原樣 fallback（`srcset`） | ✅ `?format=` 直連 | `<img>` |
@@ -31,9 +32,70 @@
 | twitch clips | ❌ | ✅ `clips.twitch.tv/embed?clip=…&parent=<host>` | `<iframe>` |
 | verb.tw | ❌（落一般圖片） | ✅ 特例 | `<img>` |
 
+## imgur 傳輸實測（CONFIRMED 2026-07-30；curl + 真 Chromium）
+
+素材：`i.imgur.com/ofT90A6.jpeg`（2712×1004, 267 KB）、`I7Thaeo.jpeg`（2380×896, 291 KB），
+出處 `www.ptt.cc/bbs/C_Chat/M.1785308048.A.4C4.html`。
+
+**referer 封鎖（CONFIRMED）** — 同一張圖併發 A/B：
+
+| Referer | 結果 |
+|---|---|
+| 無 / `http://localhost:8080/` | `200`, 266843 bytes |
+| `https://www.ptt.cc/bbs/…` | **`403`, 0 bytes** |
+| `https://term.ptt.cc/` | **`403`, 0 bytes** |
+
+→ `referrerPolicy="no-referrer"` 是**出圖的必要條件**，不可移除（守護測試
+`tests/unit/imgur_webp_resolver.test.jsx`「referrerPolicy 守護」）。403 只花 0.58s，
+故封鎖症狀是「不出圖」而非「慢」——**別把慢誤診成 referer 問題**。
+
+**原圖有 per-request 長尾（CONFIRMED）** — 真 Chromium、三個獨立快取 context、
+**同一瞬間**請求**同一 URL**：`806 / 785 / 803 ms`、`816 / 2539 / 8782 ms`、
+`766 / 792 / 767 ms`、`833 / 767 / 766 ms`。
+→ 「同時間 web 版快、BBS 版慢」在兩邊 code 完全相同時也會發生，**不足以推論 client 有 bug**。
+
+**`.webp` 衍生檔無長尾（CONFIRMED）** — 每輪全新 context 交叉測：
+
+| | 5 輪耗時 | 解析度 | 體積 |
+|---|---|---|---|
+| `.jpeg` | 783 / 788 / **9226** / **6513** / 764 ms | 2712×1004 | 267 KB |
+| `.webp` | 592 / 592 / 585 / 571 / 571 ms | 2712×1004（**相同**） | 54 KB（1/5） |
+
+→ 本專案採 **webp 優先 + 原副檔名 fallback**（`imgurImage()`，走既有 `srcset` 候選鏈）。
+**兩個第三方套件都沒有這個優化，別再從它們身上找加速手法。**
+
+**imgur 忽略 URL 副檔名（CONFIRMED，關鍵約束）** — 一律回儲存的原始格式：
+
+| URL | 實際回應 |
+|---|---|
+| `ofT90A6.png` / `.gif` / `.jpeg` | 全部 `image/jpeg` 266843 B |
+| `auVUJzV.jpg` / `.png` | 全部 `image/gif` 10850053 B（**完整動畫**） |
+
+唯一例外是 `.webp`——那是真正的轉檔衍生端點。推論：**URL 副檔名不是可靠的型別判準**，
+無副檔名時補的 `.jpg` 其實拿得到原檔。
+
+**動圖必須排除 webp（CONFIRMED）** — imgur 的 webp 對 gif 只回**靜態單幀**：
+`auVUJzV` gif 10.85 MB／完整動畫 → webp 27950 B／`VP8 static`／零 `ANMF` frame。
+且 `<img>` 會 **onload 成功** → FallbackImage 不會退回 → 動圖被靜音成一張圖。
+故 `imgurImage()` 只在副檔名**明確是 jpg/jpeg/png** 時才要 webp；未知（無副檔名，
+imgur 分享連結的預設形式）與 gif/gifv 一律維持原檔。守護測試見
+`tests/unit/imgur_webp_resolver.test.jsx`。
+
+**gif→mp4 不採用（CONFIRMED）** — `ptt-media-preview` `term.js#createImgurGif` 的做法。
+動畫與尺寸都保得住（gif 500×281 → mp4 500×280，H.264 偶數高度所致），體積 10.85 MB →
+1.12 MB，但 **imgur 的 mp4 衍生有嚴重長尾**：真瀏覽器 fetch 完整檔案 4 輪
+`1203 / 1162 / 66664 / 65195 ms`，而同一張 gif 原檔 4 輪穩定 `2271 / 2428 / 2437 / 2437 ms`。
+→ 改用 mp4 反而更差。三個素材 `auVUJzV` / `zalXDgv` / `rpNNbpw` 的 `.mp4` 都存在且可播
+（3.8～11.0s），但 curl 也量到 39.6s / 43.6s 的長尾，非單一素材問題。
+
+**驗證陷阱**：`.webp` 貼進**網址列**會 `302` 導到 `imgur.com/<id>.webp`（HTML 頁）→
+看起來像「打不開」。imgur 依 `Sec-Fetch-Dest` 分流：`document` → 302；`image`（即
+`<img src>`，我們的實際情境）→ `200 image/webp`。要驗證請用 DevTools console 的
+`new Image().src = …` 或真的放進 `<img>`。
+
 ## referer 規則（本專案已沿用，改動前先讀）
 
-- imgur 系一律 `referrerPolicy="no-referrer"`（否則被 referer 封鎖擋圖）。
+- imgur 系一律 `referrerPolicy="no-referrer"`（否則被 referer 封鎖擋圖，403 實證見上節）。
 - **`*.verb.tw` 例外：其圖床需要 referer**，不可加 no-referrer（本專案 `needsReferer()`）。
 - imgur 相簿 API 用多 client_id 隨機 + `fetch(mode:cors)` 規避單一 client_id 配額。
 - 純 in-page JS **無法 100% 自解** term 場景的 referer 問題（連線重用）；真要保險只有擴充的網路層攔截。
@@ -42,4 +104,4 @@
 
 - imgur-fix：`getUrlInfo`／`createEmbed`／`lazyLoader`／`initTerm`（`detectEasyReading` 監看 `#easyReadingLastRow` 的 `style.display`）／`beforescriptexecute`（攔掉 imgur 官方 embed.js）。
 - media-preview：`imgur.js#get`（多 client_id）、`term.js#getConfig`（讀 `pttchrome.pref.v1`）、`rules.json`／`background.js`（去 referer）。
-- 本專案：`src/components/ImagePreviewer.jsx`（`imageUrlResolvers` most-specific→generic、`resolveSrcToImageUrl` 回 media descriptor `{type:'image'|'video'|'iframe'|'album', src, srcset?, images?}`、`FallbackImage` 逐一試 srcset 候選）。
+- 本專案：`src/components/ImagePreviewer.jsx`（`imageUrlResolvers` most-specific→generic、`resolveSrcToImageUrl` 回 media descriptor `{type:'image'|'video'|'iframe'|'album', src, srcset?, images?}`、`FallbackImage` 逐一試 srcset 候選、`renderMedia()` 單一 descriptor→元素、`imgurImage()`／`imgurAlbumMedia()` webp 優先）。**`album` 的 `images` 是 descriptor 陣列（非 URL 字串）**，相簿內的圖因此也吃到 srcset 候選鏈。

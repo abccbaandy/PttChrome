@@ -11,6 +11,10 @@
     <meta name="viewport" content="user-scalable=no, width=device-width, initial-scale=1, maximum-scale=1">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 
+    <!-- 好讀模式自動開圖最常打 i.imgur.com；提前完成 DNS+TLS（實測 connect 約
+         150ms）。圖片本身不帶 credentials，故不加 crossorigin。 -->
+    <link rel="preconnect" href="https://i.imgur.com">
+
     <!--
       React/react-dom and every dependency are bundled by Vite (React 19
       dropped the UMD build); no runtime CDN <script> deps remain. UI components

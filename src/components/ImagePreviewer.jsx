@@ -33,7 +33,7 @@ export const requestPreview = (href) => {
 
 // resolveSrcToImageUrl turns a link into a *media descriptor*:
 //   { type: "image", src, srcset? } | { type: "video", src }
-//   | { type: "iframe", src }       | { type: "album", images: [url] }
+//   | { type: "iframe", src }       | { type: "album", images: [descriptor] }
 // `type` defaults to "image" when omitted (back-compat with bare { src }).
 export const resolveSrcToImageUrl = ({ src }) =>
   imageUrlResolvers.find((r) => r.test(src)).request(src);
@@ -320,24 +320,26 @@ const inlineVideo = (src, key) => <InlineVideo key={key} src={src} />;
 
 const inlineIframe = (src, key) => <InlineIframe key={key} src={src} />;
 
+// 單一 descriptor → 元素。相簿展開的每一項也走這裡，所以相簿內的圖自動吃到
+// srcset 候選鏈（如 imgur 的 webp 優先），不必在 album 分支複製一份判斷。
+const renderMedia = (descriptor, key) => {
+  switch (descriptor.type) {
+    case "video":
+      return inlineVideo(descriptor.src, key);
+    case "iframe":
+      return inlineIframe(descriptor.src, key);
+    default:
+      return inlineImage(descriptor, key);
+  }
+};
+
 ImagePreviewer.Inline = ({ value, error }) => {
   if (error) {
     return false;
   } else if (value) {
-    switch (value.type) {
-      case "video":
-        return inlineVideo(value.src, undefined);
-      case "iframe":
-        return inlineIframe(value.src, undefined);
-      case "album":
-        return value.images.map((url, i) =>
-          RE_VIDEO_EXT.test(url)
-            ? inlineVideo(url, i)
-            : inlineImage({ src: url }, i),
-        );
-      default:
-        return inlineImage(value, undefined);
-    }
+    return value.type === "album"
+      ? value.images.map(renderMedia)
+      : renderMedia(value, undefined);
   } else {
     return <LoadingOverlay />;
   }
@@ -354,6 +356,50 @@ const IMGUR_CLIENT_IDS = [
   "8683d4c3edf9f8f",
   "88f07b92270c5f2",
 ];
+
+// imgur 對同一 hash 另外提供 `.webp` 衍生檔：解析度與原圖完全相同、體積約 1/5，
+// 而且不像原圖那樣有 per-request 長尾（真 Chromium、獨立快取、同瞬間同 URL 實測
+// 0.8s / 2.5s / 8.8s；webp 則穩定 ~0.58s）。故靜態圖優先要 webp，原副檔名留作候選，
+// webp 不存在時由 FallbackImage 自動退回。數據與驗證方式見
+// docs/media-preview-addons.md。
+//
+// **動圖必須排除**：imgur 的 webp 衍生對 gif 只回**靜態單幀**（實測 auVUJzV：
+// gif 10.85 MB／完整動畫 → webp 27950 B／VP8 static、零 ANMF frame），而且 <img>
+// 會 onload 成功 → FallbackImage 不會退回，動圖直接被靜音成一張圖。
+//
+// 而且 **imgur 忽略 URL 副檔名**，一律回儲存的原始格式（實測 `auVUJzV.jpg` 與
+// `.png` 都回 image/gif 完整動畫；`ofT90A6.png`/`.gif` 都回 image/jpeg）。所以
+// URL 副檔名**不是**可靠的動圖判準——只有它明確寫著靜態格式時才敢要 webp；未知
+// （無副檔名，imgur 分享連結的預設形式）一律維持原檔，寧可放棄優化也不冒險。
+// gif→mp4（ptt-media-preview term.js 的做法）也不採用：動畫與尺寸雖然都保住，但
+// imgur 的 mp4 衍生有嚴重長尾（真瀏覽器實測 1.1 MB 花 65～67s），比直接載 10 MB
+// 的 gif（4/4 穩定 2.3s）更差。數據見 docs/media-preview-addons.md。
+const STATIC_IMGUR_EXT = new Set(["jpg", "jpeg", "png"]);
+
+// ext 可為 undefined（無副檔名）——那正是最危險的一類，必須與「明確寫著 .jpg」
+// 區分開來，不可在呼叫端先補預設值。
+const imgurImage = (id, ext) => {
+  const base = `https://i.imgur.com/${id}`;
+  if (!ext || !STATIC_IMGUR_EXT.has(ext)) {
+    return { type: "image", src: `${base}.${ext || "jpg"}` };
+  }
+  const candidates = [`${base}.webp`, `${base}.${ext}`];
+  return { type: "image", src: candidates[0], srcset: candidates };
+};
+
+// 相簿 API 回傳的 link 是原副檔名直連；轉成 descriptor 讓相簿內的圖也吃到 webp
+// 優先（相簿一次展開多張，最吃這個優化）。
+const imgurAlbumMedia = (link) => {
+  if (RE_VIDEO_EXT.test(link)) {
+    return { type: "video", src: link };
+  }
+  const m = RE_IMGUR_SINGLE.exec(link);
+  if (!m) {
+    return { type: "image", src: link };
+  }
+  const [, id, ext] = m;
+  return imgurImage(id, ext && ext.toLowerCase());
+};
 
 const resolveImgurAlbum = (hash) => {
   const clientId =
@@ -381,9 +427,9 @@ const imageUrlResolvers = [
     },
     request(src) {
       const hash = src.match(this.regex)[1];
-      return resolveImgurAlbum(hash).then((images) => ({
+      return resolveImgurAlbum(hash).then((links) => ({
         type: "album",
-        images,
+        images: links.map(imgurAlbumMedia),
       }));
     },
   },
@@ -395,12 +441,9 @@ const imageUrlResolvers = [
     },
     request(src) {
       const [, id, ext] = this.regex.exec(src);
-      let e = (ext || "jpg").toLowerCase();
+      let e = ext && ext.toLowerCase();
       if (e === "gifv") e = "gif";
-      return Promise.resolve({
-        type: "image",
-        src: `https://i.imgur.com/${id}.${e}`,
-      });
+      return Promise.resolve(imgurImage(id, e));
     },
   },
   {

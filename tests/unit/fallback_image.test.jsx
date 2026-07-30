@@ -79,6 +79,26 @@ describe("FallbackImage 載入失敗重試 + 可見錯誤態", () => {
     expect(img(container)).not.toBeNull();
   });
 
+  // imgur 的 webp 優先（見 imgur_webp_resolver.test.jsx）就是靠這條路徑保底：
+  // webp 衍生檔不存在時第一候選會 onError，必須自動退到原副檔名而不是顯示失敗。
+  test("第一候選用罄 → 換下一候選（webp 失敗退回原圖的保底路徑）", () => {
+    const A = "https://i.imgur.com/abc123.webp";
+    const B = "https://i.imgur.com/abc123.jpeg";
+    const { container } = render(
+      <Inline value={{ type: "image", src: A, srcset: [A, B] }} />,
+    );
+    expect(img(container).getAttribute("src")).toBe(A);
+
+    errorAndFlushBackoff(container); // retry 1（同候選）
+    errorAndFlushBackoff(container); // retry 2（同候選）
+    expect(img(container).getAttribute("src")).toBe(A);
+
+    fireEvent.error(img(container)); // 重試用罄 → 前進到下一候選
+    expect(img(container).getAttribute("src")).toBe(B);
+    expect(loading(container)).toBe(1); // 仍在讀取，不是失敗態
+    expect(errorBox(container)).toBeNull();
+  });
+
   test("載入成功 → 隱藏讀取動畫並顯示圖片", () => {
     const { container } = renderInline();
     fireEvent.load(img(container));
