@@ -8,6 +8,7 @@ import {
   RE_MEEE,
   flickrBase58Decode,
 } from "../js/image_url_detect";
+import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 
 const noop = () => {};
 
@@ -274,13 +275,57 @@ const FallbackImage = React.memo(function FallbackImage({
   );
 });
 
+// 播放器內建全螢幕進出後把影片捲回視野。
+//
+// 進全螢幕時 <video> 被提到全螢幕層、原位高度塌陷 → 內容總高驟減，捲動容器
+// （.main）的 scrollTop 被夾到新的 maxScroll；退出後高度回來，捲動位置卻停在被夾
+// 過的值 → 文章跳到很後面（與點圖放大/縮小同一類，見 16c5398）。
+// 退出當下已拿不到「進場前的相對位置」（進場那刻 layout 就變了，且原生全螢幕鈕
+// 攔不到 before），故不套 computeAnchoredScrollTop，改用可預期的還原：置中。
+// 量測一律 offsetTop/offsetHeight，不可用 getBoundingClientRect（座標系規則見
+// scroll_anchor.js 開頭）。
+const useFullscreenScrollRestore = (videoRef) => {
+  React.useEffect(() => {
+    const wasFullscreen = { current: false };
+    const onChange = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (document.fullscreenElement === v) {
+        wasFullscreen.current = true;
+        return;
+      }
+      // 別支影片/別的元素進出全螢幕時不得亂動捲動位置。
+      if (wasFullscreen.current !== true || document.fullscreenElement) return;
+      wasFullscreen.current = false;
+      const container = v.closest("#mainContainer");
+      const scroller = v.closest(".main");
+      if (!container || !scroller) return;
+      // 退出全螢幕的 layout 回復可能落在事件之後，下一幀再量才是還原後的值。
+      requestAnimationFrame(() => {
+        if (!v.isConnected) return;
+        scroller.scrollTop = computeCenteredScrollTop({
+          top: offsetTopWithin(v, container),
+          height: v.offsetHeight,
+          viewportHeight: scroller.clientHeight,
+          maxScroll: scroller.scrollHeight - scroller.clientHeight,
+        });
+      });
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, [videoRef]);
+};
+
 // <video>/<iframe> 內嵌：載入完成前疊 LoadingOverlay，避免網路慢時空白像壞掉。
 const InlineVideo = React.memo(function InlineVideo({ src }) {
   const [loaded, setLoaded] = React.useState(false);
+  const videoRef = React.useRef(null);
+  useFullscreenScrollRestore(videoRef);
   return (
     <React.Fragment>
       {!loaded && <LoadingOverlay />}
       <video
+        ref={videoRef}
         className="easyReadingVideo"
         src={src}
         controls
@@ -378,8 +423,15 @@ const STATIC_IMGUR_EXT = new Set(["jpg", "jpeg", "png"]);
 
 // ext 可為 undefined（無副檔名）——那正是最危險的一類，必須與「明確寫著 .jpg」
 // 區分開來，不可在呼叫端先補預設值。
-const imgurImage = (id, ext) => {
+const imgurMedia = (id, ext) => {
   const base = `https://i.imgur.com/${id}`;
+  // imgur 也託管影片直連（.mp4）。必須先於「圖片」判斷分流，否則會被塞進 <img>，
+  // 永遠 decode 失敗 → 顯示「圖片載入失敗，點擊重試」。相簿路徑本來就有這個分流，
+  // 單一連結漏掉（實例 i.imgur.com/8MYpXhr.mp4）。webm/ogg 衍生 imgur 不產（實測
+  // 同 hash .webm 回 404），故不改寫副檔名，原樣交給 <video>。
+  if (ext && RE_VIDEO_EXT.test(`.${ext}`)) {
+    return { type: "video", src: `${base}.${ext}` };
+  }
   if (!ext || !STATIC_IMGUR_EXT.has(ext)) {
     return { type: "image", src: `${base}.${ext || "jpg"}` };
   }
@@ -398,7 +450,7 @@ const imgurAlbumMedia = (link) => {
     return { type: "image", src: link };
   }
   const [, id, ext] = m;
-  return imgurImage(id, ext && ext.toLowerCase());
+  return imgurMedia(id, ext && ext.toLowerCase());
 };
 
 const resolveImgurAlbum = (hash) => {
@@ -443,7 +495,7 @@ const imageUrlResolvers = [
       const [, id, ext] = this.regex.exec(src);
       let e = ext && ext.toLowerCase();
       if (e === "gifv") e = "gif";
-      return Promise.resolve(imgurImage(id, e));
+      return Promise.resolve(imgurMedia(id, e));
     },
   },
   {

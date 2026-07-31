@@ -240,10 +240,24 @@ a:link,a:visited,a:active,a:hover {
   -webkit-user-select: none;
 }
 
+/* 自動開影片：尺寸上限比照 .easyReadingImg（19em/39em），**必須有 max-height**——
+   直式影片（如 480×854）在舊的固定 width:640px 下高度會撐到 1138px，遠超過視窗，
+   而影片不像圖片能靠捲動一段段看，播放控制列被推到畫面外就沒法操作。
+   width/height 留 auto（不寫死）讓瀏覽器依 intrinsic 比例縮放，避免 <video> 以
+   object-fit:contain 補黑邊。
+   尺規備註：img.hyperLinkPreview 有反向 scale 抵消 .main 的 transform（見
+   term_view.js updateReverseScaleCss），影片**沒有**，故 19em 在此隨 scaleY 一起
+   縮放 ≒ 視窗高的八成（19em×26px/(24 列×26px)），正是我們要的「不超出可視範圍」。 */
 .easyReadingVideo {
   margin: 0.5em auto;
-  width: 640px;
   display: block;
+  max-width: 39em;
+  max-height: 19em;
+}
+/* 圖左字右合併的左欄比 39em 窄時，比照 .easyReadingImg 以欄寬收斂
+   （mp4 連結同樣被 isImageLikeUrl 判為圖片列，會進到合併塊左欄）。 */
+.mergedImageCol .easyReadingVideo {
+  max-width: 100%;
 }
 
 .terminal_display {

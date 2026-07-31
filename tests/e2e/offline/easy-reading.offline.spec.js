@@ -247,6 +247,51 @@ test.describe('好读模式翻页（离线重放）', () => {
 // 好读 End→原生跳到底：需带 'end' step 的 article cassette（录制时 RECORD_END=1）。
 const endCassette = findCassettes('article').find((c) => c.steps.some((s) => s.on === 'end'));
 
+// REGRESSION: 好读自动开影片时，直式影片（如 480×854）在旧的固定 width:640px 下
+// 高度会撑到 1138px 远超视窗——图片超高还能上下卷着看，影片则连播放控制列都被推出
+// 画面，没法操作。修法：.easyReadingVideo 比照 .easyReadingImg 给 max-height/max-width
+// （src/css/main.css）。这里守真浏览器的真 layout：注入一个「刻意超高」的 video 替身
+// （不需真影片档，CSS 的 max-height 会压过 inline 的 height），量它的实际视觉高度。
+// 注意影片没有 img.hyperLinkPreview 那种反向 scale，视觉高度含 .main 的 transform，
+// 故用 getBoundingClientRect（视觉座标）与 window.innerHeight 比，而非 layout 座标。
+test.describe('好读内嵌影片尺寸（离线重放）', () => {
+  if (!articles.length) {
+    test.skip('尚无 article cassette；先 yarn record:cassette（guest 或帐密）', () => {});
+  }
+
+  test('影片不得超出可视范围（max-height 不可移除）', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, articles[0], { easyReading: true });
+
+    const r = await page.evaluate(() => {
+      const mc = document.getElementById('mainContainer');
+      if (!mc) return { skip: 'no #mainContainer' };
+      const v = document.createElement('video');
+      v.className = 'easyReadingVideo';
+      // 超高/超宽替身：若 CSS 的 max-* 不见了，rect 就会是这个夸张的值。
+      v.style.height = '5000px';
+      v.style.width = '5000px';
+      mc.appendChild(v);
+      const rect = v.getBoundingClientRect();
+      const out = {
+        h: rect.height,
+        w: rect.width,
+        winH: window.innerHeight,
+        winW: window.innerWidth,
+      };
+      v.remove();
+      return out;
+    });
+    test.skip(!!r.skip, r.skip || '');
+    console.log(`[video-size] rect=${Math.round(r.w)}x${Math.round(r.h)} win=${r.winW}x${r.winH}`);
+    expect(r.h).toBeGreaterThan(0);
+    expect(r.h).toBeLessThanOrEqual(r.winH);
+    expect(r.w).toBeLessThanOrEqual(r.winW);
+  });
+});
+
 test.describe('好读 End 切回原生（离线重放）', () => {
   test.skip(!endCassette, '尚无带 end step 的 cassette；录制时设 RECORD_END=1');
 

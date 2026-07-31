@@ -70,6 +70,34 @@ describe("imgur 單圖 resolver：webp 優先 + 原副檔名 fallback", () => {
   });
 });
 
+// 迴歸守護（真實回報：好讀模式自動開圖對 https://i.imgur.com/8MYpXhr.mp4 顯示
+// 「圖片載入失敗，點擊重試」）：imgur 單圖 resolver 排在通用影片 resolver 之前，
+// 影片直連被它吃掉後回 {type:"image"} → 塞進 <img> 永遠 decode 失敗。相簿路徑早就
+// 有影片分流，只有單一連結漏掉。
+describe("imgur 影片直連：必須產 video descriptor，不可當圖片載", () => {
+  test(".mp4 → video，不是 image", async () => {
+    expect(await resolve(`${B}/8MYpXhr.mp4`)).toEqual({
+      type: "video",
+      src: `${B}/8MYpXhr.mp4`,
+    });
+  });
+
+  test("無 i. 前綴的 imgur.com/<id>.mp4 也正規化到 i.imgur.com 並回 video", async () => {
+    expect(await resolve("https://imgur.com/abc123.mp4")).toEqual({
+      type: "video",
+      src: `${B}/abc123.mp4`,
+    });
+  });
+
+  // 症狀層：鎖「渲染成什麼元素」而非 descriptor 形狀。
+  test("渲染成 <video>，畫面上不得出現 <img>", async () => {
+    const value = await resolve(`${B}/8MYpXhr.mp4`);
+    const { container } = render(<ImagePreviewer.Inline value={value} />);
+    expect(container.querySelector("video")).not.toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+  });
+});
+
 describe("imgur 相簿：展開的每張圖也走 webp 優先", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

@@ -3,6 +3,7 @@
 // → 視窗落到文章更後面，被點的圖跑出視野（放大時往前偏，同源）。
 import {
   computeAnchoredScrollTop,
+  computeCenteredScrollTop,
   offsetTopWithin,
 } from "../../src/js/scroll_anchor";
 
@@ -100,6 +101,64 @@ describe("computeAnchoredScrollTop", () => {
     });
     expect(Number.isFinite(next)).toBe(true);
     expect(next).toBe(2500);
+  });
+});
+
+// 影片退出全螢幕後的還原（症狀：文章跳到很後面，剛看的影片不見了）。
+// 進全螢幕時 <video> 被提到全螢幕層、原位高度塌陷 → scrollTop 被夾到新的
+// maxScroll；退出後高度回來但捲動位置回不去。退出當下已無「之前的相對位置」
+// 可用（進場時 layout 就變了），故改用可預期的還原：把影片捲回視窗中央。
+describe("computeCenteredScrollTop", () => {
+  test("影片置中於視窗", () => {
+    expect(
+      computeCenteredScrollTop({
+        top: 3000,
+        height: 400,
+        viewportHeight: 800,
+        maxScroll: 9000,
+      }),
+    ).toBe(2800);
+  });
+
+  test("影片比視窗高 → 對齊影片頂端（不留負間距）", () => {
+    expect(
+      computeCenteredScrollTop({
+        top: 3000,
+        height: 1200,
+        viewportHeight: 800,
+        maxScroll: 9000,
+      }),
+    ).toBe(3000);
+  });
+
+  test("夾在 [0, maxScroll]", () => {
+    expect(
+      computeCenteredScrollTop({
+        top: 100,
+        height: 400,
+        viewportHeight: 800,
+        maxScroll: 9000,
+      }),
+    ).toBe(0);
+    expect(
+      computeCenteredScrollTop({
+        top: 8000,
+        height: 400,
+        viewportHeight: 800,
+        maxScroll: 5000,
+      }),
+    ).toBe(5000);
+  });
+
+  test("內容比視窗短（maxScroll <= 0）→ 0", () => {
+    expect(
+      computeCenteredScrollTop({
+        top: 300,
+        height: 100,
+        viewportHeight: 800,
+        maxScroll: -50,
+      }),
+    ).toBe(0);
   });
 });
 

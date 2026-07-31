@@ -33,6 +33,25 @@ export function computeAnchoredScrollTop({
   return Math.max(0, Math.min(next, limit));
 }
 
+// 把某元素捲回視窗中央的 scrollTop。
+//
+// 用於「內嵌影片退出全螢幕」：進全螢幕時 <video> 被提到全螢幕層、原位高度塌陷，
+// 內容總高驟減 → 瀏覽器把 scrollTop 夾到新的 maxScroll；退出後高度回來，捲動位置
+// 卻回不去（症狀：文章跳到很後面）。此時已無「進場前的相對位置」可用（進場那刻
+// layout 就變了，攔不到 before 值），故不套 computeAnchoredScrollTop，改用可預期的
+// 還原：剛看完的影片回到視窗中央。
+// 元素比視窗高時上緣對齊（間距不取負值），才不會把影片頂端推出視窗上方。
+export function computeCenteredScrollTop({
+  top,
+  height,
+  viewportHeight,
+  maxScroll,
+}) {
+  const next = top - Math.max(0, (viewportHeight - height) / 2);
+  const limit = maxScroll > 0 ? maxScroll : 0;
+  return Math.max(0, Math.min(next, limit));
+}
+
 // el 相對 ancestor 的 layout 頂端距離。
 // 兩端各自沿 offsetParent 鏈累加到頂後相減——相減法不要求 ancestor 落在 el 的
 // offsetParent 鏈上（#mainContainer 未設 position，鏈會直接跳過它到 body，單邊

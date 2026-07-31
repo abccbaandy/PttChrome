@@ -22,6 +22,7 @@
 |---|---|---|---|
 | 一般圖片副檔名 jpg/png/gif/jpeg/webp/apng/avif/jfif/svg | ✅ 完整 | ⚠️ 僅 imgur 路徑＋`.webp`＋twimg | `<img>` |
 | 一般影片 mp4/webm/ogg | ✅ | ⚠️ 僅 imgur mp4 | `<video controls>` |
+| imgur 單圖直連為 `.mp4`（`i.imgur.com/<id>.mp4`） | ✅ | ✅ | `<video controls>`（本專案：`imgurMedia()` 先分流，見下節） |
 | imgur 單圖 hash | ✅ 依副檔名(預設 .jpg) | ✅ 壞圖修復／查 `image/<hash>` API 判型別 | `i.imgur.com/<id>.<ext>` |
 | imgur **webp 優先**（見下節） | ❌ | ❌ | 本專案獨有 |
 | imgur gif→mp4（省流量） | ✅ option `imgurVideo` | ✅ 一律轉 | `<video>` |
@@ -61,7 +62,7 @@
 | `.jpeg` | 783 / 788 / **9226** / **6513** / 764 ms | 2712×1004 | 267 KB |
 | `.webp` | 592 / 592 / 585 / 571 / 571 ms | 2712×1004（**相同**） | 54 KB（1/5） |
 
-→ 本專案採 **webp 優先 + 原副檔名 fallback**（`imgurImage()`，走既有 `srcset` 候選鏈）。
+→ 本專案採 **webp 優先 + 原副檔名 fallback**（`imgurMedia()`，走既有 `srcset` 候選鏈）。
 **兩個第三方套件都沒有這個優化，別再從它們身上找加速手法。**
 
 **imgur 忽略 URL 副檔名（CONFIRMED，關鍵約束）** — 一律回儲存的原始格式：
@@ -77,7 +78,7 @@
 **動圖必須排除 webp（CONFIRMED）** — imgur 的 webp 對 gif 只回**靜態單幀**：
 `auVUJzV` gif 10.85 MB／完整動畫 → webp 27950 B／`VP8 static`／零 `ANMF` frame。
 且 `<img>` 會 **onload 成功** → FallbackImage 不會退回 → 動圖被靜音成一張圖。
-故 `imgurImage()` 只在副檔名**明確是 jpg/jpeg/png** 時才要 webp；未知（無副檔名，
+故 `imgurMedia()` 只在副檔名**明確是 jpg/jpeg/png** 時才要 webp；未知（無副檔名，
 imgur 分享連結的預設形式）與 gif/gifv 一律維持原檔。守護測試見
 `tests/unit/imgur_webp_resolver.test.jsx`。
 
@@ -97,6 +98,12 @@ imgur 分享連結的預設形式）與 gif/gifv 一律維持原檔。守護測�
 
 - imgur 系一律 `referrerPolicy="no-referrer"`（否則被 referer 封鎖擋圖，403 實證見上節）。
 - **`*.verb.tw` 例外：其圖床需要 referer**，不可加 no-referrer（本專案 `needsReferer()`）。
+- **影片無法比照辦理**：HTML 的 `video` 元素**不支援 `referrerpolicy` 屬性**，imgur 影片直連
+  只能吃文件層級的 referrer policy。實測（2026-07-31，`i.imgur.com/8MYpXhr.mp4`）本專案的部署
+  來源 `https://abccbaandy.github.io/` 與 dev 的 `http://localhost:8080/` 皆回 `206 video/mp4`，
+  只有 `https://term.ptt.cc/` 被擋 `403` → 現況不受影響。**不要**為此加文件層級
+  `meta name="referrer" content="no-referrer"`：會波及 reCAPTCHA Enterprise／Firebase 的
+  網域驗證（見 `docs/pref-sync-firestore.md`），風險大於收益。
 - imgur 相簿 API 用多 client_id 隨機 + `fetch(mode:cors)` 規避單一 client_id 配額。
 - 純 in-page JS **無法 100% 自解** term 場景的 referer 問題（連線重用）；真要保險只有擴充的網路層攔截。
 
@@ -104,4 +111,4 @@ imgur 分享連結的預設形式）與 gif/gifv 一律維持原檔。守護測�
 
 - imgur-fix：`getUrlInfo`／`createEmbed`／`lazyLoader`／`initTerm`（`detectEasyReading` 監看 `#easyReadingLastRow` 的 `style.display`）／`beforescriptexecute`（攔掉 imgur 官方 embed.js）。
 - media-preview：`imgur.js#get`（多 client_id）、`term.js#getConfig`（讀 `pttchrome.pref.v1`）、`rules.json`／`background.js`（去 referer）。
-- 本專案：`src/components/ImagePreviewer.jsx`（`imageUrlResolvers` most-specific→generic、`resolveSrcToImageUrl` 回 media descriptor `{type:'image'|'video'|'iframe'|'album', src, srcset?, images?}`、`FallbackImage` 逐一試 srcset 候選、`renderMedia()` 單一 descriptor→元素、`imgurImage()`／`imgurAlbumMedia()` webp 優先）。**`album` 的 `images` 是 descriptor 陣列（非 URL 字串）**，相簿內的圖因此也吃到 srcset 候選鏈。
+- 本專案：`src/components/ImagePreviewer.jsx`（`imageUrlResolvers` most-specific→generic、`resolveSrcToImageUrl` 回 media descriptor `{type:'image'|'video'|'iframe'|'album', src, srcset?, images?}`、`FallbackImage` 逐一試 srcset 候選、`renderMedia()` 單一 descriptor→元素、`imgurMedia()`／`imgurAlbumMedia()` 影片分流＋靜態圖 webp 優先）。**`album` 的 `images` 是 descriptor 陣列（非 URL 字串）**，相簿內的圖因此也吃到 srcset 候選鏈。
