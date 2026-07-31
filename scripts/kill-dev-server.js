@@ -18,26 +18,46 @@ function sh(cmd) {
   }
 }
 
-// 找出正在 listen PORT 的 PID 清單。
-function findListeningPids() {
+// 解析「正在 listen PORT 的 PID」清單（純函式，unit test 守護：
+// tests/unit/kill_dev_server_parse.test.js）。
+//   netstat 行範例（Windows）：
+//     TCP    0.0.0.0:8080    0.0.0.0:0    LISTENING    12345
+//     TCP    [::1]:8080      [::]:0       LISTENING    12345
+//   lsof（非 Windows，已加 -t -sTCP:LISTEN）：一行一個 PID。
+//
+// **本機位址一定要連 IPv6 一起看**：Vite 在 Windows 只綁 `[::1]:8080`，而
+// `netstat -ano -p tcp` 只列 IPv4 → 舊版在這裡回空清單，`yarn kill:dev` 靜默
+// 沒殺到任何東西（腳本一律 exit 0，連錯誤都不會冒出來）。故改用不帶 `-p` 的
+// `netstat -ano`（IPv4+IPv6 全列），並在這裡自行篩 TCP/LISTENING。
+function parseListeningPids(out, port, { lsof = false } = {}) {
   const pids = new Set();
-  if (isWin) {
-    // netstat 行範例： TCP    0.0.0.0:8080    0.0.0.0:0    LISTENING    12345
-    const out = sh('netstat -ano -p tcp');
-    for (const line of out.split(/\r?\n/)) {
-      if (!/LISTENING/i.test(line)) continue;
-      if (!new RegExp(`[:.]${PORT}\\b`).test(line)) continue;
-      const m = line.trim().split(/\s+/);
-      const pid = m[m.length - 1];
-      if (/^\d+$/.test(pid) && pid !== '0') pids.add(pid);
+  for (const raw of String(out).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (lsof) {
+      if (/^\d+$/.test(line)) pids.add(line);
+      continue;
     }
-  } else {
-    const out = sh(`lsof -ti tcp:${PORT} -sTCP:LISTEN`);
-    for (const pid of out.split(/\r?\n/)) {
-      if (/^\d+$/.test(pid)) pids.add(pid);
-    }
+    if (!/^TCP\b/i.test(line)) continue;
+    if (!/\bLISTENING\b/i.test(line)) continue;
+    const cols = line.split(/\s+/);
+    // 本機位址（cols[1]）的埠必須正好是 port——用整行比對會誤中遠端位址與
+    // 「18080 / 80800」這種相鄰數字。
+    const local = cols[1] || '';
+    if (local.slice(local.lastIndexOf(':') + 1) !== String(port)) continue;
+    const pid = cols[cols.length - 1];
+    if (/^\d+$/.test(pid) && pid !== '0') pids.add(pid);
   }
   return [...pids];
+}
+
+// 找出正在 listen PORT 的 PID 清單。
+function findListeningPids() {
+  return isWin
+    ? parseListeningPids(sh('netstat -ano'), PORT)
+    : parseListeningPids(sh(`lsof -ti tcp:${PORT} -sTCP:LISTEN`), PORT, {
+        lsof: true,
+      });
 }
 
 // 驗 PID 是否為 node 跑 vite 的進程。回傳 true 才砍。
@@ -80,5 +100,10 @@ function main() {
   }
 }
 
-main();
-process.exit(0);
+// 被 require（unit test 取用 parseListeningPids）時不可自己跑起來、更不可 exit。
+if (require.main === module) {
+  main();
+  process.exit(0);
+}
+
+module.exports = { parseListeningPids };

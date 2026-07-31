@@ -27,3 +27,7 @@ dist/*
 
 .idea/
 3rd_script/
+
+# Claude Code hook 的旗標檔（本 session 是否啟動過 dev server；見 .claude/settings.json）
+.claude/.dev-server-running
+.claude/settings.local.json

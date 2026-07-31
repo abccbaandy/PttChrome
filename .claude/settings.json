@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "grep -qE '(yarn|npm|pnpm) start|\\bvite\\b' && touch \"$CLAUDE_PROJECT_DIR/.claude/.dev-server-running\"; true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"$CLAUDE_PROJECT_DIR/.claude/.dev-server-running\"; if [ -f \"$f\" ]; then rm -f \"$f\"; node \"$CLAUDE_PROJECT_DIR/scripts/kill-dev-server.js\"; fi; true",
+            "statusMessage": "清理殘留 dev server"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"$CLAUDE_PROJECT_DIR/.claude/.dev-server-running\"; rm -f \"$f\"; node \"$CLAUDE_PROJECT_DIR/scripts/kill-dev-server.js\"; true"
+          }
+        ]
+      }
+    ]
+  }
+}

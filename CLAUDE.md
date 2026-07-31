@@ -6,6 +6,8 @@ Vite 8（Rolldown 核心）+ React19（bundled）。React plugin 用 `@vitejs/pl
 
 ## 跑起來（踩雷點，務必照做）
 - 啟動 dev server：`yarn start` → http://localhost:8080（= `vite`）
+  - **收工前務必關掉**（`yarn kill:dev`）。`.claude/settings.json` 已掛 hook 自動收：Bash/PowerShell 跑到 `yarn start`/`vite` 時記旗標檔 `.claude/.dev-server-running`，Stop／SessionEnd 時才殺——**只殺 Claude 自己開的**，不動使用者手動開的 server。
+  - 踩坑：Windows 上 vite 只綁 **IPv6** `[::1]:8080`，舊版 `kill-dev-server.js` 用 `netstat -ano -p tcp`（僅列 IPv4）→ 抓不到 PID、腳本又一律 exit 0 → `yarn kill:dev` **靜默沒殺到**。已改用不帶 `-p` 的 `netstat -ano` 自行篩（純函式守護 `tests/unit/kill_dev_server_parse.test.js`）。
   - 用 **Node**（≥20.19，建議 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
   - 套件管理用 **yarn**（Yarn v4，`node-modules` linker，設定於 `.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。**勿用 npm**（會產生多餘 `package-lock.json`）。CI 安裝用 `yarn install --immutable`。Yarn v4 不跑自訂 `pre*`/`post*` script；build 產物清理由 Vite `emptyOutDir` 處理（無 `clean` script）。Yarn v4 script 是 portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數（`record:cassette` 用此，勿再引入 cross-env）。
 - dev server 內建 `/bbs` WebSocket proxy，改寫 Origin→term.ptt.cc，直連 `wss://ws.ptt.cc/bbs`。開頁即自動連真 PTT，**不需任何中繼**。
@@ -38,6 +40,8 @@ Vite 8（Rolldown 核心）+ React19（bundled）。React plugin 用 `@vitejs/pl
   失敗自動截圖/錄影 + console dump。helper：`tests/e2e/helpers/ptt.js`。細節見 `tests/e2e/README.md`。
   - **Playwright 升版後（含 Dependabot bump）本機必跑 `yarn playwright install chromium`**：新版綁新 browser binary，
     沒裝會整批 e2e 秒掛（症狀：`browserType.launch: Executable doesn't exist`），與被測 code 無關。CI 每次都重裝所以不受影響。
+    - 更早一步的症狀：`yarn test:e2e*` 直接 `command not found: playwright`＝**本機 node_modules 落後 lockfile**
+      （Dependabot 升版後沒重裝）。修法 `yarn install --immutable` → `yarn playwright install chromium`，不是 script 壞了。
 - **強制規範：改到渲染/畫面這類易壞 code，提交前必跑 e2e**（`yarn test:e2e`，至少 `easy-reading.spec.js`+`enhance.spec.js`）。
   適用 `term_view.js`、`term_ui.jsx`、`src/components/**`、`easy_reading.js`、`pttchrome.jsx` 渲染/切換路徑、`term_buf.js` 渲染相關等。
   理由：unit（jsdom + testing-library）仍**不跑真瀏覽器/真 WebSocket/完整 boot 鏈**，捕捉不到「一進文章即炸」這類 runtime 崩潰
