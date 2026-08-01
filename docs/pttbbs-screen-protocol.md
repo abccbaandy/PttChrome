@@ -5,22 +5,56 @@
 
 **研究方法規範（強制）**：PTT 行為邏輯**一律先讀 `3rd_script/pttbbs` 原始碼**找出真實實作，**禁止**自行猜測或從錄製素材/畫面觀察反推規則——素材只用來**驗證**對 code 的理解是否有誤。反例教訓：last-read 高亮曾從實錄反推成「作者亮白＋標題紅的單列游標」模型，連修三版仍殘紅；讀 `readdoent` 十分鐘即知是 title-match 多列高亮＋作者亮白其實是 isonline（見 §10）。
 
+## 0. 版本對齊（先做，否則比對的是別的版本）
+
+線上「系統資訊」畫面的欄位語意（`mbbsd/cal.c#p_sysinfo` ＋ `util/newvers.sh`）：
+
+| 顯示欄位 | 變數 | 產生方式 |
+|---|---|---|
+| `https://github.com/ptt/pttbbs.git` | `build_remote` | `git config --get remote.origin.url` |
+| 第 1 個 hash（如 `c1ff72df`） | `build_origin` | `git rev-parse --short origin/master`＝**build 機上的 upstream master** |
+| 第 2 個 hash（如 `50372909`） | `build_hash` | `git rev-parse --short HEAD`＝PTT **私有** commit（不在公開 repo） |
+| 尾綴 `M` | 同上 | `git diff --quiet` 失敗＝working tree 有未提交改動 |
+| `編譯時間` | `build_time` | `date` |
+
+⇒ **可公開對照的基準是第 1 個 hash（`build_origin`）**，不是第 2 個。比對前先
+`cd 3rd_script/pttbbs && git checkout <build_origin>`；`3rd_script/` 在 `.gitignore`、非 submodule，checkout 不影響主 repo。
+
+**wire 上的 ANSI ≠ source 的字面 escape**：PTT 編 `pfterm`（`mbbsd/Makefile` 的 `USE_PFTERM` 分支，
+非 `screen.c`）。pfterm 把畫面存成 attribute 陣列，輸出時由 `mbbsd/pfterm.c#fterm_chattr`
+**重新產生**最短序列，格式固定為 `ESC [ [0;] [1;] [5;] [3<fg>;] [4<bg>] m`：`0` 只在
+「bold/blink 由開轉關」或「fg/bg 回到預設」時出現，且 `FTCONF_WORKAROUND_BOLD` 會在
+fg＝預設(7) 時強制補印 `37`。⇒ 比對 client 的 ANSI regex 時必須先過這層，不能直接拿
+source 裡的 `ANSI_COLOR(...)` 字面。實例見 §9 水球。
+
 ## 1. 輸出層機制
 
-- 虛擬螢幕 buffer + 每列 dirty 追蹤（`mbbsd/screen.c` 頂部 `big_picture`，每列 mode/smod/emod/len/oldlen）。
-- `refresh()` → `doupdate()`：**只送 dirty lines**（各列 `rel_move` 到 smod 起點、輸出 smod..emod、oldlen>len 時 `o_cleol`）；結尾**必** `rel_move(→cur_col,cur_ln)` 把終端游標移到確定 park 位置，再 `oflush()`（screen.c `doupdate` 尾段）。
-- clear 家族：`clear()`(screen.c:419) 清虛擬螢幕＋設 docls → 下次 refresh 走 `redrawwin()`(:240) 全屏重繪；`clrtoeol()`(:434) 截當列；`clrtobot()`(:505) 清游標以下全部列。
-- 滾動 |scrollcnt| ≥ t_lines-3 也退化成全屏重繪（doupdate 開頭）。
+**PTT 編的是 `pfterm.c`，不是 `screen.c`**（`mbbsd/Makefile`：`.if $(USE_PFTERM) OBJS+=pfterm.o .else OBJS+=screen.o`）。
+兩者介面相同（`refresh`/`doupdate`/`clear`/`clrtoeol`/`redrawwin`…），本節依賴的不變量**在兩者皆成立**，
+差別只在 dirty 粒度與 ANSI 產生方式：
+
+| | `screen.c`（舊） | `pfterm.c`（PTT 實跑） |
+|---|---|---|
+| 虛擬螢幕 | `big_picture`，每列 mode/smod/emod/len/oldlen | `FTCMAP`(字元)/`FTAMAP`(attr) 雙緩衝 + `FTD[]` dirty map |
+| dirty 粒度 | **每列**一段連續區間 smod..emod | **每 cell**（可跳著送；實錄 `ESC[24;39H` 直接跳欄補印即此） |
+| ANSI attribute | ESC 原樣寫進 buffer、原樣送出 | 存成 attr、輸出時由 `fterm_chattr` **重新產生**（見 §0） |
+| 清到行尾 | `oldlen>len` → `o_cleol` | `derase` → `fterm_rawclreol()` |
+| 結尾游標 | `rel_move(→cur_col,cur_ln)` + `oflush()` | `fterm_rawcursor()` → `fterm_rawmove_opt(ft.y,ft.x)` + `fterm_rawflush()` |
+
+- `refresh()` → `doupdate()`：**只送 dirty 的部分**；結尾**必**把終端游標移到確定 park 位置再 flush（兩者皆是）。
+- clear 家族：`clear()` 清虛擬螢幕 → 下次 refresh 全屏重繪；`clrtoeol()` 截當列；`clrtobot()` 清游標以下全部列。
+  `redrawwin()` 在 pfterm ＝ flippage + clrscr + `fterm_rawclear()` + markdirty。
+- 滾動 |scrollcnt| ≥ t_lines-3 也退化成全屏重繪（screen.c doupdate 開頭；pfterm 有對應的 scroll 最佳化）。
 
 ## 2. 時序不變量 → client 三推論
 
 | 不變量 | 出處 |
 |---|---|
-| 等待輸入前必 refresh：`dogetch()` 在 `while(輸入buffer空)` 內先 `refresh()` 再 select | `mbbsd/io.c:416,422` |
-| `oflush()` 每次 refresh 結尾必執行；正常情況一次 `write` | screen.c doupdate 尾、`common/sys/vbuf.c` `vbuf_write` |
-| **typeahead 跳繪**：client 還有按鍵在途（輸入 buffer 非空）→ refresh **直接 return 不畫** | `mbbsd/screen.c:15,290-298,310` |
-| 輸出 buffer 3072 bytes，快滿即中途 flush | `mbbsd/io.c:6(OBUFSIZE),139` |
-| `Ctrl-L` 是全域熱鍵：`redrawwin()+refresh()` 強制全屏重繪 | `mbbsd/io.c:530-532`（igetch 內） |
+| 等待輸入前必 refresh：`dogetch()` 在 `while(輸入buffer空)` 內先 `refresh()` 再 select | `mbbsd/io.c#dogetch` |
+| flush 每次 refresh 結尾必執行；正常情況一次 `write` | pfterm `doupdate` 尾 `fterm_rawflush`／screen.c `oflush`、`common/sys/vbuf.c` |
+| **typeahead 跳繪**：client 還有按鍵在途（輸入 buffer 非空）→ refresh **直接 return 不畫** | `mbbsd/pfterm.c#refresh`：`if (ft.typeahead && fterm_typeahead()) return;`（screen.c 同義） |
+| 輸出 buffer 3072 bytes，快滿即中途 flush | `mbbsd/io.c`（OBUFSIZE） |
+| `Ctrl-L` 是全域熱鍵：`redrawwin()+refresh()` 強制全屏重繪 | `mbbsd/io.c#igetch` switch |
 
 推論（client 端設計依據）：
 1. **一鍵一回應**：送一鍵收到的輸出＝恰一次完整畫面更新，結尾游標 park 位置確定。BBS 可當 request/response 協定用。
@@ -33,16 +67,29 @@
 
 | row | 內容 | 出處 |
 |---|---|---|
-| 0 | `showtitle()` 反白標題：板主/活動看板名/`看板《NAME》` | `mbbsd/menu.c:92`；由 `readtitle()` 呼叫 `mbbsd/bbs.c:577` |
-| 1 | 固定提示列 `[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明` | `mbbsd/bbs.c:578` |
-| 2 | 反白表頭 `   編號    日 期 作 者       文  章  標  題`＋右端 `人氣:N`（vbarf ANSI_REVERSE；cassette 實測 30;47） | `mbbsd/bbs.c:594` |
-| 3..rows-2 | entry 列，每頁 `headers_size = p_lines` 筆（24 列＝20 筆） | `mbbsd/read.c`（PARTUPDATE 內 realloc）、游標列算式 `3 + n - top`（read.c:183-185） |
-| rows-1 | feeter 反白 ` 文章選讀 `＋`(y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面`（RMAIL 則為 ` 郵件選讀 `） | `mbbsd/read.c:1226,1229` `vs_footer` |
+| 0 | `showtitle()` 反白標題：`【title】` 從 col 0 起，右端 `看板/系列/文摘《NAME》`（`title_tail_msgs[]`＝`看板`/`系列`/`文摘`，依 MODE_SELECT/MODE_DIGEST 決定） | `mbbsd/menu.c#showtitle`；由 `readtitle()` 呼叫 `mbbsd/bbs.c` |
+| 1 | 固定提示列 `[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明` | `mbbsd/bbs.c` |
+| 2 | 反白表頭 `   編號    <日 期|價 格> 作  者       文  章  標  題`＋右端 `人氣:N`（vbarf ANSI_REVERSE；cassette 實測 30;47）。日期欄字樣依 LISTMODE 變動 ⇒ **只認「編號」最穩** | `mbbsd/bbs.c` vbarf |
+| 3..rows-2 | entry 列，每頁 `headers_size = p_lines` 筆（24 列＝20 筆） | `mbbsd/read.c`（PARTUPDATE 內 realloc）、游標列算式 `3 + n - top`（`cursor_pos`） |
+| rows-1 | feeter 反白 ` 文章選讀 `＋` (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面`；**RMAIL 是 ` 鴻雁往返 `＋` (R/y)回信 (x)站內轉寄 (d/D)刪信 (^P)寄發新信 \t(←/q)離開`**（不是「郵件選讀」） | `mbbsd/read.c` READ_REDRAW 的 `vs_footer` |
 
-entry 列欄位（`readdoent`，`mbbsd/bbs.c:641-840`）：
-- 序號欄 `%7d`（bbs.c:788）；**置底文**序號欄改為黃色 `★`（Big5 `A1B9`，bbs.c:777-782）。
-- 游標欄：`STR_CURSOR ">"` / `STR_CURSOR2 "●"`（`include/common.h:233-234`）。全形 `●` 蓋序號最高位（client 已知坑：截斷序號）。
-- 之後推文數（著色 2 字）、日期或金額、作者 `%-13.12s`、標題。
+entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推出的 0-indexed 螢幕欄位：
+
+| cols | 來源 | 內容 |
+|---|---|---|
+| 0-6 | `prints("%7d", num)` | 序號；**置底文**改印 `"  " ANSI "  ★ "`＝同寬 7 cells（★ 在 cols 4-5） |
+| 7 | 字面 `" "` | |
+| 8 | `"%c"` type | ` `/`+`/`~`/`*`/`#`/`m`/`M`/`=`/`!`/`s`/`S`/`D` |
+| 9-10 | `ESC "[0;1;3%4.4s"` 的**後 2 字** | 推文數（`爆`/`XX`/數字；前 2 字被吃進 ANSI 序列） |
+| 11-16 | `prints("%-6.5s", ent->date)`（`IS_LISTING_MONEY` 則 `" ---- "`／`"%5d "`） | 日期／金額 |
+| 17-29 | `prints("%-13.12s", ent->owner)` | 作者（內容 ≤12 字 ⇒ 切片用 [17,29)；col 29 恆為 padding） |
+| 30-31 | `outs(mark)` | `□`/`R:`/`轉`/`鎖`/`ˇ`（2 cells） |
+| 32 | `outc(' ')` | |
+| 33- | title | `w = t_columns - 34` |
+
+- 游標欄：`STR_CURSOR ">"` / `STR_CURSOR2 "●"`（`include/common.h`）。全形 `●` 蓋 cols 0-1＝序號的前導空格＋最高位（client 已知坑：截斷序號）。
+- 刪除文 `iscorpse = (owner[0]=='-' && owner[1]==0)` ⇒ 作者欄是單一 `-`。
+- client 對應常數：`comment_parse.js` 的 `LIST_AUTHOR_COL_START=17` / `LIST_AUTHOR_COL_END=29`（owner 內容 end-exclusive）／`LIST_TITLE_COL_START=30`（mark 起點）。**兩者差一格 padding，別混用**。
 - **置底文只出現在板尾頁**：`get_records_and_bottom`（`mbbsd/read.c` ~1052）當 `n >= headers_size` **或 `MODE_SELECT|MODE_DIGEST`** 走純 `get_records` 不含置底。⇒ 非板尾頁、`/` 篩選清單、文摘模式**必無**置底列。
 
 ## 4. burst 特徵（一次按鍵回應動了哪些列）
@@ -95,9 +142,15 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c:641-840`）：
 
 ## 9. 水球/廣播指紋（T4 非請自來，CONFIRMED）
 
-- 路徑：SIGUSR2 → `write_request`（`mbbsd/mbbsd.c:493`）→ `show_call_in`（:392）→ `outmsg`（`mbbsd/kaede.c:128`）＝ `move(b_lines - msg_occupied, 0); clrtoeol(); outs(msg)`。
-- 格式：`ESC[1;33;46m ◆userid ESC[37;45m 訊息內容 ESC[0m`（水球）；廣播/aloha 同走 outmsg 家族。
-- **client 指紋**：無 in-flight ∧ 非使用者觸發的 settle，髒列集合 ⊆ {底列}（msg_occupied>0 時上移一列），且該列以反白 `◆`（Big5 `A1BB` 系）帶 `1;33;46`/`37;45` 色起頭。dogetch 等待中即時觸發（`io.c:460`），可出現在任何畫面。
+- 路徑：SIGUSR2 → `write_request`（`mbbsd/mbbsd.c`）→ `show_call_in` → `outmsg`（`mbbsd/kaede.c`）＝ `move(b_lines - msg_occupied, 0); clrtoeol(); outs(msg)`。
+- source 字面（`show_call_in`）：
+  - 一般 `ANSI_COLOR(1;33;46) "★%s" ANSI_COLOR(37;45) " %s " ANSI_RESET`
+  - PLAY_ANGEL（MSGMODE_TOANGEL）`ANSI_COLOR(1;37;46) "★%s" …`（同結構）
+  - **字元是 `★`（Big5 `A1B9`）不是 `◆`** — 舊版本檔寫成 ◆ 是錯的；`string_util.js#parseWaterball` 用 ★ 才是對的。
+- **wire 上的實際 byte**（經 §0 的 pfterm 重寫）：`ESC[1;33;46m★userid` `ESC[0;1;37;45m 訊息 ESC[m`。
+  第二段之所以是 `0;1;37;45` 而非 source 的 `37;45`：fg 回到預設 7 觸發 `fterm_chattr` 的 reset，
+  再由 `FTCONF_WORKAROUND_BOLD` 補印 `37`。尾端的 `ESC[K` 只有新訊息比前一則**短**時才會送 ⇒ 不可當必要條件。
+- **client 指紋**：無 in-flight ∧ 非使用者觸發的 settle，髒列集合 ⊆ {底列}（msg_occupied>0 時上移一列），且該列以反白 `★` 帶 `1;33;46`／`1;37;46` 色起頭。dogetch 等待中即時觸發（`io.c`），可出現在任何畫面。
 
 ## 10. last-read 高亮（readdoent title-match，CONFIRMED）
 
@@ -108,8 +161,33 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c:641-840`）：
 - **作者欄亮色與 last-read 無關**：`isonline`（作者在線上）→ 作者名 `ANSI_COLOR(1)` 亮（bbs.c:815-823；lightbar 使用者旗標則 36 青）。
 - client 對應：`src/js/list_session.js` `_lastReadTitle`／`subjectOfListRow`／`paintLastReadListRow`；不變量見 `docs/easy-reading-list.md` #16。
 
-## 11. 版本與未知
+## 11. client parser ↔ 官方格式字串對照（2026-08 全面反查，CONFIRMED）
 
-- 以 HEAD 讀碼；term.ptt.cc 實跑版本未知但此區域程式碼古老穩定。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。
+`src/js/` 這批「讀畫面文字反推狀態」的 parser，逐條對 `c1ff72df` 驗過。回歸守護在
+`tests/unit/string_util.test.js`（每個 case 註明出處）、`comment_parse.test.js`、
+`auto_login_logic.test.js`、`easy_reading_logic.test.js`。
+
+| client | 官方出處 | 契約 |
+|---|---|---|
+| `parseStatusRow` | `pmore.c#mf_display_footer` ＋ `more.c#common_pmore_footer_handler` | part1 `"  瀏覽 第 %1d[/%1d] 頁 (%3d%%) "`（頁碼**無位數上限**，實錄已見 540/540）；part2 `" 目前顯示: 第 %02d~%02d 行"`／**`" 顯示範圍: %d~%d 欄位, %02d~%02d 行"`（`mf.xpos>0` 左右捲動）**；part3 五種變體（含 RMAIL 的 `(y)回信`）。`bpref.oldstatusbar` 的 `"  瀏覽 P.%d(%d%%)  "` 目前**不支援**（非預設） |
+| `parseListRow` | `menu.c#show_status` | `"[%d/%d 星期XX %d:%02d]"` ＋ `"%-14s"`（today_is，**緊接 `]` 無空格**）＋ `" 線上%d人, 我是%s"` ＋ `"\t[呼叫器]%s "`；呼叫器狀態 5 種＝`var.c#str_pager_modes`：關閉／打開／拔掉／防水／好友 |
+| `parseWaterball` | `mbbsd.c#show_call_in` | 見 §9 |
+| `parseReplyText` | `bbs.c#reply_post`（三種互斥分支）＋`more.c`／`edit.c` | `▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] `／**`▲ 回應至 (F)看板 (Q)取消？[F] `（無寄信權限）**／`▲ 無法回應至看板。 改回應至 (M)作者信箱 (Q)取消？[Q] `／`把這篇文章收入到暫存檔？[y/N] `／`請選擇暫存檔 (0-9)[0]: ` |
+| `parsePushInitText` | `bbs.c#recommend`／`angel.c` | `您覺得這篇文章 `；`FormatCommentString` 的輸入 prompt「→ id:」**無行尾時間戳** |
+| `parseReqNotMetText` | `bbs.c` `vmsgf("未達看板發文限制: %s")`＋`vtuikit.c#vshowmsg` | vmsg 前綴 `VMSG_MSG_PREFIX " ◆ "`；右側浮動 `VMSG_MSG_FLOAT " [按任意鍵繼續]"` |
+| `comment_parse.COMMENT_RE` | `comments.c#FormatCommentString`＋`common/bbs/names.c#is_validuserid` | `<attr><推/噓/→><空格>ESC[33m<id>ESC[m:<msg 補到 maxlength>ESC[m<tail>`；id 長度 **2..IDLEN(12)**、首 isalpha 其餘 isalnum；`BRD_ALIGNEDCMT` 時 id 以 `%-*s` 補到 12 寬（故 `:` 前可有空格）；tail＝`[%15s ]MM/DD HH:MM`（`Cdate_mdHM` ＝ `"%m/%d %H:%M"`，IP 僅 `BRD_IPLOGRECMD`／guest） |
+| `comment_parse` 列表欄位 | `bbs.c#readdoent` | 見 §3 欄位表 |
+| `auto_login` | `mbbsd.c` 登入迴圈＋`include/common.h` | prompt `請輸入代號，或以 guest 參觀，或以 new 註冊: `(DOECHO)／`MSG_PASSWD "請輸入您的密碼: "`(NOECHO)／`您想刪除其他重複登入的連線嗎？[Y/n] `(LCECHO)／`您要刪除以上錯誤嘗試的記錄嗎? [Y/n] `(`vans`→`vgets`，**都要 `\r`**)。失敗出口＝`ERR_PASSWD "密碼不對喔！…"`、`ERR_UID "這裡沒有這個人啦！"`（`is_validuserid` 失敗，**不會再問密碼**）、`抱歉，此帳號已設定為只能使用安全連線(如ssh)登入。` |
+| `easy_reading.reachedPageEnd` | `pmore.c` FOOTER1 配色 | VIEWALL `ANSI_COLOR(37;44)`＝fg7/bg4（＝看完）；VIEWNONE `33;45`；一般 `34;46` |
+| `term_buf.isTextWrappedRow` | `pmore.c` `MFDISP_WRAP_INDICATOR ANSI_COLOR(0;1;37) "\\"` | 80 欄下 `maxcol = 77`（`dispw = DBCS_HEADERWIDTH(79) = 78`）⇒ indicator 落在 **col 78**（ASCII 斷行）或 **col 77**（DBCS 跨界被回退擦掉 lead byte）；顏色 fg7/bright/bg0。TRUNC 用 `>`、WNAV 用 `<`，不可混 |
+| `term_buf.setPageState` | `vtuikit.h`／`edit.c`／`angel.c` | `VMSG_PAUSE " 請按任意鍵繼續 "`；`請按 空白鍵 繼續`＝`angel.c` 的新手提示；編輯器底列＝`vs_footer(" 編輯文章 ", " (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開\t…")`（「編輯文章」後**兩個空格**） |
+| `term_keyboard` | `common/sys/vtkbd.c`＋`include/vtkbd.h` | `ESC[A/B/C/D`→`KEY_UP+(c-'A')`；`ESC[1~`→HOME、`ESC[2~`→INS、`ESC[3~/4~/5~/6~`→`KEY_DEL+(c-'3')`＝DEL/END/PGUP/PGDN（`vtkbd.h` 註明 "must follow vt220 ordering"）。全部對上 |
+| `aid_parse` | `mbbsd/aids.c#aidu2aidc` | 字母表 `0-9A-Za-z-_`（64 字），產出**恆 8 字**；反向 `aidc2aidu` 不限長度但畫面上只會出現產生端形式 |
+| `symbol_table.js` | — | **不適用**：是 client 端 Unicode→顯示寬度分類表（1/2＝強制全形、3＝壞 DBCS），與 server 邏輯無關 |
+
+## 12. 版本與未知
+
+- 以 §0 的 `build_origin`（`c1ff72df`）讀碼；PTT 實跑的是私有 commit `50372909`，差異不可見。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。
 - unknown：ws.ptt.cc 的 WS proxy 是否保留 server write 邊界（proxy 不在本 repo）。
+- unknown：私有 commit 與 upstream 的實際差異。已知線索一則——水球第二段顏色（§9）推得線上應為 `ANSI_COLOR(1;37;45)`，upstream 字面是 `ANSI_COLOR(37;45)`；推文列 `:` 與內容間的一格空白同樣是 upstream 字面（`":%-*s"`）沒有、實錄有 ⇒ client 兩種都收。
 - 大字型 term（rows≠24）：`p_lines`/`b_lines` 相對式全部成立，但 client 端規則需寫成 rows-relative；未實測。

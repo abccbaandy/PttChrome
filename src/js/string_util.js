@@ -18,6 +18,7 @@ export function unescapeStr(it) {
 
     if (curChar == '\\' && (nextChar == '\\' || nextChar == '^')) {
       result += nextChar;
+      i++; // 逸出對是兩個字元，第二個不可再被當成獨立字元處理
     } else if (curChar == '^') {
       if ('@' <= nextChar && nextChar <= '_') {
         var code = it.charCodeAt(i+1) - 64;
@@ -123,8 +124,16 @@ export function normalizeCopyText(it) {
     .replace(/ +\r/g, '\r');
 };
 
+// 好讀模式必須讓位給原生的 prompt。官方 mbbsd/bbs.c#reply_post 依權限走三種
+// **互斥**分支（缺一條就有一群使用者的「y 回應」不會讓位）：
+//   !CheckPostRestriction         → "▲ 無法回應至看板。 改回應至 (M)作者信箱 (Q)取消？[Q] "
+//   !HasSendMailUserPerm          → "▲ 回應至 (F)看板 (Q)取消？[F] "
+//   else                          → "▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] "
+// 另兩條：mbbsd/more.c 的收暫存檔、mbbsd/edit.c 的選暫存檔。
+// 一律 prefix 比對（官方字串尾端有空格，這裡不寫進來以免多一層假設）。
 export function parseReplyText(it) {
   return (it.indexOf('▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] ') === 0 ||
+      it.indexOf('▲ 回應至 (F)看板 (Q)取消？[F] ') === 0 ||
       it.indexOf('▲ 無法回應至看板。 改回應至 (M)作者信箱 (Q)取消？[Q]') === 0 ||
       it.indexOf('把這篇文章收入到暫存檔？[y/N]') === 0 ||
       it.indexOf('請選擇暫存檔 (0-9)[0]:') === 0);
@@ -151,9 +160,26 @@ export function parseReqNotMetText(it) {
   return (it.indexOf(' ◆ 未達看板發文限制:') === 0);
 };
 
+// pmore 底部狀態列＝「這頁是文章」的決定性指紋（pageState 3 / classifyListScreen
+// 'article' 都靠它）。官方 mbbsd/pmore.c#mf_display_footer 三段拼接：
+//
+//   part1 SUMMARY  "  瀏覽 第 %1d/%1d 頁 (%3d%%) "   allpages >= 0
+//                  "  瀏覽 第 %1d 頁 (%3d%%) "        allpages <  0（總頁未知）
+//   part2 DETAIL   " 目前顯示: 第 %02d~%02d 行"                mf.xpos == 0
+//                  " 顯示範圍: %d~%d 欄位, %02d~%02d 行"       mf.xpos >  0（左右捲動中）
+//   part3 HELP     mbbsd/more.c#common_pmore_footer_handler 依剩餘寬度五選一：
+//                  "(y)回信 (h)說明 (←/q)離開 "（RMAIL）/ "(y)回應(X%)推文(h)說明(←)離開 "
+//                  / "(y)回應(X/%)推文 (←)離開 " / "(h)說明 (←/q)離開 " / "(←q)離開 "
+//
+// part1 尾 1 空格 ＋ part2 首 1 空格 ⇒ 「%)」與 part2 之間恰 2 空格。
+// 頁碼/百分比用 %1d/%3d，**沒有位數上限**（實錄 stock-end 已見 540/540），所以
+// 不可寫成 \d{1,3}。part2 兩個分支的行號欄位形狀相同（" S~E 行"），共用同一組
+// capture；「顯示範圍」分支若不支援，使用者一按 `.`/`>` 右捲長行就掉出文章判定。
+const STATUS_ROW_RE =
+  /  瀏覽 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  (?:目前顯示: 第|顯示範圍: \d+~\d+ 欄位,) 0*(\d+)~0*(\d+) 行 *(?:\(y\)(?:回應|回信) *)?(?:\(X\/?%\)推文 *)?(?:\(h\)說明 *)? *\(←\/?q?\)離開 /;
+
 export function parseStatusRow(str) {
-  var regex = new RegExp(/  瀏覽 第 (\d{1,3})(?:\/(\d{1,3}))? 頁 *\( *(\d{1,3})%\)  目前顯示: 第 0*(\d+)~0*(\d+) 行 *(?:\(y\)回應)?(?:\(X\/?%\)推文)?(?:\(h\)說明)? *\(←\/?q?\)離開 /g);
-  var result = regex.exec(str);
+  var result = STATUS_ROW_RE.exec(str);
 
   if (result && result.length === 6) {
     return {
@@ -168,19 +194,56 @@ export function parseStatusRow(str) {
   return null;
 };
 
+// 選單畫面底部狀態列＝ MENU 指紋（term_buf.setPageState / classifyListScreen）。
+// 官方 mbbsd/menu.c#show_status，經 vbarf（\t 之後靠右對齊）組出：
+//   "[%d/%d 星期%c%c %d:%02d]" "%-14s" " 線上" "%d" "人, 我是" "%s" "\t[呼叫器]" "%s "
+// 兩個必須照著寫的細節：
+//  1. 「]」後**緊接** SHM->today_is（%-14s 左對齊）——不保證有空格，舊版寫成
+//     "\] " 會在 today_is 首字非空白時整條失配。
+//  2. 呼叫器狀態取自 mbbsd/var.c#str_pager_modes[PAGER_MODES]，共五種；舊版只認
+//     前兩種，使用者設成拔掉／防水／好友時主選單就認不出來（離板交易的 expect
+//     永不完成 → 卡住）。
+const PAGER_MODES = ['關閉', '打開', '拔掉', '防水', '好友']; // str_pager_modes
+const LIST_ROW_RE = new RegExp(
+  /\[\d{1,2}\/\d{1,2} +星期. +\d{1,2}:\d{2}\].* 線上\d+人, 我是\w+ +\[呼叫器\]/.source +
+  '(?:' + PAGER_MODES.join('|') + ') '
+);
+
 export function parseListRow(str) {
-  var regex = new RegExp(/\[\d{1,2}\/\d{1,2} +星期. +\d{1,2}:\d{1,2}\] .+ 線上\d+人, 我是\w+ +\[呼叫器\](?:關閉|打開) /g);
-  return regex.test(str);
+  return LIST_ROW_RE.test(str);
 };
 
+// \u6c34\u7403\uff0f\u5ee3\u64ad\u3002\u5403\u7684\u662f b2u(\u539f\u59cb WS bytes)\uff08pttchrome.jsx\uff09\uff0c\u4e0d\u662f\u6e32\u67d3\u5f8c\u7684\u756b\u9762\u3002
+// \u5b98\u65b9 mbbsd/mbbsd.c#show_call_in \u2192 mbbsd/kaede.c#outmsg\uff1a
+//   \u4e00\u822c        ANSI_COLOR(1;33;46) "\u2605%s" ANSI_COLOR(37;45) " %s " ANSI_RESET
+//   PLAY_ANGEL  ANSI_COLOR(1;37;46) "\u2605%s" ANSI_COLOR(37;45) " %s " ANSI_RESET
+//
+// **\u91cd\u8981\uff1awire \u4e0a\u7684 ANSI \u4e0d\u662f source \u7684\u5b57\u9762\u5e8f\u5217\u3002** PTT \u7528 pfterm\uff08mbbsd/Makefile
+// \u7684 USE_PFTERM \u5206\u652f\u7de8 pfterm.o\uff09\uff0c\u5b83\u628a\u756b\u9762\u5b58\u6210 attribute \u9663\u5217\uff0c\u8f38\u51fa\u6642\u7531
+// mbbsd/pfterm.c#fterm_chattr **\u91cd\u65b0\u7522\u751f**\u6700\u77ed\u5e8f\u5217\uff0c\u683c\u5f0f\u56fa\u5b9a\u70ba
+//   ESC "[" [0;] [1;] [5;] [3<fg>;] [4<bg>] "m"
+// \u5176\u4e2d "0" \u53ea\u5728\u300cbold/blink \u7531\u958b\u8f49\u95dc\u300d\u6216\u300cfg/bg \u8b8a\u56de\u9810\u8a2d\u300d\u6642\u51fa\u73fe\uff0c\u4e14
+// FTCONF_WORKAROUND_BOLD \u6703\u5728 fg==\u9810\u8a2d(7) \u6642\u5f37\u5236\u88dc\u5370 "37"\u3002
+// \u64da\u6b64\u63a8\u5c0e\u672c\u5217\uff1a\u9810\u8a2d attr \u2192 1;33;46 \u5f97 ESC[1;33;46m\uff08bold 0\u21921\u3001fg 3\u3001bg 6\uff09\uff1b
+// \u63a5\u8457\u5207\u5230 bold+fg7+bg5 \u6642\uff0c\u56e0 fg \u56de\u5230\u9810\u8a2d\u503c\u800c\u89f8\u767c reset\uff0c\u5f97 ESC[0;1;37;45m
+// \u2014\u2014 \u6b63\u662f\u7dda\u4e0a\u5be6\u969b\u89c0\u5bdf\u5230\u7684\u5e8f\u5217\u3002
+// \u76f8\u5c0d\u820a\u7248\u653e\u5bec\u4e09\u8655\uff1a
+//   - \u958b\u982d 1;33;46\uff08\u4e00\u822c\uff09\uff0f1;37;46\uff08\u5c0f\u5929\u4f7f\uff09
+//   - \u4e2d\u6bb5\u6536 "37;45"\uff08upstream \u5b57\u9762\uff09\u8207 "0;1;37;45"\uff08\u7dda\u4e0a pfterm \u7522\u7269\uff09\u5169\u7a2e
+//   - \u5c3e\u7aef ESC "[K"\uff08\u6e05\u5230\u884c\u5c3e\uff09\u53ea\u6709\u65b0\u8a0a\u606f\u6bd4\u524d\u4e00\u5247\u77ed\u6642\u624d\u6703\u9001\uff0c\u820a\u7248\u5f37\u5236\u8981\u6c42\u5b83
+//     \u2192 \u8a0a\u606f\u8b8a\u9577\u7684\u90a3\u4e00\u5247\u6574\u500b\u6f0f\u6293
+const WATERBALL_RE =
+  /\x1b\[1;3[37];46m\u2605(\w+)\x1b\[(?:0;1;)?37;45m (.+?) \x1b\[m/;
+// \u5ee3\u64ad\uff0f\u7cfb\u7d71\u8a0a\u606f\uff1adoupdate \u7684 rel_move \u5148\u628a\u6e38\u6a19\u5b9a\u4f4d\u5230\u5e95\u5217\u518d\u4e0a\u8272\u3002
+const BROADCAST_RE =
+  /\x1b\[24;\d{2}H\x1b\[1;37;45m([^\x1b]+)(?:\x1b\[24;18H)?\x1b\[m/;
+
 export function parseWaterball(str) {
-  var regex = new RegExp(/\x1b\[1;33;46m\u2605(\w+)\x1b\[0;1;37;45m (.+) \x1b\[m\x1b\[K/g);
-  var result = regex.exec(str);
+  var result = WATERBALL_RE.exec(str);
   if (result && result.length == 3) {
     return { userId: result[1], message: result[2] };
   } else {
-    regex = new RegExp(/\x1b\[24;\d{2}H\x1b\[1;37;45m([^\x1b]+)(?:\x1b\[24;18H)?\x1b\[m/g);
-    result = regex.exec(str);
+    result = BROADCAST_RE.exec(str);
     if (result && result.length == 2) {
       return { message: result[1] };
     }

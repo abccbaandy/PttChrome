@@ -135,8 +135,36 @@ describe("AutoLogin._tick prompt → response", () => {
     expect(al.__sent).toEqual([]);
   });
 
-  test("wrong credentials → stops without retrying (avoids lockout loops)", () => {
-    const al = makeLogin({ _sentPass: true, __screen: "密碼或代號錯誤，請檢查" });
+  // 官方 include/common.h：
+  //   ERR_PASSWD "密碼不對喔！請檢查帳號及密碼大小寫有無輸入錯誤。"
+  //   ERR_UID    "這裡沒有這個人啦！"
+  // 這兩條都必須讓 AutoLogin 收手（避免重試觸發帳號鎖定／空轉到 timeout）。
+  // 舊版寫的「密碼或代號錯誤」「無法登入」在官方 source 裡**不存在**。
+  test("ERR_PASSWD 全文 → stops without retrying (avoids lockout loops)", () => {
+    const al = makeLogin({
+      _sentPass: true,
+      __screen: "密碼不對喔！請檢查帳號及密碼大小寫有無輸入錯誤。"
+    });
+    al._tick();
+    expect(al.__stopped).toBe(true);
+    expect(al.__sent).toEqual([]);
+  });
+
+  // mbbsd.c 登入迴圈：is_validuserid(uid) 失敗 → outs(err_uid) 後 continue，
+  // **不會**再問密碼 → 沒有這條就一路空轉到 timeout。
+  test("ERR_UID（帳號格式不合法，不會再問密碼）→ stops", () => {
+    const al = makeLogin({ _sentUser: true, __screen: "這裡沒有這個人啦！" });
+    al._tick();
+    expect(al.__stopped).toBe(true);
+    expect(al.__sent).toEqual([]);
+  });
+
+  // passwd_require_secure_connection：同樣 continue 回帳號輸入，不問密碼。
+  test("只能使用安全連線 → stops", () => {
+    const al = makeLogin({
+      _sentUser: true,
+      __screen: "抱歉，此帳號已設定為只能使用安全連線(如ssh)登入。"
+    });
     al._tick();
     expect(al.__stopped).toBe(true);
     expect(al.__sent).toEqual([]);

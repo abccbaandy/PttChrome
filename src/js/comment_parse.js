@@ -66,8 +66,12 @@ export function rowToText(chars) {
 //     non-comment here and take no floor — matches BePTT's terminal numbering.
 //   Regression: tests/unit/comment_parse.test.js "official cross-validation" + fixtures
 //   IpComment_M.1621089154.txt / Forward_M.1644506392.txt.
+//   - id 長度上限 — common/bbs/names.c#is_validuserid：長度 2..IDLEN、首字 isalpha、
+//     其餘 isalnum；include/pttstruct.h `#define IDLEN 12`（fileheader_t.owner 也只有
+//     IDLEN+1 bytes）。所以 id 恰是 [A-Za-z][0-9A-Za-z]{1,11}；沒有上限時，內文裡
+//     更長的 "推 xxxxxxxxxxxxxx: …" 假冒行會被當成真推文而多吃一個樓層。
 const COMMENT_RE = new RegExp(
-  /^(推|噓|→)\s+([A-Za-z][0-9A-Za-z]+)\s*:.*/.source + COMMENT_TIME_RE.source
+  /^(推|噓|→)\s+([A-Za-z][0-9A-Za-z]{1,11})\s*:.*/.source + COMMENT_TIME_RE.source
 );
 
 // The user id starts at col 3: the 推/噓/→ marker is a 2-col DBCS char (cols 0-1)
@@ -151,16 +155,31 @@ export function parseArticleBoard(text) {
   return m ? m[1] : null;
 }
 
-// Board list author column. Calibrated against live PTT (C_Chat, 2026-06), e.g.:
-//   " 352960 + 4 6/05 HarunoYukino R: ..."
-//   "  ^0          ^12 ^17(author, 12 wide)"
-// The id column starts at 17 (after "index pushcount M/DD ") and the author field
-// is 12 chars wide. Fail-safe: if the extracted text is not a plain userid we
+// Board list column map — 逐欄對 mbbsd/bbs.c#readdoent 的 printf 序列推出來的
+// （pttbbs @ c1ff72df；先前是 live 校準值，現已與官方 source 對上）：
+//
+//   cols  來源                                              內容
+//   0-6   prints("%7d", num)                                序號（置底文改印
+//                                                           "  " ANSI "  ★ " ＝同寬 7 cells）
+//   7     printf 字面 " "                                    空格
+//   8     "%c" type                                         ' '/'+'/'~'/'*'/'#'/'m'/'M'/'='/'!'/'s'/'S'/'D'
+//   9-10  ESC "[0;1;3%4.4s" 的後 2 字                        推文數（"爆"/"XX"/數字，前 2 字被吃進 ANSI）
+//   11-16 prints("%-6.5s", ent->date)（或 IS_LISTING_MONEY   日期 " 6/05" / 金額
+//         的 " ---- " / "%5d "）
+//   17-29 prints("%-13.12s", ent->owner)                    作者（≤12 字 + ≥1 格 padding）
+//   30-31 outs(mark)                                        □ / R: / 轉 / 鎖 / ˇ（2 cells）
+//   32    outc(' ')
+//   33-   title                                             標題（w = t_columns - 34）
+//
+// LIST_AUTHOR_COL_END(29) 是 **owner 內容**（%.12s）的 end-exclusive，用來切作者字串；
+// 標題區起點是 LIST_TITLE_COL_START(30)，兩者差一格 padding —— 別混用。
+// Fail-safe: if the extracted text is not a plain userid we
 // return null and the row is NOT hidden, so we never hide a legitimate post by
 // mistake. The cursor row (●) and pinned rows (★) carry a leading full-width char
 // that shifts the columns; realignListColumns below compensates for it.
 export const LIST_AUTHOR_COL_START = 17;
 export const LIST_AUTHOR_COL_END = 29;
+export const LIST_TITLE_COL_START = 30;
 const USERID_RE = /^[0-9A-Za-z]+$/;
 
 // The keyboard-cursor row in the board list carries a full-width cursor bullet (●)
@@ -215,11 +234,12 @@ export function parseListTitleRaw(text) {
 }
 
 // Which quick-blacklist region a screen column falls in on a board-list row.
-// Columns are fixed screen cells (see parseListAuthor calibration): author field
-// [17, 29), title region 29+. Anything left of the author field (seq/push/date)
-// is neither.
+// Columns are fixed screen cells (欄位表見上方 readdoent 對照)：作者欄 %-13.12s
+// 佔 [17, 30)、標題區（mark 起）從 30。col 29 是作者欄自己的 padding 格，屬
+// author —— 舊版用 LIST_AUTHOR_COL_END(29) 當標題起點，點在該格會誤判成 title。
+// Anything left of the author field (seq/push/date) is neither.
 export function listColRegion(col) {
-  if (col >= LIST_AUTHOR_COL_END) return 'title';
+  if (col >= LIST_TITLE_COL_START) return 'title';
   if (col >= LIST_AUTHOR_COL_START) return 'author';
   return null;
 }

@@ -12,7 +12,7 @@
 
 1. **協定無規格**。唯一介面是 80×24 字元流；何時「回應結束」、哪幾列會髒、游標停哪，pttbbs 沒有合約，只能逆向原始碼＋錄影帶實錄（`docs/pttbbs-screen-protocol.md`）。每條沒逆向到的行為＝上線後一輪修復。
 2. **settle 判定**。server 寫入是增量、可黏包（OBUFSIZE 3072 拆包＋WS proxy 邊界 unknown），「畫面到齊」只能靠 50ms 靜默窗推定；本地導覽約 30ms 一幀重繪與之交錯，gating 沒切乾淨就 settle 餓死（不變量 2b）。
-3. **typeahead 跳繪**。pttbbs 在輸入 buffer 非空時直接跳過重繪（`mbbsd/screen.c`）⇒ 機器送鍵必須全序列化（CommandQueue 單 in-flight）。這是 v3 的 source 級死因。
+3. **typeahead 跳繪**。pttbbs 在輸入 buffer 非空時直接跳過重繪（PTT 編的是 `mbbsd/pfterm.c#refresh`，非 screen.c；兩者同義）⇒ 機器送鍵必須全序列化（CommandQueue 單 in-flight）。這是 v3 的 source 級死因。
 4. **隱藏列改變幾何**。隱藏 N 列後 24 行視窗要用其他頁的列補滿 → 必須超前抓頁＋自己算視窗，還要在 server 真游標與本地假游標間往返對位（`●` 污染列 bug 一族全源於此）。
 5. **狀態爆炸**。原生單態 vs「5 狀態 × 3 渲染模式 × 佇列 in-flight × 預讀鏈態」，每個交互組合都是可能漏掉的格子。
 6. **驗收標準無界**。若承諾「與原生無可感知差異」，QA 面就是 **PTT 的全部互動面**（`/` 搜尋、`Z`、精華區、水球、動態看板、推文數即時變化、刪文位移、置底文…）——native 對這一切免費正確，仿真層每項都要分類、要嘛支援要嘛降級。

@@ -73,6 +73,12 @@ export function nextEasyReadingRowState({
         consumeIgnoreOneUpdate = true;
         halt = true;
       } else if (isStatusRow) {
+        // 「已看完整篇」＝ pmore footer 第一段的配色（mbbsd/pmore.c
+        // #mf_display_footer 依 mf_viewedAll()/mf_viewedNone() 選色，
+        // pttbbs @ c1ff72df）：
+        //   PMORE_COLOR_FOOTER1_VIEWALL  ANSI_COLOR(37;44) → fg 7 / bg 4 ← 這裡
+        //   PMORE_COLOR_FOOTER1_VIEWNONE ANSI_COLOR(33;45) → fg 3 / bg 5
+        //   PMORE_COLOR_FOOTER1          ANSI_COLOR(34;46) → fg 4 / bg 6
         if (lastRowFirstChBg == 4 && lastRowFirstChFg == 7) {
           reachedPageEnd = true;
         } else {

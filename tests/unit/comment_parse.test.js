@@ -73,6 +73,21 @@ describe("parseComment", () => {
     expect(parseComment("")).toBeNull();
     expect(parseComment(null)).toBeNull();
   });
+
+  // PTT 帳號規則 common/bbs/names.c#is_validuserid：長度 2..IDLEN(12)、
+  // 首字 isalpha、其餘 isalnum。fileheader_t.owner 也只有 IDLEN+1 bytes
+  // （include/pttstruct.h），所以推文列的 id 不可能超過 12 字。
+  test("userid 邊界（is_validuserid：長度 2..12）", () => {
+    expect(parseComment(ts("推 ab: x"))).toEqual({ type: "推", userid: "ab" });
+    expect(parseComment(ts("推 abcdefghijkl: x"))).toEqual({
+      type: "推",
+      userid: "abcdefghijkl"
+    }); // 12 字，合法上限
+    // 13 字＝不可能是真 id，這種行是內文假冒推文格式（本文照樣不佔樓層）。
+    expect(parseComment(ts("推 abcdefghijklm: x"))).toBeNull();
+    // 單字元 id 不存在（len < 2）。
+    expect(parseComment(ts("推 a: x"))).toBeNull();
+  });
 });
 
 describe("parseArticleAuthor", () => {
@@ -154,12 +169,17 @@ describe("parseListTitleRaw（黑名單快速新增：Modal 預填用，保留�
   });
 });
 
+// 欄位邊界依 mbbsd/bbs.c#readdoent 的 printf 序列（見 comment_parse.js 頂部欄位表）：
+// 作者欄 prints("%-13.12s", ent->owner) 佔 cols [17,30)（內容 ≤12 字 + 至少 1 格
+// padding），標題區（mark "□"/"R:" 起）從 col 30。col 29 是作者欄的 padding，
+// 屬 author 不屬 title。
 describe("listColRegion（右鍵欄位判定）", () => {
-  test("boundaries: author field [17,29), title 29+", () => {
+  test("boundaries: author field [17,30), title 30+", () => {
     expect(listColRegion(16)).toBeNull();
     expect(listColRegion(17)).toBe("author");
     expect(listColRegion(28)).toBe("author");
-    expect(listColRegion(29)).toBe("title");
+    expect(listColRegion(29)).toBe("author"); // %-13.12s 的 padding 格
+    expect(listColRegion(30)).toBe("title"); // mark（□/R:/轉/鎖/ˇ）起點
     expect(listColRegion(79)).toBe("title");
     expect(listColRegion(0)).toBeNull();
   });

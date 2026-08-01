@@ -1,7 +1,9 @@
 // Serialized machine-key queue for list easy reading (v4 principle C).
 //
 // pttbbs skips repaints while client keys are still in its input buffer
-// (typeahead, mbbsd/screen.c:310 — see docs/pttbbs-screen-protocol.md §2), so
+// (typeahead — PTT 編的是 pfterm：`mbbsd/pfterm.c#refresh` 開頭
+// `if (ft.typeahead && fterm_typeahead()) return;`；screen.c 同義。
+// see docs/pttbbs-screen-protocol.md §1/§2), so
 // two machine keys in flight guarantee the intermediate screen is swallowed and
 // any per-response detection races. This queue enforces ONE in-flight command:
 // send keys → wait for a settled screen that satisfies `expect` → only then

@@ -150,6 +150,23 @@ describe("nextEasyReadingRowState", () => {
     expect(r.sendCommandAfterUpdate).toBe("");
   });
 
+  // pmore footer 第一段的三種配色（mbbsd/pmore.c#mf_display_footer 依
+  // mf_viewedAll()/mf_viewedNone() 選，pttbbs @ c1ff72df）。只有 VIEWALL
+  // 代表「整篇看完」，另兩種都必須繼續往下翻——否則好讀模式會在第一頁
+  // 或中間頁就停住。
+  it("pmore FOOTER1 配色：只有 VIEWALL(37;44) 算看完", () => {
+    const at = (bg, fg) => nextEasyReadingRowState(rowInput({
+      startedEasyReading: true, curY: 23, curX: 79, isStatusRow: true,
+      lastRowFirstChBg: bg, lastRowFirstChFg: fg
+    }));
+    // PMORE_COLOR_FOOTER1_VIEWALL  ANSI_COLOR(37;44) → fg 7 / bg 4
+    expect(at(4, 7).reachedPageEnd).toBe(true);
+    // PMORE_COLOR_FOOTER1_VIEWNONE ANSI_COLOR(33;45) → fg 3 / bg 5
+    expect(at(5, 3).reachedPageEnd).toBe(false);
+    // PMORE_COLOR_FOOTER1          ANSI_COLOR(34;46) → fg 4 / bg 6
+    expect(at(6, 4).reachedPageEnd).toBe(false);
+  });
+
   it("does not overwrite a queued command (skipOne) with a page-down", () => {
     const r = nextEasyReadingRowState(rowInput({
       startedEasyReading: true, curY: 23, curX: 79, isStatusRow: true,

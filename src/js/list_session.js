@@ -61,8 +61,13 @@ export function parseBoardName(row0Text) {
 //   「編號」, ≥3 parsable article numbers in the entry area (or the board-tail
 //   short-page rule below), the cursor parked in the entry area at col ≤ 1,
 //   and the bottom feeter containing 「文章選讀」.
-// Deliberately NOT parseListRow — that matches the BOARD MENU footer (v3 trap
-// #3); and 「郵件選讀」 (mail) must not engage, hence the exact feeter text.
+// Deliberately NOT parseListRow — that matches the BOARD MENU footer (v3 trap #3).
+// feeter 文字對 mbbsd/read.c#i_read 的 READ_REDRAW 分支（pttbbs @ c1ff72df）：
+//   vs_footer(" 文章選讀 ", " (y)回應(X)推文(^X)轉錄 …")   一般看板
+//   vs_footer(" 鴻雁往返 ", " (R/y)回信 (x)站內轉寄 …")     currstat == RMAIL
+// 精確比對「文章選讀」正好把信箱擋在外面（信箱不得 engage 列表好讀）。
+// row2 表頭來自 bbs.c 的 vbarf(ANSI_REVERSE "   編號    %s 作  者       文  章  標  題\t人氣:%d ")，
+// 其中 %s 是 日 期／價 格（LISTMODE），所以只認「編號」最穩。
 export function classifyListScreen(facts) {
   const { rowTexts, curX, curY, rows, row0Reversed, row2Reversed } = facts;
   const lastRowText = rowTexts[rows - 1] || '';

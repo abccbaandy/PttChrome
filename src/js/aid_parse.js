@@ -3,9 +3,13 @@
 // in one screen row plus an optional board suffix "(Board)" / "@Board"; the
 // click-to-navigate behaviour lives in src/js/aid_navigation.js.
 //
-// Format (verified against pttbbs source, mbbsd/stuff.c aidu2aidc / aids.c):
-// an AIDc is EXACTLY 8 chars from the base64 variant alphabet
-// "0-9 A-Z a-z - _". The official footer line looks like
+// Format (verified against pttbbs @ c1ff72df, mbbsd/aids.c + mbbsd/stuff.c):
+// aidu2aidc() 以 aidu2aidc_table = "0123456789A-Za-z-_"（64 字）逐位取模，寫進
+// buf[0..7] ⇒ 產出的 AIDc **恆為 8 字**，字元集就是本檔 isAidChar 的那組。
+// 反向的 aidc2aidu() 反而不限長度（讀到 '\0' 或空白為止），但畫面上出現的一律
+// 是產生端的 8 字形式，所以這裡用「恰 8 字」當判準是對的（第 9 字仍是 AID 字元
+// ⇒ 那是別的識別碼，不是 AIDc）。
+// 官方 footer（bbs.c，AID_DISPLAYNAME/AID_HOSTNAME）：
 //   文章代碼(AID): #1gIeu-3A (Android) [ptt.cc]
 // and cross-board references are conventionally "#AID (Board)" or "#AID@Board".
 //

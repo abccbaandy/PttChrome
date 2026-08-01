@@ -237,9 +237,19 @@ AutoLogin.prototype._tick = function() {
     return;
   }
 
-  // Wrong credentials → give up (avoid lockout loops).
-  if (screen.includes('密碼不對') || screen.includes('密碼或代號錯誤') ||
-      screen.includes('無法登入')) {
+  // 登入失敗 → 收手（避免重試觸發帳號鎖定，或一路空轉到 timeout）。
+  // 官方 mbbsd/mbbsd.c 的登入迴圈只有這幾種「不會再往下走」的出口：
+  //   include/common.h ERR_PASSWD "密碼不對喔！請檢查帳號及密碼大小寫有無輸入錯誤。"
+  //     — 帳號格式合法（存在與否都一樣）但密碼錯，回頭重問代號。
+  //   include/common.h ERR_UID    "這裡沒有這個人啦！"
+  //     — is_validuserid(uid) 失敗（長度非 2..12 / 首字非字母 / 含非 alnum），
+  //       **不會再問密碼** ⇒ 少了這條就永遠等不到密碼 prompt。
+  //   passwd_require_secure_connection → "抱歉，此帳號已設定為只能使用安全連線(如ssh)登入。"
+  //       同樣 continue 回帳號輸入。
+  // 一律取前綴比對（畫面上這些訊息後面還會接著重印的代號 prompt）。
+  if (screen.includes('密碼不對') ||
+      screen.includes('這裡沒有這個人啦') ||
+      screen.includes('只能使用安全連線')) {
     this.stop();
   }
 };
