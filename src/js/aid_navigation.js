@@ -86,6 +86,14 @@ AidNavigation.prototype = {
       keys: 's' + board + '\r',
       kind: 'aid-board-jump',
       fullRepaint: true,
+      // The queue is SHARED with list_session, whose cleanup / native-mirror
+      // switches / disconnect all call flush() — which is silent by contract
+      // (no onFail). Without this hook the dropped step would leave `active`
+      // stuck true forever and every keystroke swallowed at the term_view
+      // entry point, with no way back.
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
       timeoutMs: 6000,
       expect: function(snapshot, facts) {
         return (
@@ -117,6 +125,14 @@ AidNavigation.prototype = {
       keys: '#' + aid + '\r',
       kind: 'aid-search',
       fullRepaint: true,
+      // The queue is SHARED with list_session, whose cleanup / native-mirror
+      // switches / disconnect all call flush() — which is silent by contract
+      // (no onFail). Without this hook the dropped step would leave `active`
+      // stuck true forever and every keystroke swallowed at the term_view
+      // entry point, with no way back.
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
       timeoutMs: 4000,
       expect: function(snapshot, facts) {
         if (facts.boardName == null) return false;
@@ -146,6 +162,14 @@ AidNavigation.prototype = {
       keys: '\r',
       kind: 'aid-open',
       fullRepaint: true,
+      // The queue is SHARED with list_session, whose cleanup / native-mirror
+      // switches / disconnect all call flush() — which is silent by contract
+      // (no onFail). Without this hook the dropped step would leave `active`
+      // stuck true forever and every keystroke swallowed at the term_view
+      // entry point, with no way back.
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
       timeoutMs: 4000,
       expect: function(snapshot, facts) {
         if (facts.kind === 'article') return true;

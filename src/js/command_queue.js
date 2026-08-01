@@ -14,7 +14,11 @@
 //   - soft timeout: re-armed on EVERY settle while the command is in flight
 //     (a settle that doesn't satisfy expect still proves the link is alive —
 //     a slow multi-write response keeps extending its own deadline);
-//   - hard timeout: armed once at send, absolute cap.
+//   - hard timeout: armed once at send, absolute cap. NEVER re-armed after
+//     that — the probe branch used to re-arm it, handing a wedged command a
+//     SECOND full hard window (worst case 2×hard ≈ 20s of frozen list render,
+//     the 「畫面停住十幾秒才切原生」 report). The probe gets its own short
+//     window instead (probeTimeoutMs).
 // v5 deterministic-transaction contract (protocol §6):
 //   - cmd.fullRepaint: append \f (Ctrl+L) to the sent keys — igetch's global
 //     hotkey forces ONE full-frame repaint after the command's response, so
@@ -44,6 +48,10 @@ export function CommandQueue(opts) {
     function(t) {
       clearTimeout(t);
     };
+  // Optional diagnostics tap (app wires it to debugRecorder?.log). Null by
+  // default = zero cost; when a hang is reproduced the recording carries the
+  // full per-command timeline (which kind, how long, done/miss/timeout).
+  this._onEvent = opts.onEvent || null;
   this._inFlight = null;
   this._pending = [];
   this._softTimer = null;
@@ -64,11 +72,18 @@ CommandQueue.prototype = {
   //                  judge the full frame before failing; false = fail direct,
   //   timeoutMs:     soft timeout (default 3000) — triggers the probe, not
   //                  the failure,
-  //   hardTimeoutMs: absolute cap per wait (default 10000),
+  //   hardTimeoutMs: absolute cap from send (default 10000), never re-armed,
+  //   probeTimeoutMs: how long the probe's full frame gets (default 2000),
   //   onDone(result), onFail(reason, facts) — reason 'miss' carries the
   //                  probed full frame's facts; 'timeout' = link silent,
+  //   onFlushed():   opt-in notification that flush() dropped this command
+  //                  while in flight — flush stays SILENT for everyone else
+  //                  (callers whose own state machine self-converges from the
+  //                  native mirror), but a caller holding an input-blocking
+  //                  flag (AidNavigation.active) must be able to release it.
   // }
   enqueue: function(cmd) {
+    this._emit('enqueue', cmd);
     this._pending.push(cmd);
     this._maybeSendNext();
   },
@@ -88,6 +103,7 @@ CommandQueue.prototype = {
     if (!cmd) return null;
     const result = cmd.expect(snapshot, facts);
     if (result) {
+      this._emit('done', cmd);
       this._finish();
       if (cmd.onDone) cmd.onDone(result);
       this._maybeSendNext();
@@ -96,22 +112,49 @@ CommandQueue.prototype = {
       // The probe's full frame arrived and expect still says no — that is a
       // definitive MISS, not a maybe: hand the known-complete screen's facts
       // to the caller for reclassification (v5: failures are explicit).
+      this._emit('miss', cmd);
       this._finish();
       if (cmd.onFail) cmd.onFail('miss', facts);
       this._maybeSendNext();
       return 'miss';
     }
     // Response still in progress — the settle proves activity, extend.
+    this._emit('settle-pending', cmd);
     this._armSoft(cmd);
     return null;
+  },
+
+  // A FOREGROUND transaction is queued behind a background command: cut the
+  // in-flight command's remaining wait down to `ms` so the queue hands over in
+  // ~a round-trip instead of its full soft/hard budget. The short deadline
+  // triggers the ordinary \f probe (zero side effects, guaranteed full-frame
+  // answer — protocol §6), so this is NOT a cancellation: the command stays in
+  // flight and keeps its pairing, and its answer is still judged by content.
+  // Deliberately never _finish()es early — that is what turns an on-the-wire
+  // response into an ownerless settle able to satisfy the next transaction's
+  // expect (invariant 7's live race: the leave-board expect ate a prefetch
+  // anchor's landing).
+  // Without this, pressing Enter/←/digits right after a burst of page keys
+  // froze the list render for the in-flight prefetch's ENTIRE budget before a
+  // single byte of the user's command went out（回報：「畫面停住、顯示處理中，
+  // 過一陣子才復原」）.
+  expedite: function(ms) {
+    const cmd = this._inFlight;
+    if (!cmd || cmd._probed || cmd.probe === false) return;
+    this._emit('expedite', cmd);
+    this._armSoft(cmd, ms || 250);
   },
 
   // Drop everything, silently (no onFail): entering functionMode / pref off /
   // leaving the board. Whatever response is still on the wire gets absorbed by
   // the native mirror, which renders anything correctly.
   flush: function() {
+    const cmd = this._inFlight;
+    if (cmd) this._emit('flush', cmd);
     this._finish();
     this._pending = [];
+    // opt-in only (see cmd.onFlushed): everyone else keeps the silent contract.
+    if (cmd && cmd.onFlushed) cmd.onFlushed();
   },
 
   // Drop only the queued-but-unsent commands, keeping the in-flight one so its
@@ -147,7 +190,9 @@ CommandQueue.prototype = {
     const cmd = this._pending.shift();
     this._inFlight = cmd;
     cmd._probed = false;
+    cmd._sentAt = Date.now();
     this._armBoth(cmd);
+    this._emit('send', cmd);
     this._send(cmd.fullRepaint ? cmd.keys + '\f' : cmd.keys);
   },
 
@@ -159,11 +204,12 @@ CommandQueue.prototype = {
     }, cmd.hardTimeoutMs || 10000);
   },
 
-  _armSoft: function(cmd) {
+  // ms omitted = the command's own soft window; expedite/probe pass a short one.
+  _armSoft: function(cmd, ms) {
     this._clearTimeout(this._softTimer);
     this._softTimer = this._setTimeout(() => {
       this._timedOut(cmd);
-    }, cmd.timeoutMs || 3000);
+    }, ms || cmd.timeoutMs || 3000);
   },
 
   // Quiet link. First time (probe allowed): force a full frame with a bare \f
@@ -172,13 +218,28 @@ CommandQueue.prototype = {
     if (this._inFlight !== cmd) return; // already completed/flushed
     if (cmd.probe !== false && !cmd._probed) {
       cmd._probed = true;
-      this._armBoth(cmd);
+      // SOFT only: re-arming hard here would grant a second full hard window
+      // (2×hard worst case). The hard timer armed at send stays the absolute
+      // deadline; if it already fired, this short probe window is the cap.
+      this._armSoft(cmd, cmd.probeTimeoutMs || 2000);
+      this._emit('probe', cmd);
       this._send('\f');
       return;
     }
+    this._emit('fail', cmd);
     this._finish();
     if (cmd.onFail) cmd.onFail('timeout');
     this._maybeSendNext();
+  },
+
+  _emit: function(name, cmd) {
+    if (!this._onEvent) return;
+    this._onEvent(name, {
+      kind: cmd.kind || null,
+      sinceSentMs: cmd._sentAt ? Date.now() - cmd._sentAt : null,
+      pendingLen: this._pending.length,
+      probed: !!cmd._probed
+    });
   },
 
   _finish: function() {

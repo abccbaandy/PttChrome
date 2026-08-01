@@ -193,6 +193,108 @@ describe("CommandQueue", () => {
     expect(sent).toEqual(["42\r", "\x1b[D"]);
   });
 
+  test("探針不得重新武裝 hard：絕對上限＝hard＋探針窗，不是 2×hard", () => {
+    // 症狀（列表好讀偶發長凍結）：_timedOut 的探針分支呼叫 _armBoth → hard 又
+    // 拿到完整一份，單一命令最壞可達 2×hard（實測「畫面停住十幾秒」的來源）。
+    // 探針只該重新武裝 SOFT（probeTimeoutMs），hard 是送出當下就定死的絕對截止。
+    const { q, sent } = makeQueue();
+    const fail = vi.fn();
+    q.enqueue(cmd("A", { timeoutMs: 3000, hardTimeoutMs: 5000, onFail: fail }));
+    // 每 2s 一個不滿足的 settle：soft 被無限延長，只剩 hard 擋著。
+    vi.advanceTimersByTime(2000);
+    settleWith(q, false);
+    vi.advanceTimersByTime(2000);
+    settleWith(q, false); // t=4000，soft 被推到 7000
+    vi.advanceTimersByTime(1000); // t=5000：hard 到期 → 探針
+    expect(sent).toEqual(["A", "\f"]);
+    expect(fail).not.toHaveBeenCalled();
+    // 探針窗＝probeTimeoutMs（預設 2000）→ t=7000 必須已經放棄。
+    vi.advanceTimersByTime(2000);
+    expect(fail).toHaveBeenCalledWith("timeout");
+    expect(q.idle).toBe(true);
+  });
+
+  test("probeTimeoutMs 可覆寫探針窗", () => {
+    const { q } = makeQueue();
+    const fail = vi.fn();
+    q.enqueue(cmd("A", { timeoutMs: 1000, probeTimeoutMs: 500, onFail: fail }));
+    vi.advanceTimersByTime(1000); // 探針
+    vi.advanceTimersByTime(499);
+    expect(fail).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fail).toHaveBeenCalledWith("timeout");
+  });
+
+  test("expedite：前景交易排隊時立刻催 in-flight 的探針，且不提前 finish（配對不破）", () => {
+    // 症狀：使用者連按翻頁（背景 prefetch 在線）後馬上按 Enter 開文 → 交易只是
+    // 排進 _pending，畫面卻已 frozen＋吞鍵，得等 prefetch 走完自己的 soft/hard
+    // 才送出。expedite 把 in-flight 的 soft 縮到極短 → 立刻送零副作用的 \f 探針
+    // （必有回應）→ 幾百毫秒內讓路。刻意不 _finish：配對不破，不產生無主 settle
+    // （不變量 7 的 live race）。
+    const { q, sent } = makeQueue();
+    q.enqueue(cmd("42\r", { kind: "prefetch-anchor-down", timeoutMs: 4000 }));
+    q.enqueue(cmd("100\r", { kind: "open-jump" }));
+    q.expedite(250);
+    expect(q.inFlightKind).toBe("prefetch-anchor-down"); // 未被提前 finish
+    expect(sent).toEqual(["42\r"]);
+    vi.advanceTimersByTime(250); // 原本要等 4000
+    expect(sent).toEqual(["42\r", "\f"]);
+    expect(q.inFlightKind).toBe("prefetch-anchor-down"); // 仍在配對中
+    settleWith(q, false); // 探針幀仍不符 → miss → 讓路
+    expect(sent).toEqual(["42\r", "\f", "100\r"]);
+  });
+
+  test("expedite：已送過探針 / probe:false / 無 in-flight 時皆為 no-op", () => {
+    const { q, sent } = makeQueue();
+    q.enqueue(cmd("A", { timeoutMs: 3000 }));
+    vi.advanceTimersByTime(3000); // 已進探針階段
+    expect(sent).toEqual(["A", "\f"]);
+    q.expedite(100);
+    vi.advanceTimersByTime(100);
+    expect(sent).toEqual(["A", "\f"]); // 不重送探針
+    q.flush();
+
+    q.enqueue(cmd("B", { timeoutMs: 3000, probe: false }));
+    q.expedite(100);
+    vi.advanceTimersByTime(100);
+    expect(sent).toEqual(["A", "\f", "B"]); // probe:false 不催
+
+    q.flush();
+    expect(() => q.expedite(100)).not.toThrow(); // 無 in-flight
+  });
+
+  test("flush 對帶 onFlushed 的 in-flight 命令通知（AID active 旗標死鎖）", () => {
+    // 症狀：AidNavigation 與 ListSession 共用 queue；list 的 cleanup/切原生會
+    // flush()（靜默、不呼叫 onFail）→ in-flight 的 AID 命令被丟掉 → active 永遠
+    // 是 true → term_view 吞掉全部鍵盤並一直閃「AID 跳文中」。flush 仍對其他
+    // 命令保持靜默，只有 opt-in 的 onFlushed 會被通知。
+    const { q } = makeQueue();
+    const flushed = vi.fn();
+    const fail = vi.fn();
+    q.enqueue(cmd("s Gossiping\r", { kind: "aid-board-jump", onFlushed: flushed, onFail: fail }));
+    q.enqueue(cmd("#AID\r", { kind: "aid-search", onFlushed: flushed }));
+    q.flush();
+    expect(flushed).toHaveBeenCalledTimes(1); // 只有 in-flight 那個
+    expect(fail).not.toHaveBeenCalled(); // flush 仍不是 onFail
+  });
+
+  test("onEvent 診斷時間軸：enqueue → send → probe → fail（debugRecorder 用）", () => {
+    const events = [];
+    const q = new CommandQueue({
+      send: () => {},
+      onEvent: (name, info) => events.push([name, info && info.kind]),
+    });
+    q.enqueue(cmd("A", { kind: "prefetch-anchor-down", timeoutMs: 1000, onFail: () => {} }));
+    vi.advanceTimersByTime(1000); // 探針
+    vi.advanceTimersByTime(2000); // 探針窗到期 → 放棄
+    expect(events).toEqual([
+      ["enqueue", "prefetch-anchor-down"],
+      ["send", "prefetch-anchor-down"],
+      ["probe", "prefetch-anchor-down"],
+      ["fail", "prefetch-anchor-down"],
+    ]);
+  });
+
   test("onSettle with nothing in flight is a no-op", () => {
     const { q } = makeQueue();
     expect(() => settleWith(q, true)).not.toThrow();

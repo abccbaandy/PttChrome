@@ -57,7 +57,11 @@ export const App = function() {
   this.commandQueue = new CommandQueue({
     send: (d) => {
       if (this.conn && this.conn.isConnected) this.conn.send(d);
-    }
+    },
+    // Per-command timeline into the debug recording (null recorder = zero
+    // cost): a reproduced "畫面停住/處理中" hang shows exactly which kind sat
+    // on the wire, for how long, and whether it ended done/miss/timeout.
+    onEvent: (name, info) => this.debugRecorder?.log('queue.' + name, info)
   });
   this.listSession = new ListSession(this, this.view, this.buf, this.commandQueue);
   // AID (#文章代碼) link click → serialized native-key navigation to the target

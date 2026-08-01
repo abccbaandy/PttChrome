@@ -615,6 +615,10 @@ const FILL_MAX_PAGES = 3;
 // Total-row cap: bounds the map / flatten / visibleListIndices cost. The end
 // FARTHEST from the selection is evicted; demand re-fetches it later.
 export const MAX_LIST_ROWS = 300;
+// Absolute cap on the frozen render (_armFrozenWatchdog). Deliberately far
+// above every transaction's own budget: this is not a timeout, it is the
+// last line of defense against a freeze with no exit at all.
+const FROZEN_WATCHDOG_MS = 12000;
 // (2026-07-10) [ ] = / v / `/` 模擬交易與 T3 airlock 皆退役：非白名單鍵一律
 // 走 _beginNativePassthrough（有序號選取先 sync-jump，再切原生鏡像＋代送）。
 
@@ -680,6 +684,8 @@ export function ListSession(core, view, termBuf, queue) {
   // independent from the main list (protocol §8) — entering/leaving forces a
   // rebuild (via _boardName=null) so numbers never alias.
   this._selectMode = false;
+  // Absolute frozen-render backstop (see _armFrozenWatchdog). null = disarmed.
+  this._frozenWatchdog = null;
 
   bindProperty(this, '_renderMode', termBuf, 'listRenderMode');
   termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
@@ -1064,10 +1070,43 @@ ListSession.prototype = {
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flushPending();
+    this._expediteBackground();
     this._renderMode = 'frozen';
     this._setLoading(true);
+    this._armFrozenWatchdog();
     this._view.hideCursor();
     this._forceRedraw();
+  },
+
+  // The render is about to freeze behind a user transaction. If the wire is
+  // still owned by a BACKGROUND prefetch, cut its remaining wait to ~a
+  // round-trip (queue.expedite fires the ordinary \f probe, so the command
+  // keeps its pairing — invariant 7 forbids flushing it). Without this the
+  // frozen screen sat out the prefetch's whole soft/hard budget before the
+  // user's first byte went out（回報：連按翻頁後開文/離板「畫面停住、顯示
+  // 處理中，過一陣子才復原」）. Foreground kinds are left alone: transactions
+  // stay strictly serialized with respect to each other.
+  _expediteBackground: function() {
+    const kind = this._queue.inFlightKind || '';
+    if (kind.indexOf('prefetch') === 0 && this._queue.expedite)
+      this._queue.expedite(250);
+  },
+
+  // Absolute backstop for the frozen render. Every freeze has its own timeout
+  // path, but a callback that never runs (a reducer with no transition for the
+  // event — e.g. _openFailed dispatched outside `opening` — or a silently
+  // flushed command) would strand the list frozen FOREVER: screen never
+  // repaints and every key is swallowed. Re-armed per freeze; a no-op if the
+  // render already recovered, so it needs no clearing at the many unfreeze
+  // points (only _cleanup tears it down).
+  _armFrozenWatchdog: function() {
+    const self = this;
+    if (this._frozenWatchdog) clearTimeout(this._frozenWatchdog);
+    this._frozenWatchdog = setTimeout(function() {
+      self._frozenWatchdog = null;
+      if (self._renderMode === 'frozen' || self.state === 'opening')
+        self._degradeToNative('指令逾時，已切至原生模式');
+    }, FROZEN_WATCHDOG_MS);
   },
 
   // Number jump: digits collected locally (overlay input), one serialized
@@ -1415,6 +1454,11 @@ ListSession.prototype = {
           );
         },
         timeoutMs: 4000,
+        // Background work must never hold the foreground hostage: cap the
+        // absolute wait well under the queue default (10s). A user pressing
+        // against the buffer edge sees 「讀取中…」 for at most this long
+        // before the benign edge answer (markEdge) unblocks navigation.
+        hardTimeoutMs: 5000,
         onDone: function() {
           self._serverNum = base;
         },
@@ -1467,6 +1511,7 @@ ListSession.prototype = {
       // RTT-adaptive timeout retired). No \f on the page key itself: a moved
       // page already responds deterministically (doubling traffic buys nothing).
       timeoutMs: 800,
+      hardTimeoutMs: 3000, // background: same reasoning as the anchor leg
       onDone: function(r) {
         self._fillPages++;
         self._serverNum = r.landed;
@@ -1506,10 +1551,12 @@ ListSession.prototype = {
       lrIdx >= 0 ? subjectOfListRow(this._termBuf.listLines[lrIdx]) : null;
     this._renderMode = 'frozen';
     this._setLoading(true);
+    this._armFrozenWatchdog();
     this._breakChain();
     // flushPending: drop queued prefetch but keep an in-flight one paired
     // (see _beginRelative); content predicates absorb the seam.
     this._queue.flushPending();
+    this._expediteBackground();
     const self = this;
     this._queue.enqueue({
       keys: String(num) + '\r',
@@ -1574,9 +1621,11 @@ ListSession.prototype = {
     }
     this._renderMode = 'frozen';
     this._setLoading(true);
+    this._armFrozenWatchdog();
     this._breakChain();
     // flushPending: keep an in-flight prefetch paired (see _beginRelative).
     this._queue.flushPending();
+    this._expediteBackground();
     const self = this;
     let parkY = -1;
     let targetY = -1;
@@ -1782,6 +1831,10 @@ ListSession.prototype = {
   _cleanup: function() {
     this._nativeHold = false;
     this._serverNum = null;
+    if (this._frozenWatchdog) {
+      clearTimeout(this._frozenWatchdog);
+      this._frozenWatchdog = null;
+    }
     this._breakChain();
     this._queue.flush();
     this._setLoading(false);
@@ -1937,6 +1990,12 @@ ListSession.prototype = {
         // pinned one (no number) — the cheap safe answer is "unknown".
         self._serverNum = null;
         self._prunePivotOverride = undefined;
+        // _moveSelection lights 「讀取中…」 whenever the cursor is pressed
+        // against a buffer edge with a command in flight — this transaction IS
+        // that command, so it owns turning it off (it used to leak: onDone also
+        // sets _edgeDown, so the next press no longer re-evaluates the
+        // indicator and the pill stayed lit until an article/board change).
+        self._setLoading(false);
         self._edgeDown = true;
         const seq = self._sequence();
         if (!seq.length) return;
@@ -1950,6 +2009,7 @@ ListSession.prototype = {
       // server didn't answer).
       onFail: function() {
         self._prunePivotOverride = undefined;
+        self._setLoading(false);
       }
     });
   },
@@ -1977,6 +2037,7 @@ ListSession.prototype = {
       onDone: function() {
         self._serverNum = 1;
         self._prunePivotOverride = undefined;
+        self._setLoading(false); // same edge-indicator ownership as _requestEnd
         self._edgeUp = true;
         const seq = self._sequence();
         if (!seq.length) return;
@@ -1985,6 +2046,7 @@ ListSession.prototype = {
       },
       onFail: function() {
         self._prunePivotOverride = undefined;
+        self._setLoading(false);
       }
     });
   },

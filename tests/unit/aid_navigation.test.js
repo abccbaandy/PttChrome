@@ -187,6 +187,19 @@ describe("AidNavigation", () => {
     expect(sent.length).toBe(2);
   });
 
+  test("共用 queue 被 flush 掉時要解鎖 active（否則全域吞鍵永久死鎖）", () => {
+    // AidNavigation 與 ListSession 共用同一個 CommandQueue。list 的 cleanup／
+    // 切原生／斷線都會 queue.flush()，而 flush 是靜默的（不呼叫 onFail）→
+    // in-flight 的 AID 命令被丟掉、active 永遠是 true → term_view.onKeyDown
+    // 吞掉全部鍵盤並一直閃「AID 跳文中，請稍候…」，無法自行復原。
+    const { nav, queue, hints } = makeHarness();
+    nav.start("1gIeu-3A", "Android");
+    expect(nav.active).toBe(true);
+    queue.flush(); // 例：離板 settle → listSession._cleanup()
+    expect(nav.active).toBe(false);
+    expect(hints.some(h => h.includes("AID 跳文失敗"))).toBe(true);
+  });
+
   test("final open accepts a status-row bottom even if the classifier hesitates", () => {
     const { nav, queue } = makeHarness();
     nav.start("1gIeu-3A", "Android");

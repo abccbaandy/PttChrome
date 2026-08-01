@@ -580,10 +580,14 @@ describe("bufferEdgeNum (anchored prefetch targets)", () => {
 // 列文字給 rowToText 用（_visibleIndices），格式取自真實列。
 function demandSession({ numStart = 100, count = 60 } = {}) {
   const enqueued = [];
+  const loading = [];
+  const banners = [];
   const view = {
     hideCursor() {},
     showCursor() {},
     resetListAccumulation() {},
+    setListLoading: (on) => loading.push(on),
+    flashListHint: (msg) => banners.push(msg),
     blacklist: new Set(),
     titleBlacklist: [],
   };
@@ -627,7 +631,7 @@ function demandSession({ numStart = 100, count = 60 } = {}) {
   const s = new ListSession({ conn: { send() {} } }, view, termBuf, queue);
   s.state = "active";
   s._boardName = "C_Chat";
-  return { s, enqueued, queue, nums };
+  return { s, enqueued, queue, nums, loading, banners, termBuf };
 }
 
 describe("demand 邊距（提早預補隱藏 round-trip 延遲）", () => {
@@ -977,6 +981,149 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
     expect(s._edgeDown).toBe(true); // edge 有收（markEdge）
     expect(s.state).toBe("active"); // 不降級
     expect(banners).toEqual([]); // 無「畫面偏離列表格式」banner
+  });
+
+  test("背景 prefetch 在線時開文：凍結不得等滿 prefetch 的 soft timeout（偶發長凍結）", async () => {
+    // 使用者回報：快速連按翻頁後馬上按 Enter 開文 → 畫面停住、顯示「開啟文章中／
+    // 讀取中」，過一陣子才復原（常以「已切至原生模式」收場）。原因＝_beginOpen
+    // 立刻 frozen＋吞鍵，但交易只是排進 pending：得等 in-flight 的 prefetch anchor
+    // 走完自己的 soft(4000)/hard(10000) 才送出第一個 byte。修法＝queue.expedite：
+    // 立刻催出 \f 探針（零副作用、必有回應）→ 幾百毫秒內讓路。
+    vi.useFakeTimers();
+    const { CommandQueue } = await import("../../src/js/command_queue");
+    const sent = [];
+    const queue = new CommandQueue({ send: (k) => sent.push(k) });
+
+    const rows = 24;
+    const numStart = 100;
+    const count = 60; // buffer 100..159，向下 anchor = 159
+    const base = numStart + count - 1;
+    const mkRow = (n) =>
+      ` ${String(n)} + 2 6/14 someoneA     □ [閒聊] 文章 ${n}`.padEnd(80);
+    const lines = [];
+    const nums = [];
+    for (let i = 0; i < count; ++i) {
+      nums.push(numStart + i);
+      lines.push([...mkRow(numStart + i)].map((ch) => ({ ch, isLeadByte: false })));
+    }
+    const rowTexts = new Array(rows).fill("");
+    rowTexts[5] = mkRow(base); // anchor 落點（jump park，底列空 → transient）
+    const termBuf = {
+      rows,
+      cols: 80,
+      listLines: lines,
+      listLineNums: nums,
+      lineChangeds: new Array(rows).fill(false),
+      changed: false,
+      addEventListener() {},
+      notify() {},
+      getRowText: (r) => rowTexts[r],
+      isUnicolor: () => false,
+      settleSnapshot: null,
+    };
+    const view = {
+      hideCursor() {},
+      showCursor() {},
+      resetListAccumulation() {},
+      setListLoading() {},
+      flashListHint() {},
+      blacklist: new Set(),
+      titleBlacklist: [],
+    };
+    const s = new ListSession({ conn: { send() {} } }, view, termBuf, queue);
+    s.state = "active";
+    s._boardName = "C_Chat";
+    s._topNum = 110;
+    s._selectedNum = 115;
+
+    s._maybeDemand(1); // 背景 prefetch：anchor "159\r" 上線、page 腿排隊
+    expect(sent).toEqual([String(base) + "\r"]);
+
+    s.onKeyDown({ key: "Enter", preventDefault() {} }); // 使用者馬上開文
+    expect(s.state).toBe("opening");
+    expect(s._renderMode).toBe("frozen"); // 畫面已凍結、鍵被吞
+
+    vi.advanceTimersByTime(300); // 修前：要等到 4000ms 才有動靜
+    expect(sent).toEqual([String(base) + "\r", "\f"]);
+
+    // 探針幀＝anchor 的落點 → anchor 完成 → 開文交易立刻上線。
+    termBuf.settleSnapshot = {
+      changedRows: new Set([5, 23]),
+      cursorMoved: true,
+      curX: 0,
+      curY: 5,
+    };
+    s._onScreenSettled();
+    expect(sent[sent.length - 1]).toBe("115\r"); // open-jump
+    vi.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 卡住／凍結類回歸守護（2026-08 使用者回報「畫面停住、顯示處理中」）
+// ---------------------------------------------------------------------------
+
+describe("讀取中指示與凍結的收尾（旗標洩漏）", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  // _moveSelection 在「游標貼著 buffer 邊、server 端還有更多列」時亮起「讀取中…」
+  // 膠囊。jump-end/jump-home 是它的 serverOp 出口，卻從不關掉 → 膠囊永久卡在
+  // 右下角，直到開文／切原生／離板。↑ 在 buffer 頂端的 wrap 語意就會送 jump-end，
+  // 極易踩到。
+  test("_requestEnd onDone/onFail 都要關掉「讀取中…」", () => {
+    for (const path of ["onDone", "onFail"]) {
+      const { s, enqueued, loading } = demandSession();
+      s._setLoading(true);
+      s._requestEnd();
+      const cmd = enqueued[enqueued.length - 1];
+      expect(cmd.kind).toBe("jump-end");
+      cmd[path]({});
+      expect(loading[loading.length - 1]).toBe(false);
+    }
+  });
+
+  test("_requestHome onDone/onFail 都要關掉「讀取中…」", () => {
+    for (const path of ["onDone", "onFail"]) {
+      const { s, enqueued, loading } = demandSession();
+      s._setLoading(true);
+      s._requestHome();
+      const cmd = enqueued[enqueued.length - 1];
+      expect(cmd.kind).toBe("jump-home");
+      cmd[path]({});
+      expect(loading[loading.length - 1]).toBe(false);
+    }
+  });
+
+  // 保底看門狗：任何讓 frozen 沒有出口的路徑（回呼從未觸發、reducer 對該事件
+  // 無轉移）都不得永久凍結——否則畫面永遠停住、鍵全被吞。
+  test("交易回呼從未觸發時，frozen 會自癒回原生鏡像", () => {
+    const { s, banners } = demandSession(); // mock queue：不跑任何 timer
+    s._beginJumpNumber(500);
+    expect(s._renderMode).toBe("frozen");
+    vi.advanceTimersByTime(13000);
+    expect(s._renderMode).toBe("native");
+    expect(banners.some((m) => m.includes("逾時"))).toBe(true);
+  });
+
+  test("_openFailed 在非 opening 狀態（reducer 無對應轉移）不得永久凍結", () => {
+    const { s } = demandSession();
+    s._selectedNum = 115;
+    s._beginOpen(); // frozen＋開文交易排隊
+    expect(s._renderMode).toBe("frozen");
+    s.state = "active"; // 例：article handoff 先發生，狀態已不是 opening
+    s._openFailed(); // reducer stay → actions 空 → 沒有任何解凍動作
+    vi.advanceTimersByTime(13000);
+    expect(s._renderMode).toBe("native");
+  });
+
+  test("cleanup 會拆掉看門狗（不得在離板後才誤觸降級）", () => {
+    const { s, banners } = demandSession();
+    s._beginJumpNumber(500);
+    s._cleanup();
+    banners.length = 0;
+    vi.advanceTimersByTime(13000);
+    expect(banners).toEqual([]);
   });
 });
 
