@@ -275,8 +275,10 @@ describe("Row Steamgifts giveaway link", () => {
   });
 });
 
-// 好讀「連續同作者推文合併」的 Row 擴充：合併塊樓層／時間都跟一般單則推文一致，
-// 只顯示 run 首則——樓層徽章維持單一樓號、trailer 時間標籤附加在 bbsline span 尾端。
+// 好讀「連續同作者推文合併」的 Row 擴充：樓層徽章只顯示 run 首則。時間戳**不是**
+// Row 的責任——它是最後一則的原始 cell，已在 comment_merge 併進 chars（故配色同
+// 原生、可選取複製）。chars 內的 '\n' 是行邊界：Row 切成多個 bbsline span，每行
+// 各自帶自己的自動開圖（見 LinkSegmentBuilder），內容不得遺失。
 describe("Row merged-comment extensions", () => {
   test("合併塊徽章維持單一樓號（首則）", () => {
     const { container } = render(
@@ -289,20 +291,25 @@ describe("Row merged-comment extensions", () => {
     expect(container.querySelector("[data-floor]").textContent).toBe("12");
   });
 
-  test("trailer 節點渲染在 bbsline span 內容尾端", () => {
+  test("chars 內的 '\\n' → 切成一行一個 bbsline span，文字零遺失", () => {
     const { container } = render(
-      <Row
-        chars={chars("PU wowbenny: hi")}
-        row={0}
-        trailer={<span className="mergedCommentTime">07/20 14:23</span>}
-      />
+      <Row chars={chars("PU wowbenny: hi\nsecond line  07/20 14:31")} row={0} />
     );
-    const line = container.querySelector('[data-type="bbsline"]');
-    const time = line.querySelector(".mergedCommentTime");
-    expect(time).not.toBeNull();
-    expect(time.textContent).toBe("07/20 14:23");
-    // 在內容之後（最後一個子節點）
-    expect(line.lastChild).toBe(time);
+    const lines = Array.from(
+      container.querySelectorAll('[data-type="bbsline"]')
+    ).map(n => n.textContent);
+    expect(lines).toEqual(["PU wowbenny: hi", "second line  07/20 14:31"]);
+    // 每個 bbsline 都保留 data-row（選取/複製沿用同一絕對 index）。
+    container
+      .querySelectorAll('[data-type="bbsline"]')
+      .forEach(n => expect(n.getAttribute("data-row")).toBe("0"));
+  });
+
+  test("無 '\\n' 的一般列：仍是單一 bbsline span（DOM 結構不變）", () => {
+    const { container } = render(
+      <Row chars={chars("PU wowbenny: hi 07/20 14:31")} row={3} />
+    );
+    expect(container.querySelectorAll('[data-type="bbsline"]').length).toBe(1);
   });
 });
 

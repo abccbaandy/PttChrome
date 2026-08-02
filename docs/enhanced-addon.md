@@ -74,21 +74,43 @@
 - 清除：好讀新文章在 `accumulatePageLines` else（新文章）分支 reset；原生 `redraw` `pageState!==3` 時 reset。
 - 無 pref/i18n（點擊驅動、恆可用）。
 
-## 連續同作者推文合併（`src/js/comment_merge.js`，2026-07）
-- 規則（使用者定案）：**連續同 userid** 的推文列合成一段（A A A B A A → A B A）；跨型別（推/噓/→）照合
+## 連續同作者推文合併（`src/js/comment_merge.js`，2026-08 改版）
+- 規則（使用者定案）：**連續同 userid** 的推文列合成一塊（A A A B A A → A B A）；跨型別（推/噓/→）照合
   （PTT 連推自動降 →）；hidden（黑名單）列**透明**（不斷 run、不入 run）；非推文列斷 run；≥2 才合併。
-  樓層徽章／時間都**只顯示 run 首則**（跟一般單則推文一致）：`floorBadge` 單一樓號、段尾
-  `.mergedCommentTime` 首則時間戳（Row prop `trailer`）。**FloorCounter／黑名單判定不動**——合併僅 render 層。
-- 排版（2026-07 使用者三輪定案）：`pre-wrap` 自然換行＋ **gap 斷行規則**（`BREAK_GAP_COLS=8`）——
-  PTT 推文無自動折行（作者在輸入框打滿才切下一則），故「打滿的列（內容尾到右側欄位空白 <8 格）」
-  ＝被切斷 → **直接相連、不插任何分隔**（「漲到120」+「0？」→「1200？」，插空格會壞成「120 0」）；
-  「內容遠短於欄寬（gap ≥8）」＝作者刻意斷句 → 插換行 cell（`\n`，Object.create 繼承來源空格
-  prototype 的 clone，**勿 mutate 原 buf cell**）。門檻校準自真實素材 fixture
-  `comment_merge_wettland.json`（打滿=3、全形餘裕=4、刻意斷句=8；門檻 4 曾誤斷使用者回報改嚴，
-  誤差方向偏「多連少斷」）。
+  樓層徽章**只顯示 run 首則**（`floorBadge` 單一樓號）。**FloorCounter／黑名單判定不動**
+  ——合併僅 render 層。
+- 排版＝**一則一行**，**作者在第一則行首、時間在最後一則行尾且置右**（2026-08 使用者定案）：去掉
+  第 2 則起重複的「型別符＋id」前綴與中間各則的時間戳，則間一律插換行 cell（`\n`，Object.create
+  繼承來源空格 prototype 的 clone，**勿 mutate 原 buf cell**），末行補上最後一則原列
+  **「內容尾 → 時間戳結束」整段**（padding＋可選 IP＋時間）原樣。
+  - **置右靠資料不靠 CSS**：run 內必為同 userid ⇒ 各列 `info.start` 相同 ⇒ 合併末行的左緣偏移
+    （懸掛縮排）等於原列的 ⇒ 帶著原 padding 就落在**與原生逐列渲染完全相同的欄**（時間 col 67..77，
+    整行 78 欄 < 容器 80 欄故不會換行）。勿改成「接在內容尾端」（使用者回報過）或 CSS 絕對定位。
+  - 全段**沿用原列 cell** → 配色與原生模式一致、且是一般文字，`^C`（走
+    `window.getSelection().toString()`）選得到。**勿改回 React 標籤節點**：舊版 `.mergedCommentTime`
+    （淡色縮小＋`user-select:none`）不可複製，使用者已回報要改。
+- DOM：`LinkSegmentBuilder` 遇 `\n` cell 就**切一個新的 bbsline span**（`_flushLine`），每個 span 後面
+  緊跟該行自己的自動開圖 div——否則整塊的預覽會全部堆到最後（使用者 2026-08 回報）。`\n` 本身不進
+  segment，換行改由區塊邊界表達；空的預覽 div 照樣輸出（區塊盒把下一行的 inline 內容擠到新行，
+  跟單行路徑同形，不需額外包裝層）。**沒有 `\n` 的一般列走原路徑，DOM 一字不動。**
+- 懸掛縮排：`main.css` 給 bbsrow `padding-left: var(--merged-comment-indent)`，首則 bbsline 再以
+  **負 `margin-left`** 拉回 0 欄；變數由 `Screen.jsx` 依 `contentStart × forceWidth/2` inline 指定。
+  **勿用 `text-indent`**——每則各自是 bbsline span，text-indent 會繼承下去把每行都往左拉。
+- **勿再加回 gap 門檻**（舊 `BREAK_GAP_COLS`，2026-08 已整組拆除）。舊版猜「這則是不是打滿被截斷的續行」
+  並把它與下一則串接；反查 pttbbs 證實此判斷**在畫面上無資訊量**：
+  | 來源 | 事實 |
+  |---|---|
+  | `bbs.c#recommend` | `maxlength = 78 - 3(lead) - 6(date) - 1(space) - 6(time) [- 15 if BRD_IPLOGRECMD/guest] - strlen(myid)` |
+  | `comments.c#FormatCommentString` | `type + " " + id + ":" + %-maxlength(msg) + tail` |
+  | `vtuikit.c#vgetstring` | 上限 `iend+1 < len`；全形另需 `len - iend >= 3` |
+  | term.ptt.cc 實測 | `':'` 後多一格 → 內容欄 `[3+len(id)+2, 66)`（IP 板 `[.., 51)`），時間戳固定 col 67..77 |
+  「作者剛好寫滿一句話」與「被輸入欄切斷」完全同形（實例：AI_Art M.1785606011 三連推第 2 則，內容
+  50 bytes ＝ 10 字 id 的理論上限），任何寬度門檻都判不出來。唯一還有訊息量的訊號是行尾時間戳
+  （真續行幾乎同分鐘送出），但仍是啟發式 → 使用者決定不猜。代價：被截斷的句子分兩行顯示（原生本來就這樣）。
 - 純函式：`groupSameAuthorRuns(anns)`（走 computeAnnotations 的 per-row 結果）、`commentContentCells(chars)`
-  （cell 邊界：前綴/內容/時間戳/可選 IPv4，全 ASCII 區掃描故無 DBCS 對映問題）、`buildMergedCommentChars`
-  （`timeLabel` 取首則時間）。**fail-safe**：run 中任一列切不出邊界 → 整組還原逐列（寧不合併不錯切）。
+  （cell 邊界 `{start,end,time,timeStart}`：前綴/內容/時間戳/可選 IPv4，全 ASCII 區掃描故無
+  DBCS 對映問題）、`buildMergedCommentChars`（回 `{chars,contentStart}`）。
+  **fail-safe**：run 中任一列切不出邊界 → 整組還原逐列（寧不合併不錯切）。
 - 接線：pref `mergeSameAuthorComments`(true) → `pttchrome.onPrefChange`→`view.*`+`redraw(true)` →
   `term_view` enhance → `Screen#computeAnnotations` 好讀分支：run 首列掛 `mergeCommentRun`
   （合併 chars＋首則 timeLabel＋**對合併 chars 重跑的 detectRowExtras**——原列偵測 col 全失效）、
@@ -98,9 +120,14 @@
   → `authorIdStart=3`、data-pusher、右鍵快速加黑名單的 col 數學全部照舊。
 - 已知取捨：合併塊內 `getText` col 對映失真（^C 複製走 `window.getSelection().toString()` 不受影響）；
   正文假推文（完整含時間戳 shape）若連續同作者也會被合併（罕見，寧簡）。
-- 測試：unit `tests/unit/comment_merge.test.js`（grouping/邊界/合併/首則時間＋stock-end golden rz2x×7）、
-  `row_render.test.jsx`（單一樓號徽章、trailer）；offline `comment_merge.offline.spec.js`（不變量：**相鄰
-  bbsrow 不得同 data-pusher**；stock-end 指名：7→1、徽章 `\d+`、內容零遺失、關開關還原）。
+- 測試：unit `tests/unit/comment_merge.test.js`（grouping/邊界/一則一行/末則時間＋wettland 十二連推、
+  stock-end golden rz2x×7）、`merge_comment_render.test.jsx`（Screen 接線：分行數、縮排 CSS var、
+  作者只在第一行／時間只在最後一行且置右到 col 67／非 React 節點）、`row_render.test.jsx`
+  （單一樓號徽章、`\n` 切成多個 bbsline 且文字零遺失、無 `\n` 仍是單一 span）；
+  offline `comment_merge.offline.spec.js`（不變量：**相鄰 bbsrow 不得同 data-pusher**；stock-end 指名：
+  7→1、徽章 `\d+`、內容零遺失、**7 個 bbsline**、作者/時間位置、**時間可被 getSelection 選取**（守
+  user-select 回歸）、**時間戳 x 座標＝同頁原生推文列**（Range 量子字串 rect）、**懸掛縮排幾何**
+  （jsdom 無 layout，只能真瀏覽器量）、**自動開圖跟在含連結那一行下面**、關開關還原）。
   依賴逐列斷言的既有 spec（enhance/easy-reading live+offline 樓層連號、pusher 計數）已顯式傳
   `mergeSameAuthorComments:false` 鎖舊行為。**pusher 解析勿用 textContent 正則**（樓號徽章數字會混進
   文字），一律讀 `data-pusher`。

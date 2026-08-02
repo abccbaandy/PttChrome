@@ -185,6 +185,22 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 | `aid_parse` | `mbbsd/aids.c#aidu2aidc` | 字母表 `0-9A-Za-z-_`（64 字），產出**恆 8 字**；反向 `aidc2aidu` 不限長度但畫面上只會出現產生端形式 |
 | `symbol_table.js` | — | **不適用**：是 client 端 Unicode→顯示寬度分類表（1/2＝強制全形、3＝壞 DBCS），與 server 邏輯無關 |
 
+## 11.1 推文列欄位寬度與輸入上限（2026-08 CONFIRMED）
+
+用途：判斷「這則推文是不是被輸入欄截斷」——結論是**畫面上判不出來**，故
+`comment_merge.js` 不再猜續行（見 `docs/enhanced-addon.md`）。此處只留欄寬事實本身。
+
+| 項目 | 出處 | 值 |
+|---|---|---|
+| 內容欄寬 `maxlength` | `bbs.c#recommend` | `78 - 3(lead) - 6(date) - 1(space) - 6(time) - strlen(myid)`；`BRD_IPLOGRECMD` 或 guest 再 `-15` |
+| 行組成 | `comments.c#FormatCommentString` | `type(2) + " " + id + ":" + %-maxlength(msg) + tail`；tail＝`" MM/DD HH:MM"`，IP 板為 `"%15s MM/DD HH:MM"`（IP **右對齊 15 欄**） |
+| 可輸入位元組上限 | `vtuikit.c#vgetstring` | 插入條件 `iend+1 < len` ⇒ 上限 `maxlength-1`；全形另需 `len - iend >= 3`（2 bytes + NUL） |
+| 線上實測（term.ptt.cc） | 本次 debug 錄製（AI_Art／Stock／IpComment fixture） | `':'` 後多一格（§12 已知差異）⇒ 內容欄 = `[3+len(id)+2, 66)`；IP 板 = `[…, 51)`；時間戳固定 col **67..77**，全行 78 欄 |
+
+推論（勿再重算）：`剩餘欄位數 = 66 - 內容尾欄`（IP 板 `51 - 內容尾欄`）。全形塞得下需剩 ≥3；
+但**實測「作者剛好寫滿」與「被截斷」同形**（AI_Art M.1785606011 三連推第 2 則內容 50 bytes
+＝ 10 字 id 的理論上限 `61-10-1`），所以此數字只能當「上界」用，不能反推作者意圖。
+
 ## 12. 版本與未知
 
 - 以 §0 的 `build_origin`（`c1ff72df`）讀碼；PTT 實跑的是私有 commit `50372909`，差異不可見。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。

@@ -1,12 +1,30 @@
 // 好讀模式「連續同作者推文合併」純邏輯（無 DOM / 無網路，unit 守護：
 // tests/unit/comment_merge.test.js）。
 //
-// 規則（2026-07 使用者定案）：連續同 userid 的推文列合併為一段、串接成段落
-// 自然換行；跨作者各自分開（A A A B A A → A B A）；跨型別（推/噓/→）照合——
-// PTT 同帳號短時間連推會自動降為 →，要求同型別會斷掉最常見 case；塊首顯示
-// 第一則的型別符號。黑名單 hidden 列透明（好讀本來就整列移除，視覺上前後同
-// 作者相鄰）。FloorCounter／黑名單判定完全不動：合併只是 render 層
-// （Screen#computeAnnotations 之後的重組），樓層仍按原始逐則計數。
+// 規則（2026-08 使用者定案）：連續同 userid 的推文列合併成一塊，**一則一行**——
+// 只去掉第 2 則起重複的「型別符＋作者 id」前綴與行尾時間戳，內容對齊首則的內容
+// 起始欄（懸掛縮排，main.css .mergedCommentBlock）。跨作者各自分開
+// （A A A B A A → A B A）；跨型別（推/噓/→）照合——PTT 同帳號短時間連推會自動
+// 降為 →，要求同型別會斷掉最常見 case；塊首顯示第一則的型別符號。黑名單 hidden
+// 列透明（好讀本來就整列移除，視覺上前後同作者相鄰）。FloorCounter／黑名單判定
+// 完全不動：合併只是 render 層（Screen#computeAnnotations 之後的重組），樓層仍按
+// 原始逐則計數。
+//
+// ---- 為何不猜「被輸入欄截斷的續行」（勿再加回 gap 門檻） ----
+// 舊版（2026-07）會把「行尾剩餘空白 < 門檻」的列當成打滿被切斷，與下一則直接
+// 串接，好把「漲到120」+「0？」復原成「1200？」。2026-08 反查 pttbbs 證實此路
+// 不通，已整組拆除：
+//   bbs.c#recommend        maxlength = 78 - 3(lead) - 6(date) - 1(space) - 6(time)
+//                                        [- 15 if BRD_IPLOGRECMD 或 guest] - strlen(myid)
+//   comments.c#FormatCommentString  "type id:%-maxlength(msg)" + tail
+//   vtuikit.c#vgetstring   可輸入上限 iend+1 < len；全形另需 len - iend >= 3
+//   term.ptt.cc 實測       ':' 後多一格 → 內容欄 [3+len(id)+2, 66)（IP 板 [.., 51)），
+//                          時間戳固定 col 67..77，全行 78 欄
+// 也就是說「作者剛好寫滿一句話」與「被輸入欄切斷」在畫面上**完全同形**（實例：
+// AI_Art M.1785606011 三連推的第 2 則，內容 50 bytes ＝ 10 字 id 的理論上限），
+// 任何寬度門檻都判不出來。唯一還有訊息量的訊號是行尾時間戳（真被截斷的續行幾乎
+// 都在同一分鐘送出），但仍是啟發式 → 使用者決定不猜：一則一行等於「原生畫面減去
+// 重複雜訊」，不可能斷錯，代價只是被截斷的句子分兩行顯示（原生本來就長這樣）。
 //
 // 所有邊界掃描都在 TermChar cell 上做：型別符/id/時間戳/IP 全是 ASCII
 // （cell==char），只有內容區有 DBCS——內容整段 slice、不逐字解讀，故不需
@@ -20,11 +38,10 @@ const ASCII_ID_RE = /[0-9A-Za-z]/;
 const TAIL_TIME_RE = /(\d{1,2}\/\d{2} \d{2}:\d{2})$/; // 鏡像 string_util COMMENT_TIME_RE
 const IPV4_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
-// 一列推文的內容 cell 邊界：{ start, end, time, gap }（[start, end) 為內容、
-// time 為該則時間戳字串、gap 為內容尾到右側欄位（IP 或時間戳）間的空白 cell 數
-// ——反映「這則有沒有打滿」，供合併排版判斷斷行）。切不出完整形狀回傳 null——
-// caller 對整個 run fail-safe 還原逐列渲染，寧可不合併也不錯切（同
-// parseListAuthor 的失敗安全原則）。
+// 一列推文的內容 cell 邊界：{ start, end, time, timeStart }（[start, end) 為內容、
+// time 為該則時間戳字串、timeStart 為它的起始欄——合併塊要把最後一則的時間戳
+// cell 原樣接到段尾）。切不出完整形狀回傳 null——caller 對整個 run fail-safe 還原
+// 逐列渲染，寧可不合併也不錯切（同 parseListAuthor 的失敗安全原則）。
 export function commentContentCells(chars) {
   if (!chars || chars.length < 8) return null;
   // ---- 內容起點：跳過 2-cell 型別符 + 空格 + id（可選補空格）+ ':' + 空格 ----
@@ -54,8 +71,7 @@ export function commentContentCells(chars) {
   const time = tm[1];
   e -= time.length;
   if (!isSpace(e)) return null; // 時間戳前必有空白（COMMENT_TIME_RE 的 \s）
-  // 內容右界＝右側第一個欄位（IP 或時間戳）的起點；gap 由它回推。
-  let rightFieldStart = e + 1;
+  const timeStart = e + 1;
   while (e >= start && isSpace(e)) --e;
   // 可選 IP（BRD_IPLOGRECMD 板）：緊鄰時間戳左側、被空白隔開的嚴格 IPv4 token。
   let tok = '';
@@ -66,10 +82,9 @@ export function commentContentCells(chars) {
   }
   if (tok && IPV4_RE.test(tok) && (k < start || (chars[k] && chars[k].ch === ' '))) {
     e = k;
-    rightFieldStart = k + 1;
     while (e >= start && isSpace(e)) --e;
   }
-  return { start, end: e + 1, time, gap: rightFieldStart - (e + 1) };
+  return { start, end: e + 1, time, timeStart };
 }
 
 // 逐列 annotation（Screen#computeAnnotations 產出，推文列帶 userid / hidden）→
@@ -98,20 +113,15 @@ export function groupSameAuthorRuns(anns) {
   return runs;
 }
 
-// 「這則打滿了沒」的斷行門檻：內容尾到右側欄位的空白 ≥ 此值＝作者刻意在此
-// 結束（保留換行）；< 此值＝打滿被切斷（直接相連）。PTT 推文無自動折行——作者
-// 在輸入框打滿才切下一則，打滿的列尾端只剩固定間隔＋DBCS 塞不下的餘裕。
-// 校準自真實素材（Stock M.1784527065 wettland5566 十二連推，fixture
-// comment_merge_wettland.json）：打滿 gap=3、被全形字擠 1 格 gap=4（「你又不是」
-// 「很強勢的股」——都須相連，門檻 4 曾誤斷，2026-07 使用者回報改嚴）；刻意斷句
-// 「甚至有可能是跌的」gap=8（須換行）。取 8＝該素材恰好只斷這一處；誤差方向
-// 偏「多連少斷」（連錯比斷錯不顯眼）。「漲到120」+「0？」相連復原成「1200？」。
-const BREAK_GAP_COLS = 8;
-
-// run → 合併後的 TermChar[]（首列前綴「推 id: 」保留原色；各列內容 slice 依
-// gap 規則直接相連或以換行 cell 分段）＋首則時間標籤（跟一般單則推文一致：一段
-// 只顯示第一則的時間）。回傳 { chars, timeLabel }；run 中任一列切不出邊界回傳
-// null（caller 還原逐列渲染）。
+// run → 合併後的 TermChar[]：首列前綴「推 id: 」保留原色（**作者在第一則**），
+// 其後各列內容 slice 以換行 cell 逐則分行，末行補上**最後一則**原列「內容尾 →
+// 時間戳結束」整段（padding＋可選 IP＋時間）→ 時間**置右對齊到與原生相同的欄**
+// （使用者 2026-08 定案：作者在頭、時間在尾且比照原生位置）。全部沿用原列 cell
+// ——配色與原生一致、且是一般文字可被 getSelection 選取複製（舊版是
+// .mergedCommentTime React 節點＋user-select:none，不可複製）。回傳：
+//   chars        合併後的 cell 陣列
+//   contentStart 首則內容起始欄 → 懸掛縮排寬度（Screen 換算像素）
+// run 中任一列切不出邊界回傳 null（caller 還原逐列渲染）。
 //
 // 內容 cell 都沿用 lines 內的既有 TermChar 實例——絕不可自造 plain object，
 // prototype 方法（isStartOfURL 等）一剝離 LinkSegmentBuilder 就 runtime 崩潰
@@ -136,15 +146,22 @@ export function buildMergedCommentChars(lines, run) {
     Object.assign(Object.create(Object.getPrototypeOf(spaceSrc)), spaceSrc, {
       ch: '\n',
     });
-  let pendingBreak = false;
+  let lastContentful = -1;
   for (let n = 0; n < run.rows.length; ++n) {
     const rowChars = lines[run.rows[n]];
     const info = infos[n];
     if (info.end <= info.start) continue; // 空內容列：跳過
-    if (out.length > prefixLen && pendingBreak) out.push(newlineCell());
+    if (out.length > prefixLen) out.push(newlineCell());
     for (let c = info.start; c < info.end; ++c) out.push(rowChars[c]);
-    pendingBreak = info.gap >= BREAK_GAP_COLS;
+    lastContentful = n;
   }
-  // 時間標籤只取首則（跟一般單則推文一致，不顯示首~末範圍）。
-  return { chars: out, timeLabel: infos[0].time };
+  if (lastContentful < 0) return null; // 整組空內容：沒東西可合併
+  // 末行接上該列「內容尾 → 時間戳結束」整段（padding＋可選 IP＋時間）**原樣**。
+  // run 內必為同 userid ⇒ 各列 info.start 相同 ⇒ 合併末行的左緣偏移等於原列的，
+  // 故時間戳落在與原生逐列渲染完全相同的欄（置右對齊），不需任何 CSS 定位。
+  const lastRow = lines[run.rows[lastContentful]];
+  const lastInfo = infos[lastContentful];
+  const tailEnd = lastInfo.timeStart + lastInfo.time.length;
+  for (let c = lastInfo.end; c < tailEnd; ++c) out.push(lastRow[c]);
+  return { chars: out, contentStart: infos[0].start };
 }

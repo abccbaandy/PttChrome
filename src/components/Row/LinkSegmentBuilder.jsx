@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import cx from "classnames";
 import HyperLink from "./HyperLink";
 import ColorSegmentBuilder from "./ColorSegmentBuilder";
@@ -24,7 +25,6 @@ export class LinkSegmentBuilder {
     mentions,
     aids,
     giveaways,
-    trailer,
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -32,9 +32,8 @@ export class LinkSegmentBuilder {
     this.onHyperLinkMouseOver = onHyperLinkMouseOver;
     this.onHyperLinkMouseOut = onHyperLinkMouseOut;
     this.floor = floor;
-    // 連續同作者推文合併塊（好讀）：trailer＝附加在行內容尾端的節點（首則時間標籤）。
-    // 樓層與時間都跟一般單則推文一致，只顯示 run 首則。
-    this.trailer = trailer;
+    // 註：合併塊的時間戳不走 React 節點——它是最後一則的原始 cell，直接併進
+    // chars 尾端（見 comment_merge.js），所以這裡沒有額外分支。
     // Same-author (原PO) highlight: wrap cols [authorIdStart, authorIdEnd) — the
     // pusher's user id — in a .commentByAuthor span so only the id is tinted.
     // undefined → not a 原PO comment, skip all wrap logic.
@@ -85,6 +84,10 @@ export class LinkSegmentBuilder {
     this.enableLinkInlinePreview = enableLinkInlinePreview;
     this.fixedUrls = fixedUrls;
     this.inlineLinkPreviews = enableLinkInlinePreview ? [] : false;
+    // 多行 row（目前只有好讀的推文合併塊：chars 內含 '\n' cell）→ 逐行切成獨立的
+    // bbsline 群組，每行的自動開圖接在**該行**下面（跟文章內文一樣），而不是全部
+    // 堆到整塊最後（使用者 2026-08 回報）。單行 row 走原本的結構，DOM 一字不動。
+    this.lineGroups = [];
     //
     this.colorSegBuilder = null;
     this.col = null;
@@ -96,6 +99,16 @@ export class LinkSegmentBuilder {
   _pushSeg(node) {
     if (this._inAuthor) this._authorWrap.push(node);
     else this.segs.push(node);
+  }
+
+  // '\n' cell＝行邊界：收掉目前這行的 segs 與它的自動開圖，開新的一行。
+  _flushLine() {
+    this.lineGroups.push({
+      segs: this.segs,
+      previews: this.inlineLinkPreviews,
+    });
+    this.segs = [];
+    this.inlineLinkPreviews = this.enableLinkInlinePreview ? [] : false;
   }
 
   _flushAuthorWrap() {
@@ -203,6 +216,14 @@ export class LinkSegmentBuilder {
   }
 
   readChar(ch, i) {
+    // 行邊界（合併塊的合成 cell）：不進 segment——換行改由 DOM 的區塊邊界表達，
+    // 這樣每行的自動開圖才有地方掛（見 _flushLine / build）。
+    if (ch.ch === "\n") {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      if (this._inAuthor) this._flushAuthorWrap();
+      this._flushLine();
+      return;
+    }
     // Open the 原PO id wrapper at the first column of the user id. floor (col 2)
     // is inserted before this, so it stays outside the wrapper.
     if (this.authorIdStart !== undefined && i === this.authorIdStart) {
@@ -273,6 +294,39 @@ export class LinkSegmentBuilder {
     // Safety net: a user id running to the end of the line never gets its close
     // boundary, so flush any still-open wrapper here.
     if (this._inAuthor) this._flushAuthorWrap();
+    if (this.lineGroups.length) {
+      // 多行：每行輸出一組「bbsline span ＋ 該行的自動開圖 div」，與單行結構同形。
+      // 預覽 div 即使是空的也照樣輸出——它是區塊盒，正好把下一行的 inline 內容擠到
+      // 新的一行（單行路徑本來就這樣做），所以不需要額外的包裝層。
+      this._flushLine();
+      return (
+        <div>
+          {this.lineGroups.map((g, i) => (
+            <Fragment key={i}>
+              <span
+                className={cx({ b2: this.highlighted })}
+                data-type="bbsline"
+                data-row={this.row}
+              >
+                {g.segs}
+              </span>
+              <div>{g.previews}</div>
+            </Fragment>
+          ))}
+          {this.enableLinkInlinePreview &&
+            this.fixedUrls &&
+            this.fixedUrls.length > 0 &&
+            this.fixedUrls.map(({ fixed }, i) => (
+              <FixedUrlLine
+                key={`fix-${i}-${fixed}`}
+                href={fixed}
+                onMouseOver={this.onHyperLinkMouseOver}
+                onMouseOut={this.onHyperLinkMouseOut}
+              />
+            ))}
+        </div>
+      );
+    }
     return (
       <div>
         <span
@@ -281,7 +335,6 @@ export class LinkSegmentBuilder {
           data-row={this.row}
         >
           {this.segs}
-          {this.trailer}
         </span>
         <div>{this.inlineLinkPreviews}</div>
         {this.enableLinkInlinePreview &&

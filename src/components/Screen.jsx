@@ -205,11 +205,11 @@ function computeAnnotations(lines, enhance, mergeCaption) {
       }
     }
     // 連續同作者推文合併（好讀限定；設定 mergeSameAuthorComments，預設開）：
-    // run 首列掛 mergeCommentRun（合併 chars＋首則時間＋對合併 chars 重跑的偵測），
-    // 其餘列掛 mergedIntoComment（頂層 render null）。樓層／時間都只顯示首則（跟一般
-    // 單則推文一致）。與圖文合併
-    // 天然不重疊（caption 分組遇第一則推文即停）。FloorCounter／黑名單完全不動
-    // ——樓層仍逐則計數，合併只是 render 層重組（見 comment_merge.js）。
+    // run 首列掛 mergeCommentRun（合併 chars＋對合併 chars 重跑的偵測），其餘列掛
+    // mergedIntoComment（頂層 render null）。一則一行，**作者在第一則、時間在最後
+    // 一則**（時間戳沿用原 cell，故配色同原生且可複製）；樓層徽章只顯示 run 首則。
+    // 與圖文合併天然不重疊（caption 分組遇第一則推文即停）。FloorCounter／黑名單
+    // 完全不動——樓層仍逐則計數，合併只是 render 層重組（見 comment_merge.js）。
     if (easyReading && mergeSameAuthorComments) {
       const runs = groupSameAuthorRuns(result);
       for (let k = 0; k < runs.length; ++k) {
@@ -223,7 +223,7 @@ function computeAnnotations(lines, enhance, mergeCaption) {
           ...firstAnn,
           mergeCommentRun: {
             chars: merged.chars,
-            timeLabel: merged.timeLabel,
+            contentStart: merged.contentStart,
             ...detectRowExtras(merged.chars, mText, firstAnn, detectOpts),
           },
         };
@@ -495,8 +495,16 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
           // data-row＝run 首列的絕對 pageLines index。塊內複製以 DOM 選取為準
           // （^C 走 window.getSelection().toString()，term_view.js）；getText 的
           // col 對映在合併段內失真，已知取捨（同 mergedImageBlock 的脈絡）。
+          // 懸掛縮排寬度＝首則內容起始欄 × 半形字寬（forceWidth 是全形字像素寬）
+          // → 第 2 則起與第一則的內容對齊（main.css .mergedCommentBlock）。
           return (
-            <div key={row} className="mergedCommentBlock">
+            <div
+              key={row}
+              className="mergedCommentBlock"
+              style={{
+                "--merged-comment-indent": `${(m.contentStart * forceWidth) / 2}px`,
+              }}
+            >
               <Row
                 chars={m.chars}
                 row={row}
@@ -504,9 +512,6 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
                 enableLinkInlinePreview={enableLinkInlinePreview}
                 highlighted={currentHighlighted === row}
                 floor={ann.floor}
-                trailer={
-                  <span className="mergedCommentTime">{m.timeLabel}</span>
-                }
                 pusher={ann.pusher}
                 pusherHighlight={ann.pusherHighlight}
                 authorIdStart={ann.authorIdStart}

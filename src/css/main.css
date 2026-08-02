@@ -220,25 +220,33 @@ a:link,a:visited,a:active,a:hover {
 #mainContainer.imagesEnlarged .mergedImageCol .easyReadingImg {
   max-width: 100%;
 }
-/* 好讀「連續同作者推文合併」（Screen.jsx mergeCommentRun）：同作者連續推文的
-   內容串接成一段，pre-wrap 隨視窗寬自然換行。row span 包進 wrapper div 後不再
-   是 #mainContainer 直系子層 → 補等效樣式（同 mergedImageBlock 的作法）。 */
+/* 好讀「連續同作者推文合併」（Screen.jsx mergeCommentRun）：同作者連續推文一則
+   一行（去掉重複的作者前綴與時間戳），pre-wrap 讓硬換行與過窄視窗的自動換行都
+   成立。row span 包進 wrapper div 後不再是 #mainContainer 直系子層 → 補等效樣式
+   （同 mergedImageBlock 的作法）。
+   懸掛縮排：padding-left 把整塊推到「首則內容起始欄」，第一則的 bbsline 再以負
+   margin 拉回 0 欄（前綴照原本 col 對齊、零寬樓號徽章不受影響）→ 第 2 則起自動
+   對齊第一則的內容。縮排寬度由 Screen 依 id 長度算成 --merged-comment-indent
+   inline var。
+   **用 margin 不用 text-indent**：合併塊每一則是獨立的 bbsline span（見
+   LinkSegmentBuilder，為了讓自動開圖掛在各自那一行下面），text-indent 會繼承下去
+   把每一行都往左拉；margin 不繼承，只作用在第一則。 */
 .mergedCommentBlock span[type="bbsrow"] {
   display: block;
   color: #c0c0c0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  padding-left: var(--merged-comment-indent, 0);
+}
+.mergedCommentBlock span[type="bbsrow"] > div > [data-type="bbsline"]:first-child {
+  margin-left: calc(-1 * var(--merged-comment-indent, 0));
 }
 /* 樓號徽章不覆寫：沿用一般 .floorBadge 的「零寬盒＋右對齊 id 起始欄向左長」疊字，
    前綴「marker＋空格＋id」照 col 對齊 → 合併塊作者 id 與相鄰單則推文（renderRow）
-   同一起始欄，不會被徽章推移。 */
-/* 首則時間標籤，淡色縮小、跟在段落尾端。 */
-.mergedCommentTime {
-  color: #808080;
-  font-size: 0.85em;
-  margin-left: 1em;
-  -webkit-user-select: none;
-}
+   同一起始欄，不會被徽章推移。
+   時間戳也不需要樣式：它是最後一則的原始 cell（見 comment_merge.js），配色跟原生
+   一致、且是一般文字可被 ^C 選取複製。舊版的 .mergedCommentTime（淡色縮小＋
+   user-select:none）已於 2026-08 移除——使用者要求「比照原生、要能複製」。 */
 
 /* 自動開影片：尺寸上限比照 .easyReadingImg（19em/39em），**必須有 max-height**——
    直式影片（如 480×854）在舊的固定 width:640px 下高度會撐到 1138px，遠超過視窗，

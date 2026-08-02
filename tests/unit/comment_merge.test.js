@@ -104,28 +104,64 @@ describe("commentContentCells", () => {
 });
 
 describe("buildMergedCommentChars", () => {
-  // 打滿欄位被切斷的推文（gap 小）→ 直接相連、不插空格：被切斷的字（如
-  // 「120」+「0」→「1200」）才能復原。使用者回報：原本加空格會出現「120 0」。
-  test("打滿的列（gap 小）直接相連，不插空格", () => {
-    const lines = [
-      chars("PU aaa: price is 120 07/20 14:23"),
-      chars("PU aaa: 0 ok         07/20 14:31"),
-    ];
-    const r = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1] });
-    expect(r).not.toBeNull();
-    expect(textOf(r.chars)).toBe("PU aaa: price is 1200 ok");
-    expect(r.timeLabel).toBe("07/20 14:23"); // 只顯示首則時間
-  });
-
-  // 內容遠短於欄寬（後面一大段空白）＝作者刻意斷句 → 保留換行（\n cell，
-  // pre-wrap 渲染成換行）。使用者定案：「原本就有大量空白的就把他當成換行」。
-  test("內容後大量空白（gap 大）→ 當成換行", () => {
+  // 核心不變量（2026-08 使用者定案，取代舊的 gap 猜續行規則）：一則推文＝一行。
+  // 合併只做「去掉第 2 則起重複的作者前綴與時間戳」，不猜哪兩則原本是同一句被
+  // 輸入欄截斷 —— 見 comment_merge.js 檔頭的 pttbbs 欄寬反查。
+  // 作者在第一則行首、時間在**最後一則**行尾且**置右對齊**（使用者 2026-08 定案）。
+  // 手法：把最後一則「內容尾 → 時間戳結束」整段（padding＋可選 IP＋時間）原樣帶過來。
+  // 同一 run 必為同 userid ⇒ 各列內容起始欄相同 ⇒ 合併行的左緣偏移＝原列的，
+  // 於是時間戳落在與原生逐列渲染**完全相同的欄**。全部沿用原 cell（ANSI 配色一致、
+  // 可被 getSelection 選取複製），不是 React 節點。
+  test("每則各自成行；末行帶原列的 padding＋時間戳（欄位同原生）", () => {
     const lines = [
       chars("PU aaa: hello        07/20 14:23"),
       chars("PU aaa: world        07/20 14:31"),
     ];
     const r = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1] });
-    expect(textOf(r.chars)).toBe("PU aaa: hello\nworld");
+    expect(r).not.toBeNull();
+    expect(textOf(r.chars)).toBe("PU aaa: hello\nworld        07/20 14:31");
+  });
+
+  test("末行時間戳與原生列同一欄（末行寬度＝原列到時間戳結束的寬度）", () => {
+    const lastRow = "PU aaa: world        07/20 14:31";
+    const lines = [chars("PU aaa: hello        07/20 14:23"), chars(lastRow)];
+    const r = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1] });
+    const info = commentContentCells(lines[1]);
+    const lastLine = textOf(r.chars).split("\n").pop();
+    // 合併末行 = 原列從內容起始欄到時間戳結束，一字不差 → 欄位對齊必然相同。
+    expect(lastLine).toBe(lastRow.slice(info.start));
+    // 時間戳結束欄＝內容起始欄 + 末行長度，與原列一致。
+    expect(info.start + lastLine.length).toBe(
+      info.timeStart + info.time.length,
+    );
+  });
+
+  // 使用者回報（AI_Art M.1785606011 三連推）：中間那則「剛好打滿到欄位最後一格」，
+  // 舊的 gap 門檻因此把三則黏成一段。打滿與否不再影響斷行。
+  test("打滿到欄位最後一格的列，仍與下一則分行", () => {
+    const lines = [
+      chars("PU aaa: i am changing termptt 07/20 14:26"),
+      chars("PU aaa: filled to the very edge 07/20 14:27"),
+      chars("PU aaa: short one            07/20 14:28"),
+    ];
+    const r = buildMergedCommentChars(lines, {
+      userid: "aaa",
+      rows: [0, 1, 2],
+    });
+    expect(textOf(r.chars).split("\n")).toEqual([
+      "PU aaa: i am changing termptt",
+      "filled to the very edge",
+      "short one            07/20 14:28",
+    ]);
+  });
+
+  test("contentStart＝首則內容起始欄（懸掛縮排寬度）", () => {
+    const lines = [
+      chars("PU aaa: hello        07/20 14:23"),
+      chars("PU aaa: world        07/20 14:31"),
+    ];
+    const r = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1] });
+    expect(r.contentStart).toBe(8); // "PU aaa: ".length
   });
 
   test("空內容列跳過", () => {
@@ -138,7 +174,7 @@ describe("buildMergedCommentChars", () => {
       userid: "aaa",
       rows: [0, 1, 2],
     });
-    expect(textOf(r.chars)).toBe("PU aaa: hello\nworld");
+    expect(textOf(r.chars)).toBe("PU aaa: hello\nworld        07/20 14:31");
   });
 
   test("run 中任一列切不出邊界 → null（整組 fail-safe 還原逐列）", () => {
@@ -151,6 +187,8 @@ describe("buildMergedCommentChars", () => {
     ).toBeNull();
   });
 
+  // 換行是唯一的合成 cell；連時間戳前的分隔空白也**重用**原列的空白 cell 實例
+  // ——沿用實例才不會剝掉 TermChar prototype（isStartOfURL 等）。
   test("cell 沿用既有 TermChar 實例；換行 cell 保留原 prototype（不可 plain object）", () => {
     const lines = [
       chars("PU aaa: hi           07/20 14:23"),
@@ -176,10 +214,9 @@ describe("buildMergedCommentChars", () => {
 
 // 真實素材回歸（使用者回報排版案例）：Stock M.1784527065 wettland5566 連續 12 則。
 // fixture 為 Big5 原始 bytes（1 byte = 1 cell/col，欄位數學與 buf 一致）。
-// 校準（2026-07 使用者定案「換行條件設嚴」）：打滿 gap=3、被全形字擠 1 格 gap=4
-// （「你又不是」「很強勢的股」「遇到」）皆須相連；唯獨刻意斷句
-// 「甚至有可能是跌的」（gap=8）換行 → 全段恰好一個換行。
-describe("真實素材（wettland5566 十二連推，斷行校準）", () => {
+// 舊版曾用 gap 門檻猜「哪幾則原本是同一句」，已於 2026-08 廢除（見 comment_merge.js
+// 檔頭）：此素材現在的期望是十二則各自成行、內容零遺失且逐則連續。
+describe("真實素材（wettland5566 十二連推）", () => {
   const fx = JSON.parse(
     fs.readFileSync(
       path.join(__dirname, "fixtures/comment_merge_wettland.json"),
@@ -190,16 +227,25 @@ describe("真實素材（wettland5566 十二連推，斷行校準）", () => {
     Array.from(Buffer.from(b64, "base64").toString("latin1")).map(cell),
   );
 
-  test("全段恰好一個換行，落在「甚至有可能是跌的」之後", () => {
+  test("十二則各自成行，逐則內容完整且順序不變", () => {
     const run = { userid: "wettland5566", rows: lines.map((_, i) => i) };
     const r = buildMergedCommentChars(lines, run);
     expect(r).not.toBeNull();
     const parts = textOf(r.chars).split("\n");
-    expect(parts.length).toBe(2); // 只此一個換行
-    // 斷點正確：前段以「甚至有可能是跌的」（fixture 第 6 列）的內容收尾
-    const info = commentContentCells(lines[5]);
-    const row6content = textOf(lines[5].slice(info.start, info.end));
-    expect(parts[0].endsWith(row6content)).toBe(true);
+    expect(parts.length).toBe(lines.length);
+    const contents = lines.map((l) => {
+      const info = commentContentCells(l);
+      return textOf(l.slice(info.start, info.end));
+    });
+    // 第一段還帶著首則前綴「噓 wettland5566: 」，中段＝該則內容原樣，
+    // 末段＝最後一則從內容起始欄到時間戳結束（padding 原樣帶著 → 時間置右對齊）。
+    expect(parts[0].endsWith(contents[0])).toBe(true);
+    expect(parts.slice(1, -1)).toEqual(contents.slice(1, -1));
+    const last = lines[lines.length - 1];
+    const li = commentContentCells(last);
+    expect(parts[parts.length - 1]).toBe(
+      textOf(last.slice(li.start, li.timeStart + li.time.length)),
+    );
   });
 });
 
