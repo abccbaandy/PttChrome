@@ -37,6 +37,7 @@
     "test:unit": "vitest run --project unit",
     "test:integration": "node scripts/run-integration.mjs",
     "kill:dev": "node scripts/kill-dev-server.js",
+    "ci:status": "node scripts/ci-status.mjs",
     "test:e2e": "yarn kill:dev && playwright test --project=live",
     "test:e2e:offline": "yarn kill:dev && playwright test --project=offline",
     "test:e2e:headed": "yarn kill:dev && playwright test --project=live --headed",
