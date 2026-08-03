@@ -35,7 +35,7 @@
 - npm modular SDK（firebase v12，版本歸 lockfile 管）。
 - `init()` 用 `import("firebase/app"|"firebase/auth"|"firebase/firestore")` → Vite/Rolldown 自動 code-split 成獨立 lazy chunk（~500KB），只在「曾登入（localStorage 旗標）」或「按登入鈕」時下載 → 未登入者（含 e2e/guest）零下載、零 Firebase 請求（Playwright 兩個方向驗證過：無旗標零流量；有旗標 chunk 正常載入）。
 - modular API 注意：`snap.exists` 是**方法** `snap.exists()`（非屬性）；`onAuthStateChanged` 通知在 sign-in promise resolve 後的 microtask 才到 → `signIn` attach listener 前要等模組層 `currentUser` 就緒（`waitForUser`）。
-- emulator hookup（test-only）：`init()` 讀 `process.env.FIRESTORE_EMULATOR_HOST` / `FIREBASE_AUTH_EMULATOR_HOST` / `GCLOUD_PROJECT`（`firebase emulators:exec` 自動設給子行程）→ `connectAuthEmulator`/`connectFirestoreEmulator` + projectId 覆寫。`vite.config.js` `define` 把三鍵 pin 成 `undefined` → production bundle 整段被 minifier DCE（entry chunk grep 不到 `EMULATOR_HOST`）。
+- emulator hookup（test-only）：`init()` 讀 `process.env.FIRESTORE_EMULATOR_HOST` / `FIREBASE_AUTH_EMULATOR_HOST` / `GCLOUD_PROJECT`（`firebase emulators:exec` 自動設給子行程）→ `connectAuthEmulator`/`connectFirestoreEmulator` + projectId 覆寫。`vite.config.mjs` `define` 把三鍵 pin 成 `undefined` → production bundle 整段被 minifier DCE（entry chunk grep 不到 `EMULATOR_HOST`）。
 
 ## 測試（官方 Firebase Emulator Suite）
 
@@ -48,7 +48,7 @@
 - 登入：auth emulator 接受**假 unsigned Google ID token**（官方功能）——`signInWithCredential(auth, GoogleAuthProvider.credential('{"sub":...,"email":...}'))`。`signInWithPopup` 需要真瀏覽器 UI，headless 不可行 → `prefSync.signIn(onCloudValues, authenticate)` 第二參數是測試注入縫；production 呼叫端不傳（走 popup），流程其餘部分（旗標、attach、merge、callback）全是真路徑。
 - 隔離策略：**每個測試換新 uid**（token 換 `sub`）而非清庫——(1) REST 清庫清不掉主 client 的 in-memory cache，殘留 doc 會污染下個測試的 fromCache snapshot；(2) 刪 auth 帳號會讓另一個 client 的 token 失效。換 uid 兩個都繞開。
 - 「另一台裝置」= 第二個 SDK app instance（`initializeApp(cfg, "seeder")`）以同 `sub` 登入（同 uid → 過 rules）讀寫 `users/{uid}`。
-- vitest integration project 用 **node env 不用 jsdom**（`vitest.config.js`）：jsdom 下 Firestore 走 WebChannel/XHR（無真瀏覽器不穩）；node env 解析到 SDK 的 node build 走 gRPC。`window.localStorage` 用 Map shim（`tests/integration/setup.js`）。
+- vitest integration project 用 **node env 不用 jsdom**（`vitest.config.mjs`）：jsdom 下 Firestore 走 WebChannel/XHR（無真瀏覽器不穩）；node env 解析到 SDK 的 node build 走 gRPC。`window.localStorage` 用 Map shim（`tests/integration/setup.js`）。
 - vitest 原生吃 ESM/`import()`，無需任何 transform plugin。
 - 等待用確定性訊號：spy `console.info` 輪詢 `snapshot action=<x>` 日誌（= listener 已掛上且 snapshot 已分類），不瞎 sleep。
 - 收尾：afterAll `terminate(db)` + `deleteApp(app)`（main + seeder 都要），否則 gRPC channel / auth token timer 讓 vitest 掛著不退。
@@ -81,7 +81,7 @@ firebase deploy --only firestore:rules
 - client：`pref_sync.js` `init()` 第 4 個 `import("firebase/app-check")`（同批 lazy chunk，未登入照樣零下載）→ `!emuProject` 才 `initializeAppCheck`（emulator/node 跳過：無 DOM、emulator 不驗 token）→ `ReCaptchaEnterpriseProvider(RECAPTCHA_SITE_KEY)` + `isTokenAutoRefreshEnabled: true`，包 try/catch（ad-blocker 擋 recaptcha script 時 app 不死，僅同步失效）。
 - key：reCAPTCHA Enterprise **score-based** key（GCP 同專案），allowedDomains 只有正式部署網域（GitHub Pages），**不含 localhost**（加了等於任何人可在本機鑄 token）。site key = `firebase_config.js` `RECAPTCHA_SITE_KEY`（公開無妨，域名限制在 key 上）。
 - App Check 註冊：provider config `tokenTtl: 86400s`（預設；每活躍裝置每天 ~1 次 assessment，Enterprise 免費額 10k/月）、`minValidScore: 0.5`（預設）。
-- **dev（localhost）走 debug token**：`DEVELOPER_MODE` 時 `self.FIREBASE_APPCHECK_DEBUG_TOKEN = process.env.APPCHECK_DEBUG_TOKEN || true`。`APPCHECK_DEBUG_TOKEN` 來自**開發機環境變數**（`vite.config.js` `define` 注入）——已註冊的 debug token 可繞過 reCAPTCHA，**絕不可進 repo**。沒設環境變數時 SDK 每瀏覽器 profile 自產一組印在 console，需逐一註冊（Console → App Check → Apps → Manage debug tokens，或 REST `POST /v1/projects/{p}/apps/{appId}/debugTokens`）。
+- **dev（localhost）走 debug token**：`DEVELOPER_MODE` 時 `self.FIREBASE_APPCHECK_DEBUG_TOKEN = process.env.APPCHECK_DEBUG_TOKEN || true`。`APPCHECK_DEBUG_TOKEN` 來自**開發機環境變數**（`vite.config.mjs` `define` 注入）——已註冊的 debug token 可繞過 reCAPTCHA，**絕不可進 repo**。沒設環境變數時 SDK 每瀏覽器 profile 自產一組印在 console，需逐一註冊（Console → App Check → Apps → Manage debug tokens，或 REST `POST /v1/projects/{p}/apps/{appId}/debugTokens`）。
 - enforcement：`firestore.googleapis.com` 的 `enforcementMode`（UNENFORCED ↔ ENFORCED）。**enforce 當下未帶 token 的舊 client 立即被拒** → 順序必須：部署新 client → 驗證 → 再 enforce。Auth（`identitytoolkit.googleapis.com`）enforce 需升級 Identity Platform，未做（Google 登入非計量資源，濫用主戰場是 Firestore）。
 - 無 gcloud 的 REST 管理做法（同上方 serviceusage 踩坑）：firebase CLI 的 refresh token（`~/.config/configstore/firebase-tools.json`，含 `cloud-platform` scope）＋ firebase-tools 內嵌公開 OAuth client id/secret（`node_modules/firebase-tools/lib/api.js`）→ `POST oauth2.googleapis.com/token` 換 access token。重建時依序：
   1. serviceusage `services:batchEnable`：`recaptchaenterprise.googleapis.com` + `firebaseappcheck.googleapis.com`

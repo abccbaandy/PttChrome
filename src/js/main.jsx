@@ -43,7 +43,7 @@ function startApp() {
       renderInto(container, <MantineRoot><DeveloperModeAlert onDismiss={onDismiss} /></MantineRoot>)
     })) : Promise.resolve()
   ).then(() => {
-    // connect. Priority: ?site override (off by default, see vite.config.js ALLOW_SITE_IN_QUERY)
+    // connect. Priority: ?site override (off by default, see vite.config.mjs ALLOW_SITE_IN_QUERY)
     // -> user proxy from prefs -> the built-in DEFAULT_SITE.
     const prefs = readValuesWithDefault();
     app.connect(

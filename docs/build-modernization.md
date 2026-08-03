@@ -6,11 +6,12 @@
 
 - **JSX 一律 `.jsx` 副檔名**：Vite 8 oxc 不吃 `.js` 內 JSX。plugin-react-swc 的 `parserConfig` 硬吃法被官方標「highly discouraged、隨時移除」→ **不採用**，改檔名。
 - **React plugin 選型＝`@vitejs/plugin-react`**（peer vite ^8，依賴只剩 `@rolldown/pluginutils`，Babel 全在 optional peer、只有 React Compiler 才需要）：比 plugin-react-swc（拖 80MB `@swc/core`）更輕更主流；`plugin-react-oxc` 已停在 vite ^7 並被併回 plugin-react，勿改用。
-- **`vitest.config.js` 刻意不 extends `vite.config.js`**：app 的 `define` 把 `FIRESTORE_EMULATOR_HOST` 等釘成 undefined（給 build DCE），integration 測試靠這些真 env 連 emulator，混用即全滅。
+- **設定檔副檔名＝模組格式，勿改回 `.js`**：`vite.config.mjs` / `vitest.config.mjs` 是 ESM（`import` 語法），`playwright.config.js` / `postcss.config.cjs` 是 CJS（`require`/`module.exports`）。repo 沒有也**不要加** `package.json` 的 `"type": "module"`——那會把所有 `.js` 一律當 ESM，`playwright.config.js` 與 `tests/e2e/helpers/*.js`（CJS `require`）會整批爆。副檔名標註格式即可，逐檔精準。踩坑：兩個 config 原本叫 `.js`，Vite 8 的 `configLoader: 'native'`（未來預設）會用 CJS 載入 → 每次 `yarn start`／`yarn test:unit` 都印 unsupported feature 警告。
+- **`vitest.config.mjs` 刻意不 extends `vite.config.mjs`**：app 的 `define` 把 `FIRESTORE_EMULATOR_HOST` 等釘成 undefined（給 build DCE），integration 測試靠這些真 env 連 emulator，混用即全滅。
 - **測試檔要純 ESM**：CJS `require()` src 模組在 Vitest 下走 Node 真實解析 → 遇 ESM extensionless import 即 `Cannot find module`。ESM 檔內也無 `__dirname`，用 `fileURLToPath(import.meta.url)`。
-- **CI flaky 重試無 `vi` 對應**（沒有 `jest.retryTimes`）：設 `vitest.config.js` integration project 的 `retry`。
+- **CI flaky 重試無 `vi` 對應**（沒有 `jest.retryTimes`）：設 `vitest.config.mjs` integration project 的 `retry`。
 - asset：`.bin` 用 `?url` import；`.bin`/`.bmp` 需列入 `assetsInclude`；小圖（< `assetsInlineLimit` 4KB）自動 inline，CSS 內不必寫 `?inline`。
-- entry＝根目錄 `index.html`，title 佔位由 `vite.config.js` 的 `transformIndexHtml` 小 plugin 替換；favicon `<link href>` Vite 自動 hash。
+- entry＝根目錄 `index.html`，title 佔位由 `vite.config.mjs` 的 `transformIndexHtml` 小 plugin 替換；favicon `<link href>` Vite 自動 hash。
 - e2e webServer 跑 `node node_modules/vite/bin/vite.js`（單一進程原則，teardown 才殺得乾淨）。
 - **lightningcss（CSS minify）比舊鏈嚴格**：非法註解之類會直接 build fail——這是好事，修 CSS 而不是繞過。
 - Yarn v4 script＝portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數 → **勿引入 cross-env**。

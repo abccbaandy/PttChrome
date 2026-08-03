@@ -11,7 +11,7 @@ Vite 8（Rolldown 核心）+ React19（bundled）。React plugin 用 `@vitejs/pl
   - 用 **Node**（≥20.19，建議 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
   - 套件管理用 **yarn**（Yarn v4，`node-modules` linker，設定於 `.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。**勿用 npm**（會產生多餘 `package-lock.json`）。CI 安裝用 `yarn install --immutable`。Yarn v4 不跑自訂 `pre*`/`post*` script；build 產物清理由 Vite `emptyOutDir` 處理（無 `clean` script）。Yarn v4 script 是 portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數（`record:cassette` 用此，勿再引入 cross-env）。
 - dev server 內建 `/bbs` WebSocket proxy，改寫 Origin→term.ptt.cc，直連 `wss://ws.ptt.cc/bbs`。開頁即自動連真 PTT，**不需任何中繼**。
-- dev 預設站台 `wstelnet://localhost:8080/bbs`（vite.config.js `define` → `DEFAULT_SITE`）。
+- dev 預設站台 `wstelnet://localhost:8080/bbs`（vite.config.mjs `define` → `DEFAULT_SITE`）。
 - 詳見 `docs/run-local.md`。
 
 ## 架構關鍵點
@@ -27,13 +27,13 @@ Vite 8（Rolldown 核心）+ React19（bundled）。React plugin 用 `@vitejs/pl
 - 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，npm modular SDK 走 dynamic `import()` 拆 lazy chunk，未登入零下載；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。App Check（reCAPTCHA Enterprise）擋 script 直打 API 燒額度；dev 走 debug token（機器 env `APPCHECK_DEBUG_TOKEN`，**不入 repo**）。詳見 `docs/pref-sync-firestore.md`。
 
 ## 測試
-- **Unit（首選，穩定）**：`yarn test:unit`（Vitest，jsdom env，不連網；設定 `vitest.config.js` unit project）。`tests/unit/` 30+ 檔＝
+- **Unit（首選，穩定）**：`yarn test:unit`（Vitest，jsdom env，不連網；設定 `vitest.config.mjs` unit project）。`tests/unit/` 30+ 檔＝
   純邏輯（解析／狀態機／轉碼）＋Row/Screen 渲染（@testing-library/react + 假 ASCII TermChar）。
   **含 JSX 的測試檔用 `.test.jsx`**。mock/timer 用 `vi.*`（globals 開啟，`describe/test/expect` 免 import）。
   增強功能的逐列判斷一律放 `comment_parse.annotateComment` 並在此回歸守護（e2e 素材不穩，純邏輯先測）。
 - **Integration（雲端同步流程）**：`yarn test:integration`（Vitest + 官方 **Firebase Emulator Suite**：真 modular SDK
   + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）。emulator 跑在 **Docker**（pinned `andreysenov/firebase-tools`，內含 firebase-tools+JDK；vitest 在 host 連容器埠），所以**本機跑需 Docker**（不再需本機裝 Java/firebase-tools）。orchestration 見 `scripts/run-integration.mjs`。
-  **`vitest.config.js` 刻意不 extends `vite.config.js`**：app 的 `define` 會把 emulator env 釘成 undefined，integration 混用會全滅。
+  **`vitest.config.mjs` 刻意不 extends `vite.config.mjs`**：app 的 `define` 會把 emulator env 釘成 undefined，integration 混用會全滅。
   `tests/integration/pref_sync.test.js`：啟動還原/他機推播/echo skip/offline 守門/signIn/signOut/憑證去敏；
   e2e 不連 Firebase，同步流程只能在這驗。細節見 `docs/pref-sync-firestore.md`。
 - **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額常滿會 fast-fail）。
@@ -86,5 +86,5 @@ Vite 8（Rolldown 核心）+ React19（bundled）。React plugin 用 `@vitejs/pl
 - 重大技術升級（框架/建置/依賴的升版或替換，如 React 升版、換 UI 庫、建置/測試工具替換）要同步更新「設定 → 關於」的「重大技術升級」區塊：`src/js/zh_TW_messages.js` 與 `src/js/en_US_messages.js` 的 `about_new_content`（兩語系都要改）
 - **依賴／建置鏈已全面現代化（2026-07，見 `docs/build-modernization.md` 掃描表），維持此狀態**：遇坑優先升級／換套件（並提報使用者），不要堆疊 workaround／`!important` 硬調。穩定性與現代化優先於最小改動。
   - **不只升版本，還要換陣營**：實作時發現某依賴的「同類但更主流」替代品已成生態標準（如 webpack+Babel→Vite、jest→Vitest），優先評估整組替換而非原地升版。無維護的小套件（如當年的 base58）優先內聯或換維護中的主流品。評估紀錄寫進 `docs/build-modernization.md`。
-  - **目標對象＝主流桌機瀏覽器現代版**（Chrome/Edge/Firefox/Safari，見 `vite.config.js` `build.target`）：**不考慮**手機、舊版、冷門瀏覽器相容性；不為它們加 polyfill/transpile/workaround。
+  - **目標對象＝主流桌機瀏覽器現代版**（Chrome/Edge/Firefox/Safari，見 `vite.config.mjs` `build.target`）：**不考慮**手機、舊版、冷門瀏覽器相容性；不為它們加 polyfill/transpile/workaround。
   - `src/js` 核心仍是 fork 來的舊式碼**風格**（prototype 掛載/`var`）：功能正常且有測試守護，**不主動大規模重寫**；觸及該檔時順手現代化即可。deprecated 瀏覽器 API 已清零（2026-07），別再重複掃描。

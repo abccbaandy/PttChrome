@@ -20,7 +20,7 @@
 |---|---|---|
 | ① | Chrome 擴充（本文件）| 對 `ws.ptt.cc` 的 websocket 請求 set `Origin: https://term.ptt.cc` |
 | ② | `?site=wsstelnet://ws.ptt.cc/bbs` | 讓前端直連 PTT（`wsstelnet`→`wss:443`，見 `src/js/pttchrome.jsx`）|
-| ③ | build flag `ALLOW_SITE_IN_QUERY` | 否則 `?site=` 不生效（`src/js/main.jsx` + `vite.config.js` 的 `define`）|
+| ③ | build flag `ALLOW_SITE_IN_QUERY` | 否則 `?site=` 不生效（`src/js/main.jsx` + `vite.config.mjs` 的 `define`）|
 
 ---
 
@@ -83,7 +83,7 @@
 
 ### ③ 開放 query 覆寫（build flag）
 
-站台來源優先序在 `src/js/main.jsx`：`?site=` 覆寫（需 `ALLOW_SITE_IN_QUERY`）→ proxy 偏好 → `DEFAULT_SITE`。兩個 flag 由 `vite.config.js` 的 `define` 於 build 時注入；要讓 `?site=` 生效，build 時設環境變數 `ALLOW_SITE_IN_QUERY=yes`。
+站台來源優先序在 `src/js/main.jsx`：`?site=` 覆寫（需 `ALLOW_SITE_IN_QUERY`）→ proxy 偏好 → `DEFAULT_SITE`。兩個 flag 由 `vite.config.mjs` 的 `define` 於 build 時注入；要讓 `?site=` 生效，build 時設環境變數 `ALLOW_SITE_IN_QUERY=yes`。
 
 > 安全面：開了之後任何人可用 `?site=` 連任意站台。本服務本就是公開 PTT 前端，風險低，但要知道有這開放面。
 
@@ -113,5 +113,5 @@ https://<PAGES_URL>/?site=wsstelnet://ws.ptt.cc/bbs
 
 - 連線 URL / scheme 解析：`src/js/pttchrome.jsx`（`wsstelnet`→`wss:443`）
 - 站台來源優先序 / `?site=` 覆寫：`src/js/main.jsx`
-- build flag 注入（`DEFAULT_SITE` / `ALLOW_SITE_IN_QUERY`）：`vite.config.js`（`define`）
+- build flag 注入（`DEFAULT_SITE` / `ALLOW_SITE_IN_QUERY`）：`vite.config.mjs`（`define`）
 - Origin 白名單根本約束：`pttchrome-research.md` §「Origin 白名單」

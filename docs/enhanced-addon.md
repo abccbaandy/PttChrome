@@ -216,7 +216,7 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 
 ### A. 活躍陷阱（動到相關 code 前先讀）
 
-- **async/await 已可用**（`vite.config.js` `build.target` = 現代桌機瀏覽器）。**勿把 target 降回舊瀏覽器**（歷史教訓，Babel 時代 preset-env 會注入 regenerator → 整包 bundle 載入即炸；現 esbuild/oxc 對過舊 target 直接報錯，仍不要降）。診斷捷徑：Playwright `page.on('pageerror')`。
+- **async/await 已可用**（`vite.config.mjs` `build.target` = 現代桌機瀏覽器）。**勿把 target 降回舊瀏覽器**（歷史教訓，Babel 時代 preset-env 會注入 regenerator → 整包 bundle 載入即炸；現 esbuild/oxc 對過舊 target 直接報錯，仍不要降）。診斷捷徑：Playwright `page.on('pageerror')`。
 - **讀「當前畫面文字」用 `buf.getRowText`，勿讀 `#mainContainer.innerText`**。`term_buf.notify` 先 `dispatchEvent('change')` 才 `view.update()` → DOM 慢一幀（下次更新才追上）。← auto-login「要按鍵才動」根因。
 - **DOM scraping 容錯**（測試/外部讀畫面）：① `visibility:hidden` 列 `innerText` 回空字串（Chromium）→ 改讀 `textContent`；② floorBadge 插在 bbsline 內污染文字（`推9 userid`）→ 推文正則須容忍 `/^(推|噓|→)\d*\s+/`。app 邏輯讀 buf、複製有 `user-select:none`，皆不受影響。
 - **改樓層徽章必須守三個契約**（各有測試守護，破一個就紅）：① 對等寬格線**淨推進 0**（零寬盒 + `position:relative`/`transform` 位移，勿改用 margin/padding 撐位）；② `[data-floor]` 的 `textContent` 仍是純樓號數字（unit/e2e 皆以此讀樓號）；③ `color` 留在 `.floorBadge` 外層（上班模式 `color.css` 以 `.floorBadge` 覆寫壓灰，`ui_behavior.offline.spec.js` 直接探測該 class）。幾何回歸（不侵入 id 欄）只有真瀏覽器量得到 → 守在 `enhance.offline.spec.js`（含合成 4 位數樓號）。

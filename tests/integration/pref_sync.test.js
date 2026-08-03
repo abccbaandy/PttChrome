@@ -54,11 +54,11 @@ const PROJECT_ID = process.env.GCLOUD_PROJECT;
 // test there. A successful poll resolves as soon as its condition holds (~200ms
 // locally), so a bigger ceiling NEVER slows the happy path — it only absorbs the
 // cold-start tail. Locally the deadline stays tight so a real hang fails fast.
-// (vitest.config.js integration project testTimeout derives its outer guard from the same env.)
+// (vitest.config.mjs integration project testTimeout derives its outer guard from the same env.)
 const POLL_DEADLINE_MS =
   Number(process.env.INTEGRATION_TIMEOUT_MS) ||
   (process.env.CI ? 30000 : 10000);
-// CI flaky 重試改由 vitest.config.js integration project 的 `retry: 2` 承接
+// CI flaky 重試改由 vitest.config.mjs integration project 的 `retry: 2` 承接
 //（Vitest 無 runtime retryTimes API）。
 
 // ---- helpers ---------------------------------------------------------------

@@ -1,4 +1,4 @@
-// Vitest（unit + integration）。刻意獨立於 vite.config.js、不 extends 它：
+// Vitest（unit + integration）。刻意獨立於 vite.config.mjs、不 extends 它：
 // app 的 `define` 會把 FIRESTORE_EMULATOR_HOST 等釘成 undefined（供 build 剪
 // dead code），integration 測試卻依賴這些真實 env 連 emulator——混用會全滅。
 // 測試下 process.env.* 直接讀 Node 真實環境變數，無需 define。

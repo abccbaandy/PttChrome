@@ -57,7 +57,7 @@ const init = () => {
     ]);
     // Test-only: route to the local emulator suite when run under the
     // integration runner (it sets these env vars, incl. the demo project
-    // id). vite.config.js `define` pins all three to undefined in app
+    // id). vite.config.mjs `define` pins all three to undefined in app
     // builds, so this block is dead-code-eliminated there.
     const emuProject = process.env.GCLOUD_PROJECT;
     const app = appM.initializeApp(
@@ -75,7 +75,7 @@ const init = () => {
         // localhost isn't on the reCAPTCHA key's domain allow-list; dev
         // builds exchange a debug token instead. APPCHECK_DEBUG_TOKEN is a
         // registered token injected from the developer's machine env (see
-        // vite.config.js — never committed); without it the SDK
+        // vite.config.mjs — never committed); without it the SDK
         // auto-generates one per browser profile and prints it to the
         // console for manual registration. Dead-code eliminated in
         // production builds.
