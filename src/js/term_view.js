@@ -6,7 +6,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
 import { wrapText, u2b, parseStatusRow } from './string_util';
-import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
+import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursorBullet, pruneListToSegment } from './list_window';
 import icon128 from '../icon/icon_128.png';
@@ -147,6 +147,12 @@ export function TermView() {
   // accumulatePageLines to size cross-page overlap from PTT's absolute row numbers
   // instead of purely from content — see comment_parse.resolvePageOverlap.
   this._accEndRow = null;
+  // Page signature ("S~E") of the last screen actually accumulated into buf.pageLines.
+  // EasyReading._onScreenSettled compares it with the settled screen's signature to
+  // detect "this server response never reached accumulatePageLines" (its cursor park
+  // landed in a cursor-only notify window, so redraw was never called for it) and
+  // forces one redraw. Reset with the rest of the tracking in hideEasyReadingOverlays.
+  this._lastAccumulatedSig = null;
 
   this.curRow = 0;
   this.curCol = 0;
@@ -477,11 +483,29 @@ TermView.prototype = {
         // already shows them; avoids a duplicate floating popup).
         this.accumulatePageLines();
         this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false);
+      } else if (
+        this.useEasyReadingMode &&
+        this.buf.settledPageState === 3 &&
+        this.buf.pageLines.length
+      ) {
+        // TRANSIENT dip out of pageState 3 while still inside the article. pageState is
+        // a per-frame classification and setPageState needs parseStatusRow to match the
+        // bottom row, so a footer caught mid-repaint (pfterm patches it per cell) or a
+        // momentarily blank last row drops it to 0/2 for one frame. The old code fell
+        // into the native branch below, which calls hideEasyReadingOverlays() and thus
+        // THREW AWAY buf.pageLines — the whole accumulated long page — and the next
+        // complete frame then rebuilt from the CURRENT page, silently losing everything
+        // before it. settledPageState is the debounced value (still 3 until the screen
+        // has been quiet on a non-article page for SETTLE_MS), so while it says 3 we
+        // just keep showing the accumulated page and accumulate nothing. Teardown for a
+        // real exit moved to EasyReading._teardownAccumulationOffArticle (settle-driven).
+        this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false);
       } else {
         // Native screen, OR easy reading sitting on a list/menu (pageState != 3):
         // one fixed screen. Hide the easy-reading overlay rows first when on.
         // Native shows images on HOVER (per enablePicPreview pref), no inline; the
         // easy-reading list/menu shows neither (matches the old hideEasyReading path).
+        // (Mid-article transients never reach here — the branch above holds them.)
         if (this.useEasyReadingMode) this.hideEasyReadingOverlays();
         this._renderScreenLines(
           /* a fresh copy for componentWillReceiveProps */ lines.slice(),
@@ -1197,11 +1221,24 @@ TermView.prototype = {
     // row numbers (rowIndexStart/End) that drive de-duplication — see resolvePageOverlap.
     var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
     var result = parseStatusRow(lastRowText);
+    // COMPLETE-RESPONSE GATE (pmore invariant P6, docs/pttbbs-screen-protocol.md §13).
+    // pfterm ends every server response with a cursor park at (rows-1, cols-1)
+    // (fterm_rawcursor → fterm_rawmove_opt), and it patches the footer per CELL — so a
+    // half-painted frame still shows the PREVIOUS page's "第 S~E 行". Accumulating off
+    // such a frame writes a stale rowIndexEnd into _accEndRow, and every later overlap
+    // is then measured from a wrong baseline (that drift is exactly what forced
+    // resolvePageOverlap to grow its 0.5 match-ratio guard). Gate instead: only a frame
+    // whose cursor is parked is a complete response. Incomplete frames fall through to
+    // render-only below (pageLines untouched → the view simply keeps showing the last
+    // accumulated state, no flicker). Same predicate the paging state machine uses
+    // (easy_reading.nextEasyReadingRowState), so both agree on what "settled" means.
+    var complete = this.buf.cur_y === this.buf.rows - 1 &&
+                   this.buf.cur_x === this.buf.cols - 1;
     var newRows = this.buf.lines.slice(0, -1); // drop the status row
     // Only the last `newRows.length` accumulated rows can overlap, so map just
     // the tail to text (keeps it O(screen), not O(article)).
     var accTail = null, newTexts = null, maxK = 0, kContent = 0, headerChanged = false;
-    if (this.buf.prevPageState == 3 && result && this.buf.pageLines.length) {
+    if (complete && this.buf.prevPageState == 3 && result && this.buf.pageLines.length) {
       accTail = this.buf.pageLines.slice(-newRows.length).map(rowToText);
       newTexts = newRows.map(rowToText);
       maxK = Math.min(accTail.length, newTexts.length);
@@ -1220,14 +1257,34 @@ TermView.prototype = {
     // plus a changed header self-heals to rebuild — both defend the
     // same-title-jump pile-up race (prevPageState=0 eaten by a stale frame →
     // new article concatenated under the old one). See decideAccumulateBranch.
+    // P1 check (classifyPageTransition): 'gap' == statusStart ran PAST accEndRow, which
+    // a single PageDown can never produce ⇒ a whole screen was swallowed (typeahead
+    // skip, P4) and its text is gone for good. Don't append a hole — flag it and let
+    // EasyReading._healFromTop re-read the article from the top.
+    var transition = classifyPageTransition({
+      accEndRow: this._accEndRow,
+      statusStart: result ? result.rowIndexStart : null,
+      statusEnd: result ? result.rowIndexEnd : null
+    });
     var branch = decideAccumulateBranch({
+      complete: complete,
       prevPageState: this.buf.prevPageState,
       pendingReset: !!this.buf.easyReadingPendingReset,
       statusStart: result ? result.rowIndexStart : null,
       kContent: kContent,
       hasAcc: this.buf.pageLines.length > 0,
-      headerChanged: headerChanged
+      headerChanged: headerChanged,
+      transition: transition
     });
+    if (branch === 'gap') {
+      // Lost page. Leave pageLines untouched (a hole is worse than a stale tail) and
+      // raise the flag EasyReading consumes on the next viewUpdate/settle.
+      console.log('easy reading: lost page, acc ends at ' + this._accEndRow +
+                  ' but screen starts at ' + result.rowIndexStart);
+      this.buf.easyReadingGapDetected = true;
+      this._mirrorStatusRowToFooter();
+      return;
+    }
     if (branch === 'append') {
       // Same article, paged down: append only the genuinely new tail. PTT re-shows
       // the previous screen's bottom at the top of the new one; resolvePageOverlap
@@ -1254,6 +1311,7 @@ TermView.prototype = {
       this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(beginIndex).map(cloneRow));
       // Advance the tracked article-line position to this screen's end.
       this._accEndRow = result.rowIndexEnd;
+      this._lastAccumulatedSig = result.rowIndexStart + '~' + result.rowIndexEnd;
     } else if (branch === 'rebuild') {
       // First page of a (new) article: restart the accumulated page as this whole
       // screen and clear the per-article pusher selection.
@@ -1270,6 +1328,8 @@ TermView.prototype = {
       // Seed overlap tracking from this first screen's status row (null if it's a
       // transient non-article frame — resolvePageOverlap then falls back to content).
       this._accEndRow = result ? result.rowIndexEnd : null;
+      this._lastAccumulatedSig =
+        result ? (result.rowIndexStart + '~' + result.rowIndexEnd) : null;
     }
     // branch === 'skip': transient half-painted frame while continuing — leave the
     // accumulated page untouched (footer mirror below still guards itself).
@@ -1517,6 +1577,8 @@ TermView.prototype = {
     // Left the article: drop overlap tracking so a stale row number can't bias the next
     // article's first page-down (see accumulatePageLines / resolvePageOverlap).
     this._accEndRow = null;
+    this._lastAccumulatedSig = null;
+    this.buf.easyReadingGapDetected = false;
     // Back on a list/menu: the pending article reset (leaveCurrentPost) is moot —
     // prevPageState!=3 already forces rebuild on the next article.
     this.buf.easyReadingPendingReset = false;

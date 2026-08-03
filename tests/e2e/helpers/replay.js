@@ -116,23 +116,79 @@ async function feedRaw(page, latin1) {
 // 重放一卷 cassette。
 //   opts.easyReading（预设 true）：进好读、逐页累积（翻页回归 / End→原生 / 行内开图 / 楼层 / 黑名单 / pusher）。
 //   opts.easyReading=false：静态单页（看板列表黑名单 / 作者栏），只喂 start step、不进好读。
+//   opts.splitFrames=true：把每个 pagedown step 的 recv **拆成两段**分两次喂，模拟
+//     真实的半画帧（PTT 一次回应常被拆成多个 WS message；client 的 notify 有 30ms
+//     debounce，所以一次翻页回应会跨好几个 redraw frame）。切点取 payload 里最后一个
+//     `ESC[24;`——pfterm 以 per-cell dirty 更新，底部状态列的补丁与游标 park
+//     (`ESC[24;80H`) 永远排在内容之后（P6），所以切在那里 = 第一段只有内容、状态列
+//     还停在**上一页的旧值**、游标也还没 park。这正是掉页 race 的现场。
+//   opts.dropSteps=[n,...]：模拟 pttbbs 的 **typeahead 跳绘**（P4，pfterm.c#refresh
+//     在 client 还有按键在途时直接 return 不画）。第 n 个 step 的画面**整个不送**，
+//     该次 PageDown 直接得到 n+1 的画面 —— server 端确实翻过去了，只是中间那页从来
+//     没画出来。这是「※ 发信站 那段消失」的确切现场，也是 harness 平常测不到的：
+//     一般重放以 client 送键为门控，重复送键不会有惩罚，跟真实链路不符。
+//   opts.answerHome=true：把 Home（\x1b[1~ → pmore#mf_goTop）当成「回到第一页」来
+//     回应（重放 start step 并从头再来一轮）。掉页自癒会送这个键。
+//   window.__replay.sent：本次重放中 client 送出的所有 bytes（含自动翻页键），
+//     window.__replay.sends：[{data, sig}]，sig = 送出当下所在页的状态列签章，
+//     供「同一页不得送两次 PageDown」这类断言用。
 async function replayCassette(page, cassette, opts = {}) {
   const easyReading = opts.easyReading !== false;
+  const splitFrames = opts.splitFrames === true ? true : (opts.splitFrames || false);
+  const dropSteps = opts.dropSteps || [];
+  const answerHome = !!opts.answerHome;
   await page.evaluate(
-    ({ cassette, easyReading }) => {
+    ({ cassette, easyReading, splitFrames, dropSteps, answerHome }) => {
       const app = window.__app;
       const steps = cassette.steps || [];
       let idx = 0;
-      window.__replay = { done: false, fed: 0, total: steps.length };
+      let pending = 0; // 尚未喂完的「后半段」数
+      window.__replay = {
+        done: false, fed: 0, total: steps.length, sent: [], sends: [], split: 0
+      };
+      window.__stubWSSent = (s) => window.__replay.sent.push(s);
       // done = 自动翻页部分（start + pagedown）全喂完；'end' step 不计入「done」，
       // 它专等测试稍后手动触发 End（switchToNativeAtBottom 送 \x1b[4~）才喂。
       const markDoneIfPaged = () => {
+        if (pending > 0) return;
         if (idx >= steps.length || steps[idx].on === 'end') window.__replay.done = true;
       };
+      const dropped = new Set(dropSteps);
       const feed = () => {
+        // typeahead 跳绘（P4）：被标记的 step 整个画面不送，直接跳到下一个 step 的
+        // 画面 —— server 端翻过去了，但中间那页 client 永远收不到。
+        while (dropped.has(idx) && idx + 1 < steps.length) {
+          window.__replay.dropped = (window.__replay.dropped || 0) + 1;
+          idx++;
+        }
         const step = steps[idx++];
-        app.onData(atob(step.recv)); // atob → latin1 bytes string（每 char = 1 byte）
+        const bytes = atob(step.recv); // atob → latin1 bytes string（每 char = 1 byte）
         window.__replay.fed = idx;
+        // 半画帧合成：只拆 pagedown（start 是全屏首绘、end 是 End 键，不在 race 路径上）。
+        // splitFrames === true → 切在**状态列补丁之前**（第一个 ESC[24;）：第一段只有
+        //   内容列，状态列还是上一页的旧值，游标也还没 park。
+        // splitFrames === <0..1 数值> → 切在该比例的 byte 位置：让第一段只画到画面
+        //   中途，其余列还留着**上一页的内容**（pfterm 只送 dirty cell，未送到的位置
+        //   自然维持旧画面）。这才是内容列本身被撕开的现场。
+        let cut = -1;
+        if (splitFrames && step.on === 'pagedown') {
+          cut =
+            typeof splitFrames === 'number'
+              ? Math.floor(bytes.length * splitFrames)
+              : bytes.indexOf('\x1b[24;');
+        }
+        if (cut > 0) {
+          window.__replay.split++;
+          pending++;
+          app.onData(bytes.slice(0, cut)); // 只有内容列；状态列还是上一页的
+          setTimeout(() => {
+            app.onData(bytes.slice(cut)); // 状态列补丁 + 游标 park
+            pending--;
+            markDoneIfPaged();
+          }, 80); // > term_buf 的 30ms notify debounce，确保中间那帧真的被 render 到
+        } else {
+          app.onData(bytes);
+        }
         markDoneIfPaged();
       };
       // 先喂掉所有开头的 start step（文章第一页 / 列表画面）。
@@ -148,7 +204,19 @@ async function replayCassette(page, cassette, opts = {}) {
       const er = app.easyReading;
       const origSend = er._send.bind(er);
       er._send = (data) => {
+        // 记下这一次送键是**从哪一页**送出的（状态列 "第 S~E 行" 签章）。翻页是
+        // request/response 交易，同一个签章被送两次 = 重复 PageDown（P4 会让中间
+        // 那页永远画不出来），所以断言要按签章分组，不能只数总数。
+        window.__replay.sends.push({ data, sig: er._currentPageSignature() });
         origSend(data); // 进 stub WS，无副作用
+        // 掉页自癒送的 Home（pmore KEY_HOME → mf_goTop）：回到文章第一页，从头再翻。
+        if (answerHome && data.indexOf('\x1b[1~') >= 0) {
+          window.__replay.home = (window.__replay.home || 0) + 1;
+          dropped.clear(); // 被吞的那页这次会正常送达
+          idx = 0;
+          while (idx < steps.length && steps[idx].on === 'start') feed();
+          return;
+        }
         if (idx < steps.length) {
           const next = steps[idx];
           if (
@@ -164,7 +232,7 @@ async function replayCassette(page, cassette, opts = {}) {
       // _onChanged 读到 pref off 会立刻 exitEasyReading（见 easy_reading.js:182）。
       er.enterEasyReading();
     },
-    { cassette, easyReading }
+    { cassette, easyReading, splitFrames, dropSteps, answerHome }
   );
 
   // 等所有 step 喂完（逐页翻页跨 timer tick 推进）；逾时不抛，交给断言抓问题。

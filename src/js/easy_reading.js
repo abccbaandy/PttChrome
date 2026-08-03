@@ -50,7 +50,7 @@ export function nextEasyReadingRowState({
   reachedPageEnd, sendCommandAfterUpdate, ignoreOneUpdate,
   curX, curY, lastRowNum, lastColNum,
   isReqNotMetRow, isStatusRow, isPushInitRow, isReplyRow,
-  lastRowFirstChFg, lastRowFirstChBg
+  lastRowFirstChFg, lastRowFirstChBg, pagePercent
 }) {
   let pageStateOverride = null;
   let consumeIgnoreOneUpdate = false;
@@ -73,13 +73,22 @@ export function nextEasyReadingRowState({
         consumeIgnoreOneUpdate = true;
         halt = true;
       } else if (isStatusRow) {
-        // 「已看完整篇」＝ pmore footer 第一段的配色（mbbsd/pmore.c
-        // #mf_display_footer 依 mf_viewedAll()/mf_viewedNone() 選色，
-        // pttbbs @ c1ff72df）：
+        // 「已看完整篇」的判準（pttbbs @ efc21a30）：
+        //
+        // 主判準 = footer 的百分比（P3）。mf_display_footer 算
+        //   progress = (int)((dispe - start) * 100 / len)
+        // 整數除法使 progress==100 ⟺ dispe >= end ⟺ mf_viewedAll()，**完全等價**。
+        //
+        // 次判準 = footer 第一段的配色（mf_display_footer 依 mf_viewedAll()/
+        // mf_viewedNone() 選色）：
         //   PMORE_COLOR_FOOTER1_VIEWALL  ANSI_COLOR(37;44) → fg 7 / bg 4 ← 這裡
         //   PMORE_COLOR_FOOTER1_VIEWNONE ANSI_COLOR(33;45) → fg 3 / bg 5
         //   PMORE_COLOR_FOOTER1          ANSI_COLOR(34;46) → fg 4 / bg 6
-        if (lastRowFirstChBg == 4 && lastRowFirstChFg == 7) {
+        // 保留為 fallback（pagePercent 拿不到時），但**不再是主判準**：pfterm 是
+        // per-cell dirty 更新（P6），(rows-1, 0) 這一格只有在真的變色時才會重畫，
+        // 用單一格的顏色推論全域狀態比讀百分比脆弱。
+        if (pagePercent >= 100 ||
+            (pagePercent == null && lastRowFirstChBg == 4 && lastRowFirstChFg == 7)) {
           reachedPageEnd = true;
         } else {
           reachedPageEnd = false;
@@ -120,6 +129,59 @@ export function nextEasyReadingRowState({
   };
 }
 
+// How many times a settle may re-send a PageDown that produced no response at all.
+export const PAGE_DOWN_MAX_RETRIES = 1;
+
+// Pure decision for the auto page-down loop, expressed as a SINGLE IN-FLIGHT
+// request/response transaction. See docs/pttbbs-screen-protocol.md §13.
+//
+// WHY a transaction and not "send whenever the screen looks ready":
+//   P4 — pfterm.c#refresh returns WITHOUT drawing while the client still has keys in
+//   pttbbs' input buffer (`if (ft.typeahead && fterm_typeahead()) return;`). So if a
+//   second PageDown reaches PTT while it is still drawing the answer to the first, the
+//   intermediate screen is never sent — that page's text is lost for good. This is the
+//   "※ 發信站 / ※ 文章網址 那段消失" report: not a parse bug, a lost screen.
+//   The previous code only deduped on the settle path; the fast path (_onViewUpdated)
+//   recorded the page signature but never checked it, so any second "complete-looking"
+//   frame on the SAME page (functionMode resume's forced notify, a waterball repaint,
+//   any other forced notify) fired a duplicate PageDown.
+//
+// The response ack is the page SIGNATURE — the status row's "第 S~E 行" range, which
+// changes on every successful page-down (P1/P2). While it still equals what we sent
+// from, the response has not arrived and we must not send again.
+//
+//   P3 — progress==100 ⟺ mf_viewedAll() (the integer division makes them exactly
+//   equivalent), and PMORE_UINAV_FORWARDPAGE returns immediately when viewedAll, i.e.
+//   PTT answers a PageDown at the bottom with COMPLETE SILENCE. So percent is the
+//   authoritative "stop" signal — more robust than the footer's first-cell colour,
+//   which pfterm only repaints when that cell actually changes (P6).
+//
+//   P6 — only a frame whose cursor is parked at (rows-1, cols-1) is a complete server
+//   response; anything else still carries the previous page's footer.
+//
+// `fromSettle` marks the recovery path: the screen has been quiet for SETTLE_MS, so PTT
+// has flushed and is blocked in dogetch — there is no in-flight repaint left for a
+// resend to be swallowed by, which makes a BOUNDED retry safe there (and only there).
+// Returns the next state alongside the action so the caller stays a thin shim.
+export function nextPageDownDecision({
+  enabled, functionMode, complete, isStatusRow, pagePercent,
+  sig, inFlightSig, retries, fromSettle
+}) {
+  const keep = { action: 'none', inFlightSig, retries, reachedPageEnd: undefined };
+  if (!enabled || functionMode || !complete || !isStatusRow || sig == null)
+    return keep;
+  if (pagePercent >= 100)
+    return { action: 'done', inFlightSig: null, retries: 0, reachedPageEnd: true };
+  if (inFlightSig != null && sig === inFlightSig) {
+    if (!fromSettle)
+      return { action: 'wait', inFlightSig, retries, reachedPageEnd: false };
+    if (retries < PAGE_DOWN_MAX_RETRIES)
+      return { action: 'retry', inFlightSig, retries: retries + 1, reachedPageEnd: false };
+    return { action: 'giveup', inFlightSig, retries, reachedPageEnd: false };
+  }
+  return { action: 'send', inFlightSig: sig, retries: 0, reachedPageEnd: false };
+}
+
 // Pure decision for leaving functionMode, evaluated on each settle (screenSettled)
 // while functionMode is on. Side-effect free so it can be regression-tested.
 //   'resume' — back to a clean article reading page (status row at the bottom with the
@@ -146,11 +208,17 @@ export function EasyReading(core, view, termBuf) {
   this.easyReadingReachedPageEnd = false;
   this.sendCommandAfterUpdate = '';
   this.ignoreOneUpdate = false;
-  // Identity ("第 a~b 行" range) of the page we last issued a PageDown FROM. Used by
-  // the settle-driven recovery (_onScreenSettled) to dedup against the per-frame fast
-  // path so a slow PTT response never gets a double page-down (which would skip a
-  // page). Reset per article (enterEasyReading / leaveCurrentPost).
-  this._lastPagedDownSignature = null;
+  // Auto-paging transaction state (see nextPageDownDecision). _inFlightSig = the page
+  // signature ("第 a~b 行" range) we issued the outstanding PageDown FROM, or null when
+  // idle; the response is acked by the signature CHANGING. BOTH the fast path
+  // (_onViewUpdated) and the settle recovery (_onScreenSettled) go through it, so a
+  // duplicate PageDown — which pttbbs' typeahead skip turns into a permanently lost
+  // page (P4) — is impossible. Reset per article (enterEasyReading / leaveCurrentPost).
+  this._inFlightSig = null;
+  this._pageDownRetries = 0;
+  // One gap self-heal per article (see _healFromTop), so a pathological article can
+  // never loop on Home.
+  this._healedOnce = false;
   // functionMode: while the user is interacting with a native PTT prompt/menu/editor
   // triggered from inside the article (r 回應、X/% 推文、y 收暫存檔…), we stop the
   // easy-reading accumulation/overlay illusion and mirror the native 24-row screen
@@ -239,7 +307,11 @@ EasyReading.prototype._computeRowState = function() {
   const lastRowText = this._termBuf.getRowText(lastRowNum, 0, this._termBuf.cols);
   const row22Text = this._termBuf.getRowText(22, 0, this._termBuf.cols);
   const lastRowFirstCh = this._termBuf.lines[lastRowNum][0];
+  const status = parseStatusRow(lastRowText);
   return nextEasyReadingRowState({
+    // P3: progress==100 ⟺ mf_viewedAll(). Authoritative "already at the bottom" signal;
+    // the footer colour below stays only as a fallback (see nextEasyReadingRowState).
+    pagePercent: status ? status.pagePercent : null,
     pageState: this._termBuf.pageState,
     startedEasyReading: this.startedEasyReading,
     showReplyText: this.easyReadingShowReplyText,
@@ -252,7 +324,7 @@ EasyReading.prototype._computeRowState = function() {
     lastRowNum,
     lastColNum,
     isReqNotMetRow: !!parseReqNotMetText(lastRowText),
-    isStatusRow: !!parseStatusRow(lastRowText),
+    isStatusRow: !!status,
     isPushInitRow: !!parsePushInitText(lastRowText),
     isReplyRow: !!parseReplyText(row22Text),
     lastRowFirstChFg: lastRowFirstCh.getFg(),
@@ -277,9 +349,72 @@ EasyReading.prototype._applyRowState = function(rowState) {
 // "目前顯示: 第 a~b 行" range (unique per page; advances on every page-down). Returns
 // null off a status row. Used to dedup the per-frame send against the settle recovery.
 EasyReading.prototype._currentPageSignature = function() {
-  const lastRowText = this._termBuf.getRowText(this._termBuf.rows - 1, 0, this._termBuf.cols);
-  const s = parseStatusRow(lastRowText);
+  const s = this._currentPageStatus();
   return s ? (s.rowIndexStart + '~' + s.rowIndexEnd) : null;
+};
+
+// parseStatusRow of the CURRENT bottom row (null off an article page).
+EasyReading.prototype._currentPageStatus = function() {
+  const lastRowText = this._termBuf.getRowText(this._termBuf.rows - 1, 0, this._termBuf.cols);
+  return parseStatusRow(lastRowText);
+};
+
+// Single gate every auto page-down goes through — both the per-frame fast path
+// (_onViewUpdated) and the settle recovery (_onScreenSettled). Gathers the facts,
+// runs the pure nextPageDownDecision, writes the resulting transaction state back and
+// sends at most one key. See nextPageDownDecision for the pmore invariants behind it.
+EasyReading.prototype._maybeSendPageDown = function(keys, fromSettle) {
+  const status = this._currentPageStatus();
+  const d = nextPageDownDecision({
+    enabled: this._enabled,
+    functionMode: this._functionMode,
+    // P6: the cursor is parked at (rows-1, cols-1) only at the end of a full response.
+    complete: this._termBuf.cur_y === this._termBuf.rows - 1 &&
+              this._termBuf.cur_x === this._termBuf.cols - 1,
+    isStatusRow: !!status,
+    pagePercent: status ? status.pagePercent : null,
+    sig: status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null,
+    inFlightSig: this._inFlightSig,
+    retries: this._pageDownRetries,
+    fromSettle: !!fromSettle
+  });
+  if (d.action === 'none')
+    return d.action;
+  this._inFlightSig = d.inFlightSig;
+  this._pageDownRetries = d.retries;
+  if (d.reachedPageEnd !== undefined)
+    this.easyReadingReachedPageEnd = d.reachedPageEnd;
+  if (d.action === 'send' || d.action === 'retry')
+    this._send(keys);
+  return d.action;
+};
+
+// Gap self-heal (pmore invariant P1, raised by term_view.accumulatePageLines as
+// buf.easyReadingGapDetected). A page was swallowed — its text will never be sent
+// again on its own, so re-read the article from the top: Home is pmore's KEY_HOME →
+// mf_goTop (pmore.c:2604), the cheapest deterministic way back to line 1. Bounded to
+// once per article so a pathological case can't loop.
+EasyReading.prototype._healFromTop = function() {
+  this._termBuf.easyReadingGapDetected = false;
+  if (this._healedOnce) {
+    console.log('easy reading: gap again after healing — leaving the page as is');
+    return;
+  }
+  this._healedOnce = true;
+  console.log('easy reading: lost page detected, re-reading from the top');
+  this._core.debugRecorder?.log('easyReading.gapHeal');
+  this.sendCommandAfterUpdate = '';
+  this._inFlightSig = null;
+  this._pageDownRetries = 0;
+  this.easyReadingReachedPageEnd = false;
+  this._termBuf.pageLines = [];
+  this._termBuf.easyReadingPendingReset = true;
+  this._termBuf.prevPageState = 0;
+  if (this._view) {
+    this._view._accEndRow = null;
+    this._view._lastAccumulatedSig = null;
+  }
+  this._send('\x1b[1~');  // KEY_HOME → mf_goTop
 };
 
 // Settle-driven page-down recovery. Fired once per quiet window (term_buf 'screenSettled'),
@@ -302,8 +437,36 @@ EasyReading.prototype._onScreenSettled = function() {
     this._evalFunctionModeExit();
     return;
   }
-  if (this._termBuf.pageState !== 3)
+  if (this._termBuf.pageState !== 3) {
+    // Settled OFF the article. term_view.redraw deliberately KEEPS the accumulated page
+    // while settledPageState is still 3 (a per-frame pageState dip mid-article must not
+    // throw the long page away), so the teardown moved here: the debounced state now
+    // agrees we really left, and this is the last chance to run it — no further redraw
+    // is guaranteed after the list has finished painting.
+    this._teardownAccumulationOffArticle();
     return;
+  }
+  // P1 violated on the last accumulate → a page was lost; nothing else matters.
+  if (this._termBuf.easyReadingGapDetected) {
+    this._healFromTop();
+    return;
+  }
+  // A response whose cursor park landed in a CURSOR-ONLY notify window never reached
+  // redraw (notify only calls view.update() on the 'changed' branch), so its page was
+  // never accumulated. The screen is quiet and the cursor parked now, so replay one
+  // full repaint — accumulatePageLines then sees a complete frame and appends it.
+  const sig = this._currentPageSignature();
+  if (sig && this._view && this._view._lastAccumulatedSig !== sig) {
+    this._forceRepaint();
+    if (this._termBuf.easyReadingGapDetected) {
+      this._healFromTop();
+      return;
+    }
+    // _forceRepaint replays 'change'/'viewUpdate', so the fast path has already run
+    // the paging decision for this screen; nothing left for the settle path to do.
+    return;
+  }
+
   if (this.sendCommandAfterUpdate)  // a command is mid-flight (incl. skipOne) — let the frame loop drive
     return;
   if (this.easyReadingReachedPageEnd)
@@ -313,15 +476,41 @@ EasyReading.prototype._onScreenSettled = function() {
   this._applyRowState(rowState);  // fix any cursor-dependent flag against the now-stable cursor
 
   if (rowState.sendCommandAfterUpdate && rowState.sendCommandAfterUpdate !== 'skipOne') {
-    const sig = this._currentPageSignature();
-    if (sig && sig !== this._lastPagedDownSignature) {
-      this._lastPagedDownSignature = sig;
-      this._send(rowState.sendCommandAfterUpdate);
-    }
     // A settle-path send has no following 'viewUpdate' to flush the queue, so never
     // leave the command queued — it would re-fire on the next frame's viewUpdate.
     this.sendCommandAfterUpdate = '';
+    this._maybeSendPageDown(rowState.sendCommandAfterUpdate, /* fromSettle */ true);
   }
+};
+
+// Replay one full repaint of the CURRENT screen.
+//
+// MUST go through term_buf.notify() rather than view.redraw(true) directly: notify is
+// what runs updateCharAttr(), which is where a Big5 lead byte gets its isLeadByte flag.
+// A settle can fire between "bytes arrived" and "the 30ms notify timer ran", so a bare
+// redraw there would clone rows whose DBCS pairs are not yet marked — rowToText then
+// returns raw Big5 (¡° instead of ※), those rows go into pageLines, and the NEXT page's
+// overlap comparison against them fails ⇒ overlap 0 ⇒ the shared row is appended twice
+// (a duplicated 「※ 文章網址」 line). Caught by the offline split-frame test.
+EasyReading.prototype._forceRepaint = function() {
+  this._termBuf.lineChangeds.fill(true);
+  this._termBuf.changed = true;
+  this._termBuf.notify();
+};
+
+// Drop the accumulated long page + its padding/scroll once the DEBOUNCED state says we
+// are off the article for good. Counterpart to term_view.redraw's transient guard.
+EasyReading.prototype._teardownAccumulationOffArticle = function() {
+  const view = this._view;
+  if (!view || typeof view.hideEasyReadingOverlays !== 'function')
+    return;
+  const hasPage = !!(this._termBuf.pageLines && this._termBuf.pageLines.length);
+  const hasPadding = !!(view.mainContainer && view.mainContainer.style &&
+                        view.mainContainer.style.paddingBottom);
+  if (!hasPage && !hasPadding)
+    return;
+  view.hideEasyReadingOverlays();
+  this._forceRepaint();
 };
 
 // Enter functionMode: stop the easy-reading illusion and mirror the native 24-row
@@ -383,15 +572,24 @@ EasyReading.prototype._evalFunctionModeExit = function() {
 
 EasyReading.prototype._onViewUpdated = function(e) {
   console.log('view update');
-  if (this.sendCommandAfterUpdate) {
-    console.log("send:" + this.sendCommandAfterUpdate);
-    if (this.sendCommandAfterUpdate != 'skipOne') {
-      // Record which page this PageDown was issued from so the settle recovery
-      // (_onScreenSettled) knows this page is already handled and won't double-send.
-      this._lastPagedDownSignature = this._currentPageSignature();
-      this._send(this.sendCommandAfterUpdate);
-    }
+  // accumulatePageLines (which just ran inside view.update()) may have found a lost
+  // page — handle that before anything else, it invalidates the whole transaction.
+  if (this._enabled && !this._functionMode && this._termBuf.easyReadingGapDetected) {
     this.sendCommandAfterUpdate = '';
+    this._healFromTop();
+    return;
+  }
+  if (this.sendCommandAfterUpdate) {
+    const keys = this.sendCommandAfterUpdate;
+    this.sendCommandAfterUpdate = '';
+    if (keys != 'skipOne') {
+      // Fast path goes through the SAME single-in-flight gate as the settle recovery.
+      // It used to send unconditionally (recording the signature but never checking
+      // it), so a second complete-looking frame on the same page fired a duplicate
+      // PageDown → pttbbs typeahead skip → that page's text lost. See
+      // nextPageDownDecision.
+      console.log("send:" + keys + " -> " + this._maybeSendPageDown(keys, false));
+    }
   }
 };
 
@@ -417,8 +615,11 @@ EasyReading.prototype.leaveCurrentPost = function() {
   // decideAccumulateBranch.
   this._termBuf.easyReadingPendingReset = true;
   // New post → forget the previous post's page identity so its first page-down is
-  // never suppressed as a "same page" by the settle recovery.
-  this._lastPagedDownSignature = null;
+  // never suppressed as a "same page" by the in-flight gate, and give the new article
+  // its own gap-heal budget.
+  this._inFlightSig = null;
+  this._pageDownRetries = 0;
+  this._healedOnce = false;
   this._functionMode = false;
   this._savedScrollTop = null;
 };
@@ -461,8 +662,12 @@ EasyReading.prototype.enterEasyReading = function() {
   this._termBuf.prevPageState = 0;
   this._termBuf.easyReadingPendingReset = true; // sticky twin — see leaveCurrentPost
   this._termBuf.pageLines = [];
-  // Fresh article → no page has been paged-down from yet (see settle recovery dedup).
-  this._lastPagedDownSignature = null;
+  this._termBuf.easyReadingGapDetected = false;
+  // Fresh article → nothing in flight, and its own gap-heal budget.
+  this._inFlightSig = null;
+  this._pageDownRetries = 0;
+  this._healedOnce = false;
+  this.easyReadingReachedPageEnd = false;
   // Mark every row dirty so the forced redraw actually paints (update() only redraws
   // changed rows), then replay a full notify so 'change' (_onChanged sets the first
   // page-down) and 'viewUpdate' (_onViewUpdated sends it) both fire.
@@ -482,6 +687,8 @@ EasyReading.prototype.exitEasyReading = function() {
   this._core.debugRecorder?.log('easyReading.exit');
   // stop any pending/in-flight auto page down
   this.sendCommandAfterUpdate = '';
+  this._inFlightSig = null;
+  this._pageDownRetries = 0;
   this._functionMode = false;
   this._savedScrollTop = null;
   // Switch off easy reading and restore the native view. switchToEasyReadingMode()

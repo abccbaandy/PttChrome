@@ -88,7 +88,17 @@ describe("normalizeCopyText", () => {
 //                    FOOTERMSG_READ_MID   "(y)回應(X/%)推文 (←)離開 "
 //                    FOOTERMSG_SHORT      "(h)說明 (←/q)離開 "
 //                    FOOTERMSG_VERYSHORT  "(←q)離開 "
+//                    ——以及**一種都不印**（見下）
 // part1 尾 1 空格 ＋ part2 首 1 空格 ⇒ 「%)」與「目前顯示」之間恰 2 空格。
+//
+// part3 可能整段消失，有兩層來源（2026-08 反查 efc21a30）：
+//   1. mbbsd/pmore.c#mf_display_footer：part2 印完 `if (avail <= 0) return;`
+//      —— 連 footer_handler 都不會被呼叫。
+//   2. mbbsd/more.c#common_pmore_footer_handler:461 最後的
+//      `else while (width-- > w) outc(' ');` —— 連 VERYSHORT 都塞不下時只填空白。
+// ⇒ **parser 不可要求 part3 存在**。要求它的後果不是「少解析一個欄位」而是整列
+//    失配 → term_buf.setPageState 判不出 pageState 3 → term_view.redraw 走 native
+//    分支 → hideEasyReadingOverlays() 清空 buf.pageLines（好讀累積頁整個不見）。
 // ---------------------------------------------------------------------------
 describe("parseStatusRow（pmore footer, pmore.c#mf_display_footer）", () => {
   test("實錄 stock-huang：多頁 ＋ FOOTERMSG_READ_LONG", () => {
@@ -143,6 +153,41 @@ describe("parseStatusRow（pmore footer, pmore.c#mf_display_footer）", () => {
   test("FOOTERMSG_VERYSHORT（(←q)離開）", () => {
     const row = "  瀏覽 第 3/6 頁 ( 42%)  目前顯示: 第 45~67 行  (←q)離開 ";
     expect(parseStatusRow(row)).not.toBeNull();
+  });
+
+  // part3 整段不印：common_pmore_footer_handler 最後的 else 只填空白（連
+  // VERYSHORT 都塞不下），或 mf_display_footer 的 `if (avail <= 0) return;`。
+  // 舊 regex 強制要求「…離開 」→ 這兩種畫面被判成「不是文章」→ 好讀累積頁被清空。
+  test("part3 整段不印（common_pmore_footer_handler 最後 else，只填空白）", () => {
+    const row =
+      "  瀏覽 第 12345/12345 頁 (100%)  目前顯示: 第 271589~271611 行        ";
+    expect(parseStatusRow(row)).toEqual({
+      pageIndex: 12345,
+      pageTotal: 12345,
+      pagePercent: 100,
+      rowIndexStart: 271589,
+      rowIndexEnd: 271611
+    });
+  });
+
+  test("part3 整段不印 ＋ 行尾無空白（mf_display_footer 的 avail<=0 提前 return）", () => {
+    const row = "  瀏覽 第 999 頁 ( 87%)  目前顯示: 第 987654~987676 行";
+    const r = parseStatusRow(row);
+    expect(r).not.toBeNull();
+    expect(r.rowIndexStart).toBe(987654);
+    expect(r.rowIndexEnd).toBe(987676);
+  });
+
+  // xpos > 0（左右捲動）的 part2 更長，更容易把 part3 擠掉。
+  test("顯示範圍（xpos>0）＋ part3 不印", () => {
+    const row =
+      "  瀏覽 第 8/9 頁 ( 91%)  顯示範圍: 101~178 欄位, 168~190 行   ";
+    expect(parseStatusRow(row)).toMatchObject({
+      pageIndex: 8,
+      pageTotal: 9,
+      rowIndexStart: 168,
+      rowIndexEnd: 190
+    });
   });
 
   // FOOTERMSG_MAIL_LONG：currstat == RMAIL（讀信箱裡的信也是 pmore）。

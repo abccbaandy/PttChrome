@@ -36,6 +36,7 @@ import {
   findPageOverlap,
   resolvePageOverlap,
   decideAccumulateBranch,
+  classifyPageTransition,
   COMMENT_USERID_COL
 } from "../../src/js/comment_parse";
 import { parsePushInitText } from "../../src/js/string_util";
@@ -920,5 +921,68 @@ describe("decideAccumulateBranch", () => {
     expect(
       d({ prevPageState: 3, pendingReset: false, statusStart: 1, kContent: 0, hasAcc: false, headerChanged: false })
     ).toBe("append");
+  });
+
+  // P6（pttbbs-screen-protocol §13）：pfterm 每次回應結尾才把游標 park 到
+  // (rows-1, cols-1)，且 footer 是 per-cell patch ⇒ 半畫幀的狀態列還是**上一頁的舊值**。
+  // 拿舊 footer 去算重疊 → _accEndRow 漂移 → 之後整條去重都建在錯的基準上。
+  // 所以「本幀不是完整回應」必須 skip，不管其他輸入長什麼樣。
+  test("半畫幀（complete=false）→ skip，即使其他輸入看起來像正常翻頁", () => {
+    expect(
+      d({ complete: false, prevPageState: 3, pendingReset: false, statusStart: 24, kContent: 1, hasAcc: true })
+    ).toBe("skip");
+  });
+  test("半畫幀（complete=false）＋看似新文章第一頁 → 仍 skip（不得誤重建）", () => {
+    expect(
+      d({ complete: false, prevPageState: 3, pendingReset: true, statusStart: 1, kContent: 0, hasAcc: true, headerChanged: true })
+    ).toBe("skip");
+  });
+  test("complete=true 時行為與舊版一致", () => {
+    expect(
+      d({ complete: true, prevPageState: 3, pendingReset: false, statusStart: 24, kContent: 1, hasAcc: true })
+    ).toBe("append");
+  });
+
+  // P1：掉頁（新頁 S' > 上一頁 E + 1）不得默默 append 出一個破洞。
+  test("掉頁（transition='gap'）→ 'gap' 分支，不 append", () => {
+    expect(
+      d({ complete: true, prevPageState: 3, pendingReset: false, statusStart: 66, kContent: 0, hasAcc: true, transition: "gap" })
+    ).toBe("gap");
+  });
+  test("掉頁但同時是文章第一頁（restart 優先，重新累積本來就對）", () => {
+    expect(
+      d({ complete: true, prevPageState: 3, pendingReset: true, statusStart: 1, kContent: 0, hasAcc: true, headerChanged: true, transition: "restart" })
+    ).toBe("rebuild");
+  });
+});
+
+// P1（docs/pttbbs-screen-protocol.md §13）：pmore 的 PageDown 是
+// mf_forward(mf.dispedlines - 1)（pmore.c#PMORE_UINAV_FORWARDPAGE），所以下一頁的
+// 起始行號恰等於上一頁的結束行號；末頁被 mf_determinemaxdisps 的 maxdisps 夾住時
+// 只會更小。**S' > E 在單次 PageDown 下不可能發生** —— 觀察到就代表中間整頁被
+// typeahead 跳繪吞掉（P4），內容永久掉了。
+describe("classifyPageTransition（pmore 分頁不變量 P1）", () => {
+  const c = classifyPageTransition;
+  test("正常翻頁：S' == E → continuation", () => {
+    expect(c({ accEndRow: 44, statusStart: 44, statusEnd: 66 })).toBe("continuation");
+  });
+  test("末頁被 maxdisps 夾住：S' < E → continuation（重疊變大而已）", () => {
+    expect(c({ accEndRow: 88, statusStart: 78, statusEnd: 100 })).toBe("continuation");
+  });
+  test("零重疊邊界 S' == E+1（dispedlines==1）→ 仍算 continuation", () => {
+    expect(c({ accEndRow: 44, statusStart: 45, statusEnd: 67 })).toBe("continuation");
+  });
+  test("掉頁：S' > E+1 → gap", () => {
+    expect(c({ accEndRow: 44, statusStart: 66, statusEnd: 88 })).toBe("gap");
+  });
+  test("往回（PgUp / 指定行）：E' < accEndRow → backward", () => {
+    expect(c({ accEndRow: 88, statusStart: 22, statusEnd: 44 })).toBe("backward");
+  });
+  test("文章第一頁 / 尚無追蹤基準 → restart", () => {
+    expect(c({ accEndRow: 88, statusStart: 1, statusEnd: 23 })).toBe("restart");
+    expect(c({ accEndRow: null, statusStart: 44, statusEnd: 66 })).toBe("restart");
+  });
+  test("statusStart 為 null（transient 幀）→ null（呼叫端另行處理）", () => {
+    expect(c({ accEndRow: 44, statusStart: null, statusEnd: null })).toBeNull();
   });
 });

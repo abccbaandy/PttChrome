@@ -16,6 +16,7 @@ import {
   findPageOverlap,
   resolvePageOverlap,
   decideAccumulateBranch,
+  classifyPageTransition,
   annotateComment,
   FloorCounter,
   parseComment
@@ -41,13 +42,26 @@ function loadArticleFixtures() {
 
 // 重建好读累积页（text 行阵列），镜像 accumulatePageLines：状态列行号为主、
 // findPageOverlap 内文比对为辅（resolvePageOverlap）。
-function reconstruct(pageScreens) {
+function reconstruct(pageScreens, transitions) {
   let acc = [];
   let accEndRow = null; // pageLines 末列对应的文章行号（上一页 rowIndexEnd）
   for (let p = 0; p < pageScreens.length; p++) {
     const statusRow = pageScreens[p][pageScreens[p].length - 1];
     const status = parseStatusRow(statusRow);
     const newRows = pageScreens[p].slice(0, -1); // 去掉最后的状态列（accumulatePageLines 同）
+    if (transitions && p > 0) {
+      transitions.push({
+        page: p,
+        accEndRow,
+        statusStart: status ? status.rowIndexStart : null,
+        statusEnd: status ? status.rowIndexEnd : null,
+        kind: classifyPageTransition({
+          accEndRow,
+          statusStart: status ? status.rowIndexStart : null,
+          statusEnd: status ? status.rowIndexEnd : null
+        })
+      });
+    }
     if (p === 0) {
       acc = newRows.slice();
       accEndRow = status ? status.rowIndexEnd : null;
@@ -158,6 +172,37 @@ describe("[ ] 跳同标题：新文章不得叠加在旧文章后（race 回归�
     expect(acc[65]).toContain("第66行");
   });
 
+  // P1 掉页合成回归：第 2 页与第 3 页之间少收一页（typeahead 跳绘，P4）。
+  // 旧逻辑 resolvePageOverlap 把负重叠夹成 0 → 照常 append → 中间那段永久消失且
+  // 无人察觉（＝「※ 发信站/※ 文章网址 那段不见」的形状）。现在必须被判成 gap。
+  test("掉页（第 2→4 页）被 classifyPageTransition 判成 gap", () => {
+    const p2 = makeScreen("文一", 23); // 第 23~44 行
+    const p4 = makeScreen("文一", 67); // 第 67~88 行（第 45~66 行整页没收到）
+    const s2 = parseStatusRow(p2[p2.length - 1]);
+    const s4 = parseStatusRow(p4[p4.length - 1]);
+    expect(
+      classifyPageTransition({
+        accEndRow: s2.rowIndexEnd,
+        statusStart: s4.rowIndexStart,
+        statusEnd: s4.rowIndexEnd
+      })
+    ).toBe("gap");
+  });
+
+  test("正常翻页（S' == E）不会被误判成 gap", () => {
+    const p2 = makeScreen("文一", 23);
+    const p3 = makeScreen("文一", 44); // S' 44 == 上一页 E 44
+    const s2 = parseStatusRow(p2[p2.length - 1]);
+    const s3 = parseStatusRow(p3[p3.length - 1]);
+    expect(
+      classifyPageTransition({
+        accEndRow: s2.rowIndexEnd,
+        statusStart: s3.rowIndexStart,
+        statusEnd: s3.rowIndexEnd
+      })
+    ).toBe("continuation");
+  });
+
   test("同画面强制重绘（pref/pusher toggle）仍是 no-op append", () => {
     const p2 = makeScreen("文一", 23);
     const acc = reconstructBranching([
@@ -179,8 +224,34 @@ describe("好读跨页累积重建（离线 fixture）", () => {
   }
   for (const fx of fixtures) {
     describe(`${fx.meta.board} (${fx.pageScreens.length}页)`, () => {
-      const acc = reconstruct(fx.pageScreens);
+      const transitions = [];
+      const acc = reconstruct(fx.pageScreens, transitions);
       const comments = acc.filter(t => COMMENT_RE.test(t));
+
+      // pmore 不变量 P1（docs/pttbbs-screen-protocol.md §13）：PageDown ＝
+      // mf_forward(mf.dispedlines - 1)，所以下一页的起始行号恰等于上一页的结束行号；
+      // 末页被 mf_determinemaxdisps 的 maxdisps 夹住时只会更小。**绝不可能更大**。
+      // 更大 ⇒ 中间整页被 typeahead 跳绘吞掉（P4），文字永久掉了。
+      // 这条守护实录素材本身：一旦录到掉页，测试直接红，而不是默默 append 出破洞。
+      test("P1：相邻页 S' <= 上一页 E（不得掉页）", () => {
+        for (const t of transitions) {
+          if (t.kind === null) continue; // 无状态列（不该发生在 pageScreens，但不硬失败）
+          expect({ page: t.page, kind: t.kind }).toEqual({
+            page: t.page,
+            kind: expect.stringMatching(/^(continuation|restart|backward)$/)
+          });
+        }
+      });
+
+      // 累积页是**显示列**，文章行号是**档案行**（P2：dispedlines 不含 wrap 续列，
+      // 也不含 EOF 后的空列），所以显示列数必 >= 末页 rowIndexEnd。少于它 ⇒ 去重
+      // 吃掉了不该吃的列。
+      test("P2：累积显示列数 >= 末页文章行号（去重没吃掉内容）", () => {
+        const last = fx.pageScreens[fx.pageScreens.length - 1];
+        const status = parseStatusRow(last[last.length - 1]);
+        if (!status) return;
+        expect(acc.length).toBeGreaterThanOrEqual(status.rowIndexEnd);
+      });
 
       test("去重后推文数 == 录制 golden（吃列→变少 / 重复→变多）", () => {
         expect(comments.length).toBe(fx.golden.commentCount);

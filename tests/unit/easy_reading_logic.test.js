@@ -17,6 +17,7 @@ vi.mock("../../src/js/string_util", () => ({
 import {
   nextEasyReadingState,
   nextEasyReadingRowState,
+  nextPageDownDecision,
   functionModeExitDecision,
   EasyReading
 } from "../../src/js/easy_reading";
@@ -484,7 +485,10 @@ describe("EasyReading._onScreenSettled", () => {
     curY = 23,
     lastRowFirstChBg = 0,
     lastRowFirstChFg = 7,
-    lastPagedSig = null
+    lastPagedSig = null,
+    // 目前这一页**已经累积过**（正常情形：完整回应帧进过 redraw）。设成别的值就会
+    // 走「这次回应从没进过 redraw」的补画分支（见下方专测）。
+    accSig = "1~23"
   } = {}) => {
     const lastRowNum = 23;
     const lastChar = { getFg: () => lastRowFirstChFg, getBg: () => lastRowFirstChBg };
@@ -497,17 +501,20 @@ describe("EasyReading._onScreenSettled", () => {
       pageState,
       prevPageState: 0,
       lines: { [lastRowNum]: [lastChar] },
+      lineChangeds: { fill: vi.fn() },
+      notify: vi.fn(),
       getRowText: () => "status-row-text",
       startedEasyReading: true,
       easyReadingShowReplyText: false,
       easyReadingShowPushInitText: false
     };
-    const view = { useEasyReadingMode: enabled };
+    const view = { useEasyReadingMode: enabled, _lastAccumulatedSig: accSig };
     const er = new EasyReading(/* core */ {}, view, termBuf);
     er._send = vi.fn(); // stub the network send
     er.easyReadingReachedPageEnd = reachedPageEnd;
     er.sendCommandAfterUpdate = sendCommandAfterUpdate;
-    er._lastPagedDownSignature = lastPagedSig;
+    er._inFlightSig = lastPagedSig;
+    er._termBufMock = termBuf;
     return er;
   };
 
@@ -524,17 +531,34 @@ describe("EasyReading._onScreenSettled", () => {
     er._onScreenSettled();
     expect(er._send).toHaveBeenCalledTimes(1);
     expect(er._send).toHaveBeenCalledWith("\x1b[6~");
-    expect(er._lastPagedDownSignature).toBe("1~23"); // records the page it paged from
+    expect(er._inFlightSig).toBe("1~23"); // 記下本頁為 in-flight
   });
 
-  it("does not double-send when this exact page was already paged down (signature match)", () => {
+  // 同一頁在 settle 時仍在 in-flight：畫面已靜止 SETTLE_MS ⇒ PTT 已 flush 並卡在
+  // dogetch（沒有進行中的重繪會被 typeahead 吞），此時補送一次是安全的；但有上限，
+  // 之後就放手不再送（見 nextPageDownDecision）。
+  it("settle 時同一頁仍在 in-flight：補送一次後就不再送", () => {
     const er = makeER({ lastPagedSig: "1~23" });
     er._onScreenSettled();
-    expect(er._send).not.toHaveBeenCalled();
+    expect(er._send).toHaveBeenCalledTimes(1);
+    er.sendCommandAfterUpdate = "";
+    er._onScreenSettled();
+    expect(er._send).toHaveBeenCalledTimes(1); // giveup，不再送
   });
 
-  it("does not send on the bottom 100% status row, and marks page end", () => {
-    const er = makeER({ lastRowFirstChBg: 4, lastRowFirstChFg: 7 });
+  // P3：progress==100 ⟺ mf_viewedAll()（pmore.c#mf_display_footer 的整數除法），
+  // 這是主判準；狀態列首格配色只是 pagePercent 拿不到時的 fallback。
+  it("狀態列 100% → 不送並標記已到底（P3）", () => {
+    parseStatusRow.mockReturnValue({ pagePercent: 100, rowIndexStart: 500, rowIndexEnd: 522 });
+    const er = makeER({ accSig: "500~522" });
+    er._onScreenSettled();
+    expect(er._send).not.toHaveBeenCalled();
+    expect(er.easyReadingReachedPageEnd).toBe(true);
+  });
+
+  it("拿不到 pagePercent 時退回配色判定（VIEWALL 37;44 → fg7/bg4）", () => {
+    parseStatusRow.mockReturnValue({ rowIndexStart: 500, rowIndexEnd: 522 });
+    const er = makeER({ accSig: "500~522", lastRowFirstChBg: 4, lastRowFirstChFg: 7 });
     er._onScreenSettled();
     expect(er._send).not.toHaveBeenCalled();
     expect(er.easyReadingReachedPageEnd).toBe(true);
@@ -562,5 +586,219 @@ describe("EasyReading._onScreenSettled", () => {
     const er = makeER({ enabled: false });
     er._onScreenSettled();
     expect(er._send).not.toHaveBeenCalled();
+  });
+
+  // 回应的游标 park 落在 cursor-only 的 notify 视窗时，notify 只走 posChanged 分支、
+  // 不呼叫 view.update() ⇒ 那一页从没进过 redraw/accumulate。画面已静止且游标已 park，
+  // 这里补一次完整重绘把它累积进去。
+  // **必须走 term_buf.notify()**（_forceRepaint）而不是直接 view.redraw()：notify 才会
+  // 跑 updateCharAttr()，那是 Big5 lead byte 标上 isLeadByte 的地方；少了它，clone 进
+  // pageLines 的列 rowToText 会得到未转码的原始 Big5，下一页比对不上 → 重叠算成 0 →
+  // 重叠列被 append 两次（离线拆帧测试抓到的重复「※ 文章網址」）。
+  it("本页尚未累积过 → 走 notify 补一次完整重绘（不可绕过 updateCharAttr）", () => {
+    const er = makeER({ accSig: "第一页的旧签章" });
+    er._onScreenSettled();
+    expect(er._termBufMock.lineChangeds.fill).toHaveBeenCalledWith(true);
+    expect(er._termBufMock.notify).toHaveBeenCalledTimes(1);
+    // 补画会重播 change/viewUpdate，快路径已经做过翻页决策，settle 不再自行送键。
+    expect(er._send).not.toHaveBeenCalled();
+  });
+
+  it("本页已累积过 → 不重复补画", () => {
+    const er = makeER();
+    er._onScreenSettled();
+    expect(er._termBufMock.notify).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// nextPageDownDecision — 自動翻頁的單一 in-flight 交易決策（pmore 不變量 P3/P4/P6，
+// docs/pttbbs-screen-protocol.md §13）。
+//
+// P4：pfterm.c#refresh 在 client 還有按鍵在途時直接 return 不畫 ⇒ **同時兩個
+// PageDown 在途，中間那頁的畫面永遠不會送出來**，該頁文字永久消失（正是「※ 發信站/
+// ※ 文章網址 那段不見」的成因）。所以翻頁必須是 request/response：送出後在看到
+// **不同的頁面簽章**（狀態列 "第 S~E 行"）之前，一律不得再送。
+// P3：progress==100 ⟺ mf_viewedAll()（整數除法剛好等價），到底就別再送——PTT 對
+// 已 viewedAll 的 PageDown 是零回應。
+// ---------------------------------------------------------------------------
+describe("nextPageDownDecision（單一 in-flight 交易, P3/P4）", () => {
+  const decide = (o = {}) => nextPageDownDecision({
+    enabled: true,
+    functionMode: false,
+    complete: true,
+    isStatusRow: true,
+    pagePercent: 40,
+    sig: "22~44",
+    inFlightSig: null,
+    retries: 0,
+    fromSettle: false,
+    ...o
+  });
+
+  it("閒置 ＋ 未到底 → send，並記下本頁簽章為 in-flight", () => {
+    const d = decide();
+    expect(d.action).toBe("send");
+    expect(d.inFlightSig).toBe("22~44");
+    expect(d.retries).toBe(0);
+  });
+
+  // 主回歸：舊版 _onViewUpdated 寫入簽章卻從不檢查（只有 settle 路徑有去重），
+  // 於是同一頁再出現一次完整幀（functionMode resume 的強制 notify、水球後游標歸位…）
+  // 就會再送一個 PageDown → 命中 P4 → 掉一整頁。
+  it("同一頁再次出現完整幀 → wait（絕不重送；掉頁主因）", () => {
+    const d = decide({ inFlightSig: "22~44" });
+    expect(d.action).toBe("wait");
+    expect(d.inFlightSig).toBe("22~44");
+  });
+
+  it("回應到了（簽章變了）→ send 下一頁，retries 歸零", () => {
+    const d = decide({ sig: "44~66", inFlightSig: "22~44", retries: 1 });
+    expect(d.action).toBe("send");
+    expect(d.inFlightSig).toBe("44~66");
+    expect(d.retries).toBe(0);
+  });
+
+  it("progress 100% → done（P3），清掉 in-flight 並標記已到底", () => {
+    const d = decide({ pagePercent: 100 });
+    expect(d.action).toBe("done");
+    expect(d.reachedPageEnd).toBe(true);
+    expect(d.inFlightSig).toBeNull();
+  });
+
+  it("100% 判定不靠狀態列首格顏色：percent 為準", () => {
+    expect(decide({ pagePercent: 99 }).action).toBe("send");
+  });
+
+  it("半畫幀（complete=false）→ none（狀態不動）", () => {
+    const d = decide({ complete: false, inFlightSig: null });
+    expect(d.action).toBe("none");
+    expect(d.inFlightSig).toBeNull();
+  });
+
+  it("functionMode / 非狀態列 / 未啟用 → none", () => {
+    expect(decide({ functionMode: true }).action).toBe("none");
+    expect(decide({ isStatusRow: false }).action).toBe("none");
+    expect(decide({ enabled: false }).action).toBe("none");
+    expect(decide({ sig: null }).action).toBe("none");
+  });
+
+  // 送出後畫面靜止 SETTLE_MS 都沒回應 ⇒ PTT 已 flush 並卡在 dogetch（沒有進行中的
+  // 重繪可被 typeahead 吞），此時補送是安全的；但仍設上限，超過就放手（不再送，
+  // 避免一路重送把畫面推過頭；真的跳過去也還有 classifyPageTransition 的掉頁自癒接住）。
+  it("settle 時仍是同一頁 → retry 一次", () => {
+    const d = decide({ fromSettle: true, inFlightSig: "22~44", retries: 0 });
+    expect(d.action).toBe("retry");
+    expect(d.retries).toBe(1);
+  });
+
+  it("settle 重試達上限 → giveup（不再送）", () => {
+    const d = decide({ fromSettle: true, inFlightSig: "22~44", retries: 1 });
+    expect(d.action).toBe("giveup");
+  });
+});
+
+// 快路徑（_onViewUpdated）的去重接線。舊版這裡無條件送，是掉頁的主要入口。
+describe("EasyReading._onViewUpdated 快路徑去重", () => {
+  const makeER = () => {
+    const termBuf = {
+      addEventListener() {},
+      cols: 80,
+      rows: 24,
+      cur_x: 79,
+      cur_y: 23,
+      pageState: 3,
+      prevPageState: 3,
+      lines: { 23: [{ getFg: () => 7, getBg: () => 0 }] },
+      getRowText: () => "status-row-text",
+      startedEasyReading: true,
+      easyReadingShowReplyText: false,
+      easyReadingShowPushInitText: false
+    };
+    const er = new EasyReading({}, { useEasyReadingMode: true }, termBuf);
+    er._send = vi.fn();
+    return er;
+  };
+
+  beforeEach(() => {
+    parseStatusRow.mockReturnValue({ pagePercent: 40, rowIndexStart: 22, rowIndexEnd: 44 });
+  });
+
+  it("同一頁連兩次 viewUpdate 只送一個 PageDown", () => {
+    const er = makeER();
+    er.sendCommandAfterUpdate = "\x1b[6~";
+    er._onViewUpdated();
+    er.sendCommandAfterUpdate = "\x1b[6~";
+    er._onViewUpdated();
+    expect(er._send).toHaveBeenCalledTimes(1);
+  });
+
+  it("換頁後才會送下一個", () => {
+    const er = makeER();
+    er.sendCommandAfterUpdate = "\x1b[6~";
+    er._onViewUpdated();
+    parseStatusRow.mockReturnValue({ pagePercent: 60, rowIndexStart: 44, rowIndexEnd: 66 });
+    er.sendCommandAfterUpdate = "\x1b[6~";
+    er._onViewUpdated();
+    expect(er._send).toHaveBeenCalledTimes(2);
+  });
+});
+
+// 掉頁自癒：term_view.accumulatePageLines 偵測到 P1 違規會升起 buf.easyReadingGapDetected，
+// EasyReading 送 Home（\x1b[1~ → pmore#mf_goTop）重讀整篇。每篇只自癒一次防迴圈。
+describe("EasyReading._healFromTop（掉頁自癒）", () => {
+  const makeER = () => {
+    const termBuf = {
+      addEventListener() {},
+      cols: 80,
+      rows: 24,
+      cur_x: 79,
+      cur_y: 23,
+      pageState: 3,
+      prevPageState: 3,
+      pageLines: [1, 2, 3],
+      easyReadingGapDetected: true,
+      lines: { 23: [{ getFg: () => 7, getBg: () => 0 }] },
+      getRowText: () => "status-row-text",
+      startedEasyReading: true,
+      easyReadingShowReplyText: false,
+      easyReadingShowPushInitText: false
+    };
+    const view = { useEasyReadingMode: true, _accEndRow: 44, _lastAccumulatedSig: "22~44" };
+    const er = new EasyReading({}, view, termBuf);
+    er._send = vi.fn();
+    return { er, termBuf, view };
+  };
+
+  beforeEach(() => {
+    parseStatusRow.mockReturnValue({ pagePercent: 40, rowIndexStart: 66, rowIndexEnd: 88 });
+  });
+
+  it("送 Home、清空累積並重設追蹤", () => {
+    const { er, termBuf, view } = makeER();
+    er._healFromTop();
+    expect(er._send).toHaveBeenCalledWith("\x1b[1~");
+    expect(termBuf.pageLines).toEqual([]);
+    expect(termBuf.easyReadingGapDetected).toBe(false);
+    expect(termBuf.easyReadingPendingReset).toBe(true);
+    expect(view._accEndRow).toBeNull();
+  });
+
+  it("每篇只自癒一次（第二次不再送 Home）", () => {
+    const { er, termBuf } = makeER();
+    er._healFromTop();
+    termBuf.easyReadingGapDetected = true;
+    er._healFromTop();
+    expect(er._send).toHaveBeenCalledTimes(1);
+    expect(termBuf.easyReadingGapDetected).toBe(false);
+  });
+
+  it("leaveCurrentPost 後重置額度（新文章可再自癒）", () => {
+    const { er, termBuf } = makeER();
+    er._healFromTop();
+    er.leaveCurrentPost();
+    termBuf.easyReadingGapDetected = true;
+    er._healFromTop();
+    expect(er._send).toHaveBeenCalledTimes(2);
   });
 });

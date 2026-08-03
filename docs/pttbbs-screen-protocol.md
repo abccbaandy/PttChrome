@@ -1,6 +1,7 @@
 # pttbbs 畫面更新協定（server 端不變量）
 
-來源：`3rd_script/pttbbs`（官方 github.com/ptt/pttbbs，checkout `c1ff72df` 2026-06-28）＝ term.ptt.cc 行為最佳近似。
+來源：`3rd_script/pttbbs`（官方 github.com/ptt/pttbbs，checkout `efc21a30` 2026-08-03；
+§1–§12 原以 `c1ff72df` 讀碼，2026-08 於 `efc21a30` 覆核 `pmore.c`/`more.c`/`pfterm.c` 差異純屬重構，結論不變）＝ term.ptt.cc 行為最佳近似。
 用途：client 畫面偵測以**確定性規則**取代 timing heuristic。本檔全部 CONFIRMED（讀碼驗證；標 ✚ 者另經 `tests/e2e/cassettes/cchat-list.json` 實錄交叉驗證）；unknown 另標。行號隨 upstream 演進會漂，函式名為準。
 
 **研究方法規範（強制）**：PTT 行為邏輯**一律先讀 `3rd_script/pttbbs` 原始碼**找出真實實作，**禁止**自行猜測或從錄製素材/畫面觀察反推規則——素材只用來**驗證**對 code 的理解是否有誤。反例教訓：last-read 高亮曾從實錄反推成「作者亮白＋標題紅的單列游標」模型，連修三版仍殘紅；讀 `readdoent` 十分鐘即知是 title-match 多列高亮＋作者亮白其實是 isonline（見 §10）。
@@ -169,7 +170,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 
 | client | 官方出處 | 契約 |
 |---|---|---|
-| `parseStatusRow` | `pmore.c#mf_display_footer` ＋ `more.c#common_pmore_footer_handler` | part1 `"  瀏覽 第 %1d[/%1d] 頁 (%3d%%) "`（頁碼**無位數上限**，實錄已見 540/540）；part2 `" 目前顯示: 第 %02d~%02d 行"`／**`" 顯示範圍: %d~%d 欄位, %02d~%02d 行"`（`mf.xpos>0` 左右捲動）**；part3 五種變體（含 RMAIL 的 `(y)回信`）。`bpref.oldstatusbar` 的 `"  瀏覽 P.%d(%d%%)  "` 目前**不支援**（非預設） |
+| `parseStatusRow` | `pmore.c#mf_display_footer` ＋ `more.c#common_pmore_footer_handler` | part1 `"  瀏覽 第 %1d[/%1d] 頁 (%3d%%) "`（頁碼**無位數上限**，實錄已見 540/540）；part2 `" 目前顯示: 第 %02d~%02d 行"`／**`" 顯示範圍: %d~%d 欄位, %02d~%02d 行"`（`mf.xpos>0` 左右捲動）**；**part3 完全不比對**——它會整段消失（見 §13 P5），要求它會讓整列失配 → 掉出 pageState 3 → 好讀累積頁被清空。`bpref.oldstatusbar` 的 `"  瀏覽 P.%d(%d%%)  "` 目前**不支援**（非預設） |
 | `parseListRow` | `menu.c#show_status` | `"[%d/%d 星期XX %d:%02d]"` ＋ `"%-14s"`（today_is，**緊接 `]` 無空格**）＋ `" 線上%d人, 我是%s"` ＋ `"\t[呼叫器]%s "`；呼叫器狀態 5 種＝`var.c#str_pager_modes`：關閉／打開／拔掉／防水／好友 |
 | `parseWaterball` | `mbbsd.c#show_call_in` | 見 §9 |
 | `parseReplyText` | `bbs.c#reply_post`（三種互斥分支）＋`more.c`／`edit.c` | `▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] `／**`▲ 回應至 (F)看板 (Q)取消？[F] `（無寄信權限）**／`▲ 無法回應至看板。 改回應至 (M)作者信箱 (Q)取消？[Q] `／`把這篇文章收入到暫存檔？[y/N] `／`請選擇暫存檔 (0-9)[0]: ` |
@@ -207,3 +208,42 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 - unknown：ws.ptt.cc 的 WS proxy 是否保留 server write 邊界（proxy 不在本 repo）。
 - unknown：私有 commit 與 upstream 的實際差異。已知線索一則——水球第二段顏色（§9）推得線上應為 `ANSI_COLOR(1;37;45)`，upstream 字面是 `ANSI_COLOR(37;45)`；推文列 `:` 與內容間的一格空白同樣是 upstream 字面（`":%-*s"`）沒有、實錄有 ⇒ client 兩種都收。
 - 大字型 term（rows≠24）：`p_lines`/`b_lines` 相對式全部成立，但 client 端規則需寫成 rows-relative；未實測。
+
+## 13. pmore 分頁不變量（文章好讀模式的確定性依據，2026-08 全部 CONFIRMED @ efc21a30）
+
+用途：把「文章好讀模式」的翻頁／累積從逐幀啟發式（內容比對＋比對率 guard＋sticky 旗標）
+換成 request/response 交易。client 對應 `src/js/easy_reading.js`、`term_view.accumulatePageLines`、
+`comment_parse.classifyPageTransition`；守護見該段末的測試清單。
+
+| # | 不變量 | 出處 |
+|---|---|---|
+| P1 | PageDown ＝ `mf_forward(mf.dispedlines - 1)` ⇒ **下一頁 `S' == 上一頁 E`**；末頁被 `maxdisps` 夾住則 `S' < E`。**`S' > E` 在單次 PageDown 下不可能** | `pmore.c#PMORE_UINAV_FORWARDPAGE`(2234)、`mf_forward`(1026)、`mf_determinemaxdisps` |
+| P2 | footer part2 的 `第 S~E 行` 是**檔案行號**；`dispedlines` 只在 `!wrapping && dispe < end` 遞增 ⇒ 不含 wrap 續列、不含 EOF 後空列 ⇒ **顯示列數 ≥ (E-S+1)** | `mf_display`(1476)、`mf_display_footer` |
+| P3 | `progress = (dispe-start)*100/len` 且 `len == end-start`（`mf_postattach`）⇒ **`progress==100` ⟺ `mf_viewedAll()`（整數除法剛好等價）**；已 viewedAll 時 PageDown 直接 `return`，**PTT 零回應** | `mf_display_footer`(2046)、`mf_viewedAll`(1081)、`PMORE_UINAV_FORWARDPAGE`(2245) |
+| P4 | client 尚有按鍵在途 → `refresh()` 直接 return **不畫** ⇒ **兩個 PageDown 同時在途＝中間那頁的畫面永遠不會送出來（內容永久掉）** | `pfterm.c#refresh`(798)；§2 |
+| P5 | footer part3 **會整段不印**，兩層來源：`mf_display_footer` 印完 part2 後 `if (avail <= 0) return;`（連 footer_handler 都不呼叫）；`common_pmore_footer_handler` 最後 `else while (width-- > w) outc(' ');`（連 VERYSHORT 都塞不下）。觸發條件＝part1+part2 太寬（多位數頁碼／六位數行號／xpos 的「顯示範圍」分支） | `pmore.c#mf_display_footer`、`more.c`(461) |
+| P6 | 每次回應結尾游標 park 在 `(rows-1, cols-1)`；footer 是 **per-cell patch**（實錄 `ESC[24;11H3 ESC[24;37H44~66 ESC[24;80H`）⇒ **半畫幀的 footer 是上一頁的舊值**，游標也還沒 park | `pfterm.c#fterm_rawcursor`(2144)、`tests/e2e/cassettes/stock-end.json` step2 |
+
+client 端推論（改這段 code 前先讀）：
+
+1. **翻頁＝單一 in-flight 交易**（P4）。ack ＝頁面簽章（`S~E`）改變；在看到新簽章前一律不得再送。
+   快路徑（`_onViewUpdated`）與 settle 路徑（`_onScreenSettled`）**必須共用同一個 gate**
+   （`nextPageDownDecision`）。舊版只有 settle 有去重，快路徑記下簽章卻不檢查 → 同頁重複送 → 掉頁。
+2. **累積只在完整回應幀**（P6）：`cur_y === rows-1 && cur_x === cols-1`。半畫幀只重畫不累積，
+   否則舊 footer 的行號會寫進 `_accEndRow`，之後整條去重都建在錯的基準上。
+3. **到底判定用 `pagePercent === 100`**（P3），不是 footer 首格顏色——per-cell dirty 更新下，
+   單一格的顏色比讀百分比脆弱（顏色僅留作 fallback）。
+4. **掉頁可判定**（P1）：`statusStart > accEndRow + 1` ⇒ 中間整頁沒收到。自癒＝送 Home
+   （`\x1b[1~` → `pmore#mf_goTop`，`pmore.c:2604`）從頭重讀，每篇一次防迴圈。
+5. **parser 不可要求 part3**（P5）。
+6. **強制重繪一律走 `term_buf.notify()`**，不可直接 `view.redraw()`：`updateCharAttr()` 只在
+   notify 裡跑，它是 Big5 lead byte 標上 `isLeadByte` 的地方。settle 可能落在「bytes 已到、
+   30ms notify 計時器還沒跑」之間，此時直接 redraw 會把未轉碼的列 clone 進 `pageLines`，
+   `rowToText` 得到原始 Big5（`¡°` 而非 `※`）→ 下一頁比對不上 → 重疊算成 0 → 重疊列被貼兩次。
+
+守護：`tests/unit/string_util.test.js`（P5 的三種無 part3 形狀）、`comment_parse.test.js`
+（`classifyPageTransition` 四種轉移、`decideAccumulateBranch` 的 complete/gap）、
+`easy_reading_logic.test.js`（`nextPageDownDecision`、快路徑去重、`_healFromTop`、補畫走 notify）、
+`replay_fixture.test.jsx`（實錄素材的 P1/P2 不變量）、
+`tests/e2e/offline/easy-reading.offline.spec.js`（`dropSteps` 模擬 P4 吞頁 → 偵測＋自癒；
+`splitFrames` 模擬 P6 半畫幀 → 內容完整、每頁只送一次 PageDown）。

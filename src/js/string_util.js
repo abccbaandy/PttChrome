@@ -170,13 +170,24 @@ export function parseReqNotMetText(it) {
 //   part3 HELP     mbbsd/more.c#common_pmore_footer_handler 依剩餘寬度五選一：
 //                  "(y)回信 (h)說明 (←/q)離開 "（RMAIL）/ "(y)回應(X%)推文(h)說明(←)離開 "
 //                  / "(y)回應(X/%)推文 (←)離開 " / "(h)說明 (←/q)離開 " / "(←q)離開 "
+//                  ——**或一種都不印**（見下）
 //
 // part1 尾 1 空格 ＋ part2 首 1 空格 ⇒ 「%)」與 part2 之間恰 2 空格。
 // 頁碼/百分比用 %1d/%3d，**沒有位數上限**（實錄 stock-end 已見 540/540），所以
 // 不可寫成 \d{1,3}。part2 兩個分支的行號欄位形狀相同（" S~E 行"），共用同一組
 // capture；「顯示範圍」分支若不支援，使用者一按 `.`/`>` 右捲長行就掉出文章判定。
+//
+// **part3 完全不比對（2026-08 反查 efc21a30）**：它會整段消失，兩層來源——
+//   1. pmore.c#mf_display_footer 印完 part2 後 `if (avail <= 0) return;`
+//      （連 footer_handler 都不呼叫）；
+//   2. more.c#common_pmore_footer_handler:461 最後 `else while (width-- > w) outc(' ');`
+//      （連 FOOTERMSG_VERYSHORT 都塞不下時只填空白）。
+// 觸發條件是 part1+part2 太寬（多位數頁碼／六位數行號／xpos 的「顯示範圍」分支）。
+// 要求 part3 的代價不是少一個欄位，而是**整列失配** → term_buf.setPageState 判不出
+// pageState 3 → term_view.redraw 落到 native 分支 → hideEasyReadingOverlays() 清空
+// buf.pageLines（好讀累積頁整個消失）。part1+part2 本身已是唯一的畫面指紋，足夠。
 const STATUS_ROW_RE =
-  /  瀏覽 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  (?:目前顯示: 第|顯示範圍: \d+~\d+ 欄位,) 0*(\d+)~0*(\d+) 行 *(?:\(y\)(?:回應|回信) *)?(?:\(X\/?%\)推文 *)?(?:\(h\)說明 *)? *\(←\/?q?\)離開 /;
+  /  瀏覽 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  (?:目前顯示: 第|顯示範圍: \d+~\d+ 欄位,) 0*(\d+)~0*(\d+) 行/;
 
 export function parseStatusRow(str) {
   var result = STATUS_ROW_RE.exec(str);

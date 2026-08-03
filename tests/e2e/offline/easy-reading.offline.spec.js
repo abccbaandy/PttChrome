@@ -375,3 +375,149 @@ test.describe('LiveHelper 启用 → 关好读单一出口（离线重放）', (
     expect(errors).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 掉页（typeahead 跳绘）回归 —— 使用者回报的「※ 发信站/※ 文章网址 那段消失」。
+// pmore 不变量见 docs/pttbbs-screen-protocol.md §13。
+//
+// 成因链：
+//   P4  pfterm.c#refresh 在 client 还有按键在途时直接 return **不画**。所以同时有
+//       两个 PageDown 在途时，中间那页的画面永远不会送出来 —— 不是显示错，是那页
+//       的字从来没到过 client。
+//   旧 code 会送出重复的 PageDown：快路径 _onViewUpdated 记下页面签章却从不检查它
+//       （只有 settle 路径有去重），任何在同一页再出现一次的完整帧（functionMode
+//       resume 的强制 notify、水球重绘…）就再送一次。
+//   P1  掉页后新页的起始行号会**跳过**上一页的结束行号（S' > E+1）。这在单次
+//       PageDown 下不可能发生（PageDown == mf_forward(dispedlines-1) ⇒ S' == E），
+//       所以它是可判定的证据。旧 resolvePageOverlap 把负重叠夹成 0 → 照常 append
+//       → 破洞无声无息。
+//
+// 本测直接把 P4 的结果喂进来（dropSteps：那一页的画面整个不送，下一次 PageDown 收到
+// 的是再下一页），断言新 code 能**发现**并自癒（送 Home → mf_goTop 从头重读）。
+// 旧 code 在这里必红：被吞那页的行永久消失。
+//
+// stock-end 的形状刚好就是回报的症状：第 3 页（第 44~66 行）页尾正是
+//   ※ 发信站: …            ← 第 65 行，只出现在第 3 页
+//   ※ 文章网址: …          ← 第 66 行，同时是第 4 页的第一行（重叠列）
+// 所以吞掉第 3 页 → 「发信站」不见、「文章网址」还在。
+test.describe('掉页（typeahead 跳绘）侦测与自癒（离线重放）', () => {
+  const paged = articles.filter((c) => (c.steps || []).some((s) => s.on === 'pagedown'));
+  if (!paged.length) {
+    test.skip('尚无多页 article cassette；先 yarn record:cassette', () => {});
+  }
+
+  for (const cassette of paged) {
+    // 吞掉「中间」那个 pagedown step（第一个 pagedown 之后的那个），确保被吞的页
+    // 既不是首页也不是末页 —— 它的内容只能靠自癒救回来。
+    const pdIdx = cassette.steps
+      .map((s, i) => (s.on === 'pagedown' ? i : -1))
+      .filter((i) => i >= 0);
+    const drop = pdIdx[Math.min(1, pdIdx.length - 1)];
+
+    test(`吞掉一页 → 侦测到并自癒，内容完整 [${cassette.__file}]`, async ({ page }) => {
+      test.setTimeout(90000);
+      const errors = [];
+      page.on('pageerror', (e) => errors.push(String(e)));
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, {
+        enableEasyReading: true,
+        showFloorNumbers: false,
+        mergeSameAuthorComments: false,
+      });
+      await replayCassette(page, cassette, {
+        easyReading: true,
+        dropSteps: [drop],
+        answerHome: true,
+      });
+
+      const state = await page.evaluate(() => window.__replay);
+      console.log(
+        `[offline/drop] ${cassette.__file}: drop=${drop} dropped=${state.dropped} home=${state.home} fed=${state.fed}/${state.total}`
+      );
+      expect(state.dropped).toBeGreaterThan(0); // 真的吞了一页，否则本测没意义
+
+      // 侦测到掉页 → 送 Home 从头重读（EasyReading._healFromTop）。
+      expect(state.home).toBeGreaterThan(0);
+
+      const rows = await readBbsLines(page);
+      const joined = rows.join('\n');
+
+      // 被吞那页的内容必须回来。「※ 发信站:」只出现在被吞的页里（「※ 文章网址:」
+      // 是跨页重叠列，下一页还有 —— 正是回报中「只有发信站那段不见」的原因）。
+      expect(joined).toContain('※ 發信站:');
+      expect(joined).toContain('※ 文章網址:');
+
+      // 自癒不得把内容重复贴一遍。
+      for (let i = 1; i < rows.length; i++) {
+        const a = rows[i - 1].replace(/\s+$/, '');
+        const b = rows[i].replace(/\s+$/, '');
+        if (a.trim() !== '') expect(b).not.toBe(a);
+      }
+      expect(errors).toEqual([]);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 半画帧（P6）：PTT 一次回应常被拆成多个 WS message（OBUFSIZE 3072 会中途 flush），
+// 而 client 的 notify 有 30ms debounce ⇒ 一次翻页会跨好几个 redraw frame。中间那些
+// 帧里内容列已是新页，但**底部状态列还是上一页的旧值**（pfterm per-cell dirty 更新，
+// 状态列补丁与游标 park 永远排在内容之后），游标也还没 park 到 (rows-1, cols-1)。
+// 拿这种帧去累积会把旧行号写进 _accEndRow（基准漂移）。新 code 用「游标已 park」
+// 当完整回应的闸，半画帧只重画不累积。
+test.describe('半画帧不污染累积（离线重放）', () => {
+  const paged = articles.filter((c) => (c.steps || []).some((s) => s.on === 'pagedown'));
+  if (!paged.length) {
+    test.skip('尚无多页 article cassette；先 yarn record:cassette', () => {});
+  }
+
+  for (const cassette of paged) {
+    for (const frac of [0.4, 0.75]) {
+      test(`切在 ${frac} 拆帧重放：内容完整、无重复、每页只送一次 PageDown [${cassette.__file}]`, async ({
+        page,
+      }) => {
+        test.setTimeout(90000);
+        const errors = [];
+        page.on('pageerror', (e) => errors.push(String(e)));
+        await bootOffline(page, ptt);
+        await ptt.applyPrefs(page, {
+          enableEasyReading: true,
+          showFloorNumbers: false,
+          mergeSameAuthorComments: false,
+        });
+        await replayCassette(page, cassette, { easyReading: true, splitFrames: frac });
+
+        const state = await page.evaluate(() => window.__replay);
+        expect(state.split).toBeGreaterThan(0);
+
+        const rows = await readBbsLines(page);
+        const joined = rows.join('\n');
+        expect(joined).toContain('※ 發信站:');
+        expect(joined).toContain('※ 文章網址:');
+        for (let i = 1; i < rows.length; i++) {
+          const a = rows[i - 1].replace(/\s+$/, '');
+          const b = rows[i].replace(/\s+$/, '');
+          if (a.trim() !== '') expect(b).not.toBe(a);
+        }
+
+        // 每个**收到过回应**的页只送一次 PageDown（最后一个签章是 cassette 已喂完、
+        // 等不到回应的那页，允许一次 bounded settle 补送）。
+        const pageDowns = state.sends.filter((s) => s.data.indexOf('\x1b[6~') >= 0);
+        const perPage = new Map();
+        const order = [];
+        for (const s of pageDowns) {
+          if (!perPage.has(s.sig)) order.push(s.sig);
+          perPage.set(s.sig, (perPage.get(s.sig) || 0) + 1);
+        }
+        console.log(
+          `[offline/split] ${cassette.__file} @${frac}: ` +
+            order.map((k) => `${k}:${perPage.get(k)}`).join(' ')
+        );
+        for (const sig of order.slice(0, -1)) {
+          expect({ sig, count: perPage.get(sig) }).toEqual({ sig, count: 1 });
+        }
+        expect(errors).toEqual([]);
+      });
+    }
+  }
+});

@@ -533,6 +533,11 @@ export function findPageOverlap(accText, newText) {
 // accTail/newTexts (optional) = the row texts findPageOverlap compared, for the guard.
 export function resolvePageOverlap({ accEndRow, statusStart, kContent, maxK, accTail, newTexts }) {
   if (accEndRow == null || statusStart == null) return kContent; // no tracking → content
+  // A NEGATIVE raw overlap means statusStart ran past accEndRow — pmore invariant P1
+  // says that cannot happen on a PageDown, so it is a LOST PAGE, not an overlap of 0.
+  // classifyPageTransition catches it upstream ('gap' branch) and the caller self-heals;
+  // if one still reaches here, fall back to the content-proven overlap instead of
+  // pretending the pages are adjacent.
   const kStatus = Math.max(0, Math.min(maxK, accEndRow - statusStart + 1));
 
   // kContent is the LARGEST text-matching run, i.e. a proven lower bound of the overlap:
@@ -563,8 +568,39 @@ export function resolvePageOverlap({ accEndRow, statusStart, kContent, maxK, acc
   return kStatus;
 }
 
+// Classify how the newly painted article page relates to what we have accumulated,
+// using PTT's absolute file-line numbers from the status row. This is the CLIENT-SIDE
+// expression of pmore invariant P1 (docs/pttbbs-screen-protocol.md §13):
+//
+//   PageDown == mf_forward(mf.dispedlines - 1)   (pmore.c#PMORE_UINAV_FORWARDPAGE)
+//
+// i.e. the next screen's FIRST file line is exactly the current screen's LAST file
+// line (`S' == E`), because pmore advances by one less than what it displayed. Near
+// the end of the article mf_forward is clamped by mf.maxdisps so the new screen can
+// start EARLIER (`S' < E`, a bigger overlap) — but it can NEVER start later.
+//
+// ⇒ `S' > E + 1` is impossible for a single PageDown. Observing it proves at least
+//   one whole screen was never received — the typeahead-skip failure mode (P4:
+//   pfterm.c#refresh returns without drawing while client keys are still queued), i.e.
+//   permanently lost article text. The old code hid this: resolvePageOverlap clamped
+//   the negative overlap to 0 and appended anyway, leaving a silent hole.
+//
+// `S' == E + 1` (zero overlap) is tolerated as a continuation: pmore's `if (i < 1) i = 1`
+// guard makes it reachable when a screen displays a single file line.
+//
+// Returns null when there is no status row to judge from (transient half-painted
+// frame) — the caller falls back to its own transient handling.
+export function classifyPageTransition({ accEndRow, statusStart, statusEnd }) {
+  if (statusStart == null) return null;
+  if (statusStart === 1 || accEndRow == null) return 'restart';
+  if (statusStart > accEndRow + 1) return 'gap';
+  if (statusEnd != null && statusEnd < accEndRow) return 'backward';
+  return 'continuation';
+}
+
 // Branch decision for term_view.accumulatePageLines — 'rebuild' (restart pageLines
-// as this screen) | 'append' (continuation de-dup) | 'skip' (transient frame).
+// as this screen) | 'append' (continuation de-dup) | 'skip' (transient/incomplete
+// frame) | 'gap' (P1 violated: a page was lost, caller must self-heal).
 //
 // Fixes the [ ] same-title-jump pile-up: leaveCurrentPost's one-shot prevPageState=0
 // gets consumed by a stale old-article frame (redraw rewrites prevPageState=pageState
@@ -585,18 +621,34 @@ export function resolvePageOverlap({ accEndRow, statusStart, kContent, maxK, acc
 //              (both non-blank and different).
 // statusStart==null (no status row = transient/half-painted frame): keep the current
 // behaviour — skip while continuing (prevPageState 3), rebuild otherwise.
+//
+// `complete` (pmore invariant P6) is the THIRD defence and the one that removes the
+// root cause of the two above: pfterm parks the cursor at (rows-1, cols-1) only at the
+// very END of a server response, and the footer is a per-cell patch — so a half-painted
+// frame still carries the PREVIOUS page's line numbers. Accumulating off such a frame
+// makes _accEndRow drift, which is what forced resolvePageOverlap to grow its
+// match-ratio drift guard. Only an explicit `false` gates (callers pass a real boolean;
+// the older call sites that omit it are testing the branch logic itself).
+//
+// `transition` comes from classifyPageTransition: 'gap' means pmore invariant P1 was
+// violated (a whole screen was lost) — the caller must self-heal rather than append a
+// hole. Checked after the first-page rebuild so a genuine restart still wins.
 export function decideAccumulateBranch({
+  complete,
   prevPageState,
   pendingReset,
   statusStart,
   kContent,
   hasAcc, // eslint-disable-line no-unused-vars -- kept for call-site readability
-  headerChanged
+  headerChanged,
+  transition
 }) {
+  if (complete === false) return 'skip';
   if (prevPageState !== 3) return 'rebuild';
   if (statusStart == null) return 'skip';
   if (statusStart === 1 && (pendingReset || (kContent === 0 && headerChanged)))
     return 'rebuild';
+  if (transition === 'gap') return 'gap';
   return 'append';
 }
 
