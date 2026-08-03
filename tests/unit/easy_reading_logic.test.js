@@ -18,6 +18,7 @@ import {
   nextEasyReadingState,
   nextEasyReadingRowState,
   nextPageDownDecision,
+  PAGE_DOWN_MAX_RETRIES,
   functionModeExitDecision,
   EasyReading
 } from "../../src/js/easy_reading";
@@ -475,49 +476,63 @@ describe("EasyReading._onKeyDownProcessUI End handling", () => {
 // re-runs the SAME pure decision and re-sends the missed PageDown, deduped by the page
 // signature so a slow PTT response cannot double-send (which would skip a page). The
 // decision itself is covered by nextEasyReadingRowState above; this guards the PLUMBING.
-describe("EasyReading._onScreenSettled", () => {
-  const makeER = ({
-    enabled = true,
-    pageState = 3,
-    sendCommandAfterUpdate = "",
-    reachedPageEnd = false,
-    curX = 79,
-    curY = 23,
-    lastRowFirstChBg = 0,
-    lastRowFirstChFg = 7,
-    lastPagedSig = null,
-    // 目前这一页**已经累积过**（正常情形：完整回应帧进过 redraw）。设成别的值就会
-    // 走「这次回应从没进过 redraw」的补画分支（见下方专测）。
-    accSig = "1~23"
-  } = {}) => {
-    const lastRowNum = 23;
-    const lastChar = { getFg: () => lastRowFirstChFg, getBg: () => lastRowFirstChBg };
-    const termBuf = {
-      addEventListener() {},
-      cols: 80,
-      rows: 24,
-      cur_x: curX,
-      cur_y: curY,
-      pageState,
-      prevPageState: 0,
-      lines: { [lastRowNum]: [lastChar] },
-      lineChangeds: { fill: vi.fn() },
-      notify: vi.fn(),
-      getRowText: () => "status-row-text",
-      startedEasyReading: true,
-      easyReadingShowReplyText: false,
-      easyReadingShowPushInitText: false
-    };
-    const view = { useEasyReadingMode: enabled, _lastAccumulatedSig: accSig };
-    const er = new EasyReading(/* core */ {}, view, termBuf);
-    er._send = vi.fn(); // stub the network send
-    er.easyReadingReachedPageEnd = reachedPageEnd;
-    er.sendCommandAfterUpdate = sendCommandAfterUpdate;
-    er._inFlightSig = lastPagedSig;
-    er._termBufMock = termBuf;
-    return er;
+const makeER = ({
+  enabled = true,
+  pageState = 3,
+  sendCommandAfterUpdate = "",
+  reachedPageEnd = false,
+  curX = 79,
+  curY = 23,
+  lastRowFirstChBg = 0,
+  lastRowFirstChFg = 7,
+  lastPagedSig = null,
+  pageDownRetries = 0,
+  // 目前这一页**已经累积过**（正常情形：完整回应帧进过 redraw）。设成别的值就会
+  // 走「这次回应从没进过 redraw」的补画分支（见下方专测）。
+  accSig = "1~23"
+} = {}) => {
+  const lastRowNum = 23;
+  const lastChar = { getFg: () => lastRowFirstChFg, getBg: () => lastRowFirstChBg };
+  const termBuf = {
+    addEventListener() {},
+    cols: 80,
+    rows: 24,
+    cur_x: curX,
+    cur_y: curY,
+    pageState,
+    prevPageState: 0,
+    settledPageState: pageState,
+    prevSettledPageState: pageState,
+    lines: { [lastRowNum]: [lastChar] },
+    lineChangeds: { fill: vi.fn() },
+    notify: vi.fn(),
+    getRowText: () => "status-row-text",
+    startedEasyReading: true,
+    easyReadingShowReplyText: false,
+    easyReadingShowPushInitText: false
   };
+  const view = { useEasyReadingMode: enabled, _lastAccumulatedSig: accSig };
+  const core = { connectedUrl: { easyReadingSupported: true } };
+  const er = new EasyReading(core, view, termBuf);
+  er._send = vi.fn(); // stub the network send
+  er.easyReadingReachedPageEnd = reachedPageEnd;
+  er.sendCommandAfterUpdate = sendCommandAfterUpdate;
+  er._inFlightSig = lastPagedSig;
+  er._pageDownRetries = pageDownRetries;
+  er._termBufMock = termBuf;
+  return er;
+};
 
+// term_buf 只在 pageState 真的變動時才 dispatch 'pageStateSettled'，所以測試也照著
+// 「先把 debounced 狀態推到新值再呼叫」來模擬一次 settle edge。
+const settleEdge = (er, from, to) => {
+  er._termBufMock.prevSettledPageState = from;
+  er._termBufMock.settledPageState = to;
+  er._termBufMock.pageState = to;
+  er._onPageStateSettled();
+};
+
+describe("EasyReading._onScreenSettled", () => {
   beforeEach(() => {
     // Default: a non-bottom status row showing "第 1~23 行".
     parseStatusRow.mockReturnValue({ pagePercent: 33, rowIndexStart: 1, rowIndexEnd: 23 });
@@ -564,10 +579,21 @@ describe("EasyReading._onScreenSettled", () => {
     expect(er.easyReadingReachedPageEnd).toBe(true);
   });
 
-  it("does not send once page end has already been reached", () => {
-    const er = makeER({ reachedPageEnd: true });
+  // 「到底了」只認**當下狀態列**（pagePercent==100 ⟺ mf_viewedAll()，P3），不認
+  // easyReadingReachedPageEnd 這個旗標——它會跨文章殘留（← 離開走 stopEasyReading，
+  // 不經 leaveCurrentPost；好讀已開著時換文章也不走 enterEasyReading），一旦讓它有權
+  // 否決 settle，下一篇文章的第一個 PageDown 就永遠送不出去（卡在第一頁）。
+  it("狀態列已 100% → settle 不再送（唯一的停止判準）", () => {
+    parseStatusRow.mockReturnValue({ pagePercent: 100, rowIndexStart: 500, rowIndexEnd: 522 });
+    const er = makeER({ reachedPageEnd: true, accSig: "500~522" });
     er._onScreenSettled();
     expect(er._send).not.toHaveBeenCalled();
+  });
+
+  it("旗標殘留為 true 但狀態列還沒到底 → 照樣送（旗標不得否決 settle）", () => {
+    const er = makeER({ reachedPageEnd: true });
+    er._onScreenSettled();
+    expect(er._send).toHaveBeenCalledWith("\x1b[6~");
   });
 
   it("does not send while a command is already in flight (lets the frame loop drive)", () => {
@@ -608,6 +634,125 @@ describe("EasyReading._onScreenSettled", () => {
     const er = makeER();
     er._onScreenSettled();
     expect(er._termBufMock.notify).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 跨文章重置（回歸守護：7fdd90a 之後「進文章卡在第一頁、換一篇還是卡」）
+//
+// 自動翻頁的 per-article 狀態（_inFlightSig / _pageDownRetries / _healedOnce /
+// easyReadingReachedPageEnd）以前只在 enterEasyReading / leaveCurrentPost 重置，
+// 但這兩條**都不涵蓋最常見的換文章路徑**：
+//   - ← 離開文章走 stopEasyReading()，不經 leaveCurrentPost()；
+//   - 好讀已經開著時再進下一篇，nextEasyReadingState 要求 !enabled ⇒ 不走 enterEasyReading()。
+// 於是上一篇的殘留跟著使用者到下一篇：
+//   (1) 上一篇讀到底 ⇒ easyReadingReachedPageEnd 殘留 true ⇒ _onScreenSettled 早退；
+//   (2) 上一篇卡在 giveup ⇒ _inFlightSig 殘留 "1~22"，而**每篇文章第一頁的簽章都是
+//       "1~22"**（sig 不跨文章唯一）⇒ 下一篇被誤判成「同一頁還在途」。
+// 兩者都讓第一個 PageDown 永遠送不出去。重置改由 settle 過的 pageState 進出 3 的
+// edge 驅動（_onPageStateSettled），與使用者按了哪個鍵無關。
+describe("跨文章重置（文章邊界 = settled pageState 進出 3）", () => {
+  beforeEach(() => {
+    parseStatusRow.mockReturnValue({ pagePercent: 14, rowIndexStart: 1, rowIndexEnd: 23 });
+    parseReplyText.mockReturnValue(false);
+    parsePushInitText.mockReturnValue(false);
+    parseReqNotMetText.mockReturnValue(false);
+  });
+
+  it("上一篇讀到底（reachedPageEnd 殘留）→ 下一篇仍會自動翻頁", () => {
+    const er = makeER({ reachedPageEnd: true, accSig: "1~23" });
+    settleEdge(er, 3, 2);   // ← 回列表
+    settleEdge(er, 2, 3);   // 進下一篇
+    er._onScreenSettled();
+    expect(er._send).toHaveBeenCalledWith("\x1b[6~");
+  });
+
+  it("上一篇卡在 giveup（_inFlightSig/retries 殘留）→ 下一篇仍會自動翻頁", () => {
+    const er = makeER({
+      lastPagedSig: "1~23",
+      pageDownRetries: PAGE_DOWN_MAX_RETRIES,
+      accSig: "1~23"
+    });
+    settleEdge(er, 3, 2);
+    settleEdge(er, 2, 3);
+    er._onScreenSettled();
+    expect(er._send).toHaveBeenCalledWith("\x1b[6~");
+  });
+
+  it("進出文章的 edge 會清掉整組 per-article 狀態", () => {
+    const er = makeER({ reachedPageEnd: true, lastPagedSig: "1~23", pageDownRetries: 1 });
+    er._healedOnce = true;
+    er.sendCommandAfterUpdate = "\x1b[6~";
+    settleEdge(er, 3, 2);   // 離開文章
+    expect(er._inFlightSig).toBe(null);
+    expect(er._pageDownRetries).toBe(0);
+    expect(er._healedOnce).toBe(false);
+    expect(er.easyReadingReachedPageEnd).toBe(false);
+    expect(er.sendCommandAfterUpdate).toBe("");
+  });
+
+  // 反向守護 P4：文章**中途**狀態列失配一幀而掉出 3 再回來，不是換文章，不可重置——
+  // 清掉 _inFlightSig 會讓同一頁再送一次 PageDown，正是 7fdd90a 要防的重複送鍵。
+  it("文章中途 3→0→3 的抖動不重置（否則會重複送 PageDown）", () => {
+    const er = makeER({ lastPagedSig: "1~23", pageDownRetries: 1 });
+    settleEdge(er, 3, 0);
+    settleEdge(er, 0, 3);
+    expect(er._inFlightSig).toBe("1~23");
+    expect(er._pageDownRetries).toBe(1);
+  });
+
+  // 不經列表的文章→文章（[ ] 同標題跳、a/b/f/=/+/-）沒有 1/2 的 settle edge，
+  // 靠 leaveCurrentPost() 補上——它以前漏了 easyReadingReachedPageEnd。
+  it("leaveCurrentPost 也清掉整組 per-article 狀態", () => {
+    const er = makeER({ reachedPageEnd: true, lastPagedSig: "1~23", pageDownRetries: 1 });
+    er._healedOnce = true;
+    er.leaveCurrentPost();
+    expect(er._inFlightSig).toBe(null);
+    expect(er._pageDownRetries).toBe(0);
+    expect(er._healedOnce).toBe(false);
+    expect(er.easyReadingReachedPageEnd).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PgDn 自救：累積頁捲不動又還沒到底時，把翻頁交易踢回去。
+// 使用者實際看到的症狀就是「PgDn 沒反應」——累積頁停在第一頁，_scrollBy 捲不動，
+// 而原本這個 case 什麼都不做。到底的文章（100%）仍然不送鍵。
+describe("PageDown 在累積頁底部的自救", () => {
+  beforeEach(() => {
+    parseReplyText.mockReturnValue(false);
+    parsePushInitText.mockReturnValue(false);
+    parseReqNotMetText.mockReturnValue(false);
+  });
+
+  const press = (er) => {
+    const e = { key: "PageDown", ctrlKey: false, altKey: false, preventDefault: vi.fn() };
+    er._onKeyDownProcessUI(e);
+    return e;
+  };
+
+  it("捲不動且還沒到底 → 補送 PageDown（並清掉卡住的 in-flight）", () => {
+    parseStatusRow.mockReturnValue({ pagePercent: 14, rowIndexStart: 1, rowIndexEnd: 23 });
+    const er = makeER({ lastPagedSig: "1~23", pageDownRetries: PAGE_DOWN_MAX_RETRIES });
+    er._scrollBy = vi.fn(() => false);
+    press(er);
+    expect(er._send).toHaveBeenCalledWith("\x1b[6~");
+  });
+
+  it("捲不動但已到底（100%）→ 不送鍵", () => {
+    parseStatusRow.mockReturnValue({ pagePercent: 100, rowIndexStart: 500, rowIndexEnd: 522 });
+    const er = makeER();
+    er._scrollBy = vi.fn(() => false);
+    press(er);
+    expect(er._send).not.toHaveBeenCalled();
+  });
+
+  it("還捲得動 → 只捲動，不送鍵", () => {
+    parseStatusRow.mockReturnValue({ pagePercent: 14, rowIndexStart: 1, rowIndexEnd: 23 });
+    const er = makeER();
+    er._scrollBy = vi.fn(() => true);
+    press(er);
+    expect(er._send).not.toHaveBeenCalled();
   });
 });
 

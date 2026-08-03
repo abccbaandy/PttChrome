@@ -521,3 +521,75 @@ test.describe('半画帧不污染累积（离线重放）', () => {
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// 跨文章：上一篇的翻页交易状态不得跟到下一篇（回归守门 —— 使用者回报「进文章卡在
+// 第一页、PgDn 没反应，换一篇还是卡」）。
+//
+// 真实链路里，好读一旦开着就**不会**再走 enterEasyReading()（nextEasyReadingState
+// 要求 !enabled），而 ← 离开文章走的是 stopEasyReading()、不经 leaveCurrentPost()
+// —— 所以「进一篇 → ← 回列表 → 再进一篇」这条最常见的路径以前没有任何重置点，
+// _inFlightSig / _pageDownRetries 会一路继承下去。而**每篇文章第一页的签章都是
+// 「1~22」**（sig 不跨文章唯一），于是下一篇的第一页被当成「上一篇那个还没回应的
+// 请求」：快路径永远 wait、settle 路径用完重试上限后永远 giveup ⇒ 一个 PageDown
+// 都送不出去 = 卡在第一页。
+//
+// 复现完全走使用者动作（不碰任何内部栏位）：只喂文章第一页、**不回应**它送出的
+// PageDown（＝真实里被 pttbbs typeahead 吞掉 / 使用者抢先 ← 离开），然后回列表、
+// 再开一篇。做两轮就把重试上限用完 —— 旧 code 第三篇一个键都不送。
+test.describe('跨文章自动翻页（离线重放）', () => {
+  const withStart = articles.filter((c) => (c.steps || []).some((s) => s.on === 'start'));
+  const listCassette = findCassettes('list').find((c) =>
+    (c.steps || []).some((s) => s.on === 'start')
+  );
+  if (!withStart.length || !listCassette) {
+    test.skip('尚无 article + list cassette；先 yarn record:cassette', () => {});
+  }
+
+  if (withStart.length && listCassette) {
+    const cassette = withStart[0];
+    const artStart = cassette.steps.find((s) => s.on === 'start');
+    const listStart = listCassette.steps.find((s) => s.on === 'start');
+
+    test(`翻页请求没被回应 → ← 回列表 → 下一篇仍会自动翻页 [${cassette.__file}]`, async ({
+      page,
+    }) => {
+      test.setTimeout(90000);
+      const errors = [];
+      page.on('pageerror', (e) => errors.push(String(e)));
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, { enableEasyReading: true });
+
+      // 只放第一页：好读会自动送 PageDown，而这一卷没有下一页可喂 —— 这个请求
+      // 永远收不到回应，交易就停在 in-flight（真实里 = 掉键 / 使用者抢先离开）。
+      await replayCassette(page, { steps: [artStart] }, { easyReading: true });
+
+      // 从这里开始只数 WS 送出层的 bytes（自动翻页键都会经过它）。
+      const collect = async () => {
+        await page.evaluate(() => {
+          window.__crossSent = [];
+          window.__stubWSSent = (s) => window.__crossSent.push(s);
+        });
+      };
+      const pagedDownCount = async () =>
+        (await page.evaluate(() => window.__crossSent)).filter(
+          (s) => s.indexOf('[6~') >= 0
+        ).length;
+
+      // ← 回列表 → 再开一篇。重复两轮：旧 code 第一轮还剩一次 settle 补送，
+      // 第二轮补送额度用完 ⇒ giveup ⇒ 零送键。
+      const openNextArticle = async () => {
+        await feedRaw(page, await page.evaluate((b64) => atob(b64), listStart.recv));
+        await page.waitForTimeout(300); // > SETTLE_MS：settle 到列表(2)
+        await collect();
+        await feedRaw(page, await page.evaluate((b64) => atob(b64), artStart.recv));
+        await page.waitForTimeout(600); // 等快路径 + settle 补送
+        return pagedDownCount();
+      };
+
+      expect(await openNextArticle()).toBeGreaterThan(0); // 第二篇
+      expect(await openNextArticle()).toBeGreaterThan(0); // 第三篇 ← 旧 code 在这里挂
+      expect(errors).toEqual([]);
+    });
+  }
+});

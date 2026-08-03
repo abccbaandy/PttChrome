@@ -259,6 +259,25 @@ export function EasyReading(core, view, termBuf) {
 // Fired once per term_buf settle edge. Auto-enable easy reading when we have just
 // settled from a board list (2) into an article (3) with the pref on.
 EasyReading.prototype._onPageStateSettled = function() {
+  // ARTICLE BOUNDARY — the only structural place the per-article paging transaction is
+  // guaranteed to be reset. Do NOT rely on the key handlers for this: ← leaves an
+  // article through stopEasyReading() (never leaveCurrentPost), and while easy reading
+  // is already on, opening the next article does NOT go through enterEasyReading()
+  // either (nextEasyReadingState requires !enabled). So the previous article's state
+  // used to follow the user into the next one, wedging it permanently — see
+  // _resetPagingState.
+  //
+  // Edge-scoped on purpose (3 <-> list/menu only). A mid-article dip (footer caught
+  // half-repainted → pageState 0/5 for one settle) must NOT reset: dropping
+  // _inFlightSig there would let the SAME page be paged down twice, which is exactly
+  // the typeahead-skip page loss (P4) the transaction exists to prevent.
+  const settled = this._termBuf.settledPageState;
+  const prevSettled = this._termBuf.prevSettledPageState;
+  const enteringArticle = settled === 3 && (prevSettled === 1 || prevSettled === 2);
+  const leavingArticle = prevSettled === 3 && (settled === 1 || settled === 2);
+  if (enteringArticle || leavingArticle)
+    this._resetPagingState();
+
   const values = readValuesWithDefault();
   const shouldEnable = nextEasyReadingState({
     settledPageState: this._termBuf.settledPageState,
@@ -359,6 +378,30 @@ EasyReading.prototype._currentPageStatus = function() {
   return parseStatusRow(lastRowText);
 };
 
+// One clean auto-paging transaction per ARTICLE. Every field here is per-post state
+// that MUST NOT survive into the next article:
+//   _inFlightSig        — the page signature is NOT unique across articles: every
+//                         article's first page is "1~22". A leftover "1~22" makes the
+//                         next article's first page look like "the response we are
+//                         still waiting for" ⇒ 'wait' forever on the fast path,
+//                         'giveup' forever on the settle path ⇒ stuck on page 1.
+//   _pageDownRetries    — a spent retry budget would carry the giveup into the next
+//                         article as well.
+//   easyReadingReachedPageEnd — set once an article is read to the bottom
+//                         (pagePercent 100); it used to veto the whole settle recovery
+//                         for the NEXT article, which is the "很容易卡在第一頁" report.
+//   _healedOnce         — each article gets its own single gap self-heal.
+// Callers: the settle article boundary (_onPageStateSettled), leaveCurrentPost (the
+// article→article jumps that never pass a list: [ ] a b f = + -), enterEasyReading /
+// exitEasyReading, and _healFromTop.
+EasyReading.prototype._resetPagingState = function() {
+  this.sendCommandAfterUpdate = '';
+  this.easyReadingReachedPageEnd = false;
+  this._inFlightSig = null;
+  this._pageDownRetries = 0;
+  this._healedOnce = false;
+};
+
 // Single gate every auto page-down goes through — both the per-frame fast path
 // (_onViewUpdated) and the settle recovery (_onScreenSettled). Gathers the facts,
 // runs the pure nextPageDownDecision, writes the resulting transaction state back and
@@ -380,6 +423,21 @@ EasyReading.prototype._maybeSendPageDown = function(keys, fromSettle) {
   });
   if (d.action === 'none')
     return d.action;
+  // Record the transaction's turning points. Without this, every way the auto-paging
+  // can stall looks the same in a debug capture — "not a single send event after the
+  // article opened" — and there is no way to tell a spent retry budget from a stale
+  // reachedPageEnd. 'send'/'wait' are left out: one is visible as the send event
+  // itself, the other fires on every frame.
+  if (d.action !== 'send' && d.action !== 'wait') {
+    this._core.debugRecorder?.log('easyReading.pageDown', {
+      action: d.action,
+      fromSettle: !!fromSettle,
+      sig: status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null,
+      // state BEFORE the decision is applied — that is what explains the action
+      wasInFlightSig: this._inFlightSig,
+      wasRetries: this._pageDownRetries
+    });
+  }
   this._inFlightSig = d.inFlightSig;
   this._pageDownRetries = d.retries;
   if (d.reachedPageEnd !== undefined)
@@ -387,6 +445,28 @@ EasyReading.prototype._maybeSendPageDown = function(keys, fromSettle) {
   if (d.action === 'send' || d.action === 'retry')
     this._send(keys);
   return d.action;
+};
+
+// User-driven rescue for a stalled auto-paging transaction, wired to PageDown (key and
+// mouse) when the accumulated page cannot scroll any further. Auto-paging is supposed
+// to be invisible, but every failure mode of it looks identical to the user — the long
+// page just stops growing and PgDn does nothing at all. Clearing the transaction and
+// re-issuing is safe here by the same argument as the settle retry: this runs from a
+// user keypress, long after PTT flushed its response, so there is no in-flight repaint
+// for the key to be swallowed by (P4). Does nothing once the status row says 100%
+// (pmore answers a PageDown at the bottom with silence anyway, P3).
+EasyReading.prototype._kickPageDown = function() {
+  const status = this._currentPageStatus();
+  if (!status || status.pagePercent >= 100)
+    return;
+  this._core.debugRecorder?.log('easyReading.pageDownKick', {
+    sig: status.rowIndexStart + '~' + status.rowIndexEnd,
+    inFlightSig: this._inFlightSig,
+    retries: this._pageDownRetries
+  });
+  this._inFlightSig = null;
+  this._pageDownRetries = 0;
+  this._maybeSendPageDown('\x1b[6~', /* fromSettle */ true);
 };
 
 // Gap self-heal (pmore invariant P1, raised by term_view.accumulatePageLines as
@@ -400,13 +480,10 @@ EasyReading.prototype._healFromTop = function() {
     console.log('easy reading: gap again after healing — leaving the page as is');
     return;
   }
-  this._healedOnce = true;
   console.log('easy reading: lost page detected, re-reading from the top');
   this._core.debugRecorder?.log('easyReading.gapHeal');
-  this.sendCommandAfterUpdate = '';
-  this._inFlightSig = null;
-  this._pageDownRetries = 0;
-  this.easyReadingReachedPageEnd = false;
+  this._resetPagingState();
+  this._healedOnce = true;  // AFTER the reset — this article's heal budget is spent
   this._termBuf.pageLines = [];
   this._termBuf.easyReadingPendingReset = true;
   this._termBuf.prevPageState = 0;
@@ -469,9 +546,11 @@ EasyReading.prototype._onScreenSettled = function() {
 
   if (this.sendCommandAfterUpdate)  // a command is mid-flight (incl. skipOne) — let the frame loop drive
     return;
-  if (this.easyReadingReachedPageEnd)
-    return;
-
+  // NOTE: deliberately NO `if (this.easyReadingReachedPageEnd) return;` here. The
+  // settle path must be idempotent on the CURRENT screen — "already at the bottom" is
+  // re-derived from this screen's status row twice over (pagePercent in
+  // _computeRowState and again in nextPageDownDecision, P3), so letting a possibly
+  // stale flag veto the whole recovery bought nothing and wedged the next article.
   const rowState = this._computeRowState();
   this._applyRowState(rowState);  // fix any cursor-dependent flag against the now-stable cursor
 
@@ -614,12 +693,10 @@ EasyReading.prototype.leaveCurrentPost = function() {
   // accumulatePageLines on a CONFIRMED first article page (statusStart===1) — see
   // decideAccumulateBranch.
   this._termBuf.easyReadingPendingReset = true;
-  // New post → forget the previous post's page identity so its first page-down is
-  // never suppressed as a "same page" by the in-flight gate, and give the new article
-  // its own gap-heal budget.
-  this._inFlightSig = null;
-  this._pageDownRetries = 0;
-  this._healedOnce = false;
+  // New post → a clean auto-paging transaction. Covers the article→article jumps that
+  // never pass through a list ([ ] 同標題、a/b/f/=/+/-), which the settle article
+  // boundary in _onPageStateSettled cannot see. See _resetPagingState.
+  this._resetPagingState();
   this._functionMode = false;
   this._savedScrollTop = null;
 };
@@ -663,11 +740,7 @@ EasyReading.prototype.enterEasyReading = function() {
   this._termBuf.easyReadingPendingReset = true; // sticky twin — see leaveCurrentPost
   this._termBuf.pageLines = [];
   this._termBuf.easyReadingGapDetected = false;
-  // Fresh article → nothing in flight, and its own gap-heal budget.
-  this._inFlightSig = null;
-  this._pageDownRetries = 0;
-  this._healedOnce = false;
-  this.easyReadingReachedPageEnd = false;
+  this._resetPagingState();  // fresh article → nothing in flight, own heal budget
   // Mark every row dirty so the forced redraw actually paints (update() only redraws
   // changed rows), then replay a full notify so 'change' (_onChanged sets the first
   // page-down) and 'viewUpdate' (_onViewUpdated sends it) both fire.
@@ -685,10 +758,12 @@ EasyReading.prototype.enterEasyReading = function() {
 EasyReading.prototype.exitEasyReading = function() {
   console.log('exit easy reading');
   this._core.debugRecorder?.log('easyReading.exit');
-  // stop any pending/in-flight auto page down
-  this.sendCommandAfterUpdate = '';
-  this._inFlightSig = null;
-  this._pageDownRetries = 0;
+  // Stop any pending/in-flight auto page down. This also clears
+  // easyReadingReachedPageEnd, which the transitive switchToEasyReadingMode() →
+  // leaveCurrentPost() below reads to decide ignoreOneUpdate — so leaving from the
+  // bottom now arms that one-shot too. Harmless: it only skips ONE frame's paging
+  // decision, and the settle recovery re-runs it right after.
+  this._resetPagingState();
   this._functionMode = false;
   this._savedScrollTop = null;
   // Switch off easy reading and restore the native view. switchToEasyReadingMode()
@@ -790,7 +865,11 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
         stop = true;
         break;
       case 'PageDown':
-        this._scrollBy(this._turnPageLines);
+        // Can't scroll any further AND the article isn't fully loaded ⇒ the auto-paging
+        // transaction is stuck, and PgDn would silently do nothing (the reported
+        // symptom). Kick it. See _kickPageDown.
+        if (!this._scrollBy(this._turnPageLines))
+          this._kickPageDown();
         stop = true;
         break;
       case 'ArrowLeft':
@@ -897,7 +976,8 @@ EasyReading.prototype._onMouseClick = function(e) {
       stop = true;
       break;
     case 3: // Page Down
-      this._scrollBy(this._turnPageLines);
+      if (!this._scrollBy(this._turnPageLines))
+        this._kickPageDown();  // same self-rescue as the PageDown key
       stop = true;
       break;
     case 4: // Home

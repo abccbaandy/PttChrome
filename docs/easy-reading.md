@@ -13,7 +13,13 @@
   - **how**：`_inFlightSig`＝已送出 PageDown 的那一頁簽章（狀態列 `第 S~E 行`），ack ＝**簽章改變**。快路徑與 settle 路徑共用純函式 `nextPageDownDecision`（`send`/`wait`/`retry`/`giveup`/`done`/`none`），入口統一在 `_maybeSendPageDown`。
   - **到底判定用 `pagePercent === 100`**（P3：`progress==100` ⟺ `mf_viewedAll()`，整數除法剛好等價）。狀態列首格顏色（VIEWALL `37;44`）降為 fallback——footer 是 per-cell patch（P6），單格顏色比讀百分比脆弱。到底後再送 PageDown PTT 是**零回應**，所以絕不能靠 timeout 判斷。
   - **bounded retry**：settle（畫面靜止 `SETTLE_MS`）時若仍是同一簽章，代表 PTT 已 flush 並卡在 `dogetch`（沒有進行中的重繪會被 typeahead 吞），此時補送一次安全；上限 `PAGE_DOWN_MAX_RETRIES=1`，之後 giveup。
-  - 狀態於 `enterEasyReading`/`leaveCurrentPost`/`exitEasyReading` 重置。
+  - **交易狀態是 per-article，重置點＝文章邊界（`_resetPagingState`，2026-08）**。涵蓋 `_inFlightSig`／`_pageDownRetries`／`_healedOnce`／`easyReadingReachedPageEnd`／`sendCommandAfterUpdate`。
+    - **`sig` 不跨文章唯一**：每篇文章第一頁都是 `1~22`。殘留的 `_inFlightSig` 會把下一篇的第一頁當成「上一篇那個還沒回應的請求」→ 快路徑永遠 `wait`、settle 用完重試上限後永遠 `giveup` ⇒ **一個 PageDown 都送不出去，卡在第一頁；換文章照樣卡**。
+    - 邊界由 **settle 過的 pageState 進出 3** 判定（`_onPageStateSettled`：`1|2 → 3` 或 `3 → 1|2`）。**只認 1/2**：文章中途狀態列失配一幀而掉出 3 再回來不是換文章，重置會讓同一頁重送 PageDown（正是 P4 要防的）。
+    - 不經列表的文章→文章（`[` `]` 同標題跳、`a/b/f/=/+/-`）沒有 1/2 邊緣，由 `leaveCurrentPost()` 補上；`enterEasyReading`/`exitEasyReading`/`_healFromTop` 也走同一個 helper。
+  - **`_onScreenSettled` 不得被 `easyReadingReachedPageEnd` 早退否決**：settle 路徑必須對當下畫面冪等，「到底了」已由 `pagePercent` 在 `_computeRowState` 與 `nextPageDownDecision` 各算一次。
+  - **使用者自救 `_kickPageDown()`**：PgDn（鍵盤與滑鼠）在累積頁**捲不動**且狀態列 `pagePercent < 100` 時，清掉交易狀態並補送一次 PageDown。自動翻頁的所有失效模式在使用者眼裡長得一模一樣（長頁停住、PgDn 毫無反應），要有一條手動出口。
+  - **debugRecorder `easyReading.pageDown` / `easyReading.pageDownKick`**：記 `retry`/`giveup`/`done`（`send`/`wait` 不記——一個看得到送出事件、一個每幀都有）。沒有它時，所有卡法在素材裡都只是「進文章後零 send」，分不出是重試額度用完還是旗標殘留。
 - **累積只在「完整回應幀」（P6）**：`term_view.accumulatePageLines` 以 `buf.cur_y === rows-1 && buf.cur_x === cols-1`（pfterm 每次回應結尾才 park 游標）當閘。半畫幀的 footer 還是**上一頁的舊值**（per-cell patch，狀態列補丁與 park 排在內容之後），拿它算重疊會把舊行號寫進 `_accEndRow`，之後整條去重都建在錯基準上——舊版的 drift guard（比對率 0.5）就是在補這個。不完整的幀只重畫、不動 `pageLines`。
 - **掉頁偵測與自癒（P1）**：`comment_parse.classifyPageTransition` 判 `restart`/`continuation`/`gap`/`backward`。`gap`＝`statusStart > accEndRow + 1`，而 PageDown ＝ `mf_forward(dispedlines-1)` 保證 `S' == E`（末頁被 `maxdisps` 夾則更小），**`S' > E` 不可能** ⇒ 一定是中間整頁沒收到。舊版 `resolvePageOverlap` 把負重疊夾成 0 → 照常 append → 破洞無聲。現在 `accumulatePageLines` 升 `buf.easyReadingGapDetected`，`EasyReading._healFromTop()` 送 Home（`\x1b[1~` → `pmore#mf_goTop`）從頭重讀，每篇一次（`_healedOnce`）防迴圈。
 - **補畫一律走 `term_buf.notify()`（`_forceRepaint`），不可直接 `view.redraw()`**：`updateCharAttr()` 只在 notify 裡跑，它是 Big5 lead byte 標上 `isLeadByte` 的地方。settle 可能落在「bytes 已到、30ms notify 計時器還沒跑」之間，直接 redraw 會把未轉碼的列 clone 進 `pageLines`，`rowToText` 得到原始 Big5（`¡°` 而非 `※`）→ 下一頁比對不上 → 重疊算成 0 → 重疊列貼兩次（離線拆幀測試抓到的重複「※ 文章網址」）。
@@ -80,7 +86,8 @@
 
 好讀的進/退/離篇收斂到三個語意明確的入口（`easy_reading.js`），新路徑只呼叫入口、不各自設旗標：
 - **`enterEasyReading()`**：唯一開好讀點，由 `_onPageStateSettled` 在 settled 2→3 邊緣驅動。`_enabled=true` + `prevPageState=0`/`pageLines=[]`（強制 `populateEasyReadingPage` 新文章 clearRows 分支）+ 全列 dirty + `changed=true` + `notify()` 重播一輪 render/viewUpdate（settle 在 'change' 迴圈外觸發，故需自行重播以啟動翻頁）。
-- **`leaveCurrentPost()`**：仍在好讀、離開本篇 → 重置 per-post（`ignoreOneUpdate`、`prevPageState=0`），**不改 `_enabled`**。鍵/滑鼠多處直接呼叫；`switchToEasyReadingMode`(`pttchrome.jsx`) 內部也呼叫它（**隱藏傳遞鏈**，已加註解標出）。
+- **`leaveCurrentPost()`**：仍在好讀、離開本篇 → 重置 per-post（`ignoreOneUpdate`、`prevPageState=0`、`_resetPagingState()`），**不改 `_enabled`**。鍵/滑鼠多處直接呼叫；`switchToEasyReadingMode`(`pttchrome.jsx`) 內部也呼叫它（**隱藏傳遞鏈**，已加註解標出）。
+  - **踩坑：per-post 狀態不可只靠這三個入口重置**（2026-08，「進文章卡在第一頁」的根因）。最常見的換文章路徑一個都不經過它們：`←` 走 `stopEasyReading()`（只設 `sendCommandAfterUpdate='skipOne'`）**不經 `leaveCurrentPost()`**；而好讀已經開著時再進下一篇**也不經 `enterEasyReading()`**（`nextEasyReadingState` 要求 `!enabled`）。凡是「每篇一份」的狀態，重置點必須掛在 settle 的文章邊界（`_onPageStateSettled`），不能掛在按鍵路徑上。
 - **`exitEasyReading()`**：唯一關好讀點。`sendCommandAfterUpdate=''` + `_enabled=false` + `_core.switchToEasyReadingMode()`（還原 overlay 列/padding/pageLines+送 `^L`）。React 恆擁有 `#mainContainer`，切原生由 reconcile 把長頁收回 24 列（無 unmount）。
 
 `EasyReading.switchToNativeAtBottom`（End/$/G 與滑鼠 End）= `_send('\x1b[4~')`（原生 End 導到底）+ `exitEasyReading()`。
