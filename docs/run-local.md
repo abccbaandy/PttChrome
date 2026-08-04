@@ -27,7 +27,7 @@ yarn start
 
 | 項目 | 說明 |
 |---|---|
-| Node ≥ 20.19 | Vite 8 的下限（建議 v24）。 |
+| Node ≥ 20.19（跑測試需 ≥ 24.15） | Vite 8 的下限 20.19；`yarn test:unit` 的 jsdom 30 另要求 `^22.22.2 \|\| ^24.15.0 \|\| >=26`。裝最新 v24 一次滿足。 |
 | 用 **Node** 跑，不要用 bun | bun 跑 dev server 的 ws proxy 不轉發 upgrade。確認 `node` 已在 PATH。 |
 | 套件管理用 **yarn** | repo 為 yarn 專案（Yarn v4，`node-modules` linker，`.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。CI 用 `yarn install --immutable`（非 `--frozen-lockfile`）。 |
 | `node_modules` | 已存在直接用。需重裝時 `yarn install`。 |
