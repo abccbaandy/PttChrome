@@ -22,6 +22,10 @@ import {
   writeValues,
 } from "../../js/pref_storage";
 import * as prefSync from "../../js/pref_sync";
+import {
+  captionAiAvailability,
+  ensureCaptionAiReady,
+} from "../../js/caption_ai";
 import { deepEqual } from "../../js/pref_sync_logic";
 import "./PrefModal.css";
 
@@ -136,7 +140,30 @@ export const PrefModal = ({
   const [values, setValues] = useState(readValuesWithDefault);
   const [syncUser, setSyncUser] = useState(null);
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | synced | error
+  // 裝置端 AI（好讀圖文並排的 AI 校正）：unsupported | unavailable | downloadable
+  // | downloading | available。開啟本 tab 時查一次；按鈕按下去才可能觸發下載
+  // （Prompt API 的模型下載需要 user activation）。
+  const [captionAiState, setCaptionAiState] = useState(null);
+  const [captionAiProgress, setCaptionAiProgress] = useState(null);
   const { colorScheme, setColorScheme } = useMantineColorScheme();
+
+  useEffect(() => {
+    let alive = true;
+    captionAiAvailability().then((a) => alive && setCaptionAiState(a));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const onCaptionAiEnableClick = useCallback(() => {
+    setCaptionAiState("downloading");
+    ensureCaptionAiReady((loaded) =>
+      setCaptionAiProgress(Math.round(loaded * 100)),
+    ).then((a) => {
+      setCaptionAiState(a);
+      setCaptionAiProgress(null);
+    });
+  }, []);
 
   const onCloseClick = useCallback(() => {
     // Untouched form → nothing to persist or upload; uploading anyway
@@ -628,6 +655,37 @@ export const PrefModal = ({
                 >
                   {i18n("options_mergeSameAuthorComments")}
                 </PrefCheckbox>
+                <PrefCheckbox
+                  name="enableCaptionAi"
+                  checked={values.enableCaptionAi}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableCaptionAi")}
+                </PrefCheckbox>
+                <div style={{ marginBottom: "0.5rem" }}>
+                  <Button
+                    id="captionAiEnableBtn"
+                    variant="default"
+                    size="xs"
+                    onClick={onCaptionAiEnableClick}
+                    disabled={
+                      !values.enableCaptionAi ||
+                      captionAiState === "unsupported" ||
+                      captionAiState === "unavailable" ||
+                      captionAiState === "downloading"
+                    }
+                  >
+                    {i18n("options_captionAiEnableBtn")}
+                  </Button>
+                  {captionAiState && (
+                    <Text size="xs" c="dimmed" mt={4}>
+                      {i18n("options_captionAiStatus_" + captionAiState)}
+                      {captionAiProgress !== null
+                        ? " " + captionAiProgress + "%"
+                        : ""}
+                    </Text>
+                  )}
+                </div>
                 <PrefCheckbox
                   name="highlightAuthorComments"
                   checked={values.highlightAuthorComments}

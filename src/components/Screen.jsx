@@ -27,11 +27,23 @@ import {
   maxCaptionCols,
 } from "../js/image_caption_group";
 import {
+  buildCaptionSpans,
+  applyAiKeep,
+  spanKey,
+  spanNeedsAi,
+} from "../js/caption_ai_logic";
+import {
+  captionAiAvailability,
+  classifySpans,
+  destroyCaptionAi,
+} from "../js/caption_ai";
+import {
   groupSameAuthorRuns,
   buildMergedCommentChars,
 } from "../js/comment_merge";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import MergeImageCaptionButton from "./MergeImageCaptionButton";
+import MergeImageCaptionAiButton from "./MergeImageCaptionAiButton";
 
 // NOTE: articleAuthor (原PO id) is tracked by term_view across page-downs and
 // passed in via enhance — the "作者" header only appears on the first page, so we
@@ -113,7 +125,7 @@ function detectRowExtras(chars, text, ann, opts) {
 // is fixed-size, so a blacklisted row is hidden (visibility:hidden) rather than
 // removed — removing it would desync the terminal grid. Floor numbers here count
 // only within the visible page (cross-page numbering needs easy reading; see plan).
-function computeAnnotations(lines, enhance, mergeCaption) {
+function computeAnnotations(lines, enhance, mergeCaption, captionAi, aiKeep) {
   const result = new Array(lines.length);
   if (!enhance) return result;
   const {
@@ -165,6 +177,24 @@ function computeAnnotations(lines, enhance, mergeCaption) {
       );
       captionBlocks =
         mergeCaption === "captionFirst" ? captionFirstBlocks : imageFirstBlocks;
+      // 裝置端 AI 校正（opt-in，另一顆浮動按鈕）：規則只取「最近一段」，遇到
+      // 說明被空行切成多段的翻譯漫畫文就只配到第一段。AI 只回答「由近而遠保留
+      // 幾段」，applyAiKeep 據此重建塊；沒有答案的塊原封不動（見
+      // caption_ai_logic.js 的零回歸不變量）。
+      if (captionAi && mergeCaption) {
+        const spans = buildCaptionSpans(texts, mergeCaption);
+        result.captionSpans = spans;
+        // 內容型簽章：好讀翻頁會重算 spans，內容沒變就不該重跑推論。
+        result.captionSpansSig = spans.map(spanKey).join(",");
+        if (aiKeep) {
+          const keepByRow = {};
+          for (const s of spans) {
+            const k = aiKeep[spanKey(s)];
+            if (k !== undefined) keepByRow[s.imageRow] = k;
+          }
+          captionBlocks = applyAiKeep(captionBlocks, spans, keepByRow);
+        }
+      }
     }
     // Steamgifts giveaway 代碼連結的文章層 gate（整篇提到 steamgifts 才啟用，
     // 見 steamgifts_parse.js）。偵測本體抽在 detectRowExtras（合併塊共用）。
@@ -317,6 +347,15 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   // 與 imagesEnlarged 同生命週期——同篇 page-down 保留、換文章/退出再進
   // （articleId 變）即重置回關，所以不會發生「換到沒按鈕的文章卻還開著、關不掉」。
   const [mergeCaption, setMergeCaption] = React.useState(null);
+  // 裝置端 AI 校正（第二顆浮動按鈕，per-session）：captionAi 是開關，aiKeep 是
+  // 「spanKey → 保留段數」的結果 cache（內容型 key，好讀翻頁不重跑推論）。
+  const [captionAi, setCaptionAi] = React.useState(false);
+  const [aiKeep, setAiKeep] = React.useState({});
+  const [aiPending, setAiPending] = React.useState(0);
+  // 模型是否真的就緒。光看 window.LanguageModel 存不存在不夠：Chromium 也有這個
+  // global，但 availability() 會回 'unavailable'（沒有模型元件）——那種情況下按鈕
+  // 按下去只會每塊 fallback 回規則，等於一顆沒有作用的按鈕。
+  const [aiReady, setAiReady] = React.useState(false);
 
   // 命令式 API：term_view 經 term_ui 的 ref.current.setCurrentHighlighted(row)
   // 設高亮列（鍵盤操作時）。取代 class instance method。
@@ -338,6 +377,9 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     prevArticleIdRef.current = articleId;
     if (imagesEnlarged) setImagesEnlarged(false);
     if (mergeCaption) setMergeCaption(null);
+    // AI 結果是 per-article 的：換文章一律丟掉（spanKey 只保證同一篇內唯一）。
+    if (captionAi) setCaptionAi(false);
+    if (Object.keys(aiKeep).length) setAiKeep({});
   }
 
   // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
@@ -414,14 +456,89 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   // 按鈕切換純屬 Screen 內部 state；換回終端機輸入焦點（隱藏 input #t），
   // 否則按鈕吃掉鍵盤、方向鍵失效。
   const handleToggleMergeCaption = React.useCallback(() => {
-    setMergeCaption((v) =>
-      v === null ? "imageFirst" : v === "imageFirst" ? "captionFirst" : null,
-    );
+    setMergeCaption((v) => {
+      const next =
+        v === null ? "imageFirst" : v === "imageFirst" ? "captionFirst" : null;
+      // 循環回「還原排版」時把 AI 一起關掉（畫面上沒有合併塊，AI 開著沒有意義）。
+      if (next === null) setCaptionAi(false);
+      return next;
+    });
     const input = document.getElementById("t");
     if (input) input.focus();
   }, []);
 
-  const annotations = computeAnnotations(lines, enhance, mergeCaption);
+  // AI 按鈕：關 → 開（若尚未合併就順手開成「上圖下文」），再按一次只關 AI，
+  // 手動合併狀態保留（兩顆按鈕互不吃掉對方的狀態）。
+  const handleToggleCaptionAi = React.useCallback(() => {
+    setCaptionAi((v) => {
+      if (!v) setMergeCaption((m) => m || "imageFirst");
+      return !v;
+    });
+    const input = document.getElementById("t");
+    if (input) input.focus();
+  }, []);
+
+  const annotations = computeAnnotations(
+    lines,
+    enhance,
+    mergeCaption,
+    captionAi,
+    aiKeep,
+  );
+
+  // spans 每次 render 重算（reference 不穩），但內容簽章穩定 → effect 只在
+  // 「候選段內容真的變了」時重跑：好讀翻頁只是往後長，前面的塊不重複推論。
+  const spansRef = React.useRef(null);
+  spansRef.current = annotations.captionSpans;
+  const aiKeepRef = React.useRef(aiKeep);
+  aiKeepRef.current = aiKeep;
+  const spansSig = annotations.captionSpansSig;
+  React.useEffect(() => {
+    if (!captionAi) return undefined;
+    const todo = (spansRef.current || []).filter(
+      (s) => spanNeedsAi(s) && aiKeepRef.current[spanKey(s)] === undefined,
+    );
+    if (!todo.length) return undefined;
+    const controller =
+      typeof AbortController === "function" ? new AbortController() : null;
+    let cancelled = false;
+    setAiPending(todo.length);
+    // 逐塊推論、逐塊回填：規則結果早就畫出來了，AI 只是漸進式修正，不擋畫面。
+    classifySpans(todo, {
+      signal: controller ? controller.signal : undefined,
+      onResult: (span, r) => {
+        if (cancelled) return;
+        setAiKeep((prev) => ({ ...prev, [spanKey(span)]: r.keep }));
+        setAiPending((p) => (p > 0 ? p - 1 : 0));
+      },
+    })
+      .catch(() => {})
+      .then(() => {
+        if (!cancelled) setAiPending(0);
+      });
+    return () => {
+      cancelled = true;
+      if (controller) controller.abort();
+      setAiPending(0); // 關掉 AI / 換頁重算時，殘留的「推論中」計數不可留在按鈕上
+    };
+  }, [captionAi, spansSig]);
+
+  // 卸載時關掉 base session（模型常駐佔記憶體）。
+  React.useEffect(() => () => destroyCaptionAi(), []);
+
+  // 可用性探測：只在設定啟用時查一次（availability() 不會觸發下載）。
+  const captionAiEnabled = !!(enhance && enhance.captionAiEnabled);
+  React.useEffect(() => {
+    if (!captionAiEnabled) {
+      setAiReady(false);
+      return undefined;
+    }
+    let alive = true;
+    captionAiAvailability().then((a) => alive && setAiReady(a === "available"));
+    return () => {
+      alive = false;
+    };
+  }, [captionAiEnabled]);
   // dropHidden: easy-reading accumulates a single growing scroll page, so a
   // blacklisted comment is removed entirely (render null → no DOM node, no blank
   // line). The fixed native grid instead keeps the row and hides it
@@ -469,6 +586,10 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     enhance.pageState === PAGE_READING &&
     (annotations.imageCaptionBlockCount || 0) >= 2
   );
+  // AI 校正鈕：再多兩個條件——設定啟用（預設關）＋模型 availability 為
+  // 'available'。不支援／模型沒下載的環境（Firefox/Safari/未下載的 Chrome）
+  // 連按鈕都不出現，行為與沒這功能時完全相同。
+  const showCaptionAiButton = !!(showMergeButton && aiReady);
   // 右欄不換行：寬度＝最寬翻譯行的顯示欄數（半形1/全形2）× 半形字寬。
   // forceWidth 是全形字強制的像素寬 → 半形 ≈ forceWidth/2；+1 全形字寬當緩衝。
   // 上限 55% 交給 CSS max-width 守（極長行時退回換行，見 main.css pre-wrap）。
@@ -549,6 +670,13 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
         <MergeImageCaptionButton
           mode={mergeCaption}
           onToggle={handleToggleMergeCaption}
+        />
+      )}
+      {showCaptionAiButton && (
+        <MergeImageCaptionAiButton
+          active={captionAi}
+          pending={captionAi ? aiPending : 0}
+          onToggle={handleToggleCaptionAi}
         />
       )}
       {currentImagePreview && (

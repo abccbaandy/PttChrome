@@ -132,6 +132,15 @@ export const en_US = {
   "mergeImageCaption_off": {
     "message": "Unmerge"
   },
+  "mergeImageCaptionAi_on": {
+    "message": "AI caption matching"
+  },
+  "mergeImageCaptionAi_off": {
+    "message": "Turn off AI matching"
+  },
+  "mergeImageCaptionAi_pending": {
+    "message": "AI matching… left"
+  },
   "debugRecord_start": {
     "message": "Record"
   },
@@ -148,6 +157,27 @@ export const en_US = {
   },
   "options_mergeSameAuthorComments": {
     "message": "Merge consecutive comments by the same author into one paragraph (easy reading only; shows time and floor range)"
+  },
+  "options_enableCaptionAi": {
+    "message": "Use on-device AI to refine image/caption pairing (easy reading only; Chrome only, first use downloads a multi-GB model)"
+  },
+  "options_captionAiEnableBtn": {
+    "message": "Check / download the on-device AI model"
+  },
+  "options_captionAiStatus_unsupported": {
+    "message": "This browser has no built-in AI (Prompt API); only Chrome 148+ on desktop supports it."
+  },
+  "options_captionAiStatus_unavailable": {
+    "message": "This device cannot run the built-in AI (needs 22GB free space and 16GB RAM or >4GB VRAM)."
+  },
+  "options_captionAiStatus_downloadable": {
+    "message": "Supported, but the model is not downloaded yet (several GB). Press the button above to start."
+  },
+  "options_captionAiStatus_downloading": {
+    "message": "Downloading the model…"
+  },
+  "options_captionAiStatus_available": {
+    "message": "On-device AI is ready. Open an article and press the \"AI caption matching\" button at the bottom right."
   },
   "options_highlightAuthorComments": {
     "message": "Highlight comments by the original poster"

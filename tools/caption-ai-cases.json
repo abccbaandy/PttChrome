@@ -1,0 +1,125 @@
+{
+  "_readme": "好讀『左圖右文』AI 配對的評估語料。golden = 該圖『由近而遠應保留幾個候選段』（buildCaptionSpans 的 keep）。cassette 案的 rowTexts 由 tools/caption-ai-eval.js 用真實 TermBuf/AnsiParser 重放 cassette 重建（不手抄）；golden 以圖片 URL 為鍵，因為列號會隨累積頁變動。synthetic 案是既有 unit 測試結構的語意版本，用來提供『不該擴張』的負例——沒有負例的話，一個永遠回答 N 的模型也會拿到 100%。",
+  "cassettes": [
+    {
+      "file": "cchat-caption-mosquito.json",
+      "direction": "imageFirst",
+      "note": "翻譯漫畫：每張圖的翻譯被空行切成 3~4 段，規則只取第一段（本功能的回歸來源）",
+      "golden": {
+        "http://i.imgur.com/Z4gDlVE.jpg": 4,
+        "http://i.imgur.com/456CKaj.jpg": 3,
+        "http://i.imgur.com/8S7wC92.jpg": 3
+      }
+    },
+    {
+      "file": "cchat-caption.json",
+      "direction": "imageFirst",
+      "note": "翻譯漫畫：每張圖的翻譯本來就只有一段（規則已正確）→ 候選段只有 1 個，不進推論，僅作結構健檢",
+      "golden": {
+        "https://pbs.twimg.com/media/HM2xS92bUAA8ayb.jpg": 1,
+        "https://pbs.twimg.com/media/HM2xS-CbMAA0n3p.jpg": 1,
+        "https://pbs.twimg.com/media/HM2xS-GbUAAaudr.jpg": 1,
+        "https://pbs.twimg.com/media/HM2xS-FboAAk3ME.jpg": 1
+      }
+    }
+  ],
+  "synthetic": [
+    {
+      "name": "負例：圖後緊貼參數，其後是與圖無關的整體心得",
+      "direction": "imageFirst",
+      "rows": [
+        "https://i.imgur.com/aaa111.jpg",
+        "原生Ideogram V4 NVFP4",
+        "quality設定值 生成時間為Default的 194%時間",
+        "  step: 35  mu: 0.0  std: 1.5",
+        "",
+        "整體來說這次改版的加速很有感，之後有空再測其他組合",
+        "順便回應一下上一篇推文問的問題",
+        "",
+        "--"
+      ],
+      "golden": { "0": 1 }
+    },
+    {
+      "name": "負例：圖後一段翻譯，接著是作者自己的心得與提問",
+      "direction": "imageFirst",
+      "rows": [
+        "https://i.imgur.com/bbb222.jpg",
+        "「我先回去嘍」",
+        "「田中君辛苦啦~」",
+        "",
+        "以上就是這次的翻譯，有錯歡迎指正",
+        "",
+        "大家覺得這種題材還想看更多嗎？",
+        "",
+        "--"
+      ],
+      "golden": { "0": 1 }
+    },
+    {
+      "name": "正例：翻譯被空行切成三段，全部都在講同一張圖",
+      "direction": "imageFirst",
+      "rows": [
+        "https://i.imgur.com/ccc333.png",
+        "在某家咖啡廳裡，店員正在準備開店。",
+        "",
+        "「今天的豆子好像特別香。」",
+        "「是新進的貨吧？」",
+        "「老闆昨天特地去挑的。」",
+        "",
+        "開店時間到了。",
+        "",
+        "--"
+      ],
+      "golden": { "0": 3 }
+    },
+    {
+      "name": "負例（captionFirst）：多段無關前言，只有緊貼圖的那段是說明",
+      "direction": "captionFirst",
+      "rows": [
+        "前言：這篇想聊聊最近測試的幾個模型",
+        "工作流的部分之後再另外開一篇",
+        "",
+        "在我的環境下 相同種子下各設定值的生成速度",
+        "*(時間為該設定值重複運行十次取最佳值)",
+        "",
+        "原生Ideogram V4 NVFP4",
+        "quality設定值 生成時間為Default的 194%時間",
+        "  step: 35  mu: 0.0  std: 1.5",
+        "https://i.imgur.com/aaa111.jpg",
+        "",
+        "--"
+      ],
+      "golden": { "9": 1 }
+    },
+    {
+      "name": "正例（captionFirst）：整段對話都是圖的說明，被空行切成兩段",
+      "direction": "captionFirst",
+      "rows": [
+        "「這次的旅行終於成行了。」",
+        "「準備了半年呢。」",
+        "",
+        "「快看，那邊就是車站前的廣場。」",
+        "https://i.imgur.com/bbb222.jpg",
+        "",
+        "--"
+      ],
+      "golden": { "4": 2 }
+    },
+    {
+      "name": "負例：圖後完全沒有相關說明（下一個話題直接開始）",
+      "direction": "imageFirst",
+      "rows": [
+        "https://i.imgur.com/ccc333.png",
+        "",
+        "接下來講一下這次改版的更新內容",
+        "官方公告在這裡，有興趣的可以自己看",
+        "",
+        "順帶一提我已經棄坑了",
+        "",
+        "--"
+      ],
+      "golden": { "0": 0 }
+    }
+  ]
+}

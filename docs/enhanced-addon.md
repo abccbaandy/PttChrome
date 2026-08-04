@@ -174,7 +174,9 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）：
 `showFloorNumbers`(true)、`highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、`blacklist`("" 換行)、
 `autoLogin`(false)、`autoLoginUser/Password`(""；
 **password 在支援 Credential API 的瀏覽器不落地**，見「自動登入」節)、
-`autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true)。套用見 `pttchrome.onPrefChange`
+`autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true)、
+`enableCaptionAi`(false，好讀圖文並排的裝置端 AI 校正；同分頁另有「檢查／下載模型」按鈕
+`#captionAiEnableBtn`，見 `docs/merge-caption-ai-assist.md`)。套用見 `pttchrome.onPrefChange`
 （`showFloorNumbers`/`blacklist`→`view.*`+`redraw(true)`）。i18n 鍵在 zh_TW/en_US `options_*`。
 
 ## 自動登入：`src/js/auto_login.js`
@@ -225,6 +227,8 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 `enhance.spec.js` 紅。
 - **要算「逐列欄位位置（col）」一律走 `TermChar[]`，勿掃 `rowToText` 後字串**。Big5 DBCS **trail byte 可能=0x40(`@`)**（其他 ASCII 標點同理）→ 掃字串會在中文內誤命中、且 string index ≠ TermChar col（DBCS 佔 2 cols）。逐列遇 `isLeadByte` 跳 2 格、只在單 byte ASCII 比對（同 `rowToText` 走訪）。實例：`mention_parse.detectMentions`（X @帳號），守護有「trail byte 0x40 不誤判」case。
 - **e2e flake 常態**：最新文章常無推文（測樓層/黑名單從 End 往舊文找）；guest 名額滿用 env `PTT_USER/PTT_PASS`；偶發 403/ECONNRESET（PTT 端）。
+- **裝置端 AI（`window.LanguageModel`）的存在 ≠ 可用**：Playwright 的 Chromium 有這個 global，但沒有模型元件（`availability()` 回 `'unavailable'`）。任何「要不要顯示 AI 功能」的判斷一律以 **`availability()` 探測結果**為準，勿用 `typeof window.LanguageModel`——否則會出現一顆按下去每次都 fallback 的假按鈕。中文也**不在** Prompt API 官方支援語言（en/ja/es/de/fr）內，故 `expectedInputs` 一律不傳語言（傳了可能丟 `NotSupportedError`）。見 `docs/merge-caption-ai-assist.md`。
+- **在測試/工具裡直接餵 cassette 進 `TermBuf` 後讀 `getRowText`，必須先讓事件回圈跑一拍**（unit 用 `vi.advanceTimersByTime(300)`、瀏覽器用 `await sleep(120)`）：`isLeadByte` 只在 buf 的 update pass（notify 30ms + settle 50ms）才標記，沒跑完就讀會拿到**未轉碼的 Big5 位元組**（症狀：整片 `§@ªÌ` 亂碼，看起來像編碼表沒載）。
 
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）
 

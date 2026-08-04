@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<!--
+  好讀「左圖右文」裝置端 AI 配對的評估頁（dev-only）。
+  用法：yarn start 後用**你自己的 Chrome** 開 http://localhost:8080/tools/caption-ai-eval.html
+  （Prompt API 的模型是 per-profile 下載的，Playwright 的臨時 profile 沒有 → 只能手動開）。
+  這頁不會進 vite build（build input 只有根目錄 index.html）。
+-->
+<html lang="zh-Hant" data-mantine-color-scheme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>caption AI eval</title>
+    <style>
+      body {
+        background: #1a1b1e;
+        color: #c1c2c5;
+        font: 14px/1.6 system-ui, "Microsoft JhengHei", sans-serif;
+        margin: 0;
+        padding: 24px;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .sub { color: #909296; margin-bottom: 16px; }
+      button {
+        background: #2c2e33; color: #c1c2c5; border: 1px solid #5c5f66;
+        border-radius: 4px; padding: 6px 14px; cursor: pointer; margin-right: 8px;
+      }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .card {
+        border: 1px solid #373a40; border-radius: 6px; padding: 12px 16px;
+        margin-bottom: 16px; background: #25262b;
+      }
+      table { border-collapse: collapse; width: 100%; font-size: 13px; }
+      th, td { border-bottom: 1px solid #373a40; padding: 4px 8px; text-align: left; vertical-align: top; }
+      th { color: #909296; font-weight: normal; }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .hit { color: #40c057; }
+      .miss { color: #fa5252; }
+      .dim { color: #909296; }
+      pre { white-space: pre-wrap; margin: 4px 0 0; color: #909296; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>好讀「左圖右文」裝置端 AI 配對 — 能力評估</h1>
+    <div class="sub">
+      量測 Chrome Prompt API（Gemini Nano）能不能判斷「圖後（前）的哪幾段文字屬於這張圖」。
+      對照組：現行純規則（永遠取最近 1 段）與「永遠取滿全部候選段」。
+    </div>
+
+    <div class="card">
+      <div><strong>模型可用性</strong>：<span id="availability">檢查中…</span></div>
+      <div style="margin-top: 8px">
+        <button id="enableBtn">啟用／下載模型</button>
+        <button id="smokeBtn">中文理解 smoke test</button>
+        <button id="runBtn">執行評估</button>
+      </div>
+      <pre id="status"></pre>
+    </div>
+
+    <div class="card">
+      <strong>中文理解 smoke test</strong>
+      <div class="sub" style="margin: 4px 0 0">
+        中文不在 Prompt API 官方支援語言（en/ja/es/de/fr）內。這幾題先確認模型讀不讀得懂中文——
+        全錯就是語言問題，不是 prompt 問題。
+      </div>
+      <div id="smoke"></div>
+    </div>
+
+    <div class="card">
+      <strong>評估結果</strong>
+      <div id="summary" class="sub"></div>
+      <div id="result"></div>
+    </div>
+
+    <script type="module" src="/tools/caption-ai-eval.js"></script>
+  </body>
+</html>

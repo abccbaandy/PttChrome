@@ -55,6 +55,9 @@ export const DEFAULT_PREFS = {
   // enhanced add-on
   showFloorNumbers: true,
   mergeSameAuthorComments: true, // 好讀：連續同作者推文合併成一段
+  // 好讀「左圖右文」的裝置端 AI 校正（Chrome Prompt API）。預設關：模型首次使用
+  // 要下載數 GB，且只有 Chrome 有 —— 開啟後文章頁才會多出 AI 浮動按鈕。
+  enableCaptionAi: false,
   highlightAuthorComments: true,
   enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
   enableXMentionLink: true, // auto-link @handle to x.com when the X account exists

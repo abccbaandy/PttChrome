@@ -118,6 +118,9 @@ export function TermView() {
   // 好讀「連續同作者推文合併」：render 層合併（Screen#computeAnnotations +
   // comment_merge.js），僅好讀文章頁生效。Set via App.onPrefChange.
   this.mergeSameAuthorComments = true;
+  // 好讀「左圖右文」的裝置端 AI 校正開關（Chrome Prompt API）。只是「讓 AI 浮動
+  // 按鈕出得來」，實際推論仍要使用者按下該按鈕。Set via App.onPrefChange.
+  this.enableCaptionAi = false;
   // Same-author comment highlighting: tint comments written by the 原PO.
   // _articleAuthor is parsed from the article header (first page only) and kept
   // across page-downs; see redraw().
@@ -548,6 +551,7 @@ TermView.prototype = {
           titleBlacklist: this.titleBlacklist,
           showFloorNumbers: this.showFloorNumbers,
           mergeSameAuthorComments: this.mergeSameAuthorComments,
+          captionAiEnabled: this.enableCaptionAi,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,
           selectedPusher: this._selectedPusher,

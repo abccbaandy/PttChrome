@@ -29,14 +29,16 @@
 import { parseComment } from "./comment_parse";
 import { isImageLikeUrl } from "./image_url_detect";
 
-const RE_SOLE_URL = /^(https?:\/\/\S+)$/;
+// export 供 caption_ai_logic.js 重用（AI 候選段掃描要用完全相同的「圖行 / 中性
+// sole-URL 行 / header」判準，兩邊各養一套必漂移）。行為不變。
+export const RE_SOLE_URL = /^(https?:\/\/\S+)$/;
 // 文章 header 標籤列（好讀累積頁的最前面：作者/看板/標題/時間）。
 const RE_HEADER_LABEL = /^(作者|看板|標題|時間)\s/;
 
 // 文章開頭的 header 區（作者/看板/標題/時間＋其後的全形分隔線）不屬於任何
 // 說明段——captionFirst 模式若不跳過，header 會被當成首圖的文字 run 併進右欄。
 // 回傳內文起始 row index；非文章頂（row 0 不是「作者」列）回傳 0。
-function skipArticleHeader(rowTexts) {
+export function skipArticleHeader(rowTexts) {
   if (!RE_HEADER_LABEL.test(((rowTexts[0] || "") + "").trim())) return 0;
   let i = 0;
   while (

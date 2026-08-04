@@ -132,6 +132,15 @@
   "mergeImageCaption_off": {
     "message": "還原排版"
   },
+  "mergeImageCaptionAi_on": {
+    "message": "AI 校正配對"
+  },
+  "mergeImageCaptionAi_off": {
+    "message": "關閉 AI 校正"
+  },
+  "mergeImageCaptionAi_pending": {
+    "message": "AI 校正中…剩"
+  },
   "debugRecord_start": {
     "message": "錄製"
   },
@@ -148,6 +157,27 @@
   },
   "options_mergeSameAuthorComments": {
     "message": "合併連續同作者推文成一段 (僅好讀模式，顯示時間與樓層範圍)"
+  },
+  "options_enableCaptionAi": {
+    "message": "圖文並排用裝置端 AI 校正配對 (僅好讀模式；目前僅 Chrome 支援，模型首次使用需下載數 GB)"
+  },
+  "options_captionAiEnableBtn": {
+    "message": "檢查／下載裝置端 AI 模型"
+  },
+  "options_captionAiStatus_unsupported": {
+    "message": "此瀏覽器沒有內建 AI（Prompt API），目前僅 Chrome 148+ 桌面版支援。"
+  },
+  "options_captionAiStatus_unavailable": {
+    "message": "此裝置無法使用內建 AI（需 22GB 可用空間、16GB 記憶體或 4GB 以上顯示記憶體）。"
+  },
+  "options_captionAiStatus_downloadable": {
+    "message": "可用，但模型尚未下載（數 GB）。按上方按鈕開始下載。"
+  },
+  "options_captionAiStatus_downloading": {
+    "message": "模型下載中…"
+  },
+  "options_captionAiStatus_available": {
+    "message": "裝置端 AI 已就緒。進文章後點右下角「AI 校正配對」按鈕使用。"
   },
   "options_highlightAuthorComments": {
     "message": "高亮原PO本人的推文"
