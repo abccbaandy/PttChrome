@@ -25,7 +25,9 @@
 
 // Closed TLD allowlist. Longer ones first so e.g. ".com" is preferred over ".co"
 // (the trailing \b also prevents matching "co" inside "com").
-const TLDS = [
+// Exported so src/js/bare_domain.js (bare-domain auto-link) shares ONE allowlist —
+// the two features must never disagree about what counts as a TLD.
+export const TLDS = [
   'community', 'online', 'store', 'tech', 'live', 'news', 'blog', 'wiki', 'site',
   'club', 'shop', 'app', 'dev', 'info', 'biz', 'moe',
   'com', 'net', 'org', 'edu', 'gov', 'xyz',

@@ -16,6 +16,7 @@ import {
   FloorCounter,
 } from "../js/comment_parse";
 import { detectFixableUrls } from "../js/url_fix";
+import { detectBareDomains } from "../js/bare_domain";
 import { detectMentions } from "../js/mention_parse";
 import { detectAids } from "../js/aid_parse";
 import {
@@ -37,6 +38,8 @@ import {
   classifySpans,
   destroyCaptionAi,
 } from "../js/caption_ai";
+import { applyAiLink, domainKey } from "../js/url_ai_logic";
+import { classifyDomains, destroyUrlAi } from "../js/url_ai";
 import {
   groupSameAuthorRuns,
   buildMergedCommentChars,
@@ -57,8 +60,14 @@ const PAGE_READING = 3;
 // 「連續同作者推文合併」塊共用——合併後的 chars 是重組的新序列，原列偵測到的
 // col 範圍全部失效，必須對合併 chars 重跑一次。回傳值僅含有命中的鍵。
 function detectRowExtras(chars, text, ann, opts) {
-  const { autoFixUrl, enableXMention, easyReading, onAidClick, hasSteamgifts } =
-    opts;
+  const {
+    autoFixUrl,
+    enableXMention,
+    easyReading,
+    onAidClick,
+    hasSteamgifts,
+    bareDomainLink,
+  } = opts;
   // Auto-fix runs on every row (article body included), independent of the
   // comment annotation. The fixed-URL line only renders in easy-reading mode
   // (see LinkSegmentBuilder); detection itself is cheap and returns [] for
@@ -118,14 +127,38 @@ function detectRowExtras(chars, text, ann, opts) {
     const found = detectGiveawayCodes(text);
     if (found.length) giveaways = found;
   }
-  return { fixedUrls, mentions, aids, giveaways };
+  // 裸網域自動連結（src/js/bare_domain.js）：無 scheme、無路徑的網域原位變可點。
+  // 與 fixedUrls 天然不重疊（那邊的候選必含空白或路徑，這邊兩者都排除），唯一
+  // 例外是「example.com /badpath.jpg」這種——同一個 host 已被修好的深連結涵蓋，
+  // 不再重複掛一個指向首頁的連結。mentions 的 @ 前綴已在 bare_domain 內排除。
+  let bareDomains;
+  if (bareDomainLink && !(ann && ann.hidden)) {
+    let found = detectBareDomains(chars, text);
+    if (found.length && fixedUrls) {
+      found = found.filter(
+        (d) =>
+          !fixedUrls.some((f) => f.original.toLowerCase().includes(d.host)),
+      );
+    }
+    // rowText 隨候選帶走：AI 複核的 prompt 與 cache key 都需要整列上下文
+    // （同一個 host 在不同句子裡本來就該有不同答案）。
+    if (found.length) bareDomains = found.map((d) => ({ ...d, rowText: text }));
+  }
+  return { fixedUrls, mentions, aids, giveaways, bareDomains };
 }
 
 // Per-row { floor } / { hidden } annotations for the Enhanced Add-on. Native grid
 // is fixed-size, so a blacklisted row is hidden (visibility:hidden) rather than
 // removed — removing it would desync the terminal grid. Floor numbers here count
 // only within the visible page (cross-page numbering needs easy reading; see plan).
-function computeAnnotations(lines, enhance, mergeCaption, captionAi, aiKeep) {
+function computeAnnotations(
+  lines,
+  enhance,
+  mergeCaption,
+  captionAi,
+  aiKeep,
+  aiLink,
+) {
   const result = new Array(lines.length);
   if (!enhance) return result;
   const {
@@ -137,6 +170,7 @@ function computeAnnotations(lines, enhance, mergeCaption, captionAi, aiKeep) {
     selectedPusher,
     pageState,
     autoFixUrl,
+    bareDomainLink,
     easyReading,
     enableXMention,
     mergeSameAuthorComments,
@@ -200,25 +234,35 @@ function computeAnnotations(lines, enhance, mergeCaption, captionAi, aiKeep) {
     // 見 steamgifts_parse.js）。偵測本體抽在 detectRowExtras（合併塊共用）。
     const detectOpts = {
       autoFixUrl,
+      bareDomainLink,
       enableXMention,
       easyReading,
       onAidClick,
       hasSteamgifts: articleHasSteamgifts(texts),
     };
+    // 裸網域 AI 複核：全頁的灰色候選收成一份清單（含推文合併塊重跑出來的），
+    // effect 依內容簽章決定要不要推論。收集用的是**套用判決之前**的候選，簽章
+    // 才不會因為 AI 撤掉某個連結而抖動。
+    const domainCands = [];
+    const withDomainAi = (extras) => {
+      if (!extras.bareDomains) return extras;
+      for (const d of extras.bareDomains) if (d.gray) domainCands.push(d);
+      return {
+        ...extras,
+        bareDomains: applyAiLink(extras.bareDomains, aiLink),
+      };
+    };
     for (let row = 0; row < lines.length; ++row) {
       const text = texts[row];
       const ann = annotateComment(text, ctx) || undefined;
-      const { fixedUrls, mentions, aids, giveaways } = detectRowExtras(
-        lines[row],
-        text,
-        ann,
-        detectOpts,
-      );
+      const { fixedUrls, mentions, aids, giveaways, bareDomains } =
+        withDomainAi(detectRowExtras(lines[row], text, ann, detectOpts));
       let r = ann;
       if (fixedUrls) r = { ...(r || {}), fixedUrls };
       if (mentions) r = { ...(r || {}), mentions };
       if (aids) r = { ...(r || {}), aids };
       if (giveaways) r = { ...(r || {}), giveaways };
+      if (bareDomains) r = { ...(r || {}), bareDomains };
       result[row] = r;
     }
     // 開啟合併時把分組結果寫進 annotation：圖行掛 mergeBlock（render 成兩欄
@@ -254,7 +298,9 @@ function computeAnnotations(lines, enhance, mergeCaption, captionAi, aiKeep) {
           mergeCommentRun: {
             chars: merged.chars,
             contentStart: merged.contentStart,
-            ...detectRowExtras(merged.chars, mText, firstAnn, detectOpts),
+            ...withDomainAi(
+              detectRowExtras(merged.chars, mText, firstAnn, detectOpts),
+            ),
           },
         };
         for (let n = 1; n < run.rows.length; ++n) {
@@ -265,6 +311,9 @@ function computeAnnotations(lines, enhance, mergeCaption, captionAi, aiKeep) {
         }
       }
     }
+    // 內容型簽章：好讀翻頁只是往後長，前面已判過的候選 key 不變 → effect 不重跑。
+    result.domainCands = domainCands;
+    result.domainCandsSig = domainCands.map(domainKey).join(",");
   } else if (pageState === PAGE_LIST || inListContext) {
     // inListContext keeps list treatment alive across overlay prompts (e.g. the
     // v 設定已讀未讀記錄 sub-screen) whose status row stops parsing as LIST(2).
@@ -356,6 +405,10 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   // global，但 availability() 會回 'unavailable'（沒有模型元件）——那種情況下按鈕
   // 按下去只會每塊 fallback 回規則，等於一顆沒有作用的按鈕。
   const [aiReady, setAiReady] = React.useState(false);
+  // 裸網域連結的 AI 複核結果 cache：domainKey → boolean。只有明確 false 會撤掉
+  // 規則已允許的連結（單向收縮，見 url_ai_logic.js）。沒有浮動按鈕——這是「壓
+  // 誤判」而不是使用者要切換的排版，設定頁勾了就在背景跑。
+  const [aiLink, setAiLink] = React.useState({});
 
   // 命令式 API：term_view 經 term_ui 的 ref.current.setCurrentHighlighted(row)
   // 設高亮列（鍵盤操作時）。取代 class instance method。
@@ -380,6 +433,8 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     // AI 結果是 per-article 的：換文章一律丟掉（spanKey 只保證同一篇內唯一）。
     if (captionAi) setCaptionAi(false);
     if (Object.keys(aiKeep).length) setAiKeep({});
+    // 同理：domainKey 含整列文字，換文章的舊判斷沒有沿用價值。
+    if (Object.keys(aiLink).length) setAiLink({});
   }
 
   // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
@@ -484,6 +539,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     mergeCaption,
     captionAi,
     aiKeep,
+    aiLink,
   );
 
   // spans 每次 render 重算（reference 不穩），但內容簽章穩定 → effect 只在
@@ -523,8 +579,45 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     };
   }, [captionAi, spansSig]);
 
+  // 裸網域 AI 複核：與 caption AI 同形的漸進式推論，但**沒有浮動按鈕**——規則
+  // 結果早就畫出來了，AI 只是逐個撤掉誤連，不擋畫面也不需要使用者操作。
+  const urlAiEnabled = !!(enhance && enhance.urlAiEnabled);
+  const domainCandsRef = React.useRef(null);
+  domainCandsRef.current = annotations.domainCands;
+  const aiLinkRef = React.useRef(aiLink);
+  aiLinkRef.current = aiLink;
+  const domainCandsSig = annotations.domainCandsSig;
+  React.useEffect(() => {
+    if (!urlAiEnabled) return undefined;
+    const seen = new Set();
+    const todo = (domainCandsRef.current || []).filter((c) => {
+      const k = domainKey(c);
+      if (seen.has(k) || aiLinkRef.current[k] !== undefined) return false;
+      seen.add(k); // 同一列在合併塊裡會出現兩次，只問一次
+      return true;
+    });
+    if (!todo.length) return undefined;
+    const controller =
+      typeof AbortController === "function" ? new AbortController() : null;
+    let cancelled = false;
+    classifyDomains(todo, {
+      signal: controller ? controller.signal : undefined,
+      onResult: (cand, r) => {
+        // link === null（逾時／垃圾回覆／不支援）不寫進 cache：留著 undefined
+        // 等於「沒有判決」→ 連結保留，也不會被記成永久答案。
+        if (cancelled || r.link === null) return;
+        setAiLink((prev) => ({ ...prev, [domainKey(cand)]: r.link }));
+      },
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+      if (controller) controller.abort();
+    };
+  }, [urlAiEnabled, domainCandsSig]);
+
   // 卸載時關掉 base session（模型常駐佔記憶體）。
   React.useEffect(() => () => destroyCaptionAi(), []);
+  React.useEffect(() => () => destroyUrlAi(), []);
 
   // 可用性探測：只在設定啟用時查一次（availability() 不會觸發下載）。
   const captionAiEnabled = !!(enhance && enhance.captionAiEnabled);
@@ -571,6 +664,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
         mentions={ann && ann.mentions}
         aids={ann && ann.aids}
         giveaways={ann && ann.giveaways}
+        bareDomains={ann && ann.bareDomains}
         blacklistNotice={ann && ann.blacklistNotice}
         onHyperLinkMouseOver={handleHyperLinkMouseOver}
         onHyperLinkMouseOut={handleHyperLinkMouseOut}
@@ -641,6 +735,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
                 mentions={m.mentions}
                 aids={m.aids}
                 giveaways={m.giveaways}
+                bareDomains={m.bareDomains}
                 onHyperLinkMouseOver={handleHyperLinkMouseOver}
                 onHyperLinkMouseOut={handleHyperLinkMouseOut}
               />

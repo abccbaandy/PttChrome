@@ -31,11 +31,12 @@ import "./PrefModal.css";
 
 // Checkbox adapter：保留 id={`pref-check-${name}`}（label[for=...] e2e marker，且
 // 點 label 文字才能切換）、name（input[name=...] marker）、event.target.checked 契約。
-const PrefCheckbox = ({ name, checked, onChange, children }) => (
+const PrefCheckbox = ({ name, checked, disabled, onChange, children }) => (
   <Checkbox
     id={`pref-check-${name}`}
     name={name}
     checked={checked}
+    disabled={disabled}
     onChange={onChange}
     label={children}
     mb="xs"
@@ -669,7 +670,7 @@ export const PrefModal = ({
                     size="xs"
                     onClick={onCaptionAiEnableClick}
                     disabled={
-                      !values.enableCaptionAi ||
+                      !(values.enableCaptionAi || values.enableUrlAi) ||
                       captionAiState === "unsupported" ||
                       captionAiState === "unavailable" ||
                       captionAiState === "downloading"
@@ -706,6 +707,28 @@ export const PrefModal = ({
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableXMentionLink")}
+                </PrefCheckbox>
+                <PrefCheckbox
+                  name="enableBareDomainLink"
+                  checked={values.enableBareDomainLink}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableBareDomainLink")}
+                </PrefCheckbox>
+                {/* AI 複核依附裸網域連結：後者關掉時前者無事可做。模型下載共用
+                    上方那顆「啟用裝置端 AI」按鈕（模型是 per-origin 的，兩個
+                    功能只需下載一次）。 */}
+                <PrefCheckbox
+                  name="enableUrlAi"
+                  checked={values.enableUrlAi}
+                  disabled={
+                    !values.enableBareDomainLink ||
+                    captionAiState === "unsupported" ||
+                    captionAiState === "unavailable"
+                  }
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableUrlAi")}
                 </PrefCheckbox>
                 <Textarea
                   label={i18n("options_blacklist")}

@@ -551,6 +551,14 @@ span {
   background-position: 0% 90%;
 }
 
+/* 裸網域自動連結：作者只寫 indiegametw.com（無 https://、無路徑）時原位變可點
+   （見 Row/LinkSegmentBuilder + bare_domain.js）。外觀同一般連結。 */
+.bareDomainLink {
+  background-image: url(../icon/http.bmp);
+  background-repeat: repeat-x;
+  background-position: 0% 90%;
+}
+
 /* 文章代碼 (AID) 自動連結：好讀模式偵測 #XXXXXXXX，點擊在站內自動導航到該文
    （見 Row/LinkSegmentBuilder + aid_parse + aid_navigation）。外觀同一般連結。 */
 .aidLink {

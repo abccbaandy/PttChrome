@@ -148,7 +148,8 @@
     這擋掉 prose 裡的網域提及（如 `※ 發信站: …(ptt.cc)`）被補 scheme 成連結，同時保留**有路徑/檔案的
     scheme-less 深連結**（如 `i.imgur.com/ajHklmb.jpeg` → `https://…`，值得可點＋自動開圖）。**勿改成單一條件**：
     只認空白會誤殺後者、只認路徑會漏判前者（兩個方向都試過）。守護測試 `url_fix.test.js`「發信站 line」
-    「scheme-less deep link」「imgur 同列去重」。
+    「scheme-less deep link」「imgur 同列去重」。**被這條擋掉的候選改由下節的 `bare_domain.js` 承接**
+    （原位連結、不加行），本節不再放寬。
   - 重建 fixed=移除所有 ASCII 空白（真 URL 不含空白）；無 scheme 則前置 `https://`（既有 scheme 不改寫）。
   - 取捨：保守設計，漏冷門 TLD／跨列斷開 URL（逐列偵測，**out of scope**）換取近零誤判。
 - 渲染：`Screen#computeAnnotations` **逐列**（含內文非推文列，獨立於 `annotateComment`）算 `fixedUrls` 掛進 ann →
@@ -158,6 +159,46 @@
   CSS `.fixedUrlLine/.fixedUrlLabel`(`main.css`)。守護測試 `tests/unit/row_render.test.jsx`「Row fixed-URL line」。
 - pref `enableAutoFixUrl`(true)；`pttchrome.onPrefChange`→`view.enableAutoFixUrl`+`redraw(true)`；
   傳入 `enhance.autoFixUrl`。i18n `options_enableAutoFixUrl`。
+
+## 裸網域自動連結（`src/js/bare_domain.js` + `url_ai*.js`）
+「無 scheme、無路徑、無空白」的網域（`indiegametw.com`、`eaigc.filtergame.com`）：`uriRegEx` 要 scheme 看不見，
+`url_fix` 的裸網域提及守門刻意跳過 → 兩層都漏（使用者 2026-08 回報）。本功能專責這塊灰色地帶。
+
+**分層契約（關鍵不變量）**
+
+| 層 | 行為 | pref | 預設 |
+|---|---|---|---|
+| 規則 `bare_domain.js` | 裸網域**預設連**，三道守則排除提及型 | `enableBareDomainLink` | 開 |
+| AI `url_ai.js` | 只能**撤掉**規則已允許的連結（單向收縮），永不新增 | `enableUrlAi` | 關 |
+
+→ AI 關／不支援／逾時／垃圾回覆 ⇒ 結果恆等於純規則結果。與 `merge-caption-ai-assist` 的零回歸同構，**方向相反**
+（那邊 AI 單向擴張、這邊單向收縮）。
+
+- 偵測 `detectBareDomains(chars, rowText) -> [{startCol,endCol,host,href,gray}]`（守護 `tests/unit/bare_domain.test.js`）。
+  **走 `TermChar[]` 而非 `rowToText`**，理由同 `mention_parse`：Big5 trail byte 落在 0x40–0x7E 涵蓋 `A-Za-z`，
+  字串掃描會湊出假 label（「中」的 trail byte = `a` → 假的 `a.com`）。TLD 允許清單**從 `url_fix.js` export 的
+  `TLDS` 複用**，兩功能不得各持一份。
+  - 三道提及守則：①`SYSTEM_LINE_RE` 命中（`※ 發信站/文章網址/編輯/轉錄/引述`、`◆ From:`）→ **整列**不偵測；
+    ②候選前後被括號包住（半形 `()`／Big5 全形 `（）`= `a1 5d`/`a1 5e`，UTF-8 charset 下 `cell.ch` 直接是該字元）；
+    ③`SYSTEM_HOSTS` 黑名單（`ptt.cc`/`ptt2.cc`/`www.*`）。
+  - 重疊排除：run 內任一 cell `isPartOfURL()` 為真（`uriRegEx` 已標）／前後緊鄰 `@`（email）／後接 `/`（深連結歸
+    `url_fix`）。`Screen#detectRowExtras` 另比對 `fixedUrls[].original` 含同 host 者剔除。
+  - `gray`＝規則沒把握、值得送 AI：`www.` 前綴或 **≥3 段子網域**視為強訊號（`gray:false`，省一次 ~1s 推論）；
+    其餘（兩段裸網域，形狀與 `ptt.cc` 型提及相同）`gray:true`。
+- 渲染：**原位**（複用 mentions 的 `[startCol,endCol)` open/close 邊界機制）→ `<a className="bareDomainLink">`，
+  **不加行、不掛 inline `ImagePreviewer`**（裸網域多半非圖），掛 hover 預覽 handler。因為是 range 不加行，
+  **原生 24 列模式也生效**（與 `FixedUrlLine` 的好讀限定不同）。CSS `.bareDomainLink`(`main.css`)。
+  守護 `row_render.test.jsx`「Row bare-domain link」、`tests/e2e/offline/bare-domain-link.offline.spec.js`。
+- AI 層：純函式 `url_ai_logic.js`（`buildDomainPrompt`／`domainLinkSchema`＝單一 boolean `link`／`parseLinkReply`／
+  `applyAiLink`／`domainKey`／`candNeedsAi`），瀏覽器層 `url_ai.js`。
+  **零回歸不變量：`applyAiLink(cands, {}) ≡ cands`**（引用都不換），只有明確 `false` 才 filter 掉。
+  `link === null`（逾時／垃圾／不支援）**不寫進 cache** → 連結保留且不被記成永久答案。
+  `domainKey` = FNV-1a(host + 整列文字)：同 host 在不同句子答案本就該不同；換文章（`articleId` 變）整包丟掉。
+  接線在 `Screen`：`computeAnnotations` 收 `result.domainCands`/`domainCandsSig`（**套判決前**的候選，簽章才不抖），
+  effect 依 `[urlAiEnabled, domainCandsSig]` 漸進推論。**無浮動按鈕**——這是壓誤判、不是使用者要切換的排版。
+- session 樣板抽在共用的 `src/js/prompt_api.js`（`caption_ai.js` 也改建其上，export 簽名不變）：
+  依 key 分別快取 base session（system prompt 決定任務框架，共用會互相帶偏）。模型下載共用設定頁那顆
+  `#captionAiEnableBtn`（模型是 per-origin，兩功能只需下載一次）。
 
 ## X(Twitter) @帳號自動連結（`src/js/mention_parse.js`）
 內文/推文出現 `@帳號`→做成連 `https://x.com/帳號` 的連結。**存在性驗證目前 OFF**（見下「驗證」）：所有格式合格 `@handle` 一律連結，可能連到不存在帳號。
@@ -171,7 +212,8 @@
 
 ## 設定（`PrefModal.jsx` 「增強功能」分頁）
 pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）：
-`showFloorNumbers`(true)、`highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、`blacklist`("" 換行)、
+`showFloorNumbers`(true)、`highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、
+`enableBareDomainLink`(true)、`enableUrlAi`(false，依附前者；unsupported/unavailable 時 checkbox disabled)、`blacklist`("" 換行)、
 `autoLogin`(false)、`autoLoginUser/Password`(""；
 **password 在支援 Credential API 的瀏覽器不落地**，見「自動登入」節)、
 `autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true)、

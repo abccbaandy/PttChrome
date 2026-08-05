@@ -76,6 +76,7 @@ export const Row = ({
   mentions,
   aids,
   giveaways,
+  bareDomains,
   blacklistNotice,
   onHyperLinkMouseOver,
   onHyperLinkMouseOut,
@@ -121,6 +122,7 @@ export const Row = ({
             mentions,
             aids,
             giveaways,
+            bareDomains,
           ),
         )
         .build()}

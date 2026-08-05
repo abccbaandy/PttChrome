@@ -63,6 +63,11 @@ applyAiKeep(ruleBlocks, spans, {[imageRow]: keep}) → blocks
 - 設定：pref `enableCaptionAi`(false) ＋ 「檢查／下載裝置端 AI 模型」按鈕（`#captionAiEnableBtn`，
   `ensureCaptionAiReady`）。**`availability()` 非 available 時絕不自動 `create()`**——模型下載數 GB，
   只在使用者按下按鈕（有 user activation）時才觸發。
+- **session 樣板已抽到共用的 `src/js/prompt_api.js`**（2026-08，第二個 AI 功能「裸網域連結 AI 複核」上線時）：
+  availability／依 key 快取 base session／`ensurePromptApiReady`／`destroyPromptApi`／`promptOnce`
+  （clone→prompt→timeout→destroy）。`caption_ai.js` 改成薄包裝，**對外 export 簽名一字未改**。
+  **依 key 分開快取**：system prompt 決定任務框架，兩功能共用一個 base session 會互相帶偏。
+  那顆下載按鈕現在同時服務兩個功能（模型是 per-origin，只需下載一次）。裸網域那側見 `docs/enhanced-addon.md`。
 
 ## 平台事實（developer.chrome.com/docs/ai/prompt-api，2026-08 查證）
 

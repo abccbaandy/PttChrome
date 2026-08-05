@@ -188,6 +188,12 @@
   "options_enableXMentionLink": {
     "message": "自動連結 @帳號 到 X/Twitter"
   },
+  "options_enableBareDomainLink": {
+    "message": "自動連結沒寫 https:// 的網址 (如 indiegametw.com)"
+  },
+  "options_enableUrlAi": {
+    "message": "用裝置端 AI 過濾誤判的網址連結 (需先下載模型)"
+  },
   "options_blacklist": {
     "message": "黑名單 (一行一個帳號)"
   },

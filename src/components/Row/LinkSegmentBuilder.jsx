@@ -25,6 +25,7 @@ export class LinkSegmentBuilder {
     mentions,
     aids,
     giveaways,
+    bareDomains,
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -76,6 +77,17 @@ export class LinkSegmentBuilder {
       }
     }
     this._giveaway = null;
+    // 裸網域自動連結（src/js/bare_domain.js）：cols [startCol, endCol) of each
+    // scheme-less、path-less 網域。同樣的開/關邊界機制，但**原位**變成連結（不像
+    // fixedUrls 另起一行）→ 原生 24 列 grid 的對齊不受影響，兩個模式都能用。
+    this._bareDomainStart = null;
+    if (bareDomains && bareDomains.length) {
+      this._bareDomainStart = new Map();
+      for (let k = 0; k < bareDomains.length; ++k) {
+        this._bareDomainStart.set(bareDomains[k].startCol, bareDomains[k]);
+      }
+    }
+    this._bareDomain = null;
     //
     this.segs = [];
     // Auto-fixed URLs (src/js/url_fix.js) render on extra lines below the article
@@ -165,6 +177,24 @@ export class LinkSegmentBuilder {
           title="Steamgifts giveaway"
           rel="noreferrer"
           target="_blank"
+        >
+          {element}
+        </a>,
+      );
+    } else if (this._bareDomain) {
+      // 裸網域 → 原位外部連結。掛 hover 預覽（圖床裸網域仍可預覽；非圖 resolver
+      // 自然 reject），但**不推** inline ImagePreviewer——裸網域絕大多數不是圖，
+      // 每個都試著開圖只會製造無謂的請求（與 X mention 同樣的取捨）。
+      this._pushSeg(
+        <a
+          key={`b${this.col}`}
+          className="bareDomainLink"
+          href={this._bareDomain.href}
+          title={this._bareDomain.href}
+          rel="noreferrer"
+          target="_blank"
+          onMouseOver={this.onHyperLinkMouseOver}
+          onMouseOut={this.onHyperLinkMouseOut}
         >
           {element}
         </a>,
@@ -272,6 +302,16 @@ export class LinkSegmentBuilder {
     if (this._giveawayStart !== null && this._giveawayStart.has(i)) {
       if (this.colorSegBuilder !== null) this.saveSegment();
       this._giveaway = this._giveawayStart.get(i);
+    }
+    // 裸網域邊界 — same open/close dance as mentions above. bare_domain.js 已排除
+    // 落在 uriRegEx 標記範圍內的候選，所以與下方的 isStartOfURL 分支不會重疊。
+    if (this._bareDomain && i === this._bareDomain.endCol) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._bareDomain = null;
+    }
+    if (this._bareDomainStart !== null && this._bareDomainStart.has(i)) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._bareDomain = this._bareDomainStart.get(i);
     }
     if (this.colorSegBuilder !== null && ch.isStartOfURL()) {
       this.saveSegment();

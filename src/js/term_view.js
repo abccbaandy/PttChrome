@@ -128,6 +128,12 @@ export function TermView() {
   // Auto-fix broken URLs: detect URLs broken by injected spaces / missing scheme /
   // split file extension and show a repaired clickable link below (src/js/url_fix.js).
   this.enableAutoFixUrl = true;
+  // Bare-domain auto-link: linkify a domain written without scheme AND without a
+  // path ("indiegametw.com") in place (src/js/bare_domain.js). Both modes.
+  this.enableBareDomainLink = true;
+  // 裸網域的裝置端 AI 複核（Chrome Prompt API）：只能**撤掉**規則已允許的連結
+  // （單向收縮），關閉／不支援時結果恆等於純規則結果。Set via App.onPrefChange.
+  this.enableUrlAi = false;
   // Auto-link X(Twitter) @handles (format-valid ones) in article body/comments.
   // Existence verification is currently off — see Screen.js / docs/enhanced-addon.md.
   this.enableXMention = true;
@@ -556,6 +562,8 @@ TermView.prototype = {
           articleAuthor: this._articleAuthor,
           selectedPusher: this._selectedPusher,
           autoFixUrl: this.enableAutoFixUrl,
+          bareDomainLink: this.enableBareDomainLink,
+          urlAiEnabled: this.enableBareDomainLink && this.enableUrlAi,
           enableXMention: this.enableXMention,
           pageState: this.buf.pageState,
           // Floor numbers only count correctly across page-downs in easy reading

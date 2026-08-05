@@ -897,6 +897,14 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.enableAutoFixUrl = value;
       this.view.redraw(true);
       break;
+    case 'enableBareDomainLink':
+      this.view.enableBareDomainLink = value;
+      this.view.redraw(true);
+      break;
+    case 'enableUrlAi':
+      this.view.enableUrlAi = value;
+      this.view.redraw(true);
+      break;
     case 'enableXMentionLink':
       this.view.enableXMention = value;
       this.view.redraw(true);

@@ -208,6 +208,90 @@ describe("Row X mention link", () => {
   });
 });
 
+// 裸網域自動連結。Screen 用 bare_domain.js 偵測 [startCol, endCol) 範圍，
+// Row/LinkSegmentBuilder 原位包成 .bareDomainLink <a>。與 fixedUrls 的關鍵差別：
+// **不另起一行**，所以原生 24 列 grid 也能用（不破壞對齊）。
+describe("Row bare-domain link", () => {
+  test("裸網域 → .bareDomainLink <a> 正好包住網域，開新分頁", () => {
+    // 去0 sp1... 用 ASCII 佔位：s0 e1 e2 sp3 host 4..14 sp15
+    const { container } = render(
+      <Row
+        chars={chars("see indiegametw.com ok")}
+        row={0}
+        bareDomains={[
+          {
+            startCol: 4,
+            endCol: 19,
+            host: "indiegametw.com",
+            href: "https://indiegametw.com",
+            gray: true
+          }
+        ]}
+      />
+    );
+    const a = container.querySelector("a.bareDomainLink");
+    expect(a).not.toBeNull();
+    expect(a.getAttribute("href")).toBe("https://indiegametw.com");
+    expect(a.getAttribute("target")).toBe("_blank");
+    expect(a.getAttribute("rel")).toBe("noreferrer");
+    expect(a.textContent).toBe("indiegametw.com");
+  });
+
+  test("原生模式（無 inline preview）照樣渲染——不像 fixedUrls 只在好讀", () => {
+    const { container } = render(
+      <Row
+        chars={chars("see a.com ok")}
+        row={0}
+        enableLinkInlinePreview={false}
+        bareDomains={[
+          { startCol: 4, endCol: 9, host: "a.com", href: "https://a.com" }
+        ]}
+      />
+    );
+    expect(container.querySelector("a.bareDomainLink")).not.toBeNull();
+  });
+
+  test("不掛 inline ImagePreviewer（裸網域多半不是圖，不做無謂請求）", () => {
+    const { container } = render(
+      <Row
+        chars={chars("see a.com ok")}
+        row={0}
+        enableLinkInlinePreview={true}
+        bareDomains={[
+          { startCol: 4, endCol: 9, host: "a.com", href: "https://a.com" }
+        ]}
+      />
+    );
+    expect(container.querySelector("a.bareDomainLink")).not.toBeNull();
+    expect(container.querySelector(".imagePreview")).toBeNull();
+    expect(container.querySelector(".fixedUrlLine")).toBeNull();
+  });
+
+  test("無 bareDomains prop → 純文字", () => {
+    const { container } = render(
+      <Row chars={chars("see indiegametw.com ok")} row={0} />
+    );
+    expect(container.querySelector(".bareDomainLink")).toBeNull();
+    expect(bbsrow(container).textContent).toBe("see indiegametw.com ok");
+  });
+
+  test("裸網域落在行尾也要收邊界", () => {
+    // s0 e1 e2 sp3 a4 .5 c6 o7 m8 → endCol 9 == 行長
+    const { container } = render(
+      <Row
+        chars={chars("see a.com")}
+        row={0}
+        bareDomains={[
+          { startCol: 4, endCol: 9, host: "a.com", href: "https://a.com" }
+        ]}
+      />
+    );
+    expect(container.querySelector("a.bareDomainLink").textContent).toBe(
+      "a.com"
+    );
+  });
+});
+
 // PTT article-code (AID) auto-link. Screen detects #XXXXXXXX ranges (aid_parse)
 // and passes them with an onClick; Row/LinkSegmentBuilder wraps them in a
 // .aidLink <a> that navigates in-app (preventDefault) instead of a new tab.

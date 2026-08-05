@@ -188,6 +188,12 @@ export const en_US = {
   "options_enableXMentionLink": {
     "message": "Auto-link @handle to X/Twitter"
   },
+  "options_enableBareDomainLink": {
+    "message": "Auto-link domains written without https:// (e.g. indiegametw.com)"
+  },
+  "options_enableUrlAi": {
+    "message": "Use on-device AI to drop mis-detected domain links (model download required)"
+  },
   "options_blacklist": {
     "message": "Blacklist (one user id per line)"
   },

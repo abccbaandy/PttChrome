@@ -60,6 +60,11 @@ export const DEFAULT_PREFS = {
   enableCaptionAi: false,
   highlightAuthorComments: true,
   enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
+  // 裸網域（無 scheme、無路徑，如 indiegametw.com）原位變成可點連結。
+  enableBareDomainLink: true,
+  // 裸網域的裝置端 AI 複核（Chrome Prompt API）。預設關，理由同 enableCaptionAi：
+  // 首次使用要下載數 GB 模型且只有 Chrome 有。開啟後只會**減少**誤連的連結。
+  enableUrlAi: false,
   enableXMentionLink: true, // auto-link @handle to x.com when the X account exists
   blacklist: "", // newline-separated user ids
   titleBlacklist: "", // newline-separated title keywords (board-list only)
