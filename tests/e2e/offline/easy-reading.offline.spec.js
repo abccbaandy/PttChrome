@@ -8,7 +8,13 @@
 // 没录过 → skip（非失败）。这里遍历所有 article cassette，逐卷守门。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { findCassettes, bootOffline, replayCassette, feedRaw } = require('../helpers/replay');
+const {
+  findCassettes,
+  bootOffline,
+  replayCassette,
+  feedRaw,
+  offlineServedUrls,
+} = require('../helpers/replay');
 
 // 推文列（textContent，可能含好读 floor badge：marker 后紧跟楼号数字）。
 const COMMENT_RE = /^(推|噓|→)\d*\s+[0-9A-Za-z]+\s*:/;
@@ -22,6 +28,15 @@ async function readBbsLines(page) {
 }
 
 const articles = findCassettes('article');
+
+// 卷内文字（URL 都是 ASCII，latin1 解够用）——用来在**产生测试前**就判定该卷是否
+// 含会渲染成 <img> 的连结，而不是跑起来才 test.skip。iframe 类（youtube/twitch）
+// 刻意不算：它们没有 img.hyperLinkPreview 可点，不属于「点图缩放」的适用情境。
+const cassetteText = (c) =>
+  (c.steps || []).map((s) => Buffer.from(s.recv, 'base64').toString('latin1')).join('');
+const IMAGE_LINK_RE =
+  /(\.(?:jpe?g|png|gif|webp|bmp|apng|avif)(?:$|[?#:'"\s]))|imgur\.com|pbs\.twimg\.com|meee\.com\.tw|flic\.kr|flickr\.com/i;
+const withImages = articles.filter((c) => IMAGE_LINK_RE.test(cassetteText(c)));
 
 test.describe('好读模式翻页（离线重放）', () => {
   if (!articles.length) {
@@ -71,6 +86,16 @@ test.describe('好读模式翻页（离线重放）', () => {
 
     // 自动行内开图：好读文章走 inlinePreview=true → 有可预览连结的列旁应出现预览节点。
     // 该卷没有可预览连结（内容相依、已冻结）才 skip。
+    //
+    // REGRESSION（顺序相依 flake）：这条曾经单跑 3/3 绿、整档跑红。根因不是渲染，
+    // 是**离线测试其实在连公网**——预览用的是 cassette 里真实文章的真实图床网址，
+    // 而 waitForSelector 预设 state:'visible'、FallbackImage 在 onLoad 前是
+    // display:none ⇒ 图载不动就永远等不到。整档跑时同一图床被打好几轮（stock-end
+    // 一卷就 9 张）→ 变慢/限流 → 超过 10s。素材本身也已腐烂：stock-huang 的
+    // i.imgur.com/L976tXr .webp 回 404（0.6~4.2s 抖动）、.png 直接 hang（>15s），
+    // 之前会绿纯粹因为 imgur 的 404 页身也是一张可解码 PNG。
+    // 修法在 helpers/replay.js#installOfflineNetwork（本地 fixture 回应），下面的
+    // 「零外流」断言就是这个 bug 的守门：拿掉路由 → served 为空 → 红。
     test(`好读自动行内开图 [${cassette.__file}]`, async ({ page }) => {
       test.setTimeout(90000);
       const PREVIEW_SEL =
@@ -79,6 +104,14 @@ test.describe('好读模式翻页（离线重放）', () => {
         /(\.(?:jpe?g|png|gif|webp|bmp|apng|avif|mp4|webm|ogg)(?:$|[?#]))|imgur\.com|pbs\.twimg\.com|youtu\.?be|youtube\.com|meee\.com\.tw|clips\.twitch\.tv|flic\.kr|flickr\.com/i;
 
       await bootOffline(page, ptt);
+      // 「有请求真的出去了」的证据：page 层看到的外部请求，必须每一笔都被离线
+      // 规则接住（served）。少了路由就会有 URL 出现在这里却不在 served 里。
+      const escaped = [];
+      page.on('request', (r) => {
+        const u = r.url();
+        if (!/^https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:|\/|$)/i.test(u)) escaped.push(u);
+      });
+
       await ptt.applyPrefs(page, { enableEasyReading: true });
       await replayCassette(page, cassette, { easyReading: true });
 
@@ -90,6 +123,15 @@ test.describe('好读模式翻页（离线重放）', () => {
       await page.waitForSelector(PREVIEW_SEL, { timeout: 10000 });
       const previews = await page.evaluate((sel) => document.querySelectorAll(sel).length, PREVIEW_SEL);
       expect(previews).toBeGreaterThan(0);
+
+      // 零外流：预览确实发了外部请求（非空 ⇒ 本断言不是空转），且全数被本地接住。
+      const served = new Set(offlineServedUrls(page));
+      const leaked = escaped.filter((u) => !served.has(u));
+      console.log(
+        `[offline/net] ${cassette.__file}: previews=${previews} external=${escaped.length} served=${served.size}`
+      );
+      expect(escaped.length).toBeGreaterThan(0);
+      expect(leaked).toEqual([]);
     });
 
     // REGRESSION: 单页文章（只走 accumulatePageLines 首页分支）在好读模式下，文章「最后一行」
@@ -152,7 +194,15 @@ test.describe('好读模式翻页（离线重放）', () => {
         expect(m.lastRect.bottom).toBeLessThanOrEqual(m.overlayRect.top + 2);
       }
     });
+  }
 
+  // 「点图缩放」只对**有图片连结**的卷成立（iframe 类没有 img 可点），故按 withImages
+  // 生成 —— 不适用的卷根本不产生测试，而不是跑起来才 test.skip（后者看起来像覆盖漏洞，
+  // 也会把真问题混在里面）。素材本身若一张图都没有则整组显式 skip，不会静默消失。
+  if (!withImages.length) {
+    test.skip('尚无含图片连结的 article cassette（点图缩放无素材）', () => {});
+  }
+  for (const cassette of withImages) {
     // REGRESSION: 好读点图切换「整页放大/缩小」后，捲动位置整个跑掉——放大态卷到
     // 文章中段再点某张图缩小，内容总高骤减但 .main 的 scrollTop 不变 → 视窗落到文章
     // 更后面，刚刚在看的那张图跑出视野。修法：点击当下以「被点的图」为锚点记下它相对
@@ -171,9 +221,9 @@ test.describe('好读模式翻页（离线重放）', () => {
         const SEL = '#mainContainer img.hyperLinkPreview';
         const scroller = document.querySelector('.main');
         const mc = document.getElementById('mainContainer');
-        if (!scroller || !mc) return { skip: 'no scroller/container' };
+        if (!scroller || !mc) return { error: 'no scroller/container' };
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-        // 外部行内图片异步载入会持续撑高内容 → 量测前先等 scrollHeight 连续两轮不变
+        // 行内图片异步载入会撑高内容 → 量测前先等 scrollHeight 连续两轮不变
         //（同本档「末行遮挡」测的作法；stock-end 图多，race 会假红）。
         const settle = async () => {
           let prev = -1, stable = 0;
@@ -195,18 +245,24 @@ test.describe('好读模式翻页（离线重放）', () => {
         scroller.scrollTop = 0;
         await sleep(300);
 
+        // 这三个条件以前是 test.skip 的防御——那是外部图床时代的产物（图载不到就
+        // 跳过，免得网路噪音假红）。图改由本地 fixture 供应后必定载得到，所以「有
+        // 图片连结的文章却一张都没载出来 / 点了不放大 / 放大后图消失」全是真 bug，
+        // 一律硬红，不得再以 skip 掩盖。
         let imgs = loadedImgs();
-        if (imgs.length < 2) return { skip: `loaded imgs = ${imgs.length}` };
+        if (!imgs.length) return { error: 'no inline image rendered' };
 
         // 点第一张 → 整页放大（内容变很长，正是位移最明显的场景）。
         imgs[0].click();
         await sleep(400);
         await settle();
-        if (!mc.classList.contains('imagesEnlarged')) return { skip: 'enlarge did not apply' };
+        if (!mc.classList.contains('imagesEnlarged')) return { error: 'enlarge did not apply' };
         imgs = loadedImgs();
-        if (imgs.length < 2) return { skip: 'imgs vanished after enlarge' };
+        if (!imgs.length) return { error: 'imgs vanished after enlarge' };
 
-        // 取中间那张当锚点（上方有大量被放大的内容 → 缩小时位移最大）。
+        // 取中间那张当锚点（上方压着大量被放大的内容 → 缩小时位移最大）。只有一张时
+        // 就是它自己：位移较小、讯号较弱，但断言完全成立（强情境由 stock-end 的 9
+        // 张涵盖）。
         const img = imgs[Math.floor(imgs.length / 2)];
         const rel = () => img.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
         const viewH = scroller.getBoundingClientRect().height;
@@ -234,7 +290,7 @@ test.describe('好读模式翻页（离线重放）', () => {
       });
 
       console.log(`[anchor] ${cassette.__file}: ${JSON.stringify(r)}`);
-      test.skip(!!r.skip, `此 cassette 无足够已载入的行内图（${r.skip}）`);
+      expect(r.error).toBeUndefined();
       expect(r.enlarged).toBe(false);
       // 核心症状：缩小后该图仍须与视窗相交（旧 code 会卷过头 → 交集 <= 0）。
       expect(r.visible).toBeGreaterThan(0);

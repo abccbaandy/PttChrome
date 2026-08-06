@@ -104,6 +104,49 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 `yarn test:e2e:offline` + `yarn test:unit` 必須**變紅**（首推作者缺席 / commentCount 不符 / 樓號錯位）；
 復原後轉綠。
 
+## 離線網路（`installOfflineNetwork`）—— 「零網路」的另一半
+`stub WebSocket` 只擋掉 **PTT 連線**。行內開圖（`ImagePreviewer`）拿到的是 cassette 裡
+**真實文章的真實圖床網址**，瀏覽器照樣會去連 `i.imgur.com`／`pbs.twimg.com`／`i.urusai.cc`。
+故 `bootOffline()` 另裝 `installOfflineNetwork(page)`（`helpers/replay.js`），把所有非本機
+請求改由本地 fixture 回應。
+
+| 分類 | 判準 | 回應 |
+|---|---|---|
+| `passthrough` | 非 http(s)／host ∈ {localhost,127.0.0.1,::1} | 不進攔截層 |
+| `image` | path+search 命中 `\.(jpe?g\|png\|gif\|webp\|bmp\|apng\|avif)($\|[?#:])` | `tests/e2e/fixtures/preview.png`（800×600，`image/png`） |
+| `imgur-album` | host `api.imgur.com` | 假 JSON，兩張 `i.imgur.com/offline*.png` |
+| `flickr` | host `api.flickr.com` | 假 photo JSON |
+| `blocked` | 其餘（youtube/twitch embed、未知 host） | 404 空身（iframe 的 `load` 與 status 無關，仍觸發） |
+
+- 純函式 `classifyOfflineRequest` 守護在 `tests/unit/offline_network_route.test.js`。
+- 「零外流」守門在 `easy-reading.offline.spec.js` 的行內開圖測（`offlineServedUrls(page)`
+  必須涵蓋 `page.on('request')` 看到的每一筆外部 URL），拿掉路由即紅。
+- **影片副檔名刻意不給 fixture**：現有 cassette 無直連影片。日後錄到影片素材會以
+  「`video` 未 `loadeddata` → `display:none` → 等不到 visible」紅出來，屆時補一支最小 mp4。
+
+### skip 政策（圖片本地化後同步收緊）
+外部圖床時代，媒體相關測試裡塞了不少 `test.skip`（`loaded imgs = 0`、`enlarge did not
+apply`…）當防禦，避免圖載不到就假紅。**圖改本地 fixture 後這些防禦全部失效** —— 圖必定
+載得到，所以那些狀況一律是真 bug，已改為硬失敗（`expect(r.error).toBeUndefined()`）。
+新增媒體測試時比照辦理，別再用 skip 吸收訊號。
+
+適用性判斷則移到**產生測試之前**：`easy-reading.offline.spec.js` 以 `withImages`
+（掃 cassette 內文找圖片連結，iframe 類不算）決定要不要為該卷生成「點圖縮放」測試。
+不適用的卷根本不出現在測試清單裡，而不是跑起來才 skip —— 後者在報告上看起來像覆蓋
+漏洞，也會把真問題混在同一個 skip 理由裡。素材整組為空時才留一個顯式 skip 標記。
+
+### 踩坑（此段修過兩次，別再重來）
+- **`page.route` 必須用述詞過濾，不可用 `'**/*'` + `route.continue()`**：Vite dev server
+  一頁幾百個 module 請求，全部拉進攔截層再 `continue()`（等於每筆重發）會讓整批 offline
+  e2e 大面積逾時，且失敗散落在與圖片毫無關係的 spec（`ui_behavior`／`debug_record`…），
+  極易誤判成別的問題。
+- **twitter 的 `:orig`／`:large` 尾綴**：`pbs.twimg.com/<id>.jpg:orig` 的副檔名後面是 `:`，
+  圖片判準漏掉它 → 落入 `blocked` → 四個候選全 404 → `previewError`。
+- **不要靠「圖床回 404 但身體是圖」僥倖**：`stock-huang` 的 `i.imgur.com/L976tXr` 現在
+  `.webp` 回 404（0.6～4.2s 抖動）、`.png` 直接 hang（>15s）；過去會綠純粹因為 imgur 的
+  404 頁身也是一張可解碼 PNG（`<img>` 不看 HTTP status，body 能 decode 就 `onLoad`）。
+  等於測試早就在測「imgur 的錯誤圖」而非我們的渲染路徑。
+
 ## 踩坑
 - 必須先 `applyPrefs(enableEasyReading:true)` 寫 localStorage **再** `enterEasyReading()`，否則
   `easy_reading.js` 的 `_onChanged` 讀到 pref off 會立刻 `exitEasyReading`。

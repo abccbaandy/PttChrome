@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const CASSETTE_DIR = path.join(__dirname, '..', 'cassettes');
+const FIXTURE_DIR = path.join(__dirname, '..', 'fixtures');
 
 // 读 cassette JSON；不存在回 null（offline spec 据此 skip，直到录制过一次）。
 function loadCassette(name) {
@@ -363,9 +364,119 @@ async function replayListCassette(page, cassette) {
   );
 }
 
-// offline spec 共用：装 stub WS、开页、关掉 Developer modal、等离线连上。
+// ---------------------------------------------------------------------------
+// 离线网路：把「行内开图」会打的**外部**请求全部拦在本地。
+//
+// 为什么必要（踩过的坑，别再拿掉）：stub WebSocket 只挡掉 PTT 连线，行内预览
+// （ImagePreviewer）拿到的是 cassette 里**真实文章的真实图床网址**，浏览器照样
+// 会去连 i.imgur.com / pbs.twimg.com / i.urusai.cc。于是「离线重放」其实依赖公网：
+//   - 名不副实：无网 / CI 出口受限时整批预览测秒挂。
+//   - 顺序相依的 flake：连跑整个 spec 会把同一图床打好几轮 → 变慢/被限流，
+//     `waitForSelector` 预设 state:'visible' 而 FallbackImage 在 onLoad 前是
+//     display:none ⇒ 载不动就永远等不到 → 单跑绿、整档跑红。
+//   - 素材会腐烂：stock-huang 的 i.imgur.com/L976tXr 现在 .webp 回 404（0.6~4.2s
+//     抖动）、.png 直接 hang（>15s）。之前会绿纯粹是因为 imgur 的 404 页身也是一张
+//     可解码的 PNG（<img> 不看 HTTP status，只要 body 能 decode 就 onLoad）——
+//     等于测试早就在测「imgur 的错误图」而不是我们的渲染路径。
+//
+// 故一律回本地固定回应：图片 → tests/e2e/fixtures/preview.png（800×600，会被
+// .easyReadingImg 的 max-height:19em 收敛成固定视觉高度 ⇒ layout 确定性）。
+// 影片副档名**刻意不给** fixture（现有 cassette 无直连影片）：日后录到影片素材时
+// 会以「video 不 loaded」红出来，而不是静默假绿——那时补一支最小 mp4 fixture 即可。
+// 尾綴含 `:`——twitter 的原图是 `<id>.jpg:orig` / `:large`（ImagePreviewer 的 twimg
+// resolver 就是这样组 srcset 的），漏掉它会让 twimg 掉进 'blocked' → 四个候选全 404
+// → previewError，正是本来要修的症状换个方式重现。
+const IMAGE_EXT_RE = /\.(?:jpe?g|png|gif|webp|bmp|apng|avif)(?:$|[?#:])/i;
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+// 纯分类：URL → 该给什么离线回应。抽出来是为了能在 tests/unit 守护
+//（tests/unit/offline_network_route.test.js），e2e 只负责把它接到 page.route。
+//   'passthrough' 本机 dev server / 非 http(s) → 照常走
+//   'image'       图片副档名 → fixture PNG
+//   'imgur-album' / 'flickr' → 各自的假 JSON
+//   'blocked'     其余（iframe embed、未知 host）→ 404 空身
+function classifyOfflineRequest(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (e) {
+    return 'passthrough';
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'passthrough';
+  // app 自己的 bundle / conv 转码表等一律放行（dev server 在本机）。
+  if (LOCAL_HOSTS.has(url.hostname)) return 'passthrough';
+  if (url.hostname === 'api.imgur.com') return 'imgur-album';
+  if (url.hostname === 'api.flickr.com') return 'flickr';
+  if (IMAGE_EXT_RE.test(url.pathname + url.search)) return 'image';
+  return 'blocked';
+}
+
+let previewPngCache = null;
+function previewPng() {
+  if (!previewPngCache) {
+    previewPngCache = fs.readFileSync(path.join(FIXTURE_DIR, 'preview.png'));
+  }
+  return previewPngCache;
+}
+
+// 本次 page 被离线规则接住的外部请求（供「不得有请求逃出去」的守门断言用）。
+const servedByPage = new WeakMap();
+function offlineServedUrls(page) {
+  return servedByPage.get(page) || [];
+}
+
+async function installOfflineNetwork(page) {
+  const served = [];
+  servedByPage.set(page, served);
+  // 用**述词**过滤而非 '**/*' + route.continue()：Vite dev server 一页要发好几百个
+  // module 请求，全部拉进 Playwright 的拦截层再 continue()（等于每一笔都重发一次）
+  // 会把整批 offline e2e 拖到不稳（实测会出现整轮大面积逾时，且与被测 code 无关）。
+  // 述词回 false 的请求根本不进拦截层 → 本机流量零开销。
+  await page.route(
+    (url) => classifyOfflineRequest(url.toString()) !== 'passthrough',
+    (route) => {
+      const raw = route.request().url();
+      const kind = classifyOfflineRequest(raw);
+      if (kind === 'passthrough') return route.continue();
+      served.push(raw);
+      switch (kind) {
+        // imgur 相簿 API：回两张（走 imgurAlbumMedia → 仍会被 'image' 规则接住）。
+        case 'imgur-album':
+          return route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+              data: {
+                images: [
+                  { link: 'https://i.imgur.com/offlineA.png' },
+                  { link: 'https://i.imgur.com/offlineB.png' },
+                ],
+              },
+            }),
+          });
+        case 'flickr':
+          return route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+              photo: { farm: 1, server: '1', id: '1', secret: 'offline' },
+            }),
+          });
+        // 图片：一律回 fixture PNG（content-type 报 image/png，浏览器以内容 sniff
+        // 解码，所以 .jpg/.gif/.webp 网址拿到 PNG 身体照样 onLoad）。
+        case 'image':
+          return route.fulfill({ contentType: 'image/png', body: previewPng() });
+        // 其余（youtube/twitch embed 之类的 iframe、未知 host）：快速 404，不留 hang。
+        // iframe 的 load 事件与 HTTP status 无关，照样触发 → InlineIframe 正常显示。
+        default:
+          return route.fulfill({ status: 404, contentType: 'text/html', body: '' });
+      }
+    }
+  );
+}
+
+// offline spec 共用：装 stub WS、挡外部网路、开页、关掉 Developer modal、等离线连上。
 async function bootOffline(page, ptt) {
   await installReplay(page);
+  await installOfflineNetwork(page);
   await page.goto('/');
   await ptt.dismissDeveloperModeAlert(page);
   await waitConnected(page);
@@ -373,6 +484,10 @@ async function bootOffline(page, ptt) {
 
 module.exports = {
   CASSETTE_DIR,
+  FIXTURE_DIR,
+  installOfflineNetwork,
+  classifyOfflineRequest,
+  offlineServedUrls,
   loadCassette,
   findCassette,
   findCassettes,
