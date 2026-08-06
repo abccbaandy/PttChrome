@@ -60,14 +60,17 @@ applyAiKeep(ruleBlocks, spans, {[imageRow]: keep}) → blocks
 - 每塊用 `session.clone()` 推論：同篇相鄰圖塊內容相似，共用 context 會讓答案互相帶偏。
 - 兩顆按鈕分開（使用者要求）：`#mergeImageCaptionBtn` 三態不變；`#mergeImageCaptionAiBtn` 開 AI
   時若尚未合併會順手開成 imageFirst，再按只關 AI；三態循環回「還原排版」時 AI 一併關掉。
-- 設定：pref `enableCaptionAi`(false) ＋ 「檢查／下載裝置端 AI 模型」按鈕（`#captionAiEnableBtn`，
-  `ensureCaptionAiReady`）。**`availability()` 非 available 時絕不自動 `create()`**——模型下載數 GB，
-  只在使用者按下按鈕（有 user activation）時才觸發。
+- 設定：在設定的 **「AI」分頁**（2026-08 獨立出來），pref `enableAi`(false，總閘門) ＋
+  `enableCaptionAi`(false)；生效條件是兩者 AND，匯總在 `term_view.js#_renderScreenLines`。
+  模型下載由**總開關的勾選**觸發（`prompt_api.js#ensurePromptApiModel`，功能中性、建完即
+  destroy）；舊的 `#captionAiEnableBtn` 已移除。**`availability()` 非 available 時絕不自動
+  `create()`**——模型下載數 GB，只在使用者點擊（有 user activation）時才觸發。分頁細節見
+  `docs/enhanced-addon.md`「設定」節。
 - **session 樣板已抽到共用的 `src/js/prompt_api.js`**（2026-08，第二個 AI 功能「裸網域連結 AI 複核」上線時）：
   availability／依 key 快取 base session／`ensurePromptApiReady`／`destroyPromptApi`／`promptOnce`
   （clone→prompt→timeout→destroy）。`caption_ai.js` 改成薄包裝，**對外 export 簽名一字未改**。
   **依 key 分開快取**：system prompt 決定任務框架，兩功能共用一個 base session 會互相帶偏。
-  那顆下載按鈕現在同時服務兩個功能（模型是 per-origin，只需下載一次）。裸網域那側見 `docs/enhanced-addon.md`。
+  模型是 per-origin，兩功能只需下載一次 → 由 AI 分頁的總開關統一負責。裸網域那側見 `docs/enhanced-addon.md`。
 
 ## 平台事實（developer.chrome.com/docs/ai/prompt-api，2026-08 查證）
 

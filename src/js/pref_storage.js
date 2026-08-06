@@ -52,19 +52,24 @@ export const DEFAULT_PREFS = {
   termSizeMode: "fixed-term-size",
   bbsMargin: 0,
 
+  // 裝置端 AI（Chrome Prompt API）總開關。所有 AI 子功能的生效條件都是
+  // `enableAi && <子 pref>`（AND 於 term_view.js 匯總）——關掉即全部停用，但子
+  // 選項的值原樣保留，重開就回到先前的組合。UI 在設定的 "ai" 分頁。
+  enableAi: false,
+  // 好讀「左圖右文」的裝置端 AI 校正。預設關：模型首次使用要下載數 GB，且只有
+  // Chrome 有 —— 開啟（且總開關開）後文章頁才會多出 AI 浮動按鈕。
+  enableCaptionAi: false,
+  // 裸網域的裝置端 AI 複核。預設關，理由同 enableCaptionAi。開啟後只會**減少**
+  // 誤連的連結（單向收縮），且依附 enableBareDomainLink。
+  enableUrlAi: false,
+
   // enhanced add-on
   showFloorNumbers: true,
   mergeSameAuthorComments: true, // 好讀：連續同作者推文合併成一段
-  // 好讀「左圖右文」的裝置端 AI 校正（Chrome Prompt API）。預設關：模型首次使用
-  // 要下載數 GB，且只有 Chrome 有 —— 開啟後文章頁才會多出 AI 浮動按鈕。
-  enableCaptionAi: false,
   highlightAuthorComments: true,
   enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
   // 裸網域（無 scheme、無路徑，如 indiegametw.com）原位變成可點連結。
   enableBareDomainLink: true,
-  // 裸網域的裝置端 AI 複核（Chrome Prompt API）。預設關，理由同 enableCaptionAi：
-  // 首次使用要下載數 GB 模型且只有 Chrome 有。開啟後只會**減少**誤連的連結。
-  enableUrlAi: false,
   enableXMentionLink: true, // auto-link @handle to x.com when the X account exists
   blacklist: "", // newline-separated user ids
   titleBlacklist: "", // newline-separated title keywords (board-list only)

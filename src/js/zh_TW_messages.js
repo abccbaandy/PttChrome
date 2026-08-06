@@ -100,6 +100,9 @@
   "options_enhance": {
     "message": "增強功能"
   },
+  "options_ai": {
+    "message": "AI 功能"
+  },
   "options_local": {
     "message": "本機設定"
   },
@@ -158,26 +161,41 @@
   "options_mergeSameAuthorComments": {
     "message": "合併連續同作者推文成一段 (僅好讀模式，顯示時間與樓層範圍)"
   },
+  "tooltip_ai": {
+    "message": "以下功能使用瀏覽器內建的裝置端 AI（Chrome Prompt API）。推論完全在你的電腦上進行，內容不會傳到任何伺服器。目前僅 Chrome 148+ 桌面版支援，且模型首次啟用需下載數 GB。"
+  },
+  "options_enableAi": {
+    "message": "啟用裝置端 AI (首次啟用會開始下載模型)"
+  },
+  "options_ai_features": {
+    "message": "細部設定"
+  },
+  "options_aiDownloadBtn": {
+    "message": "開始下載模型"
+  },
   "options_enableCaptionAi": {
-    "message": "圖文並排用裝置端 AI 校正配對 (僅好讀模式；目前僅 Chrome 支援，模型首次使用需下載數 GB)"
+    "message": "圖文並排用 AI 校正配對 (僅好讀模式)"
   },
-  "options_captionAiEnableBtn": {
-    "message": "檢查／下載裝置端 AI 模型"
+  "options_enableUrlAi": {
+    "message": "用 AI 過濾誤判的網址連結"
   },
-  "options_captionAiStatus_unsupported": {
+  "tooltip_enableUrlAi": {
+    "message": "需先在「增強功能」開啟「自動連結沒寫 https:// 的網址」。"
+  },
+  "options_aiStatus_unsupported": {
     "message": "此瀏覽器沒有內建 AI（Prompt API），目前僅 Chrome 148+ 桌面版支援。"
   },
-  "options_captionAiStatus_unavailable": {
+  "options_aiStatus_unavailable": {
     "message": "此裝置無法使用內建 AI（需 22GB 可用空間、16GB 記憶體或 4GB 以上顯示記憶體）。"
   },
-  "options_captionAiStatus_downloadable": {
-    "message": "可用，但模型尚未下載（數 GB）。按上方按鈕開始下載。"
+  "options_aiStatus_downloadable": {
+    "message": "可用，但模型尚未下載（數 GB）。"
   },
-  "options_captionAiStatus_downloading": {
+  "options_aiStatus_downloading": {
     "message": "模型下載中…"
   },
-  "options_captionAiStatus_available": {
-    "message": "裝置端 AI 已就緒。進文章後點右下角「AI 校正配對」按鈕使用。"
+  "options_aiStatus_available": {
+    "message": "裝置端 AI 已就緒。"
   },
   "options_highlightAuthorComments": {
     "message": "高亮原PO本人的推文"
@@ -190,9 +208,6 @@
   },
   "options_enableBareDomainLink": {
     "message": "自動連結沒寫 https:// 的網址 (如 indiegametw.com)"
-  },
-  "options_enableUrlAi": {
-    "message": "用裝置端 AI 過濾誤判的網址連結 (需先下載模型)"
   },
   "options_blacklist": {
     "message": "黑名單 (一行一個帳號)"

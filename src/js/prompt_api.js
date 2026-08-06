@@ -19,6 +19,10 @@
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
+// 總開關暖機用的 system prompt。內容不重要（session 建完即丟），但 create() 需要
+// 一個 initialPrompts；刻意保持中性，不帶任何功能的任務框架。
+const WARMUP_SYSTEM_PROMPT = "You are a helpful assistant.";
+
 const api = () =>
   typeof window !== "undefined" && window.LanguageModel
     ? window.LanguageModel
@@ -75,6 +79,26 @@ export async function ensurePromptApiReady(key, systemPrompt, onProgress) {
     const session = await createSession(systemPrompt, onProgress);
     destroyPromptApi(key);
     sessions.set(key, Promise.resolve(session));
+    return "available";
+  } catch (e) {
+    return await promptApiAvailability();
+  }
+}
+
+// 設定頁的 AI **總開關**用（功能中性）：帶著 user activation 把 per-origin 模型拉
+// 下來（needed 時回報進度），成功後**立刻 destroy**、不寫進 sessions 快取——總開關
+// 不知道使用者接下來要用哪個功能，預先常駐某個功能的 base session 只是白佔記憶體。
+// 各功能的 base session 照舊由 promptOnce → baseSession lazy 建立（那時已 available，
+// create() 不需 user activation）。
+//
+// 守門與 ensurePromptApiReady 相同：'unsupported'/'unavailable' 直接回傳，**絕不**
+// 呼叫 create()（模型數 GB，只在使用者明確要求時才下載）。
+export async function ensurePromptApiModel(onProgress) {
+  const before = await promptApiAvailability();
+  if (before === "unsupported" || before === "unavailable") return before;
+  try {
+    const session = await createSession(WARMUP_SYSTEM_PROMPT, onProgress);
+    if (session && typeof session.destroy === "function") session.destroy();
     return "available";
   } catch (e) {
     return await promptApiAvailability();

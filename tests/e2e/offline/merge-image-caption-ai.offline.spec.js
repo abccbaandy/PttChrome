@@ -48,6 +48,7 @@ test.describe('好讀圖文合併 × 裝置端 AI（離線重放）', () => {
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {
       enableEasyReading: true,
+      enableAi: true, // AI 總開關（設定 → AI 分頁）；子選項要它一起開才生效
       enableCaptionAi: true,
     });
     await replayCassette(page, cassette, { easyReading: true });
@@ -96,6 +97,7 @@ test.describe('好讀圖文合併 × 裝置端 AI（離線重放）', () => {
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {
       enableEasyReading: true,
+      enableAi: true, // AI 總開關（設定 → AI 分頁）；子選項要它一起開才生效
       enableCaptionAi: true,
     });
     await replayCassette(page, cassette, { easyReading: true });

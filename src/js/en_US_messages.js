@@ -100,6 +100,9 @@ export const en_US = {
   "options_enhance": {
     "message": "Enhanced"
   },
+  "options_ai": {
+    "message": "AI"
+  },
   "options_local": {
     "message": "This Device"
   },
@@ -158,26 +161,41 @@ export const en_US = {
   "options_mergeSameAuthorComments": {
     "message": "Merge consecutive comments by the same author into one paragraph (easy reading only; shows time and floor range)"
   },
+  "tooltip_ai": {
+    "message": "These features use the browser's built-in on-device AI (Chrome Prompt API). Inference runs entirely on your machine — nothing is sent to any server. Only Chrome 148+ on desktop supports it, and enabling it downloads a multi-GB model the first time."
+  },
+  "options_enableAi": {
+    "message": "Enable on-device AI (first time starts the model download)"
+  },
+  "options_ai_features": {
+    "message": "Features"
+  },
+  "options_aiDownloadBtn": {
+    "message": "Start model download"
+  },
   "options_enableCaptionAi": {
-    "message": "Use on-device AI to refine image/caption pairing (easy reading only; Chrome only, first use downloads a multi-GB model)"
+    "message": "Use AI to refine image/caption pairing (easy reading only)"
   },
-  "options_captionAiEnableBtn": {
-    "message": "Check / download the on-device AI model"
+  "options_enableUrlAi": {
+    "message": "Use AI to drop mis-detected domain links"
   },
-  "options_captionAiStatus_unsupported": {
+  "tooltip_enableUrlAi": {
+    "message": "Requires \"Auto-link domains written without https://\" in the Enhanced tab."
+  },
+  "options_aiStatus_unsupported": {
     "message": "This browser has no built-in AI (Prompt API); only Chrome 148+ on desktop supports it."
   },
-  "options_captionAiStatus_unavailable": {
+  "options_aiStatus_unavailable": {
     "message": "This device cannot run the built-in AI (needs 22GB free space and 16GB RAM or >4GB VRAM)."
   },
-  "options_captionAiStatus_downloadable": {
-    "message": "Supported, but the model is not downloaded yet (several GB). Press the button above to start."
+  "options_aiStatus_downloadable": {
+    "message": "Supported, but the model is not downloaded yet (several GB)."
   },
-  "options_captionAiStatus_downloading": {
+  "options_aiStatus_downloading": {
     "message": "Downloading the model…"
   },
-  "options_captionAiStatus_available": {
-    "message": "On-device AI is ready. Open an article and press the \"AI caption matching\" button at the bottom right."
+  "options_aiStatus_available": {
+    "message": "On-device AI is ready."
   },
   "options_highlightAuthorComments": {
     "message": "Highlight comments by the original poster"
@@ -190,9 +208,6 @@ export const en_US = {
   },
   "options_enableBareDomainLink": {
     "message": "Auto-link domains written without https:// (e.g. indiegametw.com)"
-  },
-  "options_enableUrlAi": {
-    "message": "Use on-device AI to drop mis-detected domain links (model download required)"
   },
   "options_blacklist": {
     "message": "Blacklist (one user id per line)"

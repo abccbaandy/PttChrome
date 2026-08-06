@@ -169,7 +169,7 @@
 | 層 | 行為 | pref | 預設 |
 |---|---|---|---|
 | 規則 `bare_domain.js` | 裸網域**預設連**，三道守則排除提及型 | `enableBareDomainLink` | 開 |
-| AI `url_ai.js` | 只能**撤掉**規則已允許的連結（單向收縮），永不新增 | `enableUrlAi` | 關 |
+| AI `url_ai.js` | 只能**撤掉**規則已允許的連結（單向收縮），永不新增 | `enableAi && enableUrlAi` | 關 |
 
 → AI 關／不支援／逾時／垃圾回覆 ⇒ 結果恆等於純規則結果。與 `merge-caption-ai-assist` 的零回歸同構，**方向相反**
 （那邊 AI 單向擴張、這邊單向收縮）。
@@ -197,8 +197,8 @@
   接線在 `Screen`：`computeAnnotations` 收 `result.domainCands`/`domainCandsSig`（**套判決前**的候選，簽章才不抖），
   effect 依 `[urlAiEnabled, domainCandsSig]` 漸進推論。**無浮動按鈕**——這是壓誤判、不是使用者要切換的排版。
 - session 樣板抽在共用的 `src/js/prompt_api.js`（`caption_ai.js` 也改建其上，export 簽名不變）：
-  依 key 分別快取 base session（system prompt 決定任務框架，共用會互相帶偏）。模型下載共用設定頁那顆
-  `#captionAiEnableBtn`（模型是 per-origin，兩功能只需下載一次）。
+  依 key 分別快取 base session（system prompt 決定任務框架，共用會互相帶偏）。模型下載由設定「AI」
+  分頁的**總開關**觸發（模型是 per-origin，兩功能只需下載一次），見下「設定」節。
 
 ## X(Twitter) @帳號自動連結（`src/js/mention_parse.js`）
 內文/推文出現 `@帳號`→做成連 `https://x.com/帳號` 的連結。**存在性驗證目前 OFF**（見下「驗證」）：所有格式合格 `@handle` 一律連結，可能連到不存在帳號。
@@ -210,16 +210,37 @@
 - **驗證為何 OFF（CONFIRMED 2026-06 實測，外部事實）**：純前端無可行探測法——unavatar 免費版每日僅 25 次（`X-Rate-Limit-Limit:25`）且 `<img>` `onerror` 無法區分 404 與 429 → 限流期會把存在帳號誤標 invalid；直連 x.com 存在/不存在 HTTP **都回 200**（SPA）；官方 API 需付費 bearer 且無瀏覽器 CORS；syndication 端點 ACAO 鎖 `platform.twitter.com`。
   - **唯一可行路＝自建 worker**：server-side 用**一般瀏覽器 UA** `fetch('https://x.com/<handle>')`，存在帳號 HTML `<title>Name (@handle) / X`、不存在 title 空（facebookexternalhit/Twitterbot UA 一律回 404，**勿用**）。worker 回小 JSON＋Cloudflare KV 快取；前端只快取明確「不存在」、429/錯誤不快取。風險：X 對 Cloudflare 出口 IP 可能另眼相待，部署後需實測。
 
-## 設定（`PrefModal.jsx` 「增強功能」分頁）
-pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）：
-`showFloorNumbers`(true)、`highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、
-`enableBareDomainLink`(true)、`enableUrlAi`(false，依附前者；unsupported/unavailable 時 checkbox disabled)、`blacklist`("" 換行)、
-`autoLogin`(false)、`autoLoginUser/Password`(""；
-**password 在支援 Credential API 的瀏覽器不落地**，見「自動登入」節)、
-`autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true)、
-`enableCaptionAi`(false，好讀圖文並排的裝置端 AI 校正；同分頁另有「檢查／下載模型」按鈕
-`#captionAiEnableBtn`，見 `docs/merge-caption-ai-assist.md`)。套用見 `pttchrome.onPrefChange`
+## 設定（`PrefModal.jsx`）
+pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用見 `pttchrome.onPrefChange`
 （`showFloorNumbers`/`blacklist`→`view.*`+`redraw(true)`）。i18n 鍵在 zh_TW/en_US `options_*`。
+
+**「增強功能」分頁**：`showFloorNumbers`(true)、`mergeSameAuthorComments`(true)、
+`highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、
+`enableBareDomainLink`(true)、`blacklist`/`titleBlacklist`("" 換行)、
+`autoLogin`(false)、`autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true)。
+（`autoLoginUser/Password` 在「本機設定」分頁——local-only、不上雲；**password 在支援
+Credential API 的瀏覽器不落地**，見「自動登入」節。）
+
+**「AI」分頁**（2026-08 從增強功能分頁獨立出來）——所有裝置端 AI 設定收攏於此：
+
+| pref | 預設 | 角色 |
+|---|---|---|
+| `enableAi` | false | **總閘門**。勾選＝帶著 user activation 觸發模型下載（`prompt_api.js#ensurePromptApiModel`）；取消勾選＝`destroyPromptApi()` 釋放常駐 session |
+| `enableCaptionAi` | false | 好讀圖文並排的 AI 校正配對（`docs/merge-caption-ai-assist.md`） |
+| `enableUrlAi` | false | 裸網域連結的 AI 複核（本文上一節），另依附 `enableBareDomainLink` |
+
+- **AND 的單一 choke point 在 `term_view.js#_renderScreenLines`**：`captionAiEnabled = enableAi &&
+  enableCaptionAi`、`urlAiEnabled = enableAi && enableBareDomainLink && enableUrlAi`。子功能不各自查總開關。
+- 總開關關閉時子選項只是**反灰、值原樣保留**（重開即回到先前組合），不清空。
+- **不支援的瀏覽器／裝置：分頁照常顯示、全部反灰＋狀態說明**（`options_aiStatus_*` 五態），
+  使用者才知道有這功能與為何不能用。判斷一律以 `availability()` 探測結果為準。
+- 補救鈕 `#aiDownloadBtn` **只在 `enableAi=true && availability='downloadable'` 時出現**：prefs 會跨
+  裝置同步，換一台機器時勾選那次的 user activation 早就用掉了，沒有別的入口能觸發下載。
+- 舊的常駐下載鈕 `#captionAiEnableBtn` 已移除（其職責併入總開關）。`ensureCaptionAiReady`／
+  `ensureUrlAiReady` 仍存在但 app 不再呼叫（前者供 `tools/caption-ai-eval.html`）。
+- 守護：`tests/unit/pref_modal_ai_tab.test.jsx`（分頁 UI 契約）、`tests/unit/prompt_api_model.test.js`
+  （暖機入口不偷下載／建完即毀）、`ui_behavior.offline.spec.js`（分頁切換＋三種 availability 的反灰）、
+  `bare-domain-link.offline.spec.js`（總開關關閉時子選項開著也不推論）。
 
 ## 自動登入：`src/js/auto_login.js`
 `App` constructor `new AutoLogin(this)`；`onConnect` 末尾 `start()`（async fire-and-forget）。**自走
@@ -269,7 +290,11 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 `enhance.spec.js` 紅。
 - **要算「逐列欄位位置（col）」一律走 `TermChar[]`，勿掃 `rowToText` 後字串**。Big5 DBCS **trail byte 可能=0x40(`@`)**（其他 ASCII 標點同理）→ 掃字串會在中文內誤命中、且 string index ≠ TermChar col（DBCS 佔 2 cols）。逐列遇 `isLeadByte` 跳 2 格、只在單 byte ASCII 比對（同 `rowToText` 走訪）。實例：`mention_parse.detectMentions`（X @帳號），守護有「trail byte 0x40 不誤判」case。
 - **e2e flake 常態**：最新文章常無推文（測樓層/黑名單從 End 往舊文找）；guest 名額滿用 env `PTT_USER/PTT_PASS`；偶發 403/ECONNRESET（PTT 端）。
-- **裝置端 AI（`window.LanguageModel`）的存在 ≠ 可用**：Playwright 的 Chromium 有這個 global，但沒有模型元件（`availability()` 回 `'unavailable'`）。任何「要不要顯示 AI 功能」的判斷一律以 **`availability()` 探測結果**為準，勿用 `typeof window.LanguageModel`——否則會出現一顆按下去每次都 fallback 的假按鈕。中文也**不在** Prompt API 官方支援語言（en/ja/es/de/fr）內，故 `expectedInputs` 一律不傳語言（傳了可能丟 `NotSupportedError`）。見 `docs/merge-caption-ai-assist.md`。
+- **裝置端 AI（`window.LanguageModel`）的存在 ≠ 可用**：Playwright 的 Chromium 有這個 global，但沒有模型。任何「要不要顯示 AI 功能」的判斷一律以 **`availability()` 探測結果**為準，勿用 `typeof window.LanguageModel`——否則會出現一顆按下去每次都 fallback 的假按鈕。中文也**不在** Prompt API 官方支援語言（en/ja/es/de/fr）內，故 `expectedInputs` 一律不傳語言（傳了可能丟 `NotSupportedError`）。見 `docs/merge-caption-ai-assist.md`。
+  - **e2e 別斷言 Chromium 的 availability 實際回值**（2026-08 實測）：在真實 origin 下它回的是
+    **`'downloadable'`**（不是舊筆記寫的 `'unavailable'`；`about:blank` 下則整個 global 都沒有）。
+    這個值會隨 browser 版本漂移 → 要測「不支援／裝置不符」的分支，一律用 `addInitScript` stub
+    `window.LanguageModel`（或 `delete` 它）明確驅動，見 `ui_behavior.offline.spec.js` 的 AI 分頁三條。
 - **在測試/工具裡直接餵 cassette 進 `TermBuf` 後讀 `getRowText`，必須先讓事件回圈跑一拍**（unit 用 `vi.advanceTimersByTime(300)`、瀏覽器用 `await sleep(120)`）：`isLeadByte` 只在 buf 的 update pass（notify 30ms + settle 50ms）才標記，沒跑完就讀會拿到**未轉碼的 Big5 位元組**（症狀：整片 `§@ªÌ` 亂碼，看起來像編碼表沒載）。
 
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）

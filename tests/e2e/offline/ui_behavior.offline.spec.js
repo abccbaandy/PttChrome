@@ -52,7 +52,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(page.locator('.PrefModal input[name="proxyUrl"]')).toBeVisible();
   });
 
-  test('PrefModal 分頁切換：general → enhance → local → about 內容對應切換', async ({ page }) => {
+  test('PrefModal 分頁切換：general → enhance → ai → local → about 內容對應切換', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
     await ptt.dismissDeveloperModeAlert(page);
@@ -68,6 +68,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     const proxyUrl = page.locator('.PrefModal input[name="proxyUrl"]');     // general only
     const blacklist = page.locator('.PrefModal textarea[name="blacklist"]'); // enhance only
     const autoLoginUser = page.locator('.PrefModal input[name="autoLoginUser"]'); // local only
+    const enableAi = page.locator('.PrefModal input[name="enableAi"]');      // ai only
 
     // 起始：general 可見
     await expect(proxyUrl).toBeVisible();
@@ -78,6 +79,14 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(blacklist).toBeVisible();
     await expect(proxyUrl).toBeHidden();
     await expect(autoLoginUser).toBeHidden();
+    await expect(enableAi).toBeHidden(); // AI 設定已全數移出增強功能分頁
+
+    // → ai（裝置端 AI 總開關 + 細部設定）
+    await nav.getByText(await label(page, 'options_ai'), { exact: true }).click();
+    await expect(enableAi).toBeVisible();
+    await expect(page.locator('.PrefModal input[name="enableCaptionAi"]')).toBeVisible();
+    await expect(page.locator('.PrefModal input[name="enableUrlAi"]')).toBeVisible();
+    await expect(blacklist).toBeHidden();
 
     // → local（帳密 + 上班模式所在的本機設定分頁）
     await nav.getByText(await label(page, 'options_local'), { exact: true }).click();
@@ -95,6 +104,67 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     // → 回 general
     await nav.getByText(await label(page, 'options_general'), { exact: true }).click();
     await expect(proxyUrl).toBeVisible();
+  });
+
+  // 未支援（其他瀏覽器）／裝置不符：AI 分頁**照常顯示**，但總開關與所有子選項
+  // 一律反灰並給出狀態說明——使用者才知道有這功能與為何不能用。
+  //
+  // 兩種狀態都用 stub 驅動，**不靠 runner 當下的實際能力**：這版 Playwright 的
+  // Chromium 在真實 origin 下 availability() 其實回 'downloadable'（不是舊筆記寫的
+  // 'unavailable'），依環境斷言會隨 browser 版本漂移。
+  for (const [name, state, initScript] of [
+    ['unsupported（其他瀏覽器沒有 Prompt API）', 'unsupported',
+      () => { delete window.LanguageModel; }],
+    ['unavailable（裝置規格不符）', 'unavailable',
+      () => {
+        window.LanguageModel = {
+          availability: () => Promise.resolve('unavailable'),
+          create: () => Promise.reject(new Error('should not be called')),
+        };
+      }],
+  ]) {
+    test(`PrefModal AI 分頁：${name} → 全部反灰且有狀態說明`, async ({ page }) => {
+      await page.addInitScript(initScript);
+      await installReplay(page);
+      await page.goto('/');
+      const nav = await openSettings(page);
+
+      await nav.getByText(await label(page, 'options_ai'), { exact: true }).click();
+      const master = page.locator('.PrefModal input[name="enableAi"]');
+      await expect(master).toBeVisible(); // 分頁本身照常顯示
+      await expect(master).toBeDisabled();
+      await expect(page.locator('.PrefModal input[name="enableCaptionAi"]')).toBeDisabled();
+      await expect(page.locator('.PrefModal input[name="enableUrlAi"]')).toBeDisabled();
+
+      await expect(
+        page.locator('.PrefModal').getByText(await label(page, 'options_aiStatus_' + state))
+      ).toBeVisible();
+    });
+  }
+
+  // 可用但模型還沒下載：分頁能用（總開關可勾），子選項仍等總開關開了才解鎖。
+  test('PrefModal AI 分頁：模型可下載時總開關可勾，子選項仍依附總開關', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.LanguageModel = {
+        availability: () => Promise.resolve('downloadable'),
+        // 勾選才會呼叫（user activation）；這裡直接給一顆假 session。
+        create: () => Promise.resolve({ destroy: () => {} }),
+      };
+    });
+    await installReplay(page);
+    await page.goto('/');
+    const nav = await openSettings(page);
+
+    await nav.getByText(await label(page, 'options_ai'), { exact: true }).click();
+    const master = page.locator('.PrefModal input[name="enableAi"]');
+    await expect(master).toBeEnabled();
+    // 預設 enableAi=false → 子選項反灰（總閘門）。
+    const caption = page.locator('.PrefModal input[name="enableCaptionAi"]');
+    await expect(caption).toBeDisabled();
+
+    await page.locator('.PrefModal label[for="pref-check-enableAi"]').click();
+    await expect(master).toBeChecked();
+    await expect(caption).toBeEnabled();
   });
 
   test('PrefModal 勾選 + 關閉：值寫入 localStorage 且 modal 消失', async ({ page }) => {

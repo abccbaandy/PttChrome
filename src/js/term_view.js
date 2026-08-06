@@ -118,8 +118,12 @@ export function TermView() {
   // 好讀「連續同作者推文合併」：render 層合併（Screen#computeAnnotations +
   // comment_merge.js），僅好讀文章頁生效。Set via App.onPrefChange.
   this.mergeSameAuthorComments = true;
-  // 好讀「左圖右文」的裝置端 AI 校正開關（Chrome Prompt API）。只是「讓 AI 浮動
-  // 按鈕出得來」，實際推論仍要使用者按下該按鈕。Set via App.onPrefChange.
+  // 裝置端 AI（Chrome Prompt API）總開關。每個 AI 子功能的生效條件都是
+  // `enableAi && <子開關>`，AND 在下面 _renderScreenLines 匯總（單一 choke point）。
+  // Set via App.onPrefChange.
+  this.enableAi = false;
+  // 好讀「左圖右文」的裝置端 AI 校正開關。只是「讓 AI 浮動按鈕出得來」，實際推論
+  // 仍要使用者按下該按鈕。Set via App.onPrefChange.
   this.enableCaptionAi = false;
   // Same-author comment highlighting: tint comments written by the 原PO.
   // _articleAuthor is parsed from the article header (first page only) and kept
@@ -557,13 +561,14 @@ TermView.prototype = {
           titleBlacklist: this.titleBlacklist,
           showFloorNumbers: this.showFloorNumbers,
           mergeSameAuthorComments: this.mergeSameAuthorComments,
-          captionAiEnabled: this.enableCaptionAi,
+          captionAiEnabled: this.enableAi && this.enableCaptionAi,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,
           selectedPusher: this._selectedPusher,
           autoFixUrl: this.enableAutoFixUrl,
           bareDomainLink: this.enableBareDomainLink,
-          urlAiEnabled: this.enableBareDomainLink && this.enableUrlAi,
+          urlAiEnabled:
+            this.enableAi && this.enableBareDomainLink && this.enableUrlAi,
           enableXMention: this.enableXMention,
           pageState: this.buf.pageState,
           // Floor numbers only count correctly across page-downs in easy reading

@@ -23,9 +23,10 @@ import {
 } from "../../js/pref_storage";
 import * as prefSync from "../../js/pref_sync";
 import {
-  captionAiAvailability,
-  ensureCaptionAiReady,
-} from "../../js/caption_ai";
+  promptApiAvailability,
+  ensurePromptApiModel,
+  destroyPromptApi,
+} from "../../js/prompt_api";
 import { deepEqual } from "../../js/pref_sync_logic";
 import "./PrefModal.css";
 
@@ -141,30 +142,44 @@ export const PrefModal = ({
   const [values, setValues] = useState(readValuesWithDefault);
   const [syncUser, setSyncUser] = useState(null);
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | synced | error
-  // 裝置端 AI（好讀圖文並排的 AI 校正）：unsupported | unavailable | downloadable
-  // | downloading | available。開啟本 tab 時查一次；按鈕按下去才可能觸發下載
-  // （Prompt API 的模型下載需要 user activation）。
-  const [captionAiState, setCaptionAiState] = useState(null);
-  const [captionAiProgress, setCaptionAiProgress] = useState(null);
+  // 裝置端 AI（Prompt API）可用性：unsupported | unavailable | downloadable |
+  // downloading | available。掛載時查一次；**下載只由使用者的點擊觸發**
+  // （Prompt API 的模型下載需要 user activation，且模型有數 GB）。
+  const [aiState, setAiState] = useState(null);
+  const [aiProgress, setAiProgress] = useState(null);
   const { colorScheme, setColorScheme } = useMantineColorScheme();
 
   useEffect(() => {
     let alive = true;
-    captionAiAvailability().then((a) => alive && setCaptionAiState(a));
+    promptApiAvailability().then((a) => alive && setAiState(a));
     return () => {
       alive = false;
     };
   }, []);
 
-  const onCaptionAiEnableClick = useCallback(() => {
-    setCaptionAiState("downloading");
-    ensureCaptionAiReady((loaded) =>
-      setCaptionAiProgress(Math.round(loaded * 100)),
+  const startAiDownload = useCallback(() => {
+    setAiState("downloading");
+    ensurePromptApiModel((loaded) =>
+      setAiProgress(Math.round(loaded * 100)),
     ).then((a) => {
-      setCaptionAiState(a);
-      setCaptionAiProgress(null);
+      setAiState(a);
+      setAiProgress(null);
     });
   }, []);
+
+  // AI 總開關：不能走通用的 onCheckboxChange——勾選要順帶帶著 user activation 觸發
+  // 模型下載，取消勾選要把常駐的 session 釋放掉（模型佔記憶體）。
+  const onAiMasterChange = useCallback(
+    ({ target: { checked } }) => {
+      setValues((v) => changeNestedValue(v, "enableAi", !!checked));
+      if (!checked) {
+        destroyPromptApi();
+        return;
+      }
+      startAiDownload();
+    },
+    [startAiDownload],
+  );
 
   const onCloseClick = useCallback(() => {
     // Untouched form → nothing to persist or upload; uploading anyway
@@ -253,6 +268,12 @@ export const PrefModal = ({
     }
   }, [show]);
 
+  // 這台機器根本用不了（沒 API／裝置不符）→ 連總開關都不給勾。null（還在探測）
+  // 不算 unusable，避免開啟面板的瞬間閃一下反灰。
+  const aiUnusable = aiState === "unsupported" || aiState === "unavailable";
+  // 子選項＝總閘門關閉或機器用不了就反灰（值保留，重開即回復先前組合）。
+  const aiSubDisabled = !values.enableAi || aiUnusable;
+
   return (
     <Modal
       opened={show}
@@ -283,6 +304,7 @@ export const PrefModal = ({
             <Tabs.List>
               <Tabs.Tab value="general">{i18n("options_general")}</Tabs.Tab>
               <Tabs.Tab value="enhance">{i18n("options_enhance")}</Tabs.Tab>
+              <Tabs.Tab value="ai">{i18n("options_ai")}</Tabs.Tab>
               <Tabs.Tab value="local">{i18n("options_local")}</Tabs.Tab>
               <Tabs.Tab value="about">{i18n("options_about")}</Tabs.Tab>
             </Tabs.List>
@@ -657,37 +679,6 @@ export const PrefModal = ({
                   {i18n("options_mergeSameAuthorComments")}
                 </PrefCheckbox>
                 <PrefCheckbox
-                  name="enableCaptionAi"
-                  checked={values.enableCaptionAi}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableCaptionAi")}
-                </PrefCheckbox>
-                <div style={{ marginBottom: "0.5rem" }}>
-                  <Button
-                    id="captionAiEnableBtn"
-                    variant="default"
-                    size="xs"
-                    onClick={onCaptionAiEnableClick}
-                    disabled={
-                      !(values.enableCaptionAi || values.enableUrlAi) ||
-                      captionAiState === "unsupported" ||
-                      captionAiState === "unavailable" ||
-                      captionAiState === "downloading"
-                    }
-                  >
-                    {i18n("options_captionAiEnableBtn")}
-                  </Button>
-                  {captionAiState && (
-                    <Text size="xs" c="dimmed" mt={4}>
-                      {i18n("options_captionAiStatus_" + captionAiState)}
-                      {captionAiProgress !== null
-                        ? " " + captionAiProgress + "%"
-                        : ""}
-                    </Text>
-                  )}
-                </div>
-                <PrefCheckbox
                   name="highlightAuthorComments"
                   checked={values.highlightAuthorComments}
                   onChange={onCheckboxChange}
@@ -714,21 +705,6 @@ export const PrefModal = ({
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableBareDomainLink")}
-                </PrefCheckbox>
-                {/* AI 複核依附裸網域連結：後者關掉時前者無事可做。模型下載共用
-                    上方那顆「啟用裝置端 AI」按鈕（模型是 per-origin 的，兩個
-                    功能只需下載一次）。 */}
-                <PrefCheckbox
-                  name="enableUrlAi"
-                  checked={values.enableUrlAi}
-                  disabled={
-                    !values.enableBareDomainLink ||
-                    captionAiState === "unsupported" ||
-                    captionAiState === "unavailable"
-                  }
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableUrlAi")}
                 </PrefCheckbox>
                 <Textarea
                   label={i18n("options_blacklist")}
@@ -779,6 +755,72 @@ export const PrefModal = ({
                 >
                   {i18n("options_autoLoginSkipWelcome")}
                 </PrefCheckbox>
+              </fieldset>
+            </Tabs.Panel>
+            {/* AI 分頁：所有裝置端 AI（Chrome Prompt API）設定收攏於此。
+                enableAi 是**總閘門**——每個子功能的生效條件都是 `enableAi && <子
+                pref>`（AND 在 term_view.js 匯總），總開關關掉時子選項只是反灰，
+                值原樣保留。不支援的瀏覽器**分頁照常顯示**、全部反灰＋狀態說明，
+                使用者才知道有這功能與為何不能用。
+                顯示與否一律看 availability() 探測結果，勿用 typeof
+                window.LanguageModel（Chromium 有 global 但沒模型，見
+                docs/enhanced-addon.md 踩坑 A）。 */}
+            <Tabs.Panel value="ai">
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_ai")}</legend>
+                <Text className="PrefModal__warning">{i18n("tooltip_ai")}</Text>
+                <PrefCheckbox
+                  name="enableAi"
+                  checked={values.enableAi}
+                  disabled={aiUnusable || aiState === "downloading"}
+                  onChange={onAiMasterChange}
+                >
+                  {i18n("options_enableAi")}
+                </PrefCheckbox>
+                {aiState && (
+                  <Text size="xs" c="dimmed" mb="xs">
+                    {i18n("options_aiStatus_" + aiState)}
+                    {aiProgress !== null ? " " + aiProgress + "%" : ""}
+                  </Text>
+                )}
+                {/* 補救鈕：prefs 會跨裝置同步，換一台機器時 enableAi 已是 true 但
+                    模型還沒下載 → 勾選那次的 user activation 早就用掉了，沒有別的
+                    入口可以觸發下載。只在這個狀態出現，available 後自動消失。 */}
+                {values.enableAi && aiState === "downloadable" && (
+                  <Button
+                    id="aiDownloadBtn"
+                    variant="default"
+                    size="xs"
+                    mb="xs"
+                    onClick={startAiDownload}
+                  >
+                    {i18n("options_aiDownloadBtn")}
+                  </Button>
+                )}
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_ai_features")}</legend>
+                <PrefCheckbox
+                  name="enableCaptionAi"
+                  checked={values.enableCaptionAi}
+                  disabled={aiSubDisabled}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableCaptionAi")}
+                </PrefCheckbox>
+                {/* AI 複核依附「增強功能」分頁的裸網域自動連結：它只能撤掉規則已
+                    允許的連結（單向收縮），規則關掉時無事可做。 */}
+                <PrefCheckbox
+                  name="enableUrlAi"
+                  checked={values.enableUrlAi}
+                  disabled={aiSubDisabled || !values.enableBareDomainLink}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableUrlAi")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_enableUrlAi")}
+                </Text>
               </fieldset>
             </Tabs.Panel>
             {/* local-only 分頁：這裡的設定僅存本機、絕不上雲（LOCAL_ONLY_PREF_KEYS

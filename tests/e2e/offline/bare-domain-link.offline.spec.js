@@ -93,6 +93,7 @@ test.describe('裸網域自動連結（離線重放）', () => {
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {
       enableEasyReading: false,
+      enableAi: true,
       enableBareDomainLink: true,
       enableUrlAi: true,
     });
@@ -106,6 +107,27 @@ test.describe('裸網域自動連結（離線重放）', () => {
     expect(await page.evaluate(() => window.__lmPrompts || 0)).toBeGreaterThan(0);
   });
 
+  // 總閘門：AI 分頁的 enableAi 關掉時，子選項就算是 true 也完全不生效
+  // （term_view.js 的 `enableAi && ...` AND）。與上一條共用會判 false 的 stub，
+  // 差別只在 enableAi —— 連結留著＋一次推論都沒送出。
+  test('AI 總開關關閉 → 子選項開著也不推論（行為等同純規則）', async ({ page }) => {
+    test.setTimeout(90000);
+    await page.addInitScript(STUB_LM_FALSE);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: false,
+      enableAi: false,
+      enableBareDomainLink: true,
+      enableUrlAi: true,
+    });
+    await replayCassette(page, cassette, { easyReading: false });
+
+    await writeRow(page, 'go indiegametw.com now');
+    await page.waitForTimeout(1500); // 給「若真有推論早該回來」的餘裕
+    await expect(page.locator('a.bareDomainLink')).toHaveCount(1);
+    expect(await page.evaluate(() => window.__lmPrompts || 0)).toBe(0);
+  });
+
   test('沒有 Prompt API → 連結原封保留（行為等同純規則）', async ({ page }) => {
     test.setTimeout(90000);
     await page.addInitScript(() => {
@@ -114,6 +136,7 @@ test.describe('裸網域自動連結（離線重放）', () => {
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {
       enableEasyReading: false,
+      enableAi: true,
       enableBareDomainLink: true,
       enableUrlAi: true, // 開著也一樣：availability 不支援 → 一律 fallback 保留
     });

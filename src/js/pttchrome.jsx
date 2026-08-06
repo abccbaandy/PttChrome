@@ -885,6 +885,10 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.mergeSameAuthorComments = value;
       this.view.redraw(true);
       break;
+    case 'enableAi':
+      this.view.enableAi = value;
+      this.view.redraw(true);
+      break;
     case 'enableCaptionAi':
       this.view.enableCaptionAi = value;
       this.view.redraw(true);
