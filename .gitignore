@@ -8,6 +8,9 @@ node_modules
 
 # yarn 專案，勿用 npm
 package-lock.json
+# 例外：proxy/ 下是與 app 完全獨立的 Cloudflare Worker 專案（自己的 package.json，
+# 不進 yarn workspace），用 npm 管理，lock 檔要入 repo 以鎖定 wrangler 版本。
+!proxy/**/package-lock.json
 
 # Playwright E2E
 test-results/

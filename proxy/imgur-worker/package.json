@@ -1,0 +1,17 @@
+{
+  "name": "ptt-imgur-cache-worker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cloudflare Worker: i.imgur.com 快取代理（解台灣→imgur Fastly BUR POP 的跨太平洋 stall）",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "usage": "node scripts/usage.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "wrangler": "^4.69.0",
+    "vitest": "^4.0.0"
+  }
+}

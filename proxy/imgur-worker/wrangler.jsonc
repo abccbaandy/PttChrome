@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ptt-imgur-cache",
+  "main": "src/index.js",
+  // Workers Cache（cache.enabled）需 compatibility_date 夠新 + wrangler >= 4.69.0
+  "compatibility_date": "2026-08-01",
+
+  // 關鍵：讓 Cloudflare 在「呼叫 Worker 之前」查快取。
+  // HIT 時 Worker 完全不執行 → 不吃 CPU 額度，回應直接從最近 POP（台灣 = TPE）吐出。
+  // 這是新機制，與舊的 caches.default（Cache API）不同：舊的在 *.workers.dev 上是 no-op，
+  // 新的在 workers.dev / 自訂網域 / service binding 都生效，free plan 可用。
+  "cache": {
+    "enabled": true,
+
+    // 預設 false ＝ Worker 版本是快取鍵的一部分，**每次 deploy 都把快取全部作廢**、
+    // 命中率從零重算。imgur 資產以 hash 定址、內容永不變，跨版本共用完全安全，
+    // 所以這裡必須開。（唯一風險是改了本 Worker 的回應內容後仍會吐舊回應——若真要
+    // 強制汰換，改路徑前綴或用 Cache-Tag purge，不要把這個關回 false。）
+    "cross_version_cache": true
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}
