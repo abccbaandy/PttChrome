@@ -8,6 +8,7 @@ import {
   RE_MEEE,
   flickrBase58Decode,
 } from "../js/image_url_detect";
+import { probeImgurAsset } from "../js/imgur_probe";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 
 const noop = () => {};
@@ -412,14 +413,38 @@ const IMGUR_CLIENT_IDS = [
 // gif 10.85 MB／完整動畫 → webp 27950 B／VP8 static、零 ANMF frame），而且 <img>
 // 會 onload 成功 → FallbackImage 不會退回，動圖直接被靜音成一張圖。
 //
-// 而且 **imgur 忽略 URL 副檔名**，一律回儲存的原始格式（實測 `auVUJzV.jpg` 與
-// `.png` 都回 image/gif 完整動畫；`ofT90A6.png`/`.gif` 都回 image/jpeg）。所以
-// URL 副檔名**不是**可靠的動圖判準——只有它明確寫著靜態格式時才敢要 webp；未知
-// （無副檔名，imgur 分享連結的預設形式）一律維持原檔，寧可放棄優化也不冒險。
-// gif→mp4（ptt-media-preview term.js 的做法）也不採用：動畫與尺寸雖然都保住，但
+// 而且 **imgur 對圖片原檔忽略 URL 副檔名**，一律回儲存的原始格式（實測
+// `auVUJzV.jpg` 與 `.png` 都回 image/gif 完整動畫；`ofT90A6.png`/`.gif` 都回
+// image/jpeg）。所以 URL 副檔名**不是**可靠的動圖判準——只有它明確寫著靜態格式時
+// 才敢直接要 webp；未知（無副檔名，imgur 分享連結的預設形式）與 gif 系副檔名改走
+// HEAD 探測（src/js/imgur_probe.js）判定真實型別。
+// gif→mp4（ptt-media-preview term.js 的做法）不採用：動畫與尺寸雖然都保住，但
 // imgur 的 mp4 衍生有嚴重長尾（真瀏覽器實測 1.1 MB 花 65～67s），比直接載 10 MB
 // 的 gif（4/4 穩定 2.3s）更差。數據見 docs/media-preview-addons.md。
 const STATIC_IMGUR_EXT = new Set(["jpg", "jpeg", "png"]);
+
+// 探測結果 → descriptor。「原始檔就是影片」的資產（現代 imgur 把上傳的動畫存成
+// video/mp4）只有 .mp4 會動，任何圖片副檔名都只回單幀靜態縮圖，且 <img> 會 onload
+// 成功 → FallbackImage 不會退回 ⇒ 動圖被靜音（回報案例 imgur.com/lP0NHpE）。
+const imgurMediaFromProbe = (id, kind) => {
+  const base = `https://i.imgur.com/${id}`;
+  switch (kind) {
+    case "video":
+      return { type: "video", src: `${base}.mp4` };
+    case "gif":
+      return { type: "image", src: `${base}.gif` };
+    case "static":
+      // 探測確認是真靜態圖，才敢吃 webp 優化（未探測前一律不敢碰）。
+      return {
+        type: "image",
+        src: `${base}.webp`,
+        srcset: [`${base}.webp`, `${base}.jpg`],
+      };
+    default:
+      // 探測失敗／非圖片回應：維持舊行為（.jpg 對圖片原檔仍拿得到原檔）。
+      return { type: "image", src: `${base}.jpg` };
+  }
+};
 
 // ext 可為 undefined（無副檔名）——那正是最危險的一類，必須與「明確寫著 .jpg」
 // 區分開來，不可在呼叫端先補預設值。
@@ -493,9 +518,17 @@ const imageUrlResolvers = [
     },
     request(src) {
       const [, id, ext] = this.regex.exec(src);
-      let e = ext && ext.toLowerCase();
-      if (e === "gifv") e = "gif";
-      return Promise.resolve(imgurMedia(id, e));
+      const e = ext && ext.toLowerCase();
+      // 明確寫著影片或靜態圖副檔名 → 直接出，不多發探測請求（imgur 為影片型資產
+      // 產的直連本來就是 .mp4，明寫 jpg/jpeg/png/webp 視為可信）。
+      if (
+        e &&
+        (RE_VIDEO_EXT.test(`.${e}`) || STATIC_IMGUR_EXT.has(e) || e === "webp")
+      ) {
+        return Promise.resolve(imgurMedia(id, e));
+      }
+      // 無副檔名（imgur 分享連結的預設形式）／gif／gifv／未知 → HEAD 探測真實型別。
+      return probeImgurAsset(id).then((kind) => imgurMediaFromProbe(id, kind));
     },
   },
   {

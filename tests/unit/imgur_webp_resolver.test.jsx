@@ -10,11 +10,35 @@ import { render } from "@testing-library/react";
 import ImagePreviewer, {
   resolveSrcToImageUrl,
 } from "../../src/components/ImagePreviewer";
+import { clearImgurProbeCache } from "../../src/js/imgur_probe";
 
 const resolve = (src) => resolveSrcToImageUrl({ src });
 const B = "https://i.imgur.com";
 
+// 副檔名未知 / gif 系的連結會先發兩發 HEAD 探測（見 src/js/imgur_probe.js）。
+// 這裡把探測結果釘死，unit 一律不連網。
+const headRes = (contentType, ok = true) => ({
+  ok,
+  headers: { get: () => contentType },
+});
+const stubProbe = ({ image = "image/jpeg", mp4 = null }) =>
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url) =>
+      Promise.resolve(
+        /\.mp4$/.test(url)
+          ? mp4
+            ? headRes(mp4)
+            : headRes("text/html", false) // 靜態圖：imgur 回 400 "Not an animated gif"
+          : headRes(image),
+      ),
+    ),
+  );
+
 describe("imgur 單圖 resolver：webp 優先 + 原副檔名 fallback", () => {
+  beforeEach(() => clearImgurProbeCache());
+  afterEach(() => vi.unstubAllGlobals());
+
   test(".jpeg → 先要 webp，原副檔名留作候選", async () => {
     expect(await resolve(`${B}/ofT90A6.jpeg`)).toEqual({
       type: "image",
@@ -29,12 +53,30 @@ describe("imgur 單圖 resolver：webp 優先 + 原副檔名 fallback", () => {
     expect(r.srcset).toEqual([`${B}/abc123.webp`, `${B}/abc123.png`]);
   });
 
-  // 迴歸守護（動圖會被靜音成一張圖）：imgur **忽略 URL 副檔名**，一律回儲存的原始
-  // 格式——實測 `auVUJzV.jpg` 與 `auVUJzV.png` 都回 `image/gif` 10.85 MB 完整動畫，
-  // `ofT90A6.png`/`.gif` 都回 `image/jpeg`。所以無副檔名時補的 `.jpg` 其實拿得到原
-  // 檔（動圖仍會動），一旦改成 webp 就變成靜態單幀，而且 <img> 會 onload 成功、
-  // FallbackImage 根本不會退回。→ 副檔名未知時一律不碰。
-  test("無副檔名（imgur.com/<id>）→ 維持 .jpg 原檔，不可改要 webp", async () => {
+  // 迴歸守護（動圖會被靜音成一張圖）：imgur 對**圖片原檔**忽略 URL 副檔名，一律回
+  // 儲存的原始格式——實測 `auVUJzV.jpg` 與 `.png` 都回 `image/gif` 10.85 MB 完整動畫。
+  // 一旦改成 webp 就變成靜態單幀，而且 <img> 會 onload 成功、FallbackImage 根本不會
+  // 退回。→ 探測到 gif 原檔時只能用原檔，不得產生 webp 候選。
+  test("無副檔名 + 探測到 gif 原檔 → 用 .gif 原檔，不可改要 webp", async () => {
+    stubProbe({ image: "image/gif" });
+    expect(await resolve("https://imgur.com/auVUJzV")).toEqual({
+      type: "image",
+      src: `${B}/auVUJzV.gif`,
+    });
+  });
+
+  // 探測確認是真靜態圖後才敢吃 webp（舊行為是「未知一律不碰」，等於放棄優化）。
+  test("無副檔名 + 探測到靜態圖 → webp 優先，.jpg 留作候選", async () => {
+    stubProbe({ image: "image/jpeg" });
+    expect(await resolve("https://imgur.com/456CKaj")).toEqual({
+      type: "image",
+      src: `${B}/456CKaj.webp`,
+      srcset: [`${B}/456CKaj.webp`, `${B}/456CKaj.jpg`],
+    });
+  });
+
+  test("探測失敗（斷網／CORS）→ 退回既有的 .jpg 行為，不炸", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
     expect(await resolve("https://imgur.com/abc123")).toEqual({
       type: "image",
       src: `${B}/abc123.jpg`,
@@ -54,19 +96,55 @@ describe("imgur 單圖 resolver：webp 優先 + 原副檔名 fallback", () => {
     });
   });
 
-  // 回歸守護：別順手把動圖也改成 webp（動畫 webp 未驗證）。
-  test(".gif 不轉 webp", async () => {
+  // 回歸守護：別順手把動圖也改成 webp（imgur 的 webp 衍生對 gif 只回靜態單幀）。
+  test(".gif（探測確認是 gif 原檔）不轉 webp", async () => {
+    stubProbe({ image: "image/gif" });
     expect(await resolve(`${B}/abc123.gif`)).toEqual({
       type: "image",
       src: `${B}/abc123.gif`,
     });
   });
 
-  test(".gifv → .gif，同樣不轉 webp", async () => {
+  test(".gifv（探測確認是 gif 原檔）→ .gif，同樣不轉 webp", async () => {
+    stubProbe({ image: "image/gif" });
     expect(await resolve(`${B}/abc123.gifv`)).toEqual({
       type: "image",
       src: `${B}/abc123.gif`,
     });
+  });
+});
+
+// 回報案例：https://imgur.com/lP0NHpE 自動開圖變成靜態圖。
+// imgur 把上傳的動畫／影片存成 video/mp4，這類資產的**任何**圖片副檔名都只回單幀
+// 靜態縮圖（實測 lP0NHpE.jpg 與 .gif 都是 200 image/jpeg 33469），而 <img> 會 onload
+// 成功 → FallbackImage 不會退回 ⇒ 動圖被靜音。只有 .mp4（200 video/mp4）會動。
+describe("imgur 影片型動圖：必須內嵌成 video 而非靜態圖", () => {
+  beforeEach(() => clearImgurProbeCache());
+  afterEach(() => vi.unstubAllGlobals());
+
+  test("無副檔名 + 探測到 mp4 → video descriptor", async () => {
+    stubProbe({ image: "image/jpeg", mp4: "video/mp4" });
+    expect(await resolve("https://imgur.com/lP0NHpE")).toEqual({
+      type: "video",
+      src: `${B}/lP0NHpE.mp4`,
+    });
+  });
+
+  test(".gifv 指到影片型資產時也要回 video（不可盲目改寫成 .gif）", async () => {
+    stubProbe({ image: "image/jpeg", mp4: "video/mp4" });
+    expect(await resolve(`${B}/lP0NHpE.gifv`)).toEqual({
+      type: "video",
+      src: `${B}/lP0NHpE.mp4`,
+    });
+  });
+
+  // 症狀層：鎖「渲染成什麼元素」而非 descriptor 形狀。
+  test("渲染成 <video>，畫面上不得出現 <img>", async () => {
+    stubProbe({ image: "image/jpeg", mp4: "video/mp4" });
+    const value = await resolve("https://imgur.com/lP0NHpE");
+    const { container } = render(<ImagePreviewer.Inline value={value} />);
+    expect(container.querySelector("video")).not.toBeNull();
+    expect(container.querySelector("img")).toBeNull();
   });
 });
 

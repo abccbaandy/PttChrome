@@ -57,6 +57,14 @@ describe("離線重放：外部請求分類", () => {
     );
   });
 
+  // imgur 型別探測（src/js/imgur_probe.js）會對同一 hash 各發一發 HEAD。離線下
+  // `.jpg` 走 fixture PNG（content-type image/png）、`.mp4` 落 blocked → 404，
+  // 兩者合起來判定為「靜態圖」——確定性結果，且不會有請求逃到公網。
+  test("imgur 型別探測的兩發 HEAD 都被離線規則接住", () => {
+    expect(classifyOfflineRequest("https://i.imgur.com/L976tXr.jpg")).toBe("image");
+    expect(classifyOfflineRequest("https://i.imgur.com/L976tXr.mp4")).toBe("blocked");
+  });
+
   test("iframe embed 與未知 host → blocked（404 空身，不留 hang）", () => {
     for (const u of [
       "https://www.youtube.com/embed/1m2KVNX4DhI",

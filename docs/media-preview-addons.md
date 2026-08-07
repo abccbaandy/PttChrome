@@ -65,7 +65,7 @@
 → 本專案採 **webp 優先 + 原副檔名 fallback**（`imgurMedia()`，走既有 `srcset` 候選鏈）。
 **兩個第三方套件都沒有這個優化，別再從它們身上找加速手法。**
 
-**imgur 忽略 URL 副檔名（CONFIRMED，關鍵約束）** — 一律回儲存的原始格式：
+**imgur 忽略 URL 副檔名（CONFIRMED，關鍵約束；僅限原始檔是圖片）** — 回儲存的原始格式：
 
 | URL | 實際回應 |
 |---|---|
@@ -73,14 +73,43 @@
 | `auVUJzV.jpg` / `.png` | 全部 `image/gif` 10850053 B（**完整動畫**） |
 
 唯一例外是 `.webp`——那是真正的轉檔衍生端點。推論：**URL 副檔名不是可靠的型別判準**，
-無副檔名時補的 `.jpg` 其實拿得到原檔。
+無副檔名時補的 `.jpg` 對圖片原檔拿得到原檔。**但原始檔是影片時這條不成立**，見下節。
+
+**影片型資產：圖片副檔名只回單幀靜態縮圖（CONFIRMED）** — 回報案例 `imgur.com/lP0NHpE`
+（自動開圖變靜態圖）。現代 imgur 把上傳的動畫／影片存成 `video/mp4`：
+
+| URL | status | content-type | bytes |
+|---|---|---|---|
+| `lP0NHpE.jpg` / `.gif` | 200 | `image/jpeg` | 33469（**靜態單幀**） |
+| `lP0NHpE.mp4` | 200 | `video/mp4` | 82794（會動） |
+| `auVUJzV.jpg`（gif 原檔） | 200 | `image/gif` | 10850053 |
+| `456CKaj.mp4`（靜態原檔） | **400** | `text/html` `Not an animated gif` | — |
+
+API `/3/image/lP0NHpE` 佐證：`type: "video/mp4"`, `animated: true`。`<img>` 對這張靜態單幀
+**onload 成功** → FallbackImage 不會退回 ⇒ 動圖被靜音，`.gif`／`.gifv` 副檔名同樣失效。
+
+→ 判定改用 **HEAD 雙探測**（`src/js/imgur_probe.js`，不吃 API 額度）：`i.imgur.com` 回應帶
+`Access-Control-Allow-Origin: *`，HEAD 屬 CORS simple method（無 preflight）、`content-type`
+屬 safelisted response header ⇒ 瀏覽器讀得到。對 `<id>.jpg` 與 `<id>.mp4` 並行各發一發：
+
+| 圖片回應 content-type | `.mp4` | 判定 | descriptor |
+|---|---|---|---|
+| `image/gif` | 任意 | gif 原檔 | `{image, .gif}`（**不得** webp） |
+| 其他 `image/*` | 200 | 影片型動圖 | `{video, .mp4}` |
+| 其他 `image/*` | 400 | 真靜態圖 | `{image, .webp + .jpg 候選}` |
+| 非圖片／探測失敗 | — | unknown | `{image, .jpg}`（舊行為） |
+
+只有「無副檔名／`gif`／`gifv`／未知副檔名」走探測；明寫 `mp4`/`webm`/`ogg` 或
+`jpg`/`jpeg`/`png`/`webp` 走原本的快速路徑（imgur 為影片型資產產的直連本來就是 `.mp4`）。
+相簿路徑不探測——API 回的 link 已是正確型別。副作用（正面）：確認為靜態後才敢吃 webp，
+過去「無副檔名一律放棄優化」的保守作法解除。守護測試 `tests/unit/imgur_probe.test.js`。
 
 **動圖必須排除 webp（CONFIRMED）** — imgur 的 webp 對 gif 只回**靜態單幀**：
 `auVUJzV` gif 10.85 MB／完整動畫 → webp 27950 B／`VP8 static`／零 `ANMF` frame。
 且 `<img>` 會 **onload 成功** → FallbackImage 不會退回 → 動圖被靜音成一張圖。
-故 `imgurMedia()` 只在副檔名**明確是 jpg/jpeg/png** 時才要 webp；未知（無副檔名，
-imgur 分享連結的預設形式）與 gif/gifv 一律維持原檔。守護測試見
-`tests/unit/imgur_webp_resolver.test.jsx`。
+故 `imgurMedia()` 只在副檔名**明確是 jpg/jpeg/png** 時才直接要 webp；未知（無副檔名，
+imgur 分享連結的預設形式）與 gif/gifv 交給上節的 HEAD 探測判定，探測到 gif 原檔一律
+維持原檔。守護測試見 `tests/unit/imgur_webp_resolver.test.jsx`。
 
 **gif→mp4 不採用（CONFIRMED）** — `ptt-media-preview` `term.js#createImgurGif` 的做法。
 動畫與尺寸都保得住（gif 500×281 → mp4 500×280，H.264 偶數高度所致），體積 10.85 MB →
@@ -111,4 +140,4 @@ imgur 分享連結的預設形式）與 gif/gifv 一律維持原檔。守護測�
 
 - imgur-fix：`getUrlInfo`／`createEmbed`／`lazyLoader`／`initTerm`（`detectEasyReading` 監看 `#easyReadingLastRow` 的 `style.display`）／`beforescriptexecute`（攔掉 imgur 官方 embed.js）。
 - media-preview：`imgur.js#get`（多 client_id）、`term.js#getConfig`（讀 `pttchrome.pref.v1`）、`rules.json`／`background.js`（去 referer）。
-- 本專案：`src/components/ImagePreviewer.jsx`（`imageUrlResolvers` most-specific→generic、`resolveSrcToImageUrl` 回 media descriptor `{type:'image'|'video'|'iframe'|'album', src, srcset?, images?}`、`FallbackImage` 逐一試 srcset 候選、`renderMedia()` 單一 descriptor→元素、`imgurMedia()`／`imgurAlbumMedia()` 影片分流＋靜態圖 webp 優先）。**`album` 的 `images` 是 descriptor 陣列（非 URL 字串）**，相簿內的圖因此也吃到 srcset 候選鏈。
+- 本專案：`src/components/ImagePreviewer.jsx`（`imageUrlResolvers` most-specific→generic、`resolveSrcToImageUrl` 回 media descriptor `{type:'image'|'video'|'iframe'|'album', src, srcset?, images?}`、`FallbackImage` 逐一試 srcset 候選、`renderMedia()` 單一 descriptor→元素、`imgurMedia()`／`imgurAlbumMedia()`／`imgurMediaFromProbe()` 影片分流＋靜態圖 webp 優先）、`src/js/imgur_probe.js`（`classifyImgurAsset` 純決策表＋`probeImgurAsset` HEAD 雙探測，per-id promise 快取）。**`album` 的 `images` 是 descriptor 陣列（非 URL 字串）**，相簿內的圖因此也吃到 srcset 候選鏈。
