@@ -38,8 +38,12 @@ import {
   classifySpans,
   destroyCaptionAi,
 } from "../js/caption_ai";
-import { applyAiLink, domainKey } from "../js/url_ai_logic";
-import { classifyDomains, destroyUrlAi } from "../js/url_ai";
+import { applyAiFix, applyAiLink, domainKey, fixKey } from "../js/url_ai_logic";
+import {
+  classifyBrokenUrls,
+  classifyDomains,
+  destroyUrlAi,
+} from "../js/url_ai";
 import {
   groupSameAuthorRuns,
   buildMergedCommentChars,
@@ -72,10 +76,11 @@ function detectRowExtras(chars, text, ann, opts) {
   // comment annotation. The fixed-URL line only renders in easy-reading mode
   // (see LinkSegmentBuilder); detection itself is cheap and returns [] for
   // almost every row.
+  // rowText 隨候選帶走：gray 候選的 AI prompt 與 cache key 都需要整列上下文。
   let fixedUrls;
   if (autoFixUrl) {
     const fixes = detectFixableUrls(text);
-    if (fixes.length) fixedUrls = fixes;
+    if (fixes.length) fixedUrls = fixes.map((f) => ({ ...f, rowText: text }));
   }
   // X(Twitter) @handle auto-links. Detect on the raw TermChar[] (DBCS-aware —
   // see mention_parse.js) and link every format-valid @handle. Existence
@@ -158,6 +163,7 @@ function computeAnnotations(
   captionAi,
   aiKeep,
   aiLink,
+  aiFix,
 ) {
   const result = new Array(lines.length);
   if (!enhance) return result;
@@ -243,20 +249,33 @@ function computeAnnotations(
     // 裸網域 AI 複核：全頁的灰色候選收成一份清單（含推文合併塊重跑出來的），
     // effect 依內容簽章決定要不要推論。收集用的是**套用判決之前**的候選，簽章
     // 才不會因為 AI 撤掉某個連結而抖動。
+    //
+    // URL 修復的 gray 候選走**相反方向**：規則層不敢認（那個形狀與英文句號同形，
+    // 見 url_fix.js 檔頭），所以預設不修，AI 判 true 才放行。故 applyAiFix 無論
+    // AI 開關與否都要套——AI 關 ⇒ aiFix 恆為空 ⇒ gray 全部不修，正是預設行為。
+    // 注意 detectRowExtras 內 bareDomains 的重疊過濾用的是**未過濾**的 fixedUrls，
+    // 不然 AI 撤掉一筆修復會讓原本被壓住的裸網域連結冒出來。
     const domainCands = [];
-    const withDomainAi = (extras) => {
-      if (!extras.bareDomains) return extras;
-      for (const d of extras.bareDomains) if (d.gray) domainCands.push(d);
-      return {
-        ...extras,
-        bareDomains: applyAiLink(extras.bareDomains, aiLink),
-      };
+    const fixCands = [];
+    const withUrlAi = (extras) => {
+      let out = extras;
+      if (extras.bareDomains) {
+        for (const d of extras.bareDomains) if (d.gray) domainCands.push(d);
+        out = { ...out, bareDomains: applyAiLink(extras.bareDomains, aiLink) };
+      }
+      if (extras.fixedUrls) {
+        for (const f of extras.fixedUrls) if (f.gray) fixCands.push(f);
+        const kept = applyAiFix(extras.fixedUrls, aiFix);
+        out = { ...out, fixedUrls: kept.length ? kept : undefined };
+      }
+      return out;
     };
     for (let row = 0; row < lines.length; ++row) {
       const text = texts[row];
       const ann = annotateComment(text, ctx) || undefined;
-      const { fixedUrls, mentions, aids, giveaways, bareDomains } =
-        withDomainAi(detectRowExtras(lines[row], text, ann, detectOpts));
+      const { fixedUrls, mentions, aids, giveaways, bareDomains } = withUrlAi(
+        detectRowExtras(lines[row], text, ann, detectOpts),
+      );
       let r = ann;
       if (fixedUrls) r = { ...(r || {}), fixedUrls };
       if (mentions) r = { ...(r || {}), mentions };
@@ -298,7 +317,7 @@ function computeAnnotations(
           mergeCommentRun: {
             chars: merged.chars,
             contentStart: merged.contentStart,
-            ...withDomainAi(
+            ...withUrlAi(
               detectRowExtras(merged.chars, mText, firstAnn, detectOpts),
             ),
           },
@@ -314,6 +333,8 @@ function computeAnnotations(
     // 內容型簽章：好讀翻頁只是往後長，前面已判過的候選 key 不變 → effect 不重跑。
     result.domainCands = domainCands;
     result.domainCandsSig = domainCands.map(domainKey).join(",");
+    result.fixCands = fixCands;
+    result.fixCandsSig = fixCands.map(fixKey).join(",");
   } else if (pageState === PAGE_LIST || inListContext) {
     // inListContext keeps list treatment alive across overlay prompts (e.g. the
     // v 設定已讀未讀記錄 sub-screen) whose status row stops parsing as LIST(2).
@@ -409,6 +430,9 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   // 規則已允許的連結（單向收縮，見 url_ai_logic.js）。沒有浮動按鈕——這是「壓
   // 誤判」而不是使用者要切換的排版，設定頁勾了就在背景跑。
   const [aiLink, setAiLink] = React.useState({});
+  // URL 修復 gray 候選的 AI 複核結果 cache：fixKey → boolean。方向相反——只有
+  // 明確 true 才**放行**一筆規則層不敢認的修復（見 url_ai_logic.js applyAiFix）。
+  const [aiFix, setAiFix] = React.useState({});
 
   // 命令式 API：term_view 經 term_ui 的 ref.current.setCurrentHighlighted(row)
   // 設高亮列（鍵盤操作時）。取代 class instance method。
@@ -435,6 +459,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     if (Object.keys(aiKeep).length) setAiKeep({});
     // 同理：domainKey 含整列文字，換文章的舊判斷沒有沿用價值。
     if (Object.keys(aiLink).length) setAiLink({});
+    if (Object.keys(aiFix).length) setAiFix({});
   }
 
   // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
@@ -540,6 +565,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     captionAi,
     aiKeep,
     aiLink,
+    aiFix,
   );
 
   // spans 每次 render 重算（reference 不穩），但內容簽章穩定 → effect 只在
@@ -614,6 +640,42 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
       if (controller) controller.abort();
     };
   }, [urlAiEnabled, domainCandsSig]);
+
+  // URL 修復 gray 候選的複核。與上面同形，差別只在方向：這裡答 true 才把一筆
+  // 規則層不敢認的修復放行出來（沒答／答 false ⇒ 維持不修）。
+  const fixAiEnabled = !!(enhance && enhance.fixAiEnabled);
+  const fixCandsRef = React.useRef(null);
+  fixCandsRef.current = annotations.fixCands;
+  const aiFixRef = React.useRef(aiFix);
+  aiFixRef.current = aiFix;
+  const fixCandsSig = annotations.fixCandsSig;
+  React.useEffect(() => {
+    if (!fixAiEnabled) return undefined;
+    const seen = new Set();
+    const todo = (fixCandsRef.current || []).filter((c) => {
+      const k = fixKey(c);
+      if (seen.has(k) || aiFixRef.current[k] !== undefined) return false;
+      seen.add(k); // 同一列在合併塊裡會出現兩次，只問一次
+      return true;
+    });
+    if (!todo.length) return undefined;
+    const controller =
+      typeof AbortController === "function" ? new AbortController() : null;
+    let cancelled = false;
+    classifyBrokenUrls(todo, {
+      signal: controller ? controller.signal : undefined,
+      onResult: (cand, r) => {
+        // link === null 不寫 cache：留 undefined＝「沒有判決」→ 不放行，也不會
+        // 被記成永久答案（下次重算還有機會問到）。
+        if (cancelled || r.link === null) return;
+        setAiFix((prev) => ({ ...prev, [fixKey(cand)]: r.link }));
+      },
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+      if (controller) controller.abort();
+    };
+  }, [fixAiEnabled, fixCandsSig]);
 
   // 卸載時關掉 base session（模型常駐佔記憶體）。
   React.useEffect(() => () => destroyCaptionAi(), []);

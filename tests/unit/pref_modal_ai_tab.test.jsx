@@ -114,10 +114,18 @@ describe("AI 分頁：總閘門", () => {
     expect(cb("enableUrlAi")).not.toBeDisabled();
   });
 
-  test("enableUrlAi 仍依附增強功能分頁的裸網域自動連結", () => {
-    openAiTab({ enableAi: true, enableBareDomainLink: false });
+  // enableUrlAi 管兩個增強功能：裸網域自動連結（AI 撤誤連）與自動修復斷掉的
+  // 連結（AI 才放行 gray 候選）。任一開著它就有事做，兩個都關才反灰。
+  test.each([
+    [{ enableBareDomainLink: true, enableAutoFixUrl: true }, false],
+    [{ enableBareDomainLink: true, enableAutoFixUrl: false }, false],
+    [{ enableBareDomainLink: false, enableAutoFixUrl: true }, false],
+    [{ enableBareDomainLink: false, enableAutoFixUrl: false }, true],
+  ])("enableUrlAi 依附兩個增強功能 %o → disabled=%s", (prefs, disabled) => {
+    openAiTab({ enableAi: true, ...prefs });
     expect(cb("enableCaptionAi")).not.toBeDisabled();
-    expect(cb("enableUrlAi")).toBeDisabled();
+    if (disabled) expect(cb("enableUrlAi")).toBeDisabled();
+    else expect(cb("enableUrlAi")).not.toBeDisabled();
   });
 });
 

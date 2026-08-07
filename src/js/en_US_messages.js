@@ -177,10 +177,10 @@ export const en_US = {
     "message": "Use AI to refine image/caption pairing (easy reading only)"
   },
   "options_enableUrlAi": {
-    "message": "Use AI to drop mis-detected domain links"
+    "message": "Use AI to decide which link detections are real"
   },
   "tooltip_enableUrlAi": {
-    "message": "Requires \"Auto-link domains written without https://\" in the Enhanced tab."
+    "message": "Applies to both \"Auto-link domains written without https://\" (drops a domain that is merely mentioned) and \"Auto-repair broken links\" (approves an address the author really did break with stray spaces). While this is off, a broken candidate with no path that was detected from spaces alone is never repaired, so an English sentence's full stop is not mistaken for a domain. Requires at least one of those two in the Enhanced tab."
   },
   "options_aiStatus_unsupported": {
     "message": "This browser has no built-in AI (Prompt API); only Chrome 148+ on desktop supports it."

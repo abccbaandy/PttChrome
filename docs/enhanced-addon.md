@@ -151,7 +151,15 @@
     「scheme-less deep link」「imgur 同列去重」。**被這條擋掉的候選改由下節的 `bare_domain.js` 承接**
     （原位連結、不加行），本節不再放寬。
   - 重建 fixed=移除所有 ASCII 空白（真 URL 不含空白）；無 scheme 則前置 `https://`（既有 scheme 不改寫）。
+  - **`gray` 旗標＝無 scheme 且無 path**（修復理由只有「注入空白」，產物是首頁連結）。這一類與英文散文的
+    「句號＋句首單字」**完全同形**，因為 `it/in/to/me/us/be/la` 這些 ccTLD 剛好也是英文單字（regex 帶 `i` flag）：
+    `...a modern Call of Duty. It does not.` → `Duty. It` → `https://Duty.It`（使用者 2026-08 回報）。
+    靠空白位置或大小寫判反而兩邊都誤（已否決）。故 `detectFixableUrls` **只回報旗標不自行過濾**，由消費端決定：
+    `Screen#computeAnnotations` 一律套 `applyAiFix` → **AI 關 ⇒ gray 全部不修**，AI 判 `true` 才放行。
+    守護 `url_fix.test.js`「句號誤判標成 gray」＋`tests/unit/url_fix_ai_render.test.jsx`＋
+    `tests/e2e/offline/url-fix-gray.offline.spec.js`。
   - 取捨：保守設計，漏冷門 TLD／跨列斷開 URL（逐列偵測，**out of scope**）換取近零誤判。
+    2026-08 起再加一項：無 scheme 無 path 的斷開裸網域（`www . a .com`）未開 AI 時不修。
 - 渲染：`Screen#computeAnnotations` **逐列**（含內文非推文列，獨立於 `annotateComment`）算 `fixedUrls` 掛進 ann →
   `<Row>` prop → `LinkSegmentBuilder.build()` 在 inline-preview 區塊後 map 出 `<FixedUrlLine>`
   （`components/Row/FixedUrlLine.jsx`：`<HyperLink>`＋恆掛 `<ImagePreviewer Inline>` 讓 resolver 自判可否開圖）。
@@ -169,10 +177,15 @@
 | 層 | 行為 | pref | 預設 |
 |---|---|---|---|
 | 規則 `bare_domain.js` | 裸網域**預設連**，三道守則排除提及型 | `enableBareDomainLink` | 開 |
-| AI `url_ai.js` | 只能**撤掉**規則已允許的連結（單向收縮），永不新增 | `enableAi && enableUrlAi` | 關 |
+| AI `url_ai.js`（key `url`） | 只能**撤掉**規則已允許的連結（單向收縮），永不新增 | `enableAi && enableBareDomainLink && enableUrlAi` | 關 |
+| AI `url_ai.js`（key `urlfix`） | **方向相反**：只能**放行** URL 修復的 gray 候選，永不撤掉非 gray | `enableAi && enableAutoFixUrl && enableUrlAi` | 關 |
 
-→ AI 關／不支援／逾時／垃圾回覆 ⇒ 結果恆等於純規則結果。與 `merge-caption-ai-assist` 的零回歸同構，**方向相反**
-（那邊 AI 單向擴張、這邊單向收縮）。
+→ 裸網域那條：AI 關／不支援／逾時／垃圾回覆 ⇒ 結果恆等於純規則結果。與 `merge-caption-ai-assist` 的零回歸同構，
+**方向相反**（那邊 AI 單向擴張、這邊單向收縮）。
+→ **URL 修復那條又是相反的**（規則不敢認 → 預設不修，AI 才放行）：同一個檔案裡住著兩組方向相反的 `apply*`，
+改動時務必先確認是哪一組。保守側的定義不同——裸網域是「連結留著」，URL 修復是「不要生出假連結」。
+`applyAiFix(cands, {}) ≡ cands.filter(c => !c.gray)`；`fixKey` 帶 `fix:` 前綴，與 `domainKey` 不得撞（同一列同一
+host 兩邊問的是不同問題）。session key 也分開（`prompt_api.js` 依 key 快取 base session，system prompt 定義任務框架）。
 
 - 偵測 `detectBareDomains(chars, rowText) -> [{startCol,endCol,host,href,gray}]`（守護 `tests/unit/bare_domain.test.js`）。
   **走 `TermChar[]` 而非 `rowToText`**，理由同 `mention_parse`：Big5 trail byte 落在 0x40–0x7E 涵蓋 `A-Za-z`，
@@ -196,6 +209,11 @@
   `domainKey` = FNV-1a(host + 整列文字)：同 host 在不同句子答案本就該不同；換文章（`articleId` 變）整包丟掉。
   接線在 `Screen`：`computeAnnotations` 收 `result.domainCands`/`domainCandsSig`（**套判決前**的候選，簽章才不抖），
   effect 依 `[urlAiEnabled, domainCandsSig]` 漸進推論。**無浮動按鈕**——這是壓誤判、不是使用者要切換的排版。
+- URL 修復側的對應物（同兩檔、方向相反）：`urlFixSystemPrompt`／`buildBrokenUrlPrompt`／`fixCandNeedsAi`／
+  `fixKey`／`applyAiFix`＋`classifyBrokenUrl(s)`（session key `urlfix`）。`Screen` 收 `result.fixCands`/
+  `fixCandsSig`，effect 依 `[fixAiEnabled, fixCandsSig]`。`destroyUrlAi()` 兩把 key 一起關。
+  注意 `detectRowExtras` 內 **bareDomains 的重疊過濾必須對「未套 `applyAiFix` 的完整 `fixedUrls`」做**，
+  否則 AI 撤掉一筆修復會讓原本被壓住的裸網域連結冒出來。
 - session 樣板抽在共用的 `src/js/prompt_api.js`（`caption_ai.js` 也改建其上，export 簽名不變）：
   依 key 分別快取 base session（system prompt 決定任務框架，共用會互相帶偏）。模型下載由設定「AI」
   分頁的**總開關**觸發（模型是 per-origin，兩功能只需下載一次），見下「設定」節。
@@ -227,10 +245,11 @@ Credential API 的瀏覽器不落地**，見「自動登入」節。）
 |---|---|---|
 | `enableAi` | false | **總閘門**。勾選＝帶著 user activation 觸發模型下載（`prompt_api.js#ensurePromptApiModel`）；取消勾選＝`destroyPromptApi()` 釋放常駐 session |
 | `enableCaptionAi` | false | 好讀圖文並排的 AI 校正配對（`docs/merge-caption-ai-assist.md`） |
-| `enableUrlAi` | false | 裸網域連結的 AI 複核（本文上一節），另依附 `enableBareDomainLink` |
+| `enableUrlAi` | false | 網址類 AI 複核，**一次管兩個增強功能**：裸網域連結（撤誤連）與 URL 修復的 gray 候選（放行）。依附 `enableBareDomainLink \|\| enableAutoFixUrl`（兩個都關才反灰） |
 
 - **AND 的單一 choke point 在 `term_view.js#_renderScreenLines`**：`captionAiEnabled = enableAi &&
-  enableCaptionAi`、`urlAiEnabled = enableAi && enableBareDomainLink && enableUrlAi`。子功能不各自查總開關。
+  enableCaptionAi`、`urlAiEnabled = enableAi && enableBareDomainLink && enableUrlAi`、
+  `fixAiEnabled = enableAi && enableAutoFixUrl && enableUrlAi`。子功能不各自查總開關。
 - 總開關關閉時子選項只是**反灰、值原樣保留**（重開即回到先前組合），不清空。
 - **不支援的瀏覽器／裝置：分頁照常顯示、全部反灰＋狀態說明**（`options_aiStatus_*` 五態），
   使用者才知道有這功能與為何不能用。判斷一律以 `availability()` 探測結果為準。

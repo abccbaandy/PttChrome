@@ -3,6 +3,8 @@
 // （link === null → 呼叫端不撤，見 url_ai_logic 的單向收縮契約）。
 // 真實模型能力不在 CI 量。
 import {
+  classifyBrokenUrl,
+  classifyBrokenUrls,
   classifyDomain,
   classifyDomains,
   destroyUrlAi,
@@ -142,6 +144,95 @@ describe("classifyDomains（佇列）", () => {
     );
     expect(out.length).toBe(0);
     expect(n).toBe(1); // 第二個完全沒送出
+  });
+});
+
+// URL 修復的 gray 候選：方向相反，**每一種失敗都是「不修」**（link null →
+// applyAiFix 不放行）。與上面共用 prompt_api 樣板但另開 session key。
+const fixCand = (original, fixed, rowText, gray = true) => ({
+  original,
+  fixed,
+  host: fixed.replace(/^https?:\/\//, "").split(/[/:]/)[0].toLowerCase(),
+  gray,
+  rowText
+});
+
+const GRAY_FIX = fixCand(
+  "Duty. It",
+  "https://Duty.It",
+  "The goal was to match a modern Call of Duty. It does not."
+);
+
+describe("classifyBrokenUrl", () => {
+  test("structured output 解析成 boolean，並帶 responseConstraint", async () => {
+    const state = installLM({ reply: '{"link": false}' });
+    const r = await classifyBrokenUrl(GRAY_FIX);
+    expect(r.link).toBe(false);
+    expect(r.fallback).toBeFalsy();
+    expect(state.prompts[0].opts.responseConstraint.properties.link).toEqual({
+      type: "boolean"
+    });
+    expect(state.clones).toBe(1);
+  });
+
+  test("與裸網域用不同的 session（system prompt 框架不同，不可共用）", async () => {
+    const state = installLM({ reply: '{"link": true}' });
+    await classifyDomain(GRAY);
+    await classifyBrokenUrl(GRAY_FIX);
+    expect(state.created).toBe(2);
+  });
+
+  test.each([
+    ["模型回垃圾", { reply: "I cannot help with that." }],
+    ["prompt() 丟例外", { reply: () => Promise.reject(new Error("NotSupportedError")) }],
+    ["create() 失敗（模型沒下載）", { createError: "model unavailable" }]
+  ])("%s → link null（＝不放行、不修）", async (_name, opts) => {
+    installLM(opts);
+    const r = await classifyBrokenUrl(GRAY_FIX);
+    expect(r.link).toBeNull();
+    expect(r.fallback).toBe(true);
+  });
+
+  test("逾時 → abort 並 link null（不修）", async () => {
+    installLM({ reply: () => new Promise(() => {}) });
+    const r = await classifyBrokenUrl(GRAY_FIX, { timeoutMs: 20 });
+    expect(r.link).toBeNull();
+    expect(r.error).toContain("timeout");
+  });
+});
+
+describe("classifyBrokenUrls（佇列）", () => {
+  test("逐一 onResult 回報；非 gray 候選直接跳過", async () => {
+    installLM({ reply: '{"link": true}' });
+    const solid = fixCand(
+      "google .tw/page",
+      "https://google.tw/page",
+      "斷開的 google .tw/page",
+      false
+    );
+    const seen = [];
+    const out = await classifyBrokenUrls([GRAY_FIX, solid], {
+      onResult: (c, r) => seen.push([c.original, r.link])
+    });
+    expect(seen).toEqual([["Duty. It", true]]);
+    expect(out.length).toBe(1);
+  });
+
+  test("abort 後不再推論", async () => {
+    const controller = new AbortController();
+    let n = 0;
+    installLM({
+      reply: () => {
+        if (++n === 1) controller.abort();
+        return Promise.resolve('{"link": true}');
+      }
+    });
+    const out = await classifyBrokenUrls(
+      [GRAY_FIX, fixCand("part. In", "https://part.In", "the best part. In fact…")],
+      { signal: controller.signal }
+    );
+    expect(out.length).toBe(0);
+    expect(n).toBe(1);
   });
 });
 

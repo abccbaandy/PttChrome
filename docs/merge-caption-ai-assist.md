@@ -52,6 +52,14 @@ applyAiKeep(ruleBlocks, spans, {[imageRow]: keep}) → blocks
 - `closed=false`（好讀還沒載完、最後一塊的候選段還會長）不送 AI，避免對半截文章推論並汙染 cache。
 - `spanNeedsAi()`：`aiEligible && closed && 段數>1 && ruleKeep<段數`——規則已無可改空間就不浪費推論。
 
+**三個 AI 輔助層的方向對照**（保守側各不相同，改任何一個前先確認是哪一組）：
+
+| 功能 | 規則預設 | AI 能做的唯一事 | 空 verdicts 的恆等式 |
+|---|---|---|---|
+| 圖文配對 `caption_ai_logic` | 只取最近一段 | **擴張** keep | `applyAiKeep(b, s, {}) ≡ b` |
+| 裸網域連結 `url_ai_logic` | 預設連 | **撤掉** 誤連 | `applyAiLink(c, {}) ≡ c` |
+| URL 修復 gray `url_ai_logic` | 預設**不**修 | **放行** 真斷開的網址 | `applyAiFix(c, {}) ≡ c.filter(!gray)` |
+
 ## 執行面
 
 - **cache key 是內容型**（`spanKey`＝FNV-1a of 圖 URL＋候選段文字＋方向＋段數）：好讀翻頁會重算

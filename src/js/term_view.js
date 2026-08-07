@@ -569,6 +569,10 @@ TermView.prototype = {
           bareDomainLink: this.enableBareDomainLink,
           urlAiEnabled:
             this.enableAi && this.enableBareDomainLink && this.enableUrlAi,
+          // 同一個 enableUrlAi 子開關也管 URL 修復的 gray 候選複核（方向相反：
+          // 那邊是 AI 答 true 才放行，見 url_ai_logic.js）。
+          fixAiEnabled:
+            this.enableAi && this.enableAutoFixUrl && this.enableUrlAi,
           enableXMention: this.enableXMention,
           pageState: this.buf.pageState,
           // Floor numbers only count correctly across page-downs in easy reading

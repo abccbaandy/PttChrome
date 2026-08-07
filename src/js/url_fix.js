@@ -22,6 +22,18 @@
 //     is treated as a real word gap and stops the match).
 // Tradeoff: we miss exotic/un-listed TLDs and URLs broken across two screen rows
 // (detection is per-row) in exchange for near-zero false positives.
+//
+// ONE class of candidate stays inherently ambiguous, and is flagged `gray`:
+// no scheme AND no path, i.e. the repair is justified *solely* by an injected
+// space and the product is a bare homepage link. That shape is indistinguishable
+// from ordinary English prose, because a sentence period followed by a word whose
+// spelling happens to be a ccTLD matches it exactly:
+//   "...a modern Call of Duty. It does not."  →  "Duty. It"  →  https://Duty.It
+// (`it` = Italy; the regex is case-insensitive). Guessing by whitespace position
+// or letter case is unreliable in both directions, so this module only REPORTS
+// the flag — the consumer decides. Screen.jsx drops gray candidates by default and
+// only lets them through when the on-device AI review approves one (url_ai.js,
+// opt-in). See docs/enhanced-addon.md.
 
 // Closed TLD allowlist. Longer ones first so e.g. ".com" is preferred over ".co"
 // (the trailing \b also prevents matching "co" inside "com").
@@ -72,9 +84,17 @@ const HAS_SCHEME_RE = /^(?:https?|ftp|telnet):\/\//i;
 
 const MAX_PER_ROW = 3;
 
-// detectFixableUrls(text) -> Array<{ original, fixed }>
-// `fixed` always carries a scheme and contains no spaces. Returns [] for the
-// common case (almost every row).
+// Host part of a scheme-carrying URL: everything up to the first '/' or ':port'.
+function hostOf(fixed) {
+  const rest = fixed.replace(HAS_SCHEME_RE, '');
+  const m = rest.match(/^[^/:]+/);
+  return m ? m[0].toLowerCase() : rest.toLowerCase();
+}
+
+// detectFixableUrls(text) -> Array<{ original, fixed, host, gray }>
+// `fixed` always carries a scheme and contains no spaces. `gray` marks the
+// ambiguous "space-only bare domain" class (see the header note). Returns [] for
+// the common case (almost every row).
 export function detectFixableUrls(text) {
   if (!text) return [];
 
@@ -109,7 +129,11 @@ export function detectFixableUrls(text) {
     if (!hasSpace && !hasPath) continue;
     if (seenFixed.has(fixed)) continue;
     seenFixed.add(fixed);
-    out.push({ original, fixed });
+    // Test the ORIGINAL (space-stripped) for the scheme — `fixed` always has one
+    // by now. No scheme + no path ⇒ the only evidence this is a URL at all was an
+    // injected space ⇒ ambiguous, hand it to the consumer's AI gate.
+    const hasScheme = HAS_SCHEME_RE.test(original.replace(/\s+/g, ''));
+    out.push({ original, fixed, host: hostOf(fixed), gray: !hasScheme && !hasPath });
     if (out.length >= MAX_PER_ROW) break;
   }
   return out;

@@ -808,12 +808,16 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableCaptionAi")}
                 </PrefCheckbox>
-                {/* AI 複核依附「增強功能」分頁的裸網域自動連結：它只能撤掉規則已
-                    允許的連結（單向收縮），規則關掉時無事可做。 */}
+                {/* 網址類複核，管兩個增強功能：裸網域自動連結（AI 只能撤掉誤連）
+                    與自動修復斷掉的連結（AI 才能放行規則不敢認的候選）。兩者都
+                    關掉時它無事可做。 */}
                 <PrefCheckbox
                   name="enableUrlAi"
                   checked={values.enableUrlAi}
-                  disabled={aiSubDisabled || !values.enableBareDomainLink}
+                  disabled={
+                    aiSubDisabled ||
+                    !(values.enableBareDomainLink || values.enableAutoFixUrl)
+                  }
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableUrlAi")}

@@ -177,10 +177,10 @@
     "message": "圖文並排用 AI 校正配對 (僅好讀模式)"
   },
   "options_enableUrlAi": {
-    "message": "用 AI 過濾誤判的網址連結"
+    "message": "用 AI 判斷網址連結該不該出現"
   },
   "tooltip_enableUrlAi": {
-    "message": "需先在「增強功能」開啟「自動連結沒寫 https:// 的網址」。"
+    "message": "同時作用於「自動連結沒寫 https:// 的網址」（撤掉只是被順口提到的網域）與「自動修復斷掉的連結」（放行真的被空白打斷的網址）。未開啟時，沒有路徑、只靠空白判定的斷掉網址一律不修復，以免把英文句子的句號誤認成網址。需先在「增強功能」開啟其中至少一項。"
   },
   "options_aiStatus_unsupported": {
     "message": "此瀏覽器沒有內建 AI（Prompt API），目前僅 Chrome 148+ 桌面版支援。"

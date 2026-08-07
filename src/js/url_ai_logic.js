@@ -15,6 +15,10 @@
 //     子網域）連問都不問。
 //
 // 零回歸的結構性保證：applyAiLink(cands, {}) 恆等於 cands（unit 守護）。
+//
+// 本檔還住著**方向相反**的第二組函式（applyAiFix 一族，檔案後半），服務 URL
+// 修復（url_fix.js）的 gray 候選：那邊規則預設不修、AI 只能放行。看到 apply*
+// 先確認是哪一組。
 
 // 送進 prompt 的整列文字上限（Nano context 有限，越長越容易漂）。
 export const MAX_LINE_CHARS = 120;
@@ -24,17 +28,20 @@ export function candNeedsAi(cand) {
   return !!(cand && cand.gray);
 }
 
-// 內容型 cache key（FNV-1a，同 caption_ai_logic.spanKey）：好讀翻頁會重算候選，
-// 但同一列的內容不變 → key 不變 → 不重複推論。**必須含整列文字**：同一個 host
-// 在不同句子裡的答案本來就該不同。
-export function domainKey(cand) {
+function fnv1a(s) {
   let h = 0x811c9dc5;
-  const s = cand.host + " " + (cand.rowText || "");
   for (let i = 0; i < s.length; ++i) {
     h ^= s.charCodeAt(i);
     h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
   }
-  return cand.host + "-" + h.toString(36);
+  return h.toString(36);
+}
+
+// 內容型 cache key（FNV-1a，同 caption_ai_logic.spanKey）：好讀翻頁會重算候選，
+// 但同一列的內容不變 → key 不變 → 不重複推論。**必須含整列文字**：同一個 host
+// 在不同句子裡的答案本來就該不同。
+export function domainKey(cand) {
+  return cand.host + "-" + fnv1a(cand.host + " " + (cand.rowText || ""));
 }
 
 // 單向收縮：只有明確 false 才移除。verdicts 為空 → 原封回傳（引用也不換，避免
@@ -107,6 +114,92 @@ export function domainLinkSchema() {
     required: ["link"],
     additionalProperties: false,
   };
+}
+
+// ---------------------------------------------------------------------------
+// URL 修復（url_fix.js）的 AI 複核。**方向與上面相反**，務必別搞混：
+//   裸網域：規則預設連，AI 只能撤（AI 關 ⇒ 全連）。
+//   URL 修復：gray 候選規則預設**不修**，AI 只能放行（AI 關 ⇒ gray 全不修）。
+// 為什麼倒過來：gray 候選（無 scheme、無路徑、只靠注入空白判定）與英文散文的
+// 「句號＋句首單字」完全同形（"Call of Duty. It" → https://Duty.It），保守側是
+// 「不要生出一個假連結」。非 gray 候選（有 scheme 或有路徑）完全不受 AI 影響。
+// ---------------------------------------------------------------------------
+
+// 只有 gray 候選值得問；有 scheme／有路徑的修復規則已有把握。
+export function fixCandNeedsAi(cand) {
+  return !!(cand && cand.gray);
+}
+
+// cache key。前綴 "fix:" 是必要的：同一列的同一個 host 也可能同時是裸網域候選，
+// 但兩邊問的是不同問題（「該不該連」vs「這到底是不是網址」），答案不可共用。
+export function fixKey(cand) {
+  return (
+    "fix:" +
+    cand.host +
+    "-" +
+    fnv1a(cand.original + " " + (cand.rowText || ""))
+  );
+}
+
+// 加法方向：非 gray 一律保留，gray 只有明確 true 才放行。verdicts 為空（AI 關／
+// 尚未算完）⇒ 等同 cands.filter(c => !c.gray)。無變動時回傳原 reference。
+export function applyAiFix(cands, verdicts) {
+  if (!cands || !cands.length) return cands;
+  let drop = false;
+  for (const c of cands) {
+    if (fixCandNeedsAi(c) && !(verdicts && verdicts[fixKey(c)] === true)) {
+      drop = true;
+      break;
+    }
+  }
+  if (!drop) return cands;
+  return cands.filter(
+    (c) => !fixCandNeedsAi(c) || (verdicts && verdicts[fixKey(c)] === true),
+  );
+}
+
+const FIX_SYSTEM_PROMPT =
+  "You read single lines from posts on a Taiwanese BBS (PTT). Sometimes an " +
+  "author types a website address but stray spaces end up inside it, so the " +
+  "address no longer works as a link. Other times a fragment merely LOOKS like " +
+  "a broken address by accident — most often an ordinary English sentence " +
+  "whose full stop is followed by a word that happens to be spelled like a " +
+  "country domain (it, in, to, me, us, be, la). You decide which one it is. " +
+  "Answer with JSON only.";
+
+export function urlFixSystemPrompt() {
+  return FIX_SYSTEM_PROMPT;
+}
+
+export function buildBrokenUrlPrompt(cand) {
+  let line = (cand.rowText || "").trim();
+  if (line.length > MAX_LINE_CHARS) line = line.slice(0, MAX_LINE_CHARS) + "…";
+  const lines = [];
+  lines.push("Line from the post:");
+  lines.push(line);
+  lines.push("");
+  lines.push("Text in question: " + cand.original);
+  lines.push("Would be repaired into: " + cand.fixed);
+  lines.push("");
+  lines.push(
+    "Did the author intend that text to be a website address, with the spaces " +
+      "being a typing mistake? Answer false when it is just running text — a " +
+      "sentence that ended and a new word that starts the next one, an " +
+      "abbreviation, or any wording where nobody was giving out a web address.",
+  );
+  // few-shot 內容刻意與任何真實語料無關（拿語料當範例等於考題外洩）。
+  lines.push("Examples:");
+  lines.push(
+    '- Line: 官網在這 demoshop . com 記得去逛 / Text: demoshop . com → {"link": true}',
+  );
+  lines.push(
+    '- Line: That was easily the best part. In fact I watched it twice. / Text: part. In → {"link": false}',
+  );
+  lines.push(
+    '- Line: 有問題寄到 samplemail . net 就好 / Text: samplemail . net → {"link": true}',
+  );
+  lines.push('Reply as {"link": true} or {"link": false}.');
+  return lines.join("\n");
 }
 
 // 解析模型回覆 → boolean；解析不出來回 null（呼叫端保留規則結果 = 保留連結）。

@@ -1,6 +1,7 @@
 import { detectFixableUrls } from '../../src/js/url_fix';
 
 const fixedOf = text => detectFixableUrls(text).map(f => f.fixed);
+const grayOf = text => detectFixableUrls(text).map(f => f.gray);
 
 describe('detectFixableUrls — repairs the 5 broken sample lines', () => {
   test('spaces around dots → collapsed', () => {
@@ -96,19 +97,65 @@ describe('detectFixableUrls — false-positive guards', () => {
   });
 });
 
+// 使用者回報：英文散文的「句號＋句首單字」與「作者打斷的裸網域」同形，因為
+// it/in/to/me/us/be/la 這些 ccTLD 剛好也是英文單字。這類候選一律標 gray，消費端
+// （Screen.jsx）預設不修，只有裝置端 AI 複核放行才會出現。
+describe('detectFixableUrls — 句號誤判標成 gray（消費端預設不修）', () => {
+  test('Call of Duty. It does not → gray', () => {
+    const text = 'The goal was to match a modern Call of Duty. It does not.';
+    expect(fixedOf(text)).toEqual(['https://Duty.It']);
+    expect(grayOf(text)).toEqual([true]);
+  });
+
+  test('句號後接 In / To 也是同一類', () => {
+    expect(grayOf('That was the best part. In fact I watched it twice.')).toEqual([true]);
+    expect(grayOf('He never replied. To be fair he was busy.')).toEqual([true]);
+  });
+
+  test('縮寫加句號（the U.S. It was）同樣是 gray', () => {
+    expect(grayOf('It happened in the U.S. It was on the news.')).toEqual([true]);
+  });
+
+  test('真的被打斷、但沒有路徑的裸網域也是 gray（形狀分不出來）', () => {
+    expect(fixedOf('官網在這 www . a .com 記得去看')).toEqual(['https://www.a.com']);
+    expect(grayOf('官網在這 www . a .com 記得去看')).toEqual([true]);
+  });
+});
+
+describe('detectFixableUrls — 有 scheme 或有路徑者不受 AI 閘門影響（gray=false）', () => {
+  test.each([
+    ['https://www . google .com/ 應該要被修好', 'https://www.google.com/'],
+    ['www.example.com/someimage. png 請自動開圖', 'https://www.example.com/someimage.png'],
+    ['example.com /badpath.jpg 測試', 'https://example.com/badpath.jpg'],
+    ['google .tw/page 看看', 'https://google.tw/page'],
+    ['參考 example.com/img.jpg 這個', 'https://example.com/img.jpg'],
+    ['https://x.com/i/status/ 1933827730166178100', 'https://x.com/i/status/1933827730166178100'],
+  ])('%s', (text, fixed) => {
+    expect(fixedOf(text)).toEqual([fixed]);
+    expect(grayOf(text)).toEqual([false]);
+  });
+});
+
 describe('detectFixableUrls — shape & dedupe', () => {
   test('dedupe identical fixed within a row', () => {
     expect(fixedOf('www . a .com 和 www . a .com')).toEqual(['https://a.com'].map(() => 'https://www.a.com'));
   });
 
-  test('each result has original + fixed, fixed carries a scheme', () => {
+  test('each result has original + fixed + host + gray, fixed carries a scheme', () => {
     const r = detectFixableUrls('圖：www.example.com/someimage. png 開圖');
     expect(r.length).toBeGreaterThan(0);
-    for (const { original, fixed } of r) {
+    for (const { original, fixed, host, gray } of r) {
       expect(typeof original).toBe('string');
       expect(typeof fixed).toBe('string');
+      expect(typeof gray).toBe('boolean');
       expect(fixed).toMatch(/^(?:https?|ftp|telnet):\/\//);
       expect(fixed).not.toMatch(/\s/);
+      expect(host).toBe('www.example.com');
     }
+  });
+
+  test('host 去掉 scheme、路徑與 port，並轉小寫', () => {
+    expect(detectFixableUrls('看 Example.COM /a.jpg 這個')[0].host).toBe('example.com');
+    expect(detectFixableUrls('連 a.com:8080 /x.png 看看')[0].host).toBe('a.com');
   });
 });
