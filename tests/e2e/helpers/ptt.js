@@ -55,6 +55,77 @@ async function dismissDeveloperModeAlert(page) {
   }
 }
 
+// --- 連線健檢（live e2e preflight）---------------------------------------
+//
+// 沒有這層時，「PTT 維護中／ws.ptt.cc 不可達」與「本專案 code 壞了」的症狀一模一樣：
+// 每個 case 都是 `waitForScreen timeout 等不到 [請輸入代號...]`，於是每個 session 都要
+// 重新研究一次是誰的問題。這裡把「WebSocket 有沒有連上」單獨驗出來並給明確結論。
+//
+// connectState 語意見 src/js/pttchrome.jsx：0=連線中、1=已連上、2=已斷線。
+
+const PTT_STATUS_HINT =
+  '排查順序：\n' +
+  '  1) 開 https://term.ptt.cc 看站台是否可用（PTT 維護／爆量時 live e2e 一律會紅，非本專案 code 問題）。\n' +
+  '  2) 確認本機到 ws.ptt.cc 的連線沒被防火牆／VPN 擋掉。\n' +
+  '  3) 以上都正常才往本專案的連線程式碼查（src/js/websocket.js、vite.config.mjs 的 /bbs proxy）。\n' +
+  '  跳過本檢查：E2E_SKIP_PREFLIGHT=1';
+
+// 純函式：把健檢蒐集到的狀態翻成「一眼看出是誰的問題」的訊息。
+// 抽出來是為了能在 tests/unit/e2e_preflight_message.test.js 守護（e2e 自己驗不到它）。
+function describeConnectFailure({ hasApp, connectState, screen, timeout }) {
+  let verdict;
+  if (!hasApp) {
+    verdict =
+      'app 沒有 boot 起來（window.__app 不存在）。這是**本專案／dev server 的問題**，' +
+      '不是 PTT：多半是 bundle 掛了、Developer Mode modal 沒被關掉，或 dev server 沒跑起來。';
+  } else if (connectState === 1) {
+    verdict =
+      'WebSocket 連上了，但終端機畫面一直是空的 —— PTT 端接受連線後不吐畫面' +
+      '（維護模式常見）。非本專案 code 問題。';
+  } else if (connectState === 2) {
+    verdict =
+      'WebSocket 連不上 PTT（連線已關閉）。**PTT 端不可達或維護中**，非本專案 code 問題。';
+  } else {
+    verdict =
+      'WebSocket 一直停在連線中，握手沒完成。多半是 **PTT 端不可達或網路被擋**，' +
+      '非本專案 code 問題。';
+  }
+  return (
+    `PTT 連線健檢失敗（等了 ${timeout}ms）\n` +
+    `結論：${verdict}\n` +
+    `connectState=${connectState === undefined ? 'n/a' : connectState}\n` +
+    `${PTT_STATUS_HINT}\n` +
+    `--- 當前畫面 ---\n${screen}\n----------------`
+  );
+}
+
+// 等 WebSocket 真的連上 PTT；逾時丟出 describeConnectFailure 的明確訊息。
+// 呼叫端：preflight.setup.js（整包一次）與 login()（單跑一支 spec 時也有明確訊息）。
+async function waitBbsConnected(page, opts = {}) {
+  const timeout = opts.timeout || 25000;
+  const interval = opts.interval || 300;
+  const deadline = Date.now() + timeout;
+  let hasApp = false;
+  let connectState;
+  while (Date.now() < deadline) {
+    const st = await page.evaluate(() => {
+      const app = window.__app;
+      if (!app) return { hasApp: false };
+      return {
+        hasApp: true,
+        connected: !!app.isConnected(),
+        connectState: app.connectState,
+      };
+    });
+    hasApp = st.hasApp;
+    connectState = st.connectState;
+    if (st.connected) return;
+    await page.waitForTimeout(interval);
+  }
+  const screen = await readScreen(page);
+  throw new Error(describeConnectFailure({ hasApp, connectState, screen, timeout }));
+}
+
 // 核心登入流程。env PTT_USER/PTT_PASS 有值用真實帳號，否則 guest。
 // 回傳登入結果摘要字串，供測試印出。
 async function login(page) {
@@ -63,6 +134,10 @@ async function login(page) {
 
   // 0. dev 模式會先跳「Developer Mode」警告 modal，需先關閉，app 才會 connect()。
   await dismissDeveloperModeAlert(page);
+
+  // 0.5 先確認 WebSocket 連得上：PTT 掛掉時直接給明確結論，而不是讓下面的
+  // waitForScreen 逾時、看起來像本專案的畫面解析壞掉。
+  await waitBbsConnected(page);
 
   // 送帳密（節流退避重試時會再呼叫一次）
   const sendCredentials = async () => {
@@ -105,6 +180,7 @@ async function login(page) {
       await page.waitForTimeout(30000);
       await page.goto('/');
       await dismissDeveloperModeAlert(page);
+      await waitBbsConnected(page);
       await sendCredentials();
       deadline = Date.now() + 40000;
       continue;
@@ -266,6 +342,8 @@ module.exports = {
   typeLine,
   sendKey,
   login,
+  waitBbsConnected,
+  describeConnectFailure,
   attachConsole,
   dismissDeveloperModeAlert,
   applyPrefs,

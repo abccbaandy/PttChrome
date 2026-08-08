@@ -707,7 +707,10 @@ EasyReading.prototype.stopEasyReading = function() {
 };
 
 EasyReading.prototype._send = function(data) {
-  this._view.conn.send(data);
+  // 走 TermView._send（內含 `if (this.conn)`）：view.conn 只在 App.onConnect 被設，
+  // 連線從未成功時是 undefined，直接 deref 會 TypeError。見 pttchrome.jsx
+  // switchToEasyReadingMode 的同類註解。
+  this._view._send(data);
 };
 
 // Temporarily leave easy reading: switch back to native rendering and jump to

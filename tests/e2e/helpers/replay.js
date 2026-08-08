@@ -41,8 +41,17 @@ function findCassette(mode) {
 }
 
 // addInitScript：必须在 page.goto 之前呼叫，覆写 window.WebSocket。
-async function installReplay(page) {
-  await page.addInitScript(() => {
+//
+// opts.neverOpen=true：模拟「**从未连上**」（PTT 维护中 / ws.ptt.cc 不可达）——不 fire
+//   open，改 fire error + close，与浏览器对失败握手的事件序列一致。这条路径与「先连上
+//   再断线」**不同**：App.onConnect 从不执行 ⇒ TermView.setConn 从没被呼叫 ⇒
+//   `view.conn === undefined`（见 pttchrome.jsx:263）。用 Playwright 的
+//   page.routeWebSocket() 做不到这件事：它会把 mock 的 WebSocket 在页面里**开起来**
+//   （types.d.ts「Playwright assumes that WebSocket will be mocked, and opens the
+//   WebSocket inside the page」），onConnect 照跑。
+async function installReplay(page, opts = {}) {
+  const neverOpen = opts.neverOpen === true;
+  await page.addInitScript((neverOpen) => {
     class StubWebSocket {
       constructor(url) {
         this.url = url;
@@ -52,6 +61,12 @@ async function installReplay(page) {
         window.__stubWS = this;
         // 异步 fire open，让 App.onConnect 在事件回圈里跑（与原生 WS 行为一致）。
         setTimeout(() => {
+          if (neverOpen) {
+            this.readyState = 3; // CLOSED
+            this._emit('error', {});
+            this._emit('close', {});
+            return;
+          }
           this.readyState = 1; // OPEN
           this._emit('open', {});
         }, 0);
@@ -97,7 +112,7 @@ async function installReplay(page) {
     StubWebSocket.CLOSING = 2;
     StubWebSocket.CLOSED = 3;
     window.WebSocket = StubWebSocket;
-  });
+  }, neverOpen);
 }
 
 // 等 app 离线「连上」（onConnect 把 connectState 设 1）。

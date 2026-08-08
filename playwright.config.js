@@ -17,16 +17,26 @@ module.exports = defineConfig({
     video: 'retain-on-failure',
     trace: 'on-first-retry',
   },
-  // 三个 project 共用同一个 webServer（Vite dev server）：
+  // 四个 project 共用同一个 webServer（Vite dev server）：
+  // - preflight：连线健检（tests/e2e/preflight.setup.js），只验「连得到 PTT」。
   // - live   ：连真实 PTT 的 e2e（现有 spec），排除 offline/ 与 tools/。
   // - offline：离线重放（tests/e2e/offline/**），用 stub WebSocket + cassette，零网络。
   // - record ：一次性录制器（tools/record-cassette.spec.js），连真实 PTT(guest) 产出 cassette。
   // 见 docs/offline-replay-testing.md。
+  //
+  // live／record 依赖 preflight：PTT 维护／不可达时，整包不跑，只留一则明确结论，
+  // 而不是 20 几条各自 waitForScreen timeout（看不出是 PTT 掛了还是本专案 code 坏了）。
   projects: [
+    {
+      name: 'preflight',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: 'preflight.setup.js',
+    },
     {
       name: 'live',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: ['offline/**', 'tools/**'],
+      dependencies: ['preflight'],
+      testIgnore: ['offline/**', 'tools/**', 'preflight.setup.js'],
     },
     {
       name: 'offline',
@@ -36,6 +46,7 @@ module.exports = defineConfig({
     {
       name: 'record',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['preflight'],
       testMatch: 'tools/record-cassette.spec.js',
     },
   ],

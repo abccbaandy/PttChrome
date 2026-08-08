@@ -17,6 +17,30 @@ yarn test:e2e:ui       # Playwright UI 模式
 
 dev server 由 `playwright.config.js` 的 `webServer` 自動啟動（已手動 `yarn start` 時 `reuseExistingServer` 會重用）。
 
+## PTT 連不上時（preflight 連線健檢）
+
+`live` 與 `record` project 都 `dependencies: ['preflight']`（`preflight.setup.js`）。
+preflight 只驗一件事：**連得到 PTT 嗎**（app 有 boot → WebSocket 連上 → server 有吐畫面），
+紅了就整包 live 不跑，只留一則明確結論。
+
+判準（訊息會直接寫在錯誤裡）：
+
+| 現象 | 結論 |
+| --- | --- |
+| `window.__app` 不存在 | 本專案／dev server 問題（bundle 掛了、dev server 沒起來） |
+| `connectState=2`（已斷線） | **PTT 端不可達或維護中**，非本專案 code 問題 |
+| `connectState=0`（一直在連） | PTT 不可達或網路被擋，非本專案 code 問題 |
+| `connectState=1` 但畫面空白 | 連上了但 server 不吐畫面（PTT 維護模式常見） |
+
+**PTT 維護中時 live e2e 必紅，這是預期行為**，先開 https://term.ptt.cc 確認站台狀態，
+不要往本專案 code 追。逃生門 `$env:E2E_SKIP_PREFLIGHT="1"`（會跳過健檢直接跑 live）。
+
+純函式 `describeConnectFailure` 的訊息內容由 `tests/unit/e2e_preflight_message.test.js` 守護。
+
+**連線失敗類的行為測試不放這裡**：真 PTT 沒辦法可靠地製造「連不上」，一律測在 offline
+project（`offline/connect_failure.offline.spec.js`，用 `installReplay(page, { neverOpen: true })`），
+好處是 CI 的 offline-e2e job 也跑得到（live e2e 不在 CI）。
+
 ## 孤兒進程 / stale bundle
 
 以前常見坑：dev server 被中斷後殘留孤兒 `node` 佔住 8080，`reuseExistingServer` 又重用到 stale bundle。
@@ -62,6 +86,8 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
   - `typeLine` / `sendKey`：對隱藏 input `#t` 打字
   - `dismissDeveloperModeAlert`：關掉 dev build 的 Developer Mode modal（不關 app 不會 connect）
   - `login`：env 有帳密用真實帳號否則 guest，容錯迴圈處理 PTT 中間提示頁 + 節流退避
+  - `waitBbsConnected` / `describeConnectFailure`：連線健檢與其錯誤訊息（見上節；`login` 開頭也會呼叫，
+    單跑一支 spec 時同樣拿得到明確結論）
   - `attachConsole`：收集 console / pageerror
   - `applyPrefs` / `resetSession` / `gotoBoard`：共用 session 專用（runtime prefs、回主選單復位、進看板）
   - `getPref(page, key)`：runtime 讀「有效 pref 值」（`DEFAULT_PREFS` 疊 localStorage），見下方規範

@@ -62,10 +62,12 @@ test.describe('滾輪按鍵旗標卡死（offline 回歸）', () => {
     await bootOffline(page, ptt);
 
     await page.evaluate(() => {
+      // 走 setModalOpen（具名來源集合）而非直接寫 modalShown：後者已改由來源集合
+      // 推導，硬寫會在下一次任何 modal 開關時被覆蓋。
       window.dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
-      window.__app.modalShown = true;
+      window.__app.setModalOpen('test', true);
       window.dispatchEvent(new MouseEvent('mouseup', { button: 2 }));
-      window.__app.modalShown = false;
+      window.__app.setModalOpen('test', false);
     });
 
     const sent = (await wheelUpAndCapture(page, 0)).join('');

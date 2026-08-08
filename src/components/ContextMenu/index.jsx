@@ -6,6 +6,7 @@ import LiveHelperModal from "./LiveHelperModal";
 import PrefModal from "./PrefModal";
 import TitleBlacklistModal from "./TitleBlacklistModal";
 import DebugRecordButton from "../DebugRecordButton";
+import { onPrefSaveImpl } from "./pref_save";
 import { downloadAsFile } from "../../js/util";
 import { readValuesWithDefault, writeValues } from "../../js/pref_storage";
 import * as prefSync from "../../js/pref_sync";
@@ -57,17 +58,6 @@ const menuHandlerByEventKey = {
   mouseBrowsing: (pttchrome) => pttchrome.switchMouseBrowsing(),
 };
 
-const onPrefSaveImpl = (pttchrome, values) => {
-  pttchrome.onValuesPrefChange(values);
-  pttchrome.modalShown = false;
-  pttchrome.setInputAreaFocus();
-  pttchrome.switchToEasyReadingMode(pttchrome.view.useEasyReadingMode);
-
-  return {
-    showsSettings: false,
-  };
-};
-
 const initialState = {
   // --- Menu state ---
   open: false,
@@ -109,6 +99,20 @@ export const ContextMenu = ({ pttchrome }) => {
   const update = useCallback((partial) => {
     if (partial !== undefined) setState((s) => ({ ...s, ...partial }));
   }, []);
+
+  // pttchrome.modalShown（終端機鍵盤／焦點的總閘門）由 render state **推導**，不由各個
+  // 事件處理器手動兩邊維護：任何一條關閉路徑中途 throw／early-return，都不會留下
+  // 「畫面上有對話框、app 卻以為沒有」的失同步 —— 那個失同步會讓 term_view 的 keyup
+  // 與 pttchrome 的 mouseover/mouseup 永久把焦點搶回隱藏 input #t，整頁只能重整才能
+  // 打字。回歸守護：tests/e2e/offline/connect_failure.offline.spec.js。
+  //
+  // 界線（刻意維持現狀，勿順手擴大）：showsInputHelper／showsLiveArticleHelper 一直
+  // 都不算 modal（終端機在它們開著時仍收鍵盤），ui_behavior.offline.spec.js 的
+  // 「點到 Mantine 圖示(SVG) 不崩潰」正是靠 InputHelper 屬「非 modal 浮層」才測得到。
+  const modalOpen = state.showsSettings || state.showsTitleBlacklist;
+  useEffect(() => {
+    pttchrome.setModalOpen("contextMenu", modalOpen);
+  }, [pttchrome, modalOpen]);
 
   const onContextMenu = useCallback(
     (event) => {
@@ -248,13 +252,12 @@ export const ContextMenu = ({ pttchrome }) => {
   );
 
   // Title quick-add opens an editable prompt (prefilled with the full title)
-  // instead of writing immediately. modalShown gates the terminal keyboard
-  // handler so typing in the TextInput doesn't drive the BBS session.
+  // instead of writing immediately. showsTitleBlacklist 會被上方的 useEffect 推導成
+  // modalShown=true，讓終端機鍵盤處理器讓位給 TextInput（打字不會驅動 BBS session）。
   const onTitleBlacklistClick = useCallback(
     (event) => {
       event.stopPropagation();
       pttchrome.contextMenuShown = false;
-      pttchrome.modalShown = true;
       update({
         ...initialState,
         showsTitleBlacklist: true,
@@ -264,10 +267,8 @@ export const ContextMenu = ({ pttchrome }) => {
     [pttchrome, update],
   );
   const onTitleBlacklistHide = useCallback(() => {
-    pttchrome.modalShown = false;
-    pttchrome.setInputAreaFocus();
     update({ showsTitleBlacklist: false, titleBlacklistDraft: "" });
-  }, [pttchrome, update]);
+  }, [update]);
   const onTitleBlacklistConfirm = useCallback(
     (keyword) => {
       quickAddBlacklist(pttchrome, "titleBlacklist", keyword);
@@ -290,7 +291,6 @@ export const ContextMenu = ({ pttchrome }) => {
       event.stopPropagation();
       pttchrome.contextMenuShown = false;
       pttchrome.onDisableLiveHelperModalState();
-      pttchrome.modalShown = true;
       update({ ...initialState, showsSettings: true });
     },
     [pttchrome, update],

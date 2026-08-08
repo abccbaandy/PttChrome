@@ -97,6 +97,8 @@ export const App = function() {
   this.mouseButtons = new MouseButtonTracker();
 
   this.inputAreaFocusTimer = null;
+  // 目前開著的 modal 來源名稱集合；modalShown = size > 0（見 setModalOpen）。
+  this._openModals = new Set();
   this.modalShown = false;
 
   this.lastSelection = null;
@@ -366,6 +368,31 @@ App.prototype.setInputAreaFocus = function() {
   this.inputArea.focus();
 };
 
+// modalShown 是終端機鍵盤／焦點的總閘門（讀取點散在 term_view.js 的 shouldAcceptInput
+// ／onInput 與本檔的 setInputAreaFocus／mouse_click／mouse_down／mouse_up／mouse_over
+// ／mouse_scroll）。歷史上它是「各處手動兩邊維護的裸布林」，只要任何一條關閉路徑漏掉
+// 復位（early-return、或副作用中途 throw），就會變成「畫面上還有對話框、app 卻以為
+// 沒有」→ keyup/mouseover/mouseup 永久把焦點搶回隱藏 input #t，整頁只能重整才能打字。
+//
+// 改為具名來源集合：
+//   - 呼叫端只宣告「我這個來源開著／關了」，不直接寫 modalShown，兩個 modal 交錯開關
+//     不會互相把對方的旗標關掉。
+//   - React 側（components/ContextMenu/index.jsx）由 render state 推導後呼叫本函式，
+//     結構上不可能失同步。
+//   - 關掉最後一個 modal 時才把焦點還給終端機。
+App.prototype.setModalOpen = function(source, open) {
+  if (open)
+    this._openModals.add(source);
+  else
+    this._openModals.delete(source);
+  var shown = this._openModals.size > 0;
+  if (shown === this.modalShown)
+    return;
+  this.modalShown = shown;
+  if (!shown)
+    this.setInputAreaFocus();
+};
+
 // FIXME: Injected when enabled. See: src/components/ContextMenu/index.js
 App.prototype.onToggleLiveHelperModalState = noop;
 // FIXME: Injected when enabled. See: src/components/ContextMenu/index.js
@@ -381,7 +408,7 @@ App.prototype.switchToEasyReadingMode = function(doSwitch) {
     this.onDisableLiveHelperModalState();
     // clear the deep cloned copy of lines
     this.buf.pageLines = [];
-    if (this.buf.pageState == 3) this.view.conn.send('\x1b[D\x1b[C'); //this.view.conn.send('qr');
+    if (this.buf.pageState == 3) this.view._send('\x1b[D\x1b[C'); //this.view._send('qr');
   } else {
     this.view.mainContainer.style.paddingBottom = '';
     this.view.lastRowIndex = 22;
@@ -390,8 +417,12 @@ App.prototype.switchToEasyReadingMode = function(doSwitch) {
     // clear the deep cloned copy of lines
     this.buf.pageLines = [];
   }
-  // request the full screen
-  this.view.conn.send(unescapeStr('^L'));
+  // request the full screen.
+  // 一律走 view._send（內含 `if (this.conn)`），不可直接 this.view.conn.send：
+  // TermView.setConn 只在 App.onConnect 被呼叫，**連線從未成功時 view.conn 是
+  // undefined** → 直接 deref 會 TypeError，把呼叫端（關設定頁）整條路徑炸斷。
+  // 回歸守護：tests/e2e/offline/connect_failure.offline.spec.js。
+  this.view._send(unescapeStr('^L'));
 };
 
 App.prototype.doCopy = function(str) {
@@ -444,7 +475,7 @@ App.prototype.showPasteUnimplemented = function() {
   const container = document.getElementById('reactAlert')
   const onDismiss = () => {
     unmountFrom(container)
-    this.modalShown = false;
+    this.setModalOpen('pasteAlert', false);
   }
   // PasteShortcutAlert 本身即 Mantine Modal（backdrop + ESC 由 Mantine 提供）；
   // × / 按鈕 / onClose 皆走 onDismiss → unmount 容器。
@@ -454,7 +485,7 @@ App.prototype.showPasteUnimplemented = function() {
       <PasteShortcutAlert opened onClose={onDismiss} />
     </MantineRoot>
   )
-  this.modalShown = true;
+  this.setModalOpen('pasteAlert', true);
 };
 
 App.prototype.onPasteDone = function(content) {
@@ -507,8 +538,8 @@ App.prototype.incrementCountToUpdatePushthread = function(interval) {
   if (++this.pushthreadAutoUpdateCount >= this.maxPushthreadAutoUpdateCount) {
     this.pushthreadAutoUpdateCount = 0;
     if (this.buf.pageState == 3 || this.buf.pageState == 2) {
-      //this.view.conn.send('qrG');
-      this.view.conn.send('\x1b[D\x1b[C\x1b[4~');
+      //this.view._send('qrG');
+      this.view._send('\x1b[D\x1b[C\x1b[4~');
     }
   }
 };

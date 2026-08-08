@@ -83,7 +83,8 @@ yarn test:e2e:offline   # 離線重放（stub WebSocket，零網路），斷網/
 yarn test:unit          # 含 Layer2 重建（無對應 fixture 則 skip）
 yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=live）
 ```
-- `playwright.config.js` 三 project：`live`（現有 spec，排除 offline/tools）、`offline`、`record`。
+- `playwright.config.js` 四 project：`preflight`（PTT 連線健檢）、`live`（現有 spec，排除
+  offline/tools；`dependencies: ['preflight']`）、`offline`、`record`（亦依賴 preflight）。
 - 沒錄過任何 cassette/fixture：offline 文章/增強 spec 與 Layer2 unit **skip**（非失敗）；
   `harness.offline.spec.js` 永遠不需素材（驗離線 boot+onData 渲染）。
 
@@ -151,5 +152,13 @@ apply`…）當防禦，避免圖載不到就假紅。**圖改本地 fixture 後
 - 必須先 `applyPrefs(enableEasyReading:true)` 寫 localStorage **再** `enterEasyReading()`，否則
   `easy_reading.js` 的 `_onChanged` 讀到 pref off 會立刻 `exitEasyReading`。
 - `installReplay()` 的 `addInitScript` 必須在 `page.goto` **之前**（覆寫 `window.WebSocket` 要早於 bundle）。
+- **「從未連上」要用 `installReplay(page, { neverOpen: true })`**（不 fire `open`，改 fire
+  `error`+`close`）。它與「先連上再斷線」是**兩條不同路徑**：`App.onConnect` 從不執行 ⇒
+  `TermView.setConn` 沒被呼叫 ⇒ `view.conn === undefined`，任何直接 `view.conn.send()`
+  立刻 TypeError；先連上再斷線時 `view.conn` 是已關閉的 socket，`send()` 依規範是 no-op 不 throw。
+  守護：`tests/e2e/offline/connect_failure.offline.spec.js`。
+  **不要改用 Playwright 的 `page.routeWebSocket()`** —— 它會把 mock 的 WebSocket 在頁面裡
+  **開起來**（官方 types：「Playwright assumes that WebSocket will be mocked, and opens the
+  WebSocket inside the page」），`onConnect` 照跑，測不到這條路徑。
 - Layer2 重建要 `pageScreens[p].slice(0,-1)` 去掉狀態列（與 accumulatePageLines 一致）。
 - `getRowText(row,0,cols,pageLines)` 第 4 參傳 pageLines 才讀累積頁（不傳讀 24 列原生 buf）。

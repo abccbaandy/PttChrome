@@ -295,6 +295,11 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
   // stopImmediatePropagation，斷線後只要它掛著，整個網頁的 UI 就都收不到鍵盤；而且在
   // 對話框裡按 Enter 會意外觸發重連。PTT 平常很少斷線，所以一直沒被發現。
   // 純鍵盤界線守在 tests/unit/connection_alert_keys.test.jsx，這裡守症狀。
+  //
+  // 注意這條是「**先連上再斷線**」（下方有 waitConnected）：view.conn 是已關閉的
+  // TelnetConnection，send() 依規範是 no-op。「**從未連上**」（view.conn === undefined）
+  // 是另一條路徑、另一組 bug，守在 connect_failure.offline.spec.js —— 別把兩者搞混，
+  // 這條綠不代表那條也綠（實例：a37a511 修完這條，那條仍整頁卡死）。
   test('斷線提示掛著時：設定頁仍能打字，Enter 不會意外重連', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
