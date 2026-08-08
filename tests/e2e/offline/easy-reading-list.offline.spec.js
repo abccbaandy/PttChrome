@@ -215,6 +215,66 @@ test.describe('文章列表好读模式（离线）', () => {
     }
   });
 
+  test('贴上原生指令一次生效：Shift+Insert 不被吞、paste 走 native-paste 只送一次', async ({ page }) => {
+    // 回归（2026-08「AID 文章码要贴两次」）：Shift+Insert 曾落 passthrough →
+    // preventDefault 取消浏览器贴上 → #t 收不到 paste 事件，PTT 只收到 \x1b[2~。
+    // 这里锁两件事：① 该按键本身不送任何 byte、不切原生；② 真正的 paste 事件
+    // 经 App.onPasteDone → ListSession.onPaste，整串一次送出并切原生镜像。
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    const AID = '#1gTTD8RU';
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, nav);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: true,
+        easyReadingListPrefetchCount: 0
+      });
+      const before = await waitState(page, (x) => x.state === 'active' && x.queueIdle);
+
+      // ① Shift+Insert 本身：不送 byte、不转态（旧码会送 \x1b[2~ 并切原生）。
+      await page.locator('#t').focus();
+      await page.keyboard.press('Shift+Insert');
+      await page.waitForTimeout(300);
+      const afterKey = await dumpListState(page);
+      expect(afterKey.sentCount).toBe(before.sentCount);
+      expect(afterKey.state).toBe('active');
+      expect(afterKey.renderMode).toBe('buffer');
+
+      // ② 真 paste 事件（浏览器在贴上成功时会发的那个）。seed 落点 server 游标
+      // ＝选取 → 免 sync 腿，整串直接进 native-paste。
+      await page.evaluate((text) => {
+        const dt = new DataTransfer();
+        dt.setData('text', text);
+        document.getElementById('t').dispatchEvent(
+          new ClipboardEvent('paste', {
+            clipboardData: dt,
+            bubbles: true,
+            cancelable: true
+          })
+        );
+      }, AID);
+
+      const after = await waitState(
+        page,
+        (x) => x.state === 'functionMode' && x.renderMode === 'native',
+        10000
+      );
+      // 恰好一次送出、内容完整（不得拆成逐字或漏字）。
+      expect(after.sentCount).toBe(before.sentCount + 1);
+      const sent = await page.evaluate(() => window.__replay.sent.slice(-1)[0]);
+      expect(sent).toBe(AID);
+      // 没有多余的 Insert 跳脱序列混进去。
+      const all = await page.evaluate(() => window.__replay.sent.join(''));
+      expect(all).not.toContain('\x1b[2~');
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
   test('本地导航即时：↑ 立即移动游标（不等 server），demand 背景补页', async ({ page }) => {
     test.setTimeout(60000);
     const logs = ptt.attachConsole(page);

@@ -135,11 +135,26 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 
 ## 8. MODE_SELECT（`/` 搜尋）交易進出對（CONFIRMED）
 
-- 進入：`/` → `select_read(locmem, RS_KEYWORD)`（`mbbsd/read.c:776`）→ `getdata(b_lines, 0, "搜尋標題: ", …, DOECHO)`（Enter 收尾；空字串→`READ_REDRAW` 回原列表）→ 命中 count>0：`currmode |= MODE_SELECT` ＋ `NEWDIRECT`（全幅重建搜尋清單，序號空間獨立、無置底，見 §3）；count==0：`READ_REDRAW`（回原列表全幅重繪，底列 vmsg 類訊息）。
+- 進入：`/` → `select_read(locmem, RS_KEYWORD)`（`mbbsd/read.c:811-813`；舊記的 `:776` 現在是 Ctrl-H 的 `RS_NEWPOST`，行號會漂、以函式名為準）→ `getdata(b_lines, 0, "搜尋標題: ", …, DOECHO)`（Enter 收尾；空字串→`READ_REDRAW` 回原列表）→ 命中 count>0：`currmode |= MODE_SELECT` ＋ `NEWDIRECT`（全幅重建搜尋清單，序號空間獨立、無置底，見 §3）；count==0：`READ_REDRAW`（回原列表全幅重繪，底列 vmsg 類訊息）。
 - 已在 MODE_SELECT 再 `/`＝「增加條件」疊加篩選。
 - **退出：`q`／`e`／`←`**（`read.c:712-725`）→ `board_select()` 回主 directory ＋ `NEWDIRECT` 全幅重建主列表；**top=crs-p_lines+1（游標在視窗底列）**。
 - **退出落點 = 帳號已讀進度，非進 select 前位置**（live CONFIRMED 2026-07-06，C_Chat 三次重測落點恆定於同一舊序號）：`crs_ln=refer` 的 refer 解析回主列表時採該板閱讀進度。⇒ client 不得假設退回畫面含進板時取樣的最新序號（re-seed 後 fill 只向上，buffer 可能整段低於進板頁）；測試判準用「序號回到主空間（> select 清單 max）」。
 - **select 清單 row0 指紋**：板名前綴由「看板」變「**系列**《板名》」（live CONFIRMED）——可做輔助指紋，但主要區分仍靠 client 自身交易狀態。
+
+## 8.1 `#` AID 搜尋交易（`select_by_aid`，CONFIRMED）
+
+`mbbsd/read.c:366-481`；入口 `i_read_key` 的 `case '#'`（`read.c:766-768`）。**不走 `read_comms[]` onekey 表**（`bbs.c` 表中 35 號為 `{0,NULL}`）⇒ 一般/mail/man/digest 各模式一律生效。
+
+- prompt：`getdata(b_lines, 0, "搜尋" AID_DISPLAYNAME ": #", aidc, 20, DOECHO)` ⇒ 底列全文 **`搜尋文章代碼(AID): #`**（`AID_DISPLAYNAME` 見 `include/common.h:151`）。尾端 `#` **印死在 prompt 裡**，非使用者輸入。
+- `DOECHO`＝`VGET_DEFAULT` → `vgets`/`vgetstring`（`vtuikit.c:1150`）：**Enter 收尾**；ESC 或空字串＝取消（`move(b_lines,0); clrtoeol(); return FULLUPDATE`）。buffer len 20 ⇒ 實收上限 19 bytes。
+- 輸入前處理（`read.c:394-399`）：strip 前置空白與**一個** `#` ⇒ 送 `#1gIeu-3A` 與 `1gIeu-3A` 等價。`aidc2aidu()` 遇非法字元回 0。
+- **成功（`read.c:477-481`）：`*pnew_ln = n+1; move(b_lines,0); clrtoeol(); return DONOTHING;`** ⇒ **只把游標移到目標序號、不重繪清單、不自動開文**。畫面指紋與「數字跳號」完全相同（底列留空）⇒ **client 直接沿用 §4 ✚ 的 park 判定**，不可等 clean-list。
+- 失敗（`read.c:464-475`）：`move(21,0); clrtobot(); move(22,0)` ＋ `不合法的文章代碼(AID)，請確定輸入是正確的` / `找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了` ＋ `pressanykey()` ＋ `FULLUPDATE`。
+- 拒絕分支：MODE_SELECT（搜尋清單中）或 RMAIL → `此狀態下無法使用搜尋文章代碼(AID)功能` ＋ `pressanykey()`。
+- **跨模式跳轉會產生二段式畫面更新**：命中處與目前模式不符（一般↔文摘）時設 `*pdefault_ch = KEY_TAB; return DONOTHING;`——server **自己補按一個 TAB**，下一圈 `i_read_key` 用它跑 `board_digest()` 切模式 ⇒ client 會看到「prompt 消失」與「全幅切換清單」兩段。
+- 文章內（pmore）按 `#`：`more.c:108-112` → `RET_SELECTAID` → `read.c:1018-1024` 先退出 pmore 回列表再開同一個 prompt，收尾強制 `FULLUPDATE`（與列表內的 `DONOTHING` 不同）。
+- **死碼警告**：`mbbsd/aids.c` 的 `do_search_aid()`（支援 `AID@BOARDNAME` 跨板語法）整段包在 `#ifdef NEW_AIDS` 內，而 `NEW_AIDS` 全 repo 無任何定義 ⇒ **真正跑的只有 `read.c#select_by_aid`，不支援 `@板名`**。勿照那段實作 client。
+- client 對照：`src/js/aid_navigation.js`（點 AID 連結的三段式交易）與列表好讀的貼上 passthrough（`list_session.js#onPaste`）——後者刻意**不**代按 Enter、不特判 AID，讓上述原生行為原樣呈現。
 
 ## 9. 水球/廣播指紋（T4 非請自來，CONFIRMED）
 

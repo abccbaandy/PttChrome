@@ -24,7 +24,8 @@ import {
   isDBCSLead,
   unescapeStr,
   b2u,
-  u2b
+  u2b,
+  normalizePasteText
 } from "../../src/js/string_util";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
@@ -45,6 +46,36 @@ describe("wrapText group-width measurement", () => {
   // Plain ASCII below the limit is returned unchanged.
   it("leaves short ASCII untouched", () => {
     expect(wrapText("hello", 10, "\n")).toBe("hello");
+  });
+});
+
+describe("normalizePasteText（貼上正規化，兩條貼上路徑共用）", () => {
+  // 從 term_view.onTextInput 抽出來的原因：列表好讀的 ListSession.onPaste 走
+  // CommandQueue（raw conn.send）而非 convSend，若各自複製一份規則，「好讀裡
+  // 貼上」與「原生貼上」會靜默分歧。這裡釘住規則本身。
+  it("換行一律收斂成單一 \\r（尾隨換行＝送出 PTT prompt，原生行為）", () => {
+    expect(normalizePasteText("#1gTTD8RU\r\n", 0)).toBe("#1gTTD8RU\r");
+    expect(normalizePasteText("#1gTTD8RU\n", 0)).toBe("#1gTTD8RU\r");
+    expect(normalizePasteText("a\nb\r\nc", 0)).toBe("a\rb\rc");
+  });
+
+  it("無換行時原樣通過（AID 貼上不被加工）", () => {
+    expect(normalizePasteText("#1gTTD8RU", 0)).toBe("#1gTTD8RU");
+  });
+
+  it("ESC 轉 Ctrl-U（\\x15）——\\x1b 會讓 PTT vgetstring 進跳脫序列", () => {
+    expect(normalizePasteText("a\x1bb", 0)).toBe("a\x15b");
+  });
+
+  it("lineWrap > 0 才折行（以 \\r 為斷行字元），lineWrap 0 原樣通過", () => {
+    // wrapText 不切開單字，斷點落在字組邊界（其規則本身由上面的 describe 守護）
+    expect(normalizePasteText("ab cd ef", 5)).toBe("ab \rcd ef");
+    expect(normalizePasteText("ab cd ef", 0)).toBe("ab cd ef");
+  });
+
+  it("含 ESC 時不折行（沿用原 onTextInput 條件），ESC 仍轉 Ctrl-U", () => {
+    // 折行會插入 \r，混進跳脫序列中間就毀了它；原碼刻意在有 \x1b 時跳過 wrap。
+    expect(normalizePasteText("ab cd\x1bef gh", 5)).toBe("ab cd\x15ef gh");
   });
 });
 

@@ -348,6 +348,38 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵一鍵切原生"
     }
   });
 
+  test("Shift+Insert（貼上快捷鍵）同樣放行——preventDefault 會取消瀏覽器貼上", () => {
+    // 回歸：Shift+Insert 不是 ctrl 組合 → 舊碼落 passthrough → preventDefault
+    // ⇒ #t 收不到 paste 事件、App.onDOMPaste 永不觸發，PTT 只收到 keyEventToBytes
+    // 產出的 \x1b[2~。畫面切原生但沒貼上東西，使用者得再貼第二次（那次才成功，
+    // 因為此時 listRenderMode 已是 native、本 hook 根本不被呼叫）。
+    const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._selectedNum = 42;
+    const e = keyEvent("Insert");
+    e.shiftKey = true;
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(false);
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer"); // 不因按鍵本身切原生
+    expect(enqueued).toEqual([]); // 不得送 \x1b[2~
+    expect(sent).toEqual([]);
+  });
+
+  test("反向守護：純 Insert（無 shift）仍是 passthrough 鍵", () => {
+    const { s, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._selectedNum = 42;
+    const e = keyEvent("Insert");
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(s.state).toBe("functionMode");
+    expect(enqueued[0].kind).toBe("native-sync-jump");
+  });
+
   test("v / `/`（舊 T2 模擬已拔除）→ 同 passthrough：sync 完成後代送、切原生", () => {
     // 已讀設定/標題搜尋改由原生畫面接手（單按切原生），模擬 prompt/overlay 退役。
     for (const key of ["v", "/"]) {

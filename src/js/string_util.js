@@ -71,6 +71,35 @@ export function wrapText(it, maxLen, enterChar) {
   return result;
 };
 
+// Paste normalization, shared by EVERY paste route so they all put the same
+// bytes on the wire. Two callers today:
+//   - TermView.onTextInput(text, /*isPasting*/true) — the native path,
+//   - ListSession.onPaste — list easy reading's serialized T3 passthrough,
+// which sends through CommandQueue (raw conn.send) instead of convSend and so
+// has to do the u2b/ansiHalfColorConv itself. Duplicating the rules here would
+// mean "paste in easy reading" and "paste in native" quietly diverging.
+//
+// ENTER_CHAR: every newline flavour collapses to a single \r — a pasted line
+// that ends in a newline therefore SUBMITS whatever PTT prompt is open (native
+// terminal behaviour, deliberately preserved).
+// ESC_CHAR: \x1b would put PTT's vgetstring into an escape sequence, so it is
+// mapped to Ctrl-U (\x15). FIXME (inherited): DBCS words with 2-color are not
+// stopped from being pasted.
+export const PASTE_ENTER_CHAR = '\r';
+export const PASTE_ESC_CHAR = '\x15'; // Ctrl-U
+
+export function normalizePasteText(text, lineWrap) {
+  let out = String(text)
+    .replace(/\r\n/g, '\r')
+    .replace(/\n/g, '\r')
+    .replace(/\r/g, PASTE_ENTER_CHAR);
+
+  if (out.indexOf('\x1b') < 0 && lineWrap > 0)
+    out = wrapText(out, lineWrap, PASTE_ENTER_CHAR);
+
+  return out.replace(/\x1b/g, PASTE_ESC_CHAR);
+}
+
 export function u2b(it) {
   var data = '';
   for (var i = 0; i < it.length; ++i) {

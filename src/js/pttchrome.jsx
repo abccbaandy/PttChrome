@@ -488,8 +488,24 @@ App.prototype.showPasteUnimplemented = function() {
   this.setModalOpen('pasteAlert', true);
 };
 
+// Single funnel for every paste route (DOM paste on #t, Ctrl-Shift-V, context
+// menu, middle click) — so both easy-reading modes only have to be taught here.
 App.prototype.onPasteDone = function(content) {
-  //this.conn.convSend(content);
+  // List easy reading owns the wire while it renders the buffer: a raw convSend
+  // would race its serialized commands AND land on a screen the user can't see.
+  // onPaste returns false when it isn't engaged (native mirror / idle).
+  if (this.listSession && this.listSession.onPaste(content))
+    return;
+
+  // Article easy reading: the same blind spot in miniature. _onKeyDown enters
+  // functionMode for any single character it doesn't handle, precisely so the
+  // prompt PTT opens (#, /, ;, :, s…) is mirrored live — but a paste isn't a
+  // keypress, so it never tripped that rule and the prompt stayed hidden behind
+  // the accumulated long page. Mirror natively before the text goes out.
+  // (_enterFunctionMode is a no-op when already in it.)
+  if (this.view.useEasyReadingMode && this.buf.startedEasyReading)
+    this.easyReading._enterFunctionMode();
+
   this.view.onTextInput(content, true);
 };
 

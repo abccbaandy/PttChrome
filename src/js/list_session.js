@@ -25,7 +25,13 @@ import {
   LIST_AUTHOR_COL_START,
   LIST_AUTHOR_COL_END,
 } from './comment_parse';
-import { parseStatusRow, parseListRow, u2b } from './string_util';
+import {
+  parseStatusRow,
+  parseListRow,
+  u2b,
+  ansiHalfColorConv,
+  normalizePasteText
+} from './string_util';
 import { keyEventToBytes } from './term_keyboard';
 import { readValuesWithDefault } from './pref_storage';
 import {
@@ -860,11 +866,24 @@ ListSession.prototype = {
     // paste); Alt/Meta combos are browser shortcuts. Everything ELSE — Ctrl-P
     // 發文 included — falls through to the closed-interaction whitelist below
     // (v4 let all ctrl combos reach the server: an open key-leak).
+    //
+    // Shift-Insert (the paste shortcut this app tells users to use — i18n
+    // alert_pasteShortcutText) MUST be in here too. It isn't a ctrl combo, so
+    // it used to fall through to 'passthrough', whose e.preventDefault()
+    // CANCELS THE BROWSER'S PASTE: no `paste` event on #t, App.onDOMPaste never
+    // fires, and all PTT gets is the \x1b[2~ that keyEventToBytes made of the
+    // Insert key. The list flipped to the native mirror with nothing pasted, so
+    // the user had to paste a SECOND time (that one worked — by then
+    // listRenderMode is 'native' and this hook isn't called at all). Bare
+    // Insert stays a passthrough key: only the shifted form is a clipboard
+    // action. The paste itself is handled in onPaste (App.onPasteDone routes it
+    // back here), not by letting bytes leak straight onto the wire.
     const clipboard =
-      e.ctrlKey &&
-      !e.altKey &&
-      !e.metaKey &&
-      ['c', 'a', 'v', 'x'].indexOf((e.key || '').toLowerCase()) !== -1;
+      (e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        ['c', 'a', 'v', 'x'].indexOf((e.key || '').toLowerCase()) !== -1) ||
+      (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Insert');
     if (clipboard || e.altKey || e.metaKey) return;
 
     if (this.state === 'opening') {
@@ -976,6 +995,82 @@ ListSession.prototype = {
       return;
     }
     finish();
+  },
+
+  // Paste (Shift-Insert / context menu / middle click), routed here from
+  // App.onPasteDone — the single funnel every paste route already goes through.
+  // Returns true when this session took ownership of the text (the caller must
+  // NOT also send it), false to let the ordinary native path run.
+  //
+  // Shape is exactly the T3 one-key passthrough (_beginNativePassthrough), only
+  // the payload is a whole string instead of one key's bytes: sync the real
+  // cursor when it lags the selection, switch to the native mirror, then send.
+  // Two reasons it can't just go raw down view.onTextInput like it used to:
+  //   - un-serialized bytes race whatever prefetch/jump is in flight (pttbbs
+  //     typeahead swallows repaints — protocol §2);
+  //   - in buffer mode the screen shows the accumulated list, so the prompt PTT
+  //     draws in response is INVISIBLE until some later settle trips the
+  //     catch-all. Users read that as "nothing happened" and paste again, which
+  //     appends into the same prompt (#1gIeu-3A1gIeu-3A → 找不到文章).
+  // What PTT then does with the text is left entirely native — no AID parsing,
+  // no synthesized Enter. `#` opens 搜尋文章代碼(AID): # and waits for Enter,
+  // and on success only MOVES the cursor (pttbbs read.c#select_by_aid); a
+  // pasted trailing newline submits it, exactly as in a real terminal.
+  onPaste: function(text) {
+    if (this.state === 'opening') {
+      // Same rule as onKeyDown: the serialized open owns the wire. Never
+      // silent — a swallowed paste with no feedback is the original bug.
+      if (this._view.flashListHint)
+        this._view.flashListHint('好讀列表：開啟文章中，請稍候…');
+      return true;
+    }
+    if (this.state === 'functionMode' && this._renderMode === 'frozen') {
+      if (this._view.flashListHint)
+        this._view.flashListHint('好讀列表：指令處理中，請稍候…');
+      return true;
+    }
+    // Native mirror (or not engaged at all): this hook doesn't own keys there,
+    // and paste is no different — the ordinary convSend path is correct.
+    if (this.state !== 'active') return false;
+
+    // CommandQueue's send is bound to the RAW conn.send (pttchrome.jsx), not
+    // conn.convSend, so the Big5 conversion that convSend would have done has
+    // to happen here — same two steps, same order (telnet.js#convSend).
+    const keys = ansiHalfColorConv(
+      u2b(normalizePasteText(text, this._view.lineWrap))
+    );
+    if (!keys) return false; // empty/unconvertible: don't burn a native switch
+
+    const r = transitionListSession(this.state, {
+      type: 'key',
+      keyClass: 'passthrough'
+    });
+    this.state = r.next; // functionMode: absorbs settles / swallows keys meanwhile
+    const self = this;
+    const finish = function() {
+      self._enterFunctionMode(); // native excursion: flush + drop cache (inv. 15)
+      self._queue.enqueue({
+        keys: keys,
+        kind: 'native-paste',
+        expect: function() {
+          return true; // any settle is the response (same as 'native-key')
+        },
+        timeoutMs: 3000
+      });
+      if (self._view.flashListHint)
+        self._view.flashListHint(
+          '已貼上並切至原生操作（開啟文章或離開看板後恢復好讀）',
+          4000
+        );
+    };
+    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+      this._freezeForTransaction();
+      // onFail too: visible degrade, never a silently dropped paste.
+      this._enqueueCursorSyncJump('native-sync-jump', finish, finish);
+      return true;
+    }
+    finish();
+    return true;
   },
 
   // Shared sync-jump leg: park the server's REAL cursor on the local selection

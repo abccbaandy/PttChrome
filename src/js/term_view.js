@@ -5,14 +5,12 @@ import { termInvColors } from './term_buf';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer } from './util';
-import { wrapText, u2b, parseStatusRow } from './string_util';
+import { u2b, parseStatusRow, normalizePasteText } from './string_util';
 import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursorBullet, pruneListToSegment } from './list_window';
 import icon128 from '../icon/icon_128.png';
 
-const ENTER_CHAR = '\r';
-const ESC_CHAR = '\x15'; // Ctrl-U
 const DEFINE_INPUT_BUFFER_SIZE = 12;
 
 // Snapshot-clone a screen row (TermChar[]) for retention in buf.pageLines. The live
@@ -625,18 +623,11 @@ TermView.prototype = {
   },
 
   onTextInput: function(text, isPasting) {
-    if (isPasting) {
-      text = text.replace(/\r\n/g, '\r');
-      text = text.replace(/\n/g, '\r');
-      text = text.replace(/\r/g, ENTER_CHAR);
-
-      if(text.indexOf('\x1b') < 0 && this.lineWrap > 0) {
-        text = wrapText(text, this.lineWrap, ENTER_CHAR);
-      }
-
-      //FIXME: stop user from pasting DBCS words with 2-color
-      text = text.replace(/\x1b/g, ESC_CHAR);
-    }
+    // Normalization lives in string_util.normalizePasteText so the list easy
+    // reading paste route (ListSession.onPaste → CommandQueue) sends byte-for-
+    // byte the same thing this native route does.
+    if (isPasting)
+      text = normalizePasteText(text, this.lineWrap);
     this._convSend(text);
   },
 
@@ -701,7 +692,10 @@ TermView.prototype = {
       }
     } else if (e.ctrlKey && !e.altKey && e.shiftKey) {
       switch (e.key.toLowerCase()) {
-        case 'V':
+        // 'v', not 'V': the switch subject is toLowerCase()'d, so the old 'V'
+        // case never matched — Ctrl-Shift-V fell through to term_keyboard's
+        // CtrlShiftMap['v'] = 22 and sent a bare ^V to PTT instead of pasting.
+        case 'v':
           this.bbscore.doPaste();
           stop = true;
           break;
