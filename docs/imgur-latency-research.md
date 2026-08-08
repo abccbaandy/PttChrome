@@ -1,5 +1,10 @@
 # imgur 台灣連線慢 — 量測與根因
 
+> **狀態：已落地。** Worker 在 `proxy/imgur-worker/`（已部署），app 端整合已完成
+> （2026-08-08）：pref `useImgurProxy`（**預設開**）／`imgurProxyUrl`，UI 在設定的
+> 「連線」分頁，改寫層 `src/js/imgur_proxy.js`。契約與守護測試見
+> `docs/enhanced-addon.md`「設定」節的「連線」分頁段。**不要重做本文的量測。**
+
 量測環境：台灣家用寬頻（IPv4），2026-08-08 台灣時間 00:2x（**非尖峰**，尖峰只會更差）。
 工具 `curl 8.7.1`，`--referer ""`，樣本圖 `i.imgur.com/L976tXr.jpg`（391 092 B PNG）。
 

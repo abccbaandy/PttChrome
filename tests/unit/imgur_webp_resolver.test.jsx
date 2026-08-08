@@ -11,6 +11,10 @@ import ImagePreviewer, {
   resolveSrcToImageUrl,
 } from "../../src/components/ImagePreviewer";
 import { clearImgurProbeCache } from "../../src/js/imgur_probe";
+import {
+  resetImgurProxyConfig,
+  setImgurProxyConfig,
+} from "../../src/js/imgur_proxy";
 
 const resolve = (src) => resolveSrcToImageUrl({ src });
 const B = "https://i.imgur.com";
@@ -213,6 +217,109 @@ describe("imgur 相簿：展開的每張圖也走 webp 優先", () => {
       type: "album",
       images: [],
     });
+  });
+});
+
+// 快取代理（proxy/imgur-worker）開啟後的候選清單。硬約束有二：
+//   1. 原址永遠留在候選清單後面 —— Worker 掛掉／額度用盡（Error 1027）時
+//      FallbackImage 自動退回現況，代理不會變成單點故障。
+//   2. 影片一律不代理 —— 代理白名單擋影片會回 404，等於自製一個載入失敗。
+describe("imgur 快取代理：代理優先、原址墊底", () => {
+  const PROXY = "https://proxy.example.dev";
+
+  beforeEach(() => {
+    clearImgurProbeCache();
+    setImgurProxyConfig({ enabled: true, base: PROXY });
+  });
+  afterEach(() => {
+    resetImgurProxyConfig();
+    vi.unstubAllGlobals();
+  });
+
+  test("靜態圖：代理 webp 第一順位，原址 webp／jpg 墊底", async () => {
+    stubProbe({ image: "image/jpeg" });
+    expect(await resolve("https://imgur.com/456CKaj")).toEqual({
+      type: "image",
+      src: `${PROXY}/456CKaj.webp`,
+      srcset: [`${PROXY}/456CKaj.webp`, `${B}/456CKaj.webp`, `${B}/456CKaj.jpg`],
+    });
+  });
+
+  test("明寫副檔名的靜態圖同樣代理優先", async () => {
+    expect(await resolve(`${B}/ofT90A6.jpeg`)).toEqual({
+      type: "image",
+      src: `${PROXY}/ofT90A6.webp`,
+      srcset: [`${PROXY}/ofT90A6.webp`, `${B}/ofT90A6.webp`, `${B}/ofT90A6.jpeg`],
+    });
+  });
+
+  test("gif 原檔：代理 .gif 優先，仍不得產生 webp 候選", async () => {
+    stubProbe({ image: "image/gif" });
+    expect(await resolve("https://imgur.com/auVUJzV")).toEqual({
+      type: "image",
+      src: `${PROXY}/auVUJzV.gif`,
+      srcset: [`${PROXY}/auVUJzV.gif`, `${B}/auVUJzV.gif`],
+    });
+  });
+
+  test("探測失敗（unknown）也代理，但保留 i.imgur.com fallback", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
+    expect(await resolve("https://imgur.com/abc123")).toEqual({
+      type: "image",
+      src: `${PROXY}/abc123.jpg`,
+      srcset: [`${PROXY}/abc123.jpg`, `${B}/abc123.jpg`],
+    });
+  });
+
+  // 這兩條是本組最重要的守護：影片一旦被送進代理就是 404。
+  test("影片直連不代理", async () => {
+    expect(await resolve(`${B}/8MYpXhr.mp4`)).toEqual({
+      type: "video",
+      src: `${B}/8MYpXhr.mp4`,
+    });
+  });
+
+  test("探測到影片型動圖不代理", async () => {
+    stubProbe({ image: "image/jpeg", mp4: "video/mp4" });
+    expect(await resolve("https://imgur.com/lP0NHpE")).toEqual({
+      type: "video",
+      src: `${B}/lP0NHpE.mp4`,
+    });
+  });
+
+  test("相簿展開的每張圖也吃到代理，影片項不受影響", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          json: () =>
+            Promise.resolve({
+              data: {
+                images: [{ link: `${B}/aaa111.jpeg` }, { link: `${B}/bbb222.mp4` }],
+              },
+            }),
+        }),
+      ),
+    );
+    const r = await resolve("https://imgur.com/a/hash12");
+    expect(r.images).toEqual([
+      {
+        type: "image",
+        src: `${PROXY}/aaa111.webp`,
+        srcset: [`${PROXY}/aaa111.webp`, `${B}/aaa111.webp`, `${B}/aaa111.jpeg`],
+      },
+      { type: "video", src: `${B}/bbb222.mp4` },
+    ]);
+  });
+
+  // 症狀層：實際渲染出來的 <img> src 要是代理位址，且 referrerPolicy 不能掉。
+  test("渲染出的 <img> 指向代理且仍不帶 referer", async () => {
+    stubProbe({ image: "image/jpeg" });
+    const value = await resolve("https://imgur.com/456CKaj");
+    const { container } = render(<ImagePreviewer.Inline value={value} />);
+    const img = container.querySelector("img");
+    expect(img.getAttribute("src")).toBe(`${PROXY}/456CKaj.webp`);
+    expect(img.getAttribute("referrerpolicy")).toBe("no-referrer");
   });
 });
 

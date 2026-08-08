@@ -17,6 +17,8 @@
 // method（不觸發 preflight）、content-type 屬 CORS-safelisted response header，
 // 所以瀏覽器端讀得到。走 HEAD 而非 imgur API：不吃 API 額度、不需 client_id。
 
+import { getImgurProxyConfig, proxiedImgurUrl } from "./imgur_proxy.js";
+
 export const IMGUR_PROBE_TIMEOUT_MS = 3000;
 
 // 純決策表（unit 直接測）：
@@ -70,9 +72,17 @@ const runProbe = (id, opts) => {
       )
       .catch(() => null);
 
-  const base = `https://i.imgur.com/${id}`;
+  // .jpg 走快取代理（省一次跨太平洋往返；探測本身也會 stall）。代理對非圖片上游是
+  // 302 fail-open，fetch 跟隨後 content-type 仍正確 ⇒ 下面的分類結果不受影響。
+  // **.mp4 一定要直連**：代理白名單擋影片會回 404 → mp4Ok=false → 影片型動圖被誤判
+  // 成 "static" → 動圖被靜音，正是本檔開頭記載的回報案例 imgur.com/lP0NHpE。
+  const jpgUrl = proxiedImgurUrl(
+    id,
+    "jpg",
+    opts.proxyConfig || getImgurProxyConfig(),
+  );
   // 兩發並行 → 延遲只有一個 RTT。
-  return Promise.all([head(`${base}.jpg`), head(`${base}.mp4`)]).then(
+  return Promise.all([head(jpgUrl), head(`https://i.imgur.com/${id}.mp4`)]).then(
     ([imgRes, mp4Res]) => {
       clearTimeout(timer);
       if (!imgRes) return "unknown";

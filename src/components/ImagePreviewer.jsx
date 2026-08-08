@@ -9,6 +9,7 @@ import {
   flickrBase58Decode,
 } from "../js/image_url_detect";
 import { probeImgurAsset } from "../js/imgur_probe";
+import { getImgurProxyConfig, imgurCandidates } from "../js/imgur_proxy";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 
 const noop = () => {};
@@ -426,42 +427,49 @@ const STATIC_IMGUR_EXT = new Set(["jpg", "jpeg", "png"]);
 // 探測結果 → descriptor。「原始檔就是影片」的資產（現代 imgur 把上傳的動畫存成
 // video/mp4）只有 .mp4 會動，任何圖片副檔名都只回單幀靜態縮圖，且 <img> 會 onload
 // 成功 → FallbackImage 不會退回 ⇒ 動圖被靜音（回報案例 imgur.com/lP0NHpE）。
+//
+// 圖片候選一律經 imgurCandidates()：代理位置放第一順位、i.imgur.com 原址墊在後面，
+// Worker 掛掉／額度用盡時由 FallbackImage 自動退回現況（代理關閉時輸出與整合前逐字
+// 相同）。**影片分支絕不能碰**——代理白名單擋影片會回 404，見 imgur_proxy.js。
+// 只有一個候選時不放 srcset：descriptor 形狀與整合代理前逐字相同（代理關閉時
+// 整條路徑的輸出完全不變），FallbackImage 的 `descriptor.srcset || [descriptor.src]`
+// 本來就等價。
+const imgurImage = (id, exts) => {
+  const candidates = imgurCandidates(id, exts, getImgurProxyConfig());
+  return candidates.length > 1
+    ? { type: "image", src: candidates[0], srcset: candidates }
+    : { type: "image", src: candidates[0] };
+};
+
 const imgurMediaFromProbe = (id, kind) => {
-  const base = `https://i.imgur.com/${id}`;
   switch (kind) {
     case "video":
-      return { type: "video", src: `${base}.mp4` };
+      return { type: "video", src: `https://i.imgur.com/${id}.mp4` };
     case "gif":
-      return { type: "image", src: `${base}.gif` };
+      return imgurImage(id, ["gif"]);
     case "static":
       // 探測確認是真靜態圖，才敢吃 webp 優化（未探測前一律不敢碰）。
-      return {
-        type: "image",
-        src: `${base}.webp`,
-        srcset: [`${base}.webp`, `${base}.jpg`],
-      };
+      return imgurImage(id, ["webp", "jpg"]);
     default:
       // 探測失敗／非圖片回應：維持舊行為（.jpg 對圖片原檔仍拿得到原檔）。
-      return { type: "image", src: `${base}.jpg` };
+      return imgurImage(id, ["jpg"]);
   }
 };
 
 // ext 可為 undefined（無副檔名）——那正是最危險的一類，必須與「明確寫著 .jpg」
 // 區分開來，不可在呼叫端先補預設值。
 const imgurMedia = (id, ext) => {
-  const base = `https://i.imgur.com/${id}`;
   // imgur 也託管影片直連（.mp4）。必須先於「圖片」判斷分流，否則會被塞進 <img>，
   // 永遠 decode 失敗 → 顯示「圖片載入失敗，點擊重試」。相簿路徑本來就有這個分流，
   // 單一連結漏掉（實例 i.imgur.com/8MYpXhr.mp4）。webm/ogg 衍生 imgur 不產（實測
   // 同 hash .webm 回 404），故不改寫副檔名，原樣交給 <video>。
   if (ext && RE_VIDEO_EXT.test(`.${ext}`)) {
-    return { type: "video", src: `${base}.${ext}` };
+    return { type: "video", src: `https://i.imgur.com/${id}.${ext}` };
   }
   if (!ext || !STATIC_IMGUR_EXT.has(ext)) {
-    return { type: "image", src: `${base}.${ext || "jpg"}` };
+    return imgurImage(id, [ext || "jpg"]);
   }
-  const candidates = [`${base}.webp`, `${base}.${ext}`];
-  return { type: "image", src: candidates[0], srcset: candidates };
+  return imgurImage(id, ["webp", ext]);
 };
 
 // 相簿 API 回傳的 link 是原副檔名直連；轉成 descriptor 讓相簿內的圖也吃到 webp

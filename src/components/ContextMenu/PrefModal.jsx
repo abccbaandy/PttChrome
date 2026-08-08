@@ -28,6 +28,8 @@ import {
   destroyPromptApi,
 } from "../../js/prompt_api";
 import { deepEqual } from "../../js/pref_sync_logic";
+import { DEFAULT_PROXY_HOST } from "../../js/util";
+import { DEFAULT_IMGUR_PROXY_BASE } from "../../js/imgur_proxy";
 import "./PrefModal.css";
 
 // Checkbox adapter：保留 id={`pref-check-${name}`}（label[for=...] e2e marker，且
@@ -303,6 +305,9 @@ export const PrefModal = ({
             <Title order={3}>{i18n("menu_settings")}</Title>
             <Tabs.List>
               <Tabs.Tab value="general">{i18n("options_general")}</Tabs.Tab>
+              <Tabs.Tab value="connection">
+                {i18n("options_connection")}
+              </Tabs.Tab>
               <Tabs.Tab value="enhance">{i18n("options_enhance")}</Tabs.Tab>
               <Tabs.Tab value="ai">{i18n("options_ai")}</Tabs.Tab>
               <Tabs.Tab value="local">{i18n("options_local")}</Tabs.Tab>
@@ -392,25 +397,6 @@ export const PrefModal = ({
                   name="lineWrap"
                   value={values.lineWrap}
                   onChange={(val) => onNumberChange("lineWrap", val)}
-                  mb="xs"
-                />
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_connection")}</legend>
-                <PrefCheckbox
-                  name="useProxy"
-                  checked={values.useProxy}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_useProxy")}
-                </PrefCheckbox>
-                <TextInput
-                  label={i18n("options_proxyUrl")}
-                  name="proxyUrl"
-                  disabled={!values.useProxy}
-                  value={values.proxyUrl}
-                  placeholder={i18n("tooltip_proxyUrl")}
-                  onChange={onTextInputChange}
                   mb="xs"
                 />
               </fieldset>
@@ -659,6 +645,56 @@ export const PrefModal = ({
                     )}
                   </Text>
                 )}
+              </fieldset>
+            </Tabs.Panel>
+            <Tabs.Panel value="connection">
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_connection_bbs")}</legend>
+                <PrefCheckbox
+                  name="useProxy"
+                  checked={values.useProxy}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_useProxy")}
+                </PrefCheckbox>
+                {/* placeholder 放的是**實際生效的預設位址**（不是說明文字）：欄位
+                    留空就是用它，使用者把自訂位址刪光也回得到預設。說明文字改掛
+                    description。imgur 那組同理。 */}
+                <TextInput
+                  label={i18n("options_proxyUrl")}
+                  description={i18n("tooltip_proxyUrl")}
+                  name="proxyUrl"
+                  disabled={!values.useProxy}
+                  value={values.proxyUrl}
+                  placeholder={DEFAULT_PROXY_HOST}
+                  onChange={onTextInputChange}
+                  mb="xs"
+                />
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_imgurProxy")}</legend>
+                {/* 隱私揭露：代理由專案方持有，會看到「哪個 IP 在看哪張圖」。
+                    預設開啟，所以這段文字必須在使用者第一次翻到這裡就看得到。 */}
+                <Text className="PrefModal__warning">
+                  {i18n("tooltip_imgurProxy")}
+                </Text>
+                <PrefCheckbox
+                  name="useImgurProxy"
+                  checked={values.useImgurProxy}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_useImgurProxy")}
+                </PrefCheckbox>
+                <TextInput
+                  label={i18n("options_imgurProxyUrl")}
+                  description={i18n("tooltip_imgurProxyUrl")}
+                  name="imgurProxyUrl"
+                  disabled={!values.useImgurProxy}
+                  value={values.imgurProxyUrl}
+                  placeholder={DEFAULT_IMGUR_PROXY_BASE}
+                  onChange={onTextInputChange}
+                  mb="xs"
+                />
               </fieldset>
             </Tabs.Panel>
             <Tabs.Panel value="enhance">

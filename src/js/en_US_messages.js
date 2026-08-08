@@ -307,6 +307,9 @@ export const en_US = {
   "options_connection": {
     "message": "Connection"
   },
+  "options_connection_bbs": {
+    "message": "BBS connection"
+  },
   "options_useProxy": {
     "message": "Connect through a proxy (takes effect after reload)"
   },
@@ -315,6 +318,21 @@ export const en_US = {
   },
   "tooltip_proxyUrl": {
     "message": "e.g. ptt-proxy.example.workers.dev, or a full wsstelnet:// URL"
+  },
+  "options_imgurProxy": {
+    "message": "Image loading proxy"
+  },
+  "tooltip_imgurProxy": {
+    "message": "imgur's CDN routes Taiwan traffic to the US, so an image occasionally stalls for 9-24 seconds. When enabled, imgur images are fetched and cached through this project's Cloudflare Worker, which removes those stalls (it does not make normal loads faster). That service sees your IP and which image you are viewing, but keeps no logs; if it fails, requests fall back to i.imgur.com automatically. Videos (mp4) always go direct and never through the proxy."
+  },
+  "options_useImgurProxy": {
+    "message": "Load imgur images through a proxy (takes effect after reload)"
+  },
+  "options_imgurProxyUrl": {
+    "message": "Image proxy address"
+  },
+  "tooltip_imgurProxyUrl": {
+    "message": "e.g. https://your-worker.workers.dev; to self-host see proxy/imgur-worker"
   },
   "options_copyOnSelect": {
     "message": "Copy text when selected."

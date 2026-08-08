@@ -307,6 +307,9 @@
   "options_connection": {
     "message": "連線"
   },
+  "options_connection_bbs": {
+    "message": "BBS 連線"
+  },
   "options_useProxy": {
     "message": "透過 proxy 連線 (重新整理後生效)"
   },
@@ -315,6 +318,21 @@
   },
   "tooltip_proxyUrl": {
     "message": "如 ptt-proxy.example.workers.dev，或完整 wsstelnet:// 位址"
+  },
+  "options_imgurProxy": {
+    "message": "圖片載入代理"
+  },
+  "tooltip_imgurProxy": {
+    "message": "imgur 的 CDN 把台灣流量導到美國，同一張圖偶爾會卡住 9～24 秒。開啟後 imgur 圖片改由本專案的 Cloudflare Worker 轉發並快取，可消除這種卡住的情況 (一般情況下的載入速度不會變快)。該服務會看到你的 IP 與所讀取的圖片位址，但不留存任何紀錄；代理失效時會自動退回直連 imgur。影片 (mp4) 一律直連，不經過代理。"
+  },
+  "options_useImgurProxy": {
+    "message": "透過代理載入 imgur 圖片 (重新整理後生效)"
+  },
+  "options_imgurProxyUrl": {
+    "message": "圖片代理位址"
+  },
+  "tooltip_imgurProxyUrl": {
+    "message": "如 https://your-worker.workers.dev，自架版本見 proxy/imgur-worker"
   },
   "options_copyOnSelect": {
     "message": "選取文字時自動複製文字"

@@ -30,9 +30,25 @@ export const DEFAULT_PREFS = {
   // Connection proxy: when on, connect through proxyUrl instead of DEFAULT_SITE so
   // users behind a block can reach PTT without installing anything. proxyUrl may be a
   // bare host (a wsstelnet:// scheme and /bbs path are filled in, see main.js) or a
-  // full ws(s)telnet:// URL. Default off; the default host is a public CF Worker relay.
+  // full ws(s)telnet:// URL.
+  // **空字串 = 用內建的公用 relay**（util.js#DEFAULT_PROXY_HOST，UI 拿它當
+  // placeholder）。不把預設值寫進欄位，使用者才能把自訂位址整段刪掉回到預設，而不是
+  // 刪成一個「開著卻沒有位址」的空設定。同理見 imgurProxyUrl。
   useProxy: false,
-  proxyUrl: "ptt-proxy.ptt-relay-8xquy.workers.dev",
+  proxyUrl: "",
+
+  // imgur 圖片快取代理。**預設開**（與上面的 BBS proxy 相反）：imgur 的 CDN 把台灣
+  // 流量導到美西，同一張圖 20 次取樣有 4～5 次卡住 9～24 s，代理實測 stall 0/20；
+  // 多數人不會去翻設定，預設關等於功能沒人用。median 幾乎不變，賣點是「不再卡住」
+  // 不是「更快」。額度的計費單位是**回源次數**（快取命中時 Worker 不執行），加上
+  // PTT 熱門文重複率高 ⇒ 100k/day 的消耗遠低於直覺。額度用盡或 Worker 掛掉時
+  // srcset 會自動退回 i.imgur.com（見 imgur_proxy.js#imgurCandidates），不會更差。
+  // 隱私：代理由專案方持有，會看到「哪個 IP 在看哪張圖」（Worker 不留任何 log），
+  // 設定 UI 有明確揭露文字。量測見 docs/imgur-latency-research.md。
+  // 空字串 = 用專案方的 Worker（imgur_proxy.js#DEFAULT_IMGUR_PROXY_BASE，UI 拿它當
+  // placeholder），理由同 proxyUrl。
+  useImgurProxy: true,
+  imgurProxyUrl: "",
 
   // mouse browsing
   useMouseBrowsing: false,

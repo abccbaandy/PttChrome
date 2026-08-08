@@ -118,3 +118,64 @@ describe("probeImgurAsset", () => {
     await expect(probeImgurAsset("throw1", { fetchImpl })).resolves.toBe("unknown");
   });
 });
+
+// 探測走快取代理時，**只有 .jpg 那一發能改**。.mp4 若也送進代理會撞上白名單的 404
+// → mp4Ok=false → 影片型動圖被誤判成 static → 動圖被靜音（回報案例 lP0NHpE）。
+describe("probeImgurAsset：快取代理", () => {
+  beforeEach(() => clearImgurProbeCache());
+
+  const PROXY = { enabled: true, base: "https://proxy.example.dev" };
+
+  const stub = (map) =>
+    vi.fn((url) => {
+      const r = map[url];
+      return r instanceof Error ? Promise.reject(r) : Promise.resolve(r);
+    });
+
+  test("代理開啟：.jpg 走代理、.mp4 仍直連 i.imgur.com", async () => {
+    const fetchImpl = stub({
+      "https://proxy.example.dev/lP0NHpE.jpg": res("image/jpeg"),
+      "https://i.imgur.com/lP0NHpE.mp4": res("video/mp4"),
+    });
+    // 誤把 .mp4 也送進代理的話，這裡拿不到 mp4 回應 → 會變成 "static"。
+    expect(
+      await probeImgurAsset("lP0NHpE", { fetchImpl, proxyConfig: PROXY }),
+    ).toBe("video");
+    const urls = fetchImpl.mock.calls.map(([u]) => u);
+    expect(urls).toContain("https://proxy.example.dev/lP0NHpE.jpg");
+    expect(urls).toContain("https://i.imgur.com/lP0NHpE.mp4");
+  });
+
+  test("代理開啟不影響四種分類（gif / static / unknown）", async () => {
+    const cases = [
+      ["gifid1", "image/gif", res("video/mp4"), "gif"],
+      ["statid", "image/png", res("text/html", false), "static"],
+      ["htmlid", "text/html", res("text/html", false), "unknown"],
+    ];
+    for (const [id, jpgType, mp4Res, want] of cases) {
+      const fetchImpl = stub({
+        [`https://proxy.example.dev/${id}.jpg`]: res(jpgType),
+        [`https://i.imgur.com/${id}.mp4`]: mp4Res,
+      });
+      expect(await probeImgurAsset(id, { fetchImpl, proxyConfig: PROXY })).toBe(
+        want,
+      );
+    }
+  });
+
+  test("代理關閉：兩發都打 i.imgur.com（與整合前相同）", async () => {
+    const fetchImpl = stub({
+      "https://i.imgur.com/plain1.jpg": res("image/jpeg"),
+      "https://i.imgur.com/plain1.mp4": res("text/html", false),
+    });
+    expect(
+      await probeImgurAsset("plain1", {
+        fetchImpl,
+        proxyConfig: { enabled: false },
+      }),
+    ).toBe("static");
+    for (const [u] of fetchImpl.mock.calls) {
+      expect(u.startsWith("https://i.imgur.com/")).toBe(true);
+    }
+  });
+});

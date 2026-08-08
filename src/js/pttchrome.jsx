@@ -14,6 +14,7 @@ import { MouseButtonTracker } from './mouse_button_tracker';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { setTimer } from './util';
+import { normalizeImgurProxyBase, setImgurProxyConfig } from './imgur_proxy';
 import PasteShortcutAlert from '../components/PasteShortcutAlert';
 import ConnectionAlert from '../components/ConnectionAlert';
 import ContextMenu from '../components/ContextMenu';
@@ -873,6 +874,15 @@ App.prototype.onPrefChange = function(name, value) {
     case 'enablePicPreview':
       // TODO: move this to ImagePreview.
       this.view.enablePicPreview = value;
+      break;
+    // imgur 快取代理：只更新 imgur_proxy.js 的模組 config，**不 redraw**。已解析過的
+    // 預覽有 module cache（requestPreview 以 href 為鍵、probeCache 以 id 為鍵），切換
+    // 只對之後新解析的連結生效 ⇒ 設定 UI 的文案標「重新整理後生效」。
+    case 'useImgurProxy':
+      setImgurProxyConfig({ enabled: value });
+      break;
+    case 'imgurProxyUrl':
+      setImgurProxyConfig({ base: normalizeImgurProxyBase(value) });
       break;
     case 'enableNotifications':
       this.view.enableNotifications = value;

@@ -46,13 +46,13 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     const settings = await label(page, 'cmenu_settings');
     await expect(menu.getByText(settings, { exact: true })).toBeVisible();
 
-    // 點 Settings → PrefModal 出現（以 general 分頁的 proxyUrl 欄位為 marker，class 無關）。
+    // 點 Settings → PrefModal 出現（以 general 分頁的 copyOnSelect 欄位為 marker，class 無關）。
     await menu.getByText(settings, { exact: true }).click();
     await expect(page.locator('.PrefModal')).toBeVisible();
-    await expect(page.locator('.PrefModal input[name="proxyUrl"]')).toBeVisible();
+    await expect(page.locator('.PrefModal input[name="copyOnSelect"]')).toBeVisible();
   });
 
-  test('PrefModal 分頁切換：general → enhance → ai → local → about 內容對應切換', async ({ page }) => {
+  test('PrefModal 分頁切換：general → connection → enhance → ai → local → about 內容對應切換', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
     await ptt.dismissDeveloperModeAlert(page);
@@ -65,14 +65,24 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(page.locator('.PrefModal')).toBeVisible();
 
     const nav = page.locator('.PrefModal__Grid__Col--left');
-    const proxyUrl = page.locator('.PrefModal input[name="proxyUrl"]');     // general only
+    const copyOnSelect = page.locator('.PrefModal input[name="copyOnSelect"]'); // general only
+    const proxyUrl = page.locator('.PrefModal input[name="proxyUrl"]');     // connection only
+    const imgurProxyUrl = page.locator('.PrefModal input[name="imgurProxyUrl"]'); // connection only
     const blacklist = page.locator('.PrefModal textarea[name="blacklist"]'); // enhance only
     const autoLoginUser = page.locator('.PrefModal input[name="autoLoginUser"]'); // local only
     const enableAi = page.locator('.PrefModal input[name="enableAi"]');      // ai only
 
     // 起始：general 可見
-    await expect(proxyUrl).toBeVisible();
+    await expect(copyOnSelect).toBeVisible();
+    await expect(proxyUrl).toBeHidden(); // 連線設定已全數移出一般分頁
     await expect(autoLoginUser).toBeHidden();
+
+    // → connection（BBS proxy + imgur 圖片代理，兩組都在這一頁）
+    await nav.getByText(await label(page, 'options_connection'), { exact: true }).click();
+    await expect(proxyUrl).toBeVisible();
+    await expect(imgurProxyUrl).toBeVisible();
+    await expect(copyOnSelect).toBeHidden();
+    await expect(blacklist).toBeHidden();
 
     // → enhance
     await nav.getByText(await label(page, 'options_enhance'), { exact: true }).click();
@@ -103,7 +113,8 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
     // → 回 general
     await nav.getByText(await label(page, 'options_general'), { exact: true }).click();
-    await expect(proxyUrl).toBeVisible();
+    await expect(copyOnSelect).toBeVisible();
+    await expect(proxyUrl).toBeHidden();
   });
 
   // 未支援（其他瀏覽器）／裝置不符：AI 分頁**照常顯示**，但總開關與所有子選項
@@ -278,6 +289,44 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(page.locator('.PrefModal')).toBeVisible();
     return page.locator('.PrefModal__Grid__Col--left');
   }
+
+  // 迴歸守護（回報：PTT 維護期間開設定頁，欄位完全打不了字）。
+  // ConnectionAlert 原本在 window capture 階段對**所有** keydown 做 preventDefault +
+  // stopImmediatePropagation，斷線後只要它掛著，整個網頁的 UI 就都收不到鍵盤；而且在
+  // 對話框裡按 Enter 會意外觸發重連。PTT 平常很少斷線，所以一直沒被發現。
+  // 純鍵盤界線守在 tests/unit/connection_alert_keys.test.jsx，這裡守症狀。
+  test('斷線提示掛著時：設定頁仍能打字，Enter 不會意外重連', async ({ page }) => {
+    await installReplay(page);
+    await page.goto('/');
+    await ptt.dismissDeveloperModeAlert(page);
+    await waitConnected(page);
+
+    // 斷線 → ConnectionAlert 出現（stub WS 的 close 會走 App.onClose）。
+    await page.evaluate(() => window.__stubWS.close());
+    const alert = page.locator('.PageTopAlert')
+      .filter({ hasText: await label(page, 'alert_connectionHeader') });
+    await expect(alert).toBeVisible();
+
+    // 斷線狀態下開設定頁 → 連線分頁
+    await openContextMenu(page);
+    await page.locator('.DropdownMenu').first()
+      .getByText(await label(page, 'cmenu_settings'), { exact: true }).click();
+    await expect(page.locator('.PrefModal')).toBeVisible();
+    await page.locator('.PrefModal__Grid__Col--left')
+      .getByText(await label(page, 'options_connection'), { exact: true }).click();
+
+    // 逐鍵輸入（fill 不會發 keydown，測不到這個 bug）。
+    const url = page.locator('.PrefModal input[name="imgurProxyUrl"]');
+    await expect(url).toBeVisible();
+    await url.click();
+    await url.pressSequentially('my.example.dev');
+    await expect(url).toHaveValue('my.example.dev');
+
+    // 在欄位裡按 Enter 不該被當成「重新連線」→ 提示仍在、設定頁沒被踢掉。
+    await url.press('Enter');
+    await expect(alert).toBeVisible();
+    await expect(page.locator('.PrefModal')).toBeVisible();
+  });
 
   const modalWidth = async (page) =>
     Math.round((await page.locator('.PrefModal').boundingBox()).width);

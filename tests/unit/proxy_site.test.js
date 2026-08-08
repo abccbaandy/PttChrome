@@ -1,4 +1,4 @@
-import { proxySiteFromPrefs } from "../../src/js/util";
+import { DEFAULT_PROXY_HOST, proxySiteFromPrefs } from "../../src/js/util";
 
 // proxySiteFromPrefs turns the proxy prefs (useProxy + proxyUrl) into a connect()
 // target. main.js uses it between the ?site override and DEFAULT_SITE.
@@ -7,11 +7,18 @@ describe("proxySiteFromPrefs", () => {
     expect(proxySiteFromPrefs({ useProxy: false, proxyUrl: "x.dev" })).toBe("");
   });
 
-  it("returns '' for empty/missing prefs", () => {
+  it("returns '' when there are no prefs at all", () => {
     expect(proxySiteFromPrefs(undefined)).toBe("");
     expect(proxySiteFromPrefs({})).toBe("");
-    expect(proxySiteFromPrefs({ useProxy: true, proxyUrl: "" })).toBe("");
-    expect(proxySiteFromPrefs({ useProxy: true, proxyUrl: "   " })).toBe("");
+  });
+
+  // 欄位空著 ＝ 用 placeholder 顯示的那個公用 relay。使用者把自訂位址整段刪掉時
+  // 就回到預設，而不是變成「開了 proxy 卻沒有位址」。
+  it("falls back to the default relay when the field is cleared", () => {
+    const want = `wsstelnet://${DEFAULT_PROXY_HOST}/bbs`;
+    expect(proxySiteFromPrefs({ useProxy: true, proxyUrl: "" })).toBe(want);
+    expect(proxySiteFromPrefs({ useProxy: true, proxyUrl: "   " })).toBe(want);
+    expect(proxySiteFromPrefs({ useProxy: true })).toBe(want);
   });
 
   it("wraps a bare host with wsstelnet:// scheme and /bbs path", () => {

@@ -239,6 +239,26 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用�
 （`autoLoginUser/Password` 在「本機設定」分頁——local-only、不上雲；**password 在支援
 Credential API 的瀏覽器不落地**，見「自動登入」節。）
 
+**「連線」分頁**（2026-08 從一般分頁獨立出來）——兩組「開關＋自訂 URL」的代理設定：
+
+| pref | 預設 | 角色 |
+|---|---|---|
+| `useProxy` | false | BBS 連線走 relay。套用在 `main.jsx` 啟動時（`util.js#proxySiteFromPrefs`），故標「重新整理後生效」 |
+| `proxyUrl` | `""` | 裸 host 或完整 `ws(s)telnet://`；**空＝`util.js#DEFAULT_PROXY_HOST`**。容錯全在 `proxySiteFromPrefs` |
+| `useImgurProxy` | **true** | imgur 圖片走快取代理（`proxy/imgur-worker`）。預設開：多數人不翻設定，關掉等於功能沒人用；額度計費單位是回源次數，快取命中不計 |
+| `imgurProxyUrl` | `""` | 裸 host 或完整 URL；**空＝`imgur_proxy.js#DEFAULT_IMGUR_PROXY_BASE`**。容錯在 `normalizeImgurProxyBase` |
+
+- 兩組形狀相同：Checkbox 當閘門、URL 欄位 `disabled={!閘門}`（值保留）、UI 層零驗證（容錯下放純函式）。
+- **預設位址放 `placeholder`，不寫進 pref 值**：欄位空著＝用預設，使用者才能把自訂位址整段刪掉回到預設，而不是刪成「開著卻沒有位址」。說明文字改掛 `description`（原本佔著 placeholder）。回退由兩個純函式各自負責，守在 `proxy_site.test.js` / `imgur_proxy.test.js`。
+- imgur 代理的改寫層 `src/js/imgur_proxy.js`：白名單 `^[A-Za-z0-9]{1,12}$` + `jpg|jpeg|png|gif|webp`，**逐字對齊 Worker 的 `RE_ASSET`**；對不上一律回原址 ⇒ 影片、未知副檔名、異常 id 全被同一條規則擋掉（影片送過去會撞 Worker 的 **404**，不是 fail-open 的 302）。
+- `imgurCandidates()` 產「代理第一、`i.imgur.com` 墊底」的候選陣列，交給既有的 `FallbackImage`；Worker 掛掉／額度用盡（Error 1027）自動退回現況。候選只有一個時不放 `srcset`，代理關閉時 descriptor 與整合前逐字相同。
+- 模組級 config **預設 `enabled:false` 是 fail-safe**，真值由 `onPrefChange` 注入（`setImgurProxyConfig`）；沒接上 pref 的路徑（含 unit 測試）維持直連。
+- 型別探測（`imgur_probe.js`）**只有 `.jpg` 那一發走代理**，`.mp4` 硬寫直連——代理擋影片回 404 → `mp4Ok=false` → 影片型動圖被誤判成 `static` → 動圖被靜音。
+- 切換**不 redraw**：`requestPreview`（href 為鍵）與 `probeCache`（id 為鍵）都是 module cache，只對之後新解析的連結生效 ⇒ 文案標「重新整理後生效」。
+- 隱私：代理由專案方持有，會看到「哪個 IP 在看哪張圖」；Worker 不留 log，設定 UI 有揭露段（`tooltip_imgurProxy`）。**別加上會留存使用者請求的紀錄。**
+- 賣點是**「不再卡住」而非「更快」**（median 幾乎不變，max 15.7 s → 1.04 s、stall 0/20）。文案不得宣稱加速。量測見 `docs/imgur-latency-research.md`。
+- 守護：`tests/unit/imgur_proxy.test.js`（白名單/候選/config）、`imgur_probe.test.js`（`.jpg` 走代理、`.mp4` 不走）、`imgur_webp_resolver.test.jsx`（代理優先原址墊底、影片不代理）、`pref_modal_connection_tab.test.jsx`（分頁 UI 契約）、`ui_behavior.offline.spec.js`（分頁切換可見性）。
+
 **「AI」分頁**（2026-08 從增強功能分頁獨立出來）——所有裝置端 AI 設定收攏於此：
 
 | pref | 預設 | 角色 |
