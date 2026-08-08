@@ -10,7 +10,7 @@
 // 用法：
 //   yarn ci:status                 等目前分支最新 run 跑完並回報
 //   yarn ci:status --branch dev    指定分支
-//   yarn ci:status --sha <sha>     只看某個 commit 的 run
+//   yarn ci:status --sha <sha>     只看某個 commit 的 run（短 sha / HEAD 也吃，會自動展開）
 //   yarn ci:status --no-wait       只看當下狀態，不等
 //   yarn ci:status --rerun-failed  跑完若失敗，自動重跑失敗 job（僅限已知 flaky）
 //
@@ -23,6 +23,10 @@ import path from "node:path";
 const API = "https://api.github.com";
 const POLL_MS = 20000;
 const DEFAULT_DEADLINE_MS = 15 * 60 * 1000;
+// 剛 push 完 GitHub 建立 workflow run 有延遲（實測數秒~數十秒）。這段寬限期內
+// 「查無 run」只當成「還沒建立」繼續等，不可直接 exit 2 —— 那會看起來像工具壞了
+// 或 CI 沒被觸發，實際上再等幾秒就有了。
+const RUN_APPEAR_GRACE_MS = 90000;
 
 // ---- 純函式（unit 守護：tests/unit/ci_status_parse.test.js）----
 
@@ -66,6 +70,13 @@ export function pickFailures(jobs) {
 export function isKnownFlaky(jobName, log) {
   if (!/integration/i.test(String(jobName))) return false;
   return /waitForCloud timeout|not ready in \d+ms|emulator/i.test(String(log || ""));
+}
+
+// GitHub runs API 的 `head_sha` 參數**只吃完整 40 字元 SHA**：短 sha 一律回空陣列，
+// 於是被誤報成「查無 run」exit 2（實際踩過：push 後 `--sha 398321f` 查不到，看起來
+// 像 CI 沒被觸發，其實早就在跑）。caller 要先用 git rev-parse 展開再送 API。
+export function isFullSha(s) {
+  return /^[0-9a-f]{40}$/i.test(String(s || ""));
 }
 
 // 全部 run 都完成才算完成（有 run 還在跑就要繼續等）。
@@ -129,7 +140,20 @@ async function main() {
     console.error("找不到 GitHub repo（git remote origin 解析失敗），請用 --repo owner/name。");
     return 2;
   }
-  const sha = arg("sha");
+  // 短 sha / HEAD / tag 名都先用本機 git 展開成完整 40 字元（見 isFullSha 的註解）。
+  let sha = arg("sha");
+  if (sha && !isFullSha(sha)) {
+    const full = sh("git", ["rev-parse", sha]);
+    if (!isFullSha(full)) {
+      console.error(
+        `--sha ${sha} 不是完整 40 字元 SHA，本機 git rev-parse 也解不出。\n` +
+          "GitHub runs API 只吃完整 SHA，請給完整值（或先 git fetch 取得該 commit）。",
+      );
+      return 2;
+    }
+    console.log(`  --sha ${sha} → ${full}（GitHub API 只吃完整 SHA，已自動展開）`);
+    sha = full;
+  }
   const branch = arg("branch") || sh("git", ["rev-parse", "--abbrev-ref", "HEAD"]) || "dev";
   const wait = !flag("no-wait");
   const deadline = Date.now() + Number(arg("timeout-ms", DEFAULT_DEADLINE_MS));
@@ -137,6 +161,7 @@ async function main() {
   console.log(`repo=${repo} ${sha ? `sha=${sha.slice(0, 7)}` : `branch=${branch}`}`);
 
   let runs = [];
+  const appearDeadline = Date.now() + RUN_APPEAR_GRACE_MS;
   for (;;) {
     // 指定 sha 一定要走 API 的 head_sha 參數：只抓最新 N 筆再自己過濾的話，
     // 稍舊的 commit 永遠落在頁外 → 誤報「查無 run」。
@@ -149,7 +174,19 @@ async function main() {
     const head = sha || (all[0] && all[0].head_sha);
     runs = all.filter((r) => r.head_sha === head);
     if (!runs.length) {
-      console.error(`查無 run（${sha ? sha : branch}）。`);
+      // 剛 push 完 run 還沒建立 → 寬限期內繼續等，別把「還沒出現」當成「查不到」。
+      if (wait && Date.now() < appearDeadline) {
+        console.log(`  …run 尚未建立，等待中（${sha ? sha.slice(0, 7) : branch}）`);
+        await sleep(POLL_MS);
+        continue;
+      }
+      console.error(
+        `查無 run（${sha ? sha : branch}）。` +
+          (wait
+            ? `已等 ${Math.round(RUN_APPEAR_GRACE_MS / 1000)}s 仍未建立。`
+            : "（--no-wait：只看當下，未等待建立。）") +
+          "\n可能原因：該 commit 未 push、workflow 未被觸發（例如由 GITHUB_TOKEN 產生的 push 不會遞迴觸發），或分支名有誤。",
+      );
       return 2;
     }
     if (!wait || allSettled(runs)) break;
@@ -204,16 +241,30 @@ async function main() {
   return 1;
 }
 
+// 收尾：**不可**用 process.exit()。Windows 上 Node 內建 fetch（undici）的 keep-alive
+// socket 還開著時強制退出，會撞上 libuv 的
+//   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 94
+// 進程改回 **exit=127** —— 把這支刻意分的 0/1/2 整個蓋掉，「有失敗」和「工具問題」
+// 都變成同一個看不懂的碼（實際踩過）。改設 process.exitCode 並主動收掉連線池，
+// 讓 event loop 自然排空後以正確的碼退出。
+async function finish(code) {
+  process.exitCode = code;
+  try {
+    // Node 內部 symbol；版本改名時 optional chaining 讓它變 no-op，最多多等
+    // keep-alive timeout，不會壞掉。
+    await globalThis[Symbol.for("undici.globalDispatcher.1")]?.close?.();
+  } catch {
+    /* 收不掉就算了，exitCode 已經設好 */
+  }
+}
+
 // 只有「直接執行」才跑 main——unit test import 純函式時**不可**連網或 exit。
 const invokedDirectly =
   process.argv[1] &&
   path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (invokedDirectly) {
-  main().then(
-    (code) => process.exit(code),
-    (e) => {
-      console.error(e.message);
-      process.exit(2);
-    },
-  );
+  main().then(finish, (e) => {
+    console.error(e.message);
+    return finish(2);
+  });
 }

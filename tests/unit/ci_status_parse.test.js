@@ -11,6 +11,7 @@ import {
   pickFailures,
   isKnownFlaky,
   allSettled,
+  isFullSha,
 } from "../../scripts/ci-status.mjs";
 
 test("import 純函式不得觸發網路（fetch 未被呼叫）", async () => {
@@ -34,6 +35,30 @@ describe("parseRepoFromRemote", () => {
     expect(parseRepoFromRemote("https://gitlab.com/a/b.git")).toBeNull();
     expect(parseRepoFromRemote("")).toBeNull();
     expect(parseRepoFromRemote(undefined)).toBeNull();
+  });
+});
+
+describe("isFullSha", () => {
+  // 迴歸：`yarn ci:status --sha 398321f`（短 sha）回「查無 run」exit 2，看起來像
+  // 工具壞了／CI 沒跑，實際上 CI 早就在跑 —— GitHub runs API 的 head_sha 參數
+  // **只吃完整 40 字元 SHA**，短 sha 一律回空陣列。故 caller 必須先展開再查。
+  test("完整 40 字元 hex 才算完整 SHA", () => {
+    expect(isFullSha("398321f6e18eb5fb5d2dddb96f6f5787a7e2257e")).toBe(true);
+    expect(isFullSha("398321F6E18EB5FB5D2DDDB96F6F5787A7E2257E")).toBe(true);
+  });
+
+  test("短 sha / 分支名 / 空值都不算（要先 git rev-parse 展開）", () => {
+    expect(isFullSha("398321f")).toBe(false);
+    expect(isFullSha("398321f6e18eb5fb5d2dddb96f6f5787a7e2257")).toBe(false); // 39 字元
+    expect(isFullSha("398321f6e18eb5fb5d2dddb96f6f5787a7e2257ee")).toBe(false); // 41 字元
+    expect(isFullSha("HEAD")).toBe(false);
+    expect(isFullSha("dev")).toBe(false);
+    expect(isFullSha("")).toBe(false);
+    expect(isFullSha(undefined)).toBe(false);
+  });
+
+  test("含非 hex 字元不算（避免把 tag 名當 sha 送進 API）", () => {
+    expect(isFullSha("z98321f6e18eb5fb5d2dddb96f6f5787a7e2257e")).toBe(false);
   });
 });
 
