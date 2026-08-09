@@ -109,6 +109,17 @@ describe("normalizeImgurProxyBase", () => {
       "https://my.example.dev",
     );
   });
+
+  // ReDoS 回歸（CodeQL js/polynomial-redos）：舊寫法 `.replace(/\/+$/, "")` 對
+  // 「一長串斜線 + 尾端非斜線」是 O(n²)——每個起點都貪婪吃完斜線，再逐格回溯找 $。
+  // 輸入是使用者自己在設定頁填的位址，所以走的是同一條 code path。
+  // 實測 60000 個斜線：regex 1894 ms、字元掃描 0 ms。
+  test("長斜線串 + 尾端非斜線不會退化成多項式回溯", () => {
+    const evil = "https://my.example.dev/" + "/".repeat(60000) + "a";
+    const t0 = performance.now();
+    expect(normalizeImgurProxyBase(evil)).toBe(evil);
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
 });
 
 describe("imgurCandidates", () => {

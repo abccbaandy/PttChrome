@@ -19,10 +19,19 @@ const PROXYABLE_EXT = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
 
 const originUrl = (id, ext) => `https://i.imgur.com/${id}.${ext}`;
 
+// 去尾端斜線刻意用字元掃描而非 `/\/+$/`：後者對「一長串斜線 + 尾端非斜線」是 O(n²)
+// 回溯（CodeQL js/polynomial-redos，實測 60000 個斜線要 1.9 s），而這裡的輸入正是
+// 使用者自己在設定頁填的位址。回歸守護 tests/unit/imgur_proxy.test.js。
+const stripTrailingSlashes = (s) => {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return s.slice(0, end);
+};
+
 // 使用者填的位址容錯：允許裸 host（your-worker.workers.dev）與尾端斜線。
 // 比照 util.js#proxySiteFromPrefs——UI 層零驗證，容錯全部下放到這個純函式。
 export const normalizeImgurProxyBase = (raw) => {
-  const s = (raw || "").trim().replace(/\/+$/, "");
+  const s = stripTrailingSlashes((raw || "").trim());
   if (!s) return DEFAULT_IMGUR_PROXY_BASE;
   return /:\/\//.test(s) ? s : "https://" + s;
 };
