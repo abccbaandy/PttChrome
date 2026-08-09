@@ -89,7 +89,11 @@ export class DebugRecorder {
       },
       redact: {
         ids: prefs && prefs.autoLoginUser ? [prefs.autoLoginUser] : [],
-        secrets: prefs && prefs.autoLoginPassword ? [prefs.autoLoginPassword] : [],
+        // The 2FA secret is a long-lived credential — leaking it in a recording
+        // means the account's second factor has to be reset to revoke it.
+        secrets: prefs
+          ? [prefs.autoLoginPassword, prefs.autoLoginOtpSecret].filter(Boolean)
+          : [],
       },
     });
   }

@@ -4,17 +4,20 @@
 
 // Strip fields that must never leave this machine before uploading.
 // Credentials live in the browser credential manager (see auto_login.js):
-// the password obviously must not reach Firestore, and the username is
-// local-only too — devices clear it once the browser store is proven, so a
-// synced copy would propagate that "" and break legacy login on devices
-// without the Credential Management API (Firefox/Safari).
+// neither the password nor the 2FA secret may reach Firestore, and the
+// username is local-only too — devices clear it once the browser store is
+// proven, so a synced copy would propagate that "" and break legacy login on
+// devices without the Credential Management API (Firefox/Safari). The same
+// applies to autoLoginOtpSecret.
 // Every key here stays on this machine only: stripped before upload and the
-// local value always wins over a cloud doc. UI groups them in the "local"
-// prefs tab (PrefModal). enableWorkMode is per-machine by design (disguise
-// the office screen, not the home one).
+// local value always wins over a cloud doc. UI groups the credentials in the
+// "auto login" prefs tab (PrefModal), the rest in the "local" tab.
+// enableWorkMode is per-machine by design (disguise the office screen, not
+// the home one).
 export const LOCAL_ONLY_PREF_KEYS = [
   "autoLoginUser",
   "autoLoginPassword",
+  "autoLoginOtpSecret",
   "enableWorkMode"
 ];
 

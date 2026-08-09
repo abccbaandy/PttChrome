@@ -11,9 +11,17 @@ yarn test:e2e
 # 真實帳號（帳密只讀環境變數，不進 git）
 $env:PTT_USER="你的帳號"; $env:PTT_PASS="你的密碼"; yarn test:e2e
 
+# 帳號有開兩階段驗證（2FA）時**必須**再給密鑰，否則整包 live 會卡在驗證碼畫面
+$env:PTT_OTP_SECRET="Base32 密鑰或整段 otpauth:// 網址"
+
 yarn test:e2e:headed   # 肉眼看登入過程
 yarn test:e2e:ui       # Playwright UI 模式
 ```
+
+**2FA 帳號**：`helpers/ptt.js#login` 會用 `PTT_OTP_SECRET` 以 `src/js/totp.js` 即時算出 6 位驗證碼
+（最多送 2 次，重試前先等過 30 秒窗——同一窗重算是同一組碼）。沒設會直接報錯說明要設什麼，
+不會空轉到逾時。`enhance.spec.js` 的自動登入案例也會把密鑰注入 prefs；**沒給密鑰時 app 端會
+刻意停在驗證碼畫面把鍵盤交還使用者**（該降級路徑守在 `tests/unit/auto_login_2fa.test.js`）。
 
 dev server 由 `playwright.config.js` 的 `webServer` 自動啟動（已手動 `yarn start` 時 `reuseExistingServer` 會重用）。
 

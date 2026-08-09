@@ -232,7 +232,8 @@ describe("startup restore (previously signed in)", () => {
     writeStoredPrefs({
       fontSize: 16,
       autoLoginUser: "me",
-      autoLoginPassword: "pw"
+      autoLoginPassword: "pw",
+      autoLoginOtpSecret: "ABCDEFGHIJKLMNOP"
     });
     const onCloudValues = vi.fn();
 
@@ -247,6 +248,7 @@ describe("startup restore (previously signed in)", () => {
         expect(applied.fontSize).toBe(18); // cloud wins
         expect(applied.autoLoginUser).toBe("me"); // local-only, kept
         expect(applied.autoLoginPassword).toBe("pw");
+        expect(applied.autoLoginOtpSecret).toBe("ABCDEFGHIJKLMNOP");
         expect(readStoredPrefs().fontSize).toBe(18);
       });
   });
@@ -255,7 +257,8 @@ describe("startup restore (previously signed in)", () => {
     writeStoredPrefs({
       fontSize: 24,
       autoLoginUser: "me",
-      autoLoginPassword: "pw"
+      autoLoginPassword: "pw",
+      autoLoginOtpSecret: "ABCDEFGHIJKLMNOP"
     });
 
     return startupWithUser(vi.fn())
@@ -268,6 +271,7 @@ describe("startup restore (previously signed in)", () => {
         expect(cloudDoc.prefs.fontSize).toBe(24);
         expect(cloudDoc.prefs).not.toHaveProperty("autoLoginPassword");
         expect(cloudDoc.prefs).not.toHaveProperty("autoLoginUser");
+        expect(cloudDoc.prefs).not.toHaveProperty("autoLoginOtpSecret");
         expect(cloudDoc.schemaVersion).toBe(1);
       });
   });

@@ -325,6 +325,9 @@ export const signOut = async () => {
 // autoLoginUser is actively deleted (not just omitted): docs written before
 // it became local-only still carry the PTT username, and set(merge:true)
 // never drops a field on its own — each save self-heals the leftover.
+// autoLoginOtpSecret deliberately gets no deleteField(): it was local-only from
+// the day it was introduced, so no cloud doc can possibly hold one, and adding
+// it would just ship a useless field on every upload.
 export const savePrefs = async values => {
   if (!currentUser) return values;
   console.info("pref_sync: uploading prefs");

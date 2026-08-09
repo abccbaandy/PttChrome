@@ -1,6 +1,8 @@
 // 可重用的 PTT E2E 工具：讀畫面、等畫面、打字、登入、擷取 console。
 // 設計成「讀畫面 → 比對 → 回應」的容錯輪詢，PTT 中間提示頁不固定也能撐住。
 
+const { totpCode, isValidOtpSecret } = require('../../../src/js/totp');
+
 const SCREEN_SELECTOR = '#mainContainer';
 
 // 讀取終端機整頁文字（#mainContainer 的 innerText）。
@@ -126,11 +128,18 @@ async function waitBbsConnected(page, opts = {}) {
   throw new Error(describeConnectFailure({ hasApp, connectState, screen, timeout }));
 }
 
+// 帳號有開 PTT 兩階段驗證時，用 env PTT_OTP_SECRET（Base32 或整段 otpauth:// 網址）
+// 即時算出 6 位驗證碼。marker 與偵測規則同 src/js/auto_login.js（勿用 '2FA' 當 marker：
+// 成功訊息與「找不到 2FA 設定檔」自癒訊息都含它）。
+const OTP_PROMPT_MARKERS = ['請輸入兩階段', '位限時數字', '位救援碼'];
+const otpPromptVisible = (screen) => OTP_PROMPT_MARKERS.some((m) => screen.includes(m));
+
 // 核心登入流程。env PTT_USER/PTT_PASS 有值用真實帳號，否則 guest。
-// 回傳登入結果摘要字串，供測試印出。
+// 帳號有 2FA 時另需 PTT_OTP_SECRET。回傳登入結果摘要字串，供測試印出。
 async function login(page) {
   const user = process.env.PTT_USER || 'guest';
   const pass = process.env.PTT_PASS || '';
+  const otpSecret = process.env.PTT_OTP_SECRET || '';
 
   // 0. dev 模式會先跳「Developer Mode」警告 modal，需先關閉，app 才會 connect()。
   await dismissDeveloperModeAlert(page);
@@ -158,6 +167,7 @@ async function login(page) {
   // 4. 容錯迴圈：處理登入後各種中間提示，直到出現主選單或可辨識的結束標記。
   const MAIN_MENU = ['主功能表', '【主功能表】'];
   let throttleRetries = 0;
+  let otpSent = 0;
   let deadline = Date.now() + 40000;
   while (Date.now() < deadline) {
     const screen = await readScreen(page);
@@ -165,6 +175,38 @@ async function login(page) {
     // 已達主選單 → 成功
     if (MAIN_MENU.some((m) => screen.includes(m))) {
       return `登入成功（${user}）`;
+    }
+
+    // 兩階段驗證（2FA）→ 用 PTT_OTP_SECRET 算出當下驗證碼。PTT 給 5 次機會，
+    // 這裡最多送 2 次，且重試必須跨 30 秒窗（同一窗重算是同一組碼，必然再錯）。
+    if (screen.includes('兩階段驗證失敗次數過多')) {
+      throw new Error(
+        `兩階段驗證失敗次數過多\n--- 當前畫面 ---\n${screen}\n----------------`
+      );
+    }
+    if (otpPromptVisible(screen)) {
+      if (!isValidOtpSecret(otpSecret)) {
+        throw new Error(
+          `帳號 ${user} 需要兩階段驗證，但沒有可用的 PTT_OTP_SECRET。\n` +
+          '  $env:PTT_OTP_SECRET="你的 2FA 密鑰（Base32 或整段 otpauth:// 網址）"\n' +
+          `--- 當前畫面 ---\n${screen}\n----------------`
+        );
+      }
+      const rejected = screen.includes('驗證碼錯誤');
+      if (rejected && otpSent >= 2) {
+        throw new Error(
+          `兩階段驗證碼連續 ${otpSent} 次未通過（密鑰錯誤或本機時間不準？）\n` +
+          `--- 當前畫面 ---\n${screen}\n----------------`
+        );
+      }
+      if (otpSent === 0 || rejected) {
+        // 被拒才重送，且先等過這一窗；prompt 還在但沒有錯誤訊息＝server 還在驗，繼續等。
+        if (rejected) await page.waitForTimeout(30000);
+        otpSent++;
+        await typeLine(page, await totpCode(otpSecret));
+      }
+      await page.waitForTimeout(800);
+      continue;
     }
 
     // PTT 登入節流（登入太頻繁, 請稍後再試）→ 退避後 reload 重連重送帳密，最多 2 次。

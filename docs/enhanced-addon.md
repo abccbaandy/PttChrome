@@ -234,10 +234,28 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用�
 
 **「增強功能」分頁**：`showFloorNumbers`(true)、`mergeSameAuthorComments`(true)、
 `highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、
-`enableBareDomainLink`(true)、`blacklist`/`titleBlacklist`("" 換行)、
-`autoLogin`(false)、`autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true)。
-（`autoLoginUser/Password` 在「本機設定」分頁——local-only、不上雲；**password 在支援
-Credential API 的瀏覽器不落地**，見「自動登入」節。）
+`enableBareDomainLink`(true)、`blacklist`/`titleBlacklist`("" 換行)。
+
+**「自動登入」分頁**（2026-08 從增強功能＋本機設定兩處集中過來）——整條登入流程一頁看完，
+內部兩個 fieldset 各自標示同步性質：
+
+| fieldset | pref | 上雲 |
+|---|---|---|
+| 開關組 | `autoLogin`(false)、`autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true) | 是 |
+| 憑證組 | `autoLoginUser`、`autoLoginPassword`、`autoLoginOtpSecret`（皆 `""`） | **否**（`LOCAL_ONLY_PREF_KEYS`） |
+
+- 分開的理由：只看開關組不知道帳密填哪、只看憑證組不知道何時觸發；但兩者同步性質不同，
+  合成一個 fieldset 會讓「只存本機」的承諾失真。**「本機設定」分頁仍是 local-only 的預設去處**，
+  憑證是唯一例外（流程可讀性優先）。
+- 欄位狀態＝**localStorage 當下實際內容**，取自開啟對話框時的 `storedSnapshot`（不可用 `values`，
+  那會隨打字變動）。空欄位的 placeholder 明說「已交給密碼管理員保管」——否則使用者會誤判沒存成功。
+- 三態說明 `options_autoLoginLocalStatus_{none,pending,plaintext}`（純函式 `localCredentialStatus`）。
+- `#autoLoginClearLocalBtn` 只 `setValues` 清三欄，寫入仍走既有的「關閉才落地」路徑。
+- **這一頁不可長駐 DOM**：`Tabs.Panel value="autologin"` 內容再包一層
+  `navActiveKey === "autologin" &&`（其他分頁維持 Tabs 預設 keepMounted）。它是唯一「長得像
+  登入表單」的內容，留在 DOM 會讓瀏覽器密碼管理員在使用者根本沒在看它時就跑自動填入。
+- **2FA 密鑰欄禁用 `type="password"`**（實測災情，見踩坑筆記「設定頁的憑證欄位＝瀏覽器眼中的
+  登入表單」）。整頁只准有一個真正的密碼欄，且必須標 `autoComplete="new-password"`。
 
 **「連線」分頁**（2026-08 從一般分頁獨立出來）——兩組「開關＋自訂 URL」的代理設定：
 
@@ -289,27 +307,71 @@ polling**（setTimeout 每 500ms），每 tick 直接從 `buf.getRowText` 讀整
 空白/Y/N 同。到主功能表即 `stop()`；逾時 90s 自停；reconnect 時 `start()` 重置（`_seq` 防 async 重入）。
 守護：`tests/unit/auto_login_logic.test.js`（假 app 驅動 `_tick`：帳號/密碼順序、dup/err one-shot、loose「重複登入」需 `[Y/n]`/`(Y/N)`、主選單 stop、密碼錯誤 stop）；e2e shared 登入 fixture 亦間接走此路徑（需 env PTT_USER/PTT_PASS）。
 
+### 兩階段驗證 2FA / TOTP（`_handleOtp`）
+server 端行為以 `3rd_script/pttbbs/mbbsd/mbbsd.c#checkuser_2fa` 為準（**勿從畫面反推**）：
+密碼正確後才問，最多 **5 次**；`U_2FA_NEWIP` 模式下 `lasthost` 相同就整段跳過 ⇒
+**同一帳號 2FA 提示可能不出現**。TOTP 參數見 `common/sys/2fa.c`：HMAC-SHA1 / 6 位 / 30 秒 /
+Base32（PTT 給 10 bytes＝16 字元），server 驗證 `time_window=1`（±30s）。
+
+- 純函式 `src/js/totp.js`：`base32Decode`（**非法字元回 `null` 不可跳過**——`0/1/8/9` 誤植會變成
+  「格式看似正確、code 永遠錯」）、`normalizeOtpSecret`（吃純 base32／含空白破折號／整段
+  `otpauth://`；用 regex 不用 `new URL()`，otpauth 是 non-special scheme）、`totpCode`（WebCrypto，
+  async）、`totpCounter`/`totpRemainingMs`。守 RFC 6238 官方向量。
+- **偵測 marker 是 `請輸入兩階段`/`位限時數字`/`位救援碼`，絕不可用 `2FA`**：成功訊息與
+  「找不到 2FA 設定檔」自癒訊息都含 `2FA`，會在不需驗證的畫面亂送數字。三個 anchor 分散在
+  prompt 頭中尾 ⇒ 80 欄下單處折行仍至少兩個存活（`_readScreen` 以 `\n` 串列會切斷子字串）。
+- **後續步驟（dup／err／歡迎畫面／主選單）一律只 gate `_sentPass`，禁止加 `_sentOtp`**，
+  否則 NEWIP 直接放行時整條流程卡死。
+- **沒有可用密鑰 → `stop()` 且一個鍵都不送**：這是刻意支援的降級用法（不想把密鑰交給密碼
+  管理員的人留空即可），不是錯誤處理。送空白會被當錯誤驗證碼、白燒 server 的 5 次額度。
+- 重試：需畫面出現 `驗證碼錯誤` 這個明確證據，**且必須跨 30 秒窗**（同窗重算 code 相同，重送必錯）；
+  我方最多用 `MAX_OTP_ATTEMPTS=2` 次，其餘留給人手打或 8 位救援碼（救援碼一次性，不自動填）。
+- 本窗剩餘 `< OTP_MIN_REMAIN_MS(2s)` 就等下一窗；看到 prompt 才把 deadline 加 `OTP_EXTRA_MS`。
+- async 送出用 `_otpPending` 防重入，resolve 後**重驗** `_done`／`_seq`／`connectState`／prompt 還在。
+  `_otpPromise` 是測試 seam。
+- 守護：`tests/unit/totp.test.js`、`tests/unit/auto_login_2fa.test.js`。
+
 ### 憑證儲存（Credential Management API）
-密碼**不再明文落地 localStorage**（支援的瀏覽器）。解析順序（`_resolveCredential`）：
+密碼**不再長期明文落地 localStorage**（支援的瀏覽器）。解析順序（`_resolveCredential`）：
 1. **session cache**（module-level `sessionCred`；PrefModal 存檔經 `onValuesPrefChange` →
-   `setSessionCredential` 寫入，reconnect 不重跳 chooser）
+   `setSessionCredential` 寫入，reconnect 不重跳 chooser。**合併語意**：只給密鑰也合法）
 2. **瀏覽器密碼管理員**：`navigator.credentials.get({password:true, mediation:'optional'})`——
    使用者開啟 auto sign-in 後無聲取回，否則 page load 跳帳號選擇器（取消→走 3）
 3. **legacy localStorage 明文**（舊資料、Firefox/Safari 等無 `PasswordCredential` 的 fallback、
    e2e addInitScript 注入路徑）
 
-寫入端（`PrefModal.storeCredentialAndStrip`）：存檔時若支援 API 且帳密齊 →
-`credentials.store(new PasswordCredential(...))` 觸發瀏覽器「儲存密碼？」提示，localStorage 只寫
-**清空 `autoLoginPassword` 的副本**；`onSave` 仍傳完整 values（in-memory 即時生效）。不支援 → 照舊明文。
+**密鑰打包（`src/js/credential_pack.js`）**：`PasswordCredential` 只有 id/password，且 `get()` 一次
+只回一筆 ⇒ 第二筆 credential 永遠讀不回來，只能把密鑰塞進 password 欄位：
 
-遷移（自我修復、不弄丟憑證）：legacy 明文登入成功（到主選單）→ `_maybeMigrate()` 呼叫 `store()`
+```
+pttchrome:v1:<BASE32_SECRET>:<password>      # 密碼永遠在最後
+```
+解包＝剝前綴後取**第一個** `:` 一刀切（`indexOf`，**不是 `split`**）。密鑰打包前已正規化成
+`[A-Z2-7]+`，不含 `:` ⇒ 第一個 `:` 必為分隔符，密碼含幾個 `:` 都不必跳脫。判別子與密鑰放前面是
+因為只需找一個邊界（後綴式得從尾巴倒著猜 marker，而密碼是任意 72 字）。**無密鑰就不套信封**
+⇒ 非 2FA 使用者的條目維持可讀、舊版 build 也讀得懂。畸形信封一律回 legacy 語意（整串當密碼）。
+
+寫入端（`PrefModal` → `pref_credential.js#credentialToStore`）：帳密齊全且支援 API →
+`credentials.store(new PasswordCredential({ password: packCredential(...) }))` 觸發瀏覽器
+「儲存／更新密碼？」提示。**localStorage 照原樣寫入，不再提早剝除**（2026-08 修）：
+`store()` 的 promise resolve **早於**使用者回答提示，舊版立刻把 `autoLoginPassword` 清成 `""`，
+使用者按「不儲存」就兩邊都沒了，且與 `_maybeMigrate` 刻意不清的設計自相矛盾。只填密鑰沒填
+密碼 → 回 `null`（組不出 credential），改由下面的 `needsStore` 補完。
+
+遷移（自我修復、不弄丟憑證）：`_maybeMigrate()` 在到主選單時觸發，條件 `_usedLegacy || _needsStore`
 （**此時不清明文**：store resolve ≠ 使用者按了儲存）；之後某次 `get()` 真取回 → 才
-`clearLegacyAutoLoginCredential()` 清掉 prefs 明文**帳號+密碼**（帳號沒密碼也沒用，瀏覽器 store 的
-cred.id/cred.password 兩者都供）。連動：`autoLoginUser` 同步改 local-only（不上雲，見
-`docs/pref-sync-firestore.md`），否則清空的 `""` 會經雲端洗掉其他裝置的 legacy 帳號。
-UI 警語/placeholder 依 `window.PasswordCredential`
-切換（i18n `tooltip_autoLogin` / `tooltip_autoLoginPlaintext` / `placeholder_autoLoginPassword`）。
-需 secure context（localhost/HTTPS）。
+`clearLegacyAutoLoginCredential()` 清掉 prefs 明文**帳號+密碼**。
+**密鑰的清除條件不同**：只有解包真的拿到密鑰（`clearSecret`）才清——PM 回來若是尚未 repack 的
+裸密碼，密鑰只存在本機一份，跟著清會永久遺失；這種情況設 `needsStore=true`，下次登入成功後
+重新 `store()` 打包版，再下次 `get()` 取回才清。這條也是「舊使用者只補填密鑰」的主要升級路徑。
+連動：`autoLoginUser`／`autoLoginOtpSecret` 皆 local-only（不上雲，見
+`docs/pref-sync-firestore.md`），否則清空的 `""` 會經雲端洗掉其他裝置的資料。
+`pref_sync.savePrefs` **不給 `autoLoginOtpSecret` 送 `deleteField()`**：它從第一天就是 local-only，
+雲端文件不可能有，加了只是每次上傳多送無用欄位（`autoLoginUser` 需要是因為它曾經上雲）。
+密鑰也已列入 `debug_recorder` 的 redact `secrets`（長期憑證，外洩要重設 2FA 才能作廢）。
+UI 警語/placeholder 依 `window.PasswordCredential` 切換。需 secure context（localhost/HTTPS）。
+守護：`tests/unit/credential_pack.test.js`、`auto_login_credentials.test.js`、
+`pref_credential.test.js`、`pref_modal_autologin_tab.test.jsx`。
 
 ## 未移植（原腳本失效/越界）
 axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠瀏覽友善模式、右鍵搜尋作者選單。
@@ -334,6 +396,22 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
     **`'downloadable'`**（不是舊筆記寫的 `'unavailable'`；`about:blank` 下則整個 global 都沒有）。
     這個值會隨 browser 版本漂移 → 要測「不支援／裝置不符」的分支，一律用 `addInitScript` stub
     `window.LanguageModel`（或 `delete` 它）明確驅動，見 `ui_behavior.offline.spec.js` 的 AI 分頁三條。
+- **設定頁的憑證欄位＝瀏覽器眼中的登入表單**（2026-08 實測災情）。Chrome 的密碼管理員靠
+  版面啟發式判斷，不看你的意圖：只要頁面上有 `<input type="password">`，它就會抓「最近的
+  文字輸入」當帳號欄配對。2FA 密鑰欄用 `PasswordInput`（=第二個 password 欄）時，Chrome 抓到的
+  是 `autoLoginDupConn` 那顆 Select 的內層 input → 跳出「**使用者名稱：刪除其他連線 (Y)**、
+  密碼：<密鑰>」的假儲存提示，並開始自動填入欄位——**那會直接毀掉「欄位空白＝已交給密碼
+  管理員」這條說明**（被填滿後使用者以為東西還在本機）。三條規則，動設定頁憑證區前先讀：
+  ① 密鑰欄用一般 `TextInput`（它本來就是 PTT 在終端機上明文印出來給人抄的東西，不是密碼）；
+  ② 整頁只准有一個真正的 `type="password"`，且標 `autoComplete="new-password"`（Chrome 的
+  「這是變更密碼表單，別自動填」標準訊號）；③ 整組欄位只在切到該分頁時才渲染。
+  守護：`tests/unit/pref_modal_autologin_tab.test.jsx`「不被瀏覽器密碼管理員誤判成登入表單」。
+- **`onValuesPrefChange` 有三個呼叫端，只有設定頁那條可以碰憑證快取**：啟動
+  （`main.jsx`）、雲端 snapshot、設定頁存檔（`pref_save.js`，帶 `{ fromPrefModal: true }`）。
+  少了這個旗標，啟動時就會把 localStorage 裡**還沒遷移完的明文**塞進 `sessionCred` →
+  `_resolveCredential` 第一段直接命中 → `credentials.get()` 永遠不執行 → 明文永遠清不掉。
+  症狀很像「清除邏輯壞了」，實際上是快取把它短路了。守護：`pref_save_close.test.js` 與
+  `auto_login_credentials.test.js`「只有設定頁編輯能填 session cache」。
 - **在測試/工具裡直接餵 cassette 進 `TermBuf` 後讀 `getRowText`，必須先讓事件回圈跑一拍**（unit 用 `vi.advanceTimersByTime(300)`、瀏覽器用 `await sleep(120)`）：`isLeadByte` 只在 buf 的 update pass（notify 30ms + settle 50ms）才標記，沒跑完就讀會拿到**未轉碼的 Big5 位元組**（症狀：整片 `§@ªÌ` 亂碼，看起來像編碼表沒載）。
 
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）

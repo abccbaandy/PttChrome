@@ -79,6 +79,26 @@ describe("DebugRecorder", () => {
     expect(decoded).toBe("hi xxxxxx xxxxxxxx end");
   });
 
+  // 2FA 密鑰是長期憑證，外洩必須重設 2FA 才能作廢 → 一定要進 redact 清單。
+  it("stop 也 redact autoLoginOtpSecret", () => {
+    const { app } = makeApp();
+    const rec = new DebugRecorder(app);
+    rec.start();
+    app.onData("code ABCDEFGHIJKLMNOP end");
+    const out = JSON.parse(
+      rec.stop({
+        prefs: {
+          autoLoginUser: "myuser",
+          autoLoginPassword: "secret99",
+          autoLoginOtpSecret: "ABCDEFGHIJKLMNOP"
+        }
+      })
+    );
+    const recvEv = out.events.find((e) => e.dir === "recv");
+    const decoded = Buffer.from(recvEv.data, "base64").toString("latin1");
+    expect(decoded).toBe("code xxxxxxxxxxxxxxxx end");
+  });
+
   it("未錄製時 log() no-op；重複 stop 回 null", () => {
     const { app } = makeApp();
     const rec = new DebugRecorder(app);

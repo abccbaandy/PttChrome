@@ -12,7 +12,7 @@
 - 同步策略：localStorage = 本地快取，啟動先套用（不阻塞 BBS 連線）；曾登入者背景 attach Firestore **onSnapshot realtime listener**，每個 snapshot merge 後二次套用（`main.jsx` → `registerOnCloudValues` + `startIfPreviouslySignedIn`）。儲存時雙寫（PrefModal `onCloseClick`/`onResetClick` → `prefSync.savePrefs`）。
 - 資料模型：`users/{uid}` 單一 doc `{ prefs, updatedAt: serverTimestamp, schemaVersion: 1 }`。
 - 衝突：cloud wins；首次登入雲端無 doc → push local up；登出只清旗標（`pttchrome.prefsync.enabled`），localStorage 保留。
-- **`autoLoginPassword`、`autoLoginUser` 絕不上雲**：上傳前 `sanitizeForCloud` 剝除、下載 merge 強制取本地值；憑證走瀏覽器 PasswordCredential（見 `src/js/auto_login.js`）。帳號 local-only 的理由：裝置在瀏覽器存好憑證後會清空 local 帳密，若帳號同步，清空的 `""` 會上雲洗掉其他裝置（無 credential API 的 Firefox/Safari legacy 登入會壞）。`savePrefs` 另以 `FieldValue.delete()` 自癒刪除舊 doc 殘留的 `prefs.autoLoginUser`。
+- **`autoLoginPassword`、`autoLoginUser`、`autoLoginOtpSecret` 絕不上雲**：上傳前 `sanitizeForCloud` 剝除、下載 merge 強制取本地值；憑證走瀏覽器 PasswordCredential（見 `src/js/auto_login.js`，2FA 密鑰打包進 password 欄位）。帳號 local-only 的理由：裝置在瀏覽器存好憑證後會清空 local 帳密，若帳號同步，清空的 `""` 會上雲洗掉其他裝置（無 credential API 的 Firefox/Safari legacy 登入會壞）；密鑰同理。`savePrefs` 另以 `FieldValue.delete()` 自癒刪除舊 doc 殘留的 `prefs.autoLoginUser`——**`autoLoginOtpSecret` 刻意不加**，它從第一天就是 local-only，雲端文件不可能有殘留。
 
 ## Realtime listener（onSnapshot）
 

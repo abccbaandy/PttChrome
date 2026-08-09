@@ -805,18 +805,26 @@ App.prototype.resetMouseCursor = function(cX, cY) {
   this.buf.mouseCursor = 11;
 };
 
-App.prototype.onValuesPrefChange = function(values) {
+App.prototype.onValuesPrefChange = function(values, opts) {
   for (var name in values) {
     this.onPrefChange(name, values[name]);
   }
 
-  // Enhanced Add-on: PrefModal hands us the un-stripped values (the persisted
-  // copy has no password when the browser credential store is used), so cache
-  // them for this session's reconnects.
-  if (values.autoLogin && values.autoLoginUser && values.autoLoginPassword) {
+  // Enhanced Add-on: cache the credentials for this session's reconnects, but
+  // ONLY when they come from the user editing the settings dialog
+  // (setSessionCredential merges, so "only the OTP secret was filled in" is a
+  // valid update too).
+  //
+  // Never on the startup/cloud path: prefs read from localStorage still hold
+  // the plaintext until the migration completes, and seeding the cache with
+  // them short-circuits _resolveCredential before it ever calls
+  // credentials.get() — so the browser store would never be proven and the
+  // plaintext would never be cleared.
+  if (values.autoLogin && opts && opts.fromPrefModal) {
     this.autoLogin.setSessionCredential(
       values.autoLoginUser,
-      values.autoLoginPassword
+      values.autoLoginPassword,
+      values.autoLoginOtpSecret
     );
   }
 

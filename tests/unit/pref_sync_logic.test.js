@@ -18,6 +18,18 @@ describe("sanitizeForCloud", () => {
     expect(out).not.toHaveProperty("autoLoginUser");
   });
 
+  // The 2FA secret is a credential like the password — it must never reach
+  // Firestore, and a synced "" would wipe it on machines without the
+  // Credential Management API.
+  it("strips autoLoginOtpSecret", () => {
+    const out = sanitizeForCloud({
+      ...DEFAULT_PREFS,
+      autoLoginOtpSecret: "ABCDEFGHIJKLMNOP"
+    });
+    expect(out).not.toHaveProperty("autoLoginOtpSecret");
+    expect(LOCAL_ONLY_PREF_KEYS).toContain("autoLoginOtpSecret");
+  });
+
   it("strips every LOCAL_ONLY_PREF_KEYS entry (incl. enableWorkMode)", () => {
     const out = sanitizeForCloud({ ...DEFAULT_PREFS, enableWorkMode: true });
     for (const key of LOCAL_ONLY_PREF_KEYS) {
@@ -53,6 +65,22 @@ describe("mergeCloudPrefs", () => {
   it("password is empty string when local has none", () => {
     const out = mergeCloudPrefs(DEFAULT_PREFS, DEFAULT_PREFS, {});
     expect(out.autoLoginPassword).toBe("");
+  });
+
+  it("always keeps the local OTP secret, even if cloud has one", () => {
+    const out = mergeCloudPrefs(
+      DEFAULT_PREFS,
+      { ...local, autoLoginOtpSecret: "ABCDEFGHIJKLMNOP" },
+      { autoLoginOtpSecret: "EVILEVILEVILEVIL" }
+    );
+    expect(out.autoLoginOtpSecret).toBe("ABCDEFGHIJKLMNOP");
+  });
+
+  it("OTP secret is empty string when local has none", () => {
+    const out = mergeCloudPrefs(DEFAULT_PREFS, DEFAULT_PREFS, {
+      autoLoginOtpSecret: "EVILEVILEVILEVIL"
+    });
+    expect(out.autoLoginOtpSecret).toBe("");
   });
 
   it("keeps the local autoLoginUser even when a legacy cloud doc has one", () => {

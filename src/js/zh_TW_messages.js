@@ -221,26 +221,71 @@
   "tooltip_title_blacklist": {
     "message": "一行一個關鍵字；看板列表隱藏標題含此關鍵字的文章"
   },
+  "options_autoLoginTab": {
+    "message": "自動登入"
+  },
   "options_autoLogin": {
     "message": "記憶帳密／自動登入"
   },
   "options_autoLoginEnable": {
     "message": "開啟網頁時自動登入"
   },
+  "tooltip_autoLoginSynced": {
+    "message": "這一組設定會跟著偏好設定雲端同步（不含下方的帳號密碼）。"
+  },
   "tooltip_autoLogin": {
     "message": "密碼會儲存到瀏覽器的密碼管理員 (如 Google 密碼管理員)，不以明文存在本機。儲存時請在瀏覽器跳出的提示按「儲存」。"
   },
+  "tooltip_autoLoginLocalCopy": {
+    "message": "在此填入的資料會先以明文暫存在本機 (localStorage)，等下次自動登入時真的從密碼管理員取回，才會自動清除。若你在瀏覽器提示按了「不要儲存」，本機這份就會一直留著。"
+  },
   "tooltip_autoLoginPlaintext": {
-    "message": "此瀏覽器不支援密碼管理員 API，帳密將以明文儲存在本機 (localStorage)，請僅在個人裝置使用。"
+    "message": "此瀏覽器不支援密碼管理員 API，帳號密碼與 2FA 密鑰只能以明文儲存在本機 (localStorage)，而且不會被自動清除。請僅在個人裝置使用。"
+  },
+  "tooltip_autoLoginUpdate": {
+    "message": "要更新的話，直接在下面填入新的內容即可；關閉設定頁時瀏覽器會跳出「儲存／更新密碼」提示，按下儲存就完成更新。"
+  },
+  "placeholder_autoLoginUser": {
+    "message": "已交給瀏覽器密碼管理員保管（本機不留）"
   },
   "placeholder_autoLoginPassword": {
-    "message": "留空＝沿用瀏覽器已儲存的密碼"
+    "message": "已交給瀏覽器密碼管理員保管；要更新請重新填寫"
   },
   "options_autoLoginUser": {
     "message": "帳號"
   },
   "options_autoLoginPassword": {
     "message": "密碼"
+  },
+  "options_autoLoginOtpSecret": {
+    "message": "兩階段驗證密鑰 (2FA / TOTP)"
+  },
+  "tooltip_autoLoginOtpSecret": {
+    "message": "PTT 兩階段驗證的密鑰（16 碼 A-Z 2-7），也可以直接貼上整段 otpauth:// 網址。留空＝自動填完帳號密碼後停在驗證碼畫面，由你自己輸入 6 碼；沒開 2FA 也請留空。"
+  },
+  "tooltip_autoLoginOtpSecretInvalid": {
+    "message": "格式不正確：應為 16 碼以上的 Base32（只含 A-Z 與 2-7），或一整段 otpauth:// 網址。"
+  },
+  "tooltip_autoLoginOtpSecretRisk": {
+    "message": "密鑰會和密碼存在同一個密碼管理員，等於放棄第二道關卡對「密碼管理員被攻破」的保護（對 PTT 端密碼外洩仍然有保護）。密鑰屬於長期憑證，一旦外洩必須重設 2FA 才能作廢。若有疑慮，可留空改用手動輸入，或在 PTT 端把 2FA 改成「只有新 IP 才驗證」。"
+  },
+  "placeholder_autoLoginOtpSecret": {
+    "message": "已交給瀏覽器密碼管理員保管；沒開 2FA 請留空"
+  },
+  "options_autoLoginLocalStatus_none": {
+    "message": "目前狀態：本機沒有留下登入資訊，改由瀏覽器密碼管理員提供。"
+  },
+  "options_autoLoginLocalStatus_pending": {
+    "message": "目前狀態：本機還留著一份明文副本，會在下次自動登入成功取回後自動清除。"
+  },
+  "options_autoLoginLocalStatus_plaintext": {
+    "message": "目前狀態：此瀏覽器不支援密碼管理員，明文副本會一直保留在本機。"
+  },
+  "options_autoLoginClearLocal": {
+    "message": "清除本機暫存的登入資訊"
+  },
+  "tooltip_autoLoginClearLocal": {
+    "message": "只會清掉本機這份副本（關閉設定頁時生效）；已存進瀏覽器密碼管理員的紀錄請到瀏覽器設定裡刪除。"
   },
   "options_autoLoginDupConn": {
     "message": "偵測到重複登入時"

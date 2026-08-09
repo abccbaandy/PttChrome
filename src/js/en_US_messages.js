@@ -221,26 +221,71 @@ export const en_US = {
   "tooltip_title_blacklist": {
     "message": "One keyword per line; hides board-list posts whose title contains it"
   },
+  "options_autoLoginTab": {
+    "message": "Auto login"
+  },
   "options_autoLogin": {
     "message": "Remember credentials / Auto login"
   },
   "options_autoLoginEnable": {
     "message": "Log in automatically when the page opens"
   },
+  "tooltip_autoLoginSynced": {
+    "message": "These settings follow preference cloud sync (the credentials below do not)."
+  },
   "tooltip_autoLogin": {
     "message": "The password is saved to the browser's password manager (e.g. Google Password Manager), not stored locally in plain text. Accept the browser's save prompt when it appears."
   },
+  "tooltip_autoLoginLocalCopy": {
+    "message": "What you enter here is first kept in plain text in localStorage, and is cleared automatically once the next auto login really reads it back from the password manager. If you dismiss the browser's save prompt, that local copy stays."
+  },
   "tooltip_autoLoginPlaintext": {
-    "message": "This browser lacks the password manager API; credentials are stored in plain text in localStorage. Use only on a personal device."
+    "message": "This browser lacks the password manager API; the account, password and 2FA secret can only be stored in plain text in localStorage, and are never cleared automatically. Use only on a personal device."
+  },
+  "tooltip_autoLoginUpdate": {
+    "message": "To update, just type the new values below; closing this dialog triggers the browser's save/update password prompt."
+  },
+  "placeholder_autoLoginUser": {
+    "message": "Held by the browser's password manager (nothing kept locally)"
   },
   "placeholder_autoLoginPassword": {
-    "message": "Leave empty to keep the password saved in the browser"
+    "message": "Held by the browser's password manager; retype to update"
   },
   "options_autoLoginUser": {
     "message": "Account"
   },
   "options_autoLoginPassword": {
     "message": "Password"
+  },
+  "options_autoLoginOtpSecret": {
+    "message": "Two-factor secret (2FA / TOTP)"
+  },
+  "tooltip_autoLoginOtpSecret": {
+    "message": "The secret for PTT's two-factor authentication (16 characters of A-Z and 2-7); a whole otpauth:// URI can be pasted as well. Leave it empty to have auto login fill in the account and password and stop at the verification prompt so you can type the 6 digits yourself — and leave it empty if 2FA is off."
+  },
+  "tooltip_autoLoginOtpSecretInvalid": {
+    "message": "Invalid format: expected at least 16 characters of Base32 (A-Z and 2-7 only), or a full otpauth:// URI."
+  },
+  "tooltip_autoLoginOtpSecretRisk": {
+    "message": "The secret ends up in the same password manager as the password, which gives up the second factor's protection against that vault being compromised (it still protects against a leak on PTT's side). The secret is a long-lived credential: leaking it requires resetting 2FA to revoke. If that worries you, leave it empty and type the code by hand, or switch PTT's 2FA to \"only verify from a new IP\"."
+  },
+  "placeholder_autoLoginOtpSecret": {
+    "message": "Held by the browser's password manager; leave empty if 2FA is off"
+  },
+  "options_autoLoginLocalStatus_none": {
+    "message": "Status: nothing stored locally — the browser's password manager supplies the credentials."
+  },
+  "options_autoLoginLocalStatus_pending": {
+    "message": "Status: a plain-text copy is still here; it is cleared once the next auto login reads the credentials back."
+  },
+  "options_autoLoginLocalStatus_plaintext": {
+    "message": "Status: this browser has no password manager API, so the plain-text copy stays on this machine."
+  },
+  "options_autoLoginClearLocal": {
+    "message": "Clear the local copy"
+  },
+  "tooltip_autoLoginClearLocal": {
+    "message": "Only removes the local copy (applied when this dialog closes); delete the password manager entry in the browser's own settings."
   },
   "options_autoLoginDupConn": {
     "message": "When a duplicate login is detected"

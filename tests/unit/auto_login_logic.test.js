@@ -32,6 +32,7 @@ function makeLogin(overrides = {}) {
 
   al._user = "testuser";
   al._pass = "secretpass";
+  al._otpSecret = ""; // no 2FA here — that path lives in auto_login_2fa.test.js
   al._dupConn = "N";
   al._skipWelcome = true;
   al._sentUser = false;

@@ -16,23 +16,51 @@
 //      enables auto sign-in, otherwise shows the account chooser on page load.
 //   3. legacy plaintext prefs in localStorage (pre-migration data, unsupported
 //      browsers like Firefox/Safari, and e2e injection).
+// The stored password may carry the 2FA secret alongside it (credential_pack.js)
+// because a PasswordCredential has nowhere else to put it.
 // Migration is self-healing and never drops credentials: a legacy login that
 // reaches the main menu triggers credentials.store() (browser save prompt), but
 // the plaintext copy (username AND password) is only wiped once a later get()
 // proves the browser really has it (store() resolving does not mean the user
-// accepted the prompt).
+// accepted the prompt). The same store() call re-packs the credential when the
+// user has since added an OTP secret.
 
 import {
   readValuesWithDefault,
   clearLegacyAutoLoginCredential
 } from './pref_storage';
+import { packCredential, unpackCredential } from './credential_pack';
+import { isValidOtpSecret, totpCode, totpCounter, totpRemainingMs } from './totp';
 
 const MAIN_MENU = ['主功能表', '【主功能表】'];
 const POLL_MS = 500;
 const ACTION_COOLDOWN_MS = 900;
 const MAX_DURATION_MS = 90000;
 
-// Page-lifetime cache: { user, pass, legacy }.
+// 2FA screens, from the official mbbsd/mbbsd.c#checkuser_2fa:
+//   prompt  「請輸入兩階段(2FA)驗證碼(6位限時數字 或 8位救援碼):」
+//   error   「驗證碼錯誤。請確定在時限前輸入完畢。」(5 attempts, then locked)
+//   locked  「兩階段驗證失敗次數過多。」→ back to the account prompt
+// The marker must NOT be '2FA': both the success line「2FA 兩階段驗證成功。」and
+// the self-heal notice「[系統提示] 找不到 2FA 設定檔…」contain it, and matching
+// those would type digits into screens that never asked for a code. The three
+// anchors below sit at the head/middle/tail of the prompt, so the one place the
+// line can wrap on an 80-column screen still leaves two of them intact
+// (_readScreen joins rows with '\n', which breaks substring matches).
+const OTP_PROMPT_MARKERS = ['請輸入兩階段', '位限時數字', '位救援碼'];
+const OTP_BAD_CODE = '驗證碼錯誤';
+const OTP_LOCKED = '兩階段驗證失敗次數過多';
+// The server allows 5 tries; spend at most 2 so a wrong secret or a skewed
+// clock still leaves the user room to type a code or a recovery code by hand.
+const MAX_OTP_ATTEMPTS = 2;
+// Don't send a code that is about to expire (guards against a fast local
+// clock; the server itself tolerates ±30s).
+const OTP_MIN_REMAIN_MS = 2000;
+// Waiting for the next 30s window can outlast the normal budget, so extend it
+// once a 2FA prompt is actually on screen.
+const OTP_EXTRA_MS = 75000;
+
+// Page-lifetime cache: { user, pass, otpSecret, legacy, needsStore }.
 let sessionCred = null;
 
 const credentialApiAvailable = () =>
@@ -45,8 +73,17 @@ export function AutoLogin(app) {
 
 // Called when PrefModal saves with credentials filled in, so they take effect
 // this session even though the password is no longer persisted to localStorage.
-AutoLogin.prototype.setSessionCredential = function(user, pass) {
-  if (user && pass) sessionCred = { user, pass, legacy: false };
+// Merging rather than replacing: "I only changed the OTP secret" is a normal
+// edit now that the password may already live in the browser store alone.
+AutoLogin.prototype.setSessionCredential = function(user, pass, otpSecret) {
+  if (!user && !pass && !otpSecret) return;
+  const base = sessionCred || { user: '', pass: '', otpSecret: '', legacy: false };
+  if (user && pass) {
+    sessionCred = { ...base, user, pass, legacy: false };
+  } else {
+    sessionCred = { ...base };
+  }
+  if (otpSecret) sessionCred.otpSecret = otpSecret;
 };
 
 AutoLogin.prototype._resolveCredential = async function(v) {
@@ -58,7 +95,12 @@ AutoLogin.prototype._resolveCredential = async function(v) {
   const legacy = () => {
     if (v.autoLoginUser && v.autoLoginPassword) {
       console.info('auto_login: credential source = legacy localStorage');
-      sessionCred = { user: v.autoLoginUser, pass: v.autoLoginPassword, legacy: true };
+      sessionCred = {
+        user: v.autoLoginUser,
+        pass: v.autoLoginPassword,
+        otpSecret: v.autoLoginOtpSecret || '',
+        legacy: true
+      };
       return sessionCred;
     }
     console.info('auto_login: no credential available');
@@ -77,16 +119,28 @@ AutoLogin.prototype._resolveCredential = async function(v) {
     });
     if (cred && cred.password) {
       console.info('auto_login: credential source = browser store');
+      const unpacked = unpackCredential(cred.password);
+      // A credential saved before 2FA support carries no secret; fall back to
+      // the one in prefs and re-pack it on the next successful login.
+      const otpSecret = unpacked.otpSecret || v.autoLoginOtpSecret || '';
+      const needsStore = !unpacked.otpSecret && !!otpSecret;
       // The browser store is now the source of truth → drop any leftover
       // plaintext credentials (username included — useless without the
-      // password) from prefs.
-      if (v.autoLoginPassword || v.autoLoginUser) {
+      // password) from prefs. The secret only goes once the store is proven to
+      // hold it as well, otherwise this machine holds the only copy.
+      if (v.autoLoginPassword || v.autoLoginUser || (!needsStore && v.autoLoginOtpSecret)) {
         console.info(
           'auto_login: clearing legacy plaintext credentials from prefs'
         );
-        clearLegacyAutoLoginCredential();
+        clearLegacyAutoLoginCredential({ clearSecret: !needsStore });
       }
-      sessionCred = { user: cred.id, pass: cred.password, legacy: false };
+      sessionCred = {
+        user: cred.id,
+        pass: unpacked.password,
+        otpSecret,
+        legacy: false,
+        needsStore
+      };
       return sessionCred;
     }
     console.info('auto_login: browser store returned no credential');
@@ -96,15 +150,16 @@ AutoLogin.prototype._resolveCredential = async function(v) {
   }
 };
 
-// Login succeeded with legacy plaintext creds → offer to save them into the
-// browser's password manager. Plaintext is wiped later, on a successful get().
+// Login succeeded and the browser store either doesn't have these credentials
+// yet (legacy plaintext) or holds a copy without the OTP secret → offer to
+// save/update them. Plaintext is wiped later, on a successful get().
 AutoLogin.prototype._maybeMigrate = function() {
-  if (!this._usedLegacy || !credentialApiAvailable()) return;
+  if (!(this._usedLegacy || this._needsStore) || !credentialApiAvailable()) return;
   try {
     navigator.credentials
       .store(new PasswordCredential({
         id: this._user,
-        password: this._pass,
+        password: packCredential(this._pass, this._otpSecret),
         name: 'PTT'
       }))
       .catch(() => {});
@@ -123,7 +178,9 @@ AutoLogin.prototype.start = async function() {
   if (!cred || seq !== this._seq) return;
   this._user = cred.user;
   this._pass = cred.pass;
+  this._otpSecret = cred.otpSecret || '';
   this._usedLegacy = !!cred.legacy;
+  this._needsStore = !!cred.needsStore;
   this._dupConn = v.autoLoginDupConn === 'Y' ? 'Y' : 'N';
   this._skipWelcome = !!v.autoLoginSkipWelcome;
 
@@ -132,6 +189,11 @@ AutoLogin.prototype.start = async function() {
   this._sentPass = false;
   this._answeredDup = false;
   this._answeredErr = false;
+  this._sawOtpPrompt = false;
+  this._otpPending = false;
+  this._otpAttempts = 0;
+  this._otpLastCounter = -1;
+  this._otpPromise = null;
   this._lastActionAt = 0;
   this._deadline = Date.now() + MAX_DURATION_MS;
   this._poll();
@@ -177,6 +239,82 @@ AutoLogin.prototype._send = function(str) {
   this._lastActionAt = Date.now();
 };
 
+// Two-factor step. Returns true when it owns this tick (the caller must not
+// fall through to the later prompts).
+//
+// Computing a TOTP needs WebCrypto, which is async while _tick is not, so the
+// send happens in a promise guarded by _otpPending; _otpPromise is also the
+// seam the unit tests await.
+AutoLogin.prototype._handleOtp = function(screen) {
+  // Out of tries: the server has dropped us back to the account prompt, so any
+  // further key would be typed into the account field.
+  if (screen.includes(OTP_LOCKED)) {
+    console.warn('auto_login: 2FA locked out (too many failed codes)');
+    this.stop();
+    return true;
+  }
+
+  if (!OTP_PROMPT_MARKERS.some(m => screen.includes(m))) return false;
+
+  if (!this._sawOtpPrompt) {
+    this._sawOtpPrompt = true;
+    // Waiting out a 30s window can exceed the normal budget.
+    this._deadline = Math.max(this._deadline, Date.now() + OTP_EXTRA_MS);
+  }
+
+  if (this._otpPending) return true;
+
+  // No usable secret → hand the keyboard back with the prompt still on screen.
+  // This is the documented opt-out for people who don't want the secret stored
+  // in a password manager, so it must not type anything: a stray key counts as
+  // a wrong code and burns one of the server's five attempts.
+  if (!isValidOtpSecret(this._otpSecret)) {
+    console.warn(
+      'auto_login: 2FA prompt but no usable OTP secret — handing over to the user'
+    );
+    this.stop();
+    return true;
+  }
+
+  const failed = screen.includes(OTP_BAD_CODE);
+  if (failed && this._otpAttempts >= MAX_OTP_ATTEMPTS) {
+    console.warn('auto_login: 2FA code rejected twice — handing over to the user');
+    this.stop();
+    return true;
+  }
+  // Retrying inside the same 30s window would produce the very same code, so
+  // wait for the next one. Requiring the explicit「驗證碼錯誤」line (rather than
+  // "the prompt is still there") also avoids re-sending while the server is
+  // still checking the first code.
+  const shouldSend =
+    this._otpAttempts === 0 || (failed && totpCounter() !== this._otpLastCounter);
+  if (!shouldSend) return true;
+
+  // Don't send a code that expires in flight.
+  if (totpRemainingMs() < OTP_MIN_REMAIN_MS) return true;
+
+  this._otpPending = true;
+  const seq = this._seq;
+  this._otpPromise = totpCode(this._otpSecret)
+    .then(code => {
+      if (this._done || seq !== this._seq) return;
+      if (this._app.connectState !== 1) return;
+      // The screen may have moved on while we were hashing.
+      if (!OTP_PROMPT_MARKERS.some(m => this._readScreen().includes(m))) return;
+      this._otpLastCounter = totpCounter();
+      this._otpAttempts++;
+      this._send(code + '\r');
+    })
+    .catch(e => {
+      console.warn('auto_login: TOTP generation failed', e);
+      this.stop();
+    })
+    .finally(() => {
+      this._otpPending = false;
+    });
+  return true;
+};
+
 AutoLogin.prototype._tick = function() {
   if (this._app.connectState !== 1) return;
   const screen = this._readScreen();
@@ -207,7 +345,13 @@ AutoLogin.prototype._tick = function() {
     return;
   }
 
-  // 3. Duplicate login → answer per preference. One-shot: the prompt appears at
+  // 3. Two-factor (TOTP) prompt. Purely reactive: with PTT's U_2FA_NEWIP mode
+  // the server skips this entirely when the source IP matches lasthost, so the
+  // steps below must keep gating on _sentPass alone — adding an _sentOtp
+  // condition would deadlock every login that never sees this prompt.
+  if (this._sentPass && this._handleOtp(screen)) return;
+
+  // 4. Duplicate login → answer per preference. One-shot: the prompt appears at
   // most once per login, and welcome banners may still contain「重複登入」after
   // it's answered — re-sending would leak keys into later screens. The loose
   // 「重複登入」match additionally requires a y/n indicator for the same reason.
@@ -219,7 +363,7 @@ AutoLogin.prototype._tick = function() {
     return;
   }
 
-  // 4. Keep/clear error-attempt prompts → default no. One-shot, same as #3.
+  // 5. Keep/clear error-attempt prompts → default no. One-shot, same as #4.
   if (this._sentPass && !this._answeredErr &&
       (screen.includes('您要刪除以上錯誤嘗試') || screen.includes('是否保留') ||
        screen.includes('保留上次') || screen.includes('清除錯誤嘗試'))) {
@@ -228,7 +372,7 @@ AutoLogin.prototype._tick = function() {
     return;
   }
 
-  // 5. Welcome / "press any key" screens → advance (only if enabled).
+  // 6. Welcome / "press any key" screens → advance (only if enabled).
   if (this._skipWelcome &&
       (screen.includes('請按任意鍵') || screen.includes('按任意鍵') ||
        screen.includes('任意鍵繼續') || screen.includes('Press any key') ||

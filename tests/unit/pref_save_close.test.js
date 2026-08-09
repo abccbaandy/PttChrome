@@ -25,9 +25,21 @@ describe('onPrefSaveImpl', () => {
     const values = { copyOnSelect: true };
 
     expect(onPrefSaveImpl(pttchrome, values)).toEqual({ showsSettings: false });
-    expect(pttchrome.onValuesPrefChange).toHaveBeenCalledWith(values);
+    expect(pttchrome.onValuesPrefChange).toHaveBeenCalledWith(values, {
+      fromPrefModal: true,
+    });
     expect(pttchrome.switchToEasyReadingMode).toHaveBeenCalledWith(true);
     expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  // 憑證快取的唯一入口：少了這個旗標，啟動路徑（main.jsx 也呼叫
+  // onValuesPrefChange）就會把 localStorage 裡還沒遷移完的明文塞進 session cache，
+  // _resolveCredential 直接回快取 → credentials.get() 永不執行 → 明文永遠清不掉。
+  test('標記 fromPrefModal，讓 auto_login 只快取使用者親手編輯的憑證', () => {
+    const pttchrome = makePttchrome();
+    onPrefSaveImpl(pttchrome, { autoLogin: true, autoLoginUser: 'u' });
+    const opts = pttchrome.onValuesPrefChange.mock.calls[0][1];
+    expect(opts).toEqual({ fromPrefModal: true });
   });
 
   test('switchToEasyReadingMode throw（view.conn undefined）仍回傳關閉指令', () => {

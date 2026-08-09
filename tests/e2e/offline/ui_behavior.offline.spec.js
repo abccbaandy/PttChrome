@@ -52,7 +52,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(page.locator('.PrefModal input[name="copyOnSelect"]')).toBeVisible();
   });
 
-  test('PrefModal 分頁切換：general → connection → enhance → ai → local → about 內容對應切換', async ({ page }) => {
+  test('PrefModal 分頁切換：general → connection → enhance → autologin → ai → local → about 內容對應切換', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
     await ptt.dismissDeveloperModeAlert(page);
@@ -69,7 +69,9 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     const proxyUrl = page.locator('.PrefModal input[name="proxyUrl"]');     // connection only
     const imgurProxyUrl = page.locator('.PrefModal input[name="imgurProxyUrl"]'); // connection only
     const blacklist = page.locator('.PrefModal textarea[name="blacklist"]'); // enhance only
-    const autoLoginUser = page.locator('.PrefModal input[name="autoLoginUser"]'); // local only
+    const autoLoginUser = page.locator('.PrefModal input[name="autoLoginUser"]'); // autologin only
+    const autoLoginOtpSecret =
+      page.locator('.PrefModal input[name="autoLoginOtpSecret"]');           // autologin only
     const enableAi = page.locator('.PrefModal input[name="enableAi"]');      // ai only
 
     // 起始：general 可見
@@ -91,19 +93,27 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(autoLoginUser).toBeHidden();
     await expect(enableAi).toBeHidden(); // AI 設定已全數移出增強功能分頁
 
+    // → autologin（開關組 + 帳號／密碼／2FA 密鑰，整條登入流程集中在這一頁）
+    await nav.getByText(await label(page, 'options_autoLoginTab'), { exact: true }).click();
+    await expect(autoLoginUser).toBeVisible();
+    await expect(autoLoginOtpSecret).toBeVisible();
+    await expect(page.locator('.PrefModal input[name="autoLogin"]')).toBeVisible();
+    await expect(blacklist).toBeHidden();
+
     // → ai（裝置端 AI 總開關 + 細部設定）
     await nav.getByText(await label(page, 'options_ai'), { exact: true }).click();
     await expect(enableAi).toBeVisible();
     await expect(page.locator('.PrefModal input[name="enableCaptionAi"]')).toBeVisible();
     await expect(page.locator('.PrefModal input[name="enableUrlAi"]')).toBeVisible();
     await expect(blacklist).toBeHidden();
+    await expect(autoLoginUser).toBeHidden();
 
-    // → local（帳密 + 上班模式所在的本機設定分頁）
+    // → local（上班模式所在的本機設定分頁；帳密已移到自動登入分頁）
     await nav.getByText(await label(page, 'options_local'), { exact: true }).click();
-    await expect(autoLoginUser).toBeVisible();
     await expect(
       page.locator('.PrefModal input[name="enableWorkMode"]')
     ).toBeVisible();
+    await expect(autoLoginUser).toBeHidden();
     await expect(blacklist).toBeHidden();
 
     // → about（含 PttChrome 版本字樣）

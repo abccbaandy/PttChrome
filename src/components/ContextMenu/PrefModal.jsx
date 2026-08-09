@@ -28,6 +28,12 @@ import {
   destroyPromptApi,
 } from "../../js/prompt_api";
 import { deepEqual } from "../../js/pref_sync_logic";
+import { isValidOtpSecret } from "../../js/totp";
+import {
+  normalizeAutoLoginValues,
+  credentialToStore,
+  localCredentialStatus,
+} from "./pref_credential";
 import { DEFAULT_PROXY_HOST } from "../../js/util";
 import { DEFAULT_IMGUR_PROXY_BASE } from "../../js/imgur_proxy";
 import "./PrefModal.css";
@@ -46,34 +52,30 @@ const PrefCheckbox = ({ name, checked, disabled, onChange, children }) => (
   />
 );
 
-// With credentials filled in on a supporting browser, persist the password to
-// the browser's password manager (Google Password Manager etc.) instead of
-// localStorage. Returns the values to persist; the caller still hands the
-// original (with password) to onSave so it takes effect this session.
-const storeCredentialAndStrip = (values) => {
-  if (
-    !values.autoLogin ||
-    !values.autoLoginUser ||
-    !values.autoLoginPassword ||
-    !window.PasswordCredential ||
-    !(navigator.credentials && navigator.credentials.store)
-  ) {
-    return values; // unsupported browser → legacy plaintext behavior
-  }
+const credentialApiAvailable = () =>
+  !!window.PasswordCredential &&
+  !!(navigator.credentials && navigator.credentials.store);
+
+// Offer the credentials to the browser's password manager (Google Password
+// Manager etc.), with the 2FA secret packed into the password field.
+//
+// Deliberately does NOT strip anything from what gets written to localStorage:
+// store() resolves before the user answers the browser's save prompt, so
+// clearing the local copy here loses the password entirely when they press
+// "Never". Wiping the plaintext is auto_login.js's job — it only happens once a
+// later credentials.get() proves the store really has it.
+const storeCredential = (values) => {
+  const cred = credentialToStore(values, {
+    supported: credentialApiAvailable(),
+  });
+  if (!cred) return;
   try {
     navigator.credentials
-      .store(
-        new PasswordCredential({
-          id: values.autoLoginUser,
-          password: values.autoLoginPassword,
-          name: "PTT",
-        }),
-      )
+      .store(new PasswordCredential({ ...cred, name: "PTT" }))
       .catch(() => {});
   } catch (e) {
-    return values;
+    // unsupported/blocked → the local copy above is the fallback
   }
-  return { ...values, autoLoginPassword: "" };
 };
 
 const replaceI18n = (id, replacements) => {
@@ -142,6 +144,9 @@ export const PrefModal = ({
 }) => {
   const [navActiveKey, setNavActiveKey] = useState("general");
   const [values, setValues] = useState(readValuesWithDefault);
+  // What localStorage held when the dialog opened. `values` follows the user's
+  // typing, so only this can answer "is there still a plaintext copy here?".
+  const [storedSnapshot, setStoredSnapshot] = useState(readValuesWithDefault);
   const [syncUser, setSyncUser] = useState(null);
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | synced | error
   // 裝置端 AI（Prompt API）可用性：unsupported | unavailable | downloadable |
@@ -184,13 +189,15 @@ export const PrefModal = ({
   );
 
   const onCloseClick = useCallback(() => {
+    const next = normalizeAutoLoginValues(values);
     // Untouched form → nothing to persist or upload; uploading anyway
     // would bump updatedAt and ping every other device for nothing.
-    if (!deepEqual(values, readValuesWithDefault())) {
-      writeValues(storeCredentialAndStrip(values));
-      prefSync.savePrefs(values);
+    if (!deepEqual(next, readValuesWithDefault())) {
+      storeCredential(next);
+      writeValues(next);
+      prefSync.savePrefs(next);
     }
-    onSave(values);
+    onSave(next);
   }, [values, onSave]);
 
   const onResetClick = useCallback(() => {
@@ -218,6 +225,23 @@ export const PrefModal = ({
 
   const onSelectStr = useCallback((name, value) => {
     setValues((v) => changeNestedValue(v, name, value));
+  }, []);
+
+  // Pasted otpauth:// URIs become the bare Base32 secret as soon as the field
+  // loses focus, so the user can see what was actually stored.
+  const onOtpSecretBlur = useCallback(() => {
+    setValues((v) => normalizeAutoLoginValues(v));
+  }, []);
+
+  // Drop the local plaintext copy. Only touches form state — the write happens
+  // through the regular "persist on close" path, like every other field.
+  const onClearLocalCredential = useCallback(() => {
+    setValues((v) => ({
+      ...v,
+      autoLoginUser: "",
+      autoLoginPassword: "",
+      autoLoginOtpSecret: "",
+    }));
   }, []);
 
   // Hotkey capture: record the pressed key (e.key) into the named pref.
@@ -266,12 +290,26 @@ export const PrefModal = ({
     // another device.
     if (show) {
       console.info("PrefModal: open → re-read prefs from storage");
-      setValues(readValuesWithDefault());
+      const stored = readValuesWithDefault();
+      setValues(stored);
+      setStoredSnapshot(stored);
     }
   }, [show]);
 
   // 這台機器根本用不了（沒 API／裝置不符）→ 連總開關都不給勾。null（還在探測）
   // 不算 unusable，避免開啟面板的瞬間閃一下反灰。
+  const credentialApi = credentialApiAvailable();
+  // 狀態說明看的是「開啟設定頁當下 localStorage 有什麼」；清除鈕看的是目前表單
+  // （按下去就該立刻反灰）。兩者刻意不同來源。
+  const credentialStatus = localCredentialStatus(storedSnapshot, {
+    supported: credentialApi,
+  });
+  const hasLocalCredential = !!(
+    values.autoLoginUser ||
+    values.autoLoginPassword ||
+    values.autoLoginOtpSecret
+  );
+
   const aiUnusable = aiState === "unsupported" || aiState === "unavailable";
   // 子選項＝總閘門關閉或機器用不了就反灰（值保留，重開即回復先前組合）。
   const aiSubDisabled = !values.enableAi || aiUnusable;
@@ -309,6 +347,9 @@ export const PrefModal = ({
                 {i18n("options_connection")}
               </Tabs.Tab>
               <Tabs.Tab value="enhance">{i18n("options_enhance")}</Tabs.Tab>
+              <Tabs.Tab value="autologin">
+                {i18n("options_autoLoginTab")}
+              </Tabs.Tab>
               <Tabs.Tab value="ai">{i18n("options_ai")}</Tabs.Tab>
               <Tabs.Tab value="local">{i18n("options_local")}</Tabs.Tab>
               <Tabs.Tab value="about">{i18n("options_about")}</Tabs.Tab>
@@ -763,35 +804,150 @@ export const PrefModal = ({
                   mb="xs"
                 />
               </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_autoLogin")}</legend>
-                <PrefCheckbox
-                  name="autoLogin"
-                  checked={values.autoLogin}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_autoLoginEnable")}
-                </PrefCheckbox>
-                <Select
-                  label={i18n("options_autoLoginDupConn")}
-                  name="autoLoginDupConn"
-                  value={values.autoLoginDupConn}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectStr("autoLoginDupConn", val)}
-                  data={[
-                    { value: "N", label: i18n("options_autoLoginDupConnNo") },
-                    { value: "Y", label: i18n("options_autoLoginDupConnYes") },
-                  ]}
-                  mb="xs"
-                />
-                <PrefCheckbox
-                  name="autoLoginSkipWelcome"
-                  checked={values.autoLoginSkipWelcome}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_autoLoginSkipWelcome")}
-                </PrefCheckbox>
-              </fieldset>
+            </Tabs.Panel>
+            {/* 自動登入分頁：整條流程（開關＋憑證）集中在這裡，因為使用者要看懂
+                「填什麼、存去哪、何時被清掉」得同時看到兩組。兩個 fieldset 刻意
+                分開並各自標示同步性質：上面那組會雲端同步，下面的帳號／密碼／
+                2FA 密鑰是 local-only（LOCAL_ONLY_PREF_KEYS in pref_sync_logic.js）。 */}
+            {/* 只在真的切到這一頁時才渲染（其他分頁維持 Tabs 預設的 keepMounted）。
+                這一頁是唯一「長得像登入表單」的內容，留在 DOM 只會讓瀏覽器的密碼
+                管理員在使用者根本沒在看它的時候跑自動填入／存密碼提示。 */}
+            <Tabs.Panel value="autologin">
+              {navActiveKey === "autologin" && (
+                <>
+                  <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                    <legend>{i18n("options_autoLogin")}</legend>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_autoLoginSynced")}
+                    </Text>
+                    <PrefCheckbox
+                      name="autoLogin"
+                      checked={values.autoLogin}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_autoLoginEnable")}
+                    </PrefCheckbox>
+                    <Select
+                      label={i18n("options_autoLoginDupConn")}
+                      name="autoLoginDupConn"
+                      /* Chrome 曾把這顆 Select 的內層 input 當成「帳號欄」配對到下面的
+                     密鑰欄，跳出「使用者名稱：刪除其他連線 (Y)」的假儲存提示。 */
+                      autoComplete="off"
+                      value={values.autoLoginDupConn}
+                      allowDeselect={false}
+                      onChange={(val) => onSelectStr("autoLoginDupConn", val)}
+                      data={[
+                        {
+                          value: "N",
+                          label: i18n("options_autoLoginDupConnNo"),
+                        },
+                        {
+                          value: "Y",
+                          label: i18n("options_autoLoginDupConnYes"),
+                        },
+                      ]}
+                      mb="xs"
+                    />
+                    <PrefCheckbox
+                      name="autoLoginSkipWelcome"
+                      checked={values.autoLoginSkipWelcome}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_autoLoginSkipWelcome")}
+                    </PrefCheckbox>
+                  </fieldset>
+                  <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                    <legend>{i18n("options_autoLoginCredentials")}</legend>
+                    <Text className="PrefModal__warning">
+                      {credentialApi
+                        ? i18n("tooltip_autoLogin")
+                        : i18n("tooltip_autoLoginPlaintext")}
+                    </Text>
+                    {credentialApi && (
+                      <Text className="PrefModal__warning">
+                        {i18n("tooltip_autoLoginLocalCopy")}
+                      </Text>
+                    )}
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_autoLoginUpdate")}
+                    </Text>
+                    <TextInput
+                      label={i18n("options_autoLoginUser")}
+                      name="autoLoginUser"
+                      autoComplete="off"
+                      placeholder={
+                        credentialApi
+                          ? i18n("placeholder_autoLoginUser")
+                          : undefined
+                      }
+                      value={values.autoLoginUser}
+                      onChange={onTextInputChange}
+                      mb="xs"
+                    />
+                    <TextInput
+                      label={i18n("options_autoLoginPassword")}
+                      type="password"
+                      name="autoLoginPassword"
+                      autoComplete="new-password"
+                      maxLength={72} /* PTT PW_PLAIN_LEN */
+                      placeholder={
+                        credentialApi
+                          ? i18n("placeholder_autoLoginPassword")
+                          : undefined
+                      }
+                      value={values.autoLoginPassword}
+                      onChange={onTextInputChange}
+                      mb="xs"
+                    />
+                    {/* 2FA 密鑰是長期憑證，且與密碼存在同一個保險庫 → 風險必須寫在
+                    欄位前面，並附上兩條降級做法（留空手動輸入／PTT 端改用僅新 IP
+                    才驗證）。留空是刻意支援的用法，不是設定不完整。 */}
+                    <Text className="PrefModal__warning">
+                      {i18n("tooltip_autoLoginOtpSecretRisk")}
+                    </Text>
+                    {/* **不可改成 type="password"**：第二個密碼欄會讓 Chrome 把整頁判成
+                    登入表單，抓最近的文字輸入當帳號、把密鑰當密碼跳出假的儲存提示，
+                    並開始自動填入（那會讓「欄位空白＝已交給密碼管理員」的說明失真）。
+                    密鑰本來就是 PTT 在終端機上以明文印出來給使用者抄的東西。 */}
+                    <TextInput
+                      label={i18n("options_autoLoginOtpSecret")}
+                      name="autoLoginOtpSecret"
+                      autoComplete="off"
+                      description={i18n("tooltip_autoLoginOtpSecret")}
+                      placeholder={
+                        credentialApi
+                          ? i18n("placeholder_autoLoginOtpSecret")
+                          : undefined
+                      }
+                      error={
+                        values.autoLoginOtpSecret &&
+                        !isValidOtpSecret(values.autoLoginOtpSecret)
+                          ? i18n("tooltip_autoLoginOtpSecretInvalid")
+                          : null
+                      }
+                      value={values.autoLoginOtpSecret}
+                      onChange={onTextInputChange}
+                      onBlur={onOtpSecretBlur}
+                      mb="xs"
+                    />
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("options_autoLoginLocalStatus_" + credentialStatus)}
+                    </Text>
+                    <Button
+                      id="autoLoginClearLocalBtn"
+                      variant="default"
+                      size="xs"
+                      disabled={!hasLocalCredential}
+                      onClick={onClearLocalCredential}
+                    >
+                      {i18n("options_autoLoginClearLocal")}
+                    </Button>
+                    <Text size="xs" c="dimmed" mt={4}>
+                      {i18n("tooltip_autoLoginClearLocal")}
+                    </Text>
+                  </fieldset>
+                </>
+              )}
             </Tabs.Panel>
             {/* AI 分頁：所有裝置端 AI（Chrome Prompt API）設定收攏於此。
                 enableAi 是**總閘門**——每個子功能的生效條件都是 `enableAi && <子
@@ -865,8 +1021,8 @@ export const PrefModal = ({
             </Tabs.Panel>
             {/* local-only 分頁：這裡的設定僅存本機、絕不上雲（LOCAL_ONLY_PREF_KEYS
                 in pref_sync_logic.js）。之後新增的 local-only 設定一律放這。
-                注意：自動登入的開關/重複登入/跳過歡迎畫面「有」上雲，故留在增強
-                功能分頁；只有帳號密碼欄位是 local-only 放這裡。 */}
+                例外：自動登入的帳號／密碼／2FA 密鑰同樣 local-only，但整條登入
+                流程要一起看才讀得懂，故集中在「自動登入」分頁。 */}
             <Tabs.Panel value="local">
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                 <legend>{i18n("options_local")}</legend>
@@ -880,36 +1036,6 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableWorkMode")}
                 </PrefCheckbox>
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_autoLoginCredentials")}</legend>
-                <Text className="PrefModal__warning">
-                  {window.PasswordCredential
-                    ? i18n("tooltip_autoLogin")
-                    : i18n("tooltip_autoLoginPlaintext")}
-                </Text>
-                <TextInput
-                  label={i18n("options_autoLoginUser")}
-                  name="autoLoginUser"
-                  autoComplete="off"
-                  value={values.autoLoginUser}
-                  onChange={onTextInputChange}
-                  mb="xs"
-                />
-                <TextInput
-                  label={i18n("options_autoLoginPassword")}
-                  type="password"
-                  name="autoLoginPassword"
-                  autoComplete="new-password"
-                  placeholder={
-                    window.PasswordCredential
-                      ? i18n("placeholder_autoLoginPassword")
-                      : undefined
-                  }
-                  value={values.autoLoginPassword}
-                  onChange={onTextInputChange}
-                  mb="xs"
-                />
               </fieldset>
             </Tabs.Panel>
             <Tabs.Panel value="about" className="PrefModal__about-selectable">

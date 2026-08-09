@@ -436,6 +436,9 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
 test('自動登入：開頁自動到主選單（不需按鍵）', async ({ shared, page }) => {
   const user = process.env.PTT_USER;
   const pass = process.env.PTT_PASS;
+  // 帳號有開兩階段驗證時一併注入密鑰，否則 auto_login 會（刻意地）停在驗證碼畫面
+  // 把鍵盤交還給使用者 —— 那條降級路徑守在 tests/unit/auto_login_2fa.test.js。
+  const otpSecret = process.env.PTT_OTP_SECRET || '';
   test.skip(!user || !pass, '需 env PTT_USER/PTT_PASS 才能測自動登入');
   test.setTimeout(120000);
   const logs = attachConsole(page);
@@ -453,6 +456,7 @@ test('自動登入：開頁自動到主選單（不需按鍵）', async ({ share
         autoLogin: true,
         autoLoginUser: user,
         autoLoginPassword: pass,
+        autoLoginOtpSecret: otpSecret,
         autoLoginDupConn: 'N',
         autoLoginSkipWelcome: true
       }

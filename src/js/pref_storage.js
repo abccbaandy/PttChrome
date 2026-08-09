@@ -92,6 +92,11 @@ export const DEFAULT_PREFS = {
   autoLogin: false,
   autoLoginUser: "",
   autoLoginPassword: "",
+  // Base32 TOTP secret for PTT's 2FA (see src/js/totp.js). Empty means either
+  // "no 2FA on this account" or "I'd rather type the 6 digits myself" — both
+  // end the same way: auto-login fills in account+password and hands the
+  // keyboard back at the verification prompt.
+  autoLoginOtpSecret: "",
   autoLoginDupConn: "N", // 'Y' | 'N': answer when a duplicate login is detected
   autoLoginSkipWelcome: true,
 
@@ -133,9 +138,20 @@ export const writeValues = values => {
 // credentials once the browser credential store has been confirmed to hold
 // them. The username goes too — it serves no purpose without the password
 // (the browser store supplies both via cred.id/cred.password).
-export const clearLegacyAutoLoginCredential = () => {
+//
+// The OTP secret is only dropped when `clearSecret` says the credential we got
+// back really carried one. A stored credential that is still a bare password
+// (not yet re-packed, see credential_pack.js) means the secret exists on this
+// machine ONLY, so clearing it unconditionally would lose it for good.
+export const clearLegacyAutoLoginCredential = ({ clearSecret = false } = {}) => {
   const v = readValuesWithDefault();
-  if (v.autoLoginPassword || v.autoLoginUser) {
-    writeValues({ ...v, autoLoginUser: "", autoLoginPassword: "" });
-  }
+  const stale =
+    v.autoLoginPassword || v.autoLoginUser || (clearSecret && v.autoLoginOtpSecret);
+  if (!stale) return;
+  writeValues({
+    ...v,
+    autoLoginUser: "",
+    autoLoginPassword: "",
+    autoLoginOtpSecret: clearSecret ? "" : v.autoLoginOtpSecret
+  });
 };
