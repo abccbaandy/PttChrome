@@ -633,6 +633,15 @@ export function classifyPageTransition({ accEndRow, statusStart, statusEnd }) {
 // `transition` comes from classifyPageTransition: 'gap' means pmore invariant P1 was
 // violated (a whole screen was lost) — the caller must self-heal rather than append a
 // hole. Checked after the first-page rebuild so a genuine restart still wins.
+// `healInFlight` (buf.easyReadingHealInFlight) — easy reading is seeking back to a
+// swallowed page with pmore's goto-line (`:N\r`, see EasyReading._healAtLine). While
+// the 「跳至第幾行:」 prompt occupies the bottom row there is no status row, so that
+// frame can classify as a non-article pageState — and term_view.redraw writes
+// buf.prevPageState on EVERY rendered frame, so the landing frame would then take the
+// `prevPageState !== 3 → rebuild` route and restart pageLines from the MIDDLE of the
+// article, silently discarding everything above it. Both rebuild routes are therefore
+// suppressed for the duration; 'gap' and the P6 'skip' deliberately still apply, so
+// neither the escalation path nor the half-frame guard is weakened.
 export function decideAccumulateBranch({
   complete,
   prevPageState,
@@ -641,12 +650,13 @@ export function decideAccumulateBranch({
   kContent,
   hasAcc, // eslint-disable-line no-unused-vars -- kept for call-site readability
   headerChanged,
-  transition
+  transition,
+  healInFlight
 }) {
   if (complete === false) return 'skip';
-  if (prevPageState !== 3) return 'rebuild';
+  if (!healInFlight && prevPageState !== 3) return 'rebuild';
   if (statusStart == null) return 'skip';
-  if (statusStart === 1 && (pendingReset || (kContent === 0 && headerChanged)))
+  if (!healInFlight && statusStart === 1 && (pendingReset || (kContent === 0 && headerChanged)))
     return 'rebuild';
   if (transition === 'gap') return 'gap';
   return 'append';

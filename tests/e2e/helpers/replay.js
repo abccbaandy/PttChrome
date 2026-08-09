@@ -144,7 +144,14 @@ async function feedRaw(page, latin1) {
 //     没画出来。这是「※ 发信站 那段消失」的确切现场，也是 harness 平常测不到的：
 //     一般重放以 client 送键为门控，重复送键不会有惩罚，跟真实链路不符。
 //   opts.answerHome=true：把 Home（\x1b[1~ → pmore#mf_goTop）当成「回到第一页」来
-//     回应（重放 start step 并从头再来一轮）。掉页自癒会送这个键。
+//     回应（重放 start step 并从头再来一轮）。掉页自癒的**最后手段**会送这个键。
+//   opts.answerGoto=true：把 goto-line（`:N\r` → pmore.c `case ':'` → mf_goto(N-1)）
+//     当成「跳回被吞掉那一页」来回应：清掉 dropSteps 并把喂食游标倒回**第一个被吞的
+//     step**，然后喂它。
+//     **这里编码了一个假设，不是录到的事实**：掉页自癒送的 N 是 _accEndRow，而依 P1
+//     （PageDown == mf_forward(dispedlines-1) ⇒ S' == E）被吞那一页的起始行号**就是**
+//     上一页的结束行号，所以「行号 N」与「被吞的 step」一一对应。P1 若被推翻，这个
+//     harness 会绿而真实链路会坏。
 //   window.__replay.sent：本次重放中 client 送出的所有 bytes（含自动翻页键），
 //     window.__replay.sends：[{data, sig}]，sig = 送出当下所在页的状态列签章，
 //     供「同一页不得送两次 PageDown」这类断言用。
@@ -153,8 +160,9 @@ async function replayCassette(page, cassette, opts = {}) {
   const splitFrames = opts.splitFrames === true ? true : (opts.splitFrames || false);
   const dropSteps = opts.dropSteps || [];
   const answerHome = !!opts.answerHome;
+  const answerGoto = !!opts.answerGoto;
   await page.evaluate(
-    ({ cassette, easyReading, splitFrames, dropSteps, answerHome }) => {
+    ({ cassette, easyReading, splitFrames, dropSteps, answerHome, answerGoto }) => {
       const app = window.__app;
       const steps = cassette.steps || [];
       let idx = 0;
@@ -233,6 +241,17 @@ async function replayCassette(page, cassette, opts = {}) {
           while (idx < steps.length && steps[idx].on === 'start') feed();
           return;
         }
+        // goto-line：`:N\r`。见函式头 answerGoto 的假设说明。
+        const goto = /^:(\d+)\r$/.exec(data);
+        if (answerGoto && goto) {
+          window.__replay.gotos = window.__replay.gotos || [];
+          window.__replay.gotos.push(Number(goto[1]));
+          const first = dropSteps.length ? Math.min.apply(null, dropSteps) : idx;
+          dropped.clear(); // 这次不再吞
+          idx = first;
+          feed();
+          return;
+        }
         if (idx < steps.length) {
           const next = steps[idx];
           if (
@@ -248,7 +267,7 @@ async function replayCassette(page, cassette, opts = {}) {
       // _onChanged 读到 pref off 会立刻 exitEasyReading（见 easy_reading.js:182）。
       er.enterEasyReading();
     },
-    { cassette, easyReading, splitFrames, dropSteps, answerHome }
+    { cassette, easyReading, splitFrames, dropSteps, answerHome, answerGoto }
   );
 
   // 等所有 step 喂完（逐页翻页跨 timer tick 推进）；逾时不抛，交给断言抓问题。

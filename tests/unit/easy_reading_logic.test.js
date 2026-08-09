@@ -16,9 +16,11 @@ vi.mock("../../src/js/string_util", () => ({
 
 import {
   nextEasyReadingState,
+  nextEasyReadingReentry,
   nextEasyReadingRowState,
   nextPageDownDecision,
   PAGE_DOWN_MAX_RETRIES,
+  PAGE_DOWN_GRACE_MS,
   functionModeExitDecision,
   EasyReading
 } from "../../src/js/easy_reading";
@@ -638,9 +640,284 @@ describe("EasyReading._onScreenSettled", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 切原生（F8）之後的旗標殘留
+//
+// exitEasyReading 是唯一的關好讀入口，但它漏了兩個 per-post 旗標：
+//
+// (1) startedEasyReading —— 唯一的清除點是 _applyRowState，而 _onChanged 在
+//     `!_enabled` 時早退 ⇒ 關掉好讀之後永遠跑不到。list_session._engageEligible()
+//     要求 !startedEasyReading，於是 **F8 之後回看板列表，列表好讀永遠不 engage**
+//     （使用者回報的「半永久原生模式」）。
+//
+// (2) ignoreOneUpdate —— exitEasyReading → switchToEasyReadingMode →
+//     leaveCurrentPost 必然把它設成 true，而它只在 _enabled 時被消費 ⇒ 跨文章殘留。
+//     後果不是「少一幀」：下一篇的 enterEasyReading() 結尾那個 notify() 是**本地**
+//     重繪（沒有 _touchRows ⇒ term_buf._serverActivity 為 false ⇒ 不 re-arm settle
+//     計時器）⇒ 沒有 screenSettled 兜底 ⇒ 那一篇一個 PageDown 都送不出去。
+// ---------------------------------------------------------------------------
+describe("exitEasyReading 的旗標殘留與本地重繪", () => {
+  const makeExitER = () => {
+    const er = makeER();
+    er._view.mainDisplay = { scrollTop: 4200 };
+    // 忠實模擬 App.switchToEasyReadingMode 的隱藏傳遞鏈（pttchrome.jsx）
+    er._core.switchToEasyReadingMode = vi.fn(() => { er.leaveCurrentPost(); });
+    return er;
+  };
+
+  beforeEach(() => {
+    readValuesWithDefault.mockReturnValue({ enableEasyReading: true });
+    parseStatusRow.mockReturnValue({ pagePercent: 33, rowIndexStart: 1, rowIndexEnd: 23 });
+    parseReplyText.mockReturnValue(false);
+    parsePushInitText.mockReturnValue(false);
+    parseReqNotMetText.mockReturnValue(false);
+  });
+
+  it("清掉 startedEasyReading（否則列表好讀永遠不 engage）", () => {
+    const er = makeExitER();
+    er.exitEasyReading();
+    expect(er._termBufMock.startedEasyReading).toBe(false);
+  });
+
+  it("清掉 ignoreOneUpdate（switchToEasyReadingMode 會再把它點起來）", () => {
+    const er = makeExitER();
+    er.exitEasyReading();
+    expect(er.ignoreOneUpdate).toBe(false);
+  });
+
+  // 核心回歸：F8 → 回列表 → 下一篇，第一個 PageDown 必須送得出去。
+  it("F8 之後下一篇仍會自動翻頁（不得卡在第一頁）", () => {
+    const er = makeExitER();
+    er.exitEasyReading();
+    // 下一篇文章的第一頁（settle 邊緣 → enterEasyReading）
+    er.enterEasyReading();
+    er._onChanged();
+    er._onViewUpdated();
+    expect(er._send).toHaveBeenCalledWith("\x1b[6~");
+  });
+
+  // 不依賴伺服器往返的本地保險：按 F8 時若還有 PageDown 在途，End／^L 的重繪會被
+  // P4 吞掉，DOM 就一直停在數千列的長頁且捲到底 ⇒ 看起來「卡在最底部、PgUp 沒反應」。
+  it("立刻本地重繪回 24 列並把捲軸歸零（不等 ^L 往返）", () => {
+    const er = makeExitER();
+    er.exitEasyReading();
+    expect(er._view.mainDisplay.scrollTop).toBe(0);
+    expect(er._termBufMock.lineChangeds.fill).toHaveBeenCalledWith(true);
+    expect(er._termBufMock.notify).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 切回好讀的兩條新路徑
+//
+// 舊版唯一的自動重啟是 settled `1|2 → 3` 邊緣（nextEasyReadingState），於是 F8 切原生
+// 之後：在同一篇文章內**沒有任何方法**切回好讀；用 [ ] a b f 在原生跳下一篇也沒有 1/2
+// 邊緣 ⇒ 一路卡原生（使用者回報的「半永久原生模式」）。
+//
+// 補兩條：
+//   C1 再按一次熱鍵（預設 F8）→ tryReenterFromNative
+//   C3 原生模式下settle 在**另一篇**文章的第一頁 → nextEasyReadingReentry
+//
+// C3 刻意用**文章身分**（畫面第 0~2 列＝作者/標題/時間）而不是 pageState 邊緣：
+// [ ] 跳文全程 pageState 都是 3，根本不會有邊緣；而「使用者在原生自己按 Home/0/g 回到
+// 第 1 行」則是同一篇，身分比對才擋得掉。docs/easy-reading.md 也明令不可把「掉出 3 再
+// 回來」當成換文章。
+// ---------------------------------------------------------------------------
+describe("nextEasyReadingReentry（原生模式下換文章才重啟）", () => {
+  const r = (o = {}) => nextEasyReadingReentry({
+    pageState: 3,
+    complete: true,
+    enabled: false,
+    enablePref: true,
+    supported: true,
+    functionMode: false,
+    statusStart: 1,
+    articleKey: "作者 B|標題 B|時間 B",
+    nativeArticleKey: "作者 A|標題 A|時間 A",
+    ...o
+  });
+
+  it("原生模式下落在另一篇文章的第一頁 → 重啟", () => {
+    expect(r()).toBe(true);
+  });
+
+  it("同一篇（原生按 Home/0/g 回到第 1 行）→ 不重啟", () => {
+    expect(r({ articleKey: "作者 A|標題 A|時間 A" })).toBe(false);
+  });
+
+  it("文章中段（statusStart != 1）→ 不重啟", () => {
+    expect(r({ statusStart: 57 })).toBe(false);
+  });
+
+  it("好讀已開／pref 關／不支援／functionMode／半畫幀／非文章 → 都不重啟", () => {
+    expect(r({ enabled: true })).toBe(false);
+    expect(r({ enablePref: false })).toBe(false);
+    expect(r({ supported: false })).toBe(false);
+    expect(r({ functionMode: true })).toBe(false);
+    expect(r({ complete: false })).toBe(false);
+    expect(r({ pageState: 2 })).toBe(false);
+  });
+
+  it("讀不到文章身分 → 不重啟（寧可留在原生）", () => {
+    expect(r({ articleKey: null })).toBe(false);
+    expect(r({ articleKey: "" })).toBe(false);
+  });
+
+  it("這篇從沒用過好讀（沒有舊身分）→ 重啟（等同既有的 2→3 行為）", () => {
+    expect(r({ nativeArticleKey: null })).toBe(true);
+  });
+});
+
+describe("F8 在原生模式下切回好讀（toggle）", () => {
+  const makeNativeER = ({ rowIndexStart = 500, key = "F8" } = {}) => {
+    const rows = ["作者 starahsu", "標題 [推薦] PTT Star", "時間 Mon Dec 31"];
+    const termBuf = {
+      addEventListener() {}, cols: 80, rows: 24, cur_x: 79, cur_y: 23,
+      pageState: 3, prevPageState: 3, settledPageState: 3, prevSettledPageState: 3,
+      pageLines: [], lines: { 23: [{ getFg: () => 7, getBg: () => 0 }] },
+      lineChangeds: { fill: vi.fn() }, notify: vi.fn(),
+      getRowText: (row) => (row === 23 ? "status-row" : (rows[row] || "")),
+      startedEasyReading: false,
+      easyReadingShowReplyText: false, easyReadingShowPushInitText: false
+    };
+    const view = { useEasyReadingMode: false, mainDisplay: { scrollTop: 0 } };
+    const er = new EasyReading({ connectedUrl: { easyReadingSupported: true } }, view, termBuf);
+    er._send = vi.fn();
+    er._termBufMock = termBuf;
+    readValuesWithDefault.mockReturnValue({
+      enableEasyReading: true, easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: key
+    });
+    parseStatusRow.mockReturnValue({ pagePercent: 80, rowIndexStart, rowIndexEnd: rowIndexStart + 22 });
+    return er;
+  };
+
+  it("按熱鍵 → 開好讀，並送 Home 回文章開頭重新累積", () => {
+    const er = makeNativeER();
+    expect(er.tryReenterFromNative({ key: "F8" })).toBe(true);
+    expect(er._enabled).toBe(true);
+    expect(er._send).toHaveBeenCalledWith("\x1b[1~");
+  });
+
+  // pfterm 對「畫面完全沒變」的回應是零 bytes（fterm_rawmove_opt 原地不動、attr 也 diff
+  // 掉），所以已經在第 1 行時送 Home 可能得不到任何回應 → 交易永遠等不到 ack。
+  it("已經在第 1 行 → 不送 Home（否則交易永遠等不到回應）", () => {
+    const er = makeNativeER({ rowIndexStart: 1 });
+    expect(er.tryReenterFromNative({ key: "F8" })).toBe(true);
+    expect(er._enabled).toBe(true);
+    expect(er._send).not.toHaveBeenCalledWith("\x1b[1~");
+  });
+
+  it("$ / G 不參與 toggle（原生 pmore 的跳文末，語意不同）", () => {
+    const er = makeNativeER();
+    expect(er.tryReenterFromNative({ key: "$" })).toBe(false);
+    expect(er.tryReenterFromNative({ key: "G" })).toBe(false);
+    expect(er._enabled).toBe(false);
+  });
+
+  it("熱鍵可自訂；pref 關掉時不攔截", () => {
+    const er = makeNativeER({ key: "F9" });
+    expect(er.tryReenterFromNative({ key: "F8" })).toBe(false);
+    expect(er.tryReenterFromNative({ key: "F9" })).toBe(true);
+
+    const off = makeNativeER();
+    readValuesWithDefault.mockReturnValue({
+      enableEasyReading: true, easyReadingEndSwitchNative: false, easyReadingEndSwitchKey: "F8"
+    });
+    expect(off.tryReenterFromNative({ key: "F8" })).toBe(false);
+  });
+
+  it("不在文章頁（讀不到狀態列）→ 不攔截", () => {
+    const er = makeNativeER();
+    parseStatusRow.mockReturnValue(null);
+    expect(er.tryReenterFromNative({ key: "F8" })).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 送鍵錨定的 watchdog：settle 不是可靠的重試觸發點
+//
+// term_buf._armSettleTimer 只由 notify() 在 _serverActivity（伺服器寫了內容）或
+// posChanged（伺服器游標 escape）時 re-arm。PageDown 真的掉了 ⇒ PTT 零回應 ⇒
+// **不會再有第二次 settle**。所以「同頁 + 未過 grace ⇒ wait」如果沒有配一個自己
+// 持有的計時器，就是把「誤重試」換成「永久卡死」。
+//
+// watchdog 以**自己送鍵的時刻**為錨（settle 錨的是「送鍵前的靜止」，在長文會被
+// React render 延遲污染），並用 _watchdogSig 認身分：回應在 grace 內到達時
+// _inFlightSig 已經換頁，計時器一律空轉，絕不多送一個鍵（否則就是 P4）。
+// ---------------------------------------------------------------------------
+describe("翻頁 watchdog（送鍵錨定的重試）", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    parseStatusRow.mockReturnValue({ pagePercent: 33, rowIndexStart: 1, rowIndexEnd: 23 });
+    parseReplyText.mockReturnValue(false);
+    parsePushInitText.mockReturnValue(false);
+    parseReqNotMetText.mockReturnValue(false);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("送出後 PTT 完全沒回應 → grace 到期由 watchdog 補送一次，再到期就 giveup", () => {
+    const er = makeER();
+    er._onScreenSettled();
+    expect(er._send).toHaveBeenCalledTimes(1);
+
+    // grace 之內的 settle 不得補送（正是錄製檔 t=23124 的情境）
+    vi.advanceTimersByTime(77);
+    er._onScreenSettled();
+    expect(er._send).toHaveBeenCalledTimes(1);
+
+    // 之後畫面一直靜默：settle 不會再來，只有 watchdog 救得了
+    vi.advanceTimersByTime(PAGE_DOWN_GRACE_MS + 50);
+    expect(er._send).toHaveBeenCalledTimes(2);
+
+    // 重試額度用完 → 不再送（避免一路把畫面推過頭）
+    vi.advanceTimersByTime(PAGE_DOWN_GRACE_MS + 50);
+    expect(er._send).toHaveBeenCalledTimes(2);
+  });
+
+  it("回應在 grace 內到達 → watchdog 到期時空轉，不得多送（否則就是 P4 掉頁）", () => {
+    const er = makeER();
+    er._onScreenSettled();
+    expect(er._send).toHaveBeenCalledTimes(1);
+
+    // 回應到了：換頁 ⇒ 快路徑送下一頁
+    vi.advanceTimersByTime(80);
+    parseStatusRow.mockReturnValue({ pagePercent: 40, rowIndexStart: 23, rowIndexEnd: 45 });
+    er.sendCommandAfterUpdate = "\x1b[6~";
+    er._onViewUpdated();
+    expect(er._send).toHaveBeenCalledTimes(2);
+
+    // 第一個 watchdog 到期：它守的是上一頁，身分不符 → 什麼都不做
+    vi.advanceTimersByTime(PAGE_DOWN_GRACE_MS - 40);
+    expect(er._send).toHaveBeenCalledTimes(2);
+  });
+
+  it("到底（100%）→ 收掉 watchdog，不再有任何鍵送出", () => {
+    const er = makeER();
+    er._onScreenSettled();
+    parseStatusRow.mockReturnValue({ pagePercent: 100, rowIndexStart: 500, rowIndexEnd: 522 });
+    er._termBufMock.getRowText = () => "bottom-status-row";
+    er.sendCommandAfterUpdate = "\x1b[6~";
+    er._onViewUpdated();
+    vi.advanceTimersByTime(PAGE_DOWN_GRACE_MS * 4);
+    expect(er._send).toHaveBeenCalledTimes(1);
+  });
+
+  it("exitEasyReading 會收掉 watchdog（不得對原生畫面送鍵）", () => {
+    const er = makeER();
+    er._core.switchToEasyReadingMode = vi.fn();
+    er._view.mainDisplay = { scrollTop: 0 };
+    er._onScreenSettled();
+    er.exitEasyReading();
+    vi.advanceTimersByTime(PAGE_DOWN_GRACE_MS * 4);
+    expect(er._send).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 跨文章重置（回歸守護：7fdd90a 之後「進文章卡在第一頁、換一篇還是卡」）
 //
-// 自動翻頁的 per-article 狀態（_inFlightSig / _pageDownRetries / _healedOnce /
+// 自動翻頁的 per-article 狀態（_inFlightSig / _pageDownRetries / 自癒額度 /
 // easyReadingReachedPageEnd）以前只在 enterEasyReading / leaveCurrentPost 重置，
 // 但這兩條**都不涵蓋最常見的換文章路徑**：
 //   - ← 離開文章走 stopEasyReading()，不經 leaveCurrentPost()；
@@ -681,12 +958,14 @@ describe("跨文章重置（文章邊界 = settled pageState 進出 3）", () =>
 
   it("進出文章的 edge 會清掉整組 per-article 狀態", () => {
     const er = makeER({ reachedPageEnd: true, lastPagedSig: "1~23", pageDownRetries: 1 });
-    er._healedOnce = true;
+    er._healGotoCount = 3;
+    er._healHomeUsed = true;
     er.sendCommandAfterUpdate = "\x1b[6~";
     settleEdge(er, 3, 2);   // 離開文章
     expect(er._inFlightSig).toBe(null);
     expect(er._pageDownRetries).toBe(0);
-    expect(er._healedOnce).toBe(false);
+    expect(er._healGotoCount).toBe(0);
+    expect(er._healHomeUsed).toBe(false);
     expect(er.easyReadingReachedPageEnd).toBe(false);
     expect(er.sendCommandAfterUpdate).toBe("");
   });
@@ -705,11 +984,13 @@ describe("跨文章重置（文章邊界 = settled pageState 進出 3）", () =>
   // 靠 leaveCurrentPost() 補上——它以前漏了 easyReadingReachedPageEnd。
   it("leaveCurrentPost 也清掉整組 per-article 狀態", () => {
     const er = makeER({ reachedPageEnd: true, lastPagedSig: "1~23", pageDownRetries: 1 });
-    er._healedOnce = true;
+    er._healGotoCount = 3;
+    er._healHomeUsed = true;
     er.leaveCurrentPost();
     expect(er._inFlightSig).toBe(null);
     expect(er._pageDownRetries).toBe(0);
-    expect(er._healedOnce).toBe(false);
+    expect(er._healGotoCount).toBe(0);
+    expect(er._healHomeUsed).toBe(false);
     expect(er.easyReadingReachedPageEnd).toBe(false);
   });
 });
@@ -777,7 +1058,10 @@ describe("nextPageDownDecision（單一 in-flight 交易, P3/P4）", () => {
     sig: "22~44",
     inFlightSig: null,
     retries: 0,
-    fromSettle: false,
+    recovery: false,
+    // 預設「送出後已久」，讓既有案例維持原意；grace 本身另有專屬案例。
+    sinceSentMs: 5000,
+    graceMs: PAGE_DOWN_GRACE_MS,
     ...o
   });
 
@@ -832,14 +1116,67 @@ describe("nextPageDownDecision（單一 in-flight 交易, P3/P4）", () => {
   // 重繪可被 typeahead 吞），此時補送是安全的；但仍設上限，超過就放手（不再送，
   // 避免一路重送把畫面推過頭；真的跳過去也還有 classifyPageTransition 的掉頁自癒接住）。
   it("settle 時仍是同一頁 → retry 一次", () => {
-    const d = decide({ fromSettle: true, inFlightSig: "22~44", retries: 0 });
+    const d = decide({ recovery: true, inFlightSig: "22~44", retries: 0 });
     expect(d.action).toBe("retry");
     expect(d.retries).toBe(1);
   });
 
   it("settle 重試達上限 → giveup（不再送）", () => {
-    const d = decide({ fromSettle: true, inFlightSig: "22~44", retries: 1 });
+    const d = decide({ recovery: true, inFlightSig: "22~44", retries: 1 });
     expect(d.action).toBe("giveup");
+  });
+
+  // 回歸：ptt-debug-20260809-135157（4700 行超長文）的真實時序。
+  //   t=23047 送 PageDown（sig 4620~4642）
+  //   t=23124 settle 觸發 → 舊版判「同一頁 ⇒ 掉了」→ retry ⇒ 第二個 PageDown
+  //   t=23124 真正的回應（4642~4664）同一毫秒才到
+  // ⇒ 兩個 PageDown 同時在途 ⇒ P4 吞掉中間那頁 ⇒ 掉頁 ⇒ 自癒送 Home ⇒ 整篇重讀。
+  //
+  // settle 的「畫面已靜止 ⇒ PTT 已 flush」推論在長文會失效：settle 計時器是在**我們
+  // 送鍵之前**就 armed 的（長頁 4600+ 列，React render 讓 callback 延後到送鍵之後才
+  // 跑），它量到的靜止期與「送鍵後 PTT 沒回應」無關。改以「距離自己送鍵多久」為準。
+  it("recovery 但距離送鍵還沒超過 grace → wait（回應可能還在路上；掉頁根因）", () => {
+    const d = decide({
+      recovery: true, inFlightSig: "4620~4642", sig: "4620~4642",
+      retries: 0, sinceSentMs: 77
+    });
+    expect(d.action).toBe("wait");
+    expect(d.retries).toBe(0);
+  });
+
+  it("recovery 且已超過 grace → retry", () => {
+    const d = decide({
+      recovery: true, inFlightSig: "4620~4642", sig: "4620~4642",
+      retries: 0, sinceSentMs: PAGE_DOWN_GRACE_MS + 1
+    });
+    expect(d.action).toBe("retry");
+  });
+
+  it("recovery 且剛好等於 grace → retry（邊界含等於）", () => {
+    const d = decide({
+      recovery: true, inFlightSig: "22~44", retries: 0, sinceSentMs: PAGE_DOWN_GRACE_MS
+    });
+    expect(d.action).toBe("retry");
+  });
+
+  // 沒有時間戳（理論上不會發生：呼叫端一律與 _inFlightSig 同時寫入）時 fail-open，
+  // 維持舊行為，絕不可因為缺一個時間戳就把交易永久卡死。
+  it("sinceSentMs 為 null → 視為已過 grace（fail-open，不得卡死）", () => {
+    const d = decide({ recovery: true, inFlightSig: "22~44", retries: 0, sinceSentMs: null });
+    expect(d.action).toBe("retry");
+  });
+
+  it("grace 只約束 recovery：快路徑同頁一律 wait", () => {
+    expect(decide({ inFlightSig: "22~44", sinceSentMs: 5 }).action).toBe("wait");
+    expect(decide({ inFlightSig: "22~44", sinceSentMs: 9999 }).action).toBe("wait");
+  });
+
+  it("grace 不影響 ack（簽章已變）：照樣 send", () => {
+    const d = decide({
+      recovery: true, sig: "44~66", inFlightSig: "22~44", retries: 1, sinceSentMs: 5
+    });
+    expect(d.action).toBe("send");
+    expect(d.retries).toBe(0);
   });
 });
 
@@ -889,9 +1226,17 @@ describe("EasyReading._onViewUpdated 快路徑去重", () => {
   });
 });
 
-// 掉頁自癒：term_view.accumulatePageLines 偵測到 P1 違規會升起 buf.easyReadingGapDetected，
-// EasyReading 送 Home（\x1b[1~ → pmore#mf_goTop）重讀整篇。每篇只自癒一次防迴圈。
-describe("EasyReading._healFromTop（掉頁自癒）", () => {
+// 掉頁自癒：term_view.accumulatePageLines 偵測到 P1 違規會升起 buf.easyReadingGapDetected。
+//
+// 舊作法是送 Home（\x1b[1~ → pmore#mf_goTop）**整篇重讀**。在 4700 行的超長文上，那正是
+// 使用者看到的「讀到一半自動從第一頁開始重讀」——治療比疾病還糟。
+//
+// 新作法用 pmore 的 goto-line（pmore.c:2735 `case ':'` → pageMode=0 → getdata_buf →
+// `if (i-- > 0) mf_goto(i)`）精準跳回缺的那一行：送 `:` + N + `\r` ⇒ 落地畫面的
+// rowIndexStart 恰為 N。目標取 _accEndRow（不是 +1）：statusStart === accEndRow 正是
+// pmore PageDown 自己的後置條件（P1: S' == E），落地幀與正常翻頁**形狀完全相同**，走
+// 既有已被測試覆蓋的 continuation/append 路徑，還多一列可做內容交叉驗證。
+describe("EasyReading 掉頁自癒（goto-line 精準補讀）", () => {
   const makeER = () => {
     const termBuf = {
       addEventListener() {},
@@ -909,41 +1254,100 @@ describe("EasyReading._healFromTop（掉頁自癒）", () => {
       easyReadingShowReplyText: false,
       easyReadingShowPushInitText: false
     };
-    const view = { useEasyReadingMode: true, _accEndRow: 44, _lastAccumulatedSig: "22~44" };
+    const view = {
+      useEasyReadingMode: true, _accEndRow: 44, _lastAccumulatedSig: "22~44",
+      mainDisplay: { scrollTop: 1234 }
+    };
     const er = new EasyReading({}, view, termBuf);
     er._send = vi.fn();
     return { er, termBuf, view };
   };
 
   beforeEach(() => {
+    // 掉頁後的畫面：累積到第 44 行，但螢幕已經跳到 66~88（中間 45~65 那頁被吞了）
     parseStatusRow.mockReturnValue({ pagePercent: 40, rowIndexStart: 66, rowIndexEnd: 88 });
   });
 
-  it("送 Home、清空累積並重設追蹤", () => {
-    const { er, termBuf, view } = makeER();
-    er._healFromTop();
-    expect(er._send).toHaveBeenCalledWith("\x1b[1~");
-    expect(termBuf.pageLines).toEqual([]);
+  it("送 `:accEndRow\\r` 精準跳回缺頁，不整篇重讀", () => {
+    const { er, termBuf } = makeER();
+    er._healGap();
+    expect(er._send).toHaveBeenCalledWith(":44\r");
     expect(termBuf.easyReadingGapDetected).toBe(false);
-    expect(termBuf.easyReadingPendingReset).toBe(true);
-    expect(view._accEndRow).toBeNull();
   });
 
-  it("每篇只自癒一次（第二次不再送 Home）", () => {
+  // 與舊 Home 版最大的差異：前面累積的內容一列都不能掉。
+  it("保留 pageLines／_accEndRow／_lastAccumulatedSig／捲軸位置", () => {
+    const { er, termBuf, view } = makeER();
+    er._healGap();
+    expect(termBuf.pageLines).toEqual([1, 2, 3]);
+    expect(view._accEndRow).toBe(44);
+    expect(view._lastAccumulatedSig).toBe("22~44");
+    expect(view.mainDisplay.scrollTop).toBe(1234);
+    // 「換文章」語意的旗標不得被誤設
+    expect(termBuf.easyReadingPendingReset).toBeFalsy();
+  });
+
+  // heal 期間底部是 prompt、pageState 會掉出 3；不擋住的話
+  // decideAccumulateBranch 會走 rebuild 把累積頁從中段重建（靜默刪光前面）。
+  it("升起 easyReadingHealInFlight（擋掉 prompt 幀觸發的 rebuild／teardown）", () => {
     const { er, termBuf } = makeER();
-    er._healFromTop();
-    termBuf.easyReadingGapDetected = true;
-    er._healFromTop();
-    expect(er._send).toHaveBeenCalledTimes(1);
+    er._healGap();
+    expect(termBuf.easyReadingHealInFlight).toBe(true);
+  });
+
+  // heal 本身必須是一筆 in-flight 交易。舊版 _healFromTop 先 _resetPagingState() 把
+  // _inFlightSig 清成 null 才送 Home ⇒ 任何搶在 heal 回應之前抵達的完整幀都會讓決策
+  // 直接回 send ⇒ 又一個 PageDown 進 PTT ⇒ 再撞一次 P4。
+  it("heal 在途時翻頁機噤聲（完整幀不得再送 PageDown）", () => {
+    const { er } = makeER();
+    er._healGap();
+    er._send.mockClear();
+    er.sendCommandAfterUpdate = "\x1b[6~";
+    er._onViewUpdated();
+    expect(er._send).not.toHaveBeenCalled();
+  });
+
+  it("落地（rowIndexStart 回到 accEndRow）→ 解除噤聲，繼續自動翻頁", () => {
+    const { er, termBuf } = makeER();
+    er._healGap();
+    er._send.mockClear();
+    // 補讀的那一頁到了：44~66，且已被 accumulate（_lastAccumulatedSig 前進）
+    parseStatusRow.mockReturnValue({ pagePercent: 45, rowIndexStart: 44, rowIndexEnd: 66 });
+    termBuf.easyReadingHealInFlight = false;  // accumulatePageLines 在 append 後清掉
+    er.sendCommandAfterUpdate = "\x1b[6~";
+    er._onViewUpdated();
+    expect(er._send).toHaveBeenCalledWith("\x1b[6~");
+  });
+
+  it("沒有 _accEndRow 可跳（第一頁就掉了）→ 退回 Home", () => {
+    const { er, view } = makeER();
+    view._accEndRow = null;
+    er._healGap();
+    expect(er._send).toHaveBeenCalledWith("\x1b[1~");
+  });
+
+  // 有界：精準 heal 便宜（一次往返、不重讀）所以放寬到每篇 3 次，之後才用一次 Home
+  // 當最後手段，再之後放手（畫面維持現狀，PgDn／F8 都還在）。
+  it("每篇 3 次 goto → 1 次 Home → 放手", () => {
+    const { er, termBuf } = makeER();
+    const again = () => { termBuf.easyReadingHealInFlight = false; termBuf.easyReadingGapDetected = true; er._healGap(); };
+    er._healGap();
+    again(); again();
+    expect(er._send.mock.calls.map((c) => c[0])).toEqual([":44\r", ":44\r", ":44\r"]);
+    again();
+    expect(er._send).toHaveBeenLastCalledWith("\x1b[1~");
+    again();
+    expect(er._send).toHaveBeenCalledTimes(4);
     expect(termBuf.easyReadingGapDetected).toBe(false);
   });
 
   it("leaveCurrentPost 後重置額度（新文章可再自癒）", () => {
     const { er, termBuf } = makeER();
-    er._healFromTop();
+    er._healGap();
     er.leaveCurrentPost();
+    termBuf.easyReadingHealInFlight = false;
     termBuf.easyReadingGapDetected = true;
-    er._healFromTop();
+    er._healGap();
     expect(er._send).toHaveBeenCalledTimes(2);
   });
 });

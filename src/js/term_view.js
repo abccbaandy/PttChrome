@@ -639,6 +639,19 @@ TermView.prototype = {
       this.flashListHint('AID 跳文中，請稍候…');
       return;
     }
+    // Switch-to-native is a TOGGLE: the gate below owns the key while easy reading is
+    // on, and this owns it while we are back in native inside a post. Without it there
+    // is no way back into easy reading for the current post at all — the user has to
+    // walk out to a list and open another one ("半永久原生模式"). functionMode is
+    // excluded (we are already mirroring native there, and _evalFunctionModeExit will
+    // resume on its own), and pageState 3 keeps it out of lists/menus/editors.
+    if (!this.useEasyReadingMode && !this.buf.easyReadingFunctionMode &&
+        this.buf.pageState === 3 && !e.ctrlKey && !e.altKey &&
+        this.bbscore.easyReading &&
+        this.bbscore.easyReading.tryReenterFromNative(e)) {
+      e.preventDefault();
+      return;
+    }
     if (this.useEasyReadingMode && this.buf.startedEasyReading &&
         !this.buf.easyReadingShowReplyText && !this.buf.easyReadingShowPushInitText &&
         !this.buf.easyReadingFunctionMode) {
@@ -1253,7 +1266,12 @@ TermView.prototype = {
     // Only the last `newRows.length` accumulated rows can overlap, so map just
     // the tail to text (keeps it O(screen), not O(article)).
     var accTail = null, newTexts = null, maxK = 0, kContent = 0, headerChanged = false;
-    if (complete && this.buf.prevPageState == 3 && result && this.buf.pageLines.length) {
+    // A gap seek (':N\r') is in flight — see EasyReading._healAtLine. prevPageState may
+    // have been poisoned by the goto prompt's frame, so it must not gate the overlap
+    // precompute either: without accTail/kContent, resolvePageOverlap loses its content
+    // cross-check exactly on the frame that needs it most.
+    var healing = !!this.buf.easyReadingHealInFlight;
+    if (complete && (this.buf.prevPageState == 3 || healing) && result && this.buf.pageLines.length) {
       accTail = this.buf.pageLines.slice(-newRows.length).map(rowToText);
       newTexts = newRows.map(rowToText);
       maxK = Math.min(accTail.length, newTexts.length);
@@ -1289,7 +1307,8 @@ TermView.prototype = {
       kContent: kContent,
       hasAcc: this.buf.pageLines.length > 0,
       headerChanged: headerChanged,
-      transition: transition
+      transition: transition,
+      healInFlight: healing
     });
     if (branch === 'gap') {
       // Lost page. Leave pageLines untouched (a hole is worse than a stale tail) and
@@ -1327,6 +1346,8 @@ TermView.prototype = {
       // Advance the tracked article-line position to this screen's end.
       this._accEndRow = result.rowIndexEnd;
       this._lastAccumulatedSig = result.rowIndexStart + '~' + result.rowIndexEnd;
+      // The gap seek landed and its rows are spliced in — drop the gate.
+      if (healing) this.buf.easyReadingHealInFlight = false;
     } else if (branch === 'rebuild') {
       // First page of a (new) article: restart the accumulated page as this whole
       // screen and clear the per-article pusher selection.
@@ -1594,6 +1615,7 @@ TermView.prototype = {
     this._accEndRow = null;
     this._lastAccumulatedSig = null;
     this.buf.easyReadingGapDetected = false;
+    this.buf.easyReadingHealInFlight = false;
     // Back on a list/menu: the pending article reset (leaveCurrentPost) is moot —
     // prevPageState!=3 already forces rebuild on the next article.
     this.buf.easyReadingPendingReset = false;

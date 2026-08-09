@@ -381,6 +381,64 @@ test.describe('好读 End 切回原生（离线重放）', () => {
     expect(after.screen).toContain('說明'); // 原生状态列
     expect(after.screen).toContain('100%'); // 在最底
   });
+
+  // 切原生的**本地保险**：exitEasyReading 不得依赖 ^L 的伺服器往返才收掉长页。
+  // 按下热键时若还有 PageDown 在途，End／^L 的重绘会被 pttbbs 的 typeahead 跳绘（P4）
+  // 吞掉，DOM 就一直停在数千列的累积长页且捲到底 —— 使用者看到的是「卡在最底部、
+  // PgUp 没反应」。所以这里**完全不喂任何后续 bytes**，直接验画面已经收回 24 列。
+  test('切原生不等伺服器回应：立刻收回 24 列且捲軸歸零', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, endCassette, { easyReading: true });
+
+    await page.evaluate(() => {
+      const a = window.__app;
+      a.view.mainDisplay.scrollTop = a.view.mainDisplay.scrollHeight; // 使用者读到底
+      a.view._send = () => {};   // 掐断送键：任何伺服器回应都不会来
+      a.easyReading.exitEasyReading();
+    });
+    await page.waitForTimeout(300);
+
+    const after = await page.evaluate(() => ({
+      useEasyReadingMode: window.__app.view.useEasyReadingMode,
+      startedEasyReading: window.__app.buf.startedEasyReading,
+      // 只数 bbsline：#mainContainer 里还有 previewSpinner 之类的非列节点。
+      rows: document.querySelectorAll('#mainContainer [data-type="bbsline"]').length,
+      scrollTop: window.__app.view.mainDisplay.scrollTop,
+    }));
+    expect(after.useEasyReadingMode).toBe(false);
+    expect(after.rows).toBeLessThanOrEqual(24); // 长页已收回单页原生
+    expect(after.scrollTop).toBe(0);
+    // 列表好读的 engage 闸读这个旗标；留着 true 就是「半永久原生模式」。
+    expect(after.startedEasyReading).toBe(false);
+  });
+
+  // toggle 的另一半：原生模式下再按一次热键切回好读，并倒回文章开头重新累积。
+  test('原生下再按熱鍵 → 切回好讀並倒回文章開頭', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, endCassette, { easyReading: true });
+    await page.evaluate(() => window.__app.easyReading.switchToNativeAtBottom());
+    await page.waitForTimeout(800);
+    expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(false);
+
+    const sent = await page.evaluate(() => {
+      const a = window.__app;
+      const out = [];
+      const orig = a.view._send.bind(a.view);
+      a.view._send = (d) => { out.push(d); orig(d); };
+      // 走真实键盘路径：term_view.onKeyDown 的原生分支才是拦截点
+      a.view.onKeyDown(Object.assign(new KeyboardEvent('keydown', { key: 'F8' }), {}));
+      return out;
+    });
+    await page.waitForTimeout(300);
+
+    expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);
+    // 在文末按下 → 必须送 Home 倒回第 1 行，否则长页只会有文末那一屏
+    expect(sent.join('')).toContain('\x1b[1~');
+  });
 });
 
 // 关好读的「单一出口」守门：任何手动关好读的路径都必须走 easyReading.exitEasyReading()，
@@ -484,19 +542,31 @@ test.describe('掉页（typeahead 跳绘）侦测与自癒（离线重放）', (
         easyReading: true,
         dropSteps: [drop],
         answerHome: true,
+        answerGoto: true,
       });
 
       const state = await page.evaluate(() => window.__replay);
       console.log(
-        `[offline/drop] ${cassette.__file}: drop=${drop} dropped=${state.dropped} home=${state.home} fed=${state.fed}/${state.total}`
+        `[offline/drop] ${cassette.__file}: drop=${drop} dropped=${state.dropped} ` +
+        `gotos=${JSON.stringify(state.gotos)} home=${state.home} fed=${state.fed}/${state.total}`
       );
       expect(state.dropped).toBeGreaterThan(0); // 真的吞了一页，否则本测没意义
 
-      // 侦测到掉页 → 送 Home 从头重读（EasyReading._healFromTop）。
-      expect(state.home).toBeGreaterThan(0);
+      // 自癒改用 pmore 的 goto-line 精准跳回缺页（`:N\r`），**不再整篇从头重读**：
+      // 在 4700 行的超长文上，Home 重读就是使用者回报的「读到一半跳回第一页」。
+      expect(state.gotos && state.gotos.length).toBeGreaterThan(0);
+      expect(state.home || 0).toBe(0);
 
       const rows = await readBbsLines(page);
       const joined = rows.join('\n');
+
+      // 精准自癒只补中间那一段，**累积页不得被重建**：第一列仍是文章的作者 header。
+      // 光验「内容完整」抓不到这条 —— 从中段重建后掉的是**上面**的内容，而底下两条
+      // 断言（※ 发信站／※ 文章网址）都在下面。goto prompt 会让 pageState 掉出 3，而
+      // term_view.redraw 每帧都写 prevPageState ⇒ 落地帧会命中
+      // decideAccumulateBranch 的 `prevPageState !== 3 → rebuild`（靠
+      // buf.easyReadingHealInFlight 挡住）。
+      expect(rows[0]).toMatch(/作者/);
 
       // 被吞那页的内容必须回来。「※ 发信站:」只出现在被吞的页里（「※ 文章网址:」
       // 是跨页重叠列，下一页还有 —— 正是回报中「只有发信站那段不见」的原因）。
@@ -515,6 +585,58 @@ test.describe('掉页（typeahead 跳绘）侦测与自癒（离线重放）', (
 });
 
 // ---------------------------------------------------------------------------
+// 长文（30 页）连续累积：素材截自使用者回报「读到一半自动从第一页重读」的那篇
+// （EZsoft 4700+ 行）。meta.mode 刻意用 'article-long' 而**不是** 'article'，免得上面
+// 每个逐卷回圈都多跑 30 页 —— 它守的是「长文累积不破洞、不重启」这一条，与那些
+// 单页/结构断言无关。
+//
+// 注意这里守不到的东西：真实 bug 的触发条件是**时序**（长页 React render 让 settle
+// callback 落到自己送键之后 → 误判掉包 → 补送 → P4），而离线 harness 以 client 送键
+// 为门控，没有 wall-clock 竞争。时序那条由 tests/unit 的 watchdog / grace 决策表守。
+const longPosts = findCassettes('article-long');
+
+test.describe('长文连续累积（离线重放）', () => {
+  test.skip(!longPosts.length, '尚无 article-long cassette');
+
+  for (const cassette of longPosts) {
+    test(`30 页不重启、不破洞、每页只送一次 PageDown [${cassette.__file}]`, async ({ page }) => {
+      test.setTimeout(120000);
+      const errors = [];
+      page.on('pageerror', (e) => errors.push(String(e)));
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, { enableEasyReading: true });
+      await replayCassette(page, cassette, { easyReading: true });
+
+      const state = await page.evaluate(() => window.__replay);
+      expect(state.fed).toBe(state.total); // 30 页全部翻完
+
+      // 从没送过 Home，也从没 goto：正常的长文不该触发任何自癒。
+      const keys = state.sends.map((s) => s.data);
+      expect(keys.filter((d) => d.indexOf('\x1b[1~') >= 0)).toEqual([]);
+      expect(keys.filter((d) => /^:\d+\r$/.test(d))).toEqual([]);
+
+      // 同一页签章不得送两次 PageDown（P4：第二个会让中间那页永远画不出来）。
+      const perPage = new Map();
+      for (const s of state.sends) {
+        if (s.data.indexOf('\x1b[6~') < 0 || !s.sig) continue;
+        perPage.set(s.sig, (perPage.get(s.sig) || 0) + 1);
+      }
+      for (const [sig, n] of perPage) expect(`${sig}:${n}`).toBe(`${sig}:1`);
+
+      // 累积页从文章 header 开始（没有被从中段重建过），且相邻列不重复。
+      const rows = await readBbsLines(page);
+      expect(rows.length).toBeGreaterThan(24 * 10); // 真的累积成长页
+      expect(rows[0]).toMatch(/作者/);
+      for (let i = 1; i < rows.length; i++) {
+        const a = rows[i - 1].replace(/\s+$/, '');
+        const b = rows[i].replace(/\s+$/, '');
+        if (a.trim() !== '') expect(b).not.toBe(a);
+      }
+      expect(errors).toEqual([]);
+    });
+  }
+});
+
 // 半画帧（P6）：PTT 一次回应常被拆成多个 WS message（OBUFSIZE 3072 会中途 flush），
 // 而 client 的 notify 有 30ms debounce ⇒ 一次翻页会跨好几个 redraw frame。中间那些
 // 帧里内容列已是新页，但**底部状态列还是上一页的旧值**（pfterm per-cell dirty 更新，

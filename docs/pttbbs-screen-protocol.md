@@ -238,6 +238,8 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 | P4 | client 尚有按鍵在途 → `refresh()` 直接 return **不畫** ⇒ **兩個 PageDown 同時在途＝中間那頁的畫面永遠不會送出來（內容永久掉）** | `pfterm.c#refresh`(798)；§2 |
 | P5 | footer part3 **會整段不印**，兩層來源：`mf_display_footer` 印完 part2 後 `if (avail <= 0) return;`（連 footer_handler 都不呼叫）；`common_pmore_footer_handler` 最後 `else while (width-- > w) outc(' ');`（連 VERYSHORT 都塞不下）。觸發條件＝part1+part2 太寬（多位數頁碼／六位數行號／xpos 的「顯示範圍」分支） | `pmore.c#mf_display_footer`、`more.c`(461) |
 | P6 | 每次回應結尾游標 park 在 `(rows-1, cols-1)`；footer 是 **per-cell patch**（實錄 `ESC[24;11H3 ESC[24;37H44~66 ESC[24;80H`）⇒ **半畫幀的 footer 是上一頁的舊值**，游標也還沒 park | `pfterm.c#fterm_rawcursor`(2144)、`tests/e2e/cassettes/stock-end.json` step2 |
+| P7 | **goto-line 是確定性的絕對定位**：`:` → `pageMode = (ch != ':') == 0` → `getdata_buf(b_lines-1, 0, PMORE_MSG_GOTO_LINE「跳至第幾行: 」, buf, 8, DOECHO)` → `i = atoi(buf)` → `if (i-- > 0) mf_goto(i)` → `mf.disps = mf.start; mf.lineno = 0; mf_forward(N-1)` ⇒ 送 `:N\r` 後 **footer 的 `S` 恰為 N**（超過末頁被 `maxdisps` 夾住只會更小）。`;` 與 `1`-`9` 走**頁**模式。輸入緩衝 **8 bytes**。prompt 期間底部列是 `跳至第幾行: `，**不匹配 footer 格式** | `pmore.c` goto 區塊（`case '1'..'9'/';'/':'`）、`mf_goto`(1067)、`PMORE_MSG_GOTO_LINE`(147) |
+| P8 | **畫面沒變就零 bytes**：`refresh` 走 `doupdate` 逐 cell diff，結尾 `fterm_rawcursor` → `fterm_rawmove_opt`（已在該位置則不輸出）⇒ **已在第 1 行時再送 Home（`mf_goTop`）可能完全沒有回應**。任何以 Home 當 request/response 交易的路徑都要先確認 `S > 1` | `pfterm.c#doupdate`／`fterm_rawmove_opt`、`mf_goTop`(1046) |
 
 client 端推論（改這段 code 前先讀）：
 
@@ -248,8 +250,17 @@ client 端推論（改這段 code 前先讀）：
    否則舊 footer 的行號會寫進 `_accEndRow`，之後整條去重都建在錯的基準上。
 3. **到底判定用 `pagePercent === 100`**（P3），不是 footer 首格顏色——per-cell dirty 更新下，
    單一格的顏色比讀百分比脆弱（顏色僅留作 fallback）。
-4. **掉頁可判定**（P1）：`statusStart > accEndRow + 1` ⇒ 中間整頁沒收到。自癒＝送 Home
-   （`\x1b[1~` → `pmore#mf_goTop`，`pmore.c:2604`）從頭重讀，每篇一次防迴圈。
+4. **掉頁可判定**（P1）：`statusStart > accEndRow + 1` ⇒ 中間整頁沒收到。自癒優先用
+   **goto-line 精準跳回**（P7）：送 `:` + `_accEndRow` + `\r`，落地幀的 `S == accEndRow`
+   ＝ P1 正常翻頁的形狀，走既有 continuation/append 路徑、已累積的內容一列都不用丟。
+   Home 從頭重讀降為最後手段（超長文重讀整篇就是使用者回報的「讀到一半跳回第一頁」）。
+   **goto prompt 期間底部列不匹配 footer**（P7）⇒ 那一幀的 `pageState` 可能不是 3，而
+   `term_view.redraw` 每幀都寫 `prevPageState` ⇒ 落地幀會命中 `prevPageState !== 3 → rebuild`
+   **從中段重建累積頁**。必須用 `buf.easyReadingHealInFlight` 顯式封住 rebuild 與 settle teardown。
+4b. **retry 的時間基準是「自己送鍵後多久」，不是「畫面靜止」**（P4 的另一面）：settle 計時器
+   由**送鍵之前**抵達的畫面 arm，長文 render 慢時 callback 會落到送鍵之後 ⇒ 誤判掉包 →
+   補送 → P4 → 真的掉一頁。而且 `_armSettleTimer` 只由伺服器活動 re-arm ⇒ 真掉鍵時**不會再有
+   settle**，所以 grace 必須配一個 client 自己的 watchdog，不能只靠 settle。
 5. **parser 不可要求 part3**（P5）。
 6. **強制重繪一律走 `term_buf.notify()`**，不可直接 `view.redraw()`：`updateCharAttr()` 只在
    notify 裡跑，它是 Big5 lead byte 標上 `isLeadByte` 的地方。settle 可能落在「bytes 已到、
@@ -258,7 +269,9 @@ client 端推論（改這段 code 前先讀）：
 
 守護：`tests/unit/string_util.test.js`（P5 的三種無 part3 形狀）、`comment_parse.test.js`
 （`classifyPageTransition` 四種轉移、`decideAccumulateBranch` 的 complete/gap）、
-`easy_reading_logic.test.js`（`nextPageDownDecision`、快路徑去重、`_healFromTop`、補畫走 notify）、
+`easy_reading_logic.test.js`（`nextPageDownDecision` 的 grace 決策表、watchdog、快路徑去重、
+goto 自癒與有界升級、補畫走 notify）、
 `replay_fixture.test.jsx`（實錄素材的 P1/P2 不變量）、
-`tests/e2e/offline/easy-reading.offline.spec.js`（`dropSteps` 模擬 P4 吞頁 → 偵測＋自癒；
-`splitFrames` 模擬 P6 半畫幀 → 內容完整、每頁只送一次 PageDown）。
+`tests/e2e/offline/easy-reading.offline.spec.js`（`dropSteps` 模擬 P4 吞頁 → `answerGoto` 驗
+精準自癒且不重建累積頁；`splitFrames` 模擬 P6 半畫幀 → 內容完整、每頁只送一次 PageDown；
+`ezsoft-longpost.json` 30 頁長文連續累積）。

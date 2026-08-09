@@ -12,16 +12,31 @@
   - **why**：pmore 的 `refresh()` 在 client 還有按鍵在途時直接 return **不畫**（P4）⇒ 同一頁送出兩個 PageDown，中間那頁的畫面**永遠不會送出來**，該頁的字永久消失。舊版快路徑 `_onViewUpdated` 記下頁面簽章卻**從不檢查**（只有 settle 路徑有去重），任何在同一頁再出現一次的完整幀（functionMode resume 的強制 notify、水球重繪…）就再送一次 → 掉頁。
   - **how**：`_inFlightSig`＝已送出 PageDown 的那一頁簽章（狀態列 `第 S~E 行`），ack ＝**簽章改變**。快路徑與 settle 路徑共用純函式 `nextPageDownDecision`（`send`/`wait`/`retry`/`giveup`/`done`/`none`），入口統一在 `_maybeSendPageDown`。
   - **到底判定用 `pagePercent === 100`**（P3：`progress==100` ⟺ `mf_viewedAll()`，整數除法剛好等價）。狀態列首格顏色（VIEWALL `37;44`）降為 fallback——footer 是 per-cell patch（P6），單格顏色比讀百分比脆弱。到底後再送 PageDown PTT 是**零回應**，所以絕不能靠 timeout 判斷。
-  - **bounded retry**：settle（畫面靜止 `SETTLE_MS`）時若仍是同一簽章，代表 PTT 已 flush 並卡在 `dogetch`（沒有進行中的重繪會被 typeahead 吞），此時補送一次安全；上限 `PAGE_DOWN_MAX_RETRIES=1`，之後 giveup。
-  - **交易狀態是 per-article，重置點＝文章邊界（`_resetPagingState`，2026-08）**。涵蓋 `_inFlightSig`／`_pageDownRetries`／`_healedOnce`／`easyReadingReachedPageEnd`／`sendCommandAfterUpdate`。
+  - **bounded retry 由「送鍵後經過多久」判定，不是「畫面靜止」（2026-08 修，治超長文自動跳回第一頁）**：上限仍是 `PAGE_DOWN_MAX_RETRIES=1`，但補送的前提改成 `sinceSentMs >= PAGE_DOWN_GRACE_MS`（600ms），由 `nextPageDownDecision` 的 `recovery`＋`sinceSentMs` 決定；未達門檻回 `wait`。
+    - **why**：settle 計時器是被**送鍵之前**抵達的畫面 arm 的（`term_buf.notify` → `_armSettleTimer`）。長文累積頁 4600+ 列時 React render 很慢（實測翻頁週期從 48ms 惡化到 200ms+），callback 被延到自己送鍵之後才跑 ⇒ 它量到的「靜止」與「PTT 沒回應」無關。實錄 `ptt-debug-20260809`：t=23047 送鍵、t=23124 settle 判定掉包補送、**同一毫秒**真正的回應才到 ⇒ 兩個 PageDown 在途 ⇒ P4 吞頁 ⇒ 自癒送 Home ⇒ 4700 行整篇重讀。
+    - **必須配 watchdog，不能只加 grace**：`_armSettleTimer` **只由伺服器活動 re-arm**（`_serverActivity`／`posChanged`）。按鍵真的掉了 ⇒ PTT 零回應 ⇒ **不會再有第二次 settle**。所以重試改由 `EasyReading._armWatchdog()`（`setTimeout(grace+20)`，以自己送鍵的時刻為錨）驅動；settle 保留為第二觸發點。
+    - **`_watchdogSig` 身分閘是承重的**：回應在 grace 內到達時 `_inFlightSig` 已換頁，計時器一律空轉——少了它就會在重繪途中多送一個鍵，正好製造 P4。
+    - **retry 一律重送 `_inFlightKeys`，不是呼叫端傳進來的 keys**：在途的交易可能是缺頁自癒的 `:N\r` 而不是 PageDown。
+  - **交易狀態是 per-article，重置點＝文章邊界（`_resetPagingState`，2026-08）**。涵蓋 `_inFlightSig`／`_inFlightKeys`／`_inFlightSentAt`／watchdog／`_pageDownRetries`／自癒額度／`easyReadingReachedPageEnd`／`sendCommandAfterUpdate`／**`ignoreOneUpdate`**。
+    - **`ignoreOneUpdate` 殘留是硬卡死，不是「少一幀」**：它 halt 掉的那一幀通常正是 `enterEasyReading()` 自己重播的 `notify()`，而那是**本地**重繪（沒有 `_touchRows` ⇒ `_serverActivity` false ⇒ **不 re-arm settle**）⇒ 連 `screenSettled` 兜底都沒有 ⇒ 那一篇一個 PageDown 都送不出去。`leaveCurrentPost()` 因此改成「先 `_resetPagingState()` 再視情況重新點起」，順序不可調換。
     - **`sig` 不跨文章唯一**：每篇文章第一頁都是 `1~22`。殘留的 `_inFlightSig` 會把下一篇的第一頁當成「上一篇那個還沒回應的請求」→ 快路徑永遠 `wait`、settle 用完重試上限後永遠 `giveup` ⇒ **一個 PageDown 都送不出去，卡在第一頁；換文章照樣卡**。
     - 邊界由 **settle 過的 pageState 進出 3** 判定（`_onPageStateSettled`：`1|2 → 3` 或 `3 → 1|2`）。**只認 1/2**：文章中途狀態列失配一幀而掉出 3 再回來不是換文章，重置會讓同一頁重送 PageDown（正是 P4 要防的）。
     - 不經列表的文章→文章（`[` `]` 同標題跳、`a/b/f/=/+/-`）沒有 1/2 邊緣，由 `leaveCurrentPost()` 補上；`enterEasyReading`/`exitEasyReading`/`_healFromTop` 也走同一個 helper。
   - **`_onScreenSettled` 不得被 `easyReadingReachedPageEnd` 早退否決**：settle 路徑必須對當下畫面冪等，「到底了」已由 `pagePercent` 在 `_computeRowState` 與 `nextPageDownDecision` 各算一次。
   - **使用者自救 `_kickPageDown()`**：PgDn（鍵盤與滑鼠）在累積頁**捲不動**且狀態列 `pagePercent < 100` 時，清掉交易狀態並補送一次 PageDown。自動翻頁的所有失效模式在使用者眼裡長得一模一樣（長頁停住、PgDn 毫無反應），要有一條手動出口。
-  - **debugRecorder `easyReading.pageDown` / `easyReading.pageDownKick`**：記 `retry`/`giveup`/`done`（`send`/`wait` 不記——一個看得到送出事件、一個每幀都有）。沒有它時，所有卡法在素材裡都只是「進文章後零 send」，分不出是重試額度用完還是旗標殘留。
+  - **debugRecorder `easyReading.pageDown` / `easyReading.pageDownKick`**：記 `retry`/`giveup`/`done`（`send`/`wait` 不記——一個看得到送出事件、一個每幀都有），payload 含 **`sinceSentMs`**（小值的 `retry`＝誤重試 bug 再現，大值＝真的掉鍵，沒有它分不出來）。沒有這些 log 時，所有卡法在素材裡都只是「進文章後零 send」，分不出是重試額度用完還是旗標殘留。
 - **累積只在「完整回應幀」（P6）**：`term_view.accumulatePageLines` 以 `buf.cur_y === rows-1 && buf.cur_x === cols-1`（pfterm 每次回應結尾才 park 游標）當閘。半畫幀的 footer 還是**上一頁的舊值**（per-cell patch，狀態列補丁與 park 排在內容之後），拿它算重疊會把舊行號寫進 `_accEndRow`，之後整條去重都建在錯基準上——舊版的 drift guard（比對率 0.5）就是在補這個。不完整的幀只重畫、不動 `pageLines`。
-- **掉頁偵測與自癒（P1）**：`comment_parse.classifyPageTransition` 判 `restart`/`continuation`/`gap`/`backward`。`gap`＝`statusStart > accEndRow + 1`，而 PageDown ＝ `mf_forward(dispedlines-1)` 保證 `S' == E`（末頁被 `maxdisps` 夾則更小），**`S' > E` 不可能** ⇒ 一定是中間整頁沒收到。舊版 `resolvePageOverlap` 把負重疊夾成 0 → 照常 append → 破洞無聲。現在 `accumulatePageLines` 升 `buf.easyReadingGapDetected`，`EasyReading._healFromTop()` 送 Home（`\x1b[1~` → `pmore#mf_goTop`）從頭重讀，每篇一次（`_healedOnce`）防迴圈。
+- **掉頁偵測與自癒（P1）**：`comment_parse.classifyPageTransition` 判 `restart`/`continuation`/`gap`/`backward`。`gap`＝`statusStart > accEndRow + 1`，而 PageDown ＝ `mf_forward(dispedlines-1)` 保證 `S' == E`（末頁被 `maxdisps` 夾則更小），**`S' > E` 不可能** ⇒ 一定是中間整頁沒收到。舊版 `resolvePageOverlap` 把負重疊夾成 0 → 照常 append → 破洞無聲。現在 `accumulatePageLines` 升 `buf.easyReadingGapDetected`，由 `EasyReading._healGap()` 處理。
+  - **自癒策略順序（2026-08 改，治超長文整篇重讀）**：`HEAL_GOTO_MAX=3` 次**精準跳回缺頁行** → 1 次 Home 從頭重讀（`_healFromTop`，最後手段）→ 放手（畫面維持現狀，PgDn／切原生熱鍵都還在）。額度 per-article，由 `_resetPagingState` 重置。
+  - **精準跳回 `_healAtLine(N)`**：送 `:` + N + `\r`。pmore `case ':'`（`pmore.c` goto 區塊）走**行號**模式（`pageMode = (ch != ':')`），`getdata_buf(PMORE_MSG_GOTO_LINE, buf, 8, DOECHO)` → `i = atoi(buf)` → `if (i-- > 0) mf_goto(i)` → `mf.disps = mf.start; mf.lineno = 0; mf_forward(N-1)` ⇒ 落地畫面 `目前顯示: 第 N~… 行`。
+    - **N 取 `_accEndRow`，不是 +1**：`statusStart === accEndRow` 正是 PageDown 自己的後置條件（P1 `S' == E`），落地幀與正常翻頁**形狀完全相同** → `continuation` → `resolvePageOverlap` k=1 → `append`，零新路徑，還多一列可做內容交叉驗證。末頁被 `maxdisps` 夾住只會讓重疊變大，兩個方向都安全。
+    - **不動任何累積狀態**：`pageLines`／`_accEndRow`／`_lastAccumulatedSig`／`scrollTop`／`_articleInstanceId` 全部保持——缺的那幾列在落地幀的 append 補進去。
+    - **heal 本身是一筆 in-flight 交易**（`_inFlightSig` 設成當下簽章、`_inFlightKeys = ':N\r'`、arm watchdog）。舊 `_healFromTop` 先 `_resetPagingState()` 清成 null 才送鍵 ⇒ 任何搶先抵達的完整幀都會讓決策回 `send` ⇒ 又一個 PageDown 撞 P4。
+  - **`buf.easyReadingHealInFlight` 是承重的兩道閘**（goto prompt 佔住底部列，狀態列失配 ⇒ 該幀 `pageState` 可能不是 3）：
+    1. `decideAccumulateBranch` 的 `healInFlight` 封住**兩條 rebuild 路徑**。`term_view.redraw` **每個渲染幀結尾都寫 `buf.prevPageState = buf.pageState`**，一幀污染就會讓落地幀命中 `prevPageState !== 3 → rebuild` ⇒ **從文章中段重建 `pageLines`、靜默刪掉上面全部內容**，比它要修的掉頁更糟。`gap` 與 P6 的 `skip` 刻意仍然生效。
+    2. `_onScreenSettled` 早退，否則 `pageState !== 3 → _teardownAccumulationOffArticle()` 會呼叫 `hideEasyReadingOverlays()` 把 `pageLines` 清空。
+    旗標由 `accumulatePageLines` 在 append 成功時清掉；PTT 完全沒回應時由交易的 `giveup` 清掉（有界，不會卡死）。
+  - **debugRecorder `easyReading.gapHeal`** 帶 `{mode: goto|home|exhausted|busy, accEndRow, screenStart, missingLines, targetLine, gotoCount, homeUsed}`。舊版**完全沒有 payload**，而且額度用盡那條只有 `console.log` 不進 recorder ⇒ 素材裡看到 1 筆其實可能發生過很多次。
 - **補畫一律走 `term_buf.notify()`（`_forceRepaint`），不可直接 `view.redraw()`**：`updateCharAttr()` 只在 notify 裡跑，它是 Big5 lead byte 標上 `isLeadByte` 的地方。settle 可能落在「bytes 已到、30ms notify 計時器還沒跑」之間，直接 redraw 會把未轉碼的列 clone 進 `pageLines`，`rowToText` 得到原始 Big5（`¡°` 而非 `※`）→ 下一頁比對不上 → 重疊算成 0 → 重疊列貼兩次（離線拆幀測試抓到的重複「※ 文章網址」）。
 - **settle 兜底（`_onScreenSettled`）**：PTT「把游標停到底部狀態列」可能是**獨立的純游標 escape（只設 `posChanged` 不設 `changed`）**，落在自己的 notify 視窗 → `if(this.changed)` 區塊整段跳過 → 該回應**從沒進過 redraw/accumulate**。`screenSettled` 在「畫面真靜止（內容＋游標都停）」時比對 `view._lastAccumulatedSig`，不同就 `_forceRepaint()` 補一次（補畫會重播 change/viewUpdate，翻頁決策由快路徑接手，settle 隨即 return）。
 - **離開文章的清理改由 settle 觸發**：`term_view.redraw` 對「好讀開啟 ∧ `buf.settledPageState === 3` ∧ 有 `pageLines`」的 transient 幀**繼續畫累積頁**，不再落到會清空 `pageLines` 的 native 分支（pageState 是逐幀分類，半畫的 footer 會讓它掉出 3 一幀，舊版因此整篇累積被丟掉、下一個完整幀從當前頁重建 → 前面全沒了）。真正離開時由 `EasyReading._teardownAccumulationOffArticle`（settle，debounced 狀態已同意）做 `hideEasyReadingOverlays()`＋重繪。
@@ -29,6 +44,11 @@
 - **為何來源集含選單(1)（CONFIRMED 讀碼）——勿收緊回 `==2`**：精華區（文章列表按 `z` 進入）頂層首列 `【精華文章】`→`pageState 1`(MENU，`term_buf.js` pageState 判定)，子目錄清單落 MENU(1) 或 LIST(2)，兩者都能 Enter 直接進文章 → 只認 `==2` 時精華區的 `1→3` 邊緣不成立，切原生後卡原生直到回真看板列表。主功能表/分類看板雖也是 MENU(1) 但無法直接開文章（必先經看板 LIST(2)），故 `1→3` 實務上只來自精華區，含 1 安全。pass/edit/normal(5/6/0) 不在來源集→原生模式內看說明(5)再回文章(3) 的 `5→3` 不會誤重啟。
 - transient 0 為何不污染：half-paint frame(末列空→`pageState=0`，`term_buf.js` pageState 判定)後續一定有更晚的視窗 re-arm 計時器，故 0 永不 settle；settle 只抓「最後靜止值」(3)。列表→文章的 settled 串流乾淨無 0，**無需 latch**。
 - 退出抑制天生正確：`switchToNativeAtBottom` 後留在 pageState 3、`settledPageState` 仍 3、**不再升級**→ `'pageStateSettled'` 不觸發、邊緣不成立 → 不誤重啟（故也不需要額外的抑制旗標）。
+- **第二條重啟邊緣：原生模式下換到另一篇文章（`nextEasyReadingReentry`，2026-08，治「半永久原生模式」）**。`nextEasyReadingState` 只認 settled `1|2 → 3`，而切原生後用 `[` `]` `a` `b` `f` `=` 跳下一篇**全程 pageState 都是 3**，根本不會有邊緣 ⇒ 一路卡原生直到繞回列表。
+  - 條件：`!enabled ∧ pref on ∧ supported ∧ !functionMode ∧ pageState 3 ∧ 游標已 park ∧ statusStart === 1 ∧ articleKey 可讀 ∧ articleKey !== nativeArticleKey`。在 `_onScreenSettled` 的 `!_enabled` 分支評估（`_maybeReenterOnNewArticle`）。
+  - **刻意用文章身分而非 pageState 邊緣**：docs 上面那條明令「掉出 3 再回來不是換文章」；而唯一擋不掉的誤觸發是「使用者在原生自己按 Home/`0`/`g` 回到第 1 行」——比對 `articleKey`（畫面第 0~2 列＝作者/標題/時間，只取 row 0 會在同作者 `a` 跳文時撞號）直接擋死。
+  - `_articleKey` 在 `enterEasyReading()` 捕捉，`exitEasyReading()` 把它搬到 `_nativeArticleKey`。`_nativeArticleKey` 為 null（這篇從沒開過好讀）時視為可重啟，行為等同既有的 `2→3`。
+  - 讀不到身分就**不重啟**（寧可留在原生）：這個方向 fail-safe，熱鍵永遠還在。
 - 退化情形（guess）：連線在**畫面中途**停 >`SETTLE_MS`（網路卡）才可能 premature settle；最壞首篇自動 enable 漏一次（捲動/重進即恢復），非 crash。`SETTLE_MS` 為可調常數，slow link premature-settle 就調高。
 
 ## render 單軌（兩模式同走 `<Screen>`）
@@ -91,7 +111,18 @@
   - **踩坑：per-post 狀態不可只靠這三個入口重置**（2026-08，「進文章卡在第一頁」的根因）。最常見的換文章路徑一個都不經過它們：`←` 走 `stopEasyReading()`（只設 `sendCommandAfterUpdate='skipOne'`）**不經 `leaveCurrentPost()`**；而好讀已經開著時再進下一篇**也不經 `enterEasyReading()`**（`nextEasyReadingState` 要求 `!enabled`）。凡是「每篇一份」的狀態，重置點必須掛在 settle 的文章邊界（`_onPageStateSettled`），不能掛在按鍵路徑上。
 - **`exitEasyReading()`**：唯一關好讀點。`sendCommandAfterUpdate=''` + `_enabled=false` + `_core.switchToEasyReadingMode()`（還原 overlay 列/padding/pageLines+送 `^L`）。React 恆擁有 `#mainContainer`，切原生由 reconcile 把長頁收回 24 列（無 unmount）。
 
-`EasyReading.switchToNativeAtBottom`（End/$/G 與滑鼠 End）= `_send('\x1b[4~')`（原生 End 導到底）+ `exitEasyReading()`。
+`EasyReading.switchToNativeAtBottom`（熱鍵／`$`／`G` 與滑鼠 End）= `_send('\x1b[4~')`（原生 End 導到底）+ `exitEasyReading()`。
+
+**熱鍵是 toggle：原生下再按一次切回好讀（`tryReenterFromNative` → `reenterFromTop`，2026-08）**。
+- 攔截點在 `term_view.onKeyDown`，**排在既有好讀 gate 之前**——好讀關掉後 `useEasyReadingMode` 是 false，那個 gate 不成立，鍵會直接落到原生。條件另加 `!easyReadingFunctionMode ∧ pageState === 3 ∧ !ctrl ∧ !alt`，且 `tryReenterFromNative` 內再要求真的讀得到狀態列（`term_buf.setPageState` 沒有 default 分支，prompt 幀的 pageState 可能是殘值）。
+- **只認 `easyReadingEndSwitchKey`（預設 F8），`$`／`G` 不參與**：它們在原生 pmore 是真的導覽鍵（`mf_goBottom`），語意是「跳文末」不是「切模式」。
+- `reenterFromTop()` 先 `enterEasyReading()`（唯一入口）再視情況送 Home 倒回第 1 行，**順序不可調換**：`enterEasyReading` 結尾會重播一次 `notify()`，快路徑會從文章中段送出 PageDown；先把 rewind 立成在途交易才能保持「同時只有一個鍵在途」（P4）。
+- **Home 只在 `rowIndexStart > 1` 才送**：pfterm 會 diff 畫面、`fterm_rawmove_opt` 原地不動，已經在第 1 行時送 Home 是**零回應**，交易會永遠等不到 ack。
+
+**`exitEasyReading()` 的收尾（2026-08 補三條，治 F8 後的殘留）**，全部必須排在 `_core.switchToEasyReadingMode()` **之後**（它透過 `leaveCurrentPost()` 會把 `ignoreOneUpdate` 重新點起來）：
+- `startedEasyReading = false`：唯一清除點原本是 `_applyRowState`，而 `_onChanged` 在 `!_enabled` 時早退 ⇒ 永遠跑不到。`list_session._engageEligible()` 讀它 ⇒ **F8 後回看板列表，列表好讀永遠不 engage**。
+- `ignoreOneUpdate = false`：見上面「翻頁交易」段的硬卡死說明。
+- `mainDisplay.scrollTop = 0` ＋ `_forceRepaint()`：**不依賴 `^L` 的伺服器往返**。按熱鍵時若還有 PageDown 在途，End／`^L` 的重繪會被 P4 吞掉，DOM 就一直停在數千列的長頁且捲到底 ⇒ 使用者看到「卡在最底部、PgUp 沒反應」。另外 `redraw` 的 native 分支用 `if (useEasyReadingMode)` 守住 overlay/scroll 還原，此時已是 false，沒有別人會重設捲軸。
 
 **所有手動關好讀路徑都必須走 `exitEasyReading()`，勿自行翻 `useEasyReadingMode` 旗標**（會漏掉 `sendCommandAfterUpdate`/pageLines 清理與 overlay 還原）：End、pref 關閉（`_onChanged` 偵測 `!enableEasyReading && _enabled`）、LiveHelper 啟用(`ContextMenu/index.jsx` `onLiveHelperChange`)、e2e `applyPrefs`。LiveHelper 這條只由 UI 驅動，守護在 offline e2e「LiveHelper 启用 → 关好读单一出口」。
 - `switchToEasyReadingMode(doSwitch)`：無參/falsy→還原 DOM+`^L`；truthy→進好讀。好讀開但畫面是列表/選單(pageState≠3)時，`redraw` 走 `hideEasyReadingOverlays()`（只還原 overlay 列+清 pageLines）後以 `_renderScreenLines(buf.lines)` 畫單頁（同原生路徑）。

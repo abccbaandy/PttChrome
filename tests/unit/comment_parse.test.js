@@ -954,6 +954,32 @@ describe("decideAccumulateBranch", () => {
       d({ complete: true, prevPageState: 3, pendingReset: true, statusStart: 1, kContent: 0, hasAcc: true, headerChanged: true, transition: "restart" })
     ).toBe("rebuild");
   });
+
+  // healInFlight：好讀正在用 pmore 的 goto-line（送 `:N\r`）補讀被吞掉的那一頁。
+  // 期間底部是「跳至第幾行:」prompt，狀態列失配 ⇒ 那一幀的 pageState 可能不是 3，而
+  // term_view.redraw **每個渲染幀結尾都寫 buf.prevPageState = buf.pageState** ⇒ 落地幀
+  // 會命中 `prevPageState !== 3 → rebuild`，**從文章中段重建 pageLines、把上面累積的
+  // 全部靜默刪掉**——比它要修的掉頁還糟。所以 heal 在途時兩條 rebuild 路徑都要封住。
+  test("heal 在途：prevPageState 被 prompt 幀污染成 0 → 仍 append（不得從中段重建）", () => {
+    expect(
+      d({ complete: true, healInFlight: true, prevPageState: 0, pendingReset: false, statusStart: 44, kContent: 1, hasAcc: true, transition: "continuation" })
+    ).toBe("append");
+  });
+  test("heal 在途：落在第一頁 + pendingReset 也不 rebuild", () => {
+    expect(
+      d({ complete: true, healInFlight: true, prevPageState: 3, pendingReset: true, statusStart: 1, kContent: 0, hasAcc: true, headerChanged: true, transition: "restart" })
+    ).toBe("append");
+  });
+  test("heal 在途：仍偵測得到掉頁（升級路徑不得被封死）", () => {
+    expect(
+      d({ complete: true, healInFlight: true, prevPageState: 3, pendingReset: false, statusStart: 66, kContent: 0, hasAcc: true, transition: "gap" })
+    ).toBe("gap");
+  });
+  test("heal 在途：半畫幀照樣 skip（P6 優先於一切）", () => {
+    expect(
+      d({ complete: false, healInFlight: true, prevPageState: 0, pendingReset: false, statusStart: 44, kContent: 1, hasAcc: true })
+    ).toBe("skip");
+  });
 });
 
 // P1（docs/pttbbs-screen-protocol.md §13）：pmore 的 PageDown 是

@@ -36,6 +36,35 @@ export function nextEasyReadingState({ settledPageState, prevSettledPageState, e
     !enabled && enablePref && supported;
 }
 
+// Pure decision for the SECOND auto-enable route: easy reading is off because the user
+// switched to native inside a post (the End/F8 key), and the screen has now settled on
+// the FIRST page of a DIFFERENT post. nextEasyReadingState cannot see this — `[`/`]`/
+// `a`/`b`/`f`/`=` keep pageState at 3 the whole way, so there is no settle edge at all,
+// and easy reading stayed off until the user went back through a list. That is the
+// "半永久原生模式" report.
+//
+// Keyed on article IDENTITY, deliberately not on a pageState edge:
+//   - docs/easy-reading.md forbids treating "dipped out of 3 and came back" as a new
+//     article (a mid-article status-row misparse does exactly that, and re-enabling
+//     there would re-send a PageDown for the same page — the P4 duplicate);
+//   - the one false positive an edge-based rule cannot exclude is the user pressing
+//     native Home/0/g back to line 1 of the SAME post. Comparing the header rows kills
+//     it outright.
+// `articleKey` = the post's 作者/標題/時間 rows; row 0 alone collides on an `a`
+// (same-author) jump. `nativeArticleKey` is the key of the post the user switched away
+// from (null when easy reading was never on in this post — then behave like the normal
+// list→article enable).
+export function nextEasyReadingReentry({
+  pageState, complete, enabled, enablePref, supported, functionMode,
+  statusStart, articleKey, nativeArticleKey
+}) {
+  if (enabled || !enablePref || !supported || functionMode) return false;
+  if (pageState !== 3 || !complete) return false;
+  if (statusStart !== 1) return false;          // only ever on a post's first page
+  if (articleKey == null || articleKey === '') return false;  // can't tell → stay native
+  return articleKey !== nativeArticleKey;
+}
+
 // Pure per-frame row-state machine for _onChanged: given the current pageState,
 // cursor position and which kind of status/push/reply row the screen shows (the
 // parse results are computed by the caller and passed in as booleans, keeping this
@@ -129,8 +158,27 @@ export function nextEasyReadingRowState({
   };
 }
 
-// How many times a settle may re-send a PageDown that produced no response at all.
+// How many times the recovery path may re-send a PageDown that produced no response.
 export const PAGE_DOWN_MAX_RETRIES = 1;
+
+// How long after OUR OWN send a recovery trigger must wait before it may conclude the
+// key was lost. See nextPageDownDecision's `recovery` note for why the settle event
+// alone is not evidence of a lost key.
+//
+// 600ms ≈ 3x the worst frame cycle and ~8x the worst send→receive RTT observed in the
+// 4700-line recording (ptt-debug-20260809). The two error costs are wildly asymmetric:
+// too short ⇒ a duplicate key ⇒ P4 ⇒ a page lost for good; too long ⇒ one extra pause
+// in the rare genuinely-lost-key case, invisible next to the 200ms frame period a long
+// article already has. Deliberately a constant, not an adaptive RTT estimate: the only
+// measurable input (settle latency) is itself polluted by render time, and a moving
+// threshold makes the decision untestable. Tune it from recordings — _maybeSendPageDown
+// logs sinceSentMs on every non-send/wait action.
+export const PAGE_DOWN_GRACE_MS = 600;
+
+// Precise gap seeks allowed per article before falling back to the whole-article
+// re-read. A seek costs one round trip and keeps everything already accumulated, so it
+// is worth retrying a few times; the Home fallback costs the entire article.
+export const HEAL_GOTO_MAX = 3;
 
 // Pure decision for the auto page-down loop, expressed as a SINGLE IN-FLIGHT
 // request/response transaction. See docs/pttbbs-screen-protocol.md §13.
@@ -159,13 +207,25 @@ export const PAGE_DOWN_MAX_RETRIES = 1;
 //   P6 — only a frame whose cursor is parked at (rows-1, cols-1) is a complete server
 //   response; anything else still carries the previous page's footer.
 //
-// `fromSettle` marks the recovery path: the screen has been quiet for SETTLE_MS, so PTT
-// has flushed and is blocked in dogetch — there is no in-flight repaint left for a
-// resend to be swallowed by, which makes a BOUNDED retry safe there (and only there).
+// `recovery` marks a path that is ALLOWED to re-send: the settle event, or the
+// send-anchored watchdog (_armWatchdog). A resend is only safe once PTT has flushed and
+// is blocked in dogetch, with no in-flight repaint left for the key to be swallowed by.
+//
+// `sinceSentMs` — ms since WE sent the outstanding key — is what actually establishes
+// that. The settle event does NOT: term_buf's settle timer is armed by the frames that
+// arrived BEFORE our send, and on a long article (4600+ accumulated rows) the React
+// render pushes its callback out past our own send, so the quiet period it measured
+// says nothing about whether PTT answered us. That is the 4700-line "自動跳回第一頁"
+// report: settle fired 77ms after the send, in the same millisecond the answer arrived,
+// concluded the key was lost, and the duplicate PageDown cost a whole page to P4 —
+// which the gap self-heal then "fixed" by re-reading the article from line 1.
+//
+// null sinceSentMs is treated as elapsed (fail-open): the caller always stamps it
+// alongside inFlightSig, and a missing stamp must never wedge the transaction.
 // Returns the next state alongside the action so the caller stays a thin shim.
 export function nextPageDownDecision({
   enabled, functionMode, complete, isStatusRow, pagePercent,
-  sig, inFlightSig, retries, fromSettle
+  sig, inFlightSig, retries, recovery, sinceSentMs, graceMs
 }) {
   const keep = { action: 'none', inFlightSig, retries, reachedPageEnd: undefined };
   if (!enabled || functionMode || !complete || !isStatusRow || sig == null)
@@ -173,7 +233,9 @@ export function nextPageDownDecision({
   if (pagePercent >= 100)
     return { action: 'done', inFlightSig: null, retries: 0, reachedPageEnd: true };
   if (inFlightSig != null && sig === inFlightSig) {
-    if (!fromSettle)
+    const elapsed = sinceSentMs == null ? Infinity : sinceSentMs;
+    const grace = graceMs == null ? PAGE_DOWN_GRACE_MS : graceMs;
+    if (!recovery || elapsed < grace)
       return { action: 'wait', inFlightSig, retries, reachedPageEnd: false };
     if (retries < PAGE_DOWN_MAX_RETRIES)
       return { action: 'retry', inFlightSig, retries: retries + 1, reachedPageEnd: false };
@@ -216,9 +278,23 @@ export function EasyReading(core, view, termBuf) {
   // page (P4) — is impossible. Reset per article (enterEasyReading / leaveCurrentPost).
   this._inFlightSig = null;
   this._pageDownRetries = 0;
-  // One gap self-heal per article (see _healFromTop), so a pathological article can
-  // never loop on Home.
-  this._healedOnce = false;
+  // The exact bytes of the outstanding request, and when they went out. The watchdog
+  // re-sends _inFlightKeys (never the caller's keys — the transaction may be a gap
+  // heal, not a PageDown), and sinceSentMs is the ONLY evidence that a key was lost;
+  // see nextPageDownDecision.
+  this._inFlightKeys = null;
+  this._inFlightSentAt = null;
+  // Send-anchored recovery timer. term_buf's settle timer is re-armed only by SERVER
+  // activity (term_buf.notify → _armSettleTimer), so a key that PTT never answered
+  // produces no further settle at all — grace-gating the settle path without this
+  // would turn a false retry into a permanent stall.
+  this._watchdogTimer = null;
+  this._watchdogSig = null;
+  // Gap self-heal budget, per article (see _healGap): a few cheap precise seeks, then
+  // one expensive re-read from the top, then give up — bounded so a pathological
+  // article can never loop.
+  this._healGotoCount = 0;
+  this._healHomeUsed = false;
   // functionMode: while the user is interacting with a native PTT prompt/menu/editor
   // triggered from inside the article (r 回應、X/% 推文、y 收暫存檔…), we stop the
   // easy-reading accumulation/overlay illusion and mirror the native 24-row screen
@@ -228,6 +304,12 @@ export function EasyReading(core, view, termBuf) {
   // accumulated long page resumes without re-paging. See docs/easy-reading.md.
   this._functionMode = false;
   this._savedScrollTop = null;
+  // Article identity (作者/標題/時間 rows) — see nextEasyReadingReentry. _articleKey is
+  // captured whenever easy reading opens a post; _nativeArticleKey is the one we left
+  // behind on a switch-to-native, and is what tells "another post" apart from "the same
+  // post, scrolled back to the top by a native Home".
+  this._articleKey = null;
+  this._nativeArticleKey = null;
 
   function bindProperty(target, name, obj, prop) {
     if (!prop) prop = name;
@@ -378,6 +460,19 @@ EasyReading.prototype._currentPageStatus = function() {
   return parseStatusRow(lastRowText);
 };
 
+// Identity of the post currently on screen, from its header rows (作者 / 標題 / 時間).
+// Only meaningful on a post's FIRST page — every caller checks statusStart === 1 first.
+// Read through getRowText so both capture sites (enter, and the re-entry check) build
+// the string exactly the same way.
+EasyReading.prototype._readArticleKey = function() {
+  const cols = this._termBuf.cols;
+  const parts = [];
+  for (let r = 0; r < 3; ++r)
+    parts.push((this._termBuf.getRowText(r, 0, cols) || '').replace(/\s+$/, ''));
+  const key = parts.join('|');
+  return key.replace(/\|/g, '') === '' ? null : key;
+};
+
 // One clean auto-paging transaction per ARTICLE. Every field here is per-post state
 // that MUST NOT survive into the next article:
 //   _inFlightSig        — the page signature is NOT unique across articles: every
@@ -390,7 +485,7 @@ EasyReading.prototype._currentPageStatus = function() {
 //   easyReadingReachedPageEnd — set once an article is read to the bottom
 //                         (pagePercent 100); it used to veto the whole settle recovery
 //                         for the NEXT article, which is the "很容易卡在第一頁" report.
-//   _healedOnce         — each article gets its own single gap self-heal.
+//   _healGotoCount / _healHomeUsed — each article gets its own gap self-heal budget.
 // Callers: the settle article boundary (_onPageStateSettled), leaveCurrentPost (the
 // article→article jumps that never pass a list: [ ] a b f = + -), enterEasyReading /
 // exitEasyReading, and _healFromTop.
@@ -399,15 +494,52 @@ EasyReading.prototype._resetPagingState = function() {
   this.easyReadingReachedPageEnd = false;
   this._inFlightSig = null;
   this._pageDownRetries = 0;
-  this._healedOnce = false;
+  this._inFlightKeys = null;
+  this._inFlightSentAt = null;
+  this._clearWatchdog();
+  this._healGotoCount = 0;
+  this._healHomeUsed = false;
+  this._termBuf.easyReadingHealInFlight = false;
+  // ignoreOneUpdate is per-post too, and leaving it set is not "one skipped frame":
+  // the frame it halts is usually enterEasyReading()'s own replayed notify(), which is
+  // a LOCAL repaint (no _touchRows ⇒ term_buf._serverActivity stays false ⇒ the settle
+  // timer is NOT re-armed) ⇒ no 'screenSettled' either ⇒ not a single PageDown goes out
+  // for the whole article. That is the "F8 之後下一篇卡在第一頁" report. Callers that
+  // genuinely want the one-shot (leaveCurrentPost) re-arm it AFTER this runs.
+  this.ignoreOneUpdate = false;
+};
+
+// Arm the recovery timer for the outstanding request. _watchdogSig is the identity
+// guard: if the answer arrives inside the grace the transaction has already moved on to
+// another page, and a timer that fired anyway would send a second key on top of an
+// in-flight repaint — exactly the P4 duplicate this whole transaction exists to prevent.
+EasyReading.prototype._armWatchdog = function() {
+  this._clearWatchdog();
+  this._watchdogSig = this._inFlightSig;
+  this._watchdogTimer = setTimeout(() => {
+    this._watchdogTimer = null;
+    if (this._inFlightSig == null || this._inFlightSig !== this._watchdogSig)
+      return;  // answered (or reset) in the meantime — nothing to recover
+    this._maybeSendPageDown(this._inFlightKeys, /* recovery */ true);
+  }, PAGE_DOWN_GRACE_MS + 20);
+};
+
+EasyReading.prototype._clearWatchdog = function() {
+  if (this._watchdogTimer != null) {
+    clearTimeout(this._watchdogTimer);
+    this._watchdogTimer = null;
+  }
+  this._watchdogSig = null;
 };
 
 // Single gate every auto page-down goes through — both the per-frame fast path
 // (_onViewUpdated) and the settle recovery (_onScreenSettled). Gathers the facts,
 // runs the pure nextPageDownDecision, writes the resulting transaction state back and
 // sends at most one key. See nextPageDownDecision for the pmore invariants behind it.
-EasyReading.prototype._maybeSendPageDown = function(keys, fromSettle) {
+EasyReading.prototype._maybeSendPageDown = function(keys, recovery) {
   const status = this._currentPageStatus();
+  const sinceSentMs = this._inFlightSentAt == null
+    ? null : Date.now() - this._inFlightSentAt;
   const d = nextPageDownDecision({
     enabled: this._enabled,
     functionMode: this._functionMode,
@@ -419,7 +551,9 @@ EasyReading.prototype._maybeSendPageDown = function(keys, fromSettle) {
     sig: status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null,
     inFlightSig: this._inFlightSig,
     retries: this._pageDownRetries,
-    fromSettle: !!fromSettle
+    recovery: !!recovery,
+    sinceSentMs: sinceSentMs,
+    graceMs: PAGE_DOWN_GRACE_MS
   });
   if (d.action === 'none')
     return d.action;
@@ -431,19 +565,34 @@ EasyReading.prototype._maybeSendPageDown = function(keys, fromSettle) {
   if (d.action !== 'send' && d.action !== 'wait') {
     this._core.debugRecorder?.log('easyReading.pageDown', {
       action: d.action,
-      fromSettle: !!fromSettle,
+      recovery: !!recovery,
       sig: status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null,
       // state BEFORE the decision is applied — that is what explains the action
       wasInFlightSig: this._inFlightSig,
-      wasRetries: this._pageDownRetries
+      wasRetries: this._pageDownRetries,
+      // The field that makes a recurrence self-diagnosing: a `retry` with a small
+      // sinceSentMs is the false-retry bug, a large one is a genuinely lost key.
+      sinceSentMs: sinceSentMs
     });
   }
   this._inFlightSig = d.inFlightSig;
   this._pageDownRetries = d.retries;
   if (d.reachedPageEnd !== undefined)
     this.easyReadingReachedPageEnd = d.reachedPageEnd;
-  if (d.action === 'send' || d.action === 'retry')
-    this._send(keys);
+  if (d.action === 'send' || d.action === 'retry') {
+    // A retry re-sends the ORIGINAL bytes, never the caller's: the outstanding request
+    // may be a gap heal (':N\r'), and the watchdog has no idea what it is recovering.
+    const bytes = d.action === 'retry' ? (this._inFlightKeys || keys) : keys;
+    this._inFlightKeys = bytes;
+    this._inFlightSentAt = Date.now();
+    this._send(bytes);
+    this._armWatchdog();
+  } else if (d.action === 'done' || d.action === 'giveup') {
+    this._clearWatchdog();
+    // Bounded escape for a seek PTT never answered: without this the heal gate would
+    // stay up forever and the settle teardown could never run again.
+    this._termBuf.easyReadingHealInFlight = false;
+  }
   return d.action;
 };
 
@@ -466,30 +615,110 @@ EasyReading.prototype._kickPageDown = function() {
   });
   this._inFlightSig = null;
   this._pageDownRetries = 0;
-  this._maybeSendPageDown('\x1b[6~', /* fromSettle */ true);
+  this._inFlightSentAt = null;  // user-driven: the grace has nothing to measure against
+  this._clearWatchdog();
+  this._maybeSendPageDown('\x1b[6~', /* recovery */ true);
 };
 
 // Gap self-heal (pmore invariant P1, raised by term_view.accumulatePageLines as
-// buf.easyReadingGapDetected). A page was swallowed — its text will never be sent
-// again on its own, so re-read the article from the top: Home is pmore's KEY_HOME →
-// mf_goTop (pmore.c:2604), the cheapest deterministic way back to line 1. Bounded to
-// once per article so a pathological case can't loop.
-EasyReading.prototype._healFromTop = function() {
+// buf.easyReadingGapDetected). A page was swallowed — pmore will never send its text
+// again on its own, so we must navigate back to it.
+//
+// Strategy order per article: up to HEAL_GOTO_MAX precise seeks, then ONE re-read from
+// the top, then give up (leave the page as is; PgDn and the switch-to-native key both
+// still work). The precise seek costs one round trip and keeps everything already
+// accumulated; the Home re-read costs the whole article, which on a 4700-line post is
+// the "讀到一半自動從第一頁重讀" report — so it is the fallback, not the first move.
+EasyReading.prototype._healGap = function() {
   this._termBuf.easyReadingGapDetected = false;
-  if (this._healedOnce) {
-    console.log('easy reading: gap again after healing — leaving the page as is');
+  // Never stack heals: the outstanding one either lands (accumulatePageLines clears
+  // easyReadingHealInFlight on the append) or the watchdog gives up on it.
+  if (this._termBuf.easyReadingHealInFlight) {
+    this._core.debugRecorder?.log('easyReading.gapHeal', { mode: 'busy' });
     return;
   }
+  const status = this._currentPageStatus();
+  const accEndRow = this._view ? this._view._accEndRow : null;
+  const base = {
+    accEndRow: accEndRow,
+    lastAccumulatedSig: this._view ? this._view._lastAccumulatedSig : null,
+    screenStart: status ? status.rowIndexStart : null,
+    screenEnd: status ? status.rowIndexEnd : null,
+    missingLines: (status && accEndRow != null) ? status.rowIndexStart - accEndRow - 1 : null,
+    gotoCount: this._healGotoCount,
+    homeUsed: this._healHomeUsed
+  };
+  if (accEndRow != null && accEndRow >= 1 && this._healGotoCount < HEAL_GOTO_MAX) {
+    this._core.debugRecorder?.log('easyReading.gapHeal',
+      Object.assign({ mode: 'goto', targetLine: accEndRow }, base));
+    this._healAtLine(accEndRow);
+    return;
+  }
+  if (!this._healHomeUsed) {
+    this._core.debugRecorder?.log('easyReading.gapHeal', Object.assign({ mode: 'home' }, base));
+    this._healFromTop();
+    return;
+  }
+  console.log('easy reading: gap again after healing — leaving the page as is');
+  this._core.debugRecorder?.log('easyReading.gapHeal', Object.assign({ mode: 'exhausted' }, base));
+};
+
+// Seek straight to the first missing line with pmore's goto-line
+// (pmore.c#pmore `case ':'` → pageMode 0 → getdata_buf(PMORE_MSG_GOTO_LINE) →
+// `if (i-- > 0) mf_goto(i)` → mf.lineno = N-1), so the landing screen's status row
+// reads exactly "第 N~… 行".
+//
+// N = _accEndRow, NOT _accEndRow + 1: statusStart === accEndRow is pmore's own
+// PageDown post-condition (P1, S' == E), so the landing frame is shaped exactly like a
+// normal page-down — classifyPageTransition 'continuation', resolvePageOverlap k = 1,
+// decideAccumulateBranch 'append'. No new code path, and the one overlapping row is a
+// free content cross-check. (Clamping by mf.maxdisps near the end only makes the
+// overlap bigger, which those same functions already handle.)
+//
+// Nothing accumulated is touched: pageLines, _accEndRow, _lastAccumulatedSig, the
+// scroll position and the article instance id all stay put — the missing rows are
+// spliced in on the landing frame's append.
+EasyReading.prototype._healAtLine = function(line) {
+  console.log('easy reading: lost page, seeking back to line ' + line);
+  ++this._healGotoCount;
+  // Two separate gates, both needed while the prompt row is up (the bottom row shows
+  // 「跳至第幾行:」 so parseStatusRow fails and pageState can drop out of 3):
+  //   buf.easyReadingHealInFlight — term_view.redraw writes buf.prevPageState on EVERY
+  //     rendered frame, so one prompt frame classified as non-3 would make the landing
+  //     frame take decideAccumulateBranch's `prevPageState !== 3 → rebuild` path and
+  //     restart pageLines from the middle of the article, silently dropping everything
+  //     above it. Worse than the gap it is healing.
+  //     It is also what makes _onScreenSettled early-return: its
+  //     `pageState !== 3 → teardown` calls hideEasyReadingOverlays(), which empties
+  //     pageLines outright.
+  this._termBuf.easyReadingHealInFlight = true;
+  // The seek is a transaction like any page-down: ack = the signature changing, and the
+  // watchdog re-sends _inFlightKeys if PTT never answers. Without this the paging
+  // machine would see the next complete frame with inFlightSig null and fire a
+  // PageDown on top of the in-flight seek — the very P4 duplicate we are recovering from.
+  this._inFlightSig = this._currentPageSignature();
+  this._inFlightKeys = ':' + line + '\r';
+  this._inFlightSentAt = Date.now();
+  this._pageDownRetries = 0;
+  this._send(this._inFlightKeys);
+  this._armWatchdog();
+};
+
+// Last-resort heal: re-read the whole article. Home is pmore's KEY_HOME → mf_goTop
+// (pmore.c:2585). Used once per article, only after the precise seeks are spent or
+// when there is no accumulated position to seek back to.
+EasyReading.prototype._healFromTop = function() {
   console.log('easy reading: lost page detected, re-reading from the top');
-  this._core.debugRecorder?.log('easyReading.gapHeal');
   this._resetPagingState();
-  this._healedOnce = true;  // AFTER the reset — this article's heal budget is spent
+  this._healHomeUsed = true;  // AFTER the reset — this article's Home budget is spent
+  this._termBuf.easyReadingHealInFlight = false;
   this._termBuf.pageLines = [];
   this._termBuf.easyReadingPendingReset = true;
   this._termBuf.prevPageState = 0;
   if (this._view) {
     this._view._accEndRow = null;
     this._view._lastAccumulatedSig = null;
+    if (this._view.mainDisplay) this._view.mainDisplay.scrollTop = 0;
   }
   this._send('\x1b[1~');  // KEY_HOME → mf_goTop
 };
@@ -505,8 +734,10 @@ EasyReading.prototype._healFromTop = function() {
 // against the fast path so a slow PTT response cannot trigger a double page-down (which
 // would skip a page). See docs/easy-reading.md.
 EasyReading.prototype._onScreenSettled = function() {
-  if (!this._enabled)
+  if (!this._enabled) {
+    this._maybeReenterOnNewArticle();
     return;
+  }
   // While mirroring native (functionMode), the only thing settle decides is whether to
   // leave functionMode — never a page-down. Handle it first (the pageState !== 3 guard
   // below would otherwise skip the editor/menu screens we need to evaluate).
@@ -514,6 +745,13 @@ EasyReading.prototype._onScreenSettled = function() {
     this._evalFunctionModeExit();
     return;
   }
+  // A gap seek (':N\r') is in flight: PTT is showing its 「跳至第幾行:」 prompt, which
+  // has no status row, so pageState may momentarily leave 3. The teardown below would
+  // read that as "the user left the article" and empty the accumulated page. The screen
+  // WILL come back to 3 — and if it doesn't, the transaction watchdog gives up and
+  // clears the flag, so this cannot wedge. See _healAtLine.
+  if (this._termBuf.easyReadingHealInFlight)
+    return;
   if (this._termBuf.pageState !== 3) {
     // Settled OFF the article. term_view.redraw deliberately KEEPS the accumulated page
     // while settledPageState is still 3 (a per-frame pageState dip mid-article must not
@@ -525,7 +763,7 @@ EasyReading.prototype._onScreenSettled = function() {
   }
   // P1 violated on the last accumulate → a page was lost; nothing else matters.
   if (this._termBuf.easyReadingGapDetected) {
-    this._healFromTop();
+    this._healGap();
     return;
   }
   // A response whose cursor park landed in a CURSOR-ONLY notify window never reached
@@ -536,7 +774,7 @@ EasyReading.prototype._onScreenSettled = function() {
   if (sig && this._view && this._view._lastAccumulatedSig !== sig) {
     this._forceRepaint();
     if (this._termBuf.easyReadingGapDetected) {
-      this._healFromTop();
+      this._healGap();
       return;
     }
     // _forceRepaint replays 'change'/'viewUpdate', so the fast path has already run
@@ -560,6 +798,37 @@ EasyReading.prototype._onScreenSettled = function() {
     this.sendCommandAfterUpdate = '';
     this._maybeSendPageDown(rowState.sendCommandAfterUpdate, /* fromSettle */ true);
   }
+};
+
+// Second auto-enable route, evaluated on every settle while easy reading is OFF: the
+// user switched to native inside a post and has since navigated to a DIFFERENT post
+// without passing a list ([ ] a b f = + -), which produces no settled 1|2 → 3 edge for
+// nextEasyReadingState to fire on. See nextEasyReadingReentry for why this is keyed on
+// article identity rather than on a pageState edge.
+EasyReading.prototype._maybeReenterOnNewArticle = function() {
+  const status = this._currentPageStatus();
+  const values = readValuesWithDefault();
+  const articleKey = status && status.rowIndexStart === 1 ? this._readArticleKey() : null;
+  const ok = nextEasyReadingReentry({
+    pageState: this._termBuf.pageState,
+    // P6: only a parked cursor means the whole response has arrived.
+    complete: this._termBuf.cur_y === this._termBuf.rows - 1 &&
+              this._termBuf.cur_x === this._termBuf.cols - 1,
+    enabled: this._enabled,
+    enablePref: values.enableEasyReading,
+    supported: this._core.connectedUrl.easyReadingSupported,
+    functionMode: this._functionMode,
+    statusStart: status ? status.rowIndexStart : null,
+    articleKey: articleKey,
+    nativeArticleKey: this._nativeArticleKey
+  });
+  if (!ok)
+    return;
+  this._core.debugRecorder?.log('easyReading.reenter', {
+    reason: 'newArticleInNative', articleKey: articleKey
+  });
+  // Already on line 1 — no rewind needed, enterEasyReading accumulates from here.
+  this.enterEasyReading();
 };
 
 // Replay one full repaint of the CURRENT screen.
@@ -655,7 +924,7 @@ EasyReading.prototype._onViewUpdated = function(e) {
   // page — handle that before anything else, it invalidates the whole transaction.
   if (this._enabled && !this._functionMode && this._termBuf.easyReadingGapDetected) {
     this.sendCommandAfterUpdate = '';
-    this._healFromTop();
+    this._healGap();
     return;
   }
   if (this.sendCommandAfterUpdate) {
@@ -682,9 +951,9 @@ EasyReading.prototype._onViewUpdated = function(e) {
 // See docs/easy-reading.md.
 EasyReading.prototype.leaveCurrentPost = function() {
   console.log('leave curent post');
-  if (!this.easyReadingReachedPageEnd) {
-    this.ignoreOneUpdate = true;
-  }
+  // Read BEFORE _resetPagingState (which clears both flags) and re-arm AFTER it —
+  // otherwise the reset silently eats the one-shot this function exists to set.
+  const wasAtEnd = this.easyReadingReachedPageEnd;
   this._termBuf.prevPageState = 0;
   // Sticky companion to the one-shot prevPageState=0 above: redraw overwrites
   // prevPageState every frame, so a stale old-article frame between here and the
@@ -697,6 +966,8 @@ EasyReading.prototype.leaveCurrentPost = function() {
   // never pass through a list ([ ] 同標題、a/b/f/=/+/-), which the settle article
   // boundary in _onPageStateSettled cannot see. See _resetPagingState.
   this._resetPagingState();
+  if (!wasAtEnd)
+    this.ignoreOneUpdate = true;
   this._functionMode = false;
   this._savedScrollTop = null;
 };
@@ -717,6 +988,51 @@ EasyReading.prototype._send = function(data) {
 // the bottom of the post. Auto-paging stops, so the native in-post search ('/')
 // and navigation become usable. Easy reading is re-enabled automatically by
 // _onPageStateSettled when the next post settles in from a list (settled 2 -> 3).
+// The other half of switchToNativeAtBottom: pressing the same configurable key again
+// while in native puts easy reading back on for THIS post. Called from
+// term_view.onKeyDown's native path (the easy-reading key gate below it requires
+// useEasyReadingMode, which is false here). Returns true when it handled the key.
+//
+// `$` / `G` deliberately do NOT toggle back: in native pmore they are real navigation
+// (mf_goBottom), and their meaning is "jump to the end", not "switch modes".
+EasyReading.prototype.tryReenterFromNative = function(e) {
+  const prefs = readValuesWithDefault();
+  if (!prefs.easyReadingEndSwitchNative || e.key !== prefs.easyReadingEndSwitchKey)
+    return false;
+  if (!prefs.enableEasyReading || !this._core.connectedUrl.easyReadingSupported)
+    return false;
+  // pageState can be stale on a prompt frame (term_buf.setPageState has no default
+  // branch), so require a real status row rather than trusting pageState alone.
+  const status = this._currentPageStatus();
+  if (!status)
+    return false;
+  this.reenterFromTop(status);
+  return true;
+};
+
+// Turn easy reading back on for the post we are sitting in, and rewind to line 1 so the
+// accumulated page holds the WHOLE post rather than starting from wherever native left
+// the cursor.
+//
+// Order matters: enterEasyReading() ends with a replayed notify() whose fast path would
+// otherwise issue a PageDown from the middle of the post — arming the rewind as the
+// outstanding transaction first is what keeps exactly one key in flight (P4).
+EasyReading.prototype.reenterFromTop = function(status) {
+  const sig = status.rowIndexStart + '~' + status.rowIndexEnd;
+  this.enterEasyReading();
+  // pfterm diffs the screen and parks the cursor with fterm_rawmove_opt, so a Home that
+  // changes nothing is answered with ZERO bytes — an unanswerable transaction. Only
+  // rewind when there is something to rewind.
+  if (status.rowIndexStart > 1) {
+    this._inFlightSig = sig;
+    this._inFlightKeys = '\x1b[1~';  // KEY_HOME → mf_goTop
+    this._inFlightSentAt = Date.now();
+    this._pageDownRetries = 0;
+    this._send(this._inFlightKeys);
+    this._armWatchdog();
+  }
+};
+
 EasyReading.prototype.switchToNativeAtBottom = function() {
   console.log('switch to native at bottom');
   // jump to the bottom of the post with native End
@@ -736,6 +1052,9 @@ EasyReading.prototype.enterEasyReading = function() {
   this._enabled = true;
   this._functionMode = false;
   this._savedScrollTop = null;
+  // Opening a post in easy reading retires whatever native excursion came before it.
+  this._articleKey = this._readArticleKey();
+  this._nativeArticleKey = null;
   // Force accumulatePageLines down its "new article" branch (restart pageLines as
   // the whole screen) instead of the same-article continuation branch, and start
   // page accumulation from empty.
@@ -777,7 +1096,37 @@ EasyReading.prototype.exitEasyReading = function() {
   // (the old vdom-desync freeze is gone now that nothing mutates #mainContainer
   // by hand).
   this._enabled = false;
+  // Remember which post we are leaving behind, so the settle re-entry route can tell a
+  // genuinely different post from a native Home back to this one's line 1.
+  this._nativeArticleKey = this._articleKey;
   this._core.switchToEasyReadingMode();
+  // --- everything below must run AFTER switchToEasyReadingMode: it transitively
+  // calls leaveCurrentPost(), which re-arms ignoreOneUpdate.
+  //
+  // startedEasyReading means "a post is open IN EASY READING". Its only clear site is
+  // _applyRowState, reachable only through _onChanged, which early-returns while
+  // disabled — so without this line it stays true forever and
+  // list_session._engageEligible() (which reads it) never lets the list easy reading
+  // engage again: the "半永久原生模式" report.
+  this.startedEasyReading = false;
+  // See _resetPagingState: a leftover ignoreOneUpdate halts the next article's only
+  // locally-replayed frame and there is no settle to fall back on.
+  this.ignoreOneUpdate = false;
+  // Local safety net for "F8 → 卡在最底部, PgUp 沒反應". switchToEasyReadingMode asks
+  // PTT for a full repaint with ^L, but that is a SERVER round trip and pfterm skips
+  // refreshes while the client still has keys queued (P4) — if a PageDown was still in
+  // flight when the user hit the key, the DOM keeps showing the multi-thousand-row
+  // accumulated page, scrolled to the bottom, until the input buffer drains. Collapse
+  // it to the native 24 rows right now, locally.
+  //
+  // MUST go through term_buf.notify() (_forceRepaint), never view.redraw() —
+  // updateCharAttr (the Big5 lead-byte pass) only runs inside notify. Also note the
+  // native redraw branch guards its scroll/overlay reset with `if (useEasyReadingMode)`,
+  // which is already false here, so nothing else resets the scroll position.
+  if (this._view && this._view.mainDisplay)
+    this._view.mainDisplay.scrollTop = 0;
+  this._termBuf.easyReadingGapDetected = false;
+  this._forceRepaint();
 };
 
 EasyReading.prototype._onKeyDown = function(e) {

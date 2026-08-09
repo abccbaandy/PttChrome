@@ -18,6 +18,20 @@ yarn test:e2e:headed   # 肉眼看登入過程
 yarn test:e2e:ui       # Playwright UI 模式
 ```
 
+> **踩過兩次的坑：「明明設了 `PTT_OTP_SECRET` 卻讀不到」＝行程環境是舊的快照，不是讀取邏輯壞掉。**
+> Windows 行程的環境變數在**啟動當下**就固定了，之後才新增的**使用者層**變數不會回填到已在跑的
+> shell／編輯器／agent。症狀正是「`PTT_USER`／`PTT_PASS` 讀得到（設得早），`PTT_OTP_SECRET` 讀不到
+> （設得晚）」，整包 live 便全數停在 `需要兩階段驗證，但沒有可用的 PTT_OTP_SECRET`。
+>
+> 先分辨是哪一種（只印長度，不印值）：
+> ```powershell
+> 'Process','User','Machine' | % { "$_=" + [Environment]::GetEnvironmentVariable('PTT_OTP_SECRET',$_).Length }
+> ```
+> `Process=0` 但 `User>0` 就是這個坑。不必重開終端機，當場注入即可：
+> ```powershell
+> $env:PTT_OTP_SECRET = [Environment]::GetEnvironmentVariable('PTT_OTP_SECRET','User'); yarn test:e2e
+> ```
+
 **2FA 帳號**：`helpers/ptt.js#login` 會用 `PTT_OTP_SECRET` 以 `src/js/totp.js` 即時算出 6 位驗證碼
 （最多送 2 次，重試前先等過 30 秒窗——同一窗重算是同一組碼）。沒設會直接報錯說明要設什麼，
 不會空轉到逾時。`enhance.spec.js` 的自動登入案例也會把密鑰注入 prefs；**沒給密鑰時 app 端會
