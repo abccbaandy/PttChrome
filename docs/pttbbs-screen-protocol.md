@@ -274,4 +274,4 @@ goto 自癒與有界升級、補畫走 notify）、
 `replay_fixture.test.jsx`（實錄素材的 P1/P2 不變量）、
 `tests/e2e/offline/easy-reading.offline.spec.js`（`dropSteps` 模擬 P4 吞頁 → `answerGoto` 驗
 精準自癒且不重建累積頁；`splitFrames` 模擬 P6 半畫幀 → 內容完整、每頁只送一次 PageDown；
-`ezsoft-longpost.json` 30 頁長文連續累積）。
+`ezsoft-longpost.json` 150 頁長文連續累積＋每頁成本不隨長度成長的曲線斷言）。

@@ -211,6 +211,28 @@ test.describe.serial('好讀模式', () => {
           console.log(`attempt ${attempt}: previewable links = ${links.length}`, JSON.stringify(links.slice(0, 3)));
           if (links.length > 0) {
             // 有可預覽連結 → 行內預覽節點必須出現（壞掉就會 timeout → 測試紅）。
+            //
+            // 自動開圖是**延遲載入**的（LazyInlinePreview：捲到附近才解析網址並掛
+            // <ImagePreviewer>，捲遠了再卸掉釋放已解碼的點陣圖 —— 超長文 287 張圖
+            // 全部立即載入且永不釋放正是「記憶體吃滿」的來源）。所以不能累積完就等
+            // 選擇器，要先由上往下掃到第一個真的把媒體掛出來的位置。
+            const seek = await page.evaluate(async (sel) => {
+              const scroller = document.querySelector('.main');
+              if (!scroller) return { found: 0 };
+              const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+              const count = () => document.querySelectorAll(sel).length;
+              const step = Math.max(200, scroller.clientHeight * 0.8);
+              for (let y = 0; y <= scroller.scrollHeight; y += step) {
+                scroller.scrollTop = y;
+                await sleep(250);
+                if (count() > 0) {
+                  await sleep(600); // 讓同一批的其他張也掛上／載入
+                  return { found: count(), scrollTop: scroller.scrollTop };
+                }
+              }
+              return { found: count(), scrollTop: scroller.scrollTop };
+            }, PREVIEW_SEL);
+            console.log('LAZY SEEK:', JSON.stringify(seek));
             await page.waitForSelector(PREVIEW_SEL, { timeout: 10000 });
             const previews = await page.evaluate((sel) => document.querySelectorAll(sel).length, PREVIEW_SEL);
             console.log('PREVIEW NODES:', previews);

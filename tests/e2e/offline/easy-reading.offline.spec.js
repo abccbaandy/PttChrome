@@ -14,6 +14,7 @@ const {
   replayCassette,
   feedRaw,
   offlineServedUrls,
+  seekInlineMedia,
 } = require('../helpers/replay');
 
 // 推文列（textContent，可能含好读 floor badge：marker 后紧跟楼号数字）。
@@ -120,7 +121,12 @@ test.describe('好读模式翻页（离线重放）', () => {
       );
       test.skip(!links.some((h) => re.test(h)), '此 cassette 文章无可预览连结（内容相依）');
 
-      await page.waitForSelector(PREVIEW_SEL, { timeout: 10000 });
+      // 自动开图是**延迟载入**的（LazyInlinePreview：卷到附近才解析网址并挂上
+      // <ImagePreviewer>，卷远了再卸掉释放已解码的点阵图）——超长文 287 张图全部
+      // 立即载入且永不释放正是「记忆体吃满」的来源。所以这里不能 replay 完就等
+      // 选择器，得先由上往下扫到第一个真的把图挂出来的位置。
+      const seek = await seekInlineMedia(page, { selector: PREVIEW_SEL });
+      console.log(`[offline/lazy] ${cassette.__file}: ${JSON.stringify(seek)}`);
       const previews = await page.evaluate((sel) => document.querySelectorAll(sel).length, PREVIEW_SEL);
       expect(previews).toBeGreaterThan(0);
 
@@ -239,11 +245,22 @@ test.describe('好读模式翻页（离线重放）', () => {
             (im) => im.offsetWidth > 0 && im.offsetHeight > 0
           );
 
-        // 先卷到底逼所有行内图开始载入，等稳定后回顶。
-        scroller.scrollTop = scroller.scrollHeight;
+        // 自动开图改成**延迟载入**（LazyInlinePreview：卷到附近才挂、卷远了卸掉
+        // 释放记忆体），所以不能再「卷到底 → 回顶」就期待整篇的图都还挂着。改成由
+        // 上往下扫，停在第一个真的把图挂出来的位置，后面的点击/锚定都在那里做。
+        const seekImgs = async () => {
+          scroller.scrollTop = 0;
+          await sleep(300);
+          if (loadedImgs().length) return;
+          const step = Math.max(200, scroller.clientHeight * 0.8);
+          for (let y = 0; y <= scroller.scrollHeight; y += step) {
+            scroller.scrollTop = y;
+            await sleep(250);
+            if (loadedImgs().length) return;
+          }
+        };
+        await seekImgs();
         await settle();
-        scroller.scrollTop = 0;
-        await sleep(300);
 
         // 这三个条件以前是 test.skip 的防御——那是外部图床时代的产物（图载不到就
         // 跳过，免得网路噪音假红）。图改由本地 fixture 供应后必定载得到，所以「有
@@ -633,6 +650,103 @@ test.describe('长文连续累积（离线重放）', () => {
         if (a.trim() !== '') expect(b).not.toBe(a);
       }
       expect(errors).toEqual([]);
+
+      // 每页成本不得随累积长度成长（O(新增列)，不是 O(文章)）。
+      //
+      // 重放的门控就在 er._send，所以相邻两次 PageDown 的间隔 ≈「收到一页 → 重绘
+      // 整份累积页 → 送下一个 PageDown」。旧 code 每帧对全部 n 列重跑
+      // rowToText/annotateComment/detectRowExtras 并重建 n 个 <Row> ⇒ 这条曲线单调
+      // 上扬（实录 ptt-debug-20260809：55ms → 1196ms；越过 PAGE_DOWN_GRACE_MS 之后
+      // 就变成误判掉包 → 补送 → P4 吞页 → 自癒重读）。修法是 Screen 的增量标注 +
+      // 元素快取（src/js/screen_annotate_cache.js）。
+      //
+      // 门槛刻意放宽（倍数 + 绝对值下限）：30 页只累积到 ~660 列，绝对差本来就小，
+      // CI 上的单点抖动可能比讯号还大。守的是**趋势**，不是精准耗时。
+      const pd = state.sends.filter((s) => s.data.indexOf('\x1b[6~') >= 0 && s.t != null);
+      const gaps = [];
+      for (let i = 1; i < pd.length; i++) gaps.push(pd[i].t - pd[i - 1].t);
+      if (gaps.length >= 12) {
+        const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+        const head = avg(gaps.slice(0, 5));
+        const tail = avg(gaps.slice(-5));
+        console.log(
+          `[longpost/perf] ${cassette.__file}: pages=${pd.length} head=${head.toFixed(1)}ms tail=${tail.toFixed(1)}ms`
+        );
+        // 实测（同一台机器、150 页素材）：修好后 head 37.0 / tail 43.5（比值 1.18）；
+        // 把 Screen 的增量快取关掉则是 head 49.5 / tail 223.6（比值 4.5）。门槛取
+        // 中间，两边都有 2 倍以上余裕。
+        expect(tail).toBeLessThan(head * 2 + 40);
+      }
+    });
+
+    // 自动开图的延迟载入 / 远离卸载（LazyInlinePreview + lazy_media.js）。
+    //
+    // 使用者回报的那篇（本素材同一篇）含 287 个图片连结，旧行为是文章一累积到就
+    // 全部解析＋下载＋解码、到离开文章前永不释放 —— 已解码的点阵图是「记忆体吃满」
+    // 的最大宗。纯逻辑与掛/卸决策在 tests/unit/lazy_inline_preview.test.jsx；这里守
+    // 真浏览器里「IntersectionObserver 真的看得到 .main 的裁切」这一条 —— .main 有
+    // transform scale 且是捲动容器，jsdom 验不到。
+    test(`自动开图延迟载入：没卷到不载、卷远了卸掉 [${cassette.__file}]`, async ({ page }) => {
+      test.setTimeout(120000);
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, { enableEasyReading: true });
+      await replayCassette(page, cassette, { easyReading: true });
+
+      const r = await page.evaluate(async () => {
+        const MEDIA =
+          '#mainContainer img.hyperLinkPreview, #mainContainer video.easyReadingVideo, #mainContainer iframe';
+        const scroller = document.querySelector('.main');
+        if (!scroller) return { error: 'no scroller' };
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const slots = document.querySelectorAll('.inlinePreviewSlot').length;
+
+        scroller.scrollTop = 0;
+        await sleep(600);
+        const mountedAtTop = document.querySelectorAll(MEDIA).length;
+
+        // 由下往上找一个「卷到才挂得出媒体」的位置。
+        const step = Math.max(200, scroller.clientHeight * 0.8);
+        let target = null;
+        let mountedDeep = 0;
+        for (let y = scroller.scrollHeight; y > step * 3; y -= step) {
+          scroller.scrollTop = y;
+          await sleep(200);
+          const m = document.querySelectorAll(MEDIA);
+          if (m.length) {
+            mountedDeep = m.length;
+            target = m[0].closest('.inlinePreviewSlot');
+            break;
+          }
+        }
+        if (!target) return { error: 'no deep media', slots, mountedAtTop };
+        await sleep(600);
+        const heightWhenMounted = target.offsetHeight;
+
+        // 卷回顶端 → 目标已远离视野，应被卸掉释放记忆体，但佔位高度留着。
+        scroller.scrollTop = 0;
+        await sleep(1500);
+        return {
+          slots,
+          mountedAtTop,
+          mountedDeep,
+          heightWhenMounted,
+          connected: target.isConnected,
+          stillMounted: target.querySelectorAll('img, video, iframe').length,
+          slotMinHeight: parseFloat(target.style.minHeight) || 0,
+        };
+      });
+
+      console.log(`[lazy] ${cassette.__file}: ${JSON.stringify(r)}`);
+      expect(r.error).toBeUndefined();
+      expect(r.slots).toBeGreaterThan(20); // 素材真的有一堆连结可延迟
+      expect(r.mountedDeep).toBeGreaterThan(0); // 卷到就挂得出来
+      // 没卷到的连结完全不解析／不下载（旧行为：全部立刻载入 ⇒ 这里会 ≈ slots）。
+      expect(r.mountedAtTop).toBeLessThan(r.slots / 3);
+      // 卷远了卸掉，且佔位高度保留 → 阅读位置不会因为内容塌陷而位移。
+      expect(r.connected).toBe(true);
+      expect(r.stillMounted).toBe(0);
+      expect(r.heightWhenMounted).toBeGreaterThan(0);
+      expect(r.slotMinHeight).toBe(r.heightWhenMounted);
     });
   }
 });

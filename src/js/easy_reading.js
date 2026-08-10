@@ -5,6 +5,7 @@ import {
   parseStatusRow
 } from './string_util';
 import { readValuesWithDefault } from './pref_storage';
+import { TRACE } from './util';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
 // (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
@@ -374,7 +375,8 @@ EasyReading.prototype._onPageStateSettled = function() {
 };
 
 EasyReading.prototype._onChanged = function(e) {
-  console.log("page state: " + this._termBuf.prevPageState + "->" + this._termBuf.pageState);
+  if (TRACE)
+    console.log("page state: " + this._termBuf.prevPageState + "->" + this._termBuf.pageState);
   const values = readValuesWithDefault()
   // Auto-enable is handled on the settle edge (_onPageStateSettled, see
   // nextEasyReadingState). Here we only react to the pref being turned off
@@ -919,7 +921,7 @@ EasyReading.prototype._evalFunctionModeExit = function() {
 };
 
 EasyReading.prototype._onViewUpdated = function(e) {
-  console.log('view update');
+  if (TRACE) console.log('view update');
   // accumulatePageLines (which just ran inside view.update()) may have found a lost
   // page — handle that before anything else, it invalidates the whole transaction.
   if (this._enabled && !this._functionMode && this._termBuf.easyReadingGapDetected) {
@@ -936,7 +938,10 @@ EasyReading.prototype._onViewUpdated = function(e) {
       // it), so a second complete-looking frame on the same page fired a duplicate
       // PageDown → pttbbs typeahead skip → that page's text lost. See
       // nextPageDownDecision.
-      console.log("send:" + keys + " -> " + this._maybeSendPageDown(keys, false));
+      // 送鍵絕不可以寫在 log 的字串運算式裡：一旦哪天把 log 包進條件式就會連送鍵
+      // 一起關掉，而那正是好讀唯一的翻頁動力。
+      const action = this._maybeSendPageDown(keys, false);
+      if (TRACE) console.log("send:" + keys + " -> " + action);
     }
   }
 };

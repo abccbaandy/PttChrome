@@ -268,6 +268,11 @@ const FallbackImage = React.memo(function FallbackImage({
         key={`${index}-${attempt}`}
         {...rest}
         {...(needsReferer(src) ? {} : { referrerPolicy: "no-referrer" })}
+        // 解碼丟去別的執行緒：好讀長文一次可能有幾十張圖同時到齊，同步解碼會把
+        // 主執行緒卡住，而自動翻頁的下一個 PageDown 正是在 render 之後才送出。
+        // （刻意**不加** loading="lazy"：未載入完成時這個 <img> 是 display:none，
+        //  瀏覽器對 display:none 的元素不會觸發 lazy；延遲由 LazyInlinePreview 做。）
+        decoding="async"
         src={src}
         onLoad={handleLoad}
         onError={handleError}

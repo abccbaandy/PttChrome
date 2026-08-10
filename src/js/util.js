@@ -1,3 +1,11 @@
+// 每幀（~30ms 一次）都會跑到的追蹤日誌開關。好讀長文一篇會產生上千筆
+// 「page state: 3->3」/「view update」，字串組裝本身不貴，但開著 DevTools 時全部
+// 留在記憶體，而長文的記憶體正是使用者回報的症狀之一。
+// 用 `if (TRACE)` 包在**呼叫端**（而不是 no-op 函式）才能讓 bundler 在 prod
+// 把整段 dead-code 消掉；dev（vite serve，含 Playwright 起的 e2e）照樣印，
+// 失敗時的 console dump 不受影響。
+export const TRACE = !!process.env.DEVELOPER_MODE;
+
 export function setTimer(repeat, func, timelimit) {
   if(repeat) {
 	  return {

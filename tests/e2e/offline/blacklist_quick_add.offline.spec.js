@@ -13,16 +13,48 @@ const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 // 找第一个带指定 data-* 的已渲染列，回传其属性值与「终端 col」对应的 client 座标
 // （x = 列左缘 + (col+0.5)*chw；clientToPos 反推回同一 col）。列先 scrollIntoView，
 // 好读长页折叠下方的列也可点。
+// 捲到目標列並回傳點擊座標。
+//
+// **量測必須等版面靜下來**：好讀的自動開圖是延遲載入的（LazyInlinePreview），
+// scrollIntoView 之後附近的圖才開始掛上，內容高度會再長一輪 —— 捲完立刻讀
+// getBoundingClientRect 會拿到過期座標，右鍵就點在別列上（選單裡沒有
+// 「加入黑名單」）。故捲動與量測分兩次 evaluate，中間等高度連續兩輪不變。
 async function targetAt(page, attr, col) {
-  return page.evaluate(
-    ({ attr, col }) => {
-      const app = window.__app;
+  const found = await page.evaluate(
+    async ({ attr }) => {
       const rows = Array.from(
         document.querySelectorAll('#mainContainer span[type="bbsrow"]')
       );
       const el = rows.find((r) => r.getAttribute(attr));
       if (!el) return null;
+      el.setAttribute('data-e2e-target', '1');
       el.scrollIntoView({ block: 'center' });
+      const scroller = document.querySelector('.main');
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      let prev = -1;
+      let stable = 0;
+      for (let i = 0; i < 20 && stable < 2; ++i) {
+        await sleep(200);
+        const h = scroller ? scroller.scrollHeight : 0;
+        if (h === prev) ++stable;
+        else {
+          stable = 0;
+          prev = h;
+        }
+      }
+      // 高度長完之後目標可能已被推離視窗中央，再捲一次並讓 layout 落定。
+      el.scrollIntoView({ block: 'center' });
+      await sleep(300);
+      return true;
+    },
+    { attr }
+  );
+  if (!found) return null;
+  return page.evaluate(
+    ({ attr, col }) => {
+      const app = window.__app;
+      const el = document.querySelector('[data-e2e-target]');
+      if (!el) return null;
       const rect = el.getBoundingClientRect();
       return {
         value: el.getAttribute(attr),

@@ -7,7 +7,12 @@ const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { findCassettes, bootOffline, replayCassette } = require('../helpers/replay');
+const {
+  findCassettes,
+  bootOffline,
+  replayCassette,
+  mountLazyPreviewsAt,
+} = require('../helpers/replay');
 
 const articles = findCassettes('article');
 
@@ -227,12 +232,21 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
     await replayCassette(page, cassette, { easyReading: true });
 
-    const groups = await page.evaluate(() => {
-      const PREVIEW = '.previewLoading, .previewError, .easyReadingImg, .easyReadingVideo';
+    // 自動開圖是延遲載入的（LazyInlinePreview）：先把該合併塊捲進視野等預覽掛上，
+    // 否則量到的永遠是空的佔位盒。標記出目標塊供 helper 用 selector 指到它。
+    await page.evaluate(() => {
       const el = Array.from(document.querySelectorAll('.mergedCommentBlock')).find((b) => {
         const row = b.querySelector('span[type="bbsrow"]');
         return row && row.getAttribute('data-pusher') === 'rz2x';
       });
+      if (el) el.setAttribute('data-e2e-target', '1');
+    });
+    const mounted = await mountLazyPreviewsAt(page, '[data-e2e-target]');
+    console.log(`[merge/lazy] previews mounted in rz2x block: ${mounted}`);
+
+    const groups = await page.evaluate(() => {
+      const PREVIEW = '.previewLoading, .previewError, .easyReadingImg, .easyReadingVideo';
+      const el = document.querySelector('[data-e2e-target]');
       if (!el) return null;
       // 攤平成 DOM 順序的事件流：每遇到一個 bbsline 開一個新群組，預覽記到當前群組。
       const out = [];

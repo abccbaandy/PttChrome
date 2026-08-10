@@ -231,7 +231,14 @@ async function replayCassette(page, cassette, opts = {}) {
         // 记下这一次送键是**从哪一页**送出的（状态列 "第 S~E 行" 签章）。翻页是
         // request/response 交易，同一个签章被送两次 = 重复 PageDown（P4 会让中间
         // 那页永远画不出来），所以断言要按签章分组，不能只数总数。
-        window.__replay.sends.push({ data, sig: er._currentPageSignature() });
+        // t：送键的 wall clock。重放的门控就在这里（送键 → 喂下一页），所以相邻两次
+        // 送键的间隔 ≈「收到一页 → 重绘整份累积页 → 送下一个 PageDown」的成本，正是
+        // 使用者回报「越读越慢」量到的那条曲线（实录 55ms → 1196ms）。
+        window.__replay.sends.push({
+          data,
+          sig: er._currentPageSignature(),
+          t: performance.now(),
+        });
         origSend(data); // 进 stub WS，无副作用
         // 掉页自癒送的 Home（pmore KEY_HOME → mf_goTop）：回到文章第一页，从头再翻。
         if (answerHome && data.indexOf('\x1b[1~') >= 0) {
@@ -516,7 +523,73 @@ async function bootOffline(page, ptt) {
   await waitConnected(page);
 }
 
+// 好讀的自動開圖是**延遲載入**的（src/components/LazyInlinePreview.jsx：捲到附近
+// 才解析網址並掛上 <ImagePreviewer>，捲遠了再卸掉釋放已解碼的點陣圖）。所以
+// 「replay 完就去 querySelector('img')」永遠只會量到空的佔位盒 —— 要驗預覽，一律
+// 先用這兩個 helper 把目標捲進視野並等它掛好。
+//
+// 這不是為了配合測試而放寬斷言：延遲載入本來就是使用者可見的行為（超長文 287 張圖
+// 全部立即載入且永不釋放＝記憶體吃滿），這裡驗的正是它。
+
+// 把 selector 指到的元素捲到視窗中央，等到它裡面出現預覽（或逾時）。
+// 回傳實際掛出來的預覽數。
+const PREVIEW_SEL =
+  '.previewLoading, .previewError, .easyReadingImg, .easyReadingVideo, img.hyperLinkPreview, video.easyReadingVideo, iframe';
+
+async function mountLazyPreviewsAt(page, selector, { timeout = 10000 } = {}) {
+  return page.evaluate(
+    async ({ selector, timeout, PREVIEW_SEL }) => {
+      const el = document.querySelector(selector);
+      if (!el) return -1;
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const deadline = Date.now() + timeout;
+      let n = 0;
+      let stable = 0;
+      // 每一輪都重新置中：先掛上的那幾張圖載入後會長高，把同一塊的其餘列推出
+      // 「接近視野」的範圍 —— 只捲一次會停在「只掛出第一張」的狀態。
+      while (Date.now() < deadline && stable < 3) {
+        el.scrollIntoView({ block: 'center' });
+        await sleep(250);
+        const cur = el.querySelectorAll(PREVIEW_SEL).length;
+        if (cur === n && n > 0) ++stable;
+        else stable = 0;
+        n = cur;
+      }
+      await sleep(300);
+      return n;
+    },
+    { selector, timeout, PREVIEW_SEL }
+  );
+}
+
+// 由上往下掃整份累積頁，停在第一個真的把行內媒體掛出來的捲動位置。
+// 給「這篇文章到底有沒有自動開圖」這類不指定位置的斷言用。
+async function seekInlineMedia(page, { selector, timeout = 20000 } = {}) {
+  return page.evaluate(
+    async ({ selector, timeout }) => {
+      const scroller = document.querySelector('.main');
+      if (!scroller) return { found: 0, scrollTop: 0 };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const count = () => document.querySelectorAll(selector).length;
+      const step = Math.max(200, scroller.clientHeight * 0.8);
+      const deadline = Date.now() + timeout;
+      for (let y = 0; y <= scroller.scrollHeight && Date.now() < deadline; y += step) {
+        scroller.scrollTop = y;
+        await sleep(250);
+        if (count() > 0) {
+          await sleep(400); // 讓同一批的其他張也掛上
+          return { found: count(), scrollTop: scroller.scrollTop };
+        }
+      }
+      return { found: count(), scrollTop: scroller.scrollTop };
+    },
+    { selector, timeout }
+  );
+}
+
 module.exports = {
+  mountLazyPreviewsAt,
+  seekInlineMedia,
   CASSETTE_DIR,
   FIXTURE_DIR,
   installOfflineNetwork,

@@ -605,6 +605,14 @@ span {
   to { transform: rotate(360deg); }
 }
 
+/* 自動開圖的延遲載入佔位盒（src/components/LazyInlinePreview.jsx）。
+   還沒捲到（或已捲遠被卸載）時裡面是空的：高度必須是 0，否則長文幾百個空盒會憑空
+   撐出好幾個螢幕的空白。卸載時把量到的高度寫進 inline style 的 min-height，
+   閱讀位置才不會因為內容塌陷而位移。 */
+.inlinePreviewSlot {
+  display: block;
+}
+
 /* 自動開圖「讀取中」指示器：解析中 + 媒體下載中共用。
    <img>/<video> 無法回報真實進度，故用不定式（indeterminate）滑動色塊。 */
 .previewLoading {

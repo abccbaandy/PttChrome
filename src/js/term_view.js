@@ -4,7 +4,7 @@ import { TermKeyboard } from './term_keyboard';
 import { termInvColors } from './term_buf';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
-import { setTimer } from './util';
+import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
 import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
@@ -12,6 +12,15 @@ import { labelListCursorBullet, pruneListToSegment } from './list_window';
 import icon128 from '../icon/icon_128.png';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
+
+// enhance 旗標，只給「好讀累積長頁」（buf.pageLines）那兩個 render 分支用。
+// 意思是：這批列是 cloneRow 出來的**快照**，append 之後永遠不會再被寫入，所以
+// 「列物件參考相同 ⇒ 內容相同」成立 → Screen 可以拿它做增量標註／元素快取
+// （見 src/js/screen_annotate_cache.js）。
+// 原生 24 列畫面與列表視窗**不可以**帶這個旗標：那裡的列是 term_buf 就地改寫的
+// 活 buffer，參考一路不變但內容每幀都在變，套快取會一直畫出上一幀的內容。
+// 凍結成模組常數（而不是每次 new 一個 literal）純粹是省一次配置。
+const STABLE_ROWS = Object.freeze({ stableRows: true });
 
 // Snapshot-clone a screen row (TermChar[]) for retention in buf.pageLines. The live
 // 24-row buffer is overwritten as PTT repaints, so accumulated rows must be copied.
@@ -493,7 +502,7 @@ TermView.prototype = {
         // appendRows(showsLinkPreview=true) behaviour. Hover preview off (inline
         // already shows them; avoids a duplicate floating popup).
         this.accumulatePageLines();
-        this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false);
+        this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, STABLE_ROWS);
       } else if (
         this.useEasyReadingMode &&
         this.buf.settledPageState === 3 &&
@@ -510,7 +519,7 @@ TermView.prototype = {
         // has been quiet on a non-article page for SETTLE_MS), so while it says 3 we
         // just keep showing the accumulated page and accumulate nothing. Teardown for a
         // real exit moved to EasyReading._teardownAccumulationOffArticle (settle-driven).
-        this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false);
+        this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, STABLE_ROWS);
       } else {
         // Native screen, OR easy reading sitting on a list/menu (pageState != 3):
         // one fixed screen. Hide the easy-reading overlay rows first when on.
@@ -594,7 +603,8 @@ TermView.prototype = {
   },
 
   setHighlightedRow: function(row) {
-    console.log(`setHighlightedRow: ${row}, this.buf.highlightCursor:${ this.buf.highlightCursor}`);
+    if (TRACE)
+      console.log(`setHighlightedRow: ${row}, this.buf.highlightCursor:${ this.buf.highlightCursor}`);
     if (this.buf.highlightCursor) {
       this.componentScreen.setCurrentHighlighted(row)
     }

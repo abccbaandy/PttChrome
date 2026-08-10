@@ -49,6 +49,12 @@ import {
   buildMergedCommentChars,
 } from "../js/comment_merge";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
+import {
+  annotationsKey,
+  sameKey,
+  isAppendOnly,
+  mergeRunKey,
+} from "../js/screen_annotate_cache";
 import MergeImageCaptionButton from "./MergeImageCaptionButton";
 import MergeImageCaptionAiButton from "./MergeImageCaptionAiButton";
 
@@ -156,6 +162,11 @@ function detectRowExtras(chars, text, ann, opts) {
 // is fixed-size, so a blacklisted row is hidden (visibility:hidden) rather than
 // removed — removing it would desync the terminal grid. Floor numbers here count
 // only within the visible page (cross-page numbering needs easy reading; see plan).
+//
+// `reuse`（可為 null）＝ 上一幀留下的可重用狀態，只有在「這一幀是上一幀的純
+// append 且所有全域輸入未變」時由呼叫端交進來（見 screen_annotate_cache.js）。
+// 有它時逐列偵測只跑新增的列，把好讀長文的每頁成本從 O(文章) 壓回 O(新增列)。
+// 回傳 { annotations, cache }：cache 要原封不動存回去給下一幀當 reuse。
 function computeAnnotations(
   lines,
   enhance,
@@ -164,9 +175,10 @@ function computeAnnotations(
   aiKeep,
   aiLink,
   aiFix,
+  reuse,
 ) {
   const result = new Array(lines.length);
-  if (!enhance) return result;
+  if (!enhance) return { annotations: result, cache: null };
   const {
     blacklist,
     titleBlacklist,
@@ -187,6 +199,25 @@ function computeAnnotations(
   const hasBlacklist = blacklist && blacklist.size > 0;
   const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
   if (pageState === PAGE_READING) {
+    // ---- 增量重算的起點（見 screen_annotate_cache.js 檔頭）----
+    // reuse 非 null ⇒ 這一幀只是把新的一頁接在後面：前綴的 texts / base 標註 /
+    // 樓層計數器 / AI 候選清單全部沿用，下面所有逐列工作只跑 [from, n)。
+    const n = lines.length;
+    let from = reuse ? reuse.texts.length : 0;
+    const texts = new Array(n);
+    for (let row = 0; row < from; ++row) texts[row] = reuse.texts[row];
+    for (let row = from; row < n; ++row) texts[row] = rowToText(lines[row]);
+    // Steamgifts giveaway 代碼連結的文章層 gate（整篇提到 steamgifts 才啟用，
+    // 見 steamgifts_parse.js）。偵測本體抽在 detectRowExtras（合併塊共用）。
+    // 它是**逐列偵測的輸入**：一旦某一頁首次把它翻成 true，前面每一列的偵測條件
+    // 都變了 ⇒ 這一幀退回全量重算（一篇文章最多發生一次）。
+    let hasSteamgifts = reuse ? reuse.hasSteamgifts : false;
+    if (!hasSteamgifts)
+      hasSteamgifts = articleHasSteamgifts(from ? texts.slice(from) : texts);
+    if (reuse && hasSteamgifts && !reuse.hasSteamgifts) {
+      reuse = null;
+      from = 0;
+    }
     // Floor numbers are shown only in easy reading, where the FloorCounter walks
     // the whole accumulated article (accurate). The native per-page counter resets
     // every page-down → inaccurate, so no floorCounter is passed there and
@@ -195,7 +226,13 @@ function computeAnnotations(
     const ctx = {
       blacklist,
       showFloorNumbers,
-      floorCounter: easyReading ? new FloorCounter() : undefined,
+      // 增量時沿用**同一個**計數器實例：它只會往前推進，只餵新列即與全量重算等價
+      // （樓層編號依賴前面所有列，重新 new 一個會從 1 重數）。
+      floorCounter: easyReading
+        ? reuse
+          ? reuse.floorCounter
+          : new FloorCounter()
+        : undefined,
       highlightAuthor,
       articleAuthor,
       selectedPusher,
@@ -203,10 +240,6 @@ function computeAnnotations(
     // 圖文合併（好讀限定）：先重建整篇純文字做跨行分組（per-row 的 annotateComment
     // 看不到鄰列）。無論開關與否都要算——關閉時浮動按鈕的顯示條件也需要塊數。
     // 塊數取兩方向（上圖下文/上文下圖）的 max，讓純「上文下圖」文章也出得了按鈕。
-    const texts = new Array(lines.length);
-    for (let row = 0; row < lines.length; ++row) {
-      texts[row] = rowToText(lines[row]);
-    }
     let captionBlocks;
     if (easyReading) {
       const imageFirstBlocks = groupImageCaptionBlocks(texts, "imageFirst");
@@ -236,15 +269,13 @@ function computeAnnotations(
         }
       }
     }
-    // Steamgifts giveaway 代碼連結的文章層 gate（整篇提到 steamgifts 才啟用，
-    // 見 steamgifts_parse.js）。偵測本體抽在 detectRowExtras（合併塊共用）。
     const detectOpts = {
       autoFixUrl,
       bareDomainLink,
       enableXMention,
       easyReading,
       onAidClick,
-      hasSteamgifts: articleHasSteamgifts(texts),
+      hasSteamgifts,
     };
     // 裸網域 AI 複核：全頁的灰色候選收成一份清單（含推文合併塊重跑出來的），
     // effect 依內容簽章決定要不要推論。收集用的是**套用判決之前**的候選，簽章
@@ -255,26 +286,37 @@ function computeAnnotations(
     // AI 開關與否都要套——AI 關 ⇒ aiFix 恆為空 ⇒ gray 全部不修，正是預設行為。
     // 注意 detectRowExtras 內 bareDomains 的重疊過濾用的是**未過濾**的 fixedUrls，
     // 不然 AI 撤掉一筆修復會讓原本被壓住的裸網域連結冒出來。
-    const domainCands = [];
-    const fixCands = [];
-    const withUrlAi = (extras) => {
+    //
+    // 候選收集分成兩段陣列，順序必須與全量重算完全一致（簽章是 join 出來的）：
+    // 先是逐列（依列序），再是合併推文塊（依 run 序）。故逐列的收在
+    // baseDomainCands/baseFixCands（可跨幀沿用），合併塊的每幀從 run 快取重播。
+    const baseDomainCands = reuse ? reuse.domainCands.slice() : [];
+    const baseFixCands = reuse ? reuse.fixCands.slice() : [];
+    const withUrlAi = (extras, dCands, fCands) => {
       let out = extras;
       if (extras.bareDomains) {
-        for (const d of extras.bareDomains) if (d.gray) domainCands.push(d);
+        for (const d of extras.bareDomains) if (d.gray) dCands.push(d);
         out = { ...out, bareDomains: applyAiLink(extras.bareDomains, aiLink) };
       }
       if (extras.fixedUrls) {
-        for (const f of extras.fixedUrls) if (f.gray) fixCands.push(f);
+        for (const f of extras.fixedUrls) if (f.gray) fCands.push(f);
         const kept = applyAiFix(extras.fixedUrls, aiFix);
         out = { ...out, fixedUrls: kept.length ? kept : undefined };
       }
       return out;
     };
-    for (let row = 0; row < lines.length; ++row) {
+    // base[row] ＝「合流裝飾之前」的逐列標註。分成 base / result 兩層是為了物件
+    // **參考穩定**：沒有被圖文合併或推文合併裝飾到的列，result[row] 就是上一幀那
+    // 同一個物件 ⇒ 下面的 <Row> 元素快取才有得重用（React 才會 bailout）。
+    const base = new Array(n);
+    for (let row = 0; row < from; ++row) base[row] = reuse.base[row];
+    for (let row = from; row < n; ++row) {
       const text = texts[row];
       const ann = annotateComment(text, ctx) || undefined;
       const { fixedUrls, mentions, aids, giveaways, bareDomains } = withUrlAi(
         detectRowExtras(lines[row], text, ann, detectOpts),
+        baseDomainCands,
+        baseFixCands,
       );
       let r = ann;
       if (fixedUrls) r = { ...(r || {}), fixedUrls };
@@ -282,18 +324,35 @@ function computeAnnotations(
       if (aids) r = { ...(r || {}), aids };
       if (giveaways) r = { ...(r || {}), giveaways };
       if (bareDomains) r = { ...(r || {}), bareDomains };
-      result[row] = r;
+      base[row] = r;
     }
+    for (let row = 0; row < n; ++row) result[row] = base[row];
+    const domainCands = baseDomainCands.slice();
+    const fixCands = baseFixCands.slice();
     // 開啟合併時把分組結果寫進 annotation：圖行掛 mergeBlock（render 成兩欄
     // wrapper），說明行掛 mergedInto（頂層 render null，改巢狀進右欄）。
     // captionMaxCols＝全部說明段最寬行的顯示欄數，右欄寬度據此動態決定（不換行）。
+    // 塊本身每幀重算（groupImageCaptionBlocks 遇第一則推文即 break，成本只有前言
+    // 段），但**裝飾出來的 annotation 物件要能跨幀重用**，否則前言段每一列的 <Row>
+    // 每幀都得重建。身分＝塊座標 ＋ 該列的 base 參考，兩者都沒變就沿用舊物件。
+    const captionCache = new Map();
     if (captionBlocks && mergeCaption) {
       result.captionMaxCols = maxCaptionCols(texts, captionBlocks);
+      const prevCaption = reuse ? reuse.captionCache : null;
+      const decorate = (row, key, extra) => {
+        const prevEntry = prevCaption && prevCaption.get(row);
+        result[row] =
+          prevEntry && prevEntry.key === key && prevEntry.base === base[row]
+            ? prevEntry.ann
+            : { ...(result[row] || {}), ...extra };
+        captionCache.set(row, { key, base: base[row], ann: result[row] });
+      };
       for (let k = 0; k < captionBlocks.length; ++k) {
         const b = captionBlocks[k];
-        result[b.imageRow] = { ...(result[b.imageRow] || {}), mergeBlock: b };
+        const bKey = b.imageRow + ":" + b.captionStart + "-" + b.captionEnd;
+        decorate(b.imageRow, bKey, { mergeBlock: b });
         for (let r = b.captionStart; r <= b.captionEnd; ++r) {
-          result[r] = { ...(result[r] || {}), mergedInto: b.imageRow };
+          decorate(r, bKey, { mergedInto: b.imageRow });
         }
       }
     }
@@ -303,31 +362,80 @@ function computeAnnotations(
     // 一則**（時間戳沿用原 cell，故配色同原生且可複製）；樓層徽章只顯示 run 首則。
     // 與圖文合併天然不重疊（caption 分組遇第一則推文即停）。FloorCounter／黑名單
     // 完全不動——樓層仍逐則計數，合併只是 render 層重組（見 comment_merge.js）。
+    //
+    // 這是長文最貴的一段：buildMergedCommentChars 會重建整塊 TermChar 陣列，還要對
+    // 合併後的 chars **再跑一次** detectRowExtras，而 8000 行的長文幾乎整篇都是推文。
+    // 故以 run 身分（mergeRunKey）＋ 該 run 每一列的 base 參考當快取鍵：翻頁只可能
+    // 改變**最後一個** run（新的一則接在後面），前面所有 run 直接重播上一幀的結果，
+    // 連裝飾出來的 annotation 物件都是同一個（元素快取才有得重用）。
+    const runCache = new Map();
     if (easyReading && mergeSameAuthorComments) {
+      const prevRuns = reuse ? reuse.runCache : null;
       const runs = groupSameAuthorRuns(result);
       for (let k = 0; k < runs.length; ++k) {
         const run = runs[k];
-        const merged = buildMergedCommentChars(lines, run);
-        if (!merged) continue; // 任一列切不出邊界 → fail-safe 還原逐列
-        const first = run.rows[0];
-        const firstAnn = result[first];
-        const mText = rowToText(merged.chars);
-        result[first] = {
-          ...firstAnn,
-          mergeCommentRun: {
-            chars: merged.chars,
-            contentStart: merged.contentStart,
-            ...withUrlAi(
-              detectRowExtras(merged.chars, mText, firstAnn, detectOpts),
-            ),
-          },
-        };
-        for (let n = 1; n < run.rows.length; ++n) {
-          result[run.rows[n]] = {
-            ...result[run.rows[n]],
-            mergedIntoComment: first,
+        const rKey = mergeRunKey(run);
+        const prevEntry = prevRuns && prevRuns.get(rKey);
+        let entry = null;
+        if (prevEntry && prevEntry.baseRefs.length === run.rows.length) {
+          entry = prevEntry;
+          for (let i = 0; i < run.rows.length; ++i) {
+            if (prevEntry.baseRefs[i] !== base[run.rows[i]]) {
+              entry = null;
+              break;
+            }
+          }
+        }
+        if (!entry) {
+          const merged = buildMergedCommentChars(lines, run);
+          const runDomainCands = [];
+          const runFixCands = [];
+          // 空的 decorated ＝ 任一列切不出邊界 → fail-safe 還原逐列。也一併進快取，
+          // 免得每幀重試同一個切不動的 run。
+          const decorated = [];
+          if (merged) {
+            const first = run.rows[0];
+            const firstAnn = result[first];
+            const mText = rowToText(merged.chars);
+            decorated.push([
+              first,
+              {
+                ...firstAnn,
+                mergeCommentRun: {
+                  chars: merged.chars,
+                  contentStart: merged.contentStart,
+                  ...withUrlAi(
+                    detectRowExtras(merged.chars, mText, firstAnn, detectOpts),
+                    runDomainCands,
+                    runFixCands,
+                  ),
+                },
+              },
+            ]);
+            for (let i = 1; i < run.rows.length; ++i) {
+              decorated.push([
+                run.rows[i],
+                { ...result[run.rows[i]], mergedIntoComment: first },
+              ]);
+            }
+          }
+          entry = {
+            baseRefs: run.rows.map((r) => base[r]),
+            decorated,
+            domainCands: runDomainCands,
+            fixCands: runFixCands,
           };
         }
+        for (let i = 0; i < entry.decorated.length; ++i) {
+          result[entry.decorated[i][0]] = entry.decorated[i][1];
+        }
+        for (let i = 0; i < entry.domainCands.length; ++i) {
+          domainCands.push(entry.domainCands[i]);
+        }
+        for (let i = 0; i < entry.fixCands.length; ++i) {
+          fixCands.push(entry.fixCands[i]);
+        }
+        runCache.set(rKey, entry);
       }
     }
     // 內容型簽章：好讀翻頁只是往後長，前面已判過的候選 key 不變 → effect 不重跑。
@@ -335,6 +443,19 @@ function computeAnnotations(
     result.domainCandsSig = domainCands.map(domainKey).join(",");
     result.fixCands = fixCands;
     result.fixCandsSig = fixCands.map(fixKey).join(",");
+    return {
+      annotations: result,
+      cache: {
+        texts,
+        base,
+        floorCounter: ctx.floorCounter,
+        hasSteamgifts,
+        domainCands: baseDomainCands,
+        fixCands: baseFixCands,
+        captionCache,
+        runCache,
+      },
+    };
   } else if (pageState === PAGE_LIST || inListContext) {
     // inListContext keeps list treatment alive across overlay prompts (e.g. the
     // v 設定已讀未讀記錄 sub-screen) whose status row stops parsing as LIST(2).
@@ -394,7 +515,9 @@ function computeAnnotations(
       }
     }
   }
-  return result;
+  // 列表／原生 24 列畫面：列物件是 term_buf 就地改寫的活 buffer（不是快照），
+  // 增量快取的前提（列參考不變 ⇒ 內容不變）在這裡**不成立**，故不回快取。
+  return { annotations: result, cache: null };
 }
 
 export const Screen = React.forwardRef(function Screen(props, ref) {
@@ -558,7 +681,35 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     if (input) input.focus();
   }, []);
 
-  const annotations = computeAnnotations(
+  // ---- 增量重算快取（好讀文章累積頁專用）----
+  // 前提由 `enhance.stableRows` 帶進來，term_view 只在渲染 buf.pageLines（好讀累積
+  // 的長頁）時給。那裡的列是 cloneRow 出來的**快照**，append 之後永不再被寫，所以
+  // 「列物件參考相同 ⇒ 內容相同」成立。原生 24 列畫面與列表視窗則是 term_buf 就地
+  // 改寫的活 buffer：參考相同但內容每幀在變，套快取會畫出上一幀的內容。
+  const cacheRef = React.useRef(null);
+  const cacheKey = annotationsKey({
+    enhance,
+    mergeCaption,
+    captionAi,
+    aiKeep,
+    aiLink,
+    aiFix,
+    forceWidth,
+    enableLinkInlinePreview,
+    enableLinkHoverPreview,
+    onHyperLinkMouseOver: handleHyperLinkMouseOver,
+    onHyperLinkMouseOut: handleHyperLinkMouseOut,
+  });
+  const stableRows = !!(enhance && enhance.stableRows);
+  const prevCache = cacheRef.current;
+  const reusable =
+    stableRows &&
+    prevCache &&
+    sameKey(prevCache.key, cacheKey) &&
+    isAppendOnly(prevCache.lines, lines)
+      ? prevCache
+      : null;
+  const computed = computeAnnotations(
     lines,
     enhance,
     mergeCaption,
@@ -566,7 +717,9 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     aiKeep,
     aiLink,
     aiFix,
+    reusable ? reusable.cache : null,
   );
+  const annotations = computed.annotations;
 
   // spans 每次 render 重算（reference 不穩），但內容簽章穩定 → effect 只在
   // 「候選段內容真的變了」時重跑：好讀翻頁只是往後長，前面的塊不重複推論。
@@ -752,6 +905,111 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   const captionColStyle = annotations.captionMaxCols
     ? { width: (annotations.captionMaxCols / 2 + 1) * forceWidth }
     : undefined;
+  // 單一列 → React node（null ＝ 這一列不佔版面：黑名單 dropHidden、已併進圖文
+  // 合併右欄、已併進同作者推文塊）。抽成函式是為了讓下面的元素快取能逐列決定
+  // 「重用上一幀的 element」還是「重建」。
+  const buildRowNode = (row) => {
+    const ann = annotations[row];
+    if (dropHidden && ann && ann.hidden) return null;
+    // 說明行已併入所屬圖行的右欄（下方 mergeBlock 分支），頂層不重複 render。
+    if (ann && ann.mergedInto !== undefined) return null;
+    // 連續同作者推文：後續列已併進 run 首列的合併段落，頂層不重複 render。
+    if (ann && ann.mergedIntoComment !== undefined) return null;
+    if (ann && ann.mergeCommentRun) {
+      const m = ann.mergeCommentRun;
+      // data-row＝run 首列的絕對 pageLines index。塊內複製以 DOM 選取為準
+      // （^C 走 window.getSelection().toString()，term_view.js）；getText 的
+      // col 對映在合併段內失真，已知取捨（同 mergedImageBlock 的脈絡）。
+      // 懸掛縮排寬度＝首則內容起始欄 × 半形字寬（forceWidth 是全形字像素寬）
+      // → 第 2 則起與第一則的內容對齊（main.css .mergedCommentBlock）。
+      return (
+        <div
+          key={row}
+          className="mergedCommentBlock"
+          style={{
+            "--merged-comment-indent": `${(m.contentStart * forceWidth) / 2}px`,
+          }}
+        >
+          <Row
+            chars={m.chars}
+            row={row}
+            forceWidth={forceWidth}
+            enableLinkInlinePreview={enableLinkInlinePreview}
+            highlighted={currentHighlighted === row}
+            floor={ann.floor}
+            pusher={ann.pusher}
+            pusherHighlight={ann.pusherHighlight}
+            authorIdStart={ann.authorIdStart}
+            authorIdEnd={ann.authorIdEnd}
+            fixedUrls={m.fixedUrls}
+            mentions={m.mentions}
+            aids={m.aids}
+            giveaways={m.giveaways}
+            bareDomains={m.bareDomains}
+            onHyperLinkMouseOver={handleHyperLinkMouseOver}
+            onHyperLinkMouseOut={handleHyperLinkMouseOut}
+          />
+        </div>
+      );
+    }
+    if (ann && ann.mergeBlock) {
+      const { captionStart, captionEnd } = ann.mergeBlock;
+      const captionRows = [];
+      for (let r = captionStart; r <= captionEnd; ++r) {
+        const cAnn = annotations[r];
+        if (dropHidden && cAnn && cAnn.hidden) continue;
+        captionRows.push(renderRow(r));
+      }
+      return (
+        <div key={row} className="mergedImageBlock">
+          <div className="mergedImageCol">{renderRow(row)}</div>
+          <div className="mergedCaptionCol" style={captionColStyle}>
+            {captionRows}
+          </div>
+        </div>
+      );
+    }
+    return renderRow(row);
+  };
+  // ---- 每列 React element 快取 ----
+  // React 對 `oldProps === newProps` 的 fiber 走 bailoutOnAlreadyFinishedWork，整個
+  // 子樹直接跳過；交回**同一個** element 物件即可拿到它。沒有這層的話，8000 列的
+  // 累積頁每頁都要重跑 8000 次 LinkSegmentBuilder（每列 80 個 TermChar → 數十個
+  // element），這是長文「越讀越慢」的另一半。
+  //
+  // 重用條件三件：列內容（chars 參考，由 isAppendOnly 保證）、最終 annotation 物件
+  // 參考、以及這一列的高亮狀態。mergeBlock 列例外——它的內容還取決於右欄那些說明
+  // 行的 annotation，條件不只自己這一列，直接重建（只有使用者手動開「圖文並排」時
+  // 才存在，且塊數有限）。
+  const prevElements = reusable ? reusable.elements : null;
+  const prevAnnotations = reusable ? reusable.annotations : null;
+  const prevHighlighted = reusable ? reusable.highlighted : undefined;
+  const elements = new Array(lines.length);
+  for (let row = 0; row < lines.length; ++row) {
+    const ann = annotations[row];
+    if (
+      prevElements &&
+      row < prevElements.length &&
+      prevAnnotations[row] === ann &&
+      (prevHighlighted === row) === (currentHighlighted === row) &&
+      !(ann && ann.mergeBlock)
+    ) {
+      elements[row] = prevElements[row];
+      continue;
+    }
+    elements[row] = buildRowNode(row);
+  }
+  cacheRef.current =
+    computed.cache && stableRows
+      ? {
+          key: cacheKey,
+          lines,
+          cache: computed.cache,
+          annotations,
+          elements,
+          highlighted: currentHighlighted,
+        }
+      : null;
   return (
     <div
       id="mainContainer"
@@ -760,69 +1018,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
       onMouseMove={handleMouseMove}
       onClick={handleImageClick}
     >
-      {lines.map((chars, row) => {
-        const ann = annotations[row];
-        if (dropHidden && ann && ann.hidden) return null;
-        // 說明行已併入所屬圖行的右欄（下方 mergeBlock 分支），頂層不重複 render。
-        if (ann && ann.mergedInto !== undefined) return null;
-        // 連續同作者推文：後續列已併進 run 首列的合併段落，頂層不重複 render。
-        if (ann && ann.mergedIntoComment !== undefined) return null;
-        if (ann && ann.mergeCommentRun) {
-          const m = ann.mergeCommentRun;
-          // data-row＝run 首列的絕對 pageLines index。塊內複製以 DOM 選取為準
-          // （^C 走 window.getSelection().toString()，term_view.js）；getText 的
-          // col 對映在合併段內失真，已知取捨（同 mergedImageBlock 的脈絡）。
-          // 懸掛縮排寬度＝首則內容起始欄 × 半形字寬（forceWidth 是全形字像素寬）
-          // → 第 2 則起與第一則的內容對齊（main.css .mergedCommentBlock）。
-          return (
-            <div
-              key={row}
-              className="mergedCommentBlock"
-              style={{
-                "--merged-comment-indent": `${(m.contentStart * forceWidth) / 2}px`,
-              }}
-            >
-              <Row
-                chars={m.chars}
-                row={row}
-                forceWidth={forceWidth}
-                enableLinkInlinePreview={enableLinkInlinePreview}
-                highlighted={currentHighlighted === row}
-                floor={ann.floor}
-                pusher={ann.pusher}
-                pusherHighlight={ann.pusherHighlight}
-                authorIdStart={ann.authorIdStart}
-                authorIdEnd={ann.authorIdEnd}
-                fixedUrls={m.fixedUrls}
-                mentions={m.mentions}
-                aids={m.aids}
-                giveaways={m.giveaways}
-                bareDomains={m.bareDomains}
-                onHyperLinkMouseOver={handleHyperLinkMouseOver}
-                onHyperLinkMouseOut={handleHyperLinkMouseOut}
-              />
-            </div>
-          );
-        }
-        if (ann && ann.mergeBlock) {
-          const { captionStart, captionEnd } = ann.mergeBlock;
-          const captionRows = [];
-          for (let r = captionStart; r <= captionEnd; ++r) {
-            const cAnn = annotations[r];
-            if (dropHidden && cAnn && cAnn.hidden) continue;
-            captionRows.push(renderRow(r));
-          }
-          return (
-            <div key={row} className="mergedImageBlock">
-              <div className="mergedImageCol">{renderRow(row)}</div>
-              <div className="mergedCaptionCol" style={captionColStyle}>
-                {captionRows}
-              </div>
-            </div>
-          );
-        }
-        return renderRow(row);
-      })}
+      {elements}
       {showMergeButton && (
         <MergeImageCaptionButton
           mode={mergeCaption}

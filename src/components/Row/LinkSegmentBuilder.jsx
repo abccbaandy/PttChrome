@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import cx from "classnames";
 import HyperLink from "./HyperLink";
 import ColorSegmentBuilder from "./ColorSegmentBuilder";
-import ImagePreviewer, { requestPreview } from "../ImagePreviewer";
+import LazyInlinePreview from "../LazyInlinePreview";
 import FixedUrlLine from "./FixedUrlLine";
 
 // Comment lines are "推 userid: ...". The marker (推/噓/→) is a 2-column DBCS
@@ -212,12 +212,14 @@ export class LinkSegmentBuilder {
         />,
       );
       // TODO: Modularize this.
+      // 延遲載入：捲到附近才解析網址並掛 <ImagePreviewer>，捲遠了再卸掉釋放已解碼
+      // 的點陣圖（見 LazyInlinePreview / lazy_media.js）。長文一次 287 張圖全部
+      // 載入且永不釋放，正是「記憶體吃滿」的來源。
       if (this.inlineLinkPreviews) {
         this.inlineLinkPreviews.push(
-          <ImagePreviewer
+          <LazyInlinePreview
             key={`${this.col}-${this.href}`}
-            request={requestPreview(this.href)}
-            component={ImagePreviewer.Inline}
+            href={this.href}
           />,
         );
       }
