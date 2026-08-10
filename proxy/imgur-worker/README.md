@@ -35,6 +35,29 @@ GET|HEAD  https://<worker>/<imgur-id>.<jpg|jpeg|png|gif|webp>
   content-length` ⇒ `src/js/imgur_probe.js` 的 HEAD 探測可直接改打這裡。
 - **fail-open**：代理出任何狀況都 302 回原址，最差等於現況。
 
+### `/tenor` — tenor 分享連結解析（非圖片代理）
+
+```
+GET  https://<worker>/tenor?url=<encodeURIComponent(tenor 分享連結)>
+     → 200 {"id","mp4","webm","gif","width","height"}  Cache-Control: public, max-age=86400
+     → 400 {"error":"bad url"}    （url 不在白名單）
+     → 404 {"error":…}            （上游非 200／非 HTML／解不出媒體）
+     → 502 {"error":"upstream"}   （回源連線失敗）
+```
+
+- **為什麼需要**：`tenor.com/<code>.gif` 是 HTML 頁不是圖檔（301 → `/view/<slug>-<id>`），
+  而 tenor 頁面**沒有 CORS**、`/view/` 又是 `x-frame-options: DENY` ⇒ 瀏覽器端無論如何解不開。
+  真實媒體位址只寫在頁面 og tag。實測見
+  [`docs/media-preview-addons.md`](../../docs/media-preview-addons.md) 的 tenor 段。
+- **只回位址，不代理影片位元組**：與上面「mp4／webm 不支援」是同一條 Cloudflare ToS 界線。
+  瀏覽器拿到 JSON 後自己去 `media.tenor.com` 取（該主機帶 `ACAO: *` 且不擋 referer）。
+- **輸入白名單（安全邊界，不可放寬）**：`https` + host 嚴格等於 `tenor.com`／`www.tenor.com`
+  + path 必須是 `/view/<slug>-<數字>` 或 `/<短碼>.gif`。放寬就變成任意站台的開放跳板。
+  純函式 `parseTenorTarget`／`parseTenorMedia` 由 `test/tenor.test.js` 守護。
+- **短碼大小寫敏感**：`bgOd4.gif` 與 `bgod4.gif` 是兩張不同的圖 ⇒ 正規化只丟 query/hash，
+  **不得**碰 pathname 大小寫。
+- 錯誤一律 `no-store`（理由同圖片路徑：把 4xx 快取起來等於自我封鎖）。
+
 ## 部署
 
 需 Cloudflare 帳號（免費方案即可）與 Node。

@@ -32,6 +32,7 @@
 | youtube watch/youtu.be/embed/shorts/live | ✅ iframe＋自訂 `youtubeParameters`＋時間戳(`t`→`start`) | ✅ 限 watch/youtu.be | `<iframe>` |
 | twitch clips | ❌ | ✅ `clips.twitch.tv/embed?clip=…&parent=<host>` | `<iframe>` |
 | verb.tw | ❌（落一般圖片） | ✅ 特例 | `<img>` |
+| **tenor 分享頁**（`tenor.com/<code>.gif`、`/view/<slug>-<id>`，見下節） | ❌ | ❌ | 本專案獨有：Worker 解析 → `<video autoplay loop muted>` |
 
 ## imgur 傳輸實測（CONFIRMED 2026-07-30；curl + 真 Chromium）
 
@@ -122,6 +123,38 @@ imgur 分享連結的預設形式）與 gif/gifv 交給上節的 HEAD 探測判�
 看起來像「打不開」。imgur 依 `Sec-Fetch-Dest` 分流：`document` → 302；`image`（即
 `<img src>`，我們的實際情境）→ `200 image/webp`。要驗證請用 DevTools console 的
 `new Image().src = …` 或真的放進 `<img>`。
+
+## tenor 實測（CONFIRMED 2026-08-11；curl）
+
+素材 `https://tenor.com/bgOd4.gif`。**結論：短連結無法在瀏覽器端解析，只能伺服端代解。**
+
+| 事實 | 值 |
+|---|---|
+| 短連結本體 | `301` → `tenor.com/view/faker-hug-smile-happy-shy-gif-16360306`（是 HTML 頁，不是圖檔） |
+| 頁面 CORS | **無 `access-control-allow-origin`** → 前端 `fetch` 讀不到 HTML |
+| `/view/` 框入 | `x-frame-options: DENY` → 不能用 iframe 迂迴 |
+| `/embed/<數字 id>` | `200`、無 XFO、無 `frame-ancestors` → 可 iframe，但**只吃數字 id**（短碼 404） |
+| Tenor API v1 | 已下線（`{"code":7,"error":"Tenor API is discontinued"}`）；v2 需 Google API key |
+| `tenor.com/oembed` | `404` |
+| og tag 媒體 | mp4 `media.tenor.com/TjWRuqajuC0AAAPo/faker-hug.mp4`、webm `…AAAPs….webm`、gif `media1.tenor.com/m/TjWRuqajuC0AAAAd/faker-hug.gif` |
+| 體積 | mp4 **960 400 B** vs gif **4 168 932 B**（4.3×）⇒ 採 mp4 |
+| media 主機 | mp4 帶 `Access-Control-Allow-Origin: *`、`Cross-Origin-Resource-Policy: cross-origin`；帶 `Referer: https://term.ptt.cc/` 仍 `200`（**不擋 hotlink**，無需 referer workaround） |
+
+**短碼大小寫敏感（踩過）** — `tenor.com/bgOd4.gif` = 16360306、`tenor.com/bgod4.gif` = **16260362**，
+兩張不同的圖。而 tenor 對 `/bgOd4`（無副檔名）、`/embed/gif/bgOd4`、`/view/bgOd4.gif` 一律
+`301` 轉小寫 → 解析到**錯的圖**。⇒ 只有 `tenor.com/<原樣短碼>.gif` 可信，鏈路上任何一段都不得
+做大小寫正規化（`parseTenorTarget` 只丟 query/hash，不碰 pathname）。
+
+**HEAD 陷阱** — gif 位址對 `HEAD` 回 `404`、`GET` 回 `200 image/gif` 4.17 MB。
+tenor 資產**不可**用 HEAD 探測型別（與 `imgur_probe.js` 的手法相反）。
+
+**實作**：`proxy/imgur-worker/src/index.js` 的 `/tenor?url=` 路由（抓頁面 → 解 og tag → 回 JSON，
+帶 CORS）＋ `src/js/tenor.js`（`RE_TENOR` 在 `image_url_detect.js`）。resolver 必須排在泛用
+`RE_IMAGE_EXT` 之前，否則 `.gif` 結尾的網頁會被當直連圖載入而必定失敗（本功能的原始 bug）。
+Worker **只回位址不代理影片位元組**（Cloudflare ToS 排除影片檔，同 `RE_ASSET` 擋 mp4 的界線）。
+開關沿用 `useImgurProxy`；關閉時不預覽（不退回泛用規則，否則又變破圖）。
+守護測試：`tests/unit/tenor.test.js`、`tests/unit/tenor_resolver.test.jsx`、
+`proxy/imgur-worker/test/tenor.test.js`。
 
 ## referer 規則（本專案已沿用，改動前先讀）
 

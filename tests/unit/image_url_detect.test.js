@@ -17,6 +17,11 @@ describe("isImageLikeUrl（與 ImagePreviewer resolvers 對照）", () => {
     // meee
     ["https://meee.com.tw/AbCdE.jpg", true],
     ["https://meee.com.tw/AbCdE", true],
+    // tenor：兩種寫法判定必須一致（短連結靠 .gif 副檔名就會 true，view 形式沒有
+    // 副檔名，若不特別認就會一個進圖文合併塊、一個不進）。它最終渲染成 <video>，
+    // 但同步判斷仍算圖片列——同 imgur 影片型資產的既有情形。
+    ["https://tenor.com/bgOd4.gif", true],
+    ["https://tenor.com/view/faker-hug-smile-happy-shy-gif-16360306", true],
     // 任意圖床直連（generic 副檔名）
     ["https://example.com/pic.webp", true],
     ["https://example.com/pic.png?x=1", true],

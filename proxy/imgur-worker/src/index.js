@@ -24,6 +24,162 @@ const RE_ASSET = /^\/([A-Za-z0-9]{1,12})\.(jpg|jpeg|png|gif|webp)$/;
 
 const IMMUTABLE = "public, max-age=31536000, immutable";
 
+// ---------------------------------------------------------------------------
+// `/tenor` 解析路由
+//
+// 為什麼要伺服端代解：tenor 的分享連結（tenor.com/<code>.gif）是 **HTML 頁**不是圖檔，
+// 301 導到 /view/<slug>-<id>；而 tenor.com 的頁面**沒有 CORS header**、/view/ 又是
+// x-frame-options: DENY ⇒ 瀏覽器端既 fetch 不到也 iframe 不了，前端無論如何解不開。
+// 真正的媒體位址只寫在頁面 og tag 裡（media.tenor.com 的 mp4／media1 的 gif），
+// 那兩個主機才帶 CORS 且不擋 referer。完整實測見 docs/media-preview-addons.md。
+//
+// 本路由**只回位址（JSON），不代理影片位元組**：Cloudflare 服務條款排除影片檔，
+// 與上面 RE_ASSET 擋 mp4 是同一條界線，不可跨。
+// ---------------------------------------------------------------------------
+
+// 可回源抓取的 tenor 路徑。**這是安全邊界**：只有分享短連結與 view 頁兩種形式，
+// 別的路徑（/search、/users/… 等）一律不放行，避免 Worker 變成任意站台的跳板。
+const RE_TENOR_PATH = /^\/(?:view\/[\w-]+-\d+|[A-Za-z0-9]{1,16}\.gif)$/;
+const TENOR_HOSTS = new Set(["tenor.com", "www.tenor.com"]);
+
+// 只掃 head 該有的長度：og tag 一定在 <head>，而頁面本體可以很大（CPU 額度與
+// 最壞情況的掃描成本都要有上界）。
+const MAX_HTML_SCAN = 300000;
+
+// 回傳正規化後的絕對 URL，或 null。
+// **pathname 的大小寫絕不可動**：tenor 短碼大小寫敏感，tenor.com/bgOd4.gif 與
+// tenor.com/bgod4.gif 是兩張不同的圖（16360306 / 16260362）。
+export const parseTenorTarget = (raw) => {
+  if (!raw || typeof raw !== "string") return null;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch (e) {
+    return null;
+  }
+  if (u.protocol !== "https:") return null;
+  if (!TENOR_HOSTS.has(u.hostname)) return null;
+  if (!RE_TENOR_PATH.test(u.pathname)) return null;
+  // query/hash 丟棄：對解析結果沒有影響，留著只會製造快取碎片。
+  return `https://${u.hostname}${u.pathname}`;
+};
+
+// og 值只接受 tenor 自家媒體主機。頁面內容是上游控制的，不做這層過濾等於讓
+// 上游（或任何能影響該頁的人）把任意第三方位址塞進我們回給前端的 JSON。
+const isTenorMediaUrl = (v) => {
+  if (!v) return false;
+  try {
+    const h = new URL(v).hostname;
+    return h === "tenor.com" || h.endsWith(".tenor.com");
+  } catch (e) {
+    return false;
+  }
+};
+
+// 逐個 <meta> tag 掃描、再從單一 tag 取屬性。
+// **刻意不寫 `<meta[^>]+property="og:video"[^>]+content="([^"]+)"`**：雙 `[^>]+`
+// 是多項式回溯（CodeQL js/polynomial-redos），而輸入是外部網頁。同理見
+// src/js/imgur_proxy.js 的 stripTrailingSlashes 註解。
+const attr = (tag, name) => {
+  const m =
+    new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i").exec(tag) ||
+    new RegExp(`\\b${name}\\s*=\\s*'([^']*)'`, "i").exec(tag);
+  return m ? m[1] : null;
+};
+
+export const parseTenorMedia = (html) => {
+  if (!html || typeof html !== "string") return null;
+  const head = html.slice(0, MAX_HTML_SCAN);
+  const out = {};
+  const videos = [];
+
+  for (const tag of head.match(/<meta\b[^>]*>/gi) || []) {
+    const prop = (attr(tag, "property") || "").toLowerCase();
+    const content = attr(tag, "content");
+    if (!prop || !content) continue;
+    switch (prop) {
+      case "og:video":
+      case "og:video:secure_url":
+        videos.push(content);
+        break;
+      case "og:image":
+        if (!out.gif && isTenorMediaUrl(content)) out.gif = content;
+        break;
+      case "og:image:width":
+      case "og:video:width":
+        if (!out.width) out.width = parseInt(content, 10) || undefined;
+        break;
+      case "og:image:height":
+      case "og:video:height":
+        if (!out.height) out.height = parseInt(content, 10) || undefined;
+        break;
+      default:
+        break;
+    }
+  }
+
+  // og:video 會出現兩次（mp4 與 webm），順序不保證 ⇒ 依副檔名分流而非取第一個。
+  for (const v of videos) {
+    if (!isTenorMediaUrl(v)) continue;
+    if (!out.mp4 && /\.mp4(?:$|[?#])/i.test(v)) out.mp4 = v;
+    else if (!out.webm && /\.webm(?:$|[?#])/i.test(v)) out.webm = v;
+  }
+
+  if (!out.mp4 && !out.gif) return null;
+
+  const canonical = /<link\b[^>]*>/gi;
+  let m;
+  while ((m = canonical.exec(head)) !== null) {
+    if ((attr(m[0], "rel") || "").toLowerCase() !== "canonical") continue;
+    const id = /-(\d+)$/.exec(attr(m[0], "href") || "");
+    if (id) out.id = id[1];
+    break;
+  }
+  return out;
+};
+
+const jsonResponse = (body, { status, cacheable }) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      // 上游可能改編碼／換位址，故不用 immutable；但映射本身夠穩定，一天足夠。
+      // 錯誤一律 no-store：把 4xx/5xx 快取起來等於自我封鎖（同 imgur 分支的理由）。
+      "cache-control": cacheable ? "public, max-age=86400" : "no-store",
+      "access-control-allow-origin": "*",
+    },
+  });
+
+const handleTenor = async (request, url) => {
+  const target = parseTenorTarget(url.searchParams.get("url"));
+  if (!target) {
+    return jsonResponse({ error: "bad url" }, { status: 400, cacheable: false });
+  }
+
+  let upstream;
+  try {
+    // 不帶 referer（同 imgur 分支）。tenor 短連結一定會 301 到 /view/，必須 follow。
+    upstream = await fetch(target, {
+      headers: { accept: "text/html,*/*" },
+      redirect: "follow",
+    });
+  } catch (e) {
+    return jsonResponse({ error: "upstream" }, { status: 502, cacheable: false });
+  }
+  if (!upstream.ok) {
+    return jsonResponse({ error: "upstream" }, { status: 404, cacheable: false });
+  }
+  if ((upstream.headers.get("content-type") || "").indexOf("text/html") !== 0) {
+    return jsonResponse({ error: "not html" }, { status: 404, cacheable: false });
+  }
+
+  const media = parseTenorMedia(await upstream.text());
+  if (!media) {
+    return jsonResponse({ error: "no media" }, { status: 404, cacheable: false });
+  }
+  return jsonResponse(media, { status: 200, cacheable: true });
+};
+
 // 上游資產以 hash 定址、內容永不變 ⇒ 可安心長 TTL。
 // 但**錯誤回應絕不可快取**：imgur 對 Cloudflare 出口 IP 會限流（公用 proxy wsrv.nl
 // 實測被回 429），把 429／5xx 快取一年等於自我封鎖。
@@ -68,12 +224,20 @@ export default {
       return new Response("method not allowed", { status: 405 });
     }
 
+    if (url.pathname === "/tenor") {
+      return handleTenor(request, url);
+    }
+
     const m = RE_ASSET.exec(url.pathname);
     if (!m) {
-      return new Response("not found\nusage: /<imgur-id>.<jpg|jpeg|png|gif|webp>\n", {
-        status: 404,
-        headers: { "content-type": "text/plain; charset=utf-8" },
-      });
+      return new Response(
+        "not found\nusage: /<imgur-id>.<jpg|jpeg|png|gif|webp>\n" +
+          "       /tenor?url=<tenor 分享連結>\n",
+        {
+          status: 404,
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        },
+      );
     }
     const [, id, ext] = m;
 

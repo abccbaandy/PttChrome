@@ -6,10 +6,12 @@ import {
   RE_IMGUR_SINGLE,
   RE_TWIMG,
   RE_MEEE,
+  RE_TENOR,
   flickrBase58Decode,
 } from "../js/image_url_detect";
 import { probeImgurAsset } from "../js/imgur_probe";
 import { getImgurProxyConfig, imgurCandidates } from "../js/imgur_proxy";
+import { tenorResolveUrl, tenorMediaDescriptor } from "../js/tenor";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 
 const noop = () => {};
@@ -324,10 +326,18 @@ const useFullscreenScrollRestore = (videoRef) => {
 };
 
 // <video>/<iframe> 內嵌：載入完成前疊 LoadingOverlay，避免網路慢時空白像壞掉。
-const InlineVideo = React.memo(function InlineVideo({ src }) {
+//
+// `gif` 模式（目前只有 tenor）：來源本質是動圖，使用者期待「一到畫面就自己動」，
+// 故自動循環播放、靜音、不給控制列。一般影片（imgur mp4 等）維持有控制列、不自動播。
+const InlineVideo = React.memo(function InlineVideo({ src, gif }) {
   const [loaded, setLoaded] = React.useState(false);
   const videoRef = React.useRef(null);
   useFullscreenScrollRestore(videoRef);
+  // muted 必須是 **property** 為真，瀏覽器才不擋自動播放；只寫 JSX 上的 muted
+  // 屬性在部分情境不會反映到 property（React 的既知落差），故補這一手。
+  React.useEffect(() => {
+    if (gif && videoRef.current) videoRef.current.muted = true;
+  }, [gif]);
   return (
     <React.Fragment>
       {!loaded && <LoadingOverlay />}
@@ -335,7 +345,11 @@ const InlineVideo = React.memo(function InlineVideo({ src }) {
         ref={videoRef}
         className="easyReadingVideo"
         src={src}
-        controls
+        controls={!gif}
+        autoPlay={!!gif}
+        loop={!!gif}
+        muted={!!gif}
+        playsInline={!!gif}
         onLoadedData={() => setLoaded(true)}
         style={loaded ? null : { display: "none" }}
       />
@@ -368,7 +382,9 @@ const inlineImage = (descriptor, key) => (
   />
 );
 
-const inlineVideo = (src, key) => <InlineVideo key={key} src={src} />;
+const inlineVideo = (descriptor, key) => (
+  <InlineVideo key={key} src={descriptor.src} gif={descriptor.gif} />
+);
 
 const inlineIframe = (src, key) => <InlineIframe key={key} src={src} />;
 
@@ -377,7 +393,7 @@ const inlineIframe = (src, key) => <InlineIframe key={key} src={src} />;
 const renderMedia = (descriptor, key) => {
   switch (descriptor.type) {
     case "video":
-      return inlineVideo(descriptor.src, key);
+      return inlineVideo(descriptor, key);
     case "iframe":
       return inlineIframe(descriptor.src, key);
     default:
@@ -654,6 +670,33 @@ const imageUrlResolvers = [
             type: "image",
             src: `https://farm${farm}.staticflickr.com/${svr}/${id}_${secret}.jpg`,
           };
+        });
+    },
+  },
+  {
+    /* tenor 分享頁（tenor.com/<code>.gif、tenor.com/view/<slug>-<id>）
+       **必須排在下面兩條泛用副檔名 resolver 之前**：短連結雖以 .gif 結尾卻是 HTML
+       頁（301 → /view/…），被「任意直連圖片」吃掉就會塞進 <img> 永遠載入失敗
+       ——這正是本功能修的原始 bug。真實媒體位址只能由 Worker 解（tenor 頁面無 CORS、
+       /view/ 又是 x-frame-options: DENY），見 src/js/tenor.js。 */
+    regex: RE_TENOR,
+    test(src) {
+      return this.regex.test(src);
+    },
+    request(src) {
+      const endpoint = tenorResolveUrl(src, getImgurProxyConfig());
+      // 代理關閉 → 不預覽（reject），**不可**掉回泛用規則，否則又變回破圖。
+      if (!endpoint)
+        return Promise.reject(new Error("tenor: resolver disabled"));
+      return fetch(endpoint, { mode: "cors" })
+        .then((r) => {
+          if (!r.ok) throw new Error("tenor: resolve failed");
+          return r.json();
+        })
+        .then((json) => {
+          const descriptor = tenorMediaDescriptor(json);
+          if (!descriptor) throw new Error("tenor: no media");
+          return descriptor;
         });
     },
   },

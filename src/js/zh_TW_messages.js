@@ -368,7 +368,7 @@
     "message": "圖片載入代理"
   },
   "tooltip_imgurProxy": {
-    "message": "imgur 的 CDN 把台灣流量導到美國，同一張圖偶爾會卡住 9～24 秒。開啟後 imgur 圖片改由本專案的 Cloudflare Worker 轉發並快取，可消除這種卡住的情況 (一般情況下的載入速度不會變快)。該服務會看到你的 IP 與所讀取的圖片位址，但不留存任何紀錄；代理失效時會自動退回直連 imgur。影片 (mp4) 一律直連，不經過代理。"
+    "message": "imgur 的 CDN 把台灣流量導到美國，同一張圖偶爾會卡住 9～24 秒。開啟後 imgur 圖片改由本專案的 Cloudflare Worker 轉發並快取，可消除這種卡住的情況 (一般情況下的載入速度不會變快)。該服務會看到你的 IP 與所讀取的圖片位址，但不留存任何紀錄；代理失效時會自動退回直連 imgur。影片 (mp4) 一律直連，不經過代理。同一個服務也負責解析 tenor 的 GIF 分享連結 (tenor.com/xxxxx.gif 其實是網頁不是圖檔，只能由伺服端代為解析)，關閉後這類連結不會顯示預覽。"
   },
   "options_useImgurProxy": {
     "message": "透過代理載入 imgur 圖片 (重新整理後生效)"

@@ -16,8 +16,21 @@ export const RE_TWIMG =
   /^https?:\/\/pbs\.twimg\.com\/media\/([\w-]+)(?:\.(\w+))?(?:\?.*?format=(\w+))?/i;
 export const RE_MEEE = /^https?:\/\/meee\.com\.tw\/(\w+)(?:\.(\w+))?/i;
 
+// tenor 的**分享頁**（HTML，不是媒體檔）：短連結 tenor.com/<code>.gif 與
+// tenor.com/view/<slug>-<id>。刻意不含 media*.tenor.com——那是直連檔，交給泛用的
+// 圖片／影片 resolver 即可。短連結雖以 .gif 結尾卻是網頁，故這條**必須排在
+// RE_IMAGE_EXT 之前**判斷，否則會被當成直連圖而載入失敗（本功能的原始 bug）。
+export const RE_TENOR =
+  /^https?:\/\/(?:www\.)?tenor\.com\/(?:view\/[\w-]+-\d+|[A-Za-z0-9]{1,16}\.gif)(?:$|[?#])/i;
+
 // 會解析成「靜態圖片／相簿」的 URL 才算（youtube/twitch iframe、影片檔不算——
 // 那些不是漫畫圖，右欄翻譯貼上去沒有意義）。
+//
+// tenor 例外說明：它最終渲染成 <video>（GIF 語意的自動循環），這裡仍算圖片列。
+// 理由同 imgur 的影片型資產——同步判斷是圖、descriptor 是 video 的組合早就存在，
+// 圖文合併塊也已支援（見 main.css 的 .mergedImageCol .easyReadingVideo）。
+// 兩種 tenor 連結形式（短連結／view）判定要一致，否則同一則圖只因寫法不同就一個
+// 進合併塊、一個不進。
 export function isImageLikeUrl(src) {
   if (!src) return false;
   return (
@@ -25,6 +38,7 @@ export function isImageLikeUrl(src) {
     (RE_IMGUR_SINGLE.test(src) && !/\/(?:a|gallery)\//i.test(src)) ||
     RE_TWIMG.test(src) ||
     RE_MEEE.test(src) ||
+    RE_TENOR.test(src) ||
     RE_IMAGE_EXT.test(src)
   );
 }

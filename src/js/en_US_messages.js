@@ -368,7 +368,7 @@ export const en_US = {
     "message": "Image loading proxy"
   },
   "tooltip_imgurProxy": {
-    "message": "imgur's CDN routes Taiwan traffic to the US, so an image occasionally stalls for 9-24 seconds. When enabled, imgur images are fetched and cached through this project's Cloudflare Worker, which removes those stalls (it does not make normal loads faster). That service sees your IP and which image you are viewing, but keeps no logs; if it fails, requests fall back to i.imgur.com automatically. Videos (mp4) always go direct and never through the proxy."
+    "message": "imgur's CDN routes Taiwan traffic to the US, so an image occasionally stalls for 9-24 seconds. When enabled, imgur images are fetched and cached through this project's Cloudflare Worker, which removes those stalls (it does not make normal loads faster). That service sees your IP and which image you are viewing, but keeps no logs; if it fails, requests fall back to i.imgur.com automatically. Videos (mp4) always go direct and never through the proxy. The same service also resolves tenor GIF share links (tenor.com/xxxxx.gif is a web page, not an image file, so it can only be resolved server-side); when disabled, those links show no preview."
   },
   "options_useImgurProxy": {
     "message": "Load imgur images through a proxy (takes effect after reload)"
