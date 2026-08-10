@@ -874,6 +874,10 @@ App.prototype.onPrefChange = function(name, value) {
       // to muted grays under this class. body-level so the whole screen
       // (including easy-reading overlay) is covered.
       document.body.classList.toggle('work-mode-active', !!value);
+      // The typing cursor's color is an inline style (not reachable by that
+      // class) and is derived from the NATIVE bg palette — it has to be told,
+      // or it goes invisible on the grayed-out reverse-video input rows.
+      if (this.view) this.view.setWorkMode(!!value);
       break;
     case 'useMouseBrowsing':
       var useMouseBrowsing = value;

@@ -229,7 +229,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     expect(saved.values && saved.values.showFloorNumbers).toBe(!before);
   });
 
-  test('上班模式：勾選後 body 掛 work-mode-active、q11 壓灰、值持久化', async ({ page }) => {
+  test('上班模式：勾選後 body 掛 work-mode-active、q11 壓灰、打字游標仍看得見、值持久化', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
     const nav = await openSettings(page);
@@ -257,6 +257,17 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     expect(colors.q11).not.toBe('rgb(255, 255, 0)');
     // 樓層編號（main.css 寫死 #ffd34d）也要壓灰
     expect(colors.floorBadge).not.toBe('rgb(255, 211, 77)');
+
+    // 打字游標（#cursor）的顏色是 inline style，class 覆寫不到 → 必須由
+    // App.onPrefChange 轉給 view.setWorkMode，否則反白輸入列（b7/b15 被壓成
+    // #374151）上的游標仍是原生反色 #3F3F3F，對比 ≈1.0 等於隱形。
+    // 上班模式下游標與 bg 無關（cursor_color.js 的固定淺灰），故不依賴畫面內容。
+    await expect(page.locator('#cursor')).toHaveCSS('color', 'rgb(229, 231, 235)');
+    // 加粗＋光暈（main.css #cursor text-shadow）：單一 `_` 太細，難一眼定位。
+    const cursorShadow = await page.evaluate(
+      () => getComputedStyle(document.getElementById('cursor')).textShadow
+    );
+    expect(cursorShadow).not.toBe('none');
 
     // 持久化：重新整理後 class 仍在（onValuesPrefChange 啟動即套用）。
     const saved = await page.evaluate(() =>

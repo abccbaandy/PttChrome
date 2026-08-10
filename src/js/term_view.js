@@ -1,7 +1,7 @@
 // Terminal View
 
 import { TermKeyboard } from './term_keyboard';
-import { termInvColors } from './term_buf';
+import { cursorColorForBg } from './cursor_color';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
@@ -103,6 +103,11 @@ export function TermView() {
   // List easy reading hides the PTT cursor while the buffer render owns the
   // screen (the real cursor points into the 24-row buffer, not the long list).
   this._cursorHidden = false;
+
+  // Work mode (enableWorkMode) repaints the screen in grays via CSS only, so the
+  // cursor's inline color has to be told about it — see cursor_color.js. Kept in
+  // sync by App.onPrefChange → setWorkMode.
+  this.workModeActive = false;
 
   // Sticky "we are in a board-list context" flag for blacklist hiding. Pressing v
   // (設定已讀未讀記錄) overlays a prompt on the list whose status row no longer
@@ -855,6 +860,13 @@ TermView.prototype = {
     this.updateCursorPos();
   },
 
+  // Work mode toggled (App.onPrefChange): repaint the cursor right away so the
+  // color follows the new palette even if no screen update is coming.
+  setWorkMode: function(on) {
+    this.workModeActive = !!on;
+    if (this.buf) this.updateCursorPos();
+  },
+
   // Lightweight fading toast for the list easy-reading closed interaction
   // (v5: a non-whitelisted key is a no-op with a hint — list_session.js
   // onKeyDown). One reusable fixed div, inline-styled so it needs no CSS file
@@ -1038,7 +1050,7 @@ TermView.prototype = {
     this.bbsCursor.style.left = pos[0] + 'px';
     this.bbsCursor.style.top = (pos[1] - this.scaleY) + 'px';
     // if you want to set cursor color by now background, use this.
-    this.bbsCursor.style.color = termInvColors[bg];
+    this.bbsCursor.style.color = cursorColorForBg(bg, this.workModeActive);
     this.updateInputBufferPos();
 
   },

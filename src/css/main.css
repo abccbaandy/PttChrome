@@ -78,8 +78,17 @@
   -webkit-user-select: none;
 }
 
+/* 打字游標。單一 `_` 字元只有 1px 高又閃爍，很難一眼定位（上班模式的低彩度畫面
+   尤其明顯），所以把它疊粗成 2~3px 並加一圈淡光暈。
+   - currentColor：顏色由 term_view.updateCursorPos 的 inline style 決定
+     （原生＝背景反色、上班模式＝固定淺灰，見 cursor_color.js），這裡自動跟著走。
+   - 位移一律往上：.terminal_display 是 height:0 的絕對定位元素，往下疊會壓到下一列。 */
 #cursor {
   display: none;
+  text-shadow:
+    0 -1px 0 currentColor,
+    0 -2px 0 currentColor,
+    0 0 4px currentColor;
 }
 
 .blink--active #cursor {
