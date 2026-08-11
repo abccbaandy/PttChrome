@@ -762,8 +762,128 @@ describe("nextEasyReadingReentry（原生模式下換文章才重啟）", () => 
     expect(r({ articleKey: "" })).toBe(false);
   });
 
-  it("這篇從沒用過好讀（沒有舊身分）→ 重啟（等同既有的 2→3 行為）", () => {
-    expect(r({ nativeArticleKey: null })).toBe(true);
+  // fail-safe 方向：這條路徑只為「使用者主動 F8 切原生之後跳到別篇」而存在，所以
+  // 「不知道使用者是從哪一篇切出來的」必須留在原生。舊版把 null 當成「這篇從沒用過
+  // 好讀 ⇒ 可重啟」是 fail-OPEN，只要 _articleKey 沒抓到（見下一個 describe 的兩條
+  // 路徑），使用者在**同一篇**按 Home 就會被切回好讀。一般的「列表→文章」自動開好讀
+  // 由 nextEasyReadingState 負責，不靠這裡。
+  it("身分不明（沒有舊身分）→ 不重啟（留在原生，熱鍵永遠還在）", () => {
+    expect(r({ nativeArticleKey: null })).toBe(false);
+    expect(r({ nativeArticleKey: "" })).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 文章身分 _articleKey 的捕捉點
+//
+// nextEasyReadingReentry 靠「畫面第 0~2 列＝作者/標題/時間」比對來擋掉「使用者在原生
+// 自己按 Home/0/g 回到同一篇第 1 行」。但身分基準若存錯，比對就形同虛設 —— 使用者回報
+// 的「按 Home 就被切回好讀」正是如此。舊版 _articleKey 只在 enterEasyReading() 捕捉
+// 一次，有兩條會存到錯誤值的路徑：
+//
+//   (1) F8 toggle 從文章**中段**切回好讀：reenterFromTop 先 enterEasyReading() 再送
+//       Home，捕捉當下畫面是中段 ⇒ 第 0~2 列是內文不是 header ⇒ 存到垃圾。
+//   (2) 好讀開著時用 [ ] a b f 跳下一篇：這條路徑**不經過** enterEasyReading()
+//       （nextEasyReadingState 要求 !enabled）⇒ _articleKey 停留在**上一篇**。
+//
+// 修法：改由 _applyRowState 在**每次確認的第一頁**（statusStart === 1）重抓，
+// enterEasyReading() 只負責清空。這是唯一同時覆蓋三條路徑（settle 邊緣進文章、跳文、
+// toggle 送 Home 後的落地幀）的捕捉點。
+// ---------------------------------------------------------------------------
+describe("文章身分 _articleKey 的捕捉點", () => {
+  // screen.rows = 目前畫面第 0~2 列；改它就等於模擬 PTT 換了一幀。
+  const makeIdER = ({ rows = ["作者 A", "標題 A", "時間 A"], rowIndexStart = 1 } = {}) => {
+    const screen = { rows };
+    const lastChar = { getFg: () => 7, getBg: () => 0 };
+    const termBuf = {
+      addEventListener() {}, cols: 80, rows: 24, cur_x: 79, cur_y: 23,
+      pageState: 3, prevPageState: 3, settledPageState: 3, prevSettledPageState: 3,
+      pageLines: [], lines: { 23: [lastChar] },
+      lineChangeds: { fill: vi.fn() }, notify: vi.fn(),
+      getRowText: (row) => (row === 23 ? "status-row" : (screen.rows[row] || "")),
+      startedEasyReading: false,
+      easyReadingShowReplyText: false, easyReadingShowPushInitText: false,
+      easyReadingGapDetected: false, easyReadingHealInFlight: false
+    };
+    const view = {
+      useEasyReadingMode: false, mainDisplay: { scrollTop: 0 }, _lastAccumulatedSig: null
+    };
+    const core = { connectedUrl: { easyReadingSupported: true } };
+    const er = new EasyReading(core, view, termBuf);
+    er._send = vi.fn();
+    // 忠實模擬 App.switchToEasyReadingMode 的隱藏傳遞鏈（pttchrome.jsx）
+    er._core.switchToEasyReadingMode = vi.fn(() => { er.leaveCurrentPost(); });
+    er._termBufMock = termBuf;
+    er._screen = screen;
+    // 模擬 PTT 送來一幀：換畫面內容 + 狀態列行號，再跑一次快路徑。
+    er._frame = (nextRows, start) => {
+      screen.rows = nextRows;
+      parseStatusRow.mockReturnValue({
+        pagePercent: 50, rowIndexStart: start, rowIndexEnd: start + 22
+      });
+      er._onChanged();
+    };
+    parseStatusRow.mockReturnValue({
+      pagePercent: 50, rowIndexStart, rowIndexEnd: rowIndexStart + 22
+    });
+    return er;
+  };
+
+  const A = ["作者 A", "標題 A", "時間 A"];
+  const B = ["作者 B", "標題 B", "時間 B"];
+  const MID = [": 這是文章中段的內文", ": 第二行內文", ": 第三行內文"];
+
+  beforeEach(() => {
+    readValuesWithDefault.mockReturnValue({
+      enableEasyReading: true, easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "F8"
+    });
+    parseReplyText.mockReturnValue(false);
+    parsePushInitText.mockReturnValue(false);
+    parseReqNotMetText.mockReturnValue(false);
+  });
+
+  // 使用者回報路徑：好讀開著 → [ 或 ] 跳下一篇 → F8 切原生 → 按 Home 回第 1 行。
+  // 舊版 _nativeArticleKey 會是**上一篇**的 key ⇒ 身分不同 ⇒ 誤重啟。
+  it("好讀下用 [ ] 跳文後切原生，同一篇按 Home 不得切回好讀", () => {
+    const er = makeIdER();
+    er.enterEasyReading();          // A 篇（列表 → 文章）
+    er._frame(A, 1);
+    er._frame(A, 23);               // 往下翻，離開第一頁
+    er.leaveCurrentPost();          // 按 ] 跳下一篇
+    er._frame(B, 1);                // B 篇第一頁落地
+    expect(er._articleKey).toBe("作者 B|標題 B|時間 B");
+
+    er.exitEasyReading();           // F8 切原生
+    expect(er._nativeArticleKey).toBe("作者 B|標題 B|時間 B");
+
+    // 原生下自己按 Home 回 B 篇第 1 行 → settle
+    parseStatusRow.mockReturnValue({ pagePercent: 3, rowIndexStart: 1, rowIndexEnd: 23 });
+    er._maybeReenterOnNewArticle();
+    expect(er._enabled).toBe(false);
+  });
+
+  // 保留下來的功能：真的換到**另一篇**時仍要自動恢復好讀。
+  it("原生下跳到另一篇的第一頁 → 仍自動恢復好讀", () => {
+    const er = makeIdER();
+    er.enterEasyReading();
+    er._frame(A, 1);
+    er.exitEasyReading();           // F8 切原生（nativeArticleKey = A）
+
+    er._screen.rows = B;            // ] 跳到 B 篇第一頁
+    parseStatusRow.mockReturnValue({ pagePercent: 3, rowIndexStart: 1, rowIndexEnd: 23 });
+    er._maybeReenterOnNewArticle();
+    expect(er._enabled).toBe(true);
+  });
+
+  // reenterFromTop 先 enterEasyReading() 再送 Home，捕捉當下畫面還在中段。
+  it("F8 toggle 從中段切回好讀 → 不得把內文當成文章身分", () => {
+    const er = makeIdER({ rows: MID, rowIndexStart: 500 });
+    expect(er.tryReenterFromNative({ key: "F8" })).toBe(true);
+    expect(er._articleKey).toBe(null);
+    expect(er._send).toHaveBeenCalledWith("\x1b[1~");
+
+    er._frame(A, 1);                // Home 落地，畫面回到第一頁
+    expect(er._articleKey).toBe("作者 A|標題 A|時間 A");
   });
 });
 

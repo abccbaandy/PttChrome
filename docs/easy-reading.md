@@ -45,10 +45,16 @@
 - transient 0 為何不污染：half-paint frame(末列空→`pageState=0`，`term_buf.js` pageState 判定)後續一定有更晚的視窗 re-arm 計時器，故 0 永不 settle；settle 只抓「最後靜止值」(3)。列表→文章的 settled 串流乾淨無 0，**無需 latch**。
 - 退出抑制天生正確：`switchToNativeAtBottom` 後留在 pageState 3、`settledPageState` 仍 3、**不再升級**→ `'pageStateSettled'` 不觸發、邊緣不成立 → 不誤重啟（故也不需要額外的抑制旗標）。
 - **第二條重啟邊緣：原生模式下換到另一篇文章（`nextEasyReadingReentry`，2026-08，治「半永久原生模式」）**。`nextEasyReadingState` 只認 settled `1|2 → 3`，而切原生後用 `[` `]` `a` `b` `f` `=` 跳下一篇**全程 pageState 都是 3**，根本不會有邊緣 ⇒ 一路卡原生直到繞回列表。
-  - 條件：`!enabled ∧ pref on ∧ supported ∧ !functionMode ∧ pageState 3 ∧ 游標已 park ∧ statusStart === 1 ∧ articleKey 可讀 ∧ articleKey !== nativeArticleKey`。在 `_onScreenSettled` 的 `!_enabled` 分支評估（`_maybeReenterOnNewArticle`）。
+  - 條件：`!enabled ∧ pref on ∧ supported ∧ !functionMode ∧ pageState 3 ∧ 游標已 park ∧ statusStart === 1 ∧ articleKey **與** nativeArticleKey 皆可讀 ∧ articleKey !== nativeArticleKey`。在 `_onScreenSettled` 的 `!_enabled` 分支評估（`_maybeReenterOnNewArticle`）。
   - **刻意用文章身分而非 pageState 邊緣**：docs 上面那條明令「掉出 3 再回來不是換文章」；而唯一擋不掉的誤觸發是「使用者在原生自己按 Home/`0`/`g` 回到第 1 行」——比對 `articleKey`（畫面第 0~2 列＝作者/標題/時間，只取 row 0 會在同作者 `a` 跳文時撞號）直接擋死。
-  - `_articleKey` 在 `enterEasyReading()` 捕捉，`exitEasyReading()` 把它搬到 `_nativeArticleKey`。`_nativeArticleKey` 為 null（這篇從沒開過好讀）時視為可重啟，行為等同既有的 `2→3`。
-  - 讀不到身分就**不重啟**（寧可留在原生）：這個方向 fail-safe，熱鍵永遠還在。
+  - **`_articleKey` 的捕捉點是 `_applyRowState`（每個 `statusStart === 1` 的幀重抓一次），不是 `enterEasyReading()`**（2026-08 修「原生下按 Home 就被切回好讀」的根因）。header 只在第一頁在畫面上，而「這篇變成當前文章」有三條路，只在 `enterEasyReading()` 抓會有兩條存到**錯的** key ⇒ 身分比對形同虛設：
+    | 路徑 | 舊版存到什麼 |
+    |---|---|
+    | settle `1\|2→3` 進文章 | 正確（畫面就是第一頁） |
+    | `[` `]` `a` `b` `f` `=` 跳下一篇 | **上一篇**的 key（好讀已開 ⇒ 不經 `enterEasyReading`，見 `_onPageStateSettled` 註解） |
+    | F8 toggle 從中段切回好讀 | **內文**（`reenterFromTop` 先 `enterEasyReading()` 再送 Home，捕捉當下還在中段） |
+    `enterEasyReading()` 改為只清成 null；`leaveCurrentPost()` 也清（跳文路徑的結構性保險）；`exitEasyReading()` 把它搬到 `_nativeArticleKey`。捕捉點受 `_enabled ∧ !_functionMode` 閘（`_onChanged` 早退），prompt/選單幀不會污染。
+  - **兩邊身分任一讀不到就不重啟**（寧可留在原生）：fail-safe，熱鍵永遠還在。舊版「`nativeArticleKey` 為 null ⇒ 視為可重啟」是 **fail-OPEN**，只要捕捉漏一次，同一篇按 Home 就會被切回好讀。這條路徑本來就只為「使用者主動切原生後跳文」存在，一般 `列表→文章` 由 `nextEasyReadingState` 負責，不靠它。
 - 退化情形（guess）：連線在**畫面中途**停 >`SETTLE_MS`（網路卡）才可能 premature settle；最壞首篇自動 enable 漏一次（捲動/重進即恢復），非 crash。`SETTLE_MS` 為可調常數，slow link premature-settle 就調高。
 
 ## render 單軌（兩模式同走 `<Screen>`）

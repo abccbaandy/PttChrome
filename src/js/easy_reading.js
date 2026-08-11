@@ -53,8 +53,17 @@ export function nextEasyReadingState({ settledPageState, prevSettledPageState, e
 //     it outright.
 // `articleKey` = the post's 作者/標題/時間 rows; row 0 alone collides on an `a`
 // (same-author) jump. `nativeArticleKey` is the key of the post the user switched away
-// from (null when easy reading was never on in this post — then behave like the normal
-// list→article enable).
+// from — see _applyRowState for where it is captured (every CONFIRMED first page, not
+// once per enterEasyReading: that older single capture point stored the WRONG post on
+// two paths and made the comparison below vacuous, which is the 「原生下按 Home 就被切
+// 回好讀」 report).
+//
+// Both keys must be KNOWN — this route exists solely for "the user switched to native
+// themselves and has since jumped elsewhere", so not knowing which post they switched
+// away from means staying native (the hotkey is always there). Treating an unknown
+// `nativeArticleKey` as "easy reading was never on here ⇒ re-enable" is fail-OPEN: any
+// missed capture turns a same-post native Home back into a false re-entry. The ordinary
+// list→article enable is nextEasyReadingState's job, not this one's.
 export function nextEasyReadingReentry({
   pageState, complete, enabled, enablePref, supported, functionMode,
   statusStart, articleKey, nativeArticleKey
@@ -62,7 +71,7 @@ export function nextEasyReadingReentry({
   if (enabled || !enablePref || !supported || functionMode) return false;
   if (pageState !== 3 || !complete) return false;
   if (statusStart !== 1) return false;          // only ever on a post's first page
-  if (articleKey == null || articleKey === '') return false;  // can't tell → stay native
+  if (!articleKey || !nativeArticleKey) return false;  // can't tell → stay native
   return articleKey !== nativeArticleKey;
 }
 
@@ -306,9 +315,11 @@ export function EasyReading(core, view, termBuf) {
   this._functionMode = false;
   this._savedScrollTop = null;
   // Article identity (作者/標題/時間 rows) — see nextEasyReadingReentry. _articleKey is
-  // captured whenever easy reading opens a post; _nativeArticleKey is the one we left
-  // behind on a switch-to-native, and is what tells "another post" apart from "the same
-  // post, scrolled back to the top by a native Home".
+  // re-read on every confirmed first-page frame while easy reading is on (_applyRowState,
+  // which is the only capture point that covers all the ways a post becomes current);
+  // _nativeArticleKey is the one we left behind on a switch-to-native, and is what tells
+  // "another post" apart from "the same post, scrolled back to the top by a native Home".
+  // null on either side means "unknown" and blocks the re-entry route (fail-safe).
   this._articleKey = null;
   this._nativeArticleKey = null;
 
@@ -411,7 +422,7 @@ EasyReading.prototype._computeRowState = function() {
   const row22Text = this._termBuf.getRowText(22, 0, this._termBuf.cols);
   const lastRowFirstCh = this._termBuf.lines[lastRowNum][0];
   const status = parseStatusRow(lastRowText);
-  return nextEasyReadingRowState({
+  const rowState = nextEasyReadingRowState({
     // P3: progress==100 ⟺ mf_viewedAll(). Authoritative "already at the bottom" signal;
     // the footer colour below stays only as a fallback (see nextEasyReadingRowState).
     pagePercent: status ? status.pagePercent : null,
@@ -433,6 +444,11 @@ EasyReading.prototype._computeRowState = function() {
     lastRowFirstChFg: lastRowFirstCh.getFg(),
     lastRowFirstChBg: lastRowFirstCh.getBg()
   });
+  // Carried alongside the pure result (not an input to it): _applyRowState needs to know
+  // whether this frame is a post's FIRST page to refresh the article identity, and the
+  // status row is already parsed here — no second parse. See _applyRowState.
+  rowState.statusStart = status ? status.rowIndexStart : null;
+  return rowState;
 };
 
 // Apply a computed rowState back onto term_buf / this. Idempotent on a stable frame.
@@ -446,6 +462,22 @@ EasyReading.prototype._applyRowState = function(rowState) {
     this.ignoreOneUpdate = false;
   if (rowState.pageStateOverride !== null)
     this._termBuf.pageState = rowState.pageStateOverride;
+  // ARTICLE IDENTITY — the 作者/標題/時間 header is only on screen on a post's FIRST
+  // page, so re-read it on every confirmed first-page frame. This is the ONLY point
+  // that covers all three ways a post becomes "the current post":
+  //   - settle edge list/menu → article (enterEasyReading, then its replayed notify);
+  //   - `[` `]` `a` `b` `f` `=` jumps, which do NOT go through enterEasyReading at all
+  //     (nextEasyReadingState requires !enabled — see _onPageStateSettled);
+  //   - the Home landing frame after reenterFromTop (the F8 toggle enters easy reading
+  //     while still MID-post, where rows 0..2 are body text, not the header).
+  // Capturing once inside enterEasyReading stored the previous post's key on the second
+  // path and body text on the third; nextEasyReadingReentry's identity check was then
+  // vacuous and a plain native Home re-enabled easy reading. Callers are gated on
+  // _enabled && !_functionMode (_onChanged), so prompt/menu frames never capture.
+  if (rowState.statusStart === 1) {
+    const key = this._readArticleKey();
+    if (key) this._articleKey = key;
+  }
 };
 
 // Identity of the article page currently shown, taken from the status row's
@@ -975,6 +1007,11 @@ EasyReading.prototype.leaveCurrentPost = function() {
     this.ignoreOneUpdate = true;
   this._functionMode = false;
   this._savedScrollTop = null;
+  // Structural belt-and-braces for the article identity: this is the jump-to-another-post
+  // path ([ ] a b f = + -), and the OLD post's key must not survive into the new one even
+  // for the few frames before _applyRowState re-captures it (an F8 in that window would
+  // hand nextEasyReadingReentry the wrong nativeArticleKey).
+  this._articleKey = null;
 };
 
 EasyReading.prototype.stopEasyReading = function() {
@@ -1058,7 +1095,11 @@ EasyReading.prototype.enterEasyReading = function() {
   this._functionMode = false;
   this._savedScrollTop = null;
   // Opening a post in easy reading retires whatever native excursion came before it.
-  this._articleKey = this._readArticleKey();
+  // The identity itself is NOT captured here: reenterFromTop calls us while the screen
+  // is still mid-post (it only sends Home afterwards), so rows 0..2 would be body text.
+  // _applyRowState re-reads it on the next confirmed first-page frame — the replayed
+  // notify() below when we are already there, the Home landing frame otherwise.
+  this._articleKey = null;
   this._nativeArticleKey = null;
   // Force accumulatePageLines down its "new article" branch (restart pageLines as
   // the whole screen) instead of the same-article continuation branch, and start
