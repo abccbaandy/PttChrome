@@ -41,12 +41,6 @@ export const en_US = {
   "cmenu_selectAll": {
     "message": "Select all"
   },
-  "cmenu_searchGoogle": {
-    "message": "Search Google for"
-  },
-  "cmenu_quickSearch": {
-    "message": "Quick Search"
-  },
   "cmenu_openUrlNewTab": {
     "message": "Open link in new tab"
   },
@@ -100,6 +94,60 @@ export const en_US = {
   "options_enhance": {
     "message": "Enhanced"
   },
+
+  // quick search (context menu)
+  "options_quickSearch": {
+    "message": "Quick Search"
+  },
+  "tooltip_quickSearch": {
+    "message": "These entries show up in the context menu once you select some text. Built-in entries can be disabled, but not edited or removed."
+  },
+  "options_quickSearchBuiltin": {
+    "message": "Built-in entries"
+  },
+  "options_quickSearchCustom": {
+    "message": "Custom entries"
+  },
+  "options_quickSearchEnabled": {
+    "message": "Enabled"
+  },
+  "options_quickSearchName": {
+    "message": "Name"
+  },
+  "options_quickSearchUrl": {
+    "message": "URL (%s = selected text)"
+  },
+  "options_quickSearchMatch": {
+    "message": "Applies to"
+  },
+  "options_quickSearchMatchAny": {
+    "message": "Any text"
+  },
+  "options_quickSearchMatchDigits": {
+    "message": "Digits only"
+  },
+  "options_quickSearchAdd": {
+    "message": "Add entry"
+  },
+  "options_quickSearchDelete": {
+    "message": "Delete"
+  },
+  "quicksearch_err_name": {
+    "message": "Name is required"
+  },
+  "quicksearch_err_url": {
+    "message": "URL must start with http:// or https:// and contain %s"
+  },
+  "quicksearch_builtin_google": {
+    "message": "Search Google"
+  },
+  "quicksearch_builtin_pixivUser": {
+    "message": "Pixiv user"
+  },
+  "quicksearch_builtin_pixivArtwork": {
+    "message": "Pixiv artwork"
+  },
+
   "options_ai": {
     "message": "AI"
   },

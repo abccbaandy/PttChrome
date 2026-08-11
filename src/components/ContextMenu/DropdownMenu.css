@@ -1,7 +1,25 @@
 /* 右鍵 context menu 改用 Mantine Menu（classNames.dropdown="DropdownMenu" 為 e2e
-   marker）。樣式由 Mantine 提供，這裡只留快捷鍵提示（rightSection）的淡化色。 */
+   marker）。樣式由 Mantine 提供，這裡只留快捷鍵提示（rightSection）的淡化色，以及
+   下面的動態寬度。 */
 .DropdownMenu .mantine-Menu-itemSection[data-position="right"] {
   color: var(--mantine-color-dimmed);
   font-size: 12px;
   margin-left: 16px;
+}
+
+/* 動態寬度：內容撐寬、設上限，超長的關鍵字單行省略號（像 Chrome 原生的右鍵搜尋）。
+   舊版是 Menu 的 width={220} 固定寬 → 「Google 搜尋 '長關鍵字'」會擠成兩行。
+   上限同時被視窗寬度夾住，避免在窄視窗超出畫面。 */
+.DropdownMenu {
+  width: max-content;
+  min-width: 180px;
+  max-width: min(420px, calc(100vw - 24px));
+}
+
+/* min-width:0 不可省：flex 子元素預設 min-width:auto，不歸零 ellipsis 不會生效。 */
+.DropdownMenu .mantine-Menu-itemLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

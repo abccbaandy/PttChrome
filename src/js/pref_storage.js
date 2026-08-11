@@ -89,6 +89,18 @@ export const DEFAULT_PREFS = {
   enableXMentionLink: true, // auto-link @handle to x.com when the X account exists
   blacklist: "", // newline-separated user ids
   titleBlacklist: "", // newline-separated title keywords (board-list only)
+
+  // 快速搜尋（右鍵選單）。內建項目定義在 quick_search.js#BUILTIN_QUICK_SEARCH，
+  // 這裡只存「被停用的內建 id」而不是整份清單：陣列 pref 走 readValuesWithDefault
+  // 的淺層合併＝整包覆蓋，一旦把內建塞進來就凍結在第一次寫入的狀態，日後新增內建
+  // 項目時既有使用者永遠看不到。
+  // Object.freeze 是刻意的：readValuesWithDefault 與 PrefModal 的 onResetClick 都是
+  // { ...DEFAULT_PREFS } 淺層複製、陣列共用同一個 reference，in-place push/splice
+  // 會污染整個 session 的預設值 → 一律 [...arr] / filter / map。
+  quickSearchDisabled: Object.freeze([]), // 內建 id，出現在裡面 = 停用
+  // [{ id, name, urlTemplate, match: 'any'|'digits', enabled }]
+  // 欄位不可為 undefined：Firestore SDK 遇到會 throw（見 pref_sync.js#savePrefs）。
+  quickSearchCustom: Object.freeze([]),
   autoLogin: false,
   autoLoginUser: "",
   autoLoginPassword: "",

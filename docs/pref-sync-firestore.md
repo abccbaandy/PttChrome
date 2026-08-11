@@ -97,4 +97,5 @@ firebase deploy --only firestore:rules
 - PrefModal 由 ContextMenu mount 一次、靠 `show` prop 切換；表單 state 在每次**開啟**時 `componentDidUpdate` 重讀 localStorage（見 `PrefModal.jsx` 該處註解），但開啟期間不吃 snapshot → 兩端**同時**編輯仍 last-write-wins，realtime 只縮小不消滅此窗口。
 - 帳號改 local-only 後，新裝置（尤其無 credential API 的 Firefox/Safari）不再從雲端拿到 `autoLoginUser`，需手動重填帳密一次。
 - 清瀏覽器資料只清掉同步旗標與快取；偏好仍在雲端，重新登入即拉回。
+- **陣列型 pref（`quickSearchDisabled`／`quickSearchCustom`）是整份清單 last-write-wins**：`setDoc({merge:true})` 只合併 map 欄位，陣列一律整包覆蓋，不做逐項合併。兩台裝置各自新增一筆自訂快速搜尋 → 後寫入的那份贏，另一筆消失。同理 `readValuesWithDefault` 的淺層合併也是整包覆蓋 → **內建項目不可存進陣列**（會凍結在第一次寫入的狀態，日後新增的內建項目舊使用者永遠看不到），故只存「被停用的內建 id」，見 `pref_storage.js#quickSearchDisabled` 註解。
 - ad-blocker 擋 `google.com/recaptcha` 時 App Check 拿不到 token：enforce 後該瀏覽器同步全掛（permission-denied），BBS 其餘功能正常（`initializeAppCheck` 有 try/catch）。

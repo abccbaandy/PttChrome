@@ -1,27 +1,13 @@
 import { Fragment } from "react";
 import { Menu } from "@mantine/core";
 import { i18n } from "../../js/i18n";
+import { quickSearchLabel } from "../../js/quick_search";
 import "./DropdownMenu.css";
-
-const normalizeSelectedText = (selectedText) => {
-  if (selectedText.length > 15) {
-    return `${selectedText.substr(0, 15)} …`;
-  }
-  return selectedText;
-};
-
-const QUICK_SEARCH = {
-  providers: [
-    {
-      name: "goo.gl",
-      url: "https://goo.gl/%s",
-    },
-  ],
-};
 
 // 右鍵 context menu。改用 Mantine Menu（受控 opened，由 index.js 的 open 狀態驅動）：
 // Menu.Target 是定位於游標 (pageX,pageY) 的零尺寸元素，floating-ui 自動處理超出邊界
-// 翻轉（取代舊的手算 top()/left()）。QuickSearch 子選單用 Menu.Sub。
+// 翻轉（取代舊的手算 top()/left()）。快速搜尋是**一層**平鋪（不用 Menu.Sub），項目
+// 由 index.jsx 依偏好＋選取內容算好後傳進來。
 export const DropdownMenu = ({
   open,
   onHide,
@@ -31,7 +17,8 @@ export const DropdownMenu = ({
   normalEnabled,
   selEnabled,
   mouseBrowsingEnabled,
-  selectedText,
+  quickSearchItems = [],
+  quickSearchQuery = "",
   authorBlacklistId,
   authorBlacklistExists,
   titleBlacklistText,
@@ -51,7 +38,8 @@ export const DropdownMenu = ({
       position="bottom-start"
       offset={0}
       shadow="md"
-      width={220}
+      // 不給 width：寬度交給 DropdownMenu.css 的 max-content + max-width（動態寬度，
+      // 長關鍵字單行省略號），舊的固定 220px 會把「Google 搜尋 '…'」擠成兩行。
       trapFocus={false}
       classNames={{ dropdown: "DropdownMenu" }}
     >
@@ -109,11 +97,17 @@ export const DropdownMenu = ({
             {i18n("cmenu_paste")}
           </Menu.Item>
         )}
-        {selEnabled && (
-          <Menu.Item onClick={(e) => onMenuSelect("searchGoogle", e)}>
-            {i18n("cmenu_searchGoogle")} '{normalizeSelectedText(selectedText)}'
+        {/* 快速搜尋：一層平鋪，每項自帶關鍵字（像 Chrome 原生的右鍵搜尋）。清單與
+            適用條件（任意文字／純數字）由 index.jsx 現讀偏好算出，這裡只負責畫。 */}
+        {quickSearchItems.map((item) => (
+          <Menu.Item
+            key={item.id}
+            className="DropdownMenu__QuickSearch"
+            onClick={(e) => onQuickSearchSelect(item, e)}
+          >
+            {quickSearchLabel(item)} '{quickSearchQuery}'
           </Menu.Item>
-        )}
+        ))}
         {urlEnabled && (
           <Fragment>
             <Menu.Item onClick={(e) => onMenuSelect("openUrlNewTab", e)}>
@@ -125,26 +119,6 @@ export const DropdownMenu = ({
           </Fragment>
         )}
         <Menu.Divider />
-        {selEnabled && (
-          <Fragment>
-            <Menu.Sub>
-              <Menu.Sub.Target>
-                <Menu.Sub.Item>{i18n("cmenu_quickSearch")}</Menu.Sub.Item>
-              </Menu.Sub.Target>
-              <Menu.Sub.Dropdown>
-                {QUICK_SEARCH.providers.map((p) => (
-                  <Menu.Item
-                    key={p.url}
-                    onClick={(e) => onQuickSearchSelect(p.url, e)}
-                  >
-                    {p.name}
-                  </Menu.Item>
-                ))}
-              </Menu.Sub.Dropdown>
-            </Menu.Sub>
-            <Menu.Divider />
-          </Fragment>
-        )}
         {normalEnabled && (
           <Fragment>
             <Menu.Item

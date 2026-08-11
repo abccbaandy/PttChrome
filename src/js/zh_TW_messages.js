@@ -41,12 +41,6 @@
   "cmenu_selectAll": {
     "message": "全選"
   },
-  "cmenu_searchGoogle": {
-    "message": "在 Google 上搜尋"
-  },
-  "cmenu_quickSearch": {
-    "message": "快速搜尋"
-  },
   "cmenu_openUrlNewTab": {
     "message": "在新分頁中開啟連結"
   },
@@ -100,6 +94,60 @@
   "options_enhance": {
     "message": "增強功能"
   },
+
+  // quick search (context menu)
+  "options_quickSearch": {
+    "message": "快速搜尋"
+  },
+  "tooltip_quickSearch": {
+    "message": "在畫面上選取文字後按右鍵，這些項目就會出現在選單裡。內建項目可以停用，但不能編輯或刪除。"
+  },
+  "options_quickSearchBuiltin": {
+    "message": "內建項目"
+  },
+  "options_quickSearchCustom": {
+    "message": "自訂項目"
+  },
+  "options_quickSearchEnabled": {
+    "message": "啟用"
+  },
+  "options_quickSearchName": {
+    "message": "名稱"
+  },
+  "options_quickSearchUrl": {
+    "message": "網址（%s 代表選取的文字）"
+  },
+  "options_quickSearchMatch": {
+    "message": "適用條件"
+  },
+  "options_quickSearchMatchAny": {
+    "message": "任意文字"
+  },
+  "options_quickSearchMatchDigits": {
+    "message": "純數字"
+  },
+  "options_quickSearchAdd": {
+    "message": "新增項目"
+  },
+  "options_quickSearchDelete": {
+    "message": "刪除"
+  },
+  "quicksearch_err_name": {
+    "message": "請輸入名稱"
+  },
+  "quicksearch_err_url": {
+    "message": "網址須以 http:// 或 https:// 開頭，且要包含 %s"
+  },
+  "quicksearch_builtin_google": {
+    "message": "Google 搜尋"
+  },
+  "quicksearch_builtin_pixivUser": {
+    "message": "pixiv 使用者"
+  },
+  "quicksearch_builtin_pixivArtwork": {
+    "message": "pixiv 圖片"
+  },
+
   "options_ai": {
     "message": "AI 功能"
   },

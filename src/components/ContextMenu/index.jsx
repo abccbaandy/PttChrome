@@ -16,6 +16,11 @@ import {
   appendBlacklistEntry,
   COMMENT_USERID_COL,
 } from "../../js/comment_parse";
+import {
+  normalizeQuickSearchQuery,
+  visibleQuickSearchItems,
+  buildQuickSearchUrl,
+} from "../../js/quick_search";
 
 function noop() {}
 
@@ -23,7 +28,6 @@ const EVENT_KEY_BY_HOT_KEY = {
   ["C".charCodeAt(0)]: "copy",
   ["E".charCodeAt(0)]: "copyLinkUrl",
   ["P".charCodeAt(0)]: "paste",
-  ["S".charCodeAt(0)]: "searchGoogle",
   ["T".charCodeAt(0)]: "openUrlNewTab",
 };
 
@@ -49,8 +53,6 @@ const menuHandlerByEventKey = {
   copy: (pttchrome, { selectedText }) => pttchrome.doCopy(selectedText),
   copyAnsi: (pttchrome) => pttchrome.doCopyAnsi(),
   paste: (pttchrome) => pttchrome.doPaste(),
-  searchGoogle: (pttchrome, { selectedText }) =>
-    pttchrome.doSearchGoogle(selectedText),
   openUrlNewTab: (pttchrome, { aElement }) =>
     pttchrome.doOpenUrlNewTab(aElement),
   copyLinkUrl: (pttchrome, { contextOnUrl }) => pttchrome.doCopy(contextOnUrl),
@@ -73,6 +75,10 @@ const initialState = {
   blacklistAuthorTarget: null,
   blacklistAuthorExists: false,
   blacklistTitleTarget: null,
+  // Quick search items shown for the current selection (already filtered by the
+  // enabled flag + each item's match rule), and the normalized query they use.
+  quickSearchItems: [],
+  quickSearchQuery: "",
   // --- Modal state ---
   showsInputHelper: false,
   showsTitleBlacklist: false,
@@ -150,6 +156,16 @@ export const ContextMenu = ({ pttchrome }) => {
       const normalEnabled = !urlEnabled && window.getSelection().isCollapsed;
       const selEnabled = !normalEnabled;
 
+      // 快速搜尋：每次開選單「現讀」偏好（同下面黑名單判定的手法）→ 設定改完立刻
+      // 生效，不必在 pttchrome.jsx#onPrefChange 掛 case。適用條件（純數字）不符的
+      // 項目在這裡就被濾掉，DropdownMenu 只負責畫。
+      const quickSearchQuery = selEnabled
+        ? normalizeQuickSearchQuery(selectedText)
+        : "";
+      const quickSearchItems = quickSearchQuery
+        ? visibleQuickSearchItems(readValuesWithDefault(), quickSearchQuery)
+        : [];
+
       // Quick-add blacklist: which author/title region (if any) sits under the
       // cursor. The ROW comes from the DOM (data-pusher / data-list-author /
       // data-list-title — easy reading is one long accumulated page, so a visual
@@ -203,6 +219,8 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistAuthorTarget,
         blacklistAuthorExists,
         blacklistTitleTarget,
+        quickSearchItems,
+        quickSearchQuery,
       });
     },
     [pttchrome, update],
@@ -228,6 +246,8 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistAuthorTarget: null,
         blacklistAuthorExists: false,
         blacklistTitleTarget: null,
+        quickSearchItems: [],
+        quickSearchQuery: "",
       });
     }
   }, [pttchrome, update]);
@@ -297,9 +317,12 @@ export const ContextMenu = ({ pttchrome }) => {
   );
 
   const onQuickSearchSelect = useCallback(
-    (eventKey, event) => {
-      const url = eventKey.replace("%s", stateRef.current.selectedText);
-      window.open(url);
+    (item, event) => {
+      const url = buildQuickSearchUrl(
+        item.urlTemplate,
+        stateRef.current.quickSearchQuery,
+      );
+      window.open(url, "_blank", "noopener");
       event.stopPropagation();
       pttchrome.contextMenuShown = false;
       update(initialState);
@@ -486,10 +509,11 @@ export const ContextMenu = ({ pttchrome }) => {
     urlEnabled,
     normalEnabled,
     selEnabled,
-    selectedText,
     blacklistAuthorTarget,
     blacklistAuthorExists,
     blacklistTitleTarget,
+    quickSearchItems,
+    quickSearchQuery,
     showsInputHelper,
     showsTitleBlacklist,
     titleBlacklistDraft,
@@ -509,7 +533,8 @@ export const ContextMenu = ({ pttchrome }) => {
         normalEnabled={normalEnabled}
         selEnabled={selEnabled}
         mouseBrowsingEnabled={pttchrome.buf.useMouseBrowsing}
-        selectedText={selectedText}
+        quickSearchItems={quickSearchItems}
+        quickSearchQuery={quickSearchQuery}
         authorBlacklistId={blacklistAuthorTarget}
         authorBlacklistExists={blacklistAuthorExists}
         titleBlacklistText={blacklistTitleTarget}

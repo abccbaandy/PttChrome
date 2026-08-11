@@ -13,6 +13,7 @@ import {
   Title,
   Text,
   Anchor,
+  ActionIcon,
   useMantineColorScheme,
 } from "@mantine/core";
 import { i18n } from "../../js/i18n";
@@ -36,6 +37,14 @@ import {
 } from "./pref_credential";
 import { DEFAULT_PROXY_HOST } from "../../js/util";
 import { DEFAULT_IMGUR_PROXY_BASE } from "../../js/imgur_proxy";
+import {
+  BUILTIN_QUICK_SEARCH,
+  MATCH_ANY,
+  MATCH_DIGITS,
+  makeQuickSearchId,
+  pruneQuickSearchEntries,
+  validateQuickSearchEntry,
+} from "../../js/quick_search";
 import "./PrefModal.css";
 
 // Checkbox adapter：保留 id={`pref-check-${name}`}（label[for=...] e2e marker，且
@@ -189,7 +198,7 @@ export const PrefModal = ({
   );
 
   const onCloseClick = useCallback(() => {
-    const next = normalizeAutoLoginValues(values);
+    const next = pruneQuickSearchEntries(normalizeAutoLoginValues(values));
     // Untouched form → nothing to persist or upload; uploading anyway
     // would bump updatedAt and ping every other device for nothing.
     if (!deepEqual(next, readValuesWithDefault())) {
@@ -254,6 +263,52 @@ export const PrefModal = ({
       return;
     }
     setValues((v) => changeNestedValue(v, name, key));
+  }, []);
+
+  // 快速搜尋清單：一律**直接替換整個陣列**，不可走 changeNestedValue（它只認物件，
+  // 遇到陣列會 spread 成普通物件把陣列毀掉）。DEFAULT_PREFS 裡的空陣列是 frozen，
+  // 且 readValuesWithDefault 的淺層複製共用同一個 reference → 禁止 in-place 修改。
+  const onQuickSearchBuiltinToggle = useCallback(
+    ({ target: { name, checked } }) => {
+      const id = name.replace(/^quickSearchBuiltin-/, "");
+      setValues((v) => {
+        const rest = (v.quickSearchDisabled || []).filter((x) => x !== id);
+        return {
+          ...v,
+          quickSearchDisabled: checked ? rest : rest.concat(id),
+        };
+      });
+    },
+    [],
+  );
+
+  const onQuickSearchCustomChange = useCallback((id, patch) => {
+    setValues((v) => ({
+      ...v,
+      quickSearchCustom: (v.quickSearchCustom || []).map((c) =>
+        c.id === id ? { ...c, ...patch } : c,
+      ),
+    }));
+  }, []);
+
+  const onQuickSearchCustomDelete = useCallback((id) => {
+    setValues((v) => ({
+      ...v,
+      quickSearchCustom: (v.quickSearchCustom || []).filter((c) => c.id !== id),
+    }));
+  }, []);
+
+  const onQuickSearchCustomAdd = useCallback(() => {
+    setValues((v) => ({
+      ...v,
+      quickSearchCustom: (v.quickSearchCustom || []).concat({
+        id: makeQuickSearchId(),
+        name: "",
+        urlTemplate: "",
+        match: MATCH_ANY,
+        enabled: true,
+      }),
+    }));
   }, []);
 
   // Cloud values land in modal state only; the app applies them through the
@@ -347,6 +402,9 @@ export const PrefModal = ({
                 {i18n("options_connection")}
               </Tabs.Tab>
               <Tabs.Tab value="enhance">{i18n("options_enhance")}</Tabs.Tab>
+              <Tabs.Tab value="quicksearch">
+                {i18n("options_quickSearch")}
+              </Tabs.Tab>
               <Tabs.Tab value="autologin">
                 {i18n("options_autoLoginTab")}
               </Tabs.Tab>
@@ -803,6 +861,117 @@ export const PrefModal = ({
                   onChange={onTextInputChange}
                   mb="xs"
                 />
+              </fieldset>
+            </Tabs.Panel>
+            {/* 快速搜尋分頁：右鍵選單（選取文字後）的搜尋項目清單。內建項目只能停用
+                不能編輯／刪除——它們定義在 quick_search.js#BUILTIN_QUICK_SEARCH，
+                pref 只存「被停用的 id」，所以日後新增內建項目舊使用者也拿得到。 */}
+            <Tabs.Panel value="quicksearch">
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_quickSearchBuiltin")}</legend>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_quickSearch")}
+                </Text>
+                {BUILTIN_QUICK_SEARCH.map((b) => (
+                  <PrefCheckbox
+                    key={b.id}
+                    name={`quickSearchBuiltin-${b.id}`}
+                    checked={
+                      (values.quickSearchDisabled || []).indexOf(b.id) < 0
+                    }
+                    onChange={onQuickSearchBuiltinToggle}
+                  >
+                    {i18n(b.nameKey)}
+                    <Text span size="xs" c="dimmed" ml="xs">
+                      {b.urlTemplate}
+                      {b.match === MATCH_DIGITS
+                        ? ` (${i18n("options_quickSearchMatchDigits")})`
+                        : ""}
+                    </Text>
+                  </PrefCheckbox>
+                ))}
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_quickSearchCustom")}</legend>
+                {(values.quickSearchCustom || []).map((c) => {
+                  // 整列空白＝剛按下「新增」還沒填，不要馬上噴紅字（關閉時會被
+                  // pruneQuickSearchEntries 丟掉）。
+                  const touched = !!(
+                    String(c.name || "").trim() ||
+                    String(c.urlTemplate || "").trim()
+                  );
+                  const err = touched ? validateQuickSearchEntry(c) : null;
+                  return (
+                    <div className="PrefModal__QuickSearchRow" key={c.id}>
+                      <Checkbox
+                        checked={c.enabled !== false}
+                        aria-label={i18n("options_quickSearchEnabled")}
+                        onChange={(e) =>
+                          onQuickSearchCustomChange(c.id, {
+                            enabled: !!e.target.checked,
+                          })
+                        }
+                      />
+                      <TextInput
+                        label={i18n("options_quickSearchName")}
+                        value={c.name}
+                        error={
+                          err === "quicksearch_err_name" ? i18n(err) : null
+                        }
+                        onChange={(e) =>
+                          onQuickSearchCustomChange(c.id, {
+                            name: e.target.value,
+                          })
+                        }
+                        className="PrefModal__QuickSearchRow__Name"
+                      />
+                      <TextInput
+                        label={i18n("options_quickSearchUrl")}
+                        value={c.urlTemplate}
+                        placeholder="https://example.com/search?q=%s"
+                        error={err === "quicksearch_err_url" ? i18n(err) : null}
+                        onChange={(e) =>
+                          onQuickSearchCustomChange(c.id, {
+                            urlTemplate: e.target.value,
+                          })
+                        }
+                        className="PrefModal__QuickSearchRow__Url"
+                      />
+                      <Select
+                        label={i18n("options_quickSearchMatch")}
+                        value={
+                          c.match === MATCH_DIGITS ? MATCH_DIGITS : MATCH_ANY
+                        }
+                        allowDeselect={false}
+                        onChange={(val) =>
+                          onQuickSearchCustomChange(c.id, { match: val })
+                        }
+                        data={[
+                          {
+                            value: MATCH_ANY,
+                            label: i18n("options_quickSearchMatchAny"),
+                          },
+                          {
+                            value: MATCH_DIGITS,
+                            label: i18n("options_quickSearchMatchDigits"),
+                          },
+                        ]}
+                        className="PrefModal__QuickSearchRow__Match"
+                      />
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        aria-label={i18n("options_quickSearchDelete")}
+                        onClick={() => onQuickSearchCustomDelete(c.id)}
+                      >
+                        ✕
+                      </ActionIcon>
+                    </div>
+                  );
+                })}
+                <Button variant="default" onClick={onQuickSearchCustomAdd}>
+                  {i18n("options_quickSearchAdd")}
+                </Button>
               </fieldset>
             </Tabs.Panel>
             {/* 自動登入分頁：整條流程（開關＋憑證）集中在這裡，因為使用者要看懂

@@ -531,10 +531,6 @@ App.prototype.doSelectAll = function() {
   window.getSelection().selectAllChildren(this.view.mainDisplay);
 };
 
-App.prototype.doSearchGoogle = function(searchTerm) {
-  window.open('http://google.com/search?q='+searchTerm);
-};
-
 App.prototype.doOpenUrlNewTab = function(a) {
   // ctrlKey opens the anchor in a new tab without stealing focus flow.
   a.dispatchEvent(new MouseEvent('click', {
