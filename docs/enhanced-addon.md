@@ -11,7 +11,7 @@
   用以排除「內文中的推文格式文字（無時間戳）」與「`※ 編輯: … MM/DD/YYYY HH:MM:SS`（格式不同+前綴※）」被誤計樓層。
   userid 子樣式 `[A-Za-z][0-9A-Za-z]+`（須字母開頭、≥2 字元）依官方 `go-bbs/user_comment_record.go` 收緊，排掉 `推 1: …` 之類假推文。官方終端 byte/格式規則（型別色碼、IP iff `BRD_IPLOGRECMD`、對齊 iff `BRD_ALIGNEDCMT`、FORWARD/轉錄不計樓）內嵌 `comment_parse.js` 的「Official cross-validation」docstring；交叉驗證測試見 `comment_parse.test.js`「official cross-validation」+ fixture `IpComment_M.1621089154.txt`／`Forward_M.1644506392.txt`。背景見 `docs/ptt-official-app-research.md`。
 - `parseListAuthor(text)`→userid|null。**欄位常數 cols 17~28**（CONFIRMED 2026-06 對 C_Chat 校準）。
-  fail-safe：非 userid→null→不隱藏。`●`(編輯過) 列有全形字位移→fall through（可接受的 under-hide）。
+  fail-safe：非 userid→null→不隱藏。行首全形字（舊版 `●` 游標）造成位移→fall through（可接受的 under-hide）；現行游標是半形 `>`（pttbbs `b9a5029f`），不位移欄位。
   守護測試：`enhance.spec.js` 「看板列表作者欄位常數仍正確」，PTT 改版位移會先紅。
 - `FloorCounter`：`seq`(總樓)、`sub`(該 type 分項)；每篇文章 reset。含 **BePTT meta-latch 規則**
   （`nonComment(text)`，演算法來源見踩坑 B「BePTT 反編譯」）：非推文列在 `※ 發信站/※ 文章網址` latch 前一律歸零計數

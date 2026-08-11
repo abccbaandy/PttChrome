@@ -94,7 +94,8 @@ export function classifyListScreen(facts) {
     for (let i = 3; i <= rows - 2; ++i) if (nums[i] != null) ++count;
     if (count >= 3) return { kind: 'clean-list', boardName };
     // 板尾短頁（2026-07-11 錄製檔誤降級）：最後一頁可能只剩 1-2 列編號文章
-    // （游標 ● 蓋掉最高位時連 parseListArticleNum 都是 null，只有 loose 可讀）
+    // （舊全形 ● 游標蓋掉最高位時連 parseListArticleNum 都是 null，只有 loose 可讀；
+    //   新半形 > 游標不蓋數字，strict/loose 同值——但 loose 仍須 strip '>'）
     // ＋置底文＋空白列，湊不滿 3 列 → 永遠 transient → 板尾任何無主 settle 都
     // 降級 functionMode 且無法自癒。放寬條件（半繪防護仍在）：游標列本身必須
     // 是列表形列，且 entry 區每個非空列都是列表形（編號/置底/刪除），至少一列。
@@ -2203,8 +2204,9 @@ ListSession.prototype = {
 // changes live (a whole-row key would duplicate the row on repaint — v3 bug 5a),
 // while a title-only key COLLAPSES two announcements that share a truncated
 // title (v4-stabilize bug 2a: 置底文少一篇). realignListColumns inside the two
-// parsers makes the cursor variant (● covering the head) key-equal to the clean
-// row. Used by BOTH term_view.accumulateListLines (map key) and
+// parsers makes the cursor variant key-equal to the clean row for BOTH cursor
+// generations (old ● shifts the columns and gets re-padded; new '>' is half-width
+// and shifts nothing). Used by BOTH term_view.accumulateListLines (map key) and
 // ListSession._pinnedKeyAt (selection identity) — must stay the same function.
 export function pinnedRowKey(text) {
   const author = parseListAuthor(text) || '';

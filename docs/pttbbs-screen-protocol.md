@@ -88,7 +88,16 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 | 32 | `outc(' ')` | |
 | 33- | title | `w = t_columns - 34` |
 
-- 游標欄：`STR_CURSOR ">"` / `STR_CURSOR2 "●"`（`include/common.h`）。全形 `●` 蓋 cols 0-1＝序號的前導空格＋最高位（client 已知坑：截斷序號）。
+- **游標欄（兩代，`include/common.h`）**：
+
+  | | 字串 | 佔用 | 蓋掉 | 欄位位移 |
+  |---|---|---|---|---|
+  | 新（**現行**） | `STR_CURSOR ">"` | cell 0 | `%7d` 的前導空格（6 位序號完整可見） | 無（半形） |
+  | 舊 | `STR_CURSOR2 "●"` | cells 0-1 | 前導空格＋**最高位數字** | 左移 1（`rowToText` 折疊 DBCS） |
+
+  切換點＝`b9a5029f` **cleanup(cursor): Always do CURSOR_ASCII**（2026-08-11）：廢除 `UF_CURSOR_ASCII` 使用者旗標，全站強制 ASCII 游標（`stuff.c#cursor_show` 一律 `outs(STR_CURSOR)`；看板列表 `psb.c#psb_default_cursor` 同步；`cursor_clear` 也從 `STR_UNCUR2`「兩格空白」改成 `STR_UNCUR`「一格」）。
+  **client 必須兩代都認**：`tests/e2e/cassettes/*.json` 是舊 server 錄的 raw bytes（offline e2e 是 CI gate）。解析 server 畫面＝雙支援（`comment_parse.js` 的 `LIST_CURSOR_WIDE`/`LIST_CURSOR_ASCII` 區塊）；我們自己畫的假游標＝一律 `>`（`list_window.js#labelListCursor`）。
+- 同批 cleanup 對 client **無**影響：`ea31f725`（DBCS 旗標強制開，只動 server 輸入端）、`202f3324`（modmark 旗標移除，`~` 改一律顯示，col 8 type 字元集合不變）、`b6f93ffa`（LIVERIGHT）。
 - 刪除文 `iscorpse = (owner[0]=='-' && owner[1]==0)` ⇒ 作者欄是單一 `-`。
 - client 對應常數：`comment_parse.js` 的 `LIST_AUTHOR_COL_START=17` / `LIST_AUTHOR_COL_END=29`（owner 內容 end-exclusive）／`LIST_TITLE_COL_START=30`（mark 起點）。**兩者差一格 padding，別混用**。
 - **置底文只出現在板尾頁**：`get_records_and_bottom`（`mbbsd/read.c` ~1052）當 `n >= headers_size` **或 `MODE_SELECT|MODE_DIGEST`** 走純 `get_records` 不含置底。⇒ 非板尾頁、`/` 篩選清單、文摘模式**必無**置底列。
@@ -97,7 +106,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 
 | 操作 | 髒列集合 | 出處 |
 |---|---|---|
-| 同頁游標上下 | **恰 2 列**：舊列＋新列，各只動 col0 起始的游標欄（`cursor_clear`/`cursor_show`） | `mbbsd/read.c:183-185`、`mbbsd/stuff.c:217,235` |
+| 同頁游標上下 | **恰 2 列**：舊列＋新列，各只動 col0 起始的游標欄（`cursor_clear` 印 1 格空白／`cursor_show` 印 1 格 `>`；舊版各 2 格） | `mbbsd/read.c:183-185`、`mbbsd/stuff.c:217,235` |
 | 翻頁（跨頁移動/PgUp/PgDn） | `move(3,0)+clrtobot()` → row3..rows-1 全重畫（含 feeter；fall-through PART_REDRAW→READ_REDRAW）；**row0-2 不動** | `mbbsd/read.c:1172-1231` |
 | 標題列變更（進板/回板/`s` 跳板） | TITLE_REDRAW 或 FULLUPDATE：row0-2 一併重畫 | 同上（FULLUPDATE `(*dotitle)()` fall-through） |
 | 開文（進 pmore） | 先 `clear()` → 全屏重繪，底列變 pmore 狀態列 | `mbbsd/pmore.c:2320,2363` |
@@ -109,7 +118,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 ## 5. 游標 park 位置（page fingerprint）
 
 每次回應結尾（doupdate 末 `rel_move`）游標必停在：
-- **文章列表**：游標列（entry 區內）col≈1（`cursor_show` 印完游標符後 move 回 column+1，stuff.c:217-233）。
+- **文章列表**：游標列（entry 區內）**col 0**（`cursor_show` 印完 `>` 後 `move(row, column)`，column 恆 0，stuff.c:214-222）。舊 `●` 版是 `move(row, column+1)`＝col 1 ⇒ client 判準一律寫 **`col ≤ 1`**，兩代通吃（`list_session.js` 共 8 處）。
 - **pmore 文章**：底部狀態列。
 - **prompt**：底列輸入點。
 ⇒ `park 在 entry 區` vs `park 在底列` 是「乾淨列表 vs 文章/prompt」的廉價判別式。client 端 settle 時的 `term_buf.cur_x/cur_y` 即 park 位置（settle 已定義為內容＋游標皆靜，`src/js/term_buf.js` `_armSettleTimer` 前註解）。

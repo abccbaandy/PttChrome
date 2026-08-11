@@ -8,7 +8,6 @@
 // 直接以 stub buf 呼叫真的 TermView.prototype.accumulateListLines（逻辑不碰 DOM）。
 import { TermView } from "../../src/js/term_view";
 import { pinnedRowKey, subjectOfListRow, listRowMarkFg } from "../../src/js/list_session";
-import { u2b } from "../../src/js/string_util";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 function chRow(text, cols = 80) {
@@ -95,6 +94,12 @@ describe("pinnedRowKey", () => {
     const cursor = "●  ★  m 1 6/01 arrenwu      轉 [公告] 板規";
     expect(pinnedRowKey(cursor)).toBe(pinnedRowKey(clean));
   });
+  test("新版游标变体（> 盖头，pttbbs b9a5029f）与干净列同 key", () => {
+    // '>' 只盖 cell 0（乾淨列该格是空白）⇒ text 是 '>' + 3 空白 + '★'。
+    const clean = "    ★  m 1 6/01 arrenwu      轉 [公告] 板規";
+    const cursor = ">   ★  m 1 6/01 arrenwu      轉 [公告] 板規";
+    expect(pinnedRowKey(cursor)).toBe(pinnedRowKey(clean));
+  });
 });
 
 describe("accumulateListLines（置底文收录）", () => {
@@ -132,6 +137,68 @@ describe("accumulateListLines（置底文收录）", () => {
     const text = rowToStr(v.buf.listLines[pinnedIdx]);
     expect(text).not.toContain("●");
     expect(text).toContain("★");
+  });
+
+  // pttbbs b9a5029f「Always do CURSOR_ASCII」：游标改半形 '>'（单格，只盖 %7d 的
+  // 前导空格）。序号完整可读 ⇒ 游标列必须走「编号列」正路进 numMap，而不是像旧
+  // ● 那样先 null 再回推。旧 parser 认不到行首 '>' → nums null → 落到 pinned 分支
+  // 被守门挡掉 ⇒ 游标所在那篇文章永远进不了 buffer。
+  test("新版 > 游标列收录成编号列（不进 pinned map），行首还原空白", () => {
+    const clean = " 350002 + 9 6/14 someoneB     □ [閒聊] 游標所在文章";
+    const cursorText = ">" + clean.slice(1);
+    const texts = header.concat([article, cursorText, feeter]);
+    const v = fakeView(texts, 4);
+    v.accumulateListLines();
+    expect(v.buf.listLineNums.filter((n) => n == null).length).toBe(0);
+    const idx = v.buf.listLineNums.indexOf(350002);
+    expect(idx).not.toBe(-1);
+    // relabel 把 '>' 还原成它盖住的那格空白 ⇒ 存进 map 的是干净列
+    expect(rowToStr(v.buf.listLines[idx])).toBe(clean.replace(/\s+$/, ""));
+  });
+
+  test("新版 > 游标停在置底列（>…★）仍收录，且 > 还原空白", () => {
+    const texts = header.concat([
+      article,
+      ">   ★  m 1 6/01 arrenwu      轉 [公告] 板規",
+      feeter,
+    ]);
+    const v = fakeView(texts, 4);
+    v.accumulateListLines();
+    const pinnedIdx = v.buf.listLineNums.indexOf(null);
+    expect(pinnedIdx).not.toBe(-1);
+    const text = rowToStr(v.buf.listLines[pinnedIdx]);
+    expect(text.indexOf(">")).toBe(-1);
+    expect(text).toContain("★");
+    // 与干净列同 key（不得因 '>' 残留而重复一列）
+    expect(v.buf.listLineNums.filter((n) => n == null).length).toBe(1);
+  });
+
+  test("partial-redraw 空白高位列（非游标列）也要回填完整序号", () => {
+    // server 在游标移开某列后可能把该列的最高位格留白（"  51281" ← 351281，
+    // pageArticleNums 的 monotonicity repair 只修 nums、不修 cell）。旧全形 ●
+    // 游标占两格刚好盖住这个瑕疵；换成半形 '>' 后就露出来变成「> 51281」。
+    const clean80 = " 351280 + 2 7/07 someoneA     □ [閒聊] 前一篇";
+    const broken81 = "  51281 + 6 7/07 HarunoYukino □ [鐵道] 現在永動機正夯";
+    const texts = header.concat([clean80, broken81, feeter]);
+    const v = fakeView(texts, texts.length - 1); // 游标 park 在底列，不在这两列
+    v.accumulateListLines();
+    const idx = v.buf.listLineNums.indexOf(351281);
+    expect(idx).not.toBe(-1);
+    expect(rowToStr(v.buf.listLines[idx])).toBe(
+      " 351281 + 6 7/07 HarunoYukino □ [鐵道] 現在永動機正夯"
+    );
+  });
+
+  test("新版 > 游标在短序号列（/搜寻结果）：行首不得出现数字", () => {
+    // '>' 只盖 padding，序号本来就完整；relabel 必须只还原 cell 0 这一格。
+    const clean531 = "    531 + 4 6/21 turndown4wat □ [情報] 火影忍者進軍卡牌";
+    const cursorText = ">" + clean531.slice(1);
+    const texts = header.concat([clean531.replace("531", "530"), cursorText, feeter]);
+    const v = fakeView(texts, 4);
+    v.accumulateListLines();
+    const idx = v.buf.listLineNums.indexOf(531);
+    expect(idx).not.toBe(-1);
+    expect(rowToStr(v.buf.listLines[idx])).toBe(clean531.replace(/\s+$/, ""));
   });
 
   test("游标停在序号不可回推的一般文章列（无★）仍排除（v3 坑 4 不回归）", () => {
@@ -469,7 +536,8 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
   const reply63 = " 351463 + 1 7/16 replyGuy     R: [ON] MyGO全體SR卡面公布";
 
   beforeAll(() => {
-    // buildListWindowLines 的 u2b('●') 需要真 Big5 表（string_util 读裸全域 lib）。
+    // accumulateListLines 链路上的 string_util 读裸全域 lib（Big5 转码表）。
+    // 游标本身自 pttbbs b9a5029f 起是半形 '>'，已不需 u2b。
     globalThis.window = globalThis;
     loadBig5Tables();
   });
@@ -508,11 +576,12 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
     expect(out[3]).toBe(v.buf.listLines[0]);
   });
 
-  test("游标与 last-read 同列：● bullet 与红样式并存", () => {
+  test("游标与 last-read 同列：> 游标与红样式并存", () => {
     const { v } = renderView("[ON] MyGO全體SR卡面公布", 1);
     const out = v.buildListWindowLines();
     const rendered = out[4];
-    expect(rendered[0].ch + rendered[1].ch).toBe(u2bBullet());
+    expect(rendered[0].ch).toBe(">");
+    expect(rendered[1].ch).not.toBe(" "); // 半形游标不吃序号最高位
     expect(rendered[35].fg).toBe(1);
     expect(rendered[35].bright).toBe(true);
   });
@@ -546,17 +615,13 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
     v._listWindowLines = null;
     const out = v.buildListWindowLines();
     const rendered = out[4]; // 游标＋last-read＋isonline 三合一（退文实况）
-    expect(rendered[0].ch + rendered[1].ch).toBe(u2bBullet());
+    expect(rendered[0].ch).toBe(">");
     expect(rendered[35].fg).toBe(1); // 标题重上红
     expect(rendered[35].bright).toBe(true);
     expect(rendered[20].fg).toBe(7); // 作者仍亮白
     expect(rendered[20].bright).toBe(true);
   });
 
-  function u2bBullet() {
-    const b = u2b("●");
-    return b.charAt(0) + b.charAt(1);
-  }
 });
 
 describe("subjectOfListRow / listRowMarkFg / isonline 不误触", () => {

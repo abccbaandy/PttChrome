@@ -8,7 +8,7 @@ import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
 import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
-import { labelListCursorBullet, pruneListToSegment } from './list_window';
+import { labelListCursor, pruneListToSegment } from './list_window';
 import icon128 from '../icon/icon_128.png';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
@@ -35,36 +35,50 @@ function cloneRow(row) {
   });
 }
 
-// Repaint a cloned board-list cursor row's leading cells so it shows the full article
-// number instead of the ●cursor bullet that covers its top digit. The full-width ●
-// occupies cells [0,1]; the visible digits start at cell 2. Given the recovered full
-// number, fill [0,1] right-aligned with the missing high-order prefix (e.g. recovered
-// 349886, visible "49886" → prefix "3" → cells become " 3", yielding " 349886"). Only
-// touches the two bullet cells; everything after is the row's own text.
+// How many cells the SERVER's cursor mark covers on this row. Two generations
+// (comment_parse.js LIST_CURSOR_* block): the old full-width ● is a DBCS pair
+// (isLeadByte on cell 0) covering [0,1]; the new half-width ">" (pttbbs b9a5029f,
+// STR_CURSOR) covers [0] only. Read it off the cell itself rather than the glyph so
+// a '>'-covered 7-digit number (col 0 would then hold a digit) still measures 1.
+function serverCursorWidth(row) {
+  return row.length && row[0].isLeadByte ? 2 : 1;
+}
+
+// Board-list sequence-number column: pttbbs `bbs.c#readdoent` opens every article
+// row with prints("%7d", num) → cells [0,7), right-aligned, space-padded.
+var LIST_NUM_COL_END = 7;
+
+// Repaint a cloned row's sequence-number column from the number the accumulator
+// resolved for it, so the stored row always shows the FULL number in native "%7d"
+// form. Three things can corrupt those cells on the wire, and this one write fixes
+// all of them (nums[i] != null already proves the row IS a numbered article row):
+//   1. cursor mark — old full-width ● swallowed cells [0,1] incl. the top digit;
+//      new half-width '>' covers cell 0 (the padding space).
+//   2. partial redraw — the server can leave the leading digit cell blank after the
+//      cursor moves off a row ("  51281" for 351281); pageArticleNums' monotonicity
+//      repair recovers the NUMBER but nothing used to repair the cells, so the row
+//      rendered a digit short. Invisible while our cursor was the 2-cell ●, plainly
+//      visible ("> 51281") once it became 1-cell '>'.
+//   3. short numbers (`/` search results, e.g. 531) — right-aligning into the same
+//      7-wide field reproduces the native "    531" exactly, which is what the old
+//      prefix-splicing logic kept getting wrong (the "/搜尋後行首出現數字" bug).
+// Attributes are untouched (native prints the number with the row's own attrs).
 function relabelListCursorRow(row, fullNum) {
-  if (fullNum == null || row.length < 3) return;
-  // Short numbers are right-aligned deeper into the column (e.g. "   531"), so
-  // the ● only covered padding — cell 2 is then a space, no digit was lost, and
-  // the bullet cells must become spaces. Deriving a prefix from vis='' would
-  // instead stamp the number's last two digits into cells [0,1] (the "/搜尋後
-  // 行首出現數字" bug: 531 → "31  531").
-  var vis = '';
-  for (var j = 2; j < row.length && row[j].ch >= '0' && row[j].ch <= '9'; ++j) vis += row[j].ch;
-  var full = String(fullNum);
-  var prefix =
-    vis && full.length > vis.length ? full.slice(0, full.length - vis.length) : '';
-  var fill = ('  ' + prefix).slice(-2); // right-align into the 2 bullet cells
-  for (var c = 0; c < 2; ++c) {
-    row[c].ch = fill[c];
+  if (fullNum == null || row.length < LIST_NUM_COL_END) return;
+  var s = String(fullNum);
+  if (s.length > LIST_NUM_COL_END) return; // wider than the field: leave as painted
+  var padded = ('       ' + s).slice(-LIST_NUM_COL_END);
+  for (var c = 0; c < LIST_NUM_COL_END; ++c) {
+    row[c].ch = padded[c];
     row[c].isLeadByte = false;
   }
 }
 
-// Restore a cloned cursor-on-★pinned row's two bullet cells to the spaces they
-// covered (a pinned row has no number to relabel — the ● sat over plain
+// Restore a cloned cursor-on-★pinned row's cursor cells to the spaces they
+// covered (a pinned row has no number to relabel — the mark sat over plain
 // padding), so the accumulated row renders identically to its cursor-free form.
-function blankListCursorBullet(row) {
-  for (var c = 0; c < 2 && c < row.length; ++c) {
+function blankListCursorMark(row) {
+  for (var c = 0, w = serverCursorWidth(row); c < w && c < row.length; ++c) {
     row[c].ch = ' ';
     row[c].isLeadByte = false;
   }
@@ -1435,7 +1449,7 @@ TermView.prototype = {
   //                                 whole row text: the push-count column changes live
   //                                 and a text key would duplicate the row (v3 bug).
   // flattenListBuffer rebuilds buf.listLines/buf.listLineNums (ascending + pinned tail).
-  // pageArticleNums recovers the ●cursor row's covered digit; cloneRow (not JSON) keeps
+  // pageArticleNums recovers the digit an old ● cursor covered; cloneRow (not JSON) keeps
   // TermChar methods. The caller (redraw) handles scroll-anchoring when older rows prepend.
   accumulateListLines: function() {
     var buf = this.buf;
@@ -1449,10 +1463,11 @@ TermView.prototype = {
     for (var i = 0; i < buf.rows; ++i) {
       if (nums[i] != null) {
         var row = cloneRow(buf.lines[i]);
-        // The ●cursor row's leading 2 cells (the bullet) cover the article number's top
-        // digit; repaint them from the recovered number so the row renders like the rest
-        // (e.g. "●49886" → " 349886") instead of a stray bullet + truncated number.
-        if (i === buf.cur_y) relabelListCursorRow(row, nums[i]);
+        // Normalize the "%7d" number column from the resolved number on EVERY numbered
+        // row, not just the cursor row: besides the cursor mark, a partial redraw can
+        // blank the leading digit cell of any row (see relabelListCursorRow). The map
+        // must always hold a row that renders like a clean native one.
+        relabelListCursorRow(row, nums[i]);
         // Server-painted last-read styling = title-match highlight (pttbbs
         // readdoent: every row whose subject equals currtitle, in the row's own
         // mark color — see list_session's styling block). Store the CLEAN row
@@ -1467,26 +1482,27 @@ TermView.prototype = {
       } else if (
         isPinnedListRow(rowTexts[i]) &&
         (i !== buf.cur_y || rowTexts[i].indexOf('★') >= 0) &&
-        // A mid-response frame can paint the server's ● on a row that is NOT
-        // buf.cur_y (jump response: bullet drawn, cursor not parked yet) — no
+        // A mid-response frame can paint the server's cursor mark on a row that is
+        // NOT buf.cur_y (jump response: mark drawn, cursor not parked yet) — no
         // neighbour recovery runs, so nums[i] is null and the author column is
         // valid, which matches the pinned signature. Loose-parse tells them
-        // apart: digits behind the ● bullet = a covered NUMBERED row. It does NOT
+        // apart: digits behind the cursor mark = a covered NUMBERED row. It does NOT
         // strip ★ (see parseListArticleNumLoose), so a genuine pinned row — whose
         // ★ is followed by a bare-integer push-count like "★    4 …" — still reads
-        // null and is collected. Without this guard the ●-row is stored (bullet
+        // null and is collected. Without this guard the cursor row is stored (mark
         // included) in the pinned map forever (the「●52880 殘留在置底尾巴」bug).
         parseListArticleNumLoose(rowTexts[i]) == null
       ) {
         // ★pinned/置底 row. A cursor row with an UNRECOVERABLE number (no numbered
-        // neighbour) also matches the pinned signature (no number + valid author) but
-        // carries no ★ — keep excluding those (v3 trap #4: stray ● misfiled as pinned).
-        // A genuine pinned row under the cursor still shows its ★ (the ● only covers
-        // the two leading padding cells), so it IS collected — otherwise a cursor
-        // parked on a pinned row keeps that announcement out of the buffer forever
-        // (v4-stabilize bug 2b: 置底文少一篇). Restore the bullet cells to spaces.
+        // neighbour — only possible under the old full-width ●, which swallowed the
+        // top digit) also matches the pinned signature (no number + valid author) but
+        // carries no ★ — keep excluding those (v3 trap #4: stray cursor row misfiled
+        // as pinned). A genuine pinned row under the cursor still shows its ★ (the
+        // mark only covers leading padding cells), so it IS collected — otherwise a
+        // cursor parked on a pinned row keeps that announcement out of the buffer
+        // forever (v4-stabilize bug 2b: 置底文少一篇). Restore the cursor cells to spaces.
         var prow = cloneRow(buf.lines[i]);
-        if (i === buf.cur_y) blankListCursorBullet(prow);
+        if (i === buf.cur_y) blankListCursorMark(prow);
         entries.push({
           num: null,
           key: pinnedRowKey(rowTexts[i]),
@@ -1531,9 +1547,9 @@ TermView.prototype = {
   // Assemble the fixed 24-row native-parity list page: cached header (3 rows) +
   // the session's window slice (20 body rows; blank filler past the end, same
   // as a native short page) + cached footer. The cursor row is a clone with the
-  // native full-width ● painted over cells [0,1] (labelListCursorBullet — the
-  // inverse of relabelListCursorRow; bytes from u2b so DBCS rendering treats it
-  // exactly like a server-drawn bullet). Returns null until the header/footer
+  // native half-width '>' painted over cell 0 (labelListCursor — the inverse of
+  // relabelListCursorRow; matches pttbbs STR_CURSOR since b9a5029f, ASCII so no
+  // Big5 conversion is involved). Returns null until the header/footer
   // caches and the buffer exist (caller falls back to the native mirror).
   // Also snapshots the result for the frozen render.
   buildListWindowLines: function() {
@@ -1542,7 +1558,6 @@ TermView.prototype = {
     var win = ls.getWindowView();
     if (!win) return null;
     var listLines = this.buf.listLines || [];
-    var bullet = u2b('●'); // two Big5 bytes
     var out = [
       this._listHeaderRows[0],
       this._listHeaderRows[1],
@@ -1568,7 +1583,7 @@ TermView.prototype = {
         out.push(this._blankListRow());
       } else if (abs === win.cursorAbs) {
         var cur = cloneRow(srcRow);
-        labelListCursorBullet(cur, bullet.charAt(0), bullet.charAt(1));
+        labelListCursor(cur);
         if (isLastRead) paintLastReadListRow(cur);
         out.push(cur);
       } else if (isLastRead) {

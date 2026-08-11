@@ -156,6 +156,31 @@ describe("classifyListScreen", () => {
     ).toEqual({ kind: "clean-list", boardName: "C_Chat" });
   });
 
+  // pttbbs b9a5029f 後：游標＝半形 '>'，只蓋 %7d 的前導空格、序號完整可見，
+  // 且 cursor_show 後 move(row, column) ⇒ 終端游標 park 在 col 0（舊版 col 1）。
+  function boardTailRowsAsciiCursor() {
+    const rows = boardTailRows();
+    rows[3] = ">353500 + 7/11 SaberMyWifi  □ [閒聊] 板尾文章";
+    return rows;
+  }
+
+  test("新版 > 游標：一般整頁 → clean-list（park col 0 仍滿足 curX ≤ 1）", () => {
+    const rows = listRows.slice();
+    rows[3] = ">" + listRows[3].slice(1);
+    expect(classifyListScreen(facts({ rowTexts: rows, curY: 3, curX: 0 }))).toEqual({
+      kind: "clean-list",
+      boardName: "C_Chat",
+    });
+  });
+
+  test("新版 > 游標的板尾短頁 → clean-list（否則板尾無主 settle 誤降級）", () => {
+    expect(
+      classifyListScreen(
+        facts({ rowTexts: boardTailRowsAsciiCursor(), curY: 3, curX: 0 })
+      )
+    ).toEqual({ kind: "clean-list", boardName: "C_Chat" });
+  });
+
   test("板尾短頁但游標列是空白列 → 仍 transient（半繪防護）", () => {
     expect(
       classifyListScreen(facts({ rowTexts: boardTailRows(), curY: 10, curX: 0 }))

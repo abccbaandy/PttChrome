@@ -2,8 +2,11 @@
 // 真浏览器/真渲染，零网络）。CI gate：这里锁的是「进板即用」的最小闭环行为；
 // 依赖特定文章/看板状态的部分留在 live e2e。
 //
-// v5 合约（docs/easy-reading-list.md）：外观近似原生（固定 24 行视窗、行首 ●
-// 游标）、封闭互动、server 互动一律确定性交易。退文回列表 = re-seed（v5/M4）：
+// v5 合约（docs/easy-reading-list.md）：外观近似原生（固定 24 行视窗、行首 '>'
+// 游标，比照 pttbbs STR_CURSOR）、封闭互动、server 互动一律确定性交易。
+// **注意 cassette 是旧 server（全形 ● 游标）录的 raw bytes**：解析 server 画面的
+// parser 双支援两代游标，我们自己画的假游标则一律 '>'。
+// 退文回列表 = re-seed（v5/M4）：
 // server 落点权威（READ_REDRAW 全幅重绘的 getkeep 视窗与游标被直接采用，顺带
 // 刷新推文数），不再逐行 parity 还原 —— 「退文画面不变」案锁的是 server 落点
 // 与离开前一致这一 pttbbs 事实链，非 client 端保存的锚点。
@@ -18,6 +21,10 @@ const {
 const nav = loadCassette('cchat-list-nav');
 const prompt = loadCassette('cchat-list-prompt');
 const pinned = loadCassette('cchat-list-pinned');
+// 舊 server（全形 ● 游標，pttbbs b9a5029f 之前）錄的同一支腳本。主測試已改跑新
+// 素材，這卷專門守護「解析 server 畫面的 parser 對兩代游標都要認得」——只留一條
+// 核心閉環，不整包跑兩遍。
+const navWide = loadCassette('cchat-list-nav-wide');
 
 async function dumpListState(page) {
   return await page.evaluate(() => {
@@ -49,13 +56,15 @@ async function dumpScreenRows(page) {
   );
 }
 
-// 视窗游标列（含 ●）的 DOM row index；-1 = 没有游标列。
+// 视窗游标列（行首 '>'）的 DOM row index；-1 = 没有游标列。
+// 游标自 pttbbs b9a5029f「Always do CURSOR_ASCII」起是半形 '>'（STR_CURSOR），
+// 我们画的假游标比照办理。**必须比对行首**——'>' 也可能出现在标题文字里。
 async function cursorRowIndex(page) {
   return await page.evaluate(() => {
     const rows = Array.from(
       document.querySelectorAll('#mainContainer [data-type="bbsline"]')
     );
-    return rows.findIndex((el) => el.textContent.includes('●'));
+    return rows.findIndex((el) => el.textContent.startsWith('>'));
   });
 }
 
@@ -134,7 +143,7 @@ test.describe('文章列表好读模式（离线）', () => {
   // 双模 engage 逐行比对案已退役（v5/M5）：parity 合约废弃，隐藏功能（黑名单/
   // 删除文）与逐行相同本质冲突（docs/easy-reading-list.md 核心原则 v5 版）。
 
-  test('进板启用：固定 24 行视窗、预读累积、序号严格递增、游标 ● 单一、实体游标隐藏', async ({ page }) => {
+  test('进板启用：固定 24 行视窗、预读累积、序号严格递增、游标 > 单一、实体游标隐藏', async ({ page }) => {
     test.setTimeout(60000);
     const logs = ptt.attachConsole(page);
     try {
@@ -167,14 +176,62 @@ test.describe('文章列表好读模式（离线）', () => {
       }
       // 原生视窗仿真：DOM 固定 24 行（不随缓冲成长），fill prepend 不动视窗。
       expect(s.domRows).toBe(24);
-      // 游标 = 恰好一列行首 ●（body 区内）。
+      // 游标 = 恰好一列行首 '>'（body 区内）。行首比对：'>' 可能出现在标题里。
       const rows = await dumpScreenRows(page);
-      const bulletRows = rows
-        .map((t, i) => (t.includes('●') ? i : -1))
+      const cursorRows = rows
+        .map((t, i) => (t.startsWith('>') ? i : -1))
         .filter((i) => i !== -1);
-      expect(bulletRows.length).toBe(1);
-      expect(bulletRows[0]).toBeGreaterThanOrEqual(3);
-      expect(bulletRows[0]).toBeLessThanOrEqual(22);
+      expect(cursorRows.length).toBe(1);
+      expect(cursorRows[0]).toBeGreaterThanOrEqual(3);
+      expect(cursorRows[0]).toBeLessThanOrEqual(22);
+      // 半形游标只盖 %7d 的前导空格 ⇒ 序号完整可见（旧全形 ● 会吃掉最高位）。
+      expect(rows[cursorRows[0]]).toMatch(/^>\d{5,7}\s/);
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
+  // 兩代游標相容（pttbbs b9a5029f「Always do CURSOR_ASCII」把 STR_CURSOR2 ● 換成
+  // STR_CURSOR >）。舊素材必須照樣 engage、序號照樣讀得到：● 蓋掉 %7d 的前導空格
+  // ＋最高位數字，靠 pageArticleNums 從鄰居回推；'>' 則直接可讀。任何一邊的 parser
+  // 退化都會讓 facts.cursorRowNum 變 null → 交易 expect 餓死 → 卡住。
+  // 我們**畫**的游標與素材世代無關，一律 '>'（labelListCursor）。
+  test('舊 ● 游標素材仍能 engage：序號從鄰居回推、視窗照樣成形（雙支援）', async ({ page }) => {
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, navWide);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: true,
+        easyReadingListPrefetchCount: 200
+      });
+      let s = await waitState(page, (x) => x.state === 'active' && x.renderMode === 'buffer');
+      expect(s.cursorHidden).toBe(true);
+      s = await waitState(page, (x) => x.listLen > 40 && x.queueIdle, 20000);
+      expect(s.state).toBe('active');
+
+      // 序號嚴格遞增＝● 蓋掉的最高位真的被回推正確（回推錯會亂序/重複）。
+      const firstNull = s.nums.indexOf(null);
+      const numbered = firstNull === -1 ? s.nums : s.nums.slice(0, firstNull);
+      expect(numbered.length).toBeGreaterThan(40);
+      for (let i = 1; i < numbered.length; i++) {
+        expect(numbered[i]).toBeGreaterThan(numbered[i - 1]);
+      }
+      expect(s.domRows).toBe(24);
+
+      // 渲染出來的游標仍是我們畫的 '>'（素材是 ● 世代，但畫面不該出現 ●）。
+      const rows = await dumpScreenRows(page);
+      const cursorRows = rows
+        .map((t, i) => (t.startsWith('>') ? i : -1))
+        .filter((i) => i !== -1);
+      expect(cursorRows.length).toBe(1);
+      expect(rows[cursorRows[0]]).toMatch(/^>\d{5,7}\s/);
+      // ● 不得漏進視窗任何一列的行首（relabel/blank 還原沒做好就會殘留）。
+      expect(rows.filter((t) => t.startsWith('●')).length).toBe(0);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -427,12 +484,9 @@ test.describe('文章列表好读模式（离线）', () => {
       for (let r = 0; r < 24; r++) {
         const norm = (t) => {
           let x = r < 3 ? t.replace(/人氣:\d+/, '人氣:*') : t;
-          // 开文列匹配：● 盖掉序号最高位（●53292 = 353292），两种形式都要认。
+          // 开文列匹配：半形游标 '>' 不盖数字（">353292"），序号照样完整。
           const numStr = String(openNum);
-          if (
-            x.indexOf(numStr) !== -1 ||
-            x.indexOf('●' + numStr.slice(1)) === 0
-          ) {
+          if (x.indexOf(numStr) !== -1) {
             x = x.slice(0, 12).replace(/[+\-Mm~]/g, ' ') + x.slice(12);
           }
           return x;

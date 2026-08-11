@@ -269,7 +269,7 @@ test.describe('cassette 录制器', () => {
               num = lastJumpNum;
             } else {
               // 当前页「最上方文章序号」——用与 runtime 相同的 pageArticleNums
-              // （含游标列 ● 盖头的邻居回推），对齐 bufferEdgeNum(up) 的选择。
+              // （含旧全形 ● 游标列盖头时的邻居回推），对齐 bufferEdgeNum(up) 的选择。
               const buf = app.buf;
               const rowTexts = [];
               for (let r = 0; r < buf.rows; r++) rowTexts.push(buf.getRowText(r, 0, buf.cols));

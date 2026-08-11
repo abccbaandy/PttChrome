@@ -1,4 +1,4 @@
-// 文章列表好讀模式 e2e（連真 PTT）。原生視窗仿真（24 行固定、● 游標、read.c 語意）：
+// 文章列表好讀模式 e2e（連真 PTT）。原生視窗仿真（24 行固定、'>' 游標、read.c 語意）：
 // 驗證進看板啟用、多頁累積、序號**嚴格遞增**(ascending：舊上新下)、置底文最底、
 // 黑名單列被隱藏且視窗補滿、PgUp 游標停新頁頂、demand 續抓、開文(序列化跳號)/返回
 // 還原、原生功能(`/`)functionMode 直通，以及 v3 不穩重現法的 soak 自動化。
@@ -129,7 +129,7 @@ function assertAscending(s) {
 }
 
 test.describe('文章列表好讀模式（live）', () => {
-  test('進看板啟用 + 多頁累積 + 序號遞增 + 置底最底 + 24行視窗 + ●游標', async ({ page }) => {
+  test('進看板啟用 + 多頁累積 + 序號遞增 + 置底最底 + 24行視窗 + > 游標', async ({ page }) => {
     test.setTimeout(120000);
     const logs = attachConsole(page);
     try {
@@ -149,18 +149,19 @@ test.describe('文章列表好讀模式（live）', () => {
       expect(s.listLen).toBeGreaterThan(20);
       const numbered = assertAscending(s);
       expect(numbered.length).toBeGreaterThan(20);
-      // 原生視窗仿真：DOM 固定 24 行；游標 = 恰一列行首 ●（body 區內）。
+      // 原生視窗仿真：DOM 固定 24 行；游標 = 恰一列行首 '>'（body 區內）。
+      // 行首比對，不可用 includes——'>' 也會出現在標題文字裡。
       expect(s.domRows).toBe(24);
-      const bulletRows = await page.evaluate(() =>
+      const cursorRows = await page.evaluate(() =>
         Array.from(
           document.querySelectorAll('#mainContainer [data-type="bbsline"]')
         )
-          .map((el, i) => (el.textContent.includes('●') ? i : -1))
+          .map((el, i) => (el.textContent.startsWith('>') ? i : -1))
           .filter((i) => i !== -1)
       );
-      expect(bulletRows.length).toBe(1);
-      expect(bulletRows[0]).toBeGreaterThanOrEqual(3);
-      expect(bulletRows[0]).toBeLessThanOrEqual(22);
+      expect(cursorRows.length).toBe(1);
+      expect(cursorRows[0]).toBeGreaterThanOrEqual(3);
+      expect(cursorRows[0]).toBeLessThanOrEqual(22);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -197,7 +198,7 @@ test.describe('文章列表好讀模式（live）', () => {
       const cursorRow = await page.evaluate(() =>
         Array.from(
           document.querySelectorAll('#mainContainer [data-type="bbsline"]')
-        ).findIndex((el) => el.textContent.includes('●'))
+        ).findIndex((el) => el.textContent.startsWith('>'))
       );
       expect(cursorRow).toBe(3);
       const after = await waitListSettled(page);

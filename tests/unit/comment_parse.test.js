@@ -227,6 +227,19 @@ describe("parseListArticleNum", () => {
       350039
     );
   });
+  test("新版游標列（半形 > 只蓋前導空格）→ 讀得到完整序號", () => {
+    // pttbbs b9a5029f「cleanup(cursor): Always do CURSOR_ASCII」廢除 UF_CURSOR_ASCII，
+    // 全站改用 STR_CURSOR ">"（單格 ASCII，只蓋 %7d 的前導空格）。序號完整可見，
+    // 欄位也不再位移 —— 舊碼的 /^\s*(\d+)\s/ 認不到行首 '>' → 游標列序號恆 null →
+    // facts.cursorRowNum 恆 null → 所有 jump 交易的 expect 永不滿足 →「列表好讀卡住」。
+    const cursorRow = ">350039 + 1 6/14 JHENGKUNLIN  □ [母雞] foo";
+    const normalRow = " 350039 + 1 6/14 JHENGKUNLIN  □ [母雞] foo";
+    expect(parseListArticleNum(cursorRow)).toBe(350039);
+    expect(parseListArticleNum(cursorRow)).toBe(parseListArticleNum(normalRow));
+    // 欄位天然對齊（'>' 是半形，rowToText 不折疊）→ 作者/標題與乾淨列等值
+    expect(parseListAuthor(cursorRow)).toBe(parseListAuthor(normalRow));
+    expect(parseListTitleRaw(cursorRow)).toBe(parseListTitleRaw(normalRow));
+  });
   test("★pinned / separator / status / empty rows → null", () => {
     expect(parseListArticleNum("★      6/14 SYSOP        ◇ [公告] 板規")).toBeNull();
     expect(parseListArticleNum("       ")).toBeNull();
@@ -247,6 +260,16 @@ describe("isPinnedListRow", () => {
   test("normal numbered article row → false (has a number)", () => {
     expect(isPinnedListRow(" 352960 + 4 6/05 HarunoYukino R: foo")).toBe(false);
   });
+  test("新版游標壓在編號列（> 蓋頭）→ false（序號讀得到，不得誤判成置底）", () => {
+    // 舊碼會因為「無序號＋作者欄合法」把它當置底列 → accumulateListLines 的
+    // (i !== cur_y || 有★) 守門再把它擋掉 ⇒ 游標所在那篇文章永遠進不了 buffer。
+    expect(isPinnedListRow(">352960 + 4 6/05 HarunoYukino R: foo")).toBe(false);
+  });
+  test("新版游標壓在置底列（>…★）→ true（★ 仍在，序號仍不可讀）", () => {
+    // server 畫法 outs("  " ANSI "  ★ ")：cells 0-3 空白、4-5 ★、6 空白；
+    // '>' 只蓋 cell 0 ⇒ text 為 '>' + 3 空白 + '★'（乾淨列是 4 空白 + '★'）。
+    expect(isPinnedListRow(">   ★  m 1 6/01 arrenwu      轉 [公告] 板規")).toBe(true);
+  });
   test("status / separator / blank rows → false (no valid author)", () => {
     expect(isPinnedListRow("【板主】abc 看板《C_Chat》線上1234人, 我是guest")).toBe(false);
     expect(isPinnedListRow("       ")).toBe(false);
@@ -260,9 +283,19 @@ describe("parseListArticleNumLoose（pinned-map guard）", () => {
     expect(parseListArticleNumLoose("●52880 +17 7/03 RoaringWolf  □ [星原] 藍色星原")).toBe(52880);
     expect(parseListArticleNumLoose("●50039 + 1 6/14 JHENGKUNLIN  □ [母雞] foo")).toBe(50039);
   });
-  test("真置底列（★ / 游标压★变体）→ null", () => {
+  test("> 盖头的编号列（新版 ASCII 游标）→ 可见数字（判为编号列，不进 pinned map）", () => {
+    // 新版 '>' 不盖数字，loose 与 strict 同值；关键是行首 '>' 必须被 strip，
+    // 否则 classifyListScreen 的板尾短页放宽规则（依赖 loose 非 null）会失效
+    // → 板尾任何无主 settle 都降级 functionMode。
+    expect(parseListArticleNumLoose(">352880 +17 7/03 RoaringWolf  □ [星原] 藍色星原")).toBe(352880);
+    expect(parseListArticleNumLoose(">350039 + 1 6/14 JHENGKUNLIN  □ [母雞] foo")).toBe(350039);
+  });
+  test("真置底列（★ / 游标压★变体，两代游标）→ null", () => {
     expect(parseListArticleNumLoose("    ★  m 1 6/01 arrenwu      轉 [公告] 板規")).toBeNull();
     expect(parseListArticleNumLoose("●  ★  m 1 6/01 arrenwu      轉 [公告] 板規")).toBeNull();
+    // '>' 加进 strip 集合后，置底列仍由 ★ 屏蔽推文数 → 依旧 null（不得回归）
+    expect(parseListArticleNumLoose(">   ★  m 1 6/01 arrenwu      轉 [公告] 板規")).toBeNull();
+    expect(parseListArticleNumLoose(">   ★    4 9/21 alicekey     □ [公告] 小軟體板的精神")).toBeNull();
   });
   test("置底列推文数为纯数字（无 m/+/= 前缀）→ null（★ 屏蔽推文数，不得误判为编号）", () => {
     // 使用者实测部分置底文固定消失的主因：★ 后紧接推文数栏，纯数字推文数
@@ -291,6 +324,11 @@ describe("isDeletedListRow", () => {
   test("游標壓在刪除列（● 蓋頭）仍 → true", () => {
     expect(
       isDeletedListRow("●03599     7/04 -            □ (本文已被刪除) <wh40917>")
+    ).toBe(true);
+  });
+  test("游標壓在刪除列（新版 > 蓋頭）仍 → true", () => {
+    expect(
+      isDeletedListRow(">203599     7/04 -            □ (本文已被刪除) <wh40917>")
     ).toBe(true);
   });
   test("一般文章列 / 置底列 / 狀態列 → false", () => {
@@ -324,6 +362,17 @@ describe("blacklistNoticeText（原生模式黑名單列 → 被刪除樣式通�
     // raw 前綴保留 ●（不 realign 墊空白 → 游標列不位移）
     expect(out.startsWith("●52960 + 4 6/05 -")).toBe(true);
     expect(out).toContain("（本文已被黑名單） HarunoYukino");
+  });
+  test("游標列（新版 > 蓋頭）：前綴保留 >、序號完整、不位移", () => {
+    const out = blacklistNoticeText(
+      ">352960 + 4 6/05 HarunoYukino R: [閒聊] 廣告貼文"
+    );
+    expect(out.startsWith(">352960 + 4 6/05 -")).toBe(true);
+    expect(out).toContain("（本文已被黑名單） HarunoYukino");
+    // 半形游標不折疊 ⇒ 通知列與乾淨列等長（原生模式游標上下移動不得跳版）
+    expect(out.length).toBe(
+      blacklistNoticeText(" 352960 + 4 6/05 HarunoYukino R: [閒聊] 廣告貼文").length
+    );
   });
   test("帶 label（標題關鍵字命中）→ 尾端顯示關鍵字而非作者", () => {
     const out = blacklistNoticeText(
@@ -376,6 +425,18 @@ describe("pageArticleNums", () => {
     expect(nums[3]).toBe(349886); // ●49886 recovered from neighbour 349887
     expect(nums[4]).toBe(349887);
     expect(nums[5]).toBe(349888);
+  });
+  test("新版 > 游標列不需回推鄰居（序號本來就完整可讀）", () => {
+    const p = [
+      "   編號    日 期 作  者       文  章  標  題                        人氣:2571",
+      ">349886 + 5 6/21 AoyamaNagisa □ [蔚藍] 哇幹 乳牛比基尼莉央",
+      " 349887 + 1 6/21 someoneA     □ [閒聊] 標題二"
+    ];
+    expect(pageArticleNums(p, 1)).toEqual([null, 349886, 349887]);
+    // 即使整頁只有游標列一列（板尾短頁），也讀得到
+    expect(pageArticleNums([">349886 + 5 6/21 AoyamaNagisa □ [蔚藍] foo"], 0)).toEqual([
+      349886
+    ]);
   });
   test("no cursor / cursor on a numberless row → that row stays null", () => {
     expect(pageArticleNums(page, 0)).toEqual([

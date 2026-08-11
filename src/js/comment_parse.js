@@ -175,21 +175,41 @@ export function parseArticleBoard(text) {
 // 標題區起點是 LIST_TITLE_COL_START(30)，兩者差一格 padding —— 別混用。
 // Fail-safe: if the extracted text is not a plain userid we
 // return null and the row is NOT hidden, so we never hide a legitimate post by
-// mistake. The cursor row (●) and pinned rows (★) carry a leading full-width char
-// that shifts the columns; realignListColumns below compensates for it.
+// mistake. Pinned rows (★) — and, with the OLD cursor generation, the cursor row (●)
+// — carry a leading full-width char that shifts the columns; realignListColumns below
+// compensates for it. The current '>' cursor is half-width and shifts nothing.
 export const LIST_AUTHOR_COL_START = 17;
 export const LIST_AUTHOR_COL_END = 29;
 export const LIST_TITLE_COL_START = 30;
 const USERID_RE = /^[0-9A-Za-z]+$/;
 
-// The keyboard-cursor row in the board list carries a full-width cursor bullet (●)
-// at its head, and pinned rows a full-width ★. rowToText collapses each 2-cell DBCS
-// glyph to ONE Unicode char, so such a leading wide marker shifts every later
-// column LEFT by one — col 17-28 then yields a truncated author (e.g. "jhengkunlin"
-// → "hengkunlin"), so the blacklist match (and thus the hidden state) silently
-// drops on whichever row the cursor is sitting on. Re-pad one space per leading wide
-// char (codepoint > 0x7F within the ASCII prefix region) to restore the fixed-column
-// alignment before slicing. Normal rows have an all-ASCII prefix → no padding.
+// The board-list keyboard cursor, TWO generations (pttbbs include/common.h):
+//
+//   舊 STR_CURSOR2 "●"  全形，佔 cells [0,1]：蓋掉 %7d 序號的前導空格 ＋ 最高位
+//                       數字。rowToText 折疊 2 cells → 1 char ⇒ 後面每欄左移一格。
+//   新 STR_CURSOR  ">"  半形，只佔 cell [0]：蓋掉前導空格，6 位序號完整可見，
+//                       欄位不位移。
+//
+// 切換點＝pttbbs `b9a5029f` "cleanup(cursor): Always do CURSOR_ASCII"（2026-08-11）：
+// 廢除 UF_CURSOR_ASCII 使用者旗標，全站強制 ASCII 游標（`mbbsd/stuff.c#cursor_show`
+// 一律 `outs(STR_CURSOR)`，看板列表的 `mbbsd/psb.c#psb_default_cursor` 同步）。
+//
+// **兩代都必須認得**：`tests/e2e/cassettes/*.json` 是舊 server 錄的 raw bytes，
+// offline e2e 是 CI gate。只換不加＝ offline 全紅。認得的地方共三處，改一處就要想到
+// 另外兩處：`parseListArticleNum`（strict）、`parseListArticleNumLoose`（strip 集合）、
+// `term_view.js#serverCursorWidth`（還原被蓋的 cell 數，以 `isLeadByte` 判寬）。
+//
+// 反向：**我們自己畫**的假游標（列表好讀視窗）一律 `>`，見 `list_window.js#labelListCursor`。
+
+// Pinned rows carry a full-width ★, and the OLD cursor a full-width ●. rowToText
+// collapses each 2-cell DBCS glyph to ONE Unicode char, so such a leading wide
+// marker shifts every later column LEFT by one — col 17-28 then yields a truncated
+// author (e.g. "jhengkunlin" → "hengkunlin"), so the blacklist match (and thus the
+// hidden state) silently drops on whichever row the cursor is sitting on. Re-pad one
+// space per leading wide char (codepoint > 0x7F within the ASCII prefix region) to
+// restore the fixed-column alignment before slicing. Normal rows — and rows under
+// the NEW half-width '>' cursor — have an all-ASCII prefix → no padding needed,
+// which is exactly right: '>' occupies one cell and shifts nothing.
 function realignListColumns(text) {
   let pad = 0;
   for (let i = 0; i < text.length && i < LIST_AUTHOR_COL_START; ++i) {
@@ -266,17 +286,24 @@ export function appendBlacklistEntry(existing, entry) {
 // the jump target when opening an article (type the number → cursor jumps there).
 // Returns the int, or null for rows where it is not readable: the ★pinned rows
 // (公告/置底) which PTT shows as "★" instead of a number, separators, the bottom
-// status row, AND the keyboard-cursor row — its leading full-width ●(cursor) glyph
-// overwrites the first 2 cells (the leading space + the number's top digit), so the
-// number is genuinely obscured (e.g. " 350039" → "●50039"). realignListColumns only
-// re-pads the lost cell to keep the LATER columns (author col 17-28) aligned; the
-// covered digit cannot be recovered from text. Returning null on the cursor row is
-// deliberate — list easy reading hides the PTT cursor and recovers that one row's
-// number from the same article on an adjacent (cursor-free) page (see term_view
-// accumulateListLines); a wrong number would corrupt de-dup and jump-to-open.
+// status row, AND — with the OLD full-width cursor only — the keyboard-cursor row.
+//
+// Cursor handling differs per generation (see the LIST_CURSOR_* block above):
+//   舊 ●  overwrites the first 2 cells (leading space + the number's top digit), so
+//         the number is genuinely obscured (" 350039" → "●50039") → null. That is
+//         deliberate: list easy reading recovers that one row's number from the same
+//         article on an adjacent (cursor-free) page (term_view accumulateListLines);
+//         a wrong number would corrupt de-dup and jump-to-open.
+//   新 >  covers only the leading padding space, so the number is fully readable —
+//         the leading '>' is stripped and the row parses like any other. Getting this
+//         wrong made facts.cursorRowNum permanently null, so every jump transaction's
+//         expect (`facts.cursorRowNum === num`) starved → open/End/Home/prefetch all
+//         timed out（使用者實測「文章列表好讀讀取卡住」）.
+// A 7-digit board number would fill col 0 and thus be covered by '>' too; the
+// neighbour-recovery path still handles it (parseListArticleNumLoose).
 export function parseListArticleNum(text) {
   if (!text) return null;
-  const m = realignListColumns(text).match(/^\s*(\d+)\s/);
+  const m = realignListColumns(text).match(/^[>\s]*(\d+)\s/);
   if (!m) return null;
   return parseInt(m[1], 10);
 }
@@ -301,13 +328,15 @@ export function isDeletedListRow(text) {
 // width ASCII parens break the 2-cell CJK rhythm and skew every following glyph — the
 // 「排版歪掉」 bug) and the original author (kept in its original case).
 //
-// The PREFIX is the RAW (un-realigned) text: on the keyboard-cursor row the leading
-// full-width ● covers cells [0,1] and rowToText collapses it to one char, so a
-// realigned prefix would insert a padding space and shift the whole line right (the
-// cursor-moves-and-layout-jumps bug). Keeping the raw prefix preserves the ● exactly
-// where the server drew it. Only the AUTHOR is read from the realigned text (the ●
-// shifts that column, so realign is needed to slice it). rawPrefixLen = author column
-// minus the count of leading wide glyphs realign would have padded.
+// The PREFIX is the RAW (un-realigned) text: under the OLD full-width ● cursor the
+// glyph covers cells [0,1] and rowToText collapses it to one char, so a realigned
+// prefix would insert a padding space and shift the whole line right (the
+// cursor-moves-and-layout-jumps bug). Keeping the raw prefix preserves the cursor
+// mark exactly where the server drew it — and the NEW half-width '>' needs no
+// compensation at all (one cell, one char). Only the AUTHOR is read from the
+// realigned text (the wide cursor shifts that column, so realign is needed to slice
+// it). rawPrefixLen = author column minus the count of leading wide glyphs realign
+// would have padded.
 // Optional `label` overrides the trailing token: author-blacklist hits omit it
 // (show the author, the reason IS the author); title-keyword hits pass the
 // matched keyword so the notice tells the user WHICH keyword fired.
@@ -334,36 +363,43 @@ export function blacklistNoticeText(text, label) {
 //
 // Distinguishes pinned rows from: status / separator / blank rows (no valid author →
 // false) and normal/cursor article rows (a number is present). IMPORTANT: only call this
-// on rows whose RECOVERED number (pageArticleNums) is null — the keyboard-cursor row also
-// has no readable number from text alone (the ● covers it) but pageArticleNums recovers
-// it from a neighbour, so the caller classifies it as numbered before reaching here.
+// on rows whose RECOVERED number (pageArticleNums) is null — under the OLD full-width ●
+// cursor the row has no readable number from text alone (the ● covers it) but
+// pageArticleNums recovers it from a neighbour, so the caller classifies it as numbered
+// before reaching here. Under the NEW '>' cursor the number reads directly, so a
+// cursor-on-article row is rejected here on the number alone.
 export function isPinnedListRow(text) {
   if (!text) return false;
   if (parseListArticleNum(text) != null) return false;
   return parseListAuthor(text) != null;
 }
 
-// Loose variant: the VISIBLE leading digits on a cursor row, where the leading
-// full-width ● glyph covers the top digit (e.g. "●49886" → 49886, missing the
-// top "3"). Strips a leading ●/space run, then reads the digit run. Returns null
+// Loose variant: the VISIBLE leading digits on a cursor row. With the OLD full-width
+// ● the top digit is covered (e.g. "●49886" → 49886, missing the top "3"); with the
+// NEW half-width '>' nothing is covered and this agrees with the strict parse.
+// Strips a leading cursor-mark/space run, then reads the digit run. Returns null
 // when no digits follow (header / a pinned ★ row / status row). Only meaningful
 // when paired with recoverCursorArticleNum to restore the covered high-order digit
 // from a neighbour. Exported ALSO as the pinned-map guard in accumulateListLines:
-// a row with visible digits after stripping ● is a bullet-covered NUMBERED row (a
-// mid-response frame can paint the ● on a row that is not buf.cur_y — no neighbour
-// recovery), never a pinned row.
+// a row with visible digits after stripping the cursor mark is a covered NUMBERED
+// row (a mid-response frame can paint the cursor on a row that is not buf.cur_y — no
+// neighbour recovery), never a pinned row. `classifyListScreen`'s board-tail
+// short-page rule also depends on it (a tail page may hold ONE numbered row).
 //
-// MUST NOT strip ★: unlike ●, ★ marks a genuine pinned row and NEVER covers an
+// MUST NOT strip ★: unlike the cursor marks, ★ marks a genuine pinned row and NEVER covers an
 // article number (pinned rows have none — PTT prints ★ where the number would go).
 // The column right after ★ is the push-count (推文數), which is often a bare integer
 // (e.g. "★    4 …", "★   35 …" — announcements without an m/M/=/+ mark). Stripping
 // ★ exposed that push count → the guard misread the pinned row as a numbered one and
 // dropped it, so those announcements vanished from the buffer (user-reported「部分置底
 // 文固定消失」). Leaving ★ in place shields the push count: `^(\d+)` never matches a
-// row that still starts with ★.
+// row that still starts with ★ — that holds for BOTH cursor generations (a pinned row
+// under the new cursor reads ">   ★ …", the ★ still blocks).
 export function parseListArticleNumLoose(text) {
   if (!text) return null;
-  const m = text.replace(/^[\s●]+/, '').match(/^(\d+)\b/);
+  const m = text
+    .replace(/^[\s●>]+/, '')
+    .match(/^(\d+)\b/);
   return m ? parseInt(m[1], 10) : null;
 }
 

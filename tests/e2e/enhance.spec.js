@@ -199,8 +199,10 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
         const sel = '#mainContainer > span[type="bbsrow"]';
         // textContent（非 innerText）：visibility:hidden 的列 innerText 會是空字串。
         const authorCol = (el) => el.textContent.substring(17, 29).trim();
+        // 行首＝空白／游標標記。游標兩代：新 '>'（半形，pttbbs b9a5029f 起）與
+        // 舊 '●'（全形，會吃掉序號最高位 → 只剩 5 位）。
         const isIndexRow = (el) =>
-          /^[ ●]?\d{5,6}\s/.test(el.textContent) && /^[0-9A-Za-z]+$/.test(authorCol(el));
+          /^[ >●]?\d{5,6}\s/.test(el.textContent) && /^[0-9A-Za-z]+$/.test(authorCol(el));
         // 選列表中第一個合法作者
         let target = '';
         for (const el of document.querySelectorAll(sel)) {
@@ -254,13 +256,14 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       );
       expect(rows.length).toBeGreaterThan(0);
 
-      // 一般索引列：開頭為（空白/●）+ 5~6 位編號。對這些列取 cols 17~28 應為合法帳號。
-      const indexRows = rows.filter((r) => /^[ ●]?\d{5,6}\s/.test(r));
+      // 一般索引列：開頭為（空白/游標標記 >／●）+ 5~6 位編號。對這些列取 cols 17~28
+      // 應為合法帳號。新游標 '>' 是半形、不位移欄位；舊 '●' 是全形，會左移一格。
+      const indexRows = rows.filter((r) => /^[ >●]?\d{5,6}\s/.test(r));
       const valid = indexRows.filter((r) => /^[0-9A-Za-z]+$/.test(r.substring(17, 29).trim()));
       console.log(`INDEX ROWS: ${indexRows.length}, AUTHOR COL VALID: ${valid.length}`);
 
       expect(indexRows.length).toBeGreaterThan(0);
-      // 容許少數編輯過(●)造成位移；多數應命中。
+      // 容許少數全形字造成位移；多數應命中。
       expect(valid.length).toBeGreaterThanOrEqual(Math.ceil(indexRows.length * 0.7));
     } catch (err) {
       console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));

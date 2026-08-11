@@ -155,17 +155,21 @@ export function pruneListToSegment(numMap, aroundNum) {
   return r;
 }
 
-// Paint the native cursor bullet onto (a CLONE of) the selected row: the
-// full-width ● occupies cells [0,1] exactly like the server draws it
-// (stuff.c cursor_show, STR_CURSOR2). `leadCh`/`trailCh` are the two Big5
-// bytes of ● (u2b('●') — computed by the caller; string_util needs the global
-// conversion tables, so the bytes are injected to keep this pure/unit-testable).
-// Inverse of term_view's relabelListCursorRow. Attributes are left as the row
-// had them (native outs() the bullet with the current attrs too).
-export function labelListCursorBullet(row, leadCh, trailCh) {
-  if (!row || row.length < 2) return;
-  row[0].ch = leadCh;
-  row[0].isLeadByte = true;
-  row[1].ch = trailCh;
-  row[1].isLeadByte = false;
+// Paint the native cursor mark onto (a CLONE of) the selected row, exactly like
+// the server draws it: `mbbsd/stuff.c#cursor_show` does `outs(STR_CURSOR)` at
+// column 0, and STR_CURSOR is the half-width ">" (include/common.h). One cell —
+// it covers the leading padding space of the "%7d" sequence-number column, so the
+// number stays fully visible and no later column shifts.
+//
+// It used to be the full-width ● (STR_CURSOR2, cells [0,1], swallowing the top
+// digit); pttbbs `b9a5029f` "cleanup(cursor): Always do CURSOR_ASCII" retired the
+// UF_CURSOR_ASCII flag and made ">" the only cursor site-wide, so we follow suit.
+// ASCII ⇒ no u2b/Big5 bytes needed, unlike the old bullet.
+//
+// Inverse of term_view's relabelListCursorRow. Attributes are left as the row had
+// them (native outs() the mark with the current attrs too).
+export function labelListCursor(row) {
+  if (!row || !row.length) return;
+  row[0].ch = '>';
+  row[0].isLeadByte = false;
 }

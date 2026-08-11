@@ -9,7 +9,7 @@ import {
   normalizeListWindow,
   windowVisibleSequence,
   pruneListToSegment,
-  labelListCursorBullet,
+  labelListCursor,
   LIST_FROM_TOP,
 } from '../../src/js/list_window';
 
@@ -144,20 +144,22 @@ describe('pruneListToSegment (window never spans a fetch hole)', () => {
   });
 });
 
-describe('labelListCursorBullet', () => {
+describe('labelListCursor', () => {
   function cell(ch) {
     return { ch, isLeadByte: false };
   }
-  test('paints the DBCS bullet pair over cells [0,1] only', () => {
+  // pttbbs b9a5029f 起官方游標＝STR_CURSOR ">"（半形單格，stuff.c#cursor_show），
+  // 只蓋 %7d 序號的前導空格 ⇒ 我們畫的假游標比照，序號完整可見、欄位不位移。
+  test('paints the half-width > over cell 0 only', () => {
     const row = [cell(' '), cell('3'), cell('4'), cell('9')];
-    labelListCursorBullet(row, '\xA1', '\xB3');
-    expect(row[0]).toEqual({ ch: '\xA1', isLeadByte: true });
-    expect(row[1]).toEqual({ ch: '\xB3', isLeadByte: false });
+    labelListCursor(row);
+    expect(row[0]).toEqual({ ch: '>', isLeadByte: false });
+    expect(row[1].ch).toBe('3'); // 序號最高位不再被蓋
     expect(row[2].ch).toBe('4');
     expect(row[3].ch).toBe('9');
   });
   test('too-short / missing rows are ignored', () => {
-    expect(() => labelListCursorBullet(null, 'a', 'b')).not.toThrow();
-    expect(() => labelListCursorBullet([{ ch: 'x' }], 'a', 'b')).not.toThrow();
+    expect(() => labelListCursor(null)).not.toThrow();
+    expect(() => labelListCursor([])).not.toThrow();
   });
 });
