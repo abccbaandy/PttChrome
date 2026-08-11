@@ -1,6 +1,7 @@
 import React from "react";
 import ImagePreviewer, { requestPreview } from "./ImagePreviewer";
 import {
+  LAZY_MEDIA_SELECTOR,
   LAZY_MOUNT_MARGIN_PX,
   LAZY_UNMOUNT_MARGIN_PX,
   nextLazyState,
@@ -85,8 +86,12 @@ export const LazyInlinePreview = React.memo(function LazyInlinePreview({
         setMounted(true);
       } else if (action === "unmount") {
         // 先量再卸：卸載後高度歸零，這個值就拿不到了。
+        // 同時確認 slot 內是不是**真的**有媒體：只有「讀取中…」指示器／載入失敗
+        // 提示／非媒體網址時，量到的高度不是內容高度，釘住它會變成永久空白
+        // （nextSlotHeight 的註解有實例）。
         const measured = el.offsetHeight;
-        setSlotHeight((prev) => nextSlotHeight(prev, measured));
+        const hasMedia = !!el.querySelector(LAZY_MEDIA_SELECTOR);
+        setSlotHeight((prev) => nextSlotHeight(prev, measured, hasMedia));
         facts.mounted = false;
         setMounted(false);
       }

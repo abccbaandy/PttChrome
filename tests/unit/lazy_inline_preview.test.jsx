@@ -93,8 +93,18 @@ describe("nextLazyState / nextSlotHeight（純決策）", () => {
     expect(LAZY_UNMOUNT_MARGIN_PX).toBeGreaterThan(LAZY_MOUNT_MARGIN_PX * 2);
   });
   test("量不到高度（還沒載完就被捲過去）⇒ 保留舊值，不要歸零", () => {
-    expect(nextSlotHeight(320, 0)).toBe(320);
-    expect(nextSlotHeight(320, 480)).toBe(480);
+    expect(nextSlotHeight(320, 0, true)).toBe(320);
+    expect(nextSlotHeight(320, 480, true)).toBe(480);
+  });
+  // 使用者實測（ptt-debug-20260812-010606）：每篇文章「※ 文章網址」那行底下都多出
+  // 一塊約 65px 的空白，推文區被往下推。成因＝該行的 URL（PTT 文章 HTML 頁，不是
+  // 媒體）也掛了預覽 slot，捲過去時顯示「讀取中…」指示器，判定非媒體後內容消失，
+  // 但卸載當下量到的正是那個指示器的高度 → 被釘進 min-height 變成永久空白。
+  // 釘高度的唯一正當理由是「真的有媒體、卸載後會塌陷」；loading/error/非媒體都不算。
+  test("卸載時 slot 內沒有真媒體（讀取中／載入失敗／根本不是媒體）⇒ 不得釘高度", () => {
+    expect(nextSlotHeight(0, 65, false)).toBe(0);
+    // 已經釘過的真實高度不因一次 no-media 量測被覆寫
+    expect(nextSlotHeight(570, 65, false)).toBe(570);
   });
 });
 
@@ -129,16 +139,28 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
       .toBeGreaterThan(0);
   });
 
+  // jsdom 沒有排版也沒有網路：offsetHeight 恆為 0，ImagePreviewer 也停在「讀取中」。
+  // 釘高度的前提是「slot 內真的有媒體、卸載後會塌陷」，所以要複現該情境就得把兩件
+  // 事都做出來：偽造高度 ＋ 放一個真媒體節點（React 只管自己 render 的 children，
+  // 手動 append 的節點不會被卸載動作移除，正好模擬「圖已經載出來了」）。
+  function fakeLoadedMedia(slot, height) {
+    Object.defineProperty(slot, "offsetHeight", {
+      configurable: true,
+      value: height,
+    });
+    const img = document.createElement("img");
+    img.className = "easyReadingImg hyperLinkPreview";
+    slot.appendChild(img);
+    return img;
+  }
+
   test("遠離視野 ⇒ 卸載，並把卸載前的高度釘進佔位盒（閱讀位置不位移）", () => {
     const { container } = render(<LazyInlinePreview href={HREF} />);
     near().emit(true);
     const slot = container.querySelector(".inlinePreviewSlot");
-    // jsdom 沒有排版，offsetHeight 恆為 0 → 手動偽造「圖已撐開 420px」。
-    Object.defineProperty(slot, "offsetHeight", {
-      configurable: true,
-      value: 420,
-    });
+    const img = fakeLoadedMedia(slot, 420);
     far().emit(false);
+    img.remove(); // 媒體隨卸載消失
     expect(slot.children.length).toBe(0);
     expect(slot.style.minHeight).toBe("420px");
   });
@@ -147,16 +169,34 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
     const { container } = render(<LazyInlinePreview href={HREF} />);
     const slot = container.querySelector(".inlinePreviewSlot");
     near().emit(true);
-    Object.defineProperty(slot, "offsetHeight", {
-      configurable: true,
-      value: 420,
-    });
+    const img = fakeLoadedMedia(slot, 420);
     far().emit(false);
+    img.remove();
     expect(slot.children.length).toBe(0);
     far().emit(true); // 回到卸載邊界之內
     near().emit(true);
     expect(slot.children.length).toBeGreaterThan(0);
     expect(slot.style.minHeight).toBe("420px");
+  });
+
+  // 症狀級回歸（使用者實測：每篇文章推文區前面多一塊空白）。
+  // 「※ 文章網址」那行的 URL 是 PTT 文章 HTML 頁，不是媒體：捲過去只會顯示
+  // 「讀取中…」指示器，判定後內容消失。卸載時**不得**把那個指示器的高度釘住，
+  // 否則變成永久假空白，而且非媒體連結永遠不會再長出內容來填它。
+  test("非媒體連結（slot 內只有讀取中指示器）卸載 ⇒ 不留 min-height", () => {
+    const { container } = render(
+      <LazyInlinePreview href="https://www.ptt.cc/bbs/ask/M.1786465191.A.DBD.html" />,
+    );
+    near().emit(true);
+    const slot = container.querySelector(".inlinePreviewSlot");
+    // 「讀取中…」指示器撐出的高度（實測 65px），slot 內沒有任何媒體元素。
+    Object.defineProperty(slot, "offsetHeight", {
+      configurable: true,
+      value: 65,
+    });
+    expect(slot.querySelector("img, video, iframe")).toBeNull();
+    far().emit(false);
+    expect(slot.style.minHeight).toBe("");
   });
 
   test("遲滯：只是離開視野（還在卸載邊界內）不卸載", () => {

@@ -532,9 +532,14 @@ test.describe('LiveHelper 启用 → 关好读单一出口（离线重放）', (
 //   ※ 文章网址: …          ← 第 66 行，同时是第 4 页的第一行（重叠列）
 // 所以吞掉第 3 页 → 「发信站」不见、「文章网址」还在。
 test.describe('掉页（typeahead 跳绘）侦测与自癒（离线重放）', () => {
-  const paged = articles.filter((c) => (c.steps || []).some((s) => s.on === 'pagedown'));
+  // 需要 **≥2 个 pagedown**：本测吞的是「中间」那一页（既非首页也非末页），只有
+  // 一个 pagedown 的卷（= 全文两页）吞掉它就等于只剩第一页，没有中间页可自癒，
+  // 前提根本不成立。
+  const paged = articles.filter(
+    (c) => (c.steps || []).filter((s) => s.on === 'pagedown').length >= 2
+  );
   if (!paged.length) {
-    test.skip('尚无多页 article cassette；先 yarn record:cassette', () => {});
+    test.skip('尚无 ≥3 页的 article cassette；先 yarn record:cassette', () => {});
   }
 
   for (const cassette of paged) {

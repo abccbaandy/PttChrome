@@ -29,9 +29,24 @@ export function nextLazyState({ mounted, near, far }) {
   return "keep";
 }
 
+// 佔位盒內「真的載到媒體」的判準（LazyInlinePreview 卸載前用它查 slot）。
+// 刻意**不含** .previewLoading／.previewError —— 見 nextSlotHeight。
+export const LAZY_MEDIA_SELECTOR =
+  "img.easyReadingImg, video.easyReadingVideo, img.hyperLinkPreview, iframe";
+
 // 卸載時要把當下高度釘進佔位盒，否則內容總高會塌陷、捲動容器的 scrollTop 被夾住
 // → 使用者的閱讀位置整個位移（與點圖放大／影片全螢幕同一類問題，見
 // src/js/scroll_anchor.js 開頭）。0／負值不採信（尚未載入完成就被捲過去）。
-export function nextSlotHeight(prev, measured) {
+//
+// hasMedia=false 一律不釘（2026-08 使用者回報「推文區前面多一塊空白」）：塌陷補償
+// 的前提是「卸載後會少掉一塊真內容」。若 slot 當下只有「讀取中…」指示器
+// （.previewLoading，URL 解析中／媒體下載中共用）、「載入失敗」提示，或這個網址
+// 根本不是媒體（ImagePreviewer render 出 null），那量到的高度就不是內容高度，
+// 釘進 min-height 只會變成**永久假空白**——而且非媒體連結永遠不會再長出內容來填它。
+// 實例：每篇文章的「※ 文章網址: https://www.ptt.cc/bbs/…html」都掛預覽 slot，
+// 捲過去顯示讀取中→判定非媒體→內容消失，卸載卻把指示器的 65px 釘住 ⇒ 每篇文章的
+// 推文區都被往下推兩行（ptt-debug-20260812-010606 實測，offline 重放已複現）。
+export function nextSlotHeight(prev, measured, hasMedia) {
+  if (!hasMedia) return prev;
   return measured > 0 ? measured : prev;
 }

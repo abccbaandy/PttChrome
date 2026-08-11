@@ -97,8 +97,23 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 - 限制：導出用 send 反查鍵表（`classifySend`），非翻頁類按鍵會標 `on:'raw'`（replay.js
   不認得，需人工裁剪或只取 start~pagedown 段）；下載前已自動 redact 已知帳密/IP，但
   **手動鍵入的密碼無法偵測**，入 repo 前務必人工複查。
+- 存進 `cassettes/` 後**必須補齊 golden meta**（`commentCount`／`firstCommentAuthor`，
+  article 卷）：逐卷測試 `easy-reading.offline.spec.js` 直接拿它們當斷言基準，缺了會
+  `expect(undefined)` 紅。
+- 實例：`ask-urlline-blank.json`（ptt-debug-20260812-010606 轉出，2 頁 5 推）——
+  唯一能重現「非媒體連結佔位盒留下假高度」的素材，見下方「素材選用」。
 - 守護測試：`tests/unit/redact.test.js`、`tests/unit/debug_recorder_logic.test.js`、
   `tests/unit/debug_recorder.test.js`、`tests/e2e/offline/debug_record.offline.spec.js`。
+
+## 素材選用（逐卷測試的前提，選錯＝測試恆綠）
+逐卷 spec 會把 `cassettes/` 裡每一卷都跑一遍，但**不是每卷都能重現每個 bug**：
+
+| 測試 | 前提 | 選錯的後果 |
+|---|---|---|
+| `lazy_preview_blank.offline.spec.js`（非媒體連結不留高度） | 文章夠長／夠多圖，把「※ 文章網址」那列推出 lazy 卸載邊界 | 短文（`test-xmen`）整篇都在視野內、從不卸載 ⇒ 佔位盒永不釘高度 ⇒ **恆綠**（實際踩過） |
+| `easy-reading.offline.spec.js` 掉頁自癒 | **≥2 個 `pagedown` step**（吞的是「中間」頁） | 只有 1 個 pagedown 的卷吞掉即只剩第一頁，沒有中間頁可自癒，前提不成立 |
+
+新增素材後請照「回歸捕捉力驗證」那節，實際把修復還原一次確認會紅。
 
 ## 回歸捕捉力驗證（關鍵，證明素材真能守門）
 錄好 cassette 後：臨時改壞 `comment_parse.findPageOverlap`（或 stash 第一則推文修復 commit），
