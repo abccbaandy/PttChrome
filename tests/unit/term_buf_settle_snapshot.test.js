@@ -22,8 +22,14 @@ const cassette = JSON.parse(
 
 function makeBuf() {
   const buf = new TermBuf(cassette.cols, cassette.rows);
-  // Minimal view stub: notify() touches update/updateCursorPos/blinkOn.
-  buf.setView({ update() {}, updateCursorPos() {}, blinkOn: false });
+  // Minimal view stub: notify() touches update/updateCursorPos/
+  // refreshCursorVisibility/blinkOn.
+  buf.setView({
+    update() {},
+    updateCursorPos() {},
+    refreshCursorVisibility() {},
+    blinkOn: false,
+  });
   buf.useMouseBrowsing = false; // keep notify() off the highlight/DOM path
   return buf;
 }

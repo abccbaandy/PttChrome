@@ -42,7 +42,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 否則 getRowText 會吐出未轉碼的 Big5 位元組。
 async function pageScreensOf(cassette) {
   const buf = new TermBuf(cassette.cols, cassette.rows);
-  buf.setView({ update() {}, updateCursorPos() {}, blinkOn: false });
+  buf.setView({
+    update() {},
+    updateCursorPos() {},
+    refreshCursorVisibility() {},
+    blinkOn: false,
+  });
   buf.useMouseBrowsing = false;
   const parser = new AnsiParser(buf);
   const screens = [];

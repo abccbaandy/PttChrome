@@ -268,6 +268,16 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用�
 `highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、
 `enableBareDomainLink`(true)、`blacklist`/`titleBlacklist`("" 換行)。
 
+**「一般 → 介面」分頁**：`autoHideBlinkCursor`(true) — PTT 自己畫了游標的畫面不再疊閃爍底線。
+判定純函式 `comment_parse.js#hasServerCursorMark`（cur_x/cur_y 那格＝游標記號；兩代 `>`/`●` 都認），
+依據是 pttbbs `mbbsd/stuff.c#cursor_show` 印完記號會把終端機游標**移回同一格**（`psb.c` 用
+`STR_CURSOR "\b"` 同義）。套用鏈：`term_buf.notify`（changed/posChanged 的共同匯流點，每幀一次）
+→ `term_view.refreshCursorVisibility` → `_applyCursorVisibility`。
+**`_cursorSuppressed` 與列表好讀的 `_cursorHidden` 是兩個獨立來源、OR 合併**——共用一個旗標會讓
+`list_session` 的 `showCursor()` 誤清抑制狀態，且 `_cursorHidden` 會讓 `updateCursorPos` 提早 return。
+守護：`tests/unit/server_cursor_mark.test.js`、`tests/e2e/offline/blink_cursor.offline.spec.js`
+（computed display 才看得到 inline style 疊 `.blink--active` CSS 的最終結果）。
+
 **「自動登入」分頁**（2026-08 從增強功能＋本機設定兩處集中過來）——整條登入流程一頁看完，
 內部兩個 fieldset 各自標示同步性質：
 

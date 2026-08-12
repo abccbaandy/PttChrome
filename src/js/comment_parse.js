@@ -195,11 +195,32 @@ const USERID_RE = /^[0-9A-Za-z]+$/;
 // 一律 `outs(STR_CURSOR)`，看板列表的 `mbbsd/psb.c#psb_default_cursor` 同步）。
 //
 // **兩代都必須認得**：`tests/e2e/cassettes/*.json` 是舊 server 錄的 raw bytes，
-// offline e2e 是 CI gate。只換不加＝ offline 全紅。認得的地方共三處，改一處就要想到
-// 另外兩處：`parseListArticleNum`（strict）、`parseListArticleNumLoose`（strip 集合）、
-// `term_view.js#serverCursorWidth`（還原被蓋的 cell 數，以 `isLeadByte` 判寬）。
+// offline e2e 是 CI gate。只換不加＝ offline 全紅。認得的地方共四處，改一處就要想到
+// 另外三處：`parseListArticleNum`（strict）、`parseListArticleNumLoose`（strip 集合）、
+// `term_view.js#serverCursorWidth`（還原被蓋的 cell 數，以 `isLeadByte` 判寬）、
+// 以及下方的 `hasServerCursorMark`（閃爍底線抑制）。
 //
 // 反向：**我們自己畫**的假游標（列表好讀視窗）一律 `>`，見 `list_window.js#labelListCursor`。
+
+const OLD_CURSOR_GLYPH = '●'; // ● (STR_CURSOR2，舊 server)
+
+// 終端機游標所在的那一格，是不是 PTT 自己畫的鍵盤游標記號？
+//
+// 不變量（pttbbs `mbbsd/stuff.c#cursor_show`）：
+//     move(row, column); outs(STR_CURSOR); move(row, column);
+// 印完游標記號後**把終端機游標移回同一格**，看板列表的 `mbbsd/psb.c#psb_default_cursor`
+// 用 `outs(STR_CURSOR "\b")` 達成同樣效果。所以「這一格就是游標記號」＝「PTT 已經自己畫了
+// 游標」，此時我們的閃爍底線是重複資訊（term_view.js#refreshCursorVisibility）。
+// 反之輸入框／編輯器不走 cursor_show，該格是內容或空白 → 底線照舊顯示。
+//
+// 半形 '>' 佔一格；舊的全形 ● 是 DBCS pair（cell 存單一 Big5 byte，故走 rowToText 還原）。
+export function hasServerCursorMark(line, x) {
+  if (!line || x == null || x < 0 || x >= line.length) return false;
+  const c = line[x];
+  if (!c) return false;
+  if (!c.isLeadByte) return c.ch === '>';
+  return rowToText(line.slice(x, x + 2)) === OLD_CURSOR_GLYPH;
+}
 
 // Pinned rows carry a full-width ★, and the OLD cursor a full-width ●. rowToText
 // collapses each 2-cell DBCS glyph to ONE Unicode char, so such a leading wide

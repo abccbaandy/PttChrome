@@ -875,6 +875,10 @@ App.prototype.onPrefChange = function(name, value) {
       // or it goes invisible on the grayed-out reverse-video input rows.
       if (this.view) this.view.setWorkMode(!!value);
       break;
+    case 'autoHideBlinkCursor':
+      // 純顯示切換：只影響 #cursor 的 display，不需 redraw。
+      if (this.view) this.view.setAutoHideBlinkCursor(!!value);
+      break;
     case 'useMouseBrowsing':
       var useMouseBrowsing = value;
       this.CmdHandler.setAttribute('useMouseBrowsing', useMouseBrowsing?'1':'0');

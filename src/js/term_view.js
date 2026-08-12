@@ -6,7 +6,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
-import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose } from './comment_parse';
+import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment } from './list_window';
 import icon128 from '../icon/icon_128.png';
@@ -117,6 +117,14 @@ export function TermView() {
   // List easy reading hides the PTT cursor while the buffer render owns the
   // screen (the real cursor points into the 24-row buffer, not the long list).
   this._cursorHidden = false;
+
+  // 閃爍底線抑制（autoHideBlinkCursor）：PTT 自己畫了 '>' 游標的畫面（列表／選單）
+  // 不需要再疊一個閃爍底線。與 _cursorHidden 是**兩個獨立來源**，用 OR 合併於
+  // _applyCursorVisibility —— 不可共用一個旗標：_cursorHidden 會讓 updateCursorPos
+  // 提早 return（位置不再更新），而 list_session 的 showCursor() 會把它清掉，
+  // 連帶把這裡的抑制狀態一起清掉。
+  this._cursorSuppressed = false;
+  this.autoHideBlinkCursor = true; // 須與 pref_storage.js DEFAULT_PREFS 一致
 
   // Work mode (enableWorkMode) repaints the screen in grays via CSS only, so the
   // cursor's inline color has to be told about it — see cursor_color.js. Kept in
@@ -865,13 +873,39 @@ TermView.prototype = {
   // showCursor restores it and repaints the position.
   hideCursor: function() {
     this._cursorHidden = true;
-    this.bbsCursor.style.display = 'none';
+    this._applyCursorVisibility();
   },
 
   showCursor: function() {
     this._cursorHidden = false;
-    this.bbsCursor.style.display = '';
+    this._applyCursorVisibility();
     this.updateCursorPos();
+  },
+
+  // 唯一寫 #cursor display 的地方。inline 'none' 蓋過 CSS 的 .blink--active 規則
+  // （main.css），設回 '' 就把顯示權交還給每秒 toggle class 的閃爍機制。
+  _applyCursorVisibility: function() {
+    this.bbsCursor.style.display =
+      (this._cursorHidden || this._cursorSuppressed) ? 'none' : '';
+  },
+
+  // 每幀重算（TermBuf.notify）：PTT 游標可能在「終端機游標沒移動、但該列被重畫」的
+  // frame 出現或消失，所以不能只掛在 updateCursorPos（posChanged）上。
+  // 成本＝一格查表。
+  refreshCursorVisibility: function() {
+    var suppressed = false;
+    if (this.autoHideBlinkCursor && this.buf) {
+      var line = this.buf.lines[this.buf.cur_y];
+      suppressed = !!line && hasServerCursorMark(line, this.buf.cur_x);
+    }
+    this._cursorSuppressed = suppressed;
+    this._applyCursorVisibility();
+  },
+
+  // autoHideBlinkCursor 被切換（App.onPrefChange）：立刻重算，不必等下一個 frame。
+  setAutoHideBlinkCursor: function(on) {
+    this.autoHideBlinkCursor = !!on;
+    this.refreshCursorVisibility();
   },
 
   // Work mode toggled (App.onPrefChange): repaint the cursor right away so the

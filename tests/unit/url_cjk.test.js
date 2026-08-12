@@ -54,7 +54,12 @@ describe("TermBuf URI detection with CJK path (Big5)", () => {
 
   function paintRow(text) {
     const buf = new TermBuf(80, 24);
-    buf.setView({ update() {}, updateCursorPos() {}, blinkOn: false });
+    buf.setView({
+      update() {},
+      updateCursorPos() {},
+      refreshCursorVisibility() {},
+      blinkOn: false,
+    });
     buf.useMouseBrowsing = false;
     const parser = new AnsiParser(buf);
     parser.feed(u2b(text)); // Big5 bytes, one char per byte

@@ -67,6 +67,10 @@ export const DEFAULT_PREFS = {
   termSize: { cols: 80, rows: 24 },
   termSizeMode: "fixed-term-size",
   bbsMargin: 0,
+  // PTT 自己畫了 '>' 游標的畫面（列表／選單）不再疊一個閃爍底線 —— 兩個游標同框是
+  // 重複資訊。輸入框／編輯器不走 pttbbs 的 cursor_show，底線照舊顯示，位置資訊不會
+  // 消失，所以預設開。判定見 comment_parse.js#hasServerCursorMark。
+  autoHideBlinkCursor: true,
 
   // 裝置端 AI（Chrome Prompt API）總開關。所有 AI 子功能的生效條件都是
   // `enableAi && <子 pref>`（AND 於 term_view.js 匯總）——關掉即全部停用，但子

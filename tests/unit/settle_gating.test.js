@@ -27,7 +27,12 @@ function makeBuf() {
     settleSnapshot: null,
     _serverActivity: false,
     _settleCursorMoved: false,
-    view: { update() {}, updateCursorPos() {}, blinkOn: false },
+    view: {
+      update() {},
+      updateCursorPos() {},
+      refreshCursorVisibility() {},
+      blinkOn: false,
+    },
     updateCharAttr() {},
     setPageState() {},
     clearHighlight() {},

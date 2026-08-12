@@ -501,6 +501,16 @@ export const PrefModal = ({
               </fieldset>
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                 <legend>{i18n("options_appearance")}</legend>
+                <PrefCheckbox
+                  name="autoHideBlinkCursor"
+                  checked={values.autoHideBlinkCursor}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_autoHideBlinkCursor")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_autoHideBlinkCursor")}
+                </Text>
                 <Text size="sm" fw={500} mb={4}>
                   {i18n("options_theme")}
                 </Text>

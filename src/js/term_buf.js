@@ -906,6 +906,10 @@ TermBuf.prototype = {
       this._armSettleTimer();
     }
 
+    // 閃爍底線抑制（autoHideBlinkCursor）：changed / posChanged 兩個分支各有 early
+    // return，notify 是兩者唯一的共同匯流點，所以在這裡每幀無條件重算一次。
+    if (this.view) this.view.refreshCursorVisibility();
+
     if (this.view.blinkOn) {
       this.view.blinkOn = false;
 

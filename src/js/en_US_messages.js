@@ -445,6 +445,12 @@ export const en_US = {
   "options_appearance": {
     "message": "Appearance"
   },
+  "options_autoHideBlinkCursor": {
+    "message": "Hide the blinking underline when PTT draws its own cursor"
+  },
+  "tooltip_autoHideBlinkCursor": {
+    "message": "Board and menu screens already show a '>' cursor; the underline stays visible in input fields and the editor."
+  },
   "options_theme": {
     "message": "Theme"
   },

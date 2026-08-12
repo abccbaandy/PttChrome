@@ -445,6 +445,12 @@
   "options_appearance": {
     "message": "介面"
   },
+  "options_autoHideBlinkCursor": {
+    "message": "PTT 已有游標時隱藏閃爍底線"
+  },
+  "tooltip_autoHideBlinkCursor": {
+    "message": "列表／選單畫面 PTT 自己會畫「>」游標；輸入框與編輯器仍會顯示閃爍底線。"
+  },
   "options_theme": {
     "message": "主題"
   },
