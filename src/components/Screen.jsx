@@ -16,6 +16,7 @@ import {
   FloorCounter,
 } from "../js/comment_parse";
 import { detectFixableUrls } from "../js/url_fix";
+import { detectWrappedUrls } from "../js/url_wrap";
 import { detectBareDomains } from "../js/bare_domain";
 import { detectMentions } from "../js/mention_parse";
 import { detectAids } from "../js/aid_parse";
@@ -397,6 +398,31 @@ function computeAnnotations(
             const first = run.rows[0];
             const firstAnn = result[first];
             const mText = rowToText(merged.chars);
+            let extras = detectRowExtras(
+              merged.chars,
+              mText,
+              firstAnn,
+              detectOpts,
+            );
+            // 跨行連結接合（src/js/url_wrap.js）：只有合併塊做得到——被 PTT 推文
+            // 輸入欄切成兩則的網址，逐列偵測兩層都看不見，要有 run 的換行邊界才接
+            // 得回來。產物形狀與 detectFixableUrls 相同 ⇒ 併進 fixedUrls 後渲染／
+            // 快取／AI 閘門全部沿用（gray 恆為 false，不進 AI）。
+            if (detectOpts.autoFixUrl) {
+              const wrapped = detectWrappedUrls(merged.chars, merged.breaks);
+              if (wrapped.length) {
+                const have = new Set(
+                  (extras.fixedUrls || []).map((f) => f.fixed),
+                );
+                const add = wrapped.filter((w) => !have.has(w.fixed));
+                if (add.length) {
+                  extras = {
+                    ...extras,
+                    fixedUrls: (extras.fixedUrls || []).concat(add),
+                  };
+                }
+              }
+            }
             decorated.push([
               first,
               {
@@ -404,11 +430,7 @@ function computeAnnotations(
                 mergeCommentRun: {
                   chars: merged.chars,
                   contentStart: merged.contentStart,
-                  ...withUrlAi(
-                    detectRowExtras(merged.chars, mText, firstAnn, detectOpts),
-                    runDomainCands,
-                    runFixCands,
-                  ),
+                  ...withUrlAi(extras, runDomainCands, runFixCands),
                 },
               },
             ]);

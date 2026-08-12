@@ -158,7 +158,8 @@
     `Screen#computeAnnotations` 一律套 `applyAiFix` → **AI 關 ⇒ gray 全部不修**，AI 判 `true` 才放行。
     守護 `url_fix.test.js`「句號誤判標成 gray」＋`tests/unit/url_fix_ai_render.test.jsx`＋
     `tests/e2e/offline/url-fix-gray.offline.spec.js`。
-  - 取捨：保守設計，漏冷門 TLD／跨列斷開 URL（逐列偵測，**out of scope**）換取近零誤判。
+  - 取捨：保守設計，漏冷門 TLD 換取近零誤判。**文章內文的跨列斷開 URL 仍 out of scope**
+    （逐列偵測；內文沒有「輸入欄寫滿」這種訊號）；**推文**的跨列斷開由下節的 `url_wrap.js` 承接。
     2026-08 起再加一項：無 scheme 無 path 的斷開裸網域（`www . a .com`）未開 AI 時不修。
 - 渲染：`Screen#computeAnnotations` **逐列**（含內文非推文列，獨立於 `annotateComment`）算 `fixedUrls` 掛進 ann →
   `<Row>` prop → `LinkSegmentBuilder.build()` 在 inline-preview 區塊後 map 出 `<FixedUrlLine>`
@@ -167,6 +168,37 @@
   CSS `.fixedUrlLine/.fixedUrlLabel`(`main.css`)。守護測試 `tests/unit/row_render.test.jsx`「Row fixed-URL line」。
 - pref `enableAutoFixUrl`(true)；`pttchrome.onPrefChange`→`view.enableAutoFixUrl`+`redraw(true)`；
   傳入 `enhance.autoFixUrl`。i18n `options_enableAutoFixUrl`。
+
+## 跨行推文連結接合（`src/js/url_wrap.js`）
+推文輸入欄有固定寬度上限，長網址會被硬切成兩則連續推文（使用者 2026-08 回報）：
+```
+→ pttuser : ...DeepMind員工 https://i.imgur.c  08/09 15:35
+→ pttuser : om/Pn3XurX.jpeg                    08/09 15:35
+```
+兩層偵測都逐列做 ⇒ 都失效：`uriRegEx` 只看到殘段 `https://i.imgur.c`（渲染成一個 404 連結），
+`url_fix` 逐列也拼不回來。**只有「連續同作者推文合併」塊做得到**——它已經把同一位作者的連續推文
+重組成含 `\n` cell 的 `TermChar[]`，接合所需的上下文全在手上。沿用 `url_fix` 的呈現方式：
+**不改寫原文**，只在合併塊下方多一行 `↳ 完整網址`（可點＋自動開圖）。
+
+**三個訊號缺一不可**（單一訊號都會誤判）：
+1. `breaks[].leftFull`＝左邊那則寫滿內容欄（`comment_merge.commentContentCells` 的 `fieldEnd`，
+   依 pttbbs 算式由該列自己的 `timeStart` 推導，見 `docs/pttbbs-screen-protocol.md` §11.1）。
+2. 兩則時間戳相差 **≤ 1 分鐘**（被切斷的續推幾乎都在同一分鐘送出；月長一律當 31 天，短月月底
+   跨日會多算 ⇒ 判成不接，方向安全）。
+3. 斷點兩側**併起來**是合法 URL：host 尾段屬 `url_fix.TLDS`（共用同一份清單）＋（有 scheme 或有 path）。
+   無 scheme 又無 path＝`url_fix` 的 `gray` 那一類，直接排除 ⇒ **永遠不需要 AI 閘門**（`gray:false`）。
+- **反向守門**：左片段自己就以媒體副檔名收尾（共用 `url_fix` 的 `EXT`，經 `endsWithMediaExt`）
+  ⇒ 那是「作者剛好寫滿的完整網址」，不接。
+- **這不是把 gap 門檻加回來**（見上面「連續同作者推文合併」的禁令）：那條講的是**中文散文**續行，
+  寬度單獨用判不出來；這裡寬度只是必要條件，判別力來自「併起來是不是網址」。散文續行仍不猜。
+- 掃描一律走 `TermChar[]` 旗標判 DBCS，**不可只看 `ch`**：Big5 trail byte 可能剛好是 `0x40`（`'@'`）
+  這種合法 URL 字元（踩坑 A 同源）。
+- 接線：`Screen#computeAnnotations` 的合併塊分支在 `detectRowExtras(merged.chars, …)` 之後，
+  以 `fixed` 去重併進 `fixedUrls` → 渲染（`FixedUrlLine`）／`runCache`／`applyAiFix` 全部沿用、零改動。
+- 限制：需 `mergeSameAuthorComments` 開啟（預設開）＋好讀模式；中間被別人插一則推文而斷開 run 的不接。
+- 守護測試：`tests/unit/url_wrap.test.js`（三訊號逐條＋78 欄整合＋IP 板 `fieldEnd`）、
+  `tests/unit/comment_merge.test.js`（`fieldEnd`／`breaks`）、
+  `tests/unit/merge_comment_render.test.jsx`「跨行連結接合」。
 
 ## 裸網域自動連結（`src/js/bare_domain.js` + `url_ai*.js`）
 「無 scheme、無路徑、無空白」的網域（`indiegametw.com`、`eaigc.filtergame.com`）：`uriRegEx` 要 scheme 看不見，

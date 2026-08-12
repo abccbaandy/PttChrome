@@ -1,0 +1,8 @@
+{
+  "note": "使用者 2026-08-12 回報的跨行斷掉網址案例（Stock 板連續 3 則推文，自 debug 錄製還原畫面後只保留這 3 列）。第 1 則寫滿內容欄、網址被 PTT 推文輸入欄切斷成 'https://i.imgur.c'，第 2 則以 'om/Pn3XurX.jpeg' 續行；第 3 則是作者自己重貼的完整網址（同一個 run，但沒寫滿 ⇒ 不會被誤接）。latin1 bytes base64（Big5 原樣，1 byte=1 cell/col，全行 80 欄）。板有 BRD_ALIGNEDCMT ⇒ id 補空格到 12 欄，內容欄右界仍是 66。帳號已代換為**同長度**佔位 pttuser（欄位數學不變）。",
+  "rows": [
+    "ofcgcHR0dXNlciAgICAgOiBTdXNhbiBaaGFuZyCms6ZXqrpEZWVwTWluZK37pHUgaHR0cHM6Ly9pLmltZ3VyLmMgIDA4LzA5IDE1OjM1ICA=",
+    "ofcgcHR0dXNlciAgICAgOiBvbS9QbjNYdXJYLmpwZWcgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDA4LzA5IDE1OjM1ICA=",
+    "ofcgcHR0dXNlciAgICAgOiBodHRwczovL2kuaW1ndXIuY29tL1BuM1h1clguanBlZyAgICAgICAgICAgICAgICAgIDA4LzA5IDE1OjM3ICA="
+  ]
+}

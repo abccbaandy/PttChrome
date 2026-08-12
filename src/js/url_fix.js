@@ -58,6 +58,14 @@ const TLD_ALT = TLDS.join('|');
 // NOT merged (that is real prose, e.g. ".../b here").
 const EXT = 'jpe?g|png|gif|webp|apng|avif|jfif|pjpeg|svg|bmp|ico|mp4|webm|ogg';
 
+// 「這串已經以媒體副檔名收尾」——src/js/url_wrap.js 用它當反向守門（左片段本身
+// 就是完整網址 ⇒ 不是被截斷的殘段）。與 EXT 共用同一份清單，兩個功能不得各自維護
+// （同 TLDS 之於 bare_domain.js 的既有約定）。
+const MEDIA_EXT_TAIL_RE = new RegExp('\\.(?:' + EXT + ')$', 'i');
+export function endsWithMediaExt(s) {
+  return !!s && MEDIA_EXT_TAIL_RE.test(s);
+}
+
 // optional scheme (tolerating "https : //"), host with optional spaces around dots
 // ending in an allowlisted TLD, optional :port, optional path. The path body itself
 // contains NO spaces; a single broken file extension ("name. png" / "name .png") is

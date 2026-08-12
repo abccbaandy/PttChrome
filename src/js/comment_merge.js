@@ -29,6 +29,23 @@
 // 所有邊界掃描都在 TermChar cell 上做：型別符/id/時間戳/IP 全是 ASCII
 // （cell==char），只有內容區有 DBCS——內容整段 slice、不逐字解讀，故不需
 // text↔cell 對映（rowToText 的 DBCS 收合在這裡不會發生）。
+//
+// ---- 內容欄右界 fieldEnd（給「這一則是否被輸入欄寫滿」用）----
+// 上面說「寬度判不出**散文**的續行」仍然成立，本節不是要復活 gap 門檻：fieldEnd
+// 只是 url_wrap.js 接合跨行 URL 時的**必要條件之一**（真正的判別力來自「斷點兩側
+// 併起來是一個合法 URL」），故一併在這裡算好交出去。反查 pttbbs：
+//   comments.c#FormatCommentString  "型別符 id" + ':' + %-maxlength(msg) + tail
+//                                   ——內容欄與 tail 之間沒有其他填充
+//   bbs.c#recommend                 tail = " MM/DD HH:MM"（12 欄）
+//                                        或 "%15s MM/DD HH:MM"（IP 右對齊 15 欄，27 欄）
+//   vtuikit.c#vgetstring            size check 為 `iend+1 >= len → bell()`
+//                                   ⇒ 可輸入長度上限 = maxlength - 1
+// 時間戳固定 11 欄寬（col 67..77），故：
+//   fieldEnd = ipFound ? timeStart - 16 : timeStart - 1      （內容欄 exclusive 右界）
+//   寫滿的一列 ⇒ 內容 exclusive 尾端 == fieldEnd - 1
+// 全部由該列自己的 timeStart 推導，不寫死 66/51（id 長度、IP 板、guest 都自動吃到）。
+// IP 誤判（內容尾巴剛好是 "1.2.3.4" 形狀）只會讓 fieldEnd 偏小 ⇒ 判定成沒寫滿 ⇒
+// 不接合，方向是安全的。
 
 // 推文列佈局（見 comment_parse.js COMMENT_RE / COMMENT_USERID_COL）：
 //   cols 0-1 型別符（推/噓/→，DBCS lead+trail）、col 2 空格、col 3 起 ASCII id、
@@ -38,10 +55,11 @@ const ASCII_ID_RE = /[0-9A-Za-z]/;
 const TAIL_TIME_RE = /(\d{1,2}\/\d{2} \d{2}:\d{2})$/; // 鏡像 string_util COMMENT_TIME_RE
 const IPV4_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
-// 一列推文的內容 cell 邊界：{ start, end, time, timeStart }（[start, end) 為內容、
-// time 為該則時間戳字串、timeStart 為它的起始欄——合併塊要把最後一則的時間戳
-// cell 原樣接到段尾）。切不出完整形狀回傳 null——caller 對整個 run fail-safe 還原
-// 逐列渲染，寧可不合併也不錯切（同 parseListAuthor 的失敗安全原則）。
+// 一列推文的內容 cell 邊界：{ start, end, time, timeStart, fieldEnd }
+// （[start, end) 為內容、time 為該則時間戳字串、timeStart 為它的起始欄——合併塊要把
+// 最後一則的時間戳 cell 原樣接到段尾；fieldEnd 為內容欄的 exclusive 右界，推導見
+// 檔頭）。切不出完整形狀回傳 null——caller 對整個 run fail-safe 還原逐列渲染，寧可
+// 不合併也不錯切（同 parseListAuthor 的失敗安全原則）。
 export function commentContentCells(chars) {
   if (!chars || chars.length < 8) return null;
   // ---- 內容起點：跳過 2-cell 型別符 + 空格 + id（可選補空格）+ ':' + 空格 ----
@@ -76,15 +94,19 @@ export function commentContentCells(chars) {
   // 可選 IP（BRD_IPLOGRECMD 板）：緊鄰時間戳左側、被空白隔開的嚴格 IPv4 token。
   let tok = '';
   let k = e;
+  let ipFound = false;
   while (k >= start && chars[k] && /[\d.]/.test(chars[k].ch) && !chars[k].isLeadByte) {
     tok = chars[k].ch + tok;
     --k;
   }
   if (tok && IPV4_RE.test(tok) && (k < start || (chars[k] && chars[k].ch === ' '))) {
+    ipFound = true;
     e = k;
     while (e >= start && isSpace(e)) --e;
   }
-  return { start, end: e + 1, time, timeStart };
+  // tail = " MM/DD HH:MM"（12 欄）或 "%15s MM/DD HH:MM"（27 欄）→ 內容欄右界，見檔頭。
+  const fieldEnd = ipFound ? timeStart - 16 : timeStart - 1;
+  return { start, end: e + 1, time, timeStart, fieldEnd };
 }
 
 // 逐列 annotation（Screen#computeAnnotations 產出，推文列帶 userid / hidden）→
@@ -121,6 +143,12 @@ export function groupSameAuthorRuns(anns) {
 // .mergedCommentTime React 節點＋user-select:none，不可複製）。回傳：
 //   chars        合併後的 cell 陣列
 //   contentStart 首則內容起始欄 → 懸掛縮排寬度（Screen 換算像素）
+//   breaks       每個換行 cell 的位置與左右兩則的接合線索（給 url_wrap.js 判斷
+//                「上一則是被輸入欄截斷、下一則是它的續行」）：
+//                  { index, leftFull, leftTime, rightTime }
+//                index＝該換行 cell 在 chars 內的 index；leftFull＝左邊那則寫滿
+//                內容欄（end >= fieldEnd - 1，推導見檔頭）；leftTime/rightTime＝
+//                兩則的 MM/DD HH:MM。**只是線索不是判決**——這裡不做任何續行推測。
 // run 中任一列切不出邊界回傳 null（caller 還原逐列渲染）。
 //
 // 內容 cell 都沿用 lines 內的既有 TermChar 實例——絕不可自造 plain object，
@@ -147,11 +175,23 @@ export function buildMergedCommentChars(lines, run) {
       ch: '\n',
     });
   let lastContentful = -1;
+  const breaks = [];
   for (let n = 0; n < run.rows.length; ++n) {
     const rowChars = lines[run.rows[n]];
     const info = infos[n];
     if (info.end <= info.start) continue; // 空內容列：跳過
-    if (out.length > prefixLen) out.push(newlineCell());
+    if (out.length > prefixLen) {
+      const prev = infos[lastContentful];
+      breaks.push({
+        index: out.length, // 換行 cell 即將被放在這一格
+        // vgetstring 的上限讓 end 落在 fieldEnd-1；容一格是因為推文也可能來自不走
+        // vgetstring 的路徑（commentd／官方 App／bot），那邊可以填滿整個欄位。
+        leftFull: prev.end >= prev.fieldEnd - 1,
+        leftTime: prev.time,
+        rightTime: info.time,
+      });
+      out.push(newlineCell());
+    }
     for (let c = info.start; c < info.end; ++c) out.push(rowChars[c]);
     lastContentful = n;
   }
@@ -163,5 +203,5 @@ export function buildMergedCommentChars(lines, run) {
   const lastInfo = infos[lastContentful];
   const tailEnd = lastInfo.timeStart + lastInfo.time.length;
   for (let c = lastInfo.end; c < tailEnd; ++c) out.push(lastRow[c]);
-  return { chars: out, contentStart: infos[0].start };
+  return { chars: out, contentStart: infos[0].start, breaks };
 }

@@ -5,8 +5,14 @@
 //      寬度＝首則內容起始欄 × 半形字寬）。
 //   3. 時間戳位置與樣式 → **作者在第一則、時間在最後一則**，且時間是一般文字
 //      cell（在 bbsline span 內，故 ^C 的 getSelection 選得到），非 React 標籤。
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import Screen from "../../src/components/Screen";
+
+// FixedUrlLine 一定會掛 LazyInlinePreview，resolver 在後續 microtask reject。
+const flushPreviews = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 
 const COLOR = {
   fg: 7,
@@ -121,5 +127,55 @@ describe("Screen 推文合併 render", () => {
     expect(PREFIX_COLS + parts[2].indexOf(LAST_TIME)).toBe(TIME_COL);
     // 已無 React 時間標籤節點（舊 .mergedCommentTime 帶 user-select:none 不可複製）。
     expect(c.querySelector(".mergedCommentTime")).toBeNull();
+  });
+});
+
+// 跨行連結接合（src/js/url_wrap.js）的 Screen 接線：被推文輸入欄切成兩則的網址，
+// 逐列偵測兩層都看不見（TermBuf.uriRegEx 只看到殘段、url_fix 逐列），只有合併塊
+// 的換行邊界接得回來 → 併進 fixedUrls，沿用既有的 ↳ 修復行渲染。
+describe("Screen 推文合併：跨行連結接合", () => {
+  // 內容欄右界 fieldEnd＝TIME_COL-1＝66；寫滿的一列內容 exclusive 尾端＝65。
+  const FRAG = "https://i.imgur.c";
+  const filler = "pic ".padEnd(65 - PREFIX_COLS - FRAG.length, " ");
+  const wrapLines = [
+    comment("推", ID, filler + FRAG, "08/09 15:35"),
+    comment("→", ID, "om/Pn3XurX.jpeg", "08/09 15:35"),
+  ];
+
+  const renderWrap = (props) =>
+    render(
+      <Screen
+        lines={wrapLines}
+        forceWidth={FORCE_WIDTH}
+        enableLinkInlinePreview={true}
+        enableLinkHoverPreview={false}
+        enhance={{
+          pageState: 3,
+          easyReading: true,
+          dropHidden: true,
+          articleId: 1,
+          mergeSameAuthorComments: true,
+          autoFixUrl: true,
+          ...props,
+        }}
+      />,
+    );
+
+  test("斷成兩則的網址 → 合併塊下方出現接回去的 ↳ 修復連結", async () => {
+    const { container: c } = renderWrap();
+    const fixed = c.querySelector(".mergedCommentBlock .fixedUrlLine");
+    expect(fixed).not.toBeNull();
+    expect(fixed.textContent).toContain("https://i.imgur.com/Pn3XurX.jpeg");
+    // 原文一個字都不改：兩則殘段照樣各自成行。
+    const parts = blockLines(c);
+    expect(parts[0]).toContain(FRAG);
+    expect(parts[1].startsWith("om/Pn3XurX.jpeg")).toBe(true); // 末行仍帶原 padding＋時間戳
+    await flushPreviews();
+  });
+
+  test("關掉「自動修復斷掉的連結」→ 不接（合併塊照常）", () => {
+    const { container: c } = renderWrap({ autoFixUrl: false });
+    expect(c.querySelector(".mergedCommentBlock")).not.toBeNull();
+    expect(c.querySelector(".fixedUrlLine")).toBeNull();
   });
 });

@@ -226,6 +226,15 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 但**實測「作者剛好寫滿」與「被截斷」同形**（AI_Art M.1785606011 三連推第 2 則內容 50 bytes
 ＝ 10 字 id 的理論上限 `61-10-1`），所以此數字只能當「上界」用，不能反推作者意圖。
 
+程式化推導（`comment_merge.commentContentCells` 回傳的 `fieldEnd`，勿寫死 66/51）：時間戳固定
+11 欄寬 ⇒ `fieldEnd = ipFound ? timeStart-16 : timeStart-1`（tail 為 27／12 欄），id 長度、IP 板、
+guest 都自動吃到。「寫滿」＝內容 exclusive 尾端 `>= fieldEnd-1`（`maxlength-1` 上限；容一格是因為
+commentd／官方 App／bot 不走 `vgetstring`，可填滿整欄）。
+
+**這個「寫滿」只可當必要條件，不可當判決**——上一段已證同形。唯一有在用它的是
+`url_wrap.js`（跨行連結接合），那裡真正的判別力來自「斷點兩側併起來是合法 URL（TLD 允許清單）」，
+寬度只負責排除「作者根本沒寫滿、只是分兩則講話」。散文續行**仍然判不出來，勿再嘗試**。
+
 ## 12. 版本與未知
 
 - 以 §0 的 `build_origin`（`c1ff72df`）讀碼；PTT 實跑的是私有 commit `50372909`，差異不可見。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。

@@ -101,6 +101,21 @@ describe("commentContentCells", () => {
   test("無時間戳（正文假形狀）→ null（fail-safe 不合併）", () => {
     expect(commentContentCells(chars("PU aaa: no time here"))).toBeNull();
   });
+
+  // fieldEnd＝內容欄 exclusive 右界，由該列自己的 timeStart 推導（不寫死 66/51）：
+  // tail = " MM/DD HH:MM"（12 欄）或 "%15s MM/DD HH:MM"（27 欄），見 comment_merge.js
+  // 檔頭的 pttbbs 反查。url_wrap.js 用它判斷「這一則是否被輸入欄寫滿」。
+  test("fieldEnd：無 IP ＝ timeStart-1", () => {
+    const row = "PU tonypong: hello world      07/20 14:23  ";
+    const r = commentContentCells(chars(row));
+    expect(r.fieldEnd).toBe(r.timeStart - 1);
+  });
+
+  test("fieldEnd：IP 板扣掉右對齊 15 欄的 IP 區 ＝ timeStart-16", () => {
+    const row = "PU ericf129: good stuff ><         1.200.29.12 05/16 22:57";
+    const r = commentContentCells(chars(row));
+    expect(r.fieldEnd).toBe(r.timeStart - 16);
+  });
 });
 
 describe("buildMergedCommentChars", () => {
@@ -153,6 +168,40 @@ describe("buildMergedCommentChars", () => {
       "filled to the very edge",
       "short one            07/20 14:28",
     ]);
+  });
+
+  // breaks＝每個換行 cell 的位置＋左右兩則的接合線索，交給 url_wrap.js 判斷
+  // 「上一則被輸入欄截斷、下一則是它的續行」。這裡**只給線索不做判決**。
+  test("breaks：每個換行 cell 一筆，帶 leftFull 與左右時間戳", () => {
+    const lines = [
+      chars("PU aaa: hello        07/20 14:23"),
+      chars("PU aaa: world        07/20 14:31"),
+    ];
+    const r = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1] });
+    expect(r.breaks).toEqual([
+      {
+        index: "PU aaa: hello".length,
+        leftFull: false, // "hello" 離內容欄右界還很遠
+        leftTime: "07/20 14:23",
+        rightTime: "07/20 14:31",
+      },
+    ]);
+  });
+
+  test("breaks：空內容列被跳過時不產生多餘的斷點", () => {
+    const lines = [
+      chars("PU aaa: hello        07/20 14:23"),
+      chars("PU aaa:              07/20 14:24"),
+      chars("PU aaa: world        07/20 14:31"),
+    ];
+    const r = buildMergedCommentChars(lines, {
+      userid: "aaa",
+      rows: [0, 1, 2],
+    });
+    expect(r.breaks).toHaveLength(1);
+    // 左側線索取自**前一個有內容的**那則（14:23），不是被跳過的空列。
+    expect(r.breaks[0].leftTime).toBe("07/20 14:23");
+    expect(r.breaks[0].rightTime).toBe("07/20 14:31");
   });
 
   test("contentStart＝首則內容起始欄（懸掛縮排寬度）", () => {
