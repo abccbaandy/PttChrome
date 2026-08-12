@@ -37,6 +37,7 @@ async function dumpListState(page) {
       listLen: (app.buf.listLines || []).length,
       nums: (app.buf.listLineNums || []).slice(),
       selectedNum: ls._selectedNum,
+      selectedPinnedKey: ls._selectedPinnedKey,
       topNum: ls._topNum,
       queueIdle: app.commandQueue.idle,
       sentCount: (window.__replay && window.__replay.sent.length) || 0,
@@ -265,6 +266,62 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(after.sentCount).toBe(before.sentCount + 1);
       const sent = await page.evaluate(() => window.__replay.sent.slice(-1)[0]);
       expect(sent).toBe('z');
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
+  test('实体键/空白键不再误切原生（2026-08「按 Caps Lock/F2/空白键画面跑掉」回归）', async ({ page }) => {
+    // 旧码：CapsLock/F2 落 passthrough 的 bytes==null 分支 → 跳过 cursor sync 腿
+    // 直接切原生镜像（server 完全没动，画面换成 prefetch 落点那页＝「跑掉」）；
+    // 空白键有 bytes 故走完整 sync→切原生→代送，使用者只想翻页却被丢去原生。
+    // pttbbs read.c:877 明载 ' ' ＝ KEY_PGDN，属本地导航白名单。
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, nav);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: true,
+        easyReadingListPrefetchCount: 0
+      });
+      const before = await waitState(page, (x) => x.state === 'active' && x.queueIdle);
+
+      await page.locator('#t').focus();
+      // ① CapsLock / F2：完全无作用（不切原生、不送 byte、不动选取）。
+      for (const k of ['CapsLock', 'F2']) {
+        await page.keyboard.press(k);
+        await page.waitForTimeout(200);
+      }
+      const dead = await dumpListState(page);
+      expect(dead.state).toBe('active');
+      expect(dead.renderMode).toBe('buffer'); // 画面仍是好读视窗，不是 server 镜像
+      expect(dead.sentCount).toBe(before.sentCount);
+      expect(dead.selectedNum).toBe(before.selectedNum);
+      expect(dead.cursorHidden).toBe(true); // 实体游标没露出＝没走 _enterFunctionMode
+
+      // ② 空白键＝本地翻页（read.c:877 ' ' ＝ KEY_PGDN）。先 PgUp 离开底端，
+      // 空白键要能把选取推回下方；逐格等价由 unit（list_keys.test.js）锁死，
+      // 这里锁的是「真浏览器里它是本地导航，不是切原生」。
+      await page.keyboard.press('PageUp');
+      const up = await waitState(
+        page,
+        (x) => x.queueIdle && x.selectedNum < before.selectedNum
+      );
+      const sel = (x) => JSON.stringify([x.selectedNum, x.selectedPinnedKey]);
+      await page.keyboard.press('Space');
+      await page.waitForTimeout(300);
+      const down = await dumpListState(page);
+      expect(sel(down)).not.toBe(sel(up)); // 确实翻了（选取往下走）
+      expect(down.state).toBe('active');
+      expect(down.renderMode).toBe('buffer'); // 仍是好读视窗
+      expect(down.cursorHidden).toBe(true);
+      // 不得把空白键裸送给 server（那是 passthrough 代送的症状）。
+      const sentAll = await page.evaluate(() => window.__replay.sent.slice());
+      expect(sentAll).not.toContain(' ');
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);

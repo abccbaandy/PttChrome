@@ -910,6 +910,12 @@ ListSession.prototype = {
     if (this.state !== 'active') return;
 
     const key = this._classifyKey(e);
+    if (key.class === 'ignore') {
+      // Deliberately NOT preventDefault'd: F12 devtools / CapsLock's OS
+      // behaviour belong to the browser, and the native keyboard path below
+      // sends nothing for these keys anyway.
+      return;
+    }
     if (key.class === 'passthrough') {
       // Non-whitelisted key: one-key switch to native (sync → mirror → send).
       // preventDefault is decided inside (Ctrl/unmappable keys stay native).
@@ -948,9 +954,11 @@ ListSession.prototype = {
   // key goes out raw only after the jump's park settle. While the leg is on
   // the wire the reducer already sits in functionMode (keyClass 'passthrough')
   // over the frozen snapshot — other keys are swallowed with a hint.
-  // Ctrl combos / unmappable keys are NOT resent: no sync (can't serialize a
-  // key we don't own), immediate mirror switch, and the event is left
-  // un-defaulted so the native keyboard path sends this very press.
+  // Ctrl combos are NOT resent: no sync (can't serialize a key we don't own),
+  // immediate mirror switch, and the event is left un-defaulted so the native
+  // keyboard path sends this very press. Keys that map to NO bytes never get
+  // here at all — _classifyKey turns them into 'ignore' (they would take the
+  // same branch and hand over to a native path that also sends nothing).
   _beginNativePassthrough: function(e) {
     let bytes = e.ctrlKey ? null : keyEventToBytes(e);
     // A printable non-ASCII char must go out as Big5 (raw UTF-16 = mojibake).
@@ -980,8 +988,9 @@ ListSession.prototype = {
         self._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
     };
     if (bytes == null) {
-      // Not resendable: switch the mirror now; the un-prevented event reaches
-      // the native keyboard handlers right after this hook returns.
+      // Ctrl combo (only case left — see header): not resendable, so switch the
+      // mirror now; the un-prevented event reaches the native keyboard handlers
+      // right after this hook returns and they send it.
       this._enterFunctionMode();
       if (this._view.flashListHint)
         this._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
@@ -1267,21 +1276,42 @@ ListSession.prototype = {
   // native + resend, _beginNativePassthrough) — never a SILENT passthrough,
   // and never a swallowed dead key (the retired noop/airlock pair).
   _classifyKey: function(e) {
+    // Keys that produce NO bytes at all (CapsLock / F1-F12 / NumLock /
+    // ScrollLock / unmappable Ctrl-Shift combos): swallow, never transition.
+    // The passthrough contract assumes the un-prevented event still reaches
+    // PTT through the native keyboard path, but TermKeyboard._onKeyDown drops
+    // these too (KeyMap miss + key.length !== 1) — so a native excursion here
+    // costs the buffer, the cache (inv. 15) and a sticky hold while the server
+    // never moves, leaving a mirror of whatever page the prefetch last landed
+    // on (2026-08「按 Caps Lock/F2 畫面跑掉」). The test IS the send path, so
+    // no hardcoded key list can drift out of sync with it. Article easy
+    // reading has the same guard as `e.key.length === 1` (easy_reading.js).
+    if (keyEventToBytes(e) == null) return { class: 'ignore' };
     if (e.ctrlKey) return { class: 'passthrough' }; // Ctrl-P 發文 etc.
+    // Navigation synonyms follow pttbbs read.c:858-902 (' ' / 'N' / KEY_PGDN /
+    // Ctrl-F = next page, 'P' / KEY_PGUP / Ctrl-B = prev page, 'p'/'k'/KEY_UP,
+    // 'n'/'j'/KEY_DOWN, '$'/KEY_END). Ctrl-F/Ctrl-B deliberately stay out:
+    // ctrl combos keep their existing browser-shortcut boundary.
     switch (e.key) {
       case 'ArrowUp':
       case 'k':
+      case 'p':
         return { class: 'nav', op: 'up' };
       case 'ArrowDown':
       case 'j':
+      case 'n':
         return { class: 'nav', op: 'down' };
       case 'PageUp':
+      case 'P':
         return { class: 'nav', op: 'pgup' };
       case 'PageDown':
+      case ' ':
+      case 'N':
         return { class: 'nav', op: 'pgdn' };
       case 'Home':
         return { class: 'nav', op: 'home' };
       case 'End':
+      case '$':
         return { class: 'nav', op: 'end' };
       case 'Enter':
       case 'ArrowRight':

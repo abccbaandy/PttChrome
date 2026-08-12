@@ -46,12 +46,14 @@ function makeSession() {
   return { s, sent, enqueued, queue };
 }
 
-function keyEvent(key) {
+function keyEvent(key, mods = {}) {
   return {
     key,
     ctrlKey: false,
     altKey: false,
     metaKey: false,
+    shiftKey: false,
+    ...mods,
     defaultPrevented: false,
     preventDefault() {
       this.defaultPrevented = true;
@@ -694,5 +696,121 @@ describe("functionMode clean-list settle 的 in-flight 吸收（相對命令配�
     expect(
       transitionListSession("functionMode", settle("clean-list", { nativeHold: true }))
     ).toEqual({ next: "functionMode", actions: [] });
+  });
+});
+
+describe("無字元實體鍵不得觸發原生 excursion（Caps Lock/F2「畫面跑掉」回歸，2026-08）", () => {
+  // 舊行為：CapsLock/F 鍵等落 _classifyKey 的 default → passthrough →
+  // _beginNativePassthrough 的 bytes==null 分支 → 跳過 cursor sync 腿直接
+  // _enterFunctionMode()：畫面瞬間換成 server 真實 24 行（通常停在背景 prefetch
+  // 的遠處頁面）＝「畫面跑掉」，還黏性 hold＋丟 cache（不變量 15）。而該分支假設的
+  // 「事件放行給原生鍵盤路徑自己送」對這些鍵不成立（TermKeyboard._onKeyDown 對
+  // KeyMap miss 且 key.length!==1 一律回 false）⇒ server 完全沒動，純損失。
+  // 新合約：keyEventToBytes(e)==null ＝ 這個鍵送不出任何 byte ＝ keyClass 'ignore'，
+  // 吞掉不轉態。
+  const DEAD_KEYS = ["CapsLock", "F2", "F8", "F12", "NumLock", "ScrollLock"];
+  test.each(DEAD_KEYS)("%s → 完全不動好讀狀態（不切原生、不丟 cache）", (key) => {
+    const { s, sent, enqueued, queue } = makeSession();
+    const hints = [];
+    s._view.flashListHint = (m) => hints.push(m);
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._boardName = "C_Chat";
+    s._selectedNum = 42;
+    s._serverNum = 7; // 未同步：舊碼會在這裡跳過 sync 腿直切原生
+    const e = keyEvent(key);
+    s.onKeyDown(e);
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer"); // 畫面不得換成 server 鏡像
+    expect(s._nativeHold).toBe(false);
+    expect(s._boardName).toBe("C_Chat"); // 不變量 15 的拋 cache 不該被誤觸
+    expect(s._selectedNum).toBe(42);
+    expect(sent).toEqual([]);
+    expect(enqueued).toEqual([]);
+    expect(queue.flushed).toBeUndefined();
+    expect(hints).toEqual([]); // 不該冒出「已切至原生」
+    // 刻意不 preventDefault：F12 開發者工具/CapsLock 的 OS 行為留給瀏覽器，
+    // 反正原生鍵盤路徑對它們也送不出 byte。
+    expect(e.defaultPrevented).toBe(false);
+  });
+
+  test("Ctrl+Shift 組合（送不出 byte）同樣 ignore，不做原生 excursion", () => {
+    const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._selectedNum = 42;
+    const e = keyEvent("X", { ctrlKey: true, shiftKey: true });
+    s.onKeyDown(e);
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer");
+    expect(sent).toEqual([]);
+    expect(enqueued).toEqual([]);
+  });
+
+  test("反向守護：Ctrl-P（發文，CtrlShiftMap 有對應）仍是 passthrough 切原生", () => {
+    const { s, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._selectedNum = 42;
+    s._serverNum = 42;
+    const e = keyEvent("p", { ctrlKey: true });
+    s.onKeyDown(e);
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("native");
+    expect(e.defaultPrevented).toBe(false); // 不代送，事件放行原生鍵盤路徑
+    expect(enqueued).toEqual([]);
+  });
+});
+
+describe("read.c 導覽同義鍵＝本地導覽零 server（空白鍵「畫面跑掉」回歸，2026-08）", () => {
+  // pttbbs mbbsd/read.c:858-902 的列表導覽鍵表：
+  //   ' ' / KEY_PGDN / 'N' / Ctrl-F   → 下一頁
+  //   KEY_PGUP / 'P' / Ctrl-B         → 上一頁
+  //   'p' / 'k' / KEY_UP              → 上移一列
+  //   'n' / 'j' / KEY_DOWN            → 下移一列
+  //   KEY_END / '$'                   → 底端
+  // 舊碼白名單只收方向鍵/j/k/PageUp/PageDown/Home/End，其餘同義鍵有 bytes ⇒ 走
+  // 完整 passthrough（sync 腿→切原生→代送）：使用者只想翻頁卻被丟去原生鏡像。
+  // Ctrl-F/Ctrl-B 刻意不納入（維持 Ctrl 組合與瀏覽器快捷鍵的既有分界）。
+  const SYNONYMS = [
+    [" ", "pgdn", "PageDown"],
+    ["N", "pgdn", "PageDown"],
+    ["P", "pgup", "PageUp"],
+    ["n", "down", "ArrowDown"],
+    ["p", "up", "ArrowUp"],
+    ["$", "end", "End"],
+  ];
+  test.each(SYNONYMS)("%s ＝ 本地導覽 %s（等同 %s）", (key, op, canonical) => {
+    const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._boardName = "C_Chat";
+    s._selectedNum = 42;
+    s._serverNum = 7; // 未同步：passthrough 會在這裡起 sync 腿
+    const ops = [];
+    s._moveSelection = (o) => ops.push(o);
+    const e = keyEvent(key);
+    s.onKeyDown(e);
+    expect(ops).toEqual([op]);
+    // 與正典鍵逐項等價
+    const ref = makeSession();
+    ref.s._view.flashListHint = () => {};
+    ref.s.state = "active";
+    ref.s._renderMode = "buffer";
+    ref.s._selectedNum = 42;
+    ref.s._serverNum = 7;
+    const refOps = [];
+    ref.s._moveSelection = (o) => refOps.push(o);
+    ref.s.onKeyDown(keyEvent(canonical));
+    expect(ops).toEqual(refOps);
+    // 零 server、不切原生、不丟 cache
+    expect(sent).toEqual([]);
+    expect(enqueued).toEqual([]);
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer");
+    expect(s._boardName).toBe("C_Chat");
+    expect(e.defaultPrevented).toBe(true);
   });
 });

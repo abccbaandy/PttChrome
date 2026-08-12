@@ -554,16 +554,43 @@ test.describe('文章列表好讀模式（live）', () => {
         return st;
       };
 
-      // 站 1：T1 鍵盤導覽（↑↓ j k PgUp PgDn，零 server）。
-      for (const k of ['ArrowUp', 'ArrowUp', 'j', 'k', 'PageUp', 'PageDown']) {
+      // 站 1：T1 鍵盤導覽（↑↓ j k PgUp PgDn ＋ read.c:858-902 同義鍵
+      // Space/N/P/n/p，零 server）。
+      for (const k of [
+        'ArrowUp',
+        'ArrowUp',
+        'j',
+        'k',
+        'PageUp',
+        'PageDown',
+        'Space',
+        'N',
+        'P',
+        'n',
+        'p',
+      ]) {
         await page.keyboard.press(k);
         await page.waitForTimeout(150);
       }
       s = await settledActive('T1-nav');
 
-      // 站 2：End 邊界確認（邊未確認 → server 交易；已確認 → 本地）。
+      // 站 1b：送不出 byte 的實體鍵＝完全無作用（2026-08「按 Caps Lock/F2 畫面
+      // 跑掉」回歸：舊碼會跳過 sync 腿直接切原生鏡像）。CapsLock 按偶數次還原
+      // 大小寫狀態，免得污染後面用字母鍵的站。
+      const selBeforeDead = s.selectedNum;
+      for (const k of ['F2', 'CapsLock', 'CapsLock']) {
+        await page.keyboard.press(k);
+        await page.waitForTimeout(150);
+      }
+      s = await settledActive('dead-keys');
+      expect(s.selectedNum).toBe(selBeforeDead);
+
+      // 站 2：End 邊界確認（邊未確認 → server 交易；已確認 → 本地）。'$' 同義
+      // （read.c:898）。
       await page.keyboard.press('End');
       s = await settledActive('End');
+      await page.keyboard.press('$');
+      s = await settledActive('End-$');
 
       // 站 3：滾輪（原生映射本地執行）。
       const selBeforeWheel = s.selectedNum;
