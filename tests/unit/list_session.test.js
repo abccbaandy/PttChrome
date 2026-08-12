@@ -383,6 +383,15 @@ describe("transitionListSession (full table)", () => {
     );
     T("functionMode", settle("article"), "suspended", ["handoff-article"]);
     T("functionMode", settle("menu"), "idle", ["cleanup"]);
+    // AID 跳文的退出前導段（站內信）刻意經過選單：mbbsd/more.c:102 把 s 綁死在
+    // currstat == READING，所以必須先 ← 退到主功能表。cleanup 會 queue.flush()
+    // → in-flight 指令的 onFlushed → 整串 AID 序列在第一步就死掉。
+    T(
+      "functionMode",
+      settle("menu", { inFlightKind: "aid-escape" }),
+      "functionMode",
+      []
+    );
     T("functionMode", settle("prompt"), "functionMode", []);
     T("functionMode", settle("transient"), "functionMode", []);
     T("functionMode", { type: "pref-off" }, "idle", ["cleanup"]);
@@ -420,6 +429,13 @@ describe("transitionListSession (full table)", () => {
       ["resume-buffer", "rebuild"]
     );
     T("suspended", settle("menu"), "idle", ["cleanup"]);
+    // 同 functionMode：AID 退出前導段行經選單時不得被 cleanup 的 flush 打斷。
+    T(
+      "suspended",
+      settle("menu", { inFlightKind: "aid-escape" }),
+      "suspended",
+      []
+    );
     T("suspended", settle("article"), "suspended", []); // page turns inside the article
     T("suspended", settle("prompt"), "suspended", []);
     T("suspended", settle("transient"), "suspended", []);

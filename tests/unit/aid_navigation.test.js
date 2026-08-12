@@ -22,16 +22,52 @@ function facts(kind, over = {}) {
   };
 }
 
+// pmore footer part3 = the currstat projection AidNavigation branches on
+// (mbbsd/more.c#common_pmore_footer_handler; see string_util.parsePagerFooterContext).
 // Reading-article status row (string_util.parseStatusRow shape).
 const STATUS_ROW =
   "  瀏覽 第 1/2 頁 ( 45%)  目前顯示: 第 1~23 行  (y)回應(X%)推文(h)說明(←)離開 ";
+// currstat == RMAIL：站內信。實錄 ptt-debug-20260813 的末列。
+const MAIL_STATUS_ROW =
+  "  瀏覽 第 1/1 頁 (100%)  目前顯示: 第 01~18 行  (y)回信 (h)說明 (←/q)離開 ";
+// part3 被 part1+part2 擠掉：分不出 currstat（單向推論 → 走安全路徑）。
+const FOOTERLESS_STATUS_ROW =
+  "  瀏覽 第 12345/12345 頁 (100%)  目前顯示: 第 271589~271611 行        ";
+// 進板畫面收尾的 pressanykey（同 term_buf.setPageState 認的字面）。
+const PRESS_ANY_KEY_ROW = "                              請按任意鍵繼續";
 
-function makeHarness({ listState = "suspended" } = {}) {
+// 一個 24 列畫面：mark 用來讓相鄰兩張畫面的「整螢幕簽章」不同（退出流程判定
+// 「← 真的退了一層」的依據）。
+function screen({ row0 = "", last = "", mark = "" } = {}) {
+  const rowTexts = new Array(24).fill("");
+  rowTexts[0] = row0;
+  rowTexts[5] = mark;
+  rowTexts[23] = last;
+  return rowTexts;
+}
+
+const MAIN_MENU_SCREEN = screen({
+  row0: "【主功能表】",
+  mark: "  (M)ail         【 私人信件區 】",
+  last: "[8/13 星期四 0:30] 線上24963人, 我是someuser        [呼叫器]打開 "
+});
+
+function makeHarness({ listState = "suspended", footer = STATUS_ROW } = {}) {
   const sent = [];
   const queue = new CommandQueue({ send: d => sent.push(d) });
   const hints = [];
   const view = { flashListHint: (msg, ms) => hints.push(msg) };
-  const termBuf = { startedEasyReading: true };
+  // termBuf 是「當前原生畫面」：AidNavigation 用 getRowText 讀末列判 currstat，
+  // 並在起手時取整螢幕簽章（CLAUDE.md：讀畫面一律用 buf.getRowText）。
+  const termBuf = {
+    startedEasyReading: true,
+    rows: 24,
+    cols: 80,
+    rowTexts: screen({ last: footer, mark: "文章內文" }),
+    getRowText(row) {
+      return this.rowTexts[row] || "";
+    }
+  };
   const core = {
     easyReading: {
       enterFunctionModeCalls: 0,
@@ -200,6 +236,14 @@ describe("AidNavigation", () => {
     expect(hints.some(h => h.includes("AID 跳文失敗"))).toBe(true);
   });
 
+  test("看板文章（footer 有「回應」）維持文章內直接 s 的快路徑", () => {
+    // 回歸守護：這條路徑 mbbsd/more.c:177 只呼叫 Select()（不經 Read()），
+    // 所以沒有進板畫面、也不該多繞主功能表。
+    const { nav, sent } = makeHarness({ footer: STATUS_ROW });
+    nav.start("1gIeu-3A", "Android");
+    expect(sent).toEqual(["sAndroid\r\f"]);
+  });
+
   test("final open accepts a status-row bottom even if the classifier hesitates", () => {
     const { nav, queue } = makeHarness();
     nav.start("1gIeu-3A", "Android");
@@ -212,5 +256,115 @@ describe("AidNavigation", () => {
     rowTexts[23] = STATUS_ROW;
     settle(queue, facts("prompt", { rowTexts }));
     expect(nav.active).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 站內信（currstat == RMAIL）的退出前導段
+//
+// mbbsd/more.c:102-112：pager 的 s(RET_SELECTBRD) 與 #(RET_SELECTAID) 都寫死
+// `currstat != READING → break`。站內信是 RMAIL → 兩鍵都是 DONOTHING，而送出的
+// "sSYSOP\r" 會被 pager **逐鍵當快捷鍵吃掉**（Y=回信給所有人 / X,%=推文 /
+// T=改標題 / E=編輯）——回報實錄 ptt-debug-20260813 就是這樣跳到另一封信。
+//
+// 修法：footer 判不出 READING 時，先用 ← 退到主功能表（mbbsd/menu.c:498 的
+// MMENU/TMENU/XMENU 才是 ReadSelect() → do_select() 真的進板；mbbsd/board.c:1902
+// 的看板列表 s 只會移動游標，不可當終點）再跳。
+// ---------------------------------------------------------------------------
+describe("AidNavigation 非 READING context（站內信／精華區）", () => {
+  const ESC_LEFT = "\x1b[D\f";
+
+  test("REGRESSION 主症狀：站內信 footer → 絕不把板名送上線，第一步是 ←", () => {
+    const { nav, sent } = makeHarness({ footer: MAIL_STATUS_ROW });
+    nav.start("1gIeu-3A", "SYSOP");
+    expect(nav.active).toBe(true);
+    expect(sent).toEqual([ESC_LEFT]);
+    // 症狀本身：板名的任何一個字元都不得進入站內信 pager。
+    expect(sent.some(s => s.indexOf("SYSOP") !== -1)).toBe(false);
+  });
+
+  test("← ← ← 退到主功能表後才送 s<board>", () => {
+    const { nav, queue, sent } = makeHarness({ footer: MAIL_STATUS_ROW });
+    nav.start("1gIeu-3A", "SYSOP");
+    // 信件內容 → 信件列表
+    settle(queue, facts("transient", { rowTexts: screen({ row0: "郵件選單", mark: "  73 11/13 coedschool" }) }));
+    expect(sent[1]).toBe(ESC_LEFT);
+    // 信件列表 → 郵件選單
+    settle(queue, facts("menu", { rowTexts: screen({ row0: "電子郵件", mark: "  (R)ead 我的信箱" }) }));
+    expect(sent[2]).toBe(ESC_LEFT);
+    // 郵件選單 → 主功能表
+    settle(queue, facts("menu", { rowTexts: MAIN_MENU_SCREEN }));
+    expect(sent[3]).toBe("sSYSOP\r\f");
+    // 之後與既有路徑完全相同。
+    settle(queue, facts("clean-list", { boardName: "SYSOP" }));
+    expect(sent[4]).toBe("#1gIeu-3A\r\f");
+    settle(queue, facts("clean-list", { boardName: "SYSOP", cursorRowNum: 92, curY: 10 }));
+    expect(sent[5]).toBe("\r\f");
+    settle(queue, facts("article"));
+    expect(nav.active).toBe(false);
+    expect(queue.idle).toBe(true);
+  });
+
+  test("主功能表的 s 會走 Read() → 進板畫面 ＋ pressanykey 要自動化解", () => {
+    // mbbsd/bbs.c:4482-4492：ReadSelect() → Read() 在本 session 首次進該板時
+    // 先跑 more(notes) 再 pressanykey()。文章內的 s 不會，所以只有這條路徑要處理。
+    const { nav, queue, sent } = makeHarness({ footer: MAIL_STATUS_ROW });
+    nav.start("1gIeu-3A", "SYSOP");
+    settle(queue, facts("menu", { rowTexts: MAIN_MENU_SCREEN }));
+    expect(sent[1]).toBe("sSYSOP\r\f");
+    // 進板畫面本身是 pmore → classifyListScreen 判成 'article'。
+    settle(queue, facts("article", { rowTexts: screen({ last: STATUS_ROW, mark: "進板畫面" }) }));
+    expect(sent[2]).toBe(ESC_LEFT);
+    // 離開 pager 後的 pressanykey。
+    settle(queue, facts("transient", { rowTexts: screen({ last: PRESS_ANY_KEY_ROW }) }));
+    expect(sent[3]).toBe(ESC_LEFT);
+    // 終於落到看板列表。
+    settle(queue, facts("clean-list", { boardName: "SYSOP" }));
+    expect(sent[4]).toBe("#1gIeu-3A\r\f");
+    expect(nav.active).toBe(true);
+  });
+
+  test("退出層數超過上限 → 可見失敗、解鎖、queue 清空", () => {
+    // 例：信箱爆量時 mbbsd/menu.c:493 會把 ← 強制轉成 'R' 卡在讀信，畫面一直
+    // 在變但永遠到不了主功能表。不可無限按下去。
+    const { nav, queue, sent, hints } = makeHarness({ footer: MAIL_STATUS_ROW });
+    nav.start("1gIeu-3A", "SYSOP");
+    for (let i = 0; i < 10; ++i) {
+      if (!nav.active) break;
+      settle(queue, facts("transient", { rowTexts: screen({ mark: "第 " + i + " 層" }) }));
+    }
+    expect(nav.active).toBe(false);
+    expect(sent.every(s => s === ESC_LEFT)).toBe(true);
+    expect(sent.length).toBeLessThanOrEqual(6);
+    expect(hints.some(h => h.includes("AID 跳文失敗"))).toBe(true);
+    expect(queue.idle).toBe(true);
+  });
+
+  test("← 沒有效果（畫面簽章不變）→ probe → miss → 可見失敗", () => {
+    const { nav, queue, sent, hints } = makeHarness({ footer: MAIL_STATUS_ROW });
+    const frozen = screen({ last: MAIL_STATUS_ROW, mark: "文章內文" });
+    nav.start("1gIeu-3A", "SYSOP");
+    settle(queue, facts("article", { rowTexts: frozen }));
+    expect(sent.length).toBe(1); // 還沒結論，繼續等
+    vi.advanceTimersByTime(5000); // soft timeout → probe
+    expect(sent[1]).toBe("\f");
+    settle(queue, facts("article", { rowTexts: frozen })); // 探針幀仍沒變 → miss
+    expect(nav.active).toBe(false);
+    expect(hints.some(h => h.includes("AID 跳文失敗"))).toBe(true);
+  });
+
+  test("footer part3 整段消失（分不出 currstat）→ 走安全的退出路徑", () => {
+    // 單向推論：只有「含回應」才敢直接送 s，其餘一律降級（看板文章走這條也對，只是慢）。
+    const { nav, sent } = makeHarness({ footer: FOOTERLESS_STATUS_ROW });
+    nav.start("1gIeu-3A", "Android");
+    expect(sent).toEqual([ESC_LEFT]);
+  });
+
+  test("共用 queue 被 flush 掉時，退出步驟一樣要解鎖 active", () => {
+    const { nav, queue, hints } = makeHarness({ footer: MAIL_STATUS_ROW });
+    nav.start("1gIeu-3A", "SYSOP");
+    queue.flush();
+    expect(nav.active).toBe(false);
+    expect(hints.some(h => h.includes("AID 跳文失敗"))).toBe(true);
   });
 });

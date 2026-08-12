@@ -355,6 +355,14 @@ export function transitionListSession(state, event) {
             // User opened an article natively while mirrored.
             return { next: 'suspended', actions: ['handoff-article'] };
           case 'menu':
+            // A serialized transaction is mid-flight and its route goes THROUGH
+            // menus: AidNavigation's escape preamble presses ← up to 主功能表
+            // before it may send `s <board>` (mbbsd/more.c:102 gates s on
+            // currstat == READING, so 站內信 needs the detour). cleanup() calls
+            // queue.flush() → the in-flight command's onFlushed → the whole AID
+            // sequence dies on its own first step. Same shape as the clean-list
+            // guard above: wait for the transaction to conclude.
+            if (event.inFlightKind) return stay;
             // Left the board: clean up entirely, back to native life.
             return { next: 'idle', actions: ['cleanup'] };
           default:
@@ -399,6 +407,10 @@ export function transitionListSession(state, event) {
               ? { next: 'active', actions: ['resume-buffer'] }
               : { next: 'active', actions: ['resume-buffer', 'rebuild'] };
           case 'menu':
+            // Same in-flight guard as functionMode's menu branch: an AID escape
+            // preamble routes through menus and cleanup()'s queue.flush() would
+            // kill it mid-sequence.
+            if (event.inFlightKind) return stay;
             return { next: 'idle', actions: ['cleanup'] };
           default:
             return stay; // article page turns / prompts inside the article

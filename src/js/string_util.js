@@ -218,6 +218,28 @@ export function parseReqNotMetText(it) {
 const STATUS_ROW_RE =
   /  瀏覽 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  (?:目前顯示: 第|顯示範圍: \d+~\d+ 欄位,) 0*(\d+)~0*(\d+) 行/;
 
+// 同一列 part3（HELP）反推 pmore 當下的 `currstat` ——「這個畫面按 s / # 有沒有用」。
+// mbbsd/more.c:102-112：pager 的 `s`(RET_SELECTBRD) 與 `#`(RET_SELECTAID) 都寫死
+//   if (!HasUserPerm(PERM_BASIC) || currstat != READING) break;
+// 站內信是 currstat == RMAIL → 兩鍵都是 DONOTHING，送出的 "s<板名>\r" 會被 pager
+// **逐鍵當快捷鍵吃掉**（Y=回信給所有人 / X,%=推文 / T=改標題 / E=編輯…）＝誤觸。
+// part3 正好是 currstat 的直接投影（more.c#common_pmore_footer_handler:406-454）：
+//   currstat == RMAIL   → FOOTERMSG_MAIL_LONG  "(y)回信 (h)說明 (←/q)離開 "
+//   currstat == READING → FOOTERMSG_READ_LONG  "(y)回應(X%)推文(h)說明(←)離開 "
+//                       / FOOTERMSG_READ_MID   "(y)回應(X/%)推文 (←)離開 "
+//   其餘（精華區 more()、進板畫面…）→ FOOTERMSG_SHORT / VERYSHORT（兩者都沒有「回應」）
+//
+// **推論只能單向**：含「回應」⇒ READING（RMAIL 分支排在最前面，不可能印出「回應」）。
+// 反向不成立——上面 part3 那段已寫明它會**整段消失**（avail <= 0 / 塞不下只填空白），
+// 所以「沒有回應」只代表**不確定**，呼叫端一律要降級到不依賴 s/# 的安全路徑。
+// 'mail' 只用來挑失敗訊息的措辭，永遠不可拿它當唯一判準。
+export function parsePagerFooterContext(lastRowText) {
+  var str = lastRowText || '';
+  if (str.indexOf('回應') >= 0) return 'reading';
+  if (str.indexOf('回信') >= 0) return 'mail';
+  return 'unknown';
+}
+
 export function parseStatusRow(str) {
   var result = STATUS_ROW_RE.exec(str);
 

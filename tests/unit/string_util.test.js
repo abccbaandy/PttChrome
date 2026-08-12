@@ -16,6 +16,7 @@ import {
   wrapText,
   normalizeCopyText,
   parseStatusRow,
+  parsePagerFooterContext,
   parseListRow,
   parseWaterball,
   parseReplyText,
@@ -269,6 +270,61 @@ describe("parseStatusRow（pmore footer, pmore.c#mf_display_footer）", () => {
     expect(
       parseStatusRow(" 文章選讀 (y)回應(X)推文(^X)轉錄 (b)進板畫面  ")
     ).toBeNull(); // 看板列表 feeter，不是文章
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePagerFooterContext — 同一列的 part3 反推 currstat（「按 s / # 有沒有用」）
+//
+// mbbsd/more.c#common_pmore_footer_handler 的五個 FOOTERMSG_* 依 currstat ＋剩餘
+// 寬度五選一。AID 一鍵跳文用它決定：文章內直接送 `s<板名>`（READING），或先用 ←
+// 退回主功能表再跳（其餘全部）。判錯方向的代價是把板名送進站內信 pager 被逐鍵
+// 當快捷鍵吃掉（Y=回信給所有人 / X,%=推文 / T=改標題）＝誤觸，所以推論只能單向。
+// ---------------------------------------------------------------------------
+describe("parsePagerFooterContext（more.c#common_pmore_footer_handler）", () => {
+  const withStatus = part3 =>
+    "  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~22 行  " + part3;
+
+  test("FOOTERMSG_READ_LONG → reading（實錄 stock-huang）", () => {
+    expect(
+      parsePagerFooterContext(withStatus("(y)回應(X%)推文(h)說明(←)離開 "))
+    ).toBe("reading");
+  });
+
+  test("FOOTERMSG_READ_MID → reading", () => {
+    expect(
+      parsePagerFooterContext(withStatus("(y)回應(X/%)推文 (←)離開 "))
+    ).toBe("reading");
+  });
+
+  test("FOOTERMSG_MAIL_LONG → mail（實錄 ptt-debug 站內信）", () => {
+    expect(
+      parsePagerFooterContext(withStatus("(y)回信 (h)說明 (←/q)離開 "))
+    ).toBe("mail");
+  });
+
+  // SHORT / VERYSHORT 兩者都沒有「回應」也沒有「回信」：可能是精華區的 more()，
+  // 也可能只是 currstat==READING 但寬度不夠。分不出來就是 unknown。
+  test("FOOTERMSG_SHORT / VERYSHORT → unknown", () => {
+    expect(
+      parsePagerFooterContext(withStatus("(h)說明 (←/q)離開 "))
+    ).toBe("unknown");
+    expect(parsePagerFooterContext(withStatus("(←q)離開 "))).toBe("unknown");
+  });
+
+  // 單向推論的關鍵案例：part3 整段消失時**不可**推論成 reading。
+  test("part3 整段不印 → unknown（不得誤判成 reading）", () => {
+    expect(
+      parsePagerFooterContext(
+        "  瀏覽 第 12345/12345 頁 (100%)  目前顯示: 第 271589~271611 行        "
+      )
+    ).toBe("unknown");
+  });
+
+  test("空字串 / null → unknown", () => {
+    expect(parsePagerFooterContext("")).toBe("unknown");
+    expect(parsePagerFooterContext(null)).toBe("unknown");
+    expect(parsePagerFooterContext(undefined)).toBe("unknown");
   });
 });
 

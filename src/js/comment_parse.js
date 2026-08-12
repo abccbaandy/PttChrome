@@ -155,6 +155,19 @@ export function parseArticleBoard(text) {
   return m ? m[1] : null;
 }
 
+// Both fields of the header line as ONE event, so callers can't keep a board
+// from a PREVIOUS post. 站內信 headers carry 作者/標題/時間 but no 看板 (the field
+// only exists in board post files), so a mail's header must CLEAR the tracked
+// board — otherwise a suffix-less #AID inside a mail inherits the last board
+// read and jumps somewhere unrelated. Returns null when the line is not a
+// header at all (later pages of an article), which callers use to keep the
+// current value across page-downs.
+export function parseArticleHeader(text) {
+  const author = parseArticleAuthor(text);
+  if (!author) return null;
+  return { author: author, board: parseArticleBoard(text) };
+}
+
 // Board list column map — 逐欄對 mbbsd/bbs.c#readdoent 的 printf 序列推出來的
 // （pttbbs @ c1ff72df；先前是 live 校準值，現已與官方 source 對上）：
 //

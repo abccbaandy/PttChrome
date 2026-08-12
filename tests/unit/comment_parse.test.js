@@ -16,6 +16,7 @@ import {
   parseComment,
   parseArticleAuthor,
   parseArticleBoard,
+  parseArticleHeader,
   parseListAuthor,
   parseListTitle,
   parseListTitleRaw,
@@ -114,6 +115,32 @@ describe("parseArticleBoard", () => {
     expect(parseArticleBoard("標題  [問題] ...")).toBeNull();
     expect(parseArticleBoard("")).toBeNull();
     expect(parseArticleBoard(null)).toBeNull();
+  });
+});
+
+// term_view 用它把「作者」與「看板」綁成同一次 header 事件。分開判斷時，站內信
+// header（沒有「看板」欄位，該欄只存在於看板文章檔）會讓 _articleBoard 沿用**上一篇
+// 看板文章**的板名 → 信裡沒帶後綴的 #AID 跳到毫不相干的看板。
+describe("parseArticleHeader（作者＋看板同一次事件）", () => {
+  test("看板文章 header → 兩個欄位都有", () => {
+    expect(parseArticleHeader("作者  wowBenny (nick) 看板 C_Chat")).toEqual({
+      author: "wowbenny",
+      board: "C_Chat"
+    });
+  });
+
+  test("站內信 header（無「看板」欄）→ board 必須是 null，不可沿用舊值", () => {
+    expect(parseArticleHeader("作者  someuser (暱稱)")).toEqual({
+      author: "someuser",
+      board: null
+    });
+  });
+
+  test("非 header 列 → null（呼叫端據此保留翻頁前的值）", () => {
+    expect(parseArticleHeader(ts("推 wowbenny: hi"))).toBeNull();
+    expect(parseArticleHeader("標題  [問題] ...")).toBeNull();
+    expect(parseArticleHeader("")).toBeNull();
+    expect(parseArticleHeader(null)).toBeNull();
   });
 });
 

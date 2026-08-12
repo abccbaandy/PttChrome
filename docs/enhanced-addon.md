@@ -459,6 +459,34 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   `_resolveCredential` 第一段直接命中 → `credentials.get()` 永遠不執行 → 明文永遠清不掉。
   症狀很像「清除邏輯壞了」，實際上是快取把它短路了。守護：`pref_save_close.test.js` 與
   `auto_login_credentials.test.js`「只有設定頁編輯能填 session cache」。
+- **送機器按鍵前必須確認「這個畫面吃不吃這個鍵」——pmore 的快捷鍵被 `currstat` 綁死**。
+  `mbbsd/more.c#pmore_key_handler`：`s`(RET_SELECTBRD) 與 `#`(RET_SELECTAID) 都寫死
+  `if (!HasUserPerm(PERM_BASIC) || currstat != READING) break;`。站內信是 `RMAIL` →
+  兩鍵都是 DONOTHING，於是 AID 跳文送的 `s<板名>\r` **被 pager 逐鍵當快捷鍵吃掉**
+  （`Y`=回信給所有人、`X`/`%`=推文、`T`=改標題、`E`=編輯、`r`/`R`=回信）——不是沒作用，是**誤觸**
+  （實錄 `ptt-debug-20260813`：畫面直接跳到另一封信，6s 後才報「切換看板失敗」）。
+  三件必須一起記的事實：
+  ① **判別式**：pager footer part3 就是 `currstat` 的直接投影
+     （`more.c#common_pmore_footer_handler`）——`RMAIL`→「(y)**回信**」、`READING`→「(y)**回應**」、
+     其餘→`(h)說明`/`(←q)離開`。純函式 `string_util.parsePagerFooterContext`。
+     **推論只能單向**：含「回應」⇒ READING；反向不成立，因為 part3 在寬狀態列下會**整段消失**
+     （同檔 `parseStatusRow` 上方註解），所以「沒有回應」只是**不確定**，一律降級走安全路徑。
+  ② **退出終點只能是主功能表**：`menu.c:498` 只有 MMENU/TMENU/XMENU 的 `s` 走
+     `ReadSelect()`→`do_select()` 真的進板；`board.c:1902`（看板列表／我的最愛／分類看板）的 `s`
+     是「搜尋看板」，命中只**移動游標**不進板 → 拿它當終點會靜默失敗。
+  ③ **走主功能表就會遇到進板畫面**：`ReadSelect()` 會呼叫 `Read()`，本 session 首次進該板先跑
+     `more(notes)` ＋ `pressanykey()`（`bbs.c:4482-4492`）；文章內的 `s`（`more.c:177` 只呼叫
+     `Select()`）不會。所以兩條路徑的 expect 不能共用同一套。
+  實作在 `src/js/aid_navigation.js`（`_pagerContext` 分流 → `_enqueueEscape` ← 到主功能表 →
+  `_enqueueBoardJump(viaMenu)` 化解進板畫面），守護 `tests/unit/aid_navigation.test.js`
+  「非 READING context」整個 describe。連帶：退出流程會行經選單，`transitionListSession` 的
+  `functionMode`／`suspended` 兩處 `menu` 分支必須有 `if (event.inFlightKind) return stay`，
+  否則 `_cleanup()` 的 `queue.flush()` 會把 in-flight 的 AID 指令連根拔掉（onFlushed → 整串失敗）。
+- **`_articleBoard` 這類「跨頁沿用」的欄位，要跟它的來源 header 綁成同一次事件**。
+  文章 header（`作者 x (y) 看板 Z`）只出現在第一頁，所以必須跨翻頁保留；但**站內信 header 沒有
+  「看板」欄位**（該欄只存在於看板文章檔）。舊碼 `if (parsedBoard) this._articleBoard = parsedBoard;`
+  分開判斷 ⇒ 信裡沿用**上一篇看板文章**的板名 ⇒ 沒帶後綴的 `#AID` 跳到毫不相干的看板。
+  改用 `comment_parse.parseArticleHeader`（回傳 `{author, board}`，非 header 列回 `null`）一次寫入。
 - **在測試/工具裡直接餵 cassette 進 `TermBuf` 後讀 `getRowText`，必須先讓事件回圈跑一拍**（unit 用 `vi.advanceTimersByTime(300)`、瀏覽器用 `await sleep(120)`）：`isLeadByte` 只在 buf 的 update pass（notify 30ms + settle 50ms）才標記，沒跑完就讀會拿到**未轉碼的 Big5 位元組**（症狀：整片 `§@ªÌ` 亂碼，看起來像編碼表沒載）。
 
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）

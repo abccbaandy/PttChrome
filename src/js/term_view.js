@@ -6,7 +6,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
-import { rowToText, parseArticleAuthor, parseArticleBoard, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
+import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment } from './list_window';
 import icon128 from '../icon/icon_128.png';
@@ -416,13 +416,16 @@ TermView.prototype = {
     // only appears on the first page of an article, so keep the last parsed value
     // across page-downs; a new article's first page overwrites it.
     if (this.buf.pageState === 3) {
-      var row0Text = rowToText(lines[0]);
-      var parsedAuthor = parseArticleAuthor(row0Text);
-      if (parsedAuthor) this._articleAuthor = parsedAuthor;
-      // The board name lives on the same first-page header ("作者 ... 看板 X");
-      // keep it across page-downs so a boardless AID link can fall back to it.
-      var parsedBoard = parseArticleBoard(row0Text);
-      if (parsedBoard) this._articleBoard = parsedBoard;
+      // Author AND board come from the SAME header line ("作者 x (y) 看板 Z"), so
+      // they are adopted as one event: a 站內信 header has no 看板 field and must
+      // therefore CLEAR the board, not inherit the previous post's (a boardless
+      // #AID in a mail would otherwise jump to an unrelated board). null = not a
+      // header row (a later page) → keep both across page-downs.
+      var header = parseArticleHeader(rowToText(lines[0]));
+      if (header) {
+        this._articleAuthor = header.author;
+        this._articleBoard = header.board;
+      }
     } else {
       // Leaving the article clears any pusher highlight selection.
       this._selectedPusher = null;
