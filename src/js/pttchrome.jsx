@@ -308,6 +308,9 @@ App.prototype.onClose = function() {
   // Connection gone: the list buffer is stale by definition — hard reset to
   // idle/native so the reconnect starts clean.
   this.listSession.disable();
+  // Same for the AID back stack: its anchors are replayed as key sequences and
+  // rely on this session's per-board cursors (pttbbs getkeep), which die with it.
+  this.aidNavigation.reset();
 
   this.cancelMbTimer();
 

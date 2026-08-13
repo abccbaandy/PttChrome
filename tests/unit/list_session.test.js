@@ -1370,3 +1370,58 @@ describe("passthrough 快路徑——server 游標已同步時跳過 sync-jump �
     expect(enqueued[0].kind).toBe("native-sync-jump");
   });
 });
+
+describe("currentAnchor（AID 返回用的列表座標）", () => {
+  // 兩次 live 實測誤跳（2026-08-13）都指向同一件事：能當返回座標的只有「我方
+  // 序列化開文時用的序號」(_openedNum)，_selectedNum 不行。
+  test("我方開文後：回傳 board + 該序號 + last-read subject", () => {
+    const { s } = demandSession({ count: 20 });
+    s._openedNum = 352295;
+    s.noteLastRead("[閒聊] 某篇");
+    expect(s.currentAnchor()).toEqual({
+      board: "C_Chat",
+      num: 352295,
+      subject: "[閒聊] 某篇"
+    });
+  });
+
+  test("REGRESSION 置底文（pinned，無序號）→ 沒有座標", () => {
+    // 開的是 C_Chat 板規（置底）走 _beginOpenPinned，不設 _openedNum；
+    // _selectedNum 還留著上一個數字選取的殘值 → 用它會開到不相干的文章。
+    const { s } = demandSession({ count: 20 });
+    s._selectedNum = 352295; // 殘值
+    s._selectedPinnedKey = "[公告] C_Chat板板規";
+    expect(s.currentAnchor()).toBe(null);
+  });
+
+  test("REGRESSION 原生模式下游標自己動過（functionMode）→ 沒有座標", () => {
+    // 按 Q 開文章資訊框就會進 functionMode：之後的方向鍵是 passthrough，
+    // server 游標移動而 _selectedNum 停在舊值。
+    const { s } = demandSession({ count: 20 });
+    s._openedNum = 5;
+    s._selectedNum = 5;
+    s._enterFunctionMode();
+    s._selectedNum = 5; // 殘值猶在
+    expect(s.currentAnchor()).toBe(null);
+  });
+
+  test("板名被原生插曲清掉 → 仍回傳序號，board 為 null 由呼叫端遞補", () => {
+    const { s } = demandSession({ count: 20 });
+    s._boardName = null;
+    s._openedNum = 352295;
+    expect(s.currentAnchor().num).toBe(352295);
+    expect(s.currentAnchor().board).toBe(null);
+  });
+
+  test("使用者按 ] 跳到下一篇（noteLeftPost）→ 座標作廢", () => {
+    const { s } = demandSession({ count: 20 });
+    s._openedNum = 5;
+    s.noteLeftPost();
+    expect(s.currentAnchor()).toBe(null);
+  });
+
+  test("什麼都沒開 → null", () => {
+    const { s } = demandSession({ count: 20 });
+    expect(s.currentAnchor()).toBe(null);
+  });
+});

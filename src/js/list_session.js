@@ -514,7 +514,13 @@ export function isLastReadStyledListRow(row) {
 // usable title (blank/short row) — never matches.
 const LIST_MARK_FG = { 'R': 3, '轉': 6, '鎖': 5, 'ˇ': 2 };
 export function subjectOfListRow(row) {
-  let t = parseListTitleRaw(rowToText(row));
+  return subjectOfListText(rowToText(row));
+}
+
+// Same key from an already-flattened row STRING (settle facts carry rowTexts,
+// not TermChar rows — aid_navigation's back landing verifies against these).
+export function subjectOfListText(text) {
+  let t = parseListTitleRaw(text);
   if (!t) return null;
   if (t.charAt(0) === 'R' && t.charAt(1) === ':') t = t.substring(2);
   else if (t.charCodeAt(0) > 0x7f) t = t.substring(1); // □/轉/鎖/ˇ state glyph
@@ -663,6 +669,9 @@ export function ListSession(core, view, termBuf, queue) {
   this._renderMode = 'native';
   this._boardName = null;
   this._selectedNum = null; // numbered selection (article number)
+  // Article number WE opened (set in _beginOpen). Unlike _selectedNum this is
+  // never a stale echo of a cursor that moved natively — see currentAnchor.
+  this._openedNum = null;
   this._selectedPinnedKey = null; // pinned-row selection (title key)
   this._topNum = null; // window-top anchor (article number; native top_ln)
   this._fillTarget = 0;
@@ -735,6 +744,12 @@ ListSession.prototype = {
     )
       return;
     const facts = this._collectFacts(snap);
+    // Pure notification (touches nothing here): landing on a list or a menu
+    // means the user left the article by themselves, so aid_navigation's back
+    // anchors no longer describe where they are. Deliberately BEFORE
+    // queue.onSettle — while OUR sequence runs, aidNavigation.active is still
+    // true at this point and the call no-ops, so only foreign settles count.
+    if (this._core.aidNavigation) this._core.aidNavigation.noteSettle(facts);
     // Server activity with NO command of ours in flight = external interaction
     // (user key passthrough, server-initiated repaint): the server cursor may
     // have moved — the prefetch chain's landed position is no longer trusted.
@@ -869,6 +884,42 @@ ListSession.prototype = {
     if (this.state === 'idle') return;
     this.state = 'functionMode';
     this._enterFunctionMode();
+  },
+
+  // Read-only snapshot of "which article is open, as a list coordinate" for
+  // aid_navigation's back stack. Valid while an article is open (suspended):
+  // _handoffArticle clears _serverNum only, so the board name, the selected
+  // number and the last-read subject all survive into the open post.
+  // MUST be read BEFORE beginExternalNavigation() — _enterFunctionMode() drops
+  // _boardName/_serverNum on entry.
+  // `board` may be null even with a usable number: a native excursion
+  // (_enterFunctionMode — any non-list screen, e.g. the Q post-info box) drops
+  // _boardName and the returning resume path does not re-seed it. The caller
+  // fills that in from the article header (nav_history.chooseAnchor).
+  // Which article is open, as a list coordinate, for aid_navigation's back
+  // stack. _openedNum (set by our own serialized open) is the ONLY number that
+  // provably matches the post on screen — two live misfires on 2026-08-13:
+  //   - a pinned (置底) post has no number at all, and _selectedNum still held
+  //     the previously selected numbered row → back opened a random article;
+  //   - with the list rendered natively (functionMode after e.g. the Q info
+  //     box), arrow keys move the server cursor without us, so _selectedNum
+  //     stayed on the row it was last told about → back opened the wrong post.
+  // `board` may be null (a native excursion drops _boardName and the resume
+  // path does not re-seed it); the caller fills it in from the article header
+  // (nav_history.chooseAnchor).
+  currentAnchor: function() {
+    if (this._openedNum == null) return null;
+    return {
+      board: this._boardName,
+      num: this._openedNum,
+      subject: this._lastReadTitle
+    };
+  },
+
+  // The post we opened is no longer the one on screen (article→article keys,
+  // which never pass a list screen — relayed by aid_navigation.noteLeftPost).
+  noteLeftPost: function() {
+    this._openedNum = null;
   },
 
   // Keyboard, called from term_view.onKeyDown ONLY while renderMode is
@@ -1692,6 +1743,11 @@ ListSession.prototype = {
     const lrIdx = (this._termBuf.listLineNums || []).indexOf(num);
     const lrSubject =
       lrIdx >= 0 ? subjectOfListRow(this._termBuf.listLines[lrIdx]) : null;
+    // The article WE are opening, by number — the only number that is known to
+    // match the post actually on screen. _selectedNum is not: while the list is
+    // rendered natively (functionMode / list easy reading off) the cursor moves
+    // without us and _selectedNum keeps its stale value. See currentAnchor.
+    this._openedNum = num;
     this._renderMode = 'frozen';
     this._setLoading(true);
     this._armFrozenWatchdog();
@@ -1910,6 +1966,9 @@ ListSession.prototype = {
     // branch — resume-buffer alone would merge stale rows into the new list
     // (movie 板多輪搜尋混雜、點舊序號開文 timeout，2026-07-10).
     this._boardName = null;
+    // Same reason: after a native excursion the post that gets opened may not be
+    // the one we last opened ourselves (the cursor moved without us).
+    this._openedNum = null;
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flush();
@@ -1986,6 +2045,7 @@ ListSession.prototype = {
     this._renderMode = 'native';
     this._boardName = null;
     this._selectedNum = null;
+    this._openedNum = null;
     this._selectedPinnedKey = null;
     this._topNum = null;
     this._edgeUp = false;

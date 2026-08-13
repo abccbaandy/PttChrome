@@ -469,6 +469,15 @@ export const PrefModal = ({
                   onKeyDown={onHotkeyCapture}
                   mb="xs"
                 />
+                <TextInput
+                  label={i18n("options_aidNavBackKey")}
+                  name="aidNavBackKey"
+                  readOnly
+                  value={values.aidNavBackKey}
+                  placeholder={i18n("tooltip_aidNavBackKey")}
+                  onKeyDown={onHotkeyCapture}
+                  mb="xs"
+                />
                 <PrefCheckbox
                   name="endTurnsOnLiveUpdate"
                   checked={values.endTurnsOnLiveUpdate}

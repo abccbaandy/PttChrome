@@ -394,6 +394,12 @@ export const en_US = {
   "tooltip_easyReadingEndSwitchKey": {
     "message": "Click then press any key to set (default F8)"
   },
+  "options_aidNavBackKey": {
+    "message": "Hotkey to go back after an AID jump"
+  },
+  "tooltip_aidNavBackKey": {
+    "message": "Click then press any key to set (default F9)"
+  },
   "options_endTurnsOnLiveUpdate": {
     "message": "Press END turns on thread live update."
   },

@@ -117,7 +117,27 @@
 
 好讀讀文中偵測 `#XXXXXXXX`（固定 8 碼 `[0-9A-Za-z_-]`，pttbbs `aidu2aidc` base64 變體；可帶 `(Board)`/`@Board` 後綴，無後綴 fallback `term_view._articleBoard`，來源同列 header `看板 X`，`comment_parse.parseArticleBoard`）→ `.aidLink` 連結。鏈路：`aid_parse.detectAids`（TermChar columns，同 mention_parse DBCS 規則）→ `Screen.computeAnnotations`（僅 `easyReading && enhance.onAidClick`）→ `Row/LinkSegmentBuilder`（同 mention 邊界機制）→ `view.onAidClick`（pttchrome 掛）→ `aid_navigation.AidNavigation.start(aid, board)`。
 
-導航 = 共用 `commandQueue` 三步序列（每步 expect 內容判定、fullRepaint、失敗可見降級；`s`/`#` 在文章內直接可用，**不需先 `←` 退列表**）：`s<board>\r`(expect clean-list+boardName 不分大小寫) → `#<aid>\r`(expect boardName+cursorRowNum+curY 在 entry 區——**不可要求 kind==clean-list**：# 跳文落地 footer 列空白（\f probe 後仍空）→ classify 判 transient，live 驗證 2026-07-10；找不到→vmsg 游標停底列→cursorRowNum null→probe→miss) → `\r`(expect article|statusRow)。前置：`easyReading._enterFunctionMode()`（原生 LIVE 鏡像；離篇/進新文由既有 settle 邏輯收斂）＋ `listSession.beginExternalNavigation()`（強制 functionMode+nativeHold+flush，reducer 對中途 clean-list settle 一律 stay，最後 article settle 走 handoff）。**順序不變量：先 beginExternalNavigation（含 flush）再 enqueue**。導航中 `aidNavigation.active` 於 `term_view.onKeyDown`／`App.mouse_click`／`onMouse_click`／`mouse_scroll` 入口吞輸入（有 banner）。同板也不省略 `s` 切板（單一路徑）。unit：`tests/unit/aid_parse.test.js`、`aid_navigation.test.js`、`row_render.test.jsx`（aidLink render）。
+導航 = 共用 `commandQueue` 的序列（每步 expect 內容判定、fullRepaint、失敗可見降級）。**前導段（僅當 pager footer 判不出 `currstat == READING`）**：`string_util.parsePagerFooterContext` 讀末列，含「回應」才敢直接送 `s`/`#`（`more.c:102-112` 把兩鍵綁死 READING；站內信 RMAIL 會**逐鍵當快捷鍵吃掉**板名）。判不出時一律降級：`\x1b[D` 一次一鍵退到 `【主功能表】`（上限 `MAX_ESCAPE_STEPS=6`，每步用整螢幕簽章確認真的退了一層），再走 `s`——只有 `menu.c:498` 的 MMENU/TMENU/XMENU 的 `s` 才真的進板（`board.c:1902` 的 s 只是搜尋看板移游標）；這條路徑會經 `Read()` → 進板畫面＋pressanykey，由 `_enqueueEnterBoardDismiss`（上限 3）化解。主序列：`s<board>\r`(expect clean-list+boardName 不分大小寫) → `#<aid>\r`(expect boardName+cursorRowNum+curY 在 entry 區——**不可要求 kind==clean-list**：# 跳文落地 footer 列空白（\f probe 後仍空）→ classify 判 transient，live 驗證 2026-07-10；找不到→vmsg 游標停底列→cursorRowNum null→probe→miss) → `\r`(expect article|statusRow)。前置：`easyReading._enterFunctionMode()`（原生 LIVE 鏡像；離篇/進新文由既有 settle 邏輯收斂）＋ `listSession.beginExternalNavigation()`（強制 functionMode+nativeHold+flush，reducer 對中途 clean-list settle 一律 stay，最後 article settle 走 handoff）。**順序不變量：先 beginExternalNavigation（含 flush）再 enqueue**。導航中 `aidNavigation.active` 於 `term_view.onKeyDown`／`App.mouse_click`／`onMouse_click`／`mouse_scroll` 入口吞輸入（有 banner）。同板也不省略 `s` 切板（單一路徑）。unit：`tests/unit/aid_parse.test.js`、`aid_navigation.test.js`、`row_render.test.jsx`（aidLink render）。
+
+### 返回原文（`nav_history.js`，CONFIRMED unit＋live）
+
+PTT 端**沒有**跳轉來源的概念（`read.c#select_by_aid` 只在 currboard 內搜尋，跨板就是真的換板），所以返回＝**用離開前擷取的錨點再導航一次**（同 BePTT 的「每個位置存一段按鍵序列、返回時重放」，差別是這裡每步都有 expect 而非盲送）。正向與返回共用同一組 enqueue 函式，只有中段那一步不同（`_enqueueMiddle`）。
+
+錨點三級（`nav_history.chooseAnchor`，純函式）：
+
+| 級 | 來源 | 中段動作 | 備註 |
+|---|---|---|---|
+| aid | `history.landed()`（本篇自己就是上次跳來的） | `#<aid>\r` | 唯一不受刪文位移影響 |
+| num | `listSession.currentAnchor()` = `_openedNum` + `_boardName`(可為 null→用 `view._articleBoard` 遞補) + `_lastReadTitle` | `<num>\r`，落地**必須** `subjectOfListText(游標列) === subject` 才送 `\r` | 序號會因刪文位移 |
+| board | `view._articleBoard` | 無：落地列表就停手 | 靠 `getkeep` per-board 游標記憶；**同板跳轉時作廢**（正向 `#aid` 已覆寫該板 keep） |
+
+- **順序不變量**：錨點必須在 `_begin()`（`easyReading._enterFunctionMode()` + `listSession.beginExternalNavigation()`）**之前**擷取——後者會清 `_boardName`/`_serverNum`/`_openedNum`。
+- **兩段式 commit**：`beginJump`/`beginBack` 只暫存，`_enqueueOpen.onDone`（文章真的開了）才 `commitJump`/`commitBack`。任一步失敗 → `abort()` **整個清空**，不 pop 不 push 不重試。
+- **`_openedNum` 而非 `_selectedNum`**（兩次 live 誤跳的根因）：置底文沒有序號、`_selectedNum` 會留著上一個數字列的殘值；原生模式（functionMode，例如按過 Q 資訊框）下方向鍵是 passthrough，`_selectedNum` 停在舊值。只有 list 好讀自己序列化開文時設的 `_openedNum` 保證對得上畫面上那篇。
+- **生命週期（三個純通知 hook，都不得改動對方狀態）**：`list_session._onScreenSettled`（**排在 `queue.onSettle` 之前**，clean-list/menu → `invalidate()`）、`easy_reading.leaveCurrentPost`（文章→文章鍵）、`App.onClose`（斷線 → `reset()`）。
+  - **我方落地會自己產生一次 `leaveCurrentPost`**（functionMode 退出走 'leave' 分支，且發生在 `onDone` 清掉 `active` 之後）→ `_ownedLeave` one-shot 吞掉它，否則每次跳完都會把剛 push 的那層抹掉。
+- **UI**：返回鈕（`term_view.showBackButton`，`(active, stack)` 的投影）＋快捷鍵 pref `aidNavBackKey`（預設 F9；F 鍵在 `term_keyboard.KeyMap` 沒有對應、送不到 PTT，而 F8 已被 `easyReadingEndSwitchKey` 佔用）。
+- **捲動還原**：錨點存的是**行索引**（`scrollTop / chh`），不是像素也不是 `_savedScrollTop`（那是 functionMode 單次進出的暫存，跨文章活不下來）。返回開文後交給 `easy_reading.requestScrollRestore`，由 `_onViewUpdated` 每次併頁時用 `nextScrollRestoreStep` 判斷高度夠不夠（好讀是逐頁累積，位置一開始不可達）；`reachedPageEnd` 仍不夠高就夾到底，使用者一按鍵立刻取消。
 
 ## 切換：三個對稱入口（CONFIRMED 純邏輯/手動驗）
 

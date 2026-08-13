@@ -163,7 +163,10 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 - **跨模式跳轉會產生二段式畫面更新**：命中處與目前模式不符（一般↔文摘）時設 `*pdefault_ch = KEY_TAB; return DONOTHING;`——server **自己補按一個 TAB**，下一圈 `i_read_key` 用它跑 `board_digest()` 切模式 ⇒ client 會看到「prompt 消失」與「全幅切換清單」兩段。
 - 文章內（pmore）按 `#`：`more.c:108-112` → `RET_SELECTAID` → `read.c:1018-1024` 先退出 pmore 回列表再開同一個 prompt，收尾強制 `FULLUPDATE`（與列表內的 `DONOTHING` 不同）。
 - **死碼警告**：`mbbsd/aids.c` 的 `do_search_aid()`（支援 `AID@BOARDNAME` 跨板語法）整段包在 `#ifdef NEW_AIDS` 內，而 `NEW_AIDS` 全 repo 無任何定義 ⇒ **真正跑的只有 `read.c#select_by_aid`，不支援 `@板名`**。勿照那段實作 client。
-- client 對照：`src/js/aid_navigation.js`（點 AID 連結的三段式交易）與列表好讀的貼上 passthrough（`list_session.js#onPaste`）——後者刻意**不**代按 Enter、不特判 AID，讓上述原生行為原樣呈現。
+- **只搜 currboard**：`select_by_aid` 依序找 `<currboard>/.DIR.bottom`、`.DIR`、`fn_mandex`，全都是**目前看板**的檔案 ⇒ 跨板一定要先 `s<board>`。另註 `read.c:404` 自帶 FIXME：置底文若沒列在 `.DIR.bottom` 這段會搜不到（實測 Test 板的置底公告 AID 搜尋直接失敗）⇒ **client 不可假設任何一篇文章的 AID 都跳得到**。
+- **per-board 游標記憶（getkeep）＝「返回原看板」可行的根據（CONFIRMED）**：`i_read` 在 `NEWDIRECT`（第一次進入該目錄）呼叫 `getkeep(currdirect, …)`（`read.c:1171`），而 `getkeep`（`read.c:105`）以 board path 的 hash 查既有 entry，**命中就沿用舊的 `crs_ln`**（`read.c:128-139`）；儲存結構是不斷追加的 link block（`KEEPSLOT=10` 一塊，滿了 malloc 下一塊），**session 內永不淘汰**。`board.c:1976` 的 `getkeep(buf, head, tmp+1)` 只在 entry 不存在時才用未讀位置當預設值，不會覆寫既有的。⇒ `s<原板>` 回去時游標仍停在離開時那一列。
+  - **推論（單一例外）**：同板的 `#<aid>` 跳轉會覆寫該板的 `crs_ln`，所以「靠 getkeep 回原文」在**原板 == 目標板**時不成立（client 端 `nav_history.chooseAnchor` 據此讓 board 級錨點作廢）。
+- client 對照：`src/js/aid_navigation.js`（點 AID 連結的三段式交易＋返回時的反向重放）、`src/js/nav_history.js`（錨點三級：aid / num＋subject 驗證 / board）與列表好讀的貼上 passthrough（`list_session.js#onPaste`）——後者刻意**不**代按 Enter、不特判 AID，讓上述原生行為原樣呈現。
 
 ## 9. 水球/廣播指紋（T4 非請自來，CONFIRMED）
 

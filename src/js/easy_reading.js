@@ -314,6 +314,10 @@ export function EasyReading(core, view, termBuf) {
   // accumulated long page resumes without re-paging. See docs/easy-reading.md.
   this._functionMode = false;
   this._savedScrollTop = null;
+  // One-shot reading-position restore for an AID back run (requestScrollRestore).
+  // Deliberately NOT _savedScrollTop: that one is the functionMode round trip and
+  // is cleared by every enter/leave, so it cannot survive across articles.
+  this._pendingScrollRestore = null;
   // Article identity (作者/標題/時間 rows) — see nextEasyReadingReentry. _articleKey is
   // re-read on every confirmed first-page frame while easy reading is on (_applyRowState,
   // which is the only capture point that covers all the ways a post becomes current);
@@ -976,6 +980,9 @@ EasyReading.prototype._onViewUpdated = function(e) {
       if (TRACE) console.log("send:" + keys + " -> " + action);
     }
   }
+  // Last: the page that just merged in may finally make the saved reading
+  // position reachable (AID back run). No-op when nothing is pending.
+  this._advanceScrollRestore();
 };
 
 // "Leaving this post" hook: stays in easy reading (does NOT touch _enabled) but
@@ -1007,11 +1014,19 @@ EasyReading.prototype.leaveCurrentPost = function() {
     this.ignoreOneUpdate = true;
   this._functionMode = false;
   this._savedScrollTop = null;
+  // Leaving the post the restore was meant for: drop it (a later article must
+  // never inherit someone else's reading position).
+  this._pendingScrollRestore = null;
   // Structural belt-and-braces for the article identity: this is the jump-to-another-post
   // path ([ ] a b f = + -), and the OLD post's key must not survive into the new one even
   // for the few frames before _applyRowState re-captures it (an F8 in that window would
   // hand nextEasyReadingReentry the wrong nativeArticleKey).
   this._articleKey = null;
+  // Pure notification (changes nothing here): this is the only hook that sees
+  // an article→article jump, which never passes a list screen — aid_navigation's
+  // back anchors describe the post we just left, so they are now stale. No-ops
+  // while aid_navigation itself is driving.
+  if (this._core.aidNavigation) this._core.aidNavigation.noteLeftPost();
 };
 
 EasyReading.prototype.stopEasyReading = function() {
@@ -1179,6 +1194,10 @@ EasyReading.prototype._onKeyDown = function(e) {
   if (!this._enabled || !this.startedEasyReading)
     return;
 
+  // The user took over: a pending AID-back scroll restore must not yank the
+  // view out from under them a page later.
+  this._pendingScrollRestore = null;
+
   this._onKeyDownProcessUI(e);
   if (e.defaultPrevented)
     return;
@@ -1206,6 +1225,57 @@ EasyReading.prototype._onKeyDown = function(e) {
   }
   if (stop)
     e.preventDefault();
+};
+
+// Scroll restore after an AID back run (aid_navigation): the article is re-read
+// from the server, so easy reading starts at the top and grows page by page
+// (nextEasyReadingRowState keeps sending PageDown until the footer reads 100%).
+// The saved position is therefore only reachable once enough of the article has
+// accumulated — this decides, per view update, whether we can land yet.
+//
+// Pure so it can be unit-tested: no DOM, no state.
+export const MAX_SCROLL_RESTORE_TRIES = 120;
+
+export function nextScrollRestoreStep({
+  lineIndex, tries, chh, scrollHeight, clientHeight, reachedPageEnd
+}) {
+  if (tries > MAX_SCROLL_RESTORE_TRIES) return { action: 'giveup' };
+  const max = Math.max(0, scrollHeight - clientHeight);
+  const target = lineIndex * chh;
+  if (max >= target) return { action: 'apply', scrollTop: target };
+  // Whole article loaded and it still isn't that tall (window resized, images
+  // collapsed, the post shrank): land as close as we can instead of hanging on.
+  if (reachedPageEnd) return { action: 'apply', scrollTop: max };
+  return { action: 'wait' };
+}
+
+// Ask for the reading position to be restored once the article has grown enough.
+// lineIndex 0 (or null) means "was at the top" — nothing to do.
+EasyReading.prototype.requestScrollRestore = function(lineIndex) {
+  if (!lineIndex) return;
+  this._pendingScrollRestore = { lineIndex: lineIndex, tries: 0 };
+};
+
+EasyReading.prototype._advanceScrollRestore = function() {
+  const pending = this._pendingScrollRestore;
+  if (!pending) return;
+  const disp = this._view.mainDisplay;
+  if (!disp || !this._view.chh) {
+    this._pendingScrollRestore = null;
+    return;
+  }
+  pending.tries++;
+  const step = nextScrollRestoreStep({
+    lineIndex: pending.lineIndex,
+    tries: pending.tries,
+    chh: this._view.chh,
+    scrollHeight: disp.scrollHeight,
+    clientHeight: disp.clientHeight,
+    reachedPageEnd: this.easyReadingReachedPageEnd
+  });
+  if (step.action === 'wait') return;
+  if (step.action === 'apply') disp.scrollTop = step.scrollTop;
+  this._pendingScrollRestore = null;
 };
 
 EasyReading.prototype._scrollBy = function(lines) {

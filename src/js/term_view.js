@@ -9,6 +9,7 @@ import { u2b, parseStatusRow, normalizePasteText } from './string_util';
 import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment } from './list_window';
+import { readValuesWithDefault } from './pref_storage';
 import icon128 from '../icon/icon_128.png';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
@@ -679,6 +680,17 @@ TermView.prototype = {
       this.flashListHint('AID 跳文中，請稍候…');
       return;
     }
+    // "返回原文" hotkey (pref aidNavBackKey, default F9). Claimed BEFORE every
+    // other handler because it must work in easy reading AND native, in a post
+    // or on a list. Safe to claim: F-keys have no KeyMap entry, so they never
+    // reach PTT anyway (term_keyboard.keyEventToBytes returns null for them).
+    // With no back stack this is a no-op hint, not a swallowed key.
+    if (this.bbscore.aidNavigation && !e.ctrlKey && !e.altKey && !e.metaKey &&
+        e.key === readValuesWithDefault().aidNavBackKey) {
+      e.preventDefault();
+      this.bbscore.aidNavigation.back();
+      return;
+    }
     // Switch-to-native is a TOGGLE: the gate below owns the key while easy reading is
     // on, and this owns it while we are back in native inside a post. Without it there
     // is no way back into easy reading for the current post at all — the user has to
@@ -987,6 +999,48 @@ TermView.prototype = {
       this._listInputWrap.remove();
       this._listInputWrap = null;
     }
+  },
+
+  // "返回原文" pill for the AID back stack (aid_navigation.js). Shown exactly
+  // while a back run is available; hidden while one is in flight.
+  //
+  // Three integration points, all of them old traps in this app:
+  //   - flashListHint's family is `pointer-events:none`, so this needs its own
+  //     element with pointer-events/cursor of its own — it is CLICKABLE.
+  //   - `nomouse_command` keeps App.checkClass from treating the pill as
+  //     terminal area (mouse browsing would send keys to PTT under the click).
+  //   - the click is stopped here: window-level capture listeners (mousedown /
+  //     click in pttchrome.jsx) otherwise steal focus back to the hidden input.
+  showBackButton: function(label, onClick) {
+    var el = this._aidBackEl;
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'nomouse_command';
+      el.style.cssText =
+        'position:fixed;left:16px;bottom:16px;background:rgba(20,40,70,.92);' +
+        'color:#fff;padding:6px 14px;border-radius:16px;font-size:13px;' +
+        'z-index:2000;pointer-events:auto;cursor:pointer;user-select:none;' +
+        'max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      el.addEventListener('mousedown', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+      });
+      el.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        if (el._onClick) el._onClick();
+      });
+      document.body.appendChild(el);
+      this._aidBackEl = el;
+    }
+    el._onClick = onClick;
+    el.textContent = label ? '← 返回 ' + label : '← 返回原文';
+    el.title = '返回跳轉前的文章';
+    el.style.display = 'block';
+  },
+
+  hideBackButton: function() {
+    if (this._aidBackEl) this._aidBackEl.style.display = 'none';
   },
 
   // Modal-ish input overlay for T2 keyword/number collection (`/` search,

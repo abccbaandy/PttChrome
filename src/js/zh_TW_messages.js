@@ -394,6 +394,12 @@
   "tooltip_easyReadingEndSwitchKey": {
     "message": "點此後按任意鍵設定 (預設 F8)"
   },
+  "options_aidNavBackKey": {
+    "message": "AID 跳文後返回原文的熱鍵"
+  },
+  "tooltip_aidNavBackKey": {
+    "message": "點此後按任意鍵設定 (預設 F9)"
+  },
   "options_endTurnsOnLiveUpdate": {
     "message": "END 啟用推文即時更新 (如 Alt + r)"
   },

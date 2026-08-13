@@ -26,6 +26,10 @@ export const DEFAULT_PREFS = {
   // key fall through to the native terminal instead. Key value is an e.key string.
   easyReadingEndSwitchNative: true,
   easyReadingEndSwitchKey: "F8",
+  // AID 跳文後「返回原文」的快捷鍵（e.key 字串）。預設 F9：F 鍵送不到 PTT
+  // （term_keyboard 的 KeyMap 沒有它們，keyEventToBytes 回 null），而 Chrome 已
+  // 佔用 F1/F3/F5/F6/F7/F10/F11/F12，F8 又給了 easyReadingEndSwitchKey。
+  aidNavBackKey: "F9",
 
   // Connection proxy: when on, connect through proxyUrl instead of DEFAULT_SITE so
   // users behind a block can reach PTT without installing anything. proxyUrl may be a

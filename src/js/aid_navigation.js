@@ -36,7 +36,26 @@
 // onFail unlocks input, flashes a banner and leaves the native screen as-is —
 // the easy-reading/list state machines self-converge from whatever shows.
 
+// Going BACK (the same machinery in reverse)
+// ------------------------------------------
+// PTT keeps no jump origin, so "back" is a SECOND navigation replayed from an
+// anchor captured before we left — exactly BePTT's design (a stack of key
+// sequences, replayed on the back press), except every step is verified by
+// content here instead of being sent blind. The stack lives in nav_history.js;
+// the only difference between a forward jump and a back run is the middle step
+// (_enqueueMiddle): #<aid>, <num> or nothing at all.
+//
+// The capture ORDER is an invariant: the anchor must be read BEFORE
+// _enterFunctionMode() / beginExternalNavigation(), because the latter clears
+// list_session's _boardName/_serverNum (list_session.js#_enterFunctionMode).
+//
+// A num anchor is verified against the landing row's subject before ⏎ goes
+// out: article numbers shift when posts are deleted, and opening the WRONG
+// article is far worse than stopping on the list.
+
 import { parseStatusRow, parsePagerFooterContext } from './string_util';
+import { subjectOfListText } from './list_session';
+import { NavHistory, chooseAnchor } from './nav_history';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -68,14 +87,34 @@ function screenSignature(rowTexts) {
   return (rowTexts || []).join('\n');
 }
 
-export function AidNavigation(core, view, termBuf, queue) {
+// One navigation run, threaded through every step instead of the old
+// (aid, board, boardLower, …) parameter chain:
+//   target: where we are going — a forward jump's { board, kind:'aid', aid },
+//           or a nav_history anchor when going back
+//   boardLower: the case-insensitive board comparison key (landing expects)
+//   dir: 'forward' (an AID link click) | 'back' (the back button / shortcut)
+// Only `target.kind` decides the middle step (_enqueueMiddle); everything else
+// — the escape preamble, the board jump, the 進板畫面 dismissals, the final ⏎ —
+// is shared byte for byte between the two directions.
+function makeRun(target, dir) {
+  return {
+    target: target,
+    boardLower: String(target.board).toLowerCase(),
+    dir: dir
+  };
+}
+
+export function AidNavigation(core, view, termBuf, queue, history) {
   this._core = core;
   this._view = view;
   this._termBuf = termBuf;
   this._queue = queue;
+  this._history = history || new NavHistory();
   // True while the key sequence is in flight — input entry points check this
   // (term_view.onKeyDown / App.onMouse_click / wheel) and swallow everything.
   this.active = false;
+  // One-shot: swallow the leaveCurrentPost our own landing causes (noteLeftPost).
+  this._ownedLeave = false;
 }
 
 AidNavigation.prototype = {
@@ -85,7 +124,67 @@ AidNavigation.prototype = {
 
   _fail: function(msg) {
     this.active = false;
+    // Where we ended up is unknown, so every anchor below is suspect: drop the
+    // whole stack rather than offer a back that lands somewhere wrong.
+    this._history.abort();
+    this._updateBackButton();
     this._hint('AID 跳文失敗：' + msg + '（已停在原生畫面）');
+  },
+
+  // The back affordance is a pure projection of (active, stack) — never
+  // toggled by hand. Safe to call before term_view grows the overlay API.
+  _updateBackButton: function() {
+    const view = this._view;
+    if (!view || !view.showBackButton || !view.hideBackButton) return;
+    if (this.canGoBack()) {
+      const entry = this._history.peek();
+      view.showBackButton(entry ? entry.label : '', this.back.bind(this));
+    } else {
+      view.hideBackButton();
+    }
+  },
+
+  // --- stack lifecycle notifications (pure: they must not touch the callers'
+  // own state). All of them no-op while WE are driving: our own intermediate
+  // screens are list/menu screens too.
+
+  // From list_session._onScreenSettled, before queue.onSettle: the user landed
+  // on a list or a menu without us — they left the article by themselves, so
+  // the anchors no longer describe where they are.
+  noteSettle: function(facts) {
+    if (this.active || !facts) return;
+    if (facts.kind !== 'clean-list' && facts.kind !== 'menu') return;
+    this._history.invalidate();
+    this._updateBackButton();
+  },
+
+  // From easy_reading.leaveCurrentPost: covers the article→article keys
+  // ([ ] a b f = + -) that never pass through a list screen.
+  //
+  // One structural exception (live-verified 2026-08-13, this check is why the
+  // first live back run failed): OUR OWN landing produces one of these. The run
+  // enters easy reading's functionMode, and when the target article settles the
+  // functionMode exit takes its 'leave' branch → leaveCurrentPost(). That fires
+  // AFTER onDone has already cleared `active`, so without the one-shot below it
+  // wipes the stack we just pushed — every jump would end with no way back.
+  noteLeftPost: function() {
+    if (this.active) return;
+    const list = this._core.listSession;
+    // Either way the post on screen is no longer the one the list session
+    // opened, so its coordinate must not seed the NEXT anchor.
+    if (list && list.noteLeftPost) list.noteLeftPost();
+    if (this._ownedLeave) {
+      this._ownedLeave = false;
+      return;
+    }
+    this._history.invalidate();
+    this._updateBackButton();
+  },
+
+  // Disconnect: the session (and pttbbs's per-board getkeep cursors) is gone.
+  reset: function() {
+    this._history.abort();
+    this._updateBackButton();
   },
 
   // Whole native screen as one string — the escape steps decide "did ← actually
@@ -119,8 +218,68 @@ AidNavigation.prototype = {
       // outside an open post (stale DOM during a transition) is ignored.
       return;
     }
-    this.active = true;
+    // ORDER INVARIANT: capture where we are BEFORE _begin() parks the list
+    // session (beginExternalNavigation → _enterFunctionMode clears _boardName
+    // and _serverNum). Nothing is pushed until the run lands (commitJump).
+    this._history.beginJump(this._captureOriginAnchor(board), {
+      board: board,
+      aid: aid
+    });
     this._hint('跳至 #' + aid + ' (' + board + ')…', 15000);
+    this._begin(makeRun({ board: board, kind: 'aid', aid: aid }, 'forward'));
+  },
+
+  // Back to the article the last jump started from. Deliberately NOT gated on
+  // startedEasyReading: the target article may be rendering natively (the user
+  // toggled easy reading off), and the sequence drives the native screen anyway.
+  back: function() {
+    if (this.active) return;
+    const anchor = this._history.beginBack();
+    if (!anchor) {
+      this._hint('沒有可返回的文章');
+      return;
+    }
+    this._hint('返回 ' + anchor.label + '…', 15000);
+    this._begin(makeRun(anchor, 'back'));
+  },
+
+  // Is a back run available right now (drives the button / the shortcut)?
+  canGoBack: function() {
+    return !this.active && this._history.canGoBack();
+  },
+
+  // The anchor for the article we are leaving, by priority (nav_history
+  // .chooseAnchor). Must run before the mirrors are entered — see start().
+  _captureOriginAnchor: function(targetBoard) {
+    const ls = this._core.listSession;
+    return chooseAnchor({
+      landed: this._history.landed(),
+      list: ls && ls.currentAnchor ? ls.currentAnchor() : null,
+      articleBoard: this._view._articleBoard,
+      targetBoard: targetBoard,
+      lineIndex: this._currentLineIndex()
+    });
+  },
+
+  // Scroll position as a LINE index rather than pixels: the article is re-read
+  // from the server on the way back, so a raw scrollTop would only be right if
+  // every row rendered at exactly the same height again.
+  _currentLineIndex: function() {
+    const disp = this._view.mainDisplay;
+    const chh = this._view.chh;
+    if (!disp || !chh) return null;
+    return Math.round(disp.scrollTop / chh);
+  },
+
+  // Shared entry for every run: lock input, put the REAL native screen on
+  // screen, then pick the fast (in-article s) or slow (escape preamble) path.
+  _begin: function(run) {
+    this.active = true;
+    this._updateBackButton(); // active → hidden: no second run mid-flight
+    // Claim the leaveCurrentPost that our own landing will produce — see
+    // noteLeftPost. Armed here (not on success) so a failed run's exit is
+    // absorbed too; _fail clears the stack anyway.
+    this._ownedLeave = true;
 
     // Show the REAL native screen while we drive it. The article easy reading's
     // functionMode is the existing live-mirror mechanism; when we leave the
@@ -132,11 +291,10 @@ AidNavigation.prototype = {
     // absorbs our intermediate clean-list settles. Must run BEFORE we enqueue.
     if (this._core.listSession) this._core.listSession.beginExternalNavigation();
 
-    const boardLower = String(board).toLowerCase();
     if (this._pagerContext() === 'reading') {
-      this._enqueueBoardJump(aid, board, boardLower, false);
+      this._enqueueBoardJump(run, false);
     } else {
-      this._enqueueEscape(aid, board, boardLower, 0, this._screenSignature());
+      this._enqueueEscape(run, 0, this._screenSignature());
     }
   },
 
@@ -144,7 +302,7 @@ AidNavigation.prototype = {
   // One press per command so every level is confirmed by CONTENT before the next
   // key goes out — a blind burst would be typeahead-swallowed (protocol §1/§2)
   // and could overshoot into 主功能表's ← (which highlights G)oodbye).
-  _enqueueEscape: function(aid, board, boardLower, step, prevSig) {
+  _enqueueEscape: function(run, step, prevSig) {
     const self = this;
     this._queue.enqueue({
       keys: KEY_LEFT,
@@ -167,14 +325,14 @@ AidNavigation.prototype = {
       },
       onDone: function(result) {
         if (result.menu) {
-          self._enqueueBoardJump(aid, board, boardLower, true);
+          self._enqueueBoardJump(run, true);
           return;
         }
         if (step + 1 >= MAX_ESCAPE_STEPS) {
           self._fail('退不回主功能表（層數過多）');
           return;
         }
-        self._enqueueEscape(aid, board, boardLower, step + 1, result.sig);
+        self._enqueueEscape(run, step + 1, result.sig);
       },
       onFail: function(reason) {
         self._fail('退不回主功能表（' + reason + '）');
@@ -185,7 +343,7 @@ AidNavigation.prototype = {
   // Dismiss the 進板畫面 that ReadSelect() → Read() shows on this session's first
   // entry to a board (mbbsd/bbs.c:4482-4492: more(notes) then pressanykey()).
   // ← leaves the pmore pager AND satisfies pressanykey, so one key handles both.
-  _enqueueEnterBoardDismiss: function(aid, board, boardLower, round) {
+  _enqueueEnterBoardDismiss: function(run, round) {
     const self = this;
     this._queue.enqueue({
       keys: KEY_LEFT,
@@ -195,12 +353,12 @@ AidNavigation.prototype = {
         self._fail('畫面已變更');
       },
       timeoutMs: 4000,
-      expect: this._boardLandingExpect(boardLower),
+      expect: this._boardLandingExpect(run.boardLower),
       onDone: function(result) {
-        self._onBoardLanding(result, aid, board, boardLower, round);
+        self._onBoardLanding(run, result, round);
       },
       onFail: function(reason) {
-        self._fail('進入看板 ' + board + ' 失敗（' + reason + '）');
+        self._fail('進入看板 ' + run.target.board + ' 失敗（' + reason + '）');
       }
     });
   },
@@ -225,16 +383,100 @@ AidNavigation.prototype = {
     };
   },
 
-  _onBoardLanding: function(result, aid, board, boardLower, round) {
+  _onBoardLanding: function(run, result, round) {
     if (result.landed) {
-      this._enqueueAidSearch(aid);
+      this._enqueueMiddle(run);
       return;
     }
     if (round + 1 >= MAX_ENTER_DISMISS) {
-      this._fail('進板畫面未關閉（' + board + '）');
+      this._fail('進板畫面未關閉（' + run.target.board + '）');
       return;
     }
-    this._enqueueEnterBoardDismiss(aid, board, boardLower, round + 1);
+    this._enqueueEnterBoardDismiss(run, round + 1);
+  },
+
+  // The board is now open on its clean list: pick the step that parks the
+  // cursor on the target article. Anchor kinds, in order of trust — see
+  // nav_history.js for why the number needs verifying and the board kind stops.
+  _enqueueMiddle: function(run) {
+    const target = run.target;
+    if (target.aid) {
+      this._enqueueAidSearch(run);
+      return;
+    }
+    if (target.num != null) {
+      this._enqueueNumberJump(run);
+      return;
+    }
+    this._finishAtList(run);
+  },
+
+  // Board-only anchor: pttbbs restored this board's cursor for us (getkeep,
+  // mbbsd/read.c:105/1171), so the article we left is under the cursor — but
+  // nothing here IDENTIFIES it, so the last keypress is the user's to make.
+  _finishAtList: function(run) {
+    this.active = false;
+    this._history.commitBack();
+    this._updateBackButton();
+    this._hint(
+      '已回到 ' + run.target.board + ' 看板，游標停在原文章（按 Enter 開啟）',
+      6000
+    );
+  },
+
+  // Back step (num anchor): <num> ⏎ parks the cursor on that article number.
+  // Same landing fingerprint as list_session's open-jump (the number prompt
+  // leaves the footer blank, so the classifier says 'transient' on a perfectly
+  // good landing — judge by the parked cursor, not by kind).
+  _enqueueNumberJump: function(run) {
+    const self = this;
+    const num = run.target.num;
+    const board = run.target.board;
+    this._queue.enqueue({
+      keys: String(num) + '\r',
+      kind: 'aid-num-jump',
+      fullRepaint: true,
+      // Shared queue: flush() is silent by contract, and a dropped command
+      // would leave `active` stuck true (every keystroke swallowed).
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      timeoutMs: 4000,
+      expect: function(snapshot, facts) {
+        if (facts.cursorRowNum !== num) return false;
+        if (facts.curY < 3 || facts.curY > facts.rows - 2) return false;
+        if (facts.curX > 1) return false;
+        return { facts: facts };
+      },
+      onDone: function(result) {
+        const facts = result.facts;
+        const rowText = facts.rowTexts[facts.curY] || '';
+        // Article numbers shift when posts are deleted. If the subject under
+        // the cursor is not the one we left, this is NOT that article: stop on
+        // the list instead of opening whatever moved into the slot.
+        if (
+          run.target.subject &&
+          subjectOfListText(rowText) !== run.target.subject
+        ) {
+          self.active = false;
+          self._history.abort();
+          self._updateBackButton();
+          self._hint(
+            '原文章位置已變動（可能已被刪除），已停在 ' + board + ' 列表',
+            6000
+          );
+          return;
+        }
+        self._enqueueOpen(run);
+      },
+      onFail: function(reason) {
+        self._fail(
+          reason === 'miss'
+            ? '找不到第 ' + num + ' 篇（原文章可能已被刪除）'
+            : '跳序號逾時'
+        );
+      }
+    });
   },
 
   // Step 1: s <board> ⏎ — the board-search jump. Lands on the target board's
@@ -246,8 +488,10 @@ AidNavigation.prototype = {
   //   viaMenu=true:  sent at 主功能表 after the escape preamble (menu.c:498 →
   //     ReadSelect() → do_select() + Read()), so the landing may be preceded by
   //     the board's 進板畫面 + pressanykey — dismissed by _onBoardLanding.
-  _enqueueBoardJump: function(aid, board, boardLower, viaMenu) {
+  _enqueueBoardJump: function(run, viaMenu) {
     const self = this;
+    const board = run.target.board;
+    const boardLower = run.boardLower;
     this._queue.enqueue({
       keys: 's' + board + '\r',
       kind: 'aid-board-jump',
@@ -271,8 +515,8 @@ AidNavigation.prototype = {
             );
           },
       onDone: function(result) {
-        if (viaMenu) self._onBoardLanding(result, aid, board, boardLower, 0);
-        else self._enqueueAidSearch(aid);
+        if (viaMenu) self._onBoardLanding(run, result, 0);
+        else self._enqueueMiddle(run);
       },
       onFail: function(reason) {
         self._fail('切換看板 ' + board + ' 失敗（' + reason + '）');
@@ -288,8 +532,9 @@ AidNavigation.prototype = {
   // classifier reads 'transient' on a perfectly good landing. "Not found"
   // parks the cursor on the bottom message row instead → cursorRowNum null →
   // probe → miss.
-  _enqueueAidSearch: function(aid) {
+  _enqueueAidSearch: function(run) {
     const self = this;
+    const aid = run.target.aid;
     this._queue.enqueue({
       keys: '#' + aid + '\r',
       kind: 'aid-search',
@@ -312,7 +557,7 @@ AidNavigation.prototype = {
         return true;
       },
       onDone: function() {
-        self._enqueueOpen(aid);
+        self._enqueueOpen(run);
       },
       onFail: function(reason) {
         self._fail(
@@ -325,7 +570,7 @@ AidNavigation.prototype = {
   // Step 3: ⏎ opens the article under the cursor. The article settle also
   // drives the normal handoffs (list session → suspended; easy reading
   // re-enters on its settled edge), so finishing here is just an unlock.
-  _enqueueOpen: function(aid) {
+  _enqueueOpen: function(run) {
     const self = this;
     this._queue.enqueue({
       keys: '\r',
@@ -349,10 +594,24 @@ AidNavigation.prototype = {
       },
       onDone: function() {
         self.active = false;
-        // Replace the long-lived "跳至…" progress banner (15s) with a short
-        // confirmation so it fades right away instead of lingering into the
-        // opened article.
-        self._hint('已跳至 #' + aid, 1200);
+        // Only here — with the article really open — does the stack move.
+        if (run.dir === 'back') {
+          const entry = self._history.commitBack();
+          self._updateBackButton();
+          // Reading position: easy reading re-reads the article from the top
+          // and grows it page by page, so this is a REQUEST that lands once
+          // enough of the post has accumulated (easy_reading#requestScrollRestore).
+          if (entry && entry.lineIndex && self._core.easyReading.requestScrollRestore)
+            self._core.easyReading.requestScrollRestore(entry.lineIndex);
+          self._hint('已返回 ' + (entry ? entry.label : ''), 1200);
+        } else {
+          self._history.commitJump();
+          self._updateBackButton();
+          // Replace the long-lived "跳至…" progress banner (15s) with a short
+          // confirmation so it fades right away instead of lingering into the
+          // opened article.
+          self._hint('已跳至 #' + run.target.aid, 1200);
+        }
       },
       onFail: function(reason) {
         self._fail('開啟文章失敗（' + reason + '）');

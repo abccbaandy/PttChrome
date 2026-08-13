@@ -487,6 +487,31 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   「看板」欄位**（該欄只存在於看板文章檔）。舊碼 `if (parsedBoard) this._articleBoard = parsedBoard;`
   分開判斷 ⇒ 信裡沿用**上一篇看板文章**的板名 ⇒ 沒帶後綴的 `#AID` 跳到毫不相干的看板。
   改用 `comment_parse.parseArticleHeader`（回傳 `{author, board}`，非 header 列回 `null`）一次寫入。
+- **「回到原本那篇」的座標不能拿 `_selectedNum`，只能拿 `_openedNum`**（AID 返回；兩次 live 誤跳都栽在這）。
+  ① 置底（pinned）文根本沒有序號，`_selectedNum` 這時還留著**上一個數字列**的殘值 → 返回時用它跳號，
+     開到完全不相干的文章（實測：回 C_Chat 板規變成開了一篇閒聊）。
+  ② 列表以**原生**渲染時（functionMode——按一下 `Q` 文章資訊框就會進去），方向鍵是 passthrough，
+     server 游標動了而 list session 不知道，`_selectedNum` 停在它最後被告知的那一列。
+  所以 `ListSession.currentAnchor()` 只認 `_beginOpen` 設的 `_openedNum`（我方序列化開文用的序號），
+  並在 `_enterFunctionMode`／`_cleanup`／`noteLeftPost` 清掉。`_boardName` 則相反：原生插曲會清掉它
+  且回列表時不重新 seed，所以允許為 null，由 `nav_history.chooseAnchor` 用 `view._articleBoard` 遞補。
+  守護：`tests/unit/list_session.test.js`「currentAnchor」describe。
+- **AID 導航自己的落地，會觸發一次「使用者離開文章」的通知**。`_begin()` 進 `easyReading` 的
+  functionMode，目標文章 settle 時 functionMode 退出走 'leave' 分支 → `leaveCurrentPost()` →
+  `aidNavigation.noteLeftPost()`；而 `_enqueueOpen.onDone` **已經先把 `active` 清成 false**，
+  所以那個「導航中就略過」的守門擋不住它 → 每次跳完都會把剛 push 的返回層抹掉，返回鈕永遠不出現
+  （live 實測 2026-08-13 第一次跑就撞上）。修法是 `_ownedLeave` one-shot，在 `_begin()` 武裝、
+  第一次 `noteLeftPost` 消耗掉。守護：`aid_navigation.test.js`「我方落地自己會產生一次 leaveCurrentPost」。
+- **可點的 overlay 不能沿用 `flashListHint` 那一族**：它們是 `pointer-events:none`（純提示），
+  照抄會做出一顆按不下去的按鈕。返回鈕（`term_view.showBackButton`）要自己的元素 ＋
+  `pointer-events:auto`，className 掛 `nomouse_command` 讓 `App.checkClass` 把它排除在終端機區域外
+  （否則滑鼠瀏覽開著時，點按鈕會連帶把游標指令送給 PTT），並在 click/mousedown 先 `stopPropagation()`
+  （window 上有 capture 階段監聽會把焦點搶回隱藏 input `#t`）。守護：`tests/e2e/offline/aid_back_ui.offline.spec.js`。
+- **live e2e 的看板選擇會互相污染**：AID 返回測試要開列表好讀（大量 prefetch）並反覆進出，
+  跑在 `C_Chat` 上會改掉該板的 server 游標（`getkeep`）與 `currtitle`，後面用 `C_Chat` 的
+  `enhance`／`easy-reading` 測試就會開到別篇文章——症狀是**單獨跑全綠、整包跑必紅**（而且紅的位置每次不同）。
+  它也不能跑在 `Test` 板：那裡幾乎只有置底公告，`read.c:404` 的 FIXME 讓置底文的 AID 搜尋失手。
+  現用 `movie`。同理，測試若改了 `enableEasyReadingList` 這種 `resetSession` 不會還原的 pref，必須自己在 finally 還原。
 - **在測試/工具裡直接餵 cassette 進 `TermBuf` 後讀 `getRowText`，必須先讓事件回圈跑一拍**（unit 用 `vi.advanceTimersByTime(300)`、瀏覽器用 `await sleep(120)`）：`isLeadByte` 只在 buf 的 update pass（notify 30ms + settle 50ms）才標記，沒跑完就讀會拿到**未轉碼的 Big5 位元組**（症狀：整片 `§@ªÌ` 亂碼，看起來像編碼表沒載）。
 
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）
