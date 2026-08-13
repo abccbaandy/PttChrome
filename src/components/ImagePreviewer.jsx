@@ -13,8 +13,16 @@ import { probeImgurAsset } from "../js/imgur_probe";
 import { getImgurProxyConfig, imgurCandidates } from "../js/imgur_proxy";
 import { tenorResolveUrl, tenorMediaDescriptor } from "../js/tenor";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
+import { reportProxyLoad } from "../js/proxy_status";
 
 const noop = () => {};
+
+// 原文那個連結的 href，供 FallbackImage 在載入成功時回報代理狀態（連結旁的徽章要用）。
+// 走 context 而非逐層傳 prop：中間隔著 ImagePreviewer → ImagePreviewer.Inline（透過
+// component prop 呼叫）→ renderMedia → inlineImage 四層，而 renderMedia 還被相簿的
+// `images.map(renderMedia)` 直接當 callback 用（多加參數會撞到 map 的 index）。
+// 預設 null ⇒ hover 預覽等沒有 Provider 的路徑自然不回報。
+export const PreviewHrefContext = React.createContext(null);
 
 export const of = (src) => Promise.resolve({ src });
 
@@ -192,6 +200,7 @@ const FallbackImage = React.memo(function FallbackImage({
   const stateRef = React.useRef(state);
   stateRef.current = state;
   const retryTimerRef = React.useRef(null);
+  const previewHref = React.useContext(PreviewHrefContext);
 
   React.useEffect(
     () => () => {
@@ -233,10 +242,13 @@ const FallbackImage = React.memo(function FallbackImage({
   }, [candidates]);
 
   // 換下一個候選網址時 loaded 一併重設，避免沿用上一張的已載入狀態。
-  const handleLoad = React.useCallback(
-    () => setState((s) => ({ ...s, loaded: true })),
-    [],
-  );
+  const handleLoad = React.useCallback(() => {
+    // 回報**實際成功的那個候選**：退回 i.imgur.com 時回報的就是原址，
+    // 分類自然是 "none"（無徽章），不必在這裡判斷代理有沒有生效。
+    if (previewHref)
+      reportProxyLoad(previewHref, candidates[stateRef.current.index]);
+    setState((s) => ({ ...s, loaded: true }));
+  }, [previewHref, candidates]);
 
   // 點擊失敗提示 → 從頭重跑整串候選。
   const handleRetry = React.useCallback(() => {

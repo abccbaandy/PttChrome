@@ -4,6 +4,7 @@ import HyperLink from "./HyperLink";
 import ColorSegmentBuilder from "./ColorSegmentBuilder";
 import LazyInlinePreview from "../LazyInlinePreview";
 import FixedUrlLine from "./FixedUrlLine";
+import ProxyBadge from "./ProxyBadge";
 
 // Comment lines are "推 userid: ...". The marker (推/噓/→) is a 2-column DBCS
 // char (cols 0-1) and col 2 is the space before the user id — that gap is where
@@ -211,6 +212,10 @@ export class LinkSegmentBuilder {
           onMouseOut={this.onHyperLinkMouseOut}
         />,
       );
+      // imgur 快取代理狀態徽章（見 ProxyBadge / src/js/proxy_status.js）。零寬盒，
+      // 對等寬格線的淨推進量為 0——原生模式雖然不掛 inline 預覽，但 hover 預覽仍會
+      // 觸發載入，徽章一樣可能出現在 24 列畫面上，所以零寬是硬需求。
+      this._pushSeg(<ProxyBadge key={`px${this.col}`} href={this.href} />);
       // TODO: Modularize this.
       // 延遲載入：捲到附近才解析網址並掛 <ImagePreviewer>，捲遠了再卸掉釋放已解碼
       // 的點陣圖（見 LazyInlinePreview / lazy_media.js）。長文一次 287 張圖全部

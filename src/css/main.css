@@ -527,6 +527,35 @@ span {
   border-radius: 2px;
 }
 
+/* imgur 快取代理狀態徽章（見 components/Row/ProxyBadge + js/proxy_status.js）：
+   接在連結後面，標示「這次載入有沒有真的經過代理」以及代理端有沒有命中。
+   排版契約同 .floorBadge：盒寬 0 + position:relative → 對等寬格線的淨推進量為 0
+   （不可破壞）。原生 24 列模式 hover 連結也會觸發載入 → 徽章可能在格線上出現，
+   零寬是硬需求不是好讀模式專屬的優化。
+   徽章本身向右生長（連結後面就是空白或行尾，不像樓層徽章會壓到作者 id）。
+   color 必須留在本層（上班模式 color.css 以 .proxyBadge 覆寫）。 */
+.proxyBadge {
+  --proxy-badge-scale: 0.5;
+  position: relative;
+  left: calc(0.15em / var(--proxy-badge-scale));
+  display: inline-block;
+  width: 0;
+  overflow: visible;
+  font-size: calc(1em * var(--proxy-badge-scale));
+  line-height: 1;
+  vertical-align: super;
+  color: #6aa9d6;
+  cursor: default;
+  -webkit-user-select: none;
+  white-space: pre;
+}
+/* 代理快取命中＝這功能最想讓人看到的狀態：實心 + 亮青色 + 微光，與未命中的空心
+   暗藍拉開對比（形狀與顏色雙重編碼，色弱也分得出）。 */
+.proxyBadge--cache {
+  color: #2ee6c0;
+  text-shadow: 0 0 3px rgba(46, 230, 192, 0.8);
+}
+
 /* Same-author (原PO) comment highlight (Enhanced Add-on). Wraps just the user-id
    columns inside a comment line (see LinkSegmentBuilder); the id's char spans are
    b0/transparent so this tint shows through without overriding ANSI colours. */

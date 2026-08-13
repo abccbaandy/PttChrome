@@ -35,6 +35,26 @@ GET|HEAD  https://<worker>/<imgur-id>.<jpg|jpeg|png|gif|webp>
   content-length` ⇒ `src/js/imgur_probe.js` 的 HEAD 探測可直接改打這裡。
 - **fail-open**：代理出任何狀況都 302 回原址，最差等於現況。
 
+#### 前端徽章用的兩個標頭
+
+app 端會在連結旁顯示「這張圖有沒有經過代理／代理端有沒有命中」的小徽章
+（`src/js/proxy_status.js` + `src/components/Row/ProxyBadge.jsx`），資料來源是這兩個：
+
+| 標頭 | 值 | 為什麼 |
+|---|---|---|
+| `Timing-Allow-Origin` | `*` | `<img>` 拿不到回應標頭，唯一不增加請求的來源是 `PerformanceResourceTiming`，其跨網域欄位要有 TAO 才揭露。**沒有它就分不出「代理服務的」與「302 導回 imgur 的」** |
+| `Server-Timing` | `pttproxy;desc=<epoch 秒>` | 同 `x-imgur-proxy-fetched-at` 的原理（命中時 Worker 不執行 ⇒ 吐舊時間戳），但走 `PerformanceResourceTiming.serverTiming` 讀得到，**不必再對圖片發一次 `fetch()`** |
+
+前端判準（順序不可調換，見 `classifyProxyDelivery`）：
+
+1. `transferSize === 0 && encodedBodySize > 0` → **瀏覽器本機快取命中，這次沒經過代理 ⇒ 無徽章**
+   （本機快取重播的是舊回應、帶著舊的 `pttproxy` 時間戳，不先擋掉會被誤判成邊緣命中）
+2. 讀不到 `pttproxy` → 無徽章。涵蓋 (a) fail-open 302 使 TAO 檢查失敗、(b) **本 Worker 加這兩個
+   標頭之前就存在的舊快取條目**——`cross_version_cache: true` 會讓它們繼續吐舊標頭，
+   在 LRU 汰換前一律判為「無徽章」。方向保守（寧可不顯示也不誤標），且會自行痊癒。
+3. 時間戳距今 > 30 s → 邊緣快取命中（強調徽章）；否則 → 代理回源 MISS（一般徽章）。
+   門檻純粹是時鐘偏差的容忍度（MISS 的時間戳差距趨近 0，單趟請求只有 1 s 級）。
+
 ### `/tenor` — tenor 分享連結解析（非圖片代理）
 
 ```

@@ -319,6 +319,46 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用�
 - 賣點是**「不再卡住」而非「更快」**（median 幾乎不變，max 15.7 s → 1.04 s、stall 0/20）。文案不得宣稱加速。量測見 `docs/imgur-latency-research.md`。
 - 守護：`tests/unit/imgur_proxy.test.js`（白名單/候選/config）、`imgur_probe.test.js`（`.jpg` 走代理、`.mp4` 不走）、`imgur_webp_resolver.test.jsx`（代理優先原址墊底、影片不代理）、`pref_modal_connection_tab.test.jsx`（分頁 UI 契約）、`ui_behavior.offline.spec.js`（分頁切換可見性）。
 
+**代理狀態徽章**（連結旁的 `◇`／`◆`，`src/js/proxy_status.js` + `components/Row/ProxyBadge.jsx`）
+
+判準主軸是**「這次載入有沒有真的經過代理」**，不是快不快：
+
+| 狀態 | 徽章 | 條件 |
+|---|---|---|
+| `cache` | `◆` | 經過代理 + 代理端快取命中（`pttproxy` 時間戳距今 > `PROXY_CACHE_AGE_THRESHOLD_SEC`，目前 30 s；門檻只是時鐘偏差容忍度，MISS 的差距趨近 0） |
+| `proxy` | `◇` | 經過代理 + 代理端回源（時間戳是新的） |
+| `none` | 無 | 其餘一律無徽章，DOM 與功能不存在時逐字相同 |
+
+- **`<img>` 讀不到回應標頭**，唯一不增加請求的資訊來源是 `PerformanceResourceTiming`
+  ⇒ Worker 必須吐 `Timing-Allow-Origin: *`（否則跨網域欄位全歸零）與
+  `Server-Timing: pttproxy;desc=<epoch 秒>`。後者能被 `entry.serverTiming` 直接讀到，
+  不必再對圖片發一次 `fetch()`（也就不需要 `access-control-expose-headers`）。
+- **命中判定靠「Worker 沒被執行」**：Workers Cache 命中時 Worker 不執行 ⇒ 吐的是建立
+  快取當下的舊時間戳。與 README 記載的 `x-imgur-proxy-fetched-at` 驗證法同一原理。
+- **`classifyProxyDelivery` 的分支順序就是規格，不可調換**：
+  `transferSize===0 && encodedBodySize>0`（瀏覽器本機快取命中，這次沒發網路請求
+  ⇒ 沒經過代理 ⇒ `none`）**必須早於**時間戳判斷——本機快取重播的是舊回應、帶著舊時間戳，
+  順序寫反會被誤判成邊緣命中。副作用：**整頁重新整理後圖多半吃本機快取 ⇒ 徽章整批消失**，
+  這是刻意的（store 單調遞增，同一 session 內捲走再捲回不會掉）。
+- **`fail-open` 的長相**：302 導到 `i.imgur.com`（該主機無 TAO）⇒ 整筆計時的 TAO 檢查失敗、
+  尺寸欄位全歸零、`serverTiming` 空 ⇒ 讀不到 `pttproxy` ⇒ `none`。**這正是額度用盡／
+  Worker 掛掉時該有的行為**，不必另外偵測。
+- **舊快取條目**：`cross_version_cache: true` 會讓加標頭之前建立的條目繼續吐舊標頭
+  ⇒ 讀不到 `pttproxy` ⇒ 判 `none`。保守（寧可不顯示也不誤標），LRU 汰換後自行痊癒。
+- **只收 `initiatorType === "img"`**：`imgur_probe.js` 的 HEAD 探測也會打到代理（同一個
+  `.jpg` URL），那是 `"fetch"`，拿它的計時去判圖片會張冠李戴。
+- **不可改用 `performance.getEntriesByName()`**：預設資源計時 buffer 只有 250 筆，長文
+  287 張圖會被丟棄 ⇒ 一律走 `PerformanceObserver({type:"resource", buffered:true})`。
+- 狀態走 module 級 store + `useSyncExternalStore`：知道結果的是預覽 `<img>` 的 onload，
+  而它與連結 `<a>` 在**不同 DOM 子樹**（`build()` 把 segs 與 previews 分開），且
+  `LazyInlinePreview` 捲遠會卸掉預覽。href 由 `PreviewHrefContext` 傳到 `FallbackImage`
+  （走 context 是因為中間隔四層，且 `renderMedia` 被 `images.map()` 當 callback 用）。
+- **徽章必須是零寬盒**（同 `.floorBadge` 的排版契約）：原生 24 列模式雖不掛 inline 預覽，
+  但 hover 預覽照樣會觸發載入 ⇒ 徽章可能出現在等寬格線上。
+- 守護：`tests/unit/proxy_status.test.js`（決策表 + 分支順序 + store 單調遞增）、
+  `proxy_badge.test.jsx`（三態渲染、`none` 不留節點）、`fallback_image.test.jsx`
+  （回報實際成功的候選、退回直連時回報直連位址）、`proxy/imgur-worker/test/headers.test.js`。
+
 **「AI」分頁**（2026-08 從增強功能分頁獨立出來）——所有裝置端 AI 設定收攏於此：
 
 | pref | 預設 | 角色 |

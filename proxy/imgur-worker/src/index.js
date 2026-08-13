@@ -183,7 +183,7 @@ const handleTenor = async (request, url) => {
 // 上游資產以 hash 定址、內容永不變 ⇒ 可安心長 TTL。
 // 但**錯誤回應絕不可快取**：imgur 對 Cloudflare 出口 IP 會限流（公用 proxy wsrv.nl
 // 實測被回 429），把 429／5xx 快取一年等於自我封鎖。
-const passthroughHeaders = (upstream, { cacheable }) => {
+export const passthroughHeaders = (upstream, { cacheable, nowMs }) => {
   const h = new Headers();
   const copy = ["content-type", "content-length", "etag", "last-modified", "accept-ranges"];
   for (const k of copy) {
@@ -196,9 +196,23 @@ const passthroughHeaders = (upstream, { cacheable }) => {
   h.set("access-control-allow-methods", "GET, HEAD, OPTIONS");
   h.set("access-control-expose-headers", "content-type, content-length");
   h.set("x-imgur-proxy", "1");
+  const now = typeof nowMs === "number" ? nowMs : Date.now();
   // 外部驗證快取是否生效用：兩次請求拿到**相同**時間戳 = 快取命中（命中時 Worker
   // 根本不執行，所以這個值不會更新）。沒有它就只能靠猜，見 README 的驗證段。
-  h.set("x-imgur-proxy-fetched-at", new Date().toISOString());
+  h.set("x-imgur-proxy-fetched-at", new Date(now).toISOString());
+
+  // ---- 前端「連結旁的代理狀態徽章」用（src/js/proxy_status.js）----
+  // <img> 載入拿不到回應標頭，唯一不增加請求的資訊來源是 PerformanceResourceTiming，
+  // 而它的跨網域欄位要有 TAO 才揭露。**沒有這一行，前端就分不出「代理服務的」與
+  // 「fail-open 302 導回 i.imgur.com 的」**（後者的 TAO 檢查會失敗 ⇒ 欄位全歸零，
+  // 正好成為「沒經過代理」的判準）。
+  h.set("timing-allow-origin", "*");
+  // 同 x-imgur-proxy-fetched-at 的原理（Workers Cache 命中時本 Worker 不執行 ⇒ 吐的是
+  // 建立快取當下的舊時間戳），但走 Server-Timing 就能被 PerformanceResourceTiming
+  // .serverTiming 讀到，**不必再對圖片發一次 fetch()**（也就不需要放進
+  // access-control-expose-headers）。前端比對「時間戳距今多久」分辨 HIT／MISS。
+  // desc 用 epoch 秒（純數字是合法的 token，不必加引號）。
+  h.set("server-timing", `pttproxy;desc=${Math.floor(now / 1000)}`);
   return h;
 };
 

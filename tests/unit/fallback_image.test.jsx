@@ -9,7 +9,14 @@
 // (jsdom, no network; <img> load/error are fired manually).
 
 import { render, fireEvent, act } from "@testing-library/react";
-import ImagePreviewer from "../../src/components/ImagePreviewer";
+import ImagePreviewer, {
+  PreviewHrefContext,
+} from "../../src/components/ImagePreviewer";
+
+// ESM 的具名匯入是 live binding，`vi.spyOn(模組命名空間)` 在這裡不可靠 → 直接 mock。
+// ImagePreviewer 只用到 reportProxyLoad 這一個匯出。
+const { reportProxyLoad } = vi.hoisted(() => ({ reportProxyLoad: vi.fn() }));
+vi.mock("../../src/js/proxy_status", () => ({ reportProxyLoad }));
 
 const Inline = ImagePreviewer.Inline;
 const IMG = "http://example.com/a.jpg";
@@ -105,5 +112,58 @@ describe("FallbackImage 載入失敗重試 + 可見錯誤態", () => {
     expect(loading(container)).toBe(0);
     expect(img(container)).not.toBeNull();
     expect(img(container).style.display).not.toBe("none");
+  });
+});
+
+// 連結旁的代理狀態徽章要知道「哪一個候選真的載入成功」，而知道這件事的只有這裡的
+// onLoad。href 走 PreviewHrefContext 進來（LazyInlinePreview 提供）。
+describe("FallbackImage 回報代理狀態", () => {
+  const HREF = "https://imgur.com/abc123";
+  const PROXIED = "https://worker.example.dev/abc123.webp";
+  const DIRECT = "https://i.imgur.com/abc123.jpg";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    reportProxyLoad.mockClear();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const renderWithHref = (value, href) =>
+    render(
+      <PreviewHrefContext.Provider value={href}>
+        <Inline value={value} />
+      </PreviewHrefContext.Provider>,
+    );
+
+  test("回報實際成功的候選（第一候選就成功）", () => {
+    const { container } = renderWithHref(
+      { type: "image", src: PROXIED, srcset: [PROXIED, DIRECT] },
+      HREF,
+    );
+    fireEvent.load(img(container));
+    expect(reportProxyLoad).toHaveBeenCalledWith(HREF, PROXIED);
+  });
+
+  // fail-open：代理候選掛了退到 i.imgur.com。回報的必須是**直連那個**，
+  // 分類才會是 none（無徽章），而不是沿用第一候選誤標成「經過代理」。
+  test("退回直連候選 → 回報的是直連位址", () => {
+    const { container } = renderWithHref(
+      { type: "image", src: PROXIED, srcset: [PROXIED, DIRECT] },
+      HREF,
+    );
+    errorAndFlushBackoff(container); // retry 1（同候選）
+    errorAndFlushBackoff(container); // retry 2（同候選）
+    fireEvent.error(img(container)); // 用罄 → 前進到直連候選
+    expect(img(container).getAttribute("src")).toBe(DIRECT);
+
+    fireEvent.load(img(container));
+    expect(reportProxyLoad).toHaveBeenCalledWith(HREF, DIRECT);
+  });
+
+  // hover 預覽沒有 Provider（context 預設 null）：不回報，也不能炸。
+  test("無 href context（hover 預覽路徑）→ 不回報且不丟例外", () => {
+    const { container } = renderInline();
+    expect(() => fireEvent.load(img(container))).not.toThrow();
+    expect(reportProxyLoad).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,8 @@
 import React from "react";
-import ImagePreviewer, { requestPreview } from "./ImagePreviewer";
+import ImagePreviewer, {
+  PreviewHrefContext,
+  requestPreview,
+} from "./ImagePreviewer";
 import {
   LAZY_MEDIA_SELECTOR,
   LAZY_MOUNT_MARGIN_PX,
@@ -112,10 +115,14 @@ export const LazyInlinePreview = React.memo(function LazyInlinePreview({
       style={slotHeight ? { minHeight: slotHeight } : undefined}
     >
       {mounted && (
-        <ImagePreviewer
-          request={requestPreview(href)}
-          component={ImagePreviewer.Inline}
-        />
+        // href 透過 context 傳到底下的 FallbackImage，讓它載入成功時能回報這個連結的
+        // 代理狀態（連結旁的徽章，見 src/js/proxy_status.js）。
+        <PreviewHrefContext.Provider value={href}>
+          <ImagePreviewer
+            request={requestPreview(href)}
+            component={ImagePreviewer.Inline}
+          />
+        </PreviewHrefContext.Provider>
       )}
     </div>
   );
