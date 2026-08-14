@@ -44,6 +44,16 @@ module.exports = defineConfig({
       testMatch: 'offline/**/*.spec.js',
     },
     {
+      // offline-firefox：只跑「選取文字」那支。issue #22 的兩個症狀（選取自動複製、
+      // 右鍵快速搜尋帶入選取）只在 Firefox 壞，Chromium 永遠綠 —— 沒有真 Firefox
+      // 就沒有回歸守護。其餘 offline spec 仍只跑 chromium（不少 spec 依賴
+      // grantPermissions 之類的 Chromium-only 行為）。
+      // 本機首次需 `yarn playwright install firefox`。
+      name: 'offline-firefox',
+      use: { ...devices['Desktop Firefox'] },
+      testMatch: 'offline/selection.offline.spec.js',
+    },
+    {
       name: 'record',
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['preflight'],

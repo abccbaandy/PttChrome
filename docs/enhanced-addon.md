@@ -570,6 +570,21 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   它也不能跑在 `Test` 板：那裡幾乎只有置底公告，`read.c:404` 的 FIXME 讓置底文的 AID 搜尋失手。
   現用 `movie`。同理，測試若改了 `enableEasyReadingList` 這種 `resetSession` 不會還原的 pref，必須自己在 finally 還原。
 - **在測試/工具裡直接餵 cassette 進 `TermBuf` 後讀 `getRowText`，必須先讓事件回圈跑一拍**（unit 用 `vi.advanceTimersByTime(300)`、瀏覽器用 `await sleep(120)`）：`isLeadByte` 只在 buf 的 update pass（notify 30ms + settle 50ms）才標記，沒跑完就讀會拿到**未轉碼的 Big5 位元組**（症狀：整片 `§@ªÌ` 亂碼，看起來像編碼表沒載）。
+- **終端機的任何祖先都不可有 `user-select: none`**（issue #22，2026-08 實測）。Firefox 判定
+  可選取性是沿 frame 鏈**往上**走、最外層的非 auto 值決定 ⇒ `#BBSWindow { user-select:none }`
+  會蓋掉 `.main { user-select:text }`，而且**只壞讀取端、不壞畫面**：拖曳照樣有反白、
+  `Range.toString()` 照樣拿得到字、`Selection.isCollapsed` 也是 false，唯獨
+  **`Selection.toString()` 回空字串**（它走 document encoder，被判不可選的內容整段跳過）。
+  下游全中：選取自動複製寫進空字串、右鍵快速搜尋關鍵字是空的、^C 複製空的。**Chrome 讓子層
+  覆寫成功，所以 Chromium e2e 永遠綠**——這類症狀一律先在 Firefox 量
+  `getComputedStyle(row).userSelect` 的整條祖先鏈，別往 JS 讀取端追。
+  真正不該被選到的節點（`#cursor`、好讀狀態列、樓層／代理徽章）各自宣告 none 即可。
+  另附一條同源事實（本次實測**未**構成問題，但改焦點邏輯前要知道）：Firefox 的
+  `Element.focus()` 會收合 document selection（Chrome 不會），本 app 的 `setInputAreaFocus`
+  各呼叫點都有 `isCollapsed` 守門才沒踩到。
+  守護：`tests/e2e/offline/selection.offline.spec.js`（**offline-firefox** project，
+  真滑鼠拖曳；程式化 `addRange` 會繞過瀏覽器選取機制 ⇒ Firefox 也會綠，測不到）
+  ＋ `tests/unit/css_user_select.test.js`（沒裝 Firefox 也擋得住手滑加回去）。
 
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）
 

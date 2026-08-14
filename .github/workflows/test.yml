@@ -78,8 +78,10 @@ jobs:
           node-version: 24
           cache: yarn
 
+      # firefox 是 offline-firefox project 用的（tests/e2e/offline/selection.offline.spec.js）：
+      # issue #22 的選取／複製症狀只在 Firefox 出現，Chromium 永遠綠。
       - name: Offline E2E tests (Playwright replay)
         run: |
           yarn install --immutable
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium firefox
           yarn test:e2e:offline

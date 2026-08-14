@@ -39,7 +39,8 @@
     "kill:dev": "node scripts/kill-dev-server.js",
     "ci:status": "node scripts/ci-status.mjs",
     "test:e2e": "yarn kill:dev && playwright test --project=live",
-    "test:e2e:offline": "yarn kill:dev && playwright test --project=offline",
+    "test:e2e:offline": "yarn kill:dev && playwright test --project=offline --project=offline-firefox",
+    "test:e2e:offline:firefox": "yarn kill:dev && playwright test --project=offline-firefox",
     "test:e2e:headed": "yarn kill:dev && playwright test --project=live --headed",
     "test:e2e:ui": "yarn kill:dev && playwright test --ui",
     "record:cassette": "yarn kill:dev && RECORD_CASSETTE=1 playwright test --project=record"

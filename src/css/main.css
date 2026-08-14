@@ -66,6 +66,15 @@
   font-size: 13px;
 }
 
+/* **這裡不可以有 `user-select: none`**（issue #22）：Firefox 會讓最外層的 none 贏過
+   子層的 `user-select: text`（Gecko 判定可選取性是沿 frame 鏈往上走，最外層的非 auto
+   值決定），於是 `.main` 想收回來的 text 無效 → 拖曳看得到反白、`Range.toString()` 也
+   拿得到字，但 `Selection.toString()` 走 document encoder 時整段被當成不可選而跳過，
+   **回傳空字串**。下游全中：選取自動複製寫進空字串、右鍵快速搜尋關鍵字是空的、^C 複製
+   空的。Chrome 讓子層覆寫成功所以看不出來。
+   終端機底下真正不該被選到的節點（游標 #cursor、好讀狀態列、樓層／代理徽章）各自
+   宣告 none，不需要在最外層再蓋一次。回歸守護：tests/e2e/offline/selection.offline.spec.js
+   （offline-firefox project）。 */
 #BBSWindow {
   position:fixed;
   width:100%;
@@ -74,8 +83,6 @@
   left:0px;
   overflow:hidden;
   z-index:1;
-
-  -webkit-user-select: none;
 }
 
 /* 打字游標。單一 `_` 字元只有 1px 高又閃爍，很難一眼定位（上班模式的低彩度畫面
@@ -104,6 +111,7 @@
   margin-right:0px;
   margin-bottom:0px;
   -webkit-user-select: text;
+  user-select: text;
   background-color: black;
   /* box-shadow: 0 0 60px 50px black; */
 }
@@ -138,6 +146,7 @@ a:link,a:visited,a:active,a:hover {
   display: none;
   overflow: hidden;
   -webkit-user-select: none;
+  user-select: none;
   z-index: 1;
   height: 1em;
   background-color: transparent;
@@ -287,6 +296,7 @@ a:link,a:visited,a:active,a:hover {
   color: #FFFFFF;
   text-decoration: blink;
   -webkit-user-select: none;
+  user-select: none;
   height: 0px;
   z-index: 2;
 }
@@ -511,6 +521,7 @@ span {
   color: #ffd34d;
   cursor: default;
   -webkit-user-select: none;
+  user-select: none;
   white-space: pre;
   /* 溢出到標記字上方時仍要讀得清楚 */
   text-shadow:
@@ -547,6 +558,7 @@ span {
   color: #6aa9d6;
   cursor: default;
   -webkit-user-select: none;
+  user-select: none;
   white-space: pre;
 }
 /* 代理快取命中＝這功能最想讓人看到的狀態：實心 + 亮青色 + 微光，與未命中的空心
@@ -620,6 +632,7 @@ span {
   margin-right: 0.3em;
   opacity: 0.6;
   -webkit-user-select: none;
+  user-select: none;
 }
 
 /* 自動開圖「讀取中」轉圈（取代舊的 bootstrap glyphicon-refresh，BS5 已無該字型）。 */
