@@ -21,7 +21,8 @@ const noop = () => {};
 // 走 context 而非逐層傳 prop：中間隔著 ImagePreviewer → ImagePreviewer.Inline（透過
 // component prop 呼叫）→ renderMedia → inlineImage 四層，而 renderMedia 還被相簿的
 // `images.map(renderMedia)` 直接當 callback 用（多加參數會撞到 map 的 index）。
-// 預設 null ⇒ hover 預覽等沒有 Provider 的路徑自然不回報。
+// 兩條預覽路徑都有 Provider：inline 在 LazyInlinePreview、hover 在 Screen。
+// 預設 null ⇒ 沒有 Provider 的路徑（測試、未來的新用法）自然不回報，不會炸。
 export const PreviewHrefContext = React.createContext(null);
 
 export const of = (src) => Promise.resolve({ src });
@@ -117,6 +118,15 @@ const getTop = (top, height) => {
 };
 
 ImagePreviewer.OnHover = ({ left, top, value, error }) => {
+  // 原生 24 列模式沒有 inline 預覽（走不到 FallbackImage），hover 預覽是唯一會
+  // 觸發載入的路徑 ⇒ 代理狀態徽章要在原生模式出現，回報就得從這裡發。
+  // hooks 必須無條件呼叫：下面三條 return 路徑都在其後。
+  const previewHref = React.useContext(PreviewHrefContext);
+  const src = value && value.src;
+  const handleLoad = React.useCallback(() => {
+    if (previewHref && src) reportProxyLoad(previewHref, src);
+  }, [previewHref, src]);
+
   if (error || (value && value.type && value.type !== "image")) {
     return false;
   } else if (value) {
@@ -124,6 +134,7 @@ ImagePreviewer.OnHover = ({ left, top, value, error }) => {
       <img
         referrerPolicy="no-referrer"
         src={value.src}
+        onLoad={handleLoad}
         style={{
           display: "block",
           position: "absolute",

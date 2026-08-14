@@ -10,10 +10,18 @@
 // ImagePreviewer's value is still undefined → Inline renders <LoadingOverlay>
 // (.previewLoading). We count those nodes: one per mounted inline ImagePreviewer.
 
-import { render, act } from "@testing-library/react";
+import { render, act, fireEvent } from "@testing-library/react";
 import Screen from "../../src/components/Screen";
 import Row from "../../src/components/Row";
 import { requestPreview } from "../../src/components/ImagePreviewer";
+import {
+  ingestEntryForTest,
+  resetProxyStatusForTest,
+} from "../../src/js/proxy_status";
+import {
+  resetImgurProxyConfig,
+  setImgurProxyConfig,
+} from "../../src/js/imgur_proxy";
 
 const COLOR = {
   fg: 7,
@@ -91,6 +99,79 @@ describe("inline image preview wiring", () => {
         />
       )
     ).toBe(0);
+  });
+});
+
+// 原生 24 列模式不掛 inline 預覽，hover 預覽是唯一會觸發載入的路徑 ⇒ 代理狀態徽章
+// 要在原生模式出現，Screen 就必須把 href 用 PreviewHrefContext 傳進 OnHover。
+// 功能引入時只有 LazyInlinePreview 有 Provider，原生模式的徽章**永遠**不會出現，
+// 而 README／docs 都宣稱會 —— 這條守的就是那個接線。
+describe("hover 預覽 → 代理狀態徽章接線", () => {
+  const BASE = "https://worker.example.dev";
+  const HOVER_URL = `${BASE}/abc123.jpg`;
+
+  beforeEach(() => {
+    resetProxyStatusForTest();
+    setImgurProxyConfig({ enabled: true, base: BASE });
+  });
+  afterEach(() => {
+    resetProxyStatusForTest();
+    resetImgurProxyConfig();
+  });
+
+  test("hover 載入成功且計時項顯示走過代理 → 該連結旁出現徽章", async () => {
+    // jsdom 的 new Image() 不會真的載入，而 resolveWithImageDOM 要等它 onload 才
+    // resolve（hover 專屬的量高度步驟）→ 沒有這個替身就永遠停在讀取指示器。
+    const OrigImage = globalThis.Image;
+    globalThis.Image = class {
+      constructor() {
+        this.height = 100;
+      }
+      set src(v) {
+        this._src = v;
+        setTimeout(() => this.onload && this.onload(), 0);
+      }
+      get src() {
+        return this._src;
+      }
+    };
+    try {
+      const { container } = render(
+        <Screen
+          lines={[urlRow(HOVER_URL)]}
+          forceWidth={80}
+          enableLinkInlinePreview={false}
+          enableLinkHoverPreview={true}
+        />,
+      );
+      await act(async () => {
+        fireEvent.mouseOver(container.querySelector("a"));
+        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+      const hoverImg = container.querySelector("img");
+      expect(hoverImg).not.toBeNull();
+      act(() => {
+        fireEvent.load(hoverImg);
+        ingestEntryForTest({
+          name: HOVER_URL,
+          initiatorType: "img",
+          startTime: 1,
+          transferSize: 40000,
+          encodedBodySize: 39700,
+          serverTiming: [
+            {
+              name: "pttproxy",
+              description: String(Math.floor(Date.now() / 1000)),
+            },
+          ],
+        });
+      });
+      expect(container.querySelector(".proxyBadge")).not.toBeNull();
+    } finally {
+      globalThis.Image = OrigImage;
+    }
   });
 });
 
