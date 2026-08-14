@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Modal,
   Tabs,
@@ -29,13 +29,19 @@ import {
   destroyPromptApi,
 } from "../../js/prompt_api";
 import { deepEqual } from "../../js/pref_sync_logic";
+import {
+  buildExportPayload,
+  parseImportPayload,
+  mergeImportedPrefs,
+  backupFileName,
+} from "../../js/pref_backup";
 import { isValidOtpSecret } from "../../js/totp";
 import {
   normalizeAutoLoginValues,
   credentialToStore,
   localCredentialStatus,
 } from "./pref_credential";
-import { DEFAULT_PROXY_HOST } from "../../js/util";
+import { DEFAULT_PROXY_HOST, downloadAsFile } from "../../js/util";
 import { DEFAULT_IMGUR_PROXY_BASE } from "../../js/imgur_proxy";
 import {
   BUILTIN_QUICK_SEARCH,
@@ -163,6 +169,9 @@ export const PrefModal = ({
   // （Prompt API 的模型下載需要 user activation，且模型有數 GB）。
   const [aiState, setAiState] = useState(null);
   const [aiProgress, setAiProgress] = useState(null);
+  // 設定備份分頁的最後一次結果訊息：null | "imported" | "badJson" | "badFormat"
+  const [backupResult, setBackupResult] = useState(null);
+  const importInputRef = useRef(null);
   const { colorScheme, setColorScheme } = useMantineColorScheme();
 
   useEffect(() => {
@@ -329,6 +338,54 @@ export const PrefModal = ({
     prefSync.signOut().catch(() => {});
   }, []);
 
+  // 匯出的是**當下表單值**（含還沒關閉存檔的修改），所以套用與 onCloseClick 同一組
+  // 正規化。憑證的剝除由 buildExportPayload 負責（共用雲端同步的排除名單）。
+  const onBackupExportClick = useCallback(() => {
+    const next = pruneQuickSearchEntries(normalizeAutoLoginValues(values));
+    downloadAsFile(
+      backupFileName(),
+      JSON.stringify(buildExportPayload(next), null, 2),
+      "application/json",
+    );
+  }, [values]);
+
+  // 匯入＝立即寫入 + 立即套用（走既有的 reset 路徑，見 ContextMenu/index.jsx
+  // #onPrefReset：redraw(true) + onPrefSaveImpl → onValuesPrefChange 全量重套）。
+  // 設定對話框沒有「取消」，關閉即存檔，所以「先預覽再決定」並不成立。
+  const onBackupImportFile = useCallback(
+    async (e) => {
+      const file = e.target.files && e.target.files[0];
+      // 清空才能重複選同一個檔案（change 事件靠值有變化才觸發）。
+      e.target.value = "";
+      if (!file) return;
+      let text;
+      try {
+        text = await file.text();
+      } catch (err) {
+        setBackupResult("badJson");
+        return;
+      }
+      const parsed = parseImportPayload(text);
+      if (!parsed.ok) {
+        setBackupResult(parsed.reason);
+        return;
+      }
+      // 備份檔沒提到的 key 回預設值，local-only（帳密／上班模式）保留本機現值。
+      const merged = pruneQuickSearchEntries(
+        mergeImportedPrefs(DEFAULT_PREFS, values, parsed.prefs),
+      );
+      writeValues(merged);
+      prefSync.savePrefs(merged);
+      setValues(merged);
+      // storedSnapshot 是自動登入分頁憑證狀態的資料來源，不同步會顯示舊資訊。
+      setStoredSnapshot(merged);
+      // storeCredential 刻意不呼叫：匯入檔不含憑證，merged 的憑證欄位就是本機原值。
+      onReset(merged);
+      setBackupResult("imported");
+    },
+    [values, onReset],
+  );
+
   useEffect(() => {
     const unsub = prefSync.onAuthState((user) => setSyncUser(user));
     return () => {
@@ -348,6 +405,7 @@ export const PrefModal = ({
       const stored = readValuesWithDefault();
       setValues(stored);
       setStoredSnapshot(stored);
+      setBackupResult(null);
     }
   }, [show]);
 
@@ -410,6 +468,7 @@ export const PrefModal = ({
               </Tabs.Tab>
               <Tabs.Tab value="ai">{i18n("options_ai")}</Tabs.Tab>
               <Tabs.Tab value="local">{i18n("options_local")}</Tabs.Tab>
+              <Tabs.Tab value="backup">{i18n("options_backup")}</Tabs.Tab>
               <Tabs.Tab value="about">{i18n("options_about")}</Tabs.Tab>
             </Tabs.List>
             <Button
@@ -727,42 +786,6 @@ export const PrefModal = ({
                   ])}
                   mb="xs"
                 />
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_sync")}</legend>
-                <Text className="PrefModal__warning">
-                  {i18n("tooltip_sync")}
-                </Text>
-                {syncUser ? (
-                  <div>
-                    <Text>
-                      {i18n("options_syncSignedInAs")}
-                      {syncUser.email}
-                    </Text>
-                    <Button variant="default" onClick={onSyncSignOutClick}>
-                      {i18n("options_syncSignOut")}
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    variant="default"
-                    onClick={onSyncSignInClick}
-                    disabled={syncStatus === "syncing"}
-                  >
-                    {i18n("options_syncSignIn")}
-                  </Button>
-                )}
-                {syncStatus !== "idle" && (
-                  <Text>
-                    {i18n(
-                      {
-                        syncing: "options_syncStatusSyncing",
-                        synced: "options_syncStatusSynced",
-                        error: "options_syncStatusError",
-                      }[syncStatus],
-                    )}
-                  </Text>
-                )}
               </fieldset>
             </Tabs.Panel>
             <Tabs.Panel value="connection">
@@ -1224,6 +1247,88 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableWorkMode")}
                 </PrefCheckbox>
+              </fieldset>
+            </Tabs.Panel>
+            <Tabs.Panel value="backup">
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_backupExport")}</legend>
+                <Text className="PrefModal__warning">
+                  {i18n("tooltip_backupExport")}
+                </Text>
+                <Button variant="default" onClick={onBackupExportClick}>
+                  {i18n("options_backupExportBtn")}
+                </Button>
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_backupImport")}</legend>
+                <Text className="PrefModal__warning">
+                  {i18n("tooltip_backupImport")}
+                </Text>
+                {/* 檔案選擇器藏起來、由按鈕轉發點擊：原生 input[type=file] 的外觀
+                    無法跟 Mantine 的按鈕對齊。 */}
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  name="backupImportFile"
+                  accept="application/json,.json"
+                  style={{ display: "none" }}
+                  onChange={onBackupImportFile}
+                />
+                <Button
+                  variant="default"
+                  onClick={() =>
+                    importInputRef.current && importInputRef.current.click()
+                  }
+                >
+                  {i18n("options_backupImportBtn")}
+                </Button>
+                {backupResult && (
+                  <Text>
+                    {i18n(
+                      backupResult === "imported"
+                        ? "options_backupImported"
+                        : backupResult === "badJson"
+                          ? "options_backupErrorBadJson"
+                          : "options_backupErrorBadFormat",
+                    )}
+                  </Text>
+                )}
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_sync")}</legend>
+                <Text className="PrefModal__warning">
+                  {i18n("tooltip_sync")}
+                </Text>
+                {syncUser ? (
+                  <div>
+                    <Text>
+                      {i18n("options_syncSignedInAs")}
+                      {syncUser.email}
+                    </Text>
+                    <Button variant="default" onClick={onSyncSignOutClick}>
+                      {i18n("options_syncSignOut")}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="default"
+                    onClick={onSyncSignInClick}
+                    disabled={syncStatus === "syncing"}
+                  >
+                    {i18n("options_syncSignIn")}
+                  </Button>
+                )}
+                {syncStatus !== "idle" && (
+                  <Text>
+                    {i18n(
+                      {
+                        syncing: "options_syncStatusSyncing",
+                        synced: "options_syncStatusSynced",
+                        error: "options_syncStatusError",
+                      }[syncStatus],
+                    )}
+                  </Text>
+                )}
               </fieldset>
             </Tabs.Panel>
             <Tabs.Panel value="about" className="PrefModal__about-selectable">

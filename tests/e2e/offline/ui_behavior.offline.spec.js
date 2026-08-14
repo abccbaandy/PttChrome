@@ -52,7 +52,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(page.locator('.PrefModal input[name="copyOnSelect"]')).toBeVisible();
   });
 
-  test('PrefModal 分頁切換：general → connection → enhance → autologin → ai → local → about 內容對應切換', async ({ page }) => {
+  test('PrefModal 分頁切換：general → connection → enhance → autologin → ai → local → backup → about 內容對應切換', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
     await ptt.dismissDeveloperModeAlert(page);
@@ -73,11 +73,16 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     const autoLoginOtpSecret =
       page.locator('.PrefModal input[name="autoLoginOtpSecret"]');           // autologin only
     const enableAi = page.locator('.PrefModal input[name="enableAi"]');      // ai only
+    const exportBtn = page.locator('.PrefModal')                            // backup only
+      .getByRole('button', { name: await label(page, 'options_backupExportBtn') });
+    const syncSignIn = page.locator('.PrefModal')                           // backup only
+      .getByRole('button', { name: await label(page, 'options_syncSignIn') });
 
     // 起始：general 可見
     await expect(copyOnSelect).toBeVisible();
     await expect(proxyUrl).toBeHidden(); // 連線設定已全數移出一般分頁
     await expect(autoLoginUser).toBeHidden();
+    await expect(syncSignIn).toBeHidden(); // 雲端同步已移到設定備份分頁
 
     // → connection（BBS proxy + imgur 圖片代理，兩組都在這一頁）
     await nav.getByText(await label(page, 'options_connection'), { exact: true }).click();
@@ -115,6 +120,16 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     ).toBeVisible();
     await expect(autoLoginUser).toBeHidden();
     await expect(blacklist).toBeHidden();
+
+    // → backup（匯出／匯入檔案 + 雲端同步；雲端同步是從一般分頁搬過來的）
+    await nav.getByText(await label(page, 'options_backup'), { exact: true }).click();
+    await expect(exportBtn).toBeVisible();
+    await expect(
+      page.locator('.PrefModal input[name="backupImportFile"]')
+    ).toHaveCount(1); // display:none，由按鈕轉發點擊
+    await expect(syncSignIn).toBeVisible();
+    await expect(copyOnSelect).toBeHidden();
+    await expect(autoLoginUser).toBeHidden();
 
     // → about（含 PttChrome 版本字樣）
     await nav.getByText(await label(page, 'options_about'), { exact: true }).click();

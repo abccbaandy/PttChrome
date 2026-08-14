@@ -94,6 +94,9 @@ export const en_US = {
   "options_enhance": {
     "message": "Enhanced"
   },
+  "options_backup": {
+    "message": "Backup"
+  },
 
   // quick search (context menu)
   "options_quickSearch": {
@@ -346,6 +349,34 @@ export const en_US = {
   },
   "options_autoLoginSkipWelcome": {
     "message": "Auto-skip welcome / press-any-key screens"
+  },
+  // settings backup (export/import file)
+  "options_backupExport": {
+    "message": "Export settings"
+  },
+  "tooltip_backupExport": {
+    "message": "Save the current settings to a JSON file. The file never contains the auto-login account, password or 2FA secret, nor machine-specific settings such as work mode."
+  },
+  "options_backupExportBtn": {
+    "message": "Export to file"
+  },
+  "options_backupImport": {
+    "message": "Import settings"
+  },
+  "tooltip_backupImport": {
+    "message": "Importing overwrites the current settings and takes effect immediately; anything missing from the backup falls back to its default. Auto-login credentials are left untouched."
+  },
+  "options_backupImportBtn": {
+    "message": "Choose a file…"
+  },
+  "options_backupImported": {
+    "message": "Settings imported. Some connection settings only take effect after a page reload."
+  },
+  "options_backupErrorBadJson": {
+    "message": "Import failed: not a valid JSON file."
+  },
+  "options_backupErrorBadFormat": {
+    "message": "Import failed: this is not a pttchrome settings backup."
   },
   "options_sync": {
     "message": "Preference Cloud Sync"

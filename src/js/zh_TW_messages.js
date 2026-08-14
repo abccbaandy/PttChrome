@@ -94,6 +94,9 @@
   "options_enhance": {
     "message": "增強功能"
   },
+  "options_backup": {
+    "message": "設定備份"
+  },
 
   // quick search (context menu)
   "options_quickSearch": {
@@ -346,6 +349,34 @@
   },
   "options_autoLoginSkipWelcome": {
     "message": "自動跳過歡迎畫面／按任意鍵提示"
+  },
+  // 設定備份（匯出／匯入檔案）
+  "options_backupExport": {
+    "message": "匯出設定"
+  },
+  "tooltip_backupExport": {
+    "message": "把目前的設定存成一個 JSON 檔。檔案不含自動登入的帳號、密碼與二階段驗證金鑰，也不含「上班模式」等本機專屬設定。"
+  },
+  "options_backupExportBtn": {
+    "message": "匯出成檔案"
+  },
+  "options_backupImport": {
+    "message": "匯入設定"
+  },
+  "tooltip_backupImport": {
+    "message": "匯入會覆蓋目前的設定並立即生效；備份檔沒有的項目會回到預設值。自動登入的帳號密碼不受影響。"
+  },
+  "options_backupImportBtn": {
+    "message": "選擇檔案匯入"
+  },
+  "options_backupImported": {
+    "message": "已匯入設定。部分連線設定需重新整理頁面後才會生效。"
+  },
+  "options_backupErrorBadJson": {
+    "message": "匯入失敗：檔案不是有效的 JSON。"
+  },
+  "options_backupErrorBadFormat": {
+    "message": "匯入失敗：這不是 pttchrome 的設定備份檔。"
   },
   "options_sync": {
     "message": "偏好設定雲端同步"
