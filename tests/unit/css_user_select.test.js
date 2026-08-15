@@ -16,7 +16,9 @@ const CSS = fs.readFileSync(
 const ruleBody = (css, selector) => {
   const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
   const re = new RegExp(
-    `(^|[},])\\s*${selector.replace(/[.#*]/g, '\\$&')}\\s*\\{([^}]*)\\}`,
+    // 完整跳脫所有 regex meta 字元（含反斜線本身），別只列用得到的那幾個：
+    // 漏跳脫的自製 escape 會被 CodeQL js/incomplete-sanitization 抓出來。
+    `(^|[},])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`,
     'm'
   );
   const m = stripped.match(re);
