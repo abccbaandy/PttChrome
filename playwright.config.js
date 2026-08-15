@@ -49,8 +49,22 @@ module.exports = defineConfig({
       // 就沒有回歸守護。其餘 offline spec 仍只跑 chromium（不少 spec 依賴
       // grantPermissions 之類的 Chromium-only 行為）。
       // 本機首次需 `yarn playwright install firefox`。
+      //
+      // MOZ_DISABLE_CONTENT_SANDBOX：Windows 上 Firefox 的 content sandbox 有時
+      // 起不來，症狀是**每一條都** `browserContext.newPage: Test timeout`，瀏覽器
+      // log 只有 `RenderCompositorSWGL failed mapping default framebuffer` 與
+      // `remoteTab is null`（＝content process 沒生出來），看起來像被測 code 大爆炸，
+      // 其實連空白頁都開不了。實測（2026-08-15）headless/有頭、關 WebRender、關硬體
+      // 加速、`security.sandbox.content.level=0`、關 fission/e10s 全都無效，只有這個
+      // 環境變數能救。測試瀏覽器只載入本機 dev server 與 fixture，關掉 content
+      // sandbox 沒有實際風險。
       name: 'offline-firefox',
-      use: { ...devices['Desktop Firefox'] },
+      use: {
+        ...devices['Desktop Firefox'],
+        launchOptions: {
+          env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: '1' },
+        },
+      },
       testMatch: 'offline/selection.offline.spec.js',
     },
     {

@@ -63,6 +63,12 @@ Vite 8（Rolldown 核心）+ React19（bundled）。React plugin 用 `@vitejs/pl
   - **`yarn test:e2e:offline` 含 `offline-firefox` project**（只跑 `selection.offline.spec.js`）：**本機需先
     `yarn playwright install firefox`**，否則整批 `browserType.launch: Executable doesn't exist`。選取／複製類
     症狀 Chromium 測不出來（見 `docs/enhanced-addon.md` 踩坑 A「終端機的任何祖先都不可有 `user-select: none`」）。
+    - **Windows 上 Firefox 的 content sandbox 起不來時，那一批會整包 `browserContext.newPage: Test timeout`**
+      （瀏覽器 log 只有 `RenderCompositorSWGL failed mapping default framebuffer`＋`remoteTab is null`＝content
+      process 沒生出來，連空白頁都開不了，看起來卻像被測 code 大爆炸）。判準：**還原 code 後照樣紅**＝環境問題。
+      修法已寫進 `playwright.config.js` 的 `offline-firefox` project：`launchOptions.env` 加
+      `MOZ_DISABLE_CONTENT_SANDBOX=1`（2026-08-15 實測：headless/有頭、關 WebRender、關硬體加速、
+      `security.sandbox.content.level=0`、關 fission/e10s 全都無效，只有這個有用）。
 - **強制規範：改 code 要連帶補測試，不准「只改不測」。**
   - **每修一個 bug 必先寫一個會重現該 bug 的 test（紅）→ 修到綠**，當回歸守護。沒有對應 test 的修復視為未完成，不可交付／commit。
   - 新功能／行為改動同理補對應 test。能用純邏輯重現的（逐列判斷、解析、轉碼等）一律下放 unit（首選，最穩），抽進
