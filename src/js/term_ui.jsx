@@ -4,9 +4,9 @@ import Screen from "../components/Screen";
 import { renderInto } from "./react_root";
 
 // 每個 #mainContainer 容器一份 { ref, handle }。React 18 root.render() 回傳 undefined，
-// 但 term_view 需要命令式呼叫 Screen.setCurrentHighlighted（高亮列）。改用 ref 取得
+// 但 term_view 需要命令式呼叫 Screen.setCursorHighlight（游標底色列）。改用 ref 取得
 // Screen 實例；handle 是穩定物件（同一容器只建一次），其方法 lazy 解 ref.current，
-// 不依賴 render() 後 ref 是否同步填充——首次高亮發生在使用者鍵盤操作時，ref 早已 commit。
+// 不依賴 render() 後 ref 是否同步填充——首次上色發生在使用者操作時，ref 早已 commit。
 const screenHandles = new WeakMap();
 
 function getScreenHandle(cont) {
@@ -16,8 +16,8 @@ function getScreenHandle(cont) {
     entry = {
       ref,
       handle: {
-        setCurrentHighlighted: row => {
-          if (ref.current) ref.current.setCurrentHighlighted(row);
+        setCursorHighlight: state => {
+          if (ref.current) ref.current.setCursorHighlight(state);
         }
       }
     };

@@ -577,6 +577,128 @@ test.describe('文章列表好读模式（离线）', () => {
       throw e;
     }
   });
+
+  // 游標底色的另一半：原生模式的鍵盤操作（不開任何好讀）也要上色，且上的是
+  // server 的真游標列 buf.cur_y。舊版底色只綁滑鼠 hover，鍵盤使用者完全沒有。
+  test('原生列表：鍵盤游標底色上在真游標列，顏色照 pref（不需開滑鼠瀏覽）', async ({ page }) => {
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, nav);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: false,
+        useMouseBrowsing: false, // 純鍵盤：底色不該再依賴滑鼠瀏覽
+        keyboardCursorHighlight: true,
+        mouseBrowsingHighlightColor: 9
+      });
+      await page.waitForTimeout(300);
+      const r = await page.evaluate(() => {
+        const rows = Array.from(
+          document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+        );
+        return {
+          curY: window.__app.buf.cur_y,
+          painted: rows
+            .map((el, i) => (el.classList.contains('b9') ? i : -1))
+            .filter((i) => i !== -1)
+        };
+      });
+      expect(r.painted).toEqual([r.curY]);
+
+      // 關掉鍵盤底色 → 立即消失（不必等下一次畫面更新）。
+      await ptt.applyPrefs(page, { keyboardCursorHighlight: false });
+      await page.waitForTimeout(200);
+      const after = await page.evaluate(
+        () =>
+          document.querySelectorAll('#mainContainer [data-type="bbsline"].b9')
+            .length
+      );
+      expect(after).toBe(0);
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
+  // 滑鼠瀏覽在列表好讀模式曾經半殘：hover 有光棒、點下去完全沒反應
+  //（App.mouse_click 對 buffer/frozen 直接 preventDefault + return）。這條鎖住
+  // 「單擊＝移到那一列並開文」的閉環，以及游標底色會真的照 pref 的顏色上色。
+  test('滑鼠單擊列表某一列 → 選取移過去並開文；游標底色用 pref 指定的顏色', async ({ page }) => {
+    test.setTimeout(90000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, nav);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: true,
+        easyReadingListPrefetchCount: 30,
+        useMouseBrowsing: true,
+        mouseBrowsingHighlight: true,
+        keyboardCursorHighlight: true,
+        // 刻意不是預設綠 b2：顏色 pref 曾是死設定（畫面永遠 #008000）。
+        mouseBrowsingHighlightColor: 6
+      });
+      let s = await waitState(page, (x) => x.state === 'active' && x.listLen > 30 && x.queueIdle, 20000);
+
+      // 鍵盤游標底色：'>' 那一列（且只有那一列）帶著 pref 指定的 b6。
+      const highlightRows = await page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+        )
+          .map((el, i) => (el.classList.contains('b6') ? i : -1))
+          .filter((i) => i !== -1)
+      );
+      expect(highlightRows).toEqual([await cursorRowIndex(page)]);
+
+      // 開文目標＝錄製的第三個 jump（cassette 只對這個序號有開文素材）。先把視窗
+      // 帶到它附近（純視窗定位，不是本案要測的東西），再用 ↓ 把選取移開兩列 ——
+      // 這樣「點擊把選取移過去」與「點擊開文」兩件事才會同時被驗到。
+      const jumps = nav.steps.filter((st) => st.num != null);
+      const openNum = jumps[2].num;
+      // openNum 是緩衝最舊的一篇：先 PgUp 讓 demand 把它讀進來（同上一條測試）。
+      await page.locator('#t').focus();
+      await page.keyboard.press('PageUp');
+      s = await waitState(page, (x) => x.queueIdle && x.listLen > 50, 15000);
+      await page.evaluate((n) => {
+        const ls = window.__app.listSession;
+        ls._selectedNum = n;
+        ls._selectedPinnedKey = null;
+        ls._forceRedraw();
+      }, openNum);
+      await page.waitForTimeout(200);
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('ArrowDown');
+      await page.waitForTimeout(300);
+      const beforeClick = await dumpListState(page);
+      expect(beforeClick.selectedNum).not.toBe(openNum);
+
+      const rows = await dumpScreenRows(page);
+      const targetRow = rows.findIndex(
+        (t, i) => i >= 3 && i <= 22 && t.trim().startsWith(String(openNum))
+      );
+      expect(targetRow).toBeGreaterThanOrEqual(3);
+
+      // 真的用滑鼠點那一列（clientToPos → body index → 絕對索引 → 開文交易）。
+      await page
+        .locator('#mainContainer [data-type="bbsline"]')
+        .nth(targetRow)
+        .click({ position: { x: 120, y: 4 } });
+
+      // 選取移到被點的那篇，並走完既有的兩段序列化開文交易。
+      s = await waitState(page, (x) => x.state === 'suspended', 20000);
+      expect(s.selectedNum).toBe(openNum);
+      expect(s.pageState).toBe(3); // 真的進到文章
+      // 全程零 raw byte 直送：開文只經 CommandQueue 的 jump + Enter。
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
 });
 
 test.describe('置底文 Enter 开启（离线，pinned 卷）', () => {

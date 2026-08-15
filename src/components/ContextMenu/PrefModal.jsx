@@ -669,54 +669,6 @@ export const PrefModal = ({
                 >
                   {i18n("options_useMouseBrowsing")}
                 </PrefCheckbox>
-                <PrefCheckbox
-                  name="mouseBrowsingHighlight"
-                  checked={values.mouseBrowsingHighlight}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_mouseBrowsingHighlight")}
-                </PrefCheckbox>
-                <Text size="sm" fw={500} mb={4}>
-                  {i18n("options_highlightColor")}
-                </Text>
-                {/* 一排可點色塊（b1..b15 = color.css 的底色 class），選中者描邊。
-                    比下拉好：直接顯示對應顏色，而非 index 數字。 */}
-                <div
-                  className="PrefModal__HighlightColors"
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 4,
-                    marginBottom: 12,
-                  }}
-                >
-                  {Array.from({ length: 15 }, (_, i) => i + 1).map((i) => (
-                    <div
-                      key={i}
-                      className={`b${i}`}
-                      title={String(i)}
-                      onClick={() =>
-                        setValues((v) =>
-                          changeNestedValue(
-                            v,
-                            "mouseBrowsingHighlightColor",
-                            i,
-                          ),
-                        )
-                      }
-                      style={{
-                        width: 22,
-                        height: 22,
-                        cursor: "pointer",
-                        boxSizing: "border-box",
-                        border:
-                          values.mouseBrowsingHighlightColor === i
-                            ? "2px solid var(--mantine-color-bright)"
-                            : "1px solid var(--mantine-color-default-border)",
-                      }}
-                    />
-                  ))}
-                </div>
                 <Select
                   label={i18n("options_mouseLeftFunction")}
                   name="mouseLeftFunction"
@@ -786,6 +738,66 @@ export const PrefModal = ({
                   ])}
                   mb="xs"
                 />
+              </fieldset>
+              {/* 游標底色：滑鼠與鍵盤共用同一條渲染管線與同一個顏色，所以獨立成一
+                  區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。 */}
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_cursorHighlight")}</legend>
+                <PrefCheckbox
+                  name="mouseBrowsingHighlight"
+                  checked={values.mouseBrowsingHighlight}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_mouseBrowsingHighlight")}
+                </PrefCheckbox>
+                <PrefCheckbox
+                  name="keyboardCursorHighlight"
+                  checked={values.keyboardCursorHighlight}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_keyboardCursorHighlight")}
+                </PrefCheckbox>
+                <Text size="sm" fw={500} mb={4}>
+                  {i18n("options_highlightColor")}
+                </Text>
+                {/* 一排可點色塊（b1..b15 = color.css 的底色 class），選中者描邊。
+                    比下拉好：直接顯示對應顏色，而非 index 數字。 */}
+                <div
+                  className="PrefModal__HighlightColors"
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 4,
+                    marginBottom: 12,
+                  }}
+                >
+                  {Array.from({ length: 15 }, (_, i) => i + 1).map((i) => (
+                    <div
+                      key={i}
+                      className={`b${i}`}
+                      title={String(i)}
+                      onClick={() =>
+                        setValues((v) =>
+                          changeNestedValue(
+                            v,
+                            "mouseBrowsingHighlightColor",
+                            i,
+                          ),
+                        )
+                      }
+                      style={{
+                        width: 22,
+                        height: 22,
+                        cursor: "pointer",
+                        boxSizing: "border-box",
+                        border:
+                          values.mouseBrowsingHighlightColor === i
+                            ? "2px solid var(--mantine-color-bright)"
+                            : "1px solid var(--mantine-color-default-border)",
+                      }}
+                    />
+                  ))}
+                </div>
               </fieldset>
             </Tabs.Panel>
             <Tabs.Panel value="connection">

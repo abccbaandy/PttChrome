@@ -796,6 +796,13 @@ App.prototype.onMouse_click = function (e) {
 
 App.prototype.onMouse_move = function(cX, cY) {
   var pos = this.clientToPos(cX, cY);
+  // 列表好讀模式的畫面是我們自己組的虛擬視窗，term_buf.onMouse_move 那套（左緣＝
+  // 離開、右緣＝翻頁、該列是否為空）全部依 server 的真實 24 列判斷，套上去只會
+  // 得到錯的游標形狀與錯的光棒。改由 view 依視窗內容判斷（見 onListMouseMove）。
+  if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
+    this.view.onListMouseMove(pos.row);
+    return;
+  }
   this.buf.onMouse_move(pos.col, pos.row, false);
 };
 
@@ -899,15 +906,19 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.redraw(true);
       this.view.updateCursorPos();
       break;
+    // 游標底色三兄弟（見 pref_storage.js）：都只影響「哪一列上什麼色」，
+    // 套用入口統一是 view.applyCursorHighlight，不需要重畫整個畫面。
     case 'mouseBrowsingHighlight':
       this.buf.highlightCursor = value;
-      this.view.redraw(true);
-      this.view.updateCursorPos();
+      this.view.applyCursorHighlight();
+      break;
+    case 'keyboardCursorHighlight':
+      this.view.keyboardCursorHighlight = !!value;
+      this.view.applyCursorHighlight();
       break;
     case 'mouseBrowsingHighlightColor':
       this.view.highlightBG = value;
-      this.view.redraw(true);
-      this.view.updateCursorPos();
+      this.view.applyCursorHighlight();
       break;
     case 'mouseLeftFunction':
       this.view.leftButtonFunction = value;
@@ -1079,13 +1090,17 @@ App.prototype.mouse_click = function(e) {
         e.preventDefault();
         return;
       }
-      // List easy reading buffer/frozen render: swallow clicks entirely.
-      // Click-selection was removed (2026-07-08, user-rejected: it moved the
-      // selection without opening the article — useless). Never fall through
-      // to useMouseBrowsing here: it would fire keys at the server from
-      // virtual-window coordinates (violates the v5 closed-interaction rule).
+      // List easy reading buffer/frozen render: the click is OURS — 單擊＝把選取
+      // 移到那一列並開文（與原生滑鼠瀏覽同語意）。座標換算後交給 ListSession 走
+      // 既有的開文交易。**永遠不要**落到下面的 useMouseBrowsing 分支：那條會依
+      // server 的真實 24 列幾何直送方向鍵，虛擬視窗的座標與它並不對應（會開錯文），
+      // 而且繞過 CommandQueue（違反 v5 封閉互動）。
       if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
         e.preventDefault();
+        if (this.listSession) {
+          var lpos = this.clientToPos(e.clientX, e.clientY);
+          this.listSession.onMouseClick(lpos.row);
+        }
         return;
       }
       if (this.buf.useMouseBrowsing) {

@@ -38,6 +38,7 @@ import {
   moveListCursorWindow,
   normalizeListWindow,
   windowVisibleSequence,
+  LIST_HEADER_ROWS,
 } from './list_window';
 
 // ---------------------------------------------------------------------------
@@ -1398,6 +1399,49 @@ ListSession.prototype = {
   onWheel: function(op) {
     if (this.state !== 'active' || this._renderMode !== 'buffer') return;
     this._moveSelection(op);
+  },
+
+  // 左鍵單擊某一列（App.mouse_click 已把 client 座標換成**渲染後**的列號）＝
+  // 「把選取移到那一列並開文」，與原生滑鼠瀏覽的語意一致。
+  //
+  // 合約（不可放行到 App.onMouse_click）：那條會依 buf.mouseCursor 與 server 的真實
+  // 24 列幾何直接 conn.send('\x1b[A'×N + '\r')。畫面上是我們自己組的虛擬視窗，兩套
+  // 座標並不對應 ⇒ 會開到別篇，而且繞過 CommandQueue（違反 v5 封閉互動 + 交易序列化）。
+  // 這裡改成「解析出絕對索引 → 寫回序號錨 → 走鍵盤同一條 reducer/開文交易」。
+  onMouseClick: function(renderRow) {
+    // 原生鏡像期間（passthrough/functionMode 的 native）不歸這裡管：呼叫端根本不會
+    // 進來，但保險起見不處理也不提示，交給原生滑鼠瀏覽。
+    if (this._renderMode === 'native') return;
+    if (this.state !== 'active' || this._renderMode !== 'buffer') {
+      // 交易進行中（開文／leave／jump 的 frozen）：與鍵盤同樣的「吞掉但不靜默」。
+      if (this._view.flashListHint)
+        this._view.flashListHint('好讀列表：處理中，請稍候…');
+      return;
+    }
+    const idx = renderRow - LIST_HEADER_ROWS;
+    if (idx < 0 || idx >= this._bodyRows()) return; // header / footer
+    const win = this.getWindowView();
+    if (!win) return;
+    const abs = win.body[idx];
+    if (abs == null) return; // 短頁的空白補列，沒有文章可點
+
+    const nums = this._termBuf.listLineNums || [];
+    this._selectedNum = nums[abs];
+    this._selectedPinnedKey =
+      this._selectedNum == null ? this._pinnedKeyAt(abs) : null;
+    // 先同步重畫：_beginOpen 會立刻切 frozen 並定住當下的視窗快照，沒有這一步
+    // 凍住的會是**點擊前**的游標位置（畫面看起來像點錯列）。
+    this._forceRedraw();
+
+    const keyClass = this._selectedNum == null ? 'open-pinned' : 'open';
+    const r = transitionListSession(this.state, { type: 'key', keyClass: keyClass });
+    this.state = r.next;
+    for (let i = 0; i < r.actions.length; ++i) {
+      const a = r.actions[i];
+      if (a === 'begin-open') this._beginOpen();
+      else if (a === 'begin-open-pinned') this._beginOpenPinned();
+      else this._runAction(a, null);
+    }
   },
 
   // ---- actions ---------------------------------------------------------------

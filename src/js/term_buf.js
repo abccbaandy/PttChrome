@@ -1185,6 +1185,12 @@ TermBuf.prototype = {
   },
 
   onMouse_move: function(tcol, trow, doRefresh){
+    // 列表好讀模式畫的是 ListSession 的虛擬視窗，下面整套（左緣＝離開、右緣＝翻頁、
+    // isLineEmpty）都依 server 的真實 24 列判斷，套上去得到的游標形狀與光棒都是錯的。
+    // 該模式的滑鼠一律由 term_view.onListMouseMove 處理（App.onMouse_move 分流）；
+    // 這裡再擋一次，涵蓋 resetMousePos 這類不經 App 的呼叫者。
+    if (this.listRenderMode === 'buffer' || this.listRenderMode === 'frozen')
+      return;
     this.tempMouseCol = tcol;
     this.tempMouseRow = trow;
 
@@ -1335,9 +1341,12 @@ TermBuf.prototype = {
     }
   },
 
+  // nowHighlight 的 setter（見建構子的 defineProperty）＝「滑鼠停在哪一列」。
+  // 實際上不上色由 view 決定：鍵盤游標也可能是來源，且列表好讀模式用的是另一組
+  // 座標，故一律轉交唯一入口 applyCursorHighlight（見 js/cursor_highlight.js）。
   setHighlight: function(row) {
     this._nowHighlight = row;
-    this.view.setHighlightedRow(row);
+    if (this.view) this.view.applyCursorHighlight();
   },
 
   clearHighlight: function(){

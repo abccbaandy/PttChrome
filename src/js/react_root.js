@@ -22,7 +22,7 @@ export function renderInto(container, element) {
   }
   // flushSync 還原 React 16 ReactDOM.render 的同步 commit 契約：React 18 起 root.render()
   // 預設非同步排程，但本 app 多處依賴「render 後 DOM/ref 立即就緒」——term_view 在
-  // _renderScreenLines 後同步呼叫 setHighlightedRow（需 Screen ref.current 已 commit），
+  // _renderScreenLines 後同步呼叫 applyCursorHighlight（需 Screen ref.current 已 commit），
   // 好讀模式在 render 後量測 scrollTop/高度。這些呼叫點皆來自 websocket/DOM/init handler
   // 而非 React event，flushSync 安全；且 React 16 本就同步渲染，無效能回退。
   flushSync(() => {

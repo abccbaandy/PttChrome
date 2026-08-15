@@ -539,8 +539,14 @@ export const en_US = {
   "options_useMouseBrowsing": {
     "message": "Mouse browsing on start"
   },
+  "options_cursorHighlight": {
+    "message": "Cursor highlight"
+  },
   "options_mouseBrowsingHighlight": {
-    "message": "Mouse browsing highlight effect"
+    "message": "Highlight the row under the mouse"
+  },
+  "options_keyboardCursorHighlight": {
+    "message": "Highlight the cursor row when using the keyboard"
   },
   "options_highlightColor": {
     "message": "Color"

@@ -63,7 +63,7 @@ export const Row = ({
   row,
   enableLinkInlinePreview,
   forceWidth,
-  highlighted,
+  highlightClass,
   floor,
   hidden,
   pusher,
@@ -84,13 +84,9 @@ export const Row = ({
   if (blacklistNotice)
     return (
       <span type="bbsrow" srow={row}>
-        {/* keep the native mouse-browse highlight (b2 green bar) on hover, same as
-            every other native list row */}
-        <span
-          className={cx({ b2: highlighted })}
-          data-type="bbsline"
-          data-row={row}
-        >
+        {/* keep the cursor highlight bar on this row too, same as every other
+            native list row (colour comes from the pref — see cursor_highlight.js) */}
+        <span className={cx(highlightClass)} data-type="bbsline" data-row={row}>
           {noticeSegments(blacklistNotice, forceWidth)}
         </span>
       </span>
@@ -112,7 +108,7 @@ export const Row = ({
             row,
             enableLinkInlinePreview,
             forceWidth,
-            highlighted,
+            highlightClass,
             onHyperLinkMouseOver,
             onHyperLinkMouseOut,
             floor,

@@ -536,8 +536,14 @@
   "options_useMouseBrowsing": {
     "message": "預設使用滑鼠瀏覽"
   },
+  "options_cursorHighlight": {
+    "message": "游標底色"
+  },
   "options_mouseBrowsingHighlight": {
-    "message": "啟用滑鼠瀏覽的底色效果"
+    "message": "滑鼠停留的那一列上底色"
+  },
+  "options_keyboardCursorHighlight": {
+    "message": "鍵盤操作時把游標所在列上底色"
   },
   "options_highlightColor": {
     "message": "底色"

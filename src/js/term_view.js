@@ -2,13 +2,14 @@
 
 import { TermKeyboard } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
+import { DEFAULT_HIGHLIGHT_BG, highlightClass, resolveHighlightRow } from './cursor_highlight';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
 import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
-import { labelListCursor, pruneListToSegment } from './list_window';
+import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { readValuesWithDefault } from './pref_storage';
 import icon128 from '../icon/icon_128.png';
 
@@ -22,6 +23,10 @@ const DEFINE_INPUT_BUFFER_SIZE = 12;
 // 活 buffer，參考一路不變但內容每幀都在變，套快取會一直畫出上一幀的內容。
 // 凍結成模組常數（而不是每次 new 一個 literal）純粹是省一次配置。
 const STABLE_ROWS = Object.freeze({ stableRows: true });
+
+// 「這一幀沒有任何列要上游標底色」。共用同一個凍結物件 → Screen 的 useState 以
+// Object.is 比較，連續的「不上色」不會白白觸發 render。
+const NO_CURSOR_HIGHLIGHT = Object.freeze({ row: -1, cls: null });
 
 // Snapshot-clone a screen row (TermChar[]) for retention in buf.pageLines. The live
 // 24-row buffer is overwritten as PTT repaints, so accumulated rows must be copied.
@@ -90,7 +95,13 @@ export function TermView() {
   this.bbsWidth = 0;
   this.bbsHeight = 0;
   this.dbcsDetect = true;
-  this.highlightBG = 2;
+  // 游標底色（pref mouseBrowsingHighlightColor）→ color.css 的 bN。滑鼠 hover 與
+  // 鍵盤游標共用同一個顏色，對映在 cursor_highlight.highlightClass。
+  // 歷史坑：這個欄位曾經**只被寫入從未被讀**（React 化時斷鏈），使用者選什麼色
+  // 畫面都是硬寫的綠色 b2。動這條路徑時務必確認 applyCursorHighlight 仍讀得到它。
+  this.highlightBG = DEFAULT_HIGHLIGHT_BG;
+  // 鍵盤操作時也把游標所在列上色（pref keyboardCursorHighlight，預設開）。
+  this.keyboardCursorHighlight = true;
   this.charset = 'big5';
   this.middleButtonFunction = 0;
   this.leftButtonFunction = false;
@@ -118,6 +129,12 @@ export function TermView() {
   // List easy reading hides the PTT cursor while the buffer render owns the
   // screen (the real cursor points into the 24-row buffer, not the long list).
   this._cursorHidden = false;
+
+  // 列表好讀模式的游標底色座標（都是「渲染後的 24 列」列號，與 server 幾何無關）：
+  //   _listCursorRow 虛擬游標列，由 buildListWindowLines 每次組視窗時寫入
+  //   _listHoverRow  滑鼠停留列，由 onListMouseMove 寫入（-1 ＝ 沒停在可點的列上）
+  this._listCursorRow = -1;
+  this._listHoverRow = -1;
 
   // 閃爍底線抑制（autoHideBlinkCursor）：PTT 自己畫了 '>' 游標的畫面（列表／選單）
   // 不需要再疊一個閃爍底線。與 _cursorHidden 是**兩個獨立來源**，用 OR 合併於
@@ -212,7 +229,7 @@ export function TermView() {
 
   // React
   this.componentScreen = {
-    setCurrentHighlighted() {},
+    setCursorHighlight() {},
   };
 
   this.selection = null;
@@ -564,8 +581,11 @@ TermView.prototype = {
           /* inlinePreview */ false,
           /* hoverPreview */ this.useEasyReadingMode ? false : this.enablePicPreview
         );
-        this.setHighlightedRow(this.buf.nowHighlight);
       }
+      // 游標底色：**所有** render 分支共用一個套用點（原本只有原生分支呼叫，所以
+      // 列表好讀與 functionMode 的游標永遠沒有底色）。必須在 _renderScreenLines
+      // 之後——Screen 的 ref 要先 commit（react_root 的 flushSync 保證同步）。
+      this.applyCursorHighlight();
       this.buf.prevPageState = this.buf.pageState;
     }
     //var time = new Date().getTime() - start;
@@ -633,12 +653,38 @@ TermView.prototype = {
     );
   },
 
-  setHighlightedRow: function(row) {
+  // 游標底色的**唯一**套用入口（滑鼠 hover 與鍵盤游標共用）。
+  //
+  // 三個模式的游標來源完全不同，故先判模式再交給純函式決策（cursor_highlight.js）：
+  //   listBuffer 我們自己組的 24 列虛擬視窗 → 虛擬游標列 _listCursorRow
+  //              （由 buildListWindowLines 記下；frozen 沿用上一份快照的值）
+  //   article    好讀累積長頁 → 不上色（沒有「游標列」的概念）
+  //   native     原生畫面 → server 真游標列 buf.cur_y（只在選單／列表）
+  // 滑鼠 hover 一律優先。呼叫點：redraw 的每個 render 分支、term_buf.setHighlight
+  // （hover 變動）、updateCursorPos（只有游標動、內容沒動的幀）、pref 變更。
+  applyCursorHighlight: function() {
+    if (!this.buf) return;
+    var listMode =
+      this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen';
+    var mode = listMode
+      ? 'listBuffer'
+      : (this.useEasyReadingMode && this.buf.pageState === 3 ? 'article' : 'native');
+    var row = resolveHighlightRow({
+      mode: mode,
+      pageState: this.buf.pageState,
+      // 滑鼠來源：列表好讀走我們自己算的視窗座標（server 幾何在那裡沒有意義），
+      // 原生沿用 term_buf.onMouse_move 設的 nowHighlight。
+      mouseEnabled: !!(this.buf.useMouseBrowsing && this.buf.highlightCursor),
+      mouseRow: listMode ? this._listHoverRow : this.buf.nowHighlight,
+      keyboardEnabled: !!this.keyboardCursorHighlight,
+      cursorRow: this.buf.cur_y,
+      listCursorRow: this._listCursorRow
+    });
     if (TRACE)
-      console.log(`setHighlightedRow: ${row}, this.buf.highlightCursor:${ this.buf.highlightCursor}`);
-    if (this.buf.highlightCursor) {
-      this.componentScreen.setCurrentHighlighted(row)
-    }
+      console.log(`applyCursorHighlight: mode=${mode} row=${row} bg=${this.highlightBG}`);
+    this.componentScreen.setCursorHighlight(
+      row < 0 ? NO_CURSOR_HIGHLIGHT : { row: row, cls: highlightClass(this.highlightBG) }
+    );
   },
 
   onInput: function(e) {
@@ -930,6 +976,29 @@ TermView.prototype = {
     if (this.buf) this.updateCursorPos();
   },
 
+  // 列表好讀模式的滑鼠移動。**不走 term_buf.onMouse_move**：那條用 server 的真實
+  // 24 列幾何判斷（左緣＝離開、右緣＝翻頁、該列是否為空），而畫面上是我們自己組的
+  // 虛擬視窗，兩者的列意義並不對應。這裡只回答一個問題：滑鼠停在哪一個「可點的
+  // 文章列」上（→ 上色 + pointer 游標），其餘一律沒有。
+  // frozen（開文交易進行中）比照鍵盤：不接受互動，清掉 hover。
+  onListMouseMove: function(row) {
+    var hover = -1;
+    if (this.buf.listRenderMode === 'buffer') {
+      var ls = this.bbscore && this.bbscore.listSession;
+      var idx = row - LIST_HEADER_ROWS;
+      if (ls && idx >= 0 && idx < this.buf.rows - 4) {
+        var win = ls.getWindowView();
+        // body[idx] == null ＝ 短頁的空白補列，沒有文章可點。
+        if (win && win.body[idx] != null) hover = row;
+      }
+    }
+    if (this.buf.BBSWin)
+      this.buf.BBSWin.style.cursor = hover >= 0 ? 'pointer' : 'auto';
+    if (hover === this._listHoverRow) return;
+    this._listHoverRow = hover;
+    this.applyCursorHighlight();
+  },
+
   // Lightweight fading toast for the list easy-reading closed interaction
   // (v5: a non-whitelisted key is a no-op with a hint — list_session.js
   // onKeyDown). One reusable fixed div, inline-styled so it needs no CSS file
@@ -1125,6 +1194,10 @@ TermView.prototype = {
 
   // Cursor
   updateCursorPos: function() {
+    // 鍵盤游標底色跟著真游標走，而游標可能在「內容沒變」的幀單獨移動
+    // （term_buf.notify 的 posChanged 分支），那種幀不會進 redraw → 底色會落後一步。
+    // 放在所有 early-return 之前：上色與游標 DOM 無關，就算底線被隱藏也照樣要更新。
+    this.applyCursorHighlight();
     if (this._cursorHidden) return;
 
     var pos = this.convertMN2XYEx(this.buf.cur_x, this.buf.cur_y);
@@ -1662,6 +1735,7 @@ TermView.prototype = {
     // (rows are replaced wholesale on re-accumulate, so the cache never goes
     // stale).
     var lastReadTitle = ls._lastReadTitle;
+    this._listCursorRow = -1;
     for (var i = 0; i < win.body.length; ++i) {
       var abs = win.body[i];
       var srcRow = abs == null ? null : listLines[abs];
@@ -1676,6 +1750,9 @@ TermView.prototype = {
         var cur = cloneRow(srcRow);
         labelListCursor(cur);
         if (isLastRead) paintLastReadListRow(cur);
+        // 虛擬游標的**渲染列號**（header 固定 3 列）→ 游標底色的上色目標。
+        // frozen 不重算，沿用這份快照的值，與 _listWindowLines 同生命週期。
+        this._listCursorRow = LIST_HEADER_ROWS + i;
         out.push(cur);
       } else if (isLastRead) {
         var lr = cloneRow(srcRow);

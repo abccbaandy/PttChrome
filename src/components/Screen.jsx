@@ -69,6 +69,10 @@ import MergeImageCaptionAiButton from "./MergeImageCaptionAiButton";
 const PAGE_LIST = 2;
 const PAGE_READING = 3;
 
+// 游標底色的「沒有」值。凍結成模組常數（而不是每次 new 一個 literal）讓
+// 「已經是不上色」的重複呼叫在 useState 的 Object.is 比較就被吃掉，不觸發 render。
+const NO_HIGHLIGHT = Object.freeze({ row: -1, cls: null });
+
 // 每列的附加偵測（auto-fix URL / X mention / AID / Steamgifts），逐列迴圈與
 // 「連續同作者推文合併」塊共用——合併後的 chars 是重組的新序列，原列偵測到的
 // col 範圍全部失效，必須對合併 chars 重跑一次。回傳值僅含有命中的鍵。
@@ -553,7 +557,10 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
     enableLinkHoverPreview,
   } = props;
 
-  const [currentHighlighted, setCurrentHighlighted] = React.useState(undefined);
+  // 游標底色：要上色的列 + 要用的 color.css 背景 class。row -1 / cls null ＝ 不上色。
+  // 來源同時涵蓋滑鼠 hover 與鍵盤游標，決策全在 js/cursor_highlight.js，套用入口是
+  // term_view.applyCursorHighlight —— 這裡只負責把 class 掛到那一列。
+  const [highlight, setHighlight] = React.useState(NO_HIGHLIGHT);
   const [currentImagePreview, setCurrentImagePreview] =
     React.useState(undefined);
   // hover 預覽對應的原文連結：只為了讓 OnHover 能回報代理狀態徽章（見
@@ -584,9 +591,13 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   // 明確 true 才**放行**一筆規則層不敢認的修復（見 url_ai_logic.js applyAiFix）。
   const [aiFix, setAiFix] = React.useState({});
 
-  // 命令式 API：term_view 經 term_ui 的 ref.current.setCurrentHighlighted(row)
-  // 設高亮列（鍵盤操作時）。取代 class instance method。
-  React.useImperativeHandle(ref, () => ({ setCurrentHighlighted }), []);
+  // 命令式 API：term_view 經 term_ui 的 ref.current.setCursorHighlight({row, cls})
+  // 設游標底色列。取代 class instance method。
+  React.useImperativeHandle(
+    ref,
+    () => ({ setCursorHighlight: setHighlight }),
+    [],
+  );
 
   // 取代 getDerivedStateFromProps（render 期比較上一次 ref，React 官方 pattern）：
   // lines reference 改變（換頁/重渲染）即關掉開啟中的 hover 圖片預覽。
@@ -895,7 +906,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
         row={row}
         forceWidth={forceWidth}
         enableLinkInlinePreview={enableLinkInlinePreview}
-        highlighted={currentHighlighted === row}
+        highlightClass={highlight.row === row ? highlight.cls : undefined}
         floor={ann && ann.floor}
         hidden={ann && ann.hidden}
         pusher={ann && ann.pusher}
@@ -964,7 +975,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
             row={row}
             forceWidth={forceWidth}
             enableLinkInlinePreview={enableLinkInlinePreview}
-            highlighted={currentHighlighted === row}
+            highlightClass={highlight.row === row ? highlight.cls : undefined}
             floor={ann.floor}
             pusher={ann.pusher}
             pusherHighlight={ann.pusherHighlight}
@@ -1012,7 +1023,10 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   // 才存在，且塊數有限）。
   const prevElements = reusable ? reusable.elements : null;
   const prevAnnotations = reusable ? reusable.annotations : null;
-  const prevHighlighted = reusable ? reusable.highlighted : undefined;
+  const prevHighlight = reusable ? reusable.highlight : NO_HIGHLIGHT;
+  // 顏色（cls）換掉時整批失效——使用者在設定頁改底色才會發生，罕見到不值得逐列
+  // 記住上一次用的 class。逐列則只比「這一列是不是那條光棒」。
+  const sameHighlightCls = prevHighlight.cls === highlight.cls;
   const elements = new Array(lines.length);
   for (let row = 0; row < lines.length; ++row) {
     const ann = annotations[row];
@@ -1020,7 +1034,8 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
       prevElements &&
       row < prevElements.length &&
       prevAnnotations[row] === ann &&
-      (prevHighlighted === row) === (currentHighlighted === row) &&
+      sameHighlightCls &&
+      (prevHighlight.row === row) === (highlight.row === row) &&
       !(ann && ann.mergeBlock)
     ) {
       elements[row] = prevElements[row];
@@ -1036,7 +1051,7 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
           cache: computed.cache,
           annotations,
           elements,
-          highlighted: currentHighlighted,
+          highlight,
         }
       : null;
   return (

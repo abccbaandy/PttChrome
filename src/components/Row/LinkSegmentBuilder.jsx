@@ -16,7 +16,7 @@ export class LinkSegmentBuilder {
     row,
     enableLinkInlinePreview,
     forceWidth,
-    highlighted,
+    highlightClass,
     onHyperLinkMouseOver,
     onHyperLinkMouseOut,
     floor,
@@ -30,7 +30,9 @@ export class LinkSegmentBuilder {
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
-    this.highlighted = highlighted;
+    // 游標底色 class（'b1'..'b15'）或 undefined＝這一列不上色。顏色由 pref 決定，
+    // 決策與對映都在 js/cursor_highlight.js —— 這裡**不可以**再硬寫 b2。
+    this.highlightClass = highlightClass;
     this.onHyperLinkMouseOver = onHyperLinkMouseOver;
     this.onHyperLinkMouseOut = onHyperLinkMouseOut;
     this.floor = floor;
@@ -351,7 +353,7 @@ export class LinkSegmentBuilder {
           {this.lineGroups.map((g, i) => (
             <Fragment key={i}>
               <span
-                className={cx({ b2: this.highlighted })}
+                className={cx(this.highlightClass)}
                 data-type="bbsline"
                 data-row={this.row}
               >
@@ -377,7 +379,7 @@ export class LinkSegmentBuilder {
     return (
       <div>
         <span
-          className={cx({ b2: this.highlighted })}
+          className={cx(this.highlightClass)}
           data-type="bbsline"
           data-row={this.row}
         >

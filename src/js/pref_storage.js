@@ -56,7 +56,16 @@ export const DEFAULT_PREFS = {
 
   // mouse browsing
   useMouseBrowsing: false,
+  // 游標底色（設定頁的「游標底色」區塊）。三個 pref 共用同一條渲染管線，決策在
+  // js/cursor_highlight.js：
+  //   mouseBrowsingHighlight       滑鼠停留的那一列上底色（需 useMouseBrowsing）
+  //   keyboardCursorHighlight      鍵盤操作時把游標所在列上底色（原生：真游標列
+  //                                buf.cur_y，只在選單／列表；列表好讀：虛擬游標列）
+  //   mouseBrowsingHighlightColor  兩者共用的顏色 index → color.css 的 b1..b15
+  // key 名稱刻意保留 mouseBrowsing 前綴（雖然現在不只滑鼠用）：改名等於要為本機與
+  // Firestore 兩邊寫遷移，換不到任何行為。
   mouseBrowsingHighlight: true,
+  keyboardCursorHighlight: true,
   mouseBrowsingHighlightColor: 2,
   mouseLeftFunction: 0,
   mouseMiddleFunction: 0,

@@ -17,6 +17,11 @@
 // below the window top ("畫面中上方").
 export const LIST_FROM_TOP = 10;
 
+// 渲染後的 24 列畫面裡，body（可選取的文章列）從第幾列開始。頭 3 列是快取的
+// header、最後 1 列是快取的 footer（_bodyRows() = rows - 4 的另一半）。
+// 「渲染列號 ↔ body index」的換算（滑鼠座標、游標底色）一律用它，不要再散落魔數 3。
+export const LIST_HEADER_ROWS = 3;
+
 // cursor_pos(read.c:170): clamp the target, keep the window when the target is
 // already inside it, otherwise re-anchor top = target - fromTop (>= 0).
 // Returns { top, cursor } or null when the sequence is empty.
