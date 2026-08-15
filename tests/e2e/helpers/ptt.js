@@ -3,6 +3,10 @@
 
 const { totpCode, isValidOtpSecret } = require('../../../src/js/totp');
 
+// 時鐘偏差階梯（30 秒為一階），與 src/js/auto_login.js#OTP_SKEW_STEPS 同義：
+// server 自己已容忍 ±30s，所以 step 0 就吃掉小偏差；偏差更大時只有換窗才救得回來。
+const OTP_SKEW_STEPS = [0, -1, 1];
+
 const SCREEN_SELECTOR = '#mainContainer';
 
 // 讀取終端機整頁文字（#mainContainer 的 innerText）。
@@ -178,7 +182,7 @@ async function login(page) {
     }
 
     // 兩階段驗證（2FA）→ 用 PTT_OTP_SECRET 算出當下驗證碼。PTT 給 5 次機會，
-    // 這裡最多送 2 次，且重試必須跨 30 秒窗（同一窗重算是同一組碼，必然再錯）。
+    // 這裡最多送 OTP_SKEW_STEPS.length 次，每次換一個時鐘偏差窗（見下方註解）。
     if (screen.includes('兩階段驗證失敗次數過多')) {
       throw new Error(
         `兩階段驗證失敗次數過多\n--- 當前畫面 ---\n${screen}\n----------------`
@@ -193,17 +197,25 @@ async function login(page) {
         );
       }
       const rejected = screen.includes('驗證碼錯誤');
-      if (rejected && otpSent >= 2) {
+      if (rejected && otpSent >= OTP_SKEW_STEPS.length) {
         throw new Error(
-          `兩階段驗證碼連續 ${otpSent} 次未通過（密鑰錯誤或本機時間不準？）\n` +
+          `兩階段驗證碼連續 ${otpSent} 次未通過（試過時鐘偏差 ` +
+          `${OTP_SKEW_STEPS.join('/')} 窗都被拒 → 密鑰錯誤，或本機時鐘偏差超過 ±90 秒）\n` +
           `--- 當前畫面 ---\n${screen}\n----------------`
         );
       }
       if (otpSent === 0 || rejected) {
-        // 被拒才重送，且先等過這一窗；prompt 還在但沒有錯誤訊息＝server 還在驗，繼續等。
-        if (rejected) await page.waitForTimeout(30000);
+        // prompt 還在但沒有錯誤訊息＝server 還在驗，繼續等。
+        // 被拒就換下一個時鐘偏差窗——**不可以只是等 30 秒再送**：那只是把同一個
+        // 相位往後推一格，本機時鐘固定偏 N 秒時每一次都會落在同樣（錯的）窗，
+        // 於是「重試」永遠是同一個結論（2026-08 實測：本機快 33 秒 → 連兩次被拒）。
+        // 階梯與理由同 src/js/auto_login.js#OTP_SKEW_STEPS。
+        const skew = OTP_SKEW_STEPS[otpSent] || 0;
         otpSent++;
-        await typeLine(page, await totpCode(otpSecret));
+        await typeLine(
+          page,
+          await totpCode(otpSecret, { atMs: Date.now() + skew * 30000 })
+        );
       }
       await page.waitForTimeout(800);
       continue;
