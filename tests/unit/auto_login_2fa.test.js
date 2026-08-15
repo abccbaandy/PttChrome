@@ -51,6 +51,8 @@ function makeLogin(overrides = {}) {
   al._otpPending = false;
   al._otpAttempts = 0;
   al._otpLastCounter = -1;
+  al._otpLastCode = "";
+  al._otpSentAt = 0;
   al._otpPromise = null;
   al._seq = 1;
   al._deadline = Date.now() + 90000;
@@ -124,7 +126,9 @@ describe("no usable secret → hands over to the user", () => {
 });
 
 describe("retries", () => {
-  test("does not resend inside the same 30s window", async () => {
+  // The rejection line stays on screen, so without the gap the next poll would
+  // fire the following code before the server has answered the previous one.
+  test("does not fire the next code before the server has answered", async () => {
     const al = makeLogin({ __screen: OTP_PROMPT });
     await tick(al);
     al.__screen = OTP_BAD;
@@ -133,34 +137,70 @@ describe("retries", () => {
     expect(al.__sent).toHaveLength(1);
   });
 
-  test("resends in the next window with a different code", async () => {
+  // A clock that is off by more than the server's own ±30s tolerance gets every
+  // code rejected, so re-sending the same window's code can never recover —
+  // walk the neighbouring windows instead.
+  test("a rejection moves on to the neighbouring window's code", async () => {
     const al = makeLogin({ __screen: OTP_PROMPT });
     await tick(al);
-    vi.setSystemTime(STEP_START + TOTP_PERIOD_SEC * 1000);
+    vi.setSystemTime(STEP_START + 2000); // past OTP_RETRY_GAP_MS
     al.__screen = OTP_BAD;
     al._lastActionAt = 0;
     await tick(al);
     expect(al.__sent).toHaveLength(2);
     expect(al.__sent[1]).not.toBe(al.__sent[0]);
     expect(al.__sent[1]).toBe(
-      (await totpCode(SECRET, { atMs: STEP_START + 30000 })) + "\r"
+      (await totpCode(SECRET, {
+        atMs: STEP_START + 2000 - TOTP_PERIOD_SEC * 1000
+      })) + "\r"
     );
   });
 
-  // The server allows five tries; we spend two and leave the rest for a
-  // hand-typed code or a recovery code.
-  test("gives up after the second rejection", async () => {
+  test("and then the window on the other side", async () => {
     const al = makeLogin({ __screen: OTP_PROMPT });
     await tick(al);
-    vi.setSystemTime(STEP_START + 30000);
     al.__screen = OTP_BAD;
+    vi.setSystemTime(STEP_START + 2000);
     al._lastActionAt = 0;
     await tick(al);
-    vi.setSystemTime(STEP_START + 60000);
+    vi.setSystemTime(STEP_START + 4000);
     al._lastActionAt = 0;
     await tick(al);
-    expect(al.__sent).toHaveLength(2);
+    expect(al.__sent).toHaveLength(3);
+    expect(al.__sent[2]).toBe(
+      (await totpCode(SECRET, {
+        atMs: STEP_START + 4000 + TOTP_PERIOD_SEC * 1000
+      })) + "\r"
+    );
+  });
+
+  // The server allows five tries; we spend three and leave the rest for a
+  // hand-typed code or a recovery code.
+  test("gives up once every skew step has been rejected", async () => {
+    const al = makeLogin({ __screen: OTP_PROMPT });
+    await tick(al);
+    al.__screen = OTP_BAD;
+    for (let i = 1; i <= 3; ++i) {
+      vi.setSystemTime(STEP_START + 2000 * i);
+      al._lastActionAt = 0;
+      await tick(al);
+    }
+    expect(al.__sent).toHaveLength(3);
     expect(al.__stopped).toBe(true);
+  });
+
+  // Crossing a window boundary can make the next step land on the code we just
+  // sent; burn the step rather than one of the server's five attempts.
+  test("never sends the same code twice in a row", async () => {
+    const al = makeLogin({ __screen: OTP_PROMPT });
+    await tick(al);
+    al.__screen = OTP_BAD;
+    // Step -1 from here is exactly the window we just sent for.
+    vi.setSystemTime(STEP_START + TOTP_PERIOD_SEC * 1000 + 2000);
+    al._lastActionAt = 0;
+    await tick(al);
+    expect(al.__sent).toHaveLength(1);
+    expect(al._otpAttempts).toBe(2); // the step was spent, the attempt was not
   });
 
   test("stops on the lockout message without sending", async () => {

@@ -30,7 +30,13 @@ import {
   clearLegacyAutoLoginCredential
 } from './pref_storage';
 import { packCredential, unpackCredential } from './credential_pack';
-import { isValidOtpSecret, totpCode, totpCounter, totpRemainingMs } from './totp';
+import {
+  isValidOtpSecret,
+  totpCode,
+  totpCounter,
+  totpRemainingMs,
+  TOTP_PERIOD_SEC
+} from './totp';
 
 const MAIN_MENU = ['主功能表', '【主功能表】'];
 const POLL_MS = 500;
@@ -50,12 +56,25 @@ const MAX_DURATION_MS = 90000;
 const OTP_PROMPT_MARKERS = ['請輸入兩階段', '位限時數字', '位救援碼'];
 const OTP_BAD_CODE = '驗證碼錯誤';
 const OTP_LOCKED = '兩階段驗證失敗次數過多';
-// The server allows 5 tries; spend at most 2 so a wrong secret or a skewed
-// clock still leaves the user room to type a code or a recovery code by hand.
-const MAX_OTP_ATTEMPTS = 2;
+// Clock-skew ladder, in 30s steps, applied in order as the server rejects each
+// code. The server already verifies with time_window=1 (±30s, see totp.js), so
+// step 0 covers a small skew on its own; a machine whose clock is off by more
+// than that gets its codes rejected *every* time, and re-sending the same
+// window's code (what we used to do) can never recover. Trying the neighbouring
+// windows extends the tolerance to roughly ±90s.
+//
+// The server allows 5 tries; spending 3 still leaves the user room to type a
+// code or a recovery code by hand.
+const OTP_SKEW_STEPS = [0, -1, 1];
+const MAX_OTP_ATTEMPTS = OTP_SKEW_STEPS.length;
 // Don't send a code that is about to expire (guards against a fast local
-// clock; the server itself tolerates ±30s).
+// clock; the server itself tolerates ±30s). Only meaningful for step 0 — a
+// neighbouring window's code was never "current" to begin with.
 const OTP_MIN_REMAIN_MS = 2000;
+// Minimum gap between two codes. The「驗證碼錯誤」line stays on screen after a
+// rejection, so without this the next poll would fire the following code before
+// the server has answered the previous one.
+const OTP_RETRY_GAP_MS = 1200;
 // Waiting for the next 30s window can outlast the normal budget, so extend it
 // once a 2FA prompt is actually on screen.
 const OTP_EXTRA_MS = 75000;
@@ -193,6 +212,8 @@ AutoLogin.prototype.start = async function() {
   this._otpPending = false;
   this._otpAttempts = 0;
   this._otpLastCounter = -1;
+  this._otpLastCode = '';
+  this._otpSentAt = 0;
   this._otpPromise = null;
   this._lastActionAt = 0;
   this._deadline = Date.now() + MAX_DURATION_MS;
@@ -278,31 +299,41 @@ AutoLogin.prototype._handleOtp = function(screen) {
 
   const failed = screen.includes(OTP_BAD_CODE);
   if (failed && this._otpAttempts >= MAX_OTP_ATTEMPTS) {
-    console.warn('auto_login: 2FA code rejected twice — handing over to the user');
+    console.warn(
+      'auto_login: 2FA code rejected on every clock-skew step — handing over to the user'
+    );
     this.stop();
     return true;
   }
-  // Retrying inside the same 30s window would produce the very same code, so
-  // wait for the next one. Requiring the explicit「驗證碼錯誤」line (rather than
-  // "the prompt is still there") also avoids re-sending while the server is
-  // still checking the first code.
+  // Requiring the explicit「驗證碼錯誤」line (rather than "the prompt is still
+  // there") avoids re-sending while the server is still checking the previous
+  // code; the gap guards against the rejection line lingering on screen.
   const shouldSend =
-    this._otpAttempts === 0 || (failed && totpCounter() !== this._otpLastCounter);
+    this._otpAttempts === 0 ||
+    (failed && Date.now() - this._otpSentAt >= OTP_RETRY_GAP_MS);
   if (!shouldSend) return true;
 
-  // Don't send a code that expires in flight.
-  if (totpRemainingMs() < OTP_MIN_REMAIN_MS) return true;
+  const skew = OTP_SKEW_STEPS[this._otpAttempts] || 0;
+  // Don't send a code that expires in flight (step 0 only — see OTP_MIN_REMAIN_MS).
+  if (skew === 0 && totpRemainingMs() < OTP_MIN_REMAIN_MS) return true;
 
   this._otpPending = true;
   const seq = this._seq;
-  this._otpPromise = totpCode(this._otpSecret)
+  const atMs = Date.now() + skew * TOTP_PERIOD_SEC * 1000;
+  this._otpPromise = totpCode(this._otpSecret, { atMs })
     .then(code => {
       if (this._done || seq !== this._seq) return;
       if (this._app.connectState !== 1) return;
       // The screen may have moved on while we were hashing.
       if (!OTP_PROMPT_MARKERS.some(m => this._readScreen().includes(m))) return;
-      this._otpLastCounter = totpCounter();
+      this._otpLastCounter = totpCounter(atMs);
       this._otpAttempts++;
+      // Crossing a window boundary between two steps can make the next step
+      // land on the code we just sent. Burn the step rather than the server's
+      // attempt budget: the next poll moves on to the following step.
+      if (code === this._otpLastCode) return;
+      this._otpLastCode = code;
+      this._otpSentAt = Date.now();
       this._send(code + '\r');
     })
     .catch(e => {
