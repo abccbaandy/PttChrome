@@ -960,6 +960,24 @@ TermBuf.prototype = {
     }, SETTLE_MS);
   },
 
+  // Adopt the CURRENT per-frame pageState as the settled one, without producing a
+  // settle edge (prev == settled). For callers that already know, from a user action,
+  // what screen we are on and must not let a stale snapshot speak for it later.
+  //
+  // Why this is needed: the settle snapshot only advances when the screen goes quiet
+  // for SETTLE_MS. Easy reading's auto page-down keeps the screen busy every ~30-40ms
+  // for the WHOLE article, so a long post can be read start to finish without a single
+  // settle — `settledPageState` then still says LIST(2) from before the post was even
+  // opened. The next quiet moment (e.g. the ^L repaint after switching back to native)
+  // fires a settle that reads as a brand new "list(2) -> article(3)" edge, and
+  // EasyReading.nextEasyReadingState re-enables easy reading against the user's
+  // explicit choice. See EasyReading.exitEasyReading (its only caller) and
+  // docs/easy-reading.md.
+  syncSettledPageState: function() {
+    this.prevSettledPageState = this.pageState;
+    this.settledPageState = this.pageState;
+  },
+
   getText: function(row, colStart, colEnd, color, isutf8, reset, lines) {
     var text = '';
     if (lines) {

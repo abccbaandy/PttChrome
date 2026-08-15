@@ -604,17 +604,21 @@ test.describe('文章列表好讀模式（live）', () => {
         expect(s.selectedNum).toBeLessThan(selBeforeWheel);
       }
 
-      // 站 4：點擊＝no-op（點擊選取已移除 2026-07-08）——點 body 列後選取不動、
-      // 不發鍵給 server（吞掉，防 useMouseBrowsing 對虛擬視窗座標發鍵）。
-      const selBeforeClick = s.selectedNum;
-      const rowBox = await page
-        .locator('#mainContainer [data-type="bbsline"]')
-        .nth(5)
-        .boundingBox();
+      // 站 4：點擊＝開被點的那一篇（59c9f9b 起的合約，治「列表好讀點了完全沒反應」；
+      // 2026-07-08~2026-08-15 之間才是 no-op，此站的舊斷言即停在那個版本）。座標 →
+      // 視窗 body index → 序號錨 → 走鍵盤同一條 reducer/_beginOpen 交易，零 raw byte；
+      // 換算純邏輯守護在 tests/unit/list_click_open.test.js，這裡鎖端到端：真的開得成、
+      // 開的是被點那一列、← 返回後好讀復原。
+      const clickTarget = page.locator('#mainContainer [data-type="bbsline"]').nth(5);
+      const clickedNum = parseInt((await clickTarget.textContent()).trim(), 10);
+      const rowBox = await clickTarget.boundingBox();
       await page.mouse.click(rowBox.x + rowBox.width / 2, rowBox.y + rowBox.height / 2);
-      await page.waitForTimeout(300);
-      s = await settledActive('click-noop');
-      expect(s.selectedNum).toBe(selBeforeClick);
+      await waitFor(page, (x) => x.state === 'suspended', 25000);
+      await page.locator('#t').focus();
+      await page.keyboard.press('ArrowLeft');
+      s = await settledActive('click-open-back');
+      // 置底文（編號欄是 ★）解析不出數字 → 只驗開文/返回，不比對序號
+      if (!Number.isNaN(clickedNum)) expect(s.selectedNum).toBe(clickedNum);
 
       // 站 5：passthrough excursion——未列鍵單按切原生後「黏住」（2026-07-10 UX：
       // 不自動彈回，反覆 [ ] 不再閃動）；原生下 ]、v、/ 全直通。

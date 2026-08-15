@@ -8,6 +8,7 @@ const {
   applyPrefs,
   resetSession,
   gotoBoard,
+  waitEasyReadingComplete,
 } = require('./helpers/ptt');
 
 // Enhanced Add-on：樓層編號 + 黑名單。連真 PTT，需好讀模式。
@@ -32,17 +33,13 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
 
       await gotoBoard(page, 'C_Chat');
 
-      // 開最新一篇，等好讀自動翻頁累積整篇
+      // 開最新一篇，等好讀自動翻頁把整篇累積完（到底才取樣，見 waitEasyReadingComplete；
+      // 舊版靠固定 4 次 Space + 固定 timeout，長文會停在推文區之前）
       await sendKey(page, 'End');
       await page.waitForTimeout(800);
       await sendKey(page, 'Enter');
-      await page.waitForTimeout(5000);
-
-      // 多翻幾頁確保有推文
-      for (let i = 0; i < 4; i++) {
-        await sendKey(page, 'Space');
-        await page.waitForTimeout(1200);
-      }
+      const acc = await waitEasyReadingComplete(page);
+      console.log('ACCUMULATE:', JSON.stringify(acc));
 
       const floors = await page.evaluate(() =>
         Array.from(document.querySelectorAll('#mainContainer [data-floor]'))
@@ -91,8 +88,8 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
           })
           .filter(Boolean)
       );
-    const childCount = () =>
-      page.evaluate(() => document.querySelectorAll('#mainContainer [data-type="bbsline"]').length);
+    // 列數由 waitEasyReadingComplete 在「整篇累積完畢」那一刻回報（見 helper 註解），
+    // 不另外抓當下值——隨手抓到的是翻頁途中的快照，跨階段不可比。
 
     try {
       await resetSession(page);
@@ -105,30 +102,32 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       await gotoBoard(page, 'C_Chat');
 
       // 用與樓層測試相同的成功導航（End→Enter）；若該篇無推文，回列表往上一篇再試。
+      //
+      // 取樣點＝「整篇累積完畢」(waitEasyReadingComplete)，不是「翻 N 次 Space 之後」。
+      // 前後兩階段必須停在同一個可重現的終點，c1/c2 才可比：舊版前 3 次 / 後 5 次
+      // Space，長文兩邊停在不同位置 ⇒ c2(412) > c1(288) 必紅（2026-08）。
       await sendKey(page, 'End');
       await page.waitForTimeout(800);
       let before = [];
       let c1 = 0;
       for (let attempt = 0; attempt < 6; attempt++) {
         await sendKey(page, 'Enter');
-        await page.waitForTimeout(3800);
-        for (let i = 0; i < 3; i++) {
-          await sendKey(page, 'Space');
-          await page.waitForTimeout(900);
-        }
+        const acc = await waitEasyReadingComplete(page);
+        console.log('ACCUMULATE BEFORE:', JSON.stringify(acc));
         before = await pushers();
-        if (before.length > 0) {
-          c1 = await childCount();
+        if (before.length > 0 && acc.reachedEnd) {
+          c1 = acc.rows;
           break;
         }
-        // 無推文 → 離開回列表、往上一篇（較舊）再試
+        // 無推文（或沒讀到底）→ 離開回列表、往上一篇（較舊）再試
         await sendKey(page, 'ArrowLeft');
         await page.waitForTimeout(1300);
         await sendKey(page, 'ArrowUp');
         await page.waitForTimeout(500);
+        before = [];
       }
       console.log('PUSHERS BEFORE:', before.length, 'childRows', c1);
-      test.skip(before.length === 0, '找不到有推文的文章，跳過黑名單驗證');
+      test.skip(before.length === 0, '找不到有推文且能讀到底的文章，跳過黑名單驗證');
 
       // 選出現次數最多的推文者
       const freq = {};
@@ -142,24 +141,24 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
         window.__app.view.blacklist = new Set([t.toLowerCase()]);
       }, target);
 
-      // 離開回列表（游標仍停在本篇）→ 再進入，好讀重新累積套用黑名單
+      // 離開回列表（游標仍停在本篇）→ 再進入，好讀重新累積套用黑名單。
+      // 同樣等到整篇讀完才取樣：與 c1 同基準（同一篇、同樣讀到 100%）。
       await sendKey(page, 'ArrowLeft');
       await page.waitForTimeout(1500);
       await sendKey(page, 'Enter');
-      await page.waitForTimeout(4000);
-      for (let i = 0; i < 5; i++) {
-        await sendKey(page, 'Space');
-        await page.waitForTimeout(1000);
-      }
+      const acc2 = await waitEasyReadingComplete(page);
+      console.log('ACCUMULATE AFTER:', JSON.stringify(acc2));
+      expect(acc2.reachedEnd).toBe(true);
 
       const after = await pushers();
-      const c2 = await childCount();
+      const c2 = acc2.rows;
       console.log('PUSHERS AFTER:', after.length, 'childRows', c2);
 
       // 被封鎖者的推文完全消失
       expect(after.includes(target)).toBe(false);
-      // 列數真的變少（整列移除，非僅隱藏占行）
+      // 列數真的變少（整列移除，非僅隱藏占行），且至少少掉該人的那幾列
       expect(c2).toBeLessThan(c1);
+      expect(before.length - after.length).toBeGreaterThanOrEqual(targetCount);
 
       // 樓層嚴格遞增。設計上黑名單列「仍占樓號」（編號絕對，見 comment_parse.test.js
       // "floors advance for every comment including blacklisted"），故移除處會留缺號，

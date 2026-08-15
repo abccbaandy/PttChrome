@@ -1157,6 +1157,24 @@ EasyReading.prototype.exitEasyReading = function() {
   // (the old vdom-desync freeze is gone now that nothing mutates #mainContainer
   // by hand).
   this._enabled = false;
+  // Retire the debounced pageState snapshot: from here on it must speak for THIS
+  // screen, not for whatever was on it before the post was opened.
+  //
+  // docs/easy-reading.md used to claim the exit suppression was structurally correct
+  // because settledPageState is already 3 here and never advances again. That holds
+  // if the article settled at least once while it was open — and the auto page-down
+  // loop makes that the exception, not the rule: it repaints every ~30-40ms, so the
+  // 50ms settle timer is re-armed continuously and NEVER fires for the whole article
+  // (long posts = more page-downs = more likely). settledPageState then still holds
+  // the LIST(2) value from before we entered, and the first quiet moment after this
+  // exit — the ^L repaint below — settles to 3 and looks exactly like a fresh
+  // "list -> article" edge, so _onPageStateSettled turns easy reading straight back
+  // on. The user sees the F8 land on the post's last page and freeze there: easy
+  // reading re-accumulates from the bottom page, whose footer already reads 100%, so
+  // no further PageDown is ever sent. That is the 「F8 切原生卡在最後一頁」 report
+  // (recorded: ptt-debug-20260815-204141.json, easyReading.exit t=2035 →
+  // easyReading.enter t=2135).
+  this._termBuf.syncSettledPageState();
   // Remember which post we are leaving behind, so the settle re-entry route can tell a
   // genuinely different post from a native Home back to this one's line 1.
   this._nativeArticleKey = this._articleKey;

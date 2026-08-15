@@ -298,6 +298,7 @@ describe("EasyReading._onPageStateSettled", () => {
   const makeER = ({ settled, prevSettled, enabled = false, supported = true } = {}) => {
     const termBuf = {
       addEventListener() {},
+      syncSettledPageState,
       settledPageState: settled,
       prevSettledPageState: prevSettled,
       startedEasyReading: false,
@@ -477,6 +478,15 @@ describe("EasyReading._onKeyDownProcessUI End handling", () => {
 // fires once the screen is truly quiet (content AND cursor stopped); _onScreenSettled
 // re-runs the SAME pure decision and re-sends the missed PageDown, deduped by the page
 // signature so a slow PTT response cannot double-send (which would skip a page). The
+// TermBuf.syncSettledPageState 的等價實作：本檔的 termBuf 全是手寫 stub，而 string_util
+// 在這裡被整包 mock 掉，import 真的 term_buf 會在載入期就炸。exitEasyReading 會呼叫它
+// （消除「翻頁全程沒 settle → settledPageState 過期」造成的假 2->3 邊緣，見
+// tests/unit/easy_reading_native_switch_settle.test.js）。
+function syncSettledPageState() {
+  this.prevSettledPageState = this.pageState;
+  this.settledPageState = this.pageState;
+}
+
 // decision itself is covered by nextEasyReadingRowState above; this guards the PLUMBING.
 const makeER = ({
   enabled = true,
@@ -497,6 +507,7 @@ const makeER = ({
   const lastChar = { getFg: () => lastRowFirstChFg, getBg: () => lastRowFirstChBg };
   const termBuf = {
     addEventListener() {},
+    syncSettledPageState,
     cols: 80,
     rows: 24,
     cur_x: curX,
@@ -796,7 +807,8 @@ describe("文章身分 _articleKey 的捕捉點", () => {
     const screen = { rows };
     const lastChar = { getFg: () => 7, getBg: () => 0 };
     const termBuf = {
-      addEventListener() {}, cols: 80, rows: 24, cur_x: 79, cur_y: 23,
+      addEventListener() {},
+      syncSettledPageState, cols: 80, rows: 24, cur_x: 79, cur_y: 23,
       pageState: 3, prevPageState: 3, settledPageState: 3, prevSettledPageState: 3,
       pageLines: [], lines: { 23: [lastChar] },
       lineChangeds: { fill: vi.fn() }, notify: vi.fn(),
@@ -891,7 +903,8 @@ describe("F8 在原生模式下切回好讀（toggle）", () => {
   const makeNativeER = ({ rowIndexStart = 500, key = "F8" } = {}) => {
     const rows = ["作者 starahsu", "標題 [推薦] PTT Star", "時間 Mon Dec 31"];
     const termBuf = {
-      addEventListener() {}, cols: 80, rows: 24, cur_x: 79, cur_y: 23,
+      addEventListener() {},
+      syncSettledPageState, cols: 80, rows: 24, cur_x: 79, cur_y: 23,
       pageState: 3, prevPageState: 3, settledPageState: 3, prevSettledPageState: 3,
       pageLines: [], lines: { 23: [{ getFg: () => 7, getBg: () => 0 }] },
       lineChangeds: { fill: vi.fn() }, notify: vi.fn(),
@@ -1305,6 +1318,7 @@ describe("EasyReading._onViewUpdated 快路徑去重", () => {
   const makeER = () => {
     const termBuf = {
       addEventListener() {},
+      syncSettledPageState,
       cols: 80,
       rows: 24,
       cur_x: 79,
@@ -1360,6 +1374,7 @@ describe("EasyReading 掉頁自癒（goto-line 精準補讀）", () => {
   const makeER = () => {
     const termBuf = {
       addEventListener() {},
+      syncSettledPageState,
       cols: 80,
       rows: 24,
       cur_x: 79,

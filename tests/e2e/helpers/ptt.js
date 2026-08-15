@@ -376,6 +376,44 @@ async function gotoBoard(page, board) {
   }
 }
 
+// 等文章好讀「整篇累積完畢」：easyReadingReachedPageEnd（＝footer 100%，見
+// nextEasyReadingRowState 的 pagePercent 判準）成立，且累積出的 DOM 列數連續數次
+// 輪詢不變（最後一頁合併進 pageLines、React 也 reconcile 完）。
+//
+// 為什麼一定要這個 helper：好讀是**自動翻頁**的，翻多久取決於文章長度與網路。
+// 用「固定次數 Space + 固定 waitTimeout」去猜停在哪裡，兩次讀同一篇會停在不同位置，
+// 任何跨階段的列數比較都失去共同基準（2026-08：黑名單案第一階段 3 次 Space 停在 288
+// 列、第二階段 5 次停在 412 列，`c2 < c1` 必紅，看起來像素材不穩，其實是斷言基準不同）。
+// 一律等到「整篇」這個唯一可重現的終點再取樣。
+//
+// 回傳 { rows, reachedEnd, timedOut }；逾時不丟例外，由呼叫端決定要斷言還是 skip。
+async function waitEasyReadingComplete(page, opts = {}) {
+  const timeout = opts.timeout || 90000;
+  const quiet = opts.quiet || 4;          // 需連續幾次輪詢列數不變
+  const interval = opts.interval || 600;
+  const deadline = Date.now() + timeout;
+  let prev = -1;
+  let stable = 0;
+  let st = { end: false, rows: 0 };
+  while (Date.now() < deadline) {
+    st = await page.evaluate(() => ({
+      end: !!(window.__app && window.__app.easyReading &&
+              window.__app.easyReading.easyReadingReachedPageEnd),
+      rows: document.querySelectorAll('#mainContainer [data-type="bbsline"]').length,
+    }));
+    if (st.rows === prev && st.rows > 0) {
+      // 到底旗標成立時只要畫面停了就收；還沒到底則多等幾輪，避免翻頁空檔誤判
+      if (++stable >= (st.end ? 2 : quiet) && st.end)
+        return { rows: st.rows, reachedEnd: true, timedOut: false };
+    } else {
+      stable = 0;
+    }
+    prev = st.rows;
+    await page.waitForTimeout(interval);
+  }
+  return { rows: st.rows, reachedEnd: !!st.end, timedOut: true };
+}
+
 // 收集 console 與 pageerror，測試失敗時可印出。回傳 logs 陣列。
 // opts.echo（或 env E2E_ECHO_CONSOLE）為真時即時印到 stdout，debug 免再自行 filter/join。
 function attachConsole(page, opts = {}) {
@@ -399,6 +437,7 @@ module.exports = {
   waitBbsConnected,
   describeConnectFailure,
   attachConsole,
+  waitEasyReadingComplete,
   dismissDeveloperModeAlert,
   applyPrefs,
   resetSession,
