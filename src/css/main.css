@@ -191,6 +191,14 @@ a:link,a:visited,a:active,a:hover {
   width: 100%;
   height: auto;
 }
+/* 延遲載入卸下期間的替身盒（LazyInlinePreview）。刻意也掛 .easyReadingImg，好讓
+   max-width/max-height、放大態的 width:100% 等**完全同一組規則**替它算高度 ——
+   佔位高度因此與真圖逐像素相同，兩種尺寸模式都準，JS 端不必複製任何 CSS 常數。
+   寬度走 CSS 變數（元件以 inline style 給原尺寸）：inline 的 width 會蓋掉放大態的
+   width:100%，變數不會。空盒、無邊框，使用者看到的就是圖片還沒載進來的留白。 */
+.inlinePreviewGhost {
+  width: var(--ghost-w);
+}
 
 /* 好讀「圖左字右合併」（翻譯漫畫文；Screen.js mergeBlock）：圖行連同 inline 圖
    佔左欄，其下說明/翻譯行搬進右欄。右欄 sticky（scroll ancestor = .main，中間無

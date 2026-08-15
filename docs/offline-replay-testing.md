@@ -111,6 +111,7 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 | 測試 | 前提 | 選錯的後果 |
 |---|---|---|
 | `lazy_preview_blank.offline.spec.js`（非媒體連結不留高度） | 文章夠長／夠多圖，把「※ 文章網址」那列推出 lazy 卸載邊界 | 短文（`test-xmen`）整篇都在視野內、從不卸載 ⇒ 佔位盒永不釘高度 ⇒ **恆綠**（實際踩過） |
+| `lazy_preview_enlarge_blank.offline.spec.js`（放大態釘的高度不留到縮小態） | 多圖且**放大後**總高足以把上方佔位盒推出 6000px 卸載邊界（`stock-end` 9 張圖：實測放大態釘住 8 個、最高 908px） | 圖太少／太短 ⇒ 放大態從不卸載 ⇒ 恆綠。spec 內以 `pinnedWhileEnlarged > 0` 硬紅擋住此情形 |
 | `easy-reading.offline.spec.js` 掉頁自癒 | **≥2 個 `pagedown` step**（吞的是「中間」頁） | 只有 1 個 pagedown 的卷吞掉即只剩第一頁，沒有中間頁可自癒，前提不成立 |
 
 新增素材後請照「回歸捕捉力驗證」那節，實際把修復還原一次確認會紅。

@@ -57,6 +57,7 @@ import {
   isAppendOnly,
   mergeRunKey,
 } from "../js/screen_annotate_cache";
+import { PreviewSizeModeContext } from "./LazyInlinePreview";
 import MergeImageCaptionButton from "./MergeImageCaptionButton";
 import MergeImageCaptionAiButton from "./MergeImageCaptionAiButton";
 
@@ -1039,38 +1040,46 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
         }
       : null;
   return (
-    <div
-      id="mainContainer"
-      ref={containerRef}
-      className={imagesEnlarged ? "imagesEnlarged" : undefined}
-      onMouseMove={handleMouseMove}
-      onClick={handleImageClick}
+    // 延遲載入佔位盒（LazyInlinePreview）卸載時會把當下高度釘進 min-height 防塌陷，
+    // 那個高度只在同一尺寸模式下成立 —— 放大態釘的高度若留到縮小態就是永久假空白
+    // （ptt-debug-20260815-112407）。故把模式一併播下去，與下面的 className 同一次
+    // render 更新，useLayoutEffect 的捲動錨定量到的才是撤除 min-height 後的新 layout。
+    <PreviewSizeModeContext.Provider
+      value={imagesEnlarged ? "enlarged" : "normal"}
     >
-      {elements}
-      {showMergeButton && (
-        <MergeImageCaptionButton
-          mode={mergeCaption}
-          onToggle={handleToggleMergeCaption}
-        />
-      )}
-      {showCaptionAiButton && (
-        <MergeImageCaptionAiButton
-          active={captionAi}
-          pending={captionAi ? aiPending : 0}
-          onToggle={handleToggleCaptionAi}
-        />
-      )}
-      {currentImagePreview && (
-        <PreviewHrefContext.Provider value={hoverPreviewHref}>
-          <ImagePreviewer
-            request={currentImagePreview}
-            component={ImagePreviewer.OnHover}
-            left={pos.left}
-            top={pos.top}
+      <div
+        id="mainContainer"
+        ref={containerRef}
+        className={imagesEnlarged ? "imagesEnlarged" : undefined}
+        onMouseMove={handleMouseMove}
+        onClick={handleImageClick}
+      >
+        {elements}
+        {showMergeButton && (
+          <MergeImageCaptionButton
+            mode={mergeCaption}
+            onToggle={handleToggleMergeCaption}
           />
-        </PreviewHrefContext.Provider>
-      )}
-    </div>
+        )}
+        {showCaptionAiButton && (
+          <MergeImageCaptionAiButton
+            active={captionAi}
+            pending={captionAi ? aiPending : 0}
+            onToggle={handleToggleCaptionAi}
+          />
+        )}
+        {currentImagePreview && (
+          <PreviewHrefContext.Provider value={hoverPreviewHref}>
+            <ImagePreviewer
+              request={currentImagePreview}
+              component={ImagePreviewer.OnHover}
+              left={pos.left}
+              top={pos.top}
+            />
+          </PreviewHrefContext.Provider>
+        )}
+      </div>
+    </PreviewSizeModeContext.Provider>
   );
 });
 
