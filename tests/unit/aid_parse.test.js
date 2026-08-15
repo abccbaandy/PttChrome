@@ -3,7 +3,7 @@
 // suffix "(Android)" / "@Android". Fake TermChar cells only need `ch` and
 // `isLeadByte` (the parser walks columns, never the DBCS tables).
 
-import { detectAids } from "../../src/js/aid_parse";
+import { detectAids, parsePostInfoAid } from "../../src/js/aid_parse";
 
 const cell = (ch, isLeadByte = false) => ({ ch, isLeadByte });
 const ascii = str => str.split("").map(c => cell(c));
@@ -167,5 +167,46 @@ describe("detectAids", () => {
   test("empty / null input", () => {
     expect(detectAids(null)).toEqual([]);
     expect(detectAids([])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePostInfoAid：讀「Q 文章資訊框」那一列，拿到本篇文章自己的 AID。
+// 定版來源 mbbsd/bbs.c#view_postinfo:3691-3705（AID_DISPLAYNAME 見
+// include/common.h:154）。這是 AID 返回錨點的資料來源，不是畫面上的連結偵測，
+// 所以吃的是解碼後的整列文字（同 parseCrossPostBoardPrefix）。
+// ---------------------------------------------------------------------------
+describe("parsePostInfoAid", () => {
+  test("定版資訊框列：AID ＋ 括號板名", () => {
+    expect(
+      parsePostInfoAid(
+        "│ 文章代碼(AID): #1gIeu-3A (movie) [ptt.cc] [好雷] 電影心得"
+      )
+    ).toEqual({ aid: "1gIeu-3A", board: "movie" });
+  });
+
+  test("currboard 為空時 pttbbs 印中文「不明」→ 板名解不到，AID 仍要拿到", () => {
+    expect(parsePostInfoAid("│ 文章代碼(AID): #1gIeu-3A (不明) [ptt.cc]")).toEqual(
+      { aid: "1gIeu-3A", board: null }
+    );
+  });
+
+  test("本篇沒有合法 AID（bbs.c:3707 只印一根框線）→ null", () => {
+    expect(parsePostInfoAid("│")).toBe(null);
+  });
+
+  test("文章內文出現的 #AID 不算資訊框（沒有「文章代碼(AID)」字面）", () => {
+    expect(parsePostInfoAid("推 someuser: 參考 #1gIeu-3A (movie) 那篇")).toBe(
+      null
+    );
+  });
+
+  test("超過 8 碼的識別碼不是 AIDc", () => {
+    expect(parsePostInfoAid("│ 文章代碼(AID): #1gIeu-3A9 (movie)")).toBe(null);
+  });
+
+  test("空 / null 輸入", () => {
+    expect(parsePostInfoAid("")).toBe(null);
+    expect(parsePostInfoAid(null)).toBe(null);
   });
 });

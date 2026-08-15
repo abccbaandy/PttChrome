@@ -130,6 +130,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 - **pmore 內安全**：pmore 主迴圈 `ch = vkey()`（`mbbsd/pmore.c:2537`）→ 同樣被 igetch 攔截全幅重繪。開文/退文交易尾附 `\f` 可行。
 - **read.c 列表層再保險**：`i_read_key` 自己也有 `case Ctrl('L'): redrawwin()+refresh()`（`mbbsd/read.c:735`）。
 - typeahead 交互（BePTT 實證＋§2 推論）：`指令+\f` 同送 → 中間增量重繪被跳繪吞 → client 恰見一幀全幅畫面。單獨 `\f`＝零副作用「我在哪」探針。
+- **推論（2026-08-15 live 實錯）：`\f` 關不掉任何「按任意鍵」**。`pressanykey()`＝`vmsg(NULL)` 的 `do { i = vkey(); } while (i == 0)`——`\f` 在 `system_key_hook`（`io.c:196-203`）就回 `KEY_INCOMPLETE`，`vkey()` 對它 `continue`（`io.c:432-434`），**那個 byte 根本不會成為一個「鍵」**。拿它當關框鍵的後果是**整串位移一格**：框沒關掉 → 下一個字元被拿去關框 → 剩下的字串被 pager／列表當快捷鍵逐鍵吃掉（實錯：`\f` + `sC_Chat\r` → `s` 關框、`h` 開說明、`a` 跳作者下一篇，人直接跑到別篇文章）。要關 pressanykey 一律用**空白鍵**。
 - `\f` 不取代 settle：全幅重繪仍拆包（OBUFSIZE 3072），settle 判「何時看」、`\f` 保證「必有得看」。
 - **重要限制（M1 實測，cchat-list-nav `\f` 版卷）：`redrawwin` 重繪的是 server 虛擬螢幕「現狀」，不會推進畫面狀態**——跳號完成後 server 虛擬螢幕的底列本來就空（§4 ✚：feeter 要到下一個 PARTUPDATE 才重畫），`跳號+\f` 的全幅重繪底列**仍空**＝classify 仍 transient、永非 clean-list。⇒ jump 落點判定必須維持 park 指紋（§4/§5），「jump 尾附 `\f` 換 clean-list expect」不成立。`\f` 的真實價值＝**零回應情境的確定性化**：timeout 探針（強制產生一幀可判定畫面）、相對命令 miss（`鍵+\f` 保證有回應）。
 
@@ -159,14 +160,31 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 - 輸入前處理（`read.c:394-399`）：strip 前置空白與**一個** `#` ⇒ 送 `#1gIeu-3A` 與 `1gIeu-3A` 等價。`aidc2aidu()` 遇非法字元回 0。
 - **成功（`read.c:477-481`）：`*pnew_ln = n+1; move(b_lines,0); clrtoeol(); return DONOTHING;`** ⇒ **只把游標移到目標序號、不重繪清單、不自動開文**。畫面指紋與「數字跳號」完全相同（底列留空）⇒ **client 直接沿用 §4 ✚ 的 park 判定**，不可等 clean-list。
 - 失敗（`read.c:464-475`）：`move(21,0); clrtobot(); move(22,0)` ＋ `不合法的文章代碼(AID)，請確定輸入是正確的` / `找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了` ＋ `pressanykey()` ＋ `FULLUPDATE`。
-- 拒絕分支：MODE_SELECT（搜尋清單中）或 RMAIL → `此狀態下無法使用搜尋文章代碼(AID)功能` ＋ `pressanykey()`。
+- 拒絕分支：MODE_SELECT（搜尋清單中）或 RMAIL → `此狀態下無法使用搜尋文章代碼(AID)功能` ＋ `pressanykey()`。**推論：`/` 搜尋清單裡不可能直接 `#` 跳文，跳轉與返回都必須先用 `s<board>` 離開 MODE_SELECT**（`s` 走 `do_select()`→`enter_board()`，currmode 重來）。
 - **跨模式跳轉會產生二段式畫面更新**：命中處與目前模式不符（一般↔文摘）時設 `*pdefault_ch = KEY_TAB; return DONOTHING;`——server **自己補按一個 TAB**，下一圈 `i_read_key` 用它跑 `board_digest()` 切模式 ⇒ client 會看到「prompt 消失」與「全幅切換清單」兩段。
 - 文章內（pmore）按 `#`：`more.c:108-112` → `RET_SELECTAID` → `read.c:1018-1024` 先退出 pmore 回列表再開同一個 prompt，收尾強制 `FULLUPDATE`（與列表內的 `DONOTHING` 不同）。
 - **死碼警告**：`mbbsd/aids.c` 的 `do_search_aid()`（支援 `AID@BOARDNAME` 跨板語法）整段包在 `#ifdef NEW_AIDS` 內，而 `NEW_AIDS` 全 repo 無任何定義 ⇒ **真正跑的只有 `read.c#select_by_aid`，不支援 `@板名`**。勿照那段實作 client。
 - **只搜 currboard**：`select_by_aid` 依序找 `<currboard>/.DIR.bottom`、`.DIR`、`fn_mandex`，全都是**目前看板**的檔案 ⇒ 跨板一定要先 `s<board>`。另註 `read.c:404` 自帶 FIXME：置底文若沒列在 `.DIR.bottom` 這段會搜不到（實測 Test 板的置底公告 AID 搜尋直接失敗）⇒ **client 不可假設任何一篇文章的 AID 都跳得到**。
 - **per-board 游標記憶（getkeep）＝「返回原看板」可行的根據（CONFIRMED）**：`i_read` 在 `NEWDIRECT`（第一次進入該目錄）呼叫 `getkeep(currdirect, …)`（`read.c:1171`），而 `getkeep`（`read.c:105`）以 board path 的 hash 查既有 entry，**命中就沿用舊的 `crs_ln`**（`read.c:128-139`）；儲存結構是不斷追加的 link block（`KEEPSLOT=10` 一塊，滿了 malloc 下一塊），**session 內永不淘汰**。`board.c:1976` 的 `getkeep(buf, head, tmp+1)` 只在 entry 不存在時才用未讀位置當預設值，不會覆寫既有的。⇒ `s<原板>` 回去時游標仍停在離開時那一列。
   - **推論（單一例外）**：同板的 `#<aid>` 跳轉會覆寫該板的 `crs_ln`，所以「靠 getkeep 回原文」在**原板 == 目標板**時不成立（client 端 `nav_history.chooseAnchor` 據此讓 board 級錨點作廢）。
-- client 對照：`src/js/aid_navigation.js`（點 AID 連結的三段式交易＋返回時的反向重放）、`src/js/nav_history.js`（錨點三級：aid / num＋subject 驗證 / board）與列表好讀的貼上 passthrough（`list_session.js#onPaste`）——後者刻意**不**代按 Enter、不特判 AID，讓上述原生行為原樣呈現。
+- client 對照：`src/js/aid_navigation.js`（點 AID 連結的四段式交易＋返回時的反向重放）、`src/js/nav_history.js`（錨點三級：aid / num＋subject 驗證 / board）與列表好讀的貼上 passthrough（`list_session.js#onPaste`）——後者刻意**不**代按 Enter、不特判 AID，讓上述原生行為原樣呈現。
+
+## 8.2 `Q` 文章資訊框交易（`view_postinfo`，CONFIRMED）
+
+**唯一能問出「我現在這篇的 AID」的原語**——`#` 只能用 AID 去找文章，反向要靠這個。是 AID 返回錨點的資料來源（`aid_navigation._enqueueOriginAid`）。
+
+- 觸發：列表 `Q`（`bbs.c:4410` onekey 表 → `view_postinfo`）；**文章內（pmore）`Q` 也可以**（`more.c:70` → `RET_DOQUERYINFO` → `bbs.c:2376`），會**先退出 pmore 回列表**再疊資訊框。無 `currstat` 閘門（與 `s`/`#` 不同）。
+- 畫面：以游標列為基準疊一個 `┌─…┐`／`└─…┘` 方框（`bbs.c:3650-3690` 決定 `area_l`；游標偏下時整框上移），內容定版 `bbs.c:3697-3705`：
+  `│ 文章代碼(AID): #<8碼AIDc> (<板名>) [ptt.cc] <標題截斷>`，其後可有 `│ 文章網址: https://…`（`QUERY_ARTICLE_URL`）、金錢／匿名／投票列。
+  `AID_DISPLAYNAME` = `include/common.h:154`。`currboard` 為空時板名印中文「不明」。
+- **本篇無合法 AID（`fn2aidu()<=0`）時只印一根 `│`**（`bbs.c:3707`）⇒ client 不可假設一定讀得到。
+- **MODE_SELECT 下數值仍正確**：`view_postinfo` 讀的是 `fhdr->filename`（篩選清單的 record 帶的是真實檔名），不碰 `bbs.c:3732` 註記會亂掉的 `multi`。
+- **收尾 `pressanykey()`（`bbs.c:3773`）＝ `vmsg(NULL)`（`proto.h:636`／`vtuikit.c:439-455`）吃掉正好一個鍵**，然後 `FULLUPDATE`。
+  - **框畫在「剛離開的文章畫面」上**（`view_postinfo` 用 `grayout()` 壓灰背景），要等 `pressanykey` 收掉後才由 `read_post` 的 `return FULLUPDATE` 重繪**列表** ⇒ 框在時 client 看到的底色仍是文章。
+  - client 三條硬規則：
+    ① 這個交易**不可帶 `fullRepaint`**：判定一律靠內容，多送一個 `\f` 只會讓 settle 幀的意義變模糊。
+    ② **關框的鍵不可以是 `\f`**（見 §6 末條：Ctrl-L 送不到 handler，框關不掉，下一個字元會被拿去關框，剩下的板名就被 pager 當快捷鍵吃掉），也**不可以是 `←`**（外漏到列表會直接離板）。現用**空白鍵**：外漏到列表或 pager 都只是翻頁，對後續的 `s<board>` 無影響。
+    ③ `pressanykey` 的回傳值有一個特例：`r == 'Q'` 會切換金錢排序模式（`bbs.c:3774-3781`）⇒ 關框鍵不可用 `Q`。
 
 ## 9. 水球/廣播指紋（T4 非請自來，CONFIRMED）
 

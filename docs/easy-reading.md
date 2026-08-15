@@ -131,15 +131,19 @@
 
 PTT 端**沒有**跳轉來源的概念（`read.c#select_by_aid` 只在 currboard 內搜尋，跨板就是真的換板），所以返回＝**用離開前擷取的錨點再導航一次**（同 BePTT 的「每個位置存一段按鍵序列、返回時重放」，差別是這裡每步都有 expect 而非盲送）。正向與返回共用同一組 enqueue 函式，只有中段那一步不同（`_enqueueMiddle`）。
 
-錨點三級（`nav_history.chooseAnchor`，純函式）：
+**正向跳轉的第 0 步 `Q`（`_enqueueOriginAid`，2026-08）**：離開前先叫出文章資訊框，讀出**本篇自己的 AID**（協定 §8.2）當返回錨點，讓 aid 級在所有情境都拿得到。
+沒有它時 `/` 搜尋過的清單一定回不去：MODE_SELECT 序號空間獨立（`read.c:661-665`），返回的 `s<board>` 又會離開搜尋模式，於是那個序號落在主清單的別篇文章。
+best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原本級別），**只有 flush 才 `_fail`**。`fullRepaint` 必須是 false、關框鍵必須是**空白鍵**（`\f` 不是「鍵」，關不掉 pressanykey）——理由見協定 §6 末條與 §8.2。
+
+錨點三級（`nav_history.chooseAnchor`，純函式；aid 級另由 `upgradePendingOriginAid` 升級而來）：
 
 | 級 | 來源 | 中段動作 | 備註 |
 |---|---|---|---|
-| aid | `history.landed()`（本篇自己就是上次跳來的） | `#<aid>\r` | 唯一不受刪文位移影響 |
+| aid | 第 0 步 `Q` 問到的本篇 AID；或 `history.landed()`（本篇自己就是上次跳來的） | `#<aid>\r` | 唯一不受刪文位移／MODE_SELECT 重新編號影響。會**保留 num/subject 當備援**：置底文的 `#` 搜尋必失手（`read.c:404` FIXME），back run 的 miss 就退回序號／停在列表，不清空 stack |
 | num | `listSession.currentAnchor()` = `_openedNum` + `_boardName`(可為 null→用 `view._articleBoard` 遞補) + `_lastReadTitle` | `<num>\r`，落地**必須** `subjectOfListText(游標列) === subject` 才送 `\r` | 序號會因刪文位移 |
-| board | `view._articleBoard` | 無：落地列表就停手 | 靠 `getkeep` per-board 游標記憶；**同板跳轉時作廢**（正向 `#aid` 已覆寫該板 keep） |
+| board | `view._articleBoard` | 無：落地列表就停手 | 靠 `getkeep` per-board 游標記憶；**同板跳轉時作廢**（正向 `#aid` 已覆寫該板 keep）——但第 0 步問到 AID 時同板也有返回鈕了 |
 
-- **順序不變量**：錨點必須在 `_begin()`（`easyReading._enterFunctionMode()` + `listSession.beginExternalNavigation()`）**之前**擷取——後者會清 `_boardName`/`_serverNum`/`_openedNum`。
+- **順序不變量**：錨點必須在 `_begin()`（`easyReading._enterFunctionMode()` + `listSession.beginExternalNavigation()`）**之前**擷取——後者會清 `_boardName`/`_serverNum`/`_openedNum`。捲動行索引同理，且要另外掛在 run 上（`run.originLineIndex`）：`chooseAnchor` 回 null 時沒有錨點可以承接它，升級成 aid 級時才補得回去。
 - **兩段式 commit**：`beginJump`/`beginBack` 只暫存，`_enqueueOpen.onDone`（文章真的開了）才 `commitJump`/`commitBack`。任一步失敗 → `abort()` **整個清空**，不 pop 不 push 不重試。
 - **`_openedNum` 而非 `_selectedNum`**（兩次 live 誤跳的根因）：置底文沒有序號、`_selectedNum` 會留著上一個數字列的殘值；原生模式（functionMode，例如按過 Q 資訊框）下方向鍵是 passthrough，`_selectedNum` 停在舊值。只有 list 好讀自己序列化開文時設的 `_openedNum` 保證對得上畫面上那篇。
 - **生命週期（三個純通知 hook，都不得改動對方狀態）**：`list_session._onScreenSettled`（**排在 `queue.onSettle` 之前**，clean-list/menu → `invalidate()`）、`easy_reading.leaveCurrentPost`（文章→文章鍵）、`App.onClose`（斷線 → `reset()`）。

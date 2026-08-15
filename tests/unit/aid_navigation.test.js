@@ -124,24 +124,44 @@ function makeHarness({
 
 const settle = (queue, f) => queue.onSettle({}, f);
 
+// 正向跳轉的第 0 步：在文章裡按 Q 叫出文章資訊框，讀出「本篇自己的 AID」當返回
+// 錨點（mbbsd/more.c:70 → bbs.c#view_postinfo:3691-3705）。收尾是 pressanykey()，
+// 所以框在畫面上時末列一定是「請按任意鍵繼續」。
+const POST_INFO_ROW = (aid, board) =>
+  "│ 文章代碼(AID): #" + aid + " (" + board + ") [ptt.cc] [閒聊] 原本那篇";
+
+// aid 省略 = 本篇沒有合法 AID（bbs.c:3707 只印一根框線）→ 框有出現但升級不了。
+function answerOriginInfo(queue, aid, board = "C_Chat") {
+  const rowTexts = new Array(24).fill("");
+  if (aid) rowTexts[19] = POST_INFO_ROW(aid, board);
+  rowTexts[23] = PRESS_ANY_KEY_ROW;
+  return settle(queue, facts("transient", { rowTexts }));
+}
+
 describe("AidNavigation", () => {
-  test("happy path: s board ⏎ (from inside the article) → # aid ⏎ → ⏎, active toggles, mirrors entered", () => {
+  test("happy path: Q → s board ⏎ (from inside the article) → # aid ⏎ → ⏎, active toggles, mirrors entered", () => {
     const { nav, queue, sent, core, hints } = makeHarness();
     nav.start("1gIeu-3A", "Android");
     expect(nav.active).toBe(true);
     expect(core.easyReading.enterFunctionModeCalls).toBe(1);
     expect(core.listSession.beginCalls).toBe(1);
-    // Board jump sent immediately — s works from inside the article, no
-    // leave-article step (fullRepaint appends \f).
-    expect(sent).toEqual(["sAndroid\r\f"]);
+    // 第 0 步：Q 問出本篇自己的 AID。**不可帶 fullRepaint**——那個 \f 會被
+    // view_postinfo 收尾的 pressanykey() 吃掉，資訊框當場消失就讀不到 AID。
+    expect(sent).toEqual(["Q"]);
+    answerOriginInfo(queue, "1gKF7GO4");
+    // 板跳：s 在文章裡也能用，不需要離開文章步驟（fullRepaint 補 \f）。前綴的
+    // 空白鍵是拿來餵資訊框那個 pressanykey 的——**不可以用 \f**：Ctrl-L 在
+    // io.c#system_key_hook 就被吃掉回 KEY_INCOMPLETE，vkey() 直接 continue，
+    // 那個 byte 永遠不會被當成按鍵，於是框關不掉、下一個 's' 反而被拿去關框。
+    expect(sent[1]).toBe(" sAndroid\r\f");
     // Board landing: name must match case-insensitively.
     settle(queue, facts("clean-list", { boardName: "android" }));
-    expect(sent[1]).toBe("#1gIeu-3A\r\f");
+    expect(sent[2]).toBe("#1gIeu-3A\r\f");
     settle(
       queue,
       facts("clean-list", { boardName: "android", cursorRowNum: 123, curY: 10 })
     );
-    expect(sent[2]).toBe("\r\f");
+    expect(sent[3]).toBe("\r\f");
     settle(queue, facts("article"));
     expect(nav.active).toBe(false);
     expect(queue.idle).toBe(true);
@@ -170,7 +190,7 @@ describe("AidNavigation", () => {
     const { nav, sent } = makeHarness();
     nav.start("1gIeu-3A", "Android");
     nav.start("2AbCdEf0", "C_Chat");
-    expect(sent).toEqual(["sAndroid\r\f"]);
+    expect(sent).toEqual(["Q"]);
   });
 
   test("idle list session is not disturbed", () => {
@@ -190,8 +210,9 @@ describe("AidNavigation", () => {
     // 「找不到文章」miss.
     const { nav, queue, sent } = makeHarness();
     nav.start("1gKF7GO4", "C_Chat");
+    answerOriginInfo(queue, "1gIeu-3A");
     settle(queue, facts("clean-list", { boardName: "C_Chat" }));
-    expect(sent[1]).toBe("#1gKF7GO4\r\f");
+    expect(sent[2]).toBe("#1gKF7GO4\r\f");
     settle(
       queue,
       facts("transient", {
@@ -201,7 +222,7 @@ describe("AidNavigation", () => {
         curX: 1
       })
     );
-    expect(sent[2]).toBe("\r\f");
+    expect(sent[3]).toBe("\r\f");
     settle(queue, facts("article"));
     expect(nav.active).toBe(false);
   });
@@ -209,13 +230,14 @@ describe("AidNavigation", () => {
   test("AID not found: press-any-key screen never satisfies expect → probe → miss → visible fail", () => {
     const { nav, queue, sent, hints } = makeHarness();
     nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(queue, "1gKF7GO4");
     settle(queue, facts("clean-list", { boardName: "Android" }));
-    expect(sent[1]).toBe("#1gIeu-3A\r\f");
+    expect(sent[2]).toBe("#1gIeu-3A\r\f");
     // The vmsg press-any-key settle: not clean-list → expect false, timer re-armed.
     settle(queue, facts("prompt"));
     // Soft timeout → probe \f.
     vi.advanceTimersByTime(4000);
-    expect(sent[2]).toBe("\f");
+    expect(sent[3]).toBe("\f");
     // Probed full frame still shows the message → definitive miss.
     settle(queue, facts("prompt"));
     expect(nav.active).toBe(false);
@@ -226,6 +248,7 @@ describe("AidNavigation", () => {
   test("error text on a clean-list bottom row also rejects (belt and braces)", () => {
     const { nav, queue, sent } = makeHarness();
     nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(queue, "1gKF7GO4");
     settle(queue, facts("clean-list", { boardName: "Android" }));
     const rowTexts = new Array(24).fill("");
     rowTexts[23] = "找不到這個文章代碼(AID)";
@@ -239,23 +262,24 @@ describe("AidNavigation", () => {
       })
     );
     // expect false → nothing new sent yet (still waiting / will probe).
-    expect(sent.length).toBe(2);
+    expect(sent.length).toBe(3);
     expect(nav.active).toBe(true);
   });
 
   test("board jump timeout → visible fail, unlock, queue drained", () => {
     const { nav, queue, sent, hints } = makeHarness();
     nav.start("1gIeu-3A", "Android");
-    expect(sent[0]).toBe("sAndroid\r\f");
+    answerOriginInfo(queue, "1gKF7GO4");
+    expect(sent[1]).toBe(" sAndroid\r\f");
     // Silent link: soft timeout → probe, then hard silence → timeout fail.
     vi.advanceTimersByTime(6000); // probe
-    expect(sent[1]).toBe("\f");
+    expect(sent[2]).toBe("\f");
     vi.advanceTimersByTime(6000); // probe timeout
     expect(nav.active).toBe(false);
     expect(hints.some(h => h.includes("切換看板"))).toBe(true);
     // The queued follow-up steps must not fire after the failure.
     expect(queue.idle).toBe(true);
-    expect(sent.length).toBe(2);
+    expect(sent.length).toBe(3);
   });
 
   test("共用 queue 被 flush 掉時要解鎖 active（否則全域吞鍵永久死鎖）", () => {
@@ -274,14 +298,16 @@ describe("AidNavigation", () => {
   test("看板文章（footer 有「回應」）維持文章內直接 s 的快路徑", () => {
     // 回歸守護：這條路徑 mbbsd/more.c:177 只呼叫 Select()（不經 Read()），
     // 所以沒有進板畫面、也不該多繞主功能表。
-    const { nav, sent } = makeHarness({ footer: STATUS_ROW });
+    const { nav, queue, sent } = makeHarness({ footer: STATUS_ROW });
     nav.start("1gIeu-3A", "Android");
-    expect(sent).toEqual(["sAndroid\r\f"]);
+    answerOriginInfo(queue, "1gKF7GO4");
+    expect(sent).toEqual(["Q", " sAndroid\r\f"]);
   });
 
   test("final open accepts a status-row bottom even if the classifier hesitates", () => {
     const { nav, queue } = makeHarness();
     nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(queue, "1gKF7GO4");
     settle(queue, facts("clean-list", { boardName: "Android" }));
     settle(
       queue,
@@ -420,8 +446,11 @@ describe("AidNavigation 返回", () => {
   const SUBJECT = subjectOfListText(listRow("[閒聊] 原本那篇"));
 
   // 走完一次成功的正向跳轉，stack 裡就有一層可以返回。
-  function jumpForward(h, aid = "1gIeu-3A", board = "Android") {
+  // originAid = null ⇒ Q 問不到本篇 AID（資訊框沒印 AID），錨點維持既有級別，
+  // 這才是舊行為（num／board 錨點）的測試路徑。
+  function jumpForward(h, aid = "1gIeu-3A", board = "Android", originAid = null) {
     h.nav.start(aid, board);
+    answerOriginInfo(h.queue, originAid);
     settle(h.queue, facts("clean-list", { boardName: board }));
     settle(
       h.queue,
@@ -447,9 +476,9 @@ describe("AidNavigation 返回", () => {
   test("跳文期間 back() 完全忽略（不可重入）", () => {
     const h = makeHarness({ articleBoard: "C_Chat" });
     h.nav.start("1gIeu-3A", "Android");
-    expect(h.sent).toEqual(["sAndroid\r\f"]);
+    expect(h.sent).toEqual(["Q"]);
     h.nav.back();
-    expect(h.sent).toEqual(["sAndroid\r\f"]);
+    expect(h.sent).toEqual(["Q"]);
   });
 
   test("num 錨點：s<原板> → <序號> → ⏎，且落地 subject 相符才開文", () => {
@@ -601,6 +630,7 @@ describe("AidNavigation 返回", () => {
       listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT }
     });
     h.nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(h.queue, "1gKF7GO4"); // Q 成功也一樣：沒落地就不入 stack
     vi.advanceTimersByTime(6000); // probe
     vi.advanceTimersByTime(6000); // probe timeout → fail
     expect(h.nav.active).toBe(false);
@@ -758,5 +788,166 @@ describe("AidNavigation 返回", () => {
     jumpForward(h);
     h.backButton.cb();
     expect(h.sent[0]).toBe("sC_Chat\r\f");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 離開前先問 server 要「本篇自己的 AID」（Q 資訊框）
+//
+// 症狀（使用者實測）：/ 搜尋 → 進文章 → 點 AID → 返回 → 回不到原本那篇。
+// 根因：/ 搜尋在 server 端是 MODE_SELECT，read.c:661-665 把 currdirect 換成暫存
+// 篩選檔 ⇒ **序號空間與主清單獨立**；而返回的 num 錨點只存一個裸序號。返回時
+// s<board> 會離開 MODE_SELECT 回主清單，再送那個篩選序號 → 落在別篇文章。
+// 修法：正向跳轉的第一步先按 Q 讀出本篇的 AID，把錨點升級成完全不受序號位移
+// 影響的 aid 級（同 BePTT 拿畫面上「文章代碼(AID)」當 ground truth 的做法）。
+// ---------------------------------------------------------------------------
+describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）", () => {
+  const listRow = title => " ".repeat(29) + title;
+  const SUBJECT = subjectOfListText(listRow("[閒聊] 原本那篇"));
+
+  // 使用者按了 /，list session 交出的序號屬於**篩選空間**，拿去主清單跳一定錯。
+  const FILTERED_ANCHOR = { board: "movie", num: 3, subject: SUBJECT };
+
+  test("REGRESSION 主症狀：返回用 #AID，不用篩選清單的序號", () => {
+    const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
+    h.nav.start("2AbCdEf0", "Gossiping");
+    answerOriginInfo(h.queue, "1gIeu-3A", "movie");
+    settle(h.queue, facts("clean-list", { boardName: "Gossiping" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "Gossiping", cursorRowNum: 9, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    h.sent.length = 0;
+
+    h.nav.back();
+    expect(h.sent[0]).toBe("smovie\r\f");
+    settle(h.queue, facts("clean-list", { boardName: "movie" }));
+    // 這裡才是本 bug 的判準：必須是 #AID，不可以是 "3\r\f"
+    expect(h.sent[1]).toBe("#1gIeu-3A\r\f");
+  });
+
+  test("資訊框的板名優先於 list session 的（MODE_SELECT 下 _boardName 可能是錯的）", () => {
+    const h = makeHarness({ listAnchor: { board: "wrongboard", num: 3 } });
+    h.nav.start("2AbCdEf0", "Gossiping");
+    answerOriginInfo(h.queue, "1gIeu-3A", "movie");
+    settle(h.queue, facts("clean-list", { boardName: "Gossiping" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "Gossiping", cursorRowNum: 9, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    h.sent.length = 0;
+
+    h.nav.back();
+    expect(h.sent[0]).toBe("smovie\r\f");
+  });
+
+  test("同板跳轉現在也有返回鈕（過去 board 錨點被作廢就完全回不去）", () => {
+    const h = makeHarness({ articleBoard: "movie" });
+    h.nav.start("2AbCdEf0", "movie"); // 同板
+    answerOriginInfo(h.queue, "1gIeu-3A", "movie");
+    settle(h.queue, facts("clean-list", { boardName: "movie" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "movie", cursorRowNum: 9, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    expect(h.nav.canGoBack()).toBe(true);
+    expect(h.backButton.label).toBe("#1gIeu-3A");
+  });
+
+  test("Q 逾時 → 降級成今日行為（照樣跳，錨點維持 num 級），不算失敗", () => {
+    const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
+    h.nav.start("2AbCdEf0", "Gossiping");
+    expect(h.sent[0]).toBe("Q");
+    vi.advanceTimersByTime(2500); // soft timeout → probe \f
+    expect(h.sent[1]).toBe("\f");
+    vi.advanceTimersByTime(2500); // 探針也沒回 → timeout
+    // 不可 _fail：跳文本身還有救，今日行為就是地板
+    expect(h.nav.active).toBe(true);
+    expect(h.sent[2]).toBe(" sGossiping\r\f");
+
+    settle(h.queue, facts("clean-list", { boardName: "Gossiping" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "Gossiping", cursorRowNum: 9, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    h.sent.length = 0;
+    h.nav.back();
+    settle(h.queue, facts("clean-list", { boardName: "movie" }));
+    expect(h.sent[1]).toBe("3\r\f"); // 退回舊的序號錨點
+  });
+
+  test("REGRESSION 關資訊框的鍵不可以是 \\f（Ctrl-L 根本送不到 handler）", () => {
+    // live 實錯 2026-08-15：mbbsd/io.c#system_key_hook:196-203 把 Ctrl('L') 攔下
+    // 做 redrawwin() 並回 KEY_INCOMPLETE，vkey() 對它 continue（io.c:432-434）⇒
+    // 那個 byte **永遠不會被當成按鍵**（這也正是它可以當萬用探針的原因）。用它
+    // 關 pressanykey ⇒ 框沒關掉、下一個 's' 被拿去關框，剩下的板名就被 pager 當
+    // 快捷鍵吃掉（'h' 說明、'a' 作者下一篇）→ 人跑到別篇文章。
+    const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
+    h.nav.start("2AbCdEf0", "Gossiping");
+    answerOriginInfo(h.queue, "1gIeu-3A", "movie");
+    expect(h.sent[1].startsWith("\f")).toBe(false);
+    expect(h.sent[1]).toBe(" sGossiping\r\f");
+  });
+
+  test("資訊框沒有 AID（置底文之類）→ 一樣降級，不阻斷跳文", () => {
+    const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
+    h.nav.start("2AbCdEf0", "Gossiping");
+    answerOriginInfo(h.queue, null); // 框有出現，但沒印 AID
+    expect(h.nav.active).toBe(true);
+    expect(h.sent[1]).toBe(" sGossiping\r\f");
+  });
+
+  test("Q 在途時被 flush 掉 → 必須解鎖 active（不可降級硬送板名）", () => {
+    // flush 代表整個導航脈絡已經不見（list cleanup／切原生／斷線），這時再把
+    // s<board> 送進未知畫面就是亂打字，和其他步驟一樣要可見失敗。
+    const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
+    h.nav.start("2AbCdEf0", "Gossiping");
+    h.queue.flush();
+    expect(h.nav.active).toBe(false);
+    expect(h.sent.some(s => s.indexOf("Gossiping") !== -1)).toBe(false);
+    expect(h.hints.some(hint => hint.includes("AID 跳文失敗"))).toBe(true);
+  });
+
+  test("返回途中不再問 Q（back run 的第一步就是 s<board>）", () => {
+    const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
+    h.nav.start("2AbCdEf0", "Gossiping");
+    answerOriginInfo(h.queue, "1gIeu-3A", "movie");
+    settle(h.queue, facts("clean-list", { boardName: "Gossiping" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "Gossiping", cursorRowNum: 9, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    h.sent.length = 0;
+    h.nav.back();
+    expect(h.sent).toEqual(["smovie\r\f"]);
+  });
+
+  test("aid 錨點的 #搜尋 miss（置底文，read.c:404 FIXME）→ 退回 num 備援，不清空 stack", () => {
+    const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
+    h.nav.start("2AbCdEf0", "Gossiping");
+    answerOriginInfo(h.queue, "1gIeu-3A", "movie");
+    settle(h.queue, facts("clean-list", { boardName: "Gossiping" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "Gossiping", cursorRowNum: 9, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    h.sent.length = 0;
+
+    h.nav.back();
+    settle(h.queue, facts("clean-list", { boardName: "movie" }));
+    expect(h.sent[1]).toBe("#1gIeu-3A\r\f");
+    // 找不到：vmsg 把游標停在底列 → cursorRowNum null → probe → miss
+    settle(h.queue, facts("prompt"));
+    vi.advanceTimersByTime(4000);
+    settle(h.queue, facts("prompt"));
+    // 備援：改用序號（仍會驗 subject 才開文）
+    expect(h.sent[h.sent.length - 1]).toBe("3\r\f");
+    expect(h.nav.active).toBe(true);
   });
 });

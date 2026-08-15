@@ -205,3 +205,77 @@ describe("NavHistory 兩段式 commit", () => {
     expect(h.commitBack().num).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// upgradePendingOriginAid：離開文章前先用 Q 向 server 問到本篇自己的 AID，把在途
+// 的 origin 錨點升級成 aid 級。這是「/ 搜尋後回不去」的修法核心——序號會因為
+// MODE_SELECT 的獨立序號空間而失效，AID 不會（mbbsd/read.c:661-665）。
+// ---------------------------------------------------------------------------
+describe("NavHistory.upgradePendingOriginAid", () => {
+  const target = { board: "movie", aid: "2AbCdEf0" };
+
+  test("num 錨點升級成 aid，且保留 num/subject/lineIndex 當備援", () => {
+    const h = new NavHistory();
+    h.beginJump(
+      {
+        kind: "num",
+        board: "C_Chat",
+        num: 3,
+        subject: "[閒聊] 原本那篇",
+        lineIndex: 42,
+        label: "C_Chat 第 3 篇"
+      },
+      target
+    );
+    h.upgradePendingOriginAid("C_Chat", "1gIeu-3A");
+    h.commitJump();
+
+    const entry = h.peek();
+    expect(entry.kind).toBe("aid");
+    expect(entry.aid).toBe("1gIeu-3A");
+    expect(entry.board).toBe("C_Chat");
+    // 置底文的 # 搜尋會失手（read.c:404 FIXME）→ 備援不可丟
+    expect(entry.num).toBe(3);
+    expect(entry.subject).toBe("[閒聊] 原本那篇");
+    expect(entry.lineIndex).toBe(42);
+    expect(entry.label).toBe("#1gIeu-3A");
+  });
+
+  test("origin 原本是 null（同板跳轉／站內信）→ 直接建出 aid 錨點，返回鈕才會出現", () => {
+    const h = new NavHistory();
+    h.beginJump(null, target);
+    h.upgradePendingOriginAid("C_Chat", "1gIeu-3A");
+    h.commitJump();
+    expect(h.canGoBack()).toBe(true);
+    expect(h.peek()).toMatchObject({
+      kind: "aid",
+      board: "C_Chat",
+      aid: "1gIeu-3A"
+    });
+  });
+
+  test("board 為 null 時沿用原錨點的板名（資訊框沒印出板名）", () => {
+    const h = new NavHistory();
+    h.beginJump({ kind: "num", board: "C_Chat", num: 3 }, target);
+    h.upgradePendingOriginAid(null, "1gIeu-3A");
+    h.commitJump();
+    expect(h.peek()).toMatchObject({ kind: "aid", board: "C_Chat" });
+  });
+
+  test("完全沒有板名可用 → 不升級（寧可維持原錨點，也不猜看板）", () => {
+    const h = new NavHistory();
+    h.beginJump(null, target);
+    h.upgradePendingOriginAid(null, "1gIeu-3A");
+    h.commitJump();
+    expect(h.canGoBack()).toBe(false);
+  });
+
+  test("沒有在途 jump（back run／已 commit）時不生效", () => {
+    const h = new NavHistory();
+    h.beginJump({ kind: "num", board: "C_Chat", num: 3 }, target);
+    h.commitJump();
+    h.beginBack();
+    h.upgradePendingOriginAid("C_Chat", "1gIeu-3A");
+    expect(h.commitBack()).toMatchObject({ kind: "num", num: 3 });
+  });
+});

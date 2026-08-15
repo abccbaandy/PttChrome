@@ -11,8 +11,12 @@
 // What an entry stores is therefore an ANCHOR — how to get back — never any
 // screen data:
 //   kind 'aid'   #<aid> is the server-side identity of an article: immune to
-//                deletions shifting numbers. Only available when the article we
-//                are leaving was ITSELF reached by an AID jump (we know its aid).
+//                deletions shifting numbers AND to a `/` search having renumbered
+//                the list (MODE_SELECT is a separate numbering space —
+//                mbbsd/read.c:661-665). Two sources: the article was ITSELF
+//                reached by an AID jump (NavHistory.landed()), or — the normal
+//                case — aid_navigation asked the server for it with the Q
+//                post-info box before leaving (upgradePendingOriginAid).
 //   kind 'num'   board + article number + subject. Covers the common "opened
 //                from the list" case. Numbers DO shift when posts are deleted,
 //                so the landing must be verified against `subject` before the
@@ -41,23 +45,44 @@
 //   articleBoard view._articleBoard (null inside 站內信 — its header has no 看板)
 //   targetBoard  where the jump is going (same-board jumps invalidate 'board')
 //   lineIndex    scroll position as a line index (see aid_navigation), or null
+// The number/subject an aid anchor carries as its fallback. Only accepted when
+// the list session is talking about the SAME board and it knows the subject:
+// _enqueueNumberJump opens blindly without a subject to verify, and a number
+// from another board would open a random article there.
+function numberFallback(list, board) {
+  const ok =
+    list &&
+    list.num != null &&
+    list.subject &&
+    list.board &&
+    board &&
+    String(list.board).toLowerCase() === String(board).toLowerCase();
+  return ok
+    ? { num: list.num, subject: list.subject }
+    : { num: null, subject: null };
+}
+
 export function chooseAnchor(input) {
   const inp = input || {};
   const lineIndex = inp.lineIndex == null ? null : inp.lineIndex;
   const landed = inp.landed;
+  const list = inp.list;
   if (landed && landed.board && landed.aid) {
+    // Keep the number as a FALLBACK even though the aid wins: pttbbs cannot
+    // #-search a pinned (置底) post at all (mbbsd/read.c:404's own FIXME), and
+    // aid_navigation drops back to the number when that search misses.
+    const spare = numberFallback(list, landed.board);
     return {
       kind: 'aid',
       board: landed.board,
       aid: landed.aid,
-      num: null,
-      subject: null,
+      num: spare.num,
+      subject: spare.subject,
       lineIndex: lineIndex,
       label: '#' + landed.aid
     };
   }
 
-  const list = inp.list;
   if (list && list.num != null) {
     // The list session loses _boardName on any native excursion (the Q
     // post-info box is enough) while keeping the selected number, so fall back
@@ -135,6 +160,40 @@ NavHistory.prototype = {
   // still runs, it just won't be reversible.
   beginJump: function(origin, target) {
     this._pending = { type: 'jump', origin: origin || null, target: target };
+  },
+
+  // The Q post-info box answered with the AID of the article we are LEAVING
+  // (aid_navigation._enqueueOriginAid). Promote the in-flight origin anchor to
+  // the aid tier — the only one immune to article numbers shifting, and the
+  // only one that survives a `/` search at all (MODE_SELECT numbers live in a
+  // separate space, mbbsd/read.c:661-665, so a num anchor captured there sends
+  // the user to a different article on the way back).
+  //
+  // The existing num/subject/lineIndex ride along as the fallback: pttbbs
+  // cannot #-search a pinned post (mbbsd/read.c:404 FIXME), so the aid tier
+  // must not be a downgrade for those.
+  //
+  // board may be null when the box printed a non-board name (currboard empty):
+  // the old anchor's board is then reused. With no board at all we do NOT
+  // upgrade — an aid anchor without a board cannot be navigated to (the AID
+  // search only ever looks inside currboard).
+  upgradePendingOriginAid: function(board, aid, lineIndex) {
+    const p = this._pending;
+    if (!p || p.type !== 'jump' || !aid) return;
+    const prev = p.origin;
+    const useBoard = board || (prev && prev.board) || null;
+    if (!useBoard) return;
+    p.origin = {
+      kind: 'aid',
+      board: useBoard,
+      aid: aid,
+      num: prev ? prev.num : null,
+      subject: prev ? prev.subject : null,
+      // With no previous anchor there is nothing to inherit, so the caller
+      // hands over the scroll position it captured before the mirrors went up.
+      lineIndex: prev ? prev.lineIndex : lineIndex == null ? null : lineIndex,
+      label: '#' + aid
+    };
   },
 
   commitJump: function() {

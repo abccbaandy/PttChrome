@@ -75,6 +75,28 @@ export function parseCrossPostBoardPrefix(rowText) {
   return m ? m[1] : null;
 }
 
+// The Q post-info box (mbbsd/bbs.c#view_postinfo:3691-3705) — the ONLY way to
+// learn the AID of the article you are currently on, which is what makes the
+// AID-jump back anchor immune to article numbers shifting (a `/` search puts
+// the list in MODE_SELECT, whose numbering is a SEPARATE space — see
+// docs/pttbbs-screen-protocol.md §8):
+//   │ 文章代碼(AID): #1gIeu-3A (movie) [ptt.cc] [好雷] 電影心得
+// Takes the DECODED row text (same as parseCrossPostBoardPrefix): the label is
+// Chinese, so it cannot be matched on raw Big5 TermChar cells.
+// The label is mandatory — a bare "#XXXXXXXX" in article TEXT must never be
+// mistaken for "this is the article I am on". board is null when pttbbs printed
+// a non-board name there (「不明」 when currboard is empty); the caller falls
+// back to its own board knowledge rather than guessing.
+const POST_INFO_AID_RE =
+  /文章代碼\(AID\)\s*[:：]\s*#([0-9A-Za-z_-]{8})(?![0-9A-Za-z_-])(?:\s*\(([0-9A-Za-z_-]{2,})\))?/;
+
+export function parsePostInfoAid(rowText) {
+  if (!rowText) return null;
+  const m = POST_INFO_AID_RE.exec(rowText);
+  if (!m) return null;
+  return { aid: m[1], board: m[2] || null };
+}
+
 // Returns [{ startCol, endCol, aid, board }] where startCol is the '#' column
 // and endCol is exclusive (first column past the 8 AID chars). board is null
 // when no suffix parsed — the caller falls back to the current article board.

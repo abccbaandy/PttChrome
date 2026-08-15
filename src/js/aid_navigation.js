@@ -56,6 +56,7 @@
 import { parseStatusRow, parsePagerFooterContext } from './string_util';
 import { subjectOfListText } from './list_session';
 import { NavHistory, chooseAnchor } from './nav_history';
+import { parsePostInfoAid } from './aid_parse';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -82,6 +83,22 @@ const MAX_ESCAPE_STEPS = 6;
 
 // 進板畫面 pager + its pressanykey = 2 keys; the slack absorbs a multi-page one.
 const MAX_ENTER_DISMISS = 3;
+
+// Dismisses the Q post-info box's pressanykey() (= vmsg(NULL), which consumes
+// exactly ONE key — mbbsd/vtuikit.c:439-455).
+//
+// It CANNOT be \f: Ctrl-L is swallowed by mbbsd/io.c#system_key_hook (:196-203)
+// which answers KEY_INCOMPLETE, and vkey() loops on that (:432-434) — the byte
+// never reaches any key handler, it only forces a redraw. That is precisely why
+// \f is a safe universal probe everywhere else, and precisely why it can never
+// dismiss a pressanykey (live-verified 2026-08-15: the box stayed up, the
+// following 's' was eaten as the dismissal and the board name was then typed
+// into the pager as hotkeys — 'h' 說明 / 'a' 作者下一篇).
+//
+// Space is inert for us on both possible screens: page-down on the article list
+// we are about to leave anyway, page-down in the pager if the box never came up.
+// ← must NOT be used: leaking one to the list would leave the board.
+const KEY_DISMISS = ' ';
 
 function screenSignature(rowTexts) {
   return (rowTexts || []).join('\n');
@@ -221,12 +238,18 @@ AidNavigation.prototype = {
     // ORDER INVARIANT: capture where we are BEFORE _begin() parks the list
     // session (beginExternalNavigation → _enterFunctionMode clears _boardName
     // and _serverNum). Nothing is pushed until the run lands (commitJump).
-    this._history.beginJump(this._captureOriginAnchor(board), {
+    const lineIndex = this._currentLineIndex();
+    this._history.beginJump(this._captureOriginAnchor(board, lineIndex), {
       board: board,
       aid: aid
     });
     this._hint('跳至 #' + aid + ' (' + board + ')…', 15000);
-    this._begin(makeRun({ board: board, kind: 'aid', aid: aid }, 'forward'));
+    const run = makeRun({ board: board, kind: 'aid', aid: aid }, 'forward');
+    // Carried so _enqueueOriginAid can hand the scroll position to an anchor
+    // built from nothing (same-board jump, 站內信): chooseAnchor returned null
+    // there, so there is no previous anchor to inherit it from.
+    run.originLineIndex = lineIndex;
+    this._begin(run);
   },
 
   // Back to the article the last jump started from. Deliberately NOT gated on
@@ -250,14 +273,14 @@ AidNavigation.prototype = {
 
   // The anchor for the article we are leaving, by priority (nav_history
   // .chooseAnchor). Must run before the mirrors are entered — see start().
-  _captureOriginAnchor: function(targetBoard) {
+  _captureOriginAnchor: function(targetBoard, lineIndex) {
     const ls = this._core.listSession;
     return chooseAnchor({
       landed: this._history.landed(),
       list: ls && ls.currentAnchor ? ls.currentAnchor() : null,
       articleBoard: this._view._articleBoard,
       targetBoard: targetBoard,
-      lineIndex: this._currentLineIndex()
+      lineIndex: lineIndex
     });
   },
 
@@ -291,11 +314,71 @@ AidNavigation.prototype = {
     // absorbs our intermediate clean-list settles. Must run BEFORE we enqueue.
     if (this._core.listSession) this._core.listSession.beginExternalNavigation();
 
-    if (this._pagerContext() === 'reading') {
-      this._enqueueBoardJump(run, false);
-    } else {
+    if (this._pagerContext() !== 'reading') {
+      // Not a board article (站內信 / 精華區 / footer squeezed out): Q would
+      // describe something that is not a post we could ever navigate back to,
+      // and s/# are dead here anyway. Straight to the escape preamble.
       this._enqueueEscape(run, 0, this._screenSignature());
+      return;
     }
+    if (run.dir === 'forward') {
+      this._enqueueOriginAid(run);
+      return;
+    }
+    this._enqueueBoardJump(run, false, false);
+  },
+
+  // Step 0 (forward jumps only): Q → the post-info box, which is the ONLY way
+  // to learn the AID of the article we are leaving (mbbsd/more.c:70 →
+  // bbs.c#view_postinfo:3691-3705). That AID becomes the back anchor, and it is
+  // the only anchor that survives a `/` search: MODE_SELECT renumbers the list
+  // into its own space (read.c:661-665), so a number captured there points at a
+  // different article once `s<board>` drops us back on the real list.
+  // Same trick BePTT uses for ground truth (see docs/enhanced-addon.md §B).
+  //
+  // Best effort by design: every failure just continues WITHOUT the upgrade, so
+  // the worst case is exactly today's behaviour. Only a flush (the navigation
+  // context itself is gone) is fatal, like every other step.
+  _enqueueOriginAid: function(run) {
+    const self = this;
+    this._queue.enqueue({
+      keys: 'Q',
+      kind: 'aid-origin-info',
+      // NO fullRepaint: the appended \f would be eaten by view_postinfo's
+      // closing pressanykey() and the box would be gone by the time the screen
+      // settles — we would read the list back instead of the AID.
+      fullRepaint: false,
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      timeoutMs: 2500,
+      expect: function(snapshot, facts) {
+        for (let r = 0; r < facts.rowTexts.length; ++r) {
+          const info = parsePostInfoAid(facts.rowTexts[r]);
+          if (info) return { info: info };
+        }
+        // Box is up but this post has no AID (bbs.c:3707 prints a bare frame
+        // line). A real answer — stop waiting and move on without an upgrade.
+        const lastRow = facts.rowTexts[facts.rows - 1] || '';
+        return PRESS_ANY_KEY_RE.test(lastRow) ? { info: null } : false;
+      },
+      onDone: function(result) {
+        if (result.info) {
+          self._history.upgradePendingOriginAid(
+            result.info.board,
+            result.info.aid,
+            run.originLineIndex
+          );
+          self._updateBackButton();
+        }
+        self._enqueueBoardJump(run, false, true);
+      },
+      onFail: function() {
+        // Degrade, never fail: the jump itself is still perfectly doable, the
+        // back anchor just stays at whatever tier chooseAnchor picked.
+        self._enqueueBoardJump(run, false, true);
+      }
+    });
   },
 
   // Step 0 (only when the pager is not currstat == READING): ← until 【主功能表】.
@@ -325,7 +408,7 @@ AidNavigation.prototype = {
       },
       onDone: function(result) {
         if (result.menu) {
-          self._enqueueBoardJump(run, true);
+          self._enqueueBoardJump(run, true, false);
           return;
         }
         if (step + 1 >= MAX_ESCAPE_STEPS) {
@@ -488,12 +571,18 @@ AidNavigation.prototype = {
   //   viaMenu=true:  sent at 主功能表 after the escape preamble (menu.c:498 →
   //     ReadSelect() → do_select() + Read()), so the landing may be preceded by
   //     the board's 進板畫面 + pressanykey — dismissed by _onBoardLanding.
-  _enqueueBoardJump: function(run, viaMenu) {
+  //   dismissFirst: the Q post-info box is still up (its pressanykey is waiting
+  //     for exactly one key), so the sequence is prefixed with a space — see
+  //     KEY_DISMISS for why that key and not \f. Sent in the SAME write as the
+  //     rest: pttbbs drains the whole input buffer without pausing, so the
+  //     dismissal and the board switch land in one output burst and the screen
+  //     never settles in between.
+  _enqueueBoardJump: function(run, viaMenu, dismissFirst) {
     const self = this;
     const board = run.target.board;
     const boardLower = run.boardLower;
     this._queue.enqueue({
-      keys: 's' + board + '\r',
+      keys: (dismissFirst ? KEY_DISMISS : '') + 's' + board + '\r',
       kind: 'aid-board-jump',
       fullRepaint: true,
       // The queue is SHARED with list_session, whose cleanup / native-mirror
@@ -560,6 +649,19 @@ AidNavigation.prototype = {
         self._enqueueOpen(run);
       },
       onFail: function(reason) {
+        // Going back, the anchor may carry a number as a spare (nav_history
+        // .upgradePendingOriginAid): pttbbs cannot #-search a PINNED post at
+        // all (mbbsd/read.c:404's own FIXME), so an aid miss there is expected
+        // rather than "we are lost" — try the number, or at least stop on the
+        // board's list instead of dropping the whole stack.
+        if (run.dir === 'back' && reason === 'miss') {
+          if (run.target.num != null) {
+            self._enqueueNumberJump(run);
+            return;
+          }
+          self._finishAtList(run);
+          return;
+        }
         self._fail(
           reason === 'miss' ? '找不到文章 #' + aid : 'AID 搜尋逾時'
         );

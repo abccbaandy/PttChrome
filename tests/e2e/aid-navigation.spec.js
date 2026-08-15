@@ -6,7 +6,9 @@
 const { test, expect } = require('./helpers/fixtures');
 const {
   readScreen,
+  waitForScreen,
   sendKey,
+  typeLine,
   applyPrefs,
   resetSession,
   gotoBoard,
@@ -292,6 +294,140 @@ test.describe.serial('AID 一鍵跳文', () => {
       // 單獨跑綠、整包跑紅）。
       await applyPrefs(page, { enableEasyReadingList: false });
       // 本測結束時人在文章裡；退回主功能表，讓下一條測試從乾淨狀態起跑。
+      try {
+        await resetSession(page);
+      } catch (e) {}
+    }
+  });
+
+  // REGRESSION（使用者實測回報）：/ 搜尋 → 進文章 → 點 AID → 返回 → 回不到原文。
+  // `/` 在 server 端是 MODE_SELECT，序號空間與主清單獨立（read.c:661-665），所以
+  // 任何「記序號」的錨點在返回時都會落到別篇；而且 list 好讀對 `/` 是 passthrough
+  // → _openedNum 被清掉 → 過去連返回鈕都不會出現。
+  // 修法是離開前先用 Q 問出本篇自己的 AID（aid 錨點免疫序號位移），這條就是它的
+  // live 守護：unit 測不到真的 MODE_SELECT 清單與真的 Q 資訊框。
+  test('REGRESSION / 搜尋後的清單也回得去（aid 錨點）', async ({ shared }) => {
+    test.setTimeout(240000);
+    const { page, logs } = shared;
+    logs.length = 0;
+    try {
+      await resetSession(page);
+      await applyPrefs(page, { enableEasyReading: true });
+      await gotoBoard(page, BACK_TEST_BOARD);
+      await sendKey(page, 'Home');
+      await page.waitForTimeout(1500);
+
+      // 跳轉目標：主清單第一篇的 AID。
+      await sendKey(page, 'Q');
+      await page.waitForTimeout(1500);
+      const infoScreen = await readScreen(page);
+      const mAid = infoScreen.match(/文章代碼\(AID\):\s*#([0-9A-Za-z_-]{8})/);
+      expect(mAid).not.toBeNull();
+      const targetAid = mAid[1];
+      await sendKey(page, 'Space');
+      await page.waitForTimeout(1000);
+
+      // 搜尋關鍵字取自畫面上真實存在的標題片段：命中數少，篩選序號才會和主清單
+      // 的序號差很多（用「幾乎全命中」的關鍵字反而測不出位移）。
+      await resetSession(page);
+      await applyPrefs(page, { enableEasyReading: true });
+      await gotoBoard(page, BACK_TEST_BOARD);
+      await page.waitForTimeout(1500);
+      const listScreen = await readScreen(page);
+      let keyword = null;
+      for (const row of listScreen.split('\n').slice(3, 20)) {
+        const parts = row.trim().split(/\s{2,}/);
+        // 最後一段是標題欄，但前面還黏著記號欄（□／●／R:／爆之類），要剝掉才是
+        // 真的標題文字——沒剝乾淨就會拿「□ 討」去搜，一定零命中（2026-08 實錯）。
+        const title = (parts[parts.length - 1] || '')
+          .replace(/^[^\p{Script=Han}A-Za-z0-9]+/u, '')
+          .replace(/^\[[^\]]*\]\s*/, '')
+          .trim();
+        if (title.length >= 3) {
+          keyword = title.slice(0, 3);
+          break;
+        }
+      }
+      console.log('SEARCH KEYWORD:', JSON.stringify(keyword));
+      expect(keyword).not.toBeNull();
+
+      // / 搜尋 → MODE_SELECT。row0 的板名前綴會從「看板」變「系列」（協定 §8）。
+      // 大板的全檔掃描要一點時間，用等畫面而不是固定 sleep。
+      await sendKey(page, 'Slash');
+      await page.waitForTimeout(1200);
+      await typeLine(page, keyword);
+      await waitForScreen(page, ['系列'], { timeout: 30000 });
+      const selectScreen = await readScreen(page);
+      console.log('SELECT HEAD:', selectScreen.split('\n')[0]);
+      expect(selectScreen).toContain('系列');
+
+      // 在篩選清單裡開一篇：這篇就是「原文」，返回要回到它。
+      await sendKey(page, 'Enter');
+      await page.waitForTimeout(5000);
+      const originHead = (await readScreen(page))
+        .split('\n')
+        .slice(0, 3)
+        .join(' / ');
+      console.log('ORIGIN HEAD:', originHead);
+      expect(await page.evaluate(() => window.__app.buf.pageState)).toBe(3);
+
+      await page.evaluate(() => {
+        window.__searchHints = [];
+        const app = window.__app;
+        const orig = app.view.flashListHint.bind(app.view);
+        app.view.flashListHint = (msg, ms) => {
+          window.__searchHints.push(msg);
+          return orig(msg, ms);
+        };
+      });
+
+      await page.evaluate(
+        ([aid, board]) => window.__app.aidNavigation.start(aid, board),
+        [targetAid, BACK_TEST_BOARD]
+      );
+      await page.waitForFunction(
+        () => window.__app.aidNavigation.active === false,
+        null,
+        { timeout: 30000 }
+      );
+      await page.waitForTimeout(3000);
+
+      const jumpHead = (await readScreen(page)).split('\n').slice(0, 3).join(' / ');
+      console.log('JUMP HEAD:', jumpHead);
+      // 真的跳走了，不然後面的返回斷言是空的。
+      expect(jumpHead).not.toBe(originHead);
+      // 過去這裡是 false（沒有可信錨點 → 連返回鈕都沒有）。
+      const anchor = await page.evaluate(() => {
+        const nav = window.__app.aidNavigation;
+        return { canBack: nav.canGoBack(), label: nav._history.peek() };
+      });
+      console.log('ANCHOR AFTER JUMP:', JSON.stringify(anchor));
+      expect(anchor.canBack).toBe(true);
+      expect(anchor.label && anchor.label.kind).toBe('aid');
+
+      await page.evaluate(() => window.__app.aidNavigation.back());
+      await page.waitForFunction(
+        () => window.__app.aidNavigation.active === false,
+        null,
+        { timeout: 30000 }
+      );
+      await page.waitForTimeout(5000);
+
+      const hints = await page.evaluate(() => window.__searchHints);
+      console.log('HINTS:', JSON.stringify(hints));
+      const backHead = (await readScreen(page)).split('\n').slice(0, 3).join(' / ');
+      console.log('BACK HEAD:', backHead);
+      expect(hints.filter((h) => h.includes('失敗')).length).toBe(0);
+      expect(await page.evaluate(() => window.__app.buf.pageState)).toBe(3);
+      expect(backHead).toBe(originHead);
+    } catch (err) {
+      console.log('\n=== console ===\n' + logs.slice(-40).join('\n'));
+      await page.screenshot({
+        path: 'tests/e2e/__screenshots__/aid-back-search-error.png',
+        fullPage: true,
+      });
+      throw err;
+    } finally {
       try {
         await resetSession(page);
       } catch (e) {}

@@ -553,6 +553,18 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   並在 `_enterFunctionMode`／`_cleanup`／`noteLeftPost` 清掉。`_boardName` 則相反：原生插曲會清掉它
   且回列表時不重新 seed，所以允許為 null，由 `nav_history.chooseAnchor` 用 `view._articleBoard` 遞補。
   守護：`tests/unit/list_session.test.js`「currentAnchor」describe。
+- **`\f` 關不掉任何「按任意鍵」——它根本不是一個「鍵」**（2026-08-15 live 實錯，AID 返回的
+  第 0 步 `Q` 文章資訊框）。`Ctrl('L')` 在 `mbbsd/io.c#system_key_hook:196-203` 就被攔下做
+  `redrawwin()` 並回 `KEY_INCOMPLETE`，`vkey()` 對它 `continue`（`io.c:432-434`）⇒ 不會回傳給
+  任何 handler。**這正是 `\f` 能當萬用探針的原因，也正是它關不掉 `pressanykey()` 的原因**
+  （協定 §6 末條）。
+  後果不是「沒作用」而是**整串位移一格**：框沒關 → 下一個字元被拿去關框 → 剩下的字串被
+  pager／列表當快捷鍵逐鍵吃掉。實錯：送 `\f` + `sC_Chat\r` ⇒ `s` 關框、`h` 開說明、
+  `a` 跳作者下一篇，人直接跑到別篇文章，畫面看起來像「切換看板失敗」。
+  **關 pressanykey 一律用空白鍵**（外漏到列表／pager 都只是翻頁），不可用 `←`（外漏會直接
+  離板）也不可用 `Q`（`bbs.c:3774` 的特例會切成金錢排序模式）。
+  另一半同樣要記：這種「回應以 pressanykey 收尾」的交易一律 `fullRepaint: false`，判定純靠內容。
+  守護：`tests/unit/aid_navigation.test.js`「origin AID 錨點」describe 的 REGRESSION 條。
 - **AID 導航自己的落地，會觸發一次「使用者離開文章」的通知**。`_begin()` 進 `easyReading` 的
   functionMode，目標文章 settle 時 functionMode 退出走 'leave' 分支 → `leaveCurrentPost()` →
   `aidNavigation.noteLeftPost()`；而 `_enqueueOpen.onDone` **已經先把 `active` 清成 false**，
@@ -589,5 +601,11 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）
 
 樓層演算法（meta-latch 規則）移植自 BePTT 7.0.9（`tw.ystudio.beptt`，jadx 反編譯確證、使用者實測過行為）。架構：文章閱讀依登入分流——免登入走 www.ptt.cc HTML（AID→URL 在 `Z7/b.java`，okhttp `over18=1`，`div.push` 計樓天然排除假推文）；登入走 telnet 逐頁解析（`I3()` 等變體，grep 錨點 `f3943g1`/`f3959j3`），跨頁去重用近 40 列含色 ring buffer 內容比對。「檢查新推文」= telnet 重進文章（AID+`$$00`）增量解析共用計數器。
+
+**導航／返回（2026-08 反編譯，決定我們**不**走重放路線的依據）**：每個畫面帶一份「從主選單起算、可重放的原始按鍵腳本」`enterStep`（固定前綴 `ESC[D`×10），推進全域 stack `N7/C0683p.java`（就一個 `List<String>`）；返回＝pop 自己那格、把上一格整串重打（`N7/C0632k.java:7821-7824` → `C0654s.run()` 送 `"eeeqq"+腳本+"\f"`）。
+- **`/` 搜尋會疊進腳本**：`N7/C0665o.java:2846-2864` `f4258Y += "$$$$/"+關鍵字+"\r\n\f"` 後**取代 stack 頂端那格**（`a` 作者／`Z` 推文數／`Gm`/`Gs` 同模式）⇒ 返回時篩選狀態一起重播。
+- **但 AID 跳轉的目標腳本是乾淨的**：`O7/f.java:1350-1393` 產出 `ESC[D×10 s<板>\r\n …#<AID>\r\n`，不帶來源頁任何搜尋條件。
+- **重放不可靠，它自己也知道**：落地後比對游標列第 17–29 欄的作者，不符跳 Toast「文章編號可能已改變」（`C0632k.java:1555-1566`／`1403-1413`），作者欄 `-` ⇒「本文已被刪除」——**只是警告，照樣進去**。真正的身分來源是畫面上的「文章代碼(AID):」（`C0632k.java:1579-1593`、`5337-5394`），閱讀紀錄 DB 的 primary key 也是 `<Board>/<AID>`。
+- ⇒ 本專案採它信得過的那半（`Q` 讀 AID → `#AID` 定位，見 `docs/easy-reading.md`「返回原文」），不採「重放搜尋＋事後比對作者」。重放另有一個 BePTT 沒解掉的殘留風險：篩選清單本身也會因新文章位移。
 
 要再開反編譯：素材位置、jadx recipe 與三個踩坑見 `docs/easy-reading-list-research.md` §3。
