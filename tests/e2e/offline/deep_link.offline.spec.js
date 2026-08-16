@@ -103,6 +103,15 @@ test.describe('deep link', () => {
     try {
       const existing = await context.newPage();
       existing.on('pageerror', (e) => errors.push(e.message));
+      // headless Chromium **沒有真正的背景分頁**：實測開了第二個 page 並
+      // bringToFront() 之後，第一個 page 仍回報 visibilityState='visible' 且
+      // hasFocus()===true（2026-08-17 量測）。而 notifyDeepLinkHandoff 的前景閘門
+      // 正是讀這兩個值 ⇒ 不 stub 的話這條測試會被閘門擋掉，量到的是假的沉默。
+      // 只蓋 hasFocus（閘門的兩個條件之一），由測試自己決定何時「切到別的分頁」。
+      await existing.addInitScript(() => {
+        window.__pttFakeFocus = true;
+        document.hasFocus = () => window.__pttFakeFocus;
+      });
       await installReplay(existing);
       await installOfflineNetwork(existing);
       await existing.goto('/');
@@ -114,11 +123,15 @@ test.describe('deep link', () => {
       const baseTitle = await existing.title();
       expect(baseTitle).not.toBe('');
 
+      // 使用者的眼睛移到別的分頁 ⇒ existing 進背景，標題閃爍才有意義。
+      await existing.evaluate(() => {
+        window.__pttFakeFocus = false;
+      });
+
       const fresh = await context.newPage();
       await installReplay(fresh);
       await installOfflineNetwork(fresh);
       await fresh.goto('/#Gossiping/' + AID);
-      // fresh 現在是前景分頁 ⇒ existing 進背景，標題閃爍才有意義。
 
       // 標題離開原本的值（每 1500ms 交替一次，用 poll 等）。
       await expect
@@ -128,6 +141,9 @@ test.describe('deep link', () => {
       await expect(existing.locator('.ListHint')).toContainText(AID);
 
       // 使用者切回這個分頁 → 停止閃爍、標題復原（visibilitychange / focus）。
+      await existing.evaluate(() => {
+        window.__pttFakeFocus = true;
+      });
       await existing.bringToFront();
       await expect.poll(() => existing.title(), { timeout: 8000 }).toBe(baseTitle);
 
@@ -169,6 +185,37 @@ test.describe('deep link', () => {
     } finally {
       await context.close();
     }
+  });
+
+  // REGRESSION：分頁就在使用者眼前時不該出聲。這裡直接呼叫 notifyDeepLinkHandoff
+  // （單一分頁 ⇒ 它必然是前景），因為真的走一次交接就一定得開第二個分頁，那會把
+  // 這個分頁推到背景，剛好測不到要測的那件事。
+  //
+  // 要守的不只是「少一則系統通知」：stopTitleFlash 掛在 window 'focus' 與
+  // 'visibilitychange' 上，分頁本來就在前景的話那兩個事件都不會再來 ⇒ 標題會一直
+  // 閃到使用者切走再切回來為止。所以斷言是「標題完全沒動過」。
+  test('分頁已在前景：只出橫幅，標題不閃', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await boot(page);
+    await expect.poll(() => page.evaluate(() => window.__app.connectState)).toBe(1);
+    const baseTitle = await page.title();
+    expect(baseTitle).not.toBe('');
+
+    expect(
+      await page.evaluate(
+        (aid) =>
+          window.__app.view.notifyDeepLinkHandoff({ board: 'movie', aid }),
+        AID
+      )
+    ).toBe(false);
+
+    // 橫幅照出（不受任何 gate 控制）。
+    await expect(page.locator('.ListHint')).toContainText(AID);
+    // 標題閃爍每 1500ms 一次；等過兩個週期確認它真的沒被排程。
+    await page.waitForTimeout(3200);
+    expect(await page.title()).toBe(baseTitle);
+    expect(errors).toEqual([]);
   });
 
   test('hashchange：同一個分頁再貼一次連結也會被收下', async ({ page }) => {

@@ -29,6 +29,7 @@ import {
   destroyPromptApi,
 } from "../../js/prompt_api";
 import { deepEqual } from "../../js/pref_sync_logic";
+import { ensureNotifyPermission } from "../../js/notification_gate";
 import {
   buildExportPayload,
   parseImportPayload,
@@ -222,6 +223,17 @@ export const PrefModal = ({
       writeValues(next);
       prefSync.savePrefs(next);
     }
+    // 兩個通知 pref 的預設值都是 true ⇒ 使用者不會去勾一個已經勾好的框 ⇒ 只靠
+    // onHandoffNotifyChange 的話權限永遠停在 'default'，系統通知永遠不出現（要
+    // 「關掉再打開」才問得到，等於隱藏操作）。所以每次關閉設定頁都再檢查一次。
+    // 兩個開關共用同一個瀏覽器權限，任一為開就該有——水球那個從來不曾自己問過。
+    //
+    // 用 Esc 關閉不算 user activation（HTML 規範明文把 Esc 排除在外），那一次請求
+    // 可能被瀏覽器忽略；可以接受——下次關閉設定頁還會再檢查。不接 onResult：
+    // 對話框正要卸載，setNotifyDenied 已經沒有意義。
+    ensureNotifyPermission(
+      next.deepLinkHandoffNotify || next.enableNotifications,
+    );
     onSave(next);
   }, [values, onSave]);
 
@@ -234,28 +246,15 @@ export const PrefModal = ({
     setValues((v) => changeNestedValue(v, name, !!checked));
   }, []);
 
-  // Deep link 交接通知：勾選是全 app 唯一有 user activation 的時機，也是唯一該問
-  // 通知權限的地方（沒頭沒尾的權限彈窗比少一則通知更糟）。跟 onAiMasterChange
-  // 同一個理由不能走通用的 onCheckboxChange。
+  // Deep link 交接通知：勾選的當下有 user activation（權限彈窗最穩的時機），所以
+  // 這裡先問一次，不等到關閉設定頁。跟 onAiMasterChange 同一個理由不能走通用的
+  // onCheckboxChange。
   //
   // 權限拿不到不算失敗：標題閃爍與頁內橫幅照常運作，只是少了「點通知切分頁」那條
   // 路，所以這裡只更新提示文字，不回頭把勾勾取消掉。
   const onHandoffNotifyChange = useCallback(({ target: { name, checked } }) => {
     setValues((v) => changeNestedValue(v, name, !!checked));
-    if (!checked || typeof Notification === "undefined") return;
-    try {
-      if (Notification.permission === "denied") {
-        setNotifyDenied(true);
-        return;
-      }
-      if (Notification.permission === "granted") return;
-      const p = Notification.requestPermission();
-      // 舊介面是 callback-only（回 undefined），新介面回 Promise。
-      if (p && p.then) p.then((r) => setNotifyDenied(r === "denied"));
-    } catch (e) {
-      // 非 secure context 之類：當作沒有系統通知這一層。
-      setNotifyDenied(true);
-    }
+    ensureNotifyPermission(checked, (r) => setNotifyDenied(r === "denied"));
   }, []);
 
   const onTextInputChange = useCallback(({ target: { name, value } }) => {

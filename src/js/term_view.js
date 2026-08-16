@@ -11,6 +11,7 @@ import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, dec
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { readValuesWithDefault } from './pref_storage';
+import { isDocumentForeground } from './notification_gate';
 import icon128 from '../icon/icon_128.png';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
@@ -1422,9 +1423,9 @@ TermView.prototype = {
   // --- 背景通知（水球 / deep link 交接共用）---------------------------------
   //
   // 三件事必須一起做，所以只能有一份實作：
-  //   1. document.title 交替閃爍 —— **沒有通知權限時唯一還有效的手段**。本專案從未
-  //      呼叫過 Notification.requestPermission（勾選 pref 時才會問），所以對還沒授權
-  //      的使用者，這一直是真正在運作的那個通道，不是備援。
+  //   1. document.title 交替閃爍 —— **沒有通知權限時唯一還有效的手段**。權限只在
+  //      PrefModal（勾選通知 pref 時、關閉設定頁時）問，沒進過設定頁的使用者一律
+  //      是 'default'，所以這一直是真正在運作的那個通道，不是備援。
   //   2. system Notification —— best effort，任何失敗都只是「沒有系統通知」。
   //      它的 onclick 是**唯一**能把瀏覽器切到本分頁的路：那裡有 user activation，
   //      window.focus() 才叫得動（背景分頁自己呼叫是無效的，見 docs/deep-link.md）。
@@ -1509,7 +1510,11 @@ TermView.prototype = {
   // 的**分頁上（外部連結一定開新分頁，這裡是背景）。三層都做：
   //   - 頁內橫幅：**不受 pref 控制**。成本為零，而且是使用者切回來之後唯一還看得到
   //     「剛剛發生了什麼」的痕跡。
-  //   - 標題閃爍 + 系統通知：受 deepLinkHandoffNotify 控制。
+  //   - 標題閃爍 + 系統通知：受 deepLinkHandoffNotify 控制，且**這個分頁必須不在
+  //     前景**。眼睛就在這裡的話通知是純噪音；更要命的是標題閃爍會停不下來——
+  //     stopTitleFlash 掛在 window 'focus' 與 'visibilitychange'（見 pttchrome.jsx），
+  //     分頁本來就在前景的話那兩個事件都不會再來，得切走再切回來才會停。所以前景
+  //     時是連閃爍一起略過，不是只擋系統通知。
   //
   // 時機刻意是「收到交接的當下」而不是「跳完」：這則通知要回答的是「你該去哪個
   // 分頁」，而且接手的分頁若還沒登入，跳轉會被 controller 收著等登入 —— 落地可能
@@ -1519,6 +1524,7 @@ TermView.prototype = {
     if (this.flashListHint)
       this.flashListHint(i18n('hint_deepLinkHandoffReceived') + ' ' + label, 8000);
     if (!this.deepLinkHandoffNotify) return false;
+    if (isDocumentForeground(document)) return false;
     var title = i18n('notification_deepLinkHandoffTitle');
     return this.showBackgroundNotification({
       title: title,

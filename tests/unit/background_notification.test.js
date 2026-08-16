@@ -4,9 +4,9 @@
 // **降級與 null-safety**，那跟渲染完全無關。
 //
 // 兩個既有隱患順帶被守起來（抽 helper 之前就存在）：
-//   a) 全專案從未呼叫 Notification.requestPermission（現在只在 PrefModal 勾選時
-//      問），所以權限多半是 'default' ⇒ 系統通知不會出現，實際在運作的一直是標題
-//      閃爍。那條路不能因為「沒有通知」就整個不做。
+//   a) 權限只在 PrefModal 問（勾選時＋關閉設定頁時），沒進過設定頁的使用者一律是
+//      'default' ⇒ 系統通知不會出現，實際在運作的一直是標題閃爍。那條路不能因為
+//      「沒有通知」就整個不做。
 //   b) 舊的 App focus handler 無條件 `view.notif.close()` ⇒ 只要出現「有 titleTimer
 //      但沒有 notif」（＝沒權限，也就是常態）就 TypeError。
 
@@ -54,6 +54,7 @@ function installNotification({ permission = "granted", throws = false } = {}) {
 afterEach(() => {
   delete globalThis.Notification;
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("_createNotification（永遠不可 throw）", () => {
@@ -190,7 +191,13 @@ describe("showBackgroundNotification", () => {
 describe("notifyDeepLinkHandoff", () => {
   const TARGET = { board: "movie", aid: "1gIeu-3A" };
 
+  // jsdom 預設是 visible + hasFocus() === true（＝前景），但這個通知的整個前提就是
+  // 「使用者的眼睛在別的分頁」。除了前景那條測試，其餘一律先把分頁壓成背景。
+  const asBackground = () =>
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+
   test("頁內橫幅不受 pref 控制（切回來後唯一看得到的痕跡）", () => {
+    asBackground();
     const ctx = ctxFor({ notify: false });
     call("notifyDeepLinkHandoff", ctx, TARGET);
     expect(ctx.hints).toHaveLength(1);
@@ -199,15 +206,43 @@ describe("notifyDeepLinkHandoff", () => {
     expect(ctx.titleTimer).toBeNull();
   });
 
-  test("pref 開著：橫幅 + 標題閃爍都要有", () => {
+  test("pref 開著且分頁在背景：橫幅 + 標題閃爍都要有", () => {
     vi.useFakeTimers();
+    asBackground();
     const ctx = ctxFor({ notify: true });
     call("notifyDeepLinkHandoff", ctx, TARGET);
     expect(ctx.hints).toHaveLength(1);
     expect(ctx.titleTimer).not.toBeNull();
   });
 
+  // REGRESSION：分頁就在眼前時完全不出聲（只留橫幅）。**標題閃爍也必須一起擋**，
+  // 不是只擋系統通知：stopTitleFlash 掛在 window 'focus' 與 'visibilitychange'
+  // 上，分頁本來就在前景的話那兩個事件都不會再來 ⇒ 標題會一直閃到使用者切走再
+  // 切回來為止。
+  test("分頁已在前景（可見且有焦點）：只留橫幅，不閃標題也不發通知", () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    installNotification({ permission: "granted" });
+    const ctx = ctxFor({ notify: true });
+    document.title = "PttChrome";
+    expect(call("notifyDeepLinkHandoff", ctx, TARGET)).toBe(false);
+    expect(ctx.hints).toHaveLength(1);
+    expect(ctx.titleTimer).toBeNull();
+    expect(ctx.notif).toBeNull();
+    vi.advanceTimersByTime(5000);
+    expect(document.title).toBe("PttChrome");
+  });
+
+  test("看得見但焦點在別的視窗 → 仍要通知（寧可多一則也不要漏）", () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const ctx = ctxFor({ notify: true });
+    call("notifyDeepLinkHandoff", ctx, TARGET);
+    expect(ctx.titleTimer).not.toBeNull();
+  });
+
   test("沒有 flashListHint（早期 boot）也不能炸", () => {
+    asBackground();
     const ctx = ctxFor({ notify: false });
     delete ctx.flashListHint;
     expect(() => call("notifyDeepLinkHandoff", ctx, TARGET)).not.toThrow();

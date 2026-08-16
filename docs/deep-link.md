@@ -232,8 +232,20 @@ link 時 `_enabled` 是 false。`_functionMode` 唯一的出口 `_evalFunctionMo
 | 層 | 受 pref 控制？ | 備註 |
 |---|---|---|
 | 頁內橫幅（`flashListHint`，`.ListHint`） | 否 | 成本為零，且是切回來後唯一的痕跡 |
-| `document.title` 閃爍 | `deepLinkHandoffNotify` | **沒有通知權限時唯一還有效的通道** |
+| `document.title` 閃爍 | `deepLinkHandoffNotify`＋非前景 | **沒有通知權限時唯一還有效的通道** |
 | 系統 `Notification` | 同上＋瀏覽器權限 | 其 `onclick` 是**唯一**能切分頁的路（那裡有 user activation） |
+
+- **前景抑制**（`notification_gate.isDocumentForeground`）：分頁就在使用者眼前
+  （`visibilityState === 'visible'` **且** `document.hasFocus()`）時，後兩層整個略過，只留橫幅。
+  不是只擋系統通知——`stopTitleFlash` 掛在 `window 'focus'` 與 `'visibilitychange'` 上，分頁
+  本來就在前景的話那兩個事件都不會再來 ⇒ 標題會一直閃到使用者切走再切回來為止。
+  兩個條件都要成立才算前景：看得見但焦點在別的視窗（雙視窗並排）仍要出聲，判斷不出來
+  （沒有 `hasFocus`）也一律當背景，寧可多通知一則。
+  **不重用 `App.appFocused`**：它初值寫死 `true`（背景開的分頁在第一次 blur 前是錯的），
+  且語意綁 window focus 並兼任水球解析閘門。
+  測試坑：**headless Chromium 沒有真正的背景分頁**——開第二個 page 並 `bringToFront()` 後，
+  第一個 page 仍回報 `visible` + `hasFocus()===true`（2026-08-17 實測）。offline e2e 靠
+  `addInitScript` 蓋掉 `document.hasFocus` 來模擬背景，見 `deep_link.offline.spec.js`。
 
 - 通知發在**跳轉之前**：接手分頁若還沒登入，`_hold()` 會把目標收著等登入 —— 落地可能
   永遠不會發生，使用者卻得先知道有東西在等他。
@@ -248,8 +260,15 @@ link 時 `_enabled` 是 false。`_functionMode` 唯一的出口 `_evalFunctionMo
   前者。`visibilitychange` 只呼叫 `stopTitleFlash()`，**不碰 `appFocused`** —— 那個旗標
   的語意是 window focus，且是水球解析的閘門（`App.onData`）。
 - pref `deepLinkHandoffNotify` 刻意不複用 `enableNotifications`（文案是「啟用水球通知」，
-  且實際是水球封包解析的閘門）。權限只在 PrefModal 勾選時問 —— 那是全 app 唯一有
-  user activation 的時機，沒頭沒尾的權限彈窗比少一則通知更糟。
+  且實際是水球封包解析的閘門）。
+- **權限請求時機**（`notification_gate.ensureNotifyPermission`）：勾選 checkbox 的當下
+  （user activation 最穩）**以及每次關閉設定頁時**都檢查一次。只靠前者不夠——兩個通知 pref
+  的預設值都是 `true`，使用者不會去勾一個已經勾好的框 ⇒ 權限永遠停在 `default`，系統通知
+  永遠不出現，得「關掉再打開」才問得到（實測回報）。關閉設定頁時只要
+  `deepLinkHandoffNotify || enableNotifications` 為真就問（兩者共用同一個瀏覽器權限，而水球
+  那個從來不曾自己問過）。已是 `granted`／`denied` 都不再送。
+  用 Esc 關閉不算 user activation（HTML 規範明文排除 Esc），那次請求可能被忽略——可接受，
+  下次關閉設定頁還會再檢查。
 
 ## 測試
 
@@ -263,7 +282,9 @@ link 時 `_enabled` 是 false。`_functionMode` 唯一的出口 `_evalFunctionMo
 | unit | `tests/unit/easy_reading_function_mode_gate.test.js`（坑 5：好讀關閉時 `_enterFunctionMode` 必須 no-op） |
 | unit | `tests/unit/easy_reading_landing_enable.test.js`（坑 4：`ensureEnabledOnArticle` 條件矩陣 + one-shot 只重試一次 + 已 enabled 絕不重開） |
 | unit | `tests/unit/easy_reading_logic.test.js` → `nextEasyReadingExternalLanding`、`navActive` gate |
-| unit | `tests/unit/background_notification.test.js`（通知降級與 null-safety；標題閃爍基準） |
-| e2e offline | `tests/e2e/offline/deep_link.offline.spec.js`（cassette 是固定 byte 流，只驗解析／暫存／清網址，**不驗完整跳轉**；另含交接通知：標題閃爍→`bringToFront()`→還原，且全程 `pageerror` 為空 —— 預設 context 沒有通知權限，剛好是要守的常態路徑） |
+| unit | `tests/unit/background_notification.test.js`（通知降級與 null-safety；標題閃爍基準；前景抑制） |
+| unit | `tests/unit/notification_gate.test.js`（權限請求時機＋前景判定的規格書） |
+| unit | `tests/unit/pref_modal_notify_permission.test.jsx`（關閉設定頁時的權限檢查） |
+| e2e offline | `tests/e2e/offline/deep_link.offline.spec.js`（cassette 是固定 byte 流，只驗解析／暫存／清網址，**不驗完整跳轉**；另含交接通知：標題閃爍→`bringToFront()`→還原，且全程 `pageerror` 為空 —— 預設 context 沒有通知權限，剛好是要守的常態路徑；前景抑制另有一條，headless 無真正背景分頁故以 `addInitScript` 蓋 `document.hasFocus`） |
 | e2e offline | `tests/e2e/offline/ui_behavior.offline.spec.js`（PrefModal 的 `deepLinkHandoffNotify` 開關） |
 | e2e live | `tests/e2e/deep-link.spec.js`（唯一驗得到「冷啟動→登入→主功能表→切板→跳文」完整鏈的地方；需 `PTT_USER`/`PTT_PASS`，AID 先用共用 session 按 Q 撈真的。落地後斷言 `useEasyReadingMode === true` 且 `easyReadingFunctionMode === false`） |
