@@ -1,0 +1,7 @@
+# 這裡列的 commit 只動格式、不動語意，git blame 應該跳過它們。
+#
+# GitHub 的 blame 介面會自動讀這個檔；本機要用得先設定一次：
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# chore: .gitattributes 全 repo 統一 LF（一次性正規化，無內容變更）
+76afcc6963600125793778ef6ebff844a90a0206
