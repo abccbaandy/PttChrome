@@ -1,0 +1,22 @@
+# 全 repo 統一 LF —— 存進 git 是 LF，簽出到工作目錄也是 LF。
+#
+# 為什麼要 eol=lf 而不是只靠各機器的 core.autocrlf：換行行為不該取決於「誰的機器
+# 怎麼設定」。實際踩過的坑是反過來的那一半——fork 進來時有 7 個 src/js 檔案的
+# blob 被存成 CRLF（term_view.js、string_util.js、symbol_table.js、telnet.js、
+# caption_ai_logic.js、zh_TW_messages.js、en_US_messages.js），之後任何寫 LF 的
+# 工具（編輯器、prettier）改個幾行，git 就把整個檔案當成全改：改 10 行的
+# term_view.js 噴出 3904 行 diff，review 與 git blame 全毀。
+#
+# 這份設定加上一次 `git add --renormalize .` 之後，工具寫 LF、git 存 LF、CI（Linux）
+# 讀 LF 三者一致，那個 diff 從此不可能出現。
+#
+# 本 repo 沒有任何 .bat/.cmd/.ps1（那些才是真正需要 CRLF 的檔），所以可以全面 LF。
+* text=auto eol=lf
+
+# 二進位：明確標掉，不倚賴 git 的自動偵測，也順便關掉 diff。
+*.png  binary
+*.gif  binary
+*.bmp  binary
+*.woff binary
+*.bz2  binary
+*.bin  binary

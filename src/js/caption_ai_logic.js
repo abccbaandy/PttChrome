@@ -212,8 +212,12 @@ export function applyAiKeep(ruleBlocks, spans, keepByImageRow) {
 // 內容型 cache key（FNV-1a）：好讀翻頁會重算 spans，但同一張圖的候選段內容不變
 // → key 不變 → 不重複推論。換文章由呼叫端另外帶 articleId 進來。
 export function spanKey(span) {
+  // 下面的分隔符是 U+0000，原始碼裡一律寫成跳脫序列（backslash + u0000），
+  // **不可以貼真正的 NUL 位元組進來**：git 只要在檔案裡看到一個 NUL 就把整份當
+  // 二進位 → .gitattributes 的 text=auto 對它不生效（換行不再正規化），diff 也
+  // 會退化成「Binary files differ」。兩種寫法的執行語意完全相同。
   let h = 0x811c9dc5;
-  const s = span.imageUrl + " " + span.texts.join(" ");
+  const s = span.imageUrl + "\u0000" + span.texts.join("\u0000");
   for (let i = 0; i < s.length; ++i) {
     h ^= s.charCodeAt(i);
     h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
