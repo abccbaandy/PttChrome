@@ -12,6 +12,7 @@
 - **CI flaky 重試無 `vi` 對應**（沒有 `jest.retryTimes`）：設 `vitest.config.mjs` integration project 的 `retry`。
 - asset：`.bin` 用 `?url` import；`.bin`/`.bmp` 需列入 `assetsInclude`；小圖（< `assetsInlineLimit` 4KB）自動 inline，CSS 內不必寫 `?inline`。
 - entry＝根目錄 `index.html`，title 佔位由 `vite.config.mjs` 的 `transformIndexHtml` 小 plugin 替換；favicon `<link href>` Vite 自動 hash。
+- **`public/` 是「路徑要穩定」的專用出口**（目前只有 PWA 的 `manifest.webmanifest` ＋ 兩張 icon）：內容由 Vite 原樣複製、**不 hash 檔名**，所以 manifest 才引用得到 icon。反過來說 `src/icon/**` 那些會被 hash，不能寫進 manifest。無 `vite-plugin-pwa`（沒有 service worker，也不打算有）——manifest 純粹是為了 `launch_handler: focus-existing`，見 `docs/deep-link.md`。
 - e2e webServer 跑 `node node_modules/vite/bin/vite.js`（單一進程原則，teardown 才殺得乾淨）。
 - **lightningcss（CSS minify）比舊鏈嚴格**：非法註解之類會直接 build fail——這是好事，修 CSS 而不是繞過。
 - Yarn v4 script＝portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數 → **勿引入 cross-env**。

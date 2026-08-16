@@ -537,6 +537,15 @@ export const PrefModal = ({
                   onKeyDown={onHotkeyCapture}
                   mb="xs"
                 />
+                <TextInput
+                  label={i18n("options_deepLinkCopyKey")}
+                  name="deepLinkCopyKey"
+                  readOnly
+                  value={values.deepLinkCopyKey}
+                  placeholder={i18n("tooltip_deepLinkCopyKey")}
+                  onKeyDown={onHotkeyCapture}
+                  mb="xs"
+                />
                 <PrefCheckbox
                   name="endTurnsOnLiveUpdate"
                   checked={values.endTurnsOnLiveUpdate}

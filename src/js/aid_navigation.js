@@ -69,7 +69,9 @@ const AID_NOT_FOUND_RE = /找不到|不正確/;
 const KEY_LEFT = '\x1b[D';
 
 // 主功能表 title (term_buf.setPageState / classifyListScreen use the same literal).
-const MAIN_MENU_TITLE = '【主功能表】';
+// Exported for deep_link_controller, which uses "row 0 starts with this" as its
+// one and only "the user is logged in" signal.
+export const MAIN_MENU_TITLE = '【主功能表】';
 
 // The board's 進板畫面 tail: mbbsd/bbs.c#Read → pressanykey(). Same literals
 // term_buf.setPageState matches for pageState 5.
@@ -214,6 +216,13 @@ AidNavigation.prototype = {
     return screenSignature(rowTexts);
   },
 
+  // Already at 主功能表 (the escape preamble's destination). Same literal test
+  // _enqueueEscape's expect uses, read straight off the native buffer.
+  _atMainMenu: function() {
+    const buf = this._termBuf;
+    return buf.getRowText(0, 0, buf.cols).indexOf(MAIN_MENU_TITLE) === 0;
+  },
+
   // 'reading' → s/# are live in this pager; anything else → escape preamble.
   // Deliberately single-directional (see string_util.parsePagerFooterContext):
   // 'unknown' (footer squeezed out) degrades to the SLOW path, never the fast one.
@@ -250,6 +259,29 @@ AidNavigation.prototype = {
     // there, so there is no previous anchor to inherit it from.
     run.originLineIndex = lineIndex;
     this._begin(run);
+  },
+
+  // A jump asked for from OUTSIDE the terminal (a deep link — see
+  // deep_link_controller.js). Same machinery, three differences from start():
+  //   - not gated on startedEasyReading: a deep link is normally consumed right
+  //     after login, at 主功能表, where no article is open at all. start()'s
+  //     gate would make it silently do nothing.
+  //   - no origin anchor. beginJump(null, …) is legal (nav_history) and means
+  //     no "← 返回" pill afterwards — correct, there IS no article to go back
+  //     to. When the user IS reading something, the caller uses start() instead
+  //     so the Q step captures a real anchor.
+  //   - Q is skipped: with no origin anchor there is nothing to upgrade.
+  // Returns whether the run was started (false = busy / bad arguments).
+  startExternal: function(aid, board) {
+    if (this.active) return false;
+    if (!aid || !board) return false;
+    this._history.beginJump(null, { board: board, aid: aid });
+    this._hint('跳至 #' + aid + ' (' + board + ')…', 15000);
+    const run = makeRun({ board: board, kind: 'aid', aid: aid }, 'forward');
+    run.originLineIndex = null;
+    run.external = true;
+    this._begin(run);
+    return true;
   },
 
   // Back to the article the last jump started from. Deliberately NOT gated on
@@ -314,6 +346,15 @@ AidNavigation.prototype = {
     // absorbs our intermediate clean-list settles. Must run BEFORE we enqueue.
     if (this._core.listSession) this._core.listSession.beginExternalNavigation();
 
+    // Already where the escape preamble would have taken us. Skipping it is not
+    // just an optimisation: _enqueueEscape SENDS ← and only then judges, and ←
+    // at 主功能表 moves the highlight onto G)oodbye (see its own comment on
+    // overshoot). The deep-link entry point lands here almost every time — the
+    // link is usually opened right after logging in.
+    if (this._atMainMenu()) {
+      this._enqueueBoardJump(run, true, false);
+      return;
+    }
     if (this._pagerContext() !== 'reading') {
       // Not a board article (站內信 / 精華區 / footer squeezed out): Q would
       // describe something that is not a post we could ever navigate back to,
@@ -321,7 +362,9 @@ AidNavigation.prototype = {
       this._enqueueEscape(run, 0, this._screenSignature());
       return;
     }
-    if (run.dir === 'forward') {
+    // run.external: no origin anchor was captured (startExternal), so there is
+    // nothing for the Q answer to upgrade — spend the command on the jump.
+    if (run.dir === 'forward' && !run.external) {
       this._enqueueOriginAid(run);
       return;
     }
@@ -341,16 +384,51 @@ AidNavigation.prototype = {
   // context itself is gone) is fatal, like every other step.
   _enqueueOriginAid: function(run) {
     const self = this;
+    this.queryPostAid({
+      kind: 'aid-origin-info',
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      onDone: function(info) {
+        if (info) {
+          self._history.upgradePendingOriginAid(
+            info.board,
+            info.aid,
+            run.originLineIndex
+          );
+          self._updateBackButton();
+        }
+        // dismissFirst: the box's pressanykey is still waiting, so the board
+        // jump is prefixed with the dismissal instead of spending a command.
+        self._enqueueBoardJump(run, false, true);
+      },
+      onFail: function() {
+        // Degrade, never fail: the jump itself is still perfectly doable, the
+        // back anchor just stays at whatever tier chooseAnchor picked.
+        self._enqueueBoardJump(run, false, true);
+      }
+    });
+  },
+
+  // The Q post-info transaction itself, shared by the jump's anchor upgrade
+  // above and by "複製本篇連結" (deep_link_controller): the three non-obvious
+  // constraints — no fullRepaint, a pressanykey tail IS the answer "this post
+  // has no AID", and the box may only be dismissed with KEY_DISMISS — must
+  // exist in exactly one place.
+  //
+  // onDone receives { aid, board } (board may be null) or null. Dismissing the
+  // box is the CALLER's job: the jump folds it into its next command, a caller
+  // with no next command must send dismissPostInfo() itself or the user is left
+  // staring at the box.
+  queryPostAid: function(handlers) {
     this._queue.enqueue({
       keys: 'Q',
-      kind: 'aid-origin-info',
+      kind: handlers.kind || 'aid-post-info',
       // NO fullRepaint: the appended \f would be eaten by view_postinfo's
       // closing pressanykey() and the box would be gone by the time the screen
       // settles — we would read the list back instead of the AID.
       fullRepaint: false,
-      onFlushed: function() {
-        self._fail('畫面已變更');
-      },
+      onFlushed: handlers.onFlushed,
       timeoutMs: 2500,
       expect: function(snapshot, facts) {
         for (let r = 0; r < facts.rowTexts.length; ++r) {
@@ -363,21 +441,76 @@ AidNavigation.prototype = {
         return PRESS_ANY_KEY_RE.test(lastRow) ? { info: null } : false;
       },
       onDone: function(result) {
-        if (result.info) {
-          self._history.upgradePendingOriginAid(
-            result.info.board,
-            result.info.aid,
-            run.originLineIndex
-          );
-          self._updateBackButton();
-        }
-        self._enqueueBoardJump(run, false, true);
+        handlers.onDone(result.info);
       },
-      onFail: function() {
-        // Degrade, never fail: the jump itself is still perfectly doable, the
-        // back anchor just stays at whatever tier chooseAnchor picked.
-        self._enqueueBoardJump(run, false, true);
+      onFail: function(reason) {
+        handlers.onFail(reason);
       }
+    });
+  },
+
+  // Put the reader back on the post after a Q that was asked purely to LEARN the
+  // AID (「複製本篇連結」). Reading the info box is not free: mbbsd/bbs.c:2375-2377
+  // answers RET_DOQUERYINFO with `view_postinfo(...); return FULLUPDATE;` — the
+  // FULLUPDATE leaves the pager and repaints the LIST. So after Q the user is on
+  // the article list no matter what, with the cursor still parked on the post
+  // (i_read never moved it). Two keys put it back:
+  //   ␣  dismiss the box's pressanykey → the list
+  //   ⏎  reopen the post under the cursor
+  // The jump path never needed this because its next step (s<board>) is a list
+  // command anyway — which is exactly why this only showed up once the copy
+  // action started using the same Q (live-verified 2026-08-16: 複製完就跳出文章).
+  //
+  // lineIndex (optional): the reading position to restore once the post has
+  // grown back — same one-shot easy reading uses for an AID back run.
+  reopenAfterPostInfo: function(lineIndex, handlers) {
+    const self = this;
+    const h = handlers || {};
+    this._queue.enqueue({
+      keys: KEY_DISMISS,
+      kind: 'aid-post-info-dismiss',
+      fullRepaint: true,
+      onFlushed: h.onFlushed,
+      timeoutMs: 4000,
+      // The list is where Q leaves us; a still-article frame means the box was
+      // never up (nothing to dismiss) and we are already home.
+      expect: function(snapshot, facts) {
+        if (facts.kind === 'clean-list') return { onList: true };
+        if (facts.kind === 'article') return { onList: false };
+        return !!parseStatusRow(facts.rowTexts[facts.rows - 1] || '')
+          ? { onList: false }
+          : false;
+      },
+      onDone: function(result) {
+        if (!result.onList) {
+          if (h.onDone) h.onDone();
+          return;
+        }
+        self._enqueueReopen(lineIndex, h);
+      },
+      onFail: h.onFail || function() {}
+    });
+  },
+
+  _enqueueReopen: function(lineIndex, h) {
+    const self = this;
+    this._queue.enqueue({
+      keys: '\r',
+      kind: 'aid-post-info-reopen',
+      fullRepaint: true,
+      onFlushed: h.onFlushed,
+      timeoutMs: 4000,
+      expect: function(snapshot, facts) {
+        if (facts.kind === 'article') return true;
+        return !!parseStatusRow(facts.rowTexts[facts.rows - 1] || '');
+      },
+      onDone: function() {
+        const er = self._core.easyReading;
+        if (lineIndex && er && er.requestScrollRestore)
+          er.requestScrollRestore(lineIndex);
+        if (h.onDone) h.onDone();
+      },
+      onFail: h.onFail || function() {}
     });
   },
 
@@ -447,8 +580,8 @@ AidNavigation.prototype = {
   },
 
   // Shared by the via-menu board jump and its dismiss rounds: the landing is the
-  // target board's clean list; a 進板畫面 (pmore → classifies as 'article') or a
-  // pressanykey tail is a known intermediate, everything else keeps waiting.
+  // target board's clean list; a 進板畫面 or a pressanykey tail is a known
+  // intermediate, everything else keeps waiting.
   _boardLandingExpect: function(boardLower) {
     return function(snapshot, facts) {
       if (
@@ -462,6 +595,23 @@ AidNavigation.prototype = {
       // We are between 主功能表 and the list here, so an article screen can only
       // be the 進板畫面 pager — the target post is still two commands away.
       if (facts.kind === 'article') return { dismiss: true };
+      // The OTHER shape of the same 進板畫面. mbbsd/bbs.c#Read:4470 shows the
+      // board notes with more(buf, NA), and NA == PMORE_AUTO_EXIT
+      // (pmore.c:199-200) — that mode draws NO footer prompt, so the bottom row
+      // is blank and the cursor parks there ⇒ classifyListScreen says 'prompt',
+      // not 'article'. Live-verified 2026-08-16 on Steam: with only the three
+      // checks above, the whole jump wedged here (probe → miss → 「切換看板失敗」),
+      // which is exactly what a deep link opened from a cold start hits, every
+      // time, on any board that has notes.
+      //
+      // Still 主功能表 in row 0 means we never left it (the s was swallowed, or
+      // the board name was rejected): NOT a 進板畫面, and a ← there would only
+      // move the highlight onto G)oodbye. Keep waiting → probe → visible miss.
+      if (
+        facts.kind === 'prompt' &&
+        (facts.rowTexts[0] || '').indexOf(MAIN_MENU_TITLE) !== 0
+      )
+        return { dismiss: true };
       return false;
     };
   },

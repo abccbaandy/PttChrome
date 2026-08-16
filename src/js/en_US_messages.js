@@ -47,6 +47,9 @@ export const en_US = {
   "cmenu_copyLinkUrl": {
     "message": "Copy link address"
   },
+  "cmenu_copyArticleLink": {
+    "message": "Copy link to this article"
+  },
   "cmenu_mouseBrowsing": {
     "message": "Mouse browsing"
   },
@@ -431,6 +434,12 @@ export const en_US = {
   "tooltip_aidNavBackKey": {
     "message": "Click then press any key to set (default F9)"
   },
+  "options_deepLinkCopyKey": {
+    "message": "Hotkey to copy a link to the current article"
+  },
+  "tooltip_deepLinkCopyKey": {
+    "message": "Click then press any key to set (default F2)"
+  },
   "options_endTurnsOnLiveUpdate": {
     "message": "Press END turns on thread live update."
   },
@@ -631,6 +640,15 @@ export const en_US = {
   },
   "alert_developerModeDismiss": {
     "message": "Yes, I understand."
+  },
+  "alert_deepLinkHandoffHeader": {
+    "message": "Opened in your existing tab"
+  },
+  "alert_deepLinkHandoffText": {
+    "message": "You already have a logged-in PTT tab; the article was handed to it. Please switch to that tab."
+  },
+  "alert_deepLinkHandoffStay": {
+    "message": "Open in this tab instead"
   },
 
   "alert_connectionHeader": {

@@ -22,6 +22,7 @@ export const DropdownMenu = ({
   authorBlacklistId,
   authorBlacklistExists,
   titleBlacklistText,
+  articleLinkEnabled,
   onTitleBlacklistClick,
   onMenuSelect,
   onInputHelperClick,
@@ -133,6 +134,13 @@ export const DropdownMenu = ({
             >
               {i18n("cmenu_mouseBrowsing")}
             </Menu.Item>
+            {/* 複製本篇文章的 deep link（外部程式貼上後點開即跳回這篇）。只在
+                文章畫面出現：要靠 Q 資訊框才問得出本篇的 AID。 */}
+            {articleLinkEnabled && (
+              <Menu.Item onClick={(e) => onMenuSelect("copyArticleLink", e)}>
+                {i18n("cmenu_copyArticleLink")}
+              </Menu.Item>
+            )}
             <Menu.Item onClick={onInputHelperClick}>
               {i18n("cmenu_showInputHelper")}
             </Menu.Item>

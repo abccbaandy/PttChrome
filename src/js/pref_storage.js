@@ -30,6 +30,9 @@ export const DEFAULT_PREFS = {
   // （term_keyboard 的 KeyMap 沒有它們，keyEventToBytes 回 null），而 Chrome 已
   // 佔用 F1/F3/F5/F6/F7/F10/F11/F12，F8 又給了 easyReadingEndSwitchKey。
   aidNavBackKey: "F9",
+  // 「複製本篇連結」（deep link）的快捷鍵。預設 F2：上面那串被 Chrome 佔用的
+  // F 鍵之外，F8/F9 又已經給了上面兩個功能，剩下的就是 F2/F4。
+  deepLinkCopyKey: "F2",
 
   // Connection proxy: when on, connect through proxyUrl instead of DEFAULT_SITE so
   // users behind a block can reach PTT without installing anything. proxyUrl may be a

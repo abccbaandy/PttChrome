@@ -951,3 +951,203 @@ describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）"
     expect(h.nav.active).toBe(true);
   });
 });
+
+// 外部 deep link（?/#Board/AID）觸發的跳轉。與 start() 的差別全在起手式：沒有
+// 原文可回、可能根本沒開任何文章、而且落點幾乎都是剛登入的主功能表。
+describe("startExternal（deep link）", () => {
+  const atMainMenu = h => {
+    h.termBuf.rowTexts = MAIN_MENU_SCREEN;
+  };
+
+  test("主功能表：直接 s<board>，不送 ←", () => {
+    // _enqueueEscape 是「先送 ← 再判斷」，在主功能表送 ← 會把反白移到
+    // G)oodbye（該函式自己的註解點名的 overshoot）。deep link 幾乎每次都
+    // 落在這個畫面，所以起手就必須認出來。
+    const h = makeHarness();
+    atMainMenu(h);
+    expect(h.nav.startExternal("1gIeu-3A", "Gossiping")).toBe(true);
+    expect(h.sent).toEqual(["sGossiping\r\f"]);
+    expect(h.nav.active).toBe(true);
+  });
+
+  test("主功能表：走 viaMenu 落點（進板畫面 + pressanykey 要被關掉）", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    h.nav.startExternal("1gIeu-3A", "Gossiping");
+    // ReadSelect() → Read() 在本 session 首次進板會先放進板畫面
+    settle(
+      h.queue,
+      facts("transient", {
+        rowTexts: screen({ last: PRESS_ANY_KEY_ROW, mark: "進板畫面" })
+      })
+    );
+    expect(h.sent[1]).toBe("\x1b[D\f");
+    settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+    expect(h.sent[2]).toBe("#1gIeu-3A\r\f");
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "gossiping", cursorRowNum: 42, curY: 10 })
+    );
+    expect(h.sent[3]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+  });
+
+  test("REGRESSION：沒有 footer 的進板畫面（PMORE_AUTO_EXIT）也要能關掉", () => {
+    // 實測 2026-08-16（Steam 板）：跳轉卡死在進板畫面。
+    // mbbsd/bbs.c#Read:4470 用 more(buf, NA)，NA = PMORE_AUTO_EXIT
+    // （pmore.c:200）—— 這個模式**不畫 footer prompt**，所以末列是空的、游標
+    // park 在末列 ⇒ classifier 說 'prompt'，而 _boardLandingExpect 原本的三個
+    // 分支（clean-list / 請按任意鍵 / article）一個都不匹配 → 永遠等下去 →
+    // probe → miss →「切換看板失敗」。
+    const h = makeHarness();
+    atMainMenu(h);
+    h.nav.startExternal("1gIeu-3A", "Steam");
+    expect(h.sent).toEqual(["sSteam\r\f"]);
+    // 進板公告：row0 是公告內容（不再是主功能表），末列空白，游標停在末列。
+    settle(
+      h.queue,
+      facts("prompt", {
+        rowTexts: screen({ row0: "", mark: "  ◢██◣ Steam 板規", last: "" }),
+        curY: 23
+      })
+    );
+    expect(h.sent[1]).toBe("\x1b[D\f");
+    settle(h.queue, facts("clean-list", { boardName: "steam" }));
+    expect(h.sent[2]).toBe("#1gIeu-3A\r\f");
+  });
+
+  test("板跳後仍停在主功能表（s 沒吃到／板名有誤）→ 不當成進板畫面亂關", () => {
+    // 這一幀跟上面同樣是 'prompt'，差別只在 row0 還是主功能表 —— 那代表我們
+    // 根本沒離開，送 ← 只會把反白移到 G)oodbye。必須繼續等（→ probe → miss →
+    // 明確失敗），不能沉默地亂按。
+    const h = makeHarness();
+    atMainMenu(h);
+    h.nav.startExternal("1gIeu-3A", "NoSuchBoard");
+    settle(
+      h.queue,
+      facts("prompt", { rowTexts: MAIN_MENU_SCREEN, curY: 23 })
+    );
+    expect(h.sent).toEqual(["sNoSuchBoard\r\f"]);
+  });
+
+  test("沒有開著的文章（startedEasyReading false）照樣能跳 —— start() 的那條 gate 不適用", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    h.termBuf.startedEasyReading = false;
+    expect(h.nav.startExternal("1gIeu-3A", "Gossiping")).toBe(true);
+    expect(h.sent).toEqual(["sGossiping\r\f"]);
+    // 對照組：同一個畫面用 start() 會被 gate 擋掉，什麼都不送
+    const h2 = makeHarness();
+    atMainMenu(h2);
+    h2.termBuf.startedEasyReading = false;
+    h2.nav.start("1gIeu-3A", "Gossiping");
+    expect(h2.sent).toEqual([]);
+  });
+
+  test("不問 Q：沒有原文錨點就沒有東西可升級", () => {
+    // 起點是一篇文章（footer 證明 currstat == READING）但仍是外部跳轉：
+    // 這時 start() 會先按 Q，startExternal 直接切板。
+    const h = makeHarness();
+    h.nav.startExternal("1gIeu-3A", "Gossiping");
+    expect(h.sent).toEqual(["sGossiping\r\f"]);
+  });
+
+  test("跳完不出現「← 返回」pill（本來就沒有原文可回）", () => {
+    const h = makeHarness({ articleBoard: "movie", scrollTop: 400 });
+    atMainMenu(h);
+    h.nav.startExternal("1gIeu-3A", "Gossiping");
+    settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "gossiping", cursorRowNum: 42, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(h.backButton.shown).toBe(false);
+    expect(h.nav.canGoBack()).toBe(false);
+  });
+
+  test("非主功能表、非文章（列表）→ 仍走 ← 退回主功能表的慢路徑", () => {
+    const h = makeHarness({ footer: "" });
+    h.termBuf.rowTexts = screen({ row0: "《Gossiping》", mark: "列表" });
+    h.nav.startExternal("1gIeu-3A", "movie");
+    expect(h.sent).toEqual(["\x1b[D\f"]);
+  });
+
+  test("進行中再來一個 deep link 會被拒絕（回 false，不插隊）", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    expect(h.nav.startExternal("1gIeu-3A", "Gossiping")).toBe(true);
+    expect(h.nav.startExternal("2AbCdEf0", "movie")).toBe(false);
+    expect(h.sent).toEqual(["sGossiping\r\f"]);
+  });
+
+  test("缺 board 或 aid → 回 false，不送任何東西", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    expect(h.nav.startExternal("1gIeu-3A", null)).toBe(false);
+    expect(h.nav.startExternal(null, "Gossiping")).toBe(false);
+    expect(h.sent).toEqual([]);
+  });
+});
+
+// 「複製本篇連結」與跳轉共用同一段 Q 交易（queryPostAid），所以那三條 pttbbs
+// 約束只會有一份實作。這裡守的是共用後的對外行為。
+describe("queryPostAid / dismissPostInfo", () => {
+  test("讀出 { aid, board }，且不可帶 fullRepaint", () => {
+    const h = makeHarness();
+    const got = [];
+    h.nav.queryPostAid({ onDone: info => got.push(info), onFail: () => {} });
+    expect(h.sent).toEqual(["Q"]); // 沒有 \f
+    answerOriginInfo(h.queue, "1gKF7GO4", "movie");
+    expect(got).toEqual([{ aid: "1gKF7GO4", board: "movie" }]);
+  });
+
+  test("框開了但這篇沒有 AID → onDone(null)，不是等到逾時", () => {
+    const h = makeHarness();
+    const got = [];
+    h.nav.queryPostAid({ onDone: info => got.push(info), onFail: () => {} });
+    answerOriginInfo(h.queue, null);
+    expect(got).toEqual([null]);
+  });
+
+  test("REGRESSION：Q 之後 PTT 會回列表，reopenAfterPostInfo 要按 Enter 開回原篇", () => {
+    // mbbsd/bbs.c:2375-2377：RET_DOQUERYINFO → view_postinfo(...) 之後
+    // **return FULLUPDATE** ⇒ 離開 pager、重畫文章列表。跳轉路徑感覺不到是因為
+    // 它下一步 s<board> 本來就是列表指令；「複製本篇連結」用同一個 Q，就會把
+    // 使用者丟在列表上（實測 2026-08-16：複製完跳出文章）。
+    const h = makeHarness();
+    const done = [];
+    h.nav.queryPostAid({ onDone: () => {}, onFail: () => {} });
+    answerOriginInfo(h.queue, "1gKF7GO4");
+    h.nav.reopenAfterPostInfo(12, { onDone: () => done.push(true) });
+    // 空白關框（不可用 \f：io.c 的 system_key_hook 會吃掉，那不算一個按鍵）
+    expect(h.sent[1]).toBe(" \f");
+    settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
+    // 游標還停在原篇（i_read 沒動過它）→ 一個 Enter 就開回去
+    expect(h.sent[2]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(done).toEqual([true]);
+    // 閱讀位置一起帶回去
+    expect(h.core.easyReading.restoreCalls).toEqual([12]);
+  });
+
+  test("關框後發現還在文章（框根本沒開）→ 不多按 Enter", () => {
+    const h = makeHarness();
+    const done = [];
+    h.nav.queryPostAid({ onDone: () => {}, onFail: () => {} });
+    answerOriginInfo(h.queue, "1gKF7GO4");
+    h.nav.reopenAfterPostInfo(null, { onDone: () => done.push(true) });
+    settle(h.queue, facts("article"));
+    expect(h.sent).toHaveLength(2);
+    expect(done).toEqual([true]);
+  });
+
+  test("跳轉路徑仍把關框併進 s<board>（回歸：抽共用後不可多送一鍵）", () => {
+    const h = makeHarness();
+    h.nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(h.queue, "1gKF7GO4");
+    expect(h.sent[1]).toBe(" sAndroid\r\f");
+  });
+});

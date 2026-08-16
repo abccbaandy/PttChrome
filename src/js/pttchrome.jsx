@@ -8,6 +8,7 @@ import { EasyReading } from './easy_reading';
 import { ListSession } from './list_session';
 import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
+import { DeepLinkController } from './deep_link_controller';
 import { AutoLogin } from './auto_login';
 import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
 import { MouseButtonTracker } from './mouse_button_tracker';
@@ -72,6 +73,9 @@ export const App = function() {
   this.view.onAidClick = (aid, board) => {
     this.aidNavigation.start(aid, board || this.view._articleBoard);
   };
+  // Deep link (外部連結 #<Board>/<AID>) → 同一套 AID 跳轉。目標可能比登入先到，
+  // 所以排程權在 controller 手上，不在 URL 解析那邊。
+  this.deepLinkController = new DeepLinkController(this, this.view, this.buf);
   this.autoLogin = new AutoLogin(this);
 
   // Debug 錄製器（src/js/debug_recorder.js）：由 DebugRecordButton 掛上/卸下，
@@ -311,6 +315,10 @@ App.prototype.onClose = function() {
   // Same for the AID back stack: its anchors are replayed as key sequences and
   // rely on this session's per-board cursors (pttbbs getkeep), which die with it.
   this.aidNavigation.reset();
+  // A deep link waiting for login belongs to the session that is now gone: the
+  // reconnect starts back at the login screen, and firing a jump into whatever
+  // the user does next is worse than making them click the link again.
+  this.deepLinkController.reset();
 
   this.cancelMbTimer();
 

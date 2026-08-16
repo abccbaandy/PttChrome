@@ -56,6 +56,8 @@ const menuHandlerByEventKey = {
   openUrlNewTab: (pttchrome, { aElement }) =>
     pttchrome.doOpenUrlNewTab(aElement),
   copyLinkUrl: (pttchrome, { contextOnUrl }) => pttchrome.doCopy(contextOnUrl),
+  copyArticleLink: (pttchrome) =>
+    pttchrome.deepLinkController.copyCurrentPostLink(),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
   mouseBrowsing: (pttchrome) => pttchrome.switchMouseBrowsing(),
 };
@@ -75,6 +77,8 @@ const initialState = {
   blacklistAuthorTarget: null,
   blacklistAuthorExists: false,
   blacklistTitleTarget: null,
+  // 右鍵當下是不是在文章畫面（決定「複製本篇連結」出不出現）。
+  articleLinkEnabled: false,
   // Quick search items shown for the current selection (already filtered by the
   // enabled flag + each item's match rule), and the normalized query they use.
   quickSearchItems: [],
@@ -221,6 +225,9 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistTitleTarget,
         quickSearchItems,
         quickSearchQuery,
+        // 「複製本篇連結」只在文章畫面有意義（要按 Q 問文章資訊框）。pageState 3
+        // = READING，與 term_view 判「可切回好讀模式」用的是同一個值。
+        articleLinkEnabled: pttchrome.buf.pageState === 3,
       });
     },
     [pttchrome, update],
@@ -512,6 +519,7 @@ export const ContextMenu = ({ pttchrome }) => {
     blacklistAuthorTarget,
     blacklistAuthorExists,
     blacklistTitleTarget,
+    articleLinkEnabled,
     quickSearchItems,
     quickSearchQuery,
     showsInputHelper,
@@ -538,6 +546,7 @@ export const ContextMenu = ({ pttchrome }) => {
         authorBlacklistId={blacklistAuthorTarget}
         authorBlacklistExists={blacklistAuthorExists}
         titleBlacklistText={blacklistTitleTarget}
+        articleLinkEnabled={articleLinkEnabled}
         onTitleBlacklistClick={onTitleBlacklistClick}
         onMenuSelect={onMenuSelect}
         onInputHelperClick={onInputHelperClick}

@@ -47,6 +47,9 @@
   "cmenu_copyLinkUrl": {
     "message": "複製連結網址"
   },
+  "cmenu_copyArticleLink": {
+    "message": "複製本篇文章連結"
+  },
   "cmenu_mouseBrowsing": {
     "message": "滑鼠瀏覽"
   },
@@ -431,6 +434,12 @@
   "tooltip_aidNavBackKey": {
     "message": "點此後按任意鍵設定 (預設 F9)"
   },
+  "options_deepLinkCopyKey": {
+    "message": "複製本篇文章連結的熱鍵"
+  },
+  "tooltip_deepLinkCopyKey": {
+    "message": "點此後按任意鍵設定 (預設 F2)"
+  },
   "options_endTurnsOnLiveUpdate": {
     "message": "END 啟用推文即時更新 (如 Alt + r)"
   },
@@ -628,6 +637,15 @@
   },
   "alert_developerModeDismiss": {
     "message": "是，我瞭解了"
+  },
+  "alert_deepLinkHandoffHeader": {
+    "message": "已在原本的分頁開啟"
+  },
+  "alert_deepLinkHandoffText": {
+    "message": "你已經有一個登入好的 PTT 分頁，這篇文章已交給它開啟，請切換過去。"
+  },
+  "alert_deepLinkHandoffStay": {
+    "message": "改在這個分頁開啟"
   },
 
   "alert_connectionHeader": {

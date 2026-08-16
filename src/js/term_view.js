@@ -737,6 +737,15 @@ TermView.prototype = {
       this.bbscore.aidNavigation.back();
       return;
     }
+    // 「複製本篇連結」hotkey (pref deepLinkCopyKey, default F2). Claimed here for
+    // the same reason as the one above: an F-key never reaches PTT anyway, and
+    // it must work in easy reading as well as native.
+    if (this.bbscore.deepLinkController && !e.ctrlKey && !e.altKey && !e.metaKey &&
+        e.key === readValuesWithDefault().deepLinkCopyKey) {
+      e.preventDefault();
+      this.bbscore.deepLinkController.copyCurrentPostLink();
+      return;
+    }
     // Switch-to-native is a TOGGLE: the gate below owns the key while easy reading is
     // on, and this owns it while we are back in native inside a post. Without it there
     // is no way back into easy reading for the current post at all — the user has to

@@ -1,0 +1,19 @@
+{
+  "name": "PttChrome",
+  "short_name": "PttChrome",
+  "description": "PTT BBS 瀏覽器終端機 client",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "icons": [
+    { "src": "./icon-128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -7,6 +7,11 @@
          階段替換（env PTTCHROME_PAGE_TITLE，預設 PttChrome）。 -->
     <title>%PTTCHROME_PAGE_TITLE%</title>
     <link rel="icon" type="image/png" href="/src/icon/logo.png">
+    <!-- 安裝成應用程式後，deep link（#<Board>/<AID>）會靠 manifest 的
+         launch_handler: focus-existing 交給既有視窗，走 window.launchQueue
+         而不是開新分頁（見 src/js/deep_link_entry.js）。路徑必須是相對的：
+         站台部署在 GitHub Pages 子路徑（vite.config.mjs base: './'）。 -->
+    <link rel="manifest" href="./manifest.webmanifest">
 
     <meta name="viewport" content="user-scalable=no, width=device-width, initial-scale=1, maximum-scale=1">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>

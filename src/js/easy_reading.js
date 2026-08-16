@@ -1035,6 +1035,31 @@ EasyReading.prototype.stopEasyReading = function() {
 };
 
 EasyReading.prototype._send = function(data) {
+  // **有序列化交易在飛時，好讀模式一個 byte 都不准送。**
+  //
+  // CommandQueue 的整個設計前提是「同時只有一個鍵在線上，回應由畫面內容判定」
+  // （v5，見 command_queue.js）。使用者的鍵盤早就被 term_view.onKeyDown /
+  // App.onMouse_click 的入口擋掉了；漏掉的是好讀**狀態機自己送的鍵**——它繞過
+  // queue 直接送，過去沒有交叉場景所以沒事，deep link 把兩者湊在一起就爆了。
+  //
+  // 實測 2026-08-16 的兩個症狀，同一個根因：
+  //   a) 跳到有進板畫面的看板（Steam）卡死：進板畫面是 pmore，與一篇文章同形，
+  //      好讀把公告當文章開始累積並送 PageDown → 餵掉了進板畫面收尾的
+  //      pressanykey（bbs.c:4470-4477）→ 導航的 ← 永遠等不到它要的畫面。
+  //   b) 「複製本篇連結」複製完就跳出文章：落地後好讀正把文章自動翻到底，它的
+  //      PageDown 先關掉了 Q 資訊框、又把 pager 翻到 100%，於是 dismissPostInfo
+  //      送的空白鍵成了 pmore 的「離開」。
+  //
+  // 只擋 aidNavigation.active 不夠（b 不在導航中），只進 functionMode 也不夠：
+  // _onViewUpdated 處理 sendCommandAfterUpdate 那段沒有看 functionMode，進入
+  // 鏡像模式**之前**就排好的 PageDown 照樣送得出去。
+  //
+  // 反過來不會卡到好讀：queue 的交易都在列表／選單／prompt 畫面上跑，而好讀只在
+  // pageState 3 才送鍵；真的卡住也有 hardTimeout 兜底。
+  // 守護：tests/unit/easy_reading_send_gate.test.js。
+  const core = this._core;
+  if (core.aidNavigation && core.aidNavigation.active) return;
+  if (core.commandQueue && core.commandQueue.inFlightKind) return;
   // 走 TermView._send（內含 `if (this.conn)`）：view.conn 只在 App.onConnect 被設，
   // 連線從未成功時是 undefined，直接 deref 會 TypeError。見 pttchrome.jsx
   // switchToEasyReadingMode 的同類註解。
