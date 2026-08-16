@@ -226,7 +226,8 @@ host 兩邊問的是不同問題）。session key 也分開（`prompt_api.js` �
   - 三道提及守則：①`SYSTEM_LINE_RE` 命中（`※ 發信站/文章網址/編輯/轉錄/引述`、`◆ From:`）→ **整列**不偵測；
     ②候選前後被括號包住（半形 `()`／Big5 全形 `（）`= `a1 5d`/`a1 5e`，UTF-8 charset 下 `cell.ch` 直接是該字元）；
     ③`SYSTEM_HOSTS` 黑名單（`ptt.cc`/`ptt2.cc`/`www.*`）。
-  - 重疊排除：run 內任一 cell `isPartOfURL()` 為真（`uriRegEx` 已標）／前後緊鄰 `@`（email）／後接 `/`（深連結歸
+  - 重疊排除：run 內任一 cell `isPartOfURL()` 為真（`uriRegEx` 已標，判定走共用的
+    `term_url_flag.js#isTermUrlCell`，`aid_parse`／`mention_parse` 同一套）／前後緊鄰 `@`（email）／後接 `/`（深連結歸
     `url_fix`）。`Screen#detectRowExtras` 另比對 `fixedUrls[].original` 含同 host 者剔除。
   - `gray`＝規則沒把握、值得送 AI：`www.` 前綴或 **≥3 段子網域**視為強訊號（`gray:false`，省一次 ~1s 推論）；
     其餘（兩段裸網域，形狀與 `ptt.cc` 型提及相同）`gray:true`。
@@ -255,6 +256,8 @@ host 兩邊問的是不同問題）。session key 也分開（`prompt_api.js` �
 - **偵測（純邏輯，無 DOM/網路）`detectMentions(chars)->[{startCol,endCol,handle}]`**（守護 `tests/unit/mention_parse.test.js`）。
   規則：`@`+1–15 個 `[A-Za-z0-9_]`；`@` 前須非單詞字元/非 `@`（擋 email `a@b`、`@@`）；後接單詞字元則截斷（16+ 連續→不連）；全數字 `@123` 排除。`endCol` exclusive（同 `authorIdStart/End` 慣例）。
   - **走 `TermChar[]`（cols）而非 `rowToText` 字串**：Big5 DBCS **trail byte 可能=0x40(`@`)**，掃字串會誤判中文內的假 `@`；逐列遇 `isLeadByte` 跳 2 格、只在單 byte ASCII 偵測，回傳的 col 就是 `LinkSegmentBuilder.readChar(ch,i)` 比對的 index。守護有「trail byte 0x40 不誤判」case。
+  - **落在既有 URL 內的 `@` 不算提及**（`https://x.com/@jack`、`http://user@host/…`）：走共用的
+    `term_url_flag.js#rangeInTermUrl`，理由與 `aid_parse` 同（見「踩坑筆記 A」該條）。
 - 渲染：`Screen#computeAnnotations`（`pageState=READING`、非 hidden、非原PO-id 列）`detectMentions`→掛 `ann.mentions`→`<Row>` prop→`LinkSegmentBuilder` 比照 URL href 邊界，在 `[startCol,endCol)` 包 `<a className="xMention" target=_blank rel=noreferrer>`（**不掛 `ImagePreviewer`**，與 URL 的 `HyperLink` 區隔）。CSS `.xMention`(`main.css`) 比照 `.y`(color.css)：橘色 `http.bmp` 底線、文字保留 ANSI 原色，外觀同一般連結。守護 `row_render.test.jsx`「Row X mention link」。
 - pref `enableXMentionLink`(true)；`pttchrome.onPrefChange`→`view.enableXMention`+`redraw(true)`；傳入 `enhance.enableXMention`。i18n `options_enableXMentionLink`。
 - **驗證為何 OFF（CONFIRMED 2026-06 實測，外部事實）**：純前端無可行探測法——unavatar 免費版每日僅 25 次（`X-Rate-Limit-Limit:25`）且 `<img>` `onerror` 無法區分 404 與 429 → 限流期會把存在帳號誤標 invalid；直連 x.com 存在/不存在 HTTP **都回 200**（SPA）；官方 API 需付費 bearer 且無瀏覽器 CORS；syndication 端點 ACAO 鎖 `platform.twitter.com`。
@@ -439,6 +442,8 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **逐列加工走單一純函式 `comment_parse.annotateComment`**，勿為某路徑另寫一份（好讀/原生曾各複製一份而發散出 bug）。逐列狀態用每圈新物件 `const ann={}`，**勿用函式作用域 `var`**（JS `var` 不每圈重設 → 非推文列繼承前列 floor/authorId 範圍，畫出整條色塊或樓號溢出到空白/※編輯/內文）。守護 `comment_parse.test.js`。
 - **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 `enhance.spec.js` 紅。
 - **要算「逐列欄位位置（col）」一律走 `TermChar[]`，勿掃 `rowToText` 後字串**。Big5 DBCS **trail byte 可能=0x40(`@`)**（其他 ASCII 標點同理）→ 掃字串會在中文內誤命中、且 string index ≠ TermChar col（DBCS 佔 2 cols）。逐列遇 `isLeadByte` 跳 2 格、只在單 byte ASCII 比對（同 `rowToText` 走訪）。實例：`mention_parse.detectMentions`（X @帳號），守護有「trail byte 0x40 不誤判」case。
+- **額外連結偵測器（`bare_domain`／`aid_parse`／`mention_parse`）一律要排除「已被 `uriRegEx` 標成 URL」的格子**，統一走 `src/js/term_url_flag.js` 的 `isTermUrlCell`／`rangeInTermUrl`（假 cell 沒有 `isPartOfURL` → 回 false，不影響純邏輯測試）。它們是在**同一批 cell** 上再掃一次找主偵測器看不見的形狀，一旦在 URL 內命中，`LinkSegmentBuilder` 就會在那個 col 切開 segment ⇒ 一條網址被拆成好幾個 `<a>`、中段換成別的 href。實例（使用者 2026-08 回報）：`https://…/PttChrome/#Browsers/1gU3wwNZ` 的 `#Browsers` 恰是合法 AIDc 形狀（`#` 前非 AID 字元、8 個 AID 字元、第 9 格非 AID 字元）→ 底線只畫到 `#Browsers`、尾段 `/1gU3wwNZ` 不是連結、滑鼠停在中段狀態列顯示 `…/PttChrome/#`（那是 `.aidLink` 的 `href="#"`）。同型還有 `https://x.com/@jack` 的 `@handle`。守護：`aid_parse.test.js`／`mention_parse.test.js` 的「已被 uriRegEx 標記的 URL 內不產生候選」＋ `tests/e2e/offline/url-fragment-aid.offline.spec.js`（真 uriRegEx 設旗標，unit 只能餵假旗標）。
+- **`LinkSegmentBuilder.readChar` 對 `'\n'` 提前 return，範圍型連結的關閉邊界必須在那裡一併清掉**。範圍型（`_mention`/`_aid`/`_giveaway`/`_bareDomain`）靠 `i === endCol` 關閉，而合併推文塊的 `'\n'` 分支走在那些檢查之前 ⇒ `endCol` 落在換行 cell 上時**永遠關不掉**，狀態外溢到後續每一行（整塊被畫底線、href 全是上一行那個連結；使用者 2026-08 回報 `duk.tw`）。`comment_merge` 會剝掉每則的行尾空白，所以「範圍結束＝換行前一格」是**常態不是邊角**。清空要在 `saveSegment()` **之後**（那一段仍須用當下狀態包成 `<a>`）；候選字元類都不含 `'\n'`，故無條件清空安全。守護 `row_render.test.jsx`「行尾裸網域不得外溢到後續行」。
 - **e2e flake 常態**：最新文章常無推文（測樓層/黑名單從 End 往舊文找）；guest 名額滿用 env `PTT_USER/PTT_PASS`；偶發 403/ECONNRESET（PTT 端）。
 - **裝置端 AI（`window.LanguageModel`）的存在 ≠ 可用**：Playwright 的 Chromium 有這個 global，但沒有模型。任何「要不要顯示 AI 功能」的判斷一律以 **`availability()` 探測結果**為準，勿用 `typeof window.LanguageModel`——否則會出現一顆按下去每次都 fallback 的假按鈕。中文也**不在** Prompt API 官方支援語言（en/ja/es/de/fr）內，故 `expectedInputs` 一律不傳語言（傳了可能丟 `NotSupportedError`）。見 `docs/merge-caption-ai-assist.md`。
   - **e2e 別斷言 Chromium 的 availability 實際回值**（2026-08 實測）：在真實 origin 下它回的是

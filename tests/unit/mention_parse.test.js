@@ -111,6 +111,32 @@ describe("detectMentions", () => {
     expect(detectMentions(ascii("X@123"))).toEqual([]);
   });
 
+  // 與 aid_parse 同型的守則（見 tests/unit/aid_parse.test.js 同名 describe）：
+  // '@' 落在已被 TermBuf.uriRegEx 標成 URL 的格子裡時（https://x.com/@jack、
+  // http://user@host/…），把它當 mention 會在那裡切開 segment，害整段網址的
+  // <a> 斷成兩截。
+  describe("已被 uriRegEx 標記的 URL 內不產生候選", () => {
+    const urlAscii = str =>
+      str.split("").map(c => ({ ...cell(c), isPartOfURL: () => true }));
+
+    test("網址路徑裡的 @handle 不是 mention", () => {
+      expect(detectMentions(urlAscii("https://x.com/@jack"))).toEqual([]);
+    });
+
+    test("網址外的 @handle 仍要偵測到", () => {
+      const row = [...ascii("hi @jack "), ...urlAscii("https://x.com/@bob")];
+      expect(detectMentions(row)).toEqual([
+        { startCol: 3, endCol: 8, handle: "jack" }
+      ]);
+    });
+
+    test("假 cell 沒有 isPartOfURL（既有測試的形狀）→ 行為不變", () => {
+      expect(detectMentions(ascii("hi @jack "))).toEqual([
+        { startCol: 3, endCol: 8, handle: "jack" }
+      ]);
+    });
+  });
+
   test("empty / null input", () => {
     expect(detectMentions(null)).toEqual([]);
     expect(detectMentions([])).toEqual([]);

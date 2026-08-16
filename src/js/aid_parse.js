@@ -18,6 +18,8 @@
 // char, and the returned columns are real TermChar indices for
 // LinkSegmentBuilder.readChar(ch, i).
 
+import { rangeInTermUrl } from './term_url_flag';
+
 const AID_LEN = 8;
 
 function isAidChar(c) {
@@ -137,12 +139,19 @@ export function detectAids(chars, rowText) {
       // Exactly 8 chars, and the 9th column must not be another AID char
       // (an over-long token is some other identifier, not an AIDc).
       if (aid.length === AID_LEN) {
-        out.push({
-          startCol: i,
-          endCol: j,
-          aid,
-          board: parseBoardSuffix(chars, j)
-        });
+        // 但一個網址的 fragment 與 AIDc 同形（'#' 前是 '/'、8 個 AID 字元、第 9 格
+        // 又是 '/'）——https://…/PttChrome/#Browsers/1gU3wwNZ 的 "#Browsers" 正是
+        // 如此。uriRegEx 早就把整段標成 URL 了；在裡面認出 AID 只會讓
+        // LinkSegmentBuilder 把那條網址的 <a> 從中切斷（見 term_url_flag.js）。
+        // 仍然要往後跳過這幾格：這裡不是 AID，也不該被當成別的候選的前綴。
+        if (!rangeInTermUrl(chars, i, j)) {
+          out.push({
+            startCol: i,
+            endCol: j,
+            aid,
+            board: parseBoardSuffix(chars, j)
+          });
+        }
         prevCh = aid.charAt(aid.length - 1);
         i = j;
         continue;

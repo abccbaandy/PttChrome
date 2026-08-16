@@ -17,6 +17,7 @@
 // 單位元組 ASCII，回傳的 col 即真實 TermChar index，LinkSegmentBuilder 的
 // readChar(ch, i) 直接可比對。
 import { TLDS } from "./url_fix";
+import { isTermUrlCell } from "./term_url_flag";
 
 const TLD_SET = new Set(TLDS);
 
@@ -73,14 +74,6 @@ function isCloseParenAt(chars, i) {
   );
 }
 
-function inTermUrl(cell) {
-  return !!(
-    cell &&
-    typeof cell.isPartOfURL === "function" &&
-    cell.isPartOfURL()
-  );
-}
-
 // labels 全部合法（非空、頭尾非連字號），且最後一個是白名單 TLD。
 function validHostLabels(labels) {
   if (labels.length < 2) return false;
@@ -134,7 +127,7 @@ export function detectBareDomains(chars, rowText) {
       const c = chars[j];
       if (!c || c.isLeadByte) break;
       if (!isLabelChar(c.ch) && c.ch !== ".") break;
-      if (inTermUrl(c)) inUrl = true;
+      if (isTermUrlCell(c)) inUrl = true;
       j++;
     }
     i = j; // 下一輪從 run 之後接著掃（run 內不可能再有第二個候選）

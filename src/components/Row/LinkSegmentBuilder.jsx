@@ -255,6 +255,16 @@ export class LinkSegmentBuilder {
     if (ch.ch === "\n") {
       if (this.colorSegBuilder !== null) this.saveSegment();
       if (this._inAuthor) this._flushAuthorWrap();
+      // 範圍型連結（mention/AID/giveaway/裸網域）的關閉邊界是 `i === endCol`，而
+      // 這個 return 走在那些檢查**之前** ⇒ endCol 剛好落在換行 cell 上時永遠關不掉，
+      // 狀態外溢到後續每一行（合併塊整塊被畫底線，使用者 2026-08 回報）。
+      // comment_merge 會剝掉每則的行尾空白，所以「範圍結束＝換行前一格」是常態。
+      // 上面的 saveSegment() 之後才清：那一段仍要用當下的狀態包成正確的 <a>。
+      // 這些候選的字元類都不含 '\n'，範圍不可能跨越換行 ⇒ 無條件清空是安全的。
+      this._mention = null;
+      this._aid = null;
+      this._giveaway = null;
+      this._bareDomain = null;
       this._flushLine();
       return;
     }

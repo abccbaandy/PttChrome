@@ -164,6 +164,46 @@ describe("detectAids", () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // 網址的 fragment 與 AIDc 同形（使用者 2026-08 回報）：
+  //   https://abccbaandy.github.io/PttChrome/#Browsers/1gU3wwNZ
+  // '#' 前一格是 '/'（非 AID 字元）、"Browsers" 恰好 8 個合法 AIDc 字元、第 9 格
+  // 又是 '/' ⇒ 結構判準完全命中。被當成 AID 的後果是 LinkSegmentBuilder 在那裡切開
+  // segment：URL 的 <a> 只到 '#'，中段變成 href="#" 的 aidLink，尾段連底線都沒有。
+  // TermBuf.uriRegEx 早就把整段標成 URL 了，所以判準是「這幾格已經是 URL 的一部分」。
+  // -------------------------------------------------------------------------
+  describe("已被 uriRegEx 標記的 URL 內不產生候選", () => {
+    // 真 TermChar 有 isPartOfURL()；假 cell 加上它才能重現這個情境。
+    const urlAscii = str => str.split("").map(c => ({ ...cell(c), isPartOfURL: () => true }));
+
+    test("網址 fragment #Browsers 不是 AID", () => {
+      expect(
+        detectAids(urlAscii("https://abccbaandy.github.io/PttChrome/#Browsers/1gU3wwNZ"))
+      ).toEqual([]);
+    });
+
+    test("URL 內的 #AID 形狀（含 - _）一樣不算", () => {
+      expect(detectAids(urlAscii("http://a.com/x#1gIeu-3A"))).toEqual([]);
+    });
+
+    test("同一列只有部分格在 URL 內：URL 外的 #AID 仍要偵測到", () => {
+      // "see #1gIeu-3A " 為一般文字，其後才是被標記的網址。
+      const row = [
+        ...ascii("see #1gIeu-3A "),
+        ...urlAscii("http://a.com/x#1gU3wwNZ")
+      ];
+      expect(detectAids(row)).toEqual([
+        { startCol: 4, endCol: 13, aid: "1gIeu-3A", board: null }
+      ]);
+    });
+
+    test("假 cell 沒有 isPartOfURL（既有測試的形狀）→ 行為不變", () => {
+      expect(detectAids(ascii("see #1gIeu-3A ok"))).toEqual([
+        { startCol: 4, endCol: 13, aid: "1gIeu-3A", board: null }
+      ]);
+    });
+  });
+
   test("empty / null input", () => {
     expect(detectAids(null)).toEqual([]);
     expect(detectAids([])).toEqual([]);

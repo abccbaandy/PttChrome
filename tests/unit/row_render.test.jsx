@@ -395,6 +395,48 @@ describe("Row merged-comment extensions", () => {
     );
     expect(container.querySelectorAll('[data-type="bbsline"]').length).toBe(1);
   });
+
+  // 使用者 2026-08 回報：合併塊裡「行尾是裸網域」時，該則之後的每一行都被畫底線
+  // （href 仍正確指向那個網域）。成因是範圍型連結的關閉邊界 `i === endCol` 落在
+  // 合成的 '\n' cell 上，而 readChar 對 '\n' 提前 return ⇒ 狀態永遠關不掉、外溢到
+  // 後續每一行。comment_merge 會把行尾空白剝掉，所以「行尾 = 換行前一格」是常態。
+  test("行尾裸網域不得外溢到後續行（關閉邊界落在 '\\n' 上）", () => {
+    // P0 U1 sp2 w3..y10 :11 sp12 → 內容從 col 13 起；duk.tw 佔 13..18，endCol 19='\n'
+    const { container } = render(
+      <Row
+        chars={chars("PU wowbenny: duk.tw\nsecond line\nthird line")}
+        row={0}
+        bareDomains={[
+          { startCol: 13, endCol: 19, host: "duk.tw", href: "https://duk.tw" }
+        ]}
+      />
+    );
+    const links = container.querySelectorAll("a.bareDomainLink");
+    expect(links.length).toBe(1);
+    expect(links[0].textContent).toBe("duk.tw");
+    const lines = container.querySelectorAll('[data-type="bbsline"]');
+    expect(lines[1].querySelector("a")).toBeNull();
+    expect(lines[2].querySelector("a")).toBeNull();
+    // 文字仍零遺失。
+    expect(Array.from(lines).map(n => n.textContent)).toEqual([
+      "PU wowbenny: duk.tw",
+      "second line",
+      "third line"
+    ]);
+  });
+
+  test("行尾 AID / mention 同樣不得外溢（同一個關閉邊界）", () => {
+    const { container } = render(
+      <Row
+        chars={chars("PU wowbenny: #1gIeu-3A\nsecond line")}
+        row={0}
+        aids={[{ startCol: 13, endCol: 22, aid: "1gIeu-3A", board: null }]}
+      />
+    );
+    expect(container.querySelectorAll("a.aidLink").length).toBe(1);
+    const lines = container.querySelectorAll('[data-type="bbsline"]');
+    expect(lines[1].querySelector("a")).toBeNull();
+  });
 });
 
 // 樓層徽章的 DOM 契約。徽章是零寬盒（不位移等寬格線），數字靠內層 .floorBadgeNum

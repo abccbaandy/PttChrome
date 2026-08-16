@@ -11,6 +11,8 @@
 // against in readChar(ch, i). Mirrors the lead-byte handling in
 // src/js/comment_parse.js#rowToText.
 
+import { rangeInTermUrl } from './term_url_flag';
+
 // X usernames are 1–15 chars of [A-Za-z0-9_]. (X also disallows the substring
 // "twitter" except in a few legacy handles; we don't enforce that — the existence
 // check is the real filter.)
@@ -82,7 +84,10 @@ export function detectMentions(chars) {
         handle.length >= 1 &&
         handle.length <= MAX_HANDLE &&
         !nextIsHandle && // would mean a 16+ char token → not a clean handle
-        !/^[0-9]+$/.test(handle) // all-digits "@123" is almost never an X handle
+        !/^[0-9]+$/.test(handle) && // all-digits "@123" is almost never an X handle
+        // 已經在 uriRegEx 標好的網址裡（https://x.com/@jack、http://user@host/…）
+        // ⇒ 不是提及，認走只會把那條網址的 <a> 切成兩截（見 term_url_flag.js）。
+        !rangeInTermUrl(chars, i, j)
       ) {
         out.push({ startCol: i, endCol: j, handle });
         prevPrevCh =
