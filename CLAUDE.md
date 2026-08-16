@@ -16,7 +16,7 @@ Vite 8（Rolldown 核心）+ React19（bundled）。React plugin 用 `@vitejs/pl
 
 ## 架構關鍵點
 - entry：根目錄 `index.html`（Vite entry）→ `src/entry.js` → `src/js/main.jsx`。`main.jsx` 先載 Big5 轉碼表(`conv/*.bin`)→ `startApp()` → `new App().connect(DEFAULT_SITE)`。
-- **dev build 啟動會跳 Developer Mode modal，按掉才會 `connect()`**（`main.jsx` 受 `process.env.DEVELOPER_MODE` gate；Vite 下 dev=`vite serve`、prod=`vite build` 自動判定）。
+- **dev build 開站即 `connect()`，與正式版 boot 時序一致**（2026-08-16 移除 Developer Mode modal：它把 connect 延後到使用者按掉為止，導致 deep link 這類「開站當下就要消費 URL」的功能在 dev 下量到的行為不可信）。`process.env.DEVELOPER_MODE` gate 仍在，但只負責掛 `window.__app`／`__i18n` 等 e2e 探針；Vite 下 dev=`vite serve`、prod=`vite build` 自動判定。
 - 登入是 telnet BBS 流程：在終端機畫面打字，**程式碼無自動登入**。
 - 核心物件（`new App()` in `src/js/pttchrome.jsx`）：
   - `core`(App) ── `view`(TermView, `src/js/term_view.js`) ── `termBuf`(TermBuf, `src/js/term_buf.js`)

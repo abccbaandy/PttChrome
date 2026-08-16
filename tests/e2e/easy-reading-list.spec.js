@@ -13,7 +13,6 @@ const { test, expect } = require('@playwright/test');
 const {
   login,
   attachConsole,
-  dismissDeveloperModeAlert,
   resetSession,
   gotoBoard,
   applyPrefs,
@@ -134,7 +133,6 @@ test.describe('文章列表好讀模式（live）', () => {
     const logs = attachConsole(page);
     try {
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await login(page);
       await resetSession(page);
 
@@ -174,7 +172,6 @@ test.describe('文章列表好讀模式（live）', () => {
     const logs = attachConsole(page);
     try {
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await login(page);
       await resetSession(page);
       // 小預讀量，便於觸發續抓。
@@ -216,7 +213,6 @@ test.describe('文章列表好讀模式（live）', () => {
     const logs = attachConsole(page);
     try {
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat', {
@@ -287,7 +283,6 @@ test.describe('文章列表好讀模式（live）', () => {
     const logs = attachConsole(page);
     try {
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat', {
@@ -335,7 +330,6 @@ test.describe('文章列表好讀模式（live）', () => {
     const logs = attachConsole(page);
     try {
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat', {
@@ -373,7 +367,6 @@ test.describe('文章列表好讀模式（live）', () => {
     const logs = attachConsole(page);
     try {
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat');
@@ -449,7 +442,6 @@ test.describe('文章列表好讀模式（live）', () => {
     const logs = attachConsole(page);
     try {
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat');
@@ -483,7 +475,6 @@ test.describe('文章列表好讀模式（live）', () => {
     const logs = attachConsole(page);
     try {
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await login(page);
       await resetSession(page);
       const before = await enterBoardWithListER(page, 'C_Chat');
@@ -535,7 +526,6 @@ test.describe('文章列表好讀模式（live）', () => {
     const logs = attachConsole(page);
     try {
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await login(page);
       await resetSession(page);
       let s = await enterBoardWithListER(page, 'C_Chat');

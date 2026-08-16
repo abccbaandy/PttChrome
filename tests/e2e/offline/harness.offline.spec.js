@@ -6,13 +6,12 @@
 // 这条永远不需要连真实 PTT，也不依赖任何录制素材。
 const { test, expect } = require('@playwright/test');
 const { installReplay, waitConnected, feedRaw } = require('../helpers/replay');
-const { readScreen, dismissDeveloperModeAlert } = require('../helpers/ptt');
+const { readScreen } = require('../helpers/ptt');
 
 test.describe('离线重放 harness', () => {
   test('stub WebSocket 离线 boot + onData 喂入能渲染到 #mainContainer', async ({ page }) => {
     await installReplay(page); // 必须在 goto 之前覆写 window.WebSocket
     await page.goto('/');
-    await dismissDeveloperModeAlert(page);
 
     // 零网络下仍能「连上」（onConnect → connectState=1）。
     await waitConnected(page);

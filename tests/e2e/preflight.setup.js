@@ -9,7 +9,6 @@
 // 逃生門：E2E_SKIP_PREFLIGHT=1（例如刻意要看某條 case 在斷線狀態下的行為）。
 const { test } = require('@playwright/test');
 const {
-  dismissDeveloperModeAlert,
   waitBbsConnected,
   waitForScreen,
   attachConsole,
@@ -23,7 +22,6 @@ test('preflight：PTT 連線可用', async ({ page }) => {
   const logs = attachConsole(page);
   try {
     await page.goto('/');
-    await dismissDeveloperModeAlert(page);
 
     // 第一層＋第二層：app boot 起來了嗎、WebSocket 連上了嗎。
     await waitBbsConnected(page, { timeout: 30000 });

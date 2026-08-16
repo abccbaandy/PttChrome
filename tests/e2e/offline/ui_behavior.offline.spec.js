@@ -21,19 +21,9 @@ async function openContextMenu(page) {
 }
 
 test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
-  test('DeveloperModeAlert：開發者模式提示出現且可關閉', async ({ page }) => {
-    await installReplay(page);
-    await page.goto('/');
-    const dismiss = page.getByRole('button', { name: 'Yes, I understand.' });
-    await expect(dismiss).toBeVisible();
-    await dismiss.click();
-    await expect(dismiss).toBeHidden();
-  });
-
   test('右鍵選單出現 → 點 Settings → PrefModal 開啟', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
 
     await openContextMenu(page);
@@ -52,10 +42,29 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect(page.locator('.PrefModal input[name="copyOnSelect"]')).toBeVisible();
   });
 
+  // deep link 交接通知的開關。勾選是全 app 唯一會問通知權限的地方（那裡才有
+  // user activation），所以它不能走通用的 onCheckboxChange —— 這條守住接線沒斷。
+  test('PrefModal general 分頁：deep link 交接通知開關可勾選', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await installReplay(page);
+    await page.goto('/');
+    await openSettings(page);
+
+    const box = page.locator('.PrefModal input[name="deepLinkHandoffNotify"]');
+    await expect(box).toBeVisible();
+    await expect(box).toBeChecked(); // 預設開
+    await box.uncheck();
+    await expect(box).not.toBeChecked();
+    // 勾回去會觸發 Notification.requestPermission —— 沒授權的 context 也不能炸。
+    await box.check();
+    await expect(box).toBeChecked();
+    expect(errors).toEqual([]);
+  });
+
   test('PrefModal 分頁切換：general → connection → enhance → autologin → ai → local → backup → about 內容對應切換', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
 
     await openContextMenu(page);
@@ -206,7 +215,6 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
   test('PrefModal 勾選 + 關閉：值寫入 localStorage 且 modal 消失', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
 
     await openContextMenu(page);
@@ -294,7 +302,6 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
   test('InputHelper：從選單開啟並完成 render（顏色盤 + 送出鈕）', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
 
     await openContextMenu(page);
@@ -317,7 +324,6 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
   // 開啟設定（PrefModal），回傳左欄 nav locator。
   async function openSettings(page) {
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
     await openContextMenu(page);
     await page.locator('.DropdownMenu').first()
@@ -339,7 +345,6 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
   test('斷線提示掛著時：設定頁仍能打字，Enter 不會意外重連', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
 
     // 斷線 → ConnectionAlert 出現（stub WS 的 close 會走 App.onClose）。
@@ -432,7 +437,6 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
   test('UI 文字：輸入小幫手符號格文字色 ≠ 底色（防白底白字）', async ({ page }) => {
     await installReplay(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
 
     await openContextMenu(page);
@@ -481,7 +485,6 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     });
     await installReplay(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
 
     await openContextMenu(page);
@@ -524,7 +527,6 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await installReplay(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
 
     await feedRaw(page, '\x1b[2J\x1b[HCOPYSMOKE');

@@ -27,7 +27,6 @@ async function openAboutTab(page) {
 async function boot(page) {
   await installReplay(page);
   await page.goto('/');
-  await ptt.dismissDeveloperModeAlert(page);
   await waitConnected(page);
 }
 
@@ -94,7 +93,6 @@ test.describe('Debug 錄製模式（offline）', () => {
 
     // 重新整理：不記憶 → Switch 關閉、按鈕消失
     await page.reload();
-    await ptt.dismissDeveloperModeAlert(page);
     await waitConnected(page);
     await expect(page.locator('#debugRecordBtn')).toHaveCount(0);
     await openAboutTab(page);

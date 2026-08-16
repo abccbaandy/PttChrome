@@ -4,7 +4,6 @@ const {
   sendKey,
   typeLine,
   attachConsole,
-  dismissDeveloperModeAlert,
   applyPrefs,
   resetSession,
   gotoBoard,
@@ -464,10 +463,7 @@ test('自動登入：開頁自動到主選單（不需按鍵）', async ({ share
       }
     });
     await page.goto('/');
-    // dev build 仍需關掉 Developer Mode modal，app 才會 connect（autoLogin 在 connect 後啟動）。
-    await dismissDeveloperModeAlert(page);
-
-    // 關鍵：完全不呼叫 typeLine/sendKey，純等自動登入。
+    // 關鍵：完全不呼叫 typeLine/sendKey，純等自動登入（開站即 connect，autoLogin 隨之啟動）。
     const deadline = Date.now() + 90000;
     let screen = '';
     while (Date.now() < deadline) {

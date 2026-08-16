@@ -22,7 +22,13 @@ import { TRACE } from './util';
 // longer re-enable against the user's choice; likewise a pass/edit/normal screen
 // (5/6/0) is excluded, so e.g. returning from in-article help does not re-enable.
 // See docs/easy-reading.md.
-export function nextEasyReadingState({ settledPageState, prevSettledPageState, enabled, enablePref, supported }) {
+export function nextEasyReadingState({ settledPageState, prevSettledPageState, enabled, enablePref, supported, navActive }) {
+  // navActive：AID 跳文／deep link 正在驅動畫面。導航途中的每一張畫面都是「別人
+  // 的」—— 尤其進板畫面是不折不扣的 pmore（與文章同形，pageState 3），在主功能表
+  // (1) 之後就構成一個 1→3 edge，好讀會把進板公告當成文章開始累積（送鍵雖然被
+  // _send 的閘門擋住，_enabled 卻已經被翻成 true）。目標文章的落地改由
+  // ensureEnabledOnArticle 負責 —— 只有它知道哪一張畫面才是真的目標。
+  if (navActive) return false;
   // Re-enable when we settled INTO an article (3) FROM a screen you open articles
   // from: a board LIST (2) or a MENU (1). The 1 covers 精華區 (essence): its top
   // level (首列【精華文章】) settles to MENU(1) and sub-folder listings to MENU(1)
@@ -66,13 +72,41 @@ export function nextEasyReadingState({ settledPageState, prevSettledPageState, e
 // list→article enable is nextEasyReadingState's job, not this one's.
 export function nextEasyReadingReentry({
   pageState, complete, enabled, enablePref, supported, functionMode,
-  statusStart, articleKey, nativeArticleKey
+  statusStart, articleKey, nativeArticleKey, navActive
 }) {
-  if (enabled || !enablePref || !supported || functionMode) return false;
+  if (enabled || !enablePref || !supported || functionMode || navActive) return false;
   if (pageState !== 3 || !complete) return false;
   if (statusStart !== 1) return false;          // only ever on a post's first page
   if (!articleKey || !nativeArticleKey) return false;  // can't tell → stay native
   return articleKey !== nativeArticleKey;
+}
+
+// 第三條自動開好讀的路線：**外部導航 run 的落地**（aid_navigation._enqueueOpen 的
+// onDone —— 全專案唯一「run 確定落在目標文章上」的點）。另外兩條在這裡結構性地
+// 不可能成立：
+//
+//   - nextEasyReadingState 要的是 settled 1|2 → 3 edge，但文章的前一步是 AID 搜尋
+//     落地，而 pttbbs 把那張畫面的 footer 列留成空白（見 aid_navigation
+//     ._enqueueAidSearch 的註解：# prompt 清掉它、跳轉重畫不補、\f 也補不回來）
+//     ⇒ term_buf.setPageState 末段的 isLineEmpty 分支 ⇒ pageState 0 ⇒ 目標文章是
+//     踩著 0→3 進來的，edge 永遠不成立。
+//   - nextEasyReadingReentry 要 nativeArticleKey 已知，而冷啟動 deep link 從來沒
+//     開過任何一篇文章，那個 key 必然是 null（fail-safe 設計，不能為此放寬）。
+//
+// 刻意**不是**去放寬 nextEasyReadingState 的 edge 條件（「0→3 也算」）：文章中途
+// 任何一次 prompt／編輯器／footer 半畫的 dip 都會產生 3→0→3，那會在同一頁重新
+// enterEasyReading（它會 _resetPagingState 清掉 _inFlightSig）並重送一次 PageDown
+// ⇒ pttbbs typeahead skip ⇒ 整頁文字永久遺失（P4）。docs/easy-reading.md 明文禁止。
+// 所以本路線 edge-free 但**一次性**：只由導航自己的落地 callback 觸發。
+//
+// `enabled` 那道 gate 是整個設計最不能拿掉的一行：既有 edge 路線若已經開了好讀，
+// 這裡必須是 no-op，否則就是上面說的那個重複 enterEasyReading。
+export function nextEasyReadingExternalLanding({
+  pageState, complete, statusStart, enabled, enablePref, supported, navActive
+}) {
+  if (enabled || !enablePref || !supported || navActive) return false;
+  if (pageState !== 3 || !complete) return false;
+  return statusStart === 1;   // 只認文章第一頁：從中途頁開始累積會少掉前面的內容
 }
 
 // Pure per-frame row-state machine for _onChanged: given the current pageState,
@@ -318,6 +352,10 @@ export function EasyReading(core, view, termBuf) {
   // Deliberately NOT _savedScrollTop: that one is the functionMode round trip and
   // is cleared by every enter/leave, so it cannot survive across articles.
   this._pendingScrollRestore = null;
+  // One-shot retry for the external-landing enable (ensureEnabledOnArticle): the
+  // navigation's onDone fires before the screen is necessarily complete, so it may
+  // ask to be re-evaluated on the NEXT settle — once, then dropped.
+  this._pendingEnableOnArticle = false;
   // Article identity (作者/標題/時間 rows) — see nextEasyReadingReentry. _articleKey is
   // re-read on every confirmed first-page frame while easy reading is on (_applyRowState,
   // which is the only capture point that covers all the ways a post becomes current);
@@ -382,11 +420,19 @@ EasyReading.prototype._onPageStateSettled = function() {
     prevSettledPageState: this._termBuf.prevSettledPageState,
     enabled: this._enabled,
     enablePref: values.enableEasyReading,
-    supported: this._core.connectedUrl.easyReadingSupported
+    supported: this._core.connectedUrl.easyReadingSupported,
+    navActive: this._navActive()
   });
   if (shouldEnable) {
     this.enterEasyReading();
   }
+};
+
+// AID 跳文／deep link 正在驅動畫面嗎？導航途中的畫面不屬於使用者的閱讀動線，
+// 兩條自動開好讀的路線都要避開它（見 nextEasyReadingState 的 navActive 註解）。
+EasyReading.prototype._navActive = function() {
+  const nav = this._core.aidNavigation;
+  return !!(nav && nav.active);
 };
 
 EasyReading.prototype._onChanged = function(e) {
@@ -773,6 +819,10 @@ EasyReading.prototype._healFromTop = function() {
 // would skip a page). See docs/easy-reading.md.
 EasyReading.prototype._onScreenSettled = function() {
   if (!this._enabled) {
+    // 導航落地當下判不出來（游標還沒 park 之類）才會留下這個一次性旗標，只在這裡
+    // 重試這一次就丟掉 —— 不做重試迴圈。見 ensureEnabledOnArticle。
+    if (this._pendingEnableOnArticle && this.ensureEnabledOnArticle(false))
+      return;
     this._maybeReenterOnNewArticle();
     return;
   }
@@ -858,7 +908,8 @@ EasyReading.prototype._maybeReenterOnNewArticle = function() {
     functionMode: this._functionMode,
     statusStart: status ? status.rowIndexStart : null,
     articleKey: articleKey,
-    nativeArticleKey: this._nativeArticleKey
+    nativeArticleKey: this._nativeArticleKey,
+    navActive: this._navActive()
   });
   if (!ok)
     return;
@@ -905,6 +956,20 @@ EasyReading.prototype._teardownAccumulationOffArticle = function() {
 // _evalFunctionModeExit('resume') can restore the reading position, then forces one
 // repaint so the native screen shows immediately (before PTT's response arrives).
 EasyReading.prototype._enterFunctionMode = function() {
+  // functionMode 只在好讀**開著**時才有意義：term_view.redraw 的分支條件是
+  // `useEasyReadingMode && buf.easyReadingFunctionMode`，而唯一的出口
+  // _evalFunctionModeExit 只能經 _onScreenSettled 進入 —— 那裡第一行就是
+  // `if (!this._enabled) { _maybeReenterOnNewArticle(); return; }`。
+  //
+  // 所以在好讀關閉時設這個旗標：畫面上什麼都不會變，卻**永遠清不掉**，而且一次
+  // 同時廢掉兩條回好讀的路 —— nextEasyReadingReentry 的 functionMode gate（自動
+  // 重入），以及 term_view.onKeyDown 的 `!buf.easyReadingFunctionMode` gate
+  // （End/F8 手動切回）。冷啟動 deep link 就是這樣鎖死整個 session 的：
+  // aid_navigation._begin 無條件呼叫本函式，而那時使用者還沒開過任何文章。
+  // 好讀關著時畫面本來就是原生的，這裡什麼都不用做。
+  // 守護：tests/unit/easy_reading_function_mode_gate.test.js
+  if (!this._enabled)
+    return;
   if (this._functionMode)
     return;
   console.log('enter function mode');
@@ -1017,6 +1082,9 @@ EasyReading.prototype.leaveCurrentPost = function() {
   // Leaving the post the restore was meant for: drop it (a later article must
   // never inherit someone else's reading position).
   this._pendingScrollRestore = null;
+  // Same reasoning for the external-landing one-shot: it was aimed at the post we
+  // are leaving, so a later article must not inherit it.
+  this._pendingEnableOnArticle = false;
   // Structural belt-and-braces for the article identity: this is the jump-to-another-post
   // path ([ ] a b f = + -), and the OLD post's key must not survive into the new one even
   // for the few frames before _applyRowState re-captures it (an F8 in that window would
@@ -1291,6 +1359,42 @@ export function nextScrollRestoreStep({
   if (reachedPageEnd) return { action: 'apply', scrollTop: max };
   return { action: 'wait' };
 }
+
+// 導航（AID 跳文／deep link）落地在目標文章上時呼叫，補上 settle edge 給不了的那次
+// 開啟。回傳是否真的開了好讀。
+//
+// allowRetry：來自落地 callback 時傳 true —— 判斷不過就留一個一次性旗標，由**下一
+// 次** screenSettled 再試一次然後丟掉（_onScreenSettled 的 disabled 分支消費）。與
+// _pendingScrollRestore 同規：這是補償而不是輪詢，落地那一刻若畫面還沒完整，通常
+// 下一個 settle 就完整了；再判不過就退化成今天的行為（維持原生），不會更糟。
+//
+// 為什麼不會造成重複 PageDown（P4）：同一次 settle 的順序是 _onPageStateSettled →
+// _onScreenSettled → CommandQueue 的 onDone（後者由 list_session._onScreenSettled
+// 驅動，而 pttchrome.jsx 先建 easyReading 才建 listSession）。既有 edge 路線若成立，
+// _enabled 早已是 true，nextEasyReadingExternalLanding 第一個條件就直接擋掉。
+EasyReading.prototype.ensureEnabledOnArticle = function(allowRetry) {
+  this._pendingEnableOnArticle = false;
+  const values = readValuesWithDefault();
+  const status = this._currentPageStatus();
+  const ok = nextEasyReadingExternalLanding({
+    pageState: this._termBuf.pageState,
+    // P6：只有游標停在 (rows-1, cols-1) 的畫面才是一次完整的 server 回應。
+    complete: this._termBuf.cur_y === this._termBuf.rows - 1 &&
+              this._termBuf.cur_x === this._termBuf.cols - 1,
+    statusStart: status ? status.rowIndexStart : null,
+    enabled: this._enabled,
+    enablePref: values.enableEasyReading,
+    supported: this._core.connectedUrl.easyReadingSupported,
+    navActive: this._navActive()
+  });
+  if (!ok) {
+    if (allowRetry && !this._enabled) this._pendingEnableOnArticle = true;
+    return false;
+  }
+  this._core.debugRecorder?.log('easyReading.enter', { reason: 'externalLanding' });
+  this.enterEasyReading();
+  return true;
+};
 
 // Ask for the reading position to be restored once the article has grown enough.
 // lineIndex 0 (or null) means "was at the top" — nothing to do.

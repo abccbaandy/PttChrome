@@ -413,6 +413,12 @@ export const en_US = {
   "options_enableNotifications": {
     "message": "Enable notifications when a message is received."
   },
+  "options_deepLinkHandoffNotify": {
+    "message": "Notify when this tab picks up an external link (tab title flash + system notification)."
+  },
+  "options_deepLinkHandoffNotifyDenied": {
+    "message": "Notifications are blocked by the browser; only the tab title will flash."
+  },
   "options_enableEasyReading": {
     "message": "Enable easy reading article view. (experimental)"
   },
@@ -632,15 +638,6 @@ export const en_US = {
   },
 
   // alerts
-  "alert_developerModeHeader": {
-    "message": "Developer Mode"
-  },
-  "alert_developerModeText": {
-    "message": "You are using developer mode. Things may break in this version of PttChrome. Use this at your own risk."
-  },
-  "alert_developerModeDismiss": {
-    "message": "Yes, I understand."
-  },
   "alert_deepLinkHandoffHeader": {
     "message": "Opened in your existing tab"
   },
@@ -674,6 +671,12 @@ export const en_US = {
   // notifications
   "notification_said": {
     "message": "says:"
+  },
+  "notification_deepLinkHandoffTitle": {
+    "message": "Link opened in this tab"
+  },
+  "hint_deepLinkHandoffReceived": {
+    "message": "Picked up an external link:"
   },
 
   // input helper

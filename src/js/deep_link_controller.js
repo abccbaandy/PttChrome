@@ -31,8 +31,20 @@ export function DeepLinkController(core, view, termBuf) {
 DeepLinkController.prototype = {
   // 外部入口（啟動時的 URL、hashchange、PWA launchQueue、其他分頁的交接）。
   // 回傳 'navigating'（已經開跳）或 'pending'（收下了，等登入）。
-  request: function(target) {
+  //
+  // opts.source === 'handoff'：**別的分頁**把連結交給我們（deep_link_entry 的
+  // serveHandoff）。那代表使用者的眼睛在另一個分頁上，這個分頁得主動出聲；其餘
+  // 來源（開站網址、hashchange、launchQueue）都是使用者本人在這個分頁的動作，
+  // 通知他自己剛做的事只是噪音。
+  //
+  // 通知發在跳轉**之前**：接手的分頁若還沒登入，_hold() 會把目標收著等登入，落地
+  // 可能永遠不會發生 —— 但使用者仍然得先知道有東西在等他。順序上 _hold 的
+  // 「登入後將跳至…」橫幅會蓋在後面，讀起來剛好是「收到了 → 登入後會跳」。
+  request: function(target, opts) {
     if (!target || !target.board || !target.aid) return null;
+    if (opts && opts.source === 'handoff' && this._view &&
+        this._view.notifyDeepLinkHandoff)
+      this._view.notifyDeepLinkHandoff(target);
     if (this._canNavigate()) {
       this._pending = null;
       return this._dispatch(target) ? 'navigating' : this._hold(target);
@@ -73,15 +85,22 @@ DeepLinkController.prototype = {
       this._hint('請在文章內使用「複製本篇連結」', 3000);
       return false;
     }
-    // 按 Q 會蓋出一個原生資訊框：對好讀模式來說跟「r 回應」「X 推文」是同一類
-    // 事件，先進 functionMode 停掉它的累積／翻頁，畫面才不會在交易途中被動。
-    const er = this._core.easyReading;
-    if (er && er._enterFunctionMode) er._enterFunctionMode();
     // 讀 AID 是有代價的：mbbsd/bbs.c:2375-2377 對 Q 的回應是
     // `view_postinfo(...); return FULLUPDATE;` —— 那個 FULLUPDATE 會離開 pager
     // 把畫面換成文章列表。所以「複製完回到原處」必須自己走完（reopenAfterPostInfo），
     // 順便把閱讀位置一起帶回去。
+    //
+    // ORDER INVARIANT：閱讀位置必須在 _enterFunctionMode() **之前**擷取。那個函式
+    // 結尾的 termBuf.notify() 是同步的（term_buf 的 changed 分支直接呼叫
+    // view.update()），而 term_view.redraw 的 functionMode 分支第一件事就是
+    // mainDisplay.scrollTop = 0（原生 24 列畫面本來就該從頂端顯示）。順序反過來
+    // 讀到的永遠是 0 ⇒ _enqueueReopen 的 `if (lineIndex …)` 直接 falsy ⇒ 複製完
+    // 雖然回到原篇卻停在第一行。aid_navigation.start() 有同一條不變量的註解。
     const lineIndex = this._currentLineIndex();
+    // 按 Q 會蓋出一個原生資訊框：對好讀模式來說跟「r 回應」「X 推文」是同一類
+    // 事件，先進 functionMode 停掉它的累積／翻頁，畫面才不會在交易途中被動。
+    const er = this._core.easyReading;
+    if (er && er._enterFunctionMode) er._enterFunctionMode();
     const self = this;
     nav.queryPostAid({
       kind: 'deeplink-copy-info',

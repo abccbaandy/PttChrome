@@ -17,6 +17,7 @@ vi.mock("../../src/js/string_util", () => ({
 import {
   nextEasyReadingState,
   nextEasyReadingReentry,
+  nextEasyReadingExternalLanding,
   nextEasyReadingRowState,
   nextPageDownDecision,
   PAGE_DOWN_MAX_RETRIES,
@@ -88,6 +89,69 @@ describe("nextEasyReadingState", () => {
   // transient 0 -> 3 flicker never settles, so prevSettled stays 3 -> no re-enable.
   it("does not re-enable on an in-post flicker after manual native switch (settled stays 3)", () => {
     expect(decide({ settledPageState: 3, prevSettledPageState: 3 })).toBe(false);
+  });
+
+  // AID 跳文／deep link 途中的每一張畫面都是「別人的」。最痛的是**進板畫面**：
+  // 它是不折不扣的 pmore（pageState 3），在主功能表(1) 之後就構成 1→3 edge，
+  // 好讀會把進板公告當文章開始累積。
+  it("導航進行中一律不開（navActive），連正常的 2→3 edge 也不例外", () => {
+    expect(decide({ navActive: true })).toBe(false);
+    expect(decide({ prevSettledPageState: 1, navActive: true })).toBe(false);
+  });
+
+  // 說明性回歸：deep link 的目標文章是踩著 0→3 進來的（前一步 AID 搜尋落地的
+  // footer 列是空的 ⇒ term_buf.setPageState 判 0）。**刻意不在這裡放寬**成
+  // 「0→3 也算」——文章中途任何一次 footer 半畫的 dip 都會產生 3→0→3，那會在
+  // 同一頁重新 enterEasyReading（清掉 _inFlightSig）並重送 PageDown ⇒ pttbbs
+  // typeahead skip ⇒ 整頁文字永久遺失（P4）。落地改由
+  // nextEasyReadingExternalLanding 這條一次性路線負責。
+  it("0→3 仍不開：那是 ensureEnabledOnArticle 的職責，不是放寬 edge", () => {
+    expect(decide({ prevSettledPageState: 0 })).toBe(false);
+  });
+});
+
+// 第三條自動開好讀的路線：外部導航（AID 跳文／deep link）的落地。
+describe("nextEasyReadingExternalLanding", () => {
+  const decide = (o = {}) => nextEasyReadingExternalLanding({
+    pageState: 3,
+    complete: true,
+    statusStart: 1,
+    enabled: false,
+    enablePref: true,
+    supported: true,
+    navActive: false,
+    ...o
+  });
+
+  it("落在文章第一頁且畫面完整 → 開", () => {
+    expect(decide()).toBe(true);
+  });
+
+  // 這條是整個設計最不能拿掉的一行：既有 edge 路線若已經開了好讀，這裡必須
+  // no-op，否則第二次 enterEasyReading 會 _resetPagingState 清掉 _inFlightSig
+  // 並從同一頁重送 PageDown ⇒ P4 掉頁。
+  it("REGRESSION：已經開著就絕不重開（守 P4 重複 PageDown）", () => {
+    expect(decide({ enabled: true })).toBe(false);
+  });
+
+  it("導航還在跑就不開（要等 onDone 解鎖 active）", () => {
+    expect(decide({ navActive: true })).toBe(false);
+  });
+
+  it("不是文章畫面 / 畫面還沒完整 → 不開（留給 one-shot 重試）", () => {
+    expect(decide({ pageState: 2 })).toBe(false);
+    expect(decide({ pageState: 0 })).toBe(false);
+    expect(decide({ complete: false })).toBe(false);
+  });
+
+  it("只認第一頁：從中途頁開始累積會少掉前面的內容", () => {
+    expect(decide({ statusStart: 12 })).toBe(false);
+    expect(decide({ statusStart: null })).toBe(false);
+  });
+
+  it("pref 關掉 / 連線不支援 → 不開", () => {
+    expect(decide({ enablePref: false })).toBe(false);
+    expect(decide({ supported: false })).toBe(false);
   });
 });
 
@@ -753,6 +817,12 @@ describe("nextEasyReadingReentry（原生模式下換文章才重啟）", () => 
 
   it("同一篇（原生按 Home/0/g 回到第 1 行）→ 不重啟", () => {
     expect(r({ articleKey: "作者 A|標題 A|時間 A" })).toBe(false);
+  });
+
+  // 導航途中的畫面同樣不算「使用者換了文章」。這道 gate 在 _enterFunctionMode
+  // 改成好讀關閉時 no-op 之後變成必要：以前是靠 functionMode 旗標順便擋住的。
+  it("AID 跳文／deep link 進行中 → 不重啟（中途的進板畫面也是文章形狀）", () => {
+    expect(r({ navActive: true })).toBe(false);
   });
 
   it("文章中段（statusStart != 1）→ 不重啟", () => {

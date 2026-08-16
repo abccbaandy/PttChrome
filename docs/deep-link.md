@@ -144,6 +144,62 @@ case RET_DOQUERYINFO:
 Q，就會把使用者丟在列表上。`reopenAfterPostInfo(lineIndex)` 負責走回去：`␣` 關框 →
 `⏎` 開回游標下那篇（`i_read` 從沒移動過游標）→ `requestScrollRestore` 帶回閱讀位置。
 
+### 4. 落地的 settle edge 結構性不成立 ⇒ 不會自己進好讀
+
+`aid_navigation._enqueueAidSearch` 的落地畫面 **footer 列是空的**（`#` prompt 清掉它、
+跳轉重畫不補、`\f` 也補不回來）⇒ `term_buf.setPageState` 末段
+
+```js
+if (this.pageState != 1 && this.isLineEmpty(lastRowNum)) this.pageState = 0;
+```
+
+把它判成 **0**。於是目標文章是踩著 **0→3** edge 進來的，而 `nextEasyReadingState` 只認
+`1|2 → 3` ⇒ **確定性**不成立。備援 `nextEasyReadingReentry` 又要求 `nativeArticleKey`
+已知，冷啟動時必然是 null（fail-safe）。
+
+「有時卻正常」的來源：目標看板若有帶 pmore footer 的進板畫面，`s<board>` 落地是
+pageState 3、prev 1 ⇒ 湊出一個 `1→3` edge，好讀在**進板公告上**誤觸發，`_enabled` 被
+翻成 true ⇒ 最後歪打正著。
+
+修法三段（缺一不可）：
+
+| Fix | 內容 |
+|---|---|
+| A | `_enterFunctionMode` 在 `!_enabled` 時 **no-op**（見下一節） |
+| B | `nextEasyReadingState` / `nextEasyReadingReentry` 加 `navActive` gate —— 導航途中的畫面都是「別人的」，進板公告尤其 |
+| C | `easyReading.ensureEnabledOnArticle(allowRetry)`，由 `aid_navigation._enqueueOpen` 的 `onDone` 呼叫 |
+
+Fix C 的兩條順序不變量（都寫在 `onDone` 的註解裡）：
+
+- **先解鎖 `active`，再叫好讀**：`easy_reading._send` 第一道閘門就是 `active`，沒解鎖
+  就 `enterEasyReading()` 會讓它 replay 出的第一個 PageDown 被整個吞掉 ⇒ 停在第一頁。
+- **在 `requestScrollRestore` 之前**：restore 靠 `_onViewUpdated` 推進，好讀沒開就沒有
+  那個迴圈。
+
+**刻意不放寬 `nextEasyReadingState` 讓 `0→3` 也算**：文章中途任何一次 footer 半畫的
+dip 都會產生 `3→0→3`，那會在同一頁重新 `enterEasyReading()`（內含 `_resetPagingState`
+清掉 `_inFlightSig`）並重送 PageDown ⇒ pttbbs typeahead skip ⇒ 整頁文字永久遺失（P4）。
+
+P4 安全性靠 `nextEasyReadingExternalLanding` 的第一個條件 `if (enabled) return false`：
+同一次 settle 的執行順序是 `_onPageStateSettled` → `easyReading._onScreenSettled` →
+`queue.onDone`（queue 由 `list_session._onScreenSettled` 驅動，而 `pttchrome.jsx` 先建
+easyReading 才建 listSession），所以既有 edge 路線若成立，`_enabled` 早已是 true。
+**這行 gate 是整個設計最不能拿掉的一行。**
+
+### 5. `_functionMode` 在好讀關閉時會永久卡住
+
+`aid_navigation._begin` 無條件呼叫 `easyReading._enterFunctionMode()`，而冷啟動 deep
+link 時 `_enabled` 是 false。`_functionMode` 唯一的出口 `_evalFunctionModeExit` 只能經
+`_onScreenSettled` 進入，那裡第一行就是 `if (!this._enabled) { …; return; }` ⇒ 旗標
+**永遠清不掉**，一次同時廢掉兩條回好讀的路：
+
+- `nextEasyReadingReentry` 的 `functionMode` gate（自動重入）
+- `term_view.onKeyDown` 的 `!buf.easyReadingFunctionMode` gate → `tryReenterFromNative`
+  （**End/F8 手動切回也一起死掉**，所以症狀是「怎麼救都救不回來」）
+
+修法：`_enterFunctionMode` 開頭 `if (!this._enabled) return;`。好讀關著時畫面本來就是
+原生的，這個函式沒有任何事情要做。
+
 ## 複製連結（分享端）
 
 - 熱鍵 pref `deepLinkCopyKey`，預設 **F2**。可用的 F 鍵只剩 F2/F4：Chrome 佔用
@@ -157,6 +213,43 @@ Q，就會把使用者丟在列表上。`reopenAfterPostInfo(lineIndex)` 負責�
 - `board` 為 null（站內信／精華區，pttbbs 印「不明」）⇒ 不產生連結：`#` 只搜
   currboard，沒有看板的 AID 跳不回去。
 - 剪貼簿被擋（非 secure context／user activation 過期）⇒ 退而用 hint 顯示連結全文。
+- **ORDER INVARIANT：`_currentLineIndex()` 必須在 `_enterFunctionMode()` 之前呼叫。**
+  後者結尾的 `termBuf.notify()` 是**同步**的（`term_buf` 的 changed 分支直接呼叫
+  `view.update()`），而 `term_view.redraw` 的 functionMode 分支第一件事就是
+  `mainDisplay.scrollTop = 0`。順序反過來讀到的永遠是 0 ⇒ `_enqueueReopen` 的
+  `if (lineIndex …)` falsy ⇒ 複製完雖然回到原篇卻停在第一行（實測 2026-08-16）。
+  `aid_navigation.start()` 有同一條不變量的註解。
+  守護：`tests/unit/deep_link_controller.test.js` —— 假 easyReading 的
+  `_enterFunctionMode` **必須**忠實地把 `scrollTop` 歸零，否則整條測試是假綠燈。
+
+## 接手通知（`term_view`）
+
+既有分頁替新分頁收下連結時，使用者的眼睛在**新開的那個**分頁上 ⇒ 不出聲的話跳轉等於
+靜默發生。三層，由 `DeepLinkController.request(target, { source: 'handoff' })` 觸發
+（只有 `serveHandoff` 這個來源會帶；開站網址／hashchange／launchQueue 都是使用者本人在
+這個分頁的動作，通知他自己剛做的事只是噪音）：
+
+| 層 | 受 pref 控制？ | 備註 |
+|---|---|---|
+| 頁內橫幅（`flashListHint`，`.ListHint`） | 否 | 成本為零，且是切回來後唯一的痕跡 |
+| `document.title` 閃爍 | `deepLinkHandoffNotify` | **沒有通知權限時唯一還有效的通道** |
+| 系統 `Notification` | 同上＋瀏覽器權限 | 其 `onclick` 是**唯一**能切分頁的路（那裡有 user activation） |
+
+- 通知發在**跳轉之前**：接手分頁若還沒登入，`_hold()` 會把目標收著等登入 —— 落地可能
+  永遠不會發生，使用者卻得先知道有東西在等他。
+- 與水球共用 `showBackgroundNotification` / `_createNotification` / `stopTitleFlash`。
+  抽 helper 時順手修掉兩個既有隱患：`new Notification` 沒有 try/catch 與 `typeof` 檢查
+  （非 secure context 會 ReferenceError 從 `App.onData` 炸出去）；`App` 的 focus handler
+  無條件 `view.notif.close()`（「有 titleTimer 但沒有 notif」＝沒權限的常態 → TypeError）。
+- **閃爍基準是當下的 `document.title`，不是 `connectedUrl.site`**：全 app 從來沒把
+  title 設成連線位址過（`index.html` 的 `<title>` 一路留著），舊的水球版本拿 site 當
+  基準 ⇒ 第一次 tick 就把標題換成 `wsstelnet://…`，停下來也還原成那串。
+- 停止條件掛 `window 'focus'` **和** `document 'visibilitychange'`：分頁列切換不保證觸發
+  前者。`visibilitychange` 只呼叫 `stopTitleFlash()`，**不碰 `appFocused`** —— 那個旗標
+  的語意是 window focus，且是水球解析的閘門（`App.onData`）。
+- pref `deepLinkHandoffNotify` 刻意不複用 `enableNotifications`（文案是「啟用水球通知」，
+  且實際是水球封包解析的閘門）。權限只在 PrefModal 勾選時問 —— 那是全 app 唯一有
+  user activation 的時機，沒頭沒尾的權限彈窗比少一則通知更糟。
 
 ## 測試
 
@@ -166,6 +259,11 @@ Q，就會把使用者丟在列表上。`reopenAfterPostInfo(lineIndex)` 負責�
 | unit | `tests/unit/deep_link_channel.test.js`（假 BroadcastChannel bus + 同步時鐘） |
 | unit | `tests/unit/deep_link_controller.test.js`（排程 + 複製連結） |
 | unit | `tests/unit/deep_link_entry.test.js`（三條進入路徑 + 清網址） |
-| unit | `tests/unit/aid_navigation.test.js` → `describe('startExternal（deep link）')` |
-| e2e offline | `tests/e2e/offline/deep_link.offline.spec.js`（cassette 是固定 byte 流，只驗解析／暫存／清網址，**不驗完整跳轉**） |
-| e2e live | `tests/e2e/deep-link.spec.js`（唯一驗得到「冷啟動→登入→主功能表→切板→跳文」完整鏈的地方；需 `PTT_USER`/`PTT_PASS`，AID 先用共用 session 按 Q 撈真的） |
+| unit | `tests/unit/aid_navigation.test.js` → `describe('startExternal（deep link）')`；落地要呼叫 `ensureEnabledOnArticle` 且 `active` 已解鎖 |
+| unit | `tests/unit/easy_reading_function_mode_gate.test.js`（坑 5：好讀關閉時 `_enterFunctionMode` 必須 no-op） |
+| unit | `tests/unit/easy_reading_landing_enable.test.js`（坑 4：`ensureEnabledOnArticle` 條件矩陣 + one-shot 只重試一次 + 已 enabled 絕不重開） |
+| unit | `tests/unit/easy_reading_logic.test.js` → `nextEasyReadingExternalLanding`、`navActive` gate |
+| unit | `tests/unit/background_notification.test.js`（通知降級與 null-safety；標題閃爍基準） |
+| e2e offline | `tests/e2e/offline/deep_link.offline.spec.js`（cassette 是固定 byte 流，只驗解析／暫存／清網址，**不驗完整跳轉**；另含交接通知：標題閃爍→`bringToFront()`→還原，且全程 `pageerror` 為空 —— 預設 context 沒有通知權限，剛好是要守的常態路徑） |
+| e2e offline | `tests/e2e/offline/ui_behavior.offline.spec.js`（PrefModal 的 `deepLinkHandoffNotify` 開關） |
+| e2e live | `tests/e2e/deep-link.spec.js`（唯一驗得到「冷啟動→登入→主功能表→切板→跳文」完整鏈的地方；需 `PTT_USER`/`PTT_PASS`，AID 先用共用 session 按 Q 撈真的。落地後斷言 `useEasyReadingMode === true` 且 `easyReadingFunctionMode === false`） |

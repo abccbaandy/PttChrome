@@ -34,23 +34,16 @@ function startApp() {
     window.__pageArticleNums = pageArticleNums;
   }
 
-  (process.env.DEVELOPER_MODE ? import('../components/DeveloperModeAlert')
-    .then(({DeveloperModeAlert}) => new Promise((resolve, reject) => {
-      const container = document.getElementById('reactAlert')
-      const onDismiss = () => {
-        unmountFrom(container)
-        resolve()
-      }
-      renderInto(container, <MantineRoot><DeveloperModeAlert onDismiss={onDismiss} /></MantineRoot>)
-    })) : Promise.resolve()
-  ).then(() => {
-    // 外部連結（#<Board>/<AID>）進來的話，先問問看有沒有已經登入好的分頁可以
-    // 接手。沒帶 deep link 就是一個已 resolve 的 Promise，開站流程完全不變。
-    return claimDeepLink().then(({ target, taken }) => {
-      if (taken) return showHandoffTaken(target, bootstrap);
-      bootstrap();
-    });
-  })
+  // 外部連結（#<Board>/<AID>）進來的話，先問問看有沒有已經登入好的分頁可以
+  // 接手。沒帶 deep link 就是一個已 resolve 的 Promise，開站流程完全不變。
+  //
+  // dev build 刻意**不再**擋一層 Developer Mode modal：那個 modal 會把 connect()
+  // 延後到使用者按掉為止，讓 dev 與正式版的 boot 時序不一致 —— deep link 這種
+  // 「開站當下就要消費 URL」的功能在 dev 下量到的行為因此不可信。
+  claimDeepLink().then(({ target, taken }) => {
+    if (taken) return showHandoffTaken(target, bootstrap);
+    bootstrap();
+  });
 
   function bootstrap() {
     // connect. Priority: ?site override (off by default, see vite.config.mjs ALLOW_SITE_IN_QUERY)

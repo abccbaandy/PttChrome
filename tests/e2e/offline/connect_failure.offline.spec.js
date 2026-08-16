@@ -45,7 +45,6 @@ test.describe('連線失敗（從未連上）', () => {
     await installReplay(page, { neverOpen: true });
     await installOfflineNetwork(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
 
     // 連線失敗 → App.onClose → ConnectionAlert；且 isConnected() 始終為 false。
     const alert = page
@@ -90,7 +89,6 @@ test.describe('連線失敗（從未連上）', () => {
     await installReplay(page, { neverOpen: true });
     await installOfflineNetwork(page);
     await page.goto('/');
-    await ptt.dismissDeveloperModeAlert(page);
     await expect(
       page
         .locator('.PageTopAlert')

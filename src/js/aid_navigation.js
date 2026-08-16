@@ -846,6 +846,22 @@ AidNavigation.prototype = {
       },
       onDone: function() {
         self.active = false;
+        // ORDER INVARIANT: unlock `active` FIRST, then hand over to easy reading.
+        // easy_reading._send's first gate is `if (aidNavigation.active) return`, so
+        // calling enterEasyReading() before the unlock would let the PageDown its
+        // replayed notify queues be swallowed whole — the article would sit on page
+        // one with the paging transaction already marked in-flight.
+        //
+        // And BEFORE requestScrollRestore below: the restore is driven by
+        // _onViewUpdated, which only runs while easy reading is accumulating.
+        //
+        // Why this call is needed at all: the target article arrives on a 0→3
+        // settle edge (the preceding AID-search screen has a blank footer row —
+        // see _enqueueAidSearch — so it settles as pageState 0), which
+        // nextEasyReadingState deliberately does not accept. See
+        // nextEasyReadingExternalLanding.
+        if (self._core.easyReading && self._core.easyReading.ensureEnabledOnArticle)
+          self._core.easyReading.ensureEnabledOnArticle(true);
         // Only here — with the article really open — does the stack move.
         if (run.dir === 'back') {
           const entry = self._history.commitBack();

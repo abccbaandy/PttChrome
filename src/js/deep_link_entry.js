@@ -56,7 +56,9 @@ export function installDeepLink(app, win) {
   serveHandoff(
     createChannel(w),
     () => app.connectState === 1,
-    target => app.deepLinkController.request(target)
+    // source: 'handoff' —— 使用者的眼睛在**新開的那個**分頁上，這裡得主動出聲
+    // （標題閃爍／系統通知／頁內橫幅）。見 DeepLinkController.request。
+    target => app.deepLinkController.request(target, { source: 'handoff' })
   );
 
   if (w.launchQueue && w.launchQueue.setConsumer) {

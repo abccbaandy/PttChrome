@@ -55,7 +55,6 @@ async function boot(page, { prefs } = {}) {
   await stubOpenAndPrefs(page, prefs);
   await installReplay(page);
   await page.goto('/');
-  await ptt.dismissDeveloperModeAlert(page);
   await waitConnected(page);
 }
 

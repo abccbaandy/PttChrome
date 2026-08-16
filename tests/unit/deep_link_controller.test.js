@@ -62,13 +62,21 @@ function makeHarness({
   const autoLogin = { stopCalls: 0, stop() { this.stopCalls++; } };
   const easyReading = {
     functionModeCalls: 0,
+    // 忠實模擬真實副作用：_enterFunctionMode 結尾的 termBuf.notify() 是**同步**的
+    // （term_buf.js 的 changed 分支直接呼叫 view.update()），而 term_view.redraw 的
+    // functionMode 分支第一件事就是 mainDisplay.scrollTop = 0（24 列原生畫面本來就
+    // 該從頂端顯示）。沒有這一行，任何「先進 functionMode 才讀捲動位置」的順序錯誤
+    // 在這裡都測不出來 —— 下面那條 REGRESSION 曾因此是假綠燈。
     _enterFunctionMode() {
       this.functionModeCalls++;
+      if (view.mainDisplay) view.mainDisplay.scrollTop = 0;
     }
   };
   const hints = [];
+  const handoffNotices = [];
   const view = {
     flashListHint: msg => hints.push(msg),
+    notifyDeepLinkHandoff: t => handoffNotices.push(t),
     mainDisplay: scrollTop == null ? null : { scrollTop },
     chh
   };
@@ -80,8 +88,8 @@ function makeHarness({
     settle();
   };
   return {
-    ctl, core, nav, autoLogin, easyReading, termBuf, view, hints, settle,
-    arriveAtMainMenu
+    ctl, core, nav, autoLogin, easyReading, termBuf, view, hints, handoffNotices,
+    settle, arriveAtMainMenu
   };
 }
 
@@ -245,6 +253,22 @@ describe("複製本篇連結", () => {
     expect(h.nav.reopenArgs).toEqual([12]); // 240 / 20
   });
 
+  test("REGRESSION：閱讀位置必須在 _enterFunctionMode **之前**擷取", () => {
+    // ORDER INVARIANT（與 aid_navigation.start() 同一條）：_enterFunctionMode 會同步
+    // 把 mainDisplay.scrollTop 歸零，順序反過來讀到的永遠是 0 ⇒ _enqueueReopen 的
+    // `if (lineIndex …)` falsy ⇒ 複製完雖然回到原篇，卻停在第一行。
+    // 實測 2026-08-16：「複製連結會跳出文章，只是單純再按一次 Enter 進來」。
+    const h = makeHarness({ lastRow: STATUS_ROW, scrollTop: 240, chh: 20 });
+    withClipboard(h.ctl);
+    h.ctl.copyCurrentPostLink();
+    // 前提成立：確實進了 functionMode，畫面也確實被歸零了
+    expect(h.easyReading.functionModeCalls).toBe(1);
+    expect(h.view.mainDisplay.scrollTop).toBe(0);
+    // 但帶回去的必須是歸零**之前**的第 12 行
+    h.nav.queries[0].onDone({ aid: "1gIeu-3A", board: "movie" });
+    expect(h.nav.reopenArgs).toEqual([12]);
+  });
+
   test("按 Q 前先進 functionMode（停掉好讀的累積／翻頁）", () => {
     const h = makeHarness({ lastRow: STATUS_ROW });
     withClipboard(h.ctl);
@@ -305,6 +329,45 @@ describe("複製本篇連結", () => {
     const h = makeHarness({ connectState: 2, lastRow: STATUS_ROW });
     expect(h.ctl.copyCurrentPostLink()).toBe(false);
     expect(h.nav.queries).toEqual([]);
+  });
+});
+
+// 外部連結一定開新分頁，交接是唯一「使用者的眼睛在別的分頁」的情境 —— 這個分頁
+// 不出聲的話，跳轉等於靜默發生（實測回報：分頁本身沒有任何反應，得自己翻分頁找）。
+describe("跨分頁接手時的通知", () => {
+  test("接手（source: handoff）→ 通知使用者", () => {
+    const h = makeHarness();
+    h.arriveAtMainMenu();
+    h.ctl.request(TARGET, { source: "handoff" });
+    expect(h.handoffNotices).toEqual([TARGET]);
+  });
+
+  test("REGRESSION：還沒登入（走 _hold）也要通知 —— 落地可能永遠不會發生", () => {
+    // 接手的分頁若尚未登入，目標會被收著等登入。使用者得先知道有東西在等他，
+    // 不然他永遠不會切過來、也就永遠不會登入。
+    const h = makeHarness();
+    expect(h.ctl.request(TARGET, { source: "handoff" })).toBe("pending");
+    expect(h.handoffNotices).toEqual([TARGET]);
+  });
+
+  test("使用者自己在這個分頁開的連結不通知（通知他自己剛做的事只是噪音）", () => {
+    const h = makeHarness();
+    h.arriveAtMainMenu();
+    h.ctl.request(TARGET);
+    h.ctl.request({ board: "movie", aid: "2AbCdEf0" }, { source: "hashchange" });
+    expect(h.handoffNotices).toEqual([]);
+  });
+
+  test("壞目標不通知", () => {
+    const h = makeHarness();
+    h.ctl.request({ board: "Gossiping" }, { source: "handoff" });
+    expect(h.handoffNotices).toEqual([]);
+  });
+
+  test("view 沒有 notifyDeepLinkHandoff（舊 view／測試替身）不能炸", () => {
+    const h = makeHarness();
+    delete h.view.notifyDeepLinkHandoff;
+    expect(() => h.ctl.request(TARGET, { source: "handoff" })).not.toThrow();
   });
 });
 

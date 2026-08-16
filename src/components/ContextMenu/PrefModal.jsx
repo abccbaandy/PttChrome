@@ -164,6 +164,13 @@ export const PrefModal = ({
   const [storedSnapshot, setStoredSnapshot] = useState(readValuesWithDefault);
   const [syncUser, setSyncUser] = useState(null);
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | synced | error
+  // 使用者（或企業政策）已封鎖本站通知：deep link 交接就只剩標題閃爍＋頁內橫幅，
+  // 說清楚比讓那個勾勾看起來有效好。初值直接讀當下的權限，不必等使用者去點。
+  const [notifyDenied, setNotifyDenied] = useState(
+    () =>
+      typeof Notification !== "undefined" &&
+      Notification.permission === "denied",
+  );
   // 裝置端 AI（Prompt API）可用性：unsupported | unavailable | downloadable |
   // downloading | available。掛載時查一次；**下載只由使用者的點擊觸發**
   // （Prompt API 的模型下載需要 user activation，且模型有數 GB）。
@@ -225,6 +232,30 @@ export const PrefModal = ({
 
   const onCheckboxChange = useCallback(({ target: { name, checked } }) => {
     setValues((v) => changeNestedValue(v, name, !!checked));
+  }, []);
+
+  // Deep link 交接通知：勾選是全 app 唯一有 user activation 的時機，也是唯一該問
+  // 通知權限的地方（沒頭沒尾的權限彈窗比少一則通知更糟）。跟 onAiMasterChange
+  // 同一個理由不能走通用的 onCheckboxChange。
+  //
+  // 權限拿不到不算失敗：標題閃爍與頁內橫幅照常運作，只是少了「點通知切分頁」那條
+  // 路，所以這裡只更新提示文字，不回頭把勾勾取消掉。
+  const onHandoffNotifyChange = useCallback(({ target: { name, checked } }) => {
+    setValues((v) => changeNestedValue(v, name, !!checked));
+    if (!checked || typeof Notification === "undefined") return;
+    try {
+      if (Notification.permission === "denied") {
+        setNotifyDenied(true);
+        return;
+      }
+      if (Notification.permission === "granted") return;
+      const p = Notification.requestPermission();
+      // 舊介面是 callback-only（回 undefined），新介面回 Promise。
+      if (p && p.then) p.then((r) => setNotifyDenied(r === "denied"));
+    } catch (e) {
+      // 非 secure context 之類：當作沒有系統通知這一層。
+      setNotifyDenied(true);
+    }
   }, []);
 
   const onTextInputChange = useCallback(({ target: { name, value } }) => {
@@ -497,6 +528,18 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableNotifications")}
                 </PrefCheckbox>
+                <PrefCheckbox
+                  name="deepLinkHandoffNotify"
+                  checked={values.deepLinkHandoffNotify}
+                  onChange={onHandoffNotifyChange}
+                >
+                  {i18n("options_deepLinkHandoffNotify")}
+                </PrefCheckbox>
+                {notifyDenied && (
+                  <Text className="PrefModal__warning">
+                    {i18n("options_deepLinkHandoffNotifyDenied")}
+                  </Text>
+                )}
                 <PrefCheckbox
                   name="enableEasyReading"
                   checked={values.enableEasyReading}

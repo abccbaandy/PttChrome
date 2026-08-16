@@ -33,6 +33,12 @@ export const DEFAULT_PREFS = {
   // 「複製本篇連結」（deep link）的快捷鍵。預設 F2：上面那串被 Chrome 佔用的
   // F 鍵之外，F8/F9 又已經給了上面兩個功能，剩下的就是 F2/F4。
   deepLinkCopyKey: "F2",
+  // 外部連結被**這個**分頁接手時（人在別的分頁）發出通知：標題閃爍 + 系統通知。
+  // 刻意不複用 enableNotifications —— 那個的文案是「啟用水球通知」，而且在
+  // App.onData 實際是當「要不要解析水球封包」的閘門在用；騷擾曲線也不同（水球
+  // 高頻、可能被刻意關掉；交接低頻且可操作，不通知等於功能靜默失效）。
+  // 頁內橫幅提示不受此開關控制（成本為零，且是切回來後唯一的痕跡）。
+  deepLinkHandoffNotify: true,
 
   // Connection proxy: when on, connect through proxyUrl instead of DEFAULT_SITE so
   // users behind a block can reach PTT without installing anything. proxyUrl may be a

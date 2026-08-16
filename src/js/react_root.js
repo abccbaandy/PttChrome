@@ -7,8 +7,8 @@
 // flushSync 仍在 react-dom。
 //
 // unmount 後從 cache 移除：unmount 過的 root 不可再 render，移除後同一容器下次
-// renderInto 會取得乾淨的新 root（DeveloperModeAlert → ConnectionAlert →
-// PasteShortcutAlert 依序重用 #reactAlert 即靠這條保證）。
+// renderInto 會取得乾淨的新 root（ConnectionAlert → PasteShortcutAlert →
+// DeepLinkHandoffAlert 依序重用 #reactAlert 即靠這條保證）。
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 

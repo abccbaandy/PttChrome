@@ -12,7 +12,6 @@ const {
   readScreen,
   sendKey,
   attachConsole,
-  dismissDeveloperModeAlert,
   resetSession,
   gotoBoard,
 } = require('./helpers/ptt');
@@ -74,7 +73,6 @@ test('deep link：帶 #<Board>/<AID> 開站 → 自動登入後落在該篇文�
     });
 
     await page.goto('/#' + BOARD + '/' + aid);
-    await dismissDeveloperModeAlert(page);
 
     // 診斷：hint 是失敗時唯一講得清楚卡在哪一步的東西；sent 用來確認真的走過
     // 進板畫面的關框（← ），也就是這條路徑真的被覆蓋到了。
@@ -147,10 +145,23 @@ test('deep link：帶 #<Board>/<AID> 開站 → 自動登入後落在該篇文�
       return {
         pageState: window.__app.buf.pageState,
         started: window.__app.buf.startedEasyReading,
+        easyReading: window.__app.view.useEasyReadingMode,
+        functionMode: window.__app.buf.easyReadingFunctionMode,
       };
     });
     console.log('BEFORE COPY:', JSON.stringify(before));
     expect(before.pageState).toBe(3);
+
+    // 落地就該是好讀模式，不需要使用者按 End（實測 2026-08-16：deep link 跳完停在
+    // 原生模式）。兩個成因都在這裡守住：
+    //   - 目標文章是踩著 **0→3** settle edge 進來的（前一步 AID 搜尋落地的 footer
+    //     列是空的 ⇒ pageState 0），nextEasyReadingState 的 1|2→3 永遠不成立 ⇒
+    //     必須由 aid_navigation 落地時的 ensureEnabledOnArticle 補上。
+    //   - _enterFunctionMode 以前在好讀關閉時也會設旗標，而那個旗標只有
+    //     _onScreenSettled 的 enabled 分支清得掉 ⇒ 永久卡住 ⇒ 連 End/F8 手動切回
+    //     的 gate（term_view.onKeyDown 的 !easyReadingFunctionMode）都一起死掉。
+    expect(before.easyReading).toBe(true);
+    expect(before.functionMode).toBe(false);
 
     await sendKey(page, 'F2');
     await expect

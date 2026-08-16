@@ -33,8 +33,34 @@ let win;
 function setup(href) {
   win = makeWin(href);
   const requests = [];
-  const app = { deepLinkController: { request: t => requests.push(t) } };
-  return { app, requests };
+  const calls = [];
+  const app = {
+    connectState: 1,
+    deepLinkController: {
+      request: (t, opts) => {
+        requests.push(t);
+        calls.push({ target: t, opts });
+      }
+    }
+  };
+  return { app, requests, calls };
+}
+
+// 把一個假的 BroadcastChannel 掛上假 window，讓 serveHandoff 真的接得到訊息。
+// 規範：不會把訊息送回給發送端自己，所以這裡直接 _deliver 模擬「另一個分頁送來」。
+function installChannel(w) {
+  const listeners = [];
+  const port = {
+    posted: [],
+    addEventListener: (type, fn) => type === "message" && listeners.push(fn),
+    removeEventListener: () => {},
+    postMessage: data => port.posted.push(data),
+    _deliver: data => listeners.slice().forEach(fn => fn({ data }))
+  };
+  w.BroadcastChannel = function() {
+    return port;
+  };
+  return port;
 }
 
 test("開站網址帶 deep link → 送進 controller", () => {
@@ -83,6 +109,26 @@ test("PWA launchQueue：focus-existing 不重載頁面，只走這條", () => {
   expect(requests).toEqual([]);
   consumer({ targetURL: BASE + "#C_Chat/" + AID });
   expect(requests).toEqual([{ board: "C_Chat", aid: AID }]);
+});
+
+// 接手是**唯一**「使用者眼睛不在這個分頁」的來源，controller 得靠這個旗標才知道
+// 要不要主動出聲（標題閃爍／系統通知／頁內橫幅）。
+test("別的分頁交接過來 → 帶 source:'handoff' 呼叫 controller", () => {
+  const { app, calls } = setup(BASE);
+  const port = installChannel(win);
+  installDeepLink(app, win);
+  port._deliver({ t: "claim", id: "c1", target: { board: "movie", aid: AID } });
+  expect(calls).toEqual([
+    { target: { board: "movie", aid: AID }, opts: { source: "handoff" } }
+  ]);
+});
+
+test("使用者自己在這個分頁開的連結不帶 handoff（不該通知他自己剛做的事）", () => {
+  const { app, calls } = setup(BASE + "#Gossiping/" + AID);
+  installDeepLink(app, win);
+  win.location.href = BASE + "#movie/2AbCdEf0";
+  win.fire("hashchange");
+  expect(calls.map(c => c.opts)).toEqual([undefined, undefined]);
 });
 
 test("launchQueue 拿到不是 deep link 的網址 → 忽略", () => {

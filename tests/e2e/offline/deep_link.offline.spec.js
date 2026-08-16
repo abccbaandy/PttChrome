@@ -17,7 +17,6 @@ async function boot(page, hash) {
   await installReplay(page);
   await installOfflineNetwork(page);
   await page.goto('/' + (hash || ''));
-  await ptt.dismissDeveloperModeAlert(page);
 }
 
 const pending = (page) =>
@@ -67,7 +66,6 @@ test.describe('deep link', () => {
       await installReplay(existing);
       await installOfflineNetwork(existing);
       await existing.goto('/');
-      await ptt.dismissDeveloperModeAlert(existing);
       // 有資格接手的條件就是連線中。
       await expect
         .poll(() => existing.evaluate(() => window.__app.connectState))
@@ -77,7 +75,6 @@ test.describe('deep link', () => {
       await installReplay(fresh);
       await installOfflineNetwork(fresh);
       await fresh.goto('/#Gossiping/' + AID);
-      await ptt.dismissDeveloperModeAlert(fresh);
 
       // 既有分頁收下目標。
       await expect
@@ -90,6 +87,85 @@ test.describe('deep link', () => {
       // 呼叫 connect() 的地方 —— 所以要看的是 conn，不是 __app。
       await expect(fresh.locator('.PageTopAlert')).toBeVisible();
       expect(await fresh.evaluate(() => window.__app.conn === undefined)).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // 接手的分頁必須**主動出聲**：使用者的眼睛在新開的那個分頁上，不通知的話跳轉
+  // 等於靜默發生（實測回報：分頁本身沒有任何反應，得自己翻分頁找）。
+  //
+  // 預設 context 沒有通知權限 —— 那正是要驗的常態路徑：系統通知拿不到，但標題
+  // 閃爍與頁內橫幅照常，而且整段不可以 throw。
+  test('既有分頁接手：標題閃爍 + 頁內橫幅，切回來就停', async ({ browser }) => {
+    const context = await browser.newContext({ baseURL: 'http://localhost:8080' });
+    const errors = [];
+    try {
+      const existing = await context.newPage();
+      existing.on('pageerror', (e) => errors.push(e.message));
+      await installReplay(existing);
+      await installOfflineNetwork(existing);
+      await existing.goto('/');
+      await expect
+        .poll(() => existing.evaluate(() => window.__app.connectState))
+        .toBe(1);
+      // 基準是**當下的標題**（index.html 的 <title>），不是 connectedUrl.site —— app
+      // 從來沒把 title 設成連線位址過，拿 site 當基準的話這條斷言會恆真（假綠燈）。
+      const baseTitle = await existing.title();
+      expect(baseTitle).not.toBe('');
+
+      const fresh = await context.newPage();
+      await installReplay(fresh);
+      await installOfflineNetwork(fresh);
+      await fresh.goto('/#Gossiping/' + AID);
+      // fresh 現在是前景分頁 ⇒ existing 進背景，標題閃爍才有意義。
+
+      // 標題離開原本的值（每 1500ms 交替一次，用 poll 等）。
+      await expect
+        .poll(() => existing.title(), { timeout: 8000 })
+        .not.toBe(baseTitle);
+      // 頁內橫幅：切回來之後唯一還看得到的痕跡。
+      await expect(existing.locator('.ListHint')).toContainText(AID);
+
+      // 使用者切回這個分頁 → 停止閃爍、標題復原（visibilitychange / focus）。
+      await existing.bringToFront();
+      await expect.poll(() => existing.title(), { timeout: 8000 }).toBe(baseTitle);
+
+      // 沒有通知權限是常態，不能因此炸掉（new Notification 在非 granted 時
+      // 我們回 null；非 secure context 連建構子都不存在）。
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('授權通知的情況下同樣不炸', async ({ browser }) => {
+    const context = await browser.newContext({
+      baseURL: 'http://localhost:8080',
+      permissions: ['notifications']
+    });
+    const errors = [];
+    try {
+      const existing = await context.newPage();
+      existing.on('pageerror', (e) => errors.push(e.message));
+      await installReplay(existing);
+      await installOfflineNetwork(existing);
+      await existing.goto('/');
+      await expect
+        .poll(() => existing.evaluate(() => window.__app.connectState))
+        .toBe(1);
+
+      const fresh = await context.newPage();
+      await installReplay(fresh);
+      await installOfflineNetwork(fresh);
+      await fresh.goto('/#Gossiping/' + AID);
+
+      await expect
+        .poll(() =>
+          existing.evaluate(() => window.__app.deepLinkController.hasPending())
+        )
+        .toBe(true);
+      expect(errors).toEqual([]);
     } finally {
       await context.close();
     }

@@ -96,11 +96,31 @@ function makeHarness({
     easyReading: {
       enterFunctionModeCalls: 0,
       restoreCalls: [],
+      // 忠實模擬真實副作用：_enterFunctionMode 結尾的 termBuf.notify() 是同步的，
+      // 而 term_view.redraw 的 functionMode 分支第一件事就是 scrollTop = 0。少了
+      // 這一行，「錨點／閱讀位置必須在 _begin() 之前擷取」那條 ORDER INVARIANT
+      // 就測不出來（deep_link_controller 正是踩在同一個坑上）。
       _enterFunctionMode() {
         this.enterFunctionModeCalls++;
+        if (view.mainDisplay) view.mainDisplay.scrollTop = 0;
+      },
+      // 落地時導航要主動把好讀接回來（settle edge 給不了那一次，見
+      // easy_reading.nextEasyReadingExternalLanding）。這裡記下呼叫時的
+      // nav.active 與相對順序，兩者都是不變量。
+      ensureCalls: 0,
+      ensureArgs: [],
+      navActiveAtEnsure: [],
+      callOrder: [],
+      ensureEnabledOnArticle(allowRetry) {
+        this.ensureCalls++;
+        this.ensureArgs.push(allowRetry);
+        this.navActiveAtEnsure.push(nav.active);
+        this.callOrder.push("ensure");
+        return true;
       },
       requestScrollRestore(lineIndex) {
         this.restoreCalls.push(lineIndex);
+        this.callOrder.push("restore");
       }
     },
     listSession: {
@@ -737,6 +757,7 @@ describe("AidNavigation 返回", () => {
       chh: 20
     });
     jumpForward(h); // 離開時停在第 30 行
+    h.core.easyReading.callOrder.length = 0; // 只看 back run 這一趟
     h.nav.back();
     settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
     const rowTexts = new Array(24).fill("");
@@ -755,6 +776,9 @@ describe("AidNavigation 返回", () => {
     expect(h.core.easyReading.restoreCalls).toEqual([]);
     settle(h.queue, facts("article"));
     expect(h.core.easyReading.restoreCalls).toEqual([30]);
+    // ORDER INVARIANT：好讀要先被接回來，捲動還原才有東西可推進 —— restore 是靠
+    // _onViewUpdated 驅動的，好讀沒開就沒有那個迴圈。
+    expect(h.core.easyReading.callOrder).toEqual(["ensure", "restore"]);
   });
 
   test("原本就在文章開頭（行索引 0）→ 不要求還原", () => {
@@ -1051,6 +1075,29 @@ describe("startExternal（deep link）", () => {
     const h = makeHarness();
     h.nav.startExternal("1gIeu-3A", "Gossiping");
     expect(h.sent).toEqual(["sGossiping\r\f"]);
+  });
+
+  test("REGRESSION：落地時要把好讀接回來（active 已解鎖）", () => {
+    // deep link 的目標文章是踩著 0→3 settle edge 進來的（前一步 AID 搜尋落地的
+    // footer 列是空的 ⇒ pageState 0），nextEasyReadingState 的 1|2→3 永遠不成立；
+    // 冷啟動又沒有 nativeArticleKey 可讓 reentry 那條路生效。所以落地必須明講。
+    // 實測 2026-08-16：跳完停在原生模式，連 End 也切不回去。
+    const h = makeHarness();
+    atMainMenu(h);
+    h.nav.startExternal("1gIeu-3A", "Gossiping");
+    settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "gossiping", cursorRowNum: 42, curY: 10 })
+    );
+    expect(h.core.easyReading.ensureCalls).toBe(0); // 還沒落地
+    settle(h.queue, facts("article"));
+    expect(h.core.easyReading.ensureCalls).toBe(1);
+    // 必須在 active 解鎖之後：easy_reading._send 的第一道閘門就是 active，
+    // 沒解鎖就開好讀會讓它排出的第一個 PageDown 被整個吞掉（停在第一頁）。
+    expect(h.core.easyReading.navActiveAtEnsure).toEqual([false]);
+    // allowRetry=true：落地當下畫面可能還沒完整，留一次 one-shot 給下個 settle。
+    expect(h.core.easyReading.ensureArgs).toEqual([true]);
   });
 
   test("跳完不出現「← 返回」pill（本來就沒有原文可回）", () => {

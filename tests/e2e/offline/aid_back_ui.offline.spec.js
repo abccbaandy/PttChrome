@@ -11,13 +11,21 @@
 // 另外驗快捷鍵（pref aidNavBackKey，預設 F9）真的接到 aidNavigation.back()。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { installReplay, installOfflineNetwork, feedRaw } = require('../helpers/replay');
+const {
+  installReplay,
+  installOfflineNetwork,
+  feedRaw,
+  waitConnected
+} = require('../helpers/replay');
 
 async function boot(page) {
   await installReplay(page);
   await installOfflineNetwork(page);
   await page.goto('/');
-  await ptt.dismissDeveloperModeAlert(page);
+  // feedRaw 直接戳 window.__app.onData，所以必須等 app 真的 boot 完。過去這裡是靠
+  // dismissDeveloperModeAlert 的 waitFor 順便擋住的（modal 移除後那個天然同步點沒了）；
+  // main.jsx 要先把 conv/*.bin 抓下來才 new App()，goto 回來時 __app 還不存在。
+  await waitConnected(page);
   await feedRaw(page, '\x1b[2J\x1b[H  OFFLINE AID BACK BUTTON TEST  ');
   await page.waitForTimeout(200);
 }

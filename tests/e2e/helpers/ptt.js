@@ -50,17 +50,6 @@ async function sendKey(page, key) {
   await page.keyboard.press(key);
 }
 
-// dev build 啟動時會跳 DeveloperModeAlert，按掉它 app 才會開始連線。
-async function dismissDeveloperModeAlert(page) {
-  const btn = page.getByRole('button', { name: 'Yes, I understand.' });
-  try {
-    await btn.waitFor({ state: 'visible', timeout: 8000 });
-    await btn.click();
-  } catch (e) {
-    // 非 dev / 沒有此 modal 時略過
-  }
-}
-
 // --- 連線健檢（live e2e preflight）---------------------------------------
 //
 // 沒有這層時，「PTT 維護中／ws.ptt.cc 不可達」與「本專案 code 壞了」的症狀一模一樣：
@@ -83,7 +72,7 @@ function describeConnectFailure({ hasApp, connectState, screen, timeout }) {
   if (!hasApp) {
     verdict =
       'app 沒有 boot 起來（window.__app 不存在）。這是**本專案／dev server 的問題**，' +
-      '不是 PTT：多半是 bundle 掛了、Developer Mode modal 沒被關掉，或 dev server 沒跑起來。';
+      '不是 PTT：多半是 bundle 掛了，或 dev server 沒跑起來。';
   } else if (connectState === 1) {
     verdict =
       'WebSocket 連上了，但終端機畫面一直是空的 —— PTT 端接受連線後不吐畫面' +
@@ -145,10 +134,7 @@ async function login(page) {
   const pass = process.env.PTT_PASS || '';
   const otpSecret = process.env.PTT_OTP_SECRET || '';
 
-  // 0. dev 模式會先跳「Developer Mode」警告 modal，需先關閉，app 才會 connect()。
-  await dismissDeveloperModeAlert(page);
-
-  // 0.5 先確認 WebSocket 連得上：PTT 掛掉時直接給明確結論，而不是讓下面的
+  // 0. 先確認 WebSocket 連得上：PTT 掛掉時直接給明確結論，而不是讓下面的
   // waitForScreen 逾時、看起來像本專案的畫面解析壞掉。
   await waitBbsConnected(page);
 
@@ -233,7 +219,6 @@ async function login(page) {
       console.log(`偵測到登入節流，等待 30s 後重新連線重試（第 ${throttleRetries} 次）`);
       await page.waitForTimeout(30000);
       await page.goto('/');
-      await dismissDeveloperModeAlert(page);
       await waitBbsConnected(page);
       await sendCredentials();
       deadline = Date.now() + 40000;
@@ -438,7 +423,6 @@ module.exports = {
   describeConnectFailure,
   attachConsole,
   waitEasyReadingComplete,
-  dismissDeveloperModeAlert,
   applyPrefs,
   resetSession,
   gotoBoard,

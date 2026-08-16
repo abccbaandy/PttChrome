@@ -250,8 +250,15 @@ export function TermView() {
 
   // for notifications
   this.enableNotifications = true;
+  // Deep link 交接通知（標題閃爍 + 系統通知）。刻意與 enableNotifications 分開：
+  // 後者的文案就是「啟用水球通知」，而且在 App.onData 實際是當「要不要解析水球
+  // 封包」的閘門在用；兩者的騷擾曲線也不同（水球高頻、交接低頻且可操作 —— 不通知
+  // 等於功能靜默失效）。見 pref_storage.deepLinkHandoffNotify。
+  this.deepLinkHandoffNotify = true;
   this.titleTimer = null;
   this.notif = null;
+  // 閃爍前的原始 document.title，停止時還原用。null = 現在沒在閃。
+  this._flashBaseTitle = null;
 
   Object.defineProperty(this, 'mainContainer', {
     get: function() { return document.getElementById('mainContainer') },
@@ -1018,6 +1025,9 @@ TermView.prototype = {
     var el = this._listHintEl;
     if (!el) {
       el = document.createElement('div');
+      // 樣式全走 inline（見上面註解），class 只是給測試一個穩定的抓手 —— 沒有它，
+      // 這個提示在 e2e 裡只能靠「body 底下最後一個沒有 id 的 div」定位。
+      el.className = 'ListHint';
       el.style.cssText =
         'position:fixed;left:50%;bottom:48px;transform:translateX(-50%);' +
         'background:rgba(20,20,20,.88);color:#eee;padding:6px 14px;' +
@@ -1409,33 +1419,113 @@ TermView.prototype = {
     };
   },
 
+  // --- 背景通知（水球 / deep link 交接共用）---------------------------------
+  //
+  // 三件事必須一起做，所以只能有一份實作：
+  //   1. document.title 交替閃爍 —— **沒有通知權限時唯一還有效的手段**。本專案從未
+  //      呼叫過 Notification.requestPermission（勾選 pref 時才會問），所以對還沒授權
+  //      的使用者，這一直是真正在運作的那個通道，不是備援。
+  //   2. system Notification —— best effort，任何失敗都只是「沒有系統通知」。
+  //      它的 onclick 是**唯一**能把瀏覽器切到本分頁的路：那裡有 user activation，
+  //      window.focus() 才叫得動（背景分頁自己呼叫是無效的，見 docs/deep-link.md）。
+  //   3. 使用者切回本分頁時全部復原（stopTitleFlash）。
+  showBackgroundNotification: function(opts) {
+    // 只留最後一則：兩個 interval 會互搶 document.title。先停也讓下面那行讀到的
+    // 一定是**使用者原本看到的**標題。
+    this.stopTitleFlash();
+    // 閃爍的基準是當下的標題，不是 connectedUrl.site：全 app 從來沒有把
+    // document.title 設成連線位址過（index.html 的 <title> 一路留著），舊的水球
+    // 版本拿 site 當基準，於是第一次 tick 就把標題換成 `wsstelnet://…`，停下來
+    // 之後也還原成那串而不是原本的標題。
+    var base = document.title;
+    this._flashBaseTitle = base;
+    var flashText = opts.titleText;
+    this.titleTimer = setTimer(true, function() {
+      document.title = (document.title === base) ? flashText : base;
+    }, 1500);
+    this.notif = this._createNotification(opts);  // 可能是 null（沒權限／不支援）
+    return !!this.notif;
+  },
+
+  // 絕不可 throw：Notification 在非 secure context 根本不存在（`new Notification`
+  // 會 ReferenceError，而呼叫鏈的頂端是 App.onData —— 一路炸出去會把整條收包路徑
+  // 打斷）。權限是 default/denied 時各家瀏覽器行為也不一致。全部收斂成「回 null」。
+  _createNotification: function(opts) {
+    try {
+      if (typeof Notification === 'undefined') return null;
+      if (Notification.permission !== 'granted') return null;
+      var notif = new Notification(opts.title, {
+        icon: icon128,
+        body: opts.body,
+        tag: opts.tag
+      });
+      notif.onclick = function() {
+        window.focus();
+        if (opts.onClick) opts.onClick();
+        notif.close();
+      };
+      return notif;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // 停閃爍 + 還原標題 + 關掉通知。**全部 null-safe**：舊版 App 的 focus handler
+  // 無條件呼叫 `view.notif.close()`，一旦出現「有 titleTimer 但沒有 notif」
+  // （＝沒有通知權限，而那正是常態）就 TypeError。
+  stopTitleFlash: function() {
+    if (this.titleTimer) {
+      this.titleTimer.cancel();
+      this.titleTimer = null;
+    }
+    // 只有真的閃過才動標題（沒閃過就沒有東西要還原，別把別人設的標題蓋掉）。
+    if (this._flashBaseTitle != null) {
+      document.title = this._flashBaseTitle;
+      this._flashBaseTitle = null;
+    }
+    if (this.notif) {
+      try {
+        this.notif.close();
+      } catch (e) {}
+      this.notif = null;
+    }
+  },
+
   showWaterballNotification: function() {
     if (!this.enableNotifications) {
       return;
     }
     var app = this.bbscore;
-    //console.log('message from ' + this.waterball.userId + ': ' + this.waterball.message); 
     var title = app.waterball.userId + ' ' + i18n('notification_said');
-    if (this.titleTimer) {
-      this.titleTimer.cancel();
-      this.titleTimer = null;
-    }
-    this.titleTimer = setTimer(true, function() {
-      if (document.title == app.connectedUrl.site) {
-        document.title = title + ' ' + app.waterball.message;
-      } else {
-        document.title = app.connectedUrl.site;
-      }
-    }, 1500);
-    var options = {
-      icon: icon128,
+    this.showBackgroundNotification({
+      title: title,
+      titleText: title + ' ' + app.waterball.message,
       body: app.waterball.message,
       tag: app.waterball.userId
-    };
-    this.notif = new Notification(title, options);
-    this.notif.onclick = function() {
-      window.focus();
-    };
+    });
+  },
+
+  // Deep link 交接：這個分頁替另一個分頁收下了一個外部連結，而使用者的眼睛在**別
+  // 的**分頁上（外部連結一定開新分頁，這裡是背景）。三層都做：
+  //   - 頁內橫幅：**不受 pref 控制**。成本為零，而且是使用者切回來之後唯一還看得到
+  //     「剛剛發生了什麼」的痕跡。
+  //   - 標題閃爍 + 系統通知：受 deepLinkHandoffNotify 控制。
+  //
+  // 時機刻意是「收到交接的當下」而不是「跳完」：這則通知要回答的是「你該去哪個
+  // 分頁」，而且接手的分頁若還沒登入，跳轉會被 controller 收著等登入 —— 落地可能
+  // 永遠不會發生，使用者卻得先知道有東西在等他。
+  notifyDeepLinkHandoff: function(target) {
+    var label = '#' + target.aid + ' (' + target.board + ')';
+    if (this.flashListHint)
+      this.flashListHint(i18n('hint_deepLinkHandoffReceived') + ' ' + label, 8000);
+    if (!this.deepLinkHandoffNotify) return false;
+    var title = i18n('notification_deepLinkHandoffTitle');
+    return this.showBackgroundNotification({
+      title: title,
+      titleText: title + ' ' + label,
+      body: label,
+      tag: 'pttchrome-deeplink-handoff'
+    });
   },
 
   // Accumulate the easy-reading scroll page into buf.pageLines (pure JS, no DOM).

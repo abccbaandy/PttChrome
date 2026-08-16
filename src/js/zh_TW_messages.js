@@ -413,6 +413,12 @@
   "options_enableNotifications": {
     "message": "啟用水球通知"
   },
+  "options_deepLinkHandoffNotify": {
+    "message": "外部連結被這個分頁接手時發出通知（分頁標題閃爍＋系統通知）"
+  },
+  "options_deepLinkHandoffNotifyDenied": {
+    "message": "瀏覽器已封鎖本站的通知，只會閃爍分頁標題。"
+  },
   "options_enableEasyReading": {
     "message": "啟用文章好讀模式 (實驗性)"
   },
@@ -629,15 +635,6 @@
   },
 
   // alerts
-  "alert_developerModeHeader": {
-    "message": "開發者模式"
-  },
-  "alert_developerModeText": {
-    "message": "您正在使用開發者模式。此版本的 PttChrome 並不穩定，無法保證所有功能會正常運作。"
-  },
-  "alert_developerModeDismiss": {
-    "message": "是，我瞭解了"
-  },
   "alert_deepLinkHandoffHeader": {
     "message": "已在原本的分頁開啟"
   },
@@ -671,6 +668,12 @@
   // notifications
   "notification_said": {
     "message": "說:"
+  },
+  "notification_deepLinkHandoffTitle": {
+    "message": "已在這個分頁開啟連結"
+  },
+  "hint_deepLinkHandoffReceived": {
+    "message": "已從外部連結接手"
   },
 
   // input helper

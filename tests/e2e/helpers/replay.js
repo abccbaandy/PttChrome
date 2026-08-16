@@ -514,12 +514,14 @@ async function installOfflineNetwork(page) {
   );
 }
 
-// offline spec 共用：装 stub WS、挡外部网路、开页、关掉 Developer modal、等离线连上。
-async function bootOffline(page, ptt) {
+// offline spec 共用：裝 stub WS、擋外部網路、開頁、等離線連上。
+//
+// 第二個參數 `ptt` 已無作用（Developer Mode modal 移除後不再需要關 modal），保留在
+// 簽名上只為了不動 40+ 個 `bootOffline(page, ptt)` 呼叫端；多傳的參數會被忽略。
+async function bootOffline(page, ptt) {  // eslint-disable-line no-unused-vars
   await installReplay(page);
   await installOfflineNetwork(page);
   await page.goto('/');
-  await ptt.dismissDeveloperModeAlert(page);
   await waitConnected(page);
 }
 

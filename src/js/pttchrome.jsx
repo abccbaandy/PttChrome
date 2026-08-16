@@ -52,6 +52,13 @@ export const App = function() {
   this.view.setBuf(this.buf);
   this.view.setCore(this);
   this.parser = new AnsiParser(this.buf);
+  // ORDER MATTERS (implicit coupling, do not reshuffle): easyReading registers its
+  // termBuf 'screenSettled' listener HERE, before listSession does below — and
+  // listSession's listener is what drives CommandQueue.onSettle (hence every
+  // command's onDone). That ordering is what lets aid_navigation's landing onDone
+  // run AFTER easyReading has already had its shot at the same settle, which is
+  // why easy_reading.ensureEnabledOnArticle can rely on `_enabled` being final by
+  // the time it is called (no double enterEasyReading → no duplicate PageDown/P4).
   this.easyReading = new EasyReading(this, this.view, this.buf);
   // List easy reading (v4): serialized machine keys + explicit state machine.
   // The queue only ever talks to the live connection; a dropped link makes the
@@ -154,12 +161,15 @@ export const App = function() {
 
   window.addEventListener('focus', function(e) {
     self.appFocused = true;
-    if (self.view.titleTimer) {
-      self.view.titleTimer.cancel();
-      self.view.titleTimer = null;
-      document.title = self.connectedUrl.site;
-      self.view.notif.close();
-    }
+    self.view.stopTitleFlash();
+  }, false);
+
+  // 分頁列切換不保證觸發 window 'focus'（各平台不一），而 deep link 交接的通知
+  // 正是「使用者人在別的分頁」時發出的 —— visibilitychange 才是規範的訊號。
+  // 只停閃爍，**不碰 appFocused**：那個旗標的語意是 window focus，且是水球解析的
+  // 閘門（App.onData），混進 visibility 會改變水球行為。stopTitleFlash 冪等。
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) self.view.stopTitleFlash();
   }, false);
 
   window.addEventListener('blur', function(e) {
@@ -967,6 +977,9 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     case 'enableNotifications':
       this.view.enableNotifications = value;
+      break;
+    case 'deepLinkHandoffNotify':
+      this.view.deepLinkHandoffNotify = value;
       break;
     case 'showFloorNumbers':
       this.view.showFloorNumbers = value;

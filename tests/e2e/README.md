@@ -92,7 +92,6 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
 - `helpers/ptt.js`：可重用工具
   - `readScreen` / `waitForScreen`：讀 `#mainContainer` 文字、輪詢等字串（容錯，timeout 帶當前畫面）
   - `typeLine` / `sendKey`：對隱藏 input `#t` 打字
-  - `dismissDeveloperModeAlert`：關掉 dev build 的 Developer Mode modal（不關 app 不會 connect）
   - `login`：env 有帳密用真實帳號否則 guest，容錯迴圈處理 PTT 中間提示頁 + 節流退避
   - `waitBbsConnected` / `describeConnectFailure`：連線健檢與其錯誤訊息（見上節；`login` 開頭也會呼叫，
     單跑一支 spec 時同樣拿得到明確結論）

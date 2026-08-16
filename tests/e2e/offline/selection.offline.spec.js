@@ -42,7 +42,6 @@ async function boot(page, prefs) {
   await stubClipboardAndPrefs(page, prefs);
   await installReplay(page);
   await page.goto('/');
-  await ptt.dismissDeveloperModeAlert(page);
   await waitConnected(page);
 }
 
