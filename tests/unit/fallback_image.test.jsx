@@ -9,14 +9,7 @@
 // (jsdom, no network; <img> load/error are fired manually).
 
 import { render, fireEvent, act } from "@testing-library/react";
-import ImagePreviewer, {
-  PreviewHrefContext,
-} from "../../src/components/ImagePreviewer";
-
-// ESM 的具名匯入是 live binding，`vi.spyOn(模組命名空間)` 在這裡不可靠 → 直接 mock。
-// ImagePreviewer 只用到 reportProxyLoad 這一個匯出。
-const { reportProxyLoad } = vi.hoisted(() => ({ reportProxyLoad: vi.fn() }));
-vi.mock("../../src/js/proxy_status", () => ({ reportProxyLoad }));
+import ImagePreviewer from "../../src/components/ImagePreviewer";
 
 const Inline = ImagePreviewer.Inline;
 const IMG = "http://example.com/a.jpg";
@@ -115,98 +108,22 @@ describe("FallbackImage 載入失敗重試 + 可見錯誤態", () => {
   });
 });
 
-// 連結旁的代理狀態徽章要知道「哪一個候選真的載入成功」，而知道這件事的只有這裡的
-// onLoad。href 走 PreviewHrefContext 進來（LazyInlinePreview 提供）。
-describe("FallbackImage 回報代理狀態", () => {
-  const HREF = "https://imgur.com/abc123";
-  const PROXIED = "https://worker.example.dev/abc123.webp";
-  const DIRECT = "https://i.imgur.com/abc123.jpg";
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    reportProxyLoad.mockClear();
-  });
-  afterEach(() => vi.useRealTimers());
-
-  const renderWithHref = (value, href) =>
-    render(
-      <PreviewHrefContext.Provider value={href}>
-        <Inline value={value} />
-      </PreviewHrefContext.Provider>,
-    );
-
-  test("回報實際成功的候選（第一候選就成功）", () => {
-    const { container } = renderWithHref(
-      { type: "image", src: PROXIED, srcset: [PROXIED, DIRECT] },
-      HREF,
-    );
-    fireEvent.load(img(container));
-    expect(reportProxyLoad).toHaveBeenCalledWith(HREF, PROXIED);
-  });
-
-  // fail-open：代理候選掛了退到 i.imgur.com。回報的必須是**直連那個**，
-  // 分類才會是 none（無徽章），而不是沿用第一候選誤標成「經過代理」。
-  test("退回直連候選 → 回報的是直連位址", () => {
-    const { container } = renderWithHref(
-      { type: "image", src: PROXIED, srcset: [PROXIED, DIRECT] },
-      HREF,
-    );
-    errorAndFlushBackoff(container); // retry 1（同候選）
-    errorAndFlushBackoff(container); // retry 2（同候選）
-    fireEvent.error(img(container)); // 用罄 → 前進到直連候選
-    expect(img(container).getAttribute("src")).toBe(DIRECT);
-
-    fireEvent.load(img(container));
-    expect(reportProxyLoad).toHaveBeenCalledWith(HREF, DIRECT);
-  });
-
-  // 沒有 Provider（context 預設 null）：不回報，也不能炸。
-  test("無 href context → 不回報且不丟例外", () => {
-    const { container } = renderInline();
-    expect(() => fireEvent.load(img(container))).not.toThrow();
-    expect(reportProxyLoad).not.toHaveBeenCalled();
-  });
-});
-
-// 原生 24 列模式不掛 inline 預覽，只有 hover 預覽 —— 而它走的是 OnHover 的
-// 單張 <img>，不是 FallbackImage。回報若只掛在 FallbackImage，原生模式就**永遠**
-// 不會出現徽章（與 README／docs 的敘述不符）。
-describe("OnHover 回報代理狀態", () => {
+// 原生 24 列模式不掛 inline 預覽，走的是 OnHover 的單張 <img>。讀取中／非圖片
+// 描述子這兩條路徑不渲染 <img>，此時要顯示讀取指示器而不是空白或例外。
+describe("OnHover", () => {
   const OnHover = ImagePreviewer.OnHover;
-  const HREF = "https://imgur.com/abc123";
   const PROXIED = "https://worker.example.dev/abc123.jpg";
 
-  beforeEach(() => reportProxyLoad.mockClear());
-
-  const renderHover = (href) =>
-    render(
-      <PreviewHrefContext.Provider value={href}>
-        <OnHover value={{ src: PROXIED, height: 100 }} left={0} top={0} />
-      </PreviewHrefContext.Provider>,
-    );
-
-  test("載入成功 → 以 context 的 href 回報實際 src", () => {
-    const { container } = renderHover(HREF);
-    fireEvent.load(img(container));
-    expect(reportProxyLoad).toHaveBeenCalledWith(HREF, PROXIED);
-  });
-
-  test("無 href context → 不回報且不丟例外", () => {
+  test("已解析 → 渲染該 src 的 <img>", () => {
     const { container } = render(
       <OnHover value={{ src: PROXIED, height: 100 }} left={0} top={0} />,
     );
-    expect(() => fireEvent.load(img(container))).not.toThrow();
-    expect(reportProxyLoad).not.toHaveBeenCalled();
+    expect(img(container).getAttribute("src")).toBe(PROXIED);
   });
 
-  // 讀取中／非圖片描述子這兩條路徑不渲染 <img>，hooks 仍必須無條件呼叫（不可早退）。
   test("尚未解析完（無 value）→ 只有讀取指示器，不丟例外", () => {
-    const { container } = render(
-      <PreviewHrefContext.Provider value={HREF}>
-        <OnHover left={0} top={0} />
-      </PreviewHrefContext.Provider>,
-    );
+    const { container } = render(<OnHover left={0} top={0} />);
     expect(container.querySelector(".previewSpinner")).not.toBeNull();
-    expect(reportProxyLoad).not.toHaveBeenCalled();
+    expect(img(container)).toBeNull();
   });
 });

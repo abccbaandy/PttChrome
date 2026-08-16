@@ -690,8 +690,6 @@
 /* work mode：增強功能寫死色（main.css）一併壓灰 —— 樓層編號、原PO/pusher 高亮、
    舊式 .linkurl 紫紅連結。 */
 .work-mode-active .floorBadge{color:#9ca3af;}
-.work-mode-active .proxyBadge{color:#9ca3af;}
-.work-mode-active .proxyBadge--cache{color:#d1d5db;text-shadow:none;}
 .work-mode-active .commentByAuthor{background-color:#374151;}
 .work-mode-active .pusherHighlight{background-color:#1f2937;}
 .work-mode-active .linkurl{color:#6b7280;}

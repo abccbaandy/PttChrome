@@ -1,6 +1,6 @@
 // 回應標頭是本 Worker 對 app 端的第二個契約（第一個是 RE_ASSET 白名單）。
-// app 端的「連結旁代理狀態徽章」完全靠 Timing-Allow-Origin + Server-Timing 判定；
-// 少一個就變成「分不出代理服務的還是 fail-open 302 導回 imgur 的」→ 徽章全滅。
+// Timing-Allow-Origin + Server-Timing 現在只服務診斷（app 端的代理狀態徽章已移除，
+// 見 README「診斷用標頭」）：少了 TAO，DevTools 看到的跨網域計時欄位會全歸零。
 import { describe, test, expect } from "vitest";
 import { passthroughHeaders } from "../src/index.js";
 
@@ -19,7 +19,7 @@ describe("passthroughHeaders", () => {
   });
 
   // 命中時 Worker 不執行 ⇒ 吐的是建立快取當下的舊值。這兩個標頭必須同源於同一個
-  // 時間點，否則 curl 驗證（看 x-imgur-proxy-fetched-at）與前端判定會對不起來。
+  // 時間點，否則 curl 驗證（看 x-imgur-proxy-fetched-at）與 Server-Timing 會對不起來。
   test("Server-Timing 與 x-imgur-proxy-fetched-at 指向同一時刻", () => {
     const h = passthroughHeaders(upstream(), { cacheable: true, nowMs: NOW_MS });
     const stamp = Number(h.get("server-timing").split("desc=")[1]);

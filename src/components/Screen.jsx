@@ -2,7 +2,6 @@ import React from "react";
 import Row from "./Row";
 import ImagePreviewer, {
   of,
-  PreviewHrefContext,
   resolveSrcToImageUrl,
   resolveWithImageDOM,
 } from "./ImagePreviewer";
@@ -563,9 +562,6 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
   const [highlight, setHighlight] = React.useState(NO_HIGHLIGHT);
   const [currentImagePreview, setCurrentImagePreview] =
     React.useState(undefined);
-  // hover 預覽對應的原文連結：只為了讓 OnHover 能回報代理狀態徽章（見
-  // PreviewHrefContext / js/proxy_status.js）。與 currentImagePreview 同生同滅。
-  const [hoverPreviewHref, setHoverPreviewHref] = React.useState(undefined);
   const [pos, setPos] = React.useState({ left: undefined, top: undefined });
   // 好讀自動開圖「一鍵放大全部圖片至視窗寬度」開關；點任一張內嵌預覽圖切換。
   const [imagesEnlarged, setImagesEnlarged] = React.useState(false);
@@ -685,7 +681,6 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
         // effect）晚一拍才掛 handler —— 先標記 handled，避免 unhandledrejection。
         preview.catch(() => {});
         setCurrentImagePreview(preview);
-        setHoverPreviewHref(href);
       }
     },
     [enableLinkHoverPreview],
@@ -693,7 +688,6 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
 
   const handleHyperLinkMouseOut = React.useCallback(() => {
     setCurrentImagePreview(undefined);
-    setHoverPreviewHref(undefined);
   }, []);
 
   // 按鈕切換純屬 Screen 內部 state；換回終端機輸入焦點（隱藏 input #t），
@@ -1084,14 +1078,12 @@ export const Screen = React.forwardRef(function Screen(props, ref) {
           />
         )}
         {currentImagePreview && (
-          <PreviewHrefContext.Provider value={hoverPreviewHref}>
-            <ImagePreviewer
-              request={currentImagePreview}
-              component={ImagePreviewer.OnHover}
-              left={pos.left}
-              top={pos.top}
-            />
-          </PreviewHrefContext.Provider>
+          <ImagePreviewer
+            request={currentImagePreview}
+            component={ImagePreviewer.OnHover}
+            left={pos.left}
+            top={pos.top}
+          />
         )}
       </div>
     </PreviewSizeModeContext.Provider>
