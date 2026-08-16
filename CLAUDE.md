@@ -90,6 +90,14 @@ Vite 8（Rolldown 核心）+ React19（bundled）。React plugin 用 `@vitejs/pl
 - 待辦交接：`docs/handoff/`，一個 `.md` = 一個尚未完成的功能/修復；挑一個做完即**刪掉該 md**。詳見 `docs/handoff/README.md`。
 - git：**不開新功能分支**，直接在現有分支（`dev`）修改與 commit。
 - 不主動 commit
+- **有 7 個 fork 來的檔案在 repo 裡是以 CRLF 儲存**：`src/js/` 的 `term_view.js`、
+  `string_util.js`、`symbol_table.js`、`telnet.js`、`caption_ai_logic.js`、
+  `zh_TW_messages.js`、`en_US_messages.js`。編輯工具寫出的是 LF ⇒ **整個檔案被當成全改**
+  （實例：改 10 行的 `term_view.js` 噴出 3904 行 diff，review 與 `git blame` 全毀）。
+  `core.autocrlf=true` 又會把一般 `git add` 的內容存成 LF，所以修法是兩步：
+  先用 node 把檔案轉回 CRLF（`s.replace(/\r\n/g,'\n').replace(/\n/g,'\r\n')`），
+  再 `git -c core.autocrlf=false add <file>`。**commit 前先看 `git show --stat`／
+  `git diff --stat` 的行數是否與實際改動相稱**，不相稱就是踩到這個坑。
 - **push 後必查 CI**：每次 push 完都要確認 GitHub Actions（`Deploy to GitHub Pages` workflow，含 unit／integration／offline-e2e）有 pass，不能 push 完就收工。
   - **一律用 `yarn ci:status`**（`scripts/ci-status.mjs`，需 env `GH_TOKEN`）：等該 commit 的所有 run 跑完 → 印每個 run 結果 → 失敗時自動挖出失敗 job/step 並印 log 尾巴。
     參數：`--branch <b>`／`--sha <sha>`／`--no-wait`（只看當下）／`--rerun-failed`（僅在它判定為已知 flaky 時才會送出重跑）。
