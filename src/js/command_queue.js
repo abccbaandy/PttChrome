@@ -54,6 +54,15 @@ export function CommandQueue(opts) {
   // default = zero cost; when a hang is reproduced the recording carries the
   // full per-command timeline (which kind, how long, done/miss/timeout).
   this._onEvent = opts.onEvent || null;
+  // Optional "the wire is free now" notification (opt-in, null = zero cost).
+  // Fired ONLY when the queue really went empty — no in-flight AND no pending —
+  // which is why every call site sits AFTER _maybeSendNext(): open-jump's onDone
+  // enqueues open-enter, and announcing idle in between would hand the wire to a
+  // caller whose bytes the next command is about to collide with.
+  // Consumer: EasyReading.onWireIdle — its auto page-down is gated on this queue
+  // (easy_reading._send) and must be re-issued the moment the gate opens, not
+  // 620ms later via its own watchdog.
+  this._onIdle = opts.onIdle || null;
   this._inFlight = null;
   this._pending = [];
   this._softTimer = null;
@@ -109,6 +118,7 @@ CommandQueue.prototype = {
       this._finish();
       if (cmd.onDone) cmd.onDone(result);
       this._maybeSendNext();
+      this._maybeIdle();
       return 'done';
     } else if (cmd._probed) {
       // The probe's full frame arrived and expect still says no — that is a
@@ -118,6 +128,7 @@ CommandQueue.prototype = {
       this._finish();
       if (cmd.onFail) cmd.onFail('miss', facts);
       this._maybeSendNext();
+      this._maybeIdle();
       return 'miss';
     }
     // Response still in progress — the settle proves activity, extend.
@@ -152,11 +163,15 @@ CommandQueue.prototype = {
   // the native mirror, which renders anything correctly.
   flush: function() {
     const cmd = this._inFlight;
+    const wasBusy = !!cmd || this._pending.length > 0;
     if (cmd) this._emit('flush', cmd);
     this._finish();
     this._pending = [];
     // opt-in only (see cmd.onFlushed): everyone else keeps the silent contract.
     if (cmd && cmd.onFlushed) cmd.onFlushed();
+    // Only when the flush actually freed the wire — an already-idle flush
+    // (cleanup runs it unconditionally) must not spin the consumer.
+    if (wasBusy) this._maybeIdle();
   },
 
   // Drop only the queued-but-unsent commands, keeping the in-flight one so its
@@ -232,6 +247,13 @@ CommandQueue.prototype = {
     this._finish();
     if (cmd.onFail) cmd.onFail('timeout');
     this._maybeSendNext();
+    this._maybeIdle();
+  },
+
+  // See _onIdle: announce ONLY a genuinely empty queue, and only to an opt-in
+  // consumer. Never called before _maybeSendNext.
+  _maybeIdle: function() {
+    if (this._onIdle && this.idle) this._onIdle();
   },
 
   _emit: function(name, cmd) {

@@ -334,6 +334,10 @@ export function EasyReading(core, view, termBuf) {
   // would turn a false retry into a permanent stall.
   this._watchdogTimer = null;
   this._watchdogSig = null;
+  // 被 _wireBusy 延後的那一次自動翻頁請求（bytes），等 onWireIdle 補送。這不是
+  // 「已送出」的 in-flight，所以刻意跟 _inFlightKeys 分開放。per-article：
+  // _resetPagingState 會清掉它。
+  this._deferredPageDownKeys = null;
   // Gap self-heal budget, per article (see _healGap): a few cheap precise seeks, then
   // one expensive re-read from the top, then give up — bounded so a pathological
   // article can never loop.
@@ -580,6 +584,9 @@ EasyReading.prototype._resetPagingState = function() {
   this._pageDownRetries = 0;
   this._inFlightKeys = null;
   this._inFlightSentAt = null;
+  // 待補送的鍵是「這一篇」的：跨文章帶過去就是在新文章上憑空多送一次 PageDown
+  // （P4 重複送鍵）。與 _pendingScrollRestore / _pendingEnableOnArticle 同規。
+  this._deferredPageDownKeys = null;
   this._clearWatchdog();
   this._healGotoCount = 0;
   this._healHomeUsed = false;
@@ -621,6 +628,19 @@ EasyReading.prototype._clearWatchdog = function() {
 // runs the pure nextPageDownDecision, writes the resulting transaction state back and
 // sends at most one key. See nextPageDownDecision for the pmore invariants behind it.
 EasyReading.prototype._maybeSendPageDown = function(keys, recovery) {
+  // 線路上有別人的交易：這一次請求**延後**，不是丟棄。決策連跑都不跑，所以
+  // _inFlightSig／_inFlightSentAt／_pageDownRetries 全部原封不動，也不上膛 watchdog
+  // ——留下一筆「送出去了」的假紀錄正是 620ms 死時間與 giveup 的來源（見 onWireIdle）。
+  if (this._wireBusy()) {
+    this._deferredPageDownKeys = keys || this._inFlightKeys || '\x1b[6~';
+    this._core.debugRecorder?.log('easyReading.pageDown', {
+      action: 'blocked',
+      recovery: !!recovery,
+      navActive: !!this._core.aidNavigation?.active,
+      inFlightKind: this._core.commandQueue?.inFlightKind || null
+    });
+    return 'blocked';
+  }
   const status = this._currentPageStatus();
   const sinceSentMs = this._inFlightSentAt == null
     ? null : Date.now() - this._inFlightSentAt;
@@ -714,6 +734,11 @@ EasyReading.prototype._kickPageDown = function() {
 // accumulated; the Home re-read costs the whole article, which on a 4700-line post is
 // the "讀到一半自動從第一頁重讀" report — so it is the fallback, not the first move.
 EasyReading.prototype._healGap = function() {
+  // 線路上有別人的交易：整個自癒延後到下一次 settle（旗標刻意還沒清）。不能往下走
+  // 的理由是 _healFromTop 會先清掉 pageLines 才送 Home——被 _send 的閘門吞掉就只剩
+  // 一片空白畫面，而它沒有 watchdog 兜底。
+  if (this._wireBusy())
+    return;
   this._termBuf.easyReadingGapDetected = false;
   // Never stack heals: the outstanding one either lands (accumulatePageLines clears
   // easyReadingHealInFlight on the append) or the watchdog gives up on it.
@@ -1125,13 +1150,47 @@ EasyReading.prototype._send = function(data) {
   // 反過來不會卡到好讀：queue 的交易都在列表／選單／prompt 畫面上跑，而好讀只在
   // pageState 3 才送鍵；真的卡住也有 hardTimeout 兜底。
   // 守護：tests/unit/easy_reading_send_gate.test.js。
-  const core = this._core;
-  if (core.aidNavigation && core.aidNavigation.active) return;
-  if (core.commandQueue && core.commandQueue.inFlightKind) return;
+  // 最後一道防線：自動翻頁那條路在 _maybeSendPageDown 開頭就先攔下來並保留待補送
+  // （見 _wireBusy／onWireIdle）；這裡涵蓋其餘直接送鍵的呼叫點（_onKeyDown 的
+  // 方向鍵、switchToNativeAtBottom 的 End…），它們被吞掉只是該次動作沒發生，
+  // 不會像翻頁那樣留下假的 in-flight。
+  if (this._wireBusy()) return;
   // 走 TermView._send（內含 `if (this.conn)`）：view.conn 只在 App.onConnect 被設，
   // 連線從未成功時是 undefined，直接 deref 會 TypeError。見 pttchrome.jsx
   // switchToEasyReadingMode 的同類註解。
   this._view._send(data);
+};
+
+// 線路上有別人的交易嗎？（AID 跳文／deep link 導航，或 CommandQueue 的序列化指令）
+EasyReading.prototype._wireBusy = function() {
+  const core = this._core;
+  if (core.aidNavigation && core.aidNavigation.active) return true;
+  if (core.commandQueue && core.commandQueue.inFlightKind) return true;
+  return false;
+};
+
+// 線路空出來了（CommandQueue.onIdle → pttchrome 接線）。把被閘門延後的那個自動翻頁
+// 補送出去。
+//
+// 為什麼一定要有這條路：文章落地的那一個 settle 上，好讀**必然**比 queue 早一步跑
+// （pttchrome.jsx 的「ORDER MATTERS」刻意保證的註冊順序），所以它送第一個 PageDown
+// 時 open-enter／aid-open 都還掛在線上 → 一定被擋。少了這個通知，就只剩 _armWatchdog
+// 的 620ms 能救，等於每篇文章開頭固定卡一下（2026-08-17 回報），而且那次 retry 若又
+// 撞上別的交易就 giveup，整篇停在第一頁。
+//
+// 刻意不做重試迴圈：仍然忙的話 _maybeSendPageDown 會把鍵原封不動存回 _deferredPageDownKeys，
+// 下一次 idle 通知再試——自我保持，沒有 timer。
+EasyReading.prototype.onWireIdle = function() {
+  const keys = this._deferredPageDownKeys;
+  if (!keys) return;
+  // 好讀已關 / 進了鏡像模式：這個補送已無意義（換文章的清除見 _resetPagingState）。
+  if (!this._enabled || this._functionMode) {
+    this._deferredPageDownKeys = null;
+    return;
+  }
+  this._deferredPageDownKeys = null;
+  // recovery：這條路不是「畫面剛更新」的 fast path，而是補送一次從未上線的請求。
+  this._maybeSendPageDown(keys, /* recovery */ true);
 };
 
 // Temporarily leave easy reading: switch back to native rendering and jump to

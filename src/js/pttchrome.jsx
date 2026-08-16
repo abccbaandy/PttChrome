@@ -70,7 +70,12 @@ export const App = function() {
     // Per-command timeline into the debug recording (null recorder = zero
     // cost): a reproduced "畫面停住/處理中" hang shows exactly which kind sat
     // on the wire, for how long, and whether it ended done/miss/timeout.
-    onEvent: (name, info) => this.debugRecorder?.log('queue.' + name, info)
+    onEvent: (name, info) => this.debugRecorder?.log('queue.' + name, info),
+    // 線路空了就叫醒好讀：它的自動翻頁被 easy_reading._send 的閘門擋住時，是
+    // **延後**不是丟棄，而文章落地那一幀好讀必定比 queue 早跑（見上面的 ORDER
+    // MATTERS）⇒ 第一個 PageDown 一定被擋。少了這條線就只剩好讀自己的 620ms
+    // watchdog 能救，等於每篇文章開頭固定卡一下。見 easy_reading.onWireIdle。
+    onIdle: () => this.easyReading.onWireIdle()
   });
   this.listSession = new ListSession(this, this.view, this.buf, this.commandQueue);
   // AID (#文章代碼) link click → serialized native-key navigation to the target

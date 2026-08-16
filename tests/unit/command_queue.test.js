@@ -299,4 +299,86 @@ describe("CommandQueue", () => {
     const { q } = makeQueue();
     expect(() => settleWith(q, true)).not.toThrow();
   });
+
+  // onIdle：線路真的空出來的那一刻通知（好讀模式的 deferred 送鍵靠它補送）。
+  // 「真的空」= 沒有 in-flight 也沒有 pending，所以必須在 _maybeSendNext 之後判定：
+  // open-jump 的 onDone 會接著 enqueue open-enter，那種情況線路根本沒空過。
+  describe("onIdle（線路空出來的通知）", () => {
+    const makeIdleQueue = () => {
+      const sent = [];
+      const idle = vi.fn();
+      const q = new CommandQueue({ send: k => sent.push(k), onIdle: idle });
+      return { q, sent, idle };
+    };
+
+    test("done 之後線路空 → 通知一次", () => {
+      const { q, idle } = makeIdleQueue();
+      q.enqueue(cmd("A"));
+      expect(idle).not.toHaveBeenCalled();
+      settleWith(q, true);
+      expect(idle).toHaveBeenCalledTimes(1);
+    });
+
+    test("REGRESSION：onDone 內接續 enqueue（open-jump→open-enter）不算空", () => {
+      // 這條是本機制的核心陷阱：通知早一步發出去，好讀就會在下一個指令已經上線
+      // 的瞬間補送 → 又被閘門吞掉，等於沒修。
+      const { q, idle } = makeIdleQueue();
+      q.enqueue(
+        cmd("12\r", {
+          kind: "open-jump",
+          onDone: () => q.enqueue(cmd("\r", { kind: "open-enter" })),
+        })
+      );
+      settleWith(q, true);
+      expect(q.inFlightKind).toBe("open-enter");
+      expect(idle).not.toHaveBeenCalled();
+
+      settleWith(q, true); // open-enter 也完成 → 這時才真的空
+      expect(idle).toHaveBeenCalledTimes(1);
+    });
+
+    test("pending 還有指令時不通知（序列化中間不算空）", () => {
+      const { q, idle } = makeIdleQueue();
+      q.enqueue(cmd("A"));
+      q.enqueue(cmd("B"));
+      settleWith(q, true); // A 完成 → B 上線
+      expect(idle).not.toHaveBeenCalled();
+      settleWith(q, true); // B 完成
+      expect(idle).toHaveBeenCalledTimes(1);
+    });
+
+    test("miss / timeout 失敗收場也通知（線路一樣空了）", () => {
+      const miss = makeIdleQueue();
+      miss.q.enqueue(cmd("A", { timeoutMs: 1000, onFail: () => {} }));
+      vi.advanceTimersByTime(1000); // 探針
+      settleWith(miss.q, false); // 探針幀仍不符 → miss
+      expect(miss.idle).toHaveBeenCalledTimes(1);
+
+      const to = makeIdleQueue();
+      to.q.enqueue(cmd("A", { timeoutMs: 1000, onFail: () => {} }));
+      vi.advanceTimersByTime(1000 + 2000); // 探針窗也到期 → timeout
+      expect(to.idle).toHaveBeenCalledTimes(1);
+    });
+
+    test("flush 也通知（切原生／離板把線路清空）", () => {
+      const { q, idle } = makeIdleQueue();
+      q.enqueue(cmd("A"));
+      q.enqueue(cmd("B"));
+      q.flush();
+      expect(q.idle).toBe(true);
+      expect(idle).toHaveBeenCalledTimes(1);
+    });
+
+    test("本來就空的 flush 不通知（避免空轉喚醒）", () => {
+      const { q, idle } = makeIdleQueue();
+      q.flush();
+      expect(idle).not.toHaveBeenCalled();
+    });
+
+    test("沒給 onIdle 也不能炸", () => {
+      const { q } = makeQueue();
+      q.enqueue(cmd("A"));
+      expect(() => settleWith(q, true)).not.toThrow();
+    });
+  });
 });
