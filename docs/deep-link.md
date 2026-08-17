@@ -7,24 +7,70 @@
 
 | 形式 | 範例 | 產生 | 解析 |
 |---|---|---|---|
-| `#<Board>/<AID>` | `https://<站台>/#Gossiping/1gIeu-3A` | ✅ 正規 | ✅ |
-| `#/<Board>/<AID>` | 前導／尾端斜線 | ✗ | ✅ |
+| `#<Board>/M.<v1>.A.<v2>.html` | `https://<站台>/#Browsers/M.1786265274.A.5E3.html` | ✅ 正規 | ✅ |
+| `#<Board>/M.<v1>.A.<v2>` | 無 `.html` | ✗ | ✅ |
+| `#<Board>/<AID>` | `#Gossiping/1gIeu-3A`（2026-08 前的正規形式） | ✗ | ✅ |
+| `#/<Board>/…` | 前導／尾端斜線 | ✗ | ✅ |
 | `#aid=<AID>&board=<Board>` | 順序不拘 | ✗ | ✅ |
 | `?board=<Board>&aid=<AID>` | query（會整頁重載） | ✗ | ✅ |
 
+- **內部表示恆為 `{ board, aid }`**：檔名只是外觀，`aid_codec` 兩邊可逆
+  ⇒ `deep_link_entry` / `deep_link_controller` / `aid_navigation` 都不必知道有這回事。
+- 檔名形式＝把 `https://www.ptt.cc/bbs/<Board>/<檔名>.html` 的後兩段搬進 hash
+  ⇒ 「手上有文章網址 → 手組一條本站連結」只是複製貼上。
 - hash 優先於 query。任一欄位不合法 ⇒ `parseDeepLink` 回 `null` ⇒ 照常開站。
 - AID：`/^[0-9A-Za-z_-]{8}$/`（pttbbs `aidu2aidc`，恆 8 字）。
-- Board：`/^[0-9A-Za-z][0-9A-Za-z_.-]{1,31}$/`。**字元集必須收緊**：這個字串會被
-  原樣送進 `s<board>\r`，夾帶空白／換行等於多送一個按鍵給 PTT。
+- 檔名：`/^(M|G)\.(\d+)\.A(?:\.([0-9A-F]{3}))?$/`（`pttbbs/docs/aids.txt:49`），
+  `.A` 後面**可以沒有** hex（v2=0）。
+- Board：`/^[0-9A-Za-z][0-9A-Za-z_.-]{1,31}$/`（`aid_codec.BOARD_RE`，deep_link 共用同一份）。
+  **字元集必須收緊**：這個字串會被原樣送進 `s<board>\r`，夾帶空白／換行等於多送一個按鍵給 PTT。
 - **為什麼是 hash 不是 path**：GitHub Pages 無 `404.html` fallback（刻意不加），
   `/Gossiping/1gIeu-3A` 會吃 GitHub 404。hash 另外還有兩個好處：不進 Referer、
   同分頁再貼一次只觸發 `hashchange`（不重載、不用重新登入）。
 - 消費後 `history.replaceState` 清掉參數（`stripDeepLink`），否則 F5 會重跳一次。
 
+## 本篇 AID 的兩條取得路徑
+
+「我現在在讀哪一篇」是複製連結、返回錨點、網址列同步共同的前提。畫面上的 `#AID`
+一律是內文引用的**別篇**，不能拿來用。
+
+| 路徑 | 成本 | 條件 |
+|---|---|---|
+| `aidNavigation.findLocalPostAid()` | **零指令、畫面不動** | 畫面／累積頁上讀得到 `※ 文章網址: …` 那行 |
+| `aidNavigation.queryPostAid()`（按 `Q`） | 被 `FULLUPDATE` 抛回文章列表，需 `␣`+`⏎` 回原處（看得到畫面在閃） | 永遠可用 |
+
+`resolvePostAid()` 是統一入口（先免費、落空才按 Q），**`onDone(info, meta)` 的
+`meta.boxOpen` 不可忽略**：它說「資訊框正開著、需要關」。免費路徑下沒有框，照舊送
+`␣` 會被 pager 當成 PageDown、`⏎` 又再翻一頁 ⇒ 閱讀位置被弄丟。
+
+免費路徑的兩個守則（缺一就會複製到**別人那篇**的連結）：
+
+1. `parseArticleUrlLine` 的 regex **錨在列首** — 回文的引言區塊會原樣帶著原文那行
+   （`: ※ 文章網址: …`）。
+2. 命中後**比對看板**（不分大小寫）。轉錄文會原樣複製原文內容、連原文那行一起帶進來
+   （`mbbsd/bbs.c:2162-2179`）；所幸 pttbbs 擋掉同板轉錄（`bbs.c:2097`「同板不需轉錄。」）
+   ⇒ 看板不符就是原文而非本篇。
+
+> `※ 文章網址:` 那行是 ptt.cc 私有 patch，不在開源 pttbbs 快照裡 ⇒ 一律當
+> best-effort，取不到就退回按 Q（行為與這條路徑不存在時完全相同）。
+
+## 網址列同步（`_syncAddressBar`）
+
+- `pageState === 3`（READING）且 `findLocalPostAid()` 算得出來 ⇒ 寫入正規形式連結。
+- 離開文章 ⇒ `stripDeepLink` 清回站台根網址。
+- 算不出來 ⇒ **什麼都不做**（維持現況；使用者可能正是從一條 deep link 進來的）。
+- **絕不為了填網址列自動按 Q**：長文從第一頁讀時網址列先停在根網址，滾到內文末尾
+  那行進畫面後才補上——這是刻意的取捨（使用者 2026-08-17 拍板）。
+- 一律 `replaceState`：不留瀏覽歷史，而且它**不觸發 `hashchange`**
+  ⇒ 不會被 `deep_link_entry` 的監聽者當成「有人貼了新連結」而自我重跳。
+- `file://` 下 `replaceState` 會 throw ⇒ 包 `try/catch`，不可中斷 settle 流程。
+
 ## 檔案分工
 
 | 檔案 | 職責 | 純度 |
 |---|---|---|
+| `src/js/aid_codec.js` | `fnToAid` / `aidToFn` / `parseArticleUrl` / `BOARD_RE` | 純函式 |
+| `src/js/article_link_target.js` | 右鍵選單「游標下這個 `<a>` 指向哪一篇」 | 吃 anchor-like |
 | `src/js/deep_link.js` | `parseDeepLink` / `buildDeepLink` / `stripDeepLink` | 純函式 |
 | `src/js/deep_link_channel.js` | `createChannel` / `claimHandoff` / `serveHandoff` | 注入 channel+timer |
 | `src/js/deep_link_controller.js` | 排程（何時跳、用哪個入口）＋ 複製連結 | 注入 core/view/buf |

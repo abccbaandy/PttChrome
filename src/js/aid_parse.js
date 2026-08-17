@@ -19,6 +19,7 @@
 // LinkSegmentBuilder.readChar(ch, i).
 
 import { rangeInTermUrl } from './term_url_flag';
+import { parseArticleUrl } from './aid_codec';
 
 const AID_LEN = 8;
 
@@ -97,6 +98,44 @@ export function parsePostInfoAid(rowText) {
   const m = POST_INFO_AID_RE.exec(rowText);
   if (!m) return null;
   return { aid: m[1], board: m[2] || null };
+}
+
+// 「本篇是哪一篇」的第二條路，而且是**免費**的：文章本文末尾那行
+//   ※ 文章網址: https://www.ptt.cc/bbs/<Board>/M.<v1>.A.<v2>.html
+// 已經把檔名寫在畫面上了，aid_codec 直接換算得到 AID，不必按 Q（按 Q 會被
+// FULLUPDATE 抛回文章列表，得再花兩個指令回來，畫面看得出來在閃）。
+//
+// 兩個非顯而易見的約束：
+//   1. **必須錨在列首**。回文的引言區塊會原樣帶著原文那行，長成 `: ※ 文章網址: …`；
+//      不錨列首就會把「別人那篇」當成本篇。
+//   2. 命中之後呼叫端**還要比對看板**（見 aid_navigation.findLocalPostAid）。轉錄文
+//      會原樣複製原文內容、連原文的這行一起帶進來（pttbbs mbbsd/bbs.c:2162-2179），
+//      而 pttbbs 擋掉同板轉錄（bbs.c:2097 "同板不需轉錄。"）⇒ 看板不符就是轉錄來的原文。
+//
+// 這行是 ptt.cc 私有 patch，不在開源 pttbbs 快照裡：一律當 best-effort，取不到就退回按 Q。
+const ARTICLE_URL_LINE_RE = /^\s*※\s*文章網址\s*[:：]\s*(\S+)/;
+
+// Q 資訊框的網址列（mbbsd/bbs.c:3713，QUERY_ARTICLE_URL）：
+//   │ 文章網址: https://www.ptt.cc/bbs/<Board>/M.<v1>.A.<v2>.html
+// 價值在於補 board：currboard 為空時上面那列的看板會印「未知」（bbs.c:3701），
+// 但網址裡的看板一直是對的。看板不提供網頁版時 pttbbs 改印
+// 「本看板目前不提供文章網址」/「本文章不提供文章網址」——那兩行沒有 URL，
+// parseArticleUrl 自然回 null。
+const POST_INFO_URL_RE = /^\s*│\s*文章網址\s*[:：]\s*(\S+)/;
+
+function urlLine(re, rowText) {
+  if (!rowText) return null;
+  const m = re.exec(rowText);
+  return m ? parseArticleUrl(m[1]) : null;
+}
+
+// → { board, aid } | null（board 來自網址路徑，一定有值）
+export function parseArticleUrlLine(rowText) {
+  return urlLine(ARTICLE_URL_LINE_RE, rowText);
+}
+
+export function parsePostInfoUrl(rowText) {
+  return urlLine(POST_INFO_URL_RE, rowText);
 }
 
 // Returns [{ startCol, endCol, aid, board }] where startCol is the '#' column

@@ -50,6 +50,12 @@
   "cmenu_copyArticleLink": {
     "message": "複製本篇文章連結"
   },
+  "cmenu_copyArticleAid": {
+    "message": "複製文章代碼 (AID)"
+  },
+  "cmenu_copyArticleDeepLink": {
+    "message": "複製文章分享連結"
+  },
   "cmenu_mouseBrowsing": {
     "message": "滑鼠瀏覽"
   },

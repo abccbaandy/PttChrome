@@ -178,6 +178,9 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
   `│ 文章代碼(AID): #<8碼AIDc> (<板名>) [ptt.cc] <標題截斷>`，其後可有 `│ 文章網址: https://…`（`QUERY_ARTICLE_URL`）、金錢／匿名／投票列。
   `AID_DISPLAYNAME` = `include/common.h:154`。`currboard` 為空時板名印中文「不明」。
 - **本篇無合法 AID（`fn2aidu()<=0`）時只印一根 `│`**（`bbs.c:3707`）⇒ client 不可假設一定讀得到。
+- **AIDc ⇄ 檔名 `M.<v1>.A.<v2>` 完全可逆、可離線算**（`mbbsd/aids.c`：`fn2aidu`/`aidu2aidc`/`aidc2aidu`/`aidu2fn`）。位元佈局、64 字表、`%03X` 等細節**內嵌在 `src/js/aid_codec.js` 的檔頭**（逐行標了 aids.c 行號），此處不重抄。看板名不在 AIDc 裡 ⇒ 短碼還原成完整網址一定得外部提供看板。
+  - 因此 client 有**免費**取得「本篇 AID」的第二條路：讀本文的 `※ 文章網址: https://www.ptt.cc/bbs/<Board>/<檔名>.html` 再換算，不必按 `Q`（`aid_navigation.findLocalPostAid`）。守則與取捨見 `docs/deep-link.md`「本篇 AID 的兩條取得路徑」。
+  - **同板轉錄被擋**（`bbs.c:2097`「同板不需轉錄。」）⇒ 「網址裡的看板 ≠ 目前看板」足以判定那行是轉錄帶進來的**原文**網址。
 - **MODE_SELECT 下數值仍正確**：`view_postinfo` 讀的是 `fhdr->filename`（篩選清單的 record 帶的是真實檔名），不碰 `bbs.c:3732` 註記會亂掉的 `multi`。
 - **收尾 `pressanykey()`（`bbs.c:3773`）＝ `vmsg(NULL)`（`proto.h:636`／`vtuikit.c:439-455`）吃掉正好一個鍵**，然後 `FULLUPDATE`。
   - **框畫在「剛離開的文章畫面」上**（`view_postinfo` 用 `grayout()` 壓灰背景），要等 `pressanykey` 收掉後才由 `read_post` 的 `return FULLUPDATE` 重繪**列表** ⇒ 框在時 client 看到的底色仍是文章。

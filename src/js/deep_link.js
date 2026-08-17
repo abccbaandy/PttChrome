@@ -10,36 +10,31 @@
 //   - hash 不會送到 server，也不會進 Referer。
 //   - 同一個分頁再貼一次連結只觸發 hashchange，不重載、不重新登入。
 //
-// 產生用的正規形式刻意做到最短、讓人手打得出來（需求：其他程式要能輕鬆手組）：
-//   https://<站台>/#<Board>/<AID>
-//   https://example.github.io/pttchrome/#Gossiping/1gIeu-3A
-// 另外相容兩種只吃不產的形式，讓既有的 key=value 習慣也能用：
+// 產生用的正規形式**照著 ptt.cc 網頁版的樣子**寫，看得出是哪一篇：
+//   https://<站台>/#<Board>/M.<v1>.A.<v2>.html
+//   https://example.github.io/pttchrome/#Gossiping/M.1786265274.A.5E3.html
+// 也就是把 https://www.ptt.cc/bbs/<Board>/<檔名>.html 的後兩段搬進 hash，
+// 於是「手上有文章網址 → 手組一條本站連結」只是複製貼上。
+// 另外相容三種只吃不產的形式：
+//   #<Board>/<AIDc>               （2026-08 之前產出的短碼形式，永遠要吃得下）
 //   #aid=<AID>&board=<Board>      （順序不拘）
 //   ?board=<Board>&aid=<AID>      （query，會整頁重載）
+//
+// 內部表示一律是 { board, aid }：檔名只是外觀，aid_codec 兩邊可逆，所以
+// deep_link_entry / deep_link_controller / aid_navigation 全都不必知道這件事。
 
-// AIDc 恆為 8 字，字元集 "0123456789A-Za-z-_"（pttbbs mbbsd/aids.c aidu2aidc）
-// —— 與 aid_parse.js 的 AID_LEN / isAidChar 同一組規則，那裡是逐格掃描版。
-const AID_RE = /^[0-9A-Za-z_-]{8}$/;
+import { BOARD_RE, aidToFn, fnToAid, isAidc } from "./aid_codec";
 
-// pttbbs 板名：brdname[IDLEN + 1]，IDLEN = 12。上限放寬到 32 只是防呆用的長度
-// 閘門（真的不存在的板名交給 PTT 自己回「找不到看板」比較誠實），字元集則必須
-// 收緊：這個字串會被原樣送進 `s<board>\r`，不可以夾雜控制字元或空白。
-const BOARD_RE = /^[0-9A-Za-z][0-9A-Za-z_.-]{1,31}$/;
-
-// #<Board>/<AID>，允許前導斜線（#/Gossiping/1abcDEFG 也吃）
+// #<Board>/<AID 或檔名>，允許前導斜線（#/Gossiping/1abcDEFG 也吃）
 const PATH_FORM_RE = /^\/?([^/]+)\/([^/]+)\/?$/;
 
 const QUERY_KEYS = ["board", "aid"];
 
 // 型別檢查不可省：RegExp#test 會先把參數轉成字串，BOARD_RE.test(null) 拿到的是
 // "null" ⇒ 通過，於是 buildDeepLink(base, null, aid) 會產出 "#null/<aid>"。
+// （isAidc 自己已含型別檢查。）
 function isValid(board, aid) {
-  return (
-    typeof board === "string" &&
-    typeof aid === "string" &&
-    BOARD_RE.test(board) &&
-    AID_RE.test(aid)
-  );
+  return typeof board === "string" && BOARD_RE.test(board) && isAidc(aid);
 }
 
 // decodeURIComponent 對半截的 % 序列會 throw；壞字串一律當成「沒有 deep link」。
@@ -51,11 +46,14 @@ function safeDecode(s) {
   }
 }
 
-function fromPair(board, aid) {
-  if (!board || !aid) return null;
+// 第二欄吃兩種寫法：檔名 M.<v1>.A.<v2>(.html)（正規形式）與 8 字 AIDc（舊形式）。
+// 先試 AIDc 再試檔名的順序無所謂——兩者字元集不重疊（AIDc 不含 '.'）。
+function fromPair(board, aidOrFn) {
+  if (!board || !aidOrFn) return null;
   const b = safeDecode(board);
-  const a = safeDecode(aid);
-  if (b === null || a === null) return null;
+  const raw = safeDecode(aidOrFn);
+  if (b === null || raw === null) return null;
+  const a = isAidc(raw) ? raw : fnToAid(raw);
   return isValid(b, a) ? { board: b, aid: a } : null;
 }
 
@@ -88,15 +86,20 @@ export function parseDeepLink(href) {
 
 // 分享用連結。刻意只保留 origin + pathname：目前的 query 可能帶著這台機器才有
 // 意義的東西（?site= 之類），不該跟著散出去。
+//
+// 產出的是檔名形式（`#<Board>/M.<v1>.A.<v2>.html`），與 ptt.cc 的文章網址同形；
+// 短碼形式改為只吃不產。parseDeepLink 兩種都解得回同一個 { board, aid }。
 export function buildDeepLink(baseHref, board, aid) {
   if (!isValid(board, aid)) return null;
+  const fn = aidToFn(aid);
+  if (!fn) return null;
   let url;
   try {
     url = new URL(baseHref);
   } catch (e) {
     return null;
   }
-  return url.origin + url.pathname + "#" + board + "/" + aid;
+  return url.origin + url.pathname + "#" + board + "/" + fn + ".html";
 }
 
 // 消費掉 deep link 後要呼叫（history.replaceState 用）：不然使用者按 F5 會再跳

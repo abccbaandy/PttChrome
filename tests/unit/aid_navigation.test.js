@@ -61,7 +61,12 @@ function makeHarness({
   articleBoard = null,
   // 捲動位置（像素）＋行高：錨點記的是「行索引」= scrollTop / chh
   scrollTop = null,
-  chh = 20
+  chh = 20,
+  // findLocalPostAid 用：pageState 3 = READING；pageLines = 好讀累積長頁
+  // （這裡用「每列一個字串」的簡化型，假 getRowText 直接取用）。
+  pageState = null,
+  pageLines = null,
+  screenRows = null
 } = {}) {
   const sent = [];
   const queue = new CommandQueue({ send: d => sent.push(d) });
@@ -87,9 +92,12 @@ function makeHarness({
     startedEasyReading: true,
     rows: 24,
     cols: 80,
-    rowTexts: screen({ last: footer, mark: "文章內文" }),
-    getRowText(row) {
-      return this.rowTexts[row] || "";
+    pageState,
+    pageLines,
+    rowTexts: screenRows || screen({ last: footer, mark: "文章內文" }),
+    // 真的 getRowText 第四個參數是「改讀這一組 lines」（好讀累積長頁）。
+    getRowText(row, colStart, colEnd, lines) {
+      return (lines || this.rowTexts)[row] || "";
     }
   };
   const core = {
@@ -1196,5 +1204,236 @@ describe("queryPostAid / dismissPostInfo", () => {
     h.nav.start("1gIeu-3A", "Android");
     answerOriginInfo(h.queue, "1gKF7GO4");
     expect(h.sent[1]).toBe(" sAndroid\r\f");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 免費路徑：文章本文的「※ 文章網址:」那行就能換算出本篇 AID，省掉按 Q。
+// 按 Q 的代價是 FULLUPDATE（bbs.c:2375-2377）＝被抛回文章列表，得再花 ␣ + ⏎
+// 兩個指令回來，使用者看得到畫面在閃。
+// 檔名 ⇄ AID 的換算對照值守在 aid_codec.test.js。
+// ---------------------------------------------------------------------------
+const URL_ROW = (board, fn) =>
+  "※ 文章網址: https://www.ptt.cc/bbs/" + board + "/" + fn + ".html";
+const BROWSERS_FN = "M.1786265274.A.5E3";
+const BROWSERS_AID = "1gU3wwNZ";
+
+// 一個「人在文章裡、畫面上看得到文章網址那行」的原生畫面。
+function articleScreenWithUrl(board = "Browsers", fn = BROWSERS_FN) {
+  const rows = screen({ last: STATUS_ROW, mark: "文章內文" });
+  rows[18] = URL_ROW(board, fn);
+  return rows;
+}
+
+describe("findLocalPostAid（免費取得本篇 AID）", () => {
+  test("原生畫面上讀得到 ※ 文章網址 → 直接換算出 AID", () => {
+    const { nav } = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl()
+    });
+    expect(nav.findLocalPostAid()).toEqual({
+      board: "Browsers",
+      aid: BROWSERS_AID
+    });
+  });
+
+  test("看板比對不分大小寫", () => {
+    const { nav } = makeHarness({
+      pageState: 3,
+      articleBoard: "browsers",
+      screenRows: articleScreenWithUrl()
+    });
+    expect(nav.findLocalPostAid()).not.toBeNull();
+  });
+
+  // 轉錄文會原樣複製原文內容、連原文那行網址一起帶進來（bbs.c:2162-2179）。
+  // pttbbs 擋掉同板轉錄（bbs.c:2097「同板不需轉錄。」）⇒ 看板不符就是原文，
+  // 拿去用會複製到「別人那篇」的連結。
+  test("看板不符（轉錄文帶進來的原文網址）→ null，退回按 Q", () => {
+    const { nav } = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl("C_Chat")
+    });
+    expect(nav.findLocalPostAid()).toBeNull();
+  });
+
+  test("引言列（回文帶進來的原文網址）不算", () => {
+    const rows = screen({ last: STATUS_ROW });
+    rows[5] = ": " + URL_ROW("Browsers", BROWSERS_FN);
+    const { nav } = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: rows
+    });
+    expect(nav.findLocalPostAid()).toBeNull();
+  });
+
+  test("不在文章裡（pageState ≠ 3）→ null", () => {
+    const { nav } = makeHarness({
+      pageState: 1,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl()
+    });
+    expect(nav.findLocalPostAid()).toBeNull();
+  });
+
+  // 站內信／精華區沒有看板 ⇒ 守不了門，也組不出連結。
+  test("沒有 _articleBoard → null", () => {
+    const { nav } = makeHarness({
+      pageState: 3,
+      articleBoard: null,
+      screenRows: articleScreenWithUrl()
+    });
+    expect(nav.findLocalPostAid()).toBeNull();
+  });
+
+  test("畫面上沒有那行 → null", () => {
+    const { nav } = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: screen({ last: STATUS_ROW, mark: "文章內文" })
+    });
+    expect(nav.findLocalPostAid()).toBeNull();
+  });
+
+  describe("好讀累積長頁（pageLines）", () => {
+    test("累積頁裡的那行也讀得到", () => {
+      const acc = ["作者 someone (某人) 看板 Browsers", "標題 [問題] 測試"];
+      acc[40] = URL_ROW("Browsers", BROWSERS_FN);
+      const { nav } = makeHarness({
+        pageState: 3,
+        articleBoard: "Browsers",
+        pageLines: acc
+      });
+      expect(nav.findLocalPostAid()).toEqual({
+        board: "Browsers",
+        aid: BROWSERS_AID
+      });
+    });
+
+    // 長文從第一頁開始讀時那行還沒進來；翻到末尾才會出現。之前掃過的列不重掃
+    // （pageLines 只會往後 concat），但新來的列必須掃得到。
+    test("長文：先掃不到，累積到末尾後掃得到", () => {
+      const acc = ["作者 someone (某人) 看板 Browsers"];
+      const { nav, termBuf } = makeHarness({
+        pageState: 3,
+        articleBoard: "Browsers",
+        pageLines: acc
+      });
+      expect(nav.findLocalPostAid()).toBeNull();
+      acc.push("內文……");
+      acc.push(URL_ROW("Browsers", BROWSERS_FN));
+      termBuf.pageLines = acc;
+      expect(nav.findLocalPostAid()).toEqual({
+        board: "Browsers",
+        aid: BROWSERS_AID
+      });
+    });
+
+    // 換文章時 pageLines 被清掉重建。快取沒歸零的話，下一篇會拿到上一篇的 AID
+    // ——同一個看板的下一篇正好躲過看板守門，症狀是「複製到剛剛那篇的連結」。
+    test("換文章（pageLines 重建）→ 快取歸零，不得沿用上一篇的 AID", () => {
+      const first = ["作者 aaa (甲) 看板 Browsers", URL_ROW("Browsers", BROWSERS_FN)];
+      const { nav, termBuf } = makeHarness({
+        pageState: 3,
+        articleBoard: "Browsers",
+        pageLines: first
+      });
+      expect(nav.findLocalPostAid().aid).toBe(BROWSERS_AID);
+      // 同看板的下一篇，且累積頁還沒長到那行。
+      termBuf.pageLines = ["作者 bbb (乙) 看板 Browsers", "內文……"];
+      expect(nav.findLocalPostAid()).toBeNull();
+    });
+
+    test("累積頁變長但首列換了（同樣是換文章）→ 也要歸零", () => {
+      const first = ["作者 aaa (甲) 看板 Browsers", URL_ROW("Browsers", BROWSERS_FN)];
+      const { nav, termBuf } = makeHarness({
+        pageState: 3,
+        articleBoard: "Browsers",
+        pageLines: first
+      });
+      expect(nav.findLocalPostAid().aid).toBe(BROWSERS_AID);
+      termBuf.pageLines = ["作者 bbb (乙) 看板 Browsers", "內文……", "更多內文"];
+      expect(nav.findLocalPostAid()).toBeNull();
+    });
+  });
+});
+
+describe("resolvePostAid（免費路徑優先，落空才按 Q）", () => {
+  test("免費路徑：一個指令都不送，meta.boxOpen 為 false", () => {
+    const { nav, sent } = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl()
+    });
+    const done = [];
+    nav.resolvePostAid({
+      kind: "t",
+      onDone: (info, meta) => done.push({ info, meta }),
+      onFail: () => done.push("fail")
+    });
+    expect(sent).toEqual([]);
+    expect(done).toEqual([
+      {
+        info: { board: "Browsers", aid: BROWSERS_AID },
+        meta: { boxOpen: false }
+      }
+    ]);
+  });
+
+  test("落空：照舊送 Q，meta.boxOpen 為 true", () => {
+    const { nav, queue, sent } = makeHarness();
+    const done = [];
+    nav.resolvePostAid({
+      kind: "t",
+      onDone: (info, meta) => done.push({ info, meta }),
+      onFail: () => done.push("fail")
+    });
+    expect(sent).toEqual(["Q"]);
+    answerOriginInfo(queue, "1gKF7GO4");
+    expect(done).toEqual([
+      {
+        info: { aid: "1gKF7GO4", board: "C_Chat" },
+        meta: { boxOpen: true }
+      }
+    ]);
+  });
+});
+
+describe("正向跳轉走免費路徑", () => {
+  test("不送 Q，板跳指令也不得帶關框用的前導空白", () => {
+    // 帶前導空白的話，那個空白在 pager 裡是 PageDown（框根本沒開）。
+    const { nav, sent } = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl()
+    });
+    nav.start("1gIeu-3A", "Android");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).not.toBe("Q");
+    expect(sent[0].startsWith("sAndroid\r")).toBe(true);
+  });
+
+  test("免費路徑取得的 AID 一樣被升級成返回錨點", () => {
+    const h = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl(),
+      listAnchor: { board: "Browsers", num: 100, subject: "[閒聊] 原本那篇" }
+    });
+    h.nav.start("1gIeu-3A", "Android");
+    // 沒有 Q 那一步，板跳是第一個指令 ⇒ 直接餵板跳之後的畫面。
+    settle(h.queue, facts("clean-list", { boardName: "Android" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "Android", cursorRowNum: 5, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    expect(h.nav.canGoBack()).toBe(true);
+    // 錨點升級成「本篇自己的 AID」——這正是免費路徑要拿到的東西（沒升級的話
+    // 會退回列表第 100 篇那種會被刪文位移的錨點）。
+    expect(h.backButton.label).toBe("#" + BROWSERS_AID);
   });
 });

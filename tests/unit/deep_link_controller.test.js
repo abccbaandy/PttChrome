@@ -3,8 +3,12 @@
 // 已經在 aid_navigation.test.js 驗過了），這裡守的是排程行為。
 
 import { DeepLinkController } from "../../src/js/deep_link_controller";
+import { parseDeepLink } from "../../src/js/deep_link";
 
 const TARGET = { board: "Gossiping", aid: "1gIeu-3A" };
+// 分享連結的正規形式是檔名形式（#<Board>/M.<v1>.A.<v2>.html），不是短碼。
+// 換算對照值守在 aid_codec.test.js。
+const FN = "M.1783270974.A.0CA.html";
 const MAIN_MENU_ROW0 = "【主功能表】 (0)離開 (1)資訊 (2)聊天";
 // 文章 pager 的末列（string_util.parseStatusRow 認得的形狀）
 const STATUS_ROW =
@@ -41,6 +45,13 @@ function makeHarness({
     // 決定 PTT「回答」了什麼（真實序列已在 aid_navigation.test.js 驗過）。
     queries: [],
     reopenArgs: [],
+    // 免費路徑（文章畫面上的「※ 文章網址:」那行）的答案，由 test 指定。
+    localAid: null,
+    localCalls: 0,
+    findLocalPostAid() {
+      this.localCalls++;
+      return this.localAid;
+    },
     queryPostAid(handlers) {
       this.queries.push(handlers);
     },
@@ -235,7 +246,7 @@ describe("複製本篇連結", () => {
     expect(h.ctl.copyCurrentPostLink()).toBe(true);
     expect(h.nav.queries).toHaveLength(1);
     h.nav.queries[0].onDone({ aid: "1gIeu-3A", board: "movie" });
-    expect(written).toEqual([BASE + "#movie/1gIeu-3A"]);
+    expect(written).toEqual([BASE + "#movie/" + FN]);
     // 回原處永遠要走，否則使用者被丟在 Q 之後的文章列表上
     expect(h.nav.reopenArgs).toHaveLength(1);
     await Promise.resolve();
@@ -315,7 +326,7 @@ describe("複製本篇連結", () => {
     h.nav.queries[0].onDone({ aid: "1gIeu-3A", board: "movie" });
     await Promise.resolve();
     await Promise.resolve();
-    expect(h.hints.some(m => m.includes(BASE + "#movie/1gIeu-3A"))).toBe(true);
+    expect(h.hints.some(m => m.includes(BASE + "#movie/" + FN))).toBe(true);
   });
 
   test("跳轉進行中不搶 queue", () => {
@@ -380,5 +391,169 @@ describe("壞輸入", () => {
     expect(h.ctl.request({ aid: "1gIeu-3A" })).toBeNull();
     expect(h.nav.externalCalls).toEqual([]);
     expect(h.ctl.hasPending()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 免費路徑：文章畫面上讀得到「※ 文章網址:」那行時，AID 用 aid_codec 直接換算，
+// 完全不必按 Q。按 Q 的代價是被 FULLUPDATE 抛回文章列表（bbs.c:2375-2377），
+// 得再花 ␣ + ⏎ 兩個指令回來 —— 使用者看得到畫面在閃。
+// ---------------------------------------------------------------------------
+describe("複製本篇連結：免費路徑", () => {
+  const BASE = "https://example.github.io/pttchrome/";
+
+  function withClipboard(ctl) {
+    const written = [];
+    ctl._locationHref = () => BASE;
+    ctl._clipboard = () => ({
+      writeText: text => {
+        written.push(text);
+        return Promise.resolve();
+      }
+    });
+    return written;
+  }
+
+  test("讀得到文章網址 → 不按 Q，直接組出連結", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    const written = withClipboard(h.ctl);
+    expect(h.ctl.copyCurrentPostLink()).toBe(true);
+    expect(h.nav.queries).toEqual([]);
+    expect(written).toEqual([BASE + "#movie/" + FN]);
+  });
+
+  // 沒按 Q 就沒有框要關、也沒被抛回列表。照舊送 ␣ + ⏎ 的話，那個空白在 pager
+  // 裡是 PageDown、⏎ 又再翻一頁 ⇒ 複製一下連結就把閱讀位置弄丟了。
+  test("REGRESSION：免費路徑不得呼叫 reopenAfterPostInfo", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW, scrollTop: 240, chh: 20 });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    withClipboard(h.ctl);
+    h.ctl.copyCurrentPostLink();
+    expect(h.nav.reopenArgs).toEqual([]);
+  });
+
+  // 免費路徑對畫面應該毫無副作用：進 functionMode 會停掉好讀的累積／翻頁並強制
+  // 重繪，使用者看得出來，而這裡根本沒有原生插曲要保護。
+  test("REGRESSION：免費路徑不得進 functionMode", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    withClipboard(h.ctl);
+    h.ctl.copyCurrentPostLink();
+    expect(h.easyReading.functionModeCalls).toBe(0);
+  });
+
+  test("讀不到 → 照舊退回按 Q 的完整流程", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW, scrollTop: 240, chh: 20 });
+    h.nav.localAid = null;
+    withClipboard(h.ctl);
+    h.ctl.copyCurrentPostLink();
+    expect(h.nav.queries).toHaveLength(1);
+    expect(h.easyReading.functionModeCalls).toBe(1);
+    h.nav.queries[0].onDone({ aid: "1gIeu-3A", board: "movie" });
+    expect(h.nav.reopenArgs).toEqual([12]);
+  });
+
+  test("不在文章裡時連問都不問", () => {
+    const h = makeHarness({ lastRow: "" });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    withClipboard(h.ctl);
+    expect(h.ctl.copyCurrentPostLink()).toBe(false);
+    expect(h.nav.localCalls).toBe(0);
+    expect(h.nav.queries).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 網址列跟著「現在在讀哪一篇」走。資料來源只有免費的 findLocalPostAid：
+// 絕不為了填網址列去按 Q（那會把畫面抛回列表再重開）。
+// ---------------------------------------------------------------------------
+describe("網址列自動同步", () => {
+  const BASE = "https://example.github.io/pttchrome/";
+
+  function withAddressBar(h, startHref = BASE) {
+    const replaced = [];
+    let href = startHref;
+    h.ctl._locationHref = () => href;
+    h.ctl._replaceState = next => {
+      replaced.push(next);
+      href = next;
+    };
+    return replaced;
+  }
+
+  test("進文章且算得出 AID → 寫入檔名形式的 deeplink", () => {
+    const h = makeHarness();
+    const replaced = withAddressBar(h);
+    h.termBuf.pageState = 3;
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    h.settle();
+    expect(replaced).toEqual([BASE + "#movie/" + FN]);
+  });
+
+  test("離開文章 → 清回站台根網址", () => {
+    const h = makeHarness();
+    const replaced = withAddressBar(h, BASE + "#movie/" + FN);
+    h.termBuf.pageState = 1;
+    h.settle();
+    expect(replaced).toEqual([BASE]);
+  });
+
+  // 長文從第一頁開始讀時「※ 文章網址」那行還沒進畫面。這時什麼都不做，
+  // 不可以清掉——使用者很可能正是從一條 deep link 點進來的。
+  test("在文章裡但還算不出 AID → 網址列維持現況", () => {
+    const h = makeHarness();
+    const replaced = withAddressBar(h, BASE + "#movie/" + FN);
+    h.termBuf.pageState = 3;
+    h.nav.localAid = null;
+    h.settle();
+    expect(replaced).toEqual([]);
+  });
+
+  test("同一篇再 settle 一次不重複寫", () => {
+    const h = makeHarness();
+    const replaced = withAddressBar(h);
+    h.termBuf.pageState = 3;
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    h.settle();
+    h.settle();
+    expect(replaced).toHaveLength(1);
+  });
+
+  test("寫進去的連結自己解得回來（F5 會停在同一篇）", () => {
+    const h = makeHarness();
+    const replaced = withAddressBar(h);
+    h.termBuf.pageState = 3;
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    h.settle();
+    expect(parseDeepLink(replaced[0])).toEqual({
+      board: "movie",
+      aid: "1gIeu-3A"
+    });
+  });
+
+  // 絕不按 Q：那是 FULLUPDATE，畫面會被抛回文章列表再重開，只為了網址列不值得。
+  test("REGRESSION：算不出來也不得為了網址列送出任何指令", () => {
+    const h = makeHarness();
+    withAddressBar(h);
+    h.termBuf.pageState = 3;
+    h.nav.localAid = null;
+    h.settle();
+    expect(h.nav.queries).toEqual([]);
+  });
+
+  // file:// 下 replaceState 會 throw。網址列漂亮與否不值得中斷 settle 流程
+  // ——後面還接著「登入了沒」與待跳目標的派發。
+  test("replaceState throw 不得中斷 settle（待跳目標仍要派發）", () => {
+    const h = makeHarness();
+    h.ctl._locationHref = () => BASE;
+    h.ctl._replaceState = () => {
+      throw new Error("SecurityError");
+    };
+    h.ctl.request(TARGET);
+    expect(() => h.arriveAtMainMenu()).not.toThrow();
+    expect(h.nav.externalCalls).toEqual([
+      { aid: "1gIeu-3A", board: "Gossiping" }
+    ]);
   });
 });

@@ -28,6 +28,10 @@ const {
 const cassette = findCassette('article');
 
 const URL = 'https://abccbaandy.github.io/PttChrome/#Browsers/1gU3wwNZ';
+// 2026-08 起分享連結改成檔名形式（#<Board>/M.<v1>.A.<v2>.html）。同一個坑：
+// "#Browsers" 依舊是合法 AIDc 形狀，貼進文章裡一樣不可以被切開。
+const URL_FN =
+  'https://abccbaandy.github.io/PttChrome/#Browsers/M.1786265274.A.5E3.html';
 // 正對照：不在網址裡的 #AID 仍要變成 .aidLink（否則「aidLink 為 0」可能只是
 // AID 偵測整個沒跑起來的假綠）。
 const REAL_AID = '#1gIeu-3A';
@@ -45,6 +49,7 @@ async function setupRows(page) {
     page,
     at(10, 'see ' + URL + ' here') +
       at(11, 'ref ' + REAL_AID + ' there') +
+      at(12, 'new ' + URL_FN + ' here') +
       `\x1b[${rows};${cols}H`
   );
   await page.waitForTimeout(800);
@@ -75,5 +80,20 @@ test.describe('網址 fragment 不被當成 AID（離線重放）', () => {
     const link = page.locator(`a.y[href="${URL}"]`);
     await expect(link).toHaveCount(1);
     await expect(link).toHaveText(URL);
+  });
+
+  test('新的檔名形式分享連結也是單一完整連結', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, cassette, { easyReading: false });
+    await setupRows(page);
+
+    await expect(page.locator('a.aidLink', { hasText: REAL_AID })).toHaveCount(1);
+    await expect(page.locator('a.aidLink', { hasText: '#Browsers' })).toHaveCount(0);
+
+    const link = page.locator(`a.y[href="${URL_FN}"]`);
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveText(URL_FN);
   });
 });

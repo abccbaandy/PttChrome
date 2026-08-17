@@ -13,7 +13,7 @@
 // AutoLogin，是因為手動登入根本不經過 AutoLogin。
 
 import { MAIN_MENU_TITLE } from './aid_navigation';
-import { buildDeepLink } from './deep_link';
+import { buildDeepLink, stripDeepLink } from './deep_link';
 import { parseStatusRow } from './string_util';
 
 export function DeepLinkController(core, view, termBuf) {
@@ -71,9 +71,12 @@ DeepLinkController.prototype = {
 
   // 分享端：問出「目前這篇」的 AID，組成 deep link 丟進剪貼簿。
   //
-  // 唯一能知道自己在看哪一篇的方法就是按 Q（畫面上的 #AID 是內文引用的別篇，
-  // 不是本篇）—— 跟跳轉存返回錨點是同一件事，所以共用 aidNavigation.queryPostAid。
-  // 差別在收尾：跳轉會把關框併進下一個指令，這裡沒有下一個指令，得自己關。
+  // 走 aidNavigation.resolvePostAid：文章本文的「※ 文章網址:」那行看得到時免費換算
+  // （畫面完全不動、即時完成），看不到才退回按 Q。畫面上的 #AID 一律是內文引用的
+  // 別篇，不是本篇，所以不能拿來用。
+  //
+  // 差別在收尾：按 Q 那條路會被 FULLUPDATE 抛回文章列表，這裡沒有下一個指令，得自己
+  // 走 reopenAfterPostInfo 回原處；免費路徑則什麼都不必做。
   copyCurrentPostLink: function() {
     const nav = this._core.aidNavigation;
     if (!nav || nav.active || this._core.connectState !== 1) return false;
@@ -85,7 +88,14 @@ DeepLinkController.prototype = {
       this._hint('請在文章內使用「複製本篇連結」', 3000);
       return false;
     }
-    // 讀 AID 是有代價的：mbbsd/bbs.c:2375-2377 對 Q 的回應是
+    // 免費路徑（畫面上讀得到「※ 文章網址:」）什麼副作用都不該有：不進 functionMode、
+    // 不記閱讀位置、不重開文章。所以先問一次，問到了就直接交件。
+    const local = nav.findLocalPostAid && nav.findLocalPostAid();
+    if (local) {
+      this._deliverLink(local);
+      return true;
+    }
+    // 以下是按 Q 那條路。讀 AID 是有代價的：mbbsd/bbs.c:2375-2377 對 Q 的回應是
     // `view_postinfo(...); return FULLUPDATE;` —— 那個 FULLUPDATE 會離開 pager
     // 把畫面換成文章列表。所以「複製完回到原處」必須自己走完（reopenAfterPostInfo），
     // 順便把閱讀位置一起帶回去。
@@ -155,6 +165,47 @@ DeepLinkController.prototype = {
     }
   },
 
+  // 網址列跟著「現在在讀哪一篇」走：貼給別人、加書籤、按 F5 都直接落在同一篇。
+  //
+  // 資料來源只有免費的那條（aidNavigation.findLocalPostAid，讀畫面上的
+  // 「※ 文章網址:」那行）。**絕不為了填網址列去按 Q**：那會被 FULLUPDATE 抛回
+  // 文章列表再重開，為了網址列讓畫面閃一下完全不划算。所以長文從第一頁開始讀時
+  // 網址列會先停在站台根網址，滾到內文末尾那行進畫面後才補上——這是刻意的。
+  //
+  // 一律 replaceState：不留瀏覽歷史（否則「上一頁」會在文章之間亂跳，而且離開
+  // 本站要按很多次），而且 replaceState 不觸發 hashchange ⇒ 不會被
+  // deep_link_entry 的 hashchange 監聽者當成「有人貼了新連結」而自我重跳。
+  _syncAddressBar: function() {
+    const buf = this._termBuf;
+    const href = this._locationHref();
+    let next;
+    // pageState 3 = READING。
+    if (buf && buf.pageState === 3) {
+      const nav = this._core.aidNavigation;
+      const info = nav && nav.findLocalPostAid ? nav.findLocalPostAid() : null;
+      // 還算不出本篇是哪一篇 ⇒ 什麼都不做，維持現況（不要清掉，使用者可能正是
+      // 從一條 deep link 進來的，清掉反而更差）。
+      if (!info) return;
+      next = buildDeepLink(href, info.board, info.aid);
+      if (!next) return;
+    } else {
+      // 回到列表／選單：網址列不該還停在剛剛那篇。
+      next = stripDeepLink(href);
+    }
+    if (next === href) return;
+    this._replaceState(next);
+  },
+
+  // 抽成方法讓 unit test 不必碰真的 window/history。
+  _replaceState: function(href) {
+    try {
+      if (window.history && window.history.replaceState)
+        window.history.replaceState(null, '', href);
+    } catch (e) {
+      // file:// 下 replaceState 會 throw。網址列漂亮與否不值得中斷 settle 流程。
+    }
+  },
+
   // 抽成方法讓 unit test 不必碰真的 window/navigator。
   _locationHref: function() {
     return window.location.href;
@@ -200,6 +251,7 @@ DeepLinkController.prototype = {
 
   _onSettled: function() {
     if (this._atMainMenu()) this._loggedIn = true;
+    this._syncAddressBar();
     if (!this._pending || !this._canNavigate()) return;
     const target = this._pending;
     this._pending = null;

@@ -21,6 +21,12 @@ import {
   visibleQuickSearchItems,
   buildQuickSearchUrl,
 } from "../../js/quick_search";
+import {
+  isAidLinkAnchor,
+  articleTargetFromAnchor,
+  formatArticleCode,
+} from "../../js/article_link_target";
+import { buildDeepLink } from "../../js/deep_link";
 
 function noop() {}
 
@@ -58,6 +64,17 @@ const menuHandlerByEventKey = {
   copyLinkUrl: (pttchrome, { contextOnUrl }) => pttchrome.doCopy(contextOnUrl),
   copyArticleLink: (pttchrome) =>
     pttchrome.deepLinkController.copyCurrentPostLink(),
+  // 游標下那篇（不是「本篇」）：文章代碼與分享連結。target 在開選單當下就算好了。
+  copyArticleAid: (pttchrome, { contextArticle }) =>
+    pttchrome.doCopy(formatArticleCode(contextArticle)),
+  copyArticleDeepLink: (pttchrome, { contextArticle }) =>
+    pttchrome.doCopy(
+      buildDeepLink(
+        window.location.href,
+        contextArticle.board,
+        contextArticle.aid,
+      ),
+    ),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
   mouseBrowsing: (pttchrome) => pttchrome.switchMouseBrowsing(),
 };
@@ -69,6 +86,8 @@ const initialState = {
   pageY: 0,
   contextOnUrl: "",
   aElement: undefined,
+  // 游標下的連結指向哪一篇文章（{ board, aid }）；null → 兩個文章選項不出現。
+  contextArticle: null,
   selectedText: "",
   urlEnabled: false,
   normalEnabled: false,
@@ -147,12 +166,22 @@ export const ContextMenu = ({ pttchrome }) => {
       let contextOnUrl = "";
       let aElement;
       if (target.tagName === "A") {
-        contextOnUrl = target.getAttribute("href");
         aElement = target;
       } else if (target.parentElement && target.parentElement.tagName === "A") {
-        contextOnUrl = target.parentElement.getAttribute("href");
         aElement = target.parentElement;
       }
+      // 文章代碼連結的 href 是佔位用的 "#"（導航靠 onClick + preventDefault），
+      // 不是一條真的網址 —— 當成 URL 的話「複製連結網址」會複製到一個孤零零的
+      // '#'，而且 urlEnabled 變 true 會讓整組 normalEnabled 項目（含「複製本篇
+      // 文章連結」）全部消失。改由 contextArticle 那兩個專用項目服務它。
+      if (aElement && !isAidLinkAnchor(aElement))
+        contextOnUrl = aElement.getAttribute("href");
+      // 游標下的連結指向哪一篇（文章代碼連結 or 內文裡的 ptt.cc 文章網址）。
+      // 沒寫看板的 #AID 用目前文章的看板遞補 —— 與 pttchrome.jsx 的點擊路徑同一套。
+      const contextArticle = articleTargetFromAnchor(
+        aElement,
+        pttchrome.view && pttchrome.view._articleBoard,
+      );
 
       // replace the &nbsp;
       const selectedText = window.getSelection().toString().replace(/ /g, " ");
@@ -216,6 +245,7 @@ export const ContextMenu = ({ pttchrome }) => {
         pageY: event.pageY,
         contextOnUrl,
         aElement,
+        contextArticle,
         selectedText,
         urlEnabled,
         normalEnabled,
@@ -520,6 +550,7 @@ export const ContextMenu = ({ pttchrome }) => {
     blacklistAuthorExists,
     blacklistTitleTarget,
     articleLinkEnabled,
+    contextArticle,
     quickSearchItems,
     quickSearchQuery,
     showsInputHelper,
@@ -547,6 +578,7 @@ export const ContextMenu = ({ pttchrome }) => {
         authorBlacklistExists={blacklistAuthorExists}
         titleBlacklistText={blacklistTitleTarget}
         articleLinkEnabled={articleLinkEnabled}
+        contextArticle={contextArticle}
         onTitleBlacklistClick={onTitleBlacklistClick}
         onMenuSelect={onMenuSelect}
         onInputHelperClick={onInputHelperClick}

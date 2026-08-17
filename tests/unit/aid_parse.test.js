@@ -3,7 +3,12 @@
 // suffix "(Android)" / "@Android". Fake TermChar cells only need `ch` and
 // `isLeadByte` (the parser walks columns, never the DBCS tables).
 
-import { detectAids, parsePostInfoAid } from "../../src/js/aid_parse";
+import {
+  detectAids,
+  parsePostInfoAid,
+  parseArticleUrlLine,
+  parsePostInfoUrl
+} from "../../src/js/aid_parse";
 
 const cell = (ch, isLeadByte = false) => ({ ch, isLeadByte });
 const ascii = str => str.split("").map(c => cell(c));
@@ -248,5 +253,94 @@ describe("parsePostInfoAid", () => {
   test("空 / null 輸入", () => {
     expect(parsePostInfoAid("")).toBe(null);
     expect(parsePostInfoAid(null)).toBe(null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 「本篇是哪一篇」的免費來源：畫面上的文章網址列。取得後可用 aid_codec 換算成
+// AID，省掉按 Q（Q 會被 FULLUPDATE 抛回文章列表，得再花兩個指令回來）。
+// ---------------------------------------------------------------------------
+describe("parseArticleUrlLine", () => {
+  test("文章本文末尾的 ※ 文章網址 → { board, aid }", () => {
+    expect(
+      parseArticleUrlLine(
+        "※ 文章網址: https://www.ptt.cc/bbs/Browsers/M.1786265274.A.5E3.html"
+      )
+    ).toEqual({ board: "Browsers", aid: "1gU3wwNZ" });
+  });
+
+  test("前導空白可以有", () => {
+    expect(
+      parseArticleUrlLine(
+        "  ※ 文章網址: https://www.ptt.cc/bbs/SYSOP/M.1786458180.A.4FE.html"
+      )
+    ).toEqual({ board: "SYSOP", aid: "1gUp14J-" });
+  });
+
+  // 回文的引言區塊會把原文那行原樣帶進來。不錨列首就會把「別人那篇」當成本篇，
+  // 於是複製連結／返回錨點全部指向錯的文章。
+  test("引言列 `: ※ 文章網址:` 不得命中", () => {
+    expect(
+      parseArticleUrlLine(
+        ": ※ 文章網址: https://www.ptt.cc/bbs/Browsers/M.1786265274.A.5E3.html"
+      )
+    ).toBe(null);
+    expect(
+      parseArticleUrlLine(
+        "> ※ 文章網址: https://www.ptt.cc/bbs/Browsers/M.1786265274.A.5E3.html"
+      )
+    ).toBe(null);
+  });
+
+  test("句子中間提到不算（必須整列就是那一行）", () => {
+    expect(
+      parseArticleUrlLine(
+        "推 someuser: 我貼 ※ 文章網址: https://www.ptt.cc/bbs/A_Board/M.1.A.001.html"
+      )
+    ).toBe(null);
+  });
+
+  test("網址不是 ptt.cc 文章 → null", () => {
+    expect(parseArticleUrlLine("※ 文章網址: https://example.com/x")).toBe(null);
+  });
+
+  test("空 / null 輸入", () => {
+    expect(parseArticleUrlLine("")).toBe(null);
+    expect(parseArticleUrlLine(null)).toBe(null);
+  });
+});
+
+describe("parsePostInfoUrl", () => {
+  test("Q 資訊框的網址列 → { board, aid }", () => {
+    expect(
+      parsePostInfoUrl(
+        "│ 文章網址: https://www.ptt.cc/bbs/Browsers/M.1786265274.A.5E3.html"
+      )
+    ).toEqual({ board: "Browsers", aid: "1gU3wwNZ" });
+  });
+
+  // 資訊框在 currboard 為空時 AID 那列的板名會印「不明」，網址列卻仍是對的。
+  test("補得回 parsePostInfoAid 拿不到的 board", () => {
+    expect(parsePostInfoAid("│ 文章代碼(AID): #1gU3wwNZ (不明) [ptt.cc]")).toEqual(
+      { aid: "1gU3wwNZ", board: null }
+    );
+    expect(
+      parsePostInfoUrl(
+        "│ 文章網址: https://www.ptt.cc/bbs/Browsers/M.1786265274.A.5E3.html"
+      ).board
+    ).toBe("Browsers");
+  });
+
+  test("pttbbs 的替代輸出（bbs.c:3709-3711）沒有網址 → null", () => {
+    expect(parsePostInfoUrl("│ 本看板目前不提供文章網址 ")).toBe(null);
+    expect(parsePostInfoUrl("│ 本文章不提供文章網址 ")).toBe(null);
+  });
+
+  test("本文的 ※ 那行不是資訊框的 │ 那行", () => {
+    expect(
+      parsePostInfoUrl(
+        "※ 文章網址: https://www.ptt.cc/bbs/Browsers/M.1786265274.A.5E3.html"
+      )
+    ).toBe(null);
   });
 });

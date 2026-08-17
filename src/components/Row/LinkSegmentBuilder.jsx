@@ -154,12 +154,17 @@ export class LinkSegmentBuilder {
       );
     } else if (this._aid) {
       // AID → in-app navigation link; preventDefault keeps the # href inert.
+      // data-aid / data-board 是給右鍵選單用的：那個 href="#" 只是佔位，右鍵端
+      // 必須靠 className + 這兩個屬性才認得出「這是文章代碼，不是一條網址」。
+      // board 可能是空字串（沒寫看板的 #AID）⇒ 右鍵端用目前文章的看板遞補。
       const aid = this._aid;
       this._pushSeg(
         <a
           key={`a${this.col}`}
           className="aidLink"
           href="#"
+          data-aid={aid.aid}
+          data-board={aid.board || ""}
           title={`跳至文章 #${aid.aid}${aid.board ? ` (${aid.board})` : ""}`}
           onClick={(e) => {
             e.preventDefault();

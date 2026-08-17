@@ -50,6 +50,12 @@ export const en_US = {
   "cmenu_copyArticleLink": {
     "message": "Copy link to this article"
   },
+  "cmenu_copyArticleAid": {
+    "message": "Copy article code (AID)"
+  },
+  "cmenu_copyArticleDeepLink": {
+    "message": "Copy article share link"
+  },
   "cmenu_mouseBrowsing": {
     "message": "Mouse browsing"
   },

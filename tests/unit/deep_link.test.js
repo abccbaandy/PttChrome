@@ -1,14 +1,60 @@
 // Unit tests for src/js/deep_link.js — the 外部連結 → 文章 的 URL 合約。
-// 這組 test 就是格式的規格書：正規形式 #<Board>/<AID>，另外相容 key=value 的
-// hash 與 query。任何「看起來像但不合法」的東西都必須回 null（＝照常開站），
-// 因為那個字串會被原樣送進 `s<board>\r` / `#<aid>\r`。
+// 這組 test 就是格式的規格書：正規形式 #<Board>/M.<v1>.A.<v2>.html（與 ptt.cc
+// 文章網址同形），另外相容「只吃不產」的短碼形式與 key=value 的 hash / query。
+// 任何「看起來像但不合法」的東西都必須回 null（＝照常開站），因為那個字串會被
+// 原樣送進 `s<board>\r` / `#<aid>\r`。
 
 import { parseDeepLink, buildDeepLink, stripDeepLink } from "../../src/js/deep_link";
 
 const BASE = "https://example.github.io/pttchrome/";
 const AID = "1gIeu-3A";
+// 同一篇文章的檔名形式（aid_codec 可逆換算，對照值守在 aid_codec.test.js）。
+const FN = "M.1783270974.A.0CA.html";
 
-describe("parseDeepLink — 正規形式 #<Board>/<AID>", () => {
+describe("parseDeepLink — 正規形式 #<Board>/<檔名>", () => {
+  test("basic", () => {
+    expect(parseDeepLink(BASE + "#Gossiping/" + FN)).toEqual({
+      board: "Gossiping",
+      aid: AID
+    });
+  });
+
+  test(".html 可有可無", () => {
+    expect(parseDeepLink(BASE + "#Gossiping/M.1783270974.A.0CA")).toEqual({
+      board: "Gossiping",
+      aid: AID
+    });
+  });
+
+  test("前導／尾端斜線也吃", () => {
+    expect(parseDeepLink(BASE + "#/C_Chat/" + FN)).toEqual({
+      board: "C_Chat",
+      aid: AID
+    });
+    expect(parseDeepLink(BASE + "#C_Chat/" + FN + "/")).toEqual({
+      board: "C_Chat",
+      aid: AID
+    });
+  });
+
+  test("整條 ptt.cc 文章網址的後兩段可以直接貼進 hash", () => {
+    // 需求：拿到文章網址的人要能「複製貼上」手組出本站連結。
+    const pttUrl = "https://www.ptt.cc/bbs/Browsers/M.1786265274.A.5E3.html";
+    const tail = pttUrl.split("/bbs/")[1];
+    expect(parseDeepLink(BASE + "#" + tail)).toEqual({
+      board: "Browsers",
+      aid: "1gU3wwNZ"
+    });
+  });
+
+  test("檔名壞掉 → null（照常開站，不可送半截的 #<aid>\\r）", () => {
+    expect(parseDeepLink(BASE + "#Gossiping/M.1783270974.X.0CA.html")).toBeNull();
+    expect(parseDeepLink(BASE + "#Gossiping/M.1783270974.A.0CAF.html")).toBeNull();
+  });
+});
+
+// 2026-08 之前產出的連結還在別人的記事本／LINE 對話裡，永遠要吃得下。
+describe("parseDeepLink — 舊短碼形式 #<Board>/<AID>（只吃不產）", () => {
   test("basic", () => {
     expect(parseDeepLink(BASE + "#Gossiping/" + AID)).toEqual({
       board: "Gossiping",
@@ -136,10 +182,14 @@ describe("parseDeepLink — 拒絕", () => {
 });
 
 describe("buildDeepLink", () => {
-  test("產生正規形式", () => {
+  test("產生正規形式（檔名形式，與 ptt.cc 文章網址同形）", () => {
     expect(buildDeepLink(BASE, "Gossiping", AID)).toBe(
-      BASE + "#Gossiping/" + AID
+      BASE + "#Gossiping/" + FN
     );
+  });
+
+  test("不再產出短碼形式", () => {
+    expect(buildDeepLink(BASE, "Gossiping", AID)).not.toContain("/" + AID);
   });
 
   test("round-trip", () => {
@@ -151,7 +201,7 @@ describe("buildDeepLink", () => {
     expect(
       buildDeepLink(BASE + "?site=wstelnet://localhost:8080/bbs#movie/aaaaaaaa",
         "Gossiping", AID)
-    ).toBe(BASE + "#Gossiping/" + AID);
+    ).toBe(BASE + "#Gossiping/" + FN);
   });
 
   test("board 為 null（站內信／精華區問不出看板）→ 不產生連結", () => {

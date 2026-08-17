@@ -23,6 +23,7 @@ export const DropdownMenu = ({
   authorBlacklistExists,
   titleBlacklistText,
   articleLinkEnabled,
+  contextArticle,
   onTitleBlacklistClick,
   onMenuSelect,
   onInputHelperClick,
@@ -116,6 +117,19 @@ export const DropdownMenu = ({
             </Menu.Item>
             <Menu.Item onClick={(e) => onMenuSelect("copyLinkUrl", e)}>
               {i18n("cmenu_copyLinkUrl")}
+            </Menu.Item>
+          </Fragment>
+        )}
+        {/* 游標下的連結指向某一篇文章時多給兩個選項。獨立成一塊而不是掛進上面的
+            urlEnabled：ptt.cc 文章網址走 urlEnabled、好讀模式的文章代碼連結走
+            normalEnabled（它的 href 是佔位符，不算 URL），兩邊共用同一塊才不必寫兩份。 */}
+        {contextArticle && (
+          <Fragment>
+            <Menu.Item onClick={(e) => onMenuSelect("copyArticleAid", e)}>
+              {i18n("cmenu_copyArticleAid")}
+            </Menu.Item>
+            <Menu.Item onClick={(e) => onMenuSelect("copyArticleDeepLink", e)}>
+              {i18n("cmenu_copyArticleDeepLink")}
             </Menu.Item>
           </Fragment>
         )}

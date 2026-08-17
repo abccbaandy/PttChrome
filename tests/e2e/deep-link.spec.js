@@ -124,8 +124,17 @@ test('deep link：帶 #<Board>/<AID> 開站 → 自動登入後落在該篇文�
     );
     expect(diag.hints.filter((h) => h.includes('失敗')).length).toBe(0);
 
-    // 4) 用過的 hash 要被清掉（F5 不重跳）。
-    expect(await page.evaluate(() => location.hash)).toBe('');
+    // 4) 網址列必須指向**現在真的在讀的那一篇**。
+    //
+    // 2026-08-17 起網址列會自動同步（_syncAddressBar）：消費掉進來的 hash 之後，
+    // 一旦畫面上讀得到「※ 文章網址」那行就把連結補回去。所以這裡不再是「hash 必須
+    // 空」——真正的不變量是「hash 絕不可以指向**別篇**」（那才會讓 F5 跳錯地方）。
+    // 補不回來（長文還沒滾到那行）時停在空字串，也是合格的。
+    const hashTarget = await page.evaluate(() =>
+      location.hash ? window.__parseDeepLink(location.href) : null
+    );
+    console.log('ADDRESS BAR:', JSON.stringify(hashTarget));
+    if (hashTarget) expect(hashTarget).toEqual({ board: BOARD, aid });
 
     // 5) 落在「正確的那一篇」＋「複製本篇連結不影響畫面」，一次驗完。
     //
@@ -169,7 +178,13 @@ test('deep link：帶 #<Board>/<AID> 開站 → 自動登入後落在該篇文�
       .toBe(1);
     const copied = await page.evaluate(() => window.__copied[0]);
     console.log('COPIED LINK:', copied);
-    expect(copied).toContain('#' + BOARD + '/' + aid);
+    // 連結是檔名形式（#<Board>/M.<v1>.A.<v2>.html），肉眼比不出 AID ⇒ 用合約自己的
+    // 解析端還原回 { board, aid } 再比。這同時也驗到「產生 → 解析」真的可逆。
+    expect(copied).toContain('#' + BOARD + '/M.');
+    expect(await page.evaluate((l) => window.__parseDeepLink(l), copied)).toEqual({
+      board: BOARD,
+      aid,
+    });
 
     // 關框後畫面必須原封不動回到這篇文章。
     await expect

@@ -56,7 +56,7 @@
 import { parseStatusRow, parsePagerFooterContext } from './string_util';
 import { subjectOfListText } from './list_session';
 import { NavHistory, chooseAnchor } from './nav_history';
-import { parsePostInfoAid } from './aid_parse';
+import { parsePostInfoAid, parseArticleUrlLine, parsePostInfoUrl } from './aid_parse';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -134,6 +134,10 @@ export function AidNavigation(core, view, termBuf, queue, history) {
   this.active = false;
   // One-shot: swallow the leaveCurrentPost our own landing causes (noteLeftPost).
   this._ownedLeave = false;
+  // findLocalPostAid 的增量掃描游標（見該函式）。
+  this._urlScanRow = 0;
+  this._urlScanLen = 0;
+  this._urlScanHit = null;
 }
 
 AidNavigation.prototype = {
@@ -384,12 +388,12 @@ AidNavigation.prototype = {
   // context itself is gone) is fatal, like every other step.
   _enqueueOriginAid: function(run) {
     const self = this;
-    this.queryPostAid({
+    this.resolvePostAid({
       kind: 'aid-origin-info',
       onFlushed: function() {
         self._fail('畫面已變更');
       },
-      onDone: function(info) {
+      onDone: function(info, meta) {
         if (info) {
           self._history.upgradePendingOriginAid(
             info.board,
@@ -398,15 +402,99 @@ AidNavigation.prototype = {
           );
           self._updateBackButton();
         }
-        // dismissFirst: the box's pressanykey is still waiting, so the board
-        // jump is prefixed with the dismissal instead of spending a command.
-        self._enqueueBoardJump(run, false, true);
+        // dismissFirst 只在真的按過 Q 時成立：那時框的 pressanykey 還在等，把關框
+        // 併進板跳指令比再花一個指令便宜。走免費路徑時沒有框，多送的那個空白會
+        // 被 pager 當成 PageDown。
+        self._enqueueBoardJump(run, false, meta.boxOpen);
       },
       onFail: function() {
         // Degrade, never fail: the jump itself is still perfectly doable, the
         // back anchor just stays at whatever tier chooseAnchor picked.
+        // onFail 只可能來自 Q 那條路（免費路徑沒有失敗這回事）⇒ 框一定開著。
         self._enqueueBoardJump(run, false, true);
       }
+    });
+  },
+
+  // 「本篇是哪一篇」的免費路徑：文章本文末尾那行
+  //   ※ 文章網址: https://www.ptt.cc/bbs/<Board>/M.<v1>.A.<v2>.html
+  // 已經把檔名寫在畫面上，aid_codec 直接換算成 AID ⇒ **零指令、畫面完全不動**。
+  // 按 Q 相對之下很貴：mbbsd/bbs.c:2375-2377 回 FULLUPDATE，一定被抛回文章列表，
+  // 得再花 ␣ + ⏎ 兩個指令回來（使用者看得到畫面在閃）。
+  //
+  // 回 { board, aid } 或 null（null ⇒ 呼叫端退回按 Q，行為與這個功能不存在時相同）。
+  //
+  // **看板守門不可省**：轉錄文會原樣複製原文內容、連原文那行網址一起帶進來
+  // （mbbsd/bbs.c:2162-2179）。所幸 pttbbs 擋掉同板轉錄（bbs.c:2097「同板不需轉錄。」），
+  // 所以「網址裡的看板 ≠ 目前文章的看板」就足以判定那是原文而非本篇。
+  findLocalPostAid: function() {
+    const buf = this._termBuf;
+    // pageState 3 = READING。不在文章裡時畫面上的網址列不代表「本篇」。
+    if (!buf || buf.pageState !== 3 || !buf.getRowText) return null;
+    const board = this._view && this._view._articleBoard;
+    // 站內信／精華區沒有看板（comment_parse 會把 _articleBoard 清成 null）：
+    // 沒有看板就守不了門，也組不出連結。
+    if (!board) return null;
+
+    const acc = buf.pageLines;
+    let hit;
+    if (acc && acc.length) {
+      // 好讀累積長頁可以長到數千列，但它只會往後 concat（screen_annotate_cache.js
+      // 的不變量），所以只掃「這次新增的那幾列」。換文章／_healFromTop 會把
+      // pageLines 清掉重建 ⇒ 長度變短或首列變了就把游標與命中一起歸零。
+      const head = acc.length ? buf.getRowText(0, 0, buf.cols, acc) : '';
+      if (acc.length < this._urlScanLen || head !== this._urlScanHead)
+        this.resetLocalPostAidScan();
+      this._urlScanHead = head;
+      if (!this._urlScanHit) {
+        for (let r = this._urlScanRow; r < acc.length; ++r) {
+          const found = parseArticleUrlLine(buf.getRowText(r, 0, buf.cols, acc));
+          if (found) {
+            this._urlScanHit = found;
+            break;
+          }
+        }
+        this._urlScanRow = acc.length;
+      }
+      this._urlScanLen = acc.length;
+      hit = this._urlScanHit;
+    } else {
+      // 原生模式沒有累積頁，只有眼前這 24 列——每次重掃即可（便宜，也不會過期）。
+      this.resetLocalPostAidScan();
+      for (let r = 0; r < buf.rows && !hit; ++r)
+        hit = parseArticleUrlLine(buf.getRowText(r, 0, buf.cols));
+    }
+    if (!hit) return null;
+    return String(hit.board).toLowerCase() === String(board).toLowerCase()
+      ? hit
+      : null;
+  },
+
+  resetLocalPostAidScan: function() {
+    this._urlScanRow = 0;
+    this._urlScanLen = 0;
+    this._urlScanHead = '';
+    this._urlScanHit = null;
+  },
+
+  // 取得本篇 AID 的統一入口：先試免費路徑，落空才按 Q。
+  //
+  // onDone(info, meta) 的 **meta.boxOpen 不可忽略**：它說的是「Q 的資訊框現在正開著、
+  // 需要關掉」。走免費路徑時根本沒按 Q，若呼叫端照舊送關框的 ␣，那個空白會被 pager
+  // 當成 PageDown、後面的 ⏎ 又再翻一頁 ⇒ 使用者的閱讀位置被弄丟。
+  resolvePostAid: function(handlers) {
+    const local = this.findLocalPostAid();
+    if (local) {
+      handlers.onDone(local, { boxOpen: false });
+      return;
+    }
+    this.queryPostAid({
+      kind: handlers.kind,
+      onFlushed: handlers.onFlushed,
+      onDone: function(info) {
+        handlers.onDone(info, { boxOpen: true });
+      },
+      onFail: handlers.onFail
     });
   },
 
@@ -431,10 +519,18 @@ AidNavigation.prototype = {
       onFlushed: handlers.onFlushed,
       timeoutMs: 2500,
       expect: function(snapshot, facts) {
+        let info = null;
+        let fromUrl = null;
         for (let r = 0; r < facts.rowTexts.length; ++r) {
-          const info = parsePostInfoAid(facts.rowTexts[r]);
-          if (info) return { info: info };
+          if (!info) info = parsePostInfoAid(facts.rowTexts[r]);
+          if (!fromUrl) fromUrl = parsePostInfoUrl(facts.rowTexts[r]);
         }
+        // 同一個框的第二列（bbs.c:3713）帶著完整網址。currboard 為空時第一列的
+        // 板名會印「不明」（bbs.c:3701），網址裡的看板卻一直是對的 ⇒ 補得回來。
+        if (info && !info.board && fromUrl)
+          info = { aid: info.aid, board: fromUrl.board };
+        if (info) return { info: info };
+        if (fromUrl) return { info: fromUrl };
         // Box is up but this post has no AID (bbs.c:3707 prints a bare frame
         // line). A real answer — stop waiting and move on without an upgrade.
         const lastRow = facts.rowTexts[facts.rows - 1] || '';

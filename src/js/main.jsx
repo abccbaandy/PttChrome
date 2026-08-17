@@ -5,6 +5,7 @@ import { readValuesWithDefault } from './pref_storage';
 import { pageArticleNums } from './comment_parse';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
 import { installDeepLink, claimDeepLink } from './deep_link_entry';
+import { parseDeepLink } from './deep_link';
 import { renderInto, unmountFrom } from './react_root';
 import { MantineRoot } from '../components/MantineRoot';
 import b2uTableUrl from '../conv/b2u_table.bin?url';
@@ -32,6 +33,9 @@ function startApp() {
     // the runtime uses (bufferEdgeNum over pageArticleNums), so recorded jump
     // nums match what ListSession will actually send during replay.
     window.__pageArticleNums = pageArticleNums;
+    // e2e 要驗「產出的分享連結指向哪一篇」。連結是檔名形式（#<Board>/M.…html），
+    // 肉眼比對不了 AID，所以把合約的解析端本身開出去讓測試呼叫。
+    window.__parseDeepLink = parseDeepLink;
   }
 
   // 外部連結（#<Board>/<AID>）進來的話，先問問看有沒有已經登入好的分頁可以
