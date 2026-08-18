@@ -76,7 +76,6 @@ const menuHandlerByEventKey = {
       ),
     ),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
-  mouseBrowsing: (pttchrome) => pttchrome.switchMouseBrowsing(),
 };
 
 const initialState = {
@@ -164,12 +163,11 @@ export const ContextMenu = ({ pttchrome }) => {
 
       const target = event.target;
       let contextOnUrl = "";
-      let aElement;
-      if (target.tagName === "A") {
-        aElement = target;
-      } else if (target.parentElement && target.parentElement.tagName === "A") {
-        aElement = target.parentElement;
-      }
+      // closest 而非「只看 parentElement」：連結內部最深可到 a > span > span
+      // （LinkSegmentBuilder 的 TwoColorWord / ForceWidthWord），只找一層的舊寫法
+      // 在 DBCS 雙色字上會漏判 ⇒ 對那種連結按右鍵時「複製連結網址」「複製文章
+      // 代碼」整組不出現。與 pttchrome.jsx#isAnchorTarget 同一個修法。
+      const aElement = target.closest ? target.closest("a") : null;
       // 文章代碼連結的 href 是佔位用的 "#"（導航靠 onClick + preventDefault），
       // 不是一條真的網址 —— 當成 URL 的話「複製連結網址」會複製到一個孤零零的
       // '#'，而且 urlEnabled 變 true 會讓整組 normalEnabled 項目（含「複製本篇
@@ -571,7 +569,6 @@ export const ContextMenu = ({ pttchrome }) => {
         urlEnabled={urlEnabled}
         normalEnabled={normalEnabled}
         selEnabled={selEnabled}
-        mouseBrowsingEnabled={pttchrome.buf.useMouseBrowsing}
         quickSearchItems={quickSearchItems}
         quickSearchQuery={quickSearchQuery}
         authorBlacklistId={blacklistAuthorTarget}

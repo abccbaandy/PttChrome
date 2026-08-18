@@ -3,11 +3,12 @@
 import { TermKeyboard } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
 import { DEFAULT_HIGHLIGHT_BG, highlightClass, resolveHighlightRow } from './cursor_highlight';
+import { exitBandRect } from './mouse_geometry';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
-import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
+import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, listColRegion } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { readValuesWithDefault } from './pref_storage';
@@ -104,11 +105,12 @@ export function TermView() {
   // 鍵盤操作時也把游標所在列上色（pref keyboardCursorHighlight，預設開）。
   this.keyboardCursorHighlight = true;
   this.charset = 'big5';
-  this.middleButtonFunction = 0;
-  this.leftButtonFunction = false;
-  this.mouseWheelFunction1 = 1;
-  this.mouseWheelFunction2 = 2;
-  this.mouseWheelFunction3 = 3;
+  // 滑鼠子開關（pref mouseLeftClick / mouseMiddleClick / mouseWheel）。總開關是
+  // buf.useMouseBrowsing，gating 一律走 mouse_regions.resolveMouseGates。
+  // 值域：mouseMiddleClick 0=關閉 1=貼上 2=左方向鍵；mouseWheel 0=關閉 1=上下頁。
+  this.mouseLeftClick = true;
+  this.mouseMiddleClick = 0;
+  this.mouseWheel = 1;
   //this.highlightFG = 7;
   this.fontFitWindowWidth = false;
   //new pref - end
@@ -284,6 +286,21 @@ export function TermView() {
   replyRowDiv.innerHTML = this.replyRowDivContent;
   this.replyRowDiv = replyRowDiv;
   this.BBSWin.appendChild(replyRowDiv);
+
+  // 文章左側「點這裡離開」的提示帶。
+  //
+  // 刻意**不放進 Screen/#mainContainer**，而是與 easyReadingLastRow 一樣當
+  // BBSWindow 底下的獨立 div：
+  //   1. .main 是好讀長頁的捲動容器，放裡面的 absolute 子元素會跟著內容捲走；
+  //   2. 三種 render 分支（原生 24 列／好讀長頁／列表虛擬視窗）要行為一致，掛在
+  //      scroller 之上就與分支無關；
+  //   3. 原生模式 Screen 每幀都在 re-render，hover 布林不該進 React state。
+  // 幾何由 setTermFontSize 寫（與 clientToPos 同源，見 mouse_geometry.js），
+  // 樣式（含硬需求 pointer-events:none）在 css/main.css。
+  var exitHintBand = document.createElement('div');
+  exitHintBand.setAttribute('id', 'exitHintBand');
+  this.exitHintBand = exitHintBand;
+  this.BBSWin.appendChild(exitHintBand);
 
   this.mainDisplay.style.border = '0px';
   this.setFontFace('MingLiu,monospace');
@@ -895,8 +912,34 @@ TermView.prototype = {
 
     this.firstGridOffset = this.bbscore.getFirstGridOffsets();
 
+    this.updateExitHintBandGeometry();
     this.updateReverseScaleCss();
     this.updateCursorPos();
+  },
+
+  // 提示帶的水平幾何。**必須與 App.clientToPos 同源**（兩者都走
+  // mouse_geometry），否則帶子亮著卻點不到、或點得到卻沒亮。高度由 CSS 給
+  // （top:0; height:100%，BBSWindow 是 position:fixed 的定位容器）。
+  // 帶子不參與 .main 的 transform，所以寬度自己乘 scaleX —— 這也是 cellWidth 做的事。
+  updateExitHintBandGeometry: function() {
+    if (!this.exitHintBand) return;
+    var rect = exitBandRect({
+      innerWidth: this.innerBounds.width,
+      chw: this.chw,
+      cols: this.buf.cols,
+      scaleX: this.scaleX,
+      scaleY: this.scaleY,
+      firstGridLeft: this.firstGridOffset && this.firstGridOffset.left
+    });
+    this.exitHintBand.style.left = rect.left + 'px';
+    this.exitHintBand.style.width = rect.width + 'px';
+  },
+
+  // 文章左側可退出的視覺提示。開關時機見 term_buf.onMouse_move / clearHighlight、
+  // onListMouseMove、App.onPrefChange、App.setModalOpen、window blur。
+  setExitAffordance: function(on) {
+    if (!this.exitHintBand) return;
+    this.exitHintBand.classList.toggle('active', !!on);
   },
 
   updateReverseScaleCss: function() {
@@ -993,14 +1036,17 @@ TermView.prototype = {
     if (this.buf) this.updateCursorPos();
   },
 
-  // 列表好讀模式的滑鼠移動。**不走 term_buf.onMouse_move**：那條用 server 的真實
-  // 24 列幾何判斷（左緣＝離開、右緣＝翻頁、該列是否為空），而畫面上是我們自己組的
-  // 虛擬視窗，兩者的列意義並不對應。這裡只回答一個問題：滑鼠停在哪一個「可點的
-  // 文章列」上（→ 上色 + pointer 游標），其餘一律沒有。
+  // 列表好讀模式的滑鼠移動。**不走 term_buf.onMouse_move**：那條依 server 的真實
+  // 24 列幾何判斷（可點列範圍、該列是否為空），而畫面上是我們自己組的虛擬視窗，
+  // 兩者的列意義並不對應。這裡只回答一個問題：滑鼠停在哪一個「可點的文章列」上。
   // frozen（開文交易進行中）比照鍵盤：不接受互動，清掉 hover。
-  onListMouseMove: function(row) {
+  //
+  // 底色與 pointer 的條件**刻意不同**（與原生一致）：整列 hover 都上底色，但只有
+  // 標題欄（col >= 30）給 pointer 並接受點擊 —— 否則左半邊完全沒反應會像壞掉。
+  // 底色的 gate 在 applyCursorHighlight（唯一真相源），這裡只 gate 總開關與 pointer。
+  onListMouseMove: function(row, col) {
     var hover = -1;
-    if (this.buf.listRenderMode === 'buffer') {
+    if (this.buf.useMouseBrowsing && this.buf.listRenderMode === 'buffer') {
       var ls = this.bbscore && this.bbscore.listSession;
       var idx = row - LIST_HEADER_ROWS;
       if (ls && idx >= 0 && idx < this.buf.rows - 4) {
@@ -1009,8 +1055,12 @@ TermView.prototype = {
         if (win && win.body[idx] != null) hover = row;
       }
     }
+    var clickable =
+      hover >= 0 && !!this.mouseLeftClick && listColRegion(col) === 'title';
     if (this.buf.BBSWin)
-      this.buf.BBSWin.style.cursor = hover >= 0 ? 'pointer' : 'auto';
+      this.buf.BBSWin.style.cursor = clickable ? 'pointer' : 'auto';
+    // 列表模式不可能有文章左側的退出帶；不關掉的話從文章切回列表會留下殘影。
+    this.setExitAffordance(false);
     if (hover === this._listHoverRow) return;
     this._listHoverRow = hover;
     this.applyCursorHighlight();

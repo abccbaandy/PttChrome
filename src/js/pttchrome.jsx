@@ -12,6 +12,14 @@ import { DeepLinkController } from './deep_link_controller';
 import { AutoLogin } from './auto_login';
 import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
 import { MouseButtonTracker } from './mouse_button_tracker';
+import {
+  ACT_NONE,
+  ACT_ENTER,
+  ACT_EXIT_ARTICLE,
+  resolveMouseGates
+} from './mouse_regions';
+import { colFromClientX } from './mouse_geometry';
+import { isPreviewTarget } from './preview_targets';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { setTimer } from './util';
@@ -27,11 +35,15 @@ import logoDisconnectIcon from '../icon/logo_disconnect.png';
 
 function noop() {}
 
-// True when the click landed on a link (the <a> itself or its immediate
-// parent), so link clicks bypass the terminal's own mouse handling.
+// True when the click landed on a link, so link clicks bypass the terminal's own
+// mouse handling.
+//
+// **必須是 closest('a')，不可以只看 parentElement**：連結內部的 DOM 最深可到
+// a > span > span（LinkSegmentBuilder 的 TwoColorWord / ForceWidthWord，DBCS
+// 雙色字與強制寬度字），只往上找一層的舊寫法在那種字上會漏判，於是「點連結」變成
+// 「送出終端機動作」——在文章裡就是左側 7 欄點到連結卻退出文章。
 function isAnchorTarget(el) {
-  return !!el && (el.tagName === 'A' ||
-    (!!el.parentElement && el.parentElement.tagName === 'A'));
+  return !!(el && el.closest && el.closest('a'));
 }
 
 const ANTI_IDLE_STR = '\x1b\x1b';
@@ -182,6 +194,8 @@ export const App = function() {
     // A mouseup while unfocused never reaches us — clear held-button state
     // or the wheel stays stuck in page-scroll mode until reload.
     self.mouseButtons.reset();
+    // 同理：滑鼠移出視窗不會再有 mousemove 把提示帶關掉。
+    self.view.setExitAffordance(false);
   }, false);
 
   this.inputArea.addEventListener('paste', function(e) {
@@ -415,6 +429,12 @@ App.prototype.setModalOpen = function(source, open) {
   if (shown === this.modalShown)
     return;
   this.modalShown = shown;
+  // 對話框蓋上來時滑鼠已經離開終端機，提示帶留著會變成殘影（mousemove 被 modal
+  // gate 擋掉，永遠等不到把它關掉的那一幀）。
+  // 這個函式是終端機鍵盤／焦點的總閘門，**任何路徑都不可以 throw**（半途中斷 ⇒
+  // 「畫面上有對話框、app 卻以為沒有」，整頁只能重整），故一律防禦性取用。
+  if (shown && this.view && this.view.setExitAffordance)
+    this.view.setExitAffordance(false);
   if (!shown)
     this.setInputAreaFocus();
 };
@@ -614,29 +634,6 @@ App.prototype.setTermSize = function(cols, rows) {
   }
 };
 
-App.prototype.switchMouseBrowsing = function() {
-  if (this.CmdHandler.getAttribute('useMouseBrowsing')=='1') {
-    this.CmdHandler.setAttribute('useMouseBrowsing', '0');
-    this.buf.useMouseBrowsing=false;
-  } else {
-    this.CmdHandler.setAttribute('useMouseBrowsing', '1');
-    this.buf.useMouseBrowsing=true;
-  }
-
-  if (!this.buf.useMouseBrowsing) {
-    this.buf.BBSWin.style.cursor = 'auto';
-    this.buf.clearHighlight();
-    this.buf.mouseCursor=0;
-    this.buf.nowHighlight=-1;
-    this.buf.tempMouseCol=0;
-    this.buf.tempMouseRow=0;
-  } else {
-    this.buf.resetMousePos();
-    this.view.redraw(true);
-    this.view.updateCursorPos();
-  }
-};
-
 App.prototype.antiIdle = function() {
   if (this.antiIdleTime && this.idleTime > this.antiIdleTime) {
     if (this.connectState == 1) {
@@ -693,19 +690,19 @@ App.prototype.getFirstGridOffsets = function() {
   };
 };
 
+// 畫面座標 → 格子座標。**欄的那一半刻意委給 mouse_geometry.colFromClientX**：
+// 文章左側的退出提示帶（#exitHintBand）必須與這裡算出來的可點區逐格對齊，兩邊
+// 共用同一份實作才不會漂移（專案裡另有 term_view.convertMN2XYEx 一套原點公式，
+// 多了 +10 與 bbsViewMargin，用錯就差十幾個像素）。
 App.prototype.clientToPos = function(cX, cY) {
-  var x;
   var y;
-  var w = this.view.innerBounds.width;
   var h = this.view.innerBounds.height;
   if (this.view.scaleX != 1 || this.view.scaleY != 1) {
-    x = cX - ((w - (this.view.chw * this.buf.cols) * this.view.scaleX) / 2);
     y = cY - ((h - (this.view.chh * this.buf.rows) * this.view.scaleY) / 2);
   } else {
-    x = cX - parseFloat(this.view.firstGridOffset.left);
     y = cY - parseFloat(this.view.firstGridOffset.top);
   }
-  var col = Math.floor(x / (this.view.chw * this.view.scaleX));
+  var col = colFromClientX(cX, this.gridGeometry());
   var row = Math.floor(y / (this.view.chh * this.view.scaleY));
 
   if (row < 0)
@@ -713,16 +710,40 @@ App.prototype.clientToPos = function(cX, cY) {
   else if (row >= this.buf.rows-1)
     row = this.buf.rows-1;
 
-  if (col < 0)
-    col = 0;
-  else if (col >= this.buf.cols-1)
-    col = this.buf.cols-1;
-
   return {col: col, row: row};
 };
 
+// 各滑鼠入口的生效與否。總開關（buf.useMouseBrowsing）與三個子開關（view 上的
+// mouseLeftClick / mouseMiddleClick / mouseWheel）在純函式 resolveMouseGates 匯總，
+// 所以「總開關關掉＝中鍵與滾輪也失效」只有一個真相源。
+App.prototype.mouseGates = function() {
+  return resolveMouseGates({
+    useMouseBrowsing: this.buf.useMouseBrowsing,
+    mouseLeftClick: this.view.mouseLeftClick,
+    mouseMiddleClick: this.view.mouseMiddleClick,
+    mouseWheel: this.view.mouseWheel
+  });
+};
+
+// 餵給 mouse_geometry 的一組幾何（see clientToPos / TermView.setTermFontSize）。
+App.prototype.gridGeometry = function() {
+  return {
+    innerWidth: this.view.innerBounds.width,
+    chw: this.view.chw,
+    cols: this.buf.cols,
+    scaleX: this.view.scaleX,
+    scaleY: this.view.scaleY,
+    firstGridLeft: this.view.firstGridOffset && this.view.firstGridOffset.left
+  };
+};
+
+// 左鍵在終端機區域點下去要送什麼。動作只有三種（見 mouse_regions.js）：
+//   ACT_ENTER        列表／選單：把 server 的真游標移到目標列再 Enter
+//   ACT_EXIT_ARTICLE 文章左側帶：左方向鍵離開
+//   其餘             **真的什麼都不做**
+// 最後一條是重點：改版前的 case 0 也會送左方向鍵，於是在文章裡隨手點一下空白處
+// 就跳出文章。
 App.prototype.onMouse_click = function (e) {
-  var cX = e.clientX, cY = e.clientY;
   if (!this.conn || !this.conn.isConnected)
     return;
 
@@ -737,80 +758,29 @@ App.prototype.onMouse_click = function (e) {
   // disable auto update pushthread if any command is issued;
   this.onDisableLiveHelperModalState();
 
+  // **先取值再交給好讀**：easyReading._onMouseClick 會 stopEasyReading()，那條路徑
+  // 一路走到 buf.notify() → clearHighlight() 把 mouseAction 清成 none。改版前這個
+  // 順序沒事只是因為舊的 case 0（＝被清掉的狀態）也送左方向鍵，剛好跟離開同義。
+  var action = this.buf.mouseAction;
+  var targetRow = this.buf.mouseActionRow;
+
   // TODO make a responder stack.
   this.easyReading._onMouseClick(e);
   if (e.defaultPrevented)
     return;
 
-  // TODO Move this to mouse browsing module.
-  switch (this.buf.mouseCursor) {
-    case 1:
-      this.conn.send('\x1b[D');  //Arrow Left
+  switch (action) {
+    case ACT_EXIT_ARTICLE:
+      this.view._send('\x1b[D'); //Arrow Left
       break;
-    case 2:
-      this.conn.send('\x1b[5~'); //Page Up
+    case ACT_ENTER: {
+      if (targetRow < 0)
+        break;
+      var delta = targetRow - this.buf.cur_y;
+      var step = delta > 0 ? '\x1b[B' : '\x1b[A'; //Arrow Down / Up
+      this.view._send(step.repeat(Math.abs(delta)) + '\r');
       break;
-    case 3:
-      this.conn.send('\x1b[6~'); //Page Down
-      break;
-    case 4:
-      this.conn.send('\x1b[1~'); //Home
-      break;
-    case 5:
-      this.conn.send('\x1b[4~'); //End
-      break;
-    case 6:
-      if (this.buf.nowHighlight != -1) {
-        var sendstr = '';
-        if (this.buf.cur_y > this.buf.nowHighlight) {
-          var count = this.buf.cur_y - this.buf.nowHighlight;
-          for (var i = 0; i < count; ++i)
-            sendstr += '\x1b[A'; //Arrow Up
-        } else if (this.buf.cur_y < this.buf.nowHighlight) {
-          var count = this.buf.nowHighlight - this.buf.cur_y;
-          for (var i = 0; i < count; ++i)
-            sendstr += '\x1b[B'; //Arrow Down
-        }
-        sendstr += '\r';
-        this.conn.send(sendstr);
-      }
-      break;
-    case 7:
-      var pos = this.clientToPos(cX, cY);
-      var sendstr = '';
-      if (this.buf.cur_y > pos.row) {
-        var count = this.buf.cur_y - pos.row;
-        for (var i = 0; i < count; ++i)
-          sendstr += '\x1b[A'; //Arrow Up
-      } else if (this.buf.cur_y < pos.row) {
-        var count = pos.row - this.buf.cur_y;
-        for (var i = 0; i < count; ++i)
-          sendstr += '\x1b[B'; //Arrow Down
-      }
-      sendstr += '\r';
-      this.conn.send(sendstr);
-      break;
-    case 0:
-      this.conn.send('\x1b[D'); //Arrow Left
-      break;
-    case 8:
-      this.conn.send('['); //Previous post with the same title
-      break;
-    case 9:
-      this.conn.send(']'); //Next post with the same title
-      break;
-    case 10:
-      this.conn.send('='); //First post with the same title
-      break;
-    case 12:
-      this.conn.send('\x1b[D\r\x1b[4~'); //Refresh post / pushed texts
-      break;
-    case 13:
-      this.conn.send('\x1b[D\r\x1b[4~[]'); //Last post with the same title (LIST)
-      break;
-    case 14:
-      this.conn.send('\x1b[D\x1b[4~[]\r'); //Last post with the same title (READING)
-      break;
+    }
     default:
       //do nothing
       break;
@@ -819,19 +789,21 @@ App.prototype.onMouse_click = function (e) {
 
 App.prototype.onMouse_move = function(cX, cY) {
   var pos = this.clientToPos(cX, cY);
-  // 列表好讀模式的畫面是我們自己組的虛擬視窗，term_buf.onMouse_move 那套（左緣＝
-  // 離開、右緣＝翻頁、該列是否為空）全部依 server 的真實 24 列判斷，套上去只會
-  // 得到錯的游標形狀與錯的光棒。改由 view 依視窗內容判斷（見 onListMouseMove）。
+  // 列表好讀模式的畫面是我們自己組的虛擬視窗，term_buf.onMouse_move 那套（可點列
+  // 判斷、欄位、該列是否為空）全部依 server 的真實 24 列判斷，套上去只會得到錯的
+  // 游標形狀與錯的光棒。改由 view 依視窗內容判斷（見 onListMouseMove）。
   if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
-    this.view.onListMouseMove(pos.row);
+    this.view.onListMouseMove(pos.row, pos.col);
     return;
   }
-  this.buf.onMouse_move(pos.col, pos.row, false);
+  this.buf.onMouse_move(pos.col, pos.row);
 };
 
-App.prototype.resetMouseCursor = function(cX, cY) {
+App.prototype.resetMouseCursor = function() {
   this.buf.BBSWin.style.cursor = 'auto';
-  this.buf.mouseCursor = 11;
+  this.buf.mouseAction = ACT_NONE;
+  this.buf.mouseActionRow = -1;
+  if (this.view.setExitAffordance) this.view.setExitAffordance(false);
 };
 
 App.prototype.onValuesPrefChange = function(values, opts) {
@@ -912,16 +884,16 @@ App.prototype.onPrefChange = function(name, value) {
       // 純顯示切換：只影響 #cursor 的 display，不需 redraw。
       if (this.view) this.view.setAutoHideBlinkCursor(!!value);
       break;
+    // 總開關。關掉＝底色、左鍵、中鍵、滾輪、指標圖示、左側提示帶全部停用
+    // （改版前中鍵與滾輪根本不看它）。連結與圖片不受影響。
     case 'useMouseBrowsing':
-      var useMouseBrowsing = value;
+      var useMouseBrowsing = !!value;
       this.CmdHandler.setAttribute('useMouseBrowsing', useMouseBrowsing?'1':'0');
       this.buf.useMouseBrowsing = useMouseBrowsing;
 
-      if (!this.buf.useMouseBrowsing) {
+      if (!useMouseBrowsing) {
         this.buf.BBSWin.style.cursor = 'auto';
         this.buf.clearHighlight();
-        this.buf.mouseCursor = 0;
-        this.buf.nowHighlight = -1;
         this.buf.tempMouseCol = 0;
         this.buf.tempMouseRow = 0;
       }
@@ -943,23 +915,19 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.highlightBG = value;
       this.view.applyCursorHighlight();
       break;
-    case 'mouseLeftFunction':
-      this.view.leftButtonFunction = value;
-      if (typeof(this.view.leftButtonFunction) == 'boolean') {
-        this.view.leftButtonFunction = this.view.leftButtonFunction ? 1:0;
-      }
+    // 左鍵開關同時管指標圖示與左側提示帶 ⇒ 要立刻重新評估滑鼠目前停的那一格，
+    // 否則要等使用者再動一次滑鼠才會看到變化。
+    case 'mouseLeftClick':
+      this.view.mouseLeftClick = !!value;
+      if (!this.view.mouseLeftClick && this.view.setExitAffordance)
+        this.view.setExitAffordance(false);
+      this.buf.resetMousePos();
       break;
-    case 'mouseMiddleFunction':
-      this.view.middleButtonFunction = value;
+    case 'mouseMiddleClick':
+      this.view.mouseMiddleClick = Number(value) || 0;
       break;
-    case 'mouseWheelFunction1':
-      this.view.mouseWheelFunction1 = value;
-      break;
-    case 'mouseWheelFunction2':
-      this.view.mouseWheelFunction2 = value;
-      break;
-    case 'mouseWheelFunction3':
-      this.view.mouseWheelFunction3 = value;
+    case 'mouseWheel':
+      this.view.mouseWheel = Number(value) || 0;
       break;
     case 'copyOnSelect':
       this.copyOnSelect = value;
@@ -1103,7 +1071,15 @@ App.prototype.mouse_click = function(e) {
 
   if (e.button == 2) { //right button
   } else if (e.button === 0) { //left button
+    // 文章裡的可點擊物件一律優先，且**不受任何滑鼠 pref 影響**。順序不可調換：
+    // 文章模式的第 0-6 欄現在是「點了就離開文章」，而連結與內嵌預覽圖都可能落在
+    // 那幾欄裡（預覽圖甚至是整寬區塊、起點就在第 0 欄）。
     if (isAnchorTarget(e.target)) {
+      return;
+    }
+    // 內嵌預覽（圖／影片／讀取中／載入失敗）走的是 Screen 的事件委派 onClick，
+    // 不是 <a> 的子孫 ⇒ 上面那條攔不到，必須另外擋一次。
+    if (isPreviewTarget(e.target)) {
       return;
     }
     if (window.getSelection().isCollapsed) { //no anything be select
@@ -1121,15 +1097,18 @@ App.prototype.mouse_click = function(e) {
       // 既有的開文交易。**永遠不要**落到下面的 useMouseBrowsing 分支：那條會依
       // server 的真實 24 列幾何直送方向鍵，虛擬視窗的座標與它並不對應（會開錯文），
       // 而且繞過 CommandQueue（違反 v5 封閉互動）。
+      // preventDefault 是**無條件**的（即使滑鼠功能整組關掉）：這個模式的畫面是
+      // 我們自己組的，不能讓瀏覽器預設行為或下游 handler 對它動作。pref gate 只
+      // 包住「要不要真的開文」。
       if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
         e.preventDefault();
-        if (this.listSession) {
+        if (this.mouseGates().leftClick && this.listSession) {
           var lpos = this.clientToPos(e.clientX, e.clientY);
-          this.listSession.onMouseClick(lpos.row);
+          this.listSession.onMouseClick(lpos.row, lpos.col);
         }
         return;
       }
-      if (this.buf.useMouseBrowsing) {
+      if (this.mouseGates().leftClick) {
         var doMouseCommand = true;
         if (e.target.className)
           if (this.checkClass(e.target.className))
@@ -1140,21 +1119,11 @@ App.prototype.mouse_click = function(e) {
         if (skipMouseClick) {
           doMouseCommand = false;
           var pos = this.clientToPos(e.clientX, e.clientY);
-          this.buf.onMouse_move(pos.col, pos.row, true);
+          this.buf.onMouse_move(pos.col, pos.row);
         }
         if (doMouseCommand) {
           this.onMouse_click(e);
           this.setDblclickTimer();
-          e.preventDefault();
-          this.setInputAreaFocus();
-        }
-      } else if (this.view.leftButtonFunction) {
-        if (this.view.leftButtonFunction == 1) {
-          this.setBBSCmd('doEnter', this.CmdHandler);
-          e.preventDefault();
-          this.setInputAreaFocus();
-        } else if (this.view.leftButtonFunction == 2) {
-          this.setBBSCmd('doRight', this.CmdHandler);
           e.preventDefault();
           this.setInputAreaFocus();
         }
@@ -1165,19 +1134,20 @@ App.prototype.mouse_click = function(e) {
   }
 };
 
+// 中鍵：0=關閉 1=貼上 2=左方向鍵（值域與設定頁的 Select index 對齊）。
+// 送字一律走 view._send —— 它內含 `if (this.conn)`，而 view.conn 只在 onConnect
+// 被設，連線成功前直接用 this.conn.send 會炸。
 App.prototype.middleMouse_down = function(e) {
   if (e.button == 1) {
     if (isAnchorTarget(e.target)) {
       return;
     }
-    if (this.view.middleButtonFunction == 1) {
-      this.conn.send('\r');
-      return false;
-    } else if (this.view.middleButtonFunction == 2) {
-      this.conn.send('\x1b[D');
-      return false;
-    } else if (this.view.middleButtonFunction == 3) {
+    var middle = this.mouseGates().middleClick;
+    if (middle === 1) {
       this.doPaste();
+      return false;
+    } else if (middle === 2) {
+      this.view._send('\x1b[D');
       return false;
     }
   }
@@ -1281,6 +1251,12 @@ App.prototype.mouse_over = function(e) {
     this.setInputAreaFocus();
 };
 
+// 滾輪＝上下翻頁（唯一動作）。改版前有三組設定（素滾／按住右鍵／按住左鍵）×
+// 四種動作，全部收斂成單一 pref `mouseWheel`（0=關閉 1=上下頁）。
+//
+// 關閉時**直接 return，不 preventDefault** —— 語意是「我們完全不碰滾輪」。原生
+// 24 列模式下畫面沒有可捲距離（#BBSWindow 是 fixed + overflow:hidden，.main 的
+// 高度就是內容高），所以放行不會造成怪異捲動。
 App.prototype.mouse_scroll = function(e) {
   // Self-heal: e.buttons is the browser's authoritative held-button state,
   // recovering any flag stuck by a mouseup we never saw.
@@ -1292,72 +1268,38 @@ App.prototype.mouse_scroll = function(e) {
     e.preventDefault();
     return;
   }
+  if (!this.mouseGates().wheel)
+    return;
   // if in easyreading, use it like webpage
   if (this.view.useEasyReadingMode && this.buf.pageState == 3) {
     return;
   }
-  // List easy reading buffer/frozen render (native-parity window): the wheel
-  // performs the SAME action mapping as native (plain scroll = arrow,
-  // right-hold = page, left-hold = thread) but executes LOCALLY on the window
-  // — the hidden real cursor must not move and no bytes go to the server.
-  // Thread ops have no local meaning → ignored. Frozen (an open is in flight)
-  // swallows the wheel entirely, mirroring the keyboard's opening behavior.
+
+  var up = e.deltaY < 0 || e.wheelDelta > 0;
+
+  // List easy reading buffer/frozen render (native-parity window): 同樣是翻頁，
+  // 但**在本機的視窗上執行** —— 隱藏的真游標不可以動，也不送任何 byte 給 server。
+  // Frozen（開文交易進行中）整個吞掉，比照鍵盤的開文行為。
   if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
     if (this.buf.listRenderMode === 'buffer' && this.listSession) {
-      var lup = e.deltaY < 0 || e.wheelDelta > 0;
-      var lpref = this.mouseButtons.right
-        ? this.view.mouseWheelFunction2
-        : this.mouseButtons.left
-          ? this.view.mouseWheelFunction3
-          : this.view.mouseWheelFunction1;
-      var lop = ['none', lup ? 'up' : 'down', lup ? 'pgup' : 'pgdn', 'none'][lpref] || 'none';
-      if (lop !== 'none') this.listSession.onWheel(lop);
+      this.listSession.onWheel(up ? 'pgup' : 'pgdn');
     }
     e.stopPropagation();
     e.preventDefault();
     return;
   }
 
-  // scroll = up/down
-  // hold right mouse key + scroll = page up/down
-  // hold left mouse key + scroll = thread prev/next
-  var mouseWheelActionsUp = [ 'none', 'doArrowUp', 'doPageUp', 'previousThread' ];
-  var mouseWheelActionsDown = [ 'none', 'doArrowDown', 'doPageDown', 'nextThread' ];
-
-  if (e.deltaY < 0 || e.wheelDelta > 0) { // scrolling up
-    if (this.mouseButtons.right) {
-      var action = mouseWheelActionsUp[this.view.mouseWheelFunction2];
-      this.setBBSCmd(action);
-    } else if (this.mouseButtons.left) {
-      var action = mouseWheelActionsUp[this.view.mouseWheelFunction3];
-      this.setBBSCmd(action);
-    } else {
-      var action = mouseWheelActionsUp[this.view.mouseWheelFunction1];
-      this.setBBSCmd(action);
-    }
-  } else { // scrolling down
-    if (this.mouseButtons.right) {
-      var action = mouseWheelActionsDown[this.view.mouseWheelFunction2];
-      this.setBBSCmd(action);
-    } else if (this.mouseButtons.left) {
-      var action = mouseWheelActionsDown[this.view.mouseWheelFunction3];
-      this.setBBSCmd(action);
-    } else {
-      var action = mouseWheelActionsDown[this.view.mouseWheelFunction1];
-      this.setBBSCmd(action);
-    }
-  }
-  
+  this.setBBSCmd(up ? 'doPageUp' : 'doPageDown');
 
   e.stopPropagation();
   e.preventDefault();
 
+  // 按住右鍵滾輪不再是被設定的手勢，但瀏覽器仍會在放開右鍵時發 contextmenu ⇒
+  // 翻完頁還跳出選單。這個旗標是 ContextMenu/index.jsx 唯一的消費者，留著。
   if (this.mouseButtons.right) //prevent context menu popup
     this.CmdHandler.setAttribute('doDOMMouseScroll','1');
   if (this.mouseButtons.left) {
-    if (this.buf.useMouseBrowsing) {
-      this.CmdHandler.setAttribute('SkipMouseClick','1');
-    }
+    this.CmdHandler.setAttribute('SkipMouseClick','1');
   }
 };
 

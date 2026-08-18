@@ -21,9 +21,6 @@ export const en_US = {
   "menu_selectAll": {
     "message": "Select all"
   },
-  "menu_mouseBrowsing": {
-    "message": "Mouse"
-  },
   "menu_settings": {
     "message": "Settings"
   },
@@ -55,9 +52,6 @@ export const en_US = {
   },
   "cmenu_copyArticleDeepLink": {
     "message": "Copy article share link"
-  },
-  "cmenu_mouseBrowsing": {
-    "message": "Mouse browsing"
   },
   "cmenu_showInputHelper": {
     "message": "Input helper ..."
@@ -554,11 +548,41 @@ export const en_US = {
   "options_mouse": {
     "message": "Mouse"
   },
+  "tooltip_useMouseBrowsing": {
+    "message": "Turning this off disables every mouse feature below (move highlight, left button, middle button, wheel). Links and images inside a post are unaffected and stay clickable."
+  },
+  "options_mouseMove": {
+    "message": "Mouse move"
+  },
+  "tooltip_mouseBrowsingHighlight": {
+    "message": "Shares its color with the keyboard cursor highlight (set on the General tab); the mouse wins when both are active. With this off, moving the mouse changes nothing on screen."
+  },
+  "tooltip_highlightColorShared": {
+    "message": "The mouse-move highlight shares this color (its switch lives on the Mouse tab)."
+  },
+  "options_mouseLeftClick": {
+    "message": "Mouse left button"
+  },
+  "options_enableMouseLeftClick": {
+    "message": "Enable left button actions"
+  },
+  "tooltip_mouseLeftClick": {
+    "message": "List: only a click in the title column opens the post / board — the date and author columns do nothing (no more misclicks). Post: click the far left edge to leave; a hint band lights up as the mouse approaches. Links and images always win, so you never leave by accident. With this off the mouse pointer stops changing shape too."
+  },
+  "options_mouseMiddleClick": {
+    "message": "Mouse middle button"
+  },
+  "options_mouseWheel": {
+    "message": "Mouse wheel"
+  },
+  "tooltip_mouseWheel": {
+    "message": "Article easy-reading keeps native browser scrolling and ignores this setting."
+  },
   "options_mouseBrowsing": {
     "message": "Mouse browsing"
   },
   "options_useMouseBrowsing": {
-    "message": "Mouse browsing on start"
+    "message": "Enable mouse browsing"
   },
   "options_cursorHighlight": {
     "message": "Cursor highlight"
@@ -572,21 +596,6 @@ export const en_US = {
   "options_highlightColor": {
     "message": "Color"
   },
-  "options_mouseLeftFunction": {
-    "message": "Mouse left button"
-  },
-  "options_mouseMiddleFunction": {
-    "message": "Mouse middle button"
-  },
-  "options_mouseWheelFunction1": {
-    "message": "Mouse wheel"
-  },
-  "options_mouseWheelFunction2": {
-    "message": "Right mouse key + mouse wheel"
-  },
-  "options_mouseWheelFunction3": {
-    "message": "Left mouse key + mouse wheel"
-  },
   "options_none": {
     "message": "No action"
   },
@@ -596,20 +605,8 @@ export const en_US = {
   "options_leftKey": {
     "message": "Sends LEFT key"
   },
-  "options_rightKey": {
-    "message": "Sends RIGHT key"
-  },
-  "options_enterKey": {
-    "message": "Sends ENTER key"
-  },
-  "options_upDown": {
-    "message": "Controls up / down"
-  },
   "options_pageUpDown": {
     "message": "Controls pageup / pagedown"
-  },
-  "options_threadLastNext": {
-    "message": "Controls thread previous / next"
   },
 
   // about page

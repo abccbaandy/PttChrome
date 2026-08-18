@@ -24,6 +24,7 @@ import {
   parseListTitleRaw,
   LIST_AUTHOR_COL_START,
   LIST_AUTHOR_COL_END,
+  listColRegion,
 } from './comment_parse';
 import {
   parseStatusRow,
@@ -1404,11 +1405,11 @@ ListSession.prototype = {
   // 左鍵單擊某一列（App.mouse_click 已把 client 座標換成**渲染後**的列號）＝
   // 「把選取移到那一列並開文」，與原生滑鼠瀏覽的語意一致。
   //
-  // 合約（不可放行到 App.onMouse_click）：那條會依 buf.mouseCursor 與 server 的真實
+  // 合約（不可放行到 App.onMouse_click）：那條會依 buf.mouseAction 與 server 的真實
   // 24 列幾何直接 conn.send('\x1b[A'×N + '\r')。畫面上是我們自己組的虛擬視窗，兩套
   // 座標並不對應 ⇒ 會開到別篇，而且繞過 CommandQueue（違反 v5 封閉互動 + 交易序列化）。
   // 這裡改成「解析出絕對索引 → 寫回序號錨 → 走鍵盤同一條 reducer/開文交易」。
-  onMouseClick: function(renderRow) {
+  onMouseClick: function(renderRow, col) {
     // 原生鏡像期間（passthrough/functionMode 的 native）不歸這裡管：呼叫端根本不會
     // 進來，但保險起見不處理也不提示，交給原生滑鼠瀏覽。
     if (this._renderMode === 'native') return;
@@ -1420,6 +1421,11 @@ ListSession.prototype = {
     }
     const idx = renderRow - LIST_HEADER_ROWS;
     if (idx < 0 || idx >= this._bodyRows()) return; // header / footer
+    // 只有標題欄可以開文，與原生一致（避免點到日期／作者欄誤開）。虛擬視窗的
+    // 欄位與 server 的 readdoent 逐格對齊（buildListWindowLines 取的就是同一批
+    // 80 格 TermChar；relabelListCursorRow 只重寫 cols 0-6、labelListCursor 的
+    // 半形 '>' 只佔 cell 0），所以 comment_parse 的欄位表在這裡照樣成立。
+    if (listColRegion(col) !== 'title') return;
     const win = this.getWindowView();
     if (!win) return;
     const abs = win.body[idx];

@@ -17,7 +17,13 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { installReplay, installOfflineNetwork, feedRaw } = require('../helpers/replay');
 
-const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
+// window.__i18n 是 main.jsx 在 `new App()` **之後**才掛的 e2e 探針，而 page.goto
+// 只等到 load —— 機器忙的時候（整包 offline 一起跑）module script 可能還沒執行完，
+// 直接 evaluate 會噴 "window.__i18n is not a function"。先等探針就緒。
+const label = async (page, key) => {
+  await page.waitForFunction(() => typeof window.__i18n === 'function');
+  return page.evaluate((k) => window.__i18n(k), key);
+};
 
 // 右鍵叫出 context menu（無選取 → normalEnabled 路徑）。餵一行畫面純粹是讓
 // #mainContainer 有東西可以按，不需要連線。

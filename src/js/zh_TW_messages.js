@@ -21,9 +21,6 @@
   "menu_selectAll": {
     "message": "全選"
   },
-  "menu_mouseBrowsing": {
-    "message": "滑鼠瀏覽"
-  },
   "menu_settings": {
     "message": "設定"
   },
@@ -55,9 +52,6 @@
   },
   "cmenu_copyArticleDeepLink": {
     "message": "複製文章分享連結"
-  },
-  "cmenu_mouseBrowsing": {
-    "message": "滑鼠瀏覽"
   },
   "cmenu_showInputHelper": {
     "message": "輸入小幫手 ..."
@@ -551,11 +545,44 @@
   "options_fontFace": {
     "message": "字型"
   },
+  "options_mouse": {
+    "message": "滑鼠"
+  },
+  "tooltip_useMouseBrowsing": {
+    "message": "關掉之後，底下所有滑鼠功能（移動底色、左鍵、中鍵、滾輪）一律失效。文章裡的連結與圖片不受影響，照樣可以點。"
+  },
+  "options_mouseMove": {
+    "message": "滑鼠移動"
+  },
+  "tooltip_mouseBrowsingHighlight": {
+    "message": "與「鍵盤游標底色」共用同一個顏色（在「一般」分頁設定）；兩者同時作用時以滑鼠優先。關掉之後，滑鼠移動不會讓畫面有任何反應。"
+  },
+  "tooltip_highlightColorShared": {
+    "message": "滑鼠移動時的底色與這裡共用同一個顏色（開關在「滑鼠」分頁）。"
+  },
+  "options_mouseLeftClick": {
+    "message": "滑鼠左鍵"
+  },
+  "options_enableMouseLeftClick": {
+    "message": "啟用左鍵操作"
+  },
+  "tooltip_mouseLeftClick": {
+    "message": "列表：點在標題欄才會開文章／進看板，點日期或作者欄不會有反應（避免誤觸）。文章：點畫面最左側離開文章，滑鼠靠近時會亮出提示帶。文章裡的連結與圖片一律優先，不會誤退。關掉之後滑鼠指標也不再變化。"
+  },
+  "options_mouseMiddleClick": {
+    "message": "滑鼠中鍵"
+  },
+  "options_mouseWheel": {
+    "message": "滑鼠滾輪"
+  },
+  "tooltip_mouseWheel": {
+    "message": "文章好讀模式維持瀏覽器捲動，不受這個設定影響。"
+  },
   "options_mouseBrowsing": {
     "message": "滑鼠瀏覽"
   },
   "options_useMouseBrowsing": {
-    "message": "預設使用滑鼠瀏覽"
+    "message": "啟用滑鼠瀏覽"
   },
   "options_cursorHighlight": {
     "message": "游標底色"
@@ -569,21 +596,6 @@
   "options_highlightColor": {
     "message": "底色"
   },
-  "options_mouseLeftFunction": {
-    "message": "滑鼠左鍵"
-  },
-  "options_mouseMiddleFunction": {
-    "message": "滑鼠中鍵"
-  },
-  "options_mouseWheelFunction1": {
-    "message": "滑鼠滾輪"
-  },
-  "options_mouseWheelFunction2": {
-    "message": "滑鼠右鍵 + 滑鼠滾輪"
-  },
-  "options_mouseWheelFunction3": {
-    "message": "滑鼠左鍵 + 滑鼠滾輪"
-  },
   "options_none": {
     "message": "無動作"
   },
@@ -593,20 +605,8 @@
   "options_leftKey": {
     "message": "送出左方向鍵"
   },
-  "options_rightKey": {
-    "message": "送出右方向鍵"
-  },
-  "options_enterKey": {
-    "message": "送出ENTER鍵"
-  },
-  "options_upDown": {
-    "message": "控制上 / 下"
-  },
   "options_pageUpDown": {
     "message": "控制上頁 / 下頁"
-  },
-  "options_threadLastNext": {
-    "message": "控制文章前篇 / 下篇"
   },
 
   // about page

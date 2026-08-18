@@ -5,6 +5,7 @@ import {
   parseStatusRow
 } from './string_util';
 import { readValuesWithDefault } from './pref_storage';
+import { ACT_EXIT_ARTICLE } from './mouse_regions';
 import { TRACE } from './util';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
@@ -1635,52 +1636,17 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
     e.preventDefault();
 };
 
+// 好讀長頁裡的滑鼠點擊。文章模式現在只有一種滑鼠動作：左側帶＝離開。
+//
+// 舊版還依 mouseCursor 分派 PageUp/PageDown/Home/End/`[`/`]`/`=`/重新整理，但那些
+// 區域在重新設計後已經不存在（滾輪與鍵盤仍可翻頁；好讀長頁本來就交給瀏覽器捲動）。
+//
+// **刻意不 preventDefault**：讓上層 App.onMouse_click 的 ACT_EXIT_ARTICLE 真的把
+// 左方向鍵送出去，server 端才會真的離開文章 —— 這裡只負責先把好讀狀態機收掉。
 EasyReading.prototype._onMouseClick = function(e) {
   if (!this._enabled || !this.startedEasyReading)
     return;
-  var stop = false;
   // XXX Should not use term buffer to track mouse cursor.
-  switch (this._termBuf.mouseCursor) {
-    case 0:
-    case 1: // Arrow Left
-      this.stopEasyReading();
-      break;
-    case 2: // Page Up
-      this._scrollBy(-this._turnPageLines);
-      stop = true;
-      break;
-    case 3: // Page Down
-      if (!this._scrollBy(this._turnPageLines))
-        this._kickPageDown();  // same self-rescue as the PageDown key
-      stop = true;
-      break;
-    case 4: // Home
-      this._scrollTop();
-      stop = true;
-      break;
-    case 5: // End
-      if (readValuesWithDefault().easyReadingEndSwitchNative) {
-        this.switchToNativeAtBottom();
-      } else {
-        // pref off → jump to bottom but stay in easy reading (official term behavior)
-        this._scrollBottom();
-      }
-      stop = true;
-      break;
-    case 6:
-    case 7:
-      break;
-    case 8: // [
-    case 9: // ]
-    case 10: // =
-    case 12: // Refresh post / pushed texts
-    case 13: // Last post with the same title (LIST)
-    case 14: // Last post with the same title (READING)
-      this.leaveCurrentPost();
-      break;
-    default: // Do nothing
-      break;
-  }
-  if (stop)
-    e.preventDefault();
+  if (this._termBuf.mouseAction === ACT_EXIT_ARTICLE)
+    this.stopEasyReading();
 };

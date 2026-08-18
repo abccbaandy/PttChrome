@@ -5,15 +5,12 @@ import { ColorState } from './term_ui';
 import { u2b, b2u, parseStatusRow, parseListRow } from './string_util';
 import { cjkUrlExtension } from './url_cjk';
 import cursorBack from '../cursor/back.png';
-import cursorPageUp from '../cursor/pageup.png';
-import cursorPageDown from '../cursor/pagedown.png';
-import cursorHome from '../cursor/home.png';
-import cursorEnd from '../cursor/end.png';
-import cursorPrevious from '../cursor/prevous.png';
-import cursorNext from '../cursor/next.png';
-import cursorFirst from '../cursor/first.png';
-import cursorRefresh from '../cursor/refresh.png';
-import cursorLast from '../cursor/last.png';
+import {
+  ACT_NONE,
+  ACT_EXIT_ARTICLE,
+  resolveMouseRegion,
+  cursorCss
+} from './mouse_regions';
 
 // Quiet period (ms) after the last redraw window before pageState is promoted to
 // `settledPageState`. Must exceed the 30ms notify debounce so a transient
@@ -65,23 +62,6 @@ export const termInvColors = [
   '#000000'  // white
 ];
 
-const mouseCursorMap = [
-  'auto',                                               // 0
-  `url(${cursorBack} 0 6,auto`,      // 1
-  `url(${cursorPageUp} 6 0,auto`,    // 2
-  `url(${cursorPageDown} 6 21,auto`, // 3
-  `url(${cursorHome} 0 0,auto`,      // 4
-  `url(${cursorEnd} 0 0,auto`,       // 5
-  'pointer',                         // 6
-  'default',                         // 7
-  `url(${cursorPrevious} 6 0,auto`,  // 8
-  `url(${cursorNext} 6 0,auto`,      // 9
-  `url(${cursorFirst} 0 0,auto`,     // 10
-  'auto',                            // 11
-  `url(${cursorRefresh} 0 0,auto`,   // 12
-  `url(${cursorLast} 0 0,auto`,      // 13
-  `url(${cursorLast} 0 0,auto`       // 14
-];
 
 function TermChar(ch) {
   this.ch = ch;
@@ -239,7 +219,10 @@ export function TermBuf(cols, rows) {
   });
   this.tempMouseCol = 0;
   this.tempMouseRow = 0;
-  this.mouseCursor = 0;
+  // 滑鼠停在哪一格代表什麼動作（mouse_regions 的 ACT_*）與它的目標列。
+  // 改版前是 0..14 的 mouseCursor 數字，同時兼任「長什麼樣」與「點了做什麼」。
+  this.mouseAction = ACT_NONE;
+  this.mouseActionRow = -1;
   this.highlightCursor = true;
   this.useMouseBrowsing = true;
   //this.scrollingTop=0;
@@ -1202,160 +1185,57 @@ TermBuf.prototype = {
     return true;
   },
 
-  onMouse_move: function(tcol, trow, doRefresh){
-    // 列表好讀模式畫的是 ListSession 的虛擬視窗，下面整套（左緣＝離開、右緣＝翻頁、
-    // isLineEmpty）都依 server 的真實 24 列判斷，套上去得到的游標形狀與光棒都是錯的。
-    // 該模式的滑鼠一律由 term_view.onListMouseMove 處理（App.onMouse_move 分流）；
-    // 這裡再擋一次，涵蓋 resetMousePos 這類不經 App 的呼叫者。
+  // 滑鼠移到 (tcol, trow)：算出這一格的語意、更新游標底色列、換滑鼠指標、開關
+  // 文章左側的退出提示帶。決策本身在純函式 mouse_regions.resolveMouseRegion
+  // （逐格的行為表與依據見那裡與 docs/mouse.md），這裡只負責套用。
+  //
+  // 這裡**只管原生 24 列畫面**。列表好讀模式畫的是 ListSession 的虛擬視窗，座標
+  // 與 server 的真實 24 列並不對應，一律由 term_view.onListMouseMove 處理
+  // （App.onMouse_move 分流）；這裡再擋一次，涵蓋 resetMousePos 這類不經 App 的
+  // 呼叫者。
+  onMouse_move: function(tcol, trow){
     if (this.listRenderMode === 'buffer' || this.listRenderMode === 'frozen')
       return;
     this.tempMouseCol = tcol;
     this.tempMouseRow = trow;
 
-    if (this.nowHighlight != trow || doRefresh) {
-      this.clearHighlight();
+    // 空列判斷只有列表用得到，其餘畫面不必掃 80 格。
+    var lineEmpty = (this.pageState === 2 || this.pageState === 4) ?
+      this.isLineEmpty(trow) : false;
+
+    var region = resolveMouseRegion({
+      pageState: this.pageState,
+      col: tcol,
+      row: trow,
+      rows: this.rows,
+      lineEmpty: lineEmpty
+    });
+
+    this.mouseAction = region.action;
+    this.mouseActionRow = region.row;
+    // setter 會轉呼叫 view.applyCursorHighlight（唯一套用入口）。
+    this.nowHighlight = region.highlightRow;
+
+    // 指標圖示與左側提示帶都是「這裡點下去會做什麼」的提示 ⇒ 跟著左鍵開關走，
+    // 與底色（滑鼠移動）各自獨立。
+    var affordance =
+      !!(this.useMouseBrowsing && this.view && this.view.mouseLeftClick);
+    if (this.BBSWin) {
+      this.BBSWin.style.cursor = cursorCss(region.cursor, {
+        backUrl: cursorBack,
+        iconsEnabled: affordance
+      });
     }
-
-    let lastRowNum = this.rows - 1;
-    let cols = this.cols;
-
-    switch( this.pageState ) {
-    case 0: //NORMAL
-      //SetCursor(m_ArrowCursor);
-      //m_CursorState = 0;
-      this.mouseCursor = 0;
-      break;
-
-    case 4: //LIST
-      if (trow>1 && trow < lastRowNum-1) {              //m_pTermData->m_RowsPerPage-1
-        if ( tcol <= 6 ) {
-          this.mouseCursor = 1;
-          this.clearHighlight();
-          //SetCursor(m_ExitCursor);m_CursorState=1;
-        } else if ( tcol >= cols-16 ) {            //m_pTermData->m_ColsPerPage-16
-          if ( trow > 12 )
-            this.mouseCursor = 3;
-          else
-            this.mouseCursor = 2;
-          this.clearHighlight();
-        } else {
-          if (!this.isLineEmpty(trow)) {
-            this.mouseCursor = 6;
-            this.nowHighlight = trow;
-          } else {
-            this.mouseCursor = 11;
-          }
-        }
-      } else if ( trow == 1 || trow == 2 ) {
-        this.mouseCursor = 2;
-      } else if ( trow === 0 ) {
-        this.mouseCursor = 4;
-      } else { // if ( trow == 23)
-        this.mouseCursor = 5;
-      }
-      break;
-
-    case 2: //LIST
-      if (trow > 2 && trow < lastRowNum) {              //m_pTermData->m_RowsPerPage-1
-        if ( tcol <= 6 ) {
-          this.mouseCursor = 1;
-          this.clearHighlight();
-          //SetCursor(m_ExitCursor);m_CursorState=1;
-        } else if ( tcol >= cols-16 ) {            //m_pTermData->m_ColsPerPage-16
-          if ( trow > 12 )
-            this.mouseCursor = 3;
-          else
-            this.mouseCursor = 2;
-          this.clearHighlight();
-        } else {
-          if (!this.isLineEmpty(trow)) {
-            this.mouseCursor = 6;
-            this.nowHighlight = trow;
-          } else {
-            this.mouseCursor = 11;
-          }
-        }
-      } else if ( trow == 1 || trow == 2 ) {
-        if ( tcol < 2 )//[
-          this.mouseCursor = 8;
-        else if ( tcol > cols-5 )//]
-          this.mouseCursor = 9;
-        else
-          this.mouseCursor = 2;
-      } else if ( trow === 0 ) {
-        if ( tcol < 2 )//=
-          this.mouseCursor = 10;
-        else if ( tcol > cols-5 )//]
-          this.mouseCursor = 9;
-        else
-          this.mouseCursor = 4;
-      } else { // if ( trow == 23)
-        if ( tcol < 2 )
-          this.mouseCursor = 12;
-        else if ( tcol > cols-5 )
-          this.mouseCursor = 13;
-        else
-          this.mouseCursor = 5;
-      }
-      break;
-
-    case 3: //READING
-      if ( trow == lastRowNum) {
-        if ( tcol < 2 )//]
-          this.mouseCursor = 12;
-        else if ( tcol > cols-5 )
-          this.mouseCursor = 14;
-        else
-          this.mouseCursor = 5;
-      } else if ( trow === 0) {
-        if (tcol < 2)//=
-          this.mouseCursor = 10;
-        else if ( tcol > cols-5 )//]
-          this.mouseCursor = 9;
-        else if ( tcol < 7 )
-          this.mouseCursor = 1;
-        else
-          this.mouseCursor = 2;
-      } else if ( trow == 1 || trow == 2) {
-        if (tcol < 2)//[
-          this.mouseCursor = 8;
-        else if ( tcol > cols-5 )//]
-          this.mouseCursor = 9;
-        else if ( tcol < 7 )
-          this.mouseCursor = 1;
-        else
-          this.mouseCursor = 2;
-      } else if ( tcol < 7 )
-        this.mouseCursor = 1;
-      else if ( trow < 12)
-        this.mouseCursor = 2;
-      else
-        this.mouseCursor = 3;
-      break;
-
-    case 1: //MENU
-      if ( trow>0 && trow < lastRowNum ) {
-        if (tcol > 7)
-          this.mouseCursor = 7;
-        else
-          this.mouseCursor = 1;
-      } else {
-        this.mouseCursor = 0;
-        //SetCursor(m_ArrowCursor);m_CursorState=0;
-      }
-      break;
-
-    default:
-      this.mouseCursor = 0;
-      break;
+    if (this.view && this.view.setExitAffordance) {
+      this.view.setExitAffordance(
+        affordance && region.action === ACT_EXIT_ARTICLE
+      );
     }
-
-    this.BBSWin.style.cursor = mouseCursorMap[this.mouseCursor];
   },
 
   resetMousePos: function() {
     if (this.useMouseBrowsing) {
-      this.onMouse_move(this.tempMouseCol, this.tempMouseRow, true);
+      this.onMouse_move(this.tempMouseCol, this.tempMouseRow);
     }
   },
 
@@ -1369,7 +1249,9 @@ TermBuf.prototype = {
 
   clearHighlight: function(){
     this.nowHighlight = -1;
-    this.mouseCursor = 0;
+    this.mouseAction = ACT_NONE;
+    this.mouseActionRow = -1;
+    if (this.view && this.view.setExitAffordance) this.view.setExitAffordance(false);
   }
 };
 

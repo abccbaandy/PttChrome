@@ -683,10 +683,14 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(targetRow).toBeGreaterThanOrEqual(3);
 
       // 真的用滑鼠點那一列（clientToPos → body index → 絕對索引 → 開文交易）。
+      // x 必須落在**標題欄**（col >= 30，見 comment_parse.LIST_TITLE_COL_START）：
+      // 2026-08 的滑鼠重新設計把可點區收斂到標題欄，點日期或作者欄不再開文。
+      // 由 view.chw 算，字級改了也不會失準。
+      const titleX = await page.evaluate(() => window.__app.view.chw * 32);
       await page
         .locator('#mainContainer [data-type="bbsline"]')
         .nth(targetRow)
-        .click({ position: { x: 120, y: 4 } });
+        .click({ position: { x: titleX, y: 4 } });
 
       // 選取移到被點的那篇，並走完既有的兩段序列化開文交易。
       s = await waitState(page, (x) => x.state === 'suspended', 20000);

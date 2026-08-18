@@ -325,7 +325,7 @@ test.describe('文章列表好讀模式（live）', () => {
     }
   });
 
-  test('滾輪＝原生映射本地執行：游標上移＋demand 續抓（不按任何鍵）', async ({ page }) => {
+  test('滾輪＝上下翻頁本地執行：游標上移＋demand 續抓（不按任何鍵）', async ({ page }) => {
     test.setTimeout(120000);
     const logs = attachConsole(page);
     try {
@@ -338,8 +338,8 @@ test.describe('文章列表好讀模式（live）', () => {
       expect(s.state).toBe('active');
       const initial = s.listLen;
 
-      // 滾輪往上：mouse_scroll 依原生偏好映射（素滾＝↑）本地移動游標，
-      // 視窗近緩衝頂即觸發 demand-up 抓更舊頁 —— 與鍵盤同一路徑。
+      // 滾輪往上＝PgUp（2026-08 滑鼠重新設計後唯一的滾輪動作，不再看按住哪顆
+      // 鍵），本地移動游標；視窗近緩衝頂即觸發 demand-up 抓更舊頁 —— 與鍵盤同一路徑。
       const selBefore = s.selectedNum;
       const main = page.locator('#mainContainer');
       await main.hover();
@@ -582,7 +582,7 @@ test.describe('文章列表好讀模式（live）', () => {
       await page.keyboard.press('$');
       s = await settledActive('End-$');
 
-      // 站 3：滾輪（原生映射本地執行）。
+      // 站 3：滾輪（上下翻頁，本地執行）。
       const selBeforeWheel = s.selectedNum;
       await page.locator('#mainContainer').hover();
       for (let i = 0; i < 3; i++) {

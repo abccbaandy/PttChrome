@@ -63,24 +63,34 @@ export const DEFAULT_PREFS = {
   useImgurProxy: true,
   imgurProxyUrl: "",
 
-  // mouse browsing
-  useMouseBrowsing: false,
-  // 游標底色（設定頁的「游標底色」區塊）。三個 pref 共用同一條渲染管線，決策在
-  // js/cursor_highlight.js：
+  // 滑鼠（設定頁的「滑鼠」分頁）。決策層是純函式 js/mouse_regions.js，合約與
+  // 舊→新 key 對照見 docs/mouse.md。
+  //
+  // useMouseBrowsing 是**真正的總開關**：關掉之後移動底色、左鍵、中鍵、滾輪全部
+  // 失效（改版前中鍵與滾輪根本不看它，只關得掉一半）。既然它現在管得住全部，
+  // 預設就得是 true，否則滾輪翻頁這類本來預設就會動的功能會憑空消失。
+  // 文章裡的連結與圖片**不受它影響**，永遠可以點。
+  useMouseBrowsing: true,
+  // 游標底色。三個 pref 共用同一條渲染管線，決策在 js/cursor_highlight.js：
   //   mouseBrowsingHighlight       滑鼠停留的那一列上底色（需 useMouseBrowsing）
   //   keyboardCursorHighlight      鍵盤操作時把游標所在列上底色（原生：真游標列
   //                                buf.cur_y，只在選單／列表；列表好讀：虛擬游標列）
   //   mouseBrowsingHighlightColor  兩者共用的顏色 index → color.css 的 b1..b15
-  // key 名稱刻意保留 mouseBrowsing 前綴（雖然現在不只滑鼠用）：改名等於要為本機與
-  // Firestore 兩邊寫遷移，換不到任何行為。
+  // UI 分處兩個分頁（滑鼠那條在「滑鼠」分頁、鍵盤那條與色票在「一般」分頁），
+  // 但底層是同一條管線。key 名稱刻意保留 mouseBrowsing 前綴（雖然現在不只滑鼠
+  // 用）：改名等於要為本機與 Firestore 兩邊寫遷移，換不到任何行為。
   mouseBrowsingHighlight: true,
   keyboardCursorHighlight: true,
   mouseBrowsingHighlightColor: 2,
-  mouseLeftFunction: 0,
-  mouseMiddleFunction: 0,
-  mouseWheelFunction1: 1,
-  mouseWheelFunction2: 2,
-  mouseWheelFunction3: 3,
+  // 左鍵：列表點標題欄開文章／進看板 + 文章內點左側離開 + 自訂滑鼠指標圖示。
+  // 單一開關，不再是「送 Enter／送右方向鍵」那種按鍵層級的設定。
+  mouseLeftClick: true,
+  // 中鍵：0=關閉 1=貼上 2=左方向鍵。**與舊 mouseMiddleFunction 的值域不同**
+  // （舊的 1 是 Enter），刻意不做遷移，見 docs/mouse.md。
+  mouseMiddleClick: 0,
+  // 滾輪：0=關閉 1=上下頁。舊版有三組設定（素滾／按住右鍵／按住左鍵）× 四種動作，
+  // 全部收斂成這一個。文章好讀模式一律交給瀏覽器捲動，不受此設定影響。
+  mouseWheel: 1,
 
   // displays
   fontFitWindowWidth: false,

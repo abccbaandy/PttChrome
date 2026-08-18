@@ -85,6 +85,36 @@
   z-index:1;
 }
 
+/* 文章左側「點這裡離開」的提示帶（term_view 建構子建立、setExitAffordance 開關）。
+   幾何（left/width）由 term_view.updateExitHintBandGeometry 寫成 inline style，與
+   App.clientToPos 同源（mouse_geometry.js），所以帶子右緣就是可點區右緣。
+
+   pointer-events:none 是**硬需求不是保險**：少了它，左側 7 欄的連結與內嵌預覽圖
+   全部點不到（e.target 會變成帶子本身，closest('a') 一律落空），而「文章裡的可點
+   擊物件優先」正是這個功能的前提。
+
+   刻意不宣告任何 user-select：#BBSWindow 的註解說明了在 Firefox 上最外層的非 auto
+   值會沿 frame 鏈壓過子層，別在這裡開先例（守護 tests/unit/css_user_select.test.js）。 */
+#exitHintBand {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.16),
+    rgba(255, 255, 255, 0)
+  );
+  border-left: 2px solid rgba(255, 255, 255, 0.5);
+  box-sizing: border-box;
+  z-index: 2;
+}
+#exitHintBand.active {
+  opacity: 1;
+}
+
 /* 打字游標。單一 `_` 字元只有 1px 高又閃爍，很難一眼定位（上班模式的低彩度畫面
    尤其明顯），所以把它疊粗成 2~3px 並加一圈淡光暈。
    - currentColor：顏色由 term_view.updateCursorPos 的 inline style 決定

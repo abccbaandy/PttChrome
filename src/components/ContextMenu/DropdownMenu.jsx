@@ -16,7 +16,6 @@ export const DropdownMenu = ({
   urlEnabled,
   normalEnabled,
   selEnabled,
-  mouseBrowsingEnabled,
   quickSearchItems = [],
   quickSearchQuery = "",
   authorBlacklistId,
@@ -141,12 +140,6 @@ export const DropdownMenu = ({
               rightSection={<span>Ctrl+A</span>}
             >
               {i18n("cmenu_selectAll")}
-            </Menu.Item>
-            <Menu.Item
-              onClick={(e) => onMenuSelect("mouseBrowsing", e)}
-              leftSection={<span>{mouseBrowsingEnabled ? "✓" : ""}</span>}
-            >
-              {i18n("cmenu_mouseBrowsing")}
             </Menu.Item>
             {/* 複製本篇文章的 deep link（外部程式貼上後點開即跳回這篇）。只在
                 文章畫面出現：要靠 Q 資訊框才問得出本篇的 AID。 */}

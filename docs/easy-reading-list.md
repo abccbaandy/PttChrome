@@ -17,7 +17,7 @@
 | 類 | 操作 | 處置 |
 |---|---|---|
 | T0 忽略鍵 | `keyEventToBytes(e) == null` 的鍵：CapsLock／F1–F12／NumLock／ScrollLock／不可映射的 Ctrl+Shift 組合 | `_classifyKey` 回 keyClass `ignore` → 吞掉、**不轉態、不 preventDefault**。判準即「這個鍵交給原生鍵盤路徑會不會送出 byte」，不硬列鍵清單 |
-| T1 本地 | ↑↓ jk／PgUp PgDn／Home End（buffer 內）／滾輪；read.c 同義鍵 `空白`＝`N`＝PgDn、`P`＝PgUp、`p`＝↑、`n`＝↓、`$`＝End | 零 server。視窗/游標語意＝web 慣例，不 read.c 逐格對齊（同義鍵集合本身照 read.c:858-902，**Ctrl-F/Ctrl-B 不納入**，維持 Ctrl 組合與瀏覽器快捷鍵的分界）。滑鼠 hover＝上游標底色（`term_view.onListMouseMove`，只對有文章的 body 列） |
+| T1 本地 | ↑↓ jk／PgUp PgDn／Home End（buffer 內）／滾輪；read.c 同義鍵 `空白`＝`N`＝PgDn、`P`＝PgUp、`p`＝↑、`n`＝↓、`$`＝End | 零 server。視窗/游標語意＝web 慣例，不 read.c 逐格對齊（同義鍵集合本身照 read.c:858-902，**Ctrl-F/Ctrl-B 不納入**，維持 Ctrl 組合與瀏覽器快捷鍵的分界）。滑鼠 hover＝上游標底色（`term_view.onListMouseMove`，只對有文章的 body 列；**只有標題欄 col≥30 給 pointer 並接受點擊**，見 `docs/mouse.md`） |
 | T2 列表內交易 | 開文（Enter／**左鍵單擊該列**）、數字跳號、End/Home 邊界確認、`←`/q/e 離板 | 腳本交易（CommandQueue 序列化） |
 | T3 一鍵切原生 passthrough | `[` `]` `=`、`v`、`/`、Ctrl-P、`z`、`s`……**其餘一切未列鍵** | 單按即生效：有序號選取且 `_serverNum` 未同步→先 `native-sync-jump`（frozen＋吞鍵）→ `enter-function-mode`（原生 excursion，不變量 15 拋 cache）→ raw 代送原鍵（`native-key` 佇列命令，防 sync 落地 settle 提早 resume）＋提示「已切至原生」。Ctrl 組合/不可映射鍵不代送（事件放行原生鍵盤路徑）。**黏性 hold（`_nativeHold`）**：切原生後 clean-list settle 一律 stay（反覆 [ ] 不閃動/不誤觸 banner），只有 article（開文→文章好讀接手→返回 re-seed）或 menu（離板→重進板 engage）才恢復好讀 |
 | T3b 貼上 | Shift+Insert／右鍵選單「貼上」／中鍵貼上 | 同 T3，但 payload 是整串：`App.onPasteDone` → `ListSession.onPaste(text)`（回 true＝已接手）→ 需要時 `native-sync-jump` → `enter-function-mode` → `native-paste` 佇列命令送出 `ansiHalfColorConv(u2b(normalizePasteText(...)))`。**PTT 收到後完全原生**：不代按 Enter、不特判 AID（`#` 仍要 Enter 才跳且只移游標不開文，協定 §8.1）；貼上內容自帶換行則照送 Enter。交易在途（opening／frozen）吞掉＋提示 |
@@ -51,10 +51,10 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
 - **缺口 prune**：序號是連續整數，`pruneListToSegment` 在 accumulate（merge→evict 後）只留 pivot 所在連續段，視窗永不跨缺口。pivot＝`session.prunePivot()`：平常＝selection；End jump 在途＝null（留最大段）；Home jump＝1。**far-jump 必設 `_prunePivotOverride`，否則 prune 會把剛抓到的目標頁丟掉**。
 - demand：視窗頂/底距 buffer 邊 **< 2×bodyRows（兩頁）** 即補（方向性、chain 不跨來源 fill/key），提早補頁把 round-trip 藏在使用者到邊之前。到邊等待＝視窗 clamp、鍵 no-op＋右下「讀取中…」指示（`view.setListLoading`；prefetch onDone/markEdge 清除）。
 - 退文回列表＝**re-seed**（不做逐行 parity 還原）：suspended 的 clean-list settle 走 functionMode 同規則——server 落點權威（READ_REDRAW 重繪的 getkeep top＋游標直接採用，順帶刷新推文數）；落點在緩衝內→resume-buffer 保留 maps，否則（pinned 落點 num=null／板名異）＋rebuild。resume（functionMode 出口）同＝採 native 畫面的 top+cursor。
-- 滾輪＝原生偏好映射本地執行（`mouse_scroll`：素滾=↑↓、右鍵滾=PgUp/PgDn、左鍵滾=thread→list 無意義 no-op）；frozen 吞滾輪。
+- 滾輪＝上下頁，本地執行（`mouse_scroll` → `onWheel('pgup'|'pgdn')`）。2026-08 滑鼠重新設計後**不再看按住哪顆鍵**，也不再有「素滾=↑↓」的映射（舊的三組 pref 已刪，見 `docs/mouse.md`）；frozen 吞滾輪。
 - **滑鼠（2026-08-15）**：座標一律先換成**渲染後**的列號，再經 `LIST_HEADER_ROWS`（=3）換算 body index，用 `getWindowView().body[idx]` 反查絕對索引。
-  - hover → `term_view.onListMouseMove`：只有「body 區且該格非 null（非短頁補列）」才上游標底色＋`cursor:pointer`；frozen 一律清掉。**不得走 `term_buf.onMouse_move`**（那套的左緣/右緣/isLineEmpty 全依 server 真實 24 列，對虛擬視窗無意義）——`term_buf.onMouse_move` 自身也擋了 buffer/frozen。
-  - 左鍵單擊 → `ListSession.onMouseClick(renderRow)`：寫回序號錨（`_selectedNum`／`_selectedPinnedKey`）→ `_forceRedraw`（frozen 快照要帶著新游標，否則畫面凍在點擊前那列）→ 走鍵盤同一條 reducer（`open`／`open-pinned`）＋ `_beginOpen`。**永遠不得放行到 `App.onMouse_click`**：那條依 `buf.mouseCursor` 與 server 幾何直送 `\x1b[A`×N+`\r`，座標不對應（開錯文）且繞過 CommandQueue。非 active／frozen 時吞掉＋提示（吞掉不得無聲）。守護：`tests/unit/list_click_open.test.js`、`easy-reading-list.offline.spec.js`「滑鼠單擊…」。
+  - hover → `term_view.onListMouseMove`：只有「body 區且該格非 null（非短頁補列）」才上游標底色；`cursor:pointer` 另需 `mouseLeftClick` 且落在標題欄（col≥30）—— **底色與可點區條件刻意不同**（整列上色、只有標題欄可點），與原生一致。整條路徑受總開關 `useMouseBrowsing` gate；frozen 一律清掉。**不得走 `term_buf.onMouse_move`**（那套的左緣/右緣/isLineEmpty 全依 server 真實 24 列，對虛擬視窗無意義）——`term_buf.onMouse_move` 自身也擋了 buffer/frozen。
+  - 左鍵單擊 → `ListSession.onMouseClick(renderRow, col)`（col 落在標題欄外直接 return）：寫回序號錨（`_selectedNum`／`_selectedPinnedKey`）→ `_forceRedraw`（frozen 快照要帶著新游標，否則畫面凍在點擊前那列）→ 走鍵盤同一條 reducer（`open`／`open-pinned`）＋ `_beginOpen`。**永遠不得放行到 `App.onMouse_click`**：那條依 `buf.mouseAction` 與 server 幾何直送 `\x1b[A`×N+`\r`，座標不對應（開錯文）且繞過 CommandQueue。非 active／frozen 時吞掉＋提示（吞掉不得無聲）。守護：`tests/unit/list_click_open.test.js`、`easy-reading-list.offline.spec.js`「滑鼠單擊…」。
 - header/footer 快取：accumulate 時從「像 clean-list 的 live 幀」更新（row0 含《＋row2 含 編號 → header；底列含 文章選讀 → footer）——跳號空底列不會污染 footer 快取。
 
 ## 狀態機（reducer＝`transitionListSession`，unit 全枚舉為準）

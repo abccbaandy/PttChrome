@@ -486,6 +486,7 @@ export const PrefModal = ({
             <Title order={3}>{i18n("menu_settings")}</Title>
             <Tabs.List>
               <Tabs.Tab value="general">{i18n("options_general")}</Tabs.Tab>
+              <Tabs.Tab value="mouse">{i18n("options_mouse")}</Tabs.Tab>
               <Tabs.Tab value="connection">
                 {i18n("options_connection")}
               </Tabs.Tab>
@@ -711,96 +712,11 @@ export const PrefModal = ({
                   />
                 )}
               </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseBrowsing")}</legend>
-                <PrefCheckbox
-                  name="useMouseBrowsing"
-                  checked={values.useMouseBrowsing}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_useMouseBrowsing")}
-                </PrefCheckbox>
-                <Select
-                  label={i18n("options_mouseLeftFunction")}
-                  name="mouseLeftFunction"
-                  value={String(values.mouseLeftFunction)}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectNum("mouseLeftFunction", val)}
-                  data={selectData([
-                    "options_none",
-                    "options_enterKey",
-                    "options_rightKey",
-                  ])}
-                  mb="xs"
-                />
-                <Select
-                  label={i18n("options_mouseMiddleFunction")}
-                  name="mouseMiddleFunction"
-                  value={String(values.mouseMiddleFunction)}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectNum("mouseMiddleFunction", val)}
-                  data={selectData([
-                    "options_none",
-                    "options_enterKey",
-                    "options_leftKey",
-                    "options_doPaste",
-                  ])}
-                  mb="xs"
-                />
-                <Select
-                  label={i18n("options_mouseWheelFunction1")}
-                  name="mouseWheelFunction1"
-                  value={String(values.mouseWheelFunction1)}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectNum("mouseWheelFunction1", val)}
-                  data={selectData([
-                    "options_none",
-                    "options_upDown",
-                    "options_pageUpDown",
-                    "options_threadLastNext",
-                  ])}
-                  mb="xs"
-                />
-                <Select
-                  label={i18n("options_mouseWheelFunction2")}
-                  name="mouseWheelFunction2"
-                  value={String(values.mouseWheelFunction2)}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectNum("mouseWheelFunction2", val)}
-                  data={selectData([
-                    "options_none",
-                    "options_upDown",
-                    "options_pageUpDown",
-                    "options_threadLastNext",
-                  ])}
-                  mb="xs"
-                />
-                <Select
-                  label={i18n("options_mouseWheelFunction3")}
-                  name="mouseWheelFunction3"
-                  value={String(values.mouseWheelFunction3)}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectNum("mouseWheelFunction3", val)}
-                  data={selectData([
-                    "options_none",
-                    "options_upDown",
-                    "options_pageUpDown",
-                    "options_threadLastNext",
-                  ])}
-                  mb="xs"
-                />
-              </fieldset>
               {/* 游標底色：滑鼠與鍵盤共用同一條渲染管線與同一個顏色，所以獨立成一
-                  區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。 */}
+                  區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。滑鼠那條
+                  已隨整組滑鼠設定搬到「滑鼠」分頁，顏色仍是兩者共用，留在這裡。 */}
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                 <legend>{i18n("options_cursorHighlight")}</legend>
-                <PrefCheckbox
-                  name="mouseBrowsingHighlight"
-                  checked={values.mouseBrowsingHighlight}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_mouseBrowsingHighlight")}
-                </PrefCheckbox>
                 <PrefCheckbox
                   name="keyboardCursorHighlight"
                   checked={values.keyboardCursorHighlight}
@@ -849,6 +765,88 @@ export const PrefModal = ({
                     />
                   ))}
                 </div>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_highlightColorShared")}
+                </Text>
+              </fieldset>
+            </Tabs.Panel>
+            {/* 滑鼠：總開關 + 四個子功能。子項一律 disabled={!useMouseBrowsing}，
+                因為總開關現在真的管得住全部（含中鍵與滾輪）——改版前那兩個根本
+                不看它。決策層是 js/mouse_regions.js，合約見 docs/mouse.md。 */}
+            <Tabs.Panel value="mouse">
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_mouseBrowsing")}</legend>
+                <PrefCheckbox
+                  name="useMouseBrowsing"
+                  checked={values.useMouseBrowsing}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_useMouseBrowsing")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_useMouseBrowsing")}
+                </Text>
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_mouseMove")}</legend>
+                <PrefCheckbox
+                  name="mouseBrowsingHighlight"
+                  checked={values.mouseBrowsingHighlight}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_mouseBrowsingHighlight")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_mouseBrowsingHighlight")}
+                </Text>
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_mouseLeftClick")}</legend>
+                <PrefCheckbox
+                  name="mouseLeftClick"
+                  checked={values.mouseLeftClick}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableMouseLeftClick")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_mouseLeftClick")}
+                </Text>
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_mouseMiddleClick")}</legend>
+                <Select
+                  aria-label={i18n("options_mouseMiddleClick")}
+                  name="mouseMiddleClick"
+                  value={String(values.mouseMiddleClick)}
+                  allowDeselect={false}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={(val) => onSelectNum("mouseMiddleClick", val)}
+                  data={selectData([
+                    "options_none",
+                    "options_doPaste",
+                    "options_leftKey",
+                  ])}
+                  mb="xs"
+                />
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_mouseWheel")}</legend>
+                <Select
+                  aria-label={i18n("options_mouseWheel")}
+                  name="mouseWheel"
+                  value={String(values.mouseWheel)}
+                  allowDeselect={false}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={(val) => onSelectNum("mouseWheel", val)}
+                  data={selectData(["options_none", "options_pageUpDown"])}
+                  mb="xs"
+                />
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_mouseWheel")}
+                </Text>
               </fieldset>
             </Tabs.Panel>
             <Tabs.Panel value="connection">

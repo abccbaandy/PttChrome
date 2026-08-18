@@ -7,6 +7,7 @@
 // 那樣依畫面幾何直接送方向鍵——虛擬視窗的座標與 server 真游標並不對應。
 import { ListSession } from "../../src/js/list_session";
 import { LIST_HEADER_ROWS } from "../../src/js/list_window";
+import { LIST_TITLE_COL_START } from "../../src/js/comment_parse";
 
 // listLines 只需要能被 rowToText 讀（pinnedRowKey 用）：一列 = TermChar-like 陣列。
 function rowOf(text) {
@@ -71,10 +72,14 @@ function makeSession({ count = 8, pinned = 0 } = {}) {
 // 渲染列號：body 第 idx 列 = 3 + idx
 const bodyRow = (idx) => LIST_HEADER_ROWS + idx;
 
+// 標題欄的任一格（欄位對 pttbbs bbs.c#readdoent 校準，見 comment_parse.js）。
+// 虛擬視窗的欄位與 server 逐格對齊，所以原生的欄位表在這裡照樣成立。
+const TITLE_COL = LIST_TITLE_COL_START + 5;
+
 describe("ListSession.onMouseClick", () => {
   test("點第 3 個 body 列 → 選取移到該篇並開文（序號跳轉，不送 raw 方向鍵）", () => {
     const { s, sent, enqueued } = makeSession();
-    s.onMouseClick(bodyRow(2));
+    s.onMouseClick(bodyRow(2), TITLE_COL);
     expect(s._selectedNum).toBe(103);
     expect(s.state).toBe("opening");
     expect(s._renderMode).toBe("frozen");
@@ -87,14 +92,14 @@ describe("ListSession.onMouseClick", () => {
 
   test("點目前已選取的那一列：一樣直接開文", () => {
     const { s, enqueued } = makeSession();
-    s.onMouseClick(bodyRow(0));
+    s.onMouseClick(bodyRow(0), TITLE_COL);
     expect(s._selectedNum).toBe(101);
     expect(enqueued[0].keys).toBe("101\r");
   });
 
   test("點置底文（無序號）走 open-pinned 路徑", () => {
     const { s, enqueued } = makeSession({ count: 3, pinned: 2 });
-    s.onMouseClick(bodyRow(3)); // index 3 = 第一篇置底
+    s.onMouseClick(bodyRow(3), TITLE_COL); // index 3 = 第一篇置底
     expect(s._selectedNum).toBe(null);
     expect(s._selectedPinnedKey).toBeTruthy();
     expect(s.state).toBe("opening");
@@ -103,16 +108,16 @@ describe("ListSession.onMouseClick", () => {
 
   test("點空白補列（短頁 filler）：完全不動作", () => {
     const { s, enqueued } = makeSession({ count: 3 });
-    s.onMouseClick(bodyRow(10)); // 只有 3 篇，第 10 格是 filler
+    s.onMouseClick(bodyRow(10), TITLE_COL); // 只有 3 篇，第 10 格是 filler
     expect(s.state).toBe("active");
     expect(enqueued).toEqual([]);
   });
 
   test("點 header／footer 列：完全不動作", () => {
     const { s, enqueued } = makeSession();
-    s.onMouseClick(0);
-    s.onMouseClick(2);
-    s.onMouseClick(23);
+    s.onMouseClick(0, TITLE_COL);
+    s.onMouseClick(2, TITLE_COL);
+    s.onMouseClick(23, TITLE_COL);
     expect(s.state).toBe("active");
     expect(enqueued).toEqual([]);
   });
@@ -121,15 +126,37 @@ describe("ListSession.onMouseClick", () => {
     const { s, enqueued, hints } = makeSession();
     s.state = "opening";
     s._renderMode = "frozen";
-    s.onMouseClick(bodyRow(1));
+    s.onMouseClick(bodyRow(1), TITLE_COL);
     expect(enqueued).toEqual([]);
     expect(hints.length).toBe(1);
+  });
+
+  // 欄位限制：改版前整列（col 7..63）都可開文，點到日期或作者欄就誤開文章。
+  test("點作者欄最後一格（col 29）：完全不動作", () => {
+    const { s, enqueued } = makeSession();
+    s.onMouseClick(bodyRow(2), LIST_TITLE_COL_START - 1);
+    expect(s.state).toBe("active");
+    expect(enqueued).toEqual([]);
+  });
+
+  test("點序號／日期欄：完全不動作", () => {
+    const { s, enqueued } = makeSession();
+    [0, 6, 12, 20].forEach((col) => s.onMouseClick(bodyRow(2), col));
+    expect(s.state).toBe("active");
+    expect(enqueued).toEqual([]);
+  });
+
+  test("標題欄第一格（col 30）就可以開文", () => {
+    const { s, enqueued } = makeSession();
+    s.onMouseClick(bodyRow(2), LIST_TITLE_COL_START);
+    expect(s._selectedNum).toBe(103);
+    expect(enqueued.length).toBe(1);
   });
 
   test("原生鏡像（renderMode native）：不處理，交給原生滑鼠瀏覽", () => {
     const { s, enqueued, hints } = makeSession();
     s._renderMode = "native";
-    s.onMouseClick(bodyRow(1));
+    s.onMouseClick(bodyRow(1), TITLE_COL);
     expect(enqueued).toEqual([]);
     expect(hints).toEqual([]);
   });

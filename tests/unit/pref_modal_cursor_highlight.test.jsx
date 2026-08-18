@@ -42,7 +42,12 @@ window.ResizeObserver =
   };
 window.scrollTo = window.scrollTo || (() => {});
 
-// 「一般」分頁是預設分頁，開啟即是。
+// 「一般」分頁是預設分頁，開啟即是。**滑鼠停留底色已搬到「滑鼠」分頁**（2026-08
+// 滑鼠功能重新設計），這裡只剩鍵盤游標開關與兩者共用的顏色色票。
+//
+// 陷阱：Mantine Tabs 預設 keepMounted，非作用分頁仍在 DOM ⇒ 用
+// document.querySelector 抓得到別的分頁的欄位、測試會綠著卻語意錯。要驗「在哪個
+// 分頁」一律先 getByRole("tab") 切過去（見 tests/unit/pref_modal_mouse_tab.test.jsx）。
 const openModal = (prefs = {}) => {
   window.localStorage.setItem(
     PREF_KEY,
@@ -91,10 +96,21 @@ describe("設定頁：游標底色", () => {
     expect(readValuesWithDefault().keyboardCursorHighlight).toBe(false);
   });
 
-  test("滑鼠停留底色與鍵盤游標底色各自獨立", () => {
+  test("滑鼠停留底色與鍵盤游標底色各自獨立（前者現在住在「滑鼠」分頁）", () => {
     openModal({ keyboardCursorHighlight: false });
     expect(box("mouseBrowsingHighlight")).toBeChecked();
     expect(box("keyboardCursorHighlight")).not.toBeChecked();
+  });
+
+  test("「一般」分頁只留鍵盤那條與色票，滑鼠那條不在這一頁", () => {
+    openModal();
+    const general = screen
+      .getByRole("tab", { name: i18n("options_general") })
+      .getAttribute("aria-controls");
+    const panel = document.getElementById(general);
+    expect(panel.querySelector('[name="keyboardCursorHighlight"]')).toBeTruthy();
+    expect(panel.querySelector(".PrefModal__HighlightColors")).toBeTruthy();
+    expect(panel.querySelector('[name="mouseBrowsingHighlight"]')).toBeNull();
   });
 
   test("點色票 → 共用顏色寫進 mouseBrowsingHighlightColor", () => {
