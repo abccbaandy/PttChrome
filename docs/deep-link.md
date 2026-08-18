@@ -29,6 +29,20 @@
   同分頁再貼一次只觸發 `hashchange`（不重載、不用重新登入）。
 - 消費後 `history.replaceState` 清掉參數（`stripDeepLink`），否則 F5 會重跳一次。
 
+## 外部改寫（瀏覽器套件 → 本站）
+
+Requestly shared list（README 有一鍵匯入連結）：
+`https://app.requestly.io/rules#sharedList/1879e51729bb474c8011b0d98216927e-ptt-deep-link`
+
+```
+match:   /^https?:\/\/www\.ptt\.cc\/bbs\/([A-Za-z0-9_-]+\/M\.\d+\.A\.[A-Z0-9]+\.html)/
+rewrite: https://abccbaandy.github.io/PttChrome/#$1
+```
+
+- 只是把 ptt.cc 文章網址搬進 hash，落點即上表的**正規形式** ⇒ 本專案零程式碼配合。
+- 該 regex 比本站 `parseDeepLink` **更嚴**（要求 `.A.` 後有 hex、看板名不含 `.`）：
+  改寫不到的網址只是照常開官方網頁版，不會產生壞連結 ⇒ 不需與 `aid_codec` 同步放寬。
+
 ## 本篇 AID 的兩條取得路徑
 
 「我現在在讀哪一篇」是複製連結、返回錨點、網址列同步共同的前提。畫面上的 `#AID`
