@@ -14,7 +14,7 @@
 | 原生畫面套用 | `term_buf.onMouse_move` | 寫 `mouseAction`／`nowHighlight`／指標／提示帶 |
 | 列表好讀套用 | `term_view.onListMouseMove` + `list_session.onMouseClick` | 虛擬視窗自己一套 |
 | 事件入口 | `pttchrome.jsx` | `mouse_click` / `middleMouse_down` / `mouse_scroll` |
-| 底色 | `cursor_highlight.js` + `term_view.applyCursorHighlight` | 滑鼠與鍵盤共用，**唯一真相源** |
+| 底色 | `cursor_highlight.js` + `term_view.applyCursorHighlight` | 滑鼠與鍵盤共用，**唯一真相源**；仲裁見下方「底色仲裁」 |
 
 ## pref schema（`pref_storage.js`）
 
@@ -86,7 +86,7 @@
 
 | 入口 | 條件 |
 |---|---|
-| 底色 | `useMouseBrowsing && mouseBrowsingHighlight`（在 `resolveHighlightRow` 的 `mouseEnabled`，**不要再加第二層**） |
+| 底色 | `useMouseBrowsing && mouseBrowsingHighlight`（在 `resolveHighlightRow` 的 `mouseEnabled`，**不要再加第二層**）；滑鼠與鍵盤誰贏另見「底色仲裁」 |
 | 指標圖示 | `useMouseBrowsing && mouseLeftClick` |
 | 左鍵動作 | `useMouseBrowsing && mouseLeftClick` |
 | 左側提示帶 | `useMouseBrowsing && mouseLeftClick && pageState === 3` |
@@ -101,6 +101,37 @@
 滾輪關閉時 `mouse_scroll` **直接 return，不 preventDefault**（語意＝我們完全不碰）。
 原生模式沒有可捲距離（`#BBSWindow` 是 `fixed; overflow:hidden`，`.main` 的高度就是
 內容高），所以放行不會造成怪異捲動。
+
+## 底色仲裁（誰最後動誰贏）
+
+`resolveHighlightRow` 收一個 `lastMover`（`'mouse'` | `'keyboard'`），狀態由
+`term_view`（`_highlightMover` / `_highlightMode` / `_lastCursorRow`）維護：
+
+| 事件 | 怎麼判 |
+|---|---|
+| 滑鼠移動 | 明講：`applyCursorHighlight('mouse')`。來源只有兩處 —— `term_view.onListMouseMove`、`term_buf.setHighlight`（**且 row >= 0**） |
+| 鍵盤游標移動 | 沒有事件可掛（游標是 server 畫的）⇒ 以「鍵盤游標列變了」推導：`mode` 相同且 `kbRow !== _lastCursorRow` |
+
+規則：`lastMover === 'keyboard'` **且該畫面真的有鍵盤游標列**時鍵盤贏，其餘沿用「滑鼠優先」。
+後半段的守門是刻意的 —— 鍵盤底色關掉、或文章頁（native pageState 3）本來就沒有游標列，
+不能因為「剛剛按過鍵」就讓 hover 底色整個消失。
+
+三個坑，改這段前先看：
+
+- **`row < 0`（`clearHighlight`）不算滑鼠移動**：`term_buf.notify` 每個重畫幀都呼叫它，
+  當成滑鼠移動的話鍵盤永遠搶不到底色。
+- **比對 `mode` 是必要的**：native 的 `buf.cur_y` 與 listBuffer 的虛擬游標列是兩套列號，
+  模式切換造成的列號變動不是使用者移動游標。
+- **`onListMouseMove` 的同列早退只在滑鼠本來就持有底色時成立**（`wasMouse`）：
+  鍵盤剛搶走時，即使 hover 列沒變也要重新套用，否則在同一列內晃滑鼠拿不回來。
+
+歷史坑：改成仲裁之前是「滑鼠恆勝」（`mouseEnabled && mouseRow >= 0` 就回 hover 列），
+而滑鼠列是**黏著狀態** —— 列表好讀的 `_listHoverRow` 沒有任何一處會在鍵盤操作時清掉
+⇒ 滑鼠停過一次之後底色就釘死在那一列（原生只因 `notify` 順手 `clearHighlight` 而在
+「有重畫的幀」看起來正常，純游標移動的幀一樣卡住）。
+
+`term_buf.notify` 的 `if (this.changed) clearHighlight()` **刻意保留**：它同時清
+`mouseAction`/`mouseActionRow`，點擊正確性依賴它。
 
 ## 三種 render 分支各由誰處理
 
@@ -187,6 +218,8 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 | `tests/unit/mouse_regions.test.js` | 區域決策表逐格 + `cursorCss` 括號平衡 |
 | `tests/unit/mouse_geometry.test.js` | 帶子右緣 ↔ 可點區右緣往返（三組幾何） |
 | `tests/unit/mouse_gating.test.js` | 總開關關掉 ⇒ 中鍵與滾輪也關 |
+| `tests/unit/cursor_highlight.test.js` | 底色決策表 + `lastMover` 仲裁（含鍵盤底色關／文章頁的回退） |
+| `tests/unit/cursor_highlight_arbitration.test.js` | `applyCursorHighlight` 的來源判定：鍵盤搶得走、滑鼠拿得回、模式切換不算移動 |
 | `tests/unit/list_hover_gating.test.js` | 列表 hover 的三個 gate、底色 vs pointer 條件不同 |
 | `tests/unit/list_click_open.test.js` | 列表點擊的標題欄限制 |
 | `tests/unit/pref_modal_mouse_tab.test.jsx` | 設定分頁的欄位、預設值、子項 disabled、選項值域 |

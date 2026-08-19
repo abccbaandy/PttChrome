@@ -1242,9 +1242,12 @@ TermBuf.prototype = {
   // nowHighlight 的 setter（見建構子的 defineProperty）＝「滑鼠停在哪一列」。
   // 實際上不上色由 view 決定：鍵盤游標也可能是來源，且列表好讀模式用的是另一組
   // 座標，故一律轉交唯一入口 applyCursorHighlight（見 js/cursor_highlight.js）。
+  //
+  // row >= 0 才算「滑鼠移動」（讓滑鼠重新取得底色優先權）：row < 0 是 clearHighlight，
+  // 而 notify 每個重畫幀都會呼叫它，把那個也當成滑鼠移動會讓鍵盤永遠搶不到底色。
   setHighlight: function(row) {
     this._nowHighlight = row;
-    if (this.view) this.view.applyCursorHighlight();
+    if (this.view) this.view.applyCursorHighlight(row >= 0 ? 'mouse' : undefined);
   },
 
   clearHighlight: function(){

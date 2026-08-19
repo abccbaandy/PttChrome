@@ -121,3 +121,66 @@ describe("resolveHighlightRow：好讀文章長頁", () => {
     ).toBe(-1);
   });
 });
+
+// 2026-08 回歸：滑鼠底色開啟時，鍵盤游標移動底色不跟著動。
+// 舊規則是「滑鼠恆勝」（mouseEnabled && mouseRow >= 0 就回 hover 列），而 hover 列是
+// 黏著狀態（只有真的收到 mousemove 才會變）⇒ 滑鼠停過一次之後，鍵盤怎麼按都搶不回來。
+// 新規則：誰最後動誰贏（lastMover），但鍵盤只有在該畫面真的有游標列時才搶得走。
+describe("resolveHighlightRow：誰最後動誰贏（lastMover）", () => {
+  const native = {
+    mode: "native",
+    mouseEnabled: true,
+    keyboardEnabled: true,
+    mouseRow: 11,
+    cursorRow: 5,
+    pageState: 2,
+  };
+  const listBuffer = {
+    mode: "listBuffer",
+    mouseEnabled: true,
+    keyboardEnabled: true,
+    mouseRow: 15,
+    listCursorRow: 8,
+    cursorRow: 3,
+    pageState: 3,
+  };
+
+  test("原生：hover 列黏著，但最後動的是鍵盤 ⇒ 上色鍵盤游標列", () => {
+    expect(resolveHighlightRow({ ...native, lastMover: "keyboard" })).toBe(5);
+  });
+
+  test("列表好讀：hover 列黏著，但最後動的是鍵盤 ⇒ 上色虛擬游標列", () => {
+    expect(resolveHighlightRow({ ...listBuffer, lastMover: "keyboard" })).toBe(8);
+  });
+
+  test("最後動的是滑鼠 ⇒ 回 hover 列", () => {
+    expect(resolveHighlightRow({ ...native, lastMover: "mouse" })).toBe(11);
+    expect(resolveHighlightRow({ ...listBuffer, lastMover: "mouse" })).toBe(15);
+  });
+
+  test("沒給 lastMover（舊呼叫端）⇒ 行為與改版前相同：滑鼠優先", () => {
+    expect(resolveHighlightRow(native)).toBe(11);
+    expect(resolveHighlightRow(listBuffer)).toBe(15);
+  });
+
+  test("鍵盤底色關掉：就算最後動的是鍵盤，hover 底色照舊生效", () => {
+    expect(
+      resolveHighlightRow({ ...native, keyboardEnabled: false, lastMover: "keyboard" })
+    ).toBe(11);
+  });
+
+  test("該畫面沒有鍵盤游標列（文章頁／游標列缺值）：hover 底色照舊生效", () => {
+    expect(
+      resolveHighlightRow({ ...native, pageState: 3, lastMover: "keyboard" })
+    ).toBe(11);
+    expect(
+      resolveHighlightRow({ ...listBuffer, listCursorRow: -1, lastMover: "keyboard" })
+    ).toBe(15);
+  });
+
+  test("好讀長頁一律不上色，lastMover 不影響", () => {
+    expect(
+      resolveHighlightRow({ ...native, mode: "article", lastMover: "keyboard" })
+    ).toBe(-1);
+  });
+});

@@ -139,6 +139,14 @@ export function TermView() {
   this._listCursorRow = -1;
   this._listHoverRow = -1;
 
+  // 游標底色的「誰最後動誰贏」仲裁狀態（決策在 js/cursor_highlight.js）：
+  //   _highlightMover  'mouse' | 'keyboard'，最後移動的是誰
+  //   _highlightMode   上一次套用時的模式，用來排除模式切換造成的假移動
+  //   _lastCursorRow   上一次套用時的鍵盤游標列（native=buf.cur_y、listBuffer=_listCursorRow）
+  this._highlightMover = 'mouse';
+  this._highlightMode = null;
+  this._lastCursorRow = -1;
+
   // 閃爍底線抑制（autoHideBlinkCursor）：PTT 自己畫了 '>' 游標的畫面（列表／選單）
   // 不需要再疊一個閃爍底線。與 _cursorHidden 是**兩個獨立來源**，用 OR 合併於
   // _applyCursorVisibility —— 不可共用一個旗標：_cursorHidden 會讓 updateCursorPos
@@ -685,15 +693,27 @@ TermView.prototype = {
   //              （由 buildListWindowLines 記下；frozen 沿用上一份快照的值）
   //   article    好讀累積長頁 → 不上色（沒有「游標列」的概念）
   //   native     原生畫面 → server 真游標列 buf.cur_y（只在選單／列表）
-  // 滑鼠 hover 一律優先。呼叫點：redraw 的每個 render 分支、term_buf.setHighlight
-  // （hover 變動）、updateCursorPos（只有游標動、內容沒動的幀）、pref 變更。
-  applyCursorHighlight: function() {
+  // 呼叫點：redraw 的每個 render 分支、term_buf.setHighlight（hover 變動）、
+  // updateCursorPos（只有游標動、內容沒動的幀）、pref 變更。
+  //
+  // source === 'mouse' ＝ 這次是**真的滑鼠移動**（onListMouseMove / term_buf 的 hover
+  // 列變動），滑鼠因此重新取得優先權。鍵盤沒有對應事件可掛（游標是 server 畫的），
+  // 改以「鍵盤游標列變了」推導；模式切換時 native 的 cur_y 與 listBuffer 的虛擬游標
+  // 列是兩套列號，列號變動不算使用者移動游標，故先比對 mode。
+  applyCursorHighlight: function(source) {
     if (!this.buf) return;
     var listMode =
       this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen';
     var mode = listMode
       ? 'listBuffer'
       : (this.useEasyReadingMode && this.buf.pageState === 3 ? 'article' : 'native');
+    var kbRow = listMode ? this._listCursorRow : this.buf.cur_y;
+    if (source === 'mouse')
+      this._highlightMover = 'mouse';
+    else if (mode === this._highlightMode && kbRow !== this._lastCursorRow)
+      this._highlightMover = 'keyboard';
+    this._highlightMode = mode;
+    this._lastCursorRow = kbRow;
     var row = resolveHighlightRow({
       mode: mode,
       pageState: this.buf.pageState,
@@ -703,7 +723,8 @@ TermView.prototype = {
       mouseRow: listMode ? this._listHoverRow : this.buf.nowHighlight,
       keyboardEnabled: !!this.keyboardCursorHighlight,
       cursorRow: this.buf.cur_y,
-      listCursorRow: this._listCursorRow
+      listCursorRow: this._listCursorRow,
+      lastMover: this._highlightMover
     });
     if (TRACE)
       console.log(`applyCursorHighlight: mode=${mode} row=${row} bg=${this.highlightBG}`);
@@ -1061,9 +1082,14 @@ TermView.prototype = {
       this.buf.BBSWin.style.cursor = clickable ? 'pointer' : 'auto';
     // 列表模式不可能有文章左側的退出帶；不關掉的話從文章切回列表會留下殘影。
     this.setExitAffordance(false);
-    if (hover === this._listHoverRow) return;
+    // 滑鼠動了 ⇒ 由滑鼠持有底色。早退（同一列內移動）只在**滑鼠本來就持有**時成立：
+    // 鍵盤剛把底色搶走的話，即使 hover 列沒變也要重新套用，否則在同一列內晃動滑鼠
+    // 永遠拿不回來。
+    var wasMouse = this._highlightMover !== 'keyboard';
+    this._highlightMover = 'mouse';
+    if (hover === this._listHoverRow && wasMouse) return;
     this._listHoverRow = hover;
-    this.applyCursorHighlight();
+    this.applyCursorHighlight('mouse');
   },
 
   // Lightweight fading toast for the list easy-reading closed interaction
