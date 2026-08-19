@@ -286,11 +286,15 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     // #374151）上的游標仍是原生反色 #3F3F3F，對比 ≈1.0 等於隱形。
     // 上班模式下游標與 bg 無關（cursor_color.js 的固定淺灰），故不依賴畫面內容。
     await expect(page.locator('#cursor')).toHaveCSS('color', 'rgb(229, 231, 235)');
-    // 加粗＋光暈（main.css #cursor text-shadow）：單一 `_` 太細，難一眼定位。
-    const cursorShadow = await page.evaluate(
-      () => getComputedStyle(document.getElementById('cursor')).textShadow
-    );
-    expect(cursorShadow).not.toBe('none');
+    // 游標本體是一條 currentColor 的直線 ＋ 一圈 box-shadow 光暈（main.css #cursor）：
+    // 低彩度的上班模式畫面尤其需要，否則細線很難一眼定位。形狀／幾何另在
+    // cursor_shape.offline.spec.js 守。
+    const cursorPaint = await page.evaluate(() => {
+      const cs = getComputedStyle(document.getElementById('cursor'));
+      return { bg: cs.backgroundColor, color: cs.color, shadow: cs.boxShadow };
+    });
+    expect(cursorPaint.bg).toBe(cursorPaint.color);
+    expect(cursorPaint.shadow).not.toBe('none');
 
     // 持久化：重新整理後 class 仍在（onValuesPrefChange 啟動即套用）。
     const saved = await page.evaluate(() =>

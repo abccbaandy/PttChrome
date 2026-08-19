@@ -1,4 +1,5 @@
-// 閃爍底線抑制（autoHideBlinkCursor）—— 離線守門（真瀏覽器 / 真 CSS / 零網路）。
+// 閃爍游標抑制（autoHideBlinkCursor）—— 離線守門（真瀏覽器 / 真 CSS / 零網路）。
+// （游標本身的形狀／幾何在 cursor_shape.offline.spec.js，這裡只管「看不看得到」。）
 //
 // 為什麼一定要上 e2e：抑制的最終效果是「#cursor 的 computed display」，而顯示權由
 // **兩層**決定 —— inline style（term_view._applyCursorVisibility）疊上每秒 toggle
@@ -39,8 +40,8 @@ async function observeCursor(page, ms = 2600) {
   }, ms);
 }
 
-test.describe('PTT 有游標時隱藏閃爍底線（離線）', () => {
-  test('預設開啟：PTT 畫了 > 的列表畫面，底線完全不顯示', async ({ page }) => {
+test.describe('PTT 有游標時隱藏閃爍游標（離線）', () => {
+  test('預設開啟：PTT 畫了 > 的列表畫面，閃爍游標完全不顯示', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {
@@ -55,7 +56,7 @@ test.describe('PTT 有游標時隱藏閃爍底線（離線）', () => {
     expect(await observeCursor(page)).toEqual(['none']);
   });
 
-  test('同一個設定下，沒有 PTT 游標的畫面（輸入框）底線照舊閃爍', async ({ page }) => {
+  test('同一個設定下，沒有 PTT 游標的畫面（輸入框）游標照舊閃爍', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {
@@ -80,7 +81,7 @@ test.describe('PTT 有游標時隱藏閃爍底線（離線）', () => {
     await page.waitForTimeout(400);
     expect(await observeCursor(page)).toEqual(['none']);
 
-    // 離開列表進到輸入狀態：游標移到空白格 → 底線回來
+    // 離開列表進到輸入狀態：游標移到空白格 → 閃爍游標回來
     await feedRaw(page, PLAIN_ROW_NO_CURSOR);
     await page.waitForTimeout(400);
     expect(await observeCursor(page)).toContain('block');
@@ -91,7 +92,7 @@ test.describe('PTT 有游標時隱藏閃爍底線（離線）', () => {
     expect(await observeCursor(page)).toEqual(['none']);
   });
 
-  test('設定關閉 → 列表畫面底線照舊閃爍（兩個游標同框）', async ({ page }) => {
+  test('設定關閉 → 列表畫面游標照舊閃爍（兩個游標同框）', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {

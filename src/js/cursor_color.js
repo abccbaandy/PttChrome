@@ -1,6 +1,7 @@
-// 打字用的閃爍底線游標（#cursor）要用什麼顏色。
+// 打字用的閃爍直線游標（#cursor）要用什麼顏色。
 //
-// 游標色是 inline style（term_view.updateCursorPos），原生模式沿用 fork 來的做法：
+// 游標色是 inline style（term_view.updateCursorPos，直線本體以 background-color:
+// currentColor 吃它），原生模式沿用 fork 來的做法：
 // 取「當前字元 ANSI 背景色的反色」termInvColors[bg]，所以游標永遠壓得過它踩著的那格。
 // 但上班模式（enableWorkMode）是純 CSS 覆寫 .b*（color.css 的 .work-mode-active
 // 生成區塊），碰不到 inline style —— 反色算的是原生背景、畫出來的卻是灰階背景，

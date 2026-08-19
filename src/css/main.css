@@ -115,17 +115,26 @@
   opacity: 1;
 }
 
-/* 打字游標。單一 `_` 字元只有 1px 高又閃爍，很難一眼定位（上班模式的低彩度畫面
-   尤其明顯），所以把它疊粗成 2~3px 並加一圈淡光暈。
+/* 打字游標＝一條細長直線（像 <input> 的 caret），不是字元。
+   前身是 index.html 裡一個 `_` 字元疊 text-shadow 加粗成底線，但底線的垂直位置取決於
+   字型的 underscore glyph metrics（元素本身 height:0），在反白輸入列這類畫面會畫到格子
+   外面、看起來像掉到下一列。改成有明確幾何的方塊後，位置與高度都不再經過字型。
+   - height: 1em ＝一格列高：font-size 由 term_view.setTermFontSize 寫成 inline（＝chh），
+     字級改變自動跟著走。left/top 由 updateCursorPos 寫成 inline（＝該格左上角）。
    - currentColor：顏色由 term_view.updateCursorPos 的 inline style 決定
      （原生＝背景反色、上班模式＝固定淺灰，見 cursor_color.js），這裡自動跟著走。
-   - 位移一律往上：.terminal_display 是 height:0 的絕對定位元素，往下疊會壓到下一列。 */
+     光暈用 box-shadow —— 沒有文字了，text-shadow 不會有任何效果。
+   - transform-origin: 0 0 是硬需求：fontFitWindowWidth 時 updateCursorPos 會對 #cursor
+     下 transform: scale(sx, sy)，預設的 center 原點會讓有高度的直線垂直位移
+     (h - h*sy)/2（舊的 height:0 元素剛好看不出來）。
+   守護：tests/e2e/offline/cursor_shape.offline.spec.js */
 #cursor {
   display: none;
-  text-shadow:
-    0 -1px 0 currentColor,
-    0 -2px 0 currentColor,
-    0 0 4px currentColor;
+  width: 2px;
+  height: 1em;
+  background-color: currentColor;
+  box-shadow: 0 0 4px currentColor;
+  transform-origin: 0 0;
 }
 
 .blink--active #cursor {

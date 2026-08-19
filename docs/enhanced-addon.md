@@ -271,7 +271,7 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用�
 `highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、
 `enableBareDomainLink`(true)、`blacklist`/`titleBlacklist`("" 換行)。
 
-**「一般 → 介面」分頁**：`autoHideBlinkCursor`(true) — PTT 自己畫了游標的畫面不再疊閃爍底線。
+**「一般 → 介面」分頁**：`autoHideBlinkCursor`(true) — PTT 自己畫了游標的畫面不再疊閃爍游標。
 判定純函式 `comment_parse.js#hasServerCursorMark`（cur_x/cur_y 那格＝游標記號；兩代 `>`/`●` 都認），
 依據是 pttbbs `mbbsd/stuff.c#cursor_show` 印完記號會把終端機游標**移回同一格**（`psb.c` 用
 `STR_CURSOR "\b"` 同義）。套用鏈：`term_buf.notify`（changed/posChanged 的共同匯流點，每幀一次）

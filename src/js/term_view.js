@@ -147,8 +147,8 @@ export function TermView() {
   this._highlightMode = null;
   this._lastCursorRow = -1;
 
-  // 閃爍底線抑制（autoHideBlinkCursor）：PTT 自己畫了 '>' 游標的畫面（列表／選單）
-  // 不需要再疊一個閃爍底線。與 _cursorHidden 是**兩個獨立來源**，用 OR 合併於
+  // 閃爍游標抑制（autoHideBlinkCursor）：PTT 自己畫了 '>' 游標的畫面（列表／選單）
+  // 不需要再疊一個閃爍游標。與 _cursorHidden 是**兩個獨立來源**，用 OR 合併於
   // _applyCursorVisibility —— 不可共用一個旗標：_cursorHidden 會讓 updateCursorPos
   // 提早 return（位置不再更新），而 list_session 的 showCursor() 會把它清掉，
   // 連帶把這裡的抑制狀態一起清掉。
@@ -1292,7 +1292,7 @@ TermView.prototype = {
   updateCursorPos: function() {
     // 鍵盤游標底色跟著真游標走，而游標可能在「內容沒變」的幀單獨移動
     // （term_buf.notify 的 posChanged 分支），那種幀不會進 redraw → 底色會落後一步。
-    // 放在所有 early-return 之前：上色與游標 DOM 無關，就算底線被隱藏也照樣要更新。
+    // 放在所有 early-return 之前：上色與游標 DOM 無關，就算閃爍游標被隱藏也照樣要更新。
     this.applyCursorHighlight();
     if (this._cursorHidden) return;
 
@@ -1316,13 +1316,15 @@ TermView.prototype = {
       this.lastRowDiv.style.webkitTransform = scaleCss;
       this.replyRowDiv.style.webkitTransform = scaleCss;
       this.bbsCursor.style.webkitTransform = scaleCss;
-      this.bbsCursor.style.webkitTransformOriginX = 'left';
       this.lastRowDiv.style.webkitTransformOriginY = '-1100%';
       this.replyRowDiv.style.webkitTransformOriginY = '-1010%';
     }
 
     this.bbsCursor.style.left = pos[0] + 'px';
-    this.bbsCursor.style.top = (pos[1] - this.scaleY) + 'px';
+    // 游標是一條高 1em 的直線（main.css #cursor），convertMN2XYEx 回傳的正是該格左上角
+    // → 直接貼齊，整條線就落在 [top, top + chh*scaleY) 這一格內。舊的 `-scaleY` 是配合
+    // 底線字元 glyph 的偏移 hack，對方塊只會讓它高出格子一像素。
+    this.bbsCursor.style.top = pos[1] + 'px';
     // if you want to set cursor color by now background, use this.
     this.bbsCursor.style.color = cursorColorForBg(bg, this.workModeActive);
     this.updateInputBufferPos();
