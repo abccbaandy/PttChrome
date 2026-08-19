@@ -147,6 +147,13 @@ export function TermView() {
   this._highlightMode = null;
   this._lastCursorRow = -1;
 
+  // 這一幀的 #mainContainer 畫的是不是「固定格線的一整螢幕」（原生／functionMode
+  // 原生鏡像／列表好讀視窗）。好讀的累積長頁不是 —— 它是一份可自由捲動的長文，
+  // 第 N 列與格線第 N 列毫無關係。updateCursorPos 用它決定要不要扣掉 .main 的
+  // scrollTop（見那裡的座標系說明）。只有真的重畫 #mainContainer 的分支才改它：
+  // 好讀的兩個 overlay 分支只換 overlay 列，畫面內容沿用上一次，旗標也要沿用。
+  this._gridRender = true;
+
   // 閃爍游標抑制（autoHideBlinkCursor）：PTT 自己畫了 '>' 游標的畫面（列表／選單）
   // 不需要再疊一個閃爍游標。與 _cursorHidden 是**兩個獨立來源**，用 OR 合併於
   // _applyCursorVisibility —— 不可共用一個旗標：_cursorHidden 會讓 updateCursorPos
@@ -522,6 +529,7 @@ TermView.prototype = {
         // page may have been scrolled down). See easy_reading.js functionMode + docs.
         this.hideEasyReadingOverlaysKeepPage();
         this.mainDisplay.scrollTop = 0;
+        this._gridRender = true;
         this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false);
       } else if (
         (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') &&
@@ -551,6 +559,7 @@ TermView.prototype = {
         // blacklist-filtered (visibleListIndices), nothing left to hide.
         this.hideEasyReadingOverlaysKeepPage();
         if (this.mainDisplay) this.mainDisplay.scrollTop = 0;
+        this._gridRender = true;
         var windowLines = null;
         if (this.buf.listRenderMode === 'buffer') {
           this.accumulateListLines();
@@ -583,6 +592,7 @@ TermView.prototype = {
         // appendRows(showsLinkPreview=true) behaviour. Hover preview off (inline
         // already shows them; avoids a duplicate floating popup).
         this.accumulatePageLines();
+        this._gridRender = false;
         this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, STABLE_ROWS);
       } else if (
         this.useEasyReadingMode &&
@@ -600,6 +610,7 @@ TermView.prototype = {
         // has been quiet on a non-article page for SETTLE_MS), so while it says 3 we
         // just keep showing the accumulated page and accumulate nothing. Teardown for a
         // real exit moved to EasyReading._teardownAccumulationOffArticle (settle-driven).
+        this._gridRender = false;
         this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, STABLE_ROWS);
       } else {
         // Native screen, OR easy reading sitting on a list/menu (pageState != 3):
@@ -608,6 +619,7 @@ TermView.prototype = {
         // easy-reading list/menu shows neither (matches the old hideEasyReading path).
         // (Mid-article transients never reach here — the branch above holds them.)
         if (this.useEasyReadingMode) this.hideEasyReadingOverlays();
+        this._gridRender = true;
         this._renderScreenLines(
           /* a fresh copy for componentWillReceiveProps */ lines.slice(),
           /* dropHidden */ false,
@@ -1324,7 +1336,16 @@ TermView.prototype = {
     // 游標是一條高 1em 的直線（main.css #cursor），convertMN2XYEx 回傳的正是該格左上角
     // → 直接貼齊，整條線就落在 [top, top + chh*scaleY) 這一格內。舊的 `-scaleY` 是配合
     // 底線字元 glyph 的偏移 hack，對方塊只會讓它高出格子一像素。
-    this.bbsCursor.style.top = pos[1] + 'px';
+    //
+    // **扣掉 .main 的 scrollTop 是硬需求**：#cursor 是 #BBSWindow（position:fixed）下的
+    // 絕對定位元素，convertMN2XYEx 給的是**格線座標**，完全不受捲動影響；而它要貼齊的
+    // 那一列在 #mainContainer 裡，會跟著 .main 捲。兩個座標系一脫鉤，游標就掉出該列
+    // （症狀：推文時閃爍直線戳出反白輸入匡）。歷史上是靠「每條模式切換路徑都記得把
+    // padding 清掉／scrollTop 歸零」擋，漏一條就破功（functionMode 就漏了）。
+    // 只在 _gridRender 的幀補償：好讀累積長頁的第 N 列與格線第 N 列無關，補了會把游標
+    // 甩出畫面。守護：tests/e2e/offline/cursor_shape.offline.spec.js
+    this.bbsCursor.style.top =
+      (pos[1] - (this._gridRender ? this.mainDisplay.scrollTop : 0)) + 'px';
     // if you want to set cursor color by now background, use this.
     this.bbsCursor.style.color = cursorColorForBg(bg, this.workModeActive);
     this.updateInputBufferPos();
@@ -1974,13 +1995,24 @@ TermView.prototype = {
     this._listBlankRow = null;
   },
 
-  // Like hideEasyReadingOverlays but does NOT clear buf.pageLines / padding / scroll.
-  // Used by the functionMode native-LIVE render: we only want the overlay rows out of
-  // the way while mirroring the native screen; the accumulated long page must survive
-  // so _evalFunctionModeExit('resume') can restore it without re-paging the article.
+  // Like hideEasyReadingOverlays but does NOT clear buf.pageLines. Used by the
+  // functionMode native-LIVE render: we only want the overlay rows out of the way
+  // while mirroring the native screen; the accumulated long page must survive so
+  // _evalFunctionModeExit('resume') can restore it without re-paging the article.
+  //
+  // KeepPage 保的是 **buf.pageLines**，不是 accumulatePageLines 留下的底部 padding
+  // —— 那一列 padding 是替 footer overlay 讓位用的，原生鏡像畫面根本沒有 overlay。
+  // 留著它，`.main`（height = chh*rows + 10、overflow-y:auto）的內容就變成
+  // chh*rows + chh ⇒ **還有 chh-10 px 可捲**，而 App.mouse_scroll 在 pageState 3
+  // 時直接放行給瀏覽器（推文提示畫面的 pageState 仍是 3）⇒ 滾輪真的把輸入列捲上去，
+  // 絕對定位的 #cursor 卻不會跟著動 ⇒ 推文時閃爍游標戳出反白輸入匡。
+  // 回好讀時 accumulatePageLines 每次都會把 padding 設回 '1em'，而且排在
+  // _evalFunctionModeExit('resume') 還原 _savedScrollTop 之前，捲動位置照舊還原。
+  // 守護：tests/e2e/offline/cursor_shape.offline.spec.js
   hideEasyReadingOverlaysKeepPage: function() {
     this.lastRowDiv.style.display = '';
     this.replyRowDiv.style.display = '';
+    if (this.mainContainer) this.mainContainer.style.paddingBottom = '';
   },
 
   // Restore the easy-reading overlay rows (footer + reply preview) to their hidden

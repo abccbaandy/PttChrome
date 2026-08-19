@@ -121,3 +121,150 @@ test.describe('打字游標是閃爍直線且不出格（離線）', () => {
     expect(m.cursor.bottom).toBeLessThanOrEqual(m.nextRow.top + 2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 游標座標系 vs `.main` 的捲動座標系（離線）
+//
+// `#cursor` 是 `#BBSWindow`（position:fixed）下的**絕對定位**元素，位置由
+// term_view.convertMN2XYEx 的格線公式（firstGridOffset + chh）算出，**不受 `.main`
+// 的 scrollTop 影響**；而它要貼齊的那一列在 `#mainContainer` 裡，**會**跟著 `.main`
+// 捲動。兩個座標系只要一脫鉤，游標就會掉出該列 —— 使用者看到的症狀是「推文時閃爍
+// 直線戳出反白輸入匡」。
+//
+// 上面那組 describe 刻意關掉好讀，所以這條路徑（好讀 → 按 X 推文 → functionMode
+// 原生鏡像）一直沒有守門。這裡守兩層：
+//   1. functionMode 的原生鏡像畫面**不可捲動** —— 進 functionMode 的
+//      hideEasyReadingOverlaysKeepPage() 必須清掉 accumulatePageLines 留下的
+//      `#mainContainer` paddingBottom，否則 `.main` 還有 chh-10 px 可捲，滑鼠滾輪
+//      （App.mouse_scroll 在 pageState 3 直接放行給瀏覽器）就會把輸入列捲上去。
+//   2. 就算真的捲了，游標也要跟著該列走（updateCursorPos 扣掉 scrollTop）。
+const ART_FOOTER =
+  '  瀏覽 第 1/1 頁 (100%)  目前顯示: 第 01~22 行  (y)回應(X%)推文(h)說明(←)離開 ';
+
+// 用 app 自己的 Big5 轉碼表把 Unicode 轉成 latin1 bytes 再餵進 App.onData
+// （PTT 是 Big5；string_util.u2b 的同一套查表，見 main.jsx 載入的 conv/*.bin）。
+async function feedBig5(page, text) {
+  await page.evaluate((t) => {
+    let out = '';
+    for (let i = 0; i < t.length; ++i) {
+      const c = t.charAt(i);
+      if (c < '\x80') {
+        out += c;
+        continue;
+      }
+      const pos = t.charCodeAt(i);
+      const hi = window.lib.u2bArray[2 * pos];
+      const lo = window.lib.u2bArray[2 * pos + 1];
+      out += hi || lo ? String.fromCharCode(hi) + String.fromCharCode(lo) : '\xFF\xFD';
+    }
+    window.__app.onData(out);
+  }, text);
+}
+
+// 一整頁文章。末列是 pmore 狀態列（term_buf.setPageState → pageState 3），並在
+// (rows-1, cols-1) park 游標 —— accumulatePageLines 的「完整回應幀」閘門要求它。
+function articleFrame({ rows, cols }) {
+  let s = '\x1b[2J\x1b[1;1H作者 someuser (nick) 看板 Test';
+  s += '\x1b[2;1H標題 [測試] 游標幾何';
+  s += '\x1b[3;1H時間 Wed Aug 19 21:47:28 2026';
+  for (let r = 5; r <= rows - 1; ++r) s += `\x1b[${r};1H第 ${r} 行 body line ${r}`;
+  s += `\x1b[${rows};1H` + ART_FOOTER;
+  s += `\x1b[${rows};${cols}H`;
+  return s;
+}
+
+// 推文輸入提示（pttbbs mbbsd/bbs.c#do_add_recommend：move(b_lines,0) + getdata(b_lines,0,…)
+// ⇒ 永遠是最後一列）。「→ someid: 」佔 11 欄，游標停在第 12 欄。
+function pushPromptFrame({ rows }) {
+  return `\x1b[${rows};1H\x1b[K→ someid: \x1b[${rows};12H`;
+}
+
+async function dims(page) {
+  return page.evaluate(() => ({
+    rows: window.__app.buf.rows,
+    cols: window.__app.buf.cols,
+  }));
+}
+
+test.describe('游標與畫面共用同一個垂直座標系（離線）', () => {
+  test('好讀→推文（functionMode 原生鏡像）：畫面沒有可捲距離', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: true,
+      enableEasyReadingList: false,
+    });
+
+    const d = await dims(page);
+    await feedBig5(page, articleFrame(d));
+    await page.waitForTimeout(400);
+    await page.evaluate(() => window.__app.easyReading.enterEasyReading());
+    await page.waitForTimeout(400);
+
+    // 前提：好讀累積頁替 footer overlay 保留了一列底部 padding。
+    expect(
+      await page.evaluate(() => document.getElementById('mainContainer').style.paddingBottom)
+    ).toBe('1em');
+
+    // 按 X 推文 → functionMode，畫面換成原生 24 列鏡像。
+    await page.evaluate(() => window.__app.easyReading._enterFunctionMode());
+    await feedBig5(page, pushPromptFrame(d));
+    await page.waitForTimeout(400);
+
+    const m = await page.evaluate(() => {
+      const main = window.__app.view.mainDisplay;
+      return {
+        functionMode: !!window.__app.buf.easyReadingFunctionMode,
+        scrollHeight: main.scrollHeight,
+        clientHeight: main.clientHeight,
+        paddingBottom: document.getElementById('mainContainer').style.paddingBottom,
+      };
+    });
+    expect(m.functionMode).toBe(true); // 前提成立：真的在原生鏡像
+    // 固定 24 列的鏡像畫面不該有任何可捲距離：捲一下就把輸入列移開，而絕對定位的
+    // #cursor 不會跟著動。
+    expect(m.scrollHeight).toBeLessThanOrEqual(m.clientHeight);
+  });
+
+  test('殘留捲動也不能把游標與它那一列拆開', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: false,
+      enableEasyReadingList: false,
+    });
+
+    const d = await dims(page);
+    // 原生固定 24 列畫面，游標停在末列輸入位置。
+    await feedBig5(page, articleFrame(d));
+    await feedBig5(page, pushPromptFrame(d));
+    await page.waitForTimeout(400);
+
+    // 人為讓 `.main` 可捲並捲到底（模擬任何殘留 padding / 捲動狀態），然後重算游標。
+    const m = await page.evaluate((row) => {
+      document.body.classList.add('blink--active');
+      const view = window.__app.view;
+      document.getElementById('mainContainer').style.paddingBottom = '3em';
+      view.mainDisplay.scrollTop = 9999;
+      view.updateCursorPos();
+      const rect = (e) => {
+        const b = e.getBoundingClientRect();
+        return { top: b.top, bottom: b.bottom, left: b.left, height: b.height };
+      };
+      const rowEl = document.querySelector(
+        `#mainContainer [type="bbsrow"][srow="${row}"]`
+      );
+      return {
+        scrollTop: view.mainDisplay.scrollTop,
+        cursor: rect(document.getElementById('cursor')),
+        row: rect(rowEl),
+        chh: view.chh,
+      };
+    }, d.rows - 1);
+
+    expect(m.scrollTop).toBeGreaterThan(0); // 前提成立：真的捲動了
+    // 游標整條必須落在它那一列裡（±2px 吸收 inline box metrics 差）。
+    expect(m.cursor.top).toBeGreaterThanOrEqual(m.row.top - 2);
+    expect(m.cursor.bottom).toBeLessThanOrEqual(m.row.top + m.chh + 2);
+  });
+});

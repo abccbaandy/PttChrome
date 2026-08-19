@@ -127,6 +127,9 @@
    - transform-origin: 0 0 是硬需求：fontFitWindowWidth 時 updateCursorPos 會對 #cursor
      下 transform: scale(sx, sy)，預設的 center 原點會讓有高度的直線垂直位移
      (h - h*sy)/2（舊的 height:0 元素剛好看不出來）。
+   - 「一定落在該格內」只在**格線與畫面同步**時成立：本元素絕對定位於 #BBSWindow，
+     而列在會捲動的 .main 裡 —— 固定格線渲染的幀由 term_view.updateCursorPos 扣掉
+     mainDisplay.scrollTop 來對齊（見那裡的座標系說明）。
    守護：tests/e2e/offline/cursor_shape.offline.spec.js */
 #cursor {
   display: none;
