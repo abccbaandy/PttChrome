@@ -8,6 +8,8 @@ const {
   resetSession,
   gotoBoard,
   waitEasyReadingComplete,
+  comparePusherSequences,
+  inspectFloorGaps,
 } = require('./helpers/ptt');
 
 // Enhanced Add-on：樓層編號 + 黑名單。連真 PTT，需好讀模式。
@@ -72,27 +74,39 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
   });
 
   // 黑名單核心：好讀模式下被封鎖推文者的推文整列移除（不留空行）。
-  // 在同一篇文章上驗證：讀取 → 封鎖某推文者 → 離開再進入重新累積 → 該人推文消失且總列數下降。
+  // 在同一篇文章上驗證：讀取 → 封鎖某推文者 → 離開再進入重新累積 → 該人推文消失、
+  // 其他人的推文原封不動、被移除的樓號整個不見（不是留一列空行）。
+  //
+  // 【禁止跨兩次讀取比列數】C_Chat 這種熱門板的推文會在兩次累積之間一直長，新增的列數
+  // 可以蓋過黑名單移除的列數 ⇒ 舊寫法的 `c2 < c1` 與
+  // `before.length - after.length >= targetCount` 會偽紅（實例：黑名單確實生效、目標作者
+  // 完全消失、pusher 由 32 降到 13，卻量到 c2=412 > c1=289，重跑才綠）。
+  // 判定一律走內容比對：推文者序列前綴（comparePusherSequences）＋樓號集合
+  // （被封鎖者的樓號必須整個消失，樓號是絕對編號、不會因為新推文而位移）。
+  // 兩者都對「第二次多出新推文」免疫。純函式守護：tests/unit/blacklist_pusher_diff.test.js。
   test('黑名單：好讀模式移除推文且不留空行', async ({ shared }) => {
     test.setTimeout(180000); // 找有推文的文章 + 兩階段累積，需較長時間
     const { page, logs } = shared;
     logs.length = 0;
-    // 注意：樓層徽章會插在 marker 與 userid 之間（"推9 userid"），故 \d* 略過徽章數字。
-    const pushers = () =>
+    // 依畫面順序取結構化列陣列。pusher 讀 data-pusher 屬性而非用正則剖 textContent：
+    // 樓號徽章數字會混進 textContent（見 offline/comment_merge.offline.spec.js 檔頭），
+    // 且 data-pusher 已由 annotateComment 轉小寫，與黑名單 key 同基準。
+    const readRows = () =>
       page.evaluate(() =>
-        Array.from(document.querySelectorAll('#mainContainer [data-type="bbsline"]'))
-          .map((el) => {
-            const m = el.textContent.match(/^(推|噓|→)\d*\s+([0-9A-Za-z]+)\s*:/);
-            return m ? m[2] : null;
-          })
-          .filter(Boolean)
+        Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"]')).map((el) => {
+          const badge = el.querySelector('[data-floor]');
+          return {
+            pusher: el.getAttribute('data-pusher'),
+            floor: badge ? parseInt(badge.textContent, 10) : null,
+            blank: el.textContent.trim() === '',
+          };
+        })
       );
-    // 列數由 waitEasyReadingComplete 在「整篇累積完畢」那一刻回報（見 helper 註解），
-    // 不另外抓當下值——隨手抓到的是翻頁途中的快照，跨階段不可比。
+    const pushersOf = (rows) => rows.map((r) => r.pusher).filter(Boolean);
 
     try {
       await resetSession(page);
-      // 關合併：本測按逐列 pusher 列數與樓號缺口斷言（合併行為另測）。
+      // 關合併：本測按逐列 pusher 序列與樓號缺口斷言（合併行為另測）。
       await applyPrefs(page, {
         enableEasyReading: true,
         showFloorNumbers: true,
@@ -101,23 +115,19 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       await gotoBoard(page, 'C_Chat');
 
       // 用與樓層測試相同的成功導航（End→Enter）；若該篇無推文，回列表往上一篇再試。
-      //
-      // 取樣點＝「整篇累積完畢」(waitEasyReadingComplete)，不是「翻 N 次 Space 之後」。
-      // 前後兩階段必須停在同一個可重現的終點，c1/c2 才可比：舊版前 3 次 / 後 5 次
-      // Space，長文兩邊停在不同位置 ⇒ c2(412) > c1(288) 必紅（2026-08）。
+      // 取樣點＝「整篇累積完畢」(waitEasyReadingComplete)，不是「翻 N 次 Space 之後」——
+      // 前後兩階段要停在同一個可重現的終點，內容前綴才對得起來。
       await sendKey(page, 'End');
       await page.waitForTimeout(800);
+      let beforeRows = [];
       let before = [];
-      let c1 = 0;
       for (let attempt = 0; attempt < 6; attempt++) {
         await sendKey(page, 'Enter');
         const acc = await waitEasyReadingComplete(page);
         console.log('ACCUMULATE BEFORE:', JSON.stringify(acc));
-        before = await pushers();
-        if (before.length > 0 && acc.reachedEnd) {
-          c1 = acc.rows;
-          break;
-        }
+        beforeRows = await readRows();
+        before = pushersOf(beforeRows);
+        if (before.length > 0 && acc.reachedEnd) break;
         // 無推文（或沒讀到底）→ 離開回列表、往上一篇（較舊）再試
         await sendKey(page, 'ArrowLeft');
         await page.waitForTimeout(1300);
@@ -125,15 +135,18 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
         await page.waitForTimeout(500);
         before = [];
       }
-      console.log('PUSHERS BEFORE:', before.length, 'childRows', c1);
+      console.log('PUSHERS BEFORE:', before.length);
       test.skip(before.length === 0, '找不到有推文且能讀到底的文章，跳過黑名單驗證');
 
       // 選出現次數最多的推文者
       const freq = {};
       before.forEach((p) => (freq[p] = (freq[p] || 0) + 1));
       const target = Object.keys(freq).sort((a, b) => freq[b] - freq[a])[0];
-      const targetCount = freq[target];
-      console.log('BLACKLIST TARGET:', target, 'x', targetCount);
+      // 該作者推文所在的樓號（絕對編號）：封鎖後這些樓號必須整個從畫面消失。
+      const removedFloors = beforeRows
+        .filter((r) => r.pusher === target && r.floor != null && !Number.isNaN(r.floor))
+        .map((r) => r.floor);
+      console.log('BLACKLIST TARGET:', target, 'x', freq[target], 'floors', JSON.stringify(removedFloors));
 
       // 設黑名單到 view（appendRows 讀 this.blacklist）
       await page.evaluate((t) => {
@@ -141,7 +154,6 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       }, target);
 
       // 離開回列表（游標仍停在本篇）→ 再進入，好讀重新累積套用黑名單。
-      // 同樣等到整篇讀完才取樣：與 c1 同基準（同一篇、同樣讀到 100%）。
       await sendKey(page, 'ArrowLeft');
       await page.waitForTimeout(1500);
       await sendKey(page, 'Enter');
@@ -149,27 +161,40 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       console.log('ACCUMULATE AFTER:', JSON.stringify(acc2));
       expect(acc2.reachedEnd).toBe(true);
 
-      const after = await pushers();
-      const c2 = acc2.rows;
-      console.log('PUSHERS AFTER:', after.length, 'childRows', c2);
+      const afterRows = await readRows();
+      const after = pushersOf(afterRows);
+      console.log('PUSHERS AFTER:', after.length);
 
-      // 被封鎖者的推文完全消失
-      expect(after.includes(target)).toBe(false);
-      // 列數真的變少（整列移除，非僅隱藏占行），且至少少掉該人的那幾列
-      expect(c2).toBeLessThan(c1);
-      expect(before.length - after.length).toBeGreaterThanOrEqual(targetCount);
-
-      // 樓層嚴格遞增。設計上黑名單列「仍占樓號」（編號絕對，見 comment_parse.test.js
-      // "floors advance for every comment including blacklisted"），故移除處會留缺號，
-      // 不可斷言連續；只守護無重複/亂序。
-      const floors = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('#mainContainer [data-floor]'))
-          .map((el) => parseInt(el.textContent, 10))
-          .filter((n) => !Number.isNaN(n))
+      // (1) 內容比對：target 的推文全消失，其他人的推文原封不動、順序不變。
+      //     after 尾端多出來的是這段期間的新推文，允許存在（cmp.appended）。
+      const cmp = comparePusherSequences(before, after, target);
+      console.log(
+        'BLACKLIST DIFF:',
+        JSON.stringify({
+          targetInBefore: cmp.targetInBefore,
+          targetInAfter: cmp.targetInAfter,
+          expectedPrefix: cmp.expectedPrefix.length,
+          appendedDuringTest: cmp.appended.length,
+          firstMismatch: cmp.firstMismatch,
+        })
       );
-      for (let i = 1; i < floors.length; i++) {
-        expect(floors[i]).toBeGreaterThan(floors[i - 1]);
-      }
+      expect(cmp.targetInBefore).toBeGreaterThan(0);
+      expect(cmp.targetInAfter).toBe(0);
+      expect(cmp.firstMismatch).toBe(null);
+      expect(cmp.prefixMatches).toBe(true);
+
+      // (2) 真的被移除（取代舊的 c2 < c1）：被封鎖者原本占的樓號整個不見。
+      //     樓號是絕對編號，新推文只會往後拿更大的號碼，不會位移既有樓號。
+      const gapInfo = inspectFloorGaps(afterRows);
+      const afterFloors = new Set(afterRows.map((r) => r.floor).filter((f) => f != null));
+      console.log('FLOOR GAPS:', JSON.stringify(gapInfo.gaps.slice(0, 10)), 'total', gapInfo.gaps.length);
+      expect(removedFloors.length).toBeGreaterThan(0);
+      expect(removedFloors.filter((f) => afterFloors.has(f))).toEqual([]);
+
+      // (3) 不留空行：移除處只留樓號缺口，缺口區間內不得出現空白列。
+      //     樓層徽章仍須嚴格遞增（絕對編號，缺號允許、重複／倒退不允許）。
+      expect(gapInfo.blankInGaps).toEqual([]);
+      expect(gapInfo.strictlyIncreasing).toBe(true);
     } catch (err) {
       console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
       await page.screenshot({ path: 'tests/e2e/__screenshots__/enhance-blacklist-error.png', fullPage: true });

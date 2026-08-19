@@ -413,6 +413,60 @@ function attachConsole(page, opts = {}) {
   return logs;
 }
 
+// ---- 黑名單 e2e 的判定純函式（unit 守護：tests/unit/blacklist_pusher_diff.test.js）----
+//
+// 為什麼不比列數：live 測在同一篇文章讀兩次（封鎖前／後），但熱門板的推文會在兩次之間
+// 繼續長，新增列數可以蓋過黑名單移除的列數 ⇒ 任何「c2 < c1」「列數差 >= targetCount」
+// 的斷言都會偽紅（實例：黑名單確實生效、目標作者完全消失，卻量到 c2=412 > c1=289）。
+// 判定一律走「內容前綴 + 樓號缺口」，對第二次多出的新推文免疫。
+
+// 前後兩次累積的推文者序列比對：before 去掉 target 之後，必須是 after 的前綴；
+// after 尾端多出來的就是期間新推文，允許存在。
+function comparePusherSequences(before, after, target) {
+  const expectedPrefix = before.filter((p) => p !== target);
+  const actualPrefix = after.slice(0, expectedPrefix.length);
+  let firstMismatch = null;
+  for (let i = 0; i < expectedPrefix.length; i++) {
+    if (actualPrefix[i] !== expectedPrefix[i]) {
+      firstMismatch = { index: i, expected: expectedPrefix[i], actual: actualPrefix[i] };
+      break;
+    }
+  }
+  return {
+    targetInBefore: before.filter((p) => p === target).length,
+    targetInAfter: after.filter((p) => p === target).length,
+    expectedPrefix,
+    actualPrefix,
+    prefixMatches: firstMismatch === null,
+    firstMismatch,
+    appended: after.slice(expectedPrefix.length),
+  };
+}
+
+// 單次讀取內的樓號結構檢查。entries 依畫面順序：[{ floor: number|null, blank: boolean }]。
+// 樓號是絕對編號（黑名單列仍占樓號），所以「跳號」＝確實有列被整列移除；
+// 跳號區間內若出現空白列，代表退化成「隱藏但占行」，就是真回歸。
+function inspectFloorGaps(entries) {
+  const gaps = [];
+  let strictlyIncreasing = true;
+  let prevFloor = null;
+  let prevIndex = -1;
+  entries.forEach((e, i) => {
+    if (e.floor == null || Number.isNaN(e.floor)) return;
+    if (prevFloor !== null) {
+      if (e.floor <= prevFloor) strictlyIncreasing = false;
+      else if (e.floor - prevFloor > 1) {
+        let blankRowsBetween = 0;
+        for (let k = prevIndex + 1; k < i; k++) if (entries[k].blank) blankRowsBetween++;
+        gaps.push({ from: prevFloor, to: e.floor, blankRowsBetween });
+      }
+    }
+    prevFloor = e.floor;
+    prevIndex = i;
+  });
+  return { gaps, blankInGaps: gaps.filter((g) => g.blankRowsBetween > 0), strictlyIncreasing };
+}
+
 module.exports = {
   readScreen,
   waitForScreen,
@@ -427,4 +481,6 @@ module.exports = {
   resetSession,
   gotoBoard,
   getPref,
+  comparePusherSequences,
+  inspectFloorGaps,
 };

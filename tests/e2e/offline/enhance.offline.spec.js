@@ -151,7 +151,7 @@ test.describe('增强 · 文章（离线重放）', () => {
       test.skip(!target, 'cassette 无 firstCommentAuthor');
 
       await bootOffline(page, ptt);
-      // 关合并：本测按「逐列 pusher 列数」计数（合并行为另测）。
+      // 关合并：本测逐列比对 pusher 与列文字（合并块会包一层 div，行结构不同；合并行为另测）。
       await ptt.applyPrefs(page, {
         enableEasyReading: true,
         showFloorNumbers: false,
@@ -159,25 +159,29 @@ test.describe('增强 · 文章（离线重放）', () => {
       });
       await replayCassette(page, article, { easyReading: true });
 
-      const pushersOf = () =>
+      // 逐列快照：pusher 读 data-pusher 属性（楼号徽章数字会混进 textContent）。
+      const readRows = () =>
         page.evaluate(() =>
-          Array.from(document.querySelectorAll('#mainContainer [data-type="bbsline"]')).map((el) => {
-            const m = el.textContent.match(/^(推|噓|→)\d*\s+([0-9A-Za-z]+)\s*:/);
-            return m ? m[2].toLowerCase() : null;
-          })
+          Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"]')).map((el) => ({
+            pusher: el.getAttribute('data-pusher'),
+            text: el.textContent,
+          }))
         );
 
-      const before = await pushersOf();
-      const c1 = before.filter(Boolean).length;
-      expect(before.includes(target)).toBe(true);
+      const before = await readRows();
+      expect(before.some((r) => r.pusher === target)).toBe(true);
 
       await ptt.applyPrefs(page, { blacklist: target }); // runtime 套用 → redraw
       await page.waitForTimeout(800);
 
-      const after = await pushersOf();
-      const c2 = after.filter(Boolean).length;
-      expect(after.includes(target)).toBe(false); // 该 pusher 消失
-      expect(c2).toBeLessThan(c1); // 列数下降（无空行残留由「整列移除」保证）
+      const after = await readRows();
+      expect(after.some((r) => r.pusher === target)).toBe(false); // 该 pusher 消失
+      // cassette 是固定 bytes、同一页 redraw ⇒ 内容可**完全等值**比对：after 必须逐列等于
+      // before 滤掉 target 推文列。这才是严格的「不留空行」守护（列数比较太弱，且 live
+      // 那边因为文章会长根本不能比，见 enhance.spec.js 黑名单案的注解）。
+      expect(after.map((r) => r.text)).toEqual(
+        before.filter((r) => r.pusher !== target).map((r) => r.text)
+      );
     });
 
     test(`pusher 高亮：togglePusherHighlight 只高亮该 pusher 的列 ${tag}`, async ({ page }) => {

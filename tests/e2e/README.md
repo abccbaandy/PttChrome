@@ -123,7 +123,22 @@ React 19 起，`el.click()` 觸發的 setState 在事件 task **之後**才 comm
 內點完立刻讀 `classList`／DOM 恆讀到舊值（假紅，實例：點圖放大 `imagesEnlarged` 恆 false，2026-07）。
 點擊後 `await new Promise(r => setTimeout(r, 300))` 再讀（或拆兩次 evaluate）。
 
-另 live 內容相依測試（最新文章）遇熱門文（推文即時灌入）列數會在斷言間變動，偶發紅屬浮動，重跑即可。
+## 規範：live 斷言不准跨兩次讀取比列數
+
+live 測試讀的是**最新文章**，熱門板（C_Chat）的推文會在斷言之間持續灌入。任何形如
+「第二次的列數 < 第一次」「兩次的數量差 >= N」的判定都會被新推文蓋過去 ⇒ 偽紅、重跑才綠
+（實例：黑名單案量到 `c2=412 > c1=289`，但目標作者其實完全消失、pusher 由 32 降到 13）。
+
+**判定一律用內容，不用計數**：
+- 序列前綴：第一次的列（濾掉預期被移除的）必須是第二次的**前綴**，尾端多出來的就是期間新增，允許。
+- 穩定識別碼：樓號是絕對編號，新推文只會往後拿更大的號碼、不會位移既有樓號 ⇒ 「某些樓號整組消失」
+  是可靠的移除證據。
+- 空行等結構性質在**單次讀取內**判定（如「樓號缺口區間內不得有空白列」），不跨時間比。
+
+實作：`helpers/ptt.js` 的 `comparePusherSequences` / `inspectFloorGaps`（純函式，unit 守護在
+`tests/unit/blacklist_pusher_diff.test.js`），用法見 `enhance.spec.js` 的黑名單案。
+需要「完全等值」等級的嚴格比對就寫離線 cassette 版（bytes 固定，可逐列 `toEqual`），
+見 `offline/enhance.offline.spec.js` 同名案。
 
 ## 擴充
 
