@@ -63,6 +63,54 @@ async function plainLeftEdge(page) {
   return pos;
 }
 
+// 找一列「可以被真的點到」的推文列，回傳它的座標與內容起始欄。
+// 排除黑名單列（visibility:hidden ⇒ 根本不是 hit-test 目標）與左緣被連結／內嵌
+// 預覽蓋住的列（那些位置本來就該由它們優先接手，見 plainLeftEdge 的同一理由）。
+async function commentRow(page) {
+  const pos = await page.evaluate(() => {
+    const v = window.__app.view;
+    const left = parseFloat(v.firstGridOffset.left);
+    const xOf = (col) => left + v.chw * (col + 0.5);
+    const rows = document.querySelectorAll(
+      '#mainContainer span[type="bbsrow"][data-pusher]'
+    );
+    for (const el of rows) {
+      if (el.style.visibility === 'hidden') continue;
+      const col = Number(el.getAttribute('data-pusher-col'));
+      if (!(col > 7)) continue; // 內容區要真的在退出帶右邊才有得比
+      // 好讀是累積長頁，推文在文章尾端 ⇒ 預設一定捲在視窗外，elementFromPoint
+      // 用的是**視窗座標**，不先捲進來一律落空。
+      el.scrollIntoView({ block: 'center' });
+      const r = el.getBoundingClientRect();
+      if (r.height <= 0) continue;
+      const y = r.top + r.height / 2;
+      // 連結／內嵌預覽在 App.mouse_click 裡優先於一切（含 pusher 高亮與退出帶），
+      // 落在那上面的座標不是這一測的現場。
+      const hit = (x) => {
+        const at = document.elementFromPoint(x, y);
+        if (!at || at.closest('[data-pusher]') !== el) return false;
+        return !at.closest(
+          'a, img, video, iframe, .inlinePreviewSlot, .previewLoading, .previewError'
+        );
+      };
+      const leftX = xOf(1);
+      const contentX = xOf(col + 1);
+      if (!hit(leftX) || !hit(contentX)) continue;
+      return { y, col, leftX, contentX, pusher: el.getAttribute('data-pusher') };
+    }
+    return null;
+  });
+  if (!pos) throw new Error('找不到可點的推文列');
+  return pos;
+}
+
+const highlightedPushers = (page) =>
+  page.evaluate(() =>
+    Array.from(
+      document.querySelectorAll('#mainContainer > span[type="bbsrow"].pusherHighlight')
+    ).map((el) => el.getAttribute('data-pusher'))
+  );
+
 // 常駐的送出收集器：__stubWSSent 是 replay 的 hook（見 helpers/replay.js），
 // 這裡接成一個可清空的陣列，好讓斷言橫跨「真實輸入」這種非同步操作。
 async function startCapture(page) {
@@ -335,5 +383,79 @@ test.describe('滑鼠（離線重放）', () => {
       return Math.abs(r.height - win.height) < 2 && Math.abs(r.top - win.top) < 2;
     });
     expect(covers).toBe(true);
+  });
+
+  // 2026-08 回報：推文區的左側退出區點不到。data-pusher 掛在**整列**上，而
+  // App.mouse_click 的 pusher 分支走在滑鼠瀏覽 gate 之前 ⇒ 推文列的 cols 0-6
+  // 一律被 pusher 高亮吃掉，退出手勢在整個推文區失效。
+  // 防誤觸模式（預設開）改成只有內容文字算數，左側因此還給退出帶。
+  test.describe('推文列的可點區（防誤觸模式）', () => {
+    const boot = async (page, prefs) => {
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, {
+        enableEasyReading: true,
+        useMouseBrowsing: true,
+        mouseLeftClick: true,
+        // 合併會把整個 run 包成一個 div（懸掛縮排、多行），逐列的欄位幾何不成立。
+        mergeSameAuthorComments: false,
+        ...prefs,
+      });
+      await replayCassette(page, article, { easyReading: true });
+    };
+
+    test('防誤觸開啟：推文列左側＝離開文章，不會變成 pusher 高亮', async ({ page }) => {
+      test.setTimeout(90000);
+      await boot(page, { mouseMisclickGuard: true });
+
+      const row = await commentRow(page);
+      await page.mouse.move(row.leftX, row.y);
+      await page.waitForTimeout(50);
+      expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe(
+        'exitArticle'
+      );
+
+      await startCapture(page);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(150);
+      expect(await takeCapture(page)).toContain(ARROW_LEFT);
+      expect(await highlightedPushers(page)).toEqual([]);
+    });
+
+    test('防誤觸開啟：點推文內容＝同作者高亮，且不會離開文章', async ({ page }) => {
+      test.setTimeout(90000);
+      await boot(page, { mouseMisclickGuard: true });
+
+      const row = await commentRow(page);
+      await page.mouse.move(row.contentX, row.y);
+      await page.waitForTimeout(50);
+      await startCapture(page);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(150);
+
+      expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
+      const on = await highlightedPushers(page);
+      expect(on.length).toBeGreaterThan(0);
+      on.forEach((p) => expect(p).toBe(row.pusher));
+    });
+
+    test('防誤觸關閉：整條推文列都能觸發同作者高亮（改版前的行為）', async ({ page }) => {
+      test.setTimeout(90000);
+      await boot(page, { mouseMisclickGuard: false });
+
+      const row = await commentRow(page);
+      await page.mouse.move(row.leftX, row.y);
+      await page.waitForTimeout(50);
+      await startCapture(page);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(150);
+
+      expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
+      const on = await highlightedPushers(page);
+      expect(on.length).toBeGreaterThan(0);
+      on.forEach((p) => expect(p).toBe(row.pusher));
+    });
   });
 });

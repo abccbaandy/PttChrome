@@ -24,6 +24,9 @@ describe("DEFAULT_PREFS", () => {
     // 會在升級後憑空消失。
     expect(DEFAULT_PREFS.useMouseBrowsing).toBe(true);
     expect(DEFAULT_PREFS.mouseLeftClick).toBe(true);
+    // 防誤觸模式（可點區＝底色區的欄位限制）預設開：它就是「點日期／作者欄不會
+    // 誤開文章」與「文章左側點得到退出帶」這兩件事的來源。
+    expect(DEFAULT_PREFS.mouseMisclickGuard).toBe(true);
     expect(DEFAULT_PREFS.mouseMiddleClick).toBe(0); // 0=關閉 1=貼上 2=左方向鍵
     expect(DEFAULT_PREFS.mouseWheel).toBe(1); // 0=關閉 1=上下頁
   });
@@ -57,9 +60,18 @@ describe("既有使用者的 localStorage 殘值", () => {
     );
     const v = readValuesWithDefault();
     expect(v.mouseLeftClick).toBe(true);
+    expect(v.mouseMisclickGuard).toBe(true);
     expect(v.mouseMiddleClick).toBe(0);
     expect(v.mouseWheel).toBe(1);
     expect(v.useMouseBrowsing).toBe(true);
+  });
+
+  test("使用者關過防誤觸的話照樣尊重", () => {
+    window.localStorage.setItem(
+      PREF_KEY,
+      JSON.stringify({ values: { mouseMisclickGuard: false } }),
+    );
+    expect(readValuesWithDefault().mouseMisclickGuard).toBe(false);
   });
 
   test("使用者自己關過總開關的話照樣尊重", () => {

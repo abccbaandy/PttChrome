@@ -24,8 +24,8 @@ import {
   parseListTitleRaw,
   LIST_AUTHOR_COL_START,
   LIST_AUTHOR_COL_END,
-  listColRegion,
 } from './comment_parse';
+import { clickableColStart } from './mouse_regions';
 import {
   parseStatusRow,
   parseListRow,
@@ -1450,11 +1450,17 @@ ListSession.prototype = {
     }
     const idx = renderRow - LIST_HEADER_ROWS;
     if (idx < 0 || idx >= this._bodyRows()) return; // header / footer
-    // 只有標題欄可以開文，與原生一致（避免點到日期／作者欄誤開）。虛擬視窗的
-    // 欄位與 server 的 readdoent 逐格對齊（buildListWindowLines 取的就是同一批
-    // 80 格 TermChar；relabelListCursorRow 只重寫 cols 0-6、labelListCursor 的
-    // 半形 '>' 只佔 cell 0），所以 comment_parse 的欄位表在這裡照樣成立。
-    if (listColRegion(col) !== 'title') return;
+    // 防誤觸模式開啟時只有標題欄可以開文，與原生一致（避免點到日期／作者欄誤開）。
+    // 虛擬視窗的欄位與 server 的 readdoent 逐格對齊（buildListWindowLines 取的就是
+    // 同一批 80 格 TermChar；relabelListCursorRow 只重寫 cols 0-6、labelListCursor
+    // 的半形 '>' 只佔 cell 0），所以 comment_parse 的欄位表在這裡照樣成立。
+    const guard = !!(
+      this._termBuf &&
+      this._termBuf.useMouseBrowsing &&
+      this._view &&
+      this._view.mouseMisclickGuard
+    );
+    if (col < clickableColStart(2, guard)) return;
     const win = this.getWindowView();
     if (!win) return;
     const abs = win.body[idx];

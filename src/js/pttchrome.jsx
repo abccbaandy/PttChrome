@@ -713,13 +713,14 @@ App.prototype.clientToPos = function(cX, cY) {
   return {col: col, row: row};
 };
 
-// 各滑鼠入口的生效與否。總開關（buf.useMouseBrowsing）與三個子開關（view 上的
-// mouseLeftClick / mouseMiddleClick / mouseWheel）在純函式 resolveMouseGates 匯總，
-// 所以「總開關關掉＝中鍵與滾輪也失效」只有一個真相源。
+// 各滑鼠入口的生效與否。總開關（buf.useMouseBrowsing）與四個子開關（view 上的
+// mouseLeftClick / mouseMisclickGuard / mouseMiddleClick / mouseWheel）在純函式
+// resolveMouseGates 匯總，所以「總開關關掉＝中鍵與滾輪也失效」只有一個真相源。
 App.prototype.mouseGates = function() {
   return resolveMouseGates({
     useMouseBrowsing: this.buf.useMouseBrowsing,
     mouseLeftClick: this.view.mouseLeftClick,
+    mouseMisclickGuard: this.view.mouseMisclickGuard,
     mouseMiddleClick: this.view.mouseMiddleClick,
     mouseWheel: this.view.mouseWheel
   });
@@ -923,6 +924,14 @@ App.prototype.onPrefChange = function(name, value) {
         this.view.setExitAffordance(false);
       this.buf.resetMousePos();
       break;
+    // 防誤觸同時管「可點區」與「底色區」⇒ 兩邊都要立刻重算：resetMousePos 重跑
+    // 目前這一格的區域決策（指標／提示帶／nowHighlight），applyCursorHighlight
+    // 補上「滑鼠沒動、只有鍵盤游標列上色」的那種畫面。
+    case 'mouseMisclickGuard':
+      this.view.mouseMisclickGuard = !!value;
+      this.buf.resetMousePos();
+      this.view.applyCursorHighlight();
+      break;
     case 'mouseMiddleClick':
       this.view.mouseMiddleClick = Number(value) || 0;
       break;
@@ -1083,14 +1092,27 @@ App.prototype.mouse_click = function(e) {
       return;
     }
     if (window.getSelection().isCollapsed) { //no anything be select
-      // Pusher highlight: clicking anywhere on a comment row toggles a whole-row
-      // highlight of all comments by that pusher. Runs regardless of mouse
-      // browsing; return early to suppress browsing nav / left-button command.
+      // Pusher highlight: clicking a comment row toggles a whole-row highlight of
+      // all comments by that pusher. Runs regardless of mouse browsing; return
+      // early to suppress browsing nav / left-button command.
+      // 防誤觸開啟時**只有內容文字**算數（data-pusher-col＝該列的內容起始欄，見
+      // comment_parse.annotateComment）：左邊「型別符＋id＋冒號」那一塊要留給文章的
+      // 左側退出帶——它佔 cols 0-6，整列都吃掉的話那個手勢在推文區永遠點不到。
+      // 欄位不合時**不 return**，讓下面的滑鼠瀏覽分支接手（＝退出文章）。
+      // 屬性缺失（理論上不會，parseComment 命中就一定算得出來）⇒ 0＝整列可點，
+      // 方向安全（退回改版前的行為）。
       var pusherEl = e.target && e.target.closest && e.target.closest('[data-pusher]');
       if (pusherEl) {
-        this.view.togglePusherHighlight(pusherEl.getAttribute('data-pusher'));
-        e.preventDefault();
-        return;
+        var pusherColStart = this.mouseGates().misclickGuard
+          ? Number(pusherEl.getAttribute('data-pusher-col')) || 0
+          : 0;
+        // row 在好讀長頁會被 clamp，但 col 是純幾何（mouse_geometry.colFromClientX），
+        // 兩種 render 分支都可信。
+        if (this.clientToPos(e.clientX, e.clientY).col >= pusherColStart) {
+          this.view.togglePusherHighlight(pusherEl.getAttribute('data-pusher'));
+          e.preventDefault();
+          return;
+        }
       }
       // List easy reading buffer/frozen render: the click is OURS — 單擊＝把選取
       // 移到那一列並開文（與原生滑鼠瀏覽同語意）。座標換算後交給 ListSession 走

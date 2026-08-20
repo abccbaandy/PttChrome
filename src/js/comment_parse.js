@@ -79,11 +79,33 @@ const COMMENT_RE = new RegExp(
 // So the id occupies cols [COMMENT_USERID_COL, COMMENT_USERID_COL + userid.length).
 export const COMMENT_USERID_COL = 3;
 
+// 推文列「內容文字」的起始欄（cell 空間）。滑鼠的防誤觸模式用它把左邊
+// 「型別符＋id＋冒號」整塊排除在可點區之外，好把 cols 0-6 還給文章的左側退出帶
+// （docs/mouse.md「點擊優先權」）。
+//
+// 文字空間 → cell 空間只差型別符那一個 DBCS 字（rowToText 把 2 格收合成 1 個字元，
+// 其後的 id／冒號全是 ASCII）⇒ 欄號 = 文字 index + 1。冒號後的那一格空白是
+// comments.c#FormatCommentString 的固定格式，但**不假設它一定在**（commentd／官方
+// App／bot 走的路徑不見得經過 vgetstring），沒有就少跳一格。
+// 與 comment_merge.commentContentCells 的 `start` 同語意，那邊是逐格掃 TermChar
+// （合併塊要真的搬 cell），這裡只為了一個欄號，走純文字不必碰 80 格。
+function commentContentCol(text, userid) {
+  const idAt = text.indexOf(userid, 1);
+  if (idAt < 0) return COMMENT_USERID_COL;
+  const colon = text.indexOf(':', idAt + userid.length);
+  if (colon < 0) return COMMENT_USERID_COL;
+  return colon + 2 + (text[colon + 1] === ' ' ? 1 : 0);
+}
+
 export function parseComment(text) {
   if (!text) return null;
   const m = text.match(COMMENT_RE);
   if (!m) return null;
-  return { type: m[1], userid: m[2].toLowerCase() };
+  return {
+    type: m[1],
+    userid: m[2].toLowerCase(),
+    contentCol: commentContentCol(text, m[2])
+  };
 }
 
 // Per-comment-row annotation used by the single render path (Screen#computeAnnotations,
@@ -102,8 +124,10 @@ export function parseComment(text) {
 //   articleAuthor:  lower id | null   (原PO)
 //   selectedPusher: lower id | null   (clicked pusher)
 // }
-// Result: { type, userid, floor?, hidden, pusher,
+// Result: { type, userid, floor?, hidden, pusher, contentCol,
 //           authorIdStart?, authorIdEnd?, pusherHighlight? }
+// contentCol＝內容文字起始欄 → Row 輸出成 data-pusher-col，滑鼠防誤觸模式據此判斷
+// 「這一點落在可點的內容區還是左邊的作者區」（App.mouse_click）。
 export function annotateComment(text, ctx) {
   const c = parseComment(text);
   if (!c) {
@@ -117,7 +141,14 @@ export function annotateComment(text, ctx) {
       ? ctx.floorCounter.next(c.type)
       : undefined;
   const hidden = !!(ctx.blacklist && ctx.blacklist.has(c.userid));
-  const result = { type: c.type, userid: c.userid, floor, hidden, pusher: c.userid };
+  const result = {
+    type: c.type,
+    userid: c.userid,
+    floor,
+    hidden,
+    pusher: c.userid,
+    contentCol: c.contentCol
+  };
   if (!hidden) {
     // 原PO comment → highlight only the user-id columns [start, end).
     if (ctx.highlightAuthor && ctx.articleAuthor && c.userid === ctx.articleAuthor) {

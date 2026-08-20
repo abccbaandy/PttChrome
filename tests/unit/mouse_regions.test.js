@@ -10,13 +10,15 @@ import {
   CUR_BACK,
   EXIT_COL_END,
   MENU_COL_START,
+  clickableColStart,
   resolveMouseRegion,
   cursorCss,
 } from "../../src/js/mouse_regions";
 import { LIST_TITLE_COL_START } from "../../src/js/comment_parse";
 
+// 預設帶著防誤觸模式（pref 預設就是開）；關掉的那一半另有 describe。
 const at = (over) =>
-  resolveMouseRegion({ rows: 24, lineEmpty: false, ...over });
+  resolveMouseRegion({ rows: 24, lineEmpty: false, misclickGuard: true, ...over });
 
 describe("文章列表（pageState 2）", () => {
   test("只有標題欄（col >= 30）可以開文", () => {
@@ -39,9 +41,16 @@ describe("文章列表（pageState 2）", () => {
     });
   });
 
-  test("底色跟著整列走，即使該欄不可點（否則左半邊看起來像壞掉）", () => {
+  test("hover 整列都認得（底色的列），但底色只從標題欄畫起", () => {
     expect(at({ pageState: 2, row: 5, col: 0 }).highlightRow).toBe(5);
     expect(at({ pageState: 2, row: 5, col: 40 }).highlightRow).toBe(5);
+    // 底色區＝可點區（使用者 2026-08 定案），兩者不可分岔。
+    expect(at({ pageState: 2, row: 5, col: 0 }).highlightColStart).toBe(
+      LIST_TITLE_COL_START,
+    );
+    expect(at({ pageState: 2, row: 5, col: 40 }).highlightColStart).toBe(
+      LIST_TITLE_COL_START,
+    );
   });
 
   test("空列不可點也不上色", () => {
@@ -94,8 +103,11 @@ describe("選單／看板列表（pageState 1）", () => {
     expect(at({ pageState: 1, row: 5, col: 0 }).action).toBe(ACT_NONE);
   });
 
-  test("hover 一樣上底色", () => {
+  test("hover 一樣上底色，範圍從可點欄起", () => {
     expect(at({ pageState: 1, row: 5, col: 0 }).highlightRow).toBe(5);
+    expect(at({ pageState: 1, row: 5, col: 0 }).highlightColStart).toBe(
+      MENU_COL_START,
+    );
   });
 
   test("首列與末列不是正文列", () => {
@@ -156,6 +168,56 @@ describe("其餘畫面", () => {
       expect(r.cursor).toBe(CUR_AUTO);
       expect(r.highlightRow).toBe(-1);
     });
+  });
+});
+
+// 防誤觸模式（pref mouseMisclickGuard，預設開）＝「可點區＝底色區」的起始欄。
+// 關掉之後整列可點、整列上底色（＝改版前的行為）。
+describe("clickableColStart（可點區＝底色區的唯一真相源）", () => {
+  test("防誤觸開啟：列表 30、選單 8、其餘 0", () => {
+    expect(clickableColStart(2, true)).toBe(LIST_TITLE_COL_START);
+    expect(clickableColStart(4, true)).toBe(LIST_TITLE_COL_START);
+    expect(clickableColStart(1, true)).toBe(MENU_COL_START);
+    [0, 3, 5, 6, undefined].forEach((ps) => {
+      expect(clickableColStart(ps, true)).toBe(0);
+    });
+  });
+
+  test("防誤觸關閉：一律 0（整列）", () => {
+    [0, 1, 2, 3, 4, 5, 6, undefined].forEach((ps) => {
+      expect(clickableColStart(ps, false)).toBe(0);
+    });
+  });
+});
+
+describe("防誤觸關閉：整列可點、整列上底色", () => {
+  const off = (over) =>
+    resolveMouseRegion({ rows: 24, lineEmpty: false, misclickGuard: false, ...over });
+
+  test("文章列表：序號／日期／作者欄都開得了文", () => {
+    [0, 6, 7, 8, 16, 17, 29, 30, 79].forEach((col) => {
+      const r = off({ pageState: 2, row: 5, col });
+      expect(r.action).toBe(ACT_ENTER);
+      expect(r.row).toBe(5);
+      expect(r.cursor).toBe(CUR_POINTER);
+      expect(r.highlightColStart).toBe(0);
+    });
+  });
+
+  test("LIST 變體與選單同樣整列可點", () => {
+    expect(off({ pageState: 4, row: 5, col: 0 }).action).toBe(ACT_ENTER);
+    expect(off({ pageState: 1, row: 5, col: 0 }).action).toBe(ACT_ENTER);
+    expect(off({ pageState: 1, row: 5, col: 0 }).highlightColStart).toBe(0);
+  });
+
+  test("空列／非正文列／文章頁不受影響", () => {
+    expect(off({ pageState: 2, row: 5, col: 0, lineEmpty: true }).action).toBe(
+      ACT_NONE,
+    );
+    expect(off({ pageState: 2, row: 0, col: 0 }).action).toBe(ACT_NONE);
+    // 文章的左側退出帶是固定手勢，與防誤觸無關。
+    expect(off({ pageState: 3, row: 10, col: 1 }).action).toBe(ACT_EXIT_ARTICLE);
+    expect(off({ pageState: 3, row: 10, col: 40 }).action).toBe(ACT_NONE);
   });
 });
 

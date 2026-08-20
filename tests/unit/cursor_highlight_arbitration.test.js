@@ -18,6 +18,7 @@ function makeView({ listRenderMode = "native" } = {}) {
   v.keyboardCursorHighlight = true;
   v.useEasyReadingMode = false;
   v.mouseLeftClick = true;
+  v.mouseMisclickGuard = true;
   // 建構子預設（term_view.js）
   v._highlightMover = "mouse";
   v._highlightMode = null;
@@ -77,7 +78,46 @@ describe("applyCursorHighlight：原生畫面", () => {
     v.highlightBG = 7;
     v.buf.nowHighlight = 11;
     v.applyCursorHighlight("mouse");
-    expect(seen[0]).toEqual({ row: 11, cls: "b7" });
+    expect(seen[0]).toEqual({
+      row: 11,
+      cls: "b7",
+      col: LIST_TITLE_COL_START,
+    });
+  });
+
+  // 底色範圍＝可點區範圍（使用者 2026-08 定案），且**不分來源** —— 鍵盤游標與滑鼠
+  // hover 共用同一個寬度，兩種光棒不一樣長只會讓人以為畫面壞了。
+  test("底色起始欄跟著防誤觸走，鍵盤來源也是同一個寬度", () => {
+    const { v } = makeView();
+    const seen = [];
+    v.componentScreen = { setCursorHighlight: (h) => seen.push(h) };
+
+    v.buf.nowHighlight = 11;
+    v.applyCursorHighlight("mouse");
+    expect(seen[seen.length - 1].col).toBe(LIST_TITLE_COL_START);
+
+    // 鍵盤搶走底色：列變了，寬度不變。
+    v.buf.cur_y = 6;
+    v.applyCursorHighlight();
+    expect(seen[seen.length - 1]).toEqual({
+      row: 6,
+      cls: "b2",
+      col: LIST_TITLE_COL_START,
+    });
+
+    v.mouseMisclickGuard = false;
+    v.applyCursorHighlight("mouse");
+    expect(seen[seen.length - 1].col).toBe(0);
+  });
+
+  test("總開關關掉就沒有誤觸要防：底色回到整列", () => {
+    const { v } = makeView();
+    const seen = [];
+    v.componentScreen = { setCursorHighlight: (h) => seen.push(h) };
+    v.buf.useMouseBrowsing = false;
+    v.buf.cur_y = 6;
+    v.applyCursorHighlight();
+    expect(seen[seen.length - 1].col).toBe(0);
   });
 });
 

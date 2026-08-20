@@ -8,7 +8,7 @@
 
 | 層 | 檔案 | 職責 |
 |---|---|---|
-| 決策（純函式） | `src/js/mouse_regions.js` | 這一格是什麼動作、指標長什麼樣、各 pref gate |
+| 決策（純函式） | `src/js/mouse_regions.js` | 這一格是什麼動作、指標長什麼樣、可點區起始欄、各 pref gate |
 | 幾何（純函式） | `src/js/mouse_geometry.js` | client x ↔ col、提示帶矩形 |
 | 命中排除 | `src/js/preview_targets.js` | 「點在預覽媒體上」的選擇器 |
 | 原生畫面套用 | `term_buf.onMouse_move` | 寫 `mouseAction`／`nowHighlight`／指標／提示帶 |
@@ -25,6 +25,7 @@
 | `keyboardCursorHighlight` | `true` | bool | 鍵盤游標列上底色（UI 在「一般」分頁） |
 | `mouseBrowsingHighlightColor` | `2` | 1..15 | 兩種底色共用（UI 在「一般」分頁） |
 | `mouseLeftClick` | `true` | bool | 列表點標題開文＋文章左側退出＋自訂指標 |
+| `mouseMisclickGuard` | `true` | bool | 防誤觸模式：**可點區＝底色區**的起始欄（見下方「防誤觸模式」） |
 | `mouseMiddleClick` | `0` | 0 關閉 / 1 貼上 / 2 左方向鍵 | |
 | `mouseWheel` | `1` | 0 關閉 / 1 上下頁 | |
 
@@ -48,11 +49,14 @@
 
 座標一律是**格子空間**（`clientToPos` 的輸出）。
 
-| pageState | 條件 | action | cursor | 底色 |
+`S` ＝ `clickableColStart(pageState, misclickGuard)`：防誤觸開啟時列表 30、選單 8，
+其餘（含防誤觸關閉）一律 0。**可點區與底色區共用它**。
+
+| pageState | 條件 | action | cursor | 底色範圍 |
 |---|---|---|---|---|
-| 2（文章列表） | `2 < row < rows-1` 且該列非空 | `col >= 30` → `enter(row)`，否則 `none` | title 區 `pointer` | 整列 |
-| 4（LIST 變體） | `1 < row < rows-2`，其餘同上 | 同上 | 同上 | 整列 |
-| 1（MENU／看板列表） | `0 < row < rows-1` | `col > 7` → `enter(row)`，否則 `none` | 可點區 `pointer` | 整列 |
+| 2（文章列表） | `2 < row < rows-1` 且該列非空 | `col >= S` → `enter(row)`，否則 `none` | 可點區 `pointer` | `[S, 行尾)` |
+| 4（LIST 變體） | `1 < row < rows-2`，其餘同上 | 同上 | 同上 | 同上 |
+| 1（MENU／看板列表） | `0 < row < rows-1` | `col >= S` → `enter(row)`，否則 `none` | 可點區 `pointer` | `[S, 行尾)` |
 | 3（READING） | `col < 7` | `exitArticle` | `back`（PNG） | 不上色 |
 | 3 | 其餘 | `none` | `auto` | 不上色 |
 | 0 / 5 / 6 | — | `none` | `auto` | 不上色 |
@@ -69,8 +73,34 @@
 - **`realignListColumns` 絕不可套在滑鼠 col 上**：那是文字空間的 DBCS 折疊補償
   （`rowToText` 把兩格併一個字元），格子空間沒有位移。
 
-底色與可點區**刻意不一致**：列表 hover 整列上底色、只有標題欄可點。與改版前的
-「整列 `nowHighlight`」一致，否則 col 0-29 完全沒反應會像壞掉。
+## 防誤觸模式（`mouseMisclickGuard`，預設開）
+
+**合約：可點區＝底色區**（使用者 2026-08 定案）。唯一真相源是
+`mouse_regions.clickableColStart(pageState, guard)`，底色端經
+`cursor_highlight.highlightColStart({ mode, pageState, misclickGuard })` 委派它。
+
+| | 文章列表／選單 | 文章推文列（pusher 高亮） |
+|---|---|---|
+| 開 | 只有標題（選項）欄可點，底色也只蓋那一段 | 只有內容文字可點（該列的 `contentCol`） |
+| 關 | 整列可點、整列上底色 | 整列可點（＝改版前的行為） |
+
+- **推文列的欄位不是全畫面共用**：`contentCol` 由 `comment_parse.annotateComment`
+  逐列算（`推 id: ` 的長度隨 id 變），經 `Row` 輸出成 `data-pusher-col`，
+  `App.mouse_click` 讀它。文章頁**不上 hover 底色**（維持原樣），所以那裡只有可點區。
+- **底色不分 `lastMover`**：鍵盤游標與滑鼠 hover 共用同一個寬度。兩種光棒不一樣長
+  只會讓人以為畫面壞了。
+- 2026-08 之前是「整列上底色、只有標題欄可點」，兩者刻意不一致 —— 代價是使用者
+  無從得知邊界在哪；現在那條底色本身就是「這裡點得下去」的提示。
+- **部分寬度底色的 DOM**：`highlightClass` 掛在 block 級的 `bbsline` span 上就是滿版，
+  所以 `S > 0` 時改掛在一個「從第 S 欄包到行尾」的 span 上（`LinkSegmentBuilder`
+  的 `_flushHighlightWrap`，比照 `.commentByAuthor` 的欄位範圍包裝）。三種範圍都是
+  「到行尾」⇒ **只有開邊界、沒有關邊界**。那個 span 另帶一個無樣式的識別 class
+  `.cursorHighlight`：`b1..b15` 同時也是 ANSI 背景色 class，光看顏色分不出光棒與
+  「這格本來就有底色」（狀態列就有 b6，`easy-reading-list.offline.spec.js` 踩過）。
+- 邊界欄都落在 ASCII 欄（列表 col 30 是 mark 欄、選單 col 8、推文 `contentCol` 緊接
+  `": "`），不會切在 DBCS 的 trail cell 上。
+- `blacklistNotice` 列（原生列表的「(本文已被黑名單)」通知）**維持整列上色**：那是
+  我們自己合成的文字、本來就開不了，套欄位範圍沒有意義。
 
 ### 移除的舊動作
 
@@ -90,6 +120,7 @@
 | 指標圖示 | `useMouseBrowsing && mouseLeftClick` |
 | 左鍵動作 | `useMouseBrowsing && mouseLeftClick` |
 | 左側提示帶 | `useMouseBrowsing && mouseLeftClick && pageState === 3` |
+| 防誤觸（可點區＝底色區的起始欄） | `useMouseBrowsing && mouseMisclickGuard` —— **跟著總開關走**，總開關關掉時左鍵／指標／提示帶全滅，沒有誤觸要防；設定頁那顆 checkbox 因此能與其他子項一樣 `disabled` |
 | 中鍵 | `useMouseBrowsing && mouseMiddleClick !== 0` |
 | 滾輪 | `useMouseBrowsing && mouseWheel !== 0` |
 | 連結／圖片／`[data-pusher]`／`copyOnSelect`／右鍵選單 | **不受任何滑鼠 pref 影響** |
@@ -153,7 +184,7 @@
 4. **`closest('a')`** —— 連結
 5. **`closest(PREVIEW_CLICK_SELECTOR)`** —— 內嵌預覽
 6. `getSelection().isCollapsed`
-7. `closest('[data-pusher]')` —— 推文者高亮
+7. `closest('[data-pusher]')` —— 推文者高亮（防誤觸開啟時還要 `col >= data-pusher-col`；**欄位不合不 return**，讓下面的左側退出帶接手）
 8. `listRenderMode` buffer/frozen 分支
 9. `useMouseBrowsing` gate
 10. `mouseLeftClick` gate
@@ -164,6 +195,11 @@
 現在是退出手勢，而連結與內嵌預覽圖都可能落在那幾欄（預覽圖甚至是整寬區塊、起點
 就在第 0 欄，而且走的是 `Screen` 的事件委派 `onClick`，不是 `<a>` 的子孫 ⇒ 第 4 條
 攔不到）。
+
+第 7 條的欄位條件是 2026-08 補的：`data-pusher` 掛在**整列**的 `bbsrow` span 上，
+而這一條走在滑鼠瀏覽 gate 之前 ⇒ 推文列的 cols 0-6 一律被 pusher 高亮吃掉，
+**退出手勢在整個推文區失效**（使用者回報）。修法是「命中但欄位不合就繼續往下走」，
+不是把這條往後移（連結／預覽仍必須贏過它）。
 
 **`closest('a')` 不可退回「只看 parentElement」**：連結內部最深可到
 `a > span > span`（`LinkSegmentBuilder` 的 `TwoColorWord` / `ForceWidthWord`，
@@ -215,15 +251,18 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 
 | 檔案 | 鎖什麼 |
 |---|---|
-| `tests/unit/mouse_regions.test.js` | 區域決策表逐格 + `cursorCss` 括號平衡 |
+| `tests/unit/mouse_regions.test.js` | 區域決策表逐格 + `clickableColStart` + 防誤觸關閉時整列可點 + `cursorCss` 括號平衡 |
 | `tests/unit/mouse_geometry.test.js` | 帶子右緣 ↔ 可點區右緣往返（三組幾何） |
 | `tests/unit/mouse_gating.test.js` | 總開關關掉 ⇒ 中鍵與滾輪也關 |
-| `tests/unit/cursor_highlight.test.js` | 底色決策表 + `lastMover` 仲裁（含鍵盤底色關／文章頁的回退） |
+| `tests/unit/cursor_highlight.test.js` | 底色決策表 + `lastMover` 仲裁（含鍵盤底色關／文章頁的回退）+ `highlightColStart` |
+| `tests/unit/row_render.test.jsx` | 部分寬度底色的 DOM（包裝 span 的範圍／`data-pusher-col`） |
+| `tests/unit/comment_parse.test.js` | `contentCol`（推文內容起始欄） |
 | `tests/unit/cursor_highlight_arbitration.test.js` | `applyCursorHighlight` 的來源判定：鍵盤搶得走、滑鼠拿得回、模式切換不算移動 |
 | `tests/unit/list_hover_gating.test.js` | 列表 hover 的三個 gate、底色 vs pointer 條件不同 |
 | `tests/unit/list_click_open.test.js` | 列表點擊的標題欄限制 |
 | `tests/unit/pref_modal_mouse_tab.test.jsx` | 設定分頁的欄位、預設值、子項 disabled、選項值域 |
 | `tests/unit/pref_schema_mouse.test.js` | 新 key 齊備、舊 key 已移除、殘值不復活 |
 | `tests/unit/i18n_parity.test.js` | 兩語系 key 集合一致 |
-| `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關 |
+| `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關／推文列可點區（防誤觸三態） |
+| `tests/e2e/offline/easy-reading-list.offline.spec.js` | 列表好讀的底色左緣＝標題欄、切防誤觸後回到整列 |
 | `tests/e2e/offline/wheel_stuck_button.offline.spec.js` | 按鍵旗標卡死的三條路徑 |

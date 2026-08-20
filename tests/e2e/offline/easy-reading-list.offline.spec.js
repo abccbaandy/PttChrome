@@ -645,14 +645,52 @@ test.describe('文章列表好读模式（离线）', () => {
       let s = await waitState(page, (x) => x.state === 'active' && x.listLen > 30 && x.queueIdle, 20000);
 
       // 鍵盤游標底色：'>' 那一列（且只有那一列）帶著 pref 指定的 b6。
-      const highlightRows = await page.evaluate(() =>
+      // 防誤觸模式（預設開）下底色只蓋標題欄 ⇒ class 掛在列內的包裝 span 上，
+      // 不在 block 級的 bbsline 上（掛上去就是滿版）。
+      const litRows = () =>
+        page.evaluate(() =>
+          Array.from(
+            document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+          )
+            .map((el, i) =>
+              // bN 同時也是 ANSI 背景色的 class（狀態列就有 b6）⇒ 光棒要靠
+              // .cursorHighlight 這個標記認，不能只看顏色。
+              el.classList.contains('b6') || el.querySelector('.cursorHighlight.b6')
+                ? i
+                : -1
+            )
+            .filter((i) => i !== -1)
+        );
+      expect(await litRows()).toEqual([await cursorRowIndex(page)]);
+
+      // 底色左緣＝可點區左緣（標題欄 col 30）：使用者 2026-08 定案「點擊區域＝
+      // 底色區域」，那條光棒本身就是「這裡點得下去」的提示。
+      const tintLeft = await page.evaluate(() => {
+        const el = document.querySelector(
+          '#mainContainer [data-type="bbsline"] .cursorHighlight.b6'
+        );
+        const v = window.__app.view;
+        return {
+          x: el.getBoundingClientRect().left,
+          want: parseFloat(v.firstGridOffset.left) + v.chw * 30,
+        };
+      });
+      expect(Math.abs(tintLeft.x - tintLeft.want)).toBeLessThan(2);
+
+      // 關掉防誤觸 ⇒ 整列可點、整列上底色（class 回到 bbsline 本身）。
+      await ptt.applyPrefs(page, { mouseMisclickGuard: false });
+      await page.waitForTimeout(200);
+      const wholeRow = await page.evaluate(() =>
         Array.from(
           document.querySelectorAll('#mainContainer [data-type="bbsline"]')
         )
           .map((el, i) => (el.classList.contains('b6') ? i : -1))
           .filter((i) => i !== -1)
       );
-      expect(highlightRows).toEqual([await cursorRowIndex(page)]);
+      expect(wholeRow).toEqual([await cursorRowIndex(page)]);
+      await ptt.applyPrefs(page, { mouseMisclickGuard: true });
+      await page.waitForTimeout(200);
+      expect(await litRows()).toEqual([await cursorRowIndex(page)]);
 
       // 開文目標＝錄製的第三個 jump（cassette 只對這個序號有開文素材）。先把視窗
       // 帶到它附近（純視窗定位，不是本案要測的東西），再用 ↓ 把選取移開兩列 ——

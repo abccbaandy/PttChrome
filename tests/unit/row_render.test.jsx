@@ -113,6 +113,77 @@ describe("Row pusher highlight", () => {
     expect(row.getAttribute("data-pusher")).toBe("wowbenny");
     expect(row.classList.contains("pusherHighlight")).toBe(false);
   });
+
+  // 滑鼠防誤觸模式讀這個屬性判斷「這一點落在可點的內容區還是左邊的作者區」
+  // （App.mouse_click）。沒有它，推文列會整列攔下左鍵 ⇒ 文章左側的退出帶點不到。
+  test("data-pusher-col 帶出內容起始欄", () => {
+    const { container } = render(
+      <Row
+        chars={chars("PU wowbenny: hi")}
+        row={0}
+        pusher="wowbenny"
+        pusherContentCol={13}
+      />
+    );
+    expect(bbsrow(container).getAttribute("data-pusher-col")).toBe("13");
+  });
+});
+
+// 游標底色的範圍＝可點區範圍（使用者 2026-08 定案）。底色 class 掛在 block 級的
+// bbsline span 上就是滿版，所以部分寬度必須改掛在一個「從該欄包到行尾」的 span。
+describe("Row 部分寬度底色（防誤觸模式）", () => {
+  const bbsline = (container) =>
+    container.querySelector('span[data-type="bbsline"]');
+
+  test("highlightColStart 未給（防誤觸關）：class 掛整列，DOM 與改版前一致", () => {
+    const { container } = render(
+      <Row chars={chars("PU wowbenny: hi")} row={0} highlightClass="b7" />
+    );
+    expect(bbsline(container).classList.contains("b7")).toBe(true);
+    expect(container.querySelectorAll(".b7").length).toBe(1);
+  });
+
+  test("highlightColStart > 0：bbsline 不上色，改由包裝 span 從該欄包到行尾", () => {
+    const text = "PU wowbenny: hello";
+    const { container } = render(
+      <Row
+        chars={chars(text)}
+        row={0}
+        highlightClass="b7"
+        highlightColStart={13}
+      />
+    );
+    expect(bbsline(container).classList.contains("b7")).toBe(false);
+    // .cursorHighlight 是識別標記：bN 同時也是 ANSI 背景色 class，光看顏色分不出
+    // 「這是光棒」還是「這格本來就有底色」。
+    const wrap = container.querySelector(
+      'span[data-type="bbsline"] > .cursorHighlight.b7'
+    );
+    expect(wrap).not.toBeNull();
+    expect(wrap.textContent).toBe(text.slice(13)); // "hello"
+    // 整列的文字一個字都沒少（包裝只是重新分段）。
+    expect(bbsline(container).textContent).toBe(text);
+  });
+
+  test("起始欄 0 等同整列（防誤觸關掉時的實際值）", () => {
+    const { container } = render(
+      <Row
+        chars={chars("PU wowbenny: hi")}
+        row={0}
+        highlightClass="b7"
+        highlightColStart={0}
+      />
+    );
+    expect(bbsline(container).classList.contains("b7")).toBe(true);
+  });
+
+  test("沒有底色 class 時不多切一段 —— DOM 與沒傳起始欄時一模一樣", () => {
+    const withCol = render(
+      <Row chars={chars("PU wowbenny: hi")} row={0} highlightColStart={13} />
+    );
+    const without = render(<Row chars={chars("PU wowbenny: hi")} row={0} />);
+    expect(withCol.container.innerHTML).toBe(without.container.innerHTML);
+  });
 });
 
 // Regression: a row re-render (e.g. on pusherHighlight toggle) must reuse the

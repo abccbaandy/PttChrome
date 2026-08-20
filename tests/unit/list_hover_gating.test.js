@@ -3,8 +3,9 @@
 //
 // 守住 2026-08 滑鼠重新設計的三件事：
 //  (1) 總開關關掉 ⇒ 連 hover 都不該有（改版前這條路徑完全不看 useMouseBrowsing）；
-//  (2) pointer 只給標題欄（col >= 30），但**底色跟著整列走** —— 兩者條件刻意不同，
-//      與原生一致，否則左半邊完全沒反應會像壞掉；
+//  (2) 防誤觸開啟時 pointer 只給標題欄（col >= 30），關閉則整列都給；hover 列
+//      （＝要上底色的列）兩種情況都認整列，底色的**寬度**另由 applyCursorHighlight
+//      決定（與可點區同源，見 cursor_highlight.highlightColStart）；
 //  (3) 列表模式一律關掉文章的左側退出提示帶（不然從文章切回列表會留殘影）。
 import { TermView } from "../../src/js/term_view";
 import { LIST_HEADER_ROWS } from "../../src/js/list_window";
@@ -17,6 +18,7 @@ const bodyRow = (idx) => LIST_HEADER_ROWS + idx;
 function makeView({
   useMouseBrowsing = true,
   mouseLeftClick = true,
+  mouseMisclickGuard = true,
   listRenderMode = "buffer",
   bodyLen = 10,
 } = {}) {
@@ -24,6 +26,7 @@ function makeView({
   const highlightCalls = [];
   const v = Object.create(TermView.prototype);
   v.mouseLeftClick = mouseLeftClick;
+  v.mouseMisclickGuard = mouseMisclickGuard;
   v._listHoverRow = -1;
   v.buf = {
     useMouseBrowsing,
@@ -51,6 +54,21 @@ describe("onListMouseMove", () => {
     expect(v.buf.BBSWin.style.cursor).toBe("pointer");
     expect(v._listHoverRow).toBe(bodyRow(2));
     expect(highlightCalls).toEqual([bodyRow(2)]);
+  });
+
+  test("防誤觸關閉：作者欄也給 pointer（整列可點）", () => {
+    const { v, highlightCalls } = makeView({ mouseMisclickGuard: false });
+    v.onListMouseMove(bodyRow(2), AUTHOR_COL);
+    expect(v.buf.BBSWin.style.cursor).toBe("pointer");
+    expect(v._listHoverRow).toBe(bodyRow(2));
+    expect(highlightCalls).toEqual([bodyRow(2)]);
+  });
+
+  test("總開關關掉 ⇒ 防誤觸也不生效（但整列本來就沒有 hover）", () => {
+    const { v } = makeView({ useMouseBrowsing: false });
+    v.onListMouseMove(bodyRow(2), AUTHOR_COL);
+    expect(v.buf.BBSWin.style.cursor).toBe("auto");
+    expect(v._listHoverRow).toBe(-1);
   });
 
   test("停在作者欄：不給 pointer，但整列照樣上底色", () => {

@@ -85,6 +85,13 @@ export const DEFAULT_PREFS = {
   // 左鍵：列表點標題欄開文章／進看板 + 文章內點左側離開 + 自訂滑鼠指標圖示。
   // 單一開關，不再是「送 Enter／送右方向鍵」那種按鍵層級的設定。
   mouseLeftClick: true,
+  // 防誤觸模式（預設開）：可點區＝底色區，兩者的起始欄由 mouse_regions
+  // .clickableColStart 統一決定。
+  //   開 列表／選單只有標題（選項）欄可點且只有那一段上底色；文章推文列只有
+  //      內容文字可觸發同作者高亮 ⇒ 左側 0-6 欄還給「點一下離開文章」的退出帶
+  //   關 整列可點、整列上底色（改版前的行為）
+  // 跟著 useMouseBrowsing 走（resolveMouseGates）：總開關關掉時沒有誤觸要防。
+  mouseMisclickGuard: true,
   // 中鍵：0=關閉 1=貼上 2=左方向鍵。**與舊 mouseMiddleFunction 的值域不同**
   // （舊的 1 是 Enter），刻意不做遷移，見 docs/mouse.md。
   mouseMiddleClick: 0,

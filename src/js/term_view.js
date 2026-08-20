@@ -2,13 +2,14 @@
 
 import { TermKeyboard } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
-import { DEFAULT_HIGHLIGHT_BG, highlightClass, resolveHighlightRow } from './cursor_highlight';
+import { DEFAULT_HIGHLIGHT_BG, highlightClass, highlightColStart, resolveHighlightRow } from './cursor_highlight';
+import { clickableColStart } from './mouse_regions';
 import { exitBandRect } from './mouse_geometry';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
-import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, listColRegion } from './comment_parse';
+import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { readValuesWithDefault } from './pref_storage';
@@ -28,7 +29,8 @@ const STABLE_ROWS = Object.freeze({ stableRows: true });
 
 // 「這一幀沒有任何列要上游標底色」。共用同一個凍結物件 → Screen 的 useState 以
 // Object.is 比較，連續的「不上色」不會白白觸發 render。
-const NO_CURSOR_HIGHLIGHT = Object.freeze({ row: -1, cls: null });
+// col＝底色從第幾欄畫起（0 = 整列），與可點區同源，見 cursor_highlight.highlightColStart。
+const NO_CURSOR_HIGHLIGHT = Object.freeze({ row: -1, cls: null, col: 0 });
 
 // Snapshot-clone a screen row (TermChar[]) for retention in buf.pageLines. The live
 // 24-row buffer is overwritten as PTT repaints, so accumulated rows must be copied.
@@ -111,6 +113,9 @@ export function TermView() {
   this.mouseLeftClick = true;
   this.mouseMiddleClick = 0;
   this.mouseWheel = 1;
+  // 防誤觸模式（pref mouseMisclickGuard，預設開）：可點區＝底色區的起始欄，
+  // 決策在 mouse_regions.clickableColStart。
+  this.mouseMisclickGuard = true;
   //this.highlightFG = 7;
   this.fontFitWindowWidth = false;
   //new pref - end
@@ -738,10 +743,19 @@ TermView.prototype = {
       listCursorRow: this._listCursorRow,
       lastMover: this._highlightMover
     });
+    // 底色寬度＝可點區寬度（使用者 2026-08 定案）。**不分 lastMover** —— 鍵盤游標
+    // 與滑鼠 hover 共用同一個寬度，否則同一個畫面上兩種光棒不一樣長。
+    var col = highlightColStart({
+      mode: mode,
+      pageState: this.buf.pageState,
+      misclickGuard: !!(this.buf.useMouseBrowsing && this.mouseMisclickGuard)
+    });
     if (TRACE)
-      console.log(`applyCursorHighlight: mode=${mode} row=${row} bg=${this.highlightBG}`);
+      console.log(`applyCursorHighlight: mode=${mode} row=${row} col=${col} bg=${this.highlightBG}`);
     this.componentScreen.setCursorHighlight(
-      row < 0 ? NO_CURSOR_HIGHLIGHT : { row: row, cls: highlightClass(this.highlightBG) }
+      row < 0
+        ? NO_CURSOR_HIGHLIGHT
+        : { row: row, cls: highlightClass(this.highlightBG), col: col }
     );
   },
 
@@ -1074,9 +1088,10 @@ TermView.prototype = {
   // 兩者的列意義並不對應。這裡只回答一個問題：滑鼠停在哪一個「可點的文章列」上。
   // frozen（開文交易進行中）比照鍵盤：不接受互動，清掉 hover。
   //
-  // 底色與 pointer 的條件**刻意不同**（與原生一致）：整列 hover 都上底色，但只有
-  // 標題欄（col >= 30）給 pointer 並接受點擊 —— 否則左半邊完全沒反應會像壞掉。
-  // 底色的 gate 在 applyCursorHighlight（唯一真相源），這裡只 gate 總開關與 pointer。
+  // 底色與 pointer 的**範圍**一致（防誤觸開＝標題欄、關＝整列，見
+  // mouse_regions.clickableColStart），但**條件**不同：底色只要停在可點的列上就給，
+  // pointer 還要 mouseLeftClick 也開著。底色的 gate 在 applyCursorHighlight
+  // （唯一真相源），這裡只 gate 總開關與 pointer。
   onListMouseMove: function(row, col) {
     var hover = -1;
     if (this.buf.useMouseBrowsing && this.buf.listRenderMode === 'buffer') {
@@ -1089,7 +1104,9 @@ TermView.prototype = {
       }
     }
     var clickable =
-      hover >= 0 && !!this.mouseLeftClick && listColRegion(col) === 'title';
+      hover >= 0 &&
+      !!this.mouseLeftClick &&
+      col >= clickableColStart(2, !!(this.buf.useMouseBrowsing && this.mouseMisclickGuard));
     if (this.buf.BBSWin)
       this.buf.BBSWin.style.cursor = clickable ? 'pointer' : 'auto';
     // 列表模式不可能有文章左側的退出帶；不關掉的話從文章切回列表會留下殘影。

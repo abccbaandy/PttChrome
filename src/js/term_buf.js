@@ -1208,7 +1208,11 @@ TermBuf.prototype = {
       col: tcol,
       row: trow,
       rows: this.rows,
-      lineEmpty: lineEmpty
+      lineEmpty: lineEmpty,
+      // 防誤觸（可點區＝底色區的起始欄）跟著總開關走，見 resolveMouseGates。
+      misclickGuard: !!(
+        this.useMouseBrowsing && this.view && this.view.mouseMisclickGuard
+      )
     });
 
     this.mouseAction = region.action;

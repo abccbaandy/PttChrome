@@ -16,6 +16,7 @@ export class LinkSegmentBuilder {
     enableLinkInlinePreview,
     forceWidth,
     highlightClass,
+    highlightColStart,
     onHyperLinkMouseOver,
     onHyperLinkMouseOut,
     floor,
@@ -32,6 +33,16 @@ export class LinkSegmentBuilder {
     // 游標底色 class（'b1'..'b15'）或 undefined＝這一列不上色。顏色由 pref 決定，
     // 決策與對映都在 js/cursor_highlight.js —— 這裡**不可以**再硬寫 b2。
     this.highlightClass = highlightClass;
+    // 底色從第幾欄畫起（0/undefined＝整列，DOM 與 2026-08 之前一字不動）。>0 時
+    // 底色改掛在一個從該欄包到行尾的 span 上，class **不**掛在 bbsline span ——
+    // 那是 block 級元素，掛上去就是滿版。範圍與可點區同源（防誤觸模式，見
+    // js/mouse_regions.clickableColStart），三種範圍（列表標題欄／選單選項欄／
+    // 推文內容欄）都是「到行尾」⇒ 只有開邊界、沒有關邊界。
+    // 沒有底色 class 就沒有包裝的必要（也不該憑空多切一段 segment 出來）。
+    this.highlightColStart =
+      highlightClass && highlightColStart > 0 ? highlightColStart : 0;
+    this._inHighlight = false;
+    this._highlightWrap = null;
     this.onHyperLinkMouseOver = onHyperLinkMouseOver;
     this.onHyperLinkMouseOut = onHyperLinkMouseOut;
     this.floor = floor;
@@ -109,14 +120,36 @@ export class LinkSegmentBuilder {
   }
 
   // Push a built segment to the current target: the author-id wrapper while
-  // inside the user-id range, otherwise the row's top-level segment list.
+  // inside the user-id range, then the partial-highlight wrapper while inside
+  // the tinted column range, otherwise the row's top-level segment list.
+  // 兩個包裝不會重疊：作者 id 在 cols [3, 3+len)，而部分底色的三種起始欄都在它右邊
+  // （推文內容欄）或在完全不同的畫面上（列表／選單）。
   _pushSeg(node) {
     if (this._inAuthor) this._authorWrap.push(node);
+    else if (this._inHighlight) this._highlightWrap.push(node);
     else this.segs.push(node);
+  }
+
+  // 部分底色包裝收尾：把 [highlightColStart, 行尾) 的段落包成一個帶底色 class 的
+  // span。build() 與 _flushLine()（合併推文塊的行邊界）都會呼叫。
+  _flushHighlightWrap() {
+    if (this._highlightWrap && this._highlightWrap.length) {
+      // .cursorHighlight 只是**識別用**的標記（沒有樣式）：底色 class 本身是 b1..b15，
+      // 而那些同時也是 ANSI 背景色的 class ⇒ 光看 bN 分不出「這是光棒」還是「這格
+      // 本來就有底色」。測試與除錯靠這個標記定位光棒。
+      this.segs.push(
+        <span key="hl" className={cx("cursorHighlight", this.highlightClass)}>
+          {this._highlightWrap}
+        </span>,
+      );
+    }
+    this._highlightWrap = null;
+    this._inHighlight = false;
   }
 
   // '\n' cell＝行邊界：收掉目前這行的 segs 與它的自動開圖，開新的一行。
   _flushLine() {
+    if (this._inHighlight) this._flushHighlightWrap();
     this.lineGroups.push({
       segs: this.segs,
       previews: this.inlineLinkPreviews,
@@ -273,6 +306,12 @@ export class LinkSegmentBuilder {
       this._flushLine();
       return;
     }
+    // 部分底色的開邊界：從這一欄起到行尾都包進帶底色的 span。
+    if (this.highlightColStart > 0 && i === this.highlightColStart) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._inHighlight = true;
+      this._highlightWrap = [];
+    }
     // Open the 原PO id wrapper at the first column of the user id. floor (col 2)
     // is inserted before this, so it stays outside the wrapper.
     if (this.authorIdStart !== undefined && i === this.authorIdStart) {
@@ -353,6 +392,8 @@ export class LinkSegmentBuilder {
     // Safety net: a user id running to the end of the line never gets its close
     // boundary, so flush any still-open wrapper here.
     if (this._inAuthor) this._flushAuthorWrap();
+    // 部分底色**只有開邊界**（一律包到行尾）⇒ 這裡才是它的收尾點。
+    if (this._inHighlight) this._flushHighlightWrap();
     if (this.lineGroups.length) {
       // 多行：每行輸出一組「bbsline span ＋ 該行的自動開圖 div」，與單行結構同形。
       // 預覽 div 即使是空的也照樣輸出——它是區塊盒，正好把下一行的 inline 內容擠到
@@ -363,7 +404,9 @@ export class LinkSegmentBuilder {
           {this.lineGroups.map((g, i) => (
             <Fragment key={i}>
               <span
-                className={cx(this.highlightClass)}
+                className={cx(
+                  this.highlightColStart ? null : this.highlightClass,
+                )}
                 data-type="bbsline"
                 data-row={this.row}
               >
@@ -389,7 +432,7 @@ export class LinkSegmentBuilder {
     return (
       <div>
         <span
-          className={cx(this.highlightClass)}
+          className={cx(this.highlightColStart ? null : this.highlightClass)}
           data-type="bbsline"
           data-row={this.row}
         >

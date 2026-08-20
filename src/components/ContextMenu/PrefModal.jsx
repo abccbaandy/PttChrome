@@ -815,6 +815,23 @@ export const PrefModal = ({
                   {i18n("tooltip_mouseLeftClick")}
                 </Text>
               </fieldset>
+              {/* 防誤觸：可點區＝底色區的起始欄（js/mouse_regions.clickableColStart）。
+                  與其他子項一樣 disabled={!useMouseBrowsing} —— 總開關關掉時左鍵、
+                  指標、提示帶全滅，沒有誤觸要防（resolveMouseGates 同步 gate 掉）。 */}
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_mouseMisclickGuard")}</legend>
+                <PrefCheckbox
+                  name="mouseMisclickGuard"
+                  checked={values.mouseMisclickGuard}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableMouseMisclickGuard")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_mouseMisclickGuard")}
+                </Text>
+              </fieldset>
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                 <legend>{i18n("options_mouseMiddleClick")}</legend>
                 <Select

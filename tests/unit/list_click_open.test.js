@@ -14,7 +14,7 @@ function rowOf(text) {
   return text.split("").map((c) => ({ ch: c, isLeadByte: false }));
 }
 
-function makeSession({ count = 8, pinned = 0 } = {}) {
+function makeSession({ count = 8, pinned = 0, misclickGuard = true } = {}) {
   const sent = [];
   const enqueued = [];
   const hints = [];
@@ -27,6 +27,8 @@ function makeSession({ count = 8, pinned = 0 } = {}) {
     setListLoading() {},
     blacklist: new Set(),
     titleBlacklist: [],
+    // 防誤觸模式（pref mouseMisclickGuard，預設開）＝只有標題欄可開文。
+    mouseMisclickGuard: misclickGuard,
   };
   const listLines = [];
   const listLineNums = [];
@@ -41,6 +43,7 @@ function makeSession({ count = 8, pinned = 0 } = {}) {
   const termBuf = {
     rows: 24,
     cols: 80,
+    useMouseBrowsing: true,
     listLines,
     listLineNums,
     lineChangeds: new Array(24).fill(false),
@@ -151,6 +154,15 @@ describe("ListSession.onMouseClick", () => {
     s.onMouseClick(bodyRow(2), LIST_TITLE_COL_START);
     expect(s._selectedNum).toBe(103);
     expect(enqueued.length).toBe(1);
+  });
+
+  test("防誤觸關閉：整條都能開文", () => {
+    [0, 6, 12, LIST_TITLE_COL_START - 1].forEach((col) => {
+      const { s, enqueued } = makeSession({ misclickGuard: false });
+      s.onMouseClick(bodyRow(2), col);
+      expect(s._selectedNum).toBe(103);
+      expect(enqueued.length).toBe(1);
+    });
   });
 
   test("原生鏡像（renderMode native）：不處理，交給原生滑鼠瀏覽", () => {

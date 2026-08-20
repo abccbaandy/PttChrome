@@ -4,8 +4,13 @@
 import {
   DEFAULT_HIGHLIGHT_BG,
   highlightClass,
+  highlightColStart,
   resolveHighlightRow,
 } from "../../src/js/cursor_highlight";
+import {
+  LIST_TITLE_COL_START,
+} from "../../src/js/comment_parse";
+import { MENU_COL_START } from "../../src/js/mouse_regions";
 
 describe("highlightClass", () => {
   test("1..15 對映 color.css 的 bN", () => {
@@ -182,5 +187,48 @@ describe("resolveHighlightRow：誰最後動誰贏（lastMover）", () => {
     expect(
       resolveHighlightRow({ ...native, mode: "article", lastMover: "keyboard" })
     ).toBe(-1);
+  });
+});
+
+// 底色範圍＝可點區範圍（使用者 2026-08 定案「點擊區域＝底色區域」），唯一真相源是
+// mouse_regions.clickableColStart。**不分 lastMover**：鍵盤游標與滑鼠 hover 共用
+// 同一個寬度。
+describe("highlightColStart", () => {
+  test("防誤觸開啟：原生列表 30、選單 8", () => {
+    expect(highlightColStart({ mode: "native", pageState: 2, misclickGuard: true }))
+      .toBe(LIST_TITLE_COL_START);
+    expect(highlightColStart({ mode: "native", pageState: 4, misclickGuard: true }))
+      .toBe(LIST_TITLE_COL_START);
+    expect(highlightColStart({ mode: "native", pageState: 1, misclickGuard: true }))
+      .toBe(MENU_COL_START);
+  });
+
+  test("列表好讀的虛擬視窗與原生列表同一套欄位", () => {
+    // listBuffer 的 pageState 在轉場幀可能不是 2（buildListWindowLines 自己組畫面），
+    // 但欄位逐格對齊 readdoent ⇒ 一律套列表的欄位表。
+    expect(
+      highlightColStart({ mode: "listBuffer", pageState: 0, misclickGuard: true })
+    ).toBe(LIST_TITLE_COL_START);
+  });
+
+  test("好讀長頁（article）一律 0 —— 它本來就不上色", () => {
+    expect(
+      highlightColStart({ mode: "article", pageState: 3, misclickGuard: true })
+    ).toBe(0);
+  });
+
+  test("防誤觸關閉：一律整列", () => {
+    [1, 2, 4].forEach((pageState) => {
+      expect(highlightColStart({ mode: "native", pageState, misclickGuard: false }))
+        .toBe(0);
+    });
+    expect(
+      highlightColStart({ mode: "listBuffer", misclickGuard: false })
+    ).toBe(0);
+  });
+
+  test("缺值不會炸，回整列", () => {
+    expect(highlightColStart()).toBe(0);
+    expect(highlightColStart({})).toBe(0);
   });
 });

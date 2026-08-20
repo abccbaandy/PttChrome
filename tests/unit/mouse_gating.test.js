@@ -6,6 +6,7 @@ import { resolveMouseGates } from "../../src/js/mouse_regions";
 const ALL_ON = {
   useMouseBrowsing: true,
   mouseLeftClick: true,
+  mouseMisclickGuard: true,
   mouseMiddleClick: 1,
   mouseWheel: 1,
 };
@@ -18,6 +19,9 @@ describe("總開關", () => {
     expect(g.cursorIcon).toBe(false);
     expect(g.middleClick).toBe(0);
     expect(g.wheel).toBe(false);
+    // 總開關關掉時左鍵／指標／提示帶全滅 ⇒ 沒有誤觸要防，防誤觸也一併關掉
+    // （推文列的 pusher 高亮因此退回整列可點）。
+    expect(g.misclickGuard).toBe(false);
   });
 
   test("開啟時各子開關各自生效", () => {
@@ -25,6 +29,7 @@ describe("總開關", () => {
     expect(g.move).toBe(true);
     expect(g.leftClick).toBe(true);
     expect(g.cursorIcon).toBe(true);
+    expect(g.misclickGuard).toBe(true);
     expect(g.middleClick).toBe(1);
     expect(g.wheel).toBe(true);
   });
@@ -37,6 +42,19 @@ describe("子開關互不牽連", () => {
     expect(g.cursorIcon).toBe(false);
     expect(g.move).toBe(true);
     expect(g.wheel).toBe(true);
+  });
+
+  test("防誤觸關 ⇒ 只有它自己關，左鍵與底色照舊", () => {
+    const g = resolveMouseGates({ ...ALL_ON, mouseMisclickGuard: false });
+    expect(g.misclickGuard).toBe(false);
+    expect(g.leftClick).toBe(true);
+    expect(g.move).toBe(true);
+  });
+
+  test("左鍵關不影響防誤觸（推文的 pusher 高亮不歸左鍵管）", () => {
+    expect(
+      resolveMouseGates({ ...ALL_ON, mouseLeftClick: false }).misclickGuard,
+    ).toBe(true);
   });
 
   test("滾輪關不影響左鍵與中鍵", () => {
@@ -59,6 +77,7 @@ describe("子開關互不牽連", () => {
 test("缺值一律當關閉，不會意外發鍵", () => {
   const g = resolveMouseGates();
   expect(g.leftClick).toBe(false);
+  expect(g.misclickGuard).toBe(false);
   expect(g.middleClick).toBe(0);
   expect(g.wheel).toBe(false);
 });

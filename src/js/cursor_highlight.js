@@ -10,6 +10,8 @@
 // class 掛到那一列。滑鼠 hover 與鍵盤游標共用同一條管線與同一個顏色設定，兩者誰贏
 // 由 lastMover 仲裁（狀態在 term_view，規則見下方 resolveHighlightRow 與 docs/mouse.md）。
 
+import { clickableColStart } from "./mouse_regions";
+
 // color.css 的 .b2 = #008000，也就是 fork 以來的預設光棒綠。
 export const DEFAULT_HIGHLIGHT_BG = 2;
 
@@ -59,4 +61,20 @@ export function resolveHighlightRow(input) {
   if (o.lastMover === "keyboard" && kbRow >= 0) return kbRow;
   if (o.mouseEnabled && mouseRow >= 0) return mouseRow;
   return kbRow;
+}
+
+// 底色從第幾欄畫起（0 = 整列）。**與可點區同一個真相源**（mouse_regions.
+// clickableColStart），使用者 2026-08 定案「點擊區域＝底色區域」：防誤觸開啟時那條
+// 底色本身就是「這裡點得下去」的提示，關掉就整列上色。
+//
+// 不分 lastMover —— 鍵盤游標與滑鼠 hover 共用同一個寬度（同上定案）：兩種來源畫出
+// 不同寬度的光棒只會讓人以為畫面壞了。
+// listBuffer（列表好讀的虛擬視窗）逐格對齊 server 的 readdoent 欄位（見
+// list_session.buildListWindowLines），故直接套列表（pageState 2）的欄位表。
+// article（好讀長頁）本來就不上色，一律回 0。
+export function highlightColStart(input) {
+  const o = input || {};
+  if (o.mode === "article") return 0;
+  if (o.mode === "listBuffer") return clickableColStart(2, o.misclickGuard);
+  return clickableColStart(o.pageState, o.misclickGuard);
 }

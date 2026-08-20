@@ -48,17 +48,28 @@ const ts = s => s + "                 06/06 16:11";
 
 describe("parseComment", () => {
   test("推/噓/→ with id (and trailing timestamp)", () => {
-    expect(parseComment(ts("推 abc: hi"))).toEqual({ type: "推", userid: "abc" });
-    expect(parseComment(ts("噓 Foo: x"))).toEqual({ type: "噓", userid: "foo" });
+    // contentCol＝內容文字的起始欄（cell 空間）：推(0-1) 空格(2) id(3-) ':' ' ' 內容。
+    expect(parseComment(ts("推 abc: hi"))).toEqual({
+      type: "推",
+      userid: "abc",
+      contentCol: 8
+    });
+    expect(parseComment(ts("噓 Foo: x"))).toEqual({
+      type: "噓",
+      userid: "foo",
+      contentCol: 8
+    });
     expect(parseComment(ts("→ wowBenny: y"))).toEqual({
       type: "→",
-      userid: "wowbenny"
+      userid: "wowbenny",
+      contentCol: 13
     });
   });
   test("id may be space-padded before ':' (Stock style)", () => {
     expect(parseComment(ts("推 diefishfish : x"))).toEqual({
       type: "推",
-      userid: "diefishfish"
+      userid: "diefishfish",
+      contentCol: 17
     });
   });
   test("comment shape but NO timestamp → null (body text)", () => {
@@ -80,10 +91,15 @@ describe("parseComment", () => {
   // 首字 isalpha、其餘 isalnum。fileheader_t.owner 也只有 IDLEN+1 bytes
   // （include/pttstruct.h），所以推文列的 id 不可能超過 12 字。
   test("userid 邊界（is_validuserid：長度 2..12）", () => {
-    expect(parseComment(ts("推 ab: x"))).toEqual({ type: "推", userid: "ab" });
+    expect(parseComment(ts("推 ab: x"))).toEqual({
+      type: "推",
+      userid: "ab",
+      contentCol: 7
+    });
     expect(parseComment(ts("推 abcdefghijkl: x"))).toEqual({
       type: "推",
-      userid: "abcdefghijkl"
+      userid: "abcdefghijkl",
+      contentCol: 17
     }); // 12 字，合法上限
     // 13 字＝不可能是真 id，這種行是內文假冒推文格式（本文照樣不佔樓層）。
     expect(parseComment(ts("推 abcdefghijklm: x"))).toBeNull();
@@ -902,10 +918,10 @@ describe("official cross-validation (Ptt-official-app fixtures)", () => {
   test("IP-bearing comment (BRD_IPLOGRECMD): IP not eaten into userid", () => {
     expect(
       parseComment("推 ericf129: 辛苦了 ><                 1.200.29.12 05/16 22:57")
-    ).toEqual({ type: "推", userid: "ericf129" });
+    ).toEqual({ type: "推", userid: "ericf129", contentCol: 13 });
     expect(
       parseComment("推 Japan2001: 謝謝活動部             180.214.183.155 05/18 18:57")
-    ).toEqual({ type: "推", userid: "japan2001" });
+    ).toEqual({ type: "推", userid: "japan2001", contentCol: 14 });
   });
 
   test("FORWARD (轉錄) line → null, takes no floor (mirrors BePTT terminal numbering)", () => {
@@ -935,7 +951,43 @@ describe("official cross-validation (Ptt-official-app fixtures)", () => {
   test("userid must start with a letter, ≥2 chars (official id pattern)", () => {
     expect(parseComment(ts("推 1: x"))).toBeNull();
     expect(parseComment(ts("推 a: x"))).toBeNull();
-    expect(parseComment(ts("推 a1: x"))).toEqual({ type: "推", userid: "a1" });
+    expect(parseComment(ts("推 a1: x"))).toEqual({
+      type: "推",
+      userid: "a1",
+      contentCol: 7
+    });
+  });
+});
+
+// 滑鼠防誤觸模式用它把「型別符＋id＋冒號」排除在可點區之外，好把 cols 0-6 還給
+// 文章左側的退出提示帶（docs/mouse.md）。算錯就是「點內容沒反應」或「左側點不到」。
+describe("contentCol（推文內容起始欄）", () => {
+  test("與 comment_merge.commentContentCells 的 start 同語意", () => {
+    // "推 aaa: " ＝ 2(型別符) + 1(空格) + 3(id) + 1(':') + 1(空格) = 8
+    expect(parseComment(ts("推 aaa: xxx")).contentCol).toBe(8);
+  });
+
+  test("冒號後沒有空白時只跳冒號那一格", () => {
+    expect(parseComment(ts("推 abc:hi")).contentCol).toBe(7);
+  });
+
+  test("BRD_ALIGNEDCMT 的補空格算在左側（不可點）那一邊", () => {
+    expect(parseComment(ts("推 abc   : hi")).contentCol).toBe(11);
+  });
+
+  test("annotateComment 把它帶出去給 Row 的 data-pusher-col", () => {
+    const ctx = { showFloorNumbers: false, floorCounter: null };
+    expect(annotateComment(ts("推 abc: hi"), ctx).contentCol).toBe(8);
+    // 黑名單列也照樣有——它只是 visibility:hidden，仍在 DOM 裡。
+    const bl = { ...ctx, blacklist: new Set(["abc"]) };
+    const r = annotateComment(ts("推 abc: hi"), bl);
+    expect(r.hidden).toBe(true);
+    expect(r.contentCol).toBe(8);
+  });
+
+  test("非推文列沒有 annotation，自然也沒有 contentCol", () => {
+    const ctx = { showFloorNumbers: false, floorCounter: null };
+    expect(annotateComment("這是內文，不是推文", ctx)).toBeNull();
   });
 });
 

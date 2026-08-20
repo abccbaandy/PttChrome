@@ -37,11 +37,26 @@ export const EXIT_COL_END = 7;
 // 對 source 校準出可靠欄位之前維持整列可點，只擋掉最左邊的序號區。
 export const MENU_COL_START = 8;
 
+// 防誤觸模式（pref mouseMisclickGuard，預設開）：這一種畫面「從第幾欄起才算可點」。
+// **唯一真相源** —— 可點區與底色區共用它，兩者不可能分岔（使用者 2026-08 定案：
+// 點擊區域＝底色區域）。關掉就是 0＝整列可點、整列上底色（改版前的行為）。
+//
+// 文章（pageState 3）不走這裡：它的左側退出帶是固定的 EXIT_COL_END 手勢，
+// 推文列的「內容區才可點」由該列自己的 contentCol 決定（comment_parse.annotateComment），
+// 兩者都不是「整個畫面共用一個起始欄」。
+export function clickableColStart(pageState, misclickGuard) {
+  if (!misclickGuard) return 0;
+  if (pageState === 2 || pageState === 4) return LIST_TITLE_COL_START;
+  if (pageState === 1) return MENU_COL_START;
+  return 0;
+}
+
 const NONE = Object.freeze({
   action: ACT_NONE,
   row: -1,
   cursor: CUR_AUTO,
-  highlightRow: -1
+  highlightRow: -1,
+  highlightColStart: 0
 });
 
 // 這一格的滑鼠語意。
@@ -53,21 +68,25 @@ const NONE = Object.freeze({
 //   rows       終端機列數（buf.rows，通常 24）
 //   lineEmpty  該列是不是空列（呼叫端算好 buf.isLineEmpty(row) 傳進來，
 //              純函式不碰 buf）
+//   misclickGuard  防誤觸模式（pref mouseMisclickGuard，已由呼叫端與總開關 and 過）
 //
 // 輸出：
-//   action       ACT_*
-//   row          action 的目標列（none 時 -1）
-//   cursor       CUR_*（交給 cursorCss 轉成實際 CSS）
-//   highlightRow 這一列要不要上游標底色（-1 = 不上）
+//   action           ACT_*
+//   row              action 的目標列（none 時 -1）
+//   cursor           CUR_*（交給 cursorCss 轉成實際 CSS）
+//   highlightRow     這一列要不要上游標底色（-1 = 不上）
+//   highlightColStart 底色從第幾欄起（0 = 整列）
 //
-// 底色與可點區**刻意不一致**：列表 hover 整列都上底色，但只有標題欄接受點擊。
-// 與原生 term_buf.onMouse_move 的「整列 nowHighlight」一致，否則 col 0-29 完全
-// 沒反應，看起來像壞掉。
+// 底色範圍與可點區**一律相同**（clickableColStart 是兩者的唯一真相源）：防誤觸開
+// ⇒ 只有標題／選項欄上底色，那條底色本身就是「這裡點得下去」的提示；關 ⇒ 整列。
+// 2026-08 之前是「整列上底色、只有標題欄可點」，兩者刻意不一致，代價是使用者無從
+// 得知邊界在哪。
 export function resolveMouseRegion(input) {
   const o = input || {};
   const rows = o.rows == null ? 24 : o.rows;
   const row = o.row == null ? -1 : o.row;
   const col = o.col == null ? -1 : o.col;
+  const colStart = clickableColStart(o.pageState, o.misclickGuard);
 
   switch (o.pageState) {
     // 2 = 文章列表（setPageState 產生）；4 = LIST 變體（setPageState 不產生，
@@ -80,24 +99,26 @@ export function resolveMouseRegion(input) {
       if (o.lineEmpty) return NONE;
       // 欄位對 pttbbs mbbsd/bbs.c#readdoent 校準（見 comment_parse.js 的欄位表）：
       // 序號 0-6 / 空格 7 / type 8 / 推文數 9-10 / 日期 11-16 / 作者 17-29 /
-      // 標題區 30-。只有標題區可開文，點日期或作者欄不再誤觸。
-      const clickable = col >= LIST_TITLE_COL_START;
+      // 標題區 30-。防誤觸開啟時只有標題區可開文，點日期或作者欄不再誤觸。
+      const clickable = col >= colStart;
       return {
         action: clickable ? ACT_ENTER : ACT_NONE,
         row: clickable ? row : -1,
         cursor: clickable ? CUR_POINTER : CUR_AUTO,
-        highlightRow: row
+        highlightRow: row,
+        highlightColStart: colStart
       };
     }
 
     case 1: {
       if (!(row > 0 && row < rows - 1)) return NONE;
-      const clickable = col >= MENU_COL_START;
+      const clickable = col >= colStart;
       return {
         action: clickable ? ACT_ENTER : ACT_NONE,
         row: clickable ? row : -1,
         cursor: clickable ? CUR_POINTER : CUR_AUTO,
-        highlightRow: row
+        highlightRow: row,
+        highlightColStart: colStart
       };
     }
 
@@ -111,7 +132,8 @@ export function resolveMouseRegion(input) {
           action: ACT_EXIT_ARTICLE,
           row: -1,
           cursor: CUR_BACK,
-          highlightRow: -1
+          highlightRow: -1,
+          highlightColStart: 0
         };
       }
       return NONE;
@@ -136,6 +158,10 @@ export function resolveMouseGates(prefs) {
     leftClick: left,
     // 自訂滑鼠指標圖示是「這裡點下去會做什麼」的提示 ⇒ 跟著左鍵開關走。
     cursorIcon: left,
+    // 防誤觸也**跟著總開關走**：總開關關掉時左鍵、指標、左側提示帶全滅，沒有任何
+    // 誤觸要防（推文列的 pusher 高亮此時退回整列可點＝改版前的行為）。設定頁那顆
+    // checkbox 因此能與其他子項一樣 disabled={!useMouseBrowsing}。
+    misclickGuard: on && !!p.mouseMisclickGuard,
     middleClick: on ? Number(p.mouseMiddleClick) || 0 : 0,
     wheel: on && !!p.mouseWheel
   };

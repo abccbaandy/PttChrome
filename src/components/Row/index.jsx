@@ -44,6 +44,11 @@ function noticeSegments(text, forceWidth) {
 //   entirely instead of passing hidden, so there it occupies no space at all.
 // pusher: lower-cased comment author id (when this row is a 推/噓/→ line) →
 //   exposed as data-pusher so a click can highlight all rows by the same pusher.
+// pusherContentCol: 該推文列內容文字的起始欄 → data-pusher-col。滑鼠的防誤觸模式
+//   用它把左邊「型別符＋id＋冒號」排除在可點區之外（App.mouse_click），好把 cols
+//   0-6 還給文章的左側退出帶。
+// highlightColStart: 底色從第幾欄畫起（0/undefined＝整列）。與可點區同源，見
+//   js/mouse_regions.clickableColStart 與 LinkSegmentBuilder 的包裝邏輯。
 // listAuthor / listTitle: board-list row's author id / raw-case title (see
 //   Screen#computeAnnotations) → exposed as data-list-author / data-list-title so
 //   the right-click quick-add-blacklist menu can read the row under the cursor.
@@ -64,9 +69,11 @@ export const Row = ({
   enableLinkInlinePreview,
   forceWidth,
   highlightClass,
+  highlightColStart,
   floor,
   hidden,
   pusher,
+  pusherContentCol,
   listAuthor,
   listTitle,
   pusherHighlight,
@@ -96,6 +103,7 @@ export const Row = ({
       type="bbsrow"
       srow={row}
       data-pusher={pusher}
+      data-pusher-col={pusherContentCol}
       data-list-author={listAuthor}
       data-list-title={listTitle}
       className={pusherHighlight ? "pusherHighlight" : undefined}
@@ -109,6 +117,7 @@ export const Row = ({
             enableLinkInlinePreview,
             forceWidth,
             highlightClass,
+            highlightColStart,
             onHyperLinkMouseOver,
             onHyperLinkMouseOut,
             floor,
