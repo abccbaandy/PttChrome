@@ -676,6 +676,7 @@ describe("functionMode clean-list settle 的 in-flight 吸收（相對命令配�
     inFlightKind: null,
     landedNumInBuffer: true,
     engageEligible: false,
+    hasNumberedRow: true,
     ...extra,
   });
   test("in-flight（native-sync-jump）→ stay 鏡像", () => {

@@ -209,6 +209,19 @@ export function isWaterballSettle({ changedRows, rowTexts, rows }) {
   return bottomOnly && marker;
 }
 
+// Does this frame's entry area hold at least one NUMBERED article row?
+// 錨定式 prefetch 的每一條腿都要一個序號當錨（bufferEdgeNum 給的序號，jump 過去），所以
+// 一幀「只有置底文／空白」的 clean-list（getkeep 落點剛好在板尾 ⇒ readdoent 只
+// 畫得出那幾列置底就 clrtobot，實錄 20260820-015809）雖然通過板尾短頁放寬規則
+// （不變量 3a），卻 seed 不出任何錨點：_startFill/_maybeFill/_maybeDemand/
+// _requestEnd 全部在 base==null 靜默 return，導覽鍵只能在那兩三列裡原地打轉
+// ＝永久卡死。⇒ 不變量 17：這種幀不得驅動 seed/rebuild/resume。
+export function hasNumberedEntryRow(facts) {
+  const nums = (facts && facts.nums) || [];
+  for (let r = 3; r <= (facts.rows || 0) - 2; ++r) if (nums[r] != null) return true;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // State machine (pure reducer)
 // ---------------------------------------------------------------------------
@@ -243,7 +256,9 @@ export function transitionListSession(state, event) {
       if (
         event.type === 'settle' &&
         event.kind === 'clean-list' &&
-        event.engageEligible
+        event.engageEligible &&
+        // 無編號列的幀 seed 不出錨點（不變量 17）：停在原生，等下一幀再 engage。
+        event.hasNumberedRow
       ) {
         return { next: 'active', actions: ['seed', 'start-fill'] };
       }
@@ -254,6 +269,13 @@ export function transitionListSession(state, event) {
       if (event.type === 'settle') {
         switch (event.kind) {
           case 'clean-list':
+            // 無編號列（getkeep 落在板尾 ⇒ 只剩置底文的短頁，不變量 17）：這一幀
+            // 帶不進任何序號，rebuild 只會把 buffer 清成無錨點的死局。板名相同就
+            // 續用現有 buffer；板名不同則連舊 buffer 都不能當畫面 → 顯性降級原生。
+            if (!event.hasNumberedRow)
+              return event.boardNameMatch
+                ? stay
+                : { next: 'functionMode', actions: ['enter-function-mode'] };
             // Accumulation already happened in redraw; a board switch (s-jump,
             // MODE_SELECT filtered list) rebuilds to stop number aliasing.
             return event.boardNameMatch
@@ -341,6 +363,9 @@ export function transitionListSession(state, event) {
             // change: article (suspended → article ER takes over) or menu
             // (idle → re-entering the board re-engages).
             if (event.nativeHold) return stay;
+            // 無編號列的落點無法 resume/rebuild（不變量 17）：繼續鏡像原生，
+            // 使用者原生翻一頁就會拿到有序號的幀再恢復好讀。
+            if (!event.hasNumberedRow) return stay;
             // Content-decided exit. If the landed cursor row is an article we
             // already hold AND we are on the same board, the page overwrite (in
             // redraw) is enough; otherwise rebuild from the current page
@@ -405,6 +430,9 @@ export function transitionListSession(state, event) {
             // replaying saved anchors (the retired _restore parity family).
             // Same rule as functionMode: landed outside the buffer (pinned
             // cursor parses null num) or board changed → rebuild.
+            // 退文落點只剩置底文時同樣不能 re-seed（不變量 17）：停在原生鏡像
+            //（_handoffArticle 已把 renderMode 設 native），等下一幀。
+            if (!event.hasNumberedRow) return stay;
             return event.landedNumInBuffer && event.boardNameMatch
               ? { next: 'active', actions: ['resume-buffer'] }
               : { next: 'active', actions: ['resume-buffer', 'rebuild'] };
@@ -806,6 +834,7 @@ ListSession.prototype = {
         facts.cursorRowNum != null &&
         (this._termBuf.listLineNums || []).indexOf(facts.cursorRowNum) !== -1,
       nativeHold: !!this._nativeHold,
+      hasNumberedRow: hasNumberedEntryRow(facts),
       engageEligible: this._engageEligible()
     };
   },
@@ -1672,7 +1701,18 @@ ListSession.prototype = {
     const base = chained
       ? this._chainState.lastLanded
       : bufferEdgeNum(this._termBuf.listLineNums, dir);
-    if (base == null) return;
+    if (base == null) {
+      // buffer 裡一列編號都沒有 ⇒ 沒有錨點可跳，這條腿送不出去。reducer 的
+      // 不變量 17 守門後不該再發生；真發生了就是「卡在這一頁、按鍵沒反應」的
+      // 那個死局，留一則診斷讓下次的 debug 錄製檔一眼看得到（不變量 7f）。
+      this._setLoading(false);
+      this._core.debugRecorder?.log('listSession.noAnchor', {
+        state: this.state,
+        origin: origin,
+        dir: dir
+      });
+      return;
+    }
     const self = this;
     const markEdge = function() {
       if (up) self._edgeUp = true;

@@ -303,6 +303,7 @@ describe("transitionListSession (full table)", () => {
     inFlightKind: null,
     landedNumInBuffer: false,
     engageEligible: false,
+    hasNumberedRow: true, // 不變量 17：無編號列的幀另有專門的枚舉列
     ...extra,
   });
   const key = keyClass => ({ type: "key", keyClass });
@@ -321,6 +322,13 @@ describe("transitionListSession (full table)", () => {
     T("idle", settle("transient"), "idle", []);
     T("idle", key("nav"), "idle", []);
     T("idle", { type: "pref-off" }, "idle", []);
+    // 不變量 17：只剩置底文的短頁沒有序號可當 prefetch 錨點 → 不得 seed
+    T(
+      "idle",
+      settle("clean-list", { engageEligible: true, hasNumberedRow: false }),
+      "idle",
+      []
+    );
   });
 
   test("active: settles", () => {
@@ -348,6 +356,15 @@ describe("transitionListSession (full table)", () => {
     T("active", settle("menu", { consumed: true }), "idle", ["cleanup"]);
     // menu 出口不受 in-flight 抑制（離板優先於任何殘留 prefetch）:
     T("active", settle("menu", { inFlightKind: "prefetch-up" }), "idle", ["cleanup"]);
+    // 不變量 17：無編號列的幀帶不進序號——板名同就續用現有 buffer（不 rebuild
+    // 成無錨點死局），板名異則連舊 buffer 都不能當畫面 → 顯性降級原生。
+    T("active", settle("clean-list", { hasNumberedRow: false }), "active", []);
+    T(
+      "active",
+      settle("clean-list", { hasNumberedRow: false, boardNameMatch: false }),
+      "functionMode",
+      ["enter-function-mode"]
+    );
   });
 
   test("active: keys", () => {
@@ -392,6 +409,13 @@ describe("transitionListSession (full table)", () => {
       "functionMode",
       []
     );
+    // 不變量 17：無編號列的落點無法 resume/rebuild → 繼續鏡像原生
+    T(
+      "functionMode",
+      settle("clean-list", { landedNumInBuffer: true, hasNumberedRow: false }),
+      "functionMode",
+      []
+    );
     T("functionMode", settle("prompt"), "functionMode", []);
     T("functionMode", settle("transient"), "functionMode", []);
     T("functionMode", { type: "pref-off" }, "idle", ["cleanup"]);
@@ -427,6 +451,13 @@ describe("transitionListSession (full table)", () => {
       settle("clean-list", { landedNumInBuffer: true, boardNameMatch: false }),
       "active",
       ["resume-buffer", "rebuild"]
+    );
+    // 不變量 17：退文落點只剩置底文 → 不 re-seed，停在原生鏡像等下一幀
+    T(
+      "suspended",
+      settle("clean-list", { landedNumInBuffer: true, hasNumberedRow: false }),
+      "suspended",
+      []
     );
     T("suspended", settle("menu"), "idle", ["cleanup"]);
     // 同 functionMode：AID 退出前導段行經選單時不得被 cleanup 的 flush 打斷。
@@ -1423,5 +1454,117 @@ describe("currentAnchor（AID 返回用的列表座標）", () => {
   test("什麼都沒開 → null", () => {
     const { s } = demandSession({ count: 20 });
     expect(s.currentAnchor()).toBe(null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 無編號列的 clean-list 幀不得 engage（不變量 17）
+// ---------------------------------------------------------------------------
+// 使用者回報「列表好讀卡在一頁、PgUp 沒反應；切原生會暫時恢復，進出一篇文章
+// 就正常」。debug 錄製檔 20260820-015809：→ 進板後 server 只畫得出兩列 ★置底文
+//（getkeep 還原的閱讀位置剛好在板尾 ⇒ top_ln 落在置底列，readdoent 畫兩列就
+// clrtobot），這一幀通過板尾短頁放寬規則判 clean-list → seed，但 buffer 收進來
+// 的兩列都沒有序號 ⇒ bufferEdgeNum 回 null ⇒ 錨定式 prefetch 的每條腿
+//（_startFill/_maybeFill/_maybeDemand/_requestEnd）全在 base==null 靜默 return。
+// 導覽鍵在那兩列裡原地打轉、零網路、連「讀取中…」都不亮 = 永久卡死
+//（唯一逃生口是 Home 的 serverOp）。
+describe("無編號列的 clean-list 幀（只剩置底文的短頁）不得 seed 出無錨點 buffer", () => {
+  const PINNED = "  ★ 27 6/09     arrenwu     □ [公告] 板規與置底";
+  const NUMBERED = " 353500 + 7/11 SaberMyWifi  □ [閒聊] 板尾文章";
+
+  // 錄製檔那一幀的形狀：row0/row2/row23 是先前整頁重繪留下的（本次 partial
+  // redraw 只改 row2 col10 之後，所以「編號」表頭還在），entry 區只剩兩列置底。
+  function frame(entryRows) {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[0] = listRows[0];
+    rowTexts[1] = listRows[1];
+    rowTexts[2] = listRows[2];
+    for (const [r, text] of Object.entries(entryRows)) rowTexts[Number(r)] = text;
+    rowTexts[23] = listRows[23];
+    return rowTexts;
+  }
+
+  // 進板落點 session：state=idle、pref 開，termBuf 的 notify 模擬 accumulate
+  // 把當前幀收進 buffer（真實 _forceRedraw 的同步累積）。
+  function landingSession(rowTexts, curY) {
+    window.localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({ values: { enableEasyReadingList: true } })
+    );
+    const enqueued = [];
+    const banners = [];
+    const view = {
+      hideCursor() {},
+      showCursor() {},
+      resetListAccumulation() {},
+      setListLoading() {},
+      flashListHint: (msg) => banners.push(msg),
+      blacklist: new Set(),
+      titleBlacklist: [],
+    };
+    const mkRow = (text) =>
+      [...text.padEnd(80)].map((ch) => ({ ch, isLeadByte: false }));
+    const termBuf = {
+      rows: 24,
+      cols: 80,
+      listLines: [],
+      listLineNums: [],
+      lineChangeds: new Array(24).fill(false),
+      changed: false,
+      startedEasyReading: false,
+      addEventListener() {},
+      getRowText: (r) => rowTexts[r],
+      isUnicolor: () => true,
+      settleSnapshot: { changedRows: new Set([3, 4]), cursorMoved: true, curX: 0, curY },
+      notify() {
+        if (this.listLineNums.length) return;
+        for (let r = 3; r <= 22; ++r) {
+          const text = rowTexts[r];
+          if (!text || !text.trim()) continue;
+          const n = /^[>\s]*(\d+)\s/.exec(text);
+          this.listLineNums.push(n ? parseInt(n[1], 10) : null);
+          this.listLines.push(mkRow(text));
+        }
+      },
+    };
+    const queue = {
+      idle: true,
+      inFlightKind: null,
+      flush() {},
+      flushPending() {},
+      flushPendingKind() {},
+      enqueue: (cmd) => enqueued.push(cmd),
+      onSettle: () => undefined,
+    };
+    const s = new ListSession({ conn: { send() {} } }, view, termBuf, queue);
+    return { s, enqueued, banners, termBuf };
+  }
+
+  test("分類器不變：兩列 ★置底＋空白仍是 clean-list（不變量 3a 的板尾保護不動）", () => {
+    const rowTexts = frame({ 3: ">" + PINNED.slice(1), 4: PINNED });
+    expect(
+      classifyListScreen(facts({ rowTexts, curY: 3, curX: 0 })).kind
+    ).toBe("clean-list");
+  });
+
+  test("REGRESSION 進板落點只有置底文 → 不 engage，停在原生（舊行為：seed 出無錨點 buffer 後永久卡死）", () => {
+    const rowTexts = frame({ 3: ">" + PINNED.slice(1), 4: PINNED });
+    const { s, enqueued, banners, termBuf } = landingSession(rowTexts, 3);
+    s._onScreenSettled();
+    expect(s.state).toBe("idle");
+    expect(s._renderMode).toBe("native");
+    expect(enqueued).toEqual([]); // 沒有 buffer 就沒有半條抓頁腿
+    expect(banners).toEqual([]); // 也不該跳降級 banner（原本就沒進好讀）
+    expect(termBuf.listLineNums.every((n) => n == null)).toBe(true);
+  });
+
+  test("板尾短頁只剩 1 列編號＋置底 → 照常 engage（不變量 3a 不被誤殺）", () => {
+    const rowTexts = frame({ 3: ">" + NUMBERED.slice(1), 4: PINNED, 5: PINNED });
+    const { s, enqueued } = landingSession(rowTexts, 3);
+    s._onScreenSettled();
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer");
+    // 有錨點 ⇒ 背景 fill 真的送得出去（無錨點時這裡會是空陣列＝卡死）
+    expect(enqueued.some((c) => c.kind === "prefetch-anchor-up")).toBe(true);
   });
 });
