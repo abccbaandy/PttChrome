@@ -1,0 +1,89 @@
+/* 拖曳中的全螢幕提示。pointer-events: none —— 遮罩本身不可以吃掉 drop 事件
+   （drop 是綁在 window 上的，遮罩若攔截反而讓放開的位置變成它自己）。 */
+.ImageUploadDropZone {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.ImageUploadDropZone__Box {
+  padding: 24px 36px;
+  border: 2px dashed rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  text-align: center;
+}
+
+/* 進度／結果卡：右下角，不擋畫面中央的終端機。 */
+.ImageUploadCard {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  z-index: 1100;
+}
+
+.ImageUploadCard--notice {
+  bottom: 16px;
+}
+
+.ImageUploadCard__Urls {
+  word-break: break-all;
+}
+
+.ImageUploadCard__Failures {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+/* 紀錄面板：右上角浮動，與右下角的進度卡不重疊。 */
+.ImageUploadPanel {
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  z-index: 1150;
+}
+
+.ImageUploadPanel__List {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ImageUploadPanel__Item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.ImageUploadPanel__Item:first-child {
+  border-top: none;
+}
+
+.ImageUploadPanel__Thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: none;
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.ImageUploadPanel__Meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.ImageUploadPanel__Scroll {
+  max-height: 360px;
+  overflow-y: auto;
+}

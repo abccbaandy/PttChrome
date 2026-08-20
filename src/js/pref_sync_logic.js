@@ -14,11 +14,15 @@
 // "auto login" prefs tab (PrefModal), the rest in the "local" tab.
 // enableWorkMode is per-machine by design (disguise the office screen, not
 // the home one).
+// imageUploadToken is the urusai image-host credential (see image_upload.js):
+// same rule as the PTT password — a credential must not reach Firestore nor a
+// settings export. Its UI sits in the "local" tab too.
 export const LOCAL_ONLY_PREF_KEYS = [
   "autoLoginUser",
   "autoLoginPassword",
   "autoLoginOtpSecret",
-  "enableWorkMode"
+  "enableWorkMode",
+  "imageUploadToken"
 ];
 
 export const sanitizeForCloud = values => {

@@ -20,6 +20,7 @@ import {
 } from './mouse_regions';
 import { colFromClientX } from './mouse_geometry';
 import { isPreviewTarget } from './preview_targets';
+import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { setTimer } from './util';
@@ -101,6 +102,9 @@ export const App = function() {
   // 所以排程權在 controller 手上，不在 URL 解析那邊。
   this.deepLinkController = new DeepLinkController(this, this.view, this.buf);
   this.autoLogin = new AutoLogin(this);
+  // 圖片上傳（urusai）：拖放／貼上截圖／右鍵選單 → 上傳 → 網址送進推文列或編輯器。
+  // 自己綁 window 的 drag* 事件；右鍵選單透過 this.imageUpload 呼叫它。
+  this.imageUpload = new ImageUploadController(this);
 
   // Debug 錄製器（src/js/debug_recorder.js）：由 DebugRecordButton 掛上/卸下，
   // 純 runtime、不落地。關鍵路徑用 this.debugRecorder?.log(tag, info) 留痕。
@@ -556,6 +560,10 @@ App.prototype.onPasteDone = function(content) {
 };
 
 App.prototype.onDOMPaste = function(e) {
+  // 剪貼簿裡是圖（截圖直接 Ctrl+V）→ 交給圖片上傳，吃掉這次貼上。沒有圖時
+  // 回 false，文字貼上的行為與加這個功能之前完全一樣。
+  if (this.imageUpload && this.imageUpload.tryClipboardImage(e))
+    return;
   let str = e.clipboardData.getData('text');
   if (str) {
     e.preventDefault();
@@ -1066,8 +1074,18 @@ App.prototype.checkClass = function(cn) {
       cn.indexOf("nonspan") >= 0 || cn.indexOf("nomouse_command") >= 0);
 };
 
+// 圖片上傳浮層（拖曳遮罩／進度／紀錄面板）上的滑鼠事件，終端機一律不碰：它不是
+// modal（終端機要能繼續打字），所以擋不住 modalShown；而滾輪是註冊在 window 的
+// **capture** listener，浮層自己 stopPropagation 也攔不到 —— 少了這道，點面板的
+// 「插入」會順便在 PTT 上送出一次滑鼠動作、面板裡滾動會變成 PTT 翻頁。
+App.prototype._onUploadLayer = function(e) {
+  return isUploadLayerTarget(e && e.target);
+};
+
 App.prototype.mouse_click = function(e) {
   if (this.modalShown)
+    return;
+  if (this._onUploadLayer(e))
     return;
   // AID navigation in flight: mouse-browsing must not inject keys. (The
   // initiating link click never reaches here — anchors early-return below.)
@@ -1164,6 +1182,9 @@ App.prototype.middleMouse_down = function(e) {
     if (isAnchorTarget(e.target)) {
       return;
     }
+    if (this._onUploadLayer(e)) {
+      return;
+    }
     var middle = this.mouseGates().middleClick;
     if (middle === 1) {
       this.doPaste();
@@ -1177,6 +1198,8 @@ App.prototype.middleMouse_down = function(e) {
 
 App.prototype.mouse_down = function(e) {
   if (this.modalShown)
+    return;
+  if (this._onUploadLayer(e))
     return;
   //0=left button, 1=middle button, 2=right button
   if (e.button === 0) {
@@ -1210,6 +1233,9 @@ App.prototype.mouse_up = function(e) {
   // released over a dialog leaves the wheel stuck in page-scroll mode.
   this.mouseButtons.onMouseUp(e.button);
   if (this.modalShown)
+    return;
+  // 讓開上傳浮層（放開按鍵的狀態自癒已在上面做完，不可以更早 return）。
+  if (this._onUploadLayer(e))
     return;
   //0=left button, 1=middle button, 2=right button
   if (e.button === 0) {
@@ -1252,6 +1278,8 @@ App.prototype.mouse_up = function(e) {
 };
 
 App.prototype.mouse_move = function(e) {
+  if (this._onUploadLayer(e))
+    return;
   if (this.buf.useMouseBrowsing) {
     if (window.getSelection().isCollapsed) {
       if(!this.mouseButtons.left)
@@ -1264,6 +1292,9 @@ App.prototype.mouse_move = function(e) {
 
 App.prototype.mouse_over = function(e) {
   if (this.modalShown)
+    return;
+  // 浮層上不可以把焦點搶回隱藏的 #t：面板裡的按鈕會失焦、面板也沒得操作。
+  if (this._onUploadLayer(e))
     return;
 
   this.curX = e.clientX;
@@ -1284,6 +1315,9 @@ App.prototype.mouse_scroll = function(e) {
   // recovering any flag stuck by a mouseup we never saw.
   this.mouseButtons.syncFromButtons(e.buttons);
   if (this.modalShown)
+    return;
+  // 上傳紀錄面板要能自己捲動（它的清單比視窗短，但仍會超出面板高度）。
+  if (this._onUploadLayer(e))
     return;
   // AID navigation in flight: no wheel-driven keys may hit the wire.
   if (this.aidNavigation.active) {

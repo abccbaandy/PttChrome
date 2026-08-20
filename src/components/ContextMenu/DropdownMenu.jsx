@@ -22,6 +22,7 @@ export const DropdownMenu = ({
   authorBlacklistExists,
   titleBlacklistText,
   articleLinkEnabled,
+  imageUploadEnabled,
   contextArticle,
   onTitleBlacklistClick,
   onMenuSelect,
@@ -154,6 +155,18 @@ export const DropdownMenu = ({
             <Menu.Item onClick={onLiveArticleHelperClick}>
               {i18n("cmenu_showLiveArticleHelper")}
             </Menu.Item>
+            {/* 圖片上傳（urusai）。拖放與 Ctrl+V 是主要入口，這兩項給「不方便
+                拖曳」與「想插入之前傳過的圖」的情況；跟著總開關 enableImageUpload。 */}
+            {imageUploadEnabled && (
+              <Fragment>
+                <Menu.Item onClick={(e) => onMenuSelect("uploadImage", e)}>
+                  {i18n("cmenu_uploadImage")}
+                </Menu.Item>
+                <Menu.Item onClick={(e) => onMenuSelect("uploadHistory", e)}>
+                  {i18n("cmenu_uploadHistory")}
+                </Menu.Item>
+              </Fragment>
+            )}
             <Menu.Divider />
           </Fragment>
         )}

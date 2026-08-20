@@ -76,6 +76,10 @@ const menuHandlerByEventKey = {
       ),
     ),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
+  // 圖片上傳（urusai）：開檔案選擇器／開上傳紀錄面板。實作在
+  // js/image_upload_controller.js，App 在建構時掛成 pttchrome.imageUpload。
+  uploadImage: (pttchrome) => pttchrome.imageUpload.openFilePicker(),
+  uploadHistory: (pttchrome) => pttchrome.imageUpload.openPanel(),
 };
 
 const initialState = {
@@ -101,6 +105,8 @@ const initialState = {
   // enabled flag + each item's match rule), and the normalized query they use.
   quickSearchItems: [],
   quickSearchQuery: "",
+  // 圖片上傳總開關（enableImageUpload），開選單當下現讀。
+  imageUploadEnabled: false,
   // --- Modal state ---
   showsInputHelper: false,
   showsTitleBlacklist: false,
@@ -256,6 +262,8 @@ export const ContextMenu = ({ pttchrome }) => {
         // 「複製本篇連結」只在文章畫面有意義（要按 Q 問文章資訊框）。pageState 3
         // = READING，與 term_view 判「可切回好讀模式」用的是同一個值。
         articleLinkEnabled: pttchrome.buf.pageState === 3,
+        // 圖片上傳的兩個選項跟著總開關走，同樣是開選單當下現讀（手法同上）。
+        imageUploadEnabled: !!readValuesWithDefault().enableImageUpload,
       });
     },
     [pttchrome, update],
@@ -551,6 +559,7 @@ export const ContextMenu = ({ pttchrome }) => {
     contextArticle,
     quickSearchItems,
     quickSearchQuery,
+    imageUploadEnabled,
     showsInputHelper,
     showsTitleBlacklist,
     titleBlacklistDraft,
@@ -575,6 +584,7 @@ export const ContextMenu = ({ pttchrome }) => {
         authorBlacklistExists={blacklistAuthorExists}
         titleBlacklistText={blacklistTitleTarget}
         articleLinkEnabled={articleLinkEnabled}
+        imageUploadEnabled={imageUploadEnabled}
         contextArticle={contextArticle}
         onTitleBlacklistClick={onTitleBlacklistClick}
         onMenuSelect={onMenuSelect}

@@ -59,6 +59,12 @@
   "cmenu_showLiveArticleHelper": {
     "message": "Live 文小幫手 ..."
   },
+  "cmenu_uploadImage": {
+    "message": "上傳圖片 ..."
+  },
+  "cmenu_uploadHistory": {
+    "message": "圖片上傳紀錄 ..."
+  },
   "cmenu_settings": {
     "message": "設定"
   },
@@ -169,6 +175,12 @@
   "options_enableWorkMode": {
     "message": "啟用上班模式（把 BBS 高彩度顏色壓成低調灰階，偽裝成一般暗色網頁）"
   },
+  "options_imageUploadToken": {
+    "message": "urusai 圖床存取憑證 (token)"
+  },
+  "tooltip_imageUploadToken": {
+    "message": "留空＝匿名上傳；填入後圖片會歸在你的 urusai 帳號下，可事後管理或刪除"
+  },
 
   // debug 錄製模式（關於分頁，runtime-only）
   "options_debugMode_title": {
@@ -262,6 +274,9 @@
   },
   "options_enableBareDomainLink": {
     "message": "自動連結沒寫 https:// 的網址 (如 indiegametw.com)"
+  },
+  "options_enableImageUpload": {
+    "message": "啟用圖片上傳 (把圖拖進視窗即上傳到 urusai 圖床，網址自動填入推文列／編輯器)"
   },
   "options_blacklist": {
     "message": "黑名單 (一行一個帳號)"
@@ -678,6 +693,74 @@
   },
   "alert_pasteShortcutClose": {
     "message": "確定"
+  },
+
+  // 圖片上傳（urusai 圖床）
+  "imageUpload_dropHint": {
+    "message": "放開以上傳圖片"
+  },
+  "imageUpload_dropSubHint": {
+    "message": "上傳到 urusai 圖床，單檔上限 50MB，可一次拖多張"
+  },
+  "imageUpload_uploading": {
+    "message": "上傳中"
+  },
+  "imageUpload_insertedSend": {
+    "message": "已插入圖片網址"
+  },
+  "imageUpload_insertedClipboard": {
+    "message": "網址已複製 (目前不在推文列或編輯器)"
+  },
+  "imageUpload_failed": {
+    "message": "圖片上傳失敗"
+  },
+  "imageUpload_openHistory": {
+    "message": "開啟上傳紀錄"
+  },
+  "imageUpload_historyTitle": {
+    "message": "圖片上傳紀錄"
+  },
+  "imageUpload_historyEmpty": {
+    "message": "還沒有上傳過圖片"
+  },
+  "imageUpload_insert": {
+    "message": "插入"
+  },
+  "imageUpload_copyUrl": {
+    "message": "複製網址"
+  },
+  "imageUpload_deleteLink": {
+    "message": "刪除連結"
+  },
+  "imageUpload_removeEntry": {
+    "message": "移除本筆"
+  },
+  "imageUpload_clearAll": {
+    "message": "清除全部"
+  },
+  "imageUpload_close": {
+    "message": "關閉"
+  },
+  "imageUploadErr_type": {
+    "message": "不是圖片檔"
+  },
+  "imageUploadErr_size": {
+    "message": "超過 50MB 上限"
+  },
+  "imageUploadErr_network": {
+    "message": "連不到圖床"
+  },
+  "imageUploadErr_timeout": {
+    "message": "上傳逾時"
+  },
+  "imageUploadErr_busy": {
+    "message": "上一批還在上傳，請稍候"
+  },
+  "imageUploadErr_invalid_response": {
+    "message": "圖床回應異常"
+  },
+  "imageUploadErr_http": {
+    "message": "圖床回報錯誤"
   },
 
   // notifications

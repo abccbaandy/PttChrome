@@ -40,5 +40,10 @@
     </div> <!--BBSWindow end-->
 
     <div id="reactAlert"></div>
+
+    <!-- 圖片上傳的浮層（拖曳遮罩／進度／上傳紀錄面板）。刻意獨立於 #reactAlert：
+         那個容器被 ConnectionAlert／PasteShortcutAlert／DeepLinkHandoffAlert 輪流
+         獨占（共用同一個 react root），上傳浮層必須能與它們同時存在。 -->
+    <div id="imageUploadReact"></div>
   </body>
 </html>

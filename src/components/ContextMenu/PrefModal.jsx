@@ -961,6 +961,15 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableBareDomainLink")}
                 </PrefCheckbox>
+                {/* 圖片上傳的總開關。憑證（token）在「本機設定」分頁 —— 它不上雲，
+                    與這個可同步的開關刻意分開放。 */}
+                <PrefCheckbox
+                  name="enableImageUpload"
+                  checked={values.enableImageUpload}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableImageUpload")}
+                </PrefCheckbox>
                 <Textarea
                   label={i18n("options_blacklist")}
                   name="blacklist"
@@ -1325,6 +1334,20 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableWorkMode")}
                 </PrefCheckbox>
+                {/* urusai 圖床的存取憑證：是憑證就不上雲（LOCAL_ONLY_PREF_KEYS），
+                    所以放這個分頁；留空＝匿名上傳，功能照常。
+                    **刻意不是 type=password**（同 autoLoginOtpSecret 的理由）：整頁
+                    多一個密碼欄，Chrome 就會把設定頁判成登入表單 → 跳假的「儲存密碼」
+                    提示並開始自動填入。守護在 pref_modal_autologin_tab.test.jsx。 */}
+                <TextInput
+                  label={i18n("options_imageUploadToken")}
+                  name="imageUploadToken"
+                  autoComplete="off"
+                  value={values.imageUploadToken}
+                  placeholder={i18n("tooltip_imageUploadToken")}
+                  onChange={onTextInputChange}
+                  mt="xs"
+                />
               </fieldset>
             </Tabs.Panel>
             <Tabs.Panel value="backup">

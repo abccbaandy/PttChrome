@@ -59,6 +59,12 @@ export const en_US = {
   "cmenu_showLiveArticleHelper": {
     "message": "Live article helper ..."
   },
+  "cmenu_uploadImage": {
+    "message": "Upload image ..."
+  },
+  "cmenu_uploadHistory": {
+    "message": "Image upload history ..."
+  },
   "cmenu_settings": {
     "message": "Settings"
   },
@@ -169,6 +175,12 @@ export const en_US = {
   "options_enableWorkMode": {
     "message": "Enable work mode (remap bright BBS colors to muted grays so the screen passes as an ordinary dark web page)"
   },
+  "options_imageUploadToken": {
+    "message": "urusai image host token"
+  },
+  "tooltip_imageUploadToken": {
+    "message": "Leave empty to upload anonymously; with a token the uploads belong to your urusai account and stay manageable"
+  },
 
   // debug recording mode (about tab, runtime-only)
   "options_debugMode_title": {
@@ -262,6 +274,9 @@ export const en_US = {
   },
   "options_enableBareDomainLink": {
     "message": "Auto-link domains written without https:// (e.g. indiegametw.com)"
+  },
+  "options_enableImageUpload": {
+    "message": "Enable image upload (drop an image into the window to upload it to the urusai image host and insert the URL)"
   },
   "options_blacklist": {
     "message": "Blacklist (one user id per line)"
@@ -678,6 +693,74 @@ export const en_US = {
   },
   "alert_pasteShortcutClose": {
     "message": "OK"
+  },
+
+  // image upload (urusai image host)
+  "imageUpload_dropHint": {
+    "message": "Drop to upload"
+  },
+  "imageUpload_dropSubHint": {
+    "message": "Uploads to the urusai image host, 50MB per file, multiple files allowed"
+  },
+  "imageUpload_uploading": {
+    "message": "Uploading"
+  },
+  "imageUpload_insertedSend": {
+    "message": "Image URL inserted"
+  },
+  "imageUpload_insertedClipboard": {
+    "message": "URL copied (not on a comment prompt or the editor)"
+  },
+  "imageUpload_failed": {
+    "message": "Image upload failed"
+  },
+  "imageUpload_openHistory": {
+    "message": "Open upload history"
+  },
+  "imageUpload_historyTitle": {
+    "message": "Image upload history"
+  },
+  "imageUpload_historyEmpty": {
+    "message": "Nothing uploaded yet"
+  },
+  "imageUpload_insert": {
+    "message": "Insert"
+  },
+  "imageUpload_copyUrl": {
+    "message": "Copy URL"
+  },
+  "imageUpload_deleteLink": {
+    "message": "Delete link"
+  },
+  "imageUpload_removeEntry": {
+    "message": "Remove"
+  },
+  "imageUpload_clearAll": {
+    "message": "Clear all"
+  },
+  "imageUpload_close": {
+    "message": "Close"
+  },
+  "imageUploadErr_type": {
+    "message": "Not an image file"
+  },
+  "imageUploadErr_size": {
+    "message": "Larger than the 50MB limit"
+  },
+  "imageUploadErr_network": {
+    "message": "Cannot reach the image host"
+  },
+  "imageUploadErr_timeout": {
+    "message": "Upload timed out"
+  },
+  "imageUploadErr_busy": {
+    "message": "Another batch is still uploading"
+  },
+  "imageUploadErr_invalid_response": {
+    "message": "Unexpected response from the image host"
+  },
+  "imageUploadErr_http": {
+    "message": "The image host reported an error"
   },
 
   // notifications
