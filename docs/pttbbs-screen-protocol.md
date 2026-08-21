@@ -221,9 +221,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 | `parseStatusRow` | `pmore.c#mf_display_footer` ＋ `more.c#common_pmore_footer_handler` | part1 `"  瀏覽 第 %1d[/%1d] 頁 (%3d%%) "`（頁碼**無位數上限**，實錄已見 540/540）；part2 `" 目前顯示: 第 %02d~%02d 行"`／**`" 顯示範圍: %d~%d 欄位, %02d~%02d 行"`（`mf.xpos>0` 左右捲動）**；**part3 完全不比對**——它會整段消失（見 §13 P5），要求它會讓整列失配 → 掉出 pageState 3 → 好讀累積頁被清空。`bpref.oldstatusbar` 的 `"  瀏覽 P.%d(%d%%)  "` 目前**不支援**（非預設） |
 | `parseListRow` | `menu.c#show_status` | `"[%d/%d 星期XX %d:%02d]"` ＋ `"%-14s"`（today_is，**緊接 `]` 無空格**）＋ `" 線上%d人, 我是%s"` ＋ `"\t[呼叫器]%s "`；呼叫器狀態 5 種＝`var.c#str_pager_modes`：關閉／打開／拔掉／防水／好友 |
 | `parseWaterball` | `mbbsd.c#show_call_in` | 見 §9 |
-| `parseReplyText` | `bbs.c#reply_post`（三種互斥分支）＋`more.c`／`edit.c` | `▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] `／**`▲ 回應至 (F)看板 (Q)取消？[F] `（無寄信權限）**／`▲ 無法回應至看板。 改回應至 (M)作者信箱 (Q)取消？[Q] `／`把這篇文章收入到暫存檔？[y/N] `／`請選擇暫存檔 (0-9)[0]: ` |
-| `parsePushInitText` | `bbs.c#recommend`／`angel.c` | `您覺得這篇文章 `；`FormatCommentString` 的輸入 prompt「→ id:」**無行尾時間戳** |
-| `parseReqNotMetText` | `bbs.c` `vmsgf("未達看板發文限制: %s")`＋`vtuikit.c#vshowmsg` | vmsg 前綴 `VMSG_MSG_PREFIX " ◆ "`；右側浮動 `VMSG_MSG_FLOAT " [按任意鍵繼續]"` |
+| `parsePushInitText`（消費者：`image_upload.js`） | `bbs.c#recommend`／`angel.c` | `您覺得這篇文章 `；`FormatCommentString` 的輸入 prompt「→ id:」**無行尾時間戳** |
 | `comment_parse.COMMENT_RE` | `comments.c#FormatCommentString`＋`common/bbs/names.c#is_validuserid` | `<attr><推/噓/→><空格>ESC[33m<id>ESC[m:<msg 補到 maxlength>ESC[m<tail>`；id 長度 **2..IDLEN(12)**、首 isalpha 其餘 isalnum；`BRD_ALIGNEDCMT` 時 id 以 `%-*s` 補到 12 寬（故 `:` 前可有空格）；tail＝`[%15s ]MM/DD HH:MM`（`Cdate_mdHM` ＝ `"%m/%d %H:%M"`，IP 僅 `BRD_IPLOGRECMD`／guest） |
 | `comment_parse` 列表欄位 | `bbs.c#readdoent` | 見 §3 欄位表 |
 | `auto_login` | `mbbsd.c` 登入迴圈＋`include/common.h` | prompt `請輸入代號，或以 guest 參觀，或以 new 註冊: `(DOECHO)／`MSG_PASSWD "請輸入您的密碼: "`(NOECHO)／`您想刪除其他重複登入的連線嗎？[Y/n] `(LCECHO)／`您要刪除以上錯誤嘗試的記錄嗎? [Y/n] `(`vans`→`vgets`，**都要 `\r`**)。失敗出口＝`ERR_PASSWD "密碼不對喔！…"`、`ERR_UID "這裡沒有這個人啦！"`（`is_validuserid` 失敗，**不會再問密碼**）、`抱歉，此帳號已設定為只能使用安全連線(如ssh)登入。` |

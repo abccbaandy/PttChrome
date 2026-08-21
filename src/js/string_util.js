@@ -153,21 +153,6 @@ export function normalizeCopyText(it) {
     .replace(/ +\r/g, '\r');
 };
 
-// 好讀模式必須讓位給原生的 prompt。官方 mbbsd/bbs.c#reply_post 依權限走三種
-// **互斥**分支（缺一條就有一群使用者的「y 回應」不會讓位）：
-//   !CheckPostRestriction         → "▲ 無法回應至看板。 改回應至 (M)作者信箱 (Q)取消？[Q] "
-//   !HasSendMailUserPerm          → "▲ 回應至 (F)看板 (Q)取消？[F] "
-//   else                          → "▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] "
-// 另兩條：mbbsd/more.c 的收暫存檔、mbbsd/edit.c 的選暫存檔。
-// 一律 prefix 比對（官方字串尾端有空格，這裡不寫進來以免多一層假設）。
-export function parseReplyText(it) {
-  return (it.indexOf('▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] ') === 0 ||
-      it.indexOf('▲ 回應至 (F)看板 (Q)取消？[F] ') === 0 ||
-      it.indexOf('▲ 無法回應至看板。 改回應至 (M)作者信箱 (Q)取消？[Q]') === 0 ||
-      it.indexOf('把這篇文章收入到暫存檔？[y/N]') === 0 ||
-      it.indexOf('請選擇暫存檔 (0-9)[0]:') === 0);
-};
-
 // Trailing PTT comment timestamp " MM/DD HH:MM" (right-aligned at the end of the
 // row, always preceded by whitespace). A finished comment row ends with it; body
 // text written in comment shape, the "→ id:" input prompt, and "※ 編輯: … ,
@@ -180,13 +165,11 @@ export function parsePushInitText(it) {
   // has no timestamp. Exclude finished arrow comments (they end with a timestamp):
   // matching them made easy reading mistake the first arrow comment for the input
   // row and drop it from the scroll (e.g. a leading "→ user:" comment went missing).
+  // 唯一消費者是 image_upload.js（判斷目前是不是推文輸入列，決定圖片網址插到哪裡）。
+  // 好讀模式已不再用它辨識 prompt 幀 —— 那些幀一律由 functionMode 鏡像原生畫面。
   return (it.indexOf('您覺得這篇文章 ') === 0 ||
       (it.search(/→ \w+ *: +/) === 0 && !COMMENT_TIME_RE.test(it)) ||
       it.indexOf('很抱歉, 本板不開放回覆文章，要改回信給作者嗎？ [y/N]:') === 0);
-};
-
-export function parseReqNotMetText(it) {
-  return (it.indexOf(' ◆ 未達看板發文限制:') === 0);
 };
 
 // pmore 底部狀態列＝「這頁是文章」的決定性指紋（pageState 3 / classifyListScreen

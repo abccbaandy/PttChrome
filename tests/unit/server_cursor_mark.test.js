@@ -72,17 +72,19 @@ describe("hasServerCursorMark", () => {
   });
 });
 
-// refreshCursorVisibility 的來源合併。#cursor 的顯示由兩個**獨立**來源決定：
-//   _cursorHidden    列表好讀模式（list_session hideCursor/showCursor）
+// refreshCursorVisibility 的來源合併。#cursor 的顯示由三個**獨立**來源決定：
+//   _cursorHidden     列表好讀模式（list_session hideCursor/showCursor）
 //   _cursorSuppressed 本功能
+//   !_gridRender      這一幀的 `.main` 裝的不是固定格線畫面（好讀累積長頁）
 // 用 OR 合併於 _applyCursorVisibility —— 共用一個旗標會讓 showCursor() 誤清抑制狀態。
 describe("TermView.refreshCursorVisibility", () => {
-  function view({ autoHide = true, hidden = false, line, curX = 0 } = {}) {
+  function view({ autoHide = true, hidden = false, line, curX = 0, gridRender = true } = {}) {
     return {
       bbsCursor: { style: {} },
       autoHideBlinkCursor: autoHide,
       _cursorHidden: hidden,
       _cursorSuppressed: false,
+      _gridRender: gridRender,
       buf: { lines: [line], cur_x: curX, cur_y: 0 },
       _applyCursorVisibility: TermView.prototype._applyCursorVisibility,
       refreshCursorVisibility: TermView.prototype.refreshCursorVisibility,
@@ -119,6 +121,33 @@ describe("TermView.refreshCursorVisibility", () => {
     v.refreshCursorVisibility();
     expect(v.bbsCursor.style.display).toBe("none");
     // 列表好讀退出 → _cursorHidden 解除，但 PTT 游標還在 → 仍該隱藏
+    v._cursorHidden = false;
+    v._applyCursorVisibility();
+    expect(v.bbsCursor.style.display).toBe("none");
+  });
+
+  // 好讀累積長頁：畫面第 N 列與格線第 N 列毫無關係，`buf.cur_y` 指不到任何一列，
+  // 游標畫在哪裡都是錯的（舊實作把它畫在視窗的 cur_y 列 → 飄在任意內文上）。
+  // 文章內的輸入一律走 functionMode 原生鏡像（＝格線幀），所以隱藏不影響打字。
+  test("非格線幀（好讀累積長頁）→ 隱藏，即使 PTT 沒畫游標", () => {
+    const v = view({ gridRender: false, line: row("guest      "), curX: 5 });
+    v.refreshCursorVisibility();
+    expect(v.bbsCursor.style.display).toBe("none");
+  });
+
+  test("回到格線幀 → 顯示權交還給閃爍機制", () => {
+    const v = view({ gridRender: false, line: row("guest      "), curX: 5 });
+    v.refreshCursorVisibility();
+    expect(v.bbsCursor.style.display).toBe("none");
+    v._gridRender = true;
+    v._applyCursorVisibility();
+    expect(v.bbsCursor.style.display).toBe("");
+  });
+
+  test("非格線幀的隱藏與另外兩個來源互不干擾", () => {
+    // 列表好讀退出（_cursorHidden 解除）不該讓長頁幀的游標冒出來
+    const v = view({ gridRender: false, hidden: true, line: row("   350024") });
+    v.refreshCursorVisibility();
     v._cursorHidden = false;
     v._applyCursorVisibility();
     expect(v.bbsCursor.style.display).toBe("none");

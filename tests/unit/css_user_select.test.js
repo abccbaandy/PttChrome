@@ -37,7 +37,7 @@ describe('終端機的 user-select（issue #22）', () => {
   });
 
   test('.main 保有 user-select: text（標準屬性，不可只留 -webkit- 前綴）', () => {
-    const values = userSelectValues(ruleBody(CSS, '.main, #easyReadingLastRow, #easyReadingReplyRow'));
+    const values = userSelectValues(ruleBody(CSS, '.main, #easyReadingLastRow'));
     expect(values).toContain('text');
     expect(values).not.toContain('none');
   });

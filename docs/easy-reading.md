@@ -71,7 +71,7 @@
 - 逐列加工（blacklist/樓層/作者高亮/pusher 高亮）統一在 `Screen#computeAnnotations` 一處。好讀文章因 `lines=完整 pageLines`，`new FloorCounter()` 一次走完整篇 → 跨頁樓號自然正確（已**無** view 端持久計數器 `_floorCounter`）。
 - `dropHidden` 移除的列**不位移**其餘列 `data-row`（=pageLines 絕對索引）；`getText` 用絕對 index → 選取/複製跨缺口仍對齊。
 - pusher 高亮：`togglePusherHighlight` 只設 `_selectedPusher`+`redraw(true)`（兩模式同；好讀重繪重入 `accumulatePageLines` 同畫面，`findPageOverlap` 去重成 no-op append，只有 render 反映變更）。
-- 好讀兩個 overlay 列（footer `#easyReadingLastRow`、reply `#easyReadingReplyRow`）是 `BBSWin` 下獨立 div、非 `#mainContainer`，仍 imperative 畫（`term_ui.renderOverlayRow` 單列），不涉所有權衝突。
+- 好讀 footer overlay 列（`#easyReadingLastRow`）是 `BBSWin` 下獨立 div、非螢幕容器，仍 imperative 畫（`term_ui.renderOverlayRow` 單列），不涉所有權衝突。（另一個 `#easyReadingReplyRow` 已隨 legacy overlay 路徑移除，見 functionMode 節。）
 - **圖片預覽（`_renderScreenLines` 的 `inlinePreview`/`hoverPreview` 兩參數，CONFIRMED e2e）**：好讀文章 `inlinePreview=true`+`hoverPreview=false`（自動行內開圖，每個連結旁掛 `<ImagePreviewer Inline>`，**不**受 `enablePicPreview` pref 約束）；原生 `inlinePreview=false`+`hoverPreview=enablePicPreview`（hover 才開）；好讀列表/選單兩者皆 false。守護：unit `image_preview.test.jsx`（Screen→Row→builder 接線）+ e2e `easy-reading.spec.js`「好讀模式自動行內開圖」。
 - **累積頁的每頁 render 成本必須是 O(新增列)，不是 O(文章)（2026-08，CONFIRMED unit 計次＋offline e2e 曲線）**：`term_buf.notify` → `view.update()` → `redraw()` → `_renderScreenLines(buf.pageLines)` → `renderInto` 的 **`flushSync`** ⇒ 每收到一頁就**同步**重算＋重建整份累積頁。舊版每幀對全部 n 列重跑 `rowToText`/`annotateComment`/`detectRowExtras`（五組偵測）＋對每個推文合併 run 重跑 `buildMergedCommentChars`＋重建 n 個 `<Row>`（每列 80 個 TermChar 過 `LinkSegmentBuilder`）⇒ 每頁 O(n)、整篇 O(n²)。實錄 `ptt-debug-20260809`（8512 行）翻頁週期 55ms→1196ms。**這不只是體感**：週期一旦越過 `PAGE_DOWN_GRACE_MS`(600)，watchdog 就誤判掉包 → 補送 PageDown → P4 吞頁 → 缺頁自癒 → 「讀到一半跳回第一頁」「卡住不讀」。修法兩層，都在 `Screen.jsx`＋純函式 `src/js/screen_annotate_cache.js`：
   1. **增量標註**：累積是純 append（`pageLines.concat`，舊列的 TermChar[] 參考永不變），故前綴的 `texts`/`base` 標註/`FloorCounter` 實例/AI 候選清單全部沿用，逐列偵測只跑新增的列。推文合併 run 以 `mergeRunKey`＋該 run 每列的 base 參考當快取鍵；圖文合併塊以塊座標＋base 參考當鍵。
@@ -108,21 +108,27 @@
 
 對應 `EasyReading._functionMode`(=`buf.easyReadingFunctionMode`)。**原則：底部互動不 hardcode、不逐選單 parse——原生畫什麼好讀就鏡像什麼**（與列表好讀的 functionMode 同概念，文章版獨立、更單純）。
 
-- **為何需要**：文章內按 `r` 回應／`X`/`%` 推文／`y` 收暫存檔，PTT 在 row22/row23 畫出選單（pageState 仍 3），但好讀仍渲染累積長頁＋footer，**蓋住選單**。舊作法靠 `curY==22`+`parseReplyText` 偵測「回應至」設 `showReplyText`，但畫選單文字(`changed`)與移游標到 row22(`posChanged`)可能不同 notify 視窗 → `curY` 閘漏接 → 選單不顯示（且到底 `reachedPageEnd` 時 `_onScreenSettled` 提早 return，無兜底）。
+- **為何需要**：文章內按 `r` 回應／`X`/`%` 推文／`y` 收暫存檔，PTT 在 row22/row23 畫出選單（pageState 仍 3），但好讀仍渲染累積長頁＋footer，**蓋住選單**。舊作法靠 `curY==22`+`parseReplyText` 偵測「回應至」設 `showReplyText`，但畫選單文字(`changed`)與移游標到 row22(`posChanged`)可能不同 notify 視窗 → `curY` 閘漏接 → 選單不顯示（且到底 `reachedPageEnd` 時 `_onScreenSettled` 提早 return，無兜底）。**該路徑已於 2026-08-21 整條刪除**（見本節末）。
 - **進入（鍵驅動）**：`_onKeyDownProcessUI` default 分支，凡**單字元鍵**(`e.key.length===1`)且非 leave-post 鍵→`_enterFunctionMode`：清 `sendCommandAfterUpdate`、存 `mainDisplay.scrollTop`、設 `_functionMode=true`、全列 dirty+`notify()` 立即重繪。**不** preventDefault（鍵照送 PTT）。僅 leave-post 鍵(`abf=+-[]ABF`)走 `leaveCurrentPost` 不進。
   - **pmore 功能鍵一律走 functionMode，勿再加 swallow list**：`h` 說明/`o` 選項/`/` 搜尋/`;` 指定頁/`,.<>` 左右捲等鍵由 functionMode 鏡像原生選單（守護 unit `easy_reading_logic.test.js`「pmore function keys enter functionMode」）。`Tab`(`stop=true`)與 ctrl `"@^_?"` 例外（Tab 放行涉 browser focus、不可同時 preventDefault+送鍵）。
   - **進入（貼上驅動）**：貼上不是按鍵 ⇒ 上面那條 `e.key.length===1` 規則抓不到，PTT 因應 `#`／`/`／`;` 等貼上內容畫的 prompt 會被好讀長頁蓋住（使用者看不到反應）。故 `App.onPasteDone` 在送出前補一次 `easyReading._enterFunctionMode()`（該函式自帶 `_functionMode` 早退，重複呼叫無害）。列表好讀的同源缺口見 `docs/easy-reading-list.md` 不變量 12b。
 - **鍵流**：`term_view.onKeyDown` gate 加 `&& !buf.easyReadingFunctionMode` → functionMode 期間全鍵直通原生（含 Enter，在原生 prompt/編輯器操作）。
 - **渲染**：`term_view.redraw` **最高優先**分支 `useEasyReadingMode && easyReadingFunctionMode` → `hideEasyReadingOverlaysKeepPage()`(藏 overlay＋清 `#mainContainer` 的 `paddingBottom`、**不清 pageLines**)＋`mainDisplay.scrollTop=0`＋`_gridRender=true`＋`_renderScreenLines(buf.lines)` 整頁原生 24 列 LIVE。**關鍵：不可用 `hideEasyReadingOverlays`**（它清 `pageLines=[]`，退出需重抓整篇、PTT 已在文末 End no-op → 不可行）。
 - **不變量：原生鏡像期間畫面必須不可捲**（`.main` 的 `scrollHeight <= clientHeight`）。`accumulatePageLines` 每頁都在 `#mainContainer` 留 `paddingBottom:1em`（替 footer overlay 讓位），原生鏡像沒有 overlay，留著它 `.main`（height=`chh*rows+10`、`overflow-y:auto`）就還有 **`chh-10` px 可捲**；而 `App.mouse_scroll` 在 `pageState==3` 時**直接 return 不 preventDefault**（推文提示畫面的 pageState 仍是 3）⇒ 滾輪真的把輸入列捲上去，絕對定位的 `#cursor` 卻不會跟著動 ⇒ **推文時閃爍游標戳出反白輸入匡**（2026-08-20；`redraw` 的 `scrollTop=0` 只在「有內容變動的幀」跑，停手不打字時偏移就停在那裡，離開文章才被 `hideEasyReadingOverlays` 清掉 → 症狀是「有時候、非特定文章、重進就好」）。故 `hideEasyReadingOverlaysKeepPage` 也要清 padding；回好讀時 `accumulatePageLines` 會設回 `1em`，且排在 `_evalFunctionModeExit('resume')` 還原 `_savedScrollTop` 之前，捲動位置照舊。守護：`tests/e2e/offline/cursor_shape.offline.spec.js`。
-  - **第二層保險在 `updateCursorPos`**：`#cursor` 是 `#BBSWindow`(fixed) 下的絕對定位元素、座標來自格線公式（`firstGridOffset`+`chh`），與 `.main` 的捲動座標系不同源。固定格線渲染的幀（`view._gridRender`：原生／functionMode 鏡像／列表好讀視窗）一律扣掉 `mainDisplay.scrollTop`；好讀累積長頁的幀不扣（第 N 列與格線第 N 列無關）。旗標只由**真的重畫 `#mainContainer`** 的 redraw 分支設定，兩個 overlay-only 分支沿用上一次的值。
+  - **2026-08-21 起這條不再是游標正確性的依賴**：`#cursor` 已搬進 `.main`（見 `docs/enhanced-addon.md` 踩坑 A），與列共用同一個捲動座標系，捲了也不會脫鉤。清 padding 仍保留 —— 原生鏡像畫面本來就不該有可捲距離。
+  - **`view._gridRender` 語意**：這一幀的 `.main` 裝的是不是固定格線的一整螢幕（原生／functionMode 鏡像／列表好讀視窗）。好讀累積長頁為 `false`，此時 `buf.cur_y` 指不到任何一列 ⇒ `_applyCursorVisibility` **整個隱藏閃爍游標**（第三個 OR 來源）。旗標只由真的重畫畫面的 redraw 分支設定。
   - **已知洞（未修）**：`App.setBBSCmd` 的好讀分支只看 `useEasyReadingMode && startedEasyReading`、**沒有排除 functionMode**，所以理論上滾輪會去捲一個原生鏡像畫面。現行路徑走不到它（`mouse_scroll` 在 `pageState==3` 就早退），且改成在 functionMode 送 `[5~`/`[6~` 會讓 page 鍵進到 `getdata` 提示，屬行為改動，故留著。
 - **退出（內容判定，settle 驅動）**：`_onChanged` functionMode 時早退（不跑翻頁機）；`_onScreenSettled` functionMode 時走 `_evalFunctionModeExit`→純函式 `functionModeExitDecision({pageState,isStatusRow,curY,lastRowNum})`（`easy_reading.js` 頂部 export，unit 守護）：
   - `resume`：`pageState==3 && isStatusRow && curY==lastRowNum`（回乾淨文章頁）→ `_functionMode=false`、`prevPageState=3`+dirty+`notify()`（`accumulatePageLines` 接續分支、`findPageOverlap` 對同畫面去重成 no-op append → 長頁無痕恢復）、還原 `scrollTop`。
   - `leave`：`pageState==1||2`（settle 進選單/列表，使用者離篇）→ `_functionMode=false`、`startedEasyReading=false`、`leaveCurrentPost()`、重繪原生列表；下一篇由既有 settle 重啟。
   - `stay`：其餘（選單/編輯器/pass 5/6/0/transient）→ 續鏡像。
 - **enter/exit/leaveCurrentPost** 皆重置 `_functionMode=false`+`_savedScrollTop=null`。
-- **與舊 reply/push overlay 路徑關係**：functionMode 為主路徑；`showReplyText`/`showPushInitText` 的 redraw 分支與 `nextEasyReadingRowState` 對應 branch **保留為 legacy fallback**（functionMode 攔截互動鍵 → 機器不在 prompt 幀執行 → 旗標恆 false → 分支實務上不觸發），暫不移除以縮小 blast radius。
+- **舊 reply/push overlay 路徑已刪除（2026-08-21）**：`_onKeyDownProcessUI` 的 default 分支對**任何單字元鍵**先 `_enterFunctionMode()`，而 `_onChanged` 在 functionMode 下第一行就 return、`redraw` 又把 functionMode 分支排在最前面 ⇒ 那兩個旗標恆 false、分支永不觸發。已一併移除：
+  - `buf.easyReadingShowReplyText` / `easyReadingShowPushInitText` 兩旗標（`term_buf` 初始化、`easy_reading` 的 `bindProperty`）
+  - `nextEasyReadingRowState` 的 `isReqNotMetRow`/`isPushInitRow`/`isReplyRow` 輸入與對應 branch（現在只認「游標停在末列末欄」的完整幀，其餘一律 `halt`）
+  - `term_view.redraw` 兩條 overlay 分支、`updateEasyReadingReplyRow`/`updateEasyReadingPushInitRow`、`#easyReadingReplyRow` div 與其 CSS
+  - `term_view.onKeyDown`/`onInput` 兩處 `!showReplyText && !showPushInitText` gate（恆真）
+  - `string_util.parseReplyText` / `parseReqNotMetText`（唯二消費者就是這條路徑）。`parsePushInitText` 保留 —— `image_upload.js` 還要用它判斷推文輸入列。
 
 **已到底時原生 End 是 no-op → 必附 `^L`**：好讀已自動翻頁到**底**時，實際游標在最後頁，再送原生 End(`\x1b[4~`) PTT **不回應不重繪** → 必須另送 `^L`(`\x0c`, Ctrl-L)強制全頁重繪。`switchToEasyReadingMode()`(無參數)已內含 `^L`(`pttchrome.jsx`)。
 

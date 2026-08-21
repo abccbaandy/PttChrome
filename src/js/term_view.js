@@ -152,11 +152,12 @@ export function TermView() {
   this._highlightMode = null;
   this._lastCursorRow = -1;
 
-  // 這一幀的 #mainContainer 畫的是不是「固定格線的一整螢幕」（原生／functionMode
-  // 原生鏡像／列表好讀視窗）。好讀的累積長頁不是 —— 它是一份可自由捲動的長文，
-  // 第 N 列與格線第 N 列毫無關係。updateCursorPos 用它決定要不要扣掉 .main 的
-  // scrollTop（見那裡的座標系說明）。只有真的重畫 #mainContainer 的分支才改它：
-  // 好讀的兩個 overlay 分支只換 overlay 列，畫面內容沿用上一次，旗標也要沿用。
+  // 這一幀的 `.main` 裝的是不是「固定格線的一整螢幕」（原生／functionMode 原生鏡像／
+  // 列表好讀視窗）。好讀的累積長頁不是 —— 它是一份可自由捲動的長文，第 N 列與格線
+  // 第 N 列毫無關係，`buf.cur_y` 在那裡指不到任何一列，所以**閃爍游標整個隱藏**
+  // （_applyCursorVisibility）。文章內的輸入情境不受影響：按任何單字元鍵都會先進
+  // functionMode 鏡像原生 24 列（easy_reading._onKeyDownProcessUI），那是格線幀。
+  // 只有真的重畫畫面的分支才改它。
   this._gridRender = true;
 
   // 閃爍游標抑制（autoHideBlinkCursor）：PTT 自己畫了 '>' 游標的畫面（列表／選單）
@@ -257,7 +258,6 @@ export function TermView() {
 
   this.selection = null;
   this.input = document.getElementById('t');
-  this.bbsCursor = document.getElementById('cursor');
   this.BBSWin = document.getElementById('BBSWindow');
   this.enablePicPreview = true;
   this.scaleX = 1;
@@ -292,6 +292,27 @@ export function TermView() {
   this.BBSWin.appendChild(mainDisplay);
   this.mainDisplay = mainDisplay;
 
+  // React 的專用容器。**不可以讓 React 直接 render 進 `.main`**：React 19 在 root
+  // container 首次 mount 的 commit 會執行 `container.textContent = ''`
+  // （react-dom-client 的 HostRoot mutation phase）⇒ 任何預先放進 `.main` 的節點
+  // （下面那顆 #cursor）第一次 render 就被清光。切一層自己的容器，React 只擁有它。
+  var screenRoot = document.createElement('div');
+  screenRoot.setAttribute('id', 'screenRoot');
+  mainDisplay.appendChild(screenRoot);
+  this.screenRoot = screenRoot;
+
+  // 閃爍游標。**住在 `.main` 裡面，和列共用同一棵 DOM 樹、同一個座標系**——
+  // 位置就是 `.main` 內容座標的 (cur_x*chw, cur_y*chh)，捲動由 `.main` 一起帶著走、
+  // 縮放由 `.main` 的 transform 一起套。歷史上它掛在 #BBSWindow（fixed）底下、用格線
+  // 公式算絕對座標，於是每次捲動／縮放都要補一個補償項，漏一條就「推文時游標戳出反白
+  // 輸入匡」（cbee3f5 → 865b828 修了兩輪仍復發）。**不要再把它搬回去，也不要再引入
+  // 任何 scrollTop／scale 補償。** 守護：tests/e2e/offline/cursor_shape.offline.spec.js
+  var bbsCursor = document.createElement('div');
+  bbsCursor.setAttribute('id', 'cursor');
+  bbsCursor.setAttribute('class', 'terminal_display');
+  mainDisplay.appendChild(bbsCursor);
+  this.bbsCursor = bbsCursor;
+
   var lastRowDiv = document.createElement('div');
   lastRowDiv.setAttribute('id', 'easyReadingLastRow');
   let spaces = ' '.repeat(80-25);  // TODO: Find a way to update this.
@@ -299,13 +320,6 @@ export function TermView() {
   lastRowDiv.innerHTML = this.lastRowDivContent;
   this.lastRowDiv = lastRowDiv;
   this.BBSWin.appendChild(lastRowDiv);
-
-  var replyRowDiv = document.createElement('div');
-  replyRowDiv.setAttribute('id', 'easyReadingReplyRow');
-  this.replyRowDivContent = '<span align="left"></span>';
-  replyRowDiv.innerHTML = this.replyRowDivContent;
-  this.replyRowDiv = replyRowDiv;
-  this.BBSWin.appendChild(replyRowDiv);
 
   // 文章左側「點這裡離開」的提示帶。
   //
@@ -456,7 +470,6 @@ TermView.prototype = {
     this.input.style.setProperty('font-family', this.fontFace, 'important');
     this.mainDisplay.style.setProperty('font-family', this.fontFace, 'important');
     this.lastRowDiv.style.setProperty('font-family', this.fontFace, 'important');
-    this.replyRowDiv.style.setProperty('font-family', this.fontFace, 'important');
     document.getElementById('cursor').style.setProperty('font-family', this.fontFace, 'important');
   },
 
@@ -585,10 +598,6 @@ TermView.prototype = {
           // mirror the native screen; the next clean-list settle re-renders.
           this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2, listEasyReading: true });
         }
-      } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowReplyText) {
-        this.updateEasyReadingReplyRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
-      } else if (this.useEasyReadingMode && this.buf.startedEasyReading && this.buf.easyReadingShowPushInitText) {
-        this.updateEasyReadingPushInitRow(changedLineHtmlStrs[changedLineHtmlStrs.length-1]);
       } else if (this.useEasyReadingMode && this.buf.pageState == 3) {
         // Easy-reading article: accumulate the long page into buf.pageLines (pure
         // JS de-dup, no DOM) then render the whole thing. Blacklisted comment rows
@@ -662,7 +671,7 @@ TermView.prototype = {
       this.chh,
       inlinePreview,
       hoverPreview,
-      this.mainDisplay,
+      this.screenRoot,
       Object.assign(
         {
           blacklist: this.blacklist,
@@ -769,8 +778,7 @@ TermView.prototype = {
       return;
     }
 
-    if (this.useEasyReadingMode && this.buf.startedEasyReading && 
-        !this.buf.easyReadingShowReplyText && !this.buf.easyReadingShowPushInitText &&
+    if (this.useEasyReadingMode && this.buf.startedEasyReading &&
         this.easyReadingKeyDownKeyCode == 229 && e.target.value != 'X') { // only use on chinese IME
       e.target.value = '';
       return;
@@ -832,7 +840,6 @@ TermView.prototype = {
       return;
     }
     if (this.useEasyReadingMode && this.buf.startedEasyReading &&
-        !this.buf.easyReadingShowReplyText && !this.buf.easyReadingShowPushInitText &&
         !this.buf.easyReadingFunctionMode) {
       this.easyReadingKeyDownKeyCode = e.keyCode;
       this.bbscore.easyReading._onKeyDown(e);
@@ -922,8 +929,6 @@ TermView.prototype = {
     this.lastRowDiv.style.fontSize = fontSize;
     this.lastRowDiv.style.width = mainWidth;
 
-    this.replyRowDiv.style.fontSize = fontSize;
-    this.replyRowDiv.style.width = mainWidth;
     if (this.chh*this.buf.rows < innerBounds.height)
       this.mainDisplay.style.marginTop = ((innerBounds.height-this.chh*this.buf.rows)/2) + this.bbsViewMargin + 'px';
     else
@@ -946,16 +951,12 @@ TermView.prototype = {
       }
       this.mainDisplay.style.webkitTransformOriginX = transOrigin;
       this.lastRowDiv.style.webkitTransformOriginX = transOrigin;
-      this.replyRowDiv.style.webkitTransformOriginX = transOrigin;
       this.lastRowDiv.style.webkitTransformOriginY = '-1100%'; // somehow these are the right value
-      this.replyRowDiv.style.webkitTransformOriginY = '-1010%';
     } else {
       this.lastRowDiv.style.webkitTransformOriginY = '';
-      this.replyRowDiv.style.webkitTransformOriginY = '';
     }
     this.mainDisplay.style.webkitTransform = scaleCss;
     this.lastRowDiv.style.webkitTransform = scaleCss;
-    this.replyRowDiv.style.webkitTransform = scaleCss;
 
     this.firstGridOffset = this.bbscore.getFirstGridOffsets();
 
@@ -1000,6 +1001,11 @@ TermView.prototype = {
     this.dynamicCss.insertRule(rule, this.dynamicCss.cssRules.length);
   },
 
+  // 格線 (col,row) → **視窗座標**。唯一消費者是 updateInputBufferPos（注音候選框
+  // `#t`，刻意留在 #BBSWindow 底下，見 index.html 的說明）。
+  // **閃爍游標不要用它** —— 它住在 `.main` 裡，用的是內容座標，見 updateCursorPos。
+  // 注意這裡的原點公式與 App.clientToPos 不同源（多了 +10 與 bbsViewMargin），
+  // 且縮放分支的垂直原點漏算 `.main` 高度那 10px，誤差 5*(1-scaleY) px。
   convertMN2XYEx: function(cx, cy) {
     var origin;
     var w = this.innerBounds.width;
@@ -1052,9 +1058,11 @@ TermView.prototype = {
 
   // 唯一寫 #cursor display 的地方。inline 'none' 蓋過 CSS 的 .blink--active 規則
   // （main.css），設回 '' 就把顯示權交還給每秒 toggle class 的閃爍機制。
+  // 三個獨立來源做 OR：手動隱藏（list_session）、PTT 自己畫了游標（autoHideBlinkCursor）、
+  // 以及這一幀不是格線畫面（好讀累積長頁 —— 格線座標在那裡沒有意義，見 _gridRender）。
   _applyCursorVisibility: function() {
     this.bbsCursor.style.display =
-      (this._cursorHidden || this._cursorSuppressed) ? 'none' : '';
+      (this._cursorHidden || this._cursorSuppressed || !this._gridRender) ? 'none' : '';
   },
 
   // 每幀重算（TermBuf.notify）：PTT 游標可能在「終端機游標沒移動、但該列被重畫」的
@@ -1325,8 +1333,6 @@ TermView.prototype = {
     this.applyCursorHighlight();
     if (this._cursorHidden) return;
 
-    var pos = this.convertMN2XYEx(this.buf.cur_x, this.buf.cur_y);
-    // if you want to set cursor color by now background, use this.
     if (this.buf.cur_y >= this.buf.rows || this.buf.cur_x >= this.buf.cols)
       return; //sometimes, the value of this.buf.cur_x is 80 :(
 
@@ -1335,34 +1341,28 @@ TermView.prototype = {
     var ch = line[this.buf.cur_x];
     var bg = ch.getBg();
 
+    // 縮放時 lastRowDiv 的 transform 由 setTermFontSize 寫，但那個 origin hack 只有在
+    // 真的縮放的幀才成立，故這裡跟著游標一起維持（沿用原行為，與游標座標無關）。
     if (this.scaleX == 1 && this.scaleY == 1) {
-      this.bbsCursor.style.webkitTransform = 'none';
       this.lastRowDiv.style.webkitTransformOriginY = '';
-      this.replyRowDiv.style.webkitTransformOriginY = '';
     } else {
       var scaleCss = 'scale('+this.scaleX+','+this.scaleY+')';
       this.mainDisplay.style.webkitTransform = scaleCss;
       this.lastRowDiv.style.webkitTransform = scaleCss;
-      this.replyRowDiv.style.webkitTransform = scaleCss;
-      this.bbsCursor.style.webkitTransform = scaleCss;
       this.lastRowDiv.style.webkitTransformOriginY = '-1100%';
-      this.replyRowDiv.style.webkitTransformOriginY = '-1010%';
     }
 
-    this.bbsCursor.style.left = pos[0] + 'px';
-    // 游標是一條高 1em 的直線（main.css #cursor），convertMN2XYEx 回傳的正是該格左上角
-    // → 直接貼齊，整條線就落在 [top, top + chh*scaleY) 這一格內。舊的 `-scaleY` 是配合
-    // 底線字元 glyph 的偏移 hack，對方塊只會讓它高出格子一像素。
-    //
-    // **扣掉 .main 的 scrollTop 是硬需求**：#cursor 是 #BBSWindow（position:fixed）下的
-    // 絕對定位元素，convertMN2XYEx 給的是**格線座標**，完全不受捲動影響；而它要貼齊的
-    // 那一列在 #mainContainer 裡，會跟著 .main 捲。兩個座標系一脫鉤，游標就掉出該列
-    // （症狀：推文時閃爍直線戳出反白輸入匡）。歷史上是靠「每條模式切換路徑都記得把
-    // padding 清掉／scrollTop 歸零」擋，漏一條就破功（functionMode 就漏了）。
-    // 只在 _gridRender 的幀補償：好讀累積長頁的第 N 列與格線第 N 列無關，補了會把游標
-    // 甩出畫面。守護：tests/e2e/offline/cursor_shape.offline.spec.js
-    this.bbsCursor.style.top =
-      (pos[1] - (this._gridRender ? this.mainDisplay.scrollTop : 0)) + 'px';
+    // **座標系合一**：#cursor 是 `.main` 的子元素（見建構子），所以這裡用的就是
+    // `.main` 的內容座標 —— 一格 chw × chh，原點在內容左上角。
+    //   捲動：#cursor 跟列一起被 `.main` 帶著走 ⇒ 不必扣 scrollTop，連「捲動時要重算」
+    //         都不需要（純滾輪不產生 term_buf 更新，舊實作就是這樣漏掉的）。
+    //   縮放：`.main` 的 transform: scale() 一併套到游標 ⇒ 不必自己乘 scaleX/scaleY，
+    //         也不必複製那套置中原點公式（它與實際 layout 差 5*(1-scaleY) px）。
+    //   置中／邊界：marginTop、align=center、+10 的捲軸讓位全部由 `.main` 自己吸收。
+    // 這裡**不可以**再引入任何補償項；要補償就表示又把它搬出 `.main` 了。
+    // 守護：tests/e2e/offline/cursor_shape.offline.spec.js
+    this.bbsCursor.style.left = (this.buf.cur_x * this.chw) + 'px';
+    this.bbsCursor.style.top = (this.buf.cur_y * this.chh) + 'px';
     // if you want to set cursor color by now background, use this.
     this.bbsCursor.style.color = cursorColorForBg(bg, this.workModeActive);
     this.updateInputBufferPos();
@@ -2028,7 +2028,6 @@ TermView.prototype = {
   // 守護：tests/e2e/offline/cursor_shape.offline.spec.js
   hideEasyReadingOverlaysKeepPage: function() {
     this.lastRowDiv.style.display = '';
-    this.replyRowDiv.style.display = '';
     if (this.mainContainer) this.mainContainer.style.paddingBottom = '';
   },
 
@@ -2039,7 +2038,6 @@ TermView.prototype = {
   // the native mode uses.
   hideEasyReadingOverlays: function() {
     this.lastRowDiv.style.display = '';
-    this.replyRowDiv.style.display = '';
     // 清掉好讀累積翻頁時加在 #mainContainer 的 1em 底部 padding（accumulatePageLines），
     // 否則 .main 仍可捲動，殘留 scrollTop 會把列表列捲上約一格，而絕對定位的 #cursor
     // （用固定 firstGridOffset 算位置、不受 scrollTop 影響）不會跟著動 → 游標低高亮列一格。
@@ -2056,21 +2054,6 @@ TermView.prototype = {
     // Back on a list/menu: the pending article reset (leaveCurrentPost) is moot —
     // prevPageState!=3 already forces rebuild on the next article.
     this.buf.easyReadingPendingReset = false;
-  },
-
-  updateEasyReadingReplyRow: function(row) {
-    var el = document.createElement('span');
-    el.style = "background-color:black;";
-    renderOverlayRow(row, this.chh, el);
-    this.setSingleChild(this.replyRowDiv.childNodes[0], el);
-    this.replyRowDiv.style.display = 'block';
-  },
-
-  updateEasyReadingPushInitRow: function(row) {
-    var el = document.createElement('span');
-    el.style = "background-color:black;";
-    renderOverlayRow(row, this.chh, el);
-    this.setSingleChild(this.lastRowDiv.childNodes[0], el);
   },
 
   setSingleChild: function(par, child) {

@@ -19,9 +19,7 @@ import {
   parsePagerFooterContext,
   parseListRow,
   parseWaterball,
-  parseReplyText,
   parsePushInitText,
-  parseReqNotMetText,
   isDBCSLead,
   unescapeStr,
   b2u,
@@ -447,45 +445,11 @@ describe("parseWaterball（show_call_in / outmsg）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// easy_reading 的 prompt 指紋（好讀模式要在這些畫面讓位給原生）
-// 官方出處：
-//   mbbsd/bbs.c#reply_post — 三種互斥 prompt（權限決定走哪一種）
-//   mbbsd/more.c           — "把這篇文章收入到暫存檔？[y/N] "
-//   mbbsd/edit.c           — "請選擇暫存檔 (0-9)[0]: "
-//   mbbsd/bbs.c#recommend  — outs(ANSI_COLOR(1) "您覺得這篇文章 ")
+// 推文輸入列的指紋。唯一消費者是 image_upload.js（決定圖片網址插到推文輸入列
+// 還是編輯器）——好讀模式的 prompt 讓位已改由 functionMode 鏡像原生畫面，
+// parseReplyText / parseReqNotMetText 隨那條 legacy 路徑一起移除。
+// 官方出處：mbbsd/bbs.c#recommend — outs(ANSI_COLOR(1) "您覺得這篇文章 ")
 // ---------------------------------------------------------------------------
-describe("parseReplyText（bbs.c#reply_post 的三種 prompt）", () => {
-  test("有寄信權限：(F)看板 (M)作者信箱 (B)二者皆是", () => {
-    expect(
-      parseReplyText("▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] ")
-    ).toBe(true);
-  });
-
-  // !HasSendMailUserPerm() 分支 —— 沒有這條時，無寄信權限的使用者按 y
-  // 回應，好讀模式不會讓位。
-  test("無寄信權限：(F)看板 (Q)取消", () => {
-    expect(parseReplyText("▲ 回應至 (F)看板 (Q)取消？[F] ")).toBe(true);
-  });
-
-  test("不可回應至看板：改回應至 (M)作者信箱", () => {
-    expect(
-      parseReplyText("▲ 無法回應至看板。 改回應至 (M)作者信箱 (Q)取消？[Q] ")
-    ).toBe(true);
-  });
-
-  test("暫存檔 prompt（more.c / edit.c）", () => {
-    expect(parseReplyText("把這篇文章收入到暫存檔？[y/N] ")).toBe(true);
-    expect(parseReplyText("請選擇暫存檔 (0-9)[0]: ")).toBe(true);
-  });
-
-  test("一般內容 → false", () => {
-    expect(parseReplyText("推 someuser: 這篇不錯                 07/26 14:30")).toBe(
-      false
-    );
-    expect(parseReplyText("")).toBe(false);
-  });
-});
-
 describe("parsePushInitText（bbs.c#recommend 的推文輸入列）", () => {
   test("推文類型選單（您覺得這篇文章 …）", () => {
     expect(parsePushInitText("您覺得這篇文章 值得推薦 給它噓聲 只加→註解 [1]? ")).toBe(
@@ -519,19 +483,6 @@ describe("parsePushInitText（bbs.c#recommend 的推文輸入列）", () => {
     expect(parsePushInitText("推 someuser: 內容                    07/26 14:30")).toBe(
       false
     );
-  });
-});
-
-// mbbsd/bbs.c 三處 vmsgf("未達看板發文限制: %s", …)，經 vtuikit.c#vshowmsg
-// 加上 " ◆ " 前綴印在底列。
-describe("parseReqNotMetText（未達看板發文限制）", () => {
-  test("vmsg 前綴 ◆ ＋ 訊息", () => {
-    expect(parseReqNotMetText(" ◆ 未達看板發文限制: 需要 5 篇文章")).toBe(true);
-  });
-
-  test("其他底列訊息 → false", () => {
-    expect(parseReqNotMetText("◆ 未達看板發文限制: 少了開頭空格")).toBe(false);
-    expect(parseReqNotMetText("")).toBe(false);
   });
 });
 

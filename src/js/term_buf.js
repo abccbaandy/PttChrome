@@ -236,8 +236,6 @@ export function TermBuf(cols, rows) {
   this.forceFullWidth = false;
 
   this.startedEasyReading = false;
-  this.easyReadingShowReplyText = false;
-  this.easyReadingShowPushInitText = false;
   this.prevPageState = 0;
   // Debounced pageState: updated only once the screen has been quiet for
   // SETTLE_MS, so transient half-painted frames never pollute it. EasyReading's

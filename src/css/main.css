@@ -119,17 +119,16 @@
    前身是 index.html 裡一個 `_` 字元疊 text-shadow 加粗成底線，但底線的垂直位置取決於
    字型的 underscore glyph metrics（元素本身 height:0），在反白輸入列這類畫面會畫到格子
    外面、看起來像掉到下一列。改成有明確幾何的方塊後，位置與高度都不再經過字型。
+   - **元素住在 `.main` 裡**（由 term_view 建構子建立，不在 index.html）：和列共用同一個
+     捲動＋縮放座標系，所以 left/top 就是內容座標 (cur_x*chw, cur_y*chh)，捲動與 scale
+     由 `.main` 一起帶著走。**這是「不出格」的結構保證**，不是靠對齊算出來的，故
+     本元素不再需要自己的 transform，也不可以再引入任何 scrollTop／scale 補償。
    - height: 1em ＝一格列高：font-size 由 term_view.setTermFontSize 寫成 inline（＝chh），
-     字級改變自動跟著走。left/top 由 updateCursorPos 寫成 inline（＝該格左上角）。
+     字級改變自動跟著走。（`.terminal_display` 給了 font-size:26px，繼承贏不過它，
+     所以那個 inline 寫入是硬需求。）
    - currentColor：顏色由 term_view.updateCursorPos 的 inline style 決定
      （原生＝背景反色、上班模式＝固定淺灰，見 cursor_color.js），這裡自動跟著走。
      光暈用 box-shadow —— 沒有文字了，text-shadow 不會有任何效果。
-   - transform-origin: 0 0 是硬需求：fontFitWindowWidth 時 updateCursorPos 會對 #cursor
-     下 transform: scale(sx, sy)，預設的 center 原點會讓有高度的直線垂直位移
-     (h - h*sy)/2（舊的 height:0 元素剛好看不出來）。
-   - 「一定落在該格內」只在**格線與畫面同步**時成立：本元素絕對定位於 #BBSWindow，
-     而列在會捲動的 .main 裡 —— 固定格線渲染的幀由 term_view.updateCursorPos 扣掉
-     mainDisplay.scrollTop 來對齊（見那裡的座標系說明）。
    守護：tests/e2e/offline/cursor_shape.offline.spec.js */
 #cursor {
   display: none;
@@ -137,14 +136,13 @@
   height: 1em;
   background-color: currentColor;
   box-shadow: 0 0 4px currentColor;
-  transform-origin: 0 0;
 }
 
 .blink--active #cursor {
   display: block;
 }
 
-.main, #easyReadingLastRow, #easyReadingReplyRow {
+.main, #easyReadingLastRow {
   font-family: MingLiu, monospace;
   font-size: 26px;
   line-height: 100%;
@@ -159,9 +157,15 @@
 }
 
 .main *,
-#easyReadingLastRow *,
-#easyReadingReplyRow * {
+#easyReadingLastRow * {
   font-family: inherit!important;
+}
+
+/* `.main` 是捲動容器，同時也是 #cursor 的定位容器（游標住在裡面，見上）。
+   縮放模式下 transform: scale() 本來就會讓它成為 containing block，但未縮放時
+   transform 是 none —— 少了這行，游標會退回去以 #BBSWindow 為基準而全盤錯位。 */
+.main {
+  position: relative;
 }
 
 .linkurl {
@@ -176,14 +180,13 @@ a:link,a:visited,a:active,a:hover {
 
 .main > span, 
 #mainContainer > span, 
-#easyReadingLastRow > span,
-#easyReadingReplyRow > span {
+#easyReadingLastRow > span {
   display:block;
   color:#C0C0C0;
   white-space: pre;
 }
 
-#easyReadingLastRow, #easyReadingReplyRow {
+#easyReadingLastRow {
   position: relative;
   display: none;
   overflow: hidden;
@@ -196,10 +199,6 @@ a:link,a:visited,a:active,a:hover {
 
 #easyReadingLastRow {
   margin-top: -1em;
-}
-
-#easyReadingReplyRow {
-  margin-top: -2em;
 }
 
 #fbSharing {

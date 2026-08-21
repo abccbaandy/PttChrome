@@ -41,11 +41,10 @@ export class ColorState {
   }
 }
 
-// Render a single row into an overlay container that is NOT #mainContainer
-// (the easy-reading footer #easyReadingLastRow and reply preview
-// #easyReadingReplyRow). Those are standalone divs under BBSWindow, so a tiny
-// per-row render here does not fight React for #mainContainer ownership
-// (that container is rendered solely via renderScreen / <Screen>).
+// Render a single row into an overlay container that is NOT the screen root
+// (the easy-reading footer #easyReadingLastRow). It is a standalone div under
+// BBSWindow, so a tiny per-row render here does not fight React for the screen
+// container's ownership (that one is rendered solely via renderScreen / <Screen>).
 export function renderOverlayRow(chars, forceWidth, cont) {
   renderInto(cont, <Row chars={chars} row={0} forceWidth={forceWidth} />);
 }

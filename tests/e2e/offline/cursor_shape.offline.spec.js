@@ -49,6 +49,7 @@ async function measure(page, row, col) {
         chw: window.__app.view.chw,
         chh: window.__app.view.chh,
         scaleY: window.__app.view.scaleY,
+        scaleX: window.__app.view.scaleX,
         col,
       };
     },
@@ -115,10 +116,14 @@ test.describe('打字游標是閃爍直線且不出格（離線）', () => {
     expect(m.scaleY).not.toBe(1); // 前提成立：真的在縮放
     // 高度跟著 scale 一起放大（＝直線真的被 transform 縮放到，不是漏網之魚）。
     expect(Math.abs(m.cursor.height - m.chh * m.scaleY)).toBeLessThanOrEqual(1);
-    // 上緣容差刻意收到 1px：縮放原點若退回預設的 center，直線會往上長出
-    // chh*(1-sy)/2（此視窗約 3px）而懸在自己這一列上方 —— 那正是要擋的症狀。
-    expect(m.cursor.top).toBeGreaterThanOrEqual(m.row.top - 1);
-    expect(m.cursor.bottom).toBeLessThanOrEqual(m.nextRow.top + 2);
+    // 垂直：直接跟該列**實際量到的** rect 比，容差 1px。
+    // 舊的格線公式垂直原點用 chh*rows，但 `.main` 實際高 chh*rows+10 且
+    // transform-origin 是 center ⇒ 系統性誤差 5*(1-scaleY) px（scaleY=1.4 約 2px）。
+    // 水平方向那個 +10 剛好在兩式間抵消，所以只有垂直會漂。
+    expect(Math.abs(m.cursor.top - m.row.top)).toBeLessThanOrEqual(1);
+    expect(m.cursor.bottom).toBeLessThanOrEqual(m.nextRow.top + 1);
+    // 水平同樣貼齊該格。
+    expect(Math.abs(m.cursor.left - (m.row.left + m.col * m.chw * m.scaleX))).toBeLessThanOrEqual(1);
   });
 });
 
@@ -226,7 +231,11 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
     expect(m.scrollHeight).toBeLessThanOrEqual(m.clientHeight);
   });
 
-  test('殘留捲動也不能把游標與它那一列拆開', async ({ page }) => {
+  // **不呼叫 updateCursorPos**：這正是 865b828 之後仍會發生的殘留症狀 —— 捲動不產生
+  // term_buf 更新（滾輪／觸控板／瀏覽器對焦捲動都不會重繪），所以「重算時扣掉 scrollTop」
+  // 這種補償永遠慢一步，游標就停在原地直到下一次按鍵。游標與列同在 `.main` 內、共用
+  // 同一個捲動座標系之後，這件事變成結構上不可能發生。
+  test('純捲動（不重繪）也不能把游標與它那一列拆開', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {
@@ -240,13 +249,12 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
     await feedBig5(page, pushPromptFrame(d));
     await page.waitForTimeout(400);
 
-    // 人為讓 `.main` 可捲並捲到底（模擬任何殘留 padding / 捲動狀態），然後重算游標。
+    // 人為讓 `.main` 可捲並捲到底（模擬任何殘留 padding / 使用者滾輪），**不重繪**。
     const m = await page.evaluate((row) => {
       document.body.classList.add('blink--active');
       const view = window.__app.view;
       document.getElementById('mainContainer').style.paddingBottom = '3em';
       view.mainDisplay.scrollTop = 9999;
-      view.updateCursorPos();
       const rect = (e) => {
         const b = e.getBoundingClientRect();
         return { top: b.top, bottom: b.bottom, left: b.left, height: b.height };
@@ -266,5 +274,59 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
     // 游標整條必須落在它那一列裡（±2px 吸收 inline box metrics 差）。
     expect(m.cursor.top).toBeGreaterThanOrEqual(m.row.top - 2);
     expect(m.cursor.bottom).toBeLessThanOrEqual(m.row.top + m.chh + 2);
+  });
+
+  // React 19 在 root container 首次 mount 時會做 `container.textContent = ''`
+  // （react-dom-client 的 HostRoot mutation commit）。`#cursor` 若直接放進 React 的
+  // root container，第一次 render 就會被清掉 —— 所以 React 有自己的容器
+  // （`#screenRoot`），`#cursor` 是它的兄弟。
+  test('React 首次 render 之後，#cursor 仍然活在 .main 裡', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await feedRaw(page, CURSOR_ON_BLANK);
+    await page.waitForTimeout(400);
+
+    const m = await page.evaluate(() => {
+      const el = document.getElementById('cursor');
+      const screen = document.getElementById('mainContainer');
+      return {
+        exists: !!el,
+        parentClass: el ? el.parentElement.className : null,
+        // 螢幕內容與游標必須在同一個捲動容器底下
+        sharedScroller: !!el && !!screen && el.closest('.main') === screen.closest('.main'),
+      };
+    });
+    expect(m.exists).toBe(true);
+    expect(m.parentClass).toBe('main');
+    expect(m.sharedScroller).toBe(true);
+  });
+
+  // 好讀累積長頁：畫面第 N 列與格線第 N 列毫無關係，游標的格線座標在那裡沒有意義
+  // （舊實作把它畫在視窗的 cur_y 列上，等於飄在任意內文上）。文章內的輸入情境一律
+  // 走 functionMode 原生鏡像（_onKeyDownProcessUI 對任何單字元鍵先 _enterFunctionMode），
+  // 所以長頁幀直接隱藏游標，不會影響打字。
+  test('好讀累積長頁（非格線幀）：游標隱藏', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: true,
+      enableEasyReadingList: false,
+    });
+
+    const d = await dims(page);
+    await feedBig5(page, articleFrame(d));
+    await page.waitForTimeout(400);
+    await page.evaluate(() => window.__app.easyReading.enterEasyReading());
+    await page.waitForTimeout(400);
+
+    const m = await page.evaluate(() => {
+      document.body.classList.add('blink--active');
+      return {
+        gridRender: window.__app.view._gridRender,
+        display: getComputedStyle(document.getElementById('cursor')).display,
+      };
+    });
+    expect(m.gridRender).toBe(false); // 前提成立：真的在非格線幀
+    expect(m.display).toBe('none');
   });
 });

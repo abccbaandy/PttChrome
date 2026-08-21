@@ -3,10 +3,10 @@ vi.mock("../../src/js/pref_storage", () => ({
 }));
 
 // The settle-recovery path (_onScreenSettled / _computeRowState / _currentPageSignature)
-// runs the four string_util parsers on getRowText output. Mock them so these wiring
-// tests control isStatusRow / the page signature directly — parser correctness has its
-// own tests (string_util / comment_parse). The pure nextEasyReading* functions below
-// take booleans and never touch string_util, so the mock does not affect them.
+// runs parseStatusRow on getRowText output. Mock it so these wiring tests control
+// isStatusRow / the page signature directly — parser correctness has its own tests
+// (string_util / comment_parse). The pure nextEasyReading* functions below take
+// booleans and never touch string_util, so the mock does not affect them.
 // COMMENT_TIME_RE 不是這裡要控制的東西，但一定要給：easy_reading → mouse_regions
 // → comment_parse 這條 import 鏈在**模組載入期**就用它組 COMMENT_RE，缺了整個
 // test file 會在 import 階段就掛掉（不是某條 assertion 紅）。
@@ -14,10 +14,7 @@ vi.mock("../../src/js/string_util", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     COMMENT_TIME_RE: actual.COMMENT_TIME_RE,
-    parseStatusRow: vi.fn(),
-    parseReplyText: vi.fn(() => false),
-    parsePushInitText: vi.fn(() => false),
-    parseReqNotMetText: vi.fn(() => false)
+    parseStatusRow: vi.fn()
   };
 });
 
@@ -33,12 +30,7 @@ import {
   EasyReading
 } from "../../src/js/easy_reading";
 import { readValuesWithDefault } from "../../src/js/pref_storage";
-import {
-  parseStatusRow,
-  parseReplyText,
-  parsePushInitText,
-  parseReqNotMetText
-} from "../../src/js/string_util";
+import { parseStatusRow } from "../../src/js/string_util";
 
 // nextEasyReadingState now decides auto-enable from term_buf's DEBOUNCED pageState
 // stream (settledPageState / prevSettledPageState), evaluated once per settle edge
@@ -170,8 +162,6 @@ describe("nextEasyReadingRowState", () => {
   const rowInput = (o = {}) => ({
     pageState: 3,
     startedEasyReading: false,
-    showReplyText: false,
-    showPushInitText: false,
     reachedPageEnd: false,
     sendCommandAfterUpdate: "",
     ignoreOneUpdate: false,
@@ -179,10 +169,7 @@ describe("nextEasyReadingRowState", () => {
     curY: 0,
     lastRowNum: 23,
     lastColNum: 79,
-    isReqNotMetRow: false,
     isStatusRow: false,
-    isPushInitRow: false,
-    isReplyRow: false,
     lastRowFirstChFg: 7,
     lastRowFirstChBg: 0,
     ...o
@@ -192,19 +179,18 @@ describe("nextEasyReadingRowState", () => {
     expect(nextEasyReadingRowState(rowInput({ pageState: 3 })).startedEasyReading).toBe(true);
   });
 
-  it("clears easy-reading flags when leaving the article (not started, pageState != 3)", () => {
-    const r = nextEasyReadingRowState(rowInput({ pageState: 0, startedEasyReading: false }));
-    expect(r.startedEasyReading).toBe(false);
-    expect(r.showReplyText).toBe(false);
-    expect(r.showPushInitText).toBe(false);
-  });
-
-  it("keeps started + shows push-init when a 'request not met' row appears off-article", () => {
-    const r = nextEasyReadingRowState(rowInput({
-      pageState: 0, startedEasyReading: true, isReqNotMetRow: true, curY: 23, curX: 79
-    }));
-    expect(r.startedEasyReading).toBe(true);
-    expect(r.showPushInitText).toBe(true);
+  it("clears startedEasyReading off-article (pageState != 3), even if it was set", () => {
+    expect(
+      nextEasyReadingRowState(rowInput({ pageState: 0, startedEasyReading: false }))
+        .startedEasyReading
+    ).toBe(false);
+    // pageState 決定一切：舊的 legacy overlay 路徑會靠「未達發文限制」之類的 prompt
+    // 把 startedEasyReading 留著，現在那些幀一律由 functionMode 鏡像原生畫面。
+    expect(
+      nextEasyReadingRowState(rowInput({
+        pageState: 0, startedEasyReading: true, curY: 23, curX: 79
+      })).startedEasyReading
+    ).toBe(false);
   });
 
   it("sends a page-down on a status row that is not yet at the bottom", () => {
@@ -261,42 +247,23 @@ describe("nextEasyReadingRowState", () => {
 
   it("overrides pageState to 5 (pass screen) on a non-status bottom row", () => {
     const r = nextEasyReadingRowState(rowInput({
-      startedEasyReading: true, curY: 23, curX: 79, isStatusRow: false, showPushInitText: false
+      startedEasyReading: true, curY: 23, curX: 79, isStatusRow: false
     }));
     expect(r.pageStateOverride).toBe(5);
     expect(r.startedEasyReading).toBe(false);
   });
 
-  it("shows push-init text when the cursor sits on a push-init last row", () => {
-    const r = nextEasyReadingRowState(rowInput({
-      startedEasyReading: true, curY: 23, curX: 10, isPushInitRow: true, showPushInitText: false
-    }));
-    expect(r.showPushInitText).toBe(true);
-    expect(r.halt).toBe(false);
-  });
-
-  it("halts on a last row that is neither status nor push-init", () => {
-    const r = nextEasyReadingRowState(rowInput({
-      startedEasyReading: true, curY: 23, curX: 10, isPushInitRow: false, showPushInitText: false
-    }));
-    expect(r.halt).toBe(true);
-    expect(r.showPushInitText).toBe(false);
-  });
-
-  it("shows reply text when the cursor sits on a reply row (row 22)", () => {
-    const r = nextEasyReadingRowState(rowInput({
-      startedEasyReading: true, curY: 22, curX: 5, isReplyRow: true
-    }));
-    expect(r.showReplyText).toBe(true);
-    expect(r.halt).toBe(false);
-  });
-
-  it("halts on row 22 when it is not a reply row", () => {
-    const r = nextEasyReadingRowState(rowInput({
-      startedEasyReading: true, curY: 22, isReplyRow: false
-    }));
-    expect(r.halt).toBe(true);
-    expect(r.showReplyText).toBe(false);
+  // 游標不在末列末欄 ⇒ 半畫好的幀、或文章內的 prompt/選單幀。後者已由 functionMode
+  // 鏡像原生畫面接手（_onKeyDownProcessUI 對任何單字元鍵先 _enterFunctionMode，而
+  // _onChanged 在 functionMode 下直接 return），所以這裡一律 halt，不再辨識
+  // 推文輸入列 / 回應選單。
+  it("halts on any frame whose cursor is not parked at the bottom-right", () => {
+    for (const pos of [{ curY: 23, curX: 10 }, { curY: 22, curX: 5 }, { curY: 5, curX: 0 }]) {
+      const r = nextEasyReadingRowState(rowInput({ startedEasyReading: true, ...pos }));
+      expect(r.halt).toBe(true);
+      expect(r.pageStateOverride).toBe(null);
+      expect(r.sendCommandAfterUpdate).toBe("");
+    }
   });
 
   it("halts when the cursor is on an unchanged interior line", () => {
@@ -373,8 +340,6 @@ describe("EasyReading._onPageStateSettled", () => {
       settledPageState: settled,
       prevSettledPageState: prevSettled,
       startedEasyReading: false,
-      easyReadingShowReplyText: false,
-      easyReadingShowPushInitText: false
     };
     const view = { useEasyReadingMode: enabled };
     const core = { connectedUrl: { easyReadingSupported: supported } };
@@ -592,8 +557,6 @@ const makeER = ({
     notify: vi.fn(),
     getRowText: () => "status-row-text",
     startedEasyReading: true,
-    easyReadingShowReplyText: false,
-    easyReadingShowPushInitText: false
   };
   const view = { useEasyReadingMode: enabled, _lastAccumulatedSig: accSig };
   const core = { connectedUrl: { easyReadingSupported: true } };
@@ -620,9 +583,6 @@ describe("EasyReading._onScreenSettled", () => {
   beforeEach(() => {
     // Default: a non-bottom status row showing "第 1~23 行".
     parseStatusRow.mockReturnValue({ pagePercent: 33, rowIndexStart: 1, rowIndexEnd: 23 });
-    parseReplyText.mockReturnValue(false);
-    parsePushInitText.mockReturnValue(false);
-    parseReqNotMetText.mockReturnValue(false);
   });
 
   it("re-sends the missed page-down on a settled non-bottom status row", () => {
@@ -749,9 +709,6 @@ describe("exitEasyReading 的旗標殘留與本地重繪", () => {
   beforeEach(() => {
     readValuesWithDefault.mockReturnValue({ enableEasyReading: true });
     parseStatusRow.mockReturnValue({ pagePercent: 33, rowIndexStart: 1, rowIndexEnd: 23 });
-    parseReplyText.mockReturnValue(false);
-    parsePushInitText.mockReturnValue(false);
-    parseReqNotMetText.mockReturnValue(false);
   });
 
   it("清掉 startedEasyReading（否則列表好讀永遠不 engage）", () => {
@@ -891,7 +848,6 @@ describe("文章身分 _articleKey 的捕捉點", () => {
       lineChangeds: { fill: vi.fn() }, notify: vi.fn(),
       getRowText: (row) => (row === 23 ? "status-row" : (screen.rows[row] || "")),
       startedEasyReading: false,
-      easyReadingShowReplyText: false, easyReadingShowPushInitText: false,
       easyReadingGapDetected: false, easyReadingHealInFlight: false
     };
     const view = {
@@ -926,9 +882,6 @@ describe("文章身分 _articleKey 的捕捉點", () => {
     readValuesWithDefault.mockReturnValue({
       enableEasyReading: true, easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: "F8"
     });
-    parseReplyText.mockReturnValue(false);
-    parsePushInitText.mockReturnValue(false);
-    parseReqNotMetText.mockReturnValue(false);
   });
 
   // 使用者回報路徑：好讀開著 → [ 或 ] 跳下一篇 → F8 切原生 → 按 Home 回第 1 行。
@@ -987,7 +940,6 @@ describe("F8 在原生模式下切回好讀（toggle）", () => {
       lineChangeds: { fill: vi.fn() }, notify: vi.fn(),
       getRowText: (row) => (row === 23 ? "status-row" : (rows[row] || "")),
       startedEasyReading: false,
-      easyReadingShowReplyText: false, easyReadingShowPushInitText: false
     };
     const view = { useEasyReadingMode: false, mainDisplay: { scrollTop: 0 } };
     const er = new EasyReading({ connectedUrl: { easyReadingSupported: true } }, view, termBuf);
@@ -1058,9 +1010,6 @@ describe("翻頁 watchdog（送鍵錨定的重試）", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     parseStatusRow.mockReturnValue({ pagePercent: 33, rowIndexStart: 1, rowIndexEnd: 23 });
-    parseReplyText.mockReturnValue(false);
-    parsePushInitText.mockReturnValue(false);
-    parseReqNotMetText.mockReturnValue(false);
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -1141,9 +1090,6 @@ describe("翻頁 watchdog（送鍵錨定的重試）", () => {
 describe("跨文章重置（文章邊界 = settled pageState 進出 3）", () => {
   beforeEach(() => {
     parseStatusRow.mockReturnValue({ pagePercent: 14, rowIndexStart: 1, rowIndexEnd: 23 });
-    parseReplyText.mockReturnValue(false);
-    parsePushInitText.mockReturnValue(false);
-    parseReqNotMetText.mockReturnValue(false);
   });
 
   it("上一篇讀到底（reachedPageEnd 殘留）→ 下一篇仍會自動翻頁", () => {
@@ -1211,9 +1157,6 @@ describe("跨文章重置（文章邊界 = settled pageState 進出 3）", () =>
 // 而原本這個 case 什麼都不做。到底的文章（100%）仍然不送鍵。
 describe("PageDown 在累積頁底部的自救", () => {
   beforeEach(() => {
-    parseReplyText.mockReturnValue(false);
-    parsePushInitText.mockReturnValue(false);
-    parseReqNotMetText.mockReturnValue(false);
   });
 
   const press = (er) => {
@@ -1405,8 +1348,6 @@ describe("EasyReading._onViewUpdated 快路徑去重", () => {
       lines: { 23: [{ getFg: () => 7, getBg: () => 0 }] },
       getRowText: () => "status-row-text",
       startedEasyReading: true,
-      easyReadingShowReplyText: false,
-      easyReadingShowPushInitText: false
     };
     const er = new EasyReading({}, { useEasyReadingMode: true }, termBuf);
     er._send = vi.fn();
@@ -1463,8 +1404,6 @@ describe("EasyReading 掉頁自癒（goto-line 精準補讀）", () => {
       lines: { 23: [{ getFg: () => 7, getBg: () => 0 }] },
       getRowText: () => "status-row-text",
       startedEasyReading: true,
-      easyReadingShowReplyText: false,
-      easyReadingShowPushInitText: false
     };
     const view = {
       useEasyReadingMode: true, _accEndRow: 44, _lastAccumulatedSig: "22~44",

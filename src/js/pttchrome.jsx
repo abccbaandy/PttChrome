@@ -463,7 +463,6 @@ App.prototype.switchToEasyReadingMode = function(doSwitch) {
     this.view.mainContainer.style.paddingBottom = '';
     this.view.lastRowIndex = 22;
     this.view.lastRowDiv.style.display = '';
-    this.view.replyRowDiv.style.display = '';
     // clear the deep cloned copy of lines
     this.buf.pageLines = [];
   }

@@ -35,8 +35,11 @@
     <div id="cmenuReact"></div>
 
     <div id="BBSWindow" style="display:none">
+      <!-- 隱藏輸入框（收鍵盤／注音候選）。**刻意留在 BBSWindow 底下、不放進 .main**：
+           .main 是捲動容器，而它 left:-10000px —— 一旦成為 scroller 的子孫，瀏覽器
+           對焦時會把捲動容器捲過去。閃爍游標 #cursor 則相反，由 term_view 建在 .main
+           裡（見 term_view.js 建構子）。 -->
       <input id="t" type="text" autocomplete="off" style="box-sizing:content-box; color:initial; border: none; width: 200px; height: 24px; position:absolute; left:-10000px; top:0px; z-index:2;resize: none; font-family:inherit !important;" autofocus/>
-      <div id="cursor" class="terminal_display"></div>
     </div> <!--BBSWindow end-->
 
     <div id="reactAlert"></div>

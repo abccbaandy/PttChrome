@@ -1,9 +1,4 @@
-import {
-  parseReplyText,
-  parsePushInitText,
-  parseReqNotMetText,
-  parseStatusRow
-} from './string_util';
+import { parseStatusRow } from './string_util';
 import { readValuesWithDefault } from './pref_storage';
 import { ACT_EXIT_ARTICLE } from './mouse_regions';
 import { TRACE } from './util';
@@ -110,36 +105,32 @@ export function nextEasyReadingExternalLanding({
   return statusStart === 1;   // 只認文章第一頁：從中途頁開始累積會少掉前面的內容
 }
 
-// Pure per-frame row-state machine for _onChanged: given the current pageState,
-// cursor position and which kind of status/push/reply row the screen shows (the
-// parse results are computed by the caller and passed in as booleans, keeping this
-// free of string_util/DOM), decide the next easy-reading render flags. Returns the
-// next flag values plus three control signals: `pageStateOverride` (5 when a
-// non-article "press any key" screen is detected, else null), `consumeIgnoreOneUpdate`
-// (clear the one-shot suppression), and `halt` (the caller had an early return here —
-// purely informational now since nothing follows the apply). Side-effect free so the
-// branchy logic is regression-tested in tests/unit/easy_reading_logic.test.js.
+// Pure per-frame row-state machine for _onChanged: given the current pageState and
+// cursor position (the status-row parse is computed by the caller and passed in as a
+// boolean, keeping this free of string_util/DOM), decide the next easy-reading render
+// state. Returns the next flag values plus three control signals: `pageStateOverride`
+// (5 when a non-article "press any key" screen is detected, else null),
+// `consumeIgnoreOneUpdate` (clear the one-shot suppression), and `halt` (the caller had
+// an early return here — purely informational now since nothing follows the apply).
+// Side-effect free so the branchy logic is regression-tested in
+// tests/unit/easy_reading_logic.test.js.
+//
+// 只認「游標停在末列末欄」的完整幀：文章內的 prompt / 選單 / 編輯器一律由 functionMode
+// 鏡像原生畫面處理（_onKeyDownProcessUI 對任何單字元鍵都先 _enterFunctionMode，而
+// _onChanged 在 functionMode 下直接 return），所以這裡不需要、也不應該再去辨識
+// 推文輸入列 / 回應選單那類 prompt 幀。
 export function nextEasyReadingRowState({
-  pageState, startedEasyReading, showReplyText, showPushInitText,
+  pageState, startedEasyReading,
   reachedPageEnd, sendCommandAfterUpdate, ignoreOneUpdate,
   curX, curY, lastRowNum, lastColNum,
-  isReqNotMetRow, isStatusRow, isPushInitRow, isReplyRow,
-  lastRowFirstChFg, lastRowFirstChBg, pagePercent
+  isStatusRow, lastRowFirstChFg, lastRowFirstChBg, pagePercent
 }) {
   let pageStateOverride = null;
   let consumeIgnoreOneUpdate = false;
   let halt = false;
 
   // dealing with page state jump to 0 because last row wasn't updated fully
-  if (pageState == 3) {
-    startedEasyReading = true;
-  } else if (startedEasyReading && isReqNotMetRow) {
-    showPushInitText = true;
-  } else {
-    showReplyText = false;
-    showPushInitText = false;
-    startedEasyReading = false;
-  }
+  startedEasyReading = (pageState == 3);
 
   if (startedEasyReading) {
     if (curY == lastRowNum && curX == lastColNum) {
@@ -168,37 +159,22 @@ export function nextEasyReadingRowState({
           reachedPageEnd = false;
           if (!sendCommandAfterUpdate) {
             // send page down
-            sendCommandAfterUpdate = '\x1b[6~';
+            sendCommandAfterUpdate = '[6~';
           }
         }
-      } else if (!showPushInitText) { // only if not showing last row text
+      } else {
         pageStateOverride = 5;
         startedEasyReading = false;
       }
-    } else if (curY == lastRowNum) {
-      if (!showPushInitText) {
-        if (isPushInitRow) {
-          showPushInitText = true;
-        } else {
-          showPushInitText = false;
-          halt = true;
-        }
-      }
-    } else if (curY == 22) {
-      if (isReplyRow) {
-        showReplyText = true;
-      } else {
-        showReplyText = false;
-        halt = true;
-      }
     } else {
-      // last line hasn't changed
+      // 游標不在末列末欄 ⇒ 這一幀不是「PTT 畫完、正在等輸入」的完整文章畫面
+      // （半畫好的幀、或 prompt 幀——後者已由 functionMode 接手）。什麼都不做。
       halt = true;
     }
   }
 
   return {
-    startedEasyReading, showReplyText, showPushInitText, reachedPageEnd,
+    startedEasyReading, reachedPageEnd,
     sendCommandAfterUpdate, pageStateOverride, consumeIgnoreOneUpdate, halt
   };
 }
@@ -379,10 +355,8 @@ export function EasyReading(core, view, termBuf) {
   }
   bindProperty(this._view, 'useEasyReadingMode', this, '_enabled');
   bindProperty(this._termBuf, 'startedEasyReading', this);
-  bindProperty(this._termBuf, 'easyReadingShowReplyText', this);
-  bindProperty(this._termBuf, 'easyReadingShowPushInitText', this);
-  // Exposed on term_buf so term_view.redraw / onKeyDown can read it (mirrors the
-  // show*Text flags above). Setting this._functionMode writes buf.easyReadingFunctionMode.
+  // Exposed on term_buf so term_view.redraw / onKeyDown can read it (mirrors
+  // startedEasyReading above). Setting this._functionMode writes buf.easyReadingFunctionMode.
   bindProperty(this._termBuf, 'easyReadingFunctionMode', this, '_functionMode');
 
   this._termBuf.addEventListener('change', this._onChanged.bind(this));
@@ -474,7 +448,6 @@ EasyReading.prototype._computeRowState = function() {
   const lastColNum = this._termBuf.cols - 1;
   const lastRowNum = this._termBuf.rows - 1;
   const lastRowText = this._termBuf.getRowText(lastRowNum, 0, this._termBuf.cols);
-  const row22Text = this._termBuf.getRowText(22, 0, this._termBuf.cols);
   const lastRowFirstCh = this._termBuf.lines[lastRowNum][0];
   const status = parseStatusRow(lastRowText);
   const rowState = nextEasyReadingRowState({
@@ -483,8 +456,6 @@ EasyReading.prototype._computeRowState = function() {
     pagePercent: status ? status.pagePercent : null,
     pageState: this._termBuf.pageState,
     startedEasyReading: this.startedEasyReading,
-    showReplyText: this.easyReadingShowReplyText,
-    showPushInitText: this.easyReadingShowPushInitText,
     reachedPageEnd: this.easyReadingReachedPageEnd,
     sendCommandAfterUpdate: this.sendCommandAfterUpdate,
     ignoreOneUpdate: this.ignoreOneUpdate,
@@ -492,10 +463,7 @@ EasyReading.prototype._computeRowState = function() {
     curY: this._termBuf.cur_y,
     lastRowNum,
     lastColNum,
-    isReqNotMetRow: !!parseReqNotMetText(lastRowText),
     isStatusRow: !!status,
-    isPushInitRow: !!parsePushInitText(lastRowText),
-    isReplyRow: !!parseReplyText(row22Text),
     lastRowFirstChFg: lastRowFirstCh.getFg(),
     lastRowFirstChBg: lastRowFirstCh.getBg()
   });
@@ -509,8 +477,6 @@ EasyReading.prototype._computeRowState = function() {
 // Apply a computed rowState back onto term_buf / this. Idempotent on a stable frame.
 EasyReading.prototype._applyRowState = function(rowState) {
   this.startedEasyReading = rowState.startedEasyReading;
-  this.easyReadingShowReplyText = rowState.showReplyText;
-  this.easyReadingShowPushInitText = rowState.showPushInitText;
   this.easyReadingReachedPageEnd = rowState.reachedPageEnd;
   this.sendCommandAfterUpdate = rowState.sendCommandAfterUpdate;
   if (rowState.consumeIgnoreOneUpdate)
