@@ -689,7 +689,7 @@ export const en_US = {
     "message": "Paste"
   },
   "alert_pasteShortcutText": {
-    "message": "Please use Shift+Insert to paste"
+    "message": "Please use Ctrl+V or Shift+Insert to paste"
   },
   "alert_pasteShortcutClose": {
     "message": "OK"

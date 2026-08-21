@@ -55,6 +55,7 @@ CORS **CONFIRMED**：preflight `OPTIONS` 回 `204` + `Access-Control-Allow-Origi
 |---|---|
 | 拖放 | controller 建構時綁 `window` 的 `dragenter/over/leave/drop`；`dragover` 必須 `preventDefault`，否則沒有 drop 且瀏覽器會用本分頁開圖（＝沖掉 BBS session）。只認 `dataTransfer.types` 含 `Files`；`dragenter/leave` 用深度計數防閃爍 |
 | 貼上截圖 | `App.onDOMPaste` 先問 `tryClipboardImage(e)`；無圖回 `false` → 文字貼上行為零改變。`clipboardData.files` 有時是空的，故 `files` 與 `items` 都看 |
+| 貼上快捷鍵 | **Ctrl+V／Shift+Insert 的 keydown 一律不可 `preventDefault`**：被 cancel 的 keydown 不會生 `paste` 事件 ⇒ `#t` 收不到 ⇒ `onDOMPaste` 不跑 ⇒ 文字與截圖兩條路一起死。`term_keyboard._onKeyDown` 的 ctrl 分支對 `v` 提早 `return false`（別改成 `doPaste()`：它只讀文字，會吞掉貼圖）。`^V` 讓位後改由 **Alt+V** 送（pttbbs `edit.c` 切 ANSI 彩色／`bbs.c` `do_post_vote`）。守護：`tests/unit/term_keyboard_paste.test.js`、`image_upload.offline.spec.js` |
 | 右鍵選單 | `menuHandlerByEventKey.uploadImage / uploadHistory`（`components/ContextMenu/index.jsx`）；檔案對話框期間 `setModalOpen('imageUploadPicker', true)`，`change`／`cancel`／window `focus` 三路兜底關閉（漏關＝終端機永久收不到鍵盤） |
 
 ## 浮層與滑鼠（易踩）

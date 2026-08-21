@@ -689,7 +689,7 @@
     "message": "貼上"
   },
   "alert_pasteShortcutText": {
-    "message": "請使用 Shift+Insert 快速鍵來貼上。"
+    "message": "請使用 Ctrl+V 或 Shift+Insert 快速鍵來貼上。"
   },
   "alert_pasteShortcutClose": {
     "message": "確定"

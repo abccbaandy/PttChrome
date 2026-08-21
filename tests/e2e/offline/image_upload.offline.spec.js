@@ -191,4 +191,39 @@ test.describe('圖片上傳（離線）', () => {
     expect(requested).toBe(false);
     expect(await sentText(page)).toBe('');
   });
+
+  // 回歸（2026-08-21「Ctrl+V 貼不上，Shift+Insert 正常」）：Ctrl+V 必須讓給瀏覽器。
+  // unit（tests/unit/term_keyboard_paste.test.js）只能證明 TermKeyboard 回 false；
+  // 「keydown 真的沒被 cancel、瀏覽器才生得出 paste 事件」這層要真瀏覽器＋完整
+  // boot 鏈才量得到——被 preventDefault 的話 #t 收不到 paste、App.onDOMPaste 不跑，
+  // 文字貼上與截圖上傳兩條路一起死。
+  test('Ctrl+V 不被吃掉：keydown 放行、線路上沒有 ^V', async ({ page }) => {
+    await drawPushPrompt(page);
+    await collectSent(page);
+
+    // app 的 keydown handler 綁在 window 的冒泡階段（term_view），所以這個後掛的
+    // listener 一定在它之後跑 → 讀得到最終的 defaultPrevented。
+    await page.evaluate(() => {
+      window.__lastKeyPrevented = null;
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'v' || e.key === 'V') window.__lastKeyPrevented = e.defaultPrevented;
+      });
+    });
+
+    await page.locator('#t').focus();
+    await page.keyboard.press('Control+v');
+    await page.waitForTimeout(200);
+
+    expect(await page.evaluate(() => window.__lastKeyPrevented)).toBe(false);
+    expect(await sentText(page)).not.toContain('');
+  });
+
+  test('Alt+V 仍送得出 ^V（Ctrl+V 讓位後唯一的路）', async ({ page }) => {
+    await drawPushPrompt(page);
+    await collectSent(page);
+
+    await page.locator('#t').focus();
+    await page.keyboard.press('Alt+v');
+    await expect.poll(() => sentText(page), { timeout: 5000 }).toContain('');
+  });
 });
