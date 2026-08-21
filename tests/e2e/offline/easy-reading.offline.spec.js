@@ -474,7 +474,11 @@ test.describe('LiveHelper 启用 → 关好读单一出口（离线重放）', (
     page.on('pageerror', (e) => errors.push(e.message));
 
     await bootOffline(page, ptt);
-    await ptt.applyPrefs(page, { enableEasyReading: true });
+    // Live 文小帮手**预设不显示**在右键选单（pref enableLiveArticleHelper）：先开。
+    await ptt.applyPrefs(page, {
+      enableEasyReading: true,
+      enableLiveArticleHelper: true,
+    });
     await replayCassette(page, liveHelperCassette, { easyReading: true });
 
     expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);

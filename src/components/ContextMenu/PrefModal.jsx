@@ -620,6 +620,23 @@ export const PrefModal = ({
                 />
               </fieldset>
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_contextMenu")}</legend>
+                <PrefCheckbox
+                  name="enableInputHelper"
+                  checked={values.enableInputHelper}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableInputHelper")}
+                </PrefCheckbox>
+                <PrefCheckbox
+                  name="enableLiveArticleHelper"
+                  checked={values.enableLiveArticleHelper}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableLiveArticleHelper")}
+                </PrefCheckbox>
+              </fieldset>
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                 <legend>{i18n("options_appearance")}</legend>
                 <PrefCheckbox
                   name="autoHideBlinkCursor"

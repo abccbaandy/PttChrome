@@ -123,8 +123,9 @@ test.describe('快速搜尋（offline）', () => {
 
     // 動態寬度：長關鍵字讓選單變寬……
     expect(longBox.width).toBeGreaterThan(shortBox.width);
-    // ……但有上限（CSS max-width: min(420px, 100vw-24px)）
-    expect(longBox.width).toBeLessThanOrEqual(420);
+    // ……但有上限（CSS max-width: min(560px, 100vw-24px)；上限在 2026-08 從 420
+    // 放寬到 560，因為複製選項多了一行網址預覽，420 會把大半條網址省略掉）
+    expect(longBox.width).toBeLessThanOrEqual(560);
     // 且項目維持單行（舊版固定 220px 時會擠成兩行 → 高度翻倍）
     expect(longItem.height).toBeLessThanOrEqual(shortItem.height + 1);
   });

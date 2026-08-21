@@ -93,6 +93,16 @@ export const en_US = {
     "message": "Cancel"
   },
 
+  "options_contextMenu": {
+    "message": "Context menu"
+  },
+  "options_enableInputHelper": {
+    "message": "Show \"Input helper\" (ANSI colors, symbols, emoticons)"
+  },
+  "options_enableLiveArticleHelper": {
+    "message": "Show \"Live article helper\" (auto-refresh comments)"
+  },
+
   // options nav
   "options_general": {
     "message": "General"

@@ -1,6 +1,6 @@
 /* 右鍵 context menu 改用 Mantine Menu（classNames.dropdown="DropdownMenu" 為 e2e
-   marker）。樣式由 Mantine 提供，這裡只留快捷鍵提示（rightSection）的淡化色，以及
-   下面的動態寬度。 */
+   marker）。樣式由 Mantine 提供，這裡只留快捷鍵提示（rightSection）的淡化色、
+   動態寬度，以及複製選項的預覽行。 */
 .DropdownMenu .mantine-Menu-itemSection[data-position="right"] {
   color: var(--mantine-color-dimmed);
   font-size: 12px;
@@ -9,11 +9,12 @@
 
 /* 動態寬度：內容撐寬、設上限，超長的關鍵字單行省略號（像 Chrome 原生的右鍵搜尋）。
    舊版是 Menu 的 width={220} 固定寬 → 「Google 搜尋 '長關鍵字'」會擠成兩行。
-   上限同時被視窗寬度夾住，避免在窄視窗超出畫面。 */
+   上限同時被視窗寬度夾住，避免在窄視窗超出畫面。
+   560 而非早期的 420：複製選項多了一行網址預覽，420 會把大半條網址省略掉。 */
 .DropdownMenu {
   width: max-content;
   min-width: 180px;
-  max-width: min(420px, calc(100vw - 24px));
+  max-width: min(560px, calc(100vw - 24px));
 }
 
 /* min-width:0 不可省：flex 子元素預設 min-width:auto，不歸零 ellipsis 不會生效。 */
@@ -22,4 +23,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 複製選項的兩行結構（標題 + 預覽）。上面那條 nowrap/ellipsis 是設在 itemLabel
+   容器上的，兩行結構要改讓它排成一欄、由**子元素**各自省略。 */
+.DropdownMenu__WithPreview .mantine-Menu-itemLabel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.DropdownMenu__WithPreview .mantine-Menu-itemLabel > * {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 預覽行：截斷已由 context_menu_items.truncateMiddle 先做過（中段省略、保住結尾），
+   這裡的 ellipsis 只是視窗太窄時的保險。 */
+.DropdownMenu__preview {
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+  line-height: 1.3;
+  margin-top: 2px;
 }

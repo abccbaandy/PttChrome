@@ -20,6 +20,17 @@ async function openContextMenu(page) {
   await page.locator('#BBSWindow').click({ button: 'right', position: { x: 40, y: 20 } });
 }
 
+// 輸入小幫手**預設不顯示**在右鍵選單（pref enableInputHelper，見 pref_storage.js）：
+// 要測它就得先把開關打開。它仍刻意不算 modal（終端機照收鍵盤），下面幾條「非 modal
+// 浮層」的測試就是靠這個性質。
+async function openInputHelper(page) {
+  await ptt.applyPrefs(page, { enableInputHelper: true });
+  await openContextMenu(page);
+  await page.locator('.DropdownMenu').first()
+    .getByText(await label(page, 'cmenu_showInputHelper'), { exact: true }).click();
+  await expect(page.locator('.InputHelperModal__ColorList')).toBeVisible();
+}
+
 test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
   test('右鍵選單出現 → 點 Settings → PrefModal 開啟', async ({ page }) => {
     await installReplay(page);
@@ -308,10 +319,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await page.goto('/');
     await waitConnected(page);
 
-    await openContextMenu(page);
-    const inputHelper = await label(page, 'cmenu_showInputHelper');
-    await page.locator('.DropdownMenu').first()
-      .getByText(inputHelper, { exact: true }).click();
+    await openInputHelper(page);
 
     // InputHelperModal 出現（顏色盤 + 送出 SplitButton 為 marker）。
     // 這些元件（Modal/Tab/Nav/NavDropdown/SplitButton）若遷移後 render 崩潰，
@@ -443,11 +451,8 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await page.goto('/');
     await waitConnected(page);
 
-    await openContextMenu(page);
-    await page.locator('.DropdownMenu').first()
-      .getByText(await label(page, 'cmenu_showInputHelper'), { exact: true }).click();
+    await openInputHelper(page);
     const dialog = page.locator('.InputHelperModal__Dialog');
-    await expect(page.locator('.InputHelperModal__ColorList')).toBeVisible();
 
     // 開「符號」群組下拉 → 選「一般」→ 出現符號格
     await dialog.getByText(await label(page, 'symTitle'), { exact: true }).click();
@@ -491,10 +496,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await page.goto('/');
     await waitConnected(page);
 
-    await openContextMenu(page);
-    await page.locator('.DropdownMenu').first()
-      .getByText(await label(page, 'cmenu_showInputHelper'), { exact: true }).click();
-    await expect(page.locator('.InputHelperModal__ColorList')).toBeVisible();
+    await openInputHelper(page);
 
     // 直接在 SVG 上派發 mousedown（e.target=SVG）→ window mousedown → App.mouse_down
     // → checkClass(SVGAnimatedString)。修正前會 throw（pageerror）。

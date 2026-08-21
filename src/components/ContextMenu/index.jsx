@@ -24,9 +24,12 @@ import {
 import {
   isAidLinkAnchor,
   articleTargetFromAnchor,
-  formatArticleCode,
 } from "../../js/article_link_target";
-import { buildDeepLink } from "../../js/deep_link";
+import {
+  menuTargetFlags,
+  copyTextFor,
+  copyPreviews,
+} from "../../js/context_menu_items";
 
 function noop() {}
 
@@ -61,20 +64,19 @@ const menuHandlerByEventKey = {
   paste: (pttchrome) => pttchrome.doPaste(),
   openUrlNewTab: (pttchrome, { aElement }) =>
     pttchrome.doOpenUrlNewTab(aElement),
-  copyLinkUrl: (pttchrome, { contextOnUrl }) => pttchrome.doCopy(contextOnUrl),
+  // 三個「內容當下算得出來」的複製項一律走 copyTextFor —— 選單裡畫的預覽用的是
+  // 同一個函式，使用者看到什麼就複製到什麼。
+  copyLinkUrl: (pttchrome, state) =>
+    pttchrome.doCopy(copyTextFor("copyLinkUrl", state)),
+  // 「本篇」刻意不走 copyTextFor：讀不到「※ 文章網址」那行時要按 Q 問 PTT，還要
+  // 自己回原處（見 deep_link_controller）。copyTextFor 那條只服務預覽。
   copyArticleLink: (pttchrome) =>
     pttchrome.deepLinkController.copyCurrentPostLink(),
   // 游標下那篇（不是「本篇」）：文章代碼與分享連結。target 在開選單當下就算好了。
-  copyArticleAid: (pttchrome, { contextArticle }) =>
-    pttchrome.doCopy(formatArticleCode(contextArticle)),
-  copyArticleDeepLink: (pttchrome, { contextArticle }) =>
-    pttchrome.doCopy(
-      buildDeepLink(
-        window.location.href,
-        contextArticle.board,
-        contextArticle.aid,
-      ),
-    ),
+  copyArticleAid: (pttchrome, state) =>
+    pttchrome.doCopy(copyTextFor("copyArticleAid", state)),
+  copyArticleDeepLink: (pttchrome, state) =>
+    pttchrome.doCopy(copyTextFor("copyArticleDeepLink", state)),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
   // 圖片上傳（urusai）：開檔案選擇器／開上傳紀錄面板。實作在
   // js/image_upload_controller.js，App 在建構時掛成 pttchrome.imageUpload。
@@ -91,6 +93,11 @@ const initialState = {
   aElement: undefined,
   // 游標下的連結指向哪一篇文章（{ board, aid }）；null → 兩個文章選項不出現。
   contextArticle: null,
+  // 「本篇」是哪一篇（aidNavigation.findLocalPostAid()，零副作用）。只用來算
+  // 「複製本篇文章連結」的預覽；null → 那一項不畫預覽，但照樣可點。
+  currentArticle: null,
+  // eventKey → 已截斷的預覽字串（context_menu_items.copyPreviews 算好的）。
+  previews: {},
   selectedText: "",
   urlEnabled: false,
   normalEnabled: false,
@@ -107,6 +114,9 @@ const initialState = {
   quickSearchQuery: "",
   // 圖片上傳總開關（enableImageUpload），開選單當下現讀。
   imageUploadEnabled: false,
+  // 兩個小幫手的顯示開關（預設關），同樣開選單當下現讀。
+  inputHelperEnabled: false,
+  liveArticleHelperEnabled: false,
   // --- Modal state ---
   showsInputHelper: false,
   showsTitleBlacklist: false,
@@ -189,9 +199,30 @@ export const ContextMenu = ({ pttchrome }) => {
 
       // replace the &nbsp;
       const selectedText = window.getSelection().toString().replace(/ /g, " ");
-      const urlEnabled = !!contextOnUrl;
-      const normalEnabled = !urlEnabled && window.getSelection().isCollapsed;
-      const selEnabled = !normalEnabled;
+      // 三個旗標的定義集中在 context_menu_items.menuTargetFlags（selEnabled 曾被
+      // 寫成 normalEnabled 的補集 ⇒ 在連結上沒選取也畫出點了沒作用的「複製」）。
+      const { urlEnabled, normalEnabled, selEnabled } = menuTargetFlags({
+        contextOnUrl,
+        selectionCollapsed: window.getSelection().isCollapsed,
+      });
+      // 偏好一次讀完給下面幾個判定共用（快速搜尋／黑名單／選單開關）。
+      const prefs = readValuesWithDefault();
+
+      // 「複製本篇文章連結」的預覽：只走**免費**路徑（讀畫面上的「※ 文章網址:」
+      // 那行換算，零副作用、增量掃描有快取）。絕不為了畫一行預覽去按 Q —— 那會被
+      // FULLUPDATE 抛回文章列表，理由同 deep_link_controller._syncAddressBar。
+      const nav = pttchrome.aidNavigation;
+      const currentArticle =
+        (normalEnabled &&
+          nav &&
+          nav.findLocalPostAid &&
+          nav.findLocalPostAid()) ||
+        null;
+      const previews = copyPreviews({
+        contextOnUrl,
+        contextArticle,
+        currentArticle,
+      });
 
       // 快速搜尋：每次開選單「現讀」偏好（同下面黑名單判定的手法）→ 設定改完立刻
       // 生效，不必在 pttchrome.jsx#onPrefChange 掛 case。適用條件（純數字）不符的
@@ -200,7 +231,7 @@ export const ContextMenu = ({ pttchrome }) => {
         ? normalizeQuickSearchQuery(selectedText)
         : "";
       const quickSearchItems = quickSearchQuery
-        ? visibleQuickSearchItems(readValuesWithDefault(), quickSearchQuery)
+        ? visibleQuickSearchItems(prefs, quickSearchQuery)
         : [];
 
       // Quick-add blacklist: which author/title region (if any) sits under the
@@ -237,9 +268,9 @@ export const ContextMenu = ({ pttchrome }) => {
           }
         }
         if (blacklistAuthorTarget) {
-          blacklistAuthorExists = parseBlacklist(
-            readValuesWithDefault().blacklist,
-          ).has(blacklistAuthorTarget.toLowerCase());
+          blacklistAuthorExists = parseBlacklist(prefs.blacklist).has(
+            blacklistAuthorTarget.toLowerCase(),
+          );
         }
       }
 
@@ -250,6 +281,8 @@ export const ContextMenu = ({ pttchrome }) => {
         contextOnUrl,
         aElement,
         contextArticle,
+        currentArticle,
+        previews,
         selectedText,
         urlEnabled,
         normalEnabled,
@@ -262,8 +295,10 @@ export const ContextMenu = ({ pttchrome }) => {
         // 「複製本篇連結」只在文章畫面有意義（要按 Q 問文章資訊框）。pageState 3
         // = READING，與 term_view 判「可切回好讀模式」用的是同一個值。
         articleLinkEnabled: pttchrome.buf.pageState === 3,
-        // 圖片上傳的兩個選項跟著總開關走，同樣是開選單當下現讀（手法同上）。
-        imageUploadEnabled: !!readValuesWithDefault().enableImageUpload,
+        // 圖片上傳與兩個小幫手的選項各自跟著自己的開關走（同樣是現讀）。
+        imageUploadEnabled: !!prefs.enableImageUpload,
+        inputHelperEnabled: !!prefs.enableInputHelper,
+        liveArticleHelperEnabled: !!prefs.enableLiveArticleHelper,
       });
     },
     [pttchrome, update],
@@ -282,6 +317,8 @@ export const ContextMenu = ({ pttchrome }) => {
         open: false,
         contextOnUrl: "",
         aElement: undefined,
+        currentArticle: null,
+        previews: {},
         selectedText: "",
         urlEnabled: false,
         normalEnabled: false,
@@ -557,9 +594,12 @@ export const ContextMenu = ({ pttchrome }) => {
     blacklistTitleTarget,
     articleLinkEnabled,
     contextArticle,
+    previews,
     quickSearchItems,
     quickSearchQuery,
     imageUploadEnabled,
+    inputHelperEnabled,
+    liveArticleHelperEnabled,
     showsInputHelper,
     showsTitleBlacklist,
     titleBlacklistDraft,
@@ -585,7 +625,10 @@ export const ContextMenu = ({ pttchrome }) => {
         titleBlacklistText={blacklistTitleTarget}
         articleLinkEnabled={articleLinkEnabled}
         imageUploadEnabled={imageUploadEnabled}
+        inputHelperEnabled={inputHelperEnabled}
+        liveArticleHelperEnabled={liveArticleHelperEnabled}
         contextArticle={contextArticle}
+        previews={previews}
         onTitleBlacklistClick={onTitleBlacklistClick}
         onMenuSelect={onMenuSelect}
         onInputHelperClick={onInputHelperClick}

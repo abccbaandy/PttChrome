@@ -93,6 +93,16 @@
     "message": "取消"
   },
 
+  "options_contextMenu": {
+    "message": "右鍵選單"
+  },
+  "options_enableInputHelper": {
+    "message": "顯示「輸入小幫手」（打 ANSI 色碼／符號／表情）"
+  },
+  "options_enableLiveArticleHelper": {
+    "message": "顯示「Live 文小幫手」（定時自動更新推文）"
+  },
+
   // options nav
   "options_general": {
     "message": "一般"

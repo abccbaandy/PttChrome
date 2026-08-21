@@ -275,6 +275,13 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用�
 `highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、
 `enableBareDomainLink`(true)、`blacklist`/`titleBlacklist`("" 換行)。
 
+**「一般 → 右鍵選單」分頁**：`enableInputHelper`(**false**)、`enableLiveArticleHelper`(**false**)
+—— 右鍵選單那兩個小幫手選項的顯示開關。走 `enableImageUpload` 那條最輕的鏈路（`ContextMenu/
+index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**不進 `onPrefChange`**）。
+關掉＝選單不畫該項；Live 文小幫手的 End 鍵 toggle 也跟著失效（那條要先從選單開浮層才會掛上
+`onToggleLiveHelperModalState`）。守護 `tests/unit/dropdown_menu_preview.test.jsx`、
+`tests/unit/pref_modal_context_menu.test.jsx`、`tests/e2e/offline/article_link_menu.offline.spec.js`。
+
 **「一般 → 介面」分頁**：`autoHideBlinkCursor`(true) — PTT 自己畫了游標的畫面不再疊閃爍游標。
 判定純函式 `comment_parse.js#hasServerCursorMark`（cur_x/cur_y 那格＝游標記號；兩代 `>`/`●` 都認），
 依據是 pttbbs `mbbsd/stuff.c#cursor_show` 印完記號會把終端機游標**移回同一格**（`psb.c` 用
