@@ -22,6 +22,14 @@ async function boot(page, hash) {
 const pending = (page) =>
   page.evaluate(() => !!(window.__app && window.__app.deepLinkController.hasPending()));
 
+// `boot()` 只做 goto，**不等 `window.__app` 掛上**（它由 startApp 開頭指派）。
+// 而 `expect.poll` 對「callback 拋例外」**不重試**（那是 `expect.toPass` 的行為）
+// ⇒ 直接 deref `window.__app.connectState` 時，只要第一次 poll 早於 startApp
+// 就整條秒掛（CI 較慢時實際發生過：`Cannot read properties of undefined`，706ms
+// fast-fail）。回 `undefined` 讓斷言失敗、poll 繼續轉，才是這裡要的語意。
+const connectState = (page) =>
+  page.evaluate(() => window.__app && window.__app.connectState);
+
 test.describe('deep link', () => {
   test('帶 #<Board>/<AID> 開站：未登入 → 收下等登入，網址清乾淨', async ({ page }) => {
     const errors = [];
@@ -68,7 +76,7 @@ test.describe('deep link', () => {
       await existing.goto('/');
       // 有資格接手的條件就是連線中。
       await expect
-        .poll(() => existing.evaluate(() => window.__app.connectState))
+        .poll(() => connectState(existing))
         .toBe(1);
 
       const fresh = await context.newPage();
@@ -116,7 +124,7 @@ test.describe('deep link', () => {
       await installOfflineNetwork(existing);
       await existing.goto('/');
       await expect
-        .poll(() => existing.evaluate(() => window.__app.connectState))
+        .poll(() => connectState(existing))
         .toBe(1);
       // 基準是**當下的標題**（index.html 的 <title>），不是 connectedUrl.site —— app
       // 從來沒把 title 設成連線位址過，拿 site 當基準的話這條斷言會恆真（假綠燈）。
@@ -168,7 +176,7 @@ test.describe('deep link', () => {
       await installOfflineNetwork(existing);
       await existing.goto('/');
       await expect
-        .poll(() => existing.evaluate(() => window.__app.connectState))
+        .poll(() => connectState(existing))
         .toBe(1);
 
       const fresh = await context.newPage();
@@ -198,7 +206,7 @@ test.describe('deep link', () => {
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await boot(page);
-    await expect.poll(() => page.evaluate(() => window.__app.connectState)).toBe(1);
+    await expect.poll(() => connectState(page)).toBe(1);
     const baseTitle = await page.title();
     expect(baseTitle).not.toBe('');
 
