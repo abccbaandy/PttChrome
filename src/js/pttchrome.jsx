@@ -1214,10 +1214,16 @@ App.prototype.mouse_down = function(e) {
   //0=left button, 1=middle button, 2=right button
   if (e.button === 0) {
     if (this.buf.useMouseBrowsing) {
+      // 350ms 內的第二下＝雙擊（或三擊）。要壓掉的只有「再送一次 PTT 指令」，
+      // **不可以 preventDefault** —— mousedown 的預設行為就是瀏覽器的選取，
+      // 取消它等於把原生雙擊選詞／三擊選行整組掐死（滑鼠瀏覽預設開 ⇒ 預設就壞）。
+      // 同一類坑見 docs/enhanced-addon.md 踩坑 A（user-select:none）。
+      // 改用既有的一次性旗標：mouse_click 開頭無條件讀取＋清空，命中時
+      // doMouseCommand=false，「第二下不重複翻頁」的原意完整保住。
+      // stopPropagation 也一併移除：mousedown 的兩個 listener 都掛在 window、
+      // 同 target 本來就不受它影響，留著只是誤導。
       if (this.dblclickTimer) { //skip
-        e.preventDefault();
-        e.stopPropagation();
-        e.cancelBubble = true;
+        this.CmdHandler.setAttribute('SkipMouseClick','1');
       }
       this.setDblclickTimer();
     }

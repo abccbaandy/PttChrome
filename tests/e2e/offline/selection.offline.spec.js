@@ -141,6 +141,43 @@ test.describe('選取文字（offline）', () => {
       .toEqual(expect.arrayContaining([expect.stringContaining(WORD)]));
   });
 
+  // 雙擊／三擊選字：mousedown 的預設行為就是瀏覽器的選取機制，App.mouse_down 曾在
+  // 「350ms 內的第二下」呼叫 preventDefault()（滑鼠瀏覽開啟時），把整組原生雙擊
+  // 選詞／三擊選行掐死。useMouseBrowsing 預設 true ⇒ 預設就是壞的。
+  // 純邏輯守護在 tests/unit/mouse_dblclick_skip.test.js，這裡鎖真瀏覽器的症狀。
+  test('雙擊選字：滑鼠瀏覽開啟時仍選得到整個詞', async ({ page }) => {
+    await boot(page, { useMouseBrowsing: true });
+    await feedLine(page, 'alpha ' + WORD + ' omega');
+
+    const rect = await wordRect(page, WORD);
+    await page.mouse.dblclick(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await page.waitForTimeout(150);
+
+    const info = await probe(page);
+    expect(info, `雙擊後的選取狀態: ${JSON.stringify(info)}`).toMatchObject({
+      isCollapsed: false,
+    });
+    expect(info.text).toContain(WORD);
+  });
+
+  test('三擊選行：滑鼠瀏覽開啟時選得到整列', async ({ page }) => {
+    await boot(page, { useMouseBrowsing: true });
+    await feedLine(page, 'alpha ' + WORD + ' omega');
+
+    const rect = await wordRect(page, WORD);
+    const x = rect.x + rect.width / 2;
+    const y = rect.y + rect.height / 2;
+    await page.mouse.click(x, y, { clickCount: 3 });
+    await page.waitForTimeout(150);
+
+    const info = await probe(page);
+    expect(info, `三擊後的選取狀態: ${JSON.stringify(info)}`).toMatchObject({
+      isCollapsed: false,
+    });
+    expect(info.text).toContain('alpha');
+    expect(info.text).toContain('omega');
+  });
+
   test('拖曳選取後右鍵：快速搜尋帶入選取內容', async ({ page }) => {
     await boot(page);
     await feedLine(page, WORD);
