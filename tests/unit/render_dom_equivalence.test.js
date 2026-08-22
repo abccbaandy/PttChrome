@@ -60,10 +60,17 @@ describe("核心畫面渲染鏈的 DOM 契約", () => {
       }
 
       const html = normalizeHtml(controller.container);
-      const golden = fs
-        .readFileSync(path.join(GOLDEN_DIR, sc.name + ".html"), "utf8")
-        .replace(/\n$/, "");
-      expect(html).toBe(golden);
+      const goldenPath = path.join(GOLDEN_DIR, sc.name + ".html");
+      if (UPDATE) {
+        // 唯一的寫檔點。沒帶 UPDATE_GOLDEN 時這一段完全不執行 ⇒ 一般 CI／本機
+        // 跑測試絕不可能覆寫 golden。
+        fs.writeFileSync(goldenPath, html + "\n");
+      } else {
+        const golden = fs
+          .readFileSync(goldenPath, "utf8")
+          .replace(/\n$/, "");
+        expect(html).toBe(golden);
+      }
 
       controller.destroy();
       root.remove();
