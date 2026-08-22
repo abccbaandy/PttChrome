@@ -4,7 +4,7 @@ import { TermView } from './term_view';
 import { TermBuf } from './term_buf';
 import { TelnetConnection } from './telnet';
 import { Websocket } from './websocket';
-import { EasyReading } from './easy_reading';
+import { EasyReading, switchModePlan } from './easy_reading';
 import { ListSession } from './list_session';
 import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
@@ -450,22 +450,33 @@ App.prototype.onDisableLiveHelperModalState = noop;
 
 App.prototype.switchToEasyReadingMode = function(doSwitch) {
   this.debugRecorder?.log('app.switchToEasyReadingMode', { doSwitch: !!doSwitch });
-  // NOTE: this resets per-post easy-reading state via leaveCurrentPost(). Callers
-  // (onPrefSaveImpl, and transitively easyReading.exitEasyReading()) rely on it —
+  // 這裡做什麼是純決策（switchModePlan，見 easy_reading.js 的長註解 + unit
+  // tests/unit/switch_mode_plan.test.js）。要點：**正在鏡像原生（functionMode，
+  // 使用者停在 X 推文／r 回應／編輯器這類 prompt 上）時，只重繪，什麼都不准重置** —
+  // 清掉 _functionMode 會讓 ^L 的整頁重繪落進好讀文章分支，而 prompt 幀的游標不在
+  // (rows-1, cols-1) ⇒ accumulatePageLines 判 incomplete ⇒ pageLines 空 ⇒ 整頁全黑。
+  //
+  // NOTE: leavePost 這條路會經 leaveCurrentPost() 重設 per-post 狀態。呼叫端
+  // （onPrefSaveImpl，以及 easyReading.exitEasyReading() 的傳遞呼叫）依賴它 —
   // an easy hop to miss when tracing the exit path.
-  this.easyReading.leaveCurrentPost();
-  if (doSwitch) {
+  var plan = switchModePlan({
+    doSwitch: !!doSwitch,
+    functionMode: !!this.buf.easyReadingFunctionMode,
+    pageState: this.buf.pageState
+  });
+  if (plan.leavePost)
+    this.easyReading.leaveCurrentPost();
+  if (doSwitch)
     this.onDisableLiveHelperModalState();
-    // clear the deep cloned copy of lines
-    this.buf.pageLines = [];
-    if (this.buf.pageState == 3) this.view._send('\x1b[D\x1b[C'); //this.view._send('qr');
-  } else {
+  if (plan.restoreNativeView) {
     this.view.mainContainer.style.paddingBottom = '';
     this.view.lastRowIndex = 22;
     this.view.lastRowDiv.style.display = '';
-    // clear the deep cloned copy of lines
-    this.buf.pageLines = [];
   }
+  // clear the deep cloned copy of lines
+  if (plan.clearPageLines)
+    this.buf.pageLines = [];
+  if (plan.cursorNudge) this.view._send('\x1b[D\x1b[C'); //this.view._send('qr');
   // request the full screen.
   // 一律走 view._send（內含 `if (this.conn)`），不可直接 this.view.conn.send：
   // TermView.setConn 只在 App.onConnect 被呼叫，**連線從未成功時 view.conn 是

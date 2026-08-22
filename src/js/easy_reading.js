@@ -281,6 +281,36 @@ export function functionModeExitDecision({ pageState, isStatusRow, curY, lastRow
   return 'stay';
 }
 
+// 「關設定頁」要對好讀做哪些事——App.switchToEasyReadingMode 的純決策（unit 守護：
+// tests/unit/switch_mode_plan.test.js）。
+//
+// PrefModal 的 X／點空白／Esc 全部匯流到 onPrefSaveImpl → switchToEasyReadingMode(
+// view.useEasyReadingMode)。它原本無條件重置（leaveCurrentPost + 清 pageLines），但
+// 使用者可能正停在 PTT 的 prompt 上（X 推文、r 回應、y 收暫存檔…），此時好讀在
+// functionMode 鏡像原生畫面。重置會清掉 _functionMode ⇒ ^L 回來的整頁重繪落進好讀
+// 文章分支 ⇒ 但游標停在輸入欄（不是 (rows-1, cols-1)）⇒ accumulatePageLines 的 P6
+// gate 判 complete=false ⇒ decideAccumulateBranch 回 'skip' ⇒ pageLines 維持 []
+// ⇒ 渲染 0 列 ⇒ **整頁全黑**，且之後每一幀游標都在 prompt 上，永遠回不來（實測 100%
+// 複現，只能離開文章再進）。所以鏡像原生時只重繪，什麼狀態都不准動。
+//
+//   leavePost        — easyReading.leaveCurrentPost()（含清 _functionMode）
+//   restoreNativeView— 還原 overlay 列／底部 padding（好讀關掉時）
+//   clearPageLines   — 丟掉累積長頁
+//   cursorNudge      — 送 \x1b[D\x1b[C（原本用來把文章畫面推一下）；在 prompt 上那是
+//                      vgets 的左右移游標（實測回 BEL），一個 byte 都不該多送。
+// ^L 一律送：pttbbs 的 system_key_hook 把 Ctrl('L') 攔成 redrawwin()+refresh() 並回
+// KEY_INCOMPLETE（mbbsd/io.c），prompt 底下也只是重繪，不會被當成輸入內容。
+export function switchModePlan({ doSwitch, functionMode, pageState }) {
+  if (doSwitch && functionMode)
+    return { leavePost: false, restoreNativeView: false, clearPageLines: false, cursorNudge: false };
+  return {
+    leavePost: true,
+    restoreNativeView: !doSwitch,
+    clearPageLines: true,
+    cursorNudge: !!doSwitch && pageState === 3
+  };
+}
+
 export function EasyReading(core, view, termBuf) {
   this._core = core;
   this._view = view;
@@ -973,6 +1003,22 @@ EasyReading.prototype._enterFunctionMode = function() {
   this._termBuf.lineChangeds.fill(true);
   this._termBuf.changed = true;
   this._termBuf.notify();
+};
+
+// 使用者「送了一段文字給 PTT」——不是按鍵，所以繞過了 _onKeyDown 那條進 functionMode
+// 的路。兩個實例，同一個缺口：
+//   a) 中文 IME 開著時按 X 推文：keydown 的 e.key 是 'Process'（keyCode 229），
+//      `e.key.length === 1` 不成立 ⇒ 不進鏡像；字元改由 input 事件（term_view.onInput
+//      的 IME 特判刻意放行 'X'）→ onTextInput → _convSend 送出。PTT 開了推文 prompt
+//      （只 patch 最後一列），好讀長頁卻原封不動 ⇒ **看不到輸入框，字卻真的送出去了**。
+//   b) 貼上：App.onPasteDone 早就自己補過這一刀（同樣理由）。
+// 由 term_view.onTextInput 這條共用漏斗統一呼叫，keydown／IME／貼上三條入口行為一致。
+// _enterFunctionMode 本身有 _enabled 與重入 gate，這裡只多一道「文章真的開著」。
+// 守護：tests/unit/easy_reading_text_input.test.js。
+EasyReading.prototype.noteTextInput = function() {
+  if (!this._enabled || !this.startedEasyReading)
+    return;
+  this._enterFunctionMode();
 };
 
 // Decide (pure functionModeExitDecision) and act when functionMode settles. 'resume'

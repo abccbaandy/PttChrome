@@ -606,8 +606,21 @@ TermView.prototype = {
         // appendRows(showsLinkPreview=true) behaviour. Hover preview off (inline
         // already shows them; avoids a duplicate floating popup).
         this.accumulatePageLines();
-        this._gridRender = false;
-        this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, STABLE_ROWS);
+        if (!this.buf.pageLines.length) {
+          // 防黑守門：累積頁是空的（accumulatePageLines 判這幀 incomplete → 'skip'，
+          // 而先前的累積又被誰清掉了）。把空陣列丟給 <Screen> 就是渲染 0 列 ＝ **整頁
+          // 全黑**，而且 prompt 幀的游標永遠不在 (rows-1, cols-1)，complete 再也不會
+          // 成立 ⇒ 黑到離開文章為止（實例：在 X 推文的輸入框上關設定頁，見
+          // switchModePlan 的註解與 tests/e2e/offline/pref_close_in_prompt.offline.spec.js）。
+          // 沒有東西可顯示時一律退回原生 24 列——與 functionMode 分支同構。
+          this.hideEasyReadingOverlaysKeepPage();
+          if (this.mainDisplay) this.mainDisplay.scrollTop = 0;
+          this._gridRender = true;
+          this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false);
+        } else {
+          this._gridRender = false;
+          this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, STABLE_ROWS);
+        }
       } else if (
         this.useEasyReadingMode &&
         this.buf.settledPageState === 3 &&
@@ -790,6 +803,12 @@ TermView.prototype = {
   },
 
   onTextInput: function(text, isPasting) {
+    // 送字給 PTT ≠ 按鍵。好讀模式是在 keydown 決定要不要切成原生鏡像（functionMode），
+    // 而 IME（keydown 的 e.key 是 'Process'）與貼上都繞得過那道判斷 → PTT 開了推文／
+    // 搜尋 prompt，畫面卻還停在好讀長頁上，使用者看不到輸入框卻打得進去。
+    // 見 easy_reading.noteTextInput（含 gate，非文章／好讀關著時為 no-op）。
+    if (this.bbscore.easyReading)
+      this.bbscore.easyReading.noteTextInput();
     // Normalization lives in string_util.normalizePasteText so the list easy
     // reading paste route (ListSession.onPaste → CommandQueue) sends byte-for-
     // byte the same thing this native route does.
