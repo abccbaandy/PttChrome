@@ -30,7 +30,11 @@ import ImagePreviewer, {
   resolveWithImageDOM,
 } from "../components/ImagePreviewer";
 import { renderInto, unmountFrom } from "../js/react_root";
-import { PAGE_READING, computeAnnotations } from "../js/screen_annotations";
+import {
+  PAGE_READING,
+  computeAnnotations,
+  annotationsAreRowIndependent,
+} from "../js/screen_annotations";
 import { spanKey, spanNeedsAi } from "../js/caption_ai_logic";
 import {
   captionAiAvailability,
@@ -105,6 +109,12 @@ export class ScreenController {
 
     // ---- 渲染狀態 ----
     this._cache = null; // { key, lines, cache, annotations, nodes, highlight }
+    // 上一幀的渲染條件，dirty-row 逐列 patch 用（見 _buildNodes）。與 _cache
+    // **刻意分離**：_cache 是「標註增量」的載體、只有好讀累積長頁（stableRows）
+    // 才有；_prevFrame 是「節點重用」的載體、每一幀都寫。攪在一起會讓原生／列表
+    // 的節點重用被綁上 stableRows 的前提（列參考不變 ⇒ 內容不變），那個前提在活
+    // buffer 上不成立。
+    this._prevFrame = null; // { lines, key, highlight, sizeMode, rowIndependent }
     this._nodes = []; // 上一幀每一列的節點（null ＝ 這一列不佔版面）
     this._liveSlots = new Set(); // 目前掛著的佔位盒（imagesEnlarged 切換要通知）
     this._overlayNodes = []; // 尾端固定浮層（兩顆按鈕 + hover 預覽宿主）
@@ -238,6 +248,10 @@ export class ScreenController {
       if (state.row >= 0 && state.cls)
         this._toggleRowClass(state.row, state.cls, true);
       if (this._cache) this._cache.highlight = state;
+      // 快路徑已經把 class 搬到正確的列上了 ⇒ 那些節點現在就是「新 highlight 下
+      // 該有的樣子」，下一幀沿用它們是對的。不同步的話下一幀的 frame gate 會因為
+      // highlight 對不上而整批重建（結果正確，但白白浪費）。
+      if (this._prevFrame) this._prevFrame.highlight = state;
       return;
     }
     this._render();
@@ -257,6 +271,7 @@ export class ScreenController {
     this.container.removeEventListener("mousemove", this._onContainerMouseMove);
     this.container.remove();
     this._cache = null;
+    this._prevFrame = null;
   }
 
   // --------------------------------------------------------------- 事件處理
@@ -410,7 +425,20 @@ export class ScreenController {
 
     this._syncAiTasks(annotations, enhance);
 
-    const nodes = this._buildNodes(lines, annotations, reusable, stableRows);
+    // ---- dirty-row 逐列 patch 的整幀輸入（非 stableRows 專用）----
+    // rowIndependent：這組 enhance 之下，每一列的 annotation 是不是只取決於該列
+    //   自己（判準住在 screen_annotations.js，那裡才看得到所有跨列耦合）。
+    // changedRows：term_view 從 buf.lineChangeds 帶下來的「server 這一幀寫了哪些
+    //   列」。只有 lines 直接來自 buf.lines 的分支會給；沒給就是 null（＝這一幀
+    //   不知道誰髒 ⇒ 不走 dirty-row 路徑）。
+    const rowIndependent = annotationsAreRowIndependent(enhance);
+    const changedRows =
+      enhance && enhance.changedRows ? new Set(enhance.changedRows) : null;
+    const nodes = this._buildNodes(lines, annotations, reusable, stableRows, {
+      key: cacheKey,
+      rowIndependent,
+      changedRows,
+    });
     this._cache =
       computed.cache && stableRows
         ? {
@@ -423,6 +451,14 @@ export class ScreenController {
           }
         : null;
     this._nodes = nodes;
+    // 必須排在 _buildNodes 之後：那裡讀的是**上一幀**的 _prevFrame。
+    this._prevFrame = {
+      lines,
+      key: cacheKey,
+      highlight: this.highlight,
+      sizeMode: this._sizeMode(),
+      rowIndependent,
+    };
 
     this._syncOverlays(annotations, enhance);
     this._patchRows(nodes);
@@ -433,7 +469,7 @@ export class ScreenController {
   // isAppendOnly 保證）、最終 annotation 物件參考、以及這一列的高亮狀態。
   // mergeBlock 列例外——它的內容還取決於右欄那些說明行的 annotation，條件不只自己
   // 這一列，直接重建（只有使用者手動開「圖文並排」時才存在，且塊數有限）。
-  _buildNodes(lines, annotations, reusable, stableRows) {
+  _buildNodes(lines, annotations, reusable, stableRows, frame) {
     const prevNodes = reusable ? reusable.nodes : null;
     const prevAnnotations = reusable ? reusable.annotations : null;
     const prevHighlight = reusable ? reusable.highlight : NO_HIGHLIGHT;
@@ -443,6 +479,31 @@ export class ScreenController {
       prevHighlight.cls === this.highlight.cls &&
       prevHighlight.col === this.highlight.col;
     const oldNodes = this._nodes;
+
+    // ---- dirty-row 逐列 patch：整幀守門（原生／列表，非 stableRows）----
+    // 通過的話，下面的逐列迴圈對「這一幀沒被寫過的列」**完全不建節點、不序列化**
+    // ——省掉 buildRow + 兩次 outerHTML。任何一條不成立就退回既有的全量路徑
+    // （每列重建 + outerHTML 比對），行為與導入這層之前逐字相同。
+    // sizeMode 要另外比：annotationsKey 刻意不含它（_setImagesEnlarged 走 slot
+    // 廣播、不重畫），但它會進 buildRow ⇒ 是節點重用的前提之一。
+    const pf = stableRows ? null : this._prevFrame;
+    const frameReuse =
+      !!pf &&
+      frame.rowIndependent &&
+      pf.rowIndependent &&
+      sameKey(pf.key, frame.key) &&
+      pf.sizeMode === this._sizeMode() &&
+      pf.highlight.cls === this.highlight.cls &&
+      pf.highlight.col === this.highlight.col;
+    const prevLines = frameReuse ? pf.lines : null;
+    const frameHighlightRow = pf ? pf.highlight.row : -1;
+    const changedRows = frame.changedRows;
+    // 這批列是快照（存進去之後不再就地改寫）⇒ 列參考相同即內容相同。列表好讀的
+    // 視窗（buffer/frozen）才有，見 term_view.buildListWindowLines。
+    const rowIdentityStable = !!(
+      this.props.enhance && this.props.enhance.rowIdentityStable
+    );
+
     const nodes = new Array(lines.length);
     for (let row = 0; row < lines.length; ++row) {
       const ann = annotations[row];
@@ -455,6 +516,27 @@ export class ScreenController {
         !(ann && ann.mergeBlock)
       ) {
         nodes[row] = prevNodes[row];
+        continue;
+      }
+      // ---- dirty-row 逐列重用 ----
+      // prevLines[row] === lines[row] 是**承重條件**，一次擋掉三件事：
+      //   1. 原生 24 列 ↔ 列表視窗 24 列互換（長度相同、來源不同）
+      //   2. buf.lines ↔ buf.pageLines 互換
+      //   3. term_buf.scroll() 的 unshift/pop/splice 把列物件換到別的 index
+      // 所以呼叫端不需要自我宣告「這一幀是什麼來源」——那種 token 漏傳沒人擋得住。
+      // 原生／列表的 lines 是 term_buf 就地改寫的活 buffer，列參考相同**不**代表
+      // 內容相同，故必須再配一個「誰髒」的來源：changedRows（server 這一幀寫過的
+      // 列）或 rowIdentityStable（這批列是快照）。
+      if (
+        frameReuse &&
+        oldNodes[row] &&
+        prevLines[row] === lines[row] &&
+        (frameHighlightRow === row) === (this.highlight.row === row) &&
+        (rowIdentityStable || (changedRows && !changedRows.has(row)))
+      ) {
+        // 沿用的節點會被下面的 keep 集合收錄 ⇒ 不會被誤 dispose
+        // （守護：tests/unit/render_dispose.test.js）。
+        nodes[row] = oldNodes[row];
         continue;
       }
       const built = this._buildRowNode(row, lines, annotations);

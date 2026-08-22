@@ -243,8 +243,6 @@ export function TermView() {
   // forces one redraw. Reset with the rest of the tracking in hideEasyReadingOverlays.
   this._lastAccumulatedSig = null;
 
-  this.curRow = 0;
-  this.curCol = 0;
 
   this.lineWrap = 78;
 
@@ -480,11 +478,12 @@ TermView.prototype = {
   redraw: function(force) {
 
     //var start = new Date().getTime();
-    var cols = this.buf.cols;
     var rows = this.buf.rows;
     var lineChangeds = this.buf.lineChangeds;
-    var changedLineHtmlStr = '';
-    var changedLineHtmlStrs = [];
+    // 這一幀要重畫哪幾列。2026-08 之前這個陣列算出來就丟掉（只取 length > 0 當
+    // 布林），而且 ch.needUpdate 是 sticky 的 ⇒ 幾乎恆等於全部列。去 sticky 之後
+    // 它是真的 dirty 集合，往下傳給 render 層做逐列 patch（見
+    // render/screen.js#_buildNodes）。force ⇒ 自然收錄全部列。
     var changedRows = [];
 
     var lines = this.buf.lines;
@@ -507,30 +506,12 @@ TermView.prototype = {
       this._selectedPusher = null;
     }
     for (var row = 0; row < rows; ++row) {
-      var chh = this.chh;
-      this.curRow = row;
-      // resets color
-      var line = lines[row];
-      var lineChanged = lineChangeds[row];
-      if (lineChanged === false && !force)
+      if (lineChangeds[row] === false && !force)
         continue;
-      var lineUpdated = false;
-      var chw = this.chw;
-
-      for (this.curCol = 0; this.curCol < cols; ++this.curCol) {
-        // always check all because it's hard to know about openSpan when jump update
-        // TODO: maybe set ch.needUpdate false?
-        lineUpdated = true;
-      }
-
-      if (lineUpdated) {
-        lineUpdated = false;
-        changedLineHtmlStrs.push(line);
-        changedRows.push(row);
-        lineChangeds[row] = false;
-      }
+      changedRows.push(row);
+      lineChangeds[row] = false;
     }
-    if (changedLineHtmlStrs.length > 0) {
+    if (changedRows.length > 0) {
       // Single render path: BOTH modes draw through <Screen> (React owns
       // #mainContainer). The only difference is which `lines` we hand it — a single
       // fixed screen (native, or a list/menu while easy reading is on) or the
@@ -548,7 +529,11 @@ TermView.prototype = {
         this.hideEasyReadingOverlaysKeepPage();
         this.mainDisplay.scrollTop = 0;
         this._gridRender = true;
-        this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false);
+        // changedRows：lines 直接來自 buf.lines ⇒ 列號一一對應，可以照實回報。
+        // 這一支實際上不會生效（pageState 仍是 3，render 層的守門
+        // screen_annotations.annotationsAreRowIndependent 一律拒絕 READING），
+        // 刻意照傳是為了「呼叫端只回報事實，能不能用由守門一處決定」。
+        this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { changedRows: changedRows });
       } else if (
         (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') &&
         this.buf.pageState !== 3
@@ -592,11 +577,19 @@ TermView.prototype = {
           // mirror paths below do NOT pass it → they use the native rules (deleted shown,
           // blacklist → 通知列), so a temporary switch back to native inside easy reading
           // stays consistent with pure native mode.
-          this._renderScreenLines(windowLines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2, listEasyReading: true });
+          // rowIdentityStable：視窗的每一列都是 cloneRow 快照（存進 _listNumMap /
+          // _listPinnedMap / header・footer cache 之後就不再就地改寫，見
+          // buildListWindowLines 的註解）⇒ 列參考相同即內容相同，render 層可以
+          // 直接沿用上一幀的節點。frozen 幀原封沿用整份 _listWindowLines，24 列
+          // 全部命中。
+          this._renderScreenLines(windowLines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2, listEasyReading: true, rowIdentityStable: true });
         } else {
           // No window yet (header cache / buffer still empty — engage races):
           // mirror the native screen; the next clean-list settle re-renders.
-          this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2, listEasyReading: true });
+          // **不可以**帶 rowIdentityStable：這裡畫的是 buf.lines（term_buf 就地
+          // 改寫的活 buffer），列參考相同不代表內容相同。上面那一行長得很像，別
+          // 順手複製過來。它走的是 changedRows 那條路（下方 enhanceOverrides）。
+          this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2, listEasyReading: true, changedRows: changedRows });
         }
       } else if (this.useEasyReadingMode && this.buf.pageState == 3) {
         // Easy-reading article: accumulate the long page into buf.pageLines (pure
@@ -616,7 +609,8 @@ TermView.prototype = {
           this.hideEasyReadingOverlaysKeepPage();
           if (this.mainDisplay) this.mainDisplay.scrollTop = 0;
           this._gridRender = true;
-          this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false);
+          // 同 functionMode 分支：pageState 3 ⇒ 守門會拒絕，照實回報而已。
+          this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { changedRows: changedRows });
         } else {
           this._gridRender = false;
           this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, STABLE_ROWS);
@@ -651,15 +645,26 @@ TermView.prototype = {
           /* a fresh copy for componentWillReceiveProps */ lines.slice(),
           /* dropHidden */ false,
           /* inlinePreview */ false,
-          /* hoverPreview */ this.useEasyReadingMode ? false : this.enablePicPreview
+          /* hoverPreview */ this.useEasyReadingMode ? false : this.enablePicPreview,
+          // 逐列 patch 真正生效的地方：原生列表／選單按住 ↑↓ 時 pttbbs 只重畫
+          // 游標的前後兩列，其餘 ~22 列直接沿用上一幀的節點。
+          { changedRows: changedRows }
         );
       }
-      // 游標底色：**所有** render 分支共用一個套用點（原本只有原生分支呼叫，所以
-      // 列表好讀與 functionMode 的游標永遠沒有底色）。必須在 _renderScreenLines
-      // 之後——Screen 的 ref 要先 commit（react_root 的 flushSync 保證同步）。
-      this.applyCursorHighlight();
-      this.buf.prevPageState = this.buf.pageState;
     }
+    // 游標底色：**所有** render 分支共用一個套用點（原本只有原生分支呼叫，所以
+    // 列表好讀與 functionMode 的游標永遠沒有底色）。必須在 _renderScreenLines
+    // 之後——ScreenController 的節點要先進 DOM。
+    //
+    // 這兩行**刻意放在 if 之外**：needUpdate 去 sticky 之後「changed 為真、卻沒有
+    // 任何一列變髒」的幀真的會出現（insertLine 的 cur_y >= scrollEnd 分支、
+    // clear(param) 的 param 不在 {0,1,2} 時），而 setPageState 讀的是 cur_x/cur_y
+    // ⇒「內容零 dirty、pageState 卻變了」可達。那種幀漏寫 prevPageState 會讓下一幀
+    // 的 decideAccumulateBranch 讀到過期值 ⇒ 好讀從文章中段重建 pageLines（上面
+    // 的內容整段消失，見 docs/easy-reading.md）。
+    // componentScreen 守門：首幀就零 dirty 時它還沒被建出來。
+    if (this.componentScreen) this.applyCursorHighlight();
+    this.buf.prevPageState = this.buf.pageState;
     //var time = new Date().getTime() - start;
     //console.log(time);
 
@@ -1956,6 +1961,15 @@ TermView.prototype = {
   // Big5 conversion is involved). Returns null until the header/footer
   // caches and the buffer exist (caller falls back to the native mirror).
   // Also snapshots the result for the frozen render.
+  //
+  // **這裡回傳的列物件是 render 層節點重用的身分依據**（enhance.rowIdentityStable
+  // → render/screen.js#_buildNodes 的 prevLines[row] === lines[row]）：map／cache
+  // 裡的列一旦存進去就**不得就地改寫**。目前所有加工都寫在 cloneRow 出來的新物件
+  // 上（relabelListCursorRow / normalizeLastReadListRow / blankListCursorMark），
+  // mergeListPage 則是整列覆蓋（map.set）。破壞這條的症狀是「列表視窗畫出上一幀的
+  // 內容」（推文數／已讀標記停在舊值）。
+  // 另外重用是 **index-keyed**：視窗捲動讓同一個列物件換到別的渲染列號時，
+  // prevLines[row] 對不上 ⇒ 自動重畫，data-row 不會錯位。
   buildListWindowLines: function() {
     var ls = this.bbscore && this.bbscore.listSession;
     if (!ls || !this._listHeaderRows || !this._listFooterRow) return null;

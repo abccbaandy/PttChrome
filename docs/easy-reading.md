@@ -81,7 +81,15 @@
 - **累積頁的每頁 render 成本必須是 O(新增列)，不是 O(文章)（2026-08，CONFIRMED unit 計次＋offline e2e 曲線）**：`term_buf.notify` → `view.update()` → `redraw()` → `_renderScreenLines(buf.pageLines)` → `renderInto` 的 **`flushSync`** ⇒ 每收到一頁就**同步**重算＋重建整份累積頁。舊版每幀對全部 n 列重跑 `rowToText`/`annotateComment`/`detectRowExtras`（五組偵測）＋對每個推文合併 run 重跑 `buildMergedCommentChars`＋重建 n 個 `<Row>`（每列 80 個 TermChar 過 `LinkSegmentBuilder`）⇒ 每頁 O(n)、整篇 O(n²)。實錄 `ptt-debug-20260809`（8512 行）翻頁週期 55ms→1196ms。**這不只是體感**：週期一旦越過 `PAGE_DOWN_GRACE_MS`(600)，watchdog 就誤判掉包 → 補送 PageDown → P4 吞頁 → 缺頁自癒 → 「讀到一半跳回第一頁」「卡住不讀」。修法兩層，都在 renderer（現為 `src/render/screen.js`）＋純函式 `src/js/screen_annotate_cache.js`：
   1. **增量標註**：累積是純 append（`pageLines.concat`，舊列的 TermChar[] 參考永不變），故前綴的 `texts`/`base` 標註/`FloorCounter` 實例/AI 候選清單全部沿用，逐列偵測只跑新增的列。推文合併 run 以 `mergeRunKey`＋該 run 每列的 base 參考當快取鍵；圖文合併塊以塊座標＋base 參考當鍵。
   2. **逐列節點快取**：沿用**同一個 DOM 節點**、完全不重建那一列。重用條件＝列 chars 參考、最終 annotation 物件參考、該列高亮狀態三者皆未變。所以第 1 層必須讓沒被裝飾到的列**沿用同一個 annotation 物件**（base/result 分兩層的理由）。去 React 化之前這層是「交回同一個 React element 物件」讓 React 走 `bailoutOnAlreadyFinishedWork`，判準一字相同。
-     - 原生 24 列／列表視窗沒有 `stableRows`（活 buffer），每幀都要重建節點；但重建後會先比對 `outerHTML`，一字未變就沿用舊節點 ⇒ 使用者的選取範圍不會每 30ms 被抽換一次。長頁走上面的參考快取，不付這個序列化成本。
+     - 原生 24 列／列表視窗沒有 `stableRows`（活 buffer），退路是「重建後比對 `outerHTML`，一字未變就沿用舊節點」⇒ 使用者的選取範圍不會每 30ms 被抽換一次。長頁走上面的參考快取，不付這個序列化成本。
+  3. **dirty-row 逐列 patch（2026-08，第 3 層）**：上面第 2 層的退路仍然付了「建節點 + 兩次 `outerHTML` 序列化」×24。這一層讓 renderer 對「這一幀沒被寫過的列」**完全不建節點**。兩個 dirty 來源，都由 `term_view.redraw` 放進 `enhance`：
+     - `changedRows`：活 buffer（`buf.lines`）這一幀 server 寫了哪幾列，來自 `buf.lineChangeds`。**`TermChar.needUpdate` 2026-08 才去 sticky**（`updateCharAttr` 消費完就清），在那之前任何寫過一次的列永遠 dirty，`lineChangeds` 等於全部列、`redraw` 裡那行逐列 `continue` 幾乎永不生效。
+     - `rowIdentityStable`：列表好讀視窗的列是 `cloneRow` 快照（存進 `_listNumMap` 之後不再就地改寫）⇒ 列參考相同即內容相同。frozen 幀 24 列全部命中。
+     - **守門住在 `src/js/screen_annotations.js#annotationsAreRowIndependent`，不在 `term_view`**：`term_view` 只回報事實，「這組 enhance 能不能只重畫 dirty 列」由標註端決定（跨列耦合全長在 `computeAnnotations` 裡）。`pageState 3` 一律拒絕——functionMode 原生鏡像與防黑守門兩條分支會帶著 `easyReading:true` 把活 buffer 交進來，FloorCounter／推文合併／圖文合併全開，只重畫 dirty 列會讓樓號永久位移。
+     - 逐列的承重條件是 `prevLines[row] === lines[row]`，一次擋掉「原生 24 列 ↔ 列表視窗 24 列互換」「`buf.lines` ↔ `buf.pageLines` 互換」「`term_buf.scroll()` 把列物件搬到別的 index」三件事，所以呼叫端不需要自我宣告來源 token。
+     - 收益集中在**列表好讀本地 nav／frozen 幀**（來自 `rowIdentityStable`；那條路徑走 `_forceRedraw`，`changedRows` 恆為全列）與**原生列表按住 ↑↓**（pttbbs 只重畫游標前後兩列）。好讀累積長頁走 `stableRows`，這一層不介入。
+     - 停用開關：`annotationsAreRowIndependent` 恆回 `false` ＋ 拿掉 `rowIdentityStable`，兩行就回到只有前兩層的行為。
+     - 守護：`tests/unit/screen_dirty_rows.test.js`（等價性一律拿「全新 controller 全量重建」當對照組逐字比 DOM）、`tests/unit/term_buf_dirty_rows.test.js`（dirty 不得漏報：真 cassette 逐步重放＋逐列內容簽章）、`tests/unit/render_dispose.test.js`（沿用的列不得被 dispose、換掉的列不得洩漏）。
   - **`enhance.stableRows` 是這整層的前提，只有累積頁那兩個 render 分支帶（`term_view.js` 的 `STABLE_ROWS`）**：那裡的列是 `cloneRow` 快照、append 後永不再被寫；原生 24 列畫面與列表視窗是 `term_buf` **就地改寫**的活 buffer，列參考一路不變而內容每幀在變，套快取會一直畫出上一幀的內容。
   - 一次性全量重算仍在（改設定、點推文者高亮、切圖文合併）：超長文會卡一幀，已知取捨。
   - 守護：`tests/unit/screen_annotate_cache.test.js`（純判準）、`tests/unit/screen_incremental_render.test.js`（**等價**：逐頁 append 的 DOM == 一次到位的 DOM；**增量**：append 22 列後重新標註／重建的列數 < 80，舊 code 是 1311）、offline e2e `ezsoft-longpost.json` 150 頁的 head/tail 週期曲線（修好 37→43ms；關掉快取 49→224ms）。

@@ -133,6 +133,36 @@ describe("渲染鏈的佔位盒生命週期", () => {
     expect(observedCount()).toBe(0);
   });
 
+  test("dirty-row 只重建髒的那一列：沿用的列不得被 dispose，重建的列不得洩漏", () => {
+    // 逐列 patch 是唯一一條「舊節點原封留在 nodes 裡」的路徑，最容易寫成兩種
+    // 反向錯誤：把沿用的列也 dispose 掉（圖片預覽整批消失），或忘記收掉被換掉
+    // 的那一列（observer / React root 越積越多）。
+    // pageState 2 ＝ 逐列獨立，才走得到 dirty-row 路徑；inline 預覽在這裡是為了
+    // 讓每一列都真的建出佔位盒。
+    const { root, controller } = mount();
+    const lines = linkLines(4, "a");
+    const listEnhance = { pageState: 2, easyReading: false, dropHidden: false, stableRows: false };
+    controller.update(props(lines, listEnhance));
+    expect(observedCount()).toBe(4 * 3);
+    const keptNode = controller.container.children[0];
+
+    // 活 buffer 的就地改寫：列物件不換，內容整列換掉。
+    const replacement = linkLines(1, "z")[0];
+    lines[1].length = 0;
+    for (const c of replacement) lines[1].push(c);
+
+    controller.update(
+      props(lines.slice(), Object.assign({ changedRows: [1] }, listEnhance)),
+    );
+
+    expect(observedCount()).toBe(4 * 3);
+    expect(controller.container.children[0]).toBe(keptNode);
+
+    controller.destroy();
+    root.remove();
+    expect(observedCount()).toBe(0);
+  });
+
   test("設定變動造成的全量重算也不會漏掉舊 observer", () => {
     const { root, controller } = mount();
     const lines = linkLines(4, "a");

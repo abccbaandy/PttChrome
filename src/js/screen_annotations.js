@@ -39,6 +39,30 @@ export const PAGE_READING = 3;
 // passed in via enhance — the "作者" header only appears on the first page, so we
 // cannot re-derive it from `lines` here on later pages.
 
+// dirty-row 逐列 patch 的守門（renderer 唯一的判準來源，見 render/screen.js
+// #_buildNodes）。回 true ⇒ 這一組 enhance 之下，每一列的 annotation 只取決於
+// 「該列自己的 chars」＋ annotationsKey 涵蓋的全域輸入 ⇒ renderer 可以只重畫
+// server 這一幀真的寫過的列，其餘沿用上一幀的節點。
+//
+// 這個知識**刻意住在這裡而不是 term_view**：跨列耦合全部長在 computeAnnotations
+// 裡，判準與被判的東西放同一個檔，日後新增跨列邏輯時漂移機率最低。
+//
+// PAGE_READING 一律排除，理由**不是**「原生看文章有跨列邏輯」——easyReading 為
+// 假時它確實逐列獨立。真正的原因有兩個：
+//   1. 「easyReading === true ＋ 活 buffer」的組合真的存在：term_view.redraw 的
+//      functionMode 原生鏡像與「防黑守門」兩個分支都把 buf.lines 交進來，而
+//      enhance.easyReading 仍是 true ⇒ FloorCounter／mergeCommentRun／mergeBlock
+//      全開。只重畫 dirty 列會讓它後面所有推文列的樓號永久位移。
+//   2. hasSteamgifts 是**文章層** gate（由整頁 texts 推出、可逐幀翻轉，見下方
+//      computeAnnotations），目前只放進回傳的 cache，非 stableRows 時 cache 為
+//      null ⇒ renderer 看不到它有沒有翻轉。
+// 要放行 READING 必須先解決這兩件事。
+export function annotationsAreRowIndependent(enhance) {
+  // 沒有 enhance ⇒ computeAnnotations 直接回全空 annotations，逐列獨立成立。
+  if (!enhance) return true;
+  return enhance.pageState !== PAGE_READING;
+}
+
 // 每列的附加偵測（auto-fix URL / X mention / AID / Steamgifts），逐列迴圈與
 // 「連續同作者推文合併」塊共用——合併後的 chars 是重組的新序列，原列偵測到的
 // col 範圍全部失效，必須對合併 chars 重跑一次。回傳值僅含有命中的鍵。

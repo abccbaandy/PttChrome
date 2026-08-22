@@ -64,6 +64,11 @@ function stable(v) {
 //
 // refs 放無法字串化又必須逐一比對的東西（onAidClick 的閉包會進 aids 的 onClick，
 // 換了就得重算）。
+//
+// 也刻意**不含** enhance.changedRows / enhance.rowIdentityStable：那兩個是給 render
+// 層做逐列節點重用的 hint（見 render/screen.js#_buildNodes），不影響任何一列算出
+// 來的 annotation。這個函式是白名單式列舉，新增 render hint 時不必來改它——但也
+// 不要順手把它們加進來，否則每一幀 changedRows 都是新陣列 ⇒ 快取永遠失效。
 export function annotationsKey(input) {
   const e = (input && input.enhance) || {};
   const sig = [

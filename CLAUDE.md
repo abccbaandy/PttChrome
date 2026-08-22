@@ -129,6 +129,14 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   `.wpadding`（`fixedResize` 直接掃 DOM 改寬度）、`data-pusher-col`（滑鼠防誤觸）、`data-list-author/-title`
   （右鍵加黑名單）這些消費端都在 unit 測不到的地方，漏一個就靜默壞掉。**刻意**要改渲染輸出時才
   `UPDATE_GOLDEN=1 yarn test:unit render_dom_equivalence`，並逐行看 diff。
+- **dirty-row 逐列 patch 的守門在 `src/js/screen_annotations.js#annotationsAreRowIndependent`，不在 `term_view`**：
+  `term_view` 只回報事實（`enhance.changedRows`＝server 這一幀寫了哪幾列、`enhance.rowIdentityStable`＝這批列是快照），
+  「這組 enhance 能不能只重畫 dirty 列」由標註端決定（跨列耦合全長在 `computeAnnotations` 裡）。**在
+  `computeAnnotations` 新增任何跨列邏輯時必須同步該函式**，否則會靜默畫出上一幀（症狀：樓號位移、
+  推文合併塊錯位）。細節與停用開關見 `docs/easy-reading.md`「render 單軌」第 3 層。
+  連帶：`TermChar.needUpdate` 已去 sticky（`term_buf.updateCharAttr` 消費完就清），`lineChangeds` 的唯一
+  清除點仍是 `term_view.redraw` —— 別在 `updateCharAttr` 裡順手清它，那會廢掉
+  `easy_reading._forceRepaint` / `list_session._forceRedraw`。
 - **純 JS 渲染鏈要自己收生命週期**：列被換掉／整份重建時，該列建立的延遲載入佔位盒
   （IntersectionObserver + ResizeObserver + `ImagePreviewer` 的 React root）必須 `destroy()`。
   入口只有 `render/screen.js#disposeNode` 一處，守護 `tests/unit/render_dispose.test.js`。

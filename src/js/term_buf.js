@@ -248,16 +248,27 @@ export function TermBuf(cols, rows) {
 
   this.pageLines = [];
 
-  this.lineChangeds = new Array(rows);
+  // 逐列 dirty 旗標：updateCharAttr 升起（由 ch.needUpdate 聚合）、term_view.redraw
+  // 是**唯一**的清除點。初值全 true ＝ 首幀必須整份畫一次；redraw 用嚴格
+  // `=== false` 判定，別把它退回 new Array(rows)（undefined 恰好也能過，但語意
+  // 從此靠巧合成立）。
+  this.lineChangeds = new Array(rows).fill(true);
 
   // Per-settle-window accumulation of the rows the SERVER wrote (puts/clear/
   // erase/scroll — see _touchRows call sites), frozen into settleSnapshot when
-  // the settle timer fires (_armSettleTimer). Deliberately NOT derived from
-  // lineChangeds/needUpdate: those flags are never cleared per window (needUpdate
-  // is sticky, updateCharAttr re-marks every ever-touched row on each notify), so
-  // they cannot tell "this response's dirty rows" apart — which is exactly what
-  // list-session burst classification needs. Local forced repaints
-  // (lineChangeds.fill(true)) never feed it either.
+  // the settle timer fires (_armSettleTimer).
+  //
+  // **Deliberately NOT derived from lineChangeds** (docs/easy-reading-list.md
+  // invariant 2). needUpdate stopped being sticky in 2026-08 (updateCharAttr now
+  // clears it per row), so lineChangeds IS a real dirty set today — but its window
+  // and its semantics are still the wrong ones here:
+  //   - window: lineChangeds is cleared by term_view.redraw, so ONE settle window
+  //     can span several redraws and lose earlier rows.
+  //   - semantics: local forced repaints (lineChangeds.fill(true) in
+  //     easy_reading._forceRepaint / list_session._forceRedraw) feed lineChangeds
+  //     but must NEVER feed this set — burst classification asks "which rows did
+  //     the SERVER write in this response", and mixing local paints in is exactly
+  //     invariant 2b (holding a nav key would starve the settle forever).
   this._settleChangedRows = new Set();
   this.settleSnapshot = null;
   // True iff the SERVER produced activity (content write or cursor escape) since
@@ -293,6 +304,10 @@ TermBuf.prototype = {
     this.cols = cols;
     this.rows = rows;
     this.lineChangeds.length = rows;
+    // 換行列數之後全列重畫：App.setTermSize 之後沒有任何強制重繪，而新增的 slot
+    // 是 undefined、新建的 TermChar 是 needUpdate = false ⇒ 不補這一行的話新列
+    // 永遠不會被畫出來。
+    this.lineChangeds.fill(true);
     this.scrollEnd = rows - 1;
     this.lines.length = rows;
     for (let r = 0; r < rows; r++) {
@@ -389,6 +404,14 @@ TermBuf.prototype = {
     this.queueUpdate();
   },
 
+  // 每次 notify 的 changed 分支跑一次：重算 DBCS lead byte、把逐格的 needUpdate
+  // 聚合成 lineChangeds[row]、對變動的列重掃 URI。
+  //
+  // KNOWN（既有瑕疵，與去 sticky 無關、sticky 下也修不好，本次不處理）：
+  // copyFromNewChar() 不清 startOfURL/endOfURL/partOfURL/fullurl，也不清
+  // line.uris；insert/del 的列內 splice 又會讓 line.uris 的欄位座標與實際 cell
+  // 錯開 ⇒ 舊 URL 旗標可能殘留。只影響 PTT 編輯器畫面（pageState 6），那裡不走
+  // 增強渲染。
   updateCharAttr: function() {
     var cols = this.cols;
     var rows = this.rows;
@@ -530,6 +553,17 @@ TermBuf.prototype = {
           }
         }
         //
+        // ---- 去 sticky（2026-08）----
+        // needUpdate 的語意是「上一次 notify 之後 server 寫過這一格」，消費完
+        // （lineChangeds 已升起、URI 已重掃）就該清掉。以前從來不清 ⇒ 任何寫過
+        // 一次的列永遠是 dirty ⇒ term_view.redraw 的逐列 continue 幾乎永不生效，
+        // 逐列 patch 也就無從談起。
+        // **必須排在 URI 偵測之後**：上面的 teardown 與 fix-link 還會再設一批 true。
+        // **lineChangeds 不在這裡清**（唯一清除點是 term_view.redraw），所以
+        // 「notify 了但沒 redraw」的幀不會漏畫，easy_reading._forceRepaint /
+        // list_session._forceRedraw 的 lineChangeds.fill(true) 也活得下來。
+        for (var uc = 0; uc < cols; ++uc)
+          line[uc].needUpdate = false;
       }
     }
   },

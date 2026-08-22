@@ -73,7 +73,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 ## 關鍵不變量（違反即復發）
 
 1. **零內容 settle 不驅動轉移**：`_onScreenSettled` 開頭 `changedRows.size===0 → return`（本地 `_forceRedraw` 也 re-arm settle）。
-2. **`_settleChangedRows` 只在 server 寫入點 add**（統一走 `_touchRows`），不可掛 `lineChangeds`。
+2. **`_settleChangedRows` 只在 server 寫入點 add**（統一走 `_touchRows`），不可掛 `lineChangeds`。`needUpdate` 已於 2026-08 去 sticky ⇒ `lineChangeds` 現在**是**真的 dirty 集合，但視窗與語意都不對：它由 `term_view.redraw` 清除（一個 settle 視窗可跨多次 redraw），而且本地強制重繪（`lineChangeds.fill(true)`）會餵它，混進去就是 2b 的「按住 nav 鍵永遠不 settle」。
 2b. **settle timer 只由 server 活動 re-arm**（`_serverActivity`：`_touchRows`＋游標 escape 的 posChanged；notify 的 changed 分支 gated）。本地 `_forceRedraw` 不得推遲 pending settle——否則按住 nav 鍵（~30ms 一次重繪）永遠不 settle → queue expect 餓死 → prefetch timeout →「按住 PgUp 無效」＋ markEdge 假邊界（置底文顯示異常的來源）。守護：`settle_gating.test.js`。
 3. **跳號回應 settle 底列是空的**（classify=transient 永不 clean-list）→ jump 類 expect 用「park 在 entry 區 col≤1 ∧ 游標列=目標序號」。`_requestEnd` 落點可為置底列（cursorRowNum null 也接受）；**prefetch 向下翻頁腿同理**：真板尾 PgDn 游標落置底列（cursorRowNum null ∧ clean-list）＝`{edge, landed:null}`，不可 miss——miss 的 hard timeout 會讓 \f 探針回應變無主 settle → catch-all 誤降級「畫面偏離列表格式」。向上腿 null 仍 false（置底只在板尾）。另有三道放寬，皆為「板尾/完成幀的無主 settle 不得誤降級」：
    - (a) `classifyListScreen` 板尾短頁規則——編號列 <3 時，若游標列本身是列表形（編號/loose/置底/刪除）∧ entry 區每個非空列都是列表形 → 仍 clean-list（板尾最後一頁可能只剩 1 列編號＋置底＋空白；舊 `●` 游標蓋掉最高位時僅 loose 可讀，新 `>` 游標 strict/loose 同值——**loose 仍須 strip `>`**，否則此規則失效、板尾無主 settle 全數誤降級）。
