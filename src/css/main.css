@@ -637,6 +637,29 @@ span {
   cursor: pointer;
 }
 
+/* 功能鍵按鈕：把畫面上的 `[d]刪除` / `(y)回應` 這類提示變成可點的按鈕
+   （解析見 js/footer_keys.js，範圍含括號本身）。
+
+   **禁止事項**（動這一段之前先讀）：
+   1. 不得宣告任何 user-select —— 終端機的任何祖先只要有 user-select:none，
+      Firefox 就整片選不起來（tests/unit/css_user_select.test.js 是回歸鎖，
+      根因見 docs/enhanced-addon.md 踩坑 A）。
+   2. :hover 只能改 background / text-decoration / outline。**不可改 font-weight
+      或 padding** —— 這是等寬格線，字重或內距一變就整列位移，.wpadding 的寬度
+      契約（term_view.fixedResize 直接掃 DOM 改它）跟著壞掉。 */
+.fnKey {
+  cursor: pointer;
+  border-radius: 2px;
+  outline: 1px dotted rgba(255, 255, 255, 0.35);
+  outline-offset: -1px;
+}
+
+.fnKey:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+  outline: 1px solid rgba(255, 255, 255, 0.7);
+  text-decoration: underline;
+}
+
 /* 自動修復斷掉的 URL：在原文那一行下方加一行可點的修復版連結（不改寫原文）。
    只在好讀模式（inline preview）渲染，見 Row/LinkSegmentBuilder + Row/FixedUrlLine。 */
 .fixedUrlLine {

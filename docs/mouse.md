@@ -26,6 +26,7 @@
 | `mouseBrowsingHighlightColor` | `2` | 1..15 | 兩種底色共用（UI 在「一般」分頁） |
 | `mouseLeftClick` | `true` | bool | 列表點標題開文＋文章左側退出＋自訂指標 |
 | `mouseMisclickGuard` | `true` | bool | 防誤觸模式：**可點區＝底色區**的起始欄（見下方「防誤觸模式」） |
+| `mouseFunctionKeys` | `true` | bool | 畫面上的功能鍵提示變成按鈕（見下方「功能鍵按鈕」） |
 | `mouseMiddleClick` | `0` | 0 關閉 / 1 貼上 / 2 左方向鍵 | |
 | `mouseWheel` | `1` | 0 關閉 / 1 上下頁 | |
 
@@ -54,12 +55,25 @@
 
 | pageState | 條件 | action | cursor | 底色範圍 |
 |---|---|---|---|---|
-| 2（文章列表） | `2 < row < rows-1` 且該列非空 | `col >= S` → `enter(row)`，否則 `none` | 可點區 `pointer` | `[S, 行尾)` |
-| 4（LIST 變體） | `1 < row < rows-2`，其餘同上 | 同上 | 同上 | 同上 |
-| 1（MENU／看板列表） | `0 < row < rows-1` | `col >= S` → `enter(row)`，否則 `none` | 可點區 `pointer` | `[S, 行尾)` |
+| 2（文章列表） | `2 < row < rows-1` 且該列非空 且 `col < 7` | `exit` | `back`（PNG） | 不上色 |
+| 2 | `2 < row < rows-1` 且該列非空 | `col >= S` → `enter(row)`，否則 `none` | 可點區 `pointer` | `[S, 行尾)` |
+| 4（LIST 變體） | `1 < row < rows-2`，其餘同上兩列 | 同上 | 同上 | 同上 |
+| 1（MENU／看板列表） | `0 < row < rows-1` 且 `col < 7` | `exit` | `back`（PNG） | 不上色 |
+| 1 | `0 < row < rows-1` | `col >= S` → `enter(row)`，否則 `none` | 可點區 `pointer` | `[S, 行尾)` |
 | 3（READING） | `col < 7` | `exitArticle` | `back`（PNG） | 不上色 |
 | 3 | 其餘 | `none` | `auto` | 不上色 |
 | 0 / 5 / 6 | — | `none` | `auto` | 不上色 |
+
+**左 7 欄（`EXIT_COL_END`）的退出帶三種畫面共用**，且**不看 `mouseMisclickGuard`**
+（使用者 2026-08 定案）：它是一個固定手勢，不是「哪一欄算內容」的欄位判定。
+
+`exit`（列表／選單）與 `exitArticle`（文章）**刻意是兩個常數**，雖然兩者都送
+`\x1b[D`：列表好讀底下必須走 `ListSession.onMouseExitClick` → `_beginLeave`
+（先 `getkeep` 同步真游標再送鍵，v5 封閉互動），文章則是 `App.onMouse_click` 直送。
+分成兩個常數才逐處檢查得出來誰漏改。
+
+退出帶的判斷**排在列範圍與 `lineEmpty` 檢查之後**，所以 header／footer 那幾列
+（現在有功能鍵按鈕）不會同時是退出區 —— 「提示帶亮＝點得下去」的合約靠這個成立。
 
 **依據**（不臆測，出處在 `3rd_script/pttbbs`）：
 
@@ -104,8 +118,13 @@
 
 ### 移除的舊動作
 
-列表左緣離開、右緣翻頁、頂列 Home、底列 End、`[`／`]`／`=` 同標題前後篇、
-重新整理、同標題末篇，以及 pageState 3 的 row 0/1/2/23 特例。舊的 `mouseCursor`
+右緣翻頁、頂列 Home、底列 End、`[`／`]`／`=` 同標題前後篇、
+重新整理、同標題末篇，以及 pageState 3 的 row 0/1/2/23 特例。
+
+**「列表左緣離開」2026-08 重新加回**（上表的 `exit`）。當初與其他 14 種一起移除的
+理由是「誤觸率高又完全沒有提示」，而**提示問題已經解決** —— 提示帶（`#exitHintBand`）
+＋ back 指標補上之後，滑鼠靠近左緣就看得到「這裡點下去會回上一層」。誤觸率的部分
+也不同：舊版是**整個畫面每一區都有動作**，現在只有固定的左 7 欄。舊的 `mouseCursor`
 是 0..14 的數字、同時兼任「長什麼樣」與「點了做什麼」，改名 `mouseAction` 是刻意的
 （漏改的地方會變 `undefined` 而不是靜默走進錯的 case）。
 
@@ -119,7 +138,8 @@
 | 底色 | `useMouseBrowsing && mouseBrowsingHighlight`（在 `resolveHighlightRow` 的 `mouseEnabled`，**不要再加第二層**）；滑鼠與鍵盤誰贏另見「底色仲裁」 |
 | 指標圖示 | `useMouseBrowsing && mouseLeftClick` |
 | 左鍵動作 | `useMouseBrowsing && mouseLeftClick` |
-| 左側提示帶 | `useMouseBrowsing && mouseLeftClick && pageState === 3` |
+| 左側提示帶 | `useMouseBrowsing && mouseLeftClick && region.cursor === CUR_BACK`（＝ pageState 1/2/3/4 的左 7 欄；**用 cursor 判、不逐一列舉 action**，日後新增退出動作不會漏列舉） |
+| 功能鍵按鈕 | `useMouseBrowsing && mouseFunctionKeys`（`term_view._renderScreenLines` 與 `_mirrorStatusRowToFooter` 兩處各 gate 一次） |
 | 防誤觸（可點區＝底色區的起始欄） | `useMouseBrowsing && mouseMisclickGuard` —— **跟著總開關走**，總開關關掉時左鍵／指標／提示帶全滅，沒有誤觸要防；設定頁那顆 checkbox 因此能與其他子項一樣 `disabled` |
 | 中鍵 | `useMouseBrowsing && mouseMiddleClick !== 0` |
 | 滾輪 | `useMouseBrowsing && mouseWheel !== 0` |
@@ -170,7 +190,7 @@
 |---|---|---|---|
 | 原生 24 列 | `term_buf.onMouse_move` | `App.onMouse_click`（依 `buf.mouseAction`） | `setBBSCmd('doPageUp'/'doPageDown')` |
 | 好讀文章長頁 | 同上（`clientToPos` 把 row clamp 進 0..rows-1） | 同上 + `easyReading._onMouseClick` 先收狀態機 | **early return，交給瀏覽器捲動** |
-| 列表好讀（buffer/frozen） | `term_view.onListMouseMove(row, col)` | `list_session.onMouseClick(row, col)` | `listSession.onWheel('pgup'/'pgdn')` |
+| 列表好讀（buffer/frozen） | `term_view.onListMouseMove(row, col)` | 左 7 欄 → `list_session.onMouseExitClick()`；其餘 → `list_session.onMouseClick(row, col)` | `listSession.onWheel('pgup'/'pgdn')` |
 
 列表好讀分支在 `App.mouse_click` 的 `preventDefault()` 是**無條件**的（即使滑鼠功能
 整組關掉）：那個畫面是我們自己組的，不能讓瀏覽器預設行為對它動作。pref gate 只包住
@@ -178,10 +198,17 @@
 
 ## 點擊優先權（`App.mouse_click` 左鍵分支，由上而下）
 
+**先決條件（這張表描述不到的一層）：元素層的 listener 永遠比 window handler 早跑。**
+`App.mouse_click` 掛在 `window` 上，而 `a.aidLink` / `a.fnKey` 的 click listener 掛在
+元素自己身上 ⇒ **下面第 1、2 條守門攔不到它們**。這兩種連結因此必須各自守：
+`aid_navigation.js` 靠 `if (this.active) return;`，功能鍵靠 `App.onFunctionKey` 開頭的
+`modalShown` / `aidNavigation.active` / `commandQueue.inFlightKind` 三道（見下方
+「功能鍵按鈕」）。新增任何元素層 listener 時同理。
+
 1. `modalShown`
 2. `aidNavigation.active`
 3. 讀清 `SkipMouseClick`
-4. **`closest('a')`** —— 連結
+4. **`closest('a')`** —— 連結、AID 連結、**功能鍵按鈕**（`a.fnKey`）
 5. **`closest(PREVIEW_CLICK_SELECTOR)`** —— 內嵌預覽
 6. `getSelection().isCollapsed`
 7. `closest('[data-pusher]')` —— 推文者高亮（防誤觸開啟時還要 `col >= data-pusher-col`；**欄位不合不 return**，讓下面的左側退出帶接手）
@@ -190,6 +217,11 @@
 10. `mouseLeftClick` gate
 11. `checkClass` / `menuitem` / `skipMouseClick`
 12. `onMouse_click(e)`
+
+**功能鍵用 `<a>` 是刻意的**：第 4 條的早退讓它自動贏過所有滑鼠瀏覽分支
+（含左 7 欄的退出帶）⇒ 加這個功能時 `App.mouse_click` 一行都不用改。守護在
+`tests/unit/screen_fnkeys_render.test.js`（標籤名一旦被改成 `span`，功能鍵會靜默
+變成「點了就退出文章／開錯文」）。
 
 第 4、5 條是「文章裡的可點擊物件優先」的實作，順序不可調換：文章模式的第 0-6 欄
 現在是退出手勢，而連結與內嵌預覽圖都可能落在那幾欄（預覽圖甚至是整寬區塊、起點
@@ -214,6 +246,121 @@ DBCS 雙色字），只找一層在那種字上會漏判。同一個 bug 在
 `buf.notify()` → `clearHighlight()` 把 `mouseAction` 清成 `none`。改版前這個順序
 沒事，只是因為舊的 `case 0`（＝被清掉的狀態）也送左方向鍵，剛好跟離開同義。
 
+## 功能鍵按鈕（`mouseFunctionKeys`，預設開）
+
+把畫面上的 `[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 …` 與
+` 文章選讀  (y)回應(X)推文(^X)轉錄 …` 變成可點的 `<a class="fnKey">`，點一下＝送出
+那個按鍵。
+
+**只認單一按鍵。** `(=[]<>)`（同標題前後篇）、`(/?a)`（搜尋）、`(v/V)`（已讀／未讀）、
+`(R/y)`、`[↑↓]` 這種多鍵組一律維持純文字：取第一個會送錯鍵（`v` 標已讀 vs `V` 標未讀、
+`d` 刪一封 vs `D` 刪範圍），違反「PTT 邏輯不准猜」。
+
+| 層 | 檔案 | 職責 |
+|---|---|---|
+| 解析（純函式） | `src/js/footer_keys.js` | `parseFunctionKeys(chars)` → `[{startCol, endCol, keyBytes, label}]`；`functionKeyRows(pageState, rows)` → 要掃哪幾列 |
+| 標註 | `screen_annotations.js#applyFunctionKeys` | 把結果掛進 `result[row].fnKeys`（**只寫 `result`，不碰 `base`**） |
+| 渲染 | `render/link_segment.js` | `a.fnKey` 分支，開/關邊界與 mention 同一套舞步 |
+| 送鍵漏斗 | `App.onFunctionKey(bytes, label)` | 唯一入口，形狀比照 `onPasteDone` |
+| 決策（純函式） | `src/js/function_key_plan.js` | `functionKeyClickPlan({bytes, mode})` |
+
+**pttbbs 校準**（逐條查證，非畫面反推）：
+
+- `mbbsd/bbs.c:663` `readtitle()`：`showtitle()` 佔 row 0，緊接 `outs("[←]離開 …")`
+  ⇒ 提示列在 **row 1**
+- `mbbsd/board.c:1330`：看板列表同樣在 row 1
+- `mbbsd/vtuikit.c:722` `vs_footer()`：一律 `move(b_lines, 0)` ⇒ **最後一列**；
+  `(` / `)` 有獨立配色，是「一個按鍵」的視覺約定
+- `mbbsd/pmore.c:2195`：文章 footer part3 ＝ `(h)按鍵說明 ` ＋ `←[q]離開 `
+  （`←` 是裸的沒括號 ⇒ 依規則不可點；相鄰的 `[q]` 可點且同義，`pmore.c:2548` 兩者
+  都是 `flExit = 1`）
+
+⇒ `functionKeyRows`：pageState 1/2/4 → `[1, rows-1]`；3 → `[rows-1]`；其餘 → `null`。
+
+### 幾個不可以踩的地方
+
+- **解析吃 `TermChar[]`，不吃 `rowToText` 的產物**：`rowToText` 把 DBCS 的 lead+trail
+  兩格折成一個字元 ⇒ 文字 index ≠ 格子 col，而 footer 一列有十幾個全形字、偏移是
+  **累加**的。且 `]` = `0x5D` **落在 Big5 trail byte 範圍內**，對裸位元組跑 regex 會
+  誤命中。走專案既有慣例：逐格走 `chars`、`isLeadByte` 就跳兩格。
+  `realignListColumns` 同樣不可用（見上方「區域決策表」的依據）。
+- **「掃哪幾列」由 `term_view` 交進 `enhance.functionKeyRows`，不由標註層推導**：
+  好讀累積長頁的 `lines` 是 `buf.pageLines`（數千列），`lines.length - 1` 是內文最後
+  一行而不是狀態列。`term_view._renderScreenLines` 只在 `!ov.stableRows` 時算它 ⇒
+  累積長頁的兩條分支永不拿到這個欄位，增量快取零風險。
+- **`annotationsKey` 一定要含 `functionKeyRows` 與 `onFunctionKey`**：列表好讀視窗走
+  `rowIdentityStable`，`render/screen.js` 的節點重用條件是
+  `rowIdentityStable || !changedRows.has(row)` ⇒ **`changedRows` 根本不參與判斷**。
+  漏了它，切 pref 後 row 1／row 23 的節點會被無條件沿用（按鈕該出現不出現、該消失
+  不消失），直到視窗捲動換掉那些列物件為止。回歸鎖：`screen_dirty_rows.test.js`
+  的兩條 `REGRESSION`。
+- **`onFunctionKey` 的引用必須穩定**（`pttchrome.jsx` 啟動時指派一次，與 `onAidClick`
+  並排）：它同時是 `annotationsKey.refs` 的成員與 `render/screen.js` outerHTML 節點
+  重用的前提。每幀新建箭頭函式會讓整份標註快取每幀失效，長文直接回到 O(n²)。
+  同理 `onClick` 閉包**只能捕捉靜態資料**（`keyBytes` / `label`）—— 捕捉逐幀狀態的話
+  重建出來的節點會因 outerHTML 相同而被丟棄、留下**舊閉包**（「按鈕點了送到上一幀
+  的東西」，完全看不出來）。
+- **`a.fnKey` 不得插入任何文字節點**（`title` 屬性不算）：`term_view.countCol` 遞迴
+  累加 `u2b(textContent).length` 來反查選取的 col，多一個字就整列錯位。
+- **`href="#"` 一定要 `preventDefault`**：本 app 用 URL hash 做 deep link
+  （`docs/deep-link.md`），漏掉會塞垃圾 hash 甚至觸發跳文解析。
+- **CSS 只能改 `background` / `text-decoration` / `outline`**：`font-weight` 或
+  `padding` 一變就位移等寬格線，破壞 `.wpadding` 的寬度契約；且**不得宣告任何
+  `user-select`**（`tests/unit/css_user_select.test.js`）。
+- **`mergeCommentRun` 合併推文分支刻意不傳 `fnKeys`**：那條路的 chars 是
+  `comment_merge.buildMergedCommentChars` 重組的新序列，原列 col 範圍全部失效
+  （它對 `mentions`/`aids` 也改用 `m.*`）。功能鍵列永遠不是推文列。
+
+### 送鍵漏斗 `App.onFunctionKey`
+
+順序固定（漏一步都會壞）：
+
+1. `modalShown` → return（元素層 listener 早跑，`mouse_click` 攔不到，見上方優先權表）
+2. `aidNavigation.active` → 提示後 return
+3. `listSession.onFunctionKey(bytes)` 回 true → 它接手了（v5 封閉互動，見下）
+4. `functionKeyClickPlan` → 文章好讀時**先** `_enterFunctionMode()` 再送 byte
+5. `commandQueue.inFlightKind` → 提示後 return
+6. `view._send(bytes)`
+
+第 4 步是關鍵：PTT 會開 prompt（`(y)回應` / `(X)推文` / `(h)說明`），但好讀的累積
+長頁原封不動 ⇒ **使用者看不到輸入框**。`docs/easy-reading.md` 的「貼上驅動」與
+「IME 驅動」補過同一個洞兩次，滑鼠點功能鍵是第三個入口。
+
+`←`（`\x1b[D`）例外：走 `stopEasyReading()`，與鍵盤 ArrowLeft 同一條路
+（`easy_reading._onKeyDownProcessUI` 的 `case 'ArrowLeft'`），否則離開文章時會先閃
+一下原生 24 列。
+
+**刻意不用 `easy_reading._send`**：它 `_wireBusy()` 時直接**丟棄**（那是給狀態機自己
+送的鍵設計的，丟了只是少翻一頁）。使用者按下去的按鈕被靜默吞掉是 bug，所以漏斗
+自己判那兩個條件並**給提示**。
+
+送鍵一律 `view._send`（內含 `if (this.conn)`）：**不用 `_convSend`**（會做 u2b 轉碼，
+對控制序列無意義）、**不用 `setBBSCmd`**（那是翻頁語意的分派器）、**絕不用
+`this.view.conn.send`**（`view.conn` 只在 `App.onConnect` 被設）。
+
+### 列表好讀的 `ListSession.onFunctionKey(bytes)`
+
+回 `true` ＝我接手了。合約與 `onPaste` 同形：
+
+| 狀態 | 行為 |
+|---|---|
+| `_renderMode === 'native'` | 回 `false`，交給一般路徑 |
+| `opening` | 提示「開啟文章中，請稍候…」後回 `true` |
+| `functionMode` + `frozen` | 提示「指令處理中，請稍候…」後回 `true` |
+| 白名單（`←` leave／方向鍵 nav／`→`・Enter open） | 走 reducer 既有的 `_beginLeave` / `_moveSelection` / `_beginOpen` |
+| 其餘 | `_beginPassthroughBytes(bytes)`：切原生 ＋ 經 CommandQueue 送出（**永不靜默**） |
+
+`_classifyBytes` **刻意獨立於 `_classifyKey`，不要合併**：後者認 `q`/`e`/`j`/`k` 這些
+**字元**為導覽鍵（那是使用者按下的按鍵），而 byte 層看到的 `'q'` 就只是 `'q'`。
+合併會把「按鍵」與「送位元組」兩種語意攪在一起。
+
+### 文章好讀的 footer overlay
+
+`#easyReadingLastRow` 是**唯一不經 `computeAnnotations`** 的渲染路徑
+（`term_view._mirrorStatusRowToFooter` → `term_ui.renderOverlayRow` 的第 4 參數），
+所以它自己呼叫 `parseFunctionKeys`。它沒有 `pointer-events:none` ⇒ 點得到；每次都整個
+`replaceChildren` 重建，listener 隨舊節點丟掉，無洩漏。
+
 ## 左側退出提示帶（`#exitHintBand`）
 
 - 是 `term_view` 自有的獨立 div，掛在 `#BBSWindow` 底下、`.main` **之後**。不放
@@ -235,6 +382,9 @@ DBCS 雙色字），只找一層在那種字上會漏判。同一個 bug 在
 - 關掉的時機（漏一個就會留殘影）：`term_buf.onMouse_move`／`clearHighlight`、
   `term_view.onListMouseMove`、`App.onPrefChange` 的兩個開關、`App.setModalOpen`、
   window `blur`。
+- **列表好讀的 hover 也會亮它**（`term_view.onListMouseMove` 的退出帶分支，2026-08
+  加回「列表左緣離開」時補上）。那條路**不走** `term_buf.onMouse_move`，兩邊各有一份
+  判斷，改其中一邊要看另一邊。
 
 ## 自訂滑鼠指標
 
@@ -263,6 +413,15 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 | `tests/unit/pref_modal_mouse_tab.test.jsx` | 設定分頁的欄位、預設值、子項 disabled、選項值域 |
 | `tests/unit/pref_schema_mouse.test.js` | 新 key 齊備、舊 key 已移除、殘值不復活 |
 | `tests/unit/i18n_parity.test.js` | 兩語系 key 集合一致 |
-| `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關／推文列可點區（防誤觸三態） |
+| `tests/unit/footer_keys.test.js` | 功能鍵解析：單鍵可點／多鍵組不可點／具名鍵 byte／**DBCS 欄位換算**／`functionKeyRows` |
+| `tests/unit/screen_fnkeys_render.test.js` | `a.fnKey` 的屬性、`onClick`、與部分底色共存、沒給 `fnKeys` 時 DOM 逐字不變 |
+| `tests/unit/function_key_click_plan.test.js` | 文章好讀先進 functionMode／`←` 走 stopEasyReading |
+| `tests/unit/list_function_key.test.js` | 列表好讀的 `onFunctionKey` / `onMouseExitClick`（白名單走 reducer、其餘 passthrough、忙碌時給提示） |
+| `tests/unit/screen_dirty_rows.test.js` | 切 pref 後按鈕真的出現／消失（`annotationsKey` 的回歸鎖，兩條分支各一） |
+| `tests/unit/mouse_dblclick_skip.test.js` | 第二次 mousedown 不得 `preventDefault`（雙擊選字） |
+| `tests/unit/fixtures/screen_golden/list_native_fnkeys.html`／`article_footer_fnkeys.html` | 整列 DOM 快照（含多鍵組維持純文字） |
+| `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關／推文列可點區（防誤觸三態）／**列表左側退出帶** |
+| `tests/e2e/offline/function_keys.offline.spec.js` | 三條 render 分支各自都接上了、點了真的送鍵、切 pref 立即生效 |
+| `tests/e2e/offline/selection.offline.spec.js` | 雙擊選詞／三擊選行（**必須跑 offline-firefox**） |
 | `tests/e2e/offline/easy-reading-list.offline.spec.js` | 列表好讀的底色左緣＝標題欄、切防誤觸後回到整列 |
 | `tests/e2e/offline/wheel_stuck_button.offline.spec.js` | 按鍵旗標卡死的三條路徑 |

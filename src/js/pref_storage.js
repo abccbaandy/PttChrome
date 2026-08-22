@@ -92,6 +92,11 @@ export const DEFAULT_PREFS = {
   //   關 整列可點、整列上底色（改版前的行為）
   // 跟著 useMouseBrowsing 走（resolveMouseGates）：總開關關掉時沒有誤觸要防。
   mouseMisclickGuard: true,
+  // 功能鍵可點（預設開）：把畫面上的 `[d]刪除` / `(y)回應` 這類提示變成按鈕，
+  // 點下去＝送出那個按鍵。只認**單一按鍵**的括號組（解析見 js/footer_keys.js），
+  // `(v/V)` `(=[]<>)` 這種多鍵組維持純文字。
+  // 跟著 useMouseBrowsing 走（設定頁 disabled，term_view 也一併 gate）。
+  mouseFunctionKeys: true,
   // 中鍵：0=關閉 1=貼上 2=左方向鍵。**與舊 mouseMiddleFunction 的值域不同**
   // （舊的 1 是 Enter），刻意不做遷移，見 docs/mouse.md。
   mouseMiddleClick: 0,

@@ -7,7 +7,13 @@
 //  * 總開關對中鍵與滾輪的 gate（改版前那兩個根本不看它）。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
+const {
+  findCassette,
+  loadCassette,
+  bootOffline,
+  replayCassette,
+  replayListCassette,
+} = require('../helpers/replay');
 
 const article = findCassette('article');
 
@@ -456,6 +462,62 @@ test.describe('滑鼠（離線重放）', () => {
       const on = await highlightedPushers(page);
       expect(on.length).toBeGreaterThan(0);
       on.forEach((p) => expect(p).toBe(row.pusher));
+    });
+  });
+
+  // 「列表左緣離開」2026-08 重新加回（當初移除是因為舊版 15 種動作完全沒有提示；
+  // 提示帶＋back 指標補上之後 affordance 問題已解決）。見 docs/mouse.md。
+  test.describe('列表的左側退出帶', () => {
+    // 用 list cassette 才畫得出真的看板列表（article cassette 送 ← 在離線重放
+    // 下沒有回應，畫面會停在文章上）。
+    const listCassette = loadCassette('cchat-list-nav');
+
+    const bootList = async (page, prefs) => {
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, {
+        enableEasyReading: false,
+        enableEasyReadingList: false,
+        useMouseBrowsing: true,
+        mouseLeftClick: true,
+        ...prefs,
+      });
+      await replayListCassette(page, listCassette);
+      await page.waitForTimeout(400);
+      const ps = await page.evaluate(() => window.__app.buf.pageState);
+      expect(ps, '重放後應停在看板列表').toBe(2);
+    };
+
+    test('原生列表：左緣亮提示帶 ＋ back 指標；點下去送左方向鍵', async ({
+      page,
+    }) => {
+      test.setTimeout(90000);
+      await bootList(page);
+
+      const near = await hoverCell(page, 1, 10);
+      expect(near.band).toBe(true);
+      expect(near.action).toBe('exit');
+      expect(near.cursor).toMatch(/^url\(.+\)\s+\d+\s+\d+,\s*auto$/);
+
+      // 第 7 欄起就不是退出帶了（那裡是一般的列表可點區）。
+      const away = await hoverCell(page, 40, 10);
+      expect(away.band).toBe(false);
+      expect(away.action).not.toBe('exit');
+
+      await hoverCell(page, 1, 10);
+      await startCapture(page);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(150);
+      expect(await takeCapture(page)).toContain(ARROW_LEFT);
+    });
+
+    test('防誤觸關閉也一樣成立（固定手勢，不是欄位判定）', async ({ page }) => {
+      test.setTimeout(90000);
+      await bootList(page, { mouseMisclickGuard: false });
+
+      const near = await hoverCell(page, 1, 10);
+      expect(near.action).toBe('exit');
+      expect(near.band).toBe(true);
     });
   });
 });

@@ -29,6 +29,7 @@ import {
   groupSameAuthorRuns,
   buildMergedCommentChars,
 } from "./comment_merge";
+import { parseFunctionKeys } from "./footer_keys";
 import { mergeRunKey } from "./screen_annotate_cache";
 
 // PttChrome pageState (see term_buf.js#setPageState): 2 = board list, 3 = reading.
@@ -61,6 +62,44 @@ export function annotationsAreRowIndependent(enhance) {
   // 沒有 enhance ⇒ computeAnnotations 直接回全空 annotations，逐列獨立成立。
   if (!enhance) return true;
   return enhance.pageState !== PAGE_READING;
+}
+
+// 功能鍵按鈕（`[d]刪除` / `(y)回應`）→ 逐列裝飾。
+//
+// 「掃哪幾列」由 term_view 算好放進 enhance.functionKeyRows（見 js/footer_keys
+// #functionKeyRows），**不在這裡推導**：好讀累積長頁的 lines 是 buf.pageLines
+// （數千列），`lines.length - 1` 是內文最後一行而不是狀態列，推導必錯。
+// term_view 只在「非快照列（活 buffer）」的分支才給這個欄位 ⇒ 累積長頁永遠不會
+// 進到這裡，增量快取零風險。
+//
+// **只寫 result[row]，絕不碰 base[row]**：base 是增量快取跨幀沿用的那一層，
+// runCache / captionCache 的 `prevEntry.base === base[row]` 判準靠它的參考身分。
+// 與 captionBlocks / mergeCommentRun 只寫 result 的既有分層一致。
+//
+// annotationsAreRowIndependent 刻意**不必**為此改動：功能鍵只取決於該列自己的
+// chars，加上 enhance.functionKeyRows / onFunctionKey（兩者都已進 annotationsKey）
+// ⇒ 正好落在該函式合約允許的範圍內。這段註解是寫給下一個人看的，別誤以為漏改。
+export function applyFunctionKeys(result, lines, enhance) {
+  const rows = enhance && enhance.functionKeyRows;
+  if (!rows || !rows.length) return;
+  const onFunctionKey = enhance.onFunctionKey;
+  for (let k = 0; k < rows.length; ++k) {
+    const row = rows[k];
+    if (row < 0 || row >= lines.length) continue;
+    const keys = parseFunctionKeys(lines[row]);
+    if (!keys) continue;
+    const fnKeys = keys.map((item) => ({
+      startCol: item.startCol,
+      endCol: item.endCol,
+      label: item.label,
+      // 閉包只捕捉靜態資料（keyBytes / label ＋引用穩定的 onFunctionKey），
+      // 見 render/link_segment.js 的 fnKey 分支說明。
+      onClick: onFunctionKey
+        ? () => onFunctionKey(item.keyBytes, item.label)
+        : null,
+    }));
+    result[row] = { ...(result[row] || {}), fnKeys };
+  }
 }
 
 // 每列的附加偵測（auto-fix URL / X mention / AID / Steamgifts），逐列迴圈與
@@ -461,6 +500,7 @@ export function computeAnnotations(
     result.domainCandsSig = domainCands.map(domainKey).join(",");
     result.fixCands = fixCands;
     result.fixCandsSig = fixCands.map(fixKey).join(",");
+    applyFunctionKeys(result, lines, enhance);
     return {
       annotations: result,
       cache: {
@@ -533,6 +573,10 @@ export function computeAnnotations(
       }
     }
   }
+  // 這一段涵蓋 PAGE_LIST / inListContext 分支，**以及 pageState 0/1/5/6 全部落空**
+  // 的情形：result 在函式開頭就已配置好，else-if 鏈沒命中時是一份全 undefined 的
+  // 陣列，直接寫進去合法。選單（pageState 1）的功能鍵就是靠這條路。
+  applyFunctionKeys(result, lines, enhance);
   // 列表／原生 24 列畫面：列物件是 term_buf 就地改寫的活 buffer（不是快照），
   // 增量快取的前提（列參考不變 ⇒ 內容不變）在這裡**不成立**，故不回快取。
   return { annotations: result, cache: null };

@@ -87,6 +87,11 @@ export function annotationsKey(input) {
     stable(e.inListContext),
     stable(e.listEasyReading),
     stable(e.dropHidden),
+    // 功能鍵按鈕：**一定要在**。列表好讀視窗走 rowIdentityStable，render/screen.js
+    // 的節點重用條件是 `rowIdentityStable || !changedRows.has(row)` ⇒ changedRows
+    // 根本不參與判斷。漏了它，切 pref 之後 row 1 / row 23 的節點會被無條件沿用，
+    // 按鈕該出現不出現、該消失不消失，直到視窗捲動換掉那些列物件為止。
+    stable(e.functionKeyRows),
     stable(input.mergeCaption),
     stable(input.captionAi),
     stable(input.aiKeep),
@@ -96,7 +101,15 @@ export function annotationsKey(input) {
     stable(input.enableLinkInlinePreview),
     stable(input.enableLinkHoverPreview)
   ].join('|');
-  return { sig: sig, refs: [e.onAidClick, input.onHyperLinkMouseOver, input.onHyperLinkMouseOut] };
+  return {
+    sig: sig,
+    refs: [
+      e.onAidClick,
+      e.onFunctionKey,
+      input.onHyperLinkMouseOver,
+      input.onHyperLinkMouseOut
+    ]
+  };
 }
 
 export function sameKey(a, b) {

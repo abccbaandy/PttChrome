@@ -1,6 +1,6 @@
 'use strict';
 
-const KeyMap = {
+export const KeyMap = {
   'Backspace': '\b',
   'Tab': '\t',
   'Enter': '\r',

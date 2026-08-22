@@ -34,6 +34,7 @@ import {
   normalizePasteText
 } from './string_util';
 import { keyEventToBytes } from './term_keyboard';
+import { LEFT_ARROW } from './function_key_plan';
 import { readValuesWithDefault } from './pref_storage';
 import {
   moveListCursorWindow,
@@ -1057,6 +1058,25 @@ ListSession.prototype = {
     let bytes = e.ctrlKey ? null : keyEventToBytes(e);
     // A printable non-ASCII char must go out as Big5 (raw UTF-16 = mojibake).
     if (bytes && bytes.length === 1 && bytes.charCodeAt(0) > 127) bytes = u2b(bytes);
+    if (bytes == null) {
+      // Ctrl combo (only case left — see header): not resendable, so switch the
+      // mirror now; the un-prevented event reaches the native keyboard handlers
+      // right after this hook returns and they send it.
+      const r0 = transitionListSession(this.state, { type: 'key', keyClass: 'passthrough' });
+      this.state = r0.next;
+      this._enterFunctionMode();
+      if (this._view.flashListHint)
+        this._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
+      return;
+    }
+    e.preventDefault();
+    this._beginPassthroughBytes(bytes);
+  },
+
+  // _beginNativePassthrough 的**後半段**，抽出來給滑鼠點功能鍵共用
+  // （onFunctionKey）。純重構，鍵盤行為一字未改：前半段的 keyEventToBytes /
+  // preventDefault / Ctrl 組合判斷留在原函式，那些只有鍵盤事件才有。
+  _beginPassthroughBytes: function(bytes) {
     const r = transitionListSession(this.state, { type: 'key', keyClass: 'passthrough' });
     this.state = r.next; // functionMode: absorbs settles / swallows keys meanwhile
     const self = this;
@@ -1081,16 +1101,6 @@ ListSession.prototype = {
       if (self._view.flashListHint)
         self._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
     };
-    if (bytes == null) {
-      // Ctrl combo (only case left — see header): not resendable, so switch the
-      // mirror now; the un-prevented event reaches the native keyboard handlers
-      // right after this hook returns and they send it.
-      this._enterFunctionMode();
-      if (this._view.flashListHint)
-        this._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
-      return;
-    }
-    e.preventDefault();
     if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
       this._freezeForTransaction();
       // onFail too: still hand over to native + send (visible degrade — the
@@ -1099,6 +1109,75 @@ ListSession.prototype = {
       return;
     }
     finish();
+  },
+
+  // 滑鼠點畫面上的功能鍵按鈕（`[←]回上層` / `[→]閱讀` / `[c]新文章` …），由
+  // App.onFunctionKey 轉進來。回 true ＝我接手了（呼叫端不可以再送一次）。
+  //
+  // **為什麼不能直送 byte**：v5 的封閉互動合約是「白名單以外的鍵＝一鍵切原生，
+  // 永不靜默」（見 _classifyKey / docs/easy-reading-list.md）。滑鼠點功能鍵語意上
+  // 完全等同按下那個鍵，必須走同一條路，否則 byte 會落在使用者看不見的畫面上、
+  // 又繞過 CommandQueue。
+  onFunctionKey: function(bytes) {
+    if (this._renderMode === 'native') return false; // 沒接管，交給一般路徑
+    if (this.state === 'opening') {
+      if (this._view.flashListHint)
+        this._view.flashListHint('好讀列表：開啟文章中，請稍候…');
+      return true;
+    }
+    if (this.state === 'functionMode' && this._renderMode === 'frozen') {
+      if (this._view.flashListHint)
+        this._view.flashListHint('好讀列表：指令處理中，請稍候…');
+      return true;
+    }
+    if (this.state !== 'active') return false;
+    if (!bytes) return true;
+
+    const cls = this._classifyBytes(bytes);
+    if (cls.class === 'passthrough') {
+      this._beginPassthroughBytes(bytes);
+      return true;
+    }
+    const r = transitionListSession(this.state, { type: 'key', keyClass: cls.class });
+    this.state = r.next;
+    for (let i = 0; i < r.actions.length; ++i) {
+      const a = r.actions[i];
+      if (a === 'move-selection') this._moveSelection(cls.op);
+      else if (a === 'begin-open') this._beginOpen();
+      else if (a === 'begin-open-pinned') this._beginOpenPinned();
+      else if (a === 'begin-leave') this._beginLeave();
+      else this._runAction(a, null);
+    }
+    return true;
+  },
+
+  // 滑鼠的左側退出帶（cols 0-6）→ 與按 ← 完全同一條路。
+  // **絕不直送 byte**：_beginLeave 會先 getkeep 把 server 的真游標同步回來再送鍵。
+  onMouseExitClick: function() {
+    return this.onFunctionKey(LEFT_ARROW);
+  },
+
+  // byte 序列 → 白名單類別。**刻意獨立於 _classifyKey，不要合併**：
+  // 後者認 `q` / `e` / `j` / `k` / `n` / `p` 這些**字元**為導覽鍵，因為那是使用者
+  // 按下的按鍵；而 byte 層看到的 'q' 就只是 'q'（例如貼上、或功能鍵標示的字面
+  // 按鍵）。合併會把「按鍵」與「送位元組」兩種語意攪在一起。
+  //
+  // 這裡只認**明確的方向鍵／翻頁鍵序列**，其餘一律 passthrough（切原生＋送出），
+  // 方向安全：passthrough 永遠會把鍵送到 PTT，只是畫面切回原生。
+  _classifyBytes: function(bytes) {
+    switch (bytes) {
+      case '\x1b[A': return { class: 'nav', op: 'up' };
+      case '\x1b[B': return { class: 'nav', op: 'down' };
+      case '\x1b[5~': return { class: 'nav', op: 'pgup' };
+      case '\x1b[6~': return { class: 'nav', op: 'pgdn' };
+      case '\x1b[1~': return { class: 'nav', op: 'home' };
+      case '\x1b[4~': return { class: 'nav', op: 'end' };
+      case '\x1b[C':
+      case '\r':
+        return { class: this._selectedNum == null ? 'open-pinned' : 'open' };
+      case LEFT_ARROW: return { class: 'leave' };
+      default: return { class: 'passthrough' };
+    }
   },
 
   // Paste (Shift-Insert / context menu / middle click), routed here from

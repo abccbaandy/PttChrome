@@ -3,7 +3,8 @@
 import { TermKeyboard } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
 import { DEFAULT_HIGHLIGHT_BG, highlightClass, highlightColStart, resolveHighlightRow } from './cursor_highlight';
-import { clickableColStart } from './mouse_regions';
+import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END } from './mouse_regions';
+import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { exitBandRect } from './mouse_geometry';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
@@ -15,6 +16,7 @@ import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_wi
 import { readValuesWithDefault } from './pref_storage';
 import { isDocumentForeground } from './notification_gate';
 import icon128 from '../icon/icon_128.png';
+import cursorBack from '../cursor/back.png';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
 
@@ -116,6 +118,9 @@ export function TermView() {
   // 防誤觸模式（pref mouseMisclickGuard，預設開）：可點區＝底色區的起始欄，
   // 決策在 mouse_regions.clickableColStart。
   this.mouseMisclickGuard = true;
+  // 功能鍵可點（pref mouseFunctionKeys）。與總開關 and 過之後才決定要不要算
+  // functionKeyRows（見 _renderScreenLines）。
+  this.mouseFunctionKeys = true;
   //this.highlightFG = 7;
   this.fontFitWindowWidth = false;
   //new pref - end
@@ -684,6 +689,21 @@ TermView.prototype = {
     const ps = this.buf.pageState;
     if (ps === 2) this._inBoardListContext = true;
     else if (ps === 1 || ps === 3) this._inBoardListContext = false;
+    // 功能鍵可點：**全專案唯一**算 functionKeyRows 的地方（這個函式是七條 render
+    // 分支共用的 enhance choke point）。
+    //
+    // `!ov.stableRows` 是關鍵守門：帶 STABLE_ROWS 的兩條分支畫的是好讀累積長頁
+    // （buf.pageLines，數千列），那裡沒有「最後一列＝狀態列」這回事，而且它們吃
+    // 增量快取 —— 永不給這個欄位，快取零風險。
+    // pageState 用 override 優先（列表好讀的視窗幀把它 pin 成 2），沒有才用 buf 的。
+    const ov = enhanceOverrides || {};
+    let fnRows = null;
+    if (!ov.stableRows && this.mouseFunctionKeys && this.buf.useMouseBrowsing) {
+      fnRows = functionKeyRows(
+        ov.pageState != null ? ov.pageState : this.buf.pageState,
+        lines.length
+      );
+    }
     this.componentScreen = renderScreen(
       lines,
       this.chh,
@@ -721,7 +741,12 @@ TermView.prototype = {
           inListContext: this._inBoardListContext,
           // Stable per-article id; Screen resets the enlarge-images toggle when it
           // changes (new article / re-entry), not on every page-down.
-          articleId: this._articleInstanceId
+          articleId: this._articleInstanceId,
+          // 功能鍵按鈕：哪幾列要掃 ＋ 點下去交給誰（App 在啟動時指派
+          // this.onFunctionKey，與 onAidClick 同一種 view-optional callback 慣例；
+          // **引用必須穩定**，annotationsKey.refs 與 outerHTML 節點重用都靠它）。
+          functionKeyRows: fnRows,
+          onFunctionKey: this.onFunctionKey
         },
         // List easy reading pins pageState:2 so computeAnnotations applies list
         // blacklist rules to the accumulated buffer even on transient frames.
@@ -1135,14 +1160,35 @@ TermView.prototype = {
         if (win && win.body[idx] != null) hover = row;
       }
     }
-    var clickable =
-      hover >= 0 &&
-      !!this.mouseLeftClick &&
-      col >= clickableColStart(2, !!(this.buf.useMouseBrowsing && this.mouseMisclickGuard));
-    if (this.buf.BBSWin)
-      this.buf.BBSWin.style.cursor = clickable ? 'pointer' : 'auto';
-    // 列表模式不可能有文章左側的退出帶；不關掉的話從文章切回列表會留下殘影。
-    this.setExitAffordance(false);
+    // 左側退出帶（cols 0..EXIT_COL_END）：與原生列表同一個手勢，同樣**不看
+    // misclickGuard**（見 mouse_regions.resolveMouseRegion 的 case 2/4）。
+    // 只在「可點的文章列」上成立 —— header／footer 那幾列有功能鍵按鈕，
+    // 不該同時是退出區，這樣「提示帶亮＝點得下去」的合約才成立。
+    var iconsEnabled = !!(this.buf.useMouseBrowsing && this.mouseLeftClick);
+    var onExitBand = hover >= 0 && col >= 0 && col < EXIT_COL_END;
+    if (onExitBand) {
+      // 退出帶上沒有「hover 到哪一列」的概念（與文章一致），底色收掉。
+      hover = -1;
+      if (this.buf.BBSWin)
+        this.buf.BBSWin.style.cursor = cursorCss(CUR_BACK, {
+          backUrl: cursorBack,
+          iconsEnabled: iconsEnabled
+        });
+      this.setExitAffordance(iconsEnabled);
+    } else {
+      var clickable =
+        hover >= 0 &&
+        !!this.mouseLeftClick &&
+        col >= clickableColStart(2, !!(this.buf.useMouseBrowsing && this.mouseMisclickGuard));
+      // 兩個字面值改走 cursorCss（唯一真相源），總開關關掉時連 pointer 都不給。
+      if (this.buf.BBSWin)
+        this.buf.BBSWin.style.cursor = cursorCss(
+          clickable ? CUR_POINTER : CUR_AUTO,
+          { backUrl: cursorBack, iconsEnabled: iconsEnabled }
+        );
+      // 離開退出帶就要關掉；不關的話從文章切回列表也會留下殘影。
+      this.setExitAffordance(false);
+    }
     // 滑鼠動了 ⇒ 由滑鼠持有底色。早退（同一列內移動）只在**滑鼠本來就持有**時成立：
     // 鍵盤剛把底色搶走的話，即使 hover 列沒變也要重新套用，否則在同一列內晃動滑鼠
     // 永遠拿不回來。
@@ -1828,7 +1874,25 @@ TermView.prototype = {
     if (parseStatusRow(statusText)) {
       var el = document.createElement('span');
       el.style = "background-color:black;";
-      renderOverlayRow(this.buf.lines[this.buf.rows-1], this.chh, el);
+      var statusChars = this.buf.lines[this.buf.rows-1];
+      // 功能鍵按鈕：這條路不經 computeAnnotations（見 term_ui.renderOverlayRow），
+      // 故在這裡自己解析。gate 與 _renderScreenLines 那邊一致。
+      var fnKeys = null;
+      if (this.mouseFunctionKeys && this.buf.useMouseBrowsing && this.onFunctionKey) {
+        var parsed = parseFunctionKeys(statusChars);
+        if (parsed) {
+          var onFunctionKey = this.onFunctionKey;
+          fnKeys = parsed.map(function(item) {
+            return {
+              startCol: item.startCol,
+              endCol: item.endCol,
+              label: item.label,
+              onClick: function() { onFunctionKey(item.keyBytes, item.label); }
+            };
+          });
+        }
+      }
+      renderOverlayRow(statusChars, this.chh, el, fnKeys);
       this.setSingleChild(this.lastRowDiv.childNodes[0], el);
     }
     this.lastRowDiv.style.display = 'block';

@@ -192,6 +192,16 @@ const ARTICLE_EASY_LINES = [
   row(seg("噓 other: 換人了", color(1, 0)), seg("                06/14 12:04")),
 ];
 
+// --- 功能鍵提示列 -----------------------------------------------------------
+// 依 pttbbs 原始碼逐字抄（不是從畫面反推）：
+//   mbbsd/bbs.c:663      看板文章列表的提示列（row 1）
+//   mbbsd/vtuikit.c:722  vs_footer()，一律畫在最後一列
+// 兩列都含全形字，所以 golden 同時也是「解析走格子空間而非文字 index」的證明。
+const FNKEY_TOP =
+  "[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]搬移至 [i]看板資訊/設定 [h]說明";
+const FNKEY_FOOTER =
+  " 文章選讀  (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題 (/?a)找標題/作者 (b)進板畫面";
+
 // --- 列表 -------------------------------------------------------------------
 const LIST_LINES = [
   listRow("gooduser", "R: [情報] 普通文章"),
@@ -211,6 +221,28 @@ const CAPTION_LINES = [
   row(seg("")),
   row(seg("推 someone: 好看", color(2, 0)), seg("                06/14 12:01")),
 ];
+
+// 原生列表 ＋ 功能鍵按鈕：row 1 的提示列與最後一列的 vs_footer 各自變成一排
+// <a class="fnKey">。刻意做成 24 列，讓 functionKeyRows(2, 24) = [1, 23] 對得上。
+const LIST_FNKEY_LINES = (() => {
+  const out = [row(seg("看板《Test》")), row(seg(FNKEY_TOP))];
+  for (let i = 0; i < LIST_LINES.length; ++i) out.push(LIST_LINES[i]);
+  while (out.length < 23) out.push(row(seg("")));
+  out.push(row(seg(FNKEY_FOOTER)));
+  return out;
+})();
+
+// 文章 ＋ 底部 footer 的功能鍵（pageState 3 ⇒ functionKeyRows(3, 24) = [23]）。
+const ARTICLE_FNKEY_LINES = (() => {
+  const out = ARTICLE_NATIVE_LINES.slice();
+  while (out.length < 23) out.push(row(seg("")));
+  out.push(row(seg(FNKEY_FOOTER)));
+  return out;
+})();
+
+// 點下去要送什麼由 App.onFunctionKey 決定；golden 只鎖 DOM，故給一個穩定的空函式
+// （引用穩定是 annotationsKey.refs 的前提，見 screen_annotate_cache.js）。
+const NOOP_FNKEY = () => {};
 
 export const SCENARIOS = [
   // 原生文章：hover 預覽開、黑名單留白（dropHidden=false）、樓層不顯示。
@@ -297,6 +329,23 @@ export const SCENARIOS = [
     pageState: 2,
     listEasyReading: true,
     easyReading: true,
+  }),
+
+  // 原生列表 ＋ 功能鍵按鈕（row 1 的提示列 ＋ row 23 的 vs_footer）。
+  // `(=[]<>)` 與 `(/?a)` 這兩組多鍵組**必須維持純文字**，golden 逐字鎖住。
+  scenario("list_native_fnkeys", LIST_FNKEY_LINES, {
+    pageState: 2,
+    easyReading: false,
+    functionKeyRows: [1, 23],
+    onFunctionKey: NOOP_FNKEY,
+  }),
+
+  // 文章 ＋ 底部 footer 的功能鍵（pageState 3 只有最後一列，見 pmore.c）。
+  scenario("article_footer_fnkeys", ARTICLE_FNKEY_LINES, {
+    pageState: 3,
+    easyReading: false,
+    functionKeyRows: [23],
+    onFunctionKey: NOOP_FNKEY,
   }),
 
   // 圖文合併（mergeCaption 由 controller 內部 state 驅動，見下方 INTERACTIONS）。

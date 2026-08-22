@@ -15,10 +15,13 @@ import { MouseButtonTracker } from './mouse_button_tracker';
 import {
   ACT_NONE,
   ACT_ENTER,
+  ACT_EXIT,
   ACT_EXIT_ARTICLE,
+  EXIT_COL_END,
   resolveMouseGates
 } from './mouse_regions';
 import { colFromClientX } from './mouse_geometry';
+import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { i18n } from './i18n';
@@ -98,6 +101,11 @@ export const App = function() {
   this.view.onAidClick = (aid, board) => {
     this.aidNavigation.start(aid, board || this.view._articleBoard);
   };
+  // 功能鍵按鈕（畫面上的 `[d]刪除` / `(y)回應`）→ 送出那個按鍵。
+  // **只指派這一次，引用從此不變**：annotationsKey.refs 與 render/screen.js 的
+  // outerHTML 節點重用都以它的參考身分為前提（每幀新建箭頭函式會讓整份標註快取
+  // 每幀失效，長文直接回到 O(n²)）。
+  this.view.onFunctionKey = (bytes, label) => this.onFunctionKey(bytes, label);
   // Deep link (外部連結 #<Board>/<AID>) → 同一套 AID 跳轉。目標可能比登入先到，
   // 所以排程權在 controller 手上，不在 URL 解析那邊。
   this.deepLinkController = new DeepLinkController(this, this.view, this.buf);
@@ -569,6 +577,53 @@ App.prototype.onPasteDone = function(content) {
   this.view.onTextInput(content, true);
 };
 
+// 點畫面上功能鍵按鈕的**唯一**漏斗。形狀比照 onPasteDone —— 那是這個 app 已經
+// 解過同一題（「一個非鍵盤的輸入要怎麼進到兩種好讀模式」）的地方。
+//
+// **必須自己守門**：<a> 上的 click listener 是元素層，永遠比掛在 window 的
+// App.mouse_click 先跑 ⇒ 那邊的三道守門（modalShown / aidNavigation.active /
+// 上傳浮層）攔不到它（aidLink 也是靠 aid_navigation 自己的 `if (this.active) return;`
+// 自保，這裡比照）。見 docs/mouse.md 的點擊優先權表。
+App.prototype.onFunctionKey = function(bytes, label) {
+  if (!bytes) return;
+  if (this.modalShown) return;
+  if (this.aidNavigation && this.aidNavigation.active) {
+    if (this.view.flashListHint)
+      this.view.flashListHint('AID 跳文中，請稍候…');
+    return;
+  }
+  // 列表好讀：封閉互動（v5）。回 true ＝它接手了，不可以再送一次。
+  if (this.listSession && this.listSession.onFunctionKey(bytes)) return;
+
+  const plan = functionKeyClickPlan({
+    bytes: bytes,
+    mode:
+      this.view.useEasyReadingMode && this.buf.startedEasyReading
+        ? 'article-easy'
+        : 'native'
+  });
+  // 送 byte **之前**先進原生鏡像：PTT 會開 prompt（(y)回應 / (X)推文 / (h)說明），
+  // 但好讀的累積長頁原封不動 ⇒ 使用者看不到輸入框。docs/easy-reading.md 的
+  // 「貼上驅動」「IME 驅動」補過同一個洞兩次，這是第三個入口。
+  // （_enterFunctionMode 已在鏡像中時是 no-op。）
+  if (plan.enterFunctionMode) this.easyReading._enterFunctionMode();
+  // `←` 走與鍵盤 ArrowLeft 完全同一條路，離開文章時才不會閃一下原生 24 列。
+  if (plan.stopEasyReading) this.easyReading.stopEasyReading();
+  if (!plan.send) return;
+  // **刻意不用 easyReading._send**：它 _wireBusy() 時直接**丟棄**（那是給狀態機
+  // 自己送的鍵設計的，丟了只是少翻一頁）。使用者按下去的按鈕被靜默吞掉是 bug，
+  // 所以在這裡自己判同一組條件並**給提示**。
+  if (this.commandQueue && this.commandQueue.inFlightKind) {
+    if (this.view.flashListHint)
+      this.view.flashListHint('指令處理中，請稍候…');
+    return;
+  }
+  // view._send 內含 `if (this.conn)`（view.conn 只在 onConnect 被設）。
+  // **不用 _convSend**（會做 u2b 轉碼，對 [D 這種控制序列無意義），
+  // **不用 setBBSCmd**（那是翻頁語意的分派器），**絕不用 this.view.conn.send**。
+  this.view._send(bytes);
+};
+
 App.prototype.onDOMPaste = function(e) {
   // 剪貼簿裡是圖（截圖直接 Ctrl+V）→ 交給圖片上傳，吃掉這次貼上。沒有圖時
   // 回 false，文字貼上的行為與加這個功能之前完全一樣。
@@ -792,6 +847,15 @@ App.prototype.onMouse_click = function (e) {
     case ACT_EXIT_ARTICLE:
       this.view._send('\x1b[D'); //Arrow Left
       break;
+    // 列表／選單的左側退出帶。送的 byte 與鍵盤左方向鍵**完全相同**，行為等價，
+    // 不需要新語意（list_session._enqueueLeaveKey 用的也是它）。
+    // **不可以掉進 default** —— 舊的 mouseCursor 改名 mouseAction 就是為了讓漏改
+    // 變成 undefined 而不是靜默走錯 case（見 mouse_regions.js 檔頭）。
+    // 註：列表好讀模式**走不到這裡**，它在 mouse_click 就被 buffer/frozen 分支
+    // 攔下並交給 listSession.onMouseExitClick（封閉互動，見 docs/mouse.md）。
+    case ACT_EXIT:
+      this.view._send(LEFT_ARROW);
+      break;
     case ACT_ENTER: {
       if (targetRow < 0)
         break;
@@ -949,6 +1013,14 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.mouseMisclickGuard = !!value;
       this.buf.resetMousePos();
       this.view.applyCursorHighlight();
+      break;
+    // 功能鍵可點：改的是 annotation 的**內容**（哪幾格要包成 <a class="fnKey">），
+    // 不是滑鼠當下停在哪一格 ⇒ 必須 redraw，而且要 **force**：dirty-row 逐列 patch
+    // 只重畫 server 這一幀寫過的列，切 pref 時那批列通常是空的，不 force 的話按鈕
+    // 該出現不出現、該消失不消失，直到 PTT 下次重畫該列為止。
+    case 'mouseFunctionKeys':
+      this.view.mouseFunctionKeys = !!value;
+      this.view.redraw(true);
       break;
     case 'mouseMiddleClick':
       this.view.mouseMiddleClick = Number(value) || 0;
@@ -1154,7 +1226,13 @@ App.prototype.mouse_click = function(e) {
         e.preventDefault();
         if (this.mouseGates().leftClick && this.listSession) {
           var lpos = this.clientToPos(e.clientX, e.clientY);
-          this.listSession.onMouseClick(lpos.row, lpos.col);
+          // 左側退出帶（cols 0..EXIT_COL_END）：與原生列表同一個手勢。**絕不直送
+          // byte** —— onMouseExitClick 走 reducer 的 _beginLeave，它會先 getkeep
+          // 同步 server 的真游標再送鍵（v5 封閉互動）。
+          if (lpos.col >= 0 && lpos.col < EXIT_COL_END)
+            this.listSession.onMouseExitClick();
+          else
+            this.listSession.onMouseClick(lpos.row, lpos.col);
         }
         return;
       }

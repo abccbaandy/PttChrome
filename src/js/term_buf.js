@@ -8,6 +8,7 @@ import cursorBack from '../cursor/back.png';
 import {
   ACT_NONE,
   ACT_EXIT_ARTICLE,
+  CUR_BACK,
   resolveMouseRegion,
   cursorCss
 } from './mouse_regions';
@@ -1263,9 +1264,9 @@ TermBuf.prototype = {
       });
     }
     if (this.view && this.view.setExitAffordance) {
-      this.view.setExitAffordance(
-        affordance && region.action === ACT_EXIT_ARTICLE
-      );
+      // 用 **cursor** 當單一真相（不逐一列舉 action）：文章與列表／選單的退出帶
+      // 是同一個手勢、同一個 back 指標，日後再多一種退出 action 也不會漏列舉。
+      this.view.setExitAffordance(affordance && region.cursor === CUR_BACK);
     }
   },
 

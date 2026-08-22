@@ -5,9 +5,12 @@
 // 「游標長什麼樣」與「點下去做什麼」兩種語意，共 15 種動作（左緣離開、右緣翻頁、
 // 頂列 Home、底列 End、`[`/`]`/`=` 同標題前後篇、重新整理…）。誤觸率高、無法測。
 //
-// 現在只剩三種動作，且「做什麼」與「長什麼樣」分開回報：
+// 現在只剩四種動作，且「做什麼」與「長什麼樣」分開回報：
 //   enter        列表／選單：把游標移到該列並 Enter（開文章／進看板）
 //   exitArticle  文章內左側帶：送左方向鍵離開
+//   exit         列表／選單的左側帶：同樣送左方向鍵回上一層（2026-08 重新加回，
+//                當初移除是因為舊版 15 種動作沒有任何提示；提示帶＋back 指標補上
+//                之後 affordance 問題已解決，見 docs/mouse.md）
 //   none         什麼都不做（**必須真的什麼都不做**；舊 case 0 會送左方向鍵，
 //                是「隨手一點就跳出文章」的來源）
 //
@@ -20,6 +23,10 @@ import { LIST_TITLE_COL_START } from './comment_parse';
 export const ACT_NONE = 'none';
 export const ACT_ENTER = 'enter';
 export const ACT_EXIT_ARTICLE = 'exitArticle';
+// 列表／選單的左側退出帶。與 ACT_EXIT_ARTICLE **刻意分成兩個常數**：語意雖同
+// （都送左方向鍵），但列表好讀底下必須走 ListSession 的封閉互動（_beginLeave 會
+// 先 getkeep 同步真游標），文章則是直送。分開才逐處檢查得出來誰漏改。
+export const ACT_EXIT = 'exit';
 
 export const CUR_AUTO = 'auto';
 export const CUR_POINTER = 'pointer';
@@ -97,6 +104,20 @@ export function resolveMouseRegion(input) {
       const bottom = o.pageState === 2 ? rows - 1 : rows - 2;
       if (!(row > top && row < bottom)) return NONE;
       if (o.lineEmpty) return NONE;
+      // 左側退出帶（與文章的 EXIT_COL_END 同一個手勢與同一組提示）。
+      // **不看 misclickGuard**（使用者 2026-08 定案）：這是一個固定手勢，不是
+      // 「哪一欄算內容」的問題，與文章一致。
+      // 放在**列範圍與 lineEmpty 檢查之後**是刻意的：header／footer 那幾列現在有
+      // 功能鍵按鈕，不該同時是退出區，這樣「提示帶亮＝點得下去」的合約才成立。
+      if (col >= 0 && col < EXIT_COL_END) {
+        return {
+          action: ACT_EXIT,
+          row: -1,
+          cursor: CUR_BACK,
+          highlightRow: -1,
+          highlightColStart: 0
+        };
+      }
       // 欄位對 pttbbs mbbsd/bbs.c#readdoent 校準（見 comment_parse.js 的欄位表）：
       // 序號 0-6 / 空格 7 / type 8 / 推文數 9-10 / 日期 11-16 / 作者 17-29 /
       // 標題區 30-。防誤觸開啟時只有標題區可開文，點日期或作者欄不再誤觸。
@@ -112,6 +133,16 @@ export function resolveMouseRegion(input) {
 
     case 1: {
       if (!(row > 0 && row < rows - 1)) return NONE;
+      // 同 case 2/4：左 7 欄恆為退出，不看 misclickGuard。
+      if (col >= 0 && col < EXIT_COL_END) {
+        return {
+          action: ACT_EXIT,
+          row: -1,
+          cursor: CUR_BACK,
+          highlightRow: -1,
+          highlightColStart: 0
+        };
+      }
       const clickable = col >= colStart;
       return {
         action: clickable ? ACT_ENTER : ACT_NONE,

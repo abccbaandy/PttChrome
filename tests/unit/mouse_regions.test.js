@@ -4,6 +4,7 @@
 import {
   ACT_NONE,
   ACT_ENTER,
+  ACT_EXIT,
   ACT_EXIT_ARTICLE,
   CUR_AUTO,
   CUR_POINTER,
@@ -36,16 +37,17 @@ describe("文章列表（pageState 2）", () => {
   });
 
   test("序號／日期／作者欄全部不可開文", () => {
-    [0, 6, 7, 8, 10, 16, 17, 25, 29].forEach((col) => {
+    // 左 7 欄現在是退出帶（見下方 describe），這裡只列 EXIT_COL_END 之後的。
+    [7, 8, 10, 16, 17, 25, 29].forEach((col) => {
       expect(at({ pageState: 2, row: 5, col }).action).toBe(ACT_NONE);
     });
   });
 
   test("hover 整列都認得（底色的列），但底色只從標題欄畫起", () => {
-    expect(at({ pageState: 2, row: 5, col: 0 }).highlightRow).toBe(5);
+    expect(at({ pageState: 2, row: 5, col: EXIT_COL_END }).highlightRow).toBe(5);
     expect(at({ pageState: 2, row: 5, col: 40 }).highlightRow).toBe(5);
     // 底色區＝可點區（使用者 2026-08 定案），兩者不可分岔。
-    expect(at({ pageState: 2, row: 5, col: 0 }).highlightColStart).toBe(
+    expect(at({ pageState: 2, row: 5, col: EXIT_COL_END }).highlightColStart).toBe(
       LIST_TITLE_COL_START,
     );
     expect(at({ pageState: 2, row: 5, col: 40 }).highlightColStart).toBe(
@@ -67,8 +69,7 @@ describe("文章列表（pageState 2）", () => {
     expect(at({ pageState: 2, row: 22, col: 40 }).action).toBe(ACT_ENTER);
   });
 
-  test("舊的左緣離開／右緣翻頁已經不存在", () => {
-    expect(at({ pageState: 2, row: 5, col: 3 }).action).toBe(ACT_NONE); // 舊：離開
+  test("舊的右緣翻頁已經不存在（左緣離開 2026-08 重新加回，見下）", () => {
     expect(at({ pageState: 2, row: 5, col: 70 }).action).toBe(ACT_ENTER); // 舊：翻頁
   });
 });
@@ -98,14 +99,13 @@ describe("選單／看板列表（pageState 1）", () => {
     expect(at({ pageState: 1, row: 5, col: 70 }).action).toBe(ACT_ENTER);
   });
 
-  test("最左邊的序號區不可點（舊版是「離開」，現在什麼都不做）", () => {
-    expect(at({ pageState: 1, row: 5, col: 7 }).action).toBe(ACT_NONE);
-    expect(at({ pageState: 1, row: 5, col: 0 }).action).toBe(ACT_NONE);
+  test("退出帶與可點區之間的空隙（col 7）什麼都不做", () => {
+    expect(at({ pageState: 1, row: 5, col: EXIT_COL_END }).action).toBe(ACT_NONE);
   });
 
   test("hover 一樣上底色，範圍從可點欄起", () => {
-    expect(at({ pageState: 1, row: 5, col: 0 }).highlightRow).toBe(5);
-    expect(at({ pageState: 1, row: 5, col: 0 }).highlightColStart).toBe(
+    expect(at({ pageState: 1, row: 5, col: EXIT_COL_END }).highlightRow).toBe(5);
+    expect(at({ pageState: 1, row: 5, col: EXIT_COL_END }).highlightColStart).toBe(
       MENU_COL_START,
     );
   });
@@ -113,6 +113,64 @@ describe("選單／看板列表（pageState 1）", () => {
   test("首列與末列不是正文列", () => {
     expect(at({ pageState: 1, row: 0, col: 40 }).action).toBe(ACT_NONE);
     expect(at({ pageState: 1, row: 23, col: 40 }).action).toBe(ACT_NONE);
+  });
+});
+
+// 2026-08 重新加回「列表左緣離開」。當初移除是因為舊版 15 種動作誤觸率高又完全
+// 沒有提示；提示帶（#exitHintBand）＋ back 指標補上之後 affordance 問題已解決，
+// 使用者要求把它帶回列表／看板列表。見 docs/mouse.md「移除的舊動作」。
+describe("列表／選單的左側退出帶（pageState 1/2/4）", () => {
+  [1, 2, 4].forEach((pageState) => {
+    test(`pageState ${pageState}：左 ${EXIT_COL_END} 欄＝回上一層，指標換成 back`, () => {
+      for (let col = 0; col < EXIT_COL_END; ++col) {
+        const r = at({ pageState, row: 5, col });
+        expect(r.action).toBe(ACT_EXIT);
+        expect(r.cursor).toBe(CUR_BACK);
+        // 退出帶上沒有「hover 到哪一列」，與文章一致 ⇒ 不上底色。
+        expect(r.highlightRow).toBe(-1);
+        expect(r.highlightColStart).toBe(0);
+      }
+    });
+
+    test(`pageState ${pageState}：防誤觸開或關都成立（固定手勢，不是欄位判定）`, () => {
+      [true, false].forEach((misclickGuard) => {
+        expect(
+          resolveMouseRegion({
+            rows: 24,
+            lineEmpty: false,
+            misclickGuard,
+            pageState,
+            row: 5,
+            col: 0,
+          }).action,
+        ).toBe(ACT_EXIT);
+      });
+    });
+
+    test(`pageState ${pageState}：第 ${EXIT_COL_END} 欄起不再是退出帶`, () => {
+      expect(at({ pageState, row: 5, col: EXIT_COL_END }).action).not.toBe(ACT_EXIT);
+    });
+  });
+
+  test("非正文列（header/footer）不是退出區 —— 那幾列現在有功能鍵按鈕", () => {
+    // 「提示帶亮＝點得下去」的合約：退出帶只在正文列範圍內成立。
+    [0, 1, 2, 23].forEach((row) => {
+      expect(at({ pageState: 2, row, col: 0 }).action).toBe(ACT_NONE);
+    });
+    [0, 23].forEach((row) => {
+      expect(at({ pageState: 1, row, col: 0 }).action).toBe(ACT_NONE);
+    });
+  });
+
+  test("空列不是退出區（lineEmpty 檢查排在前面）", () => {
+    expect(at({ pageState: 2, row: 5, col: 0, lineEmpty: true }).action).toBe(
+      ACT_NONE,
+    );
+  });
+
+  test("文章的退出動作仍是獨立常數（兩者刻意分開，見 mouse_regions.js）", () => {
+    expect(at({ pageState: 3, row: 5, col: 0 }).action).toBe(ACT_EXIT_ARTICLE);
+    expect(ACT_EXIT).not.toBe(ACT_EXIT_ARTICLE);
   });
 });
 
@@ -194,8 +252,8 @@ describe("防誤觸關閉：整列可點、整列上底色", () => {
   const off = (over) =>
     resolveMouseRegion({ rows: 24, lineEmpty: false, misclickGuard: false, ...over });
 
-  test("文章列表：序號／日期／作者欄都開得了文", () => {
-    [0, 6, 7, 8, 16, 17, 29, 30, 79].forEach((col) => {
+  test("文章列表：序號／日期／作者欄都開得了文（退出帶以外）", () => {
+    [7, 8, 16, 17, 29, 30, 79].forEach((col) => {
       const r = off({ pageState: 2, row: 5, col });
       expect(r.action).toBe(ACT_ENTER);
       expect(r.row).toBe(5);
@@ -204,10 +262,10 @@ describe("防誤觸關閉：整列可點、整列上底色", () => {
     });
   });
 
-  test("LIST 變體與選單同樣整列可點", () => {
-    expect(off({ pageState: 4, row: 5, col: 0 }).action).toBe(ACT_ENTER);
-    expect(off({ pageState: 1, row: 5, col: 0 }).action).toBe(ACT_ENTER);
-    expect(off({ pageState: 1, row: 5, col: 0 }).highlightColStart).toBe(0);
+  test("LIST 變體與選單同樣整列可點（退出帶以外）", () => {
+    expect(off({ pageState: 4, row: 5, col: EXIT_COL_END }).action).toBe(ACT_ENTER);
+    expect(off({ pageState: 1, row: 5, col: EXIT_COL_END }).action).toBe(ACT_ENTER);
+    expect(off({ pageState: 1, row: 5, col: EXIT_COL_END }).highlightColStart).toBe(0);
   });
 
   test("空列／非正文列／文章頁不受影響", () => {
@@ -215,6 +273,9 @@ describe("防誤觸關閉：整列可點、整列上底色", () => {
       ACT_NONE,
     );
     expect(off({ pageState: 2, row: 0, col: 0 }).action).toBe(ACT_NONE);
+    // 退出帶也**不看防誤觸**（使用者定案），關掉照樣成立。
+    expect(off({ pageState: 2, row: 5, col: 0 }).action).toBe(ACT_EXIT);
+    expect(off({ pageState: 1, row: 5, col: 0 }).action).toBe(ACT_EXIT);
     // 文章的左側退出帶是固定手勢，與防誤觸無關。
     expect(off({ pageState: 3, row: 10, col: 1 }).action).toBe(ACT_EXIT_ARTICLE);
     expect(off({ pageState: 3, row: 10, col: 40 }).action).toBe(ACT_NONE);

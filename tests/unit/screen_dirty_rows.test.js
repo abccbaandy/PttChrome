@@ -175,6 +175,55 @@ describe("changedRows（活 buffer）", () => {
     expectMatchesFullRebuild(s, lines.slice(), { blacklist: new Set(["bob"]) });
   });
 
+  // 功能鍵按鈕的專屬回歸鎖 —— 這一條是 annotationsKey 漏加 functionKeyRows /
+  // onFunctionKey 時**唯一**會紅的地方。
+  test("REGRESSION：切「功能鍵可點」pref → 按鈕真的出現／消失", () => {
+    const lines = listLines();
+    // 提示列（bbs.c:663 的那一列）放在 row 1，符合 functionKeyRows 的輸出。
+    lines[1] = row(seg("[d]刪除 (y)回應"));
+    const s = mount(props(lines));
+    expect(s.container.querySelectorAll("a.fnKey").length).toBe(0);
+
+    // 開啟：changedRows 刻意給空的（切 pref 時 server 一列都沒重畫）。
+    s.update(
+      props(lines.slice(), {
+        functionKeyRows: [1],
+        onFunctionKey: () => {},
+        changedRows: [],
+      }),
+    );
+    expect(s.container.querySelectorAll("a.fnKey").length).toBe(2);
+
+    // 關閉：按鈕必須消失。
+    s.update(props(lines.slice(), { changedRows: [] }));
+    expect(s.container.querySelectorAll("a.fnKey").length).toBe(0);
+  });
+
+  test("REGRESSION：列表好讀視窗（rowIdentityStable）切 pref 一樣即時生效", () => {
+    // 這條路的重用條件是 `rowIdentityStable || !changedRows.has(row)` ⇒
+    // **changedRows 根本不參與判斷**。annotationsKey 沒涵蓋 functionKeyRows 的話，
+    // row 1 的節點會被無條件沿用，直到視窗捲動換掉列物件為止。
+    const lines = listLines();
+    lines[1] = row(seg("[d]刪除 (y)回應"));
+    const winProps = (ls, extra) =>
+      props(ls, {
+        listEasyReading: true,
+        easyReading: true,
+        rowIdentityStable: true,
+        ...extra,
+      });
+    const s = mount(winProps(lines));
+    expect(s.container.querySelectorAll("a.fnKey").length).toBe(0);
+
+    s.update(
+      winProps(lines.slice(), { functionKeyRows: [1], onFunctionKey: () => {} }),
+    );
+    expect(s.container.querySelectorAll("a.fnKey").length).toBe(2);
+
+    s.update(winProps(lines.slice()));
+    expect(s.container.querySelectorAll("a.fnKey").length).toBe(0);
+  });
+
   test("列物件被換掉就必須重畫，即使它不在 changedRows", () => {
     // 承重條件 prevLines[row] === lines[row]。原生 24 列 ↔ 列表視窗 24 列互換、
     // buf.lines ↔ buf.pageLines 互換、term_buf.scroll() 把列物件搬到別的 index，

@@ -849,6 +849,23 @@ export const PrefModal = ({
                   {i18n("tooltip_mouseMisclickGuard")}
                 </Text>
               </fieldset>
+              {/* 功能鍵可點：解析在 js/footer_keys.js，只認單一按鍵的括號組。
+                  一樣 disabled={!useMouseBrowsing}（term_view 也一併 gate，
+                  總開關關掉時一個節點都不產生）。 */}
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_mouseFunctionKeys")}</legend>
+                <PrefCheckbox
+                  name="mouseFunctionKeys"
+                  checked={values.mouseFunctionKeys}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableMouseFunctionKeys")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_mouseFunctionKeys")}
+                </Text>
+              </fieldset>
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                 <legend>{i18n("options_mouseMiddleClick")}</legend>
                 <Select

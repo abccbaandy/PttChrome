@@ -67,6 +67,9 @@ function noticeSegments(text, forceWidth) {
 //   tint shows through without overriding any ANSI colours).
 // authorIdStart/authorIdEnd: cols [start, end) of the user id when this comment is
 //   by the 原PO → wrap just the id in .commentByAuthor (see LinkSegmentBuilder).
+// fnKeys: 這一列的可點功能鍵（`[d]刪除` / `(y)回應`），cols [startCol, endCol)
+//   含括號，每筆帶 onClick（見 js/footer_keys.js 與 js/screen_annotations
+//   #applyFunctionKeys）→ LinkSegmentBuilder 包成 <a class="fnKey">。
 // blacklistNotice: native-list blacklisted row → render this deleted-style notice
 //   「(本文已被黑名單) <作者>」instead of the original char cells. Bypasses
 //   LinkSegmentBuilder (no links / colours), but still forces full-width glyphs to
@@ -96,6 +99,7 @@ export function buildRow({
   aids,
   giveaways,
   bareDomains,
+  fnKeys,
   blacklistNotice,
   onHyperLinkMouseOver,
   onHyperLinkMouseOut,
@@ -137,6 +141,7 @@ export function buildRow({
     giveaways,
     bareDomains,
     sizeMode,
+    fnKeys,
   );
   for (let i = 0; i < chars.length; ++i) builder.readChar(chars[i], i);
 

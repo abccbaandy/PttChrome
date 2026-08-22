@@ -28,8 +28,13 @@ export class ColorState {
 // (the easy-reading footer #easyReadingLastRow). It is a standalone div under
 // BBSWin, so a tiny per-row render here does not fight the screen container's
 // owner (that one is rendered solely via renderScreen / ScreenController).
-export function renderOverlayRow(chars, forceWidth, cont) {
-  const built = buildRow({ chars, row: 0, forceWidth });
+//
+// fnKeys（可選）＝這一列的可點功能鍵。文章好讀的 footer 是**唯一**不經
+// computeAnnotations 的渲染路徑，所以呼叫端（term_view._mirrorStatusRowToFooter）
+// 自己呼叫 parseFunctionKeys 帶進來。#easyReadingLastRow 沒有 pointer-events:none
+// ⇒ 點得到；每次都整個 replaceChildren 重建，listener 隨舊節點一起丟掉，不會洩漏。
+export function renderOverlayRow(chars, forceWidth, cont, fnKeys) {
+  const built = buildRow({ chars, row: 0, forceWidth, fnKeys });
   cont.replaceChildren(built.node);
 }
 

@@ -603,6 +603,15 @@
   "tooltip_mouseMisclickGuard": {
     "message": "開啟：列表只有點標題欄才會開文（點日期或作者欄沒反應），文章裡只有點推文的內容文字才會高亮同一個推文者 —— 左側因此空出來給「點一下離開文章」的提示帶。關閉：整條都能點。游標底色的範圍一律等於可點範圍。"
   },
+  "options_mouseFunctionKeys": {
+    "message": "功能鍵可點"
+  },
+  "options_enableMouseFunctionKeys": {
+    "message": "畫面上的功能鍵提示變成按鈕"
+  },
+  "tooltip_mouseFunctionKeys": {
+    "message": "把畫面頂端與底部的 [←]離開、[Ctrl-P]發表文章、(y)回應、(X)推文 這類提示變成可以點的按鈕，點一下等於按下那個鍵。只有標示**單一按鍵**的才可點；(v/V)、(=[]<>) 這種一組多鍵的維持純文字，以免送錯鍵。"
+  },
   "options_mouseMiddleClick": {
     "message": "滑鼠中鍵"
   },

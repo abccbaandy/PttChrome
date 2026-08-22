@@ -60,6 +60,7 @@ export class LinkSegmentBuilder {
     giveaways,
     bareDomains,
     sizeMode,
+    fnKeys,
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -134,6 +135,21 @@ export class LinkSegmentBuilder {
       }
     }
     this._bareDomain = null;
+    // 功能鍵按鈕（src/js/footer_keys.js）：cols [startCol, endCol) of each
+    // `[d]` / `(y)` / `(^X)` token（範圍**含括號**，所以邊界必落在 ASCII 格上，
+    // 不可能切在 DBCS 的 trail cell 中間）。開/關邊界機制與 mention 完全相同。
+    //
+    // 用 <a> 是**刻意**的：pttchrome 的 App.mouse_click 有一條 isAnchorTarget 早退
+    // （優先權第 4 條，見 docs/mouse.md），它讓功能鍵自動贏過所有滑鼠瀏覽分支
+    // ⇒ App.mouse_click 一行都不用改。
+    this._fnKeyStart = null;
+    if (fnKeys && fnKeys.length) {
+      this._fnKeyStart = new Map();
+      for (let k = 0; k < fnKeys.length; ++k) {
+        this._fnKeyStart.set(fnKeys[k].startCol, fnKeys[k]);
+      }
+    }
+    this._fnKey = null;
     //
     this.segs = [];
     // Auto-fixed URLs (src/js/url_fix.js) render on extra lines below the article
@@ -280,6 +296,34 @@ export class LinkSegmentBuilder {
       if (this.onHyperLinkMouseOut)
         a.addEventListener("mouseout", this.onHyperLinkMouseOut);
       this._pushSeg(a);
+    } else if (this._fnKey) {
+      // 功能鍵 → 送出那個按鍵。href="#" **一定要 preventDefault**：本 app 用 URL
+      // hash 做 deep link（docs/deep-link.md），漏掉會塞垃圾 hash 甚至觸發跳文解析。
+      //
+      // onClick 閉包**只捕捉靜態資料**（keyBytes / label ＋ 那個引用穩定的
+      // enhance.onFunctionKey）。捕捉任何逐幀狀態都會踩到 render/screen.js 的
+      // outerHTML 節點重用：重建出來的節點因 HTML 相同被丟棄、留下舊閉包
+      // ⇒「按鈕點了送到上一幀的東西」，且完全看不出來。
+      //
+      // 這個 <a> **不得插入任何文字節點**：term_view.countCol 遞迴累加
+      // u2b(textContent).length，多一個字就讓選取／ANSI 複製的 col 反查錯位
+      // （title 屬性不算文字節點，可以放）。
+      const fnKey = this._fnKey;
+      const a = el(
+        "a",
+        {
+          class: "fnKey",
+          href: "#",
+          "data-fnkey": fnKey.label,
+          title: `按 ${fnKey.label}`,
+        },
+        element,
+      );
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (fnKey.onClick) fnKey.onClick();
+      });
+      this._pushSeg(a);
     } else if (this.href) {
       this._pushSeg(
         hyperLink(
@@ -337,6 +381,7 @@ export class LinkSegmentBuilder {
       this._aid = null;
       this._giveaway = null;
       this._bareDomain = null;
+      this._fnKey = null;
       this._flushLine();
       return;
     }
@@ -404,6 +449,15 @@ export class LinkSegmentBuilder {
     if (this._bareDomainStart !== null && this._bareDomainStart.has(i)) {
       if (this.colorSegBuilder !== null) this.saveSegment();
       this._bareDomain = this._bareDomainStart.get(i);
+    }
+    // 功能鍵邊界 — same open/close dance as mentions above.
+    if (this._fnKey && i === this._fnKey.endCol) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._fnKey = null;
+    }
+    if (this._fnKeyStart !== null && this._fnKeyStart.has(i)) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._fnKey = this._fnKeyStart.get(i);
     }
     if (this.colorSegBuilder !== null && ch.isStartOfURL()) {
       this.saveSegment();

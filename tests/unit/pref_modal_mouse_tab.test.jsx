@@ -97,13 +97,14 @@ beforeAll(() => setupI18n());
 beforeEach(() => window.localStorage.clear());
 
 describe("設定頁：滑鼠分頁", () => {
-  test("五個功能都在這一頁上", () => {
+  test("六個功能都在這一頁上", () => {
     const panel = openMouseTab();
     [
       "useMouseBrowsing",
       "mouseBrowsingHighlight",
       "mouseLeftClick",
       "mouseMisclickGuard",
+      "mouseFunctionKeys",
     ].forEach((name) => expect(field(panel, name)).toBeTruthy());
     // Mantine Select 的 input 沒有 name，用 legend 驗欄位在場。
     expect(panel.textContent).toContain(i18n("options_mouseMiddleClick"));
@@ -116,7 +117,9 @@ describe("設定頁：滑鼠分頁", () => {
     expect(field(panel, "mouseBrowsingHighlight")).toBeChecked();
     expect(field(panel, "mouseLeftClick")).toBeChecked();
     expect(field(panel, "mouseMisclickGuard")).toBeChecked();
+    expect(field(panel, "mouseFunctionKeys")).toBeChecked();
     expect(DEFAULT_PREFS.mouseMisclickGuard).toBe(true);
+    expect(DEFAULT_PREFS.mouseFunctionKeys).toBe(true);
     expect(DEFAULT_PREFS.useMouseBrowsing).toBe(true);
     expect(DEFAULT_PREFS.mouseMiddleClick).toBe(0);
     expect(DEFAULT_PREFS.mouseWheel).toBe(1);
@@ -127,6 +130,7 @@ describe("設定頁：滑鼠分頁", () => {
     expect(field(panel, "mouseBrowsingHighlight")).toBeDisabled();
     expect(field(panel, "mouseLeftClick")).toBeDisabled();
     expect(field(panel, "mouseMisclickGuard")).toBeDisabled();
+    expect(field(panel, "mouseFunctionKeys")).toBeDisabled();
     panel
       .querySelectorAll("input[readonly], input[aria-haspopup='listbox']")
       .forEach((el) => expect(el).toBeDisabled());
@@ -150,6 +154,13 @@ describe("設定頁：滑鼠分頁", () => {
     fireEvent.click(field(panel, "mouseMisclickGuard"));
     closeModal();
     expect(readValuesWithDefault().mouseMisclickGuard).toBe(false);
+  });
+
+  test("關掉功能鍵可點 → 寫進 pref", () => {
+    const panel = openMouseTab();
+    fireEvent.click(field(panel, "mouseFunctionKeys"));
+    closeModal();
+    expect(readValuesWithDefault().mouseFunctionKeys).toBe(false);
   });
 
   test("關掉總開關 → 寫進 pref（子項的值原樣保留，重開就回到先前的組合）", () => {

@@ -603,6 +603,15 @@ export const en_US = {
   "tooltip_mouseMisclickGuard": {
     "message": "On: in a list only the title column opens the post, and in a post only a comment's text toggles the same-commenter highlight — so the left edge stays free for the \"leave the post\" band. Off: the whole row responds. The highlight bar always covers exactly the clickable area."
   },
+  "options_mouseFunctionKeys": {
+    "message": "Clickable function keys"
+  },
+  "options_enableMouseFunctionKeys": {
+    "message": "Turn on-screen key hints into buttons"
+  },
+  "tooltip_mouseFunctionKeys": {
+    "message": "Turns the key hints at the top and bottom of the screen — [←]Leave, [Ctrl-P]Post, (y)Reply, (X)Comment — into buttons; clicking one sends that key. Only hints naming a **single** key are clickable; groups such as (v/V) or (=[]<>) stay plain text so the wrong key is never sent."
+  },
   "options_mouseMiddleClick": {
     "message": "Mouse middle button"
   },
