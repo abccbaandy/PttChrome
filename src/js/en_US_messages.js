@@ -664,6 +664,7 @@ export const en_US = {
   },
   "about_new_content": {
     "message": [
+      'Core screens (board list, article, and both easy-reading modes) rewritten as plain JavaScript DOM, no longer going through React — a BBS screen repaints in full on every incoming page, where React is all cost and no benefit; the settings dialog and other peripheral UI stay on React.',
       'Upgraded to React 19 (bundled, function components + hooks).',
       'Dropped Bootstrap / react-bootstrap; UI components migrated to Mantine (dark by default, switchable theme).',
       'Build tooling: Vite 8 (Rolldown core, replacing webpack + Babel), Yarn 4; tests on Vitest 4 (replacing Jest).',

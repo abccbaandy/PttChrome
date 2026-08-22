@@ -1,4 +1,4 @@
-// 好讀自動開圖的延遲載入／遠離卸載（src/components/LazyInlinePreview.jsx ＋
+// 好讀自動開圖的延遲載入／遠離卸載（src/render/inline_preview_slot.js ＋
 // src/js/lazy_media.js）。
 //
 // 背景：好讀把整篇累積成一長頁並對每個連結掛 inline 預覽。實錄的 EZsoft 長文有
@@ -9,7 +9,6 @@
 // （imgur 無副檔名的還會發兩個 HEAD 探測），所以單純給 <img> 加 loading="lazy"
 // 沒有用，延遲必須做在整個預覽元件的掛載上。
 
-import { render, act } from "@testing-library/react";
 import {
   nextLazyState,
   recordSlotAspect,
@@ -32,11 +31,27 @@ vi.mock("../../src/components/ImagePreviewer", async (importOriginal) => {
   };
 });
 
-const {
-  default: LazyInlinePreview,
-  PreviewSizeModeContext,
-  resetLazyObserversForTest,
-} = await import("../../src/components/LazyInlinePreview");
+const { createInlinePreviewSlot, resetLazyObserversForTest } = await import(
+  "../../src/render/inline_preview_slot"
+);
+
+// 舊版是 React 元件 + PreviewSizeModeContext；純 JS 版是一個 slot 物件，尺寸模式
+// 由 ScreenController 直接呼叫 setSizeMode() 廣播。掛進 document 好讓 .remove()
+// 與 offsetHeight 的覆寫行為與真實情境一致。
+function mountSlot(href, sizeMode) {
+  const slot = createInlinePreviewSlot(href, sizeMode);
+  document.body.appendChild(slot.el);
+  liveSlots.push(slot);
+  return slot;
+}
+const liveSlots = [];
+function destroySlots() {
+  while (liveSlots.length) {
+    const s = liveSlots.pop();
+    s.destroy();
+    s.el.remove();
+  }
+}
 
 // 假 IntersectionObserver：記下每個 root margin 建立的 observer，測試自己決定
 // 什麼時候回報相交/不相交。
@@ -58,12 +73,10 @@ class FakeIO {
     this.targets.clear();
   }
   emit(isIntersecting) {
-    act(() => {
-      this.cb(
-        Array.from(this.targets).map((target) => ({ target, isIntersecting })),
-        this,
-      );
-    });
+    this.cb(
+      Array.from(this.targets).map((target) => ({ target, isIntersecting })),
+      this,
+    );
   }
 }
 
@@ -86,12 +99,10 @@ class FakeRO {
     this.targets.clear();
   }
   emit() {
-    act(() => {
-      this.cb(
-        Array.from(this.targets).map((target) => ({ target })),
-        this,
-      );
-    });
+    this.cb(
+      Array.from(this.targets).map((target) => ({ target })),
+      this,
+    );
   }
 }
 
@@ -196,7 +207,7 @@ describe("nextLazyState / recordSlotHeight（純決策）", () => {
   });
 });
 
-describe("LazyInlinePreview（掛載/卸載）", () => {
+describe("延遲載入佔位盒（掛載/卸載）", () => {
   const HREF = "https://i.imgur.com/abcdefg.jpg";
 
   beforeEach(() => {
@@ -209,25 +220,25 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   });
 
   afterEach(() => {
+    destroySlots();
     delete global.IntersectionObserver;
     delete global.ResizeObserver;
     resetLazyObserversForTest();
   });
 
   test("還沒進入視野 ⇒ 佔位盒是空的，且 requestPreview 一次都沒被呼叫", () => {
-    const { container } = render(<LazyInlinePreview href={HREF} />);
-    const slot = container.querySelector(".inlinePreviewSlot");
+    const slot = mountSlot(HREF).el;
     expect(slot).not.toBeNull();
     expect(slot.children.length).toBe(0);
     expect(spies.requestPreview).toBe(0);
   });
 
   test("接近視野 ⇒ 掛上預覽（此時才解析網址）", () => {
-    const { container } = render(<LazyInlinePreview href={HREF} />);
+    const slot = mountSlot(HREF).el;
     near().emit(true);
     expect(spies.requestPreview).toBe(1);
     expect(
-      container.querySelector(".inlinePreviewSlot").children.length,
+      slot.children.length,
     ).toBeGreaterThan(0);
   });
 
@@ -272,9 +283,9 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   }
 
   test("遠離視野 ⇒ 卸載，並把卸載前的高度釘進佔位盒（閱讀位置不位移）", () => {
-    const { container } = render(<LazyInlinePreview href={HREF} />);
+    const slot = mountSlot(HREF).el;
     near().emit(true);
-    const slot = container.querySelector(".inlinePreviewSlot");
+    
     const img = fakeLoadedMedia(slot, 420);
     far().emit(false);
     img.remove(); // 媒體隨卸載消失
@@ -283,8 +294,7 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   });
 
   test("捲回來 ⇒ 重新掛載，佔位高度保留", () => {
-    const { container } = render(<LazyInlinePreview href={HREF} />);
-    const slot = container.querySelector(".inlinePreviewSlot");
+    const slot = mountSlot(HREF).el;
     near().emit(true);
     const img = fakeLoadedMedia(slot, 420);
     far().emit(false);
@@ -303,20 +313,17 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   //   (2) 佔位盒歸零 ⇒ 往上捲時圖一張張掛回來撐開，把上方內容推走 ⇒ 跳頁
   // 正解：兩種模式各記一組實測高度，切回去就用那一組。
   test("放大→捲遠→縮小：佔位盒換用縮小態的高度（不留空白，也不塌陷）", () => {
-    const view = (mode) => (
-      <PreviewSizeModeContext.Provider value={mode}>
-        <LazyInlinePreview href={HREF} />
-      </PreviewSizeModeContext.Provider>
-    );
-    const { container, rerender } = render(view("normal"));
-    const slot = container.querySelector(".inlinePreviewSlot");
+    const handle = mountSlot(HREF, "normal");
+    const slot = handle.el;
+    const rerender = (mode) => handle.setSizeMode(mode);
+    
     near().emit(true);
     // 縮小態把圖載出來 → 這個模式的高度被記下（關鍵：不必等到卸載）
     fakeLoadedMedia(slot, 570);
     resized().emit();
 
     // 點圖放大：同一張圖變成 908
-    rerender(view("enlarged"));
+    rerender("enlarged");
     resizeTo(slot, 908);
     resized().emit();
     expect(slot.style.minHeight).toBe("908px");
@@ -329,11 +336,11 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
     expect(slot.style.minHeight).toBe("908px");
 
     // 點縮小 ⇒ 換用縮小態量到的 570：不是 908（空白），也不是 0（塌陷→跳頁）
-    rerender(view("normal"));
+    rerender("normal");
     expect(slot.style.minHeight).toBe("570px");
 
     // 切回放大 ⇒ 回到 908
-    rerender(view("enlarged"));
+    rerender("enlarged");
     expect(slot.style.minHeight).toBe("908px");
   });
 
@@ -341,13 +348,10 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   // 這時不得拿放大態的值頂替（＝空白），也不能什麼都不放（＝塌陷跳頁）：要留下同比例
   // 的替身盒，讓 CSS 用真圖那組規則算出縮小態該有的高度。
   test("只在放大態量過 ⇒ 切到縮小態改由替身盒佔位（不套放大態高度）", () => {
-    const view = (mode) => (
-      <PreviewSizeModeContext.Provider value={mode}>
-        <LazyInlinePreview href={HREF} />
-      </PreviewSizeModeContext.Provider>
-    );
-    const { container, rerender } = render(view("enlarged"));
-    const slot = container.querySelector(".inlinePreviewSlot");
+    const handle = mountSlot(HREF, "enlarged");
+    const slot = handle.el;
+    const rerender = (mode) => handle.setSizeMode(mode);
+    
     near().emit(true);
     const img = fakeLoadedMedia(slot, 908, { w: 800, h: 600 });
     resized().emit();
@@ -355,7 +359,7 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
 
     far().emit(false); // 往下捲到卸載
     img.remove();
-    rerender(view("normal")); // 點縮小
+    rerender("normal"); // 點縮小
     expect(slot.style.minHeight).toBe("");
 
     const ghost = slot.querySelector(".inlinePreviewGhost");
@@ -367,8 +371,7 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   });
 
   test("替身盒只在卸載期間存在，掛回來就讓位給真圖", () => {
-    const { container } = render(<LazyInlinePreview href={HREF} />);
-    const slot = container.querySelector(".inlinePreviewSlot");
+    const slot = mountSlot(HREF).el;
     near().emit(true);
     const img = fakeLoadedMedia(slot, 570, { w: 800, h: 600 });
     resized().emit();
@@ -384,8 +387,7 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   // 載入完成前 <img> 已在 DOM 裡但 display:none，量到的是「讀取中…」指示器的高度。
   // 記進去就是假空白（同 ask-urlline-blank 那個 65px 實例）。
   test("媒體還沒載完（img 尚未佔到版面）⇒ 尺寸回報不得記高度", () => {
-    const { container } = render(<LazyInlinePreview href={HREF} />);
-    const slot = container.querySelector(".inlinePreviewSlot");
+    const slot = mountSlot(HREF).el;
     near().emit(true);
     Object.defineProperty(slot, "offsetHeight", {
       configurable: true,
@@ -407,11 +409,9 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   // 「讀取中…」指示器，判定後內容消失。卸載時**不得**把那個指示器的高度釘住，
   // 否則變成永久假空白，而且非媒體連結永遠不會再長出內容來填它。
   test("非媒體連結（slot 內只有讀取中指示器）卸載 ⇒ 不留 min-height", () => {
-    const { container } = render(
-      <LazyInlinePreview href="https://www.ptt.cc/bbs/ask/M.1786465191.A.DBD.html" />,
-    );
+    const slot = mountSlot("https://www.ptt.cc/bbs/ask/M.1786465191.A.DBD.html").el;
     near().emit(true);
-    const slot = container.querySelector(".inlinePreviewSlot");
+    
     // 「讀取中…」指示器撐出的高度（實測 65px），slot 內沒有任何媒體元素。
     Object.defineProperty(slot, "offsetHeight", {
       configurable: true,
@@ -423,8 +423,7 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   });
 
   test("遲滯：只是離開視野（還在卸載邊界內）不卸載", () => {
-    const { container } = render(<LazyInlinePreview href={HREF} />);
-    const slot = container.querySelector(".inlinePreviewSlot");
+    const slot = mountSlot(HREF).el;
     near().emit(true);
     near().emit(false); // 捲出視野，但 far 仍相交
     expect(slot.children.length).toBeGreaterThan(0);
@@ -433,10 +432,10 @@ describe("LazyInlinePreview（掛載/卸載）", () => {
   test("環境沒有 IntersectionObserver ⇒ 立即掛載（行為與沒這功能時相同）", () => {
     delete global.IntersectionObserver;
     resetLazyObserversForTest();
-    const { container } = render(<LazyInlinePreview href={HREF} />);
+    const slot = mountSlot(HREF).el;
     expect(spies.requestPreview).toBe(1);
     expect(
-      container.querySelector(".inlinePreviewSlot").children.length,
+      slot.children.length,
     ).toBeGreaterThan(0);
   });
 });

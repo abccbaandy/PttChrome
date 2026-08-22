@@ -28,7 +28,8 @@
   },
   "lint-staged": {
     "*.json": "prettier --write",
-    "src/components/**/*.{js,jsx,json,css}": "prettier --write"
+    "src/components/**/*.{js,jsx,json,css}": "prettier --write",
+    "src/render/**/*.js": "prettier --write"
   },
   "scripts": {
     "prepare": "husky",

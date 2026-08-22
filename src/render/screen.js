@@ -1,0 +1,812 @@
+// 終端機畫面的渲染控制器（原 src/components/Screen.jsx 的純 JS 版）。
+//
+// 它擁有 #mainContainer，四個核心模組（文章列表／列表好讀／文章／文章好讀）全部
+// 走這一條路徑——**不可以有第二條**。2026-06 的教訓（舊 docs 坑 #11 / commit
+// 06696b9、63139be）：好讀曾直接竄改 #mainContainer，React 樹的 Row 節點變成
+// detached，切回 React 路徑後更新全打在 detached 節點上 ⇒ 畫面永久凍結。
+//
+// 對外介面刻意與舊的 React handle 相容，term_view 一行都不用改：
+//   update(props)                 ← term_ui.renderScreen
+//   setCursorHighlight({row,cls,col}) ← term_view.applyCursorHighlight
+//
+// 逐列標註仍走 src/js/screen_annotations.js（與 React 版共用的純函式）。
+// 兩層快取的**判準**一字沿用舊版，只是產物從 React element 換成 DOM 節點：
+//   1. 標註層 — screen_annotate_cache 的 annotationsKey/sameKey/isAppendOnly，
+//      只在 enhance.stableRows（好讀累積長頁的快照列）為真時啟用。
+//   2. 節點層 — 列參考 + annotation 參考 + 該列高亮狀態都沒變就沿用同一個 DOM 節點。
+// 沒有這兩層，8000 列的累積頁每頁都要重建 8000 列（長文「越讀越慢」的來源，
+// 見 screen_annotate_cache.js 檔頭的實測）。
+import { el } from "./dom";
+import { buildRow } from "./row";
+import {
+  createMergeImageCaptionButton,
+  createMergeImageCaptionAiButton,
+} from "./merge_buttons";
+import { createSignatureTask } from "./signature_task";
+import React from "react";
+import ImagePreviewer, {
+  of,
+  resolveSrcToImageUrl,
+  resolveWithImageDOM,
+} from "../components/ImagePreviewer";
+import { renderInto, unmountFrom } from "../js/react_root";
+import { PAGE_READING, computeAnnotations } from "../js/screen_annotations";
+import { spanKey, spanNeedsAi } from "../js/caption_ai_logic";
+import {
+  captionAiAvailability,
+  classifySpans,
+  destroyCaptionAi,
+} from "../js/caption_ai";
+import { domainKey, fixKey } from "../js/url_ai_logic";
+import {
+  classifyBrokenUrls,
+  classifyDomains,
+  destroyUrlAi,
+} from "../js/url_ai";
+import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
+import {
+  annotationsKey,
+  sameKey,
+  isAppendOnly,
+} from "../js/screen_annotate_cache";
+
+// 游標底色的「沒有」值。凍結成模組常數讓「已經是不上色」的重複呼叫在比較階段就
+// 被吃掉。col＝底色從第幾欄畫起（0＝整列），與可點區同源
+// （js/mouse_regions.clickableColStart）。
+const NO_HIGHLIGHT = Object.freeze({ row: -1, cls: null, col: 0 });
+
+// 一列被丟棄時要收掉它建立的延遲載入佔位盒（IntersectionObserver /
+// ResizeObserver / ImagePreviewer 的 React root）。React 卸載時自動做的事，
+// 純 JS 必須自己做——這是去 React 化唯一新增的洩漏面。
+function disposeNode(node) {
+  if (!node) return;
+  const slots = node.__slots;
+  if (!slots) return;
+  for (let i = 0; i < slots.length; ++i) slots[i].destroy();
+  node.__slots = null;
+}
+
+export class ScreenController {
+  constructor(screenRoot) {
+    this.screenRoot = screenRoot;
+    this.container = el("div", { id: "mainContainer" });
+    screenRoot.appendChild(this.container);
+
+    // 最後一次 update() 的 props（互動 state 改變時據此重畫）。
+    this.props = null;
+
+    // ---- 互動狀態（原本是 Screen 的 11 個 useState）----
+    // 游標底色：要上色的列 + color.css 背景 class + 起始欄。row -1 / cls null ＝
+    // 不上色；col 0 ＝ 整列，col > 0 ＝ 只有 [col, 行尾) 上色。決策全在
+    // js/cursor_highlight.js，套用入口是 term_view.applyCursorHighlight。
+    this.highlight = NO_HIGHLIGHT;
+    this._hoverPreview = undefined;
+    this._hoverPos = { left: undefined, top: undefined };
+    // 好讀自動開圖「一鍵放大全部圖片至視窗寬度」；點任一張內嵌預覽圖切換。
+    this._imagesEnlarged = false;
+    // 好讀「圖左字右合併」三態：null（關）→ "imageFirst" → "captionFirst" → null。
+    // 與 imagesEnlarged 同生命週期——同篇 page-down 保留、換文章／退出再進
+    // （articleId 變）才重置，所以不會「換到沒按鈕的文章卻還開著、關不掉」。
+    this._mergeCaption = null;
+    // 裝置端 AI 校正（第二顆浮動按鈕，per-session）。
+    this._captionAi = false;
+    this._aiKeep = {};
+    this._aiPending = 0;
+    // 模型是否真的就緒。光看 window.LanguageModel 存不存在不夠：Chromium 也有這個
+    // global，但 availability() 會回 'unavailable'（沒有模型元件）——那種情況下
+    // 按鈕按下去只會每塊 fallback 回規則，等於一顆沒有作用的按鈕。
+    this._aiReady = false;
+    // 裸網域連結的 AI 複核結果 cache：domainKey → boolean。只有明確 false 會撤掉
+    // 規則已允許的連結（單向收縮，見 url_ai_logic.js）。
+    this._aiLink = {};
+    // URL 修復 gray 候選的 AI 複核結果 cache：fixKey → boolean。方向相反——只有
+    // 明確 true 才**放行**一筆規則層不敢認的修復。
+    this._aiFix = {};
+
+    // ---- 渲染狀態 ----
+    this._cache = null; // { key, lines, cache, annotations, nodes, highlight }
+    this._nodes = []; // 上一幀每一列的節點（null ＝ 這一列不佔版面）
+    this._liveSlots = new Set(); // 目前掛著的佔位盒（imagesEnlarged 切換要通知）
+    this._overlayNodes = []; // 尾端固定浮層（兩顆按鈕 + hover 預覽宿主）
+    this._captionAiEnabledSeen = null;
+    this._availabilityToken = 0;
+
+    // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
+    // hover 預覽的 OnHover img 無此 class，不受影響。
+    this._onContainerClick = this._onContainerClick.bind(this);
+    this._onContainerMouseMove = this._onContainerMouseMove.bind(this);
+    this.onHyperLinkMouseOver = this.onHyperLinkMouseOver.bind(this);
+    this.onHyperLinkMouseOut = this.onHyperLinkMouseOut.bind(this);
+    this.container.addEventListener("click", this._onContainerClick);
+    this.container.addEventListener("mousemove", this._onContainerMouseMove);
+
+    this._mergeButton = null;
+    this._aiButton = null;
+    this._hoverHost = null;
+
+    this._initAiTasks();
+  }
+
+  // ---------------------------------------------------------------- AI 任務
+  // 三套裝置端推論都是「內容簽章變了才重跑、逐筆回填、不擋畫面」，抽在
+  // signature_task.js。舊版是三段幾乎相同的 useEffect。
+  _initAiTasks() {
+    this._captionAiTask = createSignatureTask(
+      (todo, ctx) => {
+        this._aiPending = todo.length;
+        this._syncAiButton();
+        // 逐塊推論、逐塊回填：規則結果早就畫出來了，AI 只是漸進式修正。
+        classifySpans(todo, {
+          signal: ctx.signal,
+          onResult: (span, r) => {
+            if (ctx.isCancelled()) return;
+            this._aiKeep = { ...this._aiKeep, [spanKey(span)]: r.keep };
+            this._aiPending = this._aiPending > 0 ? this._aiPending - 1 : 0;
+            this._rerender();
+          },
+        })
+          .catch(() => {})
+          .then(() => {
+            if (ctx.isCancelled()) return;
+            this._aiPending = 0;
+            this._syncAiButton();
+          });
+      },
+      {
+        // 關掉 AI／換頁重算時，殘留的「推論中」計數不可留在按鈕上。
+        onCancel: () => {
+          this._aiPending = 0;
+          this._syncAiButton();
+        },
+      },
+    );
+
+    this._urlAiTask = createSignatureTask((todo, ctx) => {
+      classifyDomains(todo, {
+        signal: ctx.signal,
+        onResult: (cand, r) => {
+          // link === null（逾時／垃圾回覆／不支援）不寫進 cache：留著 undefined
+          // 等於「沒有判決」→ 連結保留，也不會被記成永久答案。
+          if (ctx.isCancelled() || r.link === null) return;
+          this._aiLink = { ...this._aiLink, [domainKey(cand)]: r.link };
+          this._rerender();
+        },
+      }).catch(() => {});
+    });
+
+    this._fixAiTask = createSignatureTask((todo, ctx) => {
+      classifyBrokenUrls(todo, {
+        signal: ctx.signal,
+        onResult: (cand, r) => {
+          if (ctx.isCancelled() || r.link === null) return;
+          this._aiFix = { ...this._aiFix, [fixKey(cand)]: r.link };
+          this._rerender();
+        },
+      }).catch(() => {});
+    });
+  }
+
+  // ------------------------------------------------------------------- 入口
+  update(props) {
+    const prev = this.props;
+    // lines 參考改變（換頁／重渲染）即關掉開啟中的 hover 圖片預覽。
+    if (
+      prev &&
+      props.lines !== prev.lines &&
+      this._hoverPreview !== undefined
+    ) {
+      this._hoverPreview = undefined;
+    }
+    // imagesEnlarged 以 enhance.articleId 為準：好讀同篇 page-down 會 concat 出新
+    // lines 參考但 articleId 不變，放大狀態因此在同篇捲動載入時保留；換文章／退出
+    // 再進（articleId 變）才重置。
+    const articleId = props.enhance && props.enhance.articleId;
+    const prevArticleId = prev && prev.enhance && prev.enhance.articleId;
+    if (prev && articleId !== prevArticleId) {
+      this._imagesEnlarged = false;
+      this._mergeCaption = null;
+      // AI 結果是 per-article 的：換文章一律丟掉（spanKey 只保證同一篇內唯一；
+      // domainKey 含整列文字，舊判斷也沒有沿用價值）。
+      this._captionAi = false;
+      this._aiKeep = {};
+      this._aiLink = {};
+      this._aiFix = {};
+    }
+    this.props = props;
+    this._render();
+  }
+
+  // 游標底色的套用點。term_view.applyCursorHighlight 是唯一呼叫者。
+  //
+  // 快路徑：整列底色（col 0，絕大多數情形）只是把 class 從舊列搬到新列，**不重畫**
+  // ——舊版走 useState 會讓整個 Screen re-render（靠元素快取 bailout 才不致於重建
+  // 每一列）。col > 0 的部分底色是包在 LinkSegmentBuilder 建的 wrapper span 裡，
+  // 沒有辦法只換 class，退回重畫。
+  setCursorHighlight(next) {
+    const prev = this.highlight;
+    const state = next || NO_HIGHLIGHT;
+    if (
+      prev.row === state.row &&
+      prev.cls === state.cls &&
+      prev.col === state.col
+    )
+      return;
+    this.highlight = state;
+    if (prev.col === 0 && state.col === 0) {
+      if (prev.row >= 0 && prev.cls)
+        this._toggleRowClass(prev.row, prev.cls, false);
+      if (state.row >= 0 && state.cls)
+        this._toggleRowClass(state.row, state.cls, true);
+      if (this._cache) this._cache.highlight = state;
+      return;
+    }
+    this._render();
+  }
+
+  destroy() {
+    this._captionAiTask.stop();
+    this._urlAiTask.stop();
+    this._fixAiTask.stop();
+    destroyCaptionAi();
+    destroyUrlAi();
+    for (let i = 0; i < this._nodes.length; ++i) disposeNode(this._nodes[i]);
+    this._nodes = [];
+    this._liveSlots.clear();
+    if (this._hoverHost) unmountFrom(this._hoverHost);
+    this.container.removeEventListener("click", this._onContainerClick);
+    this.container.removeEventListener("mousemove", this._onContainerMouseMove);
+    this.container.remove();
+    this._cache = null;
+  }
+
+  // --------------------------------------------------------------- 事件處理
+  // 縮放會讓整份內容高度驟變，而捲動容器（.main）的 scrollTop 不變 → 視窗相對文章
+  // 整個位移，被點的那張圖跑出視野。故點擊當下先記下錨點（此時讀到的還是**舊
+  // layout**，正是我們要的 before 值），套用後立刻補回捲動位置。
+  // 量測一律用 offsetTop/offsetHeight，不可用 getBoundingClientRect——見
+  // scroll_anchor.js 開頭的座標系規則（.main 與 img 各有 transform scale）。
+  _onContainerClick(e) {
+    const t = e.target;
+    if (!t || t.tagName !== "IMG" || !t.classList.contains("hyperLinkPreview"))
+      return;
+    const scroller = this.container.closest(".main");
+    const anchor = scroller
+      ? {
+          el: t,
+          scroller,
+          topBefore: offsetTopWithin(t, this.container),
+          heightBefore: t.offsetHeight,
+          scrollBefore: scroller.scrollTop,
+        }
+      : null; // 拿不到捲動容器就單純切換，不補償（不 crash）。
+    this._setImagesEnlarged(!this._imagesEnlarged);
+    if (!anchor || !anchor.el.isConnected) return;
+    anchor.scroller.scrollTop = computeAnchoredScrollTop({
+      topBefore: anchor.topBefore,
+      heightBefore: anchor.heightBefore,
+      scrollBefore: anchor.scrollBefore,
+      topAfter: offsetTopWithin(anchor.el, this.container),
+      heightAfter: anchor.el.offsetHeight,
+      maxScroll: anchor.scroller.scrollHeight - anchor.scroller.clientHeight,
+    });
+  }
+
+  _onContainerMouseMove(e) {
+    if (this._hoverPreview === undefined) return;
+    this._hoverPos = { left: e.clientX, top: e.clientY };
+    this._syncHoverPreview();
+  }
+
+  onHyperLinkMouseOver(e) {
+    if (!this.props || !this.props.enableLinkHoverPreview) return;
+    const href = e.currentTarget.href;
+    const preview = of(href)
+      .then(resolveSrcToImageUrl)
+      .then(resolveWithImageDOM);
+    // 同 requestPreview：不可預覽連結立即 reject，消費端（ImagePreviewer effect）
+    // 晚一拍才掛 handler —— 先標記 handled，避免 unhandledrejection。
+    preview.catch(() => {});
+    this._hoverPreview = preview;
+    this._syncHoverPreview();
+  }
+
+  onHyperLinkMouseOut() {
+    if (this._hoverPreview === undefined) return;
+    this._hoverPreview = undefined;
+    this._syncHoverPreview();
+  }
+
+  // 按鈕切換純屬本控制器的內部狀態；換回終端機輸入焦點（隱藏 input #t），
+  // 否則按鈕吃掉鍵盤、方向鍵失效。
+  _refocusTerminal() {
+    const input = document.getElementById("t");
+    if (input) input.focus();
+  }
+
+  _toggleMergeCaption() {
+    const v = this._mergeCaption;
+    const next =
+      v === null ? "imageFirst" : v === "imageFirst" ? "captionFirst" : null;
+    // 循環回「還原排版」時把 AI 一起關掉（畫面上沒有合併塊，AI 開著沒有意義）。
+    if (next === null) this._captionAi = false;
+    this._mergeCaption = next;
+    this._rerender();
+    this._refocusTerminal();
+  }
+
+  // AI 按鈕：關 → 開（若尚未合併就順手開成「上圖下文」），再按一次只關 AI，
+  // 手動合併狀態保留（兩顆按鈕互不吃掉對方的狀態）。
+  _toggleCaptionAi() {
+    if (!this._captionAi && !this._mergeCaption)
+      this._mergeCaption = "imageFirst";
+    this._captionAi = !this._captionAi;
+    this._rerender();
+    this._refocusTerminal();
+  }
+
+  // imagesEnlarged 不需要重建任何一列：容器 class 決定圖片尺寸，佔位盒只要知道
+  // 現在是哪個模式（分模式各記一筆高度，見 lazy_media.recordSlotHeight）。
+  _setImagesEnlarged(next) {
+    if (this._imagesEnlarged === next) return;
+    this._imagesEnlarged = next;
+    this.container.classList.toggle("imagesEnlarged", next);
+    const mode = next ? "enlarged" : "normal";
+    for (const slot of this._liveSlots) slot.setSizeMode(mode);
+  }
+
+  // ----------------------------------------------------------------- 渲染
+  _rerender() {
+    if (this.props) this._render();
+  }
+
+  _render() {
+    const { lines, enhance, forceWidth, enableLinkInlinePreview } = this.props;
+
+    // ---- 增量重算快取（好讀文章累積頁專用）----
+    // 前提由 `enhance.stableRows` 帶進來，term_view 只在渲染 buf.pageLines（好讀
+    // 累積的長頁）時給。那裡的列是 cloneRow 出來的**快照**，append 之後永不再被
+    // 寫，所以「列物件參考相同 ⇒ 內容相同」成立。原生 24 列畫面與列表視窗則是
+    // term_buf 就地改寫的活 buffer：參考相同但內容每幀在變，套快取會畫出上一幀。
+    const cacheKey = annotationsKey({
+      enhance,
+      mergeCaption: this._mergeCaption,
+      captionAi: this._captionAi,
+      aiKeep: this._aiKeep,
+      aiLink: this._aiLink,
+      aiFix: this._aiFix,
+      forceWidth,
+      enableLinkInlinePreview,
+      enableLinkHoverPreview: this.props.enableLinkHoverPreview,
+      onHyperLinkMouseOver: this.onHyperLinkMouseOver,
+      onHyperLinkMouseOut: this.onHyperLinkMouseOut,
+    });
+    const stableRows = !!(enhance && enhance.stableRows);
+    const prevCache = this._cache;
+    const reusable =
+      stableRows &&
+      prevCache &&
+      sameKey(prevCache.key, cacheKey) &&
+      isAppendOnly(prevCache.lines, lines)
+        ? prevCache
+        : null;
+    const computed = computeAnnotations(
+      lines,
+      enhance,
+      this._mergeCaption,
+      this._captionAi,
+      this._aiKeep,
+      this._aiLink,
+      this._aiFix,
+      reusable ? reusable.cache : null,
+    );
+    const annotations = computed.annotations;
+
+    this._syncAiTasks(annotations, enhance);
+
+    const nodes = this._buildNodes(lines, annotations, reusable, stableRows);
+    this._cache =
+      computed.cache && stableRows
+        ? {
+            key: cacheKey,
+            lines,
+            cache: computed.cache,
+            annotations,
+            nodes,
+            highlight: this.highlight,
+          }
+        : null;
+    this._nodes = nodes;
+
+    this._syncOverlays(annotations, enhance);
+    this._patchRows(nodes);
+  }
+
+  // ---- 每列節點快取 ----
+  // 重用條件三件（與舊版 Screen.jsx 的元素快取一字對應）：列內容（chars 參考，由
+  // isAppendOnly 保證）、最終 annotation 物件參考、以及這一列的高亮狀態。
+  // mergeBlock 列例外——它的內容還取決於右欄那些說明行的 annotation，條件不只自己
+  // 這一列，直接重建（只有使用者手動開「圖文並排」時才存在，且塊數有限）。
+  _buildNodes(lines, annotations, reusable, stableRows) {
+    const prevNodes = reusable ? reusable.nodes : null;
+    const prevAnnotations = reusable ? reusable.annotations : null;
+    const prevHighlight = reusable ? reusable.highlight : NO_HIGHLIGHT;
+    // 顏色（cls）或起始欄（col）換掉時整批失效——使用者在設定頁改底色／切防誤觸
+    // 才會發生，罕見到不值得逐列記住上一次用的值。
+    const sameHighlightCls =
+      prevHighlight.cls === this.highlight.cls &&
+      prevHighlight.col === this.highlight.col;
+    const oldNodes = this._nodes;
+    const nodes = new Array(lines.length);
+    for (let row = 0; row < lines.length; ++row) {
+      const ann = annotations[row];
+      if (
+        prevNodes &&
+        row < prevNodes.length &&
+        prevAnnotations[row] === ann &&
+        sameHighlightCls &&
+        (prevHighlight.row === row) === (this.highlight.row === row) &&
+        !(ann && ann.mergeBlock)
+      ) {
+        nodes[row] = prevNodes[row];
+        continue;
+      }
+      const built = this._buildRowNode(row, lines, annotations);
+      // 原生／列表（非 stableRows）每幀都要重算，但畫面內容往往一字未變。序列化
+      // 比對後沿用舊節點，可以省掉整列的 DOM 抽換——選取範圍與捲動位置因此不會
+      // 每 30ms 被打斷一次。長頁走上面的參考快取，不必付這個序列化成本。
+      if (!stableRows && built && oldNodes[row]) {
+        const have = oldNodes[row];
+        if (have.outerHTML === built.outerHTML) {
+          disposeNode(built);
+          nodes[row] = have;
+          continue;
+        }
+      }
+      nodes[row] = built;
+    }
+    // 這一幀沒有留下來的舊節點：收掉它們的佔位盒。
+    const keep = new Set();
+    for (let i = 0; i < nodes.length; ++i) if (nodes[i]) keep.add(nodes[i]);
+    for (let i = 0; i < oldNodes.length; ++i) {
+      if (oldNodes[i] && !keep.has(oldNodes[i])) disposeNode(oldNodes[i]);
+    }
+    return nodes;
+  }
+
+  // 單一列 → DOM 節點（null ＝ 這一列不佔版面：黑名單 dropHidden、已併進圖文合併
+  // 右欄、已併進同作者推文塊）。
+  _buildRowNode(row, lines, annotations) {
+    const { enhance, forceWidth, enableLinkInlinePreview } = this.props;
+    // dropHidden: 好讀累積成一整份長捲頁，黑名單推文整列移除（不留空行）。固定的
+    // 原生 grid 則保留該列並隱藏（visibility:hidden），以維持終端機對齊。移除**不會**
+    // 位移其餘列的 row/data-row（絕對 pageLines index），跨缺口的選取複製才不會錯位。
+    const dropHidden = !!(enhance && enhance.dropHidden);
+    const ann = annotations[row];
+    if (dropHidden && ann && ann.hidden) return null;
+    // 說明行已併入所屬圖行的右欄；連續同作者推文的後續列已併進 run 首列。
+    if (ann && ann.mergedInto !== undefined) return null;
+    if (ann && ann.mergedIntoComment !== undefined) return null;
+
+    if (ann && ann.mergeCommentRun) {
+      const m = ann.mergeCommentRun;
+      // data-row＝run 首列的絕對 pageLines index。塊內複製以 DOM 選取為準
+      // （^C 走 window.getSelection().toString()）；getText 的 col 對映在合併段內
+      // 失真，已知取捨（同 mergedImageBlock 的脈絡）。
+      // 懸掛縮排寬度＝首則內容起始欄 × 半形字寬（forceWidth 是全形字像素寬）
+      // → 第 2 則起與第一則的內容對齊（main.css .mergedCommentBlock）。
+      const built = buildRow({
+        chars: m.chars,
+        row,
+        forceWidth,
+        enableLinkInlinePreview,
+        highlightClass:
+          this.highlight.row === row ? this.highlight.cls : undefined,
+        highlightColStart:
+          this.highlight.row === row ? this.highlight.col : undefined,
+        floor: ann.floor,
+        pusher: ann.pusher,
+        pusherContentCol: ann.contentCol,
+        pusherHighlight: ann.pusherHighlight,
+        authorIdStart: ann.authorIdStart,
+        authorIdEnd: ann.authorIdEnd,
+        fixedUrls: m.fixedUrls,
+        mentions: m.mentions,
+        aids: m.aids,
+        giveaways: m.giveaways,
+        bareDomains: m.bareDomains,
+        onHyperLinkMouseOver: this.onHyperLinkMouseOver,
+        onHyperLinkMouseOut: this.onHyperLinkMouseOut,
+        sizeMode: this._sizeMode(),
+      });
+      const wrapper = el(
+        "div",
+        {
+          class: "mergedCommentBlock",
+          style: {
+            "--merged-comment-indent": `${(m.contentStart * forceWidth) / 2}px`,
+          },
+        },
+        built.node,
+      );
+      this._adopt(wrapper, built.slots);
+      return wrapper;
+    }
+
+    if (ann && ann.mergeBlock) {
+      const { captionStart, captionEnd } = ann.mergeBlock;
+      const slots = [];
+      const image = this._renderRow(row, lines, annotations, slots);
+      const captionRows = [];
+      for (let r = captionStart; r <= captionEnd; ++r) {
+        const cAnn = annotations[r];
+        if (dropHidden && cAnn && cAnn.hidden) continue;
+        captionRows.push(this._renderRow(r, lines, annotations, slots));
+      }
+      // 右欄不換行：寬度＝最寬翻譯行的顯示欄數（半形1/全形2）× 半形字寬。
+      // forceWidth 是全形字強制的像素寬 → 半形 ≈ forceWidth/2；+1 全形字寬當緩衝。
+      // 上限 55% 交給 CSS max-width 守（極長行時退回換行，見 main.css pre-wrap）。
+      const captionColStyle = annotations.captionMaxCols
+        ? { width: `${(annotations.captionMaxCols / 2 + 1) * forceWidth}px` }
+        : undefined;
+      const wrapper = el("div", { class: "mergedImageBlock" }, [
+        el("div", { class: "mergedImageCol" }, image),
+        el(
+          "div",
+          { class: "mergedCaptionCol", style: captionColStyle },
+          captionRows,
+        ),
+      ]);
+      this._adopt(wrapper, slots);
+      return wrapper;
+    }
+
+    const slots = [];
+    const node = this._renderRow(row, lines, annotations, slots);
+    this._adopt(node, slots);
+    return node;
+  }
+
+  // 一列的 <Row> 等價物。抽出來是因為圖文合併時說明行要從頂層移進右欄，兩處必須
+  // 用同一份渲染（row/data-row 保留絕對 pageLines index，選取複製才不壞）。
+  _renderRow(row, lines, annotations, slots) {
+    const { forceWidth, enableLinkInlinePreview } = this.props;
+    const ann = annotations[row];
+    const built = buildRow({
+      chars: lines[row],
+      row,
+      forceWidth,
+      enableLinkInlinePreview,
+      highlightClass:
+        this.highlight.row === row ? this.highlight.cls : undefined,
+      highlightColStart:
+        this.highlight.row === row ? this.highlight.col : undefined,
+      floor: ann && ann.floor,
+      hidden: ann && ann.hidden,
+      pusher: ann && ann.pusher,
+      pusherContentCol: ann && ann.contentCol,
+      listAuthor: ann && ann.listAuthor,
+      listTitle: ann && ann.listTitle,
+      pusherHighlight: ann && ann.pusherHighlight,
+      authorIdStart: ann && ann.authorIdStart,
+      authorIdEnd: ann && ann.authorIdEnd,
+      fixedUrls: ann && ann.fixedUrls,
+      mentions: ann && ann.mentions,
+      aids: ann && ann.aids,
+      giveaways: ann && ann.giveaways,
+      bareDomains: ann && ann.bareDomains,
+      blacklistNotice: ann && ann.blacklistNotice,
+      onHyperLinkMouseOver: this.onHyperLinkMouseOver,
+      onHyperLinkMouseOut: this.onHyperLinkMouseOut,
+      sizeMode: this._sizeMode(),
+    });
+    for (let i = 0; i < built.slots.length; ++i) slots.push(built.slots[i]);
+    return built.node;
+  }
+
+  _sizeMode() {
+    return this._imagesEnlarged ? "enlarged" : "normal";
+  }
+
+  // 把這一列建立的佔位盒掛到它的頂層節點上，並記進存活集合（imagesEnlarged 切換
+  // 要逐一通知）。節點被丟棄時由 disposeNode 收掉。
+  _adopt(node, slots) {
+    node.__slots = slots;
+    for (let i = 0; i < slots.length; ++i) {
+      const slot = slots[i];
+      this._liveSlots.add(slot);
+      const origDestroy = slot.destroy;
+      slot.destroy = () => {
+        this._liveSlots.delete(slot);
+        origDestroy();
+      };
+    }
+  }
+
+  // 把容器的列區塊調成 `nodes` 的樣子。逐位置比對＋就地搬移：沒變的節點原封不動
+  // 留在 DOM 裡（好讀累積頁的常態是純 append，這裡就只會做 appendChild）。
+  _patchRows(nodes) {
+    const container = this.container;
+    // 列區塊的右邊界＝第一個浮層節點（浮層永遠排在最後）。取 isConnected 的那個：
+    // 拿到一個已經被移出 DOM 的節點當終點，下面的清理迴圈會一路把浮層也掃掉。
+    const stop = this._overlayNodes.find((n) => n.isConnected) || null;
+    let cursor = container.firstChild;
+    for (let i = 0; i < nodes.length; ++i) {
+      const want = nodes[i];
+      if (!want) continue;
+      if (cursor === want) {
+        cursor = cursor.nextSibling;
+        continue;
+      }
+      container.insertBefore(want, cursor);
+    }
+    // 走到這裡，所有要留的列都已經排在 cursor 之前；cursor 到浮層之間的都是舊的。
+    while (cursor && cursor !== stop) {
+      const next = cursor.nextSibling;
+      cursor.remove();
+      cursor = next;
+    }
+  }
+
+  // ------------------------------------------------------------- 尾端浮層
+  // 兩顆浮動按鈕與 hover 圖片預覽住在 #mainContainer 尾端，位置固定、不參與列 diff。
+  // 需要顯示的組合改變時整段重排（一次至多 3 個節點，且只在使用者操作時發生）。
+  _syncOverlays(annotations, enhance) {
+    // 浮動「圖文並排」按鈕：好讀文章頁且偵測到 ≥2 個「圖＋說明」塊才出現。純結構
+    // 啟發式（見 image_caption_group.js），不確定那段字是不是翻譯 → opt-in 手動切換。
+    const showMergeButton = !!(
+      enhance &&
+      enhance.easyReading &&
+      enhance.pageState === PAGE_READING &&
+      (annotations.imageCaptionBlockCount || 0) >= 2
+    );
+    // AI 校正鈕：再多兩個條件——設定啟用（預設關）＋模型 availability 為
+    // 'available'。不支援／模型沒下載的環境（Firefox/Safari/未下載的 Chrome）
+    // 連按鈕都不出現，行為與沒這功能時完全相同。
+    this._probeAiAvailability(enhance);
+    const showCaptionAiButton = !!(showMergeButton && this._aiReady);
+
+    const wanted = [];
+    if (showMergeButton) {
+      if (!this._mergeButton) {
+        this._mergeButton = createMergeImageCaptionButton(() =>
+          this._toggleMergeCaption(),
+        );
+      }
+      this._mergeButton.update(this._mergeCaption);
+      wanted.push(this._mergeButton.el);
+    }
+    if (showCaptionAiButton) {
+      if (!this._aiButton) {
+        this._aiButton = createMergeImageCaptionAiButton(() =>
+          this._toggleCaptionAi(),
+        );
+      }
+      this._aiButton.update(
+        this._captionAi,
+        this._captionAi ? this._aiPending : 0,
+      );
+      wanted.push(this._aiButton.el);
+    }
+    if (this._hoverPreview !== undefined) {
+      if (!this._hoverHost) this._hoverHost = el("div", null);
+      wanted.push(this._hoverHost);
+    }
+
+    const same =
+      wanted.length === this._overlayNodes.length &&
+      wanted.every((n, i) => n === this._overlayNodes[i]);
+    if (!same) {
+      for (let i = 0; i < this._overlayNodes.length; ++i) {
+        this._overlayNodes[i].remove();
+      }
+      for (let i = 0; i < wanted.length; ++i) {
+        this.container.appendChild(wanted[i]);
+      }
+      this._overlayNodes = wanted;
+    }
+    this._syncHoverPreview();
+  }
+
+  _syncAiButton() {
+    if (!this._aiButton) return;
+    this._aiButton.update(
+      this._captionAi,
+      this._captionAi ? this._aiPending : 0,
+    );
+  }
+
+  _syncHoverPreview() {
+    if (this._hoverPreview === undefined) {
+      if (this._hoverHost && this._hoverHost.isConnected) {
+        unmountFrom(this._hoverHost);
+        this._hoverHost.remove();
+        this._overlayNodes = this._overlayNodes.filter(
+          (n) => n !== this._hoverHost,
+        );
+      }
+      return;
+    }
+    if (!this._hoverHost) this._hoverHost = el("div", null);
+    if (!this._hoverHost.isConnected) {
+      this.container.appendChild(this._hoverHost);
+      this._overlayNodes.push(this._hoverHost);
+    }
+    renderInto(
+      this._hoverHost,
+      React.createElement(ImagePreviewer, {
+        request: this._hoverPreview,
+        component: ImagePreviewer.OnHover,
+        left: this._hoverPos.left,
+        top: this._hoverPos.top,
+      }),
+    );
+  }
+
+  // 可用性探測：只在設定啟用時查一次（availability() 不會觸發下載）。
+  _probeAiAvailability(enhance) {
+    const enabled = !!(enhance && enhance.captionAiEnabled);
+    if (enabled === this._captionAiEnabledSeen) return;
+    this._captionAiEnabledSeen = enabled;
+    const token = ++this._availabilityToken;
+    if (!enabled) {
+      this._aiReady = false;
+      return;
+    }
+    captionAiAvailability().then((a) => {
+      if (token !== this._availabilityToken) return;
+      const ready = a === "available";
+      if (ready === this._aiReady) return;
+      this._aiReady = ready;
+      this._rerender();
+    });
+  }
+
+  // 三套推論的簽章同步。收集 todo 的去重規則與舊版逐條相同。
+  _syncAiTasks(annotations, enhance) {
+    this._captionAiTask.sync(this._captionAi, annotations.captionSpansSig, () =>
+      (annotations.captionSpans || []).filter(
+        (s) => spanNeedsAi(s) && this._aiKeep[spanKey(s)] === undefined,
+      ),
+    );
+    this._urlAiTask.sync(
+      !!(enhance && enhance.urlAiEnabled),
+      annotations.domainCandsSig,
+      () => {
+        const seen = new Set();
+        return (annotations.domainCands || []).filter((c) => {
+          const k = domainKey(c);
+          if (seen.has(k) || this._aiLink[k] !== undefined) return false;
+          seen.add(k); // 同一列在合併塊裡會出現兩次，只問一次
+          return true;
+        });
+      },
+    );
+    this._fixAiTask.sync(
+      !!(enhance && enhance.fixAiEnabled),
+      annotations.fixCandsSig,
+      () => {
+        const seen = new Set();
+        return (annotations.fixCands || []).filter((c) => {
+          const k = fixKey(c);
+          if (seen.has(k) || this._aiFix[k] !== undefined) return false;
+          seen.add(k);
+          return true;
+        });
+      },
+    );
+  }
+
+  // 整列底色的快路徑：把 class 掛上／拿掉那一列的 bbsline span。合併推文塊會有
+  // 多個同 data-row 的 bbsline（每行一個），全部一起處理。
+  _toggleRowClass(row, cls, on) {
+    const spans = this.container.querySelectorAll(
+      `[data-type="bbsline"][data-row="${row}"]`,
+    );
+    for (let i = 0; i < spans.length; ++i) {
+      if (on) spans[i].classList.add(cls);
+      else spans[i].classList.remove(cls);
+    }
+  }
+}
+
+export default ScreenController;

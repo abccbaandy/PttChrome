@@ -1,4 +1,4 @@
-// 好讀累積長頁的**增量重算**（Screen.jsx + screen_annotate_cache.js）。
+// 好讀累積長頁的**增量重算**（src/render/screen.js + screen_annotate_cache.js）。
 //
 // 背景：好讀文章每收到一頁就同步重繪整份累積頁。原本每幀對全部 n 列重跑
 // rowToText / annotateComment / detectRowExtras 並重建 n 個 <Row>，8500 行的長文
@@ -9,15 +9,13 @@
 // 這裡守護兩件事，兩件缺一不可：
 //   1. 等價 —— 「一次 render 到位」與「每頁 append 逐步 rerender」的 DOM 完全相同。
 //      增量最怕的是算錯（樓層從中間重數、推文合併塊沿用到錯的列…），這條擋住。
-//   2. 增量 —— append 一頁之後，重新標註的列數／重新 render 的 <Row> 數是常數級，
+//   2. 增量 —— append 一頁之後，重新標註的列數／重建的列節點數是常數級，
 //      不是 O(文章)。用計次而非計時（時間在 CI 上會 flake）。
 //
-// cell 假資料手法：ASCII 單格 cell（同 screen_dropHidden.test.jsx），但推文列的
+// cell 假資料手法：ASCII 單格 cell（同 screen_dropHidden.test.js），但推文列的
 // 型別符（推/噓/→ 實際是 2-col DBCS）用「isLeadByte 的 cell + 空字串 cell」頂替
 // cols 0-1 —— rowToText 對 `lead.ch + next.ch` 長度為 1 的情形直接回傳，不走 b2u，
 // 所以不需要 Big5 對照表，而 comment_merge 的欄位數學（id 從 col 3 起）照樣成立。
-
-import { render } from "@testing-library/react";
 
 const counters = vi.hoisted(() => ({ rowToText: 0, rowRender: 0 }));
 
@@ -32,16 +30,44 @@ vi.mock("../../src/js/comment_parse", async (importOriginal) => {
   };
 });
 
-vi.mock("../../src/components/Row", async (importOriginal) => {
+vi.mock("../../src/render/row", async (importOriginal) => {
   const actual = await importOriginal();
-  const Counting = (props) => {
+  const counting = (props) => {
     ++counters.rowRender;
-    return actual.Row(props);
+    return actual.buildRow(props);
   };
-  return { ...actual, Row: Counting, default: Counting };
+  return { ...actual, buildRow: counting, default: counting };
 });
 
-const Screen = (await import("../../src/components/Screen")).default;
+const { ScreenController } = await import("../../src/render/screen");
+
+// 掛一個畫面；回傳 { container, update, destroy }。
+const live = [];
+function mountScreen(props) {
+  const root = document.createElement("div");
+  root.className = "main";
+  document.body.appendChild(root);
+  const controller = new ScreenController(root);
+  const entry = {
+    controller,
+    get container() {
+      return controller.container;
+    },
+    update: (next) => controller.update(next),
+    destroy() {
+      controller.destroy();
+      root.remove();
+      const i = live.indexOf(entry);
+      if (i >= 0) live.splice(i, 1);
+    },
+  };
+  live.push(entry);
+  controller.update(props);
+  return entry;
+}
+afterEach(() => {
+  while (live.length) live[live.length - 1].destroy();
+});
 
 const COLOR = {
   fg: 7,
@@ -124,16 +150,16 @@ const enhance = () => ({
 
 const PAGE = 22;
 
+const propsFor = (lines, extra) => ({
+  lines,
+  forceWidth: 16,
+  enableLinkInlinePreview: false,
+  enableLinkHoverPreview: false,
+  enhance: { ...enhance(), ...extra },
+});
+
 function renderAll(lines, extra) {
-  return render(
-    <Screen
-      lines={lines}
-      forceWidth={16}
-      enableLinkInlinePreview={false}
-      enableLinkHoverPreview={false}
-      enhance={{ ...enhance(), ...extra }}
-    />,
-  );
+  return mountScreen(propsFor(lines, extra));
 }
 
 describe("好讀累積頁增量重算：與全量重算等價", () => {
@@ -145,20 +171,12 @@ describe("好讀累積頁增量重算：與全量重算等價", () => {
 
     const once = renderAll(full);
     const expected = once.container.innerHTML;
-    once.unmount();
+    once.destroy();
 
     // 逐頁 append：slice 保留列物件參考，正是 accumulatePageLines 的 concat 形狀。
     const step = renderAll(full.slice(0, PAGE));
     for (let end = PAGE * 2; end < total + PAGE; end += PAGE) {
-      step.rerender(
-        <Screen
-          lines={full.slice(0, Math.min(end, total))}
-          forceWidth={16}
-          enableLinkInlinePreview={false}
-          enableLinkHoverPreview={false}
-          enhance={enhance()}
-        />,
-      );
+      step.update(propsFor(full.slice(0, Math.min(end, total))));
     }
     expect(step.container.innerHTML).toBe(expected);
   });
@@ -168,15 +186,7 @@ describe("好讀累積頁增量重算：與全量重算等價", () => {
     const full = makeArticle(total);
     const step = renderAll(full.slice(0, PAGE));
     for (let end = PAGE * 2; end <= total; end += PAGE) {
-      step.rerender(
-        <Screen
-          lines={full.slice(0, end)}
-          forceWidth={16}
-          enableLinkInlinePreview={false}
-          enableLinkHoverPreview={false}
-          enhance={enhance()}
-        />,
-      );
+      step.update(propsFor(full.slice(0, end)));
     }
     const badges = Array.from(
       step.container.querySelectorAll(".floorBadgeNum"),
@@ -195,15 +205,7 @@ describe("好讀累積頁增量重算：與全量重算等價", () => {
     const second = makeArticle(PAGE * 2).map((row) =>
       row.map((c) => cell(c.ch, c.isLeadByte)),
     );
-    step.rerender(
-      <Screen
-        lines={second}
-        forceWidth={16}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={{ ...enhance(), articleId: 2 }}
-      />,
-    );
+    step.update(propsFor(second, { articleId: 2 }));
     const fresh = renderAll(second, { articleId: 2 });
     expect(step.container.innerHTML).toBe(fresh.container.innerHTML);
   });
@@ -211,15 +213,7 @@ describe("好讀累積頁增量重算：與全量重算等價", () => {
   test("設定變動（選推文者高亮）在累積頁上正確全量重算", () => {
     const full = makeArticle(PAGE * 4);
     const step = renderAll(full);
-    step.rerender(
-      <Screen
-        lines={full}
-        forceWidth={16}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={{ ...enhance(), selectedPusher: "alpha1" }}
-      />,
-    );
+    step.update(propsFor(full, { selectedPusher: "alpha1" }));
     const fresh = renderAll(full, { selectedPusher: "alpha1" });
     expect(step.container.innerHTML).toBe(fresh.container.innerHTML);
     expect(step.container.querySelectorAll(".pusherHighlight").length).toBeGreaterThan(0);
@@ -236,12 +230,12 @@ describe("好讀累積頁增量重算：與全量重算等價", () => {
       enableLinkHoverPreview: false,
       enhance: { ...enhance(), stableRows: false, ...extra },
     });
-    const step = render(<Screen {...props()} />);
+    const step = mountScreen(props());
     // 就地改寫該列的內容（不換物件參考），模擬 pfterm 的 per-cell 重畫。
     "作者 hacker (壞人) 看板 Test".split("").forEach((c, i) => {
       if (rows[0][i]) rows[0][i].ch = c;
     });
-    step.rerender(<Screen {...props({ articleId: 1 })} />);
+    step.update(props({ articleId: 1 }));
     expect(step.container.textContent).toContain("hacker");
   });
 });
@@ -255,15 +249,7 @@ describe("好讀累積頁增量重算：成本是 O(新增列) 不是 O(文章)"
 
     counters.rowToText = 0;
     counters.rowRender = 0;
-    step.rerender(
-      <Screen
-        lines={full.slice(0, LONG + PAGE)}
-        forceWidth={16}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={enhance()}
-      />,
-    );
+    step.update(propsFor(full.slice(0, LONG + PAGE)));
 
     // 上限抓得寬鬆（新增 22 列 + 合併塊對合併 chars 的重跑 + 邊界 run 重算），
     // 但遠低於「整篇重算」的 1022。舊 code 會是 1000+。
@@ -276,15 +262,7 @@ describe("好讀累積頁增量重算：成本是 O(新增列) 不是 O(文章)"
     const step = renderAll(full);
     counters.rowToText = 0;
     counters.rowRender = 0;
-    step.rerender(
-      <Screen
-        lines={full}
-        forceWidth={16}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={enhance()}
-      />,
-    );
+    step.update(propsFor(full));
     expect(counters.rowToText).toBe(0);
     expect(counters.rowRender).toBe(0);
   });

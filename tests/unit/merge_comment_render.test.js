@@ -1,18 +1,16 @@
-// 好讀「連續同作者推文合併」的 Screen render 接線守護（仿
-// merge_image_caption_render.test.jsx）。守的是使用者 2026-08 回報的症狀：
+// 好讀「連續同作者推文合併」的渲染接線守護（仿
+// merge_image_caption_render.test.js）。守的是使用者 2026-08 回報的症狀：
 //   1. 三則連推被黏成一段 → 現在一則一行（塊內換行數 = 則數 - 1）。
 //   2. 換行後回到第 0 欄 → 懸掛縮排（padding-left 與 text-indent 互為相反、
 //      寬度＝首則內容起始欄 × 半形字寬）。
 //   3. 時間戳位置與樣式 → **作者在第一則、時間在最後一則**，且時間是一般文字
 //      cell（在 bbsline span 內，故 ^C 的 getSelection 選得到），非 React 標籤。
-import { act, render } from "@testing-library/react";
-import Screen from "../../src/components/Screen";
+import { mountScreen, unmountAll } from "./helpers/mount_screen";
 
-// FixedUrlLine 一定會掛 LazyInlinePreview，resolver 在後續 microtask reject。
-const flushPreviews = () =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+// 修復連結行一定會掛延遲載入佔位盒，resolver 在後續 microtask reject。
+const flushPreviews = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+afterEach(unmountAll);
 
 const COLOR = {
   fg: 7,
@@ -61,21 +59,13 @@ const lines = [
 const FORCE_WIDTH = 20;
 
 function renderScreen() {
-  return render(
-    <Screen
-      lines={lines}
-      forceWidth={FORCE_WIDTH}
-      enableLinkInlinePreview={false}
-      enableLinkHoverPreview={false}
-      enhance={{
+  return mountScreen({ lines: lines, forceWidth: FORCE_WIDTH, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: {
         pageState: 3,
         easyReading: true,
         dropHidden: true,
         articleId: 1,
         mergeSameAuthorComments: true,
-      }}
-    />,
-  );
+      } });
 }
 
 // 一則一行＝一個 bbsline span（每行各自帶自動開圖，見 LinkSegmentBuilder）。
@@ -143,13 +133,7 @@ describe("Screen 推文合併：跨行連結接合", () => {
   ];
 
   const renderWrap = (props) =>
-    render(
-      <Screen
-        lines={wrapLines}
-        forceWidth={FORCE_WIDTH}
-        enableLinkInlinePreview={true}
-        enableLinkHoverPreview={false}
-        enhance={{
+    mountScreen({ lines: wrapLines, forceWidth: FORCE_WIDTH, enableLinkInlinePreview: true, enableLinkHoverPreview: false, enhance: {
           pageState: 3,
           easyReading: true,
           dropHidden: true,
@@ -157,9 +141,7 @@ describe("Screen 推文合併：跨行連結接合", () => {
           mergeSameAuthorComments: true,
           autoFixUrl: true,
           ...props,
-        }}
-      />,
-    );
+        } });
 
   test("斷成兩則的網址 → 合併塊下方出現接回去的 ↳ 修復連結", async () => {
     const { container: c } = renderWrap();

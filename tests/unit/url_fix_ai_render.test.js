@@ -1,11 +1,11 @@
-// URL 修復 gray 候選的 Screen 接線守護（仿 merge_image_caption_ai_render）。
+// URL 修復 gray 候選的渲染接線守護（仿 merge_image_caption_ai_render）。
 // 回歸來源：`The goal was to match a modern Call of Duty. It does not.` 被修成
 // https://Duty.It（`it` = 義大利 ccTLD，剛好也是英文單字）。
 //
 // 鎖的是**症狀**：那一列不得長出修復連結。方向與裸網域相反——gray 候選規則層
 // 預設不修，只有裝置端 AI 明確答 true 才放行（見 url_ai_logic.js applyAiFix）。
-import { render, waitFor } from "@testing-library/react";
-import Screen from "../../src/components/Screen";
+import { waitFor } from "@testing-library/dom";
+import { mountScreen, unmountAll } from "./helpers/mount_screen";
 
 const COLOR = {
   fg: 7,
@@ -62,17 +62,15 @@ function installLM(reply) {
 }
 
 function renderScreen(props) {
-  return render(
-    <Screen
-      lines={lines}
-      forceWidth={80}
-      // 修復連結另起一行，只在好讀（＝有 inline preview）時渲染，見
-      // LinkSegmentBuilder。本測試三列都沒有帶 scheme 的真 URL，不會發預覽請求。
-      enableLinkInlinePreview={true}
-      enableLinkHoverPreview={false}
-      enhance={{ ...enhance, ...(props || {}) }}
-    />,
-  );
+  return mountScreen({
+    lines,
+    forceWidth: 80,
+    // 修復連結另起一行，只在好讀（＝有 inline preview）時渲染，見 link_segment.js。
+    // 本測試三列都沒有帶 scheme 的真 URL，不會發預覽請求。
+    enableLinkInlinePreview: true,
+    enableLinkHoverPreview: false,
+    enhance: { ...enhance, ...(props || {}) },
+  });
 }
 
 const fixedHrefs = (c) =>
@@ -81,10 +79,11 @@ const fixedHrefs = (c) =>
   );
 
 afterEach(() => {
+  unmountAll();
   delete window.LanguageModel;
 });
 
-describe("Screen URL 修復 × gray 候選閘門", () => {
+describe("畫面 URL 修復 × gray 候選閘門", () => {
   test("AI 關閉（預設）：句號誤判不出現，有路徑的修復照舊", () => {
     const { container: c } = renderScreen();
     expect(fixedHrefs(c)).toEqual(["https://example.com/badpath.jpg"]);

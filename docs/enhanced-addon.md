@@ -20,11 +20,19 @@
 - `parseArticleAuthor(text)`→原PO id(lower)|null，正則 `/^\s*作者\s+([0-9A-Za-z]+)/`。**僅文章首頁首行**（作者列）解析得到；翻頁後 lines[0] 是內文→null。
 - **`annotateComment(text, ctx)`→逐列判斷的單一真相**（floor/hidden/pusher/authorId 範圍/pusherHighlight）。
   `ctx={blacklist,showFloorNumbers,floorCounter,highlightAuthor,articleAuthor,selectedPusher}`。**單一渲染路徑
-  呼叫它**（`Screen#computeAnnotations`，兩模式共用）；勿為某路徑另寫一份（見踩坑 A「逐列加工走單一純函式」）。
+  呼叫它**（`js/screen_annotations.js#computeAnnotations`，兩模式共用）；勿為某路徑另寫一份（見踩坑 A「逐列加工走單一純函式」）。
   floor 對黑名單列仍 +1（樓號絕對正確）；hidden 短路其餘高亮。回 null=非推文列。守護測試 `tests/unit/comment_parse.test.js`。
 
-## 渲染整合（單一路徑 `<Screen>`→`<Row>`）
-- `<Row>`(`components/Row/index.jsx`) 有 props `floor`/`hidden`。`floor`→`LinkSegmentBuilder.readChar`
+## 渲染整合（單一路徑 `ScreenController`→`buildRow`）
+
+> **2026-08 核心渲染鏈已去 React 化**：`<Screen>`/`<Row>` → `src/render/`（純 JS DOM，見
+> `docs/easy-reading.md`「render 單軌」）。以下 DOM 契約／逐列加工邏輯一字不變，只有實作檔改名：
+> `components/Screen.jsx` → `js/screen_annotations.js`（標註）＋ `render/screen.js`（控制器）、
+> `components/Row/index.jsx` → `render/row.js`、`Row/LinkSegmentBuilder.jsx` → `render/link_segment.js`、
+> `Row/ColorSegmentBuilder.js` → `render/color_segment.js`、`Row/WordSegmentBuilder/` → `render/word_segment.js`、
+> `LazyInlinePreview.jsx` → `render/inline_preview_slot.js`。`ImagePreviewer` 仍是 React。
+
+- `buildRow`(`render/row.js`) 有參數 `floor`/`hidden`。`floor`→`link_segment.readChar`
   在 **col 2**（marker 與 userid 間的空格）插入 `.floorBadge`（CSS `main.css`：`display:inline-block;
   width:0;vertical-align:super` 小字上標，不位移等寬格線；`user-select:none` 故不污染複製）。
   **定位＝右對齊 userid 起始欄、向左生長**（零寬盒 `left:calc(0.5em/--floor-scale)` 右移 1 欄，內層
@@ -32,20 +40,20 @@
   半透明深底）往 marker 方向溢出 → **作者 id 永不被蓋**。`hidden`→
   外層 bbsrow `visibility:hidden`（保留行高、不破壞固定格線）。樓層計數：黑名單推文 **仍 +1 樓**（先
   `counter.next` 再決定隱藏/移除），故編號維持絕對正確。
-- **單一渲染路徑（兩模式都走 `renderScreen`→`Screen.jsx#computeAnnotations`）**：逐列加工只有一處，無法發散。
+- **單一渲染路徑（兩模式都走 `renderScreen`→`screen_annotations.js#computeAnnotations`）**：逐列加工只有一處，無法發散。
   `term_view.redraw`/`_renderScreenLines` 傳 `enhance={blacklist,showFloorNumbers,highlightAuthor,
   articleAuthor,selectedPusher,pageState,dropHidden}`。`computeAnnotations`：`pageState==3`→`annotateComment`
   (floor／黑名單 hidden／作者高亮／pusher 高亮)；`pageState==2`→`parseListAuthor`(黑名單 hidden)。
-  - 兩模式差別只在傳給 `<Screen>` 的 `lines`：原生/好讀列表選單=`buf.lines`(單頁)；好讀文章=`buf.pageLines`
+  - 兩模式差別只在傳給 renderer 的 `lines`：原生/好讀列表選單=`buf.lines`(單頁)；好讀文章=`buf.pageLines`
     (累積長頁，`term_view.accumulatePageLines` 純 JS 去重：`resolvePageOverlap`＝狀態列行號為主、`findPageOverlap` 內文為輔，見 `docs/easy-reading.md`)。
-  - **黑名單列移除 vs 隱藏由 `enhance.dropHidden` 決定**：好讀文章 `dropHidden=true`→Screen render `null`
+  - **黑名單列移除 vs 隱藏由 `enhance.dropHidden` 決定**：好讀文章 `dropHidden=true`→該列不產生節點
     （整列移除、長卷無空行）；原生/列表 `dropHidden=false`→`visibility:hidden`（固定格線只能隱藏不移除）。
-    render `null` **不位移**其餘列 `data-row`(=pageLines 絕對索引)，故選取/複製跨缺口仍對齊。
+    不產生節點 **不位移**其餘列 `data-row`(=pageLines 絕對索引)，故選取/複製跨缺口仍對齊。
   - floor 跨頁：好讀文章 `lines=完整 pageLines`，`computeAnnotations` 每次 `new FloorCounter()` 走完整篇
     → 樓號自然正確（無 view 端持久計數器）。
 - 測試讀列：`#mainContainer > span[type="bbsrow"]`(Row 外層) > `div` > `span[data-type="bbsline"]`(連結/徽章在此)。
   讀推文用 `[data-type="bbsline"]` 的 **textContent**（`visibility:hidden` 列 innerText 為空），推文正則需容忍
-  徽章數字：`/^(推|噓|→)\d*\s+/`。好讀文章黑名單列已 render `null`→DOM 無該列（childCount 下降）。
+  徽章數字：`/^(推|噓|→)\d*\s+/`。好讀文章黑名單列不產生節點→DOM 無該列（childCount 下降）。
 
 ## 原PO 推文高亮（same-author，只高亮 userid 區塊）
 - 推文者 == 原PO id → **只**把 userid 欄位 `[3, 3+len)` 包成 `<span class="commentByAuthor">`（`main.css`
@@ -56,8 +64,8 @@
   `authorIdStart/End` 任一 undefined→完全跳過。
 - 原PO id 由 `view._articleAuthor` 跨頁持久：`redraw` 開頭 `pageState==3` 時 `parseArticleAuthor(lines[0])`，**有值才覆蓋**
   （翻頁 null 沿用上次；新文章首頁覆蓋）。**勿** reset，靠覆蓋即可。
-- 逐列判斷由 `annotateComment` 統一（見上）。render 只負責「把回傳值畫出來」：`Screen#computeAnnotations`
-  →`ann.authorIdStart/End`→Row props（兩模式同走 `<Screen>`→`<Row>`，無第二條接線）。
+- 逐列判斷由 `annotateComment` 統一（見上）。render 只負責「把回傳值畫出來」：`screen_annotations#computeAnnotations`
+  →`ann.authorIdStart/End`→`buildRow` 參數（兩模式同走 `ScreenController`→`buildRow`，無第二條接線）。
 - pref `highlightAuthorComments`(true)；`pttchrome.onPrefChange`→`view.*`+`redraw(true)`。i18n `options_highlightAuthorComments`。
 
 ## 點選推文者高亮（pusher highlight，整列）
@@ -71,9 +79,9 @@
   0-6 欄的「點一下離開文章」在整個推文區永遠點不到（使用者回報）。
 - 偵測一律走 DOM（**好讀畫面是重排長卷、不對應 buf 24 列網格**，不能用 `getRowText`；`clientToPos` 的 **col**
   是純幾何、兩模式都可信，**row** 才是被 clamp 的那個）。推文列 `data-pusher`(lower id) 與 `data-pusher-col`
-  由 `<Row>` 外層 span（props `pusher`／`pusherContentCol`，來自 `ann.pusher`／`ann.contentCol`）統一掛上，兩模式同。
+  由 `buildRow` 的外層 span（參數 `pusher`／`pusherContentCol`，來自 `ann.pusher`／`ann.contentCol`）統一掛上，兩模式同。
 - 狀態 `view._selectedPusher`（傳入 `annotateComment` ctx）；`togglePusherHighlight` 兩模式同：設 `_selectedPusher`
-  + `redraw(true)` → `computeAnnotations` 重算 `ann.pusherHighlight`，`<Screen>` 重繪套 class。（好讀重繪會重入
+  + `redraw(true)` → `computeAnnotations` 重算 `ann.pusherHighlight`，renderer 重繪套 class。（好讀重繪會重入
   `accumulatePageLines` 同畫面，`findPageOverlap` 去重成 no-op append，故無重複列。）
 - 清除：好讀新文章在 `accumulatePageLines` else（新文章）分支 reset；原生 `redraw` `pageState!==3` 時 reset。
 - 無 pref/i18n（點擊驅動、恆可用）。
@@ -98,7 +106,7 @@
   segment，換行改由區塊邊界表達；空的預覽 div 照樣輸出（區塊盒把下一行的 inline 內容擠到新行，
   跟單行路徑同形，不需額外包裝層）。**沒有 `\n` 的一般列走原路徑，DOM 一字不動。**
 - 懸掛縮排：`main.css` 給 bbsrow `padding-left: var(--merged-comment-indent)`，首則 bbsline 再以
-  **負 `margin-left`** 拉回 0 欄；變數由 `Screen.jsx` 依 `contentStart × forceWidth/2` inline 指定。
+  **負 `margin-left`** 拉回 0 欄；變數由 `render/screen.js` 依 `contentStart × forceWidth/2` inline 指定。
   **勿用 `text-indent`**——每則各自是 bbsline span，text-indent 會繼承下去把每行都往左拉。
 - **勿再加回 gap 門檻**（舊 `BREAK_GAP_COLS`，2026-08 已整組拆除）。舊版猜「這則是不是打滿被截斷的續行」
   並把它與下一則串接；反查 pttbbs 證實此判斷**在畫面上無資訊量**：
@@ -116,7 +124,7 @@
   DBCS 對映問題）、`buildMergedCommentChars`（回 `{chars,contentStart}`）。
   **fail-safe**：run 中任一列切不出邊界 → 整組還原逐列（寧不合併不錯切）。
 - 接線：pref `mergeSameAuthorComments`(true) → `pttchrome.onPrefChange`→`view.*`+`redraw(true)` →
-  `term_view` enhance → `Screen#computeAnnotations` 好讀分支：run 首列掛 `mergeCommentRun`
+  `term_view` enhance → `screen_annotations#computeAnnotations` 好讀分支：run 首列掛 `mergeCommentRun`
   （合併 chars＋首則 timeLabel＋**對合併 chars 重跑的 detectRowExtras**——原列偵測 col 全失效）、
   其餘列 `mergedIntoComment`（頂層 render null）。i18n `options_mergeSameAuthorComments`（zh/en）。
 - 關鍵不變量：合併 chars 的每個 cell **沿用原 TermChar 實例**（分隔空白重用 padding cell）——自造 plain
@@ -125,8 +133,8 @@
 - 已知取捨：合併塊內 `getText` col 對映失真（^C 複製走 `window.getSelection().toString()` 不受影響）；
   正文假推文（完整含時間戳 shape）若連續同作者也會被合併（罕見，寧簡）。
 - 測試：unit `tests/unit/comment_merge.test.js`（grouping/邊界/一則一行/末則時間＋wettland 十二連推、
-  stock-end golden rz2x×7）、`merge_comment_render.test.jsx`（Screen 接線：分行數、縮排 CSS var、
-  作者只在第一行／時間只在最後一行且置右到 col 67／非 React 節點）、`row_render.test.jsx`
+  stock-end golden rz2x×7）、`merge_comment_render.test.js`（renderer 接線：分行數、縮排 CSS var、
+  作者只在第一行／時間只在最後一行且置右到 col 67／時間戳是一般 cell 不是額外節點）、`row_render.test.js`
   （單一樓號徽章、`\n` 切成多個 bbsline 且文字零遺失、無 `\n` 仍是單一 span）；
   offline `comment_merge.offline.spec.js`（不變量：**相鄰 bbsrow 不得同 data-pusher**；stock-end 指名：
   7→1、徽章 `\d+`、內容零遺失、**7 個 bbsline**、作者/時間位置、**時間可被 getSelection 選取**（守
@@ -159,17 +167,17 @@
     「句號＋句首單字」**完全同形**，因為 `it/in/to/me/us/be/la` 這些 ccTLD 剛好也是英文單字（regex 帶 `i` flag）：
     `...a modern Call of Duty. It does not.` → `Duty. It` → `https://Duty.It`（使用者 2026-08 回報）。
     靠空白位置或大小寫判反而兩邊都誤（已否決）。故 `detectFixableUrls` **只回報旗標不自行過濾**，由消費端決定：
-    `Screen#computeAnnotations` 一律套 `applyAiFix` → **AI 關 ⇒ gray 全部不修**，AI 判 `true` 才放行。
-    守護 `url_fix.test.js`「句號誤判標成 gray」＋`tests/unit/url_fix_ai_render.test.jsx`＋
+    `screen_annotations#computeAnnotations` 一律套 `applyAiFix` → **AI 關 ⇒ gray 全部不修**，AI 判 `true` 才放行。
+    守護 `url_fix.test.js`「句號誤判標成 gray」＋`tests/unit/url_fix_ai_render.test.js`＋
     `tests/e2e/offline/url-fix-gray.offline.spec.js`。
   - 取捨：保守設計，漏冷門 TLD 換取近零誤判。**文章內文的跨列斷開 URL 仍 out of scope**
     （逐列偵測；內文沒有「輸入欄寫滿」這種訊號）；**推文**的跨列斷開由下節的 `url_wrap.js` 承接。
     2026-08 起再加一項：無 scheme 無 path 的斷開裸網域（`www . a .com`）未開 AI 時不修。
-- 渲染：`Screen#computeAnnotations` **逐列**（含內文非推文列，獨立於 `annotateComment`）算 `fixedUrls` 掛進 ann →
-  `<Row>` prop → `LinkSegmentBuilder.build()` 在 inline-preview 區塊後 map 出 `<FixedUrlLine>`
-  （`components/Row/FixedUrlLine.jsx`：`<HyperLink>`＋恆掛 `<ImagePreviewer Inline>` 讓 resolver 自判可否開圖）。
+- 渲染：`screen_annotations#computeAnnotations` **逐列**（含內文非推文列，獨立於 `annotateComment`）算 `fixedUrls` 掛進 ann →
+  `buildRow` 參數 → `link_segment.build()` 在 inline-preview 區塊後產生 `.fixedUrlLine`
+  （`render/link_segment.js#fixedUrlLine`：連結錨點＋恆掛一個延遲載入佔位盒，讓 resolver 自判可否開圖）。
   **僅當 `enableLinkInlinePreview`（好讀模式）才渲染**——原生固定 24 列 grid 加行會破壞對齊，故不加，與自動開圖一致。
-  CSS `.fixedUrlLine/.fixedUrlLabel`(`main.css`)。守護測試 `tests/unit/row_render.test.jsx`「Row fixed-URL line」。
+  CSS `.fixedUrlLine/.fixedUrlLabel`(`main.css`)。守護測試 `tests/unit/row_render.test.js`「列 fixed-URL line」。
 - pref `enableAutoFixUrl`(true)；`pttchrome.onPrefChange`→`view.enableAutoFixUrl`+`redraw(true)`；
   傳入 `enhance.autoFixUrl`。i18n `options_enableAutoFixUrl`。
 
@@ -197,12 +205,12 @@
   寬度單獨用判不出來；這裡寬度只是必要條件，判別力來自「併起來是不是網址」。散文續行仍不猜。
 - 掃描一律走 `TermChar[]` 旗標判 DBCS，**不可只看 `ch`**：Big5 trail byte 可能剛好是 `0x40`（`'@'`）
   這種合法 URL 字元（踩坑 A 同源）。
-- 接線：`Screen#computeAnnotations` 的合併塊分支在 `detectRowExtras(merged.chars, …)` 之後，
+- 接線：`screen_annotations#computeAnnotations` 的合併塊分支在 `detectRowExtras(merged.chars, …)` 之後，
   以 `fixed` 去重併進 `fixedUrls` → 渲染（`FixedUrlLine`）／`runCache`／`applyAiFix` 全部沿用、零改動。
 - 限制：需 `mergeSameAuthorComments` 開啟（預設開）＋好讀模式；中間被別人插一則推文而斷開 run 的不接。
 - 守護測試：`tests/unit/url_wrap.test.js`（三訊號逐條＋78 欄整合＋IP 板 `fieldEnd`）、
   `tests/unit/comment_merge.test.js`（`fieldEnd`／`breaks`）、
-  `tests/unit/merge_comment_render.test.jsx`「跨行連結接合」。
+  `tests/unit/merge_comment_render.test.js`「跨行連結接合」。
 
 ## 裸網域自動連結（`src/js/bare_domain.js` + `url_ai*.js`）
 「無 scheme、無路徑、無空白」的網域（`indiegametw.com`、`eaigc.filtergame.com`）：`uriRegEx` 要 scheme 看不見，
@@ -238,7 +246,7 @@ host 兩邊問的是不同問題）。session key 也分開（`prompt_api.js` �
 - 渲染：**原位**（複用 mentions 的 `[startCol,endCol)` open/close 邊界機制）→ `<a className="bareDomainLink">`，
   **不加行、不掛 inline `ImagePreviewer`**（裸網域多半非圖），掛 hover 預覽 handler。因為是 range 不加行，
   **原生 24 列模式也生效**（與 `FixedUrlLine` 的好讀限定不同）。CSS `.bareDomainLink`(`main.css`)。
-  守護 `row_render.test.jsx`「Row bare-domain link」、`tests/e2e/offline/bare-domain-link.offline.spec.js`。
+  守護 `row_render.test.js`「Row bare-domain link」、`tests/e2e/offline/bare-domain-link.offline.spec.js`。
 - AI 層：純函式 `url_ai_logic.js`（`buildDomainPrompt`／`domainLinkSchema`＝單一 boolean `link`／`parseLinkReply`／
   `applyAiLink`／`domainKey`／`candNeedsAi`），瀏覽器層 `url_ai.js`。
   **零回歸不變量：`applyAiLink(cands, {}) ≡ cands`**（引用都不換），只有明確 `false` 才 filter 掉。
@@ -262,7 +270,7 @@ host 兩邊問的是不同問題）。session key 也分開（`prompt_api.js` �
   - **走 `TermChar[]`（cols）而非 `rowToText` 字串**：Big5 DBCS **trail byte 可能=0x40(`@`)**，掃字串會誤判中文內的假 `@`；逐列遇 `isLeadByte` 跳 2 格、只在單 byte ASCII 偵測，回傳的 col 就是 `LinkSegmentBuilder.readChar(ch,i)` 比對的 index。守護有「trail byte 0x40 不誤判」case。
   - **落在既有 URL 內的 `@` 不算提及**（`https://x.com/@jack`、`http://user@host/…`）：走共用的
     `term_url_flag.js#rangeInTermUrl`，理由與 `aid_parse` 同（見「踩坑筆記 A」該條）。
-- 渲染：`Screen#computeAnnotations`（`pageState=READING`、非 hidden、非原PO-id 列）`detectMentions`→掛 `ann.mentions`→`<Row>` prop→`LinkSegmentBuilder` 比照 URL href 邊界，在 `[startCol,endCol)` 包 `<a className="xMention" target=_blank rel=noreferrer>`（**不掛 `ImagePreviewer`**，與 URL 的 `HyperLink` 區隔）。CSS `.xMention`(`main.css`) 比照 `.y`(color.css)：橘色 `http.bmp` 底線、文字保留 ANSI 原色，外觀同一般連結。守護 `row_render.test.jsx`「Row X mention link」。
+- 渲染：`screen_annotations#computeAnnotations`（`pageState=READING`、非 hidden、非原PO-id 列）`detectMentions`→掛 `ann.mentions`→`buildRow` 參數→`link_segment` 比照 URL href 邊界，在 `[startCol,endCol)` 包 `<a className="xMention" target=_blank rel=noreferrer>`（**不掛內嵌預覽**，與一般 URL 錨點區隔）。CSS `.xMention`(`main.css`) 比照 `.y`(color.css)：橘色 `http.bmp` 底線、文字保留 ANSI 原色，外觀同一般連結。守護 `row_render.test.js`「Row X mention link」。
 - pref `enableXMentionLink`(true)；`pttchrome.onPrefChange`→`view.enableXMention`+`redraw(true)`；傳入 `enhance.enableXMention`。i18n `options_enableXMentionLink`。
 - **驗證為何 OFF（CONFIRMED 2026-06 實測，外部事實）**：純前端無可行探測法——unavatar 免費版每日僅 25 次（`X-Rate-Limit-Limit:25`）且 `<img>` `onerror` 無法區分 404 與 429 → 限流期會把存在帳號誤標 invalid；直連 x.com 存在/不存在 HTTP **都回 200**（SPA）；官方 API 需付費 bearer 且無瀏覽器 CORS；syndication 端點 ACAO 鎖 `platform.twitter.com`。
   - **唯一可行路＝自建 worker**：server-side 用**一般瀏覽器 UA** `fetch('https://x.com/<handle>')`，存在帳號 HTML `<title>Name (@handle) / X`、不存在 title 空（facebookexternalhit/Twitterbot UA 一律回 404，**勿用**）。worker 回小 JSON＋Cloudflare KV 快取；前端只快取明確「不存在」、429/錯誤不快取。風險：X 對 Cloudflare 出口 IP 可能另眼相待，部署後需實測。
@@ -452,16 +460,16 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   - 守護：`tests/e2e/offline/cursor_shape.offline.spec.js`（8 條：形狀／格內／水平／縮放／functionMode 不可捲／純捲動不脫鉤／`#cursor` 活在 `.main`／長頁隱藏）＋ `tests/unit/server_cursor_mark.test.js`（三個可見性來源 OR 合併）。
 - **「pref → 畫面」的鏈路要有測試盯著終點，不能只看到有人賦值就算接上**。實例：`mouseBrowsingHighlightColor`（游標底色）→ `view.highlightBG` 從 fork 改 React 起就是**只寫不讀**——`term_view.js` 初始化一次、`App.onPrefChange` 賦值一次，全 repo 零讀取點，真正上色的是 `LinkSegmentBuilder`/`Row` 硬寫的 `cx({ b2: … })`。使用者選任何顏色畫面永遠是 `#008000`，而且因為 pref 有正確持久化、`redraw(true)` 也有被呼叫，看起來一切正常。2026-08-15 才發現並改成 `cursor_highlight.js#highlightClass(pref)` → `b1..b15`。教訓：新增/搬動任何「設定值影響渲染」的 pref，回歸測試要斷言**渲染輸出**（DOM class/style），不是斷言中間欄位被設到。
 - **游標底色（光棒）只有一個套用入口 `term_view.applyCursorHighlight`**，決策全在純函式 `src/js/cursor_highlight.js`。來源有三種（原生真游標 `buf.cur_y`／列表好讀虛擬游標／滑鼠 hover）、模式判斷靠 `buf.listRenderMode` 與 `pageState`，**勿在 render 分支各自呼叫 Screen 的命令式 API**（舊版只有原生分支呼叫 `setHighlightedRow`，所以列表好讀與 functionMode 的游標永遠沒有底色）。掛載點：redraw 的 if/else 鏈之後（統一一次）、`term_buf.setHighlight`、`updateCursorPos`（涵蓋只有游標動的幀）、pref 變更。
-- **傳給 `React.PureComponent` 的 prop 勿在 render 內現生新物件/Promise**。否則 shallow-compare 永遠不等 → PureComponent 形同失效、子樹每次重掛。實例：`ImagePreviewer` 的 `request` 曾每 render `of(href).then(resolveSrcToImageUrl)` 新 Promise → pusherHighlight 重繪時 value 重置、YouTube iframe 卸載重掛**閃爍**（img 有快取無感）；改 `ImagePreviewer.jsx#requestPreview(href)` 以 href memoize（module `Map`），同 href 同參考。守護 `tests/unit/row_render.test.jsx`「same href → request prop 參考相等」。
-- **`<Screen>` 的增量快取只在 `enhance.stableRows` 為真時成立**（好讀累積長頁 `buf.pageLines`，由 `term_view.js` 的 `STABLE_ROWS` 帶）。那裡的列是 `cloneRow` 快照、append 之後永不再被寫，所以「列物件參考相同 ⇒ 內容相同」才成立。**原生 24 列畫面與列表視窗是 `term_buf` 就地改寫的活 buffer**：`buf.lines[y][x].ch = …`，列參考一路不變而內容每幀在變 —— 這兩條路徑加上 `stableRows` 就會一直畫出上一幀的內容。守護 `screen_incremental_render.test.jsx`「stableRows 沒帶 ⇒ 不套快取」。細節與另一半（`<Row>` 元素快取）見 `docs/easy-reading.md`「累積頁的每頁 render 成本必須是 O(新增列)」。
-- **自動開圖是延遲載入的（`LazyInlinePreview`）：測試要驗預覽必先捲到，且捲完要等版面靜下來再量座標**。replay/boot 完就 `querySelector('img')` 只會量到空的佔位盒（用 `tests/e2e/helpers/replay.js` 的 `mountLazyPreviewsAt`／`seekInlineMedia`）。更隱蔽的一條：`scrollIntoView()` 之後**立刻**讀 `getBoundingClientRect()` 會拿到過期座標 —— 附近的圖這時才開始掛上、載入完又長高，把目標推走 → 後續 `page.mouse.click(x, y)` 點在別列上（`blacklist_quick_add` 的右鍵選單「查無加入黑名單」就是這樣紅的）。捲動與量測分開，中間等 `scrollHeight` 連續兩輪不變。
-- **佔位盒的塌陷補償只能給「真的有媒體」的 slot**（`lazy_media.nextSlotHeight` 的 `hasMedia`）。`LazyInlinePreview` 卸載時會把當下高度釘進 `min-height`，本意是防真圖片卸載後內容塌陷、閱讀位置位移；但好讀對**每一個**連結都掛 slot，而每篇文章結尾都有「※ 文章網址: https://www.ptt.cc/bbs/…html」這種**非媒體**連結——它捲到附近只會顯示「讀取中…」指示器（`.previewLoading`，URL 解析中／媒體下載中共用），判定後內容消失。舊碼無條件釘住那 65px ⇒ **每篇文章的推文區前面都多出一塊假空白**，而且非媒體連結永遠不會再長出內容來填它（使用者 2026-08 回報）。判準用 `LAZY_MEDIA_SELECTOR` 查 slot 內有無真媒體元素，**刻意不含** `.previewLoading`／`.previewError`。守護：`tests/unit/lazy_inline_preview.test.jsx` ＋ `tests/e2e/offline/lazy_preview_blank.offline.spec.js`（素材必須夠長才會觸發卸載，見 `docs/offline-replay-testing.md`「素材選用」）。
+- **傳給 `React.PureComponent` 的 prop 勿在 render 內現生新物件/Promise**。否則 shallow-compare 永遠不等 → PureComponent 形同失效、子樹每次重掛。實例：`ImagePreviewer` 的 `request` 曾每 render `of(href).then(resolveSrcToImageUrl)` 新 Promise → pusherHighlight 重繪時 value 重置、YouTube iframe 卸載重掛**閃爍**（img 有快取無感）；改 `ImagePreviewer.jsx#requestPreview(href)` 以 href memoize（module `Map`），同 href 同參考。核心渲染鏈去 React 化後 `ImagePreviewer` 仍是 React 葉子島，這條照樣成立。守護 `tests/unit/row_render.test.js`「same href → requestPreview 回同一個 Promise」。
+- **逐列節點快取只在 `enhance.stableRows` 為真時成立**（好讀累積長頁 `buf.pageLines`，由 `term_view.js` 的 `STABLE_ROWS` 帶）。那裡的列是 `cloneRow` 快照、append 之後永不再被寫，所以「列物件參考相同 ⇒ 內容相同」才成立。**原生 24 列畫面與列表視窗是 `term_buf` 就地改寫的活 buffer**：`buf.lines[y][x].ch = …`，列參考一路不變而內容每幀在變 —— 這兩條路徑加上 `stableRows` 就會一直畫出上一幀的內容。守護 `screen_incremental_render.test.js`「stableRows 沒帶 ⇒ 不套快取」。細節與另一半（逐列節點快取）見 `docs/easy-reading.md`「累積頁的每頁 render 成本必須是 O(新增列)」。
+- **自動開圖是延遲載入的（`render/inline_preview_slot.js`）：測試要驗預覽必先捲到，且捲完要等版面靜下來再量座標**。replay/boot 完就 `querySelector('img')` 只會量到空的佔位盒（用 `tests/e2e/helpers/replay.js` 的 `mountLazyPreviewsAt`／`seekInlineMedia`）。更隱蔽的一條：`scrollIntoView()` 之後**立刻**讀 `getBoundingClientRect()` 會拿到過期座標 —— 附近的圖這時才開始掛上、載入完又長高，把目標推走 → 後續 `page.mouse.click(x, y)` 點在別列上（`blacklist_quick_add` 的右鍵選單「查無加入黑名單」就是這樣紅的）。捲動與量測分開，中間等 `scrollHeight` 連續兩輪不變。
+- **佔位盒的塌陷補償只能給「真的有媒體」的 slot**（`lazy_media.recordSlotHeight` 的 `hasMedia`）。佔位盒卸載時會把當下高度釘進 `min-height`，本意是防真圖片卸載後內容塌陷、閱讀位置位移；但好讀對**每一個**連結都掛 slot，而每篇文章結尾都有「※ 文章網址: https://www.ptt.cc/bbs/…html」這種**非媒體**連結——它捲到附近只會顯示「讀取中…」指示器（`.previewLoading`，URL 解析中／媒體下載中共用），判定後內容消失。舊碼無條件釘住那 65px ⇒ **每篇文章的推文區前面都多出一塊假空白**，而且非媒體連結永遠不會再長出內容來填它（使用者 2026-08 回報）。判準用 `LAZY_MEDIA_SELECTOR` 查 slot 內有無真媒體元素，**刻意不含** `.previewLoading`／`.previewError`。守護：`tests/unit/lazy_inline_preview.test.js` ＋ `tests/e2e/offline/lazy_preview_blank.offline.spec.js`（素材必須夠長才會觸發卸載，見 `docs/offline-replay-testing.md`「素材選用」）。
 - **送鍵（或任何副作用）不可寫在 `console.log` 的字串運算式裡**。`easy_reading._onViewUpdated` 曾寫成 `console.log("send:" + keys + " -> " + this._maybeSendPageDown(keys, false))` —— 哪天把 log 包進 `if (TRACE)` 就會連好讀唯一的翻頁動力一起關掉。每幀日誌現由 `util.js` 的 `TRACE`（= `process.env.DEVELOPER_MODE`）在**呼叫端**包住，dev/e2e 照印、prod 由 bundler 整段消除。
 - **逐列加工走單一純函式 `comment_parse.annotateComment`**，勿為某路徑另寫一份（好讀/原生曾各複製一份而發散出 bug）。逐列狀態用每圈新物件 `const ann={}`，**勿用函式作用域 `var`**（JS `var` 不每圈重設 → 非推文列繼承前列 floor/authorId 範圍，畫出整條色塊或樓號溢出到空白/※編輯/內文）。守護 `comment_parse.test.js`。
 - **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 `enhance.spec.js` 紅。
 - **要算「逐列欄位位置（col）」一律走 `TermChar[]`，勿掃 `rowToText` 後字串**。Big5 DBCS **trail byte 可能=0x40(`@`)**（其他 ASCII 標點同理）→ 掃字串會在中文內誤命中、且 string index ≠ TermChar col（DBCS 佔 2 cols）。逐列遇 `isLeadByte` 跳 2 格、只在單 byte ASCII 比對（同 `rowToText` 走訪）。實例：`mention_parse.detectMentions`（X @帳號），守護有「trail byte 0x40 不誤判」case。
 - **額外連結偵測器（`bare_domain`／`aid_parse`／`mention_parse`）一律要排除「已被 `uriRegEx` 標成 URL」的格子**，統一走 `src/js/term_url_flag.js` 的 `isTermUrlCell`／`rangeInTermUrl`（假 cell 沒有 `isPartOfURL` → 回 false，不影響純邏輯測試）。它們是在**同一批 cell** 上再掃一次找主偵測器看不見的形狀，一旦在 URL 內命中，`LinkSegmentBuilder` 就會在那個 col 切開 segment ⇒ 一條網址被拆成好幾個 `<a>`、中段換成別的 href。實例（使用者 2026-08 回報）：`https://…/PttChrome/#Browsers/1gU3wwNZ` 的 `#Browsers` 恰是合法 AIDc 形狀（`#` 前非 AID 字元、8 個 AID 字元、第 9 格非 AID 字元）→ 底線只畫到 `#Browsers`、尾段 `/1gU3wwNZ` 不是連結、滑鼠停在中段狀態列顯示 `…/PttChrome/#`（那是 `.aidLink` 的 `href="#"`）。同型還有 `https://x.com/@jack` 的 `@handle`。守護：`aid_parse.test.js`／`mention_parse.test.js` 的「已被 uriRegEx 標記的 URL 內不產生候選」＋ `tests/e2e/offline/url-fragment-aid.offline.spec.js`（真 uriRegEx 設旗標，unit 只能餵假旗標）。
-- **`LinkSegmentBuilder.readChar` 對 `'\n'` 提前 return，範圍型連結的關閉邊界必須在那裡一併清掉**。範圍型（`_mention`/`_aid`/`_giveaway`/`_bareDomain`）靠 `i === endCol` 關閉，而合併推文塊的 `'\n'` 分支走在那些檢查之前 ⇒ `endCol` 落在換行 cell 上時**永遠關不掉**，狀態外溢到後續每一行（整塊被畫底線、href 全是上一行那個連結；使用者 2026-08 回報 `duk.tw`）。`comment_merge` 會剝掉每則的行尾空白，所以「範圍結束＝換行前一格」是**常態不是邊角**。清空要在 `saveSegment()` **之後**（那一段仍須用當下狀態包成 `<a>`）；候選字元類都不含 `'\n'`，故無條件清空安全。守護 `row_render.test.jsx`「行尾裸網域不得外溢到後續行」。
+- **`LinkSegmentBuilder.readChar` 對 `'\n'` 提前 return，範圍型連結的關閉邊界必須在那裡一併清掉**。範圍型（`_mention`/`_aid`/`_giveaway`/`_bareDomain`）靠 `i === endCol` 關閉，而合併推文塊的 `'\n'` 分支走在那些檢查之前 ⇒ `endCol` 落在換行 cell 上時**永遠關不掉**，狀態外溢到後續每一行（整塊被畫底線、href 全是上一行那個連結；使用者 2026-08 回報 `duk.tw`）。`comment_merge` 會剝掉每則的行尾空白，所以「範圍結束＝換行前一格」是**常態不是邊角**。清空要在 `saveSegment()` **之後**（那一段仍須用當下狀態包成 `<a>`）；候選字元類都不含 `'\n'`，故無條件清空安全。守護 `row_render.test.js`「行尾裸網域不得外溢到後續行」。
 - **e2e flake 常態**：最新文章常無推文（測樓層/黑名單從 End 往舊文找）；guest 名額滿用 env `PTT_USER/PTT_PASS`；偶發 403/ECONNRESET（PTT 端）。
 - **裝置端 AI（`window.LanguageModel`）的存在 ≠ 可用**：Playwright 的 Chromium 有這個 global，但沒有模型。任何「要不要顯示 AI 功能」的判斷一律以 **`availability()` 探測結果**為準，勿用 `typeof window.LanguageModel`——否則會出現一顆按下去每次都 fallback 的假按鈕。中文也**不在** Prompt API 官方支援語言（en/ja/es/de/fr）內，故 `expectedInputs` 一律不傳語言（傳了可能丟 `NotSupportedError`）。見 `docs/merge-caption-ai-assist.md`。
   - **e2e 別斷言 Chromium 的 availability 實際回值**（2026-08 實測）：在真實 origin 下它回的是

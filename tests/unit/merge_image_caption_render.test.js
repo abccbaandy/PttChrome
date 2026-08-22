@@ -1,12 +1,13 @@
-// 好讀「圖左字右合併」的 Screen render 接線守護（仿 screen_dropHidden.test.js）：
-//   - 合併狀態是 Screen 內部 state（浮動按鈕切換）：開啟時翻譯行從頂層消失、
+// 好讀「圖左字右合併」的渲染接線守護（仿 screen_dropHidden.test.js）：
+//   - 合併狀態是 renderer 的內部 state（浮動按鈕切換）：開啟時翻譯行從頂層消失、
 //     搬進所屬圖行的 .mergedCaptionCol；data-row 保留絕對 index。
 //   - 右欄寬度動態＝最寬翻譯行欄數（半形1/全形2）換算像素（不換行）。
 //   - articleId 變（換文章/退出再進）→ 合併狀態重置回關（regression：曾為
 //     session-sticky，換到沒按鈕的文章後關不掉）。
 //   - 按鈕條件：easyReading + 文章頁 + ≥2 個「圖＋說明」塊。
-import { render, fireEvent } from "@testing-library/react";
-import Screen from "../../src/components/Screen";
+import { mountScreen, unmountAll } from "./helpers/mount_screen";
+
+afterEach(unmountAll);
 
 const COLOR = {
   fg: 7,
@@ -53,18 +54,10 @@ const enhanceFor = ({ easyReading = true, articleId = 1 } = {}) => ({
 });
 
 function renderScreen(opts) {
-  return render(
-    <Screen
-      lines={lines}
-      forceWidth={FORCE_WIDTH}
-      enableLinkInlinePreview={false}
-      enableLinkHoverPreview={false}
-      enhance={enhanceFor(opts)}
-    />,
-  );
+  return mountScreen({ lines: lines, forceWidth: FORCE_WIDTH, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: enhanceFor(opts) });
 }
 
-describe("Screen 圖文合併 render", () => {
+describe("圖文合併 render", () => {
   test("預設關：無 wrapper；點按鈕合併：翻譯行進 .mergedCaptionCol、data-row 保留、右欄寬度動態", () => {
     const { container: c } = renderScreen({});
     // 預設關閉、按鈕存在。
@@ -72,7 +65,7 @@ describe("Screen 圖文合併 render", () => {
     const btn = c.querySelector("#mergeImageCaptionBtn");
     expect(btn).not.toBeNull();
 
-    fireEvent.click(btn);
+    btn.click();
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(2);
     // 全部 8 列都在（沒有行被丟掉），絕對 index 不變。
     expect(dataRows(c).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
@@ -89,9 +82,8 @@ describe("Screen 圖文合併 render", () => {
       ),
     ).toEqual([5]);
     // 翻譯行不在頂層。
-    const topLevelIdx = Array.from(
-      c.querySelectorAll("#mainContainer > span"),
-    ).map((n) =>
+    // c 就是 #mainContainer（mountScreen 直接回 controller 的容器）。
+    const topLevelIdx = Array.from(c.querySelectorAll(":scope > span")).map((n) =>
       parseInt(n.querySelector("[data-row]").getAttribute("data-row"), 10),
     );
     expect(topLevelIdx).toEqual([0, 6, 7]);
@@ -99,7 +91,7 @@ describe("Screen 圖文合併 render", () => {
     expect(cols[0].style.width).toBe(`${(10 / 2 + 1) * FORCE_WIDTH}px`);
 
     // 再點一次 → 切「上文下圖」：圖行之前的文字歸該圖右欄。
-    fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
+    c.querySelector("#mergeImageCaptionBtn").click();
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(2);
     const cols2 = c.querySelectorAll(".mergedCaptionCol");
     expect(
@@ -115,7 +107,7 @@ describe("Screen 圖文合併 render", () => {
     expect(dataRows(c).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
 
     // 第三次點 → 還原關閉。
-    fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
+    c.querySelector("#mergeImageCaptionBtn").click();
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(0);
     expect(dataRows(c)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
@@ -127,38 +119,23 @@ describe("Screen 圖文合併 render", () => {
       line("第二張翻譯"), // 2
       line("https://i.imgur.com/bbb222.jpg"), // 3
     ];
-    const { container: c } = render(
-      <Screen
-        lines={captionFirstLines}
-        forceWidth={FORCE_WIDTH}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={enhanceFor({})}
-      />,
-    );
+    const { container: c } = mountScreen({ lines: captionFirstLines, forceWidth: FORCE_WIDTH, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: enhanceFor({}) });
     const btn = c.querySelector("#mergeImageCaptionBtn");
     expect(btn).not.toBeNull();
     // imageFirst 只有 1 塊（圖2 之後無字）→ 第一次點只合併 1 塊。
-    fireEvent.click(btn);
+    btn.click();
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(1);
     // 第二次點 → captionFirst 合併 2 塊。
-    fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
+    c.querySelector("#mergeImageCaptionBtn").click();
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(2);
   });
 
   test("articleId 變（換文章）→ 合併狀態重置回關", () => {
-    const { container: c, rerender } = renderScreen({ articleId: 1 });
-    fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
+    const screen = renderScreen({ articleId: 1 });
+    const c = screen.container;
+    c.querySelector("#mergeImageCaptionBtn").click();
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(2);
-    rerender(
-      <Screen
-        lines={lines}
-        forceWidth={FORCE_WIDTH}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={enhanceFor({ articleId: 2 })}
-      />,
-    );
+    screen.update({ lines, forceWidth: FORCE_WIDTH, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: enhanceFor({ articleId: 2 }) });
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(0);
   });
 
@@ -169,15 +146,13 @@ describe("Screen 圖文合併 render", () => {
   });
 
   test("塊數 <2 → 無按鈕", () => {
-    const { container: c } = render(
-      <Screen
-        lines={[lines[1], lines[2]]} // 只有一塊
-        forceWidth={FORCE_WIDTH}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={enhanceFor({})}
-      />,
-    );
+    const { container: c } = mountScreen({
+      lines: [lines[1], lines[2]], // 只有一塊
+      forceWidth: FORCE_WIDTH,
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: enhanceFor({}),
+    });
     expect(c.querySelector("#mergeImageCaptionBtn")).toBeNull();
   });
 });

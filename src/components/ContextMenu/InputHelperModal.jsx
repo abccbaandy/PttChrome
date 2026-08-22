@@ -9,9 +9,24 @@ import {
   Group,
   Text,
 } from "@mantine/core";
-import ColorSpan from "../Row/WordSegmentBuilder/ColorSpan";
+
+import cx from "classnames";
+
 import { i18n } from "../../js/i18n";
 import "./InputHelperModal.css";
+
+// 顏色預覽方塊。核心渲染鏈 2026-08 去 React 化後 <ColorSpan> 不再存在（純 JS 版在
+// src/render/word_segment.js），但這裡是設定類 UI、仍是 React，故就地留一份最小的
+// 等價元件——class 命名（q{fg}/b{bg}/qq{bg} ＝ color.css）與渲染鏈那邊同源。
+const ColorSpan = ({ className, colorState, inner }) => (
+  <span
+    className={cx(className, `q${colorState.fg}`, `b${colorState.bg}`, {
+      [`qq${colorState.bg}`]: colorState.blink,
+    })}
+  >
+    {inner}
+  </span>
+);
 
 const SYMBOLS = {
   general: [

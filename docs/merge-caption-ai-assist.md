@@ -8,7 +8,8 @@ recommendation: **已實作**（2026-08，opt-in、預設關）。2026-07／2026
 | `src/js/image_caption_group.js` | 純規則（就近段落）。**行為零改動**，只多 export 兩個判準給 AI 層重用 |
 | `src/js/caption_ai_logic.js` | 純函式：候選段切分、keep→塊重建、prompt/schema、cache key |
 | `src/js/caption_ai.js` | 瀏覽器層：`window.LanguageModel` session／佇列／逾時／fallback |
-| `src/components/Screen.jsx` | 接線：spans 掛在 annotations、effect 逐塊推論、結果回填 re-render |
+| `src/js/screen_annotations.js` | 標註：spans 掛在 annotations |
+| `src/render/screen.js` | 接線：逐塊推論（`signature_task`）、結果回填重繪 |
 | `src/components/MergeImageCaptionAiButton.jsx` | 第二顆浮動按鈕（`#mergeImageCaptionAiBtn`，bottom:112） |
 | `tools/caption-ai-eval.html` | 能力評估頁（dev-only，用真 Chrome 開） |
 
@@ -160,7 +161,7 @@ CONFIRMED：**中文讀得懂**（smoke 前兩題穩過），且顯著優於現�
 |---|---|---|
 | unit | `tests/unit/caption_ai_logic.test.js` | 打蚊子篇回歸（4 段候選、ruleKeep=1、keep=4 → 右欄涵蓋到 row 23）、零回歸不變量、closed、keep 檢核、prompt/schema/解析 |
 | unit | `tests/unit/caption_ai_client.test.js` | availability 五態、clone 推論、逾時／例外／垃圾回覆全部 fallback 回規則、abort、`ensureCaptionAiReady` 不偷下載 |
-| unit(jsdom) | `tests/unit/merge_image_caption_ai_render.test.jsx` | 按鈕出現條件（含「有 API 沒模型」）、右欄擴張、可逆、換文章重置 |
+| unit(jsdom) | `tests/unit/merge_image_caption_ai_render.test.js` | 按鈕出現條件（含「有 API 沒模型」）、右欄擴張、可逆、換文章重置 |
 | offline e2e | `tests/e2e/offline/merge-image-caption-ai.offline.spec.js` | 真瀏覽器／真渲染：stub LanguageModel → 右欄列數 > 純規則、總列數不變（零遺失） |
 
 真實模型能力**不進 CI**（輸出不定、且 CI runner 沒有模型）——那是評估頁的工作。

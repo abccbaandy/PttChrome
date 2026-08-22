@@ -1,5 +1,5 @@
 // Rendering test for Screen's dropHidden behaviour. After unifying the render path
-// (easy reading also draws through <Screen>), the only per-mode difference is how a
+// (easy reading also draws through the same renderer), the only per-mode difference is how a
 // blacklisted comment row is treated:
 //   - dropHidden:true  (easy-reading accumulated long page) → row removed entirely
 //     (no DOM node, no blank gap); surviving rows keep their ABSOLUTE pageLines
@@ -11,8 +11,9 @@
 // false) so rowToText just concatenates .ch — the Big5 b2u path (needs window.lib)
 // is never exercised, and the 推/噓/→ marker is a plain Unicode char here.
 
-import { render } from "@testing-library/react";
-import Screen from "../../src/components/Screen";
+import { mountScreen, unmountAll } from "./helpers/mount_screen";
+
+afterEach(unmountAll);
 
 const COLOR = {
   fg: 7,
@@ -64,18 +65,10 @@ const enhanceBase = {
 };
 
 function render_(dropHidden) {
-  return render(
-    <Screen
-      lines={lines}
-      forceWidth={20}
-      enableLinkInlinePreview={false}
-      enableLinkHoverPreview={false}
-      enhance={Object.assign({}, enhanceBase, { dropHidden })}
-    />
-  ).container;
+  return mountScreen({ lines: lines, forceWidth: 20, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: Object.assign({}, enhanceBase, { dropHidden }) }).container;
 }
 
-describe("Screen blacklist dropHidden", () => {
+describe("畫面 blacklist dropHidden", () => {
   test("dropHidden:true → blacklisted row produces no node; survivors keep absolute data-row", () => {
     const container = render_(true);
     // baduser row removed entirely → only 2 rows rendered.
@@ -115,18 +108,10 @@ const listLines = [
 ];
 
 function renderList(enhanceExtra) {
-  return render(
-    <Screen
-      lines={listLines}
-      forceWidth={50}
-      enableLinkInlinePreview={false}
-      enableLinkHoverPreview={false}
-      enhance={Object.assign(
+  return mountScreen({ lines: listLines, forceWidth: 50, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: Object.assign(
         { blacklist: new Set(), titleBlacklist: [], pageState: 2, dropHidden: false },
         enhanceExtra
-      )}
-    />
-  ).container;
+      ) }).container;
 }
 
 const hiddenRows = container =>
@@ -134,7 +119,7 @@ const hiddenRows = container =>
 const noticeRows = container =>
   bbsrows(container).filter(n => (n.textContent || "").includes("（本文已被黑名單）"));
 
-describe("Screen board-list easy-reading mode (listEasyReading:true → 全部隱藏)", () => {
+describe("畫面 board-list easy-reading mode (listEasyReading:true → 全部隱藏)", () => {
   test("titleBlacklist keyword hides the matching row (visibility:hidden)", () => {
     const container = renderList({ titleBlacklist: ["廣告"], listEasyReading: true });
     expect(bbsrows(container).length).toBe(3);
@@ -161,7 +146,7 @@ describe("Screen board-list easy-reading mode (listEasyReading:true → 全部�
   });
 });
 
-describe("Screen board-list native mode (無 listEasyReading → 黑名單通知列/刪除文原生)", () => {
+describe("畫面 board-list native mode (無 listEasyReading → 黑名單通知列/刪除文原生)", () => {
   test("author blacklist → 通知列「(本文已被黑名單) <作者>」，非隱藏", () => {
     const container = renderList({ blacklist: new Set(["anyuser"]) });
     expect(hiddenRows(container).length).toBe(0);
@@ -185,15 +170,7 @@ describe("Screen board-list native mode (無 listEasyReading → 黑名單通知
       line(IDX_PREFIX + ("-" + " ".repeat(12)).slice(0, 12) + "□ (本文已被刪除) [someone]"),
       listRow("gooduser", "□ [心得] 另一篇")
     ];
-    const container = render(
-      <Screen
-        lines={deletedLines}
-        forceWidth={50}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={{ blacklist: new Set(), titleBlacklist: [], pageState: 2, dropHidden: false }}
-      />
-    ).container;
+    const container = mountScreen({ lines: deletedLines, forceWidth: 50, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: { blacklist: new Set(), titleBlacklist: [], pageState: 2, dropHidden: false } }).container;
     expect(hiddenRows(container).length).toBe(0);
     expect(noticeRows(container).length).toBe(0);
   });
@@ -212,18 +189,10 @@ describe("Screen board-list native mode (無 listEasyReading → 黑名單通知
 // overlay screens; computeAnnotations must keep hiding list rows when it is set even
 // though pageState !== 2.
 function renderListCtx(enhanceExtra) {
-  return render(
-    <Screen
-      lines={listLines}
-      forceWidth={50}
-      enableLinkInlinePreview={false}
-      enableLinkHoverPreview={false}
-      enhance={Object.assign(
+  return mountScreen({ lines: listLines, forceWidth: 50, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: Object.assign(
         { blacklist: new Set(), dropHidden: false },
         enhanceExtra
-      )}
-    />
-  ).container;
+      ) }).container;
 }
 
 const hiddenCount = container =>
@@ -234,7 +203,7 @@ const hiddenCount = container =>
 // The v prompt is an easy-reading (listEasyReading) T2 transaction → listEasyReading
 // stays true (derived from the engaged session state), so blacklist rows behind the
 // overlay stay HIDDEN even when the overlay frame stops parsing as LIST(2).
-describe("Screen list blacklist sticky inListContext (easy-reading v prompt)", () => {
+describe("畫面 list blacklist sticky inListContext (easy-reading v prompt)", () => {
   test("pageState 0 + inListContext + listEasyReading → author blacklist still hides", () => {
     const container = renderListCtx({
       blacklist: new Set(["anyuser"]),

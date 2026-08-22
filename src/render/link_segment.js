@@ -1,14 +1,46 @@
-import { Fragment } from "react";
+// 一列的「範圍型裝飾」組裝：把 TermChar[] 切成一段段，替每一段決定要不要包成
+// <a>（URL／X mention／AID／Steamgifts 代碼／裸網域）、要不要插樓層徽章、要不要包
+// 原PO id 或部分底色的 wrapper，最後吐出這一列的 DOM。
+//
+// 原 src/components/Row/LinkSegmentBuilder.jsx（含 HyperLink / FixedUrlLine 兩個
+// 小元件）的純 JS 版。狀態機與邊界判定一字未改，只有產物從 React element 換成
+// DOM 節點；所有 class / data-* 都是外部契約，見 CLAUDE.md 與 golden。
 import cx from "classnames";
-import HyperLink from "./HyperLink";
-import ColorSegmentBuilder from "./ColorSegmentBuilder";
-import LazyInlinePreview from "../LazyInlinePreview";
-import FixedUrlLine from "./FixedUrlLine";
+import { el } from "./dom";
+import ColorSegmentBuilder from "./color_segment";
+import { createInlinePreviewSlot } from "./inline_preview_slot";
 
 // Comment lines are "推 userid: ...". The marker (推/噓/→) is a 2-column DBCS
 // char (cols 0-1) and col 2 is the space before the user id — that gap is where
 // the floor number is shown (matching the original script).
 const FLOOR_BADGE_COL = 2;
+
+// 超連結錨點。class="y" 是舊版 HyperLink 的產物，main.css 與 pttchrome 的
+// isAnchorTarget（closest('a')）都吃它。
+function hyperLink(href, inner, onMouseOver, onMouseOut) {
+  const a = el(
+    "a",
+    { class: "y", href, rel: "noreferrer", target: "_blank" },
+    inner,
+  );
+  if (onMouseOver) a.addEventListener("mouseover", onMouseOver);
+  if (onMouseOut) a.addEventListener("mouseout", onMouseOut);
+  return a;
+}
+
+// 一條「自動修復的連結」，渲染在原文那一列**下面**（原文永遠不改寫，見
+// src/js/url_fix.js）。它一定是可點的連結；預覽走延遲載入（捲到附近才解析／載入，
+// 捲遠了卸掉），resolver 再決定要不要自動開圖（不可預覽／失敗的連結什麼都不畫，
+// 與一般的自動開圖路徑相同）。
+function fixedUrlLine(href, onMouseOver, onMouseOut, slots, sizeMode) {
+  const slot = createInlinePreviewSlot(href, sizeMode);
+  slots.push(slot);
+  return el("div", { class: "fixedUrlLine" }, [
+    el("span", { class: "fixedUrlLabel", title: "自動修復的連結" }, "↳"),
+    hyperLink(href, href, onMouseOver, onMouseOut),
+    slot.el,
+  ]);
+}
 
 export class LinkSegmentBuilder {
   constructor(
@@ -27,6 +59,7 @@ export class LinkSegmentBuilder {
     aids,
     giveaways,
     bareDomains,
+    sizeMode,
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -46,8 +79,8 @@ export class LinkSegmentBuilder {
     this.onHyperLinkMouseOver = onHyperLinkMouseOver;
     this.onHyperLinkMouseOut = onHyperLinkMouseOut;
     this.floor = floor;
-    // 註：合併塊的時間戳不走 React 節點——它是最後一則的原始 cell，直接併進
-    // chars 尾端（見 comment_merge.js），所以這裡沒有額外分支。
+    // 註：合併塊的時間戳不走額外節點——它是最後一則的原始 cell，直接併進 chars
+    // 尾端（見 comment_merge.js），所以這裡沒有額外分支。
     // Same-author (原PO) highlight: wrap cols [authorIdStart, authorIdEnd) — the
     // pusher's user id — in a .commentByAuthor span so only the id is tinted.
     // undefined → not a 原PO comment, skip all wrap logic.
@@ -55,11 +88,11 @@ export class LinkSegmentBuilder {
     this.authorIdEnd = authorIdEnd;
     this._inAuthor = false;
     this._authorWrap = null;
-    // X(Twitter) @handle auto-links: cols [startCol, endCol) of each VERIFIED
-    // mention (src/js/mention_parse.js + x_handle_verify.js). Indexed by start
-    // column; _mention holds the one currently being consumed so saveSegment wraps
-    // it in an <a>. Like the URL href, a mention closes the current segment at its
-    // boundaries — but it gets a plain .xMention link, no hover/inline preview.
+    // X(Twitter) @handle auto-links: cols [startCol, endCol) of each mention
+    // (src/js/mention_parse.js). Indexed by start column; _mention holds the one
+    // currently being consumed so saveSegment wraps it in an <a>. Like the URL
+    // href, a mention closes the current segment at its boundaries — but it gets
+    // a plain .xMention link, no hover/inline preview.
     this._mentionStart = null;
     if (mentions && mentions.length) {
       this._mentionStart = new Map();
@@ -109,6 +142,10 @@ export class LinkSegmentBuilder {
     this.enableLinkInlinePreview = enableLinkInlinePreview;
     this.fixedUrls = fixedUrls;
     this.inlineLinkPreviews = enableLinkInlinePreview ? [] : false;
+    // 這一列建立的延遲載入佔位盒。列被換掉時 renderer 必須逐一 destroy()，
+    // 否則 IntersectionObserver / ResizeObserver / React root 全部留著。
+    this.slots = [];
+    this.sizeMode = sizeMode || "normal";
     // 多行 row（目前只有好讀的推文合併塊：chars 內含 '\n' cell）→ 逐行切成獨立的
     // bbsline 群組，每行的自動開圖接在**該行**下面（跟文章內文一樣），而不是全部
     // 堆到整塊最後（使用者 2026-08 回報）。單行 row 走原本的結構，DOM 一字不動。
@@ -138,9 +175,11 @@ export class LinkSegmentBuilder {
       // 而那些同時也是 ANSI 背景色的 class ⇒ 光看 bN 分不出「這是光棒」還是「這格
       // 本來就有底色」。測試與除錯靠這個標記定位光棒。
       this.segs.push(
-        <span key="hl" className={cx("cursorHighlight", this.highlightClass)}>
-          {this._highlightWrap}
-        </span>,
+        el(
+          "span",
+          { class: cx("cursorHighlight", this.highlightClass) },
+          this._highlightWrap,
+        ),
       );
     }
     this._highlightWrap = null;
@@ -161,9 +200,7 @@ export class LinkSegmentBuilder {
   _flushAuthorWrap() {
     if (this._authorWrap && this._authorWrap.length) {
       this.segs.push(
-        <span key="authorId" className="commentByAuthor">
-          {this._authorWrap}
-        </span>,
+        el("span", { class: "commentByAuthor" }, this._authorWrap),
       );
     }
     this._authorWrap = null;
@@ -175,15 +212,16 @@ export class LinkSegmentBuilder {
     if (this._mention) {
       // X mention → plain external link (X-blue via .xMention), no ImagePreviewer.
       this._pushSeg(
-        <a
-          key={`m${this.col}`}
-          className="xMention"
-          href={this._mention.href}
-          rel="noreferrer"
-          target="_blank"
-        >
-          {element}
-        </a>,
+        el(
+          "a",
+          {
+            class: "xMention",
+            href: this._mention.href,
+            rel: "noreferrer",
+            target: "_blank",
+          },
+          element,
+        ),
       );
     } else if (this._aid) {
       // AID → in-app navigation link; preventDefault keeps the # href inert.
@@ -191,80 +229,76 @@ export class LinkSegmentBuilder {
       // 必須靠 className + 這兩個屬性才認得出「這是文章代碼，不是一條網址」。
       // board 可能是空字串（沒寫看板的 #AID）⇒ 右鍵端用目前文章的看板遞補。
       const aid = this._aid;
-      this._pushSeg(
-        <a
-          key={`a${this.col}`}
-          className="aidLink"
-          href="#"
-          data-aid={aid.aid}
-          data-board={aid.board || ""}
-          title={`跳至文章 #${aid.aid}${aid.board ? ` (${aid.board})` : ""}`}
-          onClick={(e) => {
-            e.preventDefault();
-            if (aid.onClick) aid.onClick();
-          }}
-        >
-          {element}
-        </a>,
+      const a = el(
+        "a",
+        {
+          class: "aidLink",
+          href: "#",
+          "data-aid": aid.aid,
+          "data-board": aid.board || "",
+          title: `跳至文章 #${aid.aid}${aid.board ? ` (${aid.board})` : ""}`,
+        },
+        element,
       );
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (aid.onClick) aid.onClick();
+      });
+      this._pushSeg(a);
     } else if (this._giveaway) {
       // Steamgifts giveaway 代碼 → 外部連結（無 slug，站方自動 redirect）。
       this._pushSeg(
-        <a
-          key={`g${this.col}`}
-          className="sgGiveawayLink"
-          href={this._giveaway.href}
-          title="Steamgifts giveaway"
-          rel="noreferrer"
-          target="_blank"
-        >
-          {element}
-        </a>,
+        el(
+          "a",
+          {
+            class: "sgGiveawayLink",
+            href: this._giveaway.href,
+            title: "Steamgifts giveaway",
+            rel: "noreferrer",
+            target: "_blank",
+          },
+          element,
+        ),
       );
     } else if (this._bareDomain) {
       // 裸網域 → 原位外部連結。掛 hover 預覽（圖床裸網域仍可預覽；非圖 resolver
-      // 自然 reject），但**不推** inline ImagePreviewer——裸網域絕大多數不是圖，
-      // 每個都試著開圖只會製造無謂的請求（與 X mention 同樣的取捨）。
-      this._pushSeg(
-        <a
-          key={`b${this.col}`}
-          className="bareDomainLink"
-          href={this._bareDomain.href}
-          title={this._bareDomain.href}
-          rel="noreferrer"
-          target="_blank"
-          onMouseOver={this.onHyperLinkMouseOver}
-          onMouseOut={this.onHyperLinkMouseOut}
-        >
-          {element}
-        </a>,
+      // 自然 reject），但**不推** inline 預覽——裸網域絕大多數不是圖，每個都試著
+      // 開圖只會製造無謂的請求（與 X mention 同樣的取捨）。
+      const a = el(
+        "a",
+        {
+          class: "bareDomainLink",
+          href: this._bareDomain.href,
+          title: this._bareDomain.href,
+          rel: "noreferrer",
+          target: "_blank",
+        },
+        element,
       );
+      if (this.onHyperLinkMouseOver)
+        a.addEventListener("mouseover", this.onHyperLinkMouseOver);
+      if (this.onHyperLinkMouseOut)
+        a.addEventListener("mouseout", this.onHyperLinkMouseOut);
+      this._pushSeg(a);
     } else if (this.href) {
       this._pushSeg(
-        <HyperLink
-          key={this.col}
-          href={this.href}
-          inner={element}
-          data-scol={this.col}
-          data-srow={this.row}
-          onMouseOver={this.onHyperLinkMouseOver}
-          onMouseOut={this.onHyperLinkMouseOut}
-        />,
+        hyperLink(
+          this.href,
+          element,
+          this.onHyperLinkMouseOver,
+          this.onHyperLinkMouseOut,
+        ),
       );
-      // TODO: Modularize this.
-      // 延遲載入：捲到附近才解析網址並掛 <ImagePreviewer>，捲遠了再卸掉釋放已解碼
-      // 的點陣圖（見 LazyInlinePreview / lazy_media.js）。長文一次 287 張圖全部
-      // 載入且永不釋放，正是「記憶體吃滿」的來源。
+      // 延遲載入：捲到附近才解析網址並掛預覽，捲遠了再卸掉釋放已解碼的點陣圖
+      // （見 inline_preview_slot.js / lazy_media.js）。長文一次 287 張圖全部載入
+      // 且永不釋放，正是「記憶體吃滿」的來源。
       if (this.inlineLinkPreviews) {
-        this.inlineLinkPreviews.push(
-          <LazyInlinePreview
-            key={`${this.col}-${this.href}`}
-            href={this.href}
-          />,
-        );
+        const slot = createInlinePreviewSlot(this.href, this.sizeMode);
+        this.slots.push(slot);
+        this.inlineLinkPreviews.push(slot.el);
       }
     } else {
-      this._pushSeg(<span key={this.col}>{element}</span>);
+      this._pushSeg(el("span", null, element));
     }
     this.colorSegBuilder = null;
   }
@@ -275,15 +309,15 @@ export class LinkSegmentBuilder {
   floorBadge() {
     const f = this.floor;
     const text = String(f.seq);
-    return (
-      <span
-        key="floor"
-        className={cx("floorBadge", { "floorBadge--wide": text.length >= 3 })}
-        data-floor
-        title={`第${f.seq}樓 ${f.type}${f.sub}`}
-      >
-        <span className="floorBadgeNum">{text}</span>
-      </span>
+    return el(
+      "span",
+      {
+        class: cx("floorBadge", { "floorBadge--wide": text.length >= 3 }),
+        // JSX 的布林簡寫 `data-floor` 在 React 下輸出 data-floor="true"。
+        "data-floor": "true",
+        title: `第${f.seq}樓 ${f.type}${f.sub}`,
+      },
+      el("span", { class: "floorBadgeNum" }, text),
     );
   }
 
@@ -385,6 +419,28 @@ export class LinkSegmentBuilder {
     }
   }
 
+  _fixedUrlLines() {
+    const out = [];
+    if (
+      this.enableLinkInlinePreview &&
+      this.fixedUrls &&
+      this.fixedUrls.length > 0
+    ) {
+      for (let i = 0; i < this.fixedUrls.length; ++i) {
+        out.push(
+          fixedUrlLine(
+            this.fixedUrls[i].fixed,
+            this.onHyperLinkMouseOver,
+            this.onHyperLinkMouseOut,
+            this.slots,
+            this.sizeMode,
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
   build() {
     if (this.colorSegBuilder !== null) {
       this.saveSegment();
@@ -399,59 +455,38 @@ export class LinkSegmentBuilder {
       // 預覽 div 即使是空的也照樣輸出——它是區塊盒，正好把下一行的 inline 內容擠到
       // 新的一行（單行路徑本來就這樣做），所以不需要額外的包裝層。
       this._flushLine();
-      return (
-        <div>
-          {this.lineGroups.map((g, i) => (
-            <Fragment key={i}>
-              <span
-                className={cx(
-                  this.highlightColStart ? null : this.highlightClass,
-                )}
-                data-type="bbsline"
-                data-row={this.row}
-              >
-                {g.segs}
-              </span>
-              <div>{g.previews}</div>
-            </Fragment>
-          ))}
-          {this.enableLinkInlinePreview &&
-            this.fixedUrls &&
-            this.fixedUrls.length > 0 &&
-            this.fixedUrls.map(({ fixed }, i) => (
-              <FixedUrlLine
-                key={`fix-${i}-${fixed}`}
-                href={fixed}
-                onMouseOver={this.onHyperLinkMouseOver}
-                onMouseOut={this.onHyperLinkMouseOut}
-              />
-            ))}
-        </div>
-      );
+      const children = [];
+      for (let i = 0; i < this.lineGroups.length; ++i) {
+        const g = this.lineGroups[i];
+        children.push(
+          el(
+            "span",
+            {
+              class: cx(this.highlightColStart ? null : this.highlightClass),
+              "data-type": "bbsline",
+              "data-row": this.row,
+            },
+            g.segs,
+          ),
+        );
+        children.push(el("div", null, g.previews));
+      }
+      children.push(this._fixedUrlLines());
+      return el("div", null, children);
     }
-    return (
-      <div>
-        <span
-          className={cx(this.highlightColStart ? null : this.highlightClass)}
-          data-type="bbsline"
-          data-row={this.row}
-        >
-          {this.segs}
-        </span>
-        <div>{this.inlineLinkPreviews}</div>
-        {this.enableLinkInlinePreview &&
-          this.fixedUrls &&
-          this.fixedUrls.length > 0 &&
-          this.fixedUrls.map(({ fixed }, i) => (
-            <FixedUrlLine
-              key={`fix-${i}-${fixed}`}
-              href={fixed}
-              onMouseOver={this.onHyperLinkMouseOver}
-              onMouseOut={this.onHyperLinkMouseOut}
-            />
-          ))}
-      </div>
-    );
+    return el("div", null, [
+      el(
+        "span",
+        {
+          class: cx(this.highlightColStart ? null : this.highlightClass),
+          "data-type": "bbsline",
+          "data-row": this.row,
+        },
+        this.segs,
+      ),
+      el("div", null, this.inlineLinkPreviews),
+      this._fixedUrlLines(),
+    ]);
   }
 }
 

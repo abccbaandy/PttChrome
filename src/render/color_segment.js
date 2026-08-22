@@ -1,6 +1,9 @@
-import WordSegmentBuilder from "./WordSegmentBuilder";
-import { b2u, isDBCSLead } from "../../js/string_util";
-import { symbolTable } from "../../js/symbol_table";
+// Big5 DBCS 併字 + 同色分段。原 src/components/Row/ColorSegmentBuilder.js 的純 JS
+// 版——邏輯一字未改（它本來就是純 class，只有 build() 的產物從 React element 換成
+// DOM 節點），註解沿用。
+import WordSegmentBuilder from "./word_segment";
+import { b2u, isDBCSLead } from "../js/string_util";
+import { symbolTable } from "../js/symbol_table";
 
 function isBadDBCS(u) {
   return symbolTable["x" + u.charCodeAt(0).toString(16)] == 3;
@@ -21,7 +24,7 @@ export class ColorSegmentBuilder {
 
   beginSegment(color) {
     this.segs.push(this.wordBuilder.build());
-    this.wordBuilder = new WordSegmentBuilder(this.segs.length, color);
+    this.wordBuilder = new WordSegmentBuilder(color);
   }
 
   appendNormalChar(text, color) {
@@ -75,6 +78,7 @@ export class ColorSegmentBuilder {
     this.wordBuilder.appendForceWidthWord(text, forceWidth);
   }
 
+  // 回傳 DOM 節點陣列（可能夾雜 null —— NullObject 的起手式，由 dom.el 跳過）。
   build() {
     this.beginSegment();
     return this.segs;

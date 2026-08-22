@@ -1,9 +1,9 @@
-// 好讀「左圖右文」AI 校正的 Screen 接線守護（仿 merge_image_caption_render）。
+// 好讀「左圖右文」AI 校正的渲染接線守護（仿 merge_image_caption_render）。
 // 回歸來源：翻譯被空行切成多段時規則只配到第一段（打蚊子那篇）——這裡用假的
 // window.LanguageModel 驗「AI 回 keep=N → 整段翻譯搬進右欄」。
 // 也守「沒有 Prompt API / 設定沒開 → 畫面與現況完全相同」。
-import { render, fireEvent, waitFor } from "@testing-library/react";
-import Screen from "../../src/components/Screen";
+import { waitFor } from "@testing-library/dom";
+import { mountScreen, unmountAll } from "./helpers/mount_screen";
 
 const COLOR = {
   fg: 7,
@@ -73,18 +73,11 @@ function installLM(reply) {
 }
 
 function renderScreen(props) {
-  return render(
-    <Screen
-      lines={lines}
-      forceWidth={20}
-      enableLinkInlinePreview={false}
-      enableLinkHoverPreview={false}
-      enhance={{ ...enhance, ...(props || {}) }}
-    />,
-  );
+  return mountScreen({ lines: lines, forceWidth: 20, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: { ...enhance, ...(props || {}) } });
 }
 
 afterEach(() => {
+  unmountAll();
   delete window.LanguageModel;
 });
 
@@ -94,7 +87,7 @@ const waitForAiBtn = (c) =>
     expect(c.querySelector("#mergeImageCaptionAiBtn")).not.toBeNull(),
   );
 
-describe("Screen 圖文合併 × 裝置端 AI", () => {
+describe("圖文合併 × 裝置端 AI", () => {
   test("AI 回 keep=3 → 開場白/對話/收尾整段進右欄（規則只會給開場白）", async () => {
     installLM('{"keep": 3}');
     const { container: c } = renderScreen();
@@ -106,7 +99,7 @@ describe("Screen 圖文合併 × 裝置端 AI", () => {
     expect(aiBtn.getAttribute("data-ai")).toBe("off");
 
     // 按 AI 鈕：順手開啟合併（原本沒開）→ 先看到規則結果（只有 row 2）。
-    fireEvent.click(aiBtn);
+    aiBtn.click();
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(2);
     expect(rowsIn(c.querySelectorAll(".mergedCaptionCol")[0])).toEqual([2]);
 
@@ -131,11 +124,11 @@ describe("Screen 圖文合併 × 裝置端 AI", () => {
     installLM('{"keep": 3}');
     const { container: c } = renderScreen();
     await waitForAiBtn(c);
-    fireEvent.click(c.querySelector("#mergeImageCaptionAiBtn"));
+    c.querySelector("#mergeImageCaptionAiBtn").click();
     await waitFor(() =>
       expect(rowsIn(c.querySelectorAll(".mergedCaptionCol")[0]).length).toBe(6),
     );
-    fireEvent.click(c.querySelector("#mergeImageCaptionAiBtn"));
+    c.querySelector("#mergeImageCaptionAiBtn").click();
     expect(rowsIn(c.querySelectorAll(".mergedCaptionCol")[0])).toEqual([2]);
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(2); // 合併仍開著
   });
@@ -144,7 +137,7 @@ describe("Screen 圖文合併 × 裝置端 AI", () => {
     installLM("sorry, I can't do that");
     const { container: c } = renderScreen();
     await waitForAiBtn(c);
-    fireEvent.click(c.querySelector("#mergeImageCaptionAiBtn"));
+    c.querySelector("#mergeImageCaptionAiBtn").click();
     await waitFor(() =>
       expect(
         c.querySelector("#mergeImageCaptionAiBtn").getAttribute("data-ai"),
@@ -176,27 +169,20 @@ describe("Screen 圖文合併 × 裝置端 AI", () => {
     const { container: c } = renderScreen({ captionAiEnabled: false });
     await new Promise((r) => setTimeout(r, 0));
     expect(c.querySelector("#mergeImageCaptionAiBtn")).toBeNull();
-    fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
+    c.querySelector("#mergeImageCaptionBtn").click();
     expect(rowsIn(c.querySelectorAll(".mergedCaptionCol")[0])).toEqual([2]);
   });
 
   test("換文章（articleId 變）→ AI 校正與結果一起重置", async () => {
     installLM('{"keep": 3}');
-    const { container: c, rerender } = renderScreen();
+    const screen = renderScreen();
+    const c = screen.container;
     await waitForAiBtn(c);
-    fireEvent.click(c.querySelector("#mergeImageCaptionAiBtn"));
+    c.querySelector("#mergeImageCaptionAiBtn").click();
     await waitFor(() =>
       expect(rowsIn(c.querySelectorAll(".mergedCaptionCol")[0]).length).toBe(6),
     );
-    rerender(
-      <Screen
-        lines={lines}
-        forceWidth={20}
-        enableLinkInlinePreview={false}
-        enableLinkHoverPreview={false}
-        enhance={{ ...enhance, articleId: 2 }}
-      />,
-    );
+    screen.update({ lines, forceWidth: 20, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: { ...enhance, articleId: 2 } });
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(0);
     expect(c.querySelector("#mergeImageCaptionAiBtn").getAttribute("data-ai")).toBe(
       "off",
@@ -207,13 +193,13 @@ describe("Screen 圖文合併 × 裝置端 AI", () => {
     installLM('{"keep": 3}');
     const { container: c } = renderScreen();
     await waitForAiBtn(c);
-    fireEvent.click(c.querySelector("#mergeImageCaptionAiBtn"));
+    c.querySelector("#mergeImageCaptionAiBtn").click();
     await waitFor(() =>
       expect(rowsIn(c.querySelectorAll(".mergedCaptionCol")[0]).length).toBe(6),
     );
     // imageFirst → captionFirst → 關
-    fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
-    fireEvent.click(c.querySelector("#mergeImageCaptionBtn"));
+    c.querySelector("#mergeImageCaptionBtn").click();
+    c.querySelector("#mergeImageCaptionBtn").click();
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(0);
     expect(c.querySelector("#mergeImageCaptionAiBtn").getAttribute("data-ai")).toBe(
       "off",

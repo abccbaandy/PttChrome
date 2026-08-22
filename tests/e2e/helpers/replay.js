@@ -525,7 +525,7 @@ async function bootOffline(page, ptt) {  // eslint-disable-line no-unused-vars
   await waitConnected(page);
 }
 
-// 好讀的自動開圖是**延遲載入**的（src/components/LazyInlinePreview.jsx：捲到附近
+// 好讀的自動開圖是**延遲載入**的（src/render/inline_preview_slot.js：捲到附近
 // 才解析網址並掛上 <ImagePreviewer>，捲遠了再卸掉釋放已解碼的點陣圖）。所以
 // 「replay 完就去 querySelector('img')」永遠只會量到空的佔位盒 —— 要驗預覽，一律
 // 先用這兩個 helper 把目標捲進視野並等它掛好。

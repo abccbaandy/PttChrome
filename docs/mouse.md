@@ -219,7 +219,7 @@ DBCS 雙色字），只找一層在那種字上會漏判。同一個 bug 在
 - 是 `term_view` 自有的獨立 div，掛在 `#BBSWindow` 底下、`.main` **之後**。不放
   `Screen`／`#mainContainer`：`.main` 是好讀長頁的捲動容器，放裡面會跟著內容捲走；
   三種 render 分支要行為一致；原生模式 Screen 每幀 re-render，hover 布林不該進
-  React state。先例見 `term_ui.jsx` 的 `#easyReadingLastRow`。
+  renderer 的狀態。先例見 `term_ui.js` 的 `#easyReadingLastRow`。
 - **座標契約：只能與 `App.clientToPos` 同源**。`clientToPos` 的欄位數學已抽到
   `mouse_geometry.colFromClientX`，帶子用同一份的 `exitBandRect`。專案裡另有
   `term_view.convertMN2XYEx` 一套原點公式（多了 `+10` 與 `bbsViewMargin`），用錯就
@@ -255,7 +255,7 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 | `tests/unit/mouse_geometry.test.js` | 帶子右緣 ↔ 可點區右緣往返（三組幾何） |
 | `tests/unit/mouse_gating.test.js` | 總開關關掉 ⇒ 中鍵與滾輪也關 |
 | `tests/unit/cursor_highlight.test.js` | 底色決策表 + `lastMover` 仲裁（含鍵盤底色關／文章頁的回退）+ `highlightColStart` |
-| `tests/unit/row_render.test.jsx` | 部分寬度底色的 DOM（包裝 span 的範圍／`data-pusher-col`） |
+| `tests/unit/row_render.test.js` | 部分寬度底色的 DOM（包裝 span 的範圍／`data-pusher-col`） |
 | `tests/unit/comment_parse.test.js` | `contentCol`（推文內容起始欄） |
 | `tests/unit/cursor_highlight_arbitration.test.js` | `applyCursorHighlight` 的來源判定：鍵盤搶得走、滑鼠拿得回、模式切換不算移動 |
 | `tests/unit/list_hover_gating.test.js` | 列表 hover 的三個 gate、底色 vs pointer 條件不同 |

@@ -2,11 +2,11 @@
 //
 // Used to detect blacklisted authors/pushers and to number comment floors. Both
 // render modes (native 24-row screen and the easy-reading accumulated long page)
-// now draw through src/components/Screen.js#computeAnnotations — there is a single
+// now draw through src/js/screen_annotations.js#computeAnnotations — there is a single
 // render path, so this logic is applied in exactly one place.
 //
 // Mirrors the DBCS handling in src/js/term_buf.js#getRowText and
-// src/components/Row/ColorSegmentBuilder.js.
+// src/render/color_segment.js.
 
 import { b2u, COMMENT_TIME_RE } from './string_util';
 
