@@ -300,6 +300,13 @@ export class ScreenController {
   onHyperLinkMouseOver(e) {
     if (!this.props || !this.props.enableLinkHoverPreview) return;
     const href = e.currentTarget.href;
+    // 座標要在這一刻就記下：本函式結尾會立刻渲染一次預覽，而 _hoverPos 原本只有
+    // mousemove 會填 ⇒ 滑進連結後、第一次 mousemove 之前那一幀座標是 undefined，
+    // OnHover 的 `left + 20` 算成 NaN（主控台噴 "`NaN` is an invalid value for
+    // the `left` css style property"）。守護 tests/unit/hover_preview_position。
+    if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
+      this._hoverPos = { left: e.clientX, top: e.clientY };
+    }
     const preview = of(href)
       .then(resolveSrcToImageUrl)
       .then(resolveWithImageDOM);

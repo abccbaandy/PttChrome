@@ -109,6 +109,10 @@ const getTop = (top, height) => {
 };
 
 ImagePreviewer.OnHover = ({ left, top, value, error }) => {
+  // 座標可能還沒定（呼叫端在任何 mousemove 之前就渲染）：退回 0，別讓
+  // `undefined + 20` 算成 NaN —— React 會拒畫該屬性並在主控台噴錯。
+  const x = Number.isFinite(left) ? left : 0;
+  const y = Number.isFinite(top) ? top : 0;
   if (error || (value && value.type && value.type !== "image")) {
     return false;
   } else if (value) {
@@ -119,8 +123,8 @@ ImagePreviewer.OnHover = ({ left, top, value, error }) => {
         style={{
           display: "block",
           position: "absolute",
-          left: left + 20,
-          top: getTop(top, value.height),
+          left: x + 20,
+          top: getTop(y, value.height),
           maxHeight: "80%",
           maxWidth: "90%",
           zIndex: 2,
@@ -133,8 +137,8 @@ ImagePreviewer.OnHover = ({ left, top, value, error }) => {
         className="previewSpinner"
         style={{
           position: "absolute",
-          left: left + 20,
-          top: top,
+          left: x + 20,
+          top: y,
           zIndex: 2,
         }}
       />
