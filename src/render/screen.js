@@ -49,6 +49,7 @@ import {
   classifyDomains,
   destroyUrlAi,
 } from "../js/url_ai";
+import { invalidateInlinePreviewHeights } from "./inline_preview_slot";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import {
   annotationsKey,
@@ -382,6 +383,9 @@ export class ScreenController {
     // 循環回「還原排版」時把 AI 一起關掉（畫面上沒有合併塊，AI 開著沒有意義）。
     if (next === null) this._captionAi = false;
     this._mergeCaption = next;
+    // 左欄比全寬窄（.mergedImageCol .easyReadingImg { max-width:100% }）⇒ 圖片顯示
+    // 寬度改變 ⇒ 之前量到的 pinned 高度過期，必須在重畫前作廢。
+    this.notifyLayoutChanged();
     this._rerender();
     this._refocusTerminal();
   }
@@ -404,6 +408,15 @@ export class ScreenController {
     this.container.classList.toggle("imagesEnlarged", next);
     const mode = next ? "enlarged" : "normal";
     for (const slot of this._liveSlots) slot.setSizeMode(mode);
+  }
+
+  // 版面**寬度**改變的唯一入口（字級／視窗 resize 走 term_view.setTermFontSize，
+  // 圖左字右合併走 _toggleMergeCaption）。佔位盒記的 pinned 高度是在舊寬度下量到
+  // 的，換寬度就過期；aspect（原尺寸）與寬度無關，一律保留讓替身盒接手。
+  // **不含 imagesEnlarged**：那是 sizeMode，本來就分模式各記一筆高度。
+  notifyLayoutChanged() {
+    invalidateInlinePreviewHeights();
+    for (const slot of this._liveSlots) slot.invalidatePinned();
   }
 
   // ----------------------------------------------------------------- 渲染

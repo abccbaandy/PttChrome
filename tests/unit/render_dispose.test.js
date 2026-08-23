@@ -30,6 +30,7 @@ class FakeIO {
   }
 }
 
+// ResizeObserver 這邊要能主動回報：佔位盒的高度就是靠它記起來的。
 const sizeObservers = [];
 class FakeRO {
   constructor(cb) {
@@ -45,6 +46,12 @@ class FakeRO {
   }
   disconnect() {
     this.targets.clear();
+  }
+  emit() {
+    this.cb(
+      Array.from(this.targets).map((target) => ({ target })),
+      this,
+    );
   }
 }
 
@@ -176,5 +183,37 @@ describe("渲染鏈的佔位盒生命週期", () => {
     controller.destroy();
     root.remove();
     expect(observedCount()).toBe(0);
+  });
+
+  // 症狀級（f9fef96b 的延伸）：推文者高亮已改走 class 層，但**任何會改動
+  // annotationsKey 的操作**還是全量重建每一列 —— AI 校正逐筆回填一篇文章就數十次。
+  // 重建出來的佔位盒若從零高度開始，整份長頁的圖片區同時塌陷再非同步撐回來
+  // ＝閃爍＋閱讀位置往下跳。量測結果存在 module 級 memo（鍵＝href）才擋得住。
+  test("設定變動造成的全量重建：新節點的佔位盒第一幀就有高度（不塌陷）", () => {
+    const { root, controller } = mount();
+    const lines = linkLines(1, "a");
+    controller.update(props(lines));
+
+    const slotEl = () => controller.container.querySelector(".inlinePreviewSlot");
+    const before = slotEl();
+    // 圖載出來、量到高度（真實情境是 near → mount → onLoad → ResizeObserver）。
+    Object.defineProperty(before, "offsetHeight", {
+      configurable: true,
+      value: 420,
+    });
+    const img = document.createElement("img");
+    img.className = "easyReadingImg hyperLinkPreview";
+    Object.defineProperty(img, "offsetHeight", { configurable: true, value: 420 });
+    before.appendChild(img);
+    sizeObservers[0].emit();
+    expect(before.style.minHeight).toBe("420px");
+
+    controller.update(props(lines, { showFloorNumbers: true }));
+    const after = slotEl();
+    expect(after).not.toBe(before); // 節點真的被重建了
+    expect(after.style.minHeight).toBe("420px"); // 修好前是 ""＝塌陷
+
+    controller.destroy();
+    root.remove();
   });
 });

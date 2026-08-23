@@ -258,6 +258,7 @@ export function TermView() {
   this.componentScreen = {
     setCursorHighlight() {},
     setSelectedPusher() {},
+    notifyLayoutChanged() {},
   };
 
   this.selection = null;
@@ -968,6 +969,10 @@ TermView.prototype = {
 
   setTermFontSize: function(cw, ch) {
     var innerBounds = this.innerBounds;
+    // 字級 pref 與視窗 resize 都經過這裡，而 mainDisplay 的寬度是 chw*cols ⇒ chw 一變
+    // 圖片的顯示寬度就變，好讀佔位盒記的高度（pinned）全部過期。見
+    // render/screen.js#notifyLayoutChanged。
+    var widthChanged = this.chw !== cw;
     this.chw = cw;
     this.chh = ch;
     var fontSize = this.chh + 'px';
@@ -1019,6 +1024,8 @@ TermView.prototype = {
     this.updateExitHintBandGeometry();
     this.updateReverseScaleCss();
     this.updateCursorPos();
+
+    if (widthChanged) this.componentScreen.notifyLayoutChanged();
   },
 
   // 提示帶的水平幾何。**必須與 App.clientToPos 同源**（兩者都走

@@ -31,9 +31,12 @@ vi.mock("../../src/components/ImagePreviewer", async (importOriginal) => {
   };
 });
 
-const { createInlinePreviewSlot, resetLazyObserversForTest } = await import(
-  "../../src/render/inline_preview_slot"
-);
+const {
+  createInlinePreviewSlot,
+  invalidateInlinePreviewHeights,
+  resetLazyObserversForTest,
+  SIZE_MEMO_MAX,
+} = await import("../../src/render/inline_preview_slot");
 
 // 舊版是 React 元件 + PreviewSizeModeContext；純 JS 版是一個 slot 物件，尺寸模式
 // 由 ScreenController 直接呼叫 setSizeMode() 廣播。掛進 document 好讓 .remove()
@@ -437,5 +440,141 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     expect(
       slot.children.length,
     ).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------
+  // 症狀級回歸（f9fef96b 的延伸）：推文者高亮已改走 class 層，但**任何會改動
+  // annotationsKey 的操作**（AI 校正逐筆回填、圖文並排、黑名單、樓號、字級…）
+  // 仍然全量重建每一列 ⇒ 舊 slot 被 disposeNode 收掉、新 slot 的 pinned/aspect
+  // 從 null 開始 ⇒ 整份長頁的圖片佔位盒同時塌陷再非同步撐回來（閃爍＋跳頁）。
+  // 修法是把量測結果存進 module 級 memo（鍵＝href），重建的 slot 第一幀就有高度。
+
+  // 量到高度（＋原尺寸）之後把節點丟掉，模擬「這一列被重建」。刻意不走
+  // near().emit(true)：ResizeObserver 那條路不必掛 React 就能記錄，跑 500 次也快。
+  function measureThenDiscard(href, height, natural) {
+    const handle = mountSlot(href);
+    fakeLoadedMedia(handle.el, height, natural);
+    resized().emit();
+    handle.destroy();
+    handle.el.remove();
+    liveSlots.splice(liveSlots.indexOf(handle), 1);
+  }
+
+  describe("重建後沿用同 href 的量測", () => {
+    test("重建的 slot 一開始就有 minHeight（不必等任何 observer 回報）", () => {
+      measureThenDiscard(HREF, 570);
+      // 重建：**不發任何 observer 事件**，第一幀就該撐住。
+      const rebuilt = mountSlot(HREF).el;
+      expect(rebuilt.style.minHeight).toBe("570px");
+    });
+
+    test("走完整的掛載→捲遠卸載也一樣記得（卸載前那次量測要回寫）", () => {
+      const handle = mountSlot(HREF);
+      near().emit(true);
+      const img = fakeLoadedMedia(handle.el, 420);
+      far().emit(false);
+      img.remove();
+      handle.destroy();
+      handle.el.remove();
+      liveSlots.splice(liveSlots.indexOf(handle), 1);
+
+      expect(mountSlot(HREF).el.style.minHeight).toBe("420px");
+    });
+
+    test("原尺寸也沿用 ⇒ 重建的 slot 直接有替身盒（沒量過的模式也佔得準）", () => {
+      measureThenDiscard(HREF, 570, { w: 800, h: 600 });
+      const rebuilt = mountSlot(HREF, "enlarged").el;
+      const ghost = rebuilt.querySelector(".inlinePreviewGhost");
+      expect(ghost).not.toBeNull();
+      expect(ghost.classList.contains("easyReadingImg")).toBe(true);
+      expect(ghost.style.aspectRatio).toBe("800 / 600");
+      expect(ghost.style.getPropertyValue("--ghost-w")).toBe("800px");
+      // enlarged 這格沒量過 ⇒ 不得拿 normal 的頂替，交給替身盒。
+      expect(rebuilt.style.minHeight).toBe("");
+    });
+
+    test("不得跨連結借高度（memo 以 href 為鍵）", () => {
+      measureThenDiscard(HREF, 570);
+      expect(mountSlot("https://i.imgur.com/zzzzzzz.jpg").el.style.minHeight).toBe(
+        "",
+      );
+    });
+
+    test("memo 有上限：最舊的 href 被淘汰（長文 287 張圖 × 多篇不得無限長大）", () => {
+      measureThenDiscard(HREF, 570);
+      for (let i = 0; i < SIZE_MEMO_MAX; ++i) {
+        measureThenDiscard(`https://i.imgur.com/pad${i}.jpg`, 100 + i);
+      }
+      expect(mountSlot(HREF).el.style.minHeight).toBe("");
+      // 最近一筆仍在。
+      const last = SIZE_MEMO_MAX - 1;
+      expect(
+        mountSlot(`https://i.imgur.com/pad${last}.jpg`).el.style.minHeight,
+      ).toBe(`${100 + last}px`);
+    });
+  });
+
+  // 真瀏覽器的 offsetHeight 會被元素自己的 inline min-height 墊高。少了這個模擬，
+  // 「量測抗膨脹」那條在 jsdom 下永遠是綠的（jsdom 沒有排版，offsetHeight 恆為
+  // 我們寫死的值）。
+  function fakeLaidOutMedia(slot, contentHeight) {
+    Object.defineProperty(slot, "offsetHeight", {
+      configurable: true,
+      get() {
+        const min = parseInt(slot.style.minHeight, 10) || 0;
+        return Math.max(contentHeight, min);
+      },
+    });
+    const img = document.createElement("img");
+    img.className = "easyReadingImg hyperLinkPreview";
+    Object.defineProperty(img, "offsetHeight", {
+      configurable: true,
+      value: contentHeight,
+    });
+    slot.appendChild(img);
+    return img;
+  }
+
+  // 版面**寬度**改變（字級／視窗 resize、圖左字右合併切換）之後，pinned 就是舊寬度
+  // 下的值。aspect 與寬度無關（替身盒交給 CSS 用真圖那組規則算），所以分開處理。
+  describe("版面寬度改變 ⇒ pinned 過期", () => {
+    test("量測前必須先拿掉自己的 min-height，否則過期高度會自我增強成永久假空白", () => {
+      // memo 帶進一個舊寬度下量到的 570，但這一次的真實內容只有 320。
+      measureThenDiscard(HREF, 570);
+      const handle = mountSlot(HREF);
+      expect(handle.el.style.minHeight).toBe("570px");
+      fakeLaidOutMedia(handle.el, 320);
+      resized().emit();
+      // 直接讀 offsetHeight 量到的是被 min-height 墊高的 570 ⇒ 再記一次 ⇒ 永遠 570。
+      expect(handle.el.style.minHeight).toBe("320px");
+    });
+
+    test("有替身盒可頂 ⇒ 作廢 pinned（改由 CSS 在新寬度下重算）", () => {
+      measureThenDiscard(HREF, 570, { w: 800, h: 600 });
+      invalidateInlinePreviewHeights();
+      const rebuilt = mountSlot(HREF).el;
+      expect(rebuilt.style.minHeight).toBe("");
+      expect(rebuilt.querySelector(".inlinePreviewGhost")).not.toBeNull();
+    });
+
+    test("沒有替身盒（iframe／相簿）⇒ 留著舊值當最佳猜測，不換來一次無謂的塌陷", () => {
+      measureThenDiscard(HREF, 450); // 沒給原尺寸 ⇒ aspect 仍是 null
+      invalidateInlinePreviewHeights();
+      expect(mountSlot(HREF).el.style.minHeight).toBe("450px");
+    });
+
+    test("存活中的 slot 也要跟著作廢（不是只有 memo）", () => {
+      const handle = mountSlot(HREF);
+      near().emit(true);
+      const img = fakeLoadedMedia(handle.el, 570, { w: 800, h: 600 });
+      resized().emit();
+      far().emit(false);
+      img.remove();
+      expect(handle.el.style.minHeight).toBe("570px");
+
+      handle.invalidatePinned();
+      expect(handle.el.style.minHeight).toBe("");
+      expect(handle.el.querySelector(".inlinePreviewGhost")).not.toBeNull();
+    });
   });
 });
