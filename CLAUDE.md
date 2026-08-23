@@ -56,6 +56,11 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     assistant turn 結束就觸發**（不是 session 結束），一旦旗標檔在就跑 `kill-dev-server.js` → 把 Playwright
     自己起的 dev server 砍掉。症狀：前幾條綠，之後整批 `page.goto: net::ERR_CONNECTION_REFUSED`，
     看起來像被測 code 大爆炸（實測 95 條有 91 條這樣紅）。前景重跑即全綠。
+    - **前景跑也可能中槍**（2026-08 實測：整輪跑到第 4 條時 dev server 被砍）：PostToolUse 的
+      `grep -qE '\bvite\b'` 吃的是 tool 的**輸入＋輸出**，所以光是 `cat playwright.config.js`
+      這種無害指令就會立起旗標檔，之後任何一次 Stop 都會殺掉 Playwright 的 dev server。
+      **跑 e2e 前在同一條指令內先清旗標**：`rm -f .claude/.dev-server-running; yarn test:e2e ...`
+      （旗標會在該指令結束後由它自己的 PostToolUse 重新立起，收工照樣清得掉）。
   - **Playwright 升版後（含 Dependabot bump）本機必跑 `yarn playwright install chromium`**：新版綁新 browser binary，
     沒裝會整批 e2e 秒掛（症狀：`browserType.launch: Executable doesn't exist`），與被測 code 無關。CI 每次都重裝所以不受影響。
     - 更早一步的症狀：`yarn test:e2e*` 直接 `command not found: playwright`＝**本機 node_modules 落後 lockfile**

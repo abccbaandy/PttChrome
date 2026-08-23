@@ -3,9 +3,12 @@
 
 const { totpCode, isValidOtpSecret } = require('../../../src/js/totp');
 
-// 時鐘偏差階梯（30 秒為一階），與 src/js/auto_login.js#OTP_SKEW_STEPS 同義：
-// server 自己已容忍 ±30s，所以 step 0 就吃掉小偏差；偏差更大時只有換窗才救得回來。
-const OTP_SKEW_STEPS = [0, -1, 1];
+// 登入互動的決策層（純函式，unit 守護 tests/unit/e2e_login_flow.test.js）。
+const {
+  createLoginState,
+  restartLoginBudget,
+  decideLoginAction,
+} = require('./login_flow');
 
 const SCREEN_SELECTOR = '#mainContainer';
 
@@ -121,14 +124,22 @@ async function waitBbsConnected(page, opts = {}) {
   throw new Error(describeConnectFailure({ hasApp, connectState, screen, timeout }));
 }
 
-// 帳號有開 PTT 兩階段驗證時，用 env PTT_OTP_SECRET（Base32 或整段 otpauth:// 網址）
-// 即時算出 6 位驗證碼。marker 與偵測規則同 src/js/auto_login.js（勿用 '2FA' 當 marker：
-// 成功訊息與「找不到 2FA 設定檔」自癒訊息都含它）。
-const OTP_PROMPT_MARKERS = ['請輸入兩階段', '位限時數字', '位救援碼'];
-const otpPromptVisible = (screen) => OTP_PROMPT_MARKERS.some((m) => screen.includes(m));
+// 目前 WebSocket 還連著嗎（登入迴圈用來區分「server 還在跑」與「連線已死」）。
+// 讀不到 window.__app 時回 undefined，讓決策層當成「未知」而不是「已斷線」。
+async function isBbsConnected(page) {
+  return page.evaluate(() => (window.__app ? !!window.__app.isConnected() : undefined));
+}
+
+// 登入迴圈的輪詢間隔。
+const LOGIN_POLL_INTERVAL_MS = 700;
 
 // 核心登入流程。env PTT_USER/PTT_PASS 有值用真實帳號，否則 guest。
 // 帳號有 2FA 時另需 PTT_OTP_SECRET。回傳登入結果摘要字串，供測試印出。
+//
+// 「看到這個畫面該做什麼、逾時該吐什麼訊息」全部在 helpers/login_flow.js 的純函式裡
+// （unit 守護：tests/unit/e2e_login_flow.test.js）；這裡只負責把決策變成真正的副作用。
+// 這樣切的理由：最會偶發紅的分支是「PTT 端驗證慢，卡在『正在檢查帳號與密碼...』」，
+// 真 PTT 上無法穩定重現，只有純函式測得到。
 async function login(page) {
   const user = process.env.PTT_USER || 'guest';
   const pass = process.env.PTT_PASS || '';
@@ -155,122 +166,60 @@ async function login(page) {
   await sendCredentials();
 
   // 4. 容錯迴圈：處理登入後各種中間提示，直到出現主選單或可辨識的結束標記。
-  const MAIN_MENU = ['主功能表', '【主功能表】'];
-  let throttleRetries = 0;
-  let otpSent = 0;
-  let deadline = Date.now() + 40000;
-  while (Date.now() < deadline) {
+  let state = createLoginState({ user, hasOtpSecret: isValidOtpSecret(otpSecret) });
+
+  for (;;) {
     const screen = await readScreen(page);
+    const connected = await isBbsConnected(page);
+    const decision = decideLoginAction({ screen, connected, now: Date.now(), state });
+    state = decision.state;
 
-    // 已達主選單 → 成功
-    if (MAIN_MENU.some((m) => screen.includes(m))) {
-      return `登入成功（${user}）`;
-    }
+    switch (decision.action) {
+      case 'done':
+        return decision.message;
 
-    // 兩階段驗證（2FA）→ 用 PTT_OTP_SECRET 算出當下驗證碼。PTT 給 5 次機會，
-    // 這裡最多送 OTP_SKEW_STEPS.length 次，每次換一個時鐘偏差窗（見下方註解）。
-    if (screen.includes('兩階段驗證失敗次數過多')) {
-      throw new Error(
-        `兩階段驗證失敗次數過多\n--- 當前畫面 ---\n${screen}\n----------------`
-      );
-    }
-    if (otpPromptVisible(screen)) {
-      if (!isValidOtpSecret(otpSecret)) {
-        throw new Error(
-          `帳號 ${user} 需要兩階段驗證，但沒有可用的 PTT_OTP_SECRET。\n` +
-          '  $env:PTT_OTP_SECRET="你的 2FA 密鑰（Base32 或整段 otpauth:// 網址）"\n' +
-          `--- 當前畫面 ---\n${screen}\n----------------`
-        );
-      }
-      const rejected = screen.includes('驗證碼錯誤');
-      if (rejected && otpSent >= OTP_SKEW_STEPS.length) {
-        throw new Error(
-          `兩階段驗證碼連續 ${otpSent} 次未通過（試過時鐘偏差 ` +
-          `${OTP_SKEW_STEPS.join('/')} 窗都被拒 → 密鑰錯誤，或本機時鐘偏差超過 ±90 秒）\n` +
-          `--- 當前畫面 ---\n${screen}\n----------------`
-        );
-      }
-      if (otpSent === 0 || rejected) {
-        // prompt 還在但沒有錯誤訊息＝server 還在驗，繼續等。
-        // 被拒就換下一個時鐘偏差窗——**不可以只是等 30 秒再送**：那只是把同一個
-        // 相位往後推一格，本機時鐘固定偏 N 秒時每一次都會落在同樣（錯的）窗，
-        // 於是「重試」永遠是同一個結論（2026-08 實測：本機快 33 秒 → 連兩次被拒）。
-        // 階梯與理由同 src/js/auto_login.js#OTP_SKEW_STEPS。
-        const skew = OTP_SKEW_STEPS[otpSent] || 0;
-        otpSent++;
+      case 'fail':
+        throw new Error(decision.message);
+
+      case 'send-otp':
         await typeLine(
           page,
-          await totpCode(otpSecret, { atMs: Date.now() + skew * 30000 })
+          await totpCode(otpSecret, { atMs: Date.now() + decision.otpSkew * 30000 })
         );
-      }
-      await page.waitForTimeout(800);
-      continue;
-    }
+        await page.waitForTimeout(800);
+        break;
 
-    // PTT 登入節流（登入太頻繁, 請稍後再試）→ 退避後 reload 重連重送帳密，最多 2 次。
-    // 實測節流後畫面卡在該訊息不動（連線疑似被掐），按鍵無效，必須重新連線。
-    if (screen.includes('登入太頻繁') || screen.includes('登入次數太頻繁')) {
-      if (throttleRetries >= 2) {
-        throw new Error(
-          `登入節流，退避重試 ${throttleRetries} 次仍失敗\n--- 當前畫面 ---\n${screen}\n----------------`
+      case 'answer-no':
+        await typeLine(page, 'n');
+        await page.waitForTimeout(800);
+        break;
+
+      case 'press-any-key':
+        await sendKey(page, 'Space');
+        await page.waitForTimeout(800);
+        break;
+
+      case 'reconnect':
+        console.log(
+          decision.reason === 'server-stall'
+            ? `PTT 端停在 ${decision.phase} 不動，${decision.backoffMs}ms 後重新連線重送帳密` +
+                `（第 ${decision.attempt} 次）`
+            : `偵測到登入節流，等待 ${decision.backoffMs}ms 後重新連線重試（第 ${decision.attempt} 次）`
         );
-      }
-      throttleRetries++;
-      console.log(`偵測到登入節流，等待 30s 後重新連線重試（第 ${throttleRetries} 次）`);
-      await page.waitForTimeout(30000);
-      await page.goto('/');
-      await waitBbsConnected(page);
-      await sendCredentials();
-      deadline = Date.now() + 40000;
-      continue;
-    }
+        await page.waitForTimeout(decision.backoffMs);
+        await page.goto('/');
+        await waitBbsConnected(page);
+        await sendCredentials();
+        state = restartLoginBudget(state, Date.now());
+        break;
 
-    // 重複登入 → 不刪除其他連線
-    if (screen.includes('您想刪除其他重複登入') || screen.includes('重複登入')) {
-      await typeLine(page, 'n');
-      await page.waitForTimeout(800);
-      continue;
+      default:
+        // 'wait'：server 正在跑（或畫面還沒變），什麼都別送 —— 亂送鍵只會被緩衝到
+        // 下一個 prompt 汙染輸入（依據見 login_flow.js 開頭對 auth_start 的說明）。
+        await page.waitForTimeout(LOGIN_POLL_INTERVAL_MS);
+        break;
     }
-
-    // 保留聊天/連線紀錄等 y/n 提示 → 預設 n
-    if (screen.includes('您要刪除以上錯誤嘗試') || screen.includes('是否保留') ||
-        screen.includes('保留上次') || screen.includes('清除錯誤嘗試')) {
-      await typeLine(page, 'n');
-      await page.waitForTimeout(800);
-      continue;
-    }
-
-    // 「請按任意鍵繼續」類提示 → 送空白
-    if (screen.includes('請按任意鍵') || screen.includes('按任意鍵') ||
-        screen.includes('任意鍵繼續') || screen.includes('Press any key')) {
-      await sendKey(page, 'Space');
-      await page.waitForTimeout(800);
-      continue;
-    }
-
-    // 帳號密碼錯誤 → 直接報錯，帶畫面
-    if (screen.includes('密碼不對') || screen.includes('無法登入') ||
-        screen.includes('密碼或代號錯誤')) {
-      throw new Error(`登入失敗（帳密錯誤）\n--- 當前畫面 ---\n${screen}\n----------------`);
-    }
-
-    // guest 名額已滿（PTT 常見） → 立即報錯，提示改用真實帳號
-    if (screen.includes('太多 guest') || screen.includes('guest 在站上')) {
-      throw new Error(
-        'guest 名額已滿（PTT 端限制）。請設定環境變數 PTT_USER / PTT_PASS 用真實帳號登入：\n' +
-        '  $env:PTT_USER="你的帳號"; $env:PTT_PASS="你的密碼"; npm run test:e2e\n' +
-        `--- 當前畫面 ---\n${screen}\n----------------`
-      );
-    }
-
-    await page.waitForTimeout(700);
   }
-
-  // 逾時：丟出最後畫面供除錯
-  const screen = await readScreen(page);
-  throw new Error(
-    `login 逾時，未進入主選單（user=${user}）\n--- 當前畫面 ---\n${screen}\n----------------`
-  );
 }
 
 const PREF_KEY = 'pttchrome.pref.v1';

@@ -49,6 +49,39 @@ preflight 只驗一件事：**連得到 PTT 嗎**（app 有 boot → WebSocket �
 project（`offline/connect_failure.offline.spec.js`，用 `installReplay(page, { neverOpen: true })`），
 好處是 CI 的 offline-e2e job 也跑得到（live e2e 不在 CI）。
 
+## 連得上但登入卡住時（login 階段判準）
+
+preflight 只管「連得到 PTT」；**帳密送出之後**卡住是另一回事。`login()` 的決策全在純函式
+`helpers/login_flow.js`（unit 守護 `tests/unit/e2e_login_flow.test.js`），錯誤訊息直接寫結論：
+
+| 畫面 / phase | 結論 |
+| --- | --- |
+| `正在檢查帳號與密碼...`（`server-verifying`） | **PTT 端驗證慢，非本專案 code 問題**。logind `auth_start()` 畫完這行就**同步**跑 `auth_user_challenge()`，期間不吐畫面也不吃鍵盤 ⇒ client 只能等 |
+| `密碼正確！ 開始登入系統...`（`server-starting`） | **PTT 端交接／配位慢**。logind 已 `start_service()` 交給 mbbsd 等 ack（server 端 `ACK_TIMEOUT_SEC` = 5 分）；mbbsd `multi_user_check()` 另有數秒隨機 sleep |
+| `部份系統正在維護中` / `系統過載` / `人數過多` / `已達上限` | PTT 端容量或維護狀態，非本專案 code 問題 |
+| `connected=false` | 連線在登入途中被關掉 |
+| `phase=unknown` | PTT 出現沒見過的提示頁 ⇒ **這才是要動 code 的情況**：把它加進 `classifyLoginScreen` 並補 unit 測試 |
+
+前四種**直接重跑即可**，不要往被測 code 追。
+
+踩過的坑（2026-08，`connect-login.spec.js` 偶發紅、單獨重跑 3 秒就過）：
+
+- 登入互動迴圈原本只有固定 40 秒預算，且**沒有任何分支認得「正在檢查帳號與密碼」** ⇒
+  PTT 端驗證慢時撞死在該畫面，吐一則看不出是誰的問題的泛用逾時。現在這兩個「server
+  正在跑」的畫面會**從進入該畫面起算**延長預算（上限 `LOGIN_SERVER_PROGRESS_BUDGET_MS`），
+  換階段（verifying → starting）重新起算，超過才逾時並吐上表的結論。
+- 卡住的是**那條連線**而不是站台：整輪 live e2e 只有一條卡滿 46 秒紅掉，下一條 spec
+  12 秒後另開連線就登入成功。所以停在同一畫面超過 `LOGIN_SERVER_STALL_MS`（15s）就
+  **就地重連重送帳密**（短退避 2s，最多 2 次，比照節流分支的配方），換連線通常就過。
+  重連過還是卡住，逾時訊息會寫「已就地重連 N 次」——那才代表站台層級有問題。
+- 觀察到的觸發條件：卡住的**幾乎都是整輪跑到後段那次登入**（實測兩輪都卡在
+  `easy-reading-list.spec.js` 的第一條，也就是同一輪的第 4 次登入），疑似 PTT 對短時間
+  重複登入的節流，只是表現成「靜靜卡住」而不是吐「登入太頻繁」。修好之後同一條 case
+  照樣卡了一次，重連後 27.8s 內綠。**降低整輪登入次數**（共用 session fixture）仍是根治方向。
+- 同時 `connect-login.spec.js` 是**唯一沒有自訂 timeout 的 live spec**，吃 60s 全域值 ⇒
+  就算把等待策略放寬也沒有空間可用（其餘 live spec 一律 `test.setTimeout(120000)` 起跳）。
+  已補 `test.setTimeout(180000)`。**新增會呼叫 `login()` 的 spec 記得也設**。
+
 ## 孤兒進程 / stale bundle
 
 以前常見坑：dev server 被中斷後殘留孤兒 `node` 佔住 8080，`reuseExistingServer` 又重用到 stale bundle。
@@ -85,14 +118,15 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
   - 共用 page 非內建 fixture，失敗不會自動截圖/錄影 → catch 內自行 `page.screenshot`。
   - 某 case 失敗 → serial 後續 skip、Playwright 重啟 worker → fixture 重建（多登入一次，可接受）。
 - **例外**：測登入流程本身的 case（`connect-login`、自動登入）用內建 `page` fixture 獨立登入。
-- `login()` 內建節流保險：偵測「登入太頻繁」→ 等 20s 重送帳密，最多 2 次。
+- `login()` 內建節流保險：偵測「登入太頻繁」→ 等 30s 後重新連線重送帳密，最多 2 次。
 
 ## 結構
 
 - `helpers/ptt.js`：可重用工具
   - `readScreen` / `waitForScreen`：讀 `#mainContainer` 文字、輪詢等字串（容錯，timeout 帶當前畫面）
   - `typeLine` / `sendKey`：對隱藏 input `#t` 打字
-  - `login`：env 有帳密用真實帳號否則 guest，容錯迴圈處理 PTT 中間提示頁 + 節流退避
+  - `login`：env 有帳密用真實帳號否則 guest；容錯迴圈只負責副作用，「看到這個畫面該做什麼」
+    全在 `helpers/login_flow.js` 的純函式（見「連得上但登入卡住時」節）
   - `waitBbsConnected` / `describeConnectFailure`：連線健檢與其錯誤訊息（見上節；`login` 開頭也會呼叫，
     單跑一支 spec 時同樣拿得到明確結論）
   - `attachConsole`：收集 console / pageerror

@@ -2,6 +2,11 @@ const { test, expect } = require('@playwright/test');
 const { readScreen, login, attachConsole } = require('./helpers/ptt');
 
 test('連線並登入到主選單', async ({ page }) => {
+  // 本檔是唯一沒有自訂 timeout 的 live spec，過去吃 playwright.config.js 的 60s 全域值：
+  // waitBbsConnected(≤25s) + 等首畫面 + 登入互動迴圈(≤40s) 相加就已經逼近 60s，PTT 端
+  // 驗證慢一點（畫面停在「正在檢查帳號與密碼...」）必紅。其餘 live spec 一律 120s 起跳。
+  test.setTimeout(180000);
+
   const logs = attachConsole(page);
 
   try {
