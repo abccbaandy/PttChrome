@@ -210,10 +210,52 @@ describe("好讀累積頁增量重算：與全量重算等價", () => {
     expect(step.container.innerHTML).toBe(fresh.container.innerHTML);
   });
 
-  test("設定變動（選推文者高亮）在累積頁上正確全量重算", () => {
+  // 推文者高亮**不是**標註層的東西（見 screen_annotate_cache.annotationsKey 的
+  // 「刻意不含」段）：它只是一個 class，由 ScreenController.setSelectedPusher 逐列
+  // 切換。放進 annotationsKey 的年代，點一下推文列＝整份長頁全量重算 + 每一列節點
+  // 重建，兩個實際回報的症狀：
+  //   1. 每個 inlinePreviewSlot 被 disposeNode 收掉重建 ⇒ pinned=null ⇒ minHeight
+  //      歸零 ⇒ 圖片佔位盒塌陷再非同步撐回來（合併推文的空白區閃爍）
+  //   2. 節點抽換落在雙擊的第二個 mousedown 之前 ⇒ 雙擊選字時好時壞
+  // 這三條鎖「切換高亮＝零重算、零節點抽換」。
+  test("切換推文者高亮：不重算標註、不重建任何一列節點", () => {
+    const full = makeArticle(PAGE * 8);
+    const step = renderAll(full);
+    const before = Array.from(step.container.children);
+
+    counters.rowToText = 0;
+    counters.rowRender = 0;
+    step.controller.setSelectedPusher("alpha1");
+
+    expect(counters.rowToText).toBe(0);
+    expect(counters.rowRender).toBe(0);
+    // 節點**身分**逐一相同（toEqual 對 DOM 節點是身分比對）。
+    expect(Array.from(step.container.children)).toEqual(before);
+
+    const on = step.container.querySelectorAll(".pusherHighlight");
+    expect(on.length).toBeGreaterThan(0);
+    on.forEach((el) => expect(el.getAttribute("data-pusher")).toBe("alpha1"));
+  });
+
+  test("取消高亮後的 DOM 與從沒切過完全等值（不得殘留 class=\"\"）", () => {
     const full = makeArticle(PAGE * 4);
     const step = renderAll(full);
+    const pristine = step.container.innerHTML;
+    step.controller.setSelectedPusher("alpha1");
+    step.controller.setSelectedPusher(null);
+    expect(step.container.innerHTML).toBe(pristine);
+  });
+
+  test("經 props 進來的 selectedPusher（新 controller／清空路徑）也要收斂", () => {
+    const full = makeArticle(PAGE * 4);
+    const step = renderAll(full);
+    const before = Array.from(step.container.children);
+    counters.rowRender = 0;
     step.update(propsFor(full, { selectedPusher: "alpha1" }));
+    // props 這條路同樣不得抽換節點：selectedPusher 已不在 annotationsKey 裡，
+    // 增量快取照樣命中，class 由 _render 收尾的對帳補上。
+    expect(counters.rowRender).toBe(0);
+    expect(Array.from(step.container.children)).toEqual(before);
     const fresh = renderAll(full, { selectedPusher: "alpha1" });
     expect(step.container.innerHTML).toBe(fresh.container.innerHTML);
     expect(step.container.querySelectorAll(".pusherHighlight").length).toBeGreaterThan(0);

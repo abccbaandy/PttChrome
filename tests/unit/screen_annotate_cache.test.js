@@ -110,7 +110,6 @@ describe("annotationsKey / sameKey", () => {
     ["showFloorNumbers", e => (e.showFloorNumbers = false)],
     ["highlightAuthor", e => (e.highlightAuthor = false)],
     ["articleAuthor", e => (e.articleAuthor = "other")],
-    ["selectedPusher", e => (e.selectedPusher = "someone")],
     ["pageState", e => (e.pageState = 2)],
     ["autoFixUrl", e => (e.autoFixUrl = false)],
     ["bareDomainLink", e => (e.bareDomainLink = false)],
@@ -125,6 +124,16 @@ describe("annotationsKey / sameKey", () => {
     const b = base();
     mutate(b.enhance);
     expect(sameKey(annotationsKey(base()), annotationsKey(b))).toBe(false);
+  });
+
+  // 反向守護：推文者高亮**刻意不在** key 裡。它只是一個 class，由
+  // ScreenController.setSelectedPusher 逐列切換（同 currentHighlighted 的理由）。
+  // 放進來的年代，點一下推文列 ⇒ 整份好讀長頁全量重算 + 每一列節點重建 ⇒
+  // 所有 inlinePreviewSlot 塌陷再非同步撐回來（閃爍），且節點抽換會打斷雙擊選字。
+  test("selectedPusher 變動 ⇒ 仍是同一把鑰匙（不得炸掉標註快取）", () => {
+    const b = base();
+    b.enhance.selectedPusher = "someone";
+    expect(sameKey(annotationsKey(base()), annotationsKey(b))).toBe(true);
   });
 
   test.each([

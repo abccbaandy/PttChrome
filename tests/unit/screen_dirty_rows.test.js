@@ -326,4 +326,32 @@ describe("pageState 3 的跨列耦合守門", () => {
 
     expectMatchesFullRebuild(s, lines.slice(), READING_ENHANCE);
   });
+
+  // 推文者高亮的 class 是 setSelectedPusher 就地 classList.add 上去的，而全量重建
+  // 時它是由 el() 依 buildRow 的物件字面順序寫出來的。原生文章（stableRows 為假）
+  // 每幀都會用 outerHTML 比對決定要不要沿用節點 ⇒ 兩者的**屬性順序**必須一致，
+  // 否則高亮之後每一幀都在無謂地抽換整批節點（正是要修掉的那個症狀）。
+  test("切了推文者高亮之後，下一幀的等值畫面仍沿用同一批節點", () => {
+    const lines = [
+      row(seg("作者  wowbenny (阿班) 看板  Test")),
+      push("alice", "第一則"),
+      push("bob", "第二則"),
+      push("alice", "第三則"),
+    ];
+    const s = mount(props(lines, READING_ENHANCE));
+    s.controller.setSelectedPusher("alice");
+    const before = Array.from(s.container.children);
+    expect(s.container.querySelectorAll(".pusherHighlight").length).toBe(2);
+
+    counters.rowRender = 0;
+    s.update(
+      props(
+        lines.slice(),
+        Object.assign({ selectedPusher: "alice" }, READING_ENHANCE),
+      ),
+    );
+
+    expect(Array.from(s.container.children)).toEqual(before);
+    expect(s.container.querySelectorAll(".pusherHighlight").length).toBe(2);
+  });
 });

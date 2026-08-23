@@ -257,6 +257,7 @@ export function TermView() {
   // React
   this.componentScreen = {
     setCursorHighlight() {},
+    setSelectedPusher() {},
   };
 
   this.selection = null;
@@ -507,7 +508,10 @@ TermView.prototype = {
         this._articleBoard = header.board;
       }
     } else {
-      // Leaving the article clears any pusher highlight selection.
+      // Leaving the article clears any pusher highlight selection. 只設欄位就好：
+      // 這裡跑在 _renderScreenLines **之前**，下面那次 render 會把新值同步進
+      // ScreenController（update ⇒ _selectedPusher ⇒ 收尾 _appliedPusher 對帳）。
+      // 在這裡呼叫 setSelectedPusher 只會對即將被丟掉的上一幀節點白做一次 O(n)。
       this._selectedPusher = null;
     }
     for (var row = 0; row < rows; ++row) {
@@ -719,6 +723,9 @@ TermView.prototype = {
           captionAiEnabled: this.enableAi && this.enableCaptionAi,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,
+          // 高亮本身**不由這條路生效**（它不進 annotationsKey，見
+          // js/screen_annotate_cache.js）。這裡帶進去是給 ScreenController 當
+          // 新建時的種子＋每幀對帳的來源；即時切換走 setSelectedPusher。
           selectedPusher: this._selectedPusher,
           autoFixUrl: this.enableAutoFixUrl,
           bareDomainLink: this.enableBareDomainLink,
@@ -1847,6 +1854,7 @@ TermView.prototype = {
       // the race the flag defends against re-opens.
       if (result && result.rowIndexStart === 1)
         this.buf.easyReadingPendingReset = false;
+      // 同 redraw 的清空點：只設欄位，由隨後的 render 同步給 ScreenController。
       this._selectedPusher = null;
       // New article (or re-entry into the same article): bump the instance id so
       // Screen resets the enlarge-images toggle back to default small images.
@@ -1899,15 +1907,22 @@ TermView.prototype = {
   },
 
   // Toggle whole-row highlight for all comments by `userid` (click handler).
-  // Clicking the selected pusher again clears it; clicking another switches. Both
-  // render paths re-apply the .pusherHighlight class from _selectedPusher inside
-  // Screen#computeAnnotations now, so a single forced redraw suffices. (In easy
-  // reading the redraw re-enters accumulatePageLines on the same screen, which
-  // findPageOverlap dedups to a no-op append; only the render reflects the change.)
+  // Clicking the selected pusher again clears it; clicking another switches.
+  //
+  // **絕對不要 redraw(true)**（2026-08 修）：高亮曾經是 annotation 的一個欄位，
+  // 而 selectedPusher 進了 annotationsKey ⇒ 點一下推文列就讓整份好讀累積長頁全量
+  // 重算（含每個 run 的 buildMergedCommentChars）＋每一列節點重建。兩個症狀：
+  //   1. 每個 inlinePreviewSlot 被 disposeNode 收掉重建，新 slot 的 pinned=null
+  //      ⇒ minHeight 歸零 ⇒ 圖片／影片佔位盒塌陷成 0 高，等 IntersectionObserver
+  //      → mount → onLoad → ResizeObserver 這串非同步流程才撐回來（使用者回報：
+  //      合併推文的空白區閃爍、隱約看到別行推文）。
+  //   2. 節點抽換發生在雙擊的第二個 mousedown **之前** ⇒ 瀏覽器的雙擊選詞落在已被
+  //      換掉的節點／位移後的版面上（使用者回報：雙擊選字時好時壞）。
+  // 高亮只是一個 class ⇒ 交給 renderer 逐列切換（同 setCursorHighlight 快路徑）。
   togglePusherHighlight: function(userid) {
     if (!userid) return;
     this._selectedPusher = this._selectedPusher === userid ? null : userid;
-    this.redraw(true);
+    this.componentScreen.setSelectedPusher(this._selectedPusher);
   },
 
   // Accumulate the currently painted board page into buf.listLines for list easy

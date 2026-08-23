@@ -294,9 +294,10 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
     }
   });
 
-  // pusher 高亮（點推文者整列高亮）。統一渲染後 togglePusherHighlight 兩模式都走 redraw(true)
-  // → computeAnnotations 套 .pusherHighlight（舊好讀走 _applyPusherHighlightDOM，已刪）。
-  // 守護：高亮列全屬該推文者、不誤傷他人、forced redraw 不重複 append（列數不變）、再點清除。
+  // pusher 高亮（點推文者整列高亮）。togglePusherHighlight 兩模式都走
+  // componentScreen.setSelectedPusher → renderer 逐列搬 .pusherHighlight class，**不重畫**
+  // （2026-08；在那之前是 redraw(true)，症狀見 docs/enhanced-addon.md「點選推文者高亮」踩坑）。
+  // 守護：高亮列全屬該推文者、不誤傷他人、列數不變（現在等於「沒有人把 redraw 加回來」）、再點清除。
   // 直接呼叫 view.togglePusherHighlight（測渲染路徑；mouse_click→closest('[data-pusher]') 接線未改）。
   test('pusher 高亮：點推文者整列高亮、不重複 append、再點清除', async ({ shared }) => {
     test.setTimeout(180000);

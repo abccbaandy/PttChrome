@@ -34,6 +34,7 @@ import {
   matchTitleBlacklist,
   FloorCounter,
   annotateComment,
+  isPusherHighlighted,
   findPageOverlap,
   resolvePageOverlap,
   decideAccumulateBranch,
@@ -754,8 +755,7 @@ describe("annotateComment", () => {
     showFloorNumbers: true,
     floorCounter: new FloorCounter(),
     highlightAuthor: true,
-    articleAuthor: "wowbenny",
-    selectedPusher: null
+    articleAuthor: "wowbenny"
   });
 
   test("non-comment row → null", () => {
@@ -836,11 +836,36 @@ describe("annotateComment", () => {
     expect(annotateComment(ts("推 alice: 1"), ctx).floor).toBeUndefined();
   });
 
-  test("selectedPusher → whole-row highlight only for the matching id", () => {
+  // 高亮已經不在 annotation 裡（見下一個 describe 與 render/screen.js）。
+  test("annotateComment 不再產出 pusherHighlight", () => {
     const ctx = baseCtx();
-    ctx.selectedPusher = "alice";
-    expect(annotateComment(ts("推 alice: 1"), ctx).pusherHighlight).toBe(true);
-    expect(annotateComment(ts("推 bob: 2"), ctx).pusherHighlight).toBeUndefined();
+    expect(annotateComment(ts("推 alice: 1"), ctx)).not.toHaveProperty(
+      "pusherHighlight",
+    );
+  });
+});
+
+// 推文者高亮的**唯一述詞**。2026-08 從 annotateComment 搬出來：寫進 annotation
+// 等於讓一個純互動狀態進 annotationsKey，點一下推文列就會炸掉整份增量快取並重建
+// 每一列節點（症狀：合併推文空白區閃爍、雙擊選字時好時壞）。現在由
+// ScreenController 在 build 時現算、切換時逐列搬 class。
+// 規則與改版前的 annotateComment 逐字等價：黑名單列不 tint。
+describe("isPusherHighlighted", () => {
+  const ann = (o) => ({ pusher: "alice", hidden: false, ...o });
+
+  test("選中的人 true；別人／沒選 false", () => {
+    expect(isPusherHighlighted(ann(), "alice")).toBe(true);
+    expect(isPusherHighlighted(ann(), "bob")).toBe(false);
+    expect(isPusherHighlighted(ann(), null)).toBe(false);
+  });
+
+  test("黑名單列即使同 id 也不 tint", () => {
+    expect(isPusherHighlighted(ann({ hidden: true }), "alice")).toBe(false);
+  });
+
+  test("非推文列（null／無 pusher）→ false", () => {
+    expect(isPusherHighlighted(null, "alice")).toBe(false);
+    expect(isPusherHighlighted({ floor: 1 }, "alice")).toBe(false);
   });
 });
 

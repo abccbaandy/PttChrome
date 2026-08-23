@@ -122,10 +122,9 @@ export function parseComment(text) {
 //   floorCounter:   FloorCounter   (mutated; caller owns its lifetime/reset)
 //   highlightAuthor: bool
 //   articleAuthor:  lower id | null   (原PO)
-//   selectedPusher: lower id | null   (clicked pusher)
 // }
 // Result: { type, userid, floor?, hidden, pusher, contentCol,
-//           authorIdStart?, authorIdEnd?, pusherHighlight? }
+//           authorIdStart?, authorIdEnd? }
 // contentCol＝內容文字起始欄 → Row 輸出成 data-pusher-col，滑鼠防誤觸模式據此判斷
 // 「這一點落在可點的內容區還是左邊的作者區」（App.mouse_click）。
 export function annotateComment(text, ctx) {
@@ -155,12 +154,29 @@ export function annotateComment(text, ctx) {
       result.authorIdStart = COMMENT_USERID_COL;
       result.authorIdEnd = COMMENT_USERID_COL + c.userid.length;
     }
-    // Selected pusher → whole-row highlight.
-    if (ctx.selectedPusher && c.userid === ctx.selectedPusher) {
-      result.pusherHighlight = true;
-    }
   }
   return result;
+}
+
+// 推文者高亮（點推文列 → 該作者的每一則整列 tint）的**唯一述詞**。
+//
+// 2026-08 從 annotateComment 搬出來：寫進 annotation 就等於讓一個純互動狀態進
+// screen_annotate_cache.annotationsKey ⇒ 點一下推文列就炸掉整份增量快取、重建
+// 好讀累積長頁的每一列節點。兩個實際回報的症狀：
+//   1. 每個 inlinePreviewSlot 被 disposeNode 收掉重建（pinned=null ⇒ minHeight
+//      歸零）⇒ 圖片佔位盒塌陷再非同步撐回來＝合併推文的空白區閃爍
+//   2. 節點抽換落在雙擊的第二個 mousedown 之前 ⇒ 雙擊選字時好時壞
+// 現在由 ScreenController 在 build 時現算、切換時逐列搬 class
+// （render/screen.js#setSelectedPusher，同 setCursorHighlight 的快路徑）。
+//
+// 規則與改版前的 annotateComment 逐字等價：黑名單列不 tint。
+export function isPusherHighlighted(ann, selectedPusher) {
+  return !!(
+    selectedPusher &&
+    ann &&
+    !ann.hidden &&
+    ann.pusher === selectedPusher
+  );
 }
 
 // Article header (first line of a post): "作者  userid (nickname) 看板 board".

@@ -18,8 +18,9 @@
   → 內文/簽名檔「帶假時間戳的假推文」拿到的暫時樓號被清掉，真推文從 1 起算。
 - `parseBlacklist(str)`→lower-case Set（換行分隔）。
 - `parseArticleAuthor(text)`→原PO id(lower)|null，正則 `/^\s*作者\s+([0-9A-Za-z]+)/`。**僅文章首頁首行**（作者列）解析得到；翻頁後 lines[0] 是內文→null。
-- **`annotateComment(text, ctx)`→逐列判斷的單一真相**（floor/hidden/pusher/authorId 範圍/pusherHighlight）。
-  `ctx={blacklist,showFloorNumbers,floorCounter,highlightAuthor,articleAuthor,selectedPusher}`。**單一渲染路徑
+- **`annotateComment(text, ctx)`→逐列判斷的單一真相**（floor/hidden/pusher/contentCol/authorId 範圍）。
+  `ctx={blacklist,showFloorNumbers,floorCounter,highlightAuthor,articleAuthor}`。
+  推文者高亮**不在這裡**（2026-08 搬走）：述詞是同檔的 `isPusherHighlighted(ann, selectedPusher)`，由 renderer 現算。**單一渲染路徑
   呼叫它**（`js/screen_annotations.js#computeAnnotations`，兩模式共用）；勿為某路徑另寫一份（見踩坑 A「逐列加工走單一純函式」）。
   floor 對黑名單列仍 +1（樓號絕對正確）；hidden 短路其餘高亮。回 null=非推文列。守護測試 `tests/unit/comment_parse.test.js`。
 
@@ -42,8 +43,9 @@
   `counter.next` 再決定隱藏/移除），故編號維持絕對正確。
 - **單一渲染路徑（兩模式都走 `renderScreen`→`screen_annotations.js#computeAnnotations`）**：逐列加工只有一處，無法發散。
   `term_view.redraw`/`_renderScreenLines` 傳 `enhance={blacklist,showFloorNumbers,highlightAuthor,
-  articleAuthor,selectedPusher,pageState,dropHidden}`。`computeAnnotations`：`pageState==3`→`annotateComment`
-  (floor／黑名單 hidden／作者高亮／pusher 高亮)；`pageState==2`→`parseListAuthor`(黑名單 hidden)。
+  articleAuthor,selectedPusher,pageState,dropHidden}`（`selectedPusher` 只給 renderer 當種子，**不進
+  `annotationsKey`**）。`computeAnnotations`：`pageState==3`→`annotateComment`
+  (floor／黑名單 hidden／作者高亮)；`pageState==2`→`parseListAuthor`(黑名單 hidden)。
   - 兩模式差別只在傳給 renderer 的 `lines`：原生/好讀列表選單=`buf.lines`(單頁)；好讀文章=`buf.pageLines`
     (累積長頁，`term_view.accumulatePageLines` 純 JS 去重：`resolvePageOverlap`＝狀態列行號為主、`findPageOverlap` 內文為輔，見 `docs/easy-reading.md`)。
   - **黑名單列移除 vs 隱藏由 `enhance.dropHidden` 決定**：好讀文章 `dropHidden=true`→該列不產生節點
@@ -80,10 +82,21 @@
 - 偵測一律走 DOM（**好讀畫面是重排長卷、不對應 buf 24 列網格**，不能用 `getRowText`；`clientToPos` 的 **col**
   是純幾何、兩模式都可信，**row** 才是被 clamp 的那個）。推文列 `data-pusher`(lower id) 與 `data-pusher-col`
   由 `buildRow` 的外層 span（參數 `pusher`／`pusherContentCol`，來自 `ann.pusher`／`ann.contentCol`）統一掛上，兩模式同。
-- 狀態 `view._selectedPusher`（傳入 `annotateComment` ctx）；`togglePusherHighlight` 兩模式同：設 `_selectedPusher`
-  + `redraw(true)` → `computeAnnotations` 重算 `ann.pusherHighlight`，renderer 重繪套 class。（好讀重繪會重入
-  `accumulatePageLines` 同畫面，`findPageOverlap` 去重成 no-op append，故無重複列。）
+- 狀態 `view._selectedPusher`（唯一真相）；`togglePusherHighlight` 兩模式同：設 `_selectedPusher`
+  + `componentScreen.setSelectedPusher(id)` → renderer 逐列搬 `.pusherHighlight` class，**不重畫**
+  （同 `setCursorHighlight` 的快路徑）。build 時的判斷由 `comment_parse.isPusherHighlighted(ann, selected)`
+  現算，讀的是 controller 欄位（`update(props)` 從 `enhance.selectedPusher` 同步）而非 annotation。
+  - **踩坑（2026-08 修，勿走回頭路）**：原本是 `redraw(true)`，而 `selectedPusher` 進了 `annotationsKey`
+    ⇒ 點一下推文列＝整份好讀長頁全量重算（含每個 run 的 `buildMergedCommentChars`）＋每一列節點重建。
+    兩個使用者回報的症狀：(1) 每個 `inlinePreviewSlot` 被 `disposeNode` 收掉重建、`pinned=null` ⇒
+    `minHeight` 歸零 ⇒ 圖片佔位盒塌陷再非同步撐回來＝**合併推文的空白區閃爍、隱約看到別行推文**；
+    (2) 節點抽換落在雙擊的第二個 mousedown 之前 ⇒ **雙擊選字時好時壞**。守護：
+    `tests/e2e/offline/pusher_highlight.offline.spec.js`（點擊前替每個 bbsrow 掛 JS expando，點完必須全數存活）
+    ＋ `tests/unit/screen_incremental_render.test.js`／`screen_dirty_rows.test.js`／`screen_annotate_cache.test.js`。
 - 清除：好讀新文章在 `accumulatePageLines` else（新文章）分支 reset；原生 `redraw` `pageState!==3` 時 reset。
+  兩處**只設欄位**（都跑在 `_renderScreenLines` 之前，隨後那次 render 會經 `update()` 同步給 controller，
+  再由 `_render()` 收尾的 `_appliedPusher` 對帳補 class）—— 在那裡呼叫 `setSelectedPusher` 只是對即將被
+  丟掉的上一幀節點白做一次 O(n)。
 - 無 pref/i18n（點擊驅動、恆可用）。
 
 ## 連續同作者推文合併（`src/js/comment_merge.js`，2026-08 改版）

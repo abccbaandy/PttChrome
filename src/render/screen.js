@@ -8,6 +8,7 @@
 // 對外介面刻意與舊的 React handle 相容，term_view 一行都不用改：
 //   update(props)                 ← term_ui.renderScreen
 //   setCursorHighlight({row,cls,col}) ← term_view.applyCursorHighlight
+//   setSelectedPusher(userid)     ← term_view.togglePusherHighlight
 //
 // 逐列標註仍走 src/js/screen_annotations.js（與 React 版共用的純函式）。
 // 兩層快取的**判準**一字沿用舊版，只是產物從 React element 換成 DOM 節點：
@@ -35,6 +36,7 @@ import {
   computeAnnotations,
   annotationsAreRowIndependent,
 } from "../js/screen_annotations";
+import { isPusherHighlighted } from "../js/comment_parse";
 import { spanKey, spanNeedsAi } from "../js/caption_ai_logic";
 import {
   captionAiAvailability,
@@ -58,6 +60,8 @@ import {
 // 被吃掉。col＝底色從第幾欄畫起（0＝整列），與可點區同源
 // （js/mouse_regions.clickableColStart）。
 const NO_HIGHLIGHT = Object.freeze({ row: -1, cls: null, col: 0 });
+// 推文者高亮的整列底色（main.css .pusherHighlight）。
+const PUSHER_HIGHLIGHT_CLASS = "pusherHighlight";
 
 // 一列被丟棄時要收掉它建立的延遲載入佔位盒（IntersectionObserver /
 // ResizeObserver / ImagePreviewer 的 React root）。React 卸載時自動做的事，
@@ -84,6 +88,14 @@ export class ScreenController {
     // 不上色；col 0 ＝ 整列，col > 0 ＝ 只有 [col, 行尾) 上色。決策全在
     // js/cursor_highlight.js，套用入口是 term_view.applyCursorHighlight。
     this.highlight = NO_HIGHLIGHT;
+    // 推文者高亮（點推文列 → 該作者的每一則整列 tint）。與 highlight 同性質：
+    // 純互動狀態、只影響 class，**不進 annotation、不進 annotationsKey**
+    // （理由見 js/screen_annotate_cache.js 的「刻意不含」段）。真相源仍是
+    // term_view._selectedPusher，這裡由 update() 同步進來。
+    this._selectedPusher = null;
+    // DOM 上實際套著的那個值。兩者不同 ⇒ 有沿用的節點還帶著舊 class，_render
+    // 收尾補一次對帳（正常翻頁兩者相等 ⇒ 零成本）。
+    this._appliedPusher = null;
     this._hoverPreview = undefined;
     this._hoverPos = { left: undefined, top: undefined };
     // 好讀自動開圖「一鍵放大全部圖片至視窗寬度」；點任一張內嵌預覽圖切換。
@@ -116,6 +128,7 @@ export class ScreenController {
     // buffer 上不成立。
     this._prevFrame = null; // { lines, key, highlight, sizeMode, rowIndependent }
     this._nodes = []; // 上一幀每一列的節點（null ＝ 這一列不佔版面）
+    this._annotations = []; // 上一幀的 annotations（與 _nodes 逐列對齊）
     this._liveSlots = new Set(); // 目前掛著的佔位盒（imagesEnlarged 切換要通知）
     this._overlayNodes = []; // 尾端固定浮層（兩顆按鈕 + hover 預覽宿主）
     this._captionAiEnabledSeen = null;
@@ -222,6 +235,11 @@ export class ScreenController {
       this._aiLink = {};
       this._aiFix = {};
     }
+    // selectedPusher 由 term_view 帶進來（它仍是唯一真相），但 render 時一律讀
+    // this._selectedPusher —— setCursorHighlight 慢路徑那種「不換 props 的
+    // _render()」才不會讀到過期值。這行同時是**新建 controller 的種子**。
+    this._selectedPusher =
+      (props.enhance && props.enhance.selectedPusher) || null;
     this.props = props;
     this._render();
   }
@@ -257,6 +275,17 @@ export class ScreenController {
     this._render();
   }
 
+  // 推文者高亮的套用點。term_view.togglePusherHighlight 是唯一呼叫者。
+  // 與 setCursorHighlight 的快路徑同構：**絕對不呼叫 _render()**，只把 class 搬到
+  // 正確的列上。走重畫的年代 = 整份好讀長頁重算 + 每一列節點重建（症狀見
+  // js/comment_parse.js#isPusherHighlighted 的註解）。
+  setSelectedPusher(userid) {
+    const next = userid || null;
+    if (this._selectedPusher === next) return;
+    this._selectedPusher = next;
+    this._syncPusherClasses();
+  }
+
   destroy() {
     this._captionAiTask.stop();
     this._urlAiTask.stop();
@@ -265,6 +294,7 @@ export class ScreenController {
     destroyUrlAi();
     for (let i = 0; i < this._nodes.length; ++i) disposeNode(this._nodes[i]);
     this._nodes = [];
+    this._annotations = [];
     this._liveSlots.clear();
     if (this._hoverHost) unmountFrom(this._hoverHost);
     this.container.removeEventListener("click", this._onContainerClick);
@@ -451,6 +481,8 @@ export class ScreenController {
           }
         : null;
     this._nodes = nodes;
+    // 與 _nodes 逐列對齊，_syncPusherClasses 據此判斷哪些列是推文列。
+    this._annotations = annotations;
     // 必須排在 _buildNodes 之後：那裡讀的是**上一幀**的 _prevFrame。
     this._prevFrame = {
       lines,
@@ -462,6 +494,10 @@ export class ScreenController {
 
     this._syncOverlays(annotations, enhance);
     this._patchRows(nodes);
+    // 沿用上一幀的節點不會自己更新 pusher class（它不在 annotation 裡）。只有
+    // 「欄位被 update(props) 換掉、卻沒經過 setSelectedPusher」時才需要補一次；
+    // 正常翻頁 append 兩者相等 ⇒ 這裡零成本，O(新增列) 的不變量不破。
+    if (this._appliedPusher !== this._selectedPusher) this._syncPusherClasses();
   }
 
   // ---- 每列節點快取 ----
@@ -595,7 +631,7 @@ export class ScreenController {
         floor: ann.floor,
         pusher: ann.pusher,
         pusherContentCol: ann.contentCol,
-        pusherHighlight: ann.pusherHighlight,
+        pusherHighlight: isPusherHighlighted(ann, this._selectedPusher),
         authorIdStart: ann.authorIdStart,
         authorIdEnd: ann.authorIdEnd,
         fixedUrls: m.fixedUrls,
@@ -675,7 +711,7 @@ export class ScreenController {
       pusherContentCol: ann && ann.contentCol,
       listAuthor: ann && ann.listAuthor,
       listTitle: ann && ann.listTitle,
-      pusherHighlight: ann && ann.pusherHighlight,
+      pusherHighlight: isPusherHighlighted(ann, this._selectedPusher),
       authorIdStart: ann && ann.authorIdStart,
       authorIdEnd: ann && ann.authorIdEnd,
       fixedUrls: ann && ann.fixedUrls,
@@ -899,6 +935,40 @@ export class ScreenController {
       if (on) spans[i].classList.add(cls);
       else spans[i].classList.remove(cls);
     }
+  }
+
+  // 一列的頂層節點 → 該掛 .pusherHighlight 的那個元素。合併推文塊的頂層是
+  // div.mergedCommentBlock，class 要下在裡面那個 span[type="bbsrow"]（與
+  // _buildRowNode 的合併分支交給 buildRow 的位置同一個）。
+  _pusherRowTarget(node) {
+    if (!node) return null;
+    if (node.getAttribute && node.getAttribute("type") === "bbsrow")
+      return node;
+    return node.querySelector ? node.querySelector('[type="bbsrow"]') : null;
+  }
+
+  // 逐列把 .pusherHighlight 對帳到 _selectedPusher。只走推文列（ann.pusher 存在），
+  // 長頁的內文列完全不碰。
+  _syncPusherClasses() {
+    const nodes = this._nodes;
+    const anns = this._annotations || [];
+    for (let row = 0; row < nodes.length; ++row) {
+      const ann = anns[row];
+      if (!ann || !ann.pusher) continue;
+      // null ＝ 這一列不佔版面（dropHidden 移除／已併進合併塊）。
+      const node = this._pusherRowTarget(nodes[row]);
+      if (!node) continue;
+      if (isPusherHighlighted(ann, this._selectedPusher)) {
+        node.classList.add(PUSHER_HIGHLIGHT_CLASS);
+      } else if (node.classList.contains(PUSHER_HIGHLIGHT_CLASS)) {
+        node.classList.remove(PUSHER_HIGHLIGHT_CLASS);
+        // classList.remove 會留下 class=""，而 el() 對 undefined 是**不輸出屬性**
+        // （見 render/dom.js）⇒ 不清掉的話「切一次再切回來」與「從沒切過」的 DOM
+        // 不等值：golden 快照與 outerHTML 節點重用比對都會失準。
+        if (!node.className) node.removeAttribute("class");
+      }
+    }
+    this._appliedPusher = this._selectedPusher;
   }
 }
 

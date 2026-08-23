@@ -58,6 +58,10 @@ export const PAGE_READING = 3;
 //      computeAnnotations），目前只放進回傳的 cache，非 stableRows 時 cache 為
 //      null ⇒ renderer 看不到它有沒有翻轉。
 // 要放行 READING 必須先解決這兩件事。
+//
+// 註：推文者高亮**不在這裡**（也不在 annotation 裡）—— 它是 renderer 的 class 層
+// 狀態（render/screen.js#setSelectedPusher）。切換它不影響任何一列的 annotation，
+// 所以這個函式不必為它改動，別誤以為漏改。
 export function annotationsAreRowIndependent(enhance) {
   // 沒有 enhance ⇒ computeAnnotations 直接回全空 annotations，逐列獨立成立。
   if (!enhance) return true;
@@ -221,7 +225,6 @@ export function computeAnnotations(
     showFloorNumbers,
     highlightAuthor,
     articleAuthor,
-    selectedPusher,
     pageState,
     autoFixUrl,
     bareDomainLink,
@@ -271,7 +274,6 @@ export function computeAnnotations(
         : undefined,
       highlightAuthor,
       articleAuthor,
-      selectedPusher,
     };
     // 圖文合併（好讀限定）：先重建整篇純文字做跨行分組（per-row 的 annotateComment
     // 看不到鄰列）。無論開關與否都要算——關閉時浮動按鈕的顯示條件也需要塊數。

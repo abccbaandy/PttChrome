@@ -54,12 +54,22 @@ function stable(v) {
   return String(v);
 }
 
-// 影響**每一列**標註／渲染的輸入 → 一組快取鍵。任何一項變動（改設定、選推文者
-// 高亮、切圖文合併、AI 回填新判決…）都讓整份快取失效並全量重算：那是一次性的
-// 使用者操作，長文卡一幀可接受；真正要防的是「每頁翻頁都全量重算」。
+// 影響**每一列**標註／渲染的輸入 → 一組快取鍵。任何一項變動（改設定、切圖文
+// 合併、AI 回填新判決…）都讓整份快取失效並全量重算：那是一次性的使用者操作，
+// 長文卡一幀可接受；真正要防的是「每頁翻頁都全量重算」。
 //
 // 刻意**不含** currentHighlighted：它一次只影響兩列，由呼叫端逐列處理，不該把
 // 整份快取炸掉（原生模式滑鼠瀏覽每移動一列就換一次）。
+//
+// 刻意**不含** selectedPusher（推文者高亮），同上理由再加兩條實際症狀 —— 它在
+// 這裡的年代，點一下推文列 ⇒ 整份好讀長頁全量重算（含每個 run 的
+// buildMergedCommentChars）＋每一列節點重建 ⇒ 所有 inlinePreviewSlot 被
+// disposeNode 收掉重建、佔位盒塌陷再非同步撐回來（合併推文空白區閃爍），而節點
+// 抽換又落在雙擊的第二個 mousedown 之前（雙擊選字時好時壞）。現在它是 renderer
+// 的 class 層狀態：ScreenController 在 build 時從自己的欄位現算、切換時逐列搬
+// class（render/screen.js#setSelectedPusher）。
+// **不要加回來**：renderer 讀的是 controller 欄位而不是 props.enhance，加回來會
+// 讓 setCursorHighlight 慢路徑「用舊 props 算 key、用新欄位建節點」而脫鉤。
 // 刻意**不含** articleId：它變動時 lines 一定也被 rebuild 換掉了。
 //
 // refs 放無法字串化又必須逐一比對的東西（onAidClick 的閉包會進 aids 的 onClick，
@@ -77,7 +87,6 @@ export function annotationsKey(input) {
     stable(e.showFloorNumbers),
     stable(e.highlightAuthor),
     stable(e.articleAuthor),
-    stable(e.selectedPusher),
     stable(e.pageState),
     stable(e.autoFixUrl),
     stable(e.bareDomainLink),
