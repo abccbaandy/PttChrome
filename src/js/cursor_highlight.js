@@ -55,6 +55,12 @@ function keyboardHighlightRow(o) {
 // 按都搶不回來。守護：tests/unit/cursor_highlight.test.js、cursor_highlight_arbitration.test.js。
 export function resolveHighlightRow(input) {
   const o = input || {};
+  // PTT 正開著輸入框（vgetstring 的反白輸入欄，呼叫端用 term_buf.isCursorOnInputField
+  // 偵測）⇒ **整個畫面**都不上色，鍵盤游標列與滑鼠 hover 列一視同仁：畫面在等使用者
+  // 打字，任何一條光棒都只是誤導（文章裡的推文輸入框本來就是這個樣子）。
+  // 這是唯一決策點 —— 滑鼠端的可點區另由 mouse_regions.resolveMouseRegion 用同一個
+  // 事實關掉，兩者一起動才守得住「底色區＝可點區」的合約。
+  if (o.inputPrompt) return -1;
   const mouseRow = o.mouseRow == null ? -1 : o.mouseRow;
   if (o.mode === "article") return -1;
   const kbRow = keyboardHighlightRow(o);

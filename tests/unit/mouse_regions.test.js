@@ -306,3 +306,34 @@ describe("cursorCss", () => {
     expect(cursorCss(CUR_AUTO, { iconsEnabled: true })).toBe("auto");
   });
 });
+
+// 2026-08：PTT 開著輸入框（vgetstring 的反白輸入欄，見 term_buf.isCursorOnInputField）
+// 時，畫面下方殘留的列表／選單列**不可以**還能點 —— 那一點會送 Enter 給輸入框，
+// 等於替使用者把搜尋送出／進錯看板。底色也一起關（合約：可點區＝底色區）。
+describe("輸入框畫面（inputPrompt）", () => {
+  test("列表／選單／文章一律 none、不上色、指標不變", () => {
+    [1, 2, 3, 4].forEach((pageState) => {
+      [3, 5, 40, LIST_TITLE_COL_START].forEach((col) => {
+        const r = at({ pageState, row: 5, col, inputPrompt: true });
+        expect(r.action).toBe(ACT_NONE);
+        expect(r.cursor).toBe(CUR_AUTO);
+        expect(r.highlightRow).toBe(-1);
+        expect(r.highlightColStart).toBe(0);
+      });
+    });
+  });
+
+  test("左側退出帶在輸入框畫面也失效（送左方向鍵會被輸入框吃掉）", () => {
+    expect(at({ pageState: 2, row: 5, col: 0, inputPrompt: true }).action).toBe(
+      ACT_NONE,
+    );
+    expect(at({ pageState: 3, row: 5, col: 0, inputPrompt: true }).action).toBe(
+      ACT_NONE,
+    );
+  });
+
+  test("沒有輸入框時行為一字不變", () => {
+    expect(at({ pageState: 2, row: 5, col: 40, inputPrompt: false }).action)
+      .toBe(ACT_ENTER);
+  });
+});

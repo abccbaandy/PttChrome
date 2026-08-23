@@ -7,6 +7,7 @@
 // DOM 節點；所有 class / data-* 都是外部契約，見 CLAUDE.md 與 golden。
 import cx from "classnames";
 import { el } from "./dom";
+import { isDBCSLead } from "../js/string_util";
 import ColorSegmentBuilder from "./color_segment";
 import { createInlinePreviewSlot } from "./inline_preview_slot";
 
@@ -77,6 +78,10 @@ export class LinkSegmentBuilder {
       highlightClass && highlightColStart > 0 ? highlightColStart : 0;
     this._inHighlight = false;
     this._highlightWrap = null;
+    // 前一格是不是 DBCS lead byte ⇒ **這一格是 trail**，切段切在這裡會把字拆掉
+    // （見 readChar 的開邊界）。判斷與 ColorSegmentBuilder 同源（isDBCSLead），
+    // 不看 ch.isLeadByte —— 那個旗標由 term_buf.updateCharAttr 標，不保證都在。
+    this._prevWasLead = false;
     this.onHyperLinkMouseOver = onHyperLinkMouseOver;
     this.onHyperLinkMouseOut = onHyperLinkMouseOut;
     this.floor = floor;
@@ -382,8 +387,24 @@ export class LinkSegmentBuilder {
       this._giveaway = null;
       this._bareDomain = null;
       this._fnKey = null;
+      this._prevWasLead = false;
       this._flushLine();
       return;
+    }
+    // 切點落在雙寬字的 **trail cell** 上時往後推一格（整個字留在底色外）。
+    // 直接切下去的後果：ColorSegmentBuilder 的 `lead` 是 per-segment 狀態，待配對的
+    // lead byte 會隨舊 builder 被丟棄，trail byte 再在新 builder 裡被當成 ASCII 畫出來
+    // ⇒「自動搜尋」變「自動搜M」，該字從 2 格縮成 1 格、後面整段左移、游標錯位
+    // （使用者 2026-08 回報：看板列表按 s 的搜尋畫面，底色起始欄 30 正好是「尋」的
+    // trail）。底色起始欄是與內容無關的固定欄號，只有它會踩到；mention／AID／
+    // giveaway／功能鍵／作者 id 的邊界依定義都落在 ASCII 格上。
+    // 守護：tests/unit/highlight_col_dbcs.test.js。
+    if (
+      this.highlightColStart > 0 &&
+      i === this.highlightColStart &&
+      this._prevWasLead
+    ) {
+      this.highlightColStart = i + 1;
     }
     // 部分底色的開邊界：從這一欄起到行尾都包進帶底色的 span。
     if (this.highlightColStart > 0 && i === this.highlightColStart) {
@@ -468,6 +489,7 @@ export class LinkSegmentBuilder {
       this.href = ch.isStartOfURL() ? ch.getFullURL() : null;
     }
     this.colorSegBuilder.readChar(ch);
+    this._prevWasLead = isDBCSLead(ch.ch);
     if (ch.isEndOfURL()) {
       this.saveSegment();
     }

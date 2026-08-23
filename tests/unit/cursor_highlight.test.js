@@ -232,3 +232,41 @@ describe("highlightColStart", () => {
     expect(highlightColStart({})).toBe(0);
   });
 });
+
+// 2026-08 回歸：在看板列表按 s（搜尋全站看板）叫出輸入框時，prompt 那一列被上底色。
+// setPageState 沒有 reset 分支 ⇒ 只重畫 row 0/1 的 prompt 畫面讓 pageState 黏在 2，
+// 而 vgetstring 把游標移進 row 1 的反白輸入欄 ⇒「pageState 2 有鍵盤游標列」成立。
+// 修法：呼叫端偵測到輸入欄（term_buf.isCursorOnInputField）就整個畫面不上色 ——
+// 鍵盤與滑鼠共用這個唯一決策點，行為與文章裡的推文輸入框一致。
+describe("resolveHighlightRow：PTT 開著輸入框（inputPrompt）", () => {
+  const base = {
+    mode: "native",
+    mouseEnabled: true,
+    keyboardEnabled: true,
+    mouseRow: -1,
+    cursorRow: 1,
+    pageState: 2,
+    inputPrompt: true,
+  };
+
+  test("鍵盤游標列不上色", () => {
+    expect(resolveHighlightRow(base)).toBe(-1);
+    expect(resolveHighlightRow({ ...base, lastMover: "keyboard" })).toBe(-1);
+  });
+
+  test("滑鼠 hover 列也不上色（點擊同時被 mouse_regions 擋掉）", () => {
+    expect(resolveHighlightRow({ ...base, mouseRow: 11 })).toBe(-1);
+    expect(
+      resolveHighlightRow({ ...base, mouseRow: 11, lastMover: "mouse" })
+    ).toBe(-1);
+  });
+
+  test("選單（pageState 1）上叫出的輸入框同樣不上色", () => {
+    expect(resolveHighlightRow({ ...base, pageState: 1 })).toBe(-1);
+  });
+
+  test("關掉輸入框後底色照舊（gate 只在輸入框存在時生效）", () => {
+    expect(resolveHighlightRow({ ...base, inputPrompt: false, cursorRow: 5 }))
+      .toBe(5);
+  });
+});

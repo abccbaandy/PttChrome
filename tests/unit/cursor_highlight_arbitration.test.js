@@ -34,6 +34,9 @@ function makeView({ listRenderMode = "native" } = {}) {
     highlightCursor: true,
     nowHighlight: -1,
     BBSWin: { style: { cursor: "auto" } },
+    // 真 TermBuf 的輸入框偵測（見 term_buf.isCursorOnInputField）。預設關，
+    // 想模擬「PTT 開著輸入框」的幀就改成回 true。
+    isCursorOnInputField: () => false,
   };
   v.componentScreen = { setCursorHighlight: (h) => applied.push(h.row) };
   return { v, applied };
@@ -181,5 +184,40 @@ describe("onListMouseMove 與仲裁的銜接", () => {
     v._highlightMover = "mouse";
     v.onListMouseMove(LIST_HEADER_ROWS + 2, LIST_TITLE_COL_START + 5);
     expect(calls).toEqual([]);
+  });
+});
+
+// 2026-08 回歸：看板列表按 s 叫出「搜尋全站看板」時 prompt 那一列被上底色。
+// pageState 黏在 2（prompt 只重畫 row 0/1），而 vgetstring 把游標移進反白輸入欄
+// ⇒ 鍵盤來源判定成立。view 這一層負責把事實餵給決策層，這裡守的是那條接線。
+describe("applyCursorHighlight：PTT 開著輸入框", () => {
+  test("原生畫面：鍵盤與滑鼠來源都不上色", () => {
+    const { v, applied } = makeView();
+    v.buf.isCursorOnInputField = () => true;
+    v.buf.cur_y = 1; // vgetstring 把游標移進 row 1 的輸入欄
+    v.applyCursorHighlight();
+    expect(applied[applied.length - 1]).toBe(-1);
+
+    v.buf.nowHighlight = 11;
+    v.applyCursorHighlight("mouse");
+    expect(applied[applied.length - 1]).toBe(-1);
+  });
+
+  test("輸入框關掉後底色照舊回來", () => {
+    const { v, applied } = makeView();
+    v.buf.isCursorOnInputField = () => true;
+    v.applyCursorHighlight();
+    expect(applied[applied.length - 1]).toBe(-1);
+
+    v.buf.isCursorOnInputField = () => false;
+    v.applyCursorHighlight();
+    expect(applied[applied.length - 1]).toBe(5);
+  });
+
+  test("列表好讀：server 真游標停在反白格也不影響虛擬視窗的光棒", () => {
+    const { v, applied } = makeView({ listRenderMode: "buffer" });
+    v.buf.isCursorOnInputField = () => true;
+    v.applyCursorHighlight();
+    expect(applied[applied.length - 1]).toBe(8);
   });
 });

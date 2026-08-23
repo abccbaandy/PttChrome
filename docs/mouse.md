@@ -63,6 +63,16 @@
 | 3（READING） | `col < 7` | `exitArticle` | `back`（PNG） | 不上色 |
 | 3 | 其餘 | `none` | `auto` | 不上色 |
 | 0 / 5 / 6 | — | `none` | `auto` | 不上色 |
+| **任何 pageState** | `inputPrompt`（PTT 開著輸入框） | `none` | `auto` | 不上色 |
+
+**`inputPrompt` ＝ `term_buf.isCursorOnInputField()`**（游標所在格是**白底黑字**，且該列不是從 col 0 就反白的狀態列）：PTT 的輸入框
+一律由 `mbbsd/vtuikit.c#vgetstring` 以 `VCLR_INPUT_FIELD`（`ESC[0;7m`）畫成反白欄，
+並把游標 `move` 進欄內（見 `docs/pttbbs-screen-protocol.md` §5）。這種畫面只重畫最上面
+一兩列，下方的列表／選單整片殘留 ⇒ `pageState` 黏著、看起來還可以點，但那一點送出的
+Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板），左側退出帶的左方向鍵同理。
+底色端由 `cursor_highlight.resolveHighlightRow` 用**同一個事實**關掉，兩邊一起動才守得住
+「可點區＝底色區」。守護：`tests/unit/mouse_regions.test.js`、`cursor_highlight.test.js`、
+`cursor_highlight_arbitration.test.js`、`term_buf_input_field.test.js`。
 
 **左 7 欄（`EXIT_COL_END`）的退出帶三種畫面共用**，且**不看 `mouseMisclickGuard`**
 （使用者 2026-08 定案）：它是一個固定手勢，不是「哪一欄算內容」的欄位判定。
@@ -111,8 +121,14 @@
   「到行尾」⇒ **只有開邊界、沒有關邊界**。那個 span 另帶一個無樣式的識別 class
   `.cursorHighlight`：`b1..b15` 同時也是 ANSI 背景色 class，光看顏色分不出光棒與
   「這格本來就有底色」（狀態列就有 b6，`easy-reading-list.offline.spec.js` 踩過）。
-- 邊界欄都落在 ASCII 欄（列表 col 30 是 mark 欄、選單 col 8、推文 `contentCol` 緊接
-  `": "`），不會切在 DBCS 的 trail cell 上。
+- **切點可能落在 DBCS 的 trail cell 上，`LinkSegmentBuilder` 自己往後推一格**。
+  真的列表／選單／推文列邊界欄確實都在 ASCII 欄（列表 col 30 是 mark 欄、選單 col 8、
+  推文 `contentCol` 緊接 `": "`），但 `S` 是**與內容無關的固定欄號**：列表上叫出的
+  prompt（`s` 搜尋看板）畫面 pageState 黏在 2，col 30 剛好是「請輸入看板名稱(按空白鍵
+  自動搜**尋**)」那個字的 trail ⇒ 切下去 `ColorSegmentBuilder` 待配對的 lead byte 被丟掉、
+  trail byte 被當 ASCII 畫成 `M`，該字從 2 格縮成 1 格、整段左移、游標錯位（2026-08
+  使用者回報）。修法：切點若落在 trail 上就 `+1`（整個字留在底色外）。
+  守護 `tests/unit/highlight_col_dbcs.test.js`。
 - `blacklistNotice` 列（原生列表的「(本文已被黑名單)」通知）**維持整列上色**：那是
   我們自己合成的文字、本來就開不了，套欄位範圍沒有意義。
 

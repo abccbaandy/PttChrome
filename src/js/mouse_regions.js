@@ -90,6 +90,12 @@ const NONE = Object.freeze({
 // 得知邊界在哪。
 export function resolveMouseRegion(input) {
   const o = input || {};
+  // PTT 正開著輸入框（vgetstring 的反白輸入欄，呼叫端用 term_buf.isCursorOnInputField
+  // 偵測）⇒ 這一幀什麼都不做。prompt 只重畫最上面一兩列，下方的列表／選單整片殘留
+  // 在畫面上，看起來還是可以點 —— 但那一點會送 Enter 給輸入框（等於替使用者把搜尋
+  // 送出／進錯看板），左側退出帶送的左方向鍵也只會被 vgetstring 吃掉。
+  // 底色同時由 cursor_highlight.resolveHighlightRow 用同一個事實關掉（可點區＝底色區）。
+  if (o.inputPrompt) return NONE;
   const rows = o.rows == null ? 24 : o.rows;
   const row = o.row == null ? -1 : o.row;
   const col = o.col == null ? -1 : o.col;

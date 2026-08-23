@@ -64,6 +64,12 @@ export const termInvColors = [
 ];
 
 
+// 白底黑字（PTT 的反白）。getFg/getBg 已把 invert 攤平 ⇒ 兩種編碼（ESC[0;7m 與
+// 直接送 fg=0/bg=7）都認得。isCursorOnInputField 用它認輸入欄。
+function isReversedCell(ch) {
+  return !!ch && ch.getFg() === 0 && ch.getBg() === 7;
+}
+
 function TermChar(ch) {
   this.ch = ch;
   this.resetAttr();
@@ -1218,6 +1224,33 @@ TermBuf.prototype = {
     return true;
   },
 
+  // 這個畫面是不是**正在等使用者輸入**（PTT 的輸入框）。
+  //
+  // 依據 mbbsd/vtuikit.c#vgetstring（1211-1240）：輸入欄一律是
+  //   outs(VCLR_INPUT_FIELD)  // include/vtuikit.h:37 → ANSI_COLOR(0;7) = ESC[0;7m
+  //   vfill(len, 0, buf)      // 填滿 len 格（實測 term.ptt.cc：看板名輸入欄 13 格
+  //                           //  ＝ IDLEN+1，與 namecomplete 的 len 相符）
+  //   outs(ANSI_RESET)
+  //   move(line_ansi, col_ansi + rt.icurr)   // 游標**必定**落在那條反白欄內
+  // ⇒「游標所在格是白底黑字」＝所有 PTT 輸入框（推文／搜尋／跳頁／y-N）的共通指紋。
+  //
+  // **判斷用 getFg/getBg（實際顯色）而不是 ch.invert**：畫面不是由 mbbsd 直接吐 ANSI，
+  // 中間隔了 pfterm 這層 framebuffer（mbbsd/pfterm.c 自己算最省的輸出），實測 2026-08
+  // term.ptt.cc 的輸入欄送的是 fg=0/bg=7，`invert` 旗標根本不會被設起來。
+  //
+  // 第二個條件擋掉「整列反白」的狀態列／標題列／列表表頭（實測 revCount=79）：
+  // vgetstring 前面一定先 outs(prompt)，輸入欄不可能從 col 0 開始。
+  //
+  // 為什麼需要它：setPageState 沒有 reset 分支，而列表上叫出的 prompt 只重畫
+  // row 0/1（mbbsd/board.c#search_local_board 只 move(0,0)+clrtoeol）⇒ pageState
+  // 黏在 2，游標底色與滑鼠可點區都還以為自己在列表上。消費端見 cursor_highlight
+  // .resolveHighlightRow 與 mouse_regions.resolveMouseRegion 的 inputPrompt。
+  isCursorOnInputField: function() {
+    var line = this.lines[this.cur_y];
+    if (!line) return false;
+    return isReversedCell(line[this.cur_x]) && !isReversedCell(line[0]);
+  },
+
   // 滑鼠移到 (tcol, trow)：算出這一格的語意、更新游標底色列、換滑鼠指標、開關
   // 文章左側的退出提示帶。決策本身在純函式 mouse_regions.resolveMouseRegion
   // （逐格的行為表與依據見那裡與 docs/mouse.md），這裡只負責套用。
@@ -1245,7 +1278,9 @@ TermBuf.prototype = {
       // 防誤觸（可點區＝底色區的起始欄）跟著總開關走，見 resolveMouseGates。
       misclickGuard: !!(
         this.useMouseBrowsing && this.view && this.view.mouseMisclickGuard
-      )
+      ),
+      // PTT 開著輸入框 ⇒ 這一幀什麼都不能點也不上色（見 resolveMouseRegion）。
+      inputPrompt: this.isCursorOnInputField()
     });
 
     this.mouseAction = region.action;

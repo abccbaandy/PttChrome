@@ -150,6 +150,9 @@ await sendKey(page, switchKey);
 production 不洩漏）。**例外**：PTT 原生熱鍵（`End`/`Enter`/`Space`/`ArrowLeft`/`Slash` 等）非本 app 設定項，照常寫死。
 - `helpers/fixtures.js`：共用登入 session fixture（見上）
 - `connect-login.spec.js`：登入到主選單（獨立登入）
+- `search_prompt.spec.js`：看板列表按 `s` 的搜尋 prompt —— 不上游標底色、殘留列表不可點、prompt 文字不破字。
+  **刻意是 live**：判準（輸入欄的實際顏色）是 pfterm 重新編碼後的結果，離線／unit 量不到，見
+  `docs/pttbbs-screen-protocol.md` §5.1。
 
 ## 規範：evaluate 內點擊後不可同步讀 React 產物
 

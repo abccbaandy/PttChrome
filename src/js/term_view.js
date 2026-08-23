@@ -801,7 +801,11 @@ TermView.prototype = {
       keyboardEnabled: !!this.keyboardCursorHighlight,
       cursorRow: this.buf.cur_y,
       listCursorRow: this._listCursorRow,
-      lastMover: this._highlightMover
+      lastMover: this._highlightMover,
+      // PTT 開著輸入框就整個畫面不上色（見 cursor_highlight 的 inputPrompt）。
+      // **只在 native 取用**：列表好讀畫的是 ListSession 自組的虛擬視窗，server 的
+      // 真游標座標在那組畫面上沒有意義，拿它判會誤關掉正常的光棒。
+      inputPrompt: mode === 'native' && this.buf.isCursorOnInputField()
     });
     // 底色寬度＝可點區寬度（使用者 2026-08 定案）。**不分 lastMover** —— 鍵盤游標
     // 與滑鼠 hover 共用同一個寬度，否則同一個畫面上兩種光棒不一樣長。

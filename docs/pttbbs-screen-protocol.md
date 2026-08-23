@@ -123,6 +123,27 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 - **prompt**：底列輸入點。
 ⇒ `park 在 entry 區` vs `park 在底列` 是「乾淨列表 vs 文章/prompt」的廉價判別式。client 端 settle 時的 `term_buf.cur_x/cur_y` 即 park 位置（settle 已定義為內容＋游標皆靜，`src/js/term_buf.js` `_armSettleTimer` 前註解）。
 
+### 5.1 輸入框指紋（`vgetstring`，CONFIRMED @ vtuikit.c:1211-1240）
+
+所有輸入點（`getdata`／`namecomplete`／推文／`y-N` 詢問）都走 `vgetstring`，它每次重畫欄位：
+`outs(VCLR_INPUT_FIELD)` → `vfill(len, 0, buf)` → `outs(ANSI_RESET)` → `move(line_ansi, col_ansi + rt.icurr)`。
+`VCLR_INPUT_FIELD` ＝ `ANSI_COLOR(0;7)` ＝ `ESC[0;7m`（`include/vtuikit.h:37`）⇒ 反白欄，且**游標必定 park 在欄內**。
+⇒ client 判別式：**游標所在格是白底黑字 ＝ 畫面正在等使用者輸入**（`term_buf.isCursorOnInputField`，
+消費端見 `docs/mouse.md`「區域決策表」的 `inputPrompt`）。
+
+**判斷必須用實際顯色（`getFg()===0 && getBg()===7`），不可以讀 `ch.invert`**：畫面不是 mbbsd 直接吐的 ANSI，
+中間隔了 `mbbsd/pfterm.c` 這層 framebuffer（自己算最省的輸出）。2026-08 實測 term.ptt.cc：搜尋看板的輸入欄送的是
+`fg=0/bg=7`（13 格 ＝ `IDLEN+1`，與 `namecomplete` 的 `len` 對得上），`invert` 旗標**從來不會被設起來** ——
+照 `vtuikit.c` 的 `ESC[0;7m` 去讀 `invert` 的第一版 unit 全綠、線上完全沒生效。同一輪實測的其他畫面：
+列表表頭／`【 搜尋全站看板 】`標題是 `fg=0/bg=7` 但**從 col 0 反白到行尾**（故要第二個條件），
+列表狀態列 `fg=4/bg=6`、pmore 文章底部狀態列 `fg=7/bg=4`、推文輸入欄 `fg=7/bg=0` ⇒ 都不會誤判。
+守護：`tests/e2e/search_prompt.spec.js`（live，這條只有連真 PTT 量得到）。
+
+**列表上叫出的 prompt 不改變 `pageState`（client 推論，CONFIRMED 讀碼）**：`mbbsd/board.c#search_local_board`
+（`s`／`Ctrl-S` 搜尋看板）只 `move(0,0); clrtoeol()` 後印兩列 prompt，下方列表整片殘留 ⇒ row 0 不再是整列
+反白、最後一列非空 ⇒ `term_buf.setPageState` 每個分支都不命中，而它**沒有 reset 分支** ⇒ 沿用前一幀的
+`pageState`（列表 2）。任何「這個畫面是不是列表／選單」的判斷都不可以只看 `pageState`，要再問 §5.1 的輸入框指紋。
+
 ## 6. `\f`（Ctrl+L）確定性交易依據（v5 新增，全部 CONFIRMED）
 
 - **igetch 全域熱鍵**：`Ctrl('L')` → `redrawwin()+refresh()` 後 `continue`（`mbbsd/io.c` igetch switch）——`\f` 永不回傳給呼叫者，等同「插入一幀全幅重繪」。`vkey()`＝`igetch()`（io.c `vkey`），故**所有走 vkey 的輸入點都吃這條**。
