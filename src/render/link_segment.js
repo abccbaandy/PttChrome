@@ -79,8 +79,9 @@ export class LinkSegmentBuilder {
     this._inHighlight = false;
     this._highlightWrap = null;
     // 前一格是不是 DBCS lead byte ⇒ **這一格是 trail**，切段切在這裡會把字拆掉
-    // （見 readChar 的開邊界）。判斷與 ColorSegmentBuilder 同源（isDBCSLead），
-    // 不看 ch.isLeadByte —— 那個旗標由 term_buf.updateCharAttr 標，不保證都在。
+    // （見 readChar 的開邊界）。判定與 ColorSegmentBuilder 同一套**交替狀態**
+    // （單看位元組值不夠，理由見 readChar 結尾），不看 ch.isLeadByte —— 那個旗標
+    // 由 term_buf.updateCharAttr 標，不保證都在。
     this._prevWasLead = false;
     this.onHyperLinkMouseOver = onHyperLinkMouseOver;
     this.onHyperLinkMouseOut = onHyperLinkMouseOut;
@@ -489,7 +490,13 @@ export class LinkSegmentBuilder {
       this.href = ch.isStartOfURL() ? ch.getFullURL() : null;
     }
     this.colorSegBuilder.readChar(ch);
-    this._prevWasLead = isDBCSLead(ch.ch);
+    // 交替狀態，**不可**寫成 `isDBCSLead(ch.ch)`：Big5 的 trail byte 有一半
+    // （0xA1..0xFE）與 lead 值域重疊 ⇒ 連續中文字時每一格都被當成 lead，開邊界的
+    // +1 會一路連鎖右移，直到撞上 trail byte < 0x81 的字才停（使用者 2026-08-23
+    // 回報的看板列表：底色該從 col 30「火」起，卻推到「北」＝少三個字）。
+    // 上一格是 lead ⇒ 這一格必是它的 trail，不可能同時是下一個字的 lead。
+    // 判定與 ColorSegmentBuilder 的 `this.lead` 同一套。
+    this._prevWasLead = !this._prevWasLead && isDBCSLead(ch.ch);
     if (ch.isEndOfURL()) {
       this.saveSegment();
     }

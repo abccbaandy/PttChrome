@@ -65,3 +65,40 @@ describe("部分底色的切點落在 DBCS trail cell 上", () => {
     expect(container.querySelector(".cursorHighlight").textContent).toBe("尋): ");
   });
 });
+
+// 連續雙寬字時開邊界被**連鎖**往右推（使用者 2026-08-23 回報，看板列表）：
+//
+//   「      9   Browsers     軟體 ◎火狐台北辦公室解散 …」
+//
+// 底色起始欄 30 正是「中文敘述」欄（board.c#show_brdlist 的 `%-34.34s`）的第一格，
+// 也就是「火」的 lead byte，本來不該推。但 trail-cell 的判斷用 isDBCSLead(byte)
+// 看**上一格的位元組值**，而 Big5 的 trail byte 有一半（0xA1..0xFE）落在 lead 的
+// 值域裡 ⇒ 每一格都被當成 trail、每一格都 +1，一路推到遇上 trail byte < 0x81 的
+// 字才停（這裡是「台」的 0x78）⇒ 底色從「北」才開始，整整少了三個字。
+// 修法：比照 ColorSegmentBuilder 用交替狀態（上一格是 lead ⇒ 這一格必是 trail，
+// 不可能同時是下一個字的 lead）。
+describe("連續雙寬字不可讓開邊界連鎖右移", () => {
+  const BRD_ROW = "      9   Browsers     軟體 ◎火狐台北辦公室解散    kimari/karst";
+
+  test("底色從中文敘述欄的第一個字（col 30）起，不是第四個字", () => {
+    const { container } = mountRow({
+      chars: seg(BRD_ROW),
+      row: 5,
+      highlightClass: "b2",
+      highlightColStart: 30,
+    });
+    const wrap = container.querySelector(".cursorHighlight");
+    expect(wrap).not.toBeNull();
+    expect(wrap.textContent).toBe("火狐台北辦公室解散    kimari/karst");
+  });
+
+  test("整列文字不被拆字", () => {
+    const { container } = mountRow({
+      chars: seg(BRD_ROW),
+      row: 5,
+      highlightClass: "b2",
+      highlightColStart: 30,
+    });
+    expect(lineText(container)).toBe(BRD_ROW);
+  });
+});
