@@ -6,7 +6,7 @@
     "@mantine/core": "^9",
     "@mantine/hooks": "^9",
     "classnames": "^2.5.1",
-    "firebase": "^12.17.1",
+    "firebase": "^12.18.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -15,7 +15,7 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^6.1.0",
     "husky": "^9.0.0",
     "jsdom": "^30.0.1",
     "lint-staged": "^17.3.0",
@@ -23,8 +23,8 @@
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
     "prettier": "^3.9.6",
-    "vite": "^8.2.1",
-    "vitest": "^4.1.10"
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   },
   "lint-staged": {
     "*.json": "prettier --write",
