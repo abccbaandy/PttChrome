@@ -635,6 +635,13 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableLiveArticleHelper")}
                 </PrefCheckbox>
+                <PrefCheckbox
+                  name="enableLongPush"
+                  checked={values.enableLongPush}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableLongPush")}
+                </PrefCheckbox>
               </fieldset>
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                 <legend>{i18n("options_appearance")}</legend>

@@ -4,7 +4,7 @@
 // 回歸來源：selEnabled 曾被寫成 normalEnabled 的補集 ⇒ 在連結上按右鍵（沒選取
 // 任何文字）也會畫出「複製」「複製 (包含 ANSI 顏色)」，但 selectedText 是空字串
 // ⇒ 點了什麼都沒發生。旗標本身守在 tests/unit/context_menu_items.test.js。
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import DropdownMenu from "../../src/components/ContextMenu/DropdownMenu";
 import { setupI18n, i18n } from "../../src/js/i18n";
@@ -174,5 +174,26 @@ describe("右鍵選單：兩個小幫手的顯示開關", () => {
     expect(
       screen.queryByText(i18n("cmenu_showInputHelper"), { exact: true }),
     ).toBeNull();
+  });
+});
+
+// longPushEnabled 在 index.jsx 是「總開關 ＋ 文章畫面 ＋ 不是站內信」三者的 AND：
+// 在列表或站內信上按 X 推不到文（站內信的 pager 甚至會把 X 當成別的快捷鍵），
+// 選單裡就不該出現這一項。
+describe("右鍵選單：長推文一鍵發送", () => {
+  test("條件不成立 → 選單裡看不到", () => {
+    renderMenu({ normalEnabled: true });
+    expect(
+      screen.queryByText(i18n("cmenu_longPush"), { exact: true }),
+    ).toBeNull();
+  });
+
+  test("條件成立 → 出現且可點", () => {
+    const onLongPushClick = vi.fn();
+    renderMenu({ normalEnabled: true, longPushEnabled: true, onLongPushClick });
+    const item = screen.getByText(i18n("cmenu_longPush"), { exact: true });
+    expect(item).toBeTruthy();
+    fireEvent.click(item);
+    expect(onLongPushClick).toHaveBeenCalled();
   });
 });

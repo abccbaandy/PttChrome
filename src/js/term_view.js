@@ -867,6 +867,13 @@ TermView.prototype = {
       this.flashListHint('AID 跳文中，請稍候…');
       return;
     }
+    // 長推文送出中：同一條理由（X → 型別 → 內容 → y 的配對不能被插隊）。進度
+    // 遮罩會讓 shouldAcceptInput() 先擋下大部分按鍵，這裡是同條件的自保。
+    if (this.bbscore.longPush && this.bbscore.longPush.active) {
+      e.preventDefault();
+      this.flashListHint('長推文送出中，請稍候…');
+      return;
+    }
     // "返回原文" hotkey (pref aidNavBackKey, default F9). Claimed BEFORE every
     // other handler because it must work in easy reading AND native, in a post
     // or on a list. Safe to claim: F-keys have no KeyMap entry, so they never

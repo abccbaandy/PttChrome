@@ -65,6 +65,9 @@ export const en_US = {
   "cmenu_uploadHistory": {
     "message": "Image upload history ..."
   },
+  "cmenu_longPush": {
+    "message": "Send long comment ..."
+  },
   "cmenu_settings": {
     "message": "Settings"
   },
@@ -93,6 +96,70 @@ export const en_US = {
     "message": "Cancel"
   },
 
+  "longPushModal_title": {
+    "message": "Send long comment"
+  },
+  "longPushModal_label": {
+    "message": "Comment text (split automatically to fit PTT's per-comment limit)"
+  },
+  "longPushModal_placeholder": {
+    "message": "Type as much as you want; no need to count characters"
+  },
+  "longPushModal_type": {
+    "message": "Type"
+  },
+  "longPushModal_typePush": {
+    "message": "Push"
+  },
+  "longPushModal_typeBoo": {
+    "message": "Boo"
+  },
+  "longPushModal_typeArrow": {
+    "message": "Arrow"
+  },
+  "longPushModal_segments": {
+    "message": "Will be sent as #n# comment(s)"
+  },
+  "longPushModal_typeNote": {
+    "message": "PTT downgrades repeated comments to an arrow within 90 seconds, so usually only the first one keeps the type you pick."
+  },
+  "longPushModal_dropped": {
+    "message": "PTT cannot display these characters; they will be skipped: #chars#"
+  },
+  "longPushModal_tooMany": {
+    "message": "#n# comments in total. This may take several minutes because of PTT's cooldown. Send anyway?"
+  },
+  "longPushModal_confirm": {
+    "message": "Send"
+  },
+  "longPushModal_confirmAnyway": {
+    "message": "Send anyway"
+  },
+  "longPushModal_cancel": {
+    "message": "Cancel"
+  },
+  "longPushProgress_title": {
+    "message": "Sending long comment"
+  },
+  "longPushProgress_sending": {
+    "message": "#n# of #m#"
+  },
+  "longPushProgress_cooldown": {
+    "message": "PTT comment cooldown, resuming in #s#s"
+  },
+  "longPushProgress_cancelling": {
+    "message": "Cleaning up..."
+  },
+  "longPushProgress_note": {
+    "message": "Cancelling only stops what has not been sent; comments already sent cannot be taken back."
+  },
+  "longPushProgress_cancel": {
+    "message": "Cancel"
+  },
+  "longPush_notArticle": {
+    "message": "Open an article first to use long comment"
+  },
+
   "options_contextMenu": {
     "message": "Context menu"
   },
@@ -101,6 +168,9 @@ export const en_US = {
   },
   "options_enableLiveArticleHelper": {
     "message": "Show \"Live article helper\" (auto-refresh comments)"
+  },
+  "options_enableLongPush": {
+    "message": "Show \"Send long comment\" (auto-split into multiple comments)"
   },
 
   // options nav

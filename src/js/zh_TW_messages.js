@@ -65,6 +65,9 @@
   "cmenu_uploadHistory": {
     "message": "圖片上傳紀錄 ..."
   },
+  "cmenu_longPush": {
+    "message": "長推文一鍵發送 ..."
+  },
   "cmenu_settings": {
     "message": "設定"
   },
@@ -93,6 +96,70 @@
     "message": "取消"
   },
 
+  "longPushModal_title": {
+    "message": "長推文一鍵發送"
+  },
+  "longPushModal_label": {
+    "message": "推文內容（會自動依 PTT 單則長度上限分段，依序送出）"
+  },
+  "longPushModal_placeholder": {
+    "message": "在這裡打一長串，不用自己算字數"
+  },
+  "longPushModal_type": {
+    "message": "類型"
+  },
+  "longPushModal_typePush": {
+    "message": "推"
+  },
+  "longPushModal_typeBoo": {
+    "message": "噓"
+  },
+  "longPushModal_typeArrow": {
+    "message": "→"
+  },
+  "longPushModal_segments": {
+    "message": "將分成 #n# 則送出"
+  },
+  "longPushModal_typeNote": {
+    "message": "PTT 限制：90 秒內連續推文會自動改成 →，所以通常只有第一則吃得到你選的類型。"
+  },
+  "longPushModal_dropped": {
+    "message": "以下字元 PTT 顯示不出來，送出時會自動略過：#chars#"
+  },
+  "longPushModal_tooMany": {
+    "message": "共 #n# 則，過程可能要好幾分鐘（PTT 有推文冷卻）。確定要送出嗎？"
+  },
+  "longPushModal_confirm": {
+    "message": "開始送出"
+  },
+  "longPushModal_confirmAnyway": {
+    "message": "還是要送"
+  },
+  "longPushModal_cancel": {
+    "message": "取消"
+  },
+  "longPushProgress_title": {
+    "message": "正在送出長推文"
+  },
+  "longPushProgress_sending": {
+    "message": "第 #n# / 共 #m# 則"
+  },
+  "longPushProgress_cooldown": {
+    "message": "PTT 推文冷卻中，#s# 秒後繼續"
+  },
+  "longPushProgress_cancelling": {
+    "message": "正在收尾…"
+  },
+  "longPushProgress_note": {
+    "message": "取消只會停掉還沒送出的部分，已送出的推文無法收回。"
+  },
+  "longPushProgress_cancel": {
+    "message": "取消"
+  },
+  "longPush_notArticle": {
+    "message": "請先進入文章畫面再用長推文"
+  },
+
   "options_contextMenu": {
     "message": "右鍵選單"
   },
@@ -101,6 +168,9 @@
   },
   "options_enableLiveArticleHelper": {
     "message": "顯示「Live 文小幫手」（定時自動更新推文）"
+  },
+  "options_enableLongPush": {
+    "message": "顯示「長推文一鍵發送」（自動分段依序推文）"
   },
 
   // options nav

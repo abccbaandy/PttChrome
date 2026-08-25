@@ -109,4 +109,23 @@ describe("設定頁：一般 → 右鍵選單", () => {
     expect(field(panel, "enableInputHelper")).toBeChecked();
     expect(field(panel, "enableLiveArticleHelper")).not.toBeChecked();
   });
+
+  // 長推文一鍵發送與上面兩個相反：**預設開**（不點就不會作用，而 PTT 本來就沒有
+  // 「一次推一長串」的辦法），所以這裡守的是「預設值沒被改掉、關得起來」。
+  test("長推文開關預設開啟", () => {
+    const panel = openGeneralTab();
+    expect(field(panel, "enableLongPush")).toBeChecked();
+    expect(DEFAULT_PREFS.enableLongPush).toBe(true);
+  });
+
+  test("取消勾選 → 關閉對話框時存成 false", () => {
+    const onSave = vi.fn();
+    const panel = openGeneralTab({}, onSave);
+    fireEvent.click(field(panel, "enableLongPush"));
+    closeModal();
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({ enableLongPush: false });
+    const stored = JSON.parse(window.localStorage.getItem(PREF_KEY)).values;
+    expect(stored.enableLongPush).toBe(false);
+  });
 });

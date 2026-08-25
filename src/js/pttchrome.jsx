@@ -8,6 +8,7 @@ import { EasyReading, switchModePlan } from './easy_reading';
 import { ListSession } from './list_session';
 import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
+import { LongPushSession } from './long_push_session';
 import { DeepLinkController } from './deep_link_controller';
 import { AutoLogin } from './auto_login';
 import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
@@ -106,6 +107,10 @@ export const App = function() {
   // article. A boardless link falls back to the current article's board
   // (tracked by term_view alongside articleAuthor).
   this.aidNavigation = new AidNavigation(this, this.view, this.buf, this.commandQueue);
+  // 長推文一鍵發送（右鍵選單）：把一大段話切成 N 則，逐則跑完 PTT 的推文互動。
+  // 與 aidNavigation 共用同一條 CommandQueue（一次只有一個鍵在線上），並同樣用
+  // `active` 擋住使用者輸入。
+  this.longPush = new LongPushSession(this, this.view, this.buf, this.commandQueue);
   this.view.onAidClick = (aid, board) => {
     this.aidNavigation.start(aid, board || this.view._articleBoard);
   };
@@ -598,6 +603,13 @@ App.prototype.onFunctionKey = function(bytes, label) {
   if (this.aidNavigation && this.aidNavigation.active) {
     if (this.view.flashListHint)
       this.view.flashListHint('AID 跳文中，請稍候…');
+    return;
+  }
+  // 長推文送出中：整條序列在程式化按 PTT 的鍵，插一個進去就會打亂 X → 型別 →
+  // 內容 的配對（進度遮罩本身也會讓 modalShown 擋住，這裡是同一條件的自保）。
+  if (this.longPush && this.longPush.active) {
+    if (this.view.flashListHint)
+      this.view.flashListHint('長推文送出中，請稍候…');
     return;
   }
   // 列表好讀：封閉互動（v5）。回 true ＝它接手了，不可以再送一次。

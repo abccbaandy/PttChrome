@@ -5,6 +5,8 @@ import InputHelperModal from "./InputHelperModal";
 import LiveHelperModal from "./LiveHelperModal";
 import PrefModal from "./PrefModal";
 import TitleBlacklistModal from "./TitleBlacklistModal";
+import LongPushModal from "./LongPushModal";
+import LongPushProgressModal from "./LongPushProgressModal";
 import DebugRecordButton from "../DebugRecordButton";
 import { onPrefSaveImpl } from "./pref_save";
 import { downloadAsFile } from "../../js/util";
@@ -30,6 +32,8 @@ import {
   copyTextFor,
   copyPreviews,
 } from "../../js/context_menu_items";
+import { parsePagerFooterContext } from "../../js/string_util";
+import { pushMaxBytes } from "../../js/long_push";
 
 function noop() {}
 
@@ -117,10 +121,18 @@ const initialState = {
   // 兩個小幫手的顯示開關（預設關），同樣開選單當下現讀。
   inputHelperEnabled: false,
   liveArticleHelperEnabled: false,
+  // 長推文一鍵發送：總開關（enableLongPush）＋「現在這個畫面按 X 推得了文嗎」。
+  longPushEnabled: false,
+  // 輸入框顯示「會分成幾則」用的**預估**上限；真正送出時由 LongPushSession 依
+  // 推文輸入列的 prompt（自己的帳號）與畫面上的推文列（有沒有 IP 欄）校正。
+  longPushMaxBytes: pushMaxBytes({}),
   // --- Modal state ---
   showsInputHelper: false,
   showsTitleBlacklist: false,
   titleBlacklistDraft: "",
+  showsLongPush: false,
+  // LongPushSession 的進度快照（null ＝ 沒在送，遮罩不出現）。
+  longPushProgress: null,
   showsLiveArticleHelper: false,
   showsSettings: false,
   // --- LiveHelper state ---
@@ -153,10 +165,28 @@ export const ContextMenu = ({ pttchrome }) => {
   // 界線（刻意維持現狀，勿順手擴大）：showsInputHelper／showsLiveArticleHelper 一直
   // 都不算 modal（終端機在它們開著時仍收鍵盤），ui_behavior.offline.spec.js 的
   // 「點到 Mantine 圖示(SVG) 不崩潰」正是靠 InputHelper 屬「非 modal 浮層」才測得到。
-  const modalOpen = state.showsSettings || state.showsTitleBlacklist;
+  //
+  // 長推文的兩層都算 modal：輸入框要收鍵盤（同標題黑名單），送出中的進度遮罩更
+  // 是**必須**——整段序列都在程式化地按 PTT 的鍵，使用者這時打字會插進 X → 型別
+  // → 內容 的中間，pttbbs 的 typeahead 會把中間那幀吞掉（command_queue.js 檔頭）。
+  const modalOpen =
+    state.showsSettings ||
+    state.showsTitleBlacklist ||
+    state.showsLongPush ||
+    !!state.longPushProgress;
   useEffect(() => {
     pttchrome.setModalOpen("contextMenu", modalOpen);
   }, [pttchrome, modalOpen]);
+
+  // 送出進度由 LongPushSession 推上來（它是純 JS，不認得 React）。
+  useEffect(() => {
+    const session = pttchrome.longPush;
+    if (!session) return undefined;
+    session.onChange = (progress) => update({ longPushProgress: progress });
+    return () => {
+      session.onChange = null;
+    };
+  }, [pttchrome, update]);
 
   const onContextMenu = useCallback(
     (event) => {
@@ -207,6 +237,10 @@ export const ContextMenu = ({ pttchrome }) => {
       });
       // 偏好一次讀完給下面幾個判定共用（快速搜尋／黑名單／選單開關）。
       const prefs = readValuesWithDefault();
+      // 底列（pmore 的 footer / prompt）——長推文的 gating 要靠它分辨站內信。
+      // 讀 buf 不讀 DOM（DOM 慢一幀，見 docs/enhanced-addon.md 踩坑 A）。
+      const buf = pttchrome.buf;
+      const lastRowText = buf.getRowText(buf.rows - 1, 0, buf.cols);
 
       // 「複製本篇文章連結」的預覽：只走**免費**路徑（讀畫面上的「※ 文章網址:」
       // 那行換算，零副作用、增量掃描有快取）。絕不為了畫一行預覽去按 Q —— 那會被
@@ -299,6 +333,15 @@ export const ContextMenu = ({ pttchrome }) => {
         imageUploadEnabled: !!prefs.enableImageUpload,
         inputHelperEnabled: !!prefs.enableInputHelper,
         liveArticleHelperEnabled: !!prefs.enableLiveArticleHelper,
+        // 長推文要真的按得到 X：站內信（currstat == RMAIL）的 pager 把 X 當成別的
+        // 快捷鍵（more.c 的 footer 是「(y)回信」那一組），送過去等於亂按。
+        // parsePagerFooterContext 只能單向推論，所以用「不是 mail」而非「是 reading」
+        // ——footer 會因為寬度不夠整段消失（string_util 的說明）。
+        longPushEnabled:
+          !!prefs.enableLongPush &&
+          pttchrome.buf.pageState === 3 &&
+          parsePagerFooterContext(lastRowText) !== "mail",
+        longPushMaxBytes: pushMaxBytes({ userId: prefs.autoLoginUser }),
       });
     },
     [pttchrome, update],
@@ -376,6 +419,40 @@ export const ContextMenu = ({ pttchrome }) => {
     },
     [pttchrome, onTitleBlacklistHide],
   );
+
+  // 長推文：開輸入框 → 按下送出後交給 LongPushSession，遮罩由它推上來的進度驅動。
+  // longPushMaxBytes 是開選單當下算好的預估上限，跨 initialState 重設要留著。
+  const onLongPushClick = useCallback(
+    (event) => {
+      event.stopPropagation();
+      pttchrome.contextMenuShown = false;
+      update({
+        ...initialState,
+        showsLongPush: true,
+        longPushMaxBytes: stateRef.current.longPushMaxBytes,
+      });
+    },
+    [pttchrome, update],
+  );
+  const onLongPushHide = useCallback(
+    () => update({ showsLongPush: false }),
+    [update],
+  );
+  const onLongPushConfirm = useCallback(
+    ({ text, type }) => {
+      update({ showsLongPush: false });
+      if (pttchrome.longPush)
+        pttchrome.longPush.start({
+          text,
+          type,
+          maxBytes: stateRef.current.longPushMaxBytes,
+        });
+    },
+    [pttchrome, update],
+  );
+  const onLongPushCancel = useCallback(() => {
+    if (pttchrome.longPush) pttchrome.longPush.cancel();
+  }, [pttchrome]);
 
   const onLiveArticleHelperClick = useCallback(
     (event) => {
@@ -600,6 +677,10 @@ export const ContextMenu = ({ pttchrome }) => {
     imageUploadEnabled,
     inputHelperEnabled,
     liveArticleHelperEnabled,
+    longPushEnabled,
+    longPushMaxBytes,
+    showsLongPush,
+    longPushProgress,
     showsInputHelper,
     showsTitleBlacklist,
     titleBlacklistDraft,
@@ -627,9 +708,11 @@ export const ContextMenu = ({ pttchrome }) => {
         imageUploadEnabled={imageUploadEnabled}
         inputHelperEnabled={inputHelperEnabled}
         liveArticleHelperEnabled={liveArticleHelperEnabled}
+        longPushEnabled={longPushEnabled}
         contextArticle={contextArticle}
         previews={previews}
         onTitleBlacklistClick={onTitleBlacklistClick}
+        onLongPushClick={onLongPushClick}
         onMenuSelect={onMenuSelect}
         onInputHelperClick={onInputHelperClick}
         onLiveArticleHelperClick={onLiveArticleHelperClick}
@@ -655,6 +738,16 @@ export const ContextMenu = ({ pttchrome }) => {
         draft={titleBlacklistDraft}
         onHide={onTitleBlacklistHide}
         onConfirm={onTitleBlacklistConfirm}
+      />
+      <LongPushModal
+        show={showsLongPush}
+        maxBytes={longPushMaxBytes}
+        onHide={onLongPushHide}
+        onConfirm={onLongPushConfirm}
+      />
+      <LongPushProgressModal
+        progress={longPushProgress}
+        onCancel={onLongPushCancel}
       />
       <PrefModal
         show={showsSettings}

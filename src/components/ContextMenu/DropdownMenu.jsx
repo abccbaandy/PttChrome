@@ -42,9 +42,11 @@ export const DropdownMenu = ({
   imageUploadEnabled,
   inputHelperEnabled,
   liveArticleHelperEnabled,
+  longPushEnabled,
   contextArticle,
   previews = {},
   onTitleBlacklistClick,
+  onLongPushClick,
   onMenuSelect,
   onInputHelperClick,
   onLiveArticleHelperClick,
@@ -176,6 +178,13 @@ export const DropdownMenu = ({
                 preview={previews.copyArticleLink}
                 onClick={(e) => onMenuSelect("copyArticleLink", e)}
               />
+            )}
+            {/* 長推文一鍵發送：打一大段話，自動依 PTT 單則上限分段依序推出。
+                只在文章畫面出現（要按得到 X），總開關 enableLongPush 預設開。 */}
+            {longPushEnabled && (
+              <Menu.Item onClick={onLongPushClick}>
+                {i18n("cmenu_longPush")}
+              </Menu.Item>
             )}
             {/* 兩個小幫手是小眾功能，**預設不顯示**（enableInputHelper /
                 enableLiveArticleHelper，設定→一般→右鍵選單），手法同下面的圖片上傳。 */}

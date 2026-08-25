@@ -373,6 +373,61 @@ PTT 私有 commit，不在公開 repo）。**觸發門檻無從得知**，但**�
    實測效果（2026-08-25，封鎖期間跑整輪 live）：**只送出 1 次登入嘗試、整輪 8.6 秒結束**，
    其餘 26 條在開 browser context 之前就被閂鎖擋掉。對照沒有閂鎖時的同一情境：9 次登入嘗試、6 分鐘。
 
+## 11.3 推文互動序列（`bbs.c#recommend`，2026-08-26 CONFIRMED）
+
+§11.1 只講**已完成**的推文列長什麼樣；這一節是「怎麼推」——長推文一鍵發送
+（`src/js/long_push*.js`）的全部依據。消費端守護：`tests/unit/long_push_screen.test.js`
+（每個字串一個 case）、`long_push_flow.test.js`（鍵序）。
+
+進入點：`bbs.c` 的 `read_comms[]` `{1, recommend} // 'X'`（`'%'` 同）；文章內按 X 走
+`more.c` → `RET_DORECOMMEND` → `read_post` 的 `recommend(ent, fhdr, direct); return FULLUPDATE;`。
+`needitem=1` ⇒ 游標必須在文章列上；`recommend()` **不移動游標**，所以列表與文章按 X
+推的是同一篇。
+
+| 步 | server（底列＝`b_lines`，提示畫在 `b_lines-1`） | client 送什麼 |
+|---|---|---|
+| 0 | 擋人 `vmsg`/`vmsgf`：`" ◆ "`＋訊息，右靠 `" [按任意鍵繼續]"`（`vtuikit.h` `VMSG_MSG_PREFIX`／`VMSG_MSG_FLOAT`） | **任一真按鍵**（`vmsg` 是 `do{i=vkey();}while(i==0)`；`\f` 被 `io.c#system_key_hook` 吃掉，同 §6 的 pressanykey 坑） |
+| 1a | 型別選單 `您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? `；`BRD_NOBOO` 板**不印 `2.`**，`3.` 仍是 3 | **單一 byte** `1`/`2`/`3`。`type = vkey()` ⇒ **不可帶 `\r`**（`\r` 會被下一個 `getdata` 當 Enter 吃掉 → 空內容 → 整則靜默取消）。非數字一律 `RECTYPE_DEFAULT`＝推 |
+| 1b | `作者本人, 使用 → 加註方式`（`is_file_owner`） | 不送鍵，直接進步驟 3 |
+| 1c | `時間太近, 使用 → 加註方式`（`now - lastrecommend < 90`，**寫死 90 秒**；`lastrecommend` 是 `recommend()` 的 `static`＝整個 mbbsd session 共用，跨看板跨文章，只在推文**成功**後更新） | 同上 |
+| 2 | 選配警告橫幅（匿名／外站轉信板、`/`搜尋等特殊列表模式），佔 `b_lines-1`/`-2` | 不需輸入 |
+| 2.5 | `要使用小天使匿名推文嗎？ [Y/n]: `（`HAS_ANGEL && PERM_ANGEL && BRD_ANGELANONYMOUS`，`vans`→`vgets`） | `n\r`。**空 Enter ＝ 匿名 YES** |
+| 3 | 內容輸入列 `<型別符> <id>:` ＋ `maxlength` 格反白欄（§11.1） | Big5 內容 ＋ `\r`；**空字串＝取消整則**（`if (!getdata(...)) return FULLUPDATE;`） |
+| 4 | 確認列 …` 確定[y/N]:`（"確定"前的空格是格式的一部分） | `y\r`。`sizeof(ans)==2` ⇒ 只吃一個字元，原始碼的 `:w`／`zz` 分支**打不進去**（死碼） |
+| 5 | 寫檔 → `return FULLUPDATE` | — |
+
+**1a / 1b / 1c 是 `if / else if / else` 互斥**：client 必須讀畫面才知道要不要送型別鍵。
+在 1b/1c 送 `1` ⇒ 那個 1 直接變成推文內容。**第 2 則起 90 秒內一定走 1c**（板主
+`MODE_BOARD` 除外），這是連續推文最容易炸的地方。
+
+冷卻與擋人訊息全集（都是步驟 0 的 ◆ 橫幅）：
+
+| 訊息 | 出處／條件 | 等得到嗎 |
+|---|---|---|
+| `本板禁止快速連續推文，請再等 %d 秒` | `BRD_NOFASTRECMD`，`bp->fastrecommend_pause` 板主可設 5–240s | ✅ 秒數在訊息裡 |
+| `本文已過長, 禁止快速連續推文, 請再等 %d 秒` | 文章 >100KiB，**固定 10 秒** | ✅ |
+| `冷靜一下吧！ (限制 %d 分 %d 秒)` | `check_cooldown`，`BRD_COOLDOWN` | ✅ |
+| `對不起，您的文章或推文間隔太近囉！ (限制 %d 分 %d 秒)` | `check_cooldown`，`REJECT_FLOOD_POST`（看板人數 vs 已發文次數，門檻表 `{4000,1, 2000,2, 1000,3, -1,10}`） | ✅ |
+| `對不起，您被設退文！ (限制 %d 分 %d 秒)` | `posttimesof(usernum)==0xf` | ❌ 懲罰狀態，等完照樣擋 |
+| `系統禁止短時間內大量推文` | 同一「分鐘桶」>**60** 則 | ❌ 無秒數 |
+| `抱歉, 禁止推薦` | `BRD_NORECOMMEND`／檔名首字 `L`／`FILE_MARKED&&FILE_SOLVED` | ❌ |
+| `無法推文: %s` | `!CheckPostPerm2()` 或 guest；`%s` 全集見 `cache.c#postperm_msg`（含水桶的 `使用者不可發言(尚有%d天)`） | ❌ |
+| `本板推文限定管理人員使用。` | `BN_ONLY_OP_CAN_ADD_COMMENT`（`#ifdef`） | ❌ |
+| `本文已刪除` | `SAFE_ARTICLE_DELETE` | ❌ |
+| `未達看板發文限制: %s` | `get_board_restriction_reason`（登入次數／退文篇數） | ❌ |
+| `檔案太大, 無法繼續推文, 請另撰文發表` | 文章 >5MiB | ❌ |
+| `錯誤: 資料庫連線異常，無法寫入。請稍候再試。` | `USE_COMMENTD` 寫入階段 | ❌ |
+
+其他事實：連署板（`BRD_VOTEBOARD`／`FILE_VOTE`）的 X 轉去 `do_voteboardreply()`＝**完全不同的
+UI**，不在推文流程內。`MAX_RECOMMENDS(100)` 只影響列表上的計數顯示（`爆`／`X%d`），不擋推文。
+上游**沒有**「是否要繼續推文」之類的續推詢問。
+
+- unknown（§12）：`recommend()` 一律 `return FULLUPDATE` ⇒ 上游讀碼的結論是推完**回文章列表**，
+  但線上是私有 commit，實測可能仍停在文章。`long_push_session` 對兩種落地都免疫（列表按 X 推的
+  是同一篇），只在「落在列表且起點是文章」時補一個 `\r` 回去。
+- unknown：`vgetstring` 畫的反白欄是 `ESC[0;7m`（fg0/bg7），與 §5.1 記的 fg7/bg0 相左。故
+  **不採用「數反白格反推 `maxlength`」**，改用 §11.1 的公式 ＋ 畫面上推文列有無 IP 欄。
+
 ## 12. 版本與未知
 
 - 以 §0 的 `build_origin`（`c1ff72df`）讀碼；PTT 實跑的是私有 commit `50372909`，差異不可見。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。

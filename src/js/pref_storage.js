@@ -149,6 +149,10 @@ export const DEFAULT_PREFS = {
   enableInputHelper: false,
   enableLiveArticleHelper: false,
 
+  // 長推文一鍵發送（右鍵選單→輸入一大段話，自動依 PTT 單則上限分段依序推出）。
+  // 預設開：不點就不會作用，而且 PTT 本來就沒有「一次推一長串」的辦法。
+  enableLongPush: true,
+
   blacklist: "", // newline-separated user ids
   titleBlacklist: "", // newline-separated title keywords (board-list only)
 
