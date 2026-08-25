@@ -10,6 +10,9 @@ const {
   decideLoginAction,
 } = require('./login_flow');
 
+// DDoS/BOT 封鎖的偵測與跨 worker 閂鎖（見該檔開頭）。
+const { assertNotBotBlocked, markBotBlocked } = require('./bot_block');
+
 const SCREEN_SELECTOR = '#mainContainer';
 
 // 讀取終端機整頁文字（#mainContainer 的 innerText）。
@@ -141,6 +144,8 @@ const LOGIN_POLL_INTERVAL_MS = 700;
 // 這樣切的理由：最會偶發紅的分支是「PTT 端驗證慢，卡在『正在檢查帳號與密碼...』」，
 // 真 PTT 上無法穩定重現，只有純函式測得到。
 async function login(page) {
+  // 這一輪稍早已經判定被 PTT 封鎖 ⇒ 一個 byte 都不要再送（每次重試都在延長封鎖）。
+  assertNotBotBlocked();
   const user = process.env.PTT_USER || 'guest';
   const pass = process.env.PTT_PASS || '';
   const otpSecret = process.env.PTT_OTP_SECRET || '';
@@ -179,6 +184,10 @@ async function login(page) {
         return decision.message;
 
       case 'fail':
+        // 封鎖是**整輪**的事實，不是這條 spec 的事實：立閂鎖，後續 spec 連都不用連。
+        // （Playwright 在 test 失敗後會重啟 worker → 共用 session 的 fixture 重建 →
+        //   又登入一次，「被鎖」會自己放大成「一直重試」。閂鎖寫檔就是為了跨 worker。）
+        if (decision.phase === 'bot-blocked') markBotBlocked(decision.message);
         throw new Error(decision.message);
 
       case 'send-otp':

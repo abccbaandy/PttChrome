@@ -676,10 +676,29 @@ const FILL_MAX_PAGES = 3;
 // Total-row cap: bounds the map / flatten / visibleListIndices cost. The end
 // FARTHEST from the selection is evicted; demand re-fetches it later.
 export const MAX_LIST_ROWS = 300;
-// Absolute cap on the frozen render (_armFrozenWatchdog). Deliberately far
-// above every transaction's own budget: this is not a timeout, it is the
-// last line of defense against a freeze with no exit at all.
-const FROZEN_WATCHDOG_MS = 12000;
+// Last line of defense against a freeze with no exit at all: a no-progress
+// backstop for the frozen render (_armFrozenWatchdog). Re-armed on
+// every completed leg, so this is "nothing has advanced for 2.5s", NOT a cap on
+// a whole multi-leg transaction (_beginOpenPinned can run a dozen legs).
+const FROZEN_WATCHDOG_MS = 2500;
+// Fast-fail budgets for the serialized machine keys. PTT answers in ~90ms and
+// term_buf needs another SETTLE_MS (50ms) to settle, so anything past ~250ms of
+// silence is already abnormal: ask the deterministic question (the queue's
+// zero-side-effect \f probe) instead of sitting on a second-scale timeout with
+// the list render frozen. 寧可降級回原生，不要凍畫面空等（錄製檔
+// ptt-debug-20260825-105701#t=12562：open-jump 空等 4002ms）.
+const CMD_PROBE_AFTER_MS = 250; // soft: triggers the probe, never a failure
+const CMD_PROBE_WINDOW_MS = 600; // how long the probed full frame gets
+const CMD_HARD_MS = 1200; // absolute cap from send (never re-armed)
+// Background prefetch legs: slightly wider (they hold nothing hostage) but
+// still far under the queue's 10s default.
+const PREFETCH_HARD_MS = 1500;
+// native-key / native-paste deliberately keep a LONG window: they do not freeze
+// anything (the native mirror is already on screen) and their only job is to
+// hold functionMode's settle absorption until their own response lands. Cutting
+// it short ends the absorption early = the state churn they were introduced to
+// stop (see _beginPassthroughBytes).
+const NATIVE_PASSTHROUGH_MS = 3000;
 // (2026-07-10) [ ] = / v / `/` 模擬交易與 T3 airlock 皆退役：非白名單鍵一律
 // 走 _beginNativePassthrough（有序號選取先 sync-jump，再切原生鏡像＋代送）。
 
@@ -795,6 +814,12 @@ ListSession.prototype = {
     // §4✚/§6) must not look ownerless to active's transient catch-all
     //（2026-07-14 錄製檔誤降級）.
     const consumed = this._queue.onSettle(snap, facts);
+    // A completed leg IS progress: re-arm the frozen backstop so it measures
+    // "nothing advanced for FROZEN_WATCHDOG_MS" rather than capping a whole
+    // multi-leg transaction (_beginOpenPinned's per-row steps would otherwise
+    // race the cap once the per-command budgets got short).
+    if (consumed === 'done' && (this._renderMode === 'frozen' || this.state === 'opening'))
+      this._armFrozenWatchdog();
     this._dispatch(this._settleEvent(facts, consumed), facts);
   },
 
@@ -1096,7 +1121,7 @@ ListSession.prototype = {
         expect: function() {
           return true; // any settle is the response
         },
-        timeoutMs: 3000
+        timeoutMs: NATIVE_PASSTHROUGH_MS
       });
       if (self._view.flashListHint)
         self._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
@@ -1238,7 +1263,7 @@ ListSession.prototype = {
         expect: function() {
           return true; // any settle is the response (same as 'native-key')
         },
-        timeoutMs: 3000
+        timeoutMs: NATIVE_PASSTHROUGH_MS
       });
       if (self._view.flashListHint)
         self._view.flashListHint(
@@ -1278,7 +1303,21 @@ ListSession.prototype = {
           facts.curX <= 1
         );
       },
-      timeoutMs: 4000,
+      // EVERY number-jump leg carries fullRepaint. A jump whose target is the
+      // row the real cursor is ALREADY on produces zero screen delta, so PTT
+      // sends ZERO bytes — and term_buf only arms its settle timer on server
+      // activity, so no settle ever reaches the expect and the command can only
+      // die by timeout (錄製檔 ptt-debug-20260825-105701#t=12562: prefetch had
+      // just parked the cursor on 2381, the open jumped to 2381 again, 4002ms
+      // of frozen screen followed). The appended \f forces one full frame, so
+      // the landing is always judgeable. The expect stays the PARK fingerprint:
+      // protocol §6 M1 — redrawwin repaints the server's CURRENT virtual screen,
+      // so the post-jump bottom row stays empty and this never becomes
+      // clean-list.
+      fullRepaint: true,
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: CMD_HARD_MS,
       onDone: function() {
         self._serverNum = num;
         onSynced();
@@ -1326,7 +1365,9 @@ ListSession.prototype = {
       expect: function(snap, facts) {
         return facts.kind === 'menu' || facts.kind === 'clean-list';
       },
-      timeoutMs: 3000,
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: CMD_HARD_MS,
       // onDone runs BEFORE the same settle's reducer pass: leaving a
       // MODE_SELECT list lands back on the MAIN list whose number space is
       // different (§8) — clear _boardName so the reducer path rebuilds.
@@ -1425,7 +1466,11 @@ ListSession.prototype = {
         }
         return false;
       },
-      timeoutMs: 4000,
+      // 跳號腿一律 fullRepaint（詳見 _enqueueCursorSyncJump）.
+      fullRepaint: true,
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: CMD_HARD_MS,
       onDone: function() {
         // Adopt the landed page wholesale (it may be discontiguous with the
         // buffer): rebuild seeds anchors from the landed facts.
@@ -1822,12 +1867,15 @@ ListSession.prototype = {
             facts.curX <= 1
           );
         },
-        timeoutMs: 4000,
+        // 跳號腿一律 fullRepaint（詳見 _enqueueCursorSyncJump）.
+        fullRepaint: true,
         // Background work must never hold the foreground hostage: cap the
         // absolute wait well under the queue default (10s). A user pressing
         // against the buffer edge sees 「讀取中…」 for at most this long
         // before the benign edge answer (markEdge) unblocks navigation.
-        hardTimeoutMs: 5000,
+        timeoutMs: CMD_PROBE_AFTER_MS,
+        probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+        hardTimeoutMs: PREFETCH_HARD_MS,
         onDone: function() {
           self._serverNum = base;
         },
@@ -1879,8 +1927,9 @@ ListSession.prototype = {
       // still on base → {edge:true} judged by CONTENT, old invariant 7's
       // RTT-adaptive timeout retired). No \f on the page key itself: a moved
       // page already responds deterministically (doubling traffic buys nothing).
-      timeoutMs: 800,
-      hardTimeoutMs: 3000, // background: same reasoning as the anchor leg
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: PREFETCH_HARD_MS, // background: same as the anchor leg
       onDone: function(r) {
         self._fillPages++;
         self._serverNum = r.landed;
@@ -1947,7 +1996,11 @@ ListSession.prototype = {
           facts.curX <= 1
         );
       },
-      timeoutMs: 4000,
+      // 跳號腿一律 fullRepaint（詳見 _enqueueCursorSyncJump）.
+      fullRepaint: true,
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: CMD_HARD_MS,
       onDone: function() {
         self._queue.enqueue({
           keys: '\r',
@@ -1955,7 +2008,10 @@ ListSession.prototype = {
           expect: function(snap, facts) {
             return facts.kind === 'article';
           },
-          timeoutMs: 4000,
+          // No fullRepaint: entering an article always repaints by itself.
+          timeoutMs: CMD_PROBE_AFTER_MS,
+          probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+          hardTimeoutMs: CMD_HARD_MS,
           onDone: function() {
             self.noteLastRead(lrSubject);
           },
@@ -2024,7 +2080,9 @@ ListSession.prototype = {
         expect: function(snap, facts) {
           return facts.kind === 'article';
         },
-        timeoutMs: 4000,
+        timeoutMs: CMD_PROBE_AFTER_MS,
+        probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+        hardTimeoutMs: CMD_HARD_MS,
         onDone: function() {
           self.noteLastRead(lrSubject);
         },
@@ -2051,7 +2109,9 @@ ListSession.prototype = {
               return false;
             return true;
           },
-          timeoutMs: 3000,
+          timeoutMs: CMD_PROBE_AFTER_MS,
+          probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+          hardTimeoutMs: CMD_HARD_MS,
           onDone: isLast ? enqueueEnter : undefined,
           onFail: fail
         });
@@ -2075,7 +2135,13 @@ ListSession.prototype = {
           }
           return false; // target not on the last page → timeout → self-heal
         },
-        timeoutMs: 4000,
+        // fullRepaint: End on a cursor that is already at the bottom answers
+        // with NOTHING (live-tested, see the header). Step 1's jump makes that
+        // unlikely, not impossible — the \f removes the case entirely.
+        fullRepaint: true,
+        timeoutMs: CMD_PROBE_AFTER_MS,
+        probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+        hardTimeoutMs: CMD_HARD_MS,
         onDone: enqueueSteps,
         onFail: fail
       });
@@ -2093,7 +2159,11 @@ ListSession.prototype = {
           facts.curX <= 1
         );
       },
-      timeoutMs: 4000,
+      // 跳號腿一律 fullRepaint（詳見 _enqueueCursorSyncJump）.
+      fullRepaint: true,
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: CMD_HARD_MS,
       onDone: enqueueEnd,
       onFail: fail
     });
@@ -2361,7 +2431,11 @@ ListSession.prototype = {
           (facts.cursorRowNum == null || facts.cursorRowNum >= anchor)
         );
       },
-      timeoutMs: 4000,
+      // 跳號腿一律 fullRepaint（詳見 _enqueueCursorSyncJump）.
+      fullRepaint: true,
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: CMD_HARD_MS,
       onDone: function() {
         // The landed page IS the board end (last_line): confirm the edge, then
         // land the local cursor there like native End. The landed row may be a
@@ -2411,7 +2485,11 @@ ListSession.prototype = {
           facts.curX <= 1
         );
       },
-      timeoutMs: 4000,
+      // 跳號腿一律 fullRepaint（詳見 _enqueueCursorSyncJump）.
+      fullRepaint: true,
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: CMD_HARD_MS,
       onDone: function() {
         self._serverNum = 1;
         self._prunePivotOverride = undefined;

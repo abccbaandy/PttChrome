@@ -64,6 +64,78 @@ preflight 只管「連得到 PTT」；**帳密送出之後**卡住是另一回�
 
 前四種**直接重跑即可**，不要往被測 code 追。
 
+## 登入預算：整輪 live e2e 只登入一次（**強制規範**）
+
+**任何新 spec 一律用共用 session（`helpers/fixtures.js` 的 `shared` fixture），不准自己
+`page.goto('/')` + `login()`。** 守護：`tests/unit/e2e_login_budget.test.js`（純靜態掃描，
+違反就紅）。
+
+理由是 PTT 有登入頻率限制，而且踩到之後**重試會讓情況變糟**。開源碼裡讀得到的下界
+（`daemon/utmpd/utmpserver3.c#action_frequently`，完整表在
+`docs/pttbbs-screen-protocol.md` §11.2）：
+
+| 條件 | 後果 |
+|---|---|
+| 距上次登入 ≤ 3 秒 | reject |
+| 同一分鐘 > 3 次 / > 10 次 | delay / reject |
+| 同一小時 > 20 次 / > 60 次 | delay / reject |
+
+一輪的登入次數盤點（27 條 live test 總共 **3 次**）：
+
+| 來源 | 次數 | 為什麼不能再省 |
+|---|---|---|
+| `helpers/fixtures.js` 的 `shared` | 1 | 27 條裡有 24 條共用它 |
+| `enhance.spec.js` 自動登入 | 1 | 被測行為就是「開站不按鍵自動登入到主選單」 |
+| `deep-link.spec.js` | 1 | 被測行為就是「開站當下消費 URL fragment」 |
+
+（2026-08-25 之前是十幾次：`easy-reading-list.spec.js` 一支就自己登入 9 次。）
+
+**另一個放大器：Playwright 在 test 失敗後會重啟 worker** ⇒ worker-scoped 的 `shared`
+fixture 重建 ⇒ 又登入一次。所以失敗多的那一輪，登入次數會遠超上表。對策有兩道：
+共用 session 的 spec 用 `describe.serial`（同一塊裡一條失敗就跳過其餘），以及下一節的閂鎖。
+
+### 「已被暫時禁止登入」＝PTT 的 DDoS/BOT 保護，**不可以靠重跑解決**
+
+畫面出現下列任一句時，帳號已被 PTT 端擋住，**每多試一次就多延長一次封鎖**：
+
+```
+[PTT DDoS/BOT 偵測系統] 偵測到連線異常/不當連續登入行為！
+[PTT DDoS/BOT 偵測系統] 帳號 xxx 有疑似不當連續登入行為所以暫停連線。
+```
+
+這段文字**不在 pttbbs 開源碼裡**（已用 Big5 正確編碼查證），是 PTT 站方自有的防濫用層。
+封鎖畫面自己寫了規則（2026-08-25 實錄全文見 `docs/pttbbs-screen-protocol.md` §11.2）：
+
+> 本系統為獨立動態偵測連線，與BBS內帳號權限無關，**無法申請手動解除鎖定**，也不會告知暫停時限。
+> 在停止使用機器人或行為不正常的App（**部份App需要關閉自動登入**）、
+> **無任何登入行為之後最多 12 小時**後會恢復。
+> 注意在暫停期間若持續嘗試登入會被視為機器人，**將無限期延長暫停時間**。
+
+三個直接後果：
+- **解除條件是「完全沒有登入行為」，不是「等一下」**——連平常用瀏覽器掛著自動登入都會重置那 12 小時。
+- **重試會無限期延長**，所以這是唯一一種「再試一次」比「什麼都不做」更糟的失敗。
+- 沒有申訴管道，也不會告訴你還要等多久。
+
+2026-08-25 實測：第一輪 24 綠 2 紅，接著只重跑 `easy-reading-list.spec.js`（9 條），
+**9 條全部卡在登入閘門**，沒有一條進得到被測 code。
+
+已內建的自動處置（`helpers/bot_block.js`）：
+
+1. `login()` 認得這兩種畫面（`login_flow.js` 的 `bot-blocked` phase）→ 直接 fail，
+   **不重連、不退避重試**（對比「登入太頻繁」是 reconnect 退避，兩者處置相反）。
+2. 就地立一個**寫檔的**閂鎖（要跨 worker 重啟才有效），之後這一輪任何 spec 在開
+   browser context 之前就直接略過，一個 byte 都不再送給 PTT。
+3. 閂鎖由 `global-setup.js` 在每輪開跑時清掉 ⇒ 只在同一輪內有效。
+
+人這邊要做的：
+
+1. **停手**。不要再跑任何 live e2e，並且**關掉平常瀏覽用的自動登入**（計時從「最後一次
+   登入行為」重新起算，最多 12 小時）。
+2. 這段期間改跑 `yarn test:unit` 與 `yarn test:e2e:offline`（真瀏覽器＋真渲染，不碰 PTT）。
+3. 要驗單一行為時只跑**那一條**（`yarn test:e2e <spec> -g "<標題片段>"`），不要整輪重跑。
+
+判準：這是 PTT 端的帳號保護，與被測 code 完全無關；螢幕上就寫著結論，別往專案 code 追。
+
 踩過的坑（2026-08，`connect-login.spec.js` 偶發紅、單獨重跑 3 秒就過）：
 
 - 登入互動迴圈原本只有固定 40 秒預算，且**沒有任何分支認得「正在檢查帳號與密碼」** ⇒
@@ -102,9 +174,10 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
 - `playwright-report/`：HTML 報告（`npx playwright show-report`）
 - console 紀錄會印在測試輸出（含 app 內 `console.log`，如 easy_reading 的 page state）
 
-## 共用登入 session（避免「登入太頻繁」節流）
+## 共用登入 session
 
-整包只登入 ~3 次：共用 session 1 + connect-login 1 + 自動登入 1。
+**次數盤點與強制規範見上面「登入預算」一節**（唯一登入點＝這個 fixture；守護
+`tests/unit/e2e_login_budget.test.js`）。這裡只寫怎麼用。
 
 - `helpers/fixtures.js`：worker-scoped fixture `shared`（`{ page, logs }`），整個 worker 只登入一次，
   跨 spec 檔重用同一個已登入 page（`workers:1`）。
@@ -116,9 +189,15 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
     寫 localStorage（`enableEasyReading` 由 easy_reading live 讀，下次進文章生效）+ 立即生效 key 走
     `window.__app.onPrefChange`（`onPrefChange('enableEasyReading')` 是 no-op，關閉時 applyPrefs 會直接退出好讀）。
   - 共用 page 非內建 fixture，失敗不會自動截圖/錄影 → catch 內自行 `page.screenshot`。
-  - 某 case 失敗 → serial 後續 skip、Playwright 重啟 worker → fixture 重建（多登入一次，可接受）。
-- **例外**：測登入流程本身的 case（`connect-login`、自動登入）用內建 `page` fixture 獨立登入。
-- `login()` 內建節流保險：偵測「登入太頻繁」→ 等 30s 後重新連線重送帳密，最多 2 次。
+  - 某 case 失敗 → serial 後續 skip、Playwright 重啟 worker → fixture 重建（多登入一次）。
+    **`describe.serial` 就是為了壓這個放大器**：沒有它，一塊裡 N 條紅就是 N 次重登。
+- **例外只有兩條**：`enhance.spec.js` 的自動登入與 `deep-link.spec.js` —— 被測行為本身
+  就是「開站自動登入」，不可能共用已登入的 page。名單鎖死在
+  `tests/unit/e2e_login_budget.test.js`，要加第三條必須是有意識的決定。
+  `connect-login.spec.js` **不**在例外裡：它斷言的就是 fixture 那一次登入的結果。
+- `login()` 兩道保險（處置相反，別搞混）：
+  - 「登入太頻繁」（`mbbsd/talk.c`，開源碼有）→ 等 30s 重新連線重送帳密，最多 2 次；
+  - 「[PTT DDoS/BOT 偵測系統]…」（PTT 私有）→ **直接 fail 並立閂鎖，整輪不再連線**。
 
 ## 結構
 

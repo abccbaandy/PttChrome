@@ -32,9 +32,26 @@
 //     falsy → onFail('miss', facts) — a REAL answer, the caller reclassifies
 //     the known-complete screen. A second silent timeout (probe unanswered =
 //     link dead) → onFail('timeout'). Opt out with cmd.probe === false.
+//   - opts.isCompleteFrame(facts): only a settle carrying a COMPLETE screen may
+//     conclude 'miss'. The probe fires on a SHORT quiet window (list_session
+//     runs 250ms), so on a slow link the command's own real response often
+//     lands AFTER the probe went out — and a partial response frame is no
+//     answer to the probe's "where am I". Without this gate every such frame
+//     became a definitive miss → 誤降級原生 on any link slower than the probe
+//     window. A non-complete frame re-arms the probe window instead (bounded
+//     by MAX_PROBE_EXTENSIONS — an unbounded extension is the wedge this whole
+//     design exists to avoid). Default () => true = the pre-gate behaviour,
+//     so callers that cannot tell (unit tests, future embedders) are
+//     unaffected.
 //
 // Zero dependencies: send and the timer functions are injected so unit tests
 // drive it with vitest fake timers and the app binds it to conn.send.
+
+// How many non-complete frames a probed command may absorb before its next
+// unsatisfying settle is taken as the verdict regardless (see _concludes).
+// 1 = worst case two probe windows on top of the soft window.
+const MAX_PROBE_EXTENSIONS = 1;
+
 export function CommandQueue(opts) {
   this._send = opts.send;
   // Wrap the globals instead of storing them bare: calling a detached
@@ -63,6 +80,14 @@ export function CommandQueue(opts) {
   // (easy_reading._send) and must be re-issued the moment the gate opens, not
   // 620ms later via its own watchdog.
   this._onIdle = opts.onIdle || null;
+  // See the header: gates the 'miss' verdict on a complete screen. Default
+  // "everything is complete" keeps the pre-gate behaviour for callers with no
+  // way to tell one apart.
+  this._isCompleteFrame =
+    opts.isCompleteFrame ||
+    function() {
+      return true;
+    };
   this._inFlight = null;
   this._pending = [];
   this._softTimer = null;
@@ -120,7 +145,7 @@ CommandQueue.prototype = {
       this._maybeSendNext();
       this._maybeIdle();
       return 'done';
-    } else if (cmd._probed) {
+    } else if (cmd._probed && this._concludes(cmd, facts)) {
       // The probe's full frame arrived and expect still says no — that is a
       // definitive MISS, not a maybe: hand the known-complete screen's facts
       // to the caller for reclassification (v5: failures are explicit).
@@ -131,9 +156,12 @@ CommandQueue.prototype = {
       this._maybeIdle();
       return 'miss';
     }
-    // Response still in progress — the settle proves activity, extend.
+    // Response still in progress — the settle proves activity, extend. Once
+    // probed, extend by the PROBE window only: falling back to the full soft
+    // window here would hand a wedged command a fresh budget, which is exactly
+    // what the hard timer exists to prevent.
     this._emit('settle-pending', cmd);
-    this._armSoft(cmd);
+    this._armSoft(cmd, cmd._probed ? cmd.probeTimeoutMs || 2000 : undefined);
     return null;
   },
 
@@ -207,6 +235,7 @@ CommandQueue.prototype = {
     const cmd = this._pending.shift();
     this._inFlight = cmd;
     cmd._probed = false;
+    cmd._probeExtensions = 0;
     cmd._sentAt = Date.now();
     this._armBoth(cmd);
     this._emit('send', cmd);
@@ -248,6 +277,17 @@ CommandQueue.prototype = {
     if (cmd.onFail) cmd.onFail('timeout');
     this._maybeSendNext();
     this._maybeIdle();
+  },
+
+  // May THIS settle end a probed command as 'miss'? Only a complete screen is
+  // an answer to the probe (see the header). A partial frame buys one more
+  // probe window; past MAX_PROBE_EXTENSIONS we stop believing a full frame is
+  // ever coming and take the verdict anyway.
+  _concludes: function(cmd, facts) {
+    if (this._isCompleteFrame(facts)) return true;
+    if (cmd._probeExtensions >= MAX_PROBE_EXTENSIONS) return true;
+    cmd._probeExtensions++;
+    return false;
   },
 
   // See _onIdle: announce ONLY a genuinely empty queue, and only to an opt-in

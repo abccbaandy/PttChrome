@@ -9,10 +9,16 @@
 // gotoBoard 靠原生列表表頭判斷進板，而 list 好讀會改寫畫面，故一律「先關著進板 →
 // 再用 pref 開啟」（onPrefChange 會 evaluateNow 立即 engage）。帳密走 env
 // PTT_USER/PTT_PASS（guest 名額常滿）。
-const { test, expect } = require('@playwright/test');
+//
+// **共用登入 session**（`helpers/fixtures.js` 的 `shared`）：這 9 條以前各自
+// `page.goto('/')` + `login()`，一輪就是 9 次登入，實測會踩到 PTT 的 DDoS/BOT
+// 保護把帳號鎖住（見 `tests/e2e/README.md`）。現在整包共用一個已登入的 page，
+// 每條開頭用 `resetSession` 回主選單重設 prefs。連帶規則：
+//   - `describe.serial`（共用 page 有狀態，順序不可打散）；
+//   - prefs 一律用 runtime 的 `applyPrefs`，**不可** `addInitScript`（不會 reload）；
+//   - 失敗時沒有內建的自動截圖，catch 內自己 `test.info().attach`。
+const { test, expect } = require('./helpers/fixtures');
 const {
-  login,
-  attachConsole,
   resetSession,
   gotoBoard,
   applyPrefs,
@@ -127,13 +133,12 @@ function assertAscending(s) {
   return numbered;
 }
 
-test.describe('文章列表好讀模式（live）', () => {
-  test('進看板啟用 + 多頁累積 + 序號遞增 + 置底最底 + 24行視窗 + > 游標', async ({ page }) => {
+test.describe.serial('文章列表好讀模式（live）', () => {
+  test('進看板啟用 + 多頁累積 + 序號遞增 + 置底最底 + 24行視窗 + > 游標', async ({ shared }) => {
     test.setTimeout(120000);
-    const logs = attachConsole(page);
+    const { page, logs } = shared;
+    logs.length = 0;
     try {
-      await page.goto('/');
-      await login(page);
       await resetSession(page);
 
       const s = await enterBoardWithListER(page, 'C_Chat');
@@ -163,16 +168,24 @@ test.describe('文章列表好讀模式（live）', () => {
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
+      // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
+      // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
       throw e;
     }
   });
 
-  test('往舊端移動觸發 demand 續抓（往上抓更舊）', async ({ page }) => {
+  test('往舊端移動觸發 demand 續抓（往上抓更舊）', async ({ shared }) => {
     test.setTimeout(120000);
-    const logs = attachConsole(page);
+    const { page, logs } = shared;
+    logs.length = 0;
     try {
-      await page.goto('/');
-      await login(page);
       await resetSession(page);
       // 小預讀量，便於觸發續抓。
       const s = await enterBoardWithListER(page, 'C_Chat', {
@@ -204,16 +217,24 @@ test.describe('文章列表好讀模式（live）', () => {
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
+      // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
+      // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
       throw e;
     }
   });
 
-  test('選取移動 + Enter 序列化開文 + ← 返回還原快取（article 好讀交棒）', async ({ page }) => {
+  test('選取移動 + Enter 序列化開文 + ← 返回還原快取（article 好讀交棒）', async ({ shared }) => {
     test.setTimeout(120000);
-    const logs = attachConsole(page);
+    const { page, logs } = shared;
+    logs.length = 0;
     try {
-      await page.goto('/');
-      await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat', {
         enableEasyReading: true, // 開文後 article 好讀應接手
@@ -274,16 +295,24 @@ test.describe('文章列表好讀模式（live）', () => {
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
+      // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
+      // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
       throw e;
     }
   });
 
-  test('置底文 Enter 開啟（End+內容定位序列）＋ ← 返回還原 pinned 選取', async ({ page }) => {
+  test('置底文 Enter 開啟（End+內容定位序列）＋ ← 返回還原 pinned 選取', async ({ shared }) => {
     test.setTimeout(120000);
-    const logs = attachConsole(page);
+    const { page, logs } = shared;
+    logs.length = 0;
     try {
-      await page.goto('/');
-      await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat', {
         easyReadingListPrefetchCount: 0,
@@ -321,16 +350,24 @@ test.describe('文章列表好讀模式（live）', () => {
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
+      // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
+      // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
       throw e;
     }
   });
 
-  test('滾輪＝上下翻頁本地執行：游標上移＋demand 續抓（不按任何鍵）', async ({ page }) => {
+  test('滾輪＝上下翻頁本地執行：游標上移＋demand 續抓（不按任何鍵）', async ({ shared }) => {
     test.setTimeout(120000);
-    const logs = attachConsole(page);
+    const { page, logs } = shared;
+    logs.length = 0;
     try {
-      await page.goto('/');
-      await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat', {
         easyReadingListPrefetchCount: 20,
@@ -358,16 +395,24 @@ test.describe('文章列表好讀模式（live）', () => {
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
+      // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
+      // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
       throw e;
     }
   });
 
-  test('/ 一鍵切原生搜尋：黏性停原生（MODE_SELECT）→ 開文返回才恢復好讀', async ({ page }) => {
+  test('/ 一鍵切原生搜尋：黏性停原生（MODE_SELECT）→ 開文返回才恢復好讀', async ({ shared }) => {
     test.setTimeout(120000);
-    const logs = attachConsole(page);
+    const { page, logs } = shared;
+    logs.length = 0;
     try {
-      await page.goto('/');
-      await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat');
       expect(s.state).toBe('active');
@@ -433,16 +478,24 @@ test.describe('文章列表好讀模式（live）', () => {
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
+      // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
+      // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
       throw e;
     }
   });
 
-  test('v 一鍵切原生：v → 原生 prompt → Enter 取消 → 黏性停原生', async ({ page }) => {
+  test('v 一鍵切原生：v → 原生 prompt → Enter 取消 → 黏性停原生', async ({ shared }) => {
     test.setTimeout(120000);
-    const logs = attachConsole(page);
+    const { page, logs } = shared;
+    logs.length = 0;
     try {
-      await page.goto('/');
-      await login(page);
       await resetSession(page);
       const s = await enterBoardWithListER(page, 'C_Chat');
       expect(s.state).toBe('active');
@@ -466,16 +519,24 @@ test.describe('文章列表好讀模式（live）', () => {
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
+      // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
+      // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
       throw e;
     }
   });
 
-  test('黑名單作者列從 DOM 真正移除（無空行）', async ({ page }) => {
+  test('黑名單作者列從 DOM 真正移除（無空行）', async ({ shared }) => {
     test.setTimeout(120000);
-    const logs = attachConsole(page);
+    const { page, logs } = shared;
+    logs.length = 0;
     try {
-      await page.goto('/');
-      await login(page);
       await resetSession(page);
       const before = await enterBoardWithListER(page, 'C_Chat');
       expect(before.state).toBe('active');
@@ -514,6 +575,15 @@ test.describe('文章列表好讀模式（live）', () => {
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
+      // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
+      // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
       throw e;
     }
   });
@@ -521,12 +591,11 @@ test.describe('文章列表好讀模式（live）', () => {
   // v5/M5 soak＝枚舉操作輪播：白名單操作（T1 本地/T2 交易/未列鍵 no-op/離板重進/
   // 連打）逐一走一輪，每步驗「模式保持＋序號遞增」。操作集合＝合約
   // （docs/easy-reading-list.md §操作分類），新增白名單操作時此輪播同步補站。
-  test('soak：白名單操作輪播——每站模式保持、無亂版、不掉 native', async ({ page }) => {
+  test('soak：白名單操作輪播——每站模式保持、無亂版、不掉 native', async ({ shared }) => {
     test.setTimeout(300000);
-    const logs = attachConsole(page);
+    const { page, logs } = shared;
+    logs.length = 0;
     try {
-      await page.goto('/');
-      await login(page);
       await resetSession(page);
       let s = await enterBoardWithListER(page, 'C_Chat');
       expect(s.state).toBe('active');
@@ -677,6 +746,15 @@ test.describe('文章列表好讀模式（live）', () => {
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
+      // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
+      // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
       throw e;
     }
   });

@@ -27,6 +27,8 @@
 //   usleep(0~1s) ＋ usleep(0~5s) ＋ 踢連線迴圈 usleep(1~3s)。這兩段都屬「server 正在跑」，
 //   同樣只能等。
 
+const { isBotBlockScreen, describeBotBlock } = require('./bot_block');
+
 // 沒有可辨識進度時的預算（＝原本整個登入迴圈的固定 40 秒）。
 const LOGIN_IDLE_BUDGET_MS = 40000;
 // 停在「server 正在跑」畫面時，從進入該畫面起算的額外預算。
@@ -60,6 +62,9 @@ const SERVER_PROGRESS_PHASES = ['server-verifying', 'server-starting'];
 function classifyLoginScreen(screen) {
   const s = screen || '';
   if (has(s, MAIN_MENU_MARKERS)) return 'main-menu';
+  // PTT 站方自有的防濫用層（**不在 pttbbs 開源碼裡**，見 helpers/bot_block.js）。
+  // 必須排在其他登入分支之前：它的畫面同時含「登入」字樣，會被後面的分支吃掉。
+  if (isBotBlockScreen(s)) return 'bot-blocked';
   if (s.includes('兩階段驗證失敗次數過多')) return 'tfa-locked';
   if (otpPromptVisible(s)) return 'tfa-prompt';
   if (s.includes('登入太頻繁') || s.includes('登入次數太頻繁')) return 'throttled';
@@ -199,6 +204,11 @@ function decideLoginAction(input) {
   }
 
   switch (phase) {
+    case 'bot-blocked':
+      // 刻意不重連、不退避重試：這是唯一「重試會讓情況變糟」的失敗模式。
+      // 呼叫端（helpers/ptt.js#login）會就地立閂鎖，讓這一輪其餘 spec 直接略過。
+      return fail(state, describeBotBlock(screen));
+
     case 'tfa-locked':
       return fail(state, withScreen('兩階段驗證失敗次數過多', screen));
 

@@ -52,6 +52,26 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   - **連線失敗類情境測在 offline 不在 live**：真 PTT 沒辦法可靠製造「連不上」。用
     `installReplay(page, { neverOpen: true })`（見 `tests/e2e/offline/connect_failure.offline.spec.js`），
     CI 的 offline-e2e job 也跑得到。**`page.routeWebSocket()` 不能用**——它會把 mock 的 WS 在頁面裡開起來，`onConnect` 照跑。
+  - **強制規範：整輪 live e2e 只登入一次。** 新 spec 一律用共用 session
+    （`tests/e2e/helpers/fixtures.js` 的 `shared` fixture），**不准自己 `page.goto('/')` + `login()`**；
+    唯二例外是 `enhance.spec.js` 的自動登入與 `deep-link.spec.js`（被測行為本身就是開站自動登入）。
+    守護 `tests/unit/e2e_login_budget.test.js`（純靜態掃描，違反就紅）。
+    理由：PTT 有登入頻率限制，開源碼讀得到的下界是「同一分鐘 >3 次 delay／>10 次 reject、
+    同一小時 >20 次 delay」（`daemon/utmpd/utmpserver3.c#action_frequently`，完整表在
+    `docs/pttbbs-screen-protocol.md` §11.2）。2026-08-25 之前一輪要登入十幾次
+    （`easy-reading-list.spec.js` 一支就 9 次），連跑兩輪直接把帳號打進封鎖。
+  - **被 PTT 鎖住時絕對不可以重跑**：畫面出現「[PTT DDoS/BOT 偵測系統] …已被暫時禁止登入／暫停連線」
+    ＝PTT 站方私有的防濫用層（**不在 pttbbs 開源碼**）。封鎖畫面自己寫明：**無法申請手動解除**、
+    「**無任何登入行為**之後最多 **12 小時**後會恢復」、「在暫停期間若持續嘗試登入…**將無限期延長**」。
+    ⇒ 這是唯一一種「再試一次」嚴格劣於「什麼都不做」的失敗；而且解除計時從**最後一次登入行為**
+    重新起算，所以連平常瀏覽用的自動登入都要一起關掉（畫面點名「部份App需要關閉自動登入」）。
+    程式已會自己認出來並立閂鎖讓整輪停手（`tests/e2e/helpers/bot_block.js`，實測整輪只送 1 次登入、
+    8.6 秒結束）；人這邊只能停手，期間改跑 unit／offline e2e。細節見 `tests/e2e/README.md` 與
+    `docs/pttbbs-screen-protocol.md` §11.2。
+  - **讀 pttbbs 原始碼搜中文要先轉 Big5**：`3rd_script/pttbbs` 是 Big5 編碼，UTF-8 grep 中文會
+    「查無」而不是報錯 ⇒ 很容易誤判成「這行為不在開源碼裡」。用
+    `grep -rlF "$(printf '登入太頻繁' | iconv -f UTF-8 -t BIG5)" --include=*.c 3rd_script/pttbbs`，
+    讀片段時 `| iconv -f BIG5 -t UTF-8`。
   - **e2e 一律前景跑，不可丟背景（`run_in_background`）**：`.claude/settings.json` 的 **Stop hook 是每個
     assistant turn 結束就觸發**（不是 session 結束），一旦旗標檔在就跑 `kill-dev-server.js` → 把 Playwright
     自己起的 dev server 砍掉。症狀：前幾條綠，之後整批 `page.goto: net::ERR_CONNECTION_REFUSED`，

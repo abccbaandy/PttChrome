@@ -381,4 +381,102 @@ describe("CommandQueue", () => {
       expect(() => settleWith(q, true)).not.toThrow();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // isCompleteFrame 守門（2026-08-25）：探針窗從秒級砍到 250ms 之後，「探針送出
+  // 後的下一個 settle 就是探針的答案」這個假設不再成立——慢速連線上指令自己的
+  // 真回應常常在探針之後才到，而部分幀不是「我在哪」的答案。沒有這道守門，
+  // 那種幀會被判定讞 miss → 呼叫端誤降級原生。
+  // -------------------------------------------------------------------------
+  describe("isCompleteFrame：只有完整幀能把探針後的 settle 判成 miss", () => {
+    const gated = () => {
+      const sent = [];
+      const q = new CommandQueue({
+        send: (k) => sent.push(k),
+        isCompleteFrame: (facts) => !!facts.__complete,
+      });
+      return { q, sent };
+    };
+    const settle = (q, result, complete) =>
+      q.onSettle({}, { __result: result, __complete: complete });
+
+    test("探針後的非完整幀不判 miss：指令留在線上等真正的全幅幀", () => {
+      const { q } = gated();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { timeoutMs: 250, probeTimeoutMs: 600, onFail: fail }));
+      vi.advanceTimersByTime(250); // 探針上線
+
+      // 指令自己的真回應賽過探針先到，但只是部分幀 → 不是答案。
+      expect(settle(q, false, false)).toBeFalsy();
+      expect(fail).not.toHaveBeenCalled();
+      expect(q.inFlightKind).toBe("test");
+    });
+
+    test("非完整幀之後的完整幀才定讞 miss", () => {
+      const { q } = gated();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { timeoutMs: 250, probeTimeoutMs: 600, onFail: fail }));
+      vi.advanceTimersByTime(250);
+      settle(q, false, false); // 部分幀：延長
+      expect(settle(q, false, true)).toBe("miss"); // 探針的全幅幀：定讞
+      expect(fail).toHaveBeenCalledWith("miss", expect.objectContaining({ __result: false }));
+    });
+
+    test("非完整幀之後若 expect 成立，照樣正常收腿（真回應只是慢）", () => {
+      const { q } = gated();
+      const done = vi.fn();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { timeoutMs: 250, probeTimeoutMs: 600, onDone: done, onFail: fail }));
+      vi.advanceTimersByTime(250);
+      settle(q, false, false);
+      expect(settle(q, true, false)).toBe("done");
+      expect(done).toHaveBeenCalled();
+      expect(fail).not.toHaveBeenCalled();
+    });
+
+    test("延長有上限：第二個非完整幀直接定讞（不得被吵雜連線無限延長）", () => {
+      const { q } = gated();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { timeoutMs: 250, probeTimeoutMs: 600, onFail: fail }));
+      vi.advanceTimersByTime(250);
+      settle(q, false, false); // 第 1 次：延長
+      expect(settle(q, false, false)).toBe("miss"); // 第 2 次：不再等
+      expect(fail).toHaveBeenCalledWith("miss", expect.anything());
+    });
+
+    test("延長用的是探針窗，不是重新給一整個 soft 窗", () => {
+      const { q, sent } = gated();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { timeoutMs: 3000, probeTimeoutMs: 600, onFail: fail }));
+      vi.advanceTimersByTime(3000); // 探針
+      expect(sent).toEqual(["A", "\f"]);
+      settle(q, false, false); // 延長
+      vi.advanceTimersByTime(599);
+      expect(fail).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(2); // 探針窗（600）到期，而非 3000
+      expect(fail).toHaveBeenCalledWith("timeout");
+    });
+
+    test("每個指令各自重算延長次數（前一筆用掉的不算在後一筆頭上）", () => {
+      const { q } = gated();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { timeoutMs: 250, probeTimeoutMs: 600, onFail: fail }));
+      q.enqueue(cmd("B", { timeoutMs: 250, probeTimeoutMs: 600, onFail: fail }));
+      vi.advanceTimersByTime(250);
+      settle(q, false, false);
+      settle(q, false, false); // A 定讞 miss → B 上線
+      expect(q.inFlightKind).toBe("test");
+
+      vi.advanceTimersByTime(250); // B 的探針
+      expect(settle(q, false, false)).toBeFalsy(); // B 拿得到自己的第一次延長
+    });
+
+    test("未注入 isCompleteFrame 時行為與守門前一致（預設全部視為完整）", () => {
+      const { q } = makeQueue();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { timeoutMs: 250, onFail: fail }));
+      vi.advanceTimersByTime(250);
+      expect(settleWith(q, false)).toBe("miss");
+    });
+  });
 });

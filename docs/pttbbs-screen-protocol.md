@@ -6,6 +6,18 @@
 
 **研究方法規範（強制）**：PTT 行為邏輯**一律先讀 `3rd_script/pttbbs` 原始碼**找出真實實作，**禁止**自行猜測或從錄製素材/畫面觀察反推規則——素材只用來**驗證**對 code 的理解是否有誤。反例教訓：last-read 高亮曾從實錄反推成「作者亮白＋標題紅的單列游標」模型，連修三版仍殘紅；讀 `readdoent` 十分鐘即知是 title-match 多列高亮＋作者亮白其實是 isonline（見 §10）。
 
+**⚠ 原始碼是 Big5，用 UTF-8 grep 中文會「查無」而不是報錯**（2026-08-25 踩坑）。
+`grep -rn "登入太頻繁" 3rd_script/pttbbs` 回空集合，很容易讓人下結論「這句不在開源碼裡」——
+實際上它就在 `mbbsd/talk.c`。同一輪誤判也差點讓「PTT 有沒有登入頻率限制」得到相反的答案。
+**中文字串一律先轉 Big5 再搜**：
+
+```bash
+grep -rlF "$(printf '登入太頻繁' | iconv -f UTF-8 -t BIG5)" --include=*.c 3rd_script/pttbbs
+```
+
+讀出來的片段要看得懂則反向轉：`sed -n '200,240p' mbbsd/talk.c | iconv -f BIG5 -t UTF-8`。
+（ASCII 的識別字、函式名、`ANSI_COLOR` 這類巨集不受影響，一般 grep 即可。）
+
 ## 0. 版本對齊（先做，否則比對的是別的版本）
 
 線上「系統資訊」畫面的欄位語意（`mbbsd/cal.c#p_sysinfo` ＋ `util/newvers.sh`）：
@@ -152,6 +164,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 - **read.c 列表層再保險**：`i_read_key` 自己也有 `case Ctrl('L'): redrawwin()+refresh()`（`mbbsd/read.c:735`）。
 - typeahead 交互（BePTT 實證＋§2 推論）：`指令+\f` 同送 → 中間增量重繪被跳繪吞 → client 恰見一幀全幅畫面。單獨 `\f`＝零副作用「我在哪」探針。
 - **推論（2026-08-15 live 實錯）：`\f` 關不掉任何「按任意鍵」**。`pressanykey()`＝`vmsg(NULL)` 的 `do { i = vkey(); } while (i == 0)`——`\f` 在 `system_key_hook`（`io.c:196-203`）就回 `KEY_INCOMPLETE`，`vkey()` 對它 `continue`（`io.c:432-434`），**那個 byte 根本不會成為一個「鍵」**。拿它當關框鍵的後果是**整串位移一格**：框沒關掉 → 下一個字元被拿去關框 → 剩下的字串被 pager／列表當快捷鍵逐鍵吃掉（實錯：`\f` + `sC_Chat\r` → `s` 關框、`h` 開說明、`a` 跳作者下一篇，人直接跑到別篇文章）。要關 pressanykey 一律用**空白鍵**。
+- **零回應跳號（CONFIRMED，2026-08-25 live 錄製）：跳號到真游標「已經所在」的那一列 ⇒ 畫面零增量 ⇒ server 送 0 bytes。** 證據 `ptt-debug-20260825-105701#t=12562`：t=10151 的 prefetch 錨定腿已送過 `2381\r` 把游標停在 2381，t=12562 的 open-jump 又送同一個 `2381\r` → 整整 4002ms 一個 byte 都沒有，直到 client 的軟逾時探針才問出答案。**這不是「server 偶發抽風」，是可重現的協定行為**（PTT 只送畫面差異）。⇒ client 端所有 `<數字>\r` 交易一律尾附 `\f`（見 `src/js/list_session.js` 的跳號腿與 `docs/easy-reading-list.md` 不變量 7g）；同理，任何「目標可能等於現況」的鍵（End 於底端、Home 於頂端）都屬同一類。
 - `\f` 不取代 settle：全幅重繪仍拆包（OBUFSIZE 3072），settle 判「何時看」、`\f` 保證「必有得看」。
 - **重要限制（M1 實測，cchat-list-nav `\f` 版卷）：`redrawwin` 重繪的是 server 虛擬螢幕「現狀」，不會推進畫面狀態**——跳號完成後 server 虛擬螢幕的底列本來就空（§4 ✚：feeter 要到下一個 PARTUPDATE 才重畫），`跳號+\f` 的全幅重繪底列**仍空**＝classify 仍 transient、永非 clean-list。⇒ jump 落點判定必須維持 park 指紋（§4/§5），「jump 尾附 `\f` 換 clean-list expect」不成立。`\f` 的真實價值＝**零回應情境的確定性化**：timeout 探針（強制產生一幀可判定畫面）、相對命令 miss（`鍵+\f` 保證有回應）。
 
@@ -277,6 +290,88 @@ commentd／官方 App／bot 不走 `vgetstring`，可填滿整欄）。
 **這個「寫滿」只可當必要條件，不可當判決**——上一段已證同形。唯一有在用它的是
 `url_wrap.js`（跨行連結接合），那裡真正的判別力來自「斷點兩側併起來是合法 URL（TLD 允許清單）」，
 寬度只負責排除「作者根本沒寫滿、只是分兩則講話」。散文續行**仍然判不出來，勿再嘗試**。
+
+## 11.2 登入頻率限制與擋人機制（2026-08-25，開源碼部分 CONFIRMED）
+
+起因：整輪 live e2e 連跑兩次，測試帳號被 PTT 擋住（`tests/e2e/README.md`）。以下區分
+「開源碼裡真的有的」與「PTT 私有的」，因為兩者的處置完全不同。
+
+### 開源碼裡有的（CONFIRMED，可讀出確切數字）
+
+**a. 登入頻率 — `daemon/utmpd/utmpserver3.c#action_frequently(uid)`**（每 uid 計數，回 0/1/2）：
+
+| 條件 | 回傳 | 意義 |
+|---|---|---|
+| 距上次登入 **≤ 3 秒** | 2 | reject |
+| 同一分鐘內 **> 10 次** | 2 | reject |
+| 同一小時內 **> 60 次** | 2 | reject |
+| 同一分鐘內 **> 3 次** | 1 | delay |
+| 同一小時內 **> 20 次** | 1 | delay |
+| 其餘 | 0 | 放行 |
+
+計數器是**掛鐘分/時的桶**（跨分、跨時整批歸零），不是滑動視窗 ⇒ 剛好跨過整點的兩次爆量不會被合併計算。
+整段包在 `#ifdef NOFLOODING` 內（巨集名與語意相反，別被誤導）。
+
+**b. reject 的畫面 — `mbbsd/talk.c`（res==2）**：`outs("登入太頻繁, 為避免系統負荷過重, 請稍後再試\n")`
+→ `log_usies("REJECTLOGIN")` → `sleep(30); exit(0)`。**連線等同已死、按鍵無效**，client 只能重連
+（`tests/e2e/helpers/login_flow.js` 的 `throttled` 分支就是依這條做 30 秒退避重連）。
+另註同檔：非真登入路徑（`!do_login`）自己 `sleep(3)`，註解直說「utmpserver usually treat 3 seconds as flooding」。
+
+**c. 密碼錯誤次數 — `LOGINATTEMPTS = 3`**（`include/config.h`）：
+`daemon/logind/logind.c#auth_fail` 與 `mbbsd/mbbsd.c` 各自數，超過就 goodbye 斷線。
+這條數的是**錯誤嘗試**，與「成功登入太多次」無關，別混為一談。
+
+**d. IP 黑名單** `~bbs/etc/banip.conf`（`common/bbs/banip.c`，支援單 IP／CIDR／range／萬用字元）
+與**全站封鎖檔** `FN_BAN`（`logind.c:1457`，存在即畫 ban 畫面）。
+
+**e. 容量閘門**（非濫用）：`regular_check()` 的 CPU 過載／人數過多／guest 名額，見 §11 的登入表。
+
+### PTT 私有的（**不在**開源碼裡）
+
+實錄畫面：
+
+```
+[PTT DDoS/BOT 偵測系統] 偵測到連線異常/不當連續登入行為！
+帳號 xxx 已被暫時禁止登入。
+[PTT DDoS/BOT 偵測系統] 帳號 xxx 有疑似不當連續登入行為所以暫停連線。
+```
+
+`3rd_script/pttbbs` 全樹查無 `DDoS`（ASCII）、也查無 Big5 的「不當連續登入」「暫停連線」
+「禁止登入」⇒ 這是 PTT 站方自有的防濫用層（對照 §0：線上「系統資訊」的第 2 個 hash 就是
+PTT 私有 commit，不在公開 repo）。**觸發門檻無從得知**，但**解除規則畫面自己寫了**：
+
+```
+[PTT DDoS/BOT 偵測系統] 帳號 xxx 有疑似不當連續登入行為所以暫停連線。
+
+由於本站近日有大量廣告信皆來自於機器人自動帳號，即日起會偵測不當連線。
+本系統為獨立動態偵測連線，與BBS內帳號權限無關，無法申請手動解除鎖定，
+也不會告知暫停時限。
+
+在停止使用機器人或行為不正常的App（部份App需要關閉自動登入）、
+無任何登入行為之後最多12小時後會恢復。
+注意在暫停期間若持續嘗試登入會被視為機器人，將無限期延長暫停時間。
+```
+
+三條硬事實（**全部與 mbbsd 的 `action_frequently` 不同層**，別套用上表的數字去推算）：
+
+| 事實 | 後果 |
+|---|---|
+| 「無任何登入行為之後最多 12 小時」 | 計時從**最後一次登入行為**重新起算；掛著自動登入的一般瀏覽也會一直重置它 |
+| 「持續嘗試登入…將無限期延長」 | 這是唯一一種「再試一次」嚴格劣於「什麼都不做」的失敗模式 |
+| 「無法申請手動解除鎖定」 | 沒有申訴管道，也不會告知剩餘時間 |
+
+「部份App需要關閉自動登入」等於直接點名 client 端的自動登入功能（本專案的
+`src/js/auto_login.js`、e2e 的兩條開站自動登入 spec）＝最容易被判定成機器人的行為模式。
+
+⇒ client／測試端唯一能做的兩件事：
+1. **少登入**。開源碼的數字給了下界：同一分鐘 >3 次就已經進入 delay，>10 次 reject；
+   同一小時 >20 次 delay。live e2e 因此把整輪登入次數壓到 **1 次共用 session ＋ 2 條
+   本質在測開站自動登入的 spec**（`tests/e2e/helpers/fixtures.js`，守護
+   `tests/unit/e2e_login_budget.test.js`）。
+2. **一偵測到就整輪停手**，而不是重試——重試會無限期延長封鎖。
+   `tests/e2e/helpers/bot_block.js`（偵測純函式＋跨 worker 閂鎖），守護 `tests/unit/e2e_bot_block.test.js`。
+   實測效果（2026-08-25，封鎖期間跑整輪 live）：**只送出 1 次登入嘗試、整輪 8.6 秒結束**，
+   其餘 26 條在開 browser context 之前就被閂鎖擋掉。對照沒有閂鎖時的同一情境：9 次登入嘗試、6 分鐘。
 
 ## 12. 版本與未知
 

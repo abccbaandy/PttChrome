@@ -4,6 +4,8 @@ const { defineConfig, devices } = require('@playwright/test');
 // dev server 由 webServer 自動啟動（已手動 yarn start 時會 reuse）。
 module.exports = defineConfig({
   testDir: './tests/e2e',
+  // 目前只負責清掉 DDoS/BOT 封鎖閂鎖，讓它只在同一輪內有效（見 tests/e2e/global-setup.js）。
+  globalSetup: './tests/e2e/global-setup.js',
   // BBS 連線/登入較慢，timeout 放寬
   timeout: 60000,
   expect: { timeout: 15000 },

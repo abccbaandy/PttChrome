@@ -87,6 +87,14 @@ export const App = function() {
     // cost): a reproduced "畫面停住/處理中" hang shows exactly which kind sat
     // on the wire, for how long, and whether it ended done/miss/timeout.
     onEvent: (name, info) => this.debugRecorder?.log('queue.' + name, info),
+    // Only a COMPLETE screen may end a probed command as 'miss' (see
+    // command_queue's header). The probe is a bare \f = redrawwin, whose
+    // response always opens with ESC[H ESC[2J, and term_buf's erase-display
+    // case 2 does _touchRows(0, rows-1) ⇒ a full-screen clear is exactly
+    // "changedRows covers every row". Anything narrower is a partial response
+    // frame that raced the probe out, not an answer to it.
+    isCompleteFrame: (facts) =>
+      !!(facts && facts.changedRows && facts.rows && facts.changedRows.size >= facts.rows),
     // 線路空了就叫醒好讀：它的自動翻頁被 easy_reading._send 的閘門擋住時，是
     // **延後**不是丟棄，而文章落地那一幀好讀必定比 queue 早跑（見上面的 ORDER
     // MATTERS）⇒ 第一個 PageDown 一定被擋。少了這條線就只剩好讀自己的 620ms

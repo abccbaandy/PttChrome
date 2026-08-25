@@ -856,17 +856,20 @@ function factsWithCursor(num) {
 
 describe("v5 確定性交易（timeout=探針觸發，非訊號；jump 腿維持 park 指紋）", () => {
   // 協定事實（§6）：\f 的 redrawwin 重繪 server 虛擬螢幕「現狀」——跳號後底列
-  // 在 server 端本來就空，\f 不會補畫 feeter → jump 落點永遠 transient。
-  // 所以 jump 腿不掛 fullRepaint（裸跳號必回應，\f 只是流量×2），expect 維持
-  // park 指紋；零回應歧義（板尾探測）交給 queue 的 timeout→\f 探針解決。
-  test("錨定 jump 腿：無 fullRepaint，expect＝park 指紋（transient 落點即完成）", () => {
+  // 在 server 端本來就空，\f 不會補畫 feeter → jump 落點永遠 transient，所以
+  // expect 必須維持 park 指紋（不得改成等 clean-list）。
+  // 但跳號腿本身一律掛 fullRepaint：「裸跳號必回應」是錯的——跳到真游標
+  // 已經所在的那一列，畫面零差異 ⇒ server 送 0 bytes ⇒ term_buf 永不 settle
+  // ⇒ expect 永不被評估，只能苦等軟逾時（錄製檔
+  // ptt-debug-20260825-105701#t=12562：open-jump 空等 4002ms）。
+  test("錨定 jump 腿：fullRepaint＋park 指紋（transient 落點即完成）", () => {
     const { s, enqueued } = demandSession({ count: 60 });
     s._topNum = 110;
     s._selectedNum = 115;
     s._maybeDemand(1);
     const anchor = enqueued[0];
     expect(anchor.kind).toBe("prefetch-anchor-down");
-    expect(anchor.fullRepaint).toBeUndefined();
+    expect(anchor.fullRepaint).toBe(true);
     const base = 159; // bufferEdgeNum(down) = 最大序號
     expect(
       anchor.expect(null, { kind: "transient", cursorRowNum: base, curY: 5, curX: 0, rows: 24 })
@@ -876,15 +879,17 @@ describe("v5 確定性交易（timeout=探針觸發，非訊號；jump 腿維持
     ).toBe(false);
   });
 
-  test("翻頁腿：短固定 timeout（800ms）觸發 queue 探針；探針幀游標未動＝內容判到邊", () => {
+  test("翻頁腿：短固定 timeout（250ms）觸發 queue 探針；探針幀游標未動＝內容判到邊", () => {
     const { s, enqueued } = demandSession({ count: 60 });
     s._topNum = 110;
     s._selectedNum = 115;
     s._maybeDemand(1);
     const page = enqueued[1];
     expect(page.kind).toBe("prefetch-down");
+    // 翻頁腿刻意不掛 \f：有動的翻頁本來就確定性回應，附 \f 只是流量×2；
+    // 板尾零回應那條由短探針窗負責（與跳號腿的取捨不同，勿順手補齊）。
     expect(page.fullRepaint).toBeUndefined();
-    expect(page.timeoutMs).toBe(800); // 舊 RTT 自適應（不變量 7）退役
+    expect(page.timeoutMs).toBe(250); // 舊 RTT 自適應（不變量 7）退役
     // 探針全幅畫面（feeter 在）上游標仍在錨點 → {edge}（確定性到邊）。
     expect(page.expect(null, factsWithCursor(159))).toEqual(
       expect.objectContaining({ edge: true })
@@ -955,7 +960,7 @@ describe("v5 確定性交易（timeout=探針觸發，非訊號；jump 腿維持
     s._selectedNum = 115;
     s._beginOpen();
     const jump = enqueued.find((c) => c.kind === "open-jump");
-    expect(jump.fullRepaint).toBeUndefined();
+    expect(jump.fullRepaint).toBe(true);
     expect(
       jump.expect(null, { kind: "transient", cursorRowNum: 115, curY: 5, curX: 0, rows: 24 })
     ).toBe(true);
@@ -1024,7 +1029,7 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
     s._selectedNum = 115;
 
     s._maybeDemand(1); // anchor jump "159\r" 上線
-    expect(sent[0]).toBe(String(base) + "\r");
+    expect(sent[0]).toBe(String(base) + "\r\f");
 
     // settle #1：anchor 落點（transient park）→ anchor 完成、page 腿接棒上線
     termBuf.settleSnapshot = {
@@ -1037,7 +1042,7 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
     expect(sent[1]).toBe("\x1b[6~");
     expect(s.state).toBe("active"); // page 腿 in flight → transient stay
 
-    // 板尾零回應 → soft timeout（800ms）→ \f 探針
+    // 板尾零回應 → soft timeout（CMD_PROBE_AFTER_MS）→ \f 探針
     vi.advanceTimersByTime(801);
     expect(sent[2]).toBe("\f");
 
@@ -1109,14 +1114,14 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
     s._selectedNum = 115;
 
     s._maybeDemand(1); // 背景 prefetch：anchor "159\r" 上線、page 腿排隊
-    expect(sent).toEqual([String(base) + "\r"]);
+    expect(sent).toEqual([String(base) + "\r\f"]);
 
     s.onKeyDown({ key: "Enter", preventDefault() {} }); // 使用者馬上開文
     expect(s.state).toBe("opening");
     expect(s._renderMode).toBe("frozen"); // 畫面已凍結、鍵被吞
 
     vi.advanceTimersByTime(300); // 修前：要等到 4000ms 才有動靜
-    expect(sent).toEqual([String(base) + "\r", "\f"]);
+    expect(sent).toEqual([String(base) + "\r\f", "\f"]);
 
     // 探針幀＝anchor 的落點 → anchor 完成 → 開文交易立刻上線。
     termBuf.settleSnapshot = {
@@ -1126,7 +1131,7 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
       curY: 5,
     };
     s._onScreenSettled();
-    expect(sent[sent.length - 1]).toBe("115\r"); // open-jump
+    expect(sent[sent.length - 1]).toBe("115\r\f"); // open-jump
     vi.useRealTimers();
   });
 });
