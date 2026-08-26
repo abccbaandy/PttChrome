@@ -79,6 +79,57 @@ describe("游標底色快路徑", () => {
     root.remove();
   });
 
+  // 「整列提亮」與「整列底色」是兩個可以同時開的樣式 ⇒ cls 會是**多個 class**
+  // （cursor_highlight.cursorHighlightClasses）。舊版 _toggleRowClass 直接
+  // classList.add(cls)，DOMTokenList 不吃含空白的 token ⇒ InvalidCharacterError，
+  // 整條游標標示鏈就地掛掉。空字串同樣會噴。
+  test("多個 class（提亮＋底色疊加）走快路徑：兩個都搬、不換節點", () => {
+    const { root, controller } = mount();
+    const before = rowNodes(controller);
+    const lineAt = (r) =>
+      controller.container.querySelector(
+        '[data-type="bbsline"][data-row="' + r + '"]',
+      );
+
+    controller.setCursorHighlight({ row: 1, cls: "cursorBrighten b2", col: 0 });
+    expect(lineAt(1).classList.contains("cursorBrighten")).toBe(true);
+    expect(lineAt(1).classList.contains("b2")).toBe(true);
+    expect(rowNodes(controller)).toEqual(before);
+
+    // 搬到第 2 列：舊列**兩個** class 都要拔掉。
+    controller.setCursorHighlight({ row: 2, cls: "cursorBrighten b2", col: 0 });
+    expect(lineAt(1).classList.contains("cursorBrighten")).toBe(false);
+    expect(lineAt(1).classList.contains("b2")).toBe(false);
+    expect(lineAt(2).classList.contains("cursorBrighten")).toBe(true);
+    expect(lineAt(2).classList.contains("b2")).toBe(true);
+    expect(rowNodes(controller)).toEqual(before);
+
+    controller.destroy();
+    root.remove();
+  });
+
+  test("只有提亮（預設樣式）：那一列不得出現任何 bN 背景 class", () => {
+    const BG_CLASSES = Array.from({ length: 15 }, (_, i) => "b" + (i + 1));
+    const { root, controller } = mount();
+    controller.setCursorHighlight({ row: 1, cls: "cursorBrighten", col: 0 });
+    const line = controller.container.querySelector(
+      '[data-type="bbsline"][data-row="1"]',
+    );
+    expect(line.classList.contains("cursorBrighten")).toBe(true);
+    expect([...line.classList].some((c) => BG_CLASSES.includes(c))).toBe(false);
+    controller.destroy();
+    root.remove();
+  });
+
+  test("空 cls 不丟 InvalidCharacterError（兩種樣式都關掉的狀態）", () => {
+    const { root, controller } = mount();
+    expect(() =>
+      controller.setCursorHighlight({ row: 1, cls: "", col: 0 }),
+    ).not.toThrow();
+    controller.destroy();
+    root.remove();
+  });
+
   test("部分底色（col > 0）只重建相關的列", () => {
     const { root, controller } = mount();
     const before = rowNodes(controller);

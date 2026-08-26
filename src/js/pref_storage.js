@@ -82,6 +82,22 @@ export const DEFAULT_PREFS = {
   mouseBrowsingHighlight: true,
   keyboardCursorHighlight: true,
   mouseBrowsingHighlightColor: 2,
+  // 游標所在列的**樣式層**（上面三個是「哪一列」的來源層，兩層正交）：
+  //   cursorRowBrighten    整列提亮、背景不動 —— 還原 pttbbs e18a7182 的
+  //                        grayout(row,row+1,GRAYOUT_COLORBOLD)＝整列 FTATTR_BOLD
+  //                        (ESC[1m)。本專案 TermChar.getFg() 就是 bright ? fg+8 : fg，
+  //                        所以「提亮一階」＝ q0..q7 換成 q8..q15 的色值（css/color.css
+  //                        的 .cursorBrighten）。預設開：不遮住任何字、也不吃掉 PTT
+  //                        自己畫的反白色塊，比整片底色安靜。
+  //   cursorRowBackground  整列上底色（顏色沿用 mouseBrowsingHighlightColor）。
+  //                        預設關 —— 改用提亮之後它變成可選的加強樣式；兩個可以同時開。
+  // **為什麼底色要開新 key 而不是把 keyboardCursorHighlight 翻成 false**：
+  // readValuesWithDefault 是 {...DEFAULT_PREFS, ...localStorage} 淺層合併，而
+  // PrefModal 關閉時整包 writeValues ⇒ 任何開過一次設定頁的人 localStorage 裡已經有
+  // 舊 key 的舊值，翻預設對他們完全無效。開新 key 是唯一能讓既有使用者也拿到新預設的做法
+  // （本 repo 刻意沒有 pref 遷移機制，見 docs/mouse.md「舊 → 新 key 對照」）。
+  cursorRowBrighten: true,
+  cursorRowBackground: false,
   // 左鍵：列表點標題欄開文章／進看板 + 文章內點左側離開 + 自訂滑鼠指標圖示。
   // 單一開關，不再是「送 Enter／送右方向鍵」那種按鍵層級的設定。
   mouseLeftClick: true,

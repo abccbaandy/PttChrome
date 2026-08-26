@@ -11,10 +11,16 @@ import { TermView } from "../../src/js/term_view";
 import { LIST_HEADER_ROWS } from "../../src/js/list_window";
 import { LIST_TITLE_COL_START } from "../../src/js/comment_parse";
 
-function makeView({ listRenderMode = "native" } = {}) {
+// 樣式層預設（cursorRowBrighten）是「提亮」，但這一檔驗的是**仲裁**（哪一列贏），
+// 與樣式無關 ⇒ 預設用底色樣式建 stub，好讓斷言直接比對既有的 bN 字串。
+// 樣式層本身的行為另外一個 describe 驗。
+function makeView({ listRenderMode = "native", styles } = {}) {
   const applied = [];
   const v = Object.create(TermView.prototype);
   v.highlightBG = 2;
+  v.cursorRowBrighten = false;
+  v.cursorRowBackground = true;
+  Object.assign(v, styles || {});
   v.keyboardCursorHighlight = true;
   v.useEasyReadingMode = false;
   v.mouseLeftClick = true;
@@ -219,5 +225,51 @@ describe("applyCursorHighlight：PTT 開著輸入框", () => {
     v.buf.isCursorOnInputField = () => true;
     v.applyCursorHighlight();
     expect(applied[applied.length - 1]).toBe(8);
+  });
+});
+
+// 樣式層（pref cursorRowBrighten / cursorRowBackground）：與「哪一列」正交，
+// 兩種可疊、可全關。全關時**整條跳過**（送 NO_CURSOR_HIGHLIGHT），不是送一個
+// 沒有樣式的 class —— 否則 Screen 會為了一個看不見的變化重畫。
+describe("applyCursorHighlight：樣式層", () => {
+  const seenOf = (v) => {
+    const seen = [];
+    v.componentScreen = { setCursorHighlight: (h) => seen.push(h) };
+    return seen;
+  };
+
+  test("預設（提亮開、底色關）：cls 只有 cursorBrighten，沒有背景 class", () => {
+    const { v } = makeView({
+      styles: { cursorRowBrighten: true, cursorRowBackground: false },
+    });
+    const seen = seenOf(v);
+    v.buf.nowHighlight = 11;
+    v.applyCursorHighlight("mouse");
+    expect(seen[seen.length - 1]).toEqual({
+      row: 11,
+      cls: "cursorBrighten",
+      col: LIST_TITLE_COL_START,
+    });
+  });
+
+  test("兩種樣式同時開 ⇒ 疊在同一列，顏色仍取自 highlightBG", () => {
+    const { v } = makeView({
+      styles: { cursorRowBrighten: true, cursorRowBackground: true },
+    });
+    v.highlightBG = 7;
+    const seen = seenOf(v);
+    v.buf.nowHighlight = 11;
+    v.applyCursorHighlight("mouse");
+    expect(seen[seen.length - 1].cls).toBe("cursorBrighten b7");
+  });
+
+  test("兩種樣式都關 ⇒ 整條跳過（row -1），即使那一列本來要上色", () => {
+    const { v } = makeView({
+      styles: { cursorRowBrighten: false, cursorRowBackground: false },
+    });
+    const seen = seenOf(v);
+    v.buf.nowHighlight = 11;
+    v.applyCursorHighlight("mouse");
+    expect(seen[seen.length - 1].row).toBe(-1);
   });
 });

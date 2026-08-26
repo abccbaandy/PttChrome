@@ -589,8 +589,11 @@ test.describe('文章列表好读模式（离线）', () => {
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
         enableEasyReadingList: false,
-        useMouseBrowsing: false, // 純鍵盤：底色不該再依賴滑鼠瀏覽
+        useMouseBrowsing: false, // 純鍵盤：標示不該再依賴滑鼠瀏覽
         keyboardCursorHighlight: true,
+        // 樣式層：這條驗的是「哪一列 + 什麼顏色」⇒ 要明確開底色樣式
+        // （預設樣式已改成無底色的 cursorRowBrighten，見 pref_storage.js）。
+        cursorRowBackground: true,
         mouseBrowsingHighlightColor: 9
       });
       await page.waitForTimeout(300);
@@ -639,6 +642,9 @@ test.describe('文章列表好读模式（离线）', () => {
         useMouseBrowsing: true,
         mouseBrowsingHighlight: true,
         keyboardCursorHighlight: true,
+        // 樣式層：底色預設已關（預設是無底色的 cursorRowBrighten），這條驗的是
+        // 顏色 pref 有沒有生效 ⇒ 明確開起來。
+        cursorRowBackground: true,
         // 刻意不是預設綠 b2：顏色 pref 曾是死設定（畫面永遠 #008000）。
         mouseBrowsingHighlightColor: 6
       });

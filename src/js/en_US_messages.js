@@ -650,7 +650,10 @@ export const en_US = {
     "message": "Mouse move"
   },
   "tooltip_mouseBrowsingHighlight": {
-    "message": "Shares its color with the keyboard cursor highlight (set on the General tab); the mouse wins when both are active. With this off, moving the mouse changes nothing on screen."
+    "message": "Shares one marking style with the keyboard cursor (set on the General tab); the mouse wins when both are active. With this off, moving the mouse changes nothing on screen."
+  },
+  "tooltip_cursorRowBrighten": {
+    "message": "Brightens the row's text and leaves the background alone, like the old PTT cursor with no highlight bar. Can be combined with the background fill."
   },
   "tooltip_highlightColorShared": {
     "message": "The mouse-move highlight shares this color (its switch lives on the Mouse tab)."
@@ -698,16 +701,22 @@ export const en_US = {
     "message": "Enable mouse browsing"
   },
   "options_cursorHighlight": {
-    "message": "Cursor highlight"
+    "message": "Cursor row"
+  },
+  "options_cursorRowBrighten": {
+    "message": "Brighten the whole row (no background)"
+  },
+  "options_cursorRowBackground": {
+    "message": "Fill the whole row with a background color"
   },
   "options_mouseBrowsingHighlight": {
-    "message": "Highlight the row under the mouse"
+    "message": "Also mark the row under the mouse"
   },
   "options_keyboardCursorHighlight": {
-    "message": "Highlight the cursor row when using the keyboard"
+    "message": "Also mark the cursor row when using the keyboard"
   },
   "options_highlightColor": {
-    "message": "Color"
+    "message": "Background color"
   },
   "options_none": {
     "message": "No action"

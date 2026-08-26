@@ -940,13 +940,20 @@ export class ScreenController {
 
   // 整列底色的快路徑：把 class 掛上／拿掉那一列的 bbsline span。合併推文塊會有
   // 多個同 data-row 的 bbsline（每行一個），全部一起處理。
+  // cls 可能是**多個 class**（"cursorBrighten b2"：提亮與底色兩種樣式疊在同一列，
+  // 見 js/cursor_highlight.cursorHighlightClasses）⇒ 必須拆 token 再進 classList，
+  // 直接丟整串會噴 InvalidCharacterError（空字串同樣會噴，故一併濾掉）。
   _toggleRowClass(row, cls, on) {
+    const tokens = String(cls || "")
+      .split(/\s+/)
+      .filter(Boolean);
+    if (!tokens.length) return;
     const spans = this.container.querySelectorAll(
       `[data-type="bbsline"][data-row="${row}"]`,
     );
     for (let i = 0; i < spans.length; ++i) {
-      if (on) spans[i].classList.add(cls);
-      else spans[i].classList.remove(cls);
+      if (on) spans[i].classList.add(...tokens);
+      else spans[i].classList.remove(...tokens);
     }
   }
 

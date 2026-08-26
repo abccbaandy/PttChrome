@@ -1004,8 +1004,9 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.redraw(true);
       this.view.updateCursorPos();
       break;
-    // 游標底色三兄弟（見 pref_storage.js）：都只影響「哪一列上什麼色」，
-    // 套用入口統一是 view.applyCursorHighlight，不需要重畫整個畫面。
+    // 游標所在列標示（見 pref_storage.js）：來源層三兄弟 + 樣式層兩兄弟，
+    // 都只影響「哪一列畫什麼」，套用入口統一是 view.applyCursorHighlight，
+    // 不需要重畫整個畫面（col > 0 的部分寬度會由 Screen 自己退回 _render）。
     case 'mouseBrowsingHighlight':
       this.buf.highlightCursor = value;
       this.view.applyCursorHighlight();
@@ -1016,6 +1017,14 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     case 'mouseBrowsingHighlightColor':
       this.view.highlightBG = value;
+      this.view.applyCursorHighlight();
+      break;
+    case 'cursorRowBrighten':
+      this.view.cursorRowBrighten = !!value;
+      this.view.applyCursorHighlight();
+      break;
+    case 'cursorRowBackground':
+      this.view.cursorRowBackground = !!value;
       this.view.applyCursorHighlight();
       break;
     // 左鍵開關同時管指標圖示與左側提示帶 ⇒ 要立刻重新評估滑鼠目前停的那一格，

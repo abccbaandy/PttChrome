@@ -736,11 +736,30 @@ export const PrefModal = ({
                   />
                 )}
               </fieldset>
-              {/* 游標底色：滑鼠與鍵盤共用同一條渲染管線與同一個顏色，所以獨立成一
-                  區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。滑鼠那條
-                  已隨整組滑鼠設定搬到「滑鼠」分頁，顏色仍是兩者共用，留在這裡。 */}
+              {/* 游標所在列：滑鼠與鍵盤共用同一條渲染管線與同一組樣式，所以獨立成
+                  一區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。滑鼠那條
+                  來源開關已隨整組滑鼠設定搬到「滑鼠」分頁，樣式仍是兩者共用，留這裡。
+                  上兩個 checkbox ＝**樣式層**（畫什麼，可同時開），
+                  keyboardCursorHighlight ＝**來源層**（哪一列）。 */}
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                 <legend>{i18n("options_cursorHighlight")}</legend>
+                <PrefCheckbox
+                  name="cursorRowBrighten"
+                  checked={values.cursorRowBrighten}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_cursorRowBrighten")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_cursorRowBrighten")}
+                </Text>
+                <PrefCheckbox
+                  name="cursorRowBackground"
+                  checked={values.cursorRowBackground}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_cursorRowBackground")}
+                </PrefCheckbox>
                 <PrefCheckbox
                   name="keyboardCursorHighlight"
                   checked={values.keyboardCursorHighlight}
@@ -748,18 +767,30 @@ export const PrefModal = ({
                 >
                   {i18n("options_keyboardCursorHighlight")}
                 </PrefCheckbox>
-                <Text size="sm" fw={500} mb={4}>
+                <Text
+                  size="sm"
+                  fw={500}
+                  mb={4}
+                  c={values.cursorRowBackground ? undefined : "dimmed"}
+                >
                   {i18n("options_highlightColor")}
                 </Text>
                 {/* 一排可點色塊（b1..b15 = color.css 的底色 class），選中者描邊。
-                    比下拉好：直接顯示對應顏色，而非 index 數字。 */}
+                    比下拉好：直接顯示對應顏色，而非 index 數字。
+                    顏色**只對「整列上底色」這個樣式有意義** ⇒ 底色關掉時整排變灰
+                    且不接受點擊（aria-disabled 讓測試與輔助技術讀得到）。 */}
                 <div
                   className="PrefModal__HighlightColors"
+                  aria-disabled={!values.cursorRowBackground}
                   style={{
                     display: "flex",
                     flexWrap: "wrap",
                     gap: 4,
                     marginBottom: 12,
+                    opacity: values.cursorRowBackground ? 1 : 0.4,
+                    pointerEvents: values.cursorRowBackground
+                      ? undefined
+                      : "none",
                   }}
                 >
                   {Array.from({ length: 15 }, (_, i) => i + 1).map((i) => (

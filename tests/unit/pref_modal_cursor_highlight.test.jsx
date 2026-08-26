@@ -1,6 +1,9 @@
-// 設定面板「游標底色」區塊的 UI 契約（2026-08-15 從「滑鼠瀏覽」拆出）。
-// 三個 pref 共用一條渲染管線：滑鼠停留開關、鍵盤游標開關（新，預設開）、共用顏色。
-// 顏色色票曾是**完全無效**的設定（選什麼畫面都是綠的），這裡守住它至少有寫進 pref。
+// 設定面板「游標所在列」區塊的 UI 契約（2026-08-15 從「滑鼠瀏覽」拆出，
+// 2026-08-26 加入樣式層）。分兩層：
+//   來源層（哪一列）  滑鼠停留開關（住「滑鼠」分頁）、鍵盤游標開關
+//   樣式層（畫什麼）  整列提亮（預設開）、整列上底色（預設關）＋底色顏色
+// 顏色色票曾是**完全無效**的設定（選什麼畫面都是綠的），這裡守住它至少有寫進 pref；
+// 現在還要守住「底色關掉時色票整排失效」（顏色只對底色樣式有意義）。
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { PrefModal } from "../../src/components/ContextMenu/PrefModal";
@@ -78,7 +81,7 @@ beforeAll(() => setupI18n());
 beforeEach(() => window.localStorage.clear());
 
 describe("設定頁：游標底色", () => {
-  test("獨立成一個「游標底色」區塊（不再埋在滑鼠瀏覽裡）", () => {
+  test("獨立成一個「游標所在列」區塊（不再埋在滑鼠瀏覽裡）", () => {
     openModal();
     expect(screen.getByText(i18n("options_cursorHighlight"))).toBeTruthy();
   });
@@ -114,9 +117,59 @@ describe("設定頁：游標底色", () => {
   });
 
   test("點色票 → 共用顏色寫進 mouseBrowsingHighlightColor", () => {
-    openModal();
+    openModal({ cursorRowBackground: true });
     fireEvent.click(swatch(6));
     closeModal();
     expect(readValuesWithDefault().mouseBrowsingHighlightColor).toBe(6);
+  });
+
+  // ---- 樣式層 ----
+
+  test("整列提亮預設開、整列上底色預設關", () => {
+    openModal();
+    expect(box("cursorRowBrighten")).toBeChecked();
+    expect(box("cursorRowBackground")).not.toBeChecked();
+    expect(DEFAULT_PREFS.cursorRowBrighten).toBe(true);
+    expect(DEFAULT_PREFS.cursorRowBackground).toBe(false);
+  });
+
+  test("兩個樣式可以同時開（不是二選一）", () => {
+    openModal();
+    fireEvent.click(box("cursorRowBackground"));
+    closeModal();
+    const v = readValuesWithDefault();
+    expect(v.cursorRowBrighten).toBe(true);
+    expect(v.cursorRowBackground).toBe(true);
+  });
+
+  test("取消整列提亮 → 寫進 pref", () => {
+    openModal();
+    fireEvent.click(box("cursorRowBrighten"));
+    closeModal();
+    expect(readValuesWithDefault().cursorRowBrighten).toBe(false);
+  });
+
+  test("底色關著時色票整排標成失效（顏色只對底色樣式有意義）", () => {
+    openModal();
+    const row = document.querySelector(".PrefModal__HighlightColors");
+    expect(row.getAttribute("aria-disabled")).toBe("true");
+    expect(row.style.pointerEvents).toBe("none");
+  });
+
+  test("勾起底色 → 色票立刻可用", () => {
+    openModal({ cursorRowBackground: true });
+    const row = document.querySelector(".PrefModal__HighlightColors");
+    expect(row.getAttribute("aria-disabled")).toBe("false");
+    expect(row.style.pointerEvents).toBe("");
+  });
+
+  test("兩個樣式都在「一般」分頁（與來源層的鍵盤開關同一區）", () => {
+    openModal();
+    const general = screen
+      .getByRole("tab", { name: i18n("options_general") })
+      .getAttribute("aria-controls");
+    const panel = document.getElementById(general);
+    expect(panel.querySelector('[name="cursorRowBrighten"]')).toBeTruthy();
+    expect(panel.querySelector('[name="cursorRowBackground"]')).toBeTruthy();
   });
 });

@@ -650,7 +650,10 @@
     "message": "滑鼠移動"
   },
   "tooltip_mouseBrowsingHighlight": {
-    "message": "與「鍵盤游標底色」共用同一個顏色（在「一般」分頁設定）；兩者同時作用時以滑鼠優先。關掉之後，滑鼠移動不會讓畫面有任何反應。"
+    "message": "與鍵盤游標共用同一組標示樣式（在「一般」分頁設定）；兩者同時作用時以滑鼠優先。關掉之後，滑鼠移動不會讓畫面有任何反應。"
+  },
+  "tooltip_cursorRowBrighten": {
+    "message": "整列文字提亮、背景不動，仿 PTT 舊版沒有底色的游標標示。可以和「整列上底色」同時開。"
   },
   "tooltip_highlightColorShared": {
     "message": "滑鼠移動時的底色與這裡共用同一個顏色（開關在「滑鼠」分頁）。"
@@ -698,16 +701,22 @@
     "message": "啟用滑鼠瀏覽"
   },
   "options_cursorHighlight": {
-    "message": "游標底色"
+    "message": "游標所在列"
+  },
+  "options_cursorRowBrighten": {
+    "message": "整列提亮（無底色）"
+  },
+  "options_cursorRowBackground": {
+    "message": "整列上底色"
   },
   "options_mouseBrowsingHighlight": {
-    "message": "滑鼠停留的那一列上底色"
+    "message": "滑鼠停留的那一列也標示"
   },
   "options_keyboardCursorHighlight": {
-    "message": "鍵盤操作時把游標所在列上底色"
+    "message": "鍵盤操作時也標示游標所在列"
   },
   "options_highlightColor": {
-    "message": "底色"
+    "message": "底色顏色"
   },
   "options_none": {
     "message": "無動作"

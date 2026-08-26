@@ -14,16 +14,18 @@
 | 原生畫面套用 | `term_buf.onMouse_move` | 寫 `mouseAction`／`nowHighlight`／指標／提示帶 |
 | 列表好讀套用 | `term_view.onListMouseMove` + `list_session.onMouseClick` | 虛擬視窗自己一套 |
 | 事件入口 | `pttchrome.jsx` | `mouse_click` / `middleMouse_down` / `mouse_scroll` |
-| 底色 | `cursor_highlight.js` + `term_view.applyCursorHighlight` | 滑鼠與鍵盤共用，**唯一真相源**；仲裁見下方「底色仲裁」 |
+| 標示 | `cursor_highlight.js` + `term_view.applyCursorHighlight` | 滑鼠與鍵盤共用，**唯一真相源**；來源／樣式分兩層見下方「游標列標示」，仲裁見「底色仲裁」 |
 
 ## pref schema（`pref_storage.js`）
 
 | key | 預設 | 值域 | 說明 |
 |---|---|---|---|
 | `useMouseBrowsing` | `true` | bool | 總開關，管得住底下全部 |
-| `mouseBrowsingHighlight` | `true` | bool | 滑鼠停留的那一列上底色 |
-| `keyboardCursorHighlight` | `true` | bool | 鍵盤游標列上底色（UI 在「一般」分頁） |
-| `mouseBrowsingHighlightColor` | `2` | 1..15 | 兩種底色共用（UI 在「一般」分頁） |
+| `mouseBrowsingHighlight` | `true` | bool | **來源層**：滑鼠停留的那一列要不要標示 |
+| `keyboardCursorHighlight` | `true` | bool | **來源層**：鍵盤游標列要不要標示（UI 在「一般」分頁） |
+| `cursorRowBrighten` | `true` | bool | **樣式層**：整列提亮、背景不動（UI 在「一般」分頁） |
+| `cursorRowBackground` | `false` | bool | **樣式層**：整列上底色（UI 在「一般」分頁） |
+| `mouseBrowsingHighlightColor` | `2` | 1..15 | 底色樣式的顏色，滑鼠與鍵盤共用（UI 在「一般」分頁） |
 | `mouseLeftClick` | `true` | bool | 列表點標題開文＋文章左側退出＋自訂指標 |
 | `mouseMisclickGuard` | `true` | bool | 防誤觸模式：**可點區＝底色區**的起始欄（見下方「防誤觸模式」） |
 | `mouseFunctionKeys` | `true` | bool | 畫面上的功能鍵提示變成按鈕（見下方「功能鍵按鈕」） |
@@ -168,6 +170,53 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 滾輪關閉時 `mouse_scroll` **直接 return，不 preventDefault**（語意＝我們完全不碰）。
 原生模式沒有可捲距離（`#BBSWindow` 是 `fixed; overflow:hidden`，`.main` 的高度就是
 內容高），所以放行不會造成怪異捲動。
+
+## 游標列標示：來源層 × 樣式層（2026-08-26）
+
+兩層**正交**，`applyCursorHighlight` 各問一次：
+
+| 層 | 問題 | 函式 | pref |
+|---|---|---|---|
+| 來源 | 哪一列 | `resolveHighlightRow` | `mouseBrowsingHighlight` / `keyboardCursorHighlight`（＋ `lastMover` 仲裁） |
+| 樣式 | 畫什麼 | `cursorHighlightClasses` | `cursorRowBrighten` / `cursorRowBackground` |
+| 寬度 | 從第幾欄畫起 | `highlightColStart` | `mouseMisclickGuard`（＝可點區，見上） |
+
+樣式層回一個 **class 字串**，可能是多個 class（`"cursorBrighten b2"`）：
+
+- 兩種樣式**可以同時開**，不是二選一。
+- 兩種都關 ⇒ 回 `""`，`applyCursorHighlight` 直接送 `NO_CURSOR_HIGHLIGHT`
+  （不是送一個沒有樣式的 class，否則 Screen 會為看不見的變化重畫）。
+- 多 class 表示 `Screen._toggleRowClass` **必須拆 token**：`classList.add("a b")`
+  會噴 `InvalidCharacterError`，整條標示鏈就地掛掉。守護
+  `tests/unit/cursor_highlight_fastpath.test.js`。
+
+### 提亮樣式（`cursorRowBrighten`，預設開）
+
+還原 pttbbs `e18a7182` 的 `grayout(row,row+1,GRAYOUT_COLORBOLD)`＝整列 `FTATTR_BOLD`
+/ `ESC[1m`（前景提亮一階、**背景不變**）。考證與官方中文名見
+`docs/pttbbs-screen-protocol.md` §11.4 —— 簡單說：官方詞彙的「光棒」專指**有底色**的
+`UF_CURSOR_STANDOUT`，圓點 `●` 是另一個 flag `UF_CURSOR_LEGACY`（只換符號、無高亮），
+無底色提亮那個實驗品已於 `814adde3` 移除。
+
+實作全在 CSS（`css/color.css` 的 `.cursorBrighten`）：
+
+- 「提亮一階」＝把 `q0..q7` 換成 `q8..q15` 的色值 —— 與 `TermChar.getFg()` 的
+  `bright ? fg+8 : fg` 同語意，不必動渲染鏈。
+- **絕對不可以用 `font-weight`**：等寬格線字重一變整列位移、`.wpadding` 的寬度契約
+  （`term_view.fixedResize` 直接掃 DOM 改它）跟著壞。同 `main.css` 的 `.fnKey` 禁令。
+  demo／原始碼直覺都會想加，守護在 `tests/unit/cursor_row_brighten.test.js`。
+- 已經是 `q8..q15` 的字沒有更亮的一階（原始碼是再疊 `FTATTR_BLINK`＝閃爍，太吵不採用）
+  ⇒ 改用整列 `text-shadow` 微發光（完全不參與 layout）。
+- 上班模式（`.work-mode-active`）**必須有自己一組**：與 `.cursorBrighten .qN` 同
+  specificity (0,2,0)，靜音調色盤在檔案後面 ⇒ 不寫就整個蓋掉。
+
+### 底色樣式預設為什麼開新 key，而不是把 `keyboardCursorHighlight` 翻成 `false`
+
+`readValuesWithDefault` 是 `{...DEFAULT_PREFS, ...localStorage}` 淺層合併，而
+`PrefModal.onCloseClick` 每次關閉**整包 `writeValues`** ⇒ 任何開過一次設定頁的人
+localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**。開新 key 是唯一能讓既有
+使用者也拿到新預設的做法（本 repo 刻意沒有 pref 遷移機制，見上方「舊 → 新 key 對照」）。
+守護：`tests/unit/pref_schema_cursor_row.test.js`。
 
 ## 底色仲裁（誰最後動誰贏）
 
@@ -421,6 +470,10 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 | `tests/unit/mouse_geometry.test.js` | 帶子右緣 ↔ 可點區右緣往返（三組幾何） |
 | `tests/unit/mouse_gating.test.js` | 總開關關掉 ⇒ 中鍵與滾輪也關 |
 | `tests/unit/cursor_highlight.test.js` | 底色決策表 + `lastMover` 仲裁（含鍵盤底色關／文章頁的回退）+ `highlightColStart` |
+| `tests/unit/cursor_row_brighten.test.js` | 樣式層四種組合 + `color.css` 契約（提亮＝q(n+8)、**無 font-weight**、無 background、上班模式有自己一組） |
+| `tests/unit/pref_schema_cursor_row.test.js` | 兩個樣式 pref 的預設值 + 既有使用者也拿得到新預設 |
+| `tests/unit/cursor_highlight_fastpath.test.js` | 快路徑：多 class 搬家、空 cls 不噴 `InvalidCharacterError` |
+| `tests/e2e/offline/cursor_row_brighten.offline.spec.js` | 真 CSS：提亮列的實際顏色＝q(n+8)、背景仍透明；切樣式即時生效 |
 | `tests/unit/row_render.test.js` | 部分寬度底色的 DOM（包裝 span 的範圍／`data-pusher-col`） |
 | `tests/unit/comment_parse.test.js` | `contentCol`（推文內容起始欄） |
 | `tests/unit/cursor_highlight_arbitration.test.js` | `applyCursorHighlight` 的來源判定：鍵盤搶得走、滑鼠拿得回、模式切換不算移動 |

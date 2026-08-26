@@ -428,6 +428,67 @@ UI**，不在推文流程內。`MAX_RECOMMENDS(100)` 只影響列表上的計數
 - unknown：`vgetstring` 畫的反白欄是 `ESC[0;7m`（fg0/bg7），與 §5.1 記的 fg7/bg0 相左。故
   **不採用「數反白格反推 `maxlength`」**，改用 §11.1 的公式 ＋ 畫面上推文列有無 IP 欄。
 
+## 11.4 游標標示：`cursor_show()` 的兩套 flag（2026-08-26 全部 CONFIRMED @ `mbbsd/stuff.c`）
+
+**別把「圓點」與「光棒」混為一談**——它們是**兩個獨立的 user flag**，官方中文名在
+`[U] 個人設定 → 個人化設定`（`mbbsd/user.c#Customize`，字串在 `user.c:477-486`）：
+
+| 官方中文（現行） | flag（`include/uflags.h`） | 做的事 |
+|---|---|---|
+| `使用舊式實心圓游標●` | `UF_CURSOR_LEGACY` `0x04000000` | **只換符號** `STR_CURSOR`(`>`) → `STR_CURSOR2`(`●`)。本身沒有任何整列高亮 |
+| `使用光棒式游標` | `UF_CURSOR_STANDOUT` `0x01000000` | `grayout(row,row+1,GRAYOUT_STANDOUT)` ＝整列**有底色**（前景/背景反轉） |
+
+現行 `cursor_show()`（`mbbsd/stuff.c:211-227`）：
+
+```c
+void cursor_show(int row, int column) {
+    move(row, column);
+    if (!HasUserFlag(UF_CURSOR_LEGACY)) { outs(STR_CURSOR);  move(row, column);     }
+    else                                { outs(STR_CURSOR2); move(row, column + 1); }
+    if (HasUserFlag(UF_CURSOR_STANDOUT)) grayout(row, row+1, GRAYOUT_STANDOUT);
+}
+```
+`STR_CURSOR2 = "●"`（Big5 `0xA1 0xB4`，佔兩格；`STR_UNCUR2` 是兩個空白）。
+呼叫點：`menu.c:615`、`psb.c:47`（Favorite／看板清單）、`read.c:176,187`、`stuff.c#cursor_key`。
+
+### `grayout` 的四個 level（`mbbsd/pfterm.c:2281-2345`）
+
+```c
+case GRAYOUT_COLORBOLD:  grayout_shift(y, end, 1, FTATTR_BOLD, FTATTR_BLINK);   // 提亮一階
+case GRAYOUT_COLORNORM:  grayout_shift(y, end, 0, FTATTR_BOLD, FTATTR_BLINK);   // 還原
+case GRAYOUT_STANDOUT:   grayout_apply(y, end, FTATTR_BLINK, 0); ft.standout=1; // 反轉
+case GRAYOUT_STANDEND:   grayout_apply(y, end, 0, FTATTR_BLINK); ft.standout=0;
+```
+`STANDOUT` 是「借 BLINK 位元」再由 `fterm_chattr()`（`pfterm.c:1786-1794`）在
+`ft.standout` 時把 `FTATTR_BLINK` 重新解讀成 `FTATTR_REVERSE` ⇒ **有底色**。
+`COLORBOLD` 走的是 `FTATTR_BOLD`（`ESC[1m`）⇒ 前景提亮一階、**背景不變**。
+
+### 時間線（六個 commit 全部驗過 `git show`）
+
+| commit | 日期 | 做的事 |
+|---|---|---|
+| `e18a7182` | 2013-01 | `Enable experimental lightbar menu system` — 加 `UF_MENU_LIGHTBAR 0x01000000`，`cursor_show()` 在該 flag 下畫 `●` ＋ `grayout(..,GRAYOUT_COLORBOLD)`＝**圓點 ＋ 無底色整列提亮**。UI 字串 `"(實驗性)啟用光棒選單系統"` |
+| `b9a5029f` | 2026-08-11 | `cleanup(cursor): Always do CURSOR_ASCII` — 「36% 使用者沒開，維護兩套 UI 太痛」；刪 `STR_CURSOR2`、廢 `UF_CURSOR_ASCII` |
+| `814adde3` | 2026-08-12 | `cleanup(menu): Remove the experimental lighbar menu` — 「只有 0.6% 使用者」；`UF_MENU_LIGHTBAR` 與那段 `COLORBOLD` 一起消失 |
+| `640a074f` | 2026-08-13 | `feat(cursor): Re-enable the legacy cursor` — 以新 flag `UF_CURSOR_LEGACY` 復活 `●`（理由：圓點可減輕閃爍游標造成的視覺疲勞）。**此時仍無整列高亮** |
+| `ebee1706` | 2026-08-14 | `feat(pfterm): Add standout() and GRAYOUT_STANDOUT` |
+| `33290148` | 2026-08-14 | `feat(user) Add UF_CURSOR_STANDOUT` — 「真正的光棒游標系統」，回收 `0x01000000` |
+
+⇒ **「無底色整列提亮」在現行 PTT 已無對應選項**（2013 的實驗品，2026-08-12 移除）。
+官方詞彙裡的「光棒」自 `33290148` 起專指**有底色**那個。
+
+### 對本 client 的意義
+
+server 送的是編碼後的 ANSI，client 看不到 flag，只看得到結果。本專案把這兩種樣式做成
+自己的 pref（`cursorRowBrighten` / `cursorRowBackground`，見 `docs/mouse.md`）：
+
+- 「提亮一階」在本專案是既有的色彩模型：`TermChar.getFg()` ＝ `bright ? fg+8 : fg`，
+  與 `ESC[1m` 同語意 ⇒ CSS 只要把 `q0..q7` 換成 `q8..q15` 的色值（`css/color.css`
+  的 `.cursorBrighten`）。**不可以用 `font-weight`**（等寬格線會整列位移）。
+- 已經是 `q8..q15` 的字沒有更亮的一階可去（原始碼是再疊 `FTATTR_BLINK`），本專案改用
+  整列 `text-shadow` 微發光，不採用閃爍。
+- 游標**符號**（`>` / `●`）是 PTT 帳號端設定，client 不偽造 server 沒送的字元。
+
 ## 12. 版本與未知
 
 - 以 §0 的 `build_origin`（`c1ff72df`）讀碼；PTT 實跑的是私有 commit `50372909`，差異不可見。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。

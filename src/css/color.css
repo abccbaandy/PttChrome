@@ -313,6 +313,29 @@
 .b15b13{background:-webkit-linear-gradient(left,#ffffff 50%,#ff00ff 50%);}
 .b15b14{background:-webkit-linear-gradient(left,#ffffff 50%,#00ffff 50%);}
 .b15b15{background:-webkit-linear-gradient(left,#ffffff 50%,#ffffff 50%);}
+/* ---- 游標整列提亮（pref cursorRowBrighten）----
+   還原 pttbbs e18a7182 的 grayout(row, row+1, GRAYOUT_COLORBOLD) ＝整列 FTATTR_BOLD
+   / ESC[1m：前景色提亮一階、**背景不變**（有底色的那個是 GRAYOUT_STANDOUT，另一個
+   pref cursorRowBackground 的 b1..b15）。本專案 TermChar.getFg() 就是
+   bright ? fg+8 : fg，所以「提亮一階」＝把 q0..q7 換成 q8..q15 的色值。
+
+   **絕對不可以用 font-weight**：這是等寬格線，字重一變整列位移、.wpadding 的寬度
+   契約（term_view.fixedResize 直接掃 DOM 改它）跟著壞 —— 同 main.css 的 .fnKey 禁令。
+   已經是 q8..q15 的字沒有更亮的一階可去（原始碼是再疊 FTATTR_BLINK＝閃爍，在瀏覽器
+   上太吵不採用），改用整列 text-shadow 微發光，text-shadow 完全不參與 layout。
+
+   放在 .work-mode-active 區塊**之前**：兩者 specificity 相同 (0,2,0)，後定義者勝
+   ⇒ 上班模式的靜音調色盤照樣蓋得掉這裡（上班模式另有一組見下方）。
+   守護：tests/unit/cursor_row_brighten.test.js。 */
+.cursorBrighten{text-shadow:0 0 6px currentColor;}
+.cursorBrighten .q0{color:#808080;}
+.cursorBrighten .q1{color:#ff0000;}
+.cursorBrighten .q2{color:#00ff00;}
+.cursorBrighten .q3{color:#ffff00;}
+.cursorBrighten .q4{color:#0000ff;}
+.cursorBrighten .q5{color:#ff00ff;}
+.cursorBrighten .q6{color:#00ffff;}
+.cursorBrighten .q7{color:#ffffff;}
 .o{position:relative;display:inline-block;}
 .o::after{content:attr(data-text);position:absolute;left:0px;width:50%;overflow:hidden;-webkit-user-select: none;user-select: none;pointer-events:none;}
 .w0::after{color:#000000;text-shadow:#000000 0 0 0px,#000000 0 0 0px,#000000 0 0 0px,#000000 0 0 0px,#000000 0 0 0px;}
@@ -368,6 +391,17 @@
 .work-mode-active .q13{color:#6b7280;}
 .work-mode-active .q14{color:#6b7280;}
 .work-mode-active .q15{color:#d1d5db;}
+/* 游標整列提亮在上班模式：該調色盤只有四階灰，直接照 q(n+8) 映幾乎全是 no-op
+   ⇒ 改成「在上班模式調色盤內各往上提一階」。text-shadow 沿用上面那條（不加
+   !important，維持上班模式的低調）。 */
+.work-mode-active .cursorBrighten .q0{color:#6b7280;}
+.work-mode-active .cursorBrighten .q1{color:#9ca3af;}
+.work-mode-active .cursorBrighten .q2{color:#d1d5db;}
+.work-mode-active .cursorBrighten .q3{color:#d1d5db;}
+.work-mode-active .cursorBrighten .q4{color:#9ca3af;}
+.work-mode-active .cursorBrighten .q5{color:#9ca3af;}
+.work-mode-active .cursorBrighten .q6{color:#9ca3af;}
+.work-mode-active .cursorBrighten .q7{color:#f3f4f6;}
 .work-mode-active .b1{background-color:#1f2937;}
 .work-mode-active .b2{background-color:#1f2937;}
 .work-mode-active .b3{background-color:#1f2937;}

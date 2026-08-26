@@ -5,8 +5,9 @@
 // LinkSegmentBuilder / Row 硬寫的 `b2`（#008000）。fork 從 DOM 字串渲染改成 React
 // 元件時斷掉，且沒有任何測試覆蓋 → 使用者選什麼顏色畫面都是綠的。
 //
-// 現在的合約：**誰要上色**（本檔 resolveHighlightRow）與**上什麼色**（highlightClass）
-// 都在這裡決定，term_view.applyCursorHighlight 是唯一的套用入口，Screen 只負責把
+// 現在的合約：**誰要上色**（本檔 resolveHighlightRow）與**上什麼色**
+// （cursorHighlightClasses：整列提亮／整列底色，兩者可疊）都在這裡決定，
+// term_view.applyCursorHighlight 是唯一的套用入口，Screen 只負責把
 // class 掛到那一列。滑鼠 hover 與鍵盤游標共用同一條管線與同一個顏色設定，兩者誰贏
 // 由 lastMover 仲裁（狀態在 term_view，規則見下方 resolveHighlightRow 與 docs/mouse.md）。
 
@@ -23,6 +24,28 @@ export function highlightClass(colorIndex) {
   if (!Number.isInteger(n) || n < 1 || n > 15) return "b" + DEFAULT_HIGHLIGHT_BG;
   return "b" + n;
 }
+
+// 「整列提亮」的 class（css/color.css）。還原 pttbbs e18a7182 的
+// grayout(row, row+1, GRAYOUT_COLORBOLD) ＝整列 FTATTR_BOLD / ESC[1m：前景色提亮
+// 一階、**背景不變**。PTT 現行已無此選項（UF_MENU_LIGHTBAR 於 814adde3 移除，
+// 官方詞彙裡的「光棒」專指有底色的 UF_CURSOR_STANDOUT），考證見
+// docs/pttbbs-screen-protocol.md。
+export const CURSOR_BRIGHTEN_CLASS = "cursorBrighten";
+
+// 這一列要掛哪些 class。**樣式層**——「哪一列」由 resolveHighlightRow 決定，兩層正交：
+// 兩種樣式可以同時開（底色 + 提亮），也可以都關（回 "" ＝這一列什麼都不畫，呼叫端
+// 應直接當成「不上色」跳過整條 render/patch）。
+//
+// 順序固定（brighten 在前）：Screen.setCursorHighlight 是拿 cls **字串**比對前後幀，
+// 順序飄動會讓沒變的幀被判成有變、白白重畫。
+export function cursorHighlightClasses(input) {
+  const o = input || {};
+  const out = [];
+  if (o.brighten) out.push(CURSOR_BRIGHTEN_CLASS);
+  if (o.background) out.push(highlightClass(o.colorIndex));
+  return out.join(" ");
+}
+
 // 原生畫面上「鍵盤游標列」只在這些 pageState 有意義：1=MENU、2/4=LIST。
 // 文章閱讀頁與編輯器／輸入框的真實游標停在底部狀態列或打字處，整列上色只會干擾
 // （這也是原生滑鼠光棒本來就只在 pageState 2/4 出現的理由，見 term_buf.onMouse_move）。

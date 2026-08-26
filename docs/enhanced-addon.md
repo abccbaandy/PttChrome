@@ -303,6 +303,14 @@ index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**�
 `onToggleLiveHelperModalState`）。守護 `tests/unit/dropdown_menu_preview.test.jsx`、
 `tests/unit/pref_modal_context_menu.test.jsx`、`tests/e2e/offline/article_link_menu.offline.spec.js`。
 
+**「一般 → 游標所在列」分頁區塊**：`cursorRowBrighten`(**true**)、`cursorRowBackground`(**false**)
+＝**樣式層**（畫什麼，兩者可同時開）；`keyboardCursorHighlight`(true) 與「滑鼠」分頁的
+`mouseBrowsingHighlight`(true) ＝**來源層**（哪一列）；`mouseBrowsingHighlightColor`(2) 只對底色
+樣式有意義（底色關掉時色票整排 `aria-disabled`）。提亮＝還原 pttbbs `GRAYOUT_COLORBOLD`（整列
+`ESC[1m`，前景提亮一階、背景不動），實作全在 `css/color.css` 的 `.cursorBrighten`。
+分層合約與「為什麼底色要開新 key」見 `docs/mouse.md`「游標列標示」，pttbbs 考證見
+`docs/pttbbs-screen-protocol.md` §11.4。
+
 **「一般 → 介面」分頁**：`autoHideBlinkCursor`(true) — PTT 自己畫了游標的畫面不再疊閃爍游標。
 判定純函式 `comment_parse.js#hasServerCursorMark`（cur_x/cur_y 那格＝游標記號；兩代 `>`/`●` 都認），
 依據是 pttbbs `mbbsd/stuff.c#cursor_show` 印完記號會把終端機游標**移回同一格**（`psb.c` 用
@@ -472,7 +480,7 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   - **非格線幀（好讀累積長頁）直接隱藏游標**：畫面第 N 列與格線第 N 列無關，`buf.cur_y` 指不到任何一列。文章內的輸入一律先進 functionMode 鏡像原生 24 列（`easy_reading._onKeyDownProcessUI` 對任何單字元鍵），那是格線幀，所以不影響打字。
   - 守護：`tests/e2e/offline/cursor_shape.offline.spec.js`（8 條：形狀／格內／水平／縮放／functionMode 不可捲／純捲動不脫鉤／`#cursor` 活在 `.main`／長頁隱藏）＋ `tests/unit/server_cursor_mark.test.js`（三個可見性來源 OR 合併）。
 - **「pref → 畫面」的鏈路要有測試盯著終點，不能只看到有人賦值就算接上**。實例：`mouseBrowsingHighlightColor`（游標底色）→ `view.highlightBG` 從 fork 改 React 起就是**只寫不讀**——`term_view.js` 初始化一次、`App.onPrefChange` 賦值一次，全 repo 零讀取點，真正上色的是 `LinkSegmentBuilder`/`Row` 硬寫的 `cx({ b2: … })`。使用者選任何顏色畫面永遠是 `#008000`，而且因為 pref 有正確持久化、`redraw(true)` 也有被呼叫，看起來一切正常。2026-08-15 才發現並改成 `cursor_highlight.js#highlightClass(pref)` → `b1..b15`。教訓：新增/搬動任何「設定值影響渲染」的 pref，回歸測試要斷言**渲染輸出**（DOM class/style），不是斷言中間欄位被設到。
-- **游標底色（光棒）只有一個套用入口 `term_view.applyCursorHighlight`**，決策全在純函式 `src/js/cursor_highlight.js`。來源有三種（原生真游標 `buf.cur_y`／列表好讀虛擬游標／滑鼠 hover）、模式判斷靠 `buf.listRenderMode` 與 `pageState`，**勿在 render 分支各自呼叫 Screen 的命令式 API**（舊版只有原生分支呼叫 `setHighlightedRow`，所以列表好讀與 functionMode 的游標永遠沒有底色）。掛載點：redraw 的 if/else 鏈之後（統一一次）、`term_buf.setHighlight`、`updateCursorPos`（涵蓋只有游標動的幀）、pref 變更。
+- **游標列標示只有一個套用入口 `term_view.applyCursorHighlight`**，決策全在純函式 `src/js/cursor_highlight.js`（`resolveHighlightRow`＝哪一列、`cursorHighlightClasses`＝畫什麼、`highlightColStart`＝從第幾欄畫起）。來源有三種（原生真游標 `buf.cur_y`／列表好讀虛擬游標／滑鼠 hover）、模式判斷靠 `buf.listRenderMode` 與 `pageState`，**勿在 render 分支各自呼叫 Screen 的命令式 API**（舊版只有原生分支呼叫 `setHighlightedRow`，所以列表好讀與 functionMode 的游標永遠沒有底色）。掛載點：redraw 的 if/else 鏈之後（統一一次）、`term_buf.setHighlight`、`updateCursorPos`（涵蓋只有游標動的幀）、pref 變更。
 - **傳給 `React.PureComponent` 的 prop 勿在 render 內現生新物件/Promise**。否則 shallow-compare 永遠不等 → PureComponent 形同失效、子樹每次重掛。實例：`ImagePreviewer` 的 `request` 曾每 render `of(href).then(resolveSrcToImageUrl)` 新 Promise → pusherHighlight 重繪時 value 重置、YouTube iframe 卸載重掛**閃爍**（img 有快取無感）；改 `ImagePreviewer.jsx#requestPreview(href)` 以 href memoize（module `Map`），同 href 同參考。核心渲染鏈去 React 化後 `ImagePreviewer` 仍是 React 葉子島，這條照樣成立。守護 `tests/unit/row_render.test.js`「same href → requestPreview 回同一個 Promise」。
 - **逐列節點快取只在 `enhance.stableRows` 為真時成立**（好讀累積長頁 `buf.pageLines`，由 `term_view.js` 的 `STABLE_ROWS` 帶）。那裡的列是 `cloneRow` 快照、append 之後永不再被寫，所以「列物件參考相同 ⇒ 內容相同」才成立。**原生 24 列畫面與列表視窗是 `term_buf` 就地改寫的活 buffer**：`buf.lines[y][x].ch = …`，列參考一路不變而內容每幀在變 —— 這兩條路徑加上 `stableRows` 就會一直畫出上一幀的內容。守護 `screen_incremental_render.test.js`「stableRows 沒帶 ⇒ 不套快取」。細節與另一半（逐列節點快取）見 `docs/easy-reading.md`「累積頁的每頁 render 成本必須是 O(新增列)」。
 - **自動開圖是延遲載入的（`render/inline_preview_slot.js`）：測試要驗預覽必先捲到，且捲完要等版面靜下來再量座標**。replay/boot 完就 `querySelector('img')` 只會量到空的佔位盒（用 `tests/e2e/helpers/replay.js` 的 `mountLazyPreviewsAt`／`seekInlineMedia`）。更隱蔽的一條：`scrollIntoView()` 之後**立刻**讀 `getBoundingClientRect()` 會拿到過期座標 —— 附近的圖這時才開始掛上、載入完又長高，把目標推走 → 後續 `page.mouse.click(x, y)` 點在別列上（`blacklist_quick_add` 的右鍵選單「查無加入黑名單」就是這樣紅的）。捲動與量測分開，中間等 `scrollHeight` 連續兩輪不變。

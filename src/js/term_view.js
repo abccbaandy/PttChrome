@@ -2,7 +2,7 @@
 
 import { TermKeyboard } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
-import { DEFAULT_HIGHLIGHT_BG, highlightClass, highlightColStart, resolveHighlightRow } from './cursor_highlight';
+import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow } from './cursor_highlight';
 import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END } from './mouse_regions';
 import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { exitBandRect } from './mouse_geometry';
@@ -106,8 +106,13 @@ export function TermView() {
   // 歷史坑：這個欄位曾經**只被寫入從未被讀**（React 化時斷鏈），使用者選什麼色
   // 畫面都是硬寫的綠色 b2。動這條路徑時務必確認 applyCursorHighlight 仍讀得到它。
   this.highlightBG = DEFAULT_HIGHLIGHT_BG;
-  // 鍵盤操作時也把游標所在列上色（pref keyboardCursorHighlight，預設開）。
+  // 鍵盤操作時也標示游標所在列（pref keyboardCursorHighlight，預設開）。
   this.keyboardCursorHighlight = true;
+  // 游標所在列的樣式層（pref cursorRowBrighten / cursorRowBackground）。上面兩個
+  // 是「哪一列」的來源層，這兩個是「畫什麼」，兩層正交、兩種樣式可同時開。
+  // 值須與 pref_storage.js DEFAULT_PREFS 一致。
+  this.cursorRowBrighten = true;
+  this.cursorRowBackground = false;
   this.charset = 'big5';
   // 滑鼠子開關（pref mouseLeftClick / mouseMiddleClick / mouseWheel）。總開關是
   // buf.useMouseBrowsing，gating 一律走 mouse_regions.resolveMouseGates。
@@ -814,12 +819,19 @@ TermView.prototype = {
       pageState: this.buf.pageState,
       misclickGuard: !!(this.buf.useMouseBrowsing && this.mouseMisclickGuard)
     });
+    // 樣式層：兩種都關掉時 cls 是空字串 ⇒ 直接當成「不標示」，省掉整條
+    // render/patch（也讓 Screen._toggleRowClass 不必處理空 token）。
+    var cls = cursorHighlightClasses({
+      brighten: !!this.cursorRowBrighten,
+      background: !!this.cursorRowBackground,
+      colorIndex: this.highlightBG
+    });
     if (TRACE)
-      console.log(`applyCursorHighlight: mode=${mode} row=${row} col=${col} bg=${this.highlightBG}`);
+      console.log(`applyCursorHighlight: mode=${mode} row=${row} col=${col} cls=${cls}`);
     this.componentScreen.setCursorHighlight(
-      row < 0
+      row < 0 || !cls
         ? NO_CURSOR_HIGHLIGHT
-        : { row: row, cls: highlightClass(this.highlightBG), col: col }
+        : { row: row, cls: cls, col: col }
     );
   },
 
