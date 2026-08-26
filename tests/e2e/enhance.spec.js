@@ -3,7 +3,6 @@ const {
   readScreen,
   sendKey,
   typeLine,
-  attachConsole,
   applyPrefs,
   resetSession,
   gotoBoard,
@@ -14,9 +13,8 @@ const {
 
 // Enhanced Add-on：樓層編號 + 黑名單。連真 PTT，需好讀模式。
 // 對應 src/js/comment_parse.js / Screen.js / term_view.js(appendRows)。
-// 共用登入 session（helpers/fixtures.js）；自動登入 test 例外（本質測登入流程，獨立 page）。
-
-const KEY = 'pttchrome.pref.v1';
+// 全部走共用登入 session（helpers/fixtures.js）——**整輪只登入一次**，連「自動登入」
+// 那條也是斷言那一次開機的結果，不再自己開站。
 
 test.describe.serial('enhanced add-on（共用 session）', () => {
   test('樓層編號：好讀模式推文出現遞增序號', async ({ shared }) => {
@@ -456,52 +454,25 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
 });
 
 // 自動登入：開頁後完全不按任何鍵，應自動送帳密、跳過提示，進到主選單。
-// 本質測登入流程 → 不共用 session，獨立 page + addInitScript（autoLogin 只在 connect 時啟動）。
-// 刻意「不」先關掉共用 session：帳號掛著另一條連線時 PTT 會多出「重複登入」提示頁，
-// 正好回歸 auto_login 的 one-shot guard（_answeredDup/_answeredErr）——guard 失效時
-// 重送的雜鍵會把畫面帶離主選單（實測停在看板列表）。
-test('自動登入：開頁自動到主選單（不需按鍵）', async ({ shared, page }) => {
-  const user = process.env.PTT_USER;
-  const pass = process.env.PTT_PASS;
-  // 帳號有開兩階段驗證時一併注入密鑰，否則 auto_login 會（刻意地）停在驗證碼畫面
-  // 把鍵盤交還給使用者 —— 那條降級路徑守在 tests/unit/auto_login_2fa.test.js。
-  const otpSecret = process.env.PTT_OTP_SECRET || '';
-  test.skip(!user || !pass, '需 env PTT_USER/PTT_PASS 才能測自動登入');
-  test.setTimeout(120000);
-  const logs = attachConsole(page);
-  void shared; // 引用 fixture 讓共用連線保持存活（製造重複登入情境）
-  try {
-    await page.addInitScript((args) => {
-      try {
-        const cur = JSON.parse(window.localStorage.getItem(args.KEY) || '{}');
-        const values = Object.assign({}, cur.values, args.extra);
-        window.localStorage.setItem(args.KEY, JSON.stringify({ values }));
-      } catch (e) {}
-    }, {
-      KEY,
-      extra: {
-        autoLogin: true,
-        autoLoginUser: user,
-        autoLoginPassword: pass,
-        autoLoginOtpSecret: otpSecret,
-        autoLoginDupConn: 'N',
-        autoLoginSkipWelcome: true
-      }
-    });
-    await page.goto('/');
-    // 關鍵：完全不呼叫 typeLine/sendKey，純等自動登入（開站即 connect，autoLogin 隨之啟動）。
-    const deadline = Date.now() + 90000;
-    let screen = '';
-    while (Date.now() < deadline) {
-      screen = await readScreen(page);
-      if (screen.includes('主功能表')) break;
-      await page.waitForTimeout(1000);
-    }
-    console.log('AUTO LOGIN SCREEN HEAD:', screen.split('\n')[0]);
-    expect(screen).toContain('主功能表');
-  } catch (err) {
-    console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
-    await page.screenshot({ path: 'tests/e2e/__screenshots__/enhance-autologin-error.png', fullPage: true });
-    throw err;
-  }
+//
+// **不自己開站**：整輪 live e2e 只登入一次，而那一次就是共用 session 的開機 ——
+// helpers/fixtures.js 用 autoLoginBoot（注入 autoLogin prefs → 開站 → 完全不按鍵
+// 等主功能表）建立它，也就是說被測行為早就在 fixture 裡跑過了，這裡斷言它留下的
+// 證據即可。自己再開一個 page 只會讓整輪多一次登入，而登入次數正是 PTT DDoS/BOT
+// 防護的觸發條件（見 tests/e2e/README.md）。
+//
+// 換掉的覆蓋度（刻意）：以前靠「共用 session 還掛著時再開一條」製造「重複登入」提示，
+// 回歸 auto_login 的 one-shot guard；整輪只剩一條連線後製造不出來，那個 guard 由
+// tests/unit/auto_login_2fa.test.js 與 auto_login_logic.test.js 守。
+test('自動登入：開頁自動到主選單（不需按鍵）', async ({ shared }) => {
+  test.skip(
+    !process.env.PTT_USER || !process.env.PTT_PASS,
+    '需 env PTT_USER/PTT_PASS 才能測自動登入（無帳密時共用 session 走 guest 手動登入）'
+  );
+  const { boot } = shared;
+  console.log('AUTO LOGIN SCREEN HEAD:', boot.screen.split('\n')[0]);
+  console.log('AUTO LOGIN WAITED:', boot.waitedMs, 'ms retries=', boot.retries);
+  // auto:false ＝ fixture 退回了 guest 手動登入 ⇒ 這條的前提根本沒成立，要紅。
+  expect(boot.auto).toBe(true);
+  expect(boot.screen).toContain('主功能表');
 });

@@ -18,10 +18,12 @@ yarn test:e2e:headed   # 肉眼看登入過程
 yarn test:e2e:ui       # Playwright UI 模式
 ```
 
-**2FA 帳號**：`helpers/ptt.js#login` 會用 `PTT_OTP_SECRET` 以 `src/js/totp.js` 即時算出 6 位驗證碼
-（最多送 2 次，重試前先等過 30 秒窗——同一窗重算是同一組碼）。沒設會直接報錯說明要設什麼，
-不會空轉到逾時。`enhance.spec.js` 的自動登入案例也會把密鑰注入 prefs；**沒給密鑰時 app 端會
-刻意停在驗證碼畫面把鍵盤交還使用者**（該降級路徑守在 `tests/unit/auto_login_2fa.test.js`）。
+**2FA 帳號**：有帳密時整輪唯一那次登入走 `helpers/ptt.js#autoLoginBoot`，密鑰
+（`PTT_OTP_SECRET`）注入 prefs 交給產品的 `src/js/auto_login.js` 自己算；**沒給密鑰時
+app 端會刻意停在驗證碼畫面把鍵盤交還使用者**（該降級路徑守在
+`tests/unit/auto_login_2fa.test.js`）。沒有帳密時退回 guest，走 `helpers/ptt.js#login`
+手動打字（它用 `src/js/totp.js` 即時算碼，最多送 2 次，重試前先等過 30 秒窗——同一窗
+重算是同一組碼）。
 
 dev server 由 `playwright.config.js` 的 `webServer` 自動啟動（已手動 `yarn start` 時 `reuseExistingServer` 會重用）。
 
@@ -67,8 +69,10 @@ preflight 只管「連得到 PTT」；**帳密送出之後**卡住是另一回�
 ## 登入預算：整輪 live e2e 只登入一次（**強制規範**）
 
 **任何新 spec 一律用共用 session（`helpers/fixtures.js` 的 `shared` fixture），不准自己
-`page.goto('/')` + `login()`。** 守護：`tests/unit/e2e_login_budget.test.js`（純靜態掃描，
-違反就紅）。
+`page.goto('/')` + `login()`，也不准自己開 `browser.newContext()`。**
+守護兩條：`tests/unit/e2e_login_budget.test.js`（純靜態掃描，違反就紅）與
+`tests/unit/e2e_auto_login_boot.test.js`（假 page 餵畫面序列，鎖住開機本身的登入次數：
+被封鎖時不重開站、節流重試有上限、終局畫面快速失敗）。
 
 理由是 PTT 有登入頻率限制，而且踩到之後**重試會讓情況變糟**。開源碼裡讀得到的下界
 （`daemon/utmpd/utmpserver3.c#action_frequently`，完整表在
@@ -80,15 +84,39 @@ preflight 只管「連得到 PTT」；**帳密送出之後**卡住是另一回�
 | 同一分鐘 > 3 次 / > 10 次 | delay / reject |
 | 同一小時 > 20 次 / > 60 次 | delay / reject |
 
-一輪的登入次數盤點（27 條 live test 總共 **3 次**）：
+一輪的登入次數盤點（27 條 live test 總共 **1 次**）：
 
-| 來源 | 次數 | 為什麼不能再省 |
+| 來源 | 次數 | 說明 |
 |---|---|---|
-| `helpers/fixtures.js` 的 `shared` | 1 | 27 條裡有 24 條共用它 |
-| `enhance.spec.js` 自動登入 | 1 | 被測行為就是「開站不按鍵自動登入到主選單」 |
-| `deep-link.spec.js` | 1 | 被測行為就是「開站當下消費 URL fragment」 |
+| `helpers/fixtures.js` 的 `shared` | 1 | 27 條**全部**共用它 |
 
-（2026-08-25 之前是十幾次：`easy-reading-list.spec.js` 一支就自己登入 9 次。）
+這一次開機**就是產品自己的自動登入**（`helpers/ptt.js#autoLoginBoot`：注入 autoLogin
+prefs → 開站 → 完全不按鍵等主功能表），所以它同時是「開站自動登入」那條 spec 的被測
+行為；沒有 `PTT_USER`/`PTT_PASS` 時退回 guest + 手動 `login()`，相關 spec 自己 skip。
+
+整輪流程：**開機（＝唯一一次登入，順帶驗自動登入）→ deep link → 其餘 spec**。
+
+### 兩條以前有豁免權的 spec 怎麼改的（2026-08-26）
+
+| spec | 以前 | 現在 |
+|---|---|---|
+| `enhance.spec.js` 自動登入 | 自己開一個 page 冷啟動 | 斷言 `shared.boot`（fixture 那一次開機留下的證據：`auto`/`screen`/`waitedMs`） |
+| `deep-link.spec.js` | 自己開一個 page 帶 `#Board/AID` 冷啟動 | 在**已登入的共用分頁**設 `location.hash` ⇒ 走 `deep_link_entry.js` 明列的第 2 條進入路徑（hashchange，「同一個分頁再貼一次連結，不重載、不用重新登入」） |
+
+deep link 的跳轉本體與冷啟動是**同一段 code**：`consume()` → `DeepLinkController.request`
+→ `_canNavigate()` → `_dispatch()`，而 `_dispatch` 在 `startedEasyReading === false` 時走
+`nav.startExternal()`，正是冷啟動那一支。所以 spec 開跳前先 `resetSession`（回主功能表
+＋關好讀）把前置狀態對齊。
+
+**刻意換掉的兩塊覆蓋度**（都另有 unit 守護，別再為了它們加登入）：
+
+| 失去的 | 為什麼 | 誰在守 |
+|---|---|---|
+| 「重複登入」提示 | 以前靠「共用 session 掛著時再開一條」製造；整輪只剩一條連線就做不出來 | `tests/unit/auto_login_2fa.test.js`、`auto_login_logic.test.js`（one-shot guard `_answeredDup`/`_answeredErr`） |
+| deep link「連結先到、人還沒登入」的暫存排程 | 冷啟動特有的時序 | `tests/unit/deep_link_controller.test.js`（`_hold`/`_pending`，含 handoff 通知） |
+
+（2026-08-25 之前是十幾次：`easy-reading-list.spec.js` 一支就自己登入 9 次。
+2026-08-26 之前是 3 次，那樣連跑五輪照樣被鎖 —— 實錄見下一節。）
 
 **另一個放大器：Playwright 在 test 失敗後會重啟 worker** ⇒ worker-scoped 的 `shared`
 fixture 重建 ⇒ 又登入一次。所以失敗多的那一輪，登入次數會遠超上表。對策有兩道：

@@ -1,24 +1,38 @@
-// Deep link live e2e：帶 #<Board>/<AID> 開站 → 自動登入 → 自動落在那篇文章。
+// Deep link live e2e：在已登入的分頁貼上 #<Board>/<AID> → 自動落在那篇文章。
 //
-// 這是**唯一**驗得到完整鏈的地方：unit 驗按鍵序列、offline 驗 URL 進得來，但
-// 「冷啟動 → 登入 → 主功能表 → s<board> → #<aid> → ⏎」整條只有真 PTT 跑得出來。
-// 特別是主功能表那個起手式（跳過 escape preamble，不然 ← 會把反白移到 G)oodbye）。
+// 這是**唯一**驗得到「主功能表 → s<board> → #<aid> → ⏎ → 落地」整條的地方：unit 驗
+// 按鍵序列、offline 驗 URL 進得來，但真正會壞的是與 PTT 的往返（特別是主功能表那個
+// 起手式：跳過 escape preamble，不然 ← 會把反白移到 G)oodbye）。
 //
-// 需要獨立 page（要測開站流程本身，不能用共用 session 的已登入 page），但**同時**
-// 拿 shared 來撈一個真實 AID —— 隨機挑 AID 是不行的，PTT 上不存在的 AID 只會得到
-// 「找不到」。
+// ## 為什麼不自己開站（2026-08-26）
+//
+// 以前這條會另開一個分頁冷啟動 ⇒ 整輪多一次登入，而登入次數正是 PTT DDoS/BOT 防護的
+// 觸發條件（見 tests/e2e/README.md）。現在改走 deep_link_entry.js 明列的**第 2 條**
+// 進入路徑：「hashchange（同一個分頁再貼一次連結，不重載、不用重新登入）」——那本來就
+// 是產品支援的真實使用路徑，而且跳轉本體與冷啟動**完全同一段 code**：
+//
+//   location.hash = '#Board/AID'
+//     → deep_link_entry 的 hashchange 監聽 → consume()
+//     → DeepLinkController.request(target)
+//     → _canNavigate()（連著 + 看過主功能表 + 沒有跳轉在跑）
+//     → _dispatch()：startedEasyReading === false ⇒ nav.startExternal()  ← 冷啟動同一支
+//
+// 所以前置條件要對齊冷啟動落地當下的狀態：**停在主功能表、好讀尚未啟動**
+// （resetSession 兩件事都做到）。
+//
+// 換掉的覆蓋度（刻意）：冷啟動特有的「連結先到、人還沒登入 ⇒ _hold 收著等登入完成」
+// 那段時序。DeepLinkController 的 _hold/_pending 守在
+// tests/unit/deep_link_controller.test.js（含 handoff 來源的通知）。
 const { test, expect } = require('./helpers/fixtures');
 const {
   readScreen,
   sendKey,
-  attachConsole,
+  applyPrefs,
   resetSession,
   gotoBoard,
 } = require('./helpers/ptt');
 
-const KEY = 'pttchrome.pref.v1';
-
-// 刻意挑一個**有進板畫面**的看板：deep link 冷啟動走的是 viaMenu 板跳
+// 刻意挑一個**有進板畫面**的看板：deep link 走的是 viaMenu 板跳
 // （ReadSelect() → Read()），本 session 首次進板一定先吃到進板畫面 pmore ＋
 // pressanykey（mbbsd/bbs.c:4482-4492）。而文章內的 s 走 more.c:177 的 Select()，
 // 從來不顯示進板畫面 —— 所以既有的 AID 點擊跳文測試涵蓋不到這條路徑，2026-08-16
@@ -29,56 +43,47 @@ const BOARD = 'Steam';
 
 const AID_RE = /文章代碼\(AID\):\s*#([0-9A-Za-z_-]{8})/;
 
-test('deep link：帶 #<Board>/<AID> 開站 → 自動登入後落在該篇文章', async ({ shared, page }) => {
-  const user = process.env.PTT_USER;
-  const pass = process.env.PTT_PASS;
-  const otpSecret = process.env.PTT_OTP_SECRET || '';
-  test.skip(!user || !pass, '需 env PTT_USER/PTT_PASS：deep link 要等登入完成才跳');
+test('deep link：貼上 #<Board>/<AID> → 自動落在該篇文章', async ({ shared }) => {
+  test.skip(
+    !process.env.PTT_USER || !process.env.PTT_PASS,
+    '需 env PTT_USER/PTT_PASS：deep link 要等登入完成才跳'
+  );
   test.setTimeout(180000);
-  const logs = attachConsole(page);
+  const { page, logs } = shared;
+  logs.length = 0;
 
-  // 1) 用共用 session 撈一個真的存在的 AID。
-  await resetSession(shared.page);
-  await gotoBoard(shared.page, BOARD);
-  await sendKey(shared.page, 'Q'); // 大寫 Q＝文章資訊框（小寫 q 是離板）
-  await shared.page.waitForTimeout(1500);
-  const infoScreen = await readScreen(shared.page);
+  // 1) 先撈一個真的存在的 AID —— 隨機挑是不行的，PTT 上不存在的 AID 只會得到「找不到」。
+  await resetSession(page);
+  await gotoBoard(page, BOARD);
+  await sendKey(page, 'Q'); // 大寫 Q＝文章資訊框（小寫 q 是離板）
+  await page.waitForTimeout(1500);
+  const infoScreen = await readScreen(page);
   const m = infoScreen.match(AID_RE);
   console.log('DEEP LINK TARGET AID:', m && m[1]);
   expect(m).not.toBeNull();
   const aid = m[1];
-  await sendKey(shared.page, 'Space'); // 關資訊框
-  await shared.page.waitForTimeout(1000);
+  await sendKey(page, 'Space'); // 關資訊框
+  await page.waitForTimeout(1000);
 
   try {
-    // 2) 新分頁帶 deep link 開站。autoLoginDupConn:'N' —— 共用 session 還掛著，
-    //    PTT 會多問一次「重複登入」。
-    await page.addInitScript((args) => {
-      try {
-        const cur = JSON.parse(window.localStorage.getItem(args.KEY) || '{}');
-        const values = Object.assign({}, cur.values, args.extra);
-        window.localStorage.setItem(args.KEY, JSON.stringify({ values }));
-      } catch (e) {}
-    }, {
-      KEY,
-      extra: {
-        autoLogin: true,
-        autoLoginUser: user,
-        autoLoginPassword: pass,
-        autoLoginOtpSecret: otpSecret,
-        autoLoginDupConn: 'N',
-        autoLoginSkipWelcome: true,
-        enableEasyReading: true,
-      },
-    });
-
-    await page.goto('/#' + BOARD + '/' + aid);
+    // 2) 回到冷啟動落地當下的狀態：主功能表 + 好讀尚未啟動（_dispatch 因此走
+    //    startExternal，與冷啟動同一支）。resetSession 會把好讀關掉，跳完之後
+    //    要是好讀模式 ⇒ 得在派工前把 pref 打開。
+    await resetSession(page);
+    await applyPrefs(page, { enableEasyReading: true });
 
     // 診斷：hint 是失敗時唯一講得清楚卡在哪一步的東西；sent 用來確認真的走過
     // 進板畫面的關框（← ），也就是這條路徑真的被覆蓋到了。
     await page.evaluate(() => {
       const app = window.__app;
       window.__diag = { hints: [], sent: [] };
+      // 共用 session：wrapper 一定要留得住還原路徑，否則後面每一條 spec 都在跑
+      // 這裡的 JSON.stringify（見本 test 的 finally）。
+      window.__diagRestore = {
+        flashListHint: app.view.flashListHint,
+        _send: app.commandQueue._send,
+        onSettle: app.commandQueue.onSettle,
+      };
       const orig = app.view.flashListHint.bind(app.view);
       app.view.flashListHint = (msg, ms) => {
         window.__diag.hints.push(msg);
@@ -105,7 +110,17 @@ test('deep link：帶 #<Board>/<AID> 開站 → 自動登入後落在該篇文�
       };
     });
 
-    // 3) 完全不按任何鍵：自動登入 → controller 在主功能表 settle 時派工 → 落地。
+    // 3) 貼上連結。**完全不按任何鍵**：hashchange → consume() → controller 派工 → 落地。
+    const before0 = await page.evaluate(() => ({
+      started: window.__app.buf.startedEasyReading,
+      pageState: window.__app.buf.pageState,
+    }));
+    console.log('BEFORE HASH:', JSON.stringify(before0));
+    expect(before0.started).toBe(false); // 沒有這個前提就不是 startExternal 那條路
+    await page.evaluate((h) => {
+      window.location.hash = h;
+    }, '#' + BOARD + '/' + aid);
+
     await page.waitForFunction(
       () => window.__app.buf.pageState === 3 && window.__app.aidNavigation.active === false,
       null,
@@ -210,5 +225,24 @@ test('deep link：帶 #<Board>/<AID> 開站 → 自動登入後落在該篇文�
     } catch (e) {}
     await page.screenshot({ path: 'tests/e2e/__screenshots__/deep-link-error.png', fullPage: true });
     throw err;
+  } finally {
+    // 共用 session 的規矩：離開時把 wrapper 拆掉、hash 清掉。page 會被後面每一條
+    // spec 沿用，留著的話它們每一次 _send/onSettle 都在跑這裡的 JSON.stringify。
+    await page.evaluate(() => {
+      try {
+        const r = window.__diagRestore;
+        if (r) {
+          window.__app.view.flashListHint = r.flashListHint;
+          window.__app.commandQueue._send = r._send;
+          window.__app.commandQueue.onSettle = r.onSettle;
+          window.__diagRestore = null;
+        }
+      } catch (e) {}
+      // 清 hash 會再觸發一次 hashchange → consume()，但 parseDeepLink('') 是 null，
+      // 不會派工（deep_link_entry.consume 的第一道就是它）。
+      try {
+        window.location.hash = '';
+      } catch (e) {}
+    });
   }
 });

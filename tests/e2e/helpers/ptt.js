@@ -8,10 +8,16 @@ const {
   createLoginState,
   restartLoginBudget,
   decideLoginAction,
+  classifyLoginScreen,
+  describeLoginTimeout,
 } = require('./login_flow');
 
 // DDoS/BOT 封鎖的偵測與跨 worker 閂鎖（見該檔開頭）。
-const { assertNotBotBlocked, markBotBlocked } = require('./bot_block');
+const {
+  assertNotBotBlocked,
+  markBotBlocked,
+  describeBotBlock,
+} = require('./bot_block');
 
 const SCREEN_SELECTOR = '#mainContainer';
 
@@ -233,6 +239,159 @@ async function login(page) {
 
 const PREF_KEY = 'pttchrome.pref.v1';
 
+// 產品自己的自動登入（src/js/auto_login.js）當成整輪 live e2e 的**唯一一次登入**。
+//
+// 為什麼不是 login()（手動打字）：以前「自動登入」是一條自己開站的 spec，deep link
+// 又是另一條，加上共用 session 的 login()，一輪就是三次登入 —— 而登入次數正是 PTT
+// DDoS/BOT 防護的觸發條件（2026-08-26 實錄：為了做一次對照連跑五輪，帳號直接被鎖）。
+// 改成「共用 session 本身就用產品的自動登入開機」之後，那條 spec 不必自己開站，只要
+// 斷言這一次開機的結果即可 ⇒ 一輪一次登入。規範見 tests/e2e/README.md。
+//
+// 這裡**完全不送任何鍵**：帳密、重複登入提示、2FA、跳過歡迎頁全部由 auto_login.js
+// 自己處理，那正是被測行為。我們只負責輪詢畫面並在該喊停的時候喊停。
+//
+// 節流／卡住的處置刻意與 login() 同一套政策（backoff 數字也一樣），差別只在「重試＝
+// 重新開站」而不是「重送帳密」：auto_login 只在 connect 當下啟動，沒有重送的入口。
+const AUTO_LOGIN_POLL_MS = 1000;
+const AUTO_LOGIN_BUDGET_MS = 90000;
+const AUTO_LOGIN_THROTTLE_BACKOFF_MS = 30000;
+const AUTO_LOGIN_MAX_THROTTLE_RETRIES = 2;
+// 這幾種畫面是**終局**（帳密錯、guest 滿、站台維護／過載／拒絕、2FA 鎖死）：
+// 等下去不會變好，直接借 decideLoginAction 的同名分支把結論吐出來。
+const AUTO_LOGIN_TERMINAL_PHASES = [
+  'bad-credentials',
+  'guest-full',
+  'maintenance',
+  'overloaded',
+  'quota-rejected',
+  'tfa-locked',
+];
+
+// 注入自動登入 prefs。addInitScript 而非 applyPrefs：auto_login 只在 connect 當下讀，
+// 而開站即 connect（CLAUDE.md「dev build 開站即 connect()」）⇒ 必須在 goto 之前就位。
+async function installAutoLoginPrefs(page, extra) {
+  const user = process.env.PTT_USER;
+  const pass = process.env.PTT_PASS;
+  await page.addInitScript(
+    (args) => {
+      try {
+        const cur = JSON.parse(window.localStorage.getItem(args.KEY) || '{}');
+        const values = Object.assign({}, cur.values, args.extra);
+        window.localStorage.setItem(args.KEY, JSON.stringify({ values }));
+      } catch (e) {}
+    },
+    {
+      KEY: PREF_KEY,
+      extra: Object.assign(
+        {
+          autoLogin: true,
+          autoLoginUser: user,
+          autoLoginPassword: pass,
+          autoLoginOtpSecret: process.env.PTT_OTP_SECRET || '',
+          // 這一輪只有這一條連線，理論上不會被問「重複登入」；仍然給 'N'，因為
+          // 上一輪殘留的連線還沒被 PTT 收掉時照樣會問（one-shot guard 的 unit 守護
+          // 在 tests/unit/auto_login_2fa.test.js）。
+          autoLoginDupConn: 'N',
+          autoLoginSkipWelcome: true,
+        },
+        extra || {}
+      ),
+    }
+  );
+}
+
+// 開站 → 完全不按鍵 → 等主功能表。回 { screen, waitedMs, retries }。
+// 失敗一律丟帶結論的錯誤；被 PTT 封鎖時**先立閂鎖**，後續 spec 連都不用連。
+async function autoLoginBoot(page, opts) {
+  const o = opts || {};
+  assertNotBotBlocked();
+  const user = process.env.PTT_USER;
+  if (!user || !process.env.PTT_PASS)
+    throw new Error('autoLoginBoot 需要 env PTT_USER/PTT_PASS');
+
+  const hasOtp = isValidOtpSecret(process.env.PTT_OTP_SECRET || '');
+
+  await installAutoLoginPrefs(page, o.prefs);
+  await page.goto('/');
+  await waitBbsConnected(page);
+
+  const startedAt = Date.now();
+  let retries = 0;
+  let deadline = startedAt + AUTO_LOGIN_BUDGET_MS;
+  let screen = '';
+  let phase = 'unknown';
+
+  for (;;) {
+    screen = await readScreen(page);
+    phase = classifyLoginScreen(screen);
+
+    if (phase === 'main-menu')
+      return { screen, waitedMs: Date.now() - startedAt, retries };
+
+    // 封鎖是**整輪**的事實：立閂鎖，之後每一條 spec 在送出任何連線之前就會被擋下。
+    if (phase === 'bot-blocked') {
+      const message = describeBotBlock(screen);
+      markBotBlocked(message);
+      throw new Error(message);
+    }
+
+    // 終局畫面：PTT 已經把結論寫在螢幕上了，再等下去只是多吃 90 秒然後吐一則泛用
+    // 逾時訊息。結論字串直接借 decideLoginAction 的同名分支（不另抄一份，兩條路
+    // 的訊息才不會漂移）。
+    // tfa-prompt 只有在**沒給密鑰**時才是終局：auto_login 會刻意停在驗證碼畫面
+    // 把鍵盤交還使用者（降級路徑守在 tests/unit/auto_login_2fa.test.js）；有密鑰時
+    // 它自己會送碼（含時鐘偏差重試），該等。
+    const terminal =
+      AUTO_LOGIN_TERMINAL_PHASES.indexOf(phase) >= 0 ||
+      (phase === 'tfa-prompt' && !hasOtp);
+    if (terminal) {
+      const decision = decideLoginAction({
+        screen,
+        connected: true,
+        now: Date.now(),
+        state: createLoginState({ user, hasOtpSecret: hasOtp, now: Date.now() }),
+      });
+      throw new Error(
+        decision.action === 'fail'
+          ? decision.message
+          : `自動登入停在 ${phase}\n--- 當前畫面 ---\n${screen}`
+      );
+    }
+
+    if (phase === 'throttled') {
+      if (retries >= AUTO_LOGIN_MAX_THROTTLE_RETRIES)
+        throw new Error(
+          `自動登入節流，退避重試 ${retries} 次仍失敗\n--- 當前畫面 ---\n${screen}`
+        );
+      ++retries;
+      console.log(
+        `偵測到登入節流，等待 ${AUTO_LOGIN_THROTTLE_BACKOFF_MS}ms 後重新開站` +
+          `（第 ${retries} 次）`
+      );
+      // 依據 mbbsd/talk.c#multi_user_check：判定 flooding 後 outs() 完就
+      // sleep(30); exit(0) ⇒ 這條連線等同已死，只能重新開站。
+      await page.waitForTimeout(AUTO_LOGIN_THROTTLE_BACKOFF_MS);
+      await page.goto('/');
+      await waitBbsConnected(page);
+      deadline = Date.now() + AUTO_LOGIN_BUDGET_MS;
+      continue;
+    }
+
+    if (Date.now() >= deadline)
+      throw new Error(
+        describeLoginTimeout({
+          user,
+          phase,
+          screen,
+          connected: await isBbsConnected(page),
+          waitedMs: Date.now() - startedAt,
+        })
+      );
+
+    await page.waitForTimeout(AUTO_LOGIN_POLL_MS);
+  }
+}
+
 // runtime 套用 prefs（共用 session 不 reload，故不能用 addInitScript）：
 // 1) 寫 localStorage —— enableEasyReading 由 easy_reading.js 在 pageState 變化時 live 讀取，下次進文章生效；
 // 2) 立即生效的 key 走 window.__app.onPrefChange（showFloorNumbers/blacklist 等，會 redraw）。
@@ -427,6 +586,7 @@ function inspectFloorGaps(entries) {
 
 module.exports = {
   readScreen,
+  autoLoginBoot,
   waitForScreen,
   typeLine,
   sendKey,

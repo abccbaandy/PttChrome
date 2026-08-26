@@ -6,7 +6,16 @@
 // 連跑兩輪就被鎖住（tests/e2e/README.md 有完整處置）。
 //
 // 修法是「整輪只登入一次」——唯一的登入點是 `helpers/fixtures.js` 的共用 session。
-// 這條測試把那個約定變成會紅的規則：**任何 live spec 都不准自己呼叫 login()**。
+// 這條測試把那個約定變成會紅的規則：**任何 live spec 都不准自己呼叫 login()，
+// 也不准自己開站（page.goto）**。
+//
+// 2026-08-26 收緊到「一輪一次」：在那之前還有兩條 spec 有豁免權（enhance 的自動登入
+// 與 deep-link，被測行為本身就是開站），一輪三次登入，連跑五輪照樣被鎖。現在
+//   - 共用 session 的開機**就是**產品的自動登入（fixtures.js 的 autoLoginBoot）
+//     ⇒ 那條 spec 改成斷言開機留下的證據；
+//   - deep link 改走 hashchange（同一個已登入分頁再貼一次連結，deep_link_entry.js
+//     明列的第 2 條進入路徑）。
+// ⇒ 豁免名單清空，整輪一次登入。
 // 純靜態掃描，不連網、不開瀏覽器，所以放 unit（e2e 素材不穩，見 CLAUDE.md 測試段）。
 import fs from "fs";
 import path from "path";
@@ -43,19 +52,21 @@ describe("live e2e 登入預算", () => {
     expect(offenders).toEqual([]);
   });
 
-  // 自己開站（`page.goto`）＝多一條連線、多一次登入（dev build 開站即 connect，且這兩條
-  // 都注入 autoLogin prefs）。只有「被測行為本身就是開站自動登入」的 spec 才有資格，
-  // 而那是一份**明確的**清單：多一個檔案進來就必須是有意識的決定，所以這裡鎖死名單而不是
-  // 只算數量。
-  test("自己開站的 live spec 就是那兩條測開站自動登入的（名單鎖死）", () => {
+  // 自己開站（`page.goto`）＝多一條連線、多一次登入（dev build 開站即 connect）。
+  // 名單現在是**空的**：連「開站自動登入」與 deep link 都改成搭共用 session 的那一次
+  // 開機，沒有任何 spec 有資格自己開站。多一個進來就是多一次登入，必須先改這條測試。
+  test("沒有任何 live spec 自己開站（page.goto）", () => {
     const booting = liveSpecs.filter((f) => /page\.goto\(/.test(read(f)));
-    expect(booting).toEqual(["deep-link.spec.js", "enhance.spec.js"]);
+    expect(booting).toEqual([]);
   });
 
-  test("那兩條開站 spec 測的確實是自動登入（沒有偷偷手動送帳密）", () => {
-    for (const f of ["deep-link.spec.js", "enhance.spec.js"]) {
-      expect(read(f)).toContain("autoLogin");
-    }
+  // 自己開 browser context 同樣等於多一條連線。preflight 不在 liveSpecs 裡（它是
+  // 獨立 project，只連線不登入），所以掃得乾淨。
+  test("沒有任何 live spec 自己開 browser context", () => {
+    const offenders = liveSpecs.filter((f) =>
+      /browser\.newContext\(/.test(read(f)),
+    );
+    expect(offenders).toEqual([]);
   });
 
   test("唯一的登入點是共用 session fixture", () => {
@@ -63,7 +74,24 @@ describe("live e2e 登入預算", () => {
       path.join(E2E_DIR, "helpers", "fixtures.js"),
       "utf8"
     );
+    // 有帳密 → 產品自己的自動登入；沒有 → guest 手動登入。就這兩條路。
+    expect(fixtures).toContain("await autoLoginBoot(page)");
     expect(fixtures).toContain("await login(page)");
+  });
+
+  // 「自動登入」那條 spec 現在斷言的是共用 session 開機留下的證據（shared.boot），
+  // 而那份證據只有走 autoLoginBoot 時才會是 auto:true ⇒ fixture 一旦改回手動登入，
+  // 那條 spec 會紅，而不是靜默失去覆蓋。
+  test("自動登入 spec 斷言的是共用 session 的開機證據", () => {
+    const src = read("enhance.spec.js");
+    expect(src).toContain("boot.auto");
+    expect(src).toContain("主功能表");
+  });
+
+  // deep link 的入口：hashchange（deep_link_entry.js 明列的第 2 條路徑）。改回自己
+  // 開站會被上面的 page.goto 掃描擋下，這條再明講「該用哪一條」。
+  test("deep link spec 走 hashchange 而不是自己冷啟動", () => {
+    expect(read("deep-link.spec.js")).toContain("location.hash");
   });
 
   test("共用 session 在被封鎖時不會再開連線（閂鎖擋在 newContext 之前）", () => {

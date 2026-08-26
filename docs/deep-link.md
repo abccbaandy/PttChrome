@@ -336,7 +336,7 @@ link 時 `_enabled` 是 false。`_functionMode` 唯一的出口 `_evalFunctionMo
 |---|---|
 | unit | `tests/unit/deep_link.test.js`（URL 合約＝規格書） |
 | unit | `tests/unit/deep_link_channel.test.js`（假 BroadcastChannel bus + 同步時鐘） |
-| unit | `tests/unit/deep_link_controller.test.js`（排程 + 複製連結） |
+| unit | `tests/unit/deep_link_controller.test.js`（排程 + 複製連結；**含冷啟動的 `_hold`/`_pending`** —— live e2e 自 2026-08-26 起走 hashchange，那段時序只剩這裡驗得到） |
 | unit | `tests/unit/deep_link_entry.test.js`（三條進入路徑 + 清網址） |
 | unit | `tests/unit/aid_navigation.test.js` → `describe('startExternal（deep link）')`；落地要呼叫 `ensureEnabledOnArticle` 且 `active` 已解鎖 |
 | unit | `tests/unit/easy_reading_function_mode_gate.test.js`（坑 5：好讀關閉時 `_enterFunctionMode` 必須 no-op） |
@@ -347,4 +347,4 @@ link 時 `_enabled` 是 false。`_functionMode` 唯一的出口 `_evalFunctionMo
 | unit | `tests/unit/pref_modal_notify_permission.test.jsx`（關閉設定頁時的權限檢查） |
 | e2e offline | `tests/e2e/offline/deep_link.offline.spec.js`（cassette 是固定 byte 流，只驗解析／暫存／清網址，**不驗完整跳轉**；另含交接通知：標題閃爍→`bringToFront()`→還原，且全程 `pageerror` 為空 —— 預設 context 沒有通知權限，剛好是要守的常態路徑；前景抑制另有一條，headless 無真正背景分頁故以 `addInitScript` 蓋 `document.hasFocus`） |
 | e2e offline | `tests/e2e/offline/ui_behavior.offline.spec.js`（PrefModal 的 `deepLinkHandoffNotify` 開關） |
-| e2e live | `tests/e2e/deep-link.spec.js`（唯一驗得到「冷啟動→登入→主功能表→切板→跳文」完整鏈的地方；需 `PTT_USER`/`PTT_PASS`，AID 先用共用 session 按 Q 撈真的。落地後斷言 `useEasyReadingMode === true` 且 `easyReadingFunctionMode === false`） |
+| e2e live | `tests/e2e/deep-link.spec.js`（唯一驗得到「主功能表→切板→跳文→落地」完整鏈的地方；需 `PTT_USER`/`PTT_PASS`，AID 先按 Q 撈真的。落地後斷言 `useEasyReadingMode === true` 且 `easyReadingFunctionMode === false`）。**2026-08-26 起不自己冷啟動**：整輪 live e2e 只登入一次（見 `tests/e2e/README.md`「登入預算」），改在共用的已登入分頁設 `location.hash` 走 hashchange 進入路徑 —— 跳轉本體與冷啟動同一段 code（`consume()`→`request`→`_dispatch`→`startExternal`，前置是 `startedEasyReading === false`）。冷啟動特有的「連結先到、人還沒登入」暫存排程由 `tests/unit/deep_link_controller.test.js` 的 `_hold`/`_pending` 守 |
