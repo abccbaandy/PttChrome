@@ -40,6 +40,35 @@ function findCassette(mode) {
   return findCassettes(mode)[0] || null;
 }
 
+// stub 只接管 **BBS 那一条** WebSocket，其余（Vite dev server 的 HMR socket）
+// 一律放行给原生 WebSocket。
+//
+// 踩过的坑（偶发红的根因，别再拿掉）：installReplay 覆写的是**全域**
+// window.WebSocket ⇒ 连 Vite HMR client 的 socket 也被接管，它送出的
+// `vite:forward-console` JSON 被记进 window.__sent / __replay.sent，混进
+// 「app 送给 PTT 的 bytes」里。症状：long_push.offline 期望 sentText === 'X'
+// 却拿到 'X{"type":"custom","event":"vite:forward-console",...}'。页面里冒出任何
+// console error / unhandled rejection 才触发转发 ⇒ 偶发而非必现，而且哪个 spec
+// 中枪取决于当下页面吐了什么（mouse.offline 也中过）。
+// 连带修掉：window.__stubWS 之前会被后建立的 HMR socket 覆盖，
+// ui_behavior.offline.spec.js 的 __stubWS.close() 就关不到 BBS 连线。
+//
+// 判准：URL 的 path 结尾是 /bbs —— dev 走本机 proxy ws://localhost:8080/bbs、
+// prod 走 wss://ws.ptt.cc/bbs（vite.config.mjs 的 DEFAULT_SITE + pttchrome.jsx
+// #connect 的 wstelnet/wsstelnet → ws/wss 转换）。Vite HMR 是 ws://host:port/?token=…
+// ⇒ pathname '/' ⇒ 不攔。
+// 纯函式守护：tests/unit/offline_ws_stub_url.test.js。
+function isBbsSocketUrl(raw) {
+  if (typeof raw !== 'string' && !(raw && typeof raw.toString === 'function')) return false;
+  let url;
+  try {
+    url = new URL(String(raw));
+  } catch (e) {
+    return false;
+  }
+  return /(^|\/)bbs$/.test(url.pathname);
+}
+
 // addInitScript：必须在 page.goto 之前呼叫，覆写 window.WebSocket。
 //
 // opts.neverOpen=true：模拟「**从未连上**」（PTT 维护中 / ws.ptt.cc 不可达）——不 fire
@@ -51,9 +80,20 @@ function findCassette(mode) {
 //   WebSocket inside the page」），onConnect 照跑。
 async function installReplay(page, opts = {}) {
   const neverOpen = opts.neverOpen === true;
-  await page.addInitScript((neverOpen) => {
+  const isBbsSrc = isBbsSocketUrl.toString();
+  await page.addInitScript(({ neverOpen, isBbsSrc }) => {
+    // 判准的**唯一来源**是模组里那支纯函式（有 unit 守护）；addInitScript 的
+    // callback 会被序列化送进页面、看不到模组作用域，所以把原始码一起带进来。
+    const isBbsSocketUrl = new Function('return (' + isBbsSrc + ')')();
+    const NativeWebSocket = window.WebSocket;
     class StubWebSocket {
-      constructor(url) {
+      constructor(url, protocols) {
+        // 不是 BBS 那条（Vite HMR…）⇒ 交还给原生 WebSocket，别记进送出纪录。
+        // class constructor 回传物件即以该物件为 new 的结果。
+        if (!isBbsSocketUrl(url))
+          return protocols === undefined
+            ? new NativeWebSocket(url)
+            : new NativeWebSocket(url, protocols);
         this.url = url;
         this.binaryType = 'arraybuffer';
         this.readyState = 0; // CONNECTING
@@ -112,7 +152,7 @@ async function installReplay(page, opts = {}) {
     StubWebSocket.CLOSING = 2;
     StubWebSocket.CLOSED = 3;
     window.WebSocket = StubWebSocket;
-  }, neverOpen);
+  }, { neverOpen, isBbsSrc });
 }
 
 // 等 app 离线「连上」（onConnect 把 connectState 设 1）。
@@ -596,6 +636,7 @@ module.exports = {
   FIXTURE_DIR,
   installOfflineNetwork,
   classifyOfflineRequest,
+  isBbsSocketUrl,
   offlineServedUrls,
   loadCassette,
   findCassette,

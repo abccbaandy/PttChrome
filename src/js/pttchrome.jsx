@@ -506,8 +506,25 @@ App.prototype.switchToEasyReadingMode = function(doSwitch) {
   this.view._send(unescapeStr('^L'));
 };
 
+// 剪貼簿寫入**一定要自己接住失敗**：document 沒有焦點、非 secure context、
+// 權限被拒時 writeText 會 reject NotAllowedError，navigator.clipboard 本身在非
+// secure context 更是根本不存在（裸 deref ＝同步 TypeError，會把呼叫端整條路徑
+// 炸斷，長推文取消收尾 long_push_session#_finish 就走這條）。
+// 沒接住的 rejection 除了讓真實使用者 console 冒紅字，還會被 Vite HMR client 轉發
+// 回 dev server（vite:forward-console）→ 離線 e2e 的 stub WebSocket 把那段 JSON
+// 記成「app 送出的 bytes」→ 讀 __sent 的 spec 偶發紅。
+// 回歸守護：tests/unit/copy_clipboard_reject.test.js。
 App.prototype.doCopy = function(str) {
-  navigator.clipboard.writeText(normalizeCopyText(str));
+  try {
+    var clip = navigator.clipboard;
+    if (!clip || !clip.writeText) return Promise.resolve(false);
+    return Promise.resolve(clip.writeText(normalizeCopyText(str))).then(
+      function() { return true; },
+      function() { return false; }
+    );
+  } catch (e) {
+    return Promise.resolve(false);
+  }
 };
 
 App.prototype.doCopyAnsi = function() {

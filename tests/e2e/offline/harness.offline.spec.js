@@ -23,4 +23,30 @@ test.describe('离线重放 harness', () => {
     const screen = await readScreen(page);
     expect(screen).toContain('HELLO OFFLINE REPLAY');
   });
+
+  // REGRESSION：stub 覆写的是**全域** window.WebSocket，一度连 Vite dev server 的
+  // HMR socket 也接管 ⇒ HMR client 送出的 `vite:forward-console` JSON 被记进
+  // __stubWSSent，混进「app 送给 PTT 的 bytes」。症状是偶发红：
+  //   long_push.offline「送出期间键盘不会漏到 PTT」期望 sentText === 'X'，
+  //   实际拿到 'X{"type":"custom","event":"vite:forward-console",...}'。
+  // 触发条件＝页面里冒出 console error / unhandled rejection，所以这里主动制造一个。
+  test('送出纪录只收 BBS 那条连线的 bytes，不混进 Vite HMR 流量', async ({ page }) => {
+    await installReplay(page);
+    await page.goto('/');
+    await waitConnected(page);
+
+    // stub 只该接管 /bbs；__stubWS 不可被后建立的 HMR socket 盖掉。
+    expect(await page.evaluate(() => window.__stubWS.url)).toContain('/bbs');
+
+    await page.evaluate(() => {
+      window.__sent = [];
+      window.__stubWSSent = (s) => window.__sent.push(s);
+      // Vite 的 client 会把 unhandled rejection 转发回 dev server（走 HMR socket）。
+      Promise.reject(new Error('offline harness: forced console forward'));
+      console.error('offline harness: forced console forward');
+    });
+    await page.waitForTimeout(500);
+
+    expect(await page.evaluate(() => (window.__sent || []).join(''))).toBe('');
+  });
 });

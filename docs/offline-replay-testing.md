@@ -176,5 +176,21 @@ apply`…）當防禦，避免圖載不到就假紅。**圖改本地 fixture 後
   **不要改用 Playwright 的 `page.routeWebSocket()`** —— 它會把 mock 的 WebSocket 在頁面裡
   **開起來**（官方 types：「Playwright assumes that WebSocket will be mocked, and opens the
   WebSocket inside the page」），`onConnect` 照跑，測不到這條路徑。
+- **stub WebSocket 只准接管 `/bbs` 那一條**（`replay.js#isBbsSocketUrl`，pathname 結尾 `/bbs`），
+  其餘交還原生 `WebSocket`。覆寫的是**全域** `window.WebSocket`，一度連 Vite dev server 的
+  HMR socket 也被接管 ⇒ HMR client 送出的 `vite:forward-console` JSON 被記進
+  `window.__sent` / `__replay.sent`，混進「app 送給 PTT 的 bytes」。症狀是**偶發紅**（頁面吐出
+  任何 console error / unhandled rejection 才觸發轉發，所以哪支 spec 中槍看當下運氣）：
+  `long_push.offline` 期望 `sentText === 'X'` 卻拿到
+  `X{"type":"custom","event":"vite:forward-console",...}`；`mouse.offline` 也中過。
+  連帶：`window.__stubWS` 之前會被後建立的 HMR socket 蓋掉。
+  判準是純函式，守護 `tests/unit/offline_ws_stub_url.test.js`；症狀層守護
+  `tests/e2e/offline/harness.offline.spec.js`（主動製造一顆 unhandled rejection 再驗 `__sent` 空）。
+  `addInitScript` 的 callback 看不到模組作用域，所以判準以 `.toString()` 帶進頁面重建 ——
+  **別在頁面裡另抄一份**，那就沒有單一來源了。
+- **產品端的 promise 一律要接住 rejection**（同一個根因的另一半）：`navigator.clipboard.writeText`
+  在 document 沒有焦點 / 非 secure context / 權限被拒時 reject `NotAllowedError`，
+  `navigator.clipboard` 本身在非 secure context 更是不存在。`App.doCopy` 原本裸呼叫 ⇒ 真實使用者
+  console 冒紅字、離線 e2e 被 HMR 轉發污染。守護 `tests/unit/copy_clipboard_reject.test.js`。
 - Layer2 重建要 `pageScreens[p].slice(0,-1)` 去掉狀態列（與 accumulatePageLines 一致）。
 - `getRowText(row,0,cols,pageLines)` 第 4 參傳 pageLines 才讀累積頁（不傳讀 24 列原生 buf）。
