@@ -72,8 +72,28 @@ async function plainLeftEdge(page) {
 // 找一列「可以被真的點到」的推文列，回傳它的座標與內容起始欄。
 // 排除黑名單列（visibility:hidden ⇒ 根本不是 hit-test 目標）與左緣被連結／內嵌
 // 預覽蓋住的列（那些位置本來就該由它們優先接手，見 plainLeftEdge 的同一理由）。
+//
+// **量座標前一定要等版面停下來**（2026-08-27 修，CI 偶發紅的來源）：好讀長頁裡有
+// 行內預覽佔位盒（這卷 cassette 有 3 個），scrollIntoView 把它們捲進視窗正好觸發
+// IntersectionObserver → mount → onLoad → ResizeObserver 撐高這串非同步流程 ⇒ 捲完
+// 當下量到的 rect 之後還會再位移。位移之後 (contentX, y) 就落在別的元素上，點下去
+// 既不會高亮（不是推文列）也不會送左方向鍵（在退出帶右邊）—— 症狀正是
+// 「防誤觸開啟：點推文內容＝同作者高亮」拿到 0 個高亮列。本機 fixture 圖秒回，
+// 幾乎都在量測前就穩定了，所以只在 CI 上偶發。
 async function commentRow(page) {
-  const pos = await page.evaluate(() => {
+  const pos = await page.evaluate(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    // 連續兩次量到同一個 top（±0.5px）才算穩定；撐不穩就放棄這一列。
+    const settle = async (el) => {
+      let last = null;
+      for (let i = 0; i < 40; i++) {
+        const top = el.getBoundingClientRect().top;
+        if (last !== null && Math.abs(top - last) < 0.5) return true;
+        last = top;
+        await sleep(50);
+      }
+      return false;
+    };
     const v = window.__app.view;
     const left = parseFloat(v.firstGridOffset.left);
     const xOf = (col) => left + v.chw * (col + 0.5);
@@ -87,6 +107,7 @@ async function commentRow(page) {
       // 好讀是累積長頁，推文在文章尾端 ⇒ 預設一定捲在視窗外，elementFromPoint
       // 用的是**視窗座標**，不先捲進來一律落空。
       el.scrollIntoView({ block: 'center' });
+      if (!(await settle(el))) continue;
       const r = el.getBoundingClientRect();
       if (r.height <= 0) continue;
       const y = r.top + r.height / 2;
@@ -109,6 +130,15 @@ async function commentRow(page) {
   if (!pos) throw new Error('找不到可點的推文列');
   return pos;
 }
+
+// 點下去之前再確認一次「指標底下真的還是那一列推文」。版面若在量測之後又位移，
+// 這裡會直接指出來，而不是讓斷言退化成看不出原因的「高亮 0 列」。
+const pusherUnder = (page, x, y) =>
+  page.evaluate(({ x, y }) => {
+    const at = document.elementFromPoint(x, y);
+    const el = at && at.closest && at.closest('[data-pusher]');
+    return el ? el.getAttribute('data-pusher') : null;
+  }, { x, y });
 
 const highlightedPushers = (page) =>
   page.evaluate(() =>
@@ -435,6 +465,10 @@ test.describe('滑鼠（離線重放）', () => {
       const row = await commentRow(page);
       await page.mouse.move(row.contentX, row.y);
       await page.waitForTimeout(50);
+      expect(
+        await pusherUnder(page, row.contentX, row.y),
+        '點擊前指標底下應仍是同一列推文（版面位移的話這裡先炸）'
+      ).toBe(row.pusher);
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
@@ -453,6 +487,10 @@ test.describe('滑鼠（離線重放）', () => {
       const row = await commentRow(page);
       await page.mouse.move(row.leftX, row.y);
       await page.waitForTimeout(50);
+      expect(
+        await pusherUnder(page, row.leftX, row.y),
+        '點擊前指標底下應仍是同一列推文（版面位移的話這裡先炸）'
+      ).toBe(row.pusher);
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();

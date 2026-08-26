@@ -145,6 +145,11 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   - **一律用 `yarn ci:status`**（`scripts/ci-status.mjs`，需 env `GH_TOKEN`）：等該 commit 的所有 run 跑完 → 印每個 run 結果 → 失敗時自動挖出失敗 job/step 並印 log 尾巴。
     參數：`--branch <b>`／`--sha <sha>`／`--no-wait`（只看當下）／`--rerun-failed`（僅在它判定為已知 flaky 時才會送出重跑）。
     exit code：`0` 全綠、`1` 有失敗、`2` 工具或設定問題（**刻意分三種**，「查不到」不可被當成「沒問題」）。
+    **「只查到 `Push on dev`（`event: dynamic`）」不等於全綠**：那是 CodeQL default setup 的 run，
+    本專案的 `Deploy to GitHub Pages` 可能只是還沒被建立（2026-08-27 實測 push 事件到 run 建立
+    延遲了 **11 分鐘**）。舊版會因為 CodeQL 那顆已完成就印「CI 全綠」exit 0 —— 已改成必須看到
+    本專案的 workflow run（`isProjectRun`，排除 `dynamic/*`）才判定，等不到就 exit 2；CI 逾時
+    也改成從「本專案 run 出現」那刻起算。守護 `tests/unit/ci_status_parse.test.js`。
     `--sha` 吃短 sha／`HEAD`／tag（腳本會自己 `git rev-parse` 展開；GitHub runs API 的 `head_sha` **只吃完整 40 字元**，
     直接送短 sha 會回空陣列＝假的「查無 run」）。剛 push 完 run 尚未建立時會寬限等 90s 才判定查無（2026-08 補，三坑都實際踩過）。
   - **本機沒有 `jq`，也沒有 `gh` CLI**。**禁止**再用 `curl … | jq` 或 `gh run …` 拼輪詢迴圈：jq 不存在 → 解析永遠是空字串 → 判不出「跑完了沒」而空轉到逾時，錯誤又常被 `2>/dev/null` 吞掉，看起來像 CI 卡住（實際早就綠了）。此坑已重複踩多次，故改用 Node 腳本（Node 是專案硬需求，Bash／PowerShell 兩種工具都跑得動）。純函式守護在 `tests/unit/ci_status_parse.test.js`。

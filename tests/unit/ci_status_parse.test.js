@@ -12,6 +12,8 @@ import {
   isKnownFlaky,
   allSettled,
   isFullSha,
+  isProjectRun,
+  projectRuns,
 } from "../../scripts/ci-status.mjs";
 
 test("import 純函式不得觸發網路（fetch 未被呼叫）", async () => {
@@ -158,5 +160,70 @@ describe("isKnownFlaky", () => {
     expect(
       isKnownFlaky("test / test-integration", "AssertionError: expected 1 to be 2"),
     ).toBe(false);
+  });
+});
+
+// GitHub 的 default setup（CodeQL / Dependabot）跑的是 `dynamic/...` workflow，
+// 不是 repo 裡的 .github/workflows/*.yml。CLAUDE.md 明寫「只有 `Push on dev` 那個
+// `dynamic` run 是 CodeQL default setup，不算」。
+//
+// REGRESSION（2026-08-27 實際踩到）：push 事件到 `Deploy to GitHub Pages` run 被
+// 建立之間**延遲了 11 分鐘**。這段空窗期裡 runs API 只回得到 CodeQL 那一顆，而它
+// 早就 completed/success ⇒ allSettled 成立 ⇒ ci:status 印「CI 全綠」並 exit 0。
+// 也就是「本專案的 CI 根本還沒開始跑」被回報成「全綠」——正是這支腳本刻意分三種
+// exit code 要防的那件事。
+describe("isProjectRun / projectRuns", () => {
+  const codeql = {
+    name: "Push on dev",
+    event: "dynamic",
+    path: "dynamic/github-code-scanning/codeql",
+    status: "completed",
+    conclusion: "success",
+  };
+  const dependabot = {
+    name: "Dependabot Updates",
+    event: "dynamic",
+    path: "dynamic/dependabot/dependabot-updates",
+    status: "completed",
+    conclusion: "success",
+  };
+  const deploy = {
+    name: "Deploy to GitHub Pages",
+    event: "push",
+    path: ".github/workflows/deploy.yml",
+    status: "in_progress",
+    conclusion: null,
+  };
+
+  test("CodeQL / Dependabot 的 default setup run 不算本專案 CI", () => {
+    expect(isProjectRun(codeql)).toBe(false);
+    expect(isProjectRun(dependabot)).toBe(false);
+  });
+
+  test("repo 自己的 workflow 算（push / workflow_dispatch 都是）", () => {
+    expect(isProjectRun(deploy)).toBe(true);
+    expect(
+      isProjectRun({ ...deploy, event: "workflow_dispatch" })
+    ).toBe(true);
+  });
+
+  test("只有 CodeQL run 時 projectRuns 為空（REGRESSION：曾被當成全綠）", () => {
+    expect(projectRuns([codeql])).toEqual([]);
+    // 這正是誤判的現場：allSettled 對「只有 CodeQL」是成立的，所以不能只靠它。
+    expect(allSettled([codeql])).toBe(true);
+    expect(projectRuns([codeql]).length).toBe(0);
+  });
+
+  test("混合時只留本專案的 run", () => {
+    expect(projectRuns([codeql, deploy])).toEqual([deploy]);
+  });
+
+  test("空值 / 缺欄位不炸", () => {
+    expect(isProjectRun(null)).toBe(false);
+    expect(isProjectRun(undefined)).toBe(false);
+    expect(projectRuns(undefined)).toEqual([]);
+    // path 欄位缺席時只能靠 event 判斷。
+    expect(isProjectRun({ name: "x", event: "push" })).toBe(true);
+    expect(isProjectRun({ name: "x", event: "dynamic" })).toBe(false);
   });
 });

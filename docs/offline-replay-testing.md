@@ -192,5 +192,12 @@ apply`…）當防禦，避免圖載不到就假紅。**圖改本地 fixture 後
   在 document 沒有焦點 / 非 secure context / 權限被拒時 reject `NotAllowedError`，
   `navigator.clipboard` 本身在非 secure context 更是不存在。`App.doCopy` 原本裸呼叫 ⇒ 真實使用者
   console 冒紅字、離線 e2e 被 HMR 轉發污染。守護 `tests/unit/copy_clipboard_reject.test.js`。
+- **在好讀長頁上量元素座標，一定要等版面停下來再量**：長頁裡的行內預覽是佔位盒
+  （IntersectionObserver → mount → onLoad → ResizeObserver 撐高），`scrollIntoView` 本身就會把
+  它們捲進視窗而觸發載入 ⇒ 捲完當下量到的 `getBoundingClientRect` 之後還會再位移。位移之後
+  用舊座標點下去就落在別的元素上，斷言會退化成看不出原因的失敗（實例：`mouse.offline` 的
+  「點推文內容＝同作者高亮」在 CI 拿到 0 個高亮列，本機因 fixture 圖秒回而測不出來）。
+  作法見 `mouse.offline.spec.js#commentRow` 的 `settle()`：連續兩次量到同一個 top 才收；
+  並在點擊前用 `pusherUnder` 再確認一次指標底下還是同一列。
 - Layer2 重建要 `pageScreens[p].slice(0,-1)` 去掉狀態列（與 accumulatePageLines 一致）。
 - `getRowText(row,0,cols,pageLines)` 第 4 參傳 pageLines 才讀累積頁（不傳讀 24 列原生 buf）。

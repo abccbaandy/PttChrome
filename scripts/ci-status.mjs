@@ -27,6 +27,13 @@ const DEFAULT_DEADLINE_MS = 15 * 60 * 1000;
 // 「查無 run」只當成「還沒建立」繼續等，不可直接 exit 2 —— 那會看起來像工具壞了
 // 或 CI 沒被觸發，實際上再等幾秒就有了。
 const RUN_APPEAR_GRACE_MS = 90000;
+// 「runs API 已經回得到東西，但裡面**沒有本專案的 workflow run**」是另一種狀況，
+// 需要遠比上面長的寬限期：2026-08-27 實測 push 事件到 `Deploy to GitHub Pages`
+// run 被建立中間隔了 **11 分鐘**，這段期間 API 只回得到 CodeQL default setup 那顆
+// （早已 completed/success）⇒ allSettled 成立 ⇒ 舊版直接印「CI 全綠」exit 0。
+// 「本專案 CI 還沒開始跑」被回報成「全綠」，正是這支腳本刻意分三種 exit code 要
+// 防的事。寧可在真的沒觸發時多等一會兒再 exit 2，也不可誤報綠。
+const PROJECT_RUN_APPEAR_GRACE_MS = 12 * 60 * 1000;
 
 // ---- 純函式（unit 守護：tests/unit/ci_status_parse.test.js）----
 
@@ -77,6 +84,24 @@ export function isKnownFlaky(jobName, log) {
 // 像 CI 沒被觸發，其實早就在跑）。caller 要先用 git rev-parse 展開再送 API。
 export function isFullSha(s) {
   return /^[0-9a-f]{40}$/i.test(String(s || ""));
+}
+
+// 這顆 run 是不是「本專案 .github/workflows 底下的 workflow」。
+//
+// GitHub 的 default setup（CodeQL、Dependabot）會用 `dynamic/...` 這種虛擬 workflow
+// 路徑、event 記成 `dynamic` —— 在 dev 上它叫「Push on dev」，很容易被誤認成本專案
+// 的 CI。CLAUDE.md 已明寫它不算。判定「有沒有 CI 在跑」只能看本專案的 run，否則就
+// 會像 2026-08-27 那次：deploy run 還沒建立，卻因為 CodeQL 那顆已完成而回報全綠。
+// 兩個判準都用（event 與 path），任一命中就排除。
+export function isProjectRun(run) {
+  if (!run) return false;
+  if (run.event === "dynamic") return false;
+  if (/^dynamic\//.test(String(run.path || ""))) return false;
+  return true;
+}
+
+export function projectRuns(runs) {
+  return (runs || []).filter(isProjectRun);
 }
 
 // 全部 run 都完成才算完成（有 run 還在跑就要繼續等）。
@@ -156,12 +181,17 @@ async function main() {
   }
   const branch = arg("branch") || sh("git", ["rev-parse", "--abbrev-ref", "HEAD"]) || "dev";
   const wait = !flag("no-wait");
-  const deadline = Date.now() + Number(arg("timeout-ms", DEFAULT_DEADLINE_MS));
 
   console.log(`repo=${repo} ${sha ? `sha=${sha.slice(0, 7)}` : `branch=${branch}`}`);
 
   let runs = [];
   const appearDeadline = Date.now() + RUN_APPEAR_GRACE_MS;
+  const projectAppearDeadline = Date.now() + PROJECT_RUN_APPEAR_GRACE_MS;
+  // CI 本身的逾時要從「本專案 run 真的出現」那一刻起算，不能把等 run 建立的時間
+  // 也算進去 —— 2026-08-27 那次光等 run 建立就吃掉 11 分鐘，預設 15 分鐘的
+  // deadline 只剩 4 分鐘，於是 run 一出現就馬上被判「等 CI 逾時」。
+  let deadline = Date.now() + Number(arg("timeout-ms", DEFAULT_DEADLINE_MS));
+  let sawProjectRun = false;
   for (;;) {
     // 指定 sha 一定要走 API 的 head_sha 參數：只抓最新 N 筆再自己過濾的話，
     // 稍舊的 commit 永遠落在頁外 → 誤報「查無 run」。
@@ -188,6 +218,34 @@ async function main() {
           "\n可能原因：該 commit 未 push、workflow 未被觸發（例如由 GITHUB_TOKEN 產生的 push 不會遞迴觸發），或分支名有誤。",
       );
       return 2;
+    }
+    // runs 非空、但裡面沒有本專案的 workflow run（只有 CodeQL / Dependabot 的
+    // default setup）＝本專案 CI 還沒被建立。**絕不可**因為那些 run 已完成就判全綠。
+    const mine = projectRuns(runs);
+    if (!mine.length) {
+      if (wait && Date.now() < projectAppearDeadline) {
+        console.log(
+          `  …只查到 default setup 的 run（${runs.map((r) => r.name).join(", ")}），` +
+            "本專案 workflow run 尚未建立，等待中",
+        );
+        await sleep(POLL_MS);
+        continue;
+      }
+      console.error(
+        `查無**本專案**的 workflow run（${sha ? sha : branch}）。` +
+          `只有 GitHub default setup 的 run：${runs.map((r) => r.name).join(", ")}。` +
+          (wait
+            ? `已等 ${Math.round(PROJECT_RUN_APPEAR_GRACE_MS / 60000)} 分鐘仍未建立。`
+            : "（--no-wait：只看當下，未等待建立。）") +
+          "\n可能原因：workflow 未被觸發（例如由 GITHUB_TOKEN 產生的 push 不會遞迴觸發）、" +
+          "workflow 被停用，或 GitHub 端事件延遲（實測可達 11 分鐘）。",
+      );
+      return 2;
+    }
+    if (!sawProjectRun) {
+      // 本專案 run 首次出現 → CI 逾時從現在起算。
+      sawProjectRun = true;
+      deadline = Date.now() + Number(arg("timeout-ms", DEFAULT_DEADLINE_MS));
     }
     if (!wait || allSettled(runs)) break;
     if (Date.now() > deadline) {
