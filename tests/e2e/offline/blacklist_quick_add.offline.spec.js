@@ -4,6 +4,11 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassettes, findCassette, bootOffline, replayCassette } = require('../helpers/replay');
+// 量座標前一律先等版面停（判準單一來源，靜態掃描守護 tests/unit/e2e_layout_settle.test.js）。
+const {
+  assertElementUnder,
+  scrollIntoViewStable,
+} = require('../helpers/layout');
 
 const articles = findCassettes('article');
 const list = findCassette('list');
@@ -13,15 +18,24 @@ const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 // 找第一个带指定 data-* 的已渲染列，回传其属性值与「终端 col」对应的 client 座标
 // （x = 列左缘 + (col+0.5)*chw；clientToPos 反推回同一 col）。列先 scrollIntoView，
 // 好读长页折叠下方的列也可点。
-// 捲到目標列並回傳點擊座標。
 //
-// **量測必須等版面靜下來**：好讀的自動開圖是延遲載入的（LazyInlinePreview），
-// scrollIntoView 之後附近的圖才開始掛上，內容高度會再長一輪 —— 捲完立刻讀
-// getBoundingClientRect 會拿到過期座標，右鍵就點在別列上（選單裡沒有
-// 「加入黑名單」）。故捲動與量測分兩次 evaluate，中間等高度連續兩輪不變。
+// **量測必須等版面靜下來**：好讀的自動開圖是延遲載入的，scrollIntoView 之後附近的圖
+// 才開始掛上，內容高度會再長一輪 —— 捲完立刻讀 getBoundingClientRect 會拿到過期座標，
+// 右鍵就點在別列上（選單裡沒有「加入黑名單」）。
+//
+// 2026-08-27 改用 helpers/layout.js。舊版自己在 page.evaluate 裡等「scroller 的
+// scrollHeight 連續兩輪不變」，有兩個洞：
+//   (a) 穩定的是**整份長頁的總高**，不是目標列的 top —— 目標**上方**的圖長高照樣把它
+//       推走，總高卻可能同時因別處卸載而抵銷成不變；
+//   (b) `document.querySelector('.main')` 回 null 時 `h` 恆為 0 ⇒ stable 兩輪後就過，
+//       整個迴圈退化成一個沒有任何訊號的固定 sleep。
+// 現在改成：等整頁終局（含 Node 端在途圖片請求）→ 捲 → 再等終局 → 等**該列自己的
+// rect** 連續三次不動。`.main` 不存在就直接丟錯，不再靜默降級。
 async function targetAt(page, attr, col) {
   const found = await page.evaluate(
-    async ({ attr }) => {
+    ({ attr }) => {
+      if (!document.querySelector('.main'))
+        throw new Error('找不到捲動容器 .main —— 版面結構變了，不可靜默當成「已穩定」');
       const rows = Array.from(
         document.querySelectorAll('#mainContainer span[type="bbsrow"]')
       );
@@ -29,27 +43,15 @@ async function targetAt(page, attr, col) {
       if (!el) return null;
       el.setAttribute('data-e2e-target', '1');
       el.scrollIntoView({ block: 'center' });
-      const scroller = document.querySelector('.main');
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      let prev = -1;
-      let stable = 0;
-      for (let i = 0; i < 20 && stable < 2; ++i) {
-        await sleep(200);
-        const h = scroller ? scroller.scrollHeight : 0;
-        if (h === prev) ++stable;
-        else {
-          stable = 0;
-          prev = h;
-        }
-      }
-      // 高度長完之後目標可能已被推離視窗中央，再捲一次並讓 layout 落定。
-      el.scrollIntoView({ block: 'center' });
-      await sleep(300);
       return true;
     },
     { attr }
   );
   if (!found) return null;
+  // 捲動會把新的佔位盒帶進「接近視野」而觸發載入，載完又把目標推走 ⇒ 要捲到
+  //「等完之後它仍在視窗內且不再動」為止（一次捲＋一次等會量到穩定但已捲出視窗的
+  // rect，實測 offline-mixed 下量到 y=1090 而視窗只有 720 高）。
+  await scrollIntoViewStable(page, '[data-e2e-target]');
   return page.evaluate(
     ({ attr, col }) => {
       const app = window.__app;
@@ -60,11 +62,21 @@ async function targetAt(page, attr, col) {
         value: el.getAttribute(attr),
         x: rect.left + (col + 0.5) * app.view.chw,
         y: rect.top + rect.height / 2,
+        attr: attr,
       };
     },
     { attr, col }
   );
 }
+
+// 右鍵之前再確認一次指標底下還是那一列（版面位移的話直接說出來）。
+const rightClickTarget = async (page, t) => {
+  await assertElementUnder(page, t.x, t.y, t.value, {
+    closest: '[' + t.attr + ']',
+    attribute: t.attr,
+  });
+  await page.mouse.click(t.x, t.y, { button: 'right' });
+};
 
 const menu = (page) => page.locator('.DropdownMenu').first();
 const menuItem = (page, text) =>
@@ -87,7 +99,7 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
 
     const t = await targetAt(page, 'data-list-author', 20); // col 20 ∈ 作者欄 [17,29)
     expect(t).not.toBeNull();
-    await page.mouse.click(t.x, t.y, { button: 'right' });
+    await rightClickTarget(page, t);
 
     const addLabel = await label(page, 'cmenu_addAuthorBlacklist');
     const item = menuItem(page, addLabel);
@@ -119,7 +131,7 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
 
     const t = await targetAt(page, 'data-list-title', 45); // col 45 ∈ 標題區 (≥29)
     expect(t).not.toBeNull();
-    await page.mouse.click(t.x, t.y, { button: 'right' });
+    await rightClickTarget(page, t);
 
     const addLabel = await label(page, 'cmenu_addTitleBlacklist');
     const item = menuItem(page, addLabel);
@@ -163,7 +175,7 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
       localStorage.setItem(key, JSON.stringify(cur));
     }, t.value);
 
-    await page.mouse.click(t.x, t.y, { button: 'right' });
+    await rightClickTarget(page, t);
     const existsLabel = await label(page, 'cmenu_authorBlacklistExists');
     const item = menuItem(page, existsLabel);
     await expect(item).toBeVisible();
@@ -178,7 +190,7 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
 
     const t = await targetAt(page, 'data-list-author', 5); // col 5 = 序號/推文數區
     expect(t).not.toBeNull();
-    await page.mouse.click(t.x, t.y, { button: 'right' });
+    await rightClickTarget(page, t);
 
     await expect(menu(page)).toBeVisible();
     const addAuthor = await label(page, 'cmenu_addAuthorBlacklist');
@@ -205,7 +217,7 @@ test.describe('黑名單快速新增 · 文章推文列（離線重放）', () =
 
     const t = await targetAt(page, 'data-pusher', 4); // col 4 ∈ id 欄 [3, 3+len)
     expect(t).not.toBeNull();
-    await page.mouse.click(t.x, t.y, { button: 'right' });
+    await rightClickTarget(page, t);
 
     const addLabel = await label(page, 'cmenu_addAuthorBlacklist');
     const item = menuItem(page, addLabel);

@@ -5,6 +5,8 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassettes, findCassette, bootOffline, replayCassette } = require('../helpers/replay');
+// 量座標前一律先等版面停（helpers/layout.js 是判準的單一來源）。
+const { waitPreviewsSettled } = require('../helpers/layout');
 
 const articles = findCassettes('article');
 const list = findCassette('list');
@@ -114,6 +116,7 @@ test.describe('增强 · 文章（离线重放）', () => {
           return out;
         }, mutateTo);
 
+      await waitPreviewsSettled(page);
       const withFloors = await measure(null);
       const badged = withFloors.filter((m) => m.seq !== null);
       expect(badged.length).toBeGreaterThan(0);
@@ -131,7 +134,9 @@ test.describe('增强 · 文章（离线重放）', () => {
 
       // 格線零位移：關掉樓號後，同一列的作者 id 首字 x 座標必須完全相同。
       await ptt.applyPrefs(page, { showFloorNumbers: false });
-      await page.waitForTimeout(500);
+      // 關樓號會走全量重建（annotationsKey 變了）⇒ 佔位盒整批 disposeNode 重做。
+      // 固定 500ms 在圖回得慢時只量到中間態；等版面終局才是「格線零位移」的量測點。
+      await waitPreviewsSettled(page);
       const off = await measure(null);
       expect(off.every((m) => m.seq === null)).toBe(true); // 徽章確實消失
       const offByRow = new Map(off.map((m) => [m.row, m.idLeft]));

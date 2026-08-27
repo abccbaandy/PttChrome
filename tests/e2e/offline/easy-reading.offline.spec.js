@@ -16,6 +16,8 @@ const {
   offlineServedUrls,
   seekInlineMedia,
 } = require('../helpers/replay');
+// 量座標／量媒體之前一律先等版面停（helpers/layout.js 是判準的單一來源）。
+const { waitPreviewsSettled } = require('../helpers/layout');
 
 // 推文列（textContent，可能含好读 floor badge：marker 后紧跟楼号数字）。
 const COMMENT_RE = /^(推|噓|→)\d*\s+[0-9A-Za-z]+\s*:/;
@@ -164,24 +166,35 @@ test.describe('好读模式翻页（离线重放）', () => {
       expect(pad).toBeTruthy();
       expect(pad).not.toBe('0px');
 
-      // (b) 行内媒体让内容变高 → 卷到底断言末行未被 overlay 遮住。等媒体异步渲染。
-      await page.waitForTimeout(1500);
-      const m = await page.evaluate(async (sel) => {
+      // (b) 行内媒体让内容变高 → 卷到底断言末行未被 overlay 遮住。
+      // 外部行内图片异步载入会持续撑高内容：单次卷到底＋固定 sleep 会在图片载完前
+      // 量测（race，stock-end.json 图多曾稳定红——量测后又长高 165px，末行被推回
+      // overlay 下方）。卷到底本身又会把新的占位盒带进视野而触发载入 ⇒ 每卷一次就
+      // 重新等一次终局，直到卷到底之后版面不再动。判准在 helpers/layout.js
+      // （含 Node 端在途图片请求 —— 图回得慢时页面上还没有任何痕迹可看）。
+      let prevH = -1;
+      for (let i = 0; i < 12; ++i) {
+        const h = await page.evaluate(() => {
+          const s = document.querySelector('.main');
+          if (!s) return -1;
+          s.scrollTop = s.scrollHeight;
+          return s.scrollHeight;
+        });
+        await waitPreviewsSettled(page);
+        if (h === prevH) break; // 內容不再長高 ⇒ 已經真的到底了
+        prevH = h;
+      }
+      // **最後一定要再捲一次**：上一輪 settle 期間圖片載入把內容撐高了，捲軸就不在底部
+      //（舊版靠 loop 之後的那一次 scrollTop=scrollHeight 收尾，改寫時漏掉 ⇒ stock-end 量到
+      // 末行 bottom=3700 vs overlay top=702，看起來像遮擋 bug 其實是根本沒捲到底）。
+      await page.evaluate(() => {
+        const s = document.querySelector('.main');
+        if (s) s.scrollTop = s.scrollHeight;
+      });
+      await waitPreviewsSettled(page);
+      const m = await page.evaluate((sel) => {
         const scroller = document.querySelector('.main');
         const overlay = document.querySelector('#easyReadingLastRow');
-        // 外部行内图片异步载入会持续撑高内容：单次卷到底＋固定 sleep 会在图片载完前
-        // 量测（race，stock-end.json 图多曾稳定红——量测后又长高 165px，末行被推回
-        // overlay 下方）。改为每轮重新卷到底、直到 scrollHeight 连续两轮不变（上限 10s）。
-        let prevH = -1, stable = 0;
-        for (let i = 0; i < 20 && stable < 2; i++) {
-          if (scroller) scroller.scrollTop = scroller.scrollHeight;
-          await new Promise((r) => setTimeout(r, 500));
-          const h = scroller ? scroller.scrollHeight : 0;
-          if (h === prevH) stable++;
-          else { stable = 0; prevH = h; }
-        }
-        if (scroller) scroller.scrollTop = scroller.scrollHeight;
-        await new Promise((r) => setTimeout(r, 300));
         const lines = Array.from(document.querySelectorAll('#mainContainer [data-type="bbsline"]'));
         const nonBlank = lines.filter((el) => el.textContent.replace(/\s+$/, '') !== '');
         const last = nonBlank[nonBlank.length - 1];
@@ -223,60 +236,67 @@ test.describe('好读模式翻页（离线重放）', () => {
       await ptt.applyPrefs(page, { enableEasyReading: true });
       await replayCassette(page, cassette, { easyReading: true });
 
-      const r = await page.evaluate(async () => {
-        const SEL = '#mainContainer img.hyperLinkPreview';
+      const SEL = '#mainContainer img.hyperLinkPreview';
+      // 自动开图是**延迟载入**的（卷到附近才挂、卷远了卸掉释放记忆体），所以不能
+      // 「卷到底 → 回顶」就期待整篇的图都还挂着。由上往下扫，停在第一个真的把图挂
+      // 出来的位置，后面的点击/锚定都在那里做。
+      //
+      // 捲動迴圈**由 Node 驱动**（2026-08-27 改）：旧版整段跑在一个 page.evaluate 里
+      // 靠 sleep(250~400) 推进，图回得慢时（offline-slow project）会一路扫到底都看不到
+      // 任何 loaded img → 以 'no inline image rendered' 假红。现在每步捲完都等
+      // helpers/layout.js 的 waitPreviewsSettled（含 Node 端在途图片请求）。
+      await waitPreviewsSettled(page);
+      const loadedImgCount = () =>
+        page.evaluate(
+          (sel) =>
+            Array.from(document.querySelectorAll(sel)).filter(
+              (im) => im.offsetWidth > 0 && im.offsetHeight > 0
+            ).length,
+          SEL
+        );
+      const geom = await page.evaluate(() => {
+        const s = document.querySelector('.main');
+        return s ? { h: s.scrollHeight, ch: s.clientHeight } : null;
+      });
+      expect(geom, '找不到捲动容器 .main').not.toBeNull();
+      if (!(await loadedImgCount())) {
+        const step = Math.max(200, geom.ch * 0.8);
+        for (let y = 0; y <= geom.h; y += step) {
+          await page.evaluate((top) => {
+            document.querySelector('.main').scrollTop = top;
+          }, y);
+          await waitPreviewsSettled(page);
+          if (await loadedImgCount()) break;
+        }
+      }
+      // 这三个条件以前是 test.skip 的防御——那是外部图床时代的产物（图载不到就
+      // 跳过，免得网路噪音假红）。图改由本地 fixture 供应后必定载得到，所以「有
+      // 图片连结的文章却一张都没载出来 / 点了不放大 / 放大后图消失」全是真 bug，
+      // 一律硬红，不得再以 skip 掩盖。
+      expect(await loadedImgCount(), '有图片连结的文章却一张都没载出来').toBeGreaterThan(0);
+
+      // 点第一张 → 整页放大（内容变很长，正是位移最明显的场景）。
+      await page.evaluate((sel) => {
+        Array.from(document.querySelectorAll(sel))
+          .filter((im) => im.offsetWidth > 0 && im.offsetHeight > 0)[0]
+          .click();
+      }, SEL);
+      await waitPreviewsSettled(page);
+      expect(
+        await page.evaluate(() =>
+          document.getElementById('mainContainer').classList.contains('imagesEnlarged')
+        ),
+        'enlarge did not apply'
+      ).toBe(true);
+      expect(await loadedImgCount(), 'imgs vanished after enlarge').toBeGreaterThan(0);
+
+      const r = await page.evaluate(async (sel) => {
         const scroller = document.querySelector('.main');
         const mc = document.getElementById('mainContainer');
-        if (!scroller || !mc) return { error: 'no scroller/container' };
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-        // 行内图片异步载入会撑高内容 → 量测前先等 scrollHeight 连续两轮不变
-        //（同本档「末行遮挡」测的作法；stock-end 图多，race 会假红）。
-        const settle = async () => {
-          let prev = -1, stable = 0;
-          for (let i = 0; i < 24 && stable < 2; i++) {
-            await sleep(400);
-            const h = scroller.scrollHeight;
-            if (h === prev) stable++;
-            else { stable = 0; prev = h; }
-          }
-        };
-        const loadedImgs = () =>
-          Array.from(document.querySelectorAll(SEL)).filter(
-            (im) => im.offsetWidth > 0 && im.offsetHeight > 0
-          );
-
-        // 自动开图改成**延迟载入**（LazyInlinePreview：卷到附近才挂、卷远了卸掉
-        // 释放记忆体），所以不能再「卷到底 → 回顶」就期待整篇的图都还挂着。改成由
-        // 上往下扫，停在第一个真的把图挂出来的位置，后面的点击/锚定都在那里做。
-        const seekImgs = async () => {
-          scroller.scrollTop = 0;
-          await sleep(300);
-          if (loadedImgs().length) return;
-          const step = Math.max(200, scroller.clientHeight * 0.8);
-          for (let y = 0; y <= scroller.scrollHeight; y += step) {
-            scroller.scrollTop = y;
-            await sleep(250);
-            if (loadedImgs().length) return;
-          }
-        };
-        await seekImgs();
-        await settle();
-
-        // 这三个条件以前是 test.skip 的防御——那是外部图床时代的产物（图载不到就
-        // 跳过，免得网路噪音假红）。图改由本地 fixture 供应后必定载得到，所以「有
-        // 图片连结的文章却一张都没载出来 / 点了不放大 / 放大后图消失」全是真 bug，
-        // 一律硬红，不得再以 skip 掩盖。
-        let imgs = loadedImgs();
-        if (!imgs.length) return { error: 'no inline image rendered' };
-
-        // 点第一张 → 整页放大（内容变很长，正是位移最明显的场景）。
-        imgs[0].click();
-        await sleep(400);
-        await settle();
-        if (!mc.classList.contains('imagesEnlarged')) return { error: 'enlarge did not apply' };
-        imgs = loadedImgs();
-        if (!imgs.length) return { error: 'imgs vanished after enlarge' };
-
+        const imgs = Array.from(document.querySelectorAll(sel)).filter(
+          (im) => im.offsetWidth > 0 && im.offsetHeight > 0
+        );
         // 取中间那张当锚点（上方压着大量被放大的内容 → 缩小时位移最大）。只有一张时
         // 就是它自己：位移较小、讯号较弱，但断言完全成立（强情境由 stock-end 的 9
         // 张涵盖）。
@@ -304,10 +324,11 @@ test.describe('好读模式翻页（离线重放）', () => {
           visible: Math.min(ir.bottom, mr.bottom) - Math.max(ir.top, mr.top),
           enlarged: mc.classList.contains('imagesEnlarged'),
         };
-      });
+      }, SEL);
 
       console.log(`[anchor] ${cassette.__file}: ${JSON.stringify(r)}`);
-      expect(r.error).toBeUndefined();
+      // 各项前提（图载出来 / 点了有放大 / 放大后图还在）已在上面逐条硬红，不再有
+      // r.error 这种把所有失败原因揉成一句话的回传值。
       expect(r.enlarged).toBe(false);
       // 核心症状：缩小后该图仍须与视窗相交（旧 code 会卷过头 → 交集 <= 0）。
       expect(r.visible).toBeGreaterThan(0);

@@ -1,12 +1,12 @@
 name: Test
 
-# Reusable workflow：三個測試 job（不含 live e2e）。
+# Reusable workflow：四個測試 job（不含 live e2e）。
 # 由 deploy.yml（push dev，後接 build/deploy）與 pr.yml（pull_request，只跑 test）共用。
 on:
   workflow_call:
 
 jobs:
-  # 三個測試 job 平行跑。不含 live e2e：連真實 PTT、guest 名額常滿會 fast-fail，不適合當 gate。
+  # 四個測試 job 平行跑。不含 live e2e：連真實 PTT、guest 名額常滿會 fast-fail，不適合當 gate。
   test-unit:
     runs-on: ubuntu-latest
     steps:
@@ -85,3 +85,34 @@ jobs:
           yarn install --immutable
           npx playwright install --with-deps chromium firefox
           yarn test:e2e:offline
+
+  # 逆境 offline e2e：同一批版面／座標敏感的 spec，但圖片改成「壞掉／很慢／混合」。
+  # 目的是把 CI 偶發紅變成**必現紅** —— 本機 fixture 圖秒回，版面在測試量座標之前就
+  # 穩了，所以「捲完立刻量 getBoundingClientRect」這類 bug 本機永遠測不出來
+  #（50fa35c 的現場）。與上面三個 job 平行跑，牆鐘時間不變。
+  # 情境是決定性的（固定延遲、URL 雜湊分桶），純函式守護在
+  # tests/unit/offline_image_profile.test.js。
+  test-e2e-offline-adverse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Yarn v4/corepack：先 enable 再讓 setup-node 做 cache:yarn（詳見 test-unit 註解）。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: corepack enable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+
+      # 只裝 chromium：逆境 project 不含 offline-firefox（那支是單行 feedLine，
+      # 結構上不受延遲載入影響，見 tests/unit/e2e_layout_settle.test.js 的豁免名單）。
+      - name: Adverse-image offline E2E (slow / broken / mixed)
+        run: |
+          yarn install --immutable
+          npx playwright install --with-deps chromium
+          yarn test:e2e:offline:adverse

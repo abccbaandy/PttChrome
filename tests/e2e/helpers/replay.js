@@ -10,6 +10,15 @@
 // src/js/pttchrome.js:252（App.onData）、src/js/easy_reading.js:82,318（_send）。
 const fs = require('fs');
 const path = require('path');
+const {
+  beginImageRequest,
+  endImageRequest,
+  fulfillImageRequest,
+  imageScenarioFor,
+  resolveImageProfile,
+  setPageImageProfile,
+  slowImageDelayMs,
+} = require('./offline_images');
 
 const CASSETTE_DIR = path.join(__dirname, '..', 'cassettes');
 const FIXTURE_DIR = path.join(__dirname, '..', 'fixtures');
@@ -492,30 +501,30 @@ function classifyOfflineRequest(raw) {
   return 'blocked';
 }
 
-let previewPngCache = null;
-function previewPng() {
-  if (!previewPngCache) {
-    previewPngCache = fs.readFileSync(path.join(FIXTURE_DIR, 'preview.png'));
-  }
-  return previewPngCache;
-}
-
 // 本次 page 被离线规则接住的外部请求（供「不得有请求逃出去」的守门断言用）。
 const servedByPage = new WeakMap();
 function offlineServedUrls(page) {
   return servedByPage.get(page) || [];
 }
 
-async function installOfflineNetwork(page) {
+// opts.profile（'cache' | 'slow' | 'broken' | 'mixed'，预设由 project 名／env 推导）
+// 决定**图片**要回什么 —— 见 helpers/offline_images.js。API 类（imgur 相簿 / flickr）
+// 与 blocked 类**不受 profile 影响**：那不是图片，把它们也弄坏只会让失败原因变模糊。
+async function installOfflineNetwork(page, opts = {}) {
   const served = [];
   servedByPage.set(page, served);
+  // 直接呼叫 installOfflineNetwork 的 spec（connect_failure / deep_link / aid_back_ui）
+  // 也要走同一條推導，否則它們哪天進了逆境清單會靜默跑在 'cache'。
+  const profile = offlineImageProfile(opts.profile);
+  setPageImageProfile(page, profile);
+  const delayMs = slowImageDelayMs(process.env);
   // 用**述词**过滤而非 '**/*' + route.continue()：Vite dev server 一页要发好几百个
   // module 请求，全部拉进 Playwright 的拦截层再 continue()（等于每一笔都重发一次）
   // 会把整批 offline e2e 拖到不稳（实测会出现整轮大面积逾时，且与被测 code 无关）。
   // 述词回 false 的请求根本不进拦截层 → 本机流量零开销。
   await page.route(
     (url) => classifyOfflineRequest(url.toString()) !== 'passthrough',
-    (route) => {
+    async (route) => {
       const raw = route.request().url();
       const kind = classifyOfflineRequest(raw);
       if (kind === 'passthrough') return route.continue();
@@ -541,10 +550,23 @@ async function installOfflineNetwork(page) {
               photo: { farm: 1, server: '1', id: '1', secret: 'offline' },
             }),
           });
-        // 图片：一律回 fixture PNG（content-type 报 image/png，浏览器以内容 sniff
-        // 解码，所以 .jpg/.gif/.webp 网址拿到 PNG 身体照样 onLoad）。
-        case 'image':
-          return route.fulfill({ contentType: 'image/png', body: previewPng() });
+        // 图片：依情境回应。'cache'（预设）＝立即回 fixture PNG，与本层引入前逐字相同
+        //（content-type 报 image/png，浏览器以内容 sniff 解码，所以 .jpg/.gif/.webp
+        // 网址拿到 PNG 身体照样 onLoad）。其余情境见 offline_images.js。
+        //
+        // in-flight 计数**必须**包住整段 await：'slow' 会真的压住 5 秒，那段期间浏览器
+        // 连 onLoad 都还没发生，页面上也还没有任何 .previewLoading 以外的痕迹 ——
+        // waitPreviewsSettled 只能靠这个计数知道「还没完」。
+        case 'image': {
+          const scenario = imageScenarioFor(raw, profile);
+          beginImageRequest(page);
+          try {
+            await fulfillImageRequest(route, { scenario, rawUrl: raw, delayMs });
+          } finally {
+            endImageRequest(page);
+          }
+          return;
+        }
         // 其余（youtube/twitch embed 之类的 iframe、未知 host）：快速 404，不留 hang。
         // iframe 的 load 事件与 HTTP status 无关，照样触发 → InlineIframe 正常显示。
         default:
@@ -554,83 +576,120 @@ async function installOfflineNetwork(page) {
   );
 }
 
+// 目前這一輪跑在哪個 Playwright project（offline / offline-slow / …）。
+// `test.info()` 在測試以外呼叫會丟，所以包 try —— 讓 helper 在 node 直接 require 時也能用。
+function currentProjectName() {
+  try {
+    return require('@playwright/test').test.info().project.name;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 這一輪的圖片載入情境。優先序：明確傳入 > env OFFLINE_IMAGE_PROFILE > project 名 > 'cache'。
+// 用 project 名而非 env 當主來源，是為了不引入 cross-env（見 CLAUDE.md 建置鏈決策）。
+function offlineImageProfile(explicit) {
+  if (explicit) return explicit;
+  return resolveImageProfile({ env: process.env, projectName: currentProjectName() });
+}
+
 // offline spec 共用：裝 stub WS、擋外部網路、開頁、等離線連上。
 //
 // 第二個參數 `ptt` 已無作用（Developer Mode modal 移除後不再需要關 modal），保留在
 // 簽名上只為了不動 40+ 個 `bootOffline(page, ptt)` 呼叫端；多傳的參數會被忽略。
-async function bootOffline(page, ptt) {  // eslint-disable-line no-unused-vars
+//
+// 第三個參數 opts.imageProfile：強制指定圖片載入情境（`image_load_conditions.offline.spec.js`
+// 用它逐條驗各情境的產品行為）。不給就依 project 名／env 推導。
+async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-unused-vars
   await installReplay(page);
-  await installOfflineNetwork(page);
+  await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });
   await page.goto('/');
   await waitConnected(page);
 }
 
-// 好讀的自動開圖是**延遲載入**的（src/render/inline_preview_slot.js：捲到附近
-// 才解析網址並掛上 <ImagePreviewer>，捲遠了再卸掉釋放已解碼的點陣圖）。所以
-// 「replay 完就去 querySelector('img')」永遠只會量到空的佔位盒 —— 要驗預覽，一律
-// 先用這兩個 helper 把目標捲進視野並等它掛好。
+// 好讀的自動開圖是**延遲載入**的（src/render/inline_preview_slot.js：捲到附近才解析網址
+// 並掛上 <ImagePreviewer>，捲遠了再卸掉釋放已解碼的點陣圖）。所以「replay 完就去
+// querySelector('img')」永遠只會量到空的佔位盒 —— 要驗預覽，一律先用這兩個 helper 把
+// 目標捲進視野並等它掛好。
 //
 // 這不是為了配合測試而放寬斷言：延遲載入本來就是使用者可見的行為（超長文 287 張圖
 // 全部立即載入且永不釋放＝記憶體吃滿），這裡驗的正是它。
-
-// 把 selector 指到的元素捲到視窗中央，等到它裡面出現預覽（或逾時）。
-// 回傳實際掛出來的預覽數。
+//
+// **停止條件是 waitPreviewsSettled，不是固定 sleep**（2026-08-27 改）：舊版靠「預覽數
+// 連續 3 輪不變 + 300ms」收工，在 'slow' 情境（圖 5.2 秒才回）下會在圖還沒回來時就
+// 判定穩定 —— seekInlineMedia 甚至會一路捲到底都找不到任何媒體而回 found:0，測試以
+// 「no inline image rendered」假紅。見 helpers/layout.js。
 const PREVIEW_SEL =
   '.previewLoading, .previewError, .easyReadingImg, .easyReadingVideo, img.hyperLinkPreview, video.easyReadingVideo, iframe';
 
-async function mountLazyPreviewsAt(page, selector, { timeout = 10000 } = {}) {
-  return page.evaluate(
-    async ({ selector, timeout, PREVIEW_SEL }) => {
-      const el = document.querySelector(selector);
-      if (!el) return -1;
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const deadline = Date.now() + timeout;
-      let n = 0;
-      let stable = 0;
-      // 每一輪都重新置中：先掛上的那幾張圖載入後會長高，把同一塊的其餘列推出
-      // 「接近視野」的範圍 —— 只捲一次會停在「只掛出第一張」的狀態。
-      while (Date.now() < deadline && stable < 3) {
+// 把 selector 指到的元素捲到視窗中央，等到它裡面的預覽全部到終局（載到／失敗）。
+// 回傳實際掛出來的預覽數。
+async function mountLazyPreviewsAt(page, selector, { timeout = 60000 } = {}) {
+  const { waitPreviewsSettled } = require('./layout');
+  const deadline = Date.now() + timeout;
+  let n = -1;
+  let stable = 0;
+  // 每一輪都重新置中：先掛上的那幾張圖載入後會長高，把同一塊的其餘列推出「接近視野」
+  // 的範圍 —— 只捲一次會停在「只掛出第一張」的狀態。
+  while (Date.now() < deadline && stable < 2) {
+    const found = await page.evaluate(
+      ({ selector, PREVIEW_SEL }) => {
+        const el = document.querySelector(selector);
+        if (!el) return -1;
         el.scrollIntoView({ block: 'center' });
-        await sleep(250);
-        const cur = el.querySelectorAll(PREVIEW_SEL).length;
-        if (cur === n && n > 0) ++stable;
-        else stable = 0;
-        n = cur;
-      }
-      await sleep(300);
-      return n;
-    },
-    { selector, timeout, PREVIEW_SEL }
-  );
+        return el.querySelectorAll(PREVIEW_SEL).length;
+      },
+      { selector, PREVIEW_SEL }
+    );
+    if (found < 0) return -1;
+    await waitPreviewsSettled(page, { timeout: Math.max(1000, deadline - Date.now()) });
+    const cur = await page.evaluate(
+      ({ selector, PREVIEW_SEL }) => {
+        const el = document.querySelector(selector);
+        return el ? el.querySelectorAll(PREVIEW_SEL).length : -1;
+      },
+      { selector, PREVIEW_SEL }
+    );
+    if (cur === n) ++stable;
+    else stable = 0;
+    n = cur;
+  }
+  return n;
 }
 
 // 由上往下掃整份累積頁，停在第一個真的把行內媒體掛出來的捲動位置。
 // 給「這篇文章到底有沒有自動開圖」這類不指定位置的斷言用。
-async function seekInlineMedia(page, { selector, timeout = 20000 } = {}) {
-  return page.evaluate(
-    async ({ selector, timeout }) => {
+async function seekInlineMedia(page, { selector, timeout = 90000 } = {}) {
+  const { waitPreviewsSettled } = require('./layout');
+  const deadline = Date.now() + timeout;
+  const geom = await page.evaluate(() => {
+    const scroller = document.querySelector('.main');
+    if (!scroller) return null;
+    return { step: Math.max(200, scroller.clientHeight * 0.8), height: scroller.scrollHeight };
+  });
+  if (!geom) return { found: 0, scrollTop: 0 };
+  for (let y = 0; y <= geom.height && Date.now() < deadline; y += geom.step) {
+    await page.evaluate((top) => {
       const scroller = document.querySelector('.main');
-      if (!scroller) return { found: 0, scrollTop: 0 };
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const count = () => document.querySelectorAll(selector).length;
-      const step = Math.max(200, scroller.clientHeight * 0.8);
-      const deadline = Date.now() + timeout;
-      for (let y = 0; y <= scroller.scrollHeight && Date.now() < deadline; y += step) {
-        scroller.scrollTop = y;
-        await sleep(250);
-        if (count() > 0) {
-          await sleep(400); // 讓同一批的其他張也掛上
-          return { found: count(), scrollTop: scroller.scrollTop };
-        }
-      }
-      return { found: count(), scrollTop: scroller.scrollTop };
-    },
-    { selector, timeout }
-  );
+      if (scroller) scroller.scrollTop = top;
+    }, y);
+    // 捲到位之後等**這一批**全部到終局，再數 —— 'slow' 情境下少了這一步就會掃空。
+    await waitPreviewsSettled(page, { timeout: Math.max(1000, deadline - Date.now()) });
+    const r = await page.evaluate((sel) => ({
+      found: document.querySelectorAll(sel).length,
+      scrollTop: document.querySelector('.main').scrollTop,
+    }), selector);
+    if (r.found > 0) return r;
+  }
+  return page.evaluate((sel) => ({
+    found: document.querySelectorAll(sel).length,
+    scrollTop: document.querySelector('.main').scrollTop,
+  }), selector);
 }
 
 module.exports = {
   mountLazyPreviewsAt,
+  offlineImageProfile,
   seekInlineMedia,
   CASSETTE_DIR,
   FIXTURE_DIR,

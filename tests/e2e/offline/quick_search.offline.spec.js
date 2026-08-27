@@ -8,6 +8,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { installReplay, waitConnected, feedRaw } = require('../helpers/replay');
+const { waitRectStable } = require('../helpers/layout');
 
 const label = (page, key) => page.evaluate(k => window.__i18n(k), key);
 
@@ -65,6 +66,17 @@ async function feedLine(page, text) {
 
 const quickItems = page => page.locator('.DropdownMenu__QuickSearch');
 
+// 量選單幾何之前先等它真的可見且不再動。React 掛上選單、Mantine 套 transition、
+// 文字量測撐開 max-content 都是分幀發生的 —— 右鍵之後**立刻** boundingBox() 量到的
+// 可能是中途值（實際症狀是寬度比較忽大忽小）。
+async function stableMenuBox(page) {
+  await page.locator('.DropdownMenu').first().waitFor({ state: 'visible' });
+  await waitRectStable(page, '.DropdownMenu');
+  const box = await page.locator('.DropdownMenu').first().boundingBox();
+  const item = await quickItems(page).first().boundingBox();
+  return { box, item };
+}
+
 test.describe('快速搜尋（offline）', () => {
   test('選到純數字 → 三個內建項目全出現，點 pixiv 使用者開對的網址', async ({ page }) => {
     await boot(page);
@@ -112,14 +124,12 @@ test.describe('快速搜尋（offline）', () => {
     await boot(page);
     await feedLine(page, short);
     await selectAndRightClick(page, short);
-    const shortBox = await page.locator('.DropdownMenu').first().boundingBox();
-    const shortItem = await quickItems(page).first().boundingBox();
+    const { box: shortBox, item: shortItem } = await stableMenuBox(page);
 
     await page.keyboard.press('Escape');
     await feedLine(page, long);
     await selectAndRightClick(page, long);
-    const longBox = await page.locator('.DropdownMenu').first().boundingBox();
-    const longItem = await quickItems(page).first().boundingBox();
+    const { box: longBox, item: longItem } = await stableMenuBox(page);
 
     // 動態寬度：長關鍵字讓選單變寬……
     expect(longBox.width).toBeGreaterThan(shortBox.width);

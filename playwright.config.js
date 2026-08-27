@@ -1,5 +1,23 @@
 const { defineConfig, devices } = require('@playwright/test');
 
+// 逆境 project 的 spec 清單（詳見下方 offline-slow 的註解）。
+// 這兩個常數被 tests/unit/e2e_layout_settle.test.js 讀去做靜態守護，改名要一起改。
+const ADVERSE_LAYOUT_SPECS = [
+  'offline/mouse.offline.spec.js',
+  'offline/pusher_highlight.offline.spec.js',
+  'offline/blacklist_quick_add.offline.spec.js',
+  'offline/comment_merge.offline.spec.js',
+  'offline/enhance.offline.spec.js',
+  'offline/quick_search.offline.spec.js',
+];
+// image_load_conditions 刻意**不在**逆境清單裡：它自己用 bootOffline 的 imageProfile
+// 逐條指定情境（明確傳入的優先序高於 project 名），放進來只會原封不動再跑一次。
+const ADVERSE_IMAGE_SPECS = [
+  'offline/lazy_preview_blank.offline.spec.js',
+  'offline/lazy_preview_enlarge_blank.offline.spec.js',
+  'offline/easy-reading.offline.spec.js',
+];
+
 // E2E 測試：用真實 Chromium 驅動 pttchrome 連真實 PTT。
 // dev server 由 webServer 自動啟動（已手動 yarn start 時會 reuse）。
 module.exports = defineConfig({
@@ -19,7 +37,7 @@ module.exports = defineConfig({
     video: 'retain-on-failure',
     trace: 'on-first-retry',
   },
-  // 四个 project 共用同一个 webServer（Vite dev server）：
+  // 各 project 共用同一个 webServer（Vite dev server）：
   // - preflight：连线健检（tests/e2e/preflight.setup.js），只验「连得到 PTT」。
   // - live   ：连真实 PTT 的 e2e（现有 spec），排除 offline/ 与 tools/。
   // - offline：离线重放（tests/e2e/offline/**），用 stub WebSocket + cassette，零网络。
@@ -68,6 +86,37 @@ module.exports = defineConfig({
         },
       },
       testMatch: 'offline/selection.offline.spec.js',
+    },
+    // ---- 逆境 project（`yarn test:e2e:offline:adverse`，CI 另開一個平行 job）----
+    // 同一批 offline spec，但圖片改成「壞掉／很慢／混合」。目的是把 CI 偶發紅變成
+    // **必現紅**：本機 fixture 圖秒回，版面在測試量座標之前就穩了，所以「捲完立刻量
+    // getBoundingClientRect」這類 bug 本機永遠測不出來（50fa35c 的現場）。
+    // profile 由 project 名推導（helpers/offline_images.js#profileFromProjectName），
+    // 不需要 cross-env。
+    //
+    // 兩層清單，分法的理由：
+    //   Tier A（ADVERSE_LAYOUT_SPECS）＝版面／座標敏感，但與圖片**成敗**無關 ⇒ 三種
+    //     逆境都跑，斷言語義完全不變。
+    //   Tier B（ADVERSE_IMAGE_SPECS）＝主題就是圖片本身，「圖有高度」是它的前提 ⇒
+    //     只跑 slow（最終 DOM 與 cache 相同，只是慢）。broken 下的行為由
+    //     image_load_conditions.offline.spec.js 專門驗，那裡的斷言是為 broken 寫的。
+    {
+      name: 'offline-slow',
+      use: { ...devices['Desktop Chrome'] },
+      timeout: 300000,
+      testMatch: [...ADVERSE_LAYOUT_SPECS, ...ADVERSE_IMAGE_SPECS],
+    },
+    {
+      name: 'offline-broken',
+      use: { ...devices['Desktop Chrome'] },
+      timeout: 300000,
+      testMatch: ADVERSE_LAYOUT_SPECS,
+    },
+    {
+      name: 'offline-mixed',
+      use: { ...devices['Desktop Chrome'] },
+      timeout: 300000,
+      testMatch: ADVERSE_LAYOUT_SPECS,
     },
     {
       name: 'record',

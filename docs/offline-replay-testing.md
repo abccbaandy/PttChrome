@@ -79,7 +79,8 @@ offline spec 遍歷所有 article cassette 逐卷守門；End 測試自動挑帶
 
 ## 跑
 ```
-yarn test:e2e:offline   # 離線重放（stub WebSocket，零網路），斷網/無帳密也全過
+yarn test:e2e:offline           # 離線重放（stub WebSocket，零網路），斷網/無帳密也全過
+yarn test:e2e:offline:adverse   # 同一批 spec，但圖片改成 慢5.2s / 404 / 301 / 混合（見下）
 yarn test:unit          # 含 Layer2 重建（無對應 fixture 則 skip）
 yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=live）
 ```
@@ -130,7 +131,7 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 | 分類 | 判準 | 回應 |
 |---|---|---|
 | `passthrough` | 非 http(s)／host ∈ {localhost,127.0.0.1,::1} | 不進攔截層 |
-| `image` | path+search 命中 `\.(jpe?g\|png\|gif\|webp\|bmp\|apng\|avif)($\|[?#:])` | `tests/e2e/fixtures/preview.png`（800×600，`image/png`） |
+| `image` | path+search 命中 `\.(jpe?g\|png\|gif\|webp\|bmp\|apng\|avif)($\|[?#:])` | 依**圖片載入情境**，見下節（預設＝`tests/e2e/fixtures/preview.png`，800×600 `image/png`，秒回） |
 | `imgur-album` | host `api.imgur.com` | 假 JSON，兩張 `i.imgur.com/offline*.png` |
 | `flickr` | host `api.flickr.com` | 假 photo JSON |
 | `blocked` | 其餘（youtube/twitch embed、未知 host） | 404 空身（iframe 的 `load` 與 status 無關，仍觸發） |
@@ -140,6 +141,63 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
   必須涵蓋 `page.on('request')` 看到的每一筆外部 URL），拿掉路由即紅。
 - **影片副檔名刻意不給 fixture**：現有 cassette 無直連影片。日後錄到影片素材會以
   「`video` 未 `loadeddata` → `display:none` → 等不到 visible」紅出來，屆時補一支最小 mp4。
+
+### 圖片載入情境（profile / scenario）
+
+`helpers/offline_images.js`。**profile** ＝一整輪測試的設定，**scenario** ＝單一 URL 實際拿到的
+回應。決定性：固定延遲、URL 的 FNV-1a 雜湊分桶，無隨機／無順序相依。純函式守護
+`tests/unit/offline_image_profile.test.js`（含分桶結果的鎖定值）。
+
+| scenario | 回應 | 產品端 |
+|---|---|---|
+| `cache` | 立即 `preview.png` | 秒開（＝本地快取命中，本層引入前的唯一行為） |
+| `slow` | 等 `SLOW_IMAGE_MS`（預設 **5200**，`OFFLINE_SLOW_IMAGE_MS` 可覆寫）後 `preview.png` | 期間維持 `.previewLoading`；終局 DOM 與 `cache` 相同 |
+| `broken` | `404` + **空 `text/plain`** | 候選耗盡 → `.previewError`；佔位盒不得被釘高度 |
+| `redirect` | `301` → `<origin>/__offline-gone__/<n>.png`（該路徑一律 `broken`） | 圖拿不到 → `.previewError` |
+
+profile 取值：`cache`（預設）／`slow`／`broken`／`redirect`／`mixed`（四桶決定性分派）。
+解析優先序 **env `OFFLINE_IMAGE_PROFILE` > Playwright project 名 > `cache`**
+（`offline-slow`／`offline-broken`／`offline-mixed`；用 project 名而非 env 才不必引入 cross-env）。
+單一測試可用 `bootOffline(page, ptt, { imageProfile })` 直接指定。
+
+三條硬性不變量（改這層之前先讀）：
+1. **決定性**。逆境 profile 的用途是把偶發紅變成**必現紅**，它自己不可以是不確定的。
+2. **轉址鏈一跳即止**：終點帶 `/__offline-gone__/` 前綴，`imageScenarioFor` 看到就回 `broken`。
+3. **`broken` 的 body 不得是可解碼的圖**。`<img>` 不看 HTTP status，body 能 decode 就 `onLoad`
+   ——「imgur 的 404 頁身也是一張 PNG」正是靠這個假綠了很久。
+
+CONFIRMED 事實（實測，別再重驗）：
+- **產品端沒有圖片載入 timeout**。`ImagePreviewer` 只有 onError 驅動的 backoff 重試
+  （`MAX_RETRIES_PER_CANDIDATE=2`、`RETRY_BASE_MS=300` ⇒ 每候選 1+2 次、300/600ms），
+  候選耗盡才 `.previewError`。**永遠 hang 的請求會永久停在 `.previewLoading`。**
+  唯一有 timeout 的是 imgur 型別探測（`imgur_probe.js`，3s abort）。
+- **Chromium 不會跟隨 `route.fulfill` 吐出的 301**（子資源；探測法：route 一律回 301 → 新開一個
+  `<img>`，handler 只被打到一次、`<img>` 直接 onerror）。所以 `redirect` 情境驗得到的是
+  「圖床回 3xx ⇒ 圖拿不到」，**驗不到**「跟隨轉址後再 404」。斷言就照實際能觀察到的寫。
+
+### 逆境 project 與 CI job
+
+`yarn test:e2e:offline:adverse` ＝ `offline-slow` + `offline-broken` + `offline-mixed`，
+CI 另開一個平行 job `test-e2e-offline-adverse`（`.github/workflows/test.yml`）。
+清單在 `playwright.config.js` 的 `ADVERSE_LAYOUT_SPECS` / `ADVERSE_IMAGE_SPECS`：
+
+| Tier | 內容 | 跑哪些 profile | 理由 |
+|---|---|---|---|
+| A `ADVERSE_LAYOUT_SPECS` | 版面／座標敏感，但與圖片**成敗**無關（mouse、pusher_highlight、blacklist_quick_add、comment_merge、enhance、quick_search） | slow / broken / mixed | 斷言語義完全不變，三種都成立才算穩 |
+| B `ADVERSE_IMAGE_SPECS` | 主題就是圖片本身（lazy_preview_*、easy-reading） | 只跑 slow | 「圖有高度」是它們的前提；`broken` 下語義會變，那條路徑由 `image_load_conditions.offline.spec.js` 專門驗 |
+
+`image_load_conditions.offline.spec.js` 刻意**不在**逆境清單裡：它自己逐條指定 profile
+（明確傳入優先序最高），放進去只會原封不動再跑一次。
+
+實測（2026-08-27，本機 Windows／chromium）：`offline` 215 passed **6.3m**、
+`offline:adverse` 189 passed **10.4m**（連跑兩輪結果一致）。CI 上這兩個 job 平行跑，牆鐘時間不變。
+
+**捕捉力已驗證**：把 `pusher_highlight.offline#commentRow` 還原成「捲完立刻量 → 用舊座標點」，
+`offline-slow` 與 `offline-mixed` 各 3 條**全紅**。這就是這套逆境 profile 存在的理由。
+
+第三個層次 `scrollIntoViewStable`（捲到中央 → 等停 → 確認**仍在視窗內**，否則重來）是實作時
+被逆境抓出來才補的：只做一次「捲 → 等 → 量」會拿到一個**穩定但已經捲出視窗**的 rect
+（`offline-mixed` 下量到 y=1090，視窗只有 720 高），之後 `elementFromPoint` 回 null。
 
 ### skip 政策（圖片本地化後同步收緊）
 外部圖床時代，媒體相關測試裡塞了不少 `test.skip`（`loaded imgs = 0`、`enlarge did not
@@ -192,12 +250,22 @@ apply`…）當防禦，避免圖載不到就假紅。**圖改本地 fixture 後
   在 document 沒有焦點 / 非 secure context / 權限被拒時 reject `NotAllowedError`，
   `navigator.clipboard` 本身在非 secure context 更是不存在。`App.doCopy` 原本裸呼叫 ⇒ 真實使用者
   console 冒紅字、離線 e2e 被 HMR 轉發污染。守護 `tests/unit/copy_clipboard_reject.test.js`。
-- **在好讀長頁上量元素座標，一定要等版面停下來再量**：長頁裡的行內預覽是佔位盒
-  （IntersectionObserver → mount → onLoad → ResizeObserver 撐高），`scrollIntoView` 本身就會把
-  它們捲進視窗而觸發載入 ⇒ 捲完當下量到的 `getBoundingClientRect` 之後還會再位移。位移之後
-  用舊座標點下去就落在別的元素上，斷言會退化成看不出原因的失敗（實例：`mouse.offline` 的
-  「點推文內容＝同作者高亮」在 CI 拿到 0 個高亮列，本機因 fixture 圖秒回而測不出來）。
-  作法見 `mouse.offline.spec.js#commentRow` 的 `settle()`：連續兩次量到同一個 top 才收；
-  並在點擊前用 `pusherUnder` 再確認一次指標底下還是同一列。
+- **在好讀長頁上量元素座標，一定要走 `tests/e2e/helpers/layout.js`**：長頁裡的行內預覽是
+  佔位盒（IntersectionObserver → mount → onLoad → ResizeObserver 撐高），`scrollIntoView`
+  本身就會把它們捲進視窗而觸發載入 ⇒ 捲完當下量到的 `getBoundingClientRect` 之後還會再位移。
+  位移之後用舊座標點下去就落在別的元素上，斷言會退化成看不出原因的失敗（實例：`mouse.offline`
+  的「點推文內容＝同作者高亮」在 CI 拿到 0 個高亮列）。
+  三個層次：`waitPreviewsSettled`（整頁終局：**Node 端在途圖片請求**＋`.previewLoading`＋
+  版面指紋連續三次相同）／`waitRectStable`（單一元素 rect 連續 3 次×100ms 不動）／
+  `assertElementUnder`（點擊前再確認，失配時直接說出「預期 X、實際 Y」）。
+  推文列與左緣純文字的取點合併成 `stableCommentRow` / `plainLeftEdge`。
+  - **本機測不出這類 bug**：預設 profile 是 `cache`（fixture 圖秒回），版面在量測前就穩了。
+    要逼出來必須 `yarn test:e2e:offline:adverse`（`offline-slow`）。
+  - 靜態守護 `tests/unit/e2e_layout_settle.test.js`：會量座標又會動滑鼠的 offline spec 一律
+    要 require 這個模組（豁免要具名並寫「結構上免疫」的理由）。50fa35c 的 settle 只活在一支
+    spec 的內層閉包裡，於是 `pusher_highlight.offline` 那份逐字拷貝原封不動地留著同一個 bug
+    ——這條測試就是為了不再發生那件事。
+  - `waitPreviewsSettled` 逾時**丟錯**而不是靜默放行；`mountLazyPreviewsAt` / `seekInlineMedia`
+    的停止條件也改成它（舊版靠固定 sleep，在 `slow` 下會在圖還沒回來時就收工）。
 - Layer2 重建要 `pageScreens[p].slice(0,-1)` 去掉狀態列（與 accumulatePageLines 一致）。
 - `getRowText(row,0,cols,pageLines)` 第 4 參傳 pageLines 才讀累積頁（不傳讀 24 列原生 buf）。

@@ -13,6 +13,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayCassette } = require('../helpers/replay');
+const { waitPreviewsSettled } = require('../helpers/layout');
 
 // 必須用**這一卷**：短文（test-xmen 之類）整篇都在視野內、從不觸發卸載，
 // 佔位盒永遠不會被釘高度 ⇒ 測試恆綠、抓不到這個 bug。這卷是 bug 回報的原始現場
@@ -27,7 +28,10 @@ test('※ 文章網址（非媒體連結）的佔位盒不得留下 min-height',
     enablePicPreview: true,
   });
   await replayCassette(page, article, { easyReading: true });
-  await page.waitForTimeout(1000); // 讓 IntersectionObserver 的掛載/卸載跑完
+  // 等 IntersectionObserver 的掛載/卸載跑完。**不能用固定 sleep**：圖回得慢時
+  //（offline-slow project，圖 5.2 秒才回）1000ms 只量到中間態，「文章網址」那列
+  // 甚至還沒被推出卸載邊界 ⇒ 測試恆綠、抓不到 bug。改等整頁終局。
+  await waitPreviewsSettled(page);
 
   const slots = await page.evaluate(() => {
     const rows = Array.from(

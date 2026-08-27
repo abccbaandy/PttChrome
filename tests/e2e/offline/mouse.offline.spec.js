@@ -14,6 +14,16 @@ const {
   replayCassette,
   replayListCassette,
 } = require('../helpers/replay');
+// 量座標前一律先等版面停：好讀長頁的行內預覽會在 scrollIntoView 之後才撐高。
+// 判準與 helper 的單一來源在 helpers/layout.js（靜態掃描守護
+// tests/unit/e2e_layout_settle.test.js）。
+const {
+  assertElementUnder,
+  assertPlainTextUnder,
+  plainLeftEdge,
+  stableCommentRow,
+  waitPreviewsSettled,
+} = require('../helpers/layout');
 
 const article = findCassette('article');
 
@@ -48,97 +58,9 @@ async function hoverCell(page, col, row) {
   }));
 }
 
-// 找一列「左緣是純文字」的位置。好讀長頁裡有些列的左緣落在內嵌預覽插槽上
-// （整寬區塊、起點就在第 0 欄），那裡本來就該由預覽優先接手，不是退出手勢的現場。
-async function plainLeftEdge(page) {
-  const pos = await page.evaluate(() => {
-    const v = window.__app.view;
-    const x = parseFloat(v.firstGridOffset.left) + v.chw * 1.5;
-    const top = parseFloat(v.firstGridOffset.top);
-    for (let row = 0; row < window.__app.buf.rows; ++row) {
-      const y = top + v.chh * (row + 0.5);
-      const el = document.elementFromPoint(x, y);
-      if (!el) continue;
-      if (el.closest('a, img, video, iframe, .inlinePreviewSlot, .previewLoading, .previewError'))
-        continue;
-      return { x, y, row };
-    }
-    return null;
-  });
-  if (!pos) throw new Error('找不到左緣是純文字的列');
-  return pos;
-}
-
-// 找一列「可以被真的點到」的推文列，回傳它的座標與內容起始欄。
-// 排除黑名單列（visibility:hidden ⇒ 根本不是 hit-test 目標）與左緣被連結／內嵌
-// 預覽蓋住的列（那些位置本來就該由它們優先接手，見 plainLeftEdge 的同一理由）。
-//
-// **量座標前一定要等版面停下來**（2026-08-27 修，CI 偶發紅的來源）：好讀長頁裡有
-// 行內預覽佔位盒（這卷 cassette 有 3 個），scrollIntoView 把它們捲進視窗正好觸發
-// IntersectionObserver → mount → onLoad → ResizeObserver 撐高這串非同步流程 ⇒ 捲完
-// 當下量到的 rect 之後還會再位移。位移之後 (contentX, y) 就落在別的元素上，點下去
-// 既不會高亮（不是推文列）也不會送左方向鍵（在退出帶右邊）—— 症狀正是
-// 「防誤觸開啟：點推文內容＝同作者高亮」拿到 0 個高亮列。本機 fixture 圖秒回，
-// 幾乎都在量測前就穩定了，所以只在 CI 上偶發。
-async function commentRow(page) {
-  const pos = await page.evaluate(async () => {
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    // 連續兩次量到同一個 top（±0.5px）才算穩定；撐不穩就放棄這一列。
-    const settle = async (el) => {
-      let last = null;
-      for (let i = 0; i < 40; i++) {
-        const top = el.getBoundingClientRect().top;
-        if (last !== null && Math.abs(top - last) < 0.5) return true;
-        last = top;
-        await sleep(50);
-      }
-      return false;
-    };
-    const v = window.__app.view;
-    const left = parseFloat(v.firstGridOffset.left);
-    const xOf = (col) => left + v.chw * (col + 0.5);
-    const rows = document.querySelectorAll(
-      '#mainContainer span[type="bbsrow"][data-pusher]'
-    );
-    for (const el of rows) {
-      if (el.style.visibility === 'hidden') continue;
-      const col = Number(el.getAttribute('data-pusher-col'));
-      if (!(col > 7)) continue; // 內容區要真的在退出帶右邊才有得比
-      // 好讀是累積長頁，推文在文章尾端 ⇒ 預設一定捲在視窗外，elementFromPoint
-      // 用的是**視窗座標**，不先捲進來一律落空。
-      el.scrollIntoView({ block: 'center' });
-      if (!(await settle(el))) continue;
-      const r = el.getBoundingClientRect();
-      if (r.height <= 0) continue;
-      const y = r.top + r.height / 2;
-      // 連結／內嵌預覽在 App.mouse_click 裡優先於一切（含 pusher 高亮與退出帶），
-      // 落在那上面的座標不是這一測的現場。
-      const hit = (x) => {
-        const at = document.elementFromPoint(x, y);
-        if (!at || at.closest('[data-pusher]') !== el) return false;
-        return !at.closest(
-          'a, img, video, iframe, .inlinePreviewSlot, .previewLoading, .previewError'
-        );
-      };
-      const leftX = xOf(1);
-      const contentX = xOf(col + 1);
-      if (!hit(leftX) || !hit(contentX)) continue;
-      return { y, col, leftX, contentX, pusher: el.getAttribute('data-pusher') };
-    }
-    return null;
-  });
-  if (!pos) throw new Error('找不到可點的推文列');
-  return pos;
-}
-
-// 點下去之前再確認一次「指標底下真的還是那一列推文」。版面若在量測之後又位移，
-// 這裡會直接指出來，而不是讓斷言退化成看不出原因的「高亮 0 列」。
-const pusherUnder = (page, x, y) =>
-  page.evaluate(({ x, y }) => {
-    const at = document.elementFromPoint(x, y);
-    const el = at && at.closest && at.closest('[data-pusher]');
-    return el ? el.getAttribute('data-pusher') : null;
-  }, { x, y });
+// plainLeftEdge / stableCommentRow / assertElementUnder 都搬到 helpers/layout.js —— 這裡
+// 原本各有一份，pusher_highlight.offline 也有一份（且始終沒補上 settle，是 50fa35c
+// 那個 bug 的活體）。合併之後只剩一處判準，補強會同時生效。
 
 const highlightedPushers = (page) =>
   page.evaluate(() =>
@@ -193,7 +115,10 @@ test.describe('滑鼠（離線重放）', () => {
     // 點左側 → 真的送出左方向鍵
     const spot = await plainLeftEdge(page);
     await page.mouse.move(spot.x, spot.y);
-    await page.waitForTimeout(50);
+    await page.waitForTimeout(50); // hover → mouseAction 更新
+    // 探測點的 y 來自格子數學所以自己不會飄，但**底下的內容會**（上方預覽長高會把
+    // 連結／預覽推進這一列）—— 連結與內嵌圖在 App.mouse_click 的優先權高過退出帶。
+    await assertPlainTextUnder(page, spot.x, spot.y);
     await startCapture(page);
     await page.mouse.down();
     await page.mouse.up();
@@ -210,6 +135,7 @@ test.describe('滑鼠（離線重放）', () => {
       mouseLeftClick: true,
     });
     await replayCassette(page, article, { easyReading: true });
+    await waitPreviewsSettled(page);
 
     await hoverCell(page, 1, 10);
     const hit = await page.evaluate(() => {
@@ -235,6 +161,7 @@ test.describe('滑鼠（離線重放）', () => {
       mouseLeftClick: true,
     });
     await replayCassette(page, article, { easyReading: true });
+    await waitPreviewsSettled(page);
 
     const probe = await page.evaluate(() => {
       const r = document.getElementById('exitHintBand').getBoundingClientRect();
@@ -260,6 +187,7 @@ test.describe('滑鼠（離線重放）', () => {
     });
     await replayCassette(page, article, { easyReading: true });
 
+    await waitPreviewsSettled(page);
     // 連結內部最深可到 a > span > span（TwoColorWord / ForceWidthWord）。
     // 舊的 isAnchorTarget 只往上找一層 ⇒ 點在那種字上會漏判成終端機動作。
     const deep = await page.evaluate(() => {
@@ -277,7 +205,8 @@ test.describe('滑鼠（離線重放）', () => {
     // 組合才驗得到「連結優先」——否則點擊落點本來就沒有動作，測了等於沒測。
     const spot = await plainLeftEdge(page);
     await page.mouse.move(spot.x, spot.y);
-    await page.waitForTimeout(50);
+    await page.waitForTimeout(50); // hover → mouseAction 更新
+    await assertPlainTextUnder(page, spot.x, spot.y);
     expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('exitArticle');
 
     await startCapture(page);
@@ -301,6 +230,7 @@ test.describe('滑鼠（離線重放）', () => {
     });
     await replayCassette(page, article, { easyReading: true });
 
+    await waitPreviewsSettled(page);
     const slot = await page.evaluate(
       () => !!document.querySelector('.inlinePreviewSlot')
     );
@@ -309,7 +239,8 @@ test.describe('滑鼠（離線重放）', () => {
     // 同理：先讓 mouseAction 是 exitArticle，才驗得到「預覽優先於退出」。
     const spot = await plainLeftEdge(page);
     await page.mouse.move(spot.x, spot.y);
-    await page.waitForTimeout(50);
+    await page.waitForTimeout(50); // hover → mouseAction 更新
+    await assertPlainTextUnder(page, spot.x, spot.y);
     expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('exitArticle');
 
     await startCapture(page);
@@ -338,7 +269,10 @@ test.describe('滑鼠（離線重放）', () => {
 
     const spot = await plainLeftEdge(page);
     await page.mouse.move(spot.x, spot.y);
-    await page.waitForTimeout(50);
+    await page.waitForTimeout(50); // hover → mouseAction 更新
+    // 探測點的 y 來自格子數學所以自己不會飄，但**底下的內容會**（上方預覽長高會把
+    // 連結／預覽推進這一列）—— 連結與內嵌圖在 App.mouse_click 的優先權高過退出帶。
+    await assertPlainTextUnder(page, spot.x, spot.y);
     await startCapture(page);
     await page.mouse.down();
     await page.mouse.up();
@@ -401,10 +335,12 @@ test.describe('滑鼠（離線重放）', () => {
     });
     await replayCassette(page, article, { easyReading: true });
 
+    await waitPreviewsSettled(page);
     await page.evaluate(() => {
       window.__app.view.mainDisplay.scrollTop = 400;
     });
-    await page.waitForTimeout(100);
+    // 捲動會把新的佔位盒帶進「接近視野」而觸發載入 ⇒ 量帶子幾何前要重新等穩。
+    await waitPreviewsSettled(page);
 
     // clientToPos 會把 row clamp 進 0..rows-1，所以視窗內任何 y、只要 col<7 都是離開。
     for (const row of [0, 12, 22]) {
@@ -443,9 +379,13 @@ test.describe('滑鼠（離線重放）', () => {
       test.setTimeout(90000);
       await boot(page, { mouseMisclickGuard: true });
 
-      const row = await commentRow(page);
+      const row = await stableCommentRow(page);
       await page.mouse.move(row.leftX, row.y);
-      await page.waitForTimeout(50);
+      await page.waitForTimeout(50); // hover → mouseAction 更新
+      await assertElementUnder(page, row.leftX, row.y, row.pusher, {
+        closest: '[data-pusher]',
+        attribute: 'data-pusher',
+      });
       expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe(
         'exitArticle'
       );
@@ -462,13 +402,15 @@ test.describe('滑鼠（離線重放）', () => {
       test.setTimeout(90000);
       await boot(page, { mouseMisclickGuard: true });
 
-      const row = await commentRow(page);
+      const row = await stableCommentRow(page);
       await page.mouse.move(row.contentX, row.y);
-      await page.waitForTimeout(50);
-      expect(
-        await pusherUnder(page, row.contentX, row.y),
-        '點擊前指標底下應仍是同一列推文（版面位移的話這裡先炸）'
-      ).toBe(row.pusher);
+      await page.waitForTimeout(50); // hover → mouseAction 更新
+      // 點擊前再確認一次指標底下還是同一列：版面若在量測之後又位移，這裡會直接說出
+      // 「預期 X、實際 Y」，而不是讓斷言退化成看不出原因的「高亮 0 列」。
+      await assertElementUnder(page, row.contentX, row.y, row.pusher, {
+        closest: '[data-pusher]',
+        attribute: 'data-pusher',
+      });
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
@@ -484,13 +426,13 @@ test.describe('滑鼠（離線重放）', () => {
       test.setTimeout(90000);
       await boot(page, { mouseMisclickGuard: false });
 
-      const row = await commentRow(page);
+      const row = await stableCommentRow(page);
       await page.mouse.move(row.leftX, row.y);
-      await page.waitForTimeout(50);
-      expect(
-        await pusherUnder(page, row.leftX, row.y),
-        '點擊前指標底下應仍是同一列推文（版面位移的話這裡先炸）'
-      ).toBe(row.pusher);
+      await page.waitForTimeout(50); // hover → mouseAction 更新
+      await assertElementUnder(page, row.leftX, row.y, row.pusher, {
+        closest: '[data-pusher]',
+        attribute: 'data-pusher',
+      });
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();

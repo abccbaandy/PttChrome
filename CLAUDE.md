@@ -100,6 +100,15 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   （例：`pageLines` 用 `JSON` 克隆剝掉 TermChar prototype 方法 → `ch.isStartOfURL is not a function`）。不可只靠 unit + build 綠就交付。
 - **離線重放（不連真實 PTT 也能驗依賴特定文章的 case）**：`yarn test:e2e:offline`（stub WebSocket 重放 byte cassette，
   真瀏覽器/真渲染）；Layer2 `tests/unit/replay_fixture.test.js` 用真實 `findPageOverlap` 純 node 重建跨頁去重。
+  - **offline e2e 不接受 flaky：不是時序問題，是斷言不夠嚴謹。** 量元素座標一律走
+    `tests/e2e/helpers/layout.js`（`waitPreviewsSettled` / `waitRectStable` / `assertElementUnder` /
+    `stableCommentRow` / `plainLeftEdge`），**禁止**用 `waitForTimeout` 當版面等待。理由：行內預覽是
+    延遲載入的佔位盒，`scrollIntoView` 本身會觸發載入 ⇒ 捲完立刻量的 rect 之後還會位移，點下去落在
+    別的元素上，斷言退化成沉默的 0（50fa35c 的現場）。靜態守護 `tests/unit/e2e_layout_settle.test.js`。
+  - **本機預設情境是「圖片秒回」，測不出上面那類 bug。** 改渲染／版面 code 時除 `yarn test:e2e:offline`
+    外加跑 **`yarn test:e2e:offline:adverse`**（圖片改成 慢 5.2s／404／301／混合四桶，決定性）。
+    CI 有對應的平行 job `test-e2e-offline-adverse`。情境表與 CONFIRMED 事實（產品端**沒有**圖片載入
+    timeout；Chromium 不跟隨 `route.fulfill` 的 301）見 `docs/offline-replay-testing.md`。
   素材一次性錄製：`yarn record:cassette`（**guest-only**，capture 為 article-scoped 不含帳號）。細節見 `docs/offline-replay-testing.md`。
   - **`yarn test:e2e:offline` 含 `offline-firefox` project**（只跑 `selection.offline.spec.js`）：**本機需先
     `yarn playwright install firefox`**，否則整批 `browserType.launch: Executable doesn't exist`。選取／複製類

@@ -437,6 +437,12 @@ DBCS 雙色字），只找一層在那種字上會漏判。同一個 bug 在
   `term_view.convertMN2XYEx` 一套原點公式（多了 `+10` 與 `bbsViewMargin`），用錯就
   差十幾個像素 ⇒ 帶子亮著卻點不到。往返守護在 `tests/unit/mouse_geometry.test.js`
   與 `mouse.offline.spec.js` 的「提示帶右緣＝可點區右緣」。
+- **測試裡量座標一律走 `tests/e2e/helpers/layout.js`**（`waitPreviewsSettled` /
+  `waitRectStable` / `assertElementUnder` / `stableCommentRow` / `plainLeftEdge`）。
+  好讀長頁的行內預覽是延遲載入的佔位盒，`scrollIntoView` 本身就會觸發載入 ⇒ 捲完立刻量
+  的 rect 之後還會位移，點下去落在別的元素上，斷言退化成沉默的 0。本機 fixture 圖秒回
+  所以測不出來，要靠 `yarn test:e2e:offline:adverse` 逼出來。靜態守護
+  `tests/unit/e2e_layout_settle.test.js`；細節見 `docs/offline-replay-testing.md`。
 - 幾何在 `term_view.setTermFontSize` 尾巴寫（全專案唯一的幾何 sink）；高度由 CSS 給
   （`top:0; height:100%`，`#BBSWindow` 是 `position:fixed` 的定位容器）。帶子不參與
   `.main` 的 transform，所以寬度自己乘 `scaleX`（`cellWidth` 已處理）。

@@ -20,49 +20,25 @@ const {
   replayCassette,
   mountLazyPreviewsAt,
 } = require('../helpers/replay');
+// 量座標前一律先等版面停。這支 spec 的 commentRow 原本是 mouse.offline 修好之前的那一份
+// 拷貝（scrollIntoView → 立刻量 → 用舊座標點），而它跑的還是全套件裡預覽最密的設定
+//（mergeSameAuthorComments: true）—— 同一個 bug 在這裡原封不動地活著。判準已收斂到
+// helpers/layout.js。
+const {
+  assertElementUnder,
+  stableCommentRow,
+  waitPreviewsSettled,
+} = require('../helpers/layout');
 
 const article = findCassette('article');
 
-// 找一列「可以被真的點到」的推文列（與 mouse.offline.spec.js 同一套判準）：排除
-// 黑名單列（visibility:hidden ⇒ 不是 hit-test 目標）與被連結／內嵌預覽蓋住的位置。
-// 合併推文塊的 data-pusher 在塊內那個 bbsrow 上，故用**後代**選擇器。
-async function commentRow(page) {
-  const pos = await page.evaluate(() => {
-    const v = window.__app.view;
-    const left = parseFloat(v.firstGridOffset.left);
-    const xOf = (col) => left + v.chw * (col + 0.5);
-    const rows = document.querySelectorAll(
-      '#mainContainer span[type="bbsrow"][data-pusher]'
-    );
-    for (const el of rows) {
-      if (el.style.visibility === 'hidden') continue;
-      const col = Number(el.getAttribute('data-pusher-col'));
-      if (!(col > 7)) continue;
-      el.scrollIntoView({ block: 'center' });
-      const r = el.getBoundingClientRect();
-      if (r.height <= 0) continue;
-      const y = r.top + Math.min(r.height / 2, v.chh / 2);
-      const contentX = xOf(col + 1);
-      const at = document.elementFromPoint(contentX, y);
-      if (!at || at.closest('[data-pusher]') !== el) continue;
-      if (
-        at.closest(
-          'a, img, video, iframe, .inlinePreviewSlot, .previewLoading, .previewError'
-        )
-      )
-        continue;
-      return {
-        y,
-        contentX,
-        pusher: el.getAttribute('data-pusher'),
-        text: el.textContent,
-      };
-    }
-    return null;
+// 點擊前的最後一道：指標底下真的還是那一列推文嗎？版面若在量測之後又位移，這裡會
+// 直接指出來，而不是讓 `expect(on.length).toBeGreaterThan(0)` 退化成沉默的 0。
+const assertUnderRow = (page, row) =>
+  assertElementUnder(page, row.contentX, row.y, row.pusher, {
+    closest: '[data-pusher]',
+    attribute: 'data-pusher',
   });
-  if (!pos) throw new Error('找不到可點的推文列');
-  return pos;
-}
 
 // 點擊前替每個 bbsrow 掛一個 JS expando —— 節點被抽換掉它就跟著消失（DOM 屬性做
 // 不到這件事：重建出來的節點會有一模一樣的屬性）。
@@ -123,6 +99,7 @@ async function boot(page) {
   await replayCassette(page, article, { easyReading: true });
   // 佔位盒是延遲載入的：不先捲進視野，量到的永遠是空盒。
   await mountLazyPreviewsAt(page, '#mainContainer');
+  await waitPreviewsSettled(page);
 }
 
 test.describe('推文者高亮（offline）', () => {
@@ -134,11 +111,12 @@ test.describe('推文者高亮（offline）', () => {
     test.setTimeout(90000);
     await boot(page);
 
-    const row = await commentRow(page);
+    const row = await stableCommentRow(page, { capHalfRow: true });
     const marks = await markRows(page);
     expect(marks).toBeGreaterThan(0);
     const before = await layout(page);
 
+    await assertUnderRow(page, row);
     await page.mouse.click(row.contentX, row.y);
     await page.waitForTimeout(400);
 
@@ -162,13 +140,15 @@ test.describe('推文者高亮（offline）', () => {
     test.setTimeout(90000);
     await boot(page);
 
-    const row = await commentRow(page);
+    const row = await stableCommentRow(page, { capHalfRow: true });
     const marks = await markRows(page);
 
+    await assertUnderRow(page, row);
     await page.mouse.click(row.contentX, row.y);
     await page.waitForTimeout(300);
     expect((await highlighted(page)).length).toBeGreaterThan(0);
 
+    await assertUnderRow(page, row);
     await page.mouse.click(row.contentX, row.y);
     await page.waitForTimeout(300);
     expect(await highlighted(page)).toEqual([]);
@@ -179,9 +159,10 @@ test.describe('推文者高亮（offline）', () => {
     test.setTimeout(90000);
     await boot(page);
 
-    const row = await commentRow(page);
+    const row = await stableCommentRow(page, { capHalfRow: true });
     const marks = await markRows(page);
 
+    await assertUnderRow(page, row);
     await page.mouse.dblclick(row.contentX, row.y);
     await page.waitForTimeout(300);
 

@@ -13,6 +13,8 @@ const {
   replayCassette,
   mountLazyPreviewsAt,
 } = require('../helpers/replay');
+// 量座標前一律先等版面停（helpers/layout.js 是判準的單一來源）。
+const { waitPreviewsSettled } = require('../helpers/layout');
 
 const articles = findCassettes('article');
 
@@ -141,6 +143,7 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
     await replayCassette(page, cassette, { easyReading: true });
+    await waitPreviewsSettled(page);
 
     const geo = await page.evaluate(() => {
       const el = Array.from(document.querySelectorAll('.mergedCommentBlock')).find((b) => {
@@ -175,6 +178,7 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
     await replayCassette(page, cassette, { easyReading: true });
+    await waitPreviewsSettled(page);
 
     const geo = await page.evaluate(() => {
       const TIME_RE = /\d{1,2}\/\d{2} \d{2}:\d{2}/;
@@ -290,7 +294,9 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     expect((await readRows(page)).filter((r) => r.pusher === 'rz2x').length).toBe(1);
 
     await ptt.applyPrefs(page, { mergeSameAuthorComments: false }); // onPrefChange → redraw
-    await page.waitForTimeout(800);
+    // 全量重建會把每個佔位盒 disposeNode 掉重做（新 slot 的 minHeight 從 memo 接手，
+    // 但圖要重新掛載）⇒ 固定 800ms 在圖回得慢時只量到中間態。
+    await waitPreviewsSettled(page);
 
     const rows = await readRows(page);
     expect(rows.filter((r) => r.pusher === 'rz2x').length).toBe(7);
