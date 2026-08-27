@@ -8,7 +8,7 @@
 //
 // ^V 本身在 PTT 有實作（pttbbs edit.c Ctrl('V') 切 ANSI 彩色模式、bbs.c read_comms
 // do_post_vote），Ctrl+Shift+V 已被 term_view 佔去當貼上，所以改由 Alt+V 送出。
-import { TermKeyboard } from "../../src/js/term_keyboard";
+import { TermKeyboard, altRemapCharCode } from "../../src/js/term_keyboard";
 
 function makeKeyboard() {
   const sent = [];
@@ -21,9 +21,12 @@ function makeKeyboard() {
 }
 
 // 最小假 KeyboardEvent：_onKeyDown 只讀這幾個欄位。
+// code 刻意「未給就是 undefined」：既有 Windows 風格事件必須原封不動地過，
+// 那正是「e.code 缺失時不得炸」的守護。
 function keyEvent(key, mods = {}) {
   return {
     key,
+    code: mods.code,
     ctrlKey: !!mods.ctrlKey,
     altKey: !!mods.altKey,
     shiftKey: !!mods.shiftKey,
@@ -96,5 +99,80 @@ describe("TermKeyboard：Alt remap", () => {
       expect(sent).toEqual([code]);
       expect(e.defaultPrevented).toBe(true);
     }
+  });
+});
+
+// 跨平台回歸：macOS 的 Option 是「組字鍵」，⌥+字母 在輸入法層被組成符號
+//（US 佈局 ⌥V→√ U+221A、⌥R→®、⌥T→†、⌥W→∑），KeyboardEvent.key 因此不再是字母。
+// 舊版 alt 分支比對 e.key.toLowerCase() ⇒ Mac 上四個 remap 全部匹配不到而靜默失效，
+// 其中 ^V 尤其致命：Ctrl+V 已讓給瀏覽器貼上，Alt+V 是送得出 \x16 的唯一路。
+// 這組測試用 Mac 風格事件（key 失真 + code 為實體鍵位）鎖住行為。
+describe("TermKeyboard：Mac Option 組字字元（e.key 失真）", () => {
+  test("⌥V 仍送 ^V（Mac 上 e.key 是 √ 而非 v）", () => {
+    const { kb, sent } = makeKeyboard();
+    const e = keyEvent("\u221a", { altKey: true, code: "KeyV" });
+    kb.onKeyDown(e);
+    expect(sent).toEqual(["\x16"]);
+    expect(e.defaultPrevented).toBe(true);
+  });
+
+  test("⌥R/⌥T/⌥W 同樣照送控制碼", () => {
+    for (const [key, code, out] of [
+      ["\u00ae", "KeyR", "\x12"],
+      ["\u2020", "KeyT", "\x14"],
+      ["\u2211", "KeyW", "\x17"],
+    ]) {
+      const { kb, sent } = makeKeyboard();
+      const e = keyEvent(key, { altKey: true, code });
+      kb.onKeyDown(e);
+      expect(sent).toEqual([out]);
+      expect(e.defaultPrevented).toBe(true);
+    }
+  });
+
+  test("反向：不在 remap 名單的 ⌥A 不送也不攔（留給瀏覽器）", () => {
+    const { kb, sent } = makeKeyboard();
+    const e = keyEvent("\u00e5", { altKey: true, code: "KeyA" });
+    kb.onKeyDown(e);
+    expect(sent).toEqual([]);
+    expect(e.defaultPrevented).toBe(false);
+  });
+
+  test("反向：⌥⇧V 不由本層處理（alt 分支排除 shift）", () => {
+    const { kb, sent } = makeKeyboard();
+    const e = keyEvent("\u221a", { altKey: true, shiftKey: true, code: "KeyV" });
+    kb.onKeyDown(e);
+    expect(sent).toEqual([]);
+    expect(e.defaultPrevented).toBe(false);
+  });
+});
+
+describe("altRemapCharCode（純函式邊界）", () => {
+  test("e.key 是字母時優先採用（Win/Linux 佈局照舊）", () => {
+    expect(altRemapCharCode({ key: "v", code: "KeyV" })).toBe(22);
+    // 佈局讓 e.key 與實體鍵位不一致時，以使用者實際打出的字母為準。
+    expect(altRemapCharCode({ key: "r", code: "KeyP" })).toBe(18);
+    expect(altRemapCharCode({ key: "V" })).toBe(22); // CapsLock
+  });
+
+  test("e.key 失真才回退 e.code", () => {
+    expect(altRemapCharCode({ key: "\u221a", code: "KeyV" })).toBe(22);
+    expect(altRemapCharCode({ key: "Dead", code: "KeyW" })).toBe(23);
+  });
+
+  test("沒有 e.code 也不得丟例外（合成事件／舊測試）", () => {
+    expect(altRemapCharCode({ key: "q" })).toBe(null);
+    expect(altRemapCharCode({ key: "\u221a" })).toBe(null);
+  });
+
+  test("空字串 e.key 不得誤中（indexOf('') === 0 的陷阱）", () => {
+    expect(altRemapCharCode({ key: "", code: "KeyA" })).toBe(null);
+    expect(altRemapCharCode({})).toBe(null);
+  });
+
+  test("不在名單的鍵一律 null", () => {
+    expect(altRemapCharCode({ key: "a", code: "KeyA" })).toBe(null);
+    expect(altRemapCharCode({ key: "Enter", code: "Enter" })).toBe(null);
+    expect(altRemapCharCode({ key: "5", code: "Digit5" })).toBe(null);
   });
 });

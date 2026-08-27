@@ -61,8 +61,38 @@ export function keyEventToBytes(e) {
   return null;
 }
 
-// FIXME: Under Mac, IME inputs will be sent as key of modified char.
-// Need to use key code directly.
+// This is where an old upstream FIXME sat: "Under Mac, IME inputs will be sent as
+// key of modified char. Need to use key code directly." It is DONE, don't re-open it.
+// The only handler that must read a LETTER off an event Mac may have modified is the
+// Alt remap, and altRemapCharCode below reads e.code — the modern "key code directly"
+// (e.keyCode is deprecated). Nothing else in this class needs it:
+//   - Ctrl and Meta are not composing modifiers, so e.key is the plain letter there.
+//   - Real IME composition never reaches this class: term_view's keyEventFilter drops
+//     keyCode 229 (e.key 'Process') before dispatching, and the composed text arrives
+//     via compositionend/input → onTextInput → _convSend instead. See the note above
+//     easy_reading.noteTextInput for what that path still has to compensate for.
+
+const ALT_REMAP_LETTERS = 'RTWV';
+
+// The letter an Alt-remap keydown means → its control code ('V' → 22), or null
+// when the key isn't one of ours.
+//
+// e.key first, e.code as the fallback. On Windows/Linux Alt+V reports key 'v', so
+// the first branch keeps honouring whatever letter the user's LAYOUT produced.
+// macOS is different: Option is a COMPOSING modifier, so ⌥V/⌥R/⌥T/⌥W arrive as
+// √(U+221A)/®/†/∑ and e.key is no longer a letter at all — matching on it there
+// silently matches nothing (^V, ^R, ^T, ^W all dead on Mac). e.code is the
+// physical key position, untouched by Option, and reads 'KeyV' on both platforms.
+// Guard the code branch too: e.code is absent on synthesized events.
+export function altRemapCharCode(e) {
+  const key = typeof e.key === 'string' && e.key.length === 1 ? e.key.toUpperCase() : '';
+  if (key && ALT_REMAP_LETTERS.indexOf(key) >= 0)
+    return key.charCodeAt(0) - 64;
+  const physical = /^Key([A-Z])$/.exec(e.code || '');
+  if (physical && ALT_REMAP_LETTERS.indexOf(physical[1]) >= 0)
+    return physical[1].charCodeAt(0) - 64;
+  return null;
+}
 
 export class TermKeyboard {
   // isLeftDB: function() -> bool
@@ -138,24 +168,28 @@ export class TermKeyboard {
       // command (pttbbs edit.c Ctrl('V') toggles ANSI color mode, bbs.c
       // read_comms maps it to do_post_vote), and Ctrl-Shift-V is already taken
       // by term_view's doPaste.
+      // On macOS this leaves Ctrl-V a DEAD key, and that is deliberate — not a bug
+      // to "fix" later. Paste there is Cmd-V, which the Meta check at the top of
+      // this function already hands to the browser; Cocoa binds Ctrl-V to
+      // scrollPageDown:, so it pastes nothing. Mac users keep both halves anyway
+      // (Cmd-V pastes, Alt-V sends ^V). Making this key platform-dependent was
+      // considered and rejected: someone on a Windows keyboard reflexively hitting
+      // Ctrl-V would then send ^V (toggling ANSI color mode) instead of pasting.
       if (key === 'v') return false;
       let mappedCode = CtrlShiftMap[key];
       if (mappedCode) {
         return this._sendCharCode(mappedCode);
       }
     } else if (!e.ctrlKey && e.altKey && !e.shiftKey) {
-      // Remapped keys, which conflict browser shortcuts.
-      // Use lowercase no even capslock's on.
-      switch (e.key.toLowerCase()) {
-        case 'r':
-        case 't':
-        case 'w':
-        // 'v' is here for a different reason than r/t/w: Ctrl-V is not a browser
-        // shortcut we work around, it is one we deliberately gave away (see the
-        // ctrl branch above), so this is the ONLY way left to send ^V.
-        case 'v':
-          // Ctrl+key
-          return this._sendCharCode(e.key.toUpperCase().charCodeAt(0) - 64);
+      // Remapped keys (r/t/w), which conflict with browser shortcuts. 'v' is here
+      // for a different reason: Ctrl-V is not a browser shortcut we work around, it
+      // is one we deliberately gave away (see the ctrl branch above), so this is the
+      // ONLY way left to send ^V. Capslock and macOS's composed Option chars are
+      // both handled by altRemapCharCode.
+      const charCode = altRemapCharCode(e);
+      if (charCode !== null) {
+        // Ctrl+key
+        return this._sendCharCode(charCode);
       }
     }
     return false;

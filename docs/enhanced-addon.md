@@ -595,6 +595,14 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   真滑鼠拖曳；程式化 `addRange` 會繞過瀏覽器選取機制 ⇒ Firefox 也會綠，測不到）
   ＋ `tests/unit/css_user_select.test.js`（沒裝 Firefox 也擋得住手滑加回去）。
 
+- **`Alt+字母` 快捷鍵一律用 `e.code` 判斷，不可只比對 `e.key`**（`term_keyboard.js#altRemapCharCode`）：
+  macOS 的 Option 是**組字鍵**，`⌥V`/`⌥R`/`⌥T`/`⌥W` 的 `e.key` 是 `√`(U+221A)/`®`/`†`/`∑` 而非字母
+  ⇒ 比對 `e.key` 的分支在 Mac 上**靜默全失效**（Ctrl+V 已讓給瀏覽器貼上，`Alt+V` 是送 `^V` 的唯一路，
+  於是 Mac 上根本送不出去）。`e.code` 是實體鍵位（`KeyV`），不受 Option 影響。現行順序是
+  **key 優先、code 補位**：Win/Linux 的非 QWERTY 佈局仍以實際打出的字母為準，且 `e.code` 缺失
+  （合成事件）時不炸。假事件測試只寫 `key:'v'` 測不到這類 bug，必須同時給 Mac 風格的 `key`+`code`
+  （`tests/unit/term_keyboard_paste.test.js`）。
+
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）
 
 樓層演算法（meta-latch 規則）移植自 BePTT 7.0.9（`tw.ystudio.beptt`，jadx 反編譯確證、使用者實測過行為）。架構：文章閱讀依登入分流——免登入走 www.ptt.cc HTML（AID→URL 在 `Z7/b.java`，okhttp `over18=1`，`div.push` 計樓天然排除假推文）；登入走 telnet 逐頁解析（`I3()` 等變體，grep 錨點 `f3943g1`/`f3959j3`），跨頁去重用近 40 列含色 ring buffer 內容比對。「檢查新推文」= telnet 重進文章（AID+`$$00`）增量解析共用計數器。
