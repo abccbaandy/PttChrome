@@ -1,4 +1,6 @@
-// 「server 這一幀在等我們做什麼」的畫面分類（src/js/long_push.js）。
+// 「server 這一幀在等我們做什麼」的畫面分類（src/js/push_screen.js）。
+// 長推文送出序列（long_push_session.js）與圖片上傳（image_upload.js 決定網址
+// 要送進推文列還是只複製）共用這一支，所以這裡紅了是兩個功能一起壞。
 //
 // 每一條字串都照 3rd_script/pttbbs 的 printf 格式建構（函式名為準，行號會漂）：
 //   bbs.c#recommend      型別選單 / 作者本人 / 時間太近 / 內容輸入 / 確定[y/N]
@@ -12,7 +14,7 @@ import {
   classifyPushScreen,
   parseVmsgText,
   parseCooldownSeconds,
-} from "../../src/js/long_push";
+} from "../../src/js/push_screen";
 
 const ROWS = 24;
 // 一幀畫面：只有底列（b_lines）有意義，其餘留白。

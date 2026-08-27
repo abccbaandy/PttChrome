@@ -41,8 +41,21 @@ CORS **CONFIRMED**：preflight `OPTIONS` 回 `204` + `Access-Control-Allow-Origi
 | 畫面 | 判準 | 動作 |
 |---|---|---|
 | 編輯文章 | `pageState === 6`（`term_buf.js#setPageState`） | `send`：`App.onPasteDone(text)` |
-| 推文輸入列 | `parsePushInitText(lastRowText)`（`string_util.js`；`→ id: `，尾端**無**時間戳） | `send` |
-| 其他（列表／選單／閱讀） | — | `clipboard`：`App.doCopy(text)` + 提示 |
+| 推文**內容輸入列** | `classifyPushScreen([lastRowText], 1).kind === 'inputPrompt'`（`push_screen.js`） | `send` |
+| 其他（列表／選單／閱讀／推文流程的其餘各步） | — | `clipboard`：`App.doCopy(text)` + 提示 |
+
+**底列分類只有一套：`push_screen.js#classifyPushScreen`**（已逐字對過 `bbs.c#recommend`，
+見 `docs/pttbbs-screen-protocol.md` §11.3），長推文送出序列（`long_push_session.js`）吃的是
+同一支，不要在 `image_upload.js` 另寫 regex。
+踩過的坑（2026-08-28）：這裡原本用 `string_util.js#parsePushInitText`，它只認 `→ id:`，
+但 prompt 是 `bbs.c:3079` 的 `sprintf("%s%s%s %s:", ctype_attr[type], ctype[type], RESET, myid)`，
+`ctype = 推／噓／→` ⇒ **最常按的 `1.值得推薦` 一律判不到**，症狀是「上傳完都說不在推文框」
+（編輯文章那條走 `pageState`，所以看起來只有推文列壞）。長推文功能後來做對了分類器卻沒回頭
+換掉這裡，兩套判斷分歧就是本 bug 的成因；`parsePushInitText` 已移除，分類器也從 `long_push.js`
+抽成獨立的 `push_screen.js`（原本擺在長推文的功能模組裡，是會再長出第二套的形狀）。
+換掉後順帶擋住三種「開頭長得像輸入列、但送字會壞事」的底列：`typeMenu`（`vkey()` 只吃 1 byte
+⇒ 網址首字被當型別鍵吞掉）、`confirm`（`確定[y/N]` 的 `ans` 只吃 1 字元 ⇒ 非 `y` ＝整則靜默取消）、
+`angel`／`cooldown`／`fatal` 橫幅。
 
 - 判斷在**上傳結束當下**做，不是拖曳當下：上傳要數秒，使用者可能已離開推文列。
 - `send` 走既有貼上漏斗 `onPasteDone`（內含列表好讀接管、文章好讀 `_enterFunctionMode`），

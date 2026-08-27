@@ -11,7 +11,8 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 
 | 檔案 | 責任 |
 |---|---|
-| `src/js/long_push.js` | 純邏輯：`stripNonBig5` / `big5ByteLength` / `pushMaxBytes` / `detectIpLogged` / `splitPushSpans`(+`splitPushSegments`) / `parseVmsgText` / `parseCooldownSeconds` / `classifyPushScreen` |
+| `src/js/long_push.js` | 送出端純邏輯：`stripNonBig5` / `big5ByteLength` / `pushMaxBytes` / `splitPushSpans`(+`splitPushSegments`) |
+| `src/js/push_screen.js` | **共用**的畫面判讀：`classifyPushScreen` / `detectIpLogged` / `parseVmsgText` / `parseCooldownSeconds`。另一個消費者是圖片上傳（`image_upload.js#decideInsertMode`）⇒ 改這裡要同時想兩邊，也**不准**任一邊自己另寫 regex（分歧實錄見 `docs/image-upload.md`） |
 | `src/js/long_push_session.js` | 狀態機（形狀比照 `aid_navigation.js`）：持 `active` 旗標，每一步一個 `CommandQueue` command |
 | `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認） |
 | `src/components/ContextMenu/LongPushProgressModal.jsx` | 送出中的全版遮罩（真 modal，唯一出口是取消） |
@@ -46,7 +47,7 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 - 中止／取消時交給剪貼簿的是原文的一段 slice，不是切開又接回去的版本；
 - 總則數可以隨時重算。
 
-## 決策表（`classifyPushScreen` → 動作）
+## 決策表（`push_screen.js#classifyPushScreen` → 動作）
 
 | kind | 判準（底列） | 動作 |
 |---|---|---|
@@ -100,7 +101,7 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 | 層 | 檔案 | 守什麼 |
 |---|---|---|
 | unit | `tests/unit/long_push_split.test.js` | 濾字、byte 長度、上限公式、分段（含全形餘裕、標點斷點） |
-| unit | `tests/unit/long_push_screen.test.js` | §11.3 每個 PTT 字串一個 case |
+| unit | `tests/unit/push_screen.test.js` | §11.3 每個 PTT 字串一個 case（共用分類器，長推文與圖片上傳都吃它） |
 | unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正 |
 | unit | `tests/unit/long_push_modal.test.js` | 即時則數、濾字提示、>20 則二次確認 |
 | unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值 |

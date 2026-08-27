@@ -376,7 +376,8 @@ PTT 私有 commit，不在公開 repo）。**觸發門檻無從得知**，但**�
 ## 11.3 推文互動序列（`bbs.c#recommend`，2026-08-26 CONFIRMED）
 
 §11.1 只講**已完成**的推文列長什麼樣；這一節是「怎麼推」——長推文一鍵發送
-（`src/js/long_push*.js`）的全部依據。消費端守護：`tests/unit/long_push_screen.test.js`
+（`src/js/long_push*.js`）與圖片上傳插入位置（`src/js/image_upload.js`）的共同依據，
+兩者共用 `src/js/push_screen.js#classifyPushScreen`。消費端守護：`tests/unit/push_screen.test.js`
 （每個字串一個 case）、`long_push_flow.test.js`（鍵序）。
 
 進入點：`bbs.c` 的 `read_comms[]` `{1, recommend} // 'X'`（`'%'` 同）；文章內按 X 走

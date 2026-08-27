@@ -41,7 +41,6 @@ import {
   classifyPageTransition,
   COMMENT_USERID_COL
 } from "../../src/js/comment_parse";
-import { parsePushInitText } from "../../src/js/string_util";
 
 // Append a realistic right-aligned timestamp so a row passes the new "must end with
 // MM/DD HH:MM" comment test. The exact gap width is irrelevant (regex needs ≥1 space).
@@ -1013,20 +1012,6 @@ describe("contentCol（推文內容起始欄）", () => {
   test("非推文列沒有 annotation，自然也沒有 contentCol", () => {
     const ctx = { showFloorNumbers: false, floorCounter: null };
     expect(annotateComment("這是內文，不是推文", ctx)).toBeNull();
-  });
-});
-
-describe("parsePushInitText (easy-reading input-prompt detection)", () => {
-  // A finished arrow comment must NOT be mistaken for the comment input prompt —
-  // that bug dropped a leading "→ user:" comment from the easy-reading scroll.
-  test("real arrow comment (has timestamp) → false", () => {
-    expect(parsePushInitText(ts("→ BlueBird5566: 才生2個也在增產成功"))).toBe(false);
-  });
-  test("bare input prompt (no timestamp) → true", () => {
-    expect(parsePushInitText("→ wowbenny: ")).toBe(true);
-  });
-  test("rating prompt still detected", () => {
-    expect(parsePushInitText("您覺得這篇文章 是好文嗎？")).toBe(true);
   });
 });
 

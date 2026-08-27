@@ -18,7 +18,7 @@
 //
 // 本檔的決策部分全是純函式（無 DOM、無網路），守護在 tests/unit/image_upload.test.js。
 
-import { parsePushInitText } from './string_util';
+import { classifyPushScreen } from './push_screen';
 
 export const URUSAI_UPLOAD_URL = 'https://api-v1-t2-upload.urusai.cc';
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -74,12 +74,22 @@ export function parseUploadResponse(raw, status) {
 }
 
 // 上傳完成後該把網址「送進終端機」還是「只複製到剪貼簿」。
-//   pageState 6            編輯文章（term_buf.js#setPageState 認的原生編輯器底列）
-//   parsePushInitText      推文輸入列（'→ id: '，尾端沒有時間戳；已完成的推文有）
+//   pageState 6   編輯文章（term_buf.js#setPageState 認的原生編輯器底列）
+//   inputPrompt   推文的**內容輸入列**（bbs.c#recommend 步驟 3）
 //   其他（列表／選單／閱讀）→ 送字等於亂按指令，一律走剪貼簿
+//
+// 底列的分類一律走共用的 push_screen.js#classifyPushScreen（長推文送出序列用的
+// 是同一支），**不要在這裡自己寫 regex**：這裡當年只認 '→ id:' 一種型別符，但 prompt 是
+// bbs.c:3079 的 sprintf("%s%s%s %s:", ctype_attr[type], ctype[type], RESET, myid)，
+// ctype = 推／噓／→ ⇒ 最常按的 1.推薦 一律判不到，症狀是「上傳完都說不在推文框」。
+// 順帶擋掉三種「長得像但送字會壞事」的底列：
+//   typeMenu 型別選單 vkey() 只吃 1 byte ⇒ 網址首字被當型別鍵吞掉；
+//   confirm  確定[y/N] ans 只吃 1 字元 ⇒ 非 y ＝整則推文靜默取消；
+//   angel／cooldown／fatal 橫幅同理都不是能打字的地方。
 export function decideInsertMode({ pageState, lastRowText }) {
   if (pageState === 6) return 'send';
-  if (lastRowText && parsePushInitText(lastRowText)) return 'send';
+  if (lastRowText && classifyPushScreen([lastRowText], 1).kind === 'inputPrompt')
+    return 'send';
   return 'clipboard';
 }
 

@@ -30,13 +30,8 @@
 // 詳見 docs/long-push.md。
 
 import { u2b, ansiHalfColorConv } from './string_util';
-import {
-  PUSH_TYPE_KEY,
-  classifyPushScreen,
-  detectIpLogged,
-  pushMaxBytes,
-  splitPushSpans
-} from './long_push';
+import { PUSH_TYPE_KEY, pushMaxBytes, splitPushSpans } from './long_push';
+import { classifyPushScreen, detectIpLogged } from './push_screen';
 
 // vgetstring 的 Ctrl-C：清空 buf 並 abort（vtuikit.c:1345-1351）⇒ getdata 回 0
 // ⇒ recommend() 直接 return FULLUPDATE，不寫入任何東西。取消時用它退出輸入列／

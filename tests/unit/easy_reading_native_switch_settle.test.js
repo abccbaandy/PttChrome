@@ -36,8 +36,7 @@ const screen = vi.hoisted(() => ({
 }));
 vi.mock(import("../../src/js/string_util"), async importOriginal => ({
   ...(await importOriginal()),
-  parseStatusRow: vi.fn(() => screen.status),
-  parsePushInitText: vi.fn(() => false)
+  parseStatusRow: vi.fn(() => screen.status)
 }));
 
 const ROWS = 24;

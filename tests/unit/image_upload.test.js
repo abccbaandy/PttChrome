@@ -117,10 +117,49 @@ describe("decideInsertMode", () => {
     expect(decideInsertMode({ pageState: 6, lastRowText: "" })).toBe("send");
   });
 
-  test("推文輸入列 → 直接送進終端機", () => {
+  // bbs.c#recommend 的 prompt 是 sprintf("%s%s%s %s:", ctype_attr, ctype, RESET, myid)，
+  // ctype = 推／噓／→ 三種（型別選單按 1/2/3）。只認 → 的話，最常用的「推」一律
+  // 掉到 clipboard ⇒ 使用者看到的症狀就是「上傳完都說不在推文框」。
+  test.each([
+    ["推 someuser: ", "推"],
+    ["噓 someuser: ", "噓"],
+    ["→ someuser: ", "→"],
+  ])("推文輸入列（型別符 %s）→ 直接送進終端機", (lastRowText) => {
+    expect(decideInsertMode({ pageState: 0, lastRowText })).toBe("send");
+  });
+
+  test("id 後補空白對齊（aligncmt 板）仍算輸入列", () => {
     expect(
-      decideInsertMode({ pageState: 0, lastRowText: "→ someuser: " }),
+      decideInsertMode({ pageState: 0, lastRowText: "推 someuser  : " }),
     ).toBe("send");
+  });
+
+  test("型別選單不算輸入列 → 只複製（vkey 只吃 1 byte，送網址會被吃掉首字）", () => {
+    expect(
+      decideInsertMode({
+        pageState: 0,
+        lastRowText:
+          "您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ",
+      }),
+    ).toBe("clipboard");
+  });
+
+  test("確認列不算輸入列 → 只複製（ans 只吃 1 字元，送網址＝非 y ＝整則取消）", () => {
+    expect(
+      decideInsertMode({
+        pageState: 0,
+        lastRowText: "推 someuser: 已經打好的內容            確定[y/N]:",
+      }),
+    ).toBe("clipboard");
+  });
+
+  test("擋人／冷卻橫幅不算輸入列 → 只複製", () => {
+    expect(
+      decideInsertMode({
+        pageState: 0,
+        lastRowText: " ◆ 本板禁止快速連續推文，請再等 20 秒      [按任意鍵繼續]",
+      }),
+    ).toBe("clipboard");
   });
 
   test("已完成的推文（尾端有時間戳）不算輸入列 → 只複製", () => {
@@ -128,6 +167,12 @@ describe("decideInsertMode", () => {
       decideInsertMode({
         pageState: 3,
         lastRowText: "→ someuser: 這是一則推文                    08/20 12:34",
+      }),
+    ).toBe("clipboard");
+    expect(
+      decideInsertMode({
+        pageState: 3,
+        lastRowText: "推 someuser: 這是一則推文                    08/20 12:34",
       }),
     ).toBe("clipboard");
   });

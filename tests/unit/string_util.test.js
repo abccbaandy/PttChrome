@@ -19,7 +19,6 @@ import {
   parsePagerFooterContext,
   parseListRow,
   parseWaterball,
-  parsePushInitText,
   isDBCSLead,
   unescapeStr,
   b2u,
@@ -445,47 +444,6 @@ describe("parseWaterball（show_call_in / outmsg）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 推文輸入列的指紋。唯一消費者是 image_upload.js（決定圖片網址插到推文輸入列
-// 還是編輯器）——好讀模式的 prompt 讓位已改由 functionMode 鏡像原生畫面，
-// parseReplyText / parseReqNotMetText 隨那條 legacy 路徑一起移除。
-// 官方出處：mbbsd/bbs.c#recommend — outs(ANSI_COLOR(1) "您覺得這篇文章 ")
-// ---------------------------------------------------------------------------
-describe("parsePushInitText（bbs.c#recommend 的推文輸入列）", () => {
-  test("推文類型選單（您覺得這篇文章 …）", () => {
-    expect(parsePushInitText("您覺得這篇文章 值得推薦 給它噓聲 只加→註解 [1]? ")).toBe(
-      true
-    );
-  });
-
-  // FormatCommentString 的輸入 prompt：「→ id:」但**還沒有**行尾時間戳
-  // （tail 是送出後才接上的）。
-  test("輸入 prompt「→ id: 」（無時間戳）", () => {
-    expect(parsePushInitText("→ someuser: ")).toBe(true);
-  });
-
-  // 已完成的 → 推文帶行尾 MM/DD HH:MM，不是輸入列 —— 否則好讀模式會把
-  // 第一則箭頭推文誤當輸入列而漏掉它。
-  test("已完成的箭頭推文（有時間戳）→ false", () => {
-    expect(
-      parsePushInitText("→ someuser: 已經送出的推文                07/26 14:30")
-    ).toBe(false);
-  });
-
-  test("本板不開放回覆 prompt", () => {
-    expect(
-      parsePushInitText(
-        "很抱歉, 本板不開放回覆文章，要改回信給作者嗎？ [y/N]:"
-      )
-    ).toBe(true);
-  });
-
-  test("一般內容 → false", () => {
-    expect(parsePushInitText("推 someuser: 內容                    07/26 14:30")).toBe(
-      false
-    );
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Big5 <-> Unicode（src/conv/*.bin 查表；PTT 全站 Big5，見 CLAUDE.md）
 // ---------------------------------------------------------------------------

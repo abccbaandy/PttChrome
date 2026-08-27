@@ -2,7 +2,7 @@
 # Bug: 好讀顯示異常，第一則箭頭推文「→ BlueBird5566」不見。
 # 真正成因 = populateEasyReadingPage 跨頁去重 over-skip (i==4 hack)，非偵測問題；
 # 詳見 docs/easy-reading-missing-comment-handoff.md (尚未修)。
-# 此處僅驗證: 該推文是合法 C (偵測層面不該丟它)。parsePushInitText 對它須回 false (見另一測試)。
+# 此處僅驗證: 該推文是合法 C (偵測層面不該丟它)。classifyPushScreen 不得把它判成 inputPrompt (見另一測試)。
 N	※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 220.133.46.223 (臺灣)
 N	※ 文章網址: https://www.ptt.cc/bbs/Stock/M.1780735101.A.683.html
 C	→ BlueBird5566: 才生2個也在增產成功                                  06/06 16:38

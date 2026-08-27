@@ -57,7 +57,9 @@ async function collectSent(page) {
 
 const sentText = (page) => page.evaluate(() => (window.__sent || []).join(''));
 
-// 把最後一列畫成 PTT 的推文輸入列（'→ id: '）。畫面是 Big5，所以用頁面裡已載入的
+// 把最後一列畫成 PTT 的推文輸入列。型別符刻意用**推**而不是 →：bbs.c#recommend 的
+// prompt 是 ctype[type]（推／噓／→），而按 1.值得推薦 是最常走的路；判斷式只認 →
+// 的那版 bug 在這裡才會現形（unit 另有三種型別符的逐一守護）。畫面是 Big5，所以用頁面裡已載入的
 // 轉碼表把字串轉成 Big5 bytes 再餵進 App.onData（＝真實的 parser→termBuf 路徑）。
 async function drawPushPrompt(page) {
   await page.evaluate(() => {
@@ -75,7 +77,7 @@ async function drawPushPrompt(page) {
       }
       return out;
     };
-    window.__app.onData('\x1b[2J\x1b[24;1H' + u2b('→ testuser: '));
+    window.__app.onData('\x1b[2J\x1b[24;1H' + u2b('推 testuser: '));
   });
   await page.waitForTimeout(200);
 }

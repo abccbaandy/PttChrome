@@ -157,20 +157,14 @@ export function normalizeCopyText(it) {
 // row, always preceded by whitespace). A finished comment row ends with it; body
 // text written in comment shape, the "→ id:" input prompt, and "※ 編輯: … ,
 // MM/DD/YYYY HH:MM:SS" (different format) do NOT. Shared by parseComment (in
-// comment_parse.js) and parsePushInitText to tell real comments apart.
+// comment_parse.js) and long_push.js#classifyPushScreen to tell real comments
+// apart from the row you can type into.
 export const COMMENT_TIME_RE = /\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/;
 
-export function parsePushInitText(it) {
-  // The "→ id: " clause is the comment INPUT prompt (the row you type into), which
-  // has no timestamp. Exclude finished arrow comments (they end with a timestamp):
-  // matching them made easy reading mistake the first arrow comment for the input
-  // row and drop it from the scroll (e.g. a leading "→ user:" comment went missing).
-  // 唯一消費者是 image_upload.js（判斷目前是不是推文輸入列，決定圖片網址插到哪裡）。
-  // 好讀模式已不再用它辨識 prompt 幀 —— 那些幀一律由 functionMode 鏡像原生畫面。
-  return (it.indexOf('您覺得這篇文章 ') === 0 ||
-      (it.search(/→ \w+ *: +/) === 0 && !COMMENT_TIME_RE.test(it)) ||
-      it.indexOf('很抱歉, 本板不開放回覆文章，要改回信給作者嗎？ [y/N]:') === 0);
-};
+// 推文底列（型別選單／輸入列／確認列／擋人橫幅）的分類一律用
+// long_push.js#classifyPushScreen（已逐字對過 bbs.c#recommend）。此處曾有一個
+// parsePushInitText 只認 '→ id:'，跟不上推／噓 兩種型別符 ⇒ 圖片上傳在推文
+// 列被判成「不在推文框」而改走剪貼簿；已移除，勿再在這裡另寫一套。
 
 // pmore 底部狀態列＝「這頁是文章」的決定性指紋（pageState 3 / classifyListScreen
 // 'article' 都靠它）。官方 mbbsd/pmore.c#mf_display_footer 三段拼接：

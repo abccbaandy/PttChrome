@@ -10,9 +10,9 @@ import {
   stripNonBig5,
   big5ByteLength,
   pushMaxBytes,
-  detectIpLogged,
   splitPushSegments,
 } from "../../src/js/long_push";
+import { detectIpLogged } from "../../src/js/push_screen";
 
 beforeAll(() => loadBig5Tables());
 
