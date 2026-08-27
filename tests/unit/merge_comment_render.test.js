@@ -161,3 +161,106 @@ describe("Screen 推文合併：跨行連結接合", () => {
     expect(c.querySelector(".fixedUrlLine")).toBeNull();
   });
 });
+
+// 跨行 AID 接合的 Screen 接線（使用者 2026-08-27 回報，錄製擋
+// tests/e2e/cassettes/ask-aid-wrap.json）。兩種切法各自走不同的程式路徑：
+//   1. 看板後綴被切到下一則 → aid_parse.parseBoardSuffix 跨換行（不需三訊號）
+//   2. AID 本體 8 碼被切成兩半 → aid_wrap.detectWrappedAids（三訊號）
+// 兩者共同的失敗症狀都是「board 拿不到 ⇒ 退回目前看板 ⇒ 跳到錯的板」。
+describe("Screen 推文合併：跨行 AID 接合", () => {
+  const AID = "1gU3wwNZ";
+  // 內容欄右界 fieldEnd＝TIME_COL-1＝66；寫滿的一列內容 exclusive 尾端＝65。
+  const FULL_LEN = 65 - PREFIX_COLS;
+
+  const renderAid = (aidLines, props) =>
+    mountScreen({
+      lines: aidLines,
+      forceWidth: FORCE_WIDTH,
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: {
+        pageState: 3,
+        easyReading: true,
+        dropHidden: true,
+        articleId: 1,
+        mergeSameAuthorComments: true,
+        onAidClick: () => {},
+        ...props,
+      },
+    });
+
+  const aidLink = (c) => c.querySelector(".mergedCommentBlock a.aidLink");
+
+  // 使用者現場：AID 打在一則的結尾（沒寫滿，尾巴還剩空白）、看板打在下一則的開頭。
+  const suffixLines = [
+    comment("推", ID, "有興趣可到 #" + AID, "08/26 22:17"),
+    comment("→", ID, "(Browsers) 體驗", "08/26 22:17"),
+  ];
+
+  test("看板後綴被切到下一則 → aidLink 仍帶對的看板", () => {
+    const { container: c } = renderAid(suffixLines);
+    const a = aidLink(c);
+    expect(a).not.toBeNull();
+    expect(a.getAttribute("data-aid")).toBe(AID);
+    expect(a.getAttribute("data-board")).toBe("Browsers");
+    // 連結文字只包 #AID 本身，看板後綴不進 <a>（欄位範圍與逐列一致）。
+    expect(a.textContent).toBe("#" + AID);
+  });
+
+  test("關掉推文合併 → 沒有合併塊，看板自然拿不到（跨行接合的前提）", () => {
+    const { container: c } = renderAid(suffixLines, {
+      mergeSameAuthorComments: false,
+    });
+    expect(c.querySelector(".mergedCommentBlock")).toBeNull();
+    const a = c.querySelector("a.aidLink");
+    expect(a.getAttribute("data-aid")).toBe(AID);
+    expect(a.getAttribute("data-board")).toBe("");
+  });
+
+  // AID 本體被輸入欄切成 6+2：左邊那則必須寫滿內容欄，兩則同一分鐘。
+  // '#' 前面留一格空白——緊鄰的字若是 AID 字元，`a#...` 那條前綴規則會（正確地）擋掉。
+  const splitHead = "#" + AID.slice(0, 6);
+  const splitLines = [
+    comment(
+      "推",
+      ID,
+      "note".padEnd(FULL_LEN - splitHead.length - 1, "x") + " " + splitHead,
+      "08/26 22:17",
+    ),
+    comment("→", ID, AID.slice(6) + " (Browsers) 體驗", "08/26 22:17"),
+  ];
+
+  test("AID 本體被切成兩半 → 兩個殘段都變成指向同一篇的連結", () => {
+    const { container: c } = renderAid(splitLines);
+    const links = c.querySelectorAll(".mergedCommentBlock a.aidLink");
+    // 範圍型連結不可跨換行（LinkSegmentBuilder 在 '\n' 一律收錨），故左右殘段
+    // 各自成錨；兩個都帶同一組 data-aid / data-board，點哪一半都跳同一篇。
+    expect(links.length).toBe(2);
+    expect(links[0].textContent).toBe("#" + AID.slice(0, 6));
+    expect(links[1].textContent).toBe(AID.slice(6));
+    for (const a of links) {
+      expect(a.getAttribute("data-aid")).toBe(AID);
+      expect(a.getAttribute("data-board")).toBe("Browsers");
+    }
+  });
+
+  test("兩則時間差超過 1 分鐘 → 不接（三訊號守門）", () => {
+    const lateLines = [
+      splitLines[0],
+      comment("→", ID, AID.slice(6) + " (Browsers) 體驗", "08/26 22:19"),
+    ];
+    const { container: c } = renderAid(lateLines);
+    expect(c.querySelector(".mergedCommentBlock")).not.toBeNull();
+    expect(aidLink(c)).toBeNull();
+  });
+
+  test("左邊那則沒寫滿內容欄 → 不接（作者只是分兩則講話）", () => {
+    const shortLines = [
+      comment("推", ID, "說明 " + splitHead, "08/26 22:17"),
+      comment("→", ID, AID.slice(6) + " (Browsers) 體驗", "08/26 22:17"),
+    ];
+    const { container: c } = renderAid(shortLines);
+    expect(c.querySelector(".mergedCommentBlock")).not.toBeNull();
+    expect(aidLink(c)).toBeNull();
+  });
+});

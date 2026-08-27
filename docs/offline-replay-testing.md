@@ -103,6 +103,12 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
   `expect(undefined)` 紅。
 - 實例：`ask-urlline-blank.json`（ptt-debug-20260812-010606 轉出，2 頁 5 推）——
   唯一能重現「非媒體連結佔位盒留下假高度」的素材，見下方「素材選用」。
+- 實例：`ask-aid-wrap.json`（ptt-debug-20260828-002500 轉出，2 頁 10 推）——守護
+  「跨行 AID 接合」：末兩則同作者推文是 `#1gU3wwNZ` ＋ 下一則開頭的 `(Browsers)`。
+  **刻意保留 `mode:'debug-derived'`**（不改成 `article`）⇒ `findCassettes('article')`
+  不會撿它、逐卷 spec 一律不受影響，只由 `aid_wrap.offline.spec.js` 以
+  `loadCassette('ask-aid-wrap')` 指名載入。裁剪方式：丟掉列表 step 與跳轉失敗留下的
+  `on:'raw'` step（`replay.js` 不認得 raw），把文章第一頁那步的 `on` 改成 `start`。
 - 守護測試：`tests/unit/redact.test.js`、`tests/unit/debug_recorder_logic.test.js`、
   `tests/unit/debug_recorder.test.js`、`tests/e2e/offline/debug_record.offline.spec.js`。
 

@@ -21,9 +21,12 @@
 import { rangeInTermUrl } from './term_url_flag';
 import { parseArticleUrl } from './aid_codec';
 
-const AID_LEN = 8;
+export const AID_LEN = 8;
 
-function isAidChar(c) {
+// 合併推文塊的「兩則之間」cell（comment_merge.buildMergedCommentChars 造的 '\n'）。
+export const NEWLINE = "\n";
+
+export function isAidChar(c) {
   return (
     (c >= "A" && c <= "Z") ||
     (c >= "a" && c <= "z") ||
@@ -45,11 +48,30 @@ function readBoardToken(chars, j) {
   return { board, next: j };
 }
 
+function isPlainCell(chars, j, ch) {
+  return !!chars[j] && !chars[j].isLeadByte && chars[j].ch === ch;
+}
+
 // Optional suffix right after the AID (or after one space): "(Board)" or
 // "@Board". Returns the board name or null; never affects the link columns.
-function parseBoardSuffix(chars, j) {
+//
+// 分隔段允許 [空白?] [換行?] [空白?]：'\n' cell 只在「連續同作者推文合併」重組出來的
+// chars 裡出現（comment_merge.buildMergedCommentChars），代表兩則推文的邊界。使用者
+// 實際寫法就是把 AID 打在一則的結尾、看板打在下一則的開頭：
+//   推 someone: ...有興趣可到  #1gU3wwNZ      08/26 22:17
+//   →  someone: (Browsers) 體驗(懷舊?)        08/26 22:17
+// 少了這一步 board 就是 null → 退回「目前文章所在看板」→ 跳轉必失敗（實錄見
+// docs/enhanced-addon.md「跨行 AID 接合」）。
+// 這裡刻意**不**比照 url_wrap 要求 leftFull／同分鐘：看板 token 本來就要 2 字以上的
+// [0-9A-Za-z_-] ＋閉合 ')'，誤判成本只是「跳到不存在的看板」（PTT 自己會擋）；而真實
+// 現場的左側那則收尾還剩 6 格空白，要求「寫滿內容欄」反而會漏掉它。
+export function parseBoardSuffix(chars, j) {
   const n = chars.length;
-  if (j < n && chars[j] && !chars[j].isLeadByte && chars[j].ch === " ") j++;
+  if (j < n && isPlainCell(chars, j, " ")) j++;
+  if (j < n && isPlainCell(chars, j, NEWLINE)) {
+    j++;
+    if (j < n && isPlainCell(chars, j, " ")) j++;
+  }
   if (j >= n || !chars[j] || chars[j].isLeadByte) return null;
   const ch = chars[j].ch;
   if (ch === "(") {

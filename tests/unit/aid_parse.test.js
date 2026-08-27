@@ -111,6 +111,51 @@ describe("detectAids", () => {
     ]);
   });
 
+  // ---- 看板後綴跨推文（合併塊的 '\n' cell）----
+  // 使用者 2026-08-27 回報的現場（ask 板 M.1787109393，錄製擋
+  // tests/e2e/cassettes/ask-aid-wrap.json）：AID 打在一則推文的結尾、看板打在
+  // 下一則的開頭。少了跨換行 board 會是 null ⇒ 退回目前看板 ⇒ 跳轉必失敗。
+  describe("board suffix across a merged-comment newline", () => {
+    test("#AID \\n (Board) → 認得看板，欄位範圍不變", () => {
+      expect(detectAids(ascii("有興趣可到 #1gU3wwNZ\n(Browsers) 體驗"))).toEqual([
+        { startCol: 6, endCol: 15, aid: "1gU3wwNZ", board: "Browsers" }
+      ]);
+    });
+
+    test("#AID \\n @Board 也認得", () => {
+      expect(detectAids(ascii("x #1gU3wwNZ\n@Browsers"))).toEqual([
+        { startCol: 2, endCol: 11, aid: "1gU3wwNZ", board: "Browsers" }
+      ]);
+    });
+
+    test("換行前後各允許一個空白", () => {
+      expect(detectAids(ascii("x #1gU3wwNZ \n (Browsers)"))[0].board).toBe(
+        "Browsers"
+      );
+    });
+
+    test("最多跨一個換行：連兩個 '\\n' 不再往下找", () => {
+      expect(detectAids(ascii("x #1gU3wwNZ\n\n(Browsers)"))[0].board).toBeNull();
+    });
+
+    test("換行後不是看板 token（中文）→ board 仍為 null", () => {
+      const row = [
+        ...ascii("#1gU3wwNZ\n("),
+        ...dbcs("\xbb", "\xa1"), // 說
+        ...ascii(")")
+      ];
+      expect(detectAids(row)[0].board).toBeNull();
+    });
+
+    test("換行後只有 1 字的 token 不算看板", () => {
+      expect(detectAids(ascii("#1gU3wwNZ\n(a) x"))[0].board).toBeNull();
+    });
+
+    test("換行後括號沒閉合 → board 仍為 null", () => {
+      expect(detectAids(ascii("#1gU3wwNZ\n(Browsers 體驗"))[0].board).toBeNull();
+    });
+  });
+
   test("multiple AIDs on one row keep correct columns", () => {
     // #0..8 sp9 #10..18
     expect(detectAids(ascii("#1gIeu-3A #2AbCdEf0"))).toEqual([

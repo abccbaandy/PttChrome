@@ -18,6 +18,7 @@ import {
 } from "./comment_parse";
 import { detectFixableUrls } from "./url_fix";
 import { detectWrappedUrls } from "./url_wrap";
+import { detectWrappedAids } from "./aid_wrap";
 import { detectBareDomains } from "./bare_domain";
 import { detectMentions } from "./mention_parse";
 import { detectAids } from "./aid_parse";
@@ -456,6 +457,31 @@ export function computeAnnotations(
                   extras = {
                     ...extras,
                     fixedUrls: (extras.fixedUrls || []).concat(add),
+                  };
+                }
+              }
+            }
+            // 跨行 AID 接合（src/js/aid_wrap.js）：與上面的 url_wrap 完全對稱——被推文
+            // 輸入欄切成兩則的 8 碼 AIDc，逐列偵測兩層都只看到殘段。產物形狀與
+            // detectAids 相同 ⇒ 補上 onClick 後併進 aids，渲染／快取全部沿用。
+            // 註：另一種切法（AID 完整、只有「(看板)」被切到下一則）在
+            // aid_parse.parseBoardSuffix 處理，不經過這裡。
+            if (detectOpts.easyReading && detectOpts.onAidClick) {
+              const wrappedAids = detectWrappedAids(merged.chars, merged.breaks);
+              if (wrappedAids.length) {
+                const have = new Set(
+                  (extras.aids || []).map((a) => a.startCol),
+                );
+                const add = wrappedAids
+                  .filter((a) => !have.has(a.startCol))
+                  .map((a) => ({
+                    ...a,
+                    onClick: () => detectOpts.onAidClick(a.aid, a.board),
+                  }));
+                if (add.length) {
+                  extras = {
+                    ...extras,
+                    aids: (extras.aids || []).concat(add),
                   };
                 }
               }

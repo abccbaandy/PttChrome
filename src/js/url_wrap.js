@@ -23,6 +23,7 @@
 // 外加一條反向守門：左片段本身已以媒體副檔名收尾 ⇒ 那是「作者剛好寫滿的完整網址」，
 // 不接。
 import { TLDS, endsWithMediaExt } from './url_fix';
+import { withinOneMinute, isDbcsCell } from './comment_break';
 
 // URL 字元類：與 url_fix.js 的 PATH / TermBuf.uriRegEx 的 host+path 類一致（純
 // ASCII、不含空白），加上 scheme 會用到的字元。
@@ -34,41 +35,12 @@ const HOST_RE = new RegExp(
   '^([A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.(?:' + TLDS.join('|') + '))\\b',
   'i'
 );
-const TIME_RE = /^(\d{1,2})\/(\d{1,2}) (\d{2}):(\d{2})$/;
 
 const MAX_PER_BLOCK = 3;
-
-// 這一格是 DBCS 的一半嗎（lead 或 trail）。**必須看旗標不能只看 ch**：Big5 的
-// trail byte 可能剛好是 0x40（'@'）這種合法 URL 字元（見 docs/enhanced-addon.md
-// 踩坑 A）。
-function isDbcsCell(chars, i) {
-  const c = chars[i];
-  if (!c) return true;
-  if (c.isLeadByte) return true;
-  const prev = chars[i - 1];
-  return !!(prev && prev.isLeadByte);
-}
 
 function isUrlCell(chars, i) {
   const c = chars[i];
   return !!c && !isDbcsCell(chars, i) && URL_CHAR_RE.test(c.ch);
-}
-
-// 時間戳 "MM/DD HH:MM" → 分鐘數。月長一律當 31 天：只用來比「差 ≤ 1 分鐘」，
-// 短月月底跨日會多算成差 2 天 ⇒ 判成不接，方向是安全的。
-function toMinutes(t) {
-  const m = TIME_RE.exec(t || '');
-  if (!m) return null;
-  return (
-    ((+m[1] * 31 + +m[2]) * 24 + +m[3]) * 60 + +m[4]
-  );
-}
-
-function withinOneMinute(a, b) {
-  const ma = toMinutes(a);
-  const mb = toMinutes(b);
-  if (ma === null || mb === null) return false;
-  return Math.abs(mb - ma) <= 1;
 }
 
 // 併起來的字串是不是一個值得連的網址 → { fixed, host }，否則 null。

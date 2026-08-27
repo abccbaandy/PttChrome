@@ -221,9 +221,44 @@
 - 接線：`screen_annotations#computeAnnotations` 的合併塊分支在 `detectRowExtras(merged.chars, …)` 之後，
   以 `fixed` 去重併進 `fixedUrls` → 渲染（`FixedUrlLine`）／`runCache`／`applyAiFix` 全部沿用、零改動。
 - 限制：需 `mergeSameAuthorComments` 開啟（預設開）＋好讀模式；中間被別人插一則推文而斷開 run 的不接。
+- 「時間戳相差 ≤ 1 分鐘」與「這一格是不是 DBCS 的一半」抽在 `src/js/comment_break.js`
+  （與下節的 AID 接合共用同一份判準，守護 `tests/unit/comment_break.test.js`）。
 - 守護測試：`tests/unit/url_wrap.test.js`（三訊號逐條＋78 欄整合＋IP 板 `fieldEnd`）、
   `tests/unit/comment_merge.test.js`（`fieldEnd`／`breaks`）、
   `tests/unit/merge_comment_render.test.js`「跨行連結接合」。
+
+## 跨行 AID 接合（`src/js/aid_wrap.js` ＋ `aid_parse.parseBoardSuffix`）
+同一個坑、被切斷的東西換成文章代碼。**兩種切法走不同的程式路徑，別混為一談**：
+
+| 切法 | 畫面 | 實作 | 需要三訊號？ |
+|---|---|---|---|
+| A. 只有看板後綴被切到下一則 | `…可到 #1gU3wwNZ` ／ `(Browsers) 體驗` | `aid_parse.parseBoardSuffix` 的分隔段允許 `[空白?] [換行?] [空白?]` | **否** |
+| B. AID 本體 8 碼被切成兩半 | `…說明 #1gU3ww` ／ `NZ (Browsers)` | `aid_wrap.detectWrappedAids` | 是（同 `url_wrap`） |
+
+- **A 為什麼不要 `leftFull`／同分鐘**：使用者 2026-08-27 的錄製檔（`ask-aid-wrap.json`）裡，
+  左邊那則收尾還剩 **6 格空白**——要求「寫滿內容欄」會直接漏掉真實案例。而看板 token 本來
+  就要 `[0-9A-Za-z_-]{2,}` ＋閉合 `)`，誤判成本只是「跳到不存在的看板」（PTT 自己會擋）。
+  這與 `comment_merge` 檔頭「勿再猜散文續行」不衝突：這裡沒有猜續行，只是讓後綴的分隔段
+  多認一個換行。
+- **B 的三訊號**與 `url_wrap` 完全對稱（`leftFull` ＋ 時間差 ≤ 1 分鐘 ＋ 併起來**恰好** 8 個
+  AID 字元）。反向守門：左片段自己已滿 8 碼 ⇒ 逐列 `detectAids` 抓得到，不重複產生；
+  `'#'` 前一格是 AID 字元或 `'#'` ⇒ 沿用 `detectAids` 的前綴規則不認。
+  兩端任一落在 `term_url_flag` 標記的 URL 內也不接（網址 fragment 與 AIDc 同形）。
+- **B 一次接合產出「兩筆」候選（左殘段一筆、右殘段一筆）**，`aid`／`board`／`onClick` 相同。
+  理由：`LinkSegmentBuilder.readChar` 在 `'\n'` cell 上**一律收錨並清掉** `_aid`／`_mention`／…
+  （那個無條件清空是刻意的，否則 `endCol` 落在換行格時狀態外溢、整塊被畫底線）。分成兩錨
+  ⇒ 兩半都有底線、點哪一半都跳同一篇，而 renderer 與「候選範圍不跨換行」這條不變量零改動。
+- 接線：`screen_annotations#computeAnnotations` 的合併塊分支，在 `detectWrappedUrls` 那段正
+  下方以 `startCol` 去重併進 `aids` → 渲染（`aidLink`）／`runCache` 全部沿用、零改動。
+- 限制同 `url_wrap`：需 `mergeSameAuthorComments`（預設開）＋好讀模式；被別人插一則而斷開
+  run 的不接；文章**內文**的跨列 AID 仍 out of scope（內文沒有「輸入欄寫滿」這種訊號）。
+- 修好之前的症狀（錄製檔整段錄下）：`board` 為 null → 退回目前文章所在看板 → 送出 `sask`
+  跳到 ask 板 → `#1gU3wwNZ` 搜不到 → `queue.miss`，跳轉失敗。
+- 守護測試：`tests/unit/aid_wrap.test.js`（三訊號逐條＋形狀邊界＋URL fragment）、
+  `tests/unit/aid_parse.test.js`「board suffix across a merged-comment newline」、
+  `tests/unit/merge_comment_render.test.js`「跨行 AID 接合」、
+  `tests/e2e/offline/aid_wrap.offline.spec.js`（真鏈重放使用者現場，含「點下去送出的是
+  `sBrowsers` 不是 `sask`」）。
 
 ## 裸網域自動連結（`src/js/bare_domain.js` + `url_ai*.js`）
 「無 scheme、無路徑、無空白」的網域（`indiegametw.com`、`eaigc.filtergame.com`）：`uriRegEx` 要 scheme 看不見，
