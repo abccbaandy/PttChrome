@@ -143,8 +143,17 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 | `blocked` | 其餘（youtube/twitch embed、未知 host） | 404 空身（iframe 的 `load` 與 status 無關，仍觸發） |
 
 - 純函式 `classifyOfflineRequest` 守護在 `tests/unit/offline_network_route.test.js`。
-- 「零外流」守門在 `easy-reading.offline.spec.js` 的行內開圖測（`offlineServedUrls(page)`
-  必須涵蓋 `page.on('request')` 看到的每一筆外部 URL），拿掉路由即紅。
+- 「零外流」是**三層**，不是一層（2026-08-28 事故後補齊，見下方 CONFIRMED）：
+  1. 述詞 route（`installOfflineNetwork`）——正常路徑全部本地回應。
+  2. 轉址終點鑄在保留域（`offline_images.js#GONE_ORIGIN`）——**不得**沿用原址 origin。
+  3. 瀏覽器層硬斷網（`playwright.config.js#OFFLINE_NO_NETWORK`）——所有 offline project 的出口
+     指向連不上的 proxy，localhost bypass。靜態守護 `tests/unit/e2e_offline_no_network.test.js`。
+- 證據來源有兩份，語義不同，別混用：
+  `offlineServedUrls(page)` ＝**被離線規則接住的**請求；
+  `offlineExternalUrls(page)` ＝**頁面實際發出的**每一筆非本機請求（由 `installOfflineNetwork`
+  自己掛 `page.on('request')` 記錄，所有 spec／所有 profile 通用）。兩者的差集＝逃出 `page.route` 的。
+  `easy-reading.offline.spec.js` 的行內開圖測斷言該差集為空（拿掉路由即紅）；
+  `image_load_conditions.offline.spec.js` 的 301 那條另外釘住「`__offline-gone__` 的請求只能落在 `GONE_ORIGIN`」。
 - **影片副檔名刻意不給 fixture**：現有 cassette 無直連影片。日後錄到影片素材會以
   「`video` 未 `loadeddata` → `display:none` → 等不到 visible」紅出來，屆時補一支最小 mp4。
 
@@ -159,7 +168,7 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 | `cache` | 立即 `preview.png` | 秒開（＝本地快取命中，本層引入前的唯一行為） |
 | `slow` | 等 `SLOW_IMAGE_MS`（預設 **5200**，`OFFLINE_SLOW_IMAGE_MS` 可覆寫）後 `preview.png` | 期間維持 `.previewLoading`；終局 DOM 與 `cache` 相同 |
 | `broken` | `404` + **空 `text/plain`** | 候選耗盡 → `.previewError`；佔位盒不得被釘高度 |
-| `redirect` | `301` → `<origin>/__offline-gone__/<n>.png`（該路徑一律 `broken`） | 圖拿不到 → `.previewError` |
+| `redirect` | `301` → `https://offline-gone.invalid/__offline-gone__/<n>.png`（該路徑一律 `broken`） | 圖拿不到 → `.previewError` |
 
 profile 取值：`cache`（預設）／`slow`／`broken`／`redirect`／`mixed`（四桶決定性分派）。
 解析優先序 **env `OFFLINE_IMAGE_PROFILE` > Playwright project 名 > `cache`**
@@ -169,6 +178,8 @@ profile 取值：`cache`（預設）／`slow`／`broken`／`redirect`／`mixed`�
 三條硬性不變量（改這層之前先讀）：
 1. **決定性**。逆境 profile 的用途是把偶發紅變成**必現紅**，它自己不可以是不確定的。
 2. **轉址鏈一跳即止**：終點帶 `/__offline-gone__/` 前綴，`imageScenarioFor` 看到就回 `broken`。
+   終點的 **origin 固定是 `https://offline-gone.invalid`**（RFC 2606 保留域，永不解析），**絕不可沿用原址** ——
+   理由見下方 CONFIRMED 的第三條。
 3. **`broken` 的 body 不得是可解碼的圖**。`<img>` 不看 HTTP status，body 能 decode 就 `onLoad`
    ——「imgur 的 404 頁身也是一張 PNG」正是靠這個假綠了很久。
 
@@ -177,9 +188,19 @@ CONFIRMED 事實（實測，別再重驗）：
   （`MAX_RETRIES_PER_CANDIDATE=2`、`RETRY_BASE_MS=300` ⇒ 每候選 1+2 次、300/600ms），
   候選耗盡才 `.previewError`。**永遠 hang 的請求會永久停在 `.previewLoading`。**
   唯一有 timeout 的是 imgur 型別探測（`imgur_probe.js`，3s abort）。
-- **Chromium 不會跟隨 `route.fulfill` 吐出的 301**（子資源；探測法：route 一律回 301 → 新開一個
-  `<img>`，handler 只被打到一次、`<img>` 直接 onerror）。所以 `redirect` 情境驗得到的是
-  「圖床回 3xx ⇒ 圖拿不到」，**驗不到**「跟隨轉址後再 404」。斷言就照實際能觀察到的寫。
+- **Chromium 會跟隨 `route.fulfill` 吐出的 301，但那一跳不再經過 `page.route`**
+  （2026-08-28 更正；08-27 曾誤判成「不會跟隨」）。從測試這一端看到的現象與「不跟隨」**一模一樣**
+  ——handler 只被打到一次、`offlineServedUrls` 裡沒有終點、`<img>` 直接 onerror——但那筆請求
+  是**真的送上公網**的。所以 `redirect` 情境驗得到的仍只是「圖床回 3xx ⇒ 圖拿不到」，
+  **驗不到**「跟隨轉址後再 404」；斷言照實際能觀察到的寫。
+- **這就是轉址終點的 origin 絕不可沿用原址的原因。** 原本沿用，而產品預設 `useImgurProxy:true`
+  會把 imgur 網址改寫成自架 Worker 位址（`src/js/imgur_proxy.js`）⇒ 終點被鑄在正式基礎設施上，
+  每輪 offline e2e 都真的去打它。發現方式是 Cloudflare access log 出現
+  `GET https://ptt-imgur-cache.…workers.dev/__offline-gone__/783.png`（`fnv1a` 對得上，逐字吻合）。
+  同一機制也對 `i.imgur.com`／`pbs.twimg.com`／`i.urusai.cc` 等圖床發出真實請求，只是看不到別人的 log。
+  修法＝終點固定 `GONE_ORIGIN`（保留域）＋ 瀏覽器層硬斷網（見上方「零外流」三層）。
+  當時所有守門全數漏接：零外流斷言只跑在 `cache`／`slow` 兩個**永遠不吐 301** 的 profile；
+  轉址鏈斷言只看 `served`（終點從未進 served ⇒ 恆為空轉）；unit 甚至反過來斷言「終點與原址同 origin」。
 
 ### 逆境 project 與 CI job
 

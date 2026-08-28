@@ -13,9 +13,15 @@
 // 由 offline-slow / offline-broken / offline-mixed 三個 project 重跑既有 spec 來守。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { findCassette, bootOffline, replayCassette, offlineServedUrls } = require('../helpers/replay');
+const {
+  findCassette,
+  bootOffline,
+  replayCassette,
+  offlineServedUrls,
+  offlineExternalUrls,
+} = require('../helpers/replay');
 const { waitPreviewsSettled } = require('../helpers/layout');
-const { GONE_PREFIX, DEFAULT_SLOW_IMAGE_MS } = require('../helpers/offline_images');
+const { GONE_PREFIX, GONE_ORIGIN, DEFAULT_SLOW_IMAGE_MS } = require('../helpers/offline_images');
 
 const IMAGE_EXT_RE = /\.(?:jpe?g|png|gif|webp|bmp|apng|avif)(?:$|[?#:])/i;
 
@@ -131,9 +137,11 @@ test.describe('行內開圖：圖片載入情境（離線重放）', () => {
     // 取決於它有哪些網址 —— 那是素材的性質，不能拿來當斷言前提（實測第一卷 article
     // 一個都沒落進去 ⇒ 測試以「應有圖落在 redirect 桶」假紅）。
     //
-    // **實測：Chromium 不會跟隨 route.fulfill 吐出的 301**（見 helpers/offline_images.js
-    // 的 GONE_PREFIX 註解），所以這裡驗得到的是「圖床回 3xx ⇒ 圖拿不到」這一段，
-    // 而不是「跟隨轉址後再 404」。斷言就照實際能觀察到的寫，不假裝驗到了轉址鏈。
+    // **Chromium 會跟隨 route.fulfill 吐出的 301，但那一跳不再經過 page.route**
+    //（見 helpers/offline_images.js 的 GONE_ORIGIN 註解；2026-08-28 由 Cloudflare
+    // access log 推翻了 08-27「不會跟隨」的誤判）。所以這裡驗得到的是「圖床回 3xx ⇒
+    // 圖拿不到」這一段，而不是「跟隨轉址後再 404」——但那一跳是真的送上網路，
+    // 因此下面必須另外釘住「它只能落在保留域」。
     await boot(page, 'redirect');
     await waitPreviewsSettled(page);
 
@@ -144,12 +152,20 @@ test.describe('行內開圖：圖片載入情境（離線重放）', () => {
     expect(r.loadedImgs).toBe(0);
     expect(r.pinned, '轉址失敗的佔位盒同樣不得被釘住高度').toEqual([]);
 
-    // 這一輪確實有圖片請求走過離線層（否則整條在空轉），且沒有任何一筆逃到公網。
+    // 這一輪確實有圖片請求走過離線層（否則整條在空轉）。
     const served = offlineServedUrls(page);
     expect(served.some((u) => IMAGE_EXT_RE.test(new URL(u).pathname))).toBe(true);
-    // 就算哪天 Chromium 改成會跟隨轉址，終點也必須是死路（不得再吐 301 造成無窮迴圈）。
+    // 終點必須是死路（不得再吐 301 造成無窮迴圈）。
     const chained = served.filter((u) => u.split(GONE_PREFIX).length > 2);
     expect(chained).toEqual([]);
+
+    // REGRESSION（2026-08-28）：轉址終點的 origin 原本沿用原址，而產品預設會把 imgur
+    // 網址改寫成自架 Worker 位址 ⇒ 那一跳每輪都真的打到 ptt-imgur-cache.…workers.dev
+    //（access log 實錄 GET /__offline-gone__/783.png）。它逃出 page.route，所以只能從
+    // 頁面實際發出的請求清單抓。凡是 __offline-gone__ 的請求，host 一律得是保留域。
+    const gone = offlineExternalUrls(page).filter((u) => u.includes(GONE_PREFIX));
+    const onRealHost = gone.filter((u) => new URL(u).origin !== GONE_ORIGIN);
+    expect(onRealHost, '轉址終點不得落在任何真實 host').toEqual([]);
   });
 
   test('讀圖超久（>5 秒）：等待期間維持讀取動畫、不誤判成失敗，之後仍正常載出', async ({

@@ -18,6 +18,21 @@ const ADVERSE_IMAGE_SPECS = [
   'offline/easy-reading.offline.spec.js',
 ];
 
+// offline project 的「瀏覽器層硬斷網」。第三層防線，上面兩層是
+//   1. helpers/replay.js#installOfflineNetwork 的述詞 route（正常路徑全部本地回應）
+//   2. helpers/offline_images.js#GONE_ORIGIN（轉址終點鑄在保留域，不沿用原址）
+// 為什麼還需要第三層：2026-08-28 發現 offline e2e 每輪都真的去打自架的 imgur 快取
+// Worker（access log 實錄 `GET /__offline-gone__/783.png`）。成因是 `route.fulfill`
+// 吐出的 301 會被 Chromium 跟隨，而那一跳**不再經過 page.route** —— 從測試這一端
+// 完全看不出來（handler 只被打到一次、served 也沒有它），卻是真的送上公網。
+// 述詞 route 有多少種繞法無法窮舉，所以直接把瀏覽器的出口封死：指向一個必定連不上
+// 的 proxy，localhost 照舊直連（dev server／stub WS 不受影響；被 route.fulfill 接住
+// 的請求根本不走網路，也不受影響）。
+const OFFLINE_NO_NETWORK = {
+  server: 'http://127.0.0.1:1',
+  bypass: 'localhost,127.0.0.1,::1',
+};
+
 // E2E 測試：用真實 Chromium 驅動 pttchrome 連真實 PTT。
 // dev server 由 webServer 自動啟動（已手動 yarn start 時會 reuse）。
 module.exports = defineConfig({
@@ -60,7 +75,7 @@ module.exports = defineConfig({
     },
     {
       name: 'offline',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK },
       testMatch: 'offline/**/*.spec.js',
     },
     {
@@ -81,6 +96,7 @@ module.exports = defineConfig({
       name: 'offline-firefox',
       use: {
         ...devices['Desktop Firefox'],
+        proxy: OFFLINE_NO_NETWORK,
         launchOptions: {
           env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: '1' },
         },
@@ -102,19 +118,19 @@ module.exports = defineConfig({
     //     image_load_conditions.offline.spec.js 專門驗，那裡的斷言是為 broken 寫的。
     {
       name: 'offline-slow',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK },
       timeout: 300000,
       testMatch: [...ADVERSE_LAYOUT_SPECS, ...ADVERSE_IMAGE_SPECS],
     },
     {
       name: 'offline-broken',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK },
       timeout: 300000,
       testMatch: ADVERSE_LAYOUT_SPECS,
     },
     {
       name: 'offline-mixed',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK },
       timeout: 300000,
       testMatch: ADVERSE_LAYOUT_SPECS,
     },

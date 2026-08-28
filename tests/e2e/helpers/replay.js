@@ -478,6 +478,18 @@ async function replayListCassette(page, cassette) {
 // → previewError，正是本来要修的症状换个方式重现。
 const IMAGE_EXT_RE = /\.(?:jpe?g|png|gif|webp|bmp|apng|avif)(?:$|[?#:])/i;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+// 「這筆請求是不是本機的」——與 classifyOfflineRequest 共用 LOCAL_HOSTS，避免兩套規則漂移。
+// 非 http(s)（data:／blob:）一律不算外部。
+function isLocalRequestUrl(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (e) {
+    return true;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return true;
+  return LOCAL_HOSTS.has(url.hostname);
+}
 
 // 纯分类：URL → 该给什么离线回应。抽出来是为了能在 tests/unit 守护
 //（tests/unit/offline_network_route.test.js），e2e 只负责把它接到 page.route。
@@ -507,12 +519,31 @@ function offlineServedUrls(page) {
   return servedByPage.get(page) || [];
 }
 
+// 本次 page **實際發出**的所有非本機請求（含沒進攔截層的那些）。
+// 與 servedByPage 的差集＝逃出 page.route 的請求。
+//
+// 為什麼要另外記一份：`route.fulfill` 吐出的 301，瀏覽器會跟隨，但那一跳**不再經過
+// page.route** ⇒ served 裡看不到它，光靠 served 無法證明「零外流」。2026-08-28 的事故
+//（offline e2e 每輪都真的去打自架 imgur Worker，見 helpers/offline_images.js 的
+// GONE_ORIGIN 註解）正是這樣躲過所有守門的。
+const requestedByPage = new WeakMap();
+function offlineExternalUrls(page) {
+  return requestedByPage.get(page) || [];
+}
+
 // opts.profile（'cache' | 'slow' | 'broken' | 'mixed'，预设由 project 名／env 推导）
 // 决定**图片**要回什么 —— 见 helpers/offline_images.js。API 类（imgur 相簿 / flickr）
 // 与 blocked 类**不受 profile 影响**：那不是图片，把它们也弄坏只会让失败原因变模糊。
 async function installOfflineNetwork(page, opts = {}) {
   const served = [];
   servedByPage.set(page, served);
+  // 記錄頁面實際發出的每一筆非本機請求（route 接住的、以及沒接住的都算）。
+  const external = [];
+  requestedByPage.set(page, external);
+  page.on('request', (r) => {
+    const u = r.url();
+    if (!isLocalRequestUrl(u)) external.push(u);
+  });
   // 直接呼叫 installOfflineNetwork 的 spec（connect_failure / deep_link / aid_back_ui）
   // 也要走同一條推導，否則它們哪天進了逆境清單會靜默跑在 'cache'。
   const profile = offlineImageProfile(opts.profile);
@@ -697,6 +728,7 @@ module.exports = {
   classifyOfflineRequest,
   isBbsSocketUrl,
   offlineServedUrls,
+  offlineExternalUrls,
   loadCassette,
   findCassette,
   findCassettes,

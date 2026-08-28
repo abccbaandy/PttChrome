@@ -33,14 +33,20 @@ const IMAGE_SCENARIOS = ['cache', 'slow', 'broken', 'redirect'];
 
 // 301 的終點一律帶這個前綴。imageScenarioFor 看到它就回 broken ⇒ 轉址最多跳一次。
 //
-// **實測（2026-08-27）：Chromium 不會跟隨 `route.fulfill` 吐出來的 301**（至少子資源
-// 如此；探測方式是 route 一律回 301 → 新開一個 <img>，route handler 只被打到一次、
-// <img> 直接 onerror）。所以 `redirect` 情境在頁面上的效果等同「圖拿不到」→ 走
-// FallbackImage 的候選鏈 → `.previewError`，我們**驗不到**「跟隨轉址後再 404」。
-// 這仍是真實世界的一種失敗形態（轉址壞掉），與純 404 走的是不同的 HTTP 狀態路徑，
-// 所以留著；GONE_PREFIX 的終止保護也留著（純函式層零成本），萬一 Playwright／
-// Chromium 哪天改成會跟隨，也不會變成無窮迴圈。
+// **更正（2026-08-28，由 Cloudflare access log 推翻 08-27 的結論）：Chromium 其實**會**
+// 跟隨 `route.fulfill` 吐出來的 301——只是那一跳**不再經過 `page.route`**。所以從測試
+// 這一端看到的現象（handler 只被打到一次、`served` 裡沒有終點、<img> 直接 onerror）
+// 與「不跟隨」一模一樣，但網路上那筆請求是真的送出去了。
+//
+// 這正是終點的 origin 絕對不可以沿用原址的理由：產品預設 `useImgurProxy:true` 會把
+// imgur 網址改寫成自架 Worker 位址（src/js/imgur_proxy.js），沿用 origin ⇒ 每輪 offline
+// e2e 都真的去打自家 Worker（實錄：`GET /__offline-gone__/783.png`）。改鑄在保留域
+// （RFC 2606 `.invalid`，永不解析）上，攔截層正常時照舊被接住回 404，攔截層破洞時
+// 也只會 DNS 失敗。守護：tests/unit/offline_image_profile.test.js 的「301 轉址鏈」段、
+// image_load_conditions.offline.spec.js 的 sentinel 斷言，以及 playwright.config.js
+// 給 offline project 設的死路 proxy（第三層，見 docs/offline-replay-testing.md）。
 const GONE_PREFIX = '/__offline-gone__/';
+const GONE_ORIGIN = 'https://offline-gone.invalid';
 
 // >5 秒（使用者要求的「讀圖超久」下界）。可用 env 覆寫供本機除錯，CI 不設。
 const DEFAULT_SLOW_IMAGE_MS = 5200;
@@ -68,16 +74,11 @@ function imageScenarioFor(rawUrl, profile) {
   return IMAGE_SCENARIOS.indexOf(profile) >= 0 ? profile : 'cache';
 }
 
-// 301 的 Location。同 host（跨 host 會多一次 CORS/預檢的變數），副檔名保持 .png 讓它
-// 仍被 classifyOfflineRequest 判成 image ⇒ 進得了攔截層，才有機會回 404。
+// 301 的 Location。origin 固定是 GONE_ORIGIN（**不得**沿用原址，理由見上），副檔名
+// 保持 .png 讓它仍被 classifyOfflineRequest 判成 image ⇒ 進得了攔截層，才有機會回 404。
+// <img> 沒設 crossOrigin（src/ 全域無此屬性），跨 origin 轉址不會多出 CORS 變數。
 function redirectTargetFor(rawUrl) {
-  let origin;
-  try {
-    origin = new URL(String(rawUrl)).origin;
-  } catch (e) {
-    origin = 'https://offline.invalid';
-  }
-  return origin + GONE_PREFIX + (fnv1a(String(rawUrl)) % 1000) + '.png';
+  return GONE_ORIGIN + GONE_PREFIX + (fnv1a(String(rawUrl)) % 1000) + '.png';
 }
 
 function slowImageDelayMs(env) {
@@ -179,6 +180,7 @@ module.exports = {
   profileLoadsEveryImage,
   setPageImageProfile,
   FIXTURE_DIR,
+  GONE_ORIGIN,
   GONE_PREFIX,
   IMAGE_PROFILES,
   IMAGE_SCENARIOS,

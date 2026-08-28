@@ -5,6 +5,7 @@
 // 圖回得慢，版面就會在測試量完座標之後才位移。逆境 profile 的用途是把偶發紅變成**必現紅**，
 // 所以它自己絕對不可以是不確定的。這支測試鎖的就是那份確定性。
 import {
+  GONE_ORIGIN,
   GONE_PREFIX,
   IMAGE_PROFILES,
   MIXED_BUCKETS,
@@ -34,6 +35,12 @@ const REAL_IMAGE_URLS = [
   "https://i.meee.com.tw/AEBHMw6.png",
   "https://i.ibb.co/yFKBG4g/p.gif",
 ];
+
+// 產品預設 useImgurProxy:true（src/js/pref_storage.js）⇒ e2e 在瀏覽器裡看到的 imgur
+// 圖片網址**已經被改寫成自架 Worker 的位址**。刻意不併進 REAL_IMAGE_URLS：那會改動
+// 下面 mixed 分桶的鎖定陣列，混淆兩件不相干的事。
+const PROXIED_URL =
+  "https://ptt-imgur-cache.ptt-relay-8xquy.workers.dev/QBvrtq4.webp";
 
 describe("離線重放：圖片載入情境", () => {
   test("非 mixed 的 profile 一律回同名 scenario", () => {
@@ -97,13 +104,34 @@ describe("離線重放：圖片載入情境", () => {
 
   // 不變量 2：301 鏈一跳即止。轉址終點帶標記前綴，再問一次必得 broken ⇒ 不可能無窮迴圈。
   describe("301 轉址鏈", () => {
-    test("轉址終點與原址同 host、仍是圖片副檔名（才進得了攔截層）", () => {
+    // 終點的 origin **不可以**沿用原址。原本沿用，而產品預設會把 imgur 網址改寫成
+    // 自架 Worker 位址 ⇒ 轉址終點被鑄在正式基礎設施上；Chromium 跟隨了那個 301，
+    // 但那一跳不再經過 page.route ⇒ offline e2e 每輪都真的打到公網
+    //（2026-08-28 由 Worker access log 的 GET /__offline-gone__/783.png 發現）。
+    // 保留域（RFC 2606 .invalid）永不解析 ⇒ 攔截層哪天再破一個洞也連不出去。
+    test("轉址終點固定落在保留域，絕不沿用原址 host", () => {
       for (const u of REAL_IMAGE_URLS) {
         const target = redirectTargetFor(u);
-        expect(new URL(target).origin).toBe(new URL(u).origin);
+        expect(new URL(target).origin).toBe(GONE_ORIGIN);
+        expect(new URL(target).origin).not.toBe(new URL(u).origin);
+        expect(new URL(target).hostname.endsWith(".invalid")).toBe(true);
+      }
+    });
+
+    test("終點仍是圖片副檔名（才進得了攔截層，回得了 404）", () => {
+      for (const u of REAL_IMAGE_URLS) {
+        const target = redirectTargetFor(u);
         expect(target.endsWith(".png")).toBe(true);
         expect(target).toContain(GONE_PREFIX);
       }
+    });
+
+    // REGRESSION：本次事故的原始輸入。網址已是 Worker 位址時，終點不得含 workers.dev。
+    test("被 imgur 代理改寫過的網址，終點不得回指自架 Worker", () => {
+      const target = redirectTargetFor(PROXIED_URL);
+      expect(target).not.toContain("workers.dev");
+      expect(target).not.toContain("ptt-imgur-cache");
+      expect(new URL(target).origin).toBe(GONE_ORIGIN);
     });
 
     test("轉址終點在任何 profile 下都是 broken（一跳即止）", () => {
@@ -122,6 +150,7 @@ describe("離線重放：圖片載入情境", () => {
 
     test("不合法 URL 不會炸，退到固定 origin", () => {
       expect(redirectTargetFor("not a url")).toContain(GONE_PREFIX);
+      expect(new URL(redirectTargetFor("not a url")).origin).toBe(GONE_ORIGIN);
     });
   });
 

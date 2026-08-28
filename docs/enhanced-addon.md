@@ -393,7 +393,9 @@ index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**�
 - 模組級 config **預設 `enabled:false` 是 fail-safe**，真值由 `onPrefChange` 注入（`setImgurProxyConfig`）；沒接上 pref 的路徑（含 unit 測試）維持直連。
 - 型別探測（`imgur_probe.js`）**只有 `.jpg` 那一發走代理**，`.mp4` 硬寫直連——代理擋影片回 404 → `mp4Ok=false` → 影片型動圖被誤判成 `static` → 動圖被靜音。
 - 切換**不 redraw**：`requestPreview`（href 為鍵）與 `probeCache`（id 為鍵）都是 module cache，只對之後新解析的連結生效 ⇒ 文案標「重新整理後生效」。
-- 隱私：代理由專案方持有，會看到「哪個 IP 在看哪張圖」；Worker 不留 log，設定 UI 有揭露段（`tooltip_imgurProxy`）。**別加上會留存使用者請求的紀錄。**
+- 隱私：代理由專案方持有，會看到「哪個 IP 在看哪張圖」；**Worker 程式碼不主動寫入任何請求紀錄**
+  （Cloudflare 平台層仍有 metrics／`wrangler tail`／Logs 這類站方視角，不在我方保存範圍）。設定 UI 有
+  揭露段（`tooltip_imgurProxy`）。**別加上會留存使用者請求的紀錄。**
 - 賣點是**「不再卡住」而非「更快」**（median 幾乎不變，max 15.7 s → 1.04 s、stall 0/20）。文案不得宣稱加速。量測見 `docs/imgur-latency-research.md`。
 - 守護：`tests/unit/imgur_proxy.test.js`（白名單/候選/config）、`imgur_probe.test.js`（`.jpg` 走代理、`.mp4` 不走）、`imgur_webp_resolver.test.jsx`（代理優先原址墊底、影片不代理）、`pref_modal_connection_tab.test.jsx`（分頁 UI 契約）、`ui_behavior.offline.spec.js`（分頁切換可見性）。
 

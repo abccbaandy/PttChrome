@@ -14,6 +14,7 @@ const {
   replayCassette,
   feedRaw,
   offlineServedUrls,
+  offlineExternalUrls,
   seekInlineMedia,
 } = require('../helpers/replay');
 // 量座標／量媒體之前一律先等版面停（helpers/layout.js 是判準的單一來源）。
@@ -107,13 +108,10 @@ test.describe('好读模式翻页（离线重放）', () => {
         /(\.(?:jpe?g|png|gif|webp|bmp|apng|avif|mp4|webm|ogg)(?:$|[?#]))|imgur\.com|pbs\.twimg\.com|youtu\.?be|youtube\.com|meee\.com\.tw|clips\.twitch\.tv|flic\.kr|flickr\.com/i;
 
       await bootOffline(page, ptt);
-      // 「有请求真的出去了」的证据：page 层看到的外部请求，必须每一笔都被离线
-      // 规则接住（served）。少了路由就会有 URL 出现在这里却不在 served 里。
-      const escaped = [];
-      page.on('request', (r) => {
-        const u = r.url();
-        if (!/^https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:|\/|$)/i.test(u)) escaped.push(u);
-      });
+      // 「有請求真的出去了」的證據：page 層看到的外部請求，必須每一筆都被離線
+      // 規則接住（served）。少了路由就會有 URL 出現在這裡卻不在 served 裡。
+      // 記錄器已下放到 installOfflineNetwork（helpers/replay.js#offlineExternalUrls），
+      // 每一支 offline spec、每一種 profile 都有現成證據，不必各自土製一份。
 
       await ptt.applyPrefs(page, { enableEasyReading: true });
       await replayCassette(page, cassette, { easyReading: true });
@@ -134,6 +132,7 @@ test.describe('好读模式翻页（离线重放）', () => {
 
       // 零外流：预览确实发了外部请求（非空 ⇒ 本断言不是空转），且全数被本地接住。
       const served = new Set(offlineServedUrls(page));
+      const escaped = offlineExternalUrls(page);
       const leaked = escaped.filter((u) => !served.has(u));
       console.log(
         `[offline/net] ${cassette.__file}: previews=${previews} external=${escaped.length} served=${served.size}`
