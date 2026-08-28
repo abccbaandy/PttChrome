@@ -15,6 +15,7 @@
 - **`public/` 是「路徑要穩定」的專用出口**（目前只有 PWA 的 `manifest.webmanifest` ＋ 兩張 icon）：內容由 Vite 原樣複製、**不 hash 檔名**，所以 manifest 才引用得到 icon。反過來說 `src/icon/**` 那些會被 hash，不能寫進 manifest。無 `vite-plugin-pwa`（沒有 service worker，也不打算有）——manifest 純粹是為了 `launch_handler: focus-existing`，見 `docs/deep-link.md`。
 - e2e webServer 跑 `node node_modules/vite/bin/vite.js`（單一進程原則，teardown 才殺得乾淨）。
 - **lightningcss（CSS minify）比舊鏈嚴格**：非法註解之類會直接 build fail——這是好事，修 CSS 而不是繞過。
+- **`src/fonts/symmingliu.woff` 是等寬格線的字寬契約，不是裝飾**（CONFIRMED，直接解字型表）：`unitsPerEm 1024`，ASCII `U+0020–U+007E` advance `512` ＝**正好 0.5em**（＝ `term_view` 的 `chw = chh/2`），符號區（`→ ← ● □ ※ Ⅰ …`）`1024` ＝ 1em（兩格），CJK 不在字型內、交給系統全形字型。Windows 有 local MingLiu，**macOS 沒有** ⇒ Mac 上整個格線押在這支 webfont 上；落地前 ASCII 退回系統 monospace（Menlo advance `0.602em`）⇒ 整列橫向偏 20%，而 `#cursor` 的欄位算術不會跟著偏。故 `@font-face` 用 `font-display: block`，且 `main.jsx` 的 `loadResources()` 與轉碼表並行 `await loadTerminalFont()`（`document.fonts.load`，3s 逾時就照跑——字型問題絕不擋連線）。**勿改成 `swap`／勿拿掉那個 await**。守護：`cursor_shape.offline.spec.js`「格線字寬契約」。
 - Yarn v4 script＝portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數 → **勿引入 cross-env**。
 
 ## 套件選型判定（新增／替換依賴時的基準）

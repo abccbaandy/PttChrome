@@ -1,6 +1,15 @@
+/* 終端機等寬格線的字寬契約就在這支字型裡：ASCII (U+0020–U+007E) 的 advance 是
+   512/1024 = **正好 0.5em**（= term_view 的 chw = chh/2），符號區（→ ← ● □ …）
+   是 1024 = 1em（兩格）。Windows 有 local MingLiu，Mac 沒有 —— 所以在 Mac 上
+   整個格線契約押在這個 webfont 上，還沒落地時 ASCII 會退回系統 monospace
+   （Menlo 的 advance 是 0.602em）⇒ 整列橫向偏 20%，而游標的欄位算術不會跟著偏。
+
+   font-display: block ＝ 寧可先不顯示，也不要用錯誤字寬畫一次再跳。搭配
+   main.jsx 的 loadTerminalFont()（startApp 前 await 這支字型）。 */
 @font-face {
   font-family: SymMingLiu;
   src: url('../fonts/symmingliu.woff') format("woff");
+  font-display: block;
 }
 
 /* 全域 border-box：原本由 bootstrap CDN 提供（終端機逐列排版以此為前提）；

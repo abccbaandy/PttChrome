@@ -426,11 +426,15 @@ App.prototype.setDblclickTimer = function() {
   }, 350);
 };
 
+// `#t` 的**唯一** focus 漏斗。preventScroll 是防禦性的第二道鎖：#t 平時停在
+// left:-10000px，只要哪天它變成某個捲動容器的子孫，focus() 的自動 scrollIntoView
+// 就會把那個容器捲飛（見 index.html 的註解）。目前 #t 掛在 #BBSWindow 底下、
+// 結構上不會發生，但這行成本是零。
 App.prototype.setInputAreaFocus = function() {
   if (this.modalShown)
     return;
   //this.DocInputArea.disabled="";
-  this.inputArea.focus();
+  this.inputArea.focus({ preventScroll: true });
 };
 
 // modalShown 是終端機鍵盤／焦點的總閘門（讀取點散在 term_view.js 的 shouldAcceptInput
@@ -802,8 +806,8 @@ App.prototype.getFirstGridOffsets = function() {
 
 // 畫面座標 → 格子座標。**欄的那一半刻意委給 mouse_geometry.colFromClientX**：
 // 文章左側的退出提示帶（#exitHintBand）必須與這裡算出來的可點區逐格對齊，兩邊
-// 共用同一份實作才不會漂移（專案裡另有 term_view.convertMN2XYEx 一套原點公式，
-// 多了 +10 與 bbsViewMargin，用錯就差十幾個像素）。
+// 共用同一份實作才不會漂移。（歷史上 term_view 另有一套 convertMN2XYEx 原點公式，
+// 多了 +10 與 bbsViewMargin，用錯就差十幾個像素；已刪除，見 mouse_geometry.js 開頭。）
 App.prototype.clientToPos = function(cX, cY) {
   var y;
   var h = this.view.innerBounds.height;

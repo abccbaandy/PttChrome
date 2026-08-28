@@ -123,6 +123,54 @@
 - **底部 padding**：`accumulatePageLines` 開頭統一設 `mainContainer.paddingBottom='1em'`（讓位給 footer overlay）；回列表/選單由 `hideEasyReadingOverlays` 清回 ''＋`scrollTop=0`（守護 `tests/unit/easy_reading_overlay_reset.test.js`；單頁文末行不被 overlay 遮的回歸見 offline `easy-reading.offline.spec.js`「末行不被底部狀態列 overlay 遮住」）。
 - **footer 鏡像（CONFIRMED 讀碼）**：footer overlay (`#easyReadingLastRow`) **不** hardcode 文字，而是每次 `accumulatePageLines` 末由 `_mirrorStatusRowToFooter` 把**真實狀態列** `buf.lines[rows-1]`（含「瀏覽 第 X/Y 頁 (n%)…(h)說明(←)離開」、真實顏色）以 `renderOverlayRow` 畫進去（`parseStatusRow` 守門，transient 空列不洗掉）。WHY：原 hardcode `(y)回應(X%)推文(←)離開` 少「(h)說明」、頁數/% 永遠靜止，與原生不一致（原生 100%／非 100% 都有 (h)說明，差別只在頁數反白）。
 
+### 游標／`#t` 的錨點契約（2026-08-28，不可退回算術模型）
+
+`#cursor`（閃爍游標）與 `#t`（注音輸入匡，本專案自己畫的那個 `border:double` 小框；OS
+的候選字清單錨在它上面）的位置**一律錨在「該列真正被畫出來的 DOM 節點」**，決策純函式在
+`src/js/cursor_anchor.js`，量測入口只有 `term_view._rowAnchor`（`#mainContainer
+[type="bbsrow"][srow=N]`，只在 `_gridRender` 幀有意義）。
+
+| 元素 | 住在 | 錨 | 取值 |
+|---|---|---|---|
+| `#cursor` | `.main` 內（`position:relative` ⇒ 它的 containing block） | `rowEl.offsetTop / offsetLeft` | 內容座標，捲動與 `transform:scale()` 由 `.main` 一併帶走 |
+| `#t` | `#BBSWindow` 內（**刻意不在 `.main`**） | `rowEl.getBoundingClientRect()` | viewport 座標；`#BBSWindow` 是 fixed、貼齊 viewport、無 border/padding ⇒ 可直接當它的 `left/top` |
+
+水平仍是 `cur_x * chw`（沒有逐格節點可錨），靠等寬字型契約保護：ASCII advance 正好
+`0.5em`（bundled webfont `SymMingLiu`，Mac 沒有 local MingLiu 時全靠它），全形字走
+`.wpadding` 強制 `chh` px。守護：`cursor_shape.offline.spec.js`「格線字寬契約」。
+
+**禁止事項**
+
+1. 不得把位置改回 `cur_y*chh` 這類算術模型。那是「這一列**應該**在哪」，畫面上是
+   layout 算出來的「**實際**在哪」，兩者之間沒有守門 ⇒ 任一列 line box 被撐大（標註、
+   inline-block baseline、`#mainContainer` 的 padding、字型還沒落地…）就整批脫鉤，
+   症狀就是**推文時游標戳出反白輸入匡**。三輪修復（`cbee3f5` → `865b828` → 把 `#cursor`
+   搬進 `.main`）拆的都是補償項，這是最後一層。
+2. 不得再引入第二套格線原點公式。舊的 `term_view.convertMN2XYEx`（`#t` 專用，多 `+10`
+   與 `bbsViewMargin`、**完全不扣 `.main.scrollTop`**、縮放分支垂直原點漏算 10px）已刪除。
+3. 不得為了統一座標系而「composition 時把 `#t` `appendChild` 進 `.main`、結束再移出」：
+   搬動有焦點的元素會先把它移出 DOM ⇒ 失焦 ⇒ **正在進行的 IME composition 被中斷**
+   （之後補 `focus()` 也救不回那個 session）；而且它新增一條「`bshow=0` 必須移出」的
+   不變量，漏掉任一路徑就把隱形的 `-100000px` 元素留在捲動容器裡，下次 `focus()`
+   把長頁捲飛。
+4. `_rowAnchor` **不做跨呼叫快取**。layout 會變的時機不只重繪與改字級（延遲載入的圖片
+   落地、pref 切 CSS class、webfont 落地都會），任何以幀序號為鍵的快取都有吃到過期
+   `offsetTop` 的路徑 —— 那正是這條契約要消滅的東西。
+
+`cur_x/cur_y` 落在格線外（PTT 偶爾把 `cur_x` 送成 `cols`）時**隱藏游標**
+（`_cursorOutOfRange`，`_applyCursorVisibility` 的第四個 OR 來源），不可以「不更新位置」
+—— 那會讓可見的游標停在過期座標上。
+
+webfont 落地時序：`@font-face` 用 `font-display: block`，`main.jsx` 的 `loadResources()`
+與轉碼表並行 `await loadTerminalFont()`（`document.fonts.load('26px SymMingLiu')`，3s 逾時
+就照跑，字型問題絕不擋連線）。理由：Windows 有 local MingLiu，**macOS 沒有** ⇒ 那裡整個
+等寬格線契約押在這支非同步 webfont 上，落地前 ASCII 退回系統 monospace（Menlo advance
+`0.602em`）⇒ 整列橫向偏 20%，而游標的欄位算術不會跟著偏。
+
+debug 錄製器已可直接判定這一類問題：`snapshotState` 帶 `fnMode / gridRender / chw / chh /
+scaleX / scaleY / dpr / fontsReady`，另有 `cursor.geom` 取樣（游標真的移動時才記，含
+`#cursor`／該列／`.main` 的矩形與 `scrollTop/scrollHeight/clientHeight`；只錄數字座標）。
+
 ## 文章 functionMode（按非導覽鍵 → 鏡像原生 LIVE，CONFIRMED 讀碼+unit）
 
 對應 `EasyReading._functionMode`(=`buf.easyReadingFunctionMode`)。**原則：底部互動不 hardcode、不逐選單 parse——原生畫什麼好讀就鏡像什麼**（與列表好讀的 functionMode 同概念，文章版獨立、更單純）。

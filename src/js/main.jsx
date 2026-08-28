@@ -102,10 +102,34 @@ function loadTable(url) {
   });
 }
 
+// 終端機字型（SymMingLiu，bundled webfont）。**格線正確性的前置條件**：ASCII 的
+// advance 必須是 0.5em 才等於 term_view 的 chw。Mac 沒有 local MingLiu ⇒ 字型落地前
+// 每一列的寬度都是錯的，而 #cursor 的欄位算術（cur_x * chw）不會跟著錯 ⇒ 游標對不上
+// 該格（症狀：推文時游標戳出反白輸入匡）。
+//
+// 逾時就照跑：字型問題絕對不可以擋住連線。字型 API 不存在（極舊環境）同理。
+function loadTerminalFont() {
+  const TIMEOUT_MS = 3000;
+  try {
+    if (typeof document === 'undefined' || !document.fonts)
+      return Promise.resolve();
+    // 尺寸只是查詢用的 face 描述，實際字級由 term_view 寫 inline style。
+    return Promise.race([
+      document.fonts.load('26px SymMingLiu'),
+      new Promise(resolve => setTimeout(resolve, TIMEOUT_MS))
+    ]).catch(e => {
+      console.log('loadTerminalFont failed (continuing): ' + e);
+    });
+  } catch (e) {
+    return Promise.resolve();
+  }
+}
+
 function loadResources() {
   Promise.all([
     loadTable(b2uTableUrl),
-    loadTable(u2bTableUrl)
+    loadTable(u2bTableUrl),
+    loadTerminalFont()
   ]).then(function(binData) {
     window.lib = window.lib || {};
     window.lib.b2uArray = new Uint8Array(binData[0]);

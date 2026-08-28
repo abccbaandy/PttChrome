@@ -35,10 +35,20 @@
     <div id="cmenuReact"></div>
 
     <div id="BBSWindow" style="display:none">
-      <!-- 隱藏輸入框（收鍵盤／注音候選）。**刻意留在 BBSWindow 底下、不放進 .main**：
-           .main 是捲動容器，而它 left:-10000px —— 一旦成為 scroller 的子孫，瀏覽器
-           對焦時會把捲動容器捲過去。閃爍游標 #cursor 則相反，由 term_view 建在 .main
-           裡（見 term_view.js 建構子）。 -->
+      <!-- 隱藏輸入框（收鍵盤／注音候選）。這個框是**本專案自己畫的**（composition 時
+           term_view 給它 border:double 並定位）；OS／瀏覽器只負責畫候選字清單，而清單
+           錨在有焦點的 input 的 caret 上 ⇒ 錨在這個 #t。
+
+           **刻意留在 BBSWindow 底下、不放進 .main**：.main 是捲動容器，而它
+           left:-10000px —— 一旦成為 scroller 的子孫，瀏覽器對焦時會把捲動容器捲過去。
+           曾評估過「composition 時才 appendChild 進 .main、結束再移出」以統一座標系，
+           **不可行**：搬動有焦點的元素會先把它從 DOM 移除 ⇒ 失焦 ⇒ 正在進行的 IME
+           composition 被中斷（之後補 focus() 也救不回那個 session）。
+           座標一致改由 term_view._cellClientRect 解決：#t 錨在「該列真正被畫出來的
+           節點」的 getBoundingClientRect()，而 #BBSWindow 是 fixed、貼齊 viewport，
+           所以 viewport 座標可以直接當它的 left/top。
+
+           閃爍游標 #cursor 則相反，由 term_view 建在 .main 裡（見 term_view.js 建構子）。 -->
       <input id="t" type="text" autocomplete="off" style="box-sizing:content-box; color:initial; border: none; width: 200px; height: 24px; position:absolute; left:-10000px; top:0px; z-index:2;resize: none; font-family:inherit !important;" autofocus/>
     </div> <!--BBSWindow end-->
 

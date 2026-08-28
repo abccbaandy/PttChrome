@@ -330,3 +330,220 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
     expect(m.display).toBe('none');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 症狀本身：推文時游標必須落在 PTT 畫的**反白輸入帶**裡（離線）
+//
+// 上面那幾條守的是「游標貼齊它那一列」，用的是列節點的矩形——但列節點的矩形本身
+// 就是被測 code 拿來定位的東西，兩邊同源。這一組改成鎖使用者真正看到的事：
+// 游標在不在那條黑字白底的帶子裡。帶子是 server 用 ESC[30;47m 畫出來的，
+// 在 DOM 裡是 `.b7`（bg 索引 7）的 span，與游標的定位路徑完全無關。
+//
+// pttbbs mbbsd/bbs.c#do_add_recommend：輸入列固定在最後一列，「→ someid: 」佔 11 欄
+// ⇒ 游標停在第 12 欄（0-based 11），反白帶從第 11 欄起 49 格。
+const PUSH_PROMPT_COL = 11;
+const PUSH_BAND_COLS = 49;
+
+function pushPromptReverseFrame({ rows }) {
+  return (
+    `\x1b[${rows};1H\x1b[K` +
+    '\x1b[1;37m→\x1b[m someid: ' +
+    '\x1b[30;47m' + ' '.repeat(PUSH_BAND_COLS) + '\x1b[m' +
+    `\x1b[${rows};${PUSH_PROMPT_COL + 1}H`
+  );
+}
+
+// #cursor 與反白帶（.b7）的矩形。量之前掛 blink--active，否則暗相位量到全 0。
+async function measureBand(page, row) {
+  return page.evaluate((row) => {
+    document.body.classList.add('blink--active');
+    const rect = (e) => {
+      if (!e) return null;
+      const b = e.getBoundingClientRect();
+      return { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
+    };
+    const rowEl = document.querySelector(
+      `#mainContainer [type="bbsrow"][srow="${row}"]`
+    );
+    return {
+      cursorDisplay: getComputedStyle(document.getElementById('cursor')).display,
+      cursor: rect(document.getElementById('cursor')),
+      band: rect(rowEl && rowEl.querySelector('.b7')),
+      row: rect(rowEl),
+    };
+  }, row);
+}
+
+function expectCursorInsideBand(m) {
+  expect(m.cursorDisplay).not.toBe('none'); // 前提：游標真的看得到
+  expect(m.band).not.toBe(null); // 前提：反白帶真的畫出來了
+  // ±1px 吸收 subpixel；再多就是真的戳出去了。
+  expect(m.cursor.left).toBeGreaterThanOrEqual(m.band.left - 1);
+  expect(m.cursor.right).toBeLessThanOrEqual(m.band.right + 1);
+  expect(m.cursor.top).toBeGreaterThanOrEqual(m.band.top - 1);
+  expect(m.cursor.bottom).toBeLessThanOrEqual(m.band.bottom + 1);
+}
+
+test.describe('推文：游標落在反白輸入帶裡（離線）', () => {
+  test('好讀 → X 推文（functionMode 原生鏡像）：游標在反白帶內', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: true,
+      enableEasyReadingList: false,
+    });
+
+    const d = await dims(page);
+    await feedBig5(page, articleFrame(d));
+    await page.waitForTimeout(400);
+    await page.evaluate(() => window.__app.easyReading.enterEasyReading());
+    await page.waitForTimeout(400);
+    await page.evaluate(() => window.__app.easyReading._enterFunctionMode());
+    await feedBig5(page, pushPromptReverseFrame(d));
+    await page.waitForTimeout(400);
+
+    expect(await page.evaluate(() => !!window.__app.buf.easyReadingFunctionMode)).toBe(true);
+    expectCursorInsideBand(await measureBand(page, d.rows - 1));
+  });
+
+  // **這條在修改前必紅。** 游標的垂直位置曾是 `cur_y * chh` 的算術模型，而畫面上那一列
+  // 的真實位置是 layout 的結果：只要有任何一列的 line box 被撐大（標註、inline-block 的
+  // baseline、#mainContainer 多的 padding、字型還沒落地…），兩者就脫鉤、游標整批下不去。
+  // 這裡直接把游標列之上的某一列撐高，模擬「任何一種撐高的原因」，**不重繪**，
+  // 只叫 updateCursorPos ——它必須讀到新的 layout。
+  test('上方列被撐高（不重繪）：游標仍在反白帶內', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: false,
+      enableEasyReadingList: false,
+    });
+
+    const d = await dims(page);
+    await feedBig5(page, articleFrame(d));
+    await feedBig5(page, pushPromptReverseFrame(d));
+    await page.waitForTimeout(400);
+
+    const before = await measureBand(page, d.rows - 1);
+    expectCursorInsideBand(before); // 前提：撐高之前本來就是好的
+
+    await page.evaluate(() => {
+      const row = document.querySelector('#mainContainer [type="bbsrow"][srow="5"]');
+      row.style.paddingTop = '9px';
+      window.__app.view.updateCursorPos();
+    });
+
+    const after = await measureBand(page, d.rows - 1);
+    // 前提成立：帶子真的被推下去了（不然這條測試什麼都沒測到）
+    expect(after.band.top - before.band.top).toBeGreaterThan(5);
+    expectCursorInsideBand(after);
+  });
+
+  // 等寬格線的字寬契約：一列 80 欄的實際寬度必須等於 cols * chw。
+  // Windows 走 local MingLiu，macOS 沒有 —— 那裡整個契約押在 bundled webfont
+  // SymMingLiu（ASCII advance 正好 0.5em）。字型沒落地時 ASCII 退回系統 monospace，
+  // 整列橫向偏掉而游標的欄位算術不會跟著偏。
+  test('格線字寬契約：一列的實際寬度 == cols * chw', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await feedRaw(page, CURSOR_ON_BLANK); // 第 10 列是純 ASCII（abc + 空白補滿）
+    await page.waitForTimeout(400);
+
+    const m = await page.evaluate((row) => ({
+      fontLoaded: document.fonts.check('26px SymMingLiu'),
+      lineWidth: document
+        .querySelector(`#mainContainer [type="bbsrow"][srow="${row}"] [data-type="bbsline"]`)
+        .getBoundingClientRect().width,
+      cols: window.__app.buf.cols,
+      chw: window.__app.view.chw,
+      scaleX: window.__app.view.scaleX,
+    }), CUR_ROW);
+
+    expect(m.fontLoaded).toBe(true);
+    expect(Math.abs(m.lineWidth - m.cols * m.chw * m.scaleX)).toBeLessThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 注音輸入匡 #t（本專案自己畫的那個 double 邊框；OS 的候選字清單錨在它上面）。
+//
+// 它住在 `.main` **外面**（#BBSWindow 底下，見 index.html），舊實作因此另有一套格線
+// 公式 convertMN2XYEx —— 那套**完全不扣 .main.scrollTop**，捲動後整個偏掉。現在改成
+// 錨在該列真正被畫出來的節點的 getBoundingClientRect()，捲動與縮放天然含在裡面。
+async function measureInputBox(page, row) {
+  return page.evaluate((row) => {
+    const view = window.__app.view;
+    view.input.style.width = '40px'; // 避免右邊界 clamp 介入這次量測
+    view.onCompositionStart({});
+    const rect = (e) => {
+      const b = e.getBoundingClientRect();
+      return { top: b.top, bottom: b.bottom, left: b.left };
+    };
+    const rowEl = document.querySelector(
+      `#mainContainer [type="bbsrow"][srow="${row}"]`
+    );
+    return {
+      bshow: view.input.getAttribute('bshow'),
+      input: rect(view.input),
+      row: rect(rowEl),
+      cur_x: window.__app.buf.cur_x,
+      chw: view.chw,
+      scaleX: view.scaleX,
+      scrollTop: view.mainDisplay.scrollTop,
+    };
+  }, row);
+}
+
+function expectInputAlignedToCell(m) {
+  expect(m.bshow).toBe('1');
+  // 左緣貼齊該格
+  expect(Math.abs(m.input.left - (m.row.left + m.cur_x * m.chw * m.scaleX)))
+    .toBeLessThanOrEqual(1);
+  // 垂直緊貼該列（塞得下就在下方、塞不下翻到上方，兩者都以該列為基準）
+  const below = Math.abs(m.input.top - m.row.bottom);
+  const above = Math.abs(m.input.bottom - m.row.top);
+  expect(Math.min(below, above)).toBeLessThanOrEqual(2);
+}
+
+test.describe('注音輸入匡 #t 錨在該格（離線）', () => {
+  test('推文列上開始 composition：#t 貼齊游標那一格', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: false,
+      enableEasyReadingList: false,
+    });
+
+    const d = await dims(page);
+    await feedBig5(page, articleFrame(d));
+    await feedBig5(page, pushPromptReverseFrame(d));
+    await page.waitForTimeout(400);
+
+    expectInputAlignedToCell(await measureInputBox(page, d.rows - 1));
+  });
+
+  // 舊的 convertMN2XYEx 在這裡必偏 scrollTop px（它只認 firstGridOffset）。
+  test('`.main` 已捲動時 #t 仍貼齊該格', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: false,
+      enableEasyReadingList: false,
+    });
+
+    const d = await dims(page);
+    await feedBig5(page, articleFrame(d));
+    await feedBig5(page, pushPromptReverseFrame(d));
+    await page.waitForTimeout(400);
+
+    // 人為讓 `.main` 可捲並捲到底（模擬任何殘留 padding／使用者滾輪）。
+    await page.evaluate(() => {
+      document.getElementById('mainContainer').style.paddingBottom = '3em';
+      window.__app.view.mainDisplay.scrollTop = 9999;
+    });
+
+    const m = await measureInputBox(page, d.rows - 1);
+    expect(m.scrollTop).toBeGreaterThan(0); // 前提成立：真的捲動了
+    expectInputAlignedToCell(m);
+  });
+});
