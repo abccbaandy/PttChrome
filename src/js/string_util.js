@@ -45,8 +45,13 @@ export function wrapText(it, maxLen, enterChar) {
   // and space characters in the beginning of original line. (indent)
   // Spaces next to a word group are merged into that group
   // to ensure the start of each wrapped line is a word.
-  // FIXME: full-width punctuation marks aren't recognized
-  var pattern = /\r|\n|([^\x00-\x7f][,.?!:;]?[\t ]*)|([\x00-\x08\x0b\x0c\x0e-\x1f\x21-\x7f]+[\t ]*)|[\t ]+/g;
+  // The optional punctuation after a full-width char covers the CJK closers too
+  // (，。、；：？！）」』】〉》): they are non-ASCII, so without them in the class each
+  // one forms its OWN group and can be pushed to the start of the next line.
+  // KNOWN boundary (deliberate): the mirror rule — full-width OPENERS （「『【 must
+  // not end a line — is not handled; that needs lookahead to regroup, and every
+  // caller here is paste normalization where a stray opener is merely ugly.
+  var pattern = /\r|\n|([^\x00-\x7f][,.?!:;，。、；：？！）」』】〉》]?[\t ]*)|([\x00-\x08\x0b\x0c\x0e-\x1f\x21-\x7f]+[\t ]*)|[\t ]+/g;
   var splited = it.match(pattern);
 
   var result = '';
@@ -83,8 +88,10 @@ export function wrapText(it, maxLen, enterChar) {
 // that ends in a newline therefore SUBMITS whatever PTT prompt is open (native
 // terminal behaviour, deliberately preserved).
 // ESC_CHAR: \x1b would put PTT's vgetstring into an escape sequence, so it is
-// mapped to Ctrl-U (\x15). FIXME (inherited): DBCS words with 2-color are not
-// stopped from being pasted.
+// mapped to Ctrl-U (\x15). That mapping is also what closed the upstream FIXME
+// "stop user from pasting DBCS words with 2-color": colored text copied off the
+// screen carries its attributes as ESC sequences, and with every \x1b rewritten
+// there is no way for them to reach PTT as attributes at all.
 export const PASTE_ENTER_CHAR = '\r';
 export const PASTE_ESC_CHAR = '\x15'; // Ctrl-U
 

@@ -47,6 +47,32 @@ describe("wrapText group-width measurement", () => {
   });
 });
 
+describe("wrapText 全形標點不落行首", () => {
+  // 上游的 FIXME（"full-width punctuation marks aren't recognized"）：全形字組寫成
+  // `[^\x00-\x7f][,.?!:;]?` —— 只吸收半形標點，全形的「，。」自成一組 ⇒ 折行時會被
+  // 推到下一行的行首。lineWrap 預設 78，每次貼上都會跑到這條路徑。
+  //
+  // maxLen 4 = 兩個全形字寬。修好前「測試，」的字組是 測/試/，⇒ 前兩字剛好填滿 ⇒
+  // 逗號被擠到行首；修好後「試，」是同一組，換成「試」帶著逗號一起換行。
+  it("全形逗號跟著前一個字換行，不會被推到行首", () => {
+    expect(wrapText("測試，", 4, "\n")).toBe("測\n試，");
+  });
+
+  it("全形句號同理", () => {
+    expect(wrapText("測試。", 4, "\n")).toBe("測\n試。");
+  });
+
+  it("原本就吸收得到的半形標點不受影響", () => {
+    expect(wrapText("測試,", 4, "\n")).toBe("測\n試,");
+  });
+
+  // 刻意不做的邊界：全形「起始」標點（（「『【）不落行尾的鏡像規則要 lookahead
+  // 重組字組，不在這次範圍。這條測試釘住現況，改動時才看得到它變了。
+  it("全形起始標點仍可能落在行尾（已知邊界）", () => {
+    expect(wrapText("測「試", 4, "\n")).toBe("測「\n試");
+  });
+});
+
 describe("normalizePasteText（貼上正規化，兩條貼上路徑共用）", () => {
   // 從 term_view.onTextInput 抽出來的原因：列表好讀的 ListSession.onPaste 走
   // CommandQueue（raw conn.send）而非 convSend，若各自複製一份規則，「好讀裡

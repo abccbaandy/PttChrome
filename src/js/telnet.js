@@ -138,9 +138,10 @@ TelnetConnection.prototype._onDataAvailable = function(e) {
         if ( this.iac_sb.slice(-2) == IAC + SE ) {
           // end of sub negotiation
           switch (this.iac_sb[0]) {
-          case TERM_TYPE: 
-            // FIXME: support other terminal types
-            //var termType = this.app.__prefs__.TermType;
+          case TERM_TYPE:
+            // 固定回報建構時設的 termType（'VT100'）。上游在這裡留過一條
+            // 「支援其他終端機類型」的 FIXME 與一行 this.app.__prefs__.TermType，
+            // 但那個 pref 從來不存在，而 PTT 只吃 VT100 ⇒ 沒有第二種值要回報。
             var rep = IAC + SB + TERM_TYPE + IS + this.termType + IAC + SE;
             this._sendRaw( rep );
             break;

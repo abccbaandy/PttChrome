@@ -468,9 +468,12 @@ App.prototype.setModalOpen = function(source, open) {
     this.setInputAreaFocus();
 };
 
-// FIXME: Injected when enabled. See: src/components/ContextMenu/index.js
+// 即時看板小幫手的兩個入口：預設 noop，只有 pref 打開時才被注入真的實作
+// （components/ContextMenu/index.jsx 的 useEffect 依 liveHelperEnabled 綁定／解綁）。
+// 這是刻意的——消費端在 term_view.js（End 鍵的 onToggle…、任何非 Alt 鍵的
+// onDisable…），不能為了「功能沒開」在熱路徑上到處加判斷。onToggle 回 true 代表
+// 按鍵已被吃掉，noop 回 undefined ⇒ End 會落到原本的行為。
 App.prototype.onToggleLiveHelperModalState = noop;
-// FIXME: Injected when enabled. See: src/components/ContextMenu/index.js
 App.prototype.onDisableLiveHelperModalState = noop;
 
 App.prototype.switchToEasyReadingMode = function(doSwitch) {
@@ -1170,8 +1173,12 @@ App.prototype.onPrefChange = function(name, value) {
     case 'dbcsDetect':
       this.view.dbcsDetect = value;
       break;
-    case 'lineWrap':
-      this.conn.lineWrap = value;
+    case 'lineWrap':      // 消費端是 term_view.onTextInput 的 this.lineWrap 與 list_session.onPaste 的
+      // this._view.lineWrap ——「貼上時每滿 N 欄插一個 \r」的欄寬，不是畫面寬度
+      // （那是 termSize.cols）。曾經寫進 this.conn.lineWrap，但那個欄位沒有任何
+      // 讀取點，且 conn 每次重連都會被換掉 ⇒ 這個 pref 整個是死的（本函式把所有
+      // 錯誤都吃掉，接錯線連一聲都不會響）。守護 tests/unit/pref_line_wrap.test.js。
+      this.view.lineWrap = value;
       break;
     case 'fontFace':
       var fontFace = value;

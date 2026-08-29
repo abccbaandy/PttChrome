@@ -174,7 +174,13 @@ AnsiParser.prototype.feed = function(data) {
         case 'P':
           term.del(params[0]>0 ? params[0] : 1);
           break;
-        case 'r': // FIXME: scroll range
+        // DECSTBM（設捲動範圍）。PTT 走的是 pfterm，它從不發這個序列——整份
+        // pfterm.c 只吐 [2J / [K / [H / [J 與 ESC D（IND）／ESC M（RI），而唯一會發
+        // DECSTBM 的 change_scroll_range()（mbbsd/screen.c）整份包在
+        // #if !defined(USE_PFTERM) 裡。⇒ 實務上 scrollStart/scrollEnd 恆為 0..rows-1，
+        // 真正用到它們的是下面 C1 分支的 ESC D / ESC M → term.scroll()。
+        // 這條留著只是通用 VT100 相容；不必為它補「DECSTBM 應同時 home 游標」那半段。
+        case 'r':
           if (params.length < 2) {
             term.scrollStart=0;
             term.scrollEnd=term.rows-1;

@@ -233,3 +233,44 @@ describe("零 dirty 幀（去 sticky 之後才可達）", () => {
     expect(() => v.redraw(false)).not.toThrow();
   });
 });
+
+// 全形字的 lead byte 被半形字蓋掉時，被孤立的 trail cell 也要重畫。
+//
+// 這一組存在的理由是「證明某段程式碼不需要」：updateCharAttr 從 2014 起帶著一段
+//   } else if (ch.isleadbyte && (col+1) < cols) { line[col+1].needUpdate = true; }
+// 的 else-if，欄位名大小寫打錯（正確是 isLeadByte，全 repo 僅該處小寫）⇒ 條件恆為
+// undefined、分支從未執行過。刪它之前要先釘住：同一個保證其實是 puts() 在寫入當下
+// 就給了（`if (ch2.isLeadByte) line[this.cur_x].needUpdate = true`），所以刪掉不會
+// 少任何東西。
+describe("覆蓋全形字的 lead byte", () => {
+  beforeAll(() => {
+    loadBig5Tables();
+  });
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("puts() 當下就把 trail cell 標成 needUpdate，該列下一幀重畫", () => {
+    const { buf, frames } = makeBuf(80, 24);
+    buf.gotoPos(0, 0);
+    buf.puts("\xa4\xa4"); // Big5「中」
+    settle();
+    expect(buf.lines[0][0].isLeadByte).toBe(true);
+    const framesBefore = frames.length;
+
+    // 只蓋掉 lead byte，trail cell 一個位元組都沒被寫到。
+    buf.gotoPos(0, 0);
+    buf.puts("A");
+    // 同步斷言：不必等 update pass，puts() 自己就標好了。
+    expect(buf.lines[0][1].needUpdate).toBe(true);
+
+    settle();
+    const dirty = new Set();
+    for (let i = framesBefore; i < frames.length; ++i)
+      for (const r of frames[i]) dirty.add(r);
+    expect(dirty.has(0)).toBe(true);
+  });
+});
