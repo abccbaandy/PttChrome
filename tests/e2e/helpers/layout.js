@@ -305,8 +305,145 @@ async function plainLeftEdge(page, { settleTimeout = 60000 } = {}) {
   return pos;
 }
 
+// ---------------------------------------------------------------------------
+// 行內預覽的「掛出來了沒」——**live 也能用**的 seek（2026-08-29）。
+//
+// 為什麼不能沿用 offline 的 seekInlineMedia（helpers/replay.js）：它每一格都
+// waitPreviewsSettled，而 settle 要求 `.previewLoading` 歸零。真 PTT ＋ 真圖床下
+// imgur 的連線會 stall（docs/imgur-latency-research.md），產品端又**沒有**圖片載入
+// timeout ⇒ 讀取指示器可以永遠留著 ⇒ settle 必逾時，只是把假紅換一種樣子。
+//
+// 為什麼不能沿用 live spec 原本那份手寫迴圈（就是這次要修掉的東西）：
+//   * 直接寫 `scroller.scrollTop = y` 會和 easy_reading 自己的捲動控制打架（累積期間
+//     它會把位置拉走）⇒ 佔位盒從沒真的進過視野；
+//   * 每格固定 sleep(250) 就往下走，而 mount 鏈是 IntersectionObserver →
+//     renderInto（React root）→ requestPreview 的 promise → commit，250ms 只夠快的
+//     情況。掃過去的那一格接著被 far observer 卸掉 ⇒ 掃完整篇 found=0（現場記錄見
+//     2026-08-29 的 handoff：7 個可預覽連結、0 個預覽節點）。
+//
+// 改成：鎖定「含目標連結那一列」的佔位盒 → scrollIntoView → 停在那裡等**內容條件**。
+// 判定分兩級，因為它們的相依對象不同：
+//   mounted  ＝ slot 裡出現任何預覽產物（含讀取中指示器）。這只證明延遲載入鏈通了，
+//              **與圖床可不可達無關** ⇒ 可以當必驗斷言。
+//   media    ＝ 真的出現 <img class=hyperLinkPreview>/<video>/<iframe>（loadedImage
+//              再加上 offsetWidth>0）。解析／下載成功才有 ⇒ 依賴外網，呼叫端只能拿它
+//              當「機會性」斷言。
+// 一律**不丟錯**：要斷言還是 skip 由呼叫端決定（同 waitEasyReadingComplete 的約定）。
+const MOUNTED_SEL =
+  'img.hyperLinkPreview, video, iframe, .previewLoading, .previewError';
+const MEDIA_SEL = 'img.hyperLinkPreview, video, iframe';
+
+async function seekMountedPreview(
+  page,
+  { hrefFilter, maxSlots = 6, mountTimeout = 15000, mediaTimeout = 15000 } = {}
+) {
+  // 目標連結 → 同一列 wrapper 裡的佔位盒。結構出自 render/link_segment.js#build：
+  // wrapper div > [ span[data-type=bbsline], div(previews), .fixedUrlLine… ]。
+  // 打 data-e2e-slot-key 只是測試自己的標記（同 stableCommentRow 的作法），
+  // **不動產品 DOM 契約**。
+  const keys = await page.evaluate(
+    ({ pattern, cap }) => {
+      const re = new RegExp(pattern, 'i');
+      const out = [];
+      const seen = new Set();
+      const anchors = document.querySelectorAll('#mainContainer a[href]');
+      for (const a of anchors) {
+        if (!re.test(a.getAttribute('href') || '')) continue;
+        const line = a.closest('[data-type="bbsline"]');
+        const wrap = line ? line.parentElement : null;
+        if (!wrap) continue;
+        const slot = wrap.querySelector('.inlinePreviewSlot');
+        if (!slot || seen.has(slot)) continue;
+        seen.add(slot);
+        const key = 'e2e-slot-' + out.length;
+        slot.setAttribute('data-e2e-slot-key', key);
+        out.push({ key: key, href: a.getAttribute('href') });
+        if (out.length >= cap) break;
+      }
+      return out;
+    },
+    { pattern: hrefFilter.source || String(hrefFilter), cap: maxSlots }
+  );
+
+  const result = {
+    slots: keys.length,
+    tried: [],
+    mounted: false,
+    mediaFound: false,
+    loadedImage: false,
+    slotKey: null,
+    href: null,
+  };
+  if (!keys.length) return result;
+
+  const state = (key) =>
+    page.evaluate(
+      ({ k, mounted, media }) => {
+        const slot = document.querySelector('[data-e2e-slot-key="' + k + '"]');
+        if (!slot) return { gone: true };
+        const medias = slot.querySelectorAll(media);
+        let loaded = false;
+        for (const m of medias) if (m.offsetWidth > 0) loaded = true;
+        return {
+          mounted: !!slot.querySelector(mounted),
+          media: medias.length > 0,
+          loaded: loaded,
+          loading: !!slot.querySelector('.previewLoading'),
+          error: !!slot.querySelector('.previewError'),
+        };
+      },
+      { k: key, mounted: MOUNTED_SEL, media: MEDIA_SEL }
+    );
+
+  for (const k of keys) {
+    await page.evaluate((key) => {
+      const slot = document.querySelector('[data-e2e-slot-key="' + key + '"]');
+      if (slot) slot.scrollIntoView({ block: 'center' });
+    }, k.key);
+
+    // 停在原地等 mount（等的是內容條件，不是固定 sleep）。
+    const deadline = Date.now() + mountTimeout;
+    let st = await state(k.key);
+    while (!st.gone && !st.mounted && Date.now() < deadline) {
+      await sleep(200);
+      st = await state(k.key);
+    }
+    // mount 之後再給媒體節點一段寬限（解析成功才會有；imgur 要先發 HEAD 探測）。
+    const mediaDeadline = Date.now() + mediaTimeout;
+    while (!st.gone && st.mounted && !st.media && !st.error && Date.now() < mediaDeadline) {
+      await sleep(200);
+      st = await state(k.key);
+    }
+    result.tried.push({ href: k.href, state: st });
+    // 各級**只會往上加**：後面試的 slot 比較差時不可以把前面的成績蓋掉。
+    // slotKey/href 一律指向目前為止最好的那個（呼叫端的點圖斷言要用它）。
+    if (st.mounted) {
+      if (!result.mounted) {
+        result.mounted = true;
+        result.slotKey = k.key;
+        result.href = k.href;
+      }
+      if (st.media && !result.mediaFound) {
+        result.mediaFound = true;
+        result.slotKey = k.key;
+        result.href = k.href;
+      }
+      if (st.loaded) {
+        result.loadedImage = true;
+        result.slotKey = k.key;
+        result.href = k.href;
+        return result; // 最完整的那一種，不必再試別的
+      }
+    }
+  }
+  return result;
+}
+
 module.exports = {
   OVERRIDING_SEL,
+  MEDIA_SEL,
+  MOUNTED_SEL,
+  seekMountedPreview,
   assertElementUnder,
   assertPlainTextUnder,
   elementUnder,

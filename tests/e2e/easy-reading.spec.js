@@ -7,7 +7,11 @@ const {
   resetSession,
   gotoBoard,
   getPref,
+  readListCandidates,
+  openArticleByNumber,
+  waitEasyReadingComplete,
 } = require('./helpers/ptt');
+const { seekMountedPreview } = require('./helpers/layout');
 
 // 共用登入 session（helpers/fixtures.js 的 shared fixture）：整包只登入一次。
 // serial：共用 page 有順序相依，每個 case 開頭 resetSession 自我復位。
@@ -177,117 +181,138 @@ test.describe.serial('好讀模式', () => {
   // 此旗標寫死 false → 圖片全不顯示（regression）。守護：找到「可預覽連結」的文章後，
   // 行內預覽節點必須出現；找不到可預覽連結（內容相依）才 skip。
   test('好讀模式自動行內開圖', async ({ shared }) => {
-    test.setTimeout(180000);
+    test.setTimeout(240000);
     const { page, logs } = shared;
     logs.length = 0;
     // 行內預覽渲染出的媒體節點（見 ImagePreviewer.Inline）：圖片 / 影片 / iframe。
     const PREVIEW_SEL =
       '#mainContainer img.hyperLinkPreview, #mainContainer video.easyReadingVideo, #mainContainer iframe';
     // 會被 ImagePreviewer 解析成非錯誤描述子的連結（imgur/twitter/youtube/直連圖影）。
+    const PREVIEWABLE =
+      /(\.(?:jpe?g|png|gif|webp|bmp|apng|avif|mp4|webm|ogg)(?:$|[?#]))|imgur\.com|pbs\.twimg\.com|youtu\.?be|youtube\.com|meee\.com\.tw|clips\.twitch\.tv|flic\.kr|flickr\.com/i;
     const previewableLinks = () =>
-      page.evaluate(() => {
-        const re = /(\.(?:jpe?g|png|gif|webp|bmp|apng|avif|mp4|webm|ogg)(?:$|[?#]))|imgur\.com|pbs\.twimg\.com|youtu\.?be|youtube\.com|meee\.com\.tw|clips\.twitch\.tv|flic\.kr|flickr\.com/i;
+      page.evaluate((pattern) => {
+        const re = new RegExp(pattern, 'i');
         return Array.from(document.querySelectorAll('#mainContainer a[href]'))
           .map((a) => a.getAttribute('href'))
           .filter((h) => re.test(h));
-      });
+      }, PREVIEWABLE.source);
 
     try {
       await resetSession(page);
       await applyPrefs(page, { enableEasyReading: true });
       await gotoBoard(page, 'C_Chat');
-      await sendKey(page, 'End');
-      await page.waitForTimeout(800);
+
+      // 選文：從列表挑序號候選（由新到舊），跳號開文。
+      // **不用 End → Enter**：End ＝ read.c 的 last_line，含置底公告（C_Chat 的置底
+      // 是十幾頁），累積跑很久且常常一張圖都沒有。置底文沒有序號 ⇒ 候選天然排除。
+      const candidates = (await readListCandidates(page, { min: 0, max: 99 }))
+        .slice()
+        .reverse()
+        .slice(0, 4);
+      console.log('CANDIDATES:', JSON.stringify(candidates));
+      expect(candidates.length).toBeGreaterThan(0);
 
       let found = false;
-      for (let attempt = 0; attempt < 8; attempt++) {
-        await sendKey(page, 'Enter');
-        await page.waitForTimeout(4500); // 好讀自動翻頁累積整篇 + 連結解析
+      let lastSeek = null;
+      for (const cand of candidates) {
+        await openArticleByNumber(page, cand.num);
+        // 等的是「整篇累積完」這個唯一可重現的終點，不是固定 waitForTimeout。
+        // 以前睡 4.5 秒就開始掃：長文那時還在自動翻頁（easy_reading 同時在控 scrollTop）
+        // ⇒ 佔位盒從沒進過視野，掃完整篇 0 個預覽節點（2026-08-29 的間歇性紅）。
+        const acc = await waitEasyReadingComplete(page, { timeout: 30000 });
         const inER = await page.evaluate(
           () => window.__app.view.useEasyReadingMode && window.__app.buf.pageState === 3
         );
-        if (inER) {
-          const links = await previewableLinks();
-          console.log(`attempt ${attempt}: previewable links = ${links.length}`, JSON.stringify(links.slice(0, 3)));
-          if (links.length > 0) {
-            // 有可預覽連結 → 行內預覽節點必須出現（壞掉就會 timeout → 測試紅）。
-            //
-            // 自動開圖是**延遲載入**的（LazyInlinePreview：捲到附近才解析網址並掛
-            // <ImagePreviewer>，捲遠了再卸掉釋放已解碼的點陣圖 —— 超長文 287 張圖
-            // 全部立即載入且永不釋放正是「記憶體吃滿」的來源）。所以不能累積完就等
-            // 選擇器，要先由上往下掃到第一個真的把媒體掛出來的位置。
-            const seek = await page.evaluate(async (sel) => {
-              const scroller = document.querySelector('.main');
-              if (!scroller) return { found: 0 };
-              const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-              const count = () => document.querySelectorAll(sel).length;
-              const step = Math.max(200, scroller.clientHeight * 0.8);
-              for (let y = 0; y <= scroller.scrollHeight; y += step) {
-                scroller.scrollTop = y;
-                await sleep(250);
-                if (count() > 0) {
-                  await sleep(600); // 讓同一批的其他張也掛上／載入
-                  return { found: count(), scrollTop: scroller.scrollTop };
-                }
-              }
-              return { found: count(), scrollTop: scroller.scrollTop };
-            }, PREVIEW_SEL);
-            console.log('LAZY SEEK:', JSON.stringify(seek));
-            await page.waitForSelector(PREVIEW_SEL, { timeout: 10000 });
-            const previews = await page.evaluate((sel) => document.querySelectorAll(sel).length, PREVIEW_SEL);
-            console.log('PREVIEW NODES:', previews);
-            expect(previews).toBeGreaterThan(0);
-
-            // 點圖放大全部圖片至視窗寬度（再點縮回）。僅在本篇實際有已載入的內嵌圖片
-            // 時驗（youtube/影片等 iframe-only 文章無 img，跳過此段，內容相依）。
-            const hasImg = await page.evaluate(() => {
-              const imgs = document.querySelectorAll('#mainContainer img.hyperLinkPreview');
-              return Array.from(imgs).some((im) => im.offsetWidth > 0);
-            });
-            if (hasImg) {
-              // React 19：click 觸發的 setState 在事件 task 之後才 commit——
-              // 點完同步讀 classList 恆 false（假紅）。等一拍再讀。
-              const enlarged = await page.evaluate(async () => {
-                const im = Array.from(
-                  document.querySelectorAll('#mainContainer img.hyperLinkPreview')
-                ).find((x) => x.offsetWidth > 0);
-                const before = im.getBoundingClientRect().width;
-                im.click();
-                await new Promise((r) => setTimeout(r, 300));
-                const mc = document.getElementById('mainContainer');
-                const after = im.getBoundingClientRect().width;
-                return {
-                  cls: mc.classList.contains('imagesEnlarged'),
-                  before,
-                  after,
-                };
-              });
-              console.log('ENLARGE:', JSON.stringify(enlarged));
-              expect(enlarged.cls).toBe(true);
-              expect(enlarged.after).toBeGreaterThanOrEqual(enlarged.before);
-              // 再點一次 → 縮回（class 移除）。同上，等 commit 後再讀。
-              const collapsed = await page.evaluate(async () => {
-                const im = Array.from(
-                  document.querySelectorAll('#mainContainer img.hyperLinkPreview')
-                ).find((x) => x.offsetWidth > 0);
-                im.click();
-                await new Promise((r) => setTimeout(r, 300));
-                return document.getElementById('mainContainer').classList.contains('imagesEnlarged');
-              });
-              expect(collapsed).toBe(false);
-            }
-
-            found = true;
-            break;
-          }
+        console.log(`article ${cand.num}: rows=${acc.rows} end=${acc.reachedEnd} ER=${inER}`);
+        if (!inER || !acc.reachedEnd) {
+          // 累積不完（超長公告／爆文）⇒ 這篇不合用，換下一篇。不是產品問題，
+          // 所以不在這裡斷言 reachedEnd。
+          await sendKey(page, 'ArrowLeft');
+          await page.waitForTimeout(1200);
+          continue;
         }
-        // 本篇無可預覽連結 → 回列表往上一篇（較舊）再試
-        await sendKey(page, 'ArrowLeft');
-        await page.waitForTimeout(1300);
-        await sendKey(page, 'ArrowUp');
-        await page.waitForTimeout(500);
+
+        const links = await previewableLinks();
+        console.log(`article ${cand.num}: previewable links = ${links.length}`, JSON.stringify(links.slice(0, 3)));
+        if (links.length === 0) {
+          await sendKey(page, 'ArrowLeft');
+          await page.waitForTimeout(1200);
+          continue;
+        }
+
+        // ---- Layer 1（必驗，與外網無關）：有連結就必須有佔位盒 ----
+        // enableLinkInlinePreview 為 false 時 render/link_segment.js 連一個
+        // .inlinePreviewSlot 都不會建 —— 這正是本測要守的 regression（統一渲染時
+        // 把旗標寫死 false ⇒ 圖片全不顯示）最直接、且完全不碰網路的訊號。
+        const slots = await page.evaluate(
+          () => document.querySelectorAll('#mainContainer .inlinePreviewSlot').length
+        );
+        console.log('INLINE PREVIEW SLOTS:', slots);
+        expect(slots).toBeGreaterThan(0);
+
+        // ---- Layer 2（必驗，與外網無關）：捲到佔位盒 → 延遲載入鏈真的 mount ----
+        // mounted ＝ slot 裡出現預覽產物（媒體節點或讀取中指示器），證明
+        // IntersectionObserver → ImagePreviewer 這條鏈通了，不需要圖片下載成功。
+        const seek = await seekMountedPreview(page, { hrefFilter: PREVIEWABLE });
+        lastSeek = seek;
+        console.log('SEEK:', JSON.stringify(seek));
+        expect(seek.slots).toBeGreaterThan(0);
+        expect(seek.mounted).toBe(true);
+
+        // ---- Layer 3（機會性）：媒體節點／真的載到圖 ----
+        // 到這裡才會碰到外網。圖床 stall／404 時產品端沒有 timeout（刻意），
+        // 所以這一層載不出來不算產品壞掉 —— 記錄後跳過，不讓圖床決定 CI 顏色。
+        if (seek.mediaFound) {
+          const previews = await page.evaluate((sel) => document.querySelectorAll(sel).length, PREVIEW_SEL);
+          console.log('PREVIEW NODES:', previews);
+          expect(previews).toBeGreaterThan(0);
+        }
+
+        // 點圖放大全部圖片至視窗寬度（再點縮回）。僅在本篇實際有已載入的內嵌圖片
+        // 時驗（youtube/影片等 iframe-only 文章無 img，跳過此段，內容相依）。
+        if (seek.loadedImage) {
+          // React 19：click 觸發的 setState 在事件 task 之後才 commit——
+          // 點完同步讀 classList 恆 false（假紅）。等一拍再讀。
+          const enlarged = await page.evaluate(async () => {
+            const im = Array.from(
+              document.querySelectorAll('#mainContainer img.hyperLinkPreview')
+            ).find((x) => x.offsetWidth > 0);
+            const before = im.getBoundingClientRect().width;
+            im.click();
+            await new Promise((r) => setTimeout(r, 300));
+            const mc = document.getElementById('mainContainer');
+            const after = im.getBoundingClientRect().width;
+            return {
+              cls: mc.classList.contains('imagesEnlarged'),
+              before,
+              after,
+            };
+          });
+          console.log('ENLARGE:', JSON.stringify(enlarged));
+          expect(enlarged.cls).toBe(true);
+          expect(enlarged.after).toBeGreaterThanOrEqual(enlarged.before);
+          // 再點一次 → 縮回（class 移除）。同上，等 commit 後再讀。
+          const collapsed = await page.evaluate(async () => {
+            const im = Array.from(
+              document.querySelectorAll('#mainContainer img.hyperLinkPreview')
+            ).find((x) => x.offsetWidth > 0);
+            im.click();
+            await new Promise((r) => setTimeout(r, 300));
+            return document.getElementById('mainContainer').classList.contains('imagesEnlarged');
+          });
+          expect(collapsed).toBe(false);
+        } else {
+          console.log('IMAGE NOT LOADED（圖床端因素，Layer 3 略過）:', JSON.stringify(seek.tried));
+        }
+
+        found = true;
+        break;
       }
-      test.skip(!found, '連續多篇都沒有可預覽的圖片連結，跳過（內容相依）');
+      test.skip(
+        !found,
+        `候選文章都不合用（沒有可預覽連結或累積不完）${lastSeek ? ' seek=' + JSON.stringify(lastSeek) : ''}`
+      );
       expect(found).toBe(true);
     } catch (err) {
       console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));

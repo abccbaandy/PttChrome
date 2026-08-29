@@ -526,6 +526,47 @@ async function waitEasyReadingComplete(page, opts = {}) {
   return { rows: st.rows, reachedEnd: !!st.end, timedOut: true };
 }
 
+// 列表畫面的文字列 → 候選 `{ num, push }`（**維持畫面由上而下的順序**＝由舊到新）。
+// 純函式，unit 守護：tests/unit/e2e_list_article_pick.test.js。
+//
+// 欄位依據 pttbbs `mbbsd/bbs.c#readdoent`：序號 `%7d`（游標 '>' 只蓋掉行首那個空格，
+// 欄位不位移）、推文數在 cols 9-10（1..99 印 `%2d`、≥MAX_RECOMMENDS 印「爆」、負的印
+// X/XX）。**置底文沒有序號** ⇒ 第一條正則自然跳過，這是「不要用 End 開最新一篇」的
+// 替代路徑能成立的關鍵。
+//
+// min > 0 ＝「一定要有推文數且 ≥ min」；min = 0 ＝ 不管有沒有推文都收（推文數不明的
+// 記 push:0），給「只要一篇開得起來的正常文章」這種需求用。max 一律擋爆文（累積過久）。
+function listArticleNumbers(rows, opts = {}) {
+  const min = opts.min == null ? 0 : opts.min;
+  const max = opts.max == null ? 99 : opts.max;
+  const out = [];
+  for (const text of rows || []) {
+    const m = /^[>\s]*(\d+)\s/.exec(text || '');
+    if (!m) continue;
+    const raw = (text.slice(9, 11) || '').trim();
+    // 「爆」（≥MAX_RECOMMENDS）與 X/XX（負推）一律不要：兩者都是推文數以百計的長文，
+    // 好讀累積跑很久。min=0（不挑推文數）時尤其必要 —— 否則它們會混在候選裡。
+    if (/爆|X/i.test(raw)) continue;
+    const push = parseInt(raw, 10);
+    const hasPush = Number.isFinite(push);
+    if (min > 0 && (!hasPush || push < min)) continue;
+    if (hasPush && push > max) continue;
+    out.push({ num: parseInt(m[1], 10), push: hasPush ? push : 0 });
+  }
+  return out;
+}
+
+// 當前列表畫面的候選（讀 buf.getRowText，不讀 DOM —— 見 CLAUDE.md）。
+async function readListCandidates(page, opts) {
+  const rows = await page.evaluate(() => {
+    const buf = window.__app.buf;
+    const out = [];
+    for (let r = 0; r < buf.rows; ++r) out.push(buf.getRowText(r, 0, buf.cols));
+    return out;
+  });
+  return listArticleNumbers(rows, opts);
+}
+
 // 從**列表畫面**挑一篇「推文數落在 [min,max]」的文章，回傳 { num, push }；找不到回 null。
 //
 // 為什麼不沿用 End → Enter（2026-08-29 樓層編號 live 失敗的根因）：
@@ -534,28 +575,15 @@ async function waitEasyReadingComplete(page, opts = {}) {
 //      「樓層/推文者」類斷言必紅。
 //   2. 「開了才知道不合用 → 退回列表 → 往上一篇再試」的重試迴圈（本檔多處）每輪都要
 //      一次完整累積，慢且仍不保證。
-// 推文數就寫在列表上（cols 9-10，pttbbs `mbbsd/bbs.c#readdoent`：1..99 印 `%2d`、
-// ≥MAX_RECOMMENDS(100) 印「爆」、負的印 X/XX）⇒ **開文之前就能挑**，上界順便擋掉爆文
-// （累積過久）。置底文沒有序號 ⇒ 正則自然跳過。
+// ⇒ **開文之前就能挑**，上界順便擋掉爆文（累積過久）。欄位依據見 listArticleNumbers。
 async function pickListArticleWithComments(page, opts = {}) {
   const min = opts.min == null ? 8 : opts.min;
   const max = opts.max == null ? 99 : opts.max;
   const pages = opts.pages || 3;
   for (let p = 0; p < pages; p++) {
-    const rows = await page.evaluate(() => {
-      const buf = window.__app.buf;
-      const out = [];
-      for (let r = 0; r < buf.rows; ++r) out.push(buf.getRowText(r, 0, buf.cols));
-      return out;
-    });
     let best = null;
-    for (const text of rows) {
-      // 序號欄（%7d；游標 '>' 只蓋掉行首那個空格，欄位不位移）
-      const m = /^[>\s]*(\d+)\s/.exec(text || '');
-      if (!m) continue;
-      const push = parseInt((text.slice(9, 11) || '').trim(), 10);
-      if (!Number.isFinite(push) || push < min || push > max) continue;
-      if (!best || push > best.push) best = { num: parseInt(m[1], 10), push: push };
+    for (const c of await readListCandidates(page, { min, max })) {
+      if (!best || c.push > best.push) best = c;
     }
     if (best) return best;
     await sendKey(page, 'PageUp'); // 往舊翻一頁再找
@@ -664,6 +692,8 @@ module.exports = {
   resetSession,
   gotoBoard,
   pickListArticleWithComments,
+  listArticleNumbers,
+  readListCandidates,
   openArticleByNumber,
   getPref,
   comparePusherSequences,
