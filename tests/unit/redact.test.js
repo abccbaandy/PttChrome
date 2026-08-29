@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { redactUser, redactIPs, redactSecret, scrub } from "../../src/js/redact";
 
 describe("redactUser", () => {
@@ -41,5 +43,25 @@ describe("scrub", () => {
   it("ids + secrets + IP 全套", () => {
     const out = scrub("myuser pw123 1.2.3.4", ["myuser"], ["pw123"]);
     expect(out).toBe("xxxxxx xxxxx xxxxxxx");
+  });
+});
+
+// 單一真相源守護：錄製器（tests/e2e/tools/record-cassette.spec.js）曾經自己複製一份
+// 逐字相同的 redactUser/redactIPs。隱私把關的邏輯拆成兩半 = 只修其中一半時另一半
+// 靜默失效，而它把關的是「公開 fork 的素材裡不可以有 PTT 帳號／IP」。
+// ⇒ 錄製器一律 require 這個模組，不准自帶實作。
+describe("錄製器共用 src/js/redact（不得自帶實作）", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "..", "e2e", "tools", "record-cassette.spec.js"),
+    "utf8"
+  );
+
+  it("record-cassette.spec.js require 得到 src/js/redact", () => {
+    expect(src).toMatch(/require\(['"][^'"]*src\/js\/redact['"]\)/);
+  });
+
+  it("record-cassette.spec.js 不再自行定義 redactUser / redactIPs", () => {
+    expect(src).not.toMatch(/function\s+redactUser\s*\(/);
+    expect(src).not.toMatch(/function\s+redactIPs\s*\(/);
   });
 });

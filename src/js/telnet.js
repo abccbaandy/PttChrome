@@ -86,6 +86,14 @@ TelnetConnection.prototype._onDataAvailable = function(e) {
         break;
       case STATE_IAC:
         switch (ch) {
+        // RFC 854：資料流裡的 0xFF 由對方加倍送出，收到 IAC IAC 就是「一個
+        // 0xFF 資料位元組」。舊碼掉進 default 把它當未知命令吃掉，於是那個
+        // byte 會靜默消失（PTT 是 Big5、不含 0xFF，所以一直沒症狀，但送出端
+        // 現在會跳脫 → 接收端必須對稱）。
+        case IAC:
+          data += IAC;
+          this.state = STATE_DATA;
+          break;
         case WILL:
           this.state=STATE_WILL;
           break;
@@ -168,8 +176,19 @@ TelnetConnection.prototype._dispatchData = function(data) {
 };
 
 TelnetConnection.prototype.send = function(str) {
-  // XXX Should do escape on IAC.
-  this._sendRaw(str);
+  this._sendEscaped(str);
+};
+
+// 資料路徑專用（send / convSend）：RFC 854 要求資料流裡的 0xFF 加倍，否則
+// server 會把它當命令起頭並吃掉後面的位元組。可觸發的來源是 string_util.u2b
+// —— 轉不出 Big5 的字元（emoji 最常見）回 '\xFF\xFD'，而貼上／輸入一路走
+// term_view.onTextInput → _convSend → convSend。
+//
+// **協商路徑不可以走這裡**：IAC DO/WILL/SB… 的 0xFF 本來就是命令，加倍會讓
+// server 讀成資料。那些一律直接用 _sendRaw。
+TelnetConnection.prototype._sendEscaped = function(str) {
+  if (!str) return;
+  this._sendRaw(str.indexOf(IAC) < 0 ? str : str.split(IAC).join(IAC + IAC));
 };
 
 TelnetConnection.prototype._sendRaw = function(data) {
@@ -186,7 +205,8 @@ TelnetConnection.prototype.convSend = function(unicode_str) {
   // detect ;50m (half color) and then convert accordingly
   if (s) {
     s = ansiHalfColorConv(s);
-    this._sendRaw(s);
+    // u2b 對非 Big5 字元回 '\xFF\xFD' ⇒ 這條路徑最常帶 IAC，必須跳脫。
+    this._sendEscaped(s);
   }
 };
 

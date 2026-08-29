@@ -69,8 +69,9 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
    `c > 0x80 && vkey_is_ready() && len - iend < 3 → vkey_purge()`，Big5 的第二個 byte 常常
    也 > 0x80，踩到就會把後面那個 `\r` **一起清掉** ⇒ 推文停在輸入列、整條序列卡死。
 4. **非 Big5 字元一定要先濾掉**（`stripNonBig5`）。`u2b` 對它們回 `'\xFF\xFD'`，`0xFF` 就是
-   telnet IAC，而 `telnet.js` 不做 IAC 跳脫（原碼自己註明的 `XXX`）⇒ emoji 會被 server 當成
-   telnet 命令。
+   telnet IAC。**傳輸層已修**（`telnet.js#_sendEscaped` 對資料路徑加倍 IAC，守護
+   `tests/unit/telnet_iac.test.js`）⇒ 現在濾掉的理由只剩顯示：那些字 PTT 畫不出來，
+   而且使用者不會知道自己打的字被吃了，所以要濾掉**並回報濾了什麼**。
 5. **每個 command 都要有 `onFlushed`**（`command_queue.js` 的硬性要求）：queue 被別人 flush
    時若不釋放 `active`，整頁再也收不到鍵盤。
 6. **進度遮罩必須是 modal**。使用者在序列途中打字會插進 X → 型別 → 內容 的中間，pttbbs 的

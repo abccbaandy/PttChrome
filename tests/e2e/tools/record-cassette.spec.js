@@ -24,6 +24,9 @@ const {
   readScreen,
   attachConsole,
 } = require('../helpers/ptt');
+// 隐私遮蔽的唯一真相源（src/js/redact.js 是纯 ESM，Playwright 内建 transform 会转成
+// CJS —— 同 helpers/ptt.js require src/js/totp 的先例）。
+const { scrub } = require('../../../src/js/redact');
 
 const MODE = process.env.RECORD_MODE || 'article';
 const BOARD = process.env.RECORD_BOARD || 'Stock';
@@ -56,55 +59,19 @@ function loadCreds() {
   return !!process.env.RECORD_ALLOW_LOGIN;
 }
 
-// 等长遮蔽登入帐号（防文章底部「→ 你的id:」输入列、列表「我是<id>」状态列泄漏）。
-// 手动扫描而非单纯 regex：id 是 ASCII token，右边界须为「非英数 / 字串结尾」；左边界为
-// 「非英数 / 字串开头」，或「Big5 尾位元组」——后者关键：列表「我是<id>」里 id 紧贴「是」
-// (Big5 0xAC4F) 的尾位元组 0x4F='O' 像字母，故再认「前一位元组在 0x40-0x7E 且其前一位元组
-// ≥0x80(Big5 lead)」也算边界。保持长度 → byte/栏位对齐不变；不误伤别人 id 的子串。
-function redactUser(str, user) {
-  if (!user || user === 'guest') return str;
-  const isAlnum = (c) => c !== undefined && /[0-9A-Za-z]/.test(c);
-  const u = user.toLowerCase();
-  let out = '';
-  let i = 0;
-  while (i < str.length) {
-    if (str.substr(i, user.length).toLowerCase() === u) {
-      const rightOk = !isAlnum(str[i + user.length]); // 含 undefined(结尾)
-      const prev = str[i - 1];
-      let leftOk = !isAlnum(prev); // 含 undefined(开头)
-      if (!leftOk) {
-        const p = prev.charCodeAt(0);
-        const p2 = str[i - 2];
-        if (p >= 0x40 && p <= 0x7e && p2 !== undefined && p2.charCodeAt(0) >= 0x80) leftOk = true; // Big5 尾位元组
-      }
-      if (rightOk && leftOk) {
-        out += 'x'.repeat(user.length);
-        i += user.length;
-        continue;
-      }
-    }
-    out += str[i++];
-  }
-  return out;
-}
-
 // 额外要遮的 id（env RECORD_REDACT_EXTRA="id1,id2"）：用于「登入帐号 != 文章里出现的自己
-// 其他 id」的情形——典型是 Fw 转录文的「※ 转录者: <自己另一个 id>」。等长遮蔽同 redactUser。
+// 其他 id」的情形——典型是 Fw 转录文的「※ 转录者: <自己另一个 id>」。
 function extraRedactIds() {
   return (process.env.RECORD_REDACT_EXTRA || '')
     .split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-// 遮 IPv4（转录者 / 「※ 发信站: …, 来自: <IP>」会带发文者 IP，属个资）。等长替换保栏位对齐。
-function redactIPs(str) {
-  return str.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, (m) => 'x'.repeat(m.length));
-}
-
-// 对一段文字套用所有遮蔽：登入帐号 + 额外 id + IPv4。
+// 对一段文字套用所有遮蔽：登入帐号 + 额外 id + IPv4，全部走 src/js/redact 这个唯一真相源
+// （scrub = 逐个 id 套边界式 redactUser，最后套 redactIPs；'guest'/空字串在 redactUser 内
+// 就 early return）。**不要在这里另开一份实作** —— 隐私把关拆成两半 = 只修一半时另一半
+// 静默失效。守护在 tests/unit/redact.test.js。
 function scrubText(str, user) {
-  let out = redactUser(str, user);
-  for (const id of extraRedactIds()) out = redactUser(out, id);
-  return redactIPs(out);
+  return scrub(str, [user, ...extraRedactIds()]);
 }
 
 // 对整卷 cassette 的 recv（base64 latin1）逐段 redact。保留 step 的其余栏位

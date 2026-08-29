@@ -15,9 +15,9 @@ import { stripNonBig5, splitPushSegments } from "../../js/long_push";
 // 長推文輸入框：使用者打一大段話，這裡即時算出「會被切成幾則」與「有哪些字
 // PTT 顯示不出來」，按下確定後把**已過濾**的內容交給 LongPushSession 送出。
 //
-// 為什麼一定要先過濾：u2b 對轉不出 Big5 的字回 '\xFF\xFD'，0xFF 就是 telnet IAC，
-// 而 telnet.js 不做 IAC 跳脫（原碼自己註明的 XXX）⇒ emoji 直接送出去會被 server
-// 當成 telnet 命令。詳見 long_push.js#stripNonBig5。
+// 為什麼一定要先過濾：u2b 對轉不出 Big5 的字回 '\xFF\xFD'，PTT 根本畫不出來，
+// 而使用者不會知道自己打的字被吃了。（0xFF 的 telnet IAC 問題已在傳輸層修掉，
+// 見 telnet.js#_sendEscaped。）詳見 long_push.js#stripNonBig5。
 
 const replaceI18n = (id, replacements) =>
   i18n(id)

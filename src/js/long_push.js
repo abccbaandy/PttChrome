@@ -21,10 +21,11 @@ export const PUSH_TYPE_KEY = { push: '1', boo: '2', arrow: '3' };
 // 字元過濾
 // ---------------------------------------------------------------------------
 
-// u2b（string_util.js:103）對轉不出 Big5 的字元回 '\xFF\xFD'，而 telnet.js:170
-// 自己註明 `XXX Should do escape on IAC.` —— 0xFF 就是 telnet IAC，送出去會被
-// server 當成 telnet 命令而不是文字（emoji 是最常見的來源）。所以送出前一定要先
-// 濾掉，並把濾掉了什麼告訴使用者。
+// u2b（string_util.js:103）對轉不出 Big5 的字元回 '\xFF\xFD'（emoji 是最常見的
+// 來源）。0xFF 的 telnet IAC 問題**已在傳輸層修掉**（telnet.js#_sendEscaped 對
+// 資料路徑加倍，守護 tests/unit/telnet_iac.test.js），所以這裡過濾的理由只剩
+// 顯示：那些字 PTT 畫不出來，而使用者不會知道自己打的字被吃了 ⇒ 送出前先濾掉，
+// 並把濾掉了什麼告訴使用者。
 export function stripNonBig5(text) {
   const src = String(text == null ? '' : text);
   let out = '';

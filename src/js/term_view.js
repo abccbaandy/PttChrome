@@ -142,7 +142,10 @@ export function TermView() {
   this.cursorX = 0;
   this.cursorY = 0;
 
-  // TODO Move this into easy_reading.js
+  // **刻意留在 view**：這是 EasyReading._enabled 的 bindProperty 來源（easy_reading.js
+  // constructor），同時被 redraw 的分支判斷／list_session／debug_recorder／e2e 探針當
+  // 公開旗標讀（docs/easy-reading.md）。搬進 easy_reading.js 等於拆掉那個契約。
+  // 手動開關一律走 App.switchToEasyReadingMode / exitEasyReading，勿直接翻這個旗標。
   this.useEasyReadingMode = false;
   this.easyReadingKeyDownKeyCode = 0;
 
@@ -341,9 +344,14 @@ export function TermView() {
 
   var lastRowDiv = document.createElement('div');
   lastRowDiv.setAttribute('id', 'easyReadingLastRow');
-  let spaces = ' '.repeat(80-25);  // TODO: Find a way to update this.
-  this.lastRowDivContent = '<span align="left"><span class="q0 b7">' + spaces + '</span><span class="q1 b7">(y)</span><span class="q0 b7">回應</span><span class="q1 b7">(X%)</span><span class="q0 b7">推文</span><span class="q1 b7">(←)</span><span class="q0 b7">離開 </span> </span>';
-  lastRowDiv.innerHTML = this.lastRowDivContent;
+  // 只建**空的** wrapper span，內容一律由 _mirrorStatusRowToFooter 填（真狀態列
+  // 的即時鏡像，含真實顏色與功能鍵）。這個 wrapper 不可省：setSingleChild 寫的是
+  // lastRowDiv.childNodes[0]，而 `#easyReadingLastRow > span` 的 CSS 也掛在它身上。
+  //
+  // 這裡曾經放一串寫死的假 footer（`(y)回應 (X%)推文 (←)離開`）＋一句上游待辦「找個
+  // 方法更新它」。mirror 上線後那是假需求：#easyReadingLastRow 預設 display:none，唯一把它
+  // 設成 block 的地方在 mirror 已經填好內容之後 ⇒ 那串字從來不會被看到。
+  lastRowDiv.appendChild(document.createElement('span'));
   this.lastRowDiv = lastRowDiv;
   this.BBSWin.appendChild(lastRowDiv);
 
@@ -403,8 +411,9 @@ export function TermView() {
     if (e.keyCode == 229)
       return false;
 
-    // TODO: Since the app is almost useless on mobile devices, we might want
-    // to revisit if we want this code.
+    // 下面兩條是 iOS 來的，但**刻意保留**：專案目標是主流桌機瀏覽器（CLAUDE.md），
+    // 不為手機做相容，而這兩條在桌機 IME 也在作用（isComposition 期間吞掉非控制鍵），
+    // 移除有風險、零收益。不要再把它當待辦。
 
     // iOS sends the keydown that starts composition as key code 0. Ignore it.
     if (e.keyCode == 0)
@@ -954,7 +963,9 @@ TermView.prototype = {
         return;
     }
 
-    // TODO: Move this. Make a key event mapper.
+    // 這裡只剩「本 app 自己要吃掉的鍵」。真正的分流在上面：列表好讀交給
+    // listSession.onKeyDown、文章好讀交給 easyReading._onKeyDown，沒被攔下的一律
+    // 原封落到 _keyboard.onKeyDown 送給 PTT。
     var stop = false;
     if (!e.ctrlKey && !e.altKey) {
       switch (e.key) {

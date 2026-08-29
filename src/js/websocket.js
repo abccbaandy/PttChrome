@@ -33,9 +33,9 @@ Websocket.prototype._onClose = function(e) {
 };
 
 Websocket.prototype.send = function(str) {
-  // XXX: move this to app.
-  // because ptt seems to reponse back slowly after large
-  // chunk of text is pasted, so better to split it up.
+  // 分塊送：ptt 在一次收到大量貼上的文字後回應會變慢，切小塊比較穩。
+  // 這是 wire 層的限制，所以**就該待在 socket 層**（每個送出端都會經過這裡），
+  // 不要往上搬到 app。
   var chunk = 1000;
   for (var i = 0; i < str.length; i += chunk) {
     var chunkStr = str.substring(i, i+chunk);

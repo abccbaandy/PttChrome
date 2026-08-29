@@ -57,7 +57,6 @@ function startApp() {
       (process.env.ALLOW_SITE_IN_QUERY && getQueryVariable('site'))
       || proxySiteFromPrefs(prefs)
       || process.env.DEFAULT_SITE);
-    // TODO: Call onSymFont for font data when it's implemented.
     console.log("load pref from storage");
     app.onValuesPrefChange(prefs);
     // Cloud prefs (Firestore) arrive later — and keep arriving via the

@@ -1,7 +1,8 @@
 // 瀏覽器版隱私遮蔽 util（自 tests/e2e/tools/record-cassette.spec.js 的
 // redactUser/redactIPs 移植，去 Buffer/env 依賴）。輸入輸出皆 latin1/一般字串，
 // 等長替換 → byte/欄位對齊不變。debug 錄製下載前套用。
-// TODO: e2e recorder spec 之後可改 import 這裡共用（目前兩份同邏輯）。
+// **隱私遮蔽的唯一真相源**：cassette 錄製器（tests/e2e/tools/record-cassette.spec.js）
+// 也 require 這裡，不得自帶第二份實作（守護 tests/unit/redact.test.js）。
 
 // 等長遮蔽指定 id（防登入帳號 / 狀態列「我是<id>」洩漏）。
 // 手動掃描而非單純 regex：id 是 ASCII token，右邊界須為「非英數 / 字串結尾」；

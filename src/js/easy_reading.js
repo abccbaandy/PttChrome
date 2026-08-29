@@ -1658,7 +1658,9 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
 EasyReading.prototype._onMouseClick = function(e) {
   if (!this._enabled || !this.startedEasyReading)
     return;
-  // XXX Should not use term buffer to track mouse cursor.
+  // `buf.mouseAction` 是**刻意**的單一真相源：純函式決策層 mouse_regions.js 算出動作
+  // 後寫進 termBuf，所有消費端（這裡、App.onMouse_click、底色）讀同一格。契約見
+  // docs/mouse.md —— 這裡不要自己另算一份區域判斷。
   if (this._termBuf.mouseAction === ACT_EXIT_ARTICLE)
     this.stopEasyReading();
 };

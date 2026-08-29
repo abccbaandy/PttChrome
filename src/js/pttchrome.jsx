@@ -681,16 +681,6 @@ App.prototype.onDOMPaste = function(e) {
   }
 };
 
-App.prototype.onSymFont = function(content) {
-  console.log("using " + (content ? "extension" : "system") + " font");
-  var font_src = content ? 'src: url('+content.data+');' : '';
-  var css = '@font-face { font-family: MingLiUNoGlyph; '+font_src+' }';
-  var style = document.createElement('style');
-  style.type = 'text/css';
-  style.innerHTML = css;
-  document.getElementsByTagName('head')[0].appendChild(style);
-};
-
 App.prototype.doSelectAll = function() {
   window.getSelection().selectAllChildren(this.view.mainDisplay);
 };
@@ -883,7 +873,8 @@ App.prototype.onMouse_click = function (e) {
   var action = this.buf.mouseAction;
   var targetRow = this.buf.mouseActionRow;
 
-  // TODO make a responder stack.
+  // 分派順序＝好讀先收狀態機，再由下面的 switch 送真正的按鍵。點擊優先權表在
+  // docs/mouse.md，動作本身由純函式決策層 mouse_regions.js 決定（四種動作）。
   this.easyReading._onMouseClick(e);
   if (e.defaultPrevented)
     return;
@@ -1089,7 +1080,8 @@ App.prototype.onPrefChange = function(name, value) {
       this.endTurnsOnLiveUpdate = value;
       break;
     case 'enablePicPreview':
-      // TODO: move this to ImagePreview.
+      // 刻意存成 view 欄位：它在 redraw 時才被讀（term_view 傳成 hoverPreview 給
+      // src/render/），所以真相源必須活在渲染鏈能同步讀到的地方，不是預覽元件裡。
       this.view.enablePicPreview = value;
       break;
     // imgur 快取代理：只更新 imgur_proxy.js 的模組 config，**不 redraw**。已解析過的

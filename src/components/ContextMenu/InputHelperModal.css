@@ -47,7 +47,7 @@
   padding-top: 8px;
 }
 .InputHelperModal__Preview__Content {
-  font-family: MingLiU, MingLiUNoGlyph, monospace;
+  font-family: MingLiU, monospace;
   font-size: 22px;
   line-height: 22px;
 }
@@ -59,7 +59,7 @@
   margin-top: 5px;
 }
 .InputHelperModal__SymbolList > li {
-  font-family: MingLiU, MingLiUNoGlyph, monospace;
+  font-family: MingLiU, monospace;
   /* 不指定底色/字色：交給暗色主題（Paper 黑底白字），格線用主題邊框色。 */
   border: 1px solid var(--mantine-color-default-border);
   font-size: 30px;
@@ -79,7 +79,7 @@
 }
 
 .InputHelperModal__EmoticonList > li {
-  font-family: MingLiU, MingLiUNoGlyph, monospace;
+  font-family: MingLiU, monospace;
   width: 100%;
   border: 1px solid var(--mantine-color-default-border);
   font-size: 21px;
