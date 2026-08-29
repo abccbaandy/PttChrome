@@ -200,7 +200,9 @@ export function resolveMouseGates(prefs) {
     // checkbox 因此能與其他子項一樣 disabled={!useMouseBrowsing}。
     misclickGuard: on && !!p.mouseMisclickGuard,
     middleClick: on ? Number(p.mouseMiddleClick) || 0 : 0,
-    wheel: on && !!p.mouseWheel
+    wheel: on && !!p.mouseWheel,
+    // 平滑捲動是滾輪的子行為 ⇒ 必須先過滾輪本身這一關（列表好讀模式才有作用）。
+    wheelSmoothScroll: on && !!p.mouseWheel && !!p.mouseWheelSmoothScroll
   };
 }
 

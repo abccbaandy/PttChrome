@@ -697,6 +697,12 @@
   "tooltip_mouseWheel": {
     "message": "文章好讀模式維持瀏覽器捲動，不受這個設定影響。"
   },
+  "options_mouseWheelSmoothScroll": {
+    "message": "文章列表好讀模式平滑捲動"
+  },
+  "tooltip_mouseWheelSmoothScroll": {
+    "message": "文章列表的好讀模式下，滾輪像一般網頁那樣平滑捲動：依滾動距離連續移動、停得住半列，觸控板的細微滑動也跟得上；關閉則一格滾輪翻一整頁。原生（非好讀）的列表畫面翻頁由 PTT 主機決定，一律是整頁翻。"
+  },
   "options_mouseBrowsing": {
     "message": "滑鼠瀏覽"
   },

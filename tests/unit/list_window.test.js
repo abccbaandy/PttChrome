@@ -6,6 +6,7 @@
 import {
   listCursorPos,
   moveListCursorWindow,
+  scrollListWindow,
   normalizeListWindow,
   windowVisibleSequence,
   pruneListToSegment,
@@ -161,5 +162,75 @@ describe('labelListCursor', () => {
   test('too-short / missing rows are ignored', () => {
     expect(() => labelListCursor(null)).not.toThrow();
     expect(() => labelListCursor([])).not.toThrow();
+  });
+});
+
+describe('scrollListWindow（平滑捲動的跨列位移，web 慣例）', () => {
+  const ctx = { len: 100, bodyRows: 20 };
+
+  test('視窗位移，游標留在原本那一列（不被拖著跑）', () => {
+    // top=40 cursor=45 → 往下 3 列：游標仍在視窗內 [43,62]
+    expect(scrollListWindow({ top: 40, cursor: 45 }, 3, ctx)).toEqual({
+      top: 43,
+      cursor: 45,
+    });
+  });
+
+  test('游標被推出視窗時夾回邊緣那一列', () => {
+    // 往下捲到游標落在視窗上緣之上 → 游標被推到新的 top
+    expect(scrollListWindow({ top: 40, cursor: 41 }, 5, ctx)).toEqual({
+      top: 45,
+      cursor: 45,
+    });
+    // 往上捲同理，夾在視窗最後一列
+    expect(scrollListWindow({ top: 40, cursor: 58 }, -5, ctx)).toEqual({
+      top: 35,
+      cursor: 54,
+    });
+  });
+
+  test('底端貼齊：最後一列停在畫面最下方，不捲進空白區（與 pgdn 刻意不同）', () => {
+    const r = scrollListWindow({ top: 75, cursor: 80 }, 20, ctx);
+    expect(r.top).toBe(80); // len - bodyRows
+    expect(r.cursor).toBe(80);
+    // 已經貼底了就完全不動
+    expect(scrollListWindow(r, 5, ctx)).toEqual({ top: 80, cursor: 80 });
+  });
+
+  test('頂端夾在 0', () => {
+    expect(scrollListWindow({ top: 3, cursor: 5 }, -10, ctx)).toEqual({
+      top: 0,
+      cursor: 5,
+    });
+  });
+
+  test('從 pgdn 留下的 over-scroll 位置往下捲，視窗不得往回跳', () => {
+    // pgdn 可以把 top 推到 len-1（下面全是空白補列）；此時往下捲只能停住。
+    const r = scrollListWindow({ top: 99, cursor: 99 }, 4, ctx);
+    expect(r).toEqual({ top: 99, cursor: 99 });
+    // 往上捲則正常
+    expect(scrollListWindow({ top: 99, cursor: 99 }, -4, ctx)).toEqual({
+      top: 95,
+      cursor: 99,
+    });
+  });
+
+  test('緩衝區比一頁短時 top 恆為 0（不會捲出空白）', () => {
+    const short = { len: 5, bodyRows: 20 };
+    expect(scrollListWindow({ top: 0, cursor: 2 }, 5, short)).toEqual({
+      top: 0,
+      cursor: 2,
+    });
+  });
+
+  test('空序列／零位移原樣回傳', () => {
+    expect(scrollListWindow({ top: 0, cursor: 0 }, 3, { len: 0, bodyRows: 20 })).toEqual({
+      top: 0,
+      cursor: 0,
+    });
+    expect(scrollListWindow({ top: 7, cursor: 9 }, 0, ctx)).toEqual({
+      top: 7,
+      cursor: 9,
+    });
   });
 });

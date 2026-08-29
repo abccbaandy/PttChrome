@@ -940,8 +940,21 @@ export const PrefModal = ({
                   data={selectData(["options_none", "options_pageUpDown"])}
                   mb="xs"
                 />
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_mouseWheel")}
+                </Text>
+                {/* 平滑捲動只在文章列表好讀模式有作用，且是滾輪的子行為
+                    ⇒ 滾輪關掉時一併 disabled（gating 同 resolveMouseGates）。 */}
+                <PrefCheckbox
+                  name="mouseWheelSmoothScroll"
+                  checked={values.mouseWheelSmoothScroll}
+                  disabled={!values.useMouseBrowsing || !values.mouseWheel}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_mouseWheelSmoothScroll")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_mouseWheelSmoothScroll")}
                 </Text>
               </fieldset>
             </Tabs.Panel>

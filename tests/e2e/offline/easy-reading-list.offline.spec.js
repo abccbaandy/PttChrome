@@ -69,6 +69,17 @@ async function cursorRowIndex(page) {
   });
 }
 
+// 視窗頂端在「過濾後序列」裡的位置（0 = 已在 buffer 最上方）。滾輪平滑捲動的
+// 斷言需要知道上方還剩多少可捲距離。
+async function windowTopPos(page) {
+  return await page.evaluate(() => {
+    const ls = window.__app.listSession;
+    const nums = window.__app.buf.listLineNums || [];
+    const abs = nums.indexOf(ls._topNum);
+    return abs === -1 ? -1 : ls._sequence().indexOf(abs);
+  });
+}
+
 async function waitState(page, pred, timeout = 15000) {
   const deadline = Date.now() + timeout;
   let last = null;
@@ -420,6 +431,113 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(Math.min(...grown.nums.filter((n) => n != null))).toBeLessThan(
         Math.min(...before.nums.filter((n) => n != null))
       );
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
+  test('滾輪平滑捲動：捲的距離就是滾輪的距離、畫面停得住半列；關掉設定回到一次一頁', async ({ page }) => {
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, nav);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: true,
+        easyReadingListPrefetchCount: 200
+      });
+      // fill 往舊文方向長 ⇒ 視窗上方會累積夠多列可捲。
+      await waitState(
+        page,
+        (x) => x.state === 'active' && x.listLen > 40 && x.queueIdle,
+        20000
+      );
+
+      // 未縮放的列高（次列位移與 scrollTop 用的座標系）。滾輪給的是**螢幕**像素，
+      // 而視窗較矮時整個終端機被 scaleY 縮放過 ⇒ 換算成內容像素才是這裡的單位
+      // （產品端同樣除以 scaleY，見 App.mouse_scroll）。
+      const { lineH, scaleY } = await page.evaluate(() => ({
+        lineH: window.__app.view.chh,
+        scaleY: window.__app.view.scaleY || 1
+      }));
+      expect(lineH).toBeGreaterThan(0);
+      const topPos0 = await windowTopPos(page);
+      expect(topPos0).toBeGreaterThan(3); // 上方要有捲得動的空間
+
+      // 滾輪事件直接派給 window（handler 掛在 window 的 capture 階段，與指標位置
+      // 無關）。刻意不用 page.mouse.wheel：那會讓這支 spec 同時「量座標＋動指標」，
+      // 撞上 tests/unit/e2e_layout_settle.test.js 的版面穩定契約，而這裡的捲動根本
+      // 不依賴任何量出來的座標。同 wheel_stuck_button.offline.spec.js 的作法。
+      const wheel = (deltaY) =>
+        page.evaluate((dy) => {
+          window.dispatchEvent(
+            new WheelEvent('wheel', { deltaY: dy, deltaMode: 0, cancelable: true })
+          );
+        }, deltaY);
+      // 動畫跑完（緩動器把距離吃光）為止。
+      const settleScroll = async () => {
+        await page.waitForFunction(() => {
+          const ls = window.__app.listSession;
+          return !ls._scroller || ls._scroller.pending() === 0;
+        }, null, { timeout: 5000 });
+        await page.waitForTimeout(80);
+      };
+
+      // 先離開底端：進板落點通常就貼在板尾，那裡「最後一列貼齊視口底部」的規則會
+      // 把次列偏移吸成 0（一次性的對齊，不是捲動距離不準），量測要避開它。
+      await wheel(-lineH * 5);
+      await settleScroll();
+      const pos0 = await page.evaluate(() => {
+        const ls = window.__app.listSession;
+        const nums = window.__app.buf.listLineNums || [];
+        const abs = nums.indexOf(ls._topNum);
+        return {
+          top: abs === -1 ? -1 : ls._sequence().indexOf(abs),
+          frac: ls.scrollFrac()
+        };
+      });
+      expect(pos0.top).toBeGreaterThan(3); // 上方還要有捲得動的空間
+
+      // 刻意選一個「不是列高整數倍」的距離：捲完必定停在半列上。
+      const dist = lineH * 2 + 7;
+      await wheel(-dist);
+      await settleScroll();
+
+      const after = await page.evaluate(() => ({
+        frac: window.__app.listSession.scrollFrac(),
+        viewTop: (() => {
+          const v = document.querySelector('#mainContainer .listBodyView');
+          return v ? v.scrollTop : null;
+        })(),
+        rows: document.querySelectorAll('#mainContainer [data-type="bbsline"]').length
+      }));
+      const topPos1 = await windowTopPos(page);
+
+      // 1) 捲掉的距離＝滾輪給的距離（像素級，不是「取整到列」）。
+      //    位置一律用像素座標：topPos * 列高 + 次列偏移；螢幕像素 ÷ scaleY。
+      const px0 = pos0.top * lineH + pos0.frac;
+      const px1 = topPos1 * lineH + after.frac;
+      expect(px0 - px1).toBeCloseTo(dist / scaleY, 0);
+      // 2) 真的停在半列上（這就是「像網頁」與「一階一階跳」的差別）。
+      expect(after.frac).toBeGreaterThan(0);
+      expect(after.frac).toBeLessThan(lineH);
+      // 3) 畫面上確實位移了：body 視口的 scrollTop 就是次列偏移。
+      expect(after.viewTop).toBeCloseTo(after.frac, 0);
+      // 4) 露出的那一小條由 overscan 列補滿（24 → 25 列）。
+      expect(after.rows).toBe(25);
+
+      // 逃生門：關掉設定立刻回到一次一頁（不必重整）。
+      await ptt.applyPrefs(page, { mouseWheelSmoothScroll: false });
+      const topPos2 = await windowTopPos(page);
+      await wheel(-100);
+      await page.waitForTimeout(150);
+      const topPos3 = await windowTopPos(page);
+      expect(topPos2 - topPos3).toBe(Math.min(20, topPos2));
+      // 翻頁會回到整列對齊（不留半列）。
+      expect(await page.evaluate(() => window.__app.listSession.scrollFrac())).toBe(0);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);

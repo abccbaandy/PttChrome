@@ -23,7 +23,8 @@
 | T3b 貼上 | Shift+Insert／右鍵選單「貼上」／中鍵貼上 | 同 T3，但 payload 是整串：`App.onPasteDone` → `ListSession.onPaste(text)`（回 true＝已接手）→ 需要時 `native-sync-jump` → `enter-function-mode` → `native-paste` 佇列命令送出 `ansiHalfColorConv(u2b(normalizePasteText(...)))`。**PTT 收到後完全原生**：不代按 Enter、不特判 AID（`#` 仍要 Enter 才跳且只移游標不開文，協定 §8.1）；貼上內容自帶換行則照送 Enter。交易在途（opening／frozen）吞掉＋提示 |
 | T4 非請自來 | 水球/廣播（server 主動寫入） | 唯一自動切原生路徑：banner 明示（水球專屬措辭）＋停在原生（黏性 hold，article/menu 才恢復好讀） |
 
-pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（預設 200，0=停背景 fill）。
+pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（預設 200，0=停背景 fill）
+＋`mouseWheelSmoothScroll`（預設 on，滾輪平滑捲動；滑鼠分頁，見 `docs/mouse.md`）。
 三原則：**A 內容判定**（settle 只定何時評估；是什麼靠指紋謂詞，`docs/pttbbs-screen-protocol.md` §3-5）、**B 顯式狀態機**（ListSession 單一擁有者）、**C 命令序列化**（CommandQueue 單一 in-flight；typeahead 跳繪 §2）。誤判永遠往 native 降級（catch-all functionMode）。
 
 ## 檔案地圖
@@ -42,7 +43,8 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
 
 ## 視窗模型（render 層，取代舊無限捲動）
 
-- **視口＝(topNum, cursorNum) 兩個序號錨定的 24 行切片**：header 3 列＋body 20 列（`bodyRows = rows-4` = pttbbs p_lines）＋footer 1 列。DOM 固定 24 行、`mainDisplay.scrollTop=0`、無捲動補償、無 scrollIntoView、無高亮 CSS。
+- **視口＝(topNum, cursorNum) 兩個序號錨定的 24 行切片**：header 3 列＋body 20 列（`bodyRows = rows-4` = pttbbs p_lines）＋footer 1 列。`mainDisplay.scrollTop=0`、無捲動補償、無 scrollIntoView、無高亮 CSS。
+- **render 的次列位移（平滑捲動）**：body 那 20 列住在 `.listBodyView`（`src/render/screen.js#_patchRows`，固定高度＋`overflow:hidden`），它的 `scrollTop` 就是 `_scrollFrac`；header/footer 留在 `#mainContainer` 直系子層（不跟著捲，也不必靠不透明背景去蓋）。停在半列時多畫一列 **overscan**（`getWindowView().overscanAbs`）補滿視口底部，放在 footer **之後**＝渲染 index 24——**footer 的 data-row 必須維持 23**（外部契約）。對齊時（frac=0）DOM 仍是 24 列，與捲動前逐字相同。golden：`tests/unit/fixtures/screen_golden/list_easy_reading_scrolled.html`＋`tests/unit/render_list_scroll.test.js`。
 - 導航空間＝**過濾後序列**：`visibleListIndices`（黑名單）→ `windowVisibleSequence`（pinned 門控）。無黑名單時＝原生行空間 → 語意同構。
 - 游標＝行首半形 `>`（`labelListCursor`，只蓋 cell 0＝`%7d` 的前導空格，同 server `STR_CURSOR` 畫法；ASCII 免 u2b；**不反白**——原生 lightbar 是 `UF_MENU_LIGHTBAR` 旗標非預設）。**兩代游標**：server 自 pttbbs `b9a5029f` 起畫 `>`（舊為全形 `●`，蓋 cells[0,1] 含序號最高位）——**讀 server 畫面的 parser 必須雙支援**（cassette 是舊素材，協定 §4），我們畫的假游標則一律 `>`。map 內永遠存序號欄正規化過的乾淨列（`relabelListCursorRow` 依 resolved num 重寫 cells[0,7) 為 `%7d`，一併修掉 partial-redraw 留白的高位格），游標只畫在 render-time clone。
 - 鍵語意＝read.c 逐條移植（`moveListCursorWindow`）：↑↓ 視窗內只動游標、越界重錨 `top = cursor - fromTop`；PgUp/PgDn `top±B`、**游標停新頁頂**；↑ 在全域第一列 wrap 到最後一列；跳位 `fromTop=10`。
@@ -51,7 +53,12 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
 - **缺口 prune**：序號是連續整數，`pruneListToSegment` 在 accumulate（merge→evict 後）只留 pivot 所在連續段，視窗永不跨缺口。pivot＝`session.prunePivot()`：平常＝selection；End jump 在途＝null（留最大段）；Home jump＝1。**far-jump 必設 `_prunePivotOverride`，否則 prune 會把剛抓到的目標頁丟掉**。
 - demand：視窗頂/底距 buffer 邊 **< 2×bodyRows（兩頁）** 即補（方向性、chain 不跨來源 fill/key），提早補頁把 round-trip 藏在使用者到邊之前。到邊等待＝視窗 clamp、鍵 no-op＋右下「讀取中…」指示（`view.setListLoading`；prefetch onDone/markEdge 清除）。
 - 退文回列表＝**re-seed**（不做逐行 parity 還原）：suspended 的 clean-list settle 走 functionMode 同規則——server 落點權威（READ_REDRAW 重繪的 getkeep top＋游標直接採用，順帶刷新推文數）；落點在緩衝內→resume-buffer 保留 maps，否則（pinned 落點 num=null／板名異）＋rebuild。resume（functionMode 出口）同＝採 native 畫面的 top+cursor。
-- 滾輪＝上下頁，本地執行（`mouse_scroll` → `onWheel('pgup'|'pgdn')`）。2026-08 滑鼠重新設計後**不再看按住哪顆鍵**，也不再有「素滾=↑↓」的映射（舊的三組 pref 已刪，見 `docs/mouse.md`）；frozen 吞滾輪。
+- 滾輪＝**平滑捲動**（pref `mouseWheelSmoothScroll`，預設 on）：`mouse_scroll` → `wheel_scroll.js#wheelDeltaToPx`（÷scaleY 換內容座標）→ `onWheelScrollPx(px)` → `smooth_scroll.js` 緩動器分幀 → `_stepScroll`。狀態＝**視窗錨（列）＋次列偏移 `_scrollFrac`（px，恆在 [0, chh)）**，位置＝`top*chh + frac`。
+  - 每幀兩條路徑：**沒跨列**只寫 body 視口的 scrollTop（不重繪、不重算序列——滾輪每幀都來，`_sequence()` 是 O(緩衝列數)）；**跨列**才 `scrollListWindow` 動視窗 + `_forceRedraw` + `_maybeDemand`。
+  - **游標被視窗推著走**（留在視窗內，否則下一幀 `normalizeListWindow` 會以游標為準把視窗重錨回去、吃掉剛捲的距離）。游標停在置底文時往上捲不會把它拉走（選取以內容為身分）——live spec 不可用 `selectedNum` 當「捲了沒」的證據，要看 `topNum`。
+  - 底端**貼齊**：`top >= maxTop`（`len-bodyRows`）時 frac 強制 0（`_setWindow` 每幀維護 `_scrollAtTop/_scrollAtBottom`），否則會露出空白。副作用：從板尾（常見的進板落點）往上捲的**第一次**會多吃掉一次對齊距離，這是「最後一列貼齊底部」的必然結果，不是換算不準。
+  - 邊旗標未算過（`_scrollEdgesKnown=false`，seed 完還沒 render）⇒ 快路徑不可用，走慢路徑重算。**寧可多算也不能拿舊旗標擋捲動**。
+  - 鍵盤導覽／交易／切原生／點擊一律 `_resetScroll()` 回到整列對齊（frozen 快照不該停在半列）。關掉 pref → 退回 `onWheel('pgup'|'pgdn')`＝一次一頁。兩條都是本地執行、零 byte、不轉態；frozen 吞滾輪。2026-08 滑鼠重新設計後**不再看按住哪顆鍵**，也不再有「素滾=↑↓」的映射（舊的三組 pref 已刪，見 `docs/mouse.md`）。
 - **滑鼠（2026-08-15）**：座標一律先換成**渲染後**的列號，再經 `LIST_HEADER_ROWS`（=3）換算 body index，用 `getWindowView().body[idx]` 反查絕對索引。
   - hover → `term_view.onListMouseMove`：只有「body 區且該格非 null（非短頁補列）」才上游標底色；`cursor:pointer` 另需 `mouseLeftClick` 且落在可點區（防誤觸開＝標題欄 col≥30，關＝整列，`mouse_regions.clickableColStart`）—— **底色的範圍與可點區相同、條件不同**（底色不看 `mouseLeftClick`），與原生一致。整條路徑受總開關 `useMouseBrowsing` gate；frozen 一律清掉。**不得走 `term_buf.onMouse_move`**（那套的左緣/右緣/isLineEmpty 全依 server 真實 24 列，對虛擬視窗無意義）——`term_buf.onMouse_move` 自身也擋了 buffer/frozen。
   - 左鍵單擊 → `ListSession.onMouseClick(renderRow, col)`（防誤觸開啟時 col 落在標題欄外直接 return）：寫回序號錨（`_selectedNum`／`_selectedPinnedKey`）→ `_forceRedraw`（frozen 快照要帶著新游標，否則畫面凍在點擊前那列）→ 走鍵盤同一條 reducer（`open`／`open-pinned`）＋ `_beginOpen`。**永遠不得放行到 `App.onMouse_click`**：那條依 `buf.mouseAction` 與 server 幾何直送 `\x1b[A`×N+`\r`，座標不對應（開錯文）且繞過 CommandQueue。非 active／frozen 時吞掉＋提示（吞掉不得無聲）。守護：`tests/unit/list_click_open.test.js`、`easy-reading-list.offline.spec.js`「滑鼠單擊…」。

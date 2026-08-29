@@ -654,6 +654,7 @@ function demandSession({ numStart = 100, count = 60 } = {}) {
   const enqueued = [];
   const loading = [];
   const banners = [];
+  const offsets = [];
   const view = {
     hideCursor() {},
     showCursor() {},
@@ -662,6 +663,9 @@ function demandSession({ numStart = 100, count = 60 } = {}) {
     flashListHint: (msg) => banners.push(msg),
     blacklist: new Set(),
     titleBlacklist: [],
+    // 平滑捲動用：列高（未縮放）＋次列位移的快路徑接收端。
+    chh: 20,
+    componentScreen: { setListScrollOffset: (px) => offsets.push(px) },
   };
   const mkRow = (n) => {
     const text = ` ${String(n)} + 2 6/14 someoneA     □ [閒聊] 文章 ${n}`.padEnd(80);
@@ -703,7 +707,7 @@ function demandSession({ numStart = 100, count = 60 } = {}) {
   const s = new ListSession({ conn: { send() {} } }, view, termBuf, queue);
   s.state = "active";
   s._boardName = "C_Chat";
-  return { s, enqueued, queue, nums, loading, banners, termBuf };
+  return { s, enqueued, queue, nums, loading, banners, termBuf, offsets };
 }
 
 describe("demand 邊距（提早預補隱藏 round-trip 延遲）", () => {
@@ -1571,5 +1575,180 @@ describe("無編號列的 clean-list 幀（只剩置底文的短頁）不得 see
     expect(s._renderMode).toBe("buffer");
     // 有錨點 ⇒ 背景 fill 真的送得出去（無錨點時這裡會是空陣列＝卡死）
     expect(enqueued.some((c) => c.kind === "prefetch-anchor-up")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 滾輪平滑捲動（pref mouseWheelSmoothScroll）
+// ---------------------------------------------------------------------------
+
+describe("滾輪平滑捲動（_stepScroll，純本地零 byte）", () => {
+  // buffer：序號 100..159（60 列），B=20，列高 20px ⇒ maxTop=40、maxPx=800。
+  // 兩邊 edge 都已確認 ⇒ 不會有 demand 干擾，任何 enqueue 都代表偷送了東西。
+  const setup = () => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    h.s._renderMode = "buffer";
+    h.s._edgeUp = true;
+    h.s._edgeDown = true;
+    h.s._topNum = 110; // 視窗位置 10
+    h.s._selectedNum = 115; // 游標位置 15
+    h.s.getWindowView(); // 讓 _setWindow 算出邊旗標（render 每幀都會做）
+    h.termBuf.notify = vi.fn();
+    return h;
+  };
+
+  test("沒跨列：只改視口偏移，不動視窗、不重繪（滾輪每幀都來，重繪是白工）", () => {
+    const { s, termBuf, offsets } = setup();
+    expect(s._stepScroll(8)).toBe(true);
+    expect(s.scrollFrac()).toBe(8);
+    expect(s._topNum).toBe(110);
+    expect(offsets).toEqual([8]); // 一次 scrollTop 寫入
+    expect(termBuf.notify).not.toHaveBeenCalled();
+  });
+
+  test("跨列：視窗走一列，餘下的像素留在次列偏移", () => {
+    const { s, termBuf } = setup();
+    s._stepScroll(26); // 一列 20px + 6px
+    expect(s._topNum).toBe(111);
+    expect(s.scrollFrac()).toBe(6);
+    expect(termBuf.notify).toHaveBeenCalled();
+  });
+
+  test("往上捲對稱（次列偏移可以退回上一列）", () => {
+    const { s } = setup();
+    s._stepScroll(8);
+    s._stepScroll(-14); // 8-14 = -6 ⇒ 退回上一列的第 14px
+    expect(s._topNum).toBe(109);
+    expect(s.scrollFrac()).toBe(14);
+  });
+
+  test("游標留在原本那一篇，被視窗推到邊緣才動", () => {
+    const { s } = setup();
+    s._stepScroll(20 * 3); // 視窗走三列
+    expect(s._topNum).toBe(113);
+    expect(s._selectedNum).toBe(115); // 還在視窗內 ⇒ 不動
+    s._stepScroll(20 * 5); // 再五列，游標被推
+    expect(s._topNum).toBe(118);
+    expect(s._selectedNum).toBe(118);
+  });
+
+  test("捲到底：最後一列貼齊視口底部（次列偏移歸零），並回報停止", () => {
+    const { s, nums } = setup();
+    expect(s._stepScroll(20 * 999)).toBe(false); // 撞到邊 ⇒ 緩動器停
+    expect(s._topNum).toBe(140); // len(60) - B(20)
+    expect(s.scrollFrac()).toBe(0); // 不留半列，否則會露出空白
+    const win = s.getWindowView();
+    expect(nums[win.body[win.body.length - 1]]).toBe(159);
+    expect(win.overscanAbs).toBeNull(); // 貼底不需要補列
+  });
+
+  test("捲到頂同理", () => {
+    const { s } = setup();
+    expect(s._stepScroll(-20 * 999)).toBe(false);
+    expect(s._topNum).toBe(100);
+    expect(s.scrollFrac()).toBe(0);
+  });
+
+  test("已在底端時再往下：偏移不得長出來（露白的來源）", () => {
+    const { s, offsets } = setup();
+    s._stepScroll(20 * 999);
+    offsets.length = 0;
+    expect(s._stepScroll(5)).toBe(false);
+    expect(s.scrollFrac()).toBe(0);
+  });
+
+  test("次列位移時多給 render 一列補滿視口（overscan）", () => {
+    const { s } = setup();
+    expect(s.getWindowView().overscanAbs).toBeNull(); // 對齊時不多畫
+    s._stepScroll(8);
+    const win = s.getWindowView();
+    expect(win.body.length).toBe(20); // body 長度不變＝渲染列號的換算基準
+    expect(win.overscanAbs).toBe(win.body[19] + 1);
+  });
+
+  test("交易進行中（frozen）與非 active 一律吞掉", () => {
+    const frozen = setup();
+    frozen.s._renderMode = "frozen";
+    expect(frozen.s._stepScroll(8)).toBe(false);
+    expect(frozen.s.scrollFrac()).toBe(0);
+
+    const opening = setup();
+    opening.s.state = "opening";
+    expect(opening.s._stepScroll(8)).toBe(false);
+  });
+
+  test("鍵盤導覽會把次列偏移歸零（不停在半列上）", () => {
+    const { s } = setup();
+    s._stepScroll(8);
+    expect(s.scrollFrac()).toBe(8);
+    s._moveSelection("down");
+    expect(s.scrollFrac()).toBe(0);
+  });
+
+  test("開文前也歸零：frozen 快照不該凍在半列上", () => {
+    const { s } = setup();
+    s._stepScroll(8);
+    s._beginOpen();
+    expect(s.scrollFrac()).toBe(0);
+  });
+
+  // 2026-08-29 live e2e 現場：游標停在置底文（★，序號 null）時往上捲，游標一直
+  // 在視窗內 ⇒ 捲動不會把它拉走，`_selectedNum` 保持 null。這是正確行為（選取以
+  // 內容為身分，捲動不該偷換選取），但**與翻頁不同** —— pgup 每次都把游標放到新頁
+  // 頂，一格就會變成有序號的列。live spec 原本用「selectedNum 變小」當作「捲上去
+  // 了」的證據，換成捲動之後那個前提就不成立了。
+  test("游標停在置底文時往上捲：視窗照樣走，選取不被偷換", () => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    const { s, termBuf } = h;
+    s._renderMode = "buffer";
+    s._edgeDown = true; // 已確認板尾 ⇒ 置底列進入導覽序列
+    s._edgeUp = true;
+    for (let i = 0; i < 3; ++i) {
+      const text = `      ★ 6/14 someoneP     □ [公告] 置底 ${i}`.padEnd(80);
+      termBuf.listLines.push([...text].map((ch) => ({ ch, isLeadByte: false })));
+      termBuf.listLineNums.push(null);
+    }
+    const pinnedAbs = termBuf.listLineNums.length - 3; // 三列置底的第一列
+    s._topNum = 150; // 視窗位置 50（序列長 63，body 20）⇒ 置底列在視窗中段
+    s._selectedNum = null;
+    s._selectedPinnedKey = s._pinnedKeyAt(pinnedAbs);
+
+    s._stepScroll(-20 * 4);
+    expect(s._topNum).toBe(146); // 視窗確實往舊文走
+    expect(s._selectedNum).toBeNull(); // 選取仍是那篇置底文
+    expect(s._selectedPinnedKey).toBe(s._pinnedKeyAt(pinnedAbs));
+  });
+
+  test("捲到 buffer 邊、該方向還有更多且已有 in-flight ⇒ 亮「讀取中…」", () => {
+    const { s, loading, queue } = setup();
+    s._edgeDown = false; // 板尾未確認＝下面還有
+    queue.idle = false; // 背景 prefetch 在線
+    s._stepScroll(20 * 999);
+    expect(loading).toContain(true);
+  });
+});
+
+describe("onWheelScrollPx（事件層 → 緩動器）", () => {
+  const setup = () => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    h.s._renderMode = "buffer";
+    h.s._topNum = 110;
+    h.s._selectedNum = 115;
+    h.s.getWindowView();
+    return h;
+  };
+
+  test("距離交給緩動器分幀吃（不是當場瞬移）", () => {
+    const { s } = setup();
+    s.onWheelScrollPx(100);
+    expect(s._scroller.pending()).toBeGreaterThan(0);
+    expect(s.scrollFrac()).toBe(0); // 還沒有任何一幀跑過
+  });
+
+  test("非 active／frozen 不受理（連緩動器都不建）", () => {
+    const frozen = setup();
+    frozen.s._renderMode = "frozen";
+    frozen.s.onWheelScrollPx(100);
+    expect(frozen.s._scroller).toBeNull();
   });
 });

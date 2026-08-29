@@ -97,7 +97,7 @@ beforeAll(() => setupI18n());
 beforeEach(() => window.localStorage.clear());
 
 describe("設定頁：滑鼠分頁", () => {
-  test("六個功能都在這一頁上", () => {
+  test("滑鼠功能都在這一頁上", () => {
     const panel = openMouseTab();
     [
       "useMouseBrowsing",
@@ -105,6 +105,7 @@ describe("設定頁：滑鼠分頁", () => {
       "mouseLeftClick",
       "mouseMisclickGuard",
       "mouseFunctionKeys",
+      "mouseWheelSmoothScroll",
     ].forEach((name) => expect(field(panel, name)).toBeTruthy());
     // Mantine Select 的 input 沒有 name，用 legend 驗欄位在場。
     expect(panel.textContent).toContain(i18n("options_mouseMiddleClick"));
@@ -123,11 +124,15 @@ describe("設定頁：滑鼠分頁", () => {
     expect(DEFAULT_PREFS.useMouseBrowsing).toBe(true);
     expect(DEFAULT_PREFS.mouseMiddleClick).toBe(0);
     expect(DEFAULT_PREFS.mouseWheel).toBe(1);
+    // 平滑捲動預設開（新 key ⇒ 既有使用者也吃得到這個預設）
+    expect(field(panel, "mouseWheelSmoothScroll")).toBeChecked();
+    expect(DEFAULT_PREFS.mouseWheelSmoothScroll).toBe(true);
   });
 
   test("總開關關閉 → 每一個子項都 disabled（含中鍵與滾輪）", () => {
     const panel = openMouseTab({ useMouseBrowsing: false });
     expect(field(panel, "mouseBrowsingHighlight")).toBeDisabled();
+    expect(field(panel, "mouseWheelSmoothScroll")).toBeDisabled();
     expect(field(panel, "mouseLeftClick")).toBeDisabled();
     expect(field(panel, "mouseMisclickGuard")).toBeDisabled();
     expect(field(panel, "mouseFunctionKeys")).toBeDisabled();
@@ -189,6 +194,18 @@ describe("設定頁：滑鼠分頁", () => {
       i18n("options_none"),
       i18n("options_pageUpDown"),
     ]);
+  });
+
+  test("滾輪關閉時「平滑捲動」也 disabled（它是滾輪的子行為）", () => {
+    const panel = openMouseTab({ mouseWheel: 0 });
+    expect(field(panel, "mouseWheelSmoothScroll")).toBeDisabled();
+  });
+
+  test("關掉平滑捲動 → 寫進 pref（回到一次一頁）", () => {
+    const panel = openMouseTab();
+    fireEvent.click(field(panel, "mouseWheelSmoothScroll"));
+    closeModal();
+    expect(readValuesWithDefault().mouseWheelSmoothScroll).toBe(false);
   });
 
   test("舊的「按住右鍵＋滾輪」「按住左鍵＋滾輪」兩組設定已不存在", () => {

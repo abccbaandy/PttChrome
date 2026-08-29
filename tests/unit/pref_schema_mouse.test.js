@@ -31,6 +31,9 @@ describe("DEFAULT_PREFS", () => {
     expect(DEFAULT_PREFS.mouseFunctionKeys).toBe(true);
     expect(DEFAULT_PREFS.mouseMiddleClick).toBe(0); // 0=關閉 1=貼上 2=左方向鍵
     expect(DEFAULT_PREFS.mouseWheel).toBe(1); // 0=關閉 1=上下頁
+    // 逐行捲動是**新 key**，所以既有使用者（localStorage 已存 mouseWheel:1）
+    // 也吃得到這個預設 —— 淺層合併只補得到缺少的 key。
+    expect(DEFAULT_PREFS.mouseWheelSmoothScroll).toBe(true);
   });
 
   test("底色三兄弟原樣保留（key 刻意不改名，避免兩邊寫遷移）", () => {

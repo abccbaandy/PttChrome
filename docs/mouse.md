@@ -31,6 +31,7 @@
 | `mouseFunctionKeys` | `true` | bool | 畫面上的功能鍵提示變成按鈕（見下方「功能鍵按鈕」） |
 | `mouseMiddleClick` | `0` | 0 關閉 / 1 貼上 / 2 左方向鍵 | |
 | `mouseWheel` | `1` | 0 關閉 / 1 上下頁 | |
+| `mouseWheelSmoothScroll` | `true` | bool | 滾輪平滑捲動（連續位移＋緩動，畫面停得住半列），**只作用於文章列表好讀模式**（其餘畫面沒有這個選擇，見下方 render 分支表）。關掉＝該模式退回一次一頁 |
 
 ### 舊 → 新 key 對照（**刻意不做遷移**）
 
@@ -161,6 +162,7 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 | 防誤觸（可點區＝底色區的起始欄） | `useMouseBrowsing && mouseMisclickGuard` —— **跟著總開關走**，總開關關掉時左鍵／指標／提示帶全滅，沒有誤觸要防；設定頁那顆 checkbox 因此能與其他子項一樣 `disabled` |
 | 中鍵 | `useMouseBrowsing && mouseMiddleClick !== 0` |
 | 滾輪 | `useMouseBrowsing && mouseWheel !== 0` |
+| 滾輪平滑捲動 | `useMouseBrowsing && mouseWheel !== 0 && mouseWheelSmoothScroll`（`resolveMouseGates` 的 `wheelSmoothScroll`；只有列表好讀分支會問這一格） |
 | 連結／圖片／`[data-pusher]`／`copyOnSelect`／右鍵選單 | **不受任何滑鼠 pref 影響** |
 
 改版前 `middleMouse_down` 與 `mouse_scroll` 完全不看 `useMouseBrowsing`，「關掉滑鼠
@@ -168,6 +170,25 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 `tests/e2e/offline/mouse.offline.spec.js`。
 
 滾輪關閉時 `mouse_scroll` **直接 return，不 preventDefault**（語意＝我們完全不碰）。
+
+**平滑捲動的三段換算**（列表好讀專用；其他畫面走上面那兩條）：
+
+1. `src/js/wheel_scroll.js#wheelDeltaToPx`（純函式）——認 `deltaMode`：0 像素／1 列
+   （Firefox 滑鼠滾輪送的是**列**，只看 deltaY 幾乎不動）／2 頁。
+2. **座標系**：wheel 給的是**螢幕**像素，而視窗較矮時整個終端機被 `scaleY` 縮放過
+   （`term_view.setTermFontSize`）⇒ `App.mouse_scroll` 除以 scaleY 換成**內容像素**，
+   之後所有數字（`chh`、次列偏移、body 視口的 scrollTop）都在內容座標系。漏掉這一步
+   會捲太多／太少。
+3. `src/js/smooth_scroll.js` 的緩動器把距離分幀吃掉（指數趨近，~120ms 收斂），每幀
+   交給 `ListSession._stepScroll`。
+
+**次列位移的座標契約**：畫面可以停在半列上（body 視口的 scrollTop = frac），所以
+`App.clientToPos` 對 body 區的列號要補回 frac，否則點擊與底色會標到上一列。視口底部
+露出的那一小條是 **overscan 列，渲染 index 24**（不是 3+20=23，那是 footer 的列號），
+`onListMouseMove`／`ListSession.onMouseClick` 都認這個值 ⇒ 「可點範圍＝標示範圍」在
+半列狀態下仍成立。
+守護：`tests/unit/wheel_scroll.test.js`、`tests/unit/smooth_scroll.test.js`、
+`tests/unit/render_list_scroll.test.js`。
 原生模式沒有可捲距離（`#BBSWindow` 是 `fixed; overflow:hidden`，`.main` 的高度就是
 內容高），所以放行不會造成怪異捲動。
 
@@ -255,7 +276,7 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 |---|---|---|---|
 | 原生 24 列 | `term_buf.onMouse_move` | `App.onMouse_click`（依 `buf.mouseAction`） | `setBBSCmd('doPageUp'/'doPageDown')` |
 | 好讀文章長頁 | 同上（`clientToPos` 把 row clamp 進 0..rows-1） | 同上 + `easyReading._onMouseClick` 先收狀態機 | **early return，交給瀏覽器捲動** |
-| 列表好讀（buffer/frozen） | `term_view.onListMouseMove(row, col)` | 左 7 欄 → `list_session.onMouseExitClick()`；其餘 → `list_session.onMouseClick(row, col)` | `listSession.onWheel('pgup'/'pgdn')` |
+| 列表好讀（buffer/frozen） | `term_view.onListMouseMove(row, col)` | 左 7 欄 → `list_session.onMouseExitClick()`；其餘 → `list_session.onMouseClick(row, col)` | 預設 `listSession.onWheelScrollPx(px)`（平滑）；`mouseWheelSmoothScroll` 關 → `listSession.onWheel('pgup'/'pgdn')` |
 
 列表好讀分支在 `App.mouse_click` 的 `preventDefault()` 是**無條件**的（即使滑鼠功能
 整組關掉）：那個畫面是我們自己組的，不能讓瀏覽器預設行為對它動作。pref gate 只包住

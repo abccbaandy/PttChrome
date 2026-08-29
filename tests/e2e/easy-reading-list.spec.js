@@ -39,6 +39,8 @@ async function dumpListState(page) {
       listLen: (app.buf.listLines || []).length,
       nums: (app.buf.listLineNums || []).slice(),
       selectedNum: ls._selectedNum,
+      // 視窗頂端的序號：平滑捲動不搬選取，「捲了沒」只能看這個錨。
+      topNum: ls._topNum,
       queueIdle: app.commandQueue.idle,
       row0: app.buf.getRowText(0, 0, app.buf.cols),
       rowLast: app.buf.getRowText(app.buf.rows - 1, 0, app.buf.cols),
@@ -363,7 +365,7 @@ test.describe.serial('文章列表好讀模式（live）', () => {
     }
   });
 
-  test('滾輪＝上下翻頁本地執行：游標上移＋demand 續抓（不按任何鍵）', async ({ shared }) => {
+  test('滾輪平滑捲動本地執行：視窗上移＋demand 續抓（不按任何鍵）', async ({ shared }) => {
     test.setTimeout(120000);
     const { page, logs } = shared;
     logs.length = 0;
@@ -375,9 +377,16 @@ test.describe.serial('文章列表好讀模式（live）', () => {
       expect(s.state).toBe('active');
       const initial = s.listLen;
 
-      // 滾輪往上＝PgUp（2026-08 滑鼠重新設計後唯一的滾輪動作，不再看按住哪顆
-      // 鍵），本地移動游標；視窗近緩衝頂即觸發 demand-up 抓更舊頁 —— 與鍵盤同一路徑。
-      const selBefore = s.selectedNum;
+      // 滾輪往上＝平滑捲動（pref mouseWheelSmoothScroll，預設開）：本地移動**視窗**，
+      // 視窗近緩衝頂即觸發 demand-up 抓更舊頁 —— 與鍵盤同一條 demand 路徑。
+      //
+      // 位移的證據只能看 `topNum`（視窗頂端那一列的序號），**不可以看 selectedNum**：
+      // 平滑捲動不會主動搬選取，游標只有被視窗推到邊緣才動。實測（2026-08-29）進板
+      // 落點的游標可能停在置底文（序號 null，前一條測試開過置底文，PTT getkeep 會還原
+      // 該位置），此時整輪捲動下來 selectedNum 一直是 null —— 那是正確行為，不是沒捲到。
+      // 對應的純邏輯守護：tests/unit/list_session.test.js「游標停在置底文時往上捲」。
+      const topBefore = s.topNum;
+      expect(typeof topBefore).toBe('number');
       const main = page.locator('#mainContainer');
       await main.hover();
       let grown = initial;
@@ -390,7 +399,15 @@ test.describe.serial('文章列表好讀模式（live）', () => {
       expect(grown).toBeGreaterThan(initial);
       const after = await waitListSettled(page);
       expect(after.state).toBe('active');
-      expect(after.selectedNum).toBeLessThan(selBefore); // 游標真的往上走
+      expect(after.topNum).toBeLessThan(topBefore); // 視窗真的往舊文走
+      // 游標永遠留在視窗內（畫面上一定看得到那一列的 '>'）。
+      const cursorRow = await page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+        ).findIndex((el) => el.textContent.startsWith('>'))
+      );
+      expect(cursorRow).toBeGreaterThanOrEqual(3); // header 3 列之後
+      expect(cursorRow).toBeLessThan(23); // footer 之前
       assertAscending(after);
     } catch (e) {
       console.log('--- console tail ---');

@@ -195,6 +195,20 @@ a:link,a:visited,a:active,a:hover {
   white-space: pre;
 }
 
+/* 列表好讀模式的 body 捲動視口（平滑捲動）。高度由 JS 設成 body 列數 × 列高，
+   內容比它多一列，多出來的部分靠 overflow:hidden 裁掉；scrollTop 就是「捲掉了
+   幾個像素」。#mainContainer > span 是直系選擇器，列包進這一層之後要補等效樣式
+   （同 .mergedImageBlock 的處理）。 */
+.listBodyView {
+  overflow: hidden;
+  scrollbar-width: none;
+}
+.listBodyView > span {
+  display: block;
+  color: #C0C0C0;
+  white-space: pre;
+}
+
 #easyReadingLastRow {
   position: relative;
   display: none;

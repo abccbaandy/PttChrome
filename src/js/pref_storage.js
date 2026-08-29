@@ -122,6 +122,14 @@ export const DEFAULT_PREFS = {
   // 滾輪：0=關閉 1=上下頁。舊版有三組設定（素滾／按住右鍵／按住左鍵）× 四種動作，
   // 全部收斂成這一個。文章好讀模式一律交給瀏覽器捲動，不受此設定影響。
   mouseWheel: 1,
+  // 滾輪平滑捲動（預設開）：**只影響文章列表好讀模式** —— 那裡的畫面是我們自己
+  // 組的 24 列視窗、沒有可捲距離，捲動量與動畫都得自己算（js/wheel_scroll.js ＋
+  // js/smooth_scroll.js），畫面停得住半列（render 端的 body 視口）。關掉＝回到
+  // 一格滾輪一整頁。原生 24 列模式沒有這個選擇（翻頁在 server 端），文章好讀模式
+  // 一律交給瀏覽器原生捲動。
+  // 開新 key 而不是把 mouseWheel 擴成三選項：淺層合併 + 既有使用者已存 mouseWheel:1
+  // ⇒ 只有新 key 的預設值吃得到（同 cursorRowBackground 那段註解）。
+  mouseWheelSmoothScroll: true,
 
   // displays
   fontFitWindowWidth: false,

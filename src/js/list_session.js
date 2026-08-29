@@ -34,10 +34,12 @@ import {
   normalizePasteText
 } from './string_util';
 import { keyEventToBytes } from './term_keyboard';
+import { createSmoothScroller } from './smooth_scroll';
 import { LEFT_ARROW } from './function_key_plan';
 import { readValuesWithDefault } from './pref_storage';
 import {
   moveListCursorWindow,
+  scrollListWindow,
   normalizeListWindow,
   windowVisibleSequence,
   LIST_HEADER_ROWS,
@@ -769,6 +771,20 @@ export function ListSession(core, view, termBuf, queue) {
   this._selectMode = false;
   // Absolute frozen-render backstop (see _armFrozenWatchdog). null = disarmed.
   this._frozenWatchdog = null;
+  // ---- 平滑捲動（滾輪：緩動動畫＋次列位移）----
+  // _scrollFrac：視窗頂端那一列**已經捲掉的像素**，恆在 [0, chh)。render 端把它
+  // 交給 body 視口的 scrollTop（src/render/screen.js 的 .listBodyView），畫面因此
+  // 停得住半列的位置 —— 沒有它，最小單位是一整列（26px），滾起來就是一階一階跳。
+  // 兩個邊旗標由 _setWindow 每次更新（getWindowView 每幀都會呼叫 ⇒ 恆新）：貼齊
+  // 邊界時 frac 必須是 0，否則會捲出空白。
+  this._scrollFrac = 0;
+  this._scrollAtTop = true;
+  this._scrollAtBottom = true;
+  // 邊旗標還沒被 _setWindow 算過（seed 完但還沒 render 過的視窗）⇒ 快路徑不可用，
+  // 一律走慢路徑重算。**寧可多算一次也不能拿舊旗標擋捲動**：擋錯＝捲不動，
+  // 而快路徑放行錯＝畫面露出空白。
+  this._scrollEdgesKnown = false;
+  this._scroller = null;
 
   bindProperty(this, '_renderMode', termBuf, 'listRenderMode');
   termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
@@ -1391,6 +1407,7 @@ ListSession.prototype = {
   // can't become an ownerless settle that prematurely satisfies our expect
   // (live race) — the transaction serializes behind it.
   _freezeForTransaction: function() {
+    this._resetScroll(); // 凍結前先回到整列對齊（frozen 快照不該停在半列）
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flushPending();
@@ -1555,6 +1572,127 @@ ListSession.prototype = {
     this._moveSelection(op);
   },
 
+  // 滾輪平滑捲動（pref mouseWheelSmoothScroll，預設開）：`px` 是**未縮放的內容像素**
+  // （呼叫端已把 deltaY 除以 scaleY），一律交給緩動器分散到數幀。
+  //
+  // 與鍵盤導覽共用狀態機、demand 與讀取中膠囊；仍然是純本地：零 byte、不轉態。
+  onWheelScrollPx: function(px) {
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return;
+    if (!px) return;
+    this._ensureScroller().add(px);
+  },
+
+  _ensureScroller: function() {
+    if (!this._scroller) {
+      const self = this;
+      const raf =
+        typeof requestAnimationFrame === 'function'
+          ? function(fn) { return requestAnimationFrame(fn); }
+          : function(fn) { return setTimeout(fn, 16); };
+      const cancel =
+        typeof cancelAnimationFrame === 'function'
+          ? function(h) { cancelAnimationFrame(h); }
+          : function(h) { clearTimeout(h); };
+      this._scroller = createSmoothScroller({
+        raf: raf,
+        cancel: cancel,
+        onStep: function(step) { return self._stepScroll(step); }
+      });
+    }
+    return this._scroller;
+  },
+
+  // 動畫的一幀。回 false ⇒ 緩動器停止（撞到邊界／模式已切走）。
+  //
+  // 兩條路徑，差別是成本：**沒跨列**就只改視口偏移（一次 scrollTop 寫入，不重繪、
+  // 不重算序列）；跨列才動視窗錨並重繪。滾輪的事件率遠高於按鍵，序列重算是
+  // O(緩衝列數) 的 rowToText，每幀都做會吃掉整個 frame budget。
+  _stepScroll: function(step) {
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return false;
+    const rowH = this._rowHeight();
+    if (!(rowH > 0)) return false;
+    const next = this._scrollFrac + step;
+    if (this._scrollEdgesKnown) {
+      // 邊界：貼齊時 frac 必須是 0（再捲就是露出空白）。
+      if (next < 0 && this._scrollAtTop) {
+        this._setScrollFrac(0);
+        return false;
+      }
+      if (next > 0 && this._scrollAtBottom) {
+        this._setScrollFrac(0);
+        return false;
+      }
+      if (next >= 0 && next < rowH) {
+        this._setScrollFrac(next);
+        return true;
+      }
+    }
+    // 跨列：換算成「序列像素座標」再夾擠，一次算出新的 (top, frac)。
+    const seq = this._sequence();
+    const pos = this._windowPos(seq);
+    if (!pos) return false;
+    const B = this._bodyRows();
+    const maxPx = Math.max(0, seq.length - B) * rowH;
+    // 上限要取 max(理論上限, 目前位置)：pgup/pgdn 可以把 top 推到超過 maxTop 的
+    // 位置（read.c 語意，下面全是空白補列），從那裡往下捲**不可以**把視窗往回
+    // 拉，往上捲也不該一次被吸到 maxTop。與 scrollListWindow 的方向性夾擠同源。
+    const capPx = Math.max(maxPx, pos.top * rowH);
+    let target = pos.top * rowH + next;
+    let hitEdge = false;
+    if (target < 0) {
+      target = 0;
+      hitEdge = true;
+    } else if (target > capPx) {
+      target = capPx;
+      hitEdge = true;
+    }
+    // 1e-6：浮點誤差讓 target 剛好落在列邊界下方一點點時，floor 會少一列。
+    const newTop = Math.floor(target / rowH + 1e-6);
+    const newFrac = Math.max(0, target - newTop * rowH);
+    const delta = newTop - pos.top;
+    if (!delta) {
+      this._setScrollFrac(newFrac);
+      return !hitEdge;
+    }
+    const r = scrollListWindow(pos, delta, { len: seq.length, bodyRows: B });
+    this._setWindow(seq, r.top, r.cursor);
+    this._scrollFrac = newFrac;
+    this._forceRedraw();
+    const direction = delta < 0 ? -1 : 1;
+    this._maybeDemand(direction);
+    const moreExpected = direction > 0 ? !this._edgeDown : !this._edgeUp;
+    const atEdge = direction > 0 ? this._scrollAtBottom : this._scrollAtTop;
+    if (atEdge && moreExpected && !this._queue.idle) this._setLoading(true);
+    return !hitEdge;
+  },
+
+  // 未縮放的列高（＝畫面上的 chh；scaleY 由呼叫端在換算 deltaY 時處理）。
+  _rowHeight: function() {
+    return (this._view && this._view.chh) || 0;
+  },
+
+  // 只改視口偏移的快路徑：不重繪、不重算序列，一次 scrollTop 寫入。
+  _setScrollFrac: function(px) {
+    this._scrollFrac = px;
+    const screen = this._view && this._view.componentScreen;
+    if (screen && screen.setListScrollOffset) screen.setListScrollOffset(px);
+  },
+
+  // 回到整列對齊（鍵盤導覽／交易／切模式）。次列偏移是滾輪專屬狀態，其他入口
+  // 一律先歸零，否則畫面會停在半列上。
+  _resetScroll: function() {
+    if (this._scroller) this._scroller.stop();
+    if (this._scrollFrac) {
+      this._scrollFrac = 0;
+      this._forceRedraw();
+    }
+  },
+
+  // render 端（term_view.buildListWindowLines）用來決定要不要多畫一列補滿視口。
+  scrollFrac: function() {
+    return this._scrollFrac;
+  },
+
   // 左鍵單擊某一列（App.mouse_click 已把 client 座標換成**渲染後**的列號）＝
   // 「把選取移到那一列並開文」，與原生滑鼠瀏覽的語意一致。
   //
@@ -1572,8 +1710,11 @@ ListSession.prototype = {
         this._view.flashListHint('好讀列表：處理中，請稍候…');
       return;
     }
+    // renderRow === rows（＝24）是平滑捲動時視口底部露出的那一小條（overscan 列，
+    // 渲染 index 24；App.clientToPos 會算出這個列號）。它一樣點得到。
+    const isOverscan = renderRow === this._termBuf.rows;
     const idx = renderRow - LIST_HEADER_ROWS;
-    if (idx < 0 || idx >= this._bodyRows()) return; // header / footer
+    if (!isOverscan && (idx < 0 || idx >= this._bodyRows())) return; // header / footer
     // 防誤觸模式開啟時只有標題欄可以開文，與原生一致（避免點到日期／作者欄誤開）。
     // 虛擬視窗的欄位與 server 的 readdoent 逐格對齊（buildListWindowLines 取的就是
     // 同一批 80 格 TermChar；relabelListCursorRow 只重寫 cols 0-6、labelListCursor
@@ -1587,8 +1728,11 @@ ListSession.prototype = {
     if (col < clickableColStart(2, guard)) return;
     const win = this.getWindowView();
     if (!win) return;
-    const abs = win.body[idx];
+    const abs = isOverscan ? win.overscanAbs : win.body[idx];
     if (abs == null) return; // 短頁的空白補列，沒有文章可點
+    // 點擊＝離開捲動：停止動畫並回到整列對齊（視窗的 top/游標不受影響，所以上面
+    // 解析出來的 abs 仍然有效）。
+    this._resetScroll();
 
     const nums = this._termBuf.listLineNums || [];
     this._selectedNum = nums[abs];
@@ -1961,6 +2105,7 @@ ListSession.prototype = {
   _beginOpen: function() {
     const num = this._selectedNum;
     if (num == null) return;
+    this._resetScroll(); // 開文前回到整列對齊（frozen 快照不該停在半列）
     // Active last-read teaching: opening this article sets the server's
     // currtitle to its subject (bbs.c:2424) — capture it now so the return
     // frame needn't be relied on (partial frames may show no styled row).
@@ -2043,6 +2188,7 @@ ListSession.prototype = {
   // Any mismatch waits out the step timeout → _openFailed → functionMode
   // self-heal, same as the numbered open.
   _beginOpenPinned: function() {
+    this._resetScroll(); // 同 _beginOpen
     const key = this._selectedPinnedKey;
     const anchor = bufferEdgeNum(this._termBuf.listLineNums, 1);
     if (key == null || anchor == null) {
@@ -2201,6 +2347,7 @@ ListSession.prototype = {
   // the specific wording). facts null = an explicit entry (airlock consent,
   // internal callers) — no banner.
   _enterFunctionMode: function(facts) {
+    this._resetScroll(); // 切原生鏡像前把次列偏移歸零
     this._nativeHold = true; // sticky: stay native until article/menu/resume
     this._setLoading(false);
     this._serverNum = null; // native excursion: the cursor goes wherever
@@ -2276,6 +2423,7 @@ ListSession.prototype = {
   },
 
   _cleanup: function() {
+    this._resetScroll();
     this._nativeHold = false;
     this._serverNum = null;
     if (this._frozenWatchdog) {
@@ -2350,6 +2498,13 @@ ListSession.prototype = {
   // anchors survive prepends and evictions, positions don't.
   _setWindow: function(seq, top, cursor) {
     const nums = this._termBuf.listLineNums || [];
+    // 平滑捲動的邊旗標（快路徑要用，見 _stepScroll）。這裡是唯一的視窗寫入點，
+    // getWindowView 每幀都會走到 ⇒ 旗標恆新，不需要另外的失效機制。
+    const maxTop = Math.max(0, seq.length - this._bodyRows());
+    this._scrollAtTop = top <= 0;
+    this._scrollAtBottom = top >= maxTop;
+    this._scrollEdgesKnown = true;
+    if (this._scrollAtBottom && this._scrollFrac) this._scrollFrac = 0;
     const cursorAbs = seq[cursor];
     this._selectedNum = nums[cursorAbs];
     this._selectedPinnedKey =
@@ -2371,7 +2526,17 @@ ListSession.prototype = {
     for (let i = pos.top; i < pos.top + B; ++i) {
       body.push(i < seq.length ? seq[i] : null);
     }
-    return { body: body, cursorAbs: seq[pos.cursor] };
+    // 次列位移時視口底部會露出下一列的一小條 ⇒ 多給 render 端一列補滿。
+    // 刻意**不放進 body**：body 的長度＝渲染列號的換算基準（LIST_HEADER_ROWS +
+    // index），多塞一格會讓 footer 的 data-row 位移，那是外部契約。
+    const overscanAbs =
+      this._scrollFrac > 0 && pos.top + B < seq.length ? seq[pos.top + B] : null;
+    return {
+      body: body,
+      cursorAbs: seq[pos.cursor],
+      overscanAbs: overscanAbs,
+      scrollPx: this._scrollFrac
+    };
   },
 
   // Local navigation (zero network when the rows are buffered): one native
@@ -2379,6 +2544,7 @@ ListSession.prototype = {
   // headroom. Ops that need rows beyond a confirmed edge go to the server
   // (serverOp), exactly like native would.
   _moveSelection: function(op) {
+    this._resetScroll(); // 鍵盤／翻頁一律回到整列對齊
     const seq = this._sequence();
     const pos = this._windowPos(seq);
     if (!pos) return;

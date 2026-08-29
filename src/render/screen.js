@@ -766,12 +766,54 @@ export class ScreenController {
 
   // 把容器的列區塊調成 `nodes` 的樣子。逐位置比對＋就地搬移：沒變的節點原封不動
   // 留在 DOM 裡（好讀累積頁的常態是純 append，這裡就只會做 appendChild）。
+  //
+  // 列表好讀的平滑捲動（enhance.listScroll）多一層：body 那 20 列住在一個固定高度、
+  // overflow:hidden 的視口節點裡，用它的 scrollTop 表達**次列位移**（畫面因此停得住
+  // 半列的位置）。header/footer 留在容器直系子層 ⇒ 不會跟著捲、也不必靠不透明背景
+  // 去蓋住捲進來的內容。列節點本身完全沒變（data-row／內容／快取都一樣），只是換了
+  // 父節點。
   _patchRows(nodes) {
-    const container = this.container;
+    const ls = this.props.enhance && this.props.enhance.listScroll;
     // 列區塊的右邊界＝第一個浮層節點（浮層永遠排在最後）。取 isConnected 的那個：
     // 拿到一個已經被移出 DOM 的節點當終點，下面的清理迴圈會一路把浮層也掃掉。
     const stop = this._overlayNodes.find((n) => n.isConnected) || null;
-    let cursor = container.firstChild;
+    if (!ls) {
+      // 非列表好讀：視口節點若還在，會因為不在 nodes 裡而被下面的清理迴圈移除。
+      this._patchInto(this.container, nodes, stop);
+      return;
+    }
+    const bodyEnd = ls.bodyStart + ls.bodyRows;
+    const bodyNodes = nodes.slice(ls.bodyStart, bodyEnd);
+    // overscan 列排在 footer 之後（term_view.buildListWindowLines 的註解說明了
+    // 為什麼不能插在 body 裡：footer 的 data-row 是外部契約）。
+    if (ls.overscan && nodes.length > bodyEnd + 1)
+      bodyNodes.push(nodes[bodyEnd + 1]);
+    const view = this._ensureBodyView(ls);
+    const outer = nodes
+      .slice(0, ls.bodyStart)
+      .concat([view], nodes.slice(bodyEnd, bodyEnd + 1));
+    this._patchInto(this.container, outer, stop);
+    this._patchInto(view, bodyNodes, null);
+    view.scrollTop = ls.offsetPx || 0;
+  }
+
+  // 列表好讀 body 的捲動視口。高度＝body 列數 × 列高（版面總高不變：它取代的就是
+  // 那 20 列），內容多一列時由 overflow:hidden 裁掉。
+  _ensureBodyView(ls) {
+    if (!this._bodyView) this._bodyView = el("div", { class: "listBodyView" });
+    const h = (ls.viewportPx || 0) + "px";
+    if (this._bodyView.style.height !== h) this._bodyView.style.height = h;
+    return this._bodyView;
+  }
+
+  // 次列位移的快路徑（term_view → ListSession._setScrollFrac）：捲動沒有跨列時
+  // 只有 scrollTop 變，整幀重繪是白工（滾輪動畫是每幀觸發的）。
+  setListScrollOffset(px) {
+    if (this._bodyView) this._bodyView.scrollTop = px || 0;
+  }
+
+  _patchInto(parent, nodes, stop) {
+    let cursor = parent.firstChild;
     for (let i = 0; i < nodes.length; ++i) {
       const want = nodes[i];
       if (!want) continue;
@@ -779,7 +821,7 @@ export class ScreenController {
         cursor = cursor.nextSibling;
         continue;
       }
-      container.insertBefore(want, cursor);
+      parent.insertBefore(want, cursor);
     }
     // 走到這裡，所有要留的列都已經排在 cursor 之前；cursor 到浮層之間的都是舊的。
     while (cursor && cursor !== stop) {

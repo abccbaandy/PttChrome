@@ -95,6 +95,38 @@ export function moveListCursorWindow(state, op, ctx) {
   return r ? { top: r.top, cursor: r.cursor, serverOp: null } : stay;
 }
 
+// 依列位移（平滑捲動跨列時用；web 慣例，**不是** read.c 的操作，所以刻意不進
+// moveListCursorWindow
+// 的 switch）：視窗位移 `lines` 列，**游標被視窗推著走** —— 能不動就不動，被推到
+// 視窗外才夾回邊緣那一列。游標必須留在視窗內（normalizeListWindow 的不變量），
+// 否則下一幀就會以游標為準把視窗重錨回去、把剛捲的距離整個吃掉。
+//
+// 與 pgdn 的刻意差異：底端**貼齊**（top 上限 = len - bodyRows，最後一列落在畫面
+// 最下方），不像 pgdn 那樣可以一路捲到「只剩最後一列在最上方、下面全是空白列」。
+// 慢速捲動時看著清單流進空白區很怪，而 read.c parity 在 v5 合約下本來就不再要求
+// （docs/easy-reading-list.md 核心原則）。鍵盤 PgUp/PgDn 語意不受影響。
+//
+// 不產生 serverOp：到邊就停，靠 ListSession 的 demand 去補頁（同 pgup/pgdn）。
+export function scrollListWindow(state, lines, ctx) {
+  const len = ctx.len;
+  const B = ctx.bodyRows;
+  if (!len || !lines) return { top: state.top, cursor: state.cursor };
+  const maxTop = Math.max(0, len - B);
+  let top;
+  if (lines > 0) {
+    // 已經在 pgdn 造成的 over-scroll 位置（top > maxTop）時，往下捲**不可以**把
+    // 視窗往回拉：夾在 max(maxTop, 現值) ⇒ 最多就是停住。
+    top = Math.min(state.top + lines, Math.max(maxTop, state.top));
+  } else {
+    top = Math.max(state.top + lines, 0);
+  }
+  let cursor = state.cursor;
+  if (cursor < top) cursor = top;
+  const lastVisible = Math.min(top + B - 1, len - 1);
+  if (cursor > lastVisible) cursor = lastVisible;
+  return { top: top, cursor: cursor };
+}
+
 // Enforce the native invariant "cursor is always inside the window" after the
 // buffer changed underneath us (merge / evict / restore): keep top when it
 // still contains the cursor, otherwise re-anchor with the jump rule (fromTop).

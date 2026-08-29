@@ -9,6 +9,7 @@ const ALL_ON = {
   mouseMisclickGuard: true,
   mouseMiddleClick: 1,
   mouseWheel: 1,
+  mouseWheelSmoothScroll: true,
 };
 
 describe("總開關", () => {
@@ -19,6 +20,7 @@ describe("總開關", () => {
     expect(g.cursorIcon).toBe(false);
     expect(g.middleClick).toBe(0);
     expect(g.wheel).toBe(false);
+    expect(g.wheelSmoothScroll).toBe(false);
     // 總開關關掉時左鍵／指標／提示帶全滅 ⇒ 沒有誤觸要防，防誤觸也一併關掉
     // （推文列的 pusher 高亮因此退回整列可點）。
     expect(g.misclickGuard).toBe(false);
@@ -32,6 +34,7 @@ describe("總開關", () => {
     expect(g.misclickGuard).toBe(true);
     expect(g.middleClick).toBe(1);
     expect(g.wheel).toBe(true);
+    expect(g.wheelSmoothScroll).toBe(true);
   });
 });
 
@@ -80,4 +83,18 @@ test("缺值一律當關閉，不會意外發鍵", () => {
   expect(g.misclickGuard).toBe(false);
   expect(g.middleClick).toBe(0);
   expect(g.wheel).toBe(false);
+});
+
+describe("滾輪平滑捲動（列表好讀模式）", () => {
+  test("滾輪本身關掉時，平滑捲動也不可能生效", () => {
+    const g = resolveMouseGates({ ...ALL_ON, mouseWheel: 0 });
+    expect(g.wheel).toBe(false);
+    expect(g.wheelSmoothScroll).toBe(false);
+  });
+
+  test("單獨關掉平滑捲動 ⇒ 滾輪仍在（退回一次一頁）", () => {
+    const g = resolveMouseGates({ ...ALL_ON, mouseWheelSmoothScroll: false });
+    expect(g.wheel).toBe(true);
+    expect(g.wheelSmoothScroll).toBe(false);
+  });
 });

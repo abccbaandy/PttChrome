@@ -119,9 +119,11 @@ export function TermView() {
   // 滑鼠子開關（pref mouseLeftClick / mouseMiddleClick / mouseWheel）。總開關是
   // buf.useMouseBrowsing，gating 一律走 mouse_regions.resolveMouseGates。
   // 值域：mouseMiddleClick 0=關閉 1=貼上 2=左方向鍵；mouseWheel 0=關閉 1=上下頁。
+  // mouseWheelSmoothScroll：滾輪平滑捲動，只作用於文章列表好讀模式（見 pref_storage）。
   this.mouseLeftClick = true;
   this.mouseMiddleClick = 0;
   this.mouseWheel = 1;
+  this.mouseWheelSmoothScroll = true;
   // 防誤觸模式（pref mouseMisclickGuard，預設開）：可點區＝底色區的起始欄，
   // 決策在 mouse_regions.clickableColStart。
   this.mouseMisclickGuard = true;
@@ -622,7 +624,24 @@ TermView.prototype = {
           // buildListWindowLines 的註解）⇒ 列參考相同即內容相同，render 層可以
           // 直接沿用上一幀的節點。frozen 幀原封沿用整份 _listWindowLines，24 列
           // 全部命中。
-          this._renderScreenLines(windowLines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { pageState: 2, listEasyReading: true, rowIdentityStable: true });
+          // 次列位移（平滑捲動）：body 區交給自己的視口節點，offsetPx 就是它的
+          // scrollTop。overscan 由實際列數推導 —— frozen 幀沿用的是快照，不能
+          // 再去問 session 現在的 frac。
+          var lsBodyRows = this.buf.rows - 4;
+          var lsSession = this.bbscore && this.bbscore.listSession;
+          this._renderScreenLines(windowLines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, {
+            pageState: 2,
+            listEasyReading: true,
+            rowIdentityStable: true,
+            listScroll: {
+              bodyStart: LIST_HEADER_ROWS,
+              bodyRows: lsBodyRows,
+              viewportPx: lsBodyRows * this.chh,
+              offsetPx:
+                (lsSession && lsSession.scrollFrac && lsSession.scrollFrac()) || 0,
+              overscan: windowLines.length > LIST_HEADER_ROWS + lsBodyRows + 1
+            }
+          });
         } else {
           // No window yet (header cache / buffer still empty — engage races):
           // mirror the native screen; the next clean-list settle re-renders.
@@ -1202,7 +1221,13 @@ TermView.prototype = {
     if (this.buf.useMouseBrowsing && this.buf.listRenderMode === 'buffer') {
       var ls = this.bbscore && this.bbscore.listSession;
       var idx = row - LIST_HEADER_ROWS;
-      if (ls && idx >= 0 && idx < this.buf.rows - 4) {
+      // row === buf.rows ＝ 平滑捲動時視口底部露出的那一小條（overscan 列，
+      // 渲染 index 24）。它一樣是使用者看得到、點得到的列 ⇒ 底色也要標得到，
+      // 「可點範圍＝標示範圍」的合約才成立（docs/mouse.md）。
+      if (ls && row === this.buf.rows) {
+        var ovWin = ls.getWindowView();
+        if (ovWin && ovWin.overscanAbs != null) hover = row;
+      } else if (ls && idx >= 0 && idx < this.buf.rows - 4) {
         var win = ls.getWindowView();
         // body[idx] == null ＝ 短頁的空白補列，沒有文章可點。
         if (win && win.body[idx] != null) hover = row;
@@ -2226,6 +2251,22 @@ TermView.prototype = {
       }
     }
     out.push(this._listFooterRow);
+    // 平滑捲動的 overscan 列：視口捲掉頂端 frac px 之後，底部會空出同樣高度 ⇒
+    // 多畫下一列補滿。**放在 footer 後面**（渲染 index 24）是刻意的：footer 的
+    // data-row 必須維持 23（外部契約，見 render_dom_equivalence 的 golden）。
+    // render 端（src/render/screen.js#_patchRows）會把它排進 body 視口裡。
+    if (win.overscanAbs != null) {
+      var ovRow = listLines[win.overscanAbs];
+      if (!ovRow) {
+        out.push(this._blankListRow());
+      } else if (lastReadTitle != null && ovRow._subject === lastReadTitle) {
+        var ovLr = cloneRow(ovRow);
+        paintLastReadListRow(ovLr);
+        out.push(ovLr);
+      } else {
+        out.push(ovRow);
+      }
+    }
     this._listWindowLines = out;
     return out;
   },

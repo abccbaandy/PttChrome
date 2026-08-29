@@ -210,6 +210,22 @@ const LIST_LINES = [
   listRow("gooduser", "□ [心得] 另一篇"),
 ];
 
+// 列表好讀 ＋ 平滑捲動（次列位移）：3 列 header + 20 列 body + footer(23) +
+// overscan(24)。overscan 列刻意放在 footer **之後**（term_view.buildListWindowLines
+// 的註解說明了為什麼：footer 的 data-row 必須維持 23）。render 端會把 body 與
+// overscan 收進 .listBodyView 視口，header/footer 留在 #mainContainer 直系子層。
+const LIST_SCROLL_LINES = (() => {
+  const out = [
+    row(seg("看板《Test》")),
+    row(seg("  編號     日 期  作 者        文  章  標  題")),
+    row(seg("")),
+  ];
+  for (let i = 0; i < 20; ++i) out.push(listRow("gooduser", "□ [心得] 第 " + i + " 篇"));
+  out.push(row(seg(FNKEY_FOOTER)));
+  out.push(listRow("gooduser", "□ [心得] 露出一小條的下一列"));
+  return out;
+})();
+
 // --- 圖文合併（好讀「圖左字右」）-------------------------------------------
 const CAPTION_LINES = [
   row(seg("作者  wowbenny (阿班) 看板  Test")),
@@ -329,6 +345,22 @@ export const SCENARIOS = [
     pageState: 2,
     listEasyReading: true,
     easyReading: true,
+  }),
+
+  // 列表好讀 ＋ 次列位移：body 區住進 .listBodyView（overflow:hidden，高度＝
+  // 20 列），offsetPx 就是它的 scrollTop。這一份 golden 鎖的是「多包了一層之後
+  // 列節點本身完全沒變」——data-row、class、內容都不動，只是換了父節點。
+  scenario("list_easy_reading_scrolled", LIST_SCROLL_LINES, {
+    pageState: 2,
+    listEasyReading: true,
+    easyReading: true,
+    listScroll: {
+      bodyStart: 3,
+      bodyRows: 20,
+      viewportPx: 400,
+      offsetPx: 7,
+      overscan: true,
+    },
   }),
 
   // 原生列表 ＋ 功能鍵按鈕（row 1 的提示列 ＋ row 23 的 vs_footer）。
