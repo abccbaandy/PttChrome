@@ -5,6 +5,7 @@
 // primitives ported from the v3 wip branch.
 import fs from "fs";
 import path from "path";
+import { CommandQueue } from "../../src/js/command_queue";
 import {
   ListSession,
   bufferEdgeNum,
@@ -984,7 +985,6 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
 
   test("板尾 prefetch-down 零回應 → 探針 transient 幀判 edge → state 停 active", async () => {
     vi.useFakeTimers();
-    const { CommandQueue } = await import("../../src/js/command_queue");
     const sent = [];
     const queue = new CommandQueue({ send: (k) => sent.push(k) });
 
@@ -1071,7 +1071,6 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
     // 走完自己的 soft(4000)/hard(10000) 才送出第一個 byte。修法＝queue.expedite：
     // 立刻催出 \f 探針（零副作用、必有回應）→ 幾百毫秒內讓路。
     vi.useFakeTimers();
-    const { CommandQueue } = await import("../../src/js/command_queue");
     const sent = [];
     const queue = new CommandQueue({ send: (k) => sent.push(k) });
 

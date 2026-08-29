@@ -33,6 +33,18 @@ const OFFLINE_NO_NETWORK = {
   bypass: 'localhost,127.0.0.1,::1',
 };
 
+// 逆境三桶共用的 use。與一般 offline 的唯一差別是**本機關掉錄影**：
+// `video: 'retain-on-failure'` 是每條測試都在錄、只有失敗才留檔 ⇒ 一輪 189 條就是
+// 189 份 screencast 通道與暫存檔 handle，是本機 Windows 撞 STATUS_DLL_INIT_FAILED
+// （見 scripts/run-adverse-e2e.mjs 開頭）的養分之一。CI 是 Linux，沒有那個 session
+// 資源上限，影片又是唯一能回看逆境現場的東西 ⇒ 只在本機關。
+// screenshot/trace 不動：前者只在失敗時抓、後者沒 retry 就不錄，成本近乎零。
+const ADVERSE_USE = {
+  ...devices['Desktop Chrome'],
+  proxy: OFFLINE_NO_NETWORK,
+  video: process.env.CI ? 'retain-on-failure' : 'off',
+};
+
 // E2E 測試：用真實 Chromium 驅動 pttchrome 連真實 PTT。
 // dev server 由 webServer 自動啟動（已手動 yarn start 時會 reuse）。
 module.exports = defineConfig({
@@ -118,19 +130,19 @@ module.exports = defineConfig({
     //     image_load_conditions.offline.spec.js 專門驗，那裡的斷言是為 broken 寫的。
     {
       name: 'offline-slow',
-      use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK },
+      use: ADVERSE_USE,
       timeout: 300000,
       testMatch: [...ADVERSE_LAYOUT_SPECS, ...ADVERSE_IMAGE_SPECS],
     },
     {
       name: 'offline-broken',
-      use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK },
+      use: ADVERSE_USE,
       timeout: 300000,
       testMatch: ADVERSE_LAYOUT_SPECS,
     },
     {
       name: 'offline-mixed',
-      use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK },
+      use: ADVERSE_USE,
       timeout: 300000,
       testMatch: ADVERSE_LAYOUT_SPECS,
     },

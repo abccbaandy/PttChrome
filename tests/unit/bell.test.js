@@ -5,6 +5,11 @@ import {
   shouldRing,
   __resetBellForTest,
 } from "../../src/js/bell";
+// **檔案層級 import，不要改回 test 內 `await import()`**：載入 App 會拖進整條主程式
+// 依賴鏈，冷載入（這支檔名排序靠前，整批跑時往往由它付這筆成本）在機器忙時超過
+// vitest 預設的 5000ms testTimeout ⇒ 該 case 偶發紅，單獨重跑又全綠（2026-08-29 實錄）。
+// 放檔案層級，載入成本就不算進任何一條 case 的預算裡。
+import { App } from "../../src/js/pttchrome";
 
 // 終端機提示音（PTT 的 ^G）。jsdom 沒有 Web Audio，所以 AudioContext 用可注入的
 // 假工廠；真正要守的是三件事：pref 關著就不出聲、連發只響一次、任何情況下都不 throw
@@ -70,8 +75,7 @@ describe("終端機提示音", () => {
   // pref → 模組狀態的接線。onPrefChange 把所有錯誤都吃掉（`catch { return }`），
   // 少接一條 case 不會有任何徵兆，只能靠測試釘住。
   describe("接到 pref", () => {
-    test("onPrefChange('enableBell') 會轉成模組狀態", async () => {
-      const { App } = await import("../../src/js/pttchrome");
+    test("onPrefChange('enableBell') 會轉成模組狀態", () => {
       const app = Object.create(App.prototype);
       __resetBellForTest(() => ({}));
 

@@ -235,17 +235,45 @@ CI 另開一個平行 job `test-e2e-offline-adverse`（`.github/workflows/test.y
 Error: worker process exited unexpectedly (code=3221225794, signal=null)
 ```
 
-`3221225794` ＝ `0xC0000142` `STATUS_DLL_INIT_FAILED` —— **Chromium 進程起不來**，
-不是被測 code 的問題。判準（三個一起看，缺一就要往 code 查）：
+`3221225794` ＝ `0xC0000142` `STATUS_DLL_INIT_FAILED` —— **新進程連 DLL 都初始化不了**
+（掛掉的是 Playwright 的 node worker，而且是啟動當下就死），不是被測 code 的問題。
+判準（三個一起看，缺一就要往 code 查）：
 
 1. 失敗訊息是上面那行，**沒有任何 AssertionError／Test timeout**；
 2. 失敗案例的耗時是 `0ms`（worker 死掉時把它排隊中的 case 一起標紅）；
 3. 同一批 spec 在 `yarn test:e2e:offline`（一般情境）全綠。
 
-成因是連續開太多 Chromium（前面剛跑完整包 offline 更容易踩）耗盡 Windows 的
-desktop heap／handle。處置：分批跑（`--project=offline-slow` 等逐個 project）、
-或降 workers（`--workers=2`），再不然就交給 CI —— `test-e2e-offline-adverse` 是
-Linux 上的獨立 job，不受此限。**不要**因為這種紅去改被測 code。
+成因是一輪連續開關上百個 Chromium（每條測試一個 page ＝ 一個 renderer 進程；前面剛跑完整包
+offline 更容易踩）耗盡 Windows 單一桌面 session 的 desktop heap／handle。
+
+**處置已自動化**：`yarn test:e2e:offline:adverse` 現在走 `scripts/run-adverse-e2e.mjs`
+（不再是一句 `playwright test --project=a --project=b --project=c`）：
+
+| 手段 | 內容 |
+|---|---|
+| 分批 | 一桶一個獨立 playwright 進程。批次結束＝playwright 與所有 Chromium 完全退出，OS 才真的回收 |
+| 冷卻 | 批次間隔預設 5s（env `ADVERSE_COOLDOWN_MS`） |
+| 共用 dev server | 腳本自己起一次 vite，各批靠 `reuseExistingServer` 附上去，不反覆啟停 |
+| 條件式補跑 | **只有**命中崩潰指紋（`worker process exited unexpectedly` ＋ `3221225794` ＋ 零 AssertionError／Test timeout）才用 `--last-failed` 補跑一次；真斷言失敗**永不重試** |
+| 本機不錄影 | 逆境三桶 `video: process.env.CI ? 'retain-on-failure' : 'off'`（`ADVERSE_USE`）。`retain-on-failure` 是**每條都在錄**、只有失敗才留檔 ⇒ 189 條就是 189 份 screencast 通道與暫存檔 handle |
+
+exit code 刻意分三種：`0` 全綠｜`1` 有真失敗（往被測 code 查）｜`2` 環境崩潰或沒跑完（**不要**改被測 code）。
+逃生門：`--only=offline-slow,offline-mixed`（挑桶，逗號分隔）、`--batch=spec`（每支 spec 各一個
+playwright 進程，最保守；實測只多付約 0.4m）、`--no-retry`。每批結束會印當下 `chrome.exe`／
+`node.exe` 進程數（只讀不殺），下次再崩時可直接看是不是孤兒累積。
+
+**已排除的方向（別再重想一遍）**：重用 BrowserContext 省不到進程 —— context 不是進程，一個
+**page** 才對應一個 renderer process，共用 context 但每條仍開自己的 page，進程數完全不變。
+真能減進程的是重用 **page**，但 `tests/e2e/offline/` 有 183 處 `bootOffline`／`installReplay`
+全依賴「每條全新 boot ＋ `addInitScript` 在 `goto` 之前覆寫 `window.WebSocket`」，而 init script
+**加了無法移除** ⇒ 共用 page 會讓那些 stub 疊加。要走得先把 cassette 供給改成 `exposeBinding`，
+屬中型重構且會波及跑得好好的 215 條一般 offline，**目前不做**。
+
+實測（2026-08-29，本機 Windows／chromium，分批後）：`offline-slow` 85 條 5.7m、`offline-broken`
+52 條 2.1m、`offline-mixed` 52 條 3.0m，合計 189 條約 10.8m（與分批前的 10.4m 同量級），全綠。
+
+### 媒體測試不准用 `test.skip` 吸收訊號
+
 外部圖床時代，媒體相關測試裡塞了不少 `test.skip`（`loaded imgs = 0`、`enlarge did not
 apply`…）當防禦，避免圖載不到就假紅。**圖改本地 fixture 後這些防禦全部失效** —— 圖必定
 載得到，所以那些狀況一律是真 bug，已改為硬失敗（`expect(r.error).toBeUndefined()`）。

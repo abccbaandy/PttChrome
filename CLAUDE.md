@@ -37,6 +37,10 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   純邏輯（解析／狀態機／轉碼）＋核心畫面渲染（`tests/unit/helpers/mount_screen.js` 掛 `ScreenController`／
   `buildRow` + 假 TermChar；週邊 React UI 仍用 @testing-library/react）。
   **含 JSX 的測試檔用 `.test.jsx`**。mock/timer 用 `vi.*`（globals 開啟，`describe/test/expect` 免 import）。
+  **模組載入一律放檔案層級，不准在 test body 裡 `await import('../../src/...')`**：那會把整條依賴鏈的
+  冷載入算進該 case 的 5000ms testTimeout ⇒ 機器忙時偶發紅（`Test timed out in 5000ms`），單獨重跑又綠，
+  而且紅的是一支跟載入無關的測試名稱。唯一例外是模組有 page-lifetime 快取、必須配 `vi.resetModules()`
+  重載（如 `auto_login_credentials.test.js`）。靜態守護 `tests/unit/module_load_cost.test.js`。
   增強功能的逐列判斷一律放 `comment_parse.annotateComment` 並在此回歸守護（e2e 素材不穩，純邏輯先測）。
 - **Integration（雲端同步流程）**：`yarn test:integration`（Vitest + 官方 **Firebase Emulator Suite**：真 modular SDK
   + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）。emulator 跑在 **Docker**（pinned `andreysenov/firebase-tools`，內含 firebase-tools+JDK；vitest 在 host 連容器埠），所以**本機跑需 Docker**（不再需本機裝 Java/firebase-tools）。orchestration 見 `scripts/run-integration.mjs`。
@@ -114,10 +118,13 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     外加跑 **`yarn test:e2e:offline:adverse`**（圖片改成 慢 5.2s／404／301／混合四桶，決定性）。
     CI 有對應的平行 job `test-e2e-offline-adverse`。情境表與 CONFIRMED 事實（產品端**沒有**圖片載入
     timeout；Chromium 不跟隨 `route.fulfill` 的 301）見 `docs/offline-replay-testing.md`。
-    - **本機（Windows）跑到第四個 project 常見整個 worker 掛掉**：`worker process exited unexpectedly
-      (code=3221225794)`＝`STATUS_DLL_INIT_FAILED`，Chromium 進程起不來（連續開太多）。判準＝**零
-      AssertionError、失敗案例耗時 0ms、同批 spec 在一般 offline 全綠** ⇒ 環境問題，分批
-      （`--project=<桶>`）或降 `--workers` 再跑，不然交給 CI。**不要因此去改被測 code。**
+    - **本機（Windows）連續開太多 Chromium 會整個 worker 掛掉**：`worker process exited unexpectedly
+      (code=3221225794)`＝`STATUS_DLL_INIT_FAILED`（新進程連 DLL 都初始化不了）。判準＝**零
+      AssertionError、失敗案例耗時 0ms、同批 spec 在一般 offline 全綠** ⇒ 環境問題，
+      **不要因此去改被測 code**。這條已自動化：該 script 走 `scripts/run-adverse-e2e.mjs`
+      （一桶一個獨立 playwright 進程＋冷卻＋只在命中指紋時 `--last-failed` 補跑；本機關掉錄影）。
+      **exit code 分三種：0 綠／1 真失敗／2 環境問題**。逃生門 `--only=<桶,桶>`／`--batch=spec`／
+      `--no-retry`。細節與「為何重用 BrowserContext 沒用」見 `docs/offline-replay-testing.md`。
   素材一次性錄製：`yarn record:cassette`（**guest-only**，capture 為 article-scoped 不含帳號）。細節見 `docs/offline-replay-testing.md`。
   - **`yarn test:e2e:offline` 含 `offline-firefox` project**（只跑 `selection.offline.spec.js`）：**本機需先
     `yarn playwright install firefox`**，否則整批 `browserType.launch: Executable doesn't exist`。選取／複製類

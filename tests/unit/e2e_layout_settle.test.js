@@ -136,12 +136,18 @@ describe("逆境 project 設定", () => {
     }
   });
 
+  // 2026-08-29 起這個 script 不再直接呼叫 playwright，而是委派給分批執行器
+  // （本機 Windows 一次跑完三桶會撞 STATUS_DLL_INIT_FAILED，見
+  // scripts/run-adverse-e2e.mjs 開頭）。涵蓋性改由該腳本的 ADVERSE_PROJECTS 保證，
+  // 它與 config 的一致性鎖在 tests/unit/adverse_runner_parse.test.js。
   test("yarn test:e2e:offline:adverse 涵蓋三個逆境 project", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
     const script = pkg.scripts["test:e2e:offline:adverse"];
-    expect(script).toBeTruthy();
+    expect(script).toContain("scripts/run-adverse-e2e.mjs");
+    const runner = fs.readFileSync(path.join(ROOT, "scripts", "run-adverse-e2e.mjs"), "utf8");
+    const listed = /ADVERSE_PROJECTS = \[([^\]]*)\]/.exec(runner)?.[1] || "";
     for (const name of ["offline-slow", "offline-broken", "offline-mixed"]) {
-      expect(script).toContain(`--project=${name}`);
+      expect(listed).toContain(name);
     }
   });
 
