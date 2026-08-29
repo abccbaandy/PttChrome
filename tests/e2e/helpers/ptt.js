@@ -449,7 +449,17 @@ async function resetSession(page) {
   if (!screen.includes('主功能表')) {
     throw new Error(`resetSession 無法回到主選單\n--- 當前畫面 ---\n${screen}\n----------------`);
   }
-  await applyPrefs(page, { enableEasyReading: false, showFloorNumbers: false, blacklist: '' });
+  // enableEasyReadingList 也要關：它是**跨 spec 殘留**的來源 —— easy-reading-list.spec
+  // 把它打開之後就沒人關，之後跑的 spec（enhance/easy-reading）於是在「列表好讀開著」
+  // 的狀態下操作列表，End/Enter 走的是 ListSession 的交易路徑，落點與原生不同。
+  // 2026-08-29 live：樓層編號那條因此開到十幾頁的置底公告，累積跑不完 → 60s test
+  // timeout；單獨重跑（pref 關著）同一條 7.2 秒就綠。測試之間不該靠執行順序。
+  await applyPrefs(page, {
+    enableEasyReading: false,
+    showFloorNumbers: false,
+    blacklist: '',
+    enableEasyReadingList: false,
+  });
   // 關閉好讀會送 Ctrl-L 觸發整頁重畫（見 applyPrefs 註解），等它完成再繼續
   await page.waitForTimeout(800);
 }
@@ -514,6 +524,61 @@ async function waitEasyReadingComplete(page, opts = {}) {
     await page.waitForTimeout(interval);
   }
   return { rows: st.rows, reachedEnd: !!st.end, timedOut: true };
+}
+
+// 從**列表畫面**挑一篇「推文數落在 [min,max]」的文章，回傳 { num, push }；找不到回 null。
+//
+// 為什麼不沿用 End → Enter（2026-08-29 樓層編號 live 失敗的根因）：
+//   1. End ＝ read.c 的 last_line，**包含置底文**。C_Chat 的置底是十幾頁的公告，
+//      好讀累積要跑很久 → 撞 60s test timeout；而且公告常常一則推文都沒有，
+//      「樓層/推文者」類斷言必紅。
+//   2. 「開了才知道不合用 → 退回列表 → 往上一篇再試」的重試迴圈（本檔多處）每輪都要
+//      一次完整累積，慢且仍不保證。
+// 推文數就寫在列表上（cols 9-10，pttbbs `mbbsd/bbs.c#readdoent`：1..99 印 `%2d`、
+// ≥MAX_RECOMMENDS(100) 印「爆」、負的印 X/XX）⇒ **開文之前就能挑**，上界順便擋掉爆文
+// （累積過久）。置底文沒有序號 ⇒ 正則自然跳過。
+async function pickListArticleWithComments(page, opts = {}) {
+  const min = opts.min == null ? 8 : opts.min;
+  const max = opts.max == null ? 99 : opts.max;
+  const pages = opts.pages || 3;
+  for (let p = 0; p < pages; p++) {
+    const rows = await page.evaluate(() => {
+      const buf = window.__app.buf;
+      const out = [];
+      for (let r = 0; r < buf.rows; ++r) out.push(buf.getRowText(r, 0, buf.cols));
+      return out;
+    });
+    let best = null;
+    for (const text of rows) {
+      // 序號欄（%7d；游標 '>' 只蓋掉行首那個空格，欄位不位移）
+      const m = /^[>\s]*(\d+)\s/.exec(text || '');
+      if (!m) continue;
+      const push = parseInt((text.slice(9, 11) || '').trim(), 10);
+      if (!Number.isFinite(push) || push < min || push > max) continue;
+      if (!best || push > best.push) best = { num: parseInt(m[1], 10), push: push };
+    }
+    if (best) return best;
+    await sendKey(page, 'PageUp'); // 往舊翻一頁再找
+    await page.waitForTimeout(800);
+  }
+  return null;
+}
+
+// 跳號 → 開文。等的是**內容條件**（游標列的序號＝目標）而不是固定 timeout：
+// 跳號回應的到達時間取決於連線，睡固定秒數不是慢就是不夠。
+async function openArticleByNumber(page, num) {
+  await page.evaluate((n) => window.__app.conn.send(String(n) + '\r'), num);
+  await page.waitForFunction(
+    (n) => {
+      const buf = window.__app.buf;
+      const text = buf.getRowText(buf.cur_y, 0, buf.cols);
+      const m = /^[>\s]*(\d+)\s/.exec(text || '');
+      return !!m && parseInt(m[1], 10) === n;
+    },
+    num,
+    { timeout: 10000 }
+  );
+  await sendKey(page, 'Enter');
 }
 
 // 收集 console 與 pageerror，測試失敗時可印出。回傳 logs 陣列。
@@ -598,6 +663,8 @@ module.exports = {
   applyPrefs,
   resetSession,
   gotoBoard,
+  pickListArticleWithComments,
+  openArticleByNumber,
   getPref,
   comparePusherSequences,
   inspectFloorGaps,

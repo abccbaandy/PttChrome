@@ -6,6 +6,8 @@ const {
   applyPrefs,
   resetSession,
   gotoBoard,
+  pickListArticleWithComments,
+  openArticleByNumber,
   waitEasyReadingComplete,
   comparePusherSequences,
   inspectFloorGaps,
@@ -32,13 +34,22 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
 
       await gotoBoard(page, 'C_Chat');
 
-      // 開最新一篇，等好讀自動翻頁把整篇累積完（到底才取樣，見 waitEasyReadingComplete；
+      // 選文＝**先看列表上的推文數再跳號開文**，不用 End→Enter（2026-08-29 失敗根因）：
+      // End 走 read.c 的 last_line，包含置底文 —— 開到的是十幾頁的置底公告，累積跑不完
+      // （60s test timeout），而且公告常常零推文，本測的斷言必紅。推文數列表上就看得到
+      // （pttbbs bbs.c#readdoent），所以「有推文且不是爆文」開文前就能保證。
+      const target = await pickListArticleWithComments(page, { min: 8, max: 99 });
+      console.log('TARGET ARTICLE:', JSON.stringify(target));
+      test.skip(!target, '列表上找不到推文數 8~99 的文章（板況異常）');
+      await openArticleByNumber(page, target.num);
+
+      // 等好讀自動翻頁把整篇累積完（到底才取樣，見 waitEasyReadingComplete；
       // 舊版靠固定 4 次 Space + 固定 timeout，長文會停在推文區之前）
-      await sendKey(page, 'End');
-      await page.waitForTimeout(800);
-      await sendKey(page, 'Enter');
       const acc = await waitEasyReadingComplete(page);
       console.log('ACCUMULATE:', JSON.stringify(acc));
+      // 沒讀到底就別再往下斷言：floors 只會是「累積到一半」的片段，紅在後面的
+      // 遞增檢查上完全看不出真正的原因。
+      expect(acc.reachedEnd).toBe(true);
 
       const floors = await page.evaluate(() =>
         Array.from(document.querySelectorAll('#mainContainer [data-floor]'))

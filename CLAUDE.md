@@ -81,6 +81,11 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     「查無」而不是報錯 ⇒ 很容易誤判成「這行為不在開源碼裡」。用
     `grep -rlF "$(printf '登入太頻繁' | iconv -f UTF-8 -t BIG5)" --include=*.c 3rd_script/pttbbs`，
     讀片段時 `| iconv -f BIG5 -t UTF-8`。
+  - **live spec 的選文／等待不准靠執行順序或固定 timeout**（2026-08-29「樓層編號」整輪紅、單獨跑綠）：
+    pref 會跨 spec 殘留（`resetSession` 現在一併關 `enableEasyReadingList`）、`End`＋`Enter` 會開到
+    置底公告（read.c `last_line` 含置底 ⇒ 十幾頁、常常零推文）。選文用
+    `helpers/ptt.js#pickListArticleWithComments`＋`openArticleByNumber`（推文數列表上就看得到，
+    開文前即可保證），等待綁內容條件。詳見 `tests/e2e/README.md`「選文與等待」。
   - **e2e 一律前景跑，不可丟背景（`run_in_background`）**：`.claude/settings.json` 的 **Stop hook 是每個
     assistant turn 結束就觸發**（不是 session 結束），一旦旗標檔在就跑 `kill-dev-server.js` → 把 Playwright
     自己起的 dev server 砍掉。症狀：前幾條綠，之後整批 `page.goto: net::ERR_CONNECTION_REFUSED`，
@@ -109,6 +114,10 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     外加跑 **`yarn test:e2e:offline:adverse`**（圖片改成 慢 5.2s／404／301／混合四桶，決定性）。
     CI 有對應的平行 job `test-e2e-offline-adverse`。情境表與 CONFIRMED 事實（產品端**沒有**圖片載入
     timeout；Chromium 不跟隨 `route.fulfill` 的 301）見 `docs/offline-replay-testing.md`。
+    - **本機（Windows）跑到第四個 project 常見整個 worker 掛掉**：`worker process exited unexpectedly
+      (code=3221225794)`＝`STATUS_DLL_INIT_FAILED`，Chromium 進程起不來（連續開太多）。判準＝**零
+      AssertionError、失敗案例耗時 0ms、同批 spec 在一般 offline 全綠** ⇒ 環境問題，分批
+      （`--project=<桶>`）或降 `--workers` 再跑，不然交給 CI。**不要因此去改被測 code。**
   素材一次性錄製：`yarn record:cassette`（**guest-only**，capture 為 article-scoped 不含帳號）。細節見 `docs/offline-replay-testing.md`。
   - **`yarn test:e2e:offline` 含 `offline-firefox` project**（只跑 `selection.offline.spec.js`）：**本機需先
     `yarn playwright install firefox`**，否則整批 `browserType.launch: Executable doesn't exist`。選取／複製類

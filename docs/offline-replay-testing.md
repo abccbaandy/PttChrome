@@ -226,7 +226,26 @@ CI 另開一個平行 job `test-e2e-offline-adverse`（`.github/workflows/test.y
 被逆境抓出來才補的：只做一次「捲 → 等 → 量」會拿到一個**穩定但已經捲出視窗**的 rect
 （`offline-mixed` 下量到 y=1090，視窗只有 720 高），之後 `elementFromPoint` 回 null。
 
-### skip 政策（圖片本地化後同步收緊）
+### 本機跑 adverse 的 worker 崩潰（Windows，環境問題）
+
+2026-08-29 本機連兩次跑 `yarn test:e2e:offline:adverse`，跑到第四個 project
+（`offline-mixed`，約第 174～181 條）整個 worker 掛掉：
+
+```
+Error: worker process exited unexpectedly (code=3221225794, signal=null)
+```
+
+`3221225794` ＝ `0xC0000142` `STATUS_DLL_INIT_FAILED` —— **Chromium 進程起不來**，
+不是被測 code 的問題。判準（三個一起看，缺一就要往 code 查）：
+
+1. 失敗訊息是上面那行，**沒有任何 AssertionError／Test timeout**；
+2. 失敗案例的耗時是 `0ms`（worker 死掉時把它排隊中的 case 一起標紅）；
+3. 同一批 spec 在 `yarn test:e2e:offline`（一般情境）全綠。
+
+成因是連續開太多 Chromium（前面剛跑完整包 offline 更容易踩）耗盡 Windows 的
+desktop heap／handle。處置：分批跑（`--project=offline-slow` 等逐個 project）、
+或降 workers（`--workers=2`），再不然就交給 CI —— `test-e2e-offline-adverse` 是
+Linux 上的獨立 job，不受此限。**不要**因為這種紅去改被測 code。
 外部圖床時代，媒體相關測試裡塞了不少 `test.skip`（`loaded imgs = 0`、`enlarge did not
 apply`…）當防禦，避免圖載不到就假紅。**圖改本地 fixture 後這些防禦全部失效** —— 圖必定
 載得到，所以那些狀況一律是真 bug，已改為硬失敗（`expect(r.error).toBeUndefined()`）。
