@@ -577,6 +577,9 @@ export const en_US = {
   "options_copyOnSelect": {
     "message": "Copy text when selected."
   },
+  "options_enableBell": {
+    "message": "Beep when PTT rings the terminal bell (input errors, chess check, chat invites)"
+  },
   "options_preferences": {
     "message": "Preferences"
   },

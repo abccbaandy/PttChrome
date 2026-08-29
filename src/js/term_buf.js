@@ -4,6 +4,7 @@ import { Event } from './event';
 import { ColorState } from './term_ui';
 import { u2b, b2u, parseStatusRow, parseListRow } from './string_util';
 import { cjkUrlExtension } from './url_cjk';
+import { ringBell } from './bell';
 import cursorBack from '../cursor/back.png';
 import {
   ACT_NONE,
@@ -354,8 +355,10 @@ TermBuf.prototype = {
       var ch = str[i];
       switch (ch) {
       case '\x07':
-        // FIXME: beep (1)Sound (2)AlertNotification (3)change icon
-        // should only play sound
+        // BEL。pttbbs 的 bell()（mbbsd/term.c）在 captcha／棋類／水球等處會送。
+        // 只出聲，不做視覺提示：畫面通知在這裡分不出「哪件事在叫」，反而會誤導。
+        // ringBell 自己吃掉所有錯誤並節流，這條熱路徑上不需要任何守門。
+        ringBell();
         continue;
       case '\b':
         this.back();

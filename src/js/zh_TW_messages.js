@@ -577,6 +577,9 @@
   "options_copyOnSelect": {
     "message": "選取文字時自動複製文字"
   },
+  "options_enableBell": {
+    "message": "PTT 發出提示音時嗶一聲（輸入錯誤、將軍、聊天邀請等）"
+  },
   "options_preferences": {
     "message": "設定"
   },

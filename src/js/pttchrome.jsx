@@ -33,6 +33,7 @@ import PasteShortcutAlert from '../components/PasteShortcutAlert';
 import ConnectionAlert from '../components/ConnectionAlert';
 import ContextMenu from '../components/ContextMenu';
 import { renderInto, unmountFrom } from './react_root';
+import { setBellEnabled } from './bell';
 import { MantineRoot } from '../components/MantineRoot';
 import logoIcon from '../icon/logo.png';
 import logoConnectIcon from '../icon/logo_connect.png';
@@ -1173,7 +1174,11 @@ App.prototype.onPrefChange = function(name, value) {
     case 'dbcsDetect':
       this.view.dbcsDetect = value;
       break;
-    case 'lineWrap':      // 消費端是 term_view.onTextInput 的 this.lineWrap 與 list_session.onPaste 的
+    case 'enableBell':
+      setBellEnabled(!!value);
+      break;
+    case 'lineWrap':
+      // 消費端是 term_view.onTextInput 的 this.lineWrap 與 list_session.onPaste 的
       // this._view.lineWrap ——「貼上時每滿 N 欄插一個 \r」的欄寬，不是畫面寬度
       // （那是 termSize.cols）。曾經寫進 this.conn.lineWrap，但那個欄位沒有任何
       // 讀取點，且 conn 每次重連都會被換掉 ⇒ 這個 pref 整個是死的（本函式把所有

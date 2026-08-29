@@ -603,6 +603,13 @@ export const PrefModal = ({
                 >
                   {i18n("options_copyOnSelect")}
                 </PrefCheckbox>
+                <PrefCheckbox
+                  name="enableBell"
+                  checked={values.enableBell}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableBell")}
+                </PrefCheckbox>
                 <NumberInput
                   label={i18n("options_antiIdleTime")}
                   description={i18n("tooltip_antiIdleTime")}
