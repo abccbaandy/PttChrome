@@ -25,7 +25,13 @@ function forceWidthWord(inner, forceWidth) {
   );
 }
 
-// FIXME(繼承自舊版): add blinking.
+// 一個全形字的頭尾兩格屬性不同時走這裡：字身用尾色，頭色靠 .o::after 疊一份
+// content:attr(data-text) 的複製字、裁掉右半；背景兩半用 .bAbB 漸層。
+//
+// qq2 = 這條路徑的閃爍（對應一般色段 build() 的 qq{bg}）。ColorState.equals 比
+// fg/bg/**blink**，所以只要有一格在閃就會落到這裡，上游卻完全沒接 ⇒ 整個字不閃。
+// **整字一起閃**，不做半形精度：::after 是疊在字身上的複製字而不是遮罩，單獨關掉
+// 它只會露出底下那份字身。兩格 blink 屬性不同本來就代表 server 寫了半個字。
 function twoColorWord(textValue, colorLead, colorTail, forceWidth) {
   return el(
     "span",
@@ -37,6 +43,7 @@ function twoColorWord(textValue, colorLead, colorTail, forceWidth) {
         o: colorLead.fg !== colorTail.fg,
         [`b${colorLead.bg}`]: colorLead.bg === colorTail.bg,
         [`b${colorLead.bg}b${colorTail.bg}`]: colorLead.bg !== colorTail.bg,
+        qq2: colorLead.blink || colorTail.blink,
         wpadding: forceWidth,
       }),
       style: forceWidthStyle(forceWidth),

@@ -337,6 +337,14 @@
 .cursorBrighten .q6{color:#00ffff;}
 .cursorBrighten .q7{color:#ffffff;}
 .o{position:relative;display:inline-block;}
+/* 二色 DBCS（render/word_segment.js#twoColorWord）的閃爍。與上面的 .qq 同語意：
+   字身透明、背景留著——兩半的背景由 .bN 或 .bAbB 漸層各自畫，這裡只要把字關掉。
+   ::after 那份複製字（頭色那半）也要一起關，否則左半會留著不閃。
+   精度邊界：整個字一起閃，不分頭尾。::after 是疊在字身上的複製字、不是遮罩，
+   單獨把它轉透明只會露出底下那份字身，所以半形精度在這個結構下做不到；而兩格
+   blink 屬性不同本來就只發生在 server 寫了半個字的時候。 */
+.blink--active .qq2{color:RGBA(0,0,0,0);}
+.blink--active .qq2::after{color:RGBA(0,0,0,0);text-shadow:none;}
 .o::after{content:attr(data-text);position:absolute;left:0px;width:50%;overflow:hidden;-webkit-user-select: none;user-select: none;pointer-events:none;}
 .w0::after{color:#000000;text-shadow:#000000 0 0 0px,#000000 0 0 0px,#000000 0 0 0px,#000000 0 0 0px,#000000 0 0 0px;}
 .w1::after{color:#800000;text-shadow:#800000 0 0 0px,#800000 0 0 0px,#800000 0 0 0px,#800000 0 0 0px,#800000 0 0 0px;}
