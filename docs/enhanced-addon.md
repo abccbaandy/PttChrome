@@ -183,8 +183,8 @@
     `screen_annotations#computeAnnotations` 一律套 `applyAiFix` → **AI 關 ⇒ gray 全部不修**，AI 判 `true` 才放行。
     守護 `url_fix.test.js`「句號誤判標成 gray」＋`tests/unit/url_fix_ai_render.test.js`＋
     `tests/e2e/offline/url-fix-gray.offline.spec.js`。
-  - 取捨：保守設計，漏冷門 TLD 換取近零誤判。**文章內文的跨列斷開 URL 仍 out of scope**
-    （逐列偵測；內文沒有「輸入欄寫滿」這種訊號）；**推文**的跨列斷開由下節的 `url_wrap.js` 承接。
+  - 取捨：保守設計，漏冷門 TLD 換取近零誤判。跨列斷開的 URL 由另外兩個模組承接：**推文**走
+    `url_wrap.js`（下節），**內文**走 `body_wrap.js`（下下節）。
     2026-08 起再加一項：無 scheme 無 path 的斷開裸網域（`www . a .com`）未開 AI 時不修。
 - 渲染：`screen_annotations#computeAnnotations` **逐列**（含內文非推文列，獨立於 `annotateComment`）算 `fixedUrls` 掛進 ann →
   `buildRow` 參數 → `link_segment.build()` 在 inline-preview 區塊後產生 `.fixedUrlLine`
@@ -226,6 +226,59 @@
 - 守護測試：`tests/unit/url_wrap.test.js`（三訊號逐條＋78 欄整合＋IP 板 `fieldEnd`）、
   `tests/unit/comment_merge.test.js`（`fieldEnd`／`breaks`）、
   `tests/unit/merge_comment_render.test.js`「跨行連結接合」。
+
+## 內文跨行連結（`src/js/body_wrap.js`）
+同一個坑換到**文章內文**（使用者 2026-08-30 回報，素材 `tests/e2e/cassettes/pttbug-body-urlwrap.json`）：
+```
+08/30/2026 06:06:19 ※ 文章網址: https://www.ptt.cc/bbs/PttBug/M.1788041180.A.
+404.html
+```
+逐列偵測兩層都只看得到殘段 ⇒ `articleTargetFromAnchor` → `parseArticleUrl` 回 `null` ⇒ 右鍵的
+**「複製文章代碼」「複製文章 deep link」整組消失**，「複製連結網址」也只複製到壞網址，
+`isImageLikeUrl` 判不出圖 ⇒ hover／行內預覽一併失效。
+
+**與 `url_fix` / `url_wrap` 的呈現方式相反**：內文這裡**不補 `↳` 修復行**，而是讓連結本身跨行
+成立 —— 兩列的殘段各自包成一個 `<a class="y">`，`href` 都是接好的完整網址。用一般連結的
+`class="y"` 是刻意的：底線樣式、hover 預覽、`pttchrome.isAnchorTarget`、右鍵的 `contextOnUrl`
+全部原樣沿用，消費端一行都不用改。
+
+**三個訊號缺一不可 ＋ 一道反向守門**（與 `url_wrap` 對稱，只有「左邊寫滿」的來源不同）：
+1. **左列寫滿**：URL 字元一路到 `maxcol` 為止，且 `maxcol+1` 不是 URL 字元。`maxcol` 由 pmore
+   算式推導（`pmoreMaxCol()`，`pmore.c:1447-1456`，80 欄 ⇒ **77**），**不寫死**。折行符號 `\`
+   落在 `maxcol+1`，因為反斜線不在 `URL_CHAR_RE` 內 ⇒ 這個條件自然成立。
+2. **右列續上**：下一列的 col 0 就是 URL 字元（中間有空白就不是續行）。
+3. **併起來是合法 URL**：共用 `url_join.validateJoined`（TLD 允許清單＋host 後只能空或 `/` 路徑；
+   無 scheme 又無 path 直接排除）⇒ `gray` 恆為 false，永遠不進 AI 閘門。
+- **反向守門**：左片段自己就以媒體副檔名收尾 ⇒ 剛好寫滿的完整網址，不接。
+- **列型守門**：兩列都不得是推文列／被黑名單隱藏的列（推文的跨行由 `url_wrap` 負責）。
+- 為什麼「寫滿 maxcol」單看很弱、合起來卻夠：pmore 是**逐字元**硬折行（不斷詞，`pmore.c:1836-1900`）
+  ⇒「URL 字元跑到 maxcol、下一列 col 0 接著仍是 URL 字元」在折行情形下**必然**是同一個 token 被切開。
+- 超長網址跨 3 列以上會繼續延伸（中間列必須整列 col 0..maxcol 都是 URL 字元）。
+
+**為什麼在標註層而不是 `term_buf`**：`updateCharAttr` 的 `line.uris` / `fullurl` 是逐列語意（且已有
+既知的座標脫勾問題，見該檔 KNOWN 註解），而且它跑在活的 24 列 buffer 上；好讀模式的左列可能來自
+更早、已經快照進 `buf.pageLines` 的那一頁。跨列資訊只有 `computeAnnotations` 手上齊全。
+
+**接線細節（改之前先讀）**：
+- pass 放在逐列迴圈之後、caption／run 兩個裝飾 pass **之前**，**只寫 `result[row]`、絕不碰
+  `base[row]`**（同 `applyFunctionKeys` 的規則：`base` 的參考身分是 `captionCache`/`runCache` 的鍵）。
+- **刻意每幀全掃、不吃增量**：斷點可能剛好落在 append 邊界（左列在上一幀就算完、`from` 之後不會
+  再跑到它），只掃新列必漏接。第一個條件是單一格子的 `isUrlCell`，幾乎所有列瞬間出局。
+- **重疊排除**（`applyWrapUrlRange`）：落在範圍內的 `mentions`/`aids`/`giveaways`/`bareDomains`
+  一律丟掉。左列殘段本來就被 `uriRegEx` 標了所以其他偵測器自己會避開，**右列的殘段沒有**
+  （`404.html` 對 `uriRegEx` 完全不成立）⇒ 這條必須自己補，不然同一段文字會被包成兩個 `<a>`。
+- 渲染端 `link_segment.js` 的 `_wrapUrl` 是範圍型候選（開/關邊界機制同 `_bareDomain`），兩條額外規則：
+  **範圍內抑制 `isStartOfURL`/`isEndOfURL` 的切段**（不抑制的話左列殘段會被 term_buf 的舊邊界切開、
+  拿回那個壞 `fullurl`）、**行內預覽 slot 只掛在 `preview:true` 的最後一段**（一條網址只開一張圖）。
+- 沿用 pref `enableAutoFixUrl`（不加新 pref）。合併推文塊那條 render 分支**不傳** `wrapUrls`。
+- 限制：**非好讀模式**下若斷點跨頁（左列是該頁最後一列），兩列不同時在 buffer 裡 ⇒ 不接；
+  好讀累積成 `buf.pageLines`，相鄰列一定拿得到 ⇒ 正常運作。
+- 共用原語（`URL_CHAR_RE` / `isUrlCell` / `validateJoined`）抽在 `src/js/url_join.js`，與 `url_wrap.js` 共用。
+- 守護測試：`tests/unit/body_wrap.test.js`（三訊號逐條＋折行符號＋3 列鏈＋`pmoreMaxCol` 算式）、
+  `tests/unit/screen_body_wrap_render.test.js`（兩列同一個 href／只有一個 slot／不是 ↳ 那條路）、
+  `tests/e2e/offline/body_url_wrap.offline.spec.js`（右鍵選單的兩個文章選項回來了）。
+- **那卷素材的版面是 PTT 端的資料 bug，不是新 spec**：`bbs.c:1523-1532` 的格式字串是
+  `"※ 文章網址: %s\n"`，前面沒有時間戳，也不該在 col 78 斷開。不可據此對「※ 文章網址」這行特判。
 
 ## 跨行 AID 接合（`src/js/aid_wrap.js` ＋ `aid_parse.parseBoardSuffix`）
 同一個坑、被切斷的東西換成文章代碼。**兩種切法走不同的程式路徑，別混為一談**：

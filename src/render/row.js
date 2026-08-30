@@ -99,6 +99,7 @@ export function buildRow({
   aids,
   giveaways,
   bareDomains,
+  wrapUrls,
   fnKeys,
   blacklistNotice,
   onHyperLinkMouseOver,
@@ -142,6 +143,7 @@ export function buildRow({
     bareDomains,
     sizeMode,
     fnKeys,
+    wrapUrls,
   );
   for (let i = 0; i < chars.length; ++i) builder.readChar(chars[i], i);
 

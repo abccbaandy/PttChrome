@@ -62,6 +62,7 @@ export class LinkSegmentBuilder {
     bareDomains,
     sizeMode,
     fnKeys,
+    wrapUrls,
   ) {
     this.row = row;
     this.forceWidth = forceWidth;
@@ -156,6 +157,25 @@ export class LinkSegmentBuilder {
       }
     }
     this._fnKey = null;
+    // 內文跨行連結（src/js/body_wrap.js）：一條被切成兩列的網址，**每一列各拿到
+    // 一段** cols [startCol, endCol) 與同一個 href。開/關邊界機制與 mention 相同，
+    // 但產物就是一般連結的 <a class="y"> —— 底線樣式、hover 預覽、
+    // pttchrome.isAnchorTarget、右鍵的 contextOnUrl 全部原樣沿用，消費端一行不用改。
+    //
+    // 兩個額外規則（見 readChar / saveSegment）：
+    //   1. 範圍內**抑制** TermChar 自己的 isStartOfURL/isEndOfURL 切段 —— 左列殘段
+    //      在 term_buf 眼裡是一條（指向 404 的）完整 URL，不抑制就會被切開、
+    //      拿回那個壞掉的 fullurl。
+    //   2. 行內預覽 slot 只掛在 preview=true 的那一段（最後一段），否則一條網址
+    //      會開出兩張一模一樣的圖。
+    this._wrapUrlStart = null;
+    if (wrapUrls && wrapUrls.length) {
+      this._wrapUrlStart = new Map();
+      for (let k = 0; k < wrapUrls.length; ++k) {
+        this._wrapUrlStart.set(wrapUrls[k].startCol, wrapUrls[k]);
+      }
+    }
+    this._wrapUrl = null;
     //
     this.segs = [];
     // Auto-fixed URLs (src/js/url_fix.js) render on extra lines below the article
@@ -342,7 +362,11 @@ export class LinkSegmentBuilder {
       // 延遲載入：捲到附近才解析網址並掛預覽，捲遠了再卸掉釋放已解碼的點陣圖
       // （見 inline_preview_slot.js / lazy_media.js）。長文一次 287 張圖全部載入
       // 且永不釋放，正是「記憶體吃滿」的來源。
-      if (this.inlineLinkPreviews) {
+      //
+      // 跨行連結的**前面幾段不掛 slot**：一條網址只該開一張圖，統一掛在
+      // preview=true 的最後一段（見建構子的 _wrapUrl 說明）。
+      const skipPreview = !!(this._wrapUrl && !this._wrapUrl.preview);
+      if (this.inlineLinkPreviews && !skipPreview) {
         const slot = createInlinePreviewSlot(this.href, this.sizeMode);
         this.slots.push(slot);
         this.inlineLinkPreviews.push(slot.el);
@@ -388,6 +412,7 @@ export class LinkSegmentBuilder {
       this._giveaway = null;
       this._bareDomain = null;
       this._fnKey = null;
+      this._wrapUrl = null;
       this._prevWasLead = false;
       this._flushLine();
       return;
@@ -481,13 +506,28 @@ export class LinkSegmentBuilder {
       if (this.colorSegBuilder !== null) this.saveSegment();
       this._fnKey = this._fnKeyStart.get(i);
     }
-    if (this.colorSegBuilder !== null && ch.isStartOfURL()) {
+    // 內文跨行連結邊界 — same open/close dance as mentions above.
+    if (this._wrapUrl && i === this._wrapUrl.endCol) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._wrapUrl = null;
+    }
+    if (this._wrapUrlStart !== null && this._wrapUrlStart.has(i)) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._wrapUrl = this._wrapUrlStart.get(i);
+    }
+    // 跨行連結範圍內**不理會** TermChar 自己的 URL 邊界：左列的殘段在 term_buf 眼
+    // 裡是一條完整（但指向 404 的）URL，不抑制就會被它切開、拿回那個壞 fullurl。
+    if (!this._wrapUrl && this.colorSegBuilder !== null && ch.isStartOfURL()) {
       this.saveSegment();
     }
     if (this.colorSegBuilder === null) {
       this.colorSegBuilder = new ColorSegmentBuilder(this.forceWidth);
       this.col = i;
-      this.href = ch.isStartOfURL() ? ch.getFullURL() : null;
+      this.href = this._wrapUrl
+        ? this._wrapUrl.href
+        : ch.isStartOfURL()
+          ? ch.getFullURL()
+          : null;
     }
     this.colorSegBuilder.readChar(ch);
     // 交替狀態，**不可**寫成 `isDBCSLead(ch.ch)`：Big5 的 trail byte 有一半
@@ -497,7 +537,7 @@ export class LinkSegmentBuilder {
     // 上一格是 lead ⇒ 這一格必是它的 trail，不可能同時是下一個字的 lead。
     // 判定與 ColorSegmentBuilder 的 `this.lead` 同一套。
     this._prevWasLead = !this._prevWasLead && isDBCSLead(ch.ch);
-    if (ch.isEndOfURL()) {
+    if (!this._wrapUrl && ch.isEndOfURL()) {
       this.saveSegment();
     }
   }

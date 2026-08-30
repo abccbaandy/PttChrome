@@ -109,6 +109,13 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
   不會撿它、逐卷 spec 一律不受影響，只由 `aid_wrap.offline.spec.js` 以
   `loadCassette('ask-aid-wrap')` 指名載入。裁剪方式：丟掉列表 step 與跳轉失敗留下的
   `on:'raw'` step（`replay.js` 不認得 raw），把文章第一頁那步的 `on` 改成 `start`。
+- 實例：`pttbug-body-urlwrap.json`（ptt-debug-20260830-110548 轉出，1 頁 7 推）——守護
+  「內文跨行連結」（`src/js/body_wrap.js`）：`※ 文章網址` 那行被切成兩列（左列收在
+  col 77、右列 `404.html` 從 col 0 起）。這裡**改成 `mode:'article'`**（與 `ask-aid-wrap`
+  相反）：它是乾淨的單頁文章，讓逐卷 spec 一起跑得到，等於多一份免費覆蓋。裁剪方式：
+  丟掉列表那個 `on:'jump'` step，只留文章頁並把 `on` 改成 `start`（文章頁自己就是整屏
+  首繪 —— `ESC[H` 起、每列都有 clrtoeol，單獨餵就是乾淨的一頁）。
+  **那個版面是 PTT 端寫檔的 bug，不是新 spec**（依據見 `docs/pttbbs-screen-protocol.md` §11.1.1）。
 - 守護測試：`tests/unit/redact.test.js`、`tests/unit/debug_recorder_logic.test.js`、
   `tests/unit/debug_recorder.test.js`、`tests/e2e/offline/debug_record.offline.spec.js`。
 

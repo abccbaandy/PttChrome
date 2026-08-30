@@ -22,45 +22,13 @@
 //   3. URL 形狀   併起來要有合法 host（TLDS）＋（scheme 或 path）
 // 外加一條反向守門：左片段本身已以媒體副檔名收尾 ⇒ 那是「作者剛好寫滿的完整網址」，
 // 不接。
-import { TLDS, endsWithMediaExt } from './url_fix';
-import { withinOneMinute, isDbcsCell } from './comment_break';
-
-// URL 字元類：與 url_fix.js 的 PATH / TermBuf.uriRegEx 的 host+path 類一致（純
-// ASCII、不含空白），加上 scheme 會用到的字元。
-const URL_CHAR_RE = /[A-Za-z0-9_#!:.?+=&%@\-/$^,;|*~'()]/;
-const SCHEME_RE = /^(?:https?|ftp|telnet):\/\//i;
-// host：label(.label)* + '.' + 允許清單 TLD。TLDS 已依長度排序（長的優先），\b 擋掉
-// 「TLD 只是更長 label 的前綴」（i.imgur.comfoo 不成立）。
-const HOST_RE = new RegExp(
-  '^([A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.(?:' + TLDS.join('|') + '))\\b',
-  'i'
-);
+// URL 字元類／host 驗證／DBCS 守門與 src/js/body_wrap.js（內文跨列）共用，抽在
+// src/js/url_join.js。
+import { endsWithMediaExt } from './url_fix';
+import { withinOneMinute } from './comment_break';
+import { isUrlCell, validateJoined } from './url_join';
 
 const MAX_PER_BLOCK = 3;
-
-function isUrlCell(chars, i) {
-  const c = chars[i];
-  return !!c && !isDbcsCell(chars, i) && URL_CHAR_RE.test(c.ch);
-}
-
-// 併起來的字串是不是一個值得連的網址 → { fixed, host }，否則 null。
-function validateJoined(joined) {
-  const hasScheme = SCHEME_RE.test(joined);
-  const rest = joined.replace(SCHEME_RE, '');
-  const m = HOST_RE.exec(rest);
-  if (!m) return null;
-  const after = rest.slice(m[0].length).replace(/^:\d+/, '');
-  // host 之後只能是空的或路徑；其他形狀（如 host 後面直接接字母）不認。
-  if (after && after[0] !== '/') return null;
-  const hasPath = after.length > 1 && after[0] === '/';
-  // 無 scheme 又無路徑 ⇒ url_fix 的 gray 那一類（產物只是首頁連結、證據薄弱），
-  // 這裡直接排除——接合本來就該是「網址被切斷」而不是「兩個字剛好像網域」。
-  if (!hasScheme && !hasPath) return null;
-  return {
-    fixed: hasScheme ? joined : 'https://' + joined,
-    host: m[1].toLowerCase(),
-  };
-}
 
 // detectWrappedUrls(chars, breaks) -> Array<{ original, fixed, host, gray, wrapped }>
 // chars／breaks 來自 comment_merge.buildMergedCommentChars。絕大多數塊回 []。

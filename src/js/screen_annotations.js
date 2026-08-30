@@ -18,6 +18,7 @@ import {
 } from "./comment_parse";
 import { detectFixableUrls } from "./url_fix";
 import { detectWrappedUrls } from "./url_wrap";
+import { detectBodyWrappedUrls, applyWrapUrlRange } from "./body_wrap";
 import { detectWrappedAids } from "./aid_wrap";
 import { detectBareDomains } from "./bare_domain";
 import { detectMentions } from "./mention_parse";
@@ -366,6 +367,40 @@ export function computeAnnotations(
       base[row] = r;
     }
     for (let row = 0; row < n; ++row) result[row] = base[row];
+    // 內文跨行連結（src/js/body_wrap.js）：被切成兩列的網址，兩列都渲染成同一條
+    // <a>（href 是接好的完整網址）。逐列偵測兩層都只看得到殘段 ⇒ 只有這裡（手上
+    // 有整份 lines）做得到。
+    //
+    // **只寫 result[row]，絕不碰 base[row]**——與 applyFunctionKeys 同一條規則：
+    // base 的參考身分是 captionCache / runCache 的快取鍵。
+    //
+    // **刻意每幀全掃、不吃增量**：斷點可能剛好落在 append 邊界（左列在上一幀就
+    // 算完、from 之後不會再跑到它），只掃新列必漏接。第一個條件就是單一格子的
+    // isUrlCell，幾乎所有列瞬間出局，成本與同樣每幀全掃的 groupSameAuthorRuns /
+    // groupImageCaptionBlocks 同級。
+    //
+    // 放在 caption / run 兩個裝飾 pass **之前**：它們用 {...result[row], ...extra}
+    // 疊上去會保留 wrapUrls；而某一對 (r-1, r) 的判定在 pageLines append-only 之下
+    // 不會改變，所以被烘進那兩個快取也安全。
+    if (autoFixUrl) {
+      const isSkipRow = (row) => {
+        const a = base[row];
+        return !!(a && (a.pusher !== undefined || a.hidden));
+      };
+      const wrapped = detectBodyWrappedUrls(lines, isSkipRow);
+      for (let k = 0; k < wrapped.length; ++k) {
+        const w = wrapped[k];
+        for (let i = 0; i < w.parts.length; ++i) {
+          const p = w.parts[i];
+          result[p.row] = applyWrapUrlRange(result[p.row], {
+            startCol: p.startCol,
+            endCol: p.endCol,
+            href: w.href,
+            preview: p.preview,
+          });
+        }
+      }
+    }
     const domainCands = baseDomainCands.slice();
     const fixCands = baseFixCands.slice();
     // 開啟合併時把分組結果寫進 annotation：圖行掛 mergeBlock（render 成兩欄

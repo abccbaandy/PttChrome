@@ -732,6 +732,9 @@ export class ScreenController {
       aids: ann && ann.aids,
       giveaways: ann && ann.giveaways,
       bareDomains: ann && ann.bareDomains,
+      // 內文跨行連結（src/js/body_wrap.js）。**上面的 mergeCommentRun 合併分支同樣
+      // 不傳**：推文的跨行接合由 url_wrap.js 走 fixedUrls，這條只管內文列。
+      wrapUrls: ann && ann.wrapUrls,
       // 功能鍵按鈕。**上面的 mergeCommentRun 合併分支刻意不傳**：那條路的 chars 是
       // comment_merge.buildMergedCommentChars 重組的新序列，原列的 col 範圍全部失效
       // （同理它對 mentions/aids 也改用 m.* 而非 ann.*）。功能鍵列永遠不是推文列。

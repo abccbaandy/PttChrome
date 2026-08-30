@@ -291,6 +291,34 @@ commentd／官方 App／bot 不走 `vgetstring`，可填滿整欄）。
 `url_wrap.js`（跨行連結接合），那裡真正的判別力來自「斷點兩側併起來是合法 URL（TLD 允許清單）」，
 寬度只負責排除「作者根本沒寫滿、只是分兩則講話」。散文續行**仍然判不出來，勿再嘗試**。
 
+## 11.1.1 內文折行寬度與「怎麼判斷這兩列本來是同一行」（2026-08-30 CONFIRMED）
+
+消費端：`src/js/body_wrap.js`（內文跨行連結接合）、`term_buf.isTextWrappedRow`。
+
+| # | 事實 | 依據 |
+|---|---|---|
+| W1 | pmore **自己做 soft wrap，不靠終端機 auto-wrap**，而且刻意不用最後一欄：`headerw = MFDISP_DBCS_HEADERWIDTH(t_columns-1)`（無條件捨去成偶數，保證不切半個中文字）、`dispw = headerw - (t_columns - headerw < 2)`、`maxcol = dispw - 1`。**80 欄 ⇒ maxcol = 77**（內容佔 col 0..77 共 78 欄，不是 80） | `pmore.c:1340-1345,1447-1456,1850` |
+| W2 | `t_columns` 被 `term.c:56` crop 成 `MAX(80, MIN(200, w))` ⇒ **寬度不可能小於 80** | `term.c:56`、`var.c:300` |
+| W3 | 兩條放寬路徑會讓某列多吐一格：借用 indicator 那一格（`col + off <= maxcol+1`）、`PMORE_TRADITIONAL_FULLCOL`（預設開，`col + off < t_columns` 時印到底並改走 `MFDISP_NEWLINE_MOVE`，**不送 clrtoeol**）。⇒ **「這一列寫到 col 78/79」代表整行塞得下，不是折行** | `pmore.c:111,1862-1877` |
+| W4 | 折行符號預設**開**（`bpref.wrapindicator = 1`，process 全域、不做 per-user 持久化）：WRAP 印 `\`、TRUNCATE 印 `>`、左右捲動列首印 `<`，位置在 col 78（DBCS 跨界被回退時 col 77），配色 fg7/bright/bg0 | `pmore.c:556-558,1979-1987` |
+| W5 | **`ESC[K` 不可當續行訊號**。pmore 自己送的 `ESC[K` 與換行都被 pfterm 的虛擬螢幕吃掉；線上的 `ESC[K` 唯一來源是 `doupdate` 的 erase 最佳化，是 **per 螢幕列**且**只有該列尾端空白是 dirty 時才送**（`derase`）。同 §9 水球那條的原理 | `pfterm.c:954-1061,1315-1329,1646-1652,2008-2019` |
+| W6 | 錄到的 CR/LF 是 `fterm_rawmove_opt` 的**游標移動**（`adx && x==0` → 送 CR；`y>ft.ry && ady<FTMV_COST && adx==0` → 送 LF），不是 line terminator | `pfterm.c:2088-2153` |
+
+**⇒ 判別「同一檔案行折成兩列」的可靠訊號只有 W4 的 indicator（要先重建成螢幕 buffer 再看 cell，
+不能掃 raw stream —— pfterm 是 per-cell diff）。但反過來不成立：**沒有 indicator 也可能是斷開的**
+—— 檔案裡本來就有換行時（下面的實例）當然不會有 indicator。故 `body_wrap.js` 的訊號改成
+「URL 字元一路寫到 maxcol、下一列 col 0 續上」，兩種成因都涵蓋。
+
+**實例（2026-08-30，`tests/e2e/cassettes/pttbug-body-urlwrap.json`）**：
+```
+08/30/2026 06:06:19 ※ 文章網址: https://www.ptt.cc/bbs/PttBug/M.1788041180.A.<CR><LF>
+404.html<ESC>[K<CR><LF>
+```
+左列內容正好 78 欄（col 0..77 ＝ maxcol），**整份畫面 `\` 出現 0 次**（而 wrapindicator 預設開）
+⇒ 這不是 pmore 折行，是**檔案裡就有換行**：`bbs.c:1523-1532` 寫的是 `log_filef(…, "※ " URL_DISPLAYNAME ": %s\n", url)`，
+格式字串前面沒有時間戳、也不會在 col 78 斷開 ⇒ **PTT 端寫檔的 bug，不是版面改版，不可當新 spec**。
+（`.A.` 後面沒有 `ESC[K` 只是 W5 的 dirty 最佳化，不是續行證據。）
+
 ## 11.2 登入頻率限制與擋人機制（2026-08-25，開源碼部分 CONFIRMED）
 
 起因：整輪 live e2e 連跑兩次，測試帳號被 PTT 擋住（`tests/e2e/README.md`）。以下區分
