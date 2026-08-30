@@ -214,6 +214,11 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 - **`view.conn` 只在 `App.onConnect` 被設**：連線從未成功時是 `undefined`。送資料一律走
   `view._send()`／`_convSend()`（內含 `if (this.conn)`），禁止直接 `this.view.conn.send(...)`。
 - 改渲染/畫面易壞 code 必跑 e2e（見「測試」段強制規範）。
+- **用腳本改檔案時，`String.replace(old, neu)` 的 neu 一律傳「回傳字串的函式」**
+  （`s.replace(old, () => neu)`）：replacement 字串裡的 `$` 開頭序列是特殊語法，本專案
+  的 md/註解大量出現反引號與 `$`，一個 `$` 後面接反引號就等於「把匹配點之前的全文再
+  貼一次」—— 實例：改 `docs/easy-reading-list.md` 的鍵盤表（欄位裡有 End 的同義鍵
+  `$`）時整份文件被塞進表格中間，而且腳本回報成功。
 - 每次踩坑如果後續session也會踩，就要寫進md
 - 每次commit前都要檢查本次更動是否含新功能，如果有的話要更新README.md新功能列表，新功能定義：以一般使用者角度，所以優化、修bug都不算
 - 重大技術升級（框架/建置/依賴的升版或替換，如 React 升版、換 UI 庫、建置/測試工具替換）要同步更新「設定 → 關於」的「重大技術升級」區塊：`src/js/zh_TW_messages.js` 與 `src/js/en_US_messages.js` 的 `about_new_content`（兩語系都要改）

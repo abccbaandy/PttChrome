@@ -1877,12 +1877,15 @@ describe("平滑捲動 × 背景補頁（回捲的回歸）", () => {
     h.screen = {
       top: 30 * ROW,
       smoothTo: null,
+      // 真瀏覽器裡「同步寫 scrollTop」= 取消進行中的平滑捲動，mock 量不到那個副作用
+      // ⇒ 改用計數斷言「該不該寫」。
+      setCalls: 0,
       getListScrollTop() { return this.top; },
       getListViewportPx() { return VP; },
-      setListScrollTop(px) { this.top = px; },
+      setListScrollTop(px) { this.setCalls++; this.top = px; },
       scrollListTo(px, behavior) {
         if (behavior === "smooth") this.smoothTo = px;
-        else this.top = px;
+        else { this.setCalls++; this.top = px; }
       },
     };
     h.s._view.componentScreen = h.screen;
@@ -1932,6 +1935,9 @@ describe("平滑捲動 × 背景補頁（回捲的回歸）", () => {
     screen.top = 20 * ROW; // 動畫途中
     screen.smoothTo = null;
 
+    // 這條測的是**基準**（動畫終點 vs 中間值），不是連發 ⇒ 明確跳出連發視窗，
+    // 讓第二發仍走 smooth。連發本身另有下面三條守護。
+    s._lastNavAt = 0;
     s._moveSelection("pgup"); // 應該從 10 再往上一頁 → 0
     s.applyScrollAfterRender();
     expect(screen.smoothTo).toBe(0);
@@ -1952,6 +1958,72 @@ describe("平滑捲動 × 背景補頁（回捲的回歸）", () => {
     expect(screen.smoothTo).toBeNull(); // 沒有重發
     expect(screen.top).toBe(20 * ROW); // 也沒被 instant 拉走
     expect(target).toBe(10 * ROW);
+  });
+
+  // 序列沒位移的那一幀**一格都不准寫** scrollTop：真瀏覽器裡同步寫入會取消進行中的
+  // 平滑捲動（_cancelScroll 就是靠這個副作用停住畫面的），而下面的重發條件又因為
+  // 「目標沒變」不會補發 ⇒ 單按一次 PgUp 只要中途來一幀重繪就捲到一半停住。
+  test("序列沒位移的幀不得寫 scrollTop（寫入＝取消瀏覽器的平滑捲動）", () => {
+    const { s, screen } = setup();
+    s._moveSelection("pgup");
+    s.applyScrollAfterRender();
+    const calls = screen.setCalls;
+
+    screen.top = 20 * ROW; // 動畫途中的一幀重繪，序列沒動
+    s.captureScrollAnchor();
+    s.applyScrollAfterRender();
+    expect(screen.setCalls).toBe(calls); // 沒寫 ⇒ 動畫活得下來
+    expect(s._scrollAnim).not.toBeNull();
+  });
+
+  test("補償寫入之後必定重發動畫（那次寫入已經把它殺掉），即使目標 px 沒變", () => {
+    const { s, screen } = setup();
+    s._moveSelection("pgup");
+    s.applyScrollAfterRender();
+    expect(screen.smoothTo).toBe(10 * ROW);
+    screen.smoothTo = null;
+
+    // 錨與 DOM 的 scrollTop 對不上 ⇒ 這一幀要補償（真實來源是 prepend/evict 的
+    // 序列位移）。補償寫入殺掉動畫之後，就算目標那一列的 px 一格都沒變也得重發。
+    screen.top = 15 * ROW; // 刻意不 captureScrollAnchor：錨仍指向位置 30
+    s.applyScrollAfterRender();
+    expect(screen.setCalls).toBeGreaterThan(0);
+    expect(screen.smoothTo).toBe(10 * ROW);
+  });
+
+  // 按住 PgUp/PgDn 的回歸（2026-08-30 回報：按著一直慢慢爬、放開後才快速補捲 1~2
+  // 頁）。根因：programmatic scrollTo({smooth}) 不保留速度，30/s 的自動重複讓每次
+  // 動畫都從曲線起點重跑，目標卻一路往前跑到 buffer 邊，剩下的距離在放開後才補完。
+  test("按住 PgUp（e.repeat）⇒ 每次直接到位，且不留下任何動畫", () => {
+    const { s, screen } = setup();
+    s._moveSelection("pgup", { repeat: true }); // 位置 30 → 10
+    s.applyScrollAfterRender();
+    expect(screen.smoothTo).toBeNull();
+    expect(screen.top).toBe(10 * ROW);
+    expect(s._scrollAnim).toBeNull();
+
+    s._moveSelection("pgup", { repeat: true }); // 10 → 0
+    s.applyScrollAfterRender();
+    expect(screen.smoothTo).toBeNull();
+    expect(screen.top).toBe(0);
+    // 放開手＝畫面立刻停：沒有殘留動畫可以再把畫面帶走。
+    expect(s._scrollAnim).toBeNull();
+  });
+
+  test("連發視窗：沒有 e.repeat 的來源（滾輪一次一頁／連按）第二發也是 instant", () => {
+    const { s, screen } = setup();
+    s._moveSelection("pgup"); // 第一發仍是平滑的（Chrome 的「慢速捲一下」）
+    s.applyScrollAfterRender();
+    expect(screen.smoothTo).toBe(10 * ROW);
+    screen.smoothTo = null;
+
+    screen.top = 20 * ROW; // 動畫才跑到一半
+    s.captureScrollAnchor();
+    s._moveSelection("pgup"); // 緊接著第二發 ⇒ 落在 NAV_BURST_MS 內
+    s.applyScrollAfterRender();
+    expect(screen.smoothTo).toBeNull(); // 不再發動畫
+    expect(screen.top).toBe(0); // 直接到位（基準仍是動畫終點：10 → 0）
+    expect(s._scrollAnim).toBeNull();
   });
 
   test("到站後動畫狀態清除，scroll 事件恢復正常更新錨", () => {

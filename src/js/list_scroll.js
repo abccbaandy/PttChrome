@@ -90,14 +90,21 @@ export function revealScrollTop({ pos, scrollTop, rowH, viewportPx, maxScrollTop
 
 // 這個導覽操作該怎麼捲。
 //
-// **behavior 是有實作理由的，不是美感**：按住 ↑↓ 時 keydown 約 30/s，而每次
-// `scrollTo({behavior:'smooth'})` 都會取消上一個動畫並重新起跑 ⇒ 捲動永遠追不上
-// 按鍵、畫面看起來卡住。所以逐列移動一律 instant，只有跨度大的操作（翻頁／頭尾／
-// 把捲出視野的游標拉回來）才用 smooth。要翻回全 smooth 只改這一支。
+// **behavior 是有實作理由的，不是美感**：瀏覽器的 programmatic 平滑捲動
+// （`scrollTo({behavior:'smooth'})`）**不保留速度** —— 每一次呼叫都取消上一個動畫、
+// 從當前位置以 ease-in-out 的**起始段**重新起跑（Blink：ProgrammaticScrollAnimator，
+// 而 Chrome 自己的鍵盤捲動走的是保留速度的 ScrollAnimator::UpdateTarget，那個能力
+// web API 沒有暴露）。所以只要按鍵比動畫快，畫面就只會一直爬：
+//   - 逐列移動（↑↓，keydown 約 30/s）一律 instant；
+//   - **按住／連發任何 nav 鍵**（`repeat`）也一律 instant —— 否則按住 PgUp/PgDn 是
+//     「按著慢慢爬、放開才快速補捲 1~2 頁」（目標每次再往前一頁、動畫卻永遠從頭起跑）。
+// 單發的大跨度操作（翻頁／頭尾／把捲出視野的游標拉回來）才用 smooth。
+// 要翻回全 smooth 只改這一支。
 export function revealPlan(op, opts) {
   const o = opts || {};
   const reduced = !!o.reducedMotion;
-  const smooth = reduced ? 'auto' : 'smooth';
+  // 按住／連發：block（捲到哪）不變，只把動畫關掉，位移才跟得上按鍵、放開即停。
+  const smooth = reduced || o.repeat ? 'auto' : 'smooth';
   switch (op) {
     case 'up':
     case 'down':

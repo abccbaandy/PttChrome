@@ -53,6 +53,12 @@ import {
 // 自己捲的（動畫會被使用者的滾輪／拖曳取消，那時永遠到不了目標）。
 const SCROLL_ANIM_MAX_MS = 1000;
 
+// 兩次導覽操作間隔小於這個值就算「連發」（按住鍵的 OS 自動重複約 30/s、滾輪一次
+// 一頁的連續刻度也在這個量級）⇒ 該次 reveal 退成 instant，見 list_scroll.revealPlan。
+// e.repeat 抓得到「自動重複的第一發」（初次延遲約 500ms，落在這個視窗外），這一支
+// 則補上沒有 repeat 旗標的來源（滾輪、貼上的 bytes、使用者自己連按）。
+const NAV_BURST_MS = 250;
+
 // 使用者要求減少動態效果時，程式化捲動一律 instant（作業系統／瀏覽器的無障礙
 // 設定）。matchMedia 在 jsdom 可能不存在 ⇒ 沒有就當作沒開。
 function prefersReducedMotion() {
@@ -810,6 +816,8 @@ export function ListSession(core, view, termBuf, queue) {
   // 必須跟著重算，否則動畫會朝一個已經不對的地方飛（＝使用者看到的回捲）。
   // null＝沒有動畫在跑。
   this._scrollAnim = null;
+  // 上一次導覽操作的時刻（連發判定，見 NAV_BURST_MS）。
+  this._lastNavAt = 0;
   // _sequence() 的記憶化（見該函式）：null＝還沒算過。
   this._seqCache = null;
 
@@ -1098,7 +1106,8 @@ ListSession.prototype = {
     this.state = r.next;
     for (let i = 0; i < r.actions.length; ++i) {
       const a = r.actions[i];
-      if (a === 'move-selection') this._moveSelection(key.op);
+      // e.repeat＝OS 的自動重複（按住不放）⇒ 這次 reveal 不做動畫，見 _moveSelection。
+      if (a === 'move-selection') this._moveSelection(key.op, { repeat: !!e.repeat });
       else if (a === 'begin-open') this._beginOpen();
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
       else if (a === 'begin-leave') this._beginLeave();
@@ -2703,7 +2712,14 @@ ListSession.prototype = {
     // 補償：把畫面定回「錨那一列」該在的地方。補頁／evict 讓序列整段位移時，
     // 這一步就是「畫面不跳」的全部（不變量 6）。動畫進行中也照做——動畫的中間值
     // 是舊座標系的，不補償就會瞬間跳過頭。
-    screen.setListScrollTop(top);
+    //
+    // **序列沒位移時一格都不准寫**：同步寫 scrollTop 會取消瀏覽器進行中的平滑捲動
+    // （_cancelScroll 正是靠這個副作用停住畫面的）。列表每有一幀重繪就寫一次「與
+    // 現值相同」的值 ⇒ 動畫被殺，而下面的 _scrollAnim 分支又因為「目標沒變」不重發
+    // ⇒ 單按一次 PgUp 只要中途來一幀就捲到一半停住。
+    const cur = screen.getListScrollTop ? screen.getListScrollTop() : top;
+    const compensated = Math.abs(top - cur) >= 0.5;
+    if (compensated) screen.setListScrollTop(top);
 
     const rv = this._pendingReveal;
     if (rv) {
@@ -2720,8 +2736,11 @@ ListSession.prototype = {
         screen.scrollListTo(target, 'smooth');
         this._armScrollAnim(seq, rv.pos, rv.block, target);
       } else {
+        // instant：**一定要**寫一次，把上一發還在飛的平滑動畫殺掉（連發的第二發
+        // 就是這條路；不寫的話舊動畫會繼續把畫面帶走＝放開後還在捲）。
+        const hadAnim = !!this._scrollAnim;
         this._scrollAnim = null;
-        if (target !== top) screen.scrollListTo(target, rv.behavior);
+        if (target !== top || hadAnim) screen.scrollListTo(target, rv.behavior);
         this._syncAnchorFromPx(seq, target, rowH);
       }
       return;
@@ -2743,7 +2762,8 @@ ListSession.prototype = {
         maxScrollTop: maxScrollTop,
         block: this._scrollAnim.block
       });
-      if (Math.abs(target - this._scrollAnim.px) >= 1) {
+      // compensated＝剛剛那次寫入已經把動畫殺了 ⇒ 即使目標 px 一樣也必須重發。
+      if (compensated || Math.abs(target - this._scrollAnim.px) >= 1) {
         screen.scrollListTo(target, 'smooth');
         this._scrollAnim.px = target;
         this._scrollAnim.at = Date.now();
@@ -2767,6 +2787,7 @@ ListSession.prototype = {
     this._anchorOverride = false;
     this._lastScrollTop = 0;
     this._scrollAnim = null;
+    this._lastNavAt = 0; // 交易凍結後的第一發不該被誤判成連發
     const screen = this._screen();
     if (screen && screen.getListScrollTop && screen.setListScrollTop)
       screen.setListScrollTop(screen.getListScrollTop());
@@ -2802,7 +2823,7 @@ ListSession.prototype = {
   //   PgUp/PgDn/Home/End（視口操作）＝ 以**視口頂**為基準；游標被捲出視野時
   //     PgUp 若先瞬移回游標再翻一頁會很怪，而游標可見時與 read.c 語意一致。
   // serverOp 的判準一字未改（read.c:842-880 的邊界條件）。
-  _moveSelection: function(op) {
+  _moveSelection: function(op, opts) {
     const seq = this._sequence();
     if (!seq.length) return;
     const len = seq.length;
@@ -2841,10 +2862,20 @@ ListSession.prototype = {
         return;
     }
     const wasVisible = this._isPosVisible(seq, cursor);
+    // 連發（按住鍵的自動重複／連續滾輪刻度）＝這次不做動畫。瀏覽器的 programmatic
+    // 平滑捲動不保留速度，比它快的按鍵只會讓畫面一直從曲線起點重跑（見 revealPlan）。
+    // e.repeat 給第一發、時間差給其餘來源，兩者缺一不可。
+    const now = Date.now();
+    const repeat = !!(opts && opts.repeat) || now - this._lastNavAt < NAV_BURST_MS;
+    this._lastNavAt = now;
     this._setCursorPos(seq, next);
     this._scheduleReveal(
       next,
-      revealPlan(op, { wasVisible: wasVisible, reducedMotion: prefersReducedMotion() })
+      revealPlan(op, {
+        wasVisible: wasVisible,
+        reducedMotion: prefersReducedMotion(),
+        repeat: repeat
+      })
     );
     this._forceRedraw();
     const direction = op === 'up' || op === 'pgup' || op === 'home' ? -1 : 1;

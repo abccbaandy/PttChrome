@@ -86,11 +86,24 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
   | `PgUp` `P` / `PgDn` `空白` `N` | `視口頂 ∓ bodyRows`，游標落在那裡 | `start`，smooth |
   | `Home` / `End` `$` | 邊已確認 → 0／`len-1`；否則 serverOp | `start` / `end`，smooth |
 
+  **表中的 smooth 只適用單發**：按住／連發時 block 不變、behavior 一律退成 instant（下一條）。
+
   兩個刻意的決定：**PgUp/PgDn/Home/End 以「視口頂」為基準**（游標在視野外時，先瞬移
-  回游標再翻一頁很怪；游標可見時與 read.c 一致）；**↑↓ 的 nearest 一律 instant**
-  （按住方向鍵約 30/s，每次 `scrollTo({behavior:'smooth'})` 會取消上一個動畫 ⇒ 捲動
-  追不上按鍵、看起來卡住）。政策收斂在 `list_scroll.js#revealPlan` 一支純函式；
-  `prefers-reduced-motion: reduce` 時一律 instant。
+  回游標再翻一頁很怪；游標可見時與 read.c 一致）；**↑↓ 的 nearest 一律 instant**。
+  政策收斂在 `list_scroll.js#revealPlan` 一支純函式；`prefers-reduced-motion: reduce`
+  時一律 instant。
+- **連發（按住／連續滾輪刻度）一律 instant**（2026-08-30 第二輪修正）。理由是瀏覽器的
+  能力邊界：programmatic 的 `scrollTo({behavior:'smooth'})` **不保留速度** —— 每次呼叫
+  都取消上一個動畫、從 ease 曲線的**起點**重新起跑（Blink 的 ProgrammaticScrollAnimator；
+  Chrome 自己的鍵盤捲動走 `ScrollAnimator::UpdateTarget`，那個保留速度的 retarget 沒有
+  暴露給 web）。於是按住 PgUp/PgDn 時 keydown 約 30/s 比動畫快，目標又一次往前一整頁 ⇒
+  **按著只慢慢爬、放開後才快速補捲 1~2 頁**（使用者回報，錄製檔 `ptt-debug-20260830-191557`）。
+  判定＝`e.repeat`（OS 自動重複；抓得到初次延遲後的第一發）**或**距上一次導覽 <
+  `NAV_BURST_MS`（250ms，補上沒有 repeat 旗標的來源：滾輪一次一頁、貼上的 bytes、
+  使用者自己連按）。單發維持 smooth（＝Chrome 的「慢速捲一下」）。
+  守護：`list_scroll.test.js`「連發」＋`list_session.test.js`「按住 PgUp」／「連發視窗」
+  ＋offline e2e「按住 PgUp（自動重複）」（用 CDP `autoRepeat` 送真 trusted keydown，
+  斷言**送完鍵當下**就到位、放開後 scrollTop 不再動）。
 - **平滑動畫 × 背景補頁：兩個不同的錨，缺一就回捲**（`_scrollAnim`）。實測每按一次
   PgUp 都會觸發 prefetch，回應約 110ms 後落地，而動畫要 200~400ms ⇒ **必然重疊**
   （錄製檔 `ptt-debug-20260830-175318` / `-175419`）。重疊時要同時做到兩件事：
@@ -106,6 +119,17 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
   所以各板強弱不同）。正解是「兩個錨各司其職」，不是凍結。
   逾時逃生門 `SCROLL_ANIM_MAX_MS=1000`（使用者中途自己捲動會取消瀏覽器的動畫，那時
   永遠到不了目標）。目標那一列被 evict／黑名單拿掉 ⇒ 放棄動畫、停在原地。
+
+  **補償寫入只有在真的要補償時才准做**（2026-08-30）：同步寫 `scrollTop` 會取消瀏覽器
+  進行中的平滑捲動（`_cancelScroll` 正是靠這個副作用停住畫面的）。`applyScrollAfterRender`
+  原本每一幀都無條件寫一次「與現值相同」的值 ⇒ 動畫被殺，而重發條件又是「目標變了才發」
+  ⇒ **不重發、動畫永久停擺**（症狀：單按一次 PgUp，中途來一幀重繪就捲到一半停住）。
+  現在是 `compensated = |top - 現值| >= 0.5` 才寫，而且**寫過就必定重發**動畫（即使目標
+  px 一格沒變）。instant 的 reveal 則相反：上一發的動畫還在飛時**一定要**寫一次把它殺掉，
+  否則放開手畫面還會被舊動畫帶走。
+  守護：`list_session.test.js`「序列沒位移的幀不得寫 scrollTop」／「補償寫入之後必定重發
+  動畫」。注意 unit 的 mock 量不到「寫入＝取消動畫」這個副作用，所以斷言的是
+  `setListScrollTop` 的**呼叫次數**，別把它改回單純比對數值。
   翻頁的基準是 `_navTopPos`（動畫在飛時取**動畫終點**，不是中間值），否則連按 PgUp
   的第二次只會從半路再翻一頁、距離不足。
   交易凍結（`_freezeForTransaction`／`_beginOpen`／`_beginOpenPinned`）必須

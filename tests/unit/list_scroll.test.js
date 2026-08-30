@@ -151,4 +151,21 @@ describe("revealPlan（behavior 政策）", () => {
   test("非導覽入口（開文定位／re-seed／點擊）⇒ 最少移動、不做動畫", () => {
     expect(revealPlan("seed", {})).toEqual({ block: "nearest", behavior: "auto" });
   });
+
+  // 按住 PgUp/PgDn 的回歸（2026-08-30）：programmatic 平滑捲動不保留速度，每次
+  // scrollTo 都從曲線起點重跑 ⇒ 按著只會慢慢爬、放開才快速補捲 1~2 頁。
+  test("連發（按住／連續滾輪）⇒ block 不變、behavior 一律 instant", () => {
+    expect(revealPlan("pgup", { repeat: true })).toEqual({ block: "start", behavior: "auto" });
+    expect(revealPlan("pgdn", { repeat: true })).toEqual({ block: "start", behavior: "auto" });
+    expect(revealPlan("home", { repeat: true })).toEqual({ block: "start", behavior: "auto" });
+    expect(revealPlan("end", { repeat: true })).toEqual({ block: "end", behavior: "auto" });
+    expect(revealPlan("up", { wasVisible: false, repeat: true })).toEqual({
+      block: "center",
+      behavior: "auto",
+    });
+  });
+
+  test("單發（沒有 repeat）維持 smooth —— 第一下的平滑捲動不能被這條規則吃掉", () => {
+    expect(revealPlan("pgdn", { repeat: false }).behavior).toBe("smooth");
+  });
 });

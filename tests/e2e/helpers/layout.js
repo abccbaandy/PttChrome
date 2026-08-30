@@ -439,6 +439,45 @@ async function seekMountedPreview(
   return result;
 }
 
+// 捲動位置停下來了嗎：連續 N 次取樣相同才算停。
+//
+// 為什麼不是 waitForTimeout：程式化的平滑捲動（scrollTo({behavior:'smooth'})）在
+// 按鍵停止之後還會繼續把畫面帶走一段距離 —— 那正是「放開後畫面自己又捲了 1~2 頁」
+// 這類 bug 的形狀。固定睡一段時間只能碰運氣抓到中間某一格；要斷言「已經停了」就得
+// 看**連續幾次取樣不再變**。回傳停下來時的 scrollTop。
+async function waitScrollStable(
+  page,
+  selector,
+  { samples = 3, interval = 100, timeout = 8000, tolerance = 0.5 } = {}
+) {
+  const deadline = Date.now() + timeout;
+  let last = null;
+  let stable = 0;
+  const seen = [];
+  while (Date.now() < deadline) {
+    const top = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      return el ? el.scrollTop : null;
+    }, selector);
+    if (top === null) throw new Error('waitScrollStable：找不到元素 ' + selector);
+    seen.push(Math.round(top));
+    if (last !== null && Math.abs(top - last) < tolerance) {
+      if (++stable >= samples - 1) return top;
+    } else {
+      stable = 0;
+    }
+    last = top;
+    await sleep(interval);
+  }
+  throw new Error(
+    'waitScrollStable 逾時：' +
+      selector +
+      ' 的 scrollTop 一直在動（最後取樣 ' +
+      seen.slice(-6).join(' → ') +
+      '）'
+  );
+}
+
 module.exports = {
   OVERRIDING_SEL,
   MEDIA_SEL,
@@ -454,4 +493,5 @@ module.exports = {
   stableCommentRow,
   waitPreviewsSettled,
   waitRectStable,
+  waitScrollStable,
 };

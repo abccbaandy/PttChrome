@@ -19,7 +19,7 @@ const {
 } = require('../helpers/replay');
 // 滾輪 smoke 會量 rect 又會動指標 ⇒ 版面穩定契約要求走這個模組
 // （tests/unit/e2e_layout_settle.test.js 靜態守護）。
-const { waitRectStable } = require('../helpers/layout');
+const { waitRectStable, waitScrollStable } = require('../helpers/layout');
 
 const nav = loadCassette('cchat-list-nav');
 const prompt = loadCassette('cchat-list-prompt');
@@ -607,6 +607,86 @@ test.describe('文章列表好读模式（离线）', () => {
         before,
         { timeout: 5000 }
       );
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
+  // 按住 PgUp/PgDn 的回歸（2026-08-30 回報：按著畫面一直慢慢爬，放開之後才快速補捲
+  // 1~2 頁）。根因：programmatic scrollTo({behavior:'smooth'}) **不保留速度** —— OS
+  // 的自動重複（約 30/s）比動畫快，每次呼叫都取消上一個動畫、從 ease 曲線的起點重跑，
+  // 而目標卻一次往前一整頁 ⇒ 按著的時候永遠追不上，剩下的距離在放開之後才補完。
+  // 修法：連發一律 instant（list_scroll.revealPlan 的 repeat）。
+  //
+  // 這條非 e2e 不可：unit 的 scrollListTo mock 量不到「瀏覽器的動畫繼續把畫面帶走」。
+  // 用 CDP 的 autoRepeat 送鍵 ⇒ 拿到的是**真的 trusted keydown 且 event.repeat===true**，
+  // 不必靠「連按夠快」這種會 flaky 的時序假設。
+  test('按住 PgUp（自動重複）：位移立刻跟上按鍵，放開後畫面不再自己捲', async ({ page }) => {
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await replayListCassette(page, nav);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, {
+        enableEasyReadingList: true,
+        easyReadingListPrefetchCount: 200
+      });
+      await waitState(
+        page,
+        (x) => x.state === 'active' && x.listLen > 50 && x.queueIdle,
+        20000
+      );
+
+      const BODY_ROWS = 20;
+      const pos0 = await windowTopPos(page);
+      // 第一發至少要能整整往上翻一頁而不被 clamp，斷言才量得到「有沒有跟上按鍵」。
+      expect(pos0).toBeGreaterThanOrEqual(BODY_ROWS + 5);
+
+      // 終點用那一列的**內容身分**（序號）而不是 px：按住 PgUp 會觸發背景補頁，而
+      // prepend 會讓整段序列往下位移（不變量 6 的補償），px 不是穩定的座標。
+      const numAtPos = (pos) =>
+        page.evaluate((p) => {
+          const seq = window.__app.listSession._sequence();
+          return window.__app.buf.listLineNums[seq[p]];
+        }, pos);
+      const afterFirst = await numAtPos(pos0 - BODY_ROWS);
+      const afterSecond = await numAtPos(Math.max(0, pos0 - 2 * BODY_ROWS));
+      expect(afterFirst).toBeGreaterThan(0);
+
+      const cdp = await page.context().newCDPSession(page);
+      const pgup = (extra) =>
+        cdp.send(
+          'Input.dispatchKeyEvent',
+          Object.assign(
+            {
+              key: 'PageUp',
+              code: 'PageUp',
+              windowsVirtualKeyCode: 33,
+              nativeVirtualKeyCode: 33
+            },
+            extra
+          )
+        );
+      const topNum = () => page.evaluate(() => window.__app.listSession._topNum);
+
+      // **送完鍵當下就到位**：鍵盤那條路整段是同步的（_moveSelection → 重繪 →
+      // applyScrollAfterRender 寫 scrollTop），所以這裡刻意一次都不等 —— 等下去舊行為
+      // 也會慢慢捲到，就抓不到「按著跟不上」了。
+      await pgup({ type: 'rawKeyDown', autoRepeat: true });
+      expect(await topNum()).toBe(afterFirst);
+      await pgup({ type: 'rawKeyDown', autoRepeat: true });
+      expect(await topNum()).toBe(afterSecond);
+      await pgup({ type: 'keyUp' });
+
+      // 放開之後畫面不再自己捲：沒有殘留的平滑動畫可以再把視口帶走。
+      await waitScrollStable(page, '#mainContainer .listBodyView');
+      expect(await topNum()).toBe(afterSecond);
+      expect(
+        await page.evaluate(() => window.__app.listSession._scrollAnim)
+      ).toBeNull();
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
