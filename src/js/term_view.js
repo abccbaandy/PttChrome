@@ -3,7 +3,7 @@
 import { TermKeyboard } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
 import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow } from './cursor_highlight';
-import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END } from './mouse_regions';
+import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates } from './mouse_regions';
 import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { exitBandRect } from './mouse_geometry';
 import { renderOverlayRow, renderScreen } from './term_ui';
@@ -606,7 +606,11 @@ TermView.prototype = {
         if (this.mainDisplay) this.mainDisplay.scrollTop = 0;
         this._gridRender = true;
         var windowLines = null;
+        var lsSession = this.bbscore && this.bbscore.listSession;
         if (this.buf.listRenderMode === 'buffer') {
+          // 重繪前先把「使用者現在看著哪一列」從 DOM 的 scrollTop 擷取成內容錨：
+          // 下一行的 accumulate 會 merge/evict/prune，整段序列可能上下位移。
+          if (lsSession) lsSession.captureScrollAnchor();
           this.accumulateListLines();
           windowLines = this.buildListWindowLines();
         } else {
@@ -624,24 +628,38 @@ TermView.prototype = {
           // buildListWindowLines 的註解）⇒ 列參考相同即內容相同，render 層可以
           // 直接沿用上一幀的節點。frozen 幀原封沿用整份 _listWindowLines，24 列
           // 全部命中。
-          // 次列位移（平滑捲動）：body 區交給自己的視口節點，offsetPx 就是它的
-          // scrollTop。overscan 由實際列數推導 —— frozen 幀沿用的是快照，不能
-          // 再去問 session 現在的 frac。
+          // 捲動：body（＝整段序列）住在一個固定高度的視口節點裡，捲動交給
+          // 瀏覽器。`scrollable` 決定它吃不吃使用者輸入——frozen（交易中）與
+          // pref 關掉時走 overflow:hidden（畫面凍住／退回一次一頁），而
+          // scrollTop 與 scrollTo() 在 hidden 下照樣有效。
           var lsBodyRows = this.buf.rows - 4;
-          var lsSession = this.bbscore && this.bbscore.listSession;
           this._renderScreenLines(windowLines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, {
             pageState: 2,
             listEasyReading: true,
             rowIdentityStable: true,
             listScroll: {
               bodyStart: LIST_HEADER_ROWS,
-              bodyRows: lsBodyRows,
               viewportPx: lsBodyRows * this.chh,
-              offsetPx:
-                (lsSession && lsSession.scrollFrac && lsSession.scrollFrac()) || 0,
-              overscan: windowLines.length > LIST_HEADER_ROWS + lsBodyRows + 1
+              scrollable:
+                this.buf.listRenderMode === 'buffer' && this._listWheelGates().wheelSmoothScroll
             }
           });
+          // 捲動事件的接線（ScreenController 只在建立視口節點時掛一次 listener，
+          // 這裡給它 callback）。hook 是常駐閉包，不必每幀重建。
+          if (this.componentScreen) {
+            if (!this._listScrollHook) {
+              var self = this;
+              this._listScrollHook = function() {
+                var s = self.bbscore && self.bbscore.listSession;
+                if (s && s.onDomScroll) s.onDomScroll();
+              };
+            }
+            this.componentScreen.onListScroll = this._listScrollHook;
+          }
+          // 重繪後把錨還原成新的 scrollTop（＋消費排隊中的 reveal）。frozen 幀
+          // 刻意不做：畫面要逐像素凍在交易開始的那一刻。
+          if (lsSession && this.buf.listRenderMode === 'buffer')
+            lsSession.applyScrollAfterRender();
         } else {
           // No window yet (header cache / buffer still empty — engage races):
           // mirror the native screen; the next clean-list settle re-renders.
@@ -737,6 +755,13 @@ TermView.prototype = {
   // author / pusher highlight) lives entirely in Screen#computeAnnotations now,
   // shared by both modes.
   _renderScreenLines: function(lines, dropHidden, inlinePreview, hoverPreview, enhanceOverrides) {
+    // 這一幀實際畫出去的那一份 lines。`data-row` 的定義就是「傳給 <Screen> 的
+    // lines index」（dropHidden 移除的列不位移其餘列的 data-row），所以凡是拿
+    // 選取座標反查內容的消費端（App.doCopyAnsi）都只能用這一份 —— 七條 render
+    // 分支餵的來源各不相同（buf.lines／buf.pageLines／列表好讀的虛擬視窗），
+    // 用錯就是複製到別的畫面，超出 buf.rows 的列還會直接 TypeError。
+    // 守護：tests/unit/list_copy_ansi.test.js。
+    this._renderedLines = lines;
     // Maintain the sticky board-list context (see constructor). LIST enters it,
     // MENU/READING leave it, everything else (overlay prompts, transient frames)
     // keeps the previous value so blacklist hiding persists across e.g. the v prompt.
@@ -1216,21 +1241,27 @@ TermView.prototype = {
   // mouse_regions.clickableColStart），但**條件**不同：底色只要停在可點的列上就給，
   // pointer 還要 mouseLeftClick 也開著。底色的 gate 在 applyCursorHighlight
   // （唯一真相源），這裡只 gate 總開關與 pointer。
+  // 捲動視口吃不吃使用者輸入，由滑鼠 gating 的單一真相源決定（同 App.mouseGates，
+  // 只是 term_view 這邊在 render 途中拿不到 App）。
+  _listWheelGates: function() {
+    return resolveMouseGates({
+      useMouseBrowsing: this.buf.useMouseBrowsing,
+      mouseWheel: this.mouseWheel,
+      mouseWheelSmoothScroll: this.mouseWheelSmoothScroll
+    });
+  },
+
   onListMouseMove: function(row, col) {
     var hover = -1;
     if (this.buf.useMouseBrowsing && this.buf.listRenderMode === 'buffer') {
       var ls = this.bbscore && this.bbscore.listSession;
+      // body ＝ header 之後的整段序列，所以 body index 直接是序列位置。
       var idx = row - LIST_HEADER_ROWS;
-      // row === buf.rows ＝ 平滑捲動時視口底部露出的那一小條（overscan 列，
-      // 渲染 index 24）。它一樣是使用者看得到、點得到的列 ⇒ 底色也要標得到，
-      // 「可點範圍＝標示範圍」的合約才成立（docs/mouse.md）。
-      if (ls && row === this.buf.rows) {
-        var ovWin = ls.getWindowView();
-        if (ovWin && ovWin.overscanAbs != null) hover = row;
-      } else if (ls && idx >= 0 && idx < this.buf.rows - 4) {
-        var win = ls.getWindowView();
-        // body[idx] == null ＝ 短頁的空白補列，沒有文章可點。
-        if (win && win.body[idx] != null) hover = row;
+      if (ls && idx >= 0) {
+        var view = ls.getListView();
+        // idx >= seq.length ＝ 短板補到 bodyRows 的空白列（或 footer），
+        // 沒有文章可 hover。
+        if (view && idx < view.seq.length) hover = row;
       }
     }
     // 左側退出帶（cols 0..EXIT_COL_END）：與原生列表同一個手勢，同樣**不看
@@ -2154,10 +2185,16 @@ TermView.prototype = {
       }
     }
     mergeListPage(this._listNumMap, this._listPinnedMap, entries);
-    // Row cap: evict the end farthest from the selection so redraw cost stays
-    // bounded (a few hundred rows ≈ the native feel). The session must clear
-    // the matching edge flag — demand re-fetches an evicted segment later.
-    var ev = evictListBuffer(this._listNumMap, ls ? ls._selectedNum : null, MAX_LIST_ROWS);
+    // Row cap: evict the end farthest from the **viewport** so redraw cost stays
+    // bounded (a few hundred rows ≈ the native feel). 樞紐是視口不是選取——
+    // 游標可以被捲出視野很遠，用它當樞紐會把使用者眼前那一段丟掉（見
+    // evictListBuffer 的註解）。
+    // The session must clear the matching edge flag — demand re-fetches later.
+    var ev = evictListBuffer(
+      this._listNumMap,
+      ls ? ls.evictPivot() : null,
+      MAX_LIST_ROWS
+    );
     if (ls && ev.evictedUp) ls.noteEvicted(-1);
     if (ls && ev.evictedDown) ls.noteEvicted(1);
     // Contiguity guard: the window must never span pages we skipped over (far
@@ -2207,8 +2244,8 @@ TermView.prototype = {
   buildListWindowLines: function() {
     var ls = this.bbscore && this.bbscore.listSession;
     if (!ls || !this._listHeaderRows || !this._listFooterRow) return null;
-    var win = ls.getWindowView();
-    if (!win) return null;
+    var view = ls.getListView();
+    if (!view) return null;
     var listLines = this.buf.listLines || [];
     var out = [
       this._listHeaderRows[0],
@@ -2224,49 +2261,49 @@ TermView.prototype = {
     // stale).
     var lastReadTitle = ls._lastReadTitle;
     this._listCursorRow = -1;
-    for (var i = 0; i < win.body.length; ++i) {
-      var abs = win.body[i];
-      var srcRow = abs == null ? null : listLines[abs];
+    // body ＝**整段序列**（上限 MAX_LIST_ROWS≈300 列），捲動交給瀏覽器。
+    var seq = view.seq;
+    for (var i = 0; i < seq.length; ++i) {
+      var abs = seq[i];
+      var srcRow = listLines[abs];
+      if (!srcRow) {
+        out.push(this._blankListRow());
+        continue;
+      }
       var isLastRead = false;
-      if (srcRow && lastReadTitle != null) {
+      if (lastReadTitle != null) {
         if (srcRow._subject === undefined) srcRow._subject = subjectOfListRow(srcRow);
         isLastRead = srcRow._subject === lastReadTitle;
       }
-      if (!srcRow) {
-        out.push(this._blankListRow());
-      } else if (abs === win.cursorAbs) {
+      if (abs === view.cursorAbs) {
         var cur = cloneRow(srcRow);
         labelListCursor(cur);
         if (isLastRead) paintLastReadListRow(cur);
         // 虛擬游標的**渲染列號**（header 固定 3 列）→ 游標底色的上色目標。
         // frozen 不重算，沿用這份快照的值，與 _listWindowLines 同生命週期。
+        // 全序列渲染後這個值可以 ≥ 23，也可能指向一列**目前捲在視野外**的節點
+        // ——那正是網頁式游標語意要的（底色跟著它捲出去）。
         this._listCursorRow = LIST_HEADER_ROWS + i;
         out.push(cur);
       } else if (isLastRead) {
-        var lr = cloneRow(srcRow);
-        paintLastReadListRow(lr);
-        out.push(lr);
+        // 上色後的 clone 依附在來源列物件上快取：map 是整列替換（mergeListPage
+        // 的 numMap.set），所以 row 物件一換 memo 自動失效。沒有它，同主題的每
+        // 一列都會在每一幀重建節點（300 列 × 30ms 一幀）。
+        if (!srcRow._lastReadPainted) {
+          var lr = cloneRow(srcRow);
+          paintLastReadListRow(lr);
+          srcRow._lastReadPainted = lr;
+        }
+        out.push(srcRow._lastReadPainted);
       } else {
         out.push(srcRow);
       }
     }
+    // 短板／剛 seed：補 blank 列到 bodyRows，維持 24 列的畫面外觀（補列不產生
+    // 額外的可捲距離——內容高恰好等於視口高）。
+    var bodyRows = this.buf.rows - 4;
+    while (out.length - LIST_HEADER_ROWS < bodyRows) out.push(this._blankListRow());
     out.push(this._listFooterRow);
-    // 平滑捲動的 overscan 列：視口捲掉頂端 frac px 之後，底部會空出同樣高度 ⇒
-    // 多畫下一列補滿。**放在 footer 後面**（渲染 index 24）是刻意的：footer 的
-    // data-row 必須維持 23（外部契約，見 render_dom_equivalence 的 golden）。
-    // render 端（src/render/screen.js#_patchRows）會把它排進 body 視口裡。
-    if (win.overscanAbs != null) {
-      var ovRow = listLines[win.overscanAbs];
-      if (!ovRow) {
-        out.push(this._blankListRow());
-      } else if (lastReadTitle != null && ovRow._subject === lastReadTitle) {
-        var ovLr = cloneRow(ovRow);
-        paintLastReadListRow(ovLr);
-        out.push(ovLr);
-      } else {
-        out.push(ovRow);
-      }
-    }
     this._listWindowLines = out;
     return out;
   },

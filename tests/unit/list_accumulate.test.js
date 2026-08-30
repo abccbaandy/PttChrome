@@ -76,6 +76,10 @@ function fakeListSession() {
     }),
     noteEvicted: vi.fn(),
     prunePivot: () => null,
+    // evict 的樞紐＝視口（ListSession.evictPivot）；這裡沒有捲動視口 ⇒ 退回選取。
+    evictPivot() {
+      return this._selectedNum;
+    },
   };
 }
 
@@ -550,7 +554,7 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
     v.accumulateListLines(); // 建 map＋header/footer 快取，帧教 _lastReadTitle
     expect(ls._lastReadTitle).toBe("[ON] MyGO全體SR卡面公布");
     ls._lastReadTitle = lastReadTitle;
-    ls.getWindowView = () => ({ body: [0, 1, 2], cursorAbs });
+    ls.getListView = () => ({ seq: [0, 1, 2], cursorAbs, cursorPos: 0 });
     v.buildListWindowLines = TermView.prototype.buildListWindowLines;
     v._listWindowLines = null;
     return { v, ls };
@@ -610,7 +614,7 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
     const v = fakeView(texts, 3, ls);
     v.buf.lines[4] = chRowAttrs(clean62, [onlineAuthorSpan, ...lastReadSpans]);
     v.accumulateListLines();
-    ls.getWindowView = () => ({ body: [0, 1, 2], cursorAbs: 1 });
+    ls.getListView = () => ({ seq: [0, 1, 2], cursorAbs: 1, cursorPos: 1 });
     v.buildListWindowLines = TermView.prototype.buildListWindowLines;
     v._listWindowLines = null;
     const out = v.buildListWindowLines();

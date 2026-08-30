@@ -1,145 +1,20 @@
-// List easy reading — native-parity window math (pure, no DOM / no TermChar
-// prototype knowledge beyond plain property writes).
-//
-// CORE PRINCIPLE (docs/easy-reading-list.md): the list easy reading experience
-// must be indistinguishable from the native list except for hidden (blacklisted)
-// rows. Every function here is a direct port of pttbbs mbbsd/read.c semantics
-// (cursor_pos read.c:170-195, key ops read.c:842-880) over the FILTERED row
-// sequence — with no blacklist the sequence equals the native one, so the two
-// modes are provably identical (tests/unit/list_window.test.js runs a read.c
-// reference simulator against these ops step-by-step).
+// List easy reading — 導覽序列與游標標記（pure, no DOM / no TermChar prototype
+// knowledge beyond plain property writes）。
 //
 // Coordinate space: "positions" are 0-based indices into the visible sequence
-// (blacklist-filtered, pinned-gated). read.c is 1-based with top_ln >= 1; the
-// port keeps the same arithmetic shifted by one.
-
-// read.c i_read_key: new_top defaults to 10 — a jump lands the cursor 10 rows
-// below the window top ("畫面中上方").
-export const LIST_FROM_TOP = 10;
+// (blacklist-filtered, pinned-gated).
+//
+// **視窗數學（read.c 的 cursor_pos / 24 列視窗 / 游標被視窗推著走）已於
+// 2026-08-30 整組退場**：畫面改成「整段序列畫進一個捲動視口、捲動交給瀏覽器」，
+// 游標與捲動位置解耦（網頁式語意），於是 `listCursorPos` / `moveListCursorWindow`
+// / `normalizeListWindow` / `scrollListWindow` 全部沒有消費端。鍵盤導覽的落點
+// 現在算在 `ListSession._moveSelection`（serverOp 的邊界判準照抄 read.c:842-880
+// 未變），捲動數學在 `js/list_scroll.js`。
 
 // 渲染後的 24 列畫面裡，body（可選取的文章列）從第幾列開始。頭 3 列是快取的
 // header、最後 1 列是快取的 footer（_bodyRows() = rows - 4 的另一半）。
 // 「渲染列號 ↔ body index」的換算（滑鼠座標、游標底色）一律用它，不要再散落魔數 3。
 export const LIST_HEADER_ROWS = 3;
-
-// cursor_pos(read.c:170): clamp the target, keep the window when the target is
-// already inside it, otherwise re-anchor top = target - fromTop (>= 0).
-// Returns { top, cursor } or null when the sequence is empty.
-export function listCursorPos(state, val, fromTop, len, bodyRows) {
-  if (!len) return null;
-  if (val > len - 1) val = len - 1;
-  if (val < 0) val = 0;
-  const top = state ? state.top : 0;
-  if (val >= top && val < top + bodyRows && top >= 0 && top < len) {
-    return { top: top, cursor: val };
-  }
-  let newTop = val - fromTop;
-  if (newTop < 0) newTop = 0;
-  return { top: newTop, cursor: val };
-}
-
-// One navigation op over the window, exactly read.c:842-880.
-//   op ∈ 'up' | 'down' | 'pgup' | 'pgdn' | 'home' | 'end'
-//   ctx = { len, bodyRows, atTop, atBottom }
-//     atTop/atBottom: the buffer edge is the CONFIRMED board edge (_edgeUp /
-//     _edgeDown). Only then may an op wrap or land "at the board end" locally;
-//     otherwise the op that needs rows we don't hold returns a serverOp so the
-//     session fetches like native would ('end' = jump+End, 'home' = jump 1).
-// Returns { top, cursor, serverOp } (top/cursor unchanged when serverOp set).
-export function moveListCursorWindow(state, op, ctx) {
-  const len = ctx.len;
-  const B = ctx.bodyRows;
-  const stay = { top: state.top, cursor: state.cursor, serverOp: null };
-  if (!len) return stay;
-  let val;
-  let fromTop;
-  switch (op) {
-    case 'up':
-      if (state.cursor <= 0) {
-        // read.c KEY_UP at the first line wraps to last_line (board end).
-        if (!ctx.atBottom) return { top: state.top, cursor: state.cursor, serverOp: 'end' };
-        val = len - 1;
-        fromTop = B - 1;
-      } else {
-        val = state.cursor - 1;
-        fromTop = B - 2;
-      }
-      break;
-    case 'down':
-      // read.c KEY_DOWN: crs+1, clamped by cursor_pos — no wrap at the end.
-      val = state.cursor + 1;
-      fromTop = 1;
-      break;
-    case 'pgup':
-      val = state.top - B;
-      fromTop = 0;
-      break;
-    case 'pgdn':
-      val = state.top + B;
-      fromTop = 0;
-      break;
-    case 'home':
-      if (!ctx.atTop) return { top: state.top, cursor: state.cursor, serverOp: 'home' };
-      val = 0;
-      fromTop = 0;
-      break;
-    case 'end':
-      if (!ctx.atBottom) return { top: state.top, cursor: state.cursor, serverOp: 'end' };
-      val = len - 1;
-      fromTop = B - 1;
-      break;
-    default:
-      return stay;
-  }
-  const r = listCursorPos(state, val, fromTop, len, B);
-  return r ? { top: r.top, cursor: r.cursor, serverOp: null } : stay;
-}
-
-// 依列位移（平滑捲動跨列時用；web 慣例，**不是** read.c 的操作，所以刻意不進
-// moveListCursorWindow
-// 的 switch）：視窗位移 `lines` 列，**游標被視窗推著走** —— 能不動就不動，被推到
-// 視窗外才夾回邊緣那一列。游標必須留在視窗內（normalizeListWindow 的不變量），
-// 否則下一幀就會以游標為準把視窗重錨回去、把剛捲的距離整個吃掉。
-//
-// 與 pgdn 的刻意差異：底端**貼齊**（top 上限 = len - bodyRows，最後一列落在畫面
-// 最下方），不像 pgdn 那樣可以一路捲到「只剩最後一列在最上方、下面全是空白列」。
-// 慢速捲動時看著清單流進空白區很怪，而 read.c parity 在 v5 合約下本來就不再要求
-// （docs/easy-reading-list.md 核心原則）。鍵盤 PgUp/PgDn 語意不受影響。
-//
-// 不產生 serverOp：到邊就停，靠 ListSession 的 demand 去補頁（同 pgup/pgdn）。
-export function scrollListWindow(state, lines, ctx) {
-  const len = ctx.len;
-  const B = ctx.bodyRows;
-  if (!len || !lines) return { top: state.top, cursor: state.cursor };
-  const maxTop = Math.max(0, len - B);
-  let top;
-  if (lines > 0) {
-    // 已經在 pgdn 造成的 over-scroll 位置（top > maxTop）時，往下捲**不可以**把
-    // 視窗往回拉：夾在 max(maxTop, 現值) ⇒ 最多就是停住。
-    top = Math.min(state.top + lines, Math.max(maxTop, state.top));
-  } else {
-    top = Math.max(state.top + lines, 0);
-  }
-  let cursor = state.cursor;
-  if (cursor < top) cursor = top;
-  const lastVisible = Math.min(top + B - 1, len - 1);
-  if (cursor > lastVisible) cursor = lastVisible;
-  return { top: top, cursor: cursor };
-}
-
-// Enforce the native invariant "cursor is always inside the window" after the
-// buffer changed underneath us (merge / evict / restore): keep top when it
-// still contains the cursor, otherwise re-anchor with the jump rule (fromTop).
-export function normalizeListWindow(top, cursor, len, bodyRows) {
-  if (!len) return null;
-  if (cursor > len - 1) cursor = len - 1;
-  if (cursor < 0) cursor = 0;
-  if (top < 0 || top > len - 1 || cursor < top || cursor >= top + bodyRows) {
-    top = cursor - LIST_FROM_TOP;
-    if (top < 0) top = 0;
-  }
-  return { top: top, cursor: cursor };
-}
 
 // Pinned-row gating (native parity): 置底文 exist only on the board's LAST page
 // (read.c: bottom_line..last_line). They may enter the navigable sequence only

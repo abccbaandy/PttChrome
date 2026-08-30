@@ -38,9 +38,11 @@ function makeView({
   };
   v.bbscore = {
     listSession: {
-      // body[idx] == null ＝ 短頁的空白補列
-      getWindowView: () => ({
-        body: Array.from({ length: 20 }, (_, i) => (i < bodyLen ? 100 + i : null)),
+      // idx >= seq.length ＝ 短板補到 bodyRows 的空白列，沒有文章可 hover
+      getListView: () => ({
+        seq: Array.from({ length: bodyLen }, (_, i) => 100 + i),
+        cursorAbs: 100,
+        cursorPos: 0,
       }),
     },
   };

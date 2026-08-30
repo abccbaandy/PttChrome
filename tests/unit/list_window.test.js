@@ -1,105 +1,14 @@
-// Window math (src/js/list_window.js) — v5 behavior-level guards.
+// 導覽序列與游標標記（src/js/list_window.js）。
 //
-// v5 合約下 read.c lockstep 參考模擬器與全枚舉比對已退役（parity 合約廢棄，
-// docs/easy-reading-list.md 核心原則）。此處只鎖使用者可感知的行為症狀：
-// PgUp 游標停新頁頂、頂端 wrap、底端 clamp、邊未確認時交給 server。
+// 視窗數學（read.c 的 cursor_pos / 24 列視窗 / 游標被視窗推著走）已於 2026-08-30
+// 整組退場——畫面改成「整段序列 + 瀏覽器原生捲動」，游標與捲動解耦。鍵盤導覽的
+// 落點語意改由 list_session.test.js「鍵盤導覽（游標與捲動解耦）」守護，捲動數學
+// 在 list_scroll.test.js。這裡只剩三件與捲動無關的事。
 import {
-  listCursorPos,
-  moveListCursorWindow,
-  scrollListWindow,
-  normalizeListWindow,
   windowVisibleSequence,
   pruneListToSegment,
   labelListCursor,
-  LIST_FROM_TOP,
 } from '../../src/js/list_window';
-
-// Drive moveListCursorWindow (0-based) with both edges confirmed (= the whole
-// board is buffered).
-function ours(state, op, len, B) {
-  return moveListCursorWindow(state, op, {
-    len,
-    bodyRows: B,
-    atTop: true,
-    atBottom: true,
-  });
-}
-
-describe('moveListCursorWindow（v5 行為級守護）', () => {
-  test('pgup lands the cursor on the new page TOP (the reported symptom)', () => {
-    // top=40, cursor=45 → PgUp: top=20, cursor=20 (read.c: new_top=0).
-    const r = ours({ top: 40, cursor: 45 }, 'pgup', 100, 20);
-    expect(r).toEqual({ top: 20, cursor: 20, serverOp: null });
-  });
-
-  test('up at the global first line wraps to the end (read.c KEY_UP)', () => {
-    const r = ours({ top: 0, cursor: 0 }, 'up', 100, 20);
-    expect(r).toEqual({ top: 99 - 19, cursor: 99, serverOp: null });
-  });
-
-  test('down at the last line stays (no wrap, read.c clamp)', () => {
-    const r = ours({ top: 80, cursor: 99 }, 'down', 100, 20);
-    expect(r).toEqual({ top: 80, cursor: 99, serverOp: null });
-  });
-
-  test('unconfirmed edges defer to the server instead of faking a local jump', () => {
-    const ctx = { len: 100, bodyRows: 20, atTop: false, atBottom: false };
-    expect(moveListCursorWindow({ top: 40, cursor: 45 }, 'end', ctx).serverOp).toBe('end');
-    expect(moveListCursorWindow({ top: 40, cursor: 45 }, 'home', ctx).serverOp).toBe('home');
-    // up at the buffer's first row without a confirmed bottom = would wrap →
-    // must go to the server too (the wrap target is the real board end).
-    expect(moveListCursorWindow({ top: 0, cursor: 0 }, 'up', ctx).serverOp).toBe('end');
-    // …but plain moves inside the buffer stay local.
-    expect(moveListCursorWindow({ top: 40, cursor: 45 }, 'up', ctx).serverOp).toBe(null);
-  });
-
-  test('empty sequence is inert', () => {
-    const r = moveListCursorWindow({ top: 0, cursor: 0 }, 'down', {
-      len: 0,
-      bodyRows: 20,
-      atTop: true,
-      atBottom: true,
-    });
-    expect(r).toEqual({ top: 0, cursor: 0, serverOp: null });
-  });
-});
-
-describe('listCursorPos', () => {
-  test('inside the window: top unchanged', () => {
-    expect(listCursorPos({ top: 10 }, 15, 0, 100, 20)).toEqual({ top: 10, cursor: 15 });
-  });
-  test('outside: re-anchor top = val - fromTop, floored at 0', () => {
-    expect(listCursorPos({ top: 10 }, 50, 10, 100, 20)).toEqual({ top: 40, cursor: 50 });
-    expect(listCursorPos({ top: 50 }, 3, 10, 100, 20)).toEqual({ top: 0, cursor: 3 });
-  });
-  test('clamps the target to [0, len-1]', () => {
-    expect(listCursorPos({ top: 0 }, 500, 0, 30, 20)).toEqual({ top: 29, cursor: 29 });
-    // clamped-to-0 target falls OUTSIDE top=5's window → re-anchor (read.c same)
-    expect(listCursorPos({ top: 5 }, -4, 0, 30, 20)).toEqual({ top: 0, cursor: 0 });
-  });
-  test('empty → null', () => {
-    expect(listCursorPos({ top: 0 }, 0, 0, 0, 20)).toBeNull();
-  });
-});
-
-describe('normalizeListWindow', () => {
-  test('keeps a window that still contains the cursor', () => {
-    expect(normalizeListWindow(10, 15, 100, 20)).toEqual({ top: 10, cursor: 15 });
-  });
-  test('re-anchors with the jump rule when the cursor escaped', () => {
-    expect(normalizeListWindow(10, 45, 100, 20)).toEqual({
-      top: 45 - LIST_FROM_TOP,
-      cursor: 45,
-    });
-    expect(normalizeListWindow(-1, 5, 100, 20)).toEqual({ top: 0, cursor: 5 });
-  });
-  test('clamps a stale cursor into the sequence', () => {
-    expect(normalizeListWindow(0, 500, 30, 20)).toEqual({ top: 29 - LIST_FROM_TOP, cursor: 29 });
-  });
-  test('empty → null', () => {
-    expect(normalizeListWindow(0, 0, 0, 20)).toBeNull();
-  });
-});
 
 describe('windowVisibleSequence (pinned gating, native last-page parity)', () => {
   const nums = [10, 11, 12, null, null]; // two pinned tail rows
@@ -162,75 +71,5 @@ describe('labelListCursor', () => {
   test('too-short / missing rows are ignored', () => {
     expect(() => labelListCursor(null)).not.toThrow();
     expect(() => labelListCursor([])).not.toThrow();
-  });
-});
-
-describe('scrollListWindow（平滑捲動的跨列位移，web 慣例）', () => {
-  const ctx = { len: 100, bodyRows: 20 };
-
-  test('視窗位移，游標留在原本那一列（不被拖著跑）', () => {
-    // top=40 cursor=45 → 往下 3 列：游標仍在視窗內 [43,62]
-    expect(scrollListWindow({ top: 40, cursor: 45 }, 3, ctx)).toEqual({
-      top: 43,
-      cursor: 45,
-    });
-  });
-
-  test('游標被推出視窗時夾回邊緣那一列', () => {
-    // 往下捲到游標落在視窗上緣之上 → 游標被推到新的 top
-    expect(scrollListWindow({ top: 40, cursor: 41 }, 5, ctx)).toEqual({
-      top: 45,
-      cursor: 45,
-    });
-    // 往上捲同理，夾在視窗最後一列
-    expect(scrollListWindow({ top: 40, cursor: 58 }, -5, ctx)).toEqual({
-      top: 35,
-      cursor: 54,
-    });
-  });
-
-  test('底端貼齊：最後一列停在畫面最下方，不捲進空白區（與 pgdn 刻意不同）', () => {
-    const r = scrollListWindow({ top: 75, cursor: 80 }, 20, ctx);
-    expect(r.top).toBe(80); // len - bodyRows
-    expect(r.cursor).toBe(80);
-    // 已經貼底了就完全不動
-    expect(scrollListWindow(r, 5, ctx)).toEqual({ top: 80, cursor: 80 });
-  });
-
-  test('頂端夾在 0', () => {
-    expect(scrollListWindow({ top: 3, cursor: 5 }, -10, ctx)).toEqual({
-      top: 0,
-      cursor: 5,
-    });
-  });
-
-  test('從 pgdn 留下的 over-scroll 位置往下捲，視窗不得往回跳', () => {
-    // pgdn 可以把 top 推到 len-1（下面全是空白補列）；此時往下捲只能停住。
-    const r = scrollListWindow({ top: 99, cursor: 99 }, 4, ctx);
-    expect(r).toEqual({ top: 99, cursor: 99 });
-    // 往上捲則正常
-    expect(scrollListWindow({ top: 99, cursor: 99 }, -4, ctx)).toEqual({
-      top: 95,
-      cursor: 99,
-    });
-  });
-
-  test('緩衝區比一頁短時 top 恆為 0（不會捲出空白）', () => {
-    const short = { len: 5, bodyRows: 20 };
-    expect(scrollListWindow({ top: 0, cursor: 2 }, 5, short)).toEqual({
-      top: 0,
-      cursor: 2,
-    });
-  });
-
-  test('空序列／零位移原樣回傳', () => {
-    expect(scrollListWindow({ top: 0, cursor: 0 }, 3, { len: 0, bodyRows: 20 })).toEqual({
-      top: 0,
-      cursor: 0,
-    });
-    expect(scrollListWindow({ top: 7, cursor: 9 }, 0, ctx)).toEqual({
-      top: 7,
-      cursor: 9,
-    });
   });
 });

@@ -34,16 +34,34 @@ import {
   normalizePasteText
 } from './string_util';
 import { keyEventToBytes } from './term_keyboard';
-import { createSmoothScroller } from './smooth_scroll';
+import {
+  topPosFromScrollTop,
+  anchorScrollTop,
+  revealScrollTop,
+  revealPlan,
+  maxScrollTopFor,
+  isRowVisible
+} from './list_scroll';
 import { LEFT_ARROW } from './function_key_plan';
 import { readValuesWithDefault } from './pref_storage';
 import {
-  moveListCursorWindow,
-  scrollListWindow,
-  normalizeListWindow,
   windowVisibleSequence,
   LIST_HEADER_ROWS,
 } from './list_window';
+
+// 程式化平滑捲動的最長等待：超過就放棄「等它到站」，把 scroll 事件當成使用者
+// 自己捲的（動畫會被使用者的滾輪／拖曳取消，那時永遠到不了目標）。
+const SCROLL_ANIM_MAX_MS = 1000;
+
+// 使用者要求減少動態效果時，程式化捲動一律 instant（作業系統／瀏覽器的無障礙
+// 設定）。matchMedia 在 jsdom 可能不存在 ⇒ 沒有就當作沒開。
+function prefersReducedMotion() {
+  return !!(
+    typeof window !== 'undefined' &&
+    window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Screen classification (pure)
@@ -725,7 +743,9 @@ export function ListSession(core, view, termBuf, queue) {
   // never a stale echo of a cursor that moved natively — see currentAnchor.
   this._openedNum = null;
   this._selectedPinnedKey = null; // pinned-row selection (title key)
-  this._topNum = null; // window-top anchor (article number; native top_ln)
+  this._topNum = null; // 捲動錨：視口頂端那一列的文章編號
+  // 視口頂端是置底列（無編號）時的錨。與 _topNum 互斥，同 _selectedPinnedKey。
+  this._topPinnedKey = null;
   this._fillTarget = 0;
   this._fillPages = 0;
   this._edgeUp = false;
@@ -771,20 +791,27 @@ export function ListSession(core, view, termBuf, queue) {
   this._selectMode = false;
   // Absolute frozen-render backstop (see _armFrozenWatchdog). null = disarmed.
   this._frozenWatchdog = null;
-  // ---- 平滑捲動（滾輪：緩動動畫＋次列位移）----
-  // _scrollFrac：視窗頂端那一列**已經捲掉的像素**，恆在 [0, chh)。render 端把它
-  // 交給 body 視口的 scrollTop（src/render/screen.js 的 .listBodyView），畫面因此
-  // 停得住半列的位置 —— 沒有它，最小單位是一整列（26px），滾起來就是一階一階跳。
-  // 兩個邊旗標由 _setWindow 每次更新（getWindowView 每幀都會呼叫 ⇒ 恆新）：貼齊
-  // 邊界時 frac 必須是 0，否則會捲出空白。
+  // ---- 捲動（瀏覽器原生；我們只維護錨）----
+  // 畫面是「整段序列畫進一個 overflow-y:auto 的視口」，捲動由瀏覽器負責。session
+  // 這邊只保存**內容錨**：(_topNum | _topPinnedKey, _scrollFrac) ＝ 視口頂端是哪
+  // 一列、那一列被捲掉幾 px。重繪前 captureScrollAnchor 從 DOM 擷取，重繪後
+  // applyScrollAfterRender 還原 —— 這是不變量 6（prepend/evict 不動視窗）的
+  // 原生捲動形式。
   this._scrollFrac = 0;
-  this._scrollAtTop = true;
-  this._scrollAtBottom = true;
-  // 邊旗標還沒被 _setWindow 算過（seed 完但還沒 render 過的視窗）⇒ 快路徑不可用，
-  // 一律走慢路徑重算。**寧可多算一次也不能拿舊旗標擋捲動**：擋錯＝捲不動，
-  // 而快路徑放行錯＝畫面露出空白。
-  this._scrollEdgesKnown = false;
-  this._scroller = null;
+  // 這一幀的錨由 action 指定（開文落地／End/Home／re-seed），不從 DOM 擷取。
+  this._anchorOverride = false;
+  // 待消費的「把某一列帶進視口」：{ pos, block, behavior }，見 _scheduleReveal。
+  this._pendingReveal = null;
+  // scroll 事件的 rAF 合併 handle，與上一次讀到的 scrollTop（推導捲動方向用）。
+  this._scrollRaf = null;
+  this._lastScrollTop = 0;
+  // 進行中的平滑捲動：{ num, key, block, px, at }。目標記的是**那一列的內容
+  // 身分**（序號／置底 key）而不只是像素——背景補頁會讓整段序列上下位移，px
+  // 必須跟著重算，否則動畫會朝一個已經不對的地方飛（＝使用者看到的回捲）。
+  // null＝沒有動畫在跑。
+  this._scrollAnim = null;
+  // _sequence() 的記憶化（見該函式）：null＝還沒算過。
+  this._seqCache = null;
 
   bindProperty(this, '_renderMode', termBuf, 'listRenderMode');
   termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
@@ -1407,7 +1434,7 @@ ListSession.prototype = {
   // can't become an ownerless settle that prematurely satisfies our expect
   // (live race) — the transaction serializes behind it.
   _freezeForTransaction: function() {
-    this._resetScroll(); // 凍結前先回到整列對齊（frozen 快照不該停在半列）
+    this._cancelScroll(); // 畫面要逐像素凍住 ⇒ 殘留的平滑動畫必須停掉
     this._breakChain();
     this._prunePivotOverride = undefined; // flush is silent — reset here
     this._queue.flushPending();
@@ -1572,125 +1599,82 @@ ListSession.prototype = {
     this._moveSelection(op);
   },
 
-  // 滾輪平滑捲動（pref mouseWheelSmoothScroll，預設開）：`px` 是**未縮放的內容像素**
-  // （呼叫端已把 deltaY 除以 scaleY），一律交給緩動器分散到數幀。
+  // 滾輪到邊（`App.mouse_scroll` 在放行給瀏覽器之前呼叫，dir: -1 上 / +1 下）。
   //
-  // 與鍵盤導覽共用狀態機、demand 與讀取中膠囊；仍然是純本地：零 byte、不轉態。
-  onWheelScrollPx: function(px) {
+  // 為什麼需要它：捲動本身交給瀏覽器之後，demand 是由 scroll 事件驅動的——而
+  // **捲不動就沒有 scroll 事件**。buffer 只有一頁時（內容高＝視口高，剛進板的
+  // 常態）使用者往上滾，畫面不動也不補頁，看起來就是卡住。到邊的滾輪本身就是
+  // 「請給我更多」的意思，這裡把它接回既有的 demand（零 byte 判斷，真正要不要
+  // 送命令仍由 _maybeDemand 的水位規則決定）。
+  onWheelAtEdge: function(dir) {
     if (this.state !== 'active' || this._renderMode !== 'buffer') return;
-    if (!px) return;
-    this._ensureScroller().add(px);
+    const screen = this._screen();
+    if (!screen || !screen.getListScrollTop) return;
+    const px = screen.getListScrollTop();
+    const atEdge = dir < 0 ? px <= 0 : px >= this._maxScrollTop() - 1;
+    if (!atEdge) return; // 還捲得動 ⇒ scroll 事件會處理
+    this._maybeDemand(dir);
+    const moreExpected = dir > 0 ? !this._edgeDown : !this._edgeUp;
+    if (moreExpected && !this._queue.idle) this._setLoading(true);
   },
 
-  _ensureScroller: function() {
-    if (!this._scroller) {
-      const self = this;
-      const raf =
-        typeof requestAnimationFrame === 'function'
-          ? function(fn) { return requestAnimationFrame(fn); }
-          : function(fn) { return setTimeout(fn, 16); };
-      const cancel =
-        typeof cancelAnimationFrame === 'function'
-          ? function(h) { cancelAnimationFrame(h); }
-          : function(h) { clearTimeout(h); };
-      this._scroller = createSmoothScroller({
-        raf: raf,
-        cancel: cancel,
-        onStep: function(step) { return self._stepScroll(step); }
-      });
-    }
-    return this._scroller;
-  },
-
-  // 動畫的一幀。回 false ⇒ 緩動器停止（撞到邊界／模式已切走）。
+  // 原生捲動的 scroll 事件（`.listBodyView`，passive）。rAF 合併：捲動事件率遠高
+  // 於一幀，而這裡每次要走一趟 O(序列長度) 的位置換算＋水位判斷。
   //
-  // 兩條路徑，差別是成本：**沒跨列**就只改視口偏移（一次 scrollTop 寫入，不重繪、
-  // 不重算序列）；跨列才動視窗錨並重繪。滾輪的事件率遠高於按鍵，序列重算是
-  // O(緩衝列數) 的 rowToText，每幀都做會吃掉整個 frame budget。
-  _stepScroll: function(step) {
-    if (this.state !== 'active' || this._renderMode !== 'buffer') return false;
-    const rowH = this._rowHeight();
-    if (!(rowH > 0)) return false;
-    const next = this._scrollFrac + step;
-    if (this._scrollEdgesKnown) {
-      // 邊界：貼齊時 frac 必須是 0（再捲就是露出空白）。
-      if (next < 0 && this._scrollAtTop) {
-        this._setScrollFrac(0);
-        return false;
-      }
-      if (next > 0 && this._scrollAtBottom) {
-        this._setScrollFrac(0);
-        return false;
-      }
-      if (next >= 0 && next < rowH) {
-        this._setScrollFrac(next);
-        return true;
-      }
-    }
-    // 跨列：換算成「序列像素座標」再夾擠，一次算出新的 (top, frac)。
-    const seq = this._sequence();
-    const pos = this._windowPos(seq);
-    if (!pos) return false;
-    const B = this._bodyRows();
-    const maxPx = Math.max(0, seq.length - B) * rowH;
-    // 上限要取 max(理論上限, 目前位置)：pgup/pgdn 可以把 top 推到超過 maxTop 的
-    // 位置（read.c 語意，下面全是空白補列），從那裡往下捲**不可以**把視窗往回
-    // 拉，往上捲也不該一次被吸到 maxTop。與 scrollListWindow 的方向性夾擠同源。
-    const capPx = Math.max(maxPx, pos.top * rowH);
-    let target = pos.top * rowH + next;
-    let hitEdge = false;
-    if (target < 0) {
-      target = 0;
-      hitEdge = true;
-    } else if (target > capPx) {
-      target = capPx;
-      hitEdge = true;
-    }
-    // 1e-6：浮點誤差讓 target 剛好落在列邊界下方一點點時，floor 會少一列。
-    const newTop = Math.floor(target / rowH + 1e-6);
-    const newFrac = Math.max(0, target - newTop * rowH);
-    const delta = newTop - pos.top;
-    if (!delta) {
-      this._setScrollFrac(newFrac);
-      return !hitEdge;
-    }
-    const r = scrollListWindow(pos, delta, { len: seq.length, bodyRows: B });
-    this._setWindow(seq, r.top, r.cursor);
-    this._scrollFrac = newFrac;
-    this._forceRedraw();
-    const direction = delta < 0 ? -1 : 1;
-    this._maybeDemand(direction);
-    const moreExpected = direction > 0 ? !this._edgeDown : !this._edgeUp;
-    const atEdge = direction > 0 ? this._scrollAtBottom : this._scrollAtTop;
-    if (atEdge && moreExpected && !this._queue.idle) this._setLoading(true);
-    return !hitEdge;
+  // **絕不重繪**（不變量 2b 的紅線）：本地重繪會餵 term_buf 的 lineChangeds，
+  // 一旦混進 settle 視窗就是「按住鍵永遠不 settle → queue expect 餓死」。捲動
+  // 只做兩件事：更新錨、必要時補資料。
+  onDomScroll: function() {
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return;
+    if (this._scrollRaf != null) return;
+    const self = this;
+    const raf =
+      typeof requestAnimationFrame === 'function'
+        ? function(fn) { return requestAnimationFrame(fn); }
+        : function(fn) { return setTimeout(fn, 16); };
+    this._scrollRaf = raf(function() {
+      self._scrollRaf = null;
+      self._onScrollFrame();
+    });
   },
 
-  // 未縮放的列高（＝畫面上的 chh；scaleY 由呼叫端在換算 deltaY 時處理）。
+  _onScrollFrame: function() {
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return;
+    const screen = this._screen();
+    if (!screen || !screen.getListScrollTop) return;
+    const px = screen.getListScrollTop();
+    const dir = px > this._lastScrollTop ? 1 : px < this._lastScrollTop ? -1 : 0;
+    this._lastScrollTop = px;
+    this._scrollAnimSettled(px); // 到站／逾時就把動畫狀態收掉
+    this.captureScrollAnchor();
+    if (!dir) return;
+    this._maybeDemand(dir);
+    // 到邊讀取中：視口已貼著 buffer 邊、server 端還有東西、而且有命令在飛
+    // （上面那次 demand 或更早的鏈）。prefetch onDone/markEdge 會關掉它。
+    const atEdge =
+      dir > 0
+        ? px >= this._maxScrollTop() - 1
+        : px <= 0;
+    const moreExpected = dir > 0 ? !this._edgeDown : !this._edgeUp;
+    if (atEdge && moreExpected && !this._queue.idle) this._setLoading(true);
+  },
+
+  _maxScrollTop: function() {
+    const screen = this._screen();
+    const rowH = this._rowHeight();
+    if (!screen || !(rowH > 0)) return 0;
+    const B = this._bodyRows();
+    return maxScrollTopFor({
+      len: this._sequence().length,
+      bodyRows: B,
+      rowH: rowH,
+      viewportPx: (screen.getListViewportPx && screen.getListViewportPx()) || B * rowH
+    });
+  },
+
+  // 未縮放的列高（＝畫面上的 chh）。
   _rowHeight: function() {
     return (this._view && this._view.chh) || 0;
-  },
-
-  // 只改視口偏移的快路徑：不重繪、不重算序列，一次 scrollTop 寫入。
-  _setScrollFrac: function(px) {
-    this._scrollFrac = px;
-    const screen = this._view && this._view.componentScreen;
-    if (screen && screen.setListScrollOffset) screen.setListScrollOffset(px);
-  },
-
-  // 回到整列對齊（鍵盤導覽／交易／切模式）。次列偏移是滾輪專屬狀態，其他入口
-  // 一律先歸零，否則畫面會停在半列上。
-  _resetScroll: function() {
-    if (this._scroller) this._scroller.stop();
-    if (this._scrollFrac) {
-      this._scrollFrac = 0;
-      this._forceRedraw();
-    }
-  },
-
-  // render 端（term_view.buildListWindowLines）用來決定要不要多畫一列補滿視口。
-  scrollFrac: function() {
-    return this._scrollFrac;
   },
 
   // 左鍵單擊某一列（App.mouse_click 已把 client 座標換成**渲染後**的列號）＝
@@ -1710,11 +1694,10 @@ ListSession.prototype = {
         this._view.flashListHint('好讀列表：處理中，請稍候…');
       return;
     }
-    // renderRow === rows（＝24）是平滑捲動時視口底部露出的那一小條（overscan 列，
-    // 渲染 index 24；App.clientToPos 會算出這個列號）。它一樣點得到。
-    const isOverscan = renderRow === this._termBuf.rows;
+    // renderRow 是**渲染後**的列號：header 3 列之後就是整段序列（body 現在全部
+    // 畫出來、由瀏覽器捲），所以 body index 直接是序列位置。
     const idx = renderRow - LIST_HEADER_ROWS;
-    if (!isOverscan && (idx < 0 || idx >= this._bodyRows())) return; // header / footer
+    if (idx < 0) return; // header
     // 防誤觸模式開啟時只有標題欄可以開文，與原生一致（避免點到日期／作者欄誤開）。
     // 虛擬視窗的欄位與 server 的 readdoent 逐格對齊（buildListWindowLines 取的就是
     // 同一批 80 格 TermChar；relabelListCursorRow 只重寫 cols 0-6、labelListCursor
@@ -1726,13 +1709,11 @@ ListSession.prototype = {
       this._view.mouseMisclickGuard
     );
     if (col < clickableColStart(2, guard)) return;
-    const win = this.getWindowView();
-    if (!win) return;
-    const abs = isOverscan ? win.overscanAbs : win.body[idx];
-    if (abs == null) return; // 短頁的空白補列，沒有文章可點
-    // 點擊＝離開捲動：停止動畫並回到整列對齊（視窗的 top/游標不受影響，所以上面
-    // 解析出來的 abs 仍然有效）。
-    this._resetScroll();
+    const view = this.getListView();
+    if (!view) return;
+    // idx >= seq.length ＝ 短板補到 bodyRows 的空白列（或 footer），沒有文章可點。
+    const abs = idx < view.seq.length ? view.seq[idx] : null;
+    if (abs == null) return;
 
     const nums = this._termBuf.listLineNums || [];
     this._selectedNum = nums[abs];
@@ -1794,10 +1775,10 @@ ListSession.prototype = {
   // docs/easy-reading-list.md 已知限制「滿版落點不得探測」.
   _demandDownIfWindowShort: function() {
     const seq = this._sequence();
-    const pos = seq.length ? this._windowPos(seq) : null;
+    if (!seq.length) return;
+    const top = this._viewportTopPos(seq);
     if (
-      pos &&
-      seq.length < pos.top + this._bodyRows() &&
+      seq.length < top + this._bodyRows() &&
       !this._edgeDown &&
       this._queue.idle
     )
@@ -1838,6 +1819,10 @@ ListSession.prototype = {
     this._selectedNum = facts ? facts.cursorRowNum : null;
     this._selectedPinnedKey = null;
     this._topNum = null;
+    // 錨的三個欄位是一組，重設要一起（漏掉 pinned key 會讓 _anchorPos 拿舊的
+    // 置底列去對位，畫面定位到別的地方）。
+    this._topPinnedKey = null;
+    this._scrollFrac = 0;
     if (facts) {
       for (let r = 3; r <= facts.rows - 2; ++r) {
         if (facts.nums[r] != null) {
@@ -1899,14 +1884,13 @@ ListSession.prototype = {
     if (this.state !== 'active' || !this._queue.idle) return;
     const seq = this._sequence();
     if (!seq.length) return;
-    const pos = this._windowPos(seq);
-    if (!pos) return;
+    const top = this._viewportTopPos(seq);
     const B = this._bodyRows();
-    if (direction < 0 && pos.top < 2 * B && !this._edgeUp)
+    if (direction < 0 && top < 2 * B && !this._edgeUp)
       this._enqueuePrefetch(true, 'key');
     else if (
       direction > 0 &&
-      seq.length - (pos.top + B) < 2 * B &&
+      seq.length - (top + B) < 2 * B &&
       !this._edgeDown
     )
       this._enqueuePrefetch(false, 'key');
@@ -1940,6 +1924,13 @@ ListSession.prototype = {
   // selection's segment survives; while an End jump is in flight the override
   // is null (= keep the LARGEST-number segment, the landing page), while a
   // Home jump keeps article 1's segment.
+  // evict／prune 的樞紐＝**視口頂那一列的序號**（使用者眼前的位置），退路才是選取。
+  // 見 evictListBuffer 的註解：游標可以離視口很遠，用它當樞紐會丟掉眼前的內容。
+  evictPivot: function() {
+    if (this._topNum != null) return this._topNum;
+    return this._selectedNum;
+  },
+
   prunePivot: function() {
     return this._prunePivotOverride !== undefined
       ? this._prunePivotOverride
@@ -2105,7 +2096,7 @@ ListSession.prototype = {
   _beginOpen: function() {
     const num = this._selectedNum;
     if (num == null) return;
-    this._resetScroll(); // 開文前回到整列對齊（frozen 快照不該停在半列）
+    this._cancelScroll(); // 同 _freezeForTransaction
     // Active last-read teaching: opening this article sets the server's
     // currtitle to its subject (bbs.c:2424) — capture it now so the return
     // frame needn't be relied on (partial frames may show no styled row).
@@ -2188,7 +2179,7 @@ ListSession.prototype = {
   // Any mismatch waits out the step timeout → _openFailed → functionMode
   // self-heal, same as the numbered open.
   _beginOpenPinned: function() {
-    this._resetScroll(); // 同 _beginOpen
+    this._cancelScroll(); // 同 _beginOpen
     const key = this._selectedPinnedKey;
     const anchor = bufferEdgeNum(this._termBuf.listLineNums, 1);
     if (key == null || anchor == null) {
@@ -2347,7 +2338,7 @@ ListSession.prototype = {
   // the specific wording). facts null = an explicit entry (airlock consent,
   // internal callers) — no banner.
   _enterFunctionMode: function(facts) {
-    this._resetScroll(); // 切原生鏡像前把次列偏移歸零
+    this._cancelScroll(); // 原生鏡像沒有捲動視口，排隊中的 reveal 要作廢
     this._nativeHold = true; // sticky: stay native until article/menu/resume
     this._setLoading(false);
     this._serverNum = null; // native excursion: the cursor goes wherever
@@ -2423,7 +2414,7 @@ ListSession.prototype = {
   },
 
   _cleanup: function() {
-    this._resetScroll();
+    this._cancelScroll();
     this._nativeHold = false;
     this._serverNum = null;
     if (this._frozenWatchdog) {
@@ -2441,6 +2432,9 @@ ListSession.prototype = {
     this._openedNum = null;
     this._selectedPinnedKey = null;
     this._topNum = null;
+    this._topPinnedKey = null;
+    this._scrollFrac = 0;
+    this._seqCache = null;
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
@@ -2464,99 +2458,394 @@ ListSession.prototype = {
   // The navigable sequence: blacklist-filtered absolute listLines indices,
   // pinned tail gated behind a confirmed bottom edge (native parity: 置底文
   // exist only on the board's last page).
+  //
+  // 記憶化：這是 O(緩衝列數) 的 rowToText（緩衝上限 MAX_LIST_ROWS=300），而原生
+  // 捲動下每個 scroll 事件都要換算一次位置＋判 demand ⇒ 不快取就是每幀重算整份。
+  // 失效判準全是**參考比對**，四個來源都只換不改：`listLines`/`listLineNums` 由
+  // flattenListBuffer 每次產生新陣列（term_view.accumulateListLines），
+  // blacklist/titleBlacklist 由 parseBlacklist/parseTitleBlacklist 換新集合
+  // （pttchrome.jsx 的 pref 套用點）。`_edgeDown` 是 pinned 門控的輸入 ⇒ 一併入 key。
   _sequence: function() {
-    return windowVisibleSequence(
-      this._visibleIndices(),
-      this._termBuf.listLineNums || [],
-      this._edgeDown
-    );
+    const buf = this._termBuf;
+    const nums = buf.listLineNums || [];
+    const lines = buf.listLines || [];
+    const bl = this._view.blacklist;
+    const tbl = this._view.titleBlacklist;
+    const c = this._seqCache;
+    if (
+      c &&
+      c.lines === lines &&
+      c.nums === nums &&
+      c.len === lines.length &&
+      c.numLen === nums.length &&
+      c.edgeDown === this._edgeDown &&
+      c.blacklist === bl &&
+      c.titleBlacklist === tbl
+    )
+      return c.seq;
+    const seq = windowVisibleSequence(this._visibleIndices(), nums, this._edgeDown);
+    this._seqCache = {
+      lines: lines,
+      nums: nums,
+      // 長度一併入 key：參考比對擋不掉「就地 push/splice」，而快取失效失敗是靜默的
+      // （畫面停在舊序列、demand 不觸發）。長度是零成本的第二道網。
+      len: lines.length,
+      numLen: nums.length,
+      edgeDown: this._edgeDown,
+      blacklist: bl,
+      titleBlacklist: tbl,
+      seq: seq
+    };
+    return seq;
   },
 
-  // Resolve the persisted (topNum, selection) anchors into sequence positions,
-  // normalized to the native cursor-in-window invariant. Returns null when the
-  // sequence is empty.
-  _windowPos: function(seq) {
-    if (!seq.length) return null;
+  // 游標（`>`）落在序列的第幾個位置。選取以**內容**為身分（序號／置底 title
+  // key），所以 prepend/evict 都不會移動它。
+  //
+  // 2026-08-30 起游標與捲動位置**解耦**（網頁式語意）：捲動不動游標、游標也不再
+  // 被視窗推著走。舊的 normalizeListWindow（視窗以游標重錨）因此從 render 路徑
+  // 退場——那條耦合正是 v1–v4 混合模型失敗的接縫（research doc §4）。
+  _cursorPos: function(seq) {
+    if (!seq.length) return -1;
+    const cursorAbs = this._resolveSelectedIndex();
+    const cursor = seq.indexOf(cursorAbs);
+    if (cursor !== -1) return cursor;
+    // Selection lost (blacklisted / evicted / pinned re-gated): snap to the
+    // nearest surviving row, same rule as moveListSelection.
+    const snapped = moveListSelection(seq, cursorAbs, 0);
+    return snapped === -1 ? seq.length - 1 : seq.indexOf(snapped);
+  },
+
+  // 捲動錨（視口頂端那一列）落在序列的第幾個位置。-1＝錨遺失（那一列被 evict／
+  // 被黑名單隱藏／pinned 重新門控）。
+  _anchorPos: function(seq) {
+    if (!seq.length) return -1;
     const nums = this._termBuf.listLineNums || [];
-    let cursorAbs = this._resolveSelectedIndex();
-    let cursor = seq.indexOf(cursorAbs);
-    if (cursor === -1) {
-      // Selection lost (blacklisted / evicted / pinned re-gated): snap to the
-      // nearest surviving row, same rule as moveListSelection.
-      const snapped = moveListSelection(seq, cursorAbs, 0);
-      cursor = snapped === -1 ? seq.length - 1 : seq.indexOf(snapped);
-    }
-    let top = -1;
     if (this._topNum != null) {
-      const topAbs = nums.indexOf(this._topNum);
-      if (topAbs !== -1) top = seq.indexOf(topAbs);
+      const abs = nums.indexOf(this._topNum);
+      if (abs !== -1) {
+        const p = seq.indexOf(abs);
+        if (p !== -1) return p;
+      }
+    } else if (this._topPinnedKey != null) {
+      for (let i = 0; i < seq.length; ++i) {
+        if (nums[seq[i]] == null && this._pinnedKeyAt(seq[i]) === this._topPinnedKey)
+          return i;
+      }
     }
-    return normalizeListWindow(top, cursor, seq.length, this._bodyRows());
+    return -1;
   },
 
-  // Persist window positions back as content anchors (number / pinned key):
-  // anchors survive prepends and evictions, positions don't.
-  _setWindow: function(seq, top, cursor) {
+  // 視口頂端的序列位置，含退路。demand 的水位判斷用它（原生捲動下 scroll 事件
+  // 會持續把錨更新成 DOM 的實況，所以這是純狀態讀取、不碰 DOM）。
+  _viewportTopPos: function(seq) {
+    const p = this._anchorPos(seq);
+    if (p !== -1) return p;
+    return Math.max(0, this._cursorPos(seq));
+  },
+
+  // 翻頁的基準位置。動畫還在飛時要用**動畫的終點**而不是中間值 —— 否則連按
+  // PgUp 的第二次只會從半路再翻一頁，距離不足（使用者感受：翻不動／卡卡的）。
+  _navTopPos: function(seq) {
+    const a = this._scrollAnim;
+    const rowH = this._rowHeight();
+    if (a && rowH > 0) {
+      const p = Math.round(a.px / rowH);
+      if (p >= 0 && p < seq.length) return p;
+    }
+    return this._viewportTopPos(seq);
+  },
+
+  // 把序列位置寫回**內容錨**（序號／置底 key）＋列內 px 偏移。錨活得過 prepend
+  // 與 evict，位置活不過 —— 這就是不變量 6 在原生捲動下的形式。
+  _setAnchorPos: function(seq, pos, frac) {
+    if (!seq.length) return;
     const nums = this._termBuf.listLineNums || [];
-    // 平滑捲動的邊旗標（快路徑要用，見 _stepScroll）。這裡是唯一的視窗寫入點，
-    // getWindowView 每幀都會走到 ⇒ 旗標恆新，不需要另外的失效機制。
-    const maxTop = Math.max(0, seq.length - this._bodyRows());
-    this._scrollAtTop = top <= 0;
-    this._scrollAtBottom = top >= maxTop;
-    this._scrollEdgesKnown = true;
-    if (this._scrollAtBottom && this._scrollFrac) this._scrollFrac = 0;
-    const cursorAbs = seq[cursor];
+    const p = Math.max(0, Math.min(pos, seq.length - 1));
+    const abs = seq[p];
+    this._topNum = nums[abs];
+    this._topPinnedKey = this._topNum == null ? this._pinnedKeyAt(abs) : null;
+    this._scrollFrac = Math.max(0, frac || 0);
+  },
+
+  // 游標寫回內容錨。
+  _setCursorPos: function(seq, cursor) {
+    if (!seq.length) return;
+    const nums = this._termBuf.listLineNums || [];
+    const c = Math.max(0, Math.min(cursor, seq.length - 1));
+    const cursorAbs = seq[c];
     this._selectedNum = nums[cursorAbs];
     this._selectedPinnedKey =
       nums[cursorAbs] == null ? this._pinnedKeyAt(cursorAbs) : null;
-    const topAbs = seq[top];
-    this._topNum = topAbs != null ? nums[topAbs] : null;
   },
 
-  // The render contract with term_view.buildListWindowLines(): the 20 body
-  // slots as absolute listLines indices (null = blank filler row, native
-  // short-page parity) + the cursor row's absolute index.
-  getWindowView: function() {
+  // 排一次「把第 pos 列帶進視口」，由 applyScrollAfterRender 在重繪後消費
+  // （render 之前算 scrollTop 沒有意義：序列長度還沒定案）。
+  _scheduleReveal: function(pos, plan) {
+    this._pendingReveal = { pos: pos, block: plan.block, behavior: plan.behavior };
+  },
+
+  // The render contract with term_view.buildListWindowLines(): 整段過濾後序列
+  // （絕對 listLines 索引）＋游標那一列的絕對索引。body 不再是 20 格切片——
+  // 全部畫出去，捲動交給瀏覽器。
+  getListView: function() {
     const seq = this._sequence();
-    const pos = this._windowPos(seq);
-    if (!pos) return null;
-    this._setWindow(seq, pos.top, pos.cursor);
-    const B = this._bodyRows();
-    const body = [];
-    for (let i = pos.top; i < pos.top + B; ++i) {
-      body.push(i < seq.length ? seq[i] : null);
-    }
-    // 次列位移時視口底部會露出下一列的一小條 ⇒ 多給 render 端一列補滿。
-    // 刻意**不放進 body**：body 的長度＝渲染列號的換算基準（LIST_HEADER_ROWS +
-    // index），多塞一格會讓 footer 的 data-row 位移，那是外部契約。
-    const overscanAbs =
-      this._scrollFrac > 0 && pos.top + B < seq.length ? seq[pos.top + B] : null;
-    return {
-      body: body,
-      cursorAbs: seq[pos.cursor],
-      overscanAbs: overscanAbs,
-      scrollPx: this._scrollFrac
+    if (!seq.length) return null;
+    const cursor = this._cursorPos(seq);
+    // 每幀把游標寫回內容錨（snap 之後可能換了一列）。捲動錨**不在這裡寫**：它
+    // 的真相源是 DOM 的 scrollTop，由 captureScrollAnchor 在重繪前擷取。
+    this._setCursorPos(seq, cursor);
+    return { seq: seq, cursorAbs: seq[cursor], cursorPos: cursor };
+  },
+
+  // ---- 原生捲動的錨定（render 前擷取 / render 後還原）-------------------------
+
+  // 記下一個進行中的平滑捲動：目標那一列的**內容身分**＋當下算出的目標 px。
+  _armScrollAnim: function(seq, pos, block, px) {
+    const nums = this._termBuf.listLineNums || [];
+    const abs = seq[Math.max(0, Math.min(pos, seq.length - 1))];
+    const num = nums[abs];
+    this._scrollAnim = {
+      num: num,
+      key: num == null ? this._pinnedKeyAt(abs) : null,
+      block: block,
+      px: px,
+      at: Date.now()
     };
   },
 
-  // Local navigation (zero network when the rows are buffered): one native
-  // read.c op over the window, then directional demand keeps a page of
-  // headroom. Ops that need rows beyond a confirmed edge go to the server
-  // (serverOp), exactly like native would.
-  _moveSelection: function(op) {
-    this._resetScroll(); // 鍵盤／翻頁一律回到整列對齊
+  // 動畫目標那一列現在在序列的第幾個位置（補頁／evict 之後會位移）。-1＝不見了。
+  _animTargetPos: function(seq) {
+    const a = this._scrollAnim;
+    if (!a) return -1;
+    const nums = this._termBuf.listLineNums || [];
+    if (a.num != null) {
+      const abs = nums.indexOf(a.num);
+      if (abs !== -1) return seq.indexOf(abs);
+      return -1;
+    }
+    if (a.key == null) return -1;
+    for (let i = 0; i < seq.length; ++i)
+      if (nums[seq[i]] == null && this._pinnedKeyAt(seq[i]) === a.key) return i;
+    return -1;
+  },
+
+  // 動畫到站了嗎（順便清掉）。逾時逃生門：使用者中途自己捲動會取消瀏覽器的
+  // 動畫，那時永遠到不了目標。
+  _scrollAnimSettled: function(px) {
+    const a = this._scrollAnim;
+    if (!a) return true;
+    if (Math.abs(px - a.px) < 1 || Date.now() - a.at > SCROLL_ANIM_MAX_MS) {
+      this._scrollAnim = null;
+      return true;
+    }
+    return false;
+  },
+
+  // 重繪前：把 DOM 現在的 scrollTop 轉成內容錨。accumulate 會讓整段序列上下位移
+  // （merge/evict/prune），位置留不住、錨留得住。
+  captureScrollAnchor: function() {
+    if (this._anchorOverride) {
+      // 這一幀的錨由 action 指定（開文落地／End/Home／re-seed），不從 DOM 擷取。
+      this._anchorOverride = false;
+      return;
+    }
+    const screen = this._screen();
+    if (!screen || !screen.getListScrollTop) return;
+    const rowH = this._rowHeight();
+    if (!(rowH > 0)) return;
     const seq = this._sequence();
-    const pos = this._windowPos(seq);
-    if (!pos) return;
-    const r = moveListCursorWindow(pos, op, {
-      len: seq.length,
-      bodyRows: this._bodyRows(),
-      atTop: this._edgeUp,
-      atBottom: this._edgeDown
+    if (!seq.length) return;
+    // **動畫期間照樣擷取**：錨的意義是「現在顯示的是哪一列」，補頁時要靠它把
+    // scrollTop 補償到新座標系（DOM 前置插入 N 列＝內容整體下移 N 列）。動畫的
+    // 終點另外由 _scrollAnim 記著，兩者是不同的東西 —— 混為一談就是回捲。
+    const t = topPosFromScrollTop({
+      scrollTop: screen.getListScrollTop(),
+      rowH: rowH
     });
-    if (r.serverOp === 'end') return this._requestEnd();
-    if (r.serverOp === 'home') return this._requestHome();
-    this._setWindow(seq, r.top, r.cursor);
+    this._setAnchorPos(seq, t.pos, t.frac);
+  },
+
+  // 重繪後：錨 → 新的序列位置 → scrollTop。接著消費 _pendingReveal。
+  applyScrollAfterRender: function() {
+    const screen = this._screen();
+    if (!screen || !screen.setListScrollTop) return;
+    const rowH = this._rowHeight();
+    if (!(rowH > 0)) return;
+    const seq = this._sequence();
+    if (!seq.length) return;
+    const B = this._bodyRows();
+    const viewportPx = screen.getListViewportPx() || B * rowH;
+    const maxScrollTop = maxScrollTopFor({
+      len: seq.length,
+      bodyRows: B,
+      rowH: rowH,
+      viewportPx: viewportPx
+    });
+    let pos = this._anchorPos(seq);
+    if (pos === -1) {
+      // 錨遺失（那一列被 evict／黑名單／pinned 門控拿掉）。退路：游標 → 0。
+      // 這是新架構最可能靜默出錯的地方 ⇒ 留一則診斷（不變量 7f）。
+      pos = Math.max(0, this._cursorPos(seq));
+      this._diag('listSession.scrollAnchorLost', {
+        topNum: this._topNum,
+        fallbackPos: pos,
+        len: seq.length
+      });
+      this._setAnchorPos(seq, pos, 0);
+    }
+    let top = anchorScrollTop({
+      pos: pos,
+      frac: this._scrollFrac,
+      rowH: rowH,
+      maxScrollTop: maxScrollTop
+    });
+    // 補償：把畫面定回「錨那一列」該在的地方。補頁／evict 讓序列整段位移時，
+    // 這一步就是「畫面不跳」的全部（不變量 6）。動畫進行中也照做——動畫的中間值
+    // 是舊座標系的，不補償就會瞬間跳過頭。
+    screen.setListScrollTop(top);
+
+    const rv = this._pendingReveal;
+    if (rv) {
+      this._pendingReveal = null;
+      const target = revealScrollTop({
+        pos: rv.pos,
+        scrollTop: top,
+        rowH: rowH,
+        viewportPx: viewportPx,
+        maxScrollTop: maxScrollTop,
+        block: rv.block
+      });
+      if (target !== top && rv.behavior === 'smooth') {
+        screen.scrollListTo(target, 'smooth');
+        this._armScrollAnim(seq, rv.pos, rv.block, target);
+      } else {
+        this._scrollAnim = null;
+        if (target !== top) screen.scrollListTo(target, rv.behavior);
+        this._syncAnchorFromPx(seq, target, rowH);
+      }
+      return;
+    }
+
+    if (this._scrollAnim) {
+      // 動畫還在飛：目標那一列可能被補頁往下推了，px 要跟著它重算，否則動畫會
+      // 朝一個已經不對的位置飛（往回捲）。序列沒動時 target 不變 ⇒ 不重發。
+      const tpos = this._animTargetPos(seq);
+      if (tpos === -1) {
+        this._scrollAnim = null; // 目標那一列不見了（evict／黑名單）⇒ 停在原地
+        return;
+      }
+      const target = revealScrollTop({
+        pos: tpos,
+        scrollTop: top,
+        rowH: rowH,
+        viewportPx: viewportPx,
+        maxScrollTop: maxScrollTop,
+        block: this._scrollAnim.block
+      });
+      if (Math.abs(target - this._scrollAnim.px) >= 1) {
+        screen.scrollListTo(target, 'smooth');
+        this._scrollAnim.px = target;
+        this._scrollAnim.at = Date.now();
+      }
+      return;
+    }
+
+    // clamp 可能把位置往回拉（序列變短）⇒ 錨要跟著更新，否則下一幀又被拉一次。
+    this._syncAnchorFromPx(seq, top, rowH);
+  },
+
+  // 停住捲動：作廢排隊中的 reveal 與 rAF，並**取消瀏覽器還在跑的平滑動畫**。
+  //
+  // `overflow:hidden` 只擋使用者輸入，不會取消已經排定的 `scrollTo({smooth})`
+  // ⇒ 交易 frozen 之後畫面還會自己慢慢捲幾像素（實測 462 → 458）。把 scrollTop
+  // 原值寫回去就能停住它（同步寫入會取消進行中的平滑捲動），位置一格都不動。
+  // 呼叫點：交易凍結（_freezeForTransaction／_beginOpen／_beginOpenPinned）、
+  // 切原生鏡像、cleanup。
+  _cancelScroll: function() {
+    this._pendingReveal = null;
+    this._anchorOverride = false;
+    this._lastScrollTop = 0;
+    this._scrollAnim = null;
+    const screen = this._screen();
+    if (screen && screen.getListScrollTop && screen.setListScrollTop)
+      screen.setListScrollTop(screen.getListScrollTop());
+    if (this._scrollRaf != null) {
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._scrollRaf);
+      else clearTimeout(this._scrollRaf);
+      this._scrollRaf = null;
+    }
+  },
+
+  _syncAnchorFromPx: function(seq, px, rowH) {
+    const t = topPosFromScrollTop({ scrollTop: px, rowH: rowH });
+    this._setAnchorPos(seq, t.pos, t.frac);
+  },
+
+  _screen: function() {
+    return (this._view && this._view.componentScreen) || null;
+  },
+
+  _diag: function(name, info) {
+    const rec = this._core && this._core.debugRecorder;
+    if (rec) rec.log(name, info);
+  },
+
+  // Local navigation (zero network when the rows are buffered), then directional
+  // demand keeps two pages of headroom. Ops that need rows beyond a confirmed
+  // edge go to the server (serverOp), exactly like native would.
+  //
+  // 游標與捲動**解耦**（2026-08-30，網頁式語意）：這裡只算「游標移到哪一篇」，
+  // 畫面位置交給瀏覽器 —— 移完排一次 reveal，由 applyScrollAfterRender 用
+  // scrollTo 把它帶進視野。兩類操作的基準不同，這是刻意的：
+  //   ↑↓（游標相對操作）＝ 以游標為基準，且「本來就看得到」時只做最小的位移
+  //   PgUp/PgDn/Home/End（視口操作）＝ 以**視口頂**為基準；游標被捲出視野時
+  //     PgUp 若先瞬移回游標再翻一頁會很怪，而游標可見時與 read.c 語意一致。
+  // serverOp 的判準一字未改（read.c:842-880 的邊界條件）。
+  _moveSelection: function(op) {
+    const seq = this._sequence();
+    if (!seq.length) return;
+    const len = seq.length;
+    const B = this._bodyRows();
+    const cursor = this._cursorPos(seq);
+    const top = this._navTopPos(seq);
+    let next;
+    switch (op) {
+      case 'up':
+        if (cursor <= 0) {
+          // read.c KEY_UP 在第一列 wrap 到 last_line（板尾）——板尾未確認就得先問。
+          if (!this._edgeDown) return this._requestEnd();
+          next = len - 1;
+        } else next = cursor - 1;
+        break;
+      case 'down':
+        next = Math.min(cursor + 1, len - 1); // read.c KEY_DOWN：到底不 wrap
+        break;
+      case 'pgup':
+        next = Math.max(0, top - B);
+        break;
+      case 'pgdn':
+        // read.c 允許 over-scroll（top 越過 maxTop、下面全是空白列）；這裡照 web
+        // 慣例夾住（v5 合約允許偏離 read.c，見 docs/easy-reading-list.md）。
+        next = Math.min(top + B, len - 1);
+        break;
+      case 'home':
+        if (!this._edgeUp) return this._requestHome();
+        next = 0;
+        break;
+      case 'end':
+        if (!this._edgeDown) return this._requestEnd();
+        next = len - 1;
+        break;
+      default:
+        return;
+    }
+    const wasVisible = this._isPosVisible(seq, cursor);
+    this._setCursorPos(seq, next);
+    this._scheduleReveal(
+      next,
+      revealPlan(op, { wasVisible: wasVisible, reducedMotion: prefersReducedMotion() })
+    );
     this._forceRedraw();
     const direction = op === 'up' || op === 'pgup' || op === 'home' ? -1 : 1;
     this._maybeDemand(direction);
@@ -2564,9 +2853,25 @@ ListSession.prototype = {
     // rows exist server-side, and a prefetch is in flight (the demand above or
     // an earlier chain) — show the loading indicator until rows arrive
     // (prefetch onDone/markEdge clear it).
-    const atEdge = direction > 0 ? r.cursor === seq.length - 1 : r.cursor === 0;
+    const atEdge = direction > 0 ? next === len - 1 : next === 0;
     const moreExpected = direction > 0 ? !this._edgeDown : !this._edgeUp;
     if (atEdge && moreExpected && !this._queue.idle) this._setLoading(true);
+  },
+
+  // 第 pos 列現在看得見嗎（reveal 政策的輸入）。量不到 DOM（尚未 render／unit
+  // stub）時一律當作看得見 ⇒ 走 instant，不會憑空放一段動畫。
+  _isPosVisible: function(seq, pos) {
+    const screen = this._screen();
+    const rowH = this._rowHeight();
+    if (!screen || !screen.getListScrollTop || !(rowH > 0)) return true;
+    return isRowVisible({
+      pos: pos,
+      scrollTop: screen.getListScrollTop(),
+      rowH: rowH,
+      viewportPx:
+        (screen.getListViewportPx && screen.getListViewportPx()) ||
+        this._bodyRows() * rowH
+    });
   },
 
   // Native End (read.c KEY_END: new_ln = last_line, which INCLUDES the pinned
@@ -2617,10 +2922,14 @@ ListSession.prototype = {
         self._edgeDown = true;
         const seq = self._sequence();
         if (!seq.length) return;
-        const B = self._bodyRows();
-        let top = seq.length - B;
-        if (top < 0) top = 0;
-        self._setWindow(seq, top, seq.length - 1);
+        // 落點就是板尾：游標到最後一列，畫面捲到底（錨由這次 action 指定，
+        // 不要讓下一幀的 captureScrollAnchor 拿舊 scrollTop 覆寫掉）。
+        self._setCursorPos(seq, seq.length - 1);
+        self._anchorOverride = true;
+        self._scheduleReveal(seq.length - 1, {
+          block: 'end',
+          behavior: prefersReducedMotion() ? 'auto' : 'smooth'
+        });
         self._forceRedraw();
       },
       // Benign failure: keep the window where it was (native would too if the
@@ -2663,7 +2972,12 @@ ListSession.prototype = {
         self._edgeUp = true;
         const seq = self._sequence();
         if (!seq.length) return;
-        self._setWindow(seq, 0, 0);
+        self._setCursorPos(seq, 0);
+        self._anchorOverride = true;
+        self._scheduleReveal(0, {
+          block: 'start',
+          behavior: prefersReducedMotion() ? 'auto' : 'smooth'
+        });
         self._forceRedraw();
       },
       onFail: function() {
@@ -2735,17 +3049,27 @@ export function pinnedRowKey(text) {
   return author + '|' + title;
 }
 
-// Evict numbered rows over the cap, dropping from the end FARTHEST from the
-// selection (the selection itself always survives; a null selection = pinned
-// tail = bottom, so the top is farthest). Mutates numMap in place; the pinned
-// map is never evicted (a handful of rows at most). Returns which end(s) got
-// dropped so the session can clear the matching _edgeUp/_edgeDown flag —
-// demand must be able to re-fetch an evicted segment.
-export function evictListBuffer(numMap, selectedNum, cap) {
+// Evict numbered rows over the cap, dropping from the end FARTHEST from
+// `pivotNum` — **視口**所在的那一列（ListSession.evictPivot），不是選取。
+//
+// 為什麼是視口而不是選取：游標與捲動位置自 2026-08-30 起解耦（網頁式語意，
+// 游標可以被捲出視野），使用者可以把畫面捲到離游標兩百多列外。pivot 若還綁著
+// 選取，下一次 prefetch 撞到 cap 時被丟掉的正是**使用者眼前那一段** —— 症狀是
+// 列突然消失、畫面跳。
+//
+// **刻意不做「選取那一列一定留著」**：留下一列孤島會讓 buffer 不連續，隨後的
+// pruneListToSegment（只留 pivot 所在的連續段）本來就會把它丟掉，等於白做。
+// 選取被淘汰掉的降級是既有且正確的——_cursorPos 會 snap 到最近的存活列，而
+// 開文走的是序號 jump 交易、不依賴那一列還在 buffer 裡。
+//
+// Mutates numMap in place; the pinned map is never evicted (a handful of rows at
+// most). Returns which end(s) got dropped so the session can clear the matching
+// _edgeUp/_edgeDown flag — demand must be able to re-fetch an evicted segment.
+export function evictListBuffer(numMap, pivotNum, cap) {
   const r = { evictedUp: false, evictedDown: false };
   if (!numMap || numMap.size <= cap) return r;
   const nums = Array.from(numMap.keys()).sort((a, b) => a - b);
-  const sel = selectedNum == null ? Infinity : selectedNum;
+  const sel = pivotNum == null ? Infinity : pivotNum;
   let lo = 0;
   let hi = nums.length - 1;
   let excess = nums.length - cap;

@@ -14,7 +14,6 @@ import { AutoLogin } from './auto_login';
 import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
 import { MouseButtonTracker } from './mouse_button_tracker';
 import { LIST_HEADER_ROWS } from './list_window';
-import { wheelDeltaToPx } from './wheel_scroll';
 import {
   ACT_NONE,
   ACT_ENTER,
@@ -542,10 +541,12 @@ App.prototype.doCopyAnsi = function() {
     return;
 
   var selection = this.lastSelection;
-  var pageLines = null;
-  if (this.view.useEasyReadingMode && this.buf.pageState == 3) {
-    pageLines = this.buf.pageLines;
-  }
+  // 選取的 row 是 DOM 的 data-row ＝「這一幀交給 <Screen> 的 lines index」，所以
+  // 反查內容只能用同一份（term_view._renderScreenLines 記下的那份），不能用
+  // buf.lines —— 列表好讀畫的是自己組的虛擬視窗，列數與內容都與 server 真實
+  // 24 列不對應（超出 24 的列在 getText 裡直接 TypeError）。null＝還沒 render 過，
+  // getText 自己會退回 buf.lines。守護：tests/unit/list_copy_ansi.test.js。
+  var pageLines = (this.view && this.view._renderedLines) || null;
 
   var ansiText = '';
   if (selection.start.row == selection.end.row) {
@@ -816,25 +817,25 @@ App.prototype.clientToPos = function(cX, cY) {
   var rowH = this.view.chh * this.view.scaleY;
   var row = Math.floor(y / rowH);
 
-  // 列表好讀的平滑捲動：body 區整體上移了 frac ⇒ 那一段的列號要自己補回來，
-  // 否則停在半列時點下去會開到上一篇（游標底色也會標錯列）。header／footer 不受
-  // 影響（它們不在捲動視口裡）。視口底部露出的那一小條（overscan 列）給它
-  // **渲染 index 24**，與 buildListWindowLines 放它的位置一致；不能用 3+20=23，
-  // 那是 footer 的列號。
-  var listFrac = this._listScrollFrac();
-  if (listFrac > 0) {
+  // 列表好讀：body 區是一個捲動視口（整段序列都畫在裡面），所以那一段的列號要
+  // 自己算 —— 螢幕 y 落在視口裡的位置，加上視口已經捲掉的距離。捲掉的距離是
+  // **內容 px**，而 y 是螢幕 px ⇒ 乘 scaleY 換到同一個座標系。
+  // header／footer 不受影響（它們不在視口裡，是 #mainContainer 的直系子層）。
+  var listTop = this._listScrollTop();
+  if (listTop != null) {
     var bodyTop = LIST_HEADER_ROWS * rowH;
     var bodyRows = this.buf.rows - 4;
     if (y >= bodyTop && y < bodyTop + bodyRows * rowH) {
       var bodyIdx = Math.floor(
-        (y - bodyTop + listFrac * this.view.scaleY) / rowH
+        (y - bodyTop + listTop * this.view.scaleY) / rowH
       );
-      if (bodyIdx > bodyRows) bodyIdx = bodyRows;
       if (bodyIdx < 0) bodyIdx = 0;
-      return {
-        col: col,
-        row: bodyIdx === bodyRows ? this.buf.rows : LIST_HEADER_ROWS + bodyIdx
-      };
+      return { col: col, row: LIST_HEADER_ROWS + bodyIdx };
+    }
+    // footer：全序列渲染後它的列號 ＝ 這一幀 lines 的最後一個 index。
+    if (y >= bodyTop + bodyRows * rowH) {
+      var wl = this.view._listWindowLines;
+      if (wl && wl.length) return { col: col, row: wl.length - 1 };
     }
   }
 
@@ -846,11 +847,14 @@ App.prototype.clientToPos = function(cX, cY) {
   return {col: col, row: row};
 };
 
-// 列表好讀的次列位移（未縮放的內容 px）。0＝沒有位移或不適用（其他畫面、frozen
-// 快照）。座標換算與 render 都以它為準。
-App.prototype._listScrollFrac = function() {
-  if (!this.listSession || this.buf.listRenderMode !== 'buffer') return 0;
-  return (this.listSession.scrollFrac && this.listSession.scrollFrac()) || 0;
+// 列表好讀 body 視口目前捲掉的距離（未縮放的內容 px）。null＝不適用（其他畫面）。
+// frozen 也要回報：交易期間畫面凍在原地，滑鼠仍然要能算出正確的列號來提示。
+App.prototype._listScrollTop = function() {
+  var mode = this.buf.listRenderMode;
+  if (mode !== 'buffer' && mode !== 'frozen') return null;
+  var screen = this.view.componentScreen;
+  if (!screen || !screen.getListScrollTop) return null;
+  return screen.getListScrollTop() || 0;
 };
 
 // 各滑鼠入口的生效與否。總開關（buf.useMouseBrowsing）與四個子開關（view 上的
@@ -1106,9 +1110,13 @@ App.prototype.onPrefChange = function(name, value) {
     case 'mouseWheel':
       this.view.mouseWheel = Number(value) || 0;
       break;
-    // 純事件層行為（下一個 wheel event 就生效），不影響已畫出來的畫面 ⇒ 免 redraw。
+    // 這條**會改變已畫出來的畫面**：列表好讀的 body 視口靠 CSS overflow 決定吃不吃
+    // 使用者的捲動輸入（開＝auto 交給瀏覽器、關＝hidden 退回一次一頁），而
+    // overflow 是在 render 時套上去的 ⇒ 不 force redraw 的話要等下一次 PTT 寫畫面
+    // 才生效（使用者看到的是「關了設定滾輪還是原生捲動」）。
     case 'mouseWheelSmoothScroll':
       this.view.mouseWheelSmoothScroll = !!value;
+      this.view.redraw(true);
       break;
     case 'copyOnSelect':
       this.copyOnSelect = value;
@@ -1523,26 +1531,23 @@ App.prototype.mouse_scroll = function(e) {
 
   var up = e.deltaY < 0 || e.wheelDelta > 0;
 
-  // List easy reading buffer/frozen render (native-parity window): 同樣是翻頁，
-  // 但**在本機的視窗上執行** —— 隱藏的真游標不可以動，也不送任何 byte 給 server。
-  // Frozen（開文交易進行中）整個吞掉，比照鍵盤的開文行為。
+  // List easy reading buffer/frozen render：body 是一個真正的捲動視口，
+  // **捲動交給瀏覽器**（與文章好讀同一條路：early return、不 preventDefault）。
+  //
+  // 「吞掉捲動」不能靠 preventDefault —— 這個 handler 掛在 window 上且沒指定
+  // passive，Chrome 73+ 一律視為 passive ⇒ preventDefault 是 no-op。改由 CSS
+  // 決定：frozen（交易中）與 pref 關掉時 .listBodyView 是 overflow:hidden
+  // （見 render/screen.js#_ensureBodyView），使用者輸入自然捲不動它。
+  // pref 關掉時滾輪退回「一次一頁」，走與鍵盤 PgUp/PgDn 完全相同的一條路。
   if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
-    if (this.buf.listRenderMode === 'buffer' && this.listSession) {
-      if (gates.wheelSmoothScroll) {
-        // 平滑捲動：換算成距離交給 ListSession 的緩動器（分幀吃掉＋次列位移）。
-        // 座標系換算是關鍵：wheel 的像素是**螢幕上的**，而視窗較矮時整個終端機
-        // 被 scaleY 縮放過（term_view.setTermFontSize）⇒ 除回去才是內容座標，
-        // 那才是 ListSession/scrollTop 用的單位。漏掉就會捲太多。
-        var scaleY = this.view.scaleY || 1;
-        var px = wheelDeltaToPx(e, {
-          lineHeight: this.view.chh * scaleY,
-          pageLines: this.buf.rows - 4
-        });
-        if (px) this.listSession.onWheelScrollPx(px / scaleY);
-      } else {
-        this.listSession.onWheel(up ? 'pgup' : 'pgdn');
-      }
+    if (gates.wheelSmoothScroll) {
+      // 放行給瀏覽器之前先問一句「是不是已經捲到邊了」：捲不動就不會有 scroll
+      // 事件，而 demand 正是由它驅動的（buffer 只有一頁時往上滾會看起來卡住）。
+      if (this.listSession) this.listSession.onWheelAtEdge(up ? -1 : 1);
+      return;
     }
+    if (this.buf.listRenderMode === 'buffer' && this.listSession)
+      this.listSession.onWheel(up ? 'pgup' : 'pgdn');
     e.stopPropagation();
     e.preventDefault();
     return;

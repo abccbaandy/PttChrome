@@ -135,6 +135,14 @@ export class ScreenController {
     this._captionAiEnabledSeen = null;
     this._availabilityToken = 0;
 
+    // 列表好讀的捲動視口（見 _ensureBodyView）。它一旦建立就常駐 controller，
+    // listener 只掛一次；`onListScroll` 由 term_view 接到 ListSession.onDomScroll。
+    this._bodyView = null;
+    this.onListScroll = null;
+    this._onListScroll = () => {
+      if (this.onListScroll) this.onListScroll();
+    };
+
     // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
     // hover 預覽的 OnHover img 無此 class，不受影響。
     this._onContainerClick = this._onContainerClick.bind(this);
@@ -298,6 +306,11 @@ export class ScreenController {
     this._annotations = [];
     this._liveSlots.clear();
     if (this._hoverHost) unmountFrom(this._hoverHost);
+    if (this._bodyView) {
+      this._bodyView.removeEventListener("scroll", this._onListScroll);
+      this._bodyView = null;
+    }
+    this.onListScroll = null;
     this.container.removeEventListener("click", this._onContainerClick);
     this.container.removeEventListener("mousemove", this._onContainerMouseMove);
     this.container.remove();
@@ -770,11 +783,15 @@ export class ScreenController {
   // 把容器的列區塊調成 `nodes` 的樣子。逐位置比對＋就地搬移：沒變的節點原封不動
   // 留在 DOM 裡（好讀累積頁的常態是純 append，這裡就只會做 appendChild）。
   //
-  // 列表好讀的平滑捲動（enhance.listScroll）多一層：body 那 20 列住在一個固定高度、
-  // overflow:hidden 的視口節點裡，用它的 scrollTop 表達**次列位移**（畫面因此停得住
-  // 半列的位置）。header/footer 留在容器直系子層 ⇒ 不會跟著捲、也不必靠不透明背景
-  // 去蓋住捲進來的內容。列節點本身完全沒變（data-row／內容／快取都一樣），只是換了
-  // 父節點。
+  // 列表好讀（enhance.listScroll）多一層：**整段緩衝**（過濾後序列，上限
+  // MAX_LIST_ROWS≈300 列）都畫進一個固定高度（＝原本 body 那 20 列）的捲動視口
+  // 節點，捲動本身交給瀏覽器 —— 與文章好讀模式同一套引擎。header/footer 留在
+  // 容器直系子層 ⇒ 不跟著捲、也不必靠不透明背景去蓋住捲進來的內容。列節點本身
+  // 完全沒變（data-row／內容／快取都一樣），只是換了父節點。
+  //
+  // body 的範圍＝`[bodyStart, nodes.length-1)`：footer 恆是最後一列（它的
+  // data-row 因此會隨序列長度變動，那是對的——data-row 的定義就是「傳給
+  // <Screen> 的 lines index」，見 term_view._renderScreenLines）。
   _patchRows(nodes) {
     const ls = this.props.enhance && this.props.enhance.listScroll;
     // 列區塊的右邊界＝第一個浮層節點（浮層永遠排在最後）。取 isConnected 的那個：
@@ -785,34 +802,60 @@ export class ScreenController {
       this._patchInto(this.container, nodes, stop);
       return;
     }
-    const bodyEnd = ls.bodyStart + ls.bodyRows;
+    const bodyEnd = Math.max(ls.bodyStart, nodes.length - 1);
     const bodyNodes = nodes.slice(ls.bodyStart, bodyEnd);
-    // overscan 列排在 footer 之後（term_view.buildListWindowLines 的註解說明了
-    // 為什麼不能插在 body 裡：footer 的 data-row 是外部契約）。
-    if (ls.overscan && nodes.length > bodyEnd + 1)
-      bodyNodes.push(nodes[bodyEnd + 1]);
     const view = this._ensureBodyView(ls);
     const outer = nodes
       .slice(0, ls.bodyStart)
-      .concat([view], nodes.slice(bodyEnd, bodyEnd + 1));
+      .concat([view], nodes.slice(bodyEnd));
     this._patchInto(this.container, outer, stop);
     this._patchInto(view, bodyNodes, null);
-    view.scrollTop = ls.offsetPx || 0;
   }
 
   // 列表好讀 body 的捲動視口。高度＝body 列數 × 列高（版面總高不變：它取代的就是
-  // 那 20 列），內容多一列時由 overflow:hidden 裁掉。
+  // 那 20 列），內容比它高的部分就是可捲距離。
+  //
+  // `scrollable=false`（交易 frozen／pref 關掉原生捲動）走 `overflow:hidden`：
+  // hidden 的元素**仍是 scroll container**，scrollTop 與 scrollTo() 照常有效，
+  // 只是使用者輸入捲不動它。這是「吞掉捲動」的唯一可行做法 —— window 上的 wheel
+  // listener 在 Chrome 是 passive-by-default，preventDefault() 是 no-op
+  // （見 pttchrome.jsx#mouse_scroll）。
   _ensureBodyView(ls) {
-    if (!this._bodyView) this._bodyView = el("div", { class: "listBodyView" });
+    if (!this._bodyView) {
+      this._bodyView = el("div", { class: "listBodyView" });
+      this._bodyView.addEventListener("scroll", this._onListScroll, {
+        passive: true,
+      });
+    }
     const h = (ls.viewportPx || 0) + "px";
     if (this._bodyView.style.height !== h) this._bodyView.style.height = h;
+    const ov = ls.scrollable ? "auto" : "hidden";
+    if (this._bodyView.style.overflowY !== ov)
+      this._bodyView.style.overflowY = ov;
     return this._bodyView;
   }
 
-  // 次列位移的快路徑（term_view → ListSession._setScrollFrac）：捲動沒有跨列時
-  // 只有 scrollTop 變，整幀重繪是白工（滾輪動畫是每幀觸發的）。
-  setListScrollOffset(px) {
+  // ---- 列表好讀的捲動存取（唯一入口）----------------------------------------
+  // ListSession 一律透過這四支動 DOM，不直接碰節點：jsdom 沒有 Element.scrollTo，
+  // 而捲動語意的 unit 測試全都在 jsdom 下跑。
+  getListScrollTop() {
+    return this._bodyView ? this._bodyView.scrollTop : 0;
+  }
+
+  getListViewportPx() {
+    return this._bodyView ? this._bodyView.clientHeight : 0;
+  }
+
+  setListScrollTop(px) {
     if (this._bodyView) this._bodyView.scrollTop = px || 0;
+  }
+
+  scrollListTo(px, behavior) {
+    const v = this._bodyView;
+    if (!v) return;
+    if (behavior === "smooth" && typeof v.scrollTo === "function")
+      v.scrollTo({ top: px || 0, behavior: "smooth" });
+    else v.scrollTop = px || 0;
   }
 
   _patchInto(parent, nodes, stop) {

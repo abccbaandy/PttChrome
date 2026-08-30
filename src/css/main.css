@@ -195,13 +195,33 @@ a:link,a:visited,a:active,a:hover {
   white-space: pre;
 }
 
-/* 列表好讀模式的 body 捲動視口（平滑捲動）。高度由 JS 設成 body 列數 × 列高，
-   內容比它多一列，多出來的部分靠 overflow:hidden 裁掉；scrollTop 就是「捲掉了
-   幾個像素」。#mainContainer > span 是直系選擇器，列包進這一層之後要補等效樣式
-   （同 .mergedImageBlock 的處理）。 */
+/* 列表好讀模式的 body 捲動視口。高度由 JS 設成 body 列數 × 列高，內容是整段
+   緩衝（≤ MAX_LIST_ROWS 列）⇒ 有真正的可捲距離，捲動交給瀏覽器（與文章好讀
+   同一套引擎）。`overflow-y` 也由 JS 控（auto／hidden，見 screen.js
+   #_ensureBodyView）。#mainContainer > span 是直系選擇器，列包進這一層之後要補
+   等效樣式（同 .mergedImageBlock 的處理）。
+
+   捲軸**不能顯示**：傳統捲軸會佔掉約 15px 內容寬，body 的 80 格網格被壓縮，而
+   header/footer 在 #mainContainer 直系子層不受影響 ⇒ 欄位左右錯開。
+   `scrollbar-gutter: stable` 同樣佔寬，一樣不行。
+   overscroll-behavior: 捲到底時不要把手勢傳給外層（.main／document），
+   免得觸發瀏覽器的返回手勢與 rubber-band。 */
 .listBodyView {
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: none;
+  /* 補頁（prepend）時的位置補償**只能有一個真相源**：ListSession 的內容錨
+     （captureScrollAnchor → applyScrollAfterRender）。瀏覽器內建的 scroll
+     anchoring 也會在前置插入節點時自己調整 scrollTop，兩邊各補一次就是補過頭。
+     實測（2026-08-30）Chrome 在我們這種「整批 patch 列節點」的更新下並沒有選中
+     anchor，拿掉這一行行為沒有可觀測差異 —— 但那是啟發式的結果、不是合約，換個
+     瀏覽器或改了 patch 方式就可能生效。明確關掉，位置只由我們算。
+     補償機制本身的守護在 tests/unit/list_session.test.js「平滑捲動 × 背景補頁」。 */
+  overflow-anchor: none;
+}
+.listBodyView::-webkit-scrollbar {
+  display: none;
 }
 .listBodyView > span {
   display: block;

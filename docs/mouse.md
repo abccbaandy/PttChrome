@@ -31,7 +31,7 @@
 | `mouseFunctionKeys` | `true` | bool | 畫面上的功能鍵提示變成按鈕（見下方「功能鍵按鈕」） |
 | `mouseMiddleClick` | `0` | 0 關閉 / 1 貼上 / 2 左方向鍵 | |
 | `mouseWheel` | `1` | 0 關閉 / 1 上下頁 | |
-| `mouseWheelSmoothScroll` | `true` | bool | 滾輪平滑捲動（連續位移＋緩動，畫面停得住半列），**只作用於文章列表好讀模式**（其餘畫面沒有這個選擇，見下方 render 分支表）。關掉＝該模式退回一次一頁 |
+| `mouseWheelSmoothScroll` | `true` | bool | 開＝列表好讀的 body 視口走 `overflow-y:auto`，**捲動整個交給瀏覽器**（與文章好讀同一套引擎）；關＝視口改 `overflow:hidden`，滾輪退回一次一頁。**只作用於文章列表好讀模式**（其餘畫面沒有這個選擇，見下方 render 分支表） |
 
 ### 舊 → 新 key 對照（**刻意不做遷移**）
 
@@ -171,24 +171,34 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 
 滾輪關閉時 `mouse_scroll` **直接 return，不 preventDefault**（語意＝我們完全不碰）。
 
-**平滑捲動的三段換算**（列表好讀專用；其他畫面走上面那兩條）：
+**列表好讀的滾輪＝完全不碰**（2026-08-30 起，與文章好讀同一條路）：`mouse_scroll`
+在 `gates.wheelSmoothScroll` 時 **early return，不 preventDefault、不 stopPropagation**，
+body 視口（`.listBodyView`，`overflow-y:auto`，內容＝整段序列）由瀏覽器自己捲。
+自己刻的那一層（`wheel_scroll.js` 的 deltaMode 換算 ＋ `smooth_scroll.js` 的 rAF
+緩動器 ＋ `_stepScroll` 的次列位移）**整組刪掉**。
 
-1. `src/js/wheel_scroll.js#wheelDeltaToPx`（純函式）——認 `deltaMode`：0 像素／1 列
-   （Firefox 滑鼠滾輪送的是**列**，只看 deltaY 幾乎不動）／2 頁。
-2. **座標系**：wheel 給的是**螢幕**像素，而視窗較矮時整個終端機被 `scaleY` 縮放過
-   （`term_view.setTermFontSize`）⇒ `App.mouse_scroll` 除以 scaleY 換成**內容像素**，
-   之後所有數字（`chh`、次列偏移、body 視口的 scrollTop）都在內容座標系。漏掉這一步
-   會捲太多／太少。
-3. `src/js/smooth_scroll.js` 的緩動器把距離分幀吃掉（指數趨近，~120ms 收斂），每幀
-   交給 `ListSession._stepScroll`。
+**放行之前先問一句「到邊了沒」**（`ListSession.onWheelAtEdge`）：demand 是 scroll 事件
+驅動的，而捲不動就沒有 scroll 事件 ⇒ buffer 只有一頁時往上滾會看起來卡住。到邊的滾輪
+本身就是「請給我更多」，這條把它接回既有的 demand（零 byte 判斷）。
 
-**次列位移的座標契約**：畫面可以停在半列上（body 視口的 scrollTop = frac），所以
-`App.clientToPos` 對 body 區的列號要補回 frac，否則點擊與底色會標到上一列。視口底部
-露出的那一小條是 **overscan 列，渲染 index 24**（不是 3+20=23，那是 footer 的列號），
-`onListMouseMove`／`ListSession.onMouseClick` 都認這個值 ⇒ 「可點範圍＝標示範圍」在
-半列狀態下仍成立。
-守護：`tests/unit/wheel_scroll.test.js`、`tests/unit/smooth_scroll.test.js`、
-`tests/unit/render_list_scroll.test.js`。
+**「吞掉捲動」不能靠 `preventDefault`**：wheel listener 掛在 `window` 且沒指定
+`passive`（`pttchrome.jsx:197`），Chrome 73+ 一律視為 passive ⇒ `preventDefault()` 是
+no-op（改版前沒被發現，是因為那時列表根本沒有可捲距離）。frozen（交易中）與 pref
+關掉一律改用 CSS：視口切 `overflow:hidden`——hidden 的元素**仍是 scroll container**，
+`scrollTop`／`scrollTo()` 照常有效，只是使用者輸入捲不動它。
+另一半：`overflow:hidden` **不會取消已排定的 `scrollTo({smooth})`**，所以交易凍結時
+還要主動停掉動畫（`ListSession._cancelScroll`：把 scrollTop 原值同步寫回去），否則
+frozen 之後畫面會自己再捲幾像素。
+
+**座標契約**：`App.clientToPos` 對 body 區的列號 ＝
+`floor((y - bodyTop + scrollTop × scaleY) / rowH)`，`row = 3 + 該值`。scrollTop 是
+**內容像素**、`y` 是**螢幕像素** ⇒ 乘 `scaleY`（視窗較矮時整個終端機被
+`term_view.setTermFontSize` 縮放過）。footer 的列號 ＝ 這一幀 lines 的最後一個 index
+（全序列渲染後它不再固定是 23）。`onListMouseMove`／`ListSession.onMouseClick` 都用
+`3 + 序列位置` 反查，「可點範圍＝標示範圍」照舊成立。
+守護：`tests/unit/list_scroll.test.js`（捲動數學）、`tests/unit/render_list_scroll.test.js`
+（視口結構與 overflow 開關）、`tests/unit/list_session.test.js`（捲動語意／錨定還原／
+動畫期間的錨）。
 原生模式沒有可捲距離（`#BBSWindow` 是 `fixed; overflow:hidden`，`.main` 的高度就是
 內容高），所以放行不會造成怪異捲動。
 
@@ -276,11 +286,12 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 |---|---|---|---|
 | 原生 24 列 | `term_buf.onMouse_move` | `App.onMouse_click`（依 `buf.mouseAction`） | `setBBSCmd('doPageUp'/'doPageDown')` |
 | 好讀文章長頁 | 同上（`clientToPos` 把 row clamp 進 0..rows-1） | 同上 + `easyReading._onMouseClick` 先收狀態機 | **early return，交給瀏覽器捲動** |
-| 列表好讀（buffer/frozen） | `term_view.onListMouseMove(row, col)` | 左 7 欄 → `list_session.onMouseExitClick()`；其餘 → `list_session.onMouseClick(row, col)` | 預設 `listSession.onWheelScrollPx(px)`（平滑）；`mouseWheelSmoothScroll` 關 → `listSession.onWheel('pgup'/'pgdn')` |
+| 列表好讀（buffer/frozen） | `term_view.onListMouseMove(row, col)` | 左 7 欄 → `list_session.onMouseExitClick()`；其餘 → `list_session.onMouseClick(row, col)` | 預設 **early return，交給瀏覽器捲動**（body 視口 `overflow-y:auto`）；`mouseWheelSmoothScroll` 關 → 視口 `overflow:hidden` ＋ `listSession.onWheel('pgup'/'pgdn')` |
 
 列表好讀分支在 `App.mouse_click` 的 `preventDefault()` 是**無條件**的（即使滑鼠功能
 整組關掉）：那個畫面是我們自己組的，不能讓瀏覽器預設行為對它動作。pref gate 只包住
-「要不要真的開文」。
+「要不要真的開文」。**滾輪相反**：預設路徑就是要讓瀏覽器的預設行為發生（那正是捲動
+本身），所以那條分支既不 `preventDefault` 也不 `stopPropagation`。
 
 ## 點擊優先權（`App.mouse_click` 左鍵分支，由上而下）
 

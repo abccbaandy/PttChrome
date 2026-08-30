@@ -165,8 +165,10 @@ describe("onListMouseMove 與仲裁的銜接", () => {
     const calls = [];
     v.bbscore = {
       listSession: {
-        getWindowView: () => ({
-          body: Array.from({ length: 20 }, (_, i) => 100 + i),
+        getListView: () => ({
+          seq: Array.from({ length: 20 }, (_, i) => 100 + i),
+          cursorAbs: 100,
+          cursorPos: 0,
         }),
       },
     };

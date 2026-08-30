@@ -701,7 +701,7 @@ export const en_US = {
     "message": "Smooth scrolling in list easy-reading"
   },
   "tooltip_mouseWheelSmoothScroll": {
-    "message": "In the article list's easy-reading mode the wheel scrolls smoothly, like a normal web page: continuous motion that can rest between rows, so even small trackpad swipes register. Turn it off to jump a whole page per notch. The native (non easy-reading) list always pages, since the server does the paging."
+    "message": "In the article list's easy-reading mode the wheel is handed straight to the browser, exactly like article easy-reading: momentum, fine trackpad swipes and your system scroll settings all behave natively. Turn it off to jump a whole page per notch. The native (non easy-reading) list always pages, since the server does the paging."
   },
   "options_mouseBrowsing": {
     "message": "Mouse browsing"

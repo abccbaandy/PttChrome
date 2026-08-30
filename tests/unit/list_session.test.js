@@ -555,6 +555,24 @@ describe("mergeListPage + flattenListBuffer", () => {
 
 describe("evictListBuffer (total-row cap)", () => {
   const mapOf = nums => new Map(nums.map(n => [n, "r" + n]));
+
+  // 樞紐＝**視口**（evictPivot），不是選取。游標與捲動位置解耦之後，使用者可以
+  // 把畫面捲到離游標兩百多列外；樞紐若還綁著選取，撞到 cap 時丟掉的就是眼前那
+  // 一段（症狀：列突然消失、畫面跳）。
+  it("樞紐是視口：游標在遠端時，眼前那一段不得被丟掉", () => {
+    const m = mapOf([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    // 視口在 9（使用者正在看板尾），游標還留在 2（很久以前選的那篇）。
+    const kept = () => Array.from(m.keys()).sort((a, b) => a - b);
+    const r = evictListBuffer(m, 9, 4);
+    expect(kept()).toContain(9);
+    expect(kept()).toContain(10);
+    expect(r.evictedUp).toBe(true);
+    // 對照：樞紐若是選取（舊行為），留下的會是游標附近而不是眼前這一段。
+    const m2 = mapOf([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    evictListBuffer(m2, 2, 4);
+    expect(Array.from(m2.keys())).not.toContain(10);
+  });
+
   it("no-op under the cap", () => {
     const m = mapOf([1, 2, 3]);
     expect(evictListBuffer(m, 2, 3)).toEqual({
@@ -563,30 +581,46 @@ describe("evictListBuffer (total-row cap)", () => {
     });
     expect(m.size).toBe(3);
   });
-  it("evicts the end FARTHEST from the selection (selection kept)", () => {
-    // selection near the bottom → the old top gets dropped.
+  it("evicts the end FARTHEST from the pivot", () => {
+    // 樞紐靠近底部 → 舊的頂端被丟掉。
     const m = mapOf([10, 11, 12, 13, 14]);
     const r = evictListBuffer(m, 14, 3);
     expect(r).toEqual({ evictedUp: true, evictedDown: false });
     expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([12, 13, 14]);
   });
-  it("evicts the bottom when the selection sits at the top", () => {
+  it("evicts the bottom when the pivot sits at the top", () => {
     const m = mapOf([10, 11, 12, 13, 14]);
     const r = evictListBuffer(m, 10, 3);
     expect(r).toEqual({ evictedUp: false, evictedDown: true });
     expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([10, 11, 12]);
   });
-  it("mid selection evicts both ends, keeping the window around it", () => {
+  it("mid pivot evicts both ends, keeping the window around it", () => {
     const m = mapOf([1, 2, 3, 4, 5, 6, 7]);
     const r = evictListBuffer(m, 4, 3);
     expect(r).toEqual({ evictedUp: true, evictedDown: true });
     expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([3, 4, 5]);
   });
-  it("null selection (pinned tail selected) is treated as bottom → evicts the top", () => {
+  it("null pivot (pinned tail) is treated as bottom → evicts the top", () => {
     const m = mapOf([10, 11, 12, 13]);
     const r = evictListBuffer(m, null, 2);
     expect(r).toEqual({ evictedUp: true, evictedDown: false });
     expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([12, 13]);
+  });
+});
+
+describe("evictPivot（樞紐＝視口，退路才是選取）", () => {
+  test("有視口錨 → 用它", () => {
+    const h = demandSession({ numStart: 100, count: 30 });
+    h.s._topNum = 115;
+    h.s._selectedNum = 100;
+    expect(h.s.evictPivot()).toBe(115);
+  });
+
+  test("視口錨是置底列／尚未建立 → 退回選取", () => {
+    const h = demandSession({ numStart: 100, count: 30 });
+    h.s._topNum = null;
+    h.s._selectedNum = 107;
+    expect(h.s.evictPivot()).toBe(107);
   });
 });
 
@@ -1578,176 +1612,531 @@ describe("無編號列的 clean-list 幀（只剩置底文的短頁）不得 see
 });
 
 // ---------------------------------------------------------------------------
-// 滾輪平滑捲動（pref mouseWheelSmoothScroll）
+// 捲動（瀏覽器原生；session 只維護內容錨 + demand）
 // ---------------------------------------------------------------------------
 
-describe("滾輪平滑捲動（_stepScroll，純本地零 byte）", () => {
-  // buffer：序號 100..159（60 列），B=20，列高 20px ⇒ maxTop=40、maxPx=800。
-  // 兩邊 edge 都已確認 ⇒ 不會有 demand 干擾，任何 enqueue 都代表偷送了東西。
+// 捲動視口的替身（真的那個是 render/screen.js 的 .listBodyView）。scrollTop 是
+// 唯一真相源，session 只從它擷取錨、往它寫還原後的位置。
+function fakeScreen(top, viewportPx) {
+  return {
+    top: top,
+    getListScrollTop() { return this.top; },
+    getListViewportPx() { return viewportPx; },
+    setListScrollTop(px) { this.top = px; },
+    scrollListTo(px) { this.top = px; },
+  };
+}
+
+describe("原生捲動：scroll 事件的處置", () => {
+  // buffer：序號 100..159（60 列），B=20，列高 20px ⇒ 內容 1200px、視口 400px、
+  // maxScrollTop=800。兩邊 edge 預設都已確認 ⇒ 任何 enqueue 都代表偷送了東西。
   const setup = () => {
     const h = demandSession({ numStart: 100, count: 60 });
     h.s._renderMode = "buffer";
     h.s._edgeUp = true;
     h.s._edgeDown = true;
-    h.s._topNum = 110; // 視窗位置 10
-    h.s._selectedNum = 115; // 游標位置 15
-    h.s.getWindowView(); // 讓 _setWindow 算出邊旗標（render 每幀都會做）
+    h.s._topNum = 110; // 視口頂＝序列位置 10
+    h.s._selectedNum = 115; // 游標＝序列位置 15
     h.termBuf.notify = vi.fn();
+    h.screen = fakeScreen(10 * 20, 20 * 20);
+    h.s._view.componentScreen = h.screen;
     return h;
   };
 
-  test("沒跨列：只改視口偏移，不動視窗、不重繪（滾輪每幀都來，重繪是白工）", () => {
-    const { s, termBuf, offsets } = setup();
-    expect(s._stepScroll(8)).toBe(true);
-    expect(s.scrollFrac()).toBe(8);
-    expect(s._topNum).toBe(110);
-    expect(offsets).toEqual([8]); // 一次 scrollTop 寫入
+  test("捲動更新視口錨，但**不重繪**（不變量 2b：本地重繪不得餵 settle）", () => {
+    const { s, screen, termBuf } = setup();
+    screen.top = 30 * 20; // 使用者捲到序列位置 30
+    s._onScrollFrame();
+    expect(s._topNum).toBe(130);
     expect(termBuf.notify).not.toHaveBeenCalled();
   });
 
-  test("跨列：視窗走一列，餘下的像素留在次列偏移", () => {
-    const { s, termBuf } = setup();
-    s._stepScroll(26); // 一列 20px + 6px
-    expect(s._topNum).toBe(111);
-    expect(s.scrollFrac()).toBe(6);
-    expect(termBuf.notify).toHaveBeenCalled();
+  test("捲動不動游標（網頁式語意：游標可以被捲出視野）", () => {
+    const { s, screen } = setup();
+    screen.top = 55 * 20;
+    s._onScrollFrame();
+    expect(s._topNum).toBe(155);
+    expect(s._selectedNum).toBe(115); // 游標仍停在原本那篇
   });
 
-  test("往上捲對稱（次列偏移可以退回上一列）", () => {
-    const { s } = setup();
-    s._stepScroll(8);
-    s._stepScroll(-14); // 8-14 = -6 ⇒ 退回上一列的第 14px
-    expect(s._topNum).toBe(109);
-    expect(s.scrollFrac()).toBe(14);
+  test("停在半列：錨是被捲到頂的那一列 + 列內偏移", () => {
+    const { s, screen } = setup();
+    screen.top = 12 * 20 + 7;
+    s._onScrollFrame();
+    expect(s._topNum).toBe(112);
+    expect(s._scrollFrac).toBeCloseTo(7);
   });
 
-  test("游標留在原本那一篇，被視窗推到邊緣才動", () => {
-    const { s } = setup();
-    s._stepScroll(20 * 3); // 視窗走三列
-    expect(s._topNum).toBe(113);
-    expect(s._selectedNum).toBe(115); // 還在視窗內 ⇒ 不動
-    s._stepScroll(20 * 5); // 再五列，游標被推
-    expect(s._topNum).toBe(118);
-    expect(s._selectedNum).toBe(118);
-  });
-
-  test("捲到底：最後一列貼齊視口底部（次列偏移歸零），並回報停止", () => {
-    const { s, nums } = setup();
-    expect(s._stepScroll(20 * 999)).toBe(false); // 撞到邊 ⇒ 緩動器停
-    expect(s._topNum).toBe(140); // len(60) - B(20)
-    expect(s.scrollFrac()).toBe(0); // 不留半列，否則會露出空白
-    const win = s.getWindowView();
-    expect(nums[win.body[win.body.length - 1]]).toBe(159);
-    expect(win.overscanAbs).toBeNull(); // 貼底不需要補列
-  });
-
-  test("捲到頂同理", () => {
-    const { s } = setup();
-    expect(s._stepScroll(-20 * 999)).toBe(false);
-    expect(s._topNum).toBe(100);
-    expect(s.scrollFrac()).toBe(0);
-  });
-
-  test("已在底端時再往下：偏移不得長出來（露白的來源）", () => {
-    const { s, offsets } = setup();
-    s._stepScroll(20 * 999);
-    offsets.length = 0;
-    expect(s._stepScroll(5)).toBe(false);
-    expect(s.scrollFrac()).toBe(0);
-  });
-
-  test("次列位移時多給 render 一列補滿視口（overscan）", () => {
-    const { s } = setup();
-    expect(s.getWindowView().overscanAbs).toBeNull(); // 對齊時不多畫
-    s._stepScroll(8);
-    const win = s.getWindowView();
-    expect(win.body.length).toBe(20); // body 長度不變＝渲染列號的換算基準
-    expect(win.overscanAbs).toBe(win.body[19] + 1);
-  });
-
-  test("交易進行中（frozen）與非 active 一律吞掉", () => {
-    const frozen = setup();
-    frozen.s._renderMode = "frozen";
-    expect(frozen.s._stepScroll(8)).toBe(false);
-    expect(frozen.s.scrollFrac()).toBe(0);
-
-    const opening = setup();
-    opening.s.state = "opening";
-    expect(opening.s._stepScroll(8)).toBe(false);
-  });
-
-  test("鍵盤導覽會把次列偏移歸零（不停在半列上）", () => {
-    const { s } = setup();
-    s._stepScroll(8);
-    expect(s.scrollFrac()).toBe(8);
-    s._moveSelection("down");
-    expect(s.scrollFrac()).toBe(0);
-  });
-
-  test("開文前也歸零：frozen 快照不該凍在半列上", () => {
-    const { s } = setup();
-    s._stepScroll(8);
-    s._beginOpen();
-    expect(s.scrollFrac()).toBe(0);
-  });
-
-  // 2026-08-29 live e2e 現場：游標停在置底文（★，序號 null）時往上捲，游標一直
-  // 在視窗內 ⇒ 捲動不會把它拉走，`_selectedNum` 保持 null。這是正確行為（選取以
-  // 內容為身分，捲動不該偷換選取），但**與翻頁不同** —— pgup 每次都把游標放到新頁
-  // 頂，一格就會變成有序號的列。live spec 原本用「selectedNum 變小」當作「捲上去
-  // 了」的證據，換成捲動之後那個前提就不成立了。
-  test("游標停在置底文時往上捲：視窗照樣走，選取不被偷換", () => {
+  test("游標停在置底文時往上捲：選取不被拉走（以內容為身分）", () => {
     const h = demandSession({ numStart: 100, count: 60 });
     const { s, termBuf } = h;
     s._renderMode = "buffer";
     s._edgeDown = true; // 已確認板尾 ⇒ 置底列進入導覽序列
     s._edgeUp = true;
     for (let i = 0; i < 3; ++i) {
-      const text = `      ★ 6/14 someoneP     □ [公告] 置底 ${i}`.padEnd(80);
+      const text = ("      ★ 6/14 someoneP     □ [公告] 置底 " + i).padEnd(80);
       termBuf.listLines.push([...text].map((ch) => ({ ch, isLeadByte: false })));
       termBuf.listLineNums.push(null);
     }
-    const pinnedAbs = termBuf.listLineNums.length - 3; // 三列置底的第一列
-    s._topNum = 150; // 視窗位置 50（序列長 63，body 20）⇒ 置底列在視窗中段
+    const pinnedAbs = termBuf.listLineNums.length - 3;
+    s._topNum = 150;
     s._selectedNum = null;
     s._selectedPinnedKey = s._pinnedKeyAt(pinnedAbs);
+    s._view.componentScreen = fakeScreen(46 * 20, 400);
 
-    s._stepScroll(-20 * 4);
-    expect(s._topNum).toBe(146); // 視窗確實往舊文走
-    expect(s._selectedNum).toBeNull(); // 選取仍是那篇置底文
+    s._onScrollFrame();
+    expect(s._topNum).toBe(146); // 視口確實往舊文走
+    expect(s._selectedNum).toBeNull();
     expect(s._selectedPinnedKey).toBe(s._pinnedKeyAt(pinnedAbs));
   });
 
+  test("往下捲近 buffer 底 ⇒ 觸發 demand（方向性）", () => {
+    const { s, screen, enqueued } = setup();
+    s._edgeDown = false;
+    screen.top = 30 * 20; // 底下只剩 10 列 < 2B
+    s._onScrollFrame();
+    expect(enqueued.some((c) => c.kind.indexOf("prefetch") === 0)).toBe(true);
+  });
+
   test("捲到 buffer 邊、該方向還有更多且已有 in-flight ⇒ 亮「讀取中…」", () => {
-    const { s, loading, queue } = setup();
-    s._edgeDown = false; // 板尾未確認＝下面還有
-    queue.idle = false; // 背景 prefetch 在線
-    s._stepScroll(20 * 999);
+    const { s, screen, loading, queue } = setup();
+    s._edgeDown = false;
+    queue.idle = false;
+    screen.top = 800; // maxScrollTop
+    s._onScrollFrame();
     expect(loading).toContain(true);
+  });
+
+  test("交易進行中（frozen）與非 active 一律不受理", () => {
+    const frozen = setup();
+    frozen.s._renderMode = "frozen";
+    frozen.screen.top = 40 * 20;
+    frozen.s._onScrollFrame();
+    expect(frozen.s._topNum).toBe(110); // 錨沒被動過
+
+    const idle = setup();
+    idle.s.state = "idle";
+    idle.screen.top = 40 * 20;
+    idle.s._onScrollFrame();
+    expect(idle.s._topNum).toBe(110);
   });
 });
 
-describe("onWheelScrollPx（事件層 → 緩動器）", () => {
-  const setup = () => {
-    const h = demandSession({ numStart: 100, count: 60 });
+// 捲動交給瀏覽器之後 demand 由 scroll 事件驅動 —— 而**捲不動就沒有 scroll 事件**。
+// buffer 只有一頁時（內容高＝視口高，剛進板的常態）往上滾會看起來卡住：畫面不動、
+// 也不補頁。到邊的滾輪本身就是「請給我更多」。
+describe("滾輪到邊即請求（沒有可捲距離時的 demand）", () => {
+  const setup = (count) => {
+    const h = demandSession({ numStart: 100, count });
     h.s._renderMode = "buffer";
-    h.s._topNum = 110;
-    h.s._selectedNum = 115;
-    h.s.getWindowView();
+    h.s._edgeUp = false; // 上面還有更舊的
+    h.s._edgeDown = true;
+    h.s._topNum = 100;
+    h.s._selectedNum = 100;
+    h.screen = fakeScreen(0, 400); // 視口 20 列 × 20px
+    h.s._view.componentScreen = h.screen;
     return h;
   };
 
-  test("距離交給緩動器分幀吃（不是當場瞬移）", () => {
-    const { s } = setup();
-    s.onWheelScrollPx(100);
-    expect(s._scroller.pending()).toBeGreaterThan(0);
-    expect(s.scrollFrac()).toBe(0); // 還沒有任何一幀跑過
+  test("buffer 只有一頁（零可捲距離）往上滾 → 觸發 demand", () => {
+    const { s, enqueued } = setup(20); // 內容高＝視口高
+    s.onWheelAtEdge(-1);
+    expect(enqueued.some((c) => c.kind.indexOf("prefetch") === 0)).toBe(true);
   });
 
-  test("非 active／frozen 不受理（連緩動器都不建）", () => {
-    const frozen = setup();
+  test("還捲得動時不插手（交給 scroll 事件，免得每一格滾輪都問一次）", () => {
+    const { s, screen, enqueued } = setup(60);
+    screen.top = 5 * 20; // 離頂端還有距離
+    s.onWheelAtEdge(-1);
+    expect(enqueued).toEqual([]);
+  });
+
+  test("該方向的邊已確認 ⇒ 不送（板頂就是板頂）", () => {
+    const { s, enqueued } = setup(20);
+    s._edgeUp = true;
+    s.onWheelAtEdge(-1);
+    expect(enqueued).toEqual([]);
+  });
+
+  test("到邊且還有東西、命令在線上 ⇒ 亮「讀取中…」", () => {
+    const { s, loading, queue } = setup(20);
+    queue.idle = false;
+    s.onWheelAtEdge(-1);
+    expect(loading).toContain(true);
+  });
+
+  test("非 active／frozen 不受理", () => {
+    const frozen = setup(20);
     frozen.s._renderMode = "frozen";
-    frozen.s.onWheelScrollPx(100);
-    expect(frozen.s._scroller).toBeNull();
+    frozen.s.onWheelAtEdge(-1);
+    expect(frozen.enqueued).toEqual([]);
+  });
+});
+
+describe("錨定還原（不變量 6 的原生捲動形式）", () => {
+  const setup = (count = 60) => {
+    const h = demandSession({ numStart: 100, count });
+    h.s._renderMode = "buffer";
+    h.s._edgeUp = true;
+    h.s._edgeDown = true;
+    h.s._topNum = 130;
+    h.s._selectedNum = 135;
+    h.screen = fakeScreen(0, 400);
+    h.s._view.componentScreen = h.screen;
+    return h;
+  };
+
+  test("prepend 一頁（往上補 20 列）→ 畫面停在同一列，scrollTop 恰好 +20 列", () => {
+    const { s, screen, termBuf } = setup();
+    s.applyScrollAfterRender();
+    const before = screen.top;
+    expect(before).toBe(30 * 20); // 130 在序列位置 30
+
+    // 往上補 20 列（prefetch-up 落地：flattenListBuffer 產生新陣列）
+    const older = [];
+    const olderNums = [];
+    for (let i = 0; i < 20; ++i) {
+      olderNums.push(80 + i);
+      older.push(termBuf.listLines[0]);
+    }
+    termBuf.listLines = older.concat(termBuf.listLines);
+    termBuf.listLineNums = olderNums.concat(termBuf.listLineNums);
+
+    s.applyScrollAfterRender();
+    expect(screen.top - before).toBe(20 * 20);
+    expect(s._topNum).toBe(130); // 錨還是同一篇
+  });
+
+  test("evict 掉上方 10 列 → scrollTop 恰好 -10 列", () => {
+    const { s, screen, termBuf } = setup();
+    s.applyScrollAfterRender();
+    const before = screen.top;
+
+    termBuf.listLines = termBuf.listLines.slice(10);
+    termBuf.listLineNums = termBuf.listLineNums.slice(10);
+
+    s.applyScrollAfterRender();
+    expect(before - screen.top).toBe(10 * 20);
+    expect(s._topNum).toBe(130);
+  });
+
+  test("錨那一列不見了（被 evict）→ 退回游標位置，不得跳到別處", () => {
+    const { s, screen, termBuf } = setup();
+    // 只留 135 之後：錨 130 消失，游標 135 還在（成為序列第 0 列）
+    termBuf.listLines = termBuf.listLines.slice(35);
+    termBuf.listLineNums = termBuf.listLineNums.slice(35);
+
+    s.applyScrollAfterRender();
+    expect(s._topNum).toBe(135);
+    expect(screen.top).toBe(0);
+  });
+
+  test("序列縮到比視口短 → scrollTop 夾到 0（不得捲出空白）", () => {
+    const { s, screen, termBuf } = setup();
+    s.applyScrollAfterRender();
+    expect(screen.top).toBeGreaterThan(0);
+
+    termBuf.listLines = termBuf.listLines.slice(0, 5);
+    termBuf.listLineNums = termBuf.listLineNums.slice(0, 5);
+    s.applyScrollAfterRender();
+    expect(screen.top).toBe(0);
+  });
+
+  test("_anchorOverride：這一幀的錨由 action 指定，不從 DOM 擷取", () => {
+    const { s, screen } = setup();
+    s._anchorOverride = true;
+    screen.top = 999; // DOM 上是別的位置（例如交易前的殘留）
+    s.captureScrollAnchor();
+    expect(s._topNum).toBe(130); // 沒被 DOM 覆寫
+    expect(s._anchorOverride).toBe(false); // 一次性
+  });
+});
+
+// 平滑捲動動畫（PgUp/Home/End/把游標拉回視野）與**背景補頁**必然重疊：實測每次
+// PgUp 都會觸發 prefetch，回應約 110ms 後落地，而動畫要 200~400ms
+//（錄製檔 ptt-debug-20260830-175318 / -175419）。
+//
+// 重疊時的正確行為有兩半，缺一就是使用者回報的「回捲」：
+//   1. **補償**：prepend 在上方插入 N 列，DOM 內容整體下移 ⇒ scrollTop 必須 +N 列
+//      才能維持視覺連續。少了它，畫面會瞬間往上跳過頭。
+//   2. **目標跟著內容走**：動畫的終點是「某一列」，那一列位移了，目標 px 也要重算。
+// 舊實作在動畫期間凍結錨（＝目標位置），於是失去「現在顯示哪一列」的資訊、做不了
+// 補償：畫面跳過頭之後動畫再把它拉回來 —— 那就是回捲。
+describe("平滑捲動 × 背景補頁（回捲的回歸）", () => {
+  const ROW = 20;
+  const VP = 20 * ROW;
+
+  const setup = () => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    h.s._renderMode = "buffer";
+    h.s._edgeUp = true;
+    h.s._edgeDown = true;
+    h.s._topNum = 130; // 視口頂＝序列位置 30
+    h.s._selectedNum = 135;
+    // scrollListTo(smooth) 不立刻到位：真瀏覽器逐幀逼近，這裡只記下目標。
+    h.screen = {
+      top: 30 * ROW,
+      smoothTo: null,
+      getListScrollTop() { return this.top; },
+      getListViewportPx() { return VP; },
+      setListScrollTop(px) { this.top = px; },
+      scrollListTo(px, behavior) {
+        if (behavior === "smooth") this.smoothTo = px;
+        else this.top = px;
+      },
+    };
+    h.s._view.componentScreen = h.screen;
+    return h;
+  };
+
+  // prefetch-up 落地：往上補 20 列（flattenListBuffer 產生新陣列）。
+  const prependPage = (termBuf, n = 20) => {
+    const older = [];
+    const olderNums = [];
+    for (let i = 0; i < n; ++i) {
+      olderNums.push(100 - n + i);
+      older.push(termBuf.listLines[0]);
+    }
+    termBuf.listLines = older.concat(termBuf.listLines);
+    termBuf.listLineNums = olderNums.concat(termBuf.listLineNums);
+  };
+
+  test("動畫途中補頁：畫面補償到新座標，且目標仍在視口**上方**（不得回捲）", () => {
+    const { s, screen, termBuf } = setup();
+    s._moveSelection("pgup"); // 位置 30 → 10
+    s.applyScrollAfterRender();
+    expect(screen.smoothTo).toBe(10 * ROW); // 動畫送出
+
+    // 動畫跑到一半（顯示序列位置 20）。
+    screen.top = 20 * ROW;
+    screen.smoothTo = null;
+
+    // 一幀的真實順序：重繪前擷取錨 → accumulate（補頁落地）→ render → 還原。
+    s.captureScrollAnchor();
+    prependPage(termBuf); // 內容整體下移 20 列
+    s.applyScrollAfterRender();
+
+    // 1) 補償：原本顯示的那一列（舊位置 20）現在在位置 40 ⇒ scrollTop 要跟上，
+    //    畫面上看到的內容才不會跳。
+    expect(screen.top).toBe(40 * ROW);
+    // 2) 目標跟著內容走：舊位置 10 → 新位置 30。
+    expect(screen.smoothTo).toBe(30 * ROW);
+    // 3) **回捲的判準**：目標必須還在當前位置的上方（PgUp 是往上）。
+    expect(screen.smoothTo).toBeLessThan(screen.top);
+  });
+
+  test("連按 PgUp：第二次以**動畫目標**為基準，不是動畫中間值", () => {
+    const { s, screen } = setup();
+    s._moveSelection("pgup"); // → 目標位置 10
+    s.applyScrollAfterRender();
+    screen.top = 20 * ROW; // 動畫途中
+    screen.smoothTo = null;
+
+    s._moveSelection("pgup"); // 應該從 10 再往上一頁 → 0
+    s.applyScrollAfterRender();
+    expect(screen.smoothTo).toBe(0);
+    expect(s._selectedNum).toBe(100); // 序列位置 0
+  });
+
+  test("序列沒變時動畫不被打斷（不重發、不瞬移）", () => {
+    const { s, screen } = setup();
+    s._moveSelection("pgup");
+    s.applyScrollAfterRender();
+    const target = screen.smoothTo;
+    screen.smoothTo = null;
+
+    screen.top = 20 * ROW; // 動畫途中，序列沒動
+    s.captureScrollAnchor();
+    s.applyScrollAfterRender();
+    expect(s._scrollAnim).not.toBeNull(); // 動畫仍在飛
+    expect(screen.smoothTo).toBeNull(); // 沒有重發
+    expect(screen.top).toBe(20 * ROW); // 也沒被 instant 拉走
+    expect(target).toBe(10 * ROW);
+  });
+
+  test("到站後動畫狀態清除，scroll 事件恢復正常更新錨", () => {
+    const { s, screen } = setup();
+    s._moveSelection("pgup");
+    s.applyScrollAfterRender();
+
+    screen.top = 10 * ROW; // 到站
+    s._onScrollFrame();
+    expect(s._scrollAnim).toBeNull();
+    expect(s._topNum).toBe(110);
+
+    screen.top = 14 * ROW; // 使用者自己捲
+    s._onScrollFrame();
+    expect(s._topNum).toBe(114);
+  });
+
+  test("使用者中途取消動畫（永遠到不了目標）⇒ 逾時後放行", () => {
+    const { s, screen } = setup();
+    s._moveSelection("pgup");
+    s.applyScrollAfterRender();
+    s._scrollAnim.at = Date.now() - 5000;
+
+    screen.top = 22 * ROW;
+    s._onScrollFrame();
+    expect(s._scrollAnim).toBeNull();
+    expect(s._topNum).toBe(122);
+  });
+
+  test("交易凍結時必須取消殘留的平滑動畫（frozen 後畫面還自己捲的回歸）", () => {
+    // overflow:hidden 只擋使用者輸入，不會取消已排定的 scrollTo({smooth})。
+    const { s, screen } = setup();
+    s._moveSelection("pgup");
+    s.applyScrollAfterRender();
+    screen.top = 20 * ROW;
+
+    s._freezeForTransaction();
+    expect(s._scrollAnim).toBeNull();
+    expect(s._pendingReveal).toBeNull();
+    expect(screen.top).toBe(20 * ROW); // 位置一格都不動，動畫已被同步寫入取消
+  });
+});
+
+describe("鍵盤導覽（游標與捲動解耦）", () => {
+  const setup = (count = 60) => {
+    const h = demandSession({ numStart: 100, count });
+    h.s._renderMode = "buffer";
+    h.s._edgeUp = true;
+    h.s._edgeDown = true;
+    h.s._topNum = 110;
+    h.s._selectedNum = 115;
+    h.screen = fakeScreen(10 * 20, 400);
+    h.s._view.componentScreen = h.screen;
+    return h;
+  };
+
+  test("↓：游標移一篇，畫面看得到就不捲（nearest）", () => {
+    const { s, screen } = setup();
+    s._moveSelection("down");
+    expect(s._selectedNum).toBe(116);
+    s.applyScrollAfterRender();
+    expect(screen.top).toBe(10 * 20); // 本來就在視野內 ⇒ 不動
+  });
+
+  test("↓ 走到視口底之外：捲最少的距離把它帶進來", () => {
+    const { s, screen } = setup();
+    s._selectedNum = 129; // 視口最後一列（位置 29）
+    s._moveSelection("down");
+    expect(s._selectedNum).toBe(130);
+    s.applyScrollAfterRender();
+    expect(screen.top).toBe(11 * 20); // 只捲一列
+  });
+
+  test("PgDn 以**視口頂**為基準（不是游標）：游標落在新頁頂並貼齊視口頂", () => {
+    const { s, screen } = setup();
+    s._selectedNum = 115;
+    s._moveSelection("pgdn");
+    expect(s._selectedNum).toBe(130); // top(10) + B(20) = 位置 30
+    s.applyScrollAfterRender();
+    expect(screen.top).toBe(30 * 20);
+  });
+
+  test("PgUp 同理，且夾在頂端", () => {
+    const { s, screen } = setup();
+    s._moveSelection("pgup");
+    expect(s._selectedNum).toBe(100); // max(0, 10-20) = 0
+    s.applyScrollAfterRender();
+    expect(screen.top).toBe(0);
+  });
+
+  test("End／Home（邊已確認）＝本地執行、零 byte", () => {
+    const { s, screen, enqueued } = setup();
+    s._moveSelection("end");
+    expect(s._selectedNum).toBe(159);
+    s.applyScrollAfterRender();
+    expect(screen.top).toBe(800); // 貼齊視口底
+
+    s._moveSelection("home");
+    expect(s._selectedNum).toBe(100);
+    s.applyScrollAfterRender();
+    expect(screen.top).toBe(0);
+    expect(enqueued).toEqual([]);
+  });
+
+  test("↑ 在第一列且板尾未確認 ⇒ 走 server（read.c wrap 的判準不變）", () => {
+    const { s, enqueued } = setup();
+    s._edgeDown = false;
+    s._selectedNum = 100;
+    s._moveSelection("up");
+    expect(enqueued[enqueued.length - 1].kind).toBe("jump-end");
+  });
+
+  test("Home 在上邊未確認時 ⇒ 走 server", () => {
+    const { s, enqueued } = setup();
+    s._edgeUp = false;
+    s._moveSelection("home");
+    expect(enqueued[enqueued.length - 1].kind).toBe("jump-home");
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+// `_sequence()` 的記憶化。原生捲動下每個 scroll 事件都要換算位置＋判 demand，
+// 而 _sequence 是 O(緩衝列數) 的 rowToText（上限 300 列）⇒ 沒快取就是每幀重算。
+// 失效判準全是參考比對，這裡逐條守住「該失效時真的會失效」。
+describe("_sequence 記憶化", () => {
+  const blankRow = (text) =>
+    [...text.padEnd(80)].map((ch) => ({ ch, isLeadByte: false }));
+
+  test("buffer 沒變 → 回同一個陣列（沒有重算）", () => {
+    const { s } = demandSession({ count: 30 });
+    const first = s._sequence();
+    expect(s._sequence()).toBe(first);
+  });
+
+  test("listLines/listLineNums 換新陣列（accumulate 落地）→ 重算", () => {
+    const { s, termBuf } = demandSession({ count: 30 });
+    const before = s._sequence();
+    expect(before.length).toBe(30);
+
+    termBuf.listLines = termBuf.listLines.slice(0, 10);
+    termBuf.listLineNums = termBuf.listLineNums.slice(0, 10);
+    const after = s._sequence();
+    expect(after).not.toBe(before);
+    expect(after.length).toBe(10);
+  });
+
+  test("_edgeDown 翻轉（pinned 門控）→ 重算", () => {
+    const { s, termBuf } = demandSession({ count: 5 });
+    termBuf.listLines = termBuf.listLines.concat([
+      blankRow("★ 2 6/14 someoneA     □ [公告] 置底文"),
+    ]);
+    termBuf.listLineNums = termBuf.listLineNums.concat([null]);
+
+    s._edgeDown = false;
+    const gated = s._sequence();
+    s._edgeDown = true;
+    const opened = s._sequence();
+    expect(opened).not.toBe(gated);
+    expect(opened.length).toBe(gated.length + 1);
+  });
+
+  test("黑名單換新集合（改設定）→ 快取失效（重算）", () => {
+    const { s } = demandSession({ count: 30 });
+    const before = s._sequence();
+    s._view.blacklist = new Set(["someoneA"]);
+    // 「有沒有重算」＝有沒有回一個新陣列。命中與否是 visibleListIndices 自己的
+    // 測試在管（這裡的假列欄位不照 readdoent 版面對齊，不適合驗過濾結果）。
+    expect(s._sequence()).not.toBe(before);
+  });
+
+  test("標題黑名單換新陣列 → 快取失效（重算）", () => {
+    const { s } = demandSession({ count: 30 });
+    const before = s._sequence();
+    s._view.titleBlacklist = ["文章"];
+    expect(s._sequence()).not.toBe(before);
+  });
+
+  test("就地 push 進 listLines（不換參考）也要失效——長度是第二道網", () => {
+    const { s, termBuf } = demandSession({ count: 30 });
+    const before = s._sequence();
+    termBuf.listLines.push(blankRow("  131 + 2 6/14 someoneA     □ [閒聊] 新文"));
+    termBuf.listLineNums.push(131);
+    const after = s._sequence();
+    expect(after).not.toBe(before);
+    expect(after.length).toBe(before.length + 1);
   });
 });
