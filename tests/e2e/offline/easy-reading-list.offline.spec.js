@@ -894,6 +894,25 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(s.selectedNum).toBe(openNum);
       expect(s.cursorHidden).toBe(true);
       await page.waitForTimeout(300);
+
+      // 视野必须停在 server 落点那一页：视口顶列＝锚（_topNum）那一列，刚读的
+      // 那篇在视野内。**下面的逐行 diff 抓不到这件事**——全序列渲染后
+      // dumpScreenRows 撈的是整段緩衝，對 scrollTop 完全不敏感。
+      //
+      // 注意这条**不是**「退文后视野跑掉」的重现（本卷录的开文目标恰好就是缓冲
+      // 最旧一篇 ⇒ 落点页顶＝序列位置 0，锚被覆写成 0 也看不出差别）。那条回归
+      // 由 unit 守：list_session.test.js「退文回列表：视野停在 server 落点那一页」
+      // ＋ render_list_scroll.test.js 的 hasListViewport()。这里守的是「视口位置
+      // 与锚一致、游标可见」，锚若被写去别处（例如沿用进文章前的 scrollTop）会红。
+      const topPos = await page.evaluate(() => {
+        const ls = window.__app.listSession;
+        const nums = window.__app.buf.listLineNums || [];
+        return ls._sequence().indexOf(nums.indexOf(ls._topNum));
+      });
+      expect(topPos).toBeGreaterThanOrEqual(0); // 锚没丢
+      expect(await windowTopPos(page)).toBe(topPos);
+      expect(await cursorRowInViewport(page)).not.toBeNull();
+
       const rowsAfterRestore = await dumpScreenRows(page);
       // body + footer（rows 3..23）逐行严格相同。两处「原生也会变」的合法差异
       // 正规化掉：header 的「人氣」计数（开文期间 server 重画 header），与开文

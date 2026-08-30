@@ -2405,6 +2405,14 @@ ListSession.prototype = {
       // the mode switch itself must be invisible).
       this._selectedNum = facts.cursorRowNum;
       this._selectedPinnedKey = null;
+      // 錨的三個欄位是一組，重設要一起（同 _seedAnchors）。
+      this._topNum = null;
+      this._topPinnedKey = null;
+      this._scrollFrac = 0;
+      // 這一幀的錨由這次 action 指定，不從 DOM 擷取——同 _requestEnd/_requestHome。
+      // 少了它，緊接著的 _forceRedraw 會讓 captureScrollAnchor 拿**還沒掛回 DOM
+      // 的視口**（scrollTop 恆 0）覆寫掉下面剛採用的落點（退文後視野跑掉）。
+      this._anchorOverride = true;
       for (let r = 3; r <= facts.rows - 2; ++r) {
         if (facts.nums[r] != null) {
           this._topNum = facts.nums[r];
@@ -2661,6 +2669,11 @@ ListSession.prototype = {
     }
     const screen = this._screen();
     if (!screen || !screen.getListScrollTop) return;
+    // 視口不在 DOM 上（剛從文章／原生鏡像回來，這一幀還沒把它掛回去）：detached
+    // 節點的 scrollTop 恆為 0，那是「沒有資訊」不是「捲到最上面」。拿它當錨會把
+    // 畫面丟回緩衝最舊那一列（使用者：退文後視野跑掉）。DOM 沒有意見的時候，
+    // session 手上的錨就是唯一的真相。
+    if (screen.hasListViewport && !screen.hasListViewport()) return;
     const rowH = this._rowHeight();
     if (!(rowH > 0)) return;
     const seq = this._sequence();
@@ -2719,7 +2732,14 @@ ListSession.prototype = {
     // ⇒ 單按一次 PgUp 只要中途來一幀就捲到一半停住。
     const cur = screen.getListScrollTop ? screen.getListScrollTop() : top;
     const compensated = Math.abs(top - cur) >= 0.5;
-    if (compensated) screen.setListScrollTop(top);
+    if (compensated) {
+      screen.setListScrollTop(top);
+      // 程式化定位＝新的基準。不同步的話它引發的 scroll 事件會被 _onScrollFrame
+      // 當成「使用者往這個方向捲」而偷送一次反方向 demand（退文回來必踩：
+      // _cancelScroll 已把 _lastScrollTop 歸零）。平滑動畫**不**同步——它的中間
+      // 幀是真的位移，方向要照常看得見。
+      this._lastScrollTop = top;
+    }
 
     const rv = this._pendingReveal;
     if (rv) {
@@ -2741,6 +2761,7 @@ ListSession.prototype = {
         const hadAnim = !!this._scrollAnim;
         this._scrollAnim = null;
         if (target !== top || hadAnim) screen.scrollListTo(target, rv.behavior);
+        this._lastScrollTop = target; // 同上：瞬時定位就是新的基準
         this._syncAnchorFromPx(seq, target, rowH);
       }
       return;

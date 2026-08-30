@@ -1617,11 +1617,16 @@ describe("無編號列的 clean-list 幀（只剩置底文的短頁）不得 see
 
 // 捲動視口的替身（真的那個是 render/screen.js 的 .listBodyView）。scrollTop 是
 // 唯一真相源，session 只從它擷取錨、往它寫還原後的位置。
-function fakeScreen(top, viewportPx) {
+// `live`＝視口節點現在還在 DOM 上嗎。文章／原生鏡像期間 .listBodyView 會被
+// _patchRows 移出容器，**detached 節點的 scrollTop 恆為 0**（那是「沒有資訊」，
+// 不是「捲到最上面」）——退文回列表的錨定就是在這個縫上壞掉的。
+function fakeScreen(top, viewportPx, live = true) {
   return {
     top: top,
-    getListScrollTop() { return this.top; },
-    getListViewportPx() { return viewportPx; },
+    live: live,
+    hasListViewport() { return this.live; },
+    getListScrollTop() { return this.live ? this.top : 0; },
+    getListViewportPx() { return this.live ? viewportPx : 0; },
     setListScrollTop(px) { this.top = px; },
     scrollListTo(px) { this.top = px; },
   };
@@ -1849,6 +1854,96 @@ describe("錨定還原（不變量 6 的原生捲動形式）", () => {
     s.captureScrollAnchor();
     expect(s._topNum).toBe(130); // 沒被 DOM 覆寫
     expect(s._anchorOverride).toBe(false); // 一次性
+  });
+
+  // 錨的真相源是 DOM 的 scrollTop —— 但**只有視口還在 DOM 上時**才成立。
+  // 文章／原生鏡像期間 .listBodyView 被移出容器，detached 節點的 scrollTop 恆為
+  // 0；把它當錨就是「畫面被丟回緩衝最舊那一列」。
+  test("視口不在 DOM 上（文章期間）→ 完全不動錨，0 不是「捲到最上面」", () => {
+    const { s, screen } = setup();
+    screen.live = false;
+    screen.top = 999; // 就算替身內部還記著別的值也不准用
+    s.captureScrollAnchor();
+    expect(s._topNum).toBe(130);
+    expect(s._scrollFrac).toBe(0);
+  });
+});
+
+// 退出文章回到列表（reducer: suspended --clean-list--> active，action resume-buffer）。
+//
+// 症狀（錄製檔 ptt-debug-20260830-221107）：緩衝往上長過幾頁之後開文再退出，
+// 視野跳到緩衝最舊那一列，剛讀的那篇捲出視野。根因：_resumeBuffer 採用 server
+// 落地幀的視窗頂列當錨，但緊接著的 _forceRedraw 那一幀 captureScrollAnchor 會
+// 從 **detached 視口**（scrollTop 恆 0）把它覆寫掉 —— 與 _requestEnd/_requestHome
+// 同一個坑，那兩處都設了 _anchorOverride。
+describe("退文回列表：視野停在 server 落點那一頁", () => {
+  const ROW = 20;
+  const VP = 20 * ROW;
+
+  // 進文章前：緩衝 100..159，使用者看著 110（序列位置 10）、游標 115。
+  // 文章期間視口被移出 DOM ⇒ live=false。
+  const setup = () => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    h.s._renderMode = "buffer";
+    h.s._edgeUp = true;
+    h.s._edgeDown = true;
+    h.s._topNum = 110;
+    h.s._selectedNum = 115;
+    h.screen = fakeScreen(10 * ROW, VP, /* live */ false);
+    h.s._view.componentScreen = h.screen;
+    h.s._lastScrollTop = 0; // _beginOpen 的 _cancelScroll 歸零過
+    return h;
+  };
+
+  // server 退文重繪（READ_REDRAW）落在 140..159 那一頁、游標停在剛讀的 145。
+  const landing = () => pageFacts(140, 145);
+
+  // 一幀＝capture（視口還沒掛回來）→ render（視口回到 DOM）→ apply。
+  const frame = (s, screen) => {
+    s.captureScrollAnchor();
+    screen.live = true;
+    s.applyScrollAfterRender();
+  };
+
+  test("落地頁的頂列就是視口頂列，剛讀的那篇在視野內", () => {
+    const { s, screen } = setup();
+    s._resumeBuffer(landing());
+    // 這一幀的錨由 action 指定（同 _requestEnd/_requestHome），不從 DOM 擷取。
+    expect(s._anchorOverride).toBe(true);
+    frame(s, screen);
+
+    expect(s._topNum).toBe(140); // 沒被 detached 的 scrollTop=0 覆寫
+    expect(screen.top).toBe(40 * ROW); // 140 在序列位置 40
+    // 游標 145 ＝序列位置 45，落在視口 [40, 60) 內
+    const seq = s._sequence();
+    expect(s._cursorPos(seq)).toBe(45);
+    expect(s._isPosVisible(seq, 45)).toBe(true);
+  });
+
+  test("錨的三個欄位是一組：pinned key 與列內偏移一併重設", () => {
+    const { s, screen } = setup();
+    s._topPinnedKey = "someoneZ|[公告] 舊的置底"; // 進文章前停在置底列的殘值
+    s._scrollFrac = 13;
+    s._resumeBuffer(landing());
+    frame(s, screen);
+
+    expect(s._topPinnedKey).toBeNull();
+    expect(screen.top).toBe(40 * ROW); // 殘留的 13px 不得偏移落地頁
+  });
+
+  test("程式化定位不得被讀成「使用者往下捲」而偷送 demand（不變量 4）", () => {
+    const { s, screen, enqueued } = setup();
+    s._edgeUp = false;
+    s._edgeDown = false;
+    // 落地頁在緩衝**上**半段（105..124）：使用者根本沒捲動，方向卻會被
+    // 「_lastScrollTop 停在 0、補償寫入 100px」偽造成 +1 → 反方向 prefetch。
+    s._resumeBuffer(pageFacts(105, 110));
+    frame(s, screen);
+    expect(screen.top).toBe(5 * ROW);
+
+    s._onScrollFrame();
+    expect(enqueued.filter((c) => c.kind.indexOf("prefetch") === 0)).toEqual([]);
+    expect(s._lastScrollTop).toBe(5 * ROW);
   });
 });
 

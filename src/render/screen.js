@@ -836,8 +836,16 @@ export class ScreenController {
   }
 
   // ---- 列表好讀的捲動存取（唯一入口）----------------------------------------
-  // ListSession 一律透過這四支動 DOM，不直接碰節點：jsdom 沒有 Element.scrollTo，
+  // ListSession 一律透過這幾支動 DOM，不直接碰節點：jsdom 沒有 Element.scrollTo，
   // 而捲動語意的 unit 測試全都在 jsdom 下跑。
+  // 視口節點現在還在 DOM 上嗎。它是常駐快取（切到文章／原生鏡像時被 _patchRows
+  // 移出容器，物件本身留著），而 **detached 節點的 scrollTop 恆為 0** —— 那是
+  // 「沒有資訊」，不是「捲到最上面」。ListSession 的 captureScrollAnchor 必須靠
+  // 這一支分辨兩者，否則退出文章那一幀會把錨定到緩衝最舊的一列。
+  hasListViewport() {
+    return !!(this._bodyView && this._bodyView.isConnected);
+  }
+
   getListScrollTop() {
     return this._bodyView ? this._bodyView.scrollTop : 0;
   }

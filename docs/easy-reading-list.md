@@ -180,7 +180,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 - key（active）：nav（↑↓jk/PgUp/PgDn/Home/End → read.c op）；Enter/→＝opening（selectedNum 有值→begin-open；null＝pinned→begin-open-pinned）；數字＝jump-digit（overlay 收參）；`←`/q/e＝leave 交易（**先 sync-jump 同步 server 游標再送離板鍵**——pttbbs getkeep 記 REAL cursor，不 sync 則再進板落點錯；`_serverNum` 快路徑同 passthrough，共用 `_enqueueCursorSyncJump`）；**其餘鍵（含 `[ ] =` `v` `/`）＝keyClass `passthrough` → `_beginNativePassthrough`：一鍵切原生＋代送**（`term_keyboard.keyEventToBytes` 轉 bytes，非 ASCII 單字元 `u2b`）。
 - opening：settle 等 article；timeout→functionMode 自癒；期間吞所有鍵。
 - functionMode：clean-list→**`nativeHold`（passthrough/自癒/降級 excursion）時 stay 鏡像（黏性）**；無 hold（leave/jump 交易）→active（landedNum∈buffer ∧ 板名同→resume；否則＋rebuild）；article→suspended；menu→idle cleanup。**enter-function-mode（passthrough/自癒/降級——原生 excursion）在 action 層清 `_boardName`** → 回 clean-list 必走 rebuild 分支（不變量 15）；只有保留 `_boardName` 的 frozen 交易（leave/jump）可走純 resume 快路徑；passthrough 屬原生 excursion → 黏性停原生；經 article/menu 回好讀時因 `_boardName` 已清必 rebuild。
-- suspended：clean-list→re-seed（resume-buffer；落點不在緩衝/板名異＋rebuild）；menu→idle。
+- suspended：clean-list→re-seed（resume-buffer：採用落地幀的游標與**視窗頂列**當錨，並設 `_anchorOverride`（不變量 6c）；落點不在緩衝/板名異＋rebuild）；menu→idle。
 - 任意：pref-off/斷線→cleanup。
 
 ## 關鍵不變量（違反即復發）
@@ -210,6 +210,24 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
    的 `pruneListToSegment` 本來就會把它丟掉；選取被淘汰的降級是既有且正確的
    （`_cursorPos` snap 到最近存活列，開文走序號 jump 不依賴 buffer）。守護：
    `list_session.test.js`「evictListBuffer」＋「evictPivot」。
+6c. **錨的真相源是 DOM 的 scrollTop —— 但只有 `.listBodyView` 還在 DOM 上時才成立。**
+   視口節點是 `ScreenController._bodyView` 上的常駐快取；切到文章／原生鏡像時
+   `_patchRows` 把它移出容器（節點還在，只是 detached），而 **detached 節點的
+   scrollTop 恆為 0**——那是「沒有資訊」，不是「捲到最上面」。兩道防線：
+   - `captureScrollAnchor` 開頭問 `screen.hasListViewport()`，false 就整幀不擷取。
+   - 凡是「這一幀的錨由 action 指定」的路徑都要設 `_anchorOverride`：`_requestEnd`／
+     `_requestHome`／**`_resumeBuffer`**（退文回列表）。錨的三個欄位
+     （`_topNum`/`_topPinnedKey`/`_scrollFrac`）一律一起重設，同 `_seedAnchors`。
+   漏掉任一道的症狀＝**退出文章後視野跑掉**：`_resumeBuffer` 剛採用的 server 落點
+   被緊接著的 `_forceRedraw` 那一幀覆寫成序列位置 0，畫面跳到緩衝最舊那一列、剛讀
+   的文章捲出視野（緩衝只有一頁時 0 剛好正確 ⇒ 症狀「有時候」；錄製檔
+   ptt-debug-20260830-221107）。另一半：程式化定位（補償寫入／instant reveal）必須
+   同步 `_lastScrollTop`，否則它引發的 scroll 事件會被 `_onScrollFrame` 讀成
+   「使用者往下捲」而偷送一次反方向 demand（違反不變量 4）。
+   守護：`list_session.test.js`「退文回列表：視野停在 server 落點那一頁」三條＋
+   「視口不在 DOM 上（文章期間）→ 完全不動錨」，`render_list_scroll.test.js`
+   「hasListViewport()」。**offline e2e 的 cchat-list-nav 卷測不到這條**：它錄的開文
+   目標恰好是緩衝最舊一篇 ⇒ 落點頁頂＝序列位置 0，覆寫與否同值。
 7. 預讀 timeout＝良性到邊；開文 timeout＝functionMode 自癒；flush 靜默（**flush 不觸發 onFail → `_prunePivotOverride` 要在 flush 出口手動重置**）。timeout 一律只是 **\f 探針觸發器**（`command_queue.js`），非訊號（**勿再引入 RTT 自適應 timeout**）。**交易前導用 `flushPending`（保留 in-flight 配對，序列化排隊）**；全量 `flush` 只准在退原生鏡像路徑（`_enterFunctionMode`/`_handoffArticle`/`_cleanup`）——flush 掉 in-flight 會讓在線回應變無主 settle、提早滿足下一交易的 expect（live race）。prefetch anchor onFail 用 `flushPendingKind('prefetch')`，不誤殺排隊中的交易。
 7b. **凍結延遲必須有界**（2026-08「畫面停住、顯示處理中，過一陣子才復原」）。三道，缺一即復發：
    - **`_timedOut` 的探針分支只重新武裝 soft**（`probeTimeoutMs` 預設 2000），**不得 `_armBoth`**——舊碼在探針時重給一份完整 hard ⇒ 單一命令最壞 2×hard（~20s）。hard 是送出當下就定死的絕對截止。上限＝`max(hard, soft+probe)`。

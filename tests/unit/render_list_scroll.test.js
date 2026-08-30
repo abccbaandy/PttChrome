@@ -128,4 +128,24 @@ describe("列表好讀 body 捲動視口", () => {
     expect(m.container.querySelector(".listBodyView")).toBeNull();
     expect(m.container.children.length).toBe(24);
   });
+
+  // 視口節點是 controller 上的常駐快取，收掉之後**還在**、只是 detached ——
+  // 而 detached 節點的 scrollTop 恆為 0。那是「沒有資訊」不是「捲到最上面」，
+  // 所以 ListSession 需要問得出「視口現在還在不在 DOM 上」。
+  test("hasListViewport()：視口收掉後為 false，回到列表好讀又為 true", () => {
+    const m = mountScreen(props());
+    expect(m.controller.hasListViewport()).toBe(true);
+
+    m.update({
+      lines: LINES.slice(0, 24),
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: { pageState: 3, easyReading: false },
+    });
+    expect(m.controller.hasListViewport()).toBe(false);
+    expect(m.controller.getListScrollTop()).toBe(0); // 節點還在，但量不到東西
+
+    m.update(props());
+    expect(m.controller.hasListViewport()).toBe(true);
+  });
 });
