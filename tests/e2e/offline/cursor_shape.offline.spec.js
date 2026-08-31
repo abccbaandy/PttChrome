@@ -505,6 +505,10 @@ function expectInputAlignedToCell(m) {
   expect(Math.min(below, above)).toBeLessThanOrEqual(2);
 }
 
+// 這兩條刻意關掉兩種好讀（要驗的是「錨在該格」這條精確契約）。**列表好讀下 #t
+// 沒有可錨的列**（srow 是整段序列的 index，不是 buf 列號 —— 見
+// term_view._rowAnchor），它的落點契約是「落在視窗內／可視區左下角」，守在
+// tests/e2e/offline/easy-reading-list.offline.spec.js「中文輸入法（離線）」。
 test.describe('注音輸入匡 #t 錨在該格（離線）', () => {
   test('推文列上開始 composition：#t 貼齊游標那一格', async ({ page }) => {
     test.setTimeout(90000);

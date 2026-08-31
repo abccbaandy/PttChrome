@@ -1150,10 +1150,18 @@ ListSession.prototype = {
     this._beginPassthroughBytes(bytes);
   },
 
-  // _beginNativePassthrough 的**後半段**，抽出來給滑鼠點功能鍵共用
-  // （onFunctionKey）。純重構，鍵盤行為一字未改：前半段的 keyEventToBytes /
-  // preventDefault / Ctrl 組合判斷留在原函式，那些只有鍵盤事件才有。
-  _beginPassthroughBytes: function(bytes) {
+  // _beginNativePassthrough 的**後半段**，抽出來給滑鼠點功能鍵（onFunctionKey）、
+  // 貼上（onPaste）、IME 送字（noteTextInput）共用。純重構，鍵盤行為一字未改：
+  // 前半段的 keyEventToBytes / preventDefault / Ctrl 組合判斷留在原函式，那些只有
+  // 鍵盤事件才有。
+  //
+  // opts.kind / opts.hint 只換佇列命令的診斷名稱與提示措辭；**序列本身**
+  //（state transition → cursor sync 腿 → _enterFunctionMode → queue.enqueue）
+  // 是不變量 12 的承重部分，三個入口一律共用這一份，勿再各自複製一遍。
+  _beginPassthroughBytes: function(bytes, opts) {
+    const kind = (opts && opts.kind) || 'native-key';
+    const hint =
+      (opts && opts.hint) || '已切至原生操作（開啟文章或離開看板後恢復好讀）';
     const r = transitionListSession(this.state, { type: 'key', keyClass: 'passthrough' });
     this.state = r.next; // functionMode: absorbs settles / swallows keys meanwhile
     const self = this;
@@ -1169,14 +1177,13 @@ ListSession.prototype = {
       // in the native mirror (same picture, no harm).
       self._queue.enqueue({
         keys: bytes,
-        kind: 'native-key',
+        kind: kind,
         expect: function() {
           return true; // any settle is the response
         },
         timeoutMs: NATIVE_PASSTHROUGH_MS
       });
-      if (self._view.flashListHint)
-        self._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
+      if (self._view.flashListHint) self._view.flashListHint(hint, 4000);
     };
     if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
       this._freezeForTransaction();
@@ -1257,10 +1264,8 @@ ListSession.prototype = {
     }
   },
 
-  // Paste (Shift-Insert / context menu / middle click), routed here from
-  // App.onPasteDone — the single funnel every paste route already goes through.
-  // Returns true when this session took ownership of the text (the caller must
-  // NOT also send it), false to let the ordinary native path run.
+  // 「使用者送了一整串文字給 PTT」的共用主體：貼上（onPaste）與 IME 送字
+  // （noteTextInput）都走這裡。回 true ＝本 session 已接手（呼叫端**不得**再送）。
   //
   // Shape is exactly the T3 one-key passthrough (_beginNativePassthrough), only
   // the payload is a whole string instead of one key's bytes: sync the real
@@ -1270,13 +1275,16 @@ ListSession.prototype = {
   //     typeahead swallows repaints — protocol §2);
   //   - in buffer mode the screen shows the accumulated list, so the prompt PTT
   //     draws in response is INVISIBLE until some later settle trips the
-  //     catch-all. Users read that as "nothing happened" and paste again, which
-  //     appends into the same prompt (#1gIeu-3A1gIeu-3A → 找不到文章).
+  //     catch-all. Users read that as "nothing happened" (貼上會再貼一次 →
+  //     #1gIeu-3A1gIeu-3A → 找不到文章；IME 則讀成「整個畫面卡住」).
   // What PTT then does with the text is left entirely native — no AID parsing,
   // no synthesized Enter. `#` opens 搜尋文章代碼(AID): # and waits for Enter,
   // and on success only MOVES the cursor (pttbbs read.c#select_by_aid); a
   // pasted trailing newline submits it, exactly as in a real terminal.
-  onPaste: function(text) {
+  //
+  // opts.normalize ＝要不要先套 normalizePasteText（**貼上專屬**的換行／折行
+  // 正規化；IME 送的是剛組完的一段字，沒有多行語意，套了會憑空多出 Enter）。
+  _beginTextPassthrough: function(text, opts) {
     if (this.state === 'opening') {
       // Same rule as onKeyDown: the serialized open owns the wire. Never
       // silent — a swallowed paste with no feedback is the original bug.
@@ -1290,47 +1298,48 @@ ListSession.prototype = {
       return true;
     }
     // Native mirror (or not engaged at all): this hook doesn't own keys there,
-    // and paste is no different — the ordinary convSend path is correct.
+    // and a text payload is no different — the ordinary convSend path is correct.
     if (this.state !== 'active') return false;
 
     // CommandQueue's send is bound to the RAW conn.send (pttchrome.jsx), not
     // conn.convSend, so the Big5 conversion that convSend would have done has
     // to happen here — same two steps, same order (telnet.js#convSend).
-    const keys = ansiHalfColorConv(
-      u2b(normalizePasteText(text, this._view.lineWrap))
-    );
+    const src = opts.normalize
+      ? normalizePasteText(text, this._view.lineWrap)
+      : text;
+    const keys = ansiHalfColorConv(u2b(src));
     if (!keys) return false; // empty/unconvertible: don't burn a native switch
 
-    const r = transitionListSession(this.state, {
-      type: 'key',
-      keyClass: 'passthrough'
-    });
-    this.state = r.next; // functionMode: absorbs settles / swallows keys meanwhile
-    const self = this;
-    const finish = function() {
-      self._enterFunctionMode(); // native excursion: flush + drop cache (inv. 15)
-      self._queue.enqueue({
-        keys: keys,
-        kind: 'native-paste',
-        expect: function() {
-          return true; // any settle is the response (same as 'native-key')
-        },
-        timeoutMs: NATIVE_PASSTHROUGH_MS
-      });
-      if (self._view.flashListHint)
-        self._view.flashListHint(
-          '已貼上並切至原生操作（開啟文章或離開看板後恢復好讀）',
-          4000
-        );
-    };
-    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
-      this._freezeForTransaction();
-      // onFail too: visible degrade, never a silently dropped paste.
-      this._enqueueCursorSyncJump('native-sync-jump', finish, finish);
-      return true;
-    }
-    finish();
+    this._beginPassthroughBytes(keys, opts); // ← 共用序列（sync 腿也在裡面）
     return true;
+  },
+
+  // Paste (Shift-Insert / context menu / middle click), routed here from
+  // App.onPasteDone — the single funnel every paste route already goes through.
+  onPaste: function(text) {
+    return this._beginTextPassthrough(text, {
+      normalize: true,
+      kind: 'native-paste',
+      hint: '已貼上並切至原生操作（開啟文章或離開看板後恢復好讀）'
+    });
+  },
+
+  // 使用者用中文輸入法在列表上打字（compositionend → term_view.onInput →
+  // onTextInput），由那條共用漏斗轉進來。
+  //
+  // **不是按鍵**：IME 的 keydown keyCode 是 229，被 term_view 的 keyEventFilter
+  // 擋在 onKeyDown 之外 ⇒ 走不到 _classifyKey 的 passthrough（一鍵切原生）。舊碼
+  // 因此讓 bytes 裸送，症狀＝「切到中文輸入法打字，整個畫面就卡住」——PTT 開了
+  // prompt，畫面卻還是累積緩衝視窗，使用者看不到自己打的字。與貼上（不變量 12b）
+  // 同源、同一條 T3 路徑，差別只有不套 normalizePasteText 與佇列命令的 kind。
+  // 回 true ＝已接手（term_view.onTextInput 不得再 _convSend）。
+  // 守護：tests/unit/list_text_input.test.js、tests/unit/term_view_text_input.test.js。
+  noteTextInput: function(text) {
+    return this._beginTextPassthrough(text, {
+      normalize: false,
+      kind: 'native-input',
+      hint: '已切至原生操作（開啟文章或離開看板後恢復好讀）'
+    });
   },
 
   // Shared sync-jump leg: park the server's REAL cursor on the local selection

@@ -125,6 +125,13 @@ function collectLegs() {
   }
   {
     const { s, enqueued } = makeSession();
+    // IME 送字（ASCII 即可，u2b 對 <0x80 直接透傳、不需 Big5 表）
+    s.noteTextInput("ab");
+    enqueued[0].onDone({});
+    push("text-input", enqueued);
+  }
+  {
+    const { s, enqueued } = makeSession();
     s._enqueuePrefetch(false, "fill");
     push("prefetch", enqueued);
   }
@@ -167,6 +174,7 @@ describe("列表好讀：機器鍵的 \\f 契約與快速失敗預算", () => {
       "jump-number",
       "leave-board",
       "leave-sync-jump",
+      "native-input",
       "native-key",
       "native-sync-jump",
       "open-enter",
@@ -181,7 +189,7 @@ describe("列表好讀：機器鍵的 \\f 契約與快速失敗預算", () => {
 
   test("keys 形如 <數字>\\r 的每一腿都掛 fullRepaint（零回應跳號的唯一解）", () => {
     const jumps = legs.filter((l) => /^[0-9]+\r$/.test(l.cmd.keys));
-    expect(jumps.length).toBe(8);
+    expect(jumps.length).toBe(9); // 入口數 × 各自的 sync/jump 腿
     for (const { label, cmd } of jumps)
       expect([label, cmd.kind, cmd.fullRepaint]).toEqual([label, cmd.kind, true]);
   });
@@ -193,7 +201,7 @@ describe("列表好讀：機器鍵的 \\f 契約與快速失敗預算", () => {
 
   test("會凍畫面的前景交易一律 250/600/1200", () => {
     const background = new Set(["prefetch-anchor-down", "prefetch-down"]);
-    const longLived = new Set(["native-key", "native-paste"]);
+    const longLived = new Set(["native-key", "native-paste", "native-input"]);
     for (const { label, cmd } of legs) {
       if (background.has(cmd.kind) || longLived.has(cmd.kind)) continue;
       expect([label, cmd.kind, cmd.timeoutMs]).toEqual([label, cmd.kind, 250]);
@@ -214,10 +222,13 @@ describe("列表好讀：機器鍵的 \\f 契約與快速失敗預算", () => {
     }
   });
 
-  test("native-key 例外：維持長窗（它不凍畫面，只負責撐住 functionMode 的吸收）", () => {
-    const nk = legs.find((l) => l.cmd.kind === "native-key").cmd;
-    expect(nk.timeoutMs).toBe(3000);
-    expect(nk.fullRepaint).toBeUndefined(); // bytes 是使用者任意輸入，不附 \f
+  test("native-key／native-input 例外：維持長窗（不凍畫面，只撐住 functionMode 的吸收）", () => {
+    for (const kind of ["native-key", "native-input"]) {
+      const cmd = legs.find((l) => l.cmd.kind === kind).cmd;
+      expect([kind, cmd.timeoutMs]).toEqual([kind, 3000]);
+      // bytes 是使用者任意輸入，不附 \f
+      expect([kind, cmd.fullRepaint]).toEqual([kind, undefined]);
+    }
   });
 });
 

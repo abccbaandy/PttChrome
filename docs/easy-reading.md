@@ -128,7 +128,13 @@
 `#cursor`（閃爍游標）與 `#t`（注音輸入匡，本專案自己畫的那個 `border:double` 小框；OS
 的候選字清單錨在它上面）的位置**一律錨在「該列真正被畫出來的 DOM 節點」**，決策純函式在
 `src/js/cursor_anchor.js`，量測入口只有 `term_view._rowAnchor`（`#mainContainer
-[type="bbsrow"][srow=N]`，只在 `_gridRender` 幀有意義）。
+[type="bbsrow"][srow=N]`），它有**兩道不等價的守門**：`_gridRender`（`.main` 裝的是不是
+固定格線的一整螢幕）**且** `_srowIsBufRow`（這一幀畫出去的 `srow` 是不是 `buf` 的列號）。
+後者由 `_renderScreenLines` 依 `cursor_anchor.paintedRowsAreBufRows` 逐列參考比對推導
+（與 `_renderedLines` 同一個 choke point、同一個理由）。**列表好讀視窗兩者一真一假**：
+它是格線幀，但 `srow` 是「整段序列」的 index。兩道都真才可錨；否則退回 `cursorOffsets`
+的算術（`#cursor`，該幀游標本來就隱藏）與 `.main` 可視區左下角（`#t`，＝原生輸入列
+將出現的位置）。
 
 | 元素 | 住在 | 錨 | 取值 |
 |---|---|---|---|
@@ -153,7 +159,16 @@
    （之後補 `focus()` 也救不回那個 session）；而且它新增一條「`bshow=0` 必須移出」的
    不變量，漏掉任一路徑就把隱形的 `-100000px` 元素留在捲動容器裡，下次 `focus()`
    把長頁捲飛。
-4. `_rowAnchor` **不做跨呼叫快取**。layout 會變的時機不只重繪與改字級（延遲載入的圖片
+4. **不得用模式旗標（`buf.listRenderMode`／`_functionMode`）當錨點判準。** 它們一律
+   「先設、後 `_forceRedraw()`」（`list_session._enterFunctionMode` 先設 `'native'` →
+   `showCursor()` → 才 `_forceRedraw()`），拿它解讀**上一幀留下來的 DOM** 必有窗口期會
+   說謊；而且會誤殺列表好讀那條 `windowLines == null` 的 fallback（那一幀畫的就是
+   `buf.lines`，`srow` 是對的）。判準只能取自「這一幀實際餵給 `<Screen>` 的 lines」。
+   2026-08-31 之前只有 `_gridRender` 一道守門，列表好讀因此把 `#t` 錨到 `.listBodyView`
+   深處、已捲出視野的一列（`rect.top` 大負數）⇒ 框被寫到視窗外、OS 候選字清單跟著跑掉
+   ⇒ 使用者回報「切到中文輸入法打字，整個畫面就卡住」。守護 `tests/unit/row_anchor.test.js`
+   ＋`easy-reading-list.offline.spec.js`「中文輸入法（離線）」。
+5. `_rowAnchor` **不做跨呼叫快取**。layout 會變的時機不只重繪與改字級（延遲載入的圖片
    落地、pref 切 CSS class、webfont 落地都會），任何以幀序號為鍵的快取都有吃到過期
    `offsetTop` 的路徑 —— 那正是這條契約要消滅的東西。
 
@@ -167,7 +182,7 @@ webfont 落地時序：`@font-face` 用 `font-display: block`，`main.jsx` 的 `
 等寬格線契約押在這支非同步 webfont 上，落地前 ASCII 退回系統 monospace（Menlo advance
 `0.602em`）⇒ 整列橫向偏 20%，而游標的欄位算術不會跟著偏。
 
-debug 錄製器已可直接判定這一類問題：`snapshotState` 帶 `fnMode / gridRender / chw / chh /
+debug 錄製器已可直接判定這一類問題：`snapshotState` 帶 `fnMode / gridRender / srowIsBufRow / chw / chh /
 scaleX / scaleY / dpr / fontsReady`，另有 `cursor.geom` 取樣（游標真的移動時才記，含
 `#cursor`／該列／`.main` 的矩形與 `scrollTop/scrollHeight/clientHeight`；只錄數字座標）。
 
@@ -179,7 +194,7 @@ scaleX / scaleY / dpr / fontsReady`，另有 `cursor.geom` 取樣（游標真的
 - **進入（鍵驅動）**：`_onKeyDownProcessUI` default 分支，凡**單字元鍵**(`e.key.length===1`)且非 leave-post 鍵→`_enterFunctionMode`：清 `sendCommandAfterUpdate`、存 `mainDisplay.scrollTop`、設 `_functionMode=true`、全列 dirty+`notify()` 立即重繪。**不** preventDefault（鍵照送 PTT）。僅 leave-post 鍵(`abf=+-[]ABF`)走 `leaveCurrentPost` 不進。
   - **pmore 功能鍵一律走 functionMode，勿再加 swallow list**：`h` 說明/`o` 選項/`/` 搜尋/`;` 指定頁/`,.<>` 左右捲等鍵由 functionMode 鏡像原生選單（守護 unit `easy_reading_logic.test.js`「pmore function keys enter functionMode」）。`Tab`(`stop=true`)與 ctrl `"@^_?"` 例外（Tab 放行涉 browser focus、不可同時 preventDefault+送鍵）。
   - **進入（貼上驅動）**：貼上不是按鍵 ⇒ 上面那條 `e.key.length===1` 規則抓不到，PTT 因應 `#`／`/`／`;` 等貼上內容畫的 prompt 會被好讀長頁蓋住（使用者看不到反應）。故 `App.onPasteDone` 在送出前補一次 `easyReading._enterFunctionMode()`（該函式自帶 `_functionMode` 早退，重複呼叫無害）。列表好讀的同源缺口見 `docs/easy-reading-list.md` 不變量 12b。
-  - **進入（文字輸入驅動＝IME，2026-08-22）**：中文 IME 開著時 keydown 的 `e.key` 是 `'Process'`（keyCode 229）⇒ 上面那條 `e.key.length===1` 規則同樣抓不到；字元改由 input 事件送出（`term_view.onInput` 的 IME 特判刻意放行 `X`）→ `onTextInput` → `_convSend` ⇒ PTT 開了推文 prompt、好讀長頁卻原封不動 ⇒ **看不到輸入框、打字卻有效**（回報症狀「有時按 X 推文輸入框不顯示，切回原生就看得到字」；「有時」＝IME 開著時）。故 `term_view.onTextInput` 這條共用漏斗開頭一律呼叫 `easyReading.noteTextInput()`（gate：`_enabled && startedEasyReading`），keydown／IME／貼上三個入口對 functionMode 行為一致。守護 `tests/unit/easy_reading_text_input.test.js`＋`tests/e2e/offline/pref_close_in_prompt.offline.spec.js`。
+  - **進入（文字輸入驅動＝IME，2026-08-22）**：中文 IME 開著時 keydown 的 `e.key` 是 `'Process'`（keyCode 229）⇒ 上面那條 `e.key.length===1` 規則同樣抓不到；字元改由 input 事件送出（`term_view.onInput` **不看 keyCode**，任何字元都往下走；舊碼那段 `easyReadingKeyDownKeyCode == 229 && value != 'X'` 就丟棄字元的特判已於 2026-08-31 確認為死碼並刪除 —— 唯一寫入點在 `onKeyDown` 內，而 `keyEventFilter` 第一條就把 229 擋在外面）→ `onTextInput` → `_convSend` ⇒ PTT 開了推文 prompt、好讀長頁卻原封不動 ⇒ **看不到輸入框、打字卻有效**（回報症狀「有時按 X 推文輸入框不顯示，切回原生就看得到字」；「有時」＝IME 開著時）。故 `term_view.onTextInput` 這條共用漏斗開頭一律呼叫 `easyReading.noteTextInput()`（gate：`_enabled && startedEasyReading`），keydown／IME／貼上三個入口對 functionMode 行為一致。守護 `tests/unit/easy_reading_text_input.test.js`＋`tests/unit/term_view_text_input.test.js`＋`tests/e2e/offline/pref_close_in_prompt.offline.spec.js`。**列表好讀的同源缺口 2026-08-31 才補**（`ListSession.noteTextInput`，見 `docs/easy-reading-list.md` 不變量 12d）：漏斗裡兩個 `noteTextInput` 並存，列表那條回 true 就代表它接手了，不可以再 `_convSend`。
   - **進入（滑鼠點功能鍵驅動，2026-08-23）**：畫面底部的 `(y)回應`／`(X)推文`／`(h)按鍵說明` 現在是可點按鈕（pref `mouseFunctionKeys`，見 `docs/mouse.md`「功能鍵按鈕」），點擊同樣不是按鍵、也不是文字輸入 ⇒ 上面三條規則全部抓不到，症狀與貼上／IME 那兩次完全相同（PTT 開了 prompt、好讀長頁原封不動 ⇒ 看不到輸入框）。故送鍵漏斗 `App.onFunctionKey` 在`view._send` **之前**呼叫 `easyReading._enterFunctionMode()`，由純函式 `function_key_plan.functionKeyClickPlan({bytes, mode})` 決策。**`\x1b[D`（`[←]離開`／`[q]`）例外**：走 `stopEasyReading()`，與鍵盤 ArrowLeft 同一條路（`_onKeyDownProcessUI` 的 `case 'ArrowLeft'`），否則離開文章時會先閃一下原生 24 列。守護 `tests/unit/function_key_click_plan.test.js`＋`tests/e2e/offline/function_keys.offline.spec.js`。
 - **鍵流**：`term_view.onKeyDown` gate 加 `&& !buf.easyReadingFunctionMode` → functionMode 期間全鍵直通原生（含 Enter，在原生 prompt/編輯器操作）。
 - **渲染**：`term_view.redraw` **最高優先**分支 `useEasyReadingMode && easyReadingFunctionMode` → `hideEasyReadingOverlaysKeepPage()`(藏 overlay＋清 `#mainContainer` 的 `paddingBottom`、**不清 pageLines**)＋`mainDisplay.scrollTop=0`＋`_gridRender=true`＋`_renderScreenLines(buf.lines)` 整頁原生 24 列 LIVE。**關鍵：不可用 `hideEasyReadingOverlays`**（它清 `pageLines=[]`，退出需重抓整篇、PTT 已在文末 End no-op → 不可行）。

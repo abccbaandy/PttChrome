@@ -35,4 +35,28 @@ export function cursorOffsets({ row, cur_x, cur_y, cols, rows, chw, chh }) {
   };
 }
 
+// 這一幀畫出去的 srow 是不是 buf 的列號。
+//
+// srow ＝ 傳給 <Screen> 的 lines index，而 term_view 的七條 render 分支餵的來源不同：
+//   buf.lines（原生／文章好讀 functionMode 鏡像／防黑守門鏡像／列表好讀的
+//     windowLines==null fallback）── srow **就是** buf 列號；
+//   列表好讀視窗（header 快取 3 列＋整段序列 ≤300 列＋footer，全是 cloneRow 快照）
+//   與好讀累積長頁（buf.pageLines）── **不是**，拿 buf.cur_y 去反查會撈到一列毫無
+//   關係的節點（列表好讀那條還躲在 .listBodyView 的捲動視口裡，通常已捲出視野 ⇒
+//   rect.top 是大負數 ⇒ #t 被寫到視窗外，OS 候選字清單跟著跑掉）。
+//
+// 判準刻意是**逐列參考相等**，不是「宣告自己是哪種模式」：模式旗標
+//（buf.listRenderMode／_functionMode）一律「先設、後 _forceRedraw()」，用它解讀
+// 上一幀留下來的 DOM 必有窗口期會說謊（list_session._enterFunctionMode 先設
+// 'native' → showCursor() → 才 _forceRedraw()）。長度相等時（剛 seed 的列表視窗
+// 恰好也是 24 列）唯一擋得住的就是逐列比對。
+//
+// 誤判方向是安全的：false negative 只是退回 _cellClientRect 的 `.main` 左下角
+// fallback；false positive 需要每一列都是同一個物件，那就真的是 buf 的格線。
+export function paintedRowsAreBufRows(lines, bufLines, rows) {
+  if (!lines || !bufLines || !(rows > 0) || lines.length !== rows) return false;
+  for (let i = 0; i < rows; ++i) if (lines[i] !== bufLines[i]) return false;
+  return true;
+}
+
 export default cursorOffsets;

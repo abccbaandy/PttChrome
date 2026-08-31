@@ -37,6 +37,7 @@ describe("snapshotState", () => {
       listState: "idle",
       fnMode: false,
       gridRender: true,
+      srowIsBufRow: false,
       chw: 12,
       chh: 24,
       scaleX: 1,
@@ -47,13 +48,19 @@ describe("snapshotState", () => {
   });
 
   // 好讀長頁 ↔ 原生鏡像是游標幾何問題的第一個分岔（推文 prompt 走鏡像）。
-  it("錄下 functionMode 與 gridRender", () => {
+  // srowIsBufRow 與 gridRender **不等價**：列表好讀視窗兩者一真一假，而
+  // #cursor／#t 的錨點只在兩者皆真時才可信（見 term_view._rowAnchor）。
+  it("錄下 functionMode 與 gridRender／srowIsBufRow", () => {
     const { app } = makeApp();
     app.buf.easyReadingFunctionMode = true;
     app.view._gridRender = false;
     const s = snapshotState(app);
     expect(s.fnMode).toBe(true);
     expect(s.gridRender).toBe(false);
+
+    app.view._gridRender = true;
+    app.view._srowIsBufRow = true;
+    expect(snapshotState(app).srowIsBufRow).toBe(true);
   });
 
   it("view / buf 缺席時不丟例外", () => {

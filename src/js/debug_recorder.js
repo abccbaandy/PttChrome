@@ -25,6 +25,7 @@ export function snapshotState(app) {
       fnMode: !!(app.buf && app.buf.easyReadingFunctionMode),
       // 這一幀是不是格線畫面 —— 決定 #cursor 該不該可見（term_view._applyCursorVisibility）。
       gridRender: !!(view && view._gridRender),
+      srowIsBufRow: !!(view && view._srowIsBufRow),
       // 重現現場要能還原格線；chw/chh 是推導值（chh/2、視窗尺寸），不是量出來的。
       chw: view && view.chw,
       chh: view && view.chh,

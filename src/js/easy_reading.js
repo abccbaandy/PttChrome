@@ -1006,12 +1006,16 @@ EasyReading.prototype._enterFunctionMode = function() {
 };
 
 // 使用者「送了一段文字給 PTT」——不是按鍵，所以繞過了 _onKeyDown 那條進 functionMode
-// 的路。兩個實例，同一個缺口：
+// 的路。三個實例，同一個缺口：
 //   a) 中文 IME 開著時按 X 推文：keydown 的 e.key 是 'Process'（keyCode 229），
-//      `e.key.length === 1` 不成立 ⇒ 不進鏡像；字元改由 input 事件（term_view.onInput
-//      的 IME 特判刻意放行 'X'）→ onTextInput → _convSend 送出。PTT 開了推文 prompt
-//      （只 patch 最後一列），好讀長頁卻原封不動 ⇒ **看不到輸入框，字卻真的送出去了**。
+//      `e.key.length === 1` 不成立 ⇒ 不進鏡像；字元改由 input 事件送出
+//      （term_view.onInput **不看 keyCode**，任何字元都往下走）→ onTextInput →
+//      _convSend。PTT 開了推文 prompt（只 patch 最後一列），好讀長頁卻原封不動
+//      ⇒ **看不到輸入框，字卻真的送出去了**。
 //   b) 貼上：App.onPasteDone 早就自己補過這一刀（同樣理由）。
+//   c) 列表好讀：同一個漏斗上的 ListSession.noteTextInput（2026-08-31 才補，見
+//      docs/easy-reading-list.md 不變量 12d）。它回 true 代表已接手，那條路徑不會
+//      走到本函式 —— 兩種好讀不可能同時擁有畫面。
 // 由 term_view.onTextInput 這條共用漏斗統一呼叫，keydown／IME／貼上三條入口行為一致。
 // _enterFunctionMode 本身有 _enabled 與重入 gate，這裡只多一道「文章真的開著」。
 // 守護：tests/unit/easy_reading_text_input.test.js。

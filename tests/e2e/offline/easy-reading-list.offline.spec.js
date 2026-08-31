@@ -1339,3 +1339,144 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 中文輸入法（IME）在列表好讀下的兩件事，都是使用者回報的「切到中文模式打字，
+// 整個畫面就卡住」的組成部分：
+//   1. 組字框 #t 必須看得見（它是 OS 候選字清單的錨；跑到視窗外＝使用者以為當機）。
+//      #t 的幾何契約主場在 cursor_shape.offline.spec.js，但那裡的兩條刻意關掉
+//      enableEasyReadingList；列表好讀的環境（cassette／pref／waitState）在本檔，
+//      而且斷言不同（要的是「落在視窗內」而非「貼齊該格」），所以放這裡。
+//   2. 組完字送出必須先切成原生鏡像，否則 PTT 畫的 prompt 被累積緩衝視窗蓋住。
+// IME 的 keydown keyCode 是 229，被 keyEventFilter 擋在 onKeyDown 之外 ⇒ 走不到
+// _classifyKey 的 passthrough，這兩件事都得靠 onTextInput 那條共用漏斗。
+// 純邏輯守護：tests/unit/row_anchor.test.js、tests/unit/list_text_input.test.js。
+// ---------------------------------------------------------------------------
+test.describe('中文輸入法（離線）', () => {
+  test.skip(!nav, '缺 cchat-list-nav cassette（yarn record:cassette 先錄一次）');
+
+  // 真 IME 事件序：compositionstart（框出現）→ 填字 → compositionend（送出）。
+  async function composeStart(page) {
+    await page.evaluate(() => {
+      const t = document.getElementById('t');
+      t.focus();
+      t.style.width = '40px'; // 避免右邊界 clamp 介入量測
+      t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    });
+  }
+  async function composeEnd(page, text) {
+    await page.evaluate((s) => {
+      const t = document.getElementById('t');
+      t.value = s;
+      t.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: s }));
+    }, text);
+  }
+
+  // prefetch: 0 ＝只有 seed 那 20 列，body 剛好塞滿視口、捲不動。要驗「錨到捲出
+  // 視野的列」就得先讓上方長出可捲距離（比照「原生捲動」那條：fill 往舊文方向長）。
+  async function engaged(page, { fill = false } = {}) {
+    await bootOffline(page, ptt);
+    await replayListCassette(page, nav);
+    await page.waitForFunction(() => window.__app.buf.pageState === 2);
+    await ptt.applyPrefs(page, {
+      enableEasyReadingList: true,
+      easyReadingListPrefetchCount: fill ? 200 : 0,
+    });
+    return waitState(
+      page,
+      (x) => x.state === 'active' && x.queueIdle && (!fill || x.listLen > 40),
+      20000
+    );
+  }
+
+  test('組字框 #t 落在視窗內（不再錨到捲出視野的那一列）', async ({ page }) => {
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await engaged(page, { fill: true });
+
+      // 捲到序列深處：buf.cur_y 對應的 srow 是整段序列最前面幾列，捲下去之後
+      // 就在視口上方外。捲動用 DOM 真相源（scrollTop），等它穩再量。
+      await page.evaluate(() => {
+        document.querySelector('#mainContainer .listBodyView').scrollTop = 9999;
+      });
+      await waitScrollStable(page, '#mainContainer .listBodyView');
+
+      const pre = await page.evaluate(() => {
+        const app = window.__app;
+        const v = document.querySelector('#mainContainer .listBodyView');
+        const el = document.querySelector(
+          `#mainContainer [type="bbsrow"][srow="${app.buf.cur_y}"]`
+        );
+        return {
+          cur_y: app.buf.cur_y,
+          scrollTop: v ? v.scrollTop : -1,
+          rowTop: el ? el.getBoundingClientRect().top : null,
+        };
+      });
+      // 前提成立才有意義（否則這條會沉默地永真）：真的捲動了、buf.cur_y 落在
+      // body（非 header 那 3 列）、而且那一列真的被捲出視野上方。
+      expect(pre.scrollTop).toBeGreaterThan(0);
+      expect(pre.cur_y).toBeGreaterThanOrEqual(3);
+      expect(pre.rowTop).not.toBeNull();
+      expect(pre.rowTop).toBeLessThan(0);
+
+      await composeStart(page);
+      const m = await page.evaluate(() => {
+        const b = document.getElementById('t').getBoundingClientRect();
+        return {
+          bshow: document.getElementById('t').getAttribute('bshow'),
+          top: b.top, bottom: b.bottom, left: b.left, right: b.right,
+          w: window.innerWidth, h: window.innerHeight,
+        };
+      });
+      expect(m.bshow).toBe('1');
+      // 舊碼：top ≈ pre.rowTop（大負數）⇒ 框整個在視窗外，候選字清單跟著跑掉。
+      expect(m.top).toBeGreaterThanOrEqual(0);
+      expect(m.bottom).toBeLessThanOrEqual(m.h);
+      expect(m.left).toBeGreaterThanOrEqual(0);
+      expect(m.right).toBeLessThanOrEqual(m.w);
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
+  test('組完字送出：切原生鏡像＋走 CommandQueue（Big5，恰送一次）', async ({ page }) => {
+    test.setTimeout(60000);
+    const logs = ptt.attachConsole(page);
+    const TEXT = '測試';
+    try {
+      const before = await engaged(page);
+      // seed 落點 server 游標＝選取 ⇒ 免 sync 腿（cassette 沒有那一腿的素材）。
+      await page.evaluate(() => {
+        const ls = window.__app.listSession;
+        ls._serverNum = ls._selectedNum;
+      });
+
+      await composeStart(page);
+      await composeEnd(page, TEXT);
+
+      const after = await waitState(
+        page,
+        (x) => x.state === 'functionMode' && x.renderMode === 'native',
+        10000
+      );
+      // 恰好一次送出（不得裸送 + 佇列各送一次）
+      expect(after.sentCount).toBe(before.sentCount + 1);
+      const sent = await page.evaluate(() => window.__replay.sent.slice(-1)[0]);
+      // Big5：兩個全形字 = 4 bytes，每個 byte < 256（裸送 UTF-16 會是 2 個 >0xFF 的碼位）
+      expect(sent.length).toBe(4);
+      expect(Math.max(...[...sent].map((c) => c.charCodeAt(0)))).toBeLessThan(256);
+      expect(sent).not.toBe(TEXT);
+      // 原生鏡像：第二層捲動視口收掉，畫面回到固定 24 列
+      expect(after.viewportPx).toBe(-1);
+      expect(after.domRows).toBe(24);
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+});

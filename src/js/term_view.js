@@ -14,7 +14,7 @@ import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, dec
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { readValuesWithDefault } from './pref_storage';
-import { cursorOffsets } from './cursor_anchor';
+import { cursorOffsets, paintedRowsAreBufRows } from './cursor_anchor';
 import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
 import icon128 from '../icon/icon_128.png';
@@ -149,7 +149,6 @@ export function TermView() {
   // 公開旗標讀（docs/easy-reading.md）。搬進 easy_reading.js 等於拆掉那個契約。
   // 手動開關一律走 App.switchToEasyReadingMode / exitEasyReading，勿直接翻這個旗標。
   this.useEasyReadingMode = false;
-  this.easyReadingKeyDownKeyCode = 0;
 
   // List easy reading hides the PTT cursor while the buffer render owns the
   // screen (the real cursor points into the 24-row buffer, not the long list).
@@ -176,6 +175,12 @@ export function TermView() {
   // functionMode 鏡像原生 24 列（easy_reading._onKeyDownProcessUI），那是格線幀。
   // 只有真的重畫畫面的分支才改它。
   this._gridRender = true;
+
+  // _gridRender 的**姊妹旗標，語意不同**：這一幀畫出去的 srow 是不是 buf 的列號。
+  // 列表好讀視窗是格線幀（_gridRender=true）但 srow 是「整段序列」的 index ⇒ 拿
+  // buf.cur_y 反查會錨到毫無關係的一列。由 _renderScreenLines 依實際餵出去的 lines
+  // 推導（cursor_anchor.paintedRowsAreBufRows），首次 render 之前是惰性值。
+  this._srowIsBufRow = true;
 
   // 閃爍游標抑制（autoHideBlinkCursor）：PTT 自己畫了 '>' 游標的畫面（列表／選單）
   // 不需要再疊一個閃爍游標。與 _cursorHidden 是**兩個獨立來源**，用 OR 合併於
@@ -762,6 +767,11 @@ TermView.prototype = {
     // 用錯就是複製到別的畫面，超出 buf.rows 的列還會直接 TypeError。
     // 守護：tests/unit/list_copy_ansi.test.js。
     this._renderedLines = lines;
+    // 同一份事實的另一面，給 #cursor／#t 的錨點用：**這一幀的 srow 是不是 buf 的
+    // 列號**（見 cursor_anchor.paintedRowsAreBufRows 與 docs/easy-reading.md
+    // 「游標／#t 的錨點契約」）。呼叫端只餵 lines，判準在這裡一次算完 —— 七條分支
+    // 各自宣告一個旗標的話，漏掉任何一條都是靜默畫錯。
+    this._srowIsBufRow = paintedRowsAreBufRows(lines, this.buf.lines, this.buf.rows);
     // Maintain the sticky board-list context (see constructor). LIST enters it,
     // MENU/READING leave it, everything else (overlay prompts, transient frames)
     // keeps the previous value so blacklist hiding persists across e.g. the v prompt.
@@ -914,11 +924,13 @@ TermView.prototype = {
       return;
     }
 
-    if (this.useEasyReadingMode && this.buf.startedEasyReading &&
-        this.easyReadingKeyDownKeyCode == 229 && e.target.value != 'X') { // only use on chinese IME
-      e.target.value = '';
-      return;
-    }
+    // 這裡**不看 keyCode**：IME 組出的任何字元都往 onTextInput 這條共用漏斗走，
+    // 由 noteTextInput 決定要不要先切成原生鏡像。舊碼有一段
+    // `easyReadingKeyDownKeyCode == 229 && value != 'X'` 就丟棄字元的特判，語意是
+    // 「IME 開著時除了 X 以外一律靜默吞掉」，與「keydown／IME／貼上三個入口一致」
+    // 的設計直接衝突；而且它永不可達（唯一寫入點在 onKeyDown 內，keyEventFilter
+    // 第一條就把 229 擋在外面）。2026-08 已刪，勿再加回。
+    // 守護：tests/unit/term_view_text_input.test.js。
     if (e.target.value) {
       this.onTextInput(e.target.value);
     }
@@ -926,10 +938,20 @@ TermView.prototype = {
   },
 
   onTextInput: function(text, isPasting) {
-    // 送字給 PTT ≠ 按鍵。好讀模式是在 keydown 決定要不要切成原生鏡像（functionMode），
-    // 而 IME（keydown 的 e.key 是 'Process'）與貼上都繞得過那道判斷 → PTT 開了推文／
-    // 搜尋 prompt，畫面卻還停在好讀長頁上，使用者看不到輸入框卻打得進去。
-    // 見 easy_reading.noteTextInput（含 gate，非文章／好讀關著時為 no-op）。
+    // 送字給 PTT ≠ 按鍵。兩種好讀模式都是在 keydown 決定要不要切成原生鏡像
+    // （functionMode），而 IME（keydown 的 e.key 是 'Process'、keyCode 229，被
+    // keyEventFilter 擋在 onKeyDown 之外）與貼上都繞得過那道判斷 → PTT 開了推文／
+    // 搜尋 prompt，畫面卻還停在好讀長頁／累積列表視窗上，使用者看不到輸入框卻打得
+    // 進去（列表那邊的症狀是「切中文輸入法打字，整個畫面卡住」）。
+    //
+    // 列表好讀：形狀比照 App.onPasteDone —— 先問 ListSession 要不要接手，接手了就
+    // **不可以**再 _convSend。isPasting 時跳過：貼上已經在 onPasteDone 問過
+    // listSession.onPaste，這裡再問一次就是同一段文字送兩次。
+    // 見 list_session.noteTextInput／easy_reading.noteTextInput（兩者都自帶 gate，
+    // 沒接管畫面時為 no-op／回 false）。
+    if (!isPasting && this.bbscore.listSession &&
+        this.bbscore.listSession.noteTextInput(text))
+      return;
     if (this.bbscore.easyReading)
       this.bbscore.easyReading.noteTextInput();
     // Normalization lives in string_util.normalizePasteText so the list easy
@@ -990,7 +1012,6 @@ TermView.prototype = {
     }
     if (this.useEasyReadingMode && this.buf.startedEasyReading &&
         !this.buf.easyReadingFunctionMode) {
-      this.easyReadingKeyDownKeyCode = e.keyCode;
       this.bbscore.easyReading._onKeyDown(e);
       if (e.defaultPrevented)
         return;
@@ -1563,9 +1584,15 @@ TermView.prototype = {
   // 這一幀 buf 第 row 列**真正被畫出來**的節點的 offset（相對 `.main` —— 它是
   // position:relative，也就是 #cursor 的 containing block ⇒ 兩者同一個座標系）。
   //
-  // 只在格線幀（_gridRender）才有意義：好讀累積長頁的 srow 是長頁列號，與 buf.cur_y
-  // 毫無關係，拿它當錨會錨到隨機一列（那種幀游標本來就整個隱藏，但 #t 還是會讀，
-  // 所以這裡要擋在源頭）。量不到就回 null，由 cursorOffsets 退回舊算術。
+  // 兩道守門，**不等價**，缺一不可：
+  //   _gridRender   ── `.main` 裝的是不是固定格線的一整螢幕。
+  //   _srowIsBufRow ── 這一幀畫出去的 srow 是不是 buf 的列號。
+  // 好讀累積長頁兩者皆否；**列表好讀視窗是格線幀（_gridRender=true）但 srow 是
+  // 「整段序列」的 index**，只看 _gridRender 就會錨到 .listBodyView 深處、通常已
+  // 捲出視野的一列 ⇒ rect.top 大負數 ⇒ #t 被寫到視窗外（2026-08「切中文輸入法
+  // 打字，整個畫面卡住」）。那種幀游標本來就整個隱藏，但 #t 還是會讀，所以要擋在
+  // 源頭。量不到就回 null，由 cursorOffsets 退回舊算術、由 _cellClientRect 退回
+  // `.main` 左下角。守護：tests/unit/row_anchor.test.js。
   //
   // **每次呼叫都現量，不做跨呼叫快取**：layout 會變的時機不只重繪與改字級（延遲載入
   // 的圖片落地、pref 切換 CSS class、字型落地都會），任何以「幀序號」為鍵的快取都會
@@ -1573,7 +1600,7 @@ TermView.prototype = {
   // 一次 offset 讀取，成本落在游標移動這個頻率上，可以接受。
   // 同一次 updateCursorPos 之內由呼叫端把結果傳給 updateInputBufferPos，不重複量。
   _rowAnchor: function(row) {
-    if (!this._gridRender) return null;
+    if (!this._gridRender || !this._srowIsBufRow) return null;
     var cont = this.mainContainer;
     var el = cont
       ? cont.querySelector('[type="bbsrow"][srow="' + row + '"]')
@@ -1607,7 +1634,8 @@ TermView.prototype = {
   // **不要改用 #cursor 的 rect 當錨**：#cursor 基底 CSS 是 display:none，靠
   // body.blink--active 每秒 toggle ⇒ 有一半時間量到全 0。
   //
-  // 沒有可錨的列（好讀累積長頁：格線座標在那裡沒有意義，_rowAnchor 回 null）時
+  // 沒有可錨的列（好讀累積長頁：格線座標在那裡沒有意義；列表好讀視窗：srow 是序列
+  // index，不是 buf 列號 —— 兩者 _rowAnchor 都回 null）時
   // **不要把框留在 -100000px**：那會讓 OS 的候選字清單跑到瀏覽器自選的角落。改停在
   // `.main` 可視區的左下角 —— 也就是原生輸入列將要出現的位置（任何送得出去的字都會
   // 先讓 easy_reading 進 functionMode 鏡像原生，屆時就改吃精確錨點）。這裡用的是
