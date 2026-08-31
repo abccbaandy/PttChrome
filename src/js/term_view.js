@@ -17,6 +17,7 @@ import { readValuesWithDefault } from './pref_storage';
 import { cursorOffsets, paintedRowsAreBufRows } from './cursor_anchor';
 import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
+import { serializedOpHint } from './serialized_op_gate';
 import icon128 from '../icon/icon_128.png';
 import cursorBack from '../cursor/back.png';
 
@@ -938,6 +939,16 @@ TermView.prototype = {
   },
 
   onTextInput: function(text, isPasting) {
+    // 序列化操作（AID 跳文／長推文）在途時一律吞掉，理由與 onKeyDown 那道相同。
+    // **排在列表好讀分派之前**：noteTextInput 自己會 _enterFunctionMode() 並排
+    // native-input，在途時那本身就是競態。isPasting 也擋（App.onPasteDone 已擋過
+    // 一層，這裡是自保：image_upload_controller 等呼叫端繞得過去）。
+    // 守護 tests/unit/serialized_op_gate.test.js。
+    var busyHint = serializedOpHint(this.bbscore);
+    if (busyHint) {
+      this.flashListHint(busyHint);
+      return;
+    }
     // 送字給 PTT ≠ 按鍵。兩種好讀模式都是在 keydown 決定要不要切成原生鏡像
     // （functionMode），而 IME（keydown 的 e.key 是 'Process'、keyCode 229，被
     // keyEventFilter 擋在 onKeyDown 之外）與貼上都繞得過那道判斷 → PTT 開了推文／
@@ -963,18 +974,13 @@ TermView.prototype = {
   },
 
   onKeyDown: function(e) {
-    // AID navigation in flight: serialized machine keys own the wire — a user
-    // key would race them (typeahead, protocol §2). Swallow with a banner.
-    if (this.bbscore.aidNavigation && this.bbscore.aidNavigation.active) {
+    // 序列化操作（AID 跳文／長推文）在途：程式化的鍵序列擁有這條線路，使用者的鍵
+    // 會與它競態（typeahead，協定 §2）。吞掉並給提示——條件與提示文字四條入口共用，
+    // 見 serialized_op_gate.js。
+    var busyHint = serializedOpHint(this.bbscore);
+    if (busyHint) {
       e.preventDefault();
-      this.flashListHint('AID 跳文中，請稍候…');
-      return;
-    }
-    // 長推文送出中：同一條理由（X → 型別 → 內容 → y 的配對不能被插隊）。進度
-    // 遮罩會讓 shouldAcceptInput() 先擋下大部分按鍵，這裡是同條件的自保。
-    if (this.bbscore.longPush && this.bbscore.longPush.active) {
-      e.preventDefault();
-      this.flashListHint('長推文送出中，請稍候…');
+      this.flashListHint(busyHint);
       return;
     }
     // "返回原文" hotkey (pref aidNavBackKey, default F9). Claimed BEFORE every

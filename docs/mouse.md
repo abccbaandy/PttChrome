@@ -413,7 +413,7 @@ DBCS 雙色字），只找一層在那種字上會漏判。同一個 bug 在
 順序固定（漏一步都會壞）：
 
 1. `modalShown` → return（元素層 listener 早跑，`mouse_click` 攔不到，見上方優先權表）
-2. `aidNavigation.active` → 提示後 return
+2. `serializedOpHint`（AID 跳文／長推文在途）→ 提示後 return。條件與提示文字是**四條送字入口共用**的述詞（`serialized_op_gate.js`：另三條是 `term_view.onKeyDown`／`onTextInput`、`App.onPasteDone`）
 3. `listSession.onFunctionKey(bytes)` 回 true → 它接手了（v5 封閉互動，見下）
 4. `functionKeyClickPlan` → 文章好讀時**先** `_enterFunctionMode()` 再送 byte
 5. `commandQueue.inFlightKind` → 提示後 return

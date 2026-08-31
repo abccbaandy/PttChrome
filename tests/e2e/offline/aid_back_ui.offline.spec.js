@@ -87,4 +87,30 @@ test.describe('AID 返回鈕', () => {
     await page.locator('#t').press('F10');
     expect(await page.evaluate(() => window.__backCalls)).toBe(1);
   });
+
+  // 跳文期間 PTT 的線路屬於那段程式化鍵序列，使用者的 bytes 一個都不准插進去
+  // （typeahead 會吞掉中間那一幀，docs/pttbbs-screen-protocol.md §2）。AID 跳文
+  // **不開 modal** ⇒ onInput 開頭那道 modalShown 早退對它不成立，IME 與貼上曾經
+  // 整段裸送。純邏輯在 tests/unit/serialized_op_gate.test.js，這裡守真物件的接線。
+  //
+  // 刻意直接翻 active 旗標而不跑真的跳文：offline 下唯一會讓它變 true 的是
+  // aid_wrap 那條 in-flight 的瞬間，抓那個窗口必然 flaky。
+  test('跳文期間鍵盤／IME／貼上都不會漏到 PTT', async ({ page }) => {
+    await boot(page);
+    // 這個檔沒有 cassette（window.__replay 不存在），記帳自己裝。
+    await page.evaluate(() => {
+      window.__sent = [];
+      window.__stubWSSent = (s) => window.__sent.push(s);
+      window.__app.aidNavigation.active = true;
+    });
+
+    await page.locator('#t').press('a');
+    await page.evaluate(() => window.__app.view.onTextInput('測'));
+    await page.evaluate(() => window.__app.onPasteDone('#1gIeu-3A'));
+    await page.waitForTimeout(200);
+
+    expect(await page.evaluate(() => window.__sent.join(''))).toBe('');
+    // 吞掉不得無聲：每一條都要看得到提示帶。
+    await expect(page.locator('.ListHint')).toContainText('AID 跳文中');
+  });
 });

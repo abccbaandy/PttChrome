@@ -170,10 +170,21 @@ test.describe('長推文一鍵發送（離線）', () => {
       .toBe(false);
   });
 
-  test('送出期間鍵盤不會漏到 PTT', async ({ page }) => {
+  // 送 bytes 給 PTT 的四條使用者入口在送出期間都必須噤聲。鍵盤那條走真按鍵；
+  // IME 與貼上沒有可靠的離線觸發方式（IME 的 composition 在 headless 造不出來），
+  // 所以直接戳產品自己的漏斗 view.onTextInput / App.onPasteDone——那正是
+  // image_upload_controller 與 doPaste 走的同一個入口。
+  // 純邏輯在 tests/unit/serialized_op_gate.test.js，這裡守的是真物件的接線。
+  test('送出期間鍵盤／IME／貼上都不會漏到 PTT', async ({ page }) => {
     await boot(page);
     await submitLongPush(page, '安安');
     await expect.poll(() => sentText(page)).toBe('X');
+
+    // 序列真的在途才驗得到守門（進度遮罩上的按鍵會結束這一輪，所以注入排在
+    // 鍵盤那兩下**之前**）。
+    expect(await page.evaluate(() => window.__app.longPush.active)).toBe(true);
+    await page.evaluate(() => window.__app.view.onTextInput('測'));
+    await page.evaluate(() => window.__app.onPasteDone('測'));
 
     await page.keyboard.press('a');
     await page.keyboard.press('Enter');

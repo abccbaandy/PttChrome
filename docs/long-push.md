@@ -17,8 +17,9 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 | `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認） |
 | `src/components/ContextMenu/LongPushProgressModal.jsx` | 送出中的全版遮罩（真 modal，唯一出口是取消） |
 | `src/components/ContextMenu/index.jsx` | gating、handler、`modalOpen` 推導、`longPush.onChange` 掛接 |
-| `src/js/pttchrome.jsx` | `new LongPushSession(...)`（與 aidNavigation 共用同一條 CommandQueue）＋ `onFunctionKey` 守門 |
-| `src/js/term_view.js` | `onKeyDown` 守門（比照 `aidNavigation.active`） |
+| `src/js/pttchrome.jsx` | `new LongPushSession(...)`（與 aidNavigation 共用同一條 CommandQueue）＋ `onFunctionKey`／`onPasteDone` 守門 |
+| `src/js/term_view.js` | `onKeyDown`／`onTextInput` 守門 |
+| `src/js/serialized_op_gate.js` | `serializedOpHint(core)`＝**四條送字入口共用**的述詞（`aidNavigation.active` / `longPush.active` → 提示字串，否則 null）。呼叫端負責吞輸入＋`flashListHint`。守護 `tests/unit/serialized_op_gate.test.js` |
 | pref | `enableLongPush`，**預設 `true`**，設定 → 一般 → 右鍵選單 |
 
 ## 資料流

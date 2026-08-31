@@ -24,6 +24,7 @@ import {
 } from './mouse_regions';
 import { colFromClientX } from './mouse_geometry';
 import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
+import { serializedOpHint } from './serialized_op_gate';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { i18n } from './i18n';
@@ -600,6 +601,17 @@ App.prototype.showPasteUnimplemented = function() {
 // Single funnel for every paste route (DOM paste on #t, Ctrl-Shift-V, context
 // menu, middle click) — so both easy-reading modes only have to be taught here.
 App.prototype.onPasteDone = function(content) {
+  // 序列化操作（AID 跳文／長推文）在途：貼上的 bytes 會插進程式化的鍵序列中間。
+  // **排在 listSession.onPaste 之前**——那條會把內容排進同一條 CommandQueue。
+  // 這裡不是重複 onTextInput 的守門：這個漏斗有三個呼叫端（onDOMPaste、doPaste、
+  // image_upload_controller），而列表好讀接手那條根本走不到 view.onTextInput。
+  const busyHint = serializedOpHint(this);
+  if (busyHint) {
+    if (this.view.flashListHint)
+      this.view.flashListHint(busyHint);
+    return;
+  }
+
   // List easy reading owns the wire while it renders the buffer: a raw convSend
   // would race its serialized commands AND land on a screen the user can't see.
   // onPaste returns false when it isn't engaged (native mirror / idle).
@@ -628,16 +640,13 @@ App.prototype.onPasteDone = function(content) {
 App.prototype.onFunctionKey = function(bytes, label) {
   if (!bytes) return;
   if (this.modalShown) return;
-  if (this.aidNavigation && this.aidNavigation.active) {
+  // 序列化操作（AID 跳文／長推文）在途：整條序列在程式化按 PTT 的鍵，插一個進去
+  // 就會打亂 X → 型別 → 內容 的配對（長推文的進度遮罩本身也會讓 modalShown 擋住，
+  // 這裡是同一條件的自保）。條件與提示文字四條入口共用，見 serialized_op_gate.js。
+  const busyHint = serializedOpHint(this);
+  if (busyHint) {
     if (this.view.flashListHint)
-      this.view.flashListHint('AID 跳文中，請稍候…');
-    return;
-  }
-  // 長推文送出中：整條序列在程式化按 PTT 的鍵，插一個進去就會打亂 X → 型別 →
-  // 內容 的配對（進度遮罩本身也會讓 modalShown 擋住，這裡是同一條件的自保）。
-  if (this.longPush && this.longPush.active) {
-    if (this.view.flashListHint)
-      this.view.flashListHint('長推文送出中，請稍候…');
+      this.view.flashListHint(busyHint);
     return;
   }
   // 列表好讀：封閉互動（v5）。回 true ＝它接手了，不可以再送一次。
