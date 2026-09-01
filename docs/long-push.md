@@ -13,6 +13,7 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 |---|---|
 | `src/js/long_push.js` | 送出端純邏輯：`stripNonBig5` / `big5ByteLength` / `pushMaxBytes` / `splitPushSpans`(+`splitPushSegments`) |
 | `src/js/push_screen.js` | **共用**的畫面判讀：`classifyPushScreen` / `detectIpLogged` / `parseVmsgText` / `parseCooldownSeconds`。另一個消費者是圖片上傳（`image_upload.js#decideInsertMode`）⇒ 改這裡要同時想兩邊，也**不准**任一邊自己另寫 regex（分歧實錄見 `docs/image-upload.md`） |
+| `src/js/long_push_anchor.js` | **游標錨定**純邏輯：`articleAnchor` / `captureCursorAnchor` / `checkCursorAnchor` / `findAnchorRowNum` / `subjectMatches`。檔頭有完整的 pttbbs 推導 |
 | `src/js/long_push_session.js` | 狀態機（形狀比照 `aid_navigation.js`）：持 `active` 旗標，每一步一個 `CommandQueue` command |
 | `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認） |
 | `src/components/ContextMenu/LongPushProgressModal.jsx` | 送出中的全版遮罩（真 modal，唯一出口是取消） |
@@ -28,9 +29,12 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 右鍵選單（gating: enableLongPush && buf.pageState===3 && footer!=='mail'）
   → LongPushModal：stripNonBig5 → splitPushSegments(預估 maxBytes) → 即時則數
   → onConfirm({ text已過濾, type })
-  → LongPushSession.start()  ── active=true, easyReading._enterFunctionMode(),
+  → LongPushSession.start()  ── 先取閱讀位置＋文章標頭錨點（ORDER INVARIANT：
+                                都要在 _enterFunctionMode() 之前），active=true,
+                                easyReading._enterFunctionMode(),
                                 listSession.beginExternalNavigation()
-  → 每則：X → [型別鍵] → 內容+\r → y\r     （全部走 commandQueue.enqueue）
+  → aidNavigation.resolvePostAid()  ── 免費路徑落空就按 Q（boxOpen ⇒ 送 ␣ 關框）
+  → 每則：[守門] → X → [型別鍵] → 內容+\r → y\r （全部走 commandQueue.enqueue）
   → onChange(progress) → ContextMenu state → LongPushProgressModal
 ```
 
@@ -60,7 +64,55 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 | `fatal` | 其他所有 ◆ 橫幅（**含認不得的**） | 中止，剩餘進剪貼簿 |
 | `other` | 都不是 | 步驟 1 視為沒回應；`confirm` 之後視為「已離開推文流程」＝該則送出成功 |
 
-## 不變量（改動前必讀）
+## 游標錨定（為什麼每次按 X 之前都要先驗）
+
+**CONFIRMED（pttbbs source）**：`read_post` 在文章內按 `X` → pmore 回
+`RET_DORECOMMEND` → `recommend(ent, fhdr, direct); return FULLUPDATE;`
+（`mbbsd/bbs.c:2471-2473`）⇒ **推完必定離開 pager 回到文章列表**。所以：
+
+- **第 1 則**的 `fhdr` 是進文章那一刻 `i_read_key` 傳給 `read_post` 的快取 ⇒ 必定推對。
+- **第 2 則起**的 `X` 是**在列表**按的，`i_read_key` 現場取 `&headers[crs_ln - top_ln]`
+  （`mbbsd/read.c:1007`）。
+
+而列表游標 `crs_ln` 是 **`.DIR` 的純行號，不綁任何文章身分**
+（`include/pttstruct.h#keeploc_t`）：`cursor_pos()` 只做上下界 clamp（`read.c:171`），
+`PARTUPDATE` 偵測到篇數變動時也只是 `recbase = -1` 重讀 headers、**`crs_ln` 原地不動**
+（`read.c:1198-1221`），唯一修正是 `crs_ln > last_line` 時夾到最後一列。一般刪文
+（`common/sys/record.c#delete_record2`）把後面每一筆 index 往前搬、置底區
+（`.DIR.bottom` 的虛擬延伸）隨 `bottom_line` 整批位移 ⇒ **同編號 ≠ 同一篇**，
+第 2 則就推到別篇（使用者實測，熱門版）。
+
+### 錨點
+
+| 欄位 | 來源 | 用途 |
+|---|---|---|
+| `aid` / `board` | `start()` 時 `aidNavigation.resolvePostAid()`（免費路徑 → 落空按 `Q`） | `#<aid>⏎` 重新定位（`read.c#select_by_aid`），**權威** |
+| `author` / `subject` | `start()` 時從**文章標頭**（`作者` / `標題` 兩行）取 | 列表上唯一比對得到的身分（`bbs.c#readdoent` 只印 編號/型別/推文數/日期/作者/標題） |
+
+**基準一定要在還在文章裡的時候取**：第 1 則落地那一幀已經是 `i_read` 重讀 headers
+之後的畫面，游標列可能早就換人，拿它當基準等於把污染當成正確值。文章標頭讀不到時
+才退而求其次用**第一次**落地幀採（弱，但比完全不比對好）。
+
+主題比對必須**容忍截斷**：`readdoent` 印標題時
+`if (strlen(title) > w) { outns(title, w-2); outs("…"); }`（w = `t_columns - 34`）。
+
+### 決策表（每次要在列表上動游標所指的文章之前 → `_gate`）
+
+| 當下畫面 | 動作 |
+|---|---|
+| `facts.kind !== 'clean-list'` | 直接進行（人在文章內，X 推的就是當前這篇） |
+| clean-list、錨點相符 | 直接進行，**不多送任何鍵** |
+| clean-list、還沒有 author/subject 錨點 | 從這一幀採，然後進行 |
+| clean-list、對不上或讀不出，**有 aid** | `#<aid>⏎` → 落地是**權威**的 ⇒ 重採錨點 → 進行 |
+| clean-list、對不上，**無 aid** 但原篇在同一頁 | `<編號>⏎` → 落地**再驗一次身分**（編號沒有身分保證）→ 進行 |
+| 以上皆不成立 / 每則額度（`MAX_RELOCATIONS = 1`）用完 | **中止**，剩餘進剪貼簿，提示「文章位置已變動」 |
+
+`_enqueueReopen`（全部送完後回文章的那個 `⏎`）**套用同一張表**——開錯文章比推錯更糟。
+
+**轉錄文**：內文標頭是**原文**作者、列表上印的是轉錄者 ⇒ 第一次比對必定 `moved`，
+靠 `#AID` 定位後重採錨點自癒（`_afterRelocate`），不會每則都重複定位。
+
+
 
 1. **不用 `fullRepaint`、不用 `probe`**（兩者都送 `\f`）。型別選單是 `vkey()` 取單一 byte，
    非數字一律當「推」——萬一 `\f` 沒被 `io.c#system_key_hook` 完全吃掉，就是在使用者沒選的
@@ -75,7 +127,9 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
    而且使用者不會知道自己打的字被吃了，所以要濾掉**並回報濾了什麼**。
 5. **每個 command 都要有 `onFlushed`**（`command_queue.js` 的硬性要求）：queue 被別人 flush
    時若不釋放 `active`，整頁再也收不到鍵盤。
-6. **進度遮罩必須是 modal**。使用者在序列途中打字會插進 X → 型別 → 內容 的中間，pttbbs 的
+6. **列表上按 X 之前一律先過 `_gate`**（見上節）。這是唯一擋住「推到別篇」的東西，
+   而且它只能**保守**：讀不出身分就當成飄掉，絕不放行。
+7. **進度遮罩必須是 modal**。使用者在序列途中打字會插進 X → 型別 → 內容 的中間，pttbbs 的
    typeahead 會把中間那幀吞掉。`modalShown` 由 `ContextMenu` 的 render state 推導
    （`showsLongPush || longPushProgress`），**不可手動賦值**。
 
@@ -93,8 +147,10 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 
 ## 尚待 live 驗證
 
-1. 推完落在**文章列表**（上游讀碼的結論）還是**文章**（線上私有 commit 可能不同）。
-   設計對兩者免疫；只在「落在 clean-list 且起點是文章」時補一個 `\r` 回去。
+1. ~~推完落在文章列表還是文章~~ → **CONFIRMED 落在文章列表**（`bbs.c:2471-2473`
+   對 `RET_DORECOMMEND` 一律 `recommend(...); return FULLUPDATE;`，2026-09 使用者
+   實測的推錯文災情也印證）。設計仍對兩者免疫；落在 clean-list 且起點是文章時，
+   **先過守門**再補 `\r` 回去。
 2. 反白欄顏色（`docs/pttbbs-screen-protocol.md` §5.1 與 `vgetstring` 相左）⇒ 目前**不靠**數
    反白格反推 `maxlength`。
 
@@ -104,7 +160,8 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 |---|---|---|
 | unit | `tests/unit/long_push_split.test.js` | 濾字、byte 長度、上限公式、分段（含全形餘裕、標點斷點） |
 | unit | `tests/unit/push_screen.test.js` | §11.3 每個 PTT 字串一個 case（共用分類器，長推文與圖片上傳都吃它） |
-| unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正 |
+| unit | `tests/unit/long_push_anchor.test.js` | 身分解析／截斷容忍／兩代游標／置底・刪除列 → 一律不得回 `ok` |
+| unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正、**游標守門與重新定位** |
 | unit | `tests/unit/long_push_modal.test.js` | 即時則數、濾字提示、>20 則二次確認 |
 | unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值 |
-| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消 |
+| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）|

@@ -451,9 +451,27 @@ PTT 私有 commit，不在公開 repo）。**觸發門檻無從得知**，但**�
 UI**，不在推文流程內。`MAX_RECOMMENDS(100)` 只影響列表上的計數顯示（`爆`／`X%d`），不擋推文。
 上游**沒有**「是否要繼續推文」之類的續推詢問。
 
-- unknown（§12）：`recommend()` 一律 `return FULLUPDATE` ⇒ 上游讀碼的結論是推完**回文章列表**，
-  但線上是私有 commit，實測可能仍停在文章。`long_push_session` 對兩種落地都免疫（列表按 X 推的
-  是同一篇），只在「落在列表且起點是文章」時補一個 `\r` 回去。
+- **CONFIRMED（2026-09 修正前為 unknown）**：`read_post` 對 pmore 的 `RET_DORECOMMEND` 是
+  `recommend(ent, fhdr, direct); return FULLUPDATE;`（`bbs.c:2471-2473`）⇒ **推完必定離開 pager
+  回到文章列表**。第 1 則的 `fhdr` 是進文章那一刻 `i_read_key` 傳進來的快取，必定推對；**第 2 則
+  起的 X 是在列表按的**，`i_read_key` 現場取 `&headers[crs_ln - top_ln]`（`read.c:1007`）。
+- **CONFIRMED：列表游標沒有文章身分綁定。** `crs_ln` 是 `.DIR` 的 1-based record index
+  （`include/pttstruct.h#keeploc_t`），`cursor_pos()` 只做上下界 clamp（`read.c:171`）。
+  `i_read` 的 `PARTUPDATE` 在 `getbtotal()` 變動時只是 `recbase = -1` 重讀 headers，
+  **`crs_ln` 原地不動**（`read.c:1198-1221`），唯一修正是 `crs_ln > last_line` 夾到最後一列
+  （`fixkeep` 只有自己 `del_range` 時才呼叫，別人刪文不會修）。所以：
+  - 一般刪文 `delete_record2`（`common/sys/record.c:157`）把後面每一筆往前搬 ⇒ 游標滑到下一篇；
+    熱門板的 safe delete 是**原地覆蓋**（`substitute_fileheader`）⇒ index 不變。
+  - 置底文放在 `.DIR.bottom`，在畫面上是 index `bottom_line+1..last_line` 的虛擬延伸
+    （`read.c#get_records_and_bottom`）⇒ 有人發新文 `bottom_line` +1，置底區整批位移。
+  - 新文章一律 append 在 `.DIR` **尾端**（`record.c#append_record`）。
+  ⇒ **「同編號」不等於「同一篇」**。列表畫面上又**沒有**印檔名或 AID（`bbs.c#readdoent` 只印
+  編號/型別/推文數/日期(M/DD)/作者(≤12)/截斷標題），所以 client 想確定游標指哪一篇只有兩條路：
+  `Q`＝`view_postinfo` 讀 AID（`bbs.c:3748`），或 `#<AIDc>⏎`＝`select_by_aid` 主動設游標
+  （`read.c:366`，**置底文搜不到**——`read.c:404` 自己的 FIXME）。
+  消費端與決策表見 `docs/long-push.md`「游標錨定」＋`src/js/long_push_anchor.js`。
+- 順帶：`do_add_recommend` 自己留了 race 自白（`bbs.c:2721`）——推文內容 append 到記憶體裡的
+  **舊檔名**，`.DIR` 計數卻用 `ent` 行號寫，「推的時候前文被刪 → 加到後文的推文數」。
 - unknown：`vgetstring` 畫的反白欄是 `ESC[0;7m`（fg0/bg7），與 §5.1 記的 fg7/bg0 相左。故
   **不採用「數反白格反推 `maxlength`」**，改用 §11.1 的公式 ＋ 畫面上推文列有無 IP 欄。
 

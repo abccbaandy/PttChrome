@@ -12,6 +12,10 @@ import { loadBig5Tables } from "./helpers/load_big5_tables";
 import { CommandQueue } from "../../src/js/command_queue";
 import { LongPushSession } from "../../src/js/long_push_session";
 import { u2b } from "../../src/js/string_util";
+import { pageArticleNums } from "../../src/js/comment_parse";
+
+// facts.rowTexts.join 的分隔字元（測試裡拿來湊 Q 的資訊框判準）。
+const BAR = "|";
 
 beforeAll(() => loadBig5Tables());
 
@@ -23,6 +27,30 @@ const CONFIRM = "推 testuser: 內容                        確定[y/N]:";
 const ARTICLE_FOOTER =
   "  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~23 行  (y)回應(X%)推文(h)說明(←)離開 ";
 const vmsg = (msg) => " ◆ " + msg + "          [按任意鍵繼續]";
+const LIST_FOOTER = " 文章選讀  (y)回應(X)推文(^X)轉錄 ";
+const AID = "1_abcDEF";
+// 長推文綁定的那一篇，文章標頭與列表列都用它。
+const ANCHOR_AUTHOR = "abcUser";
+const ANCHOR_TITLE = "[閒聊] 原本那篇";
+const ARTICLE_HEAD = [
+  "作者  " + ANCHOR_AUTHOR + " (安安) 看板 Test",
+  "標題  " + ANCHOR_TITLE,
+  "時間  Mon Sep  1 12:00:00 2026",
+];
+
+// 依 bbs.c#readdoent 的 printf 序列排版（欄位表見 comment_parse.js）：
+//   0-6 %7d 序號 | 7 空格 | 8 型別 | 9-10 推文數 | 11-16 %-6.5s 日期
+//   17-29 %-13.12s 作者 | 30- mark + 標題
+function listRow(num, author, title, cursor) {
+  const seq = cursor ? ">" + String(num).padStart(6) : String(num).padStart(7);
+  return (
+    seq + "    " + " 9/01 " + author.padEnd(13).slice(0, 13) + "□" + title
+  );
+}
+const ANCHOR_ROW = (num, cursor) =>
+  listRow(num, ANCHOR_AUTHOR, ANCHOR_TITLE, cursor);
+const OTHER_ROW = (num, cursor) =>
+  listRow(num, "someoneElse", "[公告] 剛剛才貼的新文", cursor);
 
 function harness(opts) {
   const o = opts || {};
@@ -31,6 +59,11 @@ function harness(opts) {
   const hints = [];
   const queue = new CommandQueue({ send: (d) => sent.push(d) });
   let rowTexts = new Array(ROWS).fill("");
+  // start() 在「還在文章裡」的時候讀標頭當錨點基準（long_push_anchor 檔頭：
+  // 落地幀已經是 i_read 重讀 headers 之後的畫面，不能當基準）。
+  (o.articleRows === undefined ? ARTICLE_HEAD : o.articleRows).forEach(
+    (t, i) => (rowTexts[i] = t),
+  );
   const termBuf = {
     rows: ROWS,
     cols: 80,
@@ -38,10 +71,42 @@ function harness(opts) {
     getRowText: (r) => rowTexts[r] || "",
   };
   const view = { flashListHint: (m) => hints.push(m) };
+  const restored = [];
+  // aidNavigation 的合約見 aid_navigation.js#resolvePostAid：免費路徑
+  // （findLocalPostAid）命中就 boxOpen=false，否則按 Q 並以 boxOpen=true 回報。
+  // localAid: undefined = 命中；null = 落空要按 Q。
+  const localAid =
+    o.localAid === undefined ? { aid: AID, board: "Test" } : o.localAid;
+  const aidNavigation = {
+    resolvePostAid(handlers) {
+      if (localAid) {
+        handlers.onDone(localAid, { boxOpen: false });
+        return;
+      }
+      queue.enqueue({
+        keys: "Q",
+        kind: handlers.kind,
+        fullRepaint: false,
+        probe: false,
+        timeoutMs: 2500,
+        onFlushed: handlers.onFlushed,
+        expect: (snap, facts) =>
+          /文章代碼|按任意鍵/.test(facts.rowTexts.join(BAR))
+            ? { info: o.qAid === undefined ? { aid: AID, board: "Test" } : o.qAid }
+            : false,
+        onDone: (r) => handlers.onDone(r.info, { boxOpen: true }),
+        onFail: (reason) => handlers.onFail(reason),
+      });
+    },
+  };
   const core = {
     doCopy: (s) => copied.push(s),
-    easyReading: { _enterFunctionMode() {} },
+    easyReading: {
+      _enterFunctionMode() {},
+      requestScrollRestore: (i) => restored.push(i),
+    },
     listSession: { beginExternalNavigation() {} },
+    aidNavigation: o.aidNavigation === undefined ? aidNavigation : o.aidNavigation,
   };
   const session = new LongPushSession(core, view, termBuf, queue);
   // 一幀 server 回應：只填底列（其餘留白），再餵給 queue.onSettle —— 與
@@ -56,7 +121,32 @@ function harness(opts) {
       { rowTexts, rows: ROWS, kind: (over && over.kind) || "article" },
     );
   };
-  return { session, sent, copied, hints, settle, queue };
+  // 一幀**文章列表**畫面。rows 從第 3 列開始鋪，cursorRow 是其中第幾列（0-based）。
+  // facts 的欄位與 list_session._collectFacts 一致。
+  const settleList = (rows, cursorRow) => {
+    rowTexts = new Array(ROWS).fill("");
+    rowTexts[0] = "【看板 Test】";
+    rowTexts[2] = "  編號    日 期 作  者       文  章  標  題";
+    rows.forEach((t, i) => (rowTexts[3 + i] = t));
+    rowTexts[ROWS - 1] = LIST_FOOTER;
+    const curY = 3 + cursorRow;
+    const nums = pageArticleNums(rowTexts, curY);
+    queue.onSettle(
+      {},
+      {
+        rowTexts,
+        rows: ROWS,
+        curX: 0,
+        curY,
+        kind: "clean-list",
+        boardName: "Test",
+        nums,
+        cursorRowNum: nums[curY] == null ? null : nums[curY],
+      },
+    );
+  };
+
+  return { session, sent, copied, hints, settle, settleList, queue, restored };
 }
 
 // 一則推文的完整往返（走型別選單的版本）。
@@ -282,7 +372,8 @@ describe("送完之後的落地", () => {
     h.settle(TYPE_MENU);
     h.settle(PROMPT);
     h.settle(CONFIRM);
-    h.settle("　　　　　　　　　　", { kind: "clean-list" });
+    // 游標還停在原篇 ⇒ 直接 Enter 開回去，不多送任何定位鍵。
+    h.settleList([OTHER_ROW(1233), ANCHOR_ROW(1234, true)], 1);
     expect(h.sent[h.sent.length - 1]).toBe("\r");
     h.settle(ARTICLE_FOOTER);
     expect(h.session.active).toBe(false);
@@ -333,5 +424,179 @@ describe("長度上限的畫面校正", () => {
     h.settle(TYPE_MENU);
     h.settle(PROMPT, { rows: { 5: "推 someone: 前人的推文 08/26 12:00" } });
     expect(seen[seen.length - 1].total).toBe(2); // 校正成 52 bytes/則
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 使用者實測的 bug：在熱門版推完第 1 則，列表一有增刪游標就飄掉，第 2 則**推到
+// 別篇文章**。根因在 pttbbs：read_post 對 RET_DORECOMMEND 一律
+// `recommend(...); return FULLUPDATE;`（bbs.c:2471-2473）⇒ 推完必定回列表，而
+// 列表游標 crs_ln 只是 .DIR 行號、不綁文章身分（read.c:1198-1221 重讀 headers
+// 時 crs_ln 原地不動）⇒ 同編號 ≠ 同一篇。
+//
+// 這一批 case 全部只問一件事：**那個會把內容推到別篇的 "X" 有沒有被送出去。**
+describe("游標錨定", () => {
+  // 一則推文的完整往返，最後停在指定的列表畫面上。
+  const pushOneThenList = (h, rows, cursorRow) => {
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT);
+    h.settle(CONFIRM);
+    h.settleList(rows, cursorRow);
+  };
+
+  test("游標飄到別篇時，不會把第 2 則推出去", () => {
+    const h = harness({ localAid: null, qAid: null }); // 拿不到 AID ＝ 只能靠比對
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    h.settle("文章代碼(AID): 按任意鍵繼續"); // Q 回「本篇沒有 AID」
+    h.settle(ARTICLE_FOOTER); // 空白關掉框 → 回到文章
+    const beforeX = h.sent.length;
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+
+    // 第 1 則送出 → 落回列表，游標底下已經換成別人剛貼的新文，而原篇也不在
+    // 這一頁上（被擠掉了）⇒ 無從定位。
+    pushOneThenList(h, [OTHER_ROW(1234), OTHER_ROW(1235, true)], 1);
+
+    expect(h.sent.slice(beforeX)).not.toContain("X");
+    expect(h.session.active).toBe(false);
+    expect(h.copied).toEqual(["第二段"]);
+    expect(h.hints.join("")).toContain("文章位置已變動");
+  });
+
+  test("有 AID → 先送 #<aid> 把游標釘回原篇，才送 X", () => {
+    const h = harness();
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    pushOneThenList(h, [ANCHOR_ROW(1233), OTHER_ROW(1234, true)], 1);
+
+    // fullRepaint: true ⇒ queue 會在 keys 後面附一個 \f。
+    expect(h.sent[h.sent.length - 1]).toBe("#" + AID + "\r\f");
+
+    // 落地：游標回到原篇 ⇒ 這時才輪到 X。
+    h.settleList([ANCHOR_ROW(1233, true), OTHER_ROW(1234)], 0);
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+  });
+
+  test("沒有 AID 但原篇還在同一頁 → 用編號跳回去，才送 X", () => {
+    const h = harness({ localAid: null, qAid: null });
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    h.settle("文章代碼(AID): 按任意鍵繼續");
+    h.settle(ARTICLE_FOOTER);
+
+    pushOneThenList(h, [ANCHOR_ROW(1233), OTHER_ROW(1234, true)], 1);
+    expect(h.sent[h.sent.length - 1]).toBe("1233\r\f");
+
+    h.settleList([ANCHOR_ROW(1233, true), OTHER_ROW(1234)], 0);
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+  });
+
+  test("編號跳落地後身分對不上 → 停手（編號沒有身分保證）", () => {
+    const h = harness({ localAid: null, qAid: null });
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    h.settle("文章代碼(AID): 按任意鍵繼續");
+    h.settle(ARTICLE_FOOTER);
+    pushOneThenList(h, [ANCHOR_ROW(1233), OTHER_ROW(1234, true)], 1);
+    const afterRelocate = h.sent.length;
+
+    // 跳到 1233 了，但那一列在這一幀已經又換成別人的文章。
+    h.settleList([OTHER_ROW(1233, true), OTHER_ROW(1234)], 0);
+    expect(h.sent.slice(afterRelocate)).not.toContain("X");
+    expect(h.session.active).toBe(false);
+    expect(h.copied).toEqual(["第二段"]);
+  });
+
+  // 轉錄文的內文標頭是**原文**作者，列表上印的是轉錄者 ⇒ 文章標頭錨點必定對不上。
+  // #AID 落地是權威的，重採錨點之後就該安定下來，不可以每一則都再定位一次。
+  test("#aid 落地會重採錨點，不會每則都重複定位", () => {
+    const h = harness();
+    h.session.start({ text: "一\n二\n三", type: "push" });
+    pushOneThenList(h, [OTHER_ROW(1234, true)], 0);
+    expect(h.sent[h.sent.length - 1]).toContain("#" + AID);
+
+    h.settleList([OTHER_ROW(1234, true)], 0); // 定位落地（實務上就是原篇）
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+
+    // 第 3 則：同一列，這次守門應該直接放行。
+    pushOneThenList(h, [OTHER_ROW(1234, true)], 0);
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+  });
+
+  // 有 AID 卻沒有文章標頭（例如標頭被捲出畫面）時，絕不可以把落地幀認成基準：
+  // 那一幀可能就是已經飄掉的畫面。AID 是權威的，寧可多送一次 #<aid>。
+  test("讀不到文章標頭但有 AID → 用 #<aid> 定位，不拿落地幀當基準", () => {
+    const h = harness({ articleRows: [] });
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    pushOneThenList(h, [OTHER_ROW(1234, true)], 0);
+    expect(h.sent[h.sent.length - 1]).toContain("#" + AID);
+  });
+
+  test("游標沒飄 → 一個定位鍵都不多送", () => {
+    const h = harness();
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    pushOneThenList(h, [OTHER_ROW(1233), ANCHOR_ROW(1234, true)], 1);
+    // X → 1 → 內容 → y → X，中間沒有 # 也沒有編號跳。
+    expect(h.sent).toHaveLength(5);
+    expect(h.sent[4]).toBe("X");
+  });
+
+  test("落在文章（不是列表）就不守門 —— X 推的本來就是當前這篇", () => {
+    const h = harness();
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT);
+    h.settle(CONFIRM);
+    h.settle(ARTICLE_FOOTER);
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+  });
+
+  test("最後回文章之前也守門：游標飄了就不盲送 Enter", () => {
+    const h = harness({ localAid: null, qAid: null });
+    h.session.start({ text: "只有一段", type: "push" });
+    h.settle("文章代碼(AID): 按任意鍵繼續");
+    h.settle(ARTICLE_FOOTER);
+    pushOneThenList(h, [OTHER_ROW(1234), OTHER_ROW(1235, true)], 1);
+    // 開錯文章比推錯更糟：定位不了就停在列表，不送 Enter。
+    expect(h.sent[h.sent.length - 1]).not.toBe("\r");
+    expect(h.session.active).toBe(false);
+  });
+});
+
+// resolvePostAid 的合約（aid_navigation.js:485）：免費路徑命中就不按 Q，
+// 落空才按；按了 Q 就一定要負責關掉那個資訊框（meta.boxOpen）。
+describe("取得文章代碼", () => {
+  test("畫面上掃得到文章網址 → 不按 Q，第一則直接在文章內按 X", () => {
+    const h = harness();
+    h.session.start({ text: "內容", type: "push" });
+    expect(h.sent).toEqual(["X"]);
+  });
+
+  test("掃不到 → 按 Q，關掉資訊框之後才繼續", () => {
+    const h = harness({ localAid: null });
+    h.session.start({ text: "內容", type: "push" });
+    expect(h.sent).toEqual(["Q"]);
+
+    h.settle("文章代碼(AID): #1_abcDEF 按任意鍵繼續");
+    expect(h.sent[1]).toBe(" "); // KEY_DISMISS，不可用 \f（會被 pressanykey 吃掉）
+    h.settle(ARTICLE_FOOTER);
+    expect(h.sent[2]).toBe("X");
+  });
+
+  test("Q 沒有回應 → 停手（畫面在哪都不知道，送 X 等於亂推）", () => {
+    const h = harness({ localAid: null });
+    h.session.start({ text: "內容", type: "push" });
+    h.queue.flush();
+    expect(h.session.active).toBe(false);
+    expect(h.sent).not.toContain("X");
+  });
+
+  test("推完回文章時把閱讀位置還回去", () => {
+    const h = harness();
+    h.session._readLineIndex = 42;
+    h.session.start({ text: "內容", type: "push" });
+    h.session._readLineIndex = 42; // start() 會重讀（假 view 沒有 mainDisplay）
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT);
+    h.settle(CONFIRM);
+    h.settleList([ANCHOR_ROW(1234, true)], 0);
+    h.settle(ARTICLE_FOOTER);
+    expect(h.restored).toEqual([42]);
   });
 });

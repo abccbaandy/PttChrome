@@ -22,6 +22,8 @@ import {
   isDeletedListRow,
   rowToText,
   parseListTitleRaw,
+  subjectOfListRow,
+  subjectOfListText,
   LIST_AUTHOR_COL_START,
   LIST_AUTHOR_COL_END,
 } from './comment_parse';
@@ -562,34 +564,13 @@ export function isLastReadStyledListRow(row) {
   return 0;
 }
 
-// The subject key of a list row — pttbbs's strcmp(currtitle, subject_ex(title))
-// re-done client-side. The displayed title is ALREADY subject_ex-stripped by the
-// server (readdoent prints mark + stripped title), so the key is the title
-// region minus the leading type mark ("R:"/"□"/"轉"/"鎖"/"ˇ"); the defensive
-// Re:/Fw: loop-strip mirrors subject_ex (common/bbs/string.c:58, case-insensitive,
-// optional trailing space) in case a raw prefix ever leaks through. null = no
-// usable title (blank/short row) — never matches.
-const LIST_MARK_FG = { 'R': 3, '轉': 6, '鎖': 5, 'ˇ': 2 };
-export function subjectOfListRow(row) {
-  return subjectOfListText(rowToText(row));
-}
+// subjectOfListText / subjectOfListRow moved to comment_parse (pure layer): the
+// long-push cursor anchor needs the same key and must not pull this DOM-coupled
+// module in. Re-exported here so the existing consumers (term_view, the
+// accumulate tests, aid_navigation) keep their import site unchanged.
+export { subjectOfListRow, subjectOfListText };
 
-// Same key from an already-flattened row STRING (settle facts carry rowTexts,
-// not TermChar rows — aid_navigation's back landing verifies against these).
-export function subjectOfListText(text) {
-  let t = parseListTitleRaw(text);
-  if (!t) return null;
-  if (t.charAt(0) === 'R' && t.charAt(1) === ':') t = t.substring(2);
-  else if (t.charCodeAt(0) > 0x7f) t = t.substring(1); // □/轉/鎖/ˇ state glyph
-  t = t.trim();
-  let prev;
-  do {
-    prev = t;
-    t = t.replace(/^(re:|fw:) ?/i, '');
-  } while (t !== prev);
-  t = t.trim();
-  return t || null;
-}
+const LIST_MARK_FG = { 'R': 3, '轉': 6, '鎖': 5, 'ˇ': 2 };
 
 // Which 1;3c color THIS row's last-read highlight uses — from its own type mark
 // (readdoent's title_type switch): R:=3黃 轉=6青 鎖=5紫 ˇ=2綠, default □=1紅.

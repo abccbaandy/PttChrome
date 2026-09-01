@@ -13,12 +13,17 @@
 // 完成判定一律看內容不看時間（CommandQueue 的核心契約）。
 //
 // ---- 三個刻意的保守選擇 ----
-// 1. **不用 fullRepaint／probe（兩者都會送 Ctrl-L）**：型別選單那一格是 vkey() 取
+// 1. **推文流程裡不用 fullRepaint／probe（兩者都會送 Ctrl-L）**：型別選單那一格是 vkey() 取
 //    單一 byte（bbs.c:2996），非數字一律當 RECTYPE_DEFAULT＝推。萬一 Ctrl-L 沒有被
 //    io.c#system_key_hook 完全吃掉，就是在使用者沒選的情況下推出去。這個功能會把
 //    內容寫進公開看板，「送錯」比「失敗」嚴重得多 ⇒ 逾時直接失敗，停在原生畫面。
 // 2. **未知畫面一律停手**（classifyPushScreen 回 'other'/'fatal'）：繼續盲送鍵在
 //    PTT 上等於亂按快捷鍵。
+// 2.5 **每次在列表按 X 之前，先確認游標指的還是原篇**。第 2 則起的 X 是在列表按
+//    的（bbs.c:2471-2473：read_post 對 RET_DORECOMMEND 一律
+//    `recommend(...); return FULLUPDATE;` ⇒ 推完必定離開 pager），而列表游標
+//    crs_ln 只是 .DIR 行號、不綁文章身分 ⇒ 板上一有增刪就同編號≠同一篇，第 2 則
+//    會推到別篇（使用者實測，熱門版）。判準與重新定位見 long_push_anchor.js。
 // 3. **每則的內容長度用當下畫面校正**（見 _enqueueContent）：估短了只是多切一則，
 //    估長了會踩到 vgetstring 的 DBCS 保護 → vkey_purge() 連 Enter 一起清掉 → 卡死。
 //
@@ -32,6 +37,13 @@
 import { u2b, ansiHalfColorConv } from './string_util';
 import { PUSH_TYPE_KEY, pushMaxBytes, splitPushSpans } from './long_push';
 import { classifyPushScreen, detectIpLogged } from './push_screen';
+import {
+  articleAnchor,
+  captureCursorAnchor,
+  checkCursorAnchor,
+  findAnchorRowNum
+} from './long_push_anchor';
+import { AID_NOT_FOUND_RE } from './aid_navigation';
 
 // vgetstring 的 Ctrl-C：清空 buf 並 abort（vtuikit.c:1345-1351）⇒ getdata 回 0
 // ⇒ recommend() 直接 return FULLUPDATE，不寫入任何東西。取消時用它退出輸入列／
@@ -48,6 +60,9 @@ const STEP_HARD_TIMEOUT_MS = 12000;
 const COOLDOWN_SLACK_MS = 1000;
 // 取消時最多送幾次收尾鍵。收不回來就放手，畫面留給使用者自己處理。
 const MAX_ABORT_STEPS = 3;
+// 每一則最多重新定位一次。定位完還對不上就是我們迷路了 —— 這種時候再送 X 等於
+// 亂推，寧可停手把剩下的內容還給使用者。
+const MAX_RELOCATIONS = 1;
 
 export function LongPushSession(core, view, termBuf, queue) {
   this._core = core;
@@ -77,6 +92,14 @@ LongPushSession.prototype = {
     this._cancelling = false;
     this._abortSteps = 0;
     this._startedInArticle = false;
+    // 這一趟長推文綁定的文章身分：{ aid, board, author, subject, num }。
+    // aid 由 aidNavigation.resolvePostAid 提供（重新定位用的權威鍵）；
+    // author/subject 是列表上比對得到的欄位（bbs.c#readdoent 只印這些）。
+    this._anchor = null;
+    this._relocations = 0;
+    // 按 Q 會把使用者踢出文章（view_postinfo 也 return FULLUPDATE），收工回文章
+    // 時要把閱讀位置還回去。
+    this._readLineIndex = null;
     this._clearTimer();
   },
 
@@ -160,6 +183,16 @@ LongPushSession.prototype = {
     this._startedInArticle = this._termBuf.pageState === 3;
     this.active = true;
 
+    // ORDER INVARIANT：閱讀位置與文章標頭都必須在 _enterFunctionMode() **之前**
+    // 讀。那個函式結尾的 termBuf.notify() 是同步的，term_view.redraw 的
+    // functionMode 分支第一件事就是 mainDisplay.scrollTop = 0（同一條不變量在
+    // deep_link_controller.copyCurrentPostLink 與 aid_navigation.start 都有註解）。
+    this._readLineIndex = this._currentLineIndex();
+    // 錨點基準一定要在**還在文章裡**的時候取：第 1 則落回列表那一幀已經是
+    // i_read 重讀 headers 之後的畫面，游標列可能早就換人，拿它當基準等於把污染
+    // 當成正確值（long_push_anchor.js 檔頭有完整推導）。
+    this._anchor = articleAnchor(this._articleHeadRows());
+
     // 把**真的**原生畫面放到台面上再開始驅動它：文章好讀的 functionMode 是既有的
     // 即時鏡像機制（先例 deep_link_controller / aid_navigation），列表好讀則停到
     // 它自己的 functionMode，讓共用 queue 淨空、reducer 不來搶我們的 settle。
@@ -168,8 +201,92 @@ LongPushSession.prototype = {
     if (this._core.listSession && this._core.listSession.beginExternalNavigation)
       this._core.listSession.beginExternalNavigation();
 
-    this._enqueueOpen();
+    this._enqueueResolveAid();
     return true;
+  },
+
+  // 與 deep_link_controller._currentLineIndex / aid_navigation._currentLineIndex
+  // 同一套算法（見上面的 ORDER INVARIANT）。
+  _currentLineIndex: function() {
+    const view = this._view;
+    const disp = view && view.mainDisplay;
+    const chh = view && view.chh;
+    if (!disp || !chh) return null;
+    return Math.round(disp.scrollTop / chh);
+  },
+
+  // 文章畫面最前面幾列（好讀模式下是累積頁的前幾列，原生模式就是眼前這幾列）。
+  // 作者／標題兩行一定落在這個範圍內。
+  _articleHeadRows: function() {
+    const buf = this._termBuf;
+    if (!buf || !buf.getRowText) return null;
+    const acc = buf.pageLines;
+    const useAcc = !!(acc && acc.length);
+    const n = Math.min(6, useAcc ? acc.length : buf.rows);
+    const out = [];
+    for (let r = 0; r < n; ++r)
+      out.push(
+        useAcc
+          ? buf.getRowText(r, 0, buf.cols, acc)
+          : buf.getRowText(r, 0, buf.cols)
+      );
+    return out;
+  },
+
+  // 取得本篇 AID —— 重新定位的權威鍵（read.c#select_by_aid）。免費路徑（讀畫面
+  // 上的「※ 文章網址」）拿不到時 resolvePostAid 會按 Q，那個 Q 的 FULLUPDATE
+  // 會把人丟到列表、留一個資訊框（meta.boxOpen）。
+  //
+  // onDone(info=null) 是**明確答案**「本篇沒有 AID」（bbs.c:3707 印的是空框行），
+  // 不是失敗：照樣繼續，只是之後只能靠作者＋主題比對。真正的 onFail 代表畫面狀態
+  // 未知 —— 這時連「我們現在在文章還是列表」都不確定，送 X 等於亂推，停手。
+  _enqueueResolveAid: function() {
+    const nav = this._core.aidNavigation;
+    if (!nav || !nav.resolvePostAid || !this._startedInArticle)
+      return this._enqueueOpen();
+    const self = this;
+    nav.resolvePostAid({
+      kind: 'longpush-aid',
+      onFlushed: function() {
+        self._onFlushed();
+      },
+      onDone: function(info, meta) {
+        if (info && info.aid) {
+          self._anchor = self._anchor || {};
+          self._anchor.aid = info.aid;
+          self._anchor.board = info.board;
+        }
+        if (meta && meta.boxOpen) return self._enqueueDismissPostInfo();
+        self._enqueueOpen();
+      },
+      onFail: function(reason) {
+        self._fail('讀不到文章代碼（' + reason + '）');
+      }
+    });
+  },
+
+  // 關掉 Q 的資訊框。只能用 KEY_DISMISS（ 會被 pressanykey 吃掉，
+  // aid_navigation.js:501-510 的同一個坑），關完人就在列表上 ⇒ 走守門。
+  _enqueueDismissPostInfo: function() {
+    const self = this;
+    this._step({
+      kind: 'longpush-aid-dismiss',
+      keys: KEY_DISMISS,
+      failMsg: '文章代碼視窗沒有關掉',
+      accept: function(c, facts) {
+        return (
+          facts.kind === 'clean-list' ||
+          facts.kind === 'article' ||
+          c.kind !== 'other'
+        );
+      },
+      done: function(c, result) {
+        if (c.kind === 'fatal') return self._fail(c.message);
+        self._gate(result.facts, function() {
+          self._enqueueOpen();
+        });
+      }
+    });
   },
 
   // 取消：只停掉「還沒送出的」，已經送出去的推文收不回來（PTT 沒有這種 API）。
@@ -201,15 +318,26 @@ LongPushSession.prototype = {
     this._queue.enqueue({
       kind: cmd.kind,
       keys: cmd.keys,
-      // Ctrl-L 一律不送（見檔頭「三個刻意的保守選擇」第 1 點）。
-      fullRepaint: false,
+      // Ctrl-L 預設不送（見檔頭「三個刻意的保守選擇」第 1 點）。唯一的例外是
+      // **列表上的重新定位**（#aid / 編號跳）：那時人不在推文流程裡，沒有型別
+      // 選單可以被誤觸，而落地又需要一個保證的完整幀才判得準（同
+      // aid_navigation._enqueueAidSearch）。probe 則一律關掉——逾時就是失敗，
+      // 絕不盲送探針。
+      fullRepaint: !!cmd.fullRepaint,
       probe: false,
       timeoutMs: STEP_TIMEOUT_MS,
       hardTimeoutMs: STEP_HARD_TIMEOUT_MS,
       expect: function(snapshot, facts) {
         const c = classifyPushScreen(facts.rowTexts, facts.rows);
         if (!cmd.accept(c, facts)) return false;
-        return { screen: c, listKind: facts.kind, rowTexts: facts.rowTexts };
+        // facts 是 list_session._collectFacts 的產物（純資料，沒有 TermChar
+        // 參考），可以整份帶給守門用。
+        return {
+          screen: c,
+          listKind: facts.kind,
+          rowTexts: facts.rowTexts,
+          facts: facts
+        };
       },
       onDone: function(result) {
         if (!self.active) return;
@@ -357,21 +485,148 @@ LongPushSession.prototype = {
       });
     this._recount();
 
-    if (this._pendingSpans().length) return this._enqueueOpen();
+    // 每一則重新給一次定位額度。
+    this._relocations = 0;
+
+    const self = this;
+    if (this._pendingSpans().length)
+      return this._gate(result && result.facts, function() {
+        self._enqueueOpen();
+      });
 
     const total = this._sent;
     if (result && result.listKind === 'clean-list' && this._startedInArticle) {
-      // recommend() 一律 return FULLUPDATE（bbs.c:2467），上游會把人丟回文章列表。
-      // 使用者是從文章裡按的，就把他送回去——游標仍停在原篇（recommend 不動游標）。
-      this._enqueueReopen(total);
-      return;
+      // recommend() 一律 return FULLUPDATE（bbs.c:2467-2473），上游會把人丟回文章
+      // 列表。使用者是從文章裡按的，就把他送回去——但**先確認游標還在原篇**：
+      // 開錯文章比推錯更糟（使用者會在錯的地方繼續讀、繼續推）。
+      return this._gate(result.facts, function() {
+        self._enqueueReopen(total);
+      });
     }
     this._finish('長推文完成，共送出 ' + total + ' 則', false);
+  },
+
+  // -------------------------------------------------------------------------
+  // 游標守門與重新定位
+  // -------------------------------------------------------------------------
+
+  // 在列表上做任何「對游標所指文章動手」的事之前都要先過這裡。
+  // 決策表見 docs/long-push.md「游標錨定」。
+  _gate: function(facts, proceed) {
+    // 不在列表上（還在文章／其他畫面）⇒ X 推的就是當前這篇，沒有歧義。
+    if (!facts || facts.kind !== 'clean-list') return proceed();
+
+    const state = checkCursorAnchor(facts, this._anchor);
+    if (state === 'ok') return proceed();
+
+    // 連基準都沒有（文章標頭讀不到、也沒問到 AID）：退而求其次用**第一次**落地
+    // 那一幀採一個。比文章標頭弱（可能已經飄過一次），但總比完全不比對好。
+    // 有 AID 就**不**走這條——那是權威的，寧可多送一次 #<aid> 也不要把可能已經
+    // 飄掉的畫面認成基準。
+    if (!this._anchor || (!this._anchor.author && !this._anchor.aid)) {
+      const cap = captureCursorAnchor(facts);
+      if (!cap) return this._fail('讀不出游標所在的文章');
+      this._anchor = Object.assign({}, this._anchor, cap);
+      return proceed();
+    }
+
+    this._enqueueRelocate(facts, proceed);
+  },
+
+  _enqueueRelocate: function(facts, proceed) {
+    if (this._relocations >= MAX_RELOCATIONS)
+      return this._fail('文章位置已變動');
+    this._relocations++;
+
+    // #<aid>⏎ 是 PTT 原生、權威的定位（read.c#select_by_aid 直接把 crs_ln 設到
+    // 那一筆），優先用。
+    if (this._anchor.aid) return this._enqueueAidRelocate(proceed);
+
+    // 沒有 AID 就只能在**這一頁**上找回原篇再用編號跳。找不到＝原篇不在眼前，
+    // 盲目翻頁去找等於在列表上亂按 —— 停手。
+    const num = findAnchorRowNum(facts, this._anchor);
+    if (num == null) return this._fail('文章位置已變動');
+    this._enqueueNumberRelocate(num, proceed);
+  },
+
+  // 判準抄 aid_navigation._enqueueAidSearch：**刻意不 gate kind === 'clean-list'**
+  // ——AID 跳的落地會留下空白 footer，classifyListScreen 會讀成 'transient'。
+  // 「找不到」則是把游標停在底列訊息上 ⇒ cursorRowNum 為 null，自然被擋掉。
+  _enqueueAidRelocate: function(proceed) {
+    const self = this;
+    this._step({
+      kind: 'longpush-relocate-aid',
+      keys: '#' + this._anchor.aid + '\r',
+      fullRepaint: true,
+      failMsg: '找不到原本那篇文章',
+      accept: function(c, facts) {
+        if (facts.boardName == null) return false;
+        if (facts.cursorRowNum == null) return false;
+        if (facts.curY < 3 || facts.curY > facts.rows - 2) return false;
+        return !AID_NOT_FOUND_RE.test(facts.rowTexts[facts.rows - 1] || '');
+      },
+      done: function(c, result) {
+        // #AID 是權威的：select_by_aid 要嘛把 crs_ln 設到那一筆，要嘛回「找不到」
+        // （accept 已經擋掉），所以落地那一列就是原篇本人。
+        self._afterRelocate(result.facts, proceed, true);
+      }
+    });
+  },
+
+  _enqueueNumberRelocate: function(num, proceed) {
+    const self = this;
+    this._step({
+      kind: 'longpush-relocate-num',
+      keys: String(num) + '\r',
+      fullRepaint: true,
+      failMsg: '游標移不回原本那篇文章',
+      accept: function(c, facts) {
+        return (
+          facts.cursorRowNum === num &&
+          facts.curY >= 3 &&
+          facts.curY <= facts.rows - 2
+        );
+      },
+      done: function(c, result) {
+        // 編號只是行號，**沒有**身分保證（這整個 bug 的根因就是它）：跳完一定要
+        // 用身分再驗一次。
+        self._afterRelocate(result.facts, proceed, false);
+      }
+    });
+  },
+
+  // 定位落地之後。
+  //
+  // authoritative（#AID 那條路）＝這一幀的游標列就是原篇本人，於是**重新採一次
+  // 錨點**。這一步同時修掉轉錄文的誤判：轉錄文的內文標頭是**原文**作者，列表上
+  // 印的卻是轉錄者 ⇒ 第一次比對必定 moved，重採之後就對得上了，不會每則都來回
+  // 定位一次。
+  //
+  // 非 authoritative（編號跳）＝我們只是把游標移到「自己剛剛比對出來的那一列」，
+  // 中間 server 還可能再變一次 ⇒ 必須用身分再驗，不符就停手。
+  _afterRelocate: function(facts, proceed, authoritative) {
+    if (!authoritative) {
+      if (checkCursorAnchor(facts, this._anchor) !== 'ok')
+        return this._fail('文章位置已變動');
+      return proceed();
+    }
+    const cap = captureCursorAnchor(facts);
+    if (cap) {
+      this._anchor.author = cap.author;
+      this._anchor.subject = cap.subject;
+      this._anchor.num = cap.num;
+    }
+    proceed();
   },
 
   _enqueueReopen: function(total) {
     const self = this;
     const done = function() {
+      const er = self._core.easyReading;
+      // 按 Q 取 AID 會把使用者踢出文章（view_postinfo 也 return FULLUPDATE），
+      // 不還原閱讀位置等於把他的進度吃掉。
+      if (self._readLineIndex && er && er.requestScrollRestore)
+        er.requestScrollRestore(self._readLineIndex);
       self._finish('長推文完成，共送出 ' + total + ' 則', false);
     };
     this._step({

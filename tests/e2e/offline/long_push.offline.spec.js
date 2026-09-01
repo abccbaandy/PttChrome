@@ -16,6 +16,14 @@ const { bootOffline, feedRaw } = require('../helpers/replay');
 // 含「回應」⇒ currstat == READING ⇒ 按 X 推得到文（string_util 的說明）。
 const ARTICLE_FOOTER =
   '  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~23 行  (y)回應(X%)推文(h)說明(←)離開 ';
+// 文章畫面的第一列（term_view 由它認出 _articleBoard）與 PTT 附在文末的網址列
+// （aid_navigation.findLocalPostAid 讀它 ⇒ 不必按 Q 就拿得到 AID）。少了它們，
+// 長推文開場會多一次 Q，鍵序就不是這裡要守的那條了。
+const ARTICLE_HEADER = '作者  testuser (安安) 看板 Test';
+const ARTICLE_TITLE = '標題  [閒聊] 測試文章';
+const ARTICLE_URL =
+  '※ 文章網址: https://www.ptt.cc/bbs/Test/M.1756700000.A.ABC.html';
+const POST_AID = '1Vr#TnAB';
 const TYPE_MENU = '您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ';
 const PROMPT = '推 testuser: ';
 const CONFIRM = '推 testuser: 內容                        確定[y/N]:';
@@ -23,6 +31,94 @@ const CONFIRM = '推 testuser: 內容                        確定[y/N]:';
 const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
 // 頁面裡已經載好 Big5 轉碼表，直接用它把畫面文字轉成 server 會送的 bytes。
+// 畫一整幀：rows 是 { 列號: 文字 } 的對照表。
+async function drawRows(page, rows) {
+  await page.evaluate((map) => {
+    const u2b = (str) => {
+      let out = '';
+      for (const ch of str) {
+        const c = ch.charCodeAt(0);
+        if (c < 0x80) {
+          out += ch;
+          continue;
+        }
+        out +=
+          String.fromCharCode(window.lib.u2bArray[2 * c]) +
+          String.fromCharCode(window.lib.u2bArray[2 * c + 1]);
+      }
+      return out;
+    };
+    let data = '\x1b[2J';
+    for (const k of Object.keys(map))
+      data += '\x1b[' + (Number(k) + 1) + ';1H' + u2b(map[k]);
+    window.__app.onData(data);
+  }, rows);
+  await page.waitForTimeout(300);
+}
+
+// 完整的文章畫面（標頭＋網址列＋pmore 狀態列）。
+const drawArticle = (page) =>
+  drawRows(page, {
+    0: ARTICLE_HEADER,
+    1: ARTICLE_TITLE,
+    20: ARTICLE_URL,
+    23: ARTICLE_FOOTER,
+  });
+
+// 一整幀**文章列表**。指紋要件見 list_session.classifyListScreen：row0/row2 反白、
+// row2 含「編號」、底列含「文章選讀」、游標停在條目區且 curX <= 1、至少 3 列編號。
+// 這裡刻意走真的 ANSI ＋ 真的游標定位，才會經過 term_buf.settleSnapshot →
+// list_session._collectFacts → CommandQueue.onSettle 這條真實路徑。
+function boardListRow(num, author, title) {
+  return (
+    String(num).padStart(7) +
+    '    ' +
+    ' 9/01 ' +
+    author.padEnd(13).slice(0, 13) +
+    '□' +
+    title
+  );
+}
+
+async function drawBoardList(page, rows, cursorRow) {
+  await page.evaluate(
+    ({ rows, curY }) => {
+      const u2b = (str) => {
+        let out = '';
+        for (const ch of str) {
+          const c = ch.charCodeAt(0);
+          if (c < 0x80) {
+            out += ch;
+            continue;
+          }
+          out +=
+            String.fromCharCode(window.lib.u2bArray[2 * c]) +
+            String.fromCharCode(window.lib.u2bArray[2 * c + 1]);
+        }
+        return out;
+      };
+      const REV = '\x1b[7m';
+      const OFF = '\x1b[0m';
+      let d = '\x1b[2J';
+      d += '\x1b[1;1H' + REV + u2b('【板主：test】看板《Test》'.padEnd(40)) + OFF;
+      d +=
+        '\x1b[3;1H' +
+        REV +
+        u2b('  編號    日 期 作  者       文  章  標  題'.padEnd(70)) +
+        OFF;
+      rows.forEach((t, i) => {
+        d += '\x1b[' + (4 + i) + ';1H' + u2b(t);
+      });
+      d += '\x1b[24;1H' + u2b(' 文章選讀  (y)回應(X)推文(^X)轉錄 ');
+      // 游標最後停在條目區那一列的第 0 欄（PTT 的 cursor_show 就是這樣）。
+      d += '\x1b[' + (curY + 1) + ';1H';
+      window.__app.onData(d);
+    },
+    { rows, curY: 3 + cursorRow }
+  );
+  await page.waitForTimeout(300);
+}
+
 async function drawLastRow(page, text) {
   await page.evaluate((s) => {
     const u2b = (str) => {
@@ -102,8 +198,12 @@ async function submitLongPush(page, text) {
 
 async function boot(page) {
   await bootOffline(page, ptt);
-  await drawLastRow(page, ARTICLE_FOOTER);
+  await drawArticle(page);
   expect(await page.evaluate(() => window.__app.buf.pageState)).toBe(3);
+  // 免費路徑拿得到 AID ⇒ 開場不會按 Q（長推文的錨點來源，見 long_push_anchor.js）。
+  expect(
+    await page.evaluate(() => !!window.__app.aidNavigation.findLocalPostAid())
+  ).toBe(true);
 }
 
 test.describe('長推文一鍵發送（離線）', () => {
@@ -223,5 +323,58 @@ test.describe('長推文一鍵發送（離線）', () => {
     await expect.poll(() => sentText(page)).toBe('X ');
     await drawLastRow(page, ARTICLE_FOOTER);
     await expect(page.getByTestId('longPushProgressStatus')).toContainText('30');
+  });
+
+  // 使用者實測的 bug：熱門版推完第 1 則，列表一有增刪游標就飄掉，第 2 則推到別篇。
+  // 根因在 pttbbs（read.c 的 crs_ln 只是行號，不綁文章身分），完整推導見
+  // src/js/long_push_anchor.js 檔頭。unit 用假 facts 釘死了決策表，這裡要證明
+  // 真實那條 term_buf → list_session._collectFacts → CommandQueue 的路徑也接得上。
+  test('落回列表時游標飄掉：先用 #AID 釘回原篇，不會直接按 X', async ({ page }) => {
+    await boot(page);
+    const aid = await page.evaluate(
+      () => window.__app.aidNavigation.findLocalPostAid().aid
+    );
+
+    await submitLongPush(page, '第一段\n第二段');
+    await expect.poll(() => sentText(page)).toBe('X');
+    await drawLastRow(page, TYPE_MENU);
+    await drawLastRow(page, PROMPT);
+    await drawLastRow(page, CONFIRM);
+
+    // 第 1 則落地，但游標底下已經是別人剛貼的新文。
+    await collectSent(page);
+    await drawBoardList(
+      page,
+      [
+        boardListRow(1233, 'testuser', '[閒聊] 測試文章'),
+        boardListRow(1234, 'someoneElse', '[公告] 剛剛才貼的新文'),
+        boardListRow(1235, 'thirdGuy', '[問卦] 又一篇'),
+      ],
+      1
+    );
+
+    // 送出去的必須是定位鍵，**不是** X。
+    await expect.poll(() => sentText(page)).toBe('#' + aid + '\r\f');
+    expect(await sentText(page)).not.toContain('X');
+  });
+
+  test('游標還在原篇時不多送任何定位鍵', async ({ page }) => {
+    await boot(page);
+    await submitLongPush(page, '第一段\n第二段');
+    await drawLastRow(page, TYPE_MENU);
+    await drawLastRow(page, PROMPT);
+    await drawLastRow(page, CONFIRM);
+
+    await collectSent(page);
+    await drawBoardList(
+      page,
+      [
+        boardListRow(1233, 'someoneElse', '[公告] 別篇'),
+        boardListRow(1234, 'testuser', '[閒聊] 測試文章'),
+        boardListRow(1235, 'thirdGuy', '[問卦] 又一篇'),
+      ],
+      1
+    );
+    await expect.poll(() => sentText(page)).toBe('X');
   });
 });

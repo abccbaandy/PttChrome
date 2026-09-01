@@ -60,8 +60,9 @@ import { parsePostInfoAid, parseArticleUrlLine, parsePostInfoUrl } from './aid_p
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
-// still classifies as clean-list.
-const AID_NOT_FOUND_RE = /找不到|不正確/;
+// still classifies as clean-list. Exported because long_push_session runs the
+// same `#<aid>⏎` transaction to pin its cursor — one regex, one place.
+export const AID_NOT_FOUND_RE = /找不到|不正確/;
 
 // ← as the terminal sees it. Backs out exactly one level everywhere the escape
 // preamble can run (pmore, i_read list, domenu) and is a no-side-effect dismiss

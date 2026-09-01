@@ -215,6 +215,21 @@ export function parseArticleHeader(text) {
   return { author: author, board: parseArticleBoard(text) };
 }
 
+// Article header, second line: "標題  [閒聊] 標題文字". Returned RAW (the reply
+// prefix is NOT stripped here — subjectKey does that, so both this and a list
+// row's title reach the same key). null when the line is not a title header.
+//
+// The long-push cursor anchor uses it to learn, WHILE STILL IN THE ARTICLE, which
+// post the run belongs to — a baseline taken from the list after the first push
+// would already be poisoned by whatever moved the cursor (see long_push_anchor).
+const ARTICLE_TITLE_RE = /^\s*標題\s+(\S.*?)\s*$/;
+
+export function parseArticleTitle(text) {
+  if (!text) return null;
+  const m = text.match(ARTICLE_TITLE_RE);
+  return m ? m[1] : null;
+}
+
 // Board list column map — 逐欄對 mbbsd/bbs.c#readdoent 的 printf 序列推出來的
 // （pttbbs @ c1ff72df；先前是 live 校準值，現已與官方 source 對上）：
 //
@@ -809,4 +824,39 @@ export function parseTitleBlacklist(str) {
 export function matchTitleBlacklist(title, keywords) {
   if (!title || !keywords || !keywords.length) return null;
   return keywords.find(k => title.includes(k)) ?? null;
+}
+
+// The subject key of a list row — pttbbs's strcmp(currtitle, subject_ex(title))
+// re-done client-side. The displayed title is ALREADY subject_ex-stripped by the
+// server (readdoent prints mark + stripped title), so the key is the title
+// region minus the leading type mark ("R:"/"□"/"轉"/"鎖"/"ˇ"); the defensive
+// Re:/Fw: loop-strip mirrors subject_ex (common/bbs/string.c:58, case-insensitive,
+// optional trailing space) in case a raw prefix ever leaks through. null = no
+// usable title (blank/short row) — never matches.
+//
+// Lives here (pure layer) rather than in list_session because THREE serialized
+// operations verify a list landing against it — list easy reading, the AID back
+// jump (aid_navigation) and the long-push cursor anchor (long_push_anchor) —
+// and the latter two must not drag the DOM-coupled list_session chain in.
+// list_session re-exports both for its own consumers.
+export function subjectOfListRow(row) {
+  return subjectOfListText(rowToText(row));
+}
+
+// Same key from an already-flattened row STRING (settle facts carry rowTexts,
+// not TermChar rows — aid_navigation's back landing and long_push's anchor
+// check both verify against these).
+export function subjectOfListText(text) {
+  let t = parseListTitleRaw(text);
+  if (!t) return null;
+  if (t.charAt(0) === 'R' && t.charAt(1) === ':') t = t.substring(2);
+  else if (t.charCodeAt(0) > 0x7f) t = t.substring(1); // □/轉/鎖/ˇ state glyph
+  t = t.trim();
+  let prev;
+  do {
+    prev = t;
+    t = t.replace(/^(re:|fw:) ?/i, '');
+  } while (t !== prev);
+  t = t.trim();
+  return t || null;
 }
