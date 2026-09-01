@@ -68,9 +68,11 @@ export function chooseAnchor(input) {
   const landed = inp.landed;
   const list = inp.list;
   if (landed && landed.board && landed.aid) {
-    // Keep the number as a FALLBACK even though the aid wins: pttbbs cannot
-    // #-search a pinned (置底) post at all (mbbsd/read.c:404's own FIXME), and
-    // aid_navigation drops back to the number when that search misses.
+    // Keep the number as a FALLBACK even though the aid wins: an aid search
+    // misses whenever the post is really gone (deleted, or we ended up on the
+    // wrong board), and aid_navigation drops back to the number in that case.
+    // (Pinned 置底 posts are NOT one of them — read.c searches .DIR.bottom
+    // first, see aid_navigation#aidSearchLanded.)
     const spare = numberFallback(list, landed.board);
     return {
       kind: 'aid',
@@ -169,9 +171,9 @@ NavHistory.prototype = {
   // separate space, mbbsd/read.c:661-665, so a num anchor captured there sends
   // the user to a different article on the way back).
   //
-  // The existing num/subject/lineIndex ride along as the fallback: pttbbs
-  // cannot #-search a pinned post (mbbsd/read.c:404 FIXME), so the aid tier
-  // must not be a downgrade for those.
+  // The existing num/subject/lineIndex ride along as the fallback: an aid
+  // search still misses on a deleted post, so the aid tier must never be a
+  // downgrade.
   //
   // board may be null when the box printed a non-board name (currboard empty):
   // the old anchor's board is then reused. With no board at all we do NOT

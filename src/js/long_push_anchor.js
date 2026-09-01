@@ -57,7 +57,9 @@ export function subjectKey(rawTitle) {
 
 // 從一列列表文字取出身分。author 是小寫 userid，subject 是 subject_ex 後的主題
 // （可能以 … 結尾＝被截斷）。兩者缺一就回 null —— 只有一半的身分不足以判定
-// 「還是同一篇」。空列／置底 ★ 列／已刪除列（作者欄是 "-"）都會落在這裡。
+// 「還是同一篇」。空列／已刪除列（作者欄是 "-"）都會落在這裡。
+// **置底（★）列不會**：它照樣有作者與標題，只是沒有編號（bbs.c:843 以 ★ 取代
+// %7d）⇒ 身分讀得出來，能不能用編號跳是另一回事（findAnchorRowNum）。
 export function listRowIdentity(text) {
   const author = parseListAuthor(text);
   if (!author) return null;
@@ -117,8 +119,8 @@ function identityMatches(id, anchor) {
 // 游標現在指的還是錨點那一篇嗎？
 //   'ok'      作者與主題都對得上 ⇒ 可以按 X
 //   'moved'   對不上 ⇒ 一定要先重新定位
-//   'unknown' 這一列讀不出身分（空列／置底 ★ 列／已刪除列／短列），或根本沒有
-//             錨點 ⇒ 比照 moved（沒有基準就不能宣稱 'ok'）
+//   'unknown' 這一列讀不出身分（空列／已刪除列／短列），或根本沒有錨點 ⇒ 比照
+//             moved（沒有基準就不能宣稱 'ok'）。置底 ★ 列讀得出身分，會走 ok/moved
 export function checkCursorAnchor(facts, anchor) {
   if (!anchor || !anchor.author || !anchor.subject) return 'unknown';
   if (!facts || facts.curY == null) return 'unknown';
@@ -132,8 +134,9 @@ export function checkCursorAnchor(facts, anchor) {
 // footer），與 classifyListScreen 用的是同一段範圍。
 //
 // pageArticleNums 已經處理過「游標蓋住編號最高位」的還原；置底列（★）本來就沒有
-// 編號會被跳過 —— 那正是我們要的：read.c:404 自己的 FIXME 說明置底文連 #AID 都
-// 搜不到，更別說用編號跳。
+// 編號會被跳過 —— 那正是我們要的：`<編號>⏎` 只吃列表上印出來的編號，置底列沒有
+// 一個可以指定。置底文要定位只能靠 #AID（那條路是通的，見
+// aid_navigation#aidSearchLanded）。
 export function findAnchorRowNum(facts, anchor) {
   if (!anchor || !anchor.author || !anchor.subject) return null;
   if (!facts || !facts.rowTexts) return null;

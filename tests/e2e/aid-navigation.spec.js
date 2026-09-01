@@ -18,8 +18,9 @@ const {
 //   - 不能是 C_Chat：本測會開列表好讀（大量 prefetch）並反覆進出，跑在 C_Chat 上會
 //     改變該板的 server 游標(getkeep)/currtitle，後面用 C_Chat 的 enhance /
 //     easy-reading 測試就會開到別篇文章（單獨跑綠、整包跑紅）。
-//   - 不能是 Test：那裡幾乎只有置底公告，而 mbbsd/read.c:404 的 FIXME 就是置底文
-//     的 AID 搜尋（搜 .DIR.bottom 那段）會失手 → 正向跳轉直接「找不到文章」。
+//   - 不能是 Test：那裡幾乎只有置底公告，一般文章少到選不出穩定的樣本。
+//     （置底文的 AID 搜尋本身是通的 —— read.c 先搜 .DIR.bottom，見
+//     aid_navigation#aidSearchLanded —— 只是這支測試要的是一般編號文章。）
 const BACK_TEST_BOARD = 'movie';
 
 test.describe.serial('AID 一鍵跳文', () => {

@@ -234,7 +234,7 @@ describe("NavHistory.upgradePendingOriginAid", () => {
     expect(entry.kind).toBe("aid");
     expect(entry.aid).toBe("1gIeu-3A");
     expect(entry.board).toBe("C_Chat");
-    // 置底文的 # 搜尋會失手（read.c:404 FIXME）→ 備援不可丟
+    // 文章已刪／找錯看板時 # 搜尋會失手 → 備援不可丟
     expect(entry.num).toBe(3);
     expect(entry.subject).toBe("[閒聊] 原本那篇");
     expect(entry.lineIndex).toBe(42);

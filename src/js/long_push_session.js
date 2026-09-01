@@ -43,7 +43,7 @@ import {
   checkCursorAnchor,
   findAnchorRowNum
 } from './long_push_anchor';
-import { AID_NOT_FOUND_RE } from './aid_navigation';
+import { aidSearchLanded } from './aid_navigation';
 
 // vgetstring 的 Ctrl-C：清空 buf 並 abort（vtuikit.c:1345-1351）⇒ getdata 回 0
 // ⇒ recommend() 直接 return FULLUPDATE，不寫入任何東西。取消時用它退出輸入列／
@@ -549,9 +549,9 @@ LongPushSession.prototype = {
     this._enqueueNumberRelocate(num, proceed);
   },
 
-  // 判準抄 aid_navigation._enqueueAidSearch：**刻意不 gate kind === 'clean-list'**
-  // ——AID 跳的落地會留下空白 footer，classifyListScreen 會讀成 'transient'。
-  // 「找不到」則是把游標停在底列訊息上 ⇒ cursorRowNum 為 null，自然被擋掉。
+  // 判準與 aid_navigation._enqueueAidSearch **共用同一個純函式**（aidSearchLanded）：
+  // 兩邊送的是同一個 `#<aid>⏎` 交易，抄一份就會像 2026-09 的置底文 bug 一樣只修好
+  // 一邊。置底（★）列沒有序號但**是**合法落點，理由與判準細節見該函式。
   _enqueueAidRelocate: function(proceed) {
     const self = this;
     this._step({
@@ -560,10 +560,7 @@ LongPushSession.prototype = {
       fullRepaint: true,
       failMsg: '找不到原本那篇文章',
       accept: function(c, facts) {
-        if (facts.boardName == null) return false;
-        if (facts.cursorRowNum == null) return false;
-        if (facts.curY < 3 || facts.curY > facts.rows - 2) return false;
-        return !AID_NOT_FOUND_RE.test(facts.rowTexts[facts.rows - 1] || '');
+        return aidSearchLanded(facts);
       },
       done: function(c, result) {
         // #AID 是權威的：select_by_aid 要嘛把 crs_ln 設到那一筆，要嘛回「找不到」

@@ -666,7 +666,8 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **live e2e 的看板選擇會互相污染**：AID 返回測試要開列表好讀（大量 prefetch）並反覆進出，
   跑在 `C_Chat` 上會改掉該板的 server 游標（`getkeep`）與 `currtitle`，後面用 `C_Chat` 的
   `enhance`／`easy-reading` 測試就會開到別篇文章——症狀是**單獨跑全綠、整包跑必紅**（而且紅的位置每次不同）。
-  它也不能跑在 `Test` 板：那裡幾乎只有置底公告，`read.c:404` 的 FIXME 讓置底文的 AID 搜尋失手。
+  它也不能跑在 `Test` 板：那裡幾乎只有置底公告，一般編號文章少到選不出穩定樣本
+  （置底文的 AID 搜尋本身是通的，見 `aid_navigation#aidSearchLanded`）。
   現用 `movie`。同理，測試若改了 `enableEasyReadingList` 這種 `resetSession` 不會還原的 pref，必須自己在 finally 還原。
 - **在測試/工具裡直接餵 cassette 進 `TermBuf` 後讀 `getRowText`，必須先讓事件回圈跑一拍**（unit 用 `vi.advanceTimersByTime(300)`、瀏覽器用 `await sleep(120)`）：`isLeadByte` 只在 buf 的 update pass（notify 30ms + settle 50ms）才標記，沒跑完就讀會拿到**未轉碼的 Big5 位元組**（症狀：整片 `§@ªÌ` 亂碼，看起來像編碼表沒載）。
 - **終端機的任何祖先都不可有 `user-select: none`**（issue #22，2026-08 實測）。Firefox 判定

@@ -198,7 +198,8 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 - **跨模式跳轉會產生二段式畫面更新**：命中處與目前模式不符（一般↔文摘）時設 `*pdefault_ch = KEY_TAB; return DONOTHING;`——server **自己補按一個 TAB**，下一圈 `i_read_key` 用它跑 `board_digest()` 切模式 ⇒ client 會看到「prompt 消失」與「全幅切換清單」兩段。
 - 文章內（pmore）按 `#`：`more.c:108-112` → `RET_SELECTAID` → `read.c:1018-1024` 先退出 pmore 回列表再開同一個 prompt，收尾強制 `FULLUPDATE`（與列表內的 `DONOTHING` 不同）。
 - **死碼警告**：`mbbsd/aids.c` 的 `do_search_aid()`（支援 `AID@BOARDNAME` 跨板語法）整段包在 `#ifdef NEW_AIDS` 內，而 `NEW_AIDS` 全 repo 無任何定義 ⇒ **真正跑的只有 `read.c#select_by_aid`，不支援 `@板名`**。勿照那段實作 client。
-- **只搜 currboard**：`select_by_aid` 依序找 `<currboard>/.DIR.bottom`、`.DIR`、`fn_mandex`，全都是**目前看板**的檔案 ⇒ 跨板一定要先 `s<board>`。另註 `read.c:404` 自帶 FIXME：置底文若沒列在 `.DIR.bottom` 這段會搜不到（實測 Test 板的置底公告 AID 搜尋直接失敗）⇒ **client 不可假設任何一篇文章的 AID 都跳得到**。
+- **只搜 currboard**：`select_by_aid` 依序找 `<currboard>/.DIR.bottom`、`.DIR`、`fn_mandex`，全都是**目前看板**的檔案 ⇒ 跨板一定要先 `s<board>`。**`.DIR.bottom` 排在最前面 ⇒ 置底文的 `#AID` 搜尋是會中的**（游標停在該 `★` 列；`read.c:478` `*pnew_ln = n + 1`）。`read.c:404` 自帶的 FIXME 講的是另一種情況——「被標記置底但**沒列在** `.DIR.bottom`」的文章，那段搜不到，但下一段搜 `.DIR` 時仍會搜到本體。2026-09 之前本文件寫「實測 Test 板置底公告 AID 搜尋直接失敗」，那是 client 端落地判準寫死 `cursorRowNum != null`（置底列印 `★` 沒有序號）造成的誤判，非 server 行為，已修（`aid_navigation#aidSearchLanded`）。
+- **置底（★）列的落地與開文（CONFIRMED）**：命中 `.DIR.bottom` 時 `n += getbtotal(currbid)`（`read.c:411`）把它換算成合併後的行號 —— 置底區就是 `bottom_line+1..last_line` 的虛擬延伸（§3）。列表上那一列**沒有序號**（`bbs.c:843` 印 `"  " ANSI "  ★ "` 取代 `%7d`）⇒ **client 的落地判定不可要求「游標列解析得出編號」**，否則會把正確落地讀成 miss（2026-09 實際 bug：置底文 deep link 卡在列表進不了文章）。⏎ 開文在 server 端本來就支援：`read.c:999-1008` 的 `num = crs_ln - bottom_line`，`num > 0` 時把 `direct` 換成 `<board>/.DIR.bottom` 再交給 `read_post`。**live 實測 2026-09-02**（`Android` 板 `#1T3vIDTr`）：`#<aid>⏎` 落在 `>   ★  m 2 6/23 albb0920     □ [公告] 板規`（`cursorRowNum` null、底列空 ⇒ classify `transient`），再一個 `⏎` 即開文成功。
 - **per-board 游標記憶（getkeep）＝「返回原看板」可行的根據（CONFIRMED）**：`i_read` 在 `NEWDIRECT`（第一次進入該目錄）呼叫 `getkeep(currdirect, …)`（`read.c:1171`），而 `getkeep`（`read.c:105`）以 board path 的 hash 查既有 entry，**命中就沿用舊的 `crs_ln`**（`read.c:128-139`）；儲存結構是不斷追加的 link block（`KEEPSLOT=10` 一塊，滿了 malloc 下一塊），**session 內永不淘汰**。`board.c:1976` 的 `getkeep(buf, head, tmp+1)` 只在 entry 不存在時才用未讀位置當預設值，不會覆寫既有的。⇒ `s<原板>` 回去時游標仍停在離開時那一列。
   - **推論（單一例外）**：同板的 `#<aid>` 跳轉會覆寫該板的 `crs_ln`，所以「靠 getkeep 回原文」在**原板 == 目標板**時不成立（client 端 `nav_history.chooseAnchor` 據此讓 board 級錨點作廢）。
 - client 對照：`src/js/aid_navigation.js`（點 AID 連結的四段式交易＋返回時的反向重放）、`src/js/nav_history.js`（錨點三級：aid / num＋subject 驗證 / board）與列表好讀的貼上 passthrough（`list_session.js#onPaste`）——後者刻意**不**代按 Enter、不特判 AID，讓上述原生行為原樣呈現。
@@ -468,7 +469,7 @@ UI**，不在推文流程內。`MAX_RECOMMENDS(100)` 只影響列表上的計數
   ⇒ **「同編號」不等於「同一篇」**。列表畫面上又**沒有**印檔名或 AID（`bbs.c#readdoent` 只印
   編號/型別/推文數/日期(M/DD)/作者(≤12)/截斷標題），所以 client 想確定游標指哪一篇只有兩條路：
   `Q`＝`view_postinfo` 讀 AID（`bbs.c:3748`），或 `#<AIDc>⏎`＝`select_by_aid` 主動設游標
-  （`read.c:366`，**置底文搜不到**——`read.c:404` 自己的 FIXME）。
+  （`read.c:366`；**置底文也搜得到**，`.DIR.bottom` 排在搜尋順序第一位，見 §8.1）。
   消費端與決策表見 `docs/long-push.md`「游標錨定」＋`src/js/long_push_anchor.js`。
 - 順帶：`do_add_recommend` 自己留了 race 自白（`bbs.c:2721`）——推文內容 append 到記憶體裡的
   **舊檔名**，`.DIR` 計數卻用 `ent` 行號寫，「推的時候前文被刪 → 加到後文的推文數」。

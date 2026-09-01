@@ -49,6 +49,12 @@ function listRow(num, author, title, cursor) {
 }
 const ANCHOR_ROW = (num, cursor) =>
   listRow(num, ANCHOR_AUTHOR, ANCHOR_TITLE, cursor);
+// 置底列：readdoent 在序號欄印 `"  " ANSI "  ★ "` 而不是 %7d（bbs.c:843）。★ 是
+// 全形，rowToText 收成一個字 ⇒ 7 cells 只剩 6 字（realignListColumns 會補回來）。
+// 新版游標 '>' 只蓋 col 0，★ 仍在。
+const PINNED_ANCHOR_ROW = (cursor) =>
+  (cursor ? ">   ★ " : "    ★ ") +
+  listRow(0, ANCHOR_AUTHOR, ANCHOR_TITLE, false).slice(7);
 const OTHER_ROW = (num, cursor) =>
   listRow(num, "someoneElse", "[公告] 剛剛才貼的新文", cursor);
 
@@ -473,6 +479,20 @@ describe("游標錨定", () => {
     // 落地：游標回到原篇 ⇒ 這時才輪到 X。
     h.settleList([ANCHOR_ROW(1233, true), OTHER_ROW(1234)], 0);
     expect(h.sent[h.sent.length - 1]).toBe("X");
+  });
+
+  // 置底文：#AID 的落地列印的是 ★ 而不是序號（bbs.c:843）⇒ cursorRowNum 為 null。
+  // 舊判準把它讀成「找不到原本那篇文章」而中止送出，剩下的內容被丟回剪貼簿。
+  // 判準已與 aid_navigation 共用（aidSearchLanded），這裡守住不再回歸。
+  test("REGRESSION：#aid 落在置底 ★ 列 → 照樣送 X，不當成找不到", () => {
+    const h = harness();
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    pushOneThenList(h, [PINNED_ANCHOR_ROW(false), OTHER_ROW(1234, true)], 1);
+    expect(h.sent[h.sent.length - 1]).toBe("#" + AID + "\r\f");
+
+    h.settleList([PINNED_ANCHOR_ROW(true), OTHER_ROW(1234)], 0);
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+    expect(h.session.active).toBe(true);
   });
 
   test("沒有 AID 但原篇還在同一頁 → 用編號跳回去，才送 X", () => {

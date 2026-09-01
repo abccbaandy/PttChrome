@@ -38,7 +38,8 @@ const {
 // 從來不顯示進板畫面 —— 所以既有的 AID 點擊跳文測試涵蓋不到這條路徑，2026-08-16
 // 就是在這裡卡死的（好讀模式把進板公告當文章、自動送 PageDown 餵掉 pressanykey）。
 // 同時避開 C_Chat（會動到 enhance / easy-reading 依賴的 server 游標）與 Test
-// （幾乎只有置底文，而置底文的 AID 搜尋在 mbbsd/read.c:404 就是會失手）。
+// （幾乎只有置底文，一般文章少到選不出穩定的樣本；置底文的 AID 搜尋本身是通的，
+// 見 aid_navigation#aidSearchLanded）。
 const BOARD = 'Steam';
 
 const AID_RE = /文章代碼\(AID\):\s*#([0-9A-Za-z_-]{8})/;

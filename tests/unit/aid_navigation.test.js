@@ -4,7 +4,13 @@
 // harness style as command_queue.test.js / list_session.test.js.
 
 import { CommandQueue } from "../../src/js/command_queue";
-import { AidNavigation } from "../../src/js/aid_navigation";
+import {
+  AidNavigation,
+  aidSearchLanded,
+  STEP_PROBE_AFTER_MS,
+  STEP_PROBE_WINDOW_MS,
+  BOARD_PROBE_AFTER_MS
+} from "../../src/js/aid_navigation";
 import { subjectOfListText } from "../../src/js/list_session";
 
 vi.useFakeTimers();
@@ -264,7 +270,7 @@ describe("AidNavigation", () => {
     // The vmsg press-any-key settle: not clean-list → expect false, timer re-armed.
     settle(queue, facts("prompt"));
     // Soft timeout → probe \f.
-    vi.advanceTimersByTime(4000);
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS);
     expect(sent[3]).toBe("\f");
     // Probed full frame still shows the message → definitive miss.
     settle(queue, facts("prompt"));
@@ -300,9 +306,9 @@ describe("AidNavigation", () => {
     answerOriginInfo(queue, "1gKF7GO4");
     expect(sent[1]).toBe(" sAndroid\r\f");
     // Silent link: soft timeout → probe, then hard silence → timeout fail.
-    vi.advanceTimersByTime(6000); // probe
+    vi.advanceTimersByTime(BOARD_PROBE_AFTER_MS); // probe
     expect(sent[2]).toBe("\f");
-    vi.advanceTimersByTime(6000); // probe timeout
+    vi.advanceTimersByTime(STEP_PROBE_WINDOW_MS); // probe timeout
     expect(nav.active).toBe(false);
     expect(hints.some(h => h.includes("切換看板"))).toBe(true);
     // The queued follow-up steps must not fire after the failure.
@@ -435,7 +441,7 @@ describe("AidNavigation 非 READING context（站內信／精華區）", () => {
     nav.start("1gIeu-3A", "SYSOP");
     settle(queue, facts("article", { rowTexts: frozen }));
     expect(sent.length).toBe(1); // 還沒結論，繼續等
-    vi.advanceTimersByTime(5000); // soft timeout → probe
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS); // soft timeout → probe
     expect(sent[1]).toBe("\f");
     settle(queue, facts("article", { rowTexts: frozen })); // 探針幀仍沒變 → miss
     expect(nav.active).toBe(false);
@@ -659,8 +665,8 @@ describe("AidNavigation 返回", () => {
     });
     h.nav.start("1gIeu-3A", "Android");
     answerOriginInfo(h.queue, "1gKF7GO4"); // Q 成功也一樣：沒落地就不入 stack
-    vi.advanceTimersByTime(6000); // probe
-    vi.advanceTimersByTime(6000); // probe timeout → fail
+    vi.advanceTimersByTime(BOARD_PROBE_AFTER_MS); // probe
+    vi.advanceTimersByTime(STEP_PROBE_WINDOW_MS); // probe timeout → fail
     expect(h.nav.active).toBe(false);
     expect(h.nav.canGoBack()).toBe(false);
   });
@@ -893,9 +899,9 @@ describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）"
     const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
     h.nav.start("2AbCdEf0", "Gossiping");
     expect(h.sent[0]).toBe("Q");
-    vi.advanceTimersByTime(2500); // soft timeout → probe \f
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS); // soft timeout → probe \f
     expect(h.sent[1]).toBe("\f");
-    vi.advanceTimersByTime(2500); // 探針也沒回 → timeout
+    vi.advanceTimersByTime(STEP_PROBE_WINDOW_MS); // 探針也沒回 → timeout
     // 不可 _fail：跳文本身還有救，今日行為就是地板
     expect(h.nav.active).toBe(true);
     expect(h.sent[2]).toBe(" sGossiping\r\f");
@@ -959,7 +965,7 @@ describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）"
     expect(h.sent).toEqual(["smovie\r\f"]);
   });
 
-  test("aid 錨點的 #搜尋 miss（置底文，read.c:404 FIXME）→ 退回 num 備援，不清空 stack", () => {
+  test("aid 錨點的 #搜尋 miss（文章已消失／找錯看板）→ 退回 num 備援，不清空 stack", () => {
     const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
     h.nav.start("2AbCdEf0", "Gossiping");
     answerOriginInfo(h.queue, "1gIeu-3A", "movie");
@@ -974,9 +980,11 @@ describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）"
     h.nav.back();
     settle(h.queue, facts("clean-list", { boardName: "movie" }));
     expect(h.sent[1]).toBe("#1gIeu-3A\r\f");
-    // 找不到：vmsg 把游標停在底列 → cursorRowNum null → probe → miss
+    // 找不到：vmsg 把游標停在底列（read.c:466-476 + vtuikit.c#vshowmsg）⇒ 落在
+    // entry 區之外 → probe → miss。**置底文不走這條**：它的 #搜尋是會中的
+    // （read.c 先搜 .DIR.bottom），見 aidSearchLanded。
     settle(h.queue, facts("prompt"));
-    vi.advanceTimersByTime(4000);
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS);
     settle(h.queue, facts("prompt"));
     // 備援：改用序號（仍會驗 subject 才開文）
     expect(h.sent[h.sent.length - 1]).toBe("3\r\f");
@@ -986,6 +994,74 @@ describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）"
 
 // 外部 deep link（?/#Board/AID）觸發的跳轉。與 start() 的差別全在起手式：沒有
 // 原文可回、可能根本沒開任何文章、而且落點幾乎都是剛登入的主功能表。
+// #<aid>⏎ 的落地判準（aid_navigation 與 long_push_session 共用）。真實列文字取自
+// tests/unit/comment_parse.test.js 用的實錄樣本。
+describe("aidSearchLanded", () => {
+  const f = over => ({
+    boardName: "android",
+    cursorRowNum: null,
+    rows: 24,
+    curY: 10,
+    rowTexts: new Array(24).fill(""),
+    ...over
+  });
+  const withRow = (y, text, over = {}) => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[y] = text;
+    return f({ curY: y, rowTexts, ...over });
+  };
+
+  test("一般編號列 → true", () => {
+    expect(aidSearchLanded(f({ cursorRowNum: 353218 }))).toBe(true);
+  });
+
+  test("置底 ★ 列（無序號）→ true（read.c 先搜 .DIR.bottom；bbs.c:843 印 ★ 取代序號）", () => {
+    expect(aidSearchLanded(withRow(10, ">   ★  m 1 6/01 arrenwu      轉 [公告] 板規"))).toBe(true);
+    expect(aidSearchLanded(withRow(10, "    ★  M 3 6/13 SaberTheBest □ [26夏] 夏番各作品首播時間"))).toBe(true);
+    // 舊版游標壓在置底列上（● 蓋掉前兩格）也要認得
+    expect(aidSearchLanded(withRow(10, "●  ★  m 1 6/01 arrenwu      轉 [公告] 板規"))).toBe(true);
+  });
+
+  test("「找不到這個文章代碼」→ false（游標被 vmsg 留在末列，落在 entry 區外）", () => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[22] = "找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了";
+    rowTexts[23] = PRESS_ANY_KEY_ROW;
+    expect(aidSearchLanded(f({ curY: 23, rowTexts }))).toBe(false);
+  });
+
+  test("「不合法的文章代碼」→ false（AID_NOT_FOUND_RE 要吃得到「不合法」）", () => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[23] = " ◆ 不合法的文章代碼(AID)，請確定輸入是正確的";
+    // 就算游標意外留在 entry 區，末列的字樣仍要擋下來
+    expect(aidSearchLanded(f({ curY: 10, rowTexts }))).toBe(false);
+  });
+
+  test("末列是 pressanykey bar → false（第二道防線）", () => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[10] = "    ★  m 1 6/01 arrenwu      轉 [公告] 板規";
+    rowTexts[23] = PRESS_ANY_KEY_ROW;
+    expect(aidSearchLanded(f({ curY: 10, rowTexts }))).toBe(false);
+  });
+
+  test("標題含「找不到」的正常文章列不得被誤殺（只掃末列，不往上掃）", () => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[22] = " 353218 + 6 9/02 someuser     □ [問題] 找不到藍牙裝置";
+    expect(aidSearchLanded(f({ curY: 22, cursorRowNum: 353218, rowTexts }))).toBe(true);
+  });
+
+  test("boardName 為 null／游標在 entry 區外／facts 缺席 → false", () => {
+    expect(aidSearchLanded(f({ boardName: null, cursorRowNum: 5 }))).toBe(false);
+    expect(aidSearchLanded(f({ cursorRowNum: 5, curY: 2 }))).toBe(false);
+    expect(aidSearchLanded(f({ cursorRowNum: 5, curY: 23 }))).toBe(false);
+    expect(aidSearchLanded(null)).toBe(false);
+  });
+
+  test("空白／分隔列（讀不出作者）→ false，不可當成置底列", () => {
+    expect(aidSearchLanded(withRow(10, ""))).toBe(false);
+    expect(aidSearchLanded(withRow(10, "─".repeat(60)))).toBe(false);
+  });
+});
+
 describe("startExternal（deep link）", () => {
   const atMainMenu = h => {
     h.termBuf.rowTexts = MAIN_MENU_SCREEN;
@@ -1136,6 +1212,62 @@ describe("startExternal（deep link）", () => {
     expect(h.nav.startExternal("1gIeu-3A", "Gossiping")).toBe(true);
     expect(h.nav.startExternal("2AbCdEf0", "movie")).toBe(false);
     expect(h.sent).toEqual(["sGossiping\r\f"]);
+  });
+
+  // ---- 置底文（★ 列）----------------------------------------------------
+  // read.c#select_by_aid **先**搜 .DIR.bottom 才搜 .DIR（read.c:403-424）⇒ 置底文
+  // 的 #AID 搜尋會成功，游標就停在那一列上。而 PTT 在置底列印 ★ 取代序號
+  // （bbs.c:843）⇒ 那一列的 cursorRowNum 必為 null。舊判準寫死
+  // `cursorRowNum == null → false`，於是把「已經正確落地」讀成 miss、
+  // 那個開文用的 ⏎ 永遠沒送出去（使用者回報：置底文跳過去卡在列表上進不了文章，
+  // 例 https://www.ptt.cc/bbs/Android/M.1561302157.A.775.html）。
+  const PINNED_ROW = ">   ★  m 1 6/01 arrenwu      轉 [公告] 板規";
+
+  test("REGRESSION：#AID 落在置底 ★ 列（無序號）也要送 ⏎ 開文", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    h.nav.startExternal("1gIeu-3A", "Android");
+    settle(h.queue, facts("clean-list", { boardName: "android" }));
+    expect(h.sent[1]).toBe("#1gIeu-3A\r\f");
+    const rowTexts = new Array(24).fill("");
+    rowTexts[10] = PINNED_ROW;
+    settle(
+      h.queue,
+      facts("transient", {
+        boardName: "android",
+        cursorRowNum: null,
+        curY: 10,
+        rowTexts
+      })
+    );
+    expect(h.sent[2]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(h.hints[h.hints.length - 1]).toContain("已跳至");
+  });
+
+  test("「找不到這個文章代碼」畫面仍判 miss（游標停在末列的 pressanykey）", () => {
+    // read.c:466-476：move(21,0) clrtobot() → 訊息印在 rows-2、pressanykey bar
+    // 在 rows-1（vtuikit.c#vshowmsg 的 move(b_lines,0)），游標留在 rows-1。
+    const h = makeHarness();
+    atMainMenu(h);
+    h.nav.startExternal("1gIeu-3A", "Android");
+    settle(h.queue, facts("clean-list", { boardName: "android" }));
+    const rowTexts = new Array(24).fill("");
+    rowTexts[22] = "找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了";
+    rowTexts[23] = PRESS_ANY_KEY_ROW;
+    const notFound = () =>
+      facts("prompt", {
+        boardName: "android",
+        cursorRowNum: null,
+        curY: 23,
+        rowTexts
+      });
+    settle(h.queue, notFound());
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS); // soft → \f 探針
+    settle(h.queue, notFound());
+    expect(h.nav.active).toBe(false);
+    expect(h.hints[h.hints.length - 1]).toContain("找不到文章");
   });
 
   test("缺 board 或 aid → 回 false，不送任何東西", () => {

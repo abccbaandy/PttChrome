@@ -248,7 +248,7 @@ best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原
 
 | 級 | 來源 | 中段動作 | 備註 |
 |---|---|---|---|
-| aid | 第 0 步 `Q` 問到的本篇 AID；或 `history.landed()`（本篇自己就是上次跳來的） | `#<aid>\r` | 唯一不受刪文位移／MODE_SELECT 重新編號影響。會**保留 num/subject 當備援**：置底文的 `#` 搜尋必失手（`read.c:404` FIXME），back run 的 miss 就退回序號／停在列表，不清空 stack |
+| aid | 第 0 步 `Q` 問到的本篇 AID；或 `history.landed()`（本篇自己就是上次跳來的） | `#<aid>\r` | 唯一不受刪文位移／MODE_SELECT 重新編號影響。會**保留 num/subject 當備援**：文章已刪／找錯看板時 `#` 搜尋會失手，back run 的 miss 就退回序號／停在列表，不清空 stack（置底文**不在**此列——`#` 搜尋搜得到，見 `aid_navigation#aidSearchLanded`） |
 | num | `listSession.currentAnchor()` = `_openedNum` + `_boardName`(可為 null→用 `view._articleBoard` 遞補) + `_lastReadTitle` | `<num>\r`，落地**必須** `subjectOfListText(游標列) === subject` 才送 `\r` | 序號會因刪文位移 |
 | board | `view._articleBoard` | 無：落地列表就停手 | 靠 `getkeep` per-board 游標記憶；**同板跳轉時作廢**（正向 `#aid` 已覆寫該板 keep）——但第 0 步問到 AID 時同板也有返回鈕了 |
 

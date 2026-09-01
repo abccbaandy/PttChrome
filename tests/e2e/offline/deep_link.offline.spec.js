@@ -11,7 +11,8 @@ const { installReplay, installOfflineNetwork } = require('../helpers/replay');
 const AID = '1gIeu-3A';
 
 // 開站到「deep link 已被 boot 流程處理完」為止。
-// 沒有其他分頁在線 ⇒ BroadcastChannel 的 claim 會等滿逾時（400ms）才自己開站，
+// 沒有其他分頁在線 ⇒ BroadcastChannel 的 claim 會等滿逾時（deep_link_channel.js
+// 的 CLAIM_TIMEOUT_MS = 600ms）才自己開站，
 // 所以後面一律用 expect.poll 等，不寫死 timeout。
 async function boot(page, hash) {
   await installReplay(page);

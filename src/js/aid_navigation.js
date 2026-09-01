@@ -57,12 +57,18 @@ import { parseStatusRow, parsePagerFooterContext } from './string_util';
 import { subjectOfListText } from './list_session';
 import { NavHistory, chooseAnchor } from './nav_history';
 import { parsePostInfoAid, parseArticleUrlLine, parsePostInfoUrl } from './aid_parse';
+import { isPinnedListRow } from './comment_parse';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
 // still classifies as clean-list. Exported because long_push_session runs the
 // same `#<aid>⏎` transaction to pin its cursor — one regex, one place.
-export const AID_NOT_FOUND_RE = /找不到|不正確/;
+//
+// The two literals are read.c:468-472: 「找不到這個文章代碼(AID)，可能是文章已
+// 消失，或是你找錯看板了」(n < 0) and 「不合法的文章代碼(AID)，請確定輸入是正確
+// 的」(aidu <= 0). 「不正確」 never actually appeared in either — it is kept only
+// so the guard never gets NARROWER than it used to be.
+export const AID_NOT_FOUND_RE = /找不到|不合法|不正確/;
 
 // ← as the terminal sees it. Backs out exactly one level everywhere the escape
 // preamble can run (pmore, i_read list, domenu) and is a no-side-effect dismiss
@@ -84,8 +90,71 @@ const PRESS_ANY_KEY_RE = /請按任意鍵繼續|請按 空白鍵 繼續/;
 // back into reading mail), so the screen keeps changing but never reaches MMENU.
 const MAX_ESCAPE_STEPS = 6;
 
+// Did `#<aid>\r` land? Shared by aid_navigation and long_push_session: both send
+// the very same transaction, and a predicate that forks once ends up fixed on only
+// one side (2026-09 的置底文 bug 兩邊同時壞，就是因為判準被抄了一份).
+//
+// Success = select_by_aid parked the cursor on a row in the entry area with the
+// board title still up (mbbsd/read.c:478 `*pnew_ln = n + 1` → cursor_pos).
+//
+// Deliberately NOT gated on kind === 'clean-list': the AID-jump landing leaves the
+// bottom footer row BLANK (the # prompt cleared it and the jump repaint doesn't
+// redraw it — live-verified 2026-07-10, even after a \f probe; protocol §6 M1), so
+// the classifier reads 'transient' on a perfectly good landing.
+//
+// 置底（★）列也算落地：select_by_aid searches `.DIR.bottom` BEFORE `.DIR`
+// (read.c:403-424) ⇒ a pinned post IS found and the cursor parks on its row — but
+// PTT prints ★ where the number would go (bbs.c:843 `outs("  " ANSI "  ★ ")` vs
+// `prints("%7d", num)`) ⇒ facts.cursorRowNum is null there by construction. The old
+// predicate hard-rejected that, read a correct landing as a miss and never sent the
+// opening ⏎ (使用者回報：置底文的 deep link 卡在列表上進不了文章). PTT itself has no
+// trouble with that ⏎: read.c:999-1008 turns a cursor past bottom_line into an index
+// into `.DIR.bottom`. isPinnedListRow's contract — only ask it about rows whose
+// recovered number is null — is honoured because cursorRowNum is tested first.
+//
+// 「找不到」 is rejected by the entry-area bound, NOT by the missing number:
+// read.c:466-476 does `move(21,0); clrtobot(); move(22,0); prints(…); pressanykey()`,
+// so the message sits on row rows-2 and the pressanykey bar on rows-1
+// (vtuikit.c#vshowmsg's `move(b_lines, 0)`), leaving the cursor on rows-1.
+// The last-row text guards are belt-and-braces. AID_NOT_FOUND_RE must NOT be scanned
+// any higher: on a real landing row rows-2 is an ordinary article row, and a title
+// containing 「找不到」 would become a false reject.
+export function aidSearchLanded(facts) {
+  if (!facts || facts.boardName == null) return false;
+  if (facts.curY < 3 || facts.curY > facts.rows - 2) return false;
+  const rowTexts = facts.rowTexts || [];
+  const lastRow = rowTexts[facts.rows - 1] || '';
+  if (AID_NOT_FOUND_RE.test(lastRow) || PRESS_ANY_KEY_RE.test(lastRow)) return false;
+  if (facts.cursorRowNum != null) return true;
+  return isPinnedListRow(rowTexts[facts.curY] || '');
+}
+
 // 進板畫面 pager + its pressanykey = 2 keys; the slack absorbs a multi-page one.
 const MAX_ENTER_DISMISS = 3;
+
+// ---- 每一步的等待預算 ----
+// A soft timeout is NOT a failure: it sends the queue's zero-side-effect \f probe
+// to ask "where am I" and lets expect judge the guaranteed full frame
+// (command_queue._timedOut). And EVERY settle re-arms the soft timer
+// (command_queue.onSettle) ⇒ shortening it only makes the VERDICT faster, it
+// never kills a correct landing that is still streaming in. PTT answers in
+// ~90ms and term_buf needs another SETTLE_MS (50ms) on top, so anything past a
+// few hundred ms of total silence is already abnormal. Same fast-fail philosophy
+// list_session already runs on this very same queue (CMD_PROBE_AFTER_MS 250 /
+// CMD_PROBE_WINDOW_MS 600 / CMD_HARD_MS 1200) — aid_navigation used to sit on
+// 4000-6000ms soft windows plus the queue's 2000/10000 defaults, so a failing
+// step took ~4.3s to say anything and a whole deep link could drag past 30s
+// (使用者回報「卡住的 timeout 太長」).
+export const STEP_PROBE_AFTER_MS = 700; // soft: triggers the probe, never a failure
+export const STEP_PROBE_WINDOW_MS = 700; // how long the probed full frame gets
+const STEP_HARD_MS = 3000; // absolute cap from send (never re-armed)
+// The board jump is heavier than the rest: the server opens the board's .DIR and
+// may paint a whole 進板畫面 before anything comes back. One notch more slack.
+export const BOARD_PROBE_AFTER_MS = 1500;
+const BOARD_HARD_MS = 5000;
+// Progress banner lifetime. Sized to the worst-case run above (~9s) so it never
+// outlives the transaction it describes; success/failure replaces it anyway.
+const PROGRESS_HINT_MS = 8000;
 
 // Dismisses the Q post-info box's pressanykey() (= vmsg(NULL), which consumes
 // exactly ONE key — mbbsd/vtuikit.c:439-455).
@@ -257,7 +326,7 @@ AidNavigation.prototype = {
       board: board,
       aid: aid
     });
-    this._hint('跳至 #' + aid + ' (' + board + ')…', 15000);
+    this._hint('跳至 #' + aid + ' (' + board + ')…', PROGRESS_HINT_MS);
     const run = makeRun({ board: board, kind: 'aid', aid: aid }, 'forward');
     // Carried so _enqueueOriginAid can hand the scroll position to an anchor
     // built from nothing (same-board jump, 站內信): chooseAnchor returned null
@@ -281,7 +350,7 @@ AidNavigation.prototype = {
     if (this.active) return false;
     if (!aid || !board) return false;
     this._history.beginJump(null, { board: board, aid: aid });
-    this._hint('跳至 #' + aid + ' (' + board + ')…', 15000);
+    this._hint('跳至 #' + aid + ' (' + board + ')…', PROGRESS_HINT_MS);
     const run = makeRun({ board: board, kind: 'aid', aid: aid }, 'forward');
     run.originLineIndex = null;
     run.external = true;
@@ -299,7 +368,7 @@ AidNavigation.prototype = {
       this._hint('沒有可返回的文章');
       return;
     }
-    this._hint('返回 ' + anchor.label + '…', 15000);
+    this._hint('返回 ' + anchor.label + '…', PROGRESS_HINT_MS);
     this._begin(makeRun(anchor, 'back'));
   },
 
@@ -518,7 +587,9 @@ AidNavigation.prototype = {
       // settles — we would read the list back instead of the AID.
       fullRepaint: false,
       onFlushed: handlers.onFlushed,
-      timeoutMs: 2500,
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
         let info = null;
         let fromUrl = null;
@@ -568,7 +639,9 @@ AidNavigation.prototype = {
       kind: 'aid-post-info-dismiss',
       fullRepaint: true,
       onFlushed: h.onFlushed,
-      timeoutMs: 4000,
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
       // The list is where Q leaves us; a still-article frame means the box was
       // never up (nothing to dismiss) and we are already home.
       expect: function(snapshot, facts) {
@@ -596,7 +669,9 @@ AidNavigation.prototype = {
       kind: 'aid-post-info-reopen',
       fullRepaint: true,
       onFlushed: h.onFlushed,
-      timeoutMs: 4000,
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
         if (facts.kind === 'article') return true;
         return !!parseStatusRow(facts.rowTexts[facts.rows - 1] || '');
@@ -627,7 +702,9 @@ AidNavigation.prototype = {
       onFlushed: function() {
         self._fail('畫面已變更');
       },
-      timeoutMs: 4000,
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
         if ((facts.rowTexts[0] || '').indexOf(MAIN_MENU_TITLE) === 0)
           return { menu: true };
@@ -665,7 +742,9 @@ AidNavigation.prototype = {
       onFlushed: function() {
         self._fail('畫面已變更');
       },
-      timeoutMs: 4000,
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
       expect: this._boardLandingExpect(run.boardLower),
       onDone: function(result) {
         self._onBoardLanding(run, result, round);
@@ -771,7 +850,9 @@ AidNavigation.prototype = {
       onFlushed: function() {
         self._fail('畫面已變更');
       },
-      timeoutMs: 4000,
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
         if (facts.cursorRowNum !== num) return false;
         if (facts.curY < 3 || facts.curY > facts.rows - 2) return false;
@@ -840,7 +921,9 @@ AidNavigation.prototype = {
       onFlushed: function() {
         self._fail('畫面已變更');
       },
-      timeoutMs: 6000,
+      timeoutMs: BOARD_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: BOARD_HARD_MS,
       expect: viaMenu
         ? this._boardLandingExpect(boardLower)
         : function(snapshot, facts) {
@@ -860,14 +943,8 @@ AidNavigation.prototype = {
     });
   },
 
-  // Step 2: # <aid> ⏎ — the in-board AID search. Success = the cursor parks on
-  // a parsable article row in the entry area with the board title still up.
-  // NOT gated on kind === 'clean-list': the AID-jump landing leaves the bottom
-  // footer row BLANK (the # prompt cleared it and the jump repaint doesn't
-  // redraw it — live-verified 2026-07-10, even after a \f probe), so the
-  // classifier reads 'transient' on a perfectly good landing. "Not found"
-  // parks the cursor on the bottom message row instead → cursorRowNum null →
-  // probe → miss.
+  // Step 2: # <aid> ⏎ — the in-board AID search. Landing judgement (including
+  // the ★pinned case) lives in aidSearchLanded, shared with long_push_session.
   _enqueueAidSearch: function(run) {
     const self = this;
     const aid = run.target.aid;
@@ -883,24 +960,21 @@ AidNavigation.prototype = {
       onFlushed: function() {
         self._fail('畫面已變更');
       },
-      timeoutMs: 4000,
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
-        if (facts.boardName == null) return false;
-        if (facts.cursorRowNum == null) return false;
-        if (facts.curY < 3 || facts.curY > facts.rows - 2) return false;
-        const lastRow = facts.rowTexts[facts.rows - 1] || '';
-        if (AID_NOT_FOUND_RE.test(lastRow)) return false;
-        return true;
+        return aidSearchLanded(facts);
       },
       onDone: function() {
         self._enqueueOpen(run);
       },
       onFail: function(reason) {
         // Going back, the anchor may carry a number as a spare (nav_history
-        // .upgradePendingOriginAid): pttbbs cannot #-search a PINNED post at
-        // all (mbbsd/read.c:404's own FIXME), so an aid miss there is expected
-        // rather than "we are lost" — try the number, or at least stop on the
-        // board's list instead of dropping the whole stack.
+        // .upgradePendingOriginAid). A miss here means the post is really gone
+        // (deleted, or we are on the wrong board) — a PINNED post is findable,
+        // see aidSearchLanded — so rather than dropping the whole stack, fall
+        // back to the number, or at least stop on the board's list.
         if (run.dir === 'back' && reason === 'miss') {
           if (run.target.num != null) {
             self._enqueueNumberJump(run);
@@ -933,7 +1007,9 @@ AidNavigation.prototype = {
       onFlushed: function() {
         self._fail('畫面已變更');
       },
-      timeoutMs: 4000,
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
         if (facts.kind === 'article') return true;
         // Some posts open straight onto a short page whose bottom row is the

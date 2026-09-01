@@ -164,11 +164,11 @@ reset()       ← App.onClose：清 pending 與 _loggedIn
   欄位，用來表達意圖，Chrome 尚未完全實作 —— 加著等它支援，不要以為加了就會自動攔。
 - Firefox/Safari 不支援 → 自動落回 BroadcastChannel。
 
-## 冷啟動跳轉的三個坑（2026-08-16 實測，全部有回歸守護）
+## 冷啟動跳轉的坑（2026-08 起陸續實測，全部有回歸守護）
 
-這三個都只在 **deep link 冷啟動**才會踩到：它是唯一走 viaMenu 板跳、且唯一在「好讀
+1-5 只在 **deep link 冷啟動**才會踩到：它是唯一走 viaMenu 板跳、且唯一在「好讀
 正在自動翻頁」時插入交易的路徑。既有的 AID 點擊跳文從文章內出發（`more.c:177` 的
-`Select()`），三條全部繞過去了。
+`Select()`），那幾條全部繞過去了。第 6 條（置底文）兩條路徑都會踩。
 
 ### 1. 進板畫面有兩種形狀，classifier 只認得一種
 
@@ -259,6 +259,60 @@ link 時 `_enabled` 是 false。`_functionMode` 唯一的出口 `_evalFunctionMo
 
 修法：`_enterFunctionMode` 開頭 `if (!this._enabled) return;`。好讀關著時畫面本來就是
 原生的，這個函式沒有任何事情要做。
+
+### 6. 置底文（★ 列）的落地沒有序號（2026-09 實測）
+
+`select_by_aid` 的搜尋順序是 `.DIR.bottom` → `.DIR` → `fn_mandex`（`read.c:403-424`），
+**置底文的 `#AID` 搜尋會中**，游標就停在那一列上。但列表在置底列印 `★` 取代序號
+（`bbs.c:843`）⇒ `facts.cursorRowNum` 必為 `null`。舊的落地判準寫死
+`cursorRowNum != null`，把正確落地讀成 miss、開文用的 `⏎` 從來沒送出去
+（症狀：跳過去卡在列表的那一篇上，進不了文章，然後才吐「找不到文章 #…」）。
+
+判準已抽成 `aid_navigation#aidSearchLanded`（`long_push_session` 的 `#AID` 重新定位共用
+同一份，抄第二份就會只修好一邊）。三條規則：
+
+| 判準 | 依據 |
+|---|---|
+| 游標必須落在 entry 區 `[3, rows-2]` | 「找不到／不合法」把訊息印在 `rows-2`、pressanykey bar 印在 `rows-1`（`read.c:466-476` ＋ `vtuikit.c#vshowmsg` 的 `move(b_lines,0)`），游標留在 `rows-1` ⇒ 這條才是真正擋掉失敗畫面的界線 |
+| 游標列有編號 **或** 是 `★` 置底列（`isPinnedListRow`） | 置底列本來就沒有編號 |
+| 末列不得是 `AID_NOT_FOUND_RE` / pressanykey bar | 第二道防線。**不可**往上掃到 `rows-2`：正常落地時那是真的文章列，標題含「找不到」就會誤殺 |
+
+刻意**不** gate `kind === 'clean-list'`：`#` prompt 清掉 footer 且重繪不補回來
+（protocol §6 M1）⇒ classifier 讀成 `transient`。
+
+開文那一步不必特判：`read.c:999-1008` 的 `num = crs_ln - bottom_line > 0` 會把 `direct`
+換成 `.DIR.bottom`，⏎ 照樣開得起來。
+
+**live 實測（2026-09-02，`#Android/M.1561302157.A.775.html`）**——整條 1.3s 走完，
+落地那一幀就是判準要收的形狀：
+
+```
+inFlight=aid-search kind=transient boardName=Android curY=20 cursorRowNum=null
+cursorRow=">   ★  m 2 6/23 albb0920     □ [公告] 板規"
+lastRow=""                                    ← # prompt 清掉 footer，故 transient
+→ 送 "\r\f" → kind=article（[公告] 板規）
+```
+
+## 每一步的等待預算
+
+軟逾時**不是失敗**：它送零副作用的 `\f` 探針逼出一張完整畫面讓 `expect` 重判
+（`command_queue._timedOut`），而且每一次 settle 都會把軟計時器重新上膛
+（`command_queue.onSettle`）⇒ 壓短只讓「判定」變快，不會誤殺還在傳的正確落地。
+常數在 `aid_navigation.js` 頂部。
+
+| 步驟 | kind | soft | probe | hard |
+|---|---|---|---|---|
+| 退回主功能表（←） | `aid-escape` | 700 | 700 | 3000 |
+| 問本篇 AID（Q） | `aid-post-info` | 700 | 700 | 3000 |
+| 換板（`s<board>⏎`） | `aid-board-jump` | **1500** | 700 | **5000** |
+| 關進板畫面（←） | `aid-board-enter` | 700 | 700 | 3000 |
+| AID 搜尋（`#<aid>⏎`） | `aid-search` | 700 | 700 | 3000 |
+| 開文（⏎） | `aid-open` | 700 | 700 | 3000 |
+
+換板放寬一級：server 要開該板的 `.DIR`、可能還要畫整張進板畫面。
+進度橫幅 `PROGRESS_HINT_MS = 8000`，與最壞總時長（約 9s）相稱。
+`long_push_session` **不**共用這組（5000/12000）：它寫進公開看板，送錯遠比失敗嚴重，
+逾時直接失敗是刻意的（`docs/long-push.md`）。
 
 ## 複製連結（分享端）
 
