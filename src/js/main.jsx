@@ -5,6 +5,7 @@ import { readValuesWithDefault } from './pref_storage';
 import { pageArticleNums } from './comment_parse';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
 import { installDeepLink, claimDeepLink } from './deep_link_entry';
+import { installHistoryBackGuard } from './history_back_guard';
 import { parseDeepLink } from './deep_link';
 import { renderInto, unmountFrom } from './react_root';
 import { MantineRoot } from '../components/MantineRoot';
@@ -69,6 +70,11 @@ function startApp() {
     // 外部連結 → 登入後自動跳到那篇文章。必須在 connect() 之後才接：目標可能比
     // 登入早到，controller 會先收著。
     installDeepLink(app);
+    // 瀏覽器「上一頁」（滑鼠側鍵／Alt+←／工具列）→ PTT 的左方向鍵。**必須排在
+    // installDeepLink 之後**：它的 consume() 會 replaceState 清掉網址上的
+    // #Board/AID，先疊 sentinel 的話那個舊網址會留在 history stack 裡，使用者按
+    // 上一頁回到它就又跳一次文。見 history_back_guard.js 檔頭。
+    installHistoryBackGuard(app);
     app.setInputAreaFocus();
     document.getElementById('BBSWindow').style.display = '';
     app.onWindowResize();

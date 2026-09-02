@@ -93,6 +93,10 @@ const optionsOf = (input) => {
 const selectsIn = (panel) =>
   [...panel.querySelectorAll("input[aria-haspopup='listbox']")];
 
+// 位置會隨欄位增減而變 ⇒ 一律用 aria-label 指名要驗哪一個 Select。
+const selectByLabel = (panel, key) =>
+  selectsIn(panel).find((el) => el.getAttribute("aria-label") === i18n(key));
+
 beforeAll(() => setupI18n());
 beforeEach(() => window.localStorage.clear());
 
@@ -180,7 +184,7 @@ describe("設定頁：滑鼠分頁", () => {
 
   test("中鍵是三選一：關閉／貼上／左方向鍵（沒有 Enter）", () => {
     const panel = openMouseTab();
-    expect(optionsOf(selectsIn(panel)[0])).toEqual([
+    expect(optionsOf(selectByLabel(panel, "options_mouseMiddleClick"))).toEqual([
       i18n("options_none"),
       i18n("options_doPaste"),
       i18n("options_leftKey"),
@@ -189,11 +193,60 @@ describe("設定頁：滑鼠分頁", () => {
 
   test("滾輪是二選一：關閉／上下頁", () => {
     const panel = openMouseTab();
-    const selects = selectsIn(panel);
-    expect(optionsOf(selects[selects.length - 1])).toEqual([
+    expect(optionsOf(selectByLabel(panel, "options_mouseWheel"))).toEqual([
       i18n("options_none"),
       i18n("options_pageUpDown"),
     ]);
+  });
+
+  // 觸控板水平手勢與瀏覽器「上一頁」：兩個獨立 pref，都在這一頁上，且跟著總開關
+  // disabled（上面「每一個子項都 disabled」那條會掃到所有 Select）。
+  test("水平手勢是二選一：關閉／左右方向鍵", () => {
+    const panel = openMouseTab();
+    expect(optionsOf(selectByLabel(panel, "options_mouseSwipeHorizontal"))).toEqual([
+      i18n("options_none"),
+      i18n("options_leftRightKey"),
+    ]);
+  });
+
+  test("瀏覽器上一頁是二選一：關閉／左方向鍵", () => {
+    const panel = openMouseTab();
+    expect(optionsOf(selectByLabel(panel, "options_mouseBackButton"))).toEqual([
+      i18n("options_none"),
+      i18n("options_leftKey"),
+    ]);
+  });
+
+  test("兩者預設都開啟", () => {
+    const panel = openMouseTab();
+    expect(selectByLabel(panel, "options_mouseSwipeHorizontal").value).toBe(
+      i18n("options_leftRightKey"),
+    );
+    expect(selectByLabel(panel, "options_mouseBackButton").value).toBe(
+      i18n("options_leftKey"),
+    );
+    expect(DEFAULT_PREFS.mouseSwipeHorizontal).toBe(1);
+    expect(DEFAULT_PREFS.mouseBackButton).toBe(1);
+  });
+
+  test("關掉瀏覽器上一頁攔截 → 寫進 pref", () => {
+    const panel = openMouseTab();
+    const input = selectByLabel(panel, "options_mouseBackButton");
+    fireEvent.click(input);
+    fireEvent.click(
+      [...document
+        .getElementById(input.getAttribute("aria-controls"))
+        .querySelectorAll("[role='option']")].find(
+        (el) => el.textContent === i18n("options_none"),
+      ),
+    );
+    closeModal();
+    expect(readValuesWithDefault().mouseBackButton).toBe(0);
+  });
+
+  test("代價要寫在說明裡：離站方式（關掉分頁／連按兩次）", () => {
+    const panel = openMouseTab();
+    expect(panel.textContent).toContain(i18n("tooltip_mouseBackButton"));
   });
 
   test("滾輪關閉時「平滑捲動」也 disabled（它是滾輪的子行為）", () => {

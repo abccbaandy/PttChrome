@@ -706,6 +706,21 @@
   "tooltip_mouseWheelSmoothScroll": {
     "message": "文章列表的好讀模式下，滾輪直接交給瀏覽器捲動，與文章好讀模式完全一致：慣性、觸控板的細微滑動、捲動設定都跟系統一樣；關閉則一格滾輪翻一整頁。原生（非好讀）的列表畫面翻頁由 PTT 主機決定，一律是整頁翻。"
   },
+  "options_mouseSwipeHorizontal": {
+    "message": "觸控板水平手勢"
+  },
+  "tooltip_mouseSwipeHorizontal": {
+    "message": "觸控板兩指左右滑動：左滑＝退出文章／回上一層（等於左方向鍵），右滑＝開啟文章（等於右方向鍵）。開啟時瀏覽器自己的「滑動返回上一頁」在本站會被停用（Safari 例外，它會先播完返回動畫才退出文章）。"
+  },
+  "options_mouseBackButton": {
+    "message": "瀏覽器「上一頁」"
+  },
+  "tooltip_mouseBackButton": {
+    "message": "把瀏覽器的上一頁（滑鼠側鍵、Alt+←、工具列按鈕）改成 PTT 的左方向鍵＝退出文章／回上一層。代價：開啟後上一頁在本站不會離開網站，要離開請關掉分頁，或在 0.8 秒內連按兩次上一頁。"
+  },
+  "options_leftRightKey": {
+    "message": "送出左／右方向鍵"
+  },
   "options_mouseBrowsing": {
     "message": "滑鼠瀏覽"
   },

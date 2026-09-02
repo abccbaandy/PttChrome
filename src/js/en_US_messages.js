@@ -706,6 +706,21 @@ export const en_US = {
   "tooltip_mouseWheelSmoothScroll": {
     "message": "In the article list's easy-reading mode the wheel is handed straight to the browser, exactly like article easy-reading: momentum, fine trackpad swipes and your system scroll settings all behave natively. Turn it off to jump a whole page per notch. The native (non easy-reading) list always pages, since the server does the paging."
   },
+  "options_mouseSwipeHorizontal": {
+    "message": "Trackpad horizontal swipe"
+  },
+  "tooltip_mouseSwipeHorizontal": {
+    "message": "Two-finger horizontal swipe on a trackpad: swiping back leaves the post / goes up one level (the LEFT key), swiping forward opens the post (the RIGHT key). While on, the browser's own swipe-to-go-back is disabled on this site (except in Safari, which plays its back animation first and then leaves the post)."
+  },
+  "options_mouseBackButton": {
+    "message": "Browser Back button"
+  },
+  "tooltip_mouseBackButton": {
+    "message": "Turns the browser's Back (mouse side button, Alt+Left, toolbar button) into PTT's LEFT key: leave the post / go up one level. The cost: Back no longer leaves the site here — close the tab instead, or press Back twice within 0.8s."
+  },
+  "options_leftRightKey": {
+    "message": "Sends LEFT / RIGHT keys"
+  },
   "options_mouseBrowsing": {
     "message": "Mouse browsing"
   },

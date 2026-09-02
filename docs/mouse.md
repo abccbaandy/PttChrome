@@ -31,6 +31,8 @@
 | `mouseFunctionKeys` | `true` | bool | 畫面上的功能鍵提示變成按鈕（見下方「功能鍵按鈕」） |
 | `mouseMiddleClick` | `0` | 0 關閉 / 1 貼上 / 2 左方向鍵 | |
 | `mouseWheel` | `1` | 0 關閉 / 1 上下頁 | |
+| `mouseSwipeHorizontal` | `1` | 0 關閉 / 1 左右方向鍵 | 觸控板兩指水平滑動 → `←`／`→`（見「手勢與瀏覽器返回」） |
+| `mouseBackButton` | `1` | 0 關閉 / 1 左方向鍵 | 攔截瀏覽器「上一頁」（側鍵／`Alt+←`／工具列）→ `←`（見「手勢與瀏覽器返回」） |
 | `mouseWheelSmoothScroll` | `true` | bool | 開＝列表好讀的 body 視口走 `overflow-y:auto`，**捲動整個交給瀏覽器**（與文章好讀同一套引擎）；關＝視口改 `overflow:hidden`，滾輪退回一次一頁。**只作用於文章列表好讀模式**（其餘畫面沒有這個選擇，見下方 render 分支表） |
 
 ### 舊 → 新 key 對照（**刻意不做遷移**）
@@ -163,6 +165,8 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 | 中鍵 | `useMouseBrowsing && mouseMiddleClick !== 0` |
 | 滾輪 | `useMouseBrowsing && mouseWheel !== 0` |
 | 滾輪平滑捲動 | `useMouseBrowsing && mouseWheel !== 0 && mouseWheelSmoothScroll`（`resolveMouseGates` 的 `wheelSmoothScroll`；只有列表好讀分支會問這一格） |
+| 水平手勢 | `useMouseBrowsing && mouseSwipeHorizontal !== 0`（`swipeX`）—— **刻意不經過 `mouseWheel`**，見下節 |
+| 瀏覽器上一頁 | `useMouseBrowsing && mouseBackButton !== 0`（`backButton`）—— 同上，不經過 `mouseWheel` |
 | 連結／圖片／`[data-pusher]`／`copyOnSelect`／右鍵選單 | **不受任何滑鼠 pref 影響** |
 
 改版前 `middleMouse_down` 與 `mouse_scroll` 完全不看 `useMouseBrowsing`，「關掉滑鼠
@@ -201,6 +205,89 @@ frozen 之後畫面會自己再捲幾像素。
 動畫期間的錨）。
 原生模式沒有可捲距離（`#BBSWindow` 是 `fixed; overflow:hidden`，`.main` 的高度就是
 內容高），所以放行不會造成怪異捲動。
+
+## 手勢與瀏覽器返回（2026-09）
+
+觸控板兩指左滑本來會觸發**瀏覽器的返回**（＝直接離開 PTT），滑鼠側鍵多半也被設成
+上一頁。兩者在本站的語意都應該是「退出文章／回上一層」＝送 `←`。
+
+**兩個來源、兩種攔法、一個出口**：
+
+| 來源 | 攔法 | 為什麼不能反過來 |
+|---|---|---|
+| 觸控板兩指水平滑動 | CSS `overscroll-behavior-x: none`（`html, body`）擋掉導航，wheel 的 `deltaX` 自己辨識（`swipe_gesture.js`） | 走 history sentinel 也攔得到，但**會先播完整段返回動畫**（Safari 是整頁 snapshot 滑進來）⇒ 體感是「畫面晃一下才退出文章」 |
+| 滑鼠側鍵 / `Alt+←` / `⌘[` / 工具列上一頁 | history sentinel（`history_back_guard.js`） | 側鍵（`button` 3/4）在 Chromium／Firefox 多數平台**在事件送到頁面之前**就導航，`preventDefault()` 不可靠（w3c/pointerevents#191 未標準化） |
+
+出口只有一個：`App.sendNavKeyAsUser(key)` → `navKeyAllowed()` 守門 →
+`view.sendKeyAsUser(key)` → **合成 keydown 走既有的 `onKeyDown` 分派鏈**。
+
+**絕對不可以直送 `view._send('[D')`**：`←` 在三種 render 分支下語意不同（原生
+直送／文章好讀要先收狀態機／列表好讀必須走 `ListSession` 的 `{class:'leave'}` 序列化
+交易），那套分派已經存在於鍵盤路徑。裸送 byte 在列表好讀底下＝在交易中途插隊
+（v5 封閉互動禁止）。順帶免費拿到 `→`（開文章）。
+
+合成事件的三條硬規則（守護 `tests/unit/term_view_send_key_as_user.test.js`）：
+1. **`cancelable: true` 絕不可省** —— 整條鏈靠 `defaultPrevented` 判斷「上游接手了」，
+   省掉它 `preventDefault()` 變 no-op ⇒ 上游接手後 `TermKeyboard` 還會再送一次。
+   （已實測：對從未 dispatch 的合成事件呼叫 `preventDefault()`，Chromium／Firefox／
+   jsdom 的 `defaultPrevented` 都會變 true，這是 DOM 標準行為。**WebKit 未實測**。）
+2. 合成事件的 `e.code` 是空字串、`isTrusted:false`、`target:null`。目前只有
+   `term_keyboard.altRemapCharCode` 讀 `e.code`（已寫成 `e.code || ''`）；**日後在鏈上
+   新增讀 `e.code`／`e.target`／`e.isTrusted` 的邏輯就會靜默壞掉**。
+3. 用 `this.onKeyDown(ev)` 直接呼叫，**不 dispatch**（`#t` 上已掛 keydown listener，
+   dispatch 會讓同一個事件跑兩次分派）。
+
+送鍵守門 `nav_key_gate.navKeyAllowed(core)`：`modalShown` 關、未連線關、`pageState`
+只允許 1/2/3/4（0/5/6 不送，與 `resolveMouseRegion` 的動作集合一致）、
+`buf.isCursorOnInputField()` 為真時不送。**刻意不含 `serializedOpHint`**：那道在
+`view.onKeyDown` 開頭就有且會自己 `flashListHint`，重複擋只會讓提示閃兩次。
+
+### 手勢辨識（`swipe_gesture.js`，純函式）
+
+`SwipeXDetector.feed(wheelEvent)` → `null` / `'back'` / `'forward'`，不變量：
+
+| # | 不變量 | 沒有它會怎樣 |
+|---|---|---|
+| 1 | 水平主導才計數（`|dx| > 1.5 × |dy|`），否則歸零 | 斜著滑會既翻頁又退出 |
+| 2 | 累積 ≥ 100px 才觸發一次，觸發後 locked | 輕輕碰一下就跳出文章 |
+| 3 | locked 只有靜止 > 200ms 才解除 | **macOS 慣性（momentum）會在手指離開後續送幾十個事件 ⇒ 連送好幾個 `←`，一路退到主功能表** |
+| 4 | 方向翻轉時歸零重算 | 來回滑會互相抵消到永遠不觸發 |
+| 5 | `deltaMode` 1/2 換算成 px（行 16px、頁 800px）才判閾值 | 滑鼠水平滾輪永遠達不到閾值 |
+| 6 | 「還沒收過事件」的哨兵是 `null` 不是 `0` | `timeStamp` 真的可能是 0（頁面剛開），每個事件都被當成新手勢 |
+
+**`deltaX` 的符號**：依 Chromium 的 overscroll 導航（東向 overscroll ＝上一頁，東向
+＝內容被往右拉＝`deltaX` 為負）⇒ 累積 `deltaX < 0` 是 `'back'`。要改只需翻
+`swipe_gesture.js` 的 `BACK_SIGN`。真機量法：
+`addEventListener('wheel', e => console.log(e.deltaX, e.deltaY, e.deltaMode), {capture:true})`。
+
+### 順手修掉的既有 bug
+
+`mouse_scroll` 的方向判斷是 `up = e.deltaY < 0 || e.wheelDelta > 0`，而純水平滑動
+`deltaY === 0` ⇒ `up === false` ⇒ 原生 24 列畫面 `setBBSCmd('doPageDown')`。也就是
+**左滑一次會同時「瀏覽器回上一頁」＋「偷送一個 PageDown 給 PTT」**（斜滑同理誤翻頁）。
+現在水平主導的事件在進入翻頁分支前就 return（`isHorizontalWheel`），與手勢 pref 無關。
+回歸鎖 `tests/unit/wheel_horizontal.test.js`。
+
+### history sentinel 的三個坑（`history_back_guard.js`）
+
+1. **順序**：必須排在 `installDeepLink()` 的 `consume()`（`replaceState` 清 hash）之後，
+   否則帶著 `#Board/AID` 的網址留在 stack 裡，按 back 回到它 → `hashchange` → 又跳一次文。
+   安裝點在 `main.jsx` 的 `bootstrap()`，緊接在 `installDeepLink(app)` 之後。
+2. **user activation**：Chrome 的 History Manipulation Intervention 會把「該 document
+   從未取得 user activation 時 `pushState` 出來的 entry」在 back 時**跳過且不發
+   `popstate`** ⇒ 直接離站。所以 sentinel 等第一次 `pointerdown`／`keydown` 才疊
+   （listener 常駐，pref 後來才開也補得上）。
+3. **離站逃生門**：sentinel 讓 back 永遠退不出站 ⇒ 800ms 內第二次 `popstate` 放行
+   （不補 sentinel、直接 `history.go(-1)`）。被守門擋下（沒送出任何鍵）時
+   `flashListHint('再按一次「上一頁」可離開本站')`，不可無聲吞掉。
+
+### Safari 的已知取捨
+
+Safari **不理 `overscroll-behavior`**（CSSWG issue #7878）⇒ 它的觸控板手勢會先播完
+返回動畫，再由 sentinel 兜底送 `←`：功能正確、體感差一截。**刻意不為它把 window 的
+wheel listener 改成 `{passive:false}`** —— 那會讓 Chrome 的 wheel 變成 main-thread
+blocking，文章好讀捲動掉幀（正是 2026-08 把捲動交還瀏覽器的原因）。真要做必須是
+**獨立的 listener 且只在 Safari 掛**。
 
 ## 游標列標示：來源層 × 樣式層（2026-08-26）
 
@@ -530,5 +617,11 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 | `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關／推文列可點區（防誤觸三態）／**列表左側退出帶** |
 | `tests/e2e/offline/function_keys.offline.spec.js` | 三條 render 分支各自都接上了、點了真的送鍵、切 pref 立即生效 |
 | `tests/e2e/offline/selection.offline.spec.js` | 雙擊選詞／三擊選行（**必須跑 offline-firefox**） |
+| `tests/unit/swipe_gesture.test.js` | 手勢辨識的六條不變量（對角線／閾值／慣性只一次／方向翻轉／`deltaMode`／`timeStamp` 0） |
+| `tests/unit/nav_key_gate.test.js` | 送鍵守門：pageState 範圍／輸入框／modal／未連線 |
+| `tests/unit/history_back_guard.test.js` | sentinel：先 activation 才疊、popstate 補回＋送鍵、pref 關閉不疊、連按兩次離站 |
+| `tests/unit/term_view_send_key_as_user.test.js` | 合成事件三條硬規則（`cancelable`／上游接手不重送／列表好讀走 `ListSession`） |
+| `tests/unit/wheel_horizontal.test.js` | **水平 wheel 不得翻頁**的回歸鎖 ＋ 手勢入口的 pref 獨立性 |
+| `tests/e2e/offline/swipe_back.offline.spec.js` | 真 wheel 事件只送一次 `←`、真 History API 上 `goBack()` 被吃掉且沒離站 |
 | `tests/e2e/offline/easy-reading-list.offline.spec.js` | 列表好讀的底色左緣＝標題欄、切防誤觸後回到整列 |
 | `tests/e2e/offline/wheel_stuck_button.offline.spec.js` | 按鍵旗標卡死的三條路徑 |

@@ -172,9 +172,12 @@
 
 /* `.main` 是捲動容器，同時也是 #cursor 的定位容器（游標住在裡面，見上）。
    縮放模式下 transform: scale() 本來就會讓它成為 containing block，但未縮放時
-   transform 是 none —— 少了這行，游標會退回去以 #BBSWindow 為基準而全盤錯位。 */
+   transform 是 none —— 少了這行，游標會退回去以 #BBSWindow 為基準而全盤錯位。
+   overscroll-behavior: 文章好讀模式下這裡是真正的捲動視口，捲到底時不要把手勢
+   往外傳（比照 .listBodyView，免得觸發瀏覽器的返回手勢與 rubber-band）。 */
 .main {
   position: relative;
+  overscroll-behavior: contain;
 }
 
 .linkurl {
@@ -401,6 +404,15 @@ img {
 
 .main img {
   padding: 0px;
+}
+
+/* 觸控板兩指水平滑動不要變成瀏覽器的「上一頁／下一頁」——那個手勢在本站的語意
+   是「退出文章／列表」（辨識在 js/swipe_gesture.js，送鍵走 view.sendKeyAsUser）。
+   擋掉導航之後 wheel 事件照常派發，所以仍收得到 deltaX 做辨識。
+   Safari 不理 overscroll-behavior（CSSWG issue #7878），它的手勢會先播完返回動畫
+   才由 history sentinel 兜底 —— 功能正確、體感差一截，已知取捨，見 docs/mouse.md。 */
+html, body {
+  overscroll-behavior-x: none;
 }
 
 body {

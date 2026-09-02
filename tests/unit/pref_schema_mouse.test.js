@@ -34,6 +34,11 @@ describe("DEFAULT_PREFS", () => {
     // 逐行捲動是**新 key**，所以既有使用者（localStorage 已存 mouseWheel:1）
     // 也吃得到這個預設 —— 淺層合併只補得到缺少的 key。
     expect(DEFAULT_PREFS.mouseWheelSmoothScroll).toBe(true);
+    // 觸控板水平手勢／瀏覽器上一頁攔截：0=關閉 1=開啟，兩者都預設開。
+    // 側鍵那顆預設開是刻意的：那顆鍵本來就被設成「上一頁」，不攔的話在 BBS 裡
+    // 隨手一按就離站（代價寫在 tooltip：要離站得連按兩次或關掉它）。
+    expect(DEFAULT_PREFS.mouseSwipeHorizontal).toBe(1);
+    expect(DEFAULT_PREFS.mouseBackButton).toBe(1);
   });
 
   test("底色三兄弟原樣保留（key 刻意不改名，避免兩邊寫遷移）", () => {
@@ -70,6 +75,16 @@ describe("既有使用者的 localStorage 殘值", () => {
     expect(v.mouseMiddleClick).toBe(0);
     expect(v.mouseWheel).toBe(1);
     expect(v.useMouseBrowsing).toBe(true);
+    expect(v.mouseSwipeHorizontal).toBe(1);
+    expect(v.mouseBackButton).toBe(1);
+  });
+
+  test("使用者關過瀏覽器上一頁攔截的話照樣尊重", () => {
+    window.localStorage.setItem(
+      PREF_KEY,
+      JSON.stringify({ values: { mouseBackButton: 0 } }),
+    );
+    expect(readValuesWithDefault().mouseBackButton).toBe(0);
   });
 
   test("使用者關過防誤觸的話照樣尊重", () => {

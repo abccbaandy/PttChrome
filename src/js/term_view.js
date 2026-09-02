@@ -125,6 +125,10 @@ export function TermView() {
   this.mouseMiddleClick = 0;
   this.mouseWheel = 1;
   this.mouseWheelSmoothScroll = true;
+  // mouseSwipeHorizontal：觸控板兩指水平滑動 → 左右方向鍵（0 關 1 開）。
+  // mouseBackButton：攔截瀏覽器「上一頁」→ 左方向鍵（0 關 1 開）。
+  this.mouseSwipeHorizontal = 1;
+  this.mouseBackButton = 1;
   // 防誤觸模式（pref mouseMisclickGuard，預設開）：可點區＝底色區的起始欄，
   // 決策在 mouse_regions.clickableColStart。
   this.mouseMisclickGuard = true;
@@ -971,6 +975,27 @@ TermView.prototype = {
     if (isPasting)
       text = normalizePasteText(text, this.lineWrap);
     this._convSend(text);
+  },
+
+  // 觸控板水平手勢／瀏覽器返回鍵的**唯一出口**：合成一個「使用者按了這個鍵」再走
+  // 既有的 onKeyDown 分派鏈。絕對不可以自己 view._send('[D') —— 左方向鍵在三
+  // 種 render 分支下語意不同（原生直送／文章好讀要先收狀態機／列表好讀必須走
+  // ListSession 的 {class:'leave'} 序列化交易），那套分派已經存在於鍵盤路徑，
+  // 裸送 byte 在列表好讀底下就是「在序列化交易中途插隊」（v5 封閉互動禁止）。
+  //
+  // 三條硬規則（守護 tests/unit/term_view_send_key_as_user.test.js）：
+  //  1. **cancelable: true 絕不可省**。整條鏈靠 e.defaultPrevented 判斷「上游有沒
+  //     有接手」；cancelable 為 false 時 preventDefault() 是 no-op ⇒ easyReading／
+  //     listSession 明明接手了，_keyboard 還會再送一次 [D。（已實測：對一個
+  //     從未 dispatch 的合成事件呼叫 preventDefault，Chromium／Firefox／jsdom 三
+  //     者的 defaultPrevented 都會變 true，這是 DOM 標準行為。）
+  //  2. 合成事件的 e.code 是空字串、isTrusted 為 false、target 為 null。目前鏈上
+  //     只有 term_keyboard.altRemapCharCode 讀 e.code，它已寫成 `e.code || ''`。
+  //     **日後在鏈上新增讀 e.code／e.target／e.isTrusted 的邏輯就會靜默壞掉。**
+  //  3. 用 this.onKeyDown(ev) **直接呼叫**，不要 dispatchEvent：#t 上已掛了 keydown
+  //     listener，dispatch 會讓同一個事件跑兩次分派。
+  sendKeyAsUser: function(keyName) {
+    this.onKeyDown(new KeyboardEvent('keydown', { key: keyName, cancelable: true }));
   },
 
   onKeyDown: function(e) {
