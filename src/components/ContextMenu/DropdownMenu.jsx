@@ -38,6 +38,7 @@ export const DropdownMenu = ({
   authorBlacklistId,
   authorBlacklistExists,
   titleBlacklistText,
+  markReadTarget,
   articleLinkEnabled,
   imageUploadEnabled,
   inputHelperEnabled,
@@ -97,9 +98,18 @@ export const DropdownMenu = ({
             {i18n("cmenu_addTitleBlacklist")}
           </Menu.Item>
         )}
-        {normalEnabled && (authorBlacklistId || titleBlacklistText) && (
-          <Menu.Divider />
+        {/* 「前已讀後未讀」：只在列表好讀模式、右鍵落在有序號的文章列時出現
+            （判定在 list_session.markReadTargetAtRow）。不加確認對話框 ——
+            原生 PTT 的 prompt 由我們代打，後果只能靠這行字說清楚。 */}
+        {normalEnabled && markReadTarget && (
+          <Menu.Item onClick={(e) => onMenuSelect("markReadUnread", e)}>
+            {i18n("cmenu_markReadUnread")}
+          </Menu.Item>
         )}
+        {normalEnabled &&
+          (authorBlacklistId || titleBlacklistText || markReadTarget) && (
+            <Menu.Divider />
+          )}
         {selEnabled && (
           <Fragment>
             <Menu.Item

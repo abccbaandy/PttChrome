@@ -83,6 +83,9 @@ export const en_US = {
   "cmenu_addTitleBlacklist": {
     "message": "Blacklist title keyword ..."
   },
+  "cmenu_markReadUnread": {
+    "message": "Mark this post and older read, newer unread"
+  },
   "titleBlacklistModal_title": {
     "message": "Add to title blacklist"
   },

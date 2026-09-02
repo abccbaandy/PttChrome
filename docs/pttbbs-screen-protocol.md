@@ -17,6 +17,8 @@ grep -rlF "$(printf '登入太頻繁' | iconv -f UTF-8 -t BIG5)" --include=*.c 3
 
 讀出來的片段要看得懂則反向轉：`sed -n '200,240p' mbbsd/talk.c | iconv -f BIG5 -t UTF-8`。
 （ASCII 的識別字、函式名、`ANSI_COLOR` 這類巨集不受影響，一般 grep 即可。）
+含 NUL 的檔案會被 grep 判成 binary（只印 `Binary file … matches`、沒有行號）⇒
+**搜原始碼一律順手加 `-a`**，免得把「有找到但沒印行」誤讀成「查無」。
 
 ## 0. 版本對齊（先做，否則比對的是別的版本）
 
@@ -536,6 +538,35 @@ server 送的是編碼後的 ANSI，client 看不到 flag，只看得到結果�
 - 已經是 `q8..q15` 的字沒有更亮的一階可去（原始碼是再疊 `FTATTR_BLINK`），本專案改用
   整列 `text-shadow` 微發光，不採用閃爍。
 - 游標**符號**（`>` / `●`）是 PTT 帳號端設定，client 不偽造 server 沒送的字元。
+
+## 11.5 `v` 已讀設定交易（`bbs.c#b_mark_read_unread`，2026-09-02 CONFIRMED）
+
+看板列表右鍵選單「前已讀後未讀」（`src/js/list_session.js#markReadUnreadBefore`）的依據。
+消費端守護：`tests/unit/list_mark_read.test.js`、`tests/e2e/offline/list_mark_read.offline.spec.js`。
+
+進入點 `read_comms[]`：`{1, b_mark_read_unread} // 'v'`（`bbs.c:4621`）。`onekey` flag **1**
+＝ needitem ⇒ 需要有效 `fhdr`，也就是**游標所在那一篇**；函式本身不移動游標。
+
+| 步 | server 畫面 | client 送什麼 |
+|---|---|---|
+| 0 | 列表畫面。**游標必須先在目標列上** | `<num>` + `⏎`（序號跳轉，本專案的 `native-sync-jump`；jump 腿一律附 `\f`，見 §6） |
+| 1 | `move(b_lines-4,0); clrtobot();` → `"\n設定已讀未讀記錄 (注意: 文章設為已讀後不會再出現修改記號 '~')\n"` → `getdata(b_lines-1, 0, "設定所有文章 (U)未讀 (V)已讀 (W)前已讀後未讀 (Q)取消？[Q] ", ans, 3, LCECHO)` | `v` |
+| 2 | `getdata` → `vgets`（**整行輸入**，LCECHO＝`VGET_LOWERCASE` 自動轉小寫，`stuff.c:309/346`） | `w` + `⏎`（**單送 `w` 不會動**） |
+| 3 | 回 `FULLUPDATE` ⇒ 整個列表重畫（已讀標記欄變了）；`w` 分支時間戳無效時先 `vmsg("請改用其它文章設定當參考點")`＝等按任意鍵 | 無 |
+
+- **prompt 畫在 `b_lines-1`**，`b_lines = t_lines - 1`（`term.c:66`）⇒ 24 列終端時 prompt 在
+  **row 22，不是底列 row 23**（`clrtobot` 從 row 19 起清空，說明文字落在 row 20）。
+  判「prompt 出現了沒」必須掃整個畫面，只看底列會永遠判否。
+- ⚠ **`v` 沒成功進 prompt 時，後續按鍵會落回列表按鍵**：`w` ＝ `b_call_in`（呼叫器，
+  對該列作者送出，**有副作用**，`bbs.c:4622` / 實作 `bbs.c:1748`）、`⏎` ＝ 開文。所以
+  step1→step2 之間**必須**有「prompt 真的出現」的內容判定，不可一次送 `vw\r`。
+- `w` 分支語意（`bbs.c:4325-4333` → `brc.c:529` `brc_toggle_read` → `brc_trunc`）：
+  拿該篇檔名時間戳 `curr` 覆蓋整份 brc 記錄成單一筆 `{create: curr, modified: curr}`；
+  之後 `brc_unread_time` 判 `ftime > create` 為未讀、`ftime == create` 為已讀
+  ⇒ **該篇（含）以前已讀、以後未讀**，且**不可回復**（原本的逐篇記錄整份被截斷）。
+- guest（`cuser.userlevel == 0`）brc 不落地（`brc.c:542`）⇒ 流程照跑但看不到效果，
+  拿 guest 驗證會誤判成 bug。
+- 置底文沒有序號，step 0 無從跳起 ⇒ client 端直接不提供（`markReadTargetAtRow` 回 null）。
 
 ## 12. 版本與未知
 

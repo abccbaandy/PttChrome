@@ -63,6 +63,10 @@ const quickAddBlacklist = (pttchrome, prefKey, entry) => {
 const menuHandlerByEventKey = {
   addAuthorBlacklist: (pttchrome, { blacklistAuthorTarget }) =>
     quickAddBlacklist(pttchrome, "blacklist", blacklistAuthorTarget),
+  // 列表好讀模式：把游標下那一列設成「以前已讀、以後未讀」的分界。整條序列
+  //（真游標跳號 → v → w+Enter）由 listSession 序列化，這裡只傳目標序號。
+  markReadUnread: (pttchrome, { markReadTarget }) =>
+    pttchrome.listSession.markReadUnreadBefore(markReadTarget.num),
   copy: (pttchrome, { selectedText }) => pttchrome.doCopy(selectedText),
   copyAnsi: (pttchrome) => pttchrome.doCopyAnsi(),
   paste: (pttchrome) => pttchrome.doPaste(),
@@ -110,6 +114,9 @@ const initialState = {
   blacklistAuthorTarget: null,
   blacklistAuthorExists: false,
   blacklistTitleTarget: null,
+  // 列表好讀模式下，右鍵那一列可不可以做「前已讀後未讀」（{ num } / null）。
+  // 判定全在 listSession.markReadTargetAtRow（狀態、置底文、header 列）。
+  markReadTarget: null,
   // 右鍵當下是不是在文章畫面（決定「複製本篇連結」出不出現）。
   articleLinkEnabled: false,
   // Quick search items shown for the current selection (already filtered by the
@@ -275,6 +282,12 @@ export const ContextMenu = ({ pttchrome }) => {
       // clientToPos (fixed screen cells, x is mode-independent). Comment rows:
       // only the id cells [3, 3+id.length). List rows: author field vs title
       // region per listColRegion.
+      //
+      // 格子座標算一次共用（黑名單看 col、下面的「前已讀後未讀」看 row）。
+      // clientToPos 已處理列表好讀 body 的捲動偏移，row 就是 render row。
+      const pos = normalEnabled
+        ? pttchrome.clientToPos(event.clientX, event.clientY)
+        : null;
       let blacklistAuthorTarget = null;
       let blacklistAuthorExists = false;
       let blacklistTitleTarget = null;
@@ -282,7 +295,7 @@ export const ContextMenu = ({ pttchrome }) => {
         target.closest &&
         target.closest("[data-pusher], [data-list-author], [data-list-title]");
       if (rowElement && normalEnabled) {
-        const { col } = pttchrome.clientToPos(event.clientX, event.clientY);
+        const col = pos.col;
         const pusher = rowElement.getAttribute("data-pusher");
         const listAuthor = rowElement.getAttribute("data-list-author");
         const listTitle = rowElement.getAttribute("data-list-title");
@@ -308,6 +321,14 @@ export const ContextMenu = ({ pttchrome }) => {
         }
       }
 
+      // 「前已讀後未讀」（列表好讀）：只要列號，可行與否由 listSession 判定
+      // ——它一併擋掉非 active／非 buffer、header 列、空白列與置底文。
+      const markReadTarget =
+        (normalEnabled &&
+          pttchrome.listSession &&
+          pttchrome.listSession.markReadTargetAtRow(pos.row)) ||
+        null;
+
       update({
         open: true,
         pageX: event.pageX,
@@ -324,6 +345,7 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistAuthorTarget,
         blacklistAuthorExists,
         blacklistTitleTarget,
+        markReadTarget,
         quickSearchItems,
         quickSearchQuery,
         // 「複製本篇連結」只在文章畫面有意義（要按 Q 問文章資訊框）。pageState 3
@@ -369,6 +391,7 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistAuthorTarget: null,
         blacklistAuthorExists: false,
         blacklistTitleTarget: null,
+        markReadTarget: null,
         quickSearchItems: [],
         quickSearchQuery: "",
       });
@@ -669,6 +692,7 @@ export const ContextMenu = ({ pttchrome }) => {
     blacklistAuthorTarget,
     blacklistAuthorExists,
     blacklistTitleTarget,
+    markReadTarget,
     articleLinkEnabled,
     contextArticle,
     previews,
@@ -704,6 +728,7 @@ export const ContextMenu = ({ pttchrome }) => {
         authorBlacklistId={blacklistAuthorTarget}
         authorBlacklistExists={blacklistAuthorExists}
         titleBlacklistText={blacklistTitleTarget}
+        markReadTarget={markReadTarget}
         articleLinkEnabled={articleLinkEnabled}
         imageUploadEnabled={imageUploadEnabled}
         inputHelperEnabled={inputHelperEnabled}

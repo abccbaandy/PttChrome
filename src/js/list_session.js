@@ -706,6 +706,13 @@ const PREFETCH_HARD_MS = 1500;
 // it short ends the absorption early = the state churn they were introduced to
 // stop (see _beginPassthroughBytes).
 const NATIVE_PASSTHROUGH_MS = 3000;
+// 看板列表按 `v` ＝ b_mark_read_unread（mbbsd/bbs.c:4309）：畫面下方跳出 getdata
+// prompt「設定所有文章 (U)未讀 (V)已讀 (W)前已讀後未讀 (Q)取消？[Q] 」。
+// b_lines = t_lines-1 ⇒ 24 列終端時 prompt 畫在 **row 22**（不是最後一列），所以
+// 判定要掃整個畫面、不能只看底列。W 分支拿該篇檔名時間戳當參考點，取不到就吐
+// vmsg 那句。詳見 docs/pttbbs-screen-protocol.md §11.5。
+const MARK_READ_PROMPT = '前已讀後未讀';
+const MARK_READ_REJECT = '請改用其它文章設定當參考點';
 // (2026-07-10) [ ] = / v / `/` 模擬交易與 T3 airlock 皆退役：非白名單鍵一律
 // 走 _beginNativePassthrough（有序號選取先 sync-jump，再切原生鏡像＋代送）。
 
@@ -1141,8 +1148,18 @@ ListSession.prototype = {
   // 是不變量 12 的承重部分，三個入口一律共用這一份，勿再各自複製一遍。
   _beginPassthroughBytes: function(bytes, opts) {
     const kind = (opts && opts.kind) || 'native-key';
+    // hint === null ＝刻意不在切換當下閃提示（多步序列由最後一步自己說「做了
+    // 什麼」）。欄位缺席才吃預設值。
     const hint =
-      (opts && opts.hint) || '已切至原生操作（開啟文章或離開看板後恢復好讀）';
+      opts && 'hint' in opts
+        ? opts.hint
+        : '已切至原生操作（開啟文章或離開看板後恢復好讀）';
+    // bytes 是字串 ＝ 一步；是陣列 ＝ 多步序列（每步 {keys, kind, expect,
+    // onDone, onFail}）。**第 n+1 步只在第 n 步的 onDone 裡 enqueue**，所以前一步
+    // 的 expect 沒滿足時後面的鍵絕不會出去 —— 那不是保險，是必要條件：'v' 沒進
+    // prompt 時 'w' 會落回列表按鍵 b_call_in（對該列作者送呼叫器，有副作用），
+    // '\r' 則會開文（docs/pttbbs-screen-protocol.md §11.5）。
+    const steps = Array.isArray(bytes) ? bytes : [{ keys: bytes, kind: kind }];
     const r = transitionListSession(this.state, { type: 'key', keyClass: 'passthrough' });
     this.state = r.next; // functionMode: absorbs settles / swallows keys meanwhile
     const self = this;
@@ -1156,15 +1173,8 @@ ListSession.prototype = {
       // absorption rule (functionMode + clean-list + inFlight → stay) until
       // the key's OWN response settles; a dead key just times out and we stay
       // in the native mirror (same picture, no harm).
-      self._queue.enqueue({
-        keys: bytes,
-        kind: kind,
-        expect: function() {
-          return true; // any settle is the response
-        },
-        timeoutMs: NATIVE_PASSTHROUGH_MS
-      });
-      if (self._view.flashListHint) self._view.flashListHint(hint, 4000);
+      self._enqueuePassthroughStep(steps, 0);
+      if (hint && self._view.flashListHint) self._view.flashListHint(hint, 4000);
     };
     if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
       this._freezeForTransaction();
@@ -1174,6 +1184,28 @@ ListSession.prototype = {
       return;
     }
     finish();
+  },
+
+  // 送出 passthrough 序列的第 i 步，並在它落地後才排下一步（單步序列＝原本的
+  // 行為，一字未改：expect 恆真、無 onDone/onFail、NATIVE_PASSTHROUGH_MS）。
+  _enqueuePassthroughStep: function(steps, i) {
+    const self = this;
+    const step = steps[i];
+    this._queue.enqueue({
+      keys: step.keys,
+      kind: step.kind || 'native-key',
+      expect:
+        step.expect ||
+        function() {
+          return true; // any settle is the response
+        },
+      timeoutMs: step.timeoutMs || NATIVE_PASSTHROUGH_MS,
+      onDone: function(result) {
+        if (step.onDone) step.onDone(result);
+        if (i + 1 < steps.length) self._enqueuePassthroughStep(steps, i + 1);
+      },
+      onFail: step.onFail
+    });
   },
 
   // 滑鼠點畫面上的功能鍵按鈕（`[←]回上層` / `[→]閱讀` / `[c]新文章` …），由
@@ -1731,6 +1763,109 @@ ListSession.prototype = {
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
       else this._runAction(a, null);
     }
+  },
+
+  // ---- 右鍵選單「前已讀後未讀」(pttbbs b_mark_read_unread) --------------------
+
+  // 純查詢、零副作用：右鍵選單問「這一列做得了嗎、對象是第幾篇」。回 null ＝
+  // 那個選單項不出現（條件全收在這裡，React 端不重複判斷）。
+  markReadTargetAtRow: function(renderRow) {
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return null;
+    const idx = renderRow - LIST_HEADER_ROWS;
+    if (idx < 0) return null; // header
+    const view = this.getListView();
+    // idx >= seq.length ＝ 短板補到 bodyRows 的空白列（或 footer）。
+    if (!view || idx >= view.seq.length) return null;
+    const abs = view.seq[idx];
+    if (abs == null) return null;
+    // 置底文不支援：沒有序號 ⇒ sync leg 的 `<num>\r` 無從送起，而且它的時間戳
+    // 當「界線」語意也不對（置底恆排在最前面）。
+    const num = (this._termBuf.listLineNums || [])[abs];
+    if (num == null) return null;
+    return { num: num };
+  },
+
+  // 需求的三步：真游標移到那一列 → `v` → `w` + Enter。回 true ＝我接手了。
+  //
+  // 為什麼**不能**一次送 'vw\r'：`v` 沒成功進 prompt 時（列表為空、畫面偏移），
+  // `w` 會落回列表按鍵 b_call_in（對該列作者送呼叫器）、`\r` 會開文。兩步一定要
+  // 序列化，而且第一步的 expect 必須確認 prompt 真的出現才准送第二步。
+  //
+  // 完成後**停在原生鏡像**（_enterFunctionMode 的黏性 _nativeHold）：已讀標記改
+  // 變 ⇒ 累積 buffer 的內容全數過時，返回時本來就該走 rebuild。
+  markReadUnreadBefore: function(num) {
+    if (this._renderMode === 'native') return false; // 沒接管，交給一般路徑
+    if (this.state === 'opening') {
+      if (this._view.flashListHint)
+        this._view.flashListHint('好讀列表：開啟文章中，請稍候…');
+      return true;
+    }
+    if (this.state === 'functionMode' && this._renderMode === 'frozen') {
+      if (this._view.flashListHint)
+        this._view.flashListHint('好讀列表：指令處理中，請稍候…');
+      return true;
+    }
+    if (this.state !== 'active') return false;
+    if (num == null) return false;
+
+    // 先把選取移到目標並**同步重畫**：_beginPassthroughBytes 會立刻凍住畫面，
+    // 少了這一步凍住的是點擊前的游標位置（看起來像點錯列）。同 onMouseClick。
+    this._selectedNum = num;
+    this._selectedPinnedKey = null;
+    this._forceRedraw();
+
+    const self = this;
+    // 第二步的判定畫面：expect 收到的 facts 就是結論這道命令的那一幀，留著給
+    // onDone 決定提示措辭（成功 vs PTT 拒絕）。
+    let applyFacts = null;
+    this._beginPassthroughBytes(
+      [
+        {
+          keys: 'v',
+          kind: 'mark-read-prompt',
+          // 掃整個畫面：prompt 在 row 22，只看底列會永遠判否。
+          expect: function(snap, facts) {
+            for (let i = 0; i < facts.rowTexts.length; ++i)
+              if (facts.rowTexts[i].indexOf(MARK_READ_PROMPT) !== -1) return true;
+            return false;
+          },
+          onFail: function() {
+            self._degradeToNative('設定已讀未讀逾時，已切至原生模式');
+          }
+        },
+        {
+          keys: 'w\r', // getdata 是整行輸入（vgets）⇒ 必須補 Enter
+          kind: 'mark-read-apply',
+          // 任何 settle 都是回應：正常是 FULLUPDATE 的列表，錯誤是 vmsg 的
+          // 等按鍵畫面 —— 兩者都停在原生鏡像讓使用者自己看（v5：失敗顯性化）。
+          expect: function(snap, facts) {
+            applyFacts = facts;
+            return true;
+          },
+          onDone: function() {
+            if (!self._view.flashListHint) return;
+            const rejected =
+              !!applyFacts &&
+              applyFacts.rowTexts.some(function(t) {
+                return t.indexOf(MARK_READ_REJECT) !== -1;
+              });
+            self._view.flashListHint(
+              rejected
+                ? 'PTT 不接受這篇當參考點，已讀記錄沒有變動（請改用其它文章）。' +
+                    '已切至原生（開啟文章或離開看板後恢復好讀）'
+                : '已將第 ' +
+                    num +
+                    ' 篇（含）以前設為已讀、以後設為未讀。' +
+                    '已切至原生（開啟文章或離開看板後恢復好讀）',
+              4000
+            );
+          }
+        }
+      ],
+      // 切原生當下不閃提示：結論由上面那句在落地後補（兩句連著閃會互相蓋掉）。
+      { kind: 'mark-read', hint: null }
+    );
+    return true;
   },
 
   // ---- actions ---------------------------------------------------------------
