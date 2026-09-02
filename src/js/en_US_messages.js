@@ -523,6 +523,12 @@ export const en_US = {
   "options_enableEasyReadingList": {
     "message": "Enable easy reading board list. (experimental, truly hides blacklisted rows)"
   },
+  "options_enableBoardListSmoothScroll": {
+    "message": "Enable smooth scrolling for the board list. (experimental, favourites / class boards)"
+  },
+  "tooltip_enableBoardListSmoothScroll": {
+    "message": "Accumulates the favourites and class-board listings into one sequence and hands scrolling straight to the browser (the same engine as list easy reading). The all-boards / hot-boards listings and the `c` new-post mode keep the native page-at-a-time behaviour."
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."
   },
@@ -701,10 +707,10 @@ export const en_US = {
     "message": "Article easy-reading keeps native browser scrolling and ignores this setting."
   },
   "options_mouseWheelSmoothScroll": {
-    "message": "Smooth scrolling in list easy-reading"
+    "message": "Smooth scrolling in list views"
   },
   "tooltip_mouseWheelSmoothScroll": {
-    "message": "In the article list's easy-reading mode the wheel is handed straight to the browser, exactly like article easy-reading: momentum, fine trackpad swipes and your system scroll settings all behave natively. Turn it off to jump a whole page per notch. The native (non easy-reading) list always pages, since the server does the paging."
+    "message": "In list easy-reading and board-list smooth scrolling the wheel is handed straight to the browser, exactly like article easy-reading: momentum, fine trackpad swipes and your system scroll settings all behave natively. Turn it off to jump a whole page per notch. The native (non easy-reading) list always pages, since the server does the paging."
   },
   "options_mouseSwipeHorizontal": {
     "message": "Trackpad horizontal swipe"

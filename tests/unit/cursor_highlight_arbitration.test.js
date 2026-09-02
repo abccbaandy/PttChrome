@@ -163,15 +163,14 @@ describe("onListMouseMove 與仲裁的銜接", () => {
   function listView() {
     const { v } = makeView({ listRenderMode: "buffer" });
     const calls = [];
-    v.bbscore = {
-      listSession: {
-        getListView: () => ({
-          seq: Array.from({ length: 20 }, (_, i) => 100 + i),
-          cursorAbs: 100,
-          cursorPos: 0,
-        }),
-      },
+    const listSession = {
+      getListView: () => ({
+        seq: Array.from({ length: 20 }, (_, i) => 100 + i),
+        cursorAbs: 100,
+        cursorPos: 0,
+      }),
     };
+    v.bbscore = { listSession, activeListSession: () => listSession };
     v.setExitAffordance = () => {};
     v.applyCursorHighlight = (src) => calls.push(src);
     return { v, calls };

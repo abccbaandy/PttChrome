@@ -50,6 +50,11 @@ import {
   windowVisibleSequence,
   LIST_HEADER_ROWS,
 } from './list_window';
+import {
+  defineOwnedRenderMode,
+  OWNER_ARTICLE_LIST,
+  isBoardListCommandKind
+} from './list_render_owner';
 
 // 程式化平滑捲動的最長等待：超過就放棄「等它到站」，把 scroll 事件當成使用者
 // 自己捲的（動畫會被使用者的滾輪／拖曳取消，那時永遠到不了目標）。
@@ -661,21 +666,6 @@ export function moveListSelection(visibleIndices, currentAbs, delta) {
 // ListSession — the single owner (class half; pure layer above)
 // ---------------------------------------------------------------------------
 
-// Same shape as easy_reading.js's private bindProperty: expose obj[prop] as a
-// live view of target[name] so term_view/redraw can read buf.listRenderMode
-// without importing this module's instance.
-function bindProperty(target, name, obj, prop) {
-  if (!prop) prop = name;
-  Object.defineProperty(obj, prop, {
-    get: function() {
-      return target[name];
-    },
-    set: function(val) {
-      target[name] = val;
-    }
-  });
-}
-
 // Initial background fill is capped LOW: the window render is cheap, but every
 // prefetch is still two server roundtrips — 2-3 pages cover the first screens;
 // demand fetches the rest as the user actually navigates.
@@ -720,9 +710,10 @@ const MARK_READ_REJECT = '請改用其它文章設定當參考點';
 //   settle → snapshot+facts → queue.onSettle (command completion first)
 //          → event booleans → transitionListSession → execute actions.
 // Owns: state, the selection (by article NUMBER, stable across prepends), the
-// board name (aliasing guard), and listRenderMode (bindProperty onto term_buf;
-// 'native' | 'buffer' | 'frozen' — redraw/onKeyDown key off it, never off
-// pageState).
+// board name (aliasing guard), and listRenderMode ('native' | 'buffer' |
+// 'frozen' — redraw/onKeyDown key off it, never off pageState). That flag is
+// SHARED with the board-list session, so it is reached through the ownership
+// layer in js/list_render_owner.js rather than written directly.
 export function ListSession(core, view, termBuf, queue) {
   this._core = core;
   this._view = view;
@@ -809,7 +800,11 @@ export function ListSession(core, view, termBuf, queue) {
   // _sequence() 的記憶化（見該函式）：null＝還沒算過。
   this._seqCache = null;
 
-  bindProperty(this, '_renderMode', termBuf, 'listRenderMode');
+  // listRenderMode 是**共用**旗標（看板列表平滑捲動走同一個），所以透過所有權層
+  // 存取：寫 buffer/frozen ＝宣告所有權，寫 native ＝只釋放自己持有的，讀 ＝別人
+  // 持有時回 'native'。少了它，「進板」那一幀（我們 engage、BoardListSession 收攤）
+  // 的結果會取決於兩個 settle listener 誰先跑。見 js/list_render_owner.js。
+  defineOwnedRenderMode(this, termBuf, OWNER_ARTICLE_LIST);
   termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
 }
 
@@ -852,7 +847,12 @@ ListSession.prototype = {
     // frame that isn't clean-list (board-tail probe / jump park, protocol
     // §4✚/§6) must not look ownerless to active's transient catch-all
     //（2026-07-14 錄製檔誤降級）.
-    const consumed = this._queue.onSettle(snap, facts);
+    // 佇列所有權（js/list_render_owner.js）：in-flight 是看板列表 session 的命令
+    // 時，判定權在它手上——這裡若照樣 onSettle，就是拿**文章列表的 facts**（沒有
+    // `brd` 欄位）去跑對方的 expect，靜默判錯。反向的守門在 BoardListSession。
+    const consumed = isBoardListCommandKind(this._queue.inFlightKind)
+      ? null
+      : this._queue.onSettle(snap, facts);
     // A completed leg IS progress: re-arm the frozen backstop so it measures
     // "nothing advanced for FROZEN_WATCHDOG_MS" rather than capping a whole
     // multi-leg transaction (_beginOpenPinned's per-row steps would otherwise

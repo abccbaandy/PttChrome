@@ -419,6 +419,9 @@ AidNavigation.prototype = {
     // nativeHold, queue flushed) so the shared queue is empty and its reducer
     // absorbs our intermediate clean-list settles. Must run BEFORE we enqueue.
     if (this._core.listSession) this._core.listSession.beginExternalNavigation();
+    // 看板列表平滑捲動同理（AID 跳文的逃生前導會經過主功能表／看板列表）。
+    if (this._core.boardListSession)
+      this._core.boardListSession.beginExternalNavigation();
 
     // Already where the escape preamble would have taken us. Skipping it is not
     // just an optimisation: _enqueueEscape SENDS ← and only then judges, and ←

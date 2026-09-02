@@ -222,6 +222,22 @@ CommandQueue.prototype = {
     });
   },
 
+  // flush() 的**限縮版**：只丟掉 kind 以 `prefix` 開頭的命令（含在飛的那一條）。
+  // 這條佇列被四個擁有者共用（ListSession / BoardListSession / AidNavigation /
+  // LongPush），而 cleanup 這種「我收攤了」的動作以前一律 flush() 整條 —— 兩種
+  // 列表 session 都掛在同一個 screenSettled 上，**同一幀**可能一邊收攤、另一邊
+  // 剛排好 prefetch，整條 flush 就會把對方的命令靜默殺掉。收攤只該清自己的。
+  flushKind: function(prefix) {
+    this.flushPendingKind(prefix);
+    const cmd = this._inFlight;
+    if (!cmd || (cmd.kind || '').indexOf(prefix) !== 0) return;
+    this._emit('flush', cmd);
+    this._finish();
+    if (cmd.onFlushed) cmd.onFlushed();
+    this._maybeSendNext();
+    this._maybeIdle();
+  },
+
   get inFlightKind() {
     return this._inFlight ? this._inFlight.kind : null;
   },

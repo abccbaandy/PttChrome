@@ -256,6 +256,22 @@ export function TermBuf(cols, rows) {
 
   this.pageLines = [];
 
+  // ---- 列表好讀的累積緩衝（兩種列表各一份，刻意不共用）----------------------
+  // listRenderMode：'native' | 'buffer' | 'frozen' —— 全專案十幾個消費端的分岔點
+  // （滑鼠座標換算、左鍵路徑、滾輪、游標高亮、onMouse_move…）。
+  // listRenderOwner：buffer/frozen 時是誰在畫（js/list_render_owner.js 的
+  // OWNER_ARTICLE_LIST / OWNER_BOARD_LIST）。兩個 session 都掛在 screenSettled 上，
+  // **同一幀**可能一邊要 engage、另一邊要收攤 ⇒ 沒有這個欄位就是靜默的競態。
+  this.listRenderMode = 'native';
+  this.listRenderOwner = null;
+  // 文章列表（ListSession）：升冪的文章列 ＋ 平行的文章編號（置底列為 null）。
+  this.listLines = [];
+  this.listLineNums = [];
+  // 看板列表（BoardListSession）：升冪的看板列 ＋ 平行的看板編號。**獨立欄位**——
+  // 共用的話「進板 → ← 回看板列表」會讓兩個 session 的 cleanup 互相清掉對方的緩衝。
+  this.brdListLines = [];
+  this.brdListLineNums = [];
+
   // 逐列 dirty 旗標：updateCharAttr 升起（由 ch.needUpdate 聚合）、term_view.redraw
   // 是**唯一**的清除點。初值全 true ＝ 首幀必須整份畫一次；redraw 用嚴格
   // `=== false` 判定，別把它退回 new Array(rows)（undefined 恰好也能過，但語意

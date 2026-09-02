@@ -327,7 +327,10 @@ live 測試讀的是**最新文章**，熱門板（C_Chat）的推文會在斷�
   1. 有可預覽連結 ⇒ 必有 `.inlinePreviewSlot`（`enableLinkInlinePreview` 被寫死 false
      時一個都不會建 —— 這就是本 spec 要守的 regression）。與外網無關，必驗。
   2. 捲到 slot ⇒ `seek.mounted`（slot 裡出現預覽產物，含讀取中指示器）。與外網無關，必驗。
-  3. `seek.mediaFound` / `seek.loadedImage` ⇒ 才驗媒體節點與點圖放大／縮回。
+  3. `seek.mediaFound`（img/video/iframe 任一）⇒ 驗媒體節點；
+     `seek.loadedImage`（**真的有一張 `<img>` 畫出來**）⇒ 才驗點圖放大／縮回。
+     兩級刻意分開：放大只對 `img` 成立，把 iframe 算進來的話「首圖是 YouTube」的
+     文章會通過守門、然後在找不到 img 的斷言上 TypeError（2026-09-03 live 實錄）。
      **依賴圖床**，載不出來就 console 記錄後略過，不讓圖床決定 CI 顏色
      （圖片載入的完整情境覆蓋在 offline 的 cache/slow/404/301 四桶）。
 

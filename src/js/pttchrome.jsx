@@ -6,6 +6,8 @@ import { TelnetConnection } from './telnet';
 import { Websocket } from './websocket';
 import { EasyReading, switchModePlan } from './easy_reading';
 import { ListSession } from './list_session';
+import { BoardListSession } from './board_list_session';
+import { OWNER_BOARD_LIST, listRenderOwnerOf } from './list_render_owner';
 import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { LongPushSession } from './long_push_session';
@@ -108,6 +110,13 @@ export const App = function() {
     onIdle: () => this.easyReading.onWireIdle()
   });
   this.listSession = new ListSession(this, this.view, this.buf, this.commandQueue);
+  // 看板列表（我的最愛／分類看板子分類）的平滑捲動。與 listSession 共用
+  // buf.listRenderMode（所有權層見 js/list_render_owner.js）與同一條 CommandQueue
+  // （命令一律 'brd-' 前綴，那是佇列的所有權判準）。
+  // **順序有意義**：它的 screenSettled listener 排在 listSession 之後，於是「離開
+  // 看板列表→進板」那一幀 listSession 先 engage、我們後收攤，收攤的 flushKind 才
+  // 不會把對方剛排進去的 prefetch 殺掉。
+  this.boardListSession = new BoardListSession(this, this.view, this.buf, this.commandQueue);
   // AID (#文章代碼) link click → serialized native-key navigation to the target
   // article. A boardless link falls back to the current article's board
   // (tracked by term_view alongside articleAuthor).
@@ -374,6 +383,7 @@ App.prototype.onClose = function() {
   // Connection gone: the list buffer is stale by definition — hard reset to
   // idle/native so the reconnect starts clean.
   this.listSession.disable();
+  this.boardListSession.disable();
   // Same for the AID back stack: its anchors are replayed as key sequences and
   // rely on this session's per-board cursors (pttbbs getkeep), which die with it.
   this.aidNavigation.reset();
@@ -620,7 +630,8 @@ App.prototype.onPasteDone = function(content) {
   // List easy reading owns the wire while it renders the buffer: a raw convSend
   // would race its serialized commands AND land on a screen the user can't see.
   // onPaste returns false when it isn't engaged (native mirror / idle).
-  if (this.listSession && this.listSession.onPaste(content))
+  const pasteOwner = this.activeListSession();
+  if (pasteOwner && pasteOwner.onPaste(content))
     return;
 
   // Article easy reading: the same blind spot in miniature. _onKeyDown enters
@@ -655,7 +666,8 @@ App.prototype.onFunctionKey = function(bytes, label) {
     return;
   }
   // 列表好讀：封閉互動（v5）。回 true ＝它接手了，不可以再送一次。
-  if (this.listSession && this.listSession.onFunctionKey(bytes)) return;
+  const fnOwner = this.activeListSession();
+  if (fnOwner && fnOwner.onFunctionKey(bytes)) return;
 
   const plan = functionKeyClickPlan({
     bytes: bytes,
@@ -859,6 +871,21 @@ App.prototype.clientToPos = function(cX, cY) {
     row = this.buf.rows-1;
 
   return {col: col, row: row};
+};
+
+// 現在是誰在畫列表畫面：文章列表好讀（listSession）／看板列表平滑捲動
+// （boardListSession）／null＝原生。**唯一真相源**——兩者共用 buf.listRenderMode，
+// 分派點散在鍵盤、貼上、功能鍵、左鍵、滾輪、捲動事件、render 分支七處，各自推導
+// 一次就是遲早漏一處的靜默錯畫（handoff §6.2）。
+App.prototype.activeListSession = function() {
+  switch (listRenderOwnerOf(this.buf)) {
+    case OWNER_BOARD_LIST:
+      return this.boardListSession || null;
+    case null:
+      return null;
+    default:
+      return this.listSession || null;
+  }
 };
 
 // 列表好讀 body 視口目前捲掉的距離（未縮放的內容 px）。null＝不適用（其他畫面）。
@@ -1238,6 +1265,14 @@ App.prototype.onPrefChange = function(name, value) {
         this.listSession.disable();
       }
       break;
+    case 'enableBoardListSmoothScroll':
+      // 看板列表平滑捲動。與上面那條對稱（畫面靜止時打開不會再有 settle）。
+      if (value) {
+        this.boardListSession.evaluateNow();
+      } else {
+        this.boardListSession.disable();
+      }
+      break;
     case 'antiIdleTime':
       this.antiIdleTime = value * 1000;
       break;
@@ -1356,15 +1391,16 @@ App.prototype.mouse_click = function(e) {
       // 包住「要不要真的開文」。
       if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
         e.preventDefault();
-        if (this.mouseGates().leftClick && this.listSession) {
+        var clickOwner = this.activeListSession();
+        if (this.mouseGates().leftClick && clickOwner) {
           var lpos = this.clientToPos(e.clientX, e.clientY);
           // 左側退出帶（cols 0..EXIT_COL_END）：與原生列表同一個手勢。**絕不直送
           // byte** —— onMouseExitClick 走 reducer 的 _beginLeave，它會先 getkeep
           // 同步 server 的真游標再送鍵（v5 封閉互動）。
           if (lpos.col >= 0 && lpos.col < EXIT_COL_END)
-            this.listSession.onMouseExitClick();
+            clickOwner.onMouseExitClick();
           else
-            this.listSession.onMouseClick(lpos.row, lpos.col);
+            clickOwner.onMouseClick(lpos.row, lpos.col);
         }
         return;
       }
@@ -1587,14 +1623,15 @@ App.prototype.mouse_scroll = function(e) {
   // （見 render/screen.js#_ensureBodyView），使用者輸入自然捲不動它。
   // pref 關掉時滾輪退回「一次一頁」，走與鍵盤 PgUp/PgDn 完全相同的一條路。
   if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
+    var wheelOwner = this.activeListSession();
     if (gates.wheelSmoothScroll) {
       // 放行給瀏覽器之前先問一句「是不是已經捲到邊了」：捲不動就不會有 scroll
       // 事件，而 demand 正是由它驅動的（buffer 只有一頁時往上滾會看起來卡住）。
-      if (this.listSession) this.listSession.onWheelAtEdge(up ? -1 : 1);
+      if (wheelOwner) wheelOwner.onWheelAtEdge(up ? -1 : 1);
       return;
     }
-    if (this.buf.listRenderMode === 'buffer' && this.listSession)
-      this.listSession.onWheel(up ? 'pgup' : 'pgdn');
+    if (this.buf.listRenderMode === 'buffer' && wheelOwner)
+      wheelOwner.onWheel(up ? 'pgup' : 'pgdn');
     e.stopPropagation();
     e.preventDefault();
     return;

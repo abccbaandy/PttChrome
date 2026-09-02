@@ -21,6 +21,10 @@ export function snapshotState(app) {
       connectState: app.connectState,
       easyReading: !!(view && view.useEasyReadingMode),
       listState: app.listSession && app.listSession.state,
+      // 看板列表平滑捲動（另一個列表 session，共用 buf.listRenderMode）。
+      brdListState: app.boardListSession && app.boardListSession.state,
+      // 這一幀的列表畫面是誰在畫（null＝原生）——兩個 session 的分岔點。
+      listOwner: (app.buf && app.buf.listRenderOwner) || null,
       // 好讀長頁 ↔ 原生鏡像：游標幾何類問題的第一個分岔（推文 prompt 走鏡像）。
       fnMode: !!(app.buf && app.buf.easyReadingFunctionMode),
       // 這一幀是不是格線畫面 —— 決定 #cursor 該不該可見（term_view._applyCursorVisibility）。

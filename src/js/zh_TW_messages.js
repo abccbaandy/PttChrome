@@ -523,6 +523,12 @@
   "options_enableEasyReadingList": {
     "message": "啟用文章列表好讀模式 (實驗性，黑名單真正隱藏)"
   },
+  "options_enableBoardListSmoothScroll": {
+    "message": "啟用看板列表平滑捲動 (實驗性，我的最愛／分類看板)"
+  },
+  "tooltip_enableBoardListSmoothScroll": {
+    "message": "把「我的最愛」與「分類看板」子分類的看板列表累積成一整段，捲動直接交給瀏覽器（與文章列表好讀同一套）。「全部看板」「熱門看板」與按 c 的新文章模式維持原生的一次一頁。"
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "好讀模式按熱鍵跳到文末並切回原生模式"
   },
@@ -701,10 +707,10 @@
     "message": "文章好讀模式維持瀏覽器捲動，不受這個設定影響。"
   },
   "options_mouseWheelSmoothScroll": {
-    "message": "文章列表好讀模式平滑捲動"
+    "message": "列表好讀模式平滑捲動"
   },
   "tooltip_mouseWheelSmoothScroll": {
-    "message": "文章列表的好讀模式下，滾輪直接交給瀏覽器捲動，與文章好讀模式完全一致：慣性、觸控板的細微滑動、捲動設定都跟系統一樣；關閉則一格滾輪翻一整頁。原生（非好讀）的列表畫面翻頁由 PTT 主機決定，一律是整頁翻。"
+    "message": "文章列表好讀模式與看板列表平滑捲動下，滾輪直接交給瀏覽器捲動，與文章好讀模式完全一致：慣性、觸控板的細微滑動、捲動設定都跟系統一樣；關閉則一格滾輪翻一整頁。原生（非好讀）的列表畫面翻頁由 PTT 主機決定，一律是整頁翻。"
   },
   "options_mouseSwipeHorizontal": {
     "message": "觸控板水平手勢"

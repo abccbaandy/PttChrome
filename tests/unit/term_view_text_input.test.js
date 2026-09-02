@@ -9,6 +9,14 @@ import { TermView } from "../../src/js/term_view";
 
 function makeCtx({ listTakes = false, hasEasyReading = true, hasListSession = true } = {}) {
   const calls = { convSend: [], easyNote: 0, listNote: [] };
+  const listSession = hasListSession
+    ? {
+        noteTextInput(text) {
+          calls.listNote.push(text);
+          return listTakes;
+        },
+      }
+    : null;
   const ctx = {
     lineWrap: 0,
     bbscore: {
@@ -19,14 +27,9 @@ function makeCtx({ listTakes = false, hasEasyReading = true, hasListSession = tr
             },
           }
         : null,
-      listSession: hasListSession
-        ? {
-            noteTextInput(text) {
-              calls.listNote.push(text);
-              return listTakes;
-            },
-          }
-        : undefined,
+      listSession,
+      // 分派的唯一真相源：term_view 只問 App.activeListSession「現在誰在畫列表」。
+      activeListSession: () => listSession,
     },
     _convSend(text) {
       calls.convSend.push(text);

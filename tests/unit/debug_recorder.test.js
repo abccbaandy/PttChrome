@@ -35,6 +35,10 @@ describe("snapshotState", () => {
       connectState: 1,
       easyReading: true,
       listState: "idle",
+      // 看板列表平滑捲動：本例的 app stub 沒建這個 session ⇒ undefined
+      brdListState: undefined,
+      // 這一幀的列表畫面是誰在畫（null＝原生）
+      listOwner: null,
       fnMode: false,
       gridRender: true,
       srowIsBufRow: false,

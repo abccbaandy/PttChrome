@@ -36,15 +36,22 @@ function makeView({
     rows: 24,
     BBSWin: { style: { cursor: "auto" } },
   };
+  // 分派一律走 App.activeListSession（buf.listRenderOwner 決定是文章列表還是
+  // 看板列表的 session）——term_view 不再直接讀 bbscore.listSession。
+  const listSession = {
+    // idx >= seq.length ＝ 短板補到 bodyRows 的空白列，沒有文章可 hover
+    getListView: () => ({
+      seq: Array.from({ length: bodyLen }, (_, i) => 100 + i),
+      cursorAbs: 100,
+      cursorPos: 0,
+    }),
+  };
   v.bbscore = {
-    listSession: {
-      // idx >= seq.length ＝ 短板補到 bodyRows 的空白列，沒有文章可 hover
-      getListView: () => ({
-        seq: Array.from({ length: bodyLen }, (_, i) => 100 + i),
-        cursorAbs: 100,
-        cursorPos: 0,
-      }),
-    },
+    listSession,
+    activeListSession: () =>
+      v.buf.listRenderMode === "buffer" || v.buf.listRenderMode === "frozen"
+        ? listSession
+        : null,
   };
   v.setExitAffordance = (on) => affordance.push(!!on);
   v.applyCursorHighlight = () => highlightCalls.push(v._listHoverRow);

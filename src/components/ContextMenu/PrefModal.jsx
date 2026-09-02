@@ -555,6 +555,16 @@ export const PrefModal = ({
                   {i18n("options_enableEasyReadingList")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="enableBoardListSmoothScroll"
+                  checked={values.enableBoardListSmoothScroll}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableBoardListSmoothScroll")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_enableBoardListSmoothScroll")}
+                </Text>
+                <PrefCheckbox
                   name="easyReadingEndSwitchNative"
                   checked={values.easyReadingEndSwitchNative}
                   onChange={onCheckboxChange}

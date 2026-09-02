@@ -53,6 +53,8 @@ function keyCtx(busy) {
       longPush: { active: busy === "longPush" },
       easyReading: { tryReenterFromNative: () => false },
       buf: { pageState: 3 },
+      // 列表分派的唯一真相源（App.activeListSession）；原生畫面 ⇒ 沒有人接管。
+      activeListSession: () => null,
     },
     buf: {
       pageState: 3,
@@ -104,6 +106,12 @@ describe("入口 1／4：term_view.onKeyDown", () => {
 function textCtx(busy) {
   const hints = [];
   const calls = { convSend: [], listNote: 0, easyNote: 0 };
+  const listSession = {
+    noteTextInput() {
+      calls.listNote++;
+      return false;
+    },
+  };
   const ctx = {
     lineWrap: 0,
     bbscore: {
@@ -114,12 +122,9 @@ function textCtx(busy) {
           calls.easyNote++;
         },
       },
-      listSession: {
-        noteTextInput() {
-          calls.listNote++;
-          return false;
-        },
-      },
+      listSession,
+      // term_view 只透過 App.activeListSession 取得「現在誰在畫列表」。
+      activeListSession: () => listSession,
     },
     _convSend(text) {
       calls.convSend.push(text);
@@ -169,7 +174,14 @@ function makeApp(busy) {
   app.aidNavigation = { active: busy === "aid" };
   app.longPush = { active: busy === "longPush" };
   app.commandQueue = { inFlightKind: null };
-  app.buf = { startedEasyReading: false, pageState: 3 };
+  // 文章列表好讀正在畫（listRenderOwner ＝ 誰持有 buf.listRenderMode），
+  // 所以 App.activeListSession() 回 listSession。
+  app.buf = {
+    startedEasyReading: false,
+    pageState: 3,
+    listRenderMode: 'buffer',
+    listRenderOwner: 'article-list',
+  };
   app.easyReading = { _enterFunctionMode: vi.fn(), stopEasyReading: vi.fn() };
   app.listSession = {
     onFunctionKey: vi.fn(() => false),

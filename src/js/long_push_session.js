@@ -200,6 +200,8 @@ LongPushSession.prototype = {
     if (er && er._enterFunctionMode) er._enterFunctionMode();
     if (this._core.listSession && this._core.listSession.beginExternalNavigation)
       this._core.listSession.beginExternalNavigation();
+    if (this._core.boardListSession && this._core.boardListSession.beginExternalNavigation)
+      this._core.boardListSession.beginExternalNavigation();
 
     this._enqueueResolveAid();
     return true;

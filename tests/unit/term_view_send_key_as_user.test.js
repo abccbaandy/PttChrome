@@ -13,6 +13,7 @@ import { TermView } from "../../src/js/term_view";
 function makeView({ listRenderMode = "native", useEasyReadingMode = false } = {}) {
   const view = Object.create(TermView.prototype);
   const seen = { keyboard: [], easyReading: [], listSession: [], hints: [] };
+  const listSession = { onKeyDown: vi.fn((e) => seen.listSession.push(e)) };
   view.useEasyReadingMode = useEasyReadingMode;
   view.buf = {
     pageState: 3,
@@ -29,7 +30,11 @@ function makeView({ listRenderMode = "native", useEasyReadingMode = false } = {}
       _onKeyDown: vi.fn((e) => seen.easyReading.push(e)),
       tryReenterFromNative: vi.fn(() => false),
     },
-    listSession: { onKeyDown: vi.fn((e) => seen.listSession.push(e)) },
+    listSession,
+    // term_view 的鍵盤分派只認 App.activeListSession（buf.listRenderOwner 決定
+    // 是文章列表還是看板列表的 session）。
+    activeListSession: () =>
+      listRenderMode === "buffer" || listRenderMode === "frozen" ? listSession : null,
     endTurnsOnLiveUpdate: false,
   };
   view._keyboard = { onKeyDown: vi.fn((e) => seen.keyboard.push(e)) };

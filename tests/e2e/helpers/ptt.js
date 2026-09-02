@@ -459,6 +459,9 @@ async function resetSession(page) {
     showFloorNumbers: false,
     blacklist: '',
     enableEasyReadingList: false,
+    // 同理（看板列表平滑捲動）：它一旦被某支 spec 打開就沒人關，之後的 spec 在
+    // 「看板列表接管中」的狀態下按鍵，走的是 BoardListSession 的交易路徑而不是原生。
+    enableBoardListSmoothScroll: false,
   });
   // 關閉好讀會送 Ctrl-L 觸發整頁重畫（見 applyPrefs 註解），等它完成再繼續
   await page.waitForTimeout(800);

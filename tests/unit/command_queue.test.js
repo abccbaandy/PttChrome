@@ -479,4 +479,46 @@ describe("CommandQueue", () => {
       expect(settleWith(q, false)).toBe("miss");
     });
   });
+  // flushKind：兩種列表好讀（ListSession / BoardListSession）共用同一條佇列，而
+  // 「我收攤了」以前一律 flush() 整條。兩個 session 都掛在同一個 screenSettled 上，
+  // **同一幀**可能一邊收攤、另一邊剛排好 prefetch ⇒ 整條 flush 會把對方的命令
+  // 靜默殺掉（症狀：進板之後文章列表永遠只有一頁）。
+  describe("flushKind（限縮版 flush，只清自己的命令）", () => {
+    test("在飛的是別人的命令 → 一個都不動", () => {
+      const { q, sent } = makeQueue();
+      q.enqueue(cmd("A", { kind: "prefetch-down" }));
+      q.enqueue(cmd("B", { kind: "prefetch-up" }));
+      q.flushKind("brd-");
+      expect(q.inFlightKind).toBe("prefetch-down");
+      settleWith(q, true);
+      expect(sent).toEqual(["A", "B"]); // 排隊中的那條照樣送得出去
+    });
+
+    test("在飛的是自己的命令 → 收掉並把別人排隊中的命令接上線", () => {
+      const { q, sent } = makeQueue();
+      q.enqueue(cmd("A", { kind: "brd-fetch-down" }));
+      q.enqueue(cmd("B", { kind: "prefetch-up" }));
+      q.flushKind("brd-");
+      expect(sent).toEqual(["A", "B"]);
+      expect(q.inFlightKind).toBe("prefetch-up");
+    });
+
+    test("排隊中只清掉前綴相符的，別人的留著", () => {
+      const { q, sent } = makeQueue();
+      q.enqueue(cmd("A", { kind: "prefetch-down" }));
+      q.enqueue(cmd("B", { kind: "brd-fetch-down" }));
+      q.enqueue(cmd("C", { kind: "prefetch-up" }));
+      q.flushKind("brd-");
+      settleWith(q, true); // A 完成
+      expect(sent).toEqual(["A", "C"]); // B 被清掉，C 保留
+    });
+
+    test("flush 掉在飛的命令時通知 onFlushed（AidNavigation 那類持有輸入鎖的呼叫端）", () => {
+      const { q } = makeQueue();
+      const onFlushed = vi.fn();
+      q.enqueue(cmd("A", { kind: "brd-leave", onFlushed }));
+      q.flushKind("brd-");
+      expect(onFlushed).toHaveBeenCalled();
+    });
+  });
 });
