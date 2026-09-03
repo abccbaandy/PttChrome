@@ -5,7 +5,10 @@
 **v5 合約（2026-07-05 拍板，取代舊 parity 合約；論證見 `docs/easy-reading-list-research.md` §1「困難點本質」／§3「BePTT 的穩定性來自哪」）：**
 
 1. **外觀近似**原生（24 列高的畫面＋游標 `>`＋鍵盤習慣近似），**不再承諾**「與原生無可感知差異」。捲動本身自 2026-08-30 起是**瀏覽器原生捲動**（與文章好讀模式同一套），刻意偏離原生的整頁翻。
-2. **封閉互動**：白名單＝導覽/開文/跳號/離板；**未列鍵＝一鍵切原生 passthrough＋黏性 hold**（可選 sync 腿 → enter-function-mode → queue 代送原鍵；切原生後停在原生，article/menu 情境切換才恢復好讀）。**不做**氣閘（同鍵二連擊）與 `[ ] =`/`v`/`/` 的模擬交易。
+2. **封閉互動**：白名單＝導覽/開文/跳號/離板；未列鍵分 **A/B 兩類**（2026-09-03，pref `enableListNativeAutoResume` 預設開）——
+   **A 類（原地重繪：`= \ ] + [ - < , . > { } t`）走凍結交易，全程不切原生**（送真鍵 → 等真回應 → 採用真落點，畫面逐像素凍住，不丟 cache）；
+   **B 類（其餘）一鍵切原生 passthrough**（可選 sync 腿 → enter-function-mode → queue 代送原鍵），操作完成、畫面靜下來 250ms 後由**靜置探針**自動切回好讀。
+   pref 關掉＝逐位元回到 2026-07-10 的黏性行為（切原生後停在原生，只有 article/menu 才恢復）。**不做**氣閘（同鍵二連擊）與模擬交易。
 3. **確定性交易**：server 互動一律 CommandQueue 交易；高風險交易尾附 `\f`（Ctrl+L，igetch 全域熱鍵→全幅重繪，協定 §2）→ 必得一幀全幅畫面，timeout 降為真異常。
 4. 交易期間 render=frozen＋吞鍵＋讀取中指示。
 5. **失敗顯性化**：timeout → 單獨 `\f` 探針拿全幅畫面重分類 → 恢復或 banner＋切原生。禁止靜默墜落。
@@ -19,13 +22,17 @@
 | T0 忽略鍵 | `keyEventToBytes(e) == null` 的鍵：CapsLock／F1–F12／NumLock／ScrollLock／不可映射的 Ctrl+Shift 組合 | `_classifyKey` 回 keyClass `ignore` → 吞掉、**不轉態、不 preventDefault**。判準即「這個鍵交給原生鍵盤路徑會不會送出 byte」，不硬列鍵清單 |
 | T1 本地 | ↑↓ jk／PgUp PgDn／Home End（buffer 內）／滾輪；read.c 同義鍵 `空白`＝`N`＝PgDn、`P`＝PgUp、`p`＝↑、`n`＝↓、`$`＝End | 零 server。視窗/游標語意＝web 慣例，不 read.c 逐格對齊（同義鍵集合本身照 read.c:858-902，**Ctrl-F/Ctrl-B 不納入**，維持 Ctrl 組合與瀏覽器快捷鍵的分界）。滑鼠 hover＝上游標底色（`term_view.onListMouseMove`，只對有文章的 body 列；**防誤觸模式開啟時只有標題欄 col≥30 給 pointer 並接受點擊，底色也只蓋那一段**，見 `docs/mouse.md`） |
 | T2 列表內交易 | 開文（Enter／**左鍵單擊該列**）、數字跳號、End/Home 邊界確認、`←`/q/e 離板 | 腳本交易（CommandQueue 序列化） |
-| T3 一鍵切原生 passthrough | `[` `]` `=`、`v`、`/`、Ctrl-P、`z`、`s`……**其餘一切未列鍵** | 單按即生效：有序號選取且 `_serverNum` 未同步→先 `native-sync-jump`（frozen＋吞鍵）→ `enter-function-mode`（原生 excursion，不變量 15 拋 cache）→ raw 代送原鍵（`native-key` 佇列命令，防 sync 落地 settle 提早 resume）＋提示「已切至原生」。Ctrl 組合/不可映射鍵不代送（事件放行原生鍵盤路徑）。**黏性 hold（`_nativeHold`）**：切原生後 clean-list settle 一律 stay（反覆 [ ] 不閃動/不誤觸 banner），只有 article（開文→文章好讀接手→返回 re-seed）或 menu（離板→重進板 engage）才恢復好讀 |
-| T3a 右鍵「前已讀後未讀」 | 右鍵選單項（只在列表好讀、游標下是**有序號**的文章列時出現） | 同 T3 的序列，但 payload 是**兩步**：`v`（expect＝畫面上出現 getdata prompt「…(W)前已讀後未讀…」，**掃整個畫面**，prompt 在 row 22 不是底列）→ 落地後才送 `w\r`。第二步只在第一步的 `onDone` 裡 enqueue —— `v` 沒進 prompt 時 `w` 會落回列表按鍵 `b_call_in`（對該列作者送呼叫器），協定見 `docs/pttbbs-screen-protocol.md` §11.5。`markReadTargetAtRow(renderRow)` 是零副作用的可行性查詢（React 端不重複判斷）；完成後照 T3 停在原生（已讀標記變了＝累積 buffer 過時，返回時走 rebuild）|
+| **T3-A 原地重繪（凍結交易，全程不切原生）** | `INPLACE_KEYS`＝`=` `\` `]` `+` `[` `-` `<` `,` `.` `>` `{` `}` `t`（read.c#i_read_key 的 `thread()`／`search_read()`／`ToggleTagItem` 三組 case，**枚舉即合約**，不得改成「猜會不會開 prompt」的啟發式）| `_beginInplaceTransaction`：state→functionMode（吸收 settle／吞鍵）但 **render=frozen**，選取≠`_serverNum` 時先 `inplace-sync-jump` → `native-inplace` 命令（尾附 `\f`）→ expect＝**park 指紋**（`curX<=1 ∧ 3<=curY<=rows-2 ∧ (cursorRowNum≠null ∨ kind='clean-list')`；**不可寫成 `kind==='clean-list'`**：跳號腿之後底列本來就空，`redrawwin` 重繪的是現狀，協定 §4✚/§6）→ `_resumeInPlace`：採用落點當選取／`_serverNum`，**錨（`_topNum`/`_scrollFrac`）一律不動**、只 reveal（不變量 N6）。`_boardName` 全程保留 ⇒ 不丟 cache。落點不在緩衝→退回 `_resumeBuffer`+`rebuild`。失敗＝`_degradeToNative`（banner＋原生）。**Ctrl-C（ClearTagList）不在此組**：FULLUPDATE 只重畫當前頁，緩衝其他頁的 tag 標記會殘留 ⇒ 歸 B 類 |
+| T3-B 一鍵切原生 passthrough | `v`、`/`、`s`、`a`、`Z`、Ctrl-P、`z`……**其餘一切未列鍵** | 單按即生效：有序號選取且 `_serverNum` 未同步→先 `native-sync-jump`（frozen＋吞鍵）→ `enter-function-mode`（原生 excursion，不變量 15 拋 cache）→ 代送原鍵（`native-key` 佇列命令，**尾附 `\f`**：PTT 完全忽略某鍵時零 byte 零 settle，沒有它只能等滿 3s）＋提示「已切至原生（操作完成後自動恢復好讀）」。Ctrl 組合/不可映射鍵不代送（事件放行原生鍵盤路徑）。**hold＝`'passthrough'`**：clean-list settle **本身**一律 stay（settle 不解除 hold），由靜置探針決定何時回好讀；article／menu 情境切換照舊立即解除 |
+| T3a 右鍵「前已讀後未讀」 | 右鍵選單項（只在列表好讀、游標下是**有序號**的文章列時出現） | 同 T3 的序列，但 payload 是**兩步**：`v`（expect＝畫面上出現 getdata prompt「…(W)前已讀後未讀…」，**掃整個畫面**，prompt 在 row 22 不是底列）→ 落地後才送 `w\r`。第二步只在第一步的 `onDone` 裡 enqueue —— `v` 沒進 prompt 時 `w` 會落回列表按鍵 `b_call_in`（對該列作者送呼叫器），協定見 `docs/pttbbs-screen-protocol.md` §11.5。`markReadTargetAtRow(renderRow)` 是零副作用的可行性查詢（React 端不重複判斷）；完成後照 T3-B 停在原生鏡像（已讀標記變了＝累積 buffer 過時，返回時走 rebuild），畫面靜下來由靜置探針自動回好讀 |
 | T3b 貼上 | Shift+Insert／右鍵選單「貼上」／中鍵貼上 | 同 T3，但 payload 是整串：`App.onPasteDone` → `ListSession.onPaste(text)`（回 true＝已接手）→ 需要時 `native-sync-jump` → `enter-function-mode` → `native-paste` 佇列命令送出 `ansiHalfColorConv(u2b(normalizePasteText(...)))`。**PTT 收到後完全原生**：不代按 Enter、不特判 AID（`#` 仍要 Enter 才跳且只移游標不開文，協定 §8.1）；貼上內容自帶換行則照送 Enter。交易在途（opening／frozen）吞掉＋提示 |
 | T3c 文字輸入（IME） | 中文輸入法組完字送出（compositionend） | 同 T3b，只是**不套 `normalizePasteText`**（那是貼上專屬的換行／折行正規化，IME 送的是剛組完的一段字）、佇列命令 kind 為 `native-input`。入口是 `term_view.onTextInput` 這條共用漏斗 → `ListSession.noteTextInput(text)`（回 true＝已接手）。**按鍵路徑抓不到它**：IME 的 keydown keyCode 是 229，被 `keyEventFilter` 擋在 `onKeyDown` 之外 ⇒ 走不到 `_classifyKey`。見不變量 12d |
-| T4 非請自來 | 水球/廣播（server 主動寫入） | 唯一自動切原生路徑：banner 明示（水球專屬措辭）＋停在原生（黏性 hold，article/menu 才恢復好讀） |
+| T4 非請自來 | 水球/廣播（server 主動寫入） | 唯一自動切原生路徑：banner 明示（水球專屬措辭）＋停在原生（`'passthrough'` hold ⇒ 畫面靜下來後靜置探針自動回好讀；pref 關掉時才是 article/menu 才恢復）|
 
 pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（預設 200，0=停背景 fill）
+＋`enableListNativeAutoResume`（**預設 on**，一顆同時管 A 類凍結交易與 B 類自動回復；
+關掉＝逐位元回到黏性原生。三階梯：全開／中（關這顆）／全關（關母開關＝純原生 24 列）——
+每一階都必須是完整可用的狀態）
 ＋`mouseWheelSmoothScroll`（預設 on＝捲動交給瀏覽器；關＝滾輪一次一頁。滑鼠分頁，
 見 `docs/mouse.md`）。
 三原則：**A 內容判定**（settle 只定何時評估；是什麼靠指紋謂詞，`docs/pttbbs-screen-protocol.md` §3-5）、**B 顯式狀態機**（ListSession 單一擁有者）、**C 命令序列化**（CommandQueue 單一 in-flight；typeahead 跳繪 §2）。誤判永遠往 native 降級（catch-all functionMode）。
@@ -182,15 +189,42 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
 ## 狀態機（reducer＝`transitionListSession`，unit 全枚舉為準）
 
 states：`idle → active ⇄ functionMode`；`active → opening → suspended → active`。
-`listRenderMode` 映射：active→buffer、opening→frozen、其餘→native。**例外：passthrough 的 sync 腿與 leave/jump 交易期間 state=functionMode 但 render=frozen**——frozen∧functionMode 時 onKeyDown 吞所有鍵（含淡出提示「指令處理中」——**吞鍵不得無聲**）。
+`listRenderMode` 映射：active→buffer、opening→frozen、其餘→native。**例外：passthrough 的 sync 腿、leave/jump 交易、以及 A 類鍵的凍結交易（`native-inplace`，全程）期間 state=functionMode 但 render=frozen**——frozen∧functionMode 時 onKeyDown 吞所有鍵（含淡出提示「指令處理中」——**吞鍵不得無聲**）。
 
 - idle：clean-list ∧ pref ∧ rows==24 ∧ `!buf.startedEasyReading` → active（seed＋start-fill）。engage 守門不用 `view.useEasyReadingMode`（article ER 離篇後仍 latch true）。
-- active：clean-list 板名同→continue-fill；異→rebuild；article→suspended；**menu→idle cleanup**（離板可與 in-flight prefetch 的 jump 重繪交錯：jump settle 先把 functionMode 彈回 active，menu settle 若走 catch-all 進 functionMode 會因靜止畫面無下一個 settle 而卡死）；prompt/transient ∧ 無 in-flight→functionMode **＋banner**（失敗顯性化：`isWaterballSettle` 命中（protocol §9 底列 ◆ 指紋）→水球專屬措辭，否則通用「畫面偏離列表」；顯式入口不出 banner——`_enterFunctionMode(facts)` 只在 facts 非 null 時顯示）；有 in-flight→stay。交易 onFail 一律 `_degradeToNative(訊息)`＝banner＋原生鏡像。
-- key（active）：nav（↑↓jk/PgUp/PgDn/Home/End → read.c op）；Enter/→＝opening（selectedNum 有值→begin-open；null＝pinned→begin-open-pinned）；數字＝jump-digit（overlay 收參）；`←`/q/e＝leave 交易（**先 sync-jump 同步 server 游標再送離板鍵**——pttbbs getkeep 記 REAL cursor，不 sync 則再進板落點錯；`_serverNum` 快路徑同 passthrough，共用 `_enqueueCursorSyncJump`）；**其餘鍵（含 `[ ] =` `v` `/`）＝keyClass `passthrough` → `_beginNativePassthrough`：一鍵切原生＋代送**（`term_keyboard.keyEventToBytes` 轉 bytes，非 ASCII 單字元 `u2b`）。
+- active：clean-list 板名同→continue-fill；異→rebuild；article→suspended；**menu→idle cleanup**（離板可與 in-flight prefetch 的 jump 重繪交錯：jump settle 先把 functionMode 彈回 active，menu settle 若走 catch-all 進 functionMode 會因靜止畫面無下一個 settle 而卡死）；prompt/transient ∧ 無 in-flight ∧ **不在 resume grace 內**→functionMode **＋banner**（`withinResumeGrace`＝剛從原生自動回好讀後 `RESUME_GRACE_MS=400` 內：server 的殘餘半繪／prompt 收尾幀還在路上，打到 catch-all 就是「剛回好讀又被踢回原生」，不變量 N4，與 `consumed` 放寬同型）（失敗顯性化：`isWaterballSettle` 命中（protocol §9 底列 ◆ 指紋）→水球專屬措辭，否則通用「畫面偏離列表」；顯式入口不出 banner——`_enterFunctionMode(facts)` 只在 facts 非 null 時顯示）；有 in-flight→stay。交易 onFail 一律 `_degradeToNative(訊息)`＝banner＋原生鏡像。
+- key（active）：nav（↑↓jk/PgUp/PgDn/Home/End → read.c op）；Enter/→＝opening（selectedNum 有值→begin-open；null＝pinned→begin-open-pinned）；數字＝jump-digit（overlay 收參）；`←`/q/e＝leave 交易（**先 sync-jump 同步 server 游標再送離板鍵**——pttbbs getkeep 記 REAL cursor，不 sync 則再進板落點錯；`_serverNum` 快路徑同 passthrough，共用 `_enqueueCursorSyncJump`）；**A 類鍵（`INPLACE_KEYS`）＝keyClass `native-inplace` → `_beginInplaceTransaction`：凍結交易，全程不切原生**；**其餘鍵（`v` `/` `s` `Z`…）＝keyClass `passthrough` → `_beginNativePassthrough`：一鍵切原生＋代送**（`term_keyboard.keyEventToBytes` 轉 bytes，非 ASCII 單字元 `u2b`）。pref `enableListNativeAutoResume` 關掉時 A 類整組落回 `passthrough`。
 - opening：settle 等 article；timeout→functionMode 自癒；期間吞所有鍵。
-- functionMode：clean-list→**`nativeHold`（passthrough/自癒/降級 excursion）時 stay 鏡像（黏性）**；無 hold（leave/jump 交易）→active（landedNum∈buffer ∧ 板名同→resume；否則＋rebuild）；article→suspended；menu→idle cleanup。**enter-function-mode（passthrough/自癒/降級——原生 excursion）在 action 層清 `_boardName`** → 回 clean-list 必走 rebuild 分支（不變量 15）；只有保留 `_boardName` 的 frozen 交易（leave/jump）可走純 resume 快路徑；passthrough 屬原生 excursion → 黏性停原生；經 article/menu 回好讀時因 `_boardName` 已清必 rebuild。
+- functionMode：新事件 **`resume-probe`**（靜置探針合成，見下）→ `holdReason==='passthrough'` ∧ 無 in-flight ∧ clean-list ∧ hasNumberedRow ∧ engageEligible 時 →active（`landedNumInBuffer ∧ 板名同`→resume；否則＋rebuild），其餘一律 stay。clean-list **settle**→**`holdReason` 非 null（passthrough/external）時 stay 鏡像**（settle 本身永不解除 hold——一個回應可能 settle 兩次，第一個 settle 內容已新、游標還在舊位置，在它上面 resume 會採用到錯的落點）；無 hold（leave/jump 交易）→active（landedNum∈buffer ∧ 板名同→resume；否則＋rebuild）；article→suspended；menu→idle cleanup。**enter-function-mode（passthrough/自癒/降級——原生 excursion）在 action 層清 `_boardName`** → 回 clean-list 必走 rebuild 分支（不變量 15）；只有保留 `_boardName` 的 frozen 交易（leave/jump）可走純 resume 快路徑；passthrough 屬原生 excursion → 黏性停原生；經 article/menu 回好讀時因 `_boardName` 已清必 rebuild。
 - suspended：clean-list→re-seed（resume-buffer：採用落地幀的游標與**視窗頂列**當錨，並設 `_anchorOverride`（不變量 6c）；落點不在緩衝/板名異＋rebuild）；menu→idle。
 - 任意：pref-off/斷線→cleanup。
+
+### 靜置探針（`resume-probe`，2026-09-03；pref `enableListNativeAutoResume`）
+
+`holdReason === 'passthrough'` 期間維護一個計時器（`_scheduleResumeProbe`）：
+
+- **排定於**：進入 hold 當下、每一次 settle、每一次使用者送 byte（`noteNativeInput()`）。
+- **取消於**：`holdReason` 不再是 `'passthrough'`（resume／seed／handoff／cleanup 都會清）、pref 關掉。
+- **到點時不看事件、直接量當下畫面**（`_collectFacts(null)`，形狀同 `evaluateNow`），
+  **只讀不寫**（不變量 N2：不送 byte、不排命令、不改錨），唯一輸出是一個合成事件。
+
+它只堵三個判定漏洞，**不是體感旋鈕**：
+
+| 條件 | 堵哪個洞 |
+|---|---|
+| `facts.kind === 'clean-list'`（其中的 `curX <= 1`） | 洞 1：PTT 還在等輸入的畫面。**`curX <= 1` 是本功能的承重牆**（不變量 N9）——`v` 的 getdata prompt 畫在 row 22、游標停在提示字後面；`vmsg`/`pressanykey` 的框在 row 23；編輯器／說明根本沒有「文章選讀」footer。放寬它＝使用者在原生 prompt 打字時畫面被搶 |
+| `!queue.inFlightKind` | 洞 2：命令還在線上。`native-key` 的 expect 恆真 ⇒ idle 來得比「PTT 真的做完」早，所以還要下面那條 |
+| `now - max(_lastServerActivityAt, _lastUserByteAt) >= RESUME_QUIET_MS(250)` | 洞 3：**一個回應會 settle 兩次**（`term_buf.js`：內容視窗與游標 park 視窗跨過 `SETTLE_MS` 時）。第一個 settle 的內容已是新清單、游標卻還在舊位置，在它上面 resume 會採用到**錯的落點**（游標跳列）。所以要等「畫面真的不動了」而不是「使用者不動了」。值沿用 `CMD_PROBE_AFTER_MS`，**不要另開新數字、不要拿它調手感** |
+| `hasNumberedRow` | 不變量 17 |
+| `engageEligible` | 母開關／rows==24／不在讀文中 |
+
+`_lastServerActivityAt` 掛在 settle 上（settle 本身就是「server 活動後靜止 `SETTLE_MS`」）——
+**不要**去 `term_buf` 另開 hook，那會踩到不變量 2/2b。
+`_lastUserByteAt` 的觀測點必須**繞過所有權層**（原生鏡像時 `activeListSession()` 回 null，
+而那正是要記的那段時間）：`term_view.onKeyDown`／`term_view.onTextInput`／
+`App.onPasteDone`／`App.onFunctionKey` 四處**無條件**呼叫 `App.noteListNativeInput()`。
+
+回復當下 `flashListHint('操作完成，已回到好讀列表')`——換畫面永不靜默（不變量 N7）。
 
 ## 關鍵不變量（違反即復發）
 
@@ -277,6 +311,31 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 17. **無編號列的 clean-list 幀不得驅動 seed／rebuild／resume**（2026-08-20 錄製檔 `20260820-015809`「列表好讀卡在一頁、PgUp 沒反應」）：進板時 pttbbs getkeep 還原的閱讀位置若剛好在板尾，`readdoent` 只畫得出那幾列**置底文**就 `clrtobot`（該幀 entry 區零編號列，但通過不變量 3a 的板尾短頁放寬 → 判 clean-list）。seed 之後 `listLineNums` 全 null ⇒ `bufferEdgeNum` 回 null ⇒ **錨定式 prefetch 的每一條腿都在 `_enqueuePrefetch` 的 `base == null` 靜默 return**（`_startFill`／`_maybeFill`／`_maybeDemand` 全走這裡），`_requestEnd` 的 `anchor == null` 同理，`_demandDownIfWindowShort` 又被「畫面有 ★ ⇒ `_edgeDown=true`」擋掉。使用者端的症狀＝導覽鍵在那兩三列裡原地打轉、**零網路、零重繪、連「讀取中…」膠囊都不亮**（`_moveSelection` 的 `!queue.idle` 不成立），唯一逃生口是 Home 的 `serverOp`；切原生（flush＋鏡像）或進出文章（re-seed）才會恢復——正是回報的三個現象。
    修法＝reducer 事件帶 `hasNumberedRow`（`hasNumberedEntryRow(facts)`，單點推導自 `facts.nums`；**勿改成由 `_collectFacts` 預先塞進 facts**——呼叫端會手組 facts）：idle 不 engage、functionMode／suspended 的 clean-list 一律 stay 鏡像原生、active 板名同 stay／板名異 `enter-function-mode`。停在原生無風險：使用者原生翻一頁就拿到有編號的幀，下一個 settle 自動 engage。
    **與不變量 3a 的分界**：3a 放寬的是「板尾最後一頁只剩 1 列編號＋置底＋空白」，**編號列 ≥1 是底線**；分類器本身**不動**（改它會讓板尾無主 settle 回頭誤降級）。`_enqueuePrefetch` 的無錨點分支另留一則 `listSession.noAnchor` 診斷（不變量 7f），下次同型卡死可直接在錄製檔看到。守護：`list_session.test.js`「無編號列的 clean-list 幀…」三條（分類器不變／落點只有置底文不 engage／板尾 1 列編號仍 engage）＋ reducer 全枚舉的 `hasNumberedRow:false` 四列。
+
+### 不變量（2026-09-03 自動回好讀新增；違反即復發）
+
+- **N1 external hold 永不自動解除**：`_holdReason` 有兩種語意，`'external'`（`beginExternalNavigation()`，
+  呼叫者＝`aid_navigation.js`（AID 跳文的逃生前導）與 `long_push_session.js`（長推文））要的是
+  「在我這條多步序列跑完之前，你不准自己彈回 buffer、不准自己排命令」。序列途中 clean-list 幀很多、
+  命令與命令之間 `inFlightKind` 也會是 null ⇒ 讓靜置探針看到就會**從中間截斷別人的序列**（靜默壞掉，
+  只在特定時序復現）。`'passthrough'`（非白名單鍵／自癒降級）才吃自動回復。
+- **N2 回復探針只讀不寫**：計時器到點時除了「量畫面 + dispatch」不得有任何副作用（不送 byte、不排命令、不改錨）。
+- **N3 回復必須同時滿足「內容 OK」與「畫面/使用者都停了」**：兩者 AND，缺一即回到 2026-07-10 黏性當初要解的問題。
+- **N4 回復後有 grace window**：`active` 的 prompt/transient catch-all 在 `RESUME_GRACE_MS` 內不得 banner／不得切原生
+  （事件欄位 `withinResumeGrace`，純函式全枚舉守護）。
+- **N5 A 類集合＝枚舉即合約**（`INPLACE_KEYS`，來源 read.c/board.c 的 case 表），**不得**改成啟發式；新增鍵要同步 unit。
+- **N6 A 類交易不得動捲動錨**：`_resumeInPlace` 只採用落點＋reveal，**不重設** `_topNum`/`_topPinnedKey`/`_scrollFrac`、
+  不設 `_anchorOverride`（那是 `_resumeBuffer` 給「畫面本來就是 server 那一頁」用的；套在凍住的 buffer 上＝視野瞬間跳走）。
+- **N7 吞鍵/換畫面永不靜默**：切原生、回好讀、逾時降級都要 `flashListHint`。
+- **N8 判定失誤不得造成「完全不可操作」**：凍結交易必須同時具備 `onFail → _degradeToNative`、`hardTimeoutMs=CMD_HARD_MS`、
+  `_armFrozenWatchdog(FROZEN_WATCHDOG_MS=2500)` 三重保護 ⇒ 最壞情況是「2.5s 後掉回原生＋banner，再由靜置探針自己回好讀」，
+  **不存在**「畫面永久凍住／鍵永久失效」的路徑。**pref 是最後一道，不是唯一一道**，不要因為有了 pref 就省掉它們。
+- **N9 `classifyListScreen` 的 `curX <= 1` 是本功能的承重牆**：它是「PTT 正在等輸入」的唯一判準，
+  放寬它＝使用者在原生 prompt 打字時畫面被搶。
+
+守護：`tests/unit/list_native_resume.test.js`（reducer 全枚舉＋假時鐘的探針行為＋凍結交易全鏈＋pref 關掉的逐位元回退）、
+`tests/unit/list_keys.test.js`（A/B 分類）、`tests/unit/board_list_session.test.js`（看板列表版）、
+`tests/e2e/offline/easy-reading-list.offline.spec.js`（`/`／`v` 兩條的自動回復）、`tests/e2e/easy-reading-list.spec.js`（live：A 類鍵全程不見原生）。
 
 ## 已知限制
 

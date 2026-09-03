@@ -236,7 +236,7 @@ test.describe.serial('看板列表平滑捲動（共用 session）', () => {
     expect(hasView).toBe(false);
   });
 
-  test('非白名單鍵（v）：一鍵切原生鏡像，不靜默吞鍵', async ({ shared }) => {
+  test('B 類鍵（/ 中文關鍵字）：一鍵切原生鏡像，取消後自動回平滑捲動', async ({ shared }) => {
     const { page, logs } = shared;
     logs.length = 0;
     await resetSession(page);
@@ -245,10 +245,14 @@ test.describe.serial('看板列表平滑捲動（共用 session）', () => {
     const screen = await enterFavorites(page);
     test.skip(!screen, 'guest／此帳號按 F 不是「我的最愛」（本期不 engage）');
 
-    // `v` 在看板列表是「標記已讀」的 prompt（b_mark_read_unread 的看板版）。
-    // 白名單以外的鍵一律「同步游標 → 切原生鏡像 → 代送」——畫面必須真的變成原生，
-    // 否則 PTT 開的 prompt 會被緩衝視窗蓋住（使用者讀成「畫面卡住」）。
-    await sendKey(page, 'v');
+    // `/` 在看板列表是 `getdata_buf` 的中文關鍵字搜尋（board.c:1843）——會開
+    // prompt、會換掉整份清單 ⇒ B 類。白名單以外的 B 類鍵一律「同步游標 → 切原生
+    // 鏡像 → 代送」，畫面必須真的變成原生，否則 PTT 開的 prompt 會被緩衝視窗蓋住
+    // （使用者讀成「畫面卡住」）。
+    // **`v`/`V` 不能拿來測這件事**：board.c 的 v/V 是 `brc_toggle_all_read` +
+    // `show_brdlist` 原地重畫，**沒有 prompt**（那是 read.c 的 v 才有），
+    // 2026-09-03 起歸 A 類凍結交易，全程不切原生。
+    await sendKey(page, '/');
     await page.waitForFunction(
       () =>
         window.__app.buf.listRenderOwner === null &&
@@ -257,12 +261,35 @@ test.describe.serial('看板列表平滑捲動（共用 session）', () => {
       { timeout: 10000 }
     );
     const st = await viewportState(page);
-    console.log('AFTER v:', JSON.stringify(st));
+    console.log('AFTER /:', JSON.stringify(st));
     expect(st.hasView).toBe(false); // 原生 24 列，沒有捲動視口
 
-    // 收尾：把 prompt 關掉（Q 取消）再回主選單
-    await sendKey(page, 'q');
-    await page.waitForTimeout(800);
+    // **等 prompt 真的畫出來再送 Enter**（綁內容條件，不可用固定 timeout）：
+    // 切原生是同步發生的（`_enterNative()`），但代送的 `/` 還排在佇列上；這時
+    // 使用者的鍵已經走原生路徑直送 PTT，先按 Enter 會撞上 typeahead（協定 §2）
+    // ——實測會變成「Enter 開了游標所在的看板」，測到的東西整個跑掉。
+    await page.waitForFunction(
+      () =>
+        Array.from(
+          document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+        ).some((el) => (el.textContent || '').includes('看板中文關鍵字')),
+      null,
+      { timeout: 10000 }
+    );
+
+    // 空關鍵字 Enter＝取消（keyword[0]=0 → brdnum=-1 → 重畫原清單）。
+    // 操作完成、畫面靜下來 ⇒ 靜置探針自動重新 engage（2026-09-03）。
+    // prompt 期間**不得**自動回復：游標停在提示字後面（curX 大）⇒
+    // classifyBoardListScreen 的 `parked` 不成立 ⇒ engageable=false ⇒ ctx 不是
+    // 'brdlist'（與文章列表的不變量 N9 同一道承重牆）。
+    await sendKey(page, 'Enter');
+    await page.waitForFunction(
+      () =>
+        window.__app.boardListSession.state === 'active' &&
+        !!document.querySelector('#mainContainer .listBodyView'),
+      null,
+      { timeout: 15000 }
+    );
     await resetSession(page);
   });
 });

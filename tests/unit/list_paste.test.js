@@ -30,6 +30,12 @@ function makeSession() {
     listLineNums: [],
     lineChangeds: new Array(24).fill(false),
     changed: false,
+    // 靜置探針（非導覽操作完成後自動回好讀）會在 hold 期間量一次當下畫面，
+    // 所以 stub 也要有 TermBuf 的畫面讀取介面（真的 TermBuf 一定有）。
+    getRowText: () => "",
+    isUnicolor: () => false,
+    cur_x: 0,
+    cur_y: 0,
     addEventListener() {},
     notify() {},
   };

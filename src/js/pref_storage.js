@@ -19,6 +19,15 @@ export const DEFAULT_PREFS = {
   // 全部看板／熱門看板／「新文章」模式一律維持原生的一次一頁。
   // 預設關（功能成熟前，與 enableEasyReading／enableEasyReadingList 同一套政策）。
   enableBoardListSmoothScroll: false,
+  // 非導覽操作結束後自動切回好讀（list_session.js / board_list_session.js）。
+  // 兩件事由這一顆開關同時管（它們是同一個承諾的兩半，拆兩顆會出現「A 類凍結但
+  // B 類不回復」這種沒人想要的中間態）：
+  //   L1 A 類鍵（[ ] = \ + - < > , . { } t／看板列表的 t v V）走凍結交易，全程不切原生
+  //   L2 B 類鍵（/ v s Ctrl-P 子畫面…）操作完成、畫面靜下來之後自動回好讀
+  // **預設開**：它是上面兩個 pref 的子功能，母開關已經是 opt-in，不需要再 opt-in
+  // 一次；預設關等於沒做。關掉＝逐位元回到 2026-09-03 之前（黏性原生：開文／離板
+  // 才回好讀），這是使用者拍板的逃生門 —— 判定類功能的最後一道防線就是設定開關。
+  enableListNativeAutoResume: true,
   // Target number of VISIBLE (non-blacklisted) rows the background prefetch
   // accumulates before stopping; continuation is demand-driven (navigate near
   // an edge). 0 disables the background fill (current page + demand only).

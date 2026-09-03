@@ -529,6 +529,12 @@
   "tooltip_enableBoardListSmoothScroll": {
     "message": "把「我的最愛」與「分類看板」子分類的看板列表累積成一整段，捲動直接交給瀏覽器（與文章列表好讀同一套）。「全部看板」「熱門看板」與按 c 的新文章模式維持原生的一次一頁。"
   },
+  "options_enableListNativeAutoResume": {
+    "message": "非導覽操作完成後自動切回好讀／平滑捲動"
+  },
+  "tooltip_enableListNativeAutoResume": {
+    "message": "在列表按下非導覽鍵（搜尋、標記、推文、設定已讀…）時，操作完成、畫面靜下來就自動切回好讀模式。只移動游標的鍵（[ ] = \\ + - < > , . { } t，看板列表的 t v V）更是全程不切原生。關掉＝停在原生模式，要開啟文章或離開看板才回好讀。"
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "好讀模式按熱鍵跳到文末並切回原生模式"
   },

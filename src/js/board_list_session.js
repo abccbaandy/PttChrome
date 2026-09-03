@@ -70,6 +70,26 @@ const PREFETCH_HARD_MS = 1500;
 const NATIVE_PASSTHROUGH_MS = 3000;
 // 凍結畫面的絕對後盾：任何一條回呼沒跑到都不能讓畫面永遠凍住 ＋ 永遠吞鍵。
 const FROZEN_WATCHDOG_MS = 2500;
+// 非導覽操作結束後自動切回平滑捲動（pref enableListNativeAutoResume）。兩個常數
+// 的取值與理由完全同 list_session.js，那裡有完整說明（RESUME_QUIET_MS 不是體感
+// 旋鈕，它堵的是「一個回應 settle 兩次」那個洞；RESUME_GRACE_MS 擋回復後的殘餘幀）。
+const RESUME_QUIET_MS = CMD_PROBE_AFTER_MS;
+const RESUME_GRACE_MS = 400;
+// A 類鍵＝原地重繪、清單內容與編號空間不變（mbbsd/board.c#choose_board 的 case 表，
+// 枚舉即合約）：
+//   t     fav_tag/admtag → head=9999 全重畫，並 fall through 到 KEY_DOWN（游標下移一列）
+//   v V   brc_toggle_all_read → show_brdlist(head,0,newflag) 原地重畫
+// **`*`（tag all）刻意不在這一組**：它一次翻掉整份清單的 tag 標記，緩衝裡其他頁
+// 會殘留舊標記 ⇒ 走 B 類（切原生，回來整份重建）。同理 `/` `S` `s` `y` `a` `m` `D`…
+const INPLACE_KEYS = 'tvV';
+
+// 切原生時提示語的尾巴。自動回復開著＝「做完就回來」；關掉＝維持舊措辭（那時行為
+// 也真的是舊的）。留著舊措辭比沒提示更糟，所以每一處都走這一支。
+function nativeResumeHint() {
+  return readValuesWithDefault().enableListNativeAutoResume
+    ? '（操作完成後自動恢復）'
+    : '（進入看板或回上層後恢復平滑捲動）';
+}
 // 背景預抓最多幾頁（每頁 20 列）。看板列表通常只有幾十到幾百項，三頁足以蓋滿
 // 視口與前後緩衝，其餘由 demand 補。
 const FILL_MAX_PAGES = 3;
@@ -96,9 +116,16 @@ function prefersReducedMotion() {
 // opening      序列化交易在飛（開看板／離開／跳號），畫面凍住＋吞鍵
 //
 // 事件（全部是先算好的布林，便於窮舉測試）：
-//   { type:'settle', ctx, inFlightKind, consumed, sameVariant, nativeHold }
+//   { type:'settle', ctx, inFlightKind, consumed, sameVariant, holdReason,
+//     withinResumeGrace, engageEligible }
 //   { type:'key', keyClass }
+//   { type:'resume-probe', ... }（同 settle 的欄位；靜置探針量當下畫面合成）
 //   { type:'pref-off' } | { type:'transaction-failed' }
+//
+// holdReason（functionMode 的停泊理由，同 list_session）：
+//   'passthrough' 非白名單鍵／自癒降級 —— 靜置後由 resume-probe 自動重新 engage
+//   'external'    aid_navigation／long_push 的多步序列停泊 —— **永不自動解除**
+//   null          沒有停泊
 export function transitionBoardListSession(state, event) {
   const stay = { next: state, actions: [] };
 
@@ -129,7 +156,9 @@ export function transitionBoardListSession(state, event) {
             // brdlist-other（全部看板／newflag：本期不做，handoff I10）與各種
             // prompt／半繪。交易在飛或這一幀剛被命令消費掉 ⇒ 是預期中的中間幀；
             // 否則顯性降級到原生鏡像（v5 合約：失敗不得靜默）。
-            return event.inFlightKind || event.consumed
+            // withinResumeGrace（不變量 N4）：剛自動回到平滑捲動的那一瞬間，
+            // server 的殘餘幀還在路上，打到這裡就是「剛回來又被 banner 踢回原生」。
+            return event.inFlightKind || event.consumed || event.withinResumeGrace
               ? stay
               : { next: 'functionMode', actions: ['enter-native'] };
         }
@@ -147,6 +176,11 @@ export function transitionBoardListSession(state, event) {
             // 實際的序列由呼叫端跑（sync 腿 → 切鏡像 → 代送），reducer 只負責
             // 把狀態挪過去，好讓在途的 settle 被吸收、其他鍵被吞掉。
             return { next: 'functionMode', actions: [] };
+          case 'native-inplace':
+            // A 類鍵（INPLACE_KEYS）：**全程不切原生**。同樣借用 functionMode
+            // 吸收在途 settle／吞鍵，但 render 維持 frozen，落地由
+            // _enqueueInplaceKey 的 expect 判定後 _resumeInPlace 直接回 buffer。
+            return { next: 'functionMode', actions: [] };
           default:
             return stay;
         }
@@ -154,11 +188,23 @@ export function transitionBoardListSession(state, event) {
       return stay;
 
     case 'functionMode':
+      // 靜置探針：非導覽操作做完了 ⇒ 自動回到平滑捲動。
+      // **不可以走「回 idle 等下一個 settle」**：畫面靜止時不會再有 settle，那會
+      // 卡死（list_session 的 menu 分支註解已經寫過一次這個坑）。所以這裡直接
+      // 送到 active 並自己 seed —— `_enterNative` 已經把緩衝整份丟掉了，本來就
+      // 該重建（非白名單鍵每一個都會改寫清單內容或整個編號空間）。
+      if (event.type === 'resume-probe') {
+        if (event.holdReason !== 'passthrough') return stay; // 不變量 N1
+        if (event.inFlightKind) return stay;
+        if (event.ctx !== 'brdlist') return stay;
+        if (!event.engageEligible) return stay;
+        return { next: 'active', actions: ['seed', 'start-fill'] };
+      }
       if (event.type === 'settle') {
         if (event.inFlightKind) return stay; // 序列化交易在飛，繼續鏡像
-        // 黏性原生（同 list_session 的 _nativeHold）：切原生之後就**停在原生**，
-        // 只有真正的情境變換（進板／回選單）才放開，否則反覆按 y/v 會讓畫面在
-        // 緩衝與原生之間閃動。
+        // 黏性原生（同 list_session 的 holdReason）：切原生之後就**停在原生**，
+        // 只有真正的情境變換（進板／回選單）或上面那個靜置探針才放開；否則反覆
+        // 按 y/v 會讓畫面在緩衝與原生之間閃動。
         if (event.ctx === 'article-list' || event.ctx === 'menu')
           return { next: 'idle', actions: ['cleanup'] };
         return stay;
@@ -198,6 +244,14 @@ export function BoardListSession(core, view, termBuf, queue) {
   this._fillPages = 0;
   this._fillTarget = 0;
   this._frozenWatchdog = null;
+  // functionMode 的停泊理由（'passthrough' | 'external' | null）——語意與拆分的
+  // 理由同 list_session._holdReason（'external' 永不自動解除，不變量 N1）。
+  this._holdReason = null;
+  // 靜置探針的 timer 與它的兩個時鐘來源（見 RESUME_QUIET_MS）。
+  this._resumeProbe = null;
+  this._lastServerActivityAt = 0;
+  this._lastUserByteAt = 0;
+  this._resumedAt = 0;
   // pruneListToSegment 的樞紐覆寫（undefined ＝用選取）。遠跳期間換成落點所在的
   // 那一段，否則新頁與舊緩衝之間的「洞」會讓連續段守門把**剛抓到的落點**丟掉。
   this._prunePivotOverride = undefined;
@@ -223,6 +277,8 @@ BoardListSession.prototype = {
     // 也不得餵給 queue 的 expect —— 同 list_session 的第一道守門。
     if (snap && snap.changedRows && snap.changedRows.size === 0 && !snap.cursorMoved)
       return;
+    // server 活動後的靜止點 ⇒ 自動回復的時鐘從這裡起算（上面已排除純本地重繪）。
+    this._lastServerActivityAt = Date.now();
     // 還沒接管、pref 又關著 ⇒ 這一幀不可能有我們的事。提早退出省掉 24 次
     // getRowText —— 這個功能預設是關的，而 settle 在每篇文章的每次翻頁都會來。
     if (this.state === 'idle' && !this._engageEligible()) return;
@@ -236,6 +292,7 @@ BoardListSession.prototype = {
     if (consumed === 'done' && (this._renderMode === 'frozen' || this.state === 'opening'))
       this._armFrozenWatchdog();
     this._dispatch(this._settleEvent(facts, consumed), facts);
+    this._scheduleResumeProbe();
   },
 
   _collectFacts: function(snap) {
@@ -265,8 +322,15 @@ BoardListSession.prototype = {
       inFlightKind: this._queue.inFlightKind,
       consumed: !!consumed,
       sameVariant: !!(facts.brd && facts.brd.variant === this._variant),
+      holdReason: this._holdReason,
+      withinResumeGrace: Date.now() - this._resumedAt < RESUME_GRACE_MS,
       engageEligible: this._engageEligible()
     };
+  },
+
+  // pref 開著＝L1 凍結交易＋L2 自動回復生效；關掉＝逐位元回到 2026-09-03 之前。
+  _autoResumeEnabled: function() {
+    return !!readValuesWithDefault().enableListNativeAutoResume;
   },
 
   // pref 開著 ∧ 標準 24 列終端 ∧ 文章好讀沒有正在讀文（同 list_session 的守門，
@@ -277,6 +341,55 @@ BoardListSession.prototype = {
       this._termBuf.rows === 24 &&
       !this._termBuf.startedEasyReading
     );
+  },
+
+  // ---- 靜置探針（非導覽操作完成 → 自動回平滑捲動）----------------------------
+  // 形狀與 list_session 完全相同（同一個 PTT、同一條線路、同一組洞），差別只有
+  // 「回復＝重新 seed」而不是 resume 舊緩衝：_enterNative 已經把緩衝丟光了。
+
+  // 使用者往 PTT 送了 byte。**只記時間戳，不得有任何其他副作用**（不變量 N2）。
+  noteNativeInput: function() {
+    this._lastUserByteAt = Date.now();
+    this._scheduleResumeProbe();
+  },
+
+  _scheduleResumeProbe: function(delay) {
+    if (this._resumeProbe) {
+      clearTimeout(this._resumeProbe);
+      this._resumeProbe = null;
+    }
+    if (this._holdReason !== 'passthrough') return;
+    if (!this._autoResumeEnabled()) return;
+    const self = this;
+    this._resumeProbe = setTimeout(function() {
+      self._resumeProbe = null;
+      self._tryResumeProbe();
+    }, delay == null ? RESUME_QUIET_MS : delay);
+  },
+
+  _cancelResumeProbe: function() {
+    if (!this._resumeProbe) return;
+    clearTimeout(this._resumeProbe);
+    this._resumeProbe = null;
+  },
+
+  // 只讀不寫（不變量 N2）：量當下畫面，唯一的輸出是一個合成事件。
+  _tryResumeProbe: function() {
+    if (this._holdReason !== 'passthrough' || !this._autoResumeEnabled()) return;
+    const quietSince = Math.max(this._lastServerActivityAt, this._lastUserByteAt);
+    const waited = Date.now() - quietSince;
+    if (waited < RESUME_QUIET_MS) return this._scheduleResumeProbe(RESUME_QUIET_MS - waited);
+    // 「PTT 完全忽略這個鍵」是零 byte 零 settle ⇒ 命令只能等 timeout，這裡補排一次。
+    if (this._queue.inFlightKind) return this._scheduleResumeProbe();
+    const facts = this._collectFacts(null);
+    if (facts.ctx !== 'brdlist') return; // 等下一個 settle 重新排
+    const event = this._settleEvent(facts, null);
+    event.type = 'resume-probe';
+    const before = this.state;
+    this._dispatch(event, facts);
+    // 換畫面永不靜默（不變量 N7）：使用者沒按任何鍵，畫面卻換回來了。
+    if (before !== this.state && this.state === 'active' && this._view.flashListHint)
+      this._view.flashListHint('操作完成，已回到平滑捲動', 2000);
   },
 
   _dispatch: function(event, facts) {
@@ -328,7 +441,9 @@ BoardListSession.prototype = {
   beginExternalNavigation: function() {
     if (this.state === 'idle') return;
     this.state = 'functionMode';
-    this._enterNative();
+    // 'external'：**永不自動解除**（不變量 N1）——序列途中的 brdlist 幀很多，
+    // 讓靜置探針看到就會把別人的序列從中間截斷。
+    this._enterNative(null, { hold: 'external' });
   },
 
   // ---- 鍵盤 -----------------------------------------------------------------
@@ -358,6 +473,10 @@ BoardListSession.prototype = {
     e.preventDefault();
     if (key.class === 'jump-digit') {
       this._beginJumpCollect(key.digit);
+      return;
+    }
+    if (key.class === 'native-inplace') {
+      this._beginInplaceTransaction(key.bytes);
       return;
     }
     this._runKeyClass(key, { repeat: !!e.repeat });
@@ -424,6 +543,14 @@ BoardListSession.prototype = {
         return { class: 'leave' };
       default:
         if (/^[1-9]$/.test(e.key)) return { class: 'jump-digit', digit: e.key };
+        // A 類鍵（INPLACE_KEYS）：原地重繪 ⇒ 凍結交易，全程不切原生。
+        // pref 關掉時整組落回 passthrough（逐位元回到 2026-09-03 之前）。
+        if (
+          e.key.length === 1 &&
+          INPLACE_KEYS.indexOf(e.key) !== -1 &&
+          this._autoResumeEnabled()
+        )
+          return { class: 'native-inplace', bytes: keyEventToBytes(e) };
         return { class: 'passthrough' };
     }
   },
@@ -498,10 +625,7 @@ BoardListSession.prototype = {
       this.state = r.next;
       this._enterNative();
       if (this._view.flashListHint)
-        this._view.flashListHint(
-          '已切至原生操作（進入看板或回上層後恢復平滑捲動）',
-          4000
-        );
+        this._view.flashListHint('已切至原生操作' + nativeResumeHint(), 4000);
       return;
     }
     e.preventDefault();
@@ -516,7 +640,7 @@ BoardListSession.prototype = {
     const hint =
       opts && 'hint' in opts
         ? opts.hint
-        : '已切至原生操作（進入看板或回上層後恢復平滑捲動）';
+        : '已切至原生操作' + nativeResumeHint();
     const r = transitionBoardListSession(this.state, {
       type: 'key',
       keyClass: 'passthrough'
@@ -528,6 +652,12 @@ BoardListSession.prototype = {
       self._queue.enqueue({
         keys: bytes,
         kind: BRD_CMD_PREFIX + kind,
+        // 尾附 \f（同 list_session._enqueuePassthroughStep）：PTT 完全忽略某個鍵時
+        // （無權限、非最愛清單按 `*`…）是**零 byte 零 settle**，命令只能等滿
+        // NATIVE_PASSTHROUGH_MS(3s) 才 timeout ⇒ 使用者盯著原生畫面發呆，
+        // 「操作完成後自動回平滑捲動」也無從觸發。協定 §6：igetch 全域攔截，
+        // getdata/vgets/pmore/編輯器一律吃這條，零副作用。
+        fullRepaint: true,
         expect: function() {
           return true; // 任何 settle 都是回應（畫面已經是原生鏡像，畫什麼都對）
         },
@@ -543,6 +673,94 @@ BoardListSession.prototype = {
     finish();
   },
 
+  // ---- A 類鍵的凍結交易（L1：原地重繪的鍵全程不切原生）------------------------
+  //
+  // 形狀照抄 list_session._beginInplaceTransaction：凍住畫面 →（必要時）跳號同步
+  // 真游標 → 送真鍵 → 等真回應 → 採用真落點。`t`/`v`/`V` 都是**對游標所在那一列**
+  // 動作的（board.c:1802/1871），本地導覽零網路 ⇒ 真游標落後時必須先同步。
+  _beginInplaceTransaction: function(bytes) {
+    const r = transitionBoardListSession(this.state, {
+      type: 'key',
+      keyClass: 'native-inplace'
+    });
+    this.state = r.next; // functionMode（吸收 settle／吞鍵），render 仍是 frozen
+    this._freezeForTransaction();
+    const self = this;
+    const send = function() {
+      self._enqueueInplaceKey(bytes);
+    };
+    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+      this._enqueueCursorSyncJump('inplace-sync-jump', send, function() {
+        self._degradeToNative('操作逾時，已切至原生模式');
+      });
+      return;
+    }
+    send();
+  },
+
+  _enqueueInplaceKey: function(bytes) {
+    const self = this;
+    let landed = null;
+    this._queue.enqueue({
+      keys: bytes,
+      kind: BRD_CMD_PREFIX + 'native-inplace',
+      // 保證必有一幀可判定（協定 §6：\f 全域被 igetch 攔截，零副作用）。
+      fullRepaint: true,
+      // 落地＝同一份清單（變體沒換）＋游標 park 在某一列。`v`/`V` 是
+      // show_brdlist 全頁重畫，`t` 是 head=9999 全重畫＋游標下移一列，兩者都符合。
+      expect: function(snap, facts) {
+        if (
+          facts.brd &&
+          facts.brd.parked &&
+          facts.brd.cursorNum != null &&
+          facts.brd.variant === self._variant
+        ) {
+          landed = facts;
+          return true;
+        }
+        return false;
+      },
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: CMD_HARD_MS,
+      onDone: function() {
+        self.state = 'active';
+        const inBuf =
+          !!landed && self._posOfNum(landed.brd.cursorNum) !== -1;
+        // 落點不在緩衝（跳很遠）＝畫面本來就要換一份 ⇒ 整份重建。
+        if (inBuf) self._resumeInPlace(landed);
+        else self._rebuild(landed);
+      },
+      onFail: function() {
+        self._degradeToNative('操作逾時，已切至原生模式');
+      }
+    });
+  },
+
+  // 凍結交易落地後回到 buffer。**不可以用 _adoptLanding**：那一支會把 _topNum
+  // 重設成原生畫面頂端那一列（給「從原生鏡像回來」設計的）；A 類交易期間畫面是
+  // 凍住的 buffer，套用會讓視野瞬間跳走。錨一律不動（不變量 N6），只 reveal。
+  _resumeInPlace: function(facts) {
+    this._holdReason = null;
+    this._cancelResumeProbe();
+    this._resumedAt = Date.now();
+    this._renderMode = 'buffer';
+    this._setLoading(false);
+    this._view.hideCursor();
+    const brd = facts && facts.brd;
+    if (brd && brd.cursorNum != null) {
+      this._serverNum = brd.cursorNum;
+      this._selectedNum = brd.cursorNum;
+    }
+    // 同步重繪：把落地那一頁併回緩衝（tag／未讀標記的逐列變化靠這一趟生效）。
+    this._forceRedraw();
+    const pos = this._cursorPos();
+    if (pos >= 0 && !this._isPosVisible(pos)) {
+      this._pendingReveal = { pos: pos, block: 'nearest', behavior: 'auto' };
+      this._forceRedraw();
+    }
+  },
+
   // 貼上（App.onPasteDone）與 IME 送字（term_view.onTextInput）。回 true ＝接手了。
   // 理由同 list_session：緩衝畫面下 PTT 開的 prompt 是**看不見的**，裸送 bytes
   // 會讓使用者以為畫面卡住；而且會與在飛的交易競態。
@@ -550,7 +768,7 @@ BoardListSession.prototype = {
     return this._beginTextPassthrough(text, {
       normalize: true,
       kind: 'native-paste',
-      hint: '已貼上並切至原生操作（進入看板或回上層後恢復平滑捲動）'
+      hint: '已貼上並切至原生操作' + nativeResumeHint()
     });
   },
 
@@ -558,7 +776,7 @@ BoardListSession.prototype = {
     return this._beginTextPassthrough(text, {
       normalize: false,
       kind: 'native-input',
-      hint: '已切至原生操作（進入看板或回上層後恢復平滑捲動）'
+      hint: '已切至原生操作' + nativeResumeHint()
     });
   },
 
@@ -661,6 +879,9 @@ BoardListSession.prototype = {
   // ---- actions ---------------------------------------------------------------
 
   _seed: function(facts) {
+    this._holdReason = null;
+    this._cancelResumeProbe();
+    this._resumedAt = Date.now(); // 不變量 N4：殘餘幀不得打到 active 的 catch-all
     this._resetBuffer();
     this._variant = facts.brd.variant;
     this._renderMode = 'buffer';
@@ -971,8 +1192,10 @@ BoardListSession.prototype = {
   // **緩衝整份丟掉**：非白名單鍵（`y` 切全部看板／`c` 新文章／`/` 關鍵字／`a`
   // 增看板／`t` 標記／`D` 刪除／`m` 移入移出／`S` 排序）每一個都會改寫清單內容
   // 或整個編號空間（handoff I5）。回來時一律重建才安全。
-  _enterNative: function(facts) {
+  // opts.hold: 'passthrough'（預設，靜置後自動回平滑捲動）| 'external'（永不解除）。
+  _enterNative: function(facts, opts) {
     this._breakScroll();
+    this._holdReason = (opts && opts.hold) || 'passthrough';
     this._setLoading(false);
     this._resetBuffer();
     this._variant = null;
@@ -982,9 +1205,11 @@ BoardListSession.prototype = {
     this._renderMode = 'native';
     this._view.showCursor();
     this._forceRedraw();
+    // 停泊當下就排一次：使用者按完鍵之後可能再也不動（畫面靜止不會有 settle）。
+    this._scheduleResumeProbe();
     if (facts && this._view.flashListHint)
       this._view.flashListHint(
-        '畫面偏離看板列表格式，已切至原生模式（進入看板或回上層後恢復平滑捲動）',
+        '畫面偏離看板列表格式，已切至原生模式' + nativeResumeHint(),
         4000
       );
   },
@@ -1000,6 +1225,8 @@ BoardListSession.prototype = {
   // 命令」——這時 in-flight 已經是我們自己剛完成的那一條。
   _reset: function() {
     this._breakScroll();
+    this._holdReason = null;
+    this._cancelResumeProbe();
     if (this._frozenWatchdog) {
       clearTimeout(this._frozenWatchdog);
       this._frozenWatchdog = null;

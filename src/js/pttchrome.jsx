@@ -630,6 +630,7 @@ App.prototype.onPasteDone = function(content) {
   // List easy reading owns the wire while it renders the buffer: a raw convSend
   // would race its serialized commands AND land on a screen the user can't see.
   // onPaste returns false when it isn't engaged (native mirror / idle).
+  this.noteListNativeInput(); // 原生鏡像下 activeListSession() 回 null，見該函式
   const pasteOwner = this.activeListSession();
   if (pasteOwner && pasteOwner.onPaste(content))
     return;
@@ -666,6 +667,7 @@ App.prototype.onFunctionKey = function(bytes, label) {
     return;
   }
   // 列表好讀：封閉互動（v5）。回 true ＝它接手了，不可以再送一次。
+  this.noteListNativeInput(); // 同上：點功能鍵也是使用者送 byte
   const fnOwner = this.activeListSession();
   if (fnOwner && fnOwner.onFunctionKey(bytes)) return;
 
@@ -877,6 +879,18 @@ App.prototype.clientToPos = function(cX, cY) {
 // （boardListSession）／null＝原生。**唯一真相源**——兩者共用 buf.listRenderMode，
 // 分派點散在鍵盤、貼上、功能鍵、左鍵、滾輪、捲動事件、render 分支七處，各自推導
 // 一次就是遲早漏一處的靜默錯畫（handoff §6.2）。
+// 「使用者剛往 PTT 送了 byte」的**無條件**通知（原生鏡像期間 activeListSession()
+// 回 null，所以不能走上面那條所有權分派 —— 收不到鍵正是我們要記的那段時間）。
+// 兩個 session 各自只記一個時間戳（不變量 N2：只讀不寫、零副作用），供
+// 「非導覽操作完成後自動切回好讀」的靜置探針判斷「使用者的手停了沒」。
+// 少了它，使用者在原生 prompt 打字打到一半就會被搶畫面。
+App.prototype.noteListNativeInput = function() {
+  if (this.listSession && this.listSession.noteNativeInput)
+    this.listSession.noteNativeInput();
+  if (this.boardListSession && this.boardListSession.noteNativeInput)
+    this.boardListSession.noteNativeInput();
+};
+
 App.prototype.activeListSession = function() {
   switch (listRenderOwnerOf(this.buf)) {
     case OWNER_BOARD_LIST:
@@ -1271,6 +1285,16 @@ App.prototype.onPrefChange = function(name, value) {
         this.boardListSession.evaluateNow();
       } else {
         this.boardListSession.disable();
+      }
+      break;
+    case 'enableListNativeAutoResume':
+      // 在原生鏡像上打開時畫面可能已經靜止（不會再有 settle 來排探針）⇒ 主動排
+      // 一次。關掉時把已排的收掉（探針自己也會再檢查一次 pref，這裡只是不留
+      // 沒有意義的 timer）。
+      for (const s of [this.listSession, this.boardListSession]) {
+        if (!s) continue;
+        if (value) s._scheduleResumeProbe();
+        else s._cancelResumeProbe();
       }
       break;
     case 'antiIdleTime':

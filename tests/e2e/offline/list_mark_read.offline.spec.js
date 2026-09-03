@@ -125,7 +125,7 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
       );
       // 第二步：跳號落地後才切原生鏡像並代送 'v'（cassette 餵回 prompt 畫面）。
       await page.waitForFunction(
-        (from) => window.__replay.sent.slice(from).includes('v'),
+        (from) => window.__replay.sent.slice(from).includes('v\f'),
         before,
         { timeout: 10000 }
       );
@@ -143,14 +143,16 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
 
       // 第三步：prompt 出現之後才送 'w\r'（getdata 是整行輸入，少了 Enter 不會動）。
       await page.waitForFunction(
-        (from) => window.__replay.sent.slice(from).includes('w\r'),
+        (from) => window.__replay.sent.slice(from).includes('w\r\f'),
         before,
         { timeout: 10000 }
       );
       const sent = (await dumpListState(page)).sent.slice(before);
-      expect(sent.indexOf('v')).toBeLessThan(sent.indexOf('w\r')); // 順序不可顛倒
+      expect(sent.indexOf('v\f')).toBeLessThan(sent.indexOf('w\r\f')); // 順序不可顛倒
       // 'w' 絕不可以在 prompt 之前就跟著跳號／'v' 一起出去（那會變成 b_call_in）。
-      expect(sent.filter((d) => d === 'vw\r' || d === 'w').length).toBe(0);
+      // 尾附的 \f 不算在內：要擋的是「v 和 w 同一批出去」與「裸 w」。
+      const noFF = (d) => (d.charAt(d.length - 1) === '\f' ? d.slice(0, -1) : d);
+      expect(sent.filter((d) => noFF(d) === 'vw\r' || noFF(d) === 'w').length).toBe(0);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);

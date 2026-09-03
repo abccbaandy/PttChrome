@@ -226,8 +226,11 @@ describe("列表好讀：機器鍵的 \\f 契約與快速失敗預算", () => {
     for (const kind of ["native-key", "native-input"]) {
       const cmd = legs.find((l) => l.cmd.kind === kind).cmd;
       expect([kind, cmd.timeoutMs]).toEqual([kind, 3000]);
-      // bytes 是使用者任意輸入，不附 \f
-      expect([kind, cmd.fullRepaint]).toEqual([kind, undefined]);
+      // 2026-09-03 起**一律尾附 \f**：PTT 完全忽略某個鍵時（無權限、MODE_SELECT
+      // 下的 Ctrl-D…）是零 byte 零 settle，命令只能等滿 3000ms 才 timeout ⇒ 使用者
+      // 盯著原生畫面發呆 3 秒，「操作完成後自動回好讀」也無從觸發。\f 保證必有
+      // 一幀（協定 §6：igetch 全域攔截，getdata/vgets/pmore/編輯器一律吃這條）。
+      expect([kind, cmd.fullRepaint]).toEqual([kind, true]);
     }
   });
 });

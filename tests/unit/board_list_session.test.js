@@ -196,7 +196,7 @@ describe("transitionBoardListSession（純 reducer）", () => {
     ).toBe("active");
   });
 
-  test("functionMode：黏性原生 —— 還在看板列表就繼續鏡像，只有情境變換才放開", () => {
+  test("functionMode：黏性原生 —— settle 本身不解除 hold，只有情境變換才放開", () => {
     expect(
       transitionBoardListSession("functionMode", settle({ ctx: "brdlist" })).next
     ).toBe("functionMode");
@@ -281,8 +281,13 @@ describe("engage / 收攤", () => {
 // ---------------------------------------------------------------------------
 
 describe("鍵盤白名單（board.c:1751-1840 的同義鍵）", () => {
-  const cls = (key, mods) =>
-    BoardListSession.prototype._classifyKey.call({}, keyEvent(key, mods));
+  // _classifyKey 讀 this._autoResumeEnabled()（A 類鍵的 pref 閘門），所以要給一個
+  // 有那支方法的 receiver。預設開＝產品預設值。
+  const cls = (key, mods, autoResume = true) =>
+    BoardListSession.prototype._classifyKey.call(
+      { _autoResumeEnabled: () => autoResume },
+      keyEvent(key, mods)
+    );
 
   test("導覽鍵：board.c 的同義鍵集合（PgUp 多一個 'b'、Home 是 '0'）", () => {
     expect(cls("ArrowUp")).toEqual({ class: "nav", op: "up" });
@@ -307,10 +312,23 @@ describe("鍵盤白名單（board.c:1751-1840 的同義鍵）", () => {
     expect(cls("e").class).toBe("passthrough");
   });
 
-  test("1-9 收集跳號；改寫清單的鍵一律 passthrough（回來要整份重建）", () => {
+  test("1-9 收集跳號；改寫清單／換編號空間的鍵一律 passthrough（回來要整份重建）", () => {
     expect(cls("5")).toEqual({ class: "jump-digit", digit: "5" });
-    for (const k of ["y", "c", "/", "a", "t", "D", "m", "S", "s", "v", "*"])
+    // `*`（tag all）刻意留在 B 類：它一次翻掉整份清單的 tag 標記，緩衝裡其他頁
+    // 會殘留舊標記 ⇒ 必須切原生、回來整份重建。
+    for (const k of ["y", "c", "/", "a", "D", "m", "S", "s", "*"])
       expect(cls(k).class).toBe("passthrough");
+  });
+
+  test("A 類鍵（t / v / V：board.c 原地重繪）→ native-inplace，全程不切原生", () => {
+    // 枚舉即合約（board.c#choose_board）：t 是 fav_tag + fall through KEY_DOWN、
+    // v/V 是 brc_toggle_all_read → show_brdlist 原地重畫。三者都不開 prompt、
+    // 不換編號空間 ⇒ 走凍結交易。
+    for (const k of ["t", "v", "V"]) expect(cls(k).class).toBe("native-inplace");
+  });
+
+  test("pref enableListNativeAutoResume 關掉 → A 類鍵整組落回 passthrough（逐位元回到舊行為）", () => {
+    for (const k of ["t", "v", "V"]) expect(cls(k, {}, false).class).toBe("passthrough");
   });
 
   test("送不出 byte 的鍵（F1 / CapsLock）→ ignore，不轉態也不 preventDefault", () => {
@@ -566,5 +584,220 @@ describe("佇列所有權（與 ListSession 共用同一條 CommandQueue）", ()
     termBuf.feed(menu, { curY: 5 });
     expect(flushed).toEqual([BRD_CMD_PREFIX]);
     expect(s.state).toBe("idle");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 非導覽操作完成後自動回平滑捲動（pref enableListNativeAutoResume，2026-09-03）
+// ---------------------------------------------------------------------------
+// 與 list_session 同一套設計；差別是回復＝**重新 seed**（_enterNative 已把緩衝
+// 整份丟掉），而且**不可以走「回 idle 等下一個 settle」**——畫面靜止時不會再有
+// settle，那會卡死。
+
+describe("reducer：functionMode × resume-probe（看板列表）", () => {
+  const probe = (extra = {}) => ({
+    type: "resume-probe",
+    ctx: "brdlist",
+    holdReason: "passthrough",
+    inFlightKind: null,
+    consumed: false,
+    sameVariant: false,
+    engageEligible: true,
+    withinResumeGrace: false,
+    ...extra,
+  });
+
+  test("條件全中 → 直接回 active 並重新 seed（不得先回 idle）", () => {
+    expect(transitionBoardListSession("functionMode", probe())).toEqual({
+      next: "active",
+      actions: ["seed", "start-fill"],
+    });
+  });
+
+  test.each([
+    ["external hold（AID／長推文停泊）", { holdReason: "external" }],
+    ["沒有停泊", { holdReason: null }],
+    ["命令還在線上", { inFlightKind: BRD_CMD_PREFIX + "native-key" }],
+    ["畫面不是可接管的看板列表", { ctx: "brdlist-other" }],
+    ["回到選單", { ctx: "menu" }],
+    ["pref 關／非 24 列", { engageEligible: false }],
+  ])("%s → stay 鏡像", (_label, extra) => {
+    expect(transitionBoardListSession("functionMode", probe(extra))).toEqual({
+      next: "functionMode",
+      actions: [],
+    });
+  });
+});
+
+describe("reducer：回復後的寬限窗（不變量 N4，看板列表）", () => {
+  const settle = (extra = {}) => ({
+    type: "settle",
+    ctx: "other",
+    inFlightKind: null,
+    consumed: false,
+    sameVariant: true,
+    engageEligible: true,
+    holdReason: null,
+    withinResumeGrace: false,
+    ...extra,
+  });
+  test("grace 內的殘餘幀 → stay（不得 banner／不得切原生）", () => {
+    expect(
+      transitionBoardListSession("active", settle({ withinResumeGrace: true }))
+    ).toEqual({ next: "active", actions: [] });
+  });
+  test("grace 外 → 照舊自癒降級", () => {
+    expect(transitionBoardListSession("active", settle())).toEqual({
+      next: "functionMode",
+      actions: ["enter-native"],
+    });
+  });
+});
+
+describe("靜置探針（看板列表 session）", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function parked() {
+    const h = makeSession();
+    h.termBuf.feed(brdScreenRows());
+    expect(h.s.state).toBe("active");
+    // 按一個 B 類鍵（`/` 中文關鍵字搜尋）→ 切原生鏡像
+    h.s.onKeyDown(keyEvent("/"));
+    h.enqueued[h.enqueued.length - 1].onDone &&
+      h.enqueued[h.enqueued.length - 1].onDone();
+    expect(h.s.state).toBe("functionMode");
+    expect(h.s._holdReason).toBe("passthrough");
+    return h;
+  }
+
+  test("原生操作完成、畫面靜下來 → 自動重新 engage（seed）", () => {
+    const h = parked();
+    h.termBuf._rowTexts = brdScreenRows();
+    h.termBuf.cur_x = 0;
+    h.termBuf.cur_y = 3;
+    vi.advanceTimersByTime(400);
+    expect(h.s.state).toBe("active");
+    expect(h.s._renderMode).toBe("buffer");
+    expect(h.hints.some((m) => m.includes("平滑捲動"))).toBe(true);
+  });
+
+  test("使用者還在打字（又送了 byte）→ 重新計時，不搶畫面", () => {
+    const h = parked();
+    h.termBuf._rowTexts = brdScreenRows();
+    h.termBuf.cur_x = 0;
+    h.termBuf.cur_y = 3;
+    vi.advanceTimersByTime(200);
+    h.s.noteNativeInput();
+    vi.advanceTimersByTime(200);
+    expect(h.s.state).toBe("functionMode");
+    vi.advanceTimersByTime(100);
+    expect(h.s.state).toBe("active");
+  });
+
+  test("external hold（beginExternalNavigation）→ 永不自動解除（不變量 N1）", () => {
+    const h = makeSession();
+    h.termBuf.feed(brdScreenRows());
+    h.s.beginExternalNavigation();
+    expect(h.s._holdReason).toBe("external");
+    expect(h.s._resumeProbe).toBe(null);
+    vi.advanceTimersByTime(5000);
+    expect(h.s.state).toBe("functionMode");
+  });
+
+  test("pref 關掉 → 一次探針都沒排，停在原生（逐位元回到舊行為）", () => {
+    const h = makeSession(); // makeSession 自己會寫 pref ⇒ 關掉要在它之後
+    h.termBuf.feed(brdScreenRows());
+    window.localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({
+        values: {
+          enableBoardListSmoothScroll: true,
+          enableListNativeAutoResume: false,
+        },
+      })
+    );
+    h.s.onKeyDown(keyEvent("/"));
+    expect(h.s._resumeProbe).toBe(null);
+    vi.advanceTimersByTime(5000);
+    expect(h.s.state).toBe("functionMode");
+  });
+});
+
+describe("B 類 passthrough 的命令形狀", () => {
+  test("代送的鍵尾附 \\f（PTT 忽略該鍵時是零 byte 零 settle，否則要空等 3s）", () => {
+    const h = makeSession();
+    h.termBuf.feed(brdScreenRows());
+    seedBuffer(h.termBuf, 1, 20);
+    h.s._selectedNum = 5;
+    h.s._serverNum = 5; // 已同步 ⇒ 免 sync 腿
+    h.enqueued.length = 0;
+    h.s.onKeyDown(keyEvent("/"));
+    const cmd = h.enqueued[0];
+    expect(cmd.kind).toBe(BRD_CMD_PREFIX + "native-key");
+    expect(cmd.keys).toBe("/");
+    expect(cmd.fullRepaint).toBe(true);
+    expect(cmd.timeoutMs).toBe(3000); // 不凍畫面 ⇒ 維持長窗（撐住 settle 吸收）
+  });
+});
+
+describe("A 類鍵的凍結交易（看板列表：t / v / V）", () => {
+  test("按 v → frozen（不是 native）、緩衝保住、命令是 brd-native-inplace", () => {
+    const h = makeSession();
+    h.termBuf.feed(brdScreenRows());
+    seedBuffer(h.termBuf, 1, 20);
+    h.s._selectedNum = 5;
+    h.s._serverNum = 5; // 已同步 ⇒ 直送鍵
+    h.enqueued.length = 0;
+    const e = keyEvent("v");
+    h.s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(h.s._renderMode).toBe("frozen");
+    expect(h.s._holdReason).toBe(null); // 不是原生小旅行
+    expect(h.termBuf.brdListLineNums.length).toBe(20); // 緩衝沒被丟掉
+    const cmd = h.enqueued[0];
+    expect(cmd.kind).toBe(BRD_CMD_PREFIX + "native-inplace");
+    expect(cmd.keys).toBe("v");
+    expect(cmd.fullRepaint).toBe(true);
+  });
+
+  test("落地採用真落點、回 buffer，錨不動（不變量 N6）", () => {
+    const h = makeSession();
+    h.termBuf.feed(brdScreenRows());
+    seedBuffer(h.termBuf, 1, 20);
+    h.s._selectedNum = 5;
+    h.s._serverNum = 5;
+    h.s._topNum = 3;
+    h.enqueued.length = 0;
+    h.s.onKeyDown(keyEvent("t"));
+    const cmd = h.enqueued[0];
+    const landed = {
+      brd: { parked: true, cursorNum: 6, variant: h.s._variant, topNum: 1 },
+      rows: 24,
+      curX: 0,
+      curY: 4,
+      rowTexts: brdScreenRows()
+    };
+    expect(cmd.expect(null, landed)).toBe(true);
+    cmd.onDone();
+    expect(h.s.state).toBe("active");
+    expect(h.s._renderMode).toBe("buffer");
+    expect(h.s._selectedNum).toBe(6);
+    expect(h.s._topNum).toBe(3); // 錨不動
+  });
+
+  test("逾時 → 顯性降級原生＋banner（不變量 N8）", () => {
+    const h = makeSession();
+    h.termBuf.feed(brdScreenRows());
+    seedBuffer(h.termBuf, 1, 20);
+    h.s._selectedNum = 5;
+    h.s._serverNum = 5;
+    h.enqueued.length = 0;
+    h.s.onKeyDown(keyEvent("V"));
+    h.hints.length = 0;
+    h.enqueued[0].onFail("timeout");
+    expect(h.s._renderMode).toBe("native");
+    expect(h.s._holdReason).toBe("passthrough");
+    expect(h.hints.some((m) => m.includes("逾時"))).toBe(true);
   });
 });

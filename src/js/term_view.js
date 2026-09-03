@@ -1013,6 +1013,9 @@ TermView.prototype = {
     // listSession.onPaste，這裡再問一次就是同一段文字送兩次。
     // 見 list_session.noteTextInput／easy_reading.noteTextInput（兩者都自帶 gate，
     // 沒接管畫面時為 no-op／回 false）。
+    // 同 onKeyDown：IME 送字也是「使用者送了 byte」，原生鏡像下同樣收不到。
+    if (this.bbscore && this.bbscore.noteListNativeInput)
+      this.bbscore.noteListNativeInput();
     var textOwner = listOwnerOf(this.bbscore);
     if (!isPasting && textOwner && textOwner.noteTextInput(text))
       return;
@@ -1103,6 +1106,11 @@ TermView.prototype = {
     // mirror correct by construction.
     // 文章列表／看板列表共用這條分派；哪一個 session 接手由 buf.listRenderOwner
     // 決定（App.activeListSession 是唯一真相源）。
+    // **無條件**先記一筆「使用者送了 byte」：原生鏡像期間 listOwnerOf 回 null，
+    // 而那正是「非導覽操作完成後自動切回好讀」最需要知道使用者手停了沒的時候
+    // （少了它會在使用者於原生 prompt 打字時把畫面搶回好讀）。只記時間戳。
+    if (this.bbscore && this.bbscore.noteListNativeInput)
+      this.bbscore.noteListNativeInput();
     var keyOwner = listOwnerOf(this.bbscore);
     if (keyOwner) {
       keyOwner.onKeyDown(e);

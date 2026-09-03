@@ -528,7 +528,7 @@ test.describe.serial('文章列表好讀模式（live）', () => {
     }
   });
 
-  test('/ 一鍵切原生搜尋：黏性停原生（MODE_SELECT）→ 開文返回才恢復好讀', async ({ shared }) => {
+  test('/ 一鍵切原生搜尋：MODE_SELECT 落地後自動回好讀 → ← 退回主列表仍好讀', async ({ shared }) => {
     test.setTimeout(120000);
     const { page, logs } = shared;
     logs.length = 0;
@@ -564,37 +564,28 @@ test.describe.serial('文章列表好讀模式（live）', () => {
       await page.keyboard.type('Re', { delay: 50 });
       await page.keyboard.press('Enter');
 
-      // 黏性原生（2026-07-10 UX）：搜尋結果（MODE_SELECT）以原生鏡像顯示，
-      // 停在原生不彈回好讀（dump 的 nums 是 buffer 序號、hold 期間不更新，
-      // 以畫面 row0「系列」判定）。
+      // 2026-09-03：搜尋結果（MODE_SELECT）落地、畫面靜下來之後**自動回好讀**
+      //（resume+rebuild：MODE_SELECT 是獨立編號空間，協定 §8）。使用者不必按
+      // 任何鍵，也不必先開一篇文章。
       const sel = await waitFor(
         page,
-        (x) => x.state === 'functionMode' && x.row0.includes('系列'),
+        (x) => x.state === 'active' && x.renderMode === 'buffer' && x.row0.includes('系列'),
         20000
       );
-      expect(sel.renderMode).toBe('native');
+      expect(sel.cursorHidden).toBe(true);
 
-      // ← 原生退出 select → 回主列表，仍停原生（黏性）。
+      // ← 退回主列表：這時已經是好讀 ⇒ 走序列化的離開交易，落地仍是好讀。
       await page.keyboard.press('ArrowLeft');
       const back = await waitFor(
         page,
-        (x) => x.state === 'functionMode' && !x.row0.includes('系列'),
+        (x) =>
+          x.state === 'active' &&
+          x.renderMode === 'buffer' &&
+          x.queueIdle &&
+          !x.row0.includes('系列'),
         20000
       );
-      expect(back.renderMode).toBe('native');
-
-      // 開文 → 返回列表：hold 解除、恢復好讀（rebuild，excursion 後 cache 不可信）。
-      await page.keyboard.press('Enter');
-      await waitFor(page, (x) => x.state === 'suspended', 25000);
-      await page.locator('#t').focus();
-      await page.keyboard.press('ArrowLeft');
-      const resumed = await waitFor(
-        page,
-        (x) => x.state === 'active' && x.queueIdle,
-        20000
-      );
-      expect(resumed.renderMode).toBe('buffer');
-      expect(resumed.cursorHidden).toBe(true);
+      expect(back.cursorHidden).toBe(true);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -611,7 +602,7 @@ test.describe.serial('文章列表好讀模式（live）', () => {
     }
   });
 
-  test('v 一鍵切原生：v → 原生 prompt → Enter 取消 → 黏性停原生', async ({ shared }) => {
+  test('v 一鍵切原生：v → 原生 prompt → Enter 取消 → 自動回好讀', async ({ shared }) => {
     test.setTimeout(120000);
     const { page, logs } = shared;
     logs.length = 0;
@@ -631,16 +622,67 @@ test.describe.serial('文章列表好讀模式（live）', () => {
       expect(fm.renderMode).toBe('native');
       await page.waitForTimeout(800); // 等 prompt 畫面到齊
       await page.keyboard.press('Enter'); // 空 Enter 取消 → FULLUPDATE 清單重繪
-      // 黏性 hold：取消後停在原生鏡像，不自動彈回好讀。
-      await page.waitForTimeout(2000);
-      const back = await dumpListState(page);
-      expect(back.state).toBe('functionMode');
-      expect(back.renderMode).toBe('native');
+      // 2026-09-03：操作完成、畫面靜下來 ⇒ 靜置探針自動切回好讀。
+      const back = await waitFor(
+        page,
+        (x) => x.state === 'active' && x.renderMode === 'buffer',
+        20000
+      );
+      expect(back.cursorHidden).toBe(true);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
       // shared 不是 Playwright 內建 page fixture ⇒ screenshot:'only-on-failure'
       // 不會生效，自己補一張進報告。
+      await test
+        .info()
+        .attach('screen', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+        .catch(() => {});
+      throw e;
+    }
+  });
+
+  test('A 類鍵（]）走凍結交易：全程看不到原生 24 列', async ({ shared }) => {
+    // read.c#i_read_key 的 thread()/search_read()/ToggleTagItem 家族＝原地重繪，
+    // 清單內容與編號空間都不變 ⇒ 送真鍵、等真回應、採用真落點，畫面從頭到尾
+    // 都是好讀的捲動視口。這是「反覆按 [ ] 會閃動」那個老問題的正解。
+    test.setTimeout(120000);
+    const { page, logs } = shared;
+    logs.length = 0;
+    try {
+      await resetSession(page);
+      const s = await enterBoardWithListER(page, 'C_Chat');
+      expect(s.state).toBe('active');
+      await waitFor(page, (x) => x.queueIdle && x.nums.some((n) => Number.isFinite(n)), 15000);
+
+      // 交易期間高頻取樣 listRenderMode：只要出現過一次 'native' 就是回歸。
+      await page.evaluate(() => {
+        window.__nativeSeen = false;
+        window.__modeWatch = setInterval(() => {
+          if (window.__app.buf.listRenderMode === 'native') window.__nativeSeen = true;
+        }, 20);
+      });
+      await page.locator('#t').focus();
+      await page.keyboard.press(']');
+      const done = await waitFor(
+        page,
+        (x) => x.state === 'active' && x.renderMode === 'buffer' && x.queueIdle,
+        20000
+      );
+      const sawNative = await page.evaluate(() => {
+        clearInterval(window.__modeWatch);
+        return window.__nativeSeen;
+      });
+      expect(sawNative).toBe(false);
+      expect(done.cursorHidden).toBe(true);
+      // 捲動視口一直都在（原生鏡像是固定 24 列，沒有這個元素）。
+      await expect(page.locator('.listBodyView')).toHaveCount(1);
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
       await test
         .info()
         .attach('screen', {
@@ -812,26 +854,33 @@ test.describe.serial('文章列表好讀模式（live）', () => {
       // 置底文（編號欄是 ★）解析不出數字 → 只驗開文/返回，不比對序號
       if (!Number.isNaN(clickedNum)) expect(s.selectedNum).toBe(clickedNum);
 
-      // 站 5：passthrough excursion——未列鍵單按切原生後「黏住」（2026-07-10 UX：
-      // 不自動彈回，反覆 [ ] 不再閃動）；原生下 ]、v、/ 全直通。
-      await page.keyboard.press('x');
+      // 站 5：B 類 excursion（2026-09-03 起「操作完成就自動回好讀」）——
+      // `v` 會開 getdata prompt，畫面**必須真的切成原生**（否則 prompt 被累積
+      // 緩衝視窗蓋住＝使用者讀成畫面卡住）；Enter 取消之後畫面靜下來，靜置探針
+      // 自動把我們切回好讀，不必先開一篇文章。
+      await page.keyboard.press('v');
       await waitFor(page, (x) => x.state === 'functionMode' && x.renderMode === 'native', 10000);
-      await page.keyboard.press(']'); // 原生直通：同標題跳文
-      await page.waitForTimeout(800);
-      let hold = await dumpListState(page);
-      expect(hold.state).toBe('functionMode'); // 黏住，不彈回
-      await page.keyboard.press('v'); // 原生 prompt
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(800); // 等 prompt 畫面到齊
       await page.keyboard.press('Enter'); // 取消
-      await page.waitForTimeout(800);
-      await page.keyboard.press('/'); // 原生搜尋 prompt
-      await page.waitForTimeout(800);
-      await page.keyboard.press('Enter'); // 取消
-      await page.waitForTimeout(800);
-      hold = await dumpListState(page);
-      expect(hold.state).toBe('functionMode'); // 全程停原生
+      s = await settledActive('auto-resume-after-v');
 
-      // 站 6：excursion 收尾——開文（article 解除 hold）→ ← 返回恢復好讀。
+      // 站 5b：A 類鍵（`]` 同標題跳文）＝凍結交易，**全程看不到原生 24 列**。
+      // 高頻取樣 listRenderMode：只要出現過一次 'native' 就是回歸。
+      await page.evaluate(() => {
+        window.__soakNativeSeen = false;
+        window.__soakWatch = setInterval(() => {
+          if (window.__app.buf.listRenderMode === 'native') window.__soakNativeSeen = true;
+        }, 20);
+      });
+      await page.keyboard.press(']');
+      s = await settledActive('inplace-relative-next');
+      const soakSawNative = await page.evaluate(() => {
+        clearInterval(window.__soakWatch);
+        return window.__soakNativeSeen;
+      });
+      expect(soakSawNative).toBe(false);
+
+      // 站 6：開文（→ 文章好讀接手）→ ← 返回恢復好讀。
       await page.keyboard.press('Enter');
       await waitFor(page, (x) => x.state === 'suspended', 25000);
       await page.locator('#t').focus();

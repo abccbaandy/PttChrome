@@ -272,9 +272,19 @@ export function hasNumberedEntryRow(facts) {
 // Events (plain data; the session precomputes every boolean so this table is
 // exhaustively unit-enumerable):
 //   { type:'settle', kind, boardNameMatch, inFlightKind,
-//     landedNumInBuffer, engageEligible }
+//     landedNumInBuffer, engageEligible, holdReason, withinResumeGrace }
 //   { type:'key', keyClass: 'nav'|'open'|'open-pinned'|'other' }
+//   { type:'resume-probe', ... }（同 settle 的欄位；靜置探針量當下畫面合成）
 //   { type:'pref-off' } | { type:'open-timeout' }
+//
+// holdReason（functionMode 的停泊理由，取代舊的 boolean _nativeHold）：
+//   'passthrough' 非白名單鍵／自癒降級的原生小旅行 —— 操作做完後由靜置探針
+//                 （resume-probe）自動切回好讀。
+//   'external'    aid_navigation／long_push 的多步序列把我們停泊在這裡 ——
+//                 **永不自動解除**（不變量 N1）：序列途中會經過大量 clean-list
+//                 幀，命令與命令之間 inFlightKind 也會是 null，自動回復會把
+//                 別人的序列從中間截斷。
+//   null          沒有停泊（frozen 交易借用 functionMode 吸收 settle）。
 //
 // Returns { next, actions[] } — action names are interpreted by ListSession.
 // Misroutes always fall toward functionMode/native (principle: self-heal).
@@ -338,8 +348,11 @@ export function transitionListSession(state, event) {
             // too: its onFail already handles the degrade — a catch-all here
             // would double it). Otherwise catch-all self-heal to the native
             // mirror (waterball, 動態看板, misclassification — everything
-            // lands here).
-            return event.inFlightKind || event.consumed
+            // lands here). `withinResumeGrace` 是第三個豁免（不變量 N4）：剛從
+            // 原生自動回到好讀的那一瞬間，server 的殘餘幀（半繪／prompt 收尾）
+            // 還在路上，打到這裡就是「剛回好讀又被 banner 踢回原生」。與
+            // `consumed` 的放寬（不變量 3c）同型，是必要條件不是保險。
+            return event.inFlightKind || event.consumed || event.withinResumeGrace
               ? stay
               : { next: 'functionMode', actions: ['enter-function-mode'] };
         }
@@ -370,6 +383,12 @@ export function transitionListSession(state, event) {
             // moves the state so in-flight settles are absorbed and other keys
             // are swallowed while the sync leg is on the wire.
             return { next: 'functionMode', actions: [] };
+          case 'native-inplace':
+            // A 類鍵（原地重繪，見 INPLACE_KEYS）：**全程不切原生**。借用
+            // functionMode 吸收在途 settle／吞鍵，但 render 維持 frozen
+            //（'state=functionMode ∧ render=frozen' 是既有的合法組合），落地由
+            // _enqueueInplaceKey 的 expect 判定後 _resumeInPlace 直接回 buffer。
+            return { next: 'functionMode', actions: [] };
           case 'transact':
             // A locally-collected parameter transaction commits (number jump):
             // the caller runs the specific begin* right after this dispatch.
@@ -382,6 +401,25 @@ export function transitionListSession(state, event) {
     }
 
     case 'functionMode': {
+      // 靜置探針：非導覽操作做完了 ⇒ 自動切回好讀（本功能的主體）。事件由
+      // ListSession._tryResumeProbe 在「畫面與使用者都靜止 RESUME_QUIET_MS」之後
+      // 量當下畫面合成，這裡只做純粹的枚舉判斷。三個洞各自對應一個條件：
+      //   洞 1 PTT 還在等輸入 → kind === 'clean-list'（其中的 curX <= 1，見 N9）
+      //   洞 2 命令還在線上   → !inFlightKind
+      //   洞 3 一個回應 settle 兩次 → 靜置時間（由呼叫端把關，這裡收不到未靜置的探針）
+      if (event.type === 'resume-probe') {
+        if (event.holdReason !== 'passthrough') return stay; // N1
+        if (event.inFlightKind) return stay;
+        if (event.kind !== 'clean-list') return stay;
+        if (!event.hasNumberedRow) return stay; // 不變量 17
+        if (!event.engageEligible) return stay;
+        // _enterFunctionMode 依不變量 15 清過 _boardName ⇒ B 類實務上一律 rebuild；
+        // 那是對的（原生鍵可以改寫清單內容與編號空間）。快路徑留給保住板名的
+        // 凍結交易（L1 的 native-inplace 走自己的 _resumeInPlace，不經這裡）。
+        return event.landedNumInBuffer && event.boardNameMatch
+          ? { next: 'active', actions: ['resume-buffer'] }
+          : { next: 'active', actions: ['resume-buffer', 'rebuild'] };
+      }
       if (event.type === 'settle') {
         switch (event.kind) {
           case 'clean-list':
@@ -390,13 +428,12 @@ export function transitionListSession(state, event) {
             // keep mirroring until it completes (the completing settle reads
             // inFlightKind null and resumes with the LANDED cursor).
             if (event.inFlightKind) return stay;
-            // Sticky native excursion (2026-07-10 UX): a passthrough/self-heal
-            // switch to native STAYS native — auto-resuming on every clean-list
-            // settle made repeated [ ] flash buffer↔native and mis-trip the
-            // catch-all banner. The hold is released only by a real context
-            // change: article (suspended → article ER takes over) or menu
-            // (idle → re-entering the board re-engages).
-            if (event.nativeHold) return stay;
+            // 停泊中（2026-07-10 起的黏性原生）：clean-list settle **本身**不解除
+            // hold。'external' 永遠不解除（N1）；'passthrough' 由靜置探針
+            // （resume-probe）解除 —— 不在這裡直接彈回的理由是 §3.4 洞 3：一個
+            // 回應可能 settle 兩次，第一個 settle 內容已新、游標還停在舊位置，
+            // 在它上面 resume 會採用到錯的落點（游標跳列）。
+            if (event.holdReason) return stay;
             // 無編號列的落點無法 resume/rebuild（不變量 17）：繼續鏡像原生，
             // 使用者原生翻一頁就會拿到有序號的幀再恢復好讀。
             if (!event.hasNumberedRow) return stay;
@@ -696,6 +733,41 @@ const PREFETCH_HARD_MS = 1500;
 // it short ends the absorption early = the state churn they were introduced to
 // stop (see _beginPassthroughBytes).
 const NATIVE_PASSTHROUGH_MS = 3000;
+// 「非導覽操作完成後自動切回好讀」的兩個時間常數（pref enableListNativeAutoResume）。
+//
+// RESUME_QUIET_MS **不是體感旋鈕**，別拿它調手感。它只堵一個判定漏洞：一個回應的
+// 「內容視窗」與「游標 park 視窗」跨過 SETTLE_MS 的間隔時會 **settle 兩次**
+// （term_buf.js 的 settle 註解寫明），第一個 settle 的內容已經是新清單、游標卻還
+// 停在舊位置 —— 那種幀完全可能通過 clean-list 指紋，在它上面 resume 就會採用到錯
+// 的落點（游標跳到別列）。所以要等「畫面真的不動了」而不是「使用者不動了」，時鐘
+// 從 max(最後一次 server 活動, 最後一次使用者送 byte) 起算。值直接沿用
+// CMD_PROBE_AFTER_MS（PTT 約 90ms 回應 + settle 50ms ⇒ 250ms 靜默已屬異常），
+// 不另開一個沒有來源的數字。
+const RESUME_QUIET_MS = CMD_PROBE_AFTER_MS;
+// 回到 active 之後的寬限窗（不變量 N4）：緊接著的殘餘半繪／prompt 幀不得打到
+// active 的 catch-all，否則就是「剛回好讀又被 banner 踢回原生」。
+const RESUME_GRACE_MS = 400;
+// A 類鍵＝**原地重繪、清單內容與編號空間不變**的非白名單鍵。枚舉即合約
+// （不變量 N5，來源是 mbbsd/read.c#i_read_key 的 case 表，pttbbs @ c1ff72df）：
+//   thread() → new_ln → cursor_pos()：  =  \  ]  +  [  -  <  ,  .  >
+//   search_read(READ_PREV/NEXT)：       {  }
+//   ToggleTagItem → crs_ln++ + PARTUPDATE： t
+// 它們不開 prompt、不進子畫面，所以走「凍結交易」（送真鍵 → 等真回應 → 採用真
+// 落點）全程不切原生 —— 反覆按 [ ] 不再閃動，也不必丟 cache 重抓（不變量 15 的
+// 理由只對「會改寫清單」的 B 類成立）。
+// **Ctrl-C（ClearTagList）刻意不在這一組**：它是 FULLUPDATE 但只重畫當前那一頁，
+// 緩衝裡其他頁的 tag 標記會殘留 ⇒ 走 B 類（切原生，回來 rebuild）。Ctrl 組合本來
+// 就在 _classifyKey 的 e.ctrlKey 分支先被判成 passthrough，這裡只是說明理由。
+const INPLACE_KEYS = '=\\]+[-<,.>{}t';
+
+// 切原生時提示語的尾巴。自動回復開著＝「做完就回來」；關掉＝維持舊措辭（那時
+// 行為也真的是舊的）。**留著舊措辭比沒提示更糟**，所以每一處切原生的 hint 都走
+// 這一支，不要再各自寫死字串。
+function nativeResumeHint() {
+  return readValuesWithDefault().enableListNativeAutoResume
+    ? '（操作完成後自動恢復好讀）'
+    : '（開啟文章或離開看板後恢復好讀）';
+}
 // 看板列表按 `v` ＝ b_mark_read_unread（mbbsd/bbs.c:4309）：畫面下方跳出 getdata
 // prompt「設定所有文章 (U)未讀 (V)已讀 (W)前已讀後未讀 (Q)取消？[Q] 」。
 // b_lines = t_lines-1 ⇒ 24 列終端時 prompt 畫在 **row 22**（不是最後一列），所以
@@ -765,11 +837,21 @@ export function ListSession(core, view, termBuf, queue) {
   this._lastReadTitle = null;
   // (2026-07-10) T3 airlock（同鍵二連擊）與 T2 mark/search 模擬皆退役：非白名單
   // 鍵一律走 _beginNativePassthrough（sync → 切原生 → 代送），單按即生效。
-  // Sticky native excursion: true from _enterFunctionMode until a context
-  // change (article handoff / board leave / resume) — while held, clean-list
-  // settles do NOT bounce back to the buffer render (reducer reads it via
-  // _settleEvent.nativeHold).
-  this._nativeHold = false;
+  // Sticky native excursion，兩種語意（reducer 透過 _settleEvent.holdReason 讀）：
+  //   'passthrough' 非白名單鍵／自癒降級 —— 操作做完後由靜置探針自動回好讀
+  //   'external'    aid_navigation／long_push 的多步序列停泊 —— **永不自動解除**
+  //   null          沒有停泊
+  // 兩者一定要分開：把黏性直接拿掉會靜默弄壞 deep link 與長推文（它們要的是
+  // 「在我這條序列跑完之前你不准自己彈回 buffer、不准自己排命令」）。
+  this._holdReason = null;
+  // 靜置探針的 timer handle 與它的兩個時鐘來源（見 RESUME_QUIET_MS）。
+  // _lastServerActivityAt 只在 settle 上更新（settle 本身就是「server 活動後靜止
+  // SETTLE_MS」）——**不要**去 term_buf 另外開 hook，那會踩到不變量 2/2b。
+  this._resumeProbe = null;
+  this._lastServerActivityAt = 0;
+  this._lastUserByteAt = 0;
+  // 最近一次回到 active 的時刻（RESUME_GRACE_MS 的起點，不變量 N4）。
+  this._resumedAt = 0;
   // MODE_SELECT (`/` filtered list) sub-state: its article-number space is
   // independent from the main list (protocol §8) — entering/leaving forces a
   // rebuild (via _boardName=null) so numbers never alias.
@@ -827,6 +909,9 @@ ListSession.prototype = {
       !snap.cursorMoved
     )
       return;
+    // 這一幀是 server 活動後的靜止點 ⇒ 自動回復的時鐘從這裡起算（洞 3）。上面
+    // 那道守門已經把純本地重繪擋掉了，所以不會誤把自己的重繪當成 server 活動。
+    this._lastServerActivityAt = Date.now();
     const facts = this._collectFacts(snap);
     // Pure notification (touches nothing here): landing on a list or a menu
     // means the user left the article by themselves, so aid_navigation's back
@@ -860,6 +945,7 @@ ListSession.prototype = {
     if (consumed === 'done' && (this._renderMode === 'frozen' || this.state === 'opening'))
       this._armFrozenWatchdog();
     this._dispatch(this._settleEvent(facts, consumed), facts);
+    this._scheduleResumeProbe();
   },
 
   // One facts object per settle: everything the classifier, the queue expects
@@ -898,10 +984,19 @@ ListSession.prototype = {
       landedNumInBuffer:
         facts.cursorRowNum != null &&
         (this._termBuf.listLineNums || []).indexOf(facts.cursorRowNum) !== -1,
-      nativeHold: !!this._nativeHold,
+      holdReason: this._holdReason,
+      withinResumeGrace: Date.now() - this._resumedAt < RESUME_GRACE_MS,
       hasNumberedRow: hasNumberedEntryRow(facts),
       engageEligible: this._engageEligible()
     };
+  },
+
+  // pref 開著＝本功能（L1 凍結交易 ＋ L2 自動回復）生效；關掉＝**逐位元回到
+  // 2026-09-03 之前**：A 類鍵一律走 passthrough、探針一次都不排。
+  // 這是使用者拍板的逃生門（三階梯見 docs/easy-reading-list.md）：判定類功能的
+  // 最後一道防線就是設定開關，全關就回到原生體驗。
+  _autoResumeEnabled: function() {
+    return !!readValuesWithDefault().enableListNativeAutoResume;
   },
 
   // pref on ∧ standard 24-row term (v1 bypass otherwise) ∧ the article easy
@@ -914,6 +1009,65 @@ ListSession.prototype = {
       this._termBuf.rows === 24 &&
       !this._termBuf.startedEasyReading
     );
+  },
+
+  // ---- 靜置探針（非導覽操作完成 → 自動回好讀）--------------------------------
+
+  // 使用者往 PTT 送了 byte（原生鏡像期間鍵盤／貼上／IME／點功能鍵都走不到
+  // activeListSession()，所以這條是**無條件**從 term_view / pttchrome 呼進來的）。
+  // **只記時間戳，不得有任何其他副作用**（不變量 N2）。
+  noteNativeInput: function() {
+    this._lastUserByteAt = Date.now();
+    this._scheduleResumeProbe();
+  },
+
+  // (重新)排定探針。排定點：進入 hold 當下、每一次 settle、每一次使用者送 byte。
+  // 取消點：離開 functionMode／cleanup／pref-off／hold 變 external／斷線 ——
+  // 全部收斂到「holdReason !== 'passthrough' 就清掉」這一條。
+  _scheduleResumeProbe: function(delay) {
+    if (this._resumeProbe) {
+      clearTimeout(this._resumeProbe);
+      this._resumeProbe = null;
+    }
+    if (this._holdReason !== 'passthrough') return;
+    if (!this._autoResumeEnabled()) return;
+    const self = this;
+    this._resumeProbe = setTimeout(function() {
+      self._resumeProbe = null;
+      self._tryResumeProbe();
+    }, delay == null ? RESUME_QUIET_MS : delay);
+  },
+
+  _cancelResumeProbe: function() {
+    if (!this._resumeProbe) return;
+    clearTimeout(this._resumeProbe);
+    this._resumeProbe = null;
+  },
+
+  // 探針到點：**不看事件，直接量當下畫面**（形狀同 evaluateNow）。只讀不寫
+  // （不變量 N2：不送 byte、不排命令、不改錨），唯一的輸出是一個合成事件。
+  _tryResumeProbe: function() {
+    if (this._holdReason !== 'passthrough' || !this._autoResumeEnabled()) return;
+    // 洞 3：畫面與使用者都要靜止。還沒靜置滿就補排剩下的時間（不是輪詢）。
+    const quietSince = Math.max(this._lastServerActivityAt, this._lastUserByteAt);
+    const waited = Date.now() - quietSince;
+    if (waited < RESUME_QUIET_MS) return this._scheduleResumeProbe(RESUME_QUIET_MS - waited);
+    // 洞 2：命令還在線上。它自己的回應會帶來 settle → 由那裡重排；但「PTT 完全
+    // 忽略這個鍵」的情形是零 byte 零 settle，只能等命令自己 timeout ⇒ 這裡補排
+    // 一次，讓 timeout 之後仍然有人來看一眼。
+    if (this._queue.inFlightKind) return this._scheduleResumeProbe();
+    const facts = this._collectFacts(null);
+    const event = this._settleEvent(facts, null);
+    event.type = 'resume-probe';
+    // 內容不合格（洞 1：PTT 還在等輸入 ⇒ classifyListScreen 的 curX<=1 判掉；
+    // 子畫面／編輯器根本不是 clean-list）：不再排，等下一個 settle 重新排。
+    if (facts.kind !== 'clean-list') return;
+    const before = this.state;
+    this._dispatch(event, facts);
+    // 換畫面永不靜默（不變量 N7）：使用者沒按任何鍵，畫面卻從原生換回好讀，
+    // 一定要說一聲。
+    if (before !== this.state && this.state === 'active' && this._view.flashListHint)
+      this._view.flashListHint('操作完成，已回到好讀列表', 2000);
   },
 
   _dispatch: function(event, facts) {
@@ -979,7 +1133,10 @@ ListSession.prototype = {
   beginExternalNavigation: function() {
     if (this.state === 'idle') return;
     this.state = 'functionMode';
-    this._enterFunctionMode();
+    // 'external'：**永不自動解除**（不變量 N1）。序列途中的 clean-list 幀很多，
+    // 命令與命令之間 inFlightKind 也會是 null ⇒ 讓靜置探針看到就會把別人的序列
+    // 從中間截斷（deep link 跳文、長推文）。
+    this._enterFunctionMode(null, { hold: 'external' });
   },
 
   // Read-only snapshot of "which article is open, as a list coordinate" for
@@ -1090,6 +1247,12 @@ ListSession.prototype = {
       return;
     }
 
+    if (key.class === 'native-inplace') {
+      // A 類鍵：凍結交易（畫面凍住 → 送真鍵 → 採用真落點 → 直接回 buffer）。
+      this._beginInplaceTransaction(key.bytes);
+      return;
+    }
+
     const r = transitionListSession(this.state, { type: 'key', keyClass: key.class });
     this.state = r.next;
     for (let i = 0; i < r.actions.length; ++i) {
@@ -1131,7 +1294,7 @@ ListSession.prototype = {
       this.state = r0.next;
       this._enterFunctionMode();
       if (this._view.flashListHint)
-        this._view.flashListHint('已切至原生操作（開啟文章或離開看板後恢復好讀）', 4000);
+        this._view.flashListHint('已切至原生操作' + nativeResumeHint(), 4000);
       return;
     }
     e.preventDefault();
@@ -1153,7 +1316,7 @@ ListSession.prototype = {
     const hint =
       opts && 'hint' in opts
         ? opts.hint
-        : '已切至原生操作（開啟文章或離開看板後恢復好讀）';
+        : '已切至原生操作' + nativeResumeHint();
     // bytes 是字串 ＝ 一步；是陣列 ＝ 多步序列（每步 {keys, kind, expect,
     // onDone, onFail}）。**第 n+1 步只在第 n 步的 onDone 裡 enqueue**，所以前一步
     // 的 expect 沒滿足時後面的鍵絕不會出去 —— 那不是保險，是必要條件：'v' 沒進
@@ -1194,6 +1357,11 @@ ListSession.prototype = {
     this._queue.enqueue({
       keys: step.keys,
       kind: step.kind || 'native-key',
+      // 尾附 \f：PTT 完全忽略某個鍵時（無權限、MODE_SELECT 下的 Ctrl-D…）是
+      // **零 byte 零 settle**，命令只能等到 NATIVE_PASSTHROUGH_MS(3s) 才 timeout
+      // ⇒ 使用者要盯著原生畫面發呆 3 秒，自動回復也無從觸發。\f 保證必有一幀
+      // （協定 §6：igetch 全域攔截，getdata/vgets/pmore/編輯器一律吃這條）。
+      fullRepaint: 'fullRepaint' in step ? step.fullRepaint : true,
       expect:
         step.expect ||
         function() {
@@ -1333,7 +1501,7 @@ ListSession.prototype = {
     return this._beginTextPassthrough(text, {
       normalize: true,
       kind: 'native-paste',
-      hint: '已貼上並切至原生操作（開啟文章或離開看板後恢復好讀）'
+      hint: '已貼上並切至原生操作' + nativeResumeHint()
     });
   },
 
@@ -1351,7 +1519,7 @@ ListSession.prototype = {
     return this._beginTextPassthrough(text, {
       normalize: false,
       kind: 'native-input',
-      hint: '已切至原生操作（開啟文章或離開看板後恢復好讀）'
+      hint: '已切至原生操作' + nativeResumeHint()
     });
   },
 
@@ -1428,6 +1596,113 @@ ListSession.prototype = {
     }, function() {
       self._degradeToNative('離開列表逾時，已切至原生模式');
     });
+  },
+
+  // A 類鍵（INPLACE_KEYS）的凍結交易 —— 本功能的 L1，形狀完全照抄 _beginLeave：
+  // 畫面逐像素凍住 → （必要時）同步真游標 → 送真鍵 → 等真回應 → 採用真落點。
+  // **不是** v5 退役的「模擬交易」（那是 client 自己算游標該去哪）；這裡送的是
+  // 真的鍵、採用的是 server 的落點，只是全程不讓使用者看到原生鏡像。
+  //
+  // 為什麼 A 類值得這樣做（2026-07-10 黏性原生當初要解的三題，對 A 類同時消失）：
+  //   閃動   —— 反覆 [ ] 不再 buffer↔原生 翻面
+  //   丟 cache —— 沒有 _enterFunctionMode ⇒ _boardName 還在，落地走純 resume 快路徑
+  //   banner —— 全程沒經過 active 的 catch-all
+  _beginInplaceTransaction: function(bytes) {
+    const r = transitionListSession(this.state, {
+      type: 'key',
+      keyClass: 'native-inplace'
+    });
+    this.state = r.next; // functionMode（吸收在途 settle／吞鍵），render 仍是 frozen
+    this._freezeForTransaction();
+    const self = this;
+    const send = function() {
+      self._enqueueInplaceKey(bytes);
+    };
+    // A 類鍵幾乎都是**對真游標所在那一列**動作的（thread 家族從游標找關聯文、
+    // t 標記游標那一列），本地導覽零網路 ⇒ 真游標落後時必須先跳號同步。
+    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+      this._enqueueCursorSyncJump('inplace-sync-jump', send, function() {
+        self._degradeToNative('操作逾時，已切至原生模式');
+      });
+      return;
+    }
+    send();
+  },
+
+  _enqueueInplaceKey: function(bytes) {
+    const self = this;
+    let landed = null;
+    this._queue.enqueue({
+      keys: bytes,
+      kind: 'native-inplace',
+      // 保證必有一幀可判定：thread() 找不到目標時回原位，畫面幾乎沒有變化。
+      // \f 在 prompt／pmore／編輯器內都是零副作用的（協定 §6）。
+      fullRepaint: true,
+      // **不可以寫成 kind === 'clean-list'**（陷阱 T1）：這個鍵前面若剛跑過
+      // inplace-sync-jump，server 虛擬螢幕的底列是空的（協定 §4 ✚），redrawwin
+      // 重繪的是**現狀**而不是推進狀態 ⇒ \f 之後仍然不是 clean-list。用 park 指紋。
+      expect: function(snap, facts) {
+        if (
+          facts.curX <= 1 &&
+          facts.curY >= 3 &&
+          facts.curY <= facts.rows - 2 &&
+          (facts.cursorRowNum != null || facts.kind === 'clean-list')
+        ) {
+          landed = facts;
+          return true;
+        }
+        return false;
+      },
+      timeoutMs: CMD_PROBE_AFTER_MS,
+      probeTimeoutMs: CMD_PROBE_WINDOW_MS,
+      hardTimeoutMs: CMD_HARD_MS,
+      onDone: function() {
+        self.state = 'active';
+        const inBuf =
+          !!landed &&
+          landed.cursorRowNum != null &&
+          (self._termBuf.listLineNums || []).indexOf(landed.cursorRowNum) !== -1;
+        // 落點不在緩衝（`[` 跳到很遠的舊文、置底列）＝畫面本來就要換一份 ⇒
+        // 走既有的 resume+rebuild（那時視野跳一下是合理的）。
+        if (inBuf) self._resumeInPlace(landed);
+        else {
+          self._resumeBuffer(landed);
+          self._rebuild(landed);
+        }
+      },
+      onFail: function() {
+        self._degradeToNative('操作逾時，已切至原生模式');
+      }
+    });
+  },
+
+  // 凍結交易落地後回到 buffer。**不可以直接用 _resumeBuffer**（陷阱 T2）：那一支
+  // 是給「從原生鏡像回來、畫面本來就是 server 那一頁」設計的，會把 _topNum 重設
+  // 成原生畫面第一列並設 _anchorOverride。A 類交易期間畫面是**凍住的 buffer**，
+  // 使用者的捲動位置在自己的視口裡 —— 套用會讓視野瞬間跳走。
+  // 這裡只做兩件事：採用落點當選取／server 游標，然後把它帶進視野（不變量 N6）。
+  _resumeInPlace: function(facts) {
+    this._holdReason = null;
+    this._cancelResumeProbe();
+    this._resumedAt = Date.now();
+    this._breakChain();
+    this._renderMode = 'buffer';
+    this._setLoading(false);
+    this._view.hideCursor();
+    if (facts && facts.cursorRowNum != null) {
+      this._serverNum = facts.cursorRowNum;
+      this._selectedNum = facts.cursorRowNum;
+      this._selectedPinnedKey = null;
+    }
+    // 同步重繪：把落地那一頁併回緩衝（t 的 tag 標記之類的逐列變化靠這一趟生效）。
+    // 錨（_topNum/_topPinnedKey/_scrollFrac）一律不碰。
+    this._forceRedraw();
+    const seq = this._sequence();
+    const pos = this._cursorPos(seq);
+    if (pos >= 0 && !this._isPosVisible(seq, pos)) {
+      this._scheduleReveal(pos, { block: 'nearest', behavior: 'auto' });
+      this._forceRedraw();
+    }
   },
 
   _enqueueLeaveKey: function() {
@@ -1619,6 +1894,15 @@ ListSession.prototype = {
         // Number jump (T2): digits collect locally in an overlay; committing
         // runs a single serialized jump transaction (_beginJumpNumber).
         if (/^[0-9]$/.test(e.key)) return { class: 'jump-digit', digit: e.key };
+        // A 類鍵（INPLACE_KEYS，枚舉即合約——不變量 N5）：原地重繪，清單內容與
+        // 編號空間都不變 ⇒ 走凍結交易，**全程不切原生**。pref 關掉時整組落回
+        // passthrough（＝逐位元回到 2026-09-03 之前的行為）。
+        if (
+          e.key.length === 1 &&
+          INPLACE_KEYS.indexOf(e.key) !== -1 &&
+          this._autoResumeEnabled()
+        )
+          return { class: 'native-inplace', bytes: keyEventToBytes(e) };
         return { class: 'passthrough' };
     }
   },
@@ -1791,8 +2075,9 @@ ListSession.prototype = {
   // `w` 會落回列表按鍵 b_call_in（對該列作者送呼叫器）、`\r` 會開文。兩步一定要
   // 序列化，而且第一步的 expect 必須確認 prompt 真的出現才准送第二步。
   //
-  // 完成後**停在原生鏡像**（_enterFunctionMode 的黏性 _nativeHold）：已讀標記改
-  // 變 ⇒ 累積 buffer 的內容全數過時，返回時本來就該走 rebuild。
+  // 完成後停在原生鏡像（_enterFunctionMode 的 'passthrough' hold）：已讀標記改
+  // 變 ⇒ 累積 buffer 的內容全數過時，返回時本來就該走 rebuild。畫面靜下來之後
+  // 由靜置探針自動切回好讀（pref enableListNativeAutoResume；關掉就停在原生）。
   markReadUnreadBefore: function(num) {
     if (this._renderMode === 'native') return false; // 沒接管，交給一般路徑
     if (this.state === 'opening') {
@@ -1852,11 +2137,11 @@ ListSession.prototype = {
             self._view.flashListHint(
               rejected
                 ? 'PTT 不接受這篇當參考點，已讀記錄沒有變動（請改用其它文章）。' +
-                    '已切至原生（開啟文章或離開看板後恢復好讀）'
+                    '已切至原生' + nativeResumeHint()
                 : '已將第 ' +
                     num +
                     ' 篇（含）以前設為已讀、以後設為未讀。' +
-                    '已切至原生（開啟文章或離開看板後恢復好讀）',
+                    '已切至原生' + nativeResumeHint(),
               4000
             );
           }
@@ -1871,7 +2156,8 @@ ListSession.prototype = {
   // ---- actions ---------------------------------------------------------------
 
   _seed: function(facts) {
-    this._nativeHold = false;
+    this._holdReason = null;
+    this._cancelResumeProbe();
     this._breakChain();
     // _lastReadTitle deliberately NOT reset: pttbbs's currtitle is per-login
     // global (readdoent compares it in every board), and a title key doesn't
@@ -2452,7 +2738,8 @@ ListSession.prototype = {
   // buffer maps are KEPT — coming back re-seeds from the server's landing
   // (suspended → clean-list → resume-buffer), no saved anchors needed (v5/M4).
   _handoffArticle: function() {
-    this._nativeHold = false; // context change: the article releases the hold
+    this._holdReason = null; // context change: the article releases the hold
+    this._cancelResumeProbe();
     this._setLoading(false);
     this._serverNum = null;
     this._breakChain();
@@ -2471,9 +2758,10 @@ ListSession.prototype = {
   // failures are VISIBLE: show a banner naming why (waterball fingerprint gets
   // the specific wording). facts null = an explicit entry (airlock consent,
   // internal callers) — no banner.
-  _enterFunctionMode: function(facts) {
+  // opts.hold: 'passthrough'（預設，靜置後自動回好讀）| 'external'（永不自動解除）。
+  _enterFunctionMode: function(facts, opts) {
     this._cancelScroll(); // 原生鏡像沒有捲動視口，排隊中的 reveal 要作廢
-    this._nativeHold = true; // sticky: stay native until article/menu/resume
+    this._holdReason = (opts && opts.hold) || 'passthrough';
     this._setLoading(false);
     this._serverNum = null; // native excursion: the cursor goes wherever
     // Native excursion = the LISTING is no longer trusted either: any native
@@ -2492,11 +2780,13 @@ ListSession.prototype = {
     this._renderMode = 'native';
     this._view.showCursor();
     this._forceRedraw();
+    // 停泊當下就排一次探針：使用者按完鍵之後可能再也不動（畫面靜止不會有 settle）。
+    this._scheduleResumeProbe();
     if (facts && this._view.flashListHint) {
       this._view.flashListHint(
-        isWaterballSettle(facts)
-          ? '收到水球／廣播，已切至原生模式（開啟文章或離開看板後恢復好讀）'
-          : '畫面偏離列表格式，已切至原生模式（開啟文章或離開看板後恢復好讀）',
+        (isWaterballSettle(facts)
+          ? '收到水球／廣播，已切至原生模式'
+          : '畫面偏離列表格式，已切至原生模式') + nativeResumeHint(),
         4000
       );
     }
@@ -2518,7 +2808,9 @@ ListSession.prototype = {
   },
 
   _resumeBuffer: function(facts) {
-    this._nativeHold = false;
+    this._holdReason = null;
+    this._cancelResumeProbe();
+    this._resumedAt = Date.now(); // 不變量 N4：殘餘幀不得打到 active 的 catch-all
     this._breakChain();
     this._renderMode = 'buffer';
     this._setLoading(false);
@@ -2557,7 +2849,8 @@ ListSession.prototype = {
 
   _cleanup: function() {
     this._cancelScroll();
-    this._nativeHold = false;
+    this._holdReason = null;
+    this._cancelResumeProbe();
     this._serverNum = null;
     if (this._frozenWatchdog) {
       clearTimeout(this._frozenWatchdog);

@@ -1,4 +1,6 @@
-// 列表好讀鍵盤合約（2026-07-10 起）：白名單＝導覽/開文/跳號/離板；其餘鍵一律
+// 列表好讀鍵盤合約（2026-07-10 起，2026-09-03 補 A/B 分類）：白名單＝導覽/開文/
+// 跳號/離板；A 類鍵（[ ] = \ + - < > , . { } t，原地重繪）走凍結交易全程不切原生；
+// 其餘 B 類鍵一律
 // 「一鍵切原生」——有序號選取且 server 游標未同步時先序列化 native-sync-jump
 //（buffer 本地導航零網路，真游標停在舊位置；jump＋key 不能同 tick 直送——pttbbs
 // typeahead 會跳過重繪，協定 §2），完成後 enter-function-mode（原生 excursion，
@@ -24,6 +26,12 @@ function makeSession() {
     listLineNums: [],
     lineChangeds: new Array(24).fill(false),
     changed: false,
+    // 靜置探針（非導覽操作完成後自動回好讀）會在 hold 期間量一次當下畫面，
+    // 所以 stub 也要有 TermBuf 的畫面讀取介面（真的 TermBuf 一定有）。
+    getRowText: () => "",
+    isUnicolor: () => false,
+    cur_x: 0,
+    cur_y: 0,
     addEventListener() {},
     notify() {},
   };
@@ -65,12 +73,12 @@ describe("ListSession 非白名單鍵一鍵切原生（[ ] = 沒反應回歸，2
   // 舊行為：[ ] = 走模擬 relative 交易（僅數字選取可用；pinned/無選取 noop 吞鍵，
   // 要再按一次 airlock）→「按了沒反應也沒讀取中」。新合約：非導覽白名單鍵一律
   // 「同步 server 游標（有序號且未同步時）→ 切原生鏡像 → 代送該鍵」——單按即生效。
-  test("active＋數字選取未同步：按 [ → preventDefault、先 sync-jump、完成後切原生＋代送 [", () => {
+  test("active＋數字選取未同步：按 z（B 類）→ preventDefault、先 sync-jump、完成後切原生＋代送 z", () => {
     const { s, sent, enqueued } = makeSession();
     s._view.flashListHint = () => {};
     s.state = "active";
     s._selectedNum = 42;
-    const e = keyEvent("[");
+    const e = keyEvent("z");
     s.onKeyDown(e);
     // 鍵本身不得同 tick passthrough（sync 腿還在途，typeahead 會卡畫面）
     expect(e.defaultPrevented).toBe(true);
@@ -86,8 +94,10 @@ describe("ListSession 非白名單鍵一鍵切原生（[ ] = 沒反應回歸，2
     expect(s._renderMode).toBe("native");
     expect(sent).toEqual([]); // 不裸送
     expect(enqueued[1].kind).toBe("native-key");
-    expect(enqueued[1].keys).toBe("[");
+    expect(enqueued[1].keys).toBe("z");
     expect(enqueued[1].expect()).toBe(true); // 任一 settle 即回應
+    // 尾附 \f：PTT 完全忽略該鍵時是零 byte 零 settle，沒有它只能等 3s timeout。
+    expect(enqueued[1].fullRepaint).toBe(true);
   });
 
   test("已同步（_serverNum===選取）→ 跳過 sync 腿，直接切原生＋代送", () => {
@@ -96,27 +106,27 @@ describe("ListSession 非白名單鍵一鍵切原生（[ ] = 沒反應回歸，2
     s.state = "active";
     s._selectedNum = 7;
     s._serverNum = 7;
-    s.onKeyDown(keyEvent("="));
+    s.onKeyDown(keyEvent("Z"));
     expect(s.state).toBe("functionMode");
     expect(enqueued.length).toBe(1); // 免 sync 腿，只有 native-key
     expect(enqueued[0].kind).toBe("native-key");
-    expect(enqueued[0].keys).toBe("=");
+    expect(enqueued[0].keys).toBe("Z");
     expect(sent).toEqual([]);
   });
 
-  test("pinned 選取（無序號）：] 無跳號可同步 → 直接切原生＋代送（不再 noop 吞鍵）", () => {
+  test("pinned 選取（無序號）：a 無跳號可同步 → 直接切原生＋代送（不再 noop 吞鍵）", () => {
     const { s, sent, enqueued } = makeSession();
     s._view.flashListHint = () => {};
     s.state = "active";
     s._selectedNum = null;
     s._selectedPinnedKey = "arrenwu|[公告] 板規";
-    const e = keyEvent("]");
+    const e = keyEvent("a");
     s.onKeyDown(e);
     expect(e.defaultPrevented).toBe(true);
     expect(s.state).toBe("functionMode");
     expect(enqueued.length).toBe(1);
     expect(enqueued[0].kind).toBe("native-key");
-    expect(enqueued[0].keys).toBe("]");
+    expect(enqueued[0].keys).toBe("a");
     expect(sent).toEqual([]);
   });
 
@@ -125,12 +135,12 @@ describe("ListSession 非白名單鍵一鍵切原生（[ ] = 沒反應回歸，2
     s._view.flashListHint = () => {};
     s.state = "active";
     s._selectedNum = 42;
-    s.onKeyDown(keyEvent("["));
+    s.onKeyDown(keyEvent("z"));
     enqueued[0].onFail("timeout");
     expect(s.state).toBe("functionMode");
     expect(s._renderMode).toBe("native");
     expect(enqueued[1].kind).toBe("native-key");
-    expect(enqueued[1].keys).toBe("[");
+    expect(enqueued[1].keys).toBe("z");
   });
 
   test("←/q/e 離板 → v5 交易化：frozen＋先同步 server 游標再送離板鍵", () => {
@@ -282,10 +292,12 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵一鍵切原生"
     ["ArrowLeft", "functionMode", "leave-sync-jump"],
     ["q", "functionMode", "leave-sync-jump"],
     ["e", "functionMode", "leave-sync-jump"],
-    // 未列鍵（含舊模擬 [ ] = v /）→ passthrough：先 native-sync-jump 再代送
-    ["[", "functionMode", "native-sync-jump"],
-    ["]", "functionMode", "native-sync-jump"],
-    ["=", "functionMode", "native-sync-jump"],
+    // A 類鍵（原地重繪）→ 凍結交易：同樣先同步真游標，但腿名不同，而且**不切原生**
+    ["[", "functionMode", "inplace-sync-jump"],
+    ["]", "functionMode", "inplace-sync-jump"],
+    ["=", "functionMode", "inplace-sync-jump"],
+    ["t", "functionMode", "inplace-sync-jump"],
+    // B 類鍵（開 prompt／進子畫面／換一份清單）→ passthrough：sync 後切原生再代送
     ["v", "functionMode", "native-sync-jump"],
     ["/", "functionMode", "native-sync-jump"],
     ["z", "functionMode", "native-sync-jump"],
@@ -465,7 +477,7 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵一鍵切原生"
     // passthrough 的 sync 腿（[ v …）在途時同規則；sync 完成後的 enter-function-mode
     // 全量 flush 屬合法（之後無 expect），此處只驗「入列當下」。
     const begins = [
-      ["[", (s) => s.onKeyDown(keyEvent("["))],
+      ["[（A 類凍結交易）", (s) => s.onKeyDown(keyEvent("["))],
       ["v", (s) => s.onKeyDown(keyEvent("v"))],
       ["ArrowLeft", (s) => s.onKeyDown(keyEvent("ArrowLeft"))],
       ["Enter開文", (s) => s.onKeyDown(keyEvent("Enter"))],
@@ -496,9 +508,13 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵一鍵切原生"
 
 describe("passthrough 黏性原生（2026-07-10 UX：不自動彈回好讀）", () => {
   // 反覆按 [ ] 時「切原生→彈回好讀→再切原生」畫面閃動、圓點游標跳動，
-  // 且高流量板的殘餘 settle 易誤觸 catch-all banner。合約改為：passthrough
-  // 切原生後 HOLD——clean-list settle 一律 stay 鏡像；只有 article（開文，
-  // 文章好讀接手）或 menu（離板，重進板 re-engage）才解除。
+  // 且高流量板的殘餘 settle 易誤觸 catch-all banner。合約：passthrough
+  // 切原生後 HOLD——**clean-list settle 本身**一律 stay 鏡像。
+  // 2026-09-03 起 hold 分兩種：'external'（AID 跳文／長推文停泊）永不自動解除；
+  // 'passthrough' 由靜置探針（resume-probe，另見 list_native_resume.test.js）
+  // 解除。這裡守護的是「settle 本身不得解除 hold」那一半 —— 少了它就會在
+  // 「一個回應 settle 兩次」的半幀上採用到錯的游標落點。
+  // 另：[ ] = 已改走 A 類凍結交易（根本不切原生），所以這裡改用 B 類鍵 z。
   function cleanList(boardName, num) {
     const rowTexts = new Array(24).fill("");
     const nums = new Array(24).fill(null);
@@ -523,15 +539,15 @@ describe("passthrough 黏性原生（2026-07-10 UX：不自動彈回好讀）", 
     s._boardName = "C_Chat";
     s._selectedNum = 42;
     s._termBuf.listLineNums = [41, 42, 43];
-    s.onKeyDown(keyEvent("]"));
+    s.onKeyDown(keyEvent("z"));
     enqueued[0].onDone(); // sync 完成 → 切原生＋native-key 入列
     enqueued[1].onDone && enqueued[1].onDone(); // key 回應完成
-    // 原生 ] 跳到下一篇同標題，列表重繪 settle → 必須 STAY（黏性）
+    // 原生操作完成後的列表重繪 settle → 必須 STAY（黏性；回好讀由靜置探針決定）
     const facts = cleanList("C_Chat", 87);
     s._dispatch(s._settleEvent(facts), facts);
     expect(s.state).toBe("functionMode");
     expect(s._renderMode).toBe("native");
-    // 連按多次 ] 也不再切換模式（穩定停原生）
+    // 連按多次也不再切換模式（穩定停原生）
     const facts2 = cleanList("C_Chat", 90);
     s._dispatch(s._settleEvent(facts2), facts2);
     expect(s.state).toBe("functionMode");
@@ -571,7 +587,7 @@ describe("passthrough 黏性原生（2026-07-10 UX：不自動彈回好讀）", 
     const menuFacts = { kind: "menu", boardName: null, rowTexts: [], nums: [], rows: 24, curY: 5, curX: 0, cursorRowNum: null };
     s._dispatch(s._settleEvent(menuFacts), menuFacts);
     expect(s.state).toBe("idle");
-    expect(s._nativeHold).toBe(false); // cleanup 解除
+    expect(s._holdReason).toBe(null); // cleanup 解除
   });
 });
 
@@ -693,11 +709,14 @@ describe("functionMode clean-list settle 的 in-flight 吸收（相對命令配�
       actions: ["resume-buffer"],
     });
   });
-  test("nativeHold（passthrough/自癒 excursion）→ 一律 stay 鏡像（黏性原生）", () => {
-    expect(
-      transitionListSession("functionMode", settle("clean-list", { nativeHold: true }))
-    ).toEqual({ next: "functionMode", actions: [] });
-  });
+  test.each(["passthrough", "external"])(
+    "holdReason=%s → clean-list settle 一律 stay 鏡像（settle 本身不解除 hold）",
+    (holdReason) => {
+      expect(
+        transitionListSession("functionMode", settle("clean-list", { holdReason }))
+      ).toEqual({ next: "functionMode", actions: [] });
+    }
+  );
 });
 
 describe("無字元實體鍵不得觸發原生 excursion（Caps Lock/F2「畫面跑掉」回歸，2026-08）", () => {
@@ -723,7 +742,7 @@ describe("無字元實體鍵不得觸發原生 excursion（Caps Lock/F2「畫面
     s.onKeyDown(e);
     expect(s.state).toBe("active");
     expect(s._renderMode).toBe("buffer"); // 畫面不得換成 server 鏡像
-    expect(s._nativeHold).toBe(false);
+    expect(s._holdReason).toBe(null);
     expect(s._boardName).toBe("C_Chat"); // 不變量 15 的拋 cache 不該被誤觸
     expect(s._selectedNum).toBe(42);
     expect(sent).toEqual([]);

@@ -414,7 +414,13 @@ async function replayListCassette(page, cassette) {
         if (idx < steps.length) {
           const next = steps[idx];
           const match = PATTERNS[next.on];
-          if (match && match(data, next)) {
+          // 2026-09-03：native-key/native-paste/native-input 也一律尾附 \f
+          //（PTT 完全忽略某個鍵時是零 byte 零 settle，沒有它只能等 3s timeout）。
+          // 錄製側的 recv 不變，所以比對前把尾巴剝掉——與 jumpMatch 的 stripFF
+          // 同一個理由，只是套用面擴大到所有精確比對的 pattern。
+          // query 例外：它自己在 step 上累積使用者逐鍵打的字，那條路徑沒有 \f。
+          const probe = next.on === 'query' ? data : stripFF(data);
+          if (match && match(probe, next)) {
             if (
               (next.on === 'jump' || next.on === 'jumpsame' || next.on === 'jumpmax') &&
               next.num != null

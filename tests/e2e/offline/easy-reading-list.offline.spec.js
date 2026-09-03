@@ -320,9 +320,12 @@ test.describe('文章列表好读模式（离线）', () => {
       );
       expect(after.state).toBe('functionMode');
       // 代送恰好一键（z 一个 byte；cassette 无对应 step，server 无回应＝良性）。
+      // 2026-09-03 起尾附 \f（Ctrl-L）：PTT 完全忽略某个键时是零 byte 零 settle，
+      // 没有它命令只能等满 3s timeout —— 使用者要盯著原生画面发呆，
+      //「操作完成后自动回好读」也无从触发。协定 §6：\f 全域被 igetch 拦截。
       expect(after.sentCount).toBe(before.sentCount + 1);
       const sent = await page.evaluate(() => window.__replay.sent.slice(-1)[0]);
-      expect(sent).toBe('z');
+      expect(sent).toBe('z\f');
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -435,7 +438,7 @@ test.describe('文章列表好读模式（离线）', () => {
       // 恰好一次送出、内容完整（不得拆成逐字或漏字）。
       expect(after.sentCount).toBe(before.sentCount + 1);
       const sent = await page.evaluate(() => window.__replay.sent.slice(-1)[0]);
-      expect(sent).toBe(AID);
+      expect(sent).toBe(AID + '\f'); // 同 native-key：尾附 \f 保证必有一帧
       // 没有多余的 Insert 跳脱序列混进去。
       const all = await page.evaluate(() => window.__replay.sent.join(''));
       expect(all).not.toContain('\x1b[2~');
@@ -1205,13 +1208,16 @@ test.describe('置底文 Enter 开启（离线，pinned 卷）', () => {
 });
 
 // 2026-07-10：'/' 与 'v' 的模拟交易退役——非白名单键一键切原生（passthrough：
-// 可选 sync 腿 → enter-function-mode → 代送原键），prompt 由原生镜像显示，
-// 回 clean-list settle 自动恢复好读（resume+rebuild，不变量 15）。
+// 可选 sync 腿 → enter-function-mode → 代送原键），prompt 由原生镜像显示。
+// 2026-09-03（本檔兩條的語意反轉）：原生操作**做完之後**不再停在原生 —— 畫面
+// 靜下來（RESUME_QUIET_MS=250ms 內沒有 server 活動也沒有使用者送 byte）就由靜置
+// 探針自動切回好讀（resume+rebuild，不變量 15 照舊）。pref
+// enableListNativeAutoResume 預設開；關掉才是舊的黏性行為。
 test.describe('passthrough 一键切原生（离线，search/mark 卷）', () => {
   const search = loadCassette('cchat-list-search');
   const mark = loadCassette('cchat-list-mark');
 
-  test('/ 一键切原生：原生 prompt 打字提交→黏性停原生（MODE_SELECT）→← 退回主列表仍原生', async ({ page }) => {
+  test('/ 一键切原生：原生 prompt 打字提交→MODE_SELECT 落地後自动回好读→← 退回主列表仍好读', async ({ page }) => {
     test.skip(!search, '缺 cchat-list-search cassette');
     test.setTimeout(60000);
     const logs = ptt.attachConsole(page);
@@ -1241,10 +1247,9 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
       await page.keyboard.type(q, { delay: 30 });
       await page.keyboard.press('Enter');
 
-      // 提交完成 → MODE_SELECT 清单以原生镜像显示；黏性 hold（2026-07-10 UX）：
-      // clean-list settle 不弹回 buffer——停在原生直到 article/menu 情境切换。
-      // 注意 dump 的 nums 是「buffer」序号（hold 期间不更新），画面序号需自行
-      // 从 DOM 列解析。
+      // 提交完成 → MODE_SELECT 清单落地。画面静下来之后靜置探針自动把我们切回
+      // 好读（resume+rebuild：MODE_SELECT 是独立编号空间，协定 §8）。
+      // 画面序号从 DOM 列解析（buffer 重建前后都对得上）。
       const screenNums = async () => {
         const rows = await dumpScreenRows(page);
         return rows
@@ -1254,9 +1259,6 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
           })
           .filter((n) => n != null);
       };
-      await page.waitForFunction(
-        () => window.__app.listSession.state === 'functionMode'
-      );
       // MODE_SELECT 画面到齐（row0 先画、body 后画的串流时序 → poll 到
       // 「画面序号整页落入独立小序号空间」为止，一次取样必踩 race）。
       await expect
@@ -1265,11 +1267,17 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
           return ns.length > 0 && Math.max(...ns) < Math.min(...mainNums);
         }, { timeout: 15000 })
         .toBe(true);
-      s = await dumpListState(page);
-      expect(s.renderMode).toBe('native');
-      expect(s.state).toBe('functionMode'); // 黏性：不弹回好读
+      // 自动回好读（本次改动的主体）：不按任何键，state 自己回 active、
+      // .listBodyView 重新出现。
+      s = await waitState(
+        page,
+        (x) => x.state === 'active' && x.renderMode === 'buffer',
+        15000
+      );
+      await expect(page.locator('.listBodyView')).toHaveCount(1);
 
-      // ← 原生退出 select → back step 喂主列表 → 仍停原生（黏性）。
+      // ← 退回主列表：这时已经是好读，所以走的是序列化的离开交易（back step）。
+      // 落地仍是好读（编号空间换了 ⇒ rebuild）。
       await page.keyboard.press('ArrowLeft');
       await expect
         .poll(async () => {
@@ -1277,9 +1285,11 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
           return ns.some((n) => n >= Math.min(...mainNums));
         }, { timeout: 15000 })
         .toBe(true);
-      s = await dumpListState(page);
-      expect(s.state).toBe('functionMode');
-      expect(s.renderMode).toBe('native');
+      s = await waitState(
+        page,
+        (x) => x.state === 'active' && x.renderMode === 'buffer',
+        15000
+      );
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -1287,7 +1297,7 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
     }
   });
 
-  test('v 一键切原生：sync 腿→代送 v→原生 prompt→Enter 取消→黏性停原生', async ({ page }) => {
+  test('v 一键切原生：sync 腿→代送 v→原生 prompt→Enter 取消→自动回好读', async ({ page }) => {
     test.skip(!mark, '缺 cchat-list-mark cassette');
     test.setTimeout(60000);
     const logs = ptt.attachConsole(page);
@@ -1325,13 +1335,16 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
       const rows = await dumpScreenRows(page);
       expect(rows.some((t) => t.includes('(U)未讀') || t.includes('未讀'))).toBe(true);
 
-      // Enter 取消（cancel step 喂 FULLUPDATE）→ 黏性 hold：停在原生镜像，
-      // 不自动弹回好读（2026-07-10 UX——反复 [ ] 的闪动/误触 banner 修正）。
+      // Enter 取消（cancel step 喂 FULLUPDATE）→ 操作完成、画面静下来 ⇒ 靜置探針
+      // 自动把我们切回好读。这就是本次改动要的行为：使用者除了非导览操作本身，
+      // 大部分时间都看不到原生模式。
       await page.keyboard.press('Enter');
-      await page.waitForTimeout(1500); // 给 settle 机会（若误弹回这里会转 active）
-      s = await dumpListState(page);
-      expect(s.state).toBe('functionMode');
-      expect(s.renderMode).toBe('native');
+      s = await waitState(
+        page,
+        (x) => x.state === 'active' && x.renderMode === 'buffer',
+        15000
+      );
+      await expect(page.locator('.listBodyView')).toHaveCount(1);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -1467,9 +1480,12 @@ test.describe('中文輸入法（離線）', () => {
       expect(after.sentCount).toBe(before.sentCount + 1);
       const sent = await page.evaluate(() => window.__replay.sent.slice(-1)[0]);
       // Big5：兩個全形字 = 4 bytes，每個 byte < 256（裸送 UTF-16 會是 2 個 >0xFF 的碼位）
-      expect(sent.length).toBe(4);
-      expect(Math.max(...[...sent].map((c) => c.charCodeAt(0)))).toBeLessThan(256);
-      expect(sent).not.toBe(TEXT);
+      // 尾巴多一個 \f（同 native-key，保證必有一幀可判定）。
+      expect(sent.slice(-1)).toBe('\f');
+      const body = sent.slice(0, -1);
+      expect(body.length).toBe(4);
+      expect(Math.max(...[...body].map((c) => c.charCodeAt(0)))).toBeLessThan(256);
+      expect(body).not.toBe(TEXT);
       // 原生鏡像：第二層捲動視口收掉，畫面回到固定 24 列
       expect(after.viewportPx).toBe(-1);
       expect(after.domRows).toBe(24);

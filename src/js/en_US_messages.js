@@ -529,6 +529,12 @@ export const en_US = {
   "tooltip_enableBoardListSmoothScroll": {
     "message": "Accumulates the favourites and class-board listings into one sequence and hands scrolling straight to the browser (the same engine as list easy reading). The all-boards / hot-boards listings and the `c` new-post mode keep the native page-at-a-time behaviour."
   },
+  "options_enableListNativeAutoResume": {
+    "message": "Return to easy reading / smooth scrolling once a non-navigation action finishes"
+  },
+  "tooltip_enableListNativeAutoResume": {
+    "message": "When a non-navigation key is pressed in a listing (search, tag, push, mark-as-read...), switch back to the easy-reading view as soon as the action completes and the screen goes quiet. Cursor-only keys ([ ] = \\ + - < > , . { } t, and t v V in the board list) never show the native mirror at all. Turn this off to stay native until an article is opened or the board is left."
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."
   },

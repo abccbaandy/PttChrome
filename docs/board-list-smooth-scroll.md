@@ -141,9 +141,10 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 | active | settle `brdlist` 換變體 | `rebuild`（編號空間換了） |
 | active | settle `article-list` / `menu` | idle：`cleanup` |
 | active | settle 其他（含 `brdlist-other`） | 交易在飛／剛被消費 → stay；否則 functionMode：`enter-native`＋banner |
-| active | key nav / open / leave / passthrough | move-selection / opening+begin-open / opening+begin-leave / functionMode |
-| functionMode | settle `article-list` / `menu` | idle：`cleanup`（黏性原生只有情境變換才放開） |
-| functionMode | 其他 settle | stay（繼續鏡像） |
+| active | key nav / open / leave / passthrough / native-inplace | move-selection / opening+begin-open / opening+begin-leave / functionMode（passthrough＝原生鏡像；native-inplace＝**凍結交易，全程不切原生**）|
+| functionMode | settle `article-list` / `menu` | idle：`cleanup` |
+| functionMode | **`resume-probe`**（靜置探針）| `holdReason==='passthrough'` ∧ 無 in-flight ∧ `ctx==='brdlist'` ∧ engageEligible → active：`seed`＋`start-fill`。**不可以走「回 idle 等下一個 settle」**——畫面靜止時不會再有 settle，那會卡死 |
+| functionMode | 其他 settle | stay（繼續鏡像；settle 本身永不解除 hold）|
 | opening | 任何 settle | stay（落地由 queue 的 expect 判） |
 | 任何 | `pref-off` | idle：`cleanup` |
 
@@ -167,7 +168,8 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 | 游標同步 `brd-*-sync-jump` | `<sel>\r` ＋ `\f` | cursorNum === sel |
 | 進看板 `brd-open-board` | `\r` | **任何 settle**；onDone → `_reset()` |
 | 回上層 `brd-leave` | `\x1b[D` | 同上 |
-| passthrough `brd-native-key/paste/input` | 原鍵／Big5 bytes | 同上（畫面已是原生鏡像） |
+| passthrough `brd-native-key/paste/input` | 原鍵／Big5 bytes ＋ `\f` | 同上（畫面已是原生鏡像）|
+| A 類鍵 `brd-native-inplace` | `t`／`v`／`V` ＋ `\f`（必要時先 `brd-inplace-sync-jump`）| `brd.parked ∧ cursorNum≠null ∧ 同變體` → `_resumeInPlace`（採用落點、**錨不動**）；落點不在緩衝 → `rebuild` |
 
 「進看板／回上層一律 `expect: () => true` + onDone 收攤」是刻意的：落點有三種
 （文章列表／另一份看板列表／主功能表·分類根），在 expect 裡窮舉遠比「收攤後讓
@@ -179,7 +181,14 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 
 同義鍵照 `board.c:1751-1840`，**與 read.c 有兩處不同**：PgUp 多一個 `b`、`0` 是 Home；
 離開只有 `←`/`q`（**沒有 `e`**）。開是 `Enter`/`→`/`r`/`l`。`1-9` 走本地浮層收集跳號。
-Ctrl 組合與其餘一切 → passthrough（切原生鏡像＋代送，黏性）。
+**A 類鍵（原地重繪，2026-09-03）＝`t`／`v`／`V`**：`t` 是 `fav_tag`/admtag 後 fall through 到
+`KEY_DOWN`（游標下移一列），`v`/`V` 是 `brc_toggle_all_read` → `show_brdlist(head,0,newflag)` 原地重畫
+（board.c:1802/1871）。三者都不開 prompt、不換編號空間 ⇒ 走**凍結交易**（`native-inplace`），
+全程看不到原生。**`*`（tag all）刻意不在此組**：它一次翻掉整份清單的 tag 標記，緩衝裡其他頁會殘留
+舊標記 ⇒ 歸 passthrough（切原生，回來整份重建）。
+Ctrl 組合與其餘一切 → passthrough（切原生鏡像＋代送），操作完成、畫面靜下來 250ms 後由**靜置探針**
+自動重新 engage（pref `enableListNativeAutoResume`，預設開；關掉＝停在原生，進板／回上層才恢復）。
+探針的三個條件與時鐘來源與文章列表完全相同，見 `docs/easy-reading-list.md`「靜置探針」節。
 送不出 byte 的鍵（F1/CapsLock…）→ `ignore`，判準是 `keyEventToBytes(e) == null` 本身。
 
 ---
@@ -196,6 +205,10 @@ Ctrl 組合與其餘一切 → passthrough（切原生鏡像＋代送，黏性�
 - **I5 零回應的 Enter**：分隔線（`NBRD_LINE`）與禁入／隱板列，PTT 一個 byte 都不回
   ⇒ **必須在本地擋掉**（`isBoardListSeparatorRow` / `isBoardListBlockedRow`），
   送出去只會凍畫面到逾時。
+- **I5b hold 分兩種**（同 `docs/easy-reading-list.md` N1）：`beginExternalNavigation()`（AID 跳文／
+  長推文）寫 `'external'`，**永不自動解除**；非白名單鍵／自癒降級寫 `'passthrough'`，才吃靜置探針。
+- **I5c A 類凍結交易不得動捲動錨**（同 N6）：`_resumeInPlace` 只採用落點＋reveal，
+  不走 `_adoptLanding`（那會把 `_topNum` 重設成原生畫面頂列 ⇒ 視野瞬間跳走）。
 - **I6 離開範圍即退回原生**：每個 settle 都重跑指紋，一旦不是 `fav`/`class`
   就切原生鏡像／收攤，**不可沿用舊緩衝繼續畫**（編號空間已換）。
 - **I7 golden 快照**：改 `render/screen.js` 或列輸出必跑 `render_dom_equivalence.test.js`。

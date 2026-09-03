@@ -45,6 +45,12 @@ function makeSession({ count = 8, pinned = 0 } = {}) {
     listLineNums,
     lineChangeds: new Array(24).fill(false),
     changed: false,
+    // 靜置探針（非導覽操作完成後自動回好讀）會在 hold 期間量一次當下畫面，
+    // 所以 stub 也要有 TermBuf 的畫面讀取介面（真的 TermBuf 一定有）。
+    getRowText: () => "",
+    isUnicolor: () => false,
+    cur_x: 0,
+    cur_y: 0,
     addEventListener() {},
     notify() {},
   };
@@ -219,14 +225,17 @@ describe("markReadUnreadBefore 的序列", () => {
     expect(last).not.toContain("已將第");
   });
 
-  test("完成後停在原生（_nativeHold），不自動回好讀", () => {
+  test("完成後停在原生鏡像，hold 是 'passthrough'（＝之後由靜置探針自動回好讀）", () => {
+    // 已讀標記全變 ⇒ 累積 buffer 過時，回來本來就該 rebuild；所以這裡只驗
+    // 「落地當下仍是原生鏡像、而且掛的是可自動解除的 hold」。真正的回復由
+    // resume-probe 負責（tests/unit/list_native_resume.test.js）。
     const { s, enqueued } = makeSession();
     s._serverNum = 103;
     s.markReadUnreadBefore(103);
     stepOf(enqueued, "mark-read-prompt").onDone(true);
     stepOf(enqueued, "mark-read-apply").onDone(true);
     expect(s._renderMode).toBe("native");
-    expect(s._nativeHold).toBe(true);
+    expect(s._holdReason).toBe("passthrough");
   });
 });
 
