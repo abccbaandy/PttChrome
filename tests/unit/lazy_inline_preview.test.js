@@ -13,7 +13,7 @@ import {
   nextLazyState,
   recordSlotAspect,
   recordSlotHeight,
-  slotMinHeight,
+  slotFloorHeight,
   LAZY_MOUNT_MARGIN_PX,
   LAZY_UNMOUNT_MARGIN_PX,
 } from "../../src/js/lazy_media";
@@ -175,16 +175,16 @@ describe("nextLazyState / recordSlotHeight（純決策）", () => {
       let p = recordSlotHeight(null, "normal", 570, true);
       p = recordSlotHeight(p, "enlarged", 908, true);
       expect(p).toEqual({ normal: 570, enlarged: 908 });
-      expect(slotMinHeight(p, "normal")).toBe(570);
-      expect(slotMinHeight(p, "enlarged")).toBe(908);
+      expect(slotFloorHeight(p, "normal")).toBe(570);
+      expect(slotFloorHeight(p, "enlarged")).toBe(908);
     });
     test("只有另一種模式量過 ⇒ 這個模式不套（沒有值可用，不得拿別的模式的頂替）", () => {
       const p = recordSlotHeight(null, "enlarged", 908, true);
-      expect(slotMinHeight(p, "normal")).toBeUndefined();
+      expect(slotFloorHeight(p, "normal")).toBeUndefined();
     });
     test("從未量過／高度無效 ⇒ 不套", () => {
-      expect(slotMinHeight(null, "normal")).toBeUndefined();
-      expect(slotMinHeight({ normal: 0 }, "normal")).toBeUndefined();
+      expect(slotFloorHeight(null, "normal")).toBeUndefined();
+      expect(slotFloorHeight({ normal: 0 }, "normal")).toBeUndefined();
     });
   });
 
@@ -210,6 +210,37 @@ describe("nextLazyState / recordSlotHeight（純決策）", () => {
   });
 });
 
+// ------------------------------------------------------------------ 疊層佔位
+// slot 的 DOM 是三層（見 src/render/inline_preview_slot.js 檔頭）：
+//   .inlinePreviewSlot           display:grid（**runtime 永不寫 inline style**）
+//     .inlinePreviewContent      真內容（React root / 真圖 / 讀取中指示器）
+//     .inlinePreviewSpacer       佔位高度（min-height）＋替身盒
+// 兩層疊在同一個 grid area ⇒ slot 高度 = max(內容, 佔位)。jsdom 沒有排版，所以這裡
+// 用 laidOutHeight() 把那條 CSS 合約模型化（真瀏覽器端由 offline e2e 守）。
+const contentOf = (slotEl) => slotEl.querySelector(".inlinePreviewContent");
+const spacerOf = (slotEl) => slotEl.querySelector(".inlinePreviewSpacer");
+// 寫進 spacer 的佔位高度（＝舊版寫在 slot 自己 min-height 上的那個值）。
+const floorOf = (slotEl) => spacerOf(slotEl).style.minHeight;
+const contentKids = (slotEl) => contentOf(slotEl).children.length;
+
+function fakeHeight(node, height) {
+  Object.defineProperty(node, "offsetHeight", {
+    configurable: true,
+    value: height,
+  });
+}
+
+// grid 疊層的高度合約：max(內容, max(spacer 的 min-height, 替身盒))。
+function laidOutHeight(slotEl) {
+  const spacer = spacerOf(slotEl);
+  const ghost = spacer.querySelector(".inlinePreviewGhost");
+  return Math.max(
+    contentOf(slotEl).offsetHeight,
+    parseInt(spacer.style.minHeight, 10) || 0,
+    ghost ? ghost.offsetHeight : 0,
+  );
+}
+
 describe("延遲載入佔位盒（掛載/卸載）", () => {
   const HREF = "https://i.imgur.com/abcdefg.jpg";
 
@@ -232,7 +263,7 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
   test("還沒進入視野 ⇒ 佔位盒是空的，且 requestPreview 一次都沒被呼叫", () => {
     const slot = mountSlot(HREF).el;
     expect(slot).not.toBeNull();
-    expect(slot.children.length).toBe(0);
+    expect(contentKids(slot)).toBe(0);
     expect(spies.requestPreview).toBe(0);
   });
 
@@ -240,9 +271,7 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     const slot = mountSlot(HREF).el;
     near().emit(true);
     expect(spies.requestPreview).toBe(1);
-    expect(
-      slot.children.length,
-    ).toBeGreaterThan(0);
+    expect(contentKids(slot)).toBeGreaterThan(0);
   });
 
   // jsdom 沒有排版也沒有網路：offsetHeight 恆為 0，ImagePreviewer 也停在「讀取中」。
@@ -250,10 +279,7 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
   // 事都做出來：偽造高度 ＋ 放一個真媒體節點（React 只管自己 render 的 children，
   // 手動 append 的節點不會被卸載動作移除，正好模擬「圖已經載出來了」）。
   function fakeLoadedMedia(slot, height, natural) {
-    Object.defineProperty(slot, "offsetHeight", {
-      configurable: true,
-      value: height,
-    });
+    fakeHeight(contentOf(slot), height);
     const img = document.createElement("img");
     img.className = "easyReadingImg hyperLinkPreview";
     if (natural) {
@@ -263,26 +289,19 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     }
     // 「已經佔到版面」的判準（hasLoadedMedia）：載入完成前的 <img> 是 display:none，
     // 那時量到的是「讀取中…」指示器的高度，不能記。
-    Object.defineProperty(img, "offsetHeight", {
-      configurable: true,
-      value: height,
-    });
-    slot.appendChild(img);
+    fakeHeight(img, height);
+    contentOf(slot).appendChild(img);
     return img;
   }
 
+  // 內容層的高度（讀取中指示器／載入失敗提示／真圖都走這裡）。
+  const setContentHeight = (slot, height) => fakeHeight(contentOf(slot), height);
+
   // 改變 slot（與其內媒體）當下的高度，模擬點圖放大／縮小造成的尺寸變化。
   function resizeTo(slot, height) {
-    Object.defineProperty(slot, "offsetHeight", {
-      configurable: true,
-      value: height,
-    });
+    fakeHeight(contentOf(slot), height);
     const img = slot.querySelector("img");
-    if (img)
-      Object.defineProperty(img, "offsetHeight", {
-        configurable: true,
-        value: height,
-      });
+    if (img) fakeHeight(img, height);
   }
 
   test("遠離視野 ⇒ 卸載，並把卸載前的高度釘進佔位盒（閱讀位置不位移）", () => {
@@ -292,8 +311,10 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     const img = fakeLoadedMedia(slot, 420);
     far().emit(false);
     img.remove(); // 媒體隨卸載消失
-    expect(slot.children.length).toBe(0);
-    expect(slot.style.minHeight).toBe("420px");
+    expect(contentKids(slot)).toBe(0);
+    // 佔位高度寫在 spacer，**不是** slot 自己（那會抑制瀏覽器的捲動補償）。
+    expect(floorOf(slot)).toBe("420px");
+    expect(slot.getAttribute("style")).toBeNull();
   });
 
   test("捲回來 ⇒ 重新掛載，佔位高度保留", () => {
@@ -302,11 +323,11 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     const img = fakeLoadedMedia(slot, 420);
     far().emit(false);
     img.remove();
-    expect(slot.children.length).toBe(0);
+    expect(contentKids(slot)).toBe(0);
     far().emit(true); // 回到卸載邊界之內
     near().emit(true);
-    expect(slot.children.length).toBeGreaterThan(0);
-    expect(slot.style.minHeight).toBe("420px");
+    expect(contentKids(slot)).toBeGreaterThan(0);
+    expect(floorOf(slot)).toBe("420px");
   });
 
   // 症狀級回歸（使用者實測 ptt-debug-20260815-112407）。完整走一遍回報的動線：
@@ -329,22 +350,22 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     rerender("enlarged");
     resizeTo(slot, 908);
     resized().emit();
-    expect(slot.style.minHeight).toBe("908px");
+    expect(floorOf(slot)).toBe("908px");
 
     // 往下捲到卸載（放大態）
     const img = slot.querySelector("img");
     far().emit(false);
     img.remove();
-    expect(slot.children.length).toBe(0);
-    expect(slot.style.minHeight).toBe("908px");
+    expect(contentKids(slot)).toBe(0);
+    expect(floorOf(slot)).toBe("908px");
 
     // 點縮小 ⇒ 換用縮小態量到的 570：不是 908（空白），也不是 0（塌陷→跳頁）
     rerender("normal");
-    expect(slot.style.minHeight).toBe("570px");
+    expect(floorOf(slot)).toBe("570px");
 
     // 切回放大 ⇒ 回到 908
     rerender("enlarged");
-    expect(slot.style.minHeight).toBe("908px");
+    expect(floorOf(slot)).toBe("908px");
   });
 
   // 使用者往下捲時，那幾張圖**只**在放大態載入過 ⇒ normal 高度沒機會被量到。
@@ -358,14 +379,15 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     near().emit(true);
     const img = fakeLoadedMedia(slot, 908, { w: 800, h: 600 });
     resized().emit();
-    expect(slot.style.minHeight).toBe("908px");
+    expect(floorOf(slot)).toBe("908px");
 
     far().emit(false); // 往下捲到卸載
     img.remove();
     rerender("normal"); // 點縮小
-    expect(slot.style.minHeight).toBe("");
+    expect(floorOf(slot)).toBe("");
 
-    const ghost = slot.querySelector(".inlinePreviewGhost");
+    // 替身盒住在 spacer 裡（不是內容層）：疊層取 max，掛載時才不會塌陷。
+    const ghost = spacerOf(slot).querySelector(".inlinePreviewGhost");
     expect(ghost).not.toBeNull();
     // 關鍵：掛的是跟真圖同一個 class，高度才會由同一組 CSS 規則算出來。
     expect(ghost.classList.contains("easyReadingImg")).toBe(true);
@@ -373,17 +395,32 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     expect(ghost.style.getPropertyValue("--ghost-w")).toBe("800px");
   });
 
-  test("替身盒只在卸載期間存在，掛回來就讓位給真圖", () => {
+  // 替身盒的存活條件是「**內容裡有沒有真的佔到版面的媒體**」，不是「有沒有掛載」。
+  // 舊版在 mount() 當下就把替身盒拿掉，可是那一刻 content 只有 56px 的「讀取中…」
+  // 指示器 —— 圖還要解析網址＋下載＋解碼才會出現（imgur 台灣連線常 stall，產品端
+  // 又沒有載入 timeout）⇒ 一次 438px 的塌陷。疊層之後替身盒繼續頂在 spacer 裡，
+  // 直到真圖佔到版面才讓位。
+  test("替身盒頂到真圖佔到版面為止：掛載當下不讓位（那時只有讀取中指示器）", () => {
     const slot = mountSlot(HREF).el;
     near().emit(true);
     const img = fakeLoadedMedia(slot, 570, { w: 800, h: 600 });
     resized().emit();
     expect(slot.querySelector(".inlinePreviewGhost")).toBeNull();
+
     far().emit(false);
     img.remove();
     expect(slot.querySelector(".inlinePreviewGhost")).not.toBeNull();
+
+    // 捲回來重新掛載：content 只有「讀取中…」⇒ 替身盒**不得**在這時退場。
     far().emit(true);
     near().emit(true);
+    setContentHeight(slot, 56);
+    resized().emit();
+    expect(slot.querySelector(".inlinePreviewGhost")).not.toBeNull();
+
+    // 真圖畫出來了 ⇒ 讓位。
+    fakeLoadedMedia(slot, 570, { w: 800, h: 600 });
+    resized().emit();
     expect(slot.querySelector(".inlinePreviewGhost")).toBeNull();
   });
 
@@ -392,19 +429,13 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
   test("媒體還沒載完（img 尚未佔到版面）⇒ 尺寸回報不得記高度", () => {
     const slot = mountSlot(HREF).el;
     near().emit(true);
-    Object.defineProperty(slot, "offsetHeight", {
-      configurable: true,
-      value: 65, // 「讀取中…」指示器
-    });
+    setContentHeight(slot, 65); // 「讀取中…」指示器
     const img = document.createElement("img");
     img.className = "easyReadingImg hyperLinkPreview";
-    Object.defineProperty(img, "offsetHeight", {
-      configurable: true,
-      value: 0,
-    });
-    slot.appendChild(img);
+    fakeHeight(img, 0);
+    contentOf(slot).appendChild(img);
     resized().emit();
-    expect(slot.style.minHeight).toBe("");
+    expect(floorOf(slot)).toBe("");
   });
 
   // 症狀級回歸（使用者實測：每篇文章推文區前面多一塊空白）。
@@ -416,20 +447,103 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     near().emit(true);
     
     // 「讀取中…」指示器撐出的高度（實測 65px），slot 內沒有任何媒體元素。
-    Object.defineProperty(slot, "offsetHeight", {
-      configurable: true,
-      value: 65,
-    });
+    setContentHeight(slot, 65);
     expect(slot.querySelector("img, video, iframe")).toBeNull();
     far().emit(false);
-    expect(slot.style.minHeight).toBe("");
+    expect(floorOf(slot)).toBe("");
+    // 也不得留下替身盒（從沒載成功過 ⇒ 沒有 aspect ⇒ 永遠不會長出內容來填）。
+    expect(slot.querySelector(".inlinePreviewGhost")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------
+  // 症狀級回歸（使用者回報 2026-09-03）：「多圖時在讀圖，按 PgUp 卻捲不上去，甚至
+  // 來回跳」。根因不是捲動計算，是**我們自己把瀏覽器的捲動補償關掉了**：
+  // 佔位高度寫在 slot 自己的 min-height 上，而讀者停在圖片中間時捲動錨點就在那個
+  // slot 裡 ⇒ 命中 CSS Scroll Anchoring 的 suppression trigger ⇒ 當幀不補償 ⇒
+  // 上方 slot 一塌陷（替身盒 494 → 讀取中 56，實測 438px＝一次 PgUp 的 76.6%）
+  // 讀者就被整整推走那麼多，兩張圖吃掉一整次 PgUp。
+  // 修法（B2）：grid 疊層，佔位高度改寫在 spacer（**兄弟**節點），slot/content 全程
+  // 零 inline style ⇒ 補償照常生效；順帶讓替身盒撐過整個載入中，掛載當幀不塌陷。
+  // 真瀏覽器端的守護在 tests/e2e/offline/easy_reading_scroll_jump.offline.spec.js。
+
+  test("掛載那一刻高度不得塌陷（替身盒讓位給讀取中指示器＝438px 的來源）", () => {
+    const handle = mountSlot(HREF, "enlarged");
+    const slot = handle.el;
+
+    // 放大態看過這張圖（量到 aspect），往下捲卸載，再點縮小 ——
+    // normal 這格從沒量過 ⇒ pinned 為空，佔位完全靠替身盒。這正是既有測試
+    // 「只在放大態量過 ⇒ 切到縮小態改由替身盒佔位」的收尾狀態。
+    near().emit(true);
+    const img = fakeLoadedMedia(slot, 908, { w: 800, h: 600 });
+    resized().emit();
+    far().emit(false);
+    img.remove();
+    handle.setSizeMode("normal");
+    expect(floorOf(slot)).toBe("");
+
+    const ghost = slot.querySelector(".inlinePreviewGhost");
+    expect(ghost).not.toBeNull();
+    fakeHeight(ghost, 494); // CSS 依原尺寸在縮小態算出來的高度
+    setContentHeight(slot, 0);
+    expect(laidOutHeight(slot)).toBe(494);
+
+    // 往上捲回來 ⇒ 重新掛載。此刻 content 只有 56px 的「讀取中…」指示器。
+    far().emit(true);
+    near().emit(true);
+    setContentHeight(slot, 56);
+    resized().emit();
+    // 舊行為：mount() 立刻拿掉替身盒 ⇒ 494 → 56，一次塌陷 438px。
+    expect(laidOutHeight(slot)).toBe(494);
+  });
+
+  test("捲動錨點的祖先（slot / content）全程不得有 inline style", () => {
+    const handle = mountSlot(HREF, "normal");
+    const slot = handle.el;
+    const clean = (step) => {
+      expect(slot.getAttribute("style"), step).toBeNull();
+      expect(contentOf(slot).getAttribute("style"), step).toBeNull();
+    };
+    clean("建立");
+    near().emit(true);
+    clean("mount");
+    const img = fakeLoadedMedia(slot, 570, { w: 800, h: 600 });
+    resized().emit();
+    clean("onResize（量到高度）");
+    handle.setSizeMode("enlarged");
+    clean("setSizeMode");
+    far().emit(false);
+    img.remove();
+    clean("unmount");
+
+    // 不是「沒人寫高度」才乾淨 —— 高度確實記著，只是寫在 spacer 上。
+    handle.setSizeMode("normal");
+    expect(floorOf(slot)).toBe("570px");
+    clean("setSizeMode（套用 570）");
+
+    handle.invalidatePinned();
+    expect(floorOf(slot)).toBe("");
+    clean("invalidatePinned");
+  });
+
+  test("佔位高度寫在 spacer 上，slot 高度取 max 不是相加", () => {
+    measureThenDiscard(HREF, 494);
+    const slot = mountSlot(HREF).el;
+    expect(floorOf(slot)).toBe("494px");
+    expect(slot.getAttribute("style")).toBeNull();
+
+    // 內容比佔位矮（讀取中指示器）⇒ 由佔位撐住。
+    setContentHeight(slot, 56);
+    expect(laidOutHeight(slot)).toBe(494);
+    // 內容比佔位高（放大態的長圖）⇒ 取內容，**不是** 494 + 700。
+    setContentHeight(slot, 700);
+    expect(laidOutHeight(slot)).toBe(700);
   });
 
   test("遲滯：只是離開視野（還在卸載邊界內）不卸載", () => {
     const slot = mountSlot(HREF).el;
     near().emit(true);
     near().emit(false); // 捲出視野，但 far 仍相交
-    expect(slot.children.length).toBeGreaterThan(0);
+    expect(contentKids(slot)).toBeGreaterThan(0);
   });
 
   test("環境沒有 IntersectionObserver ⇒ 立即掛載（行為與沒這功能時相同）", () => {
@@ -437,9 +551,7 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     resetLazyObserversForTest();
     const slot = mountSlot(HREF).el;
     expect(spies.requestPreview).toBe(1);
-    expect(
-      slot.children.length,
-    ).toBeGreaterThan(0);
+    expect(contentKids(slot)).toBeGreaterThan(0);
   });
 
   // ---------------------------------------------------------------------
@@ -465,7 +577,7 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
       measureThenDiscard(HREF, 570);
       // 重建：**不發任何 observer 事件**，第一幀就該撐住。
       const rebuilt = mountSlot(HREF).el;
-      expect(rebuilt.style.minHeight).toBe("570px");
+      expect(floorOf(rebuilt)).toBe("570px");
     });
 
     test("走完整的掛載→捲遠卸載也一樣記得（卸載前那次量測要回寫）", () => {
@@ -478,26 +590,24 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
       handle.el.remove();
       liveSlots.splice(liveSlots.indexOf(handle), 1);
 
-      expect(mountSlot(HREF).el.style.minHeight).toBe("420px");
+      expect(floorOf(mountSlot(HREF).el)).toBe("420px");
     });
 
     test("原尺寸也沿用 ⇒ 重建的 slot 直接有替身盒（沒量過的模式也佔得準）", () => {
       measureThenDiscard(HREF, 570, { w: 800, h: 600 });
       const rebuilt = mountSlot(HREF, "enlarged").el;
-      const ghost = rebuilt.querySelector(".inlinePreviewGhost");
+      const ghost = spacerOf(rebuilt).querySelector(".inlinePreviewGhost");
       expect(ghost).not.toBeNull();
       expect(ghost.classList.contains("easyReadingImg")).toBe(true);
       expect(ghost.style.aspectRatio).toBe("800 / 600");
       expect(ghost.style.getPropertyValue("--ghost-w")).toBe("800px");
       // enlarged 這格沒量過 ⇒ 不得拿 normal 的頂替，交給替身盒。
-      expect(rebuilt.style.minHeight).toBe("");
+      expect(floorOf(rebuilt)).toBe("");
     });
 
     test("不得跨連結借高度（memo 以 href 為鍵）", () => {
       measureThenDiscard(HREF, 570);
-      expect(mountSlot("https://i.imgur.com/zzzzzzz.jpg").el.style.minHeight).toBe(
-        "",
-      );
+      expect(floorOf(mountSlot("https://i.imgur.com/zzzzzzz.jpg").el)).toBe("");
     });
 
     test("memo 有上限：最舊的 href 被淘汰（長文 287 張圖 × 多篇不得無限長大）", () => {
@@ -505,62 +615,56 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
       for (let i = 0; i < SIZE_MEMO_MAX; ++i) {
         measureThenDiscard(`https://i.imgur.com/pad${i}.jpg`, 100 + i);
       }
-      expect(mountSlot(HREF).el.style.minHeight).toBe("");
+      expect(floorOf(mountSlot(HREF).el)).toBe("");
       // 最近一筆仍在。
       const last = SIZE_MEMO_MAX - 1;
-      expect(
-        mountSlot(`https://i.imgur.com/pad${last}.jpg`).el.style.minHeight,
-      ).toBe(`${100 + last}px`);
+      expect(floorOf(mountSlot(`https://i.imgur.com/pad${last}.jpg`).el)).toBe(
+        `${100 + last}px`,
+      );
     });
   });
 
-  // 真瀏覽器的 offsetHeight 會被元素自己的 inline min-height 墊高。少了這個模擬，
-  // 「量測抗膨脹」那條在 jsdom 下永遠是綠的（jsdom 沒有排版，offsetHeight 恆為
-  // 我們寫死的值）。
+  // 疊層之後 slot 的高度是 max(內容, 佔位)，而**量的是內容層**。這個 fake 把兩者
+  // 都做出來：slot 會被佔位撐高，content 永遠只回內容自己的高度。
   function fakeLaidOutMedia(slot, contentHeight) {
-    Object.defineProperty(slot, "offsetHeight", {
-      configurable: true,
-      get() {
-        const min = parseInt(slot.style.minHeight, 10) || 0;
-        return Math.max(contentHeight, min);
-      },
-    });
+    fakeHeight(contentOf(slot), contentHeight);
     const img = document.createElement("img");
     img.className = "easyReadingImg hyperLinkPreview";
-    Object.defineProperty(img, "offsetHeight", {
-      configurable: true,
-      value: contentHeight,
-    });
-    slot.appendChild(img);
+    fakeHeight(img, contentHeight);
+    contentOf(slot).appendChild(img);
     return img;
   }
 
   // 版面**寬度**改變（字級／視窗 resize、圖左字右合併切換）之後，pinned 就是舊寬度
   // 下的值。aspect 與寬度無關（替身盒交給 CSS 用真圖那組規則算），所以分開處理。
   describe("版面寬度改變 ⇒ pinned 過期", () => {
-    test("量測前必須先拿掉自己的 min-height，否則過期高度會自我增強成永久假空白", () => {
+    // 舊版把佔位高度寫在 slot 自己的 min-height 上，量 slot.offsetHeight 就會量到
+    // 被自己墊高的值 ⇒ 一個過期偏大的高度會被原封不動再記一次＝自我增強的永久假
+    // 空白（舊 code 得靠「量之前先拿掉 min-height、量完再放回」硬繞）。疊層之後量
+    // 的是 content，而 content 從來沒有 inline style ⇒ 這條路徑隨結構消失。
+    test("量的是內容層 ⇒ 過期的佔位高度不會自我增強成永久假空白", () => {
       // memo 帶進一個舊寬度下量到的 570，但這一次的真實內容只有 320。
       measureThenDiscard(HREF, 570);
       const handle = mountSlot(HREF);
-      expect(handle.el.style.minHeight).toBe("570px");
+      expect(floorOf(handle.el)).toBe("570px");
       fakeLaidOutMedia(handle.el, 320);
       resized().emit();
-      // 直接讀 offsetHeight 量到的是被 min-height 墊高的 570 ⇒ 再記一次 ⇒ 永遠 570。
-      expect(handle.el.style.minHeight).toBe("320px");
+      expect(floorOf(handle.el)).toBe("320px");
+      expect(contentOf(handle.el).getAttribute("style")).toBeNull();
     });
 
     test("有替身盒可頂 ⇒ 作廢 pinned（改由 CSS 在新寬度下重算）", () => {
       measureThenDiscard(HREF, 570, { w: 800, h: 600 });
       invalidateInlinePreviewHeights();
       const rebuilt = mountSlot(HREF).el;
-      expect(rebuilt.style.minHeight).toBe("");
+      expect(floorOf(rebuilt)).toBe("");
       expect(rebuilt.querySelector(".inlinePreviewGhost")).not.toBeNull();
     });
 
     test("沒有替身盒（iframe／相簿）⇒ 留著舊值當最佳猜測，不換來一次無謂的塌陷", () => {
       measureThenDiscard(HREF, 450); // 沒給原尺寸 ⇒ aspect 仍是 null
       invalidateInlinePreviewHeights();
-      expect(mountSlot(HREF).el.style.minHeight).toBe("450px");
+      expect(floorOf(mountSlot(HREF).el)).toBe("450px");
     });
 
     test("存活中的 slot 也要跟著作廢（不是只有 memo）", () => {
@@ -570,10 +674,10 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
       resized().emit();
       far().emit(false);
       img.remove();
-      expect(handle.el.style.minHeight).toBe("570px");
+      expect(floorOf(handle.el)).toBe("570px");
 
       handle.invalidatePinned();
-      expect(handle.el.style.minHeight).toBe("");
+      expect(floorOf(handle.el)).toBe("");
       expect(handle.el.querySelector(".inlinePreviewGhost")).not.toBeNull();
     });
   });

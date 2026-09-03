@@ -9,6 +9,13 @@
 //   img.hyperLinkPreview 另被套反向 scale（見 term_view.js setTermFontSize /
 //   updateReverseScaleCss）→ getBoundingClientRect() 含 transform，尺規與 scrollTop
 //   不同。故錨定的量測一律走 offsetTop / offsetHeight（不含 transform）。
+//
+// 界線（2026-09）：這裡只管**點圖放大／縮小**與**影片退出全螢幕**這兩個「我們自己
+// 造成的、同步的」高度驟變。**捲動途中因延遲載入造成的高度變化不歸這裡管，交給
+// 瀏覽器內建的 scroll anchoring** —— 實測它在 .main 上涵蓋得比自己算更全面（連
+// transform:scale 與整批列節點重建都涵蓋）。代價是**不可以在捲動錨點的祖先上寫
+// inline style**，那會讓該幀的補償整個作廢；佔位盒因此改成 grid 疊層，詳見
+// src/render/inline_preview_slot.js 檔頭與 docs/easy-reading.md。
 
 // 保持 anchor 元素相對視窗的位置不變，換算高度變化後的新 scrollTop。
 //

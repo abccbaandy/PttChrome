@@ -1501,6 +1501,21 @@ EasyReading.prototype._advanceScrollRestore = function() {
   this._pendingScrollRestore = null;
 };
 
+// 捲動一段列數；回傳「有沒有真的還捲得動」（false ⇒ 呼叫端當作到頂/到底處理）。
+//
+// **下界刻意用 `mainContainer.clientHeight - chh*rows`，不要「改用捲動容器自己的
+// scrollHeight - clientHeight」**（2026-09 實測後放棄的改動，勿再嘗試）：
+//   * 兩者的內容項是同一個值（實測 stock-end：`mainContainer.clientHeight` 2700
+//     ＝ `.main.scrollHeight` 2700），所以「佔位盒塌陷會讓它低估」對兩式**一樣**成立，
+//     換公式治不了那件事。
+//   * 差別只在視窗項：`.main.clientHeight` 實測 730，比 `chh*rows`（24×30＝720）多 10px。
+//     ⇒ 現行下界 1980 **高於**真正的 maxScroll 1970 ⇒ 到底之後 `_scrollBy` 仍回 true。
+//     換成 1969 就會在到底時回 false，於是 **Space／→／↓／Enter 會 leaveCurrentPost()
+//     把文章關掉** —— 那是使用者看得到的行為改變（live e2e
+//     `easy-reading.spec.js` 的「第一則推文不消失」實測被這個關掉，畫面退回看板列表）。
+// 要動這個邊界請當成獨立的產品決策處理（並先補 leaveCurrentPost 的守護），
+// 不要順手夾在別的修復裡。守護：tests/unit/easy_reading_logic.test.js
+// 「_scrollBy 的捲動下界」。
 EasyReading.prototype._scrollBy = function(lines) {
   var cont = this._view.mainDisplay;
   if (lines < 0 && cont.scrollTop == 0)

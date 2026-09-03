@@ -87,7 +87,7 @@ const probeView = (page) =>
           blank,
           slotHeight: s.offsetHeight,
           mediaHeight: media ? media.offsetHeight : 0,
-          minHeight: s.style.minHeight || '',
+          minHeight: s.querySelector('.inlinePreviewSpacer').style.minHeight || '',
         };
       }
     }
@@ -162,7 +162,10 @@ test('放大→捲遠→縮小→捲回：佔位盒不得留下放大態的高�
     const out = [];
     const slots = document.querySelectorAll('.inlinePreviewSlot');
     for (let i = 0; i < slots.length; ++i) {
-      const h = parseFloat(slots[i].style.minHeight) || 0;
+      const h =
+        parseFloat(
+          slots[i].querySelector('.inlinePreviewSpacer').style.minHeight
+        ) || 0;
       if (h > 0) out.push({ idx: Number(slots[i].getAttribute('data-e2e-slot')), h });
     }
     return out;

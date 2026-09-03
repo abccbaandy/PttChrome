@@ -16,6 +16,7 @@ const ADVERSE_IMAGE_SPECS = [
   'offline/lazy_preview_blank.offline.spec.js',
   'offline/lazy_preview_enlarge_blank.offline.spec.js',
   'offline/easy-reading.offline.spec.js',
+  'offline/easy_reading_scroll_jump.offline.spec.js',
 ];
 
 // offline project 的「瀏覽器層硬斷網」。第三層防線，上面兩層是

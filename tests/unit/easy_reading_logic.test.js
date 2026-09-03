@@ -1152,6 +1152,62 @@ describe("跨文章重置（文章邊界 = settled pageState 進出 3）", () =>
 });
 
 // ---------------------------------------------------------------------------
+// _scrollBy 的「還捲得動嗎」下界。
+//
+// 這裡鎖的是**現行公式**（`mainContainer.clientHeight - chh*rows`），因為換成看似
+// 更權威的 `cont.scrollHeight - cont.clientHeight` 會改變使用者看得到的行為：
+//   * 內容項兩式相同（實測 stock-end：mainContainer.clientHeight 2700
+//     ＝ .main.scrollHeight 2700）⇒ 「佔位盒塌陷會讓它低估」對兩式一樣成立。
+//   * 視窗項不同：.main.clientHeight 實測 730 > chh*rows（24×30＝720）⇒ 現行下界
+//     1980 高於真正的 maxScroll 1970，到底之後仍回 true；換公式後回 false ⇒
+//     Space／→／↓／Enter 會 leaveCurrentPost() **把文章關掉**（2026-09 live e2e
+//     實測：easy-reading.spec.js「第一則推文不消失」整條退回看板列表）。
+// 要改這個邊界＝獨立的產品決策，先補 leaveCurrentPost 的守護再說。
+describe("_scrollBy 的捲動下界", () => {
+  const makeER = ({ scrollTop, scrollHeight, clientHeight, containerHeight }) => {
+    const termBuf = { addEventListener() {}, rows: 24 };
+    const mainDisplay = { scrollTop, scrollHeight, clientHeight };
+    const view = {
+      mainDisplay,
+      mainContainer: { clientHeight: containerHeight },
+      chh: 30,
+    };
+    return new EasyReading(/* core */ {}, view, termBuf);
+  };
+
+  // 實測值（stock-end，chh=30、rows=24）：內容 2700、視窗 730、maxScroll 1970。
+  const real = (scrollTop) =>
+    makeER({
+      scrollTop,
+      scrollHeight: 2700,
+      clientHeight: 730,
+      containerHeight: 2700,
+    });
+
+  it("還沒到底 ⇒ 捲得動", () => {
+    const er = real(1000);
+    expect(er._scrollBy(22)).toBe(true);
+    expect(er._view.mainDisplay.scrollTop).toBe(1000 + 30 * 22);
+  });
+
+  it("捲到底（scrollTop 已是 maxScroll）⇒ 仍回 true，**不得**把文章關掉", () => {
+    // 下界 2700 − 30×24 = 1980 高於 maxScroll 1970 ⇒ 到底之後 Space 只是原地不動，
+    // 不會走 leaveCurrentPost()。改用 scrollHeight − clientHeight 會回 false。
+    expect(real(1970)._scrollBy(22)).toBe(true);
+  });
+
+  it("到頂 ⇒ 往上捲回 false（呼叫端據此離開文章）", () => {
+    expect(real(0)._scrollBy(-22)).toBe(false);
+  });
+
+  it("沒到頂 ⇒ 往上捲得動", () => {
+    const er = real(900);
+    expect(er._scrollBy(-22)).toBe(true);
+    expect(er._view.mainDisplay.scrollTop).toBe(900 - 30 * 22);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // PgDn 自救：累積頁捲不動又還沒到底時，把翻頁交易踢回去。
 // 使用者實際看到的症狀就是「PgDn 沒反應」——累積頁停在第一頁，_scrollBy 捲不動，
 // 而原本這個 case 什麼都不做。到底的文章（100%）仍然不送鍵。

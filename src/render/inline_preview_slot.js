@@ -15,14 +15,38 @@
 // **ImagePreviewer 仍是 React**（唯一留在核心畫面裡的 React 葉子島）：一張圖進視野
 // 才開一個 root、捲遠就 unmount，同時存活的數量是「視野內」等級，不在每幀熱路徑上。
 // 佔位盒本身（含替身盒 ghost）是純 JS —— 它每一列都有，才是熱路徑。
-// 替身盒與 previewer 在舊版就是互斥的（`!mounted && ghost` / `mounted && previewer`），
-// 所以 React root 可以直接開在 slot 節點上，DOM 結構與舊版逐字相同。
+//
+// ---- 疊層佔位：DOM 結構與硬不變量（2026-09）----
+// 每個 slot 固定長這樣：
+//   .inlinePreviewSlot        display:grid（靜態 CSS，runtime 永不寫 inline style）
+//     .inlinePreviewContent   React root／真圖／讀取中指示器都在這層
+//     .inlinePreviewSpacer    佔位高度（min-height）＋卸載期／載入中的替身盒
+// 兩層疊在同一個 grid area ⇒ slot 高度 = **max**(內容, 佔位)，不是相加。
+//
+// **硬不變量：`.inlinePreviewSlot` 與 `.inlinePreviewContent` 在 runtime 一律不得被
+// 寫 inline style。** 它們是捲動錨點的祖先（讀者停在圖片中間時錨點就在這裡面），
+// 改動 min-height/height/padding/margin/position/transform 任一項都會命中 CSS Scroll
+// Anchoring 的 suppression trigger ⇒ 瀏覽器當幀放棄補償上方內容的高度變化 ⇒ 讀者被
+// 整整推走一次塌陷量。實測 438px ＝ 一次 PgUp 的 76.6%，兩張圖就吃掉一整次 PgUp
+// （使用者回報「多圖時 PgUp 捲不上去、甚至來回跳」的根因）。佔位高度一律寫在
+// spacer（**兄弟**節點，不是祖先）上。同理不要在捲動期間對 .main 寫 transform。
+// 長頁的捲動位置全部交給瀏覽器內建的 scroll anchoring —— 實測它在 .main 上涵蓋得比
+// 自己算更全面（連 transform:scale 與整批節點重建都涵蓋）。
+//
+// 疊層還順帶收掉兩個坑：
+//   1. **掛載當下不再塌陷**：舊版 mount() 先拿掉替身盒、再放進「讀取中」指示器
+//      （494 → 56），現在替身盒住在 spacer 裡，取 max ⇒ 全程維持原高度，直到真圖
+//      佔到版面才讓位（syncGhost 的判準因此從「有沒有掛載」改成「內容裡有沒有真的
+//      佔到版面的媒體」）。
+//   2. 量內容高度不必再「拿掉自己的 min-height 再放回去」：content 永遠沒有 inline
+//      style，量到的就是純內容高度，舊版那種「過期偏大的值自我增強成永久假空白」
+//      的路徑隨結構消失。
 //
 // ---- 量測結果為什麼要放 module 級（2026-08）----
 // pinned/aspect 原本只活在 slot 的閉包裡，節點被 disposeNode 收掉就一起沒了。可是
 // **任何會改動 annotationsKey 的操作都走全量重建**（AI 校正逐筆回填最頻繁，一篇文章
 // 數十次；還有圖文並排、黑名單、樓號、字級…）⇒ 重建出來的 slot 是全新物件、
-// minHeight 歸零 ⇒ 整份長頁的圖片佔位盒同時塌陷，再等 IntersectionObserver → mount
+// 佔位高度歸零 ⇒ 整份長頁的圖片佔位盒同時塌陷，再等 IntersectionObserver → mount
 // → onLoad → ResizeObserver 這串非同步流程才撐回來（症狀：閃爍、閱讀位置往下跳）。
 // 所以量到的東西改存在以 href 為鍵的 module 級 memo，重建的 slot 第一幀就有高度。
 //
@@ -43,7 +67,7 @@ import {
   nextLazyState,
   recordSlotAspect,
   recordSlotHeight,
-  slotMinHeight,
+  slotFloorHeight,
 } from "../js/lazy_media";
 
 const callbacks = new WeakMap();
@@ -115,19 +139,6 @@ function hasLoadedMedia(node) {
   return false;
 }
 
-// 內容高度。**量之前一定要先拿掉自己的 inline min-height**：offsetHeight 會被它墊高，
-// 於是一個過期偏大的值（memo 帶進來的、或版面寬度變了以後的）會被原封不動地再記錄
-// 一次 ⇒ 自我增強的永久假空白，而且愈量愈黏。同一個 task 內拿掉再補回，中間不會有
-// 畫面被畫出來。
-function measureContentHeight(node) {
-  const had = node.style.minHeight;
-  if (!had) return node.offsetHeight;
-  node.style.removeProperty("min-height");
-  const h = node.offsetHeight;
-  node.style.minHeight = had;
-  return h;
-}
-
 // 媒體的原尺寸。<img> 是 naturalWidth/Height、<video> 是 videoWidth/Height；
 // <iframe> 沒有原尺寸（回 0），那種 slot 只能靠分模式記的高度。
 function measureIntrinsic(node) {
@@ -185,7 +196,13 @@ export function resetLazyObserversForTest() {
 // 純 JS 版改由 ScreenController 對存活中的 slot 逐一 setSizeMode()。
 export function createInlinePreviewSlot(href, sizeMode = "normal") {
   const supported = lazyPreviewSupported();
+  // 疊層佔位（見檔頭）：content 放真內容、spacer 放佔位高度與替身盒，兩層疊在同一個
+  // grid area ⇒ slot 高度取 max。**node 與 content 一輩子不得有 inline style。**
   const node = el("div", { class: "inlinePreviewSlot" });
+  const content = el("div", { class: "inlinePreviewContent" });
+  const spacer = el("div", { class: "inlinePreviewSpacer" });
+  node.appendChild(content);
+  node.appendChild(spacer);
 
   // 同一個 href 之前量過的話直接接手（見檔頭「量測結果為什麼要放 module 級」）。
   const memo = recallSize(href);
@@ -194,7 +211,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     mounted: false,
     // { [sizeMode]: height }：各尺寸模式下實測到的內容高度。null ＝ 都還沒量過。
     pinned: memo ? memo.pinned : null,
-    // { w, h }：媒體原尺寸，卸載期間拿來擺同比例的替身盒。
+    // { w, h }：媒體原尺寸，真圖還沒佔到版面時拿來擺同比例的替身盒。
     aspect: memo ? memo.aspect : null,
     sizeMode,
     destroyed: false,
@@ -203,41 +220,59 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   const facts = { mounted: !supported, near: false, far: false };
 
   let ghost = null;
+  // 目前這個替身盒是用哪組原尺寸建的（recordSlotAspect 值沒變就回同一個物件，
+  // 所以比參考即可）。syncGhost 每次尺寸回報都會跑，靠它 bail out 免得反覆重建。
+  let ghostAspect = null;
 
-  function applyMinHeight() {
-    const minHeight = slotMinHeight(state.pinned, state.sizeMode);
-    // slotMinHeight 回的是數字；補 px（舊版靠 React 的 style 物件自動補）。
-    if (minHeight) node.style.minHeight = `${minHeight}px`;
-    else node.style.removeProperty("min-height");
+  // 佔位高度**只寫 spacer**（兄弟節點）。寫 node/content 會抑制瀏覽器的捲動補償，
+  // 見檔頭硬不變量。用 min-height 而非 height：spacer 裡還可能有替身盒，兩者取大。
+  function applyFloorHeight() {
+    const floor = slotFloorHeight(state.pinned, state.sizeMode);
+    // slotFloorHeight 回的是數字；補 px。
+    if (floor) spacer.style.minHeight = `${floor}px`;
+    else spacer.style.removeProperty("min-height");
   }
 
   function removeGhost() {
     if (ghost) {
       ghost.remove();
       ghost = null;
+      ghostAspect = null;
     }
   }
 
-  // 卸載期間的替身盒：套的是**跟真圖同一組** .easyReadingImg 規則（max-width/
+  // 真圖還沒佔到版面時的替身盒：套的是**跟真圖同一組** .easyReadingImg 規則（max-width/
   // max-height、放大態的 width:100%），只多給原尺寸 —— 於是高度由 CSS 自己算出來，
   // 與真圖逐像素相同，兩種模式都準，也不必在 JS 裡複製任何 CSS 常數。--ghost-w 走
   // CSS 變數而非 inline width：inline 樣式會蓋過放大態的 width:100%，變數則讓那條
   // 規則照常勝出。
   function syncGhost() {
-    const want = !state.mounted && state.aspect;
+    // 判準是「內容裡有沒有**真的佔到版面**的媒體」，不是「有沒有掛載」：掛載到圖片
+    // 真的畫出來之間還隔著解析網址＋下載＋解碼（imgur 台灣連線常 stall，產品端又
+    // 沒有載入 timeout），那段期間 content 只有 56px 的「讀取中」指示器。替身盒留在
+    // spacer 裡頂著，slot 高度才不會在 mount 當幀塌陷 438px。
+    // 替身盒只在量到過 aspect（＝真的載出過媒體、有原尺寸）時才存在，所以
+    // 「非媒體連結」與「從沒載成功過的圖」不會因此留下假空白。
+    // 沒掛載時不必查 DOM：內容層必然是空的（unmountFrom 同步清掉 React 的節點）。
+    const want =
+      state.aspect && (!state.mounted || !hasLoadedMedia(content))
+        ? state.aspect
+        : null;
     if (!want) {
       removeGhost();
       return;
     }
+    if (ghost && ghostAspect === want) return;
     removeGhost();
     ghost = el("div", {
       class: "easyReadingImg inlinePreviewGhost",
       style: {
-        "--ghost-w": `${state.aspect.w}px`,
-        aspectRatio: `${state.aspect.w} / ${state.aspect.h}`,
+        "--ghost-w": `${want.w}px`,
+        aspectRatio: `${want.w} / ${want.h}`,
       },
     });
-    node.appendChild(ghost);
+    ghostAspect = want;
+    spacer.appendChild(ghost);
   }
 
   // 量到的東西一律回寫 memo，下一次重建才接得住。
@@ -248,23 +283,24 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   function mount() {
     if (state.mounted || state.destroyed) return;
     state.mounted = true;
-    removeGhost();
     renderInto(
-      node,
+      content,
       React.createElement(ImagePreviewer, {
         request: requestPreview(href),
         component: ImagePreviewer.Inline,
       }),
     );
-    applyMinHeight();
+    // 替身盒**不在這裡拿掉**：真圖佔到版面之前它還得繼續頂著（見 syncGhost）。
+    syncGhost();
+    applyFloorHeight();
   }
 
   function unmount() {
     if (!state.mounted) return;
     state.mounted = false;
-    unmountFrom(node);
+    unmountFrom(content);
     syncGhost();
-    applyMinHeight();
+    applyFloorHeight();
   }
 
   function onIntersect(kind, isIntersecting) {
@@ -279,8 +315,8 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
       // 先量再卸：卸載後高度歸零，這個值就拿不到了。同時確認 slot 內是不是**真的**
       // 有媒體：只有「讀取中…」指示器／載入失敗提示／非媒體網址時，量到的高度不是
       // 內容高度，釘住它會變成永久空白（recordSlotHeight 的註解有實例）。
-      const measured = measureContentHeight(node);
-      const hasMedia = !!node.querySelector(LAZY_MEDIA_SELECTOR);
+      const measured = content.offsetHeight;
+      const hasMedia = !!content.querySelector(LAZY_MEDIA_SELECTOR);
       const prevPinned = state.pinned;
       const prevAspect = state.aspect;
       state.pinned = recordSlotHeight(
@@ -290,7 +326,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
         hasMedia,
       );
       if (hasMedia) {
-        const it = measureIntrinsic(node);
+        const it = measureIntrinsic(content);
         state.aspect = recordSlotAspect(state.aspect, it.count, it.w, it.h);
       }
       if (state.pinned !== prevPinned || state.aspect !== prevAspect)
@@ -306,28 +342,29 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   // 佔位盒塌陷、往上捲時圖一張張撐開把閱讀位置往下推（症狀：捲一捲就跳頁）。
   function onResize() {
     if (state.destroyed) return;
-    const loaded = hasLoadedMedia(node);
+    const loaded = hasLoadedMedia(content);
     const prevPinned = state.pinned;
     const prevAspect = state.aspect;
     state.pinned = recordSlotHeight(
       state.pinned,
       state.sizeMode,
-      measureContentHeight(node),
+      content.offsetHeight,
       loaded,
     );
-    applyMinHeight();
+    applyFloorHeight();
     if (loaded) {
-      const it = measureIntrinsic(node);
+      const it = measureIntrinsic(content);
       state.aspect = recordSlotAspect(state.aspect, it.count, it.w, it.h);
-      syncGhost();
     }
+    // 真圖一佔到版面就讓替身盒退場（loaded=false 時它得繼續頂著）。
+    syncGhost();
     if (state.pinned !== prevPinned || state.aspect !== prevAspect) remember();
   }
 
   // memo 命中 ⇒ 這個節點在**第一幀**就要有高度，不能等 observer 回報（那是下一個
   // task 以後的事，中間會先畫出一幀塌陷 —— 正是本次要修掉的症狀）。
   if (memo) {
-    applyMinHeight();
+    applyFloorHeight();
     syncGhost();
   }
 
@@ -354,11 +391,14 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   if (sizeObserverSupported()) {
     ensureSizeObserver();
     const obs = sizeObserver;
-    sizeCallbacks.set(node, onResize);
-    obs.observe(node);
+    // 觀察 **content** 而不是 slot：疊層之後 slot 高度取 max，spacer 撐著的時候
+    // 「讀取中 56px → 真圖 494px」不會改變 slot 高度 ⇒ 觀察 slot 就永遠收不到那次
+    // 回報，實測高度也就永遠記不進 pinned。
+    sizeCallbacks.set(content, onResize);
+    obs.observe(content);
     sizeTeardown.set(node, () => {
-      sizeCallbacks.delete(node);
-      obs.unobserve(node);
+      sizeCallbacks.delete(content);
+      obs.unobserve(content);
     });
   }
 
@@ -367,7 +407,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     setSizeMode(mode) {
       if (state.sizeMode === mode || state.destroyed) return;
       state.sizeMode = mode;
-      applyMinHeight();
+      applyFloorHeight();
     },
     // 版面寬度變了 ⇒ 這個 slot 的 pinned 也過期。規則同
     // invalidateInlinePreviewHeights：有替身盒可頂就丟掉，沒有就留著當最佳猜測。
@@ -375,7 +415,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
       if (state.destroyed || !state.pinned || !state.aspect) return;
       state.pinned = null;
       remember();
-      applyMinHeight();
+      applyFloorHeight();
       syncGhost();
     },
     destroy() {
@@ -393,7 +433,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
       }
       if (state.mounted) {
         state.mounted = false;
-        unmountFrom(node);
+        unmountFrom(content);
       }
     },
   };

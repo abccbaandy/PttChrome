@@ -163,7 +163,7 @@ export function annotateComment(text, ctx) {
 // 2026-08 從 annotateComment 搬出來：寫進 annotation 就等於讓一個純互動狀態進
 // screen_annotate_cache.annotationsKey ⇒ 點一下推文列就炸掉整份增量快取、重建
 // 好讀累積長頁的每一列節點。兩個實際回報的症狀：
-//   1. 每個 inlinePreviewSlot 被 disposeNode 收掉重建（pinned=null ⇒ minHeight
+//   1. 每個 inlinePreviewSlot 被 disposeNode 收掉重建（pinned=null ⇒ 佔位高度
 //      歸零）⇒ 圖片佔位盒塌陷再非同步撐回來＝合併推文的空白區閃爍
 //   2. 節點抽換落在雙擊的第二個 mousedown 之前 ⇒ 雙擊選字時好時壞
 // 現在由 ScreenController 在 build 時現算、切換時逐列搬 class

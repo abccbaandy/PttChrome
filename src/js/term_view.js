@@ -2217,7 +2217,7 @@ TermView.prototype = {
   // 而 selectedPusher 進了 annotationsKey ⇒ 點一下推文列就讓整份好讀累積長頁全量
   // 重算（含每個 run 的 buildMergedCommentChars）＋每一列節點重建。兩個症狀：
   //   1. 每個 inlinePreviewSlot 被 disposeNode 收掉重建，新 slot 的 pinned=null
-  //      ⇒ minHeight 歸零 ⇒ 圖片／影片佔位盒塌陷成 0 高，等 IntersectionObserver
+  //      ⇒ 佔位高度歸零 ⇒ 圖片／影片佔位盒塌陷成 0 高，等 IntersectionObserver
   //      → mount → onLoad → ResizeObserver 這串非同步流程才撐回來（使用者回報：
   //      合併推文的空白區閃爍、隱約看到別行推文）。
   //   2. 節點抽換發生在雙擊的第二個 mousedown **之前** ⇒ 瀏覽器的雙擊選詞落在已被

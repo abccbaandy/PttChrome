@@ -195,23 +195,28 @@ describe("渲染鏈的佔位盒生命週期", () => {
     controller.update(props(lines));
 
     const slotEl = () => controller.container.querySelector(".inlinePreviewSlot");
+    // 佔位高度寫在 spacer（兄弟節點）上，不是 slot 自己 —— 寫祖先會抑制瀏覽器的
+    // 捲動補償，見 src/render/inline_preview_slot.js 檔頭。
+    const floorOf = (slot) =>
+      slot.querySelector(".inlinePreviewSpacer").style.minHeight;
     const before = slotEl();
+    const beforeContent = before.querySelector(".inlinePreviewContent");
     // 圖載出來、量到高度（真實情境是 near → mount → onLoad → ResizeObserver）。
-    Object.defineProperty(before, "offsetHeight", {
+    Object.defineProperty(beforeContent, "offsetHeight", {
       configurable: true,
       value: 420,
     });
     const img = document.createElement("img");
     img.className = "easyReadingImg hyperLinkPreview";
     Object.defineProperty(img, "offsetHeight", { configurable: true, value: 420 });
-    before.appendChild(img);
+    beforeContent.appendChild(img);
     sizeObservers[0].emit();
-    expect(before.style.minHeight).toBe("420px");
+    expect(floorOf(before)).toBe("420px");
 
     controller.update(props(lines, { showFloorNumbers: true }));
     const after = slotEl();
     expect(after).not.toBe(before); // 節點真的被重建了
-    expect(after.style.minHeight).toBe("420px"); // 修好前是 ""＝塌陷
+    expect(floorOf(after)).toBe("420px"); // 修好前是 ""＝塌陷
 
     controller.destroy();
     root.remove();

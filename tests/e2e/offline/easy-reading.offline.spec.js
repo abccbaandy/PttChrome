@@ -761,7 +761,12 @@ test.describe('长文连续累积（离线重放）', () => {
           heightWhenMounted,
           connected: target.isConnected,
           stillMounted: target.querySelectorAll('img, video, iframe').length,
-          slotMinHeight: parseFloat(target.style.minHeight) || 0,
+          // 佔位高度寫在 spacer（兄弟節點）上，不是 slot 自己 —— 寫祖先會抑制
+          // 浏览器的捲动补偿，见 src/render/inline_preview_slot.js 档头。
+          slotMinHeight:
+            parseFloat(
+              target.querySelector('.inlinePreviewSpacer').style.minHeight
+            ) || 0,
         };
       });
 

@@ -34,15 +34,16 @@ export function nextLazyState({ mounted, near, far }) {
 export const LAZY_MEDIA_SELECTOR =
   "img.easyReadingImg, video.easyReadingVideo, img.hyperLinkPreview, iframe";
 
-// 卸載時要把當下高度釘進佔位盒，否則內容總高會塌陷、捲動容器的 scrollTop 被夾住
-// → 使用者的閱讀位置整個位移（與點圖放大／影片全螢幕同一類問題，見
-// src/js/scroll_anchor.js 開頭）。0／負值不採信（尚未載入完成就被捲過去）。
+// 卸載時要把當下高度釘進佔位盒的 spacer（見 render/inline_preview_slot.js 檔頭
+// 「疊層佔位」），否則內容總高會塌陷、捲動容器的 scrollTop 被夾住 → 使用者的閱讀
+// 位置整個位移（與點圖放大／影片全螢幕同一類問題，見 src/js/scroll_anchor.js
+// 開頭）。0／負值不採信（尚未載入完成就被捲過去）。
 //
 // hasMedia=false 一律不釘（2026-08 使用者回報「推文區前面多一塊空白」）：塌陷補償
 // 的前提是「卸載後會少掉一塊真內容」。若 slot 當下只有「讀取中…」指示器
 // （.previewLoading，URL 解析中／媒體下載中共用）、「載入失敗」提示，或這個網址
 // 根本不是媒體（ImagePreviewer render 出 null），那量到的高度就不是內容高度，
-// 釘進 min-height 只會變成**永久假空白**——而且非媒體連結永遠不會再長出內容來填它。
+// 釘成佔位高度只會變成**永久假空白**——而且非媒體連結永遠不會再長出內容來填它。
 // 實例：每篇文章的「※ 文章網址: https://www.ptt.cc/bbs/…html」都掛預覽 slot，
 // 捲過去顯示讀取中→判定非媒體→內容消失，卸載卻把指示器的 65px 釘住 ⇒ 每篇文章的
 // 推文區都被往下推兩行（ptt-debug-20260812-010606 實測，offline 重放已複現）。
@@ -52,7 +53,7 @@ export const LAZY_MEDIA_SELECTOR =
 // layout 高度可達數千 px）。只記一個值會踩到兩種症狀，兩種都是使用者實測回報的
 // （ptt-debug-20260815-112407）：
 //   1. 不分模式就套用 ⇒ 放大態釘的高度留到縮小態＝永久假空白（點縮小只是拿掉
-//      #mainContainer 的 class，CSS 立刻生效但 inline min-height 不受影響）。
+//      #mainContainer 的 class，CSS 立刻生效但釘住的佔位高度不受影響）。
 //   2. 模式不符就丟掉不套 ⇒ 佔位盒塌陷成 0，往上捲時圖片一張張掛回來把**視窗上方**
 //      的內容撐開，閱讀位置被往下推＝「捲一捲就跳頁、跳過中間的圖」。
 // 所以正解是「換一種模式就換一組高度」：兩種模式各自記住實測值，切過去時直接用那組
@@ -69,14 +70,19 @@ export function recordSlotHeight(prev, mode, measured, hasMedia) {
   return { ...prev, [mode]: measured };
 }
 
-export function slotMinHeight(pinned, mode) {
+// 佔位盒的高度**下限**（floor）。B2 疊層之後 slot 高度 = max(內容, spacer)，這個值
+// 就是寫進 spacer 的那一半；不再是 slot 自己的 min-height（那會抑制瀏覽器的捲動
+// 補償，見 render/inline_preview_slot.js 檔頭的硬不變量）。語意與舊名
+// slotMinHeight 完全相同。
+export function slotFloorHeight(pinned, mode) {
   const h = pinned && pinned[mode];
   return h > 0 ? h : undefined;
 }
 
-// 媒體的**原尺寸**（intrinsic size）。有了它，卸載期間就能放一個同比例的替身盒
-// （LazyInlinePreview 的 ghost）頂著，讓 CSS 用跟真圖一模一樣的規則去算高度 ——
-// 於是任何模式都佔得準，連「這個模式從沒量過」也不例外。
+// 媒體的**原尺寸**（intrinsic size）。有了它，只要真圖還沒佔到版面（卸載期間、
+// 以及掛載後還在下載的那段）就能放一個同比例的替身盒（inline_preview_slot 的
+// ghost）頂著，讓 CSS 用跟真圖一模一樣的規則去算高度 —— 於是任何模式都佔得準，
+// 連「這個模式從沒量過」也不例外。
 //
 // 為什麼需要它、而分模式記高度還不夠：使用者往下捲時是在放大態看那些圖的，那幾張
 // 圖的 normal 高度**從來沒有機會被量到**；點縮小再往上捲，它們就只能塌陷 ⇒ 跳頁。

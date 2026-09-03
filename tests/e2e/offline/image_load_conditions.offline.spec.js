@@ -60,10 +60,11 @@ const outcome = (page) =>
     loadedImgs: Array.from(document.querySelectorAll(sel)).filter(
       (im) => im.offsetWidth > 0 && im.offsetHeight > 0
     ).length,
-    // 佔位盒被釘住的 inline min-height。載入失敗時**不得**有值：釘住的會是錯誤提示
-    // 的高度 ⇒ 永久假空白（同 lazy_preview_blank 那條 bug 的根因，
+    // 佔位盒被釘住的高度（寫在 .inlinePreviewSpacer 上，見 inline_preview_slot.js
+    // 檔頭「疊層佔位」）。載入失敗時**不得**有值：釘住的會是錯誤提示的高度 ⇒
+    // 永久假空白（同 lazy_preview_blank 那條 bug 的根因，
     // src/js/lazy_media.js#recordSlotHeight 的 hasMedia 分支）。
-    pinned: Array.from(document.querySelectorAll('.inlinePreviewSlot'))
+    pinned: Array.from(document.querySelectorAll('.inlinePreviewSpacer'))
       .map((n) => parseFloat(n.style.minHeight) || 0)
       .filter((h) => h > 0),
   }), IMG_SEL);

@@ -220,7 +220,11 @@ a:link,a:visited,a:active,a:hover {
      實測（2026-08-30）Chrome 在我們這種「整批 patch 列節點」的更新下並沒有選中
      anchor，拿掉這一行行為沒有可觀測差異 —— 但那是啟發式的結果、不是合約，換個
      瀏覽器或改了 patch 方式就可能生效。明確關掉，位置只由我們算。
-     補償機制本身的守護在 tests/unit/list_session.test.js「平滑捲動 × 背景補頁」。 */
+     補償機制本身的守護在 tests/unit/list_session.test.js「平滑捲動 × 背景補頁」。
+
+     **這條只適用列表好讀，不要照抄到 .main（文章好讀）**：那裡的位移量沒有第二個
+     真相源，內建 anchoring 涵蓋得比自己算更全面（2026-09 實測），所以刻意留著用。
+     詳見 src/render/inline_preview_slot.js 檔頭與 docs/easy-reading.md。 */
   overflow-anchor: none;
 }
 .listBodyView::-webkit-scrollbar {
@@ -278,11 +282,13 @@ a:link,a:visited,a:active,a:hover {
   width: 100%;
   height: auto;
 }
-/* 延遲載入卸下期間的替身盒（LazyInlinePreview）。刻意也掛 .easyReadingImg，好讓
-   max-width/max-height、放大態的 width:100% 等**完全同一組規則**替它算高度 ——
+/* 真圖還沒佔到版面時的替身盒（inline_preview_slot.js）。刻意也掛 .easyReadingImg，
+   好讓 max-width/max-height、放大態的 width:100% 等**完全同一組規則**替它算高度 ——
    佔位高度因此與真圖逐像素相同，兩種尺寸模式都準，JS 端不必複製任何 CSS 常數。
    寬度走 CSS 變數（元件以 inline style 給原尺寸）：inline 的 width 會蓋掉放大態的
-   width:100%，變數不會。空盒、無邊框，使用者看到的就是圖片還沒載進來的留白。 */
+   width:100%，變數不會。空盒、無邊框，使用者看到的就是圖片還沒載進來的留白。
+   住在 .inlinePreviewSpacer 裡（不是內容層）：疊層取 max 而非相加，所以掛載當下
+   「替身盒讓位給讀取中指示器」不再是一次 438px 的塌陷。 */
 .inlinePreviewGhost {
   width: var(--ghost-w);
 }
@@ -753,12 +759,36 @@ span {
   to { transform: rotate(360deg); }
 }
 
-/* 自動開圖的延遲載入佔位盒（src/components/LazyInlinePreview.jsx）。
+/* 自動開圖的延遲載入佔位盒（src/render/inline_preview_slot.js）。
    還沒捲到（或已捲遠被卸載）時裡面是空的：高度必須是 0，否則長文幾百個空盒會憑空
-   撐出好幾個螢幕的空白。卸載時把量到的高度寫進 inline style 的 min-height，
-   閱讀位置才不會因為內容塌陷而位移。 */
+   撐出好幾個螢幕的空白。
+
+   ---- 為什麼是 grid 疊層而不是單純 display:block ----
+   佔位高度**不可以**寫在 slot（或任何「捲動錨點的祖先」）自己的 inline style 上。
+   讀者停在圖片中間時，捲動錨點就在這個 slot 裡；改寫祖先的 min-height/height/
+   padding/margin/position/transform 任一項都會命中 CSS Scroll Anchoring 的
+   suppression trigger ⇒ 瀏覽器當幀**放棄補償**上方內容的高度變化 ⇒ 讀者被整整推走
+   一次塌陷量（實測 438px ＝ 一次 PgUp 的 76.6%，兩張圖就吃掉一整次 PgUp；
+   症狀＝「多圖時 PgUp 捲不上去／來回跳」）。
+
+   所以改成 grid 疊層：內容包一層 .inlinePreviewContent、佔位高度寫在它的兄弟節點
+   .inlinePreviewSpacer 上，兩者疊在同一個 grid area ⇒ slot 高度 = max(內容, 佔位)
+   （不是相加）。display:grid / grid-area 都是**靜態** stylesheet 規則、runtime 永不
+   改寫 ⇒ slot 與 content 這兩個錨點祖先零樣式變動 ⇒ 補償照常生效，捲動位置全交給
+   瀏覽器內建的 scroll anchoring（實測它在 .main 上涵蓋得比自己算更全面）。
+   align-items:start 不可省：grid item 預設 stretch 會把內容拉成整列高。
+   spacer 疊在內容上方，pointer-events:none 才不會吃掉點圖放大的點擊。 */
 .inlinePreviewSlot {
-  display: block;
+  display: grid;
+  grid-template-areas: "stack";
+  align-items: start;
+}
+.inlinePreviewSlot > .inlinePreviewContent,
+.inlinePreviewSlot > .inlinePreviewSpacer {
+  grid-area: stack;
+}
+.inlinePreviewSpacer {
+  pointer-events: none;
 }
 
 /* 自動開圖「讀取中」指示器：解析中 + 媒體下載中共用。
