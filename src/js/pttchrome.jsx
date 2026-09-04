@@ -33,7 +33,7 @@ import {
   rawModePrefRowVisible
 } from './pmore_pref';
 import { navKeyAllowed } from './nav_key_gate';
-import { SwipeXDetector, isHorizontalWheel } from './swipe_gesture';
+import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { i18n } from './i18n';
@@ -148,10 +148,6 @@ export const App = function() {
   // 圖片上傳（urusai）：拖放／貼上截圖／右鍵選單 → 上傳 → 網址送進推文列或編輯器。
   // 自己綁 window 的 drag* 事件；右鍵選單透過 this.imageUpload 呼叫它。
   this.imageUpload = new ImageUploadController(this);
-  // 觸控板兩指水平滑動的辨識器（純狀態機，餵 wheel 事件）。狀態刻意不塞進 App
-  // 的欄位堆裡：慣性鎖與累積量是它自己的事，見 swipe_gesture.js。
-  this.swipeX = new SwipeXDetector();
-
   // Debug 錄製器（src/js/debug_recorder.js）：由 DebugRecordButton 掛上/卸下，
   // 純 runtime、不落地。關鍵路徑用 this.debugRecorder?.log(tag, info) 留痕。
   this.debugRecorder = null;
@@ -1002,8 +998,7 @@ App.prototype.mouseGates = function() {
     mouseMiddleClick: this.view.mouseMiddleClick,
     mouseWheel: this.view.mouseWheel,
     mouseWheelSmoothScroll: this.view.mouseWheelSmoothScroll,
-    mouseSwipeHorizontal: this.view.mouseSwipeHorizontal,
-    mouseBackButton: this.view.mouseBackButton
+    mouseBackNav: this.view.mouseBackNav
   });
 };
 
@@ -1254,11 +1249,8 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.mouseWheelSmoothScroll = !!value;
       this.view.redraw(true);
       break;
-    case 'mouseSwipeHorizontal':
-      this.view.mouseSwipeHorizontal = Number(value) || 0;
-      break;
-    case 'mouseBackButton':
-      this.view.mouseBackButton = Number(value) || 0;
+    case 'mouseBackNav':
+      this.view.mouseBackNav = Number(value) || 0;
       break;
     case 'copyOnSelect':
       this.copyOnSelect = value;
@@ -1683,18 +1675,13 @@ App.prototype.mouse_scroll = function(e) {
     return;
   }
   var gates = this.mouseGates();
-  // 觸控板兩指水平滑動：wheel 的 deltaX 主導 ⇒ 這是**手勢**，不是捲動。
-  // 排在 gates.wheel 之前是刻意的：手勢是獨立 pref（見 resolveMouseGates），不該
-  // 被「我不要滾輪翻頁」一起關掉。瀏覽器自己的返回手勢由 CSS overscroll-behavior-x
-  // 擋掉（main.css），擋掉之後 wheel 事件照常派發，所以這裡收得到。
-  var swipe = gates.swipeX ? this.swipeX.feed(e) : null;
-  if (swipe) {
-    this.sendNavKeyAsUser(swipe === 'back' ? 'ArrowLeft' : 'ArrowRight');
-    return;
-  }
   // 水平主導的事件到此為止。下面整段都是「上下翻頁」，而 `up` 只看 deltaY ⇒
   // 純水平滑動（deltaY === 0）會被算成「往下」，原生 24 列列表左滑因此會偷送一個
   // PageDown 給 PTT（斜向滑動同理誤翻頁）。守護 tests/unit/wheel_horizontal.test.js。
+  //
+  // **這裡刻意不做手勢辨識**：觸控板的返回手勢交給瀏覽器原生跑（CSS 不擋
+  // overscroll），由 history_back_guard 的 sentinel 接住。原生手勢一啟動，頁面
+  // 只收得到 1–3 個 wheel 事件就被瀏覽器接管。
   if (isHorizontalWheel(e))
     return;
   if (!gates.wheel)

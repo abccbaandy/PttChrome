@@ -147,15 +147,14 @@ export const DEFAULT_PREFS = {
   // 開新 key 而不是把 mouseWheel 擴成三選項：淺層合併 + 既有使用者已存 mouseWheel:1
   // ⇒ 只有新 key 的預設值吃得到（同 cursorRowBackground 那段註解）。
   mouseWheelSmoothScroll: true,
-  // 觸控板兩指水平滑動：0=關閉 1=左右方向鍵。左滑（會觸發瀏覽器「上一頁」的那個
-  // 方向）＝送左方向鍵＝退出文章／列表，右滑＝右方向鍵＝開文章。辨識在
-  // js/swipe_gesture.js，瀏覽器自己的返回手勢由 CSS overscroll-behavior-x 擋掉。
-  mouseSwipeHorizontal: 1,
-  // 攔截瀏覽器「上一頁」（滑鼠側鍵／Alt+←／工具列）→ 左方向鍵：0=關閉 1=開啟。
-  // 預設開：這台機器的側鍵本來就被設成上一頁，不攔的話等於在 BBS 裡隨手離站。
-  // 代價（tooltip 已寫明）：本站的上一頁變成「退出」，要離站得連按兩次或關掉它。
-  // 實作是 history sentinel，見 js/history_back_guard.js。
-  mouseBackButton: 1,
+  // 攔截瀏覽器的「返回」→ 左方向鍵：0=關閉 1=開啟。**一個 key 涵蓋所有來源**
+  // （觸控板左滑手勢、滑鼠側鍵、Alt+←／⌘[、工具列上一頁）——它們現在是同一條
+  // 實作（history sentinel，見 js/history_back_guard.js），永遠一起開關。
+  // 預設開：側鍵與觸控板左滑本來就是上一頁，不攔的話等於在 BBS 裡隨手離站。
+  // 代價（tooltip 已寫明）：本站的返回變成「退出文章」，要離站得關掉分頁。
+  // 舊 key mouseSwipeHorizontal / mouseBackButton 已刪除且**刻意不做遷移**
+  // （readValuesWithDefault 是淺層合併，殘留舊 key 不會污染新 key）。
+  mouseBackNav: 1,
 
   // displays
   fontFitWindowWidth: false,

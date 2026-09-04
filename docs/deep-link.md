@@ -77,6 +77,20 @@ rewrite: https://abccbaandy.github.io/PttChrome/#$1
   那行進畫面後才補上——這是刻意的取捨（使用者 2026-08-17 拍板）。
 - 一律 `replaceState`：不留瀏覽歷史，而且它**不觸發 `hashchange`**
   ⇒ 不會被 `deep_link_entry` 的監聽者當成「有人貼了新連結」而自我重跳。
+  **但這句只涵蓋 replaceState 當下**——它改的是「當前 entry」，日後**traversal 經過
+  那一格**時 fragment 一樣會變動而派發 `hashchange`。見下條。
+- **`state` 必須原封帶過去**（`replaceState(window.history.state, '', href)`，不可傳
+  `null`）：我們改的那一層通常是 `history_back_guard` 的 sentinel，它把身分記在
+  `history.state` 裡。洗掉之後 guard 認不出「落回自己那一層」，使用者按「下一頁」
+  回到它會被當成一次往外退而多送一個 `←`。
+- **與瀏覽器返回的交會（2026-09-05 實機 bug）**：sentinel 就是使用者站著的那一層
+  ⇒ 它帶著 `#Board/AID`；guard 接住返回後用 `history.forward()` 走回去（traversal，
+  理由見 `docs/mouse.md`）⇒ **hashchange** ⇒ `consume()` 把它當成新連結 ⇒ 畫面被拉回
+  剛剛那篇文章（症狀：按側鍵／`Alt+←`／觸控板左滑都退不出去）。
+  修法是 `self_navigation.js` 的靜音窗口：guard 在自己的 traversal 期間標記，
+  `consume()` 期間內 return。**`consume()` 的合約是「使用者給了一條連結」**，本站自己
+  造成的導航是回音，不算。守護 `tests/unit/back_guard_deep_link.test.js` 與
+  `tests/e2e/offline/swipe_back.offline.spec.js`。
 - `file://` 下 `replaceState` 會 throw ⇒ 包 `try/catch`，不可中斷 settle 流程。
 
 ## 檔案分工

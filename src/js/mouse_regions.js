@@ -203,13 +203,12 @@ export function resolveMouseGates(prefs) {
     wheel: on && !!p.mouseWheel,
     // 平滑捲動是滾輪的子行為 ⇒ 必須先過滾輪本身這一關（列表好讀模式才有作用）。
     wheelSmoothScroll: on && !!p.mouseWheel && !!p.mouseWheelSmoothScroll,
-    // 觸控板兩指水平滑動 → 左右方向鍵（辨識在 swipe_gesture.js）。
+    // 瀏覽器的「返回」→ 左方向鍵：觸控板左滑手勢、滑鼠側鍵、Alt+←／⌘[、
+    // 工具列上一頁**全都是同一個來源**（一律走 history sentinel，見
+    // history_back_guard.js）⇒ 只有一個 pref，不可能單獨開關其中一種。
     // **刻意不掛在 mouseWheel 底下**：mouseWheel 的語意是「垂直滾輪＝上下頁」，
     // 綁進去會讓「我不要滾輪翻頁」的人連退出手勢一起失去。
-    swipeX: on ? Number(p.mouseSwipeHorizontal) || 0 : 0,
-    // 瀏覽器「上一頁」（滑鼠側鍵／Alt+←／工具列）→ 左方向鍵。攔法是 history
-    // sentinel，見 history_back_guard.js（側鍵的 preventDefault 不可靠）。
-    backButton: on ? Number(p.mouseBackButton) || 0 : 0
+    backNav: on ? Number(p.mouseBackNav) || 0 : 0
   };
 }
 

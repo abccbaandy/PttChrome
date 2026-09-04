@@ -10,6 +10,7 @@
 //      整個安裝情境失效）
 
 import { parseDeepLink, stripDeepLink } from './deep_link';
+import { isSelfNavigating } from './self_navigation';
 import { createChannel, claimHandoff, serveHandoff } from './deep_link_channel';
 
 // 開站前先問：已經有登入好的分頁可以接手嗎？回 Promise<{ target, taken }>。
@@ -34,6 +35,12 @@ export function installDeepLink(app, win) {
   // 會再跳一次，而那時他多半早就人在別篇文章了。
   // （replaceState 不會觸發 hashchange，不必擔心自我遞迴。）
   const consume = () => {
+    // 本站自己造成的 history traversal（history_back_guard 補回 sentinel）會讓
+    // fragment 變動而派發 hashchange —— 那是回音，不是「使用者又貼了一條連結」。
+    // 少了這道判斷，按上一頁／滑鼠側鍵／觸控板左滑都會被拉回剛剛那篇文章
+    // （2026-09-05 實機回報）。理由與窗口長度見 self_navigation.js，
+    // 回歸鎖 tests/unit/back_guard_deep_link.test.js。
+    if (isSelfNavigating()) return null;
     const href = w.location.href;
     const target = parseDeepLink(href);
     if (!target) return null;

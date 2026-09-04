@@ -977,39 +977,23 @@ export const PrefModal = ({
                   {i18n("tooltip_mouseWheelSmoothScroll")}
                 </Text>
               </fieldset>
-              {/* 觸控板兩指水平滑動與瀏覽器「上一頁」：兩條不同層級的來源、同一個
-                  出口（App.sendNavKeyAsUser → view.sendKeyAsUser）。刻意各自一個
-                  pref，不掛在滾輪底下 —— 見 mouse_regions.resolveMouseGates。 */}
+              {/* 瀏覽器的「返回」（觸控板左滑手勢／滑鼠側鍵／Alt+←／工具列）
+                  → 左方向鍵。**一個 pref、一條實作**（history sentinel），刻意不
+                  掛在滾輪底下 —— 見 mouse_regions.resolveMouseGates。 */}
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseSwipeHorizontal")}</legend>
+                <legend>{i18n("options_mouseBackNav")}</legend>
                 <Select
-                  aria-label={i18n("options_mouseSwipeHorizontal")}
-                  name="mouseSwipeHorizontal"
-                  value={String(values.mouseSwipeHorizontal)}
+                  aria-label={i18n("options_mouseBackNav")}
+                  name="mouseBackNav"
+                  value={String(values.mouseBackNav)}
                   allowDeselect={false}
                   disabled={!values.useMouseBrowsing}
-                  onChange={(val) => onSelectNum("mouseSwipeHorizontal", val)}
-                  data={selectData(["options_none", "options_leftRightKey"])}
-                  mb="xs"
-                />
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseSwipeHorizontal")}
-                </Text>
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseBackButton")}</legend>
-                <Select
-                  aria-label={i18n("options_mouseBackButton")}
-                  name="mouseBackButton"
-                  value={String(values.mouseBackButton)}
-                  allowDeselect={false}
-                  disabled={!values.useMouseBrowsing}
-                  onChange={(val) => onSelectNum("mouseBackButton", val)}
+                  onChange={(val) => onSelectNum("mouseBackNav", val)}
                   data={selectData(["options_none", "options_leftKey"])}
                   mb="xs"
                 />
                 <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseBackButton")}
+                  {i18n("tooltip_mouseBackNav")}
                 </Text>
               </fieldset>
             </Tabs.Panel>

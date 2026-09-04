@@ -153,10 +153,9 @@ export function TermView() {
   this.mouseMiddleClick = 0;
   this.mouseWheel = 1;
   this.mouseWheelSmoothScroll = true;
-  // mouseSwipeHorizontal：觸控板兩指水平滑動 → 左右方向鍵（0 關 1 開）。
-  // mouseBackButton：攔截瀏覽器「上一頁」→ 左方向鍵（0 關 1 開）。
-  this.mouseSwipeHorizontal = 1;
-  this.mouseBackButton = 1;
+  // mouseBackNav：攔截瀏覽器的「返回」→ 左方向鍵（0 關 1 開）。來源含觸控板
+  // 左滑手勢、滑鼠側鍵、Alt+←／⌘[、工具列上一頁，全走同一條 history sentinel。
+  this.mouseBackNav = 1;
   // 防誤觸模式（pref mouseMisclickGuard，預設開）：可點區＝底色區的起始欄，
   // 決策在 mouse_regions.clickableColStart。
   this.mouseMisclickGuard = true;

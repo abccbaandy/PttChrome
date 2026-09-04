@@ -199,39 +199,35 @@ describe("設定頁：滑鼠分頁", () => {
     ]);
   });
 
-  // 觸控板水平手勢與瀏覽器「上一頁」：兩個獨立 pref，都在這一頁上，且跟著總開關
-  // disabled（上面「每一個子項都 disabled」那條會掃到所有 Select）。
-  test("水平手勢是二選一：關閉／左右方向鍵", () => {
+  // 瀏覽器返回攔截（觸控板左滑手勢／側鍵／Alt+←／工具列）：**一個 pref**，
+  // 跟著總開關 disabled（上面「每一個子項都 disabled」那條會掃到所有 Select）。
+  test("返回攔截是二選一：關閉／左方向鍵", () => {
     const panel = openMouseTab();
-    expect(optionsOf(selectByLabel(panel, "options_mouseSwipeHorizontal"))).toEqual([
-      i18n("options_none"),
-      i18n("options_leftRightKey"),
-    ]);
-  });
-
-  test("瀏覽器上一頁是二選一：關閉／左方向鍵", () => {
-    const panel = openMouseTab();
-    expect(optionsOf(selectByLabel(panel, "options_mouseBackButton"))).toEqual([
+    expect(optionsOf(selectByLabel(panel, "options_mouseBackNav"))).toEqual([
       i18n("options_none"),
       i18n("options_leftKey"),
     ]);
   });
 
-  test("兩者預設都開啟", () => {
+  test("預設開啟", () => {
     const panel = openMouseTab();
-    expect(selectByLabel(panel, "options_mouseSwipeHorizontal").value).toBe(
-      i18n("options_leftRightKey"),
-    );
-    expect(selectByLabel(panel, "options_mouseBackButton").value).toBe(
+    expect(selectByLabel(panel, "options_mouseBackNav").value).toBe(
       i18n("options_leftKey"),
     );
-    expect(DEFAULT_PREFS.mouseSwipeHorizontal).toBe(1);
-    expect(DEFAULT_PREFS.mouseBackButton).toBe(1);
+    expect(DEFAULT_PREFS.mouseBackNav).toBe(1);
   });
 
-  test("關掉瀏覽器上一頁攔截 → 寫進 pref", () => {
+  // 手勢與側鍵已合併成同一條實作 ⇒ 設定頁不可以再有兩格（留兩個旗標只是多一處
+  // 出錯，而且它們永遠會一起開關）。
+  test("舊的兩格已經不在設定頁上", () => {
     const panel = openMouseTab();
-    const input = selectByLabel(panel, "options_mouseBackButton");
+    expect(panel.querySelector("[name='mouseSwipeHorizontal']")).toBeNull();
+    expect(panel.querySelector("[name='mouseBackButton']")).toBeNull();
+  });
+
+  test("關掉返回攔截 → 寫進 pref", () => {
+    const panel = openMouseTab();
+    const input = selectByLabel(panel, "options_mouseBackNav");
     fireEvent.click(input);
     fireEvent.click(
       [...document
@@ -241,12 +237,12 @@ describe("設定頁：滑鼠分頁", () => {
       ),
     );
     closeModal();
-    expect(readValuesWithDefault().mouseBackButton).toBe(0);
+    expect(readValuesWithDefault().mouseBackNav).toBe(0);
   });
 
-  test("代價要寫在說明裡：離站方式（關掉分頁／連按兩次）", () => {
+  test("代價與前提要寫在說明裡：離站方式＋手勢取決於系統設定", () => {
     const panel = openMouseTab();
-    expect(panel.textContent).toContain(i18n("tooltip_mouseBackButton"));
+    expect(panel.textContent).toContain(i18n("tooltip_mouseBackNav"));
   });
 
   test("滾輪關閉時「平滑捲動」也 disabled（它是滾輪的子行為）", () => {

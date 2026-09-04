@@ -739,20 +739,11 @@ export const en_US = {
   "tooltip_mouseWheelSmoothScroll": {
     "message": "In list easy-reading and board-list smooth scrolling the wheel is handed straight to the browser, exactly like article easy-reading: momentum, fine trackpad swipes and your system scroll settings all behave natively. Turn it off to jump a whole page per notch. The native (non easy-reading) list always pages, since the server does the paging."
   },
-  "options_mouseSwipeHorizontal": {
-    "message": "Trackpad horizontal swipe"
+  "options_mouseBackNav": {
+    "message": "Browser Back / trackpad swipe"
   },
-  "tooltip_mouseSwipeHorizontal": {
-    "message": "Two-finger horizontal swipe on a trackpad: swiping back leaves the post / goes up one level (the LEFT key), swiping forward opens the post (the RIGHT key). While on, the browser's own swipe-to-go-back is disabled on this site (except in Safari, which plays its back animation first and then leaves the post)."
-  },
-  "options_mouseBackButton": {
-    "message": "Browser Back button"
-  },
-  "tooltip_mouseBackButton": {
-    "message": "Turns the browser's Back (mouse side button, Alt+Left, toolbar button) into PTT's LEFT key: leave the post / go up one level. The cost: Back no longer leaves the site here — close the tab instead, or press Back twice within 0.8s."
-  },
-  "options_leftRightKey": {
-    "message": "Sends LEFT / RIGHT keys"
+  "tooltip_mouseBackNav": {
+    "message": "Turns the browser's Back into PTT's LEFT key: leave the post / go up one level. Covers the two-finger trackpad swipe (which uses the browser's own native back gesture, so the arrow indicator, the follow-along motion and cancelling by letting go mid-swipe all behave exactly like on any other site), the mouse side button, Alt+Left or Cmd+[, and the toolbar Back button. Whether the trackpad gesture works at all depends on your system settings (macOS: Settings → Trackpad → More Gestures → Swipe between pages). To actually leave this site, close the tab, or use Back twice on a screen that has nothing left to exit."
   },
   "options_mouseBrowsing": {
     "message": "Mouse browsing"

@@ -197,10 +197,14 @@ DeepLinkController.prototype = {
   },
 
   // 抽成方法讓 unit test 不必碰真的 window/history。
+  // **state 必須原封不動帶過去**：我們改的是「當前 entry」，而使用者站著的那一
+  // 層通常是 history_back_guard 的 sentinel（它把身分記在 history.state 裡）。
+  // 傳 null 會把 sentinel 洗成一般 entry ⇒ guard 認不出「落回自己那一層」，
+  // 使用者按「下一頁」回到它時會被當成一次往外退而多送一個左方向鍵。
   _replaceState: function(href) {
     try {
       if (window.history && window.history.replaceState)
-        window.history.replaceState(null, '', href);
+        window.history.replaceState(window.history.state, '', href);
     } catch (e) {
       // file:// 下 replaceState 會 throw。網址列漂亮與否不值得中斷 settle 流程。
     }

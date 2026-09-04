@@ -34,11 +34,10 @@ describe("DEFAULT_PREFS", () => {
     // 逐行捲動是**新 key**，所以既有使用者（localStorage 已存 mouseWheel:1）
     // 也吃得到這個預設 —— 淺層合併只補得到缺少的 key。
     expect(DEFAULT_PREFS.mouseWheelSmoothScroll).toBe(true);
-    // 觸控板水平手勢／瀏覽器上一頁攔截：0=關閉 1=開啟，兩者都預設開。
-    // 側鍵那顆預設開是刻意的：那顆鍵本來就被設成「上一頁」，不攔的話在 BBS 裡
-    // 隨手一按就離站（代價寫在 tooltip：要離站得連按兩次或關掉它）。
-    expect(DEFAULT_PREFS.mouseSwipeHorizontal).toBe(1);
-    expect(DEFAULT_PREFS.mouseBackButton).toBe(1);
+    // 瀏覽器返回攔截（觸控板左滑手勢／側鍵／Alt+←／工具列，同一條實作）：
+    // 0=關閉 1=開啟，預設開是刻意的——那些操作本來就是「上一頁」，不攔的話在
+    // BBS 裡隨手一滑就離站（代價寫在 tooltip：要離站得關掉分頁）。
+    expect(DEFAULT_PREFS.mouseBackNav).toBe(1);
   });
 
   test("底色三兄弟原樣保留（key 刻意不改名，避免兩邊寫遷移）", () => {
@@ -75,16 +74,28 @@ describe("既有使用者的 localStorage 殘值", () => {
     expect(v.mouseMiddleClick).toBe(0);
     expect(v.mouseWheel).toBe(1);
     expect(v.useMouseBrowsing).toBe(true);
-    expect(v.mouseSwipeHorizontal).toBe(1);
-    expect(v.mouseBackButton).toBe(1);
+    expect(v.mouseBackNav).toBe(1);
   });
 
-  test("使用者關過瀏覽器上一頁攔截的話照樣尊重", () => {
+  test("使用者關過返回攔截的話照樣尊重", () => {
     window.localStorage.setItem(
       PREF_KEY,
-      JSON.stringify({ values: { mouseBackButton: 0 } }),
+      JSON.stringify({ values: { mouseBackNav: 0 } }),
     );
-    expect(readValuesWithDefault().mouseBackButton).toBe(0);
+    expect(readValuesWithDefault().mouseBackNav).toBe(0);
+  });
+
+  // 2026-09 合併：mouseSwipeHorizontal + mouseBackButton → mouseBackNav，
+  // **刻意不做遷移**（淺層合併，殘留舊 key 不會污染新 key；代價是改過設定的人
+  // 要重設一次）。
+  test("殘留的舊手勢／上一頁 key 不影響新 key 的預設值", () => {
+    window.localStorage.setItem(
+      PREF_KEY,
+      JSON.stringify({
+        values: { mouseSwipeHorizontal: 0, mouseBackButton: 0 },
+      }),
+    );
+    expect(readValuesWithDefault().mouseBackNav).toBe(1);
   });
 
   test("使用者關過防誤觸的話照樣尊重", () => {
