@@ -235,7 +235,9 @@ export class ScreenController {
     const articleId = props.enhance && props.enhance.articleId;
     const prevArticleId = prev && prev.enhance && prev.enhance.articleId;
     if (prev && articleId !== prevArticleId) {
-      this._imagesEnlarged = false;
+      // 走唯一入口：直接賦值欄位會漏掉容器 class（＝圖片尺寸的真正決定者）與
+      // 存活中 slot 的 sizeMode，下一篇就會一開場就是大圖。
+      this._setImagesEnlarged(false);
       this._mergeCaption = null;
       // AI 結果是 per-article 的：換文章一律丟掉（spanKey 只保證同一篇內唯一；
       // domainKey 含整列文字，舊判斷也沒有沿用價值）。
@@ -416,7 +418,11 @@ export class ScreenController {
   // imagesEnlarged 不需要重建任何一列：容器 class 決定圖片尺寸，佔位盒只要知道
   // 現在是哪個模式（分模式各記一筆高度，見 lazy_media.recordSlotHeight）。
   _setImagesEnlarged(next) {
-    if (this._imagesEnlarged === next) return;
+    // 早退守衛同時看 DOM：欄位對、class 卻沒跟上（有人繞過本入口直接改欄位）時
+    // 不可早退，否則會靜默停在不同步狀態。
+    const domInSync =
+      this.container.classList.contains("imagesEnlarged") === next;
+    if (this._imagesEnlarged === next && domInSync) return;
     this._imagesEnlarged = next;
     this.container.classList.toggle("imagesEnlarged", next);
     const mode = next ? "enlarged" : "normal";
