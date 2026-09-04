@@ -73,7 +73,8 @@ export function parseUploadResponse(raw, status) {
   };
 }
 
-// 上傳完成後該把網址「送進終端機」還是「只複製到剪貼簿」。
+// 上傳完成後該把網址插到哪裡：頁面上的文字輸入框／送進終端機／只複製到剪貼簿。
+//   hasTextTarget 頁面上有註冊的文字輸入框（長推文輸入框）→ 插進去，**最優先**
 //   pageState 6   編輯文章（term_buf.js#setPageState 認的原生編輯器底列）
 //   inputPrompt   推文的**內容輸入列**（bbs.c#recommend 步驟 3）
 //   其他（列表／選單／閱讀）→ 送字等於亂按指令，一律走剪貼簿
@@ -86,7 +87,11 @@ export function parseUploadResponse(raw, status) {
 //   typeMenu 型別選單 vkey() 只吃 1 byte ⇒ 網址首字被當型別鍵吞掉；
 //   confirm  確定[y/N] ans 只吃 1 字元 ⇒ 非 y ＝整則推文靜默取消；
 //   angel／cooldown／fatal 橫幅同理都不是能打字的地方。
-export function decideInsertMode({ pageState, lastRowText }) {
+export function decideInsertMode({ pageState, lastRowText, hasTextTarget }) {
+  // 頁面上有註冊過的文字輸入目標（目前唯一的消費者是長推文輸入框）就一律插進去，
+  // 而且**優先於** send：那個 modal 開著時底下的畫面是文章／文章列表，走 send 等於
+  // 把網址的每個字元當成列表快捷鍵按下去。所以這是最優先，不是並列的第三個分支。
+  if (hasTextTarget) return 'target';
   if (pageState === 6) return 'send';
   if (lastRowText && classifyPushScreen([lastRowText], 1).kind === 'inputPrompt')
     return 'send';

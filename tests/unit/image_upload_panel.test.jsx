@@ -11,7 +11,10 @@ import {
   ImageUploadOverlay,
   uploadErrorText,
 } from "../../src/components/ImageUploadOverlay";
-import { isUploadLayerTarget } from "../../src/js/image_upload_controller";
+import {
+  isUploadLayerTarget,
+  ImageUploadController,
+} from "../../src/js/image_upload_controller";
 import { setupI18n, i18n } from "../../src/js/i18n";
 
 window.matchMedia =
@@ -126,6 +129,21 @@ describe("ImageUploadOverlay", () => {
     expect(screen.getByText(i18n("imageUpload_insertedClipboard"))).toBeTruthy();
   });
 
+  // 第三種目的地：長推文輸入框開著時網址插進那個 Textarea（不是終端機、不是剪貼簿）。
+  test("插進輸入框時標題說的是『已插入輸入框』", () => {
+    mountOverlay({
+      notice: { type: "success", mode: "target", urls: [item.url], failures: [] },
+    });
+    expect(screen.getByText(i18n("imageUpload_insertedTarget"))).toBeTruthy();
+  });
+
+  test("送進終端機時標題仍是『已插入』", () => {
+    mountOverlay({
+      notice: { type: "success", mode: "send", urls: [item.url], failures: [] },
+    });
+    expect(screen.getByText(i18n("imageUpload_insertedSend"))).toBeTruthy();
+  });
+
   test("失敗逐筆列出檔名與原因", () => {
     mountOverlay({
       notice: {
@@ -165,5 +183,48 @@ describe("isUploadLayerTarget", () => {
     expect(isUploadLayerTarget(btn)).toBe(true);
     expect(isUploadLayerTarget(outside)).toBe(false);
     expect(isUploadLayerTarget(null)).toBe(false);
+  });
+});
+
+// 插入分派：長推文輸入框註冊自己當目標之後，網址就不可以再流進終端機
+// （此時底下的畫面是文章列表，每個字元都會變成快捷鍵）。
+describe("ImageUploadController 的插入目標", () => {
+  const makeCore = () => ({
+    buf: { pageState: 6, rows: 24, cols: 80, getRowText: () => "推 me: " },
+    onPasteDone: vi.fn(),
+    doCopy: vi.fn(),
+    setModalOpen: vi.fn(),
+  });
+
+  test("註冊目標後插進目標，終端機一個字都收不到", () => {
+    const core = makeCore();
+    const c = new ImageUploadController(core);
+    const insert = vi.fn();
+    c.setInsertTarget({ insert });
+    expect(c.insertUrls(["https://i.urusai.cc/a.png"])).toBe("target");
+    expect(insert).toHaveBeenCalledWith("https://i.urusai.cc/a.png");
+    expect(core.onPasteDone).not.toHaveBeenCalled();
+    expect(core.doCopy).not.toHaveBeenCalled();
+  });
+
+  test("清掉目標後退回原本的決策（modal 中途關掉不可以往已卸載的 state 塞字）", () => {
+    const core = makeCore();
+    const c = new ImageUploadController(core);
+    const target = { insert: vi.fn() };
+    c.setInsertTarget(target);
+    c.clearInsertTarget(target);
+    expect(c.insertUrls(["https://i.urusai.cc/a.png"])).toBe("send");
+    expect(core.onPasteDone).toHaveBeenCalled();
+    expect(target.insert).not.toHaveBeenCalled();
+  });
+
+  test("清別人的目標不會把現任目標清掉", () => {
+    const core = makeCore();
+    const c = new ImageUploadController(core);
+    const mine = { insert: vi.fn() };
+    c.setInsertTarget(mine);
+    c.clearInsertTarget({ insert: () => {} });
+    expect(c.insertUrls(["https://i.urusai.cc/a.png"])).toBe("target");
+    expect(mine.insert).toHaveBeenCalled();
   });
 });

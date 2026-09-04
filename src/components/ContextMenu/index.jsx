@@ -767,6 +767,7 @@ export const ContextMenu = ({ pttchrome }) => {
       <LongPushModal
         show={showsLongPush}
         maxBytes={longPushMaxBytes}
+        imageUpload={pttchrome.imageUpload}
         onHide={onLongPushHide}
         onConfirm={onLongPushConfirm}
       />

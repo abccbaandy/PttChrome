@@ -36,6 +36,7 @@ export function isUploadLayerTarget(el) {
 export function ImageUploadController(core) {
   this._core = core;
   this._dragDepth = 0;
+  this._insertTarget = null;
   this._noticeTimer = null;
   this._busy = false;
   this._state = {
@@ -54,6 +55,20 @@ export function ImageUploadController(core) {
   window.addEventListener('dragleave', function(e) { self._onDragLeave(e); });
   window.addEventListener('drop', function(e) { self._onDrop(e); });
 }
+
+// 頁面上的文字輸入框可以把自己註冊成插入目標（目前唯一的消費者是長推文輸入框
+// LongPushModal）。刻意做成**通用**目標而不是 longPush 專屬：InputHelperModal 之類
+// 的輸入框將來同題。但現在只有一個消費者，所以不做註冊表／堆疊。
+//   target 形狀：{ insert(text) }
+ImageUploadController.prototype.setInsertTarget = function(target) {
+  this._insertTarget = target || null;
+};
+
+// 傳入自己才清：A 關閉時不可以把後開的 B 清掉。target 不在了（modal 中途被關掉）
+// 就乾淨退回既有決策，絕不往一個已卸載的 React state 塞字。
+ImageUploadController.prototype.clearInsertTarget = function(target) {
+  if (!target || this._insertTarget === target) this._insertTarget = null;
+};
 
 ImageUploadController.prototype.enabled = function() {
   return !!readValuesWithDefault().enableImageUpload;
@@ -240,9 +255,14 @@ ImageUploadController.prototype.insertUrls = function(urls) {
   const buf = this._core.buf;
   const mode = decideInsertMode({
     pageState: buf.pageState,
-    lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols)
+    lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
+    hasTextTarget: !!this._insertTarget
   });
-  if (mode === 'send') {
+  if (mode === 'target') {
+    // 頁面上的輸入框（長推文）開著：插進它的游標處。此時底下的畫面是文章／文章
+    // 列表，走 send 等於把網址當成列表快捷鍵一個一個按下去。
+    this._insertTarget.insert(text);
+  } else if (mode === 'send') {
     // 既有的貼上漏斗：列表好讀接管、文章好讀 functionMode 都在裡面處理過了，
     // 不可以繞過去直接 view.conn.send。**不補 Enter**，送不送由使用者決定。
     this._core.onPasteDone(text);

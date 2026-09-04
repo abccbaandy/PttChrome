@@ -177,6 +177,47 @@ describe("decideInsertMode", () => {
     ).toBe("clipboard");
   });
 
+  // 長推文輸入框開著時，網址要插進**那個 Textarea**，絕不能是 send：底下的畫面是
+  // 文章／文章列表，送出去的每個字元都會變成列表快捷鍵。所以 target 必須**贏過**
+  // 既有的兩條 send 判準，而不是與它們並列（docs/handoff 的不變量 1）。
+  test("有輸入目標時一律插進目標（贏過編輯文章的 pageState 6）", () => {
+    expect(
+      decideInsertMode({ pageState: 6, lastRowText: "", hasTextTarget: true }),
+    ).toBe("target");
+  });
+
+  test("有輸入目標時贏過推文輸入列", () => {
+    expect(
+      decideInsertMode({
+        pageState: 0,
+        lastRowText: "推 someuser: ",
+        hasTextTarget: true,
+      }),
+    ).toBe("target");
+  });
+
+  test("有輸入目標時，連原本會走剪貼簿的畫面也改插目標", () => {
+    expect(
+      decideInsertMode({ pageState: 3, lastRowText: "", hasTextTarget: true }),
+    ).toBe("target");
+  });
+
+  test("hasTextTarget 為 false／未給時行為與原本完全一樣", () => {
+    expect(
+      decideInsertMode({ pageState: 6, lastRowText: "", hasTextTarget: false }),
+    ).toBe("send");
+    expect(
+      decideInsertMode({
+        pageState: 0,
+        lastRowText: "推 someuser: ",
+        hasTextTarget: false,
+      }),
+    ).toBe("send");
+    expect(
+      decideInsertMode({ pageState: 3, lastRowText: "", hasTextTarget: false }),
+    ).toBe("clipboard");
+  });
+
   test("看板列表／閱讀畫面 → 只複製（送字等於亂按指令）", () => {
     expect(
       decideInsertMode({

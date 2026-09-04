@@ -132,6 +132,15 @@
   "longPushModal_tooMany": {
     "message": "共 #n# 則，過程可能要好幾分鐘（PTT 有推文冷卻）。確定要送出嗎？"
   },
+  "longPushModal_uploadImage": {
+    "message": "插入圖片"
+  },
+  "longPushModal_uploadHint": {
+    "message": "可直接把圖片拖進來、貼上截圖，或按「插入圖片」選檔，上傳完的網址會插在游標處。"
+  },
+  "longPushModal_urlTooLong": {
+    "message": "圖片網址比單則推文上限還長，可能會被切成兩則（圖就開不起來）。建議改用短網址或分開推。"
+  },
   "longPushModal_confirm": {
     "message": "開始送出"
   },
@@ -845,6 +854,9 @@
   },
   "imageUpload_insertedSend": {
     "message": "已插入圖片網址"
+  },
+  "imageUpload_insertedTarget": {
+    "message": "已插入圖片網址 (長推文輸入框)"
   },
   "imageUpload_insertedClipboard": {
     "message": "網址已複製 (目前不在推文列或編輯器)"

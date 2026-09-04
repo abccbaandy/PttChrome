@@ -132,6 +132,15 @@ export const en_US = {
   "longPushModal_tooMany": {
     "message": "#n# comments in total. This may take several minutes because of PTT's cooldown. Send anyway?"
   },
+  "longPushModal_uploadImage": {
+    "message": "Insert image"
+  },
+  "longPushModal_uploadHint": {
+    "message": "Drop an image here, paste a screenshot, or click Insert image; the uploaded URL lands at the cursor."
+  },
+  "longPushModal_urlTooLong": {
+    "message": "The image URL is longer than one comment allows; it may be split across two comments (the image would not open). Consider a shortened URL or a separate comment."
+  },
   "longPushModal_confirm": {
     "message": "Send"
   },
@@ -845,6 +854,9 @@ export const en_US = {
   },
   "imageUpload_insertedSend": {
     "message": "Image URL inserted"
+  },
+  "imageUpload_insertedTarget": {
+    "message": "Image URL inserted into the input box"
   },
   "imageUpload_insertedClipboard": {
     "message": "URL copied (not on a comment prompt or the editor)"

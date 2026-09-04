@@ -11,6 +11,7 @@ import {
   big5ByteLength,
   pushMaxBytes,
   splitPushSegments,
+  findUrlSpans,
 } from "../../src/js/long_push";
 import { detectIpLogged } from "../../src/js/push_screen";
 
@@ -153,5 +154,66 @@ describe("splitPushSegments", () => {
   test("斷點後的空白不帶進下一段", () => {
     const segs = splitPushSegments("aaaa bbbb", 5);
     expect(segs).toEqual(["aaaa", "bbbb"]);
+  });
+});
+
+// 圖片上傳會把圖床網址插進長推文輸入框（docs/image-upload.md 的 target 模式）。
+// 網址被切成兩則＝PTT 上兩則各一半，圖**永遠開不起來**——這是使用者看得到的
+// 正確性，不是美觀問題。零件與 url_join.js 共用，不另寫 regex。
+describe("findUrlSpans", () => {
+  test("抓得到 scheme 開頭的整段網址", () => {
+    expect(findUrlSpans("看這個 https://i.urusai.cc/ab.png 收工")).toEqual([
+      { start: 4, end: 30 },
+    ]);
+  });
+
+  test("沒有 scheme 的字串不算網址（避免把一般文字當成不可切）", () => {
+    expect(findUrlSpans("i.urusai.cc/ab.png")).toEqual([]);
+  });
+
+  test("多條網址各自成段", () => {
+    expect(findUrlSpans("a https://x.tw/1.png b http://y.tw/2.png").length).toBe(
+      2,
+    );
+  });
+});
+
+describe("splitPushSegments：URL 保護", () => {
+  // 沒有保護時：硬切落在 .png 的 '.' 之前，回退又把那個 '.' 當成合法斷點
+  // ⇒ 切出 "…/ab." + "png"。
+  test("塞得下就整條留在同一則（回退不把 URL 內部的 . 當斷點）", () => {
+    expect(splitPushSegments("看這個 https://i.urusai.cc/ab.png", 30)).toEqual([
+      "看這個",
+      "https://i.urusai.cc/ab.png",
+    ]);
+  });
+
+  test("網址前有一大段中文時也不切斷它", () => {
+    const url = "https://i.urusai.cc/ab.png";
+    const segs = splitPushSegments("今天天氣真好我們出去走走吧 " + url, 30);
+    expect(segs.some((s) => s.indexOf(url) >= 0)).toBe(true);
+    for (const s of segs) expect(big5ByteLength(s)).toBeLessThanOrEqual(30);
+  });
+
+  test("網址剛好塞得下整則時不會被前面的標點擠掉", () => {
+    const segs = splitPushSegments("好，https://i.urusai.cc/ab.png", 26);
+    expect(segs).toContain("https://i.urusai.cc/ab.png");
+  });
+
+  // 例外只有一種：URL 本身就比單則上限長 ⇒ 只能硬切（PTT 沒有「不切」這個選項），
+  // modal 會事先警告。保護必須是「盡量」，不能因為退不動就原地卡住。
+  test("URL 比上限還長 → 硬切、照樣前進（不得無限迴圈／不得回空陣列）", () => {
+    const url = "https://i.urusai.cc/abcdefgh.png";
+    const segs = splitPushSegments(url, 10);
+    expect(segs.length).toBeGreaterThan(1);
+    for (const s of segs) expect(big5ByteLength(s)).toBeLessThanOrEqual(10);
+    expect(segs.join("")).toBe(url);
+  });
+
+  test("前面有文字、URL 又比上限長時仍切得出完整段落", () => {
+    const segs = splitPushSegments("看這個 https://i.urusai.cc/abcdefgh.png", 10);
+    expect(segs.length).toBeGreaterThan(1);
+    expect(segs[0]).toBe("看這個");
+    expect(segs.join("").indexOf("https://")).toBeGreaterThanOrEqual(0);
   });
 });

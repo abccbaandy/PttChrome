@@ -11,11 +11,11 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 
 | 檔案 | 責任 |
 |---|---|
-| `src/js/long_push.js` | 送出端純邏輯：`stripNonBig5` / `big5ByteLength` / `pushMaxBytes` / `splitPushSpans`(+`splitPushSegments`) |
+| `src/js/long_push.js` | 送出端純邏輯：`stripNonBig5` / `big5ByteLength` / `pushMaxBytes` / `splitPushSpans`(+`splitPushSegments`) / `findUrlSpans` |
 | `src/js/push_screen.js` | **共用**的畫面判讀：`classifyPushScreen` / `detectIpLogged` / `parseVmsgText` / `parseCooldownSeconds`。另一個消費者是圖片上傳（`image_upload.js#decideInsertMode`）⇒ 改這裡要同時想兩邊，也**不准**任一邊自己另寫 regex（分歧實錄見 `docs/image-upload.md`） |
 | `src/js/long_push_anchor.js` | **游標錨定**純邏輯：`articleAnchor` / `captureCursorAnchor` / `checkCursorAnchor` / `findAnchorRowNum` / `subjectMatches`。檔頭有完整的 pttbbs 推導 |
 | `src/js/long_push_session.js` | 狀態機（形狀比照 `aid_navigation.js`）：持 `active` 旗標，每一步一個 `CommandQueue` command |
-| `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認） |
+| `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認 ＋ 圖片上傳，見下節） |
 | `src/components/ContextMenu/LongPushProgressModal.jsx` | 送出中的全版遮罩（真 modal，唯一出口是取消） |
 | `src/components/ContextMenu/index.jsx` | gating、handler、`modalOpen` 推導、`longPush.onChange` 掛接 |
 | `src/js/pttchrome.jsx` | `new LongPushSession(...)`（與 aidNavigation 共用同一條 CommandQueue）＋ `onFunctionKey`／`onPasteDone` 守門 |
@@ -129,9 +129,47 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
    時若不釋放 `active`，整頁再也收不到鍵盤。
 6. **列表上按 X 之前一律先過 `_gate`**（見上節）。這是唯一擋住「推到別篇」的東西，
    而且它只能**保守**：讀不出身分就當成飄掉，絕不放行。
-7. **進度遮罩必須是 modal**。使用者在序列途中打字會插進 X → 型別 → 內容 的中間，pttbbs 的
+7. **分段盡量不切斷 URL**。切斷＝PTT 上兩則各一半，圖／連結**永遠開不起來**
+   （`url_wrap.js` 那套跨列接合是「讀」別人推文用的，救不了自己送出去的）。
+   `BREAK_AFTER_RE` 本來就含 `.` 和 `:` ⇒ 不保護的話，回退找斷點會直接停在
+   `https://i.urusai.cc/ab.png` 的 `.` 後面。細節見下面「URL 保護與硬切」。
+8. **進度遮罩必須是 modal**。使用者在序列途中打字會插進 X → 型別 → 內容 的中間，pttbbs 的
    typeahead 會把中間那幀吞掉。`modalShown` 由 `ContextMenu` 的 render state 推導
    （`showsLongPush || longPushProgress`），**不可手動賦值**。
+
+## 圖片上傳（`target` 插入模式）
+
+輸入框開著時把自己註冊成 `ImageUploadController` 的插入目標，上傳完的 `url_direct`
+就插進 **Textarea 的游標處**。合約與三個入口見 `docs/image-upload.md`；這裡只記
+長推文這側的規則：
+
+- **絕不可以是 `send`**：這個 modal 開著時底下的畫面是文章／文章列表，`send` 走
+  `App.onPasteDone` → 終端機 ⇒ 網址每個字元都變成列表快捷鍵。`decideInsertMode` 的
+  `target` 因此**優先於** `pageState===6` 與 `inputPrompt`，不是並列的第三分支。
+- `closeOnClickOutside={false}`：上傳浮層是另一個 React root（`#imageUploadReact`，
+  portal 在 body 上），對 Mantine Modal 而言算「點外面」⇒ 少了這行，打了一大段話點
+  一下「開啟上傳紀錄」就整段沒了（`LongPushProgressModal` 早就有，這裡當年漏了）。
+- 插入前後視情況各補一個空白，讓網址獨立成 token ⇒ `splitPushSpans` 的 URL 保護才
+  有機會把它整條留在同一則。
+- `enableImageUpload` 關閉時**不註冊**目標、也不出現「插入圖片」鈕。
+
+### URL 保護與硬切（`splitPushSpans`）
+
+`findUrlSpans`（零件與 `url_join.js` 共用 `SCHEME_RE` / `URL_CHAR_RE`，**不另寫 regex**）
+算出每條網址的 `[start, end)`，然後：
+
+1. step 1 的硬切點落在某條網址**內部** → 退到該網址的**起點**（整條落進下一則），
+   並跳過 step 3 的回退；
+2. step 3 回退找斷點時，落在網址內部的位置一律不算斷點。
+
+**例外只有一種**：網址本身就比單則上限長（IP 板＋長 id ⇒ `pushMaxBytes` 可能只有
+33 bytes，而 `https://i.urusai.cc/<id>.png` 約 30–34 bytes）。此時網址起點在 `cursor`
+之前，退不動 ⇒ 照 step 1 **硬切**繼續前進——退到 `cursor` 等於原地不動，會變成無限
+迴圈。使用者 2026-09-02 拍板：**硬切＋事先警告，不擋送出**（`longPushModal_urlTooLong`
+的 `Alert`；二次確認那條是給「會跑好幾分鐘」用的，這裡攔下來反而礙事）。
+
+modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: prefs.autoLoginUser })`），
+真值在送出時由畫面校正、且雙向 ⇒ 警告會誤報也會漏報，文案一律寫「可能」。
 
 ## 取消
 
@@ -158,10 +196,11 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 
 | 層 | 檔案 | 守什麼 |
 |---|---|---|
-| unit | `tests/unit/long_push_split.test.js` | 濾字、byte 長度、上限公式、分段（含全形餘裕、標點斷點） |
+| unit | `tests/unit/long_push_split.test.js` | 濾字、byte 長度、上限公式、分段（含全形餘裕、標點斷點、**URL 保護與硬切**） |
 | unit | `tests/unit/push_screen.test.js` | §11.3 每個 PTT 字串一個 case（共用分類器，長推文與圖片上傳都吃它） |
 | unit | `tests/unit/long_push_anchor.test.js` | 身分解析／截斷容忍／兩代游標／置底・刪除列 → 一律不得回 `ok` |
 | unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正、**游標守門與重新定位** |
-| unit | `tests/unit/long_push_modal.test.js` | 即時則數、濾字提示、>20 則二次確認 |
+| unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告** |
 | unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值 |
+| e2e | `tests/e2e/offline/long_push_image_upload.offline.spec.js` | 輸入框開著時拖圖 → 網址進 Textarea、**線路上一個 byte 都沒送**、點「開啟上傳紀錄」modal 不關 |
 | e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）|

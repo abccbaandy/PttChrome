@@ -69,9 +69,13 @@ export const ImageUploadOverlay = ({
         closeButtonLabel={i18n("imageUpload_close")}
         title={
           notice.type === "success"
-            ? notice.mode === "send"
-              ? i18n("imageUpload_insertedSend")
-              : i18n("imageUpload_insertedClipboard")
+            ? // 三種目的地（image_upload.js#decideInsertMode）：頁面上的輸入框
+              // （長推文）／終端機／剪貼簿。
+              notice.mode === "target"
+              ? i18n("imageUpload_insertedTarget")
+              : notice.mode === "send"
+                ? i18n("imageUpload_insertedSend")
+                : i18n("imageUpload_insertedClipboard")
             : i18n("imageUpload_failed")
         }
       >

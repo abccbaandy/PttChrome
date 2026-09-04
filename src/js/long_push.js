@@ -12,6 +12,7 @@
 // 詳見 docs/long-push.md 與 docs/pttbbs-screen-protocol.md §11.3。
 
 import { u2b } from './string_util';
+import { SCHEME_RE, URL_CHAR_RE } from './url_join';
 
 // 型別選單的按鍵（bbs.c:2996-3010：vkey() 取一個 byte，'1'..'3' → RECTYPE_GOOD/
 // BAD/ARROW，非數字一律 RECTYPE_DEFAULT ＝ 推）。
@@ -93,6 +94,37 @@ export function pushMaxBytes(opts) {
 // 分段
 // ---------------------------------------------------------------------------
 
+// 文字裡的網址位置 [{start, end})。零件與 url_join.js 共用（SCHEME_RE / URL_CHAR_RE），
+// **不另寫 regex**——圖片上傳當年自己寫底列 regex 的分歧實錄見 docs/image-upload.md。
+//
+// 為什麼分段要知道網址在哪：切斷一條網址＝PTT 上兩則各一半，圖**永遠開不起來**
+// （url_wrap.js 那套跨列接合是「讀」別人推文用的，救不了自己送出去的）。而
+// BREAK_AFTER_RE 裡就含 . 和 :（見下方），不保護的話回退找斷點會直接停在
+// https://i.urusai.cc/ab.png 的 . 後面，把網址剖成兩半。
+export function findUrlSpans(text) {
+  const src = String(text == null ? '' : text);
+  const spans = [];
+  for (let i = 0; i < src.length; ) {
+    // 便宜的前置守門：scheme 只可能從 h/f/t 開頭（https／http／ftp／telnet）。
+    const c = src.charAt(i).toLowerCase();
+    if ((c !== 'h' && c !== 'f' && c !== 't') || !SCHEME_RE.test(src.slice(i))) {
+      ++i;
+      continue;
+    }
+    let end = i;
+    while (end < src.length && URL_CHAR_RE.test(src.charAt(end))) ++end;
+    spans.push({ start: i, end });
+    i = end;
+  }
+  return spans;
+}
+
+// abs 這個位置是不是落在某條網址的**內部**（兩端不算：切在網址前或網址後都沒問題）。
+function urlSpanAround(spans, abs) {
+  for (const s of spans) if (s.start < abs && abs < s.end) return s;
+  return null;
+}
+
 // 優先在這些字元「之後」斷（使用者定案：優先標點／空白斷，不加 (1/3) 序號）。
 const BREAK_AFTER_RE = /[\s,.;:!?)\]}，、。；：！？）」』】》〉…]/;
 // 回退找斷點時最多讓一段短掉幾成——找太遠會切出一堆碎段。
@@ -111,6 +143,7 @@ const MAX_BACKTRACK_RATIO = 0.35;
 export function splitPushSpans(text, maxBytes) {
   const limit = Math.max(2, maxBytes | 0);
   const src = String(text == null ? '' : text);
+  const urlSpans = findUrlSpans(src);
   const out = [];
   let pos = 0;
   for (;;) {
@@ -131,10 +164,21 @@ export function splitPushSpans(text, maxBytes) {
       // 2. 段末是全形字時保留 1 byte 餘裕（見上面的 vkey_purge 說明）。
       if (end < line.length && bytes === limit && line.charAt(end - 1) >= '\x80')
         --end;
-      // 3. 還有剩 → 往回找標點／空白斷點，切在它後面。
-      if (end < line.length) {
+      // 2.5 切點落在網址內部 → 退到該網址的**起點**，讓整條網址落進下一則。
+      //     這只是「盡量」：網址起點在 cursor 之前（＝這一則就是從網址中間開始的，
+      //     也就是網址本身比單則上限還長）時退不動，只能照 step 1 硬切繼續前進
+      //     ——退到 cursor 等於原地不動，會變成無限迴圈。LongPushModal 會事先
+      //     警告這種網址（使用者 2026-09-02 拍板：硬切＋警告，不擋送出）。
+      const cutSpan =
+        end < line.length ? urlSpanAround(urlSpans, cursor + end) : null;
+      const protectedByUrl = !!cutSpan && cutSpan.start > cursor;
+      if (protectedByUrl) end = cutSpan.start - cursor;
+      // 3. 還有剩 → 往回找標點／空白斷點，切在它後面。網址內部的 . 與 : 不算斷點
+      //    （切在那裡就是把網址剖成兩半）。
+      if (!protectedByUrl && end < line.length) {
         const floor = Math.max(1, Math.ceil(end * (1 - MAX_BACKTRACK_RATIO)));
         for (let k = end; k >= floor; --k) {
+          if (urlSpanAround(urlSpans, cursor + k)) continue;
           if (BREAK_AFTER_RE.test(line.charAt(k - 1))) {
             end = k;
             break;
