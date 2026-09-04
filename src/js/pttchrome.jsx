@@ -27,6 +27,11 @@ import {
 import { colFromClientX } from './mouse_geometry';
 import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
 import { serializedOpHint } from './serialized_op_gate';
+import {
+  MFDISP_RAW_PLAIN,
+  rawModeKey,
+  rawModePrefRowVisible
+} from './pmore_pref';
 import { navKeyAllowed } from './nav_key_gate';
 import { SwipeXDetector, isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
@@ -133,6 +138,9 @@ export const App = function() {
   // outerHTML 節點重用都以它的參考身分為前提（每幀新建箭頭函式會讓整份標註快取
   // 每幀失效，長文直接回到 O(n²)）。
   this.view.onFunctionKey = (bytes, label) => this.onFunctionKey(bytes, label);
+  // 「開燈」的軌 B：把 pmore 的色彩顯示模式切成純文字（或切回預設格式化）。
+  // **只指派這一次，引用從此不變**（同 onFunctionKey 的理由）。
+  this.view.onLightsRawMode = (mode) => this.onLightsRawMode(mode);
   // Deep link (外部連結 #<Board>/<AID>) → 同一套 AID 跳轉。目標可能比登入先到，
   // 所以排程權在 controller 手上，不在 URL 解析那邊。
   this.deepLinkController = new DeepLinkController(this, this.view, this.buf);
@@ -698,6 +706,66 @@ App.prototype.onFunctionKey = function(bytes, label) {
   // **不用 _convSend**（會做 u2b 轉碼，對 [D 這種控制序列無意義），
   // **不用 setBBSCmd**（那是翻頁語意的分派器），**絕不用 this.view.conn.send**。
   this.view._send(bytes);
+};
+
+// 「開燈」按鈕的軌 B：替使用者切 pmore 的色彩顯示模式（bpref.rawmode）。
+//
+// 為什麼非切不可：PTT server 在送出畫面之前就把「前景色==背景色」的**半形**格換成
+// 空白了（pfterm.c 的 PFTERM_DISABLE_HIDDEN_MESSAGE），那些字**根本沒到瀏覽器**，
+// 本地怎麼改 CSS 都救不回來。唯一的路是讓 server 用不上色的模式重送一次。
+//
+// **必須序列化成兩步，不可以把 `\3` 兩個 byte 一次送出**：pttbbs 的 typeahead 會把
+// 中間那一幀吞掉（docs/pttbbs-screen-protocol.md §2），而 `3` 若落回文章按鍵是
+// pmore 的「跳至第 3 頁」，會把使用者彈到別的地方。所以第一步用 CommandQueue 送
+// `\` 並以**畫面內容**（選項列出現）判定完成，確定進了設定頁才送數字鍵。
+//
+// 第二步刻意**不**再排一條 queue 命令：EasyReading 的 screenSettled listener 註冊在
+// listSession（＝驅動 queue.onSettle 的那個）之前，所以「文章回來」那一幀
+// _evalFunctionModeExit 會比 queue.onDone 先跑；此時若還有命令在飛，
+// easy_reading._send 的 _wireBusy 閘門會把 reenterFromTop 的 Home 直接丟掉
+// （整篇重讀就失效了）。cmd1.onDone 執行時 queue 已 _finish()，線路是空的。
+App.prototype.onLightsRawMode = function(mode) {
+  const key = rawModeKey(mode);
+  if (!key) return;
+  if (this.modalShown) return;
+  const busyHint = serializedOpHint(this);
+  if (busyHint) {
+    if (this.view.flashListHint) this.view.flashListHint(busyHint);
+    return;
+  }
+  if (!this.commandQueue) return;
+  if (this.commandQueue.inFlightKind) {
+    if (this.view.flashListHint)
+      this.view.flashListHint('指令處理中，請稍候…');
+    return;
+  }
+  // 送 byte **之前**先進原生鏡像：設定頁畫在原生 24 列上，好讀的累積長頁卻原封
+  // 不動 ⇒ 使用者根本看不到它（同 onFunctionKey / onPasteDone 的既有結論）。
+  // _enterFunctionMode 在好讀關著或已在鏡像中時是 no-op。
+  if (this.view.useEasyReadingMode && this.buf.startedEasyReading)
+    this.easyReading._enterFunctionMode();
+  const self = this;
+  this.commandQueue.enqueue({
+    keys: '\\',
+    kind: 'lights-pref',
+    expect: function(snapshot, facts) {
+      return rawModePrefRowVisible(facts && facts.rowTexts);
+    },
+    onDone: function() {
+      // pmore.c 的 case '1'/'2'/'3' 直選並立即 return —— **不需要 Enter**。
+      self.view._send(key);
+      // 選項列在直選時不會被重畫，parseRawModeFromPrefRow 讀到的仍是切換前的值，
+      // 所以程式化切換要自己記下目標（見 easy_reading.js 的 _rawMode 註解）。
+      self.easyReading._rawMode = mode;
+      if (self.view.flashListHint && mode === MFDISP_RAW_PLAIN)
+        self.view.flashListHint(i18n('lightsOn_switchedPlain'), 5000);
+    },
+    onFail: function() {
+      // 第一步沒等到設定頁 ⇒ **絕不送數字鍵**（會被當成 pmore 的「跳至第 N 頁」）。
+      if (self.view.flashListHint)
+        self.view.flashListHint(i18n('lightsOn_switchFailed'));
+    }
+  });
 };
 
 App.prototype.onDOMPaste = function(e) {

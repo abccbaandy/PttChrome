@@ -22,6 +22,7 @@ import { buildRow } from "./row";
 import {
   createMergeImageCaptionButton,
   createMergeImageCaptionAiButton,
+  createLightsOnButton,
 } from "./merge_buttons";
 import { createSignatureTask } from "./signature_task";
 import React from "react";
@@ -44,6 +45,7 @@ import {
   destroyCaptionAi,
 } from "../js/caption_ai";
 import { domainKey, fixKey } from "../js/url_ai_logic";
+import { MFDISP_RAW_PLAIN } from "../js/pmore_pref";
 import {
   classifyBrokenUrls,
   classifyDomains,
@@ -101,6 +103,10 @@ export class ScreenController {
     this._hoverPos = { left: undefined, top: undefined };
     // 好讀自動開圖「一鍵放大全部圖片至視窗寬度」；點任一張內嵌預覽圖切換。
     this._imagesEnlarged = false;
+    // 開燈（隱藏文字提亮）。**只是軌 A 的 CSS 開關**——軌 B（server 已擦掉的內容）
+    // 由 App 切 pmore rawmode 處理，狀態在 enhance.rawMode，不在這裡。與
+    // imagesEnlarged 同生命週期：同篇 page-down 保留、換文章（articleId 變）重置。
+    this._lightsOn = false;
     // 好讀「圖左字右合併」三態：null（關）→ "imageFirst" → "captionFirst" → null。
     // 與 imagesEnlarged 同生命週期——同篇 page-down 保留、換文章／退出再進
     // （articleId 變）才重置，所以不會「換到沒按鈕的文章卻還開著、關不掉」。
@@ -154,6 +160,7 @@ export class ScreenController {
 
     this._mergeButton = null;
     this._aiButton = null;
+    this._lightsButton = null;
     this._hoverHost = null;
 
     this._initAiTasks();
@@ -238,6 +245,11 @@ export class ScreenController {
       // 走唯一入口：直接賦值欄位會漏掉容器 class（＝圖片尺寸的真正決定者）與
       // 存活中 slot 的 sizeMode，下一篇就會一開場就是大圖。
       this._setImagesEnlarged(false);
+      // 開燈的 CSS 態同樣走唯一入口（直接賦值會漏掉容器 class）。**軌 B 不會被
+      // 這裡還原**：pmore 的 bpref 是 per-connection 全域，下一篇文章仍是純文字
+      // 模式，所以按鈕會依 enhance.rawMode 直接顯示成「關燈」（刻意，見
+      // docs/handoff 決策 D6 → docs/enhanced-addon.md）。
+      this._setLightsOn(false);
       this._mergeCaption = null;
       // AI 結果是 per-article 的：換文章一律丟掉（spanKey 只保證同一篇內唯一；
       // domainKey 含整列文字，舊判斷也沒有沿用價值）。
@@ -413,6 +425,49 @@ export class ScreenController {
     this._captionAi = !this._captionAi;
     this._rerender();
     this._refocusTerminal();
+  }
+
+  // 開燈鈕：軌 A 的 CSS 立刻生效（同步、零延遲），軌 B 只在偵測到「被 server 擦掉
+  // 的隱藏內容」時才動 —— 那要請 App 替使用者切 pmore 的色彩顯示模式並重讀整篇
+  // （見 pttchrome.jsx#onLightsRawMode）。關燈則把切過的模式切回預設格式化。
+  _toggleLights() {
+    const enhance = this.props && this.props.enhance;
+    const ann = this._annotations || [];
+    const next = !this._lightsActive();
+    this._setLightsOn(next);
+    const switchRawMode = enhance && enhance.onLightsRawMode;
+    if (switchRawMode) {
+      if (next) {
+        if (ann.hasErasedHidden) switchRawMode(MFDISP_RAW_PLAIN);
+      } else if (enhance.rawMode === MFDISP_RAW_PLAIN) {
+        switchRawMode(0);
+      }
+    }
+    this._syncLightsButton();
+    this._refocusTerminal();
+  }
+
+  // 按鈕上顯示的「燈亮著嗎」。軌 B 切過模式之後畫面上已經沒有隱藏文字可提亮，
+  // 但燈確實是亮的 —— 兩軌任一成立就算亮，否則使用者會找不到關燈的路。
+  _lightsActive() {
+    const enhance = this.props && this.props.enhance;
+    return !!(
+      this._lightsOn ||
+      (enhance && enhance.rawMode === MFDISP_RAW_PLAIN)
+    );
+  }
+
+  // 開燈不需要重建任何一列：容器 class 決定樣式（同 imagesEnlarged 的形狀）。
+  _setLightsOn(next) {
+    const domInSync = this.container.classList.contains("lightsOn") === next;
+    if (this._lightsOn === next && domInSync) return;
+    this._lightsOn = next;
+    this.container.classList.toggle("lightsOn", next);
+  }
+
+  _syncLightsButton() {
+    if (!this._lightsButton) return;
+    this._lightsButton.update(this._lightsActive());
   }
 
   // imagesEnlarged 不需要重建任何一列：容器 class 決定圖片尺寸，佔位盒只要知道
@@ -908,6 +963,16 @@ export class ScreenController {
     // 連按鈕都不出現，行為與沒這功能時完全相同。
     this._probeAiAvailability(enhance);
     const showCaptionAiButton = !!(showMergeButton && this._aiReady);
+    // 開燈鈕：文章頁偵測到隱藏文字就出現（**原生模式也要**——隱藏文字在原生一樣
+    // 看不見）。第三個條件是燈已經亮著：軌 B 切成純文字之後畫面上再也偵測不到
+    // 隱藏文字，少了它按鈕會消失、使用者關不掉燈。
+    const showLightsButton = !!(
+      enhance &&
+      enhance.pageState === PAGE_READING &&
+      (annotations.hasLitHidden ||
+        annotations.hasErasedHidden ||
+        this._lightsActive())
+    );
 
     const wanted = [];
     if (showMergeButton) {
@@ -930,6 +995,13 @@ export class ScreenController {
         this._captionAi ? this._aiPending : 0,
       );
       wanted.push(this._aiButton.el);
+    }
+    if (showLightsButton) {
+      if (!this._lightsButton) {
+        this._lightsButton = createLightsOnButton(() => this._toggleLights());
+      }
+      this._lightsButton.update(this._lightsActive());
+      wanted.push(this._lightsButton.el);
     }
     if (this._hoverPreview !== undefined) {
       if (!this._hoverHost) this._hoverHost = el("div", null);

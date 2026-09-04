@@ -735,3 +735,30 @@
 .work-mode-active .commentByAuthor{background-color:#374151;}
 .work-mode-active .pusherHighlight{background-color:#1f2937;}
 .work-mode-active .linkurl{color:#6b7280;}
+
+/* ---- 開燈（隱藏文字提亮，render/screen.js#_setLightsOn 在 #mainContainer 上
+   toggle .lightsOn）----
+   隱藏文字＝前景色 == 背景色（PTT 慣例的 ESC[30m 黑字黑底）。段落 DOM 是
+   <span class="q{fg} b{bg}">（render/word_segment.js#build），所以「fg===bg」在
+   CSS 裡就是這八條。specificity (0,3,0) ⇒ 蓋得過 .work-mode-active .q0 (0,2,0)
+   與 .cursorBrighten .q0 (0,2,0)，放在檔尾也不必擔心被後面的規則翻掉。
+
+   **只准用不影響 layout 的屬性**（color / text-shadow）：等寬格線一位移，
+   .wpadding 的寬度契約（term_view.fixedResize 直接掃 DOM 改 style.width）跟著壞
+   —— 同 .cursorBrighten 與 main.css .fnKey 的禁令，**絕對不可以用 font-weight /
+   letter-spacing / padding**。
+
+   用 text-shadow 當標示、**不要用 background-color**：隱藏文字那列的尾隨空白多半
+   在同一個 ESC[30m 區段裡，背景色會把一大片空白一起塗亮；text-shadow 對沒有字形的
+   空白格完全不顯示，正好只標到真的有字的那幾格。
+
+   提亮色不可用 #808080：那與 1;30 深灰撞色，會分不清「被提亮的隱藏字」與「原本
+   就是深灰的字」。守護：tests/unit/lights_on_css.test.js。 */
+.lightsOn .q0.b0,
+.lightsOn .q1.b1,
+.lightsOn .q2.b2,
+.lightsOn .q3.b3,
+.lightsOn .q4.b4,
+.lightsOn .q5.b5,
+.lightsOn .q6.b6,
+.lightsOn .q7.b7{color:#ffd43b;text-shadow:0 0 6px #ffd43b;}

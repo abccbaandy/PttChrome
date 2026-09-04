@@ -1,5 +1,5 @@
-// 好讀模式的兩顆浮動按鈕（原 src/components/MergeImageCaptionButton.jsx 與
-// MergeImageCaptionAiButton.jsx 的純 JS 版）。
+// 文章畫面右下角的浮動按鈕（原 src/components/MergeImageCaptionButton.jsx 與
+// MergeImageCaptionAiButton.jsx 的純 JS 版，後來又多了「開燈」）。
 //
 // 它們住在 #mainContainer 尾端、位置固定，不參與列 diff。舊版就刻意不用 Mantine
 // （Screen 的 root 不在 MantineProvider 底下，Mantine 元件在此會 throw），所以是
@@ -88,6 +88,27 @@ export function createMergeImageCaptionAiButton(onToggle) {
         : active
           ? i18n("mergeImageCaptionAi_off")
           : i18n("mergeImageCaptionAi_on");
+    },
+  };
+}
+
+// 「開燈」鈕（bottom:160 疊在 AI 校正鈕的 112 之上）。隱藏文字（前景色==背景色）
+// 分兩軌，見 js/hidden_text.js：軌 A 純 CSS 提亮（容器加 .lightsOn），軌 B 的內容
+// PTT **根本沒送出來**，只能替使用者切成純文字模式重讀整篇。
+//
+// label 一律顯示「點下去會發生什麼」，與圖文並排鈕同慣例。
+export function createLightsOnButton(onToggle) {
+  const { wrap, button } = floatingButton("lightsOnBtn", 160, onToggle);
+  return {
+    el: wrap,
+    update(active) {
+      button.setAttribute("data-lights", active ? "on" : "off");
+      restyle(
+        button,
+        active ? "#f59f00" : "#495057",
+        active ? "2px solid #ffd43b" : "2px solid #ced4da",
+      );
+      button.textContent = active ? i18n("lightsOn_off") : i18n("lightsOn_on");
     },
   };
 }

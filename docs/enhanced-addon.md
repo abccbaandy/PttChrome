@@ -376,6 +376,73 @@ host 兩邊問的是不同問題）。session key 也分開（`prompt_api.js` �
 - **驗證為何 OFF（CONFIRMED 2026-06 實測，外部事實）**：純前端無可行探測法——unavatar 免費版每日僅 25 次（`X-Rate-Limit-Limit:25`）且 `<img>` `onerror` 無法區分 404 與 429 → 限流期會把存在帳號誤標 invalid；直連 x.com 存在/不存在 HTTP **都回 200**（SPA）；官方 API 需付費 bearer 且無瀏覽器 CORS；syndication 端點 ACAO 鎖 `platform.twitter.com`。
   - **唯一可行路＝自建 worker**：server-side 用**一般瀏覽器 UA** `fetch('https://x.com/<handle>')`，存在帳號 HTML `<title>Name (@handle) / X`、不存在 title 空（facebookexternalhit/Twitterbot UA 一律回 404，**勿用**）。worker 回小 JSON＋Cloudflare KV 快取；前端只快取明確「不存在」、429/錯誤不快取。風險：X 對 Cloudflare 出口 IP 可能另眼相待，部署後需實測。
 
+## 開燈：隱藏文字（`src/js/hidden_text.js` ＋ `src/js/pmore_pref.js`）
+
+PTT 慣例把「雷」用低亮度黑字寫在黑底上（`ESC[30m`），讀者按 `\` 切 pmore 的色彩顯示模式
+「開燈」。本專案把它做成浮動按鈕 —— 但**只有一半救得回來**（server 端事實見
+`docs/pttbbs-screen-protocol.md` §14.2 `PFTERM_DISABLE_HIDDEN_MESSAGE`）：
+
+| 軌 | 條件 | 意義 | 處理 |
+|---|---|---|---|
+| **A** | `fg === bg` 且該格**有字** | DBCS（中文）與帶 BLINK 的半形沒被 server 擦掉 | **純 CSS 提亮**（容器 class `.lightsOn`），可標示 |
+| **B** | `fg === bg` 且該格是空白，且滿足 run 門檻 | server 已擦成空白，**內容根本沒到瀏覽器** | 只能替使用者切 rawmode 讓 server 重送 |
+
+- **判準只有一條 `fg === bg`**（經 `TermChar.getColor()`，已把 bright/invert 攤平），一條式涵蓋
+  `ESC[30m`／`ESC[30;40m`／`ESC[34;44m`／`ESC[37;47m`／`ESC[7;30;40m`。
+  **刻意不涵蓋 `ESC[1;30m`**（fg=8 深灰）—— 那是 pmore 進設定頁時 grayout 整片上半畫面用的，
+  判準寫成 `fg===0` 會在每次按 `\` 時整頁誤判。**不要加「顏色相近」的模糊判定。**
+- **軌 B 的 run 門檻依背景色分兩組**（單一數字不是漏抓就是誤報，`ERASED_RUN_MIN_*`）：
+  `bg === 0`（黑底＝PTT 文章常態）**≥ 2 格**；`bg !== 0`（彩底）**≥ 8 格**。
+  - 黑底取 2 的根據：`fg=0/bg=0` 的空白**只可能**來自 server 明確送過 `ESC[30m`；`ESC[K` 擦出來的格
+    走 `copyFromNewChar()` → `resetAttr()` ⇒ fg=7/bg=0，**不繼承當前 SGR**，不會製造假訊號。
+  - 彩底取 8 的根據：文章狀態列開頭有 **2 格 fg=7/bg=7**（`ESC[0;47m` 之後），門檻 8 正好擋掉它。
+    **這也是「掃描不必特別排除狀態列」的原因** —— 排除最後一列會破壞好讀累積長頁的逐列獨立性。
+  - **不要為了「簡單」把黑底也設成 8**：實測真樣本一個是 9 格（`abc test2`）、一個是 60 格（隱藏網址），
+    但短的隱藏字串很常見。
+- **偵測掛在 `computeAnnotations` 的 `PAGE_READING` 分支**，與 `imageCaptionBlockCount` 同一條路，
+  只掃 `[from, n)` 並純累加成 `result.hasLitHidden` / `hasErasedHidden`（計數存進回傳的 cache）。
+  **不需要**像 `hasSteamgifts` 那樣「首次翻 true 就全量重算」：那個是逐列偵測的**輸入**，這兩個只是輸出。
+- **軌 A 的提亮是純 CSS，零渲染改動**：`.lightsOn .q0.b0 … .q7.b7 { color:#ffd43b; text-shadow:… }`
+  （`color.css` 檔尾，specificity (0,3,0) 蓋得過 `.work-mode-active .q0` 與 `.cursorBrighten .q0` 的 (0,2,0)）。
+  - **只准用不影響 layout 的屬性**（`color`／`text-shadow`）：`font-weight`／`letter-spacing`／`padding`
+    一律禁止，等寬格線一位移 `.wpadding` 的寬度契約（`term_view.fixedResize`）跟著壞。
+  - **用 `text-shadow` 不用 `background-color`**：隱藏文字那列的尾隨空白多半在同一個 `ESC[30m` 區段裡，
+    背景色會把一大片空白一起塗亮；text-shadow 對沒有字形的空白格完全不顯示。
+  - **提亮色不可用 `#808080`**（與 `1;30` 深灰撞色）。
+  - class 掛在 `#mainContainer`（`ScreenController._setLightsOn`），沿用 `_setImagesEnlarged` 的形狀 ⇒
+    toggle 是 O(1)、不重建任何一列、不碰 golden 快照、不失效兩層快取。**刻意不在
+    `word_segment.build()` 依 `fg===bg` 加 class**：那會改動核心渲染鏈的 DOM 輸出 ⇒ 整份 golden 要重跑。
+  - 旁證：「上班模式」開啟時隱藏中文本來就隱約可見（`.work-mode-active .q0{color:#111827}` 而 `.b0`
+    沒被覆寫 ⇒ 深藍灰 on 黑），隱藏英數字仍完全看不見 —— 正是上表的必然結果。
+- **軌 B 的送鍵序列（`App.onLightsRawMode`）**：`\` → 等**畫面內容**確認設定頁（`rawModePrefRowVisible`
+  ＝出現「色彩顯示方式」列）→ 才送 `3`（`pmore.c` 的 `case '3'` 直選並立即 return，**不需要 Enter**）。
+  - **兩個 byte 絕不可以一次送**（typeahead 會吞掉中間那一幀）；**第一步沒成功就絕不送數字鍵**
+    （`3` 落回文章按鍵是 pmore 的「跳至第 N 頁」，會把使用者彈到別的地方）。
+  - 第一步走 `CommandQueue`（`kind: 'lights-pref'`）；**第二步刻意不再排一條 queue 命令** ——
+    EasyReading 的 `screenSettled` listener 註冊在 listSession（＝驅動 `queue.onSettle` 的那個）**之前**，
+    所以「文章回來」那一幀 `_evalFunctionModeExit` 比 `queue.onDone` 先跑；此時若還有命令在飛，
+    `easy_reading._send` 的 `_wireBusy` 閘門會把 `reenterFromTop` 的 Home 直接丟掉 ⇒ 整篇重讀失效。
+  - 送鍵前先 `easyReading._enterFunctionMode()`（好讀關著時是 no-op），否則設定頁畫在原生 24 列上、
+    好讀長頁原封不動 ⇒ 使用者看不到它。
+  - 之後由 `easy_reading` 的「離開 pmore 設定頁 ⇒ 整篇重讀」接手（`docs/easy-reading.md`）。
+- **按鈕出現條件**（`ScreenController._syncOverlays`，bottom:160）：`pageState === PAGE_READING` 且
+  （`hasLitHidden || hasErasedHidden || 燈已經亮著`）。第三項不可省：軌 B 切成純文字之後畫面上再也
+  偵測不到隱藏文字，少了它按鈕會消失、使用者關不掉燈。**原生模式（好讀關閉）也要出現** —— 隱藏文字
+  在原生一樣看不見。
+- **狀態的兩半**：`_lightsOn`（軌 A 的 CSS 開關，per-article，`articleId` 變即重置）與
+  `enhance.rawMode`（軌 B，來自 `easyReading._rawMode`）。**軌 B 不隨換文章還原**：`bpref` 是
+  pmore 的 process 層全域、跨文章持續到登出（§14.1 Q10），所以下一篇文章的按鈕直接顯示成「關燈」。
+  刻意不在離開文章時自動還原 —— 那必須在**離開之前**送 `\`（列表畫面的 `\` 是別的鍵），會拖慢每一次離開文章。
+- **`_rawMode` 的已知落差**：使用者自己按 `1`/`2`/`3` **直選**時 pmore 直接 return、不重畫選項列 ⇒
+  `parseRawModeFromPrefRow` 讀到的仍是按鍵前的值，按鈕標籤會落後一步（只影響標籤：再點一次
+  只是重送一遍同樣的模式，無其他後果）。`\` 循環那條路會逐次重畫選項列，跟得上。
+- **刻意不做**：(a) 不加 pref 開關（比照黑名單右鍵快速新增，靠「偵測到才出現按鈕」自我 gating）；
+  (b) 軌 B 用「純文字」(2) 而不是「原始ANSI控制碼」(1)——後者把每個控制碼印成可見字元，畫面完全不能讀；
+  (c) 軌 B 切換後**不標示**「哪些字是被開燈的」——兩種模式的行號／斷行都可能不同，沒有可靠的對位資訊。
+- 守護：`tests/unit/hidden_text.test.js`（每條對應一個實測樣本）、`lights_on_css.test.js`、
+  `lights_on_render.test.js`、`lights_on_raw_mode.test.js`、`pmore_pref_screen.test.js`、
+  `easy_reading_pmore_pref.test.js`、`tests/e2e/offline/lights_on.offline.spec.js`。
+
 ## 設定（`PrefModal.jsx`）
 pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用見 `pttchrome.onPrefChange`
 （`showFloorNumbers`/`blacklist`→`view.*`+`redraw(true)`）。i18n 鍵在 zh_TW/en_US `options_*`。

@@ -626,3 +626,75 @@ goto 自癒與有界升級、補畫走 notify）、
 `tests/e2e/offline/easy-reading.offline.spec.js`（`dropSteps` 模擬 P4 吞頁 → `answerGoto` 驗
 精準自癒且不重建累積頁；`splitFrames` 模擬 P6 半畫幀 → 內容完整、每頁只送一次 PageDown；
 `ezsoft-longpost.json` 150 頁長文連續累積＋每頁成本不隨長度成長的曲線斷言）。
+
+## 14. pmore 設定頁與隱藏文字擦除（2026-09-05 CONFIRMED，讀碼＋錄製檔逐格實證）
+
+用途：「離開 pmore 設定頁 ⇒ 好讀整篇重讀」與「開燈」兩個功能的依據。client 對應
+`src/js/pmore_pref.js`、`src/js/hidden_text.js`、`easy_reading._evalFunctionModeExit`。
+
+### 14.1 設定頁的畫面協定（`mbbsd/pmore.c`）
+
+| # | 事實 | 出處 |
+|---|---|---|
+| Q1 | 文章內 `\` → `pmore_QuickRawModePref()`；`o` → `pmore_Preference()`；兩者回來後都 `MFDISP_DIRTY()` | `pmore.c:2763-2770` |
+| Q2 | rawmode 三值：`MFDISP_RAW_NA`(0 預設格式化) / `MFDISP_RAW_NOANSI`(1 原始ANSI控制碼) / `MFDISP_RAW_PLAIN`(2 純文字) | `pmore.c:525-528` |
+| Q3 | 快速設定頁按鍵：`\` 循環、`1`/`2`/`3` **直選並立即 return（不需要 Enter）**、`←`/`→` 增減、其他任意鍵 return | `pmore.c:2986-3005` |
+| Q4 | 三個標題字串：快速設定頁 `" piaip's more: pmore 2007+ 快速設定 - 色彩(ANSI碼)顯示模式 "`／完整設定頁 `" piaip's more: pmore 2007+ 設定選項 "`／說明頁 `" piaip's more: pmore 2007+ 瀏覽程式使用說明"`。**只有前兩者含「設定」** ⇒ 這是把 `h` 說明頁排除掉的判準 | `pmore.c:129-135` |
+| Q5 | 選項列＝`色彩顯示方式:` ＋ `1 預設格式化內容 \|2 原始ANSI控制碼 \|3 純文字`，**選中項的數字後面緊接 `*`**，未選是空白 | `pmore.c:149-152`、`pmore_prefEntry`(2873) |
+| Q6 | 兩個設定頁都以 `vmsg()` 收尾 ⇒ 末列右側是反白的 `[按任意鍵繼續]` ⇒ client 判成 `pageState 5` | `pmore.c:2986`、`pmore.c:3061` |
+| Q7 | 快速設定頁畫在 `ystart = b_lines-2`；24 列終端 `b_lines = t_lines-1 = 23` ⇒ **0-based row 21 標題／22 選項／23 提示**。完整設定頁 `ystart = b_lines-9`＋`PMORE_SHADOW_ABOVE` 的一列 `▔` ⇒ 標題在 row 15。**client 端不得綁死列號**（`t_lines` 一變就位移） | `pmore.c:2970`、`pmore.c:3015`、`mbbsd/term.c:66` |
+| Q8 | 進設定頁前 `grayout(0, ystart-1, GRAYOUT_DARK)` ⇒ 上半畫面整片重畫成 `ESC[1;30m`（fg=0 **＋BOLD** ⇒ client 端 `getFg()` 是 **8**，不是 0） | `pmore.c:2974`、`pmore.c:3018`；§11.4 |
+| Q9 | 完整設定頁另有 `w` 斷行／`m` 斷行符號／`l` 分隔線／`t` 傳統狀態列 —— **五項全都改變整篇文章的呈現與行數** | `pmore.c:3057-3082` |
+| Q10 | `bpref` 是 **process 層全域、沒有任何 load/save** ⇒ 設定**跨文章持續到登出**，不寫回使用者設定檔（`grep -a bpref` 只命中 pmore.c） | `pmore.c:556-558` |
+
+wire 行為（錄製檔實錄，兩份檔各三輪 `\`）：進設定頁 ~2.1KB（grayout 整片重畫＋三列）；
+再按 `\` 只 **56~84 bytes**（只 patch 選項列那幾格）；離開任意鍵 1.6~2.2KB（`ESC[H` 起整頁重畫，
+**只重畫「目前這一頁」**）。離開後的狀態列：切「純文字」⇒ 行號與切換前**完全相同**
+（`第 33~55 行`）；切「原始ANSI控制碼」⇒ 停在 66%（控制碼變可見字元 ⇒ 每則推文吃兩列）。
+
+⇒ **client 端結論**：好讀累積長頁的去重主判準是狀態列絕對行號，「預設 ↔ 純文字」行號相同
+⇒ 一列都不 append ⇒ 畫面完全沒變。**離開設定頁必須整篇重讀**，且判準要判**畫面**不判按鍵
+（改到 rawmode 的入口有 `\`、`|`、`1`/`2`/`3` 三組，`w`/`l`/`t` 又改行數）。
+
+### 14.2 server 端的隱藏文字擦除（`PFTERM_DISABLE_HIDDEN_MESSAGE`）
+
+```c
+// mbbsd/pfterm.c:1037-1047，refresh() 逐格輸出時
+if (FTATTR_GETFG(FTAMAP[y][x]) == FTATTR_GETBG(FTAMAP[y][x]) &&
+    (FTAMAP[y][x] & ~(FTATTR_FGMASK | FTATTR_BGMASK)) == 0 &&
+    !(FTD[x] & FTDIRTY_DBCS) &&
+    !(x + 1 < len && (FTD[x+1] & FTDIRTY_DBCS)))
+    fterm_rawc(' ');            // ← 送空白，不送真正的字元
+else
+    fterm_rawc(FTDC[x]);
+```
+
+`ftattr` 的位元只有 `FG(3) | BOLD | BG(3) | BLINK`（`pfterm.c:285-295`，**沒有 reverse／
+underline** ⇒ reverse 更早就被攤平成 fg/bg 互換），所以擦除條件精確等於
+**fg == bg 且 BOLD=0 且 BLINK=0 且（自己與下一格都不是 DBCS）**：
+
+| 作者寫法 | server 送出的 | client `getFg()/getBg()` | 本地救得回來？ |
+|---|---|---|---|
+| `ESC[30m` + 半形英數（含網址） | **空白** | 0 / 0 | ❌ 內容不存在 |
+| `ESC[30m` + 中文（DBCS） | 原字元 | 0 / 0 | ✅ |
+| `ESC[5;30m` + 半形（blink） | 原字元 | 0 / 0 | ✅ |
+| `ESC[7;30;40m`（reverse 同色） | **空白** | 0 / 0 | ❌ |
+| `ESC[34;44m` 藍字藍底半形 | **空白** | 4 / 4 | ❌ |
+| `ESC[1;30m`（grayout 用的） | 原字元 | **8** / 0 | 不適用（看得見） |
+
+`PFTERM_DISABLE_HIDDEN_MESSAGE` 在開源碼裡**沒有任何地方 `#define`**（全 repo 只出現在
+上面那一處 `#ifdef`）⇒ 是 PTT 站方自己開的，與 §11.2 的「DDoS/BOT 偵測」同性質的私有設定。
+但整條規則（含 DBCS 例外）已被錄製檔**逐格**實證：Test 板一篇自建測試文，原文
+`abc test2`（9 個半形，隱藏）在預設模式下送的是 `ESC[30m` ＋ **9 個 0x20**；同一篇的
+`中文測試2`（隱藏）送的是 `ESC[30m` ＋ **`中文測試` 的原始 Big5 位元組** ＋ **1 個 0x20**
+（末尾那個半形 `2` 被擦掉）。Hunter 板那篇的隱藏網址：預設模式 60 格全空白、全畫面
+`partOfURL` 一格都沒有；純文字模式同一列是完整網址、60 格 `partOfURL`。
+
+⇒ **這是「畫面上看不到的字，client 端可能根本收不到」的通則**，會影響未來任何
+「從畫面文字推導」的功能。另兩則副作用：
+
+- 文章狀態列開頭有 **2 格 fg=7/bg=7 的空白**（`ESC[0;47m` 之後）⇒ 任何 `fg===bg` 的偵測
+  都要有彩底門檻（client 取連續 ≥8 格），否則每一篇文章都誤報。
+- 純文字模式（rawmode 2）送的是**原始檔頭** `作者: someuser (暱稱) 看板: Test`，不是格式化過的
+  `作者  someuser` ⇒ `comment_parse` 的 `作者`／`標題`／`看板` regex 兩種都要吃
+  （已改成 `作者[:：]?\s+`）。推文列不受影響（`推 `/`噓 `/`→ ` 與顏色無關）。

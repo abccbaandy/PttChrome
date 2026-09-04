@@ -302,6 +302,18 @@ export const en_US = {
   "mergeImageCaptionAi_pending": {
     "message": "AI matching… left"
   },
+  "lightsOn_on": {
+    "message": "Lights on (reveal hidden text)"
+  },
+  "lightsOn_off": {
+    "message": "Lights off"
+  },
+  "lightsOn_switchedPlain": {
+    "message": "Switched to plain-text display mode and reloaded the post — the PTT server never sends hidden alphanumeric text to the browser, so it has to resend it. Colors are gone for now; press \"Lights off\" to restore them."
+  },
+  "lightsOn_switchFailed": {
+    "message": "Lights on failed: could not open PTT's color display mode screen. Please try again."
+  },
   "debugRecord_start": {
     "message": "Record"
   },

@@ -182,7 +182,12 @@ export function isPusherHighlighted(ann, selectedPusher) {
 // Article header (first line of a post): "作者  userid (nickname) 看板 board".
 // Returns the 原PO id in lower case (for same-author comment highlighting), or
 // null when the line is not an author header (e.g. a later page of the article).
-const ARTICLE_AUTHOR_RE = /^\s*作者\s+([0-9A-Za-z]+)/;
+//
+// 冒號的那一種是 pmore 的**純文字**顯示模式（bpref.rawmode = MFDISP_RAW_PLAIN）：
+// server 送的是原始檔頭 `作者: someuser (暱稱) 看板: Test`，不是格式化過的
+// `作者  someuser`。「開燈」會替使用者切到那個模式，所以兩種都要吃 —— 否則原PO
+// 推文高亮與 long_push_anchor 會在開燈之後靜默失效。
+const ARTICLE_AUTHOR_RE = /^\s*作者[:：]?\s+([0-9A-Za-z]+)/;
 
 export function parseArticleAuthor(text) {
   if (!text) return null;
@@ -194,7 +199,7 @@ export function parseArticleAuthor(text) {
 // Same header line also carries "看板 board"; the board name is what an AID
 // link without an explicit board falls back to. Returned as-is (PTT board
 // lookup is case-insensitive), or null when the line is not an author header.
-const ARTICLE_BOARD_RE = /看板\s+([0-9A-Za-z_-]+)/;
+const ARTICLE_BOARD_RE = /看板[:：]?\s+([0-9A-Za-z_-]+)/;
 
 export function parseArticleBoard(text) {
   if (!text) return null;
@@ -222,7 +227,7 @@ export function parseArticleHeader(text) {
 // The long-push cursor anchor uses it to learn, WHILE STILL IN THE ARTICLE, which
 // post the run belongs to — a baseline taken from the list after the first push
 // would already be poisoned by whatever moved the cursor (see long_push_anchor).
-const ARTICLE_TITLE_RE = /^\s*標題\s+(\S.*?)\s*$/;
+const ARTICLE_TITLE_RE = /^\s*標題[:：]?\s+(\S.*?)\s*$/;
 
 export function parseArticleTitle(text) {
   if (!text) return null;

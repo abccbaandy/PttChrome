@@ -2,6 +2,7 @@ import { parseStatusRow } from './string_util';
 import { readValuesWithDefault } from './pref_storage';
 import { ACT_EXIT_ARTICLE } from './mouse_regions';
 import { TRACE } from './util';
+import { pmorePrefScreenSeen, parseRawModeFromPrefRow } from './pmore_pref';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
 // (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
@@ -358,6 +359,18 @@ export function EasyReading(core, view, termBuf) {
   // settle (_evalFunctionModeExit). buf.pageLines is preserved throughout so the
   // accumulated long page resumes without re-paging. See docs/easy-reading.md.
   this._functionMode = false;
+  // functionMode 期間看過 pmore 的「設定」畫面（`\` 快速設定／`o` 完整設定）。
+  // 離開 functionMode 時據此改走「整篇重讀」而不是續接累積 —— 理由見
+  // _evalFunctionModeExit 的 pmore 段。清除點：'leave' 分支、_resetPagingState、
+  // leaveCurrentPost、exitEasyReading（少一個就會讓之後每個 prompt 退出時誤觸重讀）。
+  this._pmorePrefSeen = false;
+  // 目前的 pmore 色彩顯示模式（bpref.rawmode，0/1/2；null＝這條連線還沒看過設定頁）。
+  // 「開燈」的按鈕標籤靠它（見 render/screen.js#_lightsActive）。真相源是**設定頁上
+  // 選中的那一項**，加上我們自己程式化切換時記下的目標值 —— 使用者按 1/2/3 直選時
+  // pmore 不重畫選項列，那一種情形下這個值會落後一步（只影響標籤，無其他後果）。
+  // bpref 是 pmore 的 process 層全域、沒有 load/save ⇒ 跨文章持續到登出，所以它
+  // **不是** per-article 狀態，不進 _resetPagingState。
+  this._rawMode = null;
   this._savedScrollTop = null;
   // One-shot reading-position restore for an AID back run (requestScrollRestore).
   // Deliberately NOT _savedScrollTop: that one is the functionMode round trip and
@@ -595,6 +608,9 @@ EasyReading.prototype._resetPagingState = function() {
   // for the whole article. That is the "F8 之後下一篇卡在第一頁" report. Callers that
   // genuinely want the one-shot (leaveCurrentPost) re-arm it AFTER this runs.
   this.ignoreOneUpdate = false;
+  // 「剛看過 pmore 設定頁」是 per-post 的一次性旗標。留著它，之後**每一個** prompt
+  // （推文、回應、搜尋…）退出 functionMode 時都會誤觸整篇重讀。
+  this._pmorePrefSeen = false;
 };
 
 // Arm the recovery timer for the outstanding request. _watchdogSig is the identity
@@ -840,6 +856,13 @@ EasyReading.prototype._healFromTop = function() {
 // against the fast path so a slow PTT response cannot trigger a double page-down (which
 // would skip a page). See docs/easy-reading.md.
 EasyReading.prototype._onScreenSettled = function() {
+  // pmore 設定頁的偵測要在**停在設定頁的那一幀**做：離開之後那一幀，設定頁的字
+  // 已經被文章蓋掉了。好讀關著時也照掃 —— rawmode 是 per-connection 的全域狀態，
+  // 「開燈」按鈕的標籤在原生模式下也要跟得上（決策 D3）。
+  // 但 _pmorePrefSeen（整篇重讀的觸發旗標）只在鏡像模式下才有意義：好讀關著時
+  // 畫面本來就是即時鏡像，沒有累積長頁要重讀。
+  if (this._notePmorePrefScreen() && this._enabled && this._functionMode)
+    this._pmorePrefSeen = true;
   if (!this._enabled) {
     // 導航落地當下判不出來（游標還沒 park 之類）才會留下這個一次性旗標，只在這裡
     // 重試這一次就丟掉 —— 不做重試迴圈。見 ensureEnabledOnArticle。
@@ -1030,6 +1053,27 @@ EasyReading.prototype.noteTextInput = function() {
 // (prevPageState=3 → continuation branch; findPageOverlap dedups the unchanged screen to
 // a no-op append), then restores the saved scroll. 'leave' drops per-post state so the
 // normal settle re-enable handles the next article. 'stay' keeps mirroring native.
+// 目前的 pmore 色彩顯示模式（唯讀對外，term_view 塞進 enhance.rawMode 給浮動按鈕）。
+Object.defineProperty(EasyReading.prototype, 'rawMode', {
+  get: function() { return this._rawMode; }
+});
+
+// 這一幀停在 pmore 的「設定」畫面上嗎？順便把選中的色彩顯示模式記下來。
+//
+// **掃整個畫面、不綁死列號**：快速設定頁畫在 row 21、完整設定頁在 row 15
+// （pmore.c 的 b_lines-2 / b_lines-9），不同 t_lines 或版本都會位移。24×80 全掃在
+// 一秒最多幾次的 settle 上成本可忽略。判準見 js/pmore_pref.js。
+EasyReading.prototype._notePmorePrefScreen = function() {
+  const buf = this._termBuf;
+  const rowTexts = [];
+  for (let r = 0; r < buf.rows; ++r) rowTexts.push(buf.getRowText(r, 0, buf.cols));
+  if (!pmorePrefScreenSeen(rowTexts))
+    return false;
+  const mode = parseRawModeFromPrefRow(rowTexts);
+  if (mode != null) this._rawMode = mode;
+  return true;
+};
+
 EasyReading.prototype._evalFunctionModeExit = function() {
   const lastRowNum = this._termBuf.rows - 1;
   const lastRowText = this._termBuf.getRowText(lastRowNum, 0, this._termBuf.cols);
@@ -1043,6 +1087,27 @@ EasyReading.prototype._evalFunctionModeExit = function() {
     return;
   console.log('exit function mode: ' + decision);
   this._functionMode = false;
+  // 剛離開 pmore 的設定頁 ⇒ **整篇重讀**，不可以走下面的續接分支。
+  //
+  // 為什麼續接會壞（實錄，見 docs/easy-reading.md「pmore 設定頁」）：好讀畫的是
+  // 累積長頁，去重的主判準是狀態列的絕對行號。離開設定頁時 pmore 只重畫「目前這
+  // 一頁」，而「預設格式化 ↔ 純文字」的行號完全相同 ⇒ kStatus === maxK ⇒ 一列都
+  // 不 append ⇒ 畫面仍是舊 rawmode 的舊 chars ⇒ 使用者看到的是「必須重進文章才
+  // 生效」。切到「原始ANSI控制碼」更糟：離開後停在 66%，翻頁狀態機會把新格式的
+  // 推文接在舊格式的長頁尾巴後面（同一批推文出現兩次、格式還不一樣）。
+  // 累積模型與 rawmode 正交，唯一可靠的修法就是重讀。
+  if (decision === 'resume' && this._pmorePrefSeen) {
+    this._pmorePrefSeen = false;
+    this._savedScrollTop = null;  // 整篇重讀，舊捲動位置無意義
+    const status = this._currentPageStatus();
+    if (status) {
+      this.reenterFromTop(status);
+      return;
+    }
+    // 沒有狀態列可判（理論上到不了，decision 'resume' 的前提就是有）——退回現行
+    // 續接路徑，最壞只是維持舊行為。
+  }
+  this._pmorePrefSeen = false;
   if (decision === 'resume') {
     this._termBuf.prevPageState = 3;  // force accumulatePageLines continuation branch
     // Resume = SAME article: a leftover pending-reset would make a short article's

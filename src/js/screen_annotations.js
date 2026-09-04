@@ -33,6 +33,7 @@ import {
 } from "./comment_merge";
 import { parseFunctionKeys } from "./footer_keys";
 import { mergeRunKey } from "./screen_annotate_cache";
+import { detectHiddenRow } from "./hidden_text";
 
 // PttChrome pageState (see term_buf.js#setPageState): 2 = board list, 3 = reading.
 export const PAGE_LIST = 2;
@@ -259,6 +260,20 @@ export function computeAnnotations(
       reuse = null;
       from = 0;
     }
+    // 「開燈」偵測（軌 A／軌 B，見 js/hidden_text.js）。逐列獨立 ⇒ 純累加即可，
+    // **不必**像 hasSteamgifts 那樣「首次翻 true 就全量重算」：那個是逐列偵測的
+    // 輸入（會改變前面每一列的判定），這兩個只是輸出。
+    // 掃 chars 而不是 texts —— 判準是顏色。成本 O(新增列 × 80)，比同一個分支裡
+    // 已經在跑的兩次 groupImageCaptionBlocks（全量）便宜得多。
+    let litRows = reuse ? reuse.litRows : 0;
+    let erasedRows = reuse ? reuse.erasedRows : 0;
+    for (let row = from; row < n; ++row) {
+      const hid = detectHiddenRow(lines[row]);
+      if (hid.lit) ++litRows;
+      if (hid.erased) ++erasedRows;
+    }
+    result.hasLitHidden = litRows > 0;
+    result.hasErasedHidden = erasedRows > 0;
     // Floor numbers are shown only in easy reading, where the FloorCounter walks
     // the whole accumulated article (accurate). The native per-page counter resets
     // every page-down → inaccurate, so no floorCounter is passed there and
@@ -571,6 +586,8 @@ export function computeAnnotations(
         base,
         floorCounter: ctx.floorCounter,
         hasSteamgifts,
+        litRows,
+        erasedRows,
         domainCands: baseDomainCands,
         fixCands: baseFixCands,
         captionCache,

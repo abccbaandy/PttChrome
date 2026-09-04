@@ -286,6 +286,8 @@ export function TermView() {
   // boardless #AID link. Assigned by the App like flashListHint etc.
   this._articleBoard = null;
   this.onAidClick = null;
+  // 「開燈」需要切 pmore 色彩顯示模式時的入口（App 指派，見 pttchrome.jsx）。
+  this.onLightsRawMode = null;
   // Pusher highlight: lower-cased id of the pusher whose comments are currently
   // highlighted (whole row), or null. Set by togglePusherHighlight on click.
   this._selectedPusher = null;
@@ -892,7 +894,17 @@ TermView.prototype = {
           // this.onFunctionKey，與 onAidClick 同一種 view-optional callback 慣例；
           // **引用必須穩定**，annotationsKey.refs 與 outerHTML 節點重用都靠它）。
           functionKeyRows: fnRows,
-          onFunctionKey: this.onFunctionKey
+          onFunctionKey: this.onFunctionKey,
+          // 「開燈」的軌 B：目前的 pmore 色彩顯示模式（0/1/2，null＝還沒看過設定
+          // 頁）＋切換入口。App 在啟動時指派 onLightsRawMode，**引用必須穩定**
+          // （同 onFunctionKey/onAidClick 的 view-optional callback 慣例）。
+          // 兩者刻意**不進** annotationsKey：它們只影響浮動按鈕，不影響任何一列
+          // 的標註（見 js/screen_annotate_cache.js 的白名單）。
+          rawMode:
+            this.bbscore && this.bbscore.easyReading
+              ? this.bbscore.easyReading.rawMode
+              : null,
+          onLightsRawMode: this.onLightsRawMode
         },
         // List easy reading pins pageState:2 so computeAnnotations applies list
         // blacklist rules to the accumulated buffer even on transient frames.

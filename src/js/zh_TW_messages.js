@@ -302,6 +302,18 @@
   "mergeImageCaptionAi_pending": {
     "message": "AI 校正中…剩"
   },
+  "lightsOn_on": {
+    "message": "開燈（顯示隱藏文字）"
+  },
+  "lightsOn_off": {
+    "message": "關燈"
+  },
+  "lightsOn_switchedPlain": {
+    "message": "已切換為「純文字」顯示模式並重新讀取——PTT 伺服器不會把隱藏的英數字送給瀏覽器，只能請它重送一次。畫面顏色會暫時消失，按「關燈」即可還原。"
+  },
+  "lightsOn_switchFailed": {
+    "message": "開燈失敗：叫不出 PTT 的色彩顯示模式設定頁，請稍後再試。"
+  },
   "debugRecord_start": {
     "message": "錄製"
   },
