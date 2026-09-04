@@ -12,7 +12,9 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 
 ## 跑起來（踩雷點，務必照做）
 - 啟動 dev server：`yarn start` → http://localhost:8080（= `vite`）
-  - **收工前務必關掉**（`yarn kill:dev`）。`.claude/settings.json` 已掛 hook 自動收：Bash/PowerShell 跑到 `yarn start`/`vite` 時記旗標檔 `.claude/.dev-server-running`，Stop／SessionEnd 時才殺——**只殺 Claude 自己開的**，不動使用者手動開的 server。
+  - **收工前務必手動關掉：`yarn kill:dev`**。這是規範不是自動化——**只要這個 session 起過 dev server（`yarn start`），結束前就要自己跑一次**，別指望 hook。
+    - `.claude/settings.json` 只剩兩個 hook：PostToolUse 記旗標檔 `.claude/.dev-server-running`（Bash/PowerShell 跑到 `yarn start`/`vite` 時），SessionEnd 才殺——**只殺 Claude 自己開的**，不動使用者手動開的 server。
+    - **Stop hook 已於 2026-09-04 移除，不要再加回去。** 它是「每個 assistant turn 結束」就觸發（不是 session 結束），會把 **Playwright 自己起的 dev server** 砍掉 ⇒ e2e 跑到一半整批 `page.goto: net::ERR_CONNECTION_REFUSED`（實測一次 254 條裡 129 條這樣紅），看起來像被測 code 大爆炸。而且 PostToolUse 的 `grep -qE '\bvite\b'` 吃的是 tool 的**輸入＋輸出**，光是 `cat playwright.config.js` 就會立起旗標 ⇒ 連前景跑也中槍。用「收工手動 `yarn kill:dev`」換掉這個自動化是刻意的取捨。
   - 踩坑：Windows 上 vite 只綁 **IPv6** `[::1]:8080`，舊版 `kill-dev-server.js` 用 `netstat -ano -p tcp`（僅列 IPv4）→ 抓不到 PID、腳本又一律 exit 0 → `yarn kill:dev` **靜默沒殺到**。已改用不帶 `-p` 的 `netstat -ano` 自行篩（純函式守護 `tests/unit/kill_dev_server_parse.test.js`）。
   - 用 **Node**（dev server ≥20.19；`test:unit` 的 jsdom 30 另需 `^22.22.2 || ^24.15.0 || >=26` → 裝最新 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
   - 套件管理用 **yarn**（Yarn v4，`node-modules` linker，設定於 `.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。**勿用 npm**（會產生多餘 `package-lock.json`）。CI 安裝用 `yarn install --immutable`。Yarn v4 不跑自訂 `pre*`/`post*` script；build 產物清理由 Vite `emptyOutDir` 處理（無 `clean` script）。Yarn v4 script 是 portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數（`record:cassette` 用此，勿再引入 cross-env）。
@@ -90,15 +92,14 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     置底公告（read.c `last_line` 含置底 ⇒ 十幾頁、常常零推文）。選文用
     `helpers/ptt.js#pickListArticleWithComments`＋`openArticleByNumber`（推文數列表上就看得到，
     開文前即可保證），等待綁內容條件。詳見 `tests/e2e/README.md`「選文與等待」。
-  - **e2e 一律前景跑，不可丟背景（`run_in_background`）**：`.claude/settings.json` 的 **Stop hook 是每個
-    assistant turn 結束就觸發**（不是 session 結束），一旦旗標檔在就跑 `kill-dev-server.js` → 把 Playwright
-    自己起的 dev server 砍掉。症狀：前幾條綠，之後整批 `page.goto: net::ERR_CONNECTION_REFUSED`，
-    看起來像被測 code 大爆炸（實測 95 條有 91 條這樣紅）。前景重跑即全綠。
-    - **前景跑也可能中槍**（2026-08 實測：整輪跑到第 4 條時 dev server 被砍）：PostToolUse 的
-      `grep -qE '\bvite\b'` 吃的是 tool 的**輸入＋輸出**，所以光是 `cat playwright.config.js`
-      這種無害指令就會立起旗標檔，之後任何一次 Stop 都會殺掉 Playwright 的 dev server。
-      **跑 e2e 前在同一條指令內先清旗標**：`rm -f .claude/.dev-server-running; yarn test:e2e ...`
-      （旗標會在該指令結束後由它自己的 PostToolUse 重新立起，收工照樣清得掉）。
+  - **`page.goto: net::ERR_CONNECTION_REFUSED` 大面積紅 ＝ dev server 被砍，不是被測 code 壞**：
+    判準是「前面若干條全綠、之後**整批**同一個錯、每條耗時一致」。2026-09-04 之前的元凶是
+    `.claude/settings.json` 的 Stop hook（每個 assistant turn 結束就跑 `kill-dev-server.js`），
+    **該 hook 已移除**（理由見「跑起來」節，別加回去）。真的再遇到就先確認 8080 還活著，
+    別往被測 code 追。
+  - **整套 offline e2e 約 10 分鐘**，超過 Bash 工具的 600s 上限會被移到背景。**分批前景跑**
+    （依 spec 檔切三、四批，各 2–3 分鐘）比丟背景好讀也好判斷：背景跑拿不到即時 exit code，
+    而「exit code 就是結論」的規矩對 `playwright test` 一樣適用（禁接管線，見「push 後必查 CI」）。
   - **Playwright 升版後（含 Dependabot bump）本機必跑 `yarn playwright install chromium`**：新版綁新 browser binary，
     沒裝會整批 e2e 秒掛（症狀：`browserType.launch: Executable doesn't exist`），與被測 code 無關。CI 每次都重裝所以不受影響。
     - 更早一步的症狀：`yarn test:e2e*` 直接 `command not found: playwright`＝**本機 node_modules 落後 lockfile**
@@ -219,6 +220,12 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   的 md/註解大量出現反引號與 `$`，一個 `$` 後面接反引號就等於「把匹配點之前的全文再
   貼一次」—— 實例：改 `docs/easy-reading-list.md` 的鍵盤表（欄位裡有 End 的同義鍵
   `$`）時整份文件被塞進表格中間，而且腳本回報成功。
+- **Bash 工具的 heredoc 會把連續兩個反斜線折成一個**：用內嵌 python 腳本（`python - <<PY`）
+  改檔時，腳本裡本來要表示「一個反斜線」的雙反斜線寫法會被折掉一層 ⇒ 送到解譯器時
+  已經變成那個跳脫序列所代表的**位元組本身**。拿它當 anchor 去比對原始碼裡的跳脫序列
+  **字面值**就永遠 assert 失敗，而且看起來像「檔案內容跟我讀到的不一樣」。
+  **anchor 一律挑不含反斜線的片段**，含反斜線的改動改用 Write／Edit 工具。
+  實例：`long_push.js` 裡那行判斷段末是否為全形字的 `line.charAt(end - 1)` 比較式。
 - 每次踩坑如果後續session也會踩，就要寫進md
 - 每次commit前都要檢查本次更動是否含新功能，如果有的話要更新README.md新功能列表，新功能定義：以一般使用者角度，所以優化、修bug都不算
 - 重大技術升級（框架/建置/依賴的升版或替換，如 React 升版、換 UI 庫、建置/測試工具替換）要同步更新「設定 → 關於」的「重大技術升級」區塊：`src/js/zh_TW_messages.js` 與 `src/js/en_US_messages.js` 的 `about_new_content`（兩語系都要改）

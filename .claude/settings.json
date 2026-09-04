@@ -11,17 +11,6 @@
         ]
       }
     ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "f=\"$CLAUDE_PROJECT_DIR/.claude/.dev-server-running\"; if [ -f \"$f\" ]; then rm -f \"$f\"; node \"$CLAUDE_PROJECT_DIR/scripts/kill-dev-server.js\"; fi; true",
-            "statusMessage": "清理殘留 dev server"
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "hooks": [
