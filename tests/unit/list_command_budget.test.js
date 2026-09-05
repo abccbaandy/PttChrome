@@ -69,6 +69,7 @@ function makeSession({ count = 40, pinned = 0, queue } = {}) {
       flushPending() {},
       flushPendingKind() {},
       expedite() {},
+      hasKind: () => false,
       enqueue(cmd) {
         enqueued.push(cmd);
       },
@@ -189,8 +190,26 @@ describe("列表好讀：機器鍵的 \\f 契約與快速失敗預算", () => {
 
   test("keys 形如 <數字>\\r 的每一腿都掛 fullRepaint（零回應跳號的唯一解）", () => {
     const jumps = legs.filter((l) => /^[0-9]+\r$/.test(l.cmd.keys));
-    expect(jumps.length).toBe(9); // 入口數 × 各自的 sync/jump 腿
+    // 2026-09-05：jump-end／jump-home 從 99999999\r／1\r 改成原生 End／Home
+    // （下一條測試接手），所以這裡從 9 腿降到 7 腿。
+    expect(jumps.length).toBe(7); // 入口數 × 各自的 sync/jump 腿
     for (const { label, cmd } of jumps)
+      expect([label, cmd.kind, cmd.fullRepaint]).toEqual([label, cmd.kind, true]);
+  });
+
+  // Home/End 直通原生鍵（read.c:893-902）。原生 End 在游標已經在底端時**零回應**
+  // （live-tested），Home 在頂端同理 ⇒ 這兩腿的 fullRepaint 不是保險而是必要條件，
+  // 少了它就只能等到逾時。open-pinned-end 走同一條路。
+  test("Home/End 送原生鍵且必掛 fullRepaint", () => {
+    const natives = legs.filter(
+      (l) => l.cmd.keys === '\x1b[1~' || l.cmd.keys === '\x1b[4~'
+    );
+    expect(natives.map((l) => l.cmd.kind).sort()).toEqual([
+      "jump-end",
+      "jump-home",
+      "open-pinned-end",
+    ]);
+    for (const { label, cmd } of natives)
       expect([label, cmd.kind, cmd.fullRepaint]).toEqual([label, cmd.kind, true]);
   });
 

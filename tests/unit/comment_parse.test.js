@@ -26,6 +26,7 @@ import {
   parseListArticleNumLoose,
   isPinnedListRow,
   isDeletedListRow,
+  isListShapedRow,
   blacklistNoticeText,
   recoverCursorArticleNum,
   pageArticleNums,
@@ -318,6 +319,63 @@ describe("isPinnedListRow", () => {
     expect(isPinnedListRow("       ")).toBe(false);
     expect(isPinnedListRow("")).toBe(false);
     expect(isPinnedListRow(null)).toBe(false);
+  });
+});
+
+// REGRESSION 2026-09-05（錄製檔 ptt-debug-20260905-122522）：在文章列表按 Ctrl-P
+// 發文，分類畫面上出現「（本文已被黑名單） vtub」通知列。setPageState 沒有 reset
+// 分支 ⇒ 發文畫面沿用列表的 pageState 2，逐列解析又不驗證列的形狀。
+describe("isListShapedRow（黑名單標註的逐列守門）", () => {
+  test("真正的列表列 → true", () => {
+    // 一般編號列
+    expect(isListShapedRow(" 352960 + 4 6/05 HarunoYukino R: [閒聊] foo")).toBe(true);
+    // 新版半形 '>' 游標列（不位移欄位）
+    expect(isListShapedRow(">352960 + 4 6/05 HarunoYukino R: [閒聊] foo")).toBe(true);
+    // 舊版全形 ● 游標列：strict 讀不到編號，loose 讀得到
+    expect(isListShapedRow("●50039 + 4 6/05 HarunoYukino R: [閒聊] foo")).toBe(true);
+    // ★置底文（無編號）
+    expect(isListShapedRow("    ★  m 1 6/01 arrenwu      轉 [公告] 不當連結相關申訴")).toBe(true);
+    expect(isListShapedRow(">   ★  m 1 6/01 arrenwu      轉 [公告] 板規")).toBe(true);
+    // 被刪除文（作者欄 '-'）
+    expect(
+      isListShapedRow(" 350025 + 1 6/14 -            □ (本文已被刪除) [someone]")
+    ).toBe(true);
+  });
+
+  test("發文分類畫面的那一列 → false（本次 bug 的現場）", () => {
+    // 錄製檔 t=7161 的最後一列。col≥29 是「26夏 5.心得 6.情報 7.Vtub 8.自介 …」
+    // ⇒ 標題黑名單 'vtub' 命中 ⇒ 整列被 blacklistNoticeText 換掉。
+    expect(
+      isListShapedRow(
+        "種類：1.閒聊 2.問題 3.討論 4.26夏 5.心得 6.情報 7.Vtub 8.自介 (1-8或不選)"
+      )
+    ).toBe(false);
+  });
+
+  test("看板發文須知／板規列 → false", () => {
+    expect(
+      isListShapedRow("  [閒聊] 希洽最基本之發文Tag，藉由發表含ACG點的文章開啟話題與其他板友閒聊。")
+    ).toBe(false);
+    expect(isListShapedRow("  [Vtub] 討論與虛擬實況主 (Vtuber) 有關的事物。")).toBe(false);
+    expect(isListShapedRow("發表文章於【 C_Chat 】 [希洽] 這裡是希洽板 看板")).toBe(false);
+    // 板規的編號條列：parseListArticleNumLoose 是 ^(\d+)\b ⇒ 「1.」會回 1。
+    // 先要求合法作者欄，才擋得住。
+    expect(isListShapedRow("  1. 不得張貼廣告或商業性質文章，違者水桶。")).toBe(false);
+  });
+
+  test("列表畫面自己的表頭／狀態列／footer → false", () => {
+    expect(
+      isListShapedRow("  【板主】abc 看板《C_Chat》線上1234人, 我是guest")
+    ).toBe(false);
+    expect(
+      isListShapedRow("   編號    日 期  作  者       文  章  標  題       人氣:12345")
+    ).toBe(false);
+    expect(
+      isListShapedRow(" 文章選讀 (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題 (/?)搜尋")
+    ).toBe(false);
+    expect(isListShapedRow("       ")).toBe(false);
+    expect(isListShapedRow("")).toBe(false);
+    expect(isListShapedRow(null)).toBe(false);
   });
 });
 

@@ -112,6 +112,14 @@ CommandQueue.prototype = {
   //   probeTimeoutMs: how long the probe's full frame gets (default 2000),
   //   onDone(result), onFail(reason, facts) — reason 'miss' carries the
   //                  probed full frame's facts; 'timeout' = link silent,
+  //   onSend():      opt-in notification fired IMMEDIATELY BEFORE the keys go out.
+  //                  A command that sits in `_pending` behind a background
+  //                  prefetch must not decide anything at enqueue time — the
+  //                  buffer can still grow, and a pivot/anchor captured then is
+  //                  stale by the time it is sent (list_session's jump-home sets
+  //                  prunePivot 1, which would steer the PREFETCH's prune while
+  //                  article 1 is not in the buffer yet). Everything derived from
+  //                  "the state right now" belongs here, not in the caller,
   //   onFlushed():   opt-in notification that flush() dropped this command
   //                  while in flight — flush stays SILENT for everyone else
   //                  (callers whose own state machine self-converges from the
@@ -242,6 +250,19 @@ CommandQueue.prototype = {
     return this._inFlight ? this._inFlight.kind : null;
   },
 
+  // 這條佇列上（在飛的 ＋ 排隊中的）有沒有 kind 以 `prefix` 開頭的命令？
+  // 前景導覽鍵的**冪等守門**：Home/End 連按時只該排一筆交易，第二筆會排在
+  // 第一筆後面，把使用者拉去同一個落點兩次（多一趟 round-trip，還會讓
+  // 「讀取中…」在中間閃一下）。用 kind 而不是自己在 caller 記旗標：旗標的清除
+  // 路徑（onDone／onFail／flush／flushKind）有四條，漏一條就是永久卡死。
+  hasKind: function(prefix) {
+    if (this._inFlight && (this._inFlight.kind || '').indexOf(prefix) === 0)
+      return true;
+    return this._pending.some(function(c) {
+      return (c.kind || '').indexOf(prefix) === 0;
+    });
+  },
+
   get idle() {
     return !this._inFlight && this._pending.length === 0;
   },
@@ -255,6 +276,10 @@ CommandQueue.prototype = {
     cmd._sentAt = Date.now();
     this._armBoth(cmd);
     this._emit('send', cmd);
+    // See cmd.onSend: last chance to derive state, and the ONLY point at which a
+    // queued command may touch shared state — a command dropped by flush() while
+    // still pending must never have run it.
+    if (cmd.onSend) cmd.onSend();
     this._send(cmd.fullRepaint ? cmd.keys + '\f' : cmd.keys);
   },
 

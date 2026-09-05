@@ -49,6 +49,7 @@ function makeSession() {
       this.pendingFlushed = (this.pendingFlushed || 0) + 1;
     },
     flushPendingKind() {},
+    hasKind: () => false,
     enqueue(cmd) {
       enqueued.push(cmd);
     },

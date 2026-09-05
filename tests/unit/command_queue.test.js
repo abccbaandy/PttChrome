@@ -193,6 +193,43 @@ describe("CommandQueue", () => {
     expect(sent).toEqual(["42\r", "\x1b[D"]);
   });
 
+  // onSend / hasKind（2026-09-05，給前景導覽鍵排在背景 prefetch 後面用）。
+  test("onSend 在 keys 送出前恰好觸發一次", () => {
+    const order = [];
+    const q = new CommandQueue({ send: k => order.push("send:" + k) });
+    q.enqueue(cmd("A", { kind: "jump-end", onSend: () => order.push("onSend") }));
+    expect(order).toEqual(["onSend", "send:A"]);
+    settleWith(q, true); // 完成後不得再觸發
+    expect(order.filter(o => o === "onSend").length).toBe(1);
+  });
+
+  test("排隊中的命令要等到真的送出才 onSend（被 flush 掉的永遠不觸發）", () => {
+    const { q } = makeQueue();
+    const first = vi.fn();
+    const second = vi.fn();
+    q.enqueue(cmd("A", { onSend: first }));
+    q.enqueue(cmd("B", { onSend: second }));
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled(); // 還在 pending
+    q.flushPending();
+    settleWith(q, true); // A 完成，B 已被丟掉
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  test("hasKind 同時看 in-flight 與 pending（連按去重的判準）", () => {
+    const { q } = makeQueue();
+    q.enqueue(cmd("A", { kind: "prefetch-down" }));
+    q.enqueue(cmd("B", { kind: "jump-end" }));
+    expect(q.hasKind("prefetch")).toBe(true); // in-flight
+    expect(q.hasKind("jump-")).toBe(true); // pending
+    expect(q.hasKind("leave")).toBe(false);
+    settleWith(q, true); // prefetch 完成 → jump-end 上線
+    expect(q.hasKind("prefetch")).toBe(false);
+    expect(q.hasKind("jump-")).toBe(true);
+    settleWith(q, true);
+    expect(q.hasKind("jump-")).toBe(false);
+  });
+
   test("探針不得重新武裝 hard：絕對上限＝hard＋探針窗，不是 2×hard", () => {
     // 症狀（列表好讀偶發長凍結）：_timedOut 的探針分支呼叫 _armBoth → hard 又
     // 拿到完整一份，單一命令最壞可達 2×hard（實測「畫面停住十幾秒」的來源）。

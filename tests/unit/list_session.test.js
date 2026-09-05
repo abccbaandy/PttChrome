@@ -740,6 +740,14 @@ function demandSession({ numStart = 100, count = 60 } = {}) {
     flushPendingKind(prefix) {
       this.pendingKindFlushed = prefix;
     },
+    expedite(ms) {
+      this.expedited = ms;
+    },
+    // 真 CommandQueue 會掃 in-flight ＋ pending；這裡照 enqueued 的紀錄近似，
+    // 讓「連按去重」在 stub 下也測得到。
+    hasKind(prefix) {
+      return enqueued.some((c) => (c.kind || "").indexOf(prefix) === 0);
+    },
     enqueue(cmd) {
       enqueued.push(cmd);
     },
@@ -1183,6 +1191,83 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
 // 卡住／凍結類回歸守護（2026-08 使用者回報「畫面停住、顯示處理中」）
 // ---------------------------------------------------------------------------
 
+// REGRESSION 2026-09-05（使用者回報「好讀列表有時 Home/End 會失效」）：
+// _requestHome/_requestEnd 開頭是 `if (!this._queue.idle) return;` —— 佇列非
+// idle 就把整個按鍵靜默丟掉：零 byte、零重繪、零提示，也不排隊重試。
+// 觸發窗口極寬，因為 _moveSelection 尾端必定 _maybeDemand → _enqueuePrefetch，
+// 剛按過任何導覽鍵佇列通常就非 idle；進板頭幾秒的鏈式補頁更是必中
+// （錄製檔 ptt-debug-20260905-122522 的 t=4480~4962 就是連續 4 筆 prefetch）。
+describe("Home/End 不得因佇列忙碌而靜默丟棄", () => {
+  // 有 in-flight（＋一筆排隊中）prefetch 的佇列。
+  function busySession() {
+    const ctx = demandSession();
+    ctx.queue.idle = false;
+    ctx.queue.inFlightKind = "prefetch-down";
+    return ctx;
+  }
+
+  test("in-flight prefetch 時按 End 仍送得出去（舊碼靜默丟棄 → 紅）", () => {
+    const { s, enqueued, queue } = busySession();
+    s._requestEnd();
+    const cmd = enqueued[enqueued.length - 1];
+    expect(cmd.kind).toBe("jump-end");
+    expect(cmd.keys).toBe("\x1b[4~");
+    // 前景優先：排隊中的 prefetch 丟掉、在飛的那筆縮短等待（不 flush，
+    // 否則還在線上的回應會變成無主 settle —— 不變量 7）。
+    expect(queue.pendingKindFlushed).toBe("prefetch");
+    expect(queue.expedited).toBe(250);
+    expect(queue.flushed).toBeUndefined();
+  });
+
+  test("in-flight prefetch 時按 Home 仍送得出去", () => {
+    const { s, enqueued, queue } = busySession();
+    s._requestHome();
+    const cmd = enqueued[enqueued.length - 1];
+    expect(cmd.kind).toBe("jump-home");
+    expect(cmd.keys).toBe("\x1b[1~");
+    expect(queue.pendingKindFlushed).toBe("prefetch");
+  });
+
+  test("吞鍵不得無聲：排在背景命令後面時「讀取中…」要亮", () => {
+    const { s, loading } = busySession();
+    s._requestEnd();
+    expect(loading[loading.length - 1]).toBe(true);
+  });
+
+  test("連按只排一筆（冪等，不把使用者拉去同一個落點兩次）", () => {
+    const { s, enqueued } = busySession();
+    s._requestEnd();
+    s._requestEnd();
+    s._requestHome(); // jump- 前綴共用 ⇒ 也被去重
+    expect(enqueued.filter((c) => (c.kind || "").indexOf("jump-") === 0).length).toBe(1);
+  });
+
+  // 不變量 17 的殘留洞：buffer 裡一列編號都沒有時，舊碼 `anchor == null → return`
+  // 讓 End 永遠送不出去 —— 而「唯一逃生口」正是這種畫面上的導覽鍵。
+  test("buffer 沒有任何編號列時 End 仍送得出去（不變量 17 死局）", () => {
+    const { s, enqueued } = demandSession();
+    s._termBuf.listLineNums = [];
+    s._requestEnd();
+    const cmd = enqueued[enqueued.length - 1];
+    expect(cmd.kind).toBe("jump-end");
+    // 沒有錨點就不拿它當條件，落點指紋照舊判。
+    expect(
+      cmd.expect({}, { curY: 5, curX: 0, rows: 24, cursorRowNum: 7 })
+    ).toBe(true);
+  });
+
+  // 樞紐必須等到命令真的送出才設：排在 prefetch 後面時提早設，會讓那筆 prefetch
+  // 的 prune 用「保留第 1 篇所在的段」當樞紐，而第 1 篇還不在 buffer 裡。
+  test("prunePivot 在 onSend 才設，不在 enqueue 當下", () => {
+    const { s, enqueued } = busySession();
+    s._prunePivotOverride = undefined;
+    s._requestHome();
+    expect(s._prunePivotOverride).toBeUndefined();
+    enqueued[enqueued.length - 1].onSend();
+    expect(s._prunePivotOverride).toBe(1);
+  });
+});
+
 describe("讀取中指示與凍結的收尾（旗標洩漏）", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -1581,6 +1666,7 @@ describe("無編號列的 clean-list 幀（只剩置底文的短頁）不得 see
       flush() {},
       flushPending() {},
       flushPendingKind() {},
+      hasKind: () => false,
       enqueue: (cmd) => enqueued.push(cmd),
       onSettle: () => undefined,
     };
@@ -2215,18 +2301,22 @@ describe("鍵盤導覽（游標與捲動解耦）", () => {
     expect(screen.top).toBe(0);
   });
 
-  test("End／Home（邊已確認）＝本地執行、零 byte", () => {
-    const { s, screen, enqueued } = setup();
-    s._moveSelection("end");
-    expect(s._selectedNum).toBe(159);
-    s.applyScrollAfterRender();
-    expect(screen.top).toBe(800); // 貼齊視口底
-
-    s._moveSelection("home");
-    expect(s._selectedNum).toBe(100);
-    s.applyScrollAfterRender();
-    expect(screen.top).toBe(0);
-    expect(enqueued).toEqual([]);
+  // 合約變更 2026-09-05（使用者決定「Home/End 真的直通原生」）：以前只有在該方向
+  // 的板邊未確認時才走 server，其餘本地瞬移。那讓落點取決於 _edgeUp/_edgeDown
+  // 兩個推導旗標，被誤設成 true 時 End 只跳到 buffer 末列而不是板尾。現在**一律**
+  // 送原生鍵（read.c:893-902），零回應由 fullRepaint 的 \f 兜住。
+  test("End／Home 一律走 server 並送原生鍵（不再有本地捷徑）", () => {
+    for (const [op, kind, keys] of [
+      ["end", "jump-end", "\x1b[4~"],
+      ["home", "jump-home", "\x1b[1~"]
+    ]) {
+      const { s, enqueued } = setup();
+      s._edgeUp = true;
+      s._edgeDown = true; // 兩邊都已確認 —— 舊碼在這裡是零 byte
+      s._moveSelection(op);
+      const cmd = enqueued[enqueued.length - 1];
+      expect([cmd.kind, cmd.keys, cmd.fullRepaint]).toEqual([kind, keys, true]);
+    }
   });
 
   test("↑ 在第一列且板尾未確認 ⇒ 走 server（read.c wrap 的判準不變）", () => {
@@ -2235,13 +2325,6 @@ describe("鍵盤導覽（游標與捲動解耦）", () => {
     s._selectedNum = 100;
     s._moveSelection("up");
     expect(enqueued[enqueued.length - 1].kind).toBe("jump-end");
-  });
-
-  test("Home 在上邊未確認時 ⇒ 走 server", () => {
-    const { s, enqueued } = setup();
-    s._edgeUp = false;
-    s._moveSelection("home");
-    expect(enqueued[enqueued.length - 1].kind).toBe("jump-home");
   });
 });
 

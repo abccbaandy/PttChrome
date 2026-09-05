@@ -1380,14 +1380,11 @@ BoardListSession.prototype = {
       case 'pgdn':
         next = Math.min(top + B, len - 1);
         break;
+      // Home/End 一律走 server（與 list_session 同一個決定，理由見該檔）。
       case 'home':
-        if (!this._edgeUp) return this._requestHome();
-        next = 0;
-        break;
+        return this._requestHome();
       case 'end':
-        if (!this._edgeDown) return this._requestEnd();
-        next = len - 1;
-        break;
+        return this._requestEnd();
       default:
         return;
     }
@@ -1408,17 +1405,38 @@ BoardListSession.prototype = {
     this._maybeDemand(op === 'up' || op === 'pgup' || op === 'home' ? -1 : 1);
   },
 
-  // End：`search_num` 會把超過 brdnum 的輸入夾到最後一項（stuff.c:189-208），
-  // 所以一次超大跳號就同時「抓到最後一頁」與「確認板尾」。
+  // 前景導覽鍵的共用前置：把背景抓頁讓開。還沒送出的直接丟（落點馬上不算數），
+  // 在飛的那筆縮成一個 round-trip —— 不能 flush 它，還在線上的回應會變成無主
+  // settle 去滿足下一筆的 expect（同 list_session 的不變量 7）。
+  _expediteBackground: function() {
+    const kind = this._queue.inFlightKind || '';
+    if (kind.indexOf(BRD_CMD_PREFIX + 'fetch') === 0 && this._queue.expedite)
+      this._queue.expedite(250);
+  },
+
+  // End = 原生 End 直通（`\x1b[4~`）。board.c:1768 CONFIRMED：`KEY_END`/`$` →
+  // `num = brdnum - 1`（psb.c:62-64 的 psb_default_input_processor 同義）。
+  // 舊做法是 `99999999\r`（search_num 夾到最後一項，stuff.c:189-208）；改直通
+  // 原生鍵是使用者 2026-09-05 的決定，`fullRepaint` 保證有回應。
+  //
+  // 佇列忙碌時**不再靜默丟棄**（回報「Home/End 有時失效」）：舊碼
+  // `if (!this._queue.idle) return;` 讓整個按鍵零 byte、零重繪、零提示消失。
   _requestEnd: function() {
-    if (!this._queue.idle) return;
+    if (this._queue.hasKind(BRD_CMD_PREFIX + 'jump-')) return;
     const self = this;
-    // 落點是最後一頁：與現有緩衝之間可能整段不連續，樞紐固定成「編號最大的那一段」
-    // （null ＝ pruneListToSegment 的預設樞紐），否則剛抓到的板尾會被當成孤島丟掉。
-    this._prunePivotOverride = null;
+    this._queue.flushPendingKind(BRD_CMD_PREFIX + 'fetch');
+    this._expediteBackground();
+    this._setLoading(true); // 吞鍵不得無聲
     this._queue.enqueue({
-      keys: '99999999\r',
+      keys: '\x1b[4~',
       kind: BRD_CMD_PREFIX + 'jump-end',
+      onSend: function() {
+        // 落點是最後一頁：與現有緩衝之間可能整段不連續，樞紐固定成「編號最大的
+        // 那一段」（null ＝ pruneListToSegment 的預設樞紐），否則剛抓到的板尾會被
+        // 當成孤島丟掉。**必須等到送出才設**：排在背景抓頁後面時提早設，會讓那筆
+        // 抓頁的 prune 用到錯的樞紐。
+        self._prunePivotOverride = null;
+      },
       expect: function(snap, facts) {
         return !!(facts.brd && facts.brd.parked && facts.brd.cursorNum != null);
       },
@@ -1428,6 +1446,7 @@ BoardListSession.prototype = {
       hardTimeoutMs: CMD_HARD_MS,
       onDone: function() {
         self._prunePivotOverride = undefined;
+        self._setLoading(false); // 這筆交易自己點亮的膠囊，自己負責關掉
         self._edgeDown = true;
         const len = self._sequenceLength();
         if (!len) return;
@@ -1442,18 +1461,25 @@ BoardListSession.prototype = {
       },
       onFail: function() {
         self._prunePivotOverride = undefined;
+        self._setLoading(false);
       }
     });
   },
 
-  // Home：第 1 項恆存在（編號＝絕對位置），跳號必有回應。
+  // Home = 原生 Home 直通（`\x1b[1~`）。board.c:1830 CONFIRMED：`KEY_HOME`/`'0'`
+  // → `num = 0` ⇒ 落在第 1 項（編號＝絕對位置，恆存在）。其餘同 _requestEnd。
   _requestHome: function() {
-    if (!this._queue.idle) return;
+    if (this._queue.hasKind(BRD_CMD_PREFIX + 'jump-')) return;
     const self = this;
-    this._prunePivotOverride = 1; // 保留第 1 項（落點）所在的那一段
+    this._queue.flushPendingKind(BRD_CMD_PREFIX + 'fetch');
+    this._expediteBackground();
+    this._setLoading(true);
     this._queue.enqueue({
-      keys: '1\r',
+      keys: '\x1b[1~',
       kind: BRD_CMD_PREFIX + 'jump-home',
+      onSend: function() {
+        self._prunePivotOverride = 1; // 保留第 1 項（落點）所在的那一段
+      },
       expect: function(snap, facts) {
         return !!(facts.brd && facts.brd.parked && facts.brd.cursorNum === 1);
       },
@@ -1463,6 +1489,7 @@ BoardListSession.prototype = {
       hardTimeoutMs: CMD_HARD_MS,
       onDone: function() {
         self._prunePivotOverride = undefined;
+        self._setLoading(false);
         self._serverNum = 1;
         self._edgeUp = true;
         if (!self._sequenceLength()) return;
@@ -1477,6 +1504,7 @@ BoardListSession.prototype = {
       },
       onFail: function() {
         self._prunePivotOverride = undefined;
+        self._setLoading(false);
       }
     });
   },

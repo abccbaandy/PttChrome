@@ -99,7 +99,15 @@ function makeSession({ prefOn = true } = {}) {
     },
     flush() {},
     flushPending() {},
-    flushPendingKind() {},
+    flushPendingKind(prefix) {
+      this.pendingKindFlushed = prefix;
+    },
+    expedite(ms) {
+      this.expedited = ms;
+    },
+    hasKind(prefix) {
+      return enqueued.some((c) => (c.kind || "").indexOf(prefix) === 0);
+    },
     flushKind() {},
   };
   const s = new BoardListSession(core, view, termBuf, queue);
@@ -379,12 +387,42 @@ describe("本地導覽（游標夾住，不照抄 PTT 的 wrap）", () => {
     expect(s._selectedNum).toBe(21);
   });
 
-  test("End／Home 在邊界未確認時改送交易，不本地跳", () => {
-    const { s, enqueued } = activeSession();
-    s._edgeDown = false;
+  // 合約變更 2026-09-05（與 list_session 同步）：Home/End 一律走 server 並送
+  // 原生鍵。board.c:1768/1830 CONFIRMED —— KEY_END → num = brdnum-1、
+  // KEY_HOME/'0' → num = 0。邊界已確認也照送（舊碼在這裡是本地瞬移＋零 byte）。
+  test("End／Home 一律送原生鍵交易，不本地跳", () => {
+    for (const [key, kind, keys] of [
+      ["End", "jump-end", "\x1b[4~"],
+      ["Home", "jump-home", "\x1b[1~"]
+    ]) {
+      const { s, enqueued } = activeSession();
+      s._edgeUp = true;
+      s._edgeDown = true;
+      s.onKeyDown(keyEvent(key));
+      expect(enqueued.map((c) => c.kind)).toEqual([BRD_CMD_PREFIX + kind]);
+      expect([enqueued[0].keys, enqueued[0].fullRepaint]).toEqual([keys, true]);
+    }
+  });
+
+  // REGRESSION 2026-09-05（與 list_session 同一個洞）：舊碼
+  // `if (!this._queue.idle) return;` 讓背景抓頁在飛時整個按鍵靜默消失。
+  test("背景抓頁在飛時 End 仍送得出去（舊碼靜默丟棄 → 紅）", () => {
+    const { s, queue, enqueued } = activeSession();
+    queue.idle = false;
+    queue.inFlightKind = BRD_CMD_PREFIX + "fetch-down";
     s.onKeyDown(keyEvent("End"));
     expect(enqueued.map((c) => c.kind)).toEqual([BRD_CMD_PREFIX + "jump-end"]);
-    expect(enqueued[0].keys).toBe("99999999\r");
+    // 前景優先：排隊中的抓頁丟掉、在飛的那筆縮短等待（不 flush，保持配對）。
+    expect(queue.pendingKindFlushed).toBe(BRD_CMD_PREFIX + "fetch");
+    expect(queue.expedited).toBe(250);
+  });
+
+  test("連按 End 只排一筆", () => {
+    const { s, queue, enqueued } = activeSession();
+    queue.idle = false;
+    s.onKeyDown(keyEvent("End"));
+    s.onKeyDown(keyEvent("End"));
+    expect(enqueued.length).toBe(1);
   });
 });
 

@@ -60,6 +60,7 @@ function makeSession({ count = 8, pinned = 0 } = {}) {
     flush() {},
     flushPending() {},
     flushPendingKind() {},
+    hasKind: () => false,
     enqueue(cmd) {
       enqueued.push(cmd);
     },

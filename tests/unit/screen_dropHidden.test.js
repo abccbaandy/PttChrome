@@ -182,6 +182,97 @@ describe("畫面 board-list native mode (無 listEasyReading → 黑名單通知
   });
 });
 
+// REGRESSION 2026-09-05（錄製檔 ptt-debug-20260905-122522 ＋ 使用者截圖）：
+// 在文章列表按 Ctrl-P 發文，分類畫面上冒出「（本文已被黑名單） vtub」通知列。
+// setPageState 沒有 reset 分支 ⇒ 發文畫面**沿用**列表的 pageState 2，
+// term_view 的 inListContext 又是黏的 ⇒ 標註層兩個輸入都指向「這是列表」。
+// 守門改成逐列形狀指紋（comment_parse#isListShapedRow）。
+const composeLines = [
+  line(""),
+  line("  [閒聊] 希洽最基本之發文Tag，藉由發表含ACG點的文章開啟話題與其他板友閒聊。"),
+  line("  [Vtub] 討論與虛擬實況主 (Vtuber) 有關的事物。"),
+  line("  1. 不得張貼廣告或商業性質文章，違者水桶。"),
+  line("發表文章於【 C_Chat 】 [希洽] 這裡是希洽板 看板"),
+  line("種類：1.閒聊 2.問題 3.討論 4.26夏 5.心得 6.情報 7.Vtub 8.自介 (1-8或不選)")
+];
+
+describe("畫面 發文/覆蓋畫面繼承 pageState 2 時不得跑黑名單", () => {
+  const renderCompose = enhanceExtra =>
+    mountScreen({
+      lines: composeLines,
+      forceWidth: 80,
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: Object.assign(
+        {
+          blacklist: new Set(),
+          titleBlacklist: [],
+          pageState: 2,
+          inListContext: true,
+          dropHidden: false
+        },
+        enhanceExtra
+      )
+    }).container;
+
+  test("標題關鍵字 vtub 命中發文分類列 → 不得出現通知列（本次 bug 的現場）", () => {
+    const container = renderCompose({ titleBlacklist: ["vtub"] });
+    expect(noticeRows(container).length).toBe(0);
+    expect(hiddenRows(container).length).toBe(0);
+    // 原始文字必須完整保留（通知列會從作者欄整段蓋掉）
+    expect(container.textContent).toContain("8.自介");
+  });
+
+  test("關鍵字命中板規列 → 不得出現通知列", () => {
+    const container = renderCompose({ titleBlacklist: ["閒聊", "廣告"] });
+    expect(noticeRows(container).length).toBe(0);
+    expect(container.textContent).toContain("希洽最基本之發文Tag");
+  });
+
+  test("非列表列不得掛 data-list-author / data-list-title（右鍵快速加黑名單）", () => {
+    const container = renderCompose({});
+    expect(container.querySelectorAll("[data-list-title]").length).toBe(0);
+    expect(container.querySelectorAll("[data-list-author]").length).toBe(0);
+  });
+
+  test("好讀視窗模式下同樣不得隱藏", () => {
+    const container = renderCompose({
+      titleBlacklist: ["vtub"],
+      listEasyReading: true
+    });
+    expect(hiddenRows(container).length).toBe(0);
+  });
+});
+
+// 同一類誤命中也發生在**真實列表畫面**上：表頭與 footer 的 col≥29 一樣會被
+// 關鍵字比對到（footer 含「轉錄」）。逐列形狀守門一併修掉。
+describe("畫面 真實列表的表頭/footer 不得被關鍵字吃掉", () => {
+  test("footer「(^X)轉錄」不因關鍵字『轉錄』變成通知列", () => {
+    const withChrome = [
+      line("  【板主】abc 看板《C_Chat》線上1234人, 我是guest"),
+      line(""),
+      line("   編號    日 期  作  者       文  章  標  題       人氣:12345"),
+      listRow("gooduser", "R: [情報] 普通文章"),
+      line(" 文章選讀 (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題 (/?)搜尋")
+    ];
+    const container = mountScreen({
+      lines: withChrome,
+      forceWidth: 80,
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: {
+        blacklist: new Set(),
+        titleBlacklist: ["轉錄", "編號"],
+        pageState: 2,
+        dropHidden: false
+      }
+    }).container;
+    expect(noticeRows(container).length).toBe(0);
+    // 真正的文章列仍照常掛 data-list-*
+    expect(container.querySelectorAll("[data-list-author]").length).toBe(1);
+  });
+});
+
 // REGRESSION (bug: 按 v 設定已讀未讀記錄時黑名單持續失效). The v prompt overlays a
 // question on the board list whose status row no longer parses as LIST(2), so the
 // per-frame pageState would be e.g. NORMAL(0) and un-hide every blacklisted row for

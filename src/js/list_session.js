@@ -20,6 +20,7 @@ import {
   parseListArticleNumLoose,
   isPinnedListRow,
   isDeletedListRow,
+  isListShapedRow,
   rowToText,
   parseListTitleRaw,
   subjectOfListRow,
@@ -3289,14 +3290,15 @@ ListSession.prototype = {
         // 慣例夾住（v5 合約允許偏離 read.c，見 docs/easy-reading-list.md）。
         next = Math.min(top + B, len - 1);
         break;
+      // Home/End 一律走 server（原生鍵直通，2026-09-05 使用者決定）。以前只在
+      // 「該方向的板邊還沒確認」時才發交易，其餘本地瞬移 —— 那讓落點取決於
+      // _edgeUp/_edgeDown 這兩個推導旗標，一旦被誤設成 true，End 只會跳到 buffer
+      // 末列而不是板尾。原生鍵沒有這個狀態相依（read.c:893-902 KEY_END → last_line，
+      // 含置底文）。代價是每次一趟 round-trip（實測 ~100ms）。
       case 'home':
-        if (!this._edgeUp) return this._requestHome();
-        next = 0;
-        break;
+        return this._requestHome();
       case 'end':
-        if (!this._edgeDown) return this._requestEnd();
-        next = len - 1;
-        break;
+        return this._requestEnd();
       default:
         return;
     }
@@ -3344,35 +3346,59 @@ ListSession.prototype = {
     });
   },
 
-  // Native End (read.c KEY_END: new_ln = last_line, which INCLUDES the pinned
-  // tail). We don't hold the board end yet — fetch it with a single always-
-  // answered command: a number jump far past the newest article lands the real
-  // cursor on last_line (search_num clamps to max, read.c:190-210), pulling
-  // the last page (pinned rows included) into the buffer. Then apply End
-  // locally. (A bare End times out when the cursor is already at the bottom —
-  // zero response, live-tested — the over-jump always answers.)
+  // End = 原生 End 直通（`\x1b[4~`）。read.c:893-902 CONFIRMED：
+  // `KEY_END`/`$` → `new_ln = last_line`，**含置底文**——比舊做法的
+  // `99999999\r`（search_num 只夾到最大**編號**文章，read.c:190-210）更接近
+  // 「末頁」的直覺。
+  //
+  // 「游標已在底端時 End 零回應會 timeout（live-tested）」是舊做法繞開原生鍵的
+  // 唯一理由，`fullRepaint` 已經把它解決掉了：queue 送的是 `\x1b[4~\f`，
+  // igetch 的全域熱鍵保證回一個完整幀給 expect 判（protocol §6）。同一招在
+  // `open-pinned-end`（本檔 _beginOpenPinned）已經跑了很久。
+  //
+  // 佇列忙碌時**不再靜默丟棄**（2026-09-05 回報「Home/End 有時失效」）：舊碼
+  // `if (!this._queue.idle) return;` 讓整個按鍵零 byte、零重繪、零提示消失，而
+  // _moveSelection 尾端必定 _maybeDemand → 剛按過任何導覽鍵佇列通常就非 idle，
+  // 進板頭 1-3 秒的鏈式補頁更是必中。改成前景優先 ＋ 排在在飛的那筆後面。
   _requestEnd: function() {
-    if (!this._queue.idle) return;
-    const anchor = bufferEdgeNum(this._termBuf.listLineNums, 1);
-    if (anchor == null) return;
+    // 連按冪等：已經有一筆跳號在路上就別再排（見 CommandQueue#hasKind）。
+    if (this._queue.hasKind('jump-')) return;
     this._breakChain(); // a non-prefetch command moves the server cursor
     const self = this;
-    this._prunePivotOverride = null; // keep the landing (max-number) segment
+    // 前景導覽鍵優先於背景補頁：還沒送出的 prefetch 直接丟（它們的落點馬上就
+    // 不算數了），在飛的那筆用 expedite 把等待縮成一個 round-trip —— 不能 flush
+    // 它，那會讓還在線上的回應變成無主 settle 去滿足我們的 expect（不變量 7）。
+    this._queue.flushPendingKind('prefetch');
+    this._expediteBackground();
+    // 吞鍵不得無聲：排在 prefetch 後面時使用者要看得到「在做事」。
+    // onDone/onFail 負責關掉（膠囊擁有權見 docs/easy-reading-list.md 7d）。
+    this._setLoading(true);
+    // anchor 必須在**送出當下**才取：這筆命令可能排在 prefetch 後面，enqueue 當時
+    // 的 buffer 邊界到送出時已經長大了。
+    let anchor = null;
     this._queue.enqueue({
-      keys: '99999999\r',
+      keys: '\x1b[4~',
       kind: 'jump-end',
+      onSend: function() {
+        anchor = bufferEdgeNum(self._termBuf.listLineNums, 1);
+        self._prunePivotOverride = null; // keep the landing (max-number) segment
+      },
       expect: function(snap, facts) {
         // Jump landing fingerprint (protocol §4 ✚: bottom row stays empty →
         // transient, never clean-list): parked in the entry area, on a row at
         // or past our previous bottom edge (a pinned row parses as null num).
+        // anchor == null（buffer 裡一列編號都沒有）不再靜默 return —— 那是不變量
+        // 17 的死局殘留；沒有錨點就純粹不拿它當條件，命令照樣送得出去。
         return (
           facts.curY >= 3 &&
           facts.curY <= facts.rows - 2 &&
           facts.curX <= 1 &&
-          (facts.cursorRowNum == null || facts.cursorRowNum >= anchor)
+          (anchor == null ||
+            facts.cursorRowNum == null ||
+            facts.cursorRowNum >= anchor)
         );
       },
-      // 跳號腿一律 fullRepaint（詳見 _enqueueCursorSyncJump）.
+      // 原生 End 在底端零回應 ⇒ 必須 fullRepaint（見上方說明）。
       fullRepaint: true,
       timeoutMs: CMD_PROBE_AFTER_MS,
       probeTimeoutMs: CMD_PROBE_WINDOW_MS,
@@ -3411,17 +3437,25 @@ ListSession.prototype = {
     });
   },
 
-  // Native Home (read.c KEY_HOME: new_ln = 0 → clamped to line 1). Article 1
-  // always exists (numbers re-compact on deletion) and a number jump always
-  // answers — one command, then apply Home locally.
+  // Home = 原生 Home 直通（`\x1b[1~`）。read.c:893-896 CONFIRMED：
+  // `KEY_HOME` → `new_ln = 0; new_top = 0` ⇒ 落在第 1 篇（編號在刪文後會重新
+  // 壓實，所以第 1 篇恆存在）。與 _requestEnd 同樣的三件事：fullRepaint 保證有
+  // 回應、佇列忙碌時排隊而不是靜默丟棄、pivot 在 onSend 才設。
   _requestHome: function() {
-    if (!this._queue.idle) return;
+    if (this._queue.hasKind('jump-')) return;
     this._breakChain(); // a non-prefetch command moves the server cursor
     const self = this;
-    this._prunePivotOverride = 1; // keep article 1's (landing) segment
+    this._queue.flushPendingKind('prefetch');
+    this._expediteBackground();
+    this._setLoading(true);
     this._queue.enqueue({
-      keys: '1\r',
+      keys: '\x1b[1~',
       kind: 'jump-home',
+      onSend: function() {
+        // 樞紐必須等到送出才設：排在 prefetch 後面時提早設會讓**那筆 prefetch**
+        // 的 prune 用「保留第 1 篇所在的段」當樞紐，而第 1 篇還不在 buffer 裡。
+        self._prunePivotOverride = 1; // keep article 1's (landing) segment
+      },
       expect: function(snap, facts) {
         return (
           facts.cursorRowNum === 1 &&
@@ -3580,6 +3614,14 @@ export function visibleListIndices(rowTexts, blacklistSet, titleKeywords) {
   const out = [];
   for (let i = 0; i < rowTexts.length; ++i) {
     const text = rowTexts[i];
+    // 不是列表形列 ⇒ 一律可見，連問都不問（與 computeAnnotations 的同一道守門
+    // 逐字對稱，不變量 10）。對累積進 listLines 的資料這是 no-op —— 那裡只收
+    // entry 區的列表列 —— 但兩份實作必須長得一樣，否則下次有人只改一邊就是
+    // 「導覽走的列」與「畫出來的列」對不上。
+    if (!isListShapedRow(text)) {
+      out.push(i);
+      continue;
+    }
     // Deleted articles ((本文已被刪除) / (已被xxx刪除), author column "-") are
     // hidden unconditionally: they cannot be opened (the serialized open would
     // wedge on them) — treated exactly like a blacklist hit.

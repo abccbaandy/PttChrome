@@ -271,12 +271,17 @@ test.describe('增强 · 看板列表（离线重放）', () => {
     await replayCassette(page, list, { easyReading: false });
     await page.waitForTimeout(500);
 
-    // 从渲染出的列表抓一列标题（col 29 起），取其中一个中文/英数字片段当关键字。
+    // 从渲染出的列表抓一列标题，取其中一个中文/英数字片段当关键字。
+    // **只能挑真的文章列**（data-list-title 就是渲染层判定的结果）：2026-09-05
+    // 之前这里是逐列 substring(29)，第一个命中的是**表头**「编号 日期 作者 标题」
+    // ——它当时确实会被换成通知列，所以这条测试是「因为那个 bug 才绿的」。
+    // 表头/footer 不再跑黑名单之后，从它身上取的关键字当然一列都命不中。
     const keyword = await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"]'));
+      const rows = Array.from(
+        document.querySelectorAll('#mainContainer > span[type="bbsrow"][data-list-title]')
+      );
       for (const el of rows) {
-        const title = el.textContent.substring(29).trim();
-        const m = title.match(/[0-9A-Za-z一-鿿]{2,}/);
+        const m = el.getAttribute('data-list-title').match(/[0-9A-Za-z一-鿿]{2,}/);
         if (m) return m[0].toLowerCase();
       }
       return null;

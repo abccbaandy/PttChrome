@@ -39,6 +39,7 @@ async function dumpListState(page) {
       listLen: (app.buf.listLines || []).length,
       nums: (app.buf.listLineNums || []).slice(),
       selectedNum: ls._selectedNum,
+      selectedPinnedKey: ls._selectedPinnedKey,
       // 視窗頂端的序號：平滑捲動不搬選取，「捲了沒」只能看這個錨。
       topNum: ls._topNum,
       queueIdle: app.commandQueue.idle,
@@ -350,13 +351,15 @@ test.describe.serial('文章列表好讀模式（live）', () => {
       expect(s.state).toBe('active');
       test.skip(!s.nums.includes(null), '此板目前無置底文');
 
-      // End：本地導覽到最底 → 選取落在最後一列置底文（pinned key 選取）。
+      // End：送原生 End（read.c KEY_END → last_line，含置底文）→ 選取落在最後
+      // 一列置底文（pinned key 選取）。2026-09-05 起這是一趟 server 交易，
+      // **不可以**用固定 timeout 等（見 tests/e2e/README.md「選文與等待」）。
       await page.locator('#t').focus();
       await page.keyboard.press('End');
-      await page.waitForTimeout(300);
-      const pinnedKey = await page.evaluate(
-        () => window.__app.listSession._selectedPinnedKey
-      );
+      const pinnedKey = await waitFor(
+        page,
+        (x) => x.state === 'active' && !!x.selectedPinnedKey
+      ).then((x) => x.selectedPinnedKey);
       console.log('pinned target:', pinnedKey);
       expect(pinnedKey).toBeTruthy();
 
@@ -812,8 +815,8 @@ test.describe.serial('文章列表好讀模式（live）', () => {
       s = await settledActive('dead-keys');
       expect(s.selectedNum).toBe(selBeforeDead);
 
-      // 站 2：End 邊界確認（邊未確認 → server 交易；已確認 → 本地）。'$' 同義
-      // （read.c:898）。
+      // 站 2：End 一律走 server 並直送原生 End（`\x1b[4~` ＋ \f；2026-09-05 起
+      // 不再有「邊已確認就本地跳」的捷徑）。'$' 同義（read.c:898）。
       await page.keyboard.press('End');
       s = await settledActive('End');
       await page.keyboard.press('$');

@@ -54,6 +54,7 @@ function makeSession({ count = 8 } = {}) {
     flush() {},
     flushPending() {},
     flushPendingKind() {},
+    hasKind: () => false,
     enqueue(cmd) {
       enqueued.push(cmd);
     },

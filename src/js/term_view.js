@@ -830,9 +830,28 @@ TermView.prototype = {
     // Maintain the sticky board-list context (see constructor). LIST enters it,
     // MENU/READING leave it, everything else (overlay prompts, transient frames)
     // keeps the previous value so blacklist hiding persists across e.g. the v prompt.
+    //
+    // 「everything else keeps the previous value」有一個**必要的例外**：整頁換掉的
+    // 畫面（Ctrl-P 發文、板規、精華區…）。setPageState 沒有 reset 分支，那些畫面會
+    // 沿用列表的 pageState 2，黏性旗標又跟著留著 ⇒ 標註層兩個輸入同時說謊
+    // （2026-09-05 錄製檔：發文分類列被標題黑名單 vtub 命中）。判準用 row2 的表頭
+    // 「編號」——`bbs.c` 的 vbarf(ANSI_REVERSE "   編號 …")，與
+    // list_session#classifyListScreen 用的是同一個指紋。**刻意不用 footer**：
+    // 「v 設定已讀未讀」這類 overlay 只重畫最後一列，表頭仍在，黏性語意才守得住
+    // （tests/unit/screen_dropHidden.test.js 的 sticky 那組）。
+    // 真正的守門仍是 comment_parse#isListShapedRow 的逐列指紋；這裡只是把旗標本身
+    // 修回誠實，別讓下一個消費端又踩同一個洞。
+    //
+    // 順序刻意：表頭解碼（rowToText 走 80 格 Big5）**只在真的會沿用舊 true 的幀**
+    // 才跑 —— 這個函式是每一幀 render 的必經之路，無條件解碼是白付的成本。
     const ps = this.buf.pageState;
     if (ps === 2) this._inBoardListContext = true;
     else if (ps === 1 || ps === 3) this._inBoardListContext = false;
+    else if (
+      this._inBoardListContext &&
+      rowToText(this.buf.lines[2] || []).indexOf('編號') < 0
+    )
+      this._inBoardListContext = false;
     // 功能鍵可點：**全專案唯一**算 functionKeyRows 的地方（這個函式是七條 render
     // 分支共用的 enhance choke point）。
     //

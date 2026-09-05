@@ -504,6 +504,36 @@ export function parseListArticleNumLoose(text) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+// 這一列**真的長得像看板文章列表的一列**嗎？黑名單標註（screen_annotations 的
+// PAGE_LIST 分支）與 visibleListIndices 的逐列守門。
+//
+// 為什麼需要它：`term_buf.setPageState` 沒有 reset 分支（見 docs/pttbbs-screen-
+// protocol.md §5.1），從列表叫出來的整頁畫面（Ctrl-P 發文、板規、精華區…）會**沿用**
+// 上一幀的 pageState 2，而 term_view 的 _inBoardListContext 又是黏的 ⇒ 標註層的
+// 「這是列表嗎」兩個輸入都不可信。逐列解析本身也不設防：parseListTitleRaw 對任何
+// 長度 > LIST_AUTHOR_COL_END 的列都回傳 col≥29 的整段文字 ⇒ 發文分類列
+// 「種類：1.閒聊 … 7.Vtub 8.自介 (1-8或不選)」的 col≥29 含 "Vtub"，只要使用者的標題
+// 黑名單有 vtub 就整列被換成「（本文已被黑名單）」通知列（2026-09-05 錄製檔）。
+// 文件早就寫了「任何『這個畫面是不是列表』的判斷都不可以只看 pageState」——這裡就是
+// 那個指紋。
+//
+// 判準（三者取聯集，順序即成本）：
+//   1. 作者欄是 '-' ＝ 被刪除文（parseListAuthor 會拒絕它，所以要先問）。
+//   2. **先要求合法的 userid 作者欄**。少了這關就形同虛設：parseListArticleNumLoose
+//      是 `^(\d+)\b`，板規的「1. 不得…」會回 1 而放行。
+//   3. 有編號（loose ⇒ 連舊全形 ● 游標蓋掉最高位的那一列也算）或有 ★（置底文沒有
+//      編號，PTT 把 ★ 印在編號欄）。★ 這關與 list_session.js 既有的
+//      `t.indexOf('★') >= 0 && isPinnedListRow(t)` 是同一個判準。
+// 與 list_session.js#classifyListScreen 內的區域 listShapedRow 是同一個概念，
+// 但那邊只在**已確認是列表畫面**的 entry 區裡用，可以寬鬆；這裡是畫面身分本身
+// 不可信的場合，所以嚴格。
+export function isListShapedRow(text) {
+  if (!text) return false;
+  if (isDeletedListRow(text)) return true;
+  if (parseListAuthor(text) == null) return false;
+  return parseListArticleNumLoose(text) != null || text.indexOf('★') >= 0;
+}
+
 // Recover a cursor row's full article number from its visible suffix and a clean
 // neighbour's number. The cursor ● covers only the high-order digit(s); board numbers
 // are monotonic and neighbours are numerically close, so the covered high part equals

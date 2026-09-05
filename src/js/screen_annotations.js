@@ -13,6 +13,7 @@ import {
   parseListTitleRaw,
   matchTitleBlacklist,
   isDeletedListRow,
+  isListShapedRow,
   blacklistNoticeText,
   FloorCounter,
 } from "./comment_parse";
@@ -612,6 +613,16 @@ export function computeAnnotations(
     //     改被刪除樣式；好讀暫時切回原生也走此路 → 不再變回反黑.)
     for (let row = 0; row < lines.length; ++row) {
       const text = rowToText(lines[row]);
+      // 這一列必須先「長得像列表列」才准跑黑名單／才准掛 data-list-*。
+      // 上面那兩個輸入（pageState、inListContext）都是**黏的**，從列表叫出來的
+      // 整頁畫面（Ctrl-P 發文、板規、精華區…）會整份繼承它們 ⇒ 板規／分類提示列
+      // 的 col≥29 一旦含到使用者的標題關鍵字就被換成通知列（2026-09-05 錄製檔：
+      // 「種類：… 7.Vtub 8.自介」被 vtub 命中）。判準見 comment_parse#isListShapedRow。
+      // 順帶修掉**真實列表畫面**上的同一類誤命中：表頭「編號 日期 作者 標題」與
+      // footer「文章選讀 (y)回應(X)推文(^X)轉錄」以前也會被關鍵字（如「轉錄」）吃掉。
+      // 逐列獨立性不受影響（只看該列自己的 chars），所以
+      // annotationsAreRowIndependent 不必跟著改。
+      if (!isListShapedRow(text)) continue;
       const deleted = isDeletedListRow(text);
       // Quick-add blacklist (right-click menu) needs every visible row's author
       // and raw-case title, independent of whether any blacklist is set yet —

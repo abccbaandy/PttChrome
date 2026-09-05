@@ -100,7 +100,7 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
   | `↑` `k` `p` | `cursor-1`；第一列 ∧ `_edgeDown` → wrap 到最後一列；`!_edgeDown` → serverOp `end` | 移動前可見 → `nearest`（**instant**）；不可見 → `center`（smooth） |
   | `↓` `j` `n` | `cursor+1`（到底不 wrap） | 同上 |
   | `PgUp` `P` / `PgDn` `空白` `N` | `視口頂 ∓ bodyRows`，游標落在那裡 | `start`，smooth |
-  | `Home` / `End` `$` | 邊已確認 → 0／`len-1`；否則 serverOp | `start` / `end`，smooth |
+  | `Home` / `End` `$` | **一律 serverOp**（送原生鍵；2026-09-05 起無本地捷徑） | `start` / `end`，smooth |
 
   **表中的 smooth 只適用單發**：按住／連發時 block 不變、behavior 一律退成 instant（下一條）。
 
@@ -153,10 +153,25 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
   補償的另一半在 CSS：`.listBodyView` 的 `overflow-anchor: none` —— 瀏覽器內建的
   scroll anchoring 也會在前置插入時調 scrollTop，兩邊各補一次就是補過頭。
   守護：`list_session.test.js`「平滑捲動 × 背景補頁（回捲的回歸）」六條。
-- **邊未確認的大跳走 server**（serverOp）：End→`_requestEnd`（送 `99999999\r`——jump
-  超過最大序號 server clamp 到 last_line 含置底，**必有回應**；單發 End 在游標已於底端
-  時零回應必 timeout）；Home→`_requestHome`（`1\r`，序號 1 恆存在）。onDone 確認 edge
-  → 本地套 End/Home（`_anchorOverride` ＋ reveal）。
+- **Home/End 一律走 server，且直送原生鍵**（2026-09-05 使用者決定「真的直通原生」）：
+  End→`_requestEnd`（`ESC[4~`，read.c:898-902 `KEY_END`/`$` → `new_ln = last_line`，
+  **含置底文**）；Home→`_requestHome`（`ESC[1~`，read.c:893-896 `KEY_HOME` →
+  `new_ln = 0`）。onDone 確認 edge → 本地套 End/Home（`_anchorOverride` ＋ reveal）。
+  - **零回應由 `fullRepaint` 兜住**：單發 End 在游標已於底端時 PTT 一個 byte 都不送
+    （live-tested），而 queue 對 `fullRepaint` 送的是「鍵 ＋ Ctrl-L」，igetch 的全域
+    熱鍵保證回一個完整幀給 expect 判（協定 §6）。這正是舊碼繞去 `99999999` ＋ Enter
+    的唯一理由，而 `open-pinned-end` 早就用同一招。順帶：跳號走 `search_num` 只夾到
+    最大**編號**文章，原生 End 的 `last_line` 才含置底列。
+  - **前景優先，不再靜默丟棄**：舊碼開頭 `if (!this._queue.idle) return;` 讓佇列忙碌時
+    整個按鍵零 byte 消失（見不變量 18）。現在改為 `flushPendingKind('prefetch')` ＋
+    `expedite(250)` ＋ 排在在飛的那筆後面（**不 flush 它**，不變量 7），並
+    `_setLoading(true)`。連按用 `queue.hasKind('jump-')` 去重；`_prunePivotOverride`
+    改在 `cmd.onSend` 才設（排隊期間設會讓那筆 prefetch 的 prune 用到錯的樞紐）。
+  - **交換條件**：Home/End 從此每次一趟 round-trip（實測 ~100ms），沒有「邊已確認就
+    本地瞬移」的快路徑。換掉的是「`_edgeUp`/`_edgeDown` 被誤設 ⇒ End 只跳到 buffer
+    末列而不是板尾」這一類狀態相依的失效。
+  - 看板列表（`board_list_session.js`）一字不差地照做（board.c:1768/1830、psb.c:58-64
+    CONFIRMED），前綴用 `BRD_CMD_PREFIX`。
 - **pinned 門控**：置底列只在 `_edgeDown`（已確認板尾）時進導航序列（native：置底只存在
   last page）→ 舊文區往下讀不會先看到置底文。seed/resume 時畫面含 ★ ⇒ `_edgeDown=true`。
 - **缺口 prune**：序號是連續整數，`pruneListToSegment` 在 accumulate（merge→evict 後）
@@ -311,6 +326,11 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 17. **無編號列的 clean-list 幀不得驅動 seed／rebuild／resume**（2026-08-20 錄製檔 `20260820-015809`「列表好讀卡在一頁、PgUp 沒反應」）：進板時 pttbbs getkeep 還原的閱讀位置若剛好在板尾，`readdoent` 只畫得出那幾列**置底文**就 `clrtobot`（該幀 entry 區零編號列，但通過不變量 3a 的板尾短頁放寬 → 判 clean-list）。seed 之後 `listLineNums` 全 null ⇒ `bufferEdgeNum` 回 null ⇒ **錨定式 prefetch 的每一條腿都在 `_enqueuePrefetch` 的 `base == null` 靜默 return**（`_startFill`／`_maybeFill`／`_maybeDemand` 全走這裡），`_requestEnd` 的 `anchor == null` 同理，`_demandDownIfWindowShort` 又被「畫面有 ★ ⇒ `_edgeDown=true`」擋掉。使用者端的症狀＝導覽鍵在那兩三列裡原地打轉、**零網路、零重繪、連「讀取中…」膠囊都不亮**（`_moveSelection` 的 `!queue.idle` 不成立），唯一逃生口是 Home 的 `serverOp`；切原生（flush＋鏡像）或進出文章（re-seed）才會恢復——正是回報的三個現象。
    修法＝reducer 事件帶 `hasNumberedRow`（`hasNumberedEntryRow(facts)`，單點推導自 `facts.nums`；**勿改成由 `_collectFacts` 預先塞進 facts**——呼叫端會手組 facts）：idle 不 engage、functionMode／suspended 的 clean-list 一律 stay 鏡像原生、active 板名同 stay／板名異 `enter-function-mode`。停在原生無風險：使用者原生翻一頁就拿到有編號的幀，下一個 settle 自動 engage。
    **與不變量 3a 的分界**：3a 放寬的是「板尾最後一頁只剩 1 列編號＋置底＋空白」，**編號列 ≥1 是底線**；分類器本身**不動**（改它會讓板尾無主 settle 回頭誤降級）。`_enqueuePrefetch` 的無錨點分支另留一則 `listSession.noAnchor` 診斷（不變量 7f），下次同型卡死可直接在錄製檔看到。守護：`list_session.test.js`「無編號列的 clean-list 幀…」三條（分類器不變／落點只有置底文不 engage／板尾 1 列編號仍 engage）＋ reducer 全枚舉的 `hasNumberedRow:false` 四列。
+   **2026-09-05 補洞**：`_requestEnd` 的 `anchor == null` 靜默 return 已移除——沒有錨點就純粹不拿它當 expect 條件，命令照樣送得出去。文中說的「唯一逃生口是 Home 的 serverOp」在當時其實也是壞的（`!queue.idle` 會把它一起丟掉，見不變量 18）。
+
+18. **前景導覽鍵不得因佇列忙碌而靜默丟棄**（2026-09-05 回報「好讀列表有時 Home/End 會失效」，錄製檔 `ptt-debug-20260905-122522`）：`_requestHome`／`_requestEnd`（以及 `board_list_session` 的同名函式）開頭是 `if (!this._queue.idle) return;` ⇒ **零 byte、零重繪、零提示，也不排隊重試**（`queue.onIdle` 只接給 EasyReading，ListSession 沒有補做機制）。而 `_moveSelection` 是 `return this._requestHome()`，early return 讓 reveal／`_forceRedraw`／`_maybeDemand`／`_setLoading(true)` 全部不執行。
+   觸發窗口極寬：`_moveSelection` 尾端必定 `_maybeDemand` → `_enqueuePrefetch`，**剛按過任何一次 ↑↓/PgUp/PgDn，佇列通常就非 idle**；進板後 `_startFill` 最多鏈式 3 頁（錄製檔 t=4480~4962 就是連續 4 筆 prefetch，每筆 ~100ms），前 1–3 秒的 Home 幾乎必掉。直接違反本文開頭的「失敗顯性化，禁止靜默墜落」與「吞鍵不得無聲」。
+   **通則**：使用者按的鍵是前景意圖，背景 prefetch 是投機工作 —— 衝突時讓背景讓路（`flushPendingKind` 丟未送出的、`expedite` 縮短在飛的），不是把前景意圖丟掉。新增任何走 queue 的按鍵路徑時，`!idle` 只能用來**排隊或去重**，不能用來**丟棄**。守護：`list_session.test.js`「Home/End 不得因佇列忙碌而靜默丟棄」六條、`board_list_session.test.js` 兩條、`command_queue.test.js` 的 `onSend`／`hasKind` 三條。
 
 ### 不變量（2026-09-03 自動回好讀新增；違反即復發）
 

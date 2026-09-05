@@ -90,6 +90,7 @@ function makeSession({ rows = listRows, curY = 3, curX = 1 } = {}) {
     flush() {},
     flushPending() {},
     flushPendingKind() {},
+    hasKind: () => false,
     enqueue: (cmd) => enqueued.push(cmd),
     onSettle: () => null,
   };

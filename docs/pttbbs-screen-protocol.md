@@ -158,6 +158,14 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 反白、最後一列非空 ⇒ `term_buf.setPageState` 每個分支都不命中，而它**沒有 reset 分支** ⇒ 沿用前一幀的
 `pageState`（列表 2）。任何「這個畫面是不是列表／選單」的判斷都不可以只看 `pageState`，要再問 §5.1 的輸入框指紋。
 
+**同一個沿用也涵蓋「整頁被換掉」的畫面，這是實際踩過的坑**：從列表按 `Ctrl-P` 發文，分類選擇畫面
+（`發表文章於【 board 】` ＋ `種類：1.閒聊 2.問題 …`）同樣一個 `setPageState` 分支都不命中、末列又非空
+（連 `pageState = 0` 的退路也不走）⇒ 沿用列表的 2。黑名單標註因此把板規／分類提示的每一列都當成
+「一列文章」去比對，只要 col≥29 撞到使用者的標題關鍵字就整列被換成通知列（2026-09-05 錄製檔
+`ptt-debug-20260905-122522`）。修法不是給 `setPageState` 加分支（沿用是刻意的），而是在消費端加**逐列
+指紋** `comment_parse#isListShapedRow` —— 就是本節說的「要再問指紋」。細節見
+`docs/enhanced-addon.md` 踩坑 A。
+
 ## 6. `\f`（Ctrl+L）確定性交易依據（v5 新增，全部 CONFIRMED）
 
 - **igetch 全域熱鍵**：`Ctrl('L')` → `redrawwin()+refresh()` 後 `continue`（`mbbsd/io.c` igetch switch）——`\f` 永不回傳給呼叫者，等同「插入一幀全幅重繪」。`vkey()`＝`igetch()`（io.c `vkey`），故**所有走 vkey 的輸入點都吃這條**。
@@ -748,3 +756,22 @@ underline** ⇒ reverse 更早就被攤平成 fg/bg 互換），所以擦除條�
 - 純文字模式（rawmode 2）送的是**原始檔頭** `作者: someuser (暱稱) 看板: Test`，不是格式化過的
   `作者  someuser` ⇒ `comment_parse` 的 `作者`／`標題`／`看板` regex 兩種都要吃
   （已改成 `作者[:：]?\s+`）。推文列不受影響（`推 `/`噓 `/`→ ` 與顏色無關）。
+
+## 11.6 Home / End 的原生語意（2026-09-05 全部 CONFIRMED）
+
+列表好讀的 Home/End 直通原生鍵（`docs/easy-reading-list.md`「導覽」）的依據。三個消費點各自對應
+一份 source，改任何一邊前先回來對一次：
+
+| 畫面 | source | `KEY_HOME`（同義 `0`） | `KEY_END`（同義 `$`） |
+|---|---|---|---|
+| 文章列表 | `mbbsd/read.c:893-902` | `new_ln = 0; new_top = 0` | `new_ln = last_line; new_top = p_lines-1` |
+| 看板列表 | `mbbsd/board.c:1830 / 1768` | `num = 0` | `num = brdnum - 1` |
+| psb 通用清單 | `mbbsd/psb.c:58-64` | `return 0` | `return total-1` |
+
+兩個會影響 client 設計的事實：
+
+- **`last_line` 含置底文**（read.c 的 `last_line` 是 entry 總數 - 1，置底列也在裡面）⇒ 原生 End 落在
+  真正的板尾；而跳號 `<很大的數字>` + `⏎` 走 `search_num`（`stuff.c:189-208`）只夾到最大**編號**文章，
+  停在置底列**之前**。要「跳到末頁」就該用原生 End。
+- **游標已經在落點上時 PTT 一個 byte 都不送**（live-tested）。這正是舊 client 繞去跳號的理由，
+  現在由 §6 的 `\f` 解決：交易送「鍵 ＋ Ctrl-L」，igetch 的全域熱鍵保證回一個完整幀。
