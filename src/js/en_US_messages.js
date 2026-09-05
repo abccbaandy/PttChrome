@@ -331,6 +331,9 @@ export const en_US = {
   "options_mergeSameAuthorComments": {
     "message": "Merge consecutive comments by the same author into one paragraph (easy reading only; shows time and floor range)"
   },
+  "options_commentBlockSpacing": {
+    "message": "Add spacing between comment blocks (easy reading only; merged same-author comments stay grouped)"
+  },
   "tooltip_ai": {
     "message": "These features use the browser's built-in on-device AI (Chrome Prompt API). Inference runs entirely on your machine — nothing is sent to any server. Only Chrome 148+ on desktop supports it, and enabling it downloads a multi-GB model the first time."
   },

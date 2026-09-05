@@ -182,6 +182,11 @@ export const DEFAULT_PREFS = {
   // enhanced add-on
   showFloorNumbers: true,
   mergeSameAuthorComments: true, // 好讀：連續同作者推文合併成一段
+  // 推文區塊行距（僅文章好讀累積長頁）：推文之間拉開距離，同作者合併塊內部的
+  // 間距則比較小 ⇒ 內緊外鬆、同一人的連續推文自成一組。**純 CSS**：只在
+  // #mainContainer 上 toggle 一個 class（render/screen.js#_setCommentSpacing），不重建
+  // 任何一列、也不進 annotationsKey。預設開——這是純排版改善，不改文字內容。
+  commentBlockSpacing: true,
   highlightAuthorComments: true,
   enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
   // 裸網域（無 scheme、無路徑，如 indiegametw.com）原位變成可點連結。

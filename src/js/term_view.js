@@ -257,6 +257,9 @@ export function TermView() {
   // 好讀「連續同作者推文合併」：render 層合併（Screen#computeAnnotations +
   // comment_merge.js），僅好讀文章頁生效。Set via App.onPrefChange.
   this.mergeSameAuthorComments = true;
+  // 推文區塊行距（內緊外鬆）：純 CSS，容器 class 由 render/screen.js 掛。
+  // Set via App.onPrefChange.
+  this.commentBlockSpacing = true;
   // 裝置端 AI（Chrome Prompt API）總開關。每個 AI 子功能的生效條件都是
   // `enableAi && <子開關>`，AND 在下面 _renderScreenLines 匯總（單一 choke point）。
   // Set via App.onPrefChange.
@@ -893,6 +896,9 @@ TermView.prototype = {
           titleBlacklist: this.titleBlacklist,
           showFloorNumbers: this.showFloorNumbers,
           mergeSameAuthorComments: this.mergeSameAuthorComments,
+          // 推文區塊行距。**刻意不進 annotationsKey**（js/screen_annotate_cache.js
+          // 的白名單）：它只影響容器 class，不改變任何一列的標註。
+          commentBlockSpacing: this.commentBlockSpacing,
           captionAiEnabled: this.enableAi && this.enableCaptionAi,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,

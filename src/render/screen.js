@@ -107,6 +107,9 @@ export class ScreenController {
     // 由 App 切 pmore rawmode 處理，狀態在 enhance.rawMode，不在這裡。與
     // imagesEnlarged 同生命週期：同篇 page-down 保留、換文章（articleId 變）重置。
     this._lightsOn = false;
+    // 推文區塊行距的容器 class（pref commentBlockSpacing）。每幀由 _render 推導，
+    // 這裡只是欄位種子（見 _setCommentSpacing 的 DOM 同步守衛）。
+    this._commentSpacing = false;
     // 好讀「圖左字右合併」三態：null（關）→ "imageFirst" → "captionFirst" → null。
     // 與 imagesEnlarged 同生命週期——同篇 page-down 保留、換文章／退出再進
     // （articleId 變）才重置，所以不會「換到沒按鈕的文章卻還開著、關不掉」。
@@ -484,6 +487,25 @@ export class ScreenController {
     for (const slot of this._liveSlots) slot.setSizeMode(mode);
   }
 
+  // 推文區塊行距（pref commentBlockSpacing）：同 lightsOn／imagesEnlarged 的形狀 ——
+  // 容器 class 決定樣式，不重建任何一列，也不進 annotationsKey。
+  //
+  // **判準是 stableRows 而不是 easyReading && pageState===3**：functionMode 原生鏡像
+  // 與「防黑守門」兩條 fallback 也帶著 easyReading:true / pageState:3，畫的卻是活的
+  // 24 列 buffer（見 js/screen_annotations.js 的 annotationsAreRowIndependent 註解）。
+  // 那裡多出任何高度就打破「原生鏡像期間畫面必須不可捲」的不變量 ⇒ 復發「推文時
+  // 游標戳出反白輸入匡」（docs/easy-reading.md）。stableRows 只在 term_view 渲染
+  // buf.pageLines 的兩個呼叫點為真，正好就是「文章好讀累積長頁」。
+  // 守護：tests/unit/comment_spacing_class.test.js
+  _setCommentSpacing(next) {
+    // 早退守衛同時看 DOM（同 _setImagesEnlarged）：欄位對、class 沒跟上時不可早退。
+    const domInSync =
+      this.container.classList.contains("commentSpacing") === next;
+    if (this._commentSpacing === next && domInSync) return;
+    this._commentSpacing = next;
+    this.container.classList.toggle("commentSpacing", next);
+  }
+
   // 版面**寬度**改變的唯一入口（字級／視窗 resize 走 term_view.setTermFontSize，
   // 圖左字右合併走 _toggleMergeCaption）。佔位盒記的 pinned 高度是在舊寬度下量到
   // 的，換寬度就過期；aspect（原尺寸）與寬度無關，一律保留讓替身盒接手。
@@ -520,6 +542,15 @@ export class ScreenController {
       onHyperLinkMouseOut: this.onHyperLinkMouseOut,
     });
     const stableRows = !!(enhance && enhance.stableRows);
+    this._setCommentSpacing(
+      !!(
+        enhance &&
+        enhance.commentBlockSpacing &&
+        enhance.easyReading &&
+        enhance.pageState === PAGE_READING &&
+        stableRows
+      ),
+    );
     const prevCache = this._cache;
     const reusable =
       stableRows &&

@@ -302,4 +302,75 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     expect(rows.filter((r) => r.pusher === 'rz2x').length).toBe(7);
     expect(rows.some((r) => r.merged)).toBe(false);
   });
+
+  // 推文區塊行距（pref commentBlockSpacing，預設開）。量的是**真幾何**：
+  //   innerGap ＝ 合併塊內相鄰兩則之間的空隙（只挑中間那個預覽盒是空的那一對，
+  //               否則量到的是圖片高度）；
+  //   outerGap ＝ 合併塊與下一個推文塊之間的空隙（兩個兄弟節點之間，天生不含圖）。
+  // 不變量：開啟時 outerGap > innerGap > 0（內緊外鬆），關閉時兩者都收斂回 0。
+  const measureGaps = (page) =>
+    page.evaluate(() => {
+      const BBSLINE = '[data-type="bbsline"]';
+      const BLOCKISH =
+        '#mainContainer > span[type="bbsrow"][data-pusher], #mainContainer > .mergedCommentBlock';
+      const block = document.querySelector('#mainContainer > .mergedCommentBlock');
+      if (!block) return null;
+      const inner = block.querySelector('span[type="bbsrow"] > div');
+      const kids = Array.from(inner.children);
+
+      // 塊內：第一組「中間預覽盒為空」的相鄰兩則。
+      let innerGap = null;
+      for (let i = 0; i + 2 < kids.length; ++i) {
+        const a = kids[i];
+        const mid = kids[i + 1];
+        const b = kids[i + 2];
+        if (!a.matches(BBSLINE) || !b.matches(BBSLINE)) continue;
+        if (mid.getBoundingClientRect().height > 0.5) continue;
+        innerGap = b.getBoundingClientRect().top - a.getBoundingClientRect().bottom;
+        break;
+      }
+
+      // 塊間：合併塊與後面第一個推文塊（兄弟節點，中間不可能夾圖）。
+      let sib = block.nextElementSibling;
+      while (sib && !sib.matches(BLOCKISH)) sib = sib.nextElementSibling;
+      const outerGap = sib
+        ? sib.getBoundingClientRect().top - block.getBoundingClientRect().bottom
+        : null;
+
+      return {
+        innerGap,
+        outerGap,
+        hasClass: document
+          .getElementById('mainContainer')
+          .classList.contains('commentSpacing'),
+      };
+    });
+
+  test('推文區塊行距：預設內緊外鬆，關掉即收斂回逐列緊貼', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    // 不顯式傳 commentBlockSpacing —— 驗「預設即開」。
+    await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: false });
+    await replayCassette(page, cassette, { easyReading: true });
+    await waitPreviewsSettled(page);
+
+    const on = await measureGaps(page);
+    expect(on).not.toBeNull();
+    expect(on.hasClass).toBe(true);
+    expect(on.innerGap).not.toBeNull();
+    expect(on.outerGap).not.toBeNull();
+    // 內緊外鬆：兩者都要大於 0，且塊間明顯大於塊內。
+    expect(on.innerGap).toBeGreaterThan(0.5);
+    expect(on.outerGap).toBeGreaterThan(on.innerGap);
+
+    await ptt.applyPrefs(page, { commentBlockSpacing: false }); // onPrefChange → redraw
+    await waitPreviewsSettled(page);
+
+    const off = await measureGaps(page);
+    expect(off).not.toBeNull();
+    expect(off.hasClass).toBe(false);
+    // 逐列緊貼：兩個空隙都回到 0（留 0.5px 給次像素捨入）。
+    expect(off.innerGap).toBeLessThan(0.5);
+    expect(off.outerGap).toBeLessThan(0.5);
+  });
 });

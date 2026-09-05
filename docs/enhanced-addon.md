@@ -157,6 +157,26 @@
   `mergeSameAuthorComments:false` 鎖舊行為。**pusher 解析勿用 textContent 正則**（樓號徽章數字會混進
   文字），一律讀 `data-pusher`。
 
+### 推文區塊行距（`commentBlockSpacing`，預設開）
+
+- 做什麼：文章好讀累積長頁裡，推文塊之間拉開 `margin-top: 0.55em`；同作者合併塊**內部**改用
+  `line-height: 1.3`（＝每則多 0.3em）⇒ 內緊外鬆，同一人的連續推文自成一組。
+- 純 CSS：`src/css/main.css` 的 `#mainContainer.commentSpacing` 兩條規則 ＋
+  `render/screen.js#_setCommentSpacing`（同 `_setLightsOn`／`_setImagesEnlarged` 的形狀，
+  容器 class 決定樣式、**不重建任何一列**）。刻意**不進** `annotationsKey`。
+- **掛 class 的判準是 `enhance.stableRows`，不是 `easyReading && pageState===3`**：functionMode
+  原生鏡像與「防黑守門」兩條 fallback 也帶 `easyReading:true`／`pageState:3`，畫的卻是活的 24 列
+  buffer；那裡多出任何高度就打破「原生鏡像期間畫面必須不可捲」的不變量 ⇒ 復發「推文時游標戳出
+  反白輸入匡」（`docs/easy-reading.md`）。
+- **禁止**在這組規則用 `letter-spacing`／`padding`／`font-weight`（等寬格線位移 ⇒ `.wpadding` 寬度
+  契約、`colFromClientX` 的推文列點擊欄位判定、`.floorBadge` 零寬盒全壞）、`margin-bottom`
+  （會推離 `#easyReadingLastRow`）、以及改 `.main` 的 `line-height`（那是 `setTermFontSize` 的
+  inline style）。
+- 測試：`tests/unit/comment_spacing_css.test.js`（CSS 契約＋上述禁令）、
+  `tests/unit/comment_spacing_class.test.js`（容器 class 的六種情形，含 **stableRows 缺席 ⇒ 不掛**
+  的回歸鎖）、`comment_merge.offline.spec.js`「推文區塊行距」（真幾何：
+  `outerGap > innerGap > 0`，關掉即兩者收斂回 0）。
+
 ## 自動修復斷掉的 URL（`src/js/url_fix.js`）
 作者把 URL 弄壞（插空白／漏 scheme／副檔名被空白斷開）→ 既有 `TermBuf.uriRegEx`（要求 scheme、不容空白）
 **完全偵測不到** → 不可點、不自動開圖。本功能**不改寫原文**，偵測後在原文那一列**下方加一行**修復版可點連結；
@@ -448,6 +468,7 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用�
 （`showFloorNumbers`/`blacklist`→`view.*`+`redraw(true)`）。i18n 鍵在 zh_TW/en_US `options_*`。
 
 **「增強功能」分頁**：`showFloorNumbers`(true)、`mergeSameAuthorComments`(true)、
+`commentBlockSpacing`(true)、
 `highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、
 `enableBareDomainLink`(true)、`blacklist`/`titleBlacklist`("" 換行)。
 

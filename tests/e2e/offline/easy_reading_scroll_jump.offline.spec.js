@@ -56,17 +56,33 @@ const MOUNT_MARGIN_PX = 1500;
 const OUT_OF_MOUNT_RANGE_SLACK_PX = 200;
 
 // 一路往下走完整篇（每步等整頁終局），讓每張圖都真的載入過一次。
+//
+// **scrollHeight 必須每一步重讀**：圖片一張張載進來，整篇會邊走邊長高（實測一篇
+// 就長了 2000px 以上）。舊版只在開頭量一次，走到那個舊高度就收工、再直接跳到底
+// ⇒ 中間有一段永遠沒被走過，那一段的圖從沒被量過高度（module 級 memo 的 aspect／
+// pinned 都是空的）⇒ 之後往回捲時它們才第一次掛載並各自撐開幾百 px，被下游的
+// 「一次 PgUp 不得暴衝」誤判成捲動補償壞掉。走過的區間會隨版面高度漂移，所以症狀
+// 是「改了任何會影響列高的 CSS 就莫名紅一條」——那是本 helper 的覆蓋率破洞，
+// 不是被測 code。
 async function walkDown(page) {
-  const geom = await page.evaluate(() => {
-    const s = document.querySelector('.main');
-    return { scrollHeight: s.scrollHeight, clientHeight: s.clientHeight };
-  });
-  const step = Math.max(200, geom.clientHeight * 0.8);
-  for (let y = 0; y <= geom.scrollHeight; y += step) {
+  const readGeom = () =>
+    page.evaluate(() => {
+      const s = document.querySelector('.main');
+      return { scrollHeight: s.scrollHeight, clientHeight: s.clientHeight };
+    });
+  const first = await readGeom();
+  const step = Math.max(200, first.clientHeight * 0.8);
+  // 上限只是防呆（載入異常導致 scrollHeight 無限長時不要跑不完）。
+  const MAX_STEPS = 500;
+  let y = 0;
+  for (let i = 0; i < MAX_STEPS; ++i) {
     await page.evaluate((top) => {
       document.querySelector('.main').scrollTop = top;
     }, y);
     await waitPreviewsSettled(page);
+    const geom = await readGeom();
+    if (y >= geom.scrollHeight) break;
+    y += step;
   }
   await page.evaluate(() => {
     const s = document.querySelector('.main');

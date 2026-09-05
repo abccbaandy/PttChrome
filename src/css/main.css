@@ -372,6 +372,38 @@ a:link,a:visited,a:active,a:hover {
    一致、且是一般文字可被 ^C 選取複製。舊版的 .mergedCommentTime（淡色縮小＋
    user-select:none）已於 2026-08 移除——使用者要求「比照原生、要能複製」。 */
 
+/* 推文區塊行距（pref commentBlockSpacing，預設開）。容器 class 由
+   render/screen.js#_setCommentSpacing 掛上，**只在「文章好讀累積長頁」才掛**
+   （判準是 enhance.stableRows，不是 easyReading && pageState===3 —— functionMode
+   原生鏡像與防黑守門那兩條 fallback 也帶著 easyReading:true / pageState:3，畫的卻是
+   活的 24 列 buffer；那裡多出任何高度就打破「原生鏡像期間畫面必須不可捲」的不變量
+   ⇒ 復發「推文時游標戳出反白輸入匡」，見 docs/easy-reading.md）。
+
+   內緊外鬆＝同作者合併塊自成一組：
+   - 塊**間**用 margin-top（推文列與合併塊都是 #mainContainer 的直系子層，display:block）。
+   - 塊**內**只能用 line-height —— 合併塊的每一則是同一個 bbsrow 裡的 **inline**
+     bbsline span（見 render/link_segment.js 的多行分支），inline 元素吃不到
+     margin-top 與垂直 padding。
+
+   **禁止事項**（動這一段之前先讀）：
+   1. 不得出現 letter-spacing / padding / font-weight —— 等寬格線一位移，三個消費端
+      靜默壞掉：term_view.fixedResize（直接掃 DOM 改 .wpadding 的 width）、
+      mouse_geometry.colFromClientX（推文列點擊的防誤觸欄位判定）、.floorBadge 的
+      零寬盒契約。同 .lightsOn / .fnKey 的既有禁令。
+   2. 不得用 margin-bottom —— #easyReadingLastRow 以 margin-top:-1em 疊在
+      #mainContainer 的 paddingBottom:1em 上，尾端多出的 margin 會把 footer overlay 推離。
+   3. 不得改 .main 或全域的 line-height —— 那是 term_view.setTermFontSize 的 inline
+      style（= chh px）在管，原生 24 列的整套座標建立在 line-height === chh 上。
+      這裡只覆寫合併塊自己的 bbsrow。
+   守護：tests/unit/comment_spacing_css.test.js、tests/unit/comment_spacing_class.test.js */
+#mainContainer.commentSpacing > span[type="bbsrow"][data-pusher],
+#mainContainer.commentSpacing > .mergedCommentBlock {
+  margin-top: 0.55em;
+}
+#mainContainer.commentSpacing > .mergedCommentBlock span[type="bbsrow"] {
+  line-height: 1.3;
+}
+
 /* 自動開影片：尺寸上限比照 .easyReadingImg（19em/39em），**必須有 max-height**——
    直式影片（如 480×854）在舊的固定 width:640px 下高度會撐到 1138px，遠超過視窗，
    而影片不像圖片能靠捲動一段段看，播放控制列被推到畫面外就沒法操作。

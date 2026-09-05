@@ -331,6 +331,9 @@
   "options_mergeSameAuthorComments": {
     "message": "合併連續同作者推文成一段 (僅好讀模式，顯示時間與樓層範圍)"
   },
+  "options_commentBlockSpacing": {
+    "message": "推文區塊加大行距 (僅好讀模式，同作者合併的推文自成一組)"
+  },
   "tooltip_ai": {
     "message": "以下功能使用瀏覽器內建的裝置端 AI（Chrome Prompt API）。推論完全在你的電腦上進行，內容不會傳到任何伺服器。目前僅 Chrome 148+ 桌面版支援，且模型首次啟用需下載數 GB。"
   },
