@@ -170,6 +170,56 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 - `\f` 不取代 settle：全幅重繪仍拆包（OBUFSIZE 3072），settle 判「何時看」、`\f` 保證「必有得看」。
 - **重要限制（M1 實測，cchat-list-nav `\f` 版卷）：`redrawwin` 重繪的是 server 虛擬螢幕「現狀」，不會推進畫面狀態**——跳號完成後 server 虛擬螢幕的底列本來就空（§4 ✚：feeter 要到下一個 PARTUPDATE 才重畫），`跳號+\f` 的全幅重繪底列**仍空**＝classify 仍 transient、永非 clean-list。⇒ jump 落點判定必須維持 park 指紋（§4/§5），「jump 尾附 `\f` 換 clean-list expect」不成立。`\f` 的真實價值＝**零回應情境的確定性化**：timeout 探針（強制產生一幀可判定畫面）、相對命令 miss（`鍵+\f` 保證有回應）。
 
+## 6.1 「等一個按鍵」的三種畫面：指紋與收尾鍵（2026-09 CONFIRMED）
+
+§6 只在 `\f` 的脈絡下提過 pressanykey。這裡把「server 停在等一個按鍵」的三種畫面
+與各自的收尾鍵列全，client 端消費者是 `src/js/screen_dismiss.js`（滑鼠點空白處關框）
+與 `src/js/long_push_session.js`（長推文的取消收尾），**兩者共用同一組常數**。
+
+| 類別 | 畫面指紋（一律在**最後一列**，`vshowmsg` 固定 `move(b_lines, 0)`） | 收尾鍵 | 出處 |
+|---|---|---|---|
+| **pressanykey** | 整列 `▄`（`VMSG_PAUSE_PAD`）填滿、正中央 ` 請按任意鍵繼續 `（`VMSG_PAUSE`），配色 `VCLR_PAUSE`＝`ANSI_COLOR(1;37;44)` | **任一真按鍵** | `include/proto.h:657` `#define pressanykey() vmsg(NULL)`；`mbbsd/vtuikit.c:328` `vshowmsg(NULL)`；`include/vtuikit.h:39-40` |
+| **vmsg 橫幅** | ` ◆ <訊息>`（`VMSG_MSG_PREFIX`）＋右靠 ` [按任意鍵繼續]`（`VMSG_MSG_FLOAT`） | **任一真按鍵** | `mbbsd/vtuikit.c:439-455`；`include/vtuikit.h:41-42` |
+| **vgetstring 輸入欄** | 游標所在格白底黑字（`VCLR_INPUT_FIELD`＝`ESC[0;7m`），且該列不是從 col 0 就反白（見 §5.1） | **`Ctrl-C`** | `mbbsd/vtuikit.c:1346` `case Ctrl('C'): rt.icurr=rt.iend=0; buf[0]=0; abort=1;` ⇒ `getdata` 回 0 ⇒ 呼叫端一律當取消 |
+
+- 前兩者的等待迴圈都是 `do { i = vkey(); } while (i == 0);`（`vtuikit.c:445-448`）
+  ⇒ **任何真的按鍵**都收得掉。**但 `\f` 不算按鍵**（§6 那一條），所以一律用**空白鍵**。
+- `system_key_hook`（`io.c:228-247`）**只**吃 `Ctrl-L`（與 DEBUG 版的 `Ctrl-Q`），
+  `Ctrl-C` 原樣通過。
+- `vans` 也是輸入欄：`vtuikit.c:405-413` `vans()` → `vgets()` → `vgetstring()`
+  ⇒ ` 確定[y/N]:`、`要使用小天使匿名推文嗎？ [Y/n]:` 這類提示**游標都在反白欄裡**，
+  適用第三列。它們是「整行輸入」（要 Enter 才送出），單送一個 `Y` 只會進欄位。
+
+### `Ctrl-C` 不是「安全鍵」——逐條查證
+
+| 畫面 | 送 `Ctrl-C` 的結果 | 出處 |
+|---|---|---|
+| `vgetstring` 輸入欄 | 清空 ＋ abort ＝ 取消（**要的行為**） | `vtuikit.c:1346` |
+| `pressanykey` / `vmsg` | 當成一個按鍵收掉（可以，但慣例用空白鍵） | `vtuikit.c:445` |
+| `b_config` 的「若要進行修改請按 Ctrl-P，其它鍵直接離開。」 | `!= Ctrl('P')` ⇒ `return FULLUPDATE`＝離開 | `board.c:603-605` |
+| `menu.c:232` 的 `★快速切換:` footer | `k < ' '` ⇒ `return 0`＝取消 | `menu.c:234-236` |
+| 推文型別選單 `您覺得這篇文章 …[1]?` | `type=vkey()`，非數字 ⇒ `RECTYPE_DEFAULT`，**不是取消，會前進到內容輸入欄** | `bbs.c:3000-3004` |
+| **文章列表（無 prompt）** | `read.c:950` `case Ctrl('C'):` **清空標記清單** `ClearTagList()` ⇒ **有副作用** | `mbbsd/read.c:950-955` |
+
+⇒ 最後一列是承重點：**`Ctrl-C` 只能在「確定輸入欄開著」時送**，不可以當成「反正點空白
+就送一個安全鍵」。推文型別選單那一條同時說明了「一次送不一定關得掉」——收尾要用
+「重複送、每次重新分類畫面」的模型（`long_push_session._enqueueAbort`）。
+
+### 進版畫面的完整序列（`(b)進板畫面`／進板）
+
+```
+Read()  bbs.c:4640-4657
+  enter_board()
+  more(<板>/notes, NA)                → pmore 畫進版畫面（與文章同形）
+  if (mr != READ_NEXT) pressanykey();  ← bbs.c:4654 ★「按任意鍵繼續」那張畫面
+  i_read(...)                          → 文章列表
+```
+
+`(b)進板畫面` 走 `read_comms[]` 的 `{ 0, b_notes }`（`bbs.c:4601`），`b_notes` 是同一段
+（`bbs.c:4061-4081`，`mr==-1` 時另印「本看板尚無進板畫面。」）。
+`[i]看板資訊`（`b_config`，`board.c:326`）對非板主也是 `pressanykey(); return FULLUPDATE;`
+（`board.c:598`）；`[h]說明` → `b_help`（`bbs.c:4223`）→ `show_help_table` → `PRESSANYKEY()`。
+
 ## 7. `v` 已讀設定交易（`b_mark_read_unread`，CONFIRMED）
 
 `mbbsd/bbs.c:4223`（鍵表 flag 1）：

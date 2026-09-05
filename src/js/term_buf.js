@@ -13,6 +13,7 @@ import {
   resolveMouseRegion,
   cursorCss
 } from './mouse_regions';
+import { resolveDismiss } from './screen_dismiss';
 
 // Quiet period (ms) after the last redraw window before pageState is promoted to
 // `settledPageState`. Must exceed the 30ms notify debounce so a transient
@@ -1277,6 +1278,19 @@ TermBuf.prototype = {
     return isReversedCell(line[this.cur_x]) && !isReversedCell(line[0]);
   },
 
+  // 這一幀有沒有一個「滑鼠關得掉的框」（pressanykey／vmsg 橫幅／vgetstring 輸入
+  // 欄）→ { kind, bytes }，沒有回 null。判斷本身在純函式
+  // screen_dismiss.resolveDismiss（pttbbs 出處逐條在那裡），這裡只餵事實。
+  //
+  // **每次呼叫都現算**，不快取：框是「畫面剛變出來」的東西，任何跨幀的暫存都會
+  // 在使用者不動滑鼠直接點的那一下讀到過期值。
+  dismissTarget: function() {
+    return resolveDismiss({
+      lastRowText: this.getRowText(this.rows - 1, 0, this.cols),
+      cursorOnInputField: this.isCursorOnInputField()
+    });
+  },
+
   // 滑鼠移到 (tcol, trow)：算出這一格的語意、更新游標底色列、換滑鼠指標、開關
   // 文章左側的退出提示帶。決策本身在純函式 mouse_regions.resolveMouseRegion
   // （逐格的行為表與依據見那裡與 docs/mouse.md），這裡只負責套用。
@@ -1306,7 +1320,10 @@ TermBuf.prototype = {
         this.useMouseBrowsing && this.view && this.view.mouseMisclickGuard
       ),
       // PTT 開著輸入框 ⇒ 這一幀什麼都不能點也不上色（見 resolveMouseRegion）。
-      inputPrompt: this.isCursorOnInputField()
+      inputPrompt: this.isCursorOnInputField(),
+      // 框開著（pressanykey／vmsg／輸入欄）⇒ 整片是「點空白處關框」的目標，
+      // 只換指標。**送鍵不在這條路上**（見 App.mouse_click 的說明）。
+      dismiss: this.dismissTarget()
     });
 
     this.mouseAction = region.action;

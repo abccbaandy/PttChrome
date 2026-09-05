@@ -25,11 +25,11 @@
 //                 1a/1b/1c 是 if/else if/else **互斥**：1b/1c 沒有型別選單，
 //                 這時送 "1" 會直接變成推文內容。第 2 段起 90 秒內一定走 1c。
 //   2  警告橫幅   匿名板／特殊列表模式（bbs.c:3016-3038），不需輸入。
-//   2.5 小天使    "要使用小天使匿名推文嗎？ [Y/n]: "（bbs.c:3055，vans → 要 Enter，
+//   2.5 小天使    "要使用小天使匿名推文嗎？ [Y/n]: "（bbs.c:3060，vans → 要 Enter，
 //                 **空 Enter ＝ 匿名 YES**，所以要明確送 n）。
 //   3  內容輸入   "推 <id>:" ＋ maxlength 格反白欄（bbs.c:3079-3086）。
 //                 送 Big5 內容 ＋ Enter；空字串 ＝ 取消整則。
-//   4  確認       "… 確定[y/N]:"（bbs.c:3094）。sizeof(ans)==2 ⇒ 只吃一個字元，
+//   4  確認       "… 確定[y/N]:"（bbs.c:3098）。sizeof(ans)==2 ⇒ 只吃一個字元，
 //                 送 y ＋ Enter。（原始碼的 :w / zz 分支打不進去，是死碼。）
 //   5  寫檔後 return FULLUPDATE（bbs.c:2467 的 caller 也是）⇒ 回文章列表。
 //      **但 term.ptt.cc 有私有 commit**（docs/pttbbs-screen-protocol.md §12），
@@ -62,7 +62,7 @@ const FATAL_WITH_TIME_RE = [/您被設退文/, /系統禁止短時間內大量�
 // 首字 isalpha、其餘 isalnum、長度 2..IDLEN(12)）。
 const PUSH_PROMPT_RE = /^(推|噓|→) ([A-Za-z][0-9A-Za-z]{1,11}) *:/;
 
-// 確認列（bbs.c:3094，注意 "確定" 前面那個空白是格式的一部分）。
+// 確認列（bbs.c:3098，注意 "確定" 前面那個空白是格式的一部分）。
 const CONFIRM_TEXT = ' 確定[y/N]:';
 
 // 已完成的推文列（判 IP 記錄板用）。時間戳前若有一個獨立的 IPv4 token，

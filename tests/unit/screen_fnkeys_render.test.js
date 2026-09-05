@@ -110,6 +110,79 @@ describe("點擊行為", () => {
   });
 });
 
+// 2026-09：複合鍵逐鍵可點。`(v/V)` 拆成 `v` 與 `V` 兩顆**相鄰**按鈕，
+// 括號與 `/` 維持純文字（D3）。渲染端零改動 —— LinkSegmentBuilder 的
+// 「先 close 再 open」舞步本來就支援相鄰段，這一支是那件事的回歸鎖。
+describe("複合鍵：同一組括號裡的相鄰多顆按鈕", () => {
+  // "ab (v/V)cd"：( 在 col 3、v 在 4、/ 在 5、V 在 6、) 在 7
+  const COMPOUND = "ab (v/V)cd";
+  const compound = (onClick) =>
+    mountRow({
+      chars: chars(COMPOUND),
+      fnKeys: [
+        { startCol: 4, endCol: 5, label: "v", onClick },
+        { startCol: 6, endCol: 7, label: "V", onClick },
+      ],
+    });
+
+  test("兩顆相鄰按鈕各自成節點，括號與 `/` **不在** <a> 裡", () => {
+    const { container } = compound(() => {});
+    const anchors = [...container.querySelectorAll("a.fnKey")];
+    expect(anchors.map((a) => a.textContent)).toEqual(["v", "V"]);
+    expect(anchors.map((a) => a.getAttribute("data-fnkey"))).toEqual(["v", "V"]);
+    // D3 的回歸鎖：任何一顆按鈕的文字都不可以含括號或分隔符。
+    anchors.forEach((a) => expect(/[()[\]/]/.test(a.textContent)).toBe(false));
+  });
+
+  test("整列文字一字不多不少（countCol 的 col 反查契約）", () => {
+    const plain = mountRow({ chars: chars(COMPOUND) });
+    expect(compound(() => {}).container.textContent).toBe(
+      plain.container.textContent,
+    );
+    expect(compound(() => {}).container.textContent).toBe(COMPOUND);
+  });
+
+  test("<a> 內沒有多餘文字節點（只有 ColorSegment 的 span）", () => {
+    const { container } = compound(() => {});
+    container.querySelectorAll("a.fnKey").forEach((a) => {
+      [...a.childNodes].forEach((n) =>
+        expect(n.nodeType).toBe(window.Node.ELEMENT_NODE),
+      );
+    });
+  });
+
+  test("v 與 V 各自送自己的鍵（語意相反，絕不可共用閉包）", () => {
+    const calls = [];
+    mountRow({
+      chars: chars(COMPOUND),
+      fnKeys: [
+        { startCol: 4, endCol: 5, label: "v", onClick: () => calls.push("v") },
+        { startCol: 6, endCol: 7, label: "V", onClick: () => calls.push("V") },
+      ],
+    });
+    const anchors = document.querySelectorAll("a.fnKey");
+    anchors[1].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    anchors[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(calls).toEqual(["V", "v"]);
+  });
+
+  test("完全連續的五顆（(=[]<>)：atom 之間一格空隙都沒有）", () => {
+    // "(=[]<>)" 從 col 0 起 ⇒ atom 在 1..6，逐格相鄰。
+    const { container } = mountRow({
+      chars: chars("(=[]<>)x"),
+      fnKeys: [1, 2, 3, 4, 5].map((c) => ({
+        startCol: c,
+        endCol: c + 1,
+        label: "=[]<>"[c - 1],
+        onClick: () => {},
+      })),
+    });
+    const anchors = [...container.querySelectorAll("a.fnKey")];
+    expect(anchors.map((a) => a.textContent)).toEqual(["=", "[", "]", "<", ">"]);
+    expect(container.textContent).toBe("(=[]<>)x");
+  });
+});
+
 describe("與其他裝飾共存", () => {
   test("部分底色 wrapper（防誤觸模式）之下仍然產生按鈕", () => {
     const { container } = mount([{ ...FN_D, onClick: () => {} }], {

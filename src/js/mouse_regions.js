@@ -76,6 +76,9 @@ const NONE = Object.freeze({
 //   lineEmpty  該列是不是空列（呼叫端算好 buf.isLineEmpty(row) 傳進來，
 //              純函式不碰 buf）
 //   misclickGuard  防誤觸模式（pref mouseMisclickGuard，已由呼叫端與總開關 and 過）
+//   inputPrompt    PTT 開著 vgetstring 輸入框（buf.isCursorOnInputField()）
+//   dismiss        這一幀有沒有滑鼠關得掉的框（screen_dismiss.resolveDismiss 的
+//                  結果，null ＝沒有）。**優先於 inputPrompt**，見下方。
 //
 // 輸出：
 //   action           ACT_*
@@ -90,6 +93,24 @@ const NONE = Object.freeze({
 // 得知邊界在哪。
 export function resolveMouseRegion(input) {
   const o = input || {};
+  // 框開著（pressanykey／vmsg 橫幅／vgetstring 輸入欄，呼叫端用
+  // screen_dismiss.resolveDismiss 判）⇒ 整個畫面都是「點空白處關框」的目標，
+  // **只換指標、不上底色**：框在時下方整片是殘影，上底色會讓人以為那裡可以點。
+  // action 刻意維持 ACT_NONE —— 關框**不走 buf.mouseAction**（term_buf.notify 的
+  // 每個 changed 幀都 clearHighlight() 把它清成 none，而框正是「畫面剛變出來」
+  // 的東西 ⇒ 使用者不動滑鼠直接點時必定讀到 none）。送鍵那一半在
+  // App.mouse_click 於點擊當下現算，見 docs/mouse.md「點空白處關框」。
+  //
+  // **必須排在 inputPrompt 早退之前**：輸入欄那一種框正好被它擋掉。
+  if (o.dismiss) {
+    return {
+      action: ACT_NONE,
+      row: -1,
+      cursor: CUR_POINTER,
+      highlightRow: -1,
+      highlightColStart: 0
+    };
+  }
   // PTT 正開著輸入框（vgetstring 的反白輸入欄，呼叫端用 term_buf.isCursorOnInputField
   // 偵測）⇒ 這一幀什麼都不做。prompt 只重畫最上面一兩列，下方的列表／選單整片殘留
   // 在畫面上，看起來還是可以點 —— 但那一點會送 Enter 給輸入框（等於替使用者把搜尋

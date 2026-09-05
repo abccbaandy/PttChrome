@@ -25,6 +25,7 @@ import {
   resolveMouseGates
 } from './mouse_regions';
 import { colFromClientX } from './mouse_geometry';
+import { dismissClickAllowed } from './screen_dismiss';
 import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
 import { serializedOpHint } from './serialized_op_gate';
 import {
@@ -1462,6 +1463,35 @@ App.prototype.mouse_click = function(e) {
         if (this.clientToPos(e.clientX, e.clientY).col >= pusherColStart) {
           this.view.togglePusherHighlight(pusherEl.getAttribute('data-pusher'));
           e.preventDefault();
+          return;
+        }
+      }
+      // 點空白處關框。PTT 停在「等一個按鍵」的畫面（進版畫面／說明畫面收尾的
+      // pressanykey、vmsg 橫幅、vgetstring 輸入欄）時，滑鼠原本沒有任何出口 ——
+      // resolveMouseRegion 對 pageState 5 走 default、對 inputPrompt 整幀早退。
+      //
+      // 位置：**在 closest('a') / 內嵌預覽 / 有選取 / [data-pusher] 之後**（那些
+      // 都已在上面 return）⇒ 功能鍵按鈕、連結、預覽圖、選字一律優先；
+      // **在 buffer/frozen 分支之前**只是順序上的方便，那條分支由下面的
+      // listRenderMode 守門明確排除。
+      //
+      // 送鍵**刻意不走 buf.mouseAction**：term_buf.notify 的每個 changed 幀都
+      // clearHighlight() 把它清成 none，而框正是「畫面剛變出來」的東西 ⇒ 使用者
+      // 不動滑鼠直接點下去時必定讀到 none，按鈕會像壞掉。這裡在點擊當下現算。
+      //
+      // listRenderMode 守門：列表好讀的 buffer/frozen 是 v5 封閉互動，直送 byte
+      // 會打亂 CommandQueue。而所有會開框的鍵在列表好讀底下都走
+      // _beginPassthroughBytes → _enterFunctionMode() → 原生鏡像，所以框出現時
+      // listRenderMode 已經是 'native'。
+      if (this.buf.listRenderMode === 'native' && this.mouseGates().leftClick) {
+        var dismiss = this.buf.dismissTarget();
+        if (dismiss) {
+          // 框開著時整個畫面都是我們的 ⇒ 就算點在游標列（不送鍵）也要
+          // preventDefault，不讓瀏覽器預設行為對這張畫面動作。
+          e.preventDefault();
+          var dpos = this.clientToPos(e.clientX, e.clientY);
+          if (dismissClickAllowed({ clickRow: dpos.row, cursorRow: this.buf.cur_y }))
+            this.view._send(dismiss.bytes);
           return;
         }
       }

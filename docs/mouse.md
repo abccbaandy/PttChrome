@@ -69,6 +69,7 @@
 | 3（READING） | `col < 7` | `exitArticle` | `back`（PNG） | 不上色 |
 | 3 | 其餘 | `none` | `auto` | 不上色 |
 | 0 / 5 / 6 | — | `none` | `auto` | 不上色 |
+| **任何 pageState** | `dismiss`（框開著：pressanykey／vmsg 橫幅／vgetstring 輸入欄） | `none`（送鍵不走這條，見下） | `pointer` | 不上色 |
 | **任何 pageState** | `inputPrompt`（PTT 開著輸入框） | `none` | `auto` | 不上色 |
 
 **`inputPrompt` ＝ `term_buf.isCursorOnInputField()`**（游標所在格是**白底黑字**，且該列不是從 col 0 就反白的狀態列）：PTT 的輸入框
@@ -162,6 +163,7 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 | 左鍵動作 | `useMouseBrowsing && mouseLeftClick` |
 | 左側提示帶 | `useMouseBrowsing && mouseLeftClick && region.cursor === CUR_BACK`（＝ pageState 1/2/3/4 的左 7 欄；**用 cursor 判、不逐一列舉 action**，日後新增退出動作不會漏列舉） |
 | 功能鍵按鈕 | `useMouseBrowsing && mouseFunctionKeys`（`term_view._renderScreenLines` 與 `_mirrorStatusRowToFooter` 兩處各 gate 一次） |
+| 點空白處關框 | `useMouseBrowsing && mouseLeftClick`（`resolveMouseGates().leftClick`，**沿用左鍵那顆 pref，沒有新 key**）＋ `buf.listRenderMode === 'native'` |
 | 防誤觸（可點區＝底色區的起始欄） | `useMouseBrowsing && mouseMisclickGuard` —— **跟著總開關走**，總開關關掉時左鍵／指標／提示帶全滅，沒有誤觸要防；設定頁那顆 checkbox 因此能與其他子項一樣 `disabled` |
 | 中鍵 | `useMouseBrowsing && mouseMiddleClick !== 0` |
 | 滾輪 | `useMouseBrowsing && mouseWheel !== 0` |
@@ -490,11 +492,12 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 5. **`closest(PREVIEW_CLICK_SELECTOR)`** —— 內嵌預覽
 6. `getSelection().isCollapsed`
 7. `closest('[data-pusher]')` —— 推文者高亮（防誤觸開啟時還要 `col >= data-pusher-col`；**欄位不合不 return**，讓下面的左側退出帶接手）
-8. `listRenderMode` buffer/frozen 分支
-9. `useMouseBrowsing` gate
-10. `mouseLeftClick` gate
-11. `checkClass` / `menuitem` / `skipMouseClick`
-12. `onMouse_click(e)`
+8. **點空白處關框**（`listRenderMode === 'native'` ＋ `mouseGates().leftClick` ＋ `buf.dismissTarget()` 非 null）—— 見下方「點空白處關框」
+9. `listRenderMode` buffer/frozen 分支
+10. `useMouseBrowsing` gate
+11. `mouseLeftClick` gate
+12. `checkClass` / `menuitem` / `skipMouseClick`
+13. `onMouse_click(e)`
 
 **功能鍵用 `<a>` 是刻意的**：第 4 條的早退讓它自動贏過所有滑鼠瀏覽分支
 （含左 7 欄的退出帶）⇒ 加這個功能時 `App.mouse_click` 一行都不用改。守護在
@@ -530,9 +533,43 @@ DBCS 雙色字），只找一層在那種字上會漏判。同一個 bug 在
 ` 文章選讀  (y)回應(X)推文(^X)轉錄 …` 變成可點的 `<a class="fnKey">`，點一下＝送出
 那個按鍵。
 
-**只認單一按鍵。** `(=[]<>)`（同標題前後篇）、`(/?a)`（搜尋）、`(v/V)`（已讀／未讀）、
-`(R/y)`、`[↑↓]` 這種多鍵組一律維持純文字：取第一個會送錯鍵（`v` 標已讀 vs `V` 標未讀、
-`d` 刪一封 vs `D` 刪範圍），違反「PTT 邏輯不准猜」。
+**複合鍵逐鍵可點（2026-09）。** `(=[]<>)`（同標題前後篇）、`(/?a)`（搜尋）、
+`(v/V)`（已讀／未讀）、`(R/y)`、`[↑↓]`、`(X%)` 這種多鍵組拆成逐個 atom，
+各自一顆按鈕，「指哪就觸發該鍵」。**絕不可以「取第一個鍵」**：`v` 標已讀 vs `V` 標
+未讀、`d` 刪一封 vs `D` 刪範圍，語意完全相反。
+
+拆解在 `footer_keys.tokenizeKeyGroup(inner)`，規則是**全有全無**——只要有一個字認不
+出來，**整組**維持純文字。這是「PTT 邏輯不准猜」在這裡的落點：
+
+| 規則（順序不可調換） | 例 |
+|---|---|
+| 1. 整組本來就是一個鍵 → 單一 atom | `Ctrl-P` `^X` `PgUp` `y`。**必須最前面**，否則 `Ctrl-P` 會被第 2 條當成「Ctrl 到 P」 |
+| 2. 範圍寫法 → 整組 null | `(0-9)` `(1-9)` `(2 - 9)` `(0~255)` |
+| 3. 含 `/` 且切完每段都非空 → 每段各自必須恰好是一個 atom | `(v/V)` `(X/%)` `(enter/→)`；`(^Z/F1)` 因為 `F1` 查不到 byte 而**整組**不可點 |
+| 4. 串接裡含**數字** → 整組 null | pmore 狀態列的 `(100%)`（`pmore.c:2144` 的 `(%3d%%)`，100 沒有前導空白）與舊版狀態列的 `(53%)`（`pmore.c:2125` 的 `(%d%%)`）—— 不擋就會多出 `1` `0` `0` `%` 四顆**送得出去**的按鈕（`%` 在 pmore 是推文、數字是跳頁）。只管串接：`(1)` 走規則 1、`(0-9)` 走規則 2 |
+| 5. 其餘 → 串接掃描（多字元具名鍵長的優先 → `Ctrl-X`／`^X` → 單一 ASCII 可見字元） | `[↑↓]` `(=[]<>)` `(/?a)`（第一段是空字串 ⇒ 落到這條）`(k↑j↓)` `(X%)` `(←q)` |
+| 任何一步認不出來 → 整組 null | `(空白/PgDn)`（`空白` 不是鍵名，`NAMED_KEYS` 只有 `空白鍵`）、`(A, B, C...)`、`[正常白字黑底]`、`(1~30天)` |
+
+具名鍵比對**大小寫不敏感**（原始碼裡 `enter`／`TAB`／`END`／`DEL` 都出現過：
+`announce.c:271`／`talk.c:1355`／`psb.c:205,648`）。
+
+**邊界（使用者 2026-09 定案 D3）：**
+
+| 情況 | 可點範圍 |
+|---|---|
+| 單鍵組（`(y)` `[d]`） | **整組含括號**（維持現況：零回歸、hit area 大，且邊界必落在 ASCII 的括號上） |
+| 複合組（`[↑↓]` `(v/V)`） | **只有 atom 本身**，`(` `)` `[` `]` `/` 維持純文字 |
+
+`(v/V)` 的 `v` 因此只有一格寬（約 8px）——**這是刻意的**，「指哪就觸發該鍵」不容許
+把 `/` 或 `)` 算進某一顆按鈕。**不要**為了放大 hit area 在 renderer／CSS 加 `padding`：
+那會位移等寬格線、破壞 `.wpadding` 的寬度契約。日後真要加寬，只能改
+`tokenizeKeyGroup` 的輸出範圍，一處決定。
+
+`findFunctionKeyTokens` 的巢狀保護連帶放寬：**`(` 組允許 inner 含 `[` `]`**
+（`(=[]<>)` 的方括號就是兩顆按鍵本身），仍禁止圓括號；`[` 組維持「不得含任何括號」。
+
+**渲染端零改動**：`render/link_segment.js` 的「先 close 再 open」舞步本來就支援相鄰
+段，複合組只是多產出幾筆 `fnKeys`。
 
 | 層 | 檔案 | 職責 |
 |---|---|---|
@@ -639,6 +676,76 @@ DBCS 雙色字），只找一層在那種字上會漏判。同一個 bug 在
 所以它自己呼叫 `parseFunctionKeys`。它沒有 `pointer-events:none` ⇒ 點得到；每次都整個
 `replaceChildren` 重建，listener 隨舊節點丟掉，無洩漏。
 
+### 輸入欄開著時**一顆按鈕都不准畫**（硬需求）
+
+`[Y/n]`（`bbs.c:3060` 小天使匿名詢問）與 ` 確定[y/N]:`（`bbs.c:3098`）都畫在
+**最後一列** ＝ `functionKeyRows` 會掃的那一列。複合鍵一放開它們立刻變成兩顆按鈕，
+但 `vans`／`getdata` 走的是**整行輸入**（`vtuikit.c#vgets`）—— 點 `Y` 只會把字打進
+欄位、**不會送出**，使用者會以為壞掉；更糟的是「要使用小天使匿名推文嗎？ [Y/n]」
+的語意是「空 Enter ＝匿名 YES」。
+
+⇒ `term_view._renderScreenLines` 算 `fnRows` 的地方與 `_mirrorStatusRowToFooter`
+**兩處都要 `&& !this.buf.isCursorOnInputField()`**。這與 `resolveMouseRegion` 的
+`inputPrompt` 早退、`cursor_highlight` 的 `inputPrompt`、`nav_key_gate` 的同一條判斷
+**是同一個事實**，四處一致才守得住。守護：`tests/unit/fnkeys_input_field_gate.test.js`
+（靜態掃描）＋ `tests/e2e/offline/screen_dismiss.offline.spec.js`（行為）。
+
+`fnRows` 已在 `annotationsKey` 裡，所以這個布林翻轉時節點會正確重建；
+`_mirrorStatusRowToFooter` 每次整個 `replaceChildren`，也沒問題。
+
+## 點空白處關框（2026-09）
+
+PTT 停在「等一個按鍵」的畫面時，滑鼠原本**沒有任何出口**：`resolveMouseRegion` 對
+pageState 5 走 `default`、對 `inputPrompt` 更是整幀早退，使用者只能去鍵盤敲一下。
+點畫面空白處 → 送對應的收尾鍵。
+
+| 類別 | 畫面指紋（只看**最後一列**） | 送什麼 | pttbbs 出處 |
+|---|---|---|---|
+| pressanykey | 含 `請按任意鍵繼續`（`VMSG_PAUSE`，左右是 `▄` padding） | **空白鍵** | `proto.h:657` `pressanykey()=vmsg(NULL)` → `vtuikit.c:328` |
+| vmsg 橫幅 | ` ◆ <訊息>` ＋右靠 ` [按任意鍵繼續]`（`push_screen.parseVmsgText`） | **空白鍵** | `vtuikit.c:439-455`、`vtuikit.h:41-42` |
+| vgetstring 輸入欄 | `buf.isCursorOnInputField()`（游標格白底黑字、該列非整列反白） | **`Ctrl-C`**（`\x03`） | `vtuikit.c:1346` `case Ctrl('C')` ⇒ abort ⇒ `getdata` 回 0 |
+
+判斷順序**輸入欄優先**：`vans`／`getdata` 的提示與訊息列長得像，但游標在不在反白欄
+裡是確定的。
+
+| 層 | 檔案 | 職責 |
+|---|---|---|
+| 判斷（純函式） | `src/js/screen_dismiss.js` | `resolveDismiss({lastRowText, cursorOnInputField})` → `{kind, bytes}`／`null`；`dismissClickAllowed({clickRow, cursorRow})`；`KEY_ABORT`／`KEY_DISMISS` 常數（與 `long_push_session` **共用同一份**） |
+| 事實 | `term_buf.dismissTarget()` | 餵 `getRowText(rows-1)` 與 `isCursorOnInputField()`，**每次現算不快取** |
+| 指標 | `mouse_regions.resolveMouseRegion` 的 `dismiss` 輸入 | 只換 `pointer`，**不上底色**（框在時下方整片是殘影，上底色會讓人以為那裡可以點）；**排在 `inputPrompt` 早退之前** |
+| 送鍵 | `App.mouse_click`（優先權第 8 條） | 現算 `dismissTarget()`，`preventDefault` 後 `view._send` |
+
+### 幾個不可以踩的地方
+
+- **不可以「點空白就送一個安全鍵」**。**沒有安全鍵**：`Ctrl-C` 在文章列表是
+  `ClearTagList()`（`read.c:950-955`，清掉標記清單）、空白鍵在文章裡是翻頁。
+  `resolveDismiss` 回 `null` 就是什麼都不做。
+- **不可以用 `\f`(Ctrl-L) 關框**：`io.c:228-247` 的 `system_key_hook` 回
+  `KEY_INCOMPLETE`，`vkey()` 直接 `continue` ⇒ 它**不算按鍵**，用它關框會整串位移
+  一格（`docs/pttbbs-screen-protocol.md` §6 有實錯記錄）。
+- **不可以用 `pageState === 5` 當判準**：它有第二條完全不同的來源
+  （`setPageState` 的 `isUnicolor(lastRow,28,53) && cur_y==lastRow && cur_x==cols-1`
+  啟發式），那種畫面不保證在等按鍵；反過來 vmsg 橫幅根本不會讓 `setPageState` 轉 5。
+- **送鍵刻意不走 `buf.mouseAction`**：`term_buf.notify()` 每個 `changed` 幀都
+  `clearHighlight()` 把它清成 `none`，而框正是「畫面剛變出來」的東西 ⇒ 使用者不動
+  滑鼠直接點時必定讀到 `none`，按鈕會像壞掉。所以在點擊當下現算。
+- **游標所在那一列不算空白處**（D2）：輸入欄開著時那一列是使用者正在打的字，
+  `pressanykey` 的 `▄` 橫幅也在那一列（`vshowmsg` 一律 `move(b_lines,0)`）。
+  點它**不送鍵，但仍 `preventDefault`**——框開著時整個畫面都是我們的。
+- **列表好讀的 buffer/frozen 不走這條**：那是 v5 封閉互動，直送 byte 會打亂
+  CommandQueue。所有會開框的鍵在列表好讀底下都走 `_beginPassthroughBytes` →
+  `_enterFunctionMode()` → 原生鏡像，所以框出現時 `listRenderMode` 已經是 `native`
+  （實測確認）。若哪天驗出 frozen 也會出現框，改成呼叫 `ListSession.onDismissClick()`
+  走 queue，不要繞過它。
+- **一次點＝一步**：型別選單那種畫面送任何非數字都會前進到下一步而不是取消
+  （`bbs.c:3000-3004`），所以「一次點不一定關得掉」是正常的 ——
+  `long_push_session._enqueueAbort` 用的是同一個模型（重複送、每次重新分類畫面）。
+- **`buf.getRowText` 只有在重畫之後才有意義**：`TermChar.isLeadByte` 是
+  `term_buf.updateCharAttr` 設的，而那支只在 `notify`（30ms debounce）→ redraw 的路上
+  跑 ⇒ 剛餵完資料時 `getRowText` 還吐原始 Big5 位元組。產品端不受影響（使用者的點擊
+  永遠在重畫之後），但**寫測試時不可以拿它當「畫面就緒」的判準**
+  （`screen_dismiss.offline.spec.js` 踩過，症狀是送出 0 byte）。
+
 ## 左側退出提示帶（`#exitHintBand`）
 
 - 是 `term_view` 自有的獨立 div，掛在 `#BBSWindow` 底下、`.main` **之後**。不放
@@ -701,15 +808,19 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 | `tests/unit/pref_modal_mouse_tab.test.jsx` | 設定分頁的欄位、預設值、子項 disabled、選項值域 |
 | `tests/unit/pref_schema_mouse.test.js` | 新 key 齊備、舊 key 已移除、殘值不復活 |
 | `tests/unit/i18n_parity.test.js` | 兩語系 key 集合一致 |
-| `tests/unit/footer_keys.test.js` | 功能鍵解析：單鍵可點／多鍵組不可點／具名鍵 byte／**DBCS 欄位換算**／`functionKeyRows` |
+| `tests/unit/footer_keys.test.js` | 功能鍵解析：單鍵可點／**複合鍵拆 atom（`tokenizeKeyGroup` 的全有全無清單）**／具名鍵 byte／**DBCS 欄位換算**／`functionKeyRows` |
 | `tests/unit/screen_fnkeys_render.test.js` | `a.fnKey` 的屬性、`onClick`、與部分底色共存、沒給 `fnKeys` 時 DOM 逐字不變 |
 | `tests/unit/function_key_click_plan.test.js` | 文章好讀先進 functionMode／`←` 走 stopEasyReading |
 | `tests/unit/list_function_key.test.js` | 列表好讀的 `onFunctionKey` / `onMouseExitClick`（白名單走 reducer、其餘 passthrough、忙碌時給提示） |
 | `tests/unit/screen_dirty_rows.test.js` | 切 pref 後按鈕真的出現／消失（`annotationsKey` 的回歸鎖，兩條分支各一） |
 | `tests/unit/mouse_dblclick_skip.test.js` | 第二次 mousedown 不得 `preventDefault`（雙擊選字） |
-| `tests/unit/fixtures/screen_golden/list_native_fnkeys.html`／`article_footer_fnkeys.html` | 整列 DOM 快照（含多鍵組維持純文字） |
+| `tests/unit/fixtures/screen_golden/list_native_fnkeys.html`／`article_footer_fnkeys.html` | 整列 DOM 快照（含複合組拆成的相鄰多顆 `a.fnKey`） |
 | `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關／推文列可點區（防誤觸三態）／**列表左側退出帶** |
-| `tests/e2e/offline/function_keys.offline.spec.js` | 三條 render 分支各自都接上了、點了真的送鍵、切 pref 立即生效 |
+| `tests/e2e/offline/function_keys.offline.spec.js` | 三條 render 分支各自都接上了、點了真的送鍵、切 pref 立即生效、**`(X%)` 逐鍵送不同鍵＋括號不可點（D3）** |
+| `tests/unit/screen_dismiss.test.js` | 關框判斷：三種指紋／輸入欄優先／`pageState 5` 第二來源不得誤判／游標列不算空白處 |
+| `tests/unit/screen_dismiss_click.test.js` | `App.mouse_click` 的接線：現算而非讀 `mouseAction`、gate、buffer/frozen 不直送、連結優先 |
+| `tests/unit/fnkeys_input_field_gate.test.js` | 輸入欄開著時兩處 render 分支都不畫按鈕（靜態掃描） |
+| `tests/e2e/offline/screen_dismiss.offline.spec.js` | 合成畫面：三種框各送對的 byte、沒有框時 0 byte、D2、pref gate、`[y/N]` 上不出現按鈕 |
 | `tests/e2e/offline/selection.offline.spec.js` | 雙擊選詞／三擊選行（**必須跑 offline-firefox**） |
 | `tests/unit/swipe_gesture.test.js` | 手勢辨識的六條不變量（對角線／閾值／慣性只一次／方向翻轉／`deltaMode`／`timeStamp` 0） |
 | `tests/unit/nav_key_gate.test.js` | 送鍵守門：pageState 範圍／輸入框／modal／未連線 |

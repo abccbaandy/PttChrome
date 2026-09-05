@@ -840,9 +840,23 @@ TermView.prototype = {
     // （buf.pageLines，數千列），那裡沒有「最後一列＝狀態列」這回事，而且它們吃
     // 增量快取 —— 永不給這個欄位，快取零風險。
     // pageState 用 override 優先（列表好讀的視窗幀把它 pin 成 2），沒有才用 buf 的。
+    //
+    // `!isCursorOnInputField()` 是**硬需求**（2026-09 複合鍵放開之後）：
+    // `[Y/n]`（bbs.c:3060 小天使）與 ` 確定[y/N]:`（bbs.c:3098）都畫在最後一列
+    // ＝ functionKeyRows 會掃的那一列，一旦拆成兩顆按鈕，點 `Y` 只會把字打進
+    // vgetstring 的欄位、**不會送出**（vgets 要 Enter），使用者會以為壞掉；
+    // 更糟的是「要使用小天使匿名推文嗎？ [Y/n]」的語意是空 Enter ＝匿名 YES。
+    // 這與 resolveMouseRegion 的 inputPrompt 早退、cursor_highlight 的
+    // inputPrompt、nav_key_gate 的同一條判斷**是同一個事實**，四處一致才守得住。
+    // （fnRows 進了 annotationsKey，所以這個布林翻轉時節點會正確重建。）
     const ov = enhanceOverrides || {};
     let fnRows = null;
-    if (!ov.stableRows && this.mouseFunctionKeys && this.buf.useMouseBrowsing) {
+    if (
+      !ov.stableRows &&
+      this.mouseFunctionKeys &&
+      this.buf.useMouseBrowsing &&
+      !this.buf.isCursorOnInputField()
+    ) {
       fnRows = functionKeyRows(
         ov.pageState != null ? ov.pageState : this.buf.pageState,
         lines.length
@@ -2201,7 +2215,14 @@ TermView.prototype = {
       // 功能鍵按鈕：這條路不經 computeAnnotations（見 term_ui.renderOverlayRow），
       // 故在這裡自己解析。gate 與 _renderScreenLines 那邊一致。
       var fnKeys = null;
-      if (this.mouseFunctionKeys && this.buf.useMouseBrowsing && this.onFunctionKey) {
+      // isCursorOnInputField 這一條與 _renderScreenLines 同一個事實，見那裡的說明
+      // （輸入欄開著時 `[Y/n]` 會變成兩顆送不出去的按鈕）。
+      if (
+        this.mouseFunctionKeys &&
+        this.buf.useMouseBrowsing &&
+        this.onFunctionKey &&
+        !this.buf.isCursorOnInputField()
+      ) {
         var parsed = parseFunctionKeys(statusChars);
         if (parsed) {
           var onFunctionKey = this.onFunctionKey;

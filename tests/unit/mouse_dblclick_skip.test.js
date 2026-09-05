@@ -27,6 +27,8 @@ function makeApp({ selectionCollapsed = true, useMouseBrowsing = true } = {}) {
     useMouseBrowsing,
     listRenderMode: "native",
     onMouse_move: vi.fn(),
+    // 點空白處關框：沒有框（App.mouse_click 每次點擊當下現算，見 screen_dismiss.js）。
+    dismissTarget: () => null,
   };
   app.view = {};
   app.mouseButtons = { onMouseDown: vi.fn(), onMouseUp: vi.fn() };

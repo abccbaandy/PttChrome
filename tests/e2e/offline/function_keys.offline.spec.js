@@ -49,7 +49,7 @@ test.describe('功能鍵可點（離線重放）', () => {
     test.skip('尚無 article cassette；先 yarn record:cassette', () => {});
   }
 
-  test('原生文章：底部 footer 的單鍵變成按鈕，多鍵組維持純文字', async ({ page }) => {
+  test('原生文章：底部 footer 的每一顆按鈕都是**一個**按鍵', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {
@@ -62,27 +62,26 @@ test.describe('功能鍵可點（離線重放）', () => {
 
     const labels = await fnKeyLabels(page);
     expect(labels.length).toBeGreaterThan(0);
-    // 每一個都必須是**單一按鍵**（單字元／caret／Ctrl-X／具名鍵）。
+    // 2026-09 起複合組拆成逐個 atom ⇒ label 有兩種形狀：單鍵組仍是 `[d]`／`(y)`
+    // （含括號），複合組的每顆按鈕就是 atom 本身（`=`、`↑`、`v`）。
+    // 不管哪一種，**去掉括號之後一定是恰好一個按鍵**——這條就是「絕不可以取第一個
+    // 鍵」的端到端鎖。
+    const NAMED = ['←', '→', '↑', '↓', 'PgUp', 'PgDn', 'Home', 'End', 'Enter', 'Esc', 'Tab', 'Del', '空白鍵'];
     labels.forEach((l) => {
-      const inner = l.slice(1, -1);
+      const inner = /^[[(].*[\])]$/.test(l) ? l.slice(1, -1) : l;
       expect(
         inner.length === 1 ||
           /^\^.$/.test(inner) ||
           /^Ctrl-.$/i.test(inner) ||
-          ['←', '→', '↑', '↓', 'PgUp', 'PgDn', 'Home', 'End', 'Enter', 'Esc', 'Tab', '空白鍵'].includes(
-            inner,
-          ),
+          NAMED.some((n) => n.toLowerCase() === inner.toLowerCase()),
         `「${l}」不是單一按鍵，不該可點`,
       ).toBe(true);
     });
-    // pmore 的 footer 一定有這幾組多鍵組，它們必須留在畫面上但**不是**按鈕。
-    const plain = await page.evaluate(
-      () => document.getElementById('mainContainer').textContent,
-    );
+    // pmore 的 footer 一定有這幾組複合鍵，整組的字串本身**不可以**是一顆按鈕。
+    // （`(=[]<>)` 的 `[` `]` 與 `(/?a)` 的 `/` 各自是**真的按鍵**，所以單獨出現在
+    //  label 裡是對的；D3 的座標級鎖在下面看板列表那個 describe。）
     ['(=[]<>)', '(/?a)'].forEach((group) => {
-      if (plain.includes(group)) {
-        expect(labels).not.toContain(group);
-      }
+      expect(labels).not.toContain(group);
     });
   });
 
@@ -268,5 +267,136 @@ test.describe('功能鍵可點：看板列表（離線重放）', () => {
     await replayListCassette(page, listCassette);
     await page.waitForTimeout(400);
     expect(await fnKeyLabels(page)).toEqual([]);
+  });
+
+  // 複合鍵逐鍵可點：文章列表的 vs_footer 有 `(=[]<>)相關主題(/?a)找標題/作者`
+  // （read.c:1241）—— 兩組共八個 atom，是全站最密的一列。
+  test('(=[]<>) 與 (/?a) 拆成八顆連續按鈕，整組字串本身不是按鈕', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReadingList: false,
+      enableEasyReading: false,
+      useMouseBrowsing: true,
+      mouseLeftClick: true,
+      mouseFunctionKeys: true,
+    });
+    await replayListCassette(page, listCassette);
+    await page.waitForTimeout(400);
+
+    const labels = await fnKeyLabels(page);
+    ['=', '[', ']', '<', '>', '/', '?', 'a'].forEach((k) =>
+      expect(labels, `缺少 atom「${k}」`).toContain(k),
+    );
+    expect(labels).not.toContain('(=[]<>)');
+    expect(labels).not.toContain('(/?a)');
+    // 八顆全在最後一列（vs_footer）。
+    const rows = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('#mainContainer a.fnKey'))
+        .filter((a) => ['=', '[', ']', '<', '>', '/', '?', 'a'].includes(a.getAttribute('data-fnkey')))
+        .map((a) => Number(a.closest('[data-row]').getAttribute('data-row'))),
+    );
+    expect(new Set(rows)).toEqual(new Set([23]));
+  });
+});
+
+// 「同一組括號、不同格、送不同的鍵」的端到端鎖。素材是 pmore 的 footer
+// `(y)回應(X%)推文(h)說明(←)離開`（more.c:410 FOOTERMSG_*）—— `(X%)` 是**一組
+// 括號、兩個不同的鍵**（X 推文／% 也是推文的同義鍵，read.c/more.c 各自獨立 case），
+// 正是「絕不可以取第一個鍵」的現場。
+test.describe('複合鍵逐鍵可點：文章 footer 的 (X%)（離線重放）', () => {
+  const article2 = findCassette('article');
+  if (!article2) {
+    test.skip('尚無 article cassette；先 yarn record:cassette', () => {});
+  }
+
+  async function openArticle(page) {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: false,
+      useMouseBrowsing: true,
+      mouseLeftClick: true,
+      mouseFunctionKeys: true,
+    });
+    await replayCassette(page, article2, { easyReading: false });
+  }
+
+  // `(X%)` 這一組在**格子空間**的起點（`(` 的 col）。四個字元都是 ASCII 單格，
+  // 所以直接逐格掃 buf.lines 就找得到，**不必量任何元素的 rect** ——
+  // 格子數學（firstGridOffset + chw/chh）是常數，不會被延遲載入的預覽推走
+  // （見 tests/unit/e2e_layout_settle.test.js 的規則說明）。
+  async function groupStartCol(page) {
+    return page.evaluate(() => {
+      const line = window.__app.buf.lines[window.__app.buf.rows - 1];
+      for (let i = 0; i + 3 < line.length; ++i) {
+        if (
+          line[i].ch === '(' &&
+          line[i + 1].ch === 'X' &&
+          line[i + 2].ch === '%' &&
+          line[i + 3].ch === ')'
+        )
+          return i;
+      }
+      return -1;
+    });
+  }
+  async function clickCell(page, col) {
+    const { x, y } = await page.evaluate((c) => {
+      const v = window.__app.view;
+      return {
+        x: parseFloat(v.firstGridOffset.left) + v.chw * (c + 0.5),
+        y:
+          parseFloat(v.firstGridOffset.top) +
+          v.chh * (window.__app.buf.rows - 1 + 0.5),
+      };
+    }, col);
+    await page.mouse.click(x, y);
+  }
+
+  test('點 X 送 X、點 % 送 %（同一組括號、相鄰兩格）', async ({ page }) => {
+    test.setTimeout(90000);
+    if (!article2) return;
+    await openArticle(page);
+
+    const x = page.locator('#mainContainer a.fnKey[data-fnkey="X"]');
+    const pct = page.locator('#mainContainer a.fnKey[data-fnkey="%"]');
+    await expect(x).toHaveCount(1);
+    await expect(pct).toHaveCount(1);
+    // 兩顆在同一列、且是相鄰的兩格（`(X%)` 是一組括號）。
+    const at = await groupStartCol(page);
+    expect(at).toBeGreaterThanOrEqual(0);
+
+    await startCapture(page);
+    await x.click();
+    await page.waitForTimeout(200);
+    expect(await takeCapture(page)).toBe('X');
+
+    await startCapture(page);
+    await pct.click();
+    await page.waitForTimeout(200);
+    expect(await takeCapture(page)).toBe('%');
+  });
+
+  test('REGRESSION（D3）：括號本身不可點 —— 點 ( 或 ) 一個 byte 都不送', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    if (!article2) return;
+    await openArticle(page);
+
+    const at = await groupStartCol(page);
+    expect(at).toBeGreaterThanOrEqual(0);
+
+    await startCapture(page);
+    // `(X%)`：`(` 在 at、`)` 在 at+3。
+    await clickCell(page, at);
+    await clickCell(page, at + 3);
+    await page.waitForTimeout(250);
+    // 括號留在畫面上當視覺分隔，但**不屬於任何一顆按鈕**：「指哪就觸發該鍵」
+    // 不容許把 `(` 或 `)` 算進某一顆的範圍。
+    // （文章的 col >= 7 沒有滑鼠動作 ⇒ 也不會走到退出手勢。）
+    expect(await takeCapture(page)).toBe('');
   });
 });

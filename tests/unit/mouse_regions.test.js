@@ -229,6 +229,51 @@ describe("其餘畫面", () => {
   });
 });
 
+// 框開著（pressanykey／vmsg 橫幅／vgetstring 輸入欄）＝整個畫面都是「點空白處
+// 關框」的目標。決策本身在 screen_dismiss.resolveDismiss，這裡只驗接線。
+describe("點空白處關框（dismiss）", () => {
+  const DISMISS = { kind: "anyKey", bytes: " " };
+
+  test("框開著 ⇒ 換 pointer 指標、但**不上底色**（下方整片是殘影）", () => {
+    [0, 1, 2, 3, 4, 5].forEach((pageState) => {
+      const r = at({ pageState, row: 10, col: 40, dismiss: DISMISS });
+      expect(r.cursor).toBe(CUR_POINTER);
+      expect(r.highlightRow).toBe(-1);
+      // 送鍵不走 buf.mouseAction（notify 每個 changed 幀都把它清成 none），
+      // 由 App.mouse_click 在點擊當下現算 ⇒ 這裡必須維持 ACT_NONE。
+      expect(r.action).toBe(ACT_NONE);
+    });
+  });
+
+  test("**優先於 inputPrompt 早退**（輸入欄那一種框正好被它擋掉）", () => {
+    const r = at({
+      pageState: 2,
+      row: 10,
+      col: 40,
+      inputPrompt: true,
+      dismiss: { kind: "inputField", bytes: "\x03" },
+    });
+    expect(r.cursor).toBe(CUR_POINTER);
+    expect(r.highlightRow).toBe(-1);
+  });
+
+  test("框開著時左側退出帶不再是 back 指標（整片都是關框）", () => {
+    const r = at({ pageState: 3, row: 10, col: 1, dismiss: DISMISS });
+    expect(r.cursor).toBe(CUR_POINTER);
+    expect(r.action).toBe(ACT_NONE);
+  });
+
+  test("沒有框時（dismiss = null）行為一字未改", () => {
+    const withNull = at({ pageState: 2, row: 10, col: 40, dismiss: null });
+    const without = at({ pageState: 2, row: 10, col: 40 });
+    expect(withNull).toEqual(without);
+    expect(withNull.action).toBe(ACT_ENTER);
+    const article = at({ pageState: 3, row: 10, col: 1, dismiss: null });
+    expect(article.action).toBe(ACT_EXIT_ARTICLE);
+    expect(article.cursor).toBe(CUR_BACK);
+  });
+});
+
 // 防誤觸模式（pref mouseMisclickGuard，預設開）＝「可點區＝底色區」的起始欄。
 // 關掉之後整列可點、整列上底色（＝改版前的行為）。
 describe("clickableColStart（可點區＝底色區的唯一真相源）", () => {

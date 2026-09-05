@@ -44,14 +44,10 @@ import {
   findAnchorRowNum
 } from './long_push_anchor';
 import { aidSearchLanded } from './aid_navigation';
-
-// vgetstring 的 Ctrl-C：清空 buf 並 abort（vtuikit.c:1345-1351）⇒ getdata 回 0
-// ⇒ recommend() 直接 return FULLUPDATE，不寫入任何東西。取消時用它退出輸入列／
-// 確認列。
-const KEY_ABORT = '\x03';
-// vmsg 的 `do { i = vkey(); } while (i == 0);` 要一個真的按鍵才消得掉；Ctrl-L 會被
-// io.c#system_key_hook 吃掉（aid_navigation.js:89-103 的同一個坑），所以用空白。
-const KEY_DISMISS = ' ';
+// 收尾鍵（Ctrl-C 取消輸入列／確認列，空白鍵收掉 vmsg 橫幅）與完整的 pttbbs 出處
+// 註解都在 screen_dismiss.js，與「滑鼠點空白處關框」**共用同一份**。
+// 不要在這裡再定義第二份。
+import { KEY_ABORT, KEY_DISMISS } from './screen_dismiss';
 
 // 每一步的等待預算。推文的回應是 server 立刻重畫底列，正常在一個 round-trip 內。
 const STEP_TIMEOUT_MS = 5000;
@@ -402,7 +398,7 @@ LongPushSession.prototype = {
     });
   },
 
-  // 步驟 2.5：小天使匿名詢問（bbs.c:3055，vans → 要 Enter）。**空 Enter 等於答
+  // 步驟 2.5：小天使匿名詢問（bbs.c:3060，vans → 要 Enter）。**空 Enter 等於答
   // YES**，所以一定要明確送 n。
   _enqueueAngel: function() {
     const self = this;

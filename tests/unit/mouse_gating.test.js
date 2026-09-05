@@ -43,6 +43,34 @@ describe("總開關", () => {
   });
 });
 
+// 2026-09「點空白處關框」與「複合鍵逐鍵可點」**刻意不開新 pref**（使用者定案 D1）：
+// 前者沿用 leftClick、後者沿用 mouseFunctionKeys。多一顆 checkbox ＝ gating 表／
+// pref schema／設定頁欄位／雲端同步 schema 全部要跟著動，而使用者要關掉時關總開關
+// 就有了。這條鎖住「沒有第八個欄位」。
+describe("D1：關框與複合鍵沿用既有 pref，resolveMouseGates 不得多欄位", () => {
+  test("回傳欄位就是這八個，一個不多", () => {
+    expect(Object.keys(resolveMouseGates(ALL_ON)).sort()).toEqual([
+      "backNav",
+      "cursorIcon",
+      "leftClick",
+      "middleClick",
+      "misclickGuard",
+      "move",
+      "wheel",
+      "wheelSmoothScroll",
+    ]);
+  });
+
+  test("關框跟著 leftClick 走（App.mouse_click 的 gate 就是它）", () => {
+    expect(resolveMouseGates({ ...ALL_ON, mouseLeftClick: false }).leftClick).toBe(
+      false,
+    );
+    expect(
+      resolveMouseGates({ ...ALL_ON, useMouseBrowsing: false }).leftClick,
+    ).toBe(false);
+  });
+});
+
 describe("子開關互不牽連", () => {
   test("左鍵關 ⇒ 指標圖示也關，但滑鼠移動（底色）仍在", () => {
     const g = resolveMouseGates({ ...ALL_ON, mouseLeftClick: false });
