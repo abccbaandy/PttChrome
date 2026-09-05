@@ -48,6 +48,13 @@ const TOP_OF = `(el) => {
 const ROW_SEL = '#mainContainer [data-type="bbsline"]';
 const MEDIA_IN_SLOT = 'img.easyReadingImg, video.easyReadingVideo, iframe';
 
+// = LAZY_MOUNT_MARGIN_PX（src/js/lazy_media.js）。測試一端不能 import 那個 ESM
+// 模組（spec 是 CJS），所以抄成常數，並由 tests/unit/e2e_lazy_margin_constant.test.js
+// 靜態守護「兩邊一致」——產品端調大這個邊界時，本測試挑候選的死角也必須跟著變大。
+const MOUNT_MARGIN_PX = 1500;
+// 候選 slot 要離「掛載邊界」再遠一點，才不會踩在邊界上（次像素、捲動容器夾值）。
+const OUT_OF_MOUNT_RANGE_SLACK_PX = 200;
+
 // 一路往下走完整篇（每步等整頁終局），讓每張圖都真的載入過一次。
 async function walkDown(page) {
   const geom = await page.evaluate(() => {
@@ -79,28 +86,91 @@ const clickAnyLoadedImg = (page) =>
     return true;
   });
 
-// 由上往下走，停在第一個真的把圖載出來的位置。延遲載入 ⇒ 文章開頭不一定有圖。
-async function seekLoadedImg(page) {
-  const geom = await page.evaluate(() => {
-    const s = document.querySelector('.main');
-    return { scrollHeight: s.scrollHeight, clientHeight: s.clientHeight };
-  });
-  const step = Math.max(200, geom.clientHeight * 0.8);
-  for (let y = 0; y <= geom.scrollHeight; y += step) {
-    await page.evaluate((top) => {
-      document.querySelector('.main').scrollTop = top;
-    }, y);
-    await waitPreviewsSettled(page);
-    const found = await page.evaluate(
-      () =>
-        Array.from(document.querySelectorAll('img.hyperLinkPreview')).filter(
-          (im) => im.offsetWidth > 0 && im.offsetHeight > 0
-        ).length
-    );
-    if (found > 0) return true;
-  }
-  return false;
+// 固定的「起讀位置」：第一個佔位盒往上留一點空間。
+//
+// **刻意不用「由上往下逐格掃到有圖為止」**（2026-09-05 CI 紅的根因）：掃到第幾格才停
+// 取決於當下的載入節奏，而停在哪裡就決定了「哪幾張圖在 normal 模式下被量過高度」
+// （pinned[normal]）—— 那正是本測試挑候選佔位盒時的**排除**條件。掃描式起點 ⇒ 候選
+// 集合隨機器快慢而變，慢的機器上會歸零，測試就紅在「素材太短」（實錄：
+// actions/runs/33955762422，同一份素材本機與其他四輪 CI 全綠）。
+// 改成由**素材本身**（第一個 slot 的位置）決定起點，與時序無關。
+async function gotoFirstSlot(page) {
+  const ok = await page.evaluate((topOfSrc) => {
+    const topOf = eval(topOfSrc);
+    const slot = document.querySelector('.inlinePreviewSlot');
+    if (!slot) return false;
+    document.querySelector('.main').scrollTop = Math.max(0, topOf(slot) - 200);
+    return true;
+  }, TOP_OF);
+  if (ok) await waitPreviewsSettled(page);
+  return ok;
 }
+
+// 捲到底。整趟放大態走完之後**明確**回到一個決定性的位置：點縮小那一下會讓整頁高度
+// 塌掉好幾倍，最終的 scrollTop 是瀏覽器的 scroll anchoring 決定的，測試不該拿它當前提
+// （同一份素材本機恆為 6824，CI 上顯然落在別處 ⇒ 上方一個候選都不剩）。
+async function gotoBottom(page) {
+  await page.evaluate(() => {
+    const s = document.querySelector('.main');
+    s.scrollTop = s.scrollHeight;
+  });
+  await waitPreviewsSettled(page);
+}
+
+// 「已卸載＋只剩替身盒頂著」而且**保證不會自己掛回來**的佔位盒。
+// 三個條件缺一不可（缺了就抓不到 bug，只是靜默變成恆綠）：
+//   a. slot 裡沒有媒體 ⇒ 真的卸載了；
+//   b. spacer 沒有 inline min-height ⇒ normal 這格從沒量過，高度純靠替身盒；
+//   c. 整個 slot 落在「視野 + LAZY_MOUNT_MARGIN_PX」之外 ⇒ 它在原地不會被 near
+//      observer 掛回來。少了 c 就會挑到邊界上的 slot：在慢一點的機器上它早就掛回來、
+//      圖也載好了（本地 fixture 秒回）⇒ 條件 a 反過來把它刷掉。
+// 一律回傳整張表，失敗時直接印出來（不必再猜「素材太短」是哪一種太短）。
+const pickGhostOnlySlot = (page) =>
+  page.evaluate(
+    ({ topOfSrc, mediaSel, margin }) => {
+      const topOf = eval(topOfSrc);
+      const scroller = document.querySelector('.main');
+      const limit = scroller.scrollTop - margin;
+      const table = [];
+      let chosen = null;
+      const slots = Array.from(document.querySelectorAll('.inlinePreviewSlot'));
+      for (let i = slots.length - 1; i >= 0; --i) {
+        const s = slots[i];
+        const spacer = s.querySelector('.inlinePreviewSpacer');
+        const ghost = s.querySelector('.inlinePreviewGhost');
+        const y = topOf(s);
+        const row = {
+          i: i,
+          y: Math.round(y),
+          h: s.offsetHeight,
+          media: !!s.querySelector(mediaSel),
+          minHeight: spacer ? spacer.style.minHeight : null,
+          ghostHeight: ghost ? ghost.offsetHeight : null,
+        };
+        table.push(row);
+        if (chosen) continue;
+        if (row.media) continue;
+        if (row.minHeight) continue;
+        if (!(row.ghostHeight >= 200)) continue;
+        if (y + row.h > limit) continue;
+        chosen = row;
+        window.__slotSamples = [s.offsetHeight];
+        window.__slotRO = new ResizeObserver(() => {
+          window.__slotSamples.push(s.offsetHeight);
+        });
+        window.__slotRO.observe(s);
+      }
+      table.reverse();
+      return {
+        ok: !!chosen,
+        chosen: chosen,
+        scrollTop: Math.round(scroller.scrollTop),
+        limit: Math.round(limit),
+        slots: table,
+      };
+    },
+    { topOfSrc: TOP_OF, mediaSel: MEDIA_IN_SLOT, margin: MOUNT_MARGIN_PX + OUT_OF_MOUNT_RANGE_SLACK_PX }
+  );
 
 // ---------------------------------------------------------------------------
 // 測試 1：掛載那一幀不得塌陷（**這條就是 bug 的機制，舊碼必紅**）。
@@ -112,14 +182,23 @@ async function seekLoadedImg(page) {
 //
 // 用 ResizeObserver 逐幀採樣而不是事後量一次：事後量到的是已經撐回來的值 ⇒ 恆綠。
 //
-// **這條的必現環境是 offline-slow**（`yarn test:e2e:offline:adverse`，圖固定慢 5.2s）。
-// 一般 offline 用瀏覽器快取，圖的 load 事件在 mount 的下一個 task 就回來、來不及跨
-// 過一次排版 ⇒ 量不到中間態（實測 rafMin 全程 570）。舊碼在 slow 下的實錄是
-// `570,65,570,65,570,65…` —— 65px 就是「讀取中…」指示器，那串來回正是使用者說的
-// 「來回跳」。所以它掛在 playwright.config.js 的 ADVERSE_IMAGE_SPECS 裡。
+// **每一個捲動位置都由素材決定、不由載入節奏決定**（見 gotoFirstSlot／gotoBottom）：
+// 這條測試的前提（找得到「只剩替身盒」的佔位盒）本身就是被那些位置決定的，起點一飄
+// 前提就會落空，紅的還是一句看不出原因的「素材太短」。
+//
+// **這條自己把圖片情境釘成 'slow'**（見下方 bootOffline）：預設的 'cache' 下它結構性
+// 地測不到東西。整支 spec 仍留在 playwright.config.js 的 ADVERSE_IMAGE_SPECS 裡 ——
+// 那是為了測試 2（它在 slow 下才有牙齒，但沿用 project 的情境）。
 test('往回捲時佔位盒掛載：高度不得塌陷（替身盒讓位給讀取中指示器）', async ({ page }) => {
   test.setTimeout(300000);
-  await bootOffline(page, ptt);
+  // **這條自己指定 'slow' 情境**（明確傳入的優先序高於 project 名，同
+  // image_load_conditions.offline.spec.js）：預設的 'cache' 下圖片秒回，mount 到真圖
+  // 佔到版面之間跨不過一次排版 ⇒ 中間態根本不存在，斷言恆綠。實測（2026-09-05，把
+  // syncGhost 的判準改回舊碼的「有沒有掛載」當突變）：cache 下 3/3 綠、samples 全程
+  // [600,600]；slow 下 3/3 紅、samples 是 600,65,600,65… —— 65px 就是「讀取中…」
+  // 指示器，那串來回正是使用者說的「來回跳」。
+  // 換句話說，在 cache 下跑這條**只可能假紅、不可能真紅**，所以不讓它靠 project 決定。
+  await bootOffline(page, ptt, { imageProfile: 'slow' });
   await ptt.applyPrefs(page, {
     enableEasyReading: true,
     enablePicPreview: true,
@@ -127,10 +206,10 @@ test('往回捲時佔位盒掛載：高度不得塌陷（替身盒讓位給讀�
   await replayCassette(page, article, { easyReading: true });
   await waitPreviewsSettled(page);
 
-  // 1. 先點放大（此時只有前面那幾張圖載過），之後整趟往下都在放大態 ⇒ 中後段的圖
-  //    **只**在放大態載入過，normal 那格永遠是空的。
-  expect(await seekLoadedImg(page), '整篇掃過一遍都沒有圖載得出來').toBe(true);
-  expect(await clickAnyLoadedImg(page), '應有可點的圖來切換放大').toBe(true);
+  // 1. 停在第一個佔位盒上點放大（此時只有最前面那幾張圖在 normal 模式下量過高度），
+  //    之後整趟往下都在放大態 ⇒ 中後段的圖**只**在放大態載入過，normal 那格永遠是空的。
+  expect(await gotoFirstSlot(page), '素材裡沒有任何行內預覽佔位盒').toBe(true);
+  expect(await clickAnyLoadedImg(page), '起讀位置應有可點的圖來切換放大').toBe(true);
   await waitPreviewsSettled(page);
   expect(
     await page.evaluate(() =>
@@ -140,7 +219,10 @@ test('往回捲時佔位盒掛載：高度不得塌陷（替身盒讓位給讀�
 
   await walkDown(page);
 
-  // 2. 點縮小（回到 normal）。
+  // 2. 回到同一個起讀位置點縮小（回到 normal）。回到原位再點，是為了讓「哪幾張圖被
+  //    量過 normal 高度」這件事一路都由位置決定 —— 在文末隨便點一張，被量到的就是
+  //    文末那幾張，候選集合又變成看運氣。
+  expect(await gotoFirstSlot(page), '縮小前回不到起讀位置').toBe(true);
   expect(await clickAnyLoadedImg(page), '縮小前視野內應有可點的圖').toBe(true);
   await waitPreviewsSettled(page);
   expect(
@@ -149,45 +231,21 @@ test('往回捲時佔位盒掛載：高度不得塌陷（替身盒讓位給讀�
     )
   ).toBe(false);
 
-  // 3. 找一個「已卸載、只剩替身盒頂著、而且在目前位置上方」的佔位盒，
-  //    在它身上裝 ResizeObserver 逐幀記高度。
-  const target = await page.evaluate(
-    ({ topOfSrc, mediaSel }) => {
-      const topOf = eval(topOfSrc);
-      const scroller = document.querySelector('.main');
-      const slots = Array.from(document.querySelectorAll('.inlinePreviewSlot'));
-      for (let i = slots.length - 1; i >= 0; --i) {
-        const s = slots[i];
-        if (s.querySelector(mediaSel)) continue; // 還掛著真圖 ⇒ 沒卸載
-        // 佔位高度必須是空的（＝normal 這格從沒量過），高度純粹由替身盒頂著。
-        // 有釘住的高度時舊碼在 mount 也不會塌陷 ⇒ 選到那種就抓不到 bug。
-        const spacer = s.querySelector('.inlinePreviewSpacer');
-        if (spacer && spacer.style.minHeight) continue;
-        const ghost = s.querySelector('.inlinePreviewGhost');
-        if (!ghost || ghost.offsetHeight < 200) continue;
-        const y = topOf(s);
-        if (y > scroller.scrollTop - 500) continue; // 必須在上方，等下捲回去才會 mount
-        window.__slotSamples = [s.offsetHeight];
-        window.__slotRO = new ResizeObserver(() => {
-          window.__slotSamples.push(s.offsetHeight);
-        });
-        window.__slotRO.observe(s);
-        return { ok: true, y: y, ghostHeight: ghost.offsetHeight, height: s.offsetHeight };
-      }
-      return { ok: false, slots: slots.length };
-    },
-    { topOfSrc: TOP_OF, mediaSel: MEDIA_IN_SLOT }
-  );
+  // 3. 捲到底（決定性的觀察位置），再找一個「已卸載、只剩替身盒頂著、而且遠在掛載
+  //    邊界之外」的佔位盒，在它身上裝 ResizeObserver 逐幀記高度。
+  await gotoBottom(page);
+  const target = await pickGhostOnlySlot(page);
   expect(
     target.ok,
-    '素材太短：整趟放大態走完之後，上方應該留下「已卸載＋只剩替身盒」的佔位盒 ⇒ ' +
-      '抓不到這個 bug，請換更長的 cassette'
+    '找不到「已卸載＋只剩替身盒」的佔位盒 ⇒ 抓不到這個 bug。' +
+      `scrollTop=${target.scrollTop}、候選須整個落在 y+h ≤ ${target.limit}，` +
+      `佔位盒現況：${JSON.stringify(target.slots)}`
   ).toBe(true);
 
   // 4. 捲回去讓它進入掛載範圍。
   await page.evaluate((y) => {
     document.querySelector('.main').scrollTop = Math.max(0, y - 200);
-  }, target.y);
+  }, target.chosen.y);
   await waitPreviewsSettled(page);
 
   const samples = await page.evaluate(() => {
@@ -197,8 +255,8 @@ test('往回捲時佔位盒掛載：高度不得塌陷（替身盒讓位給讀�
   const min = Math.min(...samples);
   console.log(
     `[mount-collapse] ${JSON.stringify({
-      ghostHeight: target.ghostHeight,
-      before: target.height,
+      ghostHeight: target.chosen.ghostHeight,
+      before: target.chosen.h,
       min,
       samples: samples.slice(0, 12),
     })}`
@@ -207,9 +265,9 @@ test('往回捲時佔位盒掛載：高度不得塌陷（替身盒讓位給讀�
   // 新碼：替身盒住在 spacer 裡，疊層取 max ⇒ 全程維持替身盒的高度。
   expect(
     min,
-    `掛載過程中佔位盒一度塌到 ${min}px（替身盒 ${target.ghostHeight}px）` +
+    `掛載過程中佔位盒一度塌到 ${min}px（替身盒 ${target.chosen.ghostHeight}px）` +
       '⇒ 讀者會被整整推走那一截'
-  ).toBeGreaterThanOrEqual(Math.round(target.ghostHeight * 0.9));
+  ).toBeGreaterThanOrEqual(Math.round(target.chosen.ghostHeight * 0.9));
 });
 
 
