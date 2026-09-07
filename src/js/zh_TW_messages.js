@@ -809,7 +809,7 @@
       '核心畫面（文章列表／文章／兩者的好讀模式）改寫為純 JavaScript DOM，不再經過 React——BBS 畫面每收到一頁就整份重畫，React 在這條路徑上只剩成本；設定頁等週邊介面仍是 React',
       '升級 React 19（bundled、function component + hooks）',
       '棄用 Bootstrap / react-bootstrap，UI 元件改用 Mantine（暗色預設、可切換主題）',
-      '建置工具：Vite 8（Rolldown 核心，取代 webpack + Babel）、Yarn 4；測試框架 Vitest 4（取代 Jest）',
+      '建置工具：Vite 8（Rolldown 核心，取代 webpack + Babel）、Yarn 4；測試框架 Vitest 5（取代 Jest）',
       '移除 jQuery 與 hammerjs，全部原生 API，無 CDN 程式庫依賴',
       'Firebase npm modular SDK（lazy chunk）＋ App Check 防護',
       '測試基建：Playwright E2E、Firebase Emulator Suite（Docker）整合測試、離線 byte-cassette 重放測試',

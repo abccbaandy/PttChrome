@@ -809,7 +809,7 @@ export const en_US = {
       'Core screens (board list, article, and both easy-reading modes) rewritten as plain JavaScript DOM, no longer going through React — a BBS screen repaints in full on every incoming page, where React is all cost and no benefit; the settings dialog and other peripheral UI stay on React.',
       'Upgraded to React 19 (bundled, function components + hooks).',
       'Dropped Bootstrap / react-bootstrap; UI components migrated to Mantine (dark by default, switchable theme).',
-      'Build tooling: Vite 8 (Rolldown core, replacing webpack + Babel), Yarn 4; tests on Vitest 4 (replacing Jest).',
+      'Build tooling: Vite 8 (Rolldown core, replacing webpack + Babel), Yarn 4; tests on Vitest 5 (replacing Jest).',
       'Removed jQuery and hammerjs in favor of native APIs; no CDN library dependencies left.',
       'Firebase npm modular SDK (lazy chunk) + App Check protection.',
       'Test infrastructure: Playwright E2E, Firebase Emulator Suite (Docker) integration tests, offline byte-cassette replay tests.',

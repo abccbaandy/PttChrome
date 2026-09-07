@@ -1,6 +1,6 @@
 # 建置鏈：依賴／工具選型基準
 
-現況：Vite 8（Rolldown 核心）＋Vitest 4，零 Babel／webpack。本文＝**動建置鏈或評估「換依賴」前的判斷依據**（CLAUDE.md 指定先讀），不是遷移紀錄。
+現況：Vite 8（Rolldown 核心）＋Vitest 5，零 Babel／webpack。本文＝**動建置鏈或評估「換依賴」前的判斷依據**（CLAUDE.md 指定先讀），不是遷移紀錄。
 
 ## 關鍵事實（動這區前必知）
 
@@ -9,6 +9,7 @@
 - **設定檔副檔名＝模組格式，勿改回 `.js`**：`vite.config.mjs` / `vitest.config.mjs` 是 ESM（`import` 語法），`playwright.config.js` / `postcss.config.cjs` 是 CJS（`require`/`module.exports`）。repo 沒有也**不要加** `package.json` 的 `"type": "module"`——那會把所有 `.js` 一律當 ESM，`playwright.config.js` 與 `tests/e2e/helpers/*.js`（CJS `require`）會整批爆。副檔名標註格式即可，逐檔精準。踩坑：兩個 config 原本叫 `.js`，Vite 8 的 `configLoader: 'native'`（未來預設）會用 CJS 載入 → 每次 `yarn start`／`yarn test:unit` 都印 unsupported feature 警告。
 - **`vitest.config.mjs` 刻意不 extends `vite.config.mjs`**：app 的 `define` 把 `FIRESTORE_EMULATOR_HOST` 等釘成 undefined（給 build DCE），integration 測試靠這些真 env 連 emulator，混用即全滅。
 - **測試檔要純 ESM**：CJS `require()` src 模組在 Vitest 下走 Node 真實解析 → 遇 ESM extensionless import 即 `Cannot find module`。ESM 檔內也無 `__dirname`，用 `fileURLToPath(import.meta.url)`。
+- **Vitest 5 起 `clearMocks` 預設為 `true`**（每個 test 前自動清 mock 呼叫記錄，等同舊 `clearMocks: true`；只清 calls，不清 implementation／return value）：新測試**不要**再依賴「mock 呼叫次數跨 test 累積」，要累積就自己在 `beforeAll` 建 counter。其他 v5 硬性前提：Node ≥22、Vite ≥6.4；config 不再往上層目錄找（必須在 repo 根跑）；未 await 的非同步 assertion 現在會直接紅。
 - **CI flaky 重試無 `vi` 對應**（沒有 `jest.retryTimes`）：設 `vitest.config.mjs` integration project 的 `retry`。
 - asset：`.bin` 用 `?url` import；`.bin`/`.bmp` 需列入 `assetsInclude`；小圖（< `assetsInlineLimit` 4KB）自動 inline，CSS 內不必寫 `?inline`。
 - entry＝根目錄 `index.html`，title 佔位由 `vite.config.mjs` 的 `transformIndexHtml` 小 plugin 替換；favicon `<link href>` Vite 自動 hash。
