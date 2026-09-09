@@ -121,6 +121,15 @@
 - 懸掛縮排：`main.css` 給 bbsrow `padding-left: var(--merged-comment-indent)`，首則 bbsline 再以
   **負 `margin-left`** 拉回 0 欄；變數由 `render/screen.js` 依 `contentStart × forceWidth/2` inline 指定。
   **勿用 `text-indent`**——每則各自是 bbsline span，text-indent 會繼承下去把每行都往左拉。
+  - **縮排只管文字：`.inlinePreviewSlot` 以等量負 `margin-left` 豁免**（2026-09 使用者回報）。
+    自動開圖的佔位盒住在**同一個 bbsrow 裡**且是區塊盒 ⇒ 不豁免的話 containing block 先被
+    縮排扣掉一截：一般態 `margin:0.5em auto` 在變窄的盒子裡置中（左緣貼齊作者 id 欄）、
+    放大態 `width:100%` 剛好少一個縮排寬。負 margin 同時拉回左緣並補回寬度
+    （`margin-left + width(auto) = 容器寬`），故**勿改成寫死 width/padding**（字級與視窗寬一變就失準），
+    也**只能寫在 stylesheet**（runtime 改寫 slot 樣式會抑制捲動錨點補償，見
+    `render/inline_preview_slot.js` 檔頭）。與 `padding-left` 那條**成對**，少一條圖就凸出容器左緣。
+    守護：`tests/unit/merged_comment_image_css.test.js`、`comment_merge.offline.spec.js`
+    （「自動開圖不吃懸掛縮排」「放大態…填滿整個塊寬」）。
 - **勿再加回 gap 門檻**（舊 `BREAK_GAP_COLS`，2026-08 已整組拆除）。舊版猜「這則是不是打滿被截斷的續行」
   並把它與下一則串接；反查 pttbbs 證實此判斷**在畫面上無資訊量**：
   | 來源 | 事實 |

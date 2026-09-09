@@ -365,6 +365,23 @@ a:link,a:visited,a:active,a:hover {
 .mergedCommentBlock span[type="bbsrow"] > div > [data-type="bbsline"]:first-child {
   margin-left: calc(-1 * var(--merged-comment-indent, 0));
 }
+/* 懸掛縮排只管**文字**：自動開圖的佔位盒要豁免（使用者 2026-09 回報「合併推文裡的
+   圖沒滿版」）。上面那個 padding-left 下在 bbsrow 上，而 .inlinePreviewSlot 就住在
+   同一個 bbsrow 裡（見 LinkSegmentBuilder：每行 bbsline 後面緊跟該行的預覽 div）且是
+   **區塊盒** ⇒ containing block 先被縮排扣掉一截：一般態的 `margin: 0.5em auto` 在變窄
+   的盒子裡置中（整體右移、左緣貼齊作者 id 欄），放大態的 width:100% 也剛好少一個縮排寬。
+   等量負 margin-left 一次解決兩者 —— 區塊盒在正常流中 `margin-left + width(auto) = 容器寬`，
+   所以左緣拉回塊左緣的同時，寬度自己補回那一截，與非合併推文的圖逐像素相同。
+   **不可改成寫死 width/padding**：字級（forceWidth）與視窗寬一變就失準。
+   **只能寫在 stylesheet**：runtime 改寫 slot 的樣式會命中 CSS Scroll Anchoring 的
+   suppression trigger（見 render/inline_preview_slot.js 檔頭硬不變量）；靜態規則、值對
+   單一節點恆定 ⇒ 不觸發，與 .inlinePreviewSlot 的 display:grid 同類。
+   與上面的 padding-left **成對**：只留其中一條，圖會凸出容器左緣。
+   守護：tests/unit/merged_comment_image_css.test.js（CSS 契約）、
+   tests/e2e/offline/comment_merge.offline.spec.js（真幾何，jsdom 量不到）。 */
+.mergedCommentBlock .inlinePreviewSlot {
+  margin-left: calc(-1 * var(--merged-comment-indent, 0px));
+}
 /* 樓號徽章不覆寫：沿用一般 .floorBadge 的「零寬盒＋右對齊 id 起始欄向左長」疊字，
    前綴「marker＋空格＋id」照 col 對齊 → 合併塊作者 id 與相鄰單則推文（renderRow）
    同一起始欄，不會被徽章推移。

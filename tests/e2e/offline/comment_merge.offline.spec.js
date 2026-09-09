@@ -170,6 +170,119 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     }
   });
 
+  // 使用者 2026-09 回報（ptt-debug-20260910-010711）：合併塊裡的自動開圖沒滿版 ——
+  // 左緣貼齊作者 id 欄，放大後仍少掉整個縮排寬。成因是上一條測的那個懸掛縮排：
+  // 佔位盒 .inlinePreviewSlot 住在**同一個 bbsrow 裡**且是區塊盒 ⇒ containing block
+  // 先被 padding-left 扣掉一截。修法是 main.css 給它等量負 margin-left
+  // （靜態規則；runtime 不得改寫 slot 樣式，見 render/inline_preview_slot.js 檔頭）。
+  // 縮排只該管文字，圖要跟非合併推文的圖一樣寬。CSS 契約另由
+  // tests/unit/merged_comment_image_css.test.js 守（jsdom 無 layout，真幾何只能在這裡量）。
+  const markTargetBlock = (page) =>
+    page.evaluate(() => {
+      const el = Array.from(document.querySelectorAll('.mergedCommentBlock')).find((b) => {
+        const row = b.querySelector('span[type="bbsrow"]');
+        return row && row.getAttribute('data-pusher') === 'rz2x';
+      });
+      if (el) el.setAttribute('data-e2e-target', '1');
+      return !!el;
+    });
+
+  test('自動開圖不吃懸掛縮排：與合併塊同左緣、同寬', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+    await replayCassette(page, cassette, { easyReading: true });
+
+    // 佔位盒是延遲載入的：先把目標塊捲進視野等預覽到終局，否則量到的是空盒。
+    expect(await markTargetBlock(page)).toBe(true);
+    await mountLazyPreviewsAt(page, '[data-e2e-target]');
+    await waitPreviewsSettled(page);
+
+    const geo = await page.evaluate(() => {
+      const el = document.querySelector('[data-e2e-target]');
+      if (!el) return null;
+      const box = el.getBoundingClientRect();
+      const rect = (n) => {
+        const r = n.getBoundingClientRect();
+        return { left: r.left, width: r.width };
+      };
+      return {
+        boxLeft: box.left,
+        boxWidth: box.width,
+        // 縮排真的存在嗎（layout px）—— 沒有的話下面全是假綠。
+        indent: parseFloat(
+          getComputedStyle(el.querySelector('span[type="bbsrow"]')).paddingLeft
+        ),
+        slots: Array.from(el.querySelectorAll('.inlinePreviewSlot')).map(rect),
+        // 對照組：非合併列（#mainContainer 的直系 bbsrow）裡的佔位盒。
+        plain: Array.from(
+          document.querySelectorAll('#mainContainer > span[type="bbsrow"] .inlinePreviewSlot')
+        ).map((n) => rect(n).width),
+      };
+    });
+    expect(geo).not.toBeNull();
+    expect(geo.indent).toBeGreaterThan(0);
+    expect(geo.slots.length).toBeGreaterThan(0);
+
+    // 症狀是「差一個縮排寬」（百餘 px），遠大於這裡的次像素容差。
+    for (const s of geo.slots) {
+      expect(Math.abs(s.left - geo.boxLeft)).toBeLessThan(1.5);
+      expect(Math.abs(s.width - geo.boxWidth)).toBeLessThan(1.5);
+    }
+    // 與非合併列的圖等寬（該頁沒有這種列時自動略過，主斷言仍在上面）。
+    for (const w of geo.plain) {
+      expect(Math.abs(w - geo.boxWidth)).toBeLessThan(1.5);
+    }
+  });
+
+  // **釘住 'cache' 情境**：這條量的是「圖真的畫出來之後」的版面，而 404（offline-broken）
+  // 與慢速桶根本沒有可點的 img.hyperLinkPreview ⇒ 逆境批次會在「點得到圖嗎」硬紅
+  // （不是產品壞，是這條測試在那些桶裡沒有現場）。釘住情境比放行 skip 好：後者在
+  // 一般桶也會靜默變成假綠。上一條（佔位盒幾何）刻意不釘 —— 它連替身盒／讀取中的
+  // 路徑都該成立，本來就與圖回得多快無關。
+  test('放大態：合併塊裡的圖填滿整個塊寬', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt, { imageProfile: 'cache' });
+    await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+    await replayCassette(page, cassette, { easyReading: true });
+
+    expect(await markTargetBlock(page)).toBe(true);
+    await mountLazyPreviewsAt(page, '[data-e2e-target]');
+    await waitPreviewsSettled(page);
+
+    // 產品路徑：點圖切換放大（render/screen.js 的容器 click handler）。
+    const clicked = await page.evaluate(() => {
+      const img = document.querySelector('[data-e2e-target] img.hyperLinkPreview');
+      if (!img || !img.offsetWidth) return false;
+      img.click();
+      return true;
+    });
+    expect(clicked).toBe(true);
+    await waitPreviewsSettled(page);
+
+    // **量 offsetWidth 不量 rect**：img.hyperLinkPreview 帶著抵消 .main transform 的
+    // 反向 scale（term_view.updateReverseScaleCss），rect 與塊的 rect 不同尺規。
+    const geo = await page.evaluate(() => {
+      const el = document.querySelector('[data-e2e-target]');
+      const img = el.querySelector('img.hyperLinkPreview');
+      return {
+        enlarged: document
+          .getElementById('mainContainer')
+          .classList.contains('imagesEnlarged'),
+        indent: parseFloat(
+          getComputedStyle(el.querySelector('span[type="bbsrow"]')).paddingLeft
+        ),
+        boxWidth: el.offsetWidth,
+        imgWidth: img ? img.offsetWidth : null,
+      };
+    });
+    expect(geo.enlarged).toBe(true);
+    expect(geo.indent).toBeGreaterThan(0);
+    expect(geo.imgWidth).not.toBeNull();
+    // 舊行為的 width:100% 是「縮排後的 100%」⇒ 剛好少一個 geo.indent。
+    expect(Math.abs(geo.imgWidth - geo.boxWidth)).toBeLessThan(1.5);
+  });
+
   // 使用者 2026-08 要求：時間「比照原生置右」，不是跟著最後一則內容的結束位置。
   // 對齊靠的是「末行原樣帶走原列的 padding」（comment_merge.js），純資料無 CSS，
   // 但欄→像素的換算只有真瀏覽器算得出來 → 直接跟同頁的原生推文列比時間戳 x 座標。
