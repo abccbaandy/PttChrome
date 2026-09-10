@@ -1,12 +1,12 @@
 name: Test
 
-# Reusable workflow：四個測試 job（不含 live e2e）。
+# Reusable workflow：五個測試 job（不含 live e2e）。
 # 由 deploy.yml（push dev，後接 build/deploy）與 pr.yml（pull_request，只跑 test）共用。
 on:
   workflow_call:
 
 jobs:
-  # 四個測試 job 平行跑。不含 live e2e：連真實 PTT、guest 名額常滿會 fast-fail，不適合當 gate。
+  # 五個測試 job 平行跑。不含 live e2e：連真實 PTT、guest 名額常滿會 fast-fail，不適合當 gate。
   test-unit:
     runs-on: ubuntu-latest
     steps:
@@ -132,3 +132,30 @@ jobs:
           yarn install --immutable
           npx playwright install --with-deps chromium
           yarn test:e2e:offline:adverse
+
+  # proxy/imgur-worker 是獨立的 npm 子專案（Cloudflare Worker 代理，非 yarn workspace），
+  # 上面四個 job 一條都掃不到它 —— 它們跑的是 yarn 的 test:unit / test:integration /
+  # test:e2e:offline*，include 全指向根目錄的 tests/。所以在這個 job 之前，Dependabot
+  # 改到 proxy/imgur-worker/package-lock.json 的 PR，那排綠勾與該改動**完全無關**
+  #（實例：PR #29 的 vitest 4→5 major bump，五個 check 全綠但一條 worker 測試都沒跑，
+  # 只能靠人在本機 npm ci && npm test 才驗得到）。
+  # 成本極低（純 node 測試，55 條約 0.2 秒），與其他 job 平行跑，牆鐘時間不變。
+  # 守護：tests/unit/ci_imgur_worker_job.test.js。
+  test-imgur-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 這個子專案用 npm（自帶 package-lock.json），不走 corepack/yarn ⇒ 不需要上面
+      # 那套「先 enable corepack 再 cache:yarn」的兩段式 setup-node。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: proxy/imgur-worker/package-lock.json
+
+      - name: Worker tests (npm)
+        working-directory: proxy/imgur-worker
+        run: |
+          npm ci
+          npm test
