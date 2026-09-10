@@ -966,6 +966,12 @@ TermBuf.prototype = {
     // return，notify 是兩者唯一的共同匯流點，所以在這裡每幀無條件重算一次。
     if (this.view) this.view.refreshCursorVisibility();
 
+    // 同一個理由掛在同一個位置：畫面（或只有游標）變了之後，用快取的滑鼠座標把
+    // 「點下去做什麼」重算一次 —— 上面的 clearHighlight() 才剛把它清成 none，而
+    // 滑鼠可能整段時間都沒有物理移動。**必須排在 setPageState() 之後**（讀本幀的
+    // 新 pageState），也涵蓋只有游標 park escape 的幀（inputPrompt／dismiss 都看游標）。
+    this.refreshMouseAction();
+
     if (this.view.blinkOn) {
       this.view.blinkOn = false;
 
@@ -1312,11 +1318,31 @@ TermBuf.prototype = {
     this.tempMouseCol = tcol;
     this.tempMouseRow = trow;
 
-    // 空列判斷只有列表用得到，其餘畫面不必掃 80 格。
-    var lineEmpty = (this.pageState === 2 || this.pageState === 4) ?
-      this.isLineEmpty(trow) : false;
+    var region = this._resolveMouseRegionAt(tcol, trow);
 
-    var region = resolveMouseRegion({
+    this.mouseAction = region.action;
+    this.mouseActionRow = region.row;
+    // setter 會轉呼叫 view.applyCursorHighlight（唯一套用入口）。**只有這裡**
+    // 會寫 nowHighlight，因為 row >= 0 時它等於宣告「滑鼠取得底色優先權」——
+    // 詳見 refreshMouseAction。
+    this.nowHighlight = region.highlightRow;
+
+    this._applyMousePointer(region);
+  },
+
+  // 這一格的滑鼠語意（純查詢，不寫任何狀態）。onMouse_move 與 refreshMouseAction
+  // 共用；兩者的**套用範圍不同**，故刻意分成 resolve / apply 兩段。
+  _resolveMouseRegionAt: function(tcol, trow) {
+    // 空列判斷只有列表用得到，其餘畫面不必掃 80 格。
+    // trow 來自 App.clientToPos，它**不 clamp**（指標移到終端機上／下方時會超出
+    // 0..rows-1），而 refreshMouseAction 每幀都會走到這裡 ⇒ 先擋掉越界，否則
+    // isLineEmpty 會 deref undefined 把整條 notify 炸斷。
+    var lineEmpty =
+      (this.pageState === 2 || this.pageState === 4) &&
+      trow >= 0 && trow < this.rows ?
+        this.isLineEmpty(trow) : false;
+
+    return resolveMouseRegion({
       pageState: this.pageState,
       col: tcol,
       row: trow,
@@ -1332,14 +1358,11 @@ TermBuf.prototype = {
       // 只換指標。**送鍵不在這條路上**（見 App.mouse_click 的說明）。
       dismiss: this.dismissTarget()
     });
+  },
 
-    this.mouseAction = region.action;
-    this.mouseActionRow = region.row;
-    // setter 會轉呼叫 view.applyCursorHighlight（唯一套用入口）。
-    this.nowHighlight = region.highlightRow;
-
-    // 指標圖示與左側提示帶都是「這裡點下去會做什麼」的提示 ⇒ 跟著左鍵開關走，
-    // 與底色（滑鼠移動）各自獨立。
+  // 指標圖示與左側提示帶都是「這裡點下去會做什麼」的提示 ⇒ 跟著左鍵開關走，
+  // 與底色（滑鼠移動）各自獨立。
+  _applyMousePointer: function(region) {
     var affordance =
       !!(this.useMouseBrowsing && this.view && this.view.mouseLeftClick);
     if (this.BBSWin) {
@@ -1353,6 +1376,30 @@ TermBuf.prototype = {
       // 是同一個手勢、同一個 back 指標，日後再多一種退出 action 也不會漏列舉。
       this.view.setExitAffordance(affordance && region.cursor === CUR_BACK);
     }
+  },
+
+  // server 重畫之後，用**快取的滑鼠格座標**重算「點下去做什麼」。
+  //
+  // 為什麼需要：notify 的每個 changed 幀都會 clearHighlight()，把 mouseAction 清成
+  // none；而重算原本只由真實 mousemove 觸發（resetMousePos 不在 notify 路徑上）
+  // ⇒ 使用者點掉「請按任意鍵繼續」後指標停在原地不動時，下一次點擊讀到的是 none，
+  // 整個落進 App.onMouse_click 的 `default: //do nothing`。
+  //
+  // **不可以碰 nowHighlight**：它的 setter 在 row >= 0 時會以 'mouse' 為來源呼叫
+  // view.applyCursorHighlight ＝宣告滑鼠取得底色優先權。每個重畫幀都宣告一次的話，
+  // _highlightMover 會永遠是 'mouse'，鍵盤再也搶不回光棒（fddf274 修掉的那個 bug）。
+  // 底色維持原行為：重畫幀由 clearHighlight() 讓出，交回鍵盤游標列。
+  // 守護：tests/unit/term_buf_mouse_refresh.test.js、cursor_highlight_arbitration.test.js。
+  refreshMouseAction: function() {
+    if (!this.useMouseBrowsing) return;
+    // 列表好讀畫的是 ListSession 的虛擬視窗，座標與 server 的真實列不對應
+    // （同 onMouse_move 的守門），一律交給 term_view.onListMouseMove。
+    if (this.listRenderMode === 'buffer' || this.listRenderMode === 'frozen')
+      return;
+    var region = this._resolveMouseRegionAt(this.tempMouseCol, this.tempMouseRow);
+    this.mouseAction = region.action;
+    this.mouseActionRow = region.row;
+    this._applyMousePointer(region);
   },
 
   resetMousePos: function() {

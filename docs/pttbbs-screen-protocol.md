@@ -166,6 +166,27 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 指紋** `comment_parse#isListShapedRow` —— 就是本節說的「要再問指紋」。細節見
 `docs/enhanced-addon.md` 踩坑 A。
 
+**沿用的另一面：子選單根本沒有分支可命中（2026-09-11 修，CONFIRMED 讀碼）**。`setPageState` 判 MENU
+只有兩條路——row0 開頭是 `【主功能表】`/`【分類看板】`/`【精華文章】`，或 `parseListRow(末列)`。而
+`menu.c#domenu` 開出來的子選單 row0 是各自的標題（`(X)yz 系統資訊區`＝`【工具程式】`、
+`(U)ser 個人設定區` 等同理），**只剩 `parseListRow` 這一條**。它的 regex 從 fork 以來比對的是
+`[%d/%d 星期XX %d:%02d] … [呼叫器]%s` —— **那個格式 pttbbs 史上不存在**
+（`git -C 3rd_script/pttbbs log -S'星期' -- mbbsd/menu.c` 零筆；`str_pager_modes` 第二項也不是「打開」
+而是「開啟」）⇒ 恆為 false 的死碼 ⇒ **所有子選單的 `pageState` 都是從主功能表繼承來的**。
+兩個使用者可見的症狀（錄製檔 `ptt-debug-20260910-171017`）：
+
+- 子選單 →「查看系統資訊」（`pressanykey` ⇒ 5）→ 關框回子選單 ⇒ **黏在 5** ⇒
+  `resolveMouseRegion` 的 `switch` 走 `default` ⇒ 滑鼠瀏覽整個失效（實錄：重畫後 9.6 秒的
+  `send` 快照仍是 5），要走到判得出來的畫面才恢復。
+- 讀完一篇按 `←` 回子選單（黏在 3）再開下一篇 ⇒ settled edge 是 `3→3`，不在
+  `nextEasyReadingState` 的來源集 `{1,2}` ⇒ 好讀「有時」不自動啟用。
+
+修法是把 `parseListRow` 校準回真實的 `show_status`（**不是**加 reset 分支，沿用仍然是刻意的）。
+守護：`tests/unit/term_buf_page_state.test.js`、`tests/unit/string_util.test.js`。
+**這一輪真正的教訓是測試面的**：當時的 unit fixture 是照著同一個錯誤假設手寫的，於是
+「程式錯 ＋ 測試錯」互相背書，一條恆假的指紋全綠躺了很久。**畫面指紋的 fixture 一律要來自
+pttbbs source 或線上實測位元組，不可與被測程式共用同一個假設。**
+
 ## 6. `\f`（Ctrl+L）確定性交易依據（v5 新增，全部 CONFIRMED）
 
 - **igetch 全域熱鍵**：`Ctrl('L')` → `redrawwin()+refresh()` 後 `continue`（`mbbsd/io.c` igetch switch）——`\f` 永不回傳給呼叫者，等同「插入一幀全幅重繪」。`vkey()`＝`igetch()`（io.c `vkey`），故**所有走 vkey 的輸入點都吃這條**。
@@ -314,7 +335,7 @@ Read()  bbs.c:4640-4657
 | client | 官方出處 | 契約 |
 |---|---|---|
 | `parseStatusRow` | `pmore.c#mf_display_footer` ＋ `more.c#common_pmore_footer_handler` | part1 `"  瀏覽 第 %1d[/%1d] 頁 (%3d%%) "`（頁碼**無位數上限**，實錄已見 540/540）；part2 `" 目前顯示: 第 %02d~%02d 行"`／**`" 顯示範圍: %d~%d 欄位, %02d~%02d 行"`（`mf.xpos>0` 左右捲動）**；**part3 完全不比對**——它會整段消失（見 §13 P5），要求它會讓整列失配 → 掉出 pageState 3 → 好讀累積頁被清空。`bpref.oldstatusbar` 的 `"  瀏覽 P.%d(%d%%)  "` 目前**不支援**（非預設） |
-| `parseListRow` | `menu.c#show_status` | `"[%d/%d 星期XX %d:%02d]"` ＋ `"%-14s"`（today_is，**緊接 `]` 無空格**）＋ `" 線上%d人, 我是%s"` ＋ `"\t[呼叫器]%s "`；呼叫器狀態 5 種＝`var.c#str_pager_modes`：關閉／打開／拔掉／防水／好友 |
+| `parseListRow` | `menu.c:302-322#show_status` | `"%d/%d周%c%c %d:%02d"`（`myweek="日一二三四五六"`，**沒有中括號、沒有「星期」**）＋ `"%-14s"`（today_is，緊接時間，補的是**位元組**寬度）＋ `" 線上%d人,我是%s,呼叫器%s"`（**半形逗號、前後無空格**）＋ `"\t(h)說明"`（靠右，**不比對**）；呼叫器狀態 5 種＝`var.c:118-125#str_pager_modes`：關閉／**開啟**／拔掉／防水／好友。**這是 `menu.c#domenu` 子選單唯一的指紋**（見下方踩坑） |
 | `parseWaterball` | `mbbsd.c#show_call_in` | 見 §9 |
 | `parsePushInitText`（消費者：`image_upload.js`） | `bbs.c#recommend`／`angel.c` | `您覺得這篇文章 `；`FormatCommentString` 的輸入 prompt「→ id:」**無行尾時間戳** |
 | `comment_parse.COMMENT_RE` | `comments.c#FormatCommentString`＋`common/bbs/names.c#is_validuserid` | `<attr><推/噓/→><空格>ESC[33m<id>ESC[m:<msg 補到 maxlength>ESC[m<tail>`；id 長度 **2..IDLEN(12)**、首 isalpha 其餘 isalnum；`BRD_ALIGNEDCMT` 時 id 以 `%-*s` 補到 12 寬（故 `:` 前可有空格）；tail＝`[%15s ]MM/DD HH:MM`（`Cdate_mdHM` ＝ `"%m/%d %H:%M"`，IP 僅 `BRD_IPLOGRECMD`／guest） |

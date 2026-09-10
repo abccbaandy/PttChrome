@@ -241,18 +241,39 @@ export function parseStatusRow(str) {
 };
 
 // 選單畫面底部狀態列＝ MENU 指紋（term_buf.setPageState / classifyListScreen）。
-// 官方 mbbsd/menu.c#show_status，經 vbarf（\t 之後靠右對齊）組出：
-//   "[%d/%d 星期%c%c %d:%02d]" "%-14s" " 線上" "%d" "人, 我是" "%s" "\t[呼叫器]" "%s "
-// 兩個必須照著寫的細節：
-//  1. 「]」後**緊接** SHM->today_is（%-14s 左對齊）——不保證有空格，舊版寫成
-//     "\] " 會在 today_is 首字非空白時整條失配。
-//  2. 呼叫器狀態取自 mbbsd/var.c#str_pager_modes[PAGER_MODES]，共五種；舊版只認
-//     前兩種，使用者設成拔掉／防水／好友時主選單就認不出來（離板交易的 expect
-//     永不完成 → 卡住）。
-const PAGER_MODES = ['關閉', '打開', '拔掉', '防水', '好友']; // str_pager_modes
+//
+// **這是 menu.c#domenu 子選單唯一的指紋**：setPageState 的 row0 白名單只有
+// 【主功能表】/【分類看板】/【精華文章】，而 (X)yz 系統資訊區的 row0 是【工具程式】、
+// (U)ser 個人設定區等亦然 ⇒ 這條 regex 失配，整個子選單就落進「沒有分支命中」，
+// 沿用上一幀的 pageState（setPageState 刻意沒有 reset 分支）。
+//
+// 官方出處 mbbsd/menu.c:302-322#show_status，vbarf 的 format string 逐段：
+//   ANSI "%d/%d周%c%c %d:%02d"  ANSI "%-14s"(SHM->today_is)
+//   ANSI " 線上" ANSI "%d" ANSI "人,我是" ANSI "%s" ANSI ",呼叫器" ANSI "%s"
+//   "\t"（vbarf 之後靠右對齊） ANSI "(h)" ANSI "說明"
+//
+// ⚠️ 2026-09 之前這裡寫的是 `[%d/%d 星期%c%c %d:%02d] … [呼叫器]%s`，**那個格式
+// pttbbs 史上不存在**（`git -C 3rd_script/pttbbs log -S'星期' -- mbbsd/menu.c` 零筆，
+// 「星期」二字全 source 都沒有），連 PAGER_MODES 的第二項都抄成「打開」（實際是
+// 「開啟」）⇒ parseListRow **恆為 false**，是一段沒人發現的死碼。當時的 unit test
+// fixture 是照同一個錯誤假設生出來的，於是把錯誤一起鎖死 —— 教訓：**指紋的 fixture
+// 必須來自 source 或線上實測位元組，不可與被測程式共用同一個假設**（CLAUDE.md
+// 「PTT 邏輯不准猜」）。
+//
+// 幾個必須照著寫的細節：
+//  1. `^` 錨定：show_status 先 move(b_lines, 0) 才 vbarf，一定從第 0 欄起。
+//  2. `周%c%c` 取的是 myweek = "日一二三四五六" 的**兩個 Big5 位元組＝一個字**。
+//  3. today_is 是站長可改的任意文字，`%-14s` 補的是**位元組**寬度（轉 Unicode 後
+//     ≤14 字）⇒ 用 lazy 的 `.{0,14}?`，不對內容做任何假設。
+//  4. `人,我是`／`,呼叫器` 都是**半形逗號、前後無空格**。
+//  5. 尾端的 `\t` → `(h)說明` 不比對：與 STATUS_ROW_RE 對 part3 的處理同理，
+//     會消失／被擠掉的段落一旦要求就整列失配（代價見上面 STATUS_ROW_RE 的長註解）。
+//  6. 呼叫器狀態取自 mbbsd/var.c:118-125#str_pager_modes[PAGER_MODES]，共五種；
+//     使用者設成拔掉／防水／好友時主選單一樣是主選單。
+const PAGER_MODES = ['關閉', '開啟', '拔掉', '防水', '好友']; // str_pager_modes
 const LIST_ROW_RE = new RegExp(
-  /\[\d{1,2}\/\d{1,2} +星期. +\d{1,2}:\d{2}\].* 線上\d+人, 我是\w+ +\[呼叫器\]/.source +
-  '(?:' + PAGER_MODES.join('|') + ') '
+  /^\d{1,2}\/\d{1,2}周[日一二三四五六] \d{1,2}:\d{2}.{0,14}? 線上\d+人,我是\w+,呼叫器/.source +
+  '(?:' + PAGER_MODES.join('|') + ')'
 );
 
 export function parseListRow(str) {

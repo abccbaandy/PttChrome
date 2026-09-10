@@ -177,6 +177,29 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 
 滾輪關閉時 `mouse_scroll` **直接 return，不 preventDefault**（語意＝我們完全不碰）。
 
+### 重畫之後的重算（`term_buf.refreshMouseAction`）
+
+`notify()` 的每個 `changed` 幀都 `clearHighlight()`，把 `mouseAction` 清成 `none`。重算原本
+**只由真實 `mousemove` 觸發**（`resetMousePos()` 只有三個 pref handler 會叫，不在 notify 路徑上）
+⇒ server 重畫後、指標停在原地不動時，下一次點擊在 `App.onMouse_click` 讀到 `none`，
+落進 `default: //do nothing`。最容易撞到的情境就是**點空白處關掉「請按任意鍵繼續」之後**
+（那條路徑刻意繞開 `buf.mouseAction`，關框本身沒事，但關完的下一次點擊會沒反應）。
+
+修法：`notify()` **尾端**呼叫 `buf.refreshMouseAction()`，用快取的 `tempMouseCol/tempMouseRow`
+重跑 `resolveMouseRegion`。掛在尾端的理由與 `refreshCursorVisibility()` 相同——`changed` 與
+`posChanged` 兩個分支各有早退，那裡是唯一的共同匯流點，而且排在 `setPageState()` 之後
+（讀得到本幀的新 `pageState`），也涵蓋只有游標 park escape 的幀（`inputPrompt`／`dismiss`
+兩個輸入都看游標）。
+
+**不變量：它只套用「點下去做什麼」那一半（`mouseAction` / `mouseActionRow` / 指標圖示 /
+左側提示帶），絕對不碰 `nowHighlight`。** `nowHighlight` 的 setter 在 `row >= 0` 時會以
+`'mouse'` 為來源呼叫 `applyCursorHighlight` ＝宣告滑鼠取得底色優先權；每個重畫幀都宣告
+一次的話 `_highlightMover` 會永遠是 `'mouse'`，鍵盤再也搶不回光棒（＝「底色仲裁」那節
+修掉的 bug）。底色維持原本行為：重畫幀由 `clearHighlight()` 讓出，交回鍵盤游標列。
+列表好讀（`listRenderMode` buffer/frozen）與 `onMouse_move` 一樣早退，座標系不同。
+
+守護：`tests/unit/term_buf_mouse_refresh.test.js`、`tests/unit/cursor_highlight_arbitration.test.js`。
+
 **列表好讀的滾輪＝完全不碰**（2026-08-30 起，與文章好讀同一條路）：`mouse_scroll`
 在 `gates.wheelSmoothScroll` 時 **early return，不 preventDefault、不 stopPropagation**，
 body 視口（`.listBodyView`，`overflow-y:auto`，內容＝整段序列）由瀏覽器自己捲。

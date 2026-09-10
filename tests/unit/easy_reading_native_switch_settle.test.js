@@ -79,6 +79,7 @@ function makeBuf() {
     updateCharAttr() {},
     setPageState() {},        // pageState 由測試直接設定（模擬伺服器畫面）
     clearHighlight() {},
+    refreshMouseAction() {},  // notify 尾端的滑鼠重算，本檔不測
     addEventListener(type, fn) {
       (listeners[type] = listeners[type] || []).push(fn);
     },

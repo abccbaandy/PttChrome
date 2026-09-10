@@ -31,8 +31,10 @@ const fixture = JSON.parse(
 const listRows = fixture.pageScreens[0]; // 24 decoded rows of a real C_Chat page
 
 const STATUS_ROW = "  瀏覽 第 1/8 頁 ( 12%)  目前顯示: 第 01~23 行 (←)離開 ";
+// mbbsd/menu.c:302-322#show_status 的實際輸出（見 string_util.js 的 LIST_ROW_RE 長註解；
+// 2026-09 以前這裡寫的是一個 pttbbs 史上不存在的格式，連帶這一條一直是假綠）。
 const BOARD_MENU_FOOTER =
-  "[6/14 星期六 12:34] 動態看板 線上1234人, 我是guest [呼叫器]打開 ";
+  "6/14周六 12:34 動態看板      線上1234人,我是guest,呼叫器開啟          (h)說明";
 
 // Facts builder around the captured page. Color reversal booleans default to
 // true (the capture is a clean board page); curY=3/curX=1 is the protocol §5

@@ -352,29 +352,58 @@ describe("parsePagerFooterContext（more.c#common_pmore_footer_handler）", () =
 });
 
 // ---------------------------------------------------------------------------
-// parseListRow — 選單畫面底部狀態列（term_buf.setPageState 的 MENU 指紋）
+// parseListRow — 選單畫面底部狀態列（term_buf.setPageState / list_session.
+// classifyListScreen 的 MENU 指紋）。
 //
-// 官方 mbbsd/menu.c#show_status，經 vbarf（\t 後靠右對齊）：
-//   ANSI "[%d/%d 星期%c%c %d:%02d]" ANSI "%-14s" ANSI " 線上" ANSI "%d"
-//   ANSI "人, 我是" ANSI "%s" ANSI "\t[呼叫器]" ANSI "%s "
-// 兩個關鍵事實：
-//   1. "]" 後**緊接** SHM->today_is（%-14s 左對齊），不保證有空格。
-//   2. 呼叫器狀態取自 mbbsd/var.c#str_pager_modes[PAGER_MODES]，共 **5** 種：
-//      關閉 / 打開 / 拔掉 / 防水 / 好友。
+// 官方 mbbsd/menu.c:302-322#show_status 的 vbarf format string（ANSI 省略）：
+//   "%d/%d周%c%c %d:%02d" "%-14s"(SHM->today_is)
+//   " 線上" "%d" "人,我是" "%s" ",呼叫器" "%s"
+//   "\t"（之後靠右對齊） "(h)" "說明"
+//
+// ⚠️ 這裡的 fixture **必須來自 source 或線上實測位元組**。2026-09 以前這一段測的是
+// `[%d/%d 星期%c%c %d:%02d] … [呼叫器]%s` —— 那個格式 pttbbs 史上不存在
+// （`git -C 3rd_script/pttbbs log -S'星期' -- mbbsd/menu.c` 零筆），fixture 又是照
+// 同一個錯誤假設手寫的，於是「程式錯 + 測試錯」互相背書：parseListRow 恆為 false
+// 卻全綠，直到使用者回報「系統資訊區的好讀時好時壞、滑鼠瀏覽卡死」才挖出來。
+//
+// 關鍵事實：
+//   1. 沒有中括號、沒有「星期」，是「周四」這種一個 Big5 字的寫法。
+//   2. today_is 緊接在時間後（%-14s 左對齊，補的是**位元組**寬度），內容是站長
+//      可改的任意文字。
+//   3. 「人,我是」「,呼叫器」都是**半形逗號、前後無空格**。
+//   4. 呼叫器狀態取自 mbbsd/var.c:118-125#str_pager_modes[PAGER_MODES]，共 **5** 種：
+//      關閉 / 開啟 / 拔掉 / 防水 / 好友（**不是**「打開」）。
 // ---------------------------------------------------------------------------
 describe("parseListRow（主選單狀態列, menu.c#show_status）", () => {
+  // %-14s 補的是位元組寬度：Big5 一個中文字 2 bytes。
+  const b5len = (s) => {
+    let n = 0;
+    for (const ch of s) n += ch.charCodeAt(0) > 0x7f ? 2 : 1;
+    return n;
+  };
+  const padTodayIs = (s) => s + " ".repeat(Math.max(0, 14 - b5len(s)));
   // vbarf 會把 \t 後的內容推到右端，這裡以固定空白模擬。
   const statusRow = (todayIs, pager, user = "someuser") =>
-    `[7/26 星期日 14:30]${todayIs.padEnd(14)} 線上24683人, 我是${user}` +
-    `        [呼叫器]${pager} `;
+    `9/10周四 17:09${padTodayIs(todayIs)} 線上24683人,我是${user},呼叫器${pager}` +
+    `          (h)說明`;
 
-  test("關閉 / 打開", () => {
+  // 線上實測（debug 錄製檔的底列）。帳號已換成同長度的佔位符
+  // （本 repo 公開，不寫真實 PTT 帳號），其餘逐 byte 照抄。
+  test("線上實際位元組（系統資訊區子選單底列）", () => {
+    expect(
+      parseListRow(
+        "9/10周四 17:09 [ 射手時 ]    線上25809人,我是bbsuser001,呼叫器開啟          (h)說明"
+      )
+    ).toBe(true);
+  });
+
+  test("關閉 / 開啟", () => {
     expect(parseListRow(statusRow(" 今日主題", "關閉"))).toBe(true);
-    expect(parseListRow(statusRow(" 今日主題", "打開"))).toBe(true);
+    expect(parseListRow(statusRow(" 今日主題", "開啟"))).toBe(true);
   });
 
   // str_pager_modes 的後三種：使用者把呼叫器設成拔掉/防水/好友時，主選單
-  // 一樣是主選單 —— 舊 regex 只認「關閉|打開」→ setPageState 認不出 MENU、
+  // 一樣是主選單 —— 認不出來的話 setPageState 判不出 MENU、
   // list_session.classifyListScreen 認不出 menu（離板交易的 expect 永不完成）。
   test("拔掉 / 防水 / 好友（str_pager_modes 其餘三種）", () => {
     expect(parseListRow(statusRow(" 今日主題", "拔掉"))).toBe(true);
@@ -382,8 +411,7 @@ describe("parseListRow（主選單狀態列, menu.c#show_status）", () => {
     expect(parseListRow(statusRow(" 今日主題", "好友"))).toBe(true);
   });
 
-  // "]" 後是 %-14s 的第一個字元，today_is 首字非空白時舊 regex 的 "\] " 失配。
-  test("today_is 緊接「]」無空格（%-14s 左對齊）", () => {
+  test("today_is 緊接時間、首字非空白（%-14s 左對齊）", () => {
     expect(parseListRow(statusRow("今日主題就是這個", "關閉"))).toBe(true);
   });
 
@@ -391,11 +419,25 @@ describe("parseListRow（主選單狀態列, menu.c#show_status）", () => {
     expect(parseListRow(statusRow("", "關閉"))).toBe(true);
   });
 
-  // 時 %d 不補零、分 %02d 補零；月/日皆不補零。
-  test("個位數時間（%d:%02d，時不補零）", () => {
+  test("today_is 塞滿 14 bytes 的中文（轉 Unicode 後只有 7 字）", () => {
+    expect(parseListRow(statusRow("今日主題七個字", "開啟"))).toBe(true);
+  });
+
+  // 時 %d 不補零、分 %02d 補零；月/日皆不補零。星期取 myweek 的七個字。
+  test("個位數月/日/時（%d/%d …%d:%02d）", () => {
     expect(
-      parseListRow("[1/2 星期一 9:05]              線上100人, 我是ab  [呼叫器]關閉 ")
+      parseListRow("1/2周一 9:05              線上100人,我是ab,呼叫器關閉  (h)說明")
     ).toBe(true);
+  });
+
+  // 這一條是本次 bug 的回歸釘子：舊格式是憑空捏造的，不可以再被接受，
+  // 否則下一個人「兩種都收」的好意會讓錯誤格式繼續看起來像有出處。
+  test("pttbbs 史上不存在的舊捏造格式 → false", () => {
+    expect(
+      parseListRow(
+        "[7/26 星期日 14:30] 今日主題     線上24683人, 我是someuser  [呼叫器]關閉 "
+      )
+    ).toBe(false);
   });
 
   test("看板文章列表 feeter 不得誤判為選單", () => {

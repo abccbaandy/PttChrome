@@ -36,6 +36,7 @@ function makeBuf() {
     updateCharAttr() {},
     setPageState() {},
     clearHighlight() {},
+    refreshMouseAction() {},  // notify 尾端的滑鼠重算，本檔不測
     dispatchEvent(ev) {
       events.push(ev.type);
     },
