@@ -9,6 +9,7 @@
 // 而維持全綠就是搬移正確的證明。
 import { TLDS } from './url_fix';
 import { isDbcsCell } from './comment_break';
+import { trimUrlTailLength } from './url_trim';
 
 // URL 字元類：與 url_fix.js 的 PATH / TermBuf.uriRegEx 的 host+path 類一致（純
 // ASCII、不含空白），加上 scheme 會用到的字元。
@@ -30,8 +31,13 @@ export function isUrlCell(chars, i) {
   return !!c && !isDbcsCell(chars, i) && URL_CHAR_RE.test(c.ch);
 }
 
-// 併起來的字串是不是一個值得連的網址 → { fixed, host }，否則 null。
+// 併起來的字串是不是一個值得連的網址 → { fixed, host, trimmed }，否則 null。
+// `trimmed` ＝ 尾端被當成句子砍掉的字元數（src/js/url_trim.js）。呼叫端若自己
+// 算了欄位範圍（body_wrap 的 parts），**必須**用它把最後一段縮回去，否則底線畫的
+// 範圍會比 href 長一格。
 export function validateJoined(joined) {
+  const trimmed = trimUrlTailLength(joined);
+  if (trimmed) joined = joined.slice(0, joined.length - trimmed);
   const hasScheme = SCHEME_RE.test(joined);
   const rest = joined.replace(SCHEME_RE, '');
   const m = HOST_RE.exec(rest);
@@ -46,5 +52,6 @@ export function validateJoined(joined) {
   return {
     fixed: hasScheme ? joined : 'https://' + joined,
     host: m[1].toLowerCase(),
+    trimmed,
   };
 }

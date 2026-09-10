@@ -186,6 +186,38 @@
   的回歸鎖）、`comment_merge.offline.spec.js`「推文區塊行距」（真幾何：
   `outerGap > innerGap > 0`，關掉即兩者收斂回 0）。
 
+## URL 結尾修剪（`src/js/url_trim.js`）
+**一條純函式、四個消費點**：結尾的句尾標點（`. , ; : ! ?`）與**不成對**的 `) ] }` 屬於句子不屬於 URL。
+
+回報現場（2026-09-10）：
+```
+          支援，(https://vt100.net/emu/ctrlseq_dec.html)，本站
+         (https://docs.frankentui.com/render/synchronized-output)
+```
+兩行的連結都把結尾的 `)` 吃進去。**不可以靠縮字元類解決**：`(` `)` 在 path 裡合法
+（維基百科 `戈黛娃夫人_(歌手)`，反向鎖在 `url_cjk.test.js`），而且同一組 host/path 字元類
+被複製在 **5 處**（`term_buf.uriRegEx`、`url_fix.PATH` 與 `VALID_URI_RE`、`url_cjk.PATH_ASCII`、
+`url_join.URL_CHAR_RE`）—— 所以改成「算出結尾之後再修剪一次」，規則只有一份。
+
+- 規則反覆套用到收斂：右括號只在**剩餘字串裡它比對應左括號多**時才砍（`(https://a/b)` 砍、
+  `https://a/b_(c)` 保留、`https://a/b((c)))` 只砍最外面多出來那一層）；句尾標點無條件砍；
+  永不砍進 `<scheme>://` ＋ 1 個字元（`https://)` 這種退化輸入原樣留著）。引號 `'` `"`
+  **刻意不納入**（path 裡出現引號比句尾引號常見）。
+- 四個消費點：
+  | 檔案 | 位置 | 備註 |
+  |---|---|---|
+  | `term_buf.js` | `updateCharAttr` 的 exec 迴圈，算出 `uriEnd` 之後、**CJK 延伸判定之前** | 縮 `uriEnd` ＝ 縮 `uri[1]` ⇒ `partOfURL`／`endOfURL`／`fullurl` 自動一致。排在 CJK 延伸前是對的：被砍掉的那個 `)` 本來就會讓 `cjkUrlExtension` 的「前導必須是 `/` 或 `=`」守門拒絕延伸 |
+  | `url_cjk.js` | 既有的結尾標點修剪改呼叫共用函式 | 括號平衡只看延伸段自己就夠：`(https://a.com/中文)` 的左括號在 URL 之外 ⇒ 本地不成對、正確砍；`/wiki/(中文)` 兩邊都在段內 ⇒ 平衡、保留 |
+  | `url_fix.js` | `detectFixableUrls` 的 `fixed`，**排在 `fixed === original` 守門之後** | 修剪若排在前面，`(https://a.com/b)` 這種「主偵測器自己就處理得好」的列會因為修剪後不再等於原文而冒出一條重複的 ↳ 修復行。`VALID_URI_RE` 刻意**不動**（它比對的是未修剪的原文字面） |
+  | `url_join.js` | `validateJoined` 先修剪再驗，回傳值多一個 `trimmed` | **呼叫端若自己算了欄位範圍必須跟著縮**：`body_wrap` 的 `parts` 是數格子數出來的，不縮就會底線比 href 長一格（砍到最後一段整段消失時整條候選棄掉） |
+- 連帶修好的下游：同一個 `<a href>` 餵行內圖片預覽、hover 預覽、右鍵「複製文章代碼／deep link」，
+  而 `image_url_detect.RE_IMAGE_EXT` 的 `(?:$|[?#])` 錨定對 `….png)` 不成立 ⇒ 以前這類連結的
+  **預覽是靜默不出現**，不是顯示錯誤。
+- 守護：`tests/unit/url_trim.test.js`（純規則全表）、`url_cjk.test.js`（真 `TermBuf`＋`AnsiParser`
+  餵 Big5 bytes 驗旗標位置，含半形／全形括號包覆與 `_(歌手)` 反向鎖）、`url_fix.test.js`
+  （含「括號包起來的完整網址不得冒出修復行」）、`body_wrap.test.js`（`parts` 跟著縮）、
+  `tests/e2e/offline/body_url_wrap.offline.spec.js`。
+
 ## 自動修復斷掉的 URL（`src/js/url_fix.js`）
 作者把 URL 弄壞（插空白／漏 scheme／副檔名被空白斷開）→ 既有 `TermBuf.uriRegEx`（要求 scheme、不容空白）
 **完全偵測不到** → 不可點、不自動開圖。本功能**不改寫原文**，偵測後在原文那一列**下方加一行**修復版可點連結；

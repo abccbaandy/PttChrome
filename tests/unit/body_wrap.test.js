@@ -55,6 +55,24 @@ describe("detectBodyWrappedUrls", () => {
     ]);
   });
 
+  // 2026-09-10：結尾的句尾標點／不成對括號不得進連結，而 parts
+  // 是自己數格子數出來的 ⇒ 必須跟著 href 一起縮（否則底線比連結長）。
+  test("最後一段的結尾 ) 不進 href，parts 也跟著縮", () => {
+    const lines = [
+      row(seg(PREFIX), link(LEFT, LEFT)),
+      row(seg(RIGHT + ")")),
+    ];
+    const out = detectBodyWrappedUrls(lines, noSkip);
+    expect(out).toHaveLength(1);
+    expect(out[0].href).toBe(FULL);
+    expect(out[0].parts[1]).toEqual({
+      row: 1,
+      startCol: 0,
+      endCol: 8,
+      preview: true,
+    });
+  });
+
   test("超長網址跨三列", () => {
     // 中間列整列都是 URL 字元（col 0..77）⇒ 續行鏈往下延伸。
     const mid = "b".repeat(78);

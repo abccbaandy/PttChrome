@@ -124,6 +124,12 @@ test.describe('內文跨行連結（離線重放）', () => {
     await boot(page, { enableAutoFixUrl: false });
 
     await expect(page.locator(`#mainContainer a.y[href="${FULL}"]`)).toHaveCount(0);
-    await expect(page.locator(`#mainContainer a.y[href="${FRAG_L}"]`)).toHaveCount(1);
+    // 段原文是 `…M.1788041180.A.`（結尾一個點），而主偵測器的結尾修剪
+    //（2026-09-10，src/js/url_trim.js）把句尾標點當成句子 ⇒ href 比原文短一格。
+    // 這是刻意的契約變更（原本連 `)` 也會被吃進連結），不是接合功能壯掉。
+    const FRAG_L_LINKED = FRAG_L.replace(/\.$/, '');
+    await expect(
+      page.locator(`#mainContainer a.y[href="${FRAG_L_LINKED}"]`)
+    ).toHaveCount(1);
   });
 });

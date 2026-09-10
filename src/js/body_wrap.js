@@ -111,6 +111,19 @@ export function detectBodyWrappedUrls(lines, isSkipRow) {
       ++row;
       continue;
     }
+    // validateJoined 可能把尾端的句尾標點／不成對括號當成句子砍掉
+    //（src/js/url_trim.js）。parts 是我們自己數格子數出来的 ⇒ 必須跟着縮，
+    // 否則底線（和點擊區）會比 href 長出那幾格。砍到最後一段整段消失時
+    // 就不再是「跟行接合」（只剩一段），整條候選棄掉。
+    if (v.trimmed) {
+      const last = parts[parts.length - 1];
+      last.endCol -= v.trimmed;
+      if (last.endCol <= last.startCol) parts.pop();
+      if (parts.length < 2) {
+        ++row;
+        continue;
+      }
+    }
     parts[parts.length - 1].preview = true;
     out.push({ href: v.fixed, host: v.host, parts });
     row = parts[parts.length - 1].row + 1;

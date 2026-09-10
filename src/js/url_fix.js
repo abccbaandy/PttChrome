@@ -35,6 +35,8 @@
 // only lets them through when the on-device AI review approves one (url_ai.js,
 // opt-in). See docs/enhanced-addon.md.
 
+import { trimUrlTail } from './url_trim';
+
 // Closed TLD allowlist. Longer ones first so e.g. ".com" is preferred over ".co"
 // (the trailing \b also prevents matching "co" inside "com").
 // Exported so src/js/bare_domain.js (bare-domain auto-link) shares ONE allowlist —
@@ -127,6 +129,11 @@ export function detectFixableUrls(text) {
     let fixed = original.replace(/\s+/g, '');
     if (!HAS_SCHEME_RE.test(fixed)) fixed = 'https://' + fixed;
     if (fixed === original) continue; // nothing was actually repaired
+    // 結尾的句尾標點／不成對括號屬於句子不屬於 URL（src/js/url_trim.js，與
+    // TermBuf.uriRegEx 共用同一條規則）。刻意排在 `fixed === original` 之後：
+    // 修剪若排在前面，`https://a.com/b)` 這種「主偵測器自己就處理得好」的列會因為
+    // 修剪後不再等於原文而冒出一條重複的 ↳ 修復行。
+    fixed = trimUrlTail(fixed);
     // Skip bare-domain MENTIONS: a candidate with neither an injected space NOR a
     // path is just a domain mentioned in prose — e.g. "批踢踢實業坊(ptt.cc)" in the
     // 發信站 line — and must NOT be linkified by merely prepending a scheme. Qualify

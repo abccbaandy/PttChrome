@@ -99,4 +99,40 @@ describe("TermBuf URI detection with CJK path (Big5)", () => {
     expect(line[0].fullurl).toBe("https://example.com/foo");
     expect(line[23].partOfURL).toBeFalsy();
   });
+
+  // 2026-09-10 回報：整條網址被半形括號包起來時，結尾的 `)` 被吃進連結
+  //（下游的行內預覽／hover 預覽／右鍵複製文章連結全部跟著失配）。
+  test("半形括號包起來的網址：結尾的 ) 不得進連結", () => {
+    const url = "https://vt100.net/emu/ctrlseq_dec.html";
+    const line = paintRow("(" + url + ")");
+    expect(line[1].startOfURL).toBe(true);
+    expect(line[1].fullurl).toBe(url);
+    // URL 佔 col 1..url.length；結尾的 `)` 落在 col 1+url.length。
+    expect(line[url.length].endOfURL).toBe(true);
+    expect(line[url.length].ch).toBe("l");
+    expect(line[1 + url.length].partOfURL).toBeFalsy();
+    expect(line[1 + url.length].ch).toBe(")");
+  });
+
+  test("全形括號（Big5 placeholder）包起來也不影響邊界", () => {
+    const url = "https://docs.frankentui.com/render/synchronized-output";
+    const line = paintRow("（" + url + "）");
+    // 全形括號佔兩格。
+    expect(line[2].startOfURL).toBe(true);
+    expect(line[2].fullurl).toBe(url);
+    expect(line[1 + url.length].endOfURL).toBe(true);
+  });
+
+  test("path 裡成對的括號必須保留（反向鎖）", () => {
+    const url = "https://en.wikipedia.org/wiki/Godiva_(singer)";
+    const line = paintRow(url + " ok");
+    expect(line[0].fullurl).toBe(url);
+    expect(line[url.length - 1].endOfURL).toBe(true);
+    expect(line[url.length - 1].ch).toBe(")");
+  });
+
+  test("句尾句號不得被吃進連結", () => {
+    const line = paintRow("see https://example.com/a/b. next");
+    expect(line[4].fullurl).toBe("https://example.com/a/b");
+  });
 });

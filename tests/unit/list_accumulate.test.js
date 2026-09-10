@@ -628,6 +628,95 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
 
 });
 
+// 遠跳（Home/End）落地的落點頁不得被緩衝上限砍掉。
+//
+// 2026-09-10 回報「好讀列表 Home/End 有時失效，體感只是移到列表頂/底部」。
+// 錯製檔 ptt-debug-20260910-021827：End 送得出去、server 也回真板尾
+//（351832..351846），但約兩百毫秒後 prefetch 用**舊**緩衝邊界當 anchor 跳號
+//（送 340111 + CR）把 server 游標拉回舊位置 ⇒ 跳躍被抹平。
+//
+// 根因：accumulateListLines 原本先 evict 再 prune，而 evict 的樞紐是**跳之前**的
+// 視口頂（ListSession.evictPivot 回 _topNum）。evictListBuffer 砍的是「離樞紐最遠
+// 的那一端」⇒ 緩衝吃滿 300 列時正好砍掉剛落地的那一頁，而且是在遠跳專用的
+// prunePivot 覆寫（End＝null，留最大編號段）輪到之前。
+// 因此順序是契約：**prune 先、evict 後**。本組測試刻意讓 stub 的 evictPivot 回
+// 「舊視口」（就像 bug 當下那樣），驗的就是順序本身擐不擐得住。
+describe("accumulateListLines（遠跳落點頁不得被 evict 砍掉）", () => {
+  const header = [
+    "【板主:abc】看板《C_Chat》",
+    "[←]離開 [→]閱讀",
+    "   編號    日 期 作  者       文  章  標  題",
+  ];
+  const footer = " 文章選讀  (y)回應(X)推文";
+  const listRow = (num) =>
+    `${String(num).padStart(7)} + 2 9/10 someoneA     □ [闒聊] 文章 ${num}`;
+
+  // 舊緩衝：340000..340299 整整 300 列（＝MAX_LIST_ROWS，已到上限）。
+  const OLD_LO = 340000;
+  const OLD_HI = 340299;
+  function seedOldBuffer(v) {
+    v._listNumMap = new Map();
+    v._listPinnedMap = new Map();
+    for (let n = OLD_LO; n <= OLD_HI; ++n)
+      v._listNumMap.set(n, chRow(listRow(n)));
+  }
+
+  // 落點頁：與舊緩衝遠遠不連續（真板尾）。
+  const LAND_LO = 351840;
+  const LAND_HI = 351845;
+  function landingTexts() {
+    const body = [];
+    for (let n = LAND_LO; n <= LAND_HI; ++n) body.push(listRow(n));
+    return header.concat(body, [footer]);
+  }
+
+  test("End 落地（prunePivot=null）：落點段留下、舊段丟掉", () => {
+    const ls = fakeListSession();
+    ls._selectedNum = OLD_LO + 120; // 跳之前的視口／選取都在舊段
+    ls.prunePivot = () => null; // jump-end 在飛（onSend 設的覆寫）
+    const v = fakeView(landingTexts(), 3, ls);
+    seedOldBuffer(v);
+    v.accumulateListLines();
+    const nums = v.buf.listLineNums;
+    expect(nums).toContain(LAND_LO);
+    expect(nums).toContain(LAND_HI);
+    expect(nums).not.toContain(OLD_LO);
+    expect(nums).not.toContain(OLD_HI);
+    // 被丟的是較舊的那一側 ⇒ 清 _edgeUp。
+    expect(ls.noteEvicted).toHaveBeenCalledWith(-1);
+  });
+
+  test("Home 落地（prunePivot=1）：第 1 篇所在的段留下", () => {
+    const ls = fakeListSession();
+    ls._selectedNum = OLD_LO + 120;
+    ls.prunePivot = () => 1;
+    const texts = header.concat([listRow(1), listRow(2), listRow(3)], [footer]);
+    const v = fakeView(texts, 3, ls);
+    seedOldBuffer(v);
+    v.accumulateListLines();
+    const nums = v.buf.listLineNums;
+    expect(nums).toEqual([1, 2, 3]);
+    expect(ls.noteEvicted).toHaveBeenCalledWith(1);
+  });
+
+  test("連續成長（沒洞）仍然照舊以視口為樞紐砍邊界", () => {
+    const ls = fakeListSession();
+    // 視口頂在舊段最上面 ⇒ 超過上限時該砍掉離它最遠的那一端（大號端）。
+    ls._selectedNum = OLD_LO;
+    const texts = header.concat(
+      [listRow(OLD_HI + 1), listRow(OLD_HI + 2)],
+      [footer]
+    );
+    const v = fakeView(texts, 3, ls);
+    seedOldBuffer(v);
+    v.accumulateListLines();
+    const nums = v.buf.listLineNums;
+    expect(nums).toContain(OLD_LO);
+    expect(nums).not.toContain(OLD_HI + 2);
+    expect(ls.noteEvicted).toHaveBeenCalledWith(1);
+  });
+});
+
 describe("subjectOfListRow / listRowMarkFg / isonline 不误触", () => {
   // pttbbs currtitle 比对键（subject_ex 等价，common/bbs/string.c:58）。
   const row = (t) =>

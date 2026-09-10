@@ -4,6 +4,7 @@ import { Event } from './event';
 import { ColorState } from './term_ui';
 import { u2b, b2u, parseStatusRow, parseListRow } from './string_util';
 import { cjkUrlExtension } from './url_cjk';
+import { trimUrlTailLength } from './url_trim';
 import { ringBell } from './bell';
 import cursorBack from '../cursor/back.png';
 import {
@@ -521,6 +522,12 @@ TermBuf.prototype = {
         while ( (res = this.uriRegEx.exec(s)) !== null ) {
           if (!uris)   uris = [];
           var uriEnd = res.index + res[0].length;
+          // 結尾的句尾標點／不成對括號屬於句子不屬於 URL（src/js/url_trim.js）。
+          // 必須在 CJK 延伸判定**之前**縮：被砍掉的那個 `)` 本來就會讓
+          // cjkUrlExtension 的「前導必須是 / 或 =」守門拒絕延伸，先縮才問得對。
+          // 縮 uriEnd 就等於同時縮 uri[1] ⇒ partOfURL / endOfURL / fullurl 三者
+          // 自動一致（它們全部由 uri[0]..uri[1] 推導，見下方寫旗標那一段）。
+          uriEnd -= trimUrlTailLength(res[0]);
           var cjkExt = '';
           // CJK path extension (Big5 branch only: non-ASCII byte pairs were
           // replaced by \xab\xcd above, so uriRegEx always stops right before

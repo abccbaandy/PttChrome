@@ -2206,7 +2206,11 @@ ListSession.prototype = {
       this._enqueuePrefetch(false, 'key');
   },
 
-  _rebuild: function(facts) {
+  // `edge`（選用）＝'up'／'down'，落點已經**確定**是那一端的邊界時帶。
+  // 必須在這裡套而不是讓呼叫端事後補：下面的 _demandDownIfWindowShort 就看
+  // `_edgeDown`，板上沒有置底文時 _seedAnchors 確認不了邊界 ⇒ 會在真板尾送一個
+  // 零回應的 PgDn（docs/easy-reading-list.md「滿版落點不得探測」那條已知限制）。
+  _rebuild: function(facts, edge) {
     this._breakChain();
     // _lastReadTitle kept: title keys are number-space independent (see _seed).
     this._view.resetListAccumulation();
@@ -2217,6 +2221,8 @@ ListSession.prototype = {
     this._edgeDown = false;
     this._fillPages = 0;
     this._seedAnchors(facts);
+    if (edge === 'up') this._edgeUp = true;
+    else if (edge === 'down') this._edgeDown = true;
     this._forceRedraw();
     if (this._selectedNum == null && this._selectedPinnedKey == null)
       this._selectLastNumbered();
@@ -2347,7 +2353,24 @@ ListSession.prototype = {
   // Home jump keeps article 1's segment.
   // evict／prune 的樞紐＝**視口頂那一列的序號**（使用者眼前的位置），退路才是選取。
   // 見 evictListBuffer 的註解：游標可以離視口很遠，用它當樞紐會丟掉眼前的內容。
+  //
+  // 但**遠跳期間例外**，而且這個例外是使用者回報的 bug：「跳之前的視口頂」距離
+  // 落點極遠 ⇒ evictListBuffer 的「砍離樞紐最遠的那一端」正好就是剛落地的那一頁。
+  // 實錄（2026-09-10 回報「Home/End 有時失效、體感只是移到列表頂/底部」，錄製檔
+  // ptt-debug-20260910-021827）：落點頁正確（End → 真板尾 351832..351846），但約
+  // 兩百毫秒後 prefetch 用**舊**緩衝邊界當 anchor 跳號（送 340111 + CR），把 server
+  // 游標一起拉回舊位置 ⇒ 整個跳躍被抹平。條件是緩衝已吃滿 MAX_LIST_ROWS=300，
+  // 所以症狀是「有時」——剛進板列少時 evict 不觸發，prune 的覆寫就能正常留住落點。
+  //
+  // 兩道一起修才完整：
+  //   1. accumulateListLines 改成 prune 先、evict 後 ⇒ 不相干的舊段先整段丟掉，
+  //      evict 量到的列數才是對的（遠跳時通常直接變 no-op）；
+  //   2. 這裡——落點頁**與緩衝連續**時沒有洞可 prune（例：緩衝底端剛好接著板尾），
+  //      那一道救不了，仍要靠樞紐本身指向落點那一側。
+  // null ⇒ sel=Infinity（只從小號端砍，留住 End 的板尾）；1 ⇒ 只從大號端砍
+  //（留住 Home 的第 1 篇）。
   evictPivot: function() {
+    if (this._prunePivotOverride !== undefined) return this._prunePivotOverride;
     if (this._topNum != null) return this._topNum;
     return this._selectedNum;
   },
@@ -3376,6 +3399,9 @@ ListSession.prototype = {
     // anchor 必須在**送出當下**才取：這筆命令可能排在 prefetch 後面，enqueue 當時
     // 的 buffer 邊界到送出時已經長大了。
     let anchor = null;
+    // 落地那一幀的 facts（與 _beginJumpNumber 同寫法）：onDone 要用它檢查
+    // 落點頁有沒有真的進緩衝。
+    let landed = null;
     this._queue.enqueue({
       keys: '\x1b[4~',
       kind: 'jump-end',
@@ -3389,14 +3415,15 @@ ListSession.prototype = {
         // or past our previous bottom edge (a pinned row parses as null num).
         // anchor == null（buffer 裡一列編號都沒有）不再靜默 return —— 那是不變量
         // 17 的死局殘留；沒有錨點就純粹不拿它當條件，命令照樣送得出去。
-        return (
+        const ok =
           facts.curY >= 3 &&
           facts.curY <= facts.rows - 2 &&
           facts.curX <= 1 &&
           (anchor == null ||
             facts.cursorRowNum == null ||
-            facts.cursorRowNum >= anchor)
-        );
+            facts.cursorRowNum >= anchor);
+        if (ok) landed = facts;
+        return ok;
       },
       // 原生 End 在底端零回應 ⇒ 必須 fullRepaint（見上方說明）。
       fullRepaint: true,
@@ -3415,6 +3442,7 @@ ListSession.prototype = {
         // sets _edgeDown, so the next press no longer re-evaluates the
         // indicator and the pill stayed lit until an article/board change).
         self._setLoading(false);
+        self._adoptJumpLandingIfDropped(landed, 'down');
         self._edgeDown = true;
         const seq = self._sequence();
         if (!seq.length) return;
@@ -3448,6 +3476,7 @@ ListSession.prototype = {
     this._queue.flushPendingKind('prefetch');
     this._expediteBackground();
     this._setLoading(true);
+    let landed = null;
     this._queue.enqueue({
       keys: '\x1b[1~',
       kind: 'jump-home',
@@ -3457,12 +3486,13 @@ ListSession.prototype = {
         self._prunePivotOverride = 1; // keep article 1's (landing) segment
       },
       expect: function(snap, facts) {
-        return (
+        const ok =
           facts.cursorRowNum === 1 &&
           facts.curY >= 3 &&
           facts.curY <= facts.rows - 2 &&
-          facts.curX <= 1
-        );
+          facts.curX <= 1;
+        if (ok) landed = facts;
+        return ok;
       },
       // 跳號腿一律 fullRepaint（詳見 _enqueueCursorSyncJump）.
       fullRepaint: true,
@@ -3473,6 +3503,7 @@ ListSession.prototype = {
         self._serverNum = 1;
         self._prunePivotOverride = undefined;
         self._setLoading(false); // same edge-indicator ownership as _requestEnd
+        self._adoptJumpLandingIfDropped(landed, 'up');
         self._edgeUp = true;
         const seq = self._sequence();
         if (!seq.length) return;
@@ -3489,6 +3520,41 @@ ListSession.prototype = {
         self._setLoading(false);
       }
     });
+  },
+
+  // 遠跳（Home/End）落地後的保險：落點頁根本不在緩衝裡就整份重建。
+  //
+  // 為什麼需要這一道（2026-09-10 回報「Home/End 有時失效」，錯製檔
+  // ptt-debug-20260910-021827）：遠跳落地時緩衝裡會同時存在「舊段」與「落點段」，
+  // 而落點段的存活完全依賴 accumulateListLines 裡 prune/evict 兩道的樞紐都算對。
+  // 一旦算錯（當時是 evict 的樞紐用了**跳之前**的視口頂，緩衝吃滿 300 列時
+  // 把剛落地的那一頁砍掉），下面的 `_setCursorPos(seq, seq.length - 1)` 就落在**舊緩衝**
+  // 的末列＝使用者回報的「體感變成單純移到列表頂/底部」，接著 demand prefetch
+  // 還會用舊邊界當 anchor 跳號，連 server 游標一起拉回舊位置。樞紐已經修好，
+  // 這裡只是把「下次又有人把樞紐算錯」的結果從靈媒失效降級成「退回跳號語意」。
+  //
+  // 重建路徑與已驗証的 _beginJumpNumber 一樣（落點頁 wholesale）。`edge` 帶給 _rebuild
+  // 而不是事後設：理由見 _rebuild 的註解。
+  _adoptJumpLandingIfDropped: function(landed, edge) {
+    if (!landed) return false;
+    // 落點頁的代表編號：Home → 第 1 篇；End → 落點頁最大編號（游標可能停在
+    // 置底列 ⇒ cursorRowNum 為 null，不能只看它）。
+    let mark = null;
+    const nums = landed.nums || [];
+    for (let i = 0; i < nums.length; ++i) {
+      if (nums[i] == null) continue;
+      if (mark == null || (edge === 'up' ? nums[i] < mark : nums[i] > mark))
+        mark = nums[i];
+    }
+    if (mark == null) return false; // 整頁置底文：沒有編號可供比對
+    if ((this._termBuf.listLineNums || []).indexOf(mark) !== -1) return false;
+    this._core.debugRecorder?.log('listSession.jumpLandingDropped', {
+      edge: edge,
+      mark: mark,
+      bufferLen: (this._termBuf.listLineNums || []).length
+    });
+    this._rebuild(landed, edge);
+    return true;
   },
 
   // Absolute listLines index of the current selection. Numbered selections

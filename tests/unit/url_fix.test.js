@@ -91,6 +91,21 @@ describe('detectFixableUrls — false-positive guards', () => {
     expect(fixedOf('參考 example.com/img.jpg 這個')).toEqual(['https://example.com/img.jpg']);
   });
 
+  // 2026-09-10：修好的 URL 結尾不得帶句尾標點／不成對括號（src/js/url_trim.js）
+  test('修好的 URL 結尾的 ) 與句號被修剪', () => {
+    expect(fixedOf('參考 (example.com/img. jpg) 這個'))
+      .toEqual(['https://example.com/img.jpg']);
+    expect(fixedOf('參考 example.com/a. jpg。'))
+      .toEqual(['https://example.com/a.jpg']);
+  });
+
+  // 反向鎖：主偵測器自己就處理得好的「括號包完整網址」不得冒出重複的修復行
+  //（修剪若排在 `fixed === original` 守門之前就會）。
+  test('括號包起來的完整網址 → 不產生修復行', () => {
+    expect(detectFixableUrls('參考 (https://example.com/a/b.html) 這個')).toEqual([]);
+    expect(detectFixableUrls('見 https://example.com/a/b.html。')).toEqual([]);
+  });
+
   test('scheme-less image link + spaced variant on same row → one deduped fix', () => {
     expect(fixedOf('中文ASDF i.imgur.com/ajHklmb.jpeg  測是 https:// i.imgur.com/ ajHklmb .jpeg'))
       .toEqual(['https://i.imgur.com/ajHklmb.jpeg']);

@@ -428,6 +428,34 @@ describe("本地導覽（游標夾住，不照抄 PTT 的 wrap）", () => {
 
 // ---------------------------------------------------------------------------
 
+// 遠跳（Home/End）期間 evict 的樞紐必須是落點那一側 —— 與 ListSession 同構的同一個
+// bug（2026-09-10 回報「好讀列表 Home/End 有時失效」，錄製檔 ptt-debug-20260910-021827）。
+// 樞紐若還是「跳之前的視口頂」，evictListBuffer 的「砍離樞紐最遠的那一端」正好把剛
+// 落地的那一頁砍掉（緩衝吃滿 MAX_LIST_ROWS 時）。
+describe("evictPivot（遠跳期間改用落點樞紐）", () => {
+  test("沒有遠跳在飛 → 視口優先，退路才是選取", () => {
+    const { s } = makeSession();
+    s._topNum = 115;
+    s._selectedNum = 100;
+    expect(s.evictPivot()).toBe(115);
+    s._topNum = null;
+    expect(s.evictPivot()).toBe(100);
+  });
+
+  test("遠跳在飛 → 與 prunePivot 同一個覆寫（null 留板尾、1 留第 1 項）", () => {
+    const { s } = makeSession();
+    s._topNum = 115;
+    s._selectedNum = 100;
+    s._prunePivotOverride = null; // brd-jump-end 在飛
+    expect(s.evictPivot()).toBe(null);
+    expect(s.prunePivot()).toBe(null);
+    s._prunePivotOverride = 1; // brd-jump-home 在飛
+    expect(s.evictPivot()).toBe(1);
+    s._prunePivotOverride = undefined;
+    expect(s.evictPivot()).toBe(115);
+  });
+});
+
 describe("抓頁（跳號一腿，不用會 wrap 的 PgUp/PgDn）", () => {
   test("往下抓：跳到緩衝底端的下一號，帶 \\f 保證有回應", () => {
     const { s, termBuf, enqueued } = makeSession();

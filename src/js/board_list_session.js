@@ -1335,7 +1335,10 @@ BoardListSession.prototype = {
 
   // evict／prune 的樞紐＝**視口頂那一列**（使用者眼前的位置），退路才是選取：
   // 游標與捲動位置解耦後，使用者可以把畫面捲到離游標很遠的地方。
+  // 遠跳（Home/End/跳號）期間樞紐必須是**落點那一側**，理由與修歷見
+  // list_session.js#evictPivot（同一個 bug 的同構面）。
   evictPivot: function() {
+    if (this._prunePivotOverride !== undefined) return this._prunePivotOverride;
     return this._topNum != null ? this._topNum : this._selectedNum;
   },
 

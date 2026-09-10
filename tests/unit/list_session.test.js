@@ -622,6 +622,23 @@ describe("evictPivot（樞紐＝視口，退路才是選取）", () => {
     h.s._selectedNum = 107;
     expect(h.s.evictPivot()).toBe(107);
   });
+
+  // 2026-09-10 回報「Home/End 有時失效」的根因之一：遠跳期間樞紐若還是
+  // 「跳之前的視口頂」，evictListBuffer 的「砍離樞紐最遠的那一端」正好把剛
+  // 落地的那一頁砍掉（緩衝吃滿 300 列時）。null ⇒ 只從小號端砍（留住 End
+  // 的板尾），1 ⇒ 只從大號端砍（留住 Home 的第 1 篇）。
+  test("遠跳在飛時樞紐改成落點那一側（與 prunePivot 同一個覆寫）", () => {
+    const h = demandSession({ numStart: 100, count: 30 });
+    h.s._topNum = 115;
+    h.s._selectedNum = 100;
+    h.s._prunePivotOverride = null; // jump-end 在飛
+    expect(h.s.evictPivot()).toBe(null);
+    expect(h.s.prunePivot()).toBe(null);
+    h.s._prunePivotOverride = 1; // jump-home 在飛
+    expect(h.s.evictPivot()).toBe(1);
+    h.s._prunePivotOverride = undefined; // 交易結束 ⇒ 回到視口
+    expect(h.s.evictPivot()).toBe(115);
+  });
 });
 
 describe("shouldStopListPrefetch", () => {
@@ -1329,6 +1346,119 @@ describe("讀取中指示與凍結的收尾（旗標洩漏）", () => {
     banners.length = 0;
     vi.advanceTimersByTime(13000);
     expect(banners).toEqual([]);
+  });
+});
+
+// 遠跳落地後落點頁不在緩衝裡 ⇒ 整份重建（使用者回報「Home/End 有時失效、
+// 體感只是移到列表頂/底部」，錄製檔 ptt-debug-20260910-021827）。
+//
+// 落點頁被 evict/prune 丟掉時，onDone 的 `_setCursorPos(seq, seq.length - 1)` 會落在
+// **舊緩衝**的末列，接著 demand prefetch 用舊邊界當 anchor 跳號，連 server 游標一起
+// 拉回舊位置。樞紐與順序已修（見上面兩組），這裡守的是最後一道：真的沒進緩衝就用
+// 已驗證的 _beginJumpNumber 模式（落點頁 wholesale）收尾。
+describe("遠跳落點頁被丟掉時改成重建", () => {
+  // 落地幀的 facts：body 列的編號離 demandSession 的 100..159 極遠。
+  function landingFacts(lo, cursorNum) {
+    const facts = {
+      rows: 24,
+      curY: 5,
+      curX: 0,
+      boardName: "C_Chat",
+      cursorRowNum: cursorNum == null ? lo + 2 : cursorNum,
+      nums: new Array(24).fill(null),
+      rowTexts: new Array(24).fill(""),
+    };
+    for (let i = 3; i <= 8; ++i) facts.nums[i] = lo + (i - 3);
+    return facts;
+  }
+
+  function landEnd(h, lo, cursorNum) {
+    h.s._requestEnd();
+    const cmd = h.enqueued[h.enqueued.length - 1];
+    cmd.onSend();
+    const facts = landingFacts(lo, cursorNum);
+    // 落點指紋：停在 entry 區、且不在舊底邊之前（不變量）。
+    expect(cmd.expect({}, facts)).toBe(true);
+    return { cmd, facts };
+  }
+
+  test("End：落點編號不在 buffer ⇒ _rebuild(landed, 'down')", () => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    h.s._topNum = 150;
+    h.s._selectedNum = 155;
+    const spy = vi.spyOn(h.s, "_rebuild").mockImplementation(() => {});
+    const { cmd, facts } = landEnd(h, 9000);
+    cmd.onDone();
+    expect(spy).toHaveBeenCalledWith(facts, "down");
+    expect(h.s._edgeDown).toBe(true);
+  });
+
+  test("End：落點頁真的在 buffer 裡 ⇒ 不重建（保住累積的緩衝）", () => {
+    const h = demandSession({ numStart: 100, count: 60 }); // 100..159
+    h.s._topNum = 150;
+    h.s._selectedNum = 155;
+    const spy = vi.spyOn(h.s, "_rebuild").mockImplementation(() => {});
+    // 緩衝底端本來就是板尾：落點頁 154..159 整頁都已經在 buffer 裡。
+    const { cmd } = landEnd(h, 154, 159);
+    cmd.onDone();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test("Home：第 1 篇不在 buffer ⇒ _rebuild(landed, 'up')", () => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    h.s._topNum = 110;
+    h.s._selectedNum = 115;
+    const spy = vi.spyOn(h.s, "_rebuild").mockImplementation(() => {});
+    h.s._requestHome();
+    const cmd = h.enqueued[h.enqueued.length - 1];
+    cmd.onSend();
+    const facts = landingFacts(1);
+    facts.cursorRowNum = 1;
+    expect(cmd.expect({}, facts)).toBe(true);
+    cmd.onDone();
+    expect(spy).toHaveBeenCalledWith(facts, "up");
+    expect(h.s._edgeUp).toBe(true);
+  });
+
+  // _rebuild 的 `edge` 必須在 _demandDownIfWindowShort **之前**生效：板上沒有置底文時
+  // _seedAnchors 確認不了邊界 ⇒ 會在真板尾送一個零回應的 PgDn
+  //（docs/easy-reading-list.md「滿版落點不得探測」）。
+  describe("_rebuild 的 edge 參數", () => {
+    // 讓 stub 的 notify 模擬 accumulate：重建清掉緩衝後把「落點短頁」填回去。
+    function shortLandingSession(lo) {
+      const h = demandSession({ numStart: 100, count: 60 });
+      const mkRow = (n) => {
+        const t = (" " + n + " + 2 6/14 someoneA     □ [閒聊] 文章 " + n).padEnd(80);
+        return [...t].map((ch) => ({ ch, isLeadByte: false }));
+      };
+      h.termBuf.notify = () => {
+        if (h.termBuf.listLineNums.length) return;
+        for (let n = lo; n < lo + 6; ++n) {
+          h.termBuf.listLineNums.push(n);
+          h.termBuf.listLines.push(mkRow(n));
+        }
+      };
+      return h;
+    }
+
+    test("edge='down'：板尾落點不得再往下探測", () => {
+      const h = shortLandingSession(9000);
+      h.s._rebuild(landingFacts(9000), "down");
+      expect(h.s._edgeDown).toBe(true);
+      expect(
+        h.enqueued.filter((c) => (c.kind || "").indexOf("prefetch") === 0)
+      ).toEqual([]);
+    });
+
+    test("不帶 edge（一般 rebuild）短頁仍要往下補頁", () => {
+      const h = shortLandingSession(9000);
+      h.s._rebuild(landingFacts(9000));
+      expect(h.s._edgeDown).toBe(false);
+      const pf = h.enqueued.filter(
+        (c) => (c.kind || "").indexOf("prefetch") === 0
+      );
+      expect(pf.length).toBeGreaterThan(0);
+    });
   });
 });
 

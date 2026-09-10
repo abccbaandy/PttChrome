@@ -162,8 +162,8 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 | 交易 | 序列 | expect |
 |---|---|---|
 | 抓頁 `brd-fetch-up/down` | `<base±1>\r` ＋ `\f` | 停在 body 且有編號 → `boardListFetchVerdict` 判 edge |
-| End `brd-jump-end` | `99999999\r` ＋ `\f` | 同上（search_num 夾到 brdnum ⇒ 順便確認板尾） |
-| Home `brd-jump-home` | `1\r` ＋ `\f` | cursorNum === 1 |
+| End `brd-jump-end` | 原生 `ESC[4~` ＋ `^L` | 停在 body 且 curX≤1（board.c:1830 `KEY_END`／`$` → `num = brdnum-1` CONFIRMED） |
+| Home `brd-jump-home` | 原生 `ESC[1~` ＋ `^L` | cursorNum === 1（board.c:1768 `KEY_HOME`／`0` → `num = 0`） |
 | 跳號 `brd-jump-number` | `<n>\r` ＋ `\f` | 停在 body → `rebuild`（落點可能離緩衝很遠） |
 | 游標同步 `brd-*-sync-jump` | `<sel>\r` ＋ `\f` | cursorNum === sel |
 | 進看板 `brd-open-board` | `\r` | **任何 settle**；onDone → `_reset()` |
@@ -229,9 +229,12 @@ Ctrl 組合與其餘一切 → passthrough（切原生鏡像＋代送），操�
 
 live spec 的兩條硬規則（踩過才寫的）：
 1. 主功能表的字母鍵只是**移動游標**，要 `F` 之後再 `Enter` 才進得去（menu.c 的 hotkey 語意）。
-2. 導覽類斷言前一定要等 `commandQueue.idle`：抓頁在飛時 `_requestEnd`/`_requestHome`
-   會靜默 early-return，否則測試會在「什麼都沒發生」上綠掉（2026-09-03 實測：
-   End 按下去選取沒動，斷言卻過了）。
+2. 導覽類斷言前一定要等 `commandQueue.idle`，但理由已經不是「靜默 early-return」——
+   2026-09-05 起抓頁在飛時 `_requestEnd`/`_requestHome` 改成**前景優先**（丟未送出的
+   prefetch、`expedite` 縮短在飛的那筆，見 easy-reading-list.md 不變量 18）；只有
+   `hasKind('brd-jump-')`（連按去重）還會真的不排。所以要等的是「上一個跳號落地」，
+   不等就可能在「什麼都沒發生」上綠掉（2026-09-03 實測：End 按下去選取沒動，
+   斷言卻過了）。
 
 **offline e2e 尚未錄製**：`RECORD_MODE=brdlist` 只能錄「分類看板子分類」（guest 沒有
 我的最愛，§1；而我的最愛是個人偏好清單，不可入 repo）。分類子分類是站台公開內容、

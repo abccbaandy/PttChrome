@@ -170,14 +170,19 @@ pref `enableEasyReadingList`（預設 off）＋`easyReadingListPrefetchCount`（
   - **交換條件**：Home/End 從此每次一趟 round-trip（實測 ~100ms），沒有「邊已確認就
     本地瞬移」的快路徑。換掉的是「`_edgeUp`/`_edgeDown` 被誤設 ⇒ End 只跳到 buffer
     末列而不是板尾」這一類狀態相依的失效。
+  - **落點頁必須真的進緩衝**（2026-09-10）：onDone 的「本地套 End/Home」拿的是
+    `_sequence()` 的首/末位置，所以落點頁被 evict/prune 丟掉時它就落在**舊緩衝**的
+    邊上（使用者體感＝「只移到列表頂/底部」），接著 demand prefetch 還會用舊邊界
+    當 anchor 跳號把 server 游標一起拉回舊位置。三道守門見不變量 19。
   - 看板列表（`board_list_session.js`）一字不差地照做（board.c:1768/1830、psb.c:58-64
     CONFIRMED），前綴用 `BRD_CMD_PREFIX`。
 - **pinned 門控**：置底列只在 `_edgeDown`（已確認板尾）時進導航序列（native：置底只存在
   last page）→ 舊文區往下讀不會先看到置底文。seed/resume 時畫面含 ★ ⇒ `_edgeDown=true`。
-- **缺口 prune**：序號是連續整數，`pruneListToSegment` 在 accumulate（merge→evict 後）
+- **缺口 prune**：序號是連續整數，`pruneListToSegment` 在 accumulate（merge 後、**evict 前**）
   只留 pivot 所在連續段，視窗永不跨缺口。pivot＝`session.prunePivot()`：平常＝selection；
   End jump 在途＝null（留最大段）；Home jump＝1。**far-jump 必設 `_prunePivotOverride`**，
-  否則 prune 會把剛抓到的目標頁丟掉。
+  否則 prune 會把剛抓到的目標頁丟掉。而 `evictPivot()` **必須讀同一個覆寫**，
+  「prune 先、evict 後」的順序也是契約——兩者的理由見不變量 19。
 - demand：視口頂/底距 buffer 邊 **< 2×bodyRows（兩頁）** 即補（方向性，方向由 scrollTop
   的變化量推導；chain 不跨來源 fill/key）。到邊等待＝右下「讀取中…」指示
   （`view.setListLoading`；prefetch onDone/markEdge 清除）。
@@ -331,6 +336,11 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 18. **前景導覽鍵不得因佇列忙碌而靜默丟棄**（2026-09-05 回報「好讀列表有時 Home/End 會失效」，錄製檔 `ptt-debug-20260905-122522`）：`_requestHome`／`_requestEnd`（以及 `board_list_session` 的同名函式）開頭是 `if (!this._queue.idle) return;` ⇒ **零 byte、零重繪、零提示，也不排隊重試**（`queue.onIdle` 只接給 EasyReading，ListSession 沒有補做機制）。而 `_moveSelection` 是 `return this._requestHome()`，early return 讓 reveal／`_forceRedraw`／`_maybeDemand`／`_setLoading(true)` 全部不執行。
    觸發窗口極寬：`_moveSelection` 尾端必定 `_maybeDemand` → `_enqueuePrefetch`，**剛按過任何一次 ↑↓/PgUp/PgDn，佇列通常就非 idle**；進板後 `_startFill` 最多鏈式 3 頁（錄製檔 t=4480~4962 就是連續 4 筆 prefetch，每筆 ~100ms），前 1–3 秒的 Home 幾乎必掉。直接違反本文開頭的「失敗顯性化，禁止靜默墜落」與「吞鍵不得無聲」。
    **通則**：使用者按的鍵是前景意圖，背景 prefetch 是投機工作 —— 衝突時讓背景讓路（`flushPendingKind` 丟未送出的、`expedite` 縮短在飛的），不是把前景意圖丟掉。新增任何走 queue 的按鍵路徑時，`!idle` 只能用來**排隊或去重**，不能用來**丟棄**。守護：`list_session.test.js`「Home/End 不得因佇列忙碌而靜默丟棄」六條、`board_list_session.test.js` 兩條、`command_queue.test.js` 的 `onSend`／`hasKind` 三條。
+
+19. **遠跳落點頁的保護必須同時覆蓋 prune 與 evict，而且 prune 在前**（2026-09-10 回報「好讀列表 Home/End 有時失效，體感變成單純移到列表頂/底部」，錄製檔 `ptt-debug-20260910-021827`）：錄製檔證實**鍵送得出去、server 也回對的畫面**（End → 真板尾 `351832..351846`），但約 300~600ms 後 `prefetch-anchor-down` 用**舊**緩衝邊界當 anchor 跳號（送 `340111` ＋ CR，回的是 8/18 的舊頁），把 server 游標一起拉回舊位置 ⇒ 整個跳躍被抹平。七次 Home/End 全是同一形狀，End 的 anchor 逐輪 `340111 → 340180 → 340229`（＝被 prefetch 撐大的舊緩衝）。
+   根因在 `term_view.accumulateListLines`：它原本**先 evict 再 prune**，而 `evictPivot()` 回的是 `_topNum`＝**跳之前的視口頂**，`evictListBuffer` 砍的是「離樞紐最遠的那一端」⇒ 遠跳時那一端恰好就是剛落地的那一頁。緩衝一旦吃滿 `MAX_LIST_ROWS=300`，落點頁就在遠跳專用的 `prunePivot()` 覆寫（End=`null` 留最大段／Home=`1` 留第 1 篇段）輪到之前被砍掉。連鎖：`noteEvicted` 把 `_edgeDown`／`_edgeUp` 清回 false（onDone 剛設的 true 被它自己的 `_forceRedraw` 廢掉）→ onDone 的 `_setCursorPos(seq, seq.length - 1)` 落在**舊緩衝**末列（＝使用者說的「只移到列表底部」）→ `_maybeDemand` 看到 edge 未確認就用 `bufferEdgeNum(舊緩衝)` 跳號。**「有時」的條件就是緩衝已達 300 列**；剛進板列少時 evict 不觸發，覆寫正常生效 ⇒ 能用。
+   三道一起修：(a) `accumulateListLines`／`accumulateBoardListLines` 改成 **prune 先、evict 後**（不相干的舊段先整段丟掉，evict 才量到對的列數，遠跳時通常直接變 no-op；無洞時 prune 是 early-return、evict 只剔兩端不可能製造洞 ⇒ 非遠跳路徑逐位元不變）；(b) `evictPivot()` 與 `prunePivot()` 共用同一個 `_prunePivotOverride`（落點頁與緩衝**連續**時沒有洞可 prune，(a) 救不了）；(c) onDone 最後一道 `_adoptJumpLandingIfDropped(landed, edge)`：落點編號真的不在 `listLineNums` 就照已驗證的 `_beginJumpNumber` 模式 `_rebuild(landed, edge)`（落點頁 wholesale），並留一則 `listSession.jumpLandingDropped` 診斷。`_rebuild` 的 `edge` 參數必須在 `_demandDownIfWindowShort` **之前**生效，否則板上沒有置底文時會在真板尾送一個零回應的 PgDn（見「已知限制」的滿版落點）。
+   守護：`list_accumulate.test.js`「遠跳落點頁不得被 evict 砍掉」三條（真的呼叫 `TermView.prototype.accumulateListLines`，stub 的 `evictPivot` 刻意回舊視口 ⇒ 驗的就是順序本身）、`list_session.test.js`「遠跳在飛時樞紐改成落點那一側」＋「遠跳落點頁被丟掉時改成重建」五條、`board_list_session.test.js` 的同構兩條。
 
 ### 不變量（2026-09-03 自動回好讀新增；違反即復發）
 

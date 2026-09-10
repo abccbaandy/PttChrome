@@ -18,6 +18,8 @@
 // punctuation ("看https://foo.com/超好笑") is indistinguishable from a CJK path
 // and will be absorbed until the next punctuation/space. Accepted tradeoff.
 
+import { trimUrlTail } from './url_trim';
+
 // Full-width punctuation / whitespace that ends a sentence, never a URL.
 const STOP = new Set(
   '　。，、；：！？…‥—－～‧·「」『』（）《》〈〉【】〔〕｛｝＂＇．'.split('')
@@ -46,6 +48,9 @@ export function cjkUrlExtension(prevChar, tail) {
     }
   }
   if (!sawCjk) return '';
-  // A trailing ASCII sentence-punctuation run belongs to the prose, not the URL.
-  return out.replace(/[.,;:!?]+$/, '');
+  // 結尾的 ASCII 句尾標點與不成對括號屬於散文不屬於 URL（src/js/url_trim.js；
+  // 那支也被 TermBuf 的 ASCII 段用，兩段各自修剪自己那一截）。括號平衡只看延伸段
+  // 自己就夠：`(https://a.com/中文)` 的左括號在 URL 之外 ⇒ 本地不成對、正確砍掉；
+  // `/wiki/(中文)` 兩邊都在延伸段內 ⇒ 平衡、保留。
+  return trimUrlTail(out);
 }

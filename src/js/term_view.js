@@ -2360,6 +2360,22 @@ TermView.prototype = {
       }
     }
     mergeListPage(this._listNumMap, this._listPinnedMap, entries);
+    // Contiguity guard: the window must never span pages we skipped over (far
+    // jumps: End / Home / open-pinned). Keep only the pivot's segment; the
+    // dropped side's edge flag is cleared so demand can re-fetch it.
+    //
+    // **順序是契約：prune 先、evict 後**（勿再換回來）。遠跳落地時緩衝裡有兩段：
+    // 舊的那段已經不相干、落點那段才是使用者要的。舊順序（evict 在前）下，evict 的
+    // 樞紐是**跳之前**的視口頂，而它砍的是「離樞紐最遠的那一端」⇒ 緩衝吃滿
+    // MAX_LIST_ROWS 時正好把剛落地的那一頁砍掉，而且是在遠跳專用的 prunePivot
+    // 覆寫輪到之前（使用者回報的「Home/End 有時失效」，錯製檔
+    // ptt-debug-20260910-021827，守護 tests/unit/list_accumulate.test.js）。
+    // prune 先把舊段整段丟掉，evict 才量到對的列數（遠跳時通常直接變 no-op）。
+    // 換序安全：無洞時 prune 是 early-return，evict 只剔兩端（不可能製造洞）
+    // ⇒ 非遠跳路徑逆位元不變。
+    var pr = pruneListToSegment(this._listNumMap, ls ? ls.prunePivot() : null);
+    if (ls && pr.prunedUp) ls.noteEvicted(-1);
+    if (ls && pr.prunedDown) ls.noteEvicted(1);
     // Row cap: evict the end farthest from the **viewport** so redraw cost stays
     // bounded (a few hundred rows ≈ the native feel). 樞紐是視口不是選取——
     // 游標可以被捲出視野很遠，用它當樞紐會把使用者眼前那一段丟掉（見
@@ -2372,12 +2388,6 @@ TermView.prototype = {
     );
     if (ls && ev.evictedUp) ls.noteEvicted(-1);
     if (ls && ev.evictedDown) ls.noteEvicted(1);
-    // Contiguity guard: the window must never span pages we skipped over (far
-    // jumps: End / Home / open-pinned). Keep only the pivot's segment; the
-    // dropped side's edge flag is cleared so demand can re-fetch it.
-    var pr = pruneListToSegment(this._listNumMap, ls ? ls.prunePivot() : null);
-    if (ls && pr.prunedUp) ls.noteEvicted(-1);
-    if (ls && pr.prunedDown) ls.noteEvicted(1);
     var flat = flattenListBuffer(this._listNumMap, this._listPinnedMap);
     buf.listLines = flat.lines;
     buf.listLineNums = flat.nums;
@@ -2527,12 +2537,13 @@ TermView.prototype = {
     }
     // 列數上限 + 連續段守門，與文章列表同一組純函式（key 換成看板編號）。
     // 樞紐是**視口**不是選取（游標可以被捲出視野很遠，見 evictListBuffer 的註解）。
-    var ev = evictListBuffer(this._brdNumMap, bs ? bs.evictPivot() : null, MAX_LIST_ROWS);
-    if (bs && ev.evictedUp) bs.noteEvicted(-1);
-    if (bs && ev.evictedDown) bs.noteEvicted(1);
+    // 順序與文章列表一致：**prune 先、evict 後**（理由見 accumulateListLines）。
     var pr = pruneListToSegment(this._brdNumMap, bs ? bs.prunePivot() : null);
     if (bs && pr.prunedUp) bs.noteEvicted(-1);
     if (bs && pr.prunedDown) bs.noteEvicted(1);
+    var ev = evictListBuffer(this._brdNumMap, bs ? bs.evictPivot() : null, MAX_LIST_ROWS);
+    if (bs && ev.evictedUp) bs.noteEvicted(-1);
+    if (bs && ev.evictedDown) bs.noteEvicted(1);
     var flat = flattenListBuffer(this._brdNumMap, EMPTY_PINNED_MAP);
     buf.brdListLines = flat.lines;
     buf.brdListLineNums = flat.nums;
