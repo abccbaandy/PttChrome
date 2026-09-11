@@ -27,6 +27,13 @@ pref `enableBoardListSmoothScroll`（預設 `false`）。實作 `src/js/board_li
 不必攔 `c` 鍵）→ footer 變體（**`(y)只列最愛` 要先於 `(m)加入/移出最愛` 判**，兩者
 都以 `(m)` 開頭）→ 游標停在 body 且該列有編號。
 
+**終端機列數不限 24**：engage 條件（`board_list_session._engageEligible`）只要求
+`buf.rows >= 24`（下界＝server 端 clamp，`mbbsd/term.c:55`）。2026-09-11 之前寫死
+`=== 24`，於是設定頁「BBS 終端機大小 → 固定字體大小」（列數由視窗高度反推，可視高
+> 480px 就 > 24）會讓整個功能**靜默失效**——勾了設定完全沒反應、也沒有任何提示。
+整條管線的幾何本來就是 `buf.rows` 推導的（`_bodyRows() = rows - 4` ＝ pttbbs 的
+`p_lines`），沒有對 24 的實質依賴。見 `docs/terminal-size.md`。
+
 ⚠ **guest 沒有我的最愛**：`choose_board` 開頭 `if (!cuser.userlevel) LIST_BRD();`
 （`board.c:1665`）⇒ guest 按 `F` 落到「全部看板」。offline cassette 只能錄分類子分類。
 

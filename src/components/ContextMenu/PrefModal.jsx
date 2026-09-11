@@ -712,6 +712,7 @@ export const PrefModal = ({
                 />
                 <Select
                   label={i18n("options_termSize")}
+                  description={i18n("tooltip_termSize")}
                   name="termSizeMode"
                   value={values.termSizeMode}
                   allowDeselect={false}

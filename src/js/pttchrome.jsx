@@ -165,7 +165,17 @@ export const App = function() {
   this.inputArea = document.getElementById('t');
   this.BBSWin = document.getElementById('BBSWindow');
 
-  // horizontally center bbs window
+  // 終端機水平置中。**不要因為 align 是 deprecated 屬性就刪掉它**：Chrome/Firefox
+  // 把它算成 `text-align: -webkit-center` / `-moz-center`，那個值會連 **block
+  // 子元素**（＝ `.main`）一起置中 —— 一般的 `text-align: center` 做不到這件事，
+  // 要換掉得改成 `.main` 自己的 margin auto，而那是會動到座標契約的獨立改動：
+  //   * `mouse_geometry.gridOriginX` 的縮放分支 `(innerWidth - chw*cols*scaleX)/2`
+  //     成立的前提就是「layout box 置中 ＋ transform-origin: center」；
+  //   * 未縮放分支量的是 `.main` 的 offsetLeft，會跟著任何換法走，但兩條分支必須
+  //     同時正確。
+  // 另一半是 `.main` 自己的 `textAlign = 'left'`（term_view.setTermFontSize）——
+  // -webkit-center 會繼承下去，那行是用來擋住它的，兩者是一組。
+  // 守護：tests/e2e/offline/term_size.offline.spec.js。
   this.BBSWin.setAttribute("align", "center");
   this.view.mainDisplay.style.transformOrigin = 'center';
 

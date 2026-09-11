@@ -1000,14 +1000,21 @@ ListSession.prototype = {
     return !!readValuesWithDefault().enableListNativeAutoResume;
   },
 
-  // pref on ∧ standard 24-row term (v1 bypass otherwise) ∧ the article easy
-  // reading is not mid-post (startedEasyReading tracks an actually-open post;
-  // view.useEasyReadingMode stays latched true between posts, so it is NOT the
-  // right guard here).
+  // pref on ∧ 終端機列數合法 ∧ the article easy reading is not mid-post
+  // (startedEasyReading tracks an actually-open post; view.useEasyReadingMode
+  // stays latched true between posts, so it is NOT the right guard here).
+  //
+  // 列數條件曾經是 `=== 24`（v1 的保守 bypass），但整條管線的幾何早就是
+  // `buf.rows` 推導的（`_bodyRows() = rows - 4`＝pttbbs 的 p_lines、
+  // list_render/clientToPos 同理），沒有任何對 24 的實質依賴 ⇒ 那一行只是讓
+  // 設定頁的「固定字體大小」模式靜默廢掉本功能（該模式的 rows 由視窗高度反推，
+  // 可視高 > 480px 就必定 > 24）。下界 24 照抄 server 端的 clamp
+  // （`mbbsd/term.c:55` MAX(24, MIN(100, h))）——比它小的列數 PTT 根本不會接受，
+  // 出現就代表 buf 處於不該有的狀態，寧可不接管。
   _engageEligible: function() {
     return (
       !!readValuesWithDefault().enableEasyReadingList &&
-      this._termBuf.rows === 24 &&
+      this._termBuf.rows >= 24 &&
       !this._termBuf.startedEasyReading
     );
   },

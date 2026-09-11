@@ -21,6 +21,7 @@ import {
   visibleListIndices,
   isWaterballSettle,
 } from "../../src/js/list_session";
+import { LIST_HEADER_ROWS } from "../../src/js/list_window";
 
 const fixture = JSON.parse(
   fs.readFileSync(
@@ -1739,19 +1740,19 @@ describe("無編號列的 clean-list 幀（只剩置底文的短頁）不得 see
 
   // 錄製檔那一幀的形狀：row0/row2/row23 是先前整頁重繪留下的（本次 partial
   // redraw 只改 row2 col10 之後，所以「編號」表頭還在），entry 區只剩兩列置底。
-  function frame(entryRows) {
-    const rowTexts = new Array(24).fill("");
+  function frame(entryRows, totalRows = 24) {
+    const rowTexts = new Array(totalRows).fill("");
     rowTexts[0] = listRows[0];
     rowTexts[1] = listRows[1];
     rowTexts[2] = listRows[2];
     for (const [r, text] of Object.entries(entryRows)) rowTexts[Number(r)] = text;
-    rowTexts[23] = listRows[23];
+    rowTexts[totalRows - 1] = listRows[23];
     return rowTexts;
   }
 
   // 進板落點 session：state=idle、pref 開，termBuf 的 notify 模擬 accumulate
   // 把當前幀收進 buffer（真實 _forceRedraw 的同步累積）。
-  function landingSession(rowTexts, curY) {
+  function landingSession(rowTexts, curY, totalRows = 24) {
     window.localStorage.setItem(
       "pttchrome.pref.v1",
       JSON.stringify({ values: { enableEasyReadingList: true } })
@@ -1770,11 +1771,11 @@ describe("無編號列的 clean-list 幀（只剩置底文的短頁）不得 see
     const mkRow = (text) =>
       [...text.padEnd(80)].map((ch) => ({ ch, isLeadByte: false }));
     const termBuf = {
-      rows: 24,
+      rows: totalRows,
       cols: 80,
       listLines: [],
       listLineNums: [],
-      lineChangeds: new Array(24).fill(false),
+      lineChangeds: new Array(totalRows).fill(false),
       changed: false,
       startedEasyReading: false,
       addEventListener() {},
@@ -1783,7 +1784,7 @@ describe("無編號列的 clean-list 幀（只剩置底文的短頁）不得 see
       settleSnapshot: { changedRows: new Set([3, 4]), cursorMoved: true, curX: 0, curY },
       notify() {
         if (this.listLineNums.length) return;
-        for (let r = 3; r <= 22; ++r) {
+        for (let r = 3; r <= totalRows - 2; ++r) {
           const text = rowTexts[r];
           if (!text || !text.trim()) continue;
           const n = /^[>\s]*(\d+)\s/.exec(text);
@@ -1832,6 +1833,24 @@ describe("無編號列的 clean-list 幀（只剩置底文的短頁）不得 see
     expect(s._renderMode).toBe("buffer");
     // 有錨點 ⇒ 背景 fill 真的送得出去（無錨點時這裡會是空陣列＝卡死）
     expect(enqueued.some((c) => c.kind === "prefetch-anchor-up")).toBe(true);
+  });
+
+  // REGRESSION：設定頁「BBS 終端機大小 → 固定字體大小」的列數由視窗高度反推
+  // （term_size.calcTermSize），可視高 > 480px 就 > 24 列 ⇒ 舊碼 `_engageEligible`
+  // 的 `rows === 24` 讓列表好讀整個靜默失效，連帶右鍵選單的「前已讀後未讀」
+  // 也一起消失（它要 listSession.markReadTargetAtRow，session 沒 active 就回 null）。
+  // 下界 24 照 server 端的 clamp（mbbsd/term.c:55）。
+  test("REGRESSION：非 24 列的終端機（固定字體大小模式）照常 engage", () => {
+    const rowTexts = frame({ 3: ">" + NUMBERED.slice(1), 4: PINNED, 5: PINNED }, 40);
+    const { s } = landingSession(rowTexts, 3, 40);
+    expect(s._engageEligible()).toBe(true);
+    s._onScreenSettled();
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer");
+    // 接管了 ⇒ 右鍵選單的「前已讀後未讀」拿得到目標（消失的那個症狀）。
+    expect(s.markReadTargetAtRow(LIST_HEADER_ROWS)).toEqual({
+      num: parseInt(NUMBERED.trim().split(/\s+/)[0], 10),
+    });
   });
 });
 

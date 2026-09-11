@@ -369,7 +369,9 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 
 ## 已知限制
 
-rows≠24 不 engage。MODE_SELECT（`/` 搜尋清單）＝`_selectMode` 子狀態：序號空間獨立（協定 §8），進出各強制 rebuild（`_boardName=null`）；**退出落點＝帳號已讀進度，非進 select 前位置**（協定 §8 live 事實）——fill 只向上，退回後 buffer 可能整段低於進板頁；**seed／rebuild 落點頁不滿版（下方空白列）時自動 demand-down 補頁**（共用 `_demandDownIfWindowShort`）——不補頁時，初次進版落在看板中段會導致向下 prefetch 的 markEdge 不觸發→`_edgeDown` 停 false→置底文整條被門控隱藏；**滿版落點不得探測**——板尾零回應 PgDn 的 timeout→`\f` 探針會與 hard timeout race 出無主 settle → 誤入 functionMode（live 實測）。（`/` 搜尋走 passthrough 原生打字，convSend 自帶 u2b；passthrough 代送的非 ASCII 單字元同樣先 `u2b`。）
+`buf.rows < 24` 不 engage（下界＝server clamp，`mbbsd/term.c:55`）——**≥24 的任意列數都可以**。
+2026-09-11 之前是 `=== 24`，於是設定頁「固定字體大小」（列數由視窗高度反推）會讓列表好讀
+與右鍵「前已讀後未讀」一起靜默消失；見 `docs/terminal-size.md`。MODE_SELECT（`/` 搜尋清單）＝`_selectMode` 子狀態：序號空間獨立（協定 §8），進出各強制 rebuild（`_boardName=null`）；**退出落點＝帳號已讀進度，非進 select 前位置**（協定 §8 live 事實）——fill 只向上，退回後 buffer 可能整段低於進板頁；**seed／rebuild 落點頁不滿版（下方空白列）時自動 demand-down 補頁**（共用 `_demandDownIfWindowShort`）——不補頁時，初次進版落在看板中段會導致向下 prefetch 的 markEdge 不觸發→`_edgeDown` 停 false→置底文整條被門控隱藏；**滿版落點不得探測**——板尾零回應 PgDn 的 timeout→`\f` 探針會與 hard timeout race 出無主 settle → 誤入 functionMode（live 實測）。（`/` 搜尋走 passthrough 原生打字，convSend 自帶 u2b；passthrough 代送的非 ASCII 單字元同樣先 `u2b`。）
 
 ## 素材再錄
 

@@ -21,12 +21,18 @@ const FOOT_FAV =
 const HEADER_NUM =
   "   編號   看  板       類別   中   文   敘   述               人氣 板   主";
 
-function brdScreenRows({ startNum = 1, count = 20, bodyRows = null } = {}) {
+// totalRows ＝終端機列數；body 佔 rows-4（＝pttbbs 的 p_lines）。預設 24 列。
+function brdScreenRows({
+  startNum = 1,
+  count = 20,
+  bodyRows = null,
+  totalRows = 24,
+} = {}) {
   const rowTexts = ["【看板列表】 批踢踢實業坊", "[←][q]回上層 [↑↓]選擇", HEADER_NUM];
   const body =
     bodyRows ||
     Array.from({ length: count }, (_, i) => brdRow(startNum + i, "B" + (startNum + i)));
-  for (let i = 0; i < 20; ++i) rowTexts.push(body[i] || "");
+  for (let i = 0; i < totalRows - 4; ++i) rowTexts.push(body[i] || "");
   rowTexts.push(FOOT_FAV);
   return rowTexts;
 }
@@ -36,7 +42,7 @@ const charOf = (ch) => ({ ch, isLeadByte: false, resetAttr() {} });
 const rowChars = (text) =>
   Array.from({ length: 80 }, (_, i) => charOf(text[i] || " "));
 
-function makeSession({ prefOn = true } = {}) {
+function makeSession({ prefOn = true, rows = 24 } = {}) {
   window.localStorage.setItem(
     "pttchrome.pref.v1",
     JSON.stringify({ values: { enableBoardListSmoothScroll: prefOn } })
@@ -55,18 +61,18 @@ function makeSession({ prefOn = true } = {}) {
   };
   let settleListener = null;
   const termBuf = {
-    rows: 24,
+    rows,
     cols: 80,
     lines: [],
     brdListLines: [],
     brdListLineNums: [],
     listRenderMode: "native",
     listRenderOwner: null,
-    lineChangeds: new Array(24).fill(false),
+    lineChangeds: new Array(rows).fill(false),
     changed: false,
     settleSnapshot: null,
     startedEasyReading: false,
-    _rowTexts: new Array(24).fill(""),
+    _rowTexts: new Array(rows).fill(""),
     getRowText(r) {
       return this._rowTexts[r] || "";
     },
@@ -264,6 +270,18 @@ describe("engage / 收攤", () => {
     termBuf.feed(brdScreenRows());
     expect(s.state).toBe("idle");
     expect(termBuf.listRenderMode).toBe("native");
+  });
+
+  // REGRESSION：設定頁「BBS 終端機大小 → 固定字體大小」的列數是由視窗高度反推
+  // （term_size.calcTermSize），可視高 > 480px 就 > 24 列 ⇒ 舊碼的 `rows === 24`
+  // 讓整個功能靜默失效（勾了設定完全沒反應）。下界 24 照 mbbsd/term.c:55。
+  test("REGRESSION：非 24 列的終端機（固定字體大小模式）照樣接管", () => {
+    const { s, termBuf } = makeSession({ rows: 40 });
+    expect(s._engageEligible()).toBe(true);
+    termBuf.feed(brdScreenRows({ count: 36, totalRows: 40 }), { curY: 3 });
+    expect(s.state).toBe("active");
+    expect(termBuf.listRenderMode).toBe("buffer");
+    expect(termBuf.listRenderOwner).toBe("board-list");
   });
 
   test("落到主功能表 → 收攤，所有權釋放回原生", () => {

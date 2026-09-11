@@ -6,6 +6,7 @@ import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolv
 import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates } from './mouse_regions';
 import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { exitBandRect } from './mouse_geometry';
+import { calcTermSize, termLayoutOffsets } from './term_size';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
@@ -1245,10 +1246,6 @@ TermView.prototype = {
     this.lastRowDiv.style.fontSize = fontSize;
     this.lastRowDiv.style.width = mainWidth;
 
-    if (this.chh*this.buf.rows < innerBounds.height)
-      this.mainDisplay.style.marginTop = ((innerBounds.height-this.chh*this.buf.rows)/2) + this.bbsViewMargin + 'px';
-    else
-      this.mainDisplay.style.marginTop =  this.bbsViewMargin + 'px';
     if (this.fontFitWindowWidth) {
       this.scaleX = Math.floor(innerBounds.width / (this.chw*this.buf.cols+10) * 100)/100;
       this.scaleY = Math.floor(innerBounds.height / (this.chh*this.buf.rows) * 100)/100;
@@ -1273,6 +1270,18 @@ TermView.prototype = {
     }
     this.mainDisplay.style.webkitTransform = scaleCss;
     this.lastRowDiv.style.webkitTransform = scaleCss;
+
+    // 垂直位移（數學在 term_size.js）。**水平不在這裡做** —— 見該檔
+    // termLayoutOffsets 的 LOCKED 註記（置中由 #BBSWindow 的 align="center"
+    // 提供，這裡再加一次就是雙重置中）。
+    // 順序上必須在 getFirstGridOffsets() 之前：那一行量的就是這裡寫的位移。
+    this.mainDisplay.style.marginTop =
+      termLayoutOffsets({
+        innerHeight: innerBounds.height,
+        chh: this.chh,
+        rows: this.buf.rows,
+        margin: this.bbsViewMargin
+      }).marginTop + 'px';
 
     this.firstGridOffset = this.bbscore.getFirstGridOffsets();
 
@@ -1908,14 +1917,13 @@ TermView.prototype = {
     }
   },
 
+  // 「固定字體大小」模式的尺寸來源。數學在 term_size.js（欄數恆 80 的理由、
+  // 列數上下界的出處都在那裡）。
   calcTermSizeFromFont: function(fontSizePx) {
-    fontSizePx = Math.floor((fontSizePx + 1) / 2) * 2;
-    let width = this.bbsWidth ? this.bbsWidth : this.innerBounds.width;
-    let height = this.bbsHeight ? this.bbsHeight : this.innerBounds.height;
-    return {
-      cols: Math.max(80, Math.min(200, Math.floor(2 * (width - 10) / fontSizePx))),
-      rows: Math.max(24, Math.min(100, Math.floor(height / fontSizePx)))
-    };
+    return calcTermSize({
+      height: this.bbsHeight ? this.bbsHeight : this.innerBounds.height,
+      fontSizePx: fontSizePx
+    });
   },
 
   getRowLineElement: function(node) {

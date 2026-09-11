@@ -333,12 +333,14 @@ BoardListSession.prototype = {
     return !!readValuesWithDefault().enableListNativeAutoResume;
   },
 
-  // pref 開著 ∧ 標準 24 列終端 ∧ 文章好讀沒有正在讀文（同 list_session 的守門，
+  // pref 開著 ∧ 終端機列數合法 ∧ 文章好讀沒有正在讀文（同 list_session 的守門，
   // 那條是為了不與文章模式的 render 分支搶畫面）。
+  // 列數下界 24 ＝ server 端的 clamp（`mbbsd/term.c:55`）；**不是** `=== 24`，
+  // 理由與 list_session._engageEligible 完全相同（見該處長註解）。
   _engageEligible: function() {
     return (
       !!readValuesWithDefault().enableBoardListSmoothScroll &&
-      this._termBuf.rows === 24 &&
+      this._termBuf.rows >= 24 &&
       !this._termBuf.startedEasyReading
     );
   },
