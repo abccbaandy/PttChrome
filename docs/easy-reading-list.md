@@ -216,7 +216,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 - key（active）：nav（↑↓jk/PgUp/PgDn/Home/End → read.c op）；Enter/→＝opening（selectedNum 有值→begin-open；null＝pinned→begin-open-pinned）；數字＝jump-digit（overlay 收參）；`←`/q/e＝leave 交易（**先 sync-jump 同步 server 游標再送離板鍵**——pttbbs getkeep 記 REAL cursor，不 sync 則再進板落點錯；`_serverNum` 快路徑同 passthrough，共用 `_enqueueCursorSyncJump`）；**A 類鍵（`INPLACE_KEYS`）＝keyClass `native-inplace` → `_beginInplaceTransaction`：凍結交易，全程不切原生**；**其餘鍵（`v` `/` `s` `Z`…）＝keyClass `passthrough` → `_beginNativePassthrough`：一鍵切原生＋代送**（`term_keyboard.keyEventToBytes` 轉 bytes，非 ASCII 單字元 `u2b`）。pref `enableListNativeAutoResume` 關掉時 A 類整組落回 `passthrough`。
 - opening：settle 等 article；timeout→functionMode 自癒；期間吞所有鍵。
 - functionMode：新事件 **`resume-probe`**（靜置探針合成，見下）→ `holdReason==='passthrough'` ∧ 無 in-flight ∧ clean-list ∧ hasNumberedRow ∧ engageEligible 時 →active（`landedNumInBuffer ∧ 板名同`→resume；否則＋rebuild），其餘一律 stay。clean-list **settle**→**`holdReason` 非 null（passthrough/external）時 stay 鏡像**（settle 本身永不解除 hold——一個回應可能 settle 兩次，第一個 settle 內容已新、游標還在舊位置，在它上面 resume 會採用到錯的落點）；無 hold（leave/jump 交易）→active（landedNum∈buffer ∧ 板名同→resume；否則＋rebuild）；article→suspended；menu→idle cleanup。**enter-function-mode（passthrough/自癒/降級——原生 excursion）在 action 層清 `_boardName`** → 回 clean-list 必走 rebuild 分支（不變量 15）；只有保留 `_boardName` 的 frozen 交易（leave/jump）可走純 resume 快路徑；passthrough 屬原生 excursion → 黏性停原生；經 article/menu 回好讀時因 `_boardName` 已清必 rebuild。
-- suspended：clean-list→re-seed（resume-buffer：採用落地幀的游標與**視窗頂列**當錨，並設 `_anchorOverride`（不變量 6c）；落點不在緩衝/板名異＋rebuild）；menu→idle。
+- suspended：clean-list ∧ 落點在緩衝 ∧ 板名同→**`resume-in-place`**（只採用落地幀的游標，**捲動錨一律不動**——文章期間視口不在 DOM 上，錨本來就是使用者離開前的那一個，不變量 N6）；否則 `resume-buffer`＋`rebuild`（畫面要換一份，重新錨定）；menu→idle。
 - 任意：pref-off/斷線→cleanup。
 
 ### 靜置探針（`resume-probe`，2026-09-03；pref `enableListNativeAutoResume`）
@@ -354,8 +354,14 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 - **N4 回復後有 grace window**：`active` 的 prompt/transient catch-all 在 `RESUME_GRACE_MS` 內不得 banner／不得切原生
   （事件欄位 `withinResumeGrace`，純函式全枚舉守護）。
 - **N5 A 類集合＝枚舉即合約**（`INPLACE_KEYS`，來源 read.c/board.c 的 case 表），**不得**改成啟發式；新增鍵要同步 unit。
-- **N6 A 類交易不得動捲動錨**：`_resumeInPlace` 只採用落點＋reveal，**不重設** `_topNum`/`_topPinnedKey`/`_scrollFrac`、
+- **N6 A 類交易與退文不得動捲動錨**：`_resumeInPlace` 只採用落點＋reveal，**不重設** `_topNum`/`_topPinnedKey`/`_scrollFrac`、
   不設 `_anchorOverride`（那是 `_resumeBuffer` 給「畫面本來就是 server 那一頁」用的；套在凍住的 buffer 上＝視野瞬間跳走）。
+  **退出文章回列表同組**（2026-09-12）：文章期間視口不在 DOM 上（不變量 6c）⇒ 錨與緩衝原封不動，
+  `suspended --clean-list--> active` 走 `resume-in-place`（落點在緩衝∧板名同）。舊行為採用 server
+  落地幀的視窗頂列，等於把畫面釘回 read.c 的 20 列分頁：把某篇捲到視口最下面、進去再退出，
+  那篇跳回畫面中間（使用者回報，錄製檔 `ptt-debug-20260911-113150`）。守護：`list_session.test.js`
+  「退文回列表：視野停在使用者自己捲到的位置」。**落點不在緩衝／板名異仍走 `resume-buffer`+`rebuild`**
+  （畫面本來就要換一份，重新錨定才是對的）。
 - **N7 吞鍵/換畫面永不靜默**：切原生、回好讀、逾時降級都要 `flashListHint`。
 - **N8 判定失誤不得造成「完全不可操作」**：凍結交易必須同時具備 `onFail → _degradeToNative`、`hardTimeoutMs=CMD_HARD_MS`、
   `_armFrozenWatchdog(FROZEN_WATCHDOG_MS=2500)` 三重保護 ⇒ 最壞情況是「2.5s 後掉回原生＋banner，再由靜置探針自己回好讀」，

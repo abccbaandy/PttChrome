@@ -495,18 +495,22 @@ export function transitionListSession(state, event) {
       if (event.type === 'settle') {
         switch (event.kind) {
           case 'clean-list':
-            // Back from the article (v5/M4 re-seed): the server repaints the
-            // full list on article exit (READ_REDRAW) with its own getkeep
-            // window and cursor — adopt that landing as the truth (push counts
-            // on the repainted page refresh via the redraw merge) instead of
-            // replaying saved anchors (the retired _restore parity family).
+            // Back from the article: the server repaints the full list on
+            // article exit (READ_REDRAW) with its own getkeep window. Adopt its
+            // CURSOR (push counts on the repainted page refresh via the redraw
+            // merge) but **not** its window top — 退文不得動捲動錨（不變量 N6）。
+            // 文章期間視口不在 DOM 上 ⇒ 錨與緩衝原封不動（不變量 6c），使用者
+            // 捲到哪裡、回來就該還在哪裡。舊行為（採用 server 落點的視窗頂列）
+            // 把畫面釘回 read.c 的分頁：把某篇捲到視口最下面、進去再退出，那篇
+            // 會跳回畫面中間（使用者回報，錄製檔 ptt-debug-20260911-113150）。
             // Same rule as functionMode: landed outside the buffer (pinned
-            // cursor parses null num) or board changed → rebuild.
+            // cursor parses null num) or board changed → rebuild（畫面本來就要
+            // 換一份，那時重新錨定才是對的）。
             // 退文落點只剩置底文時同樣不能 re-seed（不變量 17）：停在原生鏡像
             //（_handoffArticle 已把 renderMode 設 native），等下一幀。
             if (!event.hasNumberedRow) return stay;
             return event.landedNumInBuffer && event.boardNameMatch
-              ? { next: 'active', actions: ['resume-buffer'] }
+              ? { next: 'active', actions: ['resume-in-place'] }
               : { next: 'active', actions: ['resume-buffer', 'rebuild'] };
           case 'menu':
             // Same in-flight guard as functionMode's menu branch: an AID escape
@@ -1104,6 +1108,8 @@ ListSession.prototype = {
         return this._enterFunctionMode(facts);
       case 'resume-buffer':
         return this._resumeBuffer(facts);
+      case 'resume-in-place':
+        return this._resumeInPlace(facts);
       case 'cleanup':
         return this._cleanup();
       // 'move-selection' / 'begin-open*' carry key context; executed in onKeyDown.
@@ -1684,10 +1690,13 @@ ListSession.prototype = {
     });
   },
 
-  // 凍結交易落地後回到 buffer。**不可以直接用 _resumeBuffer**（陷阱 T2）：那一支
-  // 是給「從原生鏡像回來、畫面本來就是 server 那一頁」設計的，會把 _topNum 重設
-  // 成原生畫面第一列並設 _anchorOverride。A 類交易期間畫面是**凍住的 buffer**，
-  // 使用者的捲動位置在自己的視口裡 —— 套用會讓視野瞬間跳走。
+  // 回到 buffer 而**不動使用者的視野**。兩個呼叫端：
+  //   1. A 類凍結交易落地（`_enqueueInplaceKey`）——畫面是凍住的 buffer；
+  //   2. 退出文章回到列表（reducer `suspended --clean-list--> active`）——文章期間
+  //      視口不在 DOM 上，錨與緩衝原封不動（不變量 6c）。
+  // **不可以改用 _resumeBuffer**（陷阱 T2）：那一支是給「從原生鏡像回來、畫面本來
+  // 就是 server 那一頁」設計的，會把 _topNum 重設成原生畫面第一列並設
+  // _anchorOverride ⇒ 使用者自己捲出來的位置被 read.c 的分頁蓋掉，視野瞬間跳走。
   // 這裡只做兩件事：採用落點當選取／server 游標，然後把它帶進視野（不變量 N6）。
   _resumeInPlace: function(facts) {
     this._holdReason = null;
@@ -1701,6 +1710,17 @@ ListSession.prototype = {
       this._serverNum = facts.cursorRowNum;
       this._selectedNum = facts.cursorRowNum;
       this._selectedPinnedKey = null;
+    }
+    // 落地幀上有置底文＝板尾已確認（同 _seedAnchors／_resumeBuffer）。錨不動，但
+    // 這是 server 剛告訴我們的事實，丟掉就會讓 pinned 尾巴被門控關掉（_sequence）。
+    if (facts && !this._edgeDown) {
+      for (let r = 3; r <= facts.rows - 2; ++r) {
+        const t = (facts.rowTexts && facts.rowTexts[r]) || '';
+        if (t.indexOf('★') >= 0 && isPinnedListRow(t)) {
+          this._edgeDown = true;
+          break;
+        }
+      }
     }
     // 同步重繪：把落地那一頁併回緩衝（t 的 tag 標記之類的逐列變化靠這一趟生效）。
     // 錨（_topNum/_topPinnedKey/_scrollFrac）一律不碰。

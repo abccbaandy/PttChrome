@@ -60,6 +60,23 @@ export function isBoardListFolderRow(text) {
   return !!text && text.indexOf('目錄') >= 0 && parseBoardListNum(text) != null;
 }
 
+// 這一列的**板名**（`%-13s` 的 `B_BH(ptr)->brdname`，board.c:1477-1486）。
+// 用途：退出看板回到看板列表時，確認「同一號碼還是同一個看板」——編號是絕對位置，
+// 但**同變體的不同清單共用同一個編號空間形狀**（分類看板的目錄列 Enter 會遞迴進
+// 另一份 choose_board，footer 變體一模一樣）⇒ 只比編號會把兩份清單混在一起。
+//
+// **不用固定欄位**：`prints("%7d%c%s", head, hideChar, unread)` 佔 10 格，但未讀
+// 標記 `unread[1]` 是全形「ˇ」（board.c:1343），`rowToText` 把它收成**一個**字元
+// ⇒ 板名的字串索引隨已讀/未讀位移一格。改抓「編號之後的第一個 ASCII 識別字」，
+// 與欄寬脫鉤。板名的字元集是 `[A-Za-z0-9_-]`（PTT brdname）。
+// 回 '' ＝這一列沒有板名（分隔線列／空白列）——比對時兩邊都是 '' 仍算相符，
+// 判定的重量落在有板名的那些列上。
+export function parseBoardListName(text) {
+  if (!text) return '';
+  const m = /^[\s>]*\d+[^A-Za-z0-9_]*([A-Za-z0-9_][A-Za-z0-9_-]*)/.exec(text);
+  return m ? m[1] : '';
+}
+
 // 整頁逐列編號。與 comment_parse.pageArticleNums **刻意不共用**：那支為文章列表
 // 寫了「游標蓋住高位數字→從鄰居回推」與「單調修復」兩段補救，而看板列表的
 // `%7d` 是右對齊、`>` 只蓋前置空白 ⇒ 那些補救在這裡只會是憑空修改的風險。

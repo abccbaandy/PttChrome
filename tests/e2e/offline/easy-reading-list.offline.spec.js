@@ -887,9 +887,9 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(s.renderMode).toBe('native');
       expect(s.cursorHidden).toBe(false);
 
-      // ← 返回列表 → re-seed（v5/M4）：server 落点（游标停在刚读的文章）在
-      // 缓冲内 → resume-buffer，maps 不重建（listLen 不缩水）、选取采落点，
-      // 且 24 行画面与离开前完全相同（server getkeep 重绘同一页）。
+      // ← 返回列表 → resume-in-place：server 落点（游标停在刚读的文章）在
+      // 缓冲内 ⇒ 只採用它當選取，maps 不重建（listLen 不缩水），
+      // **滾動錨一律不動**（不變量 N6）——使用者進文章前看到的那一畫面原樣接回來。
       await page.keyboard.press('ArrowLeft');
       s = await waitState(page, (x) => x.state === 'active', 20000);
       expect(s.renderMode).toBe('buffer');
@@ -898,15 +898,15 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(s.cursorHidden).toBe(true);
       await page.waitForTimeout(300);
 
-      // 视野必须停在 server 落点那一页：视口顶列＝锚（_topNum）那一列，刚读的
-      // 那篇在视野内。**下面的逐行 diff 抓不到这件事**——全序列渲染后
-      // dumpScreenRows 撈的是整段緩衝，對 scrollTop 完全不敏感。
+      // 视口顶列＝锚（_topNum）那一列，刚读的那篇在视野内。
+      // **下面的逐行 diff 抓不到这件事**——全序列渲染后 dumpScreenRows
+      // 撈的是整段緩衝，對 scrollTop 完全不敏感。
       //
-      // 注意这条**不是**「退文后视野跑掉」的重现（本卷录的开文目标恰好就是缓冲
-      // 最旧一篇 ⇒ 落点页顶＝序列位置 0，锚被覆写成 0 也看不出差别）。那条回归
-      // 由 unit 守：list_session.test.js「退文回列表：视野停在 server 落点那一页」
-      // ＋ render_list_scroll.test.js 的 hasListViewport()。这里守的是「视口位置
-      // 与锚一致、游标可见」，锚若被写去别处（例如沿用进文章前的 scrollTop）会红。
+      // 注意这条**不是**「退文後视野跑掉」的重现：本卷录的开文目标恰好就是
+      // 缓冲最旧一篇 ⇒ 使用者的锚跟 server 落点页顶都是序列位置 0，两种
+      // 行为看不出差别。那条回归由 unit 守：list_session.test.js
+      // 「退文回列表：視野停在使用者自己捲到的位置」＋ render_list_scroll.test.js
+      // 的 hasListViewport()。这里守的是「视口位置与锚一致、游标可见」。
       const topPos = await page.evaluate(() => {
         const ls = window.__app.listSession;
         const nums = window.__app.buf.listLineNums || [];

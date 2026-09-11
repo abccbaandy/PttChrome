@@ -138,20 +138,46 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 
 ### 4.3 狀態機（`transitionBoardListSession`，純 reducer）
 
-`idle` → `active` ⇄ `functionMode`；`active` → `opening`。（**沒有 `suspended`**：
-離開看板列表就收攤，不跨畫面保留緩衝。）
+`idle` → `active` ⇄ `functionMode`；`active` → `opening`；`active` → `suspended` → `active`。
+
+**`suspended`（進板）是 2026-09-12 加的**（此前是「離開看板列表就收攤」）：進板時把畫面所有權
+交還，但**緩衝／捲動錨／變體整份留著**，退板回來原樣接上（同 `list_session` 的 suspended，
+文章列表好讀的不變量 N6）。舊行為是退板後重新 `seed`，錨變成 server 落地頁的頂列，而
+`head = (num / p_lines) * p_lines` 是 20 列分頁（board.c:1710-1716）⇒ 使用者把某個看板捲到
+視口最下面、進去再退出，它會被吸附回畫面中間（使用者回報，與文章列表好讀同一個症狀，
+錄製檔 `ptt-debug-20260911-113150`）。
+
+**別名守門（承重）**：同變體的**不同清單**共用同一個編號空間形狀——分類看板的目錄列
+（`NBRD_FOLDER`）Enter 會遞迴進另一份 `choose_board`，footer 變體一模一樣（board.c:1279-1290
+只看 `IS_LISTING_FAV`/`IN_CLASS`）。所以 resume 要過**兩道**守門：
+
+1. 開板交易的落點 `ctx === 'article-list'` 才 `_suspend()`；其餘落點（目錄遞迴、主功能表、
+   怪畫面）照舊 `_reset()`。
+2. 退板落地幀再過一次內容指紋 `landedSameList`：落點那一列的**板名**（`parseBoardListName`）
+   要跟緩衝裡同編號那一列相同。對不上就 `seed`（整份重建）。
+
+`parseBoardListName` **不用固定欄位**：未讀標記 `unread[1]` 是全形「ˇ」（board.c:1343），
+`rowToText` 會把它收成**一個**字元 ⇒ 板名的字串索引隨已讀/未讀位移一格；改抓「編號之後的
+第一個 ASCII 識別字」。守護：`board_list_parse.test.js` 的 `parseBoardListName` 那組、
+`board_list_session.test.js`「進板 → 退板：緩衝與捲動錨跨畫面保留」。
 
 | 狀態 | 事件 | 結果 |
 |---|---|---|
 | idle | settle `brdlist` ＋ engageEligible | active：`seed` + `start-fill` |
 | active | settle `brdlist` 同變體 | `continue-fill` |
 | active | settle `brdlist` 換變體 | `rebuild`（編號空間換了） |
-| active | settle `article-list` / `menu` | idle：`cleanup` |
+| active | settle `article-list` | **suspended：`suspend`**（緩衝／錨留著，等退板） |
+| active | settle `menu` | idle：`cleanup`（上一層是另一個編號空間） |
 | active | settle 其他（含 `brdlist-other`） | 交易在飛／剛被消費 → stay；否則 functionMode：`enter-native`＋banner |
 | active | key nav / open / leave / passthrough / native-inplace | move-selection / opening+begin-open / opening+begin-leave / functionMode（passthrough＝原生鏡像；native-inplace＝**凍結交易，全程不切原生**）|
 | functionMode | settle `article-list` / `menu` | idle：`cleanup` |
 | functionMode | **`resume-probe`**（靜置探針）| `holdReason==='passthrough'` ∧ 無 in-flight ∧ `ctx==='brdlist'` ∧ engageEligible → active：`seed`＋`start-fill`。**不可以走「回 idle 等下一個 settle」**——畫面靜止時不會再有 settle，那會卡死 |
 | functionMode | 其他 settle | stay（繼續鏡像；settle 本身永不解除 hold）|
+| suspended | settle `brdlist` ∧ 同變體 ∧ `landedSameList` ∧ engageEligible | active：`resume-in-place`（採用落點游標，**捲動錨不動**） |
+| suspended | settle `brdlist`，但換了一份清單 | active：`seed`＋`start-fill`（整份重建） |
+| suspended | settle `brdlist`，但 !engageEligible | idle：`cleanup` |
+| suspended | settle `menu` | idle：`cleanup`（交易在飛時 stay，同 functionMode 的 AID 守門）|
+| suspended | 其他 settle（板內翻頁、讀文、prompt…）| stay |
 | opening | 任何 settle | stay（落地由 queue 的 expect 判） |
 | 任何 | `pref-off` | idle：`cleanup` |
 
@@ -173,7 +199,7 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 | Home `brd-jump-home` | 原生 `ESC[1~` ＋ `^L` | cursorNum === 1（board.c:1768 `KEY_HOME`／`0` → `num = 0`） |
 | 跳號 `brd-jump-number` | `<n>\r` ＋ `\f` | 停在 body → `rebuild`（落點可能離緩衝很遠） |
 | 游標同步 `brd-*-sync-jump` | `<sel>\r` ＋ `\f` | cursorNum === sel |
-| 進看板 `brd-open-board` | `\r` | **任何 settle**；onDone → `_reset()` |
+| 進看板 `brd-open-board` | `\r` | **任何 settle**；onDone → 落點是 `article-list` 就 `_suspend()`（緩衝留著），其餘 `_reset()` |
 | 回上層 `brd-leave` | `\x1b[D` | 同上 |
 | passthrough `brd-native-key/paste/input` | 原鍵／Big5 bytes ＋ `\f` | 同上（畫面已是原生鏡像）|
 | A 類鍵 `brd-native-inplace` | `t`／`v`／`V` ＋ `\f`（必要時先 `brd-inplace-sync-jump`）| `brd.parked ∧ cursorNum≠null ∧ 同變體` → `_resumeInPlace`（採用落點、**錨不動**）；落點不在緩衝 → `rebuild` |

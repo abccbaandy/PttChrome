@@ -30,7 +30,8 @@ import {
   boardListFetchTarget,
   boardListFetchVerdict,
   isBoardListSeparatorRow,
-  isBoardListBlockedRow
+  isBoardListBlockedRow,
+  parseBoardListName
 } from './board_list_parse';
 import { bufferEdgeNum } from './list_session';
 import { rowToText } from './comment_parse';
@@ -114,10 +115,12 @@ function prefersReducedMotion() {
 // active       畫累積緩衝，本地導覽
 // functionMode 原生 LIVE 鏡像，所有鍵放行（自癒與 passthrough 的落點，黏性）
 // opening      序列化交易在飛（開看板／離開／跳號），畫面凍住＋吞鍵
+// suspended    進了看板（文章列表在畫面上），**緩衝與捲動錨整份留著**，等退板
+//              回來原樣接上（同 list_session 的 suspended）。畫面所有權已交還。
 //
 // 事件（全部是先算好的布林，便於窮舉測試）：
-//   { type:'settle', ctx, inFlightKind, consumed, sameVariant, holdReason,
-//     withinResumeGrace, engageEligible }
+//   { type:'settle', ctx, inFlightKind, consumed, sameVariant, landedSameList,
+//     holdReason, withinResumeGrace, engageEligible }
 //   { type:'key', keyClass }
 //   { type:'resume-probe', ... }（同 settle 的欄位；靜置探針量當下畫面合成）
 //   { type:'pref-off' } | { type:'transaction-failed' }
@@ -149,8 +152,14 @@ export function transitionBoardListSession(state, event) {
               ? { next: 'active', actions: ['continue-fill'] }
               : { next: 'active', actions: ['rebuild'] };
           case 'article-list':
+            // 進板了（不是走我們自己的開板交易——那條在 _enqueueLandingKey 的
+            // onDone 就決定了）。畫面所有權交還給 ListSession／原生，但**緩衝與
+            // 捲動錨留著**：退板回來時原樣接上（不變量 N6）。編號空間有沒有換
+            // 由 resume 的指紋（landedSameList）判，換了就整份重建。
+            return { next: 'suspended', actions: ['suspend'] };
           case 'menu':
-            // 真的離開看板列表了（進板／回主功能表）⇒ 收攤，畫面交給另一邊。
+            // 真的離開看板列表了（回主功能表／分類看板根）⇒ 收攤，緩衝丟掉：
+            // 上一層是另一個編號空間，留著只會別名。
             return { next: 'idle', actions: ['cleanup'] };
           default:
             // brdlist-other（全部看板／newflag：本期不做，handoff I10）與各種
@@ -210,6 +219,26 @@ export function transitionBoardListSession(state, event) {
         return stay;
       }
       return stay; // 原生鏡像下鍵盤 hook 根本不會呼叫進來
+
+    case 'suspended':
+      if (event.type !== 'settle') return stay;
+      switch (event.ctx) {
+        case 'brdlist':
+          if (event.inFlightKind) return stay; // 交易在飛（AID 前導段等），別插隊
+          if (!event.engageEligible) return { next: 'idle', actions: ['cleanup'] };
+          // 退板回到**同一份**清單 ⇒ 採用 server 游標、捲動錨一律不動
+          //（不變量 N6）。否則是另一個編號空間（目錄看板遞迴／變體換了）⇒
+          // 整份重建，那時視野跳一下才是對的。
+          return event.sameVariant && event.landedSameList
+            ? { next: 'active', actions: ['resume-in-place'] }
+            : { next: 'active', actions: ['seed', 'start-fill'] };
+        case 'menu':
+          // 從板內一路回到主功能表／分類看板根：真的離開了，緩衝丟掉。
+          if (event.inFlightKind) return stay; // 同 functionMode 的 AID 守門
+          return { next: 'idle', actions: ['cleanup'] };
+        default:
+          return stay; // 板內的一切（文章列表翻頁、讀文、prompt…）
+      }
 
     case 'opening':
       if (event.type === 'transaction-failed')
@@ -322,10 +351,29 @@ BoardListSession.prototype = {
       inFlightKind: this._queue.inFlightKind,
       consumed: !!consumed,
       sameVariant: !!(facts.brd && facts.brd.variant === this._variant),
+      landedSameList: this._landedSameList(facts),
       holdReason: this._holdReason,
       withinResumeGrace: Date.now() - this._resumedAt < RESUME_GRACE_MS,
       engageEligible: this._engageEligible()
     };
+  },
+
+  // 退板落地的這一幀，還是我們進板前那一份清單嗎？（suspended → active 的守門）
+  //
+  // 編號＝絕對位置，但**同變體的不同清單共用同一個編號空間形狀**：分類看板的
+  // 目錄列（`NBRD_FOLDER`）按 Enter 會遞迴進另一份 choose_board，footer 變體
+  // 一模一樣（board.c:1279-1290 只看 IS_LISTING_FAV/IN_CLASS）⇒ 只比 variant ＋
+  // 「落點編號在緩衝裡」會把兩份清單混進同一個緩衝。
+  // 判準＝落點那一列的**板名**要跟緩衝裡同編號那一列相同。那是我們剛剛讀完的
+  // 看板（`num` 是 static，board.c:1646 ⇒ 退板一定停在原處），對不上就代表
+  // 畫面換了一份清單。板名不會因為讀過而變（變的是 cols 8-9 的未讀標記）。
+  _landedSameList: function(facts) {
+    const brd = facts && facts.brd;
+    if (!brd || brd.cursorNum == null) return false;
+    const buffered = this._rowTextOf(brd.cursorNum);
+    if (!buffered) return false;
+    const name = parseBoardListName(facts.rowTexts[facts.curY] || '');
+    return !!name && name === parseBoardListName(buffered);
   },
 
   // pref 開著＝L1 凍結交易＋L2 自動回復生效；關掉＝逐位元回到 2026-09-03 之前。
@@ -418,6 +466,12 @@ BoardListSession.prototype = {
         return this._rebuild(facts);
       case 'enter-native':
         return this._enterNative(facts);
+      case 'suspend':
+        return this._suspend({ flush: true });
+      case 'resume-in-place':
+        this._resumeInPlace(facts);
+        // 進板時被 flush 掉的背景填充要接回去（緩衝可能還沒填到 _fillTarget）。
+        return this._maybeFill();
       case 'cleanup':
         return this._cleanup();
       default:
@@ -441,7 +495,10 @@ BoardListSession.prototype = {
   // 外部序列化導覽（aid_navigation / long_push）要接管這條線路：先停到原生鏡像，
   // 把中間的 settle 吸收掉，別讓我們自己的交易插隊。
   beginExternalNavigation: function() {
-    if (this.state === 'idle') return;
+    // suspended 與 idle 同樣「我們不在畫面上」⇒ 不要動（此前進板就是 idle，
+    // 這裡的早退路徑本來就涵蓋了板內的 AID 導覽）。切原生鏡像只會白丟緩衝，
+    // 而序列真的把我們帶回別份清單時，退板落地的 landedSameList 指紋會擋下來。
+    if (this.state === 'idle' || this.state === 'suspended') return;
     this.state = 'functionMode';
     // 'external'：**永不自動解除**（不變量 N1）——序列途中的 brdlist 幀很多，
     // 讓靜置探針看到就會把別人的序列從中間截斷。
@@ -1085,7 +1142,9 @@ BoardListSession.prototype = {
     this._freezeForTransaction();
     const self = this;
     const send = function() {
-      self._enqueueLandingKey('\r', 'open-board', '進入看板逾時，已切至原生模式');
+      self._enqueueLandingKey('\r', 'open-board', '進入看板逾時，已切至原生模式', {
+        keepOnArticleList: true
+      });
     };
     if (num === this._serverNum) send();
     else this._enqueueCursorSyncJump('open-sync-jump', send, function() {
@@ -1122,17 +1181,27 @@ BoardListSession.prototype = {
   //   主功能表／其他 → 原生
   // 「一律收攤再由內容決定」比在 expect 裡窮舉落點穩健得多：`←` 的上層可能是
   // 主功能表、分類看板根，也可能是另一份同變體的看板列表。
-  _enqueueLandingKey: function(keys, kind, failMsg) {
+  //
+  // opts.keepOnArticleList：**落點是文章列表時改成 suspend（緩衝留著）**。開板
+  // 專用 —— 進了看板就一定會從同一個 choose_board 呼叫點退回來（`Read()` 回到
+  // 它的呼叫者），使用者捲出來的視野該原樣還給他。落點是別的東西（目錄看板遞迴
+  // 進另一份清單、主功能表、怪畫面）一律照舊 `_reset()`：那些都是另一個編號空間。
+  // 退板落地那一刻還會再過一次 `landedSameList` 指紋，兩道守門都過才 resume。
+  _enqueueLandingKey: function(keys, kind, failMsg, opts) {
     const self = this;
+    let landedCtx = null;
     this._queue.enqueue({
       keys: keys,
       kind: BRD_CMD_PREFIX + kind,
-      expect: function() {
+      expect: function(snap, facts) {
+        landedCtx = facts ? facts.ctx : null;
         return true;
       },
       timeoutMs: NATIVE_PASSTHROUGH_MS,
       onDone: function() {
-        self._reset();
+        if (opts && opts.keepOnArticleList && landedCtx === 'article-list')
+          self._suspend();
+        else self._reset();
       },
       onFail: function() {
         self._degradeToNative(failMsg);
@@ -1240,6 +1309,31 @@ BoardListSession.prototype = {
     this._selectedNum = null;
     this._serverNum = null;
     this._topNum = null;
+    this._renderMode = 'native';
+    this._view.showCursor();
+    this._forceRedraw();
+  },
+
+  // 進板：把畫面所有權交還，但**緩衝／捲動錨／變體整份留著**（state → suspended）。
+  // 與 _reset 的唯一差別就是這個保留 —— 退板回到同一份清單時 _resumeInPlace 把
+  // 使用者自己捲出來的視野原樣接回去（不變量 N6），而不是被 server 那一頁
+  //（`head = (num/p_lines)*p_lines`，20 列分頁）重新釘住。
+  // opts.flush：reducer 那條路要清掉自己還在排的補頁命令（進板後那些鍵不能再送）；
+  // 交易 onDone 那條路**不可以** flush（in-flight 就是我們自己剛完成的那一條）。
+  _suspend: function(opts) {
+    this._breakScroll();
+    this._holdReason = null;
+    this._cancelResumeProbe();
+    if (this._frozenWatchdog) {
+      clearTimeout(this._frozenWatchdog);
+      this._frozenWatchdog = null;
+    }
+    if (opts && opts.flush) this._queue.flushKind(BRD_CMD_PREFIX);
+    this._setLoading(false);
+    this.state = 'suspended';
+    // 板內 server 游標會亂跑 ⇒ 不確定；退板落地幀會重教（同 _enterNative）。
+    this._serverNum = null;
+    this._prunePivotOverride = undefined;
     this._renderMode = 'native';
     this._view.showCursor();
     this._forceRedraw();

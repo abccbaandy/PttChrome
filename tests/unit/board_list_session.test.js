@@ -180,13 +180,73 @@ describe("transitionBoardListSession（純 reducer）", () => {
     ).toEqual(["rebuild"]);
   });
 
-  test("active：落到文章列表／主功能表 → 收攤回 idle（畫面交給另一邊）", () => {
-    for (const ctx of ["article-list", "menu"]) {
-      expect(transitionBoardListSession("active", settle({ ctx }))).toEqual({
-        next: "idle",
-        actions: ["cleanup"],
-      });
-    }
+  test("active：進板 → suspended（緩衝留著）；回主功能表 → 收攤回 idle", () => {
+    // 進板＝還會從同一個 choose_board 退回來 ⇒ 緩衝與捲動錨留著，
+    // 退板時原樣接上（不變量 N6）。主功能表＝真的離開，上一層是另一個編號空間。
+    expect(
+      transitionBoardListSession("active", settle({ ctx: "article-list" }))
+    ).toEqual({ next: "suspended", actions: ["suspend"] });
+    expect(transitionBoardListSession("active", settle({ ctx: "menu" }))).toEqual({
+      next: "idle",
+      actions: ["cleanup"],
+    });
+  });
+
+  test("suspended：退回同一份清單 → resume-in-place（捲動錨不動）", () => {
+    expect(
+      transitionBoardListSession(
+        "suspended",
+        settle({ sameVariant: true, landedSameList: true, engageEligible: true })
+      )
+    ).toEqual({ next: "active", actions: ["resume-in-place"] });
+  });
+
+  test("suspended：落到別份清單（目錄看板遞迴／換變體）→ 整份重建", () => {
+    // 分類看板的目錄列 Enter 會遞迴進另一份 choose_board：footer 變體一模一樣、
+    // 編號同樣是絕對位置 ⇒ 只比 variant 會把兩份清單混進同一個緩衝。
+    for (const o of [
+      { sameVariant: true, landedSameList: false },
+      { sameVariant: false, landedSameList: true },
+    ])
+      expect(
+        transitionBoardListSession(
+          "suspended",
+          settle({ ...o, engageEligible: true })
+        )
+      ).toEqual({ next: "active", actions: ["seed", "start-fill"] });
+  });
+
+  test("suspended：板內的一切 settle 都只是 stay", () => {
+    for (const ctx of ["article-list", "brdlist-other", "other"])
+      expect(
+        transitionBoardListSession("suspended", settle({ ctx })).next
+      ).toBe("suspended");
+  });
+
+  test("suspended：回主功能表 → cleanup；交易在飛時不得插隊", () => {
+    expect(
+      transitionBoardListSession("suspended", settle({ ctx: "menu" }))
+    ).toEqual({ next: "idle", actions: ["cleanup"] });
+    // AID 退出前導段行經選單／看板列表時不得被 cleanup 的 flush 打斷（同 functionMode）。
+    for (const ctx of ["menu", "brdlist"])
+      expect(
+        transitionBoardListSession(
+          "suspended",
+          settle({ ctx, inFlightKind: "aid-escape", engageEligible: true })
+        )
+      ).toEqual({ next: "suspended", actions: [] });
+  });
+
+  test("suspended：pref 關掉／不可 engage → 收攤", () => {
+    expect(
+      transitionBoardListSession("suspended", { type: "pref-off" })
+    ).toEqual({ next: "idle", actions: ["cleanup"] });
+    expect(
+      transitionBoardListSession(
+        "suspended",
+        settle({ sameVariant: true, landedSameList: true, engageEligible: false })
+      )
+    ).toEqual({ next: "idle", actions: ["cleanup"] });
   });
 
   test("REGRESSION（I10）：active 收到不在本期範圍的看板列表 → 顯性切原生", () => {
@@ -913,5 +973,130 @@ describe("A 類鍵的凍結交易（看板列表：t / v / V）", () => {
     expect(h.s._renderMode).toBe("native");
     expect(h.s._holdReason).toBe("passthrough");
     expect(h.hints.some((m) => m.includes("逾時"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 進板 → 退板：視野不得被 server 那一頁重新釘住
+//
+// 使用者回報（與文章列表好讀同一個症狀，錄製檔 ptt-debug-20260911-113150）：
+// 用滑鼠把某個看板捲到視口最下面，進去再退出，它會跳回畫面中間。
+// 根因：舊行為在進板時 `_reset()` 把緩衝整份丟掉，退板再 `seed` —— 錨變成
+// server 落地頁的頂列，而 `head = (num / p_lines) * p_lines` 是 20 列分頁
+// （board.c:1710-1716）⇒ 位置一律被吸附回分頁邊界。
+// ---------------------------------------------------------------------------
+describe("進板 → 退板：緩衝與捲動錨跨畫面保留", () => {
+  // 文章列表那一幀（boardListContextKind 的指紋：row0 有《》、footer 有「文章選讀」）。
+  const articleListRows = () => {
+    const rows = new Array(24).fill("");
+    rows[0] = " 【板主:none】看板《C_Chat》";
+    rows[23] = "  文章選讀  (y)回應(X)推文";
+    return rows;
+  };
+
+  // 進板前：緩衝 1..60、使用者把視口捲到頂＝21（序列位置 20）、游標 40。
+  const engaged = () => {
+    const h = makeSession();
+    seedBuffer(h.termBuf, 1, 60);
+    h.s.state = "active";
+    h.s._variant = "fav";
+    h.s._renderMode = "buffer";
+    h.s._topNum = 21;
+    h.s._scrollFrac = 9;
+    h.s._selectedNum = 40;
+    h.s._serverNum = 40;
+    h.s._edgeUp = true;
+    h.s._edgeDown = true;
+    return h;
+  };
+
+  test("進板（非交易路徑）→ suspended，緩衝／錨／變體原封不動", () => {
+    const { s, termBuf } = engaged();
+    termBuf.feed(articleListRows(), { curY: 3 });
+
+    expect(s.state).toBe("suspended");
+    expect(s._renderMode).toBe("native"); // 畫面所有權已交還
+    expect(termBuf.brdListLineNums.length).toBe(60); // 緩衝沒被丟掉
+    expect(s._topNum).toBe(21);
+    expect(s._scrollFrac).toBe(9);
+    expect(s._variant).toBe("fav");
+    expect(s._serverNum).toBeNull(); // 板內游標會亂跑 ⇒ 不確定
+  });
+
+  test("退板回到同一份清單 → 錨不動，只採用 server 游標", () => {
+    const { s, termBuf } = engaged();
+    termBuf.feed(articleListRows(), { curY: 3 });
+    // server 退板重繪：`num` 是 static（board.c:1646）⇒ 停在剛讀的 40，
+    // head 對齊到 [21, 40] 那一頁 —— 舊行為就是被這一頁的頂列釘住。
+    termBuf.feed(brdScreenRows({ startNum: 21, count: 20 }), { curY: 3 + 19 });
+
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer");
+    expect(termBuf.brdListLineNums.length).toBe(60); // 緩衝沒被丟掉重建
+    expect(s._topNum).toBe(21); // 沒被 server 落地頁改掉
+    expect(s._scrollFrac).toBe(9);
+    expect(s._selectedNum).toBe(40); // 游標採用落點
+    expect(s._serverNum).toBe(40);
+  });
+
+  test("落到別份清單（同變體、同編號、板名不同）→ 整份重建，不得混進舊緩衝", () => {
+    // 分類看板的目錄列 Enter 會遞迴進另一份 choose_board：footer 變體一樣、
+    // 編號一樣是 1-based 絕對位置 ⇒ 只比編號就會別名。
+    const { s, termBuf } = engaged();
+    termBuf.feed(articleListRows(), { curY: 3 });
+    const other = brdScreenRows({
+      bodyRows: Array.from({ length: 20 }, (_, i) => brdRow(21 + i, "OTHER" + i)),
+    });
+    termBuf.feed(other, { curY: 3 + 19 });
+
+    expect(s.state).toBe("active");
+    // 舊緩衝整份丟掉（_resetBuffer）——不得把別份清單 merge 進來。
+    expect(termBuf.brdListLineNums.length).toBe(0);
+    expect(s._topNum).toBe(21); // seed 採用落地頁頂列（本來就該重新錨定）
+    expect(s._selectedNum).toBe(40);
+  });
+
+  test("從板內一路回到主功能表 → 收攤，緩衝丟掉", () => {
+    const { s, termBuf } = engaged();
+    termBuf.feed(articleListRows(), { curY: 3 });
+    const menu = new Array(24).fill("");
+    menu[0] = "【主功能表】 批踢踢實業坊";
+    termBuf.feed(menu, { curY: 3 });
+
+    expect(s.state).toBe("idle");
+    expect(termBuf.brdListLineNums.length).toBe(0);
+    expect(s._topNum).toBeNull();
+  });
+
+  test("開板交易落在文章列表 → suspend；落在別的畫面（目錄遞迴等）→ 照舊 reset", () => {
+    for (const [ctx, expected] of [
+      ["article-list", "suspended"],
+      ["brdlist", "idle"],
+      ["menu", "idle"],
+    ]) {
+      const { s, enqueued } = engaged();
+      s._beginOpen();
+      const cmd = enqueued.find((c) => c.kind === BRD_CMD_PREFIX + "open-board");
+      expect(cmd).toBeTruthy();
+      cmd.expect(null, { ctx });
+      cmd.onDone();
+      expect(s.state).toBe(expected);
+    }
+  });
+});
+
+describe("suspended：外部序列化導覽不得動我們的緩衝", () => {
+  test("板內的 AID 導覽呼叫 beginExternalNavigation → 早退（同 idle）", () => {
+    const h = makeSession();
+    seedBuffer(h.termBuf, 1, 60);
+    h.s.state = "suspended";
+    h.s._variant = "fav";
+    h.s._topNum = 21;
+
+    h.s.beginExternalNavigation();
+
+    expect(h.s.state).toBe("suspended");
+    expect(h.termBuf.brdListLineNums.length).toBe(60);
+    expect(h.s._topNum).toBe(21);
   });
 });

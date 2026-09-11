@@ -440,14 +440,15 @@ describe("transitionListSession (full table)", () => {
   });
 
   test("suspended", () => {
-    // v5/M4 re-seed：退文回列表不再逐行 parity 還原（_restore 家族退役），
-    // 與 functionMode 同規則——server 落點權威，落點在緩衝內續用 buffer，
+    // v5/M4 re-seed：退文回列表不再逐行 parity 還原（_restore 家族退役）。
+    // 落點在緩衝內 ⇒ resume-in-place：採用 server 游標、**不動捲動錨**
+    //（不變量 N6；文章期間視口不在 DOM 上，錨原封不動）。
     // 否則 rebuild（pinned 落點 cursorRowNum=null → landedNumInBuffer=false）。
     T(
       "suspended",
       settle("clean-list", { landedNumInBuffer: true }),
       "active",
-      ["resume-buffer"]
+      ["resume-in-place"]
     );
     T("suspended", settle("clean-list"), "active", ["resume-buffer", "rebuild"]);
     T(
@@ -2112,14 +2113,15 @@ describe("錨定還原（不變量 6 的原生捲動形式）", () => {
   });
 });
 
-// 退出文章回到列表（reducer: suspended --clean-list--> active，action resume-buffer）。
+// _resumeBuffer＝「從原生鏡像回來、畫面本來就是 server 那一頁」那條路（reducer 的
+// functionMode/rebuild 分支）。退文回列表**不走這裡**（見下一個 describe）。
 //
-// 症狀（錄製檔 ptt-debug-20260830-221107）：緩衝往上長過幾頁之後開文再退出，
-// 視野跳到緩衝最舊那一列，剛讀的那篇捲出視野。根因：_resumeBuffer 採用 server
-// 落地幀的視窗頂列當錨，但緊接著的 _forceRedraw 那一幀 captureScrollAnchor 會
-// 從 **detached 視口**（scrollTop 恆 0）把它覆寫掉 —— 與 _requestEnd/_requestHome
-// 同一個坑，那兩處都設了 _anchorOverride。
-describe("退文回列表：視野停在 server 落點那一頁", () => {
+// 症狀（錄製檔 ptt-debug-20260830-221107）：緩衝往上長過幾頁之後回到 buffer，
+// 視野跳到緩衝最舊那一列。根因：_resumeBuffer 採用 server 落地幀的視窗頂列當錨，
+// 但緊接著的 _forceRedraw 那一幀 captureScrollAnchor 會從 **detached 視口**
+//（scrollTop 恆 0）把它覆寫掉 —— 與 _requestEnd/_requestHome 同一個坑，那兩處
+// 都設了 _anchorOverride。
+describe("回 buffer（原生鏡像落點）：視野停在 server 落點那一頁", () => {
   const ROW = 20;
   const VP = 20 * ROW;
 
@@ -2545,5 +2547,138 @@ describe("_sequence 記憶化", () => {
     const after = s._sequence();
     expect(after).not.toBe(before);
     expect(after.length).toBe(before.length + 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 退出文章回到列表（reducer: suspended --clean-list--> active，action
+// resume-in-place）。
+//
+// 使用者回報（錄製檔 ptt-debug-20260911-113150）：把某篇用滑鼠捲到視口最下面、
+// 進去再退出，那篇會跳回畫面中間。根因：舊的 resume-buffer 採用 server 落地幀
+// （READ_REDRAW，read.c 的 20 列分頁）的視窗頂列當錨 ⇒ 使用者自己捲出來的位置
+// 被丟掉，畫面被釘回 server 的分頁。
+//
+// 正確行為：文章期間視口不在 DOM 上，錨與緩衝原封不動（不變量 6c）⇒ 退文只採用
+// server 游標，捲動錨一律不動（不變量 N6，同 A 類凍結交易）。
+// ---------------------------------------------------------------------------
+describe("退文回列表：視野停在使用者自己捲到的位置", () => {
+  const ROW = 20;
+  const VP = 20 * ROW;
+
+  // 進文章前：緩衝 100..159，使用者把視口捲到頂＝110（序列位置 10）⇒ 可見
+  // [110, 129]，游標 129 恰好停在**視口最下面那一列**。
+  // 文章期間 .listBodyView 被移出容器 ⇒ live=false；detached 節點的 scrollTop 是
+  // 0（瀏覽器在移出時就把捲動位置丟了），所以替身的 top 也從 0 起算 —— session
+  // 手上的 _topNum 才是這段期間唯一的真相源。
+  const setup = () => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    h.s._renderMode = "buffer";
+    h.s._edgeUp = true;
+    h.s._edgeDown = true;
+    h.s._topNum = 110;
+    h.s._selectedNum = 129;
+    h.s.state = "suspended";
+    h.screen = fakeScreen(0, VP, /* live */ false);
+    h.s._view.componentScreen = h.screen;
+    h.s._lastScrollTop = 0; // _beginOpen 的 _cancelScroll 歸零過
+    return h;
+  };
+
+  // server 退文重繪：read.c 的視窗把游標那篇擺在自己的分頁裡（120..139，游標
+  // 129 ⇒ 落在畫面正中間）。這正是使用者看到的「跑回中間」。
+  const settleBack = (s, facts) =>
+    s._dispatch(
+      {
+        type: "settle",
+        kind: "clean-list",
+        boardNameMatch: true,
+        inFlightKind: null,
+        consumed: false,
+        landedNumInBuffer: true,
+        holdReason: null,
+        withinResumeGrace: false,
+        hasNumberedRow: true,
+        engageEligible: true,
+      },
+      facts
+    );
+
+  // 一幀＝capture（視口還沒掛回來）→ render（視口回到 DOM）→ apply。
+  const frame = (s, screen) => {
+    s.captureScrollAnchor();
+    screen.live = true;
+    s.applyScrollAfterRender();
+  };
+
+  test("捲到視口最下面的那篇，退文後還在最下面", () => {
+    const { s, screen } = setup();
+    settleBack(s, pageFacts(120, 129));
+    expect(s.state).toBe("active");
+    frame(s, screen);
+
+    expect(s._topNum).toBe(110); // 沒被 server 落點（120）改掉
+    expect(s._scrollFrac).toBe(0);
+    expect(screen.top).toBe(10 * ROW); // 視口頂仍是序列位置 10
+    // 游標採用 server 落點，位置＝序列 29 ＝視口 [10, 30) 的最後一列
+    expect(s._selectedNum).toBe(129);
+    const seq = s._sequence();
+    expect(s._cursorPos(seq)).toBe(29);
+    expect(s._isPosVisible(seq, 29)).toBe(true);
+  });
+
+  test("錨不被 detached 視口的 scrollTop=0 覆寫（舊坑不得復發）", () => {
+    const { s, screen } = setup();
+    settleBack(s, pageFacts(120, 129));
+    frame(s, screen);
+    // 0 是「沒有資訊」不是「捲到最上面」：吃進去就會變成緩衝最舊那一列 100。
+    expect(s._topNum).not.toBe(100);
+    expect(s._topNum).toBe(110);
+  });
+
+  test("列內偏移（停在半列）一併保留", () => {
+    const { s, screen } = setup();
+    s._scrollFrac = 7;
+    settleBack(s, pageFacts(120, 129));
+    frame(s, screen);
+    expect(s._scrollFrac).toBeCloseTo(7);
+    expect(screen.top).toBe(10 * ROW + 7);
+  });
+
+  test("文章內換過文（落點捲出視野）→ 錨不動，只把游標 reveal 進視野", () => {
+    const { s, screen } = setup();
+    // 在文章裡按 ]/↓ 換到 150，退出時 server 游標停在那裡（序列位置 50，
+    // 不在視口 [10, 30) 內）。
+    settleBack(s, pageFacts(140, 150));
+    frame(s, screen);
+
+    expect(s._selectedNum).toBe(150);
+    const seq = s._sequence();
+    expect(s._isPosVisible(seq, 50)).toBe(true);
+    // nearest：只捲到剛好看得見，不重新置中（50 變成視口最後一列 ⇒ 頂＝31）
+    expect(screen.top).toBe(31 * ROW);
+  });
+
+  test("程式化定位不得被讀成「使用者捲動」而偷送 demand（不變量 4）", () => {
+    const { s, screen, enqueued } = setup();
+    s._edgeUp = false;
+    s._edgeDown = false;
+    settleBack(s, pageFacts(120, 129));
+    frame(s, screen);
+
+    expect(s._lastScrollTop).toBe(10 * ROW);
+    s._onScrollFrame();
+    expect(enqueued.filter((c) => c.kind.indexOf("prefetch") === 0)).toEqual([]);
+  });
+
+  test("落地幀上有置底文 ⇒ 板尾確認（錨不動，但事實要收下）", () => {
+    const { s, screen } = setup();
+    s._edgeDown = false;
+    const facts = pageFacts(140, 150);
+    facts.rowTexts[22] = "  ★ 27 6/09     arrenwu     □ [公告] 板規與置底";
+    facts.nums[22] = null;
+    settleBack(s, facts);
+    frame(s, screen);
+    expect(s._edgeDown).toBe(true);
   });
 });

@@ -18,6 +18,7 @@ import {
   boardListFetchTarget,
   boardListFetchVerdict,
   BRD_HEADER_ROWS,
+  parseBoardListName,
 } from "../../src/js/board_list_parse";
 
 const pad7 = (n) => String(n).padStart(7, " ");
@@ -86,6 +87,30 @@ describe("parseBoardListNum", () => {
     // 用 /^\\s*(\\d+)\\s/ 這種「數字後必須有空白」的樣式會整列讀成 null ⇒
     // 該列不會進緩衝，畫面就少一個看板。
     expect(parseBoardListNum(blockedRow(4, "SYSOP"))).toBe(4);
+  });
+
+  // 退板回到看板列表時的「還是同一份清單嗎」指紋
+  //（board_list_session._landedSameList）。
+  describe("parseBoardListName", () => {
+    test("讀出 %-13s 的板名，不受未讀標記位移影響", () => {
+      // 已讀：unread[0] 是兩個半形空白；未讀：unread[1] 是全形「ˇ」，
+      // rowToText 會把它收成**一個**字元 ⇒ 板名的字串索引會差一格。
+      // 固定欄位切法就是在這裡壞的，所以改抓「編號之後的第一個識別字」。
+      expect(parseBoardListName(brdRow(12, "C_Chat"))).toBe("C_Chat");
+      expect(parseBoardListName(unreadRow(12, "C_Chat"))).toBe("C_Chat");
+    });
+
+    test("兩份清單的同一編號板名不同 ⇒ 分得出來", () => {
+      expect(parseBoardListName(brdRow(12, "C_Chat"))).not.toBe(
+        parseBoardListName(brdRow(12, "Gossiping"))
+      );
+    });
+
+    test("沒有板名的列（分隔線／表頭／空列）回 空字串", () => {
+      expect(parseBoardListName(lineRow(3))).toBe("");
+      expect(parseBoardListName("")).toBe("");
+      expect(parseBoardListName(HEADER_NUM)).toBe("");
+    });
   });
 
   test("分隔線／目錄列也有編號（非 newflag 時 board.c 一律印 %7d）", () => {
