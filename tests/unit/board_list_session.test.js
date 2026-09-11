@@ -295,6 +295,36 @@ describe("engage / 收攤", () => {
     expect(termBuf.listRenderOwner).toBeNull();
   });
 
+  // 看板列表的 header 是**自己的**常數（BRD_HEADER_ROWS，與文章列表的
+  // LIST_HEADER_ROWS 同值但語意不同）。滑鼠座標鏈兩種列表共用，所以「render row
+  // ↔ body idx」的換算一律走 session 的 headerRows()，不得寫死任一常數。
+  test("列號換算走 session 的 headerRows()（不是寫死的常數）", () => {
+    const mk = () => {
+      const ctx = makeSession();
+      ctx.termBuf.feed(brdScreenRows());
+      seedBuffer(ctx.termBuf, 1, 20);
+      ctx.s._serverNum = ctx.s._selectedNum; // 真游標已同步 ⇒ 開板不必先跳號
+      return ctx;
+    };
+    // baseline：header = 3 ⇒ render row 3 是 body 第 0 項，點下去會開板。
+    // （少了這段，下面那條會在「其實根本沒走到換算」的情況下沉默通過。）
+    const base = mk();
+    expect(base.s.headerRows()).toBe(3);
+    base.s.onMouseClick(3, 10);
+    expect(base.s.state).toBe("opening");
+    expect(base.s._selectedNum).toBe(1);
+
+    // headerRows 換成 4 ⇒ 同一個 render row 落在 header 區，不得開板。
+    const moved = mk();
+    moved.s.headerRows = () => 4;
+    moved.s.onMouseClick(3, 10);
+    expect(moved.s.state).toBe("active");
+    // row 4 才是 body 第 0 項。
+    moved.s.onMouseClick(4, 10);
+    expect(moved.s.state).toBe("opening");
+    expect(moved.s._selectedNum).toBe(1);
+  });
+
   test("disable()：pref 關掉一律回到原生", () => {
     const { s, termBuf } = makeSession();
     termBuf.feed(brdScreenRows());

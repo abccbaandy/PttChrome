@@ -804,7 +804,7 @@ BoardListSession.prototype = {
       if (this._view.flashListHint) this._view.flashListHint('看板列表：處理中，請稍候…');
       return;
     }
-    const idx = renderRow - BRD_HEADER_ROWS;
+    const idx = renderRow - this.headerRows();
     if (idx < 0) return; // header
     const guard = !!(
       this._termBuf &&
@@ -1254,6 +1254,12 @@ BoardListSession.prototype = {
   },
 
   // ---- 序列／視窗 -------------------------------------------------------------
+
+  // 渲染後畫面裡 body 從第幾列開始。理由同 ListSession.headerRows（滑鼠座標鏈
+  // 一律問 session，不要由呼叫端挑常數）——這裡回的是**看板列表自己**的那個。
+  headerRows: function() {
+    return BRD_HEADER_ROWS;
+  },
 
   // body 的列數（原生 24 列畫面的 rows 3..22 ＝ p_lines ＝ 20）。
   _bodyRows: function() {

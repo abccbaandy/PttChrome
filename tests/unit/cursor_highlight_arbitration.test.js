@@ -164,6 +164,7 @@ describe("onListMouseMove 與仲裁的銜接", () => {
     const { v } = makeView({ listRenderMode: "buffer" });
     const calls = [];
     const listSession = {
+      headerRows: () => LIST_HEADER_ROWS,
       getListView: () => ({
         seq: Array.from({ length: 20 }, (_, i) => 100 + i),
         cursorAbs: 100,

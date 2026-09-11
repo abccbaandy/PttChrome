@@ -15,7 +15,6 @@ import { DeepLinkController } from './deep_link_controller';
 import { AutoLogin } from './auto_login';
 import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
 import { MouseButtonTracker } from './mouse_button_tracker';
-import { LIST_HEADER_ROWS } from './list_window';
 import {
   ACT_NONE,
   ACT_ENTER,
@@ -924,16 +923,23 @@ App.prototype.clientToPos = function(cX, cY) {
   // 自己算 —— 螢幕 y 落在視口裡的位置，加上視口已經捲掉的距離。捲掉的距離是
   // **內容 px**，而 y 是螢幕 px ⇒ 乘 scaleY 換到同一個座標系。
   // header／footer 不受影響（它們不在視口裡，是 #mainContainer 的直系子層）。
-  var listTop = this._listScrollTop();
+  // header 列數**問 session**，不要自己挑常數：兩種列表的 header 是兩個不同的
+  // 常數（LIST_HEADER_ROWS / BRD_HEADER_ROWS，語意不同、刻意各自宣告），而這條
+  // 路兩者共用。挑錯的那一個目前不會出錯（兩者同為 3），但「其中一邊改版」時
+  // 就是靜默連坐 —— 算出來的 row 會被 BoardListSession.onMouseClick 用**它自己**
+  // 的常數反算回 body idx ⇒ 點進錯的看板。
+  var listSession = this.activeListSession();
+  var listTop = listSession ? this._listScrollTop() : null;
   if (listTop != null) {
-    var bodyTop = LIST_HEADER_ROWS * rowH;
+    var listHeaderRows = listSession.headerRows();
+    var bodyTop = listHeaderRows * rowH;
     var bodyRows = this.buf.rows - 4;
     if (y >= bodyTop && y < bodyTop + bodyRows * rowH) {
       var bodyIdx = Math.floor(
         (y - bodyTop + listTop * this.view.scaleY) / rowH
       );
       if (bodyIdx < 0) bodyIdx = 0;
-      return { col: col, row: LIST_HEADER_ROWS + bodyIdx };
+      return { col: col, row: listHeaderRows + bodyIdx };
     }
     // footer：全序列渲染後它的列號 ＝ 這一幀 lines 的最後一個 index。
     if (y >= bodyTop + bodyRows * rowH) {

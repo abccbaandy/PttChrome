@@ -1426,7 +1426,9 @@ TermView.prototype = {
     if (this.buf.useMouseBrowsing && this.buf.listRenderMode === 'buffer') {
       var ls = listOwnerOf(this.bbscore);
       // body ＝ header 之後的整段序列，所以 body index 直接是序列位置。
-      var idx = row - LIST_HEADER_ROWS;
+      // header 列數**問 session**：這條路兩種列表共用，而它們的 header 是兩個
+      // 不同的常數（理由見 ListSession.headerRows）。
+      var idx = ls ? row - ls.headerRows() : -1;
       if (ls && idx >= 0) {
         var view = ls.getListView();
         // idx >= seq.length ＝ 短板補到 bodyRows 的空白列（或 footer），

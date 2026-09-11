@@ -39,6 +39,9 @@ function makeView({
   // 分派一律走 App.activeListSession（buf.listRenderOwner 決定是文章列表還是
   // 看板列表的 session）——term_view 不再直接讀 bbscore.listSession。
   const listSession = {
+    // header 列數由 session 回答（term_view 不得自己挑常數，見
+    // tests/unit/list_header_rows_source.test.js）。
+    headerRows: () => LIST_HEADER_ROWS,
     // idx >= seq.length ＝ 短板補到 bodyRows 的空白列，沒有文章可 hover
     getListView: () => ({
       seq: Array.from({ length: bodyLen }, (_, i) => 100 + i),

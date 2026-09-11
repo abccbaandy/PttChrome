@@ -2017,9 +2017,9 @@ ListSession.prototype = {
         this._view.flashListHint('好讀列表：處理中，請稍候…');
       return;
     }
-    // renderRow 是**渲染後**的列號：header 3 列之後就是整段序列（body 現在全部
-    // 畫出來、由瀏覽器捲），所以 body index 直接是序列位置。
-    const idx = renderRow - LIST_HEADER_ROWS;
+    // renderRow 是**渲染後**的列號：header 之後就是整段序列（body 現在全部畫
+    // 出來、由瀏覽器捲），所以 body index 直接是序列位置。
+    const idx = renderRow - this.headerRows();
     if (idx < 0) return; // header
     // 防誤觸模式開啟時只有標題欄可以開文，與原生一致（避免點到日期／作者欄誤開）。
     // 虛擬視窗的欄位與 server 的 readdoent 逐格對齊（buildListWindowLines 取的就是
@@ -2063,7 +2063,7 @@ ListSession.prototype = {
   // 那個選單項不出現（條件全收在這裡，React 端不重複判斷）。
   markReadTargetAtRow: function(renderRow) {
     if (this.state !== 'active' || this._renderMode !== 'buffer') return null;
-    const idx = renderRow - LIST_HEADER_ROWS;
+    const idx = renderRow - this.headerRows();
     if (idx < 0) return null; // header
     const view = this.getListView();
     // idx >= seq.length ＝ 短板補到 bodyRows 的空白列（或 footer）。
@@ -2914,6 +2914,14 @@ ListSession.prototype = {
   },
 
   // ---- window navigation ------------------------------------------------------
+
+  // 渲染後畫面裡 body 從第幾列開始。**滑鼠座標鏈一律問 session、不要自己挑常數**
+  // ——看板列表的 header 是另一個常數（BRD_HEADER_ROWS，語意不同、刻意各自宣告），
+  // 而 clientToPos／onListMouseMove 兩條路兩種列表共用。呼叫端挑常數就會在「其中
+  // 一邊改版」時靜默連坐（點進錯的看板、hover 落在錯的列）。
+  headerRows: function() {
+    return LIST_HEADER_ROWS;
+  },
 
   // The window's body row count: the native list body (rows 3..rows-2 on a
   // 24-row screen = 20 entries, pttbbs p_lines).

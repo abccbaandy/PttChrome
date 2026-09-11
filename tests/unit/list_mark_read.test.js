@@ -133,6 +133,19 @@ describe("markReadTargetAtRow（純查詢，決定選單項出不出現）", () 
     expect(s.markReadTargetAtRow(bodyRow(2))).toEqual({ num: 103 });
   });
 
+  // 「render row ↔ body idx」的換算必須走 session 自己的 headerRows()，不是寫死
+  // 的 LIST_HEADER_ROWS —— 滑鼠座標鏈（clientToPos / onListMouseMove）兩種列表
+  // 共用，而看板列表的 header 是另一個常數。改了 headerRows 卻沒跟著走的話，
+  // 其中一邊改版時就是靜默連坐（點進錯的看板）。
+  test("列號換算走 session 的 headerRows()（不是寫死的常數）", () => {
+    const { s } = makeSession();
+    expect(s.headerRows()).toBe(LIST_HEADER_ROWS);
+    s.headerRows = () => 4;
+    expect(s.markReadTargetAtRow(4)).toEqual({ num: 101 });
+    expect(s.markReadTargetAtRow(3)).toBe(null); // 在新的 header 區內
+    expect(s.markReadTargetAtRow(6)).toEqual({ num: 103 });
+  });
+
   test("非 active／非 buffer（原生鏡像、交易中）→ null", () => {
     const { s } = makeSession();
     s._renderMode = "native";
