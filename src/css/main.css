@@ -843,6 +843,57 @@ span {
   pointer-events: none;
 }
 
+/* 單張圖的暫時性灰階切換鈕（src/render/inline_preview_slot.js#ensureGrayButton）。
+   動線是「轉灰階 → 用瀏覽器內建的以圖找圖查」，所以效果只要是 render-time 的
+   filter 就夠（本地產不出真正灰階的位元組，理由見該檔的 grayHrefs 註解）。
+
+   ---- 為什麼是 grid item + 百分比 margin，不是 JS 算座標 ----
+   圖片身上有一條**動態反向 scale**（term_view.js 抵消 .main 的 transform:scale），
+   而 .main 本身也是 transform 過的 ⇒ getBoundingClientRect() + position:fixed 量到的
+   是另一個座標系，還得自己跟捲動與 resize。改成待在**同一個 layout 空間**裡：按鈕
+   是 slot 的第三個 grid item、與內容疊在同一格（不增加 slot 高度），水平位置靠一條
+   負責抵消「圖片 margin:0.5em auto 置中留白」的百分比 margin。百分比 margin 以
+   grid area（＝slot）寬為基準，所以扣掉左右各半的留白就正好貼在圖片右上角。
+   --img-w 由既有的 ResizeObserver 回呼量 img.offsetWidth 寫在**按鈕自己**身上
+   （.inlinePreviewSlot / .inlinePreviewContent 一律不得有 runtime inline style，
+   見上面的硬不變量）。放大／縮小／字級／視窗改變都自動跟上，零捲動監聽。
+   外觀比照 render/merge_buttons.js 的浮動按鈕。 */
+.inlinePreviewSlot > .previewGrayBtn {
+  grid-area: stack;
+  justify-self: end;
+  align-self: start;
+  margin-right: calc((100% - var(--img-w, 100%)) / 2);
+  /* 圖片上緣相對於內容層上緣，同樣由 JS 量（**不可**在這裡寫 0.5em 照抄圖片的
+     margin：em 在按鈕身上以按鈕自己的 12px 解析，圖片那個 0.5em 用的是終端機字級
+     ⇒ 按鈕會浮到圖片上緣之外、壓到上一列文字，實測差 9px）。 */
+  margin-top: var(--img-top, 0px);
+  /* 「DOM 排在後面」不足以疊在圖片上方：<img> 是**行內置換元素**（CSS 2.1 繪製
+     順序的第 7 步），而按鈕是 block-level grid item（背景／邊框在第 4 步）⇒ 圖片
+     反而蓋住按鈕。實測症狀：按鈕看得見卻點不到，elementFromPoint 回的是 <img>
+     （Playwright 會說「img … intercepts pointer events」，看起來像座標算錯）。
+     給它自己的堆疊脈絡就排到第 9 步。位移量是 0，版面不動。 */
+  position: relative;
+  z-index: 1;
+  visibility: hidden;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #fff;
+  background: rgba(33, 37, 41, 0.75);
+  border: 1px solid #ced4da;
+}
+/* 平時隱藏，不干擾閱讀；:focus-visible 那條讓鍵盤使用者也叫得出來。 */
+.inlinePreviewSlot:hover > .previewGrayBtn,
+.inlinePreviewSlot > .previewGrayBtn:focus-visible {
+  visibility: visible;
+}
+/* 只打真圖：替身盒 .inlinePreviewGhost 雖然也掛 .easyReadingImg，但它是 <div>。 */
+.inlinePreviewSlot[data-gray="1"] img.easyReadingImg {
+  filter: grayscale(1);
+}
+
 /* 自動開圖「讀取中」指示器：解析中 + 媒體下載中共用。
    <img>/<video> 無法回報真實進度，故用不定式（indeterminate）滑動色塊。 */
 .previewLoading {

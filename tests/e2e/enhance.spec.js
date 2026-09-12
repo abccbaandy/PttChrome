@@ -123,29 +123,37 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       });
       await gotoBoard(page, 'C_Chat');
 
-      // 用與樓層測試相同的成功導航（End→Enter）；若該篇無推文，回列表往上一篇再試。
+      // 選文＝**先看列表上的推文數再跳號開文**，與樓層編號測試同一套
+      // （`pickListArticleWithComments` + `openArticleByNumber`）。
+      //
+      // 這裡曾是 `End`＋`Enter`＋「沒推文就往上一篇再試」的迴圈，2026-09 換掉，理由
+      // 有兩層：
+      //   1. 與樓層編號測試 2026-08-29 那次同一個坑 —— `End` 走 read.c 的 `last_line`
+      //      （含置底），開到的常是十幾頁、零推文的置底公告。
+      //   2. 更致命的是**本測要進同一篇兩次**（封鎖前／後），而第二次原本只按裸
+      //      `Enter`，開的是「游標當下停在哪」的那一篇。列表在這段期間會長新文、
+      //      重試迴圈也會移動游標 ⇒ 兩次可能根本不是同一篇，或同一篇但起點差一列
+      //      ⇒ `comparePusherSequences` 在 **index 0** 就 mismatch（實測
+      //      expected=anpinjou / actual=laughingxd，而黑名單其實完全生效：
+      //      targetInBefore=46、targetInAfter=0）。改成兩次都**按序號跳**，
+      //      「同一篇」就變成前提而不是運氣。
       // 取樣點＝「整篇累積完畢」(waitEasyReadingComplete)，不是「翻 N 次 Space 之後」——
       // 前後兩階段要停在同一個可重現的終點，內容前綴才對得起來。
-      await sendKey(page, 'End');
-      await page.waitForTimeout(800);
-      let beforeRows = [];
-      let before = [];
-      for (let attempt = 0; attempt < 6; attempt++) {
-        await sendKey(page, 'Enter');
-        const acc = await waitEasyReadingComplete(page);
-        console.log('ACCUMULATE BEFORE:', JSON.stringify(acc));
-        beforeRows = await readRows();
-        before = pushersOf(beforeRows);
-        if (before.length > 0 && acc.reachedEnd) break;
-        // 無推文（或沒讀到底）→ 離開回列表、往上一篇（較舊）再試
-        await sendKey(page, 'ArrowLeft');
-        await page.waitForTimeout(1300);
-        await sendKey(page, 'ArrowUp');
-        await page.waitForTimeout(500);
-        before = [];
-      }
+      const article = await pickListArticleWithComments(page, { min: 8, max: 99 });
+      console.log('TARGET ARTICLE:', JSON.stringify(article));
+      test.skip(!article, '列表上找不到推文數 8~99 的文章（板況異常）');
+
+      await openArticleByNumber(page, article.num);
+      const acc = await waitEasyReadingComplete(page);
+      console.log('ACCUMULATE BEFORE:', JSON.stringify(acc));
+      // 沒讀到底就別再往下斷言：序列只會是「累積到一半」的片段，紅在後面的內容
+      // 比對上完全看不出真正的原因（同樓層編號測試的守門）。
+      expect(acc.reachedEnd).toBe(true);
+      const beforeRows = await readRows();
+      const before = pushersOf(beforeRows);
       console.log('PUSHERS BEFORE:', before.length);
-      test.skip(before.length === 0, '找不到有推文且能讀到底的文章，跳過黑名單驗證');
+      // 推文數是開文前就從列表讀到的，這裡為 0 代表解析壞了，不是板況問題 ⇒ 硬紅。
+      expect(before.length).toBeGreaterThan(0);
 
       // 選出現次數最多的推文者
       const freq = {};
@@ -162,10 +170,11 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
         window.__app.view.blacklist = new Set([t.toLowerCase()]);
       }, target);
 
-      // 離開回列表（游標仍停在本篇）→ 再進入，好讀重新累積套用黑名單。
+      // 離開回列表 → **按同一個序號**再跳進去（不是裸 Enter：那開的是「游標當下停
+      // 在哪」，列表期間長出新文就可能換篇 ⇒ 內容比對在 index 0 就假紅）。
       await sendKey(page, 'ArrowLeft');
       await page.waitForTimeout(1500);
-      await sendKey(page, 'Enter');
+      await openArticleByNumber(page, article.num);
       const acc2 = await waitEasyReadingComplete(page);
       console.log('ACCUMULATE AFTER:', JSON.stringify(acc2));
       expect(acc2.reachedEnd).toBe(true);

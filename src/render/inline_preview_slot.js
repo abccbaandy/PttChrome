@@ -59,6 +59,7 @@
 import React from "react";
 import ImagePreviewer, { requestPreview } from "../components/ImagePreviewer";
 import { renderInto, unmountFrom } from "../js/react_root";
+import { i18n } from "../js/i18n";
 import { el } from "./dom";
 import {
   LAZY_MEDIA_SELECTOR,
@@ -110,6 +111,28 @@ function rememberSize(href, pinned, aspect) {
   if (sizeMemo.size > SIZE_MEMO_MAX) {
     sizeMemo.delete(sizeMemo.keys().next().value);
   }
+}
+
+// ------------------------------------------------------- 單張圖的暫時性灰階
+// 使用者動線：把某張圖轉灰階 → 用瀏覽器內建的「以圖找圖」查。灰階是 CSS filter
+// （render-time 效果，不動圖片位元組）—— 本地產不出真正灰階的位元組：預覽圖全是
+// 跨網域、又刻意帶 referrerPolicy="no-referrer" 且沒有 crossorigin 屬性，畫進
+// canvas 會被 taint、toBlob() 直接 throw；補 crossorigin="anonymous" 則會讓大量
+// 圖床改為載入失敗。
+//
+// 狀態放 module 級、以 href 為鍵，理由同上面的 sizeMemo：**任何改動 annotationsKey
+// 的操作都會整份重建 slot**（AI 校正逐筆回填一篇文章就數十次），存在閉包裡的話
+// 灰階會在使用者眼前自己跳回原彩。生命週期比照 imagesEnlarged：同篇 page-down
+// 保留、換文章／退出再進由 ScreenController 清掉（clearInlinePreviewGray）。
+// 刻意**不做成 pref**（比照 imagesEnlarged／mergeCaption，純 runtime 切換），
+// 也刻意不進 annotationsKey（不改變任何一列的標註）。
+const grayHrefs = new Set();
+
+// 換文章的唯一入口（呼叫端 render/screen.js#_resetImagesGray）。只清 Set 不夠：
+// 已經掛在畫面上的節點還帶著 data-gray，所以呼叫端必須連帶對存活中的 slot
+// 逐一 syncGray()。
+export function clearInlinePreviewGray() {
+  grayHrefs.clear();
 }
 
 // 版面寬度改變了（字級／視窗 resize、圖文並排切換）⇒ pinned 全部過期。
@@ -186,6 +209,7 @@ export function resetLazyObserversForTest() {
   farObserver = null;
   sizeObserver = null;
   sizeMemo.clear();
+  grayHrefs.clear();
 }
 
 // 一個佔位盒。回傳的 slot 由 renderer（screen.js）持有；列被換掉時**必須**呼叫
@@ -275,6 +299,79 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     spacer.appendChild(ghost);
   }
 
+  // ------------------------------------------------------------ 灰階切換鈕
+  // 平時 visibility:hidden（見 main.css），hover 整個 slot 或按鈕取得鍵盤焦點才
+  // 浮現 —— 不干擾閱讀。
+  let grayButton = null;
+
+  // 灰階態的唯一同步點：屬性（CSS 的鉤子）與按鈕文字（永遠說「點下去會發生什麼」）
+  // 一起翻，兩邊不會各自為政。
+  function syncGray() {
+    const on = grayHrefs.has(href);
+    if (on) node.dataset.gray = "1";
+    else delete node.dataset.gray;
+    if (grayButton)
+      grayButton.title = i18n(on ? "imageGray_off" : "imageGray_on");
+  }
+
+  // 只有「content 裡剛好一張、而且已經佈局出來」的 <img> 才配按鈕：
+  //   * 非媒體 slot（「※ 文章網址」那行）、影片、iframe、相簿（多張）不該長出
+  //     一顆指涉不明的按鈕；
+  //   * 連帶讓 jsdom（圖片永不載入 ⇒ offsetWidth 恆 0）完全不會生成它 ⇒
+  //     tests/unit/fixtures/screen_golden/*.html 不受影響。
+  function singleLaidOutImage() {
+    const imgs = content.querySelectorAll("img.easyReadingImg");
+    if (imgs.length !== 1) return null;
+    return imgs[0].offsetWidth > 0 ? imgs[0] : null;
+  }
+
+  function ensureGrayButton(img) {
+    if (!grayButton) {
+      grayButton = el(
+        "button",
+        { class: "previewGrayBtn", type: "button" },
+        "◐",
+      );
+      grayButton.addEventListener("click", (e) => {
+        // 這一下**只**屬於按鈕：不讓它冒到 ScreenController 掛在容器上的委派
+        // （那條是「點圖放大／縮小」）、也不讓它走到終端機的滑鼠路徑。
+        e.stopPropagation();
+        e.preventDefault();
+        if (grayHrefs.has(href)) grayHrefs.delete(href);
+        else grayHrefs.add(href);
+        syncGray();
+      });
+      node.appendChild(grayButton);
+    }
+    // 按鈕要貼的是**圖片**的右上角，不是 slot 的 —— 圖片是 `margin: 0.5em auto`，
+    // 左右各有一段置中留白、上面還有一段。兩個量都寫成 CSS 變數交給 main.css：
+    // 寬度給那條抵消置中留白的百分比 margin，上緣差給 margin-top。
+    //
+    // 上緣差**必須量**、不能在 CSS 裡照抄一個 0.5em：em 在按鈕身上是以按鈕自己的
+    // font-size（12px）解析，而圖片那個 0.5em 用的是終端機字級（隨設定變動）——
+    // 照抄會讓按鈕浮在圖片上緣之外（實測差 9px，直接壓到上一列文字）。
+    //
+    // 兩個量都走 offsetWidth/offsetTop（**layout 空間**）。**不可**改用
+    // getBoundingClientRect + position:fixed：.main 整體經 transform:scale()，圖片
+    // 身上還有一條動態反向 scale（term_view.js），viewport 座標與這裡對不起來，
+    // 而且得自己處理捲動與 resize。留在同一個 layout 空間內就零 viewport 幾何、
+    // 零捲動監聽，放大／縮小／字級改變全自動跟上。
+    grayButton.style.setProperty("--img-w", `${img.offsetWidth}px`);
+    // 兩者的 offsetParent 必然相同（img 在 content 裡，中間沒有定位祖先），
+    // 相減即「圖片上緣相對於內容層上緣」—— 按鈕靠 align-self:start 起算的就是那裡。
+    grayButton.style.setProperty(
+      "--img-top",
+      `${img.offsetTop - content.offsetTop}px`,
+    );
+    syncGray();
+  }
+
+  function removeGrayButton() {
+    if (!grayButton) return;
+    grayButton.remove();
+    grayButton = null;
+  }
+
   // 量到的東西一律回寫 memo，下一次重建才接得住。
   function remember() {
     rememberSize(href, state.pinned, state.aspect);
@@ -299,6 +396,9 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     if (!state.mounted) return;
     state.mounted = false;
     unmountFrom(content);
+    // 圖沒了，按鈕就沒有對象可指（純 JS 渲染鏈要自己收生命週期）。灰階**態**仍留在
+    // module 級的 grayHrefs 裡 ⇒ 捲回來重新掛載時圖還是灰的。
+    removeGrayButton();
     syncGhost();
     applyFloorHeight();
   }
@@ -358,6 +458,11 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     }
     // 真圖一佔到版面就讓替身盒退場（loaded=false 時它得繼續頂著）。
     syncGhost();
+    // 灰階鈕跟著量到的圖寬走。onResize 已經涵蓋「圖片載入完成／放大縮小／字級與
+    // 視窗改變」三種會動到圖寬的時機，不必新增任何監聽。
+    const img = singleLaidOutImage();
+    if (img) ensureGrayButton(img);
+    else removeGrayButton();
     if (state.pinned !== prevPinned || state.aspect !== prevAspect) remember();
   }
 
@@ -367,6 +472,10 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     applyFloorHeight();
     syncGhost();
   }
+  // 灰階態同理要在**第一幀**就套上。ResizeObserver 首次觀察的回報是下一個 frame
+  // 的事，等它的話重建（AI 校正逐筆回填、字級…）會讓灰圖閃一下原彩。按鈕本身
+  // 不在這裡建（要等量得到圖寬），只有屬性。
+  syncGray();
 
   if (supported) {
     ensureObservers();
@@ -404,6 +513,9 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
 
   return {
     el: node,
+    // 換文章的重置由 ScreenController 清完 grayHrefs 後逐一呼叫（已掛在畫面上的
+    // 節點還帶著 data-gray，只清 Set 會漏掉它們）。
+    syncGray,
     setSizeMode(mode) {
       if (state.sizeMode === mode || state.destroyed) return;
       state.sizeMode = mode;
@@ -431,6 +543,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
         t2();
         sizeTeardown.delete(node);
       }
+      removeGrayButton();
       if (state.mounted) {
         state.mounted = false;
         unmountFrom(content);

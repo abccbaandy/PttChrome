@@ -170,6 +170,37 @@ describe("渲染鏈的佔位盒生命週期", () => {
     expect(observedCount()).toBe(0);
   });
 
+  // 灰階切換鈕（hover 圖片才浮現）是 slot 自己 append 到節點上的第三個 grid item。
+  // 它不是 observer，但同屬「純 JS 渲染鏈要自己收的生命週期」：列被換掉時如果只收
+  // observer 而漏掉它，按鈕就會跟著被丟棄的節點一起留在記憶體裡（click listener
+  // 還握著閉包）。入口與 observer 同一處（slot.destroy / unmount）。
+  test("灰階鈕隨 slot 一起收掉（不是只有 observer 要收）", () => {
+    const { root, controller } = mount();
+    controller.update(props(linkLines(1, "a")));
+
+    const slotEl = () =>
+      controller.container.querySelector(".inlinePreviewSlot");
+    const content = slotEl().querySelector(".inlinePreviewContent");
+    // 灰階鈕只在量得到圖寬時才建立；jsdom 不排版也不載圖，兩者都要自己造。
+    const img = document.createElement("img");
+    img.className = "easyReadingImg hyperLinkPreview";
+    Object.defineProperty(img, "offsetWidth", { configurable: true, value: 600 });
+    Object.defineProperty(img, "offsetHeight", { configurable: true, value: 400 });
+    Object.defineProperty(content, "offsetHeight", {
+      configurable: true,
+      value: 400,
+    });
+    content.appendChild(img);
+    sizeObservers[0].emit();
+    const btn = slotEl().querySelector(".previewGrayBtn");
+    expect(btn).not.toBeNull();
+
+    controller.destroy();
+    root.remove();
+    expect(observedCount()).toBe(0);
+    expect(btn.isConnected).toBe(false);
+  });
+
   test("設定變動造成的全量重算也不會漏掉舊 observer", () => {
     const { root, controller } = mount();
     const lines = linkLines(4, "a");

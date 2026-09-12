@@ -29,9 +29,11 @@ import {
 } from "../../js/article_link_target";
 import {
   menuTargetFlags,
+  contextMenuDisposition,
   copyTextFor,
   copyPreviews,
 } from "../../js/context_menu_items";
+import { isNativeMenuTarget } from "../../js/preview_targets";
 import { parsePagerFooterContext } from "../../js/string_util";
 import { pushMaxBytes } from "../../js/long_push";
 
@@ -197,15 +199,25 @@ export const ContextMenu = ({ pttchrome }) => {
 
   const onContextMenu = useCallback(
     (event) => {
-      event.stopPropagation();
-      event.preventDefault();
+      // **preventDefault 不可以再無條件放在最前面**：壓在內嵌預覽圖上時要整個放行
+      // 瀏覽器原生選單（另存圖片／複製圖片／以智慧鏡頭搜尋）——那是唯一入口，沒有
+      // 任何網頁 API 叫得出來。三個分支的**順序**由 contextMenuDisposition 決定
+      // （純函式，守護 tests/unit/context_menu_disposition.test.js）。
       const { CmdHandler } = pttchrome;
-      const doDOMMouseScroll =
-        CmdHandler.getAttribute("doDOMMouseScroll") === "1";
-      if (doDOMMouseScroll) {
+      const disposition = contextMenuDisposition({
+        nativeTarget: isNativeMenuTarget(event.target),
+        doDOMMouseScroll: CmdHandler.getAttribute("doDOMMouseScroll") === "1",
+      });
+      if (disposition === "swallow") {
+        // 「按住右鍵滾輪翻頁」放開右鍵時補發的那一次，照舊吞掉。
+        event.stopPropagation();
+        event.preventDefault();
         CmdHandler.setAttribute("doDOMMouseScroll", "0");
         return;
       }
+      if (disposition === "native") return; // 一個 preventDefault 都不准叫
+      event.stopPropagation();
+      event.preventDefault();
       pttchrome.contextMenuShown = true;
       // just in case the selection get de-selected
       if (window.getSelection().isCollapsed) {

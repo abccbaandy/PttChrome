@@ -302,6 +302,12 @@
   "mergeImageCaptionAi_pending": {
     "message": "AI 校正中…剩"
   },
+  "imageGray_on": {
+    "message": "轉成灰階（便於以圖找圖）"
+  },
+  "imageGray_off": {
+    "message": "還原色彩"
+  },
   "lightsOn_on": {
     "message": "開燈（顯示隱藏文字）"
   },

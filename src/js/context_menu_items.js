@@ -79,3 +79,23 @@ export function copyPreviews(state, href) {
   }
   return out;
 }
+
+// 右鍵事件該怎麼處置。抽成純函式的理由是**順序敏感**：三個分支的先後不是風格問題，
+// 調換就會產生一個只在特定動線下出現、而且靜默的 bug。
+//
+//   'swallow' — 吞掉（stopPropagation + preventDefault，什麼都不開）。
+//               來源是「按住右鍵滾輪翻頁」：手勢結束放開右鍵時瀏覽器仍會發一次
+//               contextmenu，那顆旗標（pttchrome.jsx 的 doDOMMouseScroll）就是用來
+//               把它消費掉的。
+//   'native'  — 放行瀏覽器原生選單（**一個 preventDefault 都不准叫**）。
+//   'menu'    — 開我們自己的選單。
+//
+// **doDOMMouseScroll 必須先判**：那顆旗標的唯一消費者就是這裡。若把圖片判斷排在
+// 它前面，使用者在圖片上做「按住右鍵滾輪翻頁」時會走 'native' 直接 return ⇒ 旗標
+// 留著 '1' ⇒ 下一次（任何地方的）正常右鍵被靜默吞掉一次，看起來像「右鍵選單偶爾
+// 叫不出來」。守護：tests/unit/context_menu_disposition.test.js
+export function contextMenuDisposition({ nativeTarget, doDOMMouseScroll }) {
+  if (doDOMMouseScroll) return "swallow";
+  if (nativeTarget) return "native";
+  return "menu";
+}

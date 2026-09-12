@@ -51,7 +51,10 @@ import {
   classifyDomains,
   destroyUrlAi,
 } from "../js/url_ai";
-import { invalidateInlinePreviewHeights } from "./inline_preview_slot";
+import {
+  clearInlinePreviewGray,
+  invalidateInlinePreviewHeights,
+} from "./inline_preview_slot";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import {
   annotationsKey,
@@ -248,6 +251,9 @@ export class ScreenController {
       // 走唯一入口：直接賦值欄位會漏掉容器 class（＝圖片尺寸的真正決定者）與
       // 存活中 slot 的 sizeMode，下一篇就會一開場就是大圖。
       this._setImagesEnlarged(false);
+      // 單張圖的暫時性灰階同理走唯一入口（直接清 Set 會漏掉已經掛著、還帶著
+      // data-gray 的節點 ⇒ 下一篇一開場就有幾張莫名其妙的灰圖）。
+      this._resetImagesGray();
       // 開燈的 CSS 態同樣走唯一入口（直接賦值會漏掉容器 class）。**軌 B 不會被
       // 這裡還原**：pmore 的 bpref 是 per-connection 全域，下一篇文章仍是純文字
       // 模式，所以按鈕會依 enhance.rawMode 直接顯示成「關燈」（刻意，見
@@ -485,6 +491,15 @@ export class ScreenController {
     this.container.classList.toggle("imagesEnlarged", next);
     const mode = next ? "enlarged" : "normal";
     for (const slot of this._liveSlots) slot.setSizeMode(mode);
+  }
+
+  // 單張圖的暫時性灰階（hover 圖片浮現的切換鈕）。狀態是 module 級、以 href 為鍵
+  // （見 inline_preview_slot.js），這裡是**換文章重置**的唯一入口：清掉狀態之後
+  // 還得叫每個存活中的 slot 把 data-gray 拿掉，否則畫面停在灰階、按鈕文字也錯。
+  // 與 imagesEnlarged 同生命週期：同篇 page-down 保留、換文章／退出再進才重置。
+  _resetImagesGray() {
+    clearInlinePreviewGray();
+    for (const slot of this._liveSlots) slot.syncGray();
   }
 
   // 推文區塊行距（pref commentBlockSpacing）：同 lightsOn／imagesEnlarged 的形狀 ——

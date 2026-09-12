@@ -543,6 +543,42 @@ DBCS 雙色字），只找一層在那種字上會漏判。同一個 bug 在
 `components/ContextMenu/index.jsx` 也有一份（雙色連結按右鍵時「複製連結網址」整組
 消失），2026-08 一併修掉。
 
+### 右鍵：圖片上一律放行瀏覽器原生選單（2026-09）
+
+`components/ContextMenu/index.jsx#onContextMenu` 掛在 `#BBSWindow` 的 **capture**
+階段，原本第一行就無條件 `preventDefault()` ⇒ 圖片上的原生選單（另存圖片／複製
+圖片／使用 Google 智慧鏡頭搜尋）整組叫不出來。智慧鏡頭**沒有任何網頁可呼叫的
+API**，唯一入口就是原生選單 ⇒ 依 CLAUDE.md「系統／瀏覽器的原生行為不准模擬，一律
+接入使用……接入時通常要同時拆掉自己擋原生的那道牆」，把那道牆拆掉。
+
+處置收斂成純函式 `js/context_menu_items.js#contextMenuDisposition`，三態：
+
+| disposition | 條件 | 行為 |
+|---|---|---|
+| `swallow` | `doDOMMouseScroll === '1'` | `stopPropagation` + `preventDefault` + 清旗標 + return |
+| `native` | 壓在 `img.easyReadingImg` 上（`js/preview_targets.js#isNativeMenuTarget`） | **直接 return，一個 `preventDefault` 都不叫** |
+| `menu` | 其餘 | 照舊開我們的選單 |
+
+**順序不可調換：`doDOMMouseScroll` 必須先判。** 那顆旗標由
+`pttchrome.jsx#mouse_scroll` 在「按住右鍵滾輪翻頁」時立起（瀏覽器放開右鍵仍會補發
+一次 `contextmenu`），而 `onContextMenu` 是它**唯一的消費者**。把圖片判斷排在前面
+⇒ 在圖片上做那個手勢會走 `native` 直接 return ⇒ 旗標留著 `'1'` ⇒ 下一次正常右鍵被
+靜默吞掉一次（症狀「右鍵選單偶爾叫不出來」，極難回推）。守護
+`tests/unit/context_menu_disposition.test.js`。
+
+**判準與 `PREVIEW_CLICK_SELECTOR` 刻意分開**：那條含 `.inlinePreviewSlot`（整寬
+區塊、含圖片左右留白），拿它放行等於圖片那一整列都沒有我們的選單；原生選單只在
+指標真的壓在圖片像素上時才有意義。影片／iframe 不納入（`<video>` 自己有原生控制項
+選單，iframe 是第三方頁面）。守護 `tests/unit/preview_targets.test.js`。
+
+順帶確認過、不必改：`App.mouse_click` 對 `e.button == 2` 是空分支；`App.mouse_up`
+的右鍵分支不 `preventDefault`（只有左鍵會），只呼叫 `setInputAreaFocus()`。
+`#cmenuReact` / `#reactAlert` / Mantine portal 都在 `#BBSWindow` 外，本來就有原生
+選單。代價（可接受）：圖片上按右鍵就沒有「設定」「複製本篇文章連結」等項目。
+
+真瀏覽器守護：`tests/e2e/offline/image_gray.offline.spec.js`（圖片上
+`defaultPrevented === false` 且我們的選單不開；文字上反之）。
+
 ### 順序陷阱：先取值再交給好讀
 
 `App.onMouse_click` 必須在呼叫 `easyReading._onMouseClick(e)` **之前**把

@@ -302,6 +302,12 @@ export const en_US = {
   "mergeImageCaptionAi_pending": {
     "message": "AI matching… left"
   },
+  "imageGray_on": {
+    "message": "Grayscale (for reverse image search)"
+  },
+  "imageGray_off": {
+    "message": "Restore colors"
+  },
   "lightsOn_on": {
     "message": "Lights on (reveal hidden text)"
   },
