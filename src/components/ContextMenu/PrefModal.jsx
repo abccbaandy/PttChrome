@@ -669,6 +669,17 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableLongPush")}
                 </PrefCheckbox>
+                <PrefCheckbox
+                  name="pushKeyOpensLongPush"
+                  checked={values.pushKeyOpensLongPush}
+                  disabled={!values.enableLongPush}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_pushKeyOpensLongPush")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_pushKeyOpensLongPush")}
+                </Text>
               </fieldset>
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">
                 <legend>{i18n("options_appearance")}</legend>

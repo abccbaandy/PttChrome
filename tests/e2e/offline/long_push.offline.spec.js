@@ -358,6 +358,88 @@ test.describe('長推文一鍵發送（離線）', () => {
     expect(await sentText(page)).not.toContain('X');
   });
 
+  // --- 攔截推文鍵（X／%）-----------------------------------------------------
+  //
+  // 判準是純函式（tests/unit/long_push_gate.test.js），三條入口的分派也有 unit
+  // （tests/unit/push_key_intercept.test.js）。這裡守的是 unit 碰不到的那半段：
+  // 真鍵盤事件 → 真 term_view 分派 → 真 React 樹開輸入框，而且**線路上一個 byte
+  // 都沒送**（unit 的假 ctx 驗不到真的 WebSocket）。
+  test('文章畫面按 X → 開長推文輸入框，一個 byte 都不送', async ({ page }) => {
+    await boot(page);
+    await collectSent(page);
+
+    await ptt.sendKey(page, 'X');
+    await expect(page.locator('[name="longPushText"]')).toBeVisible();
+    expect(await sentText(page)).toBe('');
+    // 輸入框要收鍵盤（modalShown 由 render state 推導）。
+    expect(await page.evaluate(() => window.__app.modalShown)).toBe(true);
+  });
+
+  test('% 是推文的同義鍵，一樣攔', async ({ page }) => {
+    await boot(page);
+    await collectSent(page);
+
+    await ptt.sendKey(page, '%');
+    await expect(page.locator('[name="longPushText"]')).toBeVisible();
+    expect(await sentText(page)).toBe('');
+  });
+
+  // 底列的 (X%)推文 按鈕走 App.onFunctionKey，**完全不經 term_view.onKeyDown**
+  // ⇒ 兩條要各攔一次。tokenizeKeyGroup 把那組拆成兩顆按鈕，所以 % 那顆也驗。
+  test('點底列的 (X)／(%) 推文按鈕 → 同樣開輸入框、不送 byte', async ({ page }) => {
+    await boot(page);
+    await ptt.applyPrefs(page, {
+      useMouseBrowsing: true,
+      mouseLeftClick: true,
+      mouseFunctionKeys: true,
+    });
+    await drawArticle(page);
+
+    for (const key of ['X', '%']) {
+      await collectSent(page);
+      const btn = page.locator(`#mainContainer a.fnKey[data-fnkey="${key}"]`);
+      await expect(btn).toHaveCount(1);
+      await btn.click();
+      await expect(page.locator('[name="longPushText"]')).toBeVisible();
+      expect(await sentText(page)).toBe('');
+      // 收掉輸入框，下一輪重來。
+      await page.keyboard.press('Escape');
+      await expect(page.locator('[name="longPushText"]')).toHaveCount(0);
+      await drawArticle(page);
+    }
+  });
+
+  test('設定關掉攔截 → X 回到 PTT 原生推文（逃生門）', async ({ page }) => {
+    await boot(page);
+    await ptt.applyPrefs(page, { pushKeyOpensLongPush: false });
+    await collectSent(page);
+
+    await ptt.sendKey(page, 'X');
+    await expect.poll(() => sentText(page)).toBe('X');
+    await expect(page.locator('[name="longPushText"]')).toHaveCount(0);
+  });
+
+  // 文章列表按 X 也是推文（bbs.c:4595 同一個 recommend），但**刻意不攔**：
+  // LongPushSession 的游標錨點要從文章標頭取，在列表上取不到 ⇒ 攔了等於拆掉唯一
+  // 擋住「推到別篇」的機制（long_push_gate.js 檔頭）。
+  test('文章列表按 X 不攔，維持原生', async ({ page }) => {
+    await boot(page);
+    await drawBoardList(
+      page,
+      [
+        boardListRow(1233, 'testuser', '[閒聊] 測試文章'),
+        boardListRow(1234, 'someoneElse', '[公告] 別篇'),
+        boardListRow(1235, 'thirdGuy', '[問卦] 又一篇'),
+      ],
+      0
+    );
+    await collectSent(page);
+
+    await ptt.sendKey(page, 'X');
+    await expect.poll(() => sentText(page)).toBe('X');
+    await expect(page.locator('[name="longPushText"]')).toHaveCount(0);
+  });
+
   test('游標還在原篇時不多送任何定位鍵', async ({ page }) => {
     await boot(page);
     await submitLongPush(page, '第一段\n第二段');

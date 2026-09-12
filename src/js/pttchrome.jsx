@@ -27,6 +27,8 @@ import { colFromClientX } from './mouse_geometry';
 import { dismissClickAllowed } from './screen_dismiss';
 import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
 import { serializedOpHint } from './serialized_op_gate';
+import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
+import { readValuesWithDefault } from './pref_storage';
 import {
   MFDISP_RAW_PLAIN,
   rawModeKey,
@@ -508,6 +510,14 @@ App.prototype.setModalOpen = function(source, open) {
 App.prototype.onToggleLiveHelperModalState = noop;
 App.prototype.onDisableLiveHelperModalState = noop;
 
+// 攔截推文鍵之後開長推文輸入框的唯一入口。同樣是預設 noop ＋ ContextMenu 的
+// useEffect 注入真實作（右鍵選單走的是同一個函式，計算點只有一處）。
+//
+// **回傳值就是合約**：true ＝ 輸入框真的開了，呼叫端才可以 preventDefault／不送
+// byte。noop 回 undefined ⇒ 三條攔截入口自動退回原生推文。ContextMenu 還沒 mount、
+// 已 unmount 都落在這個分支——吞掉按鍵又不開輸入框是這個功能最嚴重的失敗模式。
+App.prototype.openLongPushModal = noop;
+
 App.prototype.switchToEasyReadingMode = function(doSwitch) {
   this.debugRecorder?.log('app.switchToEasyReadingMode', { doSwitch: !!doSwitch });
   // 這裡做什麼是純決策（switchModePlan，見 easy_reading.js 的長註解 + unit
@@ -679,6 +689,20 @@ App.prototype.onFunctionKey = function(bytes, label) {
     if (this.view.flashListHint)
       this.view.flashListHint(busyHint);
     return;
+  }
+  // 底列的「(X%)推文」按鈕：與鍵盤 X 同一個判準，改開長推文輸入框。
+  // 使用者以為「攔了鍵盤就會一起攔到」，但這條路根本不經過 term_view.onKeyDown
+  // （元素 onClick → 這裡 → view._send），兩條必須各攔一次。
+  // tokenizeKeyGroup 把 (X%)推文 拆成兩顆按鈕，所以 '%' 那顆也要攔（isPushKey）。
+  // 排在 functionKeyClickPlan 之前：那條會 _enterFunctionMode()，理由同 term_view
+  // 的攔截點（LongPushSession.start 的 ORDER INVARIANT）。
+  // 沒開成 modal 就什麼都不做，往下照原本的路送出去。
+  if (isPushKey(bytes)) {
+    const pushFacts = pushGateFacts(this);
+    if (pushFacts && shouldInterceptPushKey({
+          key: bytes, prefs: readValuesWithDefault(),
+          pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText
+        }) && this.openLongPushModal()) return;
   }
   // 列表好讀：封閉互動（v5）。回 true ＝它接手了，不可以再送一次。
   this.noteListNativeInput(); // 同上：點功能鍵也是使用者送 byte

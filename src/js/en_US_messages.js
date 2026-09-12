@@ -168,9 +168,6 @@ export const en_US = {
   "longPushProgress_cancel": {
     "message": "Cancel"
   },
-  "longPush_notArticle": {
-    "message": "Open an article first to use long comment"
-  },
 
   "options_contextMenu": {
     "message": "Context menu"
@@ -183,6 +180,12 @@ export const en_US = {
   },
   "options_enableLongPush": {
     "message": "Show \"Send long comment\" (auto-split into multiple comments)"
+  },
+  "options_pushKeyOpensLongPush": {
+    "message": "Pressing X / % in an article opens \"Send long comment\""
+  },
+  "tooltip_pushKeyOpensLongPush": {
+    "message": "Turn off to get PTT's native single comment prompt back. X in the article list is always native."
   },
 
   // options nav

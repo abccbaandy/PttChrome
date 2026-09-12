@@ -46,7 +46,13 @@ test.describe('好讀模式停在 prompt 上（離線重放）', () => {
 
   async function openArticleInEasyReading(page) {
     await bootOffline(page, ptt);
-    await ptt.applyPrefs(page, { enableEasyReading: true });
+    // 這個 describe 用 X 當「把 PTT 叫出推文 prompt」的手段，守的是 prompt 上關設定
+    // 頁不可變全黑。預設情況下 X 會被攔去開長推文輸入框（不送 byte、也不進
+    // functionMode），所以這裡關掉攔截；攔截本身守在 long_push.offline.spec.js。
+    await ptt.applyPrefs(page, {
+      enableEasyReading: true,
+      pushKeyOpensLongPush: false,
+    });
     await replayCassette(page, cassette, { easyReading: true });
     expect(await rowCount(page)).toBeGreaterThan(0);
   }

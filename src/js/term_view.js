@@ -21,6 +21,7 @@ import { cursorOffsets, paintedRowsAreBufRows } from './cursor_anchor';
 import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
+import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import icon128 from '../icon/icon_128.png';
 import cursorBack from '../cursor/back.png';
 
@@ -1053,6 +1054,20 @@ TermView.prototype = {
       this.flashListHint(busyHint);
       return;
     }
+    // 推文鍵的第三條入口：IME。中文輸入法開著時 keydown 的 keyCode 是 229，被
+    // keyEventFilter 擋在 onKeyDown 之外，字改從 input 事件進到這裡 ⇒ 少了這道，
+    // 「IME 開著按 X」會得到原生推文、關掉才是長推文，行為不一致（easy_reading.js
+    // noteTextInput 的註解已把這個情境列為 case (a) 並宣示三條入口一致）。
+    // **isPasting 排除**：貼上一個 'X' 不是按鍵。只匹配單一字元，IME 一次上字
+    // "XD" 自然落回原路。同樣排在 noteTextInput 之前（那兩個會 _enterFunctionMode）。
+    if (!isPasting && isPushKey(text)) {
+      var pushFacts = pushGateFacts(this.bbscore);
+      if (pushFacts && shouldInterceptPushKey({
+            key: text, prefs: readValuesWithDefault(),
+            pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText
+          }) && this.bbscore.openLongPushModal && this.bbscore.openLongPushModal())
+        return;
+    }
     // 送字給 PTT ≠ 按鍵。兩種好讀模式都是在 keydown 決定要不要切成原生鏡像
     // （functionMode），而 IME（keydown 的 e.key 是 'Process'、keyCode 229，被
     // keyEventFilter 擋在 onKeyDown 之外）與貼上都繞得過那道判斷 → PTT 開了推文／
@@ -1143,6 +1158,29 @@ TermView.prototype = {
         this.bbscore.easyReading.tryReenterFromNative(e)) {
       e.preventDefault();
       return;
+    }
+    // 推文鍵（X / %）改開「長推文一鍵發送」。pref pushKeyOpensLongPush，預設開。
+    //
+    // **排在所有 dispatch 之前**：下面 easyReading._onKeyDown 的 default 分支會
+    // _enterFunctionMode()，那個函式結尾的同步 redraw 把 mainDisplay.scrollTop 歸
+    // 零，而 LongPushSession.start() 的 ORDER INVARIANT 要在那之前用 scrollTop 算
+    // 閱讀位置、並讀文章標頭錨點 ⇒ 提前進 functionMode 會讓送完回不到原位置。
+    // 同理排在 _keyboard.onKeyDown 之前（原生模式下 X 就是走那條送出去的）。
+    // 但**排在三道自訂 hotkey 之後**：使用者明確綁的鍵應該贏過這個預設接管。
+    //
+    // 順序只能是「先開成功、再吞」：openLongPushModal 在 ContextMenu 尚未 mount 時
+    // 是 noop（回 undefined）⇒ 不 preventDefault，X 照原生路徑送出去。吞掉按鍵又
+    // 不開輸入框＝使用者按 X 沒反應，是這個功能最嚴重的失敗模式。
+    if (isPushKey(e.key)) {
+      var pushFacts = pushGateFacts(this.bbscore);
+      if (pushFacts && shouldInterceptPushKey({
+            key: e.key, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey,
+            prefs: readValuesWithDefault(),
+            pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText
+          }) && this.bbscore.openLongPushModal && this.bbscore.openLongPushModal()) {
+        e.preventDefault();
+        return;
+      }
     }
     if (this.useEasyReadingMode && this.buf.startedEasyReading &&
         !this.buf.easyReadingFunctionMode) {

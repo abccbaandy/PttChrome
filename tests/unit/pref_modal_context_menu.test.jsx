@@ -128,4 +128,33 @@ describe("設定頁：一般 → 右鍵選單", () => {
     const stored = JSON.parse(window.localStorage.getItem(PREF_KEY)).values;
     expect(stored.enableLongPush).toBe(false);
   });
+
+  // 「按 X 改開長推文」也是預設開——它取代的是 PTT 原生推文，所以這個開關就是逃生
+  // 門：攔截若在某個畫面誤判，關掉立刻回到原生單則推文。
+  test("「按 X 改開長推文」預設開啟", () => {
+    const panel = openGeneralTab();
+    expect(field(panel, "pushKeyOpensLongPush")).toBeChecked();
+    expect(DEFAULT_PREFS.pushKeyOpensLongPush).toBe(true);
+  });
+
+  test("關掉攔截 → 存成 false（長推文本身照舊可用）", () => {
+    const onSave = vi.fn();
+    const panel = openGeneralTab({}, onSave);
+    fireEvent.click(field(panel, "pushKeyOpensLongPush"));
+    closeModal();
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      pushKeyOpensLongPush: false,
+      enableLongPush: true,
+    });
+    const stored = JSON.parse(window.localStorage.getItem(PREF_KEY)).values;
+    expect(stored.pushKeyOpensLongPush).toBe(false);
+  });
+
+  // 從屬關係要在 UI 上看得出來：總開關關掉時，攔截那一項按不動（判準端也擋著，
+  // 見 long_push_gate.shouldInterceptPushKey）。
+  test("總開關關掉 → 攔截那一項停用", () => {
+    const panel = openGeneralTab({ enableLongPush: false });
+    expect(field(panel, "pushKeyOpensLongPush")).toBeDisabled();
+  });
 });

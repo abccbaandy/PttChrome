@@ -1,7 +1,10 @@
 # 長推文一鍵發送
 
-右鍵選單 →「長推文一鍵發送」→ 輸入一大段話 → 依 PTT 單則推文的 Big5 byte 上限自動
-分段 → 逐則跑完完整的推文互動送出。撞到冷卻自動等待，全程有進度遮罩與取消。
+輸入一大段話 → 依 PTT 單則推文的 Big5 byte 上限自動分段 → 逐則跑完完整的推文互動
+送出。撞到冷卻自動等待，全程有進度遮罩與取消。
+
+**入口有兩個**：右鍵選單的「長推文一鍵發送」，以及**在文章裡按推文鍵（`X`／`%`）**
+——後者預設**取代**原生推文（pref `pushKeyOpensLongPush`，見下面「攔截推文鍵」）。
 
 PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整理在
 `docs/pttbbs-screen-protocol.md` **§11.3**，**動這個功能前先讀那一節**；本文只寫 client
@@ -21,12 +24,14 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 | `src/js/pttchrome.jsx` | `new LongPushSession(...)`（與 aidNavigation 共用同一條 CommandQueue）＋ `onFunctionKey`／`onPasteDone` 守門 |
 | `src/js/term_view.js` | `onKeyDown`／`onTextInput` 守門 |
 | `src/js/serialized_op_gate.js` | `serializedOpHint(core)`＝**四條送字入口共用**的述詞（`aidNavigation.active` / `longPush.active` → 提示字串，否則 null）。呼叫端負責吞輸入＋`flashListHint`。守護 `tests/unit/serialized_op_gate.test.js` |
-| pref | `enableLongPush`，**預設 `true`**，設定 → 一般 → 右鍵選單 |
+| `src/js/long_push_gate.js` | **攔截推文鍵**的述詞：`isPushKey` / `longPushAvailable`（選單與攔截共用）/ `atPagerStatusRow` / `shouldInterceptPushKey` / `pushGateFacts` |
+| pref | `enableLongPush`（**預設 `true`**）＋ `pushKeyOpensLongPush`（**預設 `true`**，從屬於前者），設定 → 一般 → 右鍵選單 |
 
 ## 資料流
 
 ```
-右鍵選單（gating: enableLongPush && buf.pageState===3 && footer!=='mail'）
+右鍵選單（gating: longPushAvailable）／按 X･% （gating: shouldInterceptPushKey）
+  → ContextMenu.openLongPush（= App.openLongPushModal 注入的實作，兩個入口共用）
   → LongPushModal：stripNonBig5 → splitPushSegments(預估 maxBytes) → 即時則數
   → onConfirm({ text已過濾, type })
   → LongPushSession.start()  ── 先取閱讀位置＋文章標頭錨點（ORDER INVARIANT：
@@ -112,7 +117,68 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 **轉錄文**：內文標頭是**原文**作者、列表上印的是轉錄者 ⇒ 第一次比對必定 `moved`，
 靠 `#AID` 定位後重採錨點自癒（`_afterRelocate`），不會每則都重複定位。
 
+## 攔截推文鍵（`long_push_gate.js`）
 
+pref `pushKeyOpensLongPush`（預設開，從屬於 `enableLongPush`）。**在文章裡**按推文鍵
+時不把 byte 送給 PTT，改開長推文輸入框。
+
+### 為什麼是三條入口
+
+| 入口 | 路徑 | 攔截點 |
+|---|---|---|
+| 鍵盤 | `term_view.onKeyDown` → `term_keyboard.onKeyPress` → `view._send` | `onKeyDown`，三道自訂 hotkey 之後、`easyReading._onKeyDown` 之前 |
+| 底列功能鍵按鈕 | 元素 `onClick` → `App.onFunctionKey` → `view._send` | `onFunctionKey`，`serializedOpHint` 之後、`noteListNativeInput` 之前 |
+| IME | `input` 事件 → `term_view.onTextInput` → `_convSend` | `onTextInput`，`serializedOpHint` 之後、`noteTextInput` 之前 |
+
+三條在應用層**沒有交會點**（唯一匯流在 `telnet.js` 傳輸層，太低），所以各攔一次。
+IME 那條非補不可：IME 開著時 keydown 的 `keyCode` 是 229，被 `keyEventFilter` 擋在
+`onKeyDown` 之外 ⇒ 少了它，「中文輸入法開著按 X」會得到原生推文（`easy_reading.js`
+`noteTextInput` 的註解早就把這個情境列為 case (a)）。
+
+### 判準（`shouldInterceptPushKey`）
+
+`isPushKey` ∧ 無 ctrl/alt/meta ∧ `pushKeyOpensLongPush` ∧ `longPushAvailable` ∧
+`atPagerStatusRow`。四個容易踩的點：
+
+1. **`X` 與 `%` 都要攔，小寫 `x` 不可以**。`more.c:90-93` 只有這兩個 case 回
+   `RET_DORECOMMEND`；`x` 在 pager 沒綁定、在文章列表是 NULL、在信件列表是轉寄。
+   底列 `(X%)推文` 被 `footer_keys.tokenizeKeyGroup` 拆成**兩顆**按鈕，漏掉 `%`
+   就會變成「點這顆是長推文、點旁邊那顆是原生」。
+2. **`shiftKey` 絕不可列入排除條件** —— `X` 與 `%` 本來就要按 Shift，一加整個功能失效。
+3. **`pageState === 3` 會過期**。`term_buf.setPageState` 沒有 reset 分支，prompt 幀
+   （`s` 切板／`/` 搜尋／`#` 打 AID，底列被 prompt 蓋掉且非空）三條判斷全不命中 ⇒
+   沿用上一幀的 3。所以要加 `atPagerStatusRow`（＝ `setPageState` 判 READING 用的
+   同一個 `parseStatusRow`，不是第二套判準），否則按 `s` 打 `XBOX` 的第一個字會被
+   吞去開輸入框。**不可**改用 `parsePagerFooterContext === 'reading'`：那個推論只能
+   單向（part3 會整段消失）。
+4. **文章列表（`pageState 2`）刻意不攔**，即使 `bbs.c:4595` 那裡按 X 也是推文：
+   `start()` 的錨點要從**文章標頭**取（見上一節），在列表上取不到 ⇒ 攔了等於拆掉
+   唯一擋住「推到別篇」的機制。
+
+`longPushAvailable` 是**選單顯示條件與攔截共用的同一個函式**（`ContextMenu/index.jsx`
+直接呼叫它），兩處不可能分歧。刻意的不對稱只有 `atPagerStatusRow`：攔截更嚴格，因為
+**吞掉按鍵比多畫一個選單項嚴重**，而攔不到的退化結果就是原生推文＝今天的行為。
+
+### 開輸入框的橋接
+
+`App.prototype.openLongPushModal`，預設 `noop`，由 `ContextMenu` 的 `useEffect` 注入
+真實作（比照 `onToggleLiveHelperModalState`）。**回傳值就是合約**：`true` ＝ 輸入框
+真的開了，呼叫端才可以 `preventDefault()`／不送 byte。ContextMenu 還沒 mount、已
+unmount 都回 falsy ⇒ 三條入口自動退回原生推文。
+
+`maxBytes` 在**開輸入框那一刻**現算（`pushMaxBytes({ userId: prefs.autoLoginUser })`）
+——攔截這條沒有「開右鍵選單」那一刻，沿用開選單時算好的值會拿到保守預設，則數高估。
+
+### 已知退化（不是 bug，別追）
+
+禁推板等**擋人條件**（`bbs.c:2847-2851` 的 `BRD_NORECOMMEND`／guest／看板發文限制／
+快速連推冷卻）原本按 X 立刻看到 ◆ 橫幅；攔截後要打完字送出才會撞到，由
+`classifyPushScreen` 判 `fatal` → 中止並把**整段原文**複製到剪貼簿（第一則時
+`_offset=0` ⇒ 不丟字）。**接受，不做事前偵測**：client 拿不到 `brdattr`，唯一「先問」
+的辦法是先送一次 X 再取消，那等於在使用者決定之前就動線路（違反「未知畫面一律停手」），
+還多一次 round trip 並被 `FULLUPDATE` 丟回列表。要回到原生推文就關掉 pref。
+
+## 不變量
 
 1. **不用 `fullRepaint`、不用 `probe`**（兩者都送 `\f`）。型別選單是 `vkey()` 取單一 byte，
    非數字一律當「推」——萬一 `\f` 沒被 `io.c#system_key_hook` 完全吃掉，就是在使用者沒選的
@@ -136,6 +202,14 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 8. **進度遮罩必須是 modal**。使用者在序列途中打字會插進 X → 型別 → 內容 的中間，pttbbs 的
    typeahead 會把中間那幀吞掉。`modalShown` 由 `ContextMenu` 的 render state 推導
    （`showsLongPush || longPushProgress`），**不可手動賦值**。
+9. **攔截時不可以提前 `_enterFunctionMode()`**。那個函式結尾的同步 redraw 會把
+   `mainDisplay.scrollTop` 歸零，而 `start()` 的 ORDER INVARIANT 要在那之前用
+   scrollTop 算閱讀位置、並讀文章標頭錨點 ⇒ 提前進入＝送完回不到原閱讀位置。
+   這就是三個攔截點都排在各自分派鏈**最前面**的原因（`start()` 自己會在正確時機
+   呼叫它）。
+10. **沒開成輸入框就不准 `preventDefault()`／吞 byte**。順序永遠是「先開成功、再吞」，
+    見上面的橋接合約。吞掉按鍵又不開輸入框＝使用者按 X 完全沒反應，是這個功能最嚴重
+    的失敗模式。
 
 ## 圖片上傳（`target` 插入模式）
 
@@ -201,6 +275,13 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 | unit | `tests/unit/long_push_anchor.test.js` | 身分解析／截斷容忍／兩代游標／置底・刪除列 → 一律不得回 `ok` |
 | unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正、**游標守門與重新定位** |
 | unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告** |
-| unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值 |
+| unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值（含攔截開關的從屬關係與 disabled） |
+| unit | `tests/unit/long_push_gate.test.js` | 攔截判準：`x` 不是推文鍵、`shiftKey` 仍要攔、prompt 幀不攔、列表不攔、開關從屬 |
+| unit | `tests/unit/push_key_intercept.test.js` | 三條入口各自的分派：不落到 `_keyboard`／`_convSend`／`view._send`、不提前進 functionMode、**沒開成就不吞** |
+| unit | `tests/unit/long_push_open_bridge.test.jsx` | `App.openLongPushModal` 注入／回 true／卸載還原 noop、**沒開過右鍵選單也算對 maxBytes** |
 | e2e | `tests/e2e/offline/long_push_image_upload.offline.spec.js` | 輸入框開著時拖圖 → 網址進 Textarea、**線路上一個 byte 都沒送**、點「開啟上傳紀錄」modal 不關 |
-| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）|
+| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）、**攔截**（按 X／%、點底列按鈕、關 pref 回原生、列表不攔）|
+
+`function_keys.offline.spec.js` 的 `(X%)` 逐鍵可點與 `pref_close_in_prompt.offline.spec.js`
+都**刻意在 prefs 裡關掉 `pushKeyOpensLongPush`**：它們量的是「送出去的 byte」與「原生
+鏡像」，預設攔截會讓 X 一個 byte 都不送。改那兩支之前先看它們的註解。

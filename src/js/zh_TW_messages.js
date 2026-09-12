@@ -168,9 +168,6 @@
   "longPushProgress_cancel": {
     "message": "取消"
   },
-  "longPush_notArticle": {
-    "message": "請先進入文章畫面再用長推文"
-  },
 
   "options_contextMenu": {
     "message": "右鍵選單"
@@ -183,6 +180,12 @@
   },
   "options_enableLongPush": {
     "message": "顯示「長推文一鍵發送」（自動分段依序推文）"
+  },
+  "options_pushKeyOpensLongPush": {
+    "message": "在文章裡按 X／% 推文時，改開「長推文一鍵發送」"
+  },
+  "tooltip_pushKeyOpensLongPush": {
+    "message": "關閉後按 X 會回到 PTT 原生的單則推文。文章列表按 X 一律維持原生。"
   },
 
   // options nav

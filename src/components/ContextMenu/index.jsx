@@ -34,8 +34,8 @@ import {
   copyPreviews,
 } from "../../js/context_menu_items";
 import { isNativeMenuTarget } from "../../js/preview_targets";
-import { parsePagerFooterContext } from "../../js/string_util";
 import { pushMaxBytes } from "../../js/long_push";
+import { longPushAvailable } from "../../js/long_push_gate";
 
 function noop() {}
 
@@ -134,6 +134,7 @@ const initialState = {
   longPushEnabled: false,
   // 輸入框顯示「會分成幾則」用的**預估**上限；真正送出時由 LongPushSession 依
   // 推文輸入列的 prompt（自己的帳號）與畫面上的推文列（有沒有 IP 欄）校正。
+  // 這個保守初值只在「輸入框還沒開過」時成立——開的那一刻 openLongPush 會現算。
   longPushMaxBytes: pushMaxBytes({}),
   // --- Modal state ---
   showsInputHelper: false,
@@ -367,15 +368,14 @@ export const ContextMenu = ({ pttchrome }) => {
         imageUploadEnabled: !!prefs.enableImageUpload,
         inputHelperEnabled: !!prefs.enableInputHelper,
         liveArticleHelperEnabled: !!prefs.enableLiveArticleHelper,
-        // 長推文要真的按得到 X：站內信（currstat == RMAIL）的 pager 把 X 當成別的
-        // 快捷鍵（more.c 的 footer 是「(y)回信」那一組），送過去等於亂按。
-        // parsePagerFooterContext 只能單向推論，所以用「不是 mail」而非「是 reading」
-        // ——footer 會因為寬度不夠整段消失（string_util 的說明）。
-        longPushEnabled:
-          !!prefs.enableLongPush &&
-          pttchrome.buf.pageState === 3 &&
-          parsePagerFooterContext(lastRowText) !== "mail",
-        longPushMaxBytes: pushMaxBytes({ userId: prefs.autoLoginUser }),
+        // 長推文要真的按得到 X。判準與「攔截推文鍵」共用**同一個**函式，兩處不可能
+        // 分歧（見 long_push_gate.js；push_screen 的分歧是前車之鑑）。攔截那邊多一
+        // 道 atPagerStatusRow 是刻意的不對稱：吞掉按鍵比多畫一個選單項嚴重。
+        longPushEnabled: longPushAvailable({
+          prefs,
+          pageState: pttchrome.buf.pageState,
+          lastRowText,
+        }),
       });
     },
     [pttchrome, update],
@@ -456,19 +456,37 @@ export const ContextMenu = ({ pttchrome }) => {
   );
 
   // 長推文：開輸入框 → 按下送出後交給 LongPushSession，遮罩由它推上來的進度驅動。
-  // longPushMaxBytes 是開選單當下算好的預估上限，跨 initialState 重設要留著。
+  //
+  // 開輸入框的**唯一**函式，右鍵選單與「攔截推文鍵」共用。maxBytes 在這一刻現算
+  // ——攔截那條沒有「開右鍵選單」那一刻，沿用開選單時算好的值會拿到 initialState
+  // 的保守預設，輸入框上的「會分成幾則」就明顯高估。
+  // 回 true 是給 App 端攔截用的合約（見 pttchrome.openLongPushModal）。
+  const openLongPush = useCallback(() => {
+    const prefs = readValuesWithDefault();
+    update({
+      ...initialState,
+      showsLongPush: true,
+      longPushMaxBytes: pushMaxBytes({ userId: prefs.autoLoginUser }),
+    });
+    return true;
+  }, [update]);
   const onLongPushClick = useCallback(
     (event) => {
       event.stopPropagation();
       pttchrome.contextMenuShown = false;
-      update({
-        ...initialState,
-        showsLongPush: true,
-        longPushMaxBytes: stateRef.current.longPushMaxBytes,
-      });
+      openLongPush();
     },
-    [pttchrome, update],
+    [pttchrome, openLongPush],
   );
+  // App → React 的注入，比照 onToggleLiveHelperModalState。**不掛 pref 當
+  // dependency**：能不能攔是每次按鍵現算的（pageState／底列，見 long_push_gate），
+  // 綁上去會做出「改完設定要重開選單才生效」的怪行為。
+  useEffect(() => {
+    pttchrome.openLongPushModal = openLongPush;
+    return () => {
+      pttchrome.openLongPushModal = noop;
+    };
+  }, [pttchrome, openLongPush]);
   const onLongPushHide = useCallback(
     () => update({ showsLongPush: false }),
     [update],

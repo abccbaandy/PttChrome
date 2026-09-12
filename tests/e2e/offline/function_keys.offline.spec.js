@@ -319,6 +319,11 @@ test.describe('複合鍵逐鍵可點：文章 footer 的 (X%)（離線重放）'
       useMouseBrowsing: true,
       mouseLeftClick: true,
       mouseFunctionKeys: true,
+      // 這個 describe 守的是「同一組括號逐鍵可點、送出去的 byte 對得上」的座標鏈，
+      // 不是推文語意。預設情況下 X／% 會被攔去開長推文輸入框（一個 byte 都不送），
+      // 那條行為另有守護（long_push.offline.spec.js ＋ tests/unit/push_key_intercept）
+      // ⇒ 這裡關掉攔截，才量得到 byte。
+      pushKeyOpensLongPush: false,
     });
     await replayCassette(page, article2, { easyReading: false });
   }

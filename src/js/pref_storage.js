@@ -210,6 +210,13 @@ export const DEFAULT_PREFS = {
   // 預設開：不點就不會作用，而且 PTT 本來就沒有「一次推一長串」的辦法。
   enableLongPush: true,
 
+  // 在文章裡按推文鍵（X／%）時，改開長推文輸入框而不是 PTT 原生的單則推文 prompt。
+  // 三條入口（鍵盤／底列功能鍵按鈕／IME）共用判準，見 long_push_gate.js。
+  // **從屬於 enableLongPush**（那個關掉時這個必定失效）。預設開：長推文本來就能送
+  // 單則，多一層輸入框換到的是自動分段與游標錨定保護。留這個開關是逃生門——攔截
+  // 若在某個畫面誤判，關掉就回到原生推文。文章列表按 X 一律不攔。
+  pushKeyOpensLongPush: true,
+
   blacklist: "", // newline-separated user ids
   titleBlacklist: "", // newline-separated title keywords (board-list only)
 
