@@ -367,13 +367,30 @@ BoardListSession.prototype = {
   // 判準＝落點那一列的**板名**要跟緩衝裡同編號那一列相同。那是我們剛剛讀完的
   // 看板（`num` 是 static，board.c:1646 ⇒ 退板一定停在原處），對不上就代表
   // 畫面換了一份清單。板名不會因為讀過而變（變的是 cols 8-9 的未讀標記）。
+  //
+  // **整頁指紋**（2026-09-12）：只比游標那一列不夠。開板的落點守門放寬成排除法
+  //（見 `_enqueueLandingKey`）之後，群組看板遞迴進另一份 choose_board 也會經過
+  // suspended，而它的落點是第 1 列（board.c:1985 `num = 0`）——第 1 列剛好同名
+  // 就會把兩份清單 merge 進同一個緩衝（靜默錯誤）。所以整頁掃一遍：落地頁每一列
+  // 只要在緩衝裡有同編號的列，板名就必須一致；有任一列矛盾就不是同一份清單。
+  // 緩衝沒有的編號不算證據（落地頁本來就可能比緩衝多出邊界列）。
   _landedSameList: function(facts) {
     const brd = facts && facts.brd;
     if (!brd || brd.cursorNum == null) return false;
     const buffered = this._rowTextOf(brd.cursorNum);
     if (!buffered) return false;
     const name = parseBoardListName(facts.rowTexts[facts.curY] || '');
-    return !!name && name === parseBoardListName(buffered);
+    if (!name || name !== parseBoardListName(buffered)) return false;
+    const nums = brd.nums || [];
+    for (let r = 0; r < nums.length; ++r) {
+      if (nums[r] == null) continue;
+      const bufText = this._rowTextOf(nums[r]);
+      if (!bufText) continue;
+      const a = parseBoardListName(facts.rowTexts[r] || '');
+      const b = parseBoardListName(bufText);
+      if (a && b && a !== b) return false;
+    }
+    return true;
   },
 
   // pref 開著＝L1 凍結交易＋L2 自動回復生效；關掉＝逐位元回到 2026-09-03 之前。
@@ -1143,7 +1160,7 @@ BoardListSession.prototype = {
     const self = this;
     const send = function() {
       self._enqueueLandingKey('\r', 'open-board', '進入看板逾時，已切至原生模式', {
-        keepOnArticleList: true
+        enteringBoard: true
       });
     };
     if (num === this._serverNum) send();
@@ -1173,20 +1190,26 @@ BoardListSession.prototype = {
       });
   },
 
-  // 開看板／回上層／跳號**共用的落地腿**：送出鍵 → 任何一幀 settle 就收攤
-  //（`_reset()` 把 renderMode 交還、state 回 idle），接著同一個 settle 的 reducer
-  // 會依畫面內容自己決定要 engage 誰：
+  // 開看板／回上層**共用的落地腿**：送出鍵 → 任何一幀 settle 就交還畫面所有權
+  //（`_reset()`／開板是 `_suspend()`，兩者都把 renderMode 還原成 native），接著
+  // 同一個 settle 的 reducer 會依畫面內容自己決定要 engage 誰：
   //   文章列表 → ListSession（它的 handler 就在同一輪跑）
   //   新的看板列表 → 我們自己從 idle 重新 seed（新的編號空間，本來就該重建）
   //   主功能表／其他 → 原生
   // 「一律收攤再由內容決定」比在 expect 裡窮舉落點穩健得多：`←` 的上層可能是
   // 主功能表、分類看板根，也可能是另一份同變體的看板列表。
   //
-  // opts.keepOnArticleList：**落點是文章列表時改成 suspend（緩衝留著）**。開板
-  // 專用 —— 進了看板就一定會從同一個 choose_board 呼叫點退回來（`Read()` 回到
-  // 它的呼叫者），使用者捲出來的視野該原樣還給他。落點是別的東西（目錄看板遞迴
-  // 進另一份清單、主功能表、怪畫面）一律照舊 `_reset()`：那些都是另一個編號空間。
-  // 退板落地那一刻還會再過一次 `landedSameList` 指紋，兩道守門都過才 resume。
+  // opts.enteringBoard：開板專用 —— 進了看板就一定會從同一個 choose_board 呼叫點
+  // 退回來（`Read()` 回到它的呼叫者），使用者捲出來的視野該原樣還給他 ⇒ 改成
+  // `_suspend()`（緩衝留著）。
+  //
+  // 守門是**排除法**：只有落在「另一個編號空間」（另一份看板列表、上一層選單）
+  // 才收攤。**不可以寫成「落點是文章列表才 suspend」**——開板的落地幀通常根本
+  // 不是文章列表：`Read()` 在 `i_read()` 之前先跑 `more(<板>/notes)` ＋
+  // `pressanykey()`（bbs.c:4646-4655），也就是進板畫面（ctx 'other'）。它只在
+  // `currbid != bnote_lastbid` 時出現（同一連線第二次進同一板就沒有）⇒ 白名單版
+  // 的守門會時好時壞，實錄見錄製檔 ptt-debug-20260912-015707。
+  // 落點未知（facts 缺）同樣保留緩衝，交給退板落地幀的 `landedSameList` 指紋。
   _enqueueLandingKey: function(keys, kind, failMsg, opts) {
     const self = this;
     let landedCtx = null;
@@ -1199,8 +1222,11 @@ BoardListSession.prototype = {
       },
       timeoutMs: NATIVE_PASSTHROUGH_MS,
       onDone: function() {
-        if (opts && opts.keepOnArticleList && landedCtx === 'article-list')
-          self._suspend();
+        const otherSpace =
+          landedCtx === 'brdlist' ||
+          landedCtx === 'brdlist-other' ||
+          landedCtx === 'menu';
+        if (opts && opts.enteringBoard && !otherSpace) self._suspend();
         else self._reset();
       },
       onFail: function() {

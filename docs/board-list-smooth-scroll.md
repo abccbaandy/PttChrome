@@ -151,10 +151,22 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 （`NBRD_FOLDER`）Enter 會遞迴進另一份 `choose_board`，footer 變體一模一樣（board.c:1279-1290
 只看 `IS_LISTING_FAV`/`IN_CLASS`）。所以 resume 要過**兩道**守門：
 
-1. 開板交易的落點 `ctx === 'article-list'` 才 `_suspend()`；其餘落點（目錄遞迴、主功能表、
-   怪畫面）照舊 `_reset()`。
+1. 開板交易的落點是**另一個編號空間**（`brdlist`／`brdlist-other`／`menu`）才 `_reset()`；
+   其餘（進板畫面、文章列表、prompt、落點未知）一律 `_suspend()`。
+   **這道是排除法，不可以寫回「落點是 `article-list` 才 suspend」**（2026-09-12 的修正）：
+   開板的落地幀通常**不是**文章列表，而是進板畫面 —— `Read()` 在 `i_read()` 之前先跑
+   `more(<板>/notes)` ＋ `pressanykey()`（bbs.c:4646-4655，ctx 判成 `'other'`），而且它只在
+   `currbid != bnote_lastbid` 時出現（同一連線第二次進同一板就沒有）⇒ 白名單版的守門會
+   **時好時壞**：手測若進的是剛才進過的板就看不出來。實錄：錄製檔
+   `ptt-debug-20260912-015707`（build 91c6676，`boardList.transition` 的 `from` 是 `idle`
+   而不是 `suspended`）。
 2. 退板落地幀再過一次內容指紋 `landedSameList`：落點那一列的**板名**（`parseBoardListName`）
-   要跟緩衝裡同編號那一列相同。對不上就 `seed`（整份重建）。
+   要跟緩衝裡同編號那一列相同，**而且整頁掃一遍**——落地頁每一列只要在緩衝裡有同編號的
+   列，板名就必須一致（緩衝沒有的編號不算證據）。有任一列矛盾就 `seed`（整份重建）。
+   整頁那半是 gate 1 放寬後補上的承重：群組看板（`BRD_GROUPBOARD`）遞迴也先過進板畫面
+   （board.c:1992-1998 同樣是 `more(notes)`＋`pressanykey()`）⇒ 它也會經過 `suspended`，
+   而它的落點是第 1 列（board.c:1985 `num = 0`），只比游標那一列的話「第 1 列剛好同名」
+   就會把兩份清單 merge 進同一個緩衝（靜默錯誤）。
 
 `parseBoardListName` **不用固定欄位**：未讀標記 `unread[1]` 是全形「ˇ」（board.c:1343），
 `rowToText` 會把它收成**一個**字元 ⇒ 板名的字串索引隨已讀/未讀位移一格；改抓「編號之後的
@@ -199,7 +211,7 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 | Home `brd-jump-home` | 原生 `ESC[1~` ＋ `^L` | cursorNum === 1（board.c:1768 `KEY_HOME`／`0` → `num = 0`） |
 | 跳號 `brd-jump-number` | `<n>\r` ＋ `\f` | 停在 body → `rebuild`（落點可能離緩衝很遠） |
 | 游標同步 `brd-*-sync-jump` | `<sel>\r` ＋ `\f` | cursorNum === sel |
-| 進看板 `brd-open-board` | `\r` | **任何 settle**；onDone → 落點是 `article-list` 就 `_suspend()`（緩衝留著），其餘 `_reset()` |
+| 進看板 `brd-open-board` | `\r` | **任何 settle**；onDone → 落點是另一份清單／選單（`brdlist`／`brdlist-other`／`menu`）才 `_reset()`，其餘（進板畫面／文章列表／未知）`_suspend()`（緩衝留著）|
 | 回上層 `brd-leave` | `\x1b[D` | 同上 |
 | passthrough `brd-native-key/paste/input` | 原鍵／Big5 bytes ＋ `\f` | 同上（畫面已是原生鏡像）|
 | A 類鍵 `brd-native-inplace` | `t`／`v`／`V` ＋ `\f`（必要時先 `brd-inplace-sync-jump`）| `brd.parked ∧ cursorNum≠null ∧ 同變體` → `_resumeInPlace`（採用落點、**錨不動**）；落點不在緩衝 → `rebuild` |
@@ -208,7 +220,13 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 （文章列表／另一份看板列表／主功能表·分類根），在 expect 裡窮舉遠比「收攤後讓
 **同一個 settle** 的 reducer 依內容重新決定」脆弱。收攤後 state 回 `idle`，
 `_settleEvent` 讀到的 `inFlightKind` 已是 null ⇒ 是看板列表就當場重新 seed，
-是文章列表就由 ListSession 接手（它的 handler 在同一輪已經跑過）。
+是文章列表就由 ListSession 接手（它的 handler 在同一輪已經跑過）。開板那條的
+「收攤」是 `_suspend()`（緩衝留著）而不是 `_reset()`，其餘不變。
+
+**已知缺口（未做）**：`suspended` 只涵蓋「進板 → 退板」。**進資料夾／群組看板再退回
+上一層清單**仍會重新 `seed` ⇒ 上一層的視野被 server 那一頁重新釘住。要修得存一疊
+上層清單的緩衝與錨（父子同變體、編號空間形狀相同，所有權與別名守門都要重寫），
+本期刻意不做。
 
 ### 4.5 鍵盤白名單（枚舉即合約）
 

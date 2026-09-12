@@ -661,18 +661,19 @@ describe("Enter 進看板", () => {
     return ctx;
   }
 
-  test("一般看板：送 Enter，落地後收攤讓另一邊接手", () => {
+  test("一般看板：送 Enter，落地後交還畫面讓另一邊接手", () => {
     const { s, termBuf, enqueued } = ready();
     s.onKeyDown(keyEvent("Enter"));
     expect(s.state).toBe("opening");
     expect(termBuf.listRenderMode).toBe("frozen");
     const cmd = enqueued[enqueued.length - 1];
     expect(cmd.keys).toBe("\r");
-    // 任何一幀 settle 都是回應：落點可能是文章列表、也可能是進了資料夾／群組看板
-    // 的另一份看板列表，一律收攤後由內容重新決定。
+    // 任何一幀 settle 都是回應：落點可能是進板畫面、文章列表，也可能是進了
+    // 資料夾／群組看板的另一份看板列表，一律交還畫面後由內容重新決定。
     expect(cmd.expect()).toBe(true);
     cmd.onDone();
-    expect(s.state).toBe("idle");
+    // 落點未知（facts 缺）⇒ 保留緩衝等退板指紋判（見 _enqueueLandingKey）。
+    expect(s.state).toBe("suspended");
     expect(termBuf.listRenderMode).toBe("native");
   });
 
@@ -1068,20 +1069,101 @@ describe("進板 → 退板：緩衝與捲動錨跨畫面保留", () => {
     expect(s._topNum).toBeNull();
   });
 
-  test("開板交易落在文章列表 → suspend；落在別的畫面（目錄遞迴等）→ 照舊 reset", () => {
+  // 落點守門是**排除法**：只有「另一個編號空間」才收攤。進板畫面（notes 頁／
+  // 請按任意鍵繼續）是 ctx 'other'，它是進板的**必經中間幀**（bbs.c:4646-4655），
+  // 不是離開看板列表。
+  test("開板交易：落在另一份清單／選單才 reset，其餘（含進板畫面）一律 suspend", () => {
     for (const [ctx, expected] of [
       ["article-list", "suspended"],
-      ["brdlist", "idle"],
+      ["other", "suspended"], // 進板畫面（請按任意鍵繼續）
+      [null, "suspended"], // facts 缺 ⇒ 未知，交給退板的 landedSameList 指紋
+      ["brdlist", "idle"], // 目錄／群組看板遞迴進另一份 choose_board
+      ["brdlist-other", "idle"],
       ["menu", "idle"],
     ]) {
       const { s, enqueued } = engaged();
       s._beginOpen();
       const cmd = enqueued.find((c) => c.kind === BRD_CMD_PREFIX + "open-board");
       expect(cmd).toBeTruthy();
-      cmd.expect(null, { ctx });
+      cmd.expect(null, ctx == null ? null : { ctx });
       cmd.onDone();
       expect(s.state).toBe(expected);
     }
+  });
+
+  // 錄製檔 ptt-debug-20260912-015707 的重現：91c6676 之後**還是**會跳位置，因為
+  // 開板落地幀不是文章列表而是進板畫面 —— `Read()` 在 `i_read()` 之前先跑
+  // `more(<板>/notes)` ＋ `pressanykey()`（bbs.c:4646-4655），只在
+  // `currbid != bnote_lastbid` 時出現（同一連線第二次進同一板就沒有 ⇒ 這個 bug
+  // 時有時無）。舊守門只認 'article-list' ⇒ `_reset()` 把緩衝丟光。
+  const noticeRows = () => {
+    const rows = new Array(24).fill("");
+    rows[0] = "▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄";
+    rows[23] = " ▄▄▄▄▄▄▄ 請按任意鍵繼續 ▄▄▄▄▄▄▄";
+    return rows;
+  };
+
+  test("開板落在進板畫面 → 按任意鍵 → 文章列表 → 退板：視野全程不動", () => {
+    const { s, termBuf, enqueued } = engaged();
+    s._beginOpen();
+    const cmd = enqueued.find((c) => c.kind === BRD_CMD_PREFIX + "open-board");
+    cmd.expect(null, { ctx: "other" });
+    cmd.onDone();
+
+    expect(s.state).toBe("suspended");
+    expect(termBuf.brdListLineNums.length).toBe(60); // 緩衝沒被丟掉
+    expect(s._variant).toBe("fav");
+
+    termBuf.feed(noticeRows(), { curY: 23 }); // 進板畫面自己的那一幀
+    expect(s.state).toBe("suspended");
+    termBuf.feed(articleListRows(), { curY: 3 }); // 使用者按空白鍵之後
+    expect(s.state).toBe("suspended");
+    expect(termBuf.brdListLineNums.length).toBe(60);
+
+    // 退板：server 重繪落在含 40 的那一頁（head 對齊 20 列分頁）。
+    termBuf.feed(brdScreenRows({ startNum: 21, count: 20 }), { curY: 3 + 19 });
+
+    expect(s.state).toBe("active");
+    expect(s._renderMode).toBe("buffer");
+    expect(termBuf.brdListLineNums.length).toBe(60);
+    expect(s._topNum).toBe(21); // 使用者自己捲出來的錨
+    expect(s._scrollFrac).toBe(9);
+    expect(s._selectedNum).toBe(40); // 游標採用落點
+  });
+
+  // gate 2（landedSameList）是放寬 gate 1 之後唯一的內容守門 ⇒ 指紋不能只看游標
+  // 那一列：群組看板遞迴進另一份 choose_board 時，第 1 列剛好同名就會誤接。
+  test("退板落地頁：游標列同名但別列不同名 ⇒ 換了一份清單，整份重建", () => {
+    const { s, termBuf, enqueued } = engaged();
+    s._beginOpen();
+    const cmd = enqueued.find((c) => c.kind === BRD_CMD_PREFIX + "open-board");
+    cmd.expect(null, { ctx: "other" });
+    cmd.onDone();
+
+    // 落地頁 25..44：游標那一列（40）板名對得上，但第一列（25）對不上。
+    const body = Array.from({ length: 20 }, (_, i) =>
+      brdRow(25 + i, i === 0 ? "OTHER25" : "B" + (25 + i))
+    );
+    termBuf.feed(brdScreenRows({ bodyRows: body }), { curY: 3 + 15 });
+
+    expect(s.state).toBe("active");
+    expect(termBuf.brdListLineNums.length).toBe(0); // 舊緩衝不得混進別份清單
+    expect(s._topNum).toBe(25); // seed：重新錨到落地頁頂列
+  });
+
+  test("退板落地頁整頁都對得上 ⇒ resume-in-place（錨不動）", () => {
+    const { s, termBuf, enqueued } = engaged();
+    s._beginOpen();
+    const cmd = enqueued.find((c) => c.kind === BRD_CMD_PREFIX + "open-board");
+    cmd.expect(null, { ctx: "other" });
+    cmd.onDone();
+
+    termBuf.feed(brdScreenRows({ startNum: 25, count: 20 }), { curY: 3 + 15 });
+
+    expect(s.state).toBe("active");
+    expect(termBuf.brdListLineNums.length).toBe(60);
+    expect(s._topNum).toBe(21);
+    expect(s._selectedNum).toBe(40);
   });
 });
 

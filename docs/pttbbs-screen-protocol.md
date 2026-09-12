@@ -244,6 +244,17 @@ Read()  bbs.c:4640-4657
   i_read(...)                          → 文章列表
 ```
 
+**進板時這張畫面「有時候有、有時候沒有」是 by design**（CONFIRMED @ `bbs.c:23/4646/4657`）：
+gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 static cache**
+（`static int bnote_lastbid = -1`，只在 `b_notes` 編輯進板畫面時 `bbs.c:4053` 重設成 -1）
+⇒ **同一連線第二次進同一個板就不再顯示**，直接落在文章列表。
+⇒ client 端「開板之後畫面會是什麼」**不可以假設是文章列表**：第一次進是
+`pmore` 的進板畫面或「請按任意鍵繼續」，第二次進才是文章列表。看板列表平滑捲動
+就踩過這個坑（守門寫成「落點是文章列表才保留緩衝」⇒ 手測時好時壞，
+見 `docs/board-list-smooth-scroll.md` §4.3 別名守門）。分類看板的**群組看板**
+（`BRD_GROUPBOARD`）遞迴進另一份 `choose_board` 之前也跑同一段
+（`board.c:1992-1998`，gate 換成 `time4_lt(now, bupdate)`）。
+
 `(b)進板畫面` 走 `read_comms[]` 的 `{ 0, b_notes }`（`bbs.c:4601`），`b_notes` 是同一段
 （`bbs.c:4061-4081`，`mr==-1` 時另印「本看板尚無進板畫面。」）。
 `[i]看板資訊`（`b_config`，`board.c:326`）對非板主也是 `pressanykey(); return FULLUPDATE;`
