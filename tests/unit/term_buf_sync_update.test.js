@@ -98,6 +98,41 @@ describe("TermBuf DEC 2026 synchronized update", () => {
     expect(buf._testUpdates.length).toBe(1); // 半幀被畫出來了
   });
 
+  // 這一對是 DEC 2026 對**正確性**（不只是視覺）的實際好處，成對出現才有意義。
+  //
+  // 閘門擋的是 queueUpdate，而 `_armSettleTimer()` 的唯一呼叫點在 notify() 裡
+  // ⇒ BSU 期間 server 的寫入既不重繪、**也不武裝 settle**。
+  // 這正好消掉協定文件不變量 P6 那一類危險：「半畫幀的 footer 是上一頁的舊值，
+  // 游標也還沒 park」—— 過去只要一幀的位元組跨過 >SETTLE_MS 的間隔，settle 就會
+  // 落在半畫幀上，好讀／list_session 讀到的是上一頁的行號。
+  // **注意這只解掉「這一幀完整了嗎」，沒有解掉「這是回應的最後一幀嗎」**
+  //（一個按鍵對應多個 doupdate ⇒ 那題仍然只有 SETTLE_MS 答得出來，見檔頭）。
+  test("BSU 期間不 settle（半畫幀不會被當成完整回應）", () => {
+    const buf = makeBuf();
+    const parser = new AnsiParser(buf);
+    let settles = 0;
+    buf.addEventListener("screenSettled", () => {
+      settles += 1;
+    });
+
+    parser.feed(BSU + paintRows(1, 12));
+    vi.advanceTimersByTime(200); // 遠超過 30ms notify + 50ms settle
+    expect(settles).toBe(0);
+  });
+
+  test("對照組：沒有 BSU 時半畫幀真的會 settle（上一條擋掉的就是這個）", () => {
+    const buf = makeBuf();
+    const parser = new AnsiParser(buf);
+    let settles = 0;
+    buf.addEventListener("screenSettled", () => {
+      settles += 1;
+    });
+
+    parser.feed(paintRows(1, 12));
+    vi.advanceTimersByTime(200);
+    expect(settles).toBeGreaterThan(0);
+  });
+
   // 零回歸主鎖：同一串 bytes，開／關 gating 的結果必須逐字相同。
   test("開關 gating 的最終畫面／游標／settle 快照完全一致", () => {
     const bytes =
