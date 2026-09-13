@@ -85,6 +85,46 @@ async function takeCapture(page) {
   });
 }
 
+// 找一張「左側留白整段蓋過左側退出帶」的內嵌圖，回傳一個落在那片留白裡、且仍在
+// 退出帶之內的座標（取圖片的垂直中心，確定跟圖片同高）。找不到回 null。
+//
+// 自動開圖是延遲載入的：不捲進視野連 requestPreview() 都不會被呼叫 ⇒ 得逐段捲著找
+// （同 image_gray.offline.spec.js#seekGrayableImage）。本 cassette 實測 slot 1210px、
+// 圖 760px ⇒ 單側留白 225px ＝ 15 欄，而退出帶是 7 欄。
+async function seekWidePadding(page) {
+  const geom = await page.evaluate(() => {
+    const s = document.querySelector('.main');
+    return s ? { h: s.scrollHeight, ch: s.clientHeight } : null;
+  });
+  if (!geom) return null;
+  const bandRight = await page.evaluate(
+    () => document.getElementById('exitHintBand').getBoundingClientRect().right
+  );
+  const step = Math.max(200, geom.ch * 0.8);
+  for (let top = 0; top <= geom.h; top += step) {
+    await page.evaluate((t) => {
+      document.querySelector('.main').scrollTop = t;
+    }, top);
+    await waitPreviewsSettled(page);
+    const hit = await page.evaluate((right) => {
+      for (const slot of document.querySelectorAll('.inlinePreviewSlot')) {
+        const img = slot.querySelector('img.easyReadingImg');
+        if (!img || !(img.offsetWidth > 0 && img.offsetHeight > 0)) continue;
+        const sr = slot.getBoundingClientRect();
+        const ir = img.getBoundingClientRect();
+        // 留白得整段蓋過退出帶，否則量到的是「圖片真的在那幾欄」＝既有的圖片優先。
+        if (ir.left <= right) continue;
+        const y = ir.top + ir.height / 2;
+        if (y < 0 || y > window.innerHeight) continue;
+        return { x: Math.round(sr.left + 2), y: Math.round(y) };
+      }
+      return null;
+    }, bandRight);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 test.describe('滑鼠（離線重放）', () => {
   if (!article) {
     test.skip('尚無 article cassette；先 yarn record:cassette', () => {});
@@ -251,6 +291,50 @@ test.describe('滑鼠（離線重放）', () => {
     });
     await page.waitForTimeout(150);
     expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
+  });
+
+  // 2026-09 回報：有圖時左側退出點擊區幾乎點不到。.inlinePreviewSlot 是**整列寬**的
+  // 區塊（沒有 width 宣告，逐層繼承 .main 的 chw*80+10px），圖片卻是 max-width:39em
+  // ＋ margin:auto 置中 ⇒ 直式圖／小圖左右各留下數十欄空白。那片空白以前也被
+  // isPreviewTarget 當成「點在預覽上」⇒ App.mouse_click 第 5 條直接 return。
+  // 而 hover 路徑**純看格子座標、完全不看 DOM** ⇒ 提示帶照亮、指標照樣是 back，
+  // 點下去 0 byte —— affordance 在說謊。
+  //
+  // 修法是 CSS 的 pointer-events 收斂（宣告本身由 tests/unit/preview_pointer_events_css
+  // 靜態守護，那是「改壞了也不會有其他測試紅」的那種）；真幾何只有這裡量得到。
+  // 上面那條「內嵌預覽圖優先」守的是相反方向 —— 它用 dispatchEvent 直接打在 slot 上
+  // （不經 hit-test），守的是「PREVIEW_CLICK_SELECTOR 這道安全網還在」。
+  test('圖片左右留白不算預覽：那裡的左側退出照樣送左方向鍵', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: true,
+      useMouseBrowsing: true,
+      mouseLeftClick: true,
+      enablePicPreview: true,
+    });
+    await replayCassette(page, article, { easyReading: true });
+    await waitPreviewsSettled(page);
+
+    const spot = await seekWidePadding(page);
+    test.skip(!spot, 'cassette 裡沒有左右留白寬於退出帶的內嵌圖');
+
+    // 座標在圖片之外、退出帶之內。改動前 elementFromPoint 會回 .inlinePreviewSlot
+    // （它在 helpers/layout.js 的 OVERRIDING_SEL 裡）⇒ 這一行就先紅。
+    await assertPlainTextUnder(page, spot.x, spot.y);
+
+    await page.mouse.move(spot.x, spot.y);
+    await page.waitForTimeout(50); // hover → mouseAction 更新
+    expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('exitArticle');
+
+    await startCapture(page);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+    expect(
+      await takeCapture(page),
+      '提示帶亮著、指標是 back，點下去卻 0 byte'
+    ).toContain(ARROW_LEFT);
   });
 
   test('左鍵功能關閉：沒有提示帶、沒有自訂指標、點了不送鍵', async ({ page }) => {

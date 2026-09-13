@@ -834,6 +834,31 @@ span {
   display: grid;
   grid-template-areas: "stack";
   align-items: start;
+  /* slot 是**整列寬**的區塊（沒有 width 宣告，逐層繼承 .main 的 chw*80+10px），
+     而圖片只有 max-width:39em + margin:auto 置中 ⇒ 直式圖／小圖左右各留下數十欄
+     空白。那片空白不該算「點在預覽上」：
+       1. 灰階鈕的 hover 觸發會擴散到整列寬（捲到圖就常駐）；
+       2. 更嚴重的是 App.mouse_click 第 5 條 isPreviewTarget 會 return ⇒ 文章模式
+          左 0-6 欄的退出手勢在圖片那幾列整段失效，而 hover 路徑純看格子座標、
+          不看 DOM ⇒ 提示帶照亮、指標照樣是 back，點下去 0 byte（affordance 說謊）。
+     修法是讓 hit-test 跟著「真的有像素的地方」走：slot 讓開，可互動的子孫各自
+     取回 auto（見下一條）。pointer-events 不影響 layout ⇒ 版面、佔位高度、
+     scroll anchoring、golden 快照全不動。
+     寬圖（達 39em ≈ 78 欄）左 7 欄仍被圖片本身覆蓋 —— 那裡確實有圖片像素，
+     維持「圖片優先」是刻意的，不是漏網。 */
+  pointer-events: none;
+}
+/* pointer-events **是繼承屬性**，所以子孫要逐一取回。清單與 js/preview_targets.js
+   的 PREVIEW_CLICK_SELECTOR 對齊 —— 少了任何一項，那種媒體連自己都點不到
+   （圖片放大、載入失敗重試都會靜默失效）。
+   .inlinePreviewSpacer 刻意不在列上：替身盒本來就不該吃點擊（它另有 none）。 */
+.inlinePreviewSlot img.easyReadingImg,
+.inlinePreviewSlot video.easyReadingVideo,
+.inlinePreviewSlot iframe,
+.inlinePreviewSlot .previewLoading,
+.inlinePreviewSlot .previewError,
+.inlinePreviewSlot > .previewGrayBtn {
+  pointer-events: auto;
 }
 .inlinePreviewSlot > .inlinePreviewContent,
 .inlinePreviewSlot > .inlinePreviewSpacer {
@@ -884,7 +909,17 @@ span {
   background: rgba(33, 37, 41, 0.75);
   border: 1px solid #ced4da;
 }
-/* 平時隱藏，不干擾閱讀；:focus-visible 那條讓鍵盤使用者也叫得出來。 */
+/* 平時隱藏，不干擾閱讀；:focus-visible 那條讓鍵盤使用者也叫得出來。
+
+   **這裡的 :hover 之所以夠精確，完全靠上面那條 slot 的 pointer-events:none**：
+   slot 是整列寬，它自己若還是 hit-test 目標，「捲到這張圖」就等於「滑鼠一定在觸發
+   範圍內」⇒ 按鈕幾乎永遠掛著（使用者實際回報過）。收斂之後 hit target 只會是圖片／
+   指示器／按鈕自己，:hover 再沿祖先鏈傳上來 ⇒ 觸發範圍剛好是媒體盒。**兩條是綁死
+   的一組，別只拿掉其中一條。**
+
+   不用 :has(img:hover) 寫成明示條件是刻意的：build.target 含 firefox110，而 :has()
+   要到 Firefox 121 才有 —— 選擇器清單裡只要有一個無效，**整條規則會被丟棄** ⇒ 按鈕
+   在那些瀏覽器上永遠叫不出來，比它要修的問題更糟。 */
 .inlinePreviewSlot:hover > .previewGrayBtn,
 .inlinePreviewSlot > .previewGrayBtn:focus-visible {
   visibility: visible;
@@ -896,8 +931,11 @@ span {
 
 /* 自動開圖「讀取中」指示器：解析中 + 媒體下載中共用。
    <img>/<video> 無法回報真實進度，故用不定式（indeterminate）滑動色塊。 */
+/* display 是 flex 而非 inline-flex、外加 width:fit-content：inline-level 元素的
+   `margin: auto` 解析成 0 ⇒ 指示器其實整片貼在第 0 欄，把左側退出帶壓掉。 */
 .previewLoading {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
   align-items: center;
   gap: 0.5em;
   margin: 0.5em auto;
@@ -938,8 +976,11 @@ span {
 }
 
 /* 自動開圖載入失敗（重試耗盡）：可見、可點重試的提示，取代靜默空白 */
+/* 同 .previewLoading：inline-flex 的 margin:auto 是 no-op ⇒ 靠左壓掉退出帶。
+   收斂後可點重試的命中區也剛好縮到文字本身。 */
 .previewError {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
   align-items: center;
   margin: 0.5em auto;
   padding: 0.15em 0.5em;

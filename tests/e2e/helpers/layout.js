@@ -184,6 +184,10 @@ async function assertElementUnder(page, x, y, expected, opts = {}) {
 
 // 指標底下**不得**是連結／內嵌預覽。App.mouse_click 的優先權階梯裡它們贏過退出帶與
 // pusher 高亮（見 docs/mouse.md），落在那上面的座標不是那幾條測試的現場。
+//
+// .inlinePreviewSlot 自 2026-09 起是 pointer-events:none（圖片左右的置中留白還給左側
+// 退出帶），elementFromPoint 正常情況下不會回它 —— **留著不是冗餘**：那條 CSS 一旦被
+// 拿掉，這裡會立刻把「留白又變成預覽」講出來，而不是讓下游斷言退化成沉默的 0。
 const OVERRIDING_SEL =
   'a, img, video, iframe, .inlinePreviewSlot, .previewLoading, .previewError';
 

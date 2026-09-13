@@ -522,7 +522,7 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 2. `aidNavigation.active`
 3. 讀清 `SkipMouseClick`
 4. **`closest('a')`** —— 連結、AID 連結、**功能鍵按鈕**（`a.fnKey`）
-5. **`closest(PREVIEW_CLICK_SELECTOR)`** —— 內嵌預覽
+5. **`closest(PREVIEW_CLICK_SELECTOR)`** —— 內嵌預覽（命中範圍＝**媒體盒本身**，不含圖片左右的置中留白，見下）
 6. `getSelection().isCollapsed`
 7. `closest('[data-pusher]')` —— 推文者高亮（防誤觸開啟時還要 `col >= data-pusher-col`；**欄位不合不 return**，讓下面的左側退出帶接手）。**`serverReport` 為真時整條跳過**：它是純裝飾，不該吃掉一整片的回報；而且 `serverReport` 會強制關掉 `misclickGuard` ⇒ `pusherColStart` 退回 0 ⇒ 不跳過的話整個推文區永遠回報不出去
 8. **點空白處關框**（`listRenderMode === 'native'` ＋ `mouseGates().leftClick` ＋ `buf.dismissTarget()` 非 null）—— 見下方「點空白處關框」
@@ -539,9 +539,33 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 變成「點了就退出文章／開錯文」）。
 
 第 4、5 條是「文章裡的可點擊物件優先」的實作，順序不可調換：文章模式的第 0-6 欄
-現在是退出手勢，而連結與內嵌預覽圖都可能落在那幾欄（預覽圖甚至是整寬區塊、起點
-就在第 0 欄，而且走的是 `Screen` 的事件委派 `onClick`，不是 `<a>` 的子孫 ⇒ 第 4 條
-攔不到）。
+現在是退出手勢，而連結與內嵌預覽圖都可能落在那幾欄（預覽走的是 `Screen` 的事件
+委派 `onClick`，不是 `<a>` 的子孫 ⇒ 第 4 條攔不到）。
+
+**第 5 條的命中範圍＝媒體盒本身，不含左右留白（2026-09 修）**：`.inlinePreviewSlot`
+是**整列寬**的區塊（無 width 宣告，逐層繼承 `.main` 的 `chw*80+10px`），圖片卻是
+`max-width: 39em` ＋ `margin: 0.5em auto` 置中 ⇒ 直式圖／小圖左右各留下數十欄空白
+（cassette 實測：slot 1210px、圖 760px ⇒ 單側 225px ＝ **15 欄**，退出帶才 7 欄）。
+那片空白以前照樣命中 `.inlinePreviewSlot` ⇒ 第 5 條 return ⇒ 使用者回報「有圖時左側
+幾乎點不到」。而 hover 路徑（`App.onMouse_move` → `buf.onMouse_move` →
+`resolveMouseRegion`）**純看格子座標、完全不看 DOM**，兩條路各說各話：提示帶照亮、
+指標照樣是 back，點下去 0 byte —— **affordance 在說謊**。
+
+修法在 CSS 而不是這張表：`.inlinePreviewSlot { pointer-events: none }` ＋ 可互動的
+子孫（`img.easyReadingImg` / `video.easyReadingVideo` / `iframe` / `.previewLoading` /
+`.previewError` / `.previewGrayBtn`）各自取回 `auto`。`pointer-events` **是繼承屬性**，
+少取回任何一項那種媒體就連自己都點不到。順帶把 `.previewLoading`／`.previewError`
+從 `inline-flex` 改成 `flex; width: fit-content`——inline-level 的 `margin: auto` 解析成
+0，它們其實整片貼在第 0 欄。`pointer-events` 不影響 layout ⇒ 版面、佔位高度、
+scroll anchoring、golden 快照全不動。
+
+`PREVIEW_CLICK_SELECTOR` 仍**保留** `.inlinePreviewSlot` 當安全網（CSS 那條被拿掉時
+至少還擋得住誤觸），所以 `dispatchEvent` 直接打在 slot 上仍會被第 5 條攔下——真實
+hit-test 已經到不了那裡。守護：`tests/unit/preview_pointer_events_css.test.js`（宣告）、
+`tests/e2e/offline/mouse.offline.spec.js`「圖片左右留白不算預覽」（真幾何）。
+
+**寬圖仍是圖片優先**：達 `max-width: 39em` ≈ 78 欄的橫幅圖，左 7 欄確實有圖片像素，
+點了切換放大是刻意保留的行為，不是漏網。
 
 第 7 條的欄位條件是 2026-08 補的：`data-pusher` 掛在**整列**的 `bbsrow` span 上，
 而這一條走在滑鼠瀏覽 gate 之前 ⇒ 推文列的 cols 0-6 一律被 pusher 高亮吃掉，
@@ -838,6 +862,9 @@ pageState 5 走 `default`、對 `inputPrompt` 更是整幀早退，使用者只�
   `.main` 的 transform，所以寬度自己乘 `scaleX`（`cellWidth` 已處理）。
 - **`pointer-events: none` 是硬需求不是保險**：少了它，左側 7 欄的連結與內嵌預覽圖
   全部點不到（`e.target` 變成帶子，`closest('a')` 一律落空）。
+- **提示帶亮著卻點不到的情況，2026-09 起只剩一種**：圖片本身真的覆蓋到左 7 欄（寬圖）。
+  以前圖片左右的置中留白也算「點在預覽上」，那是 bug，已由 `.inlinePreviewSlot` 的
+  `pointer-events: none` 讓開（見「點擊優先權」第 5 條）。
 - **不可宣告任何 `user-select`**（Firefox 上最外層的非 auto 值會沿 frame 鏈壓過子層，
   見 `#BBSWindow` 的註解與 `tests/unit/css_user_select.test.js`）。
 - 關掉的時機（漏一個就會留殘影）：`term_buf.onMouse_move`／`clearHighlight`、

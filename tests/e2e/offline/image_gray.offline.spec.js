@@ -146,6 +146,44 @@ test.describe('圖片灰階鈕與原生右鍵選單（離線重放）', () => {
     expect(btn.top).toBeLessThan(img.top + img.height / 2);
   });
 
+  // 2026-09 回報：灰階鈕幾乎永遠顯示。觸發條件原本是 .inlinePreviewSlot:hover，而 slot
+  // 是**整列寬**的區塊（沒有 width 宣告，逐層繼承 .main 的 chw*80+10px），圖片卻是
+  // max-width:39em ＋ margin:auto 置中 ⇒ 捲到這張圖時滑鼠水平**在任何位置**都算 hover
+  // 到 slot ⇒ 按鈕常駐。改成綁在真圖上（選擇器契約由 tests/unit/image_gray_css 守，
+  // 留白到底有多寬只有真瀏覽器量得到）。
+  test('hover 落在圖片左右留白上：按鈕不該浮現', async ({ page }) => {
+    test.setTimeout(180000);
+    await boot(page);
+    expect(await seekGrayableImage(page)).toBe(true);
+    await expect(page.locator(BTN_SEL)).toHaveCount(1);
+
+    // 量座標前先把 slot 捲穩：seekGrayableImage 只保證圖片有佈局，不保證在視窗內。
+    await scrollIntoViewStable(page, SLOT_SEL);
+    const spots = await page.evaluate((sel) => {
+      const slot = document.querySelector(sel);
+      const img = slot.querySelector('img.easyReadingImg');
+      const sr = slot.getBoundingClientRect();
+      const ir = img.getBoundingClientRect();
+      if (ir.left - sr.left < 8) return null; // 寬圖：沒有留白可測
+      const y = Math.round(ir.top + ir.height / 2);
+      return {
+        pad: { x: Math.round(sr.left + 2), y },
+        img: { x: Math.round(ir.left + ir.width / 2), y },
+      };
+    }, SLOT_SEL);
+    test.skip(!spots, '這張圖寬到沒有左右留白');
+
+    await page.mouse.move(spots.pad.x, spots.pad.y);
+    expect(
+      await styleOf(page, BTN_SEL, 'visibility'),
+      '綁 slot:hover ⇒ 按鈕在整列寬度上都浮現（捲到圖就等於常駐）'
+    ).toBe('hidden');
+
+    // 同一列、水平移到圖片上就該出現 —— 確認上一段不是因為按鈕本身壞了才看不到。
+    await page.mouse.move(spots.img.x, spots.img.y);
+    expect(await styleOf(page, BTN_SEL, 'visibility')).toBe('visible');
+  });
+
   test('點灰階鈕：只有那張圖變灰階，且不得誤觸點圖放大', async ({ page }) => {
     test.setTimeout(180000);
     await boot(page);
