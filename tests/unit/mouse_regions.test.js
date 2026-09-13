@@ -382,3 +382,51 @@ describe("輸入框畫面（inputPrompt）", () => {
       .toBe(ACT_ENTER);
   });
 });
+
+// 2026-09 滑鼠交給 PTT server（XTerm SGR 回報）時，整張決策表都不作數。
+//
+// 這是排在**最前面**的早退（連 dismiss 都要讓開）。一條早退同時關掉四件事：
+// action 恆 none、指標恆 auto、底色恆 -1、左側退出提示帶不畫 —— 所以四個消費端
+// （App.onMouse_click／_applyMousePointer／cursor_highlight／setExitAffordance）
+// 一行都不用改。
+describe("serverMouse：滑鼠交給 PTT server", () => {
+  // 逐格掃過所有 pageState 與所有欄位，一格都不能漏。
+  test("所有 pageState 的所有格子都是 NONE", () => {
+    for (const pageState of [0, 1, 2, 3, 4, 5]) {
+      for (const col of [0, 3, 6, 7, 8, 29, 30, 40, 79]) {
+        for (const row of [0, 1, 12, 22, 23]) {
+          const r = at({ serverMouse: true, pageState, col, row });
+          expect(r.action).toBe(ACT_NONE);
+          expect(r.row).toBe(-1);
+          expect(r.cursor).toBe(CUR_AUTO);
+          expect(r.highlightRow).toBe(-1);
+        }
+      }
+    }
+  });
+
+  test("即使框開著（dismiss）也讓開 —— 關框那一下也該由 server 收", () => {
+    const r = at({ serverMouse: true, pageState: 5, col: 40, row: 12, dismiss: { bytes: "\r" } });
+    expect(r.action).toBe(ACT_NONE);
+    expect(r.cursor).toBe(CUR_AUTO);
+  });
+
+  test("文章內左側退出帶也讓開", () => {
+    const r = at({ serverMouse: true, pageState: 3, col: 2, row: 10 });
+    expect(r.action).toBe(ACT_NONE);
+    expect(r.cursor).toBe(CUR_AUTO);
+  });
+
+  // 零回歸鎖：serverMouse 為 false（＝絕大多數人的常態）時，逐格結果必須與
+  // 加這條早退之前**逐字相同**。這一組保護的是「多加一個早退不小心動到既有表」。
+  test("serverMouse:false 時逐格與未帶該欄位時完全相同", () => {
+    for (const pageState of [0, 1, 2, 3, 4, 5]) {
+      for (const col of [0, 3, 6, 7, 8, 29, 30, 40, 79]) {
+        for (const row of [0, 1, 12, 22, 23]) {
+          const base = at({ pageState, col, row });
+          expect(at({ serverMouse: false, pageState, col, row })).toEqual(base);
+        }
+      }
+    }
+  });
+});

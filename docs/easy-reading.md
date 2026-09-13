@@ -62,6 +62,19 @@
 
 ## render 單軌（兩模式同走 `ScreenController`）
 
+> **DEC 2026 同步輸出（2026-09）不參與 settle，只擋畫面。**
+> PTT 把每個 `doupdate()` 包在 `ESC[?2026h` … `ESC[?2026l` 之間。我們在
+> `term_buf.queueUpdate()` 開頭 `if (this.inSyncUpdate) return;`，讓一幀被 WebSocket
+> 切成好幾塊時不會在中途畫出半幀（撕裂）。**刻意不拿 ESU 當 settle**：一個 logical page
+> 對應多個 `doupdate()`，而且 `!ft.dirty` 早退路徑會吐零內容的 BSU/ESU 對，ESU 的常態
+> 語意是「server 回去等按鍵了」而非「這一頁畫完了」（依據見
+> `docs/pttbbs-screen-protocol.md` §1.1）。用它推進 settle 會把 `command_queue` 的 expect
+> 餵掉；反過來延遲永遠安全。
+> 閘門掛在 `queueUpdate` 而**不是** `notify`：`queueUpdate` 是所有 server 寫入路徑的共同
+> 出口，而 `notify()` 另有本地重繪的直呼者（`_forceRepaint` / `_forceRedraw` 系列）——
+> 本地重繪不可以被 server 的 BSU 擋住。保險絲 `SYNC_SAFETY_MS=250`（BSU 沒等到 ESU），
+> kill switch `buf.syncUpdateEnabled`。守護 `tests/unit/term_buf_sync_update.test.js`。
+
 兩模式都走 `renderScreen()`＝把 `lines` 交給 `ScreenController.update()`（`term_ui.js` → `src/render/screen.js`），**controller 單一擁有 `#mainContainer`**。差別只在傳進去的 `lines`：
 
 > **2026-08 核心渲染鏈已去 React 化**：`<Screen>`/`<Row>` 換成 `src/render/`（純 JS DOM）。

@@ -34,6 +34,8 @@
 | `mouseBackNav` | `1` | 0 關閉 / 1 左方向鍵 | 攔截瀏覽器的「返回」→ `←`。**一個 key 涵蓋所有來源**（觸控板左滑手勢／側鍵／`Alt+←`／`⌘[`／工具列），它們是同一條實作（見「手勢與瀏覽器返回」） |
 | `mouseWheelSmoothScroll` | `true` | bool | 開＝列表好讀的 body 視口走 `overflow-y:auto`，**捲動整個交給瀏覽器**（與文章好讀同一套引擎）；關＝視口改 `overflow:hidden`，滾輪退回一次一頁。**只作用於文章列表好讀模式**（其餘畫面沒有這個選擇，見下方 render 分支表） |
 
+| `mouseServerReport` | `false` | bool | 把點擊與滾輪回報給 PTT server（XTerm SGR）。開啟後我們自己那套滑鼠語意整組讓位，見「PTT server 端的滑鼠回報」。**預設關**：PTT 的 `UF_MOUSE` 預設關，且 pttbbs 目前沒有任何東西消費 `KEY_MOUSE` |
+
 ### 舊 → 新 key 對照（**刻意不做遷移**）
 
 | 舊 key | 舊值域 | 去向 |
@@ -58,6 +60,12 @@
 
 `S` ＝ `clickableColStart(pageState, misclickGuard)`：防誤觸開啟時列表 30、選單 8，
 其餘（含防誤觸關閉）一律 0。**可點區與底色區共用它**。
+
+**第一條早退是 `serverMouse`**（排在 `dismiss` 與 `inputPrompt` 之前）：滑鼠已交給
+PTT server 時整張表都不作數，一律回 `NONE`。一條早退同時關掉四件事 —— `action` 恆
+`ACT_NONE`、`cursor` 恆 `CUR_AUTO`、`highlightRow` 恆 `-1`（`setHighlight` 因此不宣告
+滑鼠優先權 ⇒ hover 底色自動消失、鍵盤游標列照常，`cursor_highlight.js` 一行都不用改）、
+左側退出提示帶不畫（`_applyMousePointer` 用 `cursor === CUR_BACK` 判）。
 
 | pageState | 條件 | action | cursor | 底色範圍 |
 |---|---|---|---|---|
@@ -169,7 +177,9 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 | 滾輪 | `useMouseBrowsing && mouseWheel !== 0` |
 | 滾輪平滑捲動 | `useMouseBrowsing && mouseWheel !== 0 && mouseWheelSmoothScroll`（`resolveMouseGates` 的 `wheelSmoothScroll`；只有列表好讀分支會問這一格） |
 | 瀏覽器返回（含觸控板左滑手勢） | `useMouseBrowsing && mouseBackNav !== 0`（`backNav`）—— **刻意不經過 `mouseWheel`**，見下節 |
-| 連結／圖片／`[data-pusher]`／`copyOnSelect`／右鍵選單 | **不受任何滑鼠 pref 影響** |
+| 回報給 PTT server | `useMouseBrowsing && mouseServerReport && buf.mouseReport.isActive()`（`serverReport`）—— 為真時**強制關掉** `leftClick`／`cursorIcon`／`misclickGuard`／`wheel`／`wheelSmoothScroll`，見下方「PTT server 端的滑鼠回報」 |
+| 連結／圖片／`copyOnSelect`／右鍵選單 | **不受任何滑鼠 pref 影響** |
+| `[data-pusher]` 推文者高亮 | 不受滑鼠 pref 影響，**但 `serverReport` 為真時整條分支跳過**（理由見下節） |
 
 改版前 `middleMouse_down` 與 `mouse_scroll` 完全不看 `useMouseBrowsing`，「關掉滑鼠
 瀏覽」只關得掉一半。守護：`tests/unit/mouse_gating.test.js`、
@@ -514,9 +524,10 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 4. **`closest('a')`** —— 連結、AID 連結、**功能鍵按鈕**（`a.fnKey`）
 5. **`closest(PREVIEW_CLICK_SELECTOR)`** —— 內嵌預覽
 6. `getSelection().isCollapsed`
-7. `closest('[data-pusher]')` —— 推文者高亮（防誤觸開啟時還要 `col >= data-pusher-col`；**欄位不合不 return**，讓下面的左側退出帶接手）
+7. `closest('[data-pusher]')` —— 推文者高亮（防誤觸開啟時還要 `col >= data-pusher-col`；**欄位不合不 return**，讓下面的左側退出帶接手）。**`serverReport` 為真時整條跳過**：它是純裝飾，不該吃掉一整片的回報；而且 `serverReport` 會強制關掉 `misclickGuard` ⇒ `pusherColStart` 退回 0 ⇒ 不跳過的話整個推文區永遠回報不出去
 8. **點空白處關框**（`listRenderMode === 'native'` ＋ `mouseGates().leftClick` ＋ `buf.dismissTarget()` 非 null）—— 見下方「點空白處關框」
 9. `listRenderMode` buffer/frozen 分支
+9.5. **回報給 PTT server**（`gates.serverReport && App._serverMouseReportable()`）—— 送 SGR press+release、`preventDefault`、return
 10. `useMouseBrowsing` gate
 11. `mouseLeftClick` gate
 12. `checkClass` / `menuitem` / `skipMouseClick`
@@ -847,6 +858,65 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 可以退出」因此一直沒有任何提示。`cursorCss` 有一條括號平衡的回歸鎖
 （`tests/unit/mouse_regions.test.js`）。
 
+## PTT server 端的滑鼠回報（2026-09，XTerm SGR）
+
+PTT 從 2026-09 起會送 `ESC[?1000h` / `ESC[?1006h` 這類序列要求終端機回報滑鼠。
+協定事實（server 端逐條可查）見 `docs/pttbbs-screen-protocol.md` §1.1「滑鼠回報協定」。
+實作：純函式與狀態機在 `src/js/mouse_report.js`，接線在 `App.mouse_click` / `App.mouse_scroll`。
+
+### 三條由 server 端事實推出的設計決定
+
+1. **pref `mouseServerReport` 預設 false。** `UF_MOUSE` 在 PTT 預設是關的，而且
+   pttbbs 目前**沒有任何東西消費 `KEY_MOUSE`** ⇒ 現在開啟等於拿自家滑鼠瀏覽去換一個
+   server 還不會用的按鍵。等 pttbbs 出現消費者再考慮翻預設。
+2. **只實作 1000（click）+ 1006（SGR），不送 motion。** `mbbsd/io.c:231-240` 會讓任何
+   非 `KEY_INCOMPLETE` 的鍵更新 `currutmp->lastact` ⇒ 送 1003 的 hover motion 會讓使用者
+   **永不 idle**。1002/1003 只記錄模式。
+3. **`sgr` 初值必須是 false。** 主機只開 1000 沒開 1006 時不可以送 SGR
+   （`vtkbd.c:305` 只在 `csi_prefix == '<'` 認滑鼠）。同理 `handleDECRST(1006)` 是
+   **停止回報**而不是退回 X10 —— X10 送給 PTT 是廢的。
+
+### 仲裁規則（只有一條）
+
+**`serverReport` 為真時，「我們自己發明的滑鼠語意」整組讓位；「真的是另一個東西」的
+目標仍然優先。** 只碰兩個既有純函式（`resolveMouseGates` 的 `serverReport` 輸出、
+`resolveMouseRegion` 的 `serverMouse` 早退），不散落條件式。
+
+| 類別 | 例子 | serverReport 時 |
+|---|---|---|
+| 我們發明的滑鼠語意 | 點標題開文、左側退出帶、自訂指標、防誤觸、滾輪翻頁、hover 底色 | **讓位** |
+| 真的是另一個東西 | 連結／AID 連結／功能鍵按鈕（`<a>`）、內嵌預覽、**已選取的文字** | **仍然優先**（優先權表第 4-6 條） |
+| 瀏覽器語意 | 中鍵貼上、返回導航（`backNav`）、原生右鍵選單 | **不受影響** |
+| 虛擬視窗 | 列表好讀 buffer/frozen、文章好讀長頁 | **不回報**（見下） |
+
+### 只在原生 24 列畫面回報（`App._serverMouseReportable()`）
+
+條件是 `listRenderMode === 'native'` 且**不是**文章好讀的長頁。另兩種 render 分支畫的
+都是我們自己組的虛擬視窗：列表好讀的列號是 buffer 索引不是螢幕列，文章好讀是一整條
+長頁、列號會被 clamp ⇒ `clientToPos` 的輸出與 server 的真實 24 列**對不起來**，送出去
+就是點錯格。與「列表好讀左鍵永不落到原生分支」同一條理由。
+
+座標**唯一來源是 `App.clientToPos()`**，不得另寫幾何（見上方「座標契約」）。
+送出**一律走 `view._send()`**，不得直接碰 `view.conn`（連線成功前是 `undefined`）。
+
+### 原生行為怎麼保住
+
+- **文字選取**：優先權表第 6 條（`getSelection().isCollapsed`）先擋；而且這條路
+  **沒有新增任何 mousedown/mouseup/auxclick listener、沒有新增 preventDefault**。
+  這是本設計最重要的節制 —— 沒有第二條事件路徑，就沒有東西會跟選取／雙擊選詞打架。
+- **原生右鍵選單**：右鍵**完全不回報**，`context_menu_items.js` 零改動。
+- **一次點擊送 press+release 兩段**：`io.c:262` 直接把 release 丟成 `KEY_INCOMPLETE`，
+  server 不區分先後；拆到 mousedown/mouseup 會讓「拖曳選字」也送出 press。
+
+### 明確不做（要改的話先讀上面的理由）
+
+motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、DECRQM（`ESC[?2026$p`）
+回覆、focus in/out（1004）、bracketed paste（2004）、X10（9）/ UTF-8（1005）/ urxvt（1015）
+編碼。
+
+已知取捨：未來 PTT 真的做出滑鼠 UI 時，好讀模式底下仍然不回報。屆時的選項是
+「tracking 期間自動停用好讀」，不在本次範圍。
+
 ## 測試
 
 | 檔案 | 鎖什麼 |
@@ -854,6 +924,11 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 | `tests/unit/mouse_regions.test.js` | 區域決策表逐格 + `clickableColStart` + 防誤觸關閉時整列可點 + `cursorCss` 括號平衡 |
 | `tests/unit/mouse_geometry.test.js` | 帶子右緣 ↔ 可點區右緣往返（三組幾何） |
 | `tests/unit/mouse_gating.test.js` | 總開關關掉 ⇒ 中鍵與滾輪也關 |
+| `tests/unit/mouse_report_encode.test.js` | SGR 編碼：button code（含 wheel 64/65 與 modifier bits）、1-based 與 clamp、press/release 字串 |
+| `tests/unit/mouse_report_modes.test.js` | 主機宣告的模式狀態機：`sgr` 初值 false、`?1006l` 後停止回報、不相符的 DECRST 不清模式、9/1001/1005/1015 完全不收 |
+| `tests/unit/mouse_report_parser.test.js` | `AnsiParser` 的 DECSET/DECRST 分派：只轉發 1000/1002/1003/1006、2026 走 sync update、跨 feed 切割 |
+| `tests/unit/mouse_report_click_path.test.js` | 接線：只在原生 24 列回報、連結／預覽／有選取／列表好讀皆零 byte、`[data-pusher]` 不吃掉回報、座標真走 `clientToPos`、**不得碰 `view.conn.send`** |
+| `tests/e2e/offline/mouse_report.offline.spec.js` | 端到端：主機宣告→點一下**恰好一對** SGR、座標對得上真實格線、關閉四連後停止、**選字與右鍵選單仍正常** |
 | `tests/unit/cursor_highlight.test.js` | 底色決策表 + `lastMover` 仲裁（含鍵盤底色關／文章頁的回退）+ `highlightColStart` |
 | `tests/unit/cursor_row_brighten.test.js` | 樣式層四種組合 + `color.css` 契約（提亮＝q(n+8)、**無 font-weight**、無 background、上班模式有自己一組） |
 | `tests/unit/pref_schema_cursor_row.test.js` | 兩個樣式 pref 的預設值 + 既有使用者也拿得到新預設 |

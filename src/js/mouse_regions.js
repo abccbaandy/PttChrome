@@ -93,6 +93,15 @@ const NONE = Object.freeze({
 // 得知邊界在哪。
 export function resolveMouseRegion(input) {
   const o = input || {};
+  // 滑鼠已經交給 PTT server（見 resolveMouseGates 的 serverReport）⇒ 這一格什麼
+  // 都不是。**必須排在最前面**，連 dismiss 都要讓開：關框那一下也該由 server 收。
+  //
+  // 一條早退同時關掉四件事，所以不必去改四個消費端：
+  //   - action 恆 ACT_NONE      ⇒ App.onMouse_click 什麼都不做
+  //   - cursor 恆 CUR_AUTO      ⇒ 自訂指標消失、_applyMousePointer 不畫退出提示帶
+  //   - highlightRow 恆 -1      ⇒ setHighlight 不宣告滑鼠優先權，hover 底色自動
+  //                                消失、鍵盤游標列照常（cursor_highlight.js 不用改）
+  if (o.serverMouse) return NONE;
   // 框開著（pressanykey／vmsg 橫幅／vgetstring 輸入欄，呼叫端用
   // screen_dismiss.resolveDismiss 判）⇒ 整個畫面都是「點空白處關框」的目標，
   // **只換指標、不上底色**：框在時下方整片是殘影，上底色會讓人以為那裡可以點。
@@ -210,20 +219,31 @@ export function resolveMouseRegion(input) {
 export function resolveMouseGates(prefs) {
   const p = prefs || {};
   const on = !!p.useMouseBrowsing;
-  const left = on && !!p.mouseLeftClick;
+  // PTT server 自己開了滑鼠 tracking，而且使用者也允許回報 ⇒ 滑鼠交給 PTT。
+  // 兩個條件缺一不可：`serverMouse` 是主機宣告的事實（buf.mouseReport.isActive()，
+  // 內含「主機開了 1000/1002/1003 且開了 1006」），`mouseServerReport` 是使用者
+  // 偏好。跟著總開關走（`on &&`），維持「總開關關掉就是全關」這條不變量。
+  const serverReport = on && !!p.mouseServerReport && !!p.serverMouse;
+  // 讓位規則：**我們自己發明的滑鼠語意**整組關掉（左鍵開文／退出帶／自訂指標／
+  // 防誤觸／滾輪翻頁），但**真的是另一個東西**的仍然保留 —— 中鍵貼上是瀏覽器語意、
+  // backNav 是瀏覽器導航，兩者都不是「終端機格子上的滑鼠」，不該送給 PTT。
+  // `move` 也保持 on：座標快取還要繼續更新（term_buf.onMouse_move）。
+  const left = on && !!p.mouseLeftClick && !serverReport;
   return {
     move: on,
+    serverReport: serverReport,
     leftClick: left,
     // 自訂滑鼠指標圖示是「這裡點下去會做什麼」的提示 ⇒ 跟著左鍵開關走。
     cursorIcon: left,
     // 防誤觸也**跟著總開關走**：總開關關掉時左鍵、指標、左側提示帶全滅，沒有任何
     // 誤觸要防（推文列的 pusher 高亮此時退回整列可點＝改版前的行為）。設定頁那顆
     // checkbox 因此能與其他子項一樣 disabled={!useMouseBrowsing}。
-    misclickGuard: on && !!p.mouseMisclickGuard,
+    misclickGuard: on && !!p.mouseMisclickGuard && !serverReport,
     middleClick: on ? Number(p.mouseMiddleClick) || 0 : 0,
-    wheel: on && !!p.mouseWheel,
+    wheel: on && !!p.mouseWheel && !serverReport,
     // 平滑捲動是滾輪的子行為 ⇒ 必須先過滾輪本身這一關（列表好讀模式才有作用）。
-    wheelSmoothScroll: on && !!p.mouseWheel && !!p.mouseWheelSmoothScroll,
+    wheelSmoothScroll:
+      on && !!p.mouseWheel && !!p.mouseWheelSmoothScroll && !serverReport,
     // 瀏覽器的「返回」→ 左方向鍵：觸控板左滑手勢、滑鼠側鍵、Alt+←／⌘[、
     // 工具列上一頁**全都是同一個來源**（一律走 history sentinel，見
     // history_back_guard.js）⇒ 只有一個 pref，不可能單獨開關其中一種。

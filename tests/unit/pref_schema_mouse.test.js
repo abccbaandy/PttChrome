@@ -38,6 +38,11 @@ describe("DEFAULT_PREFS", () => {
     // 0=關閉 1=開啟，預設開是刻意的——那些操作本來就是「上一頁」，不攔的話在
     // BBS 裡隨手一滑就離站（代價寫在 tooltip：要離站得關掉分頁）。
     expect(DEFAULT_PREFS.mouseBackNav).toBe(1);
+    // 2026-09 把滑鼠交給 PTT server（XTerm SGR 回報）。**預設關**，兩個理由都在
+    // server 端可查：PTT 的 UF_MOUSE 使用者旗標預設就是關的，而且 pttbbs 目前
+    // **沒有任何東西消費 KEY_MOUSE** ⇒ 現在開啟等於拿自家滑鼠瀏覽去換一個
+    // server 還不會用的按鍵。翻預設前先確認 pttbbs 已經有消費者。
+    expect(DEFAULT_PREFS.mouseServerReport).toBe(false);
   });
 
   test("底色三兄弟原樣保留（key 刻意不改名，避免兩邊寫遷移）", () => {

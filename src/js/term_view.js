@@ -158,6 +158,9 @@ export function TermView() {
   // mouseBackNav：攔截瀏覽器的「返回」→ 左方向鍵（0 關 1 開）。來源含觸控板
   // 左滑手勢、滑鼠側鍵、Alt+←／⌘[、工具列上一頁，全走同一條 history sentinel。
   this.mouseBackNav = 1;
+  // mouseServerReport：把滑鼠事件回報給 PTT server（XTerm SGR）。預設關，理由見
+  // pref_storage.js。真的要送還得主機自己開了 tracking（buf.mouseReport.isActive()）。
+  this.mouseServerReport = false;
   // 防誤觸模式（pref mouseMisclickGuard，預設開）：可點區＝底色區的起始欄，
   // 決策在 mouse_regions.clickableColStart。
   this.mouseMisclickGuard = true;

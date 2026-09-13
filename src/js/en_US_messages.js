@@ -760,6 +760,12 @@ export const en_US = {
   "tooltip_mouseBackNav": {
     "message": "Turns the browser's Back into PTT's LEFT key: leave the post / go up one level. Covers the two-finger trackpad swipe (which uses the browser's own native back gesture, so the arrow indicator, the follow-along motion and cancelling by letting go mid-swipe all behave exactly like on any other site), the mouse side button, Alt+Left or Cmd+[, and the toolbar Back button. Whether the trackpad gesture works at all depends on your system settings (macOS: Settings → Trackpad → More Gestures → Swipe between pages). To actually leave this site, close the tab, or use Back twice on a screen that has nothing left to exit."
   },
+  "options_mouseServerReport": {
+    "message": "Hand the mouse to PTT"
+  },
+  "tooltip_mouseServerReport": {
+    "message": "Report mouse clicks and wheel events straight to the PTT server using the standard terminal XTerm SGR protocol, letting PTT itself decide what a click does. Turning this on makes this site's own mouse behaviour stand down (click a title to open, left-edge exit, wheel paging, on-screen function-key buttons); selecting text, clicking links and the right-click menu are unaffected. You must first enable MOUSE in PTT's own settings (個人設定區 → 設定使用者資料) before the server asks for reports. Off by default: nothing on PTT actually consumes mouse events yet, so turning it on today just gives up this site's mouse browsing for nothing."
+  },
   "options_mouseBrowsing": {
     "message": "Mouse browsing"
   },

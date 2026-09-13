@@ -155,6 +155,16 @@ export const DEFAULT_PREFS = {
   // 舊 key mouseSwipeHorizontal / mouseBackButton 已刪除且**刻意不做遷移**
   // （readValuesWithDefault 是淺層合併，殘留舊 key 不會污染新 key）。
   mouseBackNav: 1,
+  // 把滑鼠事件回報給 PTT server（XTerm SGR，`ESC[<Cb;Cx;CyM`）。開啟後我們自己
+  // 那套滑鼠瀏覽（點標題開文、左側退出帶、滾輪翻頁、功能鍵按鈕…）整組讓位。
+  //
+  // **預設 false**，兩個理由都在 server 端可查：
+  //   1. PTT 的 UF_MOUSE 使用者旗標預設就是關的（include/uflags.h:22、
+  //      mbbsd/user.c:452-455）⇒ 絕大多數人的主機根本不會開 tracking。
+  //   2. 更關鍵：pttbbs 目前**沒有任何東西消費 KEY_MOUSE**（include/vtkbd.h:130-131；
+  //      只有 mbbsd/io.c:262 把 release 丟成 KEY_INCOMPLETE）⇒ 現在開啟等於拿
+  //      自家滑鼠瀏覽去換一個 server 還不會用的按鍵。等 pttbbs 出現消費者再考慮翻預設。
+  mouseServerReport: false,
 
   // displays
   fontFitWindowWidth: false,

@@ -46,9 +46,14 @@ describe("總開關", () => {
 // 2026-09「點空白處關框」與「複合鍵逐鍵可點」**刻意不開新 pref**（使用者定案 D1）：
 // 前者沿用 leftClick、後者沿用 mouseFunctionKeys。多一顆 checkbox ＝ gating 表／
 // pref schema／設定頁欄位／雲端同步 schema 全部要跟著動，而使用者要關掉時關總開關
-// 就有了。這條鎖住「沒有第八個欄位」。
+// 就有了。這條鎖住欄位數，讓「又多一顆」必須是刻意的決定。
+//
+// 2026-09 新增的第九個 `serverReport` 是例外，且**不是新 checkbox 而已**：
+// 它是「滑鼠已交給 PTT server」這個事實（pref × 主機宣告的 tracking 狀態）的
+// 單一真相源，其餘 gate 反過來讀它來讓位。寫在這裡而不是散在各個入口，
+// 正是這條守護想要的方向。
 describe("D1：關框與複合鍵沿用既有 pref，resolveMouseGates 不得多欄位", () => {
-  test("回傳欄位就是這八個，一個不多", () => {
+  test("回傳欄位就是這九個，一個不多", () => {
     expect(Object.keys(resolveMouseGates(ALL_ON)).sort()).toEqual([
       "backNav",
       "cursorIcon",
@@ -56,6 +61,7 @@ describe("D1：關框與複合鍵沿用既有 pref，resolveMouseGates 不得多
       "middleClick",
       "misclickGuard",
       "move",
+      "serverReport",
       "wheel",
       "wheelSmoothScroll",
     ]);
@@ -153,5 +159,58 @@ describe("滾輪平滑捲動（列表好讀模式）", () => {
     const g = resolveMouseGates({ ...ALL_ON, mouseWheelSmoothScroll: false });
     expect(g.wheel).toBe(true);
     expect(g.wheelSmoothScroll).toBe(false);
+  });
+});
+
+// 2026-09 PTT server 端的滑鼠回報（XTerm SGR）。
+//
+// 仲裁規則只有一條：`serverReport` 為真時，**我們自己發明的滑鼠語意**整組讓位
+// （左鍵開文／退出帶／自訂指標／防誤觸／滾輪翻頁），但**真的是另一個東西**的
+// 仍然保留 —— 中鍵貼上是瀏覽器語意、backNav 是瀏覽器導航，兩者都不是「終端機
+// 格子上的滑鼠」，不該送給 PTT。
+const SERVER_ON = {
+  ...ALL_ON,
+  mouseServerReport: true,
+  serverMouse: true,
+};
+
+describe("serverReport：滑鼠交給 PTT server", () => {
+  test("兩個條件缺一不可（pref × 主機宣告的 tracking 狀態）", () => {
+    expect(resolveMouseGates(ALL_ON).serverReport).toBe(false);
+    expect(
+      resolveMouseGates({ ...ALL_ON, mouseServerReport: true }).serverReport,
+    ).toBe(false); // 主機沒開
+    expect(
+      resolveMouseGates({ ...ALL_ON, serverMouse: true }).serverReport,
+    ).toBe(false); // 使用者沒開
+    expect(resolveMouseGates(SERVER_ON).serverReport).toBe(true);
+  });
+
+  test("接管時我們自己那套滑鼠語意全部讓位", () => {
+    const g = resolveMouseGates(SERVER_ON);
+    expect(g.leftClick).toBe(false);
+    expect(g.cursorIcon).toBe(false);
+    expect(g.misclickGuard).toBe(false);
+    expect(g.wheel).toBe(false);
+    expect(g.wheelSmoothScroll).toBe(false);
+  });
+
+  test("瀏覽器語意的兩項不受影響（中鍵貼上、返回導航）", () => {
+    const g = resolveMouseGates(SERVER_ON);
+    expect(g.middleClick).toBe(1);
+    expect(g.backNav).toBe(1);
+    // 座標快取仍要更新（term_buf.onMouse_move）。
+    expect(g.move).toBe(true);
+  });
+
+  test("總開關關掉時 serverReport 也是 false（總開關管得住全部）", () => {
+    const g = resolveMouseGates({ ...SERVER_ON, useMouseBrowsing: false });
+    expect(g.serverReport).toBe(false);
+  });
+
+  test("pref 關掉後其餘 gate 原樣恢復（沒有殘留副作用）", () => {
+    const off = resolveMouseGates({ ...SERVER_ON, mouseServerReport: false });
+    const base = resolveMouseGates(ALL_ON);
+    expect(off).toEqual(base);
   });
 });

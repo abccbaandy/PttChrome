@@ -11,6 +11,29 @@ AnsiParser.STATE_ESC = 1;
 AnsiParser.STATE_CSI = 2;
 AnsiParser.STATE_C1 = 3;
 
+// DECSET(`h`, set=true) / DECRST(`l`, set=false) 的私有模式分派。
+// 逐個掃 params：`ESC[?1000;1006h` 這種一次設多個模式的形式是合法的（PTT 目前
+// 一條一條送，但別依賴那個）。認不得的模式安靜略過。
+// `term.beginSyncUpdate?.()` 用 optional call：unit test 常餵精簡的 termbuf stub。
+AnsiParser.prototype._decPrivate = function(term, params, set) {
+  for (var i = 0; i < params.length; ++i) {
+    switch (params[i]) {
+    case 2026: // Synchronized Output: BSU / ESU
+      if (set) term.beginSyncUpdate?.();
+      else term.endSyncUpdate?.();
+      break;
+    case 1000: // XTerm mouse tracking: normal（點擊）
+    case 1002: //                       button-event（拖曳）
+    case 1003: //                       any-event（含 hover motion）
+    case 1006: //                       SGR 編碼
+      if (set) term.handleDECSET?.(params[i]);
+      else term.handleDECRST?.(params[i]);
+      break;
+    default: // 其餘一律安靜忽略
+    }
+  }
+};
+
 AnsiParser.prototype.feed = function(data) {
   var term = this.termbuf;
   if (!term)
@@ -34,7 +57,16 @@ AnsiParser.prototype.feed = function(data) {
       }
       break;
     case AnsiParser.STATE_CSI:
-      if ( (ch >= '`' && ch <= 'z') || (ch >= '@' && ch <='Z') ) {
+      // ECMA-48 的 CSI final byte ＝ 0x40..0x7E。fork 原版寫成
+      // (ch >= '`' && ch <= 'z') || (ch >= '@' && ch <= 'Z')，漏掉 0x5B-0x5F
+      // （[ \ ] ^ _）與 0x7B-0x7E（{ | } ~）⇒ 以那九個字元結尾的 CSI **永不終結**，
+      // 後續畫面全被累積進 this.esc，直到某個落在舊範圍的字元「假結束」並被當成
+      // 該序列的指令執行（'H' ⇒ 游標跳原點、'J' ⇒ 清畫面）。一條沒實作的序列
+      // 因此不是安靜的 no-op，而是「畫面從此壞掉」。
+      // PTT 2026-09 起送 DEC private control sequence 並預告還會再加別的，
+      // 公告明說「不用實作內容，只要讀到 sequence 不會壞掉即可」⇒ 範圍必須判對。
+      // 守護：tests/unit/ansi_parser_csi_final.test.js
+      if ( ch >= '@' && ch <= '~' ) {
         // if(ch != 'm')
         //    dump('CSI: ' + this.esc + ch + '\n');
         var params=this.esc.split(';');
@@ -94,7 +126,22 @@ AnsiParser.prototype.feed = function(data) {
         case 'd':
           term.gotoPos(term.cur_x, params[0]>0?params[0]-1:0);
           break;
+        // DECSET / DECRST。目前只認 DEC 2026（Synchronized Output）：
+        // `ESC[?2026h` = BSU（幀開始）、`ESC[?2026l` = ESU（幀結束）。
+        // 其餘 DEC 私有模式（含 PTT 之後會送的滑鼠 1000/1002/1003/1006）一律安靜
+        // 忽略——PTT 公告要求的相容性就是「讀到不會壞掉」，不必實作內容。
+        // 守護：tests/unit/ansi_parser_dec_private.test.js
+        case 'h':
+          if (firstChar == '?') this._decPrivate(term, params, true);
+          break;
+        case 'l':
+          if (firstChar == '?') this._decPrivate(term, params, false);
+          break;
         /*
+        以下 alt-screen（47/1047/1048/1049）與 cursorAppMode（1）是 fork 來的舊碼，
+        **刻意維持註解**：它們讀 `term.view.conn.listener`，那條路在本專案早已不存在
+        （view.conn 只在 App.onConnect 被設，且沒有 listener 這個成員），解開會直接炸。
+        PTT 也從來不送這些序列（pttbbs 全 repo 只吐 2026/1000/1002/1003/1006 十條）。
         case 'h':
           if (firstChar == '?') {
             var mainobj = term.view.conn.listener;

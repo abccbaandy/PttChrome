@@ -24,6 +24,7 @@ import {
   resolveMouseGates
 } from './mouse_regions';
 import { colFromClientX } from './mouse_geometry';
+import { encodeClick, encodeWheel } from './mouse_report';
 import { dismissClickAllowed } from './screen_dismiss';
 import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
 import { serializedOpHint } from './serialized_op_gate';
@@ -354,6 +355,10 @@ App.prototype._attachConn = function(conn) {
 App.prototype.onConnect = function() {
   this.conn.isConnected = true;
   this.view.setConn(this.conn);
+  // 終端機模式（DEC 2026 同步輸出…）是 per-connection 的。TermBuf 一個頁面只建
+  // 一次，所以新連線一定要從乾淨狀態開始，否則上一條連線若斷在一幀中間
+  // （收到 BSU 沒收到 ESU），新連線的畫面會被壓到保險絲才動。
+  this.buf.resetTerminalModes();
   console.info("pttchrome onConnect");
   this.debugRecorder?.log('app.onConnect');
   this.connectState = 1;
@@ -395,6 +400,9 @@ App.prototype.onClose = function() {
     this.timerEverySec.cancel();
   }
   this.conn.isConnected = false;
+  // 見 onConnect：斷線當下就把 per-connection 的終端機模式清掉，別讓卡住的 BSU
+  // 撐到下一條連線。
+  this.buf.resetTerminalModes();
 
   // Connection gone: the list buffer is stale by definition — hard reset to
   // idle/native so the reconnect starts clean.
@@ -1031,6 +1039,18 @@ App.prototype.sendNavKeyAsUser = function(keyName) {
 // 各滑鼠入口的生效與否。總開關（buf.useMouseBrowsing）與四個子開關（view 上的
 // mouseLeftClick / mouseMisclickGuard / mouseMiddleClick / mouseWheel）在純函式
 // resolveMouseGates 匯總，所以「總開關關掉＝中鍵與滾輪也失效」只有一個真相源。
+// 這一幀的畫面是不是「server 的真實 24 列」——只有它成立時，clientToPos 的列號
+// 才與 PTT 端的終端機座標對得起來，回報出去才不會點錯格。
+//
+// 另兩種 render 分支畫的都是我們自己組的虛擬視窗：列表好讀（buffer/frozen）的
+// 列號是 buffer 索引不是螢幕列，文章好讀是一整條長頁、列號會被 clamp。
+// 見 docs/mouse.md「三種 render 分支各由誰處理」。
+App.prototype._serverMouseReportable = function() {
+  if (this.buf.listRenderMode !== 'native') return false;
+  if (this.view.useEasyReadingMode && this.buf.pageState === 3) return false;
+  return true;
+};
+
 App.prototype.mouseGates = function() {
   return resolveMouseGates({
     useMouseBrowsing: this.buf.useMouseBrowsing,
@@ -1039,7 +1059,10 @@ App.prototype.mouseGates = function() {
     mouseMiddleClick: this.view.mouseMiddleClick,
     mouseWheel: this.view.mouseWheel,
     mouseWheelSmoothScroll: this.view.mouseWheelSmoothScroll,
-    mouseBackNav: this.view.mouseBackNav
+    mouseBackNav: this.view.mouseBackNav,
+    // 使用者偏好 × 主機宣告的事實，兩個都要真才會把滑鼠讓給 PTT。
+    mouseServerReport: this.view.mouseServerReport,
+    serverMouse: this.buf.mouseReport.isActive()
   });
 };
 
@@ -1293,6 +1316,14 @@ App.prototype.onPrefChange = function(name, value) {
     case 'mouseBackNav':
       this.view.mouseBackNav = Number(value) || 0;
       break;
+    // 兩份都要寫：view 上那份是 gate 的輸入，mouseReport.enabled 是狀態機自己的
+    // 短路（isActive 的第一個條件）。resetMousePos 讓指標／底色立刻依新 gate 重算，
+    // 否則要等下一次 PTT 寫畫面才看得出「自訂指標消失了」。
+    case 'mouseServerReport':
+      this.view.mouseServerReport = !!value;
+      this.buf.mouseReport.enabled = !!value;
+      this.buf.resetMousePos();
+      break;
     case 'copyOnSelect':
       this.copyOnSelect = value;
       break;
@@ -1497,7 +1528,12 @@ App.prototype.mouse_click = function(e) {
       // 欄位不合時**不 return**，讓下面的滑鼠瀏覽分支接手（＝退出文章）。
       // 屬性缺失（理論上不會，parseComment 命中就一定算得出來）⇒ 0＝整列可點，
       // 方向安全（退回改版前的行為）。
-      var pusherEl = e.target && e.target.closest && e.target.closest('[data-pusher]');
+      // 滑鼠交給 PTT 時**整條 pusher 分支跳過**：它是純裝飾（本地高亮），不該
+      // 吃掉一整片的回報。而且 serverReport 會強制關掉 misclickGuard
+      // ⇒ pusherColStart 退回 0 ⇒ 不跳過的話整個推文區永遠回報不出去。
+      var pusherEl = this.mouseGates().serverReport
+        ? null
+        : (e.target && e.target.closest && e.target.closest('[data-pusher]'));
       if (pusherEl) {
         var pusherColStart = this.mouseGates().misclickGuard
           ? Number(pusherEl.getAttribute('data-pusher-col')) || 0
@@ -1560,6 +1596,30 @@ App.prototype.mouse_click = function(e) {
           else
             clickOwner.onMouseClick(lpos.row, lpos.col);
         }
+        return;
+      }
+      // 滑鼠回報給 PTT server（XTerm SGR）。位置刻意在這裡：
+      //   - 在 closest('a') / 內嵌預覽 / 有選取 / buffer-frozen 分支**之後**
+      //     ⇒ 連結、功能鍵按鈕、預覽圖、選字、列表好讀一律優先，回報不會搶走它們；
+      //   - 在 useMouseBrowsing / mouseLeftClick 分支**之前** ⇒ 我們自己那套滑鼠
+      //     瀏覽讓位（實際上 gates 已經把它們關掉了，這裡是順序上的保險）。
+      // 到得了這裡就一定是 listRenderMode === 'native'（buffer/frozen 上面已 return）
+      // ⇒ 座標與 server 的真實 24 列對得起來。
+      if (this.mouseGates().serverReport && this._serverMouseReportable()) {
+        var mpos = this.clientToPos(e.clientX, e.clientY);
+        this.view._send(encodeClick({
+          button: 0, // click 事件只對主鍵發（非主鍵走 auxclick）
+          col: mpos.col,
+          row: mpos.row,
+          cols: this.buf.cols,
+          rows: this.buf.rows,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey
+        }));
+        e.preventDefault();
+        this.setInputAreaFocus();
         return;
       }
       if (this.mouseGates().leftClick) {
@@ -1758,6 +1818,25 @@ App.prototype.mouse_scroll = function(e) {
   // 只收得到 1–3 個 wheel 事件就被瀏覽器接管。
   if (isHorizontalWheel(e))
     return;
+  // 滑鼠交給 PTT server：滾輪回報成 xterm 的 64（上）／65（下）。
+  // **排在 gates.wheel 之前**——serverReport 為真時 gates.wheel 已被強制關掉，
+  // 放在後面會被上面那行 early return 吃掉。
+  // 水平滾輪不回報（上面已 return）：xterm 的 66/67 我們不實作。
+  if (gates.serverReport && this._serverMouseReportable()) {
+    var wpos = this.clientToPos(e.clientX, e.clientY);
+    this.view._send(encodeWheel({
+      wheel: (e.deltaY < 0 || e.wheelDelta > 0) ? 'up' : 'down',
+      col: wpos.col,
+      row: wpos.row,
+      cols: this.buf.cols,
+      rows: this.buf.rows,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey
+    }));
+    return;
+  }
   if (!gates.wheel)
     return;
   // if in easyreading, use it like webpage

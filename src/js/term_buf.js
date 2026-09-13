@@ -14,6 +14,7 @@ import {
   resolveMouseRegion,
   cursorCss
 } from './mouse_regions';
+import { MouseReportState } from './mouse_report';
 import { resolveDismiss } from './screen_dismiss';
 
 // Quiet period (ms) after the last redraw window before pageState is promoted to
@@ -23,6 +24,13 @@ import { resolveDismiss } from './screen_dismiss';
 // only captures the final stable value once PTT stops sending. See
 // docs/easy-reading.md (settle 後判斷). Tunable; raise if slow links premature-settle.
 const SETTLE_MS = 50;
+
+// DEC 2026 Synchronized Output 的保險絲：收到 BSU（`ESC[?2026h`）卻遲遲等不到
+// ESU（`ESC[?2026l`）時，最多壓住畫面這麼久就強制補畫。會發生的情境是連線中斷在
+// 一幀中間、或 server 端異常。取 250ms 的理由：正常情況下同一幀的位元組塊間隔遠
+// 小於它（一幀被 3072-byte OBUFSIZE 拆開而已），而 CommandQueue 的軟逾時是 3000ms
+// （command_queue.js）⇒ 保險絲永遠先動，不會讓「畫面卡住」惡化成「命令逾時」。
+const SYNC_SAFETY_MS = 250;
 
 const termColors = [
   // dark
@@ -309,6 +317,23 @@ export function TermBuf(cols, rows) {
   // TWICE, and the second (cursor-only, zero content rows) settle must still
   // reach the ListSession/CommandQueue — its screen is the complete response.
   this._settleCursorMoved = false;
+
+  // ---- DEC 2026 Synchronized Output（BSU/ESU）------------------------------
+  // PTT 從 2026-09 起把每個 doupdate() 包在 `ESC[?2026h` … `ESC[?2026l` 之間
+  // （mbbsd/pfterm.c:817-823, 1074-1075）。我們只拿它**擋畫面**（BSU 期間不重繪，
+  // ESU 一到補一次），**不拿它當 settle**——理由見 tests/unit/term_buf_sync_update.js
+  // 開頭與 docs/easy-reading.md：一個 logical page 對應多個 doupdate()，而且
+  // `!ft.dirty` 早退路徑會吐零內容的 BSU/ESU 對，ESU 的常態語意是「server 回去等
+  // 按鍵了」而非「這一頁畫完了」。
+  // 沒收到 2026 的環境（登入畫面、舊 server、其他站台）`inSyncUpdate` 恆 false
+  // ⇒ 下面的 early-return 永不命中 ⇒ 行為與加這段之前逐字相同。
+  this.syncUpdateEnabled = true; // 程式層 kill switch（無 UI；e2e/console 可關）
+  this.inSyncUpdate = false;
+  this._syncSafetyTimer = null;
+
+  // XTerm SGR 滑鼠回報的模式狀態（主機用 ESC[?1000h 這類序列宣告）。
+  // `enabled` 由 pref mouseServerReport 寫入（App.onPrefChange），預設關。
+  this.mouseReport = new MouseReportState();
 
   this.viewBufferTimer = 30;
 
@@ -898,7 +923,61 @@ TermBuf.prototype = {
     }
   },
 
+  // BSU（`ESC[?2026h`）：server 宣告「這一幀我還沒寫完」。壓住重繪直到 ESU。
+  beginSyncUpdate: function() {
+    if (!this.syncUpdateEnabled) return;
+    this.inSyncUpdate = true;
+    // 撤掉已排定的 30ms debounce：不撤的話它會在幀中途醒來畫出半幀，正是這整段
+    // 要修掉的東西。內容不會遺失（changed/posChanged 仍為 true），ESU 會補畫。
+    clearTimeout(this.timerUpdate);
+    this.timerUpdate = null;
+    // 刻意用布林不用巢狀計數：pfterm 的 rawbegin/rawend 嚴格成對且不遞迴
+    // （pfterm.c:817/1075），計數只會讓「掉了一個 ESU」從「這一幀晚 250ms」
+    // 惡化成「永久鎖死」。連續兩個 BSU 只是重新起算保險絲。
+    clearTimeout(this._syncSafetyTimer);
+    this._syncSafetyTimer = setTimeout(() => {
+      this._syncSafetyTimer = null;
+      this.endSyncUpdate();
+    }, SYNC_SAFETY_MS);
+  },
+
+  // ESU（`ESC[?2026l`）：這一幀寫完了，補畫一次。
+  endSyncUpdate: function() {
+    clearTimeout(this._syncSafetyTimer);
+    this._syncSafetyTimer = null;
+    if (!this.inSyncUpdate) return; // 落單的 ESU（例如重連收到後半句）＝ no-op
+    this.inSyncUpdate = false;
+    // 零內容的 sync frame（pfterm 的 !ft.dirty 早退路徑，PTT 每次回去等按鍵都會
+    // 送一對）不該產生任何重繪 ⇒ 只有真的有東西變才補。
+    if (this.changed || this.posChanged) this.queueUpdate(true);
+  },
+
+  // 連線層級的終端機模式重設。TermBuf/AnsiParser 一個頁面只建一次（pttchrome.jsx），
+  // onClose 只重建 conn ⇒ 這些跨連線的狀態必須顯式清掉，否則上一條連線斷在一幀
+  // 中間就會讓新連線的畫面一直被壓住。
+  resetTerminalModes: function() {
+    clearTimeout(this._syncSafetyTimer);
+    this._syncSafetyTimer = null;
+    this.inSyncUpdate = false;
+    this.mouseReport.reset();
+  },
+
+  // AnsiParser 的 DECSET/DECRST 轉發（`ESC[?1000h` 這類）。
+  handleDECSET: function(mode) {
+    this.mouseReport.handleDECSET(mode);
+  },
+
+  handleDECRST: function(mode) {
+    this.mouseReport.handleDECRST(mode);
+  },
+
   queueUpdate: function(directupdate) {
+    // BSU 期間不排重繪。注意這道閘門刻意放在 queueUpdate 而**不是** notify：
+    // queueUpdate 是所有 server 寫入路徑的共同出口，而 notify() 另有本地重繪的
+    // 直呼者（easy_reading / list_session / board_list_session 的 _forceRepaint
+    // 系列）——本地重繪不可以被 server 的 BSU 擋住。
+    if (this.inSyncUpdate)
+      return;
     if (this.timerUpdate)
       return;
 
@@ -1356,7 +1435,12 @@ TermBuf.prototype = {
       inputPrompt: this.isCursorOnInputField(),
       // 框開著（pressanykey／vmsg／輸入欄）⇒ 整片是「點空白處關框」的目標，
       // 只換指標。**送鍵不在這條路上**（見 App.mouse_click 的說明）。
-      dismiss: this.dismissTarget()
+      dismiss: this.dismissTarget(),
+      // 滑鼠已交給 PTT ⇒ 整個畫面沒有任何我們自己的滑鼠語意（排在最前面的早退）。
+      serverMouse: !!(
+        this.mouseReport.isActive() &&
+        this.view && this.view.mouseServerReport
+      )
     });
   },
 

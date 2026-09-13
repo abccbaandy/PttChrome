@@ -1008,6 +1008,24 @@ export const PrefModal = ({
                   {i18n("tooltip_mouseBackNav")}
                 </Text>
               </fieldset>
+              {/* 把滑鼠交給 PTT server（XTerm SGR 回報）。開啟後上面所有「我們自己
+                  的」滑鼠行為整組讓位 ⇒ 放在最後、獨立一個 fieldset。
+                  預設關的兩個理由見 pref_storage.js（PTT 的 UF_MOUSE 預設關，且
+                  pttbbs 目前沒有任何東西消費 KEY_MOUSE）。 */}
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_mouseServerReport")}</legend>
+                <PrefCheckbox
+                  name="mouseServerReport"
+                  checked={values.mouseServerReport}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_mouseServerReport")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_mouseServerReport")}
+                </Text>
+              </fieldset>
             </Tabs.Panel>
             <Tabs.Panel value="connection">
               <fieldset className="PrefModal__Grid__Col--right__Fieldset">

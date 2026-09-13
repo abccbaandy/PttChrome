@@ -61,6 +61,49 @@ source 裡的 `ANSI_COLOR(...)` 字面。實例見 §9 水球。
   `redrawwin()` 在 pfterm ＝ flippage + clrscr + `fterm_rawclear()` + markdirty。
 - 滾動 |scrollcnt| ≥ t_lines-3 也退化成全屏重繪（screen.c doupdate 開頭；pfterm 有對應的 scroll 最佳化）。
 
+## 1.1 DEC 私有序列（2026-09 新增，全部 CONFIRMED）
+
+PTT 公告 2026-09-08 預告、約 09-20 上線。**server 吐的 DEC 私有序列全集只有下列十條**
+（`grep -rn '"\[?' 3rd_script/pttbbs` 的全部結果）：`?2026h/l`、`?1000h/l`、`?1002h/l`、
+`?1003h/l`、`?1006h/l`。沒有 `?25`（游標顯示）、`?1049`（alt screen）、`?7`（autowrap）。
+
+### Synchronized Output（DEC 2026 / BSU・ESU）
+
+| 事實 | 出處 |
+|---|---|
+| `DEC_SYNC_BEGIN` = `ESC [ ? 2 0 2 6 h`、`DEC_SYNC_END` = `ESC [ ? 2 0 2 6 l`（source 寫成 `ESC_STR "[?2026h"`） | `mbbsd/pfterm.c:53-54`（commit `961c6239`） |
+| 包住**整個 `doupdate()`**：首行 `fterm_rawbegin()`、尾端 `fterm_rawcursor(); fterm_rawend();` | `pfterm.c:817-823, 1074-1075` |
+| **`!ft.dirty` 早退路徑也吐完整 BSU/ESU 對** ⇒ 存在**零內容 sync frame** | `pfterm.c:824-829` |
+| 游標 park 被刻意移進 sync block 內、ESU 之前；`fterm_rawflush()` 從 `rawcursor` 移到 `rawend` ⇒ **每幀 flush 次數不變** | `pfterm.c:2164-2176, 2259-2264` |
+| 登入畫面不送（`do_term_init` 在 `oklogin` 之後） | `mbbsd/mbbsd.c:1548-1554` |
+
+**最重要的一條推論：ESU 不是「一頁」的邊界。**
+`refresh()` 在 mbbsd 被呼叫 51 處，而且 `dogetch()` 每次回去等按鍵前都會再叫一次
+（`mbbsd/io.c:451-452` 的 `while (vbuf_is_empty(pvin)) { refresh(); … }`）⇒ **一個 logical page
+對應多個 `doupdate()`**，而且其中很多是零內容的。ESU 的常態語意是「server 回去等鍵了」。
+⇒ client 可以拿它**擋畫面**（防撕裂），**不可以**拿它當 settle（會把 `command_queue` 的
+expect 餘掉）。本專案的實作見 `term_buf.js#beginSyncUpdate` 與 `docs/easy-reading.md`。
+
+### 滑鼠回報協定（XTerm SGR）
+
+| 事實 | 出處 |
+|---|---|
+| 三種模式的實際字串：CLICK=`?1003l?1000h?1006h`、DRAG=`?1003l?1002h?1006h`、TRACK=`?1003h?1006h`、關閉=`?1000l?1002l?1003l?1006l` | `mbbsd/term.c:79-118`（commit `f0e6df74`） |
+| `term_init()` **無條件**呼叫 `term_enable_mouse(MOUSE_MODE_CLICK)` ⇒ 沒有 `UF_MOUSE` 的人收到**關閉四連** ⇒ **每個 session 都會收到 DEC 序列** | `term.c:136` |
+| `UF_MOUSE`（`0x00004000`）**預設關**，設定項「MOUSE 啟用滑鼠支援」 | `include/uflags.h:22`、`mbbsd/user.c:452-455`（commit `5b41008d`） |
+| 改設定後會重送 | `mbbsd/mbbsd.c:527`、`mbbsd/user.c:552` |
+| 入站解析**只認 SGR**（`csi_prefix == '<'`），且**不看 `UF_MOUSE`** ⇒ 只要 client 送，server 一定當按鍵收 | `common/sys/vtkbd.c:299-326` |
+| `KEY_MOUSE`(0x0501) **目前沒有任何消費者**；只有 `KEY_MOUSE_RELEASE` 在 `io.c:262` 被丟成 `KEY_INCOMPLETE` | `include/vtkbd.h:130-131` |
+| 任何非 `KEY_INCOMPLETE` 的鍵會更新 `currutmp->lastact` ⇒ **若實作 1003 motion 回報，使用者永不 idle** | `mbbsd/io.c:231-240` |
+
+⇒ client 實作回報時的三條：預設關、只實作 1000+1006（**不送 motion**）、
+`sgr` 初值必須是 false。實作見 `src/js/mouse_report.js`。
+
+### 連線底層換 NIOS
+
+`68fc0976 refactor(io): Unify io.c and nios.c` —— **純 server 端 I/O 重構，無 wire 協定改變**，
+只有時序／緩衝特性可能不同。client 無需針對它做任何事。
+
 ## 2. 時序不變量 → client 三推論
 
 | 不變量 | 出處 |
@@ -680,7 +723,7 @@ server 送的是編碼後的 ANSI，client 看不到 flag，只看得到結果�
 | P5 | footer part3 **會整段不印**，兩層來源：`mf_display_footer` 印完 part2 後 `if (avail <= 0) return;`（連 footer_handler 都不呼叫）；`common_pmore_footer_handler` 最後 `else while (width-- > w) outc(' ');`（連 VERYSHORT 都塞不下）。觸發條件＝part1+part2 太寬（多位數頁碼／六位數行號／xpos 的「顯示範圍」分支） | `pmore.c#mf_display_footer`、`more.c`(461) |
 | P6 | 每次回應結尾游標 park 在 `(rows-1, cols-1)`；footer 是 **per-cell patch**（實錄 `ESC[24;11H3 ESC[24;37H44~66 ESC[24;80H`）⇒ **半畫幀的 footer 是上一頁的舊值**，游標也還沒 park | `pfterm.c#fterm_rawcursor`(2144)、`tests/e2e/cassettes/stock-end.json` step2 |
 | P7 | **goto-line 是確定性的絕對定位**：`:` → `pageMode = (ch != ':') == 0` → `getdata_buf(b_lines-1, 0, PMORE_MSG_GOTO_LINE「跳至第幾行: 」, buf, 8, DOECHO)` → `i = atoi(buf)` → `if (i-- > 0) mf_goto(i)` → `mf.disps = mf.start; mf.lineno = 0; mf_forward(N-1)` ⇒ 送 `:N\r` 後 **footer 的 `S` 恰為 N**（超過末頁被 `maxdisps` 夾住只會更小）。`;` 與 `1`-`9` 走**頁**模式。輸入緩衝 **8 bytes**。prompt 期間底部列是 `跳至第幾行: `，**不匹配 footer 格式** | `pmore.c` goto 區塊（`case '1'..'9'/';'/':'`）、`mf_goto`(1067)、`PMORE_MSG_GOTO_LINE`(147) |
-| P8 | **畫面沒變就零 bytes**：`refresh` 走 `doupdate` 逐 cell diff，結尾 `fterm_rawcursor` → `fterm_rawmove_opt`（已在該位置則不輸出）⇒ **已在第 1 行時再送 Home（`mf_goTop`）可能完全沒有回應**。任何以 Home 當 request/response 交易的路徑都要先確認 `S > 1` | `pfterm.c#doupdate`／`fterm_rawmove_opt`、`mf_goTop`(1046) |
+| P8 | **畫面沒變就零「畫面回應」**：`refresh` 走 `doupdate` 逐 cell diff，結尾 `fterm_rawcursor` → `fterm_rawmove_opt`（已在該位置則不輸出）⇒ **已在第 1 行時再送 Home（`mf_goTop`）可能完全沒有回應**。任何以 Home 當 request/response 交易的路徑都要先確認 `S > 1`。**2026-09 修訂：不再是「零 bytes」** —— DEC 2026 同步輸出讓每個 `doupdate()` 都吐一對 `ESC[?2026h/l`（連 `!ft.dirty` 早退路徑也吐，見 §1.1）⇒ 線上固定 16 bytes。但那兩條序列在 client 端不寫任何一格、不動游標 ⇒ **不 re-arm settle timer**，所以所有建立在這條上的 client 推論（「零回應只能等 timeout」⇒ `fullRepaint: true` 附 `\f`）**結論不變**。判準要改用「有沒有 settle」而不是「有沒有 byte」 | `pfterm.c#doupdate`／`fterm_rawmove_opt`、`mf_goTop`(1046)；§1.1 |
 
 client 端推論（改這段 code 前先讀）：
 
