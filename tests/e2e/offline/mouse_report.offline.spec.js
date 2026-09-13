@@ -148,23 +148,10 @@ test.describe('滑鼠回報給 PTT server（離線重放）', () => {
     expect(await takeCapture(page)).toContain('\x1b[<64;');
   });
 
-  // CLAUDE.md 硬規則：系統／瀏覽器的原生行為不准模擬也不准擋掉。
-  test('原生行為不受影響：選字仍然選得到，且選取狀態下不回報', async ({ page }) => {
-    test.setTimeout(90000);
-    await feedRaw(page, ENABLE_CLICK);
-
-    const a = await cellXY(page, 20, 5);
-    const b = await cellXY(page, 40, 5);
-    await page.mouse.move(a.x, a.y);
-    await page.mouse.down();
-    await page.mouse.move(b.x, b.y, { steps: 8 });
-    await page.mouse.up();
-    await page.waitForTimeout(100);
-
-    const sel = await page.evaluate(() => window.getSelection().toString());
-    expect(sel.length).toBeGreaterThan(0); // 選取沒有被吃掉
-  });
-
+  // 「選字仍然正常」那條**刻意不放在這裡**：拖曳任意格子座標會因為那片剛好是
+  // 空白、或列節點在拖曳途中被重繪而靜默退化成空選取（實測本機 3 次紅 1 次、
+  // CI 紅一次）。選字類斷言一律用 selection.offline.spec.js 的 sentinel word +
+  // wordRect 技法，那裡也同時跑 firefox。見該檔「滑鼠回報開啟時：選字仍然正常」。
   test('原生行為不受影響：右鍵仍然叫得出本站選單，且不回報', async ({ page }) => {
     test.setTimeout(90000);
     await feedRaw(page, ENABLE_CLICK);

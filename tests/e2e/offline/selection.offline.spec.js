@@ -178,6 +178,42 @@ test.describe('選取文字（offline）', () => {
     expect(info.text).toContain('omega');
   });
 
+  // 2026-09 XTerm SGR 滑鼠回報：把滑鼠交給 PTT server 之後，原生選字**仍然要能用**
+  // （CLAUDE.md 硬規則：系統／瀏覽器的原生行為不准模擬也不准擋掉）。
+  //
+  // 這條的設計刻意「不新增任何 mousedown/mouseup/auxclick listener、不新增
+  // preventDefault」，回報只掛在既有的 click handler 上、且排在
+  // `getSelection().isCollapsed` 那道守門之後 ⇒ 有選取時一個 byte 都不會送。
+  // 放在本檔而不是 mouse_report.offline.spec.js：選字類斷言必須用這裡的
+  // sentinel word + wordRect 技法才嚴謹（拖曳任意格子座標會因為那片剛好是空白、
+  // 或列節點被重繪而靜默退化成空選取），而且本檔同時跑 chromium 與 firefox。
+  test('滑鼠回報開啟時：選字仍然正常，且不送任何回報', async ({ page }) => {
+    await boot(page, { useMouseBrowsing: true, mouseServerReport: true });
+    // 主機宣告要滑鼠回報（mbbsd/term.c 的 MOUSE_MODE_CLICK 實際字串）。
+    await feedRaw(page, '\x1b[?1003l\x1b[?1000h\x1b[?1006h');
+    expect(
+      await page.evaluate(() => window.__app.buf.mouseReport.isActive())
+    ).toBe(true);
+
+    await feedLine(page, WORD);
+    await page.evaluate(() => {
+      window.__sentLog = [];
+      window.__stubWSSent = (s) => window.__sentLog.push(s);
+    });
+
+    await dragSelect(page, await wordRect(page, WORD));
+
+    const info = await probe(page);
+    expect(info, `拖曳後的選取狀態: ${JSON.stringify(info)}`).toMatchObject({
+      isCollapsed: false,
+    });
+    expect(info.text).toContain(WORD); // 選到的就是那個字，不是「非空就算過」
+    // 有選取 ⇒ 優先權表第 6 條先擋下，回報一個 byte 都不送。
+    expect(
+      await page.evaluate(() => (window.__sentLog || []).join(''))
+    ).not.toContain('\x1b[<');
+  });
+
   test('拖曳選取後右鍵：快速搜尋帶入選取內容', async ({ page }) => {
     await boot(page);
     await feedLine(page, WORD);
