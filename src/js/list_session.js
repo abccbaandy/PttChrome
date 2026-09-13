@@ -36,7 +36,7 @@ import {
   ansiHalfColorConv,
   normalizePasteText
 } from './string_util';
-import { keyEventToBytes } from './term_keyboard';
+import { keyEventToBytes, altRemapCharCode } from './term_keyboard';
 import {
   topPosFromScrollTop,
   anchorScrollTop,
@@ -1215,7 +1215,16 @@ ListSession.prototype = {
         !e.metaKey &&
         ['c', 'a', 'v', 'x'].indexOf((e.key || '').toLowerCase()) !== -1) ||
       (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Insert');
-    if (clipboard || e.altKey || e.metaKey) return;
+    // Alt 重映射鍵（Alt+R/T/W/V ＝ ^R/^T/^W/^V，term_keyboard.altRemapCharCode）是
+    // **本 app 自己造的送鍵入口**（為避開瀏覽器的 Ctrl+R/T/W 快捷鍵），不是瀏覽器
+    // 快捷鍵 ⇒ 與 Ctrl 組合同級，必須走 passthrough 的 sync 腿。read.c:957 的
+    // Ctrl('T') TagThread 就是對真游標那一列動作的。其餘 Alt/Meta 組合才是瀏覽器
+    // 的，維持放行。判定條件與 TermKeyboard._onKeyDown 的 alt 分支對齊
+    //（!ctrl && alt && !shift），否則兩條路徑會漂移：這裡接手了、原生那邊卻不送
+    // ＝按鍵變啞巴。
+    const altRemap =
+      e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey ? altRemapCharCode(e) : null;
+    if (clipboard || (e.altKey && altRemap === null) || e.metaKey) return;
 
     if (this.state === 'opening') {
       // Serialized open in flight: swallow everything (sub-second; the open
@@ -1238,6 +1247,15 @@ ListSession.prototype = {
       return;
     }
     if (this.state !== 'active') return;
+
+    if (altRemap !== null) {
+      // _classifyKey 走不到：keyEventToBytes 對 altKey 一律回 null ⇒ 會被判成
+      // 'ignore'（吞掉、零 server），所以這裡自己攔。刻意排在 state gate **之後**：
+      // opening／frozen 期間與其他鍵一樣被吞掉並給提示，別跟序列化交易搶線路。
+      e.preventDefault();
+      this._beginPassthroughBytes(String.fromCharCode(altRemap));
+      return;
+    }
 
     const key = this._classifyKey(e);
     if (key.class === 'ignore') {
@@ -1291,19 +1309,32 @@ ListSession.prototype = {
   // key goes out raw only after the jump's park settle. While the leg is on
   // the wire the reducer already sits in functionMode (keyClass 'passthrough')
   // over the frozen snapshot — other keys are swallowed with a hint.
-  // Ctrl combos are NOT resent: no sync (can't serialize a key we don't own),
-  // immediate mirror switch, and the event is left un-defaulted so the native
-  // keyboard path sends this very press. Keys that map to NO bytes never get
-  // here at all — _classifyKey turns them into 'ignore' (they would take the
-  // same branch and hand over to a native path that also sends nothing).
+  //
+  // **Ctrl 組合一樣代送**（2026-09-13 修「查詢作者跑去別篇」）：舊碼寫死
+  // `e.ctrlKey ? null : ...`，把所有 Ctrl 組合推進下面的 bytes == null 分支，而那條
+  // 分支不經過 _beginPassthroughBytes ⇒ **跳過 sync 腿**。read.c:904 的 Ctrl('Q') 是
+  // `my_query(headers[crs_ln - top_ln].owner)`，對**真游標那一列**動作；好讀列表的
+  // T1 導覽零網路，真游標通常停在背景 prefetch 的落點 ⇒ 查到別人，退出後選取也被
+  // re-seed 帶走（錄製檔 ptt-debug-20260913-184532#t=5926 裸送 ^Q、#t=5940 是別人的
+  // my_query）。同類 cursor-relative 鍵：read.c Ctrl-S/T/D。keyEventToBytes 的
+  // ctrlKey 分支本來就算得出 bytes（CtrlShiftMap），舊註解「can't serialize a key we
+  // don't own」的前提早就不成立了。
+  //
+  // Keys that map to NO bytes never get here at all — _classifyKey turns them into
+  // 'ignore' (they would take the same branch and hand over to a native path that
+  // also sends nothing).
   _beginNativePassthrough: function(e) {
-    let bytes = e.ctrlKey ? null : keyEventToBytes(e);
+    let bytes = keyEventToBytes(e);
     // A printable non-ASCII char must go out as Big5 (raw UTF-16 = mojibake).
-    if (bytes && bytes.length === 1 && bytes.charCodeAt(0) > 127) bytes = u2b(bytes);
+    // **Ctrl 組合一律不過 u2b**：CtrlShiftMap 的 `[`/`\`/`]` 是 219/220/221（upstream
+    // 拿 keyCode 當 char code 的老 bug，本次不修），都 > 127 ⇒ 過 u2b 會被當成 Unicode
+    // 字元做 Big5 轉碼，送出跟原生鍵盤路徑不一樣的 byte。
+    if (!e.ctrlKey && bytes && bytes.length === 1 && bytes.charCodeAt(0) > 127)
+      bytes = u2b(bytes);
     if (bytes == null) {
-      // Ctrl combo (only case left — see header): not resendable, so switch the
-      // mirror now; the un-prevented event reaches the native keyboard handlers
-      // right after this hook returns and they send it.
+      // 現在只剩 Ctrl+Shift 組合、以及 Ctrl+數字／Ctrl+F1 這種 CtrlShiftMap 沒對應的
+      // 鍵：算不出 bytes 就沒得序列化代送，只能立刻切鏡像，事件不 preventDefault ⇒
+      // 原生鍵盤路徑緊接著處理這一次按鍵（對它們多半也是不送）。
       const r0 = transitionListSession(this.state, { type: 'key', keyClass: 'passthrough' });
       this.state = r0.next;
       this._enterFunctionMode();

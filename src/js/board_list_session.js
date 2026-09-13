@@ -49,7 +49,7 @@ import {
   BRD_CMD_PREFIX,
   isBoardListCommandKind
 } from './list_render_owner';
-import { keyEventToBytes } from './term_keyboard';
+import { keyEventToBytes, altRemapCharCode } from './term_keyboard';
 import { u2b, ansiHalfColorConv, normalizePasteText } from './string_util';
 import { clickableColStart } from './mouse_regions';
 import { LEFT_ARROW } from './function_key_plan';
@@ -532,13 +532,28 @@ BoardListSession.prototype = {
         !e.metaKey &&
         ['c', 'a', 'v', 'x'].indexOf((e.key || '').toLowerCase()) !== -1) ||
       (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Insert');
-    if (clipboard || e.altKey || e.metaKey) return;
+    // Alt 重映射鍵（Alt+R/T/W/V ＝ ^R/^T/^W/^V）是**本 app 自己造的送鍵入口**，不是
+    // 瀏覽器快捷鍵 ⇒ 與 Ctrl 組合同級，必須走 passthrough 的 sync 腿（Alt+W ＝
+    // board.c:1731 Ctrl('W')）。其餘 Alt/Meta 組合才是瀏覽器的，維持放行。條件與
+    // TermKeyboard._onKeyDown 的 alt 分支對齊（!ctrl && alt && !shift），否則兩條路徑
+    // 會漂移。同 list_session.onKeyDown。
+    const altRemap =
+      e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey ? altRemapCharCode(e) : null;
+    if (clipboard || (e.altKey && altRemap === null) || e.metaKey) return;
 
     if (this._busyHint()) {
       e.preventDefault();
       return;
     }
     if (this.state !== 'active') return;
+
+    if (altRemap !== null) {
+      // _classifyKey 走不到：keyEventToBytes 對 altKey 一律回 null ⇒ 判成 'ignore'。
+      // 排在 state gate 之後：交易在飛時與其他鍵一樣被吞掉並給提示。
+      e.preventDefault();
+      this._beginPassthroughBytes(String.fromCharCode(altRemap));
+      return;
+    }
 
     const key = this._classifyKey(e);
     if (key.class === 'ignore') return; // 不 preventDefault：F12／CapsLock 歸瀏覽器
@@ -688,12 +703,20 @@ BoardListSession.prototype = {
 
   // ---- passthrough（非白名單鍵＝一鍵切原生＋代送）------------------------------
 
+  // **Ctrl 組合一樣代送**（2026-09-13）：舊碼寫死 `e.ctrlKey ? null : ...`，把 Ctrl
+  // 組合推進下面的 bytes == null 分支，而那條分支不經過 _beginPassthroughBytes ⇒
+  // **跳過 sync 腿**。board.c 有一整組對真游標那列動作的 Ctrl 鍵（:1890 Ctrl('S')、
+  // :2044 Ctrl('T')），本地導覽零網路 ⇒ server 對錯的那列動作。理由與實證同
+  // list_session._beginNativePassthrough 的標頭。
   _beginNativePassthrough: function(e) {
-    let bytes = e.ctrlKey ? null : keyEventToBytes(e);
-    if (bytes && bytes.length === 1 && bytes.charCodeAt(0) > 127) bytes = u2b(bytes);
+    let bytes = keyEventToBytes(e);
+    // **Ctrl 組合一律不過 u2b**：CtrlShiftMap 的 `[`/`\`/`]` 是 219/220/221，過 u2b
+    // 會被當成 Unicode 字元做 Big5 轉碼 ⇒ 與原生鍵盤路徑送出不同的 byte。
+    if (!e.ctrlKey && bytes && bytes.length === 1 && bytes.charCodeAt(0) > 127)
+      bytes = u2b(bytes);
     if (bytes == null) {
-      // Ctrl 組合：沒辦法序列化代送（我們不擁有這個鍵）。立刻切鏡像，事件不
-      // preventDefault ⇒ 原生鍵盤路徑緊接著會把它送出去。
+      // 只剩 Ctrl+Shift、以及 CtrlShiftMap 沒對應的 Ctrl 組合：算不出 bytes 就沒得
+      // 序列化代送。立刻切鏡像，事件不 preventDefault ⇒ 原生鍵盤路徑緊接著處理。
       const r = transitionBoardListSession(this.state, {
         type: 'key',
         keyClass: 'passthrough'

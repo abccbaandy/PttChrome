@@ -850,3 +850,39 @@ underline** ⇒ reverse 更早就被攤平成 fg/bg 互換），所以擦除條�
   停在置底列**之前**。要「跳到末頁」就該用原生 End。
 - **游標已經在落點上時 PTT 一個 byte 都不送**（live-tested）。這正是舊 client 繞去跳號的理由，
   現在由 §6 的 `\f` 解決：交易送「鍵 ＋ Ctrl-L」，igetch 的全域熱鍵保證回一個完整幀。
+
+## 11.7 吃「真游標那一列」的 Ctrl 鍵（2026-09-13 CONFIRMED @ read.c / board.c）
+
+列表好讀的本地導覽（T1）是零網路的，**server 的真實游標長期落後選取**（通常停在背景
+prefetch 的落點）。所以任何「對游標所在那一列動作」的鍵，代送前一定要先跑
+`native-sync-jump` 腿。判準是**這個鍵會不會吃真游標**，不是「它是不是 Ctrl」——
+下面這張表就是查詢入口，新增鍵時先在這裡對一次，別靠猜。
+
+### 文章列表（`mbbsd/read.c#i_read_key`）
+
+| 鍵 | 行 | 實作 | 吃真游標？ |
+|---|---|---|---|
+| `Ctrl-Q` | :904 | `my_query(headers[locmem->crs_ln - locmem->top_ln].owner)` | **是**（查詢作者） |
+| `Ctrl-S` | :911 | `getuser(headers[crs_ln - top_ln].owner, &muser)` | **是**（使用者設定，需 `PERM_ACCOUNTS`） |
+| `Ctrl-T` | :957 | `TagThread(currdirect)`（註解自承 copy from `case 't'`） | **是** |
+| `Ctrl-D` | :970 | `TagPruner(bid)`；`MODE_SELECT` 下拒絕 | **是** |
+| `Ctrl-C` | :950 | `ClearTagList()`（全域） | 否，但 FULLUPDATE 只重畫當前頁 ⇒ 緩衝其他頁 tag 殘留，歸 T3-B |
+| `Ctrl-F` / `Ctrl-B` | :880 / :886 | 翻頁同義鍵 | 否（刻意不納白名單，維持與瀏覽器快捷鍵的分界） |
+
+### 看板列表（`mbbsd/board.c`）
+
+| 鍵 | 行 | 實作 | 吃真游標？ |
+|---|---|---|---|
+| `Ctrl-S` | :1890 | 看板設定 | **是** |
+| `Ctrl-T` | :2044 | `fav_remove_all_tag()` | 否（sync 無害，照走同一條序列） |
+| `Ctrl-W` | :1731 | `whereami()` | 否 |
+| `Ctrl-P` | :2050 | `paste_taged_brds(class_bid)` | 否 |
+
+### 連帶：Alt 重映射鍵
+
+`Alt+R/T/W/V` 是**本 app 自己造的送鍵入口**（為避開瀏覽器的 Ctrl+R/T/W 快捷鍵，見
+`term_keyboard.altRemapCharCode`），送出的就是 `^R/^T/^W/^V` ⇒ 語意上與上表同一格。
+`Alt+T` 在文章列表就是 `read.c:957` 的 `Ctrl('T')`。
+
+**2026-09-13 之前這兩類鍵都跳過 sync 腿**（症狀：搜尋作者後按 `Ctrl-Q` 查到別人，按 `←`
+退出後選取也跟著跑掉）。根因、守則與守護測試見 `docs/easy-reading-list.md` 不變量 12。

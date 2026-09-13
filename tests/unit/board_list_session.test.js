@@ -1182,3 +1182,66 @@ describe("suspended：外部序列化導覽不得動我們的緩衝", () => {
     expect(h.s._topNum).toBe(21);
   });
 });
+
+// ---------------------------------------------------------------------------
+
+// 與 list_keys.test.js 檔末那組對稱（2026-09-13 回報「查詢作者會跑去其它文章」，
+// 錄製檔 ptt-debug-20260913-184532）。舊碼兩處把鍵擋在 passthrough 序列之外，因而
+// **跳過 native-sync-jump 腿**：
+//   1. _beginNativePassthrough 開頭寫死 `e.ctrlKey ? null : keyEventToBytes(e)`；
+//   2. onKeyDown 開頭 `if (clipboard || e.altKey || e.metaKey) return;` 把 Alt 重映射
+//      鍵（Alt+R/T/W/V ＝ ^R/^T/^W/^V）整個 early-return 掉 —— 連原生鏡像都不切。
+// 看板列表這邊的 cursor-relative Ctrl 鍵見 board.c:1890 Ctrl('S')、:2044 Ctrl('T')；
+// Alt+W ＝ board.c:1731 Ctrl('W') whereami。
+describe("cursor-relative Ctrl／Alt 組合鍵先同步真游標（2026-09-13）", () => {
+  function ready({ selected = 7, server = 1 } = {}) {
+    const ctx = makeSession();
+    ctx.termBuf.feed(brdScreenRows());
+    seedBuffer(ctx.termBuf, 1, 20);
+    ctx.s._selectedNum = selected;
+    ctx.s._serverNum = server;
+    return ctx;
+  }
+
+  test("Ctrl-S → 先 native-sync-jump，落地後才代送 \\x13", () => {
+    const { s, enqueued } = ready();
+    const e = keyEvent("s", { ctrlKey: true });
+    s.onKeyDown(e);
+
+    expect(e.defaultPrevented).toBe(true); // 代送模式：原事件不放行
+    expect(enqueued[0].kind).toBe(BRD_CMD_PREFIX + "native-sync-jump");
+    expect(enqueued[0].keys).toBe("7\r");
+    enqueued[0].onDone();
+    expect(enqueued[1].kind).toBe(BRD_CMD_PREFIX + "native-key");
+    expect(enqueued[1].keys).toBe("\x13");
+    expect(enqueued[1].fullRepaint).toBe(true);
+  });
+
+  test("Ctrl 組合的 bytes 不得過 u2b：Ctrl-] 送 charCode 221", () => {
+    const { s, enqueued } = ready({ selected: 7, server: 7 });
+    s.onKeyDown(keyEvent("]", { ctrlKey: true }));
+    expect(enqueued.length).toBe(1);
+    expect(enqueued[0].keys).toBe(String.fromCharCode(221));
+  });
+
+  test("Alt 重映射鍵 Alt-W（＝^W whereami，board.c:1731）走 sync → 代送", () => {
+    const { s, enqueued } = ready();
+    const e = keyEvent("w", { altKey: true });
+    s.onKeyDown(e);
+
+    expect(e.defaultPrevented).toBe(true);
+    expect(enqueued[0].kind).toBe(BRD_CMD_PREFIX + "native-sync-jump");
+    enqueued[0].onDone();
+    expect(enqueued[1].keys).toBe("\x17"); // ^W
+    expect(s._renderMode).toBe("native");
+  });
+
+  test("反向守護：非 remap 的 Alt 組合（Alt-F）仍整個放行給瀏覽器", () => {
+    const { s, enqueued } = ready();
+    const e = keyEvent("f", { altKey: true });
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(false);
+    expect(s.state).toBe("active");
+    expect(enqueued).toEqual([]);
+  });
+});

@@ -237,7 +237,10 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 （board.c:1802/1871）。三者都不開 prompt、不換編號空間 ⇒ 走**凍結交易**（`native-inplace`），
 全程看不到原生。**`*`（tag all）刻意不在此組**：它一次翻掉整份清單的 tag 標記，緩衝裡其他頁會殘留
 舊標記 ⇒ 歸 passthrough（切原生，回來整份重建）。
-Ctrl 組合與其餘一切 → passthrough（切原生鏡像＋代送），操作完成、畫面靜下來 250ms 後由**靜置探針**
+Ctrl 組合、Alt 重映射鍵（Alt+R/T/W/V ＝ `^R/^T/^W/^V`）與其餘一切 → passthrough（**有序號選取且真游標
+落後時先 `native-sync-jump`**，再切原生鏡像＋代送）。Ctrl/Alt 這兩類 2026-09-13 前被擋在序列之外因而跳過
+同步腿，而 board.c 有一整組吃真游標的鍵（`:1890 Ctrl-S`、`:2044 Ctrl-T`、`:1731 Ctrl-W`）——根因與守則見
+`docs/easy-reading-list.md` 不變量 12。操作完成、畫面靜下來 250ms 後由**靜置探針**
 自動重新 engage（pref `enableListNativeAutoResume`，預設開；關掉＝停在原生，進板／回上層才恢復）。
 探針的三個條件與時鐘來源與文章列表完全相同，見 `docs/easy-reading-list.md`「靜置探針」節。
 送不出 byte 的鍵（F1/CapsLock…）→ `ignore`，判準是 `keyEventToBytes(e) == null` 本身。
