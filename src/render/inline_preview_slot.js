@@ -300,9 +300,12 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   }
 
   // ------------------------------------------------------------ 灰階切換鈕
-  // 平時 visibility:hidden（見 main.css），hover **真圖**（或按鈕自己、或按鈕取得
-  // 鍵盤焦點）才浮現 —— 不干擾閱讀。觸發條件刻意不是「hover slot」：slot 是整列寬，
-  // 那樣寫等於捲到這張圖就常駐一顆按鈕。
+  // 平時 visibility:hidden（見 main.css），hover 到**媒體盒**或按鈕取得鍵盤焦點才
+  // 浮現 —— 不干擾閱讀。CSS 那條選擇器寫的是 `.inlinePreviewSlot:hover`，而 slot 是
+  // 整列寬；它之所以只在圖片上成立，靠的是同檔的
+  // `.inlinePreviewSlot { pointer-events: none }` 把 hit target 收斂到媒體盒
+  // （:hover 再沿祖先鏈傳上來）。**兩條是綁死的一組**：只拿掉 pointer-events 那條，
+  // 按鈕就退回「捲到這張圖就常駐」。
   let grayButton = null;
 
   // 灰階態的唯一同步點：屬性（CSS 的鉤子）與按鈕文字（永遠說「點下去會發生什麼」）
