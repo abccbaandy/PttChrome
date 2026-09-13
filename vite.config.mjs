@@ -62,7 +62,19 @@ export default defineConfig(({ command }) => {
       emptyOutDir: true,
       sourcemap: true,
       // 目標＝主流桌機瀏覽器現代版（見 CLAUDE.md 慣例）；不考慮手機/舊版/冷門瀏覽器。
-      target: ['chrome110', 'edge110', 'firefox110', 'safari16'],
+      //
+      // **用 Vite 的字面值，不要手寫版本號陣列**。'baseline-widely-available' 由 Vite
+      // 解析成 Baseline Widely Available 那組（Vite 8.2 ＝ chrome111/edge111/firefox114/
+      // safari16.4/ios16.4，基準日 2025-05-01），而且**每個 Vite major 會自己往前 bump**
+      // ⇒ 零維護。手寫的下場就是它原本的樣子：釘在 chrome110/firefox110/safari16
+      //（2023 年初）三年沒人動，比慣例寫的「現代版」寬鬆得多，且沒有任何依據來源。
+      // Baseline Widely Available ＝ 所有核心瀏覽器支援滿 30 個月，是 WebDX 的標準定義。
+      //
+      // **代價（記著）**：這條線不含 `:has()`（要 Firefox 121）與原生 CSS nesting。
+      // 而 Playwright 跑的是它自帶的最新瀏覽器 ⇒ **用了超出 target 的 CSS 特性，測試
+      // 一條都不會紅**，這個設定是唯一防線。CSS 的選擇器清單裡只要有一個無效，整條
+      // 規則會被丟棄（2026-09 灰階鈕的 `:has()` 差點踩到，見 docs/easy-reading.md）。
+      target: 'baseline-widely-available',
       // 體積警告門檻（沿用舊 webpack performance 調校精神）：基線 entry ~709KB
       //（React+Mantine+app）、firebase lazy chunk ~567KB，皆屬預期；門檻設在
       // 基線之上以濾噪音，仍能抓真正異常肥大。

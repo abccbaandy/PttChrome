@@ -18,6 +18,9 @@
 - **lightningcss（CSS minify）比舊鏈嚴格**：非法註解之類會直接 build fail——這是好事，修 CSS 而不是繞過。
 - **`src/fonts/symmingliu.woff` 是等寬格線的字寬契約，不是裝飾**（CONFIRMED，直接解字型表）：`unitsPerEm 1024`，ASCII `U+0020–U+007E` advance `512` ＝**正好 0.5em**（＝ `term_view` 的 `chw = chh/2`），符號區（`→ ← ● □ ※ Ⅰ …`）`1024` ＝ 1em（兩格），CJK 不在字型內、交給系統全形字型。Windows 有 local MingLiu，**macOS 沒有** ⇒ Mac 上整個格線押在這支 webfont 上；落地前 ASCII 退回系統 monospace（Menlo advance `0.602em`）⇒ 整列橫向偏 20%，而 `#cursor` 的欄位算術不會跟著偏。故 `@font-face` 用 `font-display: block`，且 `main.jsx` 的 `loadResources()` 與轉碼表並行 `await loadTerminalFont()`（`document.fonts.load`，3s 逾時就照跑——字型問題絕不擋連線）。**勿改成 `swap`／勿拿掉那個 await**。守護：`cursor_shape.offline.spec.js`「格線字寬契約」。
 - Yarn v4 script＝portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數 → **勿引入 cross-env**。
+- **`build.target` ＝ Vite 的 `'baseline-widely-available'` 字面值，禁止手寫版本號陣列**（2026-09 改）：Vite 把它解析成 Baseline Widely Available 那組（Vite 8.2 ＝ `chrome111/edge111/firefox114/safari16.4/ios16.4`，基準日 2025-05-01），而且**每個 Vite major 自己往前 bump** ⇒ 零維護，且「所有核心瀏覽器支援滿 30 個月」是 WebDX 的標準定義，比任何手挑版本號都有依據。手寫的下場實錄：原本釘在 `chrome110/edge110/firefox110/safari16`（2023 年初）**整整三年沒人動**，比 CLAUDE.md 慣例寫的「主流桌機瀏覽器現代版」寬鬆得多，而且當初挑那組數字時沒有依據來源。守護 `tests/unit/build_target_baseline.test.js`。
+  - **這條線不含 `:has()`（要 Firefox 121）與原生 CSS nesting。**想用超出 target 的語法／CSS 特性時，`build.target` 是**唯一**防線：**Playwright 跑的是它自帶的最新 Chromium/Firefox ⇒ 整套 e2e 一條都不會紅**。CSS 尤其致命——選擇器清單裡只要有一個無效，**整條規則會被丟棄**（2026-09 灰階鈕的 `.inlinePreviewSlot:has(img:hover)` 差點踩到：在 FF 121 以下整條顯示規則失效＝按鈕永遠叫不出來，比它要修的問題更糟，改用 `pointer-events` 收斂解決，見 `docs/easy-reading.md`）。
+  - 要解鎖某個特性時的正解：**升 Vite**（字面值自動前進），而不是把 target 改回手寫。
 
 ## 套件選型判定（新增／替換依賴時的基準）
 
