@@ -3,6 +3,9 @@
 輸入一大段話 → 依 PTT 單則推文的 Big5 byte 上限自動分段 → 逐則跑完完整的推文互動
 送出。撞到冷卻自動等待，全程有進度遮罩與取消。
 
+**開輸入框之前會先探路**（2026-09）：送一個 X 問 PTT「這篇推得了嗎」，推不了就直接
+把 PTT 的原話顯示出來，一個字都不必打。見下面「探路（preflight）」。
+
 **入口有兩個**：右鍵選單的「長推文一鍵發送」，以及**在文章裡按推文鍵（`X`／`%`）**
 ——後者預設**取代**原生推文（pref `pushKeyOpensLongPush`，見下面「攔截推文鍵」）。
 
@@ -17,9 +20,10 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 | `src/js/long_push.js` | 送出端純邏輯：`stripNonBig5` / `big5ByteLength` / `pushMaxBytes` / `splitPushSpans`(+`splitPushSegments`) / `findUrlSpans` |
 | `src/js/push_screen.js` | **共用**的畫面判讀：`classifyPushScreen` / `detectIpLogged` / `parseVmsgText` / `parseCooldownSeconds`。另一個消費者是圖片上傳（`image_upload.js#decideInsertMode`）⇒ 改這裡要同時想兩邊，也**不准**任一邊自己另寫 regex（分歧實錄見 `docs/image-upload.md`） |
 | `src/js/long_push_anchor.js` | **游標錨定**純邏輯：`articleAnchor` / `captureCursorAnchor` / `checkCursorAnchor` / `findAnchorRowNum` / `subjectMatches`。檔頭有完整的 pttbbs 推導 |
-| `src/js/long_push_session.js` | 狀態機（形狀比照 `aid_navigation.js`）：持 `active` 旗標，每一步一個 `CommandQueue` command |
+| `src/js/long_push_session.js` | 狀態機（形狀比照 `aid_navigation.js`）：**三階段** `preflight` → `armed` → `sending`，每一步一個 `CommandQueue` command。`active`＝線路上有命令在飛、`busy`＝這個功能還握著畫面（含 armed 與冷卻倒數） |
 | `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認 ＋ 圖片上傳，見下節） |
-| `src/components/ContextMenu/LongPushProgressModal.jsx` | 送出中的全版遮罩（真 modal，唯一出口是取消） |
+| `src/components/ContextMenu/LongPushProgressModal.jsx` | 送出中／探路中的全版遮罩（真 modal，唯一出口是取消） |
+| `src/components/ContextMenu/LongPushErrorModal.jsx` | 推不出去時的錯誤框：**PTT 原文照錄** ＋ 來源標示 ＋ 已送出則數 ＋ 剩餘內容（唯讀 Textarea，按了才複製） |
 | `src/components/ContextMenu/index.jsx` | gating、handler、`modalOpen` 推導、`longPush.onChange` 掛接 |
 | `src/js/pttchrome.jsx` | `new LongPushSession(...)`（與 aidNavigation 共用同一條 CommandQueue）＋ `onFunctionKey`／`onPasteDone` 守門 |
 | `src/js/term_view.js` | `onKeyDown`／`onTextInput` 守門 |
@@ -32,15 +36,23 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 ```
 右鍵選單（gating: longPushAvailable）／按 X･% （gating: shouldInterceptPushKey）
   → ContextMenu.openLongPush（= App.openLongPushModal 注入的實作，兩個入口共用）
-  → LongPushModal：stripNonBig5 → splitPushSegments(預估 maxBytes) → 即時則數
+  → LongPushSession.startPreflight()  ── 回 true ＝ 我接手了這次按鍵
+        序幕：取閱讀位置＋文章標頭錨點（ORDER INVARIANT：都要在
+              _enterFunctionMode() 之前）→ easyReading._enterFunctionMode()
+              → listSession.beginExternalNavigation()
+              → aidNavigation.resolvePostAid()（免費路徑落空就按 Q）
+        探路：X → classifyPushScreen → 收尾（Ctrl-C／␣）→ [守門] → ⏎ 回文章
+              ＋ requestScrollRestore
+  → onPreflight(result)
+        blocked → LongPushErrorModal（PTT 原文照錄）        【結束，一個字都不必打】
+        可以推 → armed（active=false，線路還給使用者）
+  → LongPushModal：stripNonBig5 → splitPushSegments(校正過的 maxBytes) → 即時則數
+                   ＋ 探路帶回來的事實（禁噓／已被降級成 →／冷卻剩幾秒）
   → onConfirm({ text已過濾, type })
-  → LongPushSession.start()  ── 先取閱讀位置＋文章標頭錨點（ORDER INVARIANT：
-                                都要在 _enterFunctionMode() 之前），active=true,
-                                easyReading._enterFunctionMode(),
-                                listSession.beginExternalNavigation()
-  → aidNavigation.resolvePostAid()  ── 免費路徑落空就按 Q（boxOpen ⇒ 送 ␣ 關框）
-  → 每則：[守門] → X → [型別鍵] → 內容+\r → y\r （全部走 commandQueue.enqueue）
+  → LongPushSession.start()  ── **沿用 _armed 的錨點／閱讀位置／AID，不重採**
+  → 每則：[守門] → X → [型別鍵] → 內容+RET → y+RET （全部走 commandQueue.enqueue）
   → onChange(progress) → ContextMenu state → LongPushProgressModal
+  → 失敗／取消 → onResult → LongPushErrorModal
 ```
 
 `start()` 的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: prefs.autoLoginUser })`，
@@ -59,15 +71,15 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 
 ## 決策表（`push_screen.js#classifyPushScreen` → 動作）
 
-| kind | 判準（底列） | 動作 |
-|---|---|---|
-| `typeMenu` | 以 `您覺得這篇文章 ` 開頭 | 送**單一 byte** 型別鍵（`1`/`2`/`3`），**不帶 `\r`** |
-| `inputPrompt` | `^(推\|噓\|→) <id> *:` 且**無**行尾時間戳 | 送 `u2b(內容)+'\r'`；順便讀 userId 校正上限 |
-| `confirm` | 含 ` 確定[y/N]:` | 送 `y\r` |
-| `angel` | 含 `要使用小天使匿名推文嗎？` | 送 `n\r`（空 Enter＝匿名 YES） |
-| `cooldown` | ◆ 橫幅 ∈ 可等清單 | 送 `' '` 消橫幅 → 遮罩倒數 `waitSec+1s` → 重送 `X` |
-| `fatal` | 其他所有 ◆ 橫幅（**含認不得的**） | 中止，剩餘進剪貼簿 |
-| `other` | 都不是 | 步驟 1 視為沒回應；`confirm` 之後視為「已離開推文流程」＝該則送出成功 |
+| kind | 判準（底列） | 動作 | preflight 時的動作 |
+|---|---|---|---|
+| `typeMenu` | 以 `您覺得這篇文章 ` 開頭 | 送**單一 byte** 型別鍵（`1`/`2`/`3`），**不帶 `\r`** | **收尾退出**（Ctrl-C ×2）→ 可以推，順便帶回 `booAllowed` |
+| `inputPrompt` | `^(推\|噓\|→) <id> *:` 且**無**行尾時間戳 | 送 `u2b(內容)+'\r'`；順便讀 userId 校正上限 | **收尾退出**（Ctrl-C ×1）→ 可以推，帶回「已被降級成 →」與 `userId` |
+| `confirm` | 含 ` 確定[y/N]:` | 送 `y\r` | （探路走不到這一格） |
+| `angel` | 含 `要使用小天使匿名推文嗎？` | 送 `n\r`（空 Enter＝匿名 YES） | **收尾退出** → 可以推（匿名板），同樣沒有型別選單 |
+| `cooldown` | ◆ 橫幅 ∈ 可等清單 | 送 `' '` 消橫幅 → 遮罩倒數 `waitSec+1s` → 重送 `X` | 送 `␣` 消橫幅 → **不算不能推**，把秒數帶回輸入框提示 |
+| `fatal` | 其他所有 ◆ 橫幅（**含認不得的**） | 中止，剩餘交給錯誤框 | 送 `␣` 消橫幅 → **不能推**，PTT 原文交給錯誤框 |
+| `other` | 都不是 | 步驟 1 視為沒回應；`confirm` 之後視為「已離開推文流程」＝該則送出成功 | （`accept` 擋掉，不會進 done） |
 
 ## 游標錨定（為什麼每次按 X 之前都要先驗）
 
@@ -162,27 +174,96 @@ IME 那條非補不可：IME 開著時 keydown 的 `keyCode` 是 229，被 `keyE
 ### 開輸入框的橋接
 
 `App.prototype.openLongPushModal`，預設 `noop`，由 `ContextMenu` 的 `useEffect` 注入
-真實作（比照 `onToggleLiveHelperModalState`）。**回傳值就是合約**：`true` ＝ 輸入框
-真的開了，呼叫端才可以 `preventDefault()`／不送 byte。ContextMenu 還沒 mount、已
-unmount 都回 falsy ⇒ 三條入口自動退回原生推文。
+真實作（比照 `onToggleLiveHelperModalState`）。**回傳值就是合約**：`true` ＝
+**我接手了這次按鍵**，呼叫端才可以 `preventDefault()`／不送 byte。ContextMenu 還沒
+mount、已 unmount、以及 `startPreflight` 接不下來（線路上已經有別的序列化操作）都回
+falsy ⇒ 三條入口自動退回原生推文。
+
+**`true` 不等於「輸入框已經開了」**（2026-09 起）：接手之後先跑探路，輸入框或錯誤框
+要等答案回來才開，中間蓋一層遮罩。線路上仍然只有那一個 X。右鍵選單那條入口拿到
+falsy 時要 `flashListHint` 說一聲——吞掉動作又沒反應是這個功能最嚴重的失敗模式。
 
 `maxBytes` 在**開輸入框那一刻**現算（`pushMaxBytes({ userId: prefs.autoLoginUser })`）
 ——攔截這條沒有「開右鍵選單」那一刻，沿用開選單時算好的值會拿到保守預設，則數高估。
 
-### 已知退化（不是 bug，別追）
+### 探路（preflight）
 
-禁推板等**擋人條件**（`bbs.c:2847-2851` 的 `BRD_NORECOMMEND`／guest／看板發文限制／
-快速連推冷卻）原本按 X 立刻看到 ◆ 橫幅；攔截後要打完字送出才會撞到，由
-`classifyPushScreen` 判 `fatal` → 中止並把**整段原文**複製到剪貼簿（第一則時
-`_offset=0` ⇒ 不丟字）。**接受，不做事前偵測**：client 拿不到 `brdattr`，唯一「先問」
-的辦法是先送一次 X 再取消，那等於在使用者決定之前就動線路（違反「未知畫面一律停手」），
-還多一次 round trip 並被 `FULLUPDATE` 丟回列表。要回到原生推文就關掉 pref。
+**2026-09 推翻了這一節原本的結論**（舊文寫的是「接受，不做事前偵測」）。
+
+#### 為什麼問得到
+
+`mbbsd/bbs.c#recommend()`（2812-2941）的**每一種**擋人判斷都在 `getdata` 讀內容
+**之前**做完，而且一律 `vmsg`/`vmsgf` 印 ◆ 橫幅後 `return FULLUPDATE`：
+
+| 擋人條件 | 出處 | 訊息（原文） |
+|---|---|---|
+| `BRD_NORECOMMEND` ／ `L` 開頭檔名 ／ 已解決的標記文 | bbs.c:2845 | `抱歉, 禁止推薦` |
+| `CheckPostPerm2` 不過 ／ guest | bbs.c:2850 | `無法推文: <reason>` |
+| `BN_ONLY_OP_CAN_ADD_COMMENT` | bbs.c:2862 | `本板推文限定管理人員使用。` |
+| 已刪除文 | bbs.c:2870 | `本文已刪除` |
+| `get_board_restriction_reason` | bbs.c:2884 | `未達看板發文限制: <msg>` |
+| `BRD_NOFASTRECMD` | bbs.c:2894 | `本板禁止快速連續推文，請再等 N 秒` |
+| 同一分鐘 > 60 則 | bbs.c:2913 | `系統禁止短時間內大量推文` |
+| 檔案 > 5MB ／ > 100KB 的 10 秒冷卻 | bbs.c:2924 / 2931 | `檔案太大…` ／ `本文已過長, 禁止快速連續推文…` |
+| `check_cooldown` | bbs.c:4344 | `冷靜一下吧！…` ／ `您被設退文！…` ／ `間隔太近囉！…` |
+
+⇒ **送一個 X 就問得到答案**，而且答案是 PTT 自己的字。
+
+#### 為什麼可以白按一次
+
+| 事實 | 出處 |
+|---|---|
+| `lastrecommend = now` 只在**成功寫檔之後**才更新 | bbs.c:3144 |
+| `check_cooldown()` 是唯讀的（只有 `diff<0` 時清 bit） | bbs.c:4344-4376 |
+| 唯一的足跡：`recommend_in_minute++` 在所有檢查**之前**（上限 60/分鐘） | bbs.c:2905-2914 |
+
+所以探路的 X ＋ Ctrl-C **不會**害真正送出時被降級成 →、也不會把冷卻計時器往後推。
+
+#### 舊結論為什麼不成立
+
+舊文說「先送一次 X 再取消等於在使用者決定之前就動線路」——**使用者已經按了 X**，
+那個 byte 本來就要上線；攔截只是把它從「直接轉送」換成「交給 CommandQueue 送、
+並讀回答案」。線路上仍然只有那一個 X，淨效果與原生按 X 一致（原生被擋也是看到
+◆ 橫幅並回到文章列表，我們還多按一個 ⏎ 幫他回原文章、還原閱讀位置）。
+
+#### 旁證
+
+BePTT（`3rd_script/BePTT`，7.1.6 的 `classes.dex` 字串常數）內含「無法推文」「抱歉」
+「禁止快速」「按任意鍵繼續」等**畫面字串的硬比對** ⇒ 同一條路（解析終端機畫面）是
+client 端唯一解法，沒有別的 API。
+
+#### 三階段與交棒
+
+| 階段 | `active` | `busy` | 線路 | 畫面 |
+|---|---|---|---|---|
+| `preflight` | true | true | 我們的命令在飛 | 探路遮罩 |
+| `armed` | **false** | true | **空著**（使用者在打字） | 輸入框 |
+| `sending` | true | true | 我們的命令在飛 | 進度遮罩 |
+
+`armed` 的 `active` 必須是 false，否則 `serializedOpHint` 會吞掉使用者正在打的字；
+但 `busy` 必須是 true，否則 `easy_reading._wireBusy()` 會讓自動翻頁插進線路——探路
+收尾按 ⏎ 回文章那一幀正好會讓 `functionMode` 退出，等於把翻頁重新打開。
+
+#### 錯誤訊息一律原文透傳
+
+`classifyPushScreen` 的 `message` 就是畫面那一行（已剝掉 `◆` 與 `[按任意鍵繼續]`），
+`LongPushErrorModal` **不做任何字串處理、不對照翻譯、不套自己的說法**，只在下面用
+一行 dimmed 小字標示「這句話是 PTT 說的」還是「這是本程式的判斷」。理由：PTT 的擋人
+訊息會隨站方設定與版本變（`無法推文: <reason>` 的 reason 更是動態的），任何硬寫的
+對照表都會在改版那天靜默壞掉。守護：`tests/unit/long_push_error_modal.test.jsx`
+（含一條「沒看過的新訊息也照樣轉達」）與 `long_push_preflight.test.js`。
+
+本程式自己的判斷（逾時、畫面已變更、文章位置已變動…）集中在
+`long_push_session.js` 的 `MSG` 常數，**刻意不 import i18n**（會把整包語系表拉進
+unit test 的冷載入成本）；錯誤框的外框文案才走 i18n。
 
 ## 不變量
 
-1. **不用 `fullRepaint`、不用 `probe`**（兩者都送 `\f`）。型別選單是 `vkey()` 取單一 byte，
+1. **推文流程之內不用 `fullRepaint`、不用 `probe`**（兩者都送 `\f`）。型別選單是 `vkey()` 取單一 byte，
    非數字一律當「推」——萬一 `\f` 沒被 `io.c#system_key_hook` 完全吃掉，就是在使用者沒選的
    情況下推出去。這個功能會把內容寫進公開看板，**送錯遠比失敗嚴重**，所以逾時直接失敗。
+   界線是「**推文流程之內**」：人在列表／文章時沒有 `vkey()` 在等單一 byte，
+   `longpush-orient` 與 `longpush-relocate-*` 用 `fullRepaint` 是既有且安全的作法。
 2. **未知畫面一律停手**。在 PTT 上盲送鍵等於亂按快捷鍵。
 3. **段末是全形字時少收 1 byte**。`vgetstring` 的 DBCS 保護是
    `c > 0x80 && vkey_is_ready() && len - iend < 3 → vkey_purge()`，Big5 的第二個 byte 常常
@@ -201,15 +282,28 @@ unmount 都回 falsy ⇒ 三條入口自動退回原生推文。
    `https://i.urusai.cc/ab.png` 的 `.` 後面。細節見下面「URL 保護與硬切」。
 8. **進度遮罩必須是 modal**。使用者在序列途中打字會插進 X → 型別 → 內容 的中間，pttbbs 的
    typeahead 會把中間那幀吞掉。`modalShown` 由 `ContextMenu` 的 render state 推導
-   （`showsLongPush || longPushProgress`），**不可手動賦值**。
+   （`showsLongPush || longPushProgress || longPushError`），**不可手動賦值**。
+   交棒那一瞬間（探路完 → 開輸入框／錯誤框）必須落在**同一次 `update()`**，否則
+   `modalShown` 會 true→false→true，中間那一幀終端機會把焦點搶回隱藏 input `#t`。
 9. **攔截時不可以提前 `_enterFunctionMode()`**。那個函式結尾的同步 redraw 會把
-   `mainDisplay.scrollTop` 歸零，而 `start()` 的 ORDER INVARIANT 要在那之前用
-   scrollTop 算閱讀位置、並讀文章標頭錨點 ⇒ 提前進入＝送完回不到原閱讀位置。
-   這就是三個攔截點都排在各自分派鏈**最前面**的原因（`start()` 自己會在正確時機
+   `mainDisplay.scrollTop` 歸零，而序幕的 ORDER INVARIANT 要在那之前用 scrollTop
+   算閱讀位置、並讀文章標頭錨點 ⇒ 提前進入＝送完回不到原閱讀位置。這就是三個
+   攔截點都排在各自分派鏈**最前面**的原因（`startPreflight()` 自己會在正確時機
    呼叫它）。
-10. **沒開成輸入框就不准 `preventDefault()`／吞 byte**。順序永遠是「先開成功、再吞」，
-    見上面的橋接合約。吞掉按鍵又不開輸入框＝使用者按 X 完全沒反應，是這個功能最嚴重
+10. **沒接手就不准 `preventDefault()`／吞 byte**。順序永遠是「先接手成功、再吞」，
+    見上面的橋接合約。吞掉按鍵又什麼都不做＝使用者按 X 完全沒反應，是這個功能最嚴重
     的失敗模式。
+11. **ORDER INVARIANT 的採樣權屬於 `startPreflight()`**：閱讀位置、文章標頭錨點與
+    **AID** 都只在那裡採一次，`start()` 一律沿用 `_armed`、**絕不重採**（那時畫面早就
+    進過 functionMode，scrollTop 已歸零、游標列可能換人，重採等於把污染當成基準）。
+    AID 尤其不能留到 `start()`：`aid_navigation.findLocalPostAid` 要 `pageState === 3`，
+    那時人可能已經在列表上，免費路徑必落空 ⇒ 退回按 `Q`，而在列表按 Q 是別的功能。
+12. **`armed` 期間 `active` 必須是 `false`、`busy` 必須是 `true`**。前者是因為線路
+    真的空著、使用者正在打字（`serializedOpHint` 吞掉他的鍵就是 bug）；後者是因為
+    `easy_reading._wireBusy()` 只看 `inFlightKind` 會漏掉這段（以及冷卻倒數那段最長
+    240 秒的空窗），自動翻頁會插進線路。
+13. **剩餘內容不得自動覆寫剪貼簿**。交給 `LongPushErrorModal` 的唯讀 Textarea，
+    使用者按了「複製剩餘內容」才走 `App.doCopy`。
 
 ## 圖片上傳（`target` 插入模式）
 
@@ -254,8 +348,15 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 - ◆ 橫幅 → `' '`
 - 已回到文章／列表 → 不送任何鍵
 
-型別選單**沒有取消**（任何非數字都會被當成預設值），所以那一步是先進到輸入列再 Ctrl-C 出來。
-已經送出的推文收不回來——PTT 沒有這種 API，遮罩上寫明了。
+型別選單**沒有取消**（任何非數字都會被當成預設值），所以那一步是先進到輸入列再 Ctrl-C
+出來。`MAX_ABORT_STEPS` 是 **4**：小天使板（`BRD_ANGELANONYMOUS`）上 Ctrl-C 會被 `vans`
+當成「非 n」＝匿名 YES，比一般情況多一步。同一個迴圈也是**探路**退出推文流程用的
+（`_enqueueAbort(onSettled, onLost)`：`onLost` 是收尾鍵逾時／被 flush 的出口，那時畫面
+狀態未知，**不可以**再往下送 ⏎）。
+
+已經送出的推文收不回來——PTT 沒有這種 API，遮罩上寫明了。剩餘內容**不再自動寫進
+剪貼簿**（2026-09 使用者定案：那會無聲蓋掉他手上的東西），改由 `LongPushErrorModal`
+顯示在唯讀 Textarea，要不要複製由他按。
 
 ## 尚待 live 驗證
 
@@ -265,6 +366,8 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
    **先過守門**再補 `\r` 回去。
 2. 反白欄顏色（`docs/pttbbs-screen-protocol.md` §5.1 與 `vgetstring` 相左）⇒ 目前**不靠**數
    反白格反推 `maxlength`。
+3. **探路**：禁推板／未達發文限制的實際橫幅字串是否與開源碼一致（term.ptt.cc 有私有
+   commit，見 §12）；以及 `BRD_ANGELANONYMOUS` 板上退出推文流程實際要幾步。
 
 ## 測試
 
@@ -273,14 +376,16 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 | unit | `tests/unit/long_push_split.test.js` | 濾字、byte 長度、上限公式、分段（含全形餘裕、標點斷點、**URL 保護與硬切**） |
 | unit | `tests/unit/push_screen.test.js` | §11.3 每個 PTT 字串一個 case（共用分類器，長推文與圖片上傳都吃它） |
 | unit | `tests/unit/long_push_anchor.test.js` | 身分解析／截斷容忍／兩代游標／置底・刪除列 → 一律不得回 `ok` |
-| unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正、**游標守門與重新定位** |
+| unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正、**游標守門與重新定位**（harness 與畫面常數抽在 `tests/unit/helpers/long_push_harness.js`，與下一列共用） |
+| unit | `tests/unit/long_push_preflight.test.js` | **探路**：只送一個 X、各 kind 的收尾鍵序、**PTT 原文逐字照錄**（含沒看過的新訊息）、冷卻不算不能推且不倒數、逾時一個收尾鍵都不送、ORDER INVARIANT（scrollTop 歸零前採樣）、`start()` 不重採錨點也不重解 AID |
+| unit | `tests/unit/long_push_error_modal.test.jsx` | 錯誤框：原文照錄、來源標示兩態、已送出則數、剩餘內容唯讀可讀回、**按了才複製** |
 | unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告** |
 | unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值（含攔截開關的從屬關係與 disabled） |
 | unit | `tests/unit/long_push_gate.test.js` | 攔截判準：`x` 不是推文鍵、`shiftKey` 仍要攔、prompt 幀不攔、列表不攔、開關從屬 |
 | unit | `tests/unit/push_key_intercept.test.js` | 三條入口各自的分派：不落到 `_keyboard`／`_convSend`／`view._send`、不提前進 functionMode、**沒開成就不吞** |
 | unit | `tests/unit/long_push_open_bridge.test.jsx` | `App.openLongPushModal` 注入／回 true／卸載還原 noop、**沒開過右鍵選單也算對 maxBytes** |
 | e2e | `tests/e2e/offline/long_push_image_upload.offline.spec.js` | 輸入框開著時拖圖 → 網址進 Textarea、**線路上一個 byte 都沒送**、點「開啟上傳紀錄」modal 不關 |
-| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）、**攔截**（按 X／%、點底列按鈕、關 pref 回原生、列表不攔）|
+| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）、**攔截**（按 X／%、點底列按鈕、關 pref 回原生、列表不攔）、**探路**（按 X 只送一個 X 且輸入框要等答案；被擋時錯誤框裡是 Big5 畫面一路解出來的 PTT 原文；被擋之後回到文章）|
 
 `function_keys.offline.spec.js` 的 `(X%)` 逐鍵可點與 `pref_close_in_prompt.offline.spec.js`
 都**刻意在 prefs 裡關掉 `pushKeyOpensLongPush`**：它們量的是「送出去的 byte」與「原生

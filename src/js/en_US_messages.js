@@ -165,6 +165,57 @@ export const en_US = {
   "longPushProgress_note": {
     "message": "Cancelling only stops what has not been sent; comments already sent cannot be taken back."
   },
+  "longPushProgress_preflight": {
+    "message": "Checking with PTT whether you can comment..."
+  },
+  "longPushModal_preflightCooldown": {
+    "message": "PTT is in comment cooldown (about #s#s left). Go ahead and type; sending will wait automatically."
+  },
+  "longPushModal_preflightArrow": {
+    "message": "PTT has already decided this comment will be a -> note (you are the author, or you commented within 90s), so the type you pick makes no difference."
+  },
+  "longPushModal_preflightNoBoo": {
+    "message": "This board does not allow boo."
+  },
+  "longPushError_title": {
+    "message": "Cannot comment"
+  },
+  "longPushError_titleSending": {
+    "message": "Long comment aborted"
+  },
+  "longPushError_titleCancelled": {
+    "message": "Long comment cancelled"
+  },
+  "longPushError_sourcePtt": {
+    "message": "Message reported by PTT (verbatim)"
+  },
+  "longPushError_sourceClient": {
+    "message": "This is this app's own assessment, not PTT's wording"
+  },
+  "longPushError_reason": {
+    "message": "Technical reason: #r#"
+  },
+  "longPushError_sent": {
+    "message": "#n# comment(s) already sent."
+  },
+  "longPushError_sentNone": {
+    "message": "Nothing has been sent yet."
+  },
+  "longPushError_noRecall": {
+    "message": "Comments already sent cannot be taken back."
+  },
+  "longPushError_restLabel": {
+    "message": "Not sent yet"
+  },
+  "longPushError_copyRest": {
+    "message": "Copy remaining text"
+  },
+  "longPushError_close": {
+    "message": "Close"
+  },
+  "longPushError_busy": {
+    "message": "Another operation is in progress; please wait."
+  },
   "longPushProgress_cancel": {
     "message": "Cancel"
   },

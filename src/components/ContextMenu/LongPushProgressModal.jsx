@@ -22,8 +22,11 @@ const replaceI18n = (id, replacements) =>
 export const LongPushProgressModal = ({ progress, onCancel }) => {
   const p = progress || { index: 0, total: 0, phase: "sending" };
   const percent = p.total ? Math.round(((p.index - 1) / p.total) * 100) : 0;
-  const status =
-    p.phase === "cancelling"
+  // preflight ＝ 還在問 PTT「這篇推得了嗎」，一則都還沒有，沒有進度可以報。
+  const preflight = p.phase === "preflight";
+  const status = preflight
+    ? i18n("longPushProgress_preflight")
+    : p.phase === "cancelling"
       ? i18n("longPushProgress_cancelling")
       : p.phase === "cooldown"
         ? replaceI18n("longPushProgress_cooldown", { s: p.waitSec })
@@ -44,15 +47,20 @@ export const LongPushProgressModal = ({ progress, onCancel }) => {
         <Text size="sm" data-testid="longPushProgressStatus">
           {status}
         </Text>
-        <Progress value={percent} animated={p.phase !== "cooldown"} />
+        <Progress
+          value={preflight ? 100 : percent}
+          animated={preflight || p.phase !== "cooldown"}
+        />
         {p.message && (
           <Text size="xs" c="dimmed">
             {p.message}
           </Text>
         )}
-        <Text size="xs" c="dimmed">
-          {i18n("longPushProgress_note")}
-        </Text>
+        {!preflight && (
+          <Text size="xs" c="dimmed">
+            {i18n("longPushProgress_note")}
+          </Text>
+        )}
         <Group justify="flex-end">
           <Button
             variant="default"

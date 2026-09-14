@@ -1248,6 +1248,11 @@ EasyReading.prototype._wireBusy = function() {
   const core = this._core;
   if (core.aidNavigation && core.aidNavigation.active) return true;
   if (core.commandQueue && core.commandQueue.inFlightKind) return true;
+  // 長推文有兩段「queue 空著、但畫面還是它的」的空窗：冷卻倒數（最長 240 秒）與
+  // armed（探完路、使用者正在輸入框打字）。那兩段 inFlightKind 是 null，只看 queue
+  // 會讓自動翻頁插進線路 —— 而且探路收尾按 ⏎ 回文章那一幀正好會讓 functionMode
+  // 退出，等於把翻頁重新打開。所以這裡問的是 busy 不是 active。
+  if (core.longPush && core.longPush.busy) return true;
   return false;
 };
 

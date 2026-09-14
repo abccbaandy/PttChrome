@@ -41,9 +41,14 @@ const replaceI18n = (id, replacements) =>
 // 超過這個則數就先問一次：PTT 有推文冷卻，整段可能要跑好幾分鐘。
 const CONFIRM_THRESHOLD = 20;
 
+// preflight ＝ 開這個框之前那一次探路（LongPushSession.startPreflight）從 PTT 畫面
+// 讀回來的事實：這塊板讓不讓噓、這次會不會被降級成 →、目前在不在冷卻。**全部是
+// 讀畫面讀到的，不是猜的**，所以這裡的文案可以寫成肯定句；null（沒探過路的降級
+// 路徑）時整個區塊消失，行為與探路上線前一樣。
 export const LongPushModal = ({
   show,
   maxBytes,
+  preflight,
   imageUpload,
   onHide,
   onConfirm,
@@ -137,6 +142,12 @@ export const LongPushModal = ({
     [parsed.text, maxBytes],
   );
 
+  // 禁噓板（BRD_NOBOO）：型別選單上根本沒有 "2."，送 2 會被 vkey() 當成預設值＝推。
+  const booAllowed = !preflight || preflight.booAllowed !== false;
+  useEffect(() => {
+    if (!booAllowed && type === "boo") setType("push");
+  }, [booAllowed, type]);
+
   const count = parsed.segments.length;
   // 打字改變則數之後，先前那次「還是要送」的確認就不算數了。
   useEffect(() => setConfirming(false), [count]);
@@ -190,7 +201,11 @@ export const LongPushModal = ({
               onChange={setType}
               data={[
                 { value: "push", label: i18n("longPushModal_typePush") },
-                { value: "boo", label: i18n("longPushModal_typeBoo") },
+                {
+                  value: "boo",
+                  label: i18n("longPushModal_typeBoo"),
+                  disabled: !booAllowed,
+                },
                 { value: "arrow", label: i18n("longPushModal_typeArrow") },
               ]}
             />
@@ -198,9 +213,43 @@ export const LongPushModal = ({
               {replaceI18n("longPushModal_segments", { n: count })}
             </Text>
           </Group>
-          <Text size="xs" c="dimmed">
-            {i18n("longPushModal_typeNote")}
-          </Text>
+          {/* 探過路就用畫面上的事實取代那句「90 秒內連推會改成 →」的推測。 */}
+          {preflight && preflight.degraded ? (
+            <Alert
+              color="yellow"
+              variant="light"
+              data-testid="longPushArrowNote"
+            >
+              {i18n("longPushModal_preflightArrow")}
+            </Alert>
+          ) : (
+            <Text size="xs" c="dimmed">
+              {i18n("longPushModal_typeNote")}
+            </Text>
+          )}
+          {!booAllowed && (
+            <Text size="xs" c="dimmed" data-testid="longPushNoBooNote">
+              {i18n("longPushModal_preflightNoBoo")}
+            </Text>
+          )}
+          {/* 冷卻**不算不能推**：打完字通常早就過了那幾秒，真的還沒過，送出時的
+              等待邏輯會處理。所以只提示，不擋。 */}
+          {preflight && preflight.cooldownSec > 0 && (
+            <Alert
+              color="blue"
+              variant="light"
+              data-testid="longPushCooldownNote"
+            >
+              {replaceI18n("longPushModal_preflightCooldown", {
+                s: preflight.cooldownSec,
+              })}
+              {preflight.cooldownMessage && (
+                <Text size="xs" c="dimmed" mt={4}>
+                  {preflight.cooldownMessage}
+                </Text>
+              )}
+            </Alert>
+          )}
           {uploadEnabled && (
             <Text size="xs" c="dimmed">
               {i18n("longPushModal_uploadHint")}

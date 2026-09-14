@@ -411,6 +411,9 @@ App.prototype.onClose = function() {
   // Same for the AID back stack: its anchors are replayed as key sequences and
   // rely on this session's per-board cursors (pttbbs getkeep), which die with it.
   this.aidNavigation.reset();
+  // 長推文的探路成果同理：錨點是這條連線的列表游標（pttbbs getkeep），斷線就失效。
+  // 不丟掉的話，重連後按下「送出」會拿舊錨點去比對新畫面。
+  this.longPush.disarm();
   // A deep link waiting for login belongs to the session that is now gone: the
   // reconnect starts back at the login screen, and firing a jump into whatever
   // the user does next is worse than making them click the link again.
@@ -521,9 +524,15 @@ App.prototype.onDisableLiveHelperModalState = noop;
 // 攔截推文鍵之後開長推文輸入框的唯一入口。同樣是預設 noop ＋ ContextMenu 的
 // useEffect 注入真實作（右鍵選單走的是同一個函式，計算點只有一處）。
 //
-// **回傳值就是合約**：true ＝ 輸入框真的開了，呼叫端才可以 preventDefault／不送
-// byte。noop 回 undefined ⇒ 三條攔截入口自動退回原生推文。ContextMenu 還沒 mount、
-// 已 unmount 都落在這個分支——吞掉按鍵又不開輸入框是這個功能最嚴重的失敗模式。
+// **回傳值就是合約**：true ＝ **我接手了這次按鍵**，呼叫端才可以 preventDefault／
+// 不送 byte。noop 回 undefined ⇒ 三條攔截入口自動退回原生推文。ContextMenu 還沒
+// mount、已 unmount、以及線路上已經有別的序列化操作都落在這個分支——吞掉按鍵又
+// 什麼都不做是這個功能最嚴重的失敗模式。
+//
+// 2026-09 起 true **不等於**「輸入框已經開了」：接手之後先跑一次探路
+// （LongPushSession.startPreflight 送一個 X 問 PTT 推不推得了），輸入框或錯誤框要
+// 等答案回來才開，中間蓋一層遮罩。線路上仍然只有那一個 X，淨效果與原生按 X 一致
+// （使用者本來就是要推文才按的）。詳見 docs/long-push.md「探路（preflight）」。
 App.prototype.openLongPushModal = noop;
 
 App.prototype.switchToEasyReadingMode = function(doSwitch) {

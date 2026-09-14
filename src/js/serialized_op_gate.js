@@ -19,7 +19,8 @@ export function serializedOpHint(core) {
   if (!core) return null;
   if (core.aidNavigation && core.aidNavigation.active)
     return 'AID 跳文中，請稍候…';
+  // 提示字隨階段不同（探路／送出），由 session 自己給——active 為真時一定有值。
   if (core.longPush && core.longPush.active)
-    return '長推文送出中，請稍候…';
+    return core.longPush.opHint || '長推文送出中，請稍候…';
   return null;
 }

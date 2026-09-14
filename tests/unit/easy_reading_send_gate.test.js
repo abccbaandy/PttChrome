@@ -18,11 +18,15 @@
 
 import { EasyReading } from "../../src/js/easy_reading";
 
-function harness({ active = false, inFlightKind = null } = {}) {
+function harness({ active = false, inFlightKind = null, longPushBusy = false } = {}) {
   const sent = [];
   return {
     ctx: {
-      _core: { aidNavigation: { active }, commandQueue: { inFlightKind } },
+      _core: {
+        aidNavigation: { active },
+        commandQueue: { inFlightKind },
+        longPush: { busy: longPushBusy }
+      },
       _view: { _send: d => sent.push(d) },
       _wireBusy: EasyReading.prototype._wireBusy
     },
@@ -50,6 +54,15 @@ test("REGRESSION：queue 有指令在飛就不送（複製連結的 Q／關框�
 test("關框交易在飛時也不送", () => {
   const h = harness({ inFlightKind: "aid-post-info-dismiss" });
   send(h.ctx, "\x1b[6~");
+  expect(h.sent).toEqual([]);
+});
+
+// 長推文有兩段「queue 空著、但畫面還是它的」的空窗：冷卻倒數（最長 240 秒）與
+// armed（探完路、使用者在輸入框打字）。armed 這段特別危險：探路收尾按 ⏎ 回文章
+// 那一幀會讓 functionMode 退出 ⇒ 自動翻頁重新打開，而那時 inFlightKind 是 null。
+test("長推文還握著畫面（冷卻倒數／探完路等使用者打字）：照樣吞掉", () => {
+  const h = harness({ longPushBusy: true });
+  send(h.ctx, "[6~");
   expect(h.sent).toEqual([]);
 });
 

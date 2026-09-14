@@ -1,9 +1,17 @@
-// 長推文一鍵發送的送出狀態機。
+// 長推文一鍵發送的狀態機（探路 ＋ 送出）。
 //
 // 使用者在右鍵選單開的輸入框打一大段話 → long_push.js 依 Big5 byte 上限切成 N 則
 // → 這裡把每一則都跑完一次完整的 PTT 推文互動（X → 型別 → 內容 → 確定[y/N]），
 // 撞到冷卻就等，等完繼續。整段期間 term_view / pttchrome 的輸入入口靠 `active`
 // 擋掉使用者按鍵（比照 aid_navigation.active），畫面上蓋一層進度遮罩。
+//
+// ---- 三階段 ----
+//   preflight  使用者一按 X 就先送一個 X 問 PTT「這篇推得了嗎」，讀完答案再退出
+//              推文流程、按 ⏎ 回原文章。推不了就把 PTT 的**原話**交給錯誤框，
+//              使用者一個字都不必打（startPreflight / _afterProbeX）。
+//   armed      探完路、輸入框開著、使用者在打字。**線路真的空著 ⇒ active=false**，
+//              但 busy=true（畫面還是我們的，見 easy_reading._wireBusy）。
+//   sending    逐則送出。沿用 armed 採好的錨點／閱讀位置／AID，絕不重採。
 //
 // ---- 為什麼每一步都得先讀畫面才能決定送什麼 ----
 // bbs.c#recommend 的型別選單（1a）與「作者本人／時間太近」（1b/1c）是互斥分支，
@@ -55,10 +63,27 @@ const STEP_HARD_TIMEOUT_MS = 12000;
 // 冷卻倒數多等一秒：server 的秒數是整數截斷的（(int)time4_diff），剛好踩點會再被擋一次。
 const COOLDOWN_SLACK_MS = 1000;
 // 取消時最多送幾次收尾鍵。收不回來就放手，畫面留給使用者自己處理。
-const MAX_ABORT_STEPS = 3;
+// 4 步是最壞情況的預算：小天使板（BRD_ANGELANONYMOUS）上 Ctrl-C 會被 vans 當成
+// 「非 n」＝匿名 YES ⇒ 匿名詢問 → 輸入列 → 取消，比一般情況多一步。
+const MAX_ABORT_STEPS = 4;
 // 每一則最多重新定位一次。定位完還對不上就是我們迷路了 —— 這種時候再送 X 等於
 // 亂推，寧可停手把剩下的內容還給使用者。
 const MAX_RELOCATIONS = 1;
+
+// 本程式自己判斷出來的失敗原因（source: 'client'）。**PTT 回報的訊息一律原文透傳**
+// （classifyPushScreen 的 message，已經剝掉 ◆ 與 [按任意鍵繼續]），絕不在這裡改寫或
+// 對照翻譯 —— 那會在 PTT 改字串的那天靜默壞掉，而這正是本功能的重點之一。
+// 集中在這裡是為了日後要 i18n 時只有一個地方要動（session 是純 JS，刻意不 import
+// i18n：那會把整包語系表拉進 unit test 的冷載入成本裡）。
+const MSG = {
+  cancelled: '長推文已取消',
+  screenChanged: '畫面已變更',
+  articleMoved: '文章位置已變動',
+  cursorUnreadable: '讀不出游標所在的文章',
+  aidUnreadable: '讀不到文章代碼',
+  unknownScreen: '看不出現在的畫面',
+  noResponse: 'PTT 沒有回應'
+};
 
 export function LongPushSession(core, view, termBuf, queue) {
   this._core = core;
@@ -67,9 +92,23 @@ export function LongPushSession(core, view, termBuf, queue) {
   this._queue = queue;
   // 送出序列進行中：term_view.onKeyDown / App.onFunctionKey / 各 mouse 入口都
   // 檢查它並吞掉使用者輸入（同 aidNavigation.active）。
+  //
+  // **語意是「線路上正在跑序列化操作」，不是「這個功能正在用」**：armed
+  // （探完路、使用者在輸入框打字）期間線路真的空著，active 必須是 false，
+  // 否則 serializedOpHint 會把他打的字吞掉。要問「這個功能是不是還握著畫面」
+  // 用 busy（見下面的 getter）。
   this.active = false;
+  // 三階段：'idle' → 'preflight'（送一個 X 問 PTT 能不能推）→ 'armed'（使用者
+  // 在輸入框打字）→ 'sending'（逐則送出）。preflight 失敗或送完就回 'idle'。
+  this._phase = 'idle';
+  // preflight 的成果，**跨越使用者打字那段時間**的唯一狀態（_reset 不清它）。
+  this._armed = null;
   // 進度回呼（ContextMenu 掛上來畫遮罩）。null = 沒人看。
   this.onChange = null;
+  // 探路結果 → ContextMenu 決定開輸入框還是錯誤框。
+  this.onPreflight = null;
+  // 送出階段的終局（失敗／取消）→ 錯誤框。成功仍走 _hint 的 toast。
+  this.onResult = null;
   this._timer = null;
   this._reset();
 }
@@ -96,7 +135,34 @@ LongPushSession.prototype = {
     // 按 Q 會把使用者踢出文章（view_postinfo 也 return FULLUPDATE），收工回文章
     // 時要把閱讀位置還回去。
     this._readLineIndex = null;
+    // 最後一次 settle 的 facts。收尾鍵（_enqueueAbort）走的是自己的 enqueue，
+    // 沒經過 _step，但收完之後要用**新鮮的** facts 過 _gate ⇒ 兩邊都記一次。
+    this._lastFacts = null;
+    // preflight 從畫面上讀到、要帶去給輸入框的事實。
+    this._preflightScreen = null;
     this._clearTimer();
+  },
+
+  // 「這個功能還握著畫面嗎」——包含 armed（使用者在打字，線路空著但畫面是我們
+  // 的）與冷卻倒數（queue 空著最長可以到 240 秒）。easy_reading 的自動翻頁要看它，
+  // 不能只看 active／inFlightKind，否則會在這兩個空窗插進線路。
+  get busy() {
+    return this.active || !!this._armed;
+  },
+
+  // 序列化操作的提示字串（serialized_op_gate 用）。armed 期間 active 是 false，
+  // 自然不會走到這裡。
+  get opHint() {
+    return this._phase === 'preflight'
+      ? '正在確認能不能推文，請稍候…'
+      : '長推文送出中，請稍候…';
+  },
+
+  // 丟掉探路成果。錨點綁在**這條連線**的列表游標上，斷線就失效（同
+  // aidNavigation.reset 的理由）。
+  disarm: function() {
+    this._armed = null;
+    if (this._phase === 'armed') this._phase = 'idle';
   },
 
   _clearTimer: function() {
@@ -141,54 +207,197 @@ LongPushSession.prototype = {
       this._view.flashListHint(msg, 6000);
   },
 
-  _finish: function(msg, copyRest) {
-    const rest = copyRest ? this._rest() : '';
+  // 收工。outcome.kind ∈ 'done' | 'fail' | 'cancel'。
+  //
+  // **剩餘內容不再自動寫進剪貼簿**（2026-09 使用者定案）：那會無聲蓋掉使用者手上
+  // 的剪貼簿內容，而且他根本不知道發生了什麼事。改成交給 LongPushErrorModal 顯示
+  // 在唯讀 Textarea 裡，要不要複製由他按。
+  _finish: function(outcome) {
+    const o = outcome || {};
+    // _rest() 讀的是 _text/_offset，**一定要在 _reset() 之前**。
+    const rest = o.keepRest ? this._rest() : '';
     const sent = this._sent;
     this.active = false;
     this._clearTimer();
     this._emit(null);
-    if (rest && this._core.doCopy) this._core.doCopy(rest);
+    this.disarm();
+    this._phase = 'idle';
     this._reset();
-    if (msg) this._hint(msg + (sent ? '（已送出 ' + sent + ' 則）' : ''));
+    if (o.kind === 'done') {
+      if (o.message) this._hint(o.message);
+      return;
+    }
+    if (this.onResult)
+      this.onResult({
+        blocked: true,
+        phase: o.kind === 'cancel' ? 'cancelled' : 'sending',
+        source: o.source || 'client',
+        message: o.message || '',
+        reason: o.reason || null,
+        sent: sent,
+        rest: rest
+      });
   },
 
-  // 失敗：停在原生畫面，剩下的內容進剪貼簿（使用者定案）。
-  _fail: function(msg) {
+  // 失敗：停在原生畫面，剩下的內容交給錯誤框（使用者可以自己讀回、複製）。
+  // source='ptt' ＝ message 是 PTT 原文（classifyPushScreen 的 message），'client'
+  // ＝ 本程式的判斷（逾時、畫面變更…）。兩者在錯誤框上會明確標示，因為使用者
+  // 對這兩種訊息該做的事完全不同。
+  _fail: function(msg, source) {
     if (!this.active) return;
-    this._finish('長推文中止：' + msg + '，剩餘內容已複製', true);
+    if (this._phase === 'preflight')
+      return this._preflightFail({ source: source || 'client', message: msg });
+    this._finish({
+      kind: 'fail',
+      source: source || 'client',
+      message: msg,
+      keepRest: true
+    });
+  },
+
+  // -------------------------------------------------------------------------
+  // 探路（preflight）的兩個終點
+  // -------------------------------------------------------------------------
+
+  // 能推。把 preflight 讀到的事實封進 _armed 交給輸入框，線路還給使用者。
+  _preflightDone: function(facts) {
+    this._armed = {
+      anchor: this._anchor,
+      readLineIndex: this._readLineIndex,
+      startedInArticle: this._startedInArticle,
+      // reopen 沒回到文章時，start() 要先送 \f 重新確認畫面（_enqueueOrient）。
+      landedInArticle: !!(facts && facts.kind === 'article'),
+      screen: this._preflightScreen || {},
+      maxBytes: this._maxBytes
+    };
+    this._phase = 'armed';
+    this.active = false;
+    this._clearTimer();
+    // 遮罩收掉與輸入框打開必須落在 React 的**同一次 update**，否則 modalShown 會
+    // true→false→true，終端機會把焦點搶回隱藏 input #t（見 ContextMenu 的掛接）。
+    this._emit(null);
+    if (this.onPreflight)
+      this.onPreflight(
+        Object.assign({ blocked: false, maxBytes: this._maxBytes }, this._armed.screen)
+      );
+  },
+
+  // 不能推（或探路本身失敗）。
+  _preflightFail: function(payload) {
+    const p = payload || {};
+    this.active = false;
+    this._clearTimer();
+    this._emit(null);
+    this.disarm();
+    this._phase = 'idle';
+    this._reset();
+    if (this.onPreflight)
+      this.onPreflight({
+        blocked: true,
+        phase: 'preflight',
+        source: p.source || 'client',
+        message: p.message || '',
+        reason: p.reason || null,
+        sent: 0,
+        rest: ''
+      });
   },
 
   // -------------------------------------------------------------------------
   // 入口
   // -------------------------------------------------------------------------
 
+  // 探路：在**使用者還沒打字之前**送一個 X 問 PTT「這篇我推得了嗎」。
+  //
+  // 為什麼問得到：bbs.c#recommend 的每一種擋人判斷（BRD_NORECOMMEND／
+  // CheckPostPerm2／guest／已刪除文／看板發文限制／快速連推／check_cooldown）都在
+  // getdata 讀內容**之前**做完，一律 vmsg 印 ◆ 橫幅後 return FULLUPDATE。
+  // 為什麼可以白按一次：lastrecommend 只在**成功寫檔後**才更新（bbs.c:3144），
+  // check_cooldown 是唯讀的（bbs.c:4344）⇒ 探路不會害真正送出時被降級或擋下。
+  // 唯一的足跡是 recommend_in_minute++（bbs.c:2909，上限 60/分鐘）。
+  // 詳見 docs/long-push.md「探路（preflight）」。
+  //
+  // 回 true ＝ 我接手了這次按鍵（呼叫端才可以 preventDefault）。
+  startPreflight: function(opts) {
+    const o = opts || {};
+    if (this.busy) return false;
+    // 只在文章裡探。列表上按 X 推的是游標所指的文章，而錨點要從文章標頭取
+    // （long_push_gate 的攔截判準也是同一條線）。
+    if (!this._termBuf || this._termBuf.pageState !== 3) return false;
+    this._reset();
+    this._phase = 'preflight';
+    this._maxBytes = o.maxBytes || pushMaxBytes({});
+    this._startedInArticle = true;
+    this.active = true;
+    this._prologue();
+    this._emit({ phase: 'preflight' });
+    this._enqueueResolveAid();
+    return true;
+  },
+
   // text 必須是已過 stripNonBig5 的內容；type ∈ 'push' | 'boo' | 'arrow'。
   // maxBytes 是呼叫端算的**預估**上限（拿不到帳號時 pushMaxBytes 會給保守值），
   // 第一則進到輸入列後就會被畫面校正。回 true 表示序列已開始。
+  //
+  // 正常路徑上 _armed 已經由 startPreflight 準備好（錨點／閱讀位置／AID／上限
+  // 都是**還在文章裡**那一刻採的），這裡一律沿用、**絕不重採**：此刻畫面早就
+  // 進過 functionMode（scrollTop 已歸零），重採等於把污染當成基準。沒有 _armed
+  // 的降級路徑（斷線 disarm、或呼叫端沒探路）才自己跑一次序幕。
   start: function(opts) {
     const o = opts || {};
     if (this.active) return false;
+    const armed = this._armed;
     const text = String(o.text || '');
-    this._reset();
+    this._reset(); // 刻意不動 _armed
     this._text = text;
-    this._maxBytes = o.maxBytes || pushMaxBytes({});
+    this._maxBytes = (armed && armed.maxBytes) || o.maxBytes || pushMaxBytes({});
     this._recount();
     if (!this._total) return false;
 
     this._typeKey = PUSH_TYPE_KEY[o.type] || PUSH_TYPE_KEY.push;
-    this._startedInArticle = this._termBuf.pageState === 3;
+    this._phase = 'sending';
     this.active = true;
 
-    // ORDER INVARIANT：閱讀位置與文章標頭都必須在 _enterFunctionMode() **之前**
-    // 讀。那個函式結尾的 termBuf.notify() 是同步的，term_view.redraw 的
-    // functionMode 分支第一件事就是 mainDisplay.scrollTop = 0（同一條不變量在
-    // deep_link_controller.copyCurrentPostLink 與 aid_navigation.start 都有註解）。
-    this._readLineIndex = this._currentLineIndex();
-    // 錨點基準一定要在**還在文章裡**的時候取：第 1 則落回列表那一幀已經是
-    // i_read 重讀 headers 之後的畫面，游標列可能早就換人，拿它當基準等於把污染
-    // 當成正確值（long_push_anchor.js 檔頭有完整推導）。
-    this._anchor = articleAnchor(this._articleHeadRows());
+    if (armed) {
+      this._anchor = armed.anchor;
+      this._readLineIndex = armed.readLineIndex;
+      this._startedInArticle = armed.startedInArticle;
+      this._userId = (armed.screen && armed.screen.userId) || '';
+      this._ipLogged =
+        armed.screen && armed.screen.ipLogged != null
+          ? armed.screen.ipLogged
+          : null;
+      const landed = armed.landedInArticle;
+      this.disarm();
+      this._prologue();
+      // 探完路人已經回到文章 ⇒ X 推的就是這篇，沒有歧義。回不去（reopen 失敗）
+      // 就先看清楚現在在哪，再過守門。
+      if (landed) this._enqueueOpen();
+      else this._enqueueOrient();
+      return true;
+    }
 
+    this._startedInArticle = this._termBuf.pageState === 3;
+    // ORDER INVARIANT：閱讀位置與文章標頭都必須在 _enterFunctionMode() **之前**
+    // 讀（理由見 _prologue）。
+    this._readLineIndex = this._currentLineIndex();
+    this._anchor = articleAnchor(this._articleHeadRows());
+    this._prologue();
+    this._enqueueResolveAid();
+    return true;
+  },
+
+  // 序幕：採樣 → 切到原生鏡像。**採樣一定要在 _enterFunctionMode() 之前**——
+  // 那個函式結尾的 termBuf.notify() 是同步的，term_view.redraw 的 functionMode
+  // 分支第一件事就是 mainDisplay.scrollTop = 0（同一條不變量在
+  // deep_link_controller.copyCurrentPostLink 與 aid_navigation.start 都有註解）。
+  // 錨點基準也一定要在**還在文章裡**的時候取：落回列表那一幀已經是 i_read 重讀
+  // headers 之後的畫面，游標列可能早就換人（long_push_anchor.js 檔頭有推導）。
+  _prologue: function() {
+    if (this._phase === 'preflight') {
+      this._readLineIndex = this._currentLineIndex();
+      this._anchor = articleAnchor(this._articleHeadRows());
+    }
     // 把**真的**原生畫面放到台面上再開始驅動它：文章好讀的 functionMode 是既有的
     // 即時鏡像機制（先例 deep_link_controller / aid_navigation），列表好讀則停到
     // 它自己的 functionMode，讓共用 queue 淨空、reducer 不來搶我們的 settle。
@@ -198,9 +407,6 @@ LongPushSession.prototype = {
       this._core.listSession.beginExternalNavigation();
     if (this._core.boardListSession && this._core.boardListSession.beginExternalNavigation)
       this._core.boardListSession.beginExternalNavigation();
-
-    this._enqueueResolveAid();
-    return true;
   },
 
   // 與 deep_link_controller._currentLineIndex / aid_navigation._currentLineIndex
@@ -238,10 +444,17 @@ LongPushSession.prototype = {
   // onDone(info=null) 是**明確答案**「本篇沒有 AID」（bbs.c:3707 印的是空框行），
   // 不是失敗：照樣繼續，只是之後只能靠作者＋主題比對。真正的 onFail 代表畫面狀態
   // 未知 —— 這時連「我們現在在文章還是列表」都不確定，送 X 等於亂推，停手。
+  // 序幕跑完（AID 拿到了）之後要做的事：探路階段是送 X 問一句就走，送出階段是
+  // 真的開始推第一則。
+  _afterPrologue: function() {
+    if (this._phase === 'preflight') return this._enqueueProbeX();
+    this._enqueueOpen();
+  },
+
   _enqueueResolveAid: function() {
     const nav = this._core.aidNavigation;
     if (!nav || !nav.resolvePostAid || !this._startedInArticle)
-      return this._enqueueOpen();
+      return this._afterPrologue();
     const self = this;
     nav.resolvePostAid({
       kind: 'longpush-aid',
@@ -255,10 +468,10 @@ LongPushSession.prototype = {
           self._anchor.board = info.board;
         }
         if (meta && meta.boxOpen) return self._enqueueDismissPostInfo();
-        self._enqueueOpen();
+        self._afterPrologue();
       },
       onFail: function(reason) {
-        self._fail('讀不到文章代碼（' + reason + '）');
+        self._fail(MSG.aidUnreadable + '（' + reason + '）');
       }
     });
   },
@@ -279,9 +492,9 @@ LongPushSession.prototype = {
         );
       },
       done: function(c, result) {
-        if (c.kind === 'fatal') return self._fail(c.message);
+        if (c.kind === 'fatal') return self._fail(c.message, 'ptt');
         self._gate(result.facts, function() {
-          self._enqueueOpen();
+          self._afterPrologue();
         });
       }
     });
@@ -296,6 +509,13 @@ LongPushSession.prototype = {
     // flush 會連 in-flight 一起丟（並觸發它的 onFlushed，_onFlushed 因為
     // _cancelling 已立起而讓路），之後 queue 是空的，收尾鍵才排得進去。
     this._queue.flush();
+    const self = this;
+    if (this._phase === 'preflight') {
+      this._abortSteps = 0;
+      return this._enqueueAbort(function() {
+        self._preflightFail({ source: 'client', message: MSG.cancelled });
+      });
+    }
     this._enqueueAbort();
   },
 
@@ -304,7 +524,7 @@ LongPushSession.prototype = {
   // （command_queue.js:114-119 的硬性要求）。
   _onFlushed: function() {
     if (this._cancelling) return; // 取消路徑自己會收尾
-    this._fail('畫面已變更');
+    this._fail(MSG.screenChanged);
   },
 
   // -------------------------------------------------------------------------
@@ -330,6 +550,7 @@ LongPushSession.prototype = {
         if (!cmd.accept(c, facts)) return false;
         // facts 是 list_session._collectFacts 的產物（純資料，沒有 TermChar
         // 參考），可以整份帶給守門用。
+        self._lastFacts = facts;
         return {
           screen: c,
           listKind: facts.kind,
@@ -347,6 +568,122 @@ LongPushSession.prototype = {
       },
       onFlushed: function() {
         self._onFlushed();
+      }
+    });
+  },
+
+  // -------------------------------------------------------------------------
+  // 探路（preflight）：送一個 X，讀 PTT 的回答，再從推文流程退出來
+  // -------------------------------------------------------------------------
+
+  _enqueueProbeX: function() {
+    const self = this;
+    this._step({
+      kind: 'longpush-probe',
+      keys: 'X',
+      failMsg: '按 X 進推文沒有回應',
+      accept: function(c) {
+        return c.kind !== 'other';
+      },
+      done: function(c, result) {
+        self._afterProbeX(c, result);
+      }
+    });
+  },
+
+  // PTT 對那一個 X 的回答 → 能不能推 ＋ 順便讀到的事實。
+  //
+  //   fatal       擋人橫幅（含認不得的）⇒ 不能推，原文帶回去給使用者看
+  //   cooldown    「請再等 N 秒」⇒ **不算不能推**：打完字通常早就超過那幾秒，
+  //               送出時的既有冷卻等待會處理，這裡只把秒數帶回去提示
+  //   typeMenu    推得了，順便知道這塊板讓不讓噓（BRD_NOBOO）
+  //   inputPrompt 推得了，但 PTT 已經決定用 → 加註（作者本人／90 秒內連推），
+  //               而且 prompt 上有自己的帳號 ⇒ 單則上限可以算準
+  //   angel       推得了（小天使匿名板），同樣沒有型別選單
+  //
+  // 三條路都走同一個 _enqueueAbort 迴圈退出（fatal／cooldown 是橫幅 ⇒ 送空白鍵，
+  // 其餘是推文流程 ⇒ 送 Ctrl-C），再過守門、按 ⏎ 回到原文章。
+  _afterProbeX: function(c, result) {
+    const self = this;
+    const screen = {};
+    if (c.kind === 'fatal') {
+      this._preflightScreen = null;
+    } else if (c.kind === 'cooldown') {
+      screen.cooldownSec = c.waitSec;
+      screen.cooldownMessage = c.message;
+    } else if (c.kind === 'typeMenu') {
+      screen.booAllowed = !!c.booAllowed;
+    } else {
+      // inputPrompt / angel：型別選單被跳過 ⇒ 這次一定是 →（bbs.c:2957-2974）。
+      screen.degraded = true;
+      if (c.kind === 'angel') screen.angel = true;
+      if (c.userId) screen.userId = c.userId;
+    }
+    if (c.kind !== 'fatal') {
+      // 畫面上還是文章，既有的推文列看得出這塊板記不記 IP ⇒ 單則上限的另一半。
+      const ip = detectIpLogged(result ? result.rowTexts : null);
+      if (ip !== null) screen.ipLogged = ip;
+      if (screen.userId) this._userId = screen.userId;
+      if (ip !== null) this._ipLogged = ip;
+      this._maxBytes = pushMaxBytes({
+        userId: this._userId,
+        ipLogged: this._ipLogged
+      });
+      this._preflightScreen = screen;
+    }
+
+    const blocked = c.kind === 'fatal';
+    const message = c.message;
+    this._abortSteps = 0;
+    this._enqueueAbort(
+      function() {
+        self._preflightLeave(blocked ? message : null);
+      },
+      function(reason) {
+        // 收尾鍵沒有回應／被 flush：畫面狀態未知，不可以再送 ⏎ 回文章。
+        self._preflightFail({
+          source: 'client',
+          message: MSG.noResponse,
+          reason: reason || null
+        });
+      }
+    );
+  },
+
+  // 退出推文流程之後：過守門、按 ⏎ 回原文章、還原閱讀位置，最後才回報結果。
+  // 被擋下來的人也要回得去——他只是按了 X，不該因此丟掉閱讀進度。
+  _preflightLeave: function(blockedMessage) {
+    const self = this;
+    const done = function(facts) {
+      if (blockedMessage != null)
+        return self._preflightFail({ source: 'ptt', message: blockedMessage });
+      self._preflightDone(facts);
+    };
+    this._gate(this._lastFacts, function() {
+      self._enqueueReopen(done);
+    });
+  },
+
+  // start() 時人不在文章（preflight 的 reopen 沒回去）：先送 \f 看清楚現在在哪，
+  // 再過守門。accept 是**白名單**——armed 期間可能已經斷線重連到登入畫面，
+  // 在那裡往下送 X 等於亂按。
+  //
+  // 這裡送 \f 不違反「推文流程裡不用 fullRepaint」那條不變量：此刻人在列表／文章，
+  // 沒有 vkey() 在等單一 byte（_enqueueAidRelocate 早就在同樣的位置這樣做）。
+  _enqueueOrient: function() {
+    const self = this;
+    this._step({
+      kind: 'longpush-orient',
+      keys: '',
+      fullRepaint: true,
+      failMsg: MSG.unknownScreen,
+      accept: function(c, facts) {
+        return facts.kind === 'clean-list' || facts.kind === 'article';
+      },
+      done: function(c, result) {
+        self._gate(result.facts, function() {
+          self._enqueueOpen();
+        });
       }
     });
   },
@@ -369,7 +706,7 @@ LongPushSession.prototype = {
   },
 
   _afterOpen: function(c, result) {
-    if (c.kind === 'fatal') return this._fail(c.message);
+    if (c.kind === 'fatal') return this._fail(c.message, 'ptt');
     if (c.kind === 'cooldown') return this._enqueueDismissAndWait(c);
     if (c.kind === 'typeMenu') return this._enqueueType();
     if (c.kind === 'angel') return this._enqueueAngel();
@@ -391,7 +728,7 @@ LongPushSession.prototype = {
         );
       },
       done: function(c, result) {
-        if (c.kind === 'fatal') return self._fail(c.message);
+        if (c.kind === 'fatal') return self._fail(c.message, 'ptt');
         if (c.kind === 'angel') return self._enqueueAngel();
         self._enqueueContent(c, result);
       }
@@ -410,7 +747,7 @@ LongPushSession.prototype = {
         return c.kind === 'inputPrompt' || c.kind === 'fatal';
       },
       done: function(c, result) {
-        if (c.kind === 'fatal') return self._fail(c.message);
+        if (c.kind === 'fatal') return self._fail(c.message, 'ptt');
         self._enqueueContent(c, result);
       }
     });
@@ -431,7 +768,7 @@ LongPushSession.prototype = {
     this._recount();
 
     const spans = this._pendingSpans();
-    if (!spans.length) return this._finish('長推文完成', false);
+    if (!spans.length) return this._finish({ kind: 'done', message: '長推文完成' });
     this._span = spans[0];
     this._emit({});
 
@@ -444,7 +781,7 @@ LongPushSession.prototype = {
         return c.kind === 'confirm' || c.kind === 'fatal';
       },
       done: function(c) {
-        if (c.kind === 'fatal') return self._fail(c.message);
+        if (c.kind === 'fatal') return self._fail(c.message, 'ptt');
         self._enqueueConfirm();
       }
     });
@@ -462,7 +799,7 @@ LongPushSession.prototype = {
         return c.kind !== 'confirm';
       },
       done: function(c, result) {
-        if (c.kind === 'fatal') return self._fail(c.message);
+        if (c.kind === 'fatal') return self._fail(c.message, 'ptt');
         self._onSegmentSent(result);
       }
     });
@@ -498,10 +835,19 @@ LongPushSession.prototype = {
       // 列表。使用者是從文章裡按的，就把他送回去——但**先確認游標還在原篇**：
       // 開錯文章比推錯更糟（使用者會在錯的地方繼續讀、繼續推）。
       return this._gate(result.facts, function() {
-        self._enqueueReopen(total);
+        self._enqueueReopen(function() {
+          self._finishDone(total);
+        });
       });
     }
-    this._finish('長推文完成，共送出 ' + total + ' 則', false);
+    this._finishDone(total);
+  },
+
+  _finishDone: function(total) {
+    this._finish({
+      kind: 'done',
+      message: '長推文完成，共送出 ' + total + ' 則'
+    });
   },
 
   // -------------------------------------------------------------------------
@@ -523,7 +869,7 @@ LongPushSession.prototype = {
     // 飄掉的畫面認成基準。
     if (!this._anchor || (!this._anchor.author && !this._anchor.aid)) {
       const cap = captureCursorAnchor(facts);
-      if (!cap) return this._fail('讀不出游標所在的文章');
+      if (!cap) return this._fail(MSG.cursorUnreadable);
       this._anchor = Object.assign({}, this._anchor, cap);
       return proceed();
     }
@@ -533,7 +879,7 @@ LongPushSession.prototype = {
 
   _enqueueRelocate: function(facts, proceed) {
     if (this._relocations >= MAX_RELOCATIONS)
-      return this._fail('文章位置已變動');
+      return this._fail(MSG.articleMoved);
     this._relocations++;
 
     // #<aid>⏎ 是 PTT 原生、權威的定位（read.c#select_by_aid 直接把 crs_ln 設到
@@ -543,7 +889,7 @@ LongPushSession.prototype = {
     // 沒有 AID 就只能在**這一頁**上找回原篇再用編號跳。找不到＝原篇不在眼前，
     // 盲目翻頁去找等於在列表上亂按 —— 停手。
     const num = findAnchorRowNum(facts, this._anchor);
-    if (num == null) return this._fail('文章位置已變動');
+    if (num == null) return this._fail(MSG.articleMoved);
     this._enqueueNumberRelocate(num, proceed);
   },
 
@@ -602,7 +948,7 @@ LongPushSession.prototype = {
   _afterRelocate: function(facts, proceed, authoritative) {
     if (!authoritative) {
       if (checkCursorAnchor(facts, this._anchor) !== 'ok')
-        return this._fail('文章位置已變動');
+        return this._fail(MSG.articleMoved);
       return proceed();
     }
     const cap = captureCursorAnchor(facts);
@@ -614,15 +960,17 @@ LongPushSession.prototype = {
     proceed();
   },
 
-  _enqueueReopen: function(total) {
+  // 按 ⏎ 回到原文章並還原閱讀位置。兩個消費者：送完全部推文的收工，以及探路
+  // 之後的歸位（被擋下來的人也要回得去）。land(facts) 的 facts 在回不去時是 null。
+  _enqueueReopen: function(onLanded) {
     const self = this;
-    const done = function() {
+    const land = function(facts) {
       const er = self._core.easyReading;
       // 按 Q 取 AID 會把使用者踢出文章（view_postinfo 也 return FULLUPDATE），
       // 不還原閱讀位置等於把他的進度吃掉。
       if (self._readLineIndex && er && er.requestScrollRestore)
         er.requestScrollRestore(self._readLineIndex);
-      self._finish('長推文完成，共送出 ' + total + ' 則', false);
+      onLanded(facts);
     };
     this._step({
       kind: 'longpush-reopen',
@@ -630,9 +978,13 @@ LongPushSession.prototype = {
       accept: function(c, facts) {
         return facts.kind === 'article' || c.kind !== 'other';
       },
-      done: done,
+      done: function(c, result) {
+        land((result && result.facts) || null);
+      },
       // 回不去只是停在列表，推文本身已經送完了，不該報成失敗。
-      fail: done
+      fail: function() {
+        land(null);
+      }
     });
   },
 
@@ -679,13 +1031,27 @@ LongPushSession.prototype = {
   // 取消收尾：把畫面從半途的推文流程帶回文章／列表。輸入列與確認列都吃 Ctrl-C
   // （清空 + abort ⇒ 什麼都不寫），橫幅吃任意鍵，型別選單沒有「取消」——送任何
   // 非數字都會被當成預設值進到輸入列，所以那一步先進去再 Ctrl-C 出來。
-  _enqueueAbort: function() {
+  // onSettled 是收尾完成後要做的事（預設：取消整趟長推文；探路階段傳的是「回原
+  // 文章 → 回報結果」）。onLost 是收尾鍵逾時／被 flush 時的出口——那時畫面狀態
+  // 未知，**不可以**再往下送 ⏎ 這類鍵（不變量 2），所以探路那條路會直接回報失敗。
+  _enqueueAbort: function(onSettled, onLost) {
     const self = this;
+    const settled =
+      onSettled ||
+      function() {
+        self._finish({
+          kind: 'cancel',
+          source: 'client',
+          message: MSG.cancelled,
+          keepRest: true
+        });
+      };
+    const lost = onLost || settled;
     const rows = this._termBuf.rows;
     const last = this._termBuf.getRowText(rows - 1, 0, this._termBuf.cols);
     const c = classifyPushScreen([last], 1);
     if (c.kind === 'other' || this._abortSteps >= MAX_ABORT_STEPS) {
-      this._finish('長推文已取消，剩餘內容已複製', true);
+      settled();
       return;
     }
     this._abortSteps++;
@@ -700,17 +1066,20 @@ LongPushSession.prototype = {
       hardTimeoutMs: STEP_HARD_TIMEOUT_MS,
       expect: function(snapshot, facts) {
         const s = classifyPushScreen(facts.rowTexts, facts.rows);
-        return s.kind !== c.kind ? { screen: s } : false;
+        if (s.kind === c.kind) return false;
+        // 收尾完要用**新鮮的** facts 過守門（探路那條路接著要按 ⏎ 回文章）。
+        self._lastFacts = facts;
+        return { screen: s };
       },
       onDone: function() {
-        self._enqueueAbort();
+        self._enqueueAbort(onSettled, onLost);
       },
       // 收不回來就放手：畫面留在原生鏡像，使用者自己按 ← 就好。
-      onFail: function() {
-        self._finish('長推文已取消，剩餘內容已複製', true);
+      onFail: function(reason) {
+        lost(reason);
       },
       onFlushed: function() {
-        self._finish('長推文已取消，剩餘內容已複製', true);
+        lost('flush');
       }
     });
   }

@@ -50,6 +50,7 @@ const renderModal = (props = {}) => {
       <LongPushModal
         show={show}
         maxBytes={props.maxBytes || 20}
+        preflight={props.preflight}
         onHide={props.onHide || (() => {})}
         onConfirm={onConfirm}
         imageUpload={props.imageUpload}
@@ -252,5 +253,55 @@ describe("網址過長警告", () => {
     expect(document.body.textContent).not.toContain(
       i18n("longPushModal_urlTooLong"),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 探路帶回來的事實（LongPushSession.startPreflight 從 PTT 畫面讀到的，不是猜的）
+// ---------------------------------------------------------------------------
+describe("探路的事實", () => {
+  test("沒探過路 → 維持原本那句推測語氣的提示，什麼都不多畫", () => {
+    renderModal();
+    expect(screen.getByText(i18n("longPushModal_typeNote"))).toBeTruthy();
+    expect(screen.queryByTestId("longPushArrowNote")).toBeNull();
+    expect(screen.queryByTestId("longPushCooldownNote")).toBeNull();
+    expect(screen.queryByTestId("longPushNoBooNote")).toBeNull();
+  });
+
+  test("PTT 已判定會降級成 → ：用肯定句取代那句推測", () => {
+    renderModal({ preflight: { blocked: false, degraded: true } });
+    expect(screen.getByTestId("longPushArrowNote")).toBeTruthy();
+    expect(screen.queryByText(i18n("longPushModal_typeNote"))).toBeNull();
+  });
+
+  test("禁噓板：噓不可選，已選的會被改回推", () => {
+    renderModal({ preflight: { blocked: false, booAllowed: false } });
+    expect(screen.getByTestId("longPushNoBooNote")).toBeTruthy();
+    // Mantine 的 SegmentedControl 是一組同名 radio。
+    const boo = document.querySelector('input[name="longPushType"][value="boo"]');
+    expect(boo.disabled).toBe(true);
+    expect(
+      document.querySelector('input[name="longPushType"]:checked').value,
+    ).toBe("push");
+  });
+
+  test("冷卻中：提示秒數與 PTT 原文，但**不擋送出**", () => {
+    const { onConfirm } = renderModal({
+      preflight: {
+        blocked: false,
+        cooldownSec: 30,
+        cooldownMessage: "本板禁止快速連續推文，請再等 30 秒",
+      },
+    });
+    const note = screen.getByTestId("longPushCooldownNote");
+    expect(note.textContent).toContain("30");
+    // PTT 的原文照錄（改版了也照樣轉達）。
+    expect(note.textContent).toContain("本板禁止快速連續推文，請再等 30 秒");
+
+    fireEvent.change(document.querySelector('[name="longPushText"]'), {
+      target: { value: "等一下就好" },
+    });
+    fireEvent.click(screen.getByText(i18n("longPushModal_confirm")));
+    expect(onConfirm).toHaveBeenCalled();
   });
 });

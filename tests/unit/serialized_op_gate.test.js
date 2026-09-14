@@ -31,6 +31,16 @@ describe("serializedOpHint 述詞", () => {
     expect(serializedOpHint({ longPush: { active: true } })).toBe(PUSH_HINT);
   });
 
+  test("探路階段的提示與送出階段不同（使用者要知道自己在等什麼）", () => {
+    const preflight = { active: true, opHint: "正在確認能不能推文，請稍候…" };
+    expect(serializedOpHint({ longPush: preflight })).toBe(preflight.opHint);
+  });
+
+  test("探完路等使用者打字（armed）→ 線路空著，不可以吞他的鍵", () => {
+    // active 是 false、busy 才是 true：那時我們只是握著畫面，沒有命令在飛。
+    expect(serializedOpHint({ longPush: { active: false, busy: true } })).toBe(null);
+  });
+
   test("兩者同時（理論上不會，共用同一條 CommandQueue）→ AID 優先，不得回 null", () => {
     expect(
       serializedOpHint({ aidNavigation: { active: true }, longPush: { active: true } })

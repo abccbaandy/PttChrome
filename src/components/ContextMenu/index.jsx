@@ -7,6 +7,7 @@ import PrefModal from "./PrefModal";
 import TitleBlacklistModal from "./TitleBlacklistModal";
 import LongPushModal from "./LongPushModal";
 import LongPushProgressModal from "./LongPushProgressModal";
+import LongPushErrorModal from "./LongPushErrorModal";
 import DebugRecordButton from "../DebugRecordButton";
 import { onPrefSaveImpl } from "./pref_save";
 import { downloadAsFile } from "../../js/util";
@@ -36,6 +37,7 @@ import {
 import { isNativeMenuTarget } from "../../js/preview_targets";
 import { pushMaxBytes } from "../../js/long_push";
 import { longPushAvailable } from "../../js/long_push_gate";
+import { serializedOpHint } from "../../js/serialized_op_gate";
 
 function noop() {}
 
@@ -141,8 +143,15 @@ const initialState = {
   showsTitleBlacklist: false,
   titleBlacklistDraft: "",
   showsLongPush: false,
-  // LongPushSession 的進度快照（null ＝ 沒在送，遮罩不出現）。
+  // 探路（startPreflight）從 PTT 畫面讀回來的事實，交給輸入框顯示：禁不禁噓、
+  // 這次會不會被降級成 →、目前在不在冷卻。null ＝ 沒探過路。
+  longPushPreflight: null,
+  // LongPushSession 的進度快照（null ＝ 沒在送，遮罩不出現）。探路期間也用它
+  // （phase: 'preflight'），使用者按下 X 之後才不會什麼都沒有。
   longPushProgress: null,
+  // 推不出去的終局（探路被擋／送出中止／取消）。內含 PTT 的原文訊息與還沒送出
+  // 的內容，null ＝ 沒有錯誤框。
+  longPushError: null,
   showsLiveArticleHelper: false,
   showsSettings: false,
   // --- LiveHelper state ---
@@ -183,7 +192,8 @@ export const ContextMenu = ({ pttchrome }) => {
     state.showsSettings ||
     state.showsTitleBlacklist ||
     state.showsLongPush ||
-    !!state.longPushProgress;
+    !!state.longPushProgress ||
+    !!state.longPushError;
   useEffect(() => {
     pttchrome.setModalOpen("contextMenu", modalOpen);
   }, [pttchrome, modalOpen]);
@@ -193,8 +203,33 @@ export const ContextMenu = ({ pttchrome }) => {
     const session = pttchrome.longPush;
     if (!session) return undefined;
     session.onChange = (progress) => update({ longPushProgress: progress });
+    // 探路的結果。遮罩收掉與「開輸入框／開錯誤框」**必須在同一次 update**：分兩次
+    // 的話 modalOpen 會 true→false→true，中間那一幀終端機會把焦點搶回隱藏 input #t
+    // （modal_shown_sources.test.js / connect_failure.offline.spec.js 守的那個坑）。
+    session.onPreflight = (result) =>
+      update(
+        result.blocked
+          ? {
+              longPushProgress: null,
+              showsLongPush: false,
+              longPushPreflight: null,
+              longPushError: result,
+            }
+          : {
+              longPushProgress: null,
+              showsLongPush: true,
+              longPushPreflight: result,
+              longPushMaxBytes:
+                result.maxBytes || stateRef.current.longPushMaxBytes,
+            },
+      );
+    // 送出階段的終局（失敗／取消）。成功不走這裡（session 自己閃一則 toast）。
+    session.onResult = (result) =>
+      update({ longPushProgress: null, longPushError: result });
     return () => {
       session.onChange = null;
+      session.onPreflight = null;
+      session.onResult = null;
     };
   }, [pttchrome, update]);
 
@@ -455,26 +490,57 @@ export const ContextMenu = ({ pttchrome }) => {
     [pttchrome, onTitleBlacklistHide],
   );
 
-  // 長推文：開輸入框 → 按下送出後交給 LongPushSession，遮罩由它推上來的進度驅動。
+  // 長推文：探路 → 開輸入框 → 按下送出後交給 LongPushSession，遮罩由它推上來的
+  // 進度驅動。
   //
-  // 開輸入框的**唯一**函式，右鍵選單與「攔截推文鍵」共用。maxBytes 在這一刻現算
-  // ——攔截那條沒有「開右鍵選單」那一刻，沿用開選單時算好的值會拿到 initialState
-  // 的保守預設，輸入框上的「會分成幾則」就明顯高估。
-  // 回 true 是給 App 端攔截用的合約（見 pttchrome.openLongPushModal）。
+  // 這個是**唯一**的入口函式，右鍵選單與「攔截推文鍵」共用。它先啟動探路
+  // （送一個 X 問 PTT 推不推得了），輸入框要等 onPreflight 回來才開——不能推的話
+  // 開的是錯誤框。**回 true 的意思是「我接手了這次按鍵」**（見 openLongPushModal
+  // 的合約註解），不是「輸入框已經開了」。
+  //
+  // maxBytes 在這一刻現算當**預估**：攔截那條沒有「開右鍵選單」那一刻，沿用開選單
+  // 時算好的值會拿到 initialState 的保守預設，「會分成幾則」就明顯高估。探路回來時
+  // 若讀到了自己的帳號／IP 欄，會再用準的值蓋過去。
   const openLongPush = useCallback(() => {
     const prefs = readValuesWithDefault();
+    const estimate = pushMaxBytes({ userId: prefs.autoLoginUser });
+    const session = pttchrome.longPush;
+    // 測試替身／還沒建好 session：退回探路上線前的行為，直接開輸入框。
+    if (!session || !session.startPreflight) {
+      update({
+        ...initialState,
+        showsLongPush: true,
+        longPushMaxBytes: estimate,
+      });
+      return true;
+    }
+    // **順序不可換**：startPreflight 內部的 _emit 會先經 onChange 寫一次
+    // longPushProgress，接著的 update({...initialState}) 會把它蓋掉，所以那個
+    // 值要在這裡補回去。
+    if (!session.startPreflight({ maxBytes: estimate })) return false;
     update({
       ...initialState,
-      showsLongPush: true,
-      longPushMaxBytes: pushMaxBytes({ userId: prefs.autoLoginUser }),
+      longPushMaxBytes: estimate,
+      longPushProgress: {
+        index: 0,
+        total: 0,
+        phase: "preflight",
+        waitSec: 0,
+        message: "",
+      },
     });
     return true;
-  }, [update]);
+  }, [pttchrome, update]);
   const onLongPushClick = useCallback(
     (event) => {
       event.stopPropagation();
       pttchrome.contextMenuShown = false;
-      openLongPush();
+      // 接不下來（線路上已經有別的序列化操作）就要說一聲，不能默默沒反應。
+      if (!openLongPush())
+        pttchrome.view?.flashListHint?.(
+          serializedOpHint(pttchrome) || i18n("longPushError_busy"),
+          3000,
+        );
     },
     [pttchrome, openLongPush],
   );
@@ -487,13 +553,24 @@ export const ContextMenu = ({ pttchrome }) => {
       pttchrome.openLongPushModal = noop;
     };
   }, [pttchrome, openLongPush]);
-  const onLongPushHide = useCallback(
-    () => update({ showsLongPush: false }),
+  // 關掉輸入框＝這次不推了：探路成果（錨點／閱讀位置／AID）沒有用了，留著只會
+  // 讓下一次 start() 拿舊錨點去比對新畫面。
+  const onLongPushHide = useCallback(() => {
+    update({ showsLongPush: false, longPushPreflight: null });
+    pttchrome.longPush?.disarm();
+  }, [pttchrome, update]);
+  const onLongPushErrorHide = useCallback(
+    () => update({ longPushError: null }),
     [update],
+  );
+  // 剩餘內容由使用者自己按（舊版是偷偷蓋掉他的剪貼簿）。
+  const onLongPushCopyRest = useCallback(
+    (text) => pttchrome.doCopy(text),
+    [pttchrome],
   );
   const onLongPushConfirm = useCallback(
     ({ text, type }) => {
-      update({ showsLongPush: false });
+      update({ showsLongPush: false, longPushPreflight: null });
       if (pttchrome.longPush)
         pttchrome.longPush.start({
           text,
@@ -734,7 +811,9 @@ export const ContextMenu = ({ pttchrome }) => {
     longPushEnabled,
     longPushMaxBytes,
     showsLongPush,
+    longPushPreflight,
     longPushProgress,
+    longPushError,
     showsInputHelper,
     showsTitleBlacklist,
     titleBlacklistDraft,
@@ -797,6 +876,7 @@ export const ContextMenu = ({ pttchrome }) => {
       <LongPushModal
         show={showsLongPush}
         maxBytes={longPushMaxBytes}
+        preflight={longPushPreflight}
         imageUpload={pttchrome.imageUpload}
         onHide={onLongPushHide}
         onConfirm={onLongPushConfirm}
@@ -804,6 +884,11 @@ export const ContextMenu = ({ pttchrome }) => {
       <LongPushProgressModal
         progress={longPushProgress}
         onCancel={onLongPushCancel}
+      />
+      <LongPushErrorModal
+        error={longPushError}
+        onHide={onLongPushErrorHide}
+        onCopy={onLongPushCopyRest}
       />
       <PrefModal
         show={showsSettings}

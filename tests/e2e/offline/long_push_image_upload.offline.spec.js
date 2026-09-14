@@ -20,6 +20,9 @@ const ARTICLE_URL =
 const ARTICLE_FOOTER =
   '  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~23 行  (y)回應(X%)推文(h)說明(←)離開 ';
 
+const TYPE_MENU = '您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ';
+const PUSH_PROMPT = '推 testuser: ';
+
 const uploadJson = (id) =>
   JSON.stringify({
     status: 'success',
@@ -114,6 +117,13 @@ async function openContextMenu(page) {
 }
 
 // 開啟長推文輸入框。
+//
+// 輸入框開之前會先跑一次**探路**：狀態機送一個 X 問 PTT 這篇推不推得了，讀完答案
+// 再 Ctrl-C 退出、按 ⏎ 回文章（docs/long-push.md「探路（preflight）」）。所以這裡
+// 要把那一段往返餵完。
+//
+// 各 case 的「線路上一個 byte 都沒送」斷言之所以仍然成立，是因為 collectSent 都排
+// 在這個函式**之後**——探路那幾個 byte 不在計數窗內。**不要把 collectSent 往前搬。**
 async function openLongPushModal(page) {
   await openContextMenu(page);
   await page
@@ -121,6 +131,10 @@ async function openLongPushModal(page) {
     .first()
     .getByText(await label(page, 'cmenu_longPush'), { exact: true })
     .click();
+  await drawRows(page, { 23: TYPE_MENU }); // 推得了
+  await drawRows(page, { 23: PUSH_PROMPT }); // 第 1 個 Ctrl-C → 輸入列
+  await drawRows(page, { 23: ARTICLE_FOOTER }); // 第 2 個 Ctrl-C → 退出
+  await drawArticle(page); // ⏎ 回到文章
   await expect(page.locator('[name="longPushText"]')).toBeVisible();
 }
 

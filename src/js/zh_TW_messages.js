@@ -165,6 +165,57 @@
   "longPushProgress_note": {
     "message": "取消只會停掉還沒送出的部分，已送出的推文無法收回。"
   },
+  "longPushProgress_preflight": {
+    "message": "正在向 PTT 確認能不能推文…"
+  },
+  "longPushModal_preflightCooldown": {
+    "message": "PTT 目前在推文冷卻中（大約還要 #s# 秒）。可以先打字，送出時會自動等待。"
+  },
+  "longPushModal_preflightArrow": {
+    "message": "PTT 已經決定這次推文改用 → 加註（你是作者本人，或 90 秒內推過文），選哪個類型都一樣。"
+  },
+  "longPushModal_preflightNoBoo": {
+    "message": "本板禁止噓文。"
+  },
+  "longPushError_title": {
+    "message": "無法推文"
+  },
+  "longPushError_titleSending": {
+    "message": "長推文中止"
+  },
+  "longPushError_titleCancelled": {
+    "message": "長推文已取消"
+  },
+  "longPushError_sourcePtt": {
+    "message": "以上訊息由 PTT 回報（原文照錄）"
+  },
+  "longPushError_sourceClient": {
+    "message": "以上是本程式的判斷，不是 PTT 的原文"
+  },
+  "longPushError_reason": {
+    "message": "技術原因：#r#"
+  },
+  "longPushError_sent": {
+    "message": "已送出 #n# 則。"
+  },
+  "longPushError_sentNone": {
+    "message": "一則都還沒送出。"
+  },
+  "longPushError_noRecall": {
+    "message": "已送出的推文無法收回。"
+  },
+  "longPushError_restLabel": {
+    "message": "尚未送出的內容"
+  },
+  "longPushError_copyRest": {
+    "message": "複製剩餘內容"
+  },
+  "longPushError_close": {
+    "message": "關閉"
+  },
+  "longPushError_busy": {
+    "message": "目前正在處理另一個操作，請稍候。"
+  },
   "longPushProgress_cancel": {
     "message": "取消"
   },

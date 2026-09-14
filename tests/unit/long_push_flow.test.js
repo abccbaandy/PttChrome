@@ -9,151 +9,24 @@
 //   - 失敗／取消沒有釋放 active → 整頁再也收不到鍵盤
 
 import { loadBig5Tables } from "./helpers/load_big5_tables";
-import { CommandQueue } from "../../src/js/command_queue";
-import { LongPushSession } from "../../src/js/long_push_session";
 import { u2b } from "../../src/js/string_util";
-import { pageArticleNums } from "../../src/js/comment_parse";
-
-// facts.rowTexts.join 的分隔字元（測試裡拿來湊 Q 的資訊框判準）。
-const BAR = "|";
+// harness 與畫面常數與 long_push_preflight.test.js 共用，見該檔頭。
+import {
+  harness,
+  vmsg,
+  ROWS,
+  PROMPT,
+  ARROW_PROMPT,
+  TYPE_MENU,
+  CONFIRM,
+  ARTICLE_FOOTER,
+  AID,
+  ANCHOR_ROW,
+  PINNED_ANCHOR_ROW,
+  OTHER_ROW,
+} from "./helpers/long_push_harness";
 
 beforeAll(() => loadBig5Tables());
-
-const ROWS = 24;
-const PROMPT = "推 testuser: ";
-const ARROW_PROMPT = "→ testuser: ";
-const TYPE_MENU = "您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ";
-const CONFIRM = "推 testuser: 內容                        確定[y/N]:";
-const ARTICLE_FOOTER =
-  "  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~23 行  (y)回應(X%)推文(h)說明(←)離開 ";
-const vmsg = (msg) => " ◆ " + msg + "          [按任意鍵繼續]";
-const LIST_FOOTER = " 文章選讀  (y)回應(X)推文(^X)轉錄 ";
-const AID = "1_abcDEF";
-// 長推文綁定的那一篇，文章標頭與列表列都用它。
-const ANCHOR_AUTHOR = "abcUser";
-const ANCHOR_TITLE = "[閒聊] 原本那篇";
-const ARTICLE_HEAD = [
-  "作者  " + ANCHOR_AUTHOR + " (安安) 看板 Test",
-  "標題  " + ANCHOR_TITLE,
-  "時間  Mon Sep  1 12:00:00 2026",
-];
-
-// 依 bbs.c#readdoent 的 printf 序列排版（欄位表見 comment_parse.js）：
-//   0-6 %7d 序號 | 7 空格 | 8 型別 | 9-10 推文數 | 11-16 %-6.5s 日期
-//   17-29 %-13.12s 作者 | 30- mark + 標題
-function listRow(num, author, title, cursor) {
-  const seq = cursor ? ">" + String(num).padStart(6) : String(num).padStart(7);
-  return (
-    seq + "    " + " 9/01 " + author.padEnd(13).slice(0, 13) + "□" + title
-  );
-}
-const ANCHOR_ROW = (num, cursor) =>
-  listRow(num, ANCHOR_AUTHOR, ANCHOR_TITLE, cursor);
-// 置底列：readdoent 在序號欄印 `"  " ANSI "  ★ "` 而不是 %7d（bbs.c:843）。★ 是
-// 全形，rowToText 收成一個字 ⇒ 7 cells 只剩 6 字（realignListColumns 會補回來）。
-// 新版游標 '>' 只蓋 col 0，★ 仍在。
-const PINNED_ANCHOR_ROW = (cursor) =>
-  (cursor ? ">   ★ " : "    ★ ") +
-  listRow(0, ANCHOR_AUTHOR, ANCHOR_TITLE, false).slice(7);
-const OTHER_ROW = (num, cursor) =>
-  listRow(num, "someoneElse", "[公告] 剛剛才貼的新文", cursor);
-
-function harness(opts) {
-  const o = opts || {};
-  const sent = [];
-  const copied = [];
-  const hints = [];
-  const queue = new CommandQueue({ send: (d) => sent.push(d) });
-  let rowTexts = new Array(ROWS).fill("");
-  // start() 在「還在文章裡」的時候讀標頭當錨點基準（long_push_anchor 檔頭：
-  // 落地幀已經是 i_read 重讀 headers 之後的畫面，不能當基準）。
-  (o.articleRows === undefined ? ARTICLE_HEAD : o.articleRows).forEach(
-    (t, i) => (rowTexts[i] = t),
-  );
-  const termBuf = {
-    rows: ROWS,
-    cols: 80,
-    pageState: o.pageState === undefined ? 3 : o.pageState,
-    getRowText: (r) => rowTexts[r] || "",
-  };
-  const view = { flashListHint: (m) => hints.push(m) };
-  const restored = [];
-  // aidNavigation 的合約見 aid_navigation.js#resolvePostAid：免費路徑
-  // （findLocalPostAid）命中就 boxOpen=false，否則按 Q 並以 boxOpen=true 回報。
-  // localAid: undefined = 命中；null = 落空要按 Q。
-  const localAid =
-    o.localAid === undefined ? { aid: AID, board: "Test" } : o.localAid;
-  const aidNavigation = {
-    resolvePostAid(handlers) {
-      if (localAid) {
-        handlers.onDone(localAid, { boxOpen: false });
-        return;
-      }
-      queue.enqueue({
-        keys: "Q",
-        kind: handlers.kind,
-        fullRepaint: false,
-        probe: false,
-        timeoutMs: 2500,
-        onFlushed: handlers.onFlushed,
-        expect: (snap, facts) =>
-          /文章代碼|按任意鍵/.test(facts.rowTexts.join(BAR))
-            ? { info: o.qAid === undefined ? { aid: AID, board: "Test" } : o.qAid }
-            : false,
-        onDone: (r) => handlers.onDone(r.info, { boxOpen: true }),
-        onFail: (reason) => handlers.onFail(reason),
-      });
-    },
-  };
-  const core = {
-    doCopy: (s) => copied.push(s),
-    easyReading: {
-      _enterFunctionMode() {},
-      requestScrollRestore: (i) => restored.push(i),
-    },
-    listSession: { beginExternalNavigation() {} },
-    aidNavigation: o.aidNavigation === undefined ? aidNavigation : o.aidNavigation,
-  };
-  const session = new LongPushSession(core, view, termBuf, queue);
-  // 一幀 server 回應：只填底列（其餘留白），再餵給 queue.onSettle —— 與
-  // list_session._onScreenSettled 的驅動方式相同。
-  const settle = (lastRow, over) => {
-    rowTexts = new Array(ROWS).fill("");
-    rowTexts[ROWS - 1] = lastRow;
-    if (over && over.rows)
-      for (const k of Object.keys(over.rows)) rowTexts[k] = over.rows[k];
-    queue.onSettle(
-      {},
-      { rowTexts, rows: ROWS, kind: (over && over.kind) || "article" },
-    );
-  };
-  // 一幀**文章列表**畫面。rows 從第 3 列開始鋪，cursorRow 是其中第幾列（0-based）。
-  // facts 的欄位與 list_session._collectFacts 一致。
-  const settleList = (rows, cursorRow) => {
-    rowTexts = new Array(ROWS).fill("");
-    rowTexts[0] = "【看板 Test】";
-    rowTexts[2] = "  編號    日 期 作  者       文  章  標  題";
-    rows.forEach((t, i) => (rowTexts[3 + i] = t));
-    rowTexts[ROWS - 1] = LIST_FOOTER;
-    const curY = 3 + cursorRow;
-    const nums = pageArticleNums(rowTexts, curY);
-    queue.onSettle(
-      {},
-      {
-        rowTexts,
-        rows: ROWS,
-        curX: 0,
-        curY,
-        kind: "clean-list",
-        boardName: "Test",
-        nums,
-        cursorRowNum: nums[curY] == null ? null : nums[curY],
-      },
-    );
-  };
-
-  return { session, sent, copied, hints, settle, settleList, queue, restored };
-}
 
 // 一則推文的完整往返（走型別選單的版本）。
 const runOne = (h) => {
@@ -296,8 +169,15 @@ describe("致命錯誤", () => {
     h.session.start({ text: "第一段\n第二段", type: "push" });
     h.settle(vmsg("本文已刪除"));
     expect(h.session.active).toBe(false);
-    expect(h.copied).toEqual(["第一段\n第二段"]);
-    expect(h.hints[0]).toContain("本文已刪除");
+    // PTT 的原文照錄，而且標明是 PTT 說的（不是我們判斷的）。
+    expect(h.results[0]).toMatchObject({
+      source: "ptt",
+      message: "本文已刪除",
+      sent: 0,
+      rest: "第一段\n第二段",
+    });
+    // 剩餘內容**不會**自動蓋掉使用者的剪貼簿。
+    expect(h.copied).toEqual([]);
   });
 
   test("已送出的那幾則不會被算進剩餘內容", () => {
@@ -305,7 +185,8 @@ describe("致命錯誤", () => {
     h.session.start({ text: "第一段\n第二段", type: "push" });
     runOne(h);
     h.settle(vmsg("抱歉, 禁止推薦"));
-    expect(h.copied).toEqual(["第二段"]);
+    expect(h.results[0]).toMatchObject({ source: "ptt", sent: 1, rest: "第二段" });
+    expect(h.copied).toEqual([]);
   });
 
   test("認不得的畫面也停手（不繼續盲送鍵）", () => {
@@ -333,7 +214,12 @@ describe("取消", () => {
 
     h.settle(ARTICLE_FOOTER);
     expect(h.session.active).toBe(false);
-    expect(h.copied).toEqual(["第一段\n第二段"]);
+    expect(h.results[0]).toMatchObject({
+      phase: "cancelled",
+      source: "client",
+      rest: "第一段\n第二段",
+    });
+    expect(h.copied).toEqual([]);
   });
 
   test("冷卻橫幅上取消 → 送任意鍵消橫幅", () => {
@@ -365,7 +251,8 @@ describe("queue 被別人 flush 掉", () => {
     h.session.start({ text: "第一段", type: "push" });
     h.queue.flush();
     expect(h.session.active).toBe(false);
-    expect(h.copied).toEqual(["第一段"]);
+    expect(h.results[0]).toMatchObject({ source: "client", rest: "第一段" });
+    expect(h.copied).toEqual([]);
   });
 });
 
@@ -464,8 +351,9 @@ describe("游標錨定", () => {
 
     expect(h.sent.slice(beforeX)).not.toContain("X");
     expect(h.session.active).toBe(false);
-    expect(h.copied).toEqual(["第二段"]);
-    expect(h.hints.join("")).toContain("文章位置已變動");
+    expect(h.results[0]).toMatchObject({ source: "client", rest: "第二段" });
+    expect(h.results[0].message).toContain("文章位置已變動");
+    expect(h.copied).toEqual([]);
   });
 
   test("有 AID → 先送 #<aid> 把游標釘回原篇，才送 X", () => {
@@ -520,7 +408,8 @@ describe("游標錨定", () => {
     h.settleList([OTHER_ROW(1233, true), OTHER_ROW(1234)], 0);
     expect(h.sent.slice(afterRelocate)).not.toContain("X");
     expect(h.session.active).toBe(false);
-    expect(h.copied).toEqual(["第二段"]);
+    expect(h.results[0]).toMatchObject({ source: "client", rest: "第二段" });
+    expect(h.copied).toEqual([]);
   });
 
   // 轉錄文的內文標頭是**原文**作者，列表上印的是轉錄者 ⇒ 文章標頭錨點必定對不上。

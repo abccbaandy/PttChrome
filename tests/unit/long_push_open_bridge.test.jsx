@@ -5,9 +5,12 @@
 // App.prototype 上預設 noop，ContextMenu 掛載時注入真實作、卸載時還原。
 //
 // 這裡守三件事：
-//  1. 掛載後叫得動，而且**回 true**（呼叫端靠這個回傳值決定要不要吞掉按鍵）；
+//  1. 掛載後叫得動，而且**回 true**（呼叫端靠這個回傳值決定要不要吞掉按鍵）。
+//     注意 true 的意思是「**我接手了這次按鍵**」——探路上線後，輸入框要等
+//     onPreflight 回來才開，中間先蓋一層遮罩；
 //  2. 沒開過右鍵選單也要算對 maxBytes（攔截這條沒有「開選單」那一刻）；
-//  3. 卸載後還原成 noop ⇒ 回 falsy ⇒ 攔截自動退回原生推文。
+//  3. 卸載後還原成 noop ⇒ 回 falsy ⇒ 攔截自動退回原生推文；
+//  4. 探路接不下來（線路上已經有別的序列化操作）⇒ 回 falsy ⇒ **不准吞掉按鍵**。
 import { render, screen, act, fireEvent } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import ContextMenu from "../../src/components/ContextMenu";
@@ -61,7 +64,14 @@ const makePttchrome = () => ({
     getRowText: () =>
       "  瀏覽 第 1/2 頁 ( 45%)  目前顯示: 第 1~23 行  (y)回應(X%)推文(h)說明(←)離開 ",
   },
-  longPush: { start: vi.fn(), cancel: vi.fn() },
+  longPush: {
+    start: vi.fn(),
+    cancel: vi.fn(),
+    // 探路：真的 session 會送一個 X 出去問 PTT，輸入框要等它的答案才開。
+    startPreflight: vi.fn(() => true),
+    disarm: vi.fn(),
+  },
+  doCopy: vi.fn(),
   imageUpload: { setInsertTarget: vi.fn(), clearInsertTarget: vi.fn() },
   setModalOpen: vi.fn(),
   contextMenuShown: false,
@@ -90,8 +100,14 @@ beforeAll(() => {
 });
 beforeEach(() => window.localStorage.clear());
 
+// 探路回報「可以推」。真實路徑上這是 LongPushSession._preflightDone 打進來的。
+const answerPreflight = (pttchrome, result) =>
+  act(() => {
+    pttchrome.longPush.onPreflight({ blocked: false, ...result });
+  });
+
 describe("pttchrome.openLongPushModal 橋接", () => {
-  test("掛載後叫得動：輸入框打開、回 true、modalShown 由 render state 推導", async () => {
+  test("掛載後叫得動：先探路（還不開輸入框）、回 true、modalShown 由 render state 推導", async () => {
     const pttchrome = makePttchrome();
     mount(pttchrome);
     expect(screen.queryByText(i18n("longPushModal_title"))).toBeNull();
@@ -103,10 +119,51 @@ describe("pttchrome.openLongPushModal 橋接", () => {
 
     // 回傳值就是合約：呼叫端靠它決定要不要 preventDefault／不送 byte。
     expect(opened).toBe(true);
-    // Mantine Modal 是延遲進場（transition），要等它真的掛上 DOM。
-    expect(await screen.findByText(i18n("longPushModal_title"))).toBeTruthy();
-    // 輸入框要收鍵盤。**不可以**直接賦值 modalShown，一律走 setModalOpen。
+    expect(pttchrome.longPush.startPreflight).toHaveBeenCalled();
+    // 還在問 PTT，輸入框不該出現——但畫面上要有東西（遮罩），不能什麼反應都沒有。
+    expect(
+      await screen.findByText(i18n("longPushProgress_preflight")),
+    ).toBeTruthy();
+    expect(screen.queryByText(i18n("longPushModal_title"))).toBeNull();
+    // 遮罩與輸入框都要收鍵盤。**不可以**直接賦值 modalShown，一律走 setModalOpen。
     expect(pttchrome.setModalOpen).toHaveBeenCalledWith("contextMenu", true);
+
+    answerPreflight(pttchrome, {});
+    expect(await screen.findByText(i18n("longPushModal_title"))).toBeTruthy();
+  });
+
+  test("探路說不能推 → 開的是錯誤框，而且是 PTT 的原文", async () => {
+    const pttchrome = makePttchrome();
+    mount(pttchrome);
+    act(() => {
+      pttchrome.openLongPushModal();
+    });
+    act(() => {
+      pttchrome.longPush.onPreflight({
+        blocked: true,
+        phase: "preflight",
+        source: "ptt",
+        message: "抱歉, 禁止推薦",
+        sent: 0,
+        rest: "",
+      });
+    });
+    expect(await screen.findByTestId("longPushErrorMessage")).toHaveTextContent(
+      "抱歉, 禁止推薦",
+    );
+    // 使用者不該對著一個推不出去的板打一大段字。
+    expect(screen.queryByText(i18n("longPushModal_title"))).toBeNull();
+  });
+
+  test("探路接不下來（線路上有別的操作）→ 回 falsy，按鍵不准被吞掉", () => {
+    const pttchrome = makePttchrome();
+    pttchrome.longPush.startPreflight = vi.fn(() => false);
+    mount(pttchrome);
+    let opened;
+    act(() => {
+      opened = pttchrome.openLongPushModal();
+    });
+    expect(opened).toBeFalsy();
   });
 
   // 攔截這條沒有「開右鍵選單」那一刻，若沿用開選單時算好的值就會拿到 initialState
@@ -117,6 +174,7 @@ describe("pttchrome.openLongPushModal 橋接", () => {
     act(() => {
       pttchrome.openLongPushModal();
     });
+    answerPreflight(pttchrome, {});
     await screen.findByText(i18n("longPushModal_title"));
 
     const expected = pushMaxBytes({ userId: AUTO_LOGIN_USER });

@@ -561,6 +561,17 @@ PTT 私有 commit，不在公開 repo）。**觸發門檻無從得知**，但**�
 | 4 | 確認列 …` 確定[y/N]:`（"確定"前的空格是格式的一部分） | `y\r`。`sizeof(ans)==2` ⇒ 只吃一個字元，原始碼的 `:w`／`zz` 分支**打不進去**（死碼） |
 | 5 | 寫檔 → `return FULLUPDATE` | — |
 
+**所有擋人判斷都在步驟 3 的 `getdata` 之前完成**（`bbs.c:2845-2941`：`BRD_NORECOMMEND`／
+`CheckPostPerm2`／guest／`BN_ONLY_OP_CAN_ADD_COMMENT`／已刪除文／`get_board_restriction_reason`／
+`BRD_NOFASTRECMD`／同分鐘 >60 則／檔案過大／`check_cooldown`），一律 `vmsg` ＋
+`return FULLUPDATE` ⇒ **送一個 X 就問得到「這篇推不推得了」**，而且答案是 PTT 自己的字。
+兩個讓「白按一次」成立的事實：`lastrecommend = now` 只在**成功寫檔後**才更新
+（`bbs.c:3144`），`check_cooldown()` 唯讀（`bbs.c:4344`）⇒ 按了 X 再 Ctrl-C 取消，
+不會害下一次被降級成 → 或被冷卻擋下。唯一的足跡是 `recommend_in_minute++`
+（`bbs.c:2909`，在檢查之前遞增，上限 60/分鐘）。
+消費端：`src/js/long_push_session.js#startPreflight`，設計見 `docs/long-push.md`
+「探路（preflight）」。
+
 **1a / 1b / 1c 是 `if / else if / else` 互斥**：client 必須讀畫面才知道要不要送型別鍵。
 在 1b/1c 送 `1` ⇒ 那個 1 直接變成推文內容。**第 2 則起 90 秒內一定走 1c**（板主
 `MODE_BOARD` 除外），這是連續推文最容易炸的地方。
