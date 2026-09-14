@@ -889,11 +889,133 @@ prefetch 的落點）。所以任何「對游標所在那一列動作」的鍵�
 | `Ctrl-W` | :1731 | `whereami()` | 否 |
 | `Ctrl-P` | :2050 | `paste_taged_brds(class_bid)` | 否 |
 
-### 連帶：Alt 重映射鍵
+### 連帶：Alt remap
 
-`Alt+R/T/W/V` 是**本 app 自己造的送鍵入口**（為避開瀏覽器的 Ctrl+R/T/W 快捷鍵，見
-`term_keyboard.altRemapCharCode`），送出的就是 `^R/^T/^W/^V` ⇒ 語意上與上表同一格。
-`Alt+T` 在文章列表就是 `read.c:957` 的 `Ctrl('T')`。
+`Alt+A~Z` 是**本 app 自己造的送鍵入口**，送出的 byte 與 `Ctrl+A~Z` 完全相同
+（§11.8）⇒ 語意上與上表同一格。`Alt+T` 在文章列表就是 `read.c:957` 的 `Ctrl('T')`。
+
+**代送路徑與是哪個 byte 無關**：`list_session._beginPassthroughBytes` /
+`board_list_session._beginPassthroughBytes` 一律先比 `_selectedNum !== _serverNum`
+再決定要不要排 sync 腿 ⇒ 26 個字母全部自動享有。**上面兩張表是查詢入口（「為什麼
+需要 sync」），不是白名單，新增鍵不需要動它。**
 
 **2026-09-13 之前這兩類鍵都跳過 sync 腿**（症狀：搜尋作者後按 `Ctrl-Q` 查到別人，按 `←`
 退出後選取也跟著跑掉）。根因、守則與守護測試見 `docs/easy-reading-list.md` 不變量 12。
+
+---
+
+## 11.8 Alt 當 Ctrl：全字母 remap 的依據（2026-09-15 CONFIRMED）
+
+`Alt`（macOS 的 `Option`）＝ PTT 的 `Ctrl`，涵蓋 26 個字母。不變量：
+
+> **`Alt+<letter>` 送出的 byte 與 `Ctrl+<letter>` 逐位元相同；差別只在誰先接手。**
+> Alt **繞過 app 自己的 UI 快捷鍵**（複製／全選／貼上 —— OS 另有入口），
+> 但**不繞過**「app 代替 PTT 管狀態」的模擬（好讀的 `^F`/`^B`/`^H`，見下）。
+
+動機：macOS 上好幾顆 `Ctrl` 組合根本按不出來（Cocoa 文字系統把 `Ctrl-Y` 綁成 yank、
+`Ctrl-A`/`Ctrl-E` 綁成行首行尾），逐顆救火沒有盡頭。實作：`src/js/term_keyboard.js` 的
+`ALT_REMAP_LETTERS` / `isAltRemapEvent`。
+
+### 為什麼協定上安全
+
+`common/sys/vtkbd.c` 的解析器只認三類輸入：裸 ASCII 控制碼（`vtkbd.h:81`
+`Ctrl(c) = c & 0x1F`）、`ESC [ …`（CSI）、`ESC O …`（SS3）。
+
+* **沒有任何 modifier 語意**：`ESC[1;5A`（Ctrl+方向鍵）的 modifier 參數被直接丟棄，
+  只當普通 `KEY_UP`（`vtkbd.c:336-340`，註解自承）。
+* 唯一的 **ESC-prefix（Meta）語意在 `mbbsd/edit.c`**（`io.c:318-320` 把第二個 byte
+  塞進全域 `KEY_ESC_arg`，只有 `edit.c:3679/3761/3790` 讀它）：`ESC X` ＝ 存檔離開、
+  `ESC q` ＝ 不存檔離開等 Emacs 風 Meta 命令。
+* **本 client 從不送 ESC-prefix** ⇒ Alt→Ctrl 撞不到任何既有解析。
+
+⇒ **反過來才危險**：若讓 Alt 走終端機慣例送 `ESC + 字元`，在編輯器裡會直接命中
+edit.c 的 Meta 表，其他畫面則是「裸 ESC 沒有 timeout，會把使用者的下一個按鍵吃掉」
+（`vtkbd.c:145-160` 進 `VKSTATE_ESC` 後一律等下一個 byte）。**不要這樣做。**
+
+### 控制碼別名（這幾顆的 `^X` 形式另有身分）
+
+| byte | 別名 | PTT 端 | source |
+|---|---|---|---|
+| `^H` 0x08 | Backspace | 文章：上一頁／`READ_PREV`；列表：`select_read(RS_NEWPOST)` | `pmore.c:2678`、`read.c:775` |
+| `^I` 0x09 | Tab | `board_digest`（精華區） | `bbs.c#read_comms` |
+| `^J` 0x0A | LF | **整個被忽略**（`return KEY_INCOMPLETE`） | `io.c:327`、`vtkbd.h:87` |
+| `^L` 0x0C | FF | `redrawwin()`；也是本 app 的 `fullRepaint` byte（§6） | `read.c:770`、`io.c:242-248` |
+| `^M` 0x0D | CR | `KEY_ENTER`（開文／送出） | `vtkbd.h:86,88`、`read.c:987` |
+
+`^J` 是零 byte 零 settle ⇒ 靠 `_beginPassthroughBytes` 尾附的 `\f` 才不會空等 3s
+timeout。這正是該機制存在的理由，**不需要為它做特例**。
+
+### 「系統 > 我們」怎麼達成：零黑名單
+
+**不維護瀏覽器快捷鍵表、不做平台偵測。** 靠一個事實：瀏覽器**保留**的快捷鍵根本不會
+把 keydown 送到頁面，收不到就不會 remap。規則因此簡化成「收得到的 Alt+字母就 remap」。
+
+例外只有一種：**收得到 keydown、但 `preventDefault` 之後瀏覽器仍有動作**（雙重觸發）。
+那種字母才進 `term_keyboard.js` 的 `ALT_REMAP_EXCLUDE`。
+
+量測頁：`tools/alt-key-probe.html`（dev-only，`yarn start` 後用**自己的**瀏覽器開
+`/tools/alt-key-probe.html`）。**Playwright 量不到**：CDP 的 `Input.dispatchKeyEvent`
+不經過 browser chrome 的快捷鍵分派，量到的永遠是「都收得到、preventDefault 都有效」
+的假綠。頁面跑**兩趟**（Pass 1 不攔＝這顆原本會發生什麼；Pass 2 攔＝還會不會發生），
+沒有 Pass 1 就分不出「preventDefault 有效」與「這顆本來就沒快捷鍵」。
+
+#### 量測結論
+
+| 環境 | 狀態 | 雙重觸發的字母 |
+|---|---|---|
+| Chrome 152 / Windows 10 | **已量**（2026-09-14） | 無 |
+| Firefox / Windows | **未量** | — |
+| Chrome・Safari / macOS | **未量**（需要一台 Mac） | — |
+
+現值：`ALT_REMAP_EXCLUDE = ''`（零排除表）。**改它必須同步更新這張表。**
+
+**Chrome / Windows 的完整結果**：26 個字母 `keydown` **全部到得了頁面**，`e.key` 都是
+小寫字母、`e.code` 都是 `Key<L>`、`keyCode` 都是 65–90，**零組字事件**，Pass 2 全部
+`否`（preventDefault 攔得住）。
+
+⚠️ **但「零排除表」不等於「Chrome 沒用到 Alt」，這個區別很重要**：
+
+* **`Alt+D` / `Alt+E` / `Alt+F` 的 Pass 1 是「有反應」**（網址列／選單），也就是它們屬於
+  **可覆寫**快捷鍵 —— 頁面先收到、不攔才輪到瀏覽器。我們攔下來 ⇒ 這三顆在本站被
+  PTT 拿走（`^D` TagPruner、`^E` manage_post、`^F` 下頁）。**這是使用者 2026-09-15
+  明確拍板的取捨**（「全部 26 個字母」＋「Alt+D 照常 remap」），不是量測結果自然導出的。
+  要還給瀏覽器就把字母加進 `ALT_REMAP_EXCLUDE`。
+* 其餘 23 顆 Pass 1「無」＝ Chrome 本來就沒綁，攔不攔都一樣。
+* **「瀏覽器保留、頁面收不到 keydown」那一類在 Chrome/Windows 的 Alt+字母裡一個都沒有**
+  （`Ctrl+T`/`Ctrl+N`/`Ctrl+W` 那種保留鍵是 Ctrl 組合，不在本表範圍）。所以「系統 > 我們」
+  在這個環境其實是靠**我們選擇不攔**來達成的，不是靠事件收不到。換到 Firefox
+  （`Alt+F/E/V/S/B/T/H` 是選單存取鍵）結論可能不同，量了才知道。
+
+### macOS 的 dead key（未實證，靠三道防線死守）
+
+`Option` 是**組字修飾鍵**：US 佈局的 `⌥E`/`⌥I`/`⌥N`/`⌥U` 是組合重音的 dead key，
+Chrome 對它們的 keydown 回報 **keyCode 229**（Firefox 有時是 0）—— 與真 IME 組字一模
+一樣的訊號。`term_view` 的入口守門本來看到 229 就丟掉，會同時壞兩件事：
+
+1. `Alt+E/I/N/U` 變啞巴鍵；
+2. 沒有人跑到 `preventDefault` ⇒ 組字照開，`é/î/ñ/ü` 從 `compositionend` →
+   `onInput` → `onTextInput` → `_convSend` **漏進 PTT**。
+
+三道防線（`src/js/term_view.js`）：`acceptsKeyEvent` 對 Alt remap 開 229/0 例外、
+`onCompositionStart` 不設 `isComposition`、`onInput` 不放行。後兩道用**時間窗**
+（`ALT_COMPOSITION_SUPPRESS_MS`）而非一次性旗標 —— 組字事件不保證會來（Windows 上
+根本不來），旗標沒有正確的清除時機。守護 `tests/unit/term_view_alt_composition.test.js`。
+
+`e.key` 在 mac 上全部失真，唯一還原得了的欄位是 `e.code`。四種形態（`altRemapCharCode`
+的註解有完整清單）：組字輸出（`⌥V` → `√`）、dead key（`e.key === 'Dead'`）、
+`'ß'.toUpperCase() === 'SS'`（長度 2）、`'µ'.toUpperCase()` 是希臘大寫 `Μ` 不是 ASCII `M`。
+
+### 不做 parity 的例外：好讀模式的 `^F`/`^B`/`^H`
+
+這三顆**不裸送給 server**。`pmore.c:2564/2573/2678` 的 `Ctrl('F')/Ctrl('B')/Ctrl('H')`
+直接移動 pmore 的頁指標，而好讀模式的狀態機自己在驅動 PageDown 累積長頁 ⇒ 裸送會讓
+server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複段落）。Ctrl 版與 Alt 版一律由
+`easy_reading.ctrlLetterOf` 收到同一條本地模擬。
+
+### 不在範圍內
+
+* **符號鍵**（`[ ] \ @ ^ _ ?`）：`CtrlShiftMap` 對它們有 upstream keyCode bug（送
+  219/220/221 而非 27/28/29，見 `docs/handoff/ctrl-punct-keycode-map.md`），且 mac 的
+  `⌥[` 也是組字鍵、要擴 `e.code` 比對到 `BracketLeft` 等，複雜度高一階。
+* **AltGr**（Windows US-International ＝ `ctrlKey+altKey`）：被 `!ctrlKey` 排除，打出的
+  字元仍走 keypress → `#t` → `onInput`。守護在 `tests/unit/alt_ctrl_remap.test.js`。

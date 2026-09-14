@@ -826,6 +826,15 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   **key 優先、code 補位**：Win/Linux 的非 QWERTY 佈局仍以實際打出的字母為準，且 `e.code` 缺失
   （合成事件）時不炸。假事件測試只寫 `key:'v'` 測不到這類 bug，必須同時給 Mac 風格的 `key`+`code`
   （`tests/unit/term_keyboard_paste.test.js`）。
+  - **2026-09-15 起 Alt 涵蓋全 26 字母**（Alt＝PTT 的 Ctrl，`docs/pttbbs-screen-protocol.md` §11.8），
+    於是四種 mac 形態全都會真的出現，不像當年 RTWV 只碰得到第一種：
+    ①組字輸出；②**dead key**（`⌥E/⌥I/⌥N/⌥U` 的 `e.key === 'Dead'`，而且 keydown 回報
+    **keyCode 229**，必須在 `term_view.acceptsKeyEvent` 開例外，否則事件在進到 remap 之前
+    就被當成 IME 丟掉、組字還會照開讓 `é/î/ñ/ü` 漏進 PTT）；③`'ß'.toUpperCase() === 'SS'`
+    （長度 2）；④`'µ'.toUpperCase()` 是**希臘大寫 Μ**(U+039C) 不是 ASCII `M`。
+  - **這條的「假事件要給 mac 形態」延伸到 session 層**：`list_session`／`board_list_session`
+    自己呼叫 `altRemapCharCode`，只寫 `key:'t'` 的 Windows 形態等於沒測到 mac
+    （`tests/unit/list_keys.test.js`、`board_list_session.test.js` 已各補一條）。
 
 ### B. BePTT 反編譯（外部參考，不可由本專案 code 反推）
 

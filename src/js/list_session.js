@@ -36,7 +36,7 @@ import {
   ansiHalfColorConv,
   normalizePasteText
 } from './string_util';
-import { keyEventToBytes, altRemapCharCode } from './term_keyboard';
+import { keyEventToBytes, altRemapCharCode, isAltRemapEvent } from './term_keyboard';
 import {
   topPosFromScrollTop,
   anchorScrollTop,
@@ -1209,21 +1209,23 @@ ListSession.prototype = {
     // Insert stays a passthrough key: only the shifted form is a clipboard
     // action. The paste itself is handled in onPaste (App.onPasteDone routes it
     // back here), not by letting bytes leak straight onto the wire.
+    // **`!e.altKey` 是合約的一部分，別拿掉**：Alt+C/A/V/X 要送 ^C/^A/^X/^V 給 PTT
+    // （Alt＝PTT 的 Ctrl，無例外），不是複製／全選／貼上／剪下 —— 那幾個維持
+    // Ctrl 版（mac 是 ⌘）。拿掉 `!e.altKey` 會讓它們被這道早退吃掉，靜默壞掉。
     const clipboard =
       (e.ctrlKey &&
         !e.altKey &&
         !e.metaKey &&
         ['c', 'a', 'v', 'x'].indexOf((e.key || '').toLowerCase()) !== -1) ||
       (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Insert');
-    // Alt 重映射鍵（Alt+R/T/W/V ＝ ^R/^T/^W/^V，term_keyboard.altRemapCharCode）是
-    // **本 app 自己造的送鍵入口**（為避開瀏覽器的 Ctrl+R/T/W 快捷鍵），不是瀏覽器
-    // 快捷鍵 ⇒ 與 Ctrl 組合同級，必須走 passthrough 的 sync 腿。read.c:957 的
-    // Ctrl('T') TagThread 就是對真游標那一列動作的。其餘 Alt/Meta 組合才是瀏覽器
-    // 的，維持放行。判定條件與 TermKeyboard._onKeyDown 的 alt 分支對齊
-    //（!ctrl && alt && !shift），否則兩條路徑會漂移：這裡接手了、原生那邊卻不送
-    // ＝按鍵變啞巴。
-    const altRemap =
-      e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey ? altRemapCharCode(e) : null;
+    // Alt remap（Alt＝PTT 的 Ctrl，全 26 字母）是**本 app 自己造的送鍵入口**，不是
+    // 瀏覽器快捷鍵 ⇒ 與 Ctrl 組合同級，必須走 passthrough 的 sync 腿。read.c:957 的
+    // Ctrl('T') TagThread 就是對真游標那一列動作的。非字母的 Alt 組合（Alt+←、
+    // Alt+數字）才是瀏覽器的，維持放行。
+    // 判定一律走 term_keyboard.isAltRemapEvent —— 這組條件以前在這裡、
+    // board_list_session、TermKeyboard._onKeyDown 三處手抄，註解還要求「必須對齊」，
+    // 而漂移的症狀是啞巴鍵（這裡接手了、原生那邊卻不送）。
+    const altRemap = isAltRemapEvent(e) ? altRemapCharCode(e) : null;
     if (clipboard || (e.altKey && altRemap === null) || e.metaKey) return;
 
     if (this.state === 'opening') {
@@ -1252,6 +1254,11 @@ ListSession.prototype = {
       // _classifyKey 走不到：keyEventToBytes 對 altKey 一律回 null ⇒ 會被判成
       // 'ignore'（吞掉、零 server），所以這裡自己攔。刻意排在 state gate **之後**：
       // opening／frozen 期間與其他鍵一樣被吞掉並給提示，別跟序列化交易搶線路。
+      // **這道攔截排在 _classifyKey 之前是承重的**：j/k/n/p 同時也是導覽白名單的
+      // 同義鍵，順序一反，Alt+J 就會變成「本地把游標往下移一格」而不是送 ^J。
+      // 另注意 _beginPassthroughBytes 的 cursor-sync 腿是**無條件**的、與是哪個
+      // byte 無關 ⇒ 26 個字母全部自動享有（docs §11.7 那張表是說明，不是白名單，
+      // 新增鍵不需要動它）。
       e.preventDefault();
       this._beginPassthroughBytes(String.fromCharCode(altRemap));
       return;

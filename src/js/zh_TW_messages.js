@@ -641,7 +641,7 @@
     "message": "點此後按任意鍵設定 (預設 F2)"
   },
   "options_endTurnsOnLiveUpdate": {
-    "message": "END 啟用推文即時更新 (如 Alt + r)"
+    "message": "END 啟用推文即時更新"
   },
   "options_connection": {
     "message": "連線"

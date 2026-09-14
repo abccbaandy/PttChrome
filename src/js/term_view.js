@@ -1,6 +1,6 @@
 // Terminal View
 
-import { TermKeyboard } from './term_keyboard';
+import { TermKeyboard, isAltRemapEvent } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
 import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow } from './cursor_highlight';
 import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates } from './mouse_regions';
@@ -26,6 +26,62 @@ import icon128 from '../icon/icon_128.png';
 import cursorBack from '../cursor/back.png';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
+
+// Alt remap 送鍵之後，多久之內把組字事件當成 dead key 的副產物吞掉。
+// macOS 的 ⌥E/⌥I/⌥N/⌥U 是組合重音的 dead key：即使 keydown 被 preventDefault，
+// 仍可能開一次組字並 commit 出 é/î/ñ/ü。詳見 onCompositionStart / onInput 的防線。
+export const ALT_COMPOSITION_SUPPRESS_MS = 150;
+
+// 純函式而非 prototype method：onInput／onCompositionStart 在單元測試裡是用
+// `TermView.prototype.onInput.call(假物件, e)` 呼叫的，那個假物件身上沒有別的方法。
+// 順帶 at 為 undefined 時 NaN < n 是 false，未初始化的路徑自動走「沒有剛 remap」。
+export function altRemapRecently(at, now) {
+  return (now === undefined ? Date.now() : now) - at < ALT_COMPOSITION_SUPPRESS_MS;
+}
+
+// 終端機鍵盤路徑的入口守門：這個 keydown/keypress 該不該進到分派鏈？
+// 抽成模組層純函式才測得到（原本是 constructor 裡的 closure）。
+// 守護：tests/unit/term_view_alt_composition.test.js。
+export function acceptsKeyEvent(e, isComposition) {
+  // IME 組字中的 keydown（Chrome 回報 keyCode 229、iOS 的起始鍵是 0）由 input
+  // 事件那條路處理，這裡一律丟掉。
+  //
+  // **例外：Alt 當 Ctrl 的送鍵**（2026-09，Alt 全面 remap 成 PTT 的 Ctrl）。
+  // 舊註解寫「On both Mac and Windows, control/alt+key will be sent as original
+  // key code even under IME」——這個前提對 macOS 的 Option 不成立：Option 是組字
+  // 修飾鍵，⌥E/⌥I/⌥N/⌥U 是組合重音的 **dead key**，Chrome 對它們的 keydown 就是
+  // 回報 keyCode 229（Firefox 有時是 0）。少了這個例外會同時壞兩件事：
+  //   1. Alt+E/I/N/U 在 mac 上變啞巴鍵（送不出 ^E/^I/^N/^U）；
+  //   2. 沒有人跑到 preventDefault ⇒ **組字照開**，é/î/ñ/ü 會從 compositionend
+  //      那條路（onInput → onTextInput → _convSend）漏進 PTT。
+  // e.code 不受 Option 影響（仍是 'KeyE'），altRemapCharCode 認得出來。
+  // 真 IME 的 229 不受影響：那時 altKey 是 false。
+  //
+  // keyCode 0 那半是 iOS 來的，但**刻意保留**：專案目標是主流桌機瀏覽器
+  //（CLAUDE.md），不為手機做相容，而它在桌機 IME 也在作用，移除有風險、零收益。
+  // 不要再把它當待辦。
+  if ((e.keyCode == 229 || e.keyCode == 0) && !isAltRemapEvent(e))
+    return false;
+
+  // iOS sends backspace when composing. Disallow any non-control keys during it.
+  if (isComposition && !e.ctrlKey && !e.altKey)
+    return false;
+
+  // Don't process meta keys, like Mac's command key.
+  if (e.metaKey)
+    return false;
+
+  return true;
+}
+
+// 這個 keydown 該不該取消「推文即時更新」？
+// Alt remap 是真的在下指令，必須跟 Ctrl 一樣關掉；其餘 Alt 組合仍是瀏覽器／OS 的。
+// **不可簡化成「一律 true」**：呼叫點在 keydown listener 裡，排在
+// `keyCode 16..19`（Shift/Ctrl/Alt 裸鍵）的早退**之前**，一律 true 會讓「單獨輕點
+// Alt 去開瀏覽器選單」也把實況更新關掉。
+export function cancelsLiveHelper(e) {
+  return !e.altKey || isAltRemapEvent(e);
+}
 
 // enhance 旗標，只給「好讀累積長頁」（buf.pageLines）那兩個 render 分支用。
 // 意思是：這批列是 cloneRow 出來的**快照**，append 之後永遠不會再被寫入，所以
@@ -427,6 +483,9 @@ export function TermView() {
     this.checkCurDB.bind(this),
     this._send.bind(this));
 
+  // 最後一次 Alt remap 送鍵的時戳（見 keydown listener 與 altRemapRecently）。
+  this._altRemapAt = 0;
+
   this.input.addEventListener('compositionstart', (e) => {
     this.onCompositionStart(e);
     this.bbscore.setInputAreaFocus();
@@ -452,32 +511,7 @@ export function TermView() {
     !this.bbscore.modalShown &&
     !this.bbscore.contextMenuShown &&
     !this._listInputWrap;
-  let keyEventFilter = (e) => {
-    // On both Mac and Windows, control/alt+key will be sent as original key
-    // code even under IME.
-    // Char inputs will be handler on input event.
-    // We can safely ignore those IME keys here.
-    if (e.keyCode == 229)
-      return false;
-
-    // 下面兩條是 iOS 來的，但**刻意保留**：專案目標是主流桌機瀏覽器（CLAUDE.md），
-    // 不為手機做相容，而這兩條在桌機 IME 也在作用（isComposition 期間吞掉非控制鍵），
-    // 移除有風險、零收益。不要再把它當待辦。
-
-    // iOS sends the keydown that starts composition as key code 0. Ignore it.
-    if (e.keyCode == 0)
-      return false;
-
-    // iOS sends backspace when composing. Disallow any non-control keys during it.
-    if (this.isComposition && !e.ctrlKey && !e.altKey)
-      return false;
-
-    // Don't process meta keys, like Mac's command key.
-    if (e.metaKey)
-      return false;
-
-    return true;
-  };
+  let keyEventFilter = (e) => acceptsKeyEvent(e, this.isComposition);
 
   addEventListener('keypress', (e) => {
     if (!shouldAcceptInput() || !keyEventFilter(e))
@@ -490,7 +524,14 @@ export function TermView() {
       return;
 
     // disable auto update pushthread if any command is issued;
-    if (!e.altKey) this.bbscore.onDisableLiveHelperModalState();
+    if (cancelsLiveHelper(e)) this.bbscore.onDisableLiveHelperModalState();
+
+    // macOS 的 dead key（⌥E/⌥I/⌥N/⌥U）即使被 preventDefault 仍可能開一次組字，
+    // 而且 compositionstart 不保證會來（Windows 上根本不來）。記一個時間窗，讓
+    // onCompositionStart / onInput 兩道防線自己判斷要不要吞掉，過期即失效 —— 用
+    // 一次性旗標的話「何時清掉」沒有正確答案，會洩漏成永久狀態。
+    // 代價：按下 Alt+字母後 150ms 內剛好 IME 上字會被丟掉一次，可接受。
+    if (isAltRemapEvent(e)) this._altRemapAt = Date.now();
 
     if(e.keyCode > 15 && e.keyCode < 19)
       return; // Shift Ctrl Alt (19)
@@ -1026,6 +1067,13 @@ TermView.prototype = {
   onInput: function(e) {
     if (this.bbscore.modalShown || this.bbscore.contextMenuShown)
       return;
+    // 第三道防線：組字若被某些瀏覽器搶在 keydown 之前開起來，它 commit 出來的重音
+    // 字元（é/î/ñ/ü）絕不可以當成使用者打的字送進 PTT —— 那是 ⌥E/⌥I/⌥N/⌥U 這幾顆
+    // dead key 的副產物，使用者的本意是送 ^E/^I/^N/^U。
+    if (altRemapRecently(this._altRemapAt)) {
+      e.target.value = '';
+      return;
+    }
     if (this.isComposition) {
       // beginning chrome 55, we no longer can update input buffer width on compositionupdate
       // so we update it on input event
@@ -1111,7 +1159,9 @@ TermView.prototype = {
   //     從未 dispatch 的合成事件呼叫 preventDefault，Chromium／Firefox／jsdom 三
   //     者的 defaultPrevented 都會變 true，這是 DOM 標準行為。）
   //  2. 合成事件的 e.code 是空字串、isTrusted 為 false、target 為 null。目前鏈上
-  //     只有 term_keyboard.altRemapCharCode 讀 e.code，它已寫成 `e.code || ''`。
+  //     只有 term_keyboard 的 altRemapCharCode 與 isAltRemapEvent 讀 e.code，兩者
+  //     都經過 `e.code || ''`（isAltRemapEvent 也用不到：合成事件 altKey 為 false，
+  //     進不了 alt 分支）。
   //     **日後在鏈上新增讀 e.code／e.target／e.isTrusted 的邏輯就會靜默壞掉。**
   //  3. 用 this.onKeyDown(ev) **直接呼叫**，不要 dispatchEvent：#t 上已掛了 keydown
   //     listener，dispatch 會讓同一個事件跑兩次分派。
@@ -1896,6 +1946,14 @@ TermView.prototype = {
   },
 
   onCompositionStart: function(e) {
+    // 第二道防線（第一道是 keydown 的 preventDefault）：macOS 的 dead key
+    //（⌥E/⌥I/⌥N/⌥U）仍可能開一次組字。這裡**不設 isComposition、不亮 #t 浮層** ——
+    // 否則 isComposition 會卡在 true，keyEventFilter 那條
+    // `isComposition && !ctrlKey && !altKey` 之後會把一般打字全吞掉，只能重整頁面。
+    if (altRemapRecently(this._altRemapAt)) {
+      this.input.value = '';
+      return;
+    }
     //this.input.disabled="";
     this.input.setAttribute('bshow', '1');
     this.updateInputBufferPos();

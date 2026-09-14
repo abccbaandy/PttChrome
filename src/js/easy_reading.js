@@ -3,6 +3,7 @@ import { readValuesWithDefault } from './pref_storage';
 import { ACT_EXIT_ARTICLE } from './mouse_regions';
 import { TRACE } from './util';
 import { pmorePrefScreenSeen, parseRawModeFromPrefRow } from './pmore_pref';
+import { altRemapCharCode, isAltRemapEvent } from './term_keyboard';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
 // (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
@@ -1447,6 +1448,27 @@ EasyReading.prototype.exitEasyReading = function() {
   this._forceRepaint();
 };
 
+// 「這個 keydown 在好讀模式裡代表哪一顆 Ctrl 字母鍵？」回小寫字母或 null。
+//
+// 為什麼好讀模式要認 Alt：Alt＝PTT 的 Ctrl（見 term_keyboard），但 ^F/^B/^H 這三顆
+// **不能**裸送給 server —— pmore.c:2564/2573/2678 的 Ctrl('F')/Ctrl('B')/Ctrl('H')
+// 直接移動 pmore 的頁指標，而好讀模式的狀態機自己在驅動 PageDown 累積長頁。裸送會讓
+// server 的頁指標被移走而長頁不知道 ⇒ 失同步（症狀：之後翻頁跳格／重複段落）。
+// 所以這三顆在好讀底下一律由本地模擬接手，Ctrl 版與 Alt 版走同一條路。
+// 這與「Alt 繞過 app 的 UI 快捷鍵」不衝突：繞過的是複製／全選／貼上那種純 UI 動作，
+// 不是「app 代替 PTT 管狀態」的模擬。
+//
+// **Alt 一律經 altRemapCharCode 還原**，不可比對 e.key：macOS 上 ⌥F/⌥B/⌥H 的 e.key
+// 是 ƒ/∫/˙，比 e.key 會靜默失效（同 docs/enhanced-addon.md 的 e.code 那條）。
+// 順帶：Ctrl 分支的 toLowerCase() 讓 CapsLock 開著時的 Ctrl+F（e.key === 'F'）也接得到。
+export function ctrlLetterOf(e) {
+  if (isAltRemapEvent(e))
+    return String.fromCharCode(altRemapCharCode(e) + 96);
+  if (e.ctrlKey && !e.altKey && typeof e.key === 'string' && e.key.length === 1)
+    return e.key.toLowerCase();
+  return null;
+}
+
 EasyReading.prototype._onKeyDown = function(e) {
   if (!this._enabled || !this.startedEasyReading)
     return;
@@ -1472,13 +1494,11 @@ EasyReading.prototype._onKeyDown = function(e) {
         stop = true;
         break;
     }
-  } else if (e.ctrlKey && !e.altKey) {
-    switch (e.key) {
-      case 'h':
-        this._send('\x1b[D\x1b[A\x1b[C');
-        stop = true;
-        break;
-    }
+  } else if (ctrlLetterOf(e) === 'h') {
+    // ^H ＝ 上一篇（pmore.c:2678 的 mf_viewedNone → READ_PREV）。Ctrl 版與 Alt 版
+    // 同路，理由見 ctrlLetterOf 上方。
+    this._send('\x1b[D\x1b[A\x1b[C');
+    stop = true;
   }
   if (stop)
     e.preventDefault();
@@ -1711,8 +1731,9 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
         }
         break;
     }
-  } else if (e.ctrlKey && !e.altKey) {
-    switch (e.key) {
+  } else if (ctrlLetterOf(e) !== null) {
+    // Ctrl 版與 Alt 版走同一條路，理由見 ctrlLetterOf 上方。
+    switch (ctrlLetterOf(e)) {
       case 'f':
         this._scrollBy(this._turnPageLines);
         stop = true;
@@ -1727,6 +1748,7 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
           this.leaveCurrentPost();
         break;
       default:
+        // 符號鍵本次不納入 Alt remap，所以這裡仍比對 e.key（Alt 給不出它們）。
         if ("@^_?".indexOf(e.key) >= 0) {
           stop = true;
           break;

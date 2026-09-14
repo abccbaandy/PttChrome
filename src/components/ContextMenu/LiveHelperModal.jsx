@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import {
   Paper,
-  Tooltip,
   Button,
   NumberInput,
   Text,
@@ -34,14 +33,16 @@ export const LiveHelperModal = ({ show, onHide, enabled, sec, onChange }) => {
   return (
     <Paper shadow="md" p="sm" withBorder className="LiveHelperModal">
       <Group gap="xs" wrap="nowrap" className="LiveHelperModal__Body">
-        <Tooltip label="Alt + r" position="top">
-          <Button
-            variant={enabled ? "filled" : "default"}
-            onClick={onEnabledClick}
-          >
-            {i18n("liveHelperEnable")}
-          </Button>
-        </Tooltip>
+        {/* upstream 的 Tooltip 寫「Alt + r」，但本 fork 的 Alt+R 送的是 ^R（現在
+            Alt+A~Z 全是 PTT 的 Ctrl，見 term_keyboard），實況更新走的是
+            pttchrome.jsx 的方向鍵序列，從來沒綁 Alt+R。照著按只會得到別的結果，
+            所以拿掉；真正的鍵盤入口是 END（term_view.onKeyDown）。 */}
+        <Button
+          variant={enabled ? "filled" : "default"}
+          onClick={onEnabledClick}
+        >
+          {i18n("liveHelperEnable")}
+        </Button>
         <Text className="LiveHelperModal__Body__Text nomouse_command">
           {i18n("liveHelperSpan")}
         </Text>

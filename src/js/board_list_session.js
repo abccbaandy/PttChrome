@@ -49,7 +49,7 @@ import {
   BRD_CMD_PREFIX,
   isBoardListCommandKind
 } from './list_render_owner';
-import { keyEventToBytes, altRemapCharCode } from './term_keyboard';
+import { keyEventToBytes, altRemapCharCode, isAltRemapEvent } from './term_keyboard';
 import { u2b, ansiHalfColorConv, normalizePasteText } from './string_util';
 import { clickableColStart } from './mouse_regions';
 import { LEFT_ARROW } from './function_key_plan';
@@ -526,19 +526,18 @@ BoardListSession.prototype = {
 
   onKeyDown: function(e) {
     // 瀏覽器／app 層的剪貼簿組合鍵留給 term_view 後面那幾個 handler。
+    // **`!e.altKey` 是合約的一部分，別拿掉**：Alt+C/A/V/X 要送 ^C/^A/^V/^X 給 PTT。
     const clipboard =
       (e.ctrlKey &&
         !e.altKey &&
         !e.metaKey &&
         ['c', 'a', 'v', 'x'].indexOf((e.key || '').toLowerCase()) !== -1) ||
       (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Insert');
-    // Alt 重映射鍵（Alt+R/T/W/V ＝ ^R/^T/^W/^V）是**本 app 自己造的送鍵入口**，不是
+    // Alt remap（Alt＝PTT 的 Ctrl，全 26 字母）是**本 app 自己造的送鍵入口**，不是
     // 瀏覽器快捷鍵 ⇒ 與 Ctrl 組合同級，必須走 passthrough 的 sync 腿（Alt+W ＝
-    // board.c:1731 Ctrl('W')）。其餘 Alt/Meta 組合才是瀏覽器的，維持放行。條件與
-    // TermKeyboard._onKeyDown 的 alt 分支對齊（!ctrl && alt && !shift），否則兩條路徑
-    // 會漂移。同 list_session.onKeyDown。
-    const altRemap =
-      e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey ? altRemapCharCode(e) : null;
+    // board.c:1731 Ctrl('W')）。非字母的 Alt 組合才是瀏覽器的，維持放行。
+    // 判定一律走 term_keyboard.isAltRemapEvent，理由同 list_session.onKeyDown。
+    const altRemap = isAltRemapEvent(e) ? altRemapCharCode(e) : null;
     if (clipboard || (e.altKey && altRemap === null) || e.metaKey) return;
 
     if (this._busyHint()) {
@@ -550,6 +549,8 @@ BoardListSession.prototype = {
     if (altRemap !== null) {
       // _classifyKey 走不到：keyEventToBytes 對 altKey 一律回 null ⇒ 判成 'ignore'。
       // 排在 state gate 之後：交易在飛時與其他鍵一樣被吞掉並給提示。
+      // **排在 _classifyKey 之前是承重的**：看板列表的 b 是 PgUp 同義鍵
+      //（board.c:1763），j/k/n/p 是上下移動，順序一反 Alt+B 就變成本地翻頁而不是 ^B。
       e.preventDefault();
       this._beginPassthroughBytes(String.fromCharCode(altRemap));
       return;

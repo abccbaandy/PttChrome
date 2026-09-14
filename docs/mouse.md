@@ -300,7 +300,7 @@ frozen 之後畫面會自己再捲幾像素。
    （已實測：對從未 dispatch 的合成事件呼叫 `preventDefault()`，Chromium／Firefox／
    jsdom 的 `defaultPrevented` 都會變 true，這是 DOM 標準行為。**WebKit 未實測**。）
 2. 合成事件的 `e.code` 是空字串、`isTrusted:false`、`target:null`。目前只有
-   `term_keyboard.altRemapCharCode` 讀 `e.code`（已寫成 `e.code || ''`）；**日後在鏈上
+   `term_keyboard` 的 `altRemapCharCode` 與 `isAltRemapEvent` 讀 `e.code`（都經過 `e.code || ''`）；**日後在鏈上
    新增讀 `e.code`／`e.target`／`e.isTrusted` 的邏輯就會靜默壞掉**。
 3. 用 `this.onKeyDown(ev)` 直接呼叫，**不 dispatch**（`#t` 上已掛 keydown listener，
    dispatch 會讓同一個事件跑兩次分派）。

@@ -928,8 +928,8 @@ describe("cursor-relative Ctrl／Alt 組合鍵先同步真游標（查詢作者�
   });
 
   test("Alt 重映射鍵 Alt-T（＝^T TagThread，read.c:957）同樣走 sync → 代送", () => {
-    // Alt+R/T/W/V 是**本 app 自己造的送鍵入口**（為避開瀏覽器的 Ctrl+R/T/W 快捷鍵，
-    // 見 term_keyboard.altRemapCharCode），不是瀏覽器快捷鍵 ⇒ 與 Ctrl 組合同級。
+    // Alt remap（Alt＝PTT 的 Ctrl，全 26 字母，見 term_keyboard）是**本 app 自己造
+    // 的送鍵入口**，不是瀏覽器快捷鍵 ⇒ 與 Ctrl 組合同級。
     // 舊碼 onKeyDown 開頭 `if (clipboard || e.altKey || e.metaKey) return;` 把它整個
     // early-return 掉：連原生鏡像都不切就由 TermKeyboard 裸送，比 Ctrl 那條更隱蔽
     //（好讀畫面完全不動，server 狀態卻已改變）。
@@ -951,22 +951,28 @@ describe("cursor-relative Ctrl／Alt 組合鍵先同步真游標（查詢作者�
     expect(s._renderMode).toBe("native");
   });
 
-  test("反向守護：非 remap 的 Alt 組合（Alt-F）仍整個放行給瀏覽器", () => {
-    // ALT_REMAP_LETTERS 只有 R/T/W/V，其餘 Alt 組合是瀏覽器／OS 的（選單列等），
-    // 維持早退：不轉態、不 preventDefault、零命令。
-    const { s, sent, enqueued } = makeSession();
-    s._view.flashListHint = () => {};
-    s.state = "active";
-    s._renderMode = "buffer";
-    s._selectedNum = 42;
-    const e = keyEvent("f", { altKey: true });
-    s.onKeyDown(e);
+  test("反向守護：非字母的 Alt 組合仍整個放行給瀏覽器", () => {
+    // Alt remap 只涵蓋 26 個字母。數字、方向鍵這類 Alt 組合仍是瀏覽器／OS 的
+    //（Alt+← 是上一頁），維持早退：不轉態、不 preventDefault、零命令。
+    // 註：Alt-F 以前在這裡，但 26 字母 remap 之後它是 ^F，已移到正向案例。
+    for (const [key, code] of [
+      ["5", "Digit5"],
+      ["ArrowLeft", "ArrowLeft"],
+    ]) {
+      const { s, sent, enqueued } = makeSession();
+      s._view.flashListHint = () => {};
+      s.state = "active";
+      s._renderMode = "buffer";
+      s._selectedNum = 42;
+      const e = keyEvent(key, { altKey: true, code });
+      s.onKeyDown(e);
 
-    expect(e.defaultPrevented).toBe(false);
-    expect(s.state).toBe("active");
-    expect(s._renderMode).toBe("buffer");
-    expect(sent).toEqual([]);
-    expect(enqueued).toEqual([]);
+      expect(e.defaultPrevented).toBe(false);
+      expect(s.state).toBe("active");
+      expect(s._renderMode).toBe("buffer");
+      expect(sent).toEqual([]);
+      expect(enqueued).toEqual([]);
+    }
   });
 
   test("反向守護：Alt-Shift-T／Ctrl-Alt-T 不是 remap 鍵，照樣放行", () => {
@@ -988,5 +994,125 @@ describe("cursor-relative Ctrl／Alt 組合鍵先同步真游標（查詢作者�
       expect(sent).toEqual([]);
       expect(enqueued).toEqual([]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Alt＝PTT 的 Ctrl，全 26 字母（2026-09）。列表好讀底下每一顆都必須走 passthrough
+// 的 cursor-sync 腿 —— Ctrl 鍵有一票是對「真游標那一列」動作的（docs §11.7），
+// 好讀的選取列與 server 游標不同步時裸送就會對錯的文章生效。
+// ---------------------------------------------------------------------------
+describe("Alt remap 全 26 字母（列表好讀）", () => {
+  function activeSession() {
+    const r = makeSession();
+    r.s._view.flashListHint = () => {};
+    r.s.state = "active";
+    r.s._renderMode = "buffer";
+    r.s._selectedNum = 42;
+    r.s._serverNum = 7; // 與選取列不同步 ⇒ 必須先跑 sync 腿
+    return r;
+  }
+
+  const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+  test("26 個字母都走 sync → 代送對應控制碼 → 切原生鏡像", () => {
+    LETTERS.forEach((L, i) => {
+      const { s, sent, enqueued } = activeSession();
+      const e = keyEvent(L.toLowerCase(), { altKey: true, code: "Key" + L });
+      s.onKeyDown(e);
+
+      expect(e.defaultPrevented).toBe(true);
+      expect(sent).toEqual([]); // 不得裸送上線
+      expect(enqueued[0].kind).toBe("native-sync-jump");
+      enqueued[0].onDone();
+      expect(enqueued[1].kind).toBe("native-key");
+      expect(enqueued[1].keys).toBe(String.fromCharCode(i + 1));
+      expect(s._renderMode).toBe("native");
+    });
+  });
+
+  test("j/k/n/p 不得變成本地移游標 —— altRemap 攔截必須排在 _classifyKey 之前", () => {
+    // 這四顆同時也是導覽白名單的同義鍵（read.c 的 ↑↓ 同義鍵）。順序一反，
+    // Alt+J 就會變成「本地把游標往下移一格」而不是送 ^J 給 PTT，而且完全無聲。
+    for (const [key, code, out] of [
+      ["j", "KeyJ", "\x0a"],
+      ["k", "KeyK", "\x0b"],
+      ["n", "KeyN", "\x0e"],
+      ["p", "KeyP", "\x10"],
+    ]) {
+      const { s, enqueued } = activeSession();
+      const before = s._selectedNum;
+      s.onKeyDown(keyEvent(key, { altKey: true, code }));
+
+      expect(s._selectedNum).toBe(before); // 游標沒被本地移動
+      expect(enqueued[0].kind).toBe("native-sync-jump");
+      enqueued[0].onDone();
+      expect(enqueued[1].keys).toBe(out);
+    }
+  });
+
+  test("Alt+M（＝\\r）走代送，不是序列化開文", () => {
+    // ^M 是 Enter 的控制碼別名（vtkbd.h:86-88）。與 Ctrl+M 同路：走原生鏡像開文，
+    // 不經 {class:'open'} 的序列化交易。既有行為，這裡釘住不要漂掉。
+    const { s, enqueued } = activeSession();
+    s.onKeyDown(keyEvent("m", { altKey: true, code: "KeyM" }));
+
+    expect(enqueued[0].kind).toBe("native-sync-jump");
+    enqueued[0].onDone();
+    expect(enqueued[1].kind).toBe("native-key");
+    expect(enqueued[1].keys).toBe("\r");
+    // 不得出現序列化開文那條路
+    expect(enqueued.some((c) => c.kind === "open")).toBe(false);
+  });
+
+  test("Alt+C/A/V/X 不被剪貼簿白名單早退吃掉", () => {
+    // clipboard 判定寫的是 `e.ctrlKey && !e.altKey` ⇒ Alt 版必須落到 remap 這條。
+    // 有人日後把 `!e.altKey` 拿掉，這四顆就會靜默變回「複製／全選／貼上／剪下」。
+    for (const [L, out] of [
+      ["C", "\x03"],
+      ["A", "\x01"],
+      ["V", "\x16"],
+      ["X", "\x18"],
+    ]) {
+      const { s, sent, enqueued } = activeSession();
+      const e = keyEvent(L.toLowerCase(), { altKey: true, code: "Key" + L });
+      s.onKeyDown(e);
+
+      expect(e.defaultPrevented).toBe(true);
+      expect(sent).toEqual([]);
+      expect(enqueued[0].kind).toBe("native-sync-jump");
+      enqueued[0].onDone();
+      expect(enqueued[1].keys).toBe(out);
+    }
+  });
+
+  test("macOS 形態（e.key 失真／dead key）在 session 層同樣接得住", () => {
+    // 這層以前只測過 key:'t' 的 Windows 形態 ⇒ mac 是盲區。session 自己呼叫
+    // altRemapCharCode，少了 e.code 就會整條啞掉。
+    for (const [key, code, out] of [
+      ["√", "KeyV", "\x16"],
+      ["Dead", "KeyE", "\x05"], // ⌥E 是組合重音的 dead key
+      ["ß", "KeyS", "\x13"], // 'ß'.toUpperCase() === 'SS'，只有 code 救得了
+      ["µ", "KeyM", "\x0d"], // 'µ'.toUpperCase() 是希臘 Μ，不是 ASCII M
+    ]) {
+      const { s, enqueued } = activeSession();
+      const e = keyEvent(key, { altKey: true, code });
+      s.onKeyDown(e);
+
+      expect(e.defaultPrevented).toBe(true);
+      expect(enqueued[0].kind).toBe("native-sync-jump");
+      enqueued[0].onDone();
+      expect(enqueued[1].keys).toBe(out);
+    }
+  });
+
+  test("已同步時免 sync 腿，直接代送", () => {
+    const { s, enqueued } = activeSession();
+    s._serverNum = 42; // 與選取列一致
+    s.onKeyDown(keyEvent("w", { altKey: true, code: "KeyW" }));
+
+    expect(enqueued.length).toBe(1);
+    expect(enqueued[0].kind).toBe("native-key");
+    expect(enqueued[0].keys).toBe("\x17");
   });
 });

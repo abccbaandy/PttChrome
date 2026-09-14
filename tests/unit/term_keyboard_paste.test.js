@@ -130,12 +130,14 @@ describe("TermKeyboard：Mac Option 組字字元（e.key 失真）", () => {
     }
   });
 
-  test("反向：不在 remap 名單的 ⌥A 不送也不攔（留給瀏覽器）", () => {
+  test("⌥A 送 ^A —— 26 字母 remap 後不再是「留給瀏覽器」", () => {
+    // 這條以前是反向守護（名單只有 RTWV）。Alt 全面當 Ctrl 之後 ⌥A 正是 ^A，
+    // 而且是**唯一**入口：Ctrl-A 被 term_view 的 doSelectAll 無條件吃掉。
     const { kb, sent } = makeKeyboard();
     const e = keyEvent("\u00e5", { altKey: true, code: "KeyA" });
     kb.onKeyDown(e);
-    expect(sent).toEqual([]);
-    expect(e.defaultPrevented).toBe(false);
+    expect(sent).toEqual(["\x01"]);
+    expect(e.defaultPrevented).toBe(true);
   });
 
   test("反向：⌥⇧V 不由本層處理（alt 分支排除 shift）", () => {
@@ -161,18 +163,23 @@ describe("altRemapCharCode（純函式邊界）", () => {
   });
 
   test("沒有 e.code 也不得丟例外（合成事件／舊測試）", () => {
-    expect(altRemapCharCode({ key: "q" })).toBe(null);
+    expect(altRemapCharCode({ key: "q" })).toBe(17); // e.key 就是字母，不需要 code
+    // e.key 失真又沒有 e.code 時無從還原，回 null 而不是丟例外。
     expect(altRemapCharCode({ key: "\u221a" })).toBe(null);
   });
 
   test("空字串 e.key 不得誤中（indexOf('') === 0 的陷阱）", () => {
-    expect(altRemapCharCode({ key: "", code: "KeyA" })).toBe(null);
+    expect(altRemapCharCode({ key: "", code: "KeyA" })).toBe(1); // 靠 e.code 補位
+    expect(altRemapCharCode({ key: "", code: "Digit5" })).toBe(null);
     expect(altRemapCharCode({})).toBe(null);
   });
 
-  test("不在名單的鍵一律 null", () => {
-    expect(altRemapCharCode({ key: "a", code: "KeyA" })).toBe(null);
+  test("非字母鍵一律 null（26 字母之外不 remap）", () => {
     expect(altRemapCharCode({ key: "Enter", code: "Enter" })).toBe(null);
     expect(altRemapCharCode({ key: "5", code: "Digit5" })).toBe(null);
+    expect(altRemapCharCode({ key: "ArrowLeft", code: "ArrowLeft" })).toBe(null);
+    // 符號鍵本次不做：CtrlShiftMap 對它們有 upstream keyCode bug
+    //（見 docs/handoff/ctrl-punct-keycode-map.md），且 mac 的 ⌥[ 也是組字鍵。
+    expect(altRemapCharCode({ key: "[", code: "BracketLeft" })).toBe(null);
   });
 });

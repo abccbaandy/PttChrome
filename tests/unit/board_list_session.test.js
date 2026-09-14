@@ -1236,12 +1236,96 @@ describe("cursor-relative Ctrl／Alt 組合鍵先同步真游標（2026-09-13）
     expect(s._renderMode).toBe("native");
   });
 
-  test("反向守護：非 remap 的 Alt 組合（Alt-F）仍整個放行給瀏覽器", () => {
+  test("反向守護：非字母的 Alt 組合仍整個放行給瀏覽器", () => {
+    // Alt remap 只涵蓋 26 個字母；Alt+← 是瀏覽器的上一頁、Alt+數字不是 PTT 指令。
+    // 註：Alt-F 以前在這裡，26 字母 remap 之後它是 ^F（board.c:1775 下一頁）。
+    for (const [key, code] of [
+      ["5", "Digit5"],
+      ["ArrowLeft", "ArrowLeft"],
+    ]) {
+      const { s, enqueued } = ready();
+      const e = keyEvent(key, { altKey: true, code });
+      s.onKeyDown(e);
+      expect(e.defaultPrevented).toBe(false);
+      expect(s.state).toBe("active");
+      expect(enqueued).toEqual([]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Alt＝PTT 的 Ctrl，全 26 字母（2026-09）。看板列表版：board.c 的 cursor-relative
+// Ctrl 鍵（:1731 ^W whereami、:1890 ^S search_local_board、:2038 ^A 加入全部標記、
+// :2044 ^T 移除全部標記、:2050 ^P 貼上標記看板）全部必須先同步真游標。
+// ---------------------------------------------------------------------------
+describe("Alt remap 全 26 字母（看板列表）", () => {
+  function ready({ selected = 7, server = 1 } = {}) {
+    const ctx = makeSession();
+    ctx.termBuf.feed(brdScreenRows());
+    seedBuffer(ctx.termBuf, 1, 20);
+    ctx.s._selectedNum = selected;
+    ctx.s._serverNum = server;
+    return ctx;
+  }
+
+  test("board.c 的 cursor-relative 鍵：Alt+W/S/A/T/P 各自走 sync → 代送", () => {
+    for (const [L, out] of [
+      ["W", "\x17"], // whereami
+      ["S", "\x13"], // search_local_board
+      ["A", "\x01"], // fav_add_all_tagged
+      ["T", "\x14"], // fav_remove_all_tag
+      ["P", "\x10"], // paste_taged_brds
+    ]) {
+      const { s, enqueued } = ready();
+      const e = keyEvent(L.toLowerCase(), { altKey: true, code: "Key" + L });
+      s.onKeyDown(e);
+
+      expect(e.defaultPrevented).toBe(true);
+      expect(enqueued[0].kind).toBe(BRD_CMD_PREFIX + "native-sync-jump");
+      enqueued[0].onDone();
+      expect(enqueued[1].kind).toBe(BRD_CMD_PREFIX + "native-key");
+      expect(enqueued[1].keys).toBe(out);
+    }
+  });
+
+  test("Alt+B 不得變成 PgUp —— 看板列表獨有的同義鍵陷阱", () => {
+    // board.c:1763 把 'b' 也當 PgUp（read.c 沒有這個同義鍵）。altRemap 的攔截若被
+    // 排到 _classifyKey 之後，Alt+B 就會變成本地翻頁而不是送 ^B 給 PTT。
     const { s, enqueued } = ready();
-    const e = keyEvent("f", { altKey: true });
+    const before = s._selectedNum;
+    const e = keyEvent("b", { altKey: true, code: "KeyB" });
     s.onKeyDown(e);
-    expect(e.defaultPrevented).toBe(false);
-    expect(s.state).toBe("active");
-    expect(enqueued).toEqual([]);
+
+    expect(s._selectedNum).toBe(before); // 沒有本地翻頁
+    expect(enqueued[0].kind).toBe(BRD_CMD_PREFIX + "native-sync-jump");
+    enqueued[0].onDone();
+    expect(enqueued[1].keys).toBe("\x02"); // ^B
+  });
+
+  test("Alt+C 不被剪貼簿白名單早退吃掉", () => {
+    const { s, enqueued } = ready();
+    const e = keyEvent("c", { altKey: true, code: "KeyC" });
+    s.onKeyDown(e);
+
+    expect(e.defaultPrevented).toBe(true);
+    expect(enqueued[0].kind).toBe(BRD_CMD_PREFIX + "native-sync-jump");
+    enqueued[0].onDone();
+    expect(enqueued[1].keys).toBe("\x03");
+  });
+
+  test("macOS 形態（⌥W 的 e.key 是 ∑、⌥E 是 Dead）同樣接得住", () => {
+    for (const [key, code, out] of [
+      ["∑", "KeyW", "\x17"],
+      ["Dead", "KeyE", "\x05"],
+    ]) {
+      const { s, enqueued } = ready();
+      const e = keyEvent(key, { altKey: true, code });
+      s.onKeyDown(e);
+
+      expect(e.defaultPrevented).toBe(true);
+      expect(enqueued[0].kind).toBe(BRD_CMD_PREFIX + "native-sync-jump");
+      enqueued[0].onDone();
+      expect(enqueued[1].keys).toBe(out);
+    }
   });
 });
