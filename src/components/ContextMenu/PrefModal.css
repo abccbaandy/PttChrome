@@ -112,3 +112,47 @@
   font-size: 12px;
   margin: 4px 0 8px;
 }
+
+/* ── 設定搜尋（左欄搜尋框 + 跳轉後的短暫高亮）────────────────────────── */
+
+/* 命中片段。用 Mantine 變數 + light-dark()，不硬編顏色。 */
+.PrefModal__Search__Mark {
+  background: light-dark(
+    var(--mantine-color-yellow-3),
+    var(--mantine-color-yellow-8)
+  );
+  color: inherit;
+  padding: 0;
+}
+
+/* 跳轉後的短暫高亮。掛在「整列外框」（Checkbox / InputWrapper 的 root，或
+   fieldset）上，class 由 PrefModal 的 flashKey 決定 —— 刻意不做 imperative 的
+   classList 寫入，那等於在 React 擁有的節點上開第二條寫入路徑。
+
+   **底色一定要用 `-light` 這種半透明變數，不可用實色的 yellow-2/yellow-9**：
+   錨點可能是整個 fieldset（分區命中），實色底會把裡面的說明文字與橘色警告字
+   壓到幾乎讀不出來。主要的視覺訊號交給外圈那道 ring。 */
+.PrefModal__Anchor--flash {
+  border-radius: var(--mantine-radius-sm);
+  animation: PrefModalAnchorFlash 1.6s ease-out 1;
+}
+
+@keyframes PrefModalAnchorFlash {
+  from {
+    background-color: var(--mantine-color-yellow-light);
+    box-shadow: 0 0 0 3px var(--mantine-color-yellow-filled);
+  }
+  to {
+    background-color: transparent;
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+/* 系統層關掉動畫時改用靜態描邊：仍然看得出「就是這一項」，只是不閃。 */
+@media (prefers-reduced-motion: reduce) {
+  .PrefModal__Anchor--flash {
+    animation: none;
+    outline: 2px solid var(--mantine-color-yellow-6);
+    outline-offset: 2px;
+  }
+}

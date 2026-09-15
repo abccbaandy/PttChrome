@@ -603,6 +603,37 @@ index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**�
   （暖機入口不偷下載／建完即毀）、`ui_behavior.offline.spec.js`（分頁切換＋三種 availability 的反灰）、
   `bare-domain-link.offline.spec.js`（總開關關閉時子選項開著也不推論）。
 
+### 設定搜尋（`src/js/pref_search.js` ＋ `components/ContextMenu/PrefSearchBox.jsx`）
+左欄搜尋框 → 下拉結果 → 切分頁＋捲動＋短暫高亮。**與右鍵選單的「快速搜尋」
+（`quick_search.js`）無關**，命名一律 `settingsSearch`/`prefSearch`，勿混。
+
+- **索引 `PREF_SEARCH_ITEMS` 是手動維護的第二份事實**：`PrefModal.jsx` 純 hardcode JSX、無 schema
+  可反射。漏收＝那一項**永遠搜不到**且畫面一切正常（靜默失效）⇒ 唯一防線是
+  `tests/unit/pref_search_index.test.js`（靜態掃原始碼的 `name=`／`<PrefSection legendKey=`／
+  `<PrefAnchor anchorKey=`／`{...anchor(…)}`，雙向比對＋兩語系字串存在性）。**新增設定項必須同步索引。**
+- **錨點 key ＝ `data-pref-anchor` 值**。非 pref 一律帶前綴，永不與 pref key 撞名：
+  `ui:`（沒有 `name` 的可操作項，如 `ui:theme`）、`section:`（分區）。
+- **三個 adapter 各管一種錨點**：`PrefCheckbox`（自動掛，約 45 項）、`PrefSection`（取代原本 27 份
+  重複的 `<fieldset className=…><legend>`）、`PrefAnchor`（沒有 name 的項目與「關於」頁的區塊）。
+  其餘輸入元件寫 `{...anchor("<key>")}`。
+- **比對規則只有一份**：`searchPrefSettings()` 回傳 `ranges`，UI 照切，**不得自己再比對一次**。
+  分數由高到低：當前語系標題前綴 100／子字串 90 → pref key 前綴 80／子字串 70（去駝峰後，
+  所以中文介面打 `auto` 或 `easy reading` 會命中）→ 分區或分頁名 60 → 當前語系 tooltip 50 →
+  另一語系標題 40 → 另一語系其他 30。同分先短標題、再索引順序。`matchedVia !== "title"` 時
+  `ranges` 為空（靠英文 key 命中就不畫假高亮）。
+- **`MAX_RESULTS = 8` 是刻意的**：Mantine Modal 的 `RemoveScroll` 沒傳 `shards`，會
+  `preventDefault()` 掉 portal 出去的下拉上的 wheel ⇒ 下拉**捲不動**。壓在不需捲動的高度內就沒問題
+  （鍵盤 ↑↓ 走 `scrollIntoView`，不受影響）。真要長清單的逃生門是
+  `<Modal removeScrollProps={{ shards: [dropdownRef] }}>`。
+- **Escape 的歸屬零程式碼**：`Combobox.Target` 在下拉開著時自動掛 `data-mantine-stop-propagation`，
+  而 Modal 的 Esc 攔截是 **window + capture**（自己呼叫 `stopPropagation()` 對它無效）。⇒ 下拉開著
+  按 Esc 只關下拉，關著才關設定頁。
+- 查詢字是**純 UI state，不進 `values`** ⇒ `onCloseClick` 的 `deepEqual` 仍短路，只是搜尋不會多寫一次
+  pref、也不會 ping 其他裝置。
+- 守護：`tests/unit/pref_search.test.js`（比對／排序純邏輯）、`pref_search_index.test.js`（索引覆蓋度）、
+  `pref_modal_search.test.jsx`（UI 接線＋錨點動態全覆蓋＋e2e marker 未破壞）、
+  `tests/e2e/offline/pref_search.offline.spec.js`（**真的捲到了沒** —— jsdom 沒有版面，只有這層量得到）。
+
 ## 自動登入：`src/js/auto_login.js`
 `App` constructor `new AutoLogin(this)`；`onConnect` 末尾 `start()`（async fire-and-forget）。**自走
 polling**（setTimeout 每 500ms），每 tick 直接從 `buf.getRowText` 讀整頁（**勿用
@@ -707,6 +738,12 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **送鍵（或任何副作用）不可寫在 `console.log` 的字串運算式裡**。`easy_reading._onViewUpdated` 曾寫成 `console.log("send:" + keys + " -> " + this._maybeSendPageDown(keys, false))` —— 哪天把 log 包進 `if (TRACE)` 就會連好讀唯一的翻頁動力一起關掉。每幀日誌現由 `util.js` 的 `TRACE`（= `process.env.DEVELOPER_MODE`）在**呼叫端**包住，dev/e2e 照印、prod 由 bundler 整段消除。
 - **逐列加工走單一純函式 `comment_parse.annotateComment`**，勿為某路徑另寫一份（好讀/原生曾各複製一份而發散出 bug）。逐列狀態用每圈新物件 `const ann={}`，**勿用函式作用域 `var`**（JS `var` 不每圈重設 → 非推文列繼承前列 floor/authorId 範圍，畫出整條色塊或樓號溢出到空白/※編輯/內文）。守護 `comment_parse.test.js`。
 - **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 `enhance.spec.js` 紅。
+- **Mantine 元件的 rest props 落在 `<input>`，不是整列外框**（`Checkbox.mjs:49,127`、`use-input-props.mjs`）。要標記／捲到／高亮「含 label 與說明文字的整列」一律用 `wrapperProps`；`Select` 更是只能靠它（`name` 會被渲染成 `<input type="hidden">`，沒有版面，`scrollIntoView` 對它無效）。
+  - **但 `wrapperProps` 裡絕不可放 `className`**：它是在 `...getStyles("root")` **之後**展開的（`Checkbox.mjs:91` vs `111`）⇒ 會把 `mantine-Checkbox-root` 整個換掉、版面爆掉。加 class 走 `classNames={{ root }}`（Styles API 是 concat，安全）。設定搜尋的錨點／高亮就是踩過這組才定案，見「設定搜尋」節。
+- **Mantine `Combobox` 預設 `keepMounted: true` + `keepMountedMode: "display-none"`**：下拉的 DOM **永遠在**，關閉時只是被加上 inline `display:none`。⇒ 測試判斷「下拉開了沒」**不能數 `role=option` 的數量**（關閉後照樣是那幾個），要看可見性（`toBeVisible()`）或 target 上的 `data-mantine-stop-propagation`。同理，全域 `querySelectorAll("[role=option]")` 會把畫面上每一個 Mantine `Select` 的選項一起撈進來——要限定在自己的 dropdown 容器內。
+- **Mantine 的鍵盤導覽讀 `event.nativeEvent.code`，不是 `event.key`**（`use-combobox-target-props.mjs`；只有 Escape 那條用 `key`）。⇒ 測試裡 `fireEvent.keyDown(el, { key: "Enter" })` **不會有任何反應**，必須一併給 `code`。
+- **Mantine 的 `Tabs.Panel` 走 React 19 `<Activity>`**（`TabsPanel.mjs:24`，`keepMountedMode` 預設 `"activity"`）：非作用分頁整塊 `display:none`。⇒ 任何「切分頁之後量版面／捲動」的動作**必須等一個 frame**（`requestAnimationFrame`），同一個 commit 裡 `scrollIntoView` 是 no-op。這與「自動登入分頁是條件渲染」是兩個各自獨立的理由，十個分頁都適用。
+- **jsdom 缺的兩個 API 已在 `tests/unit/setup.js` 補上**：`Element.prototype.scrollIntoView`（Mantine `useCombobox#selectOption` 是**非 optional** 呼叫 ⇒ 任何按方向鍵操作下拉的測試沒它就整批 TypeError）與 `document.fonts`（Mantine Textarea autosize 無條件 `document.fonts.addEventListener` ⇒ render 到「增強功能」分頁的黑名單欄位就炸）。**兩者都要先判斷全域存在**——該 setup 檔對整個 unit project 生效，其中有檔案用 `@vitest-environment node`。
 - **列表黑名單標註不可只信 `pageState`／`inListContext` —— 每一列都要先過 `comment_parse#isListShapedRow`**（2026-09-05 使用者回報「發文介面出現黑名單髒資料」，錄製檔 `ptt-debug-20260905-122522`）。兩層守門**同時都是黏的**：`term_buf.setPageState` 沒有 reset 分支（那是刻意的，見 `docs/pttbbs-screen-protocol.md` §5.1），從列表叫出來的整頁畫面（Ctrl-P 發文、板規、精華區…）會**沿用**列表的 `pageState = 2`；`term_view._inBoardListContext` 又只在 pageState 1/3 才清掉。而逐列解析本身零設防：`parseListTitleRaw` 對任何長度 > 29 的列都回傳 col≥29 的整段文字。
   現場：發文分類列「種類：1.閒聊 2.問題 … 7.Vtub 8.自介 (1-8或不選)」的 col≥29 是「26夏 5.心得 6.情報 7.Vtub 8.自介 …」⇒ 使用者標題黑名單裡的 `vtub` 命中 ⇒ 整列被 `blacklistNoticeText` 換成「（本文已被黑名單） vtub」，把使用者正在看的分類提示蓋掉。**命中與否純看欄位對齊**（同畫面的 `[Vtub]` 板規列剛好落在 col 21 而逃過），所以症狀是「多黑名單命中的版塊最容易發生」的隨機髒資料。
   **判準要嚴：先要求合法 userid 作者欄，再要求編號或 ★**。單用編號會漏接——`parseListArticleNumLoose` 是 `^(\d+)\b`，板規的「1. 不得…」會回 1 而放行。同一道閘門也修掉**真實列表畫面**上的同型誤命中（表頭「編號 日期 作者 標題」與 footer「文章選讀 (y)回應(X)推文(^X)轉錄」以前會被關鍵字如「轉錄」吃掉，golden 快照裡它們身上那組假的 `data-list-title` 就是證據）。`list_session#visibleListIndices` 必須同步同一道閘門（不變量 10）。守護：`comment_parse.test.js` 的 `isListShapedRow`、`screen_dropHidden.test.js` 兩個新 describe、golden `list_native_fnkeys` / `list_easy_reading_scrolled`。

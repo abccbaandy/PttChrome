@@ -253,6 +253,20 @@
     "message": "設定備份"
   },
 
+  // settings search (設定頁左欄搜尋框；與下面的 quick search 無關，勿混用)
+  "options_settingsSearchLabel": {
+    "message": "搜尋設定"
+  },
+  "options_settingsSearchPlaceholder": {
+    "message": "搜尋設定…"
+  },
+  "options_settingsSearchEmpty": {
+    "message": "找不到符合的設定"
+  },
+  "options_settingsSearchHintKey": {
+    "message": "比對英文名稱"
+  },
+
   // quick search (context menu)
   "options_quickSearch": {
     "message": "快速搜尋"

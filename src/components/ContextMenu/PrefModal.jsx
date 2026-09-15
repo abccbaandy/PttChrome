@@ -1,4 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import {
   Modal,
   Tabs,
@@ -52,7 +58,47 @@ import {
   pruneQuickSearchEntries,
   validateQuickSearchEntry,
 } from "../../js/quick_search";
+import { PrefSearchBox } from "./PrefSearchBox";
 import "./PrefModal.css";
+
+// 設定搜尋跳轉後「哪一項正在閃」。
+//
+// **刻意用 module-level 的 external store，而不是 React Context**：Context 要在整棵
+// 樹外面多包一層 Provider，而這個檔案的 JSX 有一千六百行 —— 多縮排兩格等於整份
+// 重寫，一次小改動噴出兩千行 diff、blame 全毀。設定頁是單例對話框，單例 store
+// 在語意上也對；useSyncExternalStore 是 React 官方的訂閱方式，concurrent 安全。
+let flashKeyValue = null;
+const flashListeners = new Set();
+const subscribeFlash = (cb) => {
+  flashListeners.add(cb);
+  return () => flashListeners.delete(cb);
+};
+const getFlashKey = () => flashKeyValue;
+const setFlashKey = (key) => {
+  if (flashKeyValue === key) return;
+  flashKeyValue = key;
+  flashListeners.forEach((cb) => cb());
+};
+const useFlashKey = () => useSyncExternalStore(subscribeFlash, getFlashKey);
+
+export const PREF_FLASH_CLASS = "PrefModal__Anchor--flash";
+// 略長於 PrefModal.css 的 animation duration，讓動畫跑完才移除 class。
+export const PREF_FLASH_MS = 1700;
+
+// 產生「整列外框」的錨點 marker 與高亮 class。
+//
+// **錨點放 wrapperProps 而不是直接寫 data-\*\*：Mantine 的 rest props 落在
+// <input> 本身（Checkbox.mjs 把 ...rest 給 input），而我們要捲到／高亮的是含
+// label 與說明文字的整列，也就是 root wrapper。
+//
+// **高亮走 classNames={{root}} 而不是 wrapperProps.className**：wrapperProps 是
+// 在 ...getStyles("root") **之後**展開的（Checkbox.mjs:91 vs 111），從那裡塞
+// className 會把 mantine-Checkbox-root 整個換掉 ⇒ 版面爆掉。Styles API 的
+// classNames 則是 concat，安全。
+const anchorFor = (key, flashKey) => ({
+  wrapperProps: { "data-pref-anchor": key },
+  classNames: flashKey === key ? { root: PREF_FLASH_CLASS } : undefined,
+});
 
 // Checkbox adapter：保留 id={`pref-check-${name}`}（label[for=...] e2e marker，且
 // 點 label 文字才能切換）、name（input[name=...] marker）、event.target.checked 契約。
@@ -65,8 +111,48 @@ const PrefCheckbox = ({ name, checked, disabled, onChange, children }) => (
     onChange={onChange}
     label={children}
     mb="xs"
+    {...anchorFor(name, useFlashKey())}
   />
 );
+
+// 分區 adapter：<fieldset> + <legend>，順帶掛上 section:<legendKey> 錨點。
+// legendKey 同時是索引裡的 sectionKey（src/js/pref_search.js），靜態守護測試
+// tests/unit/pref_search_index.test.js 直接掃這個 prop。
+const PrefSection = ({ legendKey, children, ...rest }) => {
+  const flashKey = useFlashKey();
+  const key = `section:${legendKey}`;
+  return (
+    <fieldset
+      className={
+        "PrefModal__Grid__Col--right__Fieldset" +
+        (flashKey === key ? " " + PREF_FLASH_CLASS : "")
+      }
+      data-pref-anchor={key}
+      {...rest}
+    >
+      <legend>{i18n(legendKey)}</legend>
+      {children}
+    </fieldset>
+  );
+};
+
+// 沒有 name 屬性、也不是分區的可操作項（主題切換、色票列、debug 開關）。
+const PrefAnchor = ({ anchorKey, children, className, ...rest }) => {
+  const flashKey = useFlashKey();
+  return (
+    <div
+      data-pref-anchor={anchorKey}
+      className={
+        [className, flashKey === anchorKey ? PREF_FLASH_CLASS : null]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+};
 
 const credentialApiAvailable = () =>
   !!window.PasswordCredential &&
@@ -179,8 +265,63 @@ export const PrefModal = ({
   const [aiProgress, setAiProgress] = useState(null);
   // 設定備份分頁的最後一次結果訊息：null | "imported" | "badJson" | "badFormat"
   const [backupResult, setBackupResult] = useState(null);
+  // 設定搜尋跳轉：pendingJump 是「要跳去哪」的指令，flashKey 是「現在哪一項在
+  // 閃」。分成兩個 state 是因為跳轉要等一個 frame（見下面的 effect），而高亮的
+  // 生命週期比跳轉長。
+  const [pendingJump, setPendingJump] = useState(null);
+  const flashKey = useFlashKey();
   const importInputRef = useRef(null);
   const { colorScheme, setColorScheme } = useMantineColorScheme();
+
+  const anchor = useCallback((key) => anchorFor(key, flashKey), [flashKey]);
+
+  const onSearchJump = useCallback((hit) => {
+    setNavActiveKey(hit.tab);
+    // n 遞增：連點同一筆結果也要重新觸發，所以物件 identity 必須改變。
+    setPendingJump((p) => ({ key: hit.key, n: (p ? p.n : 0) + 1 }));
+  }, []);
+
+  // 切分頁 → 捲動 → 短暫高亮。
+  //
+  // **必須等一個 frame**，兩個各自獨立的理由：
+  //  1) Mantine 的 Tabs.Panel 走 React 的 <Activity>（非作用分頁整塊
+  //     display:none）⇒ 跟 setNavActiveKey 同一個 commit 裡 scrollIntoView 是
+  //     no-op，量不到版面；
+  //  2)「自動登入」分頁是條件渲染（navActiveKey === "autologin" && …），
+  //     目標元素這一刻根本還不存在。
+  useEffect(() => {
+    if (!pendingJump) return;
+    let timer = 0;
+    const raf = requestAnimationFrame(() => {
+      const node = document.querySelector(
+        `[data-pref-anchor="${pendingJump.key}"]`,
+      );
+      if (node && node.scrollIntoView) {
+        const reduce =
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        node.scrollIntoView({
+          block: "center",
+          behavior: reduce ? "auto" : "smooth",
+        });
+      }
+      setFlashKey(pendingJump.key);
+      timer = window.setTimeout(() => setFlashKey(null), PREF_FLASH_MS);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+      setFlashKey(null);
+    };
+  }, [pendingJump]);
+
+  // 設定頁關閉 → 下次打開是乾淨狀態（否則會看到上次那一項還在閃）。
+  useEffect(() => {
+    if (!show) {
+      setPendingJump(null);
+      setFlashKey(null);
+    }
+  }, [show]);
 
   useEffect(() => {
     let alive = true;
@@ -484,6 +625,7 @@ export const PrefModal = ({
         <div className="PrefModal__Grid">
           <div className="PrefModal__Grid__Col--left">
             <Title order={3}>{i18n("menu_settings")}</Title>
+            <PrefSearchBox onJump={onSearchJump} resetToken={show} />
             <Tabs.List>
               <Tabs.Tab value="general">{i18n("options_general")}</Tabs.Tab>
               <Tabs.Tab value="mouse">{i18n("options_mouse")}</Tabs.Tab>
@@ -512,8 +654,7 @@ export const PrefModal = ({
           </div>
           <div className="PrefModal__Grid__Col--right">
             <Tabs.Panel value="general">
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_general")}</legend>
+              <PrefSection legendKey="options_general">
                 <PrefCheckbox
                   name="enablePicPreview"
                   checked={values.enablePicPreview}
@@ -590,6 +731,7 @@ export const PrefModal = ({
                   placeholder={i18n("tooltip_easyReadingEndSwitchKey")}
                   onKeyDown={onHotkeyCapture}
                   mb="xs"
+                  {...anchor("easyReadingEndSwitchKey")}
                 />
                 <TextInput
                   label={i18n("options_aidNavBackKey")}
@@ -599,6 +741,7 @@ export const PrefModal = ({
                   placeholder={i18n("tooltip_aidNavBackKey")}
                   onKeyDown={onHotkeyCapture}
                   mb="xs"
+                  {...anchor("aidNavBackKey")}
                 />
                 <TextInput
                   label={i18n("options_deepLinkCopyKey")}
@@ -608,6 +751,7 @@ export const PrefModal = ({
                   placeholder={i18n("tooltip_deepLinkCopyKey")}
                   onKeyDown={onHotkeyCapture}
                   mb="xs"
+                  {...anchor("deepLinkCopyKey")}
                 />
                 <PrefCheckbox
                   name="endTurnsOnLiveUpdate"
@@ -637,6 +781,7 @@ export const PrefModal = ({
                   value={values.antiIdleTime}
                   onChange={(val) => onNumberChange("antiIdleTime", val)}
                   mb="xs"
+                  {...anchor("antiIdleTime")}
                 />
                 <NumberInput
                   label={i18n("options_lineWrap")}
@@ -644,10 +789,10 @@ export const PrefModal = ({
                   value={values.lineWrap}
                   onChange={(val) => onNumberChange("lineWrap", val)}
                   mb="xs"
+                  {...anchor("lineWrap")}
                 />
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_contextMenu")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_contextMenu">
                 <PrefCheckbox
                   name="enableInputHelper"
                   checked={values.enableInputHelper}
@@ -680,9 +825,8 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_pushKeyOpensLongPush")}
                 </Text>
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_appearance")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_appearance">
                 <PrefCheckbox
                   name="autoHideBlinkCursor"
                   checked={values.autoHideBlinkCursor}
@@ -693,19 +837,21 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_autoHideBlinkCursor")}
                 </Text>
-                <Text size="sm" fw={500} mb={4}>
-                  {i18n("options_theme")}
-                </Text>
-                <SegmentedControl
-                  value={colorScheme}
-                  onChange={setColorScheme}
-                  data={[
-                    { value: "light", label: i18n("options_themeLight") },
-                    { value: "dark", label: i18n("options_themeDark") },
-                    { value: "auto", label: i18n("options_themeAuto") },
-                  ]}
-                  mb="xs"
-                />
+                <PrefAnchor anchorKey="ui:theme">
+                  <Text size="sm" fw={500} mb={4}>
+                    {i18n("options_theme")}
+                  </Text>
+                  <SegmentedControl
+                    value={colorScheme}
+                    onChange={setColorScheme}
+                    data={[
+                      { value: "light", label: i18n("options_themeLight") },
+                      { value: "dark", label: i18n("options_themeDark") },
+                      { value: "auto", label: i18n("options_themeAuto") },
+                    ]}
+                    mb="xs"
+                  />
+                </PrefAnchor>
                 <TextInput
                   label={i18n("options_fontFace")}
                   description={i18n("tooltip_fontFace")}
@@ -713,6 +859,7 @@ export const PrefModal = ({
                   value={values.fontFace}
                   onChange={onTextInputChange}
                   mb="xs"
+                  {...anchor("fontFace")}
                 />
                 <NumberInput
                   label={i18n("options_bbsMargin")}
@@ -720,6 +867,7 @@ export const PrefModal = ({
                   value={values.bbsMargin}
                   onChange={(val) => onNumberChange("bbsMargin", val)}
                   mb="xs"
+                  {...anchor("bbsMargin")}
                 />
                 <Select
                   label={i18n("options_termSize")}
@@ -739,6 +887,7 @@ export const PrefModal = ({
                     },
                   ]}
                   mb="xs"
+                  {...anchor("termSizeMode")}
                 />
                 {values.termSizeMode === "fixed-term-size" && (
                   <div>
@@ -748,6 +897,7 @@ export const PrefModal = ({
                       value={values.termSize.cols}
                       onChange={(val) => onNumberChange("termSize.cols", val)}
                       mb="xs"
+                      {...anchor("termSize.cols")}
                     />
                     <NumberInput
                       label={i18n("options_rows")}
@@ -755,6 +905,7 @@ export const PrefModal = ({
                       value={values.termSize.rows}
                       onChange={(val) => onNumberChange("termSize.rows", val)}
                       mb="xs"
+                      {...anchor("termSize.rows")}
                     />
                     <PrefCheckbox
                       name="fontFitWindowWidth"
@@ -772,16 +923,16 @@ export const PrefModal = ({
                     value={values.fontSize}
                     onChange={(val) => onNumberChange("fontSize", val)}
                     mb="xs"
+                    {...anchor("fontSize")}
                   />
                 )}
-              </fieldset>
+              </PrefSection>
               {/* 游標所在列：滑鼠與鍵盤共用同一條渲染管線與同一組樣式，所以獨立成
-                  一區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。滑鼠那條
-                  來源開關已隨整組滑鼠設定搬到「滑鼠」分頁，樣式仍是兩者共用，留這裡。
-                  上兩個 checkbox ＝**樣式層**（畫什麼，可同時開），
-                  keyboardCursorHighlight ＝**來源層**（哪一列）。 */}
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_cursorHighlight")}</legend>
+                一區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。滑鼠那條
+                來源開關已隨整組滑鼠設定搬到「滑鼠」分頁，樣式仍是兩者共用，留這裡。
+                上兩個 checkbox ＝**樣式層**（畫什麼，可同時開），
+                keyboardCursorHighlight ＝**來源層**（哪一列）。 */}
+              <PrefSection legendKey="options_cursorHighlight">
                 <PrefCheckbox
                   name="cursorRowBrighten"
                   checked={values.cursorRowBrighten}
@@ -806,70 +957,71 @@ export const PrefModal = ({
                 >
                   {i18n("options_keyboardCursorHighlight")}
                 </PrefCheckbox>
-                <Text
-                  size="sm"
-                  fw={500}
-                  mb={4}
-                  c={values.cursorRowBackground ? undefined : "dimmed"}
-                >
-                  {i18n("options_highlightColor")}
-                </Text>
-                {/* 一排可點色塊（b1..b15 = color.css 的底色 class），選中者描邊。
-                    比下拉好：直接顯示對應顏色，而非 index 數字。
-                    顏色**只對「整列上底色」這個樣式有意義** ⇒ 底色關掉時整排變灰
-                    且不接受點擊（aria-disabled 讓測試與輔助技術讀得到）。 */}
-                <div
-                  className="PrefModal__HighlightColors"
-                  aria-disabled={!values.cursorRowBackground}
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 4,
-                    marginBottom: 12,
-                    opacity: values.cursorRowBackground ? 1 : 0.4,
-                    pointerEvents: values.cursorRowBackground
-                      ? undefined
-                      : "none",
-                  }}
-                >
-                  {Array.from({ length: 15 }, (_, i) => i + 1).map((i) => (
-                    <div
-                      key={i}
-                      className={`b${i}`}
-                      title={String(i)}
-                      onClick={() =>
-                        setValues((v) =>
-                          changeNestedValue(
-                            v,
-                            "mouseBrowsingHighlightColor",
-                            i,
-                          ),
-                        )
-                      }
-                      style={{
-                        width: 22,
-                        height: 22,
-                        cursor: "pointer",
-                        boxSizing: "border-box",
-                        border:
-                          values.mouseBrowsingHighlightColor === i
-                            ? "2px solid var(--mantine-color-bright)"
-                            : "1px solid var(--mantine-color-default-border)",
-                      }}
-                    />
-                  ))}
-                </div>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_highlightColorShared")}
-                </Text>
-              </fieldset>
+                <PrefAnchor anchorKey="ui:highlightColor">
+                  <Text
+                    size="sm"
+                    fw={500}
+                    mb={4}
+                    c={values.cursorRowBackground ? undefined : "dimmed"}
+                  >
+                    {i18n("options_highlightColor")}
+                  </Text>
+                  {/* 一排可點色塊（b1..b15 = color.css 的底色 class），選中者描邊。
+                  比下拉好：直接顯示對應顏色，而非 index 數字。
+                  顏色**只對「整列上底色」這個樣式有意義** ⇒ 底色關掉時整排變灰
+                  且不接受點擊（aria-disabled 讓測試與輔助技術讀得到）。 */}
+                  <div
+                    className="PrefModal__HighlightColors"
+                    aria-disabled={!values.cursorRowBackground}
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 4,
+                      marginBottom: 12,
+                      opacity: values.cursorRowBackground ? 1 : 0.4,
+                      pointerEvents: values.cursorRowBackground
+                        ? undefined
+                        : "none",
+                    }}
+                  >
+                    {Array.from({ length: 15 }, (_, i) => i + 1).map((i) => (
+                      <div
+                        key={i}
+                        className={`b${i}`}
+                        title={String(i)}
+                        onClick={() =>
+                          setValues((v) =>
+                            changeNestedValue(
+                              v,
+                              "mouseBrowsingHighlightColor",
+                              i,
+                            ),
+                          )
+                        }
+                        style={{
+                          width: 22,
+                          height: 22,
+                          cursor: "pointer",
+                          boxSizing: "border-box",
+                          border:
+                            values.mouseBrowsingHighlightColor === i
+                              ? "2px solid var(--mantine-color-bright)"
+                              : "1px solid var(--mantine-color-default-border)",
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <Text size="xs" c="dimmed">
+                    {i18n("tooltip_highlightColorShared")}
+                  </Text>
+                </PrefAnchor>
+              </PrefSection>
             </Tabs.Panel>
             {/* 滑鼠：總開關 + 四個子功能。子項一律 disabled={!useMouseBrowsing}，
-                因為總開關現在真的管得住全部（含中鍵與滾輪）——改版前那兩個根本
-                不看它。決策層是 js/mouse_regions.js，合約見 docs/mouse.md。 */}
+              因為總開關現在真的管得住全部（含中鍵與滾輪）——改版前那兩個根本
+              不看它。決策層是 js/mouse_regions.js，合約見 docs/mouse.md。 */}
             <Tabs.Panel value="mouse">
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseBrowsing")}</legend>
+              <PrefSection legendKey="options_mouseBrowsing">
                 <PrefCheckbox
                   name="useMouseBrowsing"
                   checked={values.useMouseBrowsing}
@@ -880,9 +1032,8 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_useMouseBrowsing")}
                 </Text>
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseMove")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_mouseMove">
                 <PrefCheckbox
                   name="mouseBrowsingHighlight"
                   checked={values.mouseBrowsingHighlight}
@@ -894,9 +1045,8 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_mouseBrowsingHighlight")}
                 </Text>
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseLeftClick")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_mouseLeftClick">
                 <PrefCheckbox
                   name="mouseLeftClick"
                   checked={values.mouseLeftClick}
@@ -908,12 +1058,11 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_mouseLeftClick")}
                 </Text>
-              </fieldset>
+              </PrefSection>
               {/* 防誤觸：可點區＝底色區的起始欄（js/mouse_regions.clickableColStart）。
-                  與其他子項一樣 disabled={!useMouseBrowsing} —— 總開關關掉時左鍵、
-                  指標、提示帶全滅，沒有誤觸要防（resolveMouseGates 同步 gate 掉）。 */}
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseMisclickGuard")}</legend>
+                與其他子項一樣 disabled={!useMouseBrowsing} —— 總開關關掉時左鍵、
+                指標、提示帶全滅，沒有誤觸要防（resolveMouseGates 同步 gate 掉）。 */}
+              <PrefSection legendKey="options_mouseMisclickGuard">
                 <PrefCheckbox
                   name="mouseMisclickGuard"
                   checked={values.mouseMisclickGuard}
@@ -925,12 +1074,11 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_mouseMisclickGuard")}
                 </Text>
-              </fieldset>
+              </PrefSection>
               {/* 邊緣點擊翻頁（2026-09 從 term.ptt.cc 原版找回）：頂列 Home／底列
-                  End／右緣與文章上下半翻頁。送鍵走鍵盤那條分派鏈，所以兩種好讀
-                  模式自動是捲動語意。主功能表不適用（PTT 端語意相反）。 */}
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseEdgePaging")}</legend>
+                End／右緣與文章上下半翻頁。送鍵走鍵盤那條分派鏈，所以兩種好讀
+                模式自動是捲動語意。主功能表不適用（PTT 端語意相反）。 */}
+              <PrefSection legendKey="options_mouseEdgePaging">
                 <PrefCheckbox
                   name="mouseEdgePaging"
                   checked={values.mouseEdgePaging}
@@ -942,12 +1090,11 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_mouseEdgePaging")}
                 </Text>
-              </fieldset>
+              </PrefSection>
               {/* 功能鍵可點：解析在 js/footer_keys.js，只認單一按鍵的括號組。
-                  一樣 disabled={!useMouseBrowsing}（term_view 也一併 gate，
-                  總開關關掉時一個節點都不產生）。 */}
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseFunctionKeys")}</legend>
+                一樣 disabled={!useMouseBrowsing}（term_view 也一併 gate，
+                總開關關掉時一個節點都不產生）。 */}
+              <PrefSection legendKey="options_mouseFunctionKeys">
                 <PrefCheckbox
                   name="mouseFunctionKeys"
                   checked={values.mouseFunctionKeys}
@@ -959,9 +1106,8 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_mouseFunctionKeys")}
                 </Text>
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseMiddleClick")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_mouseMiddleClick">
                 <Select
                   aria-label={i18n("options_mouseMiddleClick")}
                   name="mouseMiddleClick"
@@ -975,10 +1121,10 @@ export const PrefModal = ({
                     "options_leftKey",
                   ])}
                   mb="xs"
+                  {...anchor("mouseMiddleClick")}
                 />
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseWheel")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_mouseWheel">
                 <Select
                   aria-label={i18n("options_mouseWheel")}
                   name="mouseWheel"
@@ -988,12 +1134,13 @@ export const PrefModal = ({
                   onChange={(val) => onSelectNum("mouseWheel", val)}
                   data={selectData(["options_none", "options_pageUpDown"])}
                   mb="xs"
+                  {...anchor("mouseWheel")}
                 />
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_mouseWheel")}
                 </Text>
                 {/* 平滑捲動只在文章列表好讀模式有作用，且是滾輪的子行為
-                    ⇒ 滾輪關掉時一併 disabled（gating 同 resolveMouseGates）。 */}
+                  ⇒ 滾輪關掉時一併 disabled（gating 同 resolveMouseGates）。 */}
                 <PrefCheckbox
                   name="mouseWheelSmoothScroll"
                   checked={values.mouseWheelSmoothScroll}
@@ -1005,12 +1152,11 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_mouseWheelSmoothScroll")}
                 </Text>
-              </fieldset>
+              </PrefSection>
               {/* 瀏覽器的「返回」（觸控板左滑手勢／滑鼠側鍵／Alt+←／工具列）
-                  → 左方向鍵。**一個 pref、一條實作**（history sentinel），刻意不
-                  掛在滾輪底下 —— 見 mouse_regions.resolveMouseGates。 */}
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseBackNav")}</legend>
+                → 左方向鍵。**一個 pref、一條實作**（history sentinel），刻意不
+                掛在滾輪底下 —— 見 mouse_regions.resolveMouseGates。 */}
+              <PrefSection legendKey="options_mouseBackNav">
                 <Select
                   aria-label={i18n("options_mouseBackNav")}
                   name="mouseBackNav"
@@ -1020,17 +1166,17 @@ export const PrefModal = ({
                   onChange={(val) => onSelectNum("mouseBackNav", val)}
                   data={selectData(["options_none", "options_leftKey"])}
                   mb="xs"
+                  {...anchor("mouseBackNav")}
                 />
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_mouseBackNav")}
                 </Text>
-              </fieldset>
+              </PrefSection>
               {/* 把滑鼠交給 PTT server（XTerm SGR 回報）。開啟後上面所有「我們自己
-                  的」滑鼠行為整組讓位 ⇒ 放在最後、獨立一個 fieldset。
-                  預設關的兩個理由見 pref_storage.js（PTT 的 UF_MOUSE 預設關，且
-                  pttbbs 目前沒有任何東西消費 KEY_MOUSE）。 */}
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_mouseServerReport")}</legend>
+                的」滑鼠行為整組讓位 ⇒ 放在最後、獨立一個 fieldset。
+                預設關的兩個理由見 pref_storage.js（PTT 的 UF_MOUSE 預設關，且
+                pttbbs 目前沒有任何東西消費 KEY_MOUSE）。 */}
+              <PrefSection legendKey="options_mouseServerReport">
                 <PrefCheckbox
                   name="mouseServerReport"
                   checked={values.mouseServerReport}
@@ -1042,11 +1188,10 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_mouseServerReport")}
                 </Text>
-              </fieldset>
+              </PrefSection>
             </Tabs.Panel>
             <Tabs.Panel value="connection">
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_connection_bbs")}</legend>
+              <PrefSection legendKey="options_connection_bbs">
                 <PrefCheckbox
                   name="useProxy"
                   checked={values.useProxy}
@@ -1055,8 +1200,8 @@ export const PrefModal = ({
                   {i18n("options_useProxy")}
                 </PrefCheckbox>
                 {/* placeholder 放的是**實際生效的預設位址**（不是說明文字）：欄位
-                    留空就是用它，使用者把自訂位址刪光也回得到預設。說明文字改掛
-                    description。imgur 那組同理。 */}
+                  留空就是用它，使用者把自訂位址刪光也回得到預設。說明文字改掛
+                  description。imgur 那組同理。 */}
                 <TextInput
                   label={i18n("options_proxyUrl")}
                   description={i18n("tooltip_proxyUrl")}
@@ -1066,12 +1211,12 @@ export const PrefModal = ({
                   placeholder={DEFAULT_PROXY_HOST}
                   onChange={onTextInputChange}
                   mb="xs"
+                  {...anchor("proxyUrl")}
                 />
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_imgurProxy")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_imgurProxy">
                 {/* 隱私揭露：代理由專案方持有，會看到「哪個 IP 在看哪張圖」。
-                    預設開啟，所以這段文字必須在使用者第一次翻到這裡就看得到。 */}
+                  預設開啟，所以這段文字必須在使用者第一次翻到這裡就看得到。 */}
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_imgurProxy")}
                 </Text>
@@ -1091,12 +1236,12 @@ export const PrefModal = ({
                   placeholder={DEFAULT_IMGUR_PROXY_BASE}
                   onChange={onTextInputChange}
                   mb="xs"
+                  {...anchor("imgurProxyUrl")}
                 />
-              </fieldset>
+              </PrefSection>
             </Tabs.Panel>
             <Tabs.Panel value="enhance">
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_enhance")}</legend>
+              <PrefSection legendKey="options_enhance">
                 <PrefCheckbox
                   name="showFloorNumbers"
                   checked={values.showFloorNumbers}
@@ -1147,7 +1292,7 @@ export const PrefModal = ({
                   {i18n("options_enableBareDomainLink")}
                 </PrefCheckbox>
                 {/* 圖片上傳的總開關。憑證（token）在「本機設定」分頁 —— 它不上雲，
-                    與這個可同步的開關刻意分開放。 */}
+                  與這個可同步的開關刻意分開放。 */}
                 <PrefCheckbox
                   name="enableImageUpload"
                   checked={values.enableImageUpload}
@@ -1164,6 +1309,7 @@ export const PrefModal = ({
                   placeholder={i18n("tooltip_blacklist")}
                   onChange={onTextInputChange}
                   mb="xs"
+                  {...anchor("blacklist")}
                 />
                 <Textarea
                   label={i18n("options_title_blacklist")}
@@ -1174,15 +1320,15 @@ export const PrefModal = ({
                   placeholder={i18n("tooltip_title_blacklist")}
                   onChange={onTextInputChange}
                   mb="xs"
+                  {...anchor("titleBlacklist")}
                 />
-              </fieldset>
+              </PrefSection>
             </Tabs.Panel>
             {/* 快速搜尋分頁：右鍵選單（選取文字後）的搜尋項目清單。內建項目只能停用
-                不能編輯／刪除——它們定義在 quick_search.js#BUILTIN_QUICK_SEARCH，
-                pref 只存「被停用的 id」，所以日後新增內建項目舊使用者也拿得到。 */}
+              不能編輯／刪除——它們定義在 quick_search.js#BUILTIN_QUICK_SEARCH，
+              pref 只存「被停用的 id」，所以日後新增內建項目舊使用者也拿得到。 */}
             <Tabs.Panel value="quicksearch">
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_quickSearchBuiltin")}</legend>
+              <PrefSection legendKey="options_quickSearchBuiltin">
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_quickSearch")}
                 </Text>
@@ -1204,9 +1350,8 @@ export const PrefModal = ({
                     </Text>
                   </PrefCheckbox>
                 ))}
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_quickSearchCustom")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_quickSearchCustom">
                 {(values.quickSearchCustom || []).map((c) => {
                   // 整列空白＝剛按下「新增」還沒填，不要馬上噴紅字（關閉時會被
                   // pruneQuickSearchEntries 丟掉）。
@@ -1286,20 +1431,19 @@ export const PrefModal = ({
                 <Button variant="default" onClick={onQuickSearchCustomAdd}>
                   {i18n("options_quickSearchAdd")}
                 </Button>
-              </fieldset>
+              </PrefSection>
             </Tabs.Panel>
             {/* 自動登入分頁：整條流程（開關＋憑證）集中在這裡，因為使用者要看懂
-                「填什麼、存去哪、何時被清掉」得同時看到兩組。兩個 fieldset 刻意
-                分開並各自標示同步性質：上面那組會雲端同步，下面的帳號／密碼／
-                2FA 密鑰是 local-only（LOCAL_ONLY_PREF_KEYS in pref_sync_logic.js）。 */}
+              「填什麼、存去哪、何時被清掉」得同時看到兩組。兩個 fieldset 刻意
+              分開並各自標示同步性質：上面那組會雲端同步，下面的帳號／密碼／
+              2FA 密鑰是 local-only（LOCAL_ONLY_PREF_KEYS in pref_sync_logic.js）。 */}
             {/* 只在真的切到這一頁時才渲染（其他分頁維持 Tabs 預設的 keepMounted）。
-                這一頁是唯一「長得像登入表單」的內容，留在 DOM 只會讓瀏覽器的密碼
-                管理員在使用者根本沒在看它的時候跑自動填入／存密碼提示。 */}
+              這一頁是唯一「長得像登入表單」的內容，留在 DOM 只會讓瀏覽器的密碼
+              管理員在使用者根本沒在看它的時候跑自動填入／存密碼提示。 */}
             <Tabs.Panel value="autologin">
               {navActiveKey === "autologin" && (
                 <>
-                  <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                    <legend>{i18n("options_autoLogin")}</legend>
+                  <PrefSection legendKey="options_autoLogin">
                     <Text size="xs" c="dimmed" mb="xs">
                       {i18n("tooltip_autoLoginSynced")}
                     </Text>
@@ -1314,7 +1458,7 @@ export const PrefModal = ({
                       label={i18n("options_autoLoginDupConn")}
                       name="autoLoginDupConn"
                       /* Chrome 曾把這顆 Select 的內層 input 當成「帳號欄」配對到下面的
-                     密鑰欄，跳出「使用者名稱：刪除其他連線 (Y)」的假儲存提示。 */
+                   密鑰欄，跳出「使用者名稱：刪除其他連線 (Y)」的假儲存提示。 */
                       autoComplete="off"
                       value={values.autoLoginDupConn}
                       allowDeselect={false}
@@ -1330,6 +1474,7 @@ export const PrefModal = ({
                         },
                       ]}
                       mb="xs"
+                      {...anchor("autoLoginDupConn")}
                     />
                     <PrefCheckbox
                       name="autoLoginSkipWelcome"
@@ -1338,9 +1483,8 @@ export const PrefModal = ({
                     >
                       {i18n("options_autoLoginSkipWelcome")}
                     </PrefCheckbox>
-                  </fieldset>
-                  <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                    <legend>{i18n("options_autoLoginCredentials")}</legend>
+                  </PrefSection>
+                  <PrefSection legendKey="options_autoLoginCredentials">
                     <Text className="PrefModal__warning">
                       {credentialApi
                         ? i18n("tooltip_autoLogin")
@@ -1366,6 +1510,7 @@ export const PrefModal = ({
                       value={values.autoLoginUser}
                       onChange={onTextInputChange}
                       mb="xs"
+                      {...anchor("autoLoginUser")}
                     />
                     <TextInput
                       label={i18n("options_autoLoginPassword")}
@@ -1381,17 +1526,18 @@ export const PrefModal = ({
                       value={values.autoLoginPassword}
                       onChange={onTextInputChange}
                       mb="xs"
+                      {...anchor("autoLoginPassword")}
                     />
                     {/* 2FA 密鑰是長期憑證，且與密碼存在同一個保險庫 → 風險必須寫在
-                    欄位前面，並附上兩條降級做法（留空手動輸入／PTT 端改用僅新 IP
-                    才驗證）。留空是刻意支援的用法，不是設定不完整。 */}
+                  欄位前面，並附上兩條降級做法（留空手動輸入／PTT 端改用僅新 IP
+                  才驗證）。留空是刻意支援的用法，不是設定不完整。 */}
                     <Text className="PrefModal__warning">
                       {i18n("tooltip_autoLoginOtpSecretRisk")}
                     </Text>
                     {/* **不可改成 type="password"**：第二個密碼欄會讓 Chrome 把整頁判成
-                    登入表單，抓最近的文字輸入當帳號、把密鑰當密碼跳出假的儲存提示，
-                    並開始自動填入（那會讓「欄位空白＝已交給密碼管理員」的說明失真）。
-                    密鑰本來就是 PTT 在終端機上以明文印出來給使用者抄的東西。 */}
+                  登入表單，抓最近的文字輸入當帳號、把密鑰當密碼跳出假的儲存提示，
+                  並開始自動填入（那會讓「欄位空白＝已交給密碼管理員」的說明失真）。
+                  密鑰本來就是 PTT 在終端機上以明文印出來給使用者抄的東西。 */}
                     <TextInput
                       label={i18n("options_autoLoginOtpSecret")}
                       name="autoLoginOtpSecret"
@@ -1412,6 +1558,7 @@ export const PrefModal = ({
                       onChange={onTextInputChange}
                       onBlur={onOtpSecretBlur}
                       mb="xs"
+                      {...anchor("autoLoginOtpSecret")}
                     />
                     <Text size="xs" c="dimmed" mb="xs">
                       {i18n("options_autoLoginLocalStatus_" + credentialStatus)}
@@ -1428,21 +1575,20 @@ export const PrefModal = ({
                     <Text size="xs" c="dimmed" mt={4}>
                       {i18n("tooltip_autoLoginClearLocal")}
                     </Text>
-                  </fieldset>
+                  </PrefSection>
                 </>
               )}
             </Tabs.Panel>
             {/* AI 分頁：所有裝置端 AI（Chrome Prompt API）設定收攏於此。
-                enableAi 是**總閘門**——每個子功能的生效條件都是 `enableAi && <子
-                pref>`（AND 在 term_view.js 匯總），總開關關掉時子選項只是反灰，
-                值原樣保留。不支援的瀏覽器**分頁照常顯示**、全部反灰＋狀態說明，
-                使用者才知道有這功能與為何不能用。
-                顯示與否一律看 availability() 探測結果，勿用 typeof
-                window.LanguageModel（Chromium 有 global 但沒模型，見
-                docs/enhanced-addon.md 踩坑 A）。 */}
+              enableAi 是**總閘門**——每個子功能的生效條件都是 `enableAi && <子
+              pref>`（AND 在 term_view.js 匯總），總開關關掉時子選項只是反灰，
+              值原樣保留。不支援的瀏覽器**分頁照常顯示**、全部反灰＋狀態說明，
+              使用者才知道有這功能與為何不能用。
+              顯示與否一律看 availability() 探測結果，勿用 typeof
+              window.LanguageModel（Chromium 有 global 但沒模型，見
+              docs/enhanced-addon.md 踩坑 A）。 */}
             <Tabs.Panel value="ai">
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_ai")}</legend>
+              <PrefSection legendKey="options_ai">
                 <Text className="PrefModal__warning">{i18n("tooltip_ai")}</Text>
                 <PrefCheckbox
                   name="enableAi"
@@ -1459,8 +1605,8 @@ export const PrefModal = ({
                   </Text>
                 )}
                 {/* 補救鈕：prefs 會跨裝置同步，換一台機器時 enableAi 已是 true 但
-                    模型還沒下載 → 勾選那次的 user activation 早就用掉了，沒有別的
-                    入口可以觸發下載。只在這個狀態出現，available 後自動消失。 */}
+                  模型還沒下載 → 勾選那次的 user activation 早就用掉了，沒有別的
+                  入口可以觸發下載。只在這個狀態出現，available 後自動消失。 */}
                 {values.enableAi && aiState === "downloadable" && (
                   <Button
                     id="aiDownloadBtn"
@@ -1472,9 +1618,8 @@ export const PrefModal = ({
                     {i18n("options_aiDownloadBtn")}
                   </Button>
                 )}
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_ai_features")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_ai_features">
                 <PrefCheckbox
                   name="enableCaptionAi"
                   checked={values.enableCaptionAi}
@@ -1484,8 +1629,8 @@ export const PrefModal = ({
                   {i18n("options_enableCaptionAi")}
                 </PrefCheckbox>
                 {/* 網址類複核，管兩個增強功能：裸網域自動連結（AI 只能撤掉誤連）
-                    與自動修復斷掉的連結（AI 才能放行規則不敢認的候選）。兩者都
-                    關掉時它無事可做。 */}
+                  與自動修復斷掉的連結（AI 才能放行規則不敢認的候選）。兩者都
+                  關掉時它無事可做。 */}
                 <PrefCheckbox
                   name="enableUrlAi"
                   checked={values.enableUrlAi}
@@ -1500,15 +1645,14 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_enableUrlAi")}
                 </Text>
-              </fieldset>
+              </PrefSection>
             </Tabs.Panel>
             {/* local-only 分頁：這裡的設定僅存本機、絕不上雲（LOCAL_ONLY_PREF_KEYS
-                in pref_sync_logic.js）。之後新增的 local-only 設定一律放這。
-                例外：自動登入的帳號／密碼／2FA 密鑰同樣 local-only，但整條登入
-                流程要一起看才讀得懂，故集中在「自動登入」分頁。 */}
+              in pref_sync_logic.js）。之後新增的 local-only 設定一律放這。
+              例外：自動登入的帳號／密碼／2FA 密鑰同樣 local-only，但整條登入
+              流程要一起看才讀得懂，故集中在「自動登入」分頁。 */}
             <Tabs.Panel value="local">
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_local")}</legend>
+              <PrefSection legendKey="options_local">
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_local")}
                 </Text>
@@ -1520,10 +1664,10 @@ export const PrefModal = ({
                   {i18n("options_enableWorkMode")}
                 </PrefCheckbox>
                 {/* urusai 圖床的存取憑證：是憑證就不上雲（LOCAL_ONLY_PREF_KEYS），
-                    所以放這個分頁；留空＝匿名上傳，功能照常。
-                    **刻意不是 type=password**（同 autoLoginOtpSecret 的理由）：整頁
-                    多一個密碼欄，Chrome 就會把設定頁判成登入表單 → 跳假的「儲存密碼」
-                    提示並開始自動填入。守護在 pref_modal_autologin_tab.test.jsx。 */}
+                  所以放這個分頁；留空＝匿名上傳，功能照常。
+                  **刻意不是 type=password**（同 autoLoginOtpSecret 的理由）：整頁
+                  多一個密碼欄，Chrome 就會把設定頁判成登入表單 → 跳假的「儲存密碼」
+                  提示並開始自動填入。守護在 pref_modal_autologin_tab.test.jsx。 */}
                 <TextInput
                   label={i18n("options_imageUploadToken")}
                   name="imageUploadToken"
@@ -1532,26 +1676,25 @@ export const PrefModal = ({
                   placeholder={i18n("tooltip_imageUploadToken")}
                   onChange={onTextInputChange}
                   mt="xs"
+                  {...anchor("imageUploadToken")}
                 />
-              </fieldset>
+              </PrefSection>
             </Tabs.Panel>
             <Tabs.Panel value="backup">
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_backupExport")}</legend>
+              <PrefSection legendKey="options_backupExport">
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_backupExport")}
                 </Text>
                 <Button variant="default" onClick={onBackupExportClick}>
                   {i18n("options_backupExportBtn")}
                 </Button>
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_backupImport")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_backupImport">
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_backupImport")}
                 </Text>
                 {/* 檔案選擇器藏起來、由按鈕轉發點擊：原生 input[type=file] 的外觀
-                    無法跟 Mantine 的按鈕對齊。 */}
+                  無法跟 Mantine 的按鈕對齊。 */}
                 <input
                   ref={importInputRef}
                   type="file"
@@ -1579,9 +1722,8 @@ export const PrefModal = ({
                     )}
                   </Text>
                 )}
-              </fieldset>
-              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
-                <legend>{i18n("options_sync")}</legend>
+              </PrefSection>
+              <PrefSection legendKey="options_sync">
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_sync")}
                 </Text>
@@ -1615,7 +1757,7 @@ export const PrefModal = ({
                     )}
                   </Text>
                 )}
-              </fieldset>
+              </PrefSection>
             </Tabs.Panel>
             <Tabs.Panel value="about" className="PrefModal__about-selectable">
               <div>
@@ -1625,7 +1767,9 @@ export const PrefModal = ({
                 </Title>
                 <Text>{replaceI18n("about_description", replacements)}</Text>
               </div>
-              <div>
+              {/* 「關於」頁沒有 fieldset（版面是 Title + 清單），所以分區錨點
+                掛在 PrefAnchor 上而不是 PrefSection。 */}
+              <PrefAnchor anchorKey="section:about_version_title">
                 <Title order={5}>{i18n("about_version_title")}</Title>
                 <ul>
                   <li>{replaceI18n("about_version_current", replacements)}</li>
@@ -1635,11 +1779,11 @@ export const PrefModal = ({
                     {process.env.BUILD_TIME})
                   </li>
                 </ul>
-              </div>
-              <div>
+              </PrefAnchor>
+              <PrefAnchor anchorKey="section:options_debugMode_title">
                 <Title order={5}>{i18n("options_debugMode_title")}</Title>
                 {/* runtime-only：不進 values / DEFAULT_PREFS / pref_storage /
-                    pref_sync —— 不落地、不上雲，重新整理即重設為關閉。 */}
+                  pref_sync —— 不落地、不上雲，重新整理即重設為關閉。 */}
                 <Switch
                   id="pref-debug-mode"
                   checked={!!debugMode}
@@ -1647,16 +1791,17 @@ export const PrefModal = ({
                   label={i18n("options_debugMode")}
                   description={i18n("options_debugMode_desc")}
                   mb="xs"
+                  {...anchor("ui:debugMode")}
                 />
-              </div>
-              <div>
+              </PrefAnchor>
+              <PrefAnchor anchorKey="section:about_new_title">
                 <Title order={5}>{i18n("about_new_title")}</Title>
                 <ul>
                   {i18n("about_new_content").map((text, index) => (
                     <li key={index}>{text}</li>
                   ))}
                 </ul>
-              </div>
+              </PrefAnchor>
             </Tabs.Panel>
           </div>
         </div>

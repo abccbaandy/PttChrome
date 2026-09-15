@@ -253,6 +253,21 @@ export const en_US = {
     "message": "Backup"
   },
 
+  // settings search (search box in the settings sidebar; unrelated to the
+  // quick search feature below -- do not mix the naming up)
+  "options_settingsSearchLabel": {
+    "message": "Search settings"
+  },
+  "options_settingsSearchPlaceholder": {
+    "message": "Search settings…"
+  },
+  "options_settingsSearchEmpty": {
+    "message": "No matching settings"
+  },
+  "options_settingsSearchHintKey": {
+    "message": "matched by internal name"
+  },
+
   // quick search (context menu)
   "options_quickSearch": {
     "message": "Quick Search"
