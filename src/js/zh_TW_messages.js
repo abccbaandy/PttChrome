@@ -781,6 +781,15 @@
   "tooltip_mouseMisclickGuard": {
     "message": "開啟：列表只有點標題欄才會開文（點日期或作者欄沒反應），文章裡只有點推文的內容文字才會高亮同一個推文者 —— 左側因此空出來給「點一下離開文章」的提示帶。關閉：整條都能點。游標底色的範圍一律等於可點範圍。"
   },
+  "options_mouseEdgePaging": {
+    "message": "邊緣點擊翻頁"
+  },
+  "options_enableMouseEdgePaging": {
+    "message": "畫面邊緣點擊翻頁／跳第一頁、最後一頁"
+  },
+  "tooltip_mouseEdgePaging": {
+    "message": "列表與看板列表：最上面一列＝第一頁，最下面一列＝最後一頁，右側邊緣上半＝上一頁、下半＝下一頁。文章：上半＝上一頁、下半＝下一頁，最下面一列＝跳到文末（左側仍是離開）。滑鼠移過去時會把該區域框出來。主功能表不適用。"
+  },
   "options_mouseFunctionKeys": {
     "message": "功能鍵可點"
   },

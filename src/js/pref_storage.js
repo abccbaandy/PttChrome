@@ -127,6 +127,14 @@ export const DEFAULT_PREFS = {
   //   關 整列可點、整列上底色（改版前的行為）
   // 跟著 useMouseBrowsing 走（resolveMouseGates）：總開關關掉時沒有誤觸要防。
   mouseMisclickGuard: true,
+  // 邊緣翻頁區（預設開）：頂列＝第一頁(Home)、底列＝最後一頁(End)、右緣上半／下半
+  // ＝上一頁／下一頁；文章內沒有右緣帶，改成整片上半／下半翻頁、底列 End。
+  // 2026-09 從 term.ptt.cc 原版找回來的功能（004c2c9 曾整組移除，理由是「沒有任何
+  // 提示」）—— 現在配 hover 提示帶＋自訂指標，且可以在這裡關掉。
+  // 三種 render 分支的語意各自沿用鍵盤路徑：原生送 PgUp/PgDn/Home/End 給 PTT，
+  // 兩種好讀模式是捲動。**主功能表不套用**（PTT 端那裡的 Home/End 是「上下一項」，
+  // 見 mouse_regions.listEdgeRegion）。跟著 useMouseBrowsing 走。
+  mouseEdgePaging: true,
   // 功能鍵可點（預設開）：把畫面上的 `[d]刪除` / `(y)回應` 這類提示變成按鈕，
   // 點下去＝送出那個按鍵。只認**單一按鍵**的括號組（解析見 js/footer_keys.js），
   // `(v/V)` `(=[]<>)` 這種多鍵組維持純文字。

@@ -781,6 +781,15 @@ export const en_US = {
   "tooltip_mouseMisclickGuard": {
     "message": "On: in a list only the title column opens the post, and in a post only a comment's text toggles the same-commenter highlight — so the left edge stays free for the \"leave the post\" band. Off: the whole row responds. The highlight bar always covers exactly the clickable area."
   },
+  "options_mouseEdgePaging": {
+    "message": "Edge click paging"
+  },
+  "options_enableMouseEdgePaging": {
+    "message": "Click the screen edges to page / jump to first or last"
+  },
+  "tooltip_mouseEdgePaging": {
+    "message": "Lists and the board list: the top row is the first page, the bottom row the last page, and the right edge pages up (upper half) or down (lower half). In a post: upper half pages up, lower half pages down, and the bottom row jumps to the end (the left edge still leaves the post). Hovering outlines the region. Not applied to the main menu."
+  },
   "options_mouseFunctionKeys": {
     "message": "Clickable function keys"
   },

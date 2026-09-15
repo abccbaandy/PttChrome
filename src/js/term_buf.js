@@ -6,11 +6,12 @@ import { u2b, b2u, parseStatusRow, parseListRow } from './string_util';
 import { cjkUrlExtension } from './url_cjk';
 import { trimUrlTailLength } from './url_trim';
 import { ringBell } from './bell';
-import cursorBack from '../cursor/back.png';
+import { MOUSE_CURSOR_URLS } from './mouse_cursors';
 import {
   ACT_NONE,
   ACT_EXIT_ARTICLE,
   CUR_BACK,
+  isEdgeCursor,
   resolveMouseRegion,
   cursorCss
 } from './mouse_regions';
@@ -237,6 +238,9 @@ export function TermBuf(cols, rows) {
   });
   this.tempMouseCol = 0;
   this.tempMouseRow = 0;
+  // 指標壓在 <a>／我們自己的浮動按鈕上（App.onMouse_move 傳進來）。它們是元素層的
+  // 可點物件，在點擊優先權表上贏過滑鼠瀏覽 ⇒ 邊緣翻頁的提示帶要讓位。
+  this._overAnchor = false;
   // 滑鼠停在哪一格代表什麼動作（mouse_regions 的 ACT_*）與它的目標列。
   // 改版前是 0..14 的 mouseCursor 數字，同時兼任「長什麼樣」與「點了做什麼」。
   this.mouseAction = ACT_NONE;
@@ -1383,6 +1387,21 @@ TermBuf.prototype = {
     });
   },
 
+  // pageState 1 底下有兩種完全不同的畫面：看板列表（mbbsd/board.c#show_brdlist）
+  // 與主功能表（mbbsd/menu.c）。它們的 Home/End 在 PTT 端語意相反 —— 看板列表是
+  // 「第一個／最後一個看板」（board.c:1830,1768），主功能表卻是「下一項／上一項」
+  // （menu.c:508,517，與 PGUP/PGDN 同一組）⇒ 邊緣翻頁區只能給前者。
+  //
+  // 指紋只看標題列，出處 board.c:1279 的 `【看板列表】`（board_list_parse
+  // .classifyBoardListScreen 的第一條判斷也是它）。只有 pageState 1 會問，其餘畫面
+  // 一格都不掃。getRowText 在這條路上是安全的：notify 先 view.update()（redraw →
+  // updateCharAttr 設好 isLeadByte）才 refreshMouseAction。
+  isBoardListScreen: function() {
+    if (this.pageState !== 1) return false;
+    var title = this.getRowText(0, 0, this.cols);
+    return typeof title === 'string' && title.indexOf('【看板列表】') === 0;
+  },
+
   // 滑鼠移到 (tcol, trow)：算出這一格的語意、更新游標底色列、換滑鼠指標、開關
   // 文章左側的退出提示帶。決策本身在純函式 mouse_regions.resolveMouseRegion
   // （逐格的行為表與依據見那裡與 docs/mouse.md），這裡只負責套用。
@@ -1391,11 +1410,14 @@ TermBuf.prototype = {
   // 與 server 的真實 24 列並不對應，一律由 term_view.onListMouseMove 處理
   // （App.onMouse_move 分流）；這裡再擋一次，涵蓋 resetMousePos 這類不經 App 的
   // 呼叫者。
-  onMouse_move: function(tcol, trow){
+  onMouse_move: function(tcol, trow, overAnchor){
     if (this.listRenderMode === 'buffer' || this.listRenderMode === 'frozen')
       return;
     this.tempMouseCol = tcol;
     this.tempMouseRow = trow;
+    // 指標壓在 <a> 上（連結／功能鍵按鈕）＝元素層贏，邊緣提示帶讓位。快取起來讓
+    // refreshMouseAction（重畫後的重算，滑鼠沒動）也看得到同一個事實。
+    this._overAnchor = !!overAnchor;
 
     var region = this._resolveMouseRegionAt(tcol, trow);
 
@@ -1426,7 +1448,15 @@ TermBuf.prototype = {
       col: tcol,
       row: trow,
       rows: this.rows,
+      cols: this.cols,
       lineEmpty: lineEmpty,
+      // 邊緣翻頁區（頂列 Home／底列 End／右緣與文章上下半翻頁），跟著總開關走。
+      edgePaging: !!(
+        this.useMouseBrowsing && this.view && this.view.mouseEdgePaging
+      ),
+      // pageState 1 的兩種畫面在 PTT 端的 Home/End 語意相反，只有看板列表能用
+      // （見 mouse_regions.listEdgeRegion 的註解）。
+      boardList: this.isBoardListScreen(),
       // 防誤觸（可點區＝底色區的起始欄）跟著總開關走，見 resolveMouseGates。
       misclickGuard: !!(
         this.useMouseBrowsing && this.view && this.view.mouseMisclickGuard
@@ -1451,10 +1481,17 @@ TermBuf.prototype = {
       !!(this.useMouseBrowsing && this.view && this.view.mouseLeftClick);
     if (this.BBSWin) {
       this.BBSWin.style.cursor = cursorCss(region.cursor, {
-        backUrl: cursorBack,
-        iconsEnabled: affordance
+        urls: MOUSE_CURSOR_URLS,
+        // 邊緣區的圖示不跟 mouseLeftClick（見 mouse_regions.isEdgeCursor）：那個
+        // 區域是另一顆 pref 管的，區域在、提示就要在。
+        iconsEnabled: affordance || isEdgeCursor(region.cursor)
       });
     }
+    // 邊緣翻頁區的提示帶。null ＝收掉；region.hintBand 只有 mouseEdgePaging 開著時
+    // 才可能非 null（resolveMouseRegion 已 gate 過），所以這裡不必再問一次 pref。
+    // 壓在 <a> 上時一律收掉：那顆按鈕／連結才是真正會發生的事（見 App.onMouse_move）。
+    if (this.view && this.view.setEdgeHintBand)
+      this.view.setEdgeHintBand(this._overAnchor ? null : region.hintBand);
     if (this.view && this.view.setExitAffordance) {
       // 用 **cursor** 當單一真相（不逐一列舉 action）：文章與列表／選單的退出帶
       // 是同一個手勢、同一個 back 指標，日後再多一種退出 action 也不會漏列舉。
@@ -1508,6 +1545,7 @@ TermBuf.prototype = {
     this.mouseAction = ACT_NONE;
     this.mouseActionRow = -1;
     if (this.view && this.view.setExitAffordance) this.view.setExitAffordance(false);
+    if (this.view && this.view.setEdgeHintBand) this.view.setEdgeHintBand(null);
   }
 };
 

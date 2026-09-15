@@ -325,6 +325,11 @@ test.describe('複合鍵逐鍵可點：文章 footer 的 (X%)（離線重放）'
       // 那條行為另有守護（long_push.offline.spec.js ＋ tests/unit/push_key_intercept）
       // ⇒ 這裡關掉攔截，才量得到「使用者的 byte 直達」。
       pushKeyOpensLongPush: false,
+      // 同理關掉邊緣點擊翻頁：2026-09 起文章的最後一列（＝footer，這一組按鈕所在）
+      // 也是「跳到文末(End)」的區域，而括號本身不屬於任何按鈕 ⇒ 點它會落到那個
+      // 區域。那是刻意的（使用者定案要找回原版的底列 End），與這裡要守的
+      // 「括號不得被算進某一顆按鈕」無關，另有 mouse.offline.spec.js 守護。
+      mouseEdgePaging: false,
     });
     await replayCassette(page, article2, { easyReading: false });
   }
@@ -402,7 +407,8 @@ test.describe('複合鍵逐鍵可點：文章 footer 的 (X%)（離線重放）'
     await page.waitForTimeout(250);
     // 括號留在畫面上當視覺分隔，但**不屬於任何一顆按鈕**：「指哪就觸發該鍵」
     // 不容許把 `(` 或 `)` 算進某一顆的範圍。
-    // （文章的 col >= 7 沒有滑鼠動作 ⇒ 也不會走到退出手勢。）
+    // （這個 describe 關掉了邊緣點擊翻頁，見 openArticle 的說明 ⇒ 底列在這裡
+    // 沒有 End 區域，量到的就是「括號自己送不送 byte」。）
     expect(await takeCapture(page)).toBe('');
   });
 });

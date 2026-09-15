@@ -3,9 +3,9 @@
 import { TermKeyboard, isAltRemapEvent } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
 import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow } from './cursor_highlight';
-import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates } from './mouse_regions';
+import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion } from './mouse_regions';
 import { functionKeyRows, parseFunctionKeys } from './footer_keys';
-import { exitBandRect } from './mouse_geometry';
+import { edgeBandRect, exitBandRect } from './mouse_geometry';
 import { calcTermSize, termLayoutOffsets } from './term_size';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
@@ -23,7 +23,7 @@ import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import icon128 from '../icon/icon_128.png';
-import cursorBack from '../cursor/back.png';
+import { MOUSE_CURSOR_URLS } from './mouse_cursors';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
 
@@ -220,6 +220,9 @@ export function TermView() {
   // 防誤觸模式（pref mouseMisclickGuard，預設開）：可點區＝底色區的起始欄，
   // 決策在 mouse_regions.clickableColStart。
   this.mouseMisclickGuard = true;
+  // 邊緣翻頁區（pref mouseEdgePaging，預設開）：頂列 Home／底列 End／右緣上下半
+  // 翻頁（文章內是整片上下半）。與總開關 and 過之後餵進 resolveMouseRegion。
+  this.mouseEdgePaging = true;
   // 功能鍵可點（pref mouseFunctionKeys）。與總開關 and 過之後才決定要不要算
   // functionKeyRows（見 _renderScreenLines）。
   this.mouseFunctionKeys = true;
@@ -474,6 +477,14 @@ export function TermView() {
   exitHintBand.setAttribute('id', 'exitHintBand');
   this.exitHintBand = exitHintBand;
   this.BBSWin.appendChild(exitHintBand);
+
+  // 邊緣翻頁區（pref mouseEdgePaging）的提示帶。與上面那條同樣的三個理由掛在
+  // BBSWindow 底下，差別只在它的四邊都由 JS 寫（矩形由 resolveMouseRegion 決定，
+  // 經 mouse_geometry.edgeBandRect 換算），而退出帶是固定的左 7 欄整片高。
+  var edgeHintBand = document.createElement('div');
+  edgeHintBand.setAttribute('id', 'edgeHintBand');
+  this.edgeHintBand = edgeHintBand;
+  this.BBSWin.appendChild(edgeHintBand);
 
   this.mainDisplay.style.border = '0px';
   this.setFontFace('MingLiu,monospace');
@@ -1389,16 +1400,48 @@ TermView.prototype = {
   // 帶子不參與 .main 的 transform，所以寬度自己乘 scaleX —— 這也是 cellWidth 做的事。
   updateExitHintBandGeometry: function() {
     if (!this.exitHintBand) return;
-    var rect = exitBandRect({
-      innerWidth: this.innerBounds.width,
-      chw: this.chw,
-      cols: this.buf.cols,
-      scaleX: this.scaleX,
-      scaleY: this.scaleY,
-      firstGridLeft: this.firstGridOffset && this.firstGridOffset.left
-    });
+    var rect = exitBandRect(this.bandGeometry());
     this.exitHintBand.style.left = rect.left + 'px';
     this.exitHintBand.style.width = rect.width + 'px';
+    // 幾何變了（字級／視窗大小）⇒ 已經亮著的邊緣帶要跟著重算，否則會停在舊位置。
+    if (this._edgeHintBand) this.setEdgeHintBand(this._edgeHintBand);
+  },
+
+  // 兩條提示帶共用的一組幾何。**必須與 App.clientToPos 同源** —— 它也是餵同一組
+  // 欄位給 mouse_geometry（App.gridGeometry），兩邊算出來的格線才會逐格對齊。
+  bandGeometry: function() {
+    return {
+      innerWidth: this.innerBounds.width,
+      innerHeight: this.innerBounds.height,
+      chw: this.chw,
+      chh: this.chh,
+      cols: this.buf.cols,
+      rows: this.buf.rows,
+      scaleX: this.scaleX,
+      scaleY: this.scaleY,
+      firstGridLeft: this.firstGridOffset && this.firstGridOffset.left,
+      firstGridTop: this.firstGridOffset && this.firstGridOffset.top
+    };
+  },
+
+  // 邊緣翻頁區的視覺提示。吃 resolveMouseRegion 的 `hintBand`（格子空間的半開
+  // 矩形）或 null。開關時機與 setExitAffordance 完全一致（term_buf.onMouse_move /
+  // clearHighlight、onListMouseMove、App.onPrefChange、App.setModalOpen、
+  // window blur）—— 漏一個就留殘影。
+  setEdgeHintBand: function(band) {
+    if (!this.edgeHintBand) return;
+    this._edgeHintBand = band || null;
+    var rect = band ? edgeBandRect(band, this.bandGeometry()) : null;
+    if (!rect) {
+      this.edgeHintBand.classList.remove('active');
+      return;
+    }
+    var style = this.edgeHintBand.style;
+    style.left = rect.left + 'px';
+    style.top = rect.top + 'px';
+    style.width = rect.width + 'px';
+    style.height = rect.height + 'px';
+    this.edgeHintBand.classList.add('active');
   },
 
   // 文章左側可退出的視覺提示。開關時機見 term_buf.onMouse_move / clearHighlight、
@@ -1512,7 +1555,32 @@ TermView.prototype = {
     });
   },
 
-  onListMouseMove: function(row, col) {
+  // 列表好讀視窗裡的邊緣翻頁區。回 null ＝這一格不是邊緣區（交回 hover／開文那條
+  // 路）。**hover 與 click 兩條路共用這一支**：左側退出帶當年兩邊各寫一份判斷，
+  // docs/mouse.md 至今還掛著「改一邊要看另一邊」的警告，新區域不要再多一組。
+  //
+  // 借用原生文章列表（pageState 2）那張表是刻意的，不是取巧：列表好讀的視窗版面
+  // 與原生 24 列逐列對齊（header 3 列／body／footer），連 lineEmpty 都不必問
+  // （視窗裡的空白列不影響邊緣區）。
+  listEdgeRegion: function(screenRow, col) {
+    if (screenRow == null || screenRow < 0 || !this.buf) return null;
+    var region = resolveMouseRegion({
+      pageState: 2,
+      row: screenRow,
+      col: col,
+      rows: this.buf.rows,
+      cols: this.buf.cols,
+      lineEmpty: false,
+      edgePaging: !!(this.buf.useMouseBrowsing && this.mouseEdgePaging)
+    });
+    // hintBand 非 null ⟺ 這一格是邊緣區（其餘動作一律 null），用它當判別式就不必
+    // 在這裡逐一列舉 action。
+    return region.hintBand ? region : null;
+  },
+
+  // screenRow ＝ 指標的**螢幕**列號（App.onMouse_move 用 mouse_geometry
+  // .rowFromClientY 算），與 row（序列 index）是兩套座標，邊緣翻頁區只能用前者。
+  onListMouseMove: function(row, col, screenRow, overAnchor) {
     var hover = -1;
     if (this.buf.useMouseBrowsing && this.buf.listRenderMode === 'buffer') {
       var ls = listOwnerOf(this.bbscore);
@@ -1533,15 +1601,32 @@ TermView.prototype = {
     // 不該同時是退出區，這樣「提示帶亮＝點得下去」的合約才成立。
     var iconsEnabled = !!(this.buf.useMouseBrowsing && this.mouseLeftClick);
     var onExitBand = hover >= 0 && col >= 0 && col < EXIT_COL_END;
-    if (onExitBand) {
+    // 邊緣翻頁區。**吃螢幕列號而不是序列列號**（見 listEdgeRegion 的說明）：
+    // 列表好讀的視窗與原生 24 列同版面（header 3 列／body／footer），所以逐格套用
+    // 原生列表那張表就對了，不必另寫一份判斷。
+    // overAnchor：指標壓在 <a> 上（連結／功能鍵按鈕）⇒ 元素層贏，邊緣區讓位
+    // （同 term_buf.onMouse_move 的處理，理由見 App.onMouse_move）。
+    var edge = overAnchor ? null : this.listEdgeRegion(screenRow, col);
+    if (edge) {
+      // 邊緣區上沒有「hover 到哪一列」的概念（同退出帶），底色收掉。
+      hover = -1;
+      if (this.buf.BBSWin)
+        this.buf.BBSWin.style.cursor = cursorCss(edge.cursor, {
+          urls: MOUSE_CURSOR_URLS,
+          iconsEnabled: true
+        });
+      this.setEdgeHintBand(edge.hintBand);
+      this.setExitAffordance(false);
+    } else if (onExitBand) {
       // 退出帶上沒有「hover 到哪一列」的概念（與文章一致），底色收掉。
       hover = -1;
       if (this.buf.BBSWin)
         this.buf.BBSWin.style.cursor = cursorCss(CUR_BACK, {
-          backUrl: cursorBack,
+          urls: MOUSE_CURSOR_URLS,
           iconsEnabled: iconsEnabled
         });
       this.setExitAffordance(iconsEnabled);
+      this.setEdgeHintBand(null);
     } else {
       var clickable =
         hover >= 0 &&
@@ -1551,10 +1636,11 @@ TermView.prototype = {
       if (this.buf.BBSWin)
         this.buf.BBSWin.style.cursor = cursorCss(
           clickable ? CUR_POINTER : CUR_AUTO,
-          { backUrl: cursorBack, iconsEnabled: iconsEnabled }
+          { urls: MOUSE_CURSOR_URLS, iconsEnabled: iconsEnabled }
         );
       // 離開退出帶就要關掉；不關的話從文章切回列表也會留下殘影。
       this.setExitAffordance(false);
+      this.setEdgeHintBand(null);
     }
     // 滑鼠動了 ⇒ 由滑鼠持有底色。早退（同一列內移動）只在**滑鼠本來就持有**時成立：
     // 鍵盤剛把底色搶走的話，即使 hover 列沒變也要重新套用，否則在同一列內晃動滑鼠

@@ -6,9 +6,18 @@ import {
   ACT_ENTER,
   ACT_EXIT,
   ACT_EXIT_ARTICLE,
+  ACT_PAGE_UP,
+  ACT_PAGE_DOWN,
+  ACT_HOME,
+  ACT_END,
   CUR_AUTO,
   CUR_POINTER,
   CUR_BACK,
+  CUR_PAGE_UP,
+  CUR_PAGE_DOWN,
+  CUR_HOME,
+  CUR_END,
+  isEdgeCursor,
   EXIT_COL_END,
   MENU_COL_START,
   clickableColStart,
@@ -350,6 +359,32 @@ describe("cursorCss", () => {
     expect(cursorCss(CUR_BACK, { iconsEnabled: true })).toBe("auto");
     expect(cursorCss(CUR_AUTO, { iconsEnabled: true })).toBe("auto");
   });
+
+  // 找回來的四顆邊緣區指標走同一支函式 ⇒ 同一條括號平衡鎖要涵蓋它們，
+  // 否則歷史會重演（少一個 ')' ⇒ 整條 declaration 被 CSS 丟掉，靜默沒有提示）。
+  test("四顆邊緣區指標的 CSS 同樣括號平衡", () => {
+    const urls = {
+      [CUR_BACK]: "/x/back.png",
+      [CUR_PAGE_UP]: "/x/pageup.png",
+      [CUR_PAGE_DOWN]: "/x/pagedown.png",
+      [CUR_HOME]: "/x/home.png",
+      [CUR_END]: "/x/end.png",
+    };
+    for (const kind of [CUR_PAGE_UP, CUR_PAGE_DOWN, CUR_HOME, CUR_END]) {
+      const css = cursorCss(kind, { urls, iconsEnabled: true });
+      expect((css.match(/\(/g) || []).length).toBe((css.match(/\)/g) || []).length);
+      expect(css).toMatch(/^url\([^)]+\)\s+\d+\s+\d+,\s*auto$/);
+    }
+    // back 也吃新的 urls 形狀（term_buf／term_view 都改成傳整張表）。
+    expect(cursorCss(CUR_BACK, { urls, iconsEnabled: true })).toContain("back.png");
+  });
+
+  test("isEdgeCursor 只認那四顆 —— 它決定「不跟 mouseLeftClick 走」的範圍", () => {
+    for (const kind of [CUR_PAGE_UP, CUR_PAGE_DOWN, CUR_HOME, CUR_END])
+      expect(isEdgeCursor(kind)).toBe(true);
+    for (const kind of [CUR_BACK, CUR_POINTER, CUR_AUTO, undefined])
+      expect(isEdgeCursor(kind)).toBe(false);
+  });
 });
 
 // 2026-08：PTT 開著輸入框（vgetstring 的反白輸入欄，見 term_buf.isCursorOnInputField）
@@ -428,5 +463,137 @@ describe("serverMouse：滑鼠交給 PTT server", () => {
         }
       }
     }
+  });
+});
+
+// ── 邊緣翻頁區（pref mouseEdgePaging，2026-09 從 term.ptt.cc 原版找回）───────────
+//
+// 頂列 Home／底列 End／右緣上下半翻頁（文章內是整片上下半）。當初與另外十種一起
+// 被移除，理由是「誤觸率高又完全沒有提示」—— 所以這一組除了逐格鎖動作，也鎖
+// 「提示帶矩形與可點範圍是同一個」以及「pref 關掉時整張表一格都沒變」。
+describe("邊緣翻頁區：列表（pageState 2）", () => {
+  const edge = (over) => at({ pageState: 2, edgePaging: true, cols: 80, ...over });
+
+  test("頂列＝Home、底列＝End，整列寬", () => {
+    const home = edge({ row: 0, col: 40 });
+    expect(home.action).toBe(ACT_HOME);
+    expect(home.hintBand).toEqual({ colStart: 0, colEnd: 80, rowStart: 0, rowEnd: 1 });
+    const end = edge({ row: 23, col: 40 });
+    expect(end.action).toBe(ACT_END);
+    expect(end.hintBand).toEqual({ colStart: 0, colEnd: 80, rowStart: 23, rowEnd: 24 });
+  });
+
+  test("標題列與提示列（row 1-2）＝上一頁，帶子涵蓋那兩列", () => {
+    for (const row of [1, 2]) {
+      const r = edge({ row, col: 40 });
+      expect(r.action).toBe(ACT_PAGE_UP);
+      expect(r.hintBand).toEqual({ colStart: 0, colEnd: 80, rowStart: 1, rowEnd: 3 });
+    }
+  });
+
+  test("右緣 16 欄：上半上一頁、下半下一頁（分界 row 12/13）", () => {
+    expect(edge({ row: 12, col: 64 }).action).toBe(ACT_PAGE_UP);
+    expect(edge({ row: 13, col: 64 }).action).toBe(ACT_PAGE_DOWN);
+    expect(edge({ row: 12, col: 79 }).action).toBe(ACT_PAGE_UP);
+  });
+
+  test("右緣的左邊界就是 col 64：63 仍然是開文", () => {
+    expect(edge({ row: 5, col: 63 }).action).toBe(ACT_ENTER);
+    expect(edge({ row: 5, col: 64 }).action).toBe(ACT_PAGE_UP);
+  });
+
+  test("左 7 欄仍然是退出帶（右緣帶不得蓋過它）", () => {
+    expect(edge({ row: 5, col: 0 }).action).toBe(ACT_EXIT);
+    expect(edge({ row: 5, col: 6 }).action).toBe(ACT_EXIT);
+  });
+
+  test("邊緣區一律不上底色 —— 那一格的意思是翻頁，不是開這一列", () => {
+    for (const [row, col] of [[0, 40], [23, 40], [1, 40], [12, 70], [13, 70]]) {
+      const r = edge({ row, col });
+      expect(r.highlightRow).toBe(-1);
+      expect(r.row).toBe(-1);
+    }
+  });
+
+  test("提示帶的欄範圍＝可點範圍（右緣帶逐格對齊）", () => {
+    const band = edge({ row: 5, col: 70 }).hintBand;
+    // 帶子左緣的前一格必須不是翻頁區，帶子右緣就是行尾。
+    expect(edge({ row: 5, col: band.colStart }).action).toBe(ACT_PAGE_UP);
+    expect(edge({ row: 5, col: band.colStart - 1 }).action).not.toBe(ACT_PAGE_UP);
+    expect(band.colEnd).toBe(80);
+  });
+});
+
+describe("邊緣翻頁區：文章（pageState 3）", () => {
+  const edge = (over) => at({ pageState: 3, edgePaging: true, cols: 80, ...over });
+
+  test("沒有右緣帶：上半整片上一頁、下半整片下一頁", () => {
+    expect(edge({ row: 3, col: 40 }).action).toBe(ACT_PAGE_UP);
+    expect(edge({ row: 12, col: 79 }).action).toBe(ACT_PAGE_UP);
+    expect(edge({ row: 13, col: 8 }).action).toBe(ACT_PAGE_DOWN);
+    expect(edge({ row: 22, col: 40 }).action).toBe(ACT_PAGE_DOWN);
+  });
+
+  test("最後一列＝End", () => {
+    expect(edge({ row: 23, col: 40 }).action).toBe(ACT_END);
+  });
+
+  test("左側退出帶贏過底列 End —— #exitHintBand 是整片高度，不能讓它說謊", () => {
+    expect(edge({ row: 23, col: 3 }).action).toBe(ACT_EXIT_ARTICLE);
+    expect(edge({ row: 10, col: 3 }).action).toBe(ACT_EXIT_ARTICLE);
+    // 反過來說，End 的帶子必須從第 7 欄才開始，不蓋到退出帶上。
+    expect(edge({ row: 23, col: 40 }).hintBand.colStart).toBe(EXIT_COL_END);
+  });
+
+  test("翻頁帶也從第 7 欄開始（左側永遠留給離開）", () => {
+    expect(edge({ row: 5, col: 40 }).hintBand.colStart).toBe(EXIT_COL_END);
+    expect(edge({ row: 20, col: 40 }).hintBand.colStart).toBe(EXIT_COL_END);
+  });
+});
+
+describe("邊緣翻頁區：pageState 1 只有看板列表能用", () => {
+  test("看板列表：頂列 Home、底列 End、右緣翻頁", () => {
+    const b = (over) =>
+      at({ pageState: 1, edgePaging: true, boardList: true, cols: 80, ...over });
+    expect(b({ row: 0, col: 40 }).action).toBe(ACT_HOME);
+    expect(b({ row: 23, col: 40 }).action).toBe(ACT_END);
+    expect(b({ row: 5, col: 70 }).action).toBe(ACT_PAGE_UP);
+    expect(b({ row: 20, col: 70 }).action).toBe(ACT_PAGE_DOWN);
+  });
+
+  // 依據：mbbsd/menu.c:508,517 —— 主功能表的 KEY_HOME/KEY_PGUP 是「下一項」、
+  // KEY_END/KEY_PGDN 是「上一項」，不是跳第一頁／最後一頁。點下去做出來的事會和
+  // 使用者的預期相反，所以整組不給。
+  test("主功能表：一格都沒有邊緣區（與 pref 關掉時逐格相同）", () => {
+    for (const col of [0, 6, 7, 40, 64, 79]) {
+      for (const row of [0, 1, 5, 12, 13, 22, 23]) {
+        const on = at({ pageState: 1, edgePaging: true, boardList: false, col, row });
+        expect(on).toEqual(at({ pageState: 1, col, row }));
+        expect(on.hintBand).toBe(null);
+      }
+    }
+  });
+});
+
+describe("邊緣翻頁區：pref 關掉＝零回歸", () => {
+  test("edgePaging:false 時逐格與未帶該欄位時完全相同", () => {
+    for (const pageState of [0, 1, 2, 3, 4, 5]) {
+      for (const col of [0, 3, 6, 7, 8, 29, 30, 40, 63, 64, 70, 79]) {
+        for (const row of [0, 1, 2, 5, 12, 13, 21, 22, 23]) {
+          const base = at({ pageState, col, row });
+          expect(at({ edgePaging: false, pageState, col, row })).toEqual(base);
+          // 沒有任何一格會亮提示帶。
+          expect(base.hintBand).toBe(null);
+        }
+      }
+    }
+  });
+
+  test("輸入框開著／框開著／滑鼠交給 server 時，邊緣區同樣不作數", () => {
+    const on = { pageState: 2, edgePaging: true, row: 0, col: 40 };
+    expect(at({ ...on, inputPrompt: true }).action).toBe(ACT_NONE);
+    expect(at({ ...on, serverMouse: true }).action).toBe(ACT_NONE);
+    expect(at({ ...on, dismiss: { bytes: " " } }).action).toBe(ACT_NONE);
+    expect(at({ ...on, dismiss: { bytes: " " } }).hintBand).toBe(null);
   });
 });

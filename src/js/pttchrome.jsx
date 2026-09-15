@@ -20,10 +20,15 @@ import {
   ACT_ENTER,
   ACT_EXIT,
   ACT_EXIT_ARTICLE,
+  ACT_PAGE_UP,
+  ACT_PAGE_DOWN,
+  ACT_HOME,
+  ACT_END,
+  EDGE_NAV_KEY,
   EXIT_COL_END,
   resolveMouseGates
 } from './mouse_regions';
-import { colFromClientX } from './mouse_geometry';
+import { colFromClientX, gridOriginY, rowFromClientY, rowHeight } from './mouse_geometry';
 import { encodeClick, encodeWheel } from './mouse_report';
 import { dismissClickAllowed } from './screen_dismiss';
 import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
@@ -64,6 +69,26 @@ function noop() {}
 // 「送出終端機動作」——在文章裡就是左側 7 欄點到連結卻退出文章。
 function isAnchorTarget(el) {
   return !!(el && el.closest && el.closest('a'));
+}
+
+// True when the click landed on one of our own in-page controls —— 目前是畫面右下角
+// 那疊浮動按鈕（開燈／圖文並排／AI 校正／debug 錄製，`render/merge_buttons.js` 的
+// 純 <button>，沒有 class 可以給 checkClass 認）。
+//
+// 2026-09 找回邊緣點擊翻頁之後這條才變成必要的：在那之前文章區的 col >= 7 沒有任何
+// 滑鼠動作，點按鈕只會觸發按鈕自己的 listener；現在那片是「上半／下半翻頁」，不擋的話
+// 每按一次浮動鈕就順便送一個翻頁鍵給 PTT（實錄：lights_on.offline.spec.js 量到
+// 送出的 bytes 從 `\` 變成 `\` ＋ End）。
+//
+// 用標籤名而不是逐一列舉 id：日後再加一顆浮動鈕不必回來改這裡。
+function isOwnControlTarget(el) {
+  return !!(el && el.closest && el.closest('button'));
+}
+
+// hover 時「這一格其實不歸終端機管」的合併判準：連結／功能鍵按鈕／我們自己的浮動
+// 按鈕。邊緣翻頁的提示帶看它決定要不要讓位（見 App.onMouse_move）。
+function isClickableTarget(el) {
+  return isAnchorTarget(el) || isOwnControlTarget(el);
 }
 
 const ANTI_IDLE_STR = '\x1b\x1b';
@@ -253,8 +278,9 @@ export const App = function() {
     // A mouseup while unfocused never reaches us — clear held-button state
     // or the wheel stays stuck in page-scroll mode until reload.
     self.mouseButtons.reset();
-    // 同理：滑鼠移出視窗不會再有 mousemove 把提示帶關掉。
+    // 同理：滑鼠移出視窗不會再有 mousemove 把提示帶關掉（兩條帶子都要）。
     self.view.setExitAffordance(false);
+    self.view.setEdgeHintBand(null);
   }, false);
 
   this.inputArea.addEventListener('paste', function(e) {
@@ -509,6 +535,8 @@ App.prototype.setModalOpen = function(source, open) {
   // 「畫面上有對話框、app 卻以為沒有」，整頁只能重整），故一律防禦性取用。
   if (shown && this.view && this.view.setExitAffordance)
     this.view.setExitAffordance(false);
+  if (shown && this.view && this.view.setEdgeHintBand)
+    this.view.setEdgeHintBand(null);
   if (!shown)
     this.setInputAreaFocus();
 };
@@ -949,16 +977,12 @@ App.prototype.getFirstGridOffsets = function() {
 // 共用同一份實作才不會漂移。（歷史上 term_view 另有一套 convertMN2XYEx 原點公式，
 // 多了 +10 與 bbsViewMargin，用錯就差十幾個像素；已刪除，見 mouse_geometry.js 開頭。）
 App.prototype.clientToPos = function(cX, cY) {
-  var y;
-  var h = this.view.innerBounds.height;
-  if (this.view.scaleX != 1 || this.view.scaleY != 1) {
-    y = cY - ((h - (this.view.chh * this.buf.rows) * this.view.scaleY) / 2);
-  } else {
-    y = cY - parseFloat(this.view.firstGridOffset.top);
-  }
-  var col = colFromClientX(cX, this.gridGeometry());
-  var rowH = this.view.chh * this.view.scaleY;
-  var row = Math.floor(y / rowH);
+  // 列的那一半同樣委給 mouse_geometry（2026-09 邊緣翻頁區的提示帶要用垂直幾何，
+  // 兩邊共用同一份原點數學，理由同上）。
+  var geom = this.gridGeometry();
+  var y = cY - gridOriginY(geom);
+  var col = colFromClientX(cX, geom);
+  var rowH = rowHeight(geom);
 
   // 列表好讀：body 區是一個捲動視口（整段序列都畫在裡面），所以那一段的列號要
   // 自己算 —— 螢幕 y 落在視口裡的位置，加上視口已經捲掉的距離。捲掉的距離是
@@ -989,12 +1013,7 @@ App.prototype.clientToPos = function(cX, cY) {
     }
   }
 
-  if (row < 0)
-    row = 0;
-  else if (row >= this.buf.rows-1)
-    row = this.buf.rows-1;
-
-  return {col: col, row: row};
+  return { col: col, row: rowFromClientY(cY, geom) };
 };
 
 // 現在是誰在畫列表畫面：文章列表好讀（listSession）／看板列表平滑捲動
@@ -1065,6 +1084,7 @@ App.prototype.mouseGates = function() {
     useMouseBrowsing: this.buf.useMouseBrowsing,
     mouseLeftClick: this.view.mouseLeftClick,
     mouseMisclickGuard: this.view.mouseMisclickGuard,
+    mouseEdgePaging: this.view.mouseEdgePaging,
     mouseMiddleClick: this.view.mouseMiddleClick,
     mouseWheel: this.view.mouseWheel,
     mouseWheelSmoothScroll: this.view.mouseWheelSmoothScroll,
@@ -1079,11 +1099,15 @@ App.prototype.mouseGates = function() {
 App.prototype.gridGeometry = function() {
   return {
     innerWidth: this.view.innerBounds.width,
+    innerHeight: this.view.innerBounds.height,
     chw: this.view.chw,
+    chh: this.view.chh,
     cols: this.buf.cols,
+    rows: this.buf.rows,
     scaleX: this.view.scaleX,
     scaleY: this.view.scaleY,
-    firstGridLeft: this.view.firstGridOffset && this.view.firstGridOffset.left
+    firstGridLeft: this.view.firstGridOffset && this.view.firstGridOffset.left,
+    firstGridTop: this.view.firstGridOffset && this.view.firstGridOffset.top
   };
 };
 
@@ -1133,6 +1157,16 @@ App.prototype.onMouse_click = function (e) {
     case ACT_EXIT:
       this.view._send(LEFT_ARROW);
       break;
+    // 邊緣翻頁區（pref mouseEdgePaging）。**一律走 sendNavKeyAsUser**（合成 keydown
+    // 走既有分派鏈），絕不直送 byte：同一顆 PageUp 在原生是 [5~、在文章好讀是
+    // 捲一頁（easy_reading 的 case）、在列表好讀是 ListSession 的封閉互動交易，
+    // 那三套語意早就寫在鍵盤路徑上了。理由與出口見 docs/mouse.md「出口」。
+    case ACT_PAGE_UP:
+    case ACT_PAGE_DOWN:
+    case ACT_HOME:
+    case ACT_END:
+      this.sendNavKeyAsUser(EDGE_NAV_KEY[action]);
+      break;
     case ACT_ENTER: {
       if (targetRow < 0)
         break;
@@ -1147,16 +1181,28 @@ App.prototype.onMouse_click = function (e) {
   }
 };
 
-App.prototype.onMouse_move = function(cX, cY) {
+// overAnchor ＝指標正壓在一個 <a> 上（連結／AID 連結／功能鍵按鈕）。那些是**元素層**
+// 的可點物件，在點擊優先權表上贏過所有滑鼠瀏覽分支（它們的 listener 掛在元素自己
+// 身上，比 window 的 mouse_click 早跑）⇒ 邊緣翻頁的提示帶這時必須讓位，否則帶子
+// 亮著說「這裡是翻頁」、點下去卻送出那顆功能鍵。指標本身不必特別處理：元素自己的
+// CSS cursor 本來就蓋過 BBSWin 的。
+App.prototype.onMouse_move = function(cX, cY, overAnchor) {
   var pos = this.clientToPos(cX, cY);
   // 列表好讀模式的畫面是我們自己組的虛擬視窗，term_buf.onMouse_move 那套（可點列
   // 判斷、欄位、該列是否為空）全部依 server 的真實 24 列判斷，套上去只會得到錯的
   // 游標形狀與錯的光棒。改由 view 依視窗內容判斷（見 onListMouseMove）。
   if (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') {
-    this.view.onListMouseMove(pos.row, pos.col);
+    // 第三個參數是**螢幕**列號：pos.row 在 body 區是序列 index（可以到幾千），
+    // 邊緣翻頁區的上下半分界必須用螢幕座標算（見 mouse_geometry.rowFromClientY）。
+    this.view.onListMouseMove(
+      pos.row,
+      pos.col,
+      rowFromClientY(cY, this.gridGeometry()),
+      overAnchor
+    );
     return;
   }
-  this.buf.onMouse_move(pos.col, pos.row);
+  this.buf.onMouse_move(pos.col, pos.row, overAnchor);
 };
 
 App.prototype.resetMouseCursor = function() {
@@ -1164,6 +1210,7 @@ App.prototype.resetMouseCursor = function() {
   this.buf.mouseAction = ACT_NONE;
   this.buf.mouseActionRow = -1;
   if (this.view.setExitAffordance) this.view.setExitAffordance(false);
+  if (this.view.setEdgeHintBand) this.view.setEdgeHintBand(null);
 };
 
 App.prototype.onValuesPrefChange = function(values, opts) {
@@ -1299,6 +1346,15 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.mouseMisclickGuard = !!value;
       this.buf.resetMousePos();
       this.view.applyCursorHighlight();
+      break;
+    // 邊緣翻頁區：只改「點下去做什麼／指標／提示帶」，不影響底色 ⇒ resetMousePos
+    // 就夠（它重跑目前這一格的區域決策）。關掉時還要主動收掉可能正亮著的帶子，
+    // 否則要等使用者再動一次滑鼠才會消失。
+    case 'mouseEdgePaging':
+      this.view.mouseEdgePaging = !!value;
+      if (!this.view.mouseEdgePaging && this.view.setEdgeHintBand)
+        this.view.setEdgeHintBand(null);
+      this.buf.resetMousePos();
       break;
     // 功能鍵可點：改的是 annotation 的**內容**（哪幾格要包成 <a class="fnKey">），
     // 不是滑鼠當下停在哪一格 ⇒ 必須 redraw，而且要 **force**：dirty-row 逐列 patch
@@ -1527,6 +1583,11 @@ App.prototype.mouse_click = function(e) {
     if (isPreviewTarget(e.target)) {
       return;
     }
+    // 我們自己的浮動按鈕（開燈／圖文並排／AI 校正／debug 錄製）同理：它們是純
+    // <button>，既不是 <a> 也不是預覽。見 isOwnControlTarget。
+    if (isOwnControlTarget(e.target)) {
+      return;
+    }
     if (window.getSelection().isCollapsed) { //no anything be select
       // Pusher highlight: clicking a comment row toggles a whole-row highlight of
       // all comments by that pusher. Runs regardless of mouse browsing; return
@@ -1600,7 +1661,16 @@ App.prototype.mouse_click = function(e) {
           // 左側退出帶（cols 0..EXIT_COL_END）：與原生列表同一個手勢。**絕不直送
           // byte** —— onMouseExitClick 走 reducer 的 _beginLeave，它會先 getkeep
           // 同步 server 的真游標再送鍵（v5 封閉互動）。
-          if (lpos.col >= 0 && lpos.col < EXIT_COL_END)
+          // 邊緣翻頁區（與 hover 同一支判斷，term_view.listEdgeRegion）。送鍵走
+          // sendNavKeyAsUser ⇒ ListSession 自己的 nav 交易會接手（_classifyKey 的
+          // pgup/pgdn/home/end），不會繞過 CommandQueue。
+          var ledge = this.view.listEdgeRegion(
+            rowFromClientY(e.clientY, this.gridGeometry()),
+            lpos.col
+          );
+          if (ledge)
+            this.sendNavKeyAsUser(EDGE_NAV_KEY[ledge.action]);
+          else if (lpos.col >= 0 && lpos.col < EXIT_COL_END)
             clickOwner.onMouseExitClick();
           else
             clickOwner.onMouseClick(lpos.row, lpos.col);
@@ -1734,7 +1804,7 @@ App.prototype.mouse_up = function(e) {
   if (e.button === 0 || e.button == 2) { //left or right button
     if (window.getSelection().isCollapsed) { //no anything be select
       if (this.buf.useMouseBrowsing)
-        this.onMouse_move(e.clientX, e.clientY);
+        this.onMouse_move(e.clientX, e.clientY, isClickableTarget(e.target));
 
       this.setInputAreaFocus();
       if (e.button === 0) {
@@ -1772,7 +1842,7 @@ App.prototype.mouse_move = function(e) {
   if (this.buf.useMouseBrowsing) {
     if (window.getSelection().isCollapsed) {
       if(!this.mouseButtons.left)
-        this.onMouse_move(e.clientX, e.clientY);
+        this.onMouse_move(e.clientX, e.clientY, isClickableTarget(e.target));
     } else
       this.resetMouseCursor();
   }

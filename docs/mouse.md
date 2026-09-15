@@ -29,6 +29,7 @@
 | `mouseLeftClick` | `true` | bool | 列表點標題開文＋文章左側退出＋自訂指標 |
 | `mouseMisclickGuard` | `true` | bool | 防誤觸模式：**可點區＝底色區**的起始欄（見下方「防誤觸模式」） |
 | `mouseFunctionKeys` | `true` | bool | 畫面上的功能鍵提示變成按鈕（見下方「功能鍵按鈕」） |
+| `mouseEdgePaging` | `true` | bool | 邊緣點擊翻頁：頂列 Home／底列 End／右緣上下半翻頁（文章內是整片上下半），見下方「邊緣翻頁區」 |
 | `mouseMiddleClick` | `0` | 0 關閉 / 1 貼上 / 2 左方向鍵 | |
 | `mouseWheel` | `1` | 0 關閉 / 1 上下頁 | |
 | `mouseBackNav` | `1` | 0 關閉 / 1 左方向鍵 | 攔截瀏覽器的「返回」→ `←`。**一個 key 涵蓋所有來源**（觸控板左滑手勢／側鍵／`Alt+←`／`⌘[`／工具列），它們是同一條實作（見「手勢與瀏覽器返回」） |
@@ -77,6 +78,15 @@ PTT server 時整張表都不作數，一律回 `NONE`。一條早退同時關�
 | 3（READING） | `col < 7` | `exitArticle` | `back`（PNG） | 不上色 |
 | 3 | 其餘 | `none` | `auto` | 不上色 |
 | 0 / 5 / 6 | — | `none` | `auto` | 不上色 |
+| 1（限看板列表）/ 2 / 4 | `row === 0` | `home` | `home`（PNG） | 不上色 |
+| 同上 | `row === rows-1` | `end` | `end`（PNG） | 不上色 |
+| 同上 | 其餘非內文列（pageState 2 的 row 1-2） | `pageUp` | `pageUp`（PNG） | 不上色 |
+| 同上 | 內文列且 `col >= cols-16` | `row > split ? pageDown : pageUp` | 同名 PNG | 不上色 |
+| 3 | `col >= 7` 且 `row === rows-1` | `end` | `end`（PNG） | 不上色 |
+| 3 | `col >= 7` 其餘 | `row <= split ? pageUp : pageDown` | 同名 PNG | 不上色 |
+
+最後五列是 **`mouseEdgePaging` 開著時**才成立（見下方「邊緣翻頁區」）；關掉時整張表
+逐格等同 2026-09 之前，回歸鎖在 `tests/unit/mouse_regions.test.js`。
 | **任何 pageState** | `dismiss`（框開著：pressanykey／vmsg 橫幅／vgetstring 輸入欄） | `none`（送鍵不走這條，見下） | `pointer` | 不上色 |
 | **任何 pageState** | `inputPrompt`（PTT 開著輸入框） | `none` | `auto` | 不上色 |
 
@@ -149,8 +159,9 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 
 ### 移除的舊動作
 
-右緣翻頁、頂列 Home、底列 End、`[`／`]`／`=` 同標題前後篇、
-重新整理、同標題末篇，以及 pageState 3 的 row 0/1/2/23 特例。
+`[`／`]`／`=` 同標題前後篇、重新整理、同標題末篇（舊 `mouseCursor` 8/9/10/12/13/14），
+以及 pageState 3 的 row 0/1/2 那幾列的左右兩欄特例。**右緣翻頁／頂列 Home／底列 End
+已於 2026-09 找回**，見下方「邊緣翻頁區」。
 
 **「列表左緣離開」2026-08 重新加回**（上表的 `exit`）。當初與其他 14 種一起移除的
 理由是「誤觸率高又完全沒有提示」，而**提示問題已經解決** —— 提示帶（`#exitHintBand`）
@@ -162,6 +173,99 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 **舊 `case 0` 也送左方向鍵** —— 那就是「文章裡隨手點一下就跳出去」的來源。新版
 `none` 一定什麼都不做。
 
+## 邊緣翻頁區（`mouseEdgePaging`，預設開，2026-09 找回）
+
+term.ptt.cc 原版把畫面切成六個區域，2026-08 的重新設計只留下中間的 `enter`（後來又
+加回左緣 `exit`）。使用者要求把其餘四個找回來：**頂列 Home／底列 End／右緣上下半
+翻頁**，文章內沒有右緣帶、改成**整片上半／下半**翻頁＋底列 End。
+
+當初移除的理由是「誤觸率高又完全沒有提示」，兩半都處理掉才加回來：
+
+| 當初的問題 | 現在 |
+|---|---|
+| 沒有提示 | 自訂指標（四顆 PNG）＋ hover 提示帶 `#edgeHintBand`（矩形＝可點範圍，逐格對齊） |
+| 關不掉 | 一顆 pref，關掉時**逐格**等同找回之前 |
+| 15 種動作滿畫面 | 只有四種，且中間那一大片（開文區）一格都沒被吃掉 |
+
+### 邊界
+
+`S = cols - 16`（80 欄畫面＝第 64 欄起，沿用 fork 以來的數字）、
+`split = floor(rows / 2)`（24 列＝12，`row > 12` 才是下半 —— 與改版前硬寫的
+`trow > 12` 逐格相同）。常數與純函式都在 `mouse_regions.js`
+（`pageBandColStart` / `pageSplitRow`）。
+
+### 三條紅線
+
+1. **送鍵一律走 `App.sendNavKeyAsUser`**（合成 keydown 走既有分派鏈），**絕不直送
+   byte**。同一顆 PageUp 在三條 render 分支的語意不同，而那三套早就寫在鍵盤路徑上：
+
+   | 分支 | 誰處理 | 行為 |
+   |---|---|---|
+   | 原生 24 列 | `term_keyboard` 的 KeyMap | `\x1b[5~` / `[6~` / `[1~` / `[4~` |
+   | 文章好讀 | `easy_reading.js` 的 PageUp/PageDown/Home/End case | `_scrollBy(±_turnPageLines)` / `_scrollTop()` / `_scrollBottom()`（＝捲動語意） |
+   | 列表好讀 | `list_session._classifyKey` 的 nav op | `_moveSelection('pgup'/'pgdn'/'home'/'end')`（封閉互動） |
+
+   裸送 byte 在列表好讀底下＝交易中途插隊（v5 禁止）。守護
+   `tests/unit/mouse_edge_send.test.js`。
+
+2. **主功能表不給**（pageState 1 只在看板列表成立）。依據 `mbbsd/menu.c:508,517`：
+   主功能表的 `KEY_HOME`／`KEY_PGUP` 是**下一項**、`KEY_END`／`KEY_PGDN` 是**上一項**，
+   點「跳第一頁」會做出相反的事。看板列表則是真的跳（`board.c:1830,1768`
+   `num = 0` / `brdnum-1`），文章列表 `read.c:893,898`、文章內 `pmore.c:2585,2590`
+   （`mf_goTop` / `mf_goBottom`）都對得上。判準是標題列的 `【看板列表】`
+   （`term_buf.isBoardListScreen`，與 `board_list_parse.classifyBoardListScreen`
+   的第一條判斷同一個指紋）。
+
+3. **左側退出帶優先於底列 End**（與改版前的 row 23 特例相反，刻意的）：
+   `#exitHintBand` 是整片高度的一條帶子，讓 End 吃掉它最底下那一格的話，帶子會在
+   那裡亮著卻送出別的鍵。所以文章的 End 帶從第 7 欄才開始。
+
+### 列表好讀底下吃的是**螢幕列號**
+
+`App.clientToPos` 在 body 區回的是**整段序列的 index**（可以到幾千），拿它算上下半
+分界會永遠是上半。所以 `App.onMouse_move` / `mouse_click` 另外用
+`mouse_geometry.rowFromClientY` 算螢幕列號，交給 `term_view.listEdgeRegion`
+（hover 與 click **共用這一支**，不要再像左側退出帶那樣兩邊各寫一份）。
+那個視窗的版面與原生 24 列逐列對齊（header 3 列／body／footer），所以它直接借用
+pageState 2 的那張表。
+
+### 元素層贏，提示帶就得讓位
+
+`<a>`（連結／AID 連結／功能鍵按鈕）與我們自己的浮動按鈕（開燈／圖文並排／AI 校正／
+debug 錄製，`render/merge_buttons.js` 的純 `button`）在點擊優先權表上都贏過滑鼠瀏覽
+⇒ hover 到它們身上時 `#edgeHintBand` 一律收掉（`App.onMouse_move` 的 `overAnchor`），
+否則帶子說「這裡是翻頁」、點下去卻送出那顆鍵。
+
+**浮動按鈕那條是回歸修復**：它們沒有 class（`checkClass` 認不出來）、不是 `<a>`、也
+不是預覽 ⇒ 找回翻頁區之前文章區沒有動作所以沒事，之後每按一次就會順便送一個翻頁鍵
+給 PTT（實錄：`lights_on.offline.spec.js` 量到送出的 bytes 從 `\` 變成 `\` ＋ End）。
+守門是 `isOwnControlTarget`（**用標籤名，不逐一列舉 id**），回歸鎖在
+`tests/unit/mouse_edge_send.test.js`。
+
+### 寫測試時會踩的兩個坑
+
+1. **連續點擊之間要等超過 350ms**：`App.mouse_down` 在 `dblclickTimer` 還活著時會立
+   `SkipMouseClick`（雙擊選詞不可以順便翻兩頁）⇒ 間隔太短時第二下之後**全部被吞掉**，
+   看起來像功能壞了。實錄：第一版 e2e 的四個區域只有第一個送得出鍵。
+2. **列表好讀的 Home/End 不是本地瞬移**：`ListSession._moveSelection` 的 `home`／`end`
+   一律走 server 交易（`_requestHome`／`_requestEnd`，2026-09-05 定案），離線重放沒有
+   對應素材 ⇒ 落點不會動。那裡要斷言的是「這一下變成 session 的 `jump-home` 交易」
+   （走 CommandQueue），不是游標位置。`pgup`／`pgdn` 才是本地的。
+   順帶：位置一律用 `getListView().cursorPos`，**不要用 `_selectedNum`** —— 選到置底文
+   時它是 `null`，拿它比較會退化成 `null` vs `null` 的假斷言。
+
+### 明確不做
+
+- **底色的關邊界**：右緣帶上一律不上底色（與左側退出帶同處理）就足以避免誤點 ——
+  指標就在帶子上。要讓中間那條底色在第 64 欄**收掉**得動
+  `render/link_segment.js` 的開關 span 舞步 ＋ `row.js` ＋ `screen.js` ＋整份 golden，
+  屬核心渲染鏈；而且「防誤觸關閉時底色蓋到左側退出帶」這個同型的不精確現況已經接受。
+- **`[`／`]`／`=`／重新整理／同標題末篇**：使用者這次沒有要（它們佔極左 2 欄／極右
+  4 欄，會把新的頂／底列帶切碎）。
+- **功能鍵按鈕列不特別讓開**：底列同時是 End 區與按鈕列，按鈕自己贏（元素層 listener
+  先跑），按鈕之間的空白（含括號）落在 End 區 —— 這是刻意的，
+  `function_keys.offline.spec.js` 的括號那條因此關掉本 pref 才量得到它要量的東西。
+
 ## Gating 表（`resolveMouseGates`）
 
 | 入口 | 條件 |
@@ -171,6 +275,7 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 | 左鍵動作 | `useMouseBrowsing && mouseLeftClick` |
 | 左側提示帶 | `useMouseBrowsing && mouseLeftClick && region.cursor === CUR_BACK`（＝ pageState 1/2/3/4 的左 7 欄；**用 cursor 判、不逐一列舉 action**，日後新增退出動作不會漏列舉） |
 | 功能鍵按鈕 | `useMouseBrowsing && mouseFunctionKeys`（`term_view._renderScreenLines` 與 `_mirrorStatusRowToFooter` 兩處各 gate 一次） |
+| 邊緣翻頁區（含指標與提示帶） | `useMouseBrowsing && mouseEdgePaging`（`edgePaging`）—— **刻意不跟 `mouseLeftClick`**：關掉「點標題開文」不該換來一個點得下去卻沒有提示的翻頁區 |
 | 點空白處關框 | `useMouseBrowsing && mouseLeftClick`（`resolveMouseGates().leftClick`，**沿用左鍵那顆 pref，沒有新 key**）＋ `buf.listRenderMode === 'native'` |
 | 防誤觸（可點區＝底色區的起始欄） | `useMouseBrowsing && mouseMisclickGuard` —— **跟著總開關走**，總開關關掉時左鍵／指標／提示帶全滅，沒有誤觸要防；設定頁那顆 checkbox 因此能與其他子項一樣 `disabled` |
 | 中鍵 | `useMouseBrowsing && mouseMiddleClick !== 0` |
@@ -500,7 +605,7 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 
 | 分支 | 移動 | 點擊 | 滾輪 |
 |---|---|---|---|
-| 原生 24 列 | `term_buf.onMouse_move` | `App.onMouse_click`（依 `buf.mouseAction`） | `setBBSCmd('doPageUp'/'doPageDown')` |
+| 原生 24 列 | `term_buf.onMouse_move` | `App.onMouse_click`（依 `buf.mouseAction`；邊緣區走 `sendNavKeyAsUser`） | `setBBSCmd('doPageUp'/'doPageDown')` |
 | 好讀文章長頁 | 同上（`clientToPos` 把 row clamp 進 0..rows-1） | 同上 + `easyReading._onMouseClick` 先收狀態機 | **early return，交給瀏覽器捲動** |
 | 列表好讀（buffer/frozen） | `term_view.onListMouseMove(row, col)` | 左 7 欄 → `list_session.onMouseExitClick()`；其餘 → `list_session.onMouseClick(row, col)` | 預設 **early return，交給瀏覽器捲動**（body 視口 `overflow-y:auto`）；`mouseWheelSmoothScroll` 關 → 視口 `overflow:hidden` ＋ `listSession.onWheel('pgup'/'pgdn')` |
 
@@ -840,7 +945,18 @@ pageState 5 走 `default`、對 `inputPrompt` 更是整幀早退，使用者只�
   永遠在重畫之後），但**寫測試時不可以拿它當「畫面就緒」的判準**
   （`screen_dismiss.offline.spec.js` 踩過，症狀是送出 0 byte）。
 
-## 左側退出提示帶（`#exitHintBand`）
+## 提示帶（`#exitHintBand` / `#edgeHintBand`）
+
+兩條帶子同樣掛在 `#BBSWindow` 底下、同樣 `pointer-events: none`、同樣不得宣告
+`user-select`。差別只有幾何：退出帶是固定的左 7 欄整片高（寬度由
+`setTermFontSize` 寫、高度給 CSS），邊緣帶的四邊都由 `term_view.setEdgeHintBand`
+依 `resolveMouseRegion` 回傳的 `hintBand`（格子空間的半開矩形）經
+`mouse_geometry.edgeBandRect` 算出來。**幾何變了（字級／視窗大小）要重算**，
+`updateExitHintBandGeometry` 尾端會把亮著的邊緣帶重下一次。
+
+以下各條寫的是退出帶，除了幾何以外對邊緣帶一字不差地適用。
+
+### 左側退出提示帶（`#exitHintBand`）
 
 - 是 `term_view` 自有的獨立 div，掛在 `#BBSWindow` 底下、`.main` **之後**。不放
   `Screen`／`#mainContainer`：`.main` 是好讀長頁的捲動容器，放裡面會跟著內容捲走；
@@ -876,7 +992,11 @@ pageState 5 走 `default`、對 `inputPrompt` 更是整幀早退，使用者只�
 
 ## 自訂滑鼠指標
 
-只剩一顆 `src/cursor/back.png`（離開文章），其餘 10 個 PNG 已刪。
+五顆：`back.png`（離開）＋ 2026-09 隨邊緣翻頁區一起找回來的 `pageup.png` /
+`pagedown.png` / `home.png` / `end.png`（來源 `3rd_script/ptt-term`，同一套 Polar
+Cursor Theme，GPL v2）。其餘 6 個 PNG 仍然不用。URL 對照表在
+`js/mouse_cursors.js`（**一份**，兩條 hover 路徑共用），hotspot：back 是 `0 6`
+（左指箭頭）、四顆邊緣指標是 `6 0`。
 
 **歷史坑**：舊的 `mouseCursorMap` 每一筆都寫成 `` `url(${x} 0 6,auto` `` —— **少一個
 右括號**。依 CSS Syntax，`url(` 之後出現空白且下一個字元不是 `)` 會產生
@@ -948,9 +1068,10 @@ motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、D
 
 | 檔案 | 鎖什麼 |
 |---|---|
-| `tests/unit/mouse_regions.test.js` | 區域決策表逐格 + `clickableColStart` + 防誤觸關閉時整列可點 + `cursorCss` 括號平衡 |
-| `tests/unit/mouse_geometry.test.js` | 帶子右緣 ↔ 可點區右緣往返（三組幾何） |
-| `tests/unit/mouse_gating.test.js` | 總開關關掉 ⇒ 中鍵與滾輪也關 |
+| `tests/unit/mouse_regions.test.js` | 區域決策表逐格 + `clickableColStart` + 防誤觸關閉時整列可點 + `cursorCss` 括號平衡（含四顆邊緣指標）+ **邊緣翻頁區逐格**（邊界 col 63/64、row 12/13、主功能表不給、`edgePaging:false` 時逐格零回歸） |
+| `tests/unit/mouse_edge_send.test.js` | 邊緣區的出口：四種動作都走 `sendNavKeyAsUser`、`view._send` 零 byte、列表好讀分支吃螢幕列號、**自家浮動按鈕不得觸發翻頁** |
+| `tests/unit/mouse_geometry.test.js` | 帶子右緣 ↔ 可點區右緣往返（三組幾何）＋ `edgeBandRect` 的四邊 ↔ `rowFromClientY`／`colFromClientX` 往返 |
+| `tests/unit/mouse_gating.test.js` | 總開關關掉 ⇒ 中鍵與滾輪也關；`edgePaging` 跟總開關與 `serverReport` 走、與 `mouseLeftClick` 互不牽連 |
 | `tests/unit/mouse_report_encode.test.js` | SGR 編碼：button code（含 wheel 64/65 與 modifier bits）、1-based 與 clamp、press/release 字串 |
 | `tests/unit/mouse_report_modes.test.js` | 主機宣告的模式狀態機：`sgr` 初值 false、`?1006l` 後停止回報、不相符的 DECRST 不清模式、9/1001/1005/1015 完全不收 |
 | `tests/unit/mouse_report_parser.test.js` | `AnsiParser` 的 DECSET/DECRST 分派：只轉發 1000/1002/1003/1006、2026 走 sync update、跨 feed 切割 |
@@ -964,7 +1085,7 @@ motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、D
 | `tests/unit/row_render.test.js` | 部分寬度底色的 DOM（包裝 span 的範圍／`data-pusher-col`） |
 | `tests/unit/comment_parse.test.js` | `contentCol`（推文內容起始欄） |
 | `tests/unit/cursor_highlight_arbitration.test.js` | `applyCursorHighlight` 的來源判定：鍵盤搶得走、滑鼠拿得回、模式切換不算移動 |
-| `tests/unit/list_hover_gating.test.js` | 列表 hover 的三個 gate、底色 vs pointer 條件不同 |
+| `tests/unit/list_hover_gating.test.js` | 列表 hover 的三個 gate、底色 vs pointer 條件不同、**邊緣區吃螢幕列號**（同一個序列列在上半／下半給不同動作） |
 | `tests/unit/list_click_open.test.js` | 列表點擊的標題欄限制 |
 | `tests/unit/pref_modal_mouse_tab.test.jsx` | 設定分頁的欄位、預設值、子項 disabled、選項值域 |
 | `tests/unit/pref_schema_mouse.test.js` | 新 key 齊備、舊 key 已移除、殘值不復活 |
@@ -976,7 +1097,7 @@ motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、D
 | `tests/unit/screen_dirty_rows.test.js` | 切 pref 後按鈕真的出現／消失（`annotationsKey` 的回歸鎖，兩條分支各一） |
 | `tests/unit/mouse_dblclick_skip.test.js` | 第二次 mousedown 不得 `preventDefault`（雙擊選字） |
 | `tests/unit/fixtures/screen_golden/list_native_fnkeys.html`／`article_footer_fnkeys.html` | 整列 DOM 快照（含複合組拆成的相鄰多顆 `a.fnKey`） |
-| `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關／推文列可點區（防誤觸三態）／**列表左側退出帶** |
+| `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關／推文列可點區（防誤觸三態）／列表左側退出帶／**邊緣翻頁區**（原生送真按鍵、好讀是捲動且 0 byte、功能鍵按鈕仍贏、pref 關掉零回歸、拖捲軸不翻頁） |
 | `tests/e2e/offline/function_keys.offline.spec.js` | 三條 render 分支各自都接上了、點了真的送鍵、切 pref 立即生效、**`(X%)` 逐鍵送不同鍵＋括號不可點（D3）** |
 | `tests/unit/screen_dismiss.test.js` | 關框判斷：三種指紋／輸入欄優先／`pageState 5` 第二來源不得誤判／游標列不算空白處 |
 | `tests/unit/screen_dismiss_click.test.js` | `App.mouse_click` 的接線：現算而非讀 `mouseAction`、gate、buffer/frozen 不直送、連結優先 |

@@ -108,6 +108,7 @@ describe("設定頁：滑鼠分頁", () => {
       "mouseBrowsingHighlight",
       "mouseLeftClick",
       "mouseMisclickGuard",
+      "mouseEdgePaging",
       "mouseFunctionKeys",
       "mouseWheelSmoothScroll",
       "mouseServerReport",
@@ -124,6 +125,8 @@ describe("設定頁：滑鼠分頁", () => {
     expect(field(panel, "mouseLeftClick")).toBeChecked();
     expect(field(panel, "mouseMisclickGuard")).toBeChecked();
     expect(field(panel, "mouseFunctionKeys")).toBeChecked();
+    expect(field(panel, "mouseEdgePaging")).toBeChecked();
+    expect(DEFAULT_PREFS.mouseEdgePaging).toBe(true);
     expect(DEFAULT_PREFS.mouseMisclickGuard).toBe(true);
     expect(DEFAULT_PREFS.mouseFunctionKeys).toBe(true);
     expect(DEFAULT_PREFS.useMouseBrowsing).toBe(true);
@@ -144,6 +147,7 @@ describe("設定頁：滑鼠分頁", () => {
     expect(field(panel, "mouseLeftClick")).toBeDisabled();
     expect(field(panel, "mouseMisclickGuard")).toBeDisabled();
     expect(field(panel, "mouseFunctionKeys")).toBeDisabled();
+    expect(field(panel, "mouseEdgePaging")).toBeDisabled();
     expect(field(panel, "mouseServerReport")).toBeDisabled();
     panel
       .querySelectorAll("input[readonly], input[aria-haspopup='listbox']")
@@ -175,6 +179,13 @@ describe("設定頁：滑鼠分頁", () => {
     fireEvent.click(field(panel, "mouseFunctionKeys"));
     closeModal();
     expect(readValuesWithDefault().mouseFunctionKeys).toBe(false);
+  });
+
+  test("關掉邊緣點擊翻頁 → 寫進 pref", () => {
+    const panel = openMouseTab();
+    fireEvent.click(field(panel, "mouseEdgePaging"));
+    closeModal();
+    expect(readValuesWithDefault().mouseEdgePaging).toBe(false);
   });
 
   test("關掉總開關 → 寫進 pref（子項的值原樣保留，重開就回到先前的組合）", () => {

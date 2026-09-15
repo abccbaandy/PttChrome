@@ -54,3 +54,49 @@ export function exitBandRect(geom) {
     width: w > 0 ? EXIT_COL_END * w : 0
   };
 }
+
+export function rowHeight(geom) {
+  const g = geom || {};
+  return g.chh * (g.scaleY == null ? 1 : g.scaleY);
+}
+
+// 垂直方向的原點。**分支條件與 App.clientToPos 逐字相同**（那裡呼叫這一支），
+// 理由同 gridOriginX：帶子與「點到第幾格」必須同源，否則帶子亮著卻點不到。
+export function gridOriginY(geom) {
+  const g = geom || {};
+  if (isScaled(g)) {
+    return (g.innerHeight - g.chh * g.rows * g.scaleY) / 2;
+  }
+  return parseFloat(g.firstGridTop) || 0;
+}
+
+// 畫面 y（client 座標）→ 第幾列。clamp 與 App.clientToPos 相同（它就是呼叫這一支）。
+//
+// **列表好讀的 body 區不走這裡**：那一段是捲動視口，列號是「整段序列」的 index，
+// 由 clientToPos 自己換算。反過來說，邊緣翻頁區在列表好讀底下要的正是這裡的
+// **螢幕列號**（視口與 24 列畫面同高，header 3 列／body／footer 的版面逐列對齊
+// 原生列表），否則右緣上下半的分界會落在幾千列的序列 index 上。
+export function rowFromClientY(clientY, geom) {
+  const g = geom || {};
+  const h = rowHeight(g);
+  if (!(h > 0)) return 0;
+  let row = Math.floor((clientY - gridOriginY(g)) / h);
+  if (row < 0) row = 0;
+  else if (row >= g.rows - 1) row = g.rows - 1;
+  return row;
+}
+
+// 邊緣翻頁提示帶（#edgeHintBand）的幾何。吃 resolveMouseRegion 回傳的
+// `hintBand`（格子空間的半開矩形），吐 CSS 的四邊。null ⇒ null（不畫）。
+export function edgeBandRect(band, geom) {
+  if (!band) return null;
+  const w = cellWidth(geom);
+  const h = rowHeight(geom);
+  if (!(w > 0) || !(h > 0)) return null;
+  return {
+    left: gridOriginX(geom) + band.colStart * w,
+    width: (band.colEnd - band.colStart) * w,
+    top: gridOriginY(geom) + band.rowStart * h,
+    height: (band.rowEnd - band.rowStart) * h
+  };
+}

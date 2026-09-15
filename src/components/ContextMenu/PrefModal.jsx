@@ -926,6 +926,23 @@ export const PrefModal = ({
                   {i18n("tooltip_mouseMisclickGuard")}
                 </Text>
               </fieldset>
+              {/* 邊緣點擊翻頁（2026-09 從 term.ptt.cc 原版找回）：頂列 Home／底列
+                  End／右緣與文章上下半翻頁。送鍵走鍵盤那條分派鏈，所以兩種好讀
+                  模式自動是捲動語意。主功能表不適用（PTT 端語意相反）。 */}
+              <fieldset className="PrefModal__Grid__Col--right__Fieldset">
+                <legend>{i18n("options_mouseEdgePaging")}</legend>
+                <PrefCheckbox
+                  name="mouseEdgePaging"
+                  checked={values.mouseEdgePaging}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableMouseEdgePaging")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_mouseEdgePaging")}
+                </Text>
+              </fieldset>
               {/* 功能鍵可點：解析在 js/footer_keys.js，只認單一按鍵的括號組。
                   一樣 disabled={!useMouseBrowsing}（term_view 也一併 gate，
                   總開關關掉時一個節點都不產生）。 */}

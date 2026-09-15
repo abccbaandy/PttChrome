@@ -182,6 +182,22 @@ fixture 重建 ⇒ 又登入一次。所以失敗多的那一輪，登入次數�
   就算把等待策略放寬也沒有空間可用（其餘 live spec 一律 `test.setTimeout(120000)` 起跳）。
   已補 `test.setTimeout(180000)`。**新增會呼叫 `login()` 的 spec 記得也設**。
 
+## live e2e 跑的時候**不要動工作目錄**（2026-09 實錄）
+
+一輪 live 跑到一半時去改 `src/` 底下的檔案、或另外跑一次 `yarn build`，Vite dev server
+會對開著的分頁下 **full-reload** —— 頁面重開之後：
+
+- 測試在 `page.evaluate` 裡掛的東西（`window.__diag` 這類診斷 hook）**整個消失**，
+  症狀是 `TypeError: Cannot read properties of undefined`，而且炸在**診斷輸出那一行**，
+  真正的失敗點被蓋掉；
+- console dump 裡會混進一整段**開機 log**（`pttchrome onConnect`、
+  `auto_login: credential source = …`、`page state: 0->0`）——這就是判準：
+  測試中途出現開機 log ＝ 頁面被重載，不是被測 code 壞掉。
+
+實錄：`aid-navigation.spec.js` 的「從好讀文章內點 AID」在整輪裡紅，單獨重跑（乾淨樹
+與有改動的樹各一次）都是 14.1 秒全綠。**判斷順序**：先確認是不是自己在跑的時候動了
+檔案，再去懷疑被測 code —— 重跑一次要付一次登入額度（見上方「登入預算」）。
+
 ## 孤兒進程 / stale bundle
 
 以前常見坑：dev server 被中斷後殘留孤兒 `node` 佔住 8080，`reuseExistingServer` 又重用到 stale bundle。

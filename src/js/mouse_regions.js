@@ -5,7 +5,9 @@
 // 「游標長什麼樣」與「點下去做什麼」兩種語意，共 15 種動作（左緣離開、右緣翻頁、
 // 頂列 Home、底列 End、`[`/`]`/`=` 同標題前後篇、重新整理…）。誤觸率高、無法測。
 //
-// 現在只剩四種動作，且「做什麼」與「長什麼樣」分開回報：
+// 現在是「做什麼」與「長什麼樣」分開回報，動作逐一列舉（漏改會變 undefined 而不是
+// 靜默走錯 case）。前四種是重新設計後留下的，後四種是 2026-09 從原版找回來的邊緣區
+// （吃 pref mouseEdgePaging，關掉時整張表逐格等同找回來之前）：
 //   enter        列表／選單：把游標移到該列並 Enter（開文章／進看板）
 //   exitArticle  文章內左側帶：送左方向鍵離開
 //   exit         列表／選單的左側帶：同樣送左方向鍵回上一層（2026-08 重新加回，
@@ -13,6 +15,8 @@
 //                之後 affordance 問題已解決，見 docs/mouse.md）
 //   none         什麼都不做（**必須真的什麼都不做**；舊 case 0 會送左方向鍵，
 //                是「隨手一點就跳出文章」的來源）
+//   home/end     頂列／底列：跳第一頁／最後一頁
+//   pageUp/Down  右緣上下半（列表／看板列表）、整片上下半（文章）：翻頁
 //
 // 座標一律是**格子空間**（clientToPos 的輸出）。注意 comment_parse.js 的
 // realignListColumns 是**文字空間**的 DBCS 折疊補償，格子空間沒有位移，
@@ -28,9 +32,47 @@ export const ACT_EXIT_ARTICLE = 'exitArticle';
 // 先 getkeep 同步真游標），文章則是直送。分開才逐處檢查得出來誰漏改。
 export const ACT_EXIT = 'exit';
 
+// 邊緣翻頁區（pref mouseEdgePaging）。2026-09 從 term.ptt.cc 原版找回來的四種動作：
+// 頂列 Home、底列 End、右緣上／下半 PageUp／PageDown（文章內則是整片上／下半）。
+//
+// 當初（004c2c9）連同另外十種一起移除的理由是「誤觸率高又完全沒有提示」。提示這半
+// 已經解決 —— 與左側退出帶同一套解法：自訂指標 ＋ hover 提示帶（#edgeHintBand），
+// 而且整組吃一個可關掉的 pref。**送鍵一律走 App.sendNavKeyAsUser**（合成 keydown 走
+// 既有分派鏈），三種 render 分支的語意各自已經寫好了，見 docs/mouse.md。
+export const ACT_PAGE_UP = 'pageUp';
+export const ACT_PAGE_DOWN = 'pageDown';
+export const ACT_HOME = 'home';
+export const ACT_END = 'end';
+
 export const CUR_AUTO = 'auto';
 export const CUR_POINTER = 'pointer';
 export const CUR_BACK = 'back';
+export const CUR_PAGE_UP = 'pageUp';
+export const CUR_PAGE_DOWN = 'pageDown';
+export const CUR_HOME = 'home';
+export const CUR_END = 'end';
+
+// 右緣翻頁帶的寬度（格）。沿用 fork 以來的 16 欄 ⇒ 80 欄畫面是第 64 欄起到行尾。
+export const PAGE_BAND_WIDTH = 16;
+
+export function pageBandColStart(cols) {
+  return (cols == null ? 80 : cols) - PAGE_BAND_WIDTH;
+}
+
+// 上半／下半的分界列：`row <= split` ⇒ 上半（PageUp）。24 列時 ＝ 12，與改版前
+// 硬寫的 `trow > 12` 逐格相同。
+export function pageSplitRow(rows) {
+  return Math.floor((rows == null ? 24 : rows) / 2);
+}
+
+// 邊緣區的動作 → 送給 term_view.sendKeyAsUser 的鍵名。**唯一真相源**：原生的
+// action switch 與列表好讀的分支都查這一張表，不各寫一份對照。
+export const EDGE_NAV_KEY = {
+  [ACT_PAGE_UP]: 'PageUp',
+  [ACT_PAGE_DOWN]: 'PageDown',
+  [ACT_HOME]: 'Home',
+  [ACT_END]: 'End'
+};
 
 // 文章內「點這裡離開」的左側帶寬度（格）。沿用 fork 以來的 7 欄：PTT 文章正文
 // 一律從第 0 欄開始，但推文行的 `推 `／`→ ` 前綴與引言的 `: ` 都在左側，7 欄
@@ -63,8 +105,65 @@ const NONE = Object.freeze({
   row: -1,
   cursor: CUR_AUTO,
   highlightRow: -1,
-  highlightColStart: 0
+  highlightColStart: 0,
+  hintBand: null
 });
+
+// 邊緣區的回傳值。`hintBand` 是**格子空間**的半開矩形
+// `{colStart, colEnd, rowStart, rowEnd}`，由 mouse_geometry.edgeBandRect 換成像素，
+// 交給 #edgeHintBand 畫出來 —— 「帶子亮＝點得下去」的合約靠兩邊同一份矩形成立。
+// 邊緣區一律**不上底色**（highlightRow -1），與左側退出帶同處理：那一格的意思是
+// 「翻頁」而不是「開這一列」。
+function edgeBand(action, cursor, rect) {
+  return {
+    action: action,
+    row: -1,
+    cursor: cursor,
+    highlightRow: -1,
+    highlightColStart: 0,
+    hintBand: rect
+  };
+}
+
+// 列表（pageState 2/4）與看板列表（pageState 1）的邊緣區。回 null ＝這一格不是邊緣
+// 區，交回原本的決策。bodyTop／bodyBottom 是該畫面「內文列」的開區間邊界。
+//
+// 主功能表（pageState 1 但不是看板列表）**不走這裡**：mbbsd/menu.c:508,517 的
+// KEY_HOME／KEY_PGUP 是「下一項」、KEY_END／KEY_PGDN 是「上一項」，做出來的事與
+// 使用者點「跳第一頁」的預期相反。呼叫端用 `boardList` 把它擋掉。
+function listEdgeRegion(row, col, rows, cols, bodyTop, bodyBottom) {
+  if (!(row >= 0 && row < rows)) return null;
+  if (row === 0)
+    return edgeBand(ACT_HOME, CUR_HOME, {
+      colStart: 0, colEnd: cols, rowStart: 0, rowEnd: 1
+    });
+  if (row === rows - 1)
+    return edgeBand(ACT_END, CUR_END, {
+      colStart: 0, colEnd: cols, rowStart: rows - 1, rowEnd: rows
+    });
+  // 內文列以外、又不是頂／底列的那幾列（pageState 2 的 row 1-2、4 的 row 1 與
+  // rows-2）＝整列上一頁，與改版前相同。帶子涵蓋**整段連續**的那幾列。
+  if (!(row > bodyTop && row < bodyBottom))
+    return edgeBand(ACT_PAGE_UP, CUR_PAGE_UP, {
+      colStart: 0,
+      colEnd: cols,
+      rowStart: row <= bodyTop ? 1 : bodyBottom,
+      rowEnd: row <= bodyTop ? bodyTop + 1 : rows - 1
+    });
+  // 內文列的右緣帶。**排在左側退出帶之後**（呼叫端的順序），兩條帶子不重疊。
+  const bandStart = pageBandColStart(cols);
+  if (col >= bandStart) {
+    const split = pageSplitRow(rows);
+    const up = row <= split;
+    return edgeBand(up ? ACT_PAGE_UP : ACT_PAGE_DOWN, up ? CUR_PAGE_UP : CUR_PAGE_DOWN, {
+      colStart: bandStart,
+      colEnd: cols,
+      rowStart: up ? bodyTop + 1 : split + 1,
+      rowEnd: up ? split + 1 : bodyBottom
+    });
+  }
+  return null;
+}
 
 // 這一格的滑鼠語意。
 //
@@ -76,6 +175,12 @@ const NONE = Object.freeze({
 //   lineEmpty  該列是不是空列（呼叫端算好 buf.isLineEmpty(row) 傳進來，
 //              純函式不碰 buf）
 //   misclickGuard  防誤觸模式（pref mouseMisclickGuard，已由呼叫端與總開關 and 過）
+//   cols           終端機欄數（buf.cols，通常 80；右緣翻頁帶從 cols-16 起）
+//   edgePaging     邊緣翻頁區（pref mouseEdgePaging，同樣已 and 過總開關）。
+//                  **不傳＝關**，整張表逐格等同 2026-09 找回這些區域之前。
+//   boardList      這一幀是不是看板列表（term_buf.isBoardListScreen）。只有
+//                  pageState 1 會看它 —— 主功能表的 Home/End 語意相反，見
+//                  listEdgeRegion。
 //   inputPrompt    PTT 開著 vgetstring 輸入框（buf.isCursorOnInputField()）
 //   dismiss        這一幀有沒有滑鼠關得掉的框（screen_dismiss.resolveDismiss 的
 //                  結果，null ＝沒有）。**優先於 inputPrompt**，見下方。
@@ -86,6 +191,9 @@ const NONE = Object.freeze({
 //   cursor           CUR_*（交給 cursorCss 轉成實際 CSS）
 //   highlightRow     這一列要不要上游標底色（-1 = 不上）
 //   highlightColStart 底色從第幾欄起（0 = 整列）
+//   hintBand         邊緣翻頁區的提示帶矩形（格子空間的半開矩形，null ＝這一格不是
+//                    邊緣區）。**非 null ⟺ 邊緣區**，消費端拿它當判別式就不必逐一
+//                    列舉 action（term_view.listEdgeRegion 就是這樣用的）。
 //
 // 底色範圍與可點區**一律相同**（clickableColStart 是兩者的唯一真相源）：防誤觸開
 // ⇒ 只有標題／選項欄上底色，那條底色本身就是「這裡點得下去」的提示；關 ⇒ 整列。
@@ -117,7 +225,8 @@ export function resolveMouseRegion(input) {
       row: -1,
       cursor: CUR_POINTER,
       highlightRow: -1,
-      highlightColStart: 0
+      highlightColStart: 0,
+      hintBand: null
     };
   }
   // PTT 正開著輸入框（vgetstring 的反白輸入欄，呼叫端用 term_buf.isCursorOnInputField
@@ -127,9 +236,15 @@ export function resolveMouseRegion(input) {
   // 底色同時由 cursor_highlight.resolveHighlightRow 用同一個事實關掉（可點區＝底色區）。
   if (o.inputPrompt) return NONE;
   const rows = o.rows == null ? 24 : o.rows;
+  const cols = o.cols == null ? 80 : o.cols;
   const row = o.row == null ? -1 : o.row;
   const col = o.col == null ? -1 : o.col;
   const colStart = clickableColStart(o.pageState, o.misclickGuard);
+  // 邊緣翻頁區（pref mouseEdgePaging，呼叫端已與總開關 and 過）。**預設不啟用**：
+  // 沒傳這個欄位時整張表逐格等同 2026-09 之前的行為，既有的區域測試就是那半邊的
+  // 回歸鎖。pageState 1 另外要求 `boardList`（理由見 listEdgeRegion）。
+  const edgeOn =
+    !!o.edgePaging && (o.pageState !== 1 || !!o.boardList);
 
   switch (o.pageState) {
     // 2 = 文章列表（setPageState 產生）；4 = LIST 變體（setPageState 不產生，
@@ -138,7 +253,10 @@ export function resolveMouseRegion(input) {
     case 4: {
       const top = o.pageState === 2 ? 2 : 1;
       const bottom = o.pageState === 2 ? rows - 1 : rows - 2;
-      if (!(row > top && row < bottom)) return NONE;
+      // 內文列以外（頂列 Home／底列 End／整列上一頁）：排在 lineEmpty 之前 ——
+      // 那個判斷只對內文列有意義，而邊緣區與該列畫了什麼無關。
+      if (!(row > top && row < bottom))
+        return (edgeOn && listEdgeRegion(row, col, rows, cols, top, bottom)) || NONE;
       if (o.lineEmpty) return NONE;
       // 左側退出帶（與文章的 EXIT_COL_END 同一個手勢與同一組提示）。
       // **不看 misclickGuard**（使用者 2026-08 定案）：這是一個固定手勢，不是
@@ -151,8 +269,14 @@ export function resolveMouseRegion(input) {
           row: -1,
           cursor: CUR_BACK,
           highlightRow: -1,
-          highlightColStart: 0
+          highlightColStart: 0,
+          hintBand: null
         };
+      }
+      // 右緣翻頁帶。**排在左側退出帶之後**：兩條帶子不重疊，而左側是先來的手勢。
+      if (edgeOn) {
+        const edge = listEdgeRegion(row, col, rows, cols, top, bottom);
+        if (edge) return edge;
       }
       // 欄位對 pttbbs mbbsd/bbs.c#readdoent 校準（見 comment_parse.js 的欄位表）：
       // 序號 0-6 / 空格 7 / type 8 / 推文數 9-10 / 日期 11-16 / 作者 17-29 /
@@ -163,12 +287,14 @@ export function resolveMouseRegion(input) {
         row: clickable ? row : -1,
         cursor: clickable ? CUR_POINTER : CUR_AUTO,
         highlightRow: row,
-        highlightColStart: colStart
+        highlightColStart: colStart,
+        hintBand: null
       };
     }
 
     case 1: {
-      if (!(row > 0 && row < rows - 1)) return NONE;
+      if (!(row > 0 && row < rows - 1))
+        return (edgeOn && listEdgeRegion(row, col, rows, cols, 0, rows - 1)) || NONE;
       // 同 case 2/4：左 7 欄恆為退出，不看 misclickGuard。
       if (col >= 0 && col < EXIT_COL_END) {
         return {
@@ -176,8 +302,13 @@ export function resolveMouseRegion(input) {
           row: -1,
           cursor: CUR_BACK,
           highlightRow: -1,
-          highlightColStart: 0
+          highlightColStart: 0,
+          hintBand: null
         };
+      }
+      if (edgeOn) {
+        const edge = listEdgeRegion(row, col, rows, cols, 0, rows - 1);
+        if (edge) return edge;
       }
       const clickable = col >= colStart;
       return {
@@ -185,7 +316,8 @@ export function resolveMouseRegion(input) {
         row: clickable ? row : -1,
         cursor: clickable ? CUR_POINTER : CUR_AUTO,
         highlightRow: row,
-        highlightColStart: colStart
+        highlightColStart: colStart,
+        hintBand: null
       };
     }
 
@@ -193,17 +325,38 @@ export function resolveMouseRegion(input) {
     // 舊版在 row 0/1/2/23 另有 `[`/`]`/`=`/重新整理/End 等特例，全部移除 ——
     // 好讀模式是可捲動長頁，clientToPos 仍把 row clamp 進 0..rows-1，那些「頂列
     // 底列」指的是**視窗**頂底而非文章頂底，語意本來就對不上。
-    case 3:
+    case 3: {
+      // **左側退出帶優先於底列 End**（與改版前的 row 23 特例不同，刻意的）：
+      // #exitHintBand 是整片高度的一條帶子，讓 End 吃掉它最底下那一格的話，帶子會
+      // 在那裡亮著卻送出別的鍵 —— affordance 說謊正是當初這些區域被移除的原因。
       if (col >= 0 && col < EXIT_COL_END) {
         return {
           action: ACT_EXIT_ARTICLE,
           row: -1,
           cursor: CUR_BACK,
           highlightRow: -1,
-          highlightColStart: 0
+          highlightColStart: 0,
+          hintBand: null
         };
       }
-      return NONE;
+      if (!edgeOn || !(row >= 0 && row < rows)) return NONE;
+      // 文章沒有右緣帶：整片內容區上半＝上一頁、下半＝下一頁（改版前相同），
+      // 最後一列＝End。好讀模式是一整條長頁，clientToPos 仍把 row clamp 進
+      // 0..rows-1 ⇒ 這裡的「上半／下半／底列」指的是**視窗**，而送出去的鍵在
+      // easy_reading 是捲動語意（_scrollBy / _scrollBottom），正好對得上。
+      if (row === rows - 1)
+        return edgeBand(ACT_END, CUR_END, {
+          colStart: EXIT_COL_END, colEnd: cols, rowStart: rows - 1, rowEnd: rows
+        });
+      const split = pageSplitRow(rows);
+      const up = row <= split;
+      return edgeBand(up ? ACT_PAGE_UP : ACT_PAGE_DOWN, up ? CUR_PAGE_UP : CUR_PAGE_DOWN, {
+        colStart: EXIT_COL_END,
+        colEnd: cols,
+        rowStart: up ? 0 : split + 1,
+        rowEnd: up ? split + 1 : rows - 1
+      });
+    }
 
     default:
       return NONE;
@@ -239,6 +392,10 @@ export function resolveMouseGates(prefs) {
     // 誤觸要防（推文列的 pusher 高亮此時退回整列可點＝改版前的行為）。設定頁那顆
     // checkbox 因此能與其他子項一樣 disabled={!useMouseBrowsing}。
     misclickGuard: on && !!p.mouseMisclickGuard && !serverReport,
+    // 邊緣翻頁區（頂列 Home／底列 End／右緣與文章上下半翻頁）。跟著總開關走，
+    // serverReport 時整組讓位 —— 它與「點標題開文」同類，都是我們自己發明的
+    // 滑鼠語意，不是瀏覽器語意。
+    edgePaging: on && !!p.mouseEdgePaging && !serverReport,
     middleClick: on ? Number(p.mouseMiddleClick) || 0 : 0,
     wheel: on && !!p.mouseWheel && !serverReport,
     // 平滑捲動是滾輪的子行為 ⇒ 必須先過滾輪本身這一關（列表好讀模式才有作用）。
@@ -261,10 +418,25 @@ export function resolveMouseGates(prefs) {
 // 指標從 React 改寫以來從未生效過（只有 'pointer'/'default'/'auto' 有作用），
 // 「文章左側可以退出」因此一直沒有任何提示。tests/unit/mouse_regions.test.js
 // 有一條括號平衡的回歸鎖，別再讓它壞掉。
+// 邊緣區指標的 hotspot：箭頭圖自己的尖端在上緣中央，沿用 ptt-term 的 `6 0`
+// （back 是左指箭頭，維持 `0 6`）。
+const EDGE_CURSOR_KEYS = [CUR_PAGE_UP, CUR_PAGE_DOWN, CUR_HOME, CUR_END];
+
+// 這個指標是不是邊緣翻頁區的。消費端用它決定「要不要顯示自訂圖示」：邊緣區的圖示
+// 跟著 mouseEdgePaging 走（區域本身已經由那顆 pref gate 過），**不跟 mouseLeftClick**
+// —— 否則關掉「點標題開文」會得到一個點得下去卻沒有任何提示的翻頁區。
+export function isEdgeCursor(kind) {
+  return EDGE_CURSOR_KEYS.indexOf(kind) >= 0;
+}
+
 export function cursorCss(kind, opts) {
   const o = opts || {};
   if (!o.iconsEnabled) return 'auto';
   if (kind === CUR_POINTER) return 'pointer';
-  if (kind === CUR_BACK && o.backUrl) return 'url(' + o.backUrl + ') 0 6, auto';
+  const urls = o.urls || {};
+  const backUrl = o.backUrl || urls[CUR_BACK];
+  if (kind === CUR_BACK && backUrl) return 'url(' + backUrl + ') 0 6, auto';
+  if (EDGE_CURSOR_KEYS.indexOf(kind) >= 0 && urls[kind])
+    return 'url(' + urls[kind] + ') 6 0, auto';
   return 'auto';
 }

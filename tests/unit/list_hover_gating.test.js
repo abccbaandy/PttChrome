@@ -21,6 +21,7 @@ function makeView({
   useMouseBrowsing = true,
   mouseLeftClick = true,
   mouseMisclickGuard = true,
+  mouseEdgePaging = true,
   listRenderMode = "buffer",
   bodyLen = 10,
 } = {}) {
@@ -29,11 +30,13 @@ function makeView({
   const v = Object.create(TermView.prototype);
   v.mouseLeftClick = mouseLeftClick;
   v.mouseMisclickGuard = mouseMisclickGuard;
+  v.mouseEdgePaging = mouseEdgePaging;
   v._listHoverRow = -1;
   v.buf = {
     useMouseBrowsing,
     listRenderMode,
     rows: 24,
+    cols: 80,
     BBSWin: { style: { cursor: "auto" } },
   };
   // 分派一律走 App.activeListSession（buf.listRenderOwner 決定是文章列表還是
@@ -58,7 +61,9 @@ function makeView({
   };
   v.setExitAffordance = (on) => affordance.push(!!on);
   v.applyCursorHighlight = () => highlightCalls.push(v._listHoverRow);
-  return { v, affordance, highlightCalls };
+  const bands = [];
+  v.setEdgeHintBand = (b) => bands.push(b);
+  return { v, affordance, highlightCalls, bands };
 }
 
 describe("onListMouseMove", () => {
@@ -197,5 +202,79 @@ describe("左側退出帶（2026-08 重新加回列表）", () => {
     v.onListMouseMove(bodyRow(2), 0);
     v.onListMouseMove(bodyRow(2), TITLE_COL);
     expect(affordance).toEqual([true, false]);
+  });
+});
+
+// ── 邊緣翻頁區在列表好讀視窗裡 ────────────────────────────────────────────────
+//
+// 這條路最容易搞錯的一件事：body 區的 row 是**整段序列的 index**（可以到幾千），
+// 而邊緣區的上下半分界必須用**螢幕列號**算 —— 所以 onListMouseMove 收第三個參數
+// （App 用 mouse_geometry.rowFromClientY 算），兩套座標不可混用。
+describe("onListMouseMove：邊緣翻頁區", () => {
+  test("螢幕頂列＝Home、底列＝End，指標換成該區域的圖示", () => {
+    const { v, bands } = makeView();
+    v.onListMouseMove(bodyRow(2), 40, 0);
+    expect(bands.at(-1)).toEqual({ colStart: 0, colEnd: 80, rowStart: 0, rowEnd: 1 });
+    expect(v.buf.BBSWin.style.cursor).toContain("home");
+    v.onListMouseMove(bodyRow(2), 40, 23);
+    expect(bands.at(-1).rowStart).toBe(23);
+    expect(v.buf.BBSWin.style.cursor).toContain("end");
+  });
+
+  test("右緣帶吃螢幕列號：同一個序列列，上半上一頁、下半下一頁", () => {
+    const { v } = makeView();
+    // 序列 index 一樣是第 500 列（捲了很久的長列表），只有螢幕位置不同。
+    v.onListMouseMove(503, 70, 5);
+    expect(v.buf.BBSWin.style.cursor).toContain("pageup");
+    v.onListMouseMove(503, 70, 20);
+    expect(v.buf.BBSWin.style.cursor).toContain("pagedown");
+  });
+
+  test("從有底色的列移到邊緣區 ⇒ 底色收掉、退出帶也不亮", () => {
+    const { v, affordance, highlightCalls } = makeView();
+    // 先停在一般文章列（底色亮著），再移到右緣帶。
+    v.onListMouseMove(bodyRow(2), TITLE_COL, 5);
+    expect(highlightCalls.at(-1)).toBe(bodyRow(2));
+    v.onListMouseMove(bodyRow(2), 70, 20);
+    expect(v._listHoverRow).toBe(-1);
+    expect(highlightCalls.at(-1)).toBe(-1);
+    expect(affordance.at(-1)).toBe(false);
+  });
+
+  test("左 7 欄仍然是退出帶（右緣帶不得搶走它）", () => {
+    const { v, affordance, bands } = makeView();
+    v.onListMouseMove(bodyRow(2), 0, 5);
+    expect(affordance.at(-1)).toBe(true);
+    expect(bands.at(-1)).toBe(null);
+  });
+
+  test("標題欄照常開文（中間那一大片一格都沒被邊緣區吃掉）", () => {
+    const { v } = makeView();
+    v.onListMouseMove(bodyRow(2), TITLE_COL, 5);
+    expect(v.buf.BBSWin.style.cursor).toBe("pointer");
+    expect(v._listHoverRow).toBe(bodyRow(2));
+  });
+
+  test("pref 關掉 ⇒ 一格都沒有邊緣區（退回找回之前的行為）", () => {
+    const { v, bands } = makeView({ mouseEdgePaging: false });
+    v.onListMouseMove(bodyRow(2), 70, 20);
+    expect(bands.every((b) => b === null)).toBe(true);
+    expect(v.buf.BBSWin.style.cursor).not.toContain("pagedown");
+  });
+
+  test("總開關關掉 ⇒ 同樣一格都沒有", () => {
+    const { v, bands } = makeView({ useMouseBrowsing: false });
+    v.onListMouseMove(bodyRow(2), 70, 0);
+    expect(bands.every((b) => b === null)).toBe(true);
+    expect(v.buf.BBSWin.style.cursor).toBe("auto");
+  });
+
+  // 這個功能的區域圖示跟著 mouseEdgePaging 走，**不跟 mouseLeftClick** —— 否則
+  // 關掉「點標題開文」會得到一個點得下去卻完全沒有提示的翻頁區。
+  test("關掉左鍵功能不影響邊緣區的指標與提示帶", () => {
+    const { v, bands } = makeView({ mouseLeftClick: false });
+    v.onListMouseMove(bodyRow(2), 70, 20);
+    expect(v.buf.BBSWin.style.cursor).toContain("pagedown");
+    expect(bands.at(-1)).not.toBe(null);
   });
 });

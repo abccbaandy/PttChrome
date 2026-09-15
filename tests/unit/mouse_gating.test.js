@@ -7,6 +7,7 @@ const ALL_ON = {
   useMouseBrowsing: true,
   mouseLeftClick: true,
   mouseMisclickGuard: true,
+  mouseEdgePaging: true,
   mouseMiddleClick: 1,
   mouseWheel: 1,
   mouseWheelSmoothScroll: true,
@@ -52,11 +53,17 @@ describe("總開關", () => {
 // 它是「滑鼠已交給 PTT server」這個事實（pref × 主機宣告的 tracking 狀態）的
 // 單一真相源，其餘 gate 反過來讀它來讓位。寫在這裡而不是散在各個入口，
 // 正是這條守護想要的方向。
+//
+// 第十個 `edgePaging` 同樣是刻意的：它找回的是原版就有、2026-08 連同另外十種一起
+// 被移除的四個邊緣區（頂列 Home／底列 End／右緣與文章上下半翻頁）。當初移除的理由
+// 是「誤觸率高又沒有提示」⇒ 現在配提示帶與指標，而且**必須關得掉**，所以它是一顆
+// 真的 checkbox 而不是沿用某條既有 pref。
 describe("D1：關框與複合鍵沿用既有 pref，resolveMouseGates 不得多欄位", () => {
-  test("回傳欄位就是這九個，一個不多", () => {
+  test("回傳欄位就是這十個，一個不多", () => {
     expect(Object.keys(resolveMouseGates(ALL_ON)).sort()).toEqual([
       "backNav",
       "cursorIcon",
+      "edgePaging",
       "leftClick",
       "middleClick",
       "misclickGuard",
@@ -65,6 +72,27 @@ describe("D1：關框與複合鍵沿用既有 pref，resolveMouseGates 不得多
       "wheel",
       "wheelSmoothScroll",
     ]);
+  });
+
+  test("邊緣翻頁跟著總開關走，serverReport 時整組讓位", () => {
+    expect(resolveMouseGates(ALL_ON).edgePaging).toBe(true);
+    expect(
+      resolveMouseGates({ ...ALL_ON, mouseEdgePaging: false }).edgePaging,
+    ).toBe(false);
+    expect(
+      resolveMouseGates({ ...ALL_ON, useMouseBrowsing: false }).edgePaging,
+    ).toBe(false);
+    // 「我們自己發明的滑鼠語意」整組交給 PTT，翻頁區也不例外。
+    expect(
+      resolveMouseGates({ ...ALL_ON, mouseServerReport: true, serverMouse: true })
+        .edgePaging,
+    ).toBe(false);
+  });
+
+  test("邊緣翻頁與左鍵互不牽連（關掉點標題開文，翻頁區還在）", () => {
+    const g = resolveMouseGates({ ...ALL_ON, mouseLeftClick: false });
+    expect(g.leftClick).toBe(false);
+    expect(g.edgePaging).toBe(true);
   });
 
   test("關框跟著 leftClick 走（App.mouse_click 的 gate 就是它）", () => {
