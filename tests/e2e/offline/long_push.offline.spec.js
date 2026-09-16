@@ -218,6 +218,10 @@ async function submitLongPush(page, text) {
 
 async function boot(page) {
   await bootOffline(page, ptt);
+  // 這支 spec 自己畫畫面（drawArticle／drawBoardList）驗的都是**原生**行為，而列表
+  // 好讀自 2026-09-16 起預設開 —— 它一 engage 就會自己往線路送機器鍵，讓「按 X 只送
+  // 出一個 byte」這類斷言收到多餘的 bytes。明確關掉，別靠預設值。
+  await ptt.applyPrefs(page, { enableEasyReadingList: false });
   await drawArticle(page);
   expect(await page.evaluate(() => window.__app.buf.pageState)).toBe(3);
   // 免費路徑拿得到 AID ⇒ 開場不會按 Q（長推文的錨點來源，見 long_push_anchor.js）。

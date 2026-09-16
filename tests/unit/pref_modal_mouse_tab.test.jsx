@@ -118,7 +118,7 @@ describe("設定頁：滑鼠分頁", () => {
     expect(panel.textContent).toContain(i18n("options_mouseWheel"));
   });
 
-  test("預設值：總開關開、移動底色開、左鍵開、防誤觸開、中鍵關、滾輪上下頁", () => {
+  test("預設值：總開關開、移動底色開、左鍵開、防誤觸開、中鍵＝左方向鍵、滾輪上下頁", () => {
     const panel = openMouseTab();
     expect(field(panel, "useMouseBrowsing")).toBeChecked();
     expect(field(panel, "mouseBrowsingHighlight")).toBeChecked();
@@ -130,7 +130,7 @@ describe("設定頁：滑鼠分頁", () => {
     expect(DEFAULT_PREFS.mouseMisclickGuard).toBe(true);
     expect(DEFAULT_PREFS.mouseFunctionKeys).toBe(true);
     expect(DEFAULT_PREFS.useMouseBrowsing).toBe(true);
-    expect(DEFAULT_PREFS.mouseMiddleClick).toBe(0);
+    expect(DEFAULT_PREFS.mouseMiddleClick).toBe(2); // 2=左方向鍵（2026-09-16 翻預設）
     expect(DEFAULT_PREFS.mouseWheel).toBe(1);
     // 平滑捲動預設開（新 key ⇒ 既有使用者也吃得到這個預設）
     expect(field(panel, "mouseWheelSmoothScroll")).toBeChecked();

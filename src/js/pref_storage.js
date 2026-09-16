@@ -7,25 +7,29 @@ export const DEFAULT_PREFS = {
   //dbcsDetect    : false,
   enablePicPreview: true,
   enableNotifications: true,
-  enableEasyReading: false,
+  // 文章好讀模式：整篇累積成一份可自由捲動的長頁（見 docs/easy-reading.md）。
+  // **2026-09 起預設開**（功能已成熟，且是本專案與原版 term.ptt.cc 最主要的差異）。
+  // 關掉＝逐位元回到原生的一次一頁，逃生門仍在設定頁。
+  enableEasyReading: true,
   // List easy reading (v4): accumulate the board article list across pages into
   // one scrollable ASCENDING list (older→newer, like native) so blacklisted rows
   // can be removed entirely (no blank gaps). Engages on entering a board list.
-  // Default OFF while the feature matures (same policy as enableEasyReading).
-  enableEasyReadingList: false,
+  // **2026-09 起預設開**，理由與政策同 enableEasyReading（功能已成熟）。
+  enableEasyReadingList: true,
   // 看板列表平滑捲動（js/board_list_session.js）：把 PTT 一頁 20 列的看板列表累積
   // 成一整段序列畫進捲動視口，捲動交給瀏覽器 —— 與文章列表好讀同一套引擎。
   // **只作用於「我的最愛」與「分類看板」的子分類**（footer 指紋，board.c:1279-1290）；
   // 全部看板／熱門看板／「新文章」模式一律維持原生的一次一頁。
-  // 預設關（功能成熟前，與 enableEasyReading／enableEasyReadingList 同一套政策）。
-  enableBoardListSmoothScroll: false,
+  // **2026-09 起預設開**，與 enableEasyReading／enableEasyReadingList 同一套政策
+  // （功能已成熟）。關掉＝那兩類看板列表回到原生的一次一頁。
+  enableBoardListSmoothScroll: true,
   // 非導覽操作結束後自動切回好讀（list_session.js / board_list_session.js）。
   // 兩件事由這一顆開關同時管（它們是同一個承諾的兩半，拆兩顆會出現「A 類凍結但
   // B 類不回復」這種沒人想要的中間態）：
   //   L1 A 類鍵（[ ] = \ + - < > , . { } t／看板列表的 t v V）走凍結交易，全程不切原生
   //   L2 B 類鍵（/ v s Ctrl-P 子畫面…）操作完成、畫面靜下來之後自動回好讀
-  // **預設開**：它是上面兩個 pref 的子功能，母開關已經是 opt-in，不需要再 opt-in
-  // 一次；預設關等於沒做。關掉＝逐位元回到 2026-09-03 之前（黏性原生：開文／離板
+  // **預設開**：它是上面兩個 pref 的子功能，母開關開著時它就該跟著生效，
+  // 預設關等於沒做。關掉＝逐位元回到 2026-09-03 之前（黏性原生：開文／離板
   // 才回好讀），這是使用者拍板的逃生門 —— 判定類功能的最後一道防線就是設定開關。
   enableListNativeAutoResume: true,
   // Target number of VISIBLE (non-blacklisted) rows the background prefetch
@@ -33,8 +37,12 @@ export const DEFAULT_PREFS = {
   // an edge). 0 disables the background fill (current page + demand only).
   // 看板列表平滑捲動共用這個目標值（同一種「先抓多少列」的取捨）。
   easyReadingListPrefetchCount: 200,
-  endTurnsOnLiveUpdate: false,
-  copyOnSelect: false,
+  // Live 文（作者還在更新）收到新內容時自動跳到最後一頁。預設開：追 Live 文時
+  // 停在舊的一頁沒有意義，不追的人也只有在畫面真的被 server 推新內容時才會動到。
+  endTurnsOnLiveUpdate: true,
+  // 選取文字即自動複製到剪貼簿（終端機慣例）。預設開：BBS 上「選起來就是要複製」，
+  // 而且選取本身不會有別的用途。實作在 pttchrome.jsx#onMouseUp。
+  copyOnSelect: true,
   // 終端機提示音：PTT 送 BEL（^G）時嗶一聲（captcha／棋類／水球等）。預設開啟，
   // 與真實終端機一致；bell.js 有 150ms 節流，連發不會變成噪音。
   enableBell: true,
@@ -142,7 +150,9 @@ export const DEFAULT_PREFS = {
   mouseFunctionKeys: true,
   // 中鍵：0=關閉 1=貼上 2=左方向鍵。**與舊 mouseMiddleFunction 的值域不同**
   // （舊的 1 是 Enter），刻意不做遷移，見 docs/mouse.md。
-  mouseMiddleClick: 0,
+  // 預設 2（左方向鍵＝回上一層）：BBS 的「返回」是最高頻的操作，而中鍵貼上在
+  // 這個 client 幾乎沒有用武之地（要輸入的場合都在 PTT 自己的編輯器裡）。
+  mouseMiddleClick: 2,
   // 滾輪：0=關閉 1=上下頁。舊版有三組設定（素滾／按住右鍵／按住左鍵）× 四種動作，
   // 全部收斂成這一個。文章好讀模式一律交給瀏覽器捲動，不受此設定影響。
   mouseWheel: 1,
@@ -249,7 +259,11 @@ export const DEFAULT_PREFS = {
   // [{ id, name, urlTemplate, match: 'any'|'digits', enabled }]
   // 欄位不可為 undefined：Firestore SDK 遇到會 throw（見 pref_sync.js#savePrefs）。
   quickSearchCustom: Object.freeze([]),
-  autoLogin: false,
+  // 開站自動登入（src/js/auto_login.js）。**預設開**：沒有憑證時
+  // `_resolveCredential` 只會 console.info 後 return —— `navigator.credentials.get`
+  // 用的是 `mediation: 'optional'`，沒存過本站密碼的人不會看到任何 UI，所以對新
+  // 使用者是零影響；存過的人正是「本來就想自動登入」的那群。
+  autoLogin: true,
   autoLoginUser: "",
   autoLoginPassword: "",
   // Base32 TOTP secret for PTT's 2FA (see src/js/totp.js). Empty means either
@@ -257,7 +271,9 @@ export const DEFAULT_PREFS = {
   // end the same way: auto-login fills in account+password and hands the
   // keyboard back at the verification prompt.
   autoLoginOtpSecret: "",
-  autoLoginDupConn: "N", // 'Y' | 'N': answer when a duplicate login is detected
+  // 'Y' | 'N': answer when a duplicate login is detected。預設 'Y'（踢掉舊連線）：
+  // 會撞到重複登入的絕大多數情況是自己上一個分頁／裝置的殘留連線。
+  autoLoginDupConn: "Y",
   autoLoginSkipWelcome: true,
 
   // local-only (never synced to cloud — see LOCAL_ONLY_PREF_KEYS in

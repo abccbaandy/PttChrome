@@ -207,8 +207,9 @@ export function TermView() {
   // buf.useMouseBrowsing，gating 一律走 mouse_regions.resolveMouseGates。
   // 值域：mouseMiddleClick 0=關閉 1=貼上 2=左方向鍵；mouseWheel 0=關閉 1=上下頁。
   // mouseWheelSmoothScroll：滾輪平滑捲動，只作用於文章列表好讀模式（見 pref_storage）。
+  // 值須與 pref_storage.js DEFAULT_PREFS 一致。
   this.mouseLeftClick = true;
-  this.mouseMiddleClick = 0;
+  this.mouseMiddleClick = 2;
   this.mouseWheel = 1;
   this.mouseWheelSmoothScroll = true;
   // mouseBackNav：攔截瀏覽器的「返回」→ 左方向鍵（0 關 1 開）。來源含觸控板

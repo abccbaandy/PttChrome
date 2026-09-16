@@ -543,7 +543,7 @@ index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**�
 
 | fieldset | pref | 上雲 |
 |---|---|---|
-| 開關組 | `autoLogin`(false)、`autoLoginDupConn`('N')、`autoLoginSkipWelcome`(true) | 是 |
+| 開關組 | `autoLogin`(**true**)、`autoLoginDupConn`(**'Y'**)、`autoLoginSkipWelcome`(true) | 是 |
 | 憑證組 | `autoLoginUser`、`autoLoginPassword`、`autoLoginOtpSecret`（皆 `""`） | **否**（`LOCAL_ONLY_PREF_KEYS`） |
 
 - 分開的理由：只看開關組不知道帳密填哪、只看憑證組不知道何時觸發；但兩者同步性質不同，

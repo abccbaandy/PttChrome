@@ -218,8 +218,10 @@ export const App = function() {
   this.waterball = { userId: '', message: '' };
   this.appFocused = true;
 
-  this.endTurnsOnLiveUpdate = false;
-  this.copyOnSelect = false;
+  // 值須與 pref_storage.js DEFAULT_PREFS 一致（boot 走 main.jsx →
+  // onValuesPrefChange 逐 key 重套，這裡只是佔位初值）。
+  this.endTurnsOnLiveUpdate = true;
+  this.copyOnSelect = true;
 
   var self = this;
 

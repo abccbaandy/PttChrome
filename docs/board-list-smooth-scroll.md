@@ -1,6 +1,6 @@
 # 看板列表平滑捲動（`choose_board` 的好讀捲動）
 
-pref `enableBoardListSmoothScroll`（預設 `false`）。實作 `src/js/board_list_session.js`
+pref `enableBoardListSmoothScroll`（**2026-09-16 起預設 `true`**）。實作 `src/js/board_list_session.js`
 ＋純解析層 `src/js/board_list_parse.js`；渲染借 `src/render/screen.js` 的 `.listBodyView`
 視口（與文章列表好讀同一套）。**動這三個檔或 `term_view` 的看板列表分支前先讀本文。**
 

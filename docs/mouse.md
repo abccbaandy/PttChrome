@@ -30,7 +30,7 @@
 | `mouseMisclickGuard` | `true` | bool | 防誤觸模式：**可點區＝底色區**的起始欄（見下方「防誤觸模式」） |
 | `mouseFunctionKeys` | `true` | bool | 畫面上的功能鍵提示變成按鈕（見下方「功能鍵按鈕」） |
 | `mouseEdgePaging` | `true` | bool | 邊緣點擊翻頁：頂列 Home／底列 End／右緣上下半翻頁（文章內是整片上下半），見下方「邊緣翻頁區」 |
-| `mouseMiddleClick` | `0` | 0 關閉 / 1 貼上 / 2 左方向鍵 | |
+| `mouseMiddleClick` | `2` | 0 關閉 / 1 貼上 / 2 左方向鍵 | 預設 2（＝回上一層）：BBS 的「返回」是最高頻操作，中鍵貼上在這個 client 幾乎用不到（2026-09-16 從 `0` 翻） |
 | `mouseWheel` | `1` | 0 關閉 / 1 上下頁 | |
 | `mouseBackNav` | `1` | 0 關閉 / 1 左方向鍵 | 攔截瀏覽器的「返回」→ `←`。**一個 key 涵蓋所有來源**（觸控板左滑手勢／側鍵／`Alt+←`／`⌘[`／工具列），它們是同一條實作（見「手勢與瀏覽器返回」） |
 | `mouseWheelSmoothScroll` | `true` | bool | 開＝列表好讀的 body 視口走 `overflow-y:auto`，**捲動整個交給瀏覽器**（與文章好讀同一套引擎）；關＝視口改 `overflow:hidden`，滾輪退回一次一頁。**只作用於文章列表好讀模式**（其餘畫面沒有這個選擇，見下方 render 分支表） |

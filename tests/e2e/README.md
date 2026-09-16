@@ -277,6 +277,20 @@ production 不洩漏）。**例外**：PTT 原生熱鍵（`End`/`Enter`/`Space`/
   **刻意是 live**：判準（輸入欄的實際顏色）是 pfterm 重新編碼後的結果，離線／unit 量不到，見
   `docs/pttbbs-screen-protocol.md` §5.1。
 
+## 規範：要測「原生模式」就自己關好讀（2026-09-16 翻預設之後）
+
+`enableEasyReading`／`enableEasyReadingList`／`enableBoardListSmoothScroll` 三顆自
+2026-09-16 起**預設開**（`src/js/pref_storage.js`）。offline spec 多半是全新 context、
+localStorage 空 ⇒ **直接吃到好讀**；live 這邊 `resetSession` 仍把三顆關成 baseline。
+
+所以：**驗原生行為的 spec 一律自己 `applyPrefs(page, { enableEasyReadingList: false })`**
+（或對應那顆），不准靠預設值。翻預設當天實際被咬的兩支，症狀都不像 pref 問題：
+
+| spec | 症狀 |
+|---|---|
+| `blacklist_quick_add.offline` | 列表好讀重畫整份列表 ⇒ 標好的 `[data-e2e-target]` 連同那一列消失，錯在 `waitRectStable：找不到元素` |
+| `long_push.offline`（文章列表按 X） | 列表 session engage 後自己往線路送機器鍵 ⇒ 「只送出一個 `X`」的斷言收到多餘 bytes，錯訊息看起來是 `Expected: "X" / Received: "X"` |
+
 ## 規範：evaluate 內點擊後不可同步讀 React 產物
 
 React 19 起，`el.click()` 觸發的 setState 在事件 task **之後**才 commit——同一個 `page.evaluate`

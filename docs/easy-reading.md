@@ -5,7 +5,7 @@
 
 ## 機制（CONFIRMED）
 
-- 啟用條件：pref `enableEasyReading`(預設 **false**，`PrefModal.jsx` `DEFAULT_PREFS`) && `connectedUrl.easyReadingSupported`(`pttchrome.jsx` true)。使用者自己開，存 localStorage `pttchrome.pref.v1`。
+- 啟用條件：pref `enableEasyReading`(**2026-09-16 起預設 true**，`pref_storage.js` `DEFAULT_PREFS`) && `connectedUrl.easyReadingSupported`(`pttchrome.jsx` true)。使用者自己開，存 localStorage `pttchrome.pref.v1`。
 - 啟用旗標：`view.useEasyReadingMode`，由 `bindProperty` 綁成 `EasyReading._enabled`。
 - 進文章(pageState 3)後由 `_onChanged` 判斷、`_onViewUpdated` 送 PageDown(`\x1b[6~`)把整篇累積成可捲動長頁（決策落純函式 `nextEasyReadingRowState`；`_onChanged` 已抽 `_computeRowState`+`_applyRowState` 兩 helper 供快路徑與兜底共用）。長文章(精華區索引)因此自動翻頁久、攔截 `/` 等鍵 → 原生搜尋不可用。
 - **翻頁＝單一 in-flight 交易（2026-08 重構，治「※ 發信站/※ 文章網址 那段消失」，依據 `docs/pttbbs-screen-protocol.md` §13 P1/P3/P4/P6）**：
@@ -335,7 +335,7 @@ best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原
 
 ## e2e 測試要點（tests/e2e/easy-reading.spec.js）
 
-- **好讀預設 false**：測試須在 `page.addInitScript` 寫 localStorage `pttchrome.pref.v1`→`{values:{enableEasyReading:true}}` 才會啟動，否則 End 只是原生（測不到）。
+- **好讀預設 true（2026-09-16 翻預設）**：要測「原生」的 spec 反過來得自己關（live 走 `helpers/ptt.js#applyPrefs`，offline 走全新 context 的 localStorage），否則吃到的是好讀。舊約定（測試自己寫 `{values:{enableEasyReading:true}}` 才會啟動）已失效。
 - app 未掛全域：`main.jsx` 僅 `DEVELOPER_MODE`(dev build 有)下 `window.__app=app` 供測試讀 `view.useEasyReadingMode`/`buf.pageState`。
 - 判好讀 vs 原生：好讀 `mainContainer` 累積 >24 列且 `#easyReadingLastRow` display:block；原生 24 列、lastRow display:none、畫面含原生狀態列「瀏覽 第 N 頁…」。原生狀態列**不論 100% 或非 100% 都含「(h)說明」**（差別只在頁數指示器顏色，到底時反白）。**勿**用「mainContainer 是否含瀏覽第」分原生/好讀 footer：footer overlay 現已**即時鏡像真實狀態列**（含「瀏覽 第…(h)說明」，見 render 段「footer 鏡像」），但它是 `BBSWin` 下獨立 div、非 `#mainContainer`，故 `mc.innerText` 不含它——仍以 `useEasyReadingMode`/`mcChildren`/`lastRowDisplay` 區分。
 - 取消 PTT 搜尋提示用**空 Enter**，勿用 Escape（pmore 把 `\x1b` 當逃逸序列開頭，導覽錯亂）。

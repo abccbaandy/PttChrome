@@ -32,7 +32,9 @@ describe("DEFAULT_PREFS", () => {
     // 邊緣點擊翻頁預設開：2026-09 找回 term.ptt.cc 原版就有的四個區域（頂列 Home／
     // 底列 End／右緣與文章上下半翻頁），使用者的預期是「本來就該有」。
     expect(DEFAULT_PREFS.mouseEdgePaging).toBe(true);
-    expect(DEFAULT_PREFS.mouseMiddleClick).toBe(0); // 0=關閉 1=貼上 2=左方向鍵
+    // 2026-09 預設改成 2（左方向鍵＝回上一層）：BBS 的「返回」是最高頻操作，
+    // 而中鍵貼上在這個 client 幾乎沒有用武之地。
+    expect(DEFAULT_PREFS.mouseMiddleClick).toBe(2); // 0=關閉 1=貼上 2=左方向鍵
     expect(DEFAULT_PREFS.mouseWheel).toBe(1); // 0=關閉 1=上下頁
     // 逐行捲動是**新 key**，所以既有使用者（localStorage 已存 mouseWheel:1）
     // 也吃得到這個預設 —— 淺層合併只補得到缺少的 key。
@@ -81,7 +83,7 @@ describe("既有使用者的 localStorage 殘值", () => {
     expect(v.mouseFunctionKeys).toBe(true);
     // 新 key ⇒ 淺層合併補得到，改過舊設定的既有使用者照樣拿得到這個預設。
     expect(v.mouseEdgePaging).toBe(true);
-    expect(v.mouseMiddleClick).toBe(0);
+    expect(v.mouseMiddleClick).toBe(2);
     expect(v.mouseWheel).toBe(1);
     expect(v.useMouseBrowsing).toBe(true);
     expect(v.mouseBackNav).toBe(1);

@@ -94,6 +94,9 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
   test('作者欄右鍵 → 加入作者黑名單 → 通知列出現且 pref 落地', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
+    // 這個 describe 驗的是**原生列表**（通知列而非整列移除）。列表好讀自
+    // 2026-09-16 起預設開，會把整份列表重畫成累積長頁 ⇒ 明確關掉，別靠預設。
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
     await replayCassette(page, list, { easyReading: false });
     await page.waitForTimeout(500);
 
@@ -126,6 +129,9 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
   test('標題欄右鍵 → Modal 預填完整標題 → 確認 → 通知列出現且 pref 落地', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
+    // 這個 describe 驗的是**原生列表**（通知列而非整列移除）。列表好讀自
+    // 2026-09-16 起預設開，會把整份列表重畫成累積長頁 ⇒ 明確關掉，別靠預設。
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
     await replayCassette(page, list, { easyReading: false });
     await page.waitForTimeout(500);
 
@@ -162,6 +168,9 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
   test('已在黑名單的作者 → 選項反灰不可點', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
+    // 這個 describe 驗的是**原生列表**（通知列而非整列移除）。列表好讀自
+    // 2026-09-16 起預設開，會把整份列表重畫成累積長頁 ⇒ 明確關掉，別靠預設。
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
     await replayCassette(page, list, { easyReading: false });
     await page.waitForTimeout(500);
 
@@ -185,6 +194,9 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
   test('非作者/標題區塊（序號欄）右鍵 → 無快速新增項目、一般選單正常', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
+    // 這個 describe 驗的是**原生列表**（通知列而非整列移除）。列表好讀自
+    // 2026-09-16 起預設開，會把整份列表重畫成累積長頁 ⇒ 明確關掉，別靠預設。
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
     await replayCassette(page, list, { easyReading: false });
     await page.waitForTimeout(500);
 
