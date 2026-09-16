@@ -358,6 +358,11 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 剪貼簿**（2026-09 使用者定案：那會無聲蓋掉他手上的東西），改由 `LongPushErrorModal`
 顯示在唯讀 Textarea，要不要複製由他按。
 
+**關掉輸入框那一下 Esc 若漏到終端機**（或使用者順手多按一下），症狀不是當下出事，
+而是**下一個方向鍵跳到同主題的上一篇**——PTT 的 vtkbd 停在 ESC 態時會把方向鍵的
+開頭 ESC 吃成 esc_arg，`[` 與 `D` 就變成字面鍵。送出端已有守門（`vtkbd_send_state.js`），
+推導與不變量見 `docs/pttbbs-screen-protocol.md` §1.2。
+
 ## 尚待 live 驗證
 
 1. ~~推完落在文章列表還是文章~~ → **CONFIRMED 落在文章列表**（`bbs.c:2471-2473`

@@ -2,6 +2,7 @@
 
 import { Event } from './event';
 import { u2b, ansiHalfColorConv } from './string_util';
+import { VK_NORMAL, guardEscSequence } from './vtkbd_send_state';
 
 // Telnet commands
 const SE = '\xf0';
@@ -48,6 +49,10 @@ export function TelnetConnection(socket) {
 
   this.state = STATE_DATA;
   this.iac_sb = '';
+
+  // server 端 vtkbd 的按鍵解析狀態（我們送了什麼就推算成什麼）。每條連線各自一份，
+  // 重連自然重置。用途見 vtkbd_send_state.js 檔頭。
+  this._vkState = VK_NORMAL;
 
   this.termType = 'VT100';
 }
@@ -186,9 +191,16 @@ TelnetConnection.prototype.send = function(str) {
 //
 // **協商路徑不可以走這裡**：IAC DO/WILL/SB… 的 0xFF 本來就是命令，加倍會讓
 // server 讀成資料。那些一律直接用 _sendRaw。
+//
+// 這裡同時是「裸 ESC 守門」的唯一掛點：send/convSend 都收斂到這裡，而協商位元組
+// 被 server 的 telnet 層吃掉、進不了 vtkbd ⇒ _sendRaw 不該套。**守門要在 IAC 加倍
+// 之前**：vtkbd 看到的是解 IAC 之後的資料流。理由見 vtkbd_send_state.js 檔頭。
 TelnetConnection.prototype._sendEscaped = function(str) {
   if (!str) return;
-  this._sendRaw(str.indexOf(IAC) < 0 ? str : str.split(IAC).join(IAC + IAC));
+  const guarded = guardEscSequence(this._vkState, str);
+  this._vkState = guarded.state;
+  const data = guarded.data;
+  this._sendRaw(data.indexOf(IAC) < 0 ? data : data.split(IAC).join(IAC + IAC));
 };
 
 TelnetConnection.prototype._sendRaw = function(data) {

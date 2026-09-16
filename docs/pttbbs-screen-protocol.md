@@ -104,6 +104,33 @@ expect 餘掉）。本專案的實作見 `term_buf.js#beginSyncUpdate` 與 `docs
 `68fc0976 refactor(io): Unify io.c and nios.c` —— **純 server 端 I/O 重構，無 wire 協定改變**，
 只有時序／緩衝特性可能不同。client 無需針對它做任何事。
 
+## 1.2 輸入層：vtkbd 的 ESC 狀態機（2026-09-16 CONFIRMED）
+
+`vtkbd_process()`（`common/sys/vtkbd.c:125-416`）是**有狀態**的四態機
+（`NORMAL` / `ESC` / `CSI` / `SS3`）。送出端因此有一條硬不變量：
+
+| 不變量 | 出處 |
+|---|---|
+| `NORMAL` 收到 ESC → 轉 `ESC` 態並回 `KEY_INCOMPLETE` ⇒ **裸 ESC 當下不產生任何按鍵**，只是把 server 留在半途 | `vtkbd.c:129-133` |
+| `ESC` 態收到的位元組若**不是** `[`／`O`，就被存成 `esc_arg` 吃掉、回一個 `KEY_ESC`，狀態回 `NORMAL` | `vtkbd.c:145-160` |
+| ⇒ **裸 ESC 之後的任何跳脫序列必定退化**：`←`(`ESC [ D`) 的開頭 ESC 被吃成 esc_arg，`[` 與 `D` 以**字面鍵**落到畫面 | 上兩列的推論 |
+| `[` 在 pager ＝ `RELATE_PREV`，在文章列表 ＝ `thread(locmem, RELATE_PREV)` ⇒ **跳到同主題的上一篇** | `more.c:130-136`、`read.c:824-846` |
+| `KEY_ESC` 只有 `edit.c` 消費（配 `KEY_ESC_arg` 做 ESC 組合鍵）；pager／列表／選單都沒有 `case KEY_ESC` ⇒ 對它們是 no-op | `io.c:318-320`、`edit.c:3678`、`edit.c:3764-3836` |
+| `edit.c` 兩處 `switch (KEY_ESC_arg)` **都沒有 `default:`** ⇒ `esc_arg == 0x1b` 不命中任何 case，編輯器裡也是 no-op | `edit.c:3764-3836` |
+| `CSI` 態收到新 ESC 會 restart 成 `ESC` 態（較晚加入的分支，跨版本可靠度低於上面幾條） | `vtkbd.c:230-235` |
+| `SS3`（`ESC O x`）不論命中與否都只吃一個位元組就回 `NORMAL` | `vtkbd.c:162-228`＋函式尾 `vtkbd.c:405-416` |
+
+**對本 client 的意義**：任何來源送出的裸 ESC（`term_keyboard.KeyMap['Escape']`、
+底列功能鍵 `footer_keys.js` 的 `Esc`、浮層關閉時漏出去的那一下）都會埋下地雷，
+症狀是**下一個方向鍵跳到別篇文章**，而且中間可以隔很久（實錄隔了 1.4 秒），
+從畫面上完全看不出因果。修法＝送出端鏡像這個狀態機，停在 `ESC` 態時對
+「以 ESC 開頭且第二個位元組是 `[`／`O`」的送出補一個 ESC 化解
+（`src/js/vtkbd_send_state.js`，守護 `tests/unit/vtkbd_send_state.test.js`、
+`tests/unit/telnet_esc_guard.test.js`）。
+
+證據樣本：`ptt-debug-20260916-011413.json#t=5494`（裸 ESC）、`#t=6922`（`ESC [ D`）、
+`#t=6933`（畫面換成同主題上一篇）。
+
 ## 2. 時序不變量 → client 三推論
 
 | 不變量 | 出處 |
