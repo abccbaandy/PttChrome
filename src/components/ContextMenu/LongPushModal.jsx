@@ -10,6 +10,7 @@ import {
   Stack,
 } from "@mantine/core";
 import { i18n } from "../../js/i18n";
+import { modEnterShortcutLabel } from "../../js/platform";
 import {
   stripNonBig5,
   splitPushSegments,
@@ -152,18 +153,44 @@ export const LongPushModal = ({
   // 打字改變則數之後，先前那次「還是要送」的確認就不算數了。
   useEffect(() => setConfirming(false), [count]);
 
+  // 送出鍵與 Ctrl+Enter 共用**同一段**，二次確認的語意才不會兩條路各走各的。
+  const trySubmit = useCallback(() => {
+    if (!count) return;
+    if (count > CONFIRM_THRESHOLD && !confirming) {
+      setConfirming(true);
+      return;
+    }
+    onConfirm({ text: parsed.text, type });
+  }, [count, confirming, parsed.text, type, onConfirm]);
+
   const onSubmit = useCallback(
     (event) => {
       event.preventDefault();
-      if (!count) return;
-      if (count > CONFIRM_THRESHOLD && !confirming) {
-        setConfirming(true);
-        return;
-      }
-      onConfirm({ text: parsed.text, type });
+      trySubmit();
     },
-    [count, confirming, parsed.text, type, onConfirm],
+    [trySubmit],
   );
+
+  // Ctrl+Enter（Mac 的 ⌘+Enter）送出。**兩個修飾鍵都收、不偵測平台**：偵測錯的人
+  // 不是退化成沒快捷鍵，而是按了沒反應（同 term_keyboard.js:236-242 的立場）。
+  // 掛在 <form> 而不是 Textarea：游標在型別選單或按鈕上時一樣送得出去。
+  // 不需要 stopPropagation —— 終端機的 global keydown 被 term_view 的
+  // shouldAcceptInput()（modalShown）擋著，這一下不會漏到 PTT。
+  const onKeyDown = useCallback(
+    (event) => {
+      if (event.key !== "Enter") return;
+      if (!event.ctrlKey && !event.metaKey) return;
+      // 組字中的 Enter 屬於 IME（上字／選字），不能當成送出。
+      if (event.nativeEvent?.isComposing || event.keyCode === 229) return;
+      // 擋掉 textarea 自己插的那個換行。
+      event.preventDefault();
+      trySubmit();
+    },
+    [trySubmit],
+  );
+
+  // 只影響提示文字；navigator 不會在 page lifetime 內變。
+  const shortcutLabel = useMemo(() => modEnterShortcutLabel(), []);
 
   return (
     <Modal
@@ -177,7 +204,7 @@ export const LongPushModal = ({
       // 上傳紀錄」就整段沒了。
       closeOnClickOutside={false}
     >
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} onKeyDown={onKeyDown}>
         <Stack gap="xs">
           <Textarea
             data-autofocus
@@ -286,7 +313,23 @@ export const LongPushModal = ({
           <Button variant="default" onClick={onHide}>
             {i18n("longPushModal_cancel")}
           </Button>
-          <Button type="submit" disabled={!count}>
+          {/* 提示一定要 aria-hidden：不然它會被算進按鈕的 accessible name，
+              所有用按鈕名稱抓元素的測試（unit 與 offline e2e）一起靜默失效。
+              輔助技術那份改由 aria-keyshortcuts 提供。 */}
+          <Button
+            type="submit"
+            disabled={!count}
+            aria-keyshortcuts="Control+Enter Meta+Enter"
+            rightSection={
+              <span
+                aria-hidden="true"
+                data-testid="longPushSubmitHint"
+                style={{ fontSize: 12, opacity: 0.75 }}
+              >
+                {shortcutLabel}
+              </span>
+            }
+          >
             {confirming
               ? i18n("longPushModal_confirmAnyway")
               : i18n("longPushModal_confirm")}

@@ -363,6 +363,25 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 開頭 ESC 吃成 esc_arg，`[` 與 `D` 就變成字面鍵。送出端已有守門（`vtkbd_send_state.js`），
 推導與不變量見 `docs/pttbbs-screen-protocol.md` §1.2。
 
+### 鍵盤送出（Ctrl+Enter）
+
+輸入框的 `<form>` 掛 `onKeyDown`（不是掛 Textarea ⇒ 游標在型別選單／按鈕上也送得出去），
+與送出鍵共用同一個 `trySubmit()`（二次確認語意因此自動一致）。三條硬規則：
+
+| 規則 | 為什麼 |
+|---|---|
+| 收 `ctrlKey \|\| metaKey`，**不偵測平台** | 同 `term_keyboard.js:236-242` 的立場：判錯的人不是退化成沒快捷鍵，而是按了沒反應 |
+| `nativeEvent.isComposing` / `keyCode === 229` 一律放行 | 組字中的 Enter 屬於 IME 上字 |
+| 命中就 `preventDefault()`，但**不** `stopPropagation()` | 前者擋 textarea 自己插的換行；後者不需要——`modalShown` 已經讓 `term_view` 的 global keydown 整組噤聲（`shouldAcceptInput()`） |
+
+按鈕上的提示由 `src/js/platform.js#modEnterShortcutLabel` 決定（Mac `⌘Enter`／其他
+`Ctrl+Enter`）。**該模組只准用於文案**，行為端永遠兩個修飾鍵都收。快捷鍵字串硬寫、
+不進 i18n（同 `DropdownMenu.jsx` 的 `rightSection={<span>Ctrl+C</span>}`）。
+
+提示那個 `span` **必須 `aria-hidden`**：否則它會被算進送出鍵的 accessible name，
+`getByRole('button', { name: i18n('longPushModal_confirm') })` 這種完整字串比對（unit 與
+offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `aria-keyshortcuts` 提供。
+
 ## 尚待 live 驗證
 
 1. ~~推完落在文章列表還是文章~~ → **CONFIRMED 落在文章列表**（`bbs.c:2471-2473`
@@ -384,13 +403,14 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 | unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正、**游標守門與重新定位**（harness 與畫面常數抽在 `tests/unit/helpers/long_push_harness.js`，與下一列共用） |
 | unit | `tests/unit/long_push_preflight.test.js` | **探路**：只送一個 X、各 kind 的收尾鍵序、**PTT 原文逐字照錄**（含沒看過的新訊息）、冷卻不算不能推且不倒數、逾時一個收尾鍵都不送、ORDER INVARIANT（scrollTop 歸零前採樣）、`start()` 不重採錨點也不重解 AID |
 | unit | `tests/unit/long_push_error_modal.test.jsx` | 錯誤框：原文照錄、來源標示兩態、已送出則數、剩餘內容唯讀可讀回、**按了才複製** |
-| unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告** |
+| unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告**、**鍵盤送出**（ctrl 與 meta 都收、單獨 Enter 不送、組字中不送、提示不進 accessible name） |
+| unit | `tests/unit/platform_label.test.js` | 快捷鍵提示的平台判斷（userAgentData 優先、UA 退路、拿不到 navigator 不 throw）|
 | unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值（含攔截開關的從屬關係與 disabled） |
 | unit | `tests/unit/long_push_gate.test.js` | 攔截判準：`x` 不是推文鍵、`shiftKey` 仍要攔、prompt 幀不攔、列表不攔、開關從屬 |
 | unit | `tests/unit/push_key_intercept.test.js` | 三條入口各自的分派：不落到 `_keyboard`／`_convSend`／`view._send`、不提前進 functionMode、**沒開成就不吞** |
 | unit | `tests/unit/long_push_open_bridge.test.jsx` | `App.openLongPushModal` 注入／回 true／卸載還原 noop、**沒開過右鍵選單也算對 maxBytes** |
 | e2e | `tests/e2e/offline/long_push_image_upload.offline.spec.js` | 輸入框開著時拖圖 → 網址進 Textarea、**線路上一個 byte 都沒送**、點「開啟上傳紀錄」modal 不關 |
-| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）、**攔截**（按 X／%、點底列按鈕、關 pref 回原生、列表不攔）、**探路**（按 X 只送一個 X 且輸入框要等答案；被擋時錯誤框裡是 Big5 畫面一路解出來的 PTT 原文；被擋之後回到文章）|
+| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）、**攔截**（按 X／%、點底列按鈕、關 pref 回原生、列表不攔）、**Ctrl+Enter 送出**（空的時候不插換行、不漏 byte）、**探路**（按 X 只送一個 X 且輸入框要等答案；被擋時錯誤框裡是 Big5 畫面一路解出來的 PTT 原文；被擋之後回到文章）|
 
 `function_keys.offline.spec.js` 的 `(X%)` 逐鍵可點與 `pref_close_in_prompt.offline.spec.js`
 都**刻意在 prefs 裡關掉 `pushKeyOpensLongPush`**：它們量的是「送出去的 byte」與「原生

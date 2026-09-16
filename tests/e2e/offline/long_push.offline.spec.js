@@ -290,6 +290,50 @@ test.describe('長推文一鍵發送（離線）', () => {
       .toBe(false);
   });
 
+  // 鍵盤送出。unit（long_push_modal.test.jsx）已經守了「Ctrl+Enter 會呼叫
+  // onConfirm」，這裡守只有真瀏覽器看得到的兩件事：
+  //   1. preventDefault 真的擋掉了 textarea 自己的換行（jsdom 不會插那個字元，
+  //      fireEvent 的回傳值只證明「有呼叫 preventDefault」）——送不出去的空白狀態
+  //      下按一次最看得出來：框還開著，內容必須仍是空的。
+  //   2. 這一下沒漏給 PTT：modalShown 擋著 term_view 的 global keydown，線路上
+  //      第一個 byte 必須就是長推文自己送的 X。
+  test('Ctrl+Enter 送出：不多插換行，也不漏 byte 給 PTT', async ({ page }) => {
+    await boot(page);
+    await openContextMenu(page);
+    await collectSent(page);
+    await itemByText(page, await label(page, 'cmenu_longPush')).click();
+    await runPreflight(page);
+
+    const box = page.locator('[name="longPushText"]');
+    await expect(box).toBeVisible();
+    await collectSent(page);
+    await box.press('Control+Enter');
+    // 空的時候按＝什麼都不會發生，但那一下也不能變成一個換行。
+    await expect(box).toBeVisible();
+    await expect(box).toHaveValue('');
+    expect(await sentText(page)).toBe('');
+
+    await box.fill('安安');
+    await collectSent(page);
+    await box.press('Control+Enter');
+
+    await expect(page.getByTestId('longPushProgressStatus')).toBeVisible();
+    await expect.poll(() => sentText(page)).toBe('X');
+
+    // 內容就是打的那兩個字，沒有被多出來的換行切成兩則。
+    await drawLastRow(page, TYPE_MENU);
+    await drawLastRow(page, PROMPT);
+    const seg = await toBig5(page, '安安');
+    await expect.poll(() => sentText(page)).toBe('X1' + seg + '\r');
+
+    await drawLastRow(page, CONFIRM);
+    await drawLastRow(page, ARTICLE_FOOTER);
+    await expect(page.getByTestId('longPushProgressStatus')).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => window.__app.longPush.active))
+      .toBe(false);
+  });
+
   // 送 bytes 給 PTT 的四條使用者入口在送出期間都必須噤聲。鍵盤那條走真按鍵；
   // IME 與貼上沒有可靠的離線觸發方式（IME 的 composition 在 headless 造不出來），
   // 所以直接戳產品自己的漏斗 view.onTextInput / App.onPasteDone——那正是

@@ -305,3 +305,82 @@ describe("探路的事實", () => {
     expect(onConfirm).toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 鍵盤送出：打完一大段話不必把手移到滑鼠。
+//
+// 行為端**不分平台**——Mac 的 ⌘ 與其他平台的 Ctrl 一律都收（同 long_push_gate 的
+// 慣例）；只有按鈕上那行提示文字會依平台變（src/js/platform.js）。
+// ---------------------------------------------------------------------------
+describe("鍵盤送出", () => {
+  // 回傳值 false ＝ 有 preventDefault（Chrome 的 textarea 會為 Ctrl+Enter 插一個
+  // 換行，不擋掉的話送出的內容會多一段）。
+  const pressEnter = (init) =>
+    fireEvent.keyDown(textarea(), { key: "Enter", ...init });
+
+  test("Ctrl+Enter 直接送出，交出去的內容一樣是過濾過的", () => {
+    const { onConfirm } = renderModal();
+    type("好耶🎉");
+    expect(pressEnter({ ctrlKey: true })).toBe(false); // 換行被擋掉
+    expect(onConfirm).toHaveBeenCalledWith({ text: "好耶", type: "push" });
+  });
+
+  test("Mac 的 ⌘+Enter 一樣送得出去", () => {
+    const { onConfirm } = renderModal();
+    type("安安");
+    pressEnter({ metaKey: true });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  test("單獨 Enter 不送出（要留給換行）", () => {
+    const { onConfirm } = renderModal();
+    type("安安");
+    expect(pressEnter()).toBe(true); // 沒有 preventDefault ⇒ 照樣換行
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  test("中文組字中的 Enter 不送出（IME 用它上字）", () => {
+    const { onConfirm } = renderModal();
+    type("安安");
+    expect(pressEnter({ ctrlKey: true, isComposing: true })).toBe(true);
+    expect(pressEnter({ ctrlKey: true, keyCode: 229 })).toBe(true);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  test("空白時按 Ctrl+Enter 什麼都不會發生（同送出鍵停用）", () => {
+    const { onConfirm } = renderModal();
+    pressEnter({ ctrlKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  test("超過 20 則時 Ctrl+Enter 也要先問一次（與按鈕同一條路）", () => {
+    const { onConfirm } = renderModal({ maxBytes: 4 });
+    type("測".repeat(30));
+    pressEnter({ ctrlKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: i18n("longPushModal_confirmAnyway") }),
+    ).toBeTruthy();
+    pressEnter({ ctrlKey: true });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  test("按鈕上看得到快捷鍵提示", () => {
+    renderModal();
+    expect(screen.getByTestId("longPushSubmitHint").textContent).toMatch(
+      /Enter$/,
+    );
+  });
+
+  test("提示不能混進送出鍵的 accessible name（aria-hidden）", () => {
+    renderModal();
+    // 少了 aria-hidden，name 會變成「開始送出 Ctrl+Enter」⇒ 所有用按鈕名稱抓元素
+    // 的測試（含 e2e）一起靜默失效。
+    const button = screen.getByRole("button", {
+      name: i18n("longPushModal_confirm"),
+    });
+    expect(button.getAttribute("aria-keyshortcuts")).toContain("Enter");
+    expect(screen.getByTestId("longPushSubmitHint").closest("[aria-hidden]"))
+      .toBeTruthy();
+  });
+});
