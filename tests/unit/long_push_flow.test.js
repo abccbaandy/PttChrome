@@ -25,6 +25,7 @@ import {
   PINNED_ANCHOR_ROW,
   OTHER_ROW,
 } from "./helpers/long_push_harness";
+import { VK_NORMAL, nextSendState } from "../../src/js/vtkbd_send_state";
 
 beforeAll(() => loadBig5Tables());
 
@@ -507,5 +508,118 @@ describe("取得文章代碼", () => {
     h.settleList([ANCHOR_ROW(1234, true)], 0);
     h.settle(ARTICLE_FOOTER);
     expect(h.restored).toEqual([42]);
+  });
+});
+
+// 長推文送出期間送的每一個 payload 都必須讓 server 的 vtkbd 停在 VK_NORMAL。
+//
+// 這是「化解懸空 ESC 態」那條守門能安全的**前提**：VK_ESC 只可能來自使用者按的
+// 裸 Escape，所以化解永遠只會發生在序列的第一個命令（人在 pager／列表，多出來的
+// KEY_ESC 是 no-op）。一旦某個 payload 以 ESC 結尾，化解就可能落在推文流程中間，
+// 而那裡有兩格不是 no-op：型別選單的 vkey()（KEY_ESC → RECTYPE_DEFAULT＝推）與
+// ◆ 橫幅的 vmsg（任何鍵都消橫幅 ⇒ 原本的空白鍵會落到底下的 pager＝下一頁）。
+// 推導與 pttbbs 出處見 src/js/vtkbd_send_state.js 檔頭。
+describe("送出序列不得把 server 的按鍵解析器留在半途", () => {
+  const allNormal = (sent) =>
+    sent.reduce((s, keys) => nextSendState(s, keys), VK_NORMAL);
+
+  test("完整往返（型別選單版）送完，狀態是 VK_NORMAL", () => {
+    const h = harness();
+    h.session.start({ text: "內容", type: "boo" });
+    runOne(h);
+    expect(h.sent.length).toBeGreaterThan(0);
+    expect(allNormal(h.sent)).toBe(VK_NORMAL);
+  });
+
+  test("每一個 payload 各自送完都回 VK_NORMAL（不只是整串抵銷）", () => {
+    const h = harness();
+    h.session.start({ text: "內容", type: "boo" });
+    runOne(h);
+    for (const keys of h.sent) expect(nextSendState(VK_NORMAL, keys)).toBe(VK_NORMAL);
+  });
+
+  test("走 Q 取 AID ＋ 冷卻 ＋ 重新定位的長路徑也一樣", () => {
+    const h = harness({ localAid: null });
+    h.session.start({ text: "內容", type: "arrow" });
+    h.settle("文章代碼(AID): #" + AID + " 按任意鍵繼續");
+    h.settle(ARTICLE_FOOTER);
+    h.settle(vmsg("本板禁止快速連續推文，請再等 3 秒"));
+    h.settle(ARTICLE_FOOTER);
+    for (const keys of h.sent) expect(nextSendState(VK_NORMAL, keys)).toBe(VK_NORMAL);
+  });
+
+  test("取消的收尾鍵也不留狀態", () => {
+    const h = harness();
+    h.session.start({ text: "內容", type: "push" });
+    h.settle(TYPE_MENU);
+    h.session.cancel();
+    h.settle(PROMPT);
+    h.settle(ARTICLE_FOOTER);
+    for (const keys of h.sent) expect(nextSendState(VK_NORMAL, keys)).toBe(VK_NORMAL);
+  });
+});
+
+// onSent ＝「整段都送出去了」的唯一出口，消費者是草稿清除。
+// 送到一半失敗／取消時草稿必須留著，使用者才有機會把沒送出去的那段救回來
+// （src/js/long_push_draft.js 檔頭）。
+describe("onSent 只在整段成功送完時響一次", () => {
+  const withOnSent = (h) => {
+    const calls = [];
+    h.session.onSent = () => calls.push(1);
+    return calls;
+  };
+
+  test("整段送完呼叫一次", () => {
+    const h = harness();
+    const calls = withOnSent(h);
+    h.session.start({ text: "內容", type: "push" });
+    runOne(h);
+    expect(calls.length).toBe(1);
+    expect(h.session.active).toBe(false);
+  });
+
+  test("多則也只在全部送完之後響一次", () => {
+    const h = harness();
+    const calls = withOnSent(h);
+    // 240 bytes；單則上限由畫面校正（prompt 帶帳號 ⇒ 最多 61）⇒ 至少 4 則。
+    h.session.start({ text: "測".repeat(120), type: "push" });
+    runOne(h);
+    expect(calls.length).toBe(0); // 還有沒送完的
+    let guard = 0;
+    while (h.session.active && guard++ < 20) {
+      h.settle(PROMPT);
+      h.settle(CONFIRM);
+      h.settle(ARTICLE_FOOTER);
+    }
+    expect(h.session.active).toBe(false);
+    expect(calls.length).toBe(1);
+  });
+
+  test("取消不呼叫", () => {
+    const h = harness();
+    const calls = withOnSent(h);
+    h.session.start({ text: "內容", type: "push" });
+    h.settle(TYPE_MENU);
+    h.session.cancel();
+    h.settle(PROMPT);
+    h.settle(ARTICLE_FOOTER);
+    expect(calls).toEqual([]);
+  });
+
+  test("送到一半被 PTT 擋下來不呼叫（草稿要留著）", () => {
+    const h = harness();
+    const calls = withOnSent(h);
+    h.session.start({ text: "內容", type: "push" });
+    h.settle(vmsg("抱歉, 禁止推薦"));
+    expect(h.session.active).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  test("queue 被別人 flush 掉也不呼叫", () => {
+    const h = harness();
+    const calls = withOnSent(h);
+    h.session.start({ text: "內容", type: "push" });
+    h.queue.flush();
+    expect(calls).toEqual([]);
   });
 });

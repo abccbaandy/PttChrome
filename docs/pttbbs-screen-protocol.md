@@ -120,16 +120,53 @@ expect 餘掉）。本專案的實作見 `term_buf.js#beginSyncUpdate` 與 `docs
 | `CSI` 態收到新 ESC 會 restart 成 `ESC` 態（較晚加入的分支，跨版本可靠度低於上面幾條） | `vtkbd.c:230-235` |
 | `SS3`（`ESC O x`）不論命中與否都只吃一個位元組就回 `NORMAL` | `vtkbd.c:162-228`＋函式尾 `vtkbd.c:405-416` |
 
-**對本 client 的意義**：任何來源送出的裸 ESC（`term_keyboard.KeyMap['Escape']`、
-底列功能鍵 `footer_keys.js` 的 `Esc`、浮層關閉時漏出去的那一下）都會埋下地雷，
-症狀是**下一個方向鍵跳到別篇文章**，而且中間可以隔很久（實錄隔了 1.4 秒），
-從畫面上完全看不出因果。修法＝送出端鏡像這個狀態機，停在 `ESC` 態時對
-「以 ESC 開頭且第二個位元組是 `[`／`O`」的送出補一個 ESC 化解
-（`src/js/vtkbd_send_state.js`，守護 `tests/unit/vtkbd_send_state.test.js`、
-`tests/unit/telnet_esc_guard.test.js`）。
+### 停在 `ESC` 態時，多出來的那個 `KEY_ESC` 在各畫面的下場（2026-09-17 CONFIRMED）
 
-證據樣本：`ptt-debug-20260916-011413.json#t=5494`（裸 ESC）、`#t=6922`（`ESC [ D`）、
-`#t=6933`（畫面換成同主題上一篇）。
+化解懸空 ESC 的代價就是這一格。**四格只有最後一格有副作用**：
+
+| 畫面 | 出處 | 反應 |
+|---|---|---|
+| pager／文章列表／選單／編輯器 | `edit.c` 是唯一消費者，兩處 `switch (KEY_ESC_arg)` 無 `default` | no-op |
+| 推文型別選單 `vkey()` | `bbs.c:3001-3010` `if (!isascii(type) \|\| !isdigit(type)) type = RECTYPE_DEFAULT;` | 當成「沒選」＝**推** |
+| `vgetstring`（推文內容列／`確定[y/N]`） | `vtuikit.c:1374` `if (c < ' ' \|\| c >= 0xFF) { bell(); continue; }` | 不吃字、不結束輸入 |
+| `vmsg` 的 ◆ 橫幅 | `vtuikit.c:447` `do { i = vkey(); } while (i == 0);` | **任何鍵都消橫幅** |
+
+推論兩條，兩條都是長推文的承重假設：
+1. **不化解**時，型別選單那一步送的 `'2'` 會被吃成 esc_arg ⇒ 型別靜默變「推」而畫面
+   照樣推進到內容輸入列 ⇒ 整段用錯的型別送出，使用者完全看不出來。
+2. **化解**時若剛好落在 ◆ 橫幅那一格，ESC 會先消掉橫幅、原本要送的空白鍵落到底下的
+   pager＝下一頁。所以「序列中間不可以處在 `ESC` 態」必須是承重不變量，不是註解
+   （守護 `tests/unit/long_push_flow.test.js`：每一步送完 `nextSendState` 都要回 `NORMAL`）。
+
+**對本 client 的意義**：任何來源送出的裸 ESC（`term_keyboard.KeyMap['Escape']`、
+底列功能鍵 `footer_keys.js` 的 `Esc`、**浮層關閉時漏出去的那一下**）都會埋下地雷。
+兩種症狀：
+
+- **下一個方向鍵跳到別篇文章**（2026-09-16），中間可以隔很久（實錄隔了 1.4 秒），
+  從畫面上完全看不出因果。證據樣本 `ptt-debug-20260916-011413.json#t=5494`（裸 ESC）、
+  `#t=6922`（`ESC [ D`）、`#t=6933`（畫面換成同主題上一篇）。
+- **下一個程式化按鍵被整個吃掉、PTT 零反應**（2026-09-17）：長推文探路的 `Q` 送出後
+  700ms 完全沒有回應（該連線 RTT 只有 12ms），CommandQueue 因此送 `` 探針、判成
+  `miss` ⇒ 使用者看到「讀不到文章代碼（miss）」。證據樣本
+  `ptt-debug-20260917-012944.json#t=529`（送 `Q`）、`#t=1229`（探針）、`#t=1241`
+  （回來的是完整文章畫面，沒有 `Q` 的資訊框）、`#t=1326`（`queue.miss`）。
+
+**浮層關閉那一下擋不住**（2026-09-17 在 offline e2e 實測，別再試「有彈窗就不送鍵」）：
+Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，等 term_view
+那條跑到時 `modalShown` 已經翻成 `false`（window capture phase 的第一個 listener 量到的
+就是 false）⇒ 每一次用 Esc 關掉浮層都會有一個裸 ESC 上線。懸空的 ESC 態是常態不是例外。
+
+修法＝送出端鏡像這個狀態機（`src/js/vtkbd_send_state.js`），而且**界線是送出入口不是
+位元組內容**：`conn.send`／`convSend`（CommandQueue／`setBBSCmd`／anti-idle／`sendData`
+等機器路徑）停在 `ESC` 態就一律補一個 ESC 化解；`conn.sendUserKey`／`convSendUserKey`
+（只有 `term_view._send`／`_convSend` 會叫）才保留 ESC 組合鍵、維持原本的窄條件。
+守護 `tests/unit/vtkbd_send_state.test.js`、`telnet_esc_guard.test.js`、
+`user_key_send_wiring.test.js`（靜態掃描入口）。
+
+**Anti-idle 是守門攔不掉的那一個**：`ANTI_IDLE_STR = ''` 從 `NORMAL` 送出，
+第二個 ESC 被吃成 esc_arg ⇒ 實際產生**一個 `KEY_ESC`**。落在型別選單那一格就是上面
+推論 1 的災情，而送出期間使用者盯著遮罩不動、`idleTime` 一路累積，正好最容易觸發 ⇒
+改成序列化操作進行中就跳過（`serialized_op_gate.js#shouldSkipAntiIdle`）。
 
 ## 2. 時序不變量 → client 三推論
 

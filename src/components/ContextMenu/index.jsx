@@ -37,6 +37,7 @@ import {
 import { isNativeMenuTarget } from "../../js/preview_targets";
 import { pushMaxBytes } from "../../js/long_push";
 import { longPushAvailable } from "../../js/long_push_gate";
+import { clearDraft } from "../../js/long_push_draft";
 import { serializedOpHint } from "../../js/serialized_op_gate";
 
 function noop() {}
@@ -226,10 +227,14 @@ export const ContextMenu = ({ pttchrome }) => {
     // 送出階段的終局（失敗／取消）。成功不走這裡（session 自己閃一則 toast）。
     session.onResult = (result) =>
       update({ longPushProgress: null, longPushError: result });
+    // 整段成功送完＝草稿唯一該清的時機。送到一半失敗／取消都刻意留著，使用者才
+    // 有機會把沒送出去的那段救回來（long_push_draft.js 檔頭）。
+    session.onSent = () => clearDraft();
     return () => {
       session.onChange = null;
       session.onPreflight = null;
       session.onResult = null;
+      session.onSent = null;
     };
   }, [pttchrome, update]);
 

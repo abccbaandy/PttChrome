@@ -537,9 +537,16 @@ test.describe('長推文一鍵發送（離線）', () => {
       // 使用者那顆按鈕的 byte 沒有被原樣轉送：線路上只有探路那一個 X（後面那些
       // 是收尾的 Ctrl-C 與回文章的 ⏎）。% 那顆尤其要驗——漏攔的話會變成「點這顆
       // 是長推文、點旁邊那顆是原生」。
+      //
+      // 第二輪的 X 前面會多一個 ESC，那是**對的**：上一輪用 Escape 關輸入框，那一下
+      // 會漏到終端機（Mantine 的 Escape handler 先跑，modalShown 那時已經翻成 false）
+      // ⇒ server 的 vtkbd 停在 VKSTATE_ESC。機器鍵一律先補一個 ESC 化解才到得了
+      // pmore；沒有它，這個 X 會被吃成 esc_arg、PTT 零反應 ——「讀不到文章代碼（miss）」
+      // 就是這樣來的（回歸守在本檔最後一支與 tests/unit/vtkbd_send_state.test.js）。
       const sent = await page.evaluate(() => window.__sent);
-      expect(sent[0]).toBe('X');
-      expect(sent.filter((b) => b === 'X')).toHaveLength(1);
+      expect(sent[0]).toMatch(/^?X$/);
+      expect(sent.filter((b) => b.indexOf('X') >= 0)).toHaveLength(1);
+      expect(sent.join('')).not.toContain('%');
       // 收掉輸入框，下一輪重來。關框＝這次不推了 ⇒ 探路成果要丟掉，不然下一次
       // start() 會拿舊錨點去比對新畫面。
       await page.keyboard.press('Escape');
@@ -586,6 +593,45 @@ test.describe('長推文一鍵發送（離線）', () => {
     await expect(page.locator('[name="longPushText"]')).toHaveCount(0);
     await expect(page.getByTestId('longPushProgressStatus')).toHaveCount(0);
     expect(await page.evaluate(() => window.__app.longPush.busy)).toBe(false);
+  });
+
+  // 「讀不到文章代碼（miss）」的根因回歸（錄製檔 ptt-debug-20260917-012944.json）。
+  //
+  // 使用者關掉長推文輸入框後順手多按一下 Esc：那時畫面上已經沒有任何彈窗，
+  // modalShown 是 false ⇒ 那一下是**合法的終端機輸入**，源頭擋不住（想靠「有彈窗
+  // 就不送鍵」修的話會發現關框那一下本來就擋得住，多按的那一下沒得擋）。
+  // 於是 server 的 vtkbd 停在 VKSTATE_ESC，下一次按 X 時 CommandQueue 送出去的第一個
+  // byte 會被吃成 esc_arg ⇒ 畫面零反應 ⇒ 700ms 後送  探針 ⇒ 判成 miss。
+  //
+  // 修法是把守門的預設反轉（機器送出一律化解，ESC 組合鍵的保護只留給真鍵盤）。
+  // 純函式兩層都有 unit（vtkbd_send_state / telnet_esc_guard / user_key_send_wiring），
+  // 這裡守的是 unit 碰不到的那條：**真 DOM keydown → term_view → telnet._vkState →
+  // CommandQueue → WS**。
+  test('關輸入框後漏出去的 Esc 不會吃掉下一次按 X', async ({ page }) => {
+    await boot(page);
+    await collectSent(page);
+
+    // 第一輪：按 X 探路 → 輸入框開 → 取消關掉。
+    await ptt.sendKey(page, 'X');
+    await runPreflight(page);
+    await page
+      .locator('form')
+      .getByRole('button', { name: await label(page, 'longPushModal_cancel') })
+      .click();
+    await expect(page.locator('[name="longPushText"]')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.__app.modalShown)).toBe(false);
+
+    await collectSent(page);
+    // 順手多按的那一下 Esc。框已經關了 ⇒ 它本來就該送到 PTT。
+    await ptt.sendKey(page, 'Escape');
+    await expect.poll(() => sentText(page)).toBe('');
+
+    // 再按一次 X：探路的第一個機器 byte 前面要補一個 ESC 化解，X 才到得了 pmore。
+    await ptt.sendKey(page, 'X');
+    await expect.poll(() => sentText(page)).toBe('' + 'X');
+    // 而且探路真的走完：miss 的那條路會開錯誤框，這裡要開的是輸入框。
+    await runPreflight(page);
+    await expect(page.getByTestId('longPushErrorMessage')).toHaveCount(0);
   });
 
   test('游標還在原篇時不多送任何定位鍵', async ({ page }) => {

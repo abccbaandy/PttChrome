@@ -57,41 +57,102 @@ describe("nextSendState：送完之後 server 停在哪", () => {
   });
 });
 
-describe("guardEscSequence：只在真的會壞掉時補一個 ESC", () => {
+describe("guardEscSequence（userKey：真鍵盤／IME 才有的 ESC 組合鍵保護）", () => {
   it("懸空 ESC ＋ 方向鍵 → 先補一個 ESC 化解", () => {
-    const r = guardEscSequence(VK_ESC, "\x1b[D");
+    const r = guardEscSequence(VK_ESC, "\x1b[D", { userKey: true });
     expect(r.data).toBe("\x1b\x1b[D");
     expect(r.state).toBe(VK_NORMAL);
   });
 
   it("懸空 ESC ＋ PageDown 同理", () => {
-    expect(guardEscSequence(VK_ESC, "\x1b[6~").data).toBe("\x1b\x1b[6~");
+    expect(guardEscSequence(VK_ESC, "\x1b[6~", { userKey: true }).data).toBe(
+      "\x1b\x1b[6~",
+    );
   });
 
   it("懸空 ESC ＋ 可列印字元 ＝ 使用者的 ESC 組合鍵，一個位元組都不加", () => {
-    const r = guardEscSequence(VK_ESC, "L");
+    const r = guardEscSequence(VK_ESC, "L", { userKey: true });
     expect(r.data).toBe("L");
     expect(r.state).toBe(VK_NORMAL);
   });
 
   it("NORMAL 狀態下的方向鍵原封不動（不可亂加）", () => {
-    const r = guardEscSequence(VK_NORMAL, "\x1b[D");
+    const r = guardEscSequence(VK_NORMAL, "\x1b[D", { userKey: true });
     expect(r.data).toBe("\x1b[D");
     expect(r.state).toBe(VK_NORMAL);
   });
 
   it("連按兩下 Esc：第二下化解第一下，狀態不累積", () => {
-    const first = guardEscSequence(VK_NORMAL, "\x1b");
+    const first = guardEscSequence(VK_NORMAL, "\x1b", { userKey: true });
     expect(first.data).toBe("\x1b");
     expect(first.state).toBe(VK_ESC);
-    const second = guardEscSequence(first.state, "\x1b");
+    const second = guardEscSequence(first.state, "\x1b", { userKey: true });
     // 第二個 ESC 本來就會被第一個吃成 esc_arg ⇒ 不必也不該再補。
     expect(second.data).toBe("\x1b");
     expect(second.state).toBe(VK_NORMAL);
   });
 
   it("CSI 半途不補（我們從不把一個序列拆成兩次送）", () => {
+    expect(guardEscSequence(VK_CSI, "\x1b[D", { userKey: true }).data).toBe(
+      "\x1b[D",
+    );
+  });
+
+  it("空字串不炸", () => {
+    const r = guardEscSequence(VK_ESC, "", { userKey: true });
+    expect(r.data).toBe("");
+    expect(r.state).toBe(VK_ESC);
+  });
+});
+
+// 預設模式＝機器送出（CommandQueue／setBBSCmd／anti-idle／sendData）。
+// 那些位元組永遠不是使用者的 ESC 組合鍵的第二個位元組（組合鍵的 Esc 走真鍵盤、
+// 不經過這些路徑），所以懸空的 ESC 態一律化解。
+//
+// 守的症狀（錄製檔 ptt-debug-20260917-012944.json#t=529）：使用者關掉長推文輸入框
+// 後多按一下 Esc ⇒ server 停在 VKSTATE_ESC ⇒ 下一次按 X 探路送出的 `Q` 被吃成
+// esc_arg、回一個在 pager 沒有消費者的 KEY_ESC ⇒ **畫面不動、零輸出** ⇒ 700ms 後
+// CommandQueue 送 \f 探針 ⇒ 判成 miss ⇒「讀不到文章代碼（miss）」。
+describe("guardEscSequence（預設＝機器送出，一律化解懸空的 ESC 態）", () => {
+  it("懸空 ESC ＋ Q（探路取 AID）→ 補一個 ESC，Q 才到得了 pmore", () => {
+    const r = guardEscSequence(VK_ESC, "Q");
+    expect(r.data).toBe("\x1bQ");
+    expect(r.state).toBe(VK_NORMAL);
+  });
+
+  it("懸空 ESC ＋ X／型別鍵／`[` 這種可列印機器鍵都要化解", () => {
+    for (const keys of ["X", "1", "[", "]", "\r", " ", "\x03", "\f"])
+      expect(guardEscSequence(VK_ESC, keys).data).toBe("\x1b" + keys);
+  });
+
+  it("懸空 ESC ＋ 跳脫序列：與 userKey 模式同結果，不會補兩次", () => {
+    for (const seq of ["\x1b[D", "\x1b[6~", "\x1bOA"])
+      expect(guardEscSequence(VK_ESC, seq).data).toBe(
+        guardEscSequence(VK_ESC, seq, { userKey: true }).data,
+      );
+  });
+
+  it("NORMAL 狀態下一個位元組都不加", () => {
+    for (const keys of ["Q", "\x1b[D", "\x1b\x1b"]) {
+      const r = guardEscSequence(VK_NORMAL, keys);
+      expect(r.data).toBe(keys);
+    }
+  });
+
+  it("單獨一個 ESC 不補：它本來就會被吃成 esc_arg 自行化解，補了反而留下新的懸空態", () => {
+    const r = guardEscSequence(VK_ESC, "\x1b");
+    expect(r.data).toBe("\x1b");
+    expect(r.state).toBe(VK_NORMAL);
+  });
+
+  it("anti-idle 的 ESC ESC 補完之後狀態是乾淨的", () => {
+    const r = guardEscSequence(VK_ESC, "\x1b\x1b");
+    expect(r.state).toBe(VK_NORMAL);
+  });
+
+  it("CSI 半途不補（同 userKey）", () => {
     expect(guardEscSequence(VK_CSI, "\x1b[D").data).toBe("\x1b[D");
+    expect(guardEscSequence(VK_SS3, "A").data).toBe("A");
   });
 
   it("空字串不炸", () => {

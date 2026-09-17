@@ -19,12 +19,13 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 |---|---|
 | `src/js/long_push.js` | 送出端純邏輯：`stripNonBig5` / `big5ByteLength` / `pushMaxBytes` / `splitPushSpans`(+`splitPushSegments`) / `findUrlSpans` |
 | `src/js/push_screen.js` | **共用**的畫面判讀：`classifyPushScreen` / `detectIpLogged` / `parseVmsgText` / `parseCooldownSeconds`。另一個消費者是圖片上傳（`image_upload.js#decideInsertMode`）⇒ 改這裡要同時想兩邊，也**不准**任一邊自己另寫 regex（分歧實錄見 `docs/image-upload.md`） |
+| `src/js/long_push_draft.js` | 草稿暫存（localStorage，**自帶 key、不進 `pttchrome.pref.v1`** ⇒ 推文內容不會被雲端同步／設定匯出帶走）：`readDraft` / `writeDraft` / `clearDraft`。單一份、不綁文章 |
 | `src/js/long_push_anchor.js` | **游標錨定**純邏輯：`articleAnchor` / `captureCursorAnchor` / `checkCursorAnchor` / `findAnchorRowNum` / `subjectMatches`。檔頭有完整的 pttbbs 推導 |
 | `src/js/long_push_session.js` | 狀態機（形狀比照 `aid_navigation.js`）：**三階段** `preflight` → `armed` → `sending`，每一步一個 `CommandQueue` command。`active`＝線路上有命令在飛、`busy`＝這個功能還握著畫面（含 armed 與冷卻倒數） |
 | `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認 ＋ 圖片上傳，見下節） |
 | `src/components/ContextMenu/LongPushProgressModal.jsx` | 送出中／探路中的全版遮罩（真 modal，唯一出口是取消） |
 | `src/components/ContextMenu/LongPushErrorModal.jsx` | 推不出去時的錯誤框：**PTT 原文照錄** ＋ 來源標示 ＋ 已送出則數 ＋ 剩餘內容（唯讀 Textarea，按了才複製） |
-| `src/components/ContextMenu/index.jsx` | gating、handler、`modalOpen` 推導、`longPush.onChange` 掛接 |
+| `src/components/ContextMenu/index.jsx` | gating、handler、`modalOpen` 推導、`longPush.onChange`／`onPreflight`／`onResult`／`onSent` 掛接 |
 | `src/js/pttchrome.jsx` | `new LongPushSession(...)`（與 aidNavigation 共用同一條 CommandQueue）＋ `onFunctionKey`／`onPasteDone` 守門 |
 | `src/js/term_view.js` | `onKeyDown`／`onTextInput` 守門 |
 | `src/js/serialized_op_gate.js` | `serializedOpHint(core)`＝**四條送字入口共用**的述詞（`aidNavigation.active` / `longPush.active` → 提示字串，否則 null）。呼叫端負責吞輸入＋`flashListHint`。守護 `tests/unit/serialized_op_gate.test.js` |
@@ -53,6 +54,7 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
   → 每則：[守門] → X → [型別鍵] → 內容+RET → y+RET （全部走 commandQueue.enqueue）
   → onChange(progress) → ContextMenu state → LongPushProgressModal
   → 失敗／取消 → onResult → LongPushErrorModal
+  → **整段送完** → onSent → clearDraft()（唯一清草稿的時機）
 ```
 
 `start()` 的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: prefs.autoLoginUser })`，
@@ -304,6 +306,23 @@ unit test 的冷載入成本）；錯誤框的外框文案才走 i18n。
     240 秒的空窗），自動翻頁會插進線路。
 13. **剩餘內容不得自動覆寫剪貼簿**。交給 `LongPushErrorModal` 的唯讀 Textarea，
     使用者按了「複製剩餘內容」才走 `App.doCopy`。
+14. **草稿只有整段成功送完才清**（`_finish({kind:'done'})` → `onSent`）。送到一半失敗、
+    被 PTT 擋下來、使用者取消，草稿一律留著——那是他打的字，我們沒有替他丟掉的權力。
+    已知取捨（2026-09-17 使用者拍板）：失敗時草稿留的是**整段原文**，重開直接送會把
+    已送出的前幾則再推一次；錯誤框另有「剩餘內容」可以複製。**不要自作主張把草稿
+    改寫成 `rest`**。
+15. **型別每次開框都重設為「推」**。以前刻意不重置，於是上次選的噓會沿用到下一次開框；
+    按 X 的預期一律是推，而噓錯了收不回來（PTT 沒有撤回 API）。禁噓板那條 effect
+    （`booAllowed` false 且 type==='boo' → 推）照舊並存。
+16. **序列進行中不可以有第三者往線路送 byte**，`serializedOpHint` 之外還有一個容易漏的：
+    **anti-idle**。`''` 在 server 端會實際產生一個 `KEY_ESC`，落在型別選單那一格
+    就是 `vkey()` 讀到非數字 ⇒ 型別靜默變「推」、畫面照樣推進 ⇒ 整段用錯的型別送出。
+    守門在 `serialized_op_gate.js#shouldSkipAntiIdle`（`App.antiIdle` 呼叫）。
+17. **序列的每一步送完都要讓 server 的 vtkbd 回到 `VK_NORMAL`**。這是「機器送出一律
+    化解懸空 ESC 態」那條守門能安全的前提：化解只會發生在序列的**第一個**命令（人在
+    pager／列表，多出來的 `KEY_ESC` 是 no-op），不會落在型別選單或 ◆ 橫幅那兩格。
+    守護 `tests/unit/long_push_flow.test.js`，各畫面的反應表見
+    `docs/pttbbs-screen-protocol.md` §1.2。
 
 ## 圖片上傳（`target` 插入模式）
 
@@ -358,10 +377,31 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 剪貼簿**（2026-09 使用者定案：那會無聲蓋掉他手上的東西），改由 `LongPushErrorModal`
 顯示在唯讀 Textarea，要不要複製由他按。
 
-**關掉輸入框那一下 Esc 若漏到終端機**（或使用者順手多按一下），症狀不是當下出事，
-而是**下一個方向鍵跳到同主題的上一篇**——PTT 的 vtkbd 停在 ESC 態時會把方向鍵的
-開頭 ESC 吃成 esc_arg，`[` 與 `D` 就變成字面鍵。送出端已有守門（`vtkbd_send_state.js`），
-推導與不變量見 `docs/pttbbs-screen-protocol.md` §1.2。
+### 關框那一下的 Esc（兩種症狀，同一個根因）
+
+**用 Esc 關掉輸入框，那一下一定會漏到終端機。** 2026-09-17 在 offline e2e 實測：
+Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，等 term_view
+那條跑到時 `modalShown` **已經翻成 false** ⇒ `shouldAcceptInput()` 放行。所以「有彈窗
+就不送鍵」修不了這個（而且框關掉之後順手多按的那一下，本來就是合法的終端機輸入）。
+⇒ server 的 vtkbd 停在 `VKSTATE_ESC` 是**常態不是例外**。
+
+兩種症狀：
+
+1. **下一個方向鍵跳到同主題的上一篇**（2026-09-16）：方向鍵開頭的 ESC 被吃成 esc_arg，
+   `[` 與 `D` 變成字面鍵，而 `[` ＝ `RELATE_PREV`。
+2. **下一次按 X 出現「讀不到文章代碼（miss）」**（2026-09-17，本節的主角）：探路送出的
+   第一個機器 byte（`Q` 或 `X`）被吃成 esc_arg、回一個在 pager 沒有消費者的 `KEY_ESC`
+   ⇒ **畫面不動、零輸出** ⇒ CommandQueue 700ms soft timeout 送 `` 探針 ⇒ 探針幀是完整
+   文章畫面、`expect` 仍找不到 AID ⇒ 判成 `miss`。這也是「取消長推文之後立刻再按 X
+   特別容易觸發」的原因。證據樣本 `ptt-debug-20260917-012944.json#t=529/1229/1241/1326`。
+
+修法是把送出端守門的**預設反轉**（`vtkbd_send_state.js`）：`conn.send`／`convSend`
+（機器路徑）停在 `ESC` 態就一律補一個 ESC 化解；ESC 組合鍵的保護縮到
+`conn.sendUserKey`／`convSendUserKey`，而那兩個**只有 `term_view._send`／`_convSend`
+會叫**。界線是**送出入口不是位元組內容** ⇒ 日後新增的送出路徑預設就是安全的那一邊。
+推導、各畫面對多出來的 `KEY_ESC` 的反應表、與不變量 17 的關係見
+`docs/pttbbs-screen-protocol.md` §1.2；入口靜態守護
+`tests/unit/user_key_send_wiring.test.js`。
 
 ### 鍵盤送出（Ctrl+Enter）
 
@@ -397,20 +437,22 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 
 | 層 | 檔案 | 守什麼 |
 |---|---|---|
+| unit | `tests/unit/long_push_draft.test.js` | 草稿：round-trip、localStorage 被關掉／存到壞值一律降級不炸、**key 不等於 `pttchrome.pref.v1`**、重複寫同值只寫一次 |
+| unit | `tests/unit/vtkbd_send_state.test.js` / `telnet_esc_guard.test.js` / `user_key_send_wiring.test.js` | 機器送出一律化解懸空 ESC 態、真鍵盤仍保留 ESC 組合鍵、**userKey 入口只有 `term_view` 一個**（靜態掃描） |
 | unit | `tests/unit/long_push_split.test.js` | 濾字、byte 長度、上限公式、分段（含全形餘裕、標點斷點、**URL 保護與硬切**） |
 | unit | `tests/unit/push_screen.test.js` | §11.3 每個 PTT 字串一個 case（共用分類器，長推文與圖片上傳都吃它） |
 | unit | `tests/unit/long_push_anchor.test.js` | 身分解析／截斷容忍／兩代游標／置底・刪除列 → 一律不得回 `ok` |
-| unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正、**游標守門與重新定位**（harness 與畫面常數抽在 `tests/unit/helpers/long_push_harness.js`，與下一列共用） |
+| unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正、**游標守門與重新定位**、**每一步送完 vtkbd 都回 `VK_NORMAL`**（不變量 17）、**`onSent` 只在整段成功送完響一次**（harness 與畫面常數抽在 `tests/unit/helpers/long_push_harness.js`，與下一列共用） |
 | unit | `tests/unit/long_push_preflight.test.js` | **探路**：只送一個 X、各 kind 的收尾鍵序、**PTT 原文逐字照錄**（含沒看過的新訊息）、冷卻不算不能推且不倒數、逾時一個收尾鍵都不送、ORDER INVARIANT（scrollTop 歸零前採樣）、`start()` 不重採錨點也不重解 AID |
 | unit | `tests/unit/long_push_error_modal.test.jsx` | 錯誤框：原文照錄、來源標示兩態、已送出則數、剩餘內容唯讀可讀回、**按了才複製** |
-| unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告**、**鍵盤送出**（ctrl 與 meta 都收、單獨 Enter 不送、組字中不送、提示不進 accessible name） |
+| unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告**、**型別每次開框回到推**、**草稿還原／還原提示／清除／開框不覆寫**、**鍵盤送出**（ctrl 與 meta 都收、單獨 Enter 不送、組字中不送、提示不進 accessible name） |
 | unit | `tests/unit/platform_label.test.js` | 快捷鍵提示的平台判斷（userAgentData 優先、UA 退路、拿不到 navigator 不 throw）|
 | unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值（含攔截開關的從屬關係與 disabled） |
 | unit | `tests/unit/long_push_gate.test.js` | 攔截判準：`x` 不是推文鍵、`shiftKey` 仍要攔、prompt 幀不攔、列表不攔、開關從屬 |
 | unit | `tests/unit/push_key_intercept.test.js` | 三條入口各自的分派：不落到 `_keyboard`／`_convSend`／`view._send`、不提前進 functionMode、**沒開成就不吞** |
 | unit | `tests/unit/long_push_open_bridge.test.jsx` | `App.openLongPushModal` 注入／回 true／卸載還原 noop、**沒開過右鍵選單也算對 maxBytes** |
 | e2e | `tests/e2e/offline/long_push_image_upload.offline.spec.js` | 輸入框開著時拖圖 → 網址進 Textarea、**線路上一個 byte 都沒送**、點「開啟上傳紀錄」modal 不關 |
-| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）、**攔截**（按 X／%、點底列按鈕、關 pref 回原生、列表不攔）、**Ctrl+Enter 送出**（空的時候不插換行、不漏 byte）、**探路**（按 X 只送一個 X 且輸入框要等答案；被擋時錯誤框裡是 Big5 畫面一路解出來的 PTT 原文；被擋之後回到文章）|
+| e2e | `tests/e2e/offline/long_push.offline.spec.js` | 整條鏈（React → session → queue → WS）、遮罩擋鍵盤、取消、**真 `term_buf` → `list_session._collectFacts` → 守門**（游標飄掉時送 `#AID` 而不是 `X`）、**攔截**（按 X／%、點底列按鈕、關 pref 回原生、列表不攔）、**Ctrl+Enter 送出**（空的時候不插換行、不漏 byte）、**探路**（按 X 只送一個 X 且輸入框要等答案；被擋時錯誤框裡是 Big5 畫面一路解出來的 PTT 原文；被擋之後回到文章）、**關輸入框後漏出去的 Esc 不會吃掉下一次按 X**（真 DOM keydown → `term_view` → `telnet._vkState` → CommandQueue → WS 是唯一交會點，unit 任一層都測不到）|
 
 `function_keys.offline.spec.js` 的 `(X%)` 逐鍵可點與 `pref_close_in_prompt.offline.spec.js`
 都**刻意在 prefs 裡關掉 `pushKeyOpensLongPush`**：它們量的是「送出去的 byte」與「原生

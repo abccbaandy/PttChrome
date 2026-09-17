@@ -18,6 +18,11 @@ import { loadBig5Tables } from "./helpers/load_big5_tables";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 import { pushMaxBytes } from "../../src/js/long_push";
+import {
+  readDraft,
+  writeDraft,
+  resetDraftCacheForTests,
+} from "../../src/js/long_push_draft";
 
 vi.mock("../../src/js/pref_sync", () => ({
   savePrefs: vi.fn(),
@@ -98,7 +103,10 @@ beforeAll(() => {
   loadBig5Tables(); // 輸入框算則數要 u2b
   setupI18n();
 });
-beforeEach(() => window.localStorage.clear());
+beforeEach(() => {
+  window.localStorage.clear();
+  resetDraftCacheForTests();
+});
 
 // 探路回報「可以推」。真實路徑上這是 LongPushSession._preflightDone 打進來的。
 const answerPreflight = (pttchrome, result) =>
@@ -192,5 +200,29 @@ describe("pttchrome.openLongPushModal 橋接", () => {
     const { unmount } = mount(pttchrome);
     unmount();
     expect(pttchrome.openLongPushModal()).toBeFalsy();
+  });
+});
+
+// onSent 與既有的 onChange／onPreflight／onResult 是同一組：掛載時注入、卸載時歸
+// null。它的消費者是草稿清除，漏掉 cleanup 就是「元件早就卸了，session 還在打
+// 一個指向舊 closure 的 callback」。
+describe("longPush.onSent 的掛接", () => {
+  test("掛載後是函式，呼叫會把草稿清掉", () => {
+    const pttchrome = makePttchrome();
+    writeDraft("送完就該清掉的內容");
+    mount(pttchrome);
+    expect(typeof pttchrome.longPush.onSent).toBe("function");
+    act(() => pttchrome.longPush.onSent());
+    expect(readDraft()).toBe("");
+  });
+
+  test("卸載後歸 null（與 onChange／onPreflight／onResult 同組）", () => {
+    const pttchrome = makePttchrome();
+    const { unmount } = mount(pttchrome);
+    unmount();
+    expect(pttchrome.longPush.onSent).toBe(null);
+    expect(pttchrome.longPush.onChange).toBe(null);
+    expect(pttchrome.longPush.onPreflight).toBe(null);
+    expect(pttchrome.longPush.onResult).toBe(null);
   });
 });

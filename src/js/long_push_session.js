@@ -109,6 +109,10 @@ export function LongPushSession(core, view, termBuf, queue) {
   this.onPreflight = null;
   // 送出階段的終局（失敗／取消）→ 錯誤框。成功仍走 _hint 的 toast。
   this.onResult = null;
+  // **整段成功送完**才會呼叫（失敗／取消一律不叫）。目前唯一的消費者是草稿清除：
+  // 送到一半失敗時草稿要留著，使用者才有機會把沒送出去的那段救回來
+  // （long_push_draft.js 檔頭）。
+  this.onSent = null;
   this._timer = null;
   this._reset();
 }
@@ -225,6 +229,8 @@ LongPushSession.prototype = {
     this._reset();
     if (o.kind === 'done') {
       if (o.message) this._hint(o.message);
+      // 唯一的「整段都送出去了」出口 ⇒ 草稿到這裡才可以清（見建構式的 onSent）。
+      if (this.onSent) this.onSent();
       return;
     }
     if (this.onResult)

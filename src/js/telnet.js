@@ -4,6 +4,9 @@ import { Event } from './event';
 import { u2b, ansiHalfColorConv } from './string_util';
 import { VK_NORMAL, guardEscSequence } from './vtkbd_send_state';
 
+// 真鍵盤／IME 路徑的守門模式（見 sendUserKey）。模組層常數，省得每次送鍵配一個物件。
+const USER_KEY = { userKey: true };
+
 // Telnet commands
 const SE = '\xf0';
 const NOP = '\xf1';
@@ -53,6 +56,8 @@ export function TelnetConnection(socket) {
   // server 端 vtkbd 的按鍵解析狀態（我們送了什麼就推算成什麼）。每條連線各自一份，
   // 重連自然重置。用途見 vtkbd_send_state.js 檔頭。
   this._vkState = VK_NORMAL;
+  // 上一次送出**之前**的狀態，只給 debug recorder 讀（見 _sendEscaped）。
+  this._vkStatePrev = VK_NORMAL;
 
   this.termType = 'VT100';
 }
@@ -180,8 +185,21 @@ TelnetConnection.prototype._dispatchData = function(data) {
   }));
 };
 
+// 機器送出（CommandQueue／App.setBBSCmd／anti-idle／App.sendData）：懸空的 ESC 態
+// 一律化解。ESC 組合鍵的保護只留給 sendUserKey/convSendUserKey ——
+// 界線是**送出入口**，不是位元組內容，完整推導見 vtkbd_send_state.js 檔頭。
 TelnetConnection.prototype.send = function(str) {
   this._sendEscaped(str);
+};
+
+// 真鍵盤／IME 專用（**只有 term_view._send / _convSend 可以叫**，守護
+// tests/unit/user_key_send_wiring.test.js）：保留使用者的 ESC 組合鍵。
+TelnetConnection.prototype.sendUserKey = function(str) {
+  this._sendEscaped(str, USER_KEY);
+};
+
+TelnetConnection.prototype.convSendUserKey = function(unicode_str) {
+  this._convSendEscaped(unicode_str, USER_KEY);
 };
 
 // 資料路徑專用（send / convSend）：RFC 854 要求資料流裡的 0xFF 加倍，否則
@@ -195,9 +213,13 @@ TelnetConnection.prototype.send = function(str) {
 // 這裡同時是「裸 ESC 守門」的唯一掛點：send/convSend 都收斂到這裡，而協商位元組
 // 被 server 的 telnet 層吃掉、進不了 vtkbd ⇒ _sendRaw 不該套。**守門要在 IAC 加倍
 // 之前**：vtkbd 看到的是解 IAC 之後的資料流。理由見 vtkbd_send_state.js 檔頭。
-TelnetConnection.prototype._sendEscaped = function(str) {
+TelnetConnection.prototype._sendEscaped = function(str, opts) {
   if (!str) return;
-  const guarded = guardEscSequence(this._vkState, str);
+  const guarded = guardEscSequence(this._vkState, str, opts);
+  // 送出**之前**的狀態：debug recorder 要錄的是這個（send 那一列的 snapshotState
+  // 在 _sendRaw 裡才跑，那時 _vkState 已經被下一行覆寫）。要證實「這個鍵有沒有被
+  // 懸空的 ESC 吃掉」看的就是它。
+  this._vkStatePrev = this._vkState;
   this._vkState = guarded.state;
   const data = guarded.data;
   this._sendRaw(data.indexOf(IAC) < 0 ? data : data.split(IAC).join(IAC + IAC));
@@ -210,6 +232,10 @@ TelnetConnection.prototype._sendRaw = function(data) {
 }
 
 TelnetConnection.prototype.convSend = function(unicode_str) {
+  this._convSendEscaped(unicode_str);
+};
+
+TelnetConnection.prototype._convSendEscaped = function(unicode_str, opts) {
   // supports UAO
   // when converting unicode to big5, use UAO.
 
@@ -218,7 +244,7 @@ TelnetConnection.prototype.convSend = function(unicode_str) {
   if (s) {
     s = ansiHalfColorConv(s);
     // u2b 對非 Big5 字元回 '\xFF\xFD' ⇒ 這條路徑最常帶 IAC，必須跳脫。
-    this._sendEscaped(s);
+    this._sendEscaped(s, opts);
   }
 };
 

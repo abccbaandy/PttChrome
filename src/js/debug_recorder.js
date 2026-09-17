@@ -30,6 +30,11 @@ export function snapshotState(app) {
       // 這一幀是不是格線畫面 —— 決定 #cursor 該不該可見（term_view._applyCursorVisibility）。
       gridRender: !!(view && view._gridRender),
       srowIsBufRow: !!(view && view._srowIsBufRow),
+      // server 端 vtkbd 停在哪（0=NORMAL / 1=ESC / 2=CSI / 3=SS3），**送出之前**的值
+      // ——懸空的 1 代表下一個位元組會被吃成 esc_arg、畫面零反應（那正是
+      // 「讀不到文章代碼（miss）」的根因，見 vtkbd_send_state.js 檔頭）。
+      // recv 那一列錄的是上一次送出後的狀態，兩種讀法都定得了案。
+      vkState: app.conn && app.conn._vkStatePrev,
       // 重現現場要能還原格線；chw/chh 是推導值（chh/2、視窗尺寸），不是量出來的。
       chw: view && view.chw,
       chh: view && view.chh,

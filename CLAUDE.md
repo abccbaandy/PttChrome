@@ -136,6 +136,11 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
       修法已寫進 `playwright.config.js` 的 `offline-firefox` project：`launchOptions.env` 加
       `MOZ_DISABLE_CONTENT_SANDBOX=1`（2026-08-15 實測：headless/有頭、關 WebRender、關硬體加速、
       `security.sandbox.content.level=0`、關 fission/e10s 全都無效，只有這個有用）。
+    - **`browserType.launch: spawn UNKNOWN` ＝這台機器的 Firefox 二進位根本起不來**（2026-09-17 實測）：
+      整批在 launch 階段就掛、**零 AssertionError**，`yarn playwright install firefox` 重裝也沒用，
+      直接執行那顆 `firefox.exe` 會回 `Permission denied`（Windows 端的防毒／執行阻擋，非 Playwright
+      也非被測 code）。判準：同一支 spec 在 `offline` (Chromium) project 全綠。處置＝**本機略過
+      `offline-firefox`，靠 CI 那一輪**（Linux runner 不受影響），不要為此改被測 code 或 config。
 - **強制規範：改 code 要連帶補測試，不准「只改不測」。**
   - **每修一個 bug 必先寫一個會重現該 bug 的 test（紅）→ 修到綠**，當回歸守護。沒有對應 test 的修復視為未完成，不可交付／commit。
   - 新功能／行為改動同理補對應 test。能用純邏輯重現的（逐列判斷、解析、轉碼等）一律下放 unit（首選，最穩），抽進

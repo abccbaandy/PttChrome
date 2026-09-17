@@ -313,3 +313,28 @@ describe("守門與旗標", () => {
     expect(h.session.busy).toBe(true);
   });
 });
+
+// 探路階段（還沒打任何字）不可能有東西送出去 ⇒ onSent 一律不響，草稿留著。
+describe("探路階段不會誤清草稿", () => {
+  test("被 PTT 擋下來不呼叫 onSent", () => {
+    const h = harness();
+    const calls = [];
+    h.session.onSent = () => calls.push(1);
+    h.session.startPreflight({});
+    h.settle(vmsg("抱歉, 禁止推薦"));
+    h.settle(ARTICLE_FOOTER);
+    expect(calls).toEqual([]);
+  });
+
+  test("探完路可以推、開輸入框也不呼叫 onSent", () => {
+    const h = harness();
+    const calls = [];
+    h.session.onSent = () => calls.push(1);
+    h.session.startPreflight({});
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT);
+    h.settle(ARTICLE_FOOTER);
+    h.settle(ARTICLE_FOOTER);
+    expect(calls).toEqual([]);
+  });
+});

@@ -10,6 +10,11 @@ import { MantineProvider } from "@mantine/core";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 import LongPushModal from "../../src/components/ContextMenu/LongPushModal";
 import { setupI18n, i18n } from "../../src/js/i18n";
+import {
+  readDraft,
+  clearDraft,
+  resetDraftCacheForTests,
+} from "../../src/js/long_push_draft";
 
 window.matchMedia =
   window.matchMedia ||
@@ -41,6 +46,13 @@ if (!document.fonts)
 beforeAll(() => {
   loadBig5Tables();
   setupI18n();
+});
+
+// 草稿會落地到 localStorage ⇒ 不清就會跨 case 污染（症狀：「空白時…」那幾支
+// 會拿到上一支留下來的內容）。模組層還有一顆 lastWritten 快取要一起重置。
+beforeEach(() => {
+  localStorage.clear();
+  resetDraftCacheForTests();
 });
 
 const renderModal = (props = {}) => {
@@ -382,5 +394,122 @@ describe("鍵盤送出", () => {
     expect(button.getAttribute("aria-keyshortcuts")).toContain("Enter");
     expect(screen.getByTestId("longPushSubmitHint").closest("[aria-hidden]"))
       .toBeTruthy();
+  });
+});
+
+// ── 型別每次開框重設為「推」────────────────────────────────────────────────
+//
+// 元件跨開關保持掛載，type 以前刻意不重置 ⇒ 上次選的噓會沿用到下一次開框，
+// 而使用者按 X 的預期一律是「推」。噓推錯是收不回來的（PTT 沒有撤回 API）。
+describe("推文類型每次開框都回到「推」", () => {
+  test("上次選了噓，關掉再開回到推", () => {
+    const { onConfirm, show } = renderModal();
+    fireEvent.click(screen.getByText(i18n("longPushModal_typeBoo")));
+    show(false);
+    show(true);
+    type("安安");
+    submit();
+    expect(onConfirm.mock.calls[0][0].type).toBe("push");
+  });
+
+  test("上次選了 →（箭頭）同理", () => {
+    const { onConfirm, show } = renderModal();
+    fireEvent.click(screen.getByText(i18n("longPushModal_typeArrow")));
+    show(false);
+    show(true);
+    type("安安");
+    submit();
+    expect(onConfirm.mock.calls[0][0].type).toBe("push");
+  });
+
+  test("同一次開框內選了噓還是送噓（不是每次 render 都重置）", () => {
+    const { onConfirm } = renderModal();
+    fireEvent.click(screen.getByText(i18n("longPushModal_typeBoo")));
+    type("安安");
+    submit();
+    expect(onConfirm.mock.calls[0][0].type).toBe("boo");
+  });
+});
+
+// ── 草稿暫存 ──────────────────────────────────────────────────────────────
+//
+// 打到一半誤關輸入框（或整個分頁）不可以白打。單一份、不綁文章 ⇒ 還原時一定要
+// 講一聲並給清除鍵，不可以默默塞進去（在 A 文章打的會出現在 B 文章）。
+describe("草稿暫存", () => {
+  test("打一半關掉，再開回來內容還在", () => {
+    const { show } = renderModal();
+    type("打到一半的推文");
+    show(false);
+    show(true);
+    expect(textarea().value).toBe("打到一半的推文");
+    expect(readDraft()).toBe("打到一半的推文");
+  });
+
+  // 重置 effect（setValue(readDraft())）與草稿寫入的執行順序陷阱：show false→true
+  // 那一次 commit 裡 value 還是**舊值**。只要寫入沾到 show，就會拿它蓋掉剛讀回來
+  // 的草稿 —— 最惡劣的情況就是這一支：上次已經送成功、session 的 onSent 清過草稿，
+  // 元件裡的 value 卻還留著整段文字 ⇒ 一開框就把已經送出去的內容復活成草稿。
+  test("送成功清過草稿之後再開框，不會把已送出的內容復活", () => {
+    const { show } = renderModal();
+    type("已經送出去的內容");
+    show(false);
+    clearDraft(); // ＝ LongPushSession._finish({kind:'done'}) → onSent
+    show(true);
+    expect(readDraft()).toBe("");
+    expect(textarea().value).toBe("");
+    expect(screen.queryByTestId("longPushDraftNote")).toBeNull();
+  });
+
+  test("草稿是空的時候開框就是空的", () => {
+    renderModal();
+    expect(textarea().value).toBe("");
+  });
+
+  test("帶回草稿時會講一聲（單一份不綁文章，可能是別篇留下來的）", () => {
+    const { show } = renderModal();
+    type("上次留下來的");
+    expect(screen.queryByTestId("longPushDraftNote")).toBeNull();
+    show(false);
+    show(true);
+    expect(screen.queryByTestId("longPushDraftNote")).toBeTruthy();
+  });
+
+  test("按「清除」把草稿與輸入框一起清掉，提示也消失", () => {
+    const { show } = renderModal();
+    type("上次留下來的");
+    show(false);
+    show(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n("longPushModal_draftClear") }),
+    );
+    expect(textarea().value).toBe("");
+    expect(readDraft()).toBe("");
+    expect(screen.queryByTestId("longPushDraftNote")).toBeNull();
+  });
+
+  test("自己打字打出來的內容不算「還原」，不跳提示", () => {
+    renderModal();
+    type("現在才打的");
+    expect(screen.queryByTestId("longPushDraftNote")).toBeNull();
+  });
+
+  test("插入圖片網址也會寫進草稿", () => {
+    const upload = fakeUpload();
+    renderModal({ imageUpload: upload });
+    type("看這張");
+    act(() =>
+      upload.setInsertTarget.mock.calls[0][0].insert(
+        "https://i.urusai.cc/a.png",
+      ),
+    );
+    expect(readDraft()).toContain("https://i.urusai.cc/a.png");
+  });
+
+  test("送出不清草稿（可能送到一半失敗，清空的責任在 session 的 onSent）", () => {
+    const { onConfirm } = renderModal();
+    type("安安");
+    submit();
+    expect(onConfirm).toHaveBeenCalled();
+    expect(readDraft()).toBe("安安");
   });
 });

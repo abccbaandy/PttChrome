@@ -24,3 +24,24 @@ export function serializedOpHint(core) {
     return core.longPush.opHint || '長推文送出中，請稍候…';
   return null;
 }
+
+// Anti-idle 的守門：線路上有程式化序列在跑時**不准**送 anti-idle。
+//
+// ANTI_IDLE_STR 是 '\x1b\x1b'（pttchrome.js），從 VK_NORMAL 送出時 server 端的
+// vtkbd 會把第二個 ESC 吃成 esc_arg ⇒ **實際產生一個 KEY_ESC**（vtkbd.c:145-160，
+// KEY_ESC=27）。多數畫面拿它沒轍（no-op），但推文型別選單那一格是
+// `type = vkey(); if (!isascii(type) || !isdigit(type)) type = RECTYPE_DEFAULT;`
+// （bbs.c:3001-3010）⇒ 那個 KEY_ESC 會被當成「沒選」＝**推**，而畫面照樣推進到
+// 內容輸入列，整則就用錯的型別送出去，使用者完全看不出來。
+//
+// 而且這不是理論風險：長推文送出期間使用者盯著遮罩不動，idleTime 一路累積，
+// 正好是最容易觸發 anti-idle 的時候。
+//
+// 守門在這裡而不是靠 vtkbd 的 ESC 化解：那個 KEY_ESC 不是狀態殘留，是 payload
+// 本身就會產生的按鍵事件，守門攔不掉。
+//
+// 不歸零 idleTime：序列跑完的下一個 tick 就會補送，反而更貼近 anti-idle 的語意。
+export function shouldSkipAntiIdle(facts) {
+  const f = facts || {};
+  return !!(f.inFlightKind || f.longPushBusy || f.aidNavActive);
+}

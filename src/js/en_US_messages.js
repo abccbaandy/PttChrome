@@ -135,6 +135,12 @@ export const en_US = {
   "longPushModal_uploadImage": {
     "message": "Insert image"
   },
+  "longPushModal_draftNote": {
+    "message": "Restored your unsent draft (it may be from a different post)."
+  },
+  "longPushModal_draftClear": {
+    "message": "Clear"
+  },
   "longPushModal_uploadHint": {
     "message": "Drop an image here, paste a screenshot, or click Insert image; the uploaded URL lands at the cursor."
   },

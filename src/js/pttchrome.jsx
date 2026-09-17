@@ -32,7 +32,7 @@ import { colFromClientX, gridOriginY, rowFromClientY, rowHeight } from './mouse_
 import { encodeClick, encodeWheel } from './mouse_report';
 import { dismissClickAllowed } from './screen_dismiss';
 import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
-import { serializedOpHint } from './serialized_op_gate';
+import { serializedOpHint, shouldSkipAntiIdle } from './serialized_op_gate';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { readValuesWithDefault } from './pref_storage';
 import {
@@ -921,6 +921,15 @@ App.prototype.setTermSize = function(cols, rows) {
 App.prototype.antiIdle = function() {
   if (this.antiIdleTime && this.idleTime > this.antiIdleTime) {
     if (this.connectState == 1) {
+      // 序列化操作進行中一個 byte 都不能插進去——ANTI_IDLE_STR 的第二個 ESC 會
+      // 在 server 端變成一個 KEY_ESC，落在推文型別選單那一格就是型別靜默變「推」。
+      // 完整推導見 serialized_op_gate.js#shouldSkipAntiIdle。
+      if (shouldSkipAntiIdle({
+        inFlightKind: this.commandQueue && this.commandQueue.inFlightKind,
+        longPushBusy: !!(this.longPush && this.longPush.busy),
+        aidNavActive: !!(this.aidNavigation && this.aidNavigation.active)
+      }))
+        return;
       this.conn.send(ANTI_IDLE_STR);
       this.idleTime = 0;
     }

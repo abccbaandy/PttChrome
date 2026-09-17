@@ -584,14 +584,20 @@ TermView.prototype = {
     this.conn=conn;
   },
 
+  // **真鍵盤／IME 的唯一出口**，所以這兩個（而且只有這兩個）走 conn 的 userKey
+  // 變體：保留使用者的 ESC 組合鍵（ESC-L 跳行／ESC-數字 讀暫存檔）。其餘所有送出
+  // 路徑（CommandQueue／App.setBBSCmd／anti-idle／App.sendData）用預設的
+  // conn.send/convSend，那一邊會把懸空的 ESC 態一律化解。界線是**送出入口**，不是
+  // 位元組內容 —— 推導見 vtkbd_send_state.js 檔頭，守護
+  // tests/unit/user_key_send_wiring.test.js。
   _send: function(data) {
     if (this.conn)
-      this.conn.send(data);
+      this.conn.sendUserKey(data);
   },
 
   _convSend: function(data) {
     if (this.conn)
-      this.conn.convSend(data);
+      this.conn.convSendUserKey(data);
   },
 
   setCore: function(core) {

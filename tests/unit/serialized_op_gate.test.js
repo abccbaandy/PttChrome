@@ -9,7 +9,7 @@
 // 長推文期間 IME 曾被 modalShown（進度遮罩推導出來的）**間接**擋住——那是巧合式
 // 覆蓋，不是守門：繞過 onInput 的呼叫端（App.onPasteDone、image_upload_controller、
 // doPaste）照樣裸送。本檔釘的是四條入口各自的守門，不靠那個巧合。
-import { serializedOpHint } from "../../src/js/serialized_op_gate";
+import { serializedOpHint, shouldSkipAntiIdle } from "../../src/js/serialized_op_gate";
 import { TermView } from "../../src/js/term_view";
 import { App } from "../../src/js/pttchrome";
 
@@ -248,5 +248,40 @@ describe("入口 4／4：App.onPasteDone（所有貼上路由的漏斗）", () =
     expect(app.listSession.onPaste).toHaveBeenCalledWith("安安");
     expect(app.view.onTextInput).toHaveBeenCalledWith("安安", true);
     expect(hints).toEqual([]);
+  });
+});
+
+// Anti-idle 的守門。ANTI_IDLE_STR('\x1b\x1b') 在 server 端會實際產生一個 KEY_ESC，
+// 落在推文型別選單那一格就是型別靜默變「推」（bbs.c:3001-3010）——而長推文送出
+// 期間使用者盯著遮罩不動，正好是最容易累積 idleTime 的時候。推導見
+// src/js/serialized_op_gate.js#shouldSkipAntiIdle。
+describe("shouldSkipAntiIdle", () => {
+  test("線路空著就照送", () => {
+    expect(shouldSkipAntiIdle({})).toBe(false);
+    expect(shouldSkipAntiIdle()).toBe(false);
+    expect(
+      shouldSkipAntiIdle({
+        inFlightKind: null,
+        longPushBusy: false,
+        aidNavActive: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("CommandQueue 上有命令在飛就跳過", () => {
+    expect(shouldSkipAntiIdle({ inFlightKind: "longpush-type" })).toBe(true);
+    expect(shouldSkipAntiIdle({ inFlightKind: "list-page" })).toBe(true);
+  });
+
+  test("armed／冷卻倒數這種 queue 空著但畫面還是長推文的空窗也要跳過", () => {
+    // busy 涵蓋 armed（使用者在輸入框打字）與最長 240 秒的冷卻倒數，
+    // 只看 inFlightKind 會漏掉（同 easy_reading._wireBusy 的理由）。
+    expect(shouldSkipAntiIdle({ inFlightKind: null, longPushBusy: true })).toBe(
+      true,
+    );
+  });
+
+  test("AID 跳文進行中也跳過", () => {
+    expect(shouldSkipAntiIdle({ aidNavActive: true })).toBe(true);
   });
 });

@@ -135,6 +135,12 @@
   "longPushModal_uploadImage": {
     "message": "插入圖片"
   },
+  "longPushModal_draftNote": {
+    "message": "已帶回上次沒送出的內容（可能是別篇文章留下來的）。"
+  },
+  "longPushModal_draftClear": {
+    "message": "清除"
+  },
   "longPushModal_uploadHint": {
     "message": "可直接把圖片拖進來、貼上截圖，或按「插入圖片」選檔，上傳完的網址會插在游標處。"
   },

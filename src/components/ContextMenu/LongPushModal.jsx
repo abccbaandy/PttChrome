@@ -17,6 +17,7 @@ import {
   big5ByteLength,
   findUrlSpans,
 } from "../../js/long_push";
+import { readDraft, writeDraft, clearDraft } from "../../js/long_push_draft";
 
 // 長推文輸入框：使用者打一大段話，這裡即時算出「會被切成幾則」與「有哪些字
 // PTT 顯示不出來」，按下確定後把**已過濾**的內容交給 LongPushSession 送出。
@@ -57,6 +58,10 @@ export const LongPushModal = ({
   const [value, setValue] = useState("");
   const [type, setType] = useState("push");
   const [confirming, setConfirming] = useState(false);
+  // 這一次開框的內容是「上次留下來的草稿」還是使用者現在打的？單一份草稿不綁
+  // 文章 ⇒ 在 A 文章打的會出現在 B 文章的輸入框，一定要講一聲並給清除鍵，
+  // 不可以默默塞進去（long_push_draft.js 檔頭）。
+  const [restored, setRestored] = useState(false);
   const textareaRef = useRef(null);
   // 插入是從 React 樹外面（上傳完成的 callback）打進來的，讀 state 會讀到閉包當時
   // 的舊值 ⇒ 走 ref。
@@ -66,12 +71,36 @@ export const LongPushModal = ({
 
   // 元件跨開關保持掛載，光靠 initial state 會殘留上一次的內容（同
   // TitleBlacklistModal 的慣例）。
+  //
+  // 兩件事刻意不一樣：
+  //   - 內容**還原草稿**而不是清空（打到一半誤關不該白打）
+  //   - 型別一律回到「推」。以前刻意不重置，於是上次選的噓會沿用到下一次開框；
+  //     按 X 的預期一律是推，而噓錯了收不回來（PTT 沒有撤回 API）。
   useEffect(() => {
     if (show) {
-      setValue("");
+      const draft = readDraft();
+      setValue(draft);
+      setRestored(!!draft);
+      setType("push");
       setConfirming(false);
     }
   }, [show]);
+
+  // 草稿寫在**真正的兩個變更點**（這裡與 insertAtCursor），刻意不用 effect：
+  // show false→true 那一次 commit 裡 value 還是舊值，任何沾到 show 的寫入 effect
+  // 都會拿它蓋掉剛讀回來的草稿；最惡劣的情況是上次已經送成功、clearDraft() 過了，
+  // 元件裡的 value 還留著整段文字 ⇒ 一開框就把已經送出去的內容復活成草稿。
+  const setValueAndDraft = useCallback((next) => {
+    setValue(next);
+    setRestored(false);
+    writeDraft(next);
+  }, []);
+
+  const onClearDraft = useCallback(() => {
+    setValue("");
+    setRestored(false);
+    clearDraft();
+  }, []);
 
   // 插在**游標處**（不是尾端）。前後視情況補一個空白讓網址獨立成 token，
   // splitPushSpans 的 URL 保護才有機會把它整條留在同一則。
@@ -88,7 +117,10 @@ export const LongPushModal = ({
       text +
       (after && !/^\s/.test(after) ? " " : "");
     caretRef.current = before.length + chunk.length;
-    setValue(before + chunk + after);
+    const next = before + chunk + after;
+    setValue(next);
+    setRestored(false);
+    writeDraft(next);
   }, []);
 
   // useState 更新後直接設 selectionStart 會被接下來的 re-render 蓋掉 ⇒ 等這次
@@ -216,7 +248,7 @@ export const LongPushModal = ({
             minRows={6}
             maxRows={16}
             value={value}
-            onChange={(event) => setValue(event.target.value)}
+            onChange={(event) => setValueAndDraft(event.target.value)}
             onPaste={onPaste}
           />
           <Group gap="md" align="center">
@@ -276,6 +308,18 @@ export const LongPushModal = ({
                 </Text>
               )}
             </Alert>
+          )}
+          {/* 草稿是**單一份、不綁文章**的（long_push_draft.js 檔頭）⇒ 帶回來的
+              內容可能是在別篇文章打的，一定要講一聲並給清除鍵。 */}
+          {restored && (
+            <Group gap="xs" align="center" data-testid="longPushDraftNote">
+              <Text size="xs" c="dimmed">
+                {i18n("longPushModal_draftNote")}
+              </Text>
+              <Button size="compact-xs" variant="subtle" onClick={onClearDraft}>
+                {i18n("longPushModal_draftClear")}
+              </Button>
+            </Group>
           )}
           {uploadEnabled && (
             <Text size="xs" c="dimmed">

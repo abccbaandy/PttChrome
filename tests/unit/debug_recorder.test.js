@@ -17,6 +17,8 @@ function makeApp() {
       calls.onData.push(d);
     },
     conn: {
+      // 真 TelnetConnection 的建構初值（VK_NORMAL）
+      _vkStatePrev: 0,
       _sendRaw(d) {
         calls.sendRaw.push(d);
       },
@@ -26,6 +28,13 @@ function makeApp() {
 }
 
 describe("snapshotState", () => {
+  it("還沒連上（app.conn 不存在）也不會炸", () => {
+    const { app } = makeApp();
+    app.conn = null;
+    expect(() => snapshotState(app)).not.toThrow();
+    expect(snapshotState(app).vkState).toBeFalsy();
+  });
+
   it("純讀取輕量快照", () => {
     const { app } = makeApp();
     expect(snapshotState(app)).toEqual({
@@ -42,6 +51,8 @@ describe("snapshotState", () => {
       fnMode: false,
       gridRender: true,
       srowIsBufRow: false,
+      // server 端 vtkbd 停在哪（送出之前）；stub 的 conn 沒送過東西 ⇒ 建構初值 0
+      vkState: 0,
       chw: 12,
       chh: 24,
       scaleX: 1,
