@@ -259,6 +259,31 @@ client 端唯一解法，沒有別的 API。
 `long_push_session.js` 的 `MSG` 常數，**刻意不 import i18n**（會把整包語系表拉進
 unit test 的冷載入成本）；錯誤框的外框文案才走 i18n。
 
+### 型別配色（`PUSH_TYPE_COLOR`）
+
+輸入框的「推／噓／→」比照 PTT 原生。pttbbs 裡有**兩組不同的配色**，別拿錯：
+
+| 出處 | 推 | 噓 | → | 用在哪 |
+|---|---|---|---|---|
+| `bbs.c:2822-2826` `ctype_attr` | `1;33` 亮黃 | `1;31` 亮紅 | `1;37` 亮白 | 型別選單（`bbs.c:2993`）＋推文輸入列前綴（`bbs.c:3085`） |
+| `comments.c:21` `ctype_attr2` | `1;37` 亮白 | `1;31` 亮紅 | `1;31` 亮紅 | 寫進檔案、文章裡看到的推文列（`FormatCommentString`） |
+
+採用**前者**（`ctype_attr`）：這個浮層取代的就是那個型別選單，而且三色互不相同。
+term.ptt.cc 送來的實錄（`ptt-debug-20260917-221112` t=9736，`\e[1m` 已開著所以選單上
+只補 `33`／`31`）：
+
+```
+您覺得這篇文章 [33m1.值得推薦 [31m2.給它噓聲 [0;1;37m3.只加→註解 [m[1]?
+```
+
+色碼取 `term_buf.js#termColors` 的 bright 槽位 11/9/15（＝終端機自己畫出來的同一份），
+常數放在 `long_push.js`（純邏輯，**不 import `term_buf`**，避免 DOM 耦合的大模組進到
+每個 unit test 的冷載入），一致性由 `tests/unit/long_push_type_color.test.js` 守。
+
+呈現成**黑底小色塊**而不是單純把文字染色：Mantine 的色彩主題可切（設定頁），亮色主題
+下亮黃與亮白等於看不見；黑底同時解決可讀性與「跟終端機長得一樣」。禁噓板時「噓」那一項
+是 `disabled`，**不上色**——內聯 `color` 會蓋掉 Mantine 用來表示 disabled 的調暗樣式。
+
 ## 不變量
 
 1. **推文流程之內不用 `fullRepaint`、不用 `probe`**（兩者都送 `\f`）。型別選單是 `vkey()` 取單一 byte，
@@ -323,6 +348,20 @@ unit test 的冷載入成本）；錯誤框的外框文案才走 i18n。
     pager／列表，多出來的 `KEY_ESC` 是 no-op），不會落在型別選單或 ◆ 橫幅那兩格。
     守護 `tests/unit/long_push_flow.test.js`，各畫面的反應表見
     `docs/pttbbs-screen-protocol.md` §1.2。
+18. **`busy` 翻 false 時必須主動通知好讀**（`_releaseWire()`，掛在 `disarm()` —— `busy`
+    唯一的共同出口）。`easy_reading._wireBusy()` 的三個來源裡，`longPush.busy` 是**唯一
+    一個 CommandQueue 管不到的**：`armed`（使用者在輸入框打字）與冷卻倒數（最長 240 秒）
+    期間 queue 空著、`onIdle` 早就發過了，`busy` 卻要等到關框才翻 false ⇒ 那一刻沒有第
+    二次 idle 能叫醒好讀被延後的自動翻頁。少了它的症狀：按 X 叫出長推文再取消，文章
+    永遠停在當前頁、怎麼捲都不會讀到結尾（沒送鍵就沒有新幀，不會再評估第二次 ⇒ 死結，
+    只能離開文章再進）。實錄 `ptt-debug-20260917-221112`：最後三筆 `easyReading.pageDown`
+    全是 `{action:"blocked", inFlightKind:null}`。
+    通知走 `easyReading.onWireIdle({ force: true })`：`force` 是因為待補送的鍵未必還在
+    （取消路徑會退出文章再 ⏎ 重開，那個文章邊界的 `_resetPagingState` 就把
+    `_deferredPageDownKeys` 清成 null 了），要不要真的送鍵仍由 `nextPageDownDecision` 決定。
+    守護 `tests/unit/long_push_wire_release.test.js`、
+    `tests/unit/easy_reading_send_gate.test.js`、
+    `tests/e2e/offline/long_push.offline.spec.js`「取消長推文之後，好讀的自動翻頁要接得回去」。
 
 ## 圖片上傳（`target` 插入模式）
 
@@ -360,7 +399,7 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 
 ## 取消
 
-`cancel()` → `queue.flush()` → 依當下底列送收尾鍵，最多 `MAX_ABORT_STEPS(3)` 次：
+`cancel()` → `queue.flush()` → 依當下底列送收尾鍵，最多 `MAX_ABORT_STEPS(4)` 次：
 
 - 輸入列／確認列 → `\x03`（Ctrl-C：`vgetstring` 清空 + abort ⇒ `getdata` 回 0 ⇒
   `recommend()` 什麼都不寫就 return）
@@ -376,6 +415,9 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 已經送出的推文收不回來——PTT 沒有這種 API，遮罩上寫明了。剩餘內容**不再自動寫進
 剪貼簿**（2026-09 使用者定案：那會無聲蓋掉他手上的東西），改由 `LongPushErrorModal`
 顯示在唯讀 Textarea，要不要複製由他按。
+
+收工的每一條路（關框 `disarm`、送出失敗 `_finish`、送出取消、斷線）都會把 `busy`
+翻成 false，而那一刻**必須主動叫醒好讀**（不變量 18）。
 
 ### 關框那一下的 Esc（兩種症狀，同一個根因）
 

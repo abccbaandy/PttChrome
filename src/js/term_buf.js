@@ -33,7 +33,10 @@ const SETTLE_MS = 50;
 // （command_queue.js）⇒ 保險絲永遠先動，不會讓「畫面卡住」惡化成「命令逾時」。
 const SYNC_SAFETY_MS = 250;
 
-const termColors = [
+// 終端機的 16 色前景色票（索引 0-7 dark、8-15 bright；ANSI 的 3x ⇒ x，1;3x ⇒ 8+x）。
+// export 是為了讓 React 側的 UI 引用**同一份**顏色而不是自己抄一組十六進位碼
+// （長推文的型別選項就是這樣拿 PTT 原生配色的，見 long_push.js#PUSH_TYPE_COLOR）。
+export const termColors = [
   // dark
   '#000000', // black
   '#800000', // red

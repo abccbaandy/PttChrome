@@ -18,6 +18,26 @@ import { SCHEME_RE, URL_CHAR_RE } from './url_join';
 // BAD/ARROW，非數字一律 RECTYPE_DEFAULT ＝ 推）。
 export const PUSH_TYPE_KEY = { push: '1', boo: '2', arrow: '3' };
 
+// 型別的**原生配色**。出處 bbs.c:2822-2826 的 ctype_attr：
+//   推 ANSI_COLOR(1;33) 亮黃 / 噓 ANSI_COLOR(1;31) 亮紅 / → ANSI_COLOR(1;37) 亮白
+// 同一組同時用在型別選單（bbs.c:2993）與推文輸入列的前綴（bbs.c:3085），也就是
+// 使用者按 X 之後**親眼看到**的那一行。term.ptt.cc 送來的 bytes 實錄（含 \e[1m 已
+// 開著所以選單上只補 33/31）見 docs/long-push.md「型別配色」。
+//
+// **刻意不是**文章裡已送出推文列的那一組（comments.c#FormatCommentString 的
+// ctype_attr2 = {1;37, 1;31, 1;31}，噓與 → 同色）：這個浮層取代的是型別選單，
+// 不是推文列。
+//
+// 色碼＝term_buf.js `termColors` 的 bright 槽位 11 / 9 / 15，與終端機自己畫出來的
+// 完全同一份。這裡刻意不 import term_buf（DOM 耦合的大模組，會把整條依賴鏈的冷
+// 載入成本加到每個用到 long_push.js 的 unit test 上），一致性改由
+// tests/unit/long_push_type_color.test.js 守。
+export const PUSH_TYPE_COLOR = {
+  push: '#ffff00',
+  boo: '#ff0000',
+  arrow: '#ffffff'
+};
+
 // ---------------------------------------------------------------------------
 // 字元過濾
 // ---------------------------------------------------------------------------

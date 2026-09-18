@@ -91,6 +91,53 @@ const submit = () =>
 const segmentsText = () =>
   screen.getByTestId("longPushSegments").textContent;
 
+// SegmentedControl 的每個選項＝一個同名 hidden radio ＋ 一個 <label>。色塊掛在
+// label 裡面，用 data-push-type 取，不依賴 Mantine 的內部 class。
+const swatch = (value) =>
+  document.querySelector(`[data-push-type="${value}"]`);
+
+// 型別選項比照 PTT 原生配色（bbs.c#recommend 的 ctype_attr：推 1;33 亮黃、
+// 噓 1;31 亮紅、→ 1;37 亮白）。畫在黑底小色塊上，理由是 Mantine 的亮色主題
+// （設定頁可切）底下亮黃與亮白等於看不見 —— 黑底同時讓它長得跟終端機一樣。
+describe("型別選項的配色", () => {
+  test("推／噓／→ 各自帶到 PTT 原生的那個顏色", () => {
+    renderModal();
+    expect(swatch("push").style.color).toBe("rgb(255, 255, 0)"); // 亮黃
+    expect(swatch("boo").style.color).toBe("rgb(255, 0, 0)"); // 亮紅
+    expect(swatch("arrow").style.color).toBe("rgb(255, 255, 255)"); // 亮白
+  });
+
+  test("色塊是黑底（亮色主題下也要讀得到）", () => {
+    renderModal();
+    for (const v of ["push", "boo", "arrow"])
+      expect(swatch(v).style.backgroundColor).toBe("rgb(0, 0, 0)");
+  });
+
+  // 黑底色塊會蓋掉 SegmentedControl 的選中指示器（它只是換一階背景灰）⇒ 三格
+  // 長得一模一樣，使用者看不出自己選了哪個。噓推錯了收不回來，這不是外觀問題。
+  test("看得出選了哪一個（色塊蓋掉了 Mantine 的選中指示器）", () => {
+    renderModal();
+    expect(swatch("push").style.opacity).toBe("1");
+    expect(Number(swatch("boo").style.opacity)).toBeLessThan(1);
+    expect(Number(swatch("arrow").style.opacity)).toBeLessThan(1);
+
+    fireEvent.click(
+      document.querySelector('input[name="longPushType"][value="arrow"]'),
+    );
+    expect(swatch("arrow").style.opacity).toBe("1");
+    expect(Number(swatch("push").style.opacity)).toBeLessThan(1);
+  });
+
+  test("禁噓板：噓那一項不上色（內聯顏色會蓋掉 Mantine 的 disabled 樣式）", () => {
+    renderModal({ preflight: { blocked: false, booAllowed: false } });
+    expect(swatch("boo")).toBeNull();
+    // 其他兩項照樣上色
+    expect(swatch("push").style.color).toBe("rgb(255, 255, 0)");
+    // 文字本身不能不見
+    expect(screen.getByText(i18n("longPushModal_typeBoo"))).toBeTruthy();
+  });
+});
+
 describe("即時則數", () => {
   test("空白時是 0 則、送出鍵停用", () => {
     renderModal();

@@ -1268,8 +1268,18 @@ EasyReading.prototype._wireBusy = function() {
 //
 // 刻意不做重試迴圈：仍然忙的話 _maybeSendPageDown 會把鍵原封不動存回 _deferredPageDownKeys，
 // 下一次 idle 通知再試——自我保持，沒有 timer。
-EasyReading.prototype.onWireIdle = function() {
-  const keys = this._deferredPageDownKeys;
+//
+// opts.force ＝ 呼叫者剛剛才是**握著線路的那個人**，而且它不是 queue 上的交易
+// （目前唯一的來源：長推文放手，long_push_session._releaseWire）。這種來源沒有
+// 「下一次 idle」可以等：queue 的 onIdle 早在它的收尾鍵那一刻就發過了，
+// longPush.busy 是**之後**才翻 false。而且 _deferredPageDownKeys 未必還在——
+// 取消長推文的路徑會退出文章再重開，那個文章邊界的 _resetPagingState 就把它清成
+// null 了（:600）。所以 force 要能在沒有待補送的鍵時也重新評估一次。
+// 多評估一次是安全的：真正要不要送鍵由 nextPageDownDecision 決定（functionMode／
+// 非完整幀／已 100%／同一頁簽章未過 grace 全都不送），不可能違反 P4。
+EasyReading.prototype.onWireIdle = function(opts) {
+  const keys =
+    this._deferredPageDownKeys || (opts && opts.force ? '\x1b[6~' : null);
   if (!keys) return;
   // 好讀已關 / 進了鏡像模式：這個補送已無意義（換文章的清除見 _resetPagingState）。
   if (!this._enabled || this._functionMode) {

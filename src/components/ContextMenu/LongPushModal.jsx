@@ -16,6 +16,7 @@ import {
   splitPushSegments,
   big5ByteLength,
   findUrlSpans,
+  PUSH_TYPE_COLOR,
 } from "../../js/long_push";
 import { readDraft, writeDraft, clearDraft } from "../../js/long_push_draft";
 
@@ -42,6 +43,39 @@ const replaceI18n = (id, replacements) =>
 
 // 超過這個則數就先問一次：PTT 有推文冷卻，整段可能要跑好幾分鐘。
 const CONFIRM_THRESHOLD = 20;
+
+// 型別選項的標籤：把字畫在一小塊黑底上，就是終端機裡長的樣子。
+//
+// 為什麼要黑底而不是單純把文字染色：顏色取自 PTT 原生的 ctype_attr（亮黃／亮紅／
+// 亮白，見 long_push.js#PUSH_TYPE_COLOR），而 Mantine 的色彩主題是可切的
+// （MantineRoot 預設暗色，但設定頁讓使用者改）—— 亮色主題下亮黃與亮白等於看不見。
+// 黑底同時解決可讀性與「跟終端機長得一樣」兩件事。
+//
+// disabled（禁噓板）時退回純文字：內聯的 color 會蓋掉 Mantine 用來表示 disabled
+// 的調暗樣式 ⇒ 看起來像可以選。
+//
+// 未選中的調暗（opacity）：黑底色塊會**蓋掉 SegmentedControl 的選中指示器**
+// —— 指示器只是把該格背景換成淺一階的灰，色塊壓在上面之後三格長得一模一樣，
+// 使用者看不出自己選了哪個（噓推錯了收不回來）。調暗是主題無關的替代訊號。
+const TypeLabel = ({ type, text, disabled, selected }) =>
+  disabled ? (
+    text
+  ) : (
+    <span
+      data-push-type={type}
+      data-selected={selected ? "true" : undefined}
+      style={{
+        display: "inline-block",
+        padding: "0 6px",
+        borderRadius: 2,
+        background: "#000000",
+        color: PUSH_TYPE_COLOR[type],
+        opacity: selected ? 1 : 0.45,
+      }}
+    >
+      {text}
+    </span>
+  );
 
 // preflight ＝ 開這個框之前那一次探路（LongPushSession.startPreflight）從 PTT 畫面
 // 讀回來的事實：這塊板讓不讓噓、這次會不會被降級成 →、目前在不在冷卻。**全部是
@@ -259,13 +293,38 @@ export const LongPushModal = ({
               value={type}
               onChange={setType}
               data={[
-                { value: "push", label: i18n("longPushModal_typePush") },
+                {
+                  value: "push",
+                  label: (
+                    <TypeLabel
+                      type="push"
+                      selected={type === "push"}
+                      text={i18n("longPushModal_typePush")}
+                    />
+                  ),
+                },
                 {
                   value: "boo",
-                  label: i18n("longPushModal_typeBoo"),
+                  label: (
+                    <TypeLabel
+                      type="boo"
+                      selected={type === "boo"}
+                      text={i18n("longPushModal_typeBoo")}
+                      disabled={!booAllowed}
+                    />
+                  ),
                   disabled: !booAllowed,
                 },
-                { value: "arrow", label: i18n("longPushModal_typeArrow") },
+                {
+                  value: "arrow",
+                  label: (
+                    <TypeLabel
+                      type="arrow"
+                      selected={type === "arrow"}
+                      text={i18n("longPushModal_typeArrow")}
+                    />
+                  ),
+                },
               ]}
             />
             <Text size="sm" c="dimmed" data-testid="longPushSegments">

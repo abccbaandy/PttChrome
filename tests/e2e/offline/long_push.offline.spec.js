@@ -100,7 +100,12 @@ async function drawBoardList(page, rows, cursorRow) {
       const REV = '\x1b[7m';
       const OFF = '\x1b[0m';
       let d = '\x1b[2J';
-      d += '\x1b[1;1H' + REV + u2b('【板主：test】看板《Test》'.padEnd(40)) + OFF;
+      // row0 反白鋪滿整列、row1 不可留空：term_buf.setPageState 判 pageState 2
+      // 要的就是這兩件事（isUnicolor(0,0,29) + isUnicolor(0,cols-20,cols-10) +
+      // !isLineEmpty(1) + isUnicolor(2,0,cols-10)）。少了它們畫面會落在 pageState 0，
+      // 「列表(2) → 文章(3)」的 settle 邊緣就不成立 ⇒ 好讀不會自動開。
+      d += '\x1b[1;1H' + REV + u2b('【板主：test】看板《Test》'.padEnd(80)) + OFF;
+      d += '\x1b[2;1H' + u2b('[←]離開 [→]閱讀 [^P]發表文章 [b]備忘錄');
       d +=
         '\x1b[3;1H' +
         REV +
@@ -652,5 +657,98 @@ test.describe('長推文一鍵發送（離線）', () => {
       1
     );
     await expect.poll(() => sentText(page)).toBe('X');
+  });
+
+  // REGRESSION（使用者回報 + 錄製檔 ptt-debug-20260917-221112）：按 X 叫出長推文
+  // 輸入框、然後**取消**，文章就再也不會往下讀到結尾。
+  //
+  // 根因是通知只有單向：好讀的自動翻頁被 easy_reading._wireBusy() 擋下時是延後
+  // 不是丟棄，喚醒點只有 EasyReading.onWireIdle()，而那是接在 CommandQueue.onIdle
+  // 上的。longPush.busy 卻是唯一一個 queue 管不到的來源 —— 探路成功後 _armed 一直
+  // 活著（使用者在打字，線路真的空著），queue 早就空了、onIdle 也發過了，busy 要
+  // 等到關框（disarm）才翻 false ⇒ 那一刻沒有人再通知好讀。沒送鍵就沒有新幀，
+  // 不會再評估第二次 ⇒ 死結。
+  //
+  // 兩層 unit 各守一半（easy_reading_send_gate 的 force 補送、long_push_wire_release
+  // 的 _releaseWire），這裡守的是 unit 碰不到的那條：**真的好讀狀態機 + 真的
+  // CommandQueue + 真的 React 關框**串起來之後，那個 PageDown 真的上得了線路。
+  test('取消長推文之後，好讀的自動翻頁要接得回去', async ({ page }) => {
+    await boot(page);
+
+    // 這支 spec 其他 case 的 drawArticle 刻意**不**把游標停在右下角（P6 的 complete
+    // gate 不成立）⇒ 好讀不會送 PageDown，鍵序斷言才乾淨。這一條要的正好相反：
+    // 一幀「完整的」文章畫面，好讀看到就會想翻頁。
+    const drawArticleComplete = async (footer) => {
+      await page.evaluate(
+        ({ rows, footer }) => {
+          const u2b = (str) => {
+            let out = '';
+            for (const ch of str) {
+              const c = ch.charCodeAt(0);
+              if (c < 0x80) {
+                out += ch;
+                continue;
+              }
+              out +=
+                String.fromCharCode(window.lib.u2bArray[2 * c]) +
+                String.fromCharCode(window.lib.u2bArray[2 * c + 1]);
+            }
+            return out;
+          };
+          let d = '\x1b[2J';
+          for (const k of Object.keys(rows))
+            d += '\x1b[' + (Number(k) + 1) + ';1H' + u2b(rows[k]);
+          d += '\x1b[24;1H' + u2b(footer);
+          // P6：只有游標停在右下角的那一幀才是「完整的 server 回應」。
+          d += '\x1b[24;80H';
+          window.__app.onData(d);
+        },
+        { rows: { 0: ARTICLE_HEADER, 1: ARTICLE_TITLE, 20: ARTICLE_URL }, footer }
+      );
+      await page.waitForTimeout(300);
+    };
+    const footerAt = (page1, page2, pct, start, end) =>
+      `  瀏覽 第 ${page1}/${page2} 頁 (${String(pct).padStart(3)}%)  ` +
+      `目前顯示: 第 ${start}~${end} 行  (y)回應(X%)推文(h)說明(←)離開 `;
+
+    // 好讀是在「列表(2) → 文章(3)」的 settle 邊緣自動開的，boot() 直接畫文章沒有
+    // 那道邊緣 ⇒ 要先過一次列表。
+    await drawBoardList(
+      page,
+      [
+        boardListRow(1233, 'someoneElse', '[公告] 別篇'),
+        boardListRow(1234, 'testuser', '[閒聊] 測試文章'),
+        boardListRow(1235, 'thirdGuy', '[問卦] 又一篇'),
+      ],
+      1
+    );
+    await drawArticleComplete(footerAt(1, 3, 33, '01', '23'));
+    await expect
+      .poll(() => page.evaluate(() => window.__app.view.useEasyReadingMode))
+      .toBe(true);
+
+    // 探路 → 輸入框開著（_armed 活著 ⇒ busy 為 true）。
+    await collectSent(page);
+    await ptt.sendKey(page, 'X');
+    await runPreflight(page);
+    expect(await page.evaluate(() => window.__app.longPush.busy)).toBe(true);
+
+    // 輸入框開著時來了一幀完整的文章畫面（真實情境：探路收尾按 ⏎ 回文章那一幀，
+    // 它同時也讓好讀退出鏡像原生模式）。好讀想翻頁，但被 longPush.busy 擋下來
+    // —— 這是**正確**的，不可以讓它插進長推文的線路。
+    await collectSent(page);
+    await drawArticleComplete(footerAt(2, 3, 66, '24', '46'));
+    await expect.poll(() => sentText(page)).toBe('');
+
+    // 使用者按取消。這一刻 busy 翻 false，而 queue 早就空了。
+    await page
+      .locator('form')
+      .getByRole('button', { name: await label(page, 'longPushModal_cancel') })
+      .click();
+    await expect(page.locator('[name="longPushText"]')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__app.longPush.busy)).toBe(false);
+
+    // 修好之前：這裡永遠是空字串，文章就此卡住。
+    await expect.poll(() => sentText(page)).toContain('\x1b[6~');
   });
 });

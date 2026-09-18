@@ -70,6 +70,9 @@ export function harness(opts) {
   };
   const view = { flashListHint: (m) => hints.push(m) };
   const restored = [];
+  // 長推文放手（busy 翻 false）時對好讀的主動通知。queue 的 onIdle 管不到那一刻，
+  // 見 long_push_session._releaseWire。
+  const wireIdle = [];
   // aidNavigation 的合約見 aid_navigation.js#resolvePostAid：免費路徑
   // （findLocalPostAid）命中就 boxOpen=false，否則按 Q 並以 boxOpen=true 回報。
   // localAid: undefined = 命中；null = 落空要按 Q。
@@ -102,6 +105,7 @@ export function harness(opts) {
     easyReading: {
       _enterFunctionMode() {},
       requestScrollRestore: (i) => restored.push(i),
+      onWireIdle: (opts) => wireIdle.push(opts),
     },
     listSession: { beginExternalNavigation() {} },
     aidNavigation: o.aidNavigation === undefined ? aidNavigation : o.aidNavigation,
@@ -158,6 +162,8 @@ export function harness(opts) {
     settleList,
     queue,
     restored,
+    wireIdle,
+    core,
   };
 }
 
