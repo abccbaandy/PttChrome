@@ -44,13 +44,46 @@ describe("userKey 送出入口只有 term_view 一個", () => {
 
   test("term_view._send / _convSend 走的是 userKey 變體，沒有退回 conn.send", () => {
     const code = fileNamed("term_view.js").code;
-    expect(code).toMatch(/_send:\s*function[\s\S]{0,120}?conn\.sendUserKey\(/);
+    expect(code).toMatch(/_send:\s*function[\s\S]{0,320}?conn\.sendUserKey\(/);
     expect(code).toMatch(
-      /_convSend:\s*function[\s\S]{0,120}?conn\.convSendUserKey\(/,
+      /_convSend:\s*function[\s\S]{0,320}?conn\.convSendUserKey\(/,
     );
     // term_view 是真鍵盤的出口，整份不該再有機器變體的呼叫。
     expect(code).not.toMatch(/\bconn\.send\s*\(/);
     expect(code).not.toMatch(/\bconn\.convSend\s*\(/);
+  });
+});
+
+// 列表好讀的 fail-closed 守門（2026-09-19「Ctrl+X 轉錄轉到別篇」）。
+//
+// 為什麼要靜態守：這道守門**今天幾乎攔不到東西**（按鍵分派點都已經自己走 sync 腿），
+// 它的價值在下一次——新增一條送字路徑、或某顆鍵被放行到原生鍵盤路徑時自動接住。
+// 正因為平常沒有可見效果，最容易被下一個人「順手簡化掉」，而拿掉之後的症狀是靜默的
+// （server 對錯的那一列動作，好讀畫面完全不動）。形狀比照 native_gesture_css.test.js。
+describe("使用者 byte 上線前必經列表好讀的 cursor-sync 守門", () => {
+  test("term_view._send / _convSend 在 conn 之前先問 adoptUserBytes", () => {
+    const code = fileNamed("term_view.js").code;
+    // 順序是承重的：問在 conn.*UserKey **之前**才擋得住。
+    expect(code).toMatch(
+      /_send:\s*function[\s\S]{0,320}?adoptUserBytes\([\s\S]{0,200}?conn\.sendUserKey\(/,
+    );
+    expect(code).toMatch(
+      /_convSend:\s*function[\s\S]{0,320}?adoptUserBytes\([\s\S]{0,200}?conn\.convSendUserKey\(/,
+    );
+    // _convSend 的 payload 是 Unicode 文字 ⇒ 必須標記 conv，接手方才知道要轉 Big5。
+    expect(code).toMatch(/adoptUserBytes\(\s*data\s*,\s*\{\s*conv:\s*true\s*\}\s*\)/);
+  });
+
+  test("App.adoptUserBytes 走 activeListSession（唯一真相源），不自己判擁有者", () => {
+    const code = fileNamed("pttchrome.jsx").code;
+    expect(code).toMatch(
+      /App\.prototype\.adoptUserBytes[\s\S]{0,300}?activeListSession\(\)/,
+    );
+  });
+
+  test("兩個列表 session 都實作了 adoptUserBytes", () => {
+    for (const n of ["list_session.js", "board_list_session.js"])
+      expect(fileNamed(n).code).toMatch(/adoptUserBytes:\s*function/);
   });
 });
 

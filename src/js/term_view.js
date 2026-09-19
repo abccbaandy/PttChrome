@@ -590,12 +590,28 @@ TermView.prototype = {
   // conn.send/convSend，那一邊會把懸空的 ESC 態一律化解。界線是**送出入口**，不是
   // 位元組內容 —— 推導見 vtkbd_send_state.js 檔頭，守護
   // tests/unit/user_key_send_wiring.test.js。
+  // **兩支都先問 `adoptUserBytes`**（2026-09-19，fail-closed；勿拿掉、勿只加在其中
+  // 一支）：列表好讀的 buffer/frozen 畫面上「選取 ≠ server 真游標」是常態，任何直接
+  // 上線的使用者 byte 都可能對錯的那一列動作（本次是 Ctrl+X 轉錄到別篇）。守門放在
+  // **送出入口**而不是按鍵分派點，是為了讓未來新增的送字路徑預設安全——同一條先例
+  // 與完整推導見 `list_user_bytes.js` 與 `vtkbd_send_state.js` 兩份檔頭。
+  // 守護 tests/unit/user_key_send_wiring.test.js。
   _send: function(data) {
+    if (this.bbscore && this.bbscore.adoptUserBytes && this.bbscore.adoptUserBytes(data))
+      return;
     if (this.conn)
       this.conn.sendUserKey(data);
   },
 
+  // `conv: true` ＝ payload 是 Unicode 文字而不是 byte，接手方必須自己轉 Big5
+  // （否則送出去是亂碼，見 list_session.adoptUserBytes）。
   _convSend: function(data) {
+    if (
+      this.bbscore &&
+      this.bbscore.adoptUserBytes &&
+      this.bbscore.adoptUserBytes(data, { conv: true })
+    )
+      return;
     if (this.conn)
       this.conn.convSendUserKey(data);
   },

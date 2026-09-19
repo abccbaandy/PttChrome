@@ -318,7 +318,8 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
     - **`keyEventToBytes` 對 `altKey` 回 null 是刻意的，不要「順手」讓它支援 Alt remap**：它緊接著就被 `_classifyKey` 按 `e.key` 分派白名單，一旦回傳 byte，`Alt+J/K/N/P` 落進 `nav`、`Alt+M` 落進開文、`Alt+0~9` 落進 jump-digit ⇒ 全部變成本地動作而非送鍵，整組 remap 靜默失效。守護 `tests/unit/alt_ctrl_remap.test.js`、`tests/unit/list_keys.test.js`（全 26 字母表驅動）。
     - 已知限制（非本次引入）：置底公告列被選取時 `_selectedNum` 是 `null`，沒有編號可跳 ⇒ 仍無法 sync，`Ctrl-Q` 會查到真游標那列的作者。`_beginLeave`／`_beginInplaceTransaction` 共有。
 12b. **剪貼簿鍵不得進 passthrough，貼上不得裸送**（2026-08「AID 文章碼要貼兩次」）。兩半缺一即復發：
-   - `onKeyDown` 的剪貼簿早退除了 Ctrl-C/A/V/X，**必須含 Shift+Insert**（app 自己的 i18n `alert_pasteShortcutText` 就是叫使用者用它）。它不是 ctrl 組合 ⇒ 舊碼落 `passthrough` → `_beginNativePassthrough` 的 **`e.preventDefault()` 會取消瀏覽器的貼上預設動作** ⇒ `#t` 收不到 `paste` 事件、`App.onDOMPaste` 永不觸發，PTT 只收到 `keyEventToBytes` 產出的 `\x1b[2~`。畫面切原生卻沒貼上任何東西，使用者得貼第二次（那次才成功——此時 `listRenderMode` 已是 native、hook 根本不被呼叫）。**純 `Insert`（無 shift）維持 passthrough**。
+   - `onKeyDown` 的剪貼簿早退是 Ctrl-C/A/V ＋ **Shift+Insert**（app 自己的 i18n `alert_pasteShortcutText` 就是叫使用者用它）。Shift+Insert 不是 ctrl 組合 ⇒ 舊碼落 `passthrough` → `_beginNativePassthrough` 的 **`e.preventDefault()` 會取消瀏覽器的貼上預設動作** ⇒ `#t` 收不到 `paste` 事件、`App.onDOMPaste` 永不觸發，PTT 只收到 `keyEventToBytes` 產出的 `\x1b[2~`。畫面切原生卻沒貼上任何東西，使用者得貼第二次（那次才成功——此時 `listRenderMode` 已是 native、hook 根本不被呼叫）。**純 `Insert`（無 shift）維持 passthrough**。
+   - **成員資格條件＝「真的有人接手這顆鍵」，不是「看起來像剪貼簿快捷鍵」**（2026-09-19「Ctrl+X 轉錄轉到別篇」，錄製檔 `ptt-debug-20260919-190640#t=7645`）：`c`/`a` 有 `term_view.onKeyDown` 的 `doCopy`/`doSelectAll`、`v` 與 `Shift+Insert` 有 `term_keyboard._onKeyDown` 的 `return false`（讓給瀏覽器）。**`x` 三不管**——終端機畫面不可編輯、focus 在恆空的隱藏 input `#t` ⇒ 瀏覽器「剪下」沒有作用對象，而早退**不 preventDefault** ⇒ 事件一路落到 `term_keyboard` 的 `CtrlShiftMap['x'] = 24` **裸送 `^X`**、跳過 cursor-sync 腿。`^X` 在文章列表是 `read_comms` 的 `{ 1, cross_post }`（`bbs.c:4555`，`needitem=1` ⇒ 吃真游標那一列）⇒ 轉錄到背景 prefetch 的落點那一篇。**`x` 已移出白名單，別加回去**；判定收斂在 `term_keyboard.isBrowserClipboardEvent`（以前在 `list_session`／`board_list_session` 兩處手抄，與 Alt remap 當年同型的漂移風險）。守護：`list_keys.test.js`「Ctrl-X（轉錄）不是剪貼簿鍵」、`board_list_session.test.js` 同名案例。
    - 貼上本身要走 `ListSession.onPaste`（T3b）而非 `view.onTextInput` 裸送：裸送會與 in-flight prefetch/jump 競態（typeahead，協定 §2），且 buffer 模式渲染的是累積清單 ⇒ **PTT 畫的 prompt 看不見**，要等某個 settle 觸發 catch-all 才現形。使用者讀成「沒反應」再貼一次 → AID 被 append 進同一個 prompt（`#1gIeu-3A1gIeu-3A` → 找不到文章）。
    - 正規化規則放 `string_util.normalizePasteText`（`term_view.onTextInput` 與 `onPaste` 共用），兩條路徑必須送出**逐 byte 相同**的內容；`CommandQueue` 的 send 綁 raw `conn.send`（不做 u2b）⇒ `onPaste` 自行 `u2b`＋`ansiHalfColorConv`，順序照 `telnet.js#convSend`。
    守護：`list_keys.test.js`（Shift+Insert 放行＋純 Insert 反向）、`list_paste.test.js`（sync 腿／快路徑／降級／吞鍵有提示／回傳值／bytes 等值）、`string_util.test.js`（normalizePasteText）、`easy-reading-list.offline.spec.js`（真瀏覽器一次貼上只送一次、無 `\x1b[2~`）。
@@ -330,6 +331,27 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
    - `term_view.onTextInput` 的 `isPasting` 分支**不得重複攔截**：貼上已經在 `App.onPasteDone` 問過 `listSession.onPaste`，這裡再問一次就是同一段文字送兩次。
    - **序列化操作（AID 跳文／長推文）在途時，四條送字入口一律吞掉並給提示**：`term_view.onKeyDown`／`onTextInput`、`App.onFunctionKey`／`onPasteDone`，條件與提示文字統一在 `serialized_op_gate.serializedOpHint(core)`（2026-09-01；在那之前只有前兩條有守門，IME 與貼上照樣裸送——長推文期間 IME 是被進度遮罩的 `modalShown` **間接**擋住的巧合，AID 跳文不開 modal ⇒ 整段裸送）。守護 `tests/unit/serialized_op_gate.test.js`＋`aid_back_ui.offline.spec.js`／`long_push.offline.spec.js`。
    同一次修法還補了 `#t`（注音組字框）的落點：buffer/frozen 幀沒有可錨的列，見「視圖模型」節與 `docs/easy-reading.md`「游標／`#t` 的錨點契約」禁止事項 4。守護：`list_text_input.test.js`、`term_view_text_input.test.js`、`row_anchor.test.js`、`easy-reading-list.offline.spec.js`「中文輸入法（離線）」。
+
+12e. **使用者 byte 的唯一出口＝線路出口的 fail-closed 守門**（2026-09-19，治本層；12b/12c/12d 與 2026-09-13 的 `^Q` 全是同一個形狀的第 1~4 次復發）。
+
+   **為什麼一直復發**：`term_view.onKeyDown` 對「session 沒接手」只有**一種**表達方式（不 `preventDefault`），它卻同時承載兩種語意 ——
+   (a)「這顆鍵歸瀏覽器／app，PTT 不該收到任何 byte」、(b)「放行給原生鍵盤路徑送出去」。
+   被歸到 (a) 卻**實際上沒有 handler 接手**的鍵，會靜默退化成 (b)＝繞過 cursor-sync 腿裸送。
+   「哪些鍵要跑 sync」過去是**每個按鍵分派點各自 opt-in**，漏一個就靜默壞掉，而漏的症狀最嚴重的一種（`^X`）連原生鏡像都不切：好讀畫面完全不動，server 卻已經對別篇動作。
+
+   **不變量**：列表好讀的 `buffer`/`frozen` render 期間，任何**使用者來源**的 byte 只能經 `_beginPassthroughBytes`（內含 sync 腿）上線。
+   守門在 `term_view._send` / `_convSend` —— 全專案**唯一**的使用者 byte 出口（`vtkbd_send_state.js` 檔頭已列出全部五個出口，`user_key_send_wiring.test.js` 靜態守住「只有 term_view 可以叫 `conn.sendUserKey`」）：
+   `bbscore.adoptUserBytes(data)` → `App.activeListSession()` → `session.adoptUserBytes()` → 決策在純函式 `list_user_bytes.decideUserBytes({ renderMode, state })`（`native`→pass／`opening`・`frozen+functionMode`→swallow＋提示／`active`→adopt／其餘→pass；分支與 `onKeyDown` 既有兩道守門同源）。
+
+   - **界線是送出入口，不是位元組內容**：刻意**不看 bytes 是哪一顆鍵**。內容判準正是前四次復發的來源（每次都要有人記得把新鍵加進 §11.7 那張表）。代價只是對「不吃真游標的鍵」多跑一次跳號，而那一腿本來就有 `_serverNum` 快路徑。形狀照抄 2026-09-17 立的同一條先例（`guardEscSequence`）。
+   - **`_convSend` 要帶 `{ conv: true }`**：它的 payload 是 **Unicode 文字不是 byte**，接手方必須走會做 `u2b`＋`ansiHalfColorConv` 的 `_beginTextPassthrough`（與 IME／貼上共用），直接丟進 `_beginPassthroughBytes` 送出去是亂碼（`CommandQueue` 的 send 綁 raw `conn.send`）。
+   - **這道網今天幾乎攔不到東西**（分派點都已自己走 sync 腿），價值在下一次 ⇒ 最容易被「順手簡化掉」，而拿掉之後的症狀是靜默的。靜態守護 `user_key_send_wiring.test.js`「使用者 byte 上線前必經列表好讀的 cursor-sync 守門」（含**順序**：`adoptUserBytes` 必須在 `conn.*UserKey` 之前）；行為守護 `list_keys.test.js` 的三條 `adoptUserBytes`；決策層 `list_user_bytes.test.js`。
+
+12f. **cursor-sync 腿落地要驗身分，不是只驗編號**（2026-09-19，與 12e 同批）：`<編號>\r` 只保證真游標停在那個**編號**。pttbbs 的 `crs_ln` 是 `.DIR` 純行號、**不綁文章身分**，一般刪文（`record.c#delete_record2`）把後面每一筆 index 往前搬 ⇒ 我們幾秒前累積進緩衝的編號可能已指向別篇（完整推導見 `docs/long-push.md:86-130`）。這一腿的下游正是對那一列動作的破壞性指令（`^X` 轉錄、`^E` 管理、`%` 推文），誤動作無法收回。
+   `_enqueueCursorSyncJump` 在 `onDone` 比對落地列與本地選取列的作者／主題（重用 `long_push_anchor.listRowIdentity` / `checkCursorAnchor`，零額外 round-trip）：
+   - **只在明確 `'moved'` 時擋** → 不送下游那顆鍵，`_degradeToNative('列表已變動，游標對不上選取的文章，已切至原生模式')`。
+   - **`'unknown'` 照舊放行**（置底列／已刪除列／呼叫端 facts 沒帶 `rowTexts`）——一起擋掉會製造一批「按了就切原生」的假陽性，比原問題更常見。這是**純粹加法**的安全網。
+   守護：`list_cursor_identity.test.js`（相符／moved／兩條 unknown 反向／列表截斷的 `…` 前綴比對）。
 
 13. `relabelListCursorRow` ＝**依 resolved num 把 cells[0,7) 重寫成 `%7d` 右對齊**（pttbbs `readdoent` 的 `prints("%7d", num)`），且對**每一列編號列**都跑（不只游標列）。一次覆蓋三種污染：(a) 兩代游標蓋格；(b) partial-redraw 留白的高位格（`"  51281"` ← 351281——`pageArticleNums` 的 monotonicity repair 只修 `nums` 不修 cell；舊全形 `●` 佔兩格剛好蓋住此瑕疵，換半形 `>` 後露出成「> 51281」）；(c) 短序號（`/` 搜尋結果 531 → `"    531"`）。**勿再回頭用 prefix 拼接**——舊法會把序號末兩位灌進行首並存進 map（污染跨頁殘留）。
 11. edge 確認（markEdge/_requestEnd）後要 `_forceRedraw`——pinned 門控開啟需要重繪才可見。

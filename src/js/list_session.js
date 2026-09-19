@@ -36,7 +36,16 @@ import {
   ansiHalfColorConv,
   normalizePasteText
 } from './string_util';
-import { keyEventToBytes, altRemapCharCode, isAltRemapEvent } from './term_keyboard';
+import {
+  keyEventToBytes,
+  altRemapCharCode,
+  isAltRemapEvent,
+  isBrowserClipboardEvent
+} from './term_keyboard';
+import { decideUserBytes, PASS, SWALLOW } from './list_user_bytes';
+// 列表游標的**身分**錨定（作者＋主題）。檔名帶 long_push 是因為長推文先需要它，
+// 內容是通用的純邏輯：「crs_ln 是純行號、同編號 ≠ 同一篇」對每一條跳號腿都成立。
+import { listRowIdentity, checkCursorAnchor } from './long_push_anchor';
 import {
   topPosFromScrollTop,
   anchorScrollTop,
@@ -1209,15 +1218,13 @@ ListSession.prototype = {
     // Insert stays a passthrough key: only the shifted form is a clipboard
     // action. The paste itself is handled in onPaste (App.onPasteDone routes it
     // back here), not by letting bytes leak straight onto the wire.
-    // **`!e.altKey` 是合約的一部分，別拿掉**：Alt+C/A/V/X 要送 ^C/^A/^X/^V 給 PTT
-    // （Alt＝PTT 的 Ctrl，無例外），不是複製／全選／貼上／剪下 —— 那幾個維持
-    // Ctrl 版（mac 是 ⌘）。拿掉 `!e.altKey` 會讓它們被這道早退吃掉，靜默壞掉。
-    const clipboard =
-      (e.ctrlKey &&
-        !e.altKey &&
-        !e.metaKey &&
-        ['c', 'a', 'v', 'x'].indexOf((e.key || '').toLowerCase()) !== -1) ||
-      (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Insert');
+    // 判定收斂在 term_keyboard.isBrowserClipboardEvent（成員資格＝「真的有人接手
+    // 這顆鍵」，**'x' 刻意不在裡面**，完整理由見該函式上方）。以前這組條件在這裡與
+    // board_list_session 兩處手抄，與 Alt remap 當年同型的漂移風險。
+    // 該述詞裡的 **`!e.altKey` 是合約的一部分，別拿掉**：Alt+C/A/V 要送 ^C/^A/^V
+    // 給 PTT（Alt＝PTT 的 Ctrl，無例外），不是複製／全選／貼上 —— 那幾個維持
+    // Ctrl 版（mac 是 ⌘）。拿掉它會讓 Alt 版被這道早退吃掉，靜默壞掉。
+    const clipboard = isBrowserClipboardEvent(e);
     // Alt remap（Alt＝PTT 的 Ctrl，全 26 字母）是**本 app 自己造的送鍵入口**，不是
     // 瀏覽器快捷鍵 ⇒ 與 Ctrl 組合同級，必須走 passthrough 的 sync 腿。read.c:957 的
     // Ctrl('T') TagThread 就是對真游標那一列動作的。非字母的 Alt 組合（Alt+←、
@@ -1303,6 +1310,46 @@ ListSession.prototype = {
       else if (a === 'begin-leave') this._beginLeave();
       else this._runAction(a, null);
     }
+  },
+
+  // 線路出口的 fail-closed 守門（2026-09-19）。`term_view._send` / `_convSend`
+  // ——全專案唯一的使用者 byte 出口——在送上線之前問這一支，回 true ＝我接手了，
+  // 呼叫端**不可以**再送。
+  //
+  // 存在理由與推導見 `list_user_bytes.js` 檔頭：sync 腿從「每個按鍵分派點自己記得
+  // 要跑」改成「byte 要上線時一律檢查」，於是漏接的鍵（本次的 Ctrl+X）與任何**未來
+  // 新增的送字路徑**自動享有同步，不必再靠人去比對 docs §11.7 那張表。
+  //
+  // 這裡刻意**不看 bytes 的內容**：判準是「現在的畫面是不是好讀緩衝」，不是「這顆鍵
+  // 會不會吃真游標」。內容判準正是前四次復發的來源（每次都得有人記得把新鍵加進表）。
+  // 代價只是對「不吃游標的鍵」多跑一次跳號，而那一腿本來就有 `_serverNum` 快路徑。
+  //
+  // `opts.conv === true` ＝這一串是 `_convSend` 的 payload：**Unicode 文字，不是
+  // byte**。它必須走會做 `u2b`+`ansiHalfColorConv` 的那條（`_beginTextPassthrough`，
+  // 與 IME／貼上共用），直接丟進 `_beginPassthroughBytes` 送出去的是亂碼——
+  // CommandQueue 的 send 綁的是 raw `conn.send`（不轉碼），見該函式內的註解。
+  // 這條路正常情況走不到（`term_view.onTextInput` 已經先問過 `noteTextInput`），
+  // 是同一張網的文字半邊：冪等，沒接手時再問一次仍是沒接手。
+  adoptUserBytes: function(bytes, opts) {
+    if (!bytes) return false;
+    if (opts && opts.conv) {
+      if (this._renderMode !== 'buffer' && this._renderMode !== 'frozen') return false;
+      return this.noteTextInput(bytes);
+    }
+    const verdict = decideUserBytes({ renderMode: this._renderMode, state: this.state });
+    if (verdict === PASS) return false;
+    if (verdict === SWALLOW) {
+      // 不變量 N7：吞鍵永不靜默。措辭與 onKeyDown 的兩道守門一致。
+      if (this._view.flashListHint)
+        this._view.flashListHint(
+          this.state === 'opening'
+            ? '好讀列表：開啟文章中，請稍候…'
+            : '好讀列表：指令處理中，請稍候…'
+        );
+      return true;
+    }
+    this._beginPassthroughBytes(bytes);
+    return true;
   },
 
   // One-key native passthrough (2026-07-10; replaces the [ ] = / v / `/`
@@ -1586,16 +1633,23 @@ ListSession.prototype = {
   _enqueueCursorSyncJump: function(kind, onSynced, onFail) {
     const num = this._selectedNum;
     const self = this;
+    // 身分基準＝**跳之前**使用者畫面上那一列的作者／主題（見 onDone 的驗證）。
+    const anchor = this._selectedRowIdentity();
+    let landed = null;
     this._queue.enqueue({
       keys: String(num) + '\r',
       kind: kind,
       expect: function(snap, facts) {
-        return (
+        if (
           facts.cursorRowNum === num &&
           facts.curY >= 3 &&
           facts.curY <= facts.rows - 2 &&
           facts.curX <= 1
-        );
+        ) {
+          landed = facts;
+          return true;
+        }
+        return false;
       },
       // EVERY number-jump leg carries fullRepaint. A jump whose target is the
       // row the real cursor is ALREADY on produces zero screen delta, so PTT
@@ -1614,6 +1668,23 @@ ListSession.prototype = {
       hardTimeoutMs: CMD_HARD_MS,
       onDone: function() {
         self._serverNum = num;
+        // ---- 落地驗身分（2026-09-19）----
+        // `<編號>\r` 只保證「真游標停在這個**編號**」，**不保證停在使用者看到的
+        // 那一篇**：pttbbs 的 crs_ln 是 `.DIR` 純行號、不綁文章身分，一般刪文會把
+        // 後面每一筆 index 往前搬（完整推導見 long_push_anchor.js 檔頭與
+        // docs/long-push.md）⇒ 緩衝是我們幾秒前累積的，期間板上刪過文就會
+        // 「同編號 ≠ 同一篇」。而這一腿的下游正是會對那一列動作的破壞性指令
+        //（^X 轉錄、^E 管理、% 推文…），誤動作無法收回。
+        //
+        // **只在明確 'moved' 時擋**（'unknown' 照舊放行）：讀不出身分的情況很多
+        //（置底列、已刪除列、facts 沒帶 rowTexts 的呼叫端），把它們一起擋掉會製造
+        // 一批新的「按了就切原生」假陽性。這道守門是純粹加法的安全網——只有在
+        // 「讀得出來、而且確定是別篇」時才拒絕。
+        if (anchor && checkCursorAnchor(landed, anchor) === 'moved') {
+          self._serverNum = null;
+          self._degradeToNative('列表已變動，游標對不上選取的文章，已切至原生模式');
+          return;
+        }
         onSynced();
       },
       onFail: function() {
@@ -1621,6 +1692,16 @@ ListSession.prototype = {
         onFail();
       }
     });
+  },
+
+  // 目前選取那一列的身分（作者＋主題），取自**本地緩衝**＝使用者眼睛看到的那一列。
+  // null ＝讀不出來（沒有選取／空列／已刪除列）⇒ 呼叫端不做身分驗證。
+  _selectedRowIdentity: function() {
+    const idx = this._resolveSelectedIndex();
+    if (idx < 0) return null;
+    const lines = this._termBuf.listLines || [];
+    if (!lines[idx]) return null;
+    return listRowIdentity(rowToText(lines[idx]));
   },
 
   // 'begin-leave' executor (v5 T2): ←/q/e as a serialized transaction over the

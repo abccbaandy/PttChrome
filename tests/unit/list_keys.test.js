@@ -357,16 +357,80 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵一鍵切原生"
     expect(s._renderMode).toBe("native");
   });
 
-  test("剪貼簿組合鍵（Ctrl-C/A/V/X）放行給 app 層（不吞、不轉態）", () => {
+  test("剪貼簿組合鍵（Ctrl-C/A/V）放行給 app 層（不吞、不轉態）", () => {
+    // 成員資格＝「真的有人接手」：c/a 由 term_view 的 doCopy/doSelectAll，
+    // v 由 term_keyboard._onKeyDown 的 `return false`（讓給瀏覽器原生貼上）。
     const { s } = makeSession();
     s.state = "active";
-    for (const k of ["c", "a", "v", "x"]) {
+    for (const k of ["c", "a", "v"]) {
       const e = keyEvent(k);
       e.ctrlKey = true;
       s.onKeyDown(e);
       expect(e.defaultPrevented).toBe(false);
       expect(s.state).toBe("active");
     }
+  });
+
+  test("Ctrl-X（轉錄）不是剪貼簿鍵 → 一鍵切原生，並序列化代送 \\x18", () => {
+    // 回歸（2026-09-19「Ctrl+X 轉錄轉到別篇」，錄製檔 ptt-debug-20260919-190640#t=7645）：
+    // 舊碼把 'x' 列進剪貼簿白名單 → 早退且不 preventDefault，而 term_view 的 ctrl
+    // 分支只接 c/a ⇒ 落到 term_keyboard 的 CtrlShiftMap['x']=24 **裸送 ^X**，
+    // 跳過 cursor-sync 腿。^X 在文章列表是 read_comms 的 { 1, cross_post }
+    //（bbs.c:4555，needitem=1 ⇒ 吃 server 真游標那一列）而本地導覽零網路
+    // ⇒ 轉錄到背景 prefetch 的落點那一篇。
+    // 終端機畫面不可編輯、focus 在恆空的 #t ⇒ 瀏覽器「剪下」本來就沒有作用對象。
+    const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._selectedNum = 42;
+    const e = keyEvent("x");
+    e.ctrlKey = true;
+    s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(enqueued[0].kind).toBe("native-sync-jump");
+    expect(enqueued[0].keys).toBe("42\r"); // 先把真游標停到選取那一列
+    enqueued[0].onDone();
+    expect(enqueued[1].kind).toBe("native-key");
+    expect(enqueued[1].keys).toBe("\x18");
+    expect(sent).toEqual([]); // 走佇列，永不裸送
+    expect(s.state).toBe("functionMode");
+  });
+
+  test("adoptUserBytes：線路出口的 fail-closed 網（繞過按鍵分派也同步得到）", () => {
+    // 治本層（2026-09-19）：sync 腿從「每個按鍵分派點自己 opt-in」改成「byte 要上線
+    // 時一律檢查」。入口是 term_view._send —— 全專案唯一的使用者 byte 出口。
+    // 這條測的是網本身：即使有人繞過 onKeyDown 直接送 byte，照樣先跑 sync 腿。
+    const { s, sent, enqueued } = makeSession();
+    s._view.flashListHint = () => {};
+    s.state = "active";
+    s._renderMode = "buffer";
+    s._selectedNum = 42;
+    s._serverNum = 7; // 真游標落後選取（背景 prefetch 的落點）
+    expect(s.adoptUserBytes("\x18")).toBe(true);
+    expect(enqueued[0].kind).toBe("native-sync-jump");
+    enqueued[0].onDone();
+    expect(enqueued[1].keys).toBe("\x18");
+    expect(sent).toEqual([]);
+  });
+
+  test("adoptUserBytes：原生鏡像下不接手（選取即真游標，沒東西要保護）", () => {
+    const { s, enqueued } = makeSession();
+    s.state = "active";
+    s._renderMode = "native";
+    s._selectedNum = 42;
+    expect(s.adoptUserBytes("\x18")).toBe(false);
+    expect(enqueued).toEqual([]);
+  });
+
+  test("adoptUserBytes：交易在途時吞掉並給提示（不變量 N7，永不靜默）", () => {
+    const hints = [];
+    const { s, enqueued } = makeSession();
+    s._view.flashListHint = (m) => hints.push(m);
+    s.state = "opening";
+    s._renderMode = "buffer";
+    expect(s.adoptUserBytes("\x18")).toBe(true);
+    expect(enqueued).toEqual([]);
+    expect(hints.some((m) => m.includes("開啟文章中"))).toBe(true);
   });
 
   test("Shift+Insert（貼上快捷鍵）同樣放行——preventDefault 會取消瀏覽器貼上", () => {

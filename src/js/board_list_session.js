@@ -49,7 +49,13 @@ import {
   BRD_CMD_PREFIX,
   isBoardListCommandKind
 } from './list_render_owner';
-import { keyEventToBytes, altRemapCharCode, isAltRemapEvent } from './term_keyboard';
+import {
+  keyEventToBytes,
+  altRemapCharCode,
+  isAltRemapEvent,
+  isBrowserClipboardEvent
+} from './term_keyboard';
+import { decideUserBytes, PASS, SWALLOW } from './list_user_bytes';
 import { u2b, ansiHalfColorConv, normalizePasteText } from './string_util';
 import { clickableColStart } from './mouse_regions';
 import { LEFT_ARROW } from './function_key_plan';
@@ -525,14 +531,10 @@ BoardListSession.prototype = {
   // ---- 鍵盤 -----------------------------------------------------------------
 
   onKeyDown: function(e) {
-    // 瀏覽器／app 層的剪貼簿組合鍵留給 term_view 後面那幾個 handler。
-    // **`!e.altKey` 是合約的一部分，別拿掉**：Alt+C/A/V/X 要送 ^C/^A/^V/^X 給 PTT。
-    const clipboard =
-      (e.ctrlKey &&
-        !e.altKey &&
-        !e.metaKey &&
-        ['c', 'a', 'v', 'x'].indexOf((e.key || '').toLowerCase()) !== -1) ||
-      (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Insert');
+    // 瀏覽器／app 層的剪貼簿組合鍵留給 term_view 後面那幾個 handler。判定與
+    // list_session 共用 term_keyboard.isBrowserClipboardEvent（**'x' 不在裡面**）。
+    // 該述詞裡的 **`!e.altKey` 是合約的一部分，別拿掉**：Alt+C/A/V 要送 ^C/^A/^V 給 PTT。
+    const clipboard = isBrowserClipboardEvent(e);
     // Alt remap（Alt＝PTT 的 Ctrl，全 26 字母）是**本 app 自己造的送鍵入口**，不是
     // 瀏覽器快捷鍵 ⇒ 與 Ctrl 組合同級，必須走 passthrough 的 sync 腿（Alt+W ＝
     // board.c:1731 Ctrl('W')）。非字母的 Alt 組合才是瀏覽器的，維持放行。
@@ -699,6 +701,26 @@ BoardListSession.prototype = {
       return false;
     if (this._view.flashListHint)
       this._view.flashListHint('看板列表：指令處理中，請稍候…');
+    return true;
+  },
+
+  // 線路出口的 fail-closed 守門（2026-09-19）。與 list_session.adoptUserBytes 同一份
+  // 合約與同一個決策函式，推導見 `list_user_bytes.js` 檔頭。
+  adoptUserBytes: function(bytes, opts) {
+    if (!bytes) return false;
+    // conv ＝ Unicode 文字，必須走會轉 Big5 的 _beginTextPassthrough（理由同
+    // list_session.adoptUserBytes）。
+    if (opts && opts.conv) {
+      if (this._renderMode !== 'buffer' && this._renderMode !== 'frozen') return false;
+      return this.noteTextInput(bytes);
+    }
+    const verdict = decideUserBytes({ renderMode: this._renderMode, state: this.state });
+    if (verdict === PASS) return false;
+    if (verdict === SWALLOW) {
+      this._busyHint(); // 不變量 N7：吞鍵永不靜默（條件與 decideUserBytes 同源）
+      return true;
+    }
+    this._beginPassthroughBytes(bytes);
     return true;
   },
 

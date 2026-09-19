@@ -44,9 +44,9 @@ for (let i = 97; i <= 122; i++) {
 //
 // Ctrl-V is NOT special-cased here, unlike in _onKeyDown: this answers "what
 // bytes does this key mean to PTT" (objectively \x16), while "which key is
-// handed to the browser for paste" is a UI-layer decision. Unreachable anyway —
-// list_session.onKeyDown returns on its clipboard whitelist ('c'/'a'/'v'/'x')
-// before either _classifyKey or _beginNativePassthrough can call us.
+// handed to the browser for paste" is a UI-layer decision. The list sessions'
+// clipboard early-return (isBrowserClipboardEvent) keeps Ctrl-V away from
+// _classifyKey / _beginNativePassthrough, so that decision is never taken here.
 export function keyEventToBytes(e) {
   // **altKey 回 null 是刻意的，不要「順手」讓它支援 Alt remap。** 下游 _classifyKey
   // 在呼叫完這裡之後，緊接著就按 e.key 分派白名單：一旦這裡對 Alt 回傳 byte，
@@ -159,6 +159,30 @@ export function isAltRemapEvent(e) {
   );
 }
 
+// 「這個 keydown 歸瀏覽器／app 的剪貼簿，PTT 一個 byte 都不該收到？」
+// 兩個列表好讀 session 的 onKeyDown 用它做早退（早退**刻意不 preventDefault**，
+// 否則會取消瀏覽器的複製／貼上預設動作，見 docs/easy-reading-list.md 不變量 12b）。
+//
+// **成員資格條件＝「真的有人接手這顆鍵」**，不是「看起來像剪貼簿快捷鍵」：
+//   'c' → term_view.onKeyDown 的 doCopy       'a' → 同處 doSelectAll
+//   'v' → 本檔 _onKeyDown 的 `return false`（讓給瀏覽器原生貼上 → App.onDOMPaste）
+//   Shift+Insert → 同上（app 的 i18n alert_pasteShortcutText 就是叫使用者用它）
+//
+// **'x' 不在裡面，別加回去**（2026-09-19「Ctrl+X 轉錄轉到別篇」，錄製檔
+// ptt-debug-20260919-190640#t=7645）：終端機畫面不可編輯、focus 停在恆空的隱藏
+// input #t ⇒ 瀏覽器「剪下」沒有作用對象，**沒有任何 handler 接它**。舊碼把 'x'
+// 列進來的後果是三不管地帶：不剪下、又因為早退而跳過列表好讀的 cursor-sync 腿，
+// 直接落到 _onKeyDown 的 CtrlShiftMap['x'] = 24 裸送 ^X。而 ^X 在文章列表是
+// read_comms 的 { 1, cross_post }（bbs.c:4555，needitem=1 ⇒ 吃 server 真游標那一列，
+// read.c:996-1005），本地導覽零網路時真游標通常停在背景 prefetch 的落點
+// ⇒ **轉錄到別篇**。與 2026-09-13「查詢作者跑去別篇」(^Q) 逐字同型。
+export function isBrowserClipboardEvent(e) {
+  const key = (e.key || '').toLowerCase();
+  if (e.ctrlKey && !e.altKey && !e.metaKey)
+    return key === 'c' || key === 'a' || key === 'v';
+  return !!e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Insert';
+}
+
 export class TermKeyboard {
   // isLeftDB: function() -> bool
   // isCurDB: function() -> bool
@@ -250,8 +274,11 @@ export class TermKeyboard {
       // （不變量與理由見檔頭 ALT_REMAP_EXCLUDE 上方那段）。
       // 'v' 在這裡有額外的份量：Ctrl-V 是我們**主動讓給**瀏覽器貼上的（見上面的 ctrl
       // 分支），所以 Alt-V 是送出 ^V 的唯一管道。
-      // 同理 Alt-C/Alt-A/Alt-X 是送出 ^C/^A/^X 的唯一可靠管道 —— Ctrl 版被 term_view
-      // 的複製／全選吃掉了（doSelectAll 更是無條件吃）。
+      // 同理 Alt-A 是送出 ^A 的唯一管道（Ctrl-A 被 term_view 的 doSelectAll 無條件
+      // 吃掉），Alt-C 則是 Ctrl-C 有選取時的唯一管道（doCopy 只在有選取時接手）。
+      // **Alt-X 不是 ^X 的唯一管道**：Ctrl-X 沒有任何 app 端 handler（終端機不可編輯
+      // ⇒ 瀏覽器剪下無對象），它走列表好讀的 passthrough sync 腿送出同樣的 \x18，
+      // 見 isBrowserClipboardEvent 上方那段。
       // CapsLock 與 macOS 的 Option 組字輸出都由 altRemapCharCode 處理。
       const charCode = altRemapCharCode(e);
       if (charCode !== null) {

@@ -1043,6 +1043,17 @@ App.prototype.noteListNativeInput = function() {
     this.boardListSession.noteNativeInput();
 };
 
+// 列表好讀的線路出口守門（2026-09-19）。`term_view._send` / `_convSend` 在送上線
+// **之前**問這一支，回 true ＝已被 session 接手（走 _beginPassthroughBytes 的
+// cursor-sync 腿），呼叫端不可以再送。推導見 `list_user_bytes.js` 檔頭。
+//
+// 放在 App 而不是讓 term_view 直接摸 session：`activeListSession()` 是「現在誰在畫
+// 列表」的唯一真相源（它讀 buf.listRenderOwner），term_view 另開一條就是第二份判斷。
+App.prototype.adoptUserBytes = function(bytes, opts) {
+  var s = this.activeListSession();
+  return !!(s && s.adoptUserBytes && s.adoptUserBytes(bytes, opts));
+};
+
 App.prototype.activeListSession = function() {
   switch (listRenderOwnerOf(this.buf)) {
     case OWNER_BOARD_LIST:

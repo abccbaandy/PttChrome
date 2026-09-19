@@ -930,8 +930,20 @@ underline** ⇒ reverse 更早就被攤平成 fg/bg 互換），所以擦除條�
 
 列表好讀的本地導覽（T1）是零網路的，**server 的真實游標長期落後選取**（通常停在背景
 prefetch 的落點）。所以任何「對游標所在那一列動作」的鍵，代送前一定要先跑
-`native-sync-jump` 腿。判準是**這個鍵會不會吃真游標**，不是「它是不是 Ctrl」——
-下面這張表就是查詢入口，新增鍵時先在這裡對一次，別靠猜。
+`native-sync-jump` 腿。
+
+**權威判準是 `read_comms[ch-1].needitem === 1`，不是下面這張表**（2026-09-19 修正）：
+`i_read_key` 的 one-key 分派（`read.c:996-1005`）只有 `needitem` 非零時才把
+`&headers[crs_ln - top_ln]` 當參數傳給命令函式（`onekey_t` 定義在
+`include/pttstruct.h:447-450`，註解自承「`needitem = 0` 表示不需要 item」）。
+⇒ **`read_comms` 裡每一顆 `{ 1, ... }` 都吃真游標**，包含表上原本漏掉的
+`^A`(`show_filename`)、`^E`(`manage_post`)、`^X`(`cross_post`)、`%`(`recommend`)
+與 `C`/`D`/`E`/`F` 一整排字母鍵。
+
+手寫表必然漏（`^X` 就漏了四個月，2026-09-19「Ctrl+X 轉錄轉到別篇」）⇒ **client 端
+已不再依賴這張表**：`term_view._send`/`_convSend` 一律先問
+`list_user_bytes.decideUserBytes`，好讀緩衝期間所有使用者 byte 無條件走 sync 腿
+（`docs/easy-reading-list.md` 不變量 12e）。下表留作**查詢與推理入口**，不是白名單。
 
 ### 文章列表（`mbbsd/read.c#i_read_key`）
 
@@ -941,6 +953,10 @@ prefetch 的落點）。所以任何「對游標所在那一列動作」的鍵�
 | `Ctrl-S` | :911 | `getuser(headers[crs_ln - top_ln].owner, &muser)` | **是**（使用者設定，需 `PERM_ACCOUNTS`） |
 | `Ctrl-T` | :957 | `TagThread(currdirect)`（註解自承 copy from `case 't'`） | **是** |
 | `Ctrl-D` | :970 | `TagPruner(bid)`；`MODE_SELECT` 下拒絕 | **是** |
+| `Ctrl-X` | `bbs.c:4555` | `read_comms` 的 `{ 1, cross_post }` ⇒ `cross_post(ent, fhdr, direct)`，`fhdr` 來自 `crs_ln` | **是**（轉錄；2026-09-19 補，見上方判準） |
+| `Ctrl-A` | `bbs.c:4532` | `{ 1, show_filename }` | **是** |
+| `Ctrl-E` | `bbs.c:4536` | `{ 1, manage_post }` | **是** |
+| `%` | `bbs.c:4560` | `{ 1, recommend }`（m3itoc 式推文） | **是** |
 | `Ctrl-C` | :950 | `ClearTagList()`（全域） | 否，但 FULLUPDATE 只重畫當前頁 ⇒ 緩衝其他頁 tag 殘留，歸 T3-B |
 | `Ctrl-F` / `Ctrl-B` | :880 / :886 | 翻頁同義鍵 | 否（刻意不納白名單，維持與瀏覽器快捷鍵的分界） |
 

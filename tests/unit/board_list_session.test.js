@@ -914,6 +914,36 @@ describe("B 類 passthrough 的命令形狀", () => {
     expect(cmd.fullRepaint).toBe(true);
     expect(cmd.timeoutMs).toBe(3000); // 不凍畫面 ⇒ 維持長窗（撐住 settle 吸收）
   });
+
+  test("Ctrl-C/A/V 放行給 app 層，但 Ctrl-X 走 sync 腿代送 \\x18", () => {
+    // 與 list_keys.test.js 同一條回歸（2026-09-19 Ctrl+X）。兩個 session 共用
+    // term_keyboard.isBrowserClipboardEvent，'x' 不在裡面：終端機沒有剪下對象，
+    // 舊碼放行的後果是裸送 ^X、跳過 cursor-sync 腿。
+    for (const k of ["c", "a", "v"]) {
+      const h = makeSession();
+      h.termBuf.feed(brdScreenRows());
+      seedBuffer(h.termBuf, 1, 20);
+      h.enqueued.length = 0;
+      const e = keyEvent(k, { ctrlKey: true });
+      h.s.onKeyDown(e);
+      expect(e.defaultPrevented).toBe(false);
+      expect(h.enqueued).toEqual([]);
+    }
+
+    const h = makeSession();
+    h.termBuf.feed(brdScreenRows());
+    seedBuffer(h.termBuf, 1, 20);
+    h.s._selectedNum = 5;
+    h.s._serverNum = null; // 真游標未知 ⇒ 必須先同步
+    h.enqueued.length = 0;
+    const e = keyEvent("x", { ctrlKey: true });
+    h.s.onKeyDown(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(h.enqueued[0].kind).toBe(BRD_CMD_PREFIX + "native-sync-jump");
+    h.enqueued[0].onDone();
+    expect(h.enqueued[1].kind).toBe(BRD_CMD_PREFIX + "native-key");
+    expect(h.enqueued[1].keys).toBe("\x18");
+  });
 });
 
 describe("A 類鍵的凍結交易（看板列表：t / v / V）", () => {
