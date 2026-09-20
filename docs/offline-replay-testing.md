@@ -135,6 +135,25 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 `yarn test:e2e:offline` + `yarn test:unit` 必須**變紅**（首推作者缺席 / commentCount 不符 / 樓號錯位）；
 復原後轉綠。
 
+## 重放的兩個結構性盲點（選 spec 落點前先讀）
+
+1. **`replayCassette` 對「byte 有沒有真的上線」失明。** 它 monkey-patch `easy_reading._send`
+   當門控，餵下一頁的條件是「**`_send` 被呼叫**」而不是「byte 到了 socket」。所以任何掛在
+   `_send` **下游**的閘門（例：`term_view._send` 的 `adoptUserBytes`）把 byte 吞掉時，文章類
+   cassette 照樣一頁一頁餵下去 ⇒ **全綠**。實例：`78c276a` 引入「每篇文章開頭卡 620ms」的
+   回歸，那一輪 offline e2e 320 條全綠（根因見 `docs/easy-reading.md`「送鍵閘門」）。
+   ⇒ 要驗 wire-level 行為就用 `replayListCassette`（門控走 stub WS 的真實 bytes）或直接量
+   `window.__replay.sent`，不要用「某個出口函式被呼叫」當斷言。
+   連帶：那個 override **必須 `return origSend(data)`** —— `_send` 的回傳值是「有沒有上線」，
+   吞掉它會讓好讀永遠判成送不出去。
+2. **列表 cassette 開文章時，文章好讀不會自動接手。** `cchat-list-nav` 的跳號落點幀
+   **底列是空白**（jump park，協定 §4✚/§6）⇒ `pageState` 判 0 ⇒ 開文的 settle 序列是
+   `2 → 0 → 3`，而 `nextEasyReadingState` 要的是 `prev === 2 || 1` ⇒ 不開好讀
+   （實測 `d:[{settled:0,prev:2},{settled:3,prev:0}]`、`useEasyReadingMode:false`）。
+   真 PTT 上那一幀底列仍是列表的功能鍵列（`pageState` 2）所以會接手 —— 這是**素材差異**，
+   不是產品 bug。⇒ 任何「文章好讀從列表自動接手」的行為只能靠 unit＋live e2e，別在這裡
+   加恆綠的 spec。
+
 ## 離線網路（`installOfflineNetwork`）—— 「零網路」的另一半
 `stub WebSocket` 只擋掉 **PTT 連線**。行內開圖（`ImagePreviewer`）拿到的是 cassette 裡
 **真實文章的真實圖床網址**，瀏覽器照樣會去連 `i.imgur.com`／`pbs.twimg.com`／`i.urusai.cc`。

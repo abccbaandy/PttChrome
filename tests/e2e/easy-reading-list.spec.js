@@ -291,6 +291,38 @@ test.describe.serial('文章列表好讀模式（live）', () => {
         window.__app.easyReading._enabled = true;
       });
 
+      // 量「文章落地 → 第一個自動翻頁真的上線」的延遲（2026-09-20 回歸守護）。
+      //
+      // 這個窗口是同類 bug 的固定落點：好讀的 screenSettled listener 比 listSession
+      // 早跑 ⇒ 第一個 PageDown 必然撞上仍在飛的 open-enter ⇒ 延後，再由
+      // CommandQueue.onIdle → onWireIdle 補送，而補送那一刻 listSession 還在
+      // `opening`。歷史兩次都是在這裡多出固定的 PAGE_DOWN_GRACE_MS+20 = 620ms：
+      //   a3aaa6e（2026-08-17）假 in-flight；78c276a（2026-09-19）機器 byte 被
+      //   使用者守門吞掉。兩次的指紋一模一樣 ⇒ 值得在 live 直接量。
+      //
+      // 判準用 `_pageDownRetries`：那 620ms 的唯一來源是 watchdog 的 retry，它會把
+      // 額度從 0 推到 1（PAGE_DOWN_MAX_RETRIES=1，用盡後再撞一次就 giveup）。
+      // 真 PTT 偶爾真的會吞鍵，所以**只在延遲明顯落在 watchdog 區間時才視為回歸**
+      // ——兩個條件同時成立才紅，單看任一個都會有假陽性。
+      await page.evaluate(() => {
+        const er = window.__app.easyReading;
+        window.__pd = { t0: null, first: null };
+        const orig = er._send.bind(er);
+        er._send = (d) => {
+          const ok = orig(d); // **必須轉傳回傳值**：它是「byte 有沒有真的上線」
+          if (ok && !window.__pd.first && d.indexOf('\x1b[6~') >= 0)
+            window.__pd.first = {
+              ms: window.__pd.t0 == null ? null : performance.now() - window.__pd.t0,
+              retries: er._pageDownRetries,
+            };
+          return ok;
+        };
+        window.__app.buf.addEventListener('pageStateSettled', () => {
+          if (window.__pd.t0 == null && window.__app.buf.settledPageState === 3)
+            window.__pd.t0 = performance.now();
+        });
+      });
+
       // Enter → opening(frozen) → 跳號+Enter 兩段 → article → suspended。
       await page.keyboard.press('Enter');
       const opened = await waitFor(page, (x) => x.state === 'suspended', 25000);
@@ -313,6 +345,27 @@ test.describe.serial('文章列表好讀模式（live）', () => {
       });
       console.log('pageLines[0]:', JSON.stringify(firstRow.slice(0, 40)));
       expect(firstRow).toContain('作者');
+
+      // ---- 第一個自動翻頁的延遲（見 Enter 之前那段長註解）----
+      // `null` ＝這篇單頁就讀完了（狀態列已 100%，pmore 對 PageDown 回以靜默，P3）
+      // ⇒ 本來就不該有自動翻頁，這一輪量不到。探針是內容相依的，**不要**為了讓它
+      // 必定觸發而去挑特定文章：那會讓這條測試依賴板上當下的內容。
+      const pd = await page.evaluate(() => window.__pd.first);
+      console.log(
+        'FIRST PAGEDOWN:',
+        JSON.stringify(pd),
+        pd ? '' : '(單頁文章，本輪無自動翻頁可量)'
+      );
+      if (pd) {
+        // 回歸指紋＝「走了 watchdog 的 retry」**且**「延遲落在 620ms 之後」。
+        const viaWatchdog = pd.retries > 0 && pd.ms != null && pd.ms >= 550;
+        expect(
+          viaWatchdog,
+          '第一個 PageDown 由 620ms watchdog 補送（' +
+            JSON.stringify(pd) +
+            '）＝機器送鍵在 _send 下游被吞掉，見 docs/easy-reading.md「送鍵閘門」'
+        ).toBe(false);
+      }
 
       // 返回列表（article 好讀下左鍵離開本篇）。
       await page.locator('#t').focus();

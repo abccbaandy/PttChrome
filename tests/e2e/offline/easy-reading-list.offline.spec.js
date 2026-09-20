@@ -1332,8 +1332,25 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
         10000
       );
       // 原生镜像＝server 的 prompt 画面（不再是 frozen 快照）。
-      const rows = await dumpScreenRows(page);
-      expect(rows.some((t) => t.includes('(U)未讀') || t.includes('未讀'))).toBe(true);
+      // **等的条件必须是内容本身**：state 翻成 functionMode 是在
+      // `_beginPassthroughBytes` 当下，而 prompt 画面要等代送的 'v' 上线、门控喂完
+      // mark step、再重绘才会到 —— 两者之间有真实的时间差。拿 state 当等待条件、
+      // 拿画面当断言，机器忙的时候就会偶发红（2026-09-20 实录：同一条单跑绿、
+      // 三支 spec 同批跑红一次）。同档 '/' 那条早就是 poll 内容的写法，比照办理。
+      await page
+        .waitForFunction(
+          () =>
+            Array.from(
+              document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+            ).some((el) => el.textContent.includes('未讀')),
+          null,
+          { timeout: 10000 }
+        )
+        .catch(async () => {
+          // 超时也要留下可读的现场（同档其他条的 console tail 惯例）。
+          console.log('screen rows:', JSON.stringify(await dumpScreenRows(page)));
+          throw new Error('原生 prompt 画面未到齐（找不到「未讀」）');
+        });
 
       // Enter 取消（cancel step 喂 FULLUPDATE）→ 操作完成、画面静下来 ⇒ 靜置探針
       // 自动把我们切回好读。这就是本次改动要的行为：使用者除了非导览操作本身，

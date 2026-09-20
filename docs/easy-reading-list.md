@@ -340,12 +340,21 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
    「哪些鍵要跑 sync」過去是**每個按鍵分派點各自 opt-in**，漏一個就靜默壞掉，而漏的症狀最嚴重的一種（`^X`）連原生鏡像都不切：好讀畫面完全不動，server 卻已經對別篇動作。
 
    **不變量**：列表好讀的 `buffer`/`frozen` render 期間，任何**使用者來源**的 byte 只能經 `_beginPassthroughBytes`（內含 sync 腿）上線。
-   守門在 `term_view._send` / `_convSend` —— 全專案**唯一**的使用者 byte 出口（`vtkbd_send_state.js` 檔頭已列出全部五個出口，`user_key_send_wiring.test.js` 靜態守住「只有 term_view 可以叫 `conn.sendUserKey`」）：
+   守門在 `term_view._send` / `_convSend` —— **真鍵盤／IME** 的唯一出口（`vtkbd_send_state.js` 檔頭列出全部六個出口，`user_key_send_wiring.test.js` 靜態守住「只有 term_view 可以叫 `conn.sendUserKey`」）：
    `bbscore.adoptUserBytes(data)` → `App.activeListSession()` → `session.adoptUserBytes()` → 決策在純函式 `list_user_bytes.decideUserBytes({ renderMode, state })`（`native`→pass／`opening`・`frozen+functionMode`→swallow＋提示／`active`→adopt／其餘→pass；分支與 `onKeyDown` 既有兩道守門同源）。
 
    - **界線是送出入口，不是位元組內容**：刻意**不看 bytes 是哪一顆鍵**。內容判準正是前四次復發的來源（每次都要有人記得把新鍵加進 §11.7 那張表）。代價只是對「不吃真游標的鍵」多跑一次跳號，而那一腿本來就有 `_serverNum` 快路徑。形狀照抄 2026-09-17 立的同一條先例（`guardEscSequence`）。
    - **`_convSend` 要帶 `{ conv: true }`**：它的 payload 是 **Unicode 文字不是 byte**，接手方必須走會做 `u2b`＋`ansiHalfColorConv` 的 `_beginTextPassthrough`（與 IME／貼上共用），直接丟進 `_beginPassthroughBytes` 送出去是亂碼（`CommandQueue` 的 send 綁 raw `conn.send`）。
-   - **這道網今天幾乎攔不到東西**（分派點都已自己走 sync 腿），價值在下一次 ⇒ 最容易被「順手簡化掉」，而拿掉之後的症狀是靜默的。靜態守護 `user_key_send_wiring.test.js`「使用者 byte 上線前必經列表好讀的 cursor-sync 守門」（含**順序**：`adoptUserBytes` 必須在 `conn.*UserKey` 之前）；行為守護 `list_keys.test.js` 的三條 `adoptUserBytes`；決策層 `list_user_bytes.test.js`。
+   - **這道網對使用者按鍵今天幾乎攔不到東西**（分派點都已自己走 sync 腿），價值在下一次 ⇒ 最容易被「順手簡化掉」，而拿掉之後的症狀是靜默的。靜態守護 `user_key_send_wiring.test.js`「使用者 byte 上線前必經列表好讀的 cursor-sync 守門」（含**順序**：`adoptUserBytes` 必須在 `conn.*UserKey` 之前）；行為守護 `list_keys.test.js` 的三條 `adoptUserBytes`；決策層 `list_user_bytes.test.js`。
+   - ⚠️ **但它一開始攔到的是「機器 byte」，而且天天攔**（2026-09-20 更正，`78c276a` 的回歸）。本條原本寫的是「`term_view._send` 是全專案**唯一**的使用者 byte 出口」—— 錯，而且是承重的錯：機器狀態機當時也走 `view._send`。兩個實測症狀：
+     | 症狀 | 判定 | 觸發頻率 | 後果 |
+     |---|---|---|---|
+     | 從好讀列表進文章，第一次自動翻頁卡 ~620ms＋閃假的「開啟文章中，請稍候…」 | `SWALLOW`（`frozen`+`opening`） | **每篇文章**（窗口決定性，見下） | 好讀的 PageDown 零 byte 上線，只剩 watchdog 救；燒掉 `PAGE_DOWN_MAX_RETRIES=1` |
+     | 在好讀列表上開設定頁再關掉 → 被踢到原生鏡像＋閃「已切至原生操作」 | `ADOPT`（`buffer`+`active`） | **每次關設定頁**（`switchToEasyReadingMode` 末尾的 `^L` 無條件送） | `_beginPassthroughBytes('\x0c')` → `_enterFunctionMode()`，連 cache 一起丟（不變量 15） |
+
+     第一條的窗口為何是決定性的：`_onScreenSettled` 裡 `_queue.onSettle` → `queue.done` → `_maybeIdle` → `easyReading.onWireIdle()` 是**同步**跑的，而它在 `_dispatch`（`handoff-article` 清 owner）**之前**（`list_session.js` 的「Command completion first」）⇒ 好讀補送那一刻 owner 必然還是 `article-list`、state 必然還是 `opening`。
+   - ⇒ **這一層只管使用者來源的 byte**。機器 byte 走 `App.sendMachineBytes`（`conn.send`），不經這裡。`decideUserBytes` 的四個分支**刻意不動**：它不看內容也不看來源，來源的分辨屬於**入口**（同「界線是送出入口」那條先例）。守護 `tests/e2e/offline/pref_close_in_list.offline.spec.js`（第二條症狀，還原 code 即紅）、`tests/unit/easy_reading_send_gate.test.js`（第一條）。
+   - **其餘仍走 `view._send` 的 `pttchrome.jsx` 呼叫點都查過了**，不需要搬：`ACT_EXIT`/`ACT_EXIT_ARTICLE`/`ACT_ENTER` 的方向鍵、aux-click 返回、`onFunctionKey` 是**真的由使用者觸發**（該過守門）；滑鼠 report（`encodeClick`/`encodeWheel`）與 dismiss bytes 都在 `buffer||frozen` 早退**之後**或 `listRenderMode === 'native'` 的條件內 ⇒ 這道守門對它們本來就是 no-op；開燈的 pmore 設定鍵只在文章畫面（owner 為 null ⇒ `PASS`）。
 
 12f. **cursor-sync 腿落地要驗身分，不是只驗編號**（2026-09-19，與 12e 同批）：`<編號>\r` 只保證真游標停在那個**編號**。pttbbs 的 `crs_ln` 是 `.DIR` 純行號、**不綁文章身分**，一般刪文（`record.c#delete_record2`）把後面每一筆 index 往前搬 ⇒ 我們幾秒前累積進緩衝的編號可能已指向別篇（完整推導見 `docs/long-push.md:86-130`）。這一腿的下游正是對那一列動作的破壞性指令（`^X` 轉錄、`^E` 管理、`%` 推文），誤動作無法收回。
    `_enqueueCursorSyncJump` 在 `onDone` 比對落地列與本地選取列的作者／主題（重用 `long_push_anchor.listRowIdentity` / `checkCursorAnchor`，零額外 round-trip）：

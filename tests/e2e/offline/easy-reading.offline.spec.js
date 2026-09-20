@@ -432,7 +432,11 @@ test.describe('好读 End 切回原生（离线重放）', () => {
     await page.evaluate(() => {
       const a = window.__app;
       a.view.mainDisplay.scrollTop = a.view.mainDisplay.scrollHeight; // 使用者读到底
-      a.view._send = () => {};   // 掐断送键：任何伺服器回应都不会来
+      // 掐断送键：任何伺服器回应都不会来。**两个出口都要掐**——关好读会经
+      // switchToEasyReadingMode 送 ^L，那是机器 byte（sendMachineBytes），
+      // 好读状态机自己的键也走那里；view._send 留着是为了真键盘路径。
+      a.view._send = () => {};
+      a.sendMachineBytes = () => false;
       a.easyReading.exitEasyReading();
     });
     await page.waitForTimeout(300);
@@ -461,20 +465,25 @@ test.describe('好读 End 切回原生（离线重放）', () => {
     await page.waitForTimeout(800);
     expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(false);
 
-    const sent = await page.evaluate(() => {
+    // 断言点是**线路**而不是某个出口函式（2026-09-20）：reenterFromTop 的 Home 是
+    // 机器 byte，走 App.sendMachineBytes 而不是 view._send（推导见
+    // src/js/easy_reading.js#_send）。量 window.__replay.sent 直接证明 byte 到了
+    // socket —— 那才是这条测试真正在乎的事，也不会再被「换了哪个出口」弄假。
+    const before = await page.evaluate(() => window.__replay.sent.length);
+    await page.evaluate(() => {
       const a = window.__app;
-      const out = [];
-      const orig = a.view._send.bind(a.view);
-      a.view._send = (d) => { out.push(d); orig(d); };
       // 走真实键盘路径：term_view.onKeyDown 的原生分支才是拦截点
       a.view.onKeyDown(Object.assign(new KeyboardEvent('keydown', { key: 'F8' }), {}));
-      return out;
     });
     await page.waitForTimeout(300);
 
     expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);
     // 在文末按下 → 必须送 Home 倒回第 1 行，否则长页只会有文末那一屏
-    expect(sent.join('')).toContain('\x1b[1~');
+    const sent = await page.evaluate(
+      (n) => window.__replay.sent.slice(n).join(''),
+      before
+    );
+    expect(sent).toContain('\x1b[1~');
   });
 });
 

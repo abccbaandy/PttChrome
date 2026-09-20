@@ -596,6 +596,12 @@ TermView.prototype = {
   // **送出入口**而不是按鍵分派點，是為了讓未來新增的送字路徑預設安全——同一條先例
   // 與完整推導見 `list_user_bytes.js` 與 `vtkbd_send_state.js` 兩份檔頭。
   // 守護 tests/unit/user_key_send_wiring.test.js。
+  //
+  // **這兩支是「真鍵盤／IME」的出口，不是「所有 byte」的出口**（2026-09-20 更正）：
+  // 那道守門是給使用者按鍵的 cursor-sync 用的，機器狀態機的 byte 走
+  // `App.sendMachineBytes`。把機器 byte 灌進這裡的後果是靜默的——好讀的自動翻頁被
+  // 判 SWALLOW（每篇文章卡 620ms）、關設定頁的 `^L` 被判 ADOPT（列表好讀被踢到原生
+  // 鏡像）。兩者實錄與推導見 `list_user_bytes.js` 檔頭「這一層只管使用者來源的 byte」。
   _send: function(data) {
     if (this.bbscore && this.bbscore.adoptUserBytes && this.bbscore.adoptUserBytes(data))
       return;

@@ -71,7 +71,17 @@ function makeHarness() {
     _lastAccumulatedSig: null,
     hideEasyReadingOverlays() {},
   };
-  const core = { aidNavigation: null, commandQueue: null, connectedUrl: {} };
+  // 好讀的機器 byte 走 App.sendMachineBytes（不是 view._send），回傳值＝有沒有
+  // 真的上線。見 src/js/easy_reading.js#_send。
+  const core = {
+    aidNavigation: null,
+    commandQueue: null,
+    connectedUrl: {},
+    sendMachineBytes: (d) => {
+      sent.push(d);
+      return true;
+    },
+  };
   const er = new EasyReading(core, view, buf);
   er._enabled = true;
   er._functionMode = true;

@@ -561,7 +561,11 @@ const makeER = ({
   const view = { useEasyReadingMode: enabled, _lastAccumulatedSig: accSig };
   const core = { connectedUrl: { easyReadingSupported: true } };
   const er = new EasyReading(core, view, termBuf);
-  er._send = vi.fn(); // stub the network send
+  // **必須回傳 true**：_send 的回傳值＝「byte 有沒有真的上線」，
+  // _maybeSendPageDown 靠它決定要不要寫交易狀態（stamp-after-send，見
+  // src/js/easy_reading.js#_maybeSendPageDown）。回 undefined ⇒ 一律判成
+  // 「送不出去」⇒ 永遠不建立 in-flight ⇒ 同一頁重複送 PageDown。
+  er._send = vi.fn(() => true); // stub the network send
   er.easyReadingReachedPageEnd = reachedPageEnd;
   er.sendCommandAfterUpdate = sendCommandAfterUpdate;
   er._inFlightSig = lastPagedSig;
@@ -855,7 +859,7 @@ describe("文章身分 _articleKey 的捕捉點", () => {
     };
     const core = { connectedUrl: { easyReadingSupported: true } };
     const er = new EasyReading(core, view, termBuf);
-    er._send = vi.fn();
+    er._send = vi.fn(() => true);
     // 忠實模擬 App.switchToEasyReadingMode 的隱藏傳遞鏈（pttchrome.jsx）
     er._core.switchToEasyReadingMode = vi.fn(() => { er.leaveCurrentPost(); });
     er._termBufMock = termBuf;
@@ -943,7 +947,7 @@ describe("F8 在原生模式下切回好讀（toggle）", () => {
     };
     const view = { useEasyReadingMode: false, mainDisplay: { scrollTop: 0 } };
     const er = new EasyReading({ connectedUrl: { easyReadingSupported: true } }, view, termBuf);
-    er._send = vi.fn();
+    er._send = vi.fn(() => true);
     er._termBufMock = termBuf;
     readValuesWithDefault.mockReturnValue({
       enableEasyReading: true, easyReadingEndSwitchNative: true, easyReadingEndSwitchKey: key
@@ -1406,7 +1410,7 @@ describe("EasyReading._onViewUpdated 快路徑去重", () => {
       startedEasyReading: true,
     };
     const er = new EasyReading({}, { useEasyReadingMode: true }, termBuf);
-    er._send = vi.fn();
+    er._send = vi.fn(() => true);
     return er;
   };
 
@@ -1466,7 +1470,7 @@ describe("EasyReading 掉頁自癒（goto-line 精準補讀）", () => {
       mainDisplay: { scrollTop: 1234 }
     };
     const er = new EasyReading({}, view, termBuf);
-    er._send = vi.fn();
+    er._send = vi.fn(() => true);
     return { er, termBuf, view };
   };
 

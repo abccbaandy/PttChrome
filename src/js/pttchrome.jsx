@@ -466,6 +466,36 @@ App.prototype.sendData = function(str) {
     this.conn.convSend(str);
 };
 
+// 機器狀態機的 byte 出口（第五條機器路徑，2026-09-20）。目前的消費者是好讀
+// （自動翻頁／gap 自癒／整頁重繪）。
+//
+// **為什麼不能沿用 `view._send`**：那是真鍵盤／IME 的出口，78c276a 起在它上面掛了
+// 一道**使用者按鍵**的 fail-closed cursor-sync 守門（`adoptUserBytes`，推導見
+// `list_user_bytes.js` 檔頭）。好讀是機器狀態機，它的 PageDown 經過那道守門時會被
+// 列表 session 當成使用者按鍵：文章落地那一瞬間 owner 還是 article-list、state 還是
+// `opening` ⇒ 判 SWALLOW ⇒ **零 byte 上線**，好讀卻已經記下「送出去了」 ⇒ 只剩
+// 620ms 的 watchdog 能救 ⇒ 每篇文章開頭固定卡 0.5 秒＋閃一次假的
+// 「開啟文章中，請稍候…」。實錄 ptt-debug-20260920-023652，完整推導見
+// `docs/easy-reading.md`「送鍵閘門」。機器 byte 去跑 cursor-sync 腿本身也毫無意義。
+//
+// 走 `conn.send`（機器變體）而非 `sendUserKey`：界線是**送出入口**不是位元組內容
+// （2026-09-17 的先例，見 `vtkbd_send_state.js` 檔頭）。對好讀送的那幾個跳脫序列
+// （`\x1b[6~`／`\x1b[1~`／`\x1b[4~`／方向鍵）兩個模式逐位元相同；對 `:N\r`（gap
+// 自癒跳行）機器模式會多補一個 ESC 化解懸空態 —— 那才是正確行為，否則 `:` 被
+// server 的 vtkbd 吃成 esc_arg，跳行靜默失效。
+//
+// **回傳值是合約**：true ＝ bytes 真的上線。呼叫端（`easy_reading._maybeSendPageDown`）
+// 靠它決定要不要寫交易狀態 —— 「送不出去」必須是可觀測的事實，不是靜默丟棄。
+// `conn.isConnected` 一定要看：`Websocket.send` 對已關閉的 socket 會 throw
+// InvalidStateError，而這裡的呼叫點都在 settle／notify handler 裡（throw 會炸斷整條
+// 渲染路徑）。形狀與 CommandQueue 的 send 一致。
+App.prototype.sendMachineBytes = function(bytes) {
+  if (!bytes) return false;
+  if (!this.conn || !this.conn.isConnected) return false;
+  this.conn.send(bytes);
+  return true;
+};
+
 App.prototype.cancelMbTimer = function() {
   if (this.mbTimer) {
     this.mbTimer.cancel();
@@ -593,13 +623,21 @@ App.prototype.switchToEasyReadingMode = function(doSwitch) {
   // clear the deep cloned copy of lines
   if (plan.clearPageLines)
     this.buf.pageLines = [];
-  if (plan.cursorNudge) this.view._send('\x1b[D\x1b[C'); //this.view._send('qr');
+  if (plan.cursorNudge) this.sendMachineBytes('\x1b[D\x1b[C');
   // request the full screen.
-  // 一律走 view._send（內含 `if (this.conn)`），不可直接 this.view.conn.send：
-  // TermView.setConn 只在 App.onConnect 被呼叫，**連線從未成功時 view.conn 是
-  // undefined** → 直接 deref 會 TypeError，把呼叫端（關設定頁）整條路徑炸斷。
+  // **走 sendMachineBytes，不是 view._send**（2026-09-20）：這兩個都是**程式**要求的
+  // 重繪，不是使用者按的鍵。留在使用者出口的後果是列表好讀（renderMode 'buffer'、
+  // state 'active'）下 `decideUserBytes` 判 ADOPT ⇒ `_beginPassthroughBytes('\x0c')`
+  // ⇒ `_enterFunctionMode()` ⇒ **關掉設定頁就被踢到原生鏡像**（連 cache 一起丟，
+  // 不變量 15）＋閃一次「已切至原生操作」。而這條路是無條件的：`pref_save.js` 每次
+  // 關框都呼 switchToEasyReadingMode。同根因的另一半見 easy_reading._send 與
+  // `App.sendMachineBytes` 的註解。
+  //
+  // 它自己帶 `if (!this.conn || !this.conn.isConnected) return false`，所以原本
+  // 「不可直接 this.view.conn.send —— 連線從未成功時 view.conn 是 undefined、
+  // 直接 deref 會 TypeError 把關設定頁整條路徑炸斷」那道保護沒有變弱。
   // 回歸守護：tests/e2e/offline/connect_failure.offline.spec.js。
-  this.view._send(unescapeStr('^L'));
+  this.sendMachineBytes(unescapeStr('^L'));
 };
 
 // 剪貼簿寫入**一定要自己接住失敗**：document 沒有焦點、非 secure context、

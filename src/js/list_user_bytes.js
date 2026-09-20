@@ -26,10 +26,30 @@
 //               而 server 已經對別篇開了轉錄流程。
 //
 // ⇒ 治本＝把 sync 從呼叫點的 opt-in 改成**線路出口的 fail-closed**：
-// `term_view._send` / `_convSend`（全專案唯一的使用者 byte 出口，見
+// `term_view._send` / `_convSend`（真鍵盤／IME 的唯一出口，見
 // `vtkbd_send_state.js` 檔頭與 tests/unit/user_key_send_wiring.test.js）送出之前先問
 // 這一層。形狀刻意照抄 2026-09-17 立的同一條先例——**界線是送出入口，不是位元組內容**。
 // 好處是**新增送字路徑預設就是安全的那一邊**，不必記得去補 sync。
+//
+// ---- 這一層只管**使用者來源**的 byte（2026-09-20 更正）----
+//
+// 本檔原本寫的是「`term_view._send` 是全專案**唯一**的 byte 出口」。那是錯的，而且是
+// 承重的錯：機器狀態機（好讀的自動翻頁／gap 自癒／整頁重繪）當時也走 `view._send`，
+// 於是這道守門把它們一起接手了。兩個實測症狀：
+//
+//   a) 從好讀列表進文章，第一次自動翻頁固定卡 ~620ms＋每篇閃一次假的
+//      「開啟文章中，請稍候…」。文章落地那一瞬間 owner 還是 article-list、state 還是
+//      `opening` ⇒ 判 SWALLOW ⇒ 好讀的 PageDown 零 byte 上線，只剩 watchdog 能救。
+//      實錄 ptt-debug-20260920-023652，完整推導見 `docs/easy-reading.md`「送鍵閘門」。
+//   b) 在好讀列表上開設定頁再關掉 ⇒ 被踢到原生鏡像。`switchToEasyReadingMode` 末尾
+//      那個 `^L` 整頁重繪是無條件的，在 `active` + `buffer` 下判 ADOPT ⇒
+//      `_beginPassthroughBytes` ⇒ `_enterFunctionMode()`（連 cache 一起丟，不變量 15）。
+//      守護 tests/e2e/offline/pref_close_in_list.offline.spec.js。
+//
+// ⇒ 機器 byte 走**另一個入口** `App.sendMachineBytes`（`conn.send`，機器 ESC 模式），
+// 不經這一層。分類學與完整出口清單見 `vtkbd_send_state.js` 檔頭。「機器 byte 要不要
+// 跑 cursor-sync 腿」的答案永遠是否：那一腿存在的理由是「使用者看到的選取 ≠ server
+// 真游標」，而機器送的鍵不對應任何選取。
 
 export const ADOPT = 'adopt'; // session 接手：走 _beginPassthroughBytes（含 sync 腿）
 export const SWALLOW = 'swallow'; // 吞掉＋提示：序列化交易在途，不准搶線路

@@ -693,18 +693,48 @@ EasyReading.prototype._maybeSendPageDown = function(keys, recovery) {
       sinceSentMs: sinceSentMs
     });
   }
+  const sends = d.action === 'send' || d.action === 'retry';
+  if (sends) {
+    // A retry re-sends the ORIGINAL bytes, never the caller's: the outstanding request
+    // may be a gap heal (':N\r'), and the watchdog has no idea what it is recovering.
+    const bytes = d.action === 'retry' ? (this._inFlightKeys || keys) : keys;
+    // ---- stamp-after-send（2026-09-20，防第 3 次復發）----
+    // 交易狀態是 **commit**，不是樂觀寫入：`_send` 回 false ＝ bytes 從來沒上線，
+    // 處置必須與本函式開頭的 `_wireBusy()` 早退**逐項相同**（存待補送、三件套一格
+    // 都不動、不上膛 watchdog）。
+    //
+    // 為什麼非這樣不可：a3aaa6e 只把 `_wireBusy()` 搬到最前面，沒有防住「`_send`
+    // 下游有別人吞掉」。78c276a 就在下游加了一道（`adoptUserBytes`），於是同一個
+    // 620ms 死時間原封回來 —— 而且假紀錄還會燒掉 `PAGE_DOWN_MAX_RETRIES`=1 的唯一
+    // 額度，再撞一次就 `giveup`（整篇停在第一頁）。
+    //
+    // 通則：**任何掛在送出下游的閘門，對機器狀態機而言都是「送出失敗」，呼叫端必須
+    // 看回傳值。** 這樣下一次有人在線路出口加東西，最壞只是「等下一次 idle 補送」。
+    //
+    // ⚠️ `d.retries`／`d.inFlightSig` 的寫回必須在這之後：`retry` 分支的 `d.retries`
+    // 已經 +1，送失敗時寫回去就是憑空消耗額度。
+    if (!this._send(bytes)) {
+      this._deferredPageDownKeys = bytes;
+      this._core.debugRecorder?.log('easyReading.pageDown', {
+        action: 'sendFailed',
+        decided: d.action,
+        recovery: !!recovery,
+        sig: status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null,
+        wasInFlightSig: this._inFlightSig,
+        wasRetries: this._pageDownRetries
+      });
+      return 'blocked';
+    }
+    this._inFlightKeys = bytes;
+    this._inFlightSentAt = Date.now();
+  }
+  // 單一 commit 點（刻意不複製成兩份：這三行漂移過一次就是整個交易機制失效）。
   this._inFlightSig = d.inFlightSig;
   this._pageDownRetries = d.retries;
   if (d.reachedPageEnd !== undefined)
     this.easyReadingReachedPageEnd = d.reachedPageEnd;
-  if (d.action === 'send' || d.action === 'retry') {
-    // A retry re-sends the ORIGINAL bytes, never the caller's: the outstanding request
-    // may be a gap heal (':N\r'), and the watchdog has no idea what it is recovering.
-    const bytes = d.action === 'retry' ? (this._inFlightKeys || keys) : keys;
-    this._inFlightKeys = bytes;
-    this._inFlightSentAt = Date.now();
-    this._send(bytes);
-    this._armWatchdog();
+  if (sends) {
+    this._armWatchdog(); // 讀 _inFlightSig ⇒ 必須在上面那行之後
   } else if (d.action === 'done' || d.action === 'giveup') {
     this._clearWatchdog();
     // Bounded escape for a seek PTT never answered: without this the heal gate would
@@ -819,11 +849,24 @@ EasyReading.prototype._healAtLine = function(line) {
   // watchdog re-sends _inFlightKeys if PTT never answers. Without this the paging
   // machine would see the next complete frame with inFlightSig null and fire a
   // PageDown on top of the in-flight seek — the very P4 duplicate we are recovering from.
+  //
+  // stamp-after-send（同 _maybeSendPageDown 的推導）：送不出去就整筆回滾。
+  // **兩個回滾都是必要的**——`easyReadingHealInFlight` 留 true 會讓之後每一次
+  // `_healGap` 都判 'busy' 早退（掉頁永遠補不回來，唯一的逃生門在 done/giveup，
+  // 而這裡連交易都沒建立）；`_healGotoCount` 留著則會憑空消耗 HEAL_GOTO_MAX=3 的
+  // 額度，用盡後退化成整篇重讀（＝「讀到一半自動從第一頁重讀」那個回報）。
+  const keys = ':' + line + '\r';
+  if (!this._send(keys)) {
+    this._termBuf.easyReadingHealInFlight = false;
+    --this._healGotoCount;
+    // 旗標刻意留著：下一次 settle 會再試一次（與 _healGap 的 _wireBusy 早退同規）。
+    this._termBuf.easyReadingGapDetected = true;
+    return;
+  }
   this._inFlightSig = this._currentPageSignature();
-  this._inFlightKeys = ':' + line + '\r';
+  this._inFlightKeys = keys;
   this._inFlightSentAt = Date.now();
   this._pageDownRetries = 0;
-  this._send(this._inFlightKeys);
   this._armWatchdog();
 };
 
@@ -832,6 +875,15 @@ EasyReading.prototype._healAtLine = function(line) {
 // when there is no accumulated position to seek back to.
 EasyReading.prototype._healFromTop = function() {
   console.log('easy reading: lost page detected, re-reading from the top');
+  // **先送再拆**（2026-09-20）：下面那一串會清掉 pageLines，而被下游閘門吞掉的 Home
+  // 沒有 watchdog 兜底 ⇒ 只剩一片空白畫面，永遠回不來（原本 `_healGap` 檔頭把這個
+  // 情境列為「不能往下走」的理由）。送出是同步的、回應不可能在本函式返回前被解析，
+  // 所以顛倒順序沒有競態，而且把那個最壞情況整個消掉。
+  // 旗標留著 ⇒ 下一次 settle 會再試一次（與 `_healAtLine` 的失敗路徑同規）。
+  if (!this._send('\x1b[1~')) {  // KEY_HOME → mf_goTop
+    this._termBuf.easyReadingGapDetected = true;
+    return;
+  }
   this._resetPagingState();
   this._healHomeUsed = true;  // AFTER the reset — this article's Home budget is spent
   this._termBuf.easyReadingHealInFlight = false;
@@ -843,7 +895,6 @@ EasyReading.prototype._healFromTop = function() {
     this._view._lastAccumulatedSig = null;
     if (this._view.mainDisplay) this._view.mainDisplay.scrollTop = 0;
   }
-  this._send('\x1b[1~');  // KEY_HOME → mf_goTop
 };
 
 // Settle-driven page-down recovery. Fired once per quiet window (term_buf 'screenSettled'),
@@ -1237,11 +1288,27 @@ EasyReading.prototype._send = function(data) {
   // （見 _wireBusy／onWireIdle）；這裡涵蓋其餘直接送鍵的呼叫點（_onKeyDown 的
   // 方向鍵、switchToNativeAtBottom 的 End…），它們被吞掉只是該次動作沒發生，
   // 不會像翻頁那樣留下假的 in-flight。
-  if (this._wireBusy()) return;
-  // 走 TermView._send（內含 `if (this.conn)`）：view.conn 只在 App.onConnect 被設，
-  // 連線從未成功時是 undefined，直接 deref 會 TypeError。見 pttchrome.jsx
-  // switchToEasyReadingMode 的同類註解。
-  this._view._send(data);
+  if (this._wireBusy()) return false;
+  // **走 App.sendMachineBytes（機器出口），不是 view._send（真鍵盤／IME 出口）**
+  // ——2026-09-20，a3aaa6e 的症狀第 2 次復發的治本層。
+  //
+  // 78c276a 在 `view._send` 上掛了一道**使用者按鍵**的 cursor-sync 守門
+  // （`adoptUserBytes`），而好讀是機器狀態機 ⇒ 它的 PageDown 被列表 session 當成
+  // 使用者按鍵吞掉。文章落地那一瞬間的窗口是**決定性**的：`queue.onSettle` →
+  // `queue.done` → `_maybeIdle` → `onWireIdle` 同步跑在 `list_session._dispatch`
+  // **之前** ⇒ 送鍵當下 owner 還是 article-list、state 還是 `opening` ⇒ SWALLOW ⇒
+  // 零 byte 上線。症狀：每篇文章開頭固定卡 620ms（只剩 watchdog 能救）＋閃一次假的
+  // 「好讀列表：開啟文章中，請稍候…」。推導與實錄見 `docs/easy-reading.md`
+  // 「送鍵閘門」與 `pttchrome.jsx` 的 `sendMachineBytes` 註解。
+  //
+  // **刻意不做 fallback 到 `view._send`**：靜默的退路正是這個 bug 的藏身處。
+  // 機器出口缺席（測試替身）就回報「沒送出」，由呼叫端當成事實處理。
+  //
+  // **回傳值是合約**：true ＝ bytes 真的上線。`_maybeSendPageDown` 靠它決定要不要
+  // 寫交易狀態（stamp-after-send，見那裡的長註解）。`sendMachineBytes` 內含
+  // `conn && conn.isConnected` 的守門，所以「連線從未成功」的保護沒有變弱。
+  if (!this._core.sendMachineBytes) return false;
+  return !!this._core.sendMachineBytes(data);
 };
 
 // 線路上有別人的交易嗎？（AID 跳文／deep link 導航，或 CommandQueue 的序列化指令）
@@ -1331,11 +1398,13 @@ EasyReading.prototype.reenterFromTop = function(status) {
   // changes nothing is answered with ZERO bytes — an unanswerable transaction. Only
   // rewind when there is something to rewind.
   if (status.rowIndexStart > 1) {
+    // stamp-after-send：送不出去就什麼都不記（模式切換本身已經發生，只是少了倒帶）。
+    if (!this._send('\x1b[1~'))  // KEY_HOME → mf_goTop
+      return;
     this._inFlightSig = sig;
-    this._inFlightKeys = '\x1b[1~';  // KEY_HOME → mf_goTop
+    this._inFlightKeys = '\x1b[1~';
     this._inFlightSentAt = Date.now();
     this._pageDownRetries = 0;
-    this._send(this._inFlightKeys);
     this._armWatchdog();
   }
 };

@@ -17,17 +17,35 @@
 // 模式**之前**就排好的 PageDown 照樣送得出去。
 
 import { EasyReading } from "../../src/js/easy_reading";
+import { decideUserBytes, SWALLOW, ADOPT } from "../../src/js/list_user_bytes";
 
-function harness({ active = false, inFlightKind = null, longPushBusy = false } = {}) {
+// 好讀是**機器狀態機**，它的 byte 走 App.sendMachineBytes（機器出口），不走
+// term_view._send（真鍵盤／IME 出口）。`_view._send` 在這裡是**陷阱**：踩到就是
+// 2026-09-20 那次復發的形狀（見檔尾的「兩條出口」describe）。
+function harness({
+  active = false,
+  inFlightKind = null,
+  longPushBusy = false,
+  conn = true
+} = {}) {
   const sent = [];
   return {
     ctx: {
       _core: {
         aidNavigation: { active },
         commandQueue: { inFlightKind },
-        longPush: { busy: longPushBusy }
+        longPush: { busy: longPushBusy },
+        sendMachineBytes: d => {
+          if (!conn) return false;
+          sent.push(d);
+          return true;
+        }
       },
-      _view: { _send: d => sent.push(d) },
+      _view: {
+        _send: () => {
+          throw new Error("機器 byte 不可以走 term_view._send（使用者出口）");
+        }
+      },
       _wireBusy: EasyReading.prototype._wireBusy
     },
     sent
@@ -75,12 +93,40 @@ test("沒有交易在飛：照常送出（好讀的翻頁動力不能被誤殺�
 test("沒有 aidNavigation / commandQueue（測試替身）也不能炸", () => {
   const sent = [];
   const ctx = {
-    _core: {},
-    _view: { _send: d => sent.push(d) },
+    _core: {
+      sendMachineBytes: d => {
+        sent.push(d);
+        return true;
+      }
+    },
+    _view: {},
     _wireBusy: EasyReading.prototype._wireBusy
   };
   send(ctx, "\x1b[6~");
   expect(sent).toEqual(["\x1b[6~"]);
+});
+
+// **刻意不做 fallback 到 view._send**：靜默的退路正是這次 bug 藏身的形狀
+// （見檔尾「兩條出口」）。機器出口缺席就是「沒送出」，由呼叫端當成事實處理。
+test("機器出口缺席：回報沒送出，不得偷偷改走使用者出口", () => {
+  const ctx = {
+    _core: {},
+    _view: {
+      _send: () => {
+        throw new Error("不可以 fallback 到使用者出口");
+      }
+    },
+    _wireBusy: EasyReading.prototype._wireBusy
+  };
+  expect(send(ctx, "\x1b[6~")).toBe(false);
+});
+
+test("_send 的回傳值就是「byte 有沒有真的上線」", () => {
+  expect(send(harness().ctx, "\x1b[6~")).toBe(true);
+  // 線路忙 → 延後，不是送出
+  expect(send(harness({ inFlightKind: "open-enter" }).ctx, "\x1b[6~")).toBe(false);
+  // 沒連線 → 機器出口回報 false
+  expect(send(harness({ conn: false }).ctx, "\x1b[6~")).toBe(false);
 });
 
 // ---------------------------------------------------------------------------
@@ -101,12 +147,44 @@ test("沒有 aidNavigation / commandQueue（測試替身）也不能炸", () => 
 const FIRST_PAGE_ROW =
   "  瀏覽 第 1/2 頁 ( 45%)  目前顯示: 第 1~23 行  (y)回應(X%)推文(h)說明(←)離開 ";
 
+// listGate ＝模擬列表好讀 session 的所有權窗（null ＝沒有 session 在管這張畫面）。
+// 判定**直接呼真的 decideUserBytes**，不手抄——舊 harness 手抄 term_view 的形狀
+// （其實是根本沒抄）就是它漏掉 2026-09-20 那次復發的原因。
 function pagingHarness({
   active = false,
   inFlightKind = null,
-  longPushBusy = false
+  longPushBusy = false,
+  listGate = null,
+  conn = true
 } = {}) {
   const sent = [];
+  const hints = [];
+  const adopted = [];
+  // 真鍵盤／IME 出口：照抄 term_view._send 的真實形狀（先問守門，回 true 就不送）。
+  const userExit = d => {
+    if (listGate) {
+      const verdict = decideUserBytes(listGate);
+      if (verdict === SWALLOW) {
+        hints.push(
+          listGate.state === "opening"
+            ? "好讀列表：開啟文章中，請稍候…"
+            : "好讀列表：指令處理中，請稍候…"
+        );
+        return;
+      }
+      if (verdict === ADOPT) {
+        adopted.push(d);
+        return;
+      }
+    }
+    sent.push(d);
+  };
+  // 機器出口：照抄 App.sendMachineBytes（回傳 byte 有沒有真的上線）。
+  const machineExit = d => {
+    if (!conn) return false;
+    sent.push(d);
+    return true;
+  };
   const ctx = {
     _enabled: true,
     _functionMode: false,
@@ -130,18 +208,26 @@ function pagingHarness({
     _core: {
       aidNavigation: { active },
       commandQueue: { inFlightKind },
-      longPush: { busy: longPushBusy }
+      longPush: { busy: longPushBusy },
+      sendMachineBytes: machineExit
     },
-    _view: { _send: d => sent.push(d) },
+    _view: { _send: userExit },
     _send: EasyReading.prototype._send,
     _wireBusy: EasyReading.prototype._wireBusy,
     _currentPageStatus: EasyReading.prototype._currentPageStatus,
+    _currentPageSignature: EasyReading.prototype._currentPageSignature,
     _armWatchdog: EasyReading.prototype._armWatchdog,
     _clearWatchdog: EasyReading.prototype._clearWatchdog,
     _maybeSendPageDown: EasyReading.prototype._maybeSendPageDown,
+    _healAtLine: EasyReading.prototype._healAtLine,
+    reenterFromTop: EasyReading.prototype.reenterFromTop,
+    enterEasyReading: function() {
+      this._enabled = true;
+    },
+    _healGotoCount: 0,
     onWireIdle: EasyReading.prototype.onWireIdle
   };
-  return { ctx, sent };
+  return { ctx, sent, hints, adopted, listGate };
 }
 
 describe("線路忙時的自動翻頁：延後而非丟棄", () => {
@@ -302,4 +388,179 @@ test("換文章時清掉待補送的鍵", () => {
     _clearWatchdog: EasyReading.prototype._clearWatchdog
   };
   expect(clears(ctx)).toBe(null);
+});
+
+// ---------------------------------------------------------------------------
+// 兩條出口：機器 byte 不得走使用者出口（2026-09-20 回報，a3aaa6e 的症狀第 2 次）
+//
+// 症狀：從好讀列表進文章，第一次自動翻頁固定延遲 ~620ms（體感卡 0.5 秒），而且每
+// 開一篇都閃一次假的「好讀列表：開啟文章中，請稍候…」。
+//
+// 根因：78c276a 把一道**使用者按鍵**的 fail-closed cursor-sync 守門掛在
+// term_view._send，前提寫的是「全專案唯一的使用者 byte 出口」—— 但 easy_reading
+// 這條機器狀態機也走 view._send ⇒ 好讀自己的 PageDown 被列表 session 當成使用者
+// 按鍵吞掉。而且那個時間窗是**決定性**的：
+//   queue.onSettle → queue.done → _maybeIdle → onWireIdle 同步跑在
+//   list_session._dispatch **之前** ⇒ 送鍵當下 owner 還是 article-list、state 還是
+//   'opening' ⇒ decideUserBytes 回 SWALLOW ⇒ term_view._send 靜默 return。
+// 實錄 ptt-debug-20260920-023652：t=1187 決策送出、t=1187~1813 零 SEND、
+// t=1813 才 `retry sinceSentMs:626`（＝PAGE_DOWN_GRACE_MS+20 的 watchdog）。
+//
+// **為什麼舊測試沒攔到**：上面兩個 harness 的 _view._send 都是
+// `d => sent.push(d)`，完全沒有模擬 term_view 真實的守門 ⇒ 連
+// 「REGRESSION：線路一空就補送，完全不需要等 620ms」那一條都照樣綠。
+//
+// 這個 describe 的斷言**不綁修法**：只問「byte 有沒有在零時間前進的情況下上線」，
+// 不問它走哪條出口。
+describe("兩條出口：機器 byte 不走使用者守門（REGRESSION 2026-09-20）", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  // 文章落地那一瞬間的真實狀態：list session 還持有 ownership（handoff-article
+  // 還沒跑），state 仍是 opening ⇒ decideUserBytes 回 SWALLOW。
+  const openingGate = () => ({ renderMode: "frozen", state: "opening" });
+
+  test("REGRESSION：列表 session 還在 opening 時補送，byte 仍必須當場上線", () => {
+    const h = pagingHarness({
+      inFlightKind: "open-enter",
+      listGate: openingGate()
+    });
+    // 第一次：撞上仍在飛的 open-enter ⇒ 延後（既有行為，維持）
+    expect(h.ctx._maybeSendPageDown("\x1b[6~")).toBe("blocked");
+    expect(h.sent).toEqual([]);
+
+    // queue.done 清掉 in-flight，同一個 tick 內同步呼 onWireIdle。
+    // 注意：此刻 listGate 仍是 opening —— _dispatch 還沒跑。
+    h.ctx._core.commandQueue.inFlightKind = null;
+    h.ctx.onWireIdle();
+
+    // 時間一格都沒前進就上線（修前：被 SWALLOW 吞掉，sent 仍是空的）
+    expect(h.sent).toEqual(["\x1b[6~"]);
+    expect(h.ctx._inFlightSig).toBe("1~23");
+    expect(h.ctx._inFlightSentAt).not.toBe(null);
+    expect(h.ctx._deferredPageDownKeys).toBe(null);
+    // retry 額度只有 1，這一發是正常 send 不該動它
+    expect(h.ctx._pageDownRetries).toBe(0);
+    expect(vi.getTimerCount()).toBe(1); // watchdog 上膛一次（正常交易）
+    // 不得被列表 session 接手去跑 cursor-sync 腿（機器 byte 跑那一腿毫無意義）
+    expect(h.adopted).toEqual([]);
+    // 假提示：N7「吞鍵永不靜默」是給使用者按鍵的，機器翻頁不該觸發它
+    expect(h.hints).toEqual([]);
+  });
+
+  test("REGRESSION：不得靠 620ms watchdog 才送出（那會燒掉唯一的 retry 額度）", () => {
+    const h = pagingHarness({
+      inFlightKind: "open-enter",
+      listGate: openingGate()
+    });
+    h.ctx._maybeSendPageDown("\x1b[6~");
+    h.ctx._core.commandQueue.inFlightKind = null;
+    h.ctx.onWireIdle();
+
+    // 修前的實際行為：這一刻 sent 還是空的，要等 620ms 的 watchdog 才會 retry，
+    // 而那一次 retry 會把 _pageDownRetries 推到 1 ⇒ PAGE_DOWN_MAX_RETRIES 用盡，
+    // 再撞一次交易就 giveup（整篇停在第一頁）。
+    //
+    // 所以判準是「watchdog 還沒到期時，鍵已經在線上、額度還完整」。
+    expect(vi.getTimerCount()).toBe(1); // watchdog 還掛著（正常交易的兜底）
+    expect(h.sent.length).toBe(1); // 但送出早就發生了，不是它救的
+    expect(h.ctx._pageDownRetries).toBe(0); // 額度完好
+  });
+
+  test("列表好讀 active（選取≠真游標）也一樣：機器翻頁不得被 ADOPT 去跑 sync 腿", () => {
+    const h = pagingHarness({ listGate: { renderMode: "buffer", state: "active" } });
+    expect(h.ctx._maybeSendPageDown("\x1b[6~")).toBe("send");
+    expect(h.sent).toEqual(["\x1b[6~"]);
+    expect(h.adopted).toEqual([]);
+  });
+
+  test("守門沒被整個拔掉：沒有 list session 時照常上線", () => {
+    const h = pagingHarness({ listGate: null });
+    expect(h.ctx._maybeSendPageDown("\x1b[6~")).toBe("send");
+    expect(h.sent).toEqual(["\x1b[6~"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 第 2 層：stamp-after-send（防第 3 次復發）
+//
+// 上面那個 bug 之所以會變成 620ms 死時間而不是「等下一次 idle 補送」，是因為
+// _maybeSendPageDown 在 _send **之前**就寫好了交易狀態並上膛 watchdog ——
+// a3aaa6e 只把 _wireBusy() 那一道搬到最前面，沒有防住「_send 下游有別人吞掉」。
+//
+// 通則：**任何掛在送出下游的閘門，對機器狀態機而言都是「送出失敗」，呼叫端必須
+// 看回傳值。** 送不出去的處置必須與 _wireBusy() 早退逐項相同。
+describe("送不出去就等同 blocked：交易狀態是 commit 不是樂觀寫入", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  test("機器出口回報沒送出：不留假 in-flight、不上膛 watchdog、存進待補送", () => {
+    const h = pagingHarness({ conn: false });
+    expect(h.ctx._maybeSendPageDown("\x1b[6~")).toBe("blocked");
+    expect(h.sent).toEqual([]);
+    expect(h.ctx._inFlightSig).toBe(null);
+    expect(h.ctx._inFlightSentAt).toBe(null);
+    expect(h.ctx._pageDownRetries).toBe(0);
+    expect(h.ctx._deferredPageDownKeys).toBe("\x1b[6~");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("REGRESSION：retry 送不出去時不得燒掉 retry 額度", () => {
+    // nextPageDownDecision 是純函式，retry 分支回傳的 d.retries 已經 +1 ⇒ 送失敗時
+    // 絕對不可以把它寫回去，否則一次失敗的補送就用掉 PAGE_DOWN_MAX_RETRIES。
+    const h = pagingHarness({ conn: false });
+    h.ctx._inFlightSig = "1~23";
+    h.ctx._inFlightKeys = "\x1b[6~";
+    h.ctx._inFlightSentAt = Date.now() - 700; // 已過 grace ⇒ 決策會回 retry
+    h.ctx._pageDownRetries = 0;
+    const stampBefore = h.ctx._inFlightSentAt;
+
+    expect(h.ctx._maybeSendPageDown(null, /* recovery */ true)).toBe("blocked");
+    expect(h.sent).toEqual([]);
+    expect(h.ctx._pageDownRetries).toBe(0); // 不是 1
+    expect(h.ctx._inFlightSig).toBe("1~23"); // 原封不動
+    expect(h.ctx._inFlightSentAt).toBe(stampBefore);
+    expect(h.ctx._deferredPageDownKeys).toBe("\x1b[6~");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("_healAtLine 送不出去：回滾 heal 旗標與跳行額度（否則自癒永久卡住）", () => {
+    const h = pagingHarness({ conn: false });
+    h.ctx._termBuf.easyReadingGapDetected = true;
+    const gotoBefore = h.ctx._healGotoCount;
+
+    h.ctx._healAtLine(42);
+
+    expect(h.sent).toEqual([]);
+    // easyReadingHealInFlight 留 true 會讓之後每一次 _healGap 都判 'busy' 早退 ⇒
+    // 掉頁永遠補不回來（唯一的逃生門是 done/giveup，而這裡連交易都沒建立）。
+    expect(h.ctx._termBuf.easyReadingHealInFlight).toBe(false);
+    // HEAL_GOTO_MAX 只有 3，失敗的跳行不該消耗額度（用盡就退化成整篇重讀）
+    expect(h.ctx._healGotoCount).toBe(gotoBefore);
+    expect(h.ctx._inFlightSig).toBe(null);
+    expect(h.ctx._inFlightSentAt).toBe(null);
+    expect(vi.getTimerCount()).toBe(0);
+    // 旗標留著 ⇒ 下一次 settle 會再試一次
+    expect(h.ctx._termBuf.easyReadingGapDetected).toBe(true);
+  });
+
+  test("_healAtLine 送得出去：照常建立交易", () => {
+    const h = pagingHarness();
+    h.ctx._healAtLine(42);
+    expect(h.sent).toEqual([":42\r"]);
+    expect(h.ctx._termBuf.easyReadingHealInFlight).toBe(true);
+    expect(h.ctx._inFlightKeys).toBe(":42\r");
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  test("reenterFromTop 送不出去：不留假 in-flight（模式切換本身仍要發生）", () => {
+    const h = pagingHarness({ conn: false });
+    h.ctx._enabled = false;
+    h.ctx.reenterFromTop({ rowIndexStart: 40, rowIndexEnd: 62 });
+    expect(h.sent).toEqual([]);
+    expect(h.ctx._enabled).toBe(true); // enterEasyReading 照跑
+    expect(h.ctx._inFlightSig).toBe(null);
+    expect(h.ctx._inFlightSentAt).toBe(null);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

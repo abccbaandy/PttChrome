@@ -110,3 +110,55 @@ describe("機器送出的入口一個都不能漏掉守門", () => {
     );
   });
 });
+
+// 機器狀態機的 byte 不走使用者出口（2026-09-20，a3aaa6e 的症狀第 2 次復發）。
+//
+// 78c276a 把使用者按鍵的 cursor-sync 守門掛在 term_view._send，理由寫的是
+// 「全專案唯一的使用者 byte 出口」—— 但 easy_reading 這條**機器狀態機**也走
+// view._send ⇒ 好讀自己的自動翻頁被列表 session 當成使用者按鍵 SWALLOW 掉，
+// 每篇文章固定卡 620ms（watchdog）＋閃一次假的「開啟文章中，請稍候…」。
+// 實錄 ptt-debug-20260920-023652，完整推導見 docs/easy-reading.md「送鍵閘門」。
+//
+// 靜態守的理由與上面那組相同：用錯出口的後果是**靜默**的（byte 被吞掉、畫面不動），
+// 而兩個出口的呼叫寫起來長得一模一樣。
+describe("機器狀態機的 byte 不走使用者出口", () => {
+  test("easy_reading 不得再叫 _view._send / _view._convSend", () => {
+    const code = fileNamed("easy_reading.js").code;
+    expect(code).not.toMatch(/_view\._send\s*\(/);
+    expect(code).not.toMatch(/_view\._convSend\s*\(/);
+    // 它的唯一出口是機器那一格
+    expect(code).toMatch(/_core\.sendMachineBytes\s*\(/);
+  });
+
+  test("App.sendMachineBytes 綁 conn.send（機器，會化解懸空 ESC），不是 userKey", () => {
+    const code = fileNamed("pttchrome.jsx").code;
+    // 順序是承重的：先確認連線（websocket.send 對已關閉的 socket 會 throw
+    // InvalidStateError），再送，最後回報「有沒有真的上線」。
+    expect(code).toMatch(
+      /App\.prototype\.sendMachineBytes[\s\S]{0,400}?conn\.isConnected[\s\S]{0,200}?conn\.send\(/,
+    );
+    expect(code).not.toMatch(
+      /App\.prototype\.sendMachineBytes[\s\S]{0,400}?sendUserKey/,
+    );
+  });
+
+  test("關設定頁的重繪／cursorNudge 走機器出口", () => {
+    // ^L 與 cursorNudge 是程式要求的整頁重繪，不是使用者按的鍵。留在使用者出口的
+    // 後果：列表好讀下關掉設定頁 → decideUserBytes 回 ADOPT →
+    // _beginPassthroughBytes → _enterFunctionMode ⇒ 被踢到原生鏡像並丟掉 cache。
+    const code = fileNamed("pttchrome.jsx").code;
+    const m = code.match(
+      /App\.prototype\.switchToEasyReadingMode[\s\S]*?\n\};/,
+    );
+    expect(m).not.toBe(null);
+    expect(m[0]).toMatch(/sendMachineBytes\(/);
+    expect(m[0]).not.toMatch(/view\._send\(/);
+  });
+
+  test("term_view 仍只有 userKey 變體（機器出口沒有長在它身上）", () => {
+    // 上面「term_view._send / _convSend 走的是 userKey 變體」那條已經斷言過
+    // `not.toMatch(/\bconn\.send\s*\(/)`。這裡把理由釘住：新的機器出口刻意放在
+    // pttchrome.jsx（與既有四條機器路徑同處一檔），所以那條斷言在這次改動後仍成立。
+    expect(fileNamed("term_view.js").code).not.toMatch(/sendMachineBytes/);
+  });
+});

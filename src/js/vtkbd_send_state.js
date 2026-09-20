@@ -34,9 +34,17 @@
 //
 // telnet.js 據此分成 `send`/`convSend`（預設）與 `sendUserKey`/`convSendUserKey`，
 // 而後兩個**只有 term_view._send / _convSend 會叫**（守護
-// tests/unit/user_key_send_wiring.test.js）。送出到線路的全部出口只有五處：
-// CommandQueue、App.sendData、anti-idle、App.setBBSCmd（以上機器）＋ term_view
-// 那兩個（真鍵盤／IME）。新增送出路徑時預設就是安全的那一邊。
+// tests/unit/user_key_send_wiring.test.js）。送出到線路的全部出口只有六處：
+// CommandQueue、App.sendData、anti-idle、App.setBBSCmd、**App.sendMachineBytes**
+// （以上機器）＋ term_view 那兩個（真鍵盤／IME）。新增送出路徑時預設就是安全的那一邊。
+//
+// `App.sendMachineBytes`（2026-09-20 補）＝機器狀態機的 byte 出口，目前的消費者是好讀
+// （自動翻頁／gap 自癒／整頁重繪）。它獨立存在的理由**不只是** ESC 守門模式：
+// `term_view._send` 上另外掛了一道**使用者按鍵**專用的 cursor-sync 守門
+// （`adoptUserBytes`，見 `list_user_bytes.js` 檔頭）。機器 byte 走那裡會被列表好讀
+// 當成使用者按鍵吞掉／接手 —— 每篇文章開頭卡 620ms、關設定頁被踢到原生鏡像，兩個
+// 症狀都是這樣來的。**這條分界因此是雙重承重的：入口決定 ESC 模式，也決定要不要過
+// cursor-sync 守門。**
 //
 // 為什麼要反轉（2026-09-17 實錄，錄製檔 ptt-debug-20260917-012944.json）：
 // 使用者關掉長推文輸入框後多按一下 Esc ⇒ server 停在 VKSTATE_ESC；下一次按 X，

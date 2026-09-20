@@ -398,8 +398,10 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵一鍵切原生"
 
   test("adoptUserBytes：線路出口的 fail-closed 網（繞過按鍵分派也同步得到）", () => {
     // 治本層（2026-09-19）：sync 腿從「每個按鍵分派點自己 opt-in」改成「byte 要上線
-    // 時一律檢查」。入口是 term_view._send —— 全專案唯一的使用者 byte 出口。
+    // 時一律檢查」。入口是 term_view._send —— 真鍵盤／IME 的唯一出口。
     // 這條測的是網本身：即使有人繞過 onKeyDown 直接送 byte，照樣先跑 sync 腿。
+    // 註（2026-09-20）：這張網**只管使用者來源的 byte**。機器狀態機走
+    // App.sendMachineBytes，不經這裡——理由見 src/js/list_user_bytes.js 檔頭。
     const { s, sent, enqueued } = makeSession();
     s._view.flashListHint = () => {};
     s.state = "active";
