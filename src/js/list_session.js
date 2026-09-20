@@ -57,6 +57,13 @@ import {
 import { LEFT_ARROW } from './function_key_plan';
 import { readValuesWithDefault } from './pref_storage';
 import {
+  BOARD_LIST,
+  FAVOURITE,
+  MENU_TITLES,
+  rowHasAnyTitle,
+  rowHasTitle
+} from './screen_titles';
+import {
   windowVisibleSequence,
   LIST_HEADER_ROWS,
 } from './list_window';
@@ -173,11 +180,9 @@ export function classifyListScreen(facts) {
   // classify as menu or the leave transaction's expect never completes
   // (timeout → probe → visible degrade: the「退到看板列表卡住」bug, v5/M4).
   if (
-    row0.indexOf('【主功能表】') === 0 ||
-    row0.indexOf('【分類看板】') === 0 ||
-    row0.indexOf('【精華文章】') === 0 ||
-    row0.indexOf('【看板列表】') === 0 ||
-    row0.indexOf('【我的最愛】') === 0 ||
+    rowHasAnyTitle(row0, MENU_TITLES) ||
+    rowHasTitle(row0, BOARD_LIST) ||
+    rowHasTitle(row0, FAVOURITE) ||
     parseListRow(lastRowText)
   ) {
     return { kind: 'menu', boardName };

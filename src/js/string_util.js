@@ -247,10 +247,33 @@ export function parseStatusRow(str) {
 // (U)ser 個人設定區等亦然 ⇒ 這條 regex 失配，整個子選單就落進「沒有分支命中」，
 // 沿用上一幀的 pageState（setPageState 刻意沒有 reset 分支）。
 //
-// 官方出處 mbbsd/menu.c:302-322#show_status，vbarf 的 format string 逐段：
+// ── 這一列有兩種格式，必須同時吃 ───────────────────────────────────────────
+//
+// 舊格式（CONFIRMED @ mbbsd/menu.c#show_status，vbarf 的 format string 逐段）：
 //   ANSI "%d/%d周%c%c %d:%02d"  ANSI "%-14s"(SHM->today_is)
 //   ANSI " 線上" ANSI "%d" ANSI "人,我是" ANSI "%s" ANSI ",呼叫器" ANSI "%s"
 //   "\t"（vbarf 之後靠右對齊） ANSI "(h)" ANSI "說明"
+//   實例：`9/10周四 17:09 [ 射手時 ]    線上25809人,我是<id>,呼叫器開啟          (h)說明`
+//
+// 新格式（**guess** @ 2026-09-20 公告「介面調整: 標題列與主選單底部狀態列改版」，
+// PTT2 09/20 測試中、PTT1 10/04；該改動**還沒進公開的 pttbbs repo**，只有公告文字）：
+//   ANSI(34;46) " 選單名稱 " ANSI(1;33;45) " 節氣/活動 " ANSI(30;47)
+//   "M/D 週X HH:MM | ID | 線上N人  [(?)回到上層] (h)說明"
+//   公告點名的差異：最左側改成選單分類標籤、欄位改用「 | 」分隔、「周X」→「週X」、
+//   **移除「我是」與「,呼叫器XX」**。
+//
+// ⇒ 舊 regex 的每一個錨點（`^` 錨定、`周`、`人,我是`、`,呼叫器`、PAGER_MODES）
+//   在新格式下全部失效。改成只留「新舊都成立」的兩個錨點，兩者都要命中：
+//     A. 日期＋星期＋時間（`周`/`週` 兩收，空白寬鬆）
+//     B. 線上人數
+//
+// 不採用公告建議的「只辨識最開頭的分類標籤」：標籤集合（主功能表／休閒遊樂／…）
+// 無法窮舉，而且舊格式根本沒有這一段，那樣會退化成只認新版。
+//
+// 誤命中由**既有的**閘門吸收，所以拿掉 `^` 是安全的：
+//   term_buf.setPageState 先要求 row 0 是反白標題列
+//     （isUnicolor(0,0,29) && isUnicolor(0, cols-20, cols-10)）才會走到這裡；
+//   list_session.classifyListScreen 另有 row0 白名單。
 //
 // ⚠️ 2026-09 之前這裡寫的是 `[%d/%d 星期%c%c %d:%02d] … [呼叫器]%s`，**那個格式
 // pttbbs 史上不存在**（`git -C 3rd_script/pttbbs log -S'星期' -- mbbsd/menu.c` 零筆，
@@ -260,24 +283,21 @@ export function parseStatusRow(str) {
 // 必須來自 source 或線上實測位元組，不可與被測程式共用同一個假設**（CLAUDE.md
 // 「PTT 邏輯不准猜」）。
 //
-// 幾個必須照著寫的細節：
-//  1. `^` 錨定：show_status 先 move(b_lines, 0) 才 vbarf，一定從第 0 欄起。
-//  2. `周%c%c` 取的是 myweek = "日一二三四五六" 的**兩個 Big5 位元組＝一個字**。
-//  3. today_is 是站長可改的任意文字，`%-14s` 補的是**位元組**寬度（轉 Unicode 後
-//     ≤14 字）⇒ 用 lazy 的 `.{0,14}?`，不對內容做任何假設。
-//  4. `人,我是`／`,呼叫器` 都是**半形逗號、前後無空格**。
-//  5. 尾端的 `\t` → `(h)說明` 不比對：與 STATUS_ROW_RE 對 part3 的處理同理，
+// **這次的新格式正是踩在同一個坑邊上**：它是照公告文字寫的，不是照 source 或實測
+// 位元組。所以規則刻意放到最寬（只認兩個一定存在的錨點），而且必須重新校準 ——
+// 條件與步驟見 docs/handoff/status-row-recalibrate.md。
+//
+// 舊格式仍要照著寫的細節（新格式的 regex 一律不假設這些）：
+//  1. `周%c%c` 取的是 myweek = "日一二三四五六" 的**兩個 Big5 位元組＝一個字**。
+//  2. today_is 是站長可改的任意文字（`%-14s` 補的是位元組寬度）⇒ 不對它做任何假設。
+//  3. 尾端的 `\t` → `(h)說明` 不比對：與 STATUS_ROW_RE 對 part3 的處理同理，
 //     會消失／被擠掉的段落一旦要求就整列失配（代價見上面 STATUS_ROW_RE 的長註解）。
-//  6. 呼叫器狀態取自 mbbsd/var.c:118-125#str_pager_modes[PAGER_MODES]，共五種；
-//     使用者設成拔掉／防水／好友時主選單一樣是主選單。
-const PAGER_MODES = ['關閉', '開啟', '拔掉', '防水', '好友']; // str_pager_modes
-const LIST_ROW_RE = new RegExp(
-  /^\d{1,2}\/\d{1,2}周[日一二三四五六] \d{1,2}:\d{2}.{0,14}? 線上\d+人,我是\w+,呼叫器/.source +
-  '(?:' + PAGER_MODES.join('|') + ')'
-);
+const LIST_ROW_DATE_RE = /\d{1,2}\/\d{1,2} ?[周週][日一二三四五六] +\d{1,2}:\d{2}/;
+const LIST_ROW_ONLINE_RE = /線上\s*\d+\s*人/;
 
 export function parseListRow(str) {
-  return LIST_ROW_RE.test(str);
+  if (!str) return false;
+  return LIST_ROW_DATE_RE.test(str) && LIST_ROW_ONLINE_RE.test(str);
 };
 
 // \u6c34\u7403\uff0f\u5ee3\u64ad\u3002\u5403\u7684\u662f b2u(\u539f\u59cb WS bytes)\uff08pttchrome.jsx\uff09\uff0c\u4e0d\u662f\u6e32\u67d3\u5f8c\u7684\u756b\u9762\u3002

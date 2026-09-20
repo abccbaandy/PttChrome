@@ -15,6 +15,7 @@ import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, dec
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
+import { BOARD_LIST, rowHasTitle } from './screen_titles';
 import { OWNER_BOARD_LIST } from './list_render_owner';
 import { readValuesWithDefault } from './pref_storage';
 import { cursorOffsets, paintedRowsAreBufRows } from './cursor_anchor';
@@ -2774,7 +2775,7 @@ TermView.prototype = {
     // 只在「長得像乾淨看板列表」的活幀更新 header/footer 快取：跳號回應會先把
     // 底列清成 prompt，污染快取就會讓視窗畫出半條 footer。
     if (
-      (rowTexts[0] || '').indexOf('【看板列表】') === 0 &&
+      rowHasTitle(rowTexts[0] || '', BOARD_LIST) &&
       (rowTexts[2] || '').indexOf('編號') >= 0
     ) {
       this._brdHeaderRows = [

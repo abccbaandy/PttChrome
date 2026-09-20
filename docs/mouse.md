@@ -212,7 +212,7 @@ term.ptt.cc 原版把畫面切成六個區域，2026-08 的重新設計只留下
    主功能表的 `KEY_HOME`／`KEY_PGUP` 是**下一項**、`KEY_END`／`KEY_PGDN` 是**上一項**，
    點「跳第一頁」會做出相反的事。看板列表則是真的跳（`board.c:1830,1768`
    `num = 0` / `brdnum-1`），文章列表 `read.c:893,898`、文章內 `pmore.c:2585,2590`
-   （`mf_goTop` / `mf_goBottom`）都對得上。判準是標題列的 `【看板列表】`
+   （`mf_goTop` / `mf_goBottom`）都對得上。判準是標題列的 `【看板列表】`（走 `screen_titles.js#rowHasTitle`，兼容去括號形狀）
    （`term_buf.isBoardListScreen`，與 `board_list_parse.classifyBoardListScreen`
    的第一條判斷同一個指紋）。
 

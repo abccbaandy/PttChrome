@@ -61,9 +61,9 @@ source 裡的 `ANSI_COLOR(...)` 字面。實例見 §9 水球。
   `redrawwin()` 在 pfterm ＝ flippage + clrscr + `fterm_rawclear()` + markdirty。
 - 滾動 |scrollcnt| ≥ t_lines-3 也退化成全屏重繪（screen.c doupdate 開頭；pfterm 有對應的 scroll 最佳化）。
 
-## 1.1 DEC 私有序列（2026-09 新增，全部 CONFIRMED）
+## 1.1 2026-09 新控制碼（DEC 私有序列、CPR、SGR 66、ECMA-48）
 
-PTT 公告 2026-09-08 預告、約 09-20 上線。**server 吐的 DEC 私有序列全集只有下列十條**
+PTT 公告 2026-09-08 預告、約 09-20 上線（2026-09-20 又一次發了六篇，見下方 CPR / SGR 66 / ECMA-48 三節）。**server 吐的 DEC 私有序列全集只有下列十條**
 （`grep -rn '"\[?' 3rd_script/pttbbs` 的全部結果）：`?2026h/l`、`?1000h/l`、`?1002h/l`、
 `?1003h/l`、`?1006h/l`。沒有 `?25`（游標顯示）、`?1049`（alt screen）、`?7`（autowrap）。
 
@@ -98,6 +98,78 @@ expect 餘掉）。本專案的實作見 `term_buf.js#beginSyncUpdate` 與 `docs
 
 ⇒ client 實作回報時的三條：預設關、只實作 1000+1006（**不送 motion**）、
 `sgr` 初值必須是 false。實作見 `src/js/mouse_report.js`。
+
+### Cursor Position Report（`ESC[6n`，2026-09-20 公告，全部 CONFIRMED）
+
+上線：PTT2 09/20、PTT1 09/27。公告：「App/Client 用 `ESC[r;cR` 格式回應目前游標位置，
+**或是忽略此指令**。PTT 的登入程式會利用這個命令來偵測 terminal 的狀態 (主要是 encoding)。」
+
+| 事實 | 出處 |
+|---|---|
+| 只有 **logind 送**，而且只在連線當下送一次：`if (ctx.encoding == CONV_NORMAL) _buff_write(conn, "\r\xc3\xa2\033[6n", 7);` | `daemon/logind/logind.c#login_ctx_activate`（commit `3f031354`） |
+| `\xc3\xa2` 是刻意挑的探針，source 原註解：`is valid for both Big5&UTF8 so can be used for detection.` UTF-8 下＝一個字 U+00E2（游標停在 **col 2**）、Big5 下＝一個雙位元組字（**col 3**） | 同上 |
+| 判定只看**第二個參數**：`if (raw_ch=='R' && csi_prefix==0 && csi_param_count==2) if (csi_params[1]==2) { ctx.encoding = CONV_UTF8; 重畫登入畫面 }` | `logind.c#login_conn_handle_terminal` |
+| 初值 `LOGIND_INITIAL_ENCODING (0)` ＝ `CONV_NORMAL` ＝ Big5 ⇒ **不回應與回應 col≠2 的結果相同** | `logind.c:116-117, 272-273` |
+| 回應在 `vtkbd_process` 裡是 `KEY_UNKNOWN`（final `'R'` 沒有對應 case），登入後的 mbbsd 不消費它 | `common/sys/vtkbd.c` 的 CSI `default:` |
+| 登入後 **mbbsd 從不送 `ESC[6n`**（全 repo 只有 logind 那一處） | `grep -rn '6n' 3rd_script/pttbbs` |
+
+**本 client 的決定：刻意不回應**（`src/js/ansi_parser.js` 的 `case 'n':` 空 body）。
+理由：`term_view.js` 寫死 `charset = 'big5'`（全 repo 無第二個寫入點），正確答案永遠是
+「留在 Big5」，而不回應零風險地達成它；反過來，實作時把欄位算成 2 的代價是 server 切成
+UTF-8 ⇒ 整站亂碼。守護 `tests/unit/ansi_parser_cpr.test.js`（斷言**零回送**）。
+哪天本專案真的改用 UTF-8 連線，才需要回頭實作 —— 屆時回報的是真實游標欄，Big5 下自然是 3。
+
+### SGR 66 一字雙色（2026-09-20 公告，全部 CONFIRMED）
+
+上線：PTT2 09/19、PTT1 09/20。**Big5 連線收不到它**，這是本節最重要的一行。
+
+| 事實 | 出處 |
+|---|---|
+| 三個開關：`FTCONF_USE_DBCS_SGR66 (1)`（入站收）、`FTCONF_UTF8_OUTPUT_SGR66 (1)`（UTF-8 出站送）、**`FTCONF_DBCS_OUTPUT_SGR66 (0)`（Big5 出站不送）** | `mbbsd/pfterm.c:212-224` |
+| 入站語意：`case 66: ft.half_attr = ft.attr; ft.has_half_attr = 1;` ⇒ 66 把**當下累積到的屬性**快照成下一個字元的「前半格」，序列剩下的參數繼續改一般屬性、成為「後半格」 | `pfterm.c#fterm_param` |
+| 快照**只被下一個字元消費一次**：`if (FTCONF_USE_DBCS_SGR66 && ft.has_half_attr) { FTA = ft.half_attr; ft.has_half_attr = 0; }` | `pfterm.c` 的一般字元分支 |
+| 出站線路格式：`fterm_rawattr(前半)` → `fterm_raws(ESC "[66;")` ＋ chattr 去掉開頭 `ESC[` → 也就是 **`ESC[<前半>m ESC[66;<後半>m <字>`** | `pfterm.c#fterm_rawattr_half` |
+| Big5 出站走的是另一條：`if ((FTD[x] & FTDIRTY_DBCS) && (FT_DBCS_NOINTRESC \|\| output_sgr66))` 只擋住「在 DBCS 中間換屬性」，不產生 SGR 66 | `pfterm.c` 的 flush 迴圈 |
+| `daemon/boardd/convert.c` 也產生 SGR 66，但那是 www.ptt.cc 的 web 輸出，**不在 WS 這條路上** | `convert.c:25,135` |
+
+⇒ **client 端忽略即完全正確**，降級結果正是公告寫的「直接用後半部的顏色呈現」。
+本專案 `TermChar.assignParams` 的 `case 66:` 是有意的 no-op（不是「剛好落在 30-37/40-47
+範圍外」），守護 `tests/unit/ansi_parser_sgr66.test.js`。真要做分色渲染的觸發條件與代價見
+`docs/handoff/sgr66-render.md`。
+
+**送出方向另有一個未爆彈**：公告第 3 階段「今年底前 PTT 編輯器關閉 Raw mode，強制新文章
+只能使用 SGR 66」。本專案貼 ASCII art 時走 `string_util.js#ansiHalfColorConv`，用的是
+`\x00` raw-mode 注入（配 `;50m` 這個 PttChrome 自有慣例），那條路屆時會失效。
+**現在不動**（PTT 編輯器的改動還沒進公開 source，照公告文字猜會違反本檔開頭的研究方法規範），
+觸發條件與作法見 `docs/handoff/ansi-half-color-send-raw-mode.md`。
+
+### ECMA-48 相容性要求（2026-09-20 公告）
+
+公告「請實作ECMA-48」是上面那幾條的總綱：
+
+> 本站預計未來會不定期增加輸出的控制碼類形。大多數的控制碼不需要 App/連線軟體真的
+> 完整支援，只要收到不要當掉、不予回應即可。……只要讀到 CSI 能正確的讀完即可。
+> Regex 範例：`\x1B\[[0-?]*[ -/]*[@-~]`
+
+也就是 `CSI P...P I...I F`：參數位元組 `P` ＝ 0x30-0x3F、中間位元組 `I` ＝ 0x20-0x2F、
+終結字元 `F` ＝ 0x40-0x7E。本專案 `src/js/ansi_parser.js` 依此補完的四件事：
+
+| 缺口 | 症狀 | 守護 |
+|---|---|---|
+| CSI 終結字元範圍漏九個字元（2026-09 已修） | 序列永不終結，後續畫面被累積進 accumulator 直到某個舊範圍字元「假結束」並被當指令執行 | `ansi_parser_csi_final.test.js` |
+| **控制字串（OSC/DCS/APC/PM/SOS）沒有終止子解析** | `ESC]0;title BEL` 的 payload 被當文字印到畫面上，BEL 還會響 | `ansi_parser_string_seq.test.js` |
+| CSI 沒有中止／重啟規則 | 被切斷的 CSI 併吞下一條：`ESC[3` + `ESC[2J` ⇒ `term.clear(3)`，真正的 ED 從沒執行 | `ansi_parser_csi_final.test.js` |
+| SGR 38/48/58 的子參數被當獨立參數 | `ESC[38;5;n` 的 `5` 變 blink；`ESC[38;2;r;g;b` 的 `30`/`40` 變黑底黑字 | `ansi_parser_sgr_subparams.test.js` |
+
+中止規則**照抄 server 端** `common/sys/vtkbd.c` 的 CSI 態（ESC 重啟／CAN·SUB 丟棄／
+其餘 C0 退回重新處理／≥0x80 丟棄），兩邊對「被截斷的序列」要有同一套認知。
+
+兩條設計決定，別順手改回去：
+1. **控制字串刻意沒有長度上限**（CSI 參數區有，`CSI_MAX = 128`）。那條路徑只吞不存，
+   沒有東西會溢位；「超過 N 就放棄」的唯一效果是把剩下的 payload 印成畫面垃圾字，
+   嚴格劣於繼續吞。救援靠下一個 ESC，而 PTT 每一幀都以 `ESC[?2026h` 開頭。
+2. **不可以把 8-bit ST（0x9C）當終止子**：WS 那條資料流是 latin1 位元組，0x9C 落在 Big5
+   的 trail byte 範圍內（例 0xA49C），正文會誤命中而把後面的序列全部吞掉。
 
 ### 連線底層換 NIOS
 
@@ -189,7 +261,7 @@ Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，�
 
 | row | 內容 | 出處 |
 |---|---|---|
-| 0 | `showtitle()` 反白標題：`【title】` 從 col 0 起，右端 `看板/系列/文摘《NAME》`（`title_tail_msgs[]`＝`看板`/`系列`/`文摘`，依 MODE_SELECT/MODE_DIGEST 決定） | `mbbsd/menu.c#showtitle`；由 `readtitle()` 呼叫 `mbbsd/bbs.c` |
+| 0 | `showtitle()` 反白標題：`【title】` 從 col 0 起（**三段式 `vs_header`，2026-09-20 公告明文保證不變**；另兩種標題有改，見 §11.9），右端 `看板/系列/文摘《NAME》`（`title_tail_msgs[]`＝`看板`/`系列`/`文摘`，依 MODE_SELECT/MODE_DIGEST 決定） | `mbbsd/menu.c#showtitle`；由 `readtitle()` 呼叫 `mbbsd/bbs.c` |
 | 1 | 固定提示列 `[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明` | `mbbsd/bbs.c` |
 | 2 | 反白表頭 `   編號    <日 期|價 格> 作  者       文  章  標  題`＋右端 `人氣:N`（vbarf ANSI_REVERSE；cassette 實測 30;47）。日期欄字樣依 LISTMODE 變動 ⇒ **只認「編號」最穩** | `mbbsd/bbs.c` vbarf |
 | 3..rows-2 | entry 列，每頁 `headers_size = p_lines` 筆（24 列＝20 筆） | `mbbsd/read.c`（PARTUPDATE 內 realloc）、游標列算式 `3 + n - top`（`cursor_pos`） |
@@ -289,6 +361,8 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
   `nextEasyReadingState` 的來源集 `{1,2}` ⇒ 好讀「有時」不自動啟用。
 
 修法是把 `parseListRow` 校準回真實的 `show_status`（**不是**加 reset 分支，沿用仍然是刻意的）。
+
+**2026-09-20 更新**：PTT 官方改版把 `show_status` 整列換掉（見 §11.9），上面那個「校準回真實 `show_status`」的結果因此又一次失效。現行實作改成**新舊聯集**，並且因為新格式只有公告文字、沒有 source，指紋刻意放到最寬（只認兩個一定存在的錨點）—— 這正是下一段「不可與被測程式共用假設」的直接應用：猜錯了也不會壞。重新校準的條件見 `docs/handoff/status-row-recalibrate.md`。
 守護：`tests/unit/term_buf_page_state.test.js`、`tests/unit/string_util.test.js`。
 **這一輪真正的教訓是測試面的**：當時的 unit fixture 是照著同一個錯誤假設手寫的，於是
 「程式錯 ＋ 測試錯」互相背書，一條恆假的指紋全綠躺了很久。**畫面指紋的 fixture 一律要來自
@@ -453,7 +527,7 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 | client | 官方出處 | 契約 |
 |---|---|---|
 | `parseStatusRow` | `pmore.c#mf_display_footer` ＋ `more.c#common_pmore_footer_handler` | part1 `"  瀏覽 第 %1d[/%1d] 頁 (%3d%%) "`（頁碼**無位數上限**，實錄已見 540/540）；part2 `" 目前顯示: 第 %02d~%02d 行"`／**`" 顯示範圍: %d~%d 欄位, %02d~%02d 行"`（`mf.xpos>0` 左右捲動）**；**part3 完全不比對**——它會整段消失（見 §13 P5），要求它會讓整列失配 → 掉出 pageState 3 → 好讀累積頁被清空。`bpref.oldstatusbar` 的 `"  瀏覽 P.%d(%d%%)  "` 目前**不支援**（非預設） |
-| `parseListRow` | `menu.c:302-322#show_status` | `"%d/%d周%c%c %d:%02d"`（`myweek="日一二三四五六"`，**沒有中括號、沒有「星期」**）＋ `"%-14s"`（today_is，緊接時間，補的是**位元組**寬度）＋ `" 線上%d人,我是%s,呼叫器%s"`（**半形逗號、前後無空格**）＋ `"\t(h)說明"`（靠右，**不比對**）；呼叫器狀態 5 種＝`var.c:118-125#str_pager_modes`：關閉／**開啟**／拔掉／防水／好友。**這是 `menu.c#domenu` 子選單唯一的指紋**（見下方踩坑） |
+| `parseListRow` | 舊：`menu.c#show_status`（CONFIRMED）；新：2026-09-20 公告（**guess**） | **兩種格式都要吃**，見 §11.9。舊：`"%d/%d周%c%c %d:%02d"` ＋ `"%-14s"`(today_is) ＋ `" 線上%d人,我是%s,呼叫器%s"` ＋ `"	(h)說明"`（靠右，**不比對**）。新：`選單名稱 \| 節氣 \| M/D 週X HH:MM \| ID \| 線上N人  [(?)回到上層] (h)說明`。實作只留兩個**新舊都成立**的錨點：日期＋`[周週]X`＋時間、以及「線上N人」；**拿掉 `^` 錪定**（新版最左側是選單標籤），誤命中由 `setPageState` 的 row0 反白閘門吸收。**這是 `menu.c#domenu` 子選單唯一的指紋** |
 | `parseWaterball` | `mbbsd.c#show_call_in` | 見 §9 |
 | `parsePushInitText`（消費者：`image_upload.js`） | `bbs.c#recommend`／`angel.c` | `您覺得這篇文章 `；`FormatCommentString` 的輸入 prompt「→ id:」**無行尾時間戳** |
 | `comment_parse.COMMENT_RE` | `comments.c#FormatCommentString`＋`common/bbs/names.c#is_validuserid` | `<attr><推/噓/→><空格>ESC[33m<id>ESC[m:<msg 補到 maxlength>ESC[m<tail>`；id 長度 **2..IDLEN(12)**、首 isalpha 其餘 isalnum；`BRD_ALIGNEDCMT` 時 id 以 `%-*s` 補到 12 寬（故 `:` 前可有空格）；tail＝`[%15s ]MM/DD HH:MM`（`Cdate_mdHM` ＝ `"%m/%d %H:%M"`，IP 僅 `BRD_IPLOGRECMD`／guest） |
@@ -1099,3 +1173,60 @@ server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複�
   `⌥[` 也是組字鍵、要擴 `e.code` 比對到 `BracketLeft` 等，複雜度高一階。
 * **AltGr**（Windows US-International ＝ `ctrlKey+altKey`）：被 `!ctrlKey` 排除，打出的
   字元仍走 keypress → `#t` → `onInput`。守護在 `tests/unit/alt_ctrl_remap.test.js`。
+
+## 11.9 標題列與主選單狀態列改版（2026-09-20 公告，**guess**）
+
+⚠️ **本節是全檔唯一不是讀碼得來的一段**。該改動**還沒進公開的 pttbbs repo**
+（`3rd_script/pttbbs` HEAD 的 `menu.c#show_status` 與 `vtuikit.c#vs_header` 都還是舊的），
+只有公告文字。上線：PTT2 09/20（測試中）、PTT1 10/04。
+**重新校準是義務，不是選項** —— 條件與步驟見 `docs/handoff/status-row-recalibrate.md`。
+
+### 三種標題形狀，公告只動了兩種
+
+| 形狀 | 函式 | 現行（CONFIRMED） | 公告的新樣子（guess） |
+|---|---|---|---|
+| 三段式 | `vtuikit.c#vs_header`（`menu.c#showtitle` 呼叫） | `【title】` ＋ 中段 ＋ 右段（`VMSG_HEADER_PREFIX/POSTFIX` = `【`/`】`） | **無變動**。公告第 1 點還特地保證「頂端 Row 0 左側仍維持「【主功能表】」不變」 |
+| 單段式 | `vtuikit.c#vs_hdr` | `【 title 】`（`VMSG_HDR_PREFIX/POSTFIX` = `"【 "`/`" 】"`） | `【title】`（移除內側空白） |
+| 兩段式 | `vtuikit.c#vs_hdr2bar` | 左分類（呼叫端自帶 `【】`）＋ 右說明列 | 移除左半部的 `【】`，改為**前後各一格半形空白**；左半部統一站台標題色、右半部 `ESC[0;30;47m` 填到行尾 |
+
+⇒ 本專案判畫面用的四個標題（主功能表／分類看板／精華文章／看板列表）**全部走三段式**，
+這次不會壞。但既然括號會動，判定已收斂成 `src/js/screen_titles.js` 一處並**同時吃兩種形狀**
+（`【X】…` 與 ` X …`），下次再動不必翻八個檔案。守護 `tests/unit/screen_titles.test.js`。
+
+公告另外點名的改名（對我們無影響，記著備查）：`(U) Customize 個人化設定` → `偏好設定列表`，
+其標題從三段式的「【個人設定】個人化設定」改成兩段式的「 偏好設定列表 」＋「 調整介面顯示與操作偏好」。
+
+### 主選單底部狀態列（`menu.c#show_status`）
+
+```
+舊：ESC[34;46m M/D周X HH:MM ESC[1;33;45m 節氣/活動
+    ESC[30;47m 線上N人,我是ID,呼叫器XX  (h)說明
+新：ESC[34;46m 選單名稱 ESC[1;33;45m 節氣/活動 ESC[30;47m
+    M/D 週X HH:MM | ID | 線上N人  [(?)回到上層] (h)說明
+```
+
+公告列的差異：
+(a) 最左側改為目前所在的選單分類標籤（「主功能表」「休閒遊樂」…）
+(b) 欄位改用「 | 」分隔，星期由「周X」改為「**週X**」
+(c) **移除「我是」與「,呼叫器XX」**
+(d) 子選單右側若空間夠會多出「(?)回到上層 (h)說明 」
+(e) `Ctrl-Z` 快速切換列的左側標籤由「*快速切換:」改為「快速切換」（本專案沒有消費它）
+
+⇒ 舊 `parseListRow` 的每一個錨點都失效。現行實作只留**新舊都成立**的兩個錨點
+（日期＋`[周週]X`＋時間、以及「線上N人」），並拿掉 `^` 錨定。細節與代價見 §11 的對照表列。
+
+### 官方給第三方的三條建議（照抄，因為它們就是我們的設計依據）
+
+1. 判「已登入並回到主選單」：Row 0 左側仍是「【主功能表】」，**而且**底部狀態列最左側
+   現在也固定顯示「 主功能表 」。官方自己補了一句：頂端在閱讀／編輯文章時會顯示文章內容，
+   **有判定錯誤的可能；左下幾乎不會判定錯誤**。
+2. 擷取 ID／線上人數／時間的規則要更新，**不要再依賴「我是」「呼叫器」「周」定位**；
+   「可以的話只辨識最開頭的分類標籤就好，不要管時間、ID 與人數等動態內容」。
+   —— 本專案**沒有採用**這條：分類標籤集合無法窮舉，而且舊格式根本沒有這一段，
+   照做會退化成只認新版。兩週的 PTT1/PTT2 上線時間差內兩種格式會同時存在。
+3. **不要對顏色做判定**：「顏色在不同站台可能有不同配色，也可能因為各種需要而臨時修改。
+   請注意日後改變顏色的修改不會預先公告。」
+   —— 這條對本專案是**已知負債**：`setPageState` 的 `isUnicolor(0,0,29)` row0 反白閘門、
+   `isCursorOnInputField` 的 fg0/bg7、`easy_reading` 的 FOOTER1 配色 fallback 都在看顏色。
+   目前都有「顏色只是閘門、內容才是判準」的結構（見 §5.1、§13 P3），暫不動；真要改是另一件事。
+

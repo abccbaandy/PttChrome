@@ -16,6 +16,13 @@
 // 本期只 engage 我的最愛（fav）與分類看板子分類（class）；全部看板／熱門看板
 // （all）與分類看板根（row0 是【分類看板】，這裡直接不命中）不做。
 
+import {
+  BOARD_LIST,
+  MENU_TITLES,
+  rowHasAnyTitle,
+  rowHasTitle
+} from './screen_titles';
+
 // 渲染後畫面裡 body 從第幾列開始（row0 標題、row1 熱鍵、row2 欄位列）。
 // 與文章列表好讀的 LIST_HEADER_ROWS 同值但**語意不同**（那是 bbs.c 的表頭），
 // 刻意各自宣告，日後其中一邊改版才不會靜默連坐。
@@ -100,7 +107,7 @@ export function classifyBoardListScreen(facts) {
   if (!facts) return null;
   const rowTexts = facts.rowTexts || [];
   const rows = facts.rows || rowTexts.length;
-  if ((rowTexts[0] || '').indexOf('【看板列表】') !== 0) return null;
+  if (!rowHasTitle(rowTexts[0] || '', BOARD_LIST)) return null;
   const foot = rowTexts[rows - 1] || '';
   if (foot.indexOf('選擇看板') < 0) return null;
   const header = rowTexts[2] || '';
@@ -159,12 +166,7 @@ export function boardListContextKind(facts) {
   const row0 = rowTexts[0] || '';
   const foot = rowTexts[rows - 1] || '';
   if (row0.indexOf('《') >= 0 && foot.indexOf('文章選讀') >= 0) return 'article-list';
-  if (
-    row0.indexOf('【主功能表】') === 0 ||
-    row0.indexOf('【分類看板】') === 0 ||
-    row0.indexOf('【精華文章】') === 0
-  )
-    return 'menu';
+  if (rowHasAnyTitle(row0, MENU_TITLES)) return 'menu';
   return 'other';
 }
 

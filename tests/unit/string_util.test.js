@@ -457,6 +457,86 @@ describe("parseListRow（主選單狀態列, menu.c#show_status）", () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseListRow — **新版**狀態列（PTT2 2026-09-20 測試中、PTT1 10/04）
+//
+// ⚠️ 狀態：**guess**，不是 CONFIRMED。
+// 來源是 2026-09-20 公告「介面調整: 標題列與主選單底部狀態列改版」的文字描述；
+// 該改動**還沒進公開的 pttbbs repo**（`3rd_script/pttbbs` HEAD 的 menu.c#show_status
+// 仍是舊格式），所以這裡沒有 source 也沒有實測位元組可抄。
+//
+// 公告原文：
+//   舊版格式：
+//     *[34;46m M/D周X HH:MM *[1;33;45m 節氣/活動
+//     *[30;47m 線上N人,我是ID,呼叫器XX  (h)說明
+//   新版格式：
+//     *[34;46m 選單名稱 *[1;33;45m 節氣/活動 *[30;47m
+//     M/D 週X HH:MM | ID | 線上N人  [(?)回到上層] (h)說明
+//   差異：(a) 最左側改為選單分類標籤 (b)「 | 」分隔、「周X」→「週X」
+//        (c) 移除「我是」與「,呼叫器XX」 (d) 子選單多 "(?)回到上層"
+//
+// 上面那段 CONFIRMED 的 describe 一條都不准刪：PTT1 上線前現行 server 還是舊格式，
+// 而且 PTT1/PTT2 的上線時間差了兩週，兩種格式會同時存在。
+//
+// **重新校準的義務**：PTT1 10/04 之後（或更早能連到 PTT2 時）要用實測位元組把這一段
+// 從 guess 升成 CONFIRMED，步驟見 docs/handoff/status-row-recalibrate.md。
+// 在那之前，regex 刻意只認兩個「新舊都一定存在」的錨點（日期時間、線上人數），
+// 不對分隔符、欄位順序、標籤內容做任何假設 —— 這正是為了讓 guess 猜錯時也不會壞。
+// ---------------------------------------------------------------------------
+describe("parseListRow（新版狀態列, 2026-09-20 公告；guess）", () => {
+  // 公告字面組出來的一列（ANSI 已被 term_buf 吃掉，parseListRow 拿到的是純文字）。
+  const newRow = (label, festival, user = "someuser", tail = " (h)說明") =>
+    ` ${label}  ${festival} 9/20 週六 17:09 | ${user} | 線上25809人 ${tail}`;
+
+  test("主功能表底列", () => {
+    expect(parseListRow(newRow("主功能表", "射手時"))).toBe(true);
+  });
+
+  test("子選單底列（含 (?)回到上層）", () => {
+    expect(
+      parseListRow(newRow("休閒遊樂", "秋分", "someuser", " (?)回到上層 (h)說明"))
+    ).toBe(true);
+  });
+
+  // 公告的 (b)：「周X」→「週X」。兩種都要收——PTT1 與 PTT2 上線差兩週。
+  test.each(["周", "週"])("星期寫成「%s」都認得", (week) => {
+    expect(
+      parseListRow(` 主功能表  射手時 9/20 ${week}六 17:09 | someuser | 線上1人 `)
+    ).toBe(true);
+  });
+
+  // 公告的 (c)：移除「我是」與「,呼叫器XX」之後仍要命中。這是舊 regex 死掉的主因。
+  test("沒有「我是」也沒有「呼叫器」仍命中", () => {
+    const row = " 主功能表  射手時 9/20 週六 17:09 | someuser | 線上25809人  (h)說明";
+    expect(row.includes("我是")).toBe(false);
+    expect(row.includes("呼叫器")).toBe(false);
+    expect(parseListRow(row)).toBe(true);
+  });
+
+  // 拿掉 `^` 錨定的直接後果：日期不再在第 0 欄。
+  test("日期不在第 0 欄仍命中（新版最左側是分類標籤）", () => {
+    expect(parseListRow(newRow("系統資訊", "小雪"))).toBe(true);
+    expect(newRow("系統資訊", "小雪").indexOf("9/20")).toBeGreaterThan(0);
+  });
+
+  test("個位數月/日/時", () => {
+    expect(parseListRow(" 主功能表  端午 1/2 週一 9:05 | ab | 線上100人 ")).toBe(true);
+  });
+
+  // 放寬 `^` 之後最該擔心的事：別的畫面被誤判成選單。
+  // 這幾列都少了至少一個錨點，且 setPageState 另有 row 0 反白閘門擋在前面。
+  test.each([
+    [" 文章選讀 (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面  ", "文章列表 feeter"],
+    ["  瀏覽 第 1/5 頁 (  9%)  目前顯示: 第 01~20 行  (←q)離開 ", "pmore 狀態列"],
+    [" 選擇看板 (a)增加看板 (y)只列最愛 (m)加入/移出最愛 ", "看板列表 feeter"],
+    ["9/20 週六 17:09 今日主題", "只有日期、沒有線上人數"],
+    [" 主功能表  射手時 | someuser | 線上25809人 ", "只有線上人數、沒有日期"],
+    ["", "空列"],
+  ])("%s → false（%s）", (row) => {
+    expect(parseListRow(row)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // parseWaterball — 水球/廣播（pttchrome.jsx 直接吃 b2u(原始 WS bytes)，不是
 // 渲染後的畫面，所以比對的是 server wire 上的真實 byte 序列）
 //

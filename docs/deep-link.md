@@ -110,7 +110,7 @@ rewrite: https://abccbaandy.github.io/PttChrome/#$1
 ```
 request(target) → _canNavigate() ? _dispatch : _hold（存記憶體，等 screenSettled）
 _canNavigate  = connectState===1 && _loggedIn && !aidNavigation.active
-_loggedIn     = 這次連線的 screenSettled 看過 row0 以【主功能表】開頭
+_loggedIn     = 這次連線的 screenSettled 看過 row0 是主功能表（`aid_navigation.isMainMenuRow`，【X】與 ` X ` 兩種形狀都吃）
 _dispatch     = autoLogin.stop()
                 → startedEasyReading ? aidNavigation.start()      // 有原文 ⇒ 有返回 pill
                                      : aidNavigation.startExternal()

@@ -3,13 +3,28 @@
 export function AnsiParser(termbuf) {
   this.termbuf = termbuf;
   this.state = AnsiParser.STATE_TEXT;
-  this.esc = '';
+  this.esc = '';        // CSI 的參數位元組區（0x30-0x3F）
+  this.escInter = '';   // CSI 的中間位元組區（0x20-0x2F）
+  this.escDrop = false; // 這條 CSI 已判定要丟棄，但還要吃到終結字元
 };
 
 AnsiParser.STATE_TEXT = 0;
 AnsiParser.STATE_ESC = 1;
 AnsiParser.STATE_CSI = 2;
 AnsiParser.STATE_C1 = 3;
+// OSC / DCS / APC / PM / SOS：ECMA-48 的「控制字串」，payload 是任意文字，
+// 必須吃到終止子為止（見 STATE_STRING 分支）。
+AnsiParser.STATE_STRING = 4;
+
+// CSI 參數區的保險絲。防的不是「序列太長」而是**終結字元永遠不來**：沒有上限時
+// 一條壞掉的序列會把後續整個畫面累積進 `this.esc`。取 128（server 端 vtkbd.c 的
+// 上限是 64，放寬一倍仍遠大於任何真實序列）。
+//
+// STATE_STRING **刻意沒有對應的上限**：那條路徑只吞不存，沒有東西會溢位，而
+// 「中途放棄」的唯一效果是把控制字串剩下的位元組印成畫面上的垃圾字 —— 嚴格劣於
+// 繼續吞。真的遇到沒有終止子的字串時，下一個 ESC 就會救回來，而 PTT 每一幀都以
+// `ESC[?2026h` 開頭。
+const CSI_MAX = 128;
 
 // DECSET(`h`, set=true) / DECRST(`l`, set=false) 的私有模式分派。
 // 逐個掃 params：`ESC[?1000;1006h` 這種一次設多個模式的形式是合法的（PTT 目前
@@ -57,6 +72,49 @@ AnsiParser.prototype.feed = function(data) {
       }
       break;
     case AnsiParser.STATE_CSI:
+      // ECMA-48 的 CSI ＝ `CSI P...P I...I F`：參數位元組 P ＝ 0x30-0x3F、
+      // 中間位元組 I ＝ 0x20-0x2F、終結字元 F ＝ 0x40-0x7E（公告給的 regex
+      // `\x1B\[[0-?]*[ -/]*[@-~]` 就是這個）。fork 原版把三者全塞進同一個
+      // `this.esc` 再 split(';')，靠「第一個字元不是數字就當私有前綴」的啟發式
+      // 勉強擋住 —— 下面改成逐 byte 分流，並補上中止規則。
+      //
+      // 中止規則**照抄 server 端**（common/sys/vtkbd.c:230-256），理由是兩邊
+      // 對「被截斷的序列」要有同一套認知：
+      //   ESC       → 重啟成 STATE_ESC（新序列打斷舊的，不執行舊的）
+      //   CAN / SUB → ECMA-48 的中止字元，整條丟棄
+      //   其餘 C0 與 DEL → 中止並**退回重新處理**（\r \n 不該被序列吃掉）
+      //   >= 0x80   → 不可能出現在 CSI 裡，丟棄（vtkbd 同樣回 KEY_UNKNOWN）
+      // 沒有這一段時，被切斷的 CSI 會併吞下一條：`ESC[3` + `ESC[2J` 會變成
+      // esc = "3\x1b[2"、final = 'J' ⇒ parseInt 得 3 ⇒ term.clear(3)。
+      if (ch == '\x1b') {
+        this.state = AnsiParser.STATE_ESC;
+        this.esc = '';
+        this.escInter = '';
+        this.escDrop = false;
+        break;
+      }
+      if (ch == '\x18' || ch == '\x1a') { // CAN / SUB
+        this.state = AnsiParser.STATE_TEXT;
+        this.esc = '';
+        this.escInter = '';
+        this.escDrop = false;
+        break;
+      }
+      if (ch < '\x20' || ch == '\x7f') {
+        this.state = AnsiParser.STATE_TEXT;
+        this.esc = '';
+        this.escInter = '';
+        this.escDrop = false;
+        --i; // 退回 STATE_TEXT 當一般控制字元處理
+        break;
+      }
+      if (ch > '\x7e') { // 0x80-0xFF：CSI 裡不合法
+        this.state = AnsiParser.STATE_TEXT;
+        this.esc = '';
+        this.escInter = '';
+        this.escDrop = false;
+        break;
+      }
       // ECMA-48 的 CSI final byte ＝ 0x40..0x7E。fork 原版寫成
       // (ch >= '`' && ch <= 'z') || (ch >= '@' && ch <= 'Z')，漏掉 0x5B-0x5F
       // （[ \ ] ^ _）與 0x7B-0x7E（{ | } ~）⇒ 以那九個字元結尾的 CSI **永不終結**，
@@ -69,18 +127,36 @@ AnsiParser.prototype.feed = function(data) {
       if ( ch >= '@' && ch <= '~' ) {
         // if(ch != 'm')
         //    dump('CSI: ' + this.esc + ch + '\n');
+
+        // 含中間位元組的序列一律安靜丟棄：本專案沒有任何一條要用它，PTT 也不送。
+        // 這條把 `ESC[?2026$p`（DECRQM 查詢）、`ESC[!p`（DECSTR）、`ESC[0 q`
+        // （DECSCUSR）收進同一條明確的丟棄路徑 —— 舊碼是靠「final 字元剛好沒命中
+        // 任何 case」才沒出事，那是巧合不是設計。
+        // `escDrop` 是「參數區超長」的結果：那條序列已經放棄，但仍必須在這裡
+        // **吃掉終結字元**才算讀完 —— 中途放棄會讓剩下的位元組變成畫面上的垃圾字。
+        if (this.escInter || this.escDrop) {
+          this.state = AnsiParser.STATE_TEXT;
+          this.esc = '';
+          this.escInter = '';
+          this.escDrop = false;
+          break;
+        }
+
         var params=this.esc.split(';');
+        // 私有前綴＝參數區第一個位元組落在 0x3C-0x3F（`<` `=` `>` `?`）。
+        // 分流之後參數區只可能是 0x30-0x3F，所以這裡可以寫成明確的範圍判定，
+        // 不必再用「不是數字就是前綴」反推。
         var firstChar = '';
-        if (params[0]) {
-          if (params[0].charAt(0)<'0' || params[0].charAt(0)>'9') {
-            firstChar = params[0].charAt(0);
-            params[0] = params[0].slice(1);
-          }
+        if (params[0] && params[0].charAt(0) >= '<' && params[0].charAt(0) <= '?') {
+          firstChar = params[0].charAt(0);
+          params[0] = params[0].slice(1);
         }
         if (firstChar && ch != 'h' && ch != 'l') { // unknown CSI
           //dump('unknown CSI: ' + this.esc + ch + '\n');
           this.state = AnsiParser.STATE_TEXT;
           this.esc = '';
+          this.escInter = '';
+          this.escDrop = false;
           break;
         }
         for (var j=0; j<params.length; ++j) {
@@ -104,7 +180,6 @@ AnsiParser.prototype.feed = function(data) {
           term.gotoPos(term.cur_x, term.cur_y+(params[0]?params[0]:1));
           break;
         case 'C':
-        case 'e':
           term.gotoPos(term.cur_x+(params[0]?params[0]:1), term.cur_y);
           break;
         case 'D':
@@ -125,6 +200,22 @@ AnsiParser.prototype.feed = function(data) {
           break;
         case 'd':
           term.gotoPos(term.cur_x, params[0]>0?params[0]-1:0);
+          break;
+        // DSR（Device Status Report）。**刻意不回應**，包含 `ESC[6n`（CPR）。
+        //
+        // PTT 2026-09 起在連線當下送 `\r \xc3\xa2 ESC[6n`（daemon/logind/logind.c
+        // #login_ctx_activate）來偵測 client 的編碼：`\xc3\xa2` 在 UTF-8 下是一個
+        // 字（游標停在 col 2）、在 Big5 下是一個雙位元組字（col 3）。回應的解析在
+        // logind.c#login_conn_handle_terminal —— **只有第二個參數 == 2 時**才會把
+        // `ctx.encoding` 切成 `CONV_UTF8` 並重畫登入畫面；其餘值與「完全不回應」
+        // 一樣留在 `LOGIND_INITIAL_ENCODING`（0 ＝ Big5）。
+        //
+        // 本專案 `term_view.js` 寫死 `charset = 'big5'`（全 repo 無第二個寫入點），
+        // 所以正確答案永遠是「留在 Big5」，而**不回應**就是零風險地達成它。
+        // 反過來說，哪天有人「順手把 CPR 實作起來」而欄位算錯成 2，代價是 server
+        // 切成 UTF-8 ⇒ 整站變亂碼。公告原文也明說「如果程式不想實作此命令可以忽略，
+        // 但請注意測試不要當掉」。守護：tests/unit/ansi_parser_cpr.test.js
+        case 'n':
           break;
         // DECSET / DECRST。目前只認 DEC 2026（Synchronized Output）：
         // `ESC[?2026h` = BSU（幀開始）、`ESC[?2026l` = ESU（幀結束）。
@@ -266,9 +357,43 @@ AnsiParser.prototype.feed = function(data) {
         }
         this.state = AnsiParser.STATE_TEXT;
         this.esc = '';
-      } else {
+        this.escInter = '';
+      } else if (this.escDrop) {
+        // 已放棄：只吞不存，等上面的終結字元分支收尾。
+      } else if (ch <= '/') { // 0x20-0x2F 中間位元組
+        this.escInter += ch;
+      } else {                // 0x30-0x3F 參數位元組
         this.esc += ch;
       }
+      // 保險絲：超長就**放棄內容但留在 CSI 態**，等終結字元來了再一起丟掉。
+      // 留在 CSI 態是重點——直接跳回 TEXT 會把序列剩下的位元組印到畫面上。
+      if (this.esc.length + this.escInter.length > CSI_MAX) {
+        this.escDrop = true;
+        this.esc = '';
+        this.escInter = '';
+      }
+      break;
+    case AnsiParser.STATE_STRING:
+      // OSC / DCS / APC / PM / SOS 的 payload。**唯一的工作是吃到終止子**，
+      // 內容一律丟棄（PTT 目前不送，但公告明說「預計未來會不定期增加輸出的
+      // 控制碼類形」）。沒有這個狀態時 `ESC ] 0;title BEL` 會變成：`]` 被 C1
+      // 吞掉、`0;title` 當文字印到畫面上、BEL 還會響一聲。
+      //
+      // 終止子三種：
+      //   BEL(0x07)        —— xterm 的 OSC 慣例
+      //   CAN(0x18)/SUB(0x1a) —— ECMA-48 的中止字元
+      //   ESC(0x1b)        —— 一律結束並**退回重新處理**。正規的 ST 是 `ESC \`，
+      //                       退回後 ESC 重開序列、`\` 落進 C1 被吃掉一個位元組，
+      //                       結果等效；順便也處理了「字串被新的 CSI 打斷」。
+      // **不可以認 8-bit ST（0x9C）**：這條資料流是 latin1 位元組，0x9C 落在
+      // Big5 的 trail byte 範圍內，正文會誤命中而把後面的序列全部吞掉。
+      if (ch == '\x1b') {
+        this.state = AnsiParser.STATE_TEXT;
+        --i;
+      } else if (ch == '\x07' || ch == '\x18' || ch == '\x1a') {
+        this.state = AnsiParser.STATE_TEXT;
+      }
+      // 其餘一律吞掉，不累積也不設上限（理由見檔頭 CSI_MAX 的註解）。
       break;
     case AnsiParser.STATE_C1:
       var C1_End = true;
@@ -320,9 +445,16 @@ AnsiParser.prototype.feed = function(data) {
       this.state = AnsiParser.STATE_TEXT;
       break;
     case AnsiParser.STATE_ESC:
-      if (ch == '[')
+      if (ch == '[') {
         this.state=AnsiParser.STATE_CSI;
-      else {
+        this.esc = '';
+        this.escInter = '';
+        this.escDrop = false;
+      } else if (ch == ']' || ch == 'P' || ch == '_' || ch == '^' || ch == 'X') {
+        // OSC(]) / DCS(P) / APC(_) / PM(^) / SOS(X)：後面接的是任意長度的
+        // payload，要吃到終止子為止，不能像 C1 那樣只吞一個位元組。
+        this.state=AnsiParser.STATE_STRING;
+      } else {
         this.state=AnsiParser.STATE_C1;
         --i;
       }

@@ -169,4 +169,94 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
     t.paint(subMenuScreen());
     expect(t.buf.pageState).toBe(1);
   });
+
+  // ─── PTT 2026-09-20 改版後的同一批畫面 ───────────────────────────────────
+  //
+  // 狀態：**guess**。公告「介面調整: 標題列與主選單底部狀態列改版」
+  // （PTT2 09/20 測試中、PTT1 10/04）把底列改成
+  //   *[34;46m 選單名稱 *[1;33;45m 節氣/活動 *[30;47m
+  //   M/D 週X HH:MM | ID | 線上N人  [(?)回到上層] (h)說明
+  // ⇒ 舊的 parseListRow 錨點（`^`、`周`、`人,我是`、`,呼叫器`）全部失效。
+  // 該改動還沒進公開的 pttbbs repo，所以這裡是照公告文字組的，重新校準見
+  // docs/handoff/status-row-recalibrate.md。
+  //
+  // 上面那一批 CONFIRMED 的測試一條都不准刪：PTT1/PTT2 上線差兩週，
+  // 兩種格式會同時存在。
+  const newStatusRow = (label, tail = "(h)說明", user = "someuser") =>
+    padCols(
+      " " + label + "  射手時 9/20 週六 17:09 | " + user + " | 線上25809人",
+      COLS - width(tail)
+    ) + tail;
+
+  const newSubMenuScreen = () =>
+    CLEAR +
+    at(0, 0) +
+    "\x1b[30;47m" +
+    padCols("【工具程式】" + " ".repeat(23) + "批踢踢實業坊", COLS) +
+    "\x1b[m" +
+    at(12, 20) +
+    "> (T)Hot Topics   【熱門話題與看板】" +
+    at(18, 22) +
+    "(X)info         《查看系統資訊》" +
+    at(ROWS - 1, 0) +
+    "\x1b[34;46m" +
+    newStatusRow("工具程式", "(?)回到上層 (h)說明") +
+    "\x1b[m" +
+    at(12, 20);
+
+  test("新版底列的子選單（row0 是【工具程式】）→ 1", () => {
+    const t = makeBuf();
+    t.paint(newSubMenuScreen());
+    expect(t.buf.pageState).toBe(1);
+  });
+
+  // 這一條才是真正的症狀鎖：新版底列下，子選單仍必須能從非選單畫面回到 1。
+  // parseListRow 失效時它會黏在 5（滑鼠瀏覽整個失效）。
+  test("新版底列：pressanykey(5) 關框回子選單 ⇒ 必須回到 1", () => {
+    const t = makeBuf();
+    t.paint(newSubMenuScreen());
+    t.paint(pressAnyKeyScreen());
+    expect(t.buf.pageState).toBe(5);
+
+    t.paint(newSubMenuScreen());
+    expect(t.buf.pageState).toBe(1);
+  });
+
+  // 新舊兩種底列在同一個 session 裡交替出現（PTT1 與 PTT2 上線差兩週、
+  // 使用者可能換站）也要都判得出來。
+  test("新舊底列交替出現都判得出 MENU", () => {
+    const t = makeBuf();
+    t.paint(subMenuScreen());
+    expect(t.buf.pageState).toBe(1);
+    t.paint(articleScreen());
+    expect(t.buf.pageState).toBe(3);
+    t.paint(newSubMenuScreen());
+    expect(t.buf.pageState).toBe(1);
+    t.paint(articleScreen());
+    expect(t.buf.pageState).toBe(3);
+    t.paint(subMenuScreen());
+    expect(t.buf.pageState).toBe(1);
+  });
+
+  // 去括號的 row0（公告的兩段式形狀）。三段式標題公告保證不變，但 screen_titles
+  // 兩種都吃 —— 這條確認那個容錯真的接到 setPageState 上。
+  test("去括號 row0（ 主功能表 ）仍判得出 MENU", () => {
+    const t = makeBuf();
+    t.paint(
+      CLEAR +
+        at(0, 0) +
+        "\x1b[30;47m" +
+        padCols(" 主功能表 " + " ".repeat(21) + "批踢踢實業坊", COLS) +
+        "\x1b[m" +
+        at(18, 20) +
+        "> (X)yz          【系統資訊區】" +
+        at(ROWS - 1, 0) +
+        "\x1b[34;46m" +
+        // 底列刻意用「認不出來」的內容，逼判定只能走 row0 那條。
+        padCols(" 主功能表 ", COLS) +
+        "\x1b[m" +
+        at(18, 20)
+    );
+    expect(t.buf.pageState).toBe(1);
+  });
 });

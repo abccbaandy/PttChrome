@@ -12,7 +12,7 @@
 // （auto_login.js 也是這樣認的）。掛在 termBuf 的 'screenSettled' 上而不是接進
 // AutoLogin，是因為手動登入根本不經過 AutoLogin。
 
-import { MAIN_MENU_TITLE } from './aid_navigation';
+import { isMainMenuRow } from './aid_navigation';
 import { buildDeepLink, stripDeepLink } from './deep_link';
 import { parseStatusRow } from './string_util';
 
@@ -250,7 +250,7 @@ DeepLinkController.prototype = {
   _atMainMenu: function() {
     const buf = this._termBuf;
     if (!buf || !buf.getRowText) return false;
-    return buf.getRowText(0, 0, buf.cols).indexOf(MAIN_MENU_TITLE) === 0;
+    return isMainMenuRow(buf.getRowText(0, 0, buf.cols));
   },
 
   _onSettled: function() {

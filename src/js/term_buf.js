@@ -17,6 +17,12 @@ import {
 } from './mouse_regions';
 import { MouseReportState } from './mouse_report';
 import { resolveDismiss } from './screen_dismiss';
+import {
+  BOARD_LIST,
+  MENU_TITLES,
+  rowHasAnyTitle,
+  rowHasTitle
+} from './screen_titles';
 
 // Quiet period (ms) after the last redraw window before pageState is promoted to
 // `settledPageState`. Must exceed the 30ms notify debounce so a transient
@@ -104,8 +110,16 @@ TermChar.defaultBg = 0;
 
 TermChar.prototype = {
 
+  // SGR 參數。**逐個索引走而不是 forEach**：38/48/58 後面跟的是子參數
+  // （`38;5;n` 256 色、`38;2;r;g;b` truecolor），必須整組吃掉才不會被當成獨立的
+  // SGR —— 否則 `ESC[38;5;123m` 的 `5` 會變成 blink、`ESC[38;2;200;30;40m` 的
+  // `30`/`40` 會變成黑字黑底。PTT 目前只送 `ESC[ [0;] [1;] [5;] [3x;] [4x] m`
+  // （pfterm.c#fterm_chattr 重新產生的最短序列），但 2026-09 的公告主軸就是
+  // 「本站預計未來會不定期增加輸出的控制碼類形」，所以這裡先擋起來。
+  // 守護：tests/unit/ansi_parser_sgr_subparams.test.js
   assignParams: function(params) {
-    params.forEach(v => {    
+    for (var i = 0; i < params.length; ++i) {
+      var v = params[i];
       switch (v) {
       case 0: // reset
         this.resetAttr();
@@ -140,6 +154,32 @@ TermChar.prototype = {
         this.invert=false;
         break;
       */
+      case 38: // 前景擴充色
+      case 48: // 背景擴充色
+      case 58: // 底線擴充色
+        // 只負責**把子參數吃掉**，不實作 256/truecolor 上色：我們的色票是 16 色
+        // （termColors），PTT 也不送。`5` → 再吃 1 個；`2` → 再吃 3 個；其餘視為
+        // 沒有子參數（有些終端機會送裸的 38 當 no-op）。
+        if (params[i + 1] === 5) i += 2;
+        else if (params[i + 1] === 2) i += 4;
+        break;
+      case 66:
+        // PTTBBS 自訂的「一字雙色」（2026-09-20 公告，非 ANSI/ECMA 標準）。
+        // 語意（mbbsd/pfterm.c#fterm_param 的 `case 66`）：把**當下累積到的屬性**
+        // 快照成下一個字元的「前半格」顏色，序列剩下的參數繼續改一般屬性、成為
+        // 「後半格」顏色。線路格式是 `ESC[<前半>m ESC[66;<後半>m <字>`
+        // （pfterm.c#fterm_rawattr_half），快照只被下一個字元消費一次。
+        //
+        // **本專案永遠收不到它**：pfterm.c 的 `FTCONF_DBCS_OUTPUT_SGR66` 是 0、
+        // `FTCONF_UTF8_OUTPUT_SGR66` 才是 1，而我們寫死 Big5 連線
+        // （term_view.js 的 `charset = 'big5'`）。公告也說「如果你目前是用 Big5
+        // 與 PTT 連線，基本上不會收到」。
+        //
+        // 所以這裡是**有意的 no-op**，不是「剛好落在下面 default 的範圍外」。
+        // 忽略它的結果正是公告描述的降級行為：整個字用後半格的顏色。
+        // 真要實作渲染的觸發條件與代價見 docs/handoff/sgr66-render.md。
+        // 守護：tests/unit/ansi_parser_sgr66.test.js
+        break;
       default:
         if (v <= 37) {
           if (v >= 30) { // fg
@@ -152,7 +192,7 @@ TermChar.prototype = {
         }
         break;
       }
-    })
+    }
   },
 
   copyFromNewChar: function() {
@@ -1304,10 +1344,7 @@ TermBuf.prototype = {
     var firstRowText = this.getRowText(0, 0, cols);
 
     if ( this.isUnicolor(0, 0, 29) && this.isUnicolor(0, cols-20, cols-10) ) {
-      var main = firstRowText.indexOf('【主功能表】');
-      var classList = firstRowText.indexOf('【分類看板】');
-      var archiveList = firstRowText.indexOf('【精華文章】');
-      if (main === 0 || classList === 0 || archiveList === 0 ||
+      if (rowHasAnyTitle(firstRowText, MENU_TITLES) ||
         parseListRow(lastRowText)) {
         //console.log('pageState = 1 (MENU)');
         this.pageState = 1; // MENU
@@ -1402,7 +1439,7 @@ TermBuf.prototype = {
   isBoardListScreen: function() {
     if (this.pageState !== 1) return false;
     var title = this.getRowText(0, 0, this.cols);
-    return typeof title === 'string' && title.indexOf('【看板列表】') === 0;
+    return rowHasTitle(title, BOARD_LIST);
   },
 
   // 滑鼠移到 (tcol, trow)：算出這一格的語意、更新游標底色列、換滑鼠指標、開關

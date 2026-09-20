@@ -58,6 +58,7 @@ import { subjectOfListText } from './list_session';
 import { NavHistory, chooseAnchor } from './nav_history';
 import { parsePostInfoAid, parseArticleUrlLine, parsePostInfoUrl } from './aid_parse';
 import { isPinnedListRow } from './comment_parse';
+import { MAIN_MENU, rowHasTitle } from './screen_titles';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -75,10 +76,17 @@ export const AID_NOT_FOUND_RE = /找不到|不合法|不正確/;
 // on a pressanykey screen.
 const KEY_LEFT = '\x1b[D';
 
-// 主功能表 title (term_buf.setPageState / classifyListScreen use the same literal).
-// Exported for deep_link_controller, which uses "row 0 starts with this" as its
-// one and only "the user is logged in" signal.
-export const MAIN_MENU_TITLE = '【主功能表】';
+// row 0 是不是主功能表。term_buf.setPageState / classifyListScreen 走的是
+// screen_titles 的同一組判定；deep_link_controller 拿這個當它**唯一的**
+// 「使用者已登入」訊號。
+//
+// 2026-09-20 公告動了單段式／兩段式標題的括號（三段式明文保證不變，Row 0 左側
+// 仍是「【主功能表】」），所以 rowHasTitle 兩種形狀都吃 —— 理由與邊界見
+// screen_titles.js 的檔頭。**不要**在這裡另外宣告一份 `'【主功能表】'` 字面值，
+// 那正是這次要收掉的東西。
+export function isMainMenuRow(rowText) {
+  return rowHasTitle(rowText, MAIN_MENU);
+}
 
 // The board's 進板畫面 tail: mbbsd/bbs.c#Read → pressanykey(). Same literals
 // term_buf.setPageState matches for pageState 5.
@@ -294,7 +302,7 @@ AidNavigation.prototype = {
   // _enqueueEscape's expect uses, read straight off the native buffer.
   _atMainMenu: function() {
     const buf = this._termBuf;
-    return buf.getRowText(0, 0, buf.cols).indexOf(MAIN_MENU_TITLE) === 0;
+    return isMainMenuRow(buf.getRowText(0, 0, buf.cols));
   },
 
   // 'reading' → s/# are live in this pager; anything else → escape preamble.
@@ -709,7 +717,7 @@ AidNavigation.prototype = {
       probeTimeoutMs: STEP_PROBE_WINDOW_MS,
       hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
-        if ((facts.rowTexts[0] || '').indexOf(MAIN_MENU_TITLE) === 0)
+        if (isMainMenuRow(facts.rowTexts[0] || ''))
           return { menu: true };
         const sig = screenSignature(facts.rowTexts);
         // Unchanged screen = ← did nothing (or was swallowed): NOT a level up.
@@ -788,7 +796,7 @@ AidNavigation.prototype = {
       // move the highlight onto G)oodbye. Keep waiting → probe → visible miss.
       if (
         facts.kind === 'prompt' &&
-        (facts.rowTexts[0] || '').indexOf(MAIN_MENU_TITLE) !== 0
+        !isMainMenuRow(facts.rowTexts[0] || '')
       )
         return { dismiss: true };
       return false;

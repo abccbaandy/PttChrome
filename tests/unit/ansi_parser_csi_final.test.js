@@ -137,3 +137,113 @@ describe("AnsiParser CSI final byte range", () => {
     expect(parser.esc).toBe("");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 中間位元組（0x20-0x2F）與 CSI 中止規則（2026-09-20 公告「請實作 ECMA-48」）
+//
+// 公告給的形狀是 `\x1B\[[0-?]*[ -/]*[@-~]`：參數位元組、中間位元組、終結字元
+// 三段。舊碼把前兩段塞進同一個 accumulator，靠「終結字元剛好沒命中任何 case」
+// 才沒出事；中止規則則整個沒有，被截斷的 CSI 會併吞下一條。
+//
+// 中止規則照抄 server 端 common/sys/vtkbd.c:230-256，兩邊對「被切斷的序列」
+// 要有同一套認知。
+describe("AnsiParser CSI 中間位元組與中止規則", () => {
+  beforeAll(() => {
+    loadBig5Tables();
+  });
+
+  // 每一條的終結字元都是我們**有實作**的指令，所以「被丟棄」與「被執行」
+  // 兩種結果在畫面上分得出來。
+  const WITH_INTERMEDIATE = [
+    [ESC + "[0 q", "DECSCUSR（游標形狀）"],
+    [ESC + "[!p", "DECSTR（軟重置）"],
+    [ESC + "[?2026$p", "DECRQM（模式查詢）"],
+    [ESC + "[1 @", "帶中間位元組的 ICH 形狀"],
+  ];
+  test.each(WITH_INTERMEDIATE)(
+    "含中間位元組的 %s 一律丟棄且不觸發同名指令",
+    (seq) => {
+      const buf = makeBuf();
+      const parser = new AnsiParser(buf);
+      const insert = vi.spyOn(buf, "insert");
+      parser.feed(ESC + "[1;1H");
+      parser.feed("KEEP");
+      parser.feed(seq);
+      parser.feed("!");
+      expect(insert).not.toHaveBeenCalled();
+      expect(row(buf, 0)).toBe("KEEP!");
+      expect(parser.state).toBe(AnsiParser.STATE_TEXT);
+      expect(parser.esc).toBe("");
+      expect(parser.escInter).toBe("");
+      insert.mockRestore();
+    }
+  );
+
+  // 主回歸：被切斷的 CSI 併吞下一條。修正前 esc 會變成 "3\x1b[2"、終結字元 'J'
+  // ⇒ parseInt("3\x1b[2") = 3 ⇒ term.clear(3)，而真正的 ESC[2J 從沒被執行。
+  test("CSI 中途遇到 ESC 會重啟，不得併吞下一條序列", () => {
+    const buf = makeBuf();
+    const parser = new AnsiParser(buf);
+    parser.feed(ESC + "[1;1H");
+    parser.feed("DIRTY");
+
+    const clear = vi.spyOn(buf, "clear");
+    parser.feed(ESC + "[3"); // 被截斷的 CSI
+    parser.feed(ESC + "[2J"); // 真正要執行的 ED
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(clear).toHaveBeenCalledWith(2);
+    clear.mockRestore();
+  });
+
+  test.each([
+    ["\x18", "CAN"],
+    ["\x1a", "SUB"],
+  ])("CSI 中途遇到 %s 整條丟棄，後續文字照常", (abortChar) => {
+    const buf = makeBuf();
+    const parser = new AnsiParser(buf);
+    const clear = vi.spyOn(buf, "clear");
+    parser.feed(ESC + "[2" + abortChar);
+    parser.feed("J"); // 這個 J 必須是字面字元，不是 ED
+    expect(clear).not.toHaveBeenCalled();
+    expect(row(buf, 0)).toBe("J");
+    expect(parser.state).toBe(AnsiParser.STATE_TEXT);
+    clear.mockRestore();
+  });
+
+  // 其餘 C0 不只是「不被吃掉」，而是要**退回去照常處理**：PTT 的畫面靠 \r\n
+  // 推進，被序列吞掉一個就整列錯位。
+  test("CSI 中途遇到 CR/LF 會中止並讓它照常生效", () => {
+    const buf = makeBuf();
+    const parser = new AnsiParser(buf);
+    parser.feed("ROW0");
+    parser.feed(ESC + "[12\r\n"); // 截斷的 CSI + 換行
+    parser.feed("ROW1");
+    expect(row(buf, 0)).toBe("ROW0");
+    expect(row(buf, 1)).toBe("ROW1");
+    expect(parser.state).toBe(AnsiParser.STATE_TEXT);
+  });
+
+  // 保險絲：終結字元永遠不來時不可以把整個畫面累積進 parser 狀態。
+  //
+  // 放棄的方式是「丟掉內容但**留在 CSI 態**」：中途跳回 TEXT 會把序列剩下的
+  // 位元組當文字印出來，畫面上就是一串 `;1;1;1…` 的垃圾。
+  test("超長 CSI 參數放棄內容但仍吃到終結字元，不得印出垃圾字", () => {
+    const buf = makeBuf();
+    const parser = new AnsiParser(buf);
+    const sgr = vi.spyOn(buf, "assignParamsToAttrs");
+
+    parser.feed(ESC + "[" + "1;".repeat(200));
+    // 放棄內容，但還沒收到終結字元 ⇒ 必須留在 CSI 態繼續吞。
+    expect(parser.state).toBe(AnsiParser.STATE_CSI);
+    expect(parser.esc).toBe("");
+
+    parser.feed("m"); // 終結字元：整條丟棄，不得套用任何屬性
+    expect(sgr).not.toHaveBeenCalled();
+    expect(parser.state).toBe(AnsiParser.STATE_TEXT);
+    expect(parser.escDrop).toBe(false);
+
+    parser.feed("BACK");
+    expect(row(buf, 0)).toBe("BACK");
+    sgr.mockRestore();
+  });
+});
