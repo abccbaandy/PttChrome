@@ -151,9 +151,16 @@ test.describe('replayListCassette 门控机制', () => {
       await page.locator('#t').focus();
       const sendJump = (num) =>
         page.evaluate((n) => window.__app.conn.send(String(n) + '\r'), num);
+      // 斷言是「每個 step **最終**都餵得進去」，不是「5 秒內餵完」—— 那個 5000 是
+      // 當初隨手寫的數字，而每次餵一個 step 都要整屏 parse + 重繪。CI runner 忙的
+      // 時候就會超過（2026-09-20 實錄：CI 第一個 PageUp 的 waitFed 5000ms timeout，
+      // 同一份 code 本機 --repeat-each=6 全綠，而且逐 byte 比對證實線路行為與前一版
+      // 完全相同 ⇒ 純粹是這個固定 timeout 太緊）。offline project 沒有 retries，
+      // 所以一次慢就是紅。改吃 project 的 60s test timeout 當上界：真的卡住仍會紅，
+      // 只是不再把「機器忙」讀成「門控壞了」。
       const waitFed = async (n) =>
         page.waitForFunction((x) => window.__replay.fed >= x, n, {
-          timeout: 5000,
+          timeout: 20000,
         });
       // 依 cassette 顺序驱动：jump 直送「数字+\r」（CommandQueue 的送法，键盘
       // 逐字打不会匹配精确序号门控）；其余用真键盘。
