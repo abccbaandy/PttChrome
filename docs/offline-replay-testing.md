@@ -127,6 +127,7 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 | `lazy_preview_blank.offline.spec.js`（非媒體連結不留高度） | 文章夠長／夠多圖，把「※ 文章網址」那列推出 lazy 卸載邊界 | 短文（`test-xmen`）整篇都在視野內、從不卸載 ⇒ 佔位盒永不釘高度 ⇒ **恆綠**（實際踩過） |
 | `lazy_preview_enlarge_blank.offline.spec.js`（放大態釘的高度不留到縮小態） | 多圖且**放大後**總高足以把上方佔位盒推出 6000px 卸載邊界（`stock-end` 9 張圖：實測放大態釘住 8 個、最高 908px） | 圖太少／太短 ⇒ 放大態從不卸載 ⇒ 恆綠。spec 內以 `pinnedWhileEnlarged > 0` 硬紅擋住此情形 |
 | `easy-reading.offline.spec.js` 掉頁自癒 | **≥2 個 `pagedown` step**（吞的是「中間」頁） | 只有 1 個 pagedown 的卷吞掉即只剩第一頁，沒有中間頁可自癒，前提不成立 |
+| `mouse.offline.spec.js`「上半／下半＝捲動一頁」 | 可捲距離 > 一次翻頁（`chh × _turnPageLines`）**且在該 profile 下成立** | 短文在逆境桶塌陷後可捲距離 < 一次翻頁 ⇒ 退化成「捲到底」而不是「捲一頁」，`toBeGreaterThan(0)` 照樣綠（見下方「逆境桶下的捲動類斷言」） |
 
 新增素材後請照「回歸捕捉力驗證」那節，實際把修復還原一次確認會紅。
 
@@ -355,6 +356,39 @@ px，被測試 2 的「一次 PgUp 不得暴衝（≤1.2 倍）」誤判成捲�
 讓它**自己指定情境**：`bootOffline(page, ptt, { imageProfile: 'slow' })`（明確傳入優先序高於
 project 名，同 `image_load_conditions.offline.spec.js`）。這樣兩個 job 跑到的都是有牙齒的版本。
 新增媒體版面測試時，先照上表做一次突變驗證再決定 profile。
+
+### 逆境桶下的捲動類斷言（2026-09-22）—— CONFIRMED
+
+**逆境桶會改變「素材有多長」，不只改變載入節奏。** 圖片全 404 ⇒ 行內預覽佔位盒只剩
+`slotFloorHeight`。同一卷素材實測（`chh=30`、視窗 24 列＝720px、一次翻頁 22 列＝660px）：
+
+| 素材 | profile | slot 高 | 長頁高 | `_scrollBy` 下界 | 真 maxScroll |
+|---|---|---|---|---|---|
+| `ask-urlline-blank`（2 頁） | cache | 600,600,0 | 2153 | 1433 | 1423 |
+| `ask-urlline-blank`（2 頁） | broken | 65,65,0 | 1083 | **363** | **353** |
+| `stock-huang`（5 頁） | cache／broken | 0,0,0 | 3839 | 3119 | 3109 |
+
+⇒ 短素材在 broken 桶下**可捲距離比一次翻頁還短**，「捲動一頁」那條測試實際只測到「捲到
+底」。`findCassette('article')` 取的是檔名排序第一卷（現為 `ask-urlline-blank`），所以
+凡是以「捲得動」為前提的測試都要改用**頁數最多的那一卷**（`findCassettes('article')`
+依 `meta.pages` 排序），並在開頭用具名斷言驗前提，不可把斷言放寬成 `> 0`。
+
+**「點了卻沒捲動」有四種來源，壓成同一個 `scrollTop === 0` 就查不出是哪一種**：
+
+| 來源 | 具名斷言 |
+|---|---|
+| 點在連結／內嵌預覽／浮動 `button`／推文列上（`App.mouse_click` 在讀 `mouseAction` 之前就 return） | 選點排除 `helpers/layout.js#EDGE_PAGING_BLOCKERS`，點擊前再 `assertPlainTextUnder(..., { sel: EDGE_PAGING_BLOCKERS })` |
+| `buf.mouseAction` 還沒算到（hover 那一幀沒跑完） | `expect.poll(mouseAction).toBe('pageDown')`，不用固定 60ms |
+| 量完座標到點下去之間版面又動了 | `scrollTop` 歸零**本身是一次捲動** ⇒ 歸零後要再 `waitPreviewsSettled` 一次 |
+| `_scrollBy` 回 false（長頁不足一屏，`scrollTop >= mainContainer.clientHeight - chh*rows`） | 前置 `assertScrollable`：`maxScroll > chh * _turnPageLines` |
+
+最後一條特別不可見：`_scrollBy` 回 false 時走 `_kickPageDown()`，而它在 `pagePercent >= 100`
+時**直接 return 不送 byte** ⇒ 同一條測試的「0 byte 送給 PTT」仍然綠。
+
+捲動量一律**寫死成 `chh × _turnPageLines`**（`scrollTop` 是同步賦值，沒有平滑捲動，量到的
+就該是那個數）。但 **End（`_scrollBottom`）要比「點擊當下」的 maxScroll**：捲到文末會把文末
+的預覽帶進視野 ⇒ 掛載 ⇒ 長頁再長高 ⇒ 事後量的 maxScroll 必定較大，拿它比永遠差一截
+（長素材在一般桶就會紅，實測）。
 
 ### 踩坑（此段修過兩次，別再重來）
 - **`page.route` 必須用述詞過濾，不可用 `'**/*'` + `route.continue()`**：Vite dev server

@@ -61,9 +61,41 @@ describe("offline e2e 版面穩定契約", () => {
       "assertElementUnder",
       "stableCommentRow",
       "plainLeftEdge",
+      "EDGE_PAGING_BLOCKERS",
     ]) {
       expect(src).toContain(name);
     }
+  });
+
+  // EDGE_PAGING_BLOCKERS 是 App.mouse_click「讀 mouseAction 之前就 return」那幾種
+  // 目標的鏡像。少一種 ⇒ 測試會挑到一個「點下去其實觸發了別的功能」的座標，斷言
+  // 退化成沉默的 0（2026-09-22 之前 mouse.offline 的 plainPointInHalf 只排了
+  // a 與 .inlinePreviewSlot）。
+  test("EDGE_PAGING_BLOCKERS 涵蓋產品端的每一種早退目標", () => {
+    const src = fs.readFileSync(path.join(HELPERS_DIR, "layout.js"), "utf8");
+    const line = /EDGE_PAGING_BLOCKERS =([^;]*);/.exec(src);
+    expect(line, "EDGE_PAGING_BLOCKERS 不見了或寫法變了").not.toBeNull();
+    for (const frag of ["OVERRIDING_SEL", "button", "[data-pusher]"]) {
+      expect(line[1]).toContain(frag);
+    }
+    // 產品端那三條守門還在嗎（改名就要回來同步這份鏡像）。
+    const app = fs.readFileSync(path.join(ROOT, "src", "js", "pttchrome.jsx"), "utf8");
+    for (const fn of ["isAnchorTarget", "isPreviewTarget", "isOwnControlTarget"]) {
+      expect(app, `${fn} 改名了，EDGE_PAGING_BLOCKERS 要跟著重新對照`).toContain(fn);
+    }
+    expect(app).toContain("data-pusher-col");
+  });
+
+  // 規則：自己用 elementFromPoint 挑座標的 offline spec，不准手寫排除清單。
+  // 手寫的那份必然會跟產品端的早退順序漂移（就是上面那條註解說的現場）。
+  test("自己挑座標的 spec 一律用 layout 的排除清單常數", () => {
+    const offenders = offlineSpecs.filter((f) => {
+      if (EXEMPT[f]) return false;
+      const src = read(f);
+      if (!/elementFromPoint\(/.test(src)) return false;
+      return !/(OVERRIDING_SEL|EDGE_PAGING_BLOCKERS)/.test(src);
+    });
+    expect(offenders).toEqual([]);
   });
 
   // 這就是規則本身。違反 ⇒ 有人又寫了「捲完立刻量、然後點下去」。

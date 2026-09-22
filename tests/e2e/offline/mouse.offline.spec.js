@@ -9,6 +9,7 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const {
   findCassette,
+  findCassettes,
   loadCassette,
   bootOffline,
   replayCassette,
@@ -18,6 +19,7 @@ const {
 // 判準與 helper 的單一來源在 helpers/layout.js（靜態掃描守護
 // tests/unit/e2e_layout_settle.test.js）。
 const {
+  EDGE_PAGING_BLOCKERS,
   assertElementUnder,
   assertPlainTextUnder,
   plainLeftEdge,
@@ -26,6 +28,20 @@ const {
 } = require('../helpers/layout');
 
 const article = findCassette('article');
+
+// 「捲得動」是前提的那幾條測試專用的素材：**頁數最多的那一卷**（仍是「撿到什麼用
+// 什麼」，不寫死檔名）。
+//
+// 為什麼不能沿用 article（檔名排序的第一卷，現為 ask-urlline-blank／2 頁）：逆境桶
+// 下圖片全部 404 ⇒ 行內預覽佔位盒從 600px 塌到 65px（2026-09-22 實測），整份好讀長頁
+// 只剩 1083px、可捲距離 353px —— **比一次翻頁的 22 列（660px）還短**。那條「上半／
+// 下半＝捲動一頁」於是在 broken 桶退化成「捲到底」，`toBeGreaterThan(0)` 照樣綠，而
+// 真正的翻頁量從來沒被驗過。素材短到貼著 `_scrollBy` 的下界時，任何幾十 px 的版面
+// 抖動都會讓它靜默回 false（PageDown 什麼都不做，且 _kickPageDown 在 100% 時不送
+// byte ⇒ 連「0 byte」斷言都還是綠的）。細節見 docs/offline-replay-testing.md。
+const longArticle = findCassettes('article').sort(
+  (a, b) => (b.meta.pages || 0) - (a.meta.pages || 0)
+)[0];
 
 const ARROW_LEFT = '\x1b[D';
 const PAGE_UP = '\x1b[5~';
@@ -619,6 +635,8 @@ test.describe('滑鼠（離線重放）', () => {
       expect(await page.evaluate(() => window.__app.buf.pageState)).toBe(2);
     };
 
+    // 素材預設用 longArticle：這個 describe 的文章測試全都在量「一次翻頁捲了多少」
+    // 或「捲到文末」，可捲距離不足就沒有現場（見 longArticle 的說明）。
     const bootArticle = async (page, prefs) => {
       await bootOffline(page, ptt);
       await ptt.applyPrefs(page, {
@@ -628,7 +646,7 @@ test.describe('滑鼠（離線重放）', () => {
         mouseEdgePaging: true,
         ...prefs,
       });
-      await replayCassette(page, article, { easyReading: true });
+      await replayCassette(page, longArticle, { easyReading: true });
     };
 
     const edgeBand = (page) =>
@@ -657,30 +675,87 @@ test.describe('滑鼠（離線重放）', () => {
       return takeCapture(page);
     };
 
-    // 好讀長頁上一個「不是連結、也不是內嵌預覽」的點：那兩種在點擊優先權表上排在
-    // 滑鼠瀏覽之前（第 4、5 條），點到就只是開連結／切換放大。
+    // 好讀長頁上一個「真的會走到 buf.mouseAction」的點。排除清單是
+    // helpers/layout.js 的 EDGE_PAGING_BLOCKERS —— App.mouse_click 在讀 mouseAction
+    // 之前就 return 的每一種目標（連結／內嵌預覽／我們自己的浮動 button／推文列的
+    // pusher 高亮）。**這裡原本只排 a 與 .inlinePreviewSlot**，少掉的那幾種點下去
+    // 會觸發別的功能，而斷言只看得到「沒捲動」這個沉默的 0。
+    //
+    // 呼叫端必須先 waitPreviewsSettled：座標本身出自格子數學（不會飄），但**底下的
+    // 內容會飄**，量完到點下去之間還會位移（見 helpers/layout.js 檔頭）。
     const plainPointInHalf = (page, half) =>
-      page.evaluate((h) => {
-        const view = window.__app.view;
-        const top = parseFloat(view.firstGridOffset.top);
-        const left = parseFloat(view.firstGridOffset.left);
-        const rows = window.__app.buf.rows;
-        const mid = Math.floor(rows / 2);
-        const range = [];
-        if (h === 'up') for (let r = 2; r <= mid; ++r) range.push(r);
-        else for (let r = mid + 1; r <= rows - 2; ++r) range.push(r);
-        for (const r of range) {
-          const y = top + view.chh * (r + 0.5);
-          for (const c of [40, 30, 50, 20, 60, 70]) {
-            const x = left + view.chw * (c + 0.5);
-            const el = document.elementFromPoint(x, y);
-            if (!el || !el.closest) continue;
-            if (el.closest('a') || el.closest('.inlinePreviewSlot')) continue;
-            return { x, y };
+      page.evaluate(
+        ({ h, blockers }) => {
+          const view = window.__app.view;
+          const top = parseFloat(view.firstGridOffset.top);
+          const left = parseFloat(view.firstGridOffset.left);
+          const rows = window.__app.buf.rows;
+          const mid = Math.floor(rows / 2);
+          const range = [];
+          if (h === 'up') for (let r = 2; r <= mid; ++r) range.push(r);
+          else for (let r = mid + 1; r <= rows - 2; ++r) range.push(r);
+          for (const r of range) {
+            const y = top + view.chh * (r + 0.5);
+            for (const c of [40, 30, 50, 20, 60, 70]) {
+              const x = left + view.chw * (c + 0.5);
+              const el = document.elementFromPoint(x, y);
+              if (!el || !el.closest) continue;
+              if (el.closest(blockers)) continue;
+              return { x, y, row: r, col: c };
+            }
           }
-        }
-        return null;
-      }, half);
+          return null;
+        },
+        { h: half, blockers: EDGE_PAGING_BLOCKERS }
+      );
+
+    // 好讀長頁的捲動幾何。產品端用的是同一組數字：
+    // easy_reading._scrollBy 捲得動的條件是 `scrollTop < mainContainer.clientHeight
+    // - chh * rows`（那條下界是刻意的產品決策，見 easy_reading.js 的長註解），
+    // 一次翻頁是 chh * _turnPageLines。
+    const scrollGeometry = (page) =>
+      page.evaluate(() => {
+        const v = window.__app.view;
+        const m = document.querySelector('.main');
+        return {
+          scrollTop: m.scrollTop,
+          maxScroll: m.scrollHeight - m.clientHeight,
+          scrollByFloor: v.mainContainer.clientHeight - v.chh * window.__app.buf.rows,
+          pageStep: v.chh * window.__app.easyReading._turnPageLines,
+          chh: v.chh,
+        };
+      });
+
+    // 「上半／下半翻頁」這組測試的前提：這份長頁在**當前 profile** 下真的捲得動一整頁。
+    // 逆境桶會讓佔位盒塌陷 ⇒ 素材不夠長時整條測試會退化成「捲到底」，而沉默地通過。
+    const assertScrollable = async (page) => {
+      const g = await scrollGeometry(page);
+      expect(
+        g.maxScroll,
+        '此 profile 下整份好讀長頁的可捲距離（' +
+          Math.round(g.maxScroll) +
+          'px）不足一次翻頁（' +
+          Math.round(g.pageStep) +
+          'px）——「捲動一頁」的前提不成立，換更長的素材，不要把斷言放寬成 >0'
+      ).toBeGreaterThan(g.pageStep);
+      return g;
+    };
+
+    // 邊緣區的一下點擊，**每一步都有具名斷言**。沉默的 0 有四種來源（連結／預覽／
+    // 浮動鈕／pusher 早退、mouseAction 沒算到、版面在量完之後位移、捲不動），全部
+    // 壓成同一個 `scrollTop === 0` 就沒人查得出是哪一種。
+    const clickEdgeRegion = async (page, point, expectAction) => {
+      await page.mouse.move(point.x, point.y);
+      // 等**內容條件**而不是固定 60ms：mouseAction 是 hover 當下由 mouse_regions
+      // 算出來寫進 termBuf 的，機器忙時那一幀可能還沒跑到。
+      await expect
+        .poll(() => page.evaluate(() => window.__app.buf.mouseAction), { timeout: 5000 })
+        .toBe(expectAction);
+      // 點下去之前再確認一次指標底下仍是純文字（量完到點下去之間版面又動了的話，
+      // 這裡會直接說出來，而不是讓下游退化成 0）。
+      await assertPlainTextUnder(page, point.x, point.y, { sel: EDGE_PAGING_BLOCKERS });
+      return clickAt(page, point.x, point.y);
+    };
 
     test('原生列表：頂列 Home／底列 End／右緣上下半翻頁，送的是真的按鍵序列', async ({
       page,
@@ -784,31 +859,45 @@ test.describe('滑鼠（離線重放）', () => {
       await waitPreviewsSettled(page);
 
       const scrollTop = () =>
-        page.evaluate(() => document.querySelector('.main').scrollTop);
+        page.evaluate(() => Math.round(document.querySelector('.main').scrollTop));
       await page.evaluate(() => {
         document.querySelector('.main').scrollTop = 0;
       });
+      // **歸零本身是一次捲動** ⇒ 會觸發新一輪 lazy mount／unmount（行內預覽的
+      // near/far IntersectionObserver），整份長頁的高度還會再變一次。量座標之前
+      // 一定要再等一次終局，否則量到的是還在動的版面。
+      await waitPreviewsSettled(page);
+      const geom = await assertScrollable(page);
 
-      // 下半 ⇒ 往下捲一頁，而且**不送 byte 給 PTT**（好讀的語意是捲動）。
+      // 下半 ⇒ 往下捲**整整一頁**，而且**不送 byte 給 PTT**（好讀的語意是捲動）。
+      // 捲動量寫死成 chh * _turnPageLines 而不是「> 0」：這一條是刻意的 ——
+      // scrollTop 是同步賦值（沒有平滑捲動），量到的就該是那個數；放寬成 >0 會讓
+      // 「其實只捲到底」「其實捲了別的量」都靜默通過。
       const down = await plainPointInHalf(page, 'down');
-      expect(down, '找不到不是連結／預覽的可點處').not.toBeNull();
-      expect(await clickAt(page, down.x, down.y)).toBe('');
-      const afterDown = await scrollTop();
-      expect(afterDown).toBeGreaterThan(0);
+      expect(down, '找不到可點的純文字處（下半）').not.toBeNull();
+      expect(await clickEdgeRegion(page, down, 'pageDown')).toBe('');
+      await expect.poll(scrollTop, { timeout: 5000 }).toBe(Math.round(geom.pageStep));
 
-      // 上半 ⇒ 捲回去。
+      // 上半 ⇒ 捲回去（同樣一整頁 ⇒ 回到頂）。
+      await waitPreviewsSettled(page);
       const up = await plainPointInHalf(page, 'up');
-      expect(up).not.toBeNull();
-      await clickAt(page, up.x, up.y);
-      expect(await scrollTop()).toBeLessThan(afterDown);
+      expect(up, '找不到可點的純文字處（上半）').not.toBeNull();
+      expect(await clickEdgeRegion(page, up, 'pageUp')).toBe('');
+      await expect.poll(scrollTop, { timeout: 5000 }).toBe(0);
 
-      // 底列 ⇒ 捲到文末（與鍵盤 End 同一條路：easy_reading._scrollBottom）。
-      await clickAt(page, await colX(page, 40), await rowY(page, 23));
-      const max = await page.evaluate(() => {
-        const m = document.querySelector('.main');
-        return m.scrollHeight - m.clientHeight;
-      });
-      expect(await scrollTop()).toBeGreaterThan(max - 5);
+      // 底列 ⇒ 捲到文末（與鍵盤 End 同一條路：easy_reading._scrollBottom，
+      // `scrollTop = scrollHeight`）。
+      //
+      // 比的是**點擊當下**的 maxScroll，不是事後再量一次：捲到文末會把文末那幾個
+      // 行內預覽帶進視野 ⇒ 掛載 ⇒ 長頁再長高 ⇒ 事後量到的 maxScroll 必定大於 End
+      // 執行時的值，拿它比就永遠差一截（實測：長素材在一般桶下就會紅）。長高是
+      // 延遲載入的副作用，不屬於 End 的語意。
+      const beforeEnd = await scrollGeometry(page);
+      const end = { x: await colX(page, 40), y: await rowY(page, 23) };
+      expect(await clickEdgeRegion(page, end, 'end')).toBe('');
+      await expect
+        .poll(scrollTop, { timeout: 5000 })
+        .toBeGreaterThan(beforeEnd.maxScroll - 5);
     });
 
     test('文章好讀：左側退出帶贏過底列 End（帶子亮著就得是離開）', async ({
@@ -930,12 +1019,20 @@ test.describe('滑鼠（離線重放）', () => {
       await page.evaluate(() => {
         document.querySelector('.main').scrollTop = 0;
       });
+      // 歸零是一次捲動 ⇒ 版面還會再動一輪（同上一條測試的理由）。
+      await waitPreviewsSettled(page);
       await startCapture(page);
       await page.mouse.move(bar.x, bar.top);
       await page.mouse.down();
       await page.mouse.move(bar.x, bar.top + 120, { steps: 5 });
       await page.mouse.up();
-      await page.waitForTimeout(200);
+      // 先等**拖曳真的把頁面捲起來**，再斷言沒送 byte。固定 sleep 除了碰運氣之外
+      // 還有一個更糟的失效模式：拖曳根本沒生效時「沒送 byte」也會綠。
+      await expect
+        .poll(() => page.evaluate(() => document.querySelector('.main').scrollTop), {
+          timeout: 5000,
+        })
+        .toBeGreaterThan(0);
       // 拖捲軸就只是捲動：不得送出任何 byte。
       expect(await takeCapture(page)).toBe('');
     });

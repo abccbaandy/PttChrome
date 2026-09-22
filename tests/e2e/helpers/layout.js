@@ -191,7 +191,17 @@ async function assertElementUnder(page, x, y, expected, opts = {}) {
 const OVERRIDING_SEL =
   'a, img, video, iframe, .inlinePreviewSlot, .previewLoading, .previewError';
 
-async function assertPlainTextUnder(page, x, y) {
+// 「量一個會走到 buf.mouseAction 的座標」時要避開的**完整**清單 ——
+// App.mouse_click 在讀 mouseAction 之前就 return 的每一種目標的鏡像：
+//   isAnchorTarget      → a
+//   isPreviewTarget     → preview_targets.js#PREVIEW_CLICK_SELECTOR（含 .previewError）
+//   isOwnControlTarget  → 任何 button（開燈／圖文並排／AI 校正／debug 錄製浮動鈕）
+//   pusher 高亮分支      → [data-pusher]（col >= data-pusher-col 時 toggle 完就 return）
+// 少一種就是「點下去其實觸發了別的功能」，而斷言退化成沉默的 0 —— 那不是時序問題，
+// 是量座標時用錯了清單。**改 pttchrome.jsx 的早退順序時要同步這裡。**
+const EDGE_PAGING_BLOCKERS = OVERRIDING_SEL + ', button, [data-pusher]';
+
+async function assertPlainTextUnder(page, x, y, { sel = OVERRIDING_SEL } = {}) {
   const hit = await page.evaluate(
     ({ x, y, sel }) => {
       const at = document.elementFromPoint(x, y);
@@ -199,7 +209,7 @@ async function assertPlainTextUnder(page, x, y) {
       const over = at.closest(sel);
       return over ? over.tagName + '.' + String(over.className || '').split(' ')[0] : null;
     },
-    { x, y, sel: OVERRIDING_SEL }
+    { x, y, sel }
   );
   if (hit !== null) {
     throw new Error(
@@ -493,6 +503,7 @@ async function waitScrollStable(
 
 module.exports = {
   OVERRIDING_SEL,
+  EDGE_PAGING_BLOCKERS,
   MEDIA_SEL,
   MOUNTED_SEL,
   seekMountedPreview,
