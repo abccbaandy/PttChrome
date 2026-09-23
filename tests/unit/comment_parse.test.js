@@ -153,6 +153,25 @@ describe("parseArticleHeader（作者＋看板同一次事件）", () => {
     });
   });
 
+  // pttbbs 的 owner 欄不一定是 userid：mbbsd/syspost.c 用 "[系統]"／"[PTT法院]" 發文，
+  // 匿名板是 real_name + "."。header 仍是 header —— 回 null 會被當成「翻頁後的非首頁」
+  // 而沿用上一篇的原PO與看板（上一篇作者在這篇推文就被誤標原PO）。
+  test("非 userid 作者（[系統]）→ 仍是 header：author 為 null、board 照解", () => {
+    expect(
+      parseArticleHeader(
+        " 作者  [系統]                                                看板  PttCurrent"
+      )
+    ).toEqual({ author: null, board: "PttCurrent" });
+    expect(parseArticleHeader("作者: [系統] 看板: Record")).toEqual({
+      author: null,
+      board: "Record"
+    });
+  });
+
+  test("翻頁後 row 0 是以「作者」起頭的內文 → 不是 header（不可清掉原PO）", () => {
+    expect(parseArticleHeader("作者 在前一段提到的那件事")).toBeNull();
+  });
+
   test("非 header 列 → null（呼叫端據此保留翻頁前的值）", () => {
     expect(parseArticleHeader(ts("推 wowbenny: hi"))).toBeNull();
     expect(parseArticleHeader("標題  [問題] ...")).toBeNull();

@@ -298,6 +298,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
   **client 必須兩代都認**：`tests/e2e/cassettes/*.json` 是舊 server 錄的 raw bytes（offline e2e 是 CI gate）。解析 server 畫面＝雙支援（`comment_parse.js` 的 `LIST_CURSOR_WIDE`/`LIST_CURSOR_ASCII` 區塊）；我們自己畫的假游標＝一律 `>`（`list_window.js#labelListCursor`）。
 - 同批 cleanup 對 client **無**影響：`ea31f725`（DBCS 旗標強制開，只動 server 輸入端）、`202f3324`（modmark 旗標移除，`~` 改一律顯示，col 8 type 字元集合不變）、`b6f93ffa`（LIVERIGHT）。
 - 刪除文 `iscorpse = (owner[0]=='-' && owner[1]==0)` ⇒ 作者欄是單一 `-`。
+- **owner 欄不一定是 userid**（CONFIRMED）：`mbbsd/syspost.c#post_msg2` 直接 `STRLCPY(fhdr.owner, author)`，呼叫端傳 `"[系統]"`／`"[" BBSMNAME "法院]"`；匿名板 `bbs.c` HAVE_ANONYMOUS 分支 owner＝`real_name + "."`；列表原樣 `%-13.12s` 印出。live PttCurrent 看到的是無括號「系統」（guess：站方用 `bbs.c` 的改作者欄功能改過）。文章檔頭同源 ⇒ pmore 顯示 `作者  [系統]`，`comment_parse.js#parseArticleHeader` 對此回 `{author:null, board}`（仍算 header，清掉上一篇原PO）。
 - client 對應常數：`comment_parse.js` 的 `LIST_AUTHOR_COL_START=17` / `LIST_AUTHOR_COL_END=29`（owner 內容 end-exclusive）／`LIST_TITLE_COL_START=30`（mark 起點）。**兩者差一格 padding，別混用**。
 - **置底文只出現在板尾頁**：`get_records_and_bottom`（`mbbsd/read.c` ~1052）當 `n >= headers_size` **或 `MODE_SELECT|MODE_DIGEST`** 走純 `get_records` 不含置底。⇒ 非板尾頁、`/` 篩選清單、文摘模式**必無**置底列。
 

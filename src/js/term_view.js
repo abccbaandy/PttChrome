@@ -2540,7 +2540,12 @@ TermView.prototype = {
     var nums = pageArticleNums(rowTexts, buf.cur_y);
     var ls = this.bbscore && this.bbscore.listSession;
     var entries = [];
-    for (var i = 0; i < buf.rows; ++i) {
+    // 只掃 entry 區 [LIST_HEADER_ROWS, rows-2]（與 accumulateBoardListLines、
+    // list_session 各掃描點同範圍）。標題列會通過 isPinnedListRow：PttCurrent 的
+    // 「【板主:wens】 … Current Ptt …」前 17 字有 4 個全形，realign 後作者欄 [17,29)
+    // 切到「Current」的 C ＝合法 userid ⇒ 整列被收成置底文，排在序列最尾
+    // （錄製檔 ptt-debug-20260924-013612；守護 list_accumulate.test.js）。
+    for (var i = LIST_HEADER_ROWS; i <= buf.rows - 2; ++i) {
       if (nums[i] != null) {
         var row = cloneRow(buf.lines[i]);
         // Normalize the "%7d" number column from the resolved number on EVERY numbered

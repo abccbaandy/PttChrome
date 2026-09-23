@@ -260,6 +260,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 4. demand 只朝移動方向。
 5. pinned map key＝`pinnedRowKey`（author|title）；`_pinnedKeyAt` 必須同函式。游標停置底列（有★）仍收錄、游標格還原空白（`blankListCursorMark`，依 `row[0].isLeadByte` 判 1 格（`>`）或 2 格（`●`））；無★游標列排除。**loose-parse guard**：`parseListArticleNumLoose`（**只 strip 游標標記 `●`/`>` ＋空白、不 strip `★`**，之後有行首數字）非 null 的列永不進 pinned map——mid-response 幀（jump 回應寫入中）游標標記可畫在非 cur_y 列，該列 num 無法回推＋作者欄有效會誤檔成置底，標記未還原永久殘留（●52880 污染 bug）。**不得 strip `★`**：★ 之後緊接推文數欄，常為純整數（`★    4 …`、`★   35 …`——無 m/M/=/+ 標記的公告），strip ★ 會露出推文數→pinned 列被誤判成編號列而排除→該公告固定消失（使用者實測「部分置底文固定消失」）；★ 天生屏蔽推文數（`^(\d+)` 不 match 仍以 ★ 開頭的列）。守護：`comment_parse.test.js`（純數字推文數→null）＋`list_accumulate.test.js`（純數字推文數置底列收錄）。
 5b. **frozen 讓位 pageState 3**（redraw list 分支條件 `pageState !== 3`）。
+5c. **`accumulateListLines` 只掃 entry 區 `[LIST_HEADER_ROWS, rows-2]`**（與看板列表、list_session 各掃描點同範圍）。標題列會通過 `isPinnedListRow`：PttCurrent row 0 前 17 字 4 個全形 ⇒ realign 後作者欄切到敘述「Current」的 `C` ⇒ 被收成置底文、排在序列最尾，點它走 open-pinned 然後 timeout 降級（錄製檔 `ptt-debug-20260924-013612`）。只在「標題列 col 28 附近恰為 ASCII」的看板發作。守護：`list_accumulate.test.js`「看板標題列不得被當成置底文收錄」。
 5c. **預讀＝錨定命令對或鏈式單腿**：首次＝jump 到 `bufferEdgeNum(方向)` → PgUp/PgDn；同方向連補＝`_chainState={dir,lastLanded}` 跳過 jump 直送翻頁（moved/edge 判準改以 lastLanded 為基準——PgDn 落新頁**頂**、anchor 在新頁**底**，用 anchor 等值判 edge 會誤判）。**鏈失效點必須齊全**（漏一個＝錯位翻頁）：所有 flush 呼叫點、任何非 prefetch enqueue（End/Home/open/passthrough）、無 in-flight 的 server settle（`_onScreenSettled` 在 `queue.onSettle` **前**檢查）、seed/rebuild/resume/cleanup、markEdge、noteEvicted。錨定失敗 onFail flush。回退開關＝`_chainState` 恆 null。offline 門控支援省略的同位置 jump（replay.js「先餵 jump 回應再餵翻頁」分支）。
 6. 選取以序號為身分；pinned 選取以標題 key；**視口頂同理以 `_topNum`／`_topPinnedKey`
    錨定**——prepend/evict 不動畫面（PgUp 不被新文往下擠的機制）。原生捲動下的形式＝
@@ -436,6 +437,8 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 `buf.rows < 24` 不 engage（下界＝server clamp，`mbbsd/term.c:55`）——**≥24 的任意列數都可以**。
 2026-09-11 之前是 `=== 24`，於是設定頁「固定字體大小」（列數由視窗高度反推）會讓列表好讀
 與右鍵「前已讀後未讀」一起靜默消失；見 `docs/terminal-size.md`。MODE_SELECT（`/` 搜尋清單）＝`_selectMode` 子狀態：序號空間獨立（協定 §8），進出各強制 rebuild（`_boardName=null`）；**退出落點＝帳號已讀進度，非進 select 前位置**（協定 §8 live 事實）——fill 只向上，退回後 buffer 可能整段低於進板頁；**seed／rebuild 落點頁不滿版（下方空白列）時自動 demand-down 補頁**（共用 `_demandDownIfWindowShort`）——不補頁時，初次進版落在看板中段會導致向下 prefetch 的 markEdge 不觸發→`_edgeDown` 停 false→置底文整條被門控隱藏；**滿版落點不得探測**——板尾零回應 PgDn 的 timeout→`\f` 探針會與 hard timeout race 出無主 settle → 誤入 functionMode（live 實測）。（`/` 搜尋走 passthrough 原生打字，convSend 自帶 u2b；passthrough 代送的非 ASCII 單字元同樣先 `u2b`。）
+
+非 userid 作者（`[系統]`、匿名 `xxx.`、站方改過的「系統」，見 `docs/pttbbs-screen-protocol.md` 列表欄位表）：有編號的列累積／導覽／開文都正常，但 `isListShapedRow`＝false ⇒ **不套標題關鍵字黑名單**；若這種作者的文章被**置底**（★），`isPinnedListRow` 要求 userid ⇒ 不會被收進緩衝。目前未修（實務罕見）。
 
 ## 素材再錄
 

@@ -326,6 +326,34 @@ describe("accumulateListLines（置底文收录）", () => {
     expect(pinned).toBe(2);
   });
 
+  test("看板標題列不得被當成置底文收錄（PttCurrent：列表最底下多一列標題列）", () => {
+    // 錄製檔 ptt-debug-20260924-013612（PttCurrent 板尾短頁）。row 0 前 17 字有 4 個
+    // 全形 ⇒ realign 補 4 格 ⇒ 作者欄 [17,29) 切到敘述「Current」的 C ⇒ 合法 userid、
+    // 又沒有編號 ⇒ isPinnedListRow 為真。標題列若被收進 pinned map 就會排在序列最尾，
+    // 點它還會走 open-pinned 交易然後 timeout 降級。累積只准掃 entry 區 [3, rows-2]。
+    const texts = [
+      "【板主:wens】               Current Ptt 程式討論區           看板《PttCurrent》",
+      "[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明",
+      "   編號    日 期 作  者       文  章  標  題                            人氣:1 ",
+      "   1654     9/20 系統         □ [開發資訊] 新指令: Cursor Position Report",
+      "   1655     9/20 系統         □ [開發資訊] 介面調整: 標題列與主選單底部狀態…",
+      "   1656     9/20 系統         □ [開發資訊] 介面調整: 動態指令列與看板資訊改版",
+      "   1657 s   9/23 starahsu     □ [問題] 進版圖片ptt輸出疑似有bug",
+      "   1658     9/23 -            □ (本文已被刪除) [xinyi101]",
+      ">  1659     9/23 系統         □ [開發資訊] 連線保持與防閒置實作建議",
+      "",
+      "",
+      // PTT 的 \f 重繪在短頁不畫底列（錄製檔 t=3039），底列是空的。
+      "",
+    ];
+    const v = fakeView(texts, 8);
+    v.accumulateListLines();
+    expect(v.buf.listLineNums).toEqual([1654, 1655, 1656, 1657, 1658, 1659]);
+    expect(v._listPinnedMap.size).toBe(0);
+    // header 快取照常更新（那是標題列唯一該去的地方）。
+    expect(rowToStr(v._listHeaderRows[0])).toBe(texts[0]);
+  });
+
   test("last-read 红列残留（两篇同时红）：map 内永存去红列＋noteLastRead 逐帧教学", () => {
     // debug cassette 20260715 实测：开 351462 退回 → 该列 1;37/1;31 标红存入 map；
     // 再开 351459 退回，重绘帧不含 351462 → map 里 351462 的红 clone 永不失效

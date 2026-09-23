@@ -214,10 +214,16 @@ export function parseArticleBoard(text) {
 // read and jumps somewhere unrelated. Returns null when the line is not a
 // header at all (later pages of an article), which callers use to keep the
 // current value across page-downs.
+//
+// 作者欄不一定是 userid（mbbsd/syspost.c 的 "[系統]"／"[PTT法院]"），那仍是 header：
+// 回 { author: null, board }，讓呼叫端清掉上一篇的原PO，而不是當成翻頁後的非首頁
+// 沿用下去。判準只放寬到「userid 或 [ 開頭」：翻頁後 row 0 恰好是以「作者」起頭的
+// 內文時，不該被當成 header 而清掉原PO。
+const ARTICLE_HEADER_RE = /^\s*作者[:：]?\s+[0-9A-Za-z[]/;
+
 export function parseArticleHeader(text) {
-  const author = parseArticleAuthor(text);
-  if (!author) return null;
-  return { author: author, board: parseArticleBoard(text) };
+  if (!text || !ARTICLE_HEADER_RE.test(text)) return null;
+  return { author: parseArticleAuthor(text), board: parseArticleBoard(text) };
 }
 
 // Article header, second line: "標題  [閒聊] 標題文字". Returned RAW (the reply
