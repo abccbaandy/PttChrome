@@ -733,8 +733,8 @@ BoardListSession.prototype = {
   // list_session._beginNativePassthrough 的標頭。
   _beginNativePassthrough: function(e) {
     let bytes = keyEventToBytes(e);
-    // **Ctrl 組合一律不過 u2b**：CtrlShiftMap 的 `[`/`\`/`]` 是 219/220/221，過 u2b
-    // 會被當成 Unicode 字元做 Big5 轉碼 ⇒ 與原生鍵盤路徑送出不同的 byte。
+    // **Ctrl 組合一律不過 u2b**：控制碼（CtrlShiftMap 全 < 0x80），與原生鍵盤路徑
+    // 同樣不轉碼；`!e.ctrlKey` 是合約表達，見 list_session 同處。
     if (!e.ctrlKey && bytes && bytes.length === 1 && bytes.charCodeAt(0) > 127)
       bytes = u2b(bytes);
     if (bytes == null) {

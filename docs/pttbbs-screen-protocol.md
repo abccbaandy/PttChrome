@@ -1168,9 +1168,15 @@ server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複�
 
 ### 不在範圍內
 
-* **符號鍵**（`[ ] \ @ ^ _ ?`）：`CtrlShiftMap` 對它們有 upstream keyCode bug（送
-  219/220/221 而非 27/28/29，見 `docs/handoff/ctrl-punct-keycode-map.md`），且 mac 的
-  `⌥[` 也是組字鍵、要擴 `e.code` 比對到 `BracketLeft` 等，複雜度高一階。
+* **符號鍵**（`[ ] \ @ ^ _ ?`）的 Alt remap：mac 的 `⌥[` 是組字鍵、要擴 `e.code` 比對到
+  `BracketLeft` 等，複雜度高一階。Ctrl 版本身已送正確控制碼（見下條）。
+* **Ctrl+符號鍵必須送 ASCII 控制碼，絕不可送 ≥0x80 的 byte**（2026-09-23 CONFIRMED，讀碼）：
+  upstream `CtrlShiftMap` 曾把 keyCode 當字元碼（`]`→221＝`0xDD`）。`include/cmsys.h` 預設
+  `VKEY_IS_MB 1` ⇒ `common/sys/vtkbd.c` VKSTATE_NORMAL 把 ≥0x80 原封交給呼叫端；
+  `mbbsd/vtuikit.c#vgetstring` 的過濾 `vkey_isprint`（`include/vtkbd.h`）對非 ASCII 回真 ⇒
+  孤兒 byte 被插進 getdata 緩衝，下一個 0x40–0x7E 字元跟它拼成一個 Big5 字（edit.c／pager.c
+  同樣用 `vkey_isprint`）。已修成 27/28/29/0/30/31，守護 `tests/unit/term_keyboard_ctrl_map.test.js`。
+  `Ctrl+[`＝`\x1b` 與 Esc 鍵逐 byte 相同。
 * **AltGr**（Windows US-International ＝ `ctrlKey+altKey`）：被 `!ctrlKey` 排除，打出的
   字元仍走 keypress → `#t` → `onInput`。守護在 `tests/unit/alt_ctrl_remap.test.js`。
 

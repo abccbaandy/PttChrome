@@ -1385,9 +1385,9 @@ ListSession.prototype = {
   _beginNativePassthrough: function(e) {
     let bytes = keyEventToBytes(e);
     // A printable non-ASCII char must go out as Big5 (raw UTF-16 = mojibake).
-    // **Ctrl 組合一律不過 u2b**：CtrlShiftMap 的 `[`/`\`/`]` 是 219/220/221（upstream
-    // 拿 keyCode 當 char code 的老 bug，本次不修），都 > 127 ⇒ 過 u2b 會被當成 Unicode
-    // 字元做 Big5 轉碼，送出跟原生鍵盤路徑不一樣的 byte。
+    // **Ctrl 組合一律不過 u2b**：它們是控制碼（CtrlShiftMap 全 < 0x80），原生鍵盤路徑
+    // 也不轉碼。現在 `> 127` 已擋掉它們，`!e.ctrlKey` 留著表達這條合約（當年表內
+    // 還有 219/220/221 的 keyCode bug 時，它是唯一讓兩條路徑送同一個 byte 的東西）。
     if (!e.ctrlKey && bytes && bytes.length === 1 && bytes.charCodeAt(0) > 127)
       bytes = u2b(bytes);
     if (bytes == null) {

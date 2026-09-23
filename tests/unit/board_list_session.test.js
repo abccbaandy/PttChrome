@@ -1247,11 +1247,11 @@ describe("cursor-relative Ctrl／Alt 組合鍵先同步真游標（2026-09-13）
     expect(enqueued[1].fullRepaint).toBe(true);
   });
 
-  test("Ctrl 組合的 bytes 不得過 u2b：Ctrl-] 送 charCode 221", () => {
+  test("Ctrl 組合的 bytes 不得過 u2b：Ctrl-] 送 \\x1d（控制碼，非舊 keyCode 221）", () => {
     const { s, enqueued } = ready({ selected: 7, server: 7 });
     s.onKeyDown(keyEvent("]", { ctrlKey: true }));
     expect(enqueued.length).toBe(1);
-    expect(enqueued[0].keys).toBe(String.fromCharCode(221));
+    expect(enqueued[0].keys).toBe("\x1d");
   });
 
   test("Alt 重映射鍵 Alt-W（＝^W whereami，board.c:1731）走 sync → 代送", () => {

@@ -21,14 +21,22 @@ export const KeyMap = {
   'Right': '\x1b[C',
   'Left': '\x1b[D'
 };
+// Ctrl+鍵 → ASCII 控制碼（字元碼 & 0x1F；'?' 是慣例的 DEL）。
+// 符號六格 upstream 填的是舊式 keyCode（'[':219 '\\':220 ']':221 '@':50 '^':54 '_':109），
+// 會以單一 byte 0xDB/0xDC/0xDD… 上線。那不是無害的：pttbbs 預設 VKEY_IS_MB=1
+// （include/cmsys.h）⇒ vtkbd 把 ≥0x80 原封交給呼叫端，vgetstring 的 vkey_isprint
+// 對非 ASCII 回真（include/vtkbd.h、mbbsd/vtuikit.c）⇒ 孤兒 byte 被插進輸入緩衝，
+// 與下一個字母拼成亂碼 Big5 字（getdata／編輯器裡「下一個字被吃掉」）。
+// '@' 是 0 ⇒ 查表一律用 `!== undefined`，不可用 truthiness。
+// '[' → ESC 與 KeyMap['Escape'] 逐 byte 相同。守護 tests/unit/term_keyboard_ctrl_map.test.js。
 let CtrlShiftMap = {
-  '@': 50,
-  '^': 54,
-  '_': 109,
-  '?': 127,
-  '[': 219,
-  '\\': 220,
-  ']': 221
+  '@': 0,
+  '[': 27,
+  '\\': 28,
+  ']': 29,
+  '^': 30,
+  '_': 31,
+  '?': 127
 };
 // A -> 1
 for (let i = 97; i <= 122; i++) {
@@ -59,7 +67,7 @@ export function keyEventToBytes(e) {
     if (e.shiftKey) return null;
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     const code = CtrlShiftMap[key];
-    return code ? String.fromCharCode(code) : null;
+    return code !== undefined ? String.fromCharCode(code) : null;
   }
   const mapped = KeyMap[e.key];
   if (mapped) return mapped;
@@ -266,7 +274,7 @@ export class TermKeyboard {
       // Ctrl-V would then send ^V (toggling ANSI color mode) instead of pasting.
       if (key === 'v') return false;
       let mappedCode = CtrlShiftMap[key];
-      if (mappedCode) {
+      if (mappedCode !== undefined) {
         return this._sendCharCode(mappedCode);
       }
     } else if (isAltRemapEvent(e)) {

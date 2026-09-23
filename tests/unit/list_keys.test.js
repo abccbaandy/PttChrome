@@ -977,10 +977,10 @@ describe("cursor-relative Ctrl／Alt 組合鍵先同步真游標（查詢作者�
     expect(sent).toEqual([]);
   });
 
-  test("Ctrl 組合的 bytes 不得過 u2b：Ctrl-] 送 charCode 221，與原生鍵盤路徑同一個 byte", () => {
-    // CtrlShiftMap 的 '[' / '\\' / ']' 是 219/220/221（upstream 拿 keyCode 當 char
-    // code 的老 bug，本次不修），都 > 127 ⇒ 若沿用非 Ctrl 鍵那條 u2b 轉碼，會被當成
-    // Unicode 字元做 Big5 轉碼，送出跟 TermKeyboard 不一樣的 byte。
+  test("Ctrl 組合的 bytes 不得過 u2b：Ctrl-] 送 \\x1d，與原生鍵盤路徑同一個 byte", () => {
+    // CtrlShiftMap 的 '[' / '\\' / ']' 曾是 219/220/221（upstream keyCode bug，已修成
+    // 27/28/29，見 term_keyboard_ctrl_map.test.js）。這條守「passthrough 送出的就是
+    // keyEventToBytes 的控制碼，不被任何轉碼改寫」。
     const { s, enqueued } = makeSession();
     s._view.flashListHint = () => {};
     s.state = "active";
@@ -990,7 +990,7 @@ describe("cursor-relative Ctrl／Alt 組合鍵先同步真游標（查詢作者�
     s.onKeyDown(keyEvent("]", { ctrlKey: true }));
 
     expect(enqueued.length).toBe(1);
-    expect(enqueued[0].keys).toBe(String.fromCharCode(221));
+    expect(enqueued[0].keys).toBe("\x1d");
   });
 
   test("Alt 重映射鍵 Alt-T（＝^T TagThread，read.c:957）同樣走 sync → 代送", () => {

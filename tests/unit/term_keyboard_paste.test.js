@@ -178,8 +178,8 @@ describe("altRemapCharCode（純函式邊界）", () => {
     expect(altRemapCharCode({ key: "Enter", code: "Enter" })).toBe(null);
     expect(altRemapCharCode({ key: "5", code: "Digit5" })).toBe(null);
     expect(altRemapCharCode({ key: "ArrowLeft", code: "ArrowLeft" })).toBe(null);
-    // 符號鍵本次不做：CtrlShiftMap 對它們有 upstream keyCode bug
-    //（見 docs/handoff/ctrl-punct-keycode-map.md），且 mac 的 ⌥[ 也是組字鍵。
+    // 符號鍵不做 Alt remap：mac 的 ⌥[ 是組字鍵（見 docs/pttbbs-screen-protocol.md §11.8
+    //「不在範圍內」）。Ctrl+符號本身的控制碼守在 term_keyboard_ctrl_map.test.js。
     expect(altRemapCharCode({ key: "[", code: "BracketLeft" })).toBe(null);
   });
 });
