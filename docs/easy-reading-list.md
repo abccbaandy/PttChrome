@@ -407,6 +407,19 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
   那篇跳回畫面中間（使用者回報，錄製檔 `ptt-debug-20260911-113150`）。守護：`list_session.test.js`
   「退文回列表：視野停在使用者自己捲到的位置」。**落點不在緩衝／板名異仍走 `resume-buffer`+`rebuild`**
   （畫面本來就要換一份，重新錨定才是對的）。
+- **N6b 編號空間不變的原生交易回好讀時還原捲動錨**（目前只有右鍵「前已讀後未讀」，2026-09-24）：
+  它是 B 類（切原生 → 靜置探針 → `resume-buffer`+`rebuild`），而 `_resumeBuffer`／`_seedAnchors` 會改採
+  PTT 分頁頂端 ⇒ 閱讀進度丟失。`markReadUnreadBefore` 在切原生前存 `_pendingViewport`；`rebuild` 之前
+  `_adoptPendingViewport` 驗證「同板∧落點游標＝發起那篇」（否則丟棄＝舊行為）；`applyScrollAfterRender`
+  裡 `_tryApplyPendingViewport` 等**錨列進緩衝且捲得到**（`pos*rowH+frac<=maxScrollTop` 或 `_edgeDown`）
+  才套用——rebuild 後緩衝只有一頁，捲不到時 capture 會把錨改寫成被夾住的那列。期間 `_maybeFill` 無視預抓
+  目標往上補（≤2 頁，**自己的 `upFills` 計數，不可共用 `_fillPages`**——往下的 demand 每頁也累加它）、
+  `_demandDownIfWindowShort` 以待還原錨為頂往下補，而且**往下的鏈到邊（`markEdge`）時要把工作交回 `_maybeFill`**：
+  rebuild 當下佇列常被往下的 demand 佔住、`_maybeFill` 直接返回，到邊的鏈不會自己回頭 ⇒ 錨在落點頁之上時
+  永遠等不到（`ptt-debug-20260924-004016.json#t=13891..18324`，只往下補 4 頁、4.4 秒零往上）。
+  生命週期進 debug 錄製檔：`listSession.viewportRestore`（saved／adopted／applied／dropped＋reason）。作廢：使用者按鍵／滾輪／點擊、
+  `_seed`／`_handoffArticle`／`_cleanup`、到頂仍找不到、逾時 `PENDING_VIEWPORT_MAX_MS`。
+  **只對 mark-read 開**：`/` 搜尋、`s` 換板等會改編號空間，舊錨不可信。守護 `tests/unit/list_mark_read_viewport.test.js`。
 - **N7 吞鍵/換畫面永不靜默**：切原生、回好讀、逾時降級都要 `flashListHint`。
 - **N8 判定失誤不得造成「完全不可操作」**：凍結交易必須同時具備 `onFail → _degradeToNative`、`hardTimeoutMs=CMD_HARD_MS`、
   `_armFrozenWatchdog(FROZEN_WATCHDOG_MS=2500)` 三重保護 ⇒ 最壞情況是「2.5s 後掉回原生＋banner，再由靜置探針自己回好讀」，

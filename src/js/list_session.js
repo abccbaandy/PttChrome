@@ -797,6 +797,10 @@ function nativeResumeHint() {
 // vmsg 那句。詳見 docs/pttbbs-screen-protocol.md §11.5。
 const MARK_READ_PROMPT = '前已讀後未讀';
 const MARK_READ_REJECT = '請改用其它文章設定當參考點';
+// 待還原捲動錨（_pendingViewport）的壽命。涵蓋「v → w⏎ → 靜置探針（RESUME_QUIET_MS）
+// → rebuild → 往上補頁」整段；過了還沒套用就放棄，免得很久以後的某次補頁突然
+// 把畫面拉走。
+const PENDING_VIEWPORT_MAX_MS = 10000;
 // (2026-07-10) [ ] = / v / `/` 模擬交易與 T3 airlock 皆退役：非白名單鍵一律
 // 走 _beginNativePassthrough（有序號選取先 sync-jump，再切原生鏡像＋代送）。
 
@@ -825,6 +829,11 @@ export function ListSession(core, view, termBuf, queue) {
   this._topNum = null; // 捲動錨：視口頂端那一列的文章編號
   // 視口頂端是置底列（無編號）時的錨。與 _topNum 互斥，同 _selectedPinnedKey。
   this._topPinnedKey = null;
+  // 待還原的捲動錨（閱讀進度）：編號空間不變的原生交易（目前只有右鍵「前已讀後
+  // 未讀」）回好讀時要還原，而不是採用 PTT 分頁的視窗頂端。
+  // { topNum, topPinnedKey, scrollFrac, boardName, cursorNum, at } / null。
+  // 見 _adoptPendingViewport / _tryApplyPendingViewport。
+  this._pendingViewport = null;
   this._fillTarget = 0;
   this._fillPages = 0;
   this._edgeUp = false;
@@ -1118,6 +1127,9 @@ ListSession.prototype = {
       case 'continue-fill':
         return this._maybeFill();
       case 'rebuild':
+        // 驗證要在 _rebuild **之前**：它自己那次重繪的 applyScrollAfterRender 就會
+        // 嘗試套用待還原的錨。
+        this._adoptPendingViewport(facts);
         return this._rebuild(facts);
       case 'handoff-article':
         return this._handoffArticle();
@@ -1209,6 +1221,8 @@ ListSession.prototype = {
   // Keyboard, called from term_view.onKeyDown ONLY while renderMode is
   // buffer/frozen (native modes never route here — full passthrough).
   onKeyDown: function(e) {
+    // 使用者自己動了 ⇒ 待還原的閱讀進度作廢（不可以在他捲動之後把畫面拉回去）。
+    this._dropPendingViewport('user-key');
     // Browser/app-level clipboard combos stay with the handlers right after
     // this hook (term_view: Ctrl-C copy / Ctrl-A select-all / Ctrl-Shift-V
     // paste); Alt/Meta combos are browser shortcuts. Everything ELSE — Ctrl-P
@@ -2097,6 +2111,8 @@ ListSession.prototype = {
   // Wheel (routed from App.mouse_scroll with the native pref mapping already
   // applied): execute the op through the SAME nav path as the keyboard.
   onWheel: function(op) {
+    // 使用者自己動了 ⇒ 待還原的閱讀進度作廢（不可以在他捲動之後把畫面拉回去）。
+    this._dropPendingViewport('user-wheel');
     if (this.state !== 'active' || this._renderMode !== 'buffer') return;
     this._moveSelection(op);
   },
@@ -2109,6 +2125,8 @@ ListSession.prototype = {
   // 「請給我更多」的意思，這裡把它接回既有的 demand（零 byte 判斷，真正要不要
   // 送命令仍由 _maybeDemand 的水位規則決定）。
   onWheelAtEdge: function(dir) {
+    // 使用者自己動了 ⇒ 待還原的閱讀進度作廢（不可以在他捲動之後把畫面拉回去）。
+    this._dropPendingViewport('user-wheel');
     if (this.state !== 'active' || this._renderMode !== 'buffer') return;
     const screen = this._screen();
     if (!screen || !screen.getListScrollTop) return;
@@ -2187,6 +2205,8 @@ ListSession.prototype = {
   // 座標並不對應 ⇒ 會開到別篇，而且繞過 CommandQueue（違反 v5 封閉互動 + 交易序列化）。
   // 這裡改成「解析出絕對索引 → 寫回序號錨 → 走鍵盤同一條 reducer/開文交易」。
   onMouseClick: function(renderRow, col) {
+    // 使用者自己動了 ⇒ 待還原的閱讀進度作廢（不可以在他捲動之後把畫面拉回去）。
+    this._dropPendingViewport('user-click');
     // 原生鏡像期間（passthrough/functionMode 的 native）不歸這裡管：呼叫端根本不會
     // 進來，但保險起見不處理也不提示，交給原生滑鼠瀏覽。
     if (this._renderMode === 'native') return;
@@ -2285,6 +2305,22 @@ ListSession.prototype = {
     this._selectedNum = num;
     this._selectedPinnedKey = null;
     this._forceRedraw();
+    // 使用者的閱讀進度（視口頂端）。上面那次重繪的 captureScrollAnchor 剛把 DOM
+    // 捲動轉成錨，這裡存一份：切原生 → resume → rebuild 會改採 PTT 分頁的視窗頂端
+    // （_seedAnchors），不存就回不來。見 _pendingViewport 的說明。
+    this._pendingViewport = {
+      topNum: this._topNum,
+      topPinnedKey: this._topPinnedKey,
+      scrollFrac: this._scrollFrac,
+      boardName: this._boardName,
+      cursorNum: num,
+      at: Date.now()
+    };
+    this._diag('listSession.viewportRestore', {
+      action: 'saved',
+      topNum: this._topNum,
+      cursorNum: num
+    });
 
     const self = this;
     // 第二步的判定畫面：expect 收到的 facts 就是結論這道命令的那一幀，留著給
@@ -2343,6 +2379,7 @@ ListSession.prototype = {
   // ---- actions ---------------------------------------------------------------
 
   _seed: function(facts) {
+    this._dropPendingViewport('seed');
     this._holdReason = null;
     this._cancelResumeProbe();
     this._breakChain();
@@ -2383,7 +2420,10 @@ ListSession.prototype = {
   _demandDownIfWindowShort: function() {
     const seq = this._sequence();
     if (!seq.length) return;
-    const top = this._viewportTopPos(seq);
+    // 有待還原的錨時以**它**為視口頂端：錨列進了緩衝但下方不足一個視窗 ⇒ 捲不到
+    // 那裡（_tryApplyPendingViewport 會一直等），要補的是它下面。
+    const pending = this._pendingTopPos(seq);
+    const top = pending !== -1 ? pending : this._viewportTopPos(seq);
     if (
       seq.length < top + this._bodyRows() &&
       !this._edgeDown &&
@@ -2473,9 +2513,21 @@ ListSession.prototype = {
   // chained via onDone — never in parallel with anything.
   _maybeFill: function() {
     if (this.state !== 'active') return;
+    // 往上補把待還原的錨帶進來之後，下方可能還不夠捲到它（見 _demandDownIfWindowShort）。
+    if (this._pendingViewport && this._queue.idle) this._demandDownIfWindowShort();
     if (this._edgeUp) return;
     if (!this._queue.idle) return;
+    // 待還原的錨還沒進緩衝：不論預抓目標是否已滿，都再往上補（上限兩頁——視口
+    // 頂端離游標不到一頁，落點頁再往上一頁一定蓋得到；錨真的找不到由
+    // _tryApplyPendingViewport 的逾時／到頂丟棄）。上限**自己計數**（upFills），
+    // 不可以看 _fillPages：往下的 demand 每頁也會累加它，錄製檔
+    // ptt-debug-20260924-004016.json 往下補了 4 頁 ⇒ 共用計數就永遠不往上補。
+    const pv = this._pendingViewport;
+    const wantAnchor =
+      !!pv && pv.adopted && this._pendingTopPos(this._sequence()) === -1 &&
+      (pv.upFills || 0) < 2;
     if (
+      !wantAnchor &&
       shouldStopListPrefetch({
         visibleCount: this._visibleIndices().length,
         target: this._fillTarget,
@@ -2484,6 +2536,7 @@ ListSession.prototype = {
       })
     )
       return;
+    if (wantAnchor) pv.upFills = (pv.upFills || 0) + 1;
     this._enqueuePrefetch(true, 'fill');
   },
 
@@ -2617,6 +2670,10 @@ ListSession.prototype = {
       // A confirmed bottom edge un-gates the pinned tail (windowVisibleSequence)
       // — repaint so 置底文 appear, exactly like native's last page.
       self._forceRedraw();
+      // 待還原的閱讀進度還在等往上補：rebuild 當下佇列被往下的 demand 佔住，
+      // _maybeFill 那時直接返回了，而到邊的鏈不會自己交回背景補頁 ⇒ 錨在落點頁
+      // 之上時永遠等不到（錄製檔 ptt-debug-20260924-004016.json#t=13891..18324）。
+      if (self._pendingViewport) self._maybeFill();
     };
     if (!chained) {
       this._queue.enqueue({
@@ -2980,6 +3037,7 @@ ListSession.prototype = {
   // buffer maps are KEPT — coming back re-seeds from the server's landing
   // (suspended → clean-list → resume-buffer), no saved anchors needed (v5/M4).
   _handoffArticle: function() {
+    this._dropPendingViewport('article');
     this._holdReason = null; // context change: the article releases the hold
     this._cancelResumeProbe();
     this._setLoading(false);
@@ -3111,6 +3169,7 @@ ListSession.prototype = {
     this._topNum = null;
     this._topPinnedKey = null;
     this._scrollFrac = 0;
+    this._dropPendingViewport('cleanup');
     this._seqCache = null;
     this._edgeUp = false;
     this._edgeDown = false;
@@ -3218,6 +3277,85 @@ ListSession.prototype = {
           return i;
       }
     }
+    return -1;
+  },
+
+  // 作廢待還原的錨。reason 進 debug 錄製檔（listSession.viewportRestore），「有時不會
+  // 捲回閱讀位置」這類回報才看得出它是被誰丟掉的（不變量 7f）。
+  _dropPendingViewport: function(reason) {
+    if (!this._pendingViewport) return;
+    this._diag('listSession.viewportRestore', {
+      action: 'dropped',
+      reason: reason,
+      topNum: this._pendingViewport.topNum
+    });
+    this._pendingViewport = null;
+  },
+
+  // 回好讀的 rebuild 之前：這次落地還是發起交易的那個情境嗎？同板＋真游標仍停在
+  // 發起的那一篇 ⇒ 編號空間沒變、錨仍然有效，保留待還原；否則（使用者在原生鏡像
+  // 裡自己移動過、換了板）丟棄，走 _seedAnchors 採用落點的舊行為。
+  _adoptPendingViewport: function(facts) {
+    const p = this._pendingViewport;
+    if (!p) return;
+    if (
+      !facts ||
+      facts.boardName == null ||
+      facts.boardName !== p.boardName ||
+      facts.cursorRowNum !== p.cursorNum
+    )
+      this._dropPendingViewport('mismatch');
+    else {
+      p.adopted = true;
+      this._diag('listSession.viewportRestore', { action: 'adopted', topNum: p.topNum });
+    }
+  },
+
+  // 每次重繪（applyScrollAfterRender）：待還原的錨已經進緩衝了就套用並清掉；
+  // 還沒（rebuild 的緩衝只有落點那一頁，錨可能在上一頁）就維持現況等補頁
+  // （_maybeFill 會為它往上補）。只在 active+buffer 才消費——原生鏡像期間的重繪
+  // 沒有列表視口。逾時或已到頂仍找不到 ⇒ 丟棄，免得很久以後某次補頁突然把
+  // 畫面拉走。
+  //
+  // 「進緩衝」還不夠，還要**捲得到**：rebuild 後緩衝只有一頁，錨列即使在裡面，
+  // 下方列數不夠時 scrollTop 會被 maxScrollTop 夾住，下一次重繪的
+  // captureScrollAnchor 就從 DOM 把錨改寫成夾住後的那一列 ⇒ 等於沒還原。所以捲不到
+  // 就繼續等補頁；已確認到底（_edgeDown）時才接受夾住（原生也只能停在那裡）。
+  _tryApplyPendingViewport: function(seq, rowH, maxScrollTop) {
+    const p = this._pendingViewport;
+    // adopted：一定要等 rebuild 驗證過才套用。同一次 resume 的 'resume-buffer'
+    // 先重繪一次，那時緩衝還是切原生之前的舊內容、錨找得到 ⇒ 在那裡消費掉的話，
+    // 緊接著的 rebuild 清空緩衝＋_seedAnchors 又把錨蓋回 PTT 分頁頂端。
+    if (!p || !p.adopted) return;
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return;
+    const pos = this._pendingTopPos(seq);
+    const frac = p.scrollFrac || 0;
+    if (pos !== -1 && (this._edgeDown || pos * rowH + frac <= maxScrollTop)) {
+      this._topNum = p.topNum;
+      this._topPinnedKey = p.topPinnedKey;
+      this._scrollFrac = frac;
+      this._diag('listSession.viewportRestore', { action: 'applied', topNum: p.topNum });
+      this._pendingViewport = null;
+      return;
+    }
+    // 到頂了還不在緩衝（被黑名單藏掉之類）＝不會再出現；逾時＝不要在很久以後拉畫面。
+    if ((pos === -1 && this._edgeUp) || Date.now() - p.at > PENDING_VIEWPORT_MAX_MS)
+      this._dropPendingViewport('lost');
+  },
+
+  // 待還原的錨（已驗證）現在在序列的第幾個位置；-1＝沒有／還沒進緩衝。
+  _pendingTopPos: function(seq) {
+    const p = this._pendingViewport;
+    if (!p || !p.adopted) return -1;
+    const nums = this._termBuf.listLineNums || [];
+    if (p.topNum != null) {
+      const abs = nums.indexOf(p.topNum);
+      return abs === -1 ? -1 : seq.indexOf(abs);
+    }
+    if (p.topPinnedKey == null) return -1;
+    for (let i = 0; i < seq.length; ++i)
+      if (nums[seq[i]] == null && this._pinnedKeyAt(seq[i]) === p.topPinnedKey)
+        return i;
     return -1;
   },
 
@@ -3372,6 +3510,7 @@ ListSession.prototype = {
       rowH: rowH,
       viewportPx: viewportPx
     });
+    this._tryApplyPendingViewport(seq, rowH, maxScrollTop);
     let pos = this._anchorPos(seq);
     if (pos === -1) {
       // 錨遺失（那一列被 evict／黑名單／pinned 門控拿掉）。退路：游標 → 0。
