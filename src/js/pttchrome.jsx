@@ -212,6 +212,9 @@ export const App = function() {
   // 目前開著的 modal 來源名稱集合；modalShown = size > 0（見 setModalOpen）。
   this._openModals = new Set();
   this.modalShown = false;
+  // 最後一個 modal 關閉的時間（performance.now() 基準）。term_view 用它擋掉「關框
+  // 的那一下」按鍵（modal_key_gate.js）。
+  this.modalClosedAt = -Infinity;
 
   this.lastSelection = null;
 
@@ -561,6 +564,8 @@ App.prototype.setModalOpen = function(source, open) {
   if (shown === this.modalShown)
     return;
   this.modalShown = shown;
+  if (!shown && typeof performance !== 'undefined')
+    this.modalClosedAt = performance.now();
   // 對話框蓋上來時滑鼠已經離開終端機，提示帶留著會變成殘影（mousemove 被 modal
   // gate 擋掉，永遠等不到把它關掉的那一幀）。
   // 這個函式是終端機鍵盤／焦點的總閘門，**任何路徑都不可以 throw**（半途中斷 ⇒

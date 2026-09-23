@@ -419,15 +419,19 @@ modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: pref
 收工的每一條路（關框 `disarm`、送出失敗 `_finish`、送出取消、斷線）都會把 `busy`
 翻成 false，而那一刻**必須主動叫醒好讀**（不變量 18）。
 
-### 關框那一下的 Esc（兩種症狀，同一個根因）
+### 關框那一下的 Esc（已擋住）與多按的那一下（靠化解）
 
-**用 Esc 關掉輸入框，那一下一定會漏到終端機。** 2026-09-17 在 offline e2e 實測：
-Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，等 term_view
-那條跑到時 `modalShown` **已經翻成 false** ⇒ `shouldAcceptInput()` 放行。所以「有彈窗
-就不送鍵」修不了這個（而且框關掉之後順手多按的那一下，本來就是合法的終端機輸入）。
-⇒ server 的 vtkbd 停在 `VKSTATE_ESC` 是**常態不是例外**。
+**關框那一下已擋住（2026-09-24，`modal_key_gate.js`）**：Mantine Modal 的 Escape handler 掛在
+window capture、比 `term_view` 先跑，等 term_view 看到時 `modalShown` 已翻成 false ⇒ 讀狀態擋不住。
+改比**事件時間**：`App.setModalOpen` 在最後一個來源關閉時記 `modalClosedAt = performance.now()`，
+`term_view` 的 keydown／keypress 丟掉 `e.timeStamp <= modalClosedAt` 的事件（按給 modal 的）。
+在那之前它還有第三種症狀：**Esc 取消回不到閱讀進度、點「取消」可以**——漏網的 keydown 進
+`easyReading._onKeyDown`，把 reopen 排好的 `_pendingScrollRestore` 當成「使用者接手」清掉
+（`ptt-debug-20260919-010054.json#t=14814/14817`）。**Esc／點擊兩條取消路徑必須等價**，守護
+`tests/e2e/offline/long_push.offline.spec.js`「Esc 關長推文輸入框：那一下按鍵不落到終端機」。
 
-兩種症狀：
+框關掉之後**順手多按的那一下**仍是合法終端機輸入、照送 ⇒ server 的 vtkbd 停在
+`VKSTATE_ESC` 仍會發生，下面的化解照樣必要。擋住之前的兩種症狀：
 
 1. **下一個方向鍵跳到同主題的上一篇**（2026-09-16）：方向鍵開頭的 ESC 被吃成 esc_arg，
    `[` 與 `D` 變成字面鍵，而 `[` ＝ `RELATE_PREV`。

@@ -54,17 +54,16 @@
 // 探針幀是完整文章畫面、expect 仍找不到 AID ⇒ 判成 miss ⇒ 使用者看到
 // 「讀不到文章代碼（miss）」。舊守門對可列印字元開頭一律不補，正好漏掉這條。
 //
-// **不能改從源頭擋**（2026-09-17 在 offline e2e 實測過，不要再試一次）：
-// term_view.js 的 shouldAcceptInput()（modalShown）看起來該擋得住「關框那一下」的
-// Esc，實際上擋不住 —— Mantine Modal 的 Escape handler 比 term_view 的 keydown
-// listener 先跑，等 term_view 那條跑到時 modalShown **已經翻成 false**（實測：
-// window capture phase 的第一個 listener 量到的就是 false）。所以每一次用 Esc 關掉
-// 長推文輸入框，都會有一個裸 ESC 上線；再加上「框關掉之後順手多按的那一下」
-// （那時畫面上真的沒有彈窗，Esc 是合法的終端機輸入，沒有理由擋），懸空的 ESC 態
-// 是常態而不是例外 —— 這正好解釋了「取消長推文之後立刻再按 X 特別容易觸發」。
-// ⇒ 只能讓後續的程式化送出自己不要踩進去。
-// 活證據：tests/e2e/offline/long_push.offline.spec.js 的「點底列的 (X)／(%) 推文
-// 按鈕」第二輪 —— 它用 Escape 關框，第二輪的探路 X 前面因此必定帶一個化解用的 ESC。
+// **「關框那一下」與「多按的那一下」是兩件事**：
+// 用 **modalShown（狀態）** 擋不住關框那一下的 Esc（2026-09-17 實測）—— Mantine Modal
+// 的 Escape handler 掛在 window capture、比 term_view 先跑，等 term_view 那條跑到時
+// modalShown 已經翻成 false。2026-09-24 改用**事件時間**擋（modal_key_gate.js：
+// 事件產生於 modal 關閉之前 ⇒ 按給 modal 的），關框那一下已不再上線。
+// 剩下的是「框關掉之後順手多按的那一下」：那時畫面上真的沒有彈窗，Esc 是合法的
+// 終端機輸入，沒有理由擋 ⇒ 懸空的 ESC 態仍然可能出現，後續的程式化送出必須自己
+// 不要踩進去 —— 這就是本檔存在的理由。
+// 活證據：tests/e2e/offline/long_push.offline.spec.js 的「關輸入框後漏出去的 Esc
+// 不會吃掉下一次按 X」。
 //
 // 化解是安全的 —— **KEY_ESC 的事件數補不補都一樣**：
 //   不補：VK_ESC + '2' → '2' 被吃成 esc_arg ⇒ 1 個 KEY_ESC、0 個真鍵

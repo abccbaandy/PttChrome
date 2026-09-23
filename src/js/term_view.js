@@ -24,6 +24,7 @@ import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
+import { keyEventPredatesModalClose } from './modal_key_gate';
 import icon128 from '../icon/icon_128.png';
 import { MOUSE_CURSOR_URLS } from './mouse_cursors';
 
@@ -526,15 +527,19 @@ export function TermView() {
     !this.bbscore.contextMenuShown &&
     !this._listInputWrap;
   let keyEventFilter = (e) => acceptsKeyEvent(e, this.isComposition);
+  // 關框的那一下（例：Esc 關長推文輸入框）是按給 modal 的：modalShown 此刻已被
+  // Mantine 的 capture handler 翻成 false，只能比事件時間（modal_key_gate.js）。
+  let belongsToClosedModal = (e) =>
+    keyEventPredatesModalClose(e.timeStamp, this.bbscore.modalClosedAt);
 
   addEventListener('keypress', (e) => {
-    if (!shouldAcceptInput() || !keyEventFilter(e))
+    if (!shouldAcceptInput() || belongsToClosedModal(e) || !keyEventFilter(e))
       return;
     this._keyboard.onKeyPress(e);
   });
 
   addEventListener('keydown', (e) => {
-    if (!shouldAcceptInput() || !keyEventFilter(e))
+    if (!shouldAcceptInput() || belongsToClosedModal(e) || !keyEventFilter(e))
       return;
 
     // disable auto update pushthread if any command is issued;

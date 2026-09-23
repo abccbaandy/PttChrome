@@ -543,13 +543,11 @@ test.describe('長推文一鍵發送（離線）', () => {
       // 是收尾的 Ctrl-C 與回文章的 ⏎）。% 那顆尤其要驗——漏攔的話會變成「點這顆
       // 是長推文、點旁邊那顆是原生」。
       //
-      // 第二輪的 X 前面會多一個 ESC，那是**對的**：上一輪用 Escape 關輸入框，那一下
-      // 會漏到終端機（Mantine 的 Escape handler 先跑，modalShown 那時已經翻成 false）
-      // ⇒ server 的 vtkbd 停在 VKSTATE_ESC。機器鍵一律先補一個 ESC 化解才到得了
-      // pmore；沒有它，這個 X 會被吃成 esc_arg、PTT 零反應 ——「讀不到文章代碼（miss）」
-      // 就是這樣來的（回歸守在本檔最後一支與 tests/unit/vtkbd_send_state.test.js）。
+      // 第二輪的 X 前面**不可以**多一個 ESC：上一輪用 Escape 關輸入框，那一下是按給
+      // modal 的，不准漏到終端機（modal_key_gate.js；以前會漏 ⇒ 這裡曾經放寬成
+      // `/^?X$/`）。
       const sent = await page.evaluate(() => window.__sent);
-      expect(sent[0]).toMatch(/^?X$/);
+      expect(sent[0]).toBe('X');
       expect(sent.filter((b) => b.indexOf('X') >= 0)).toHaveLength(1);
       expect(sent.join('')).not.toContain('%');
       // 收掉輸入框，下一輪重來。關框＝這次不推了 ⇒ 探路成果要丟掉，不然下一次
@@ -598,6 +596,45 @@ test.describe('長推文一鍵發送（離線）', () => {
     await expect(page.locator('[name="longPushText"]')).toHaveCount(0);
     await expect(page.getByTestId('longPushProgressStatus')).toHaveCount(0);
     expect(await page.evaluate(() => window.__app.longPush.busy)).toBe(false);
+  });
+
+  // Esc 取消與點「取消」必須等價（錄製檔 ptt-debug-20260919-010054.json）。
+  //
+  // Mantine 的 Escape handler 掛在 window capture，比 term_view 先跑，關框後
+  // modalShown 已翻成 false ⇒ 同一個 keydown 以前會落到 term_view.onKeyDown：
+  // 送出一個裸 ESC，而且 easyReading._onKeyDown 把 reopen 排好的閱讀位置還原
+  // （_pendingScrollRestore）當成「使用者接手」清掉 ⇒ Esc 取消回不到閱讀進度，
+  // 點「取消」卻可以。守門：modal_key_gate.js（比事件時間，不比狀態）。
+  test('Esc 關長推文輸入框：那一下按鍵不落到終端機（同點「取消」）', async ({ page }) => {
+    await boot(page);
+    await collectSent(page);
+    await ptt.sendKey(page, 'X');
+    await runPreflight(page);
+
+    await collectSent(page);
+    await page.evaluate(() => {
+      const view = window.__app.view;
+      window.__termKeys = [];
+      const orig = view.onKeyDown.bind(view);
+      view.onKeyDown = (e) => {
+        window.__termKeys.push(e.key);
+        return orig(e);
+      };
+    });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[name="longPushText"]')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.__app.modalShown)).toBe(false);
+    await expect
+      .poll(() => page.evaluate(() => window.__app.longPush.busy))
+      .toBe(false);
+    // 給漏網的 keydown 一點時間落地再斷言「什麼都沒有」。
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.__termKeys)).toEqual([]);
+    expect(await sentText(page)).not.toContain('');
+
+    // 關框**之後**再按的 Esc 是合法終端機輸入，照樣要到得了（下一支守化解）。
+    await ptt.sendKey(page, 'Escape');
+    await expect.poll(() => page.evaluate(() => window.__termKeys)).toEqual(['Escape']);
   });
 
   // 「讀不到文章代碼（miss）」的根因回歸（錄製檔 ptt-debug-20260917-012944.json）。
