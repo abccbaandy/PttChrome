@@ -39,6 +39,7 @@
     "test:integration": "node scripts/run-integration.mjs",
     "kill:dev": "node scripts/kill-dev-server.js",
     "ci:status": "node scripts/ci-status.mjs",
+    "debug:screens": "node scripts/debug-screens.mjs",
     "test:e2e": "yarn kill:dev && playwright test --project=live",
     "test:e2e:offline": "yarn kill:dev && playwright test --project=offline --project=offline-firefox",
     "test:e2e:offline:firefox": "yarn kill:dev && playwright test --project=offline-firefox",
