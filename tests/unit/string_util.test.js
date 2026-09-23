@@ -320,6 +320,15 @@ describe("parsePagerFooterContext（more.c#common_pmore_footer_handler）", () =
     ).toBe("reading");
   });
 
+  // PTT 動態指令列改版（2026-09-20 公告第 5 點，PTT1 10/18 預定；**guess**）：
+  // 右半改由動態指令列產生、結尾統一「(←)離開 (h)說明」。只要仍有「(y)回應」就還是
+  // reading；若被寬度擠掉，退回 unknown ＝既有的安全降級，不會誤判。
+  test("新版動態指令列（guess）→ reading", () => {
+    expect(
+      parsePagerFooterContext(withStatus("(y)回應 (X)推文 (←)離開 (h)說明"))
+    ).toBe("reading");
+  });
+
   test("FOOTERMSG_MAIL_LONG → mail（實錄 ptt-debug 站內信）", () => {
     expect(
       parsePagerFooterContext(withStatus("(y)回信 (h)說明 (←/q)離開 "))

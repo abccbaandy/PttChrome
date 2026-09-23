@@ -189,6 +189,20 @@ describe("buildBoardListWindowLines", () => {
     expect(textOf(lines[3 + 6]).startsWith(">")).toBe(false);
   });
 
+  // PTT 動態指令列改版（2026-09-20 公告，PTT1 10/18 預定；**guess**）：caption 由
+  // 「  選擇看板  」改成「 看板列表 / 我的最愛 / 分類看板 」。只認舊字樣時 footer 快取
+  // 永遠是空的 ⇒ buildBoardListWindowLines 回 null ⇒ 平滑捲動整個退回原生。
+  test.each(["我的最愛", "看板列表"])("新版 caption「%s」的 footer 也進快取", (caption) => {
+    const texts = screenTexts({ count: 4 });
+    texts[texts.length - 1] = " " + caption + "  (a)增加看板 (s)進入已知板名           (h)說明";
+    const v = fakeView(texts);
+    v.bbscore = { activeListSession: () => fakeSession(v) };
+    v.accumulateBoardListLines();
+    const lines = v.buildBoardListWindowLines();
+    expect(lines).not.toBeNull();
+    expect(textOf(lines[lines.length - 1])).toContain(caption);
+  });
+
   test("短清單補 blank 列到 body 高度（維持 24 列外觀、不產生額外可捲距離）", () => {
     const v = fakeView(screenTexts({ count: 4 }));
     v.bbscore = { activeListSession: () => fakeSession(v) };

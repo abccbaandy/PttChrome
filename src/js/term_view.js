@@ -16,6 +16,7 @@ import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LI
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
 import { BOARD_LIST, rowHasTitle } from './screen_titles';
+import { isArticleListFooter, isBoardListFooter } from './screen_captions';
 import { OWNER_BOARD_LIST } from './list_render_owner';
 import { readValuesWithDefault } from './pref_storage';
 import { cursorOffsets, paintedRowsAreBufRows } from './cursor_anchor';
@@ -2629,7 +2630,7 @@ TermView.prototype = {
         cloneRow(buf.lines[2])
       ];
     }
-    if ((rowTexts[buf.rows - 1] || '').indexOf('文章選讀') >= 0) {
+    if (isArticleListFooter(rowTexts[buf.rows - 1])) {
       this._listFooterRow = cloneRow(buf.lines[buf.rows - 1]);
     }
   },
@@ -2784,7 +2785,7 @@ TermView.prototype = {
         cloneRow(buf.lines[2])
       ];
     }
-    if ((rowTexts[buf.rows - 1] || '').indexOf('選擇看板') >= 0)
+    if (isBoardListFooter(rowTexts[buf.rows - 1]))
       this._brdFooterRow = cloneRow(buf.lines[buf.rows - 1]);
   },
 

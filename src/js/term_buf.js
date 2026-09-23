@@ -17,6 +17,7 @@ import {
 } from './mouse_regions';
 import { MouseReportState } from './mouse_report';
 import { resolveDismiss } from './screen_dismiss';
+import { EDITOR_CAPTION, footerCaption } from './screen_captions';
 import {
   BOARD_LIST,
   MENU_TITLES,
@@ -90,6 +91,13 @@ export const termInvColors = [
 function isReversedCell(ch) {
   return !!ch && ch.getFg() === 0 && ch.getBg() === 7;
 }
+
+// 編輯器（vedit）底列最右側的狀態框：edit.c:471-479 的 `%s│%c%c%c%c%3d:%3d`
+// （插入/取代、aipr 四旗標、行:欄）。2026-09-20 公告「動態指令列與看板資訊改版」
+// 第 5 點說中段提示改成動態、左側 caption 與這個狀態框**不變**（guess）⇒ 兩者
+// 就是新舊都成立的錨點。旗標格不限字元（公告的範例字串在那一格有落差），只要求
+// 結尾是行:欄；它擋掉「內文剛好以 編輯文章 開頭」的誤判。
+const EDITOR_STATUS_BOX_RE = /(插入|取代).*\d+:\s*\d+\s*$/;
 
 function TermChar(ch) {
   this.ch = ch;
@@ -1332,7 +1340,8 @@ TermBuf.prototype = {
       this.pageState = 5; // some ansi drawing screen to pass
       return;
     }
-    if (lastRowText.indexOf(' 編輯文章  (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開') === 0) {
+    if (footerCaption(lastRowText) === EDITOR_CAPTION &&
+        EDITOR_STATUS_BOX_RE.test(lastRowText)) {
       this.pageState = 6;
       return;
     }
@@ -1408,10 +1417,25 @@ TermBuf.prototype = {
   // row 0/1（mbbsd/board.c#search_local_board 只 move(0,0)+clrtoeol）⇒ pageState
   // 黏在 2，游標底色與滑鼠可點區都還以為自己在列表上。消費端見 cursor_highlight
   // .resolveHighlightRow 與 mouse_regions.resolveMouseRegion 的 inputPrompt。
+  //
+  // 例外：游標停在**已知狀態列**上（pmore 的「瀏覽 第 x/y 頁」、vs_footer 的列表／
+  // 編輯器 caption）⇒ 一定不是輸入框。vs_footer 右段配色 VCLR_FOOTER = 0;30;47
+  // （vtuikit.h:41）＝fg0/bg7，caption 是 34;46（vtuikit.h:40）不反白，光看顏色會把
+  // 「游標 park 在底列右下角」誤判成輸入框；pmore 的 FOOTER3 也是 30;47
+  // （pmore.c:186-191）。反過來 vgetstring 的 prompt 從 col 0 覆寫整列，prompt 在畫面上
+  // 時這兩種指紋不可能成立。2026-09-20 公告「動態指令列與看板資訊改版」讓這件事變常態
+  // （空列表游標停 23,79；pmore 右半統一色碼；guess）。誤判的後果：nav_key_gate 擋掉
+  // 返回手勢、mouse_regions 整幀 NONE、點擊改送 Ctrl-C。
   isCursorOnInputField: function() {
     var line = this.lines[this.cur_y];
     if (!line) return false;
-    return isReversedCell(line[this.cur_x]) && !isReversedCell(line[0]);
+    if (!(isReversedCell(line[this.cur_x]) && !isReversedCell(line[0])))
+      return false;
+    if (this.cur_y === this.rows - 1) {
+      var text = this.getRowText(this.cur_y, 0, this.cols);
+      if (parseStatusRow(text) || footerCaption(text) != null) return false;
+    }
+    return true;
   },
 
   // 這一幀有沒有一個「滑鼠關得掉的框」（pressanykey／vmsg 橫幅／vgetstring 輸入

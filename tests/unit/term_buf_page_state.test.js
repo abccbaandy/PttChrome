@@ -259,4 +259,45 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
     );
     expect(t.buf.pageState).toBe(1);
   });
+
+  // ─── 編輯器（vedit）底列 → pageState 6 ────────────────────────────────────
+  // 舊版 CONFIRMED @ edit.c:470-479：
+  //   vs_footer(" 編輯文章 ", " (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開\t%s│%c%c%c%c%3d:%3d")
+  // 新版（2026-09-20 公告「動態指令列與看板資訊改版」第 5 點，PTT1 10/18 預定；**guess**）：
+  //   左側「 編輯文章 」與最右側狀態框【不變】，中段改成動態指令列。
+  // 以前比對的是整段中段提示 ⇒ 新版一上線 pageState 6 就失效，編輯器內的圖片上傳
+  // （image_upload.js 的 pageState 6 → send）會走錯路徑。
+  const editorScreen = (mid) =>
+    CLEAR +
+    at(0, 0) +
+    "作者: someuser  看板: Test" +
+    at(2, 0) +
+    "內文第一行" +
+    at(ROWS - 1, 0) +
+    "\x1b[34;46m 編輯文章 \x1b[30;47m" +
+    padCols(mid, COLS - width(" 編輯文章 ") - width("插入│aipr  3:  5")) +
+    "插入│aipr  3:  5" +
+    "\x1b[m" +
+    at(2, 4);
+
+  test("舊版編輯器底列 → 6", () => {
+    const t = makeBuf();
+    t.paint(editorScreen(" (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開"));
+    expect(t.buf.pageState).toBe(6);
+  });
+
+  test("新版編輯器底列（動態指令列中段；guess）→ 6", () => {
+    const t = makeBuf();
+    t.paint(editorScreen(" (^X)存檔 (^C)色碼 (^V)彩色 (Esc-h)按鍵 (^Z)說明"));
+    expect(t.buf.pageState).toBe(6);
+  });
+
+  test("底列以「 編輯文章 」開頭但沒有右側狀態框 ⇒ 不是 6", () => {
+    const t = makeBuf();
+    t.paint(subMenuScreen());
+    t.paint(
+      CLEAR + at(0, 0) + "隨便一段內文" + at(ROWS - 1, 0) + " 編輯文章 的心得分享" + at(0, 0)
+    );
+    expect(t.buf.pageState).not.toBe(6);
+  });
 });

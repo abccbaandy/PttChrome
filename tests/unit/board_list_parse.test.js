@@ -304,3 +304,72 @@ describe("抓頁：跳號目標與落地判定", () => {
     });
   });
 });
+
+// ─── PTT 動態指令列改版（2026-09-20 公告，PTT1 10/18 預定；**guess**）─────────
+// 舊版 board.c:1285 三變體共用「  選擇看板  」，變體只能靠按鍵提示分。新版 caption
+// 依列表類型分三種（前後各 1 格空白）：「看板列表」一般・熱門・分類子層／
+// 「我的最愛」／「分類看板」分類根；中段提示改為動態（依權限／寬度／空列表增減）。
+// ⇒「我的最愛」光看 caption 就定 fav；「看板列表」仍要靠提示分 class/all，
+//   提示被隱藏時退成 unknown（不 engage＝原生，安全）。
+// 重新校準見 docs/handoff/list-caption-recalibrate.md。
+describe("classifyBoardListScreen — 新版 caption（guess）", () => {
+  const newFoot = (caption, mid) =>
+    " " + caption + "  " + mid + "                 (h)說明";
+
+  test("「我的最愛」即使中段沒有 (a)增加看板 也是 fav、可 engage", () => {
+    const r = classifyBoardListScreen(
+      brdScreen({ foot: newFoot("我的最愛", "(s)進入已知板名") })
+    );
+    expect(r.variant).toBe("fav");
+    expect(r.engageable).toBe(true);
+  });
+
+  test("「看板列表」＋(m)加入/移出最愛（無 (y)只列最愛）→ class", () => {
+    const r = classifyBoardListScreen(
+      brdScreen({ foot: newFoot("看板列表", "(m)加入/移出最愛 (s)進入已知板名") })
+    );
+    expect(r.variant).toBe("class");
+    expect(r.engageable).toBe(true);
+  });
+
+  test("「看板列表」＋(y)只列最愛 → all，不 engage", () => {
+    const r = classifyBoardListScreen(
+      brdScreen({ foot: newFoot("看板列表", "(m)加入/移出最愛 (y)只列最愛") })
+    );
+    expect(r.variant).toBe("all");
+    expect(r.engageable).toBe(false);
+  });
+
+  test("「看板列表」但提示全被動態隱藏 → unknown，不 engage", () => {
+    const r = classifyBoardListScreen(brdScreen({ foot: newFoot("看板列表", "") }));
+    expect(r.variant).toBe("unknown");
+    expect(r.engageable).toBe(false);
+  });
+
+  test("新版信件列表／文章列表 caption 放在看板列表 row0 下 ⇒ 不命中", () => {
+    expect(
+      classifyBoardListScreen(brdScreen({ foot: newFoot("文章列表", "(y)回應") }))
+    ).toBeNull();
+  });
+
+  test.each(["文章列表", "系列文章", "文摘列表"])(
+    "boardListContextKind：《看板》＋新版「%s」→ article-list",
+    (caption) => {
+      const rowTexts = new Array(24).fill("");
+      rowTexts[0] = " 【板主:none】看板《Test》";
+      rowTexts[23] = newFoot(caption, "(y)回應 (X)推文");
+      expect(boardListContextKind({ rowTexts, curX: 0, curY: 3, rows: 24 })).toBe(
+        "article-list"
+      );
+    }
+  );
+
+  test("boardListContextKind：新版信件列表 ≠ article-list", () => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[0] = " 【板主:none】看板《Test》";
+    rowTexts[23] = newFoot("信件列表", "(R)回信");
+    expect(boardListContextKind({ rowTexts, curX: 0, curY: 3, rows: 24 })).not.toBe(
+      "article-list"
+    );
+  });
+});

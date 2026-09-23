@@ -131,6 +131,46 @@ describe("classifyListScreen", () => {
     expect(r.kind).not.toBe("clean-list");
   });
 
+  // ─── PTT 動態指令列改版（2026-09-20 公告，PTT1 10/18 預定；**guess**）───
+  // 舊版 read.c:1237 對非信箱的所有列表一律印「文章選讀」；新版拆成三種 caption，
+  // 集合一對一。信箱（read.c:1234 鴻雁往返 → 信件列表）照舊不 engage。
+  // 重新校準見 docs/handoff/list-caption-recalibrate.md。
+  const newFeeter = (caption) =>
+    " " + caption + "  (y)回應 (X)推文 (^X)轉錄 (/)搜尋標題            (h)說明";
+
+  test.each(["文章列表", "系列文章", "文摘列表"])(
+    "新版 feeter「%s」→ clean-list",
+    (caption) => {
+      const rows = listRows.slice();
+      rows[rows.length - 1] = newFeeter(caption);
+      expect(classifyListScreen(facts({ rowTexts: rows }))).toEqual({
+        kind: "clean-list",
+        boardName: "C_Chat",
+      });
+    }
+  );
+
+  test("新版信箱 feeter「信件列表」never engages as clean-list", () => {
+    const rows = listRows.slice();
+    rows[rows.length - 1] = " 信件列表  (R)回信 (x)站內轉寄 (d)刪信            (h)說明";
+    expect(classifyListScreen(facts({ rowTexts: rows })).kind).not.toBe(
+      "clean-list"
+    );
+  });
+
+  test("新版空列表（row3「沒有文章...」、無 > 游標、游標停 23,79）→ 不是 clean-list", () => {
+    // 公告第 4 點：空列表不畫游標字元，硬體游標停在右下角。
+    // row3 字樣是 read.c:1225 舊版就有的 outs("    沒有文章...")。
+    const rows = listRows.slice(0, 3);
+    rows[3] = "    沒有文章...";
+    for (let i = 4; i <= 22; ++i) rows[i] = "";
+    rows[23] = " 文章列表                                               (←)離開 (h)說明";
+    const r = classifyListScreen(
+      facts({ rowTexts: rows, curY: rows.length - 1, curX: 79 })
+    );
+    expect(r.kind).not.toBe("clean-list");
+  });
+
   test("feeter present but fewer than 3 parsable numbers → not clean-list", () => {
     const rows = listRows.slice();
     for (let i = 3; i <= rows.length - 2; ++i) rows[i] = "";

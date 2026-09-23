@@ -11,6 +11,7 @@
 // 游標底色因此畫到 prompt 那一列上（使用者回報：底色＋文字破碼＋游標錯位）。
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
+import { u2b } from "../../src/js/string_util";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 loadBig5Tables();
@@ -86,5 +87,91 @@ describe("isCursorOnInputField", () => {
     buf.cur_x = 999;
     buf.cur_y = 999;
     expect(buf.isCursorOnInputField()).toBe(false);
+  });
+});
+
+// ─── 游標 park 在「已知狀態列」右下角 ⇒ 不是輸入框 ─────────────────────────────
+// vs_footer 的右段配色是 VCLR_FOOTER = ANSI_COLOR(0;30;47)（vtuikit.h:41）＝ fg0/bg7，
+// 正好是輸入欄的指紋；caption 是 VCLR_FOOTER_CAPTION = 34;46（vtuikit.h:40），不反白
+// ⇒ 光看顏色，「游標停在 vs_footer 右段」會被誤判成輸入框。
+// PTT 2026-09-20 公告「動態指令列與看板資訊改版」（**guess**）讓這件事變常態：
+//   第 4 點：空列表不畫 > 游標，硬體游標停在 (23,79)（＝vs_footer 右段）
+//   第 5 點：pmore 右半改由動態指令列產生、「統一色碼」
+// 誤判的後果：nav_key_gate 擋掉觸控板返回／上一頁、mouse_regions 整幀 NONE
+// （文章左側退出帶失效）、點擊改送 Ctrl-C（列表上＝ClearTagList）。
+// 輸入框不可能與這兩種狀態列同時存在：vgetstring 的 prompt 從 col 0 覆寫整列。
+describe("isCursorOnInputField — 游標停在狀態列右下角", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  // 走真的 notify → updateCharAttr（getRowText 需要 isLeadByte）。
+  function paint(screen) {
+    const buf = new TermBuf(80, 24);
+    buf.setView({
+      update() {},
+      updateCursorPos() {},
+      refreshCursorVisibility() {},
+      charset: "big5",
+      blinkOn: false,
+    });
+    buf.useMouseBrowsing = false;
+    new AnsiParser(buf).feed(u2b(screen));
+    vi.advanceTimersByTime(300);
+    return buf;
+  }
+
+  const width = (s) => {
+    let w = 0;
+    for (const ch of s) w += ch.charCodeAt(0) > 0x7f ? 2 : 1;
+    return w;
+  };
+  const padCols = (s, cols) => s + " ".repeat(Math.max(0, cols - width(s)));
+  const PARK = "\x1b[24;80H";
+
+  // caption（34;46）＋右段 VCLR_FOOTER（30;47）填到行尾。
+  const footer = (left, right) =>
+    "\x1b[24;1H\x1b[34;46m" +
+    left +
+    "\x1b[30;47m" +
+    padCols(right, 80 - width(left)) +
+    "\x1b[m";
+
+  test("新版 pmore 狀態列（右半統一成 30;47；guess）⇒ false", () => {
+    const buf = paint(
+      "\x1b[1;1H內文" +
+        footer(
+          "  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~22 行",
+          "  (y)回應 (X)推文 (←)離開 (h)說明"
+        ) +
+        PARK
+    );
+    expect(buf.cur_y).toBe(23);
+    expect(buf.cur_x).toBe(79);
+    expect(buf.isCursorOnInputField()).toBe(false);
+  });
+
+  test("新版空文章列表（無 > 游標、游標停 23,79；guess）⇒ false", () => {
+    const buf = paint(
+      "\x1b[1;1H\x1b[30;47m" +
+        padCols("【板主:none】  看板《Test》", 80) +
+        "\x1b[m\x1b[4;1H    沒有文章..." +
+        footer(" 文章列表 ", "                                        (←)離開 (h)說明") +
+        PARK
+    );
+    expect(buf.isCursorOnInputField()).toBe(false);
+  });
+
+  test("舊版 vs_footer（文章選讀）＋游標在右下角 ⇒ 同樣 false", () => {
+    const buf = paint(
+      footer(" 文章選讀 ", " (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題") + PARK
+    );
+    expect(buf.isCursorOnInputField()).toBe(false);
+  });
+
+  test("底列真的是 vgetstring prompt（反白欄、游標在欄內）⇒ 仍是 true", () => {
+    const buf = paint(
+      "\x1b[24;1H 搜尋標題: \x1b[0;7m" + " ".repeat(40) + "\x1b[0m\x1b[24;12H"
+    );
+    expect(buf.isCursorOnInputField()).toBe(true);
   });
 });

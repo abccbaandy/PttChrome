@@ -115,6 +115,29 @@ describe("accumulateListLines（置底文收录）", () => {
   const article = " 350001 + 2 6/14 someoneA     □ [閒聊] 一般文章";
   const feeter = " 文章選讀  (y)回應(X)推文";
 
+  // footer 快取（buildListWindowLines 組 24 列好讀視窗用）。PTT 動態指令列改版
+  // （2026-09-20 公告，PTT1 10/18 預定；**guess**）把 read.c:1237 的「文章選讀」拆成
+  // 「文章列表／系列文章／文摘列表」。只認舊字樣時快取永遠空 ⇒ 好讀視窗組不出來。
+  test.each([
+    " 文章選讀  (y)回應(X)推文",
+    " 文章列表  (y)回應 (X)推文            (h)說明",
+    " 系列文章  (y)回應 (X)推文            (h)說明",
+    " 文摘列表  (y)回應                    (h)說明",
+  ])("footer「%s」進快取", (foot) => {
+    const v = fakeView(header.concat([article, foot]), 3);
+    v.accumulateListLines();
+    expect(v._listFooterRow).toBeTruthy();
+    expect(rowToStr(v._listFooterRow)).toBe(foot.replace(/\s+$/, ""));
+  });
+
+  test("信箱 footer（舊「鴻雁往返」／新「信件列表」）不進快取", () => {
+    for (const foot of [" 鴻雁往返  (R/y)回信", " 信件列表  (R)回信         (h)說明"]) {
+      const v = fakeView(header.concat([article, foot]), 3);
+      v.accumulateListLines();
+      expect(v._listFooterRow).toBeFalsy();
+    }
+  });
+
   test("同标题不同作者的两篇置底都保留（bug 2a）", () => {
     const texts = header.concat([
       article,

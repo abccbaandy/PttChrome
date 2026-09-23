@@ -205,7 +205,7 @@ pref `enableEasyReadingList`（**2026-09-16 起預設 on**）＋`easyReadingList
     → 走鍵盤同一條 reducer（`open`／`open-pinned`）＋ `_beginOpen`。**永遠不得放行到
     `App.onMouse_click`**（那條依 `buf.mouseAction` 與 server 幾何直送
     `\x1b[A`×N+`\r`，座標不對應且繞過 CommandQueue）。非 active／frozen 時吞掉＋提示。
-- header/footer 快取：accumulate 時從「像 clean-list 的 live 幀」更新（row0 含《＋row2 含 編號 → header；底列含 文章選讀 → footer）——跳號空底列不會污染 footer 快取。
+- header/footer 快取：accumulate 時從「像 clean-list 的 live 幀」更新（row0 含《＋row2 含 編號 → header；底列 caption 是文章列表 → footer，判定 `screen_captions.js#isArticleListFooter`，新舊 caption 見 protocol §11.10）——跳號空底列不會污染 footer 快取。
 
 ## 狀態機（reducer＝`transitionListSession`，unit 全枚舉為準）
 
@@ -233,7 +233,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 
 | 條件 | 堵哪個洞 |
 |---|---|
-| `facts.kind === 'clean-list'`（其中的 `curX <= 1`） | 洞 1：PTT 還在等輸入的畫面。**`curX <= 1` 是本功能的承重牆**（不變量 N9）——`v` 的 getdata prompt 畫在 row 22、游標停在提示字後面；`vmsg`/`pressanykey` 的框在 row 23；編輯器／說明根本沒有「文章選讀」footer。放寬它＝使用者在原生 prompt 打字時畫面被搶 |
+| `facts.kind === 'clean-list'`（其中的 `curX <= 1`） | 洞 1：PTT 還在等輸入的畫面。**`curX <= 1` 是本功能的承重牆**（不變量 N9）——`v` 的 getdata prompt 畫在 row 22、游標停在提示字後面；`vmsg`/`pressanykey` 的框在 row 23；編輯器／說明根本沒有文章列表 caption 的 footer。放寬它＝使用者在原生 prompt 打字時畫面被搶 |
 | `!queue.inFlightKind` | 洞 2：命令還在線上。`native-key` 的 expect 恆真 ⇒ idle 來得比「PTT 真的做完」早，所以還要下面那條 |
 | `now - max(_lastServerActivityAt, _lastUserByteAt) >= RESUME_QUIET_MS(250)` | 洞 3：**一個回應會 settle 兩次**（`term_buf.js`：內容視窗與游標 park 視窗跨過 `SETTLE_MS` 時）。第一個 settle 的內容已是新清單、游標卻還在舊位置，在它上面 resume 會採用到**錯的落點**（游標跳列）。所以要等「畫面真的不動了」而不是「使用者不動了」。值沿用 `CMD_PROBE_AFTER_MS`，**不要另開新數字、不要拿它調手感** |
 | `hasNumberedRow` | 不變量 17 |

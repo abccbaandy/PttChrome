@@ -12,6 +12,9 @@
 //      的「總數／編號」字樣就分得出來（board.c:1338）。
 //   3. footer 三變體由 `IS_LISTING_FAV()` / `IN_CLASS()` 決定（board.c:1279-1290），
 //      是「我的最愛／分類子分類／全部看板」唯一可靠的指紋。
+//      新版（2026-09-20 公告「動態指令列與看板資訊改版」，guess）caption 本身就分
+//      「看板列表／我的最愛／分類看板」，但中段提示改成動態（依權限／寬度增減）。
+//      caption 判定收在 screen_captions.js。
 //
 // 本期只 engage 我的最愛（fav）與分類看板子分類（class）；全部看板／熱門看板
 // （all）與分類看板根（row0 是【分類看板】，這裡直接不命中）不做。
@@ -22,6 +25,11 @@ import {
   rowHasAnyTitle,
   rowHasTitle
 } from './screen_titles';
+import {
+  boardListCaptionVariant,
+  isArticleListFooter,
+  isBoardListFooter
+} from './screen_captions';
 
 // 渲染後畫面裡 body 從第幾列開始（row0 標題、row1 熱鍵、row2 欄位列）。
 // 與文章列表好讀的 LIST_HEADER_ROWS 同值但**語意不同**（那是 bbs.c 的表頭），
@@ -95,6 +103,20 @@ export function boardListRowNums(rowTexts, rows) {
   return out;
 }
 
+// 靠中段按鍵提示分變體。新版「我的最愛」光看 caption 就定案（呼叫端先問
+// boardListCaptionVariant），舊版「選擇看板」與新版「看板列表」只能走這裡。
+// 判序照 board.c:1279-1290 的三元式反推。'all' 要**先於** 'class' 判：兩者
+// 都以 `(m)加入/移出最愛` 開頭，只有第二個選項不同。
+// 已知風險（新版，guess）：「看板列表」底下若 `(y)只列最愛` 被動態隱藏而 `(m)` 還在，
+// 全部看板會被當成 class engage —— 功能照常（evict 上限在），只是 all 本期未驗體感。
+// 兩個提示都被藏掉則是 'unknown'＝不 engage＝原生，安全。
+function boardListHintVariant(foot) {
+  if (foot.indexOf('(a)增加看板') >= 0) return 'fav';
+  if (foot.indexOf('(y)只列最愛') >= 0) return 'all';
+  if (foot.indexOf('(m)加入/移出最愛') >= 0) return 'class';
+  return 'unknown';
+}
+
 // 一幀畫面是不是看板列表，以及是哪一種。回 null ＝根本不是（文章列表／主功能表／
 // 【分類看板】根／文章／prompt…）。
 //
@@ -109,19 +131,14 @@ export function classifyBoardListScreen(facts) {
   const rows = facts.rows || rowTexts.length;
   if (!rowHasTitle(rowTexts[0] || '', BOARD_LIST)) return null;
   const foot = rowTexts[rows - 1] || '';
-  if (foot.indexOf('選擇看板') < 0) return null;
+  if (!isBoardListFooter(foot)) return null;
   const header = rowTexts[2] || '';
   // row2 是 `vbarf(... newflag ? "總數" : "編號")`（board.c:1338）：畫面自己就分得出
   // newflag，不必去攔 `c` 鍵。newflag 下 `%7d` 印的是文章總數，編號 key 立刻失真。
   const newflag = header.indexOf('總數') >= 0;
   if (!newflag && header.indexOf('編號') < 0) return null;
 
-  let variant = 'unknown';
-  // 判序照 board.c:1279-1290 的三元式反推。'all' 要**先於** 'class' 判：兩者
-  // 都以 `(m)加入/移出最愛` 開頭，只有第二個選項不同。
-  if (foot.indexOf('(a)增加看板') >= 0) variant = 'fav';
-  else if (foot.indexOf('(y)只列最愛') >= 0) variant = 'all';
-  else if (foot.indexOf('(m)加入/移出最愛') >= 0) variant = 'class';
+  const variant = boardListCaptionVariant(foot) || boardListHintVariant(foot);
 
   const nums = boardListRowNums(rowTexts, rows);
   const curY = facts.curY;
@@ -155,7 +172,7 @@ export function classifyBoardListScreen(facts) {
 // 這一幀屬於哪一種「情境」——state machine 只吃這個枚舉。
 //   'brdlist'       可 engage 的看板列表（我的最愛／分類子分類）
 //   'brdlist-other' 看板列表但不在本期範圍（全部看板／熱門／newflag）
-//   'article-list'  文章列表（《看板》＋「文章選讀」）⇒ ListSession 的地盤
+//   'article-list'  文章列表（《看板》＋文章列表 caption）⇒ ListSession 的地盤
 //   'menu'          主功能表／分類看板根／精華文章 ⇒ 已離開看板列表
 //   'other'         prompt／半繪／說明畫面…（原生鏡像照畫即可）
 export function boardListContextKind(facts) {
@@ -165,7 +182,7 @@ export function boardListContextKind(facts) {
   const rows = (facts && facts.rows) || rowTexts.length;
   const row0 = rowTexts[0] || '';
   const foot = rowTexts[rows - 1] || '';
-  if (row0.indexOf('《') >= 0 && foot.indexOf('文章選讀') >= 0) return 'article-list';
+  if (row0.indexOf('《') >= 0 && isArticleListFooter(foot)) return 'article-list';
   if (rowHasAnyTitle(row0, MENU_TITLES)) return 'menu';
   return 'other';
 }

@@ -265,7 +265,7 @@ Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，�
 | 1 | 固定提示列 `[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明` | `mbbsd/bbs.c` |
 | 2 | 反白表頭 `   編號    <日 期|價 格> 作  者       文  章  標  題`＋右端 `人氣:N`（vbarf ANSI_REVERSE；cassette 實測 30;47）。日期欄字樣依 LISTMODE 變動 ⇒ **只認「編號」最穩** | `mbbsd/bbs.c` vbarf |
 | 3..rows-2 | entry 列，每頁 `headers_size = p_lines` 筆（24 列＝20 筆） | `mbbsd/read.c`（PARTUPDATE 內 realloc）、游標列算式 `3 + n - top`（`cursor_pos`） |
-| rows-1 | feeter 反白 ` 文章選讀 `＋` (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面`；**RMAIL 是 ` 鴻雁往返 `＋` (R/y)回信 (x)站內轉寄 (d/D)刪信 (^P)寄發新信 \t(←/q)離開`**（不是「郵件選讀」） | `mbbsd/read.c` READ_REDRAW 的 `vs_footer` |
+| rows-1 | feeter 反白 ` 文章選讀 `＋` (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面`；**RMAIL 是 ` 鴻雁往返 `＋` (R/y)回信 (x)站內轉寄 (d/D)刪信 (^P)寄發新信 \t(←/q)離開`**（不是「郵件選讀」）。新版（2026-09-20 公告，**guess**）caption 改 `文章列表`／`系列文章`／`文摘列表`／`信件列表`，見 §11.10；判定一律走 `screen_captions.js` | `mbbsd/read.c` READ_REDRAW 的 `vs_footer` |
 
 entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推出的 0-indexed 螢幕欄位：
 
@@ -535,7 +535,8 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 | `auto_login` | `mbbsd.c` 登入迴圈＋`include/common.h` | prompt `請輸入代號，或以 guest 參觀，或以 new 註冊: `(DOECHO)／`MSG_PASSWD "請輸入您的密碼: "`(NOECHO)／`您想刪除其他重複登入的連線嗎？[Y/n] `(LCECHO)／`您要刪除以上錯誤嘗試的記錄嗎? [Y/n] `(`vans`→`vgets`，**都要 `\r`**)。失敗出口＝`ERR_PASSWD "密碼不對喔！…"`、`ERR_UID "這裡沒有這個人啦！"`（`is_validuserid` 失敗，**不會再問密碼**）、`抱歉，此帳號已設定為只能使用安全連線(如ssh)登入。` |
 | `easy_reading.reachedPageEnd` | `pmore.c` FOOTER1 配色 | VIEWALL `ANSI_COLOR(37;44)`＝fg7/bg4（＝看完）；VIEWNONE `33;45`；一般 `34;46` |
 | `term_buf.isTextWrappedRow` | `pmore.c` `MFDISP_WRAP_INDICATOR ANSI_COLOR(0;1;37) "\\"` | 80 欄下 `maxcol = 77`（`dispw = DBCS_HEADERWIDTH(79) = 78`）⇒ indicator 落在 **col 78**（ASCII 斷行）或 **col 77**（DBCS 跨界被回退擦掉 lead byte）；顏色 fg7/bright/bg0。TRUNC 用 `>`、WNAV 用 `<`，不可混 |
-| `term_buf.setPageState` | `vtuikit.h`／`edit.c`／`angel.c` | `VMSG_PAUSE " 請按任意鍵繼續 "`；`請按 空白鍵 繼續`＝`angel.c` 的新手提示；編輯器底列＝`vs_footer(" 編輯文章 ", " (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開\t…")`（「編輯文章」後**兩個空格**） |
+| `term_buf.setPageState` | `vtuikit.h`／`edit.c`／`angel.c` | `VMSG_PAUSE " 請按任意鍵繼續 "`；`請按 空白鍵 繼續`＝`angel.c` 的新手提示；編輯器底列＝`vs_footer(" 編輯文章 ", " (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開\t%s│%c%c%c%c%3d:%3d")`。判定只認 caption `編輯文章` ＋ 右側狀態框（`term_buf.js#EDITOR_STATUS_BOX_RE`），中段提示不比對（新版動態化，§11.10） |
+| `screen_captions.js` | `read.c:1234-1238`／`board.c:1285`／`edit.c:470`（舊，CONFIRMED）＋ 2026-09-20 公告（新，**guess**） | 最後一列**行首** token ∈ 已知 caption 集合。消費端：`classifyListScreen`、`classifyBoardListScreen`／`boardListContextKind`、`term_view` 兩個 footer 快取、`setPageState` 編輯器、`isCursorOnInputField` 例外。見 §11.10 |
 | `term_keyboard` | `common/sys/vtkbd.c`＋`include/vtkbd.h` | `ESC[A/B/C/D`→`KEY_UP+(c-'A')`；`ESC[1~`→HOME、`ESC[2~`→INS、`ESC[3~/4~/5~/6~`→`KEY_DEL+(c-'3')`＝DEL/END/PGUP/PGDN（`vtkbd.h` 註明 "must follow vt220 ordering"）。全部對上 |
 | `aid_parse` | `mbbsd/aids.c#aidu2aidc` | 字母表 `0-9A-Za-z-_`（64 字），產出**恆 8 字**；反向 `aidc2aidu` 不限長度但畫面上只會出現產生端形式 |
 | `symbol_table.js` | — | **不適用**：是 client 端 Unicode→顯示寬度分類表（1/2＝強制全形、3＝壞 DBCS），與 server 邏輯無關 |
@@ -1236,3 +1237,37 @@ server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複�
    `isCursorOnInputField` 的 fg0/bg7、`easy_reading` 的 FOOTER1 配色 fallback 都在看顏色。
    目前都有「顏色只是閘門、內容才是判準」的結構（見 §5.1、§13 P3），暫不動；真要改是另一件事。
 
+## 11.10 動態指令列與看板資訊改版（2026-09-20 公告，**guess**）
+
+⚠️ 同 §11.9：**只有公告文字**，`3rd_script/pttbbs` 已同步到 upstream 03cdf5eb（2026-09-23）仍無
+`vs_cmd_bar`／新 caption。上線：PTT2 09/20、PTT1 10/18（預定）。
+重新校準見 `docs/handoff/list-caption-recalibrate.md`。實作一律「新舊都吃、猜錯退原生」。
+
+### 底列 caption（判定收在 `src/js/screen_captions.js`，只認**行首** token）
+
+| 畫面 | 舊（CONFIRMED） | 新（guess） | 本專案用途 |
+|---|---|---|---|
+| 文章列表（非信箱的所有 i_read：一般／搜尋結果／文摘） | ` 文章選讀 `（read.c:1237） | ` 文章列表 `／` 系列文章 `（`/ ? a Z G # =` 篩選）／` 文摘列表 `（Tab） | 列表好讀 clean-list、footer 快取、看板列表情境 `article-list` |
+| 信箱 | ` 鴻雁往返 `（read.c:1234） | ` 信件列表 ` | **排除**（信箱不得 engage 列表好讀） |
+| 看板列表 | `  選擇看板  `（board.c:1285，三變體共用） | ` 看板列表 `（一般／熱門／分類子層）／` 我的最愛 `／` 分類看板 `（分類根） | 平滑捲動指紋；新版「我的最愛」直接定 fav，「看板列表」仍靠中段提示分 class/all |
+| 精華區 | ` 【功能鍵】 `／` 【板  主】 `／`【已標記(複製) N 項】`（announce.c:259） | ` 精華列表 `／` 精華管理 `／` 標記項目 ` | 無消費端（精華區靠 row0【精華文章】） |
+| 編輯器 | ` 編輯文章 `＋`\t%s│%c%c%c%c%3d:%3d`（edit.c:470-479） | caption 與右側狀態框**不變**，中段動態化 | pageState 6（圖片上傳 `send` 路徑） |
+
+新舊集合一對一：舊版「文章選讀」涵蓋的正好是新版那三種。
+
+### 其他變更與影響
+
+- **Row 1／Row 23 中段動態化**（依指令優先權／權限／空列表／終端機寬度增減）：本專案**不以提示文字判畫面**，
+  只有 `footer_keys.js` 做功能鍵 tokenize（新格式 `[k]名`／` (k)名` 照吃）與 `board_list_parse` 的 class/all
+  分辨（提示被藏掉 ⇒ `unknown` ⇒ 不 engage）。
+- **空列表**：不畫 `>`、游標停 (23,79)、row3 `    沒有文章...`（這串 read.c:1225 舊版就有）。
+  ⇒ `classifyListScreen` 判 `prompt`（非 clean-list）＝原生，安全。
+  ⇒ 連帶：vs_footer 右段 `VCLR_FOOTER`=0;30;47（vtuikit.h:41）＝fg0/bg7，游標 park 在那裡會被
+  `isCursorOnInputField` 誤判成輸入框（後果：返回手勢被擋、滑鼠整幀 NONE、點擊送 Ctrl-C）。
+  已加例外：游標在最後一列且該列是 `parseStatusRow` 或已知 caption ⇒ false（舊版游標 park 在列表底列右下角時也會中，
+  測試 `term_buf_input_field.test.js` 有舊版 case）。
+- **pmore 右下**：`(h)說明(→)離開 `／`(h)說明 (←/q)離開 ` → `(←)離開 (h)說明`，左半不變。
+  `parseStatusRow` 不比對 part3（§11 表）⇒ 無影響；`parsePagerFooterContext` 單向推論，新版仍含 `(y)回應` 才判 reading，否則 unknown＝既有降級。
+- **`[i]` 看板資訊**：改成全螢幕可捲動列表，**必須 `q` 或 `←` 才離開**（Space／PgDn 變翻頁），板主熱鍵要先 `Ctrl-P` 切編輯模式。
+  本專案**沒有**自動送 `i`、也沒有對它送「任意鍵」收尾；`aid_navigation` 逃生鍵是 ←（新版可離開）；
+  `screen_dismiss` 只在「請按任意鍵」／vmsg／輸入欄才動作 ⇒ 無需改。**日後若要自動化 `[i]`，離開一律送 ←。**

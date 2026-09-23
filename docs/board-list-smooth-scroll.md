@@ -22,7 +22,7 @@ pref `enableBoardListSmoothScroll`（**2026-09-16 起預設 `true`**）。實作
 | 「新文章」模式 | 任一看板列表按 `c` | 同上三者之一 | ❌ `newflag` |
 | 分類看板**根** | 主功能表 `C`（`class_bid==1`） | 無 footer（不走 `clsflag` 分支） | ❌ 指紋不命中（row0 是【分類看板】） |
 
-判序（`classifyBoardListScreen`）：row0 以 `【看板列表】` 開頭（比對走 `src/js/screen_titles.js#rowHasTitle`，**`【X】` 與去括號的 ` X ` 兩種形狀都吃**；理由見 `docs/pttbbs-screen-protocol.md` §11.9） **且** footer 含「選擇看板」
+判序（`classifyBoardListScreen`）：row0 以 `【看板列表】` 開頭（比對走 `src/js/screen_titles.js#rowHasTitle`，**`【X】` 與去括號的 ` X ` 兩種形狀都吃**；理由見 `docs/pttbbs-screen-protocol.md` §11.9） **且** footer caption 是看板列表（`src/js/screen_captions.js#isBoardListFooter`：舊「選擇看板」＋新版「看板列表／我的最愛／分類看板」guess，見 protocol §11.10；新版「我的最愛」直接定 fav）
 為前提 → row2 是「編號」還是「總數」（`board.c:1338`，畫面自己就分得出 newflag，
 不必攔 `c` 鍵）→ footer 變體（**`(y)只列最愛` 要先於 `(m)加入/移出最愛` 判**，兩者
 都以 `(m)` 開頭）→ 游標停在 body 且該列有編號。
