@@ -1450,6 +1450,16 @@ ListSession.prototype = {
       this._enqueueCursorSyncJump('native-sync-jump', finish, finish);
       return;
     }
+    if (this._selectedNum == null && this._canPinnedCursorSync()) {
+      this._freezeForTransaction();
+      // onFail **不送鍵**（與上面編號腿相反）：置底序列是多腿逐格走，失敗時真游標
+      // 可能停在任一中間列 ⇒ Ctrl-D／Ctrl-X 這類破壞性鍵會落在錯列且無法收回。
+      // 等同編號腿 checkCursorAnchor === 'moved' 的處理：明示降級、不代送。
+      this._enqueuePinnedCursorSync('native-pinned', finish, function() {
+        self._degradeToNative('游標無法對到置底列，已切至原生模式');
+      });
+      return;
+    }
     finish();
   },
 
@@ -1718,17 +1728,26 @@ ListSession.prototype = {
   _beginLeave: function() {
     this._freezeForTransaction();
     const num = this._selectedNum;
-    if (num == null || num === this._serverNum) {
-      // Pinned/no selection (nothing to jump to) or the real cursor is
-      // already on the selection — skip the sync leg (one round-trip).
-      this._enqueueLeaveKey();
-      return;
-    }
+    const self = this;
     // Sync the REAL cursor to the selection first: pttbbs stores the board's
     // re-entry position from the real cursor on exit (getkeep) — leaving from
     // a stale cursor makes the NEXT board entry land somewhere else entirely
     // (local T1 navigation is zero-network; 2026-07-08 report).
-    const self = this;
+    // 置底列選取同理，走多腿的 pinned 同步（4+N 腿，換下次進板落點正確）。
+    if (num == null && this._canPinnedCursorSync()) {
+      this._enqueuePinnedCursorSync('leave-pinned', function() {
+        self._enqueueLeaveKey();
+      }, function() {
+        self._degradeToNative('離開列表逾時，已切至原生模式');
+      });
+      return;
+    }
+    if (num == null || num === this._serverNum) {
+      // No selection (nothing to jump to) or the real cursor is already on
+      // the selection — skip the sync leg (one round-trip).
+      this._enqueueLeaveKey();
+      return;
+    }
     this._enqueueCursorSyncJump('leave-sync-jump', function() {
       self._enqueueLeaveKey();
     }, function() {
@@ -1760,6 +1779,12 @@ ListSession.prototype = {
     // t 標記游標那一列），本地導覽零網路 ⇒ 真游標落後時必須先跳號同步。
     if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
       this._enqueueCursorSyncJump('inplace-sync-jump', send, function() {
+        self._degradeToNative('操作逾時，已切至原生模式');
+      });
+      return;
+    }
+    if (this._selectedNum == null && this._canPinnedCursorSync()) {
+      this._enqueuePinnedCursorSync('inplace-pinned', send, function() {
         self._degradeToNative('操作逾時，已切至原生模式');
       });
       return;
@@ -1798,10 +1823,12 @@ ListSession.prototype = {
         self.state = 'active';
         const inBuf =
           !!landed &&
-          landed.cursorRowNum != null &&
-          (self._termBuf.listLineNums || []).indexOf(landed.cursorRowNum) !== -1;
-        // 落點不在緩衝（`[` 跳到很遠的舊文、置底列）＝畫面本來就要換一份 ⇒
-        // 走既有的 resume+rebuild（那時視野跳一下是合理的）。
+          (landed.cursorRowNum != null
+            ? (self._termBuf.listLineNums || []).indexOf(landed.cursorRowNum) !== -1
+            : self._pinnedIndexOf(self._landedPinnedKey(landed)) !== -1);
+        // 落點不在緩衝（`[` 跳到很遠的舊文）＝畫面本來就要換一份 ⇒ 走既有的
+        // resume+rebuild（那時視野跳一下是合理的）。落在緩衝裡已有的置底列（對置底列
+        // 按 t 之類）算在緩衝內：錨不動（不變量 N6）。
         if (inBuf) self._resumeInPlace(landed);
         else {
           self._resumeBuffer(landed);
@@ -1834,6 +1861,11 @@ ListSession.prototype = {
       this._serverNum = facts.cursorRowNum;
       this._selectedNum = facts.cursorRowNum;
       this._selectedPinnedKey = null;
+    } else if (this._pinnedIndexOf(this._landedPinnedKey(facts)) !== -1) {
+      // 落在緩衝裡已有的置底列（無編號）：選取改記 pinned key，_serverNum 照實為 null。
+      this._serverNum = null;
+      this._selectedNum = null;
+      this._selectedPinnedKey = this._landedPinnedKey(facts);
     }
     // 落地幀上有置底文＝板尾已確認（同 _seedAnchors／_resumeBuffer）。錨不動，但
     // 這是 server 剛告訴我們的事實，丟掉就會讓 pinned 尾巴被門控關掉（_sequence）。
@@ -2776,8 +2808,7 @@ ListSession.prototype = {
   _beginOpenPinned: function() {
     this._cancelScroll(); // 同 _beginOpen
     const key = this._selectedPinnedKey;
-    const anchor = bufferEdgeNum(this._termBuf.listLineNums, 1);
-    if (key == null || anchor == null) {
+    if (!this._canPinnedCursorSync()) {
       this._openFailed();
       return;
     }
@@ -2789,8 +2820,6 @@ ListSession.prototype = {
     this._queue.flushPending();
     this._expediteBackground();
     const self = this;
-    let parkY = -1;
-    let targetY = -1;
     // Active last-read teaching, same as _beginOpen: locate the pinned row in
     // the buffer by its key and capture its subject before the open runs.
     let lrSubject = null;
@@ -2821,9 +2850,44 @@ ListSession.prototype = {
         onFail: fail
       });
     };
+    this._enqueuePinnedCursorSync('open-pinned', enqueueEnter, fail);
+  },
+
+  // 選取是置底列、且緩衝裡有編號列可當 jump 錨 ⇒ 走得了 _enqueuePinnedCursorSync。
+  // 緩衝沒有任何編號列只發生在極端情況（測試的空緩衝）；那時呼叫端維持舊行為。
+  _canPinnedCursorSync: function() {
+    return (
+      this._selectedPinnedKey != null &&
+      bufferEdgeNum(this._termBuf.listLineNums, 1) != null
+    );
+  },
+
+  // 把 server 真游標停到選取中的★置底列（`_beginOpenPinned` 原本的 1–3 腿抽出來，
+  // 給開文與三個 cursor-relative 入口共用；不變量 12）。腿的 kind ＝
+  // `<kindPrefix>-jump/-end/-step`。呼叫端先確認 `_canPinnedCursorSync()`。
+  //
+  // **沒有「真游標已在這個置底列」的快路徑**（刻意）：那需要一個和 _serverNum 並行的
+  // 欄位，而 _serverNum 有十幾個賦值點，漏清一處＝過期快路徑＝ Ctrl-D／t 落在錯列
+  // 且無法收回。置底列選取＋連按 cursor-relative 鍵極罕見，每次多跑幾腿換正確性。
+  //
+  // _serverNum 一開始就清成 null：jump 送出後真游標就離開舊編號，成功時停在置底列
+  // （無編號）⇒ null 才是實話，下一個編號選取的鍵會老實走 sync。
+  _enqueuePinnedCursorSync: function(kindPrefix, onSynced, onFail) {
+    const self = this;
+    const key = this._selectedPinnedKey;
+    const anchor = bufferEdgeNum(this._termBuf.listLineNums, 1);
+    this._serverNum = null;
+    let parkY = -1;
+    let targetY = -1;
+    const fail = function() {
+      onFail();
+    };
+    const synced = function() {
+      onSynced();
+    };
     const enqueueSteps = function() {
       if (targetY === parkY) {
-        enqueueEnter();
+        synced();
         return;
       }
       const delta = targetY > parkY ? 1 : -1;
@@ -2832,11 +2896,11 @@ ListSession.prototype = {
         const isLast = stepY === targetY;
         self._queue.enqueue({
           keys: delta > 0 ? '\x1b[B' : '\x1b[A',
-          kind: 'open-pinned-step',
+          kind: kindPrefix + '-step',
           expect: function(snap, facts) {
             if (facts.curY !== stepY || facts.curX > 1) return false;
-            // Final verification before Enter: the cursor row must BE the
-            // target pinned row (content identity, not position arithmetic).
+            // Final verification before the caller's key: the cursor row must
+            // BE the target pinned row (content identity, not position arithmetic).
             if (isLast && pinnedRowKey(facts.rowTexts[stepY] || '') !== key)
               return false;
             return true;
@@ -2844,7 +2908,7 @@ ListSession.prototype = {
           timeoutMs: CMD_PROBE_AFTER_MS,
           probeTimeoutMs: CMD_PROBE_WINDOW_MS,
           hardTimeoutMs: CMD_HARD_MS,
-          onDone: isLast ? enqueueEnter : undefined,
+          onDone: isLast ? synced : undefined,
           onFail: fail
         });
         if (isLast) break;
@@ -2853,7 +2917,7 @@ ListSession.prototype = {
     const enqueueEnd = function() {
       self._queue.enqueue({
         keys: '\x1b[4~', // End: park on the last page (pinned rows included)
-        kind: 'open-pinned-end',
+        kind: kindPrefix + '-end',
         expect: function(snap, facts) {
           if (facts.curY < 3 || facts.curY > facts.rows - 2 || facts.curX > 1)
             return false;
@@ -2880,7 +2944,7 @@ ListSession.prototype = {
     };
     this._queue.enqueue({
       keys: String(anchor) + '\r',
-      kind: 'open-pinned-jump',
+      kind: kindPrefix + '-jump',
       expect: function(snap, facts) {
         // Same jump-landing fingerprint as open-jump / prefetch anchors
         // (protocol §4 ✚: the bottom row stays empty → never clean-list).
@@ -3735,6 +3799,23 @@ ListSession.prototype = {
     const lines = this._termBuf.listLines || [];
     const text = lines[idx] ? rowToText(lines[idx]) : '';
     return pinnedRowKey(text);
+  },
+
+  // 緩衝裡 pinned key 為 key 的置底列索引；-1 ＝不在緩衝（或 key 為 null）。
+  _pinnedIndexOf: function(key) {
+    if (key == null) return -1;
+    const nums = this._termBuf.listLineNums || [];
+    for (let i = 0; i < nums.length; ++i)
+      if (nums[i] == null && this._pinnedKeyAt(i) === key) return i;
+    return -1;
+  },
+
+  // 落地幀的游標若停在★置底列，回它的 pinned key；否則 null。
+  _landedPinnedKey: function(facts) {
+    if (!facts || facts.cursorRowNum != null || !facts.rowTexts) return null;
+    const t = facts.rowTexts[facts.curY] || '';
+    if (t.indexOf('★') < 0 || !isPinnedListRow(t)) return null;
+    return pinnedRowKey(t);
   },
 
   _selectLastNumbered: function() {

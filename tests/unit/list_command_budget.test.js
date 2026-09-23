@@ -161,6 +161,26 @@ function collectLegs() {
     enqueued[enqueued.length - 1].onDone({}); // 最後一步 → open-enter
     push("open-pinned", enqueued);
   }
+  // 置底列選取的 cursor-relative 入口：共用 _enqueuePinnedCursorSync 的三腿，
+  // 走完後才排上各自的鍵（list_pinned_cursor_sync.test.js 守行為，這裡守預算）。
+  for (const [label, run] of [
+    ["passthrough-pinned", (s) => s._beginPassthroughBytes("c")],
+    ["inplace-pinned", (s) => s._beginInplaceTransaction("t")],
+    ["leave-pinned", (s) => s._beginLeave()],
+  ]) {
+    const { s, enqueued } = makeSession({ count: 40, pinned: 1 });
+    s._selectedNum = null;
+    s._selectedPinnedKey = s._pinnedKeyAt(40);
+    run(s);
+    enqueued[0].onDone({}); // *-pinned-jump → *-pinned-end
+    const end = enqueued[1];
+    const rowTexts = new Array(24).fill("");
+    rowTexts[7] = PINNED_ROW;
+    expect(end.expect({}, { curY: 5, curX: 0, rows: 24, rowTexts })).toBe(true);
+    end.onDone({}); // → *-pinned-step ×2
+    enqueued[enqueued.length - 1].onDone({}); // 最後一步 → 該入口自己的鍵
+    push(label, enqueued);
+  }
   return legs;
 }
 
@@ -170,13 +190,23 @@ describe("列表好讀：機器鍵的 \\f 契約與快速失敗預算", () => {
   test("每個入口點都真的排了指令（收集器本身別靜默失效）", () => {
     const kinds = [...new Set(legs.map((l) => l.cmd.kind))].sort();
     expect(kinds).toEqual([
+      "inplace-pinned-end",
+      "inplace-pinned-jump",
+      "inplace-pinned-step",
       "jump-end",
       "jump-home",
       "jump-number",
       "leave-board",
+      "leave-pinned-end",
+      "leave-pinned-jump",
+      "leave-pinned-step",
       "leave-sync-jump",
+      "native-inplace",
       "native-input",
       "native-key",
+      "native-pinned-end",
+      "native-pinned-jump",
+      "native-pinned-step",
       "native-sync-jump",
       "open-enter",
       "open-jump",
@@ -192,7 +222,8 @@ describe("列表好讀：機器鍵的 \\f 契約與快速失敗預算", () => {
     const jumps = legs.filter((l) => /^[0-9]+\r$/.test(l.cmd.keys));
     // 2026-09-05：jump-end／jump-home 從 99999999\r／1\r 改成原生 End／Home
     // （下一條測試接手），所以這裡從 9 腿降到 7 腿。
-    expect(jumps.length).toBe(7); // 入口數 × 各自的 sync/jump 腿
+    // 2026-09-23：置底列的 passthrough／inplace／leave 各一條 *-pinned-jump ⇒ 10。
+    expect(jumps.length).toBe(10); // 入口數 × 各自的 sync/jump 腿
     for (const { label, cmd } of jumps)
       expect([label, cmd.kind, cmd.fullRepaint]).toEqual([label, cmd.kind, true]);
   });
@@ -205,8 +236,11 @@ describe("列表好讀：機器鍵的 \\f 契約與快速失敗預算", () => {
       (l) => l.cmd.keys === '\x1b[1~' || l.cmd.keys === '\x1b[4~'
     );
     expect(natives.map((l) => l.cmd.kind).sort()).toEqual([
+      "inplace-pinned-end",
       "jump-end",
       "jump-home",
+      "leave-pinned-end",
+      "native-pinned-end",
       "open-pinned-end",
     ]);
     for (const { label, cmd } of natives)
