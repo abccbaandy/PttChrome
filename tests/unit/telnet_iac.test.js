@@ -85,3 +85,103 @@ describe("接收端：IAC IAC 還原成一個資料位元組", () => {
     expect(got.join("")).toBe("a\xffb");
   });
 });
+
+// 防閒置／連線保持：IAC DO TIMING-MARK（RFC 860）。PTT 站方公告（PttCurrent
+// 2026-09-23）＋ pttbbs common/sys/telnet.c IAC_WAIT_OPT default 分支：未知 option
+// 的 DO 回 WONT，位元組在 telnet 層就被吃掉、不進 vkey ⇒ 不影響畫面／輸入狀態。
+describe("TIMING-MARK（防閒置 keep-alive）", () => {
+  const WONT = "\xfc";
+  const DONT = "\xfe";
+  const TM = "\x06";
+
+  it("sendTimingMark() 線上恰為 FF FD 06（不加倍 IAC、不動 vtkbd 推算狀態）", () => {
+    const { conn, wire } = makeConn();
+    conn.send("\x1b"); // 懸空 ESC：TM 不該化解或改變它
+    const before = conn._vkState;
+    const sentBefore = wire();
+    conn.sendTimingMark();
+    expect(wire().slice(sentBefore.length)).toBe(IAC + DO + TM);
+    expect(conn._vkState).toBe(before);
+  });
+
+  it("收到 IAC WONT TM：不當資料、不回覆", () => {
+    const { conn, socket, wire } = makeConn();
+    const got = [];
+    conn.addEventListener("data", (e) => got.push(e.detail.data));
+    feed(socket, IAC + WONT + TM);
+    expect(got).toEqual([]);
+    expect(wire()).toBe("");
+  });
+
+  it("收到 IAC WILL TM：不當資料、也不回 IAC DONT TM", () => {
+    const { conn, socket, wire } = makeConn();
+    const got = [];
+    conn.addEventListener("data", (e) => got.push(e.detail.data));
+    feed(socket, IAC + WILL + TM);
+    expect(got).toEqual([]);
+    expect(wire()).not.toContain(IAC + DONT + TM);
+    expect(wire()).toBe("");
+  });
+
+  it("只含協商 bytes 的封包也更新 lastRecvAt（WONT TM 就是這種封包）", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1000);
+      const { conn, socket } = makeConn();
+      vi.setSystemTime(5000);
+      feed(socket, IAC + WONT + TM);
+      expect(conn.lastRecvAt).toBe(5000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("任何送出都更新 lastSendAt", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(2000);
+      const { conn } = makeConn();
+      vi.setSystemTime(7000);
+      conn.send("a");
+      expect(conn.lastSendAt).toBe(7000);
+      vi.setSystemTime(9000);
+      conn.sendTimingMark();
+      expect(conn.lastSendAt).toBe(9000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("abort()：半開斷線時立刻收攤", () => {
+  it("關 socket 並立即 dispatch 一次 close；之後 socket 遲到的 close 不再觸發", () => {
+    const { conn, socket } = makeConn();
+    socket.close = vi.fn();
+    let closes = 0;
+    conn.addEventListener("close", () => closes++);
+    conn.abort();
+    expect(socket.close).toHaveBeenCalledTimes(1);
+    expect(closes).toBe(1);
+    socket.dispatchEvent(new CustomEvent("close"));
+    expect(closes).toBe(1);
+  });
+
+  it("abort 之後遲到的資料不再往上送", () => {
+    const { conn, socket } = makeConn();
+    socket.close = () => {};
+    const got = [];
+    conn.addEventListener("data", (e) => got.push(e.detail.data));
+    conn.abort();
+    feed(socket, "late");
+    expect(got).toEqual([]);
+  });
+
+  it("正常 close 也只 dispatch 一次", () => {
+    const { conn, socket } = makeConn();
+    let closes = 0;
+    conn.addEventListener("close", () => closes++);
+    socket.dispatchEvent(new CustomEvent("close"));
+    socket.dispatchEvent(new CustomEvent("close"));
+    expect(closes).toBe(1);
+  });
+});

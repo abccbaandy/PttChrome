@@ -229,16 +229,22 @@ Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，�
 就是 false）⇒ 每一次用 Esc 關掉浮層都會有一個裸 ESC 上線。懸空的 ESC 態是常態不是例外。
 
 修法＝送出端鏡像這個狀態機（`src/js/vtkbd_send_state.js`），而且**界線是送出入口不是
-位元組內容**：`conn.send`／`convSend`（CommandQueue／`setBBSCmd`／anti-idle／`sendData`
+位元組內容**：`conn.send`／`convSend`（CommandQueue／`setBBSCmd`／`sendData`
 等機器路徑）停在 `ESC` 態就一律補一個 ESC 化解；`conn.sendUserKey`／`convSendUserKey`
 （只有 `term_view._send`／`_convSend` 會叫）才保留 ESC 組合鍵、維持原本的窄條件。
 守護 `tests/unit/vtkbd_send_state.test.js`、`telnet_esc_guard.test.js`、
 `user_key_send_wiring.test.js`（靜態掃描入口）。
 
-**Anti-idle 是守門攔不掉的那一個**：`ANTI_IDLE_STR = ''` 從 `NORMAL` 送出，
-第二個 ESC 被吃成 esc_arg ⇒ 實際產生**一個 `KEY_ESC`**。落在型別選單那一格就是上面
-推論 1 的災情，而送出期間使用者盯著遮罩不動、`idleTime` 一路累積，正好最容易觸發 ⇒
-改成序列化操作進行中就跳過（`serialized_op_gate.js#shouldSkipAntiIdle`）。
+### 1.3 防閒置／連線保持：IAC DO TIMING-MARK（CONFIRMED）
+
+- 送 `FF FD 06`（`TelnetConnection.sendTimingMark`，走 `_sendRaw`、不加倍 IAC、不動 `_vkState`）。
+- server：`common/sys/telnet.c#telnet_handler` IAC_COMMAND `DO` → IAC_WAIT_OPT → option 6 落 `default`
+  → 回 `IAC WONT 6`，回傳非 0 ＝ bytes 從輸入緩衝剔除，**不進 vkey**。站方公告（PttCurrent 2026-09-23）同此。
+- client 收 `WONT 6`／`WILL 6` 一律忽略、**不回 DONT**（`telnet.js` STATE_WILL 的 TIMING_MARK case）。
+- 不用的替代品：按鍵式（ESC ESC／NUL／^L／方向鍵）會進 vkey——ESC ESC 被吃成 esc_arg 產生一個 `KEY_ESC`，
+  落在推文型別選單就是型別靜默變「推」（本專案舊實作的坑）；`IAC NOP`（telnet.c `case NOP`）無回應
+  ⇒ 單向流量、偵測不到半開；`IAC AYT`（`telnet_send_ayt`）回明文 `I'm still alive.` 加 CRLF，污染畫面。
+- 計時與半開斷線判定：`src/js/keep_alive.js`（任何送出重置計時；probe 後 30s 無任何 recv ⇒ `conn.abort()`）。
 
 ## 2. 時序不變量 → client 三推論
 

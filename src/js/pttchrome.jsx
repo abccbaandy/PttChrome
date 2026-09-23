@@ -32,7 +32,8 @@ import { colFromClientX, gridOriginY, rowFromClientY, rowHeight } from './mouse_
 import { encodeClick, encodeWheel } from './mouse_report';
 import { dismissClickAllowed } from './screen_dismiss';
 import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
-import { serializedOpHint, shouldSkipAntiIdle } from './serialized_op_gate';
+import { serializedOpHint } from './serialized_op_gate';
+import { decideKeepAlive, KEEP_ALIVE_TIMEOUT_MS } from './keep_alive';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { readValuesWithDefault } from './pref_storage';
 import {
@@ -91,7 +92,6 @@ function isClickableTarget(el) {
   return isAnchorTarget(el) || isOwnControlTarget(el);
 }
 
-const ANTI_IDLE_STR = '\x1b\x1b';
 
 export const App = function() {
 
@@ -181,8 +181,10 @@ export const App = function() {
   this.debugRecorder = null;
 
   //new pref - start
-  this.antiIdleTime = 0;
-  this.idleTime = 0;
+  // 單位是毫秒（pref 存秒，onValuesPrefChange 乘 1000）；對應 DEFAULT_PREFS.antiIdleTime。
+  this.antiIdleTime = 180 * 1000;
+  // 送出 keep-alive probe 的時間；null＝沒有待回應的 probe（見 antiIdle）。
+  this._keepAliveProbeAt = null;
   //new pref - end
 
   // for picPreview
@@ -394,7 +396,7 @@ App.prototype.onConnect = function() {
   this.debugRecorder?.log('app.onConnect');
   this.connectState = 1;
   this.updateTabIcon('connect');
-  this.idleTime = 0;
+  this._keepAliveProbeAt = null;
   var self = this;
   this.timerEverySec = setTimer(true, function() {
     self.antiIdle();
@@ -453,7 +455,7 @@ App.prototype.onClose = function() {
   this.cancelMbTimer();
 
   this.connectState = 2;
-  this.idleTime = 0;
+  this._keepAliveProbeAt = null;
 
   const onDismiss = () => {
     unmountFrom(container);
@@ -961,24 +963,29 @@ App.prototype.setTermSize = function(cols, rows) {
   }
 };
 
+// 防閒置／連線保持（每秒一次，onConnect 的 timerEverySec）。送的是 IAC DO
+// TIMING-MARK，在 server 的 telnet 層就被吃掉、不進 vkey ⇒ 插在 AID 跳文／長推文
+// 這類序列化操作中間也不會變成按鍵，不需要守門。決策與半開斷線判定見 keep_alive.js。
 App.prototype.antiIdle = function() {
-  if (this.antiIdleTime && this.idleTime > this.antiIdleTime) {
-    if (this.connectState == 1) {
-      // 序列化操作進行中一個 byte 都不能插進去——ANTI_IDLE_STR 的第二個 ESC 會
-      // 在 server 端變成一個 KEY_ESC，落在推文型別選單那一格就是型別靜默變「推」。
-      // 完整推導見 serialized_op_gate.js#shouldSkipAntiIdle。
-      if (shouldSkipAntiIdle({
-        inFlightKind: this.commandQueue && this.commandQueue.inFlightKind,
-        longPushBusy: !!(this.longPush && this.longPush.busy),
-        aidNavActive: !!(this.aidNavigation && this.aidNavigation.active)
-      }))
-        return;
-      this.conn.send(ANTI_IDLE_STR);
-      this.idleTime = 0;
-    }
-  } else {
-    if (this.connectState == 1)
-      this.idleTime += 1000;
+  if (this.connectState != 1 || !this.conn) return;
+  var now = Date.now();
+  var decision = decideKeepAlive({
+    now: now,
+    intervalMs: this.antiIdleTime,
+    timeoutMs: KEEP_ALIVE_TIMEOUT_MS,
+    lastSendAt: this.conn.lastSendAt,
+    lastRecvAt: this.conn.lastRecvAt,
+    probeAt: this._keepAliveProbeAt
+  });
+  if (decision.action === 'probe') {
+    this.conn.sendTimingMark();
+    this._keepAliveProbeAt = now;
+    this.debugRecorder?.log('keepAlive.probe');
+  } else if (decision.action === 'dead') {
+    console.info('pttchrome keep-alive: no response, closing');
+    this.debugRecorder?.log('keepAlive.dead', { probeAt: this._keepAliveProbeAt });
+    // abort 會同步 dispatch close → onClose（斷線提示、重連入口）。
+    this.conn.abort();
   }
 };
 

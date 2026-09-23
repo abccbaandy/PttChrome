@@ -34,6 +34,8 @@ const TERM_TYPE = '\x18';
 const IS = '\x00';
 const SEND = '\x01';
 const NAWS = '\x1f';
+// RFC 860。防閒置／連線保持用：見 sendTimingMark。
+const TIMING_MARK = '\x06';
 
 // state
 const STATE_DATA=0;
@@ -60,6 +62,13 @@ export function TelnetConnection(socket) {
   this._vkStatePrev = VK_NORMAL;
 
   this.termType = 'VT100';
+
+  // 最後一次送出／收到任何 bytes（含協商）的時間，給防閒置判斷（keep_alive.js）。
+  // 建構當下就起算：連線剛建立視為剛有過往返。
+  this.lastSendAt = Date.now();
+  this.lastRecvAt = this.lastSendAt;
+  // close 只 dispatch 一次：abort() 會先自己發，之後 socket 遲到的 close 要吞掉。
+  this._closed = false;
 }
 
 Event.mixin(TelnetConnection.prototype);
@@ -69,10 +78,14 @@ TelnetConnection.prototype._onOpen = function(e) {
 };
 
 TelnetConnection.prototype._onClose = function(e) {
+  if (this._closed) return;
+  this._closed = true;
   this.dispatchEvent(new CustomEvent('close'));
 };
 
 TelnetConnection.prototype._onDataAvailable = function(e) {
+  if (this._closed) return;
+  this.lastRecvAt = Date.now();
   var str = e.detail.data;
   var data='';
   var count = str.length;
@@ -128,6 +141,10 @@ TelnetConnection.prototype._onDataAvailable = function(e) {
         case ECHO:
         case SUPRESS_GO_AHEAD:
           this._sendRaw( IAC + DO + ch );
+          break;
+        // 我們送 DO TM 的回應（PTT 回 WONT，走下面 STATE_WONT；有的 server 回
+        // WILL）。直接忽略、不回 DONT：站方公告要求，免得每次 keep-alive 多一趟往返。
+        case TIMING_MARK:
           break;
         default:
           this._sendRaw( IAC + DONT + ch );
@@ -185,7 +202,7 @@ TelnetConnection.prototype._dispatchData = function(data) {
   }));
 };
 
-// 機器送出（CommandQueue／App.setBBSCmd／anti-idle／App.sendData）：懸空的 ESC 態
+// 機器送出（CommandQueue／App.setBBSCmd／App.sendData）：懸空的 ESC 態
 // 一律化解。ESC 組合鍵的保護只留給 sendUserKey/convSendUserKey ——
 // 界線是**送出入口**，不是位元組內容，完整推導見 vtkbd_send_state.js 檔頭。
 TelnetConnection.prototype.send = function(str) {
@@ -227,9 +244,33 @@ TelnetConnection.prototype._sendEscaped = function(str, opts) {
 
 TelnetConnection.prototype._sendRaw = function(data) {
   if (data) {
+    this.lastSendAt = Date.now();
     this.socket.send(data);
   }
 }
+
+// 防閒置／連線保持：IAC DO TIMING-MARK（RFC 860）。PTT 在 telnet 層就把它吃掉並回
+// IAC WONT TM（pttbbs common/sys/telnet.c IAC_WAIT_OPT 的 default 分支），**不進
+// vkey** ⇒ 不影響畫面、游標、選單或輸入狀態；又有回應 ⇒ 雙向都有封包，中間設備的
+// 逾時計時器會刷新，沒回應則可判定半開斷線（見 keep_alive.js）。
+// 按鍵式（ESC ESC／NUL／^L）會變成真按鍵；IAC NOP 沒回應；IAC AYT 會回明文污染畫面。
+// 必須走 _sendRaw：0xFF 是命令不是資料，加倍就廢了；也不可動 _vkState（vtkbd 看不到它）。
+TelnetConnection.prototype.sendTimingMark = function() {
+  this._sendRaw(IAC + DO + TIMING_MARK);
+};
+
+// 半開斷線（keep-alive 沒回應）時收攤：死掉的 TCP 上 WebSocket 的 close handshake
+// 可能要很久才回，所以關 socket 後立刻自己發 close，走 App 既有的斷線流程；之後
+// socket 遲到的 close／data 由 _closed 吞掉。
+TelnetConnection.prototype.abort = function() {
+  if (this._closed) return;
+  try {
+    if (this.socket.close) this.socket.close();
+  } catch (e) {
+    // socket 已壞：照樣往下收攤
+  }
+  this._onClose();
+};
 
 TelnetConnection.prototype.convSend = function(unicode_str) {
   this._convSendEscaped(unicode_str);

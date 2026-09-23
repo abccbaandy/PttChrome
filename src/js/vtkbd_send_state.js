@@ -35,7 +35,7 @@
 // telnet.js 據此分成 `send`/`convSend`（預設）與 `sendUserKey`/`convSendUserKey`，
 // 而後兩個**只有 term_view._send / _convSend 會叫**（守護
 // tests/unit/user_key_send_wiring.test.js）。送出到線路的全部出口只有六處：
-// CommandQueue、App.sendData、anti-idle、App.setBBSCmd、**App.sendMachineBytes**
+// CommandQueue、App.sendData、App.setBBSCmd、**App.sendMachineBytes**
 // （以上機器）＋ term_view 那兩個（真鍵盤／IME）。新增送出路徑時預設就是安全的那一邊。
 //
 // `App.sendMachineBytes`（2026-09-20 補）＝機器狀態機的 byte 出口，目前的消費者是好讀

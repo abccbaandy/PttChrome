@@ -1132,7 +1132,7 @@ export const en_US = {
 
   // tooltips
   "tooltip_antiIdleTime": {
-    "message": "Input 0 to disable this feature."
+    "message": "When no key has been sent for this long, send a keep-alive packet that does not affect the screen, so routers / mobile networks do not drop the idle connection. No response within 30 seconds is treated as disconnected. Default: 180 seconds. Input 0 to disable."
   },
   "tooltip_fontFace": {
     "message": "Separate each font with a comma, start with the desired font and end with a generic font."

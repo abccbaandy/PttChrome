@@ -46,7 +46,7 @@ export const DEFAULT_PREFS = {
   // 終端機提示音：PTT 送 BEL（^G）時嗶一聲（captcha／棋類／水球等）。預設開啟，
   // 與真實終端機一致；bell.js 有 150ms 節流，連發不會變成噪音。
   enableBell: true,
-  antiIdleTime: 0,
+  antiIdleTime: 180,
   lineWrap: 78,
   // Easy reading: pressing this key jumps to the post bottom and switches back to
   // native mode (so native in-post search '/' becomes usable). Toggle off to let the

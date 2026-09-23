@@ -339,10 +339,9 @@ term.ptt.cc 送來的實錄（`ptt-debug-20260917-221112` t=9736，`\e[1m` 已�
 15. **型別每次開框都重設為「推」**。以前刻意不重置，於是上次選的噓會沿用到下一次開框；
     按 X 的預期一律是推，而噓錯了收不回來（PTT 沒有撤回 API）。禁噓板那條 effect
     （`booAllowed` false 且 type==='boo' → 推）照舊並存。
-16. **序列進行中不可以有第三者往線路送 byte**，`serializedOpHint` 之外還有一個容易漏的：
-    **anti-idle**。`''` 在 server 端會實際產生一個 `KEY_ESC`，落在型別選單那一格
-    就是 `vkey()` 讀到非數字 ⇒ 型別靜默變「推」、畫面照樣推進 ⇒ 整段用錯的型別送出。
-    守門在 `serialized_op_gate.js#shouldSkipAntiIdle`（`App.antiIdle` 呼叫）。
+16. **序列進行中不可以有第三者往線路送 byte**：`serializedOpHint` 管四條使用者入口。
+    anti-idle **不需要**守門：已改送 `IAC DO TIMING-MARK`，server 在 telnet 層就吃掉
+    （`common/sys/telnet.c` IAC_WAIT_OPT default 分支），不進 vkey（見 `docs/pttbbs-screen-protocol.md` §1.3）。
 17. **序列的每一步送完都要讓 server 的 vtkbd 回到 `VK_NORMAL`**。這是「機器送出一律
     化解懸空 ESC 態」那條守門能安全的前提：化解只會發生在序列的**第一個**命令（人在
     pager／列表，多出來的 `KEY_ESC` 是 no-op），不會落在型別選單或 ◆ 橫幅那兩格。
