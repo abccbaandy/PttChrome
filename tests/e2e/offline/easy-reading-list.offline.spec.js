@@ -134,9 +134,17 @@ async function waitState(page, pred, timeout = 15000) {
   throw new Error('waitState 超时：' + JSON.stringify(last));
 }
 
-// 门控机制 smoke：不开 list 好读（pref 全预设 off），直接用键盘 / conn.send 触发
+// 门控机制 smoke：不开 list 好读，直接用键盘 / conn.send 触发
 // 门控 map，验证 cassette 每个 step 都喂得进真 parser、终局画面回到看板列表。
 // 这条守的是 replayListCassette + 录制器产物本身 —— 视窗逻辑坏掉不影响它。
+//
+// 两个「按键被好读接走 ⇒ 送出的 bytes 对不上门控 ⇒ 永远喂不到下一步、等到
+// timeout」的竞态，都是**时红时绿**（CI 与本机 --repeat-each 并行都实际红过）：
+//  1. enableEasyReadingList 2026-09 起预设开，engage 是非同步的 —— 抢在某颗 PageUp
+//     之前 engage 的话，那颗键变成 ListSession 的本地 pgup ⇒ 必须显式关掉。
+//  2. 文章好读：waitFed 只代表 recv 已喂进 parser，不代表好读已经退场。退文后紧接的
+//     PageUp 若赶在 buf.startedEasyReading 清掉之前，会被 easyReading._onKeyDown
+//     当成文章内捲动吃掉（preventDefault、零 byte）⇒ 按键前先等它退场。
 test.describe('replayListCassette 门控机制', () => {
   test.skip(!nav, '缺 cchat-list-nav cassette（yarn record:cassette 先录一次）');
 
@@ -144,6 +152,7 @@ test.describe('replayListCassette 门控机制', () => {
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, nav);
       // start step 已喂：画面应是看板列表。
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
@@ -182,6 +191,9 @@ test.describe('replayListCassette 门控机制', () => {
       await waitFed(8);
       await sendJump(jumps[3].num); // jumpsame
       await waitFed(9);
+      // 文章好读退场才轮得到原生 PageUp（见 describe 上方第 2 点）。这一帧底列
+      // 空白、pageState 仍是 0，所以等的是好读旗标而不是 pageState。
+      await page.waitForFunction(() => !window.__app.buf.startedEasyReading);
       await page.keyboard.press('PageUp'); // 最后一卷 pageup
       await page.waitForFunction(() => window.__replay && window.__replay.done);
 
