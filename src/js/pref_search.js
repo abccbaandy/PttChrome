@@ -86,6 +86,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_enableListNativeAutoResume",
     },
     {
+      key: "easyReadingBrowserFind",
+      titleKey: "options_easyReadingBrowserFind",
+      tooltipKey: "tooltip_easyReadingBrowserFind",
+    },
+    {
       key: "easyReadingEndSwitchNative",
       titleKey: "options_easyReadingEndSwitchNative",
     },

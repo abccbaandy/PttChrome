@@ -642,6 +642,12 @@
   "options_easyReadingEndSwitchNative": {
     "message": "好讀模式按熱鍵跳到文末並切回原生模式"
   },
+  "options_easyReadingBrowserFind": {
+    "message": "好讀模式用瀏覽器搜尋文章（Ctrl+F／⌘F）"
+  },
+  "tooltip_easyReadingBrowserFind": {
+    "message": "好讀文章裡按 Ctrl+F 交給瀏覽器的尋找功能，按 / 會提示改用它（PTT 原生搜尋會從文末起找，好讀下不準）。翻頁請改用空白鍵、PgDn 或 Alt+F。關掉＝Ctrl+F 翻頁、/ 送 PTT。"
+  },
   "options_easyReadingEndSwitchKey": {
     "message": "切回原生模式的熱鍵"
   },
@@ -1023,6 +1029,9 @@
   },
   "notification_deepLinkHandoffTitle": {
     "message": "已在這個分頁開啟連結"
+  },
+  "hint_easyReadingUseBrowserFind": {
+    "message": "好讀模式請按 %s 使用瀏覽器搜尋"
   },
   "hint_deepLinkHandoffReceived": {
     "message": "已從外部連結接手"

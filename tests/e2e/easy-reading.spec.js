@@ -8,6 +8,7 @@ const {
   gotoBoard,
   getPref,
   readListCandidates,
+  pickListArticleWithComments,
   openArticleByNumber,
   waitEasyReadingComplete,
 } = require('./helpers/ptt');
@@ -380,6 +381,93 @@ test.describe.serial('好讀模式', () => {
     } catch (err) {
       console.log('\n=== console ===\n' + logs.slice(-30).join('\n'));
       await page.screenshot({ path: 'tests/e2e/__screenshots__/er-help-error.png', fullPage: true });
+      throw err;
+    }
+  });
+  // seekBack（:N 指定行往回跳）＋ pref easyReadingBrowserFind。
+  // 往回跳的舊症狀：_accEndRow 倒退 ⇒ 自動翻頁把已累積的內容重複接到長頁尾巴、畫面被捲走。
+  // 修後：累積頁一列不變、捲到跳轉目的地、PTT 指標一次 realign 回尾端。
+  // 同一篇順便驗 `/` 改成提示（不送 PTT、不進 functionMode）與 Ctrl+F 不送 ^F。
+  // 純邏輯守護：tests/unit/easy_reading_seek_back.test.js、easy_reading_browser_find.test.js。
+  test('好讀模式 :N 往回跳不重複累積；/ 提示改用瀏覽器搜尋', async ({ shared }) => {
+    test.setTimeout(180000);
+    const { page, logs } = shared;
+    logs.length = 0;
+    const rowTexts = () => page.evaluate(() =>
+      window.__app.buf.pageLines.map((r) => r.map((c) => c.ch).join('').replace(/\s+$/, ''))
+    );
+    try {
+      await resetSession(page);
+      await applyPrefs(page, { enableEasyReading: true, easyReadingBrowserFind: true });
+      await gotoBoard(page, 'C_Chat');
+
+      // 需要 `:5` 落地頁（第 5~27 行）整頁都在已累積範圍內 ⇒ 文章至少兩頁多。推文數多
+      // 的通常夠長（開文前就能從列表挑，見 pickListArticleWithComments）；不夠長就退回
+      // 列表往舊翻一頁再挑。
+      let ok = false;
+      for (let attempt = 0; attempt < 3 && !ok; ++attempt) {
+        const cand = await pickListArticleWithComments(page, { min: 20, max: 99, pages: 4 });
+        if (!cand) break;
+        await openArticleByNumber(page, cand.num);
+        const acc = await waitEasyReadingComplete(page, { timeout: 40000 });
+        const n = await page.evaluate(() => window.__app.buf.pageLines.length);
+        console.log(`article ${cand.num} (push ${cand.push}): rows=${acc.rows} end=${acc.reachedEnd} pageLines=${n}`);
+        if (acc.reachedEnd && n >= 50) { ok = true; break; }
+        await sendKey(page, 'ArrowLeft');
+        await page.waitForFunction(() => window.__app.buf.pageState === 2, null, { timeout: 10000 });
+        await sendKey(page, 'PageUp');
+        await page.waitForTimeout(800);
+      }
+      test.skip(!ok, '找不到夠長且累積得完的文章');
+
+      const before = await rowTexts();
+      const accEnd = await page.evaluate(() => window.__app.view._accEndRow);
+
+      // ---- `/`：提示、不送 PTT、不進 functionMode ----
+      const bottomRow = () => page.evaluate(() => {
+        const b = window.__app.buf;
+        return b.getRowText(b.rows - 1, 0, b.cols);
+      });
+      await sendKey(page, 'Slash');
+      await expect(page.locator('.ListHint')).toContainText(/Ctrl\+F|⌘F/);
+      await page.waitForTimeout(1200); // 若 '/' 真的送出，PTT 這段時間內就會畫出搜尋 prompt
+      expect(await page.evaluate(() => window.__app.easyReading._functionMode)).toBe(false);
+      expect(await bottomRow()).toContain('目前顯示'); // 仍是狀態列，不是「搜尋文字:」
+
+      // ---- Ctrl+F：不送 ^F（pmore 的 ^F 會移頁指標 ⇒ 狀態列行號會變） ----
+      const sigBefore = await page.evaluate(() => window.__app.easyReading._currentPageSignature());
+      // 不按 Escape 收尋找列：headless 沒有 UI，而好讀下 Escape 會以 ESC 位元組送進 pmore。
+      await sendKey(page, 'Control+f');
+      await page.waitForTimeout(1500);
+      expect(await page.evaluate(() => window.__app.easyReading._currentPageSignature())).toBe(sigBefore);
+
+      // ---- :5 往回跳 ----
+      await sendKey(page, ':');
+      await page.waitForFunction(() => window.__app.easyReading._functionMode === true, null, { timeout: 5000 });
+      await typeLine(page, '5');
+      // 等 resume（functionMode 退出）且 realign 回到尾端（_accEndRow 不變、狀態列回到文末）
+      await page.waitForFunction(
+        (end) => {
+          const a = window.__app;
+          return a.easyReading._functionMode === false &&
+            !a.buf.easyReadingHealInFlight && a.view._accEndRow === end;
+        },
+        accEnd,
+        { timeout: 15000 }
+      );
+      await page.waitForTimeout(2500); // 給自動翻頁機會犯錯（修前會在這段時間重複 append）
+
+      const after = await rowTexts();
+      expect(after.length).toBe(before.length);
+      expect(after).toEqual(before);
+      expect(await page.evaluate(() => window.__app.view._accEndRow)).toBe(accEnd);
+      // 捲到跳轉目的地：視窗頂端附近（前幾列之內）
+      const top = await page.evaluate(() => window.__app.view.mainDisplay.scrollTop);
+      const chh = await page.evaluate(() => window.__app.view.chh);
+      expect(top).toBeLessThan(chh * 12);
+    } catch (err) {
+      console.log('\n=== console ===\n' + logs.slice(-40).join('\n'));
+      await page.screenshot({ path: 'tests/e2e/__screenshots__/er-seekback-error.png', fullPage: true });
       throw err;
     }
   });

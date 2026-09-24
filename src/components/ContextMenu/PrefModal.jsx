@@ -716,6 +716,16 @@ export const PrefModal = ({
                   {i18n("tooltip_enableListNativeAutoResume")}
                 </Text>
                 <PrefCheckbox
+                  name="easyReadingBrowserFind"
+                  checked={values.easyReadingBrowserFind}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_easyReadingBrowserFind")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_easyReadingBrowserFind")}
+                </Text>
+                <PrefCheckbox
                   name="easyReadingEndSwitchNative"
                   checked={values.easyReadingEndSwitchNative}
                   onChange={onCheckboxChange}

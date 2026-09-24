@@ -53,6 +53,10 @@ export const DEFAULT_PREFS = {
   // key fall through to the native terminal instead. Key value is an e.key string.
   easyReadingEndSwitchNative: true,
   easyReadingEndSwitchKey: "F8",
+  // 好讀文章的搜尋交給瀏覽器：Ctrl+F 不攔截（開瀏覽器尋找列）、`/` 改顯示提示。
+  // 關掉＝舊行為（Ctrl+F 本地翻頁、`/` 送 PTT 原生搜尋）。理由見
+  // easy_reading.js#easyReadingFindKeyAction。
+  easyReadingBrowserFind: true,
   // AID 跳文後「返回原文」的快捷鍵（e.key 字串）。預設 F9：F 鍵送不到 PTT
   // （term_keyboard 的 KeyMap 沒有它們，keyEventToBytes 回 null），而 Chrome 已
   // 佔用 F1/F3/F5/F6/F7/F10/F11/F12，F8 又給了 easyReadingEndSwitchKey。

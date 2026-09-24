@@ -31,3 +31,9 @@ export function isMacPlatform(nav) {
 export function modEnterShortcutLabel(nav) {
   return isMacPlatform(nav) ? '⌘Enter' : 'Ctrl+Enter';
 }
+
+// 瀏覽器「尋找」的快捷鍵提示（好讀文章按 `/` 時的提示用，見 easy_reading.js
+// #easyReadingFindKeyAction）。Mac 是 ⌘F；其他平台 Ctrl+F。
+export function findShortcutLabel(nav) {
+  return isMacPlatform(nav) ? '⌘F' : 'Ctrl+F';
+}

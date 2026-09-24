@@ -220,6 +220,9 @@ function pagingHarness({
     _clearWatchdog: EasyReading.prototype._clearWatchdog,
     _maybeSendPageDown: EasyReading.prototype._maybeSendPageDown,
     _healAtLine: EasyReading.prototype._healAtLine,
+    _seekLine: EasyReading.prototype._seekLine,
+    _realignAfterSeek: EasyReading.prototype._realignAfterSeek,
+    _needsRealign: EasyReading.prototype._needsRealign,
     reenterFromTop: EasyReading.prototype.reenterFromTop,
     enterEasyReading: function() {
       this._enabled = true;
@@ -551,6 +554,58 @@ describe("送不出去就等同 blocked：交易狀態是 commit 不是樂觀寫
     expect(h.ctx._termBuf.easyReadingHealInFlight).toBe(true);
     expect(h.ctx._inFlightKeys).toBe(":42\r");
     expect(vi.getTimerCount()).toBe(1);
+  });
+
+  // seekBack：functionMode 裡 goto／搜尋把 PTT 頁指標往回移到已累積範圍（term_view
+  // 升 easyReadingSeekBack）。一次 `:<accEndRow>\r` 把指標拉回尾端，而不是從落地處
+  // 一頁一頁 PageDown 走回去；這不是掉頁，不得吃 HEAL_GOTO_MAX 額度。
+  test("seekBack realign：送 :<accEndRow>，建立交易、不吃自癒額度", () => {
+    const h = pagingHarness();
+    h.ctx._view._accEndRow = 180;
+    h.ctx._termBuf.easyReadingSeekBack = { row: 40, landingStart: 41 };
+    expect(h.ctx._needsRealign()).toBe(true);
+    h.ctx._realignAfterSeek();
+    expect(h.sent).toEqual([":180\r"]);
+    expect(h.ctx._termBuf.easyReadingHealInFlight).toBe(true);
+    expect(h.ctx._inFlightKeys).toBe(":180\r");
+    expect(h.ctx._healGotoCount).toBe(0);
+    expect(h.ctx._needsRealign()).toBe(false);
+    expect(vi.getTimerCount()).toBe(1);
+    // 冪等：同一筆不會送第二次（P4）
+    h.ctx._realignAfterSeek();
+    expect(h.sent).toEqual([":180\r"]);
+  });
+
+  test("seekBack realign：線路忙 ⇒ 延後（旗標留著），不丟", () => {
+    const h = pagingHarness({ inFlightKind: "open-enter" });
+    h.ctx._view._accEndRow = 180;
+    h.ctx._termBuf.easyReadingSeekBack = { row: 40, landingStart: 41 };
+    h.ctx._realignAfterSeek();
+    expect(h.sent).toEqual([]);
+    expect(h.ctx._needsRealign()).toBe(true);
+    expect(h.ctx._inFlightSig).toBe(null);
+  });
+
+  test("seekBack realign：送不出去（未連線）⇒ 不留假 in-flight，旗標留著下次再試", () => {
+    const h = pagingHarness({ conn: false });
+    h.ctx._view._accEndRow = 180;
+    h.ctx._termBuf.easyReadingSeekBack = { row: 40, landingStart: 41 };
+    h.ctx._realignAfterSeek();
+    expect(h.sent).toEqual([]);
+    expect(h.ctx._termBuf.easyReadingHealInFlight).toBe(false);
+    expect(h.ctx._inFlightSig).toBe(null);
+    expect(h.ctx._needsRealign()).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("seekBack realign：已有 seek 在途 ⇒ 不疊送", () => {
+    const h = pagingHarness();
+    h.ctx._view._accEndRow = 180;
+    h.ctx._termBuf.easyReadingHealInFlight = true;
+    h.ctx._termBuf.easyReadingSeekBack = { row: 40, landingStart: 41 };
+    h.ctx._realignAfterSeek();
+    expect(h.sent).toEqual([]);
+    expect(h.ctx._needsRealign()).toBe(false);
   });
 
   test("reenterFromTop 送不出去：不留假 in-flight（模式切換本身仍要發生）", () => {

@@ -474,6 +474,8 @@ describe("EasyReading._onKeyDownProcessUI End handling", () => {
   // 說明(h) etc. dead in easy reading). That list is removed: they now fall through to
   // functionMode like r/X/%/y, so PTT draws the native menu/help and we mirror it LIVE.
   // Guard: each enters functionMode and is NOT preventDefault'd (the key must reach PTT).
+  // `/` 在這裡屬於 pref easyReadingBrowserFind **關閉**的情境（makeER 的 prefs 沒帶
+  // 它）；預設開時 `/` 改成提示，見 easy_reading_browser_find.test.js。
   it("pmore function keys enter functionMode and reach PTT (no preventDefault)", () => {
     for (const key of ["h", "H", "o", "p", "\\", "/", ";", ":", "#", "s", "1", "9", ",", ".", "<", ">"]) {
       const { er } = makeER({

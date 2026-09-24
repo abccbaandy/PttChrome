@@ -761,13 +761,21 @@ export function resolvePageOverlap({ accEndRow, statusStart, kContent, maxK, acc
 // `S' == E + 1` (zero overlap) is tolerated as a continuation: pmore's `if (i < 1) i = 1`
 // guard makes it reachable when a screen displays a single file line.
 //
+// 'backward' (statusEnd < accEndRow) = the PTT page pointer moved BACK into the range we
+// already accumulated — pmore's goto (`:N` line / `;N` page) or search (`/`, n, N) run
+// from functionMode; none of them is bound by P1. It is checked BEFORE the first-page
+// 'restart': jumping back to line 1 of a long article is still a seek, not a new
+// article (a genuinely new article is caught earlier by decideAccumulateBranch's
+// rebuild conditions, which keep their priority).
+//
 // Returns null when there is no status row to judge from (transient half-painted
 // frame) — the caller falls back to its own transient handling.
 export function classifyPageTransition({ accEndRow, statusStart, statusEnd }) {
   if (statusStart == null) return null;
-  if (statusStart === 1 || accEndRow == null) return 'restart';
+  if (accEndRow == null) return 'restart';
   if (statusStart > accEndRow + 1) return 'gap';
   if (statusEnd != null && statusEnd < accEndRow) return 'backward';
+  if (statusStart === 1) return 'restart';
   return 'continuation';
 }
 
@@ -832,7 +840,49 @@ export function decideAccumulateBranch({
   if (!healInFlight && statusStart === 1 && (pendingReset || (kContent === 0 && headerChanged)))
     return 'rebuild';
   if (transition === 'gap') return 'gap';
+  // Seek back into the accumulated range (see classifyPageTransition 'backward'). It
+  // used to fall through to 'append': resolvePageOverlap clamps k to maxK so no row is
+  // added, but the caller then set _accEndRow to this screen's END — moving it
+  // BACKWARDS — and every later PageDown re-appended already-accumulated text to the
+  // tail of the long page. 'seekBack' leaves the accumulation untouched.
+  if (transition === 'backward') return 'seekBack';
   return 'append';
+}
+
+// Where does the screen PTT just painted sit inside the accumulated long page?
+// Used on a seekBack landing (goto / search from functionMode) to scroll the long page
+// to the jump target, and as the safety gate for re-aligning PTT's page pointer: if
+// the screen is NOT found, it may not be the same article and nothing is done.
+//
+// Text only (search highlighting changes attributes, not text). The file-line numbers
+// on the status row are NOT used as the index: with pmore's wrap mode one file line
+// spans several display rows (see resolvePageOverlap), so statusStart-1 is only the
+// hint for which of several identical runs to prefer.
+//
+// Match = the first min(8, screen) rows equal (trailing blanks ignored), truncated at the
+// end of the page, with at least 2 non-blank rows compared — an all-blank run matches
+// everywhere and would scroll to a random place. Returns the row index or -1.
+export function locateScreenInPage({ pageTexts, screenTexts, hintIndex }) {
+  const trim = t => (t || '').replace(/\s+$/, '');
+  const m = Math.min(8, screenTexts.length);
+  if (!m || !pageTexts.length) return -1;
+  const scr = screenTexts.slice(0, m).map(trim);
+  const hint = Math.max(0, Math.min(pageTexts.length - 1, hintIndex || 0));
+  const matchAt = (i) => {
+    let nonBlank = 0;
+    for (let j = 0; j < m && i + j < pageTexts.length; ++j) {
+      if (trim(pageTexts[i + j]) !== scr[j]) return false;
+      if (scr[j].trim() !== '') ++nonBlank;
+    }
+    return nonBlank >= 2;
+  };
+  // Nearest to the hint first: hint, hint+1, hint-1, hint+2, …
+  for (let d = 0; d < pageTexts.length; ++d) {
+    if (hint + d < pageTexts.length && matchAt(hint + d)) return hint + d;
+    if (d > 0 && hint - d >= 0 && matchAt(hint - d)) return hint - d;
+    if (hint + d >= pageTexts.length && hint - d < 0) break;
+  }
+  return -1;
 }
 
 // Build a lower-cased Set from the newline-separated blacklist textarea value.

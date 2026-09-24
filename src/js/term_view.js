@@ -11,7 +11,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
-import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
+import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
@@ -1284,7 +1284,11 @@ TermView.prototype = {
     }
     if (this.useEasyReadingMode && this.buf.startedEasyReading &&
         !this.buf.easyReadingFunctionMode) {
-      this.bbscore.easyReading._onKeyDown(e);
+      // 'browser'＝這個鍵交給瀏覽器（好讀文章的 Ctrl+F 開尋找列）：就此 return，
+      // 不 preventDefault、也不落到下面的 _keyboard 送 ^F 給 PTT。
+      // 見 easy_reading.js#easyReadingFindKeyAction。
+      if (this.bbscore.easyReading._onKeyDown(e) === 'browser')
+        return;
       if (e.defaultPrevented)
         return;
     }
@@ -2403,6 +2407,30 @@ TermView.prototype = {
       this._mirrorStatusRowToFooter();
       return;
     }
+    if (branch === 'seekBack') {
+      // PTT's page pointer moved BACK into what we already have (goto / search from
+      // functionMode). Accumulation stays untouched — pageLines, _accEndRow and
+      // _lastAccumulatedSig all keep describing the accumulated tail, so the paging
+      // machine's baseline cannot regress (the old 'append' route set _accEndRow to
+      // this screen's end and PageDown then re-appended old text to the tail).
+      // Locate the screen in the long page; found ⇒ hand it to EasyReading, which
+      // scrolls there and re-aligns PTT's pointer to _accEndRow in one round trip
+      // (_realignAfterSeek). Not found ⇒ do nothing: later PageDown frames stay
+      // 'backward' (no-op) until they catch up with _accEndRow — slow but idempotent.
+      var pageTexts = this.buf.pageLines.map(rowToText);
+      var landingRow = locateScreenInPage({
+        pageTexts: pageTexts,
+        screenTexts: newTexts || newRows.map(rowToText),
+        hintIndex: result.rowIndexStart - 1
+      });
+      // 已有一筆還沒 realign 的就不覆蓋（同一個落地畫面被強制重繪再進來一次）；
+      // 上一筆已送出 realign 則視為新的一次跳轉。
+      var pendingSeek = this.buf.easyReadingSeekBack;
+      if (landingRow >= 0 && (!pendingSeek || pendingSeek.realigned))
+        this.buf.easyReadingSeekBack = { row: landingRow, landingStart: result.rowIndexStart };
+      this._mirrorStatusRowToFooter();
+      return;
+    }
     if (branch === 'append') {
       // Same article, paged down: append only the genuinely new tail. PTT re-shows
       // the previous screen's bottom at the top of the new one; resolvePageOverlap
@@ -2432,6 +2460,8 @@ TermView.prototype = {
       this._lastAccumulatedSig = result.rowIndexStart + '~' + result.rowIndexEnd;
       // The gap seek landed and its rows are spliced in — drop the gate.
       if (healing) this.buf.easyReadingHealInFlight = false;
+      // PTT's pointer is back on the accumulated tail: any seekBack is settled.
+      this.buf.easyReadingSeekBack = null;
     } else if (branch === 'rebuild') {
       // First page of a (new) article: restart the accumulated page as this whole
       // screen and clear the per-article pusher selection.
@@ -2891,6 +2921,7 @@ TermView.prototype = {
     this._lastAccumulatedSig = null;
     this.buf.easyReadingGapDetected = false;
     this.buf.easyReadingHealInFlight = false;
+    this.buf.easyReadingSeekBack = null;
     // Back on a list/menu: the pending article reset (leaveCurrentPost) is moot —
     // prevPageState!=3 already forces rebuild on the next article.
     this.buf.easyReadingPendingReset = false;

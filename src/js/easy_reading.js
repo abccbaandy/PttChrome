@@ -4,6 +4,9 @@ import { ACT_EXIT_ARTICLE } from './mouse_regions';
 import { TRACE } from './util';
 import { pmorePrefScreenSeen, parseRawModeFromPrefRow } from './pmore_pref';
 import { altRemapCharCode, isAltRemapEvent } from './term_keyboard';
+import { i18n } from './i18n';
+import { findShortcutLabel } from './platform';
+import { offsetTopWithin } from './scroll_anchor';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
 // (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
@@ -602,6 +605,8 @@ EasyReading.prototype._resetPagingState = function() {
   this._healGotoCount = 0;
   this._healHomeUsed = false;
   this._termBuf.easyReadingHealInFlight = false;
+  // seekBack 落地（term_view.accumulatePageLines 升的）是「這一篇」的，同規。
+  this._termBuf.easyReadingSeekBack = null;
   // ignoreOneUpdate is per-post too, and leaving it set is not "one skipped frame":
   // the frame it halts is usually enterEasyReading()'s own replayed notify(), which is
   // a LOCAL repaint (no _touchRows ⇒ term_buf._serverActivity stays false ⇒ the settle
@@ -834,6 +839,74 @@ EasyReading.prototype._healGap = function() {
 EasyReading.prototype._healAtLine = function(line) {
   console.log('easy reading: lost page, seeking back to line ' + line);
   ++this._healGotoCount;
+  if (!this._seekLine(line)) {
+    --this._healGotoCount;
+    // 旗標刻意留著：下一次 settle 會再試一次（與 _healGap 的 _wireBusy 早退同規）。
+    this._termBuf.easyReadingGapDetected = true;
+  }
+};
+
+// seekBack 的後半段（term_view.accumulatePageLines 升 buf.easyReadingSeekBack）：使用者
+// 在 functionMode 用 `:N`／`;N`／搜尋把 PTT 的頁指標**往回**移到已累積的範圍內。長頁
+// 本身沒動（分支 'seekBack'），但 PTT 的指標已經不在 _accEndRow ⇒ 放著不管，自動翻頁
+// 會從落地處一頁一頁走回尾端（每頁都是 backward no-op，長文要走幾百趟）。改用同一個
+// goto-line 一次拉回 `:_accEndRow`：落地幀與 _healAtLine 完全同形（continuation，
+// k=1），已到文末則 pagePercent 100 ⇒ 'done'。**不吃** HEAL_GOTO_MAX 額度——這不是掉頁。
+// 捲到跳轉目的地由 _evalFunctionModeExit 負責（它讀 easyReadingSeekBack.row）。
+// 把累積長頁捲到第 row 列（pageLines 絕對索引）的頂端。量的是**畫出來的列節點**
+// （`[type=bbsrow][srow=N]`，srow＝pageLines 索引，見 docs/easy-reading.md「render 單軌」），
+// 不用 row*chh 算術：行內圖片佔位盒讓每列高度不均。黑名單列被整列拿掉（dropHidden）
+// 時往後找最近的一列。找不到任何節點回 false（呼叫端退回原本的捲動位置）。
+EasyReading.prototype._scrollToPageRow = function(row) {
+  const view = this._view;
+  const disp = view && view.mainDisplay;
+  const mc = view && view.mainContainer;
+  if (!disp || !mc || typeof mc.querySelector !== 'function')
+    return false;
+  const n = (this._termBuf.pageLines || []).length;
+  const limit = Math.min(n, row + (this._termBuf.rows || 24));
+  for (let r = row; r < limit; ++r) {
+    const el = mc.querySelector('[type="bbsrow"][srow="' + r + '"]');
+    if (el) {
+      disp.scrollTop = offsetTopWithin(el, disp);
+      return true;
+    }
+  }
+  return false;
+};
+
+EasyReading.prototype._needsRealign = function() {
+  const seek = this._termBuf.easyReadingSeekBack;
+  return !!(seek && !seek.realigned);
+};
+
+EasyReading.prototype._realignAfterSeek = function() {
+  const seek = this._termBuf.easyReadingSeekBack;
+  if (!seek || seek.realigned)
+    return;
+  // 已有 seek 在途（heal 或上一次 realign）：它落地後指標自然回到 _accEndRow。
+  if (this._termBuf.easyReadingHealInFlight) {
+    seek.realigned = true;
+    return;
+  }
+  // 線路上有別人的交易：留著旗標，下一次 viewUpdate／settle 再試。
+  if (this._wireBusy())
+    return;
+  const accEndRow = this._view ? this._view._accEndRow : null;
+  this._core.debugRecorder?.log('easyReading.seekBack', {
+    landingStart: seek.landingStart, row: seek.row, accEndRow: accEndRow
+  });
+  if (accEndRow == null || accEndRow < 1) {
+    seek.realigned = true;  // 無基準可拉：退回「逐頁走回去」的慢路徑
+    return;
+  }
+  if (this._seekLine(accEndRow))
+    seek.realigned = true;
+};
+
+// 送 pmore goto-line（`:N\r`）當成一筆 in-flight 交易。回傳 byte 有沒有真的上線；
+// 送不出去時交易狀態一格都不寫（stamp-after-send）。_healAtLine／_realignAfterSeek 共用。
+EasyReading.prototype._seekLine = function(line) {
   // Two separate gates, both needed while the prompt row is up (the bottom row shows
   // 「跳至第幾行:」 so parseStatusRow fails and pageState can drop out of 3):
   //   buf.easyReadingHealInFlight — term_view.redraw writes buf.prevPageState on EVERY
@@ -853,21 +926,20 @@ EasyReading.prototype._healAtLine = function(line) {
   // stamp-after-send（同 _maybeSendPageDown 的推導）：送不出去就整筆回滾。
   // **兩個回滾都是必要的**——`easyReadingHealInFlight` 留 true 會讓之後每一次
   // `_healGap` 都判 'busy' 早退（掉頁永遠補不回來，唯一的逃生門在 done/giveup，
-  // 而這裡連交易都沒建立）；`_healGotoCount` 留著則會憑空消耗 HEAL_GOTO_MAX=3 的
-  // 額度，用盡後退化成整篇重讀（＝「讀到一半自動從第一頁重讀」那個回報）。
+  // 而這裡連交易都沒建立）；另一個是呼叫端 _healAtLine 的 `_healGotoCount`，留著會
+  // 憑空消耗 HEAL_GOTO_MAX=3 的額度，用盡後退化成整篇重讀（＝「讀到一半自動從第一頁
+  // 重讀」那個回報）。
   const keys = ':' + line + '\r';
   if (!this._send(keys)) {
     this._termBuf.easyReadingHealInFlight = false;
-    --this._healGotoCount;
-    // 旗標刻意留著：下一次 settle 會再試一次（與 _healGap 的 _wireBusy 早退同規）。
-    this._termBuf.easyReadingGapDetected = true;
-    return;
+    return false;
   }
   this._inFlightSig = this._currentPageSignature();
   this._inFlightKeys = keys;
   this._inFlightSentAt = Date.now();
   this._pageDownRetries = 0;
   this._armWatchdog();
+  return true;
 };
 
 // Last-resort heal: re-read the whole article. Home is pmore's KEY_HOME → mf_goTop
@@ -951,6 +1023,10 @@ EasyReading.prototype._onScreenSettled = function() {
     this._healGap();
     return;
   }
+  if (this._needsRealign()) {
+    this._realignAfterSeek();
+    return;
+  }
   // A response whose cursor park landed in a CURSOR-ONLY notify window never reached
   // redraw (notify only calls view.update() on the 'changed' branch), so its page was
   // never accumulated. The screen is quiet and the cursor parked now, so replay one
@@ -960,6 +1036,10 @@ EasyReading.prototype._onScreenSettled = function() {
     this._forceRepaint();
     if (this._termBuf.easyReadingGapDetected) {
       this._healGap();
+      return;
+    }
+    if (this._needsRealign()) {
+      this._realignAfterSeek();
       return;
     }
     // _forceRepaint replays 'change'/'viewUpdate', so the fast path has already run
@@ -1168,7 +1248,16 @@ EasyReading.prototype._evalFunctionModeExit = function() {
     this._termBuf.lineChangeds.fill(true);
     this._termBuf.changed = true;
     this._termBuf.notify();
-    if (this._savedScrollTop != null)
+    // PTT 的頁指標被 goto／搜尋往回移了（上面那次 notify 的 accumulatePageLines 升
+    // easyReadingSeekBack）⇒ 捲到跳轉目的地；否則（推文、回應這類沒移動的）還原原位。
+    // 往**前**跳到還沒累積的地方走的是 gap 自癒，這裡維持原位（已知邊界）。
+    const seek = this._termBuf.easyReadingSeekBack;
+    let landed = false;
+    if (seek && !seek.scrolled) {
+      seek.scrolled = true;
+      landed = this._scrollToPageRow(seek.row);
+    }
+    if (!landed && this._savedScrollTop != null)
       this._view.mainDisplay.scrollTop = this._savedScrollTop;
   } else {  // 'leave'
     this.startedEasyReading = false;
@@ -1187,6 +1276,14 @@ EasyReading.prototype._onViewUpdated = function(e) {
   if (this._enabled && !this._functionMode && this._termBuf.easyReadingGapDetected) {
     this.sendCommandAfterUpdate = '';
     this._healGap();
+    return;
+  }
+  // Same slot for a seek back into the accumulated range (goto / search from
+  // functionMode): the landing screen must not trigger a PageDown from THERE — re-align
+  // PTT's pointer to _accEndRow instead. See _realignAfterSeek.
+  if (this._enabled && !this._functionMode && this._needsRealign()) {
+    this.sendCommandAfterUpdate = '';
+    this._realignAfterSeek();
     return;
   }
   if (this.sendCommandAfterUpdate) {
@@ -1524,6 +1621,7 @@ EasyReading.prototype.exitEasyReading = function() {
   if (this._view && this._view.mainDisplay)
     this._view.mainDisplay.scrollTop = 0;
   this._termBuf.easyReadingGapDetected = false;
+  this._termBuf.easyReadingSeekBack = null;
   this._forceRepaint();
 };
 
@@ -1548,6 +1646,34 @@ export function ctrlLetterOf(e) {
   return null;
 }
 
+// 好讀文章裡的「搜尋」鍵要怎麼處理：'browser' | 'hint' | null（null＝照舊）。
+//
+// 為什麼原生 `/` 在好讀下不能用（pref 預設開＝不送 PTT）：
+//   pmore 的 mf_search（pmore.c:1125）從 **PTT 端目前頁** mf_forward(1) 起找，而好讀
+//   早就自動翻到文末了 ⇒ 起點與使用者眼睛所在位置無關；找不到時 disps = maxdisps
+//   （停在最後一頁）。網頁沒有 API 能開瀏覽器的尋找列，所以改成：
+//   - Ctrl+F → 'browser'：不攔截、不送 PTT（^F 會移走 pmore 的頁指標，見 ctrlLetterOf
+//     上方），讓瀏覽器預設行為接手——累積長頁本來就是 DOM，直接可搜。
+//   - `/`    → 'hint'：吞掉並提示改用 Ctrl+F／⌘F。
+// **只認真的 Ctrl**，不用 ctrlLetterOf：它把 Alt+F 也算成 f，而 Alt+F 必須保留本地
+// 翻頁（Ctrl+F 讓位後翻頁的替代鍵之一）。鍵盤行為不分平台（platform.js 檔頭），Mac
+// 的 Ctrl+F 也讓位，只有提示文案分 ⌘F。
+// 只在好讀文章、非 functionMode 生效（呼叫端 term_view.onKeyDown 的 gate）；prompt
+// 內 Ctrl+F 是編輯鍵，照送 PTT。守護 tests/unit/easy_reading_browser_find.test.js。
+export function easyReadingFindKeyAction(e, prefs) {
+  if (!prefs || !prefs.easyReadingBrowserFind)
+    return null;
+  if (typeof e.key !== 'string')
+    return null;
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === 'f')
+    return 'browser';
+  if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key === '/')
+    return 'hint';
+  return null;
+}
+
+// 回傳 'browser' 代表「這個鍵交給瀏覽器」：呼叫端必須就此 return，既不 preventDefault
+// 也不往下送給 PTT（見 easyReadingFindKeyAction）。
 EasyReading.prototype._onKeyDown = function(e) {
   if (!this._enabled || !this.startedEasyReading)
     return;
@@ -1556,7 +1682,8 @@ EasyReading.prototype._onKeyDown = function(e) {
   // view out from under them a page later.
   this._pendingScrollRestore = null;
 
-  this._onKeyDownProcessUI(e);
+  if (this._onKeyDownProcessUI(e) === 'browser')
+    return 'browser';
   if (e.defaultPrevented)
     return;
 
@@ -1720,6 +1847,17 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
       e.preventDefault();
       return;
     }
+  }
+  const findAction = easyReadingFindKeyAction(e, readValuesWithDefault());
+  if (findAction === 'browser')
+    return 'browser';
+  if (findAction === 'hint') {
+    if (this._view.flashListHint)
+      this._view.flashListHint(
+        String(i18n('hint_easyReadingUseBrowserFind') || '').replace('%s', findShortcutLabel()),
+        4000);
+    e.preventDefault();
+    return;
   }
   if (!e.ctrlKey && !e.altKey) {
     switch (e.key) {

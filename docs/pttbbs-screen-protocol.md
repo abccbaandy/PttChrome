@@ -881,6 +881,7 @@ server 送的是編碼後的 ANSI，client 看不到 flag，只看得到結果�
 | P6 | 每次回應結尾游標 park 在 `(rows-1, cols-1)`；footer 是 **per-cell patch**（實錄 `ESC[24;11H3 ESC[24;37H44~66 ESC[24;80H`）⇒ **半畫幀的 footer 是上一頁的舊值**，游標也還沒 park | `pfterm.c#fterm_rawcursor`(2144)、`tests/e2e/cassettes/stock-end.json` step2 |
 | P7 | **goto-line 是確定性的絕對定位**：`:` → `pageMode = (ch != ':') == 0` → `getdata_buf(b_lines-1, 0, PMORE_MSG_GOTO_LINE「跳至第幾行: 」, buf, 8, DOECHO)` → `i = atoi(buf)` → `if (i-- > 0) mf_goto(i)` → `mf.disps = mf.start; mf.lineno = 0; mf_forward(N-1)` ⇒ 送 `:N\r` 後 **footer 的 `S` 恰為 N**（超過末頁被 `maxdisps` 夾住只會更小）。`;` 與 `1`-`9` 走**頁**模式。輸入緩衝 **8 bytes**。prompt 期間底部列是 `跳至第幾行: `，**不匹配 footer 格式** | `pmore.c` goto 區塊（`case '1'..'9'/';'/':'`）、`mf_goto`(1067)、`PMORE_MSG_GOTO_LINE`(147) |
 | P8 | **畫面沒變就零「畫面回應」**：`refresh` 走 `doupdate` 逐 cell diff，結尾 `fterm_rawcursor` → `fterm_rawmove_opt`（已在該位置則不輸出）⇒ **已在第 1 行時再送 Home（`mf_goTop`）可能完全沒有回應**。任何以 Home 當 request/response 交易的路徑都要先確認 `S > 1`。**2026-09 修訂：不再是「零 bytes」** —— DEC 2026 同步輸出讓每個 `doupdate()` 都吐一對 `ESC[?2026h/l`（連 `!ft.dirty` 早退路徑也吐，見 §1.1）⇒ 線上固定 16 bytes。但那兩條序列在 client 端不寫任何一格、不動游標 ⇒ **不 re-arm settle timer**，所以所有建立在這條上的 client 推論（「零回應只能等 timeout」⇒ `fullRepaint: true` 附 `\f`）**結論不變**。判準要改用「有沒有 settle」而不是「有沒有 byte」 | `pfterm.c#doupdate`／`fterm_rawmove_opt`、`mf_goTop`(1046)；§1.1 |
+| P9 | **goto／搜尋不受 P1 約束，可往回**：`:N`／`;N`／`1`-`9` 走 `mf_goto`（P7），`/`／`n`／`N` 走 `mf_search`：起點是**PTT 端目前頁**（`mf_forward(1)` 後往下找，`N` 往上），找到則 `disps` 停在命中那行、畫面上所有命中處加 `ANSI_REVERSE`；**找不到則 `disps = maxdisps`（跳到末頁）** | `pmore.c#mf_search`(1125)、`pmore_cmd_search`(2549)、`mf_display` 的 `sr.search_str` 分支(1835) |
 
 client 端推論（改這段 code 前先讀）：
 
@@ -902,6 +903,12 @@ client 端推論（改這段 code 前先讀）：
    由**送鍵之前**抵達的畫面 arm，長文 render 慢時 callback 會落到送鍵之後 ⇒ 誤判掉包 →
    補送 → P4 → 真的掉一頁。而且 `_armSettleTimer` 只由伺服器活動 re-arm ⇒ 真掉鍵時**不會再有
    settle**，所以 grace 必須配一個 client 自己的 watchdog，不能只靠 settle。
+4c. **往回跳（P9）不是翻頁**：落地頁 `E' < accEndRow` ⇒ `classifyPageTransition` 回 `backward`（**含 `S'==1`**，
+   跳回第一頁也是 seek 不是新文章；真正換文章由 rebuild 條件先接住）→ `decideAccumulateBranch` 回
+   `seekBack`：累積頁、`_accEndRow` 一格都不動，再以 goto-line `:_accEndRow` 把 PTT 指標一次拉回尾端
+   （與 4. 的自癒同形）。舊版走 append 把 `_accEndRow` 設成落地頁的 E（倒退）⇒ 之後每次 PageDown
+   都把已累積的內容重複接到尾巴。**原生搜尋在好讀下因此不可用**：好讀早就把 PTT 指標翻到文末，
+   `/` 的起點與使用者看的位置無關 ⇒ 好讀文章的搜尋改交給瀏覽器（`docs/easy-reading.md`）。
 5. **parser 不可要求 part3**（P5）。
 6. **強制重繪一律走 `term_buf.notify()`**，不可直接 `view.redraw()`：`updateCharAttr()` 只在
    notify 裡跑，它是 Big5 lead byte 標上 `isLeadByte` 的地方。settle 可能落在「bytes 已到、
@@ -909,7 +916,8 @@ client 端推論（改這段 code 前先讀）：
    `rowToText` 得到原始 Big5（`¡°` 而非 `※`）→ 下一頁比對不上 → 重疊算成 0 → 重疊列被貼兩次。
 
 守護：`tests/unit/string_util.test.js`（P5 的三種無 part3 形狀）、`comment_parse.test.js`
-（`classifyPageTransition` 四種轉移、`decideAccumulateBranch` 的 complete/gap）、
+（`classifyPageTransition` 四種轉移、`decideAccumulateBranch` 的 complete/gap/seekBack、`locateScreenInPage`）、
+`easy_reading_seek_back.test.js`（P9：真 `accumulatePageLines` 逐幀餵往回跳、realign、resume 捲動）、
 `easy_reading_logic.test.js`（`nextPageDownDecision` 的 grace 決策表、watchdog、快路徑去重、
 goto 自癒與有界升級、補畫走 notify）、
 `replay_fixture.test.jsx`（實錄素材的 P1/P2 不變量）、

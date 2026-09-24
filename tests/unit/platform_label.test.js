@@ -2,7 +2,7 @@
 //
 // 守的是「Mac 使用者看到的提示是 ⌘ 而不是 Ctrl」，以及**偵測失敗時要退回
 // Ctrl+Enter 而不是爆炸**：這個值會直接進 render，throw 等於整個長推文輸入框開不起來。
-import { isMacPlatform, modEnterShortcutLabel } from '../../src/js/platform';
+import { isMacPlatform, modEnterShortcutLabel, findShortcutLabel } from '../../src/js/platform';
 
 const nav = (over) => ({ userAgent: '', ...over });
 
@@ -55,5 +55,13 @@ describe('平台判斷（只影響提示文案）', () => {
     expect(() => modEnterShortcutLabel(null)).not.toThrow();
     expect(modEnterShortcutLabel(null)).toBe('Ctrl+Enter');
     expect(modEnterShortcutLabel(nav())).toBe('Ctrl+Enter');
+  });
+});
+
+describe('瀏覽器尋找的提示（好讀文章按 / 時）', () => {
+  test('Mac 是 ⌘F，其他 Ctrl+F，偵測不到退回 Ctrl+F', () => {
+    expect(findShortcutLabel(nav({ userAgentData: { platform: 'macOS' } }))).toBe('⌘F');
+    expect(findShortcutLabel(nav({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }))).toBe('Ctrl+F');
+    expect(findShortcutLabel(null)).toBe('Ctrl+F');
   });
 });

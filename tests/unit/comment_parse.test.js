@@ -40,6 +40,7 @@ import {
   resolvePageOverlap,
   decideAccumulateBranch,
   classifyPageTransition,
+  locateScreenInPage,
   COMMENT_USERID_COL
 } from "../../src/js/comment_parse";
 
@@ -1202,6 +1203,27 @@ describe("decideAccumulateBranch", () => {
       d({ complete: true, healInFlight: true, prevPageState: 3, pendingReset: false, statusStart: 66, kContent: 0, hasAcc: true, transition: "gap" })
     ).toBe("gap");
   });
+  // seekBack：functionMode 裡 `:N` 指定行／`;N` 指定頁／原生搜尋把 PTT 頁指標往回移，
+  // resume 那一幀落在已累積的範圍內。舊版走 append ⇒ _accEndRow 倒退 ⇒ 之後每次
+  // PageDown 都把已累積的內容重複接到長頁尾巴（使用者看到的是「被捲到其他位置」）。
+  test("REGRESSION：往回跳（transition='backward'）→ seekBack，不是 append", () => {
+    expect(
+      d({ complete: true, prevPageState: 3, pendingReset: false, statusStart: 22, kContent: 0, hasAcc: true, transition: "backward" })
+    ).toBe("seekBack");
+  });
+  test("往回跳到第一頁但其實是新文章（header 變了）→ rebuild 仍優先", () => {
+    expect(
+      d({ complete: true, prevPageState: 3, pendingReset: false, statusStart: 1, kContent: 0, hasAcc: true, headerChanged: true, transition: "backward" })
+    ).toBe("rebuild");
+    expect(
+      d({ complete: true, prevPageState: 0, pendingReset: false, statusStart: 22, kContent: 0, hasAcc: true, transition: "backward" })
+    ).toBe("rebuild");
+  });
+  test("往回跳的半畫幀 → skip（P6 優先）", () => {
+    expect(
+      d({ complete: false, prevPageState: 3, pendingReset: false, statusStart: 22, kContent: 0, hasAcc: true, transition: "backward" })
+    ).toBe("skip");
+  });
   test("heal 在途：半畫幀照樣 skip（P6 優先於一切）", () => {
     expect(
       d({ complete: false, healInFlight: true, prevPageState: 0, pendingReset: false, statusStart: 44, kContent: 1, hasAcc: true })
@@ -1232,10 +1254,55 @@ describe("classifyPageTransition（pmore 分頁不變量 P1）", () => {
     expect(c({ accEndRow: 88, statusStart: 22, statusEnd: 44 })).toBe("backward");
   });
   test("文章第一頁 / 尚無追蹤基準 → restart", () => {
-    expect(c({ accEndRow: 88, statusStart: 1, statusEnd: 23 })).toBe("restart");
+    expect(c({ accEndRow: 22, statusStart: 1, statusEnd: 22 })).toBe("restart");
     expect(c({ accEndRow: null, statusStart: 44, statusEnd: 66 })).toBe("restart");
+  });
+  // 好讀已累積到 88 行，使用者在 functionMode 用 `:1` 指定行（或搜尋）跳回第一頁：
+  // 這是**往回跳**，不是新文章開頭。舊版回 restart → decideAccumulateBranch 走 append
+  // → term_view 把 _accEndRow 設回 23（倒退）→ 之後的 PageDown 把已累積內容重複接到
+  // 長頁尾巴。真正的新文章由 decideAccumulateBranch 的 rebuild 條件先接住（優先序不變）。
+  test("REGRESSION：累積到中段後跳回第一頁（statusEnd < accEndRow）→ backward，不是 restart", () => {
+    expect(c({ accEndRow: 88, statusStart: 1, statusEnd: 23 })).toBe("backward");
   });
   test("statusStart 為 null（transient 幀）→ null（呼叫端另行處理）", () => {
     expect(c({ accEndRow: 44, statusStart: null, statusEnd: null })).toBeNull();
+  });
+});
+
+// seekBack 落地時，在累積長頁裡找「落地畫面」的位置：供捲動到跳轉目的地，同時是
+// 「這一幀確實是同一篇文章的已累積段落」的安全閘（找不到就不 realign）。
+// 只比文字：搜尋的反白只改屬性。不假設「檔案行＝顯示列」（w 斷行下不成立）。
+describe("locateScreenInPage", () => {
+  const page = [];
+  for (let i = 0; i < 200; ++i) page.push("line " + i);
+  // 內容重複的段落：同一段在 50 與 150 都有
+  const dup = page.slice();
+  for (let i = 0; i < 10; ++i) dup[150 + i] = dup[50 + i];
+
+  test("命中：回傳落地畫面第一列在長頁的索引", () => {
+    expect(locateScreenInPage({ pageTexts: page, screenTexts: page.slice(80, 103), hintIndex: 79 })).toBe(80);
+  });
+  test("hint 偏掉（斷行讓檔案行≠顯示列）仍找得到", () => {
+    expect(locateScreenInPage({ pageTexts: page, screenTexts: page.slice(80, 103), hintIndex: 10 })).toBe(80);
+  });
+  test("多處相同 ⇒ 取最靠近 hint 的", () => {
+    const scr = dup.slice(50, 58);
+    expect(locateScreenInPage({ pageTexts: dup, screenTexts: scr, hintIndex: 140 })).toBe(150);
+    expect(locateScreenInPage({ pageTexts: dup, screenTexts: scr, hintIndex: 40 })).toBe(50);
+  });
+  test("尾空白不影響比對", () => {
+    const scr = page.slice(30, 40).map(t => t + "    ");
+    expect(locateScreenInPage({ pageTexts: page, screenTexts: scr, hintIndex: 0 })).toBe(30);
+  });
+  test("找不到 ⇒ -1", () => {
+    expect(locateScreenInPage({ pageTexts: page, screenTexts: ["x", "y", "z"], hintIndex: 0 })).toBe(-1);
+  });
+  test("全空白（非空白列 < 2）不算命中，避免亂捲", () => {
+    const blanks = ["", "", "", "only one", "", ""];
+    const p = ["a", "", "", "", "only one", "", "", "b"];
+    expect(locateScreenInPage({ pageTexts: p, screenTexts: blanks, hintIndex: 0 })).toBe(-1);
+  });
+  test("落地畫面比長頁剩餘列還長（貼近文末）⇒ 只比得到的前綴", () => {
+    expect(locateScreenInPage({ pageTexts: page, screenTexts: page.slice(195, 200).concat(["", ""]), hintIndex: 195 })).toBe(195);
   });
 });

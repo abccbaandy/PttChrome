@@ -122,9 +122,10 @@ describe("_onKeyDown：Alt+H ≡ Ctrl+H（上一篇）", () => {
 });
 
 describe("_onKeyDownProcessUI：Alt+F/B/H ≡ Ctrl+F/B/H（本地捲動，零送出）", () => {
+  // Ctrl+F 不在這張表裡：pref easyReadingBrowserFind（預設開）把它讓給瀏覽器的
+  // 尋找列，Alt+F 正是它讓位後的翻頁替代鍵 —— 守護見 easy_reading_browser_find.test.js。
   test("Alt+F 往下一頁、Alt+B 往上一頁，都不送 byte 給 server", () => {
     for (const [mods, delta] of [
-      [{ ctrlKey: true, key: "f" }, +400],
       [{ altKey: true, code: "KeyF", key: "f" }, +400],
       [{ altKey: true, code: "KeyF", key: "ƒ" }, +400], // macOS 形態
       [{ ctrlKey: true, key: "b" }, -400],

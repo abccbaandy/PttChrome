@@ -643,6 +643,12 @@ export const en_US = {
   "options_easyReadingEndSwitchNative": {
     "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."
   },
+  "options_easyReadingBrowserFind": {
+    "message": "Search posts in easy reading with the browser's find (Ctrl+F / ⌘F)"
+  },
+  "tooltip_easyReadingBrowserFind": {
+    "message": "In an easy-reading post, Ctrl+F opens the browser's find bar and / shows a hint to use it (PTT's own search starts from the end of the post, so it is unreliable here). Page with Space, PgDn or Alt+F instead. Off = Ctrl+F pages down and / goes to PTT."
+  },
   "options_easyReadingEndSwitchKey": {
     "message": "Hotkey to switch back to native mode"
   },
@@ -1024,6 +1030,9 @@ export const en_US = {
   },
   "notification_deepLinkHandoffTitle": {
     "message": "Link opened in this tab"
+  },
+  "hint_easyReadingUseBrowserFind": {
+    "message": "In easy reading, press %s to search with the browser"
   },
   "hint_deepLinkHandoffReceived": {
     "message": "Picked up an external link:"
