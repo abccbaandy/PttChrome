@@ -125,6 +125,17 @@ function edgeBand(action, cursor, rect) {
   };
 }
 
+// 這一格的提示帶要不要**畫出來**（交給 term_view.setEdgeHintBand）。PgUp／PgDn 區
+// 面積太大（列表右緣 16 欄的上下半、文章內整片上下半），半透明帶子會蓋住內文、
+// 影響閱讀 ⇒ 那兩區只靠自訂指標（pageup/pagedown.png）提示，不畫帶子。
+// `region.hintBand` 本身**照舊保留**：它同時是「這一格是邊緣區」的判別式
+// （term_view.listEdgeRegion）與幾何合約，把它清成 null 會讓列表好讀的翻頁區整個消失。
+export function visibleHintBand(region) {
+  if (!region || !region.hintBand) return null;
+  if (region.action === ACT_PAGE_UP || region.action === ACT_PAGE_DOWN) return null;
+  return region.hintBand;
+}
+
 // 列表（pageState 2/4）與看板列表（pageState 1）的邊緣區。回 null ＝這一格不是邊緣
 // 區，交回原本的決策。bodyTop／bodyBottom 是該畫面「內文列」的開區間邊界。
 //

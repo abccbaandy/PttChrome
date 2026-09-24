@@ -780,29 +780,45 @@ test.describe('滑鼠（離線重放）', () => {
       );
     });
 
-    test('提示帶與可點區逐格對齊（右緣帶左緣的前一格仍是開文區）', async ({
-      page,
-    }) => {
+    // PgUp／PgDn 區面積太大（文章內是整片上下半），半透明帶子會蓋住內文 ⇒ 只留
+    // 自訂指標、不畫帶子（mouse_regions.visibleHintBand）。區域與點擊行為不變。
+    test('右緣 PgUp／PgDn 區：動作照舊，但不畫提示帶', async ({ page }) => {
       test.setTimeout(90000);
       await bootNativeList(page);
 
-      await page.mouse.move(await colX(page, 70), await rowY(page, 6));
-      await page.waitForTimeout(60);
+      for (const [row, action] of [
+        [6, 'pageUp'],
+        [20, 'pageDown'],
+      ]) {
+        await page.mouse.move(await colX(page, 70), await rowY(page, row));
+        await expect
+          .poll(() => page.evaluate(() => window.__app.buf.mouseAction), { timeout: 5000 })
+          .toBe(action);
+        expect((await edgeBand(page)).active).toBe(false);
+      }
+    });
+
+    test('Home 提示帶與可點區逐格對齊（整列寬，離開頂列就熄）', async ({ page }) => {
+      test.setTimeout(90000);
+      await bootNativeList(page);
+
+      await page.mouse.move(await colX(page, 40), await rowY(page, 0));
+      await expect
+        .poll(() => page.evaluate(() => window.__app.buf.mouseAction), { timeout: 5000 })
+        .toBe('home');
       const band = await edgeBand(page);
       expect(band.active).toBe(true);
 
-      // 帶子左緣往左 2px ⇒ 不再是翻頁區，帶子也要熄掉。
-      await page.mouse.move(band.left - 2, await rowY(page, 6));
+      // 帶子右緣就是行尾：往內 2px 仍是 Home。
+      await page.mouse.move(band.right - 2, await rowY(page, 0));
       await page.waitForTimeout(60);
-      expect(await page.evaluate(() => window.__app.buf.mouseAction)).not.toMatch(
-        /^page/
-      );
-      expect((await edgeBand(page)).active).toBe(false);
+      expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('home');
 
-      // 帶子右緣就是行尾。
-      await page.mouse.move(band.right - 2, await rowY(page, 6));
+      // 帶子下緣往下 2px ⇒ 不再是 Home 區，帶子也要熄掉（row 1 是 PgUp，不畫帶子）。
+      await page.mouse.move(await colX(page, 40), band.bottom + 2);
       await page.waitForTimeout(60);
-      expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('pageUp');
+      expect(await page.evaluate(() => window.__app.buf.mouseAction)).not.toBe('home');
+      expect((await edgeBand(page)).active).toBe(false);
     });
 
     test('提示帶 pointer-events:none —— 不得擋掉底下的任何點擊', async ({ page }) => {

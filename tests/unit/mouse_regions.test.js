@@ -22,6 +22,7 @@ import {
   MENU_COL_START,
   clickableColStart,
   resolveMouseRegion,
+  visibleHintBand,
   cursorCss,
 } from "../../src/js/mouse_regions";
 import { LIST_TITLE_COL_START } from "../../src/js/comment_parse";
@@ -548,6 +549,43 @@ describe("邊緣翻頁區：文章（pageState 3）", () => {
   test("翻頁帶也從第 7 欄開始（左側永遠留給離開）", () => {
     expect(edge({ row: 5, col: 40 }).hintBand.colStart).toBe(EXIT_COL_END);
     expect(edge({ row: 20, col: 40 }).hintBand.colStart).toBe(EXIT_COL_END);
+  });
+});
+
+// 使用者回報：PgUp／PgDn 區面積太大（文章內是整片上下半），半透明提示帶蓋住內文
+// 影響閱讀 ⇒ 那兩區只留自訂指標，不畫帶子；Home／End 的細帶照畫。
+// 同時鎖 hintBand 本身**不可**因此變 null：它是 term_view.listEdgeRegion 的邊緣區
+// 判別式，清掉的話列表好讀的翻頁區會整個消失。
+describe("邊緣翻頁區：PgUp／PgDn 不畫提示帶（visibleHintBand）", () => {
+  const cases = [
+    ["列表右緣上半", { pageState: 2, row: 5, col: 70 }, ACT_PAGE_UP],
+    ["列表右緣下半", { pageState: 2, row: 20, col: 70 }, ACT_PAGE_DOWN],
+    ["列表 row 1 整列上一頁", { pageState: 2, row: 1, col: 40 }, ACT_PAGE_UP],
+    ["文章上半", { pageState: 3, row: 5, col: 40 }, ACT_PAGE_UP],
+    ["文章下半", { pageState: 3, row: 20, col: 40 }, ACT_PAGE_DOWN],
+    ["看板列表右緣", { pageState: 1, boardList: true, row: 5, col: 70 }, ACT_PAGE_UP],
+  ];
+  for (const [name, over, action] of cases) {
+    test(`${name}：不畫帶子，但仍是邊緣區`, () => {
+      const r = at({ edgePaging: true, cols: 80, ...over });
+      expect(r.action).toBe(action);
+      expect(r.hintBand).not.toBe(null);
+      expect(visibleHintBand(r)).toBe(null);
+    });
+  }
+
+  test("Home／End 照畫帶子", () => {
+    for (const [pageState, row, col] of [[2, 0, 40], [2, 23, 40], [3, 23, 40]]) {
+      const r = at({ pageState, row, col, edgePaging: true, cols: 80 });
+      expect([ACT_HOME, ACT_END]).toContain(r.action);
+      expect(visibleHintBand(r)).toEqual(r.hintBand);
+      expect(visibleHintBand(r)).not.toBe(null);
+    }
+  });
+
+  test("非邊緣區／null ⇒ null", () => {
+    expect(visibleHintBand(at({ pageState: 2, row: 5, col: 40, edgePaging: true }))).toBe(null);
+    expect(visibleHintBand(null)).toBe(null);
   });
 });
 

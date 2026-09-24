@@ -183,7 +183,7 @@ term.ptt.cc 原版把畫面切成六個區域，2026-08 的重新設計只留下
 
 | 當初的問題 | 現在 |
 |---|---|
-| 沒有提示 | 自訂指標（四顆 PNG）＋ hover 提示帶 `#edgeHintBand`（矩形＝可點範圍，逐格對齊） |
+| 沒有提示 | 自訂指標（四顆 PNG）＋ Home／End 的 hover 提示帶 `#edgeHintBand`（矩形＝可點範圍，逐格對齊）；PgUp／PgDn 只有指標，見下「PgUp／PgDn 不畫提示帶」 |
 | 關不掉 | 一顆 pref，關掉時**逐格**等同找回之前 |
 | 15 種動作滿畫面 | 只有四種，且中間那一大片（開文區）一格都沒被吃掉 |
 
@@ -219,6 +219,19 @@ term.ptt.cc 原版把畫面切成六個區域，2026-08 的重新設計只留下
 3. **左側退出帶優先於底列 End**（與改版前的 row 23 特例相反，刻意的）：
    `#exitHintBand` 是整片高度的一條帶子，讓 End 吃掉它最底下那一格的話，帶子會在
    那裡亮著卻送出別的鍵。所以文章的 End 帶從第 7 欄才開始。
+
+### PgUp／PgDn 不畫提示帶（2026-09）
+
+使用者回報：PgUp／PgDn 區面積太大（列表右緣 16 欄的上下半、文章內整片上下半），
+半透明帶子一亮就蓋住大片內文、影響閱讀 ⇒ 這兩區**只靠自訂指標**（pageup/pagedown.png）
+提示，Home／End 的細帶照畫。
+
+「畫不畫」與「是不是邊緣區」刻意分開：`resolveMouseRegion` 的 `hintBand` 照舊回傳
+（它是 `term_view.listEdgeRegion` 的判別式，也是幾何合約；清成 null 會讓列表好讀的
+翻頁區整個消失），只在交給 `setEdgeHintBand` 的兩個消費端（`term_buf.onMouse_move`、
+`term_view.onListMouseMove`）過一次 `mouse_regions.visibleHintBand`。守護
+`tests/unit/mouse_regions.test.js`「PgUp／PgDn 不畫提示帶」與
+`mouse.offline.spec.js`「右緣 PgUp／PgDn 區：動作照舊，但不畫提示帶」。
 
 ### 列表好讀底下吃的是**螢幕列號**
 

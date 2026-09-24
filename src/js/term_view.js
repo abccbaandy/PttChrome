@@ -3,7 +3,7 @@
 import { TermKeyboard, isAltRemapEvent } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
 import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow } from './cursor_highlight';
-import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion } from './mouse_regions';
+import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion, visibleHintBand } from './mouse_regions';
 import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { edgeBandRect, exitBandRect } from './mouse_geometry';
 import { calcTermSize, termLayoutOffsets } from './term_size';
@@ -1651,7 +1651,8 @@ TermView.prototype = {
           urls: MOUSE_CURSOR_URLS,
           iconsEnabled: true
         });
-      this.setEdgeHintBand(edge.hintBand);
+      // PgUp／PgDn 區只給指標不畫帶子（見 mouse_regions.visibleHintBand）。
+      this.setEdgeHintBand(visibleHintBand(edge));
       this.setExitAffordance(false);
     } else if (onExitBand) {
       // 退出帶上沒有「hover 到哪一列」的概念（與文章一致），底色收掉。

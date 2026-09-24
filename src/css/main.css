@@ -124,13 +124,14 @@
   opacity: 1;
 }
 
-/* 邊緣翻頁區（pref mouseEdgePaging）的提示帶：頂列 Home／底列 End／右緣上下半
-   翻頁（文章內是整片上下半）。四邊都由 term_view.setEdgeHintBand 寫成 inline
-   style（矩形來自 mouse_regions 的 hintBand，經 mouse_geometry.edgeBandRect
-   換算），這裡只給樣式。
+/* 邊緣翻頁區（pref mouseEdgePaging）的提示帶：只畫頂列 Home／底列 End。
+   PgUp／PgDn 區（右緣上下半、文章內整片上下半）面積太大，畫了會蓋住內文，
+   只靠自訂指標提示（mouse_regions.visibleHintBand）。四邊都由
+   term_view.setEdgeHintBand 寫成 inline style（矩形來自 mouse_regions 的
+   hintBand，經 mouse_geometry.edgeBandRect 換算），這裡只給樣式。
 
-   pointer-events:none 與上面那條同樣是**硬需求**：這片帶子會蓋住半個畫面，少了它
-   連結、內嵌預覽圖、功能鍵按鈕全部點不到。同理不宣告任何 user-select。 */
+   pointer-events:none 與上面那條同樣是**硬需求**：帶子蓋在整列上，少了它
+   連結、功能鍵按鈕全部點不到。同理不宣告任何 user-select。 */
 #edgeHintBand {
   position: absolute;
   pointer-events: none;

@@ -13,6 +13,7 @@ import {
   CUR_BACK,
   isEdgeCursor,
   resolveMouseRegion,
+  visibleHintBand,
   cursorCss
 } from './mouse_regions';
 import { MouseReportState } from './mouse_report';
@@ -1554,8 +1555,9 @@ TermBuf.prototype = {
     // 邊緣翻頁區的提示帶。null ＝收掉；region.hintBand 只有 mouseEdgePaging 開著時
     // 才可能非 null（resolveMouseRegion 已 gate 過），所以這裡不必再問一次 pref。
     // 壓在 <a> 上時一律收掉：那顆按鈕／連結才是真正會發生的事（見 App.onMouse_move）。
+    // PgUp／PgDn 區不畫帶子（面積太大會蓋住內文），見 mouse_regions.visibleHintBand。
     if (this.view && this.view.setEdgeHintBand)
-      this.view.setEdgeHintBand(this._overAnchor ? null : region.hintBand);
+      this.view.setEdgeHintBand(this._overAnchor ? null : visibleHintBand(region));
     if (this.view && this.view.setExitAffordance) {
       // 用 **cursor** 當單一真相（不逐一列舉 action）：文章與列表／選單的退出帶
       // 是同一個手勢、同一個 back 指標，日後再多一種退出 action 也不會漏列舉。
