@@ -154,6 +154,15 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
    真 PTT 上那一幀底列仍是列表的功能鍵列（`pageState` 2）所以會接手 —— 這是**素材差異**，
    不是產品 bug。⇒ 任何「文章好讀從列表自動接手」的行為只能靠 unit＋live e2e，別在這裡
    加恆綠的 spec。
+   **但「不會接手」不是保證**（2026-09-24 實測）：機器忙時 settle 的切法不同，
+   `cchat-list-nav` 的門控 smoke 有時會 `enter easy reading`。好讀一旦接手，
+   **`waitFed(n)` 只代表 recv 進了 parser，不代表好讀已退場** —— 退文後緊接的 PageUp
+   若趕在 `buf.startedEasyReading` 清掉之前，會被 `easyReading._onKeyDown` 當成文章內
+   捲動吃掉（零 byte）⇒ 門控永遠等不到、60s timeout。同一支 smoke 另一個同形的坑是
+   `enableEasyReadingList` 預設開、engage 非同步，搶在 PageUp 之前 engage 就變成本地
+   pgup。兩者都是**時紅時綠**，本機要 `--repeat-each=24 --workers=6` 才抓得到。
+   ⇒ 列表 cassette 的鍵盤 smoke：**顯式關掉 list 好讀**，且**退文後按鍵前等
+   `!buf.startedEasyReading`**（該 frame `pageState` 仍是 0，不能拿它等）。
 
 ## 離線網路（`installOfflineNetwork`）—— 「零網路」的另一半
 `stub WebSocket` 只擋掉 **PTT 連線**。行內開圖（`ImagePreviewer`）拿到的是 cassette 裡

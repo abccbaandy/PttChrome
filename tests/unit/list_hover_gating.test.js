@@ -271,10 +271,25 @@ describe("onListMouseMove：邊緣翻頁區", () => {
 
   // 這個功能的區域圖示跟著 mouseEdgePaging 走，**不跟 mouseLeftClick** —— 否則
   // 關掉「點標題開文」會得到一個點得下去卻完全沒有提示的翻頁區。
+  // （PgUp／PgDn 區本來就不畫帶子，見下一條；帶子改用頂列 Home 來量。）
   test("關掉左鍵功能不影響邊緣區的指標與提示帶", () => {
     const { v, bands } = makeView({ mouseLeftClick: false });
     v.onListMouseMove(bodyRow(2), 70, 20);
     expect(v.buf.BBSWin.style.cursor).toContain("pagedown");
+    v.onListMouseMove(bodyRow(2), 40, 0);
+    expect(v.buf.BBSWin.style.cursor).toContain("home");
     expect(bands.at(-1)).not.toBe(null);
+  });
+
+  // PgUp／PgDn 區面積太大，半透明帶子會蓋住內文 ⇒ 只給指標、不畫帶子
+  // （mouse_regions.visibleHintBand）。區域本身仍在：指標照換、底色照收。
+  test("右緣 PgUp／PgDn：指標照換，但不畫提示帶", () => {
+    const { v, bands } = makeView();
+    v.onListMouseMove(bodyRow(2), 70, 5);
+    expect(v.buf.BBSWin.style.cursor).toContain("pageup");
+    expect(bands.at(-1)).toBe(null);
+    v.onListMouseMove(bodyRow(2), 70, 20);
+    expect(v.buf.BBSWin.style.cursor).toContain("pagedown");
+    expect(bands.at(-1)).toBe(null);
   });
 });
