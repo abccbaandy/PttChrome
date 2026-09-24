@@ -95,7 +95,13 @@ export function big5ByteLength(text) {
 // 長度上限
 // ---------------------------------------------------------------------------
 
-// bbs.c:3043-3078
+// **權威來源是畫面**：推文輸入列的反白欄寬就是 maxlength（vgetstring 的 len，
+// term_buf.inputFieldWidth 量），有它就直接用——IP 欄、id 長度、BRD_ALIGNEDCMT 的
+// id 補寬、小天使暱稱、term.ptt.cc 私有的格式差異全都已經算進去了。
+// 實測 ptt-debug-20260924-221056.json#t=4660/17273：IP 板 36 格、非 IP 板 51 格
+// （id 10 字），與下面公式逐位吻合。
+//
+// 量不到欄寬時才退回公式（bbs.c:3043-3078）：
 //   maxlength = 78 - 3(lead) - 6(date) - 1(space) - 6(time)      = 62
 //               [- 15 if (BRD_IPLOGRECMD || isGuest)]            → 47
 //               - strlen(myid)
@@ -105,6 +111,7 @@ export function big5ByteLength(text) {
 // ⇒ 真正打得進去的是 maxlength - 1 bytes。
 export function pushMaxBytes(opts) {
   const o = opts || {};
+  if (o.fieldWidth >= 2) return o.fieldWidth - 1;
   const idLen = (o.userId || '').length || 12; // 拿不到 id 就用 IDLEN 保守估
   const base = o.ipLogged === false ? 61 : 46; // 判不出來時當 IP 板（較短＝安全）
   return Math.max(1, base - idLen - 1);

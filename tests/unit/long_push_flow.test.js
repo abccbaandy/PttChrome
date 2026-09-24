@@ -319,6 +319,42 @@ describe("長度上限的畫面校正", () => {
     h.settle(PROMPT, { rows: { 5: "推 someone: 前人的推文 08/26 12:00" } });
     expect(seen[seen.length - 1].total).toBe(2); // 校正成 52 bytes/則
   });
+  // 使用者回報：非 IP 板每則尾巴固定空 15 格。畫面上看不到任何推文列時（停在文章
+  // 開頭、或推完落回列表）公式只能保守當 IP 板。輸入列本身的反白欄寬就是
+  // maxlength（ptt-debug-20260924-221056.json#t=4660/17273：IP 板 36 格、非 IP 51 格），
+  // 量得到就以它為準。
+  test("量得到輸入欄寬 ⇒ 沒有推文列可看也用完整長度", () => {
+    const h = harness();
+    h.session.start({ text: "測".repeat(40), type: "push", maxBytes: 33 });
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT, { fieldWidth: 53 }); // 61 - len("testuser")
+    // maxBytes = 53 - 1 = 52 ⇒ 段末全形讓 1 byte ⇒ 25 個字。
+    expect(h.sent[2]).toBe(u2b("測".repeat(25)) + "\r");
+  });
+
+  test("欄寬優先於畫面上推文列的 IP 推論", () => {
+    const h = harness();
+    h.session.start({ text: "測".repeat(40), type: "push", maxBytes: 60 });
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT, {
+      fieldWidth: 20,
+      rows: { 5: "推 someone: 前人的推文 08/26 12:00" },
+    });
+    // 公式會給 52，但欄只有 20 格 ⇒ 19 bytes ⇒ 全形 9 個字（18 bytes）。
+    expect(h.sent[2]).toBe(u2b("測".repeat(9)) + "\r");
+  });
+
+  test("第 2 則起落回列表（沒有推文列）也不退回保守值", () => {
+    const h = harness();
+    h.session.start({ text: "測".repeat(60), type: "push", maxBytes: 33 });
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT, { fieldWidth: 53 });
+    h.settle(CONFIRM);
+    h.settle(ARTICLE_FOOTER); // 推完落回文章（無推文列）
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT); // 這一幀量不到欄寬 ⇒ 沿用上一則量到的
+    expect(h.sent[h.sent.length - 1]).toBe(u2b("測".repeat(25)) + "\r");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -217,3 +217,26 @@ describe("splitPushSegments：URL 保護", () => {
     expect(segs.join("").indexOf("https://")).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe("pushMaxBytes：輸入欄寬優先", () => {
+  // 欄寬＝vgetstring 的 len＝maxlength（ptt-debug-20260924-221056.json#t=4660/17273）
+  // ⇒ 可輸入 maxlength-1。欄寬已涵蓋 IP、id 長度、對齊推文、小天使暱稱。
+  test("有欄寬 ⇒ 欄寬 - 1，無視 userId／ipLogged", () => {
+    expect(pushMaxBytes({ fieldWidth: 51, userId: "x", ipLogged: true })).toBe(50);
+    expect(pushMaxBytes({ fieldWidth: 36 })).toBe(35);
+  });
+
+  test("欄寬缺席或不合理 ⇒ 退回公式", () => {
+    expect(pushMaxBytes({ fieldWidth: null, userId: "tester1234", ipLogged: false })).toBe(50);
+    expect(pushMaxBytes({ fieldWidth: 1, userId: "tester1234" })).toBe(35);
+  });
+
+  test("錄製實測兩個板的欄寬 ↔ 公式逐位吻合", () => {
+    expect(pushMaxBytes({ fieldWidth: 36 })).toBe(
+      pushMaxBytes({ userId: "tester1234", ipLogged: true }),
+    );
+    expect(pushMaxBytes({ fieldWidth: 51 })).toBe(
+      pushMaxBytes({ userId: "tester1234", ipLogged: false }),
+    );
+  });
+});

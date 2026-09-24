@@ -1439,6 +1439,21 @@ TermBuf.prototype = {
     return true;
   },
 
+  // 游標所在那條反白輸入欄有幾格；不在輸入欄上回 null。
+  // 欄寬＝vgetstring 的 len（vfill(len,…) 整欄重畫，已打的字也是同一個反白色），
+  // 推文輸入列上就是 bbs.c#recommend 的 maxlength ⇒ 長推文的單則上限以它為準
+  // （long_push.js#pushMaxBytes）。實測 ptt-debug-20260924-221056.json#t=4660/17273：
+  // `ESC[30;47m` ＋ IP 板 36 格／非 IP 板 51 格。
+  inputFieldWidth: function() {
+    if (!this.isCursorOnInputField()) return null;
+    var line = this.lines[this.cur_y];
+    var start = this.cur_x;
+    var end = this.cur_x;
+    while (start > 0 && isReversedCell(line[start - 1])) --start;
+    while (end + 1 < this.cols && isReversedCell(line[end + 1])) ++end;
+    return end - start + 1;
+  },
+
   // 這一幀有沒有一個「滑鼠關得掉的框」（pressanykey／vmsg 橫幅／vgetstring 輸入
   // 欄）→ { kind, bytes }，沒有回 null。判斷本身在純函式
   // screen_dismiss.resolveDismiss（pttbbs 出處逐條在那裡），這裡只餵事實。

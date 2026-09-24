@@ -57,10 +57,22 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
   → **整段送完** → onSent → clearDraft()（唯一清草稿的時機）
 ```
 
-`start()` 的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: prefs.autoLoginUser })`，
-IP 板一律當 true＝較短）。真正的上限在第一次拿到內容輸入列時由畫面校正，**雙向**：
-prompt 裡有自己的帳號，畫面上的既有推文列有沒有 IP 欄就決定 base 是 61 還是 46。
-校正後 `_recount()` 會更新遮罩上的總則數。
+單則上限的**權威來源是推文輸入列的反白欄寬**（＝`maxlength`，`term_buf.inputFieldWidth`；
+實測與推導見 `docs/pttbbs-screen-protocol.md` §11.3 末）。量測點都不多送鍵：
+
+| 路徑 | 哪一幀 |
+|---|---|
+| 探路・型別選單 | 收尾第一個 Ctrl-C 被 `vkey()` 當預設「推」落到的輸入列（`_enqueueAbort` → `_onAbortPrompt`） |
+| 探路・降級（作者本人／90 秒內） | 探路 X 的回應本身（`_afterProbeX`） |
+| 送出 | 每則的輸入列（`_enqueueContent`） |
+
+⇒ 輸入框打開時的即時則數就已經是精確值。量到後存在 `_fieldWidth`，`start()` 從 `_armed.screen`
+沿用；之後量不到的幀（落回列表、假 buf）不會退回保守值。唯一計算點 `_calibrate`。
+
+**量不到才退回公式**（`pushMaxBytes` 的 userId／ipLogged）：帳號取 prompt 上的 id，IP 取畫面上既有推文列
+有沒有 IP 欄，判不出來當 IP 板（較短）。**使用者回報的「非 IP 板尾巴固定空 15 格」就是這條退路**：
+停在文章開頭或推完落回列表時看不到推文列。開輸入框前的第一個估值是
+`pushMaxBytes({ userId: prefs.autoLoginUser })`，探路回來就會被取代。
 
 ## 位移模型（`_text` / `_offset`）
 
@@ -393,8 +405,8 @@ term.ptt.cc 送來的實錄（`ptt-debug-20260917-221112` t=9736，`\e[1m` 已�
 迴圈。使用者 2026-09-02 拍板：**硬切＋事先警告，不擋送出**（`longPushModal_urlTooLong`
 的 `Alert`；二次確認那條是給「會跑好幾分鐘」用的，這裡攔下來反而礙事）。
 
-modal 用來判斷的 `maxBytes` 只是**預估**（`pushMaxBytes({ userId: prefs.autoLoginUser })`），
-真值在送出時由畫面校正、且雙向 ⇒ 警告會誤報也會漏報，文案一律寫「可能」。
+modal 用來判斷的 `maxBytes` 是探路量到的欄寬（量不到時才是公式預估），送出時每則還會再量一次
+⇒ 仍可能有出入，文案一律寫「可能」。
 
 ## 取消
 
@@ -473,8 +485,7 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
    對 `RET_DORECOMMEND` 一律 `recommend(...); return FULLUPDATE;`，2026-09 使用者
    實測的推錯文災情也印證）。設計仍對兩者免疫；落在 clean-list 且起點是文章時，
    **先過守門**再補 `\r` 回去。
-2. 反白欄顏色（`docs/pttbbs-screen-protocol.md` §5.1 與 `vgetstring` 相左）⇒ 目前**不靠**數
-   反白格反推 `maxlength`。
+2. ~~反白欄顏色~~ → **CONFIRMED 推文輸入欄反白、欄寬＝`maxlength`**（2026-09-24 錄製），已改成以欄寬為準。
 3. **探路**：禁推板／未達發文限制的實際橫幅字串是否與開源碼一致（term.ptt.cc 有私有
    commit，見 §12）；以及 `BRD_ANGELANONYMOUS` 板上退出推文流程實際要幾步。
 
@@ -484,11 +495,12 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 |---|---|---|
 | unit | `tests/unit/long_push_draft.test.js` | 草稿：round-trip、localStorage 被關掉／存到壞值一律降級不炸、**key 不等於 `pttchrome.pref.v1`**、重複寫同值只寫一次 |
 | unit | `tests/unit/vtkbd_send_state.test.js` / `telnet_esc_guard.test.js` / `user_key_send_wiring.test.js` | 機器送出一律化解懸空 ESC 態、真鍵盤仍保留 ESC 組合鍵、**userKey 入口只有 `term_view` 一個**（靜態掃描） |
-| unit | `tests/unit/long_push_split.test.js` | 濾字、byte 長度、上限公式、分段（含全形餘裕、標點斷點、**URL 保護與硬切**） |
+| unit | `tests/unit/long_push_split.test.js` | 濾字、byte 長度、上限公式、**欄寬優先於公式**、分段（含全形餘裕、標點斷點、**URL 保護與硬切**） |
+| unit | `tests/unit/term_buf_input_field.test.js` | `inputFieldWidth`：錄製的原始 bytes（IP 36／非 IP 51 格）、欄內已有字、游標不在欄上／整列反白 → null |
 | unit | `tests/unit/push_screen.test.js` | §11.3 每個 PTT 字串一個 case（共用分類器，長推文與圖片上傳都吃它） |
 | unit | `tests/unit/long_push_anchor.test.js` | 身分解析／截斷容忍／兩代游標／置底・刪除列 → 一律不得回 `ok` |
-| unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正、**游標守門與重新定位**、**每一步送完 vtkbd 都回 `VK_NORMAL`**（不變量 17）、**`onSent` 只在整段成功送完響一次**（harness 與畫面常數抽在 `tests/unit/helpers/long_push_harness.js`，與下一列共用） |
-| unit | `tests/unit/long_push_preflight.test.js` | **探路**：只送一個 X、各 kind 的收尾鍵序、**PTT 原文逐字照錄**（含沒看過的新訊息）、冷卻不算不能推且不倒數、逾時一個收尾鍵都不送、ORDER INVARIANT（scrollTop 歸零前採樣）、`start()` 不重採錨點也不重解 AID |
+| unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正（**欄寬優先、第 2 則起不退回保守值**）、**游標守門與重新定位**、**每一步送完 vtkbd 都回 `VK_NORMAL`**（不變量 17）、**`onSent` 只在整段成功送完響一次**（harness 與畫面常數抽在 `tests/unit/helpers/long_push_harness.js`，與下一列共用） |
+| unit | `tests/unit/long_push_preflight.test.js` | **探路**：只送一個 X、各 kind 的收尾鍵序、**收尾中間幀量欄寬（型別選單／降級兩條路）並交給 `start()`**、**PTT 原文逐字照錄**（含沒看過的新訊息）、冷卻不算不能推且不倒數、逾時一個收尾鍵都不送、ORDER INVARIANT（scrollTop 歸零前採樣）、`start()` 不重採錨點也不重解 AID |
 | unit | `tests/unit/long_push_error_modal.test.jsx` | 錯誤框：原文照錄、來源標示兩態、已送出則數、剩餘內容唯讀可讀回、**按了才複製** |
 | unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告**、**型別每次開框回到推**、**草稿還原／還原提示／清除／開框不覆寫**、**鍵盤送出**（ctrl 與 meta 都收、單獨 Enter 不送、組字中不送、提示不進 accessible name） |
 | unit | `tests/unit/platform_label.test.js` | 快捷鍵提示的平台判斷（userAgentData 優先、UA 退路、拿不到 navigator 不 throw）|

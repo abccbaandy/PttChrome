@@ -57,6 +57,7 @@ export function harness(opts) {
   const hints = [];
   const queue = new CommandQueue({ send: (d) => sent.push(d) });
   let rowTexts = new Array(ROWS).fill("");
+  let fieldWidth = null;
   // start() 在「還在文章裡」的時候讀標頭當錨點基準（long_push_anchor 檔頭：
   // 落地幀已經是 i_read 重讀 headers 之後的畫面，不能當基準）。
   (o.articleRows === undefined ? ARTICLE_HEAD : o.articleRows).forEach(
@@ -67,6 +68,9 @@ export function harness(opts) {
     cols: 80,
     pageState: o.pageState === undefined ? 3 : o.pageState,
     getRowText: (r) => rowTexts[r] || "",
+    // 推文輸入欄的反白寬度（term_buf.inputFieldWidth）。每一幀由 settle 的
+    // over.fieldWidth 設定，預設 null ＝ 量不到 ⇒ session 退回公式。
+    inputFieldWidth: () => fieldWidth,
   };
   const view = { flashListHint: (m) => hints.push(m) };
   const restored = [];
@@ -120,6 +124,7 @@ export function harness(opts) {
   const settle = (lastRow, over) => {
     rowTexts = new Array(ROWS).fill("");
     rowTexts[ROWS - 1] = lastRow;
+    fieldWidth = over && over.fieldWidth != null ? over.fieldWidth : null;
     if (over && over.rows)
       for (const k of Object.keys(over.rows)) rowTexts[k] = over.rows[k];
     queue.onSettle(
@@ -135,6 +140,7 @@ export function harness(opts) {
     rowTexts[2] = "  編號    日 期 作  者       文  章  標  題";
     rows.forEach((t, i) => (rowTexts[3 + i] = t));
     rowTexts[ROWS - 1] = LIST_FOOTER;
+    fieldWidth = null;
     const curY = 3 + cursorRow;
     const nums = pageArticleNums(rowTexts, curY);
     queue.onSettle(

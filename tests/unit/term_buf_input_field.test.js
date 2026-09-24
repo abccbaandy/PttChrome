@@ -175,3 +175,42 @@ describe("isCursorOnInputField — 游標停在狀態列右下角", () => {
     expect(buf.isCursorOnInputField()).toBe(true);
   });
 });
+
+// 推文輸入欄的反白寬度＝vgetstring 的 len＝maxlength（長推文單則上限的權威來源）。
+// bytes 取自 ptt-debug-20260924-221056.json#t=4660（IP 板）／t=17273（非 IP 板），
+// 帳號換成同長度（10 字）的佔位 id。
+describe("inputFieldWidth", () => {
+  const pushPrompt = (len) =>
+    "\x1b[24;1H\x1b[1;33m" + u2b("推") + "\x1b[m tester1234: \x1b[30;47m" +
+    " ".repeat(len) + "\x1b[m\x1b[K\x1b[24;16H";
+
+  test("IP 板的推文輸入欄 36 格", () => {
+    const buf = makeBuf();
+    feed(buf, pushPrompt(36));
+    expect(buf.inputFieldWidth()).toBe(36);
+  });
+
+  test("非 IP 板的推文輸入欄 51 格", () => {
+    const buf = makeBuf();
+    feed(buf, pushPrompt(51));
+    expect(buf.inputFieldWidth()).toBe(51);
+  });
+
+  test("欄內已經打了字（echo 也是 30;47）⇒ 仍量到整欄", () => {
+    const buf = makeBuf();
+    feed(buf, pushPrompt(51) + "\x1b[30;47mjfkdl\x1b[m");
+    expect(buf.inputFieldWidth()).toBe(51);
+  });
+
+  test("游標不在輸入欄上 ⇒ null", () => {
+    const buf = makeBuf();
+    feed(buf, pushPrompt(51) + "\x1b[6;1H");
+    expect(buf.inputFieldWidth()).toBe(null);
+  });
+
+  test("整列反白的表頭 ⇒ null", () => {
+    const buf = makeBuf();
+    feed(buf, "\x1b[3;1H\x1b[30;47m" + " ".repeat(80) + "\x1b[0m\x1b[3;40H");
+    expect(buf.inputFieldWidth()).toBe(null);
+  });
+});

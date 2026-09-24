@@ -12,6 +12,7 @@
 //   - 探完路重採錨點 → 採到已經進過 functionMode 的污染畫面
 
 import { loadBig5Tables } from "./helpers/load_big5_tables";
+import { u2b } from "../../src/js/string_util";
 import {
   harness,
   vmsg,
@@ -104,6 +105,49 @@ describe("探路的鍵序", () => {
       angel: true,
       degraded: true,
     });
+  });
+});
+
+describe("探路量推文輸入欄寬（單則上限）", () => {
+  // 型別選單上的第一個 Ctrl-C 會被當成預設「推」、先落到輸入列 ⇒ 那一幀就有反白欄，
+  // 不必多送任何鍵。畫面上沒有推文列時公式只能保守當 IP 板（37），欄寬才是真值。
+  test("型別選單路徑：Ctrl-C 的中間幀量到欄寬 ⇒ 回報精確上限", () => {
+    const h = pre();
+    probe(h, TYPE_MENU);
+    h.settle(PROMPT, { fieldWidth: 53 });
+    leaveToArticle(h);
+    expect(h.preflight[0]).toMatchObject({
+      blocked: false,
+      maxBytes: 52,
+      userId: "testuser",
+    });
+  });
+
+  test("沒有型別選單（降級）：探路那一幀就是輸入列", () => {
+    const h = pre();
+    h.session.startPreflight({});
+    h.settle(ARROW_PROMPT, { fieldWidth: 38 });
+    leaveToArticle(h);
+    expect(h.preflight[0]).toMatchObject({ blocked: false, maxBytes: 37 });
+  });
+
+  test("量不到欄寬 ⇒ 退回公式（保守當 IP 板）", () => {
+    const h = pre();
+    probe(h, TYPE_MENU);
+    h.settle(PROMPT);
+    leaveToArticle(h);
+    expect(h.preflight[0].maxBytes).toBe(37); // 46 - 8 - 1
+  });
+
+  test("start() 沿用探路量到的欄寬", () => {
+    const h = pre();
+    probe(h, TYPE_MENU);
+    h.settle(PROMPT, { fieldWidth: 53 });
+    leaveToArticle(h);
+    h.session.start({ text: "測".repeat(40), type: "push" });
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT); // 這一幀量不到 ⇒ 沿用 armed 的 53
+    expect(h.sent[h.sent.length - 1]).toBe(u2b("測".repeat(25)) + "\r");
   });
 });
 

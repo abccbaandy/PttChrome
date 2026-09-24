@@ -336,7 +336,9 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 `fg=0/bg=7`（13 格 ＝ `IDLEN+1`，與 `namecomplete` 的 `len` 對得上），`invert` 旗標**從來不會被設起來** ——
 照 `vtuikit.c` 的 `ESC[0;7m` 去讀 `invert` 的第一版 unit 全綠、線上完全沒生效。同一輪實測的其他畫面：
 列表表頭／`【 搜尋全站看板 】`標題是 `fg=0/bg=7` 但**從 col 0 反白到行尾**（故要第二個條件），
-列表狀態列 `fg=4/bg=6`、pmore 文章底部狀態列 `fg=7/bg=4`、推文輸入欄 `fg=7/bg=0` ⇒ 都不會誤判。
+列表狀態列 `fg=4/bg=6`、pmore 文章底部狀態列 `fg=7/bg=4` ⇒ 都不會誤判。
+推文輸入欄**也是反白**（舊版本節誤記成 fg=7/bg=0，已推翻）：`ESC[30;47m` ＋ `maxlength` 格，欄內 echo 同色
+（`ptt-debug-20260924-221056.json#t=4660/17273/6148`）⇒ 欄寬可量，`term_buf.inputFieldWidth`，消費端見 §11.3 末。
 守護：`tests/e2e/search_prompt.spec.js`（live，這條只有連真 PTT 量得到）。
 
 **列表上叫出的 prompt 不改變 `pageState`（client 推論，CONFIRMED 讀碼）**：`mbbsd/board.c#search_local_board`
@@ -765,8 +767,12 @@ UI**，不在推文流程內。`MAX_RECOMMENDS(100)` 只影響列表上的計數
   消費端與決策表見 `docs/long-push.md`「游標錨定」＋`src/js/long_push_anchor.js`。
 - 順帶：`do_add_recommend` 自己留了 race 自白（`bbs.c:2721`）——推文內容 append 到記憶體裡的
   **舊檔名**，`.DIR` 計數卻用 `ent` 行號寫，「推的時候前文被刪 → 加到後文的推文數」。
-- unknown：`vgetstring` 畫的反白欄是 `ESC[0;7m`（fg0/bg7），與 §5.1 記的 fg7/bg0 相左。故
-  **不採用「數反白格反推 `maxlength`」**，改用 §11.1 的公式 ＋ 畫面上推文列有無 IP 欄。
+- CONFIRMED（2026-09-24）：推文輸入欄是 `ESC[30;47m` 反白，**欄寬＝`maxlength`**。實錄同一帳號（id 10 字）
+  IP 板 36 格、非 IP 板 51 格，差 15＝IP 欄，`欄寬-1` 與 §11.1 公式逐位吻合
+  （`ptt-debug-20260924-221056.json#t=4660/17273`）。⇒ 長推文**以數反白格為準**（`term_buf.inputFieldWidth`
+  → `long_push.js#pushMaxBytes({fieldWidth})`），§11.1 公式＋推文列 IP 推論降為量不到時的退路。
+  確認列（`確定[y/N]:`）的線上 bytes 只有 `ESC[28;53H確定[y/N]:` ＋ 2 格欄（t=10064）——pfterm 只送差異，
+  內容欄沿用輸入列那一幀；不必也不要再從確認列量。
 
 ## 11.4 游標標示：`cursor_show()` 的兩套 flag（2026-08-26 全部 CONFIRMED @ `mbbsd/stuff.c`）
 

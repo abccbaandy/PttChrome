@@ -127,6 +127,8 @@ LongPushSession.prototype = {
     this._typeKey = PUSH_TYPE_KEY.push;
     this._userId = '';
     this._ipLogged = null;
+    // 推文輸入列的反白欄寬（term_buf.inputFieldWidth）＝maxlength，量到過就以它為準。
+    this._fieldWidth = null;
     this._maxBytes = pushMaxBytes({});
     this._cancelling = false;
     this._abortSteps = 0;
@@ -397,6 +399,7 @@ LongPushSession.prototype = {
         armed.screen && armed.screen.ipLogged != null
           ? armed.screen.ipLogged
           : null;
+      this._fieldWidth = (armed.screen && armed.screen.fieldWidth) || null;
       const landed = armed.landedInArticle;
       this.disarm();
       this._prologue();
@@ -585,6 +588,8 @@ LongPushSession.prototype = {
           screen: c,
           listKind: facts.kind,
           rowTexts: facts.rowTexts,
+          // expect 在 settle 當下呼叫 ⇒ termBuf 就是這一幀。
+          fieldWidth: c.kind === 'inputPrompt' ? self._measureField() : null,
           facts: facts
         };
       },
@@ -650,15 +655,12 @@ LongPushSession.prototype = {
       if (c.userId) screen.userId = c.userId;
     }
     if (c.kind !== 'fatal') {
-      // 畫面上還是文章，既有的推文列看得出這塊板記不記 IP ⇒ 單則上限的另一半。
-      const ip = detectIpLogged(result ? result.rowTexts : null);
-      if (ip !== null) screen.ipLogged = ip;
-      if (screen.userId) this._userId = screen.userId;
-      if (ip !== null) this._ipLogged = ip;
-      this._maxBytes = pushMaxBytes({
-        userId: this._userId,
-        ipLogged: this._ipLogged
-      });
+      // 降級分支（inputPrompt）這一幀就量得到欄寬；型別選單要等收尾的 Ctrl-C 落到
+      // 輸入列那一幀（_enqueueAbort 裡量）。量不到時畫面上還是文章，既有的推文列
+      // 看得出這塊板記不記 IP ⇒ 公式退路的另一半。
+      this._calibrate(screen.userId, result && result.fieldWidth, result && result.rowTexts);
+      if (this._ipLogged !== null) screen.ipLogged = this._ipLogged;
+      if (this._fieldWidth) screen.fieldWidth = this._fieldWidth;
       this._preflightScreen = screen;
     }
 
@@ -786,15 +788,9 @@ LongPushSession.prototype = {
   // 步驟 3：內容 + Enter。queue 的 send 綁的是 raw conn.send（pttchrome.jsx），
   // 所以 convSend 會做的 Big5 轉碼要自己來（同 list_session 的貼上路徑）。
   _enqueueContent: function(screen, result) {
-    // 這一幀的 prompt 帶著自己的帳號，是最準的 maxlength 來源；IP 記錄板則從畫面
-    // 上已完成的推文列反推（判不出來時 pushMaxBytes 取較短的那個＝安全方向）。
-    if (screen.userId) this._userId = screen.userId;
-    const ip = detectIpLogged(result ? result.rowTexts : null);
-    if (ip !== null) this._ipLogged = ip;
-    this._maxBytes = pushMaxBytes({
-      userId: this._userId,
-      ipLogged: this._ipLogged
-    });
+    // 這一幀的反白欄寬就是 maxlength（權威）；量不到才退回公式：prompt 上的帳號
+    // ＋畫面上已完成的推文列有沒有 IP 欄（判不出來時取較短的那個＝安全方向）。
+    this._calibrate(screen.userId, result && result.fieldWidth, result && result.rowTexts);
     this._recount();
 
     const spans = this._pendingSpans();
@@ -841,13 +837,13 @@ LongPushSession.prototype = {
     this._sent++;
     // 第 1 則落地後畫面上就有自己剛推的那一列，用它把 IP 記錄板判準確
     // （第 1 則是用保守值算的，之後可以放寬）。
-    const ip = detectIpLogged(result ? result.rowTexts : null);
-    if (ip !== null) this._ipLogged = ip;
-    if (this._userId)
-      this._maxBytes = pushMaxBytes({
-        userId: this._userId,
-        ipLogged: this._ipLogged
-      });
+    // （已經量到欄寬時這裡不會改變結果，欄寬優先。）
+    if (this._userId || this._fieldWidth)
+      this._calibrate(null, null, result && result.rowTexts);
+    else {
+      const ip = detectIpLogged(result ? result.rowTexts : null);
+      if (ip !== null) this._ipLogged = ip;
+    }
     this._recount();
 
     // 每一則重新給一次定位額度。
@@ -1064,6 +1060,33 @@ LongPushSession.prototype = {
   // onSettled 是收尾完成後要做的事（預設：取消整趟長推文；探路階段傳的是「回原
   // 文章 → 回報結果」）。onLost 是收尾鍵逾時／被 flush 時的出口——那時畫面狀態
   // 未知，**不可以**再往下送 ⏎ 這類鍵（不變量 2），所以探路那條路會直接回報失敗。
+  // 單則上限的唯一計算點。fieldWidth（畫面反白欄寬）優先，其次才是公式的兩個輸入。
+  _calibrate: function(userId, fieldWidth, rowTexts) {
+    if (userId) this._userId = userId;
+    if (fieldWidth) this._fieldWidth = fieldWidth;
+    const ip = detectIpLogged(rowTexts || null);
+    if (ip !== null) this._ipLogged = ip;
+    this._maxBytes = pushMaxBytes({
+      fieldWidth: this._fieldWidth,
+      userId: this._userId,
+      ipLogged: this._ipLogged
+    });
+  },
+
+  _measureField: function() {
+    const buf = this._termBuf;
+    return buf && buf.inputFieldWidth ? buf.inputFieldWidth() : null;
+  },
+
+  // 收尾途中經過輸入列：量欄寬、記帳號，探路階段一併交給輸入框。
+  _onAbortPrompt: function(s) {
+    this._calibrate(s.userId, this._measureField(), null);
+    const screen = this._phase === 'preflight' ? this._preflightScreen : null;
+    if (!screen) return;
+    if (s.userId && !screen.userId) screen.userId = s.userId;
+    if (this._fieldWidth) screen.fieldWidth = this._fieldWidth;
+  },
+
   _enqueueAbort: function(onSettled, onLost) {
     const self = this;
     const settled =
@@ -1097,6 +1120,9 @@ LongPushSession.prototype = {
       expect: function(snapshot, facts) {
         const s = classifyPushScreen(facts.rowTexts, facts.rows);
         if (s.kind === c.kind) return false;
+        // 型別選單上的 Ctrl-C 會被 vkey() 當成預設「推」、先落到輸入列 ⇒ 探路最常見
+        // 的路徑只有這一幀看得到反白欄，不必多送任何鍵就量得到單則上限。
+        if (s.kind === 'inputPrompt') self._onAbortPrompt(s);
         // 收尾完要用**新鮮的** facts 過守門（探路那條路接著要按 ⏎ 回文章）。
         self._lastFacts = facts;
         return { screen: s };
