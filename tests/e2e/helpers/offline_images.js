@@ -39,7 +39,7 @@ const IMAGE_SCENARIOS = ['cache', 'slow', 'broken', 'redirect'];
 // 與「不跟隨」一模一樣，但網路上那筆請求是真的送出去了。
 //
 // 這正是終點的 origin 絕對不可以沿用原址的理由：產品預設 `useImgurProxy:true` 會把
-// imgur 網址改寫成自架 Worker 位址（src/js/imgur_proxy.js），沿用 origin ⇒ 每輪 offline
+// imgur 網址改寫成自架 Worker 位址（src/js/image_proxy.js），沿用 origin ⇒ 每輪 offline
 // e2e 都真的去打自家 Worker（實錄：`GET /__offline-gone__/783.png`）。改鑄在保留域
 // （RFC 2606 `.invalid`，永不解析）上，攔截層正常時照舊被接住回 404，攔截層破洞時
 // 也只會 DNS 失敗。守護：tests/unit/offline_image_profile.test.js 的「301 轉址鏈」段、

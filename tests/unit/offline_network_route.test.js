@@ -43,6 +43,15 @@ describe("離線重放：外部請求分類", () => {
     expect(classifyOfflineRequest("https://pbs.twimg.com/media/AB.png:large")).toBe("image");
   });
 
+  // 圖片代理（產品預設開）改寫後的位址：Worker 路徑刻意以圖片副檔名結尾，才會被
+  // 接成 fixture；歸錯類＝每輪 offline e2e 都真的打到自家 Worker。
+  test("圖片代理的 twimg／catbox 路徑歸 image", () => {
+    const W = "https://ptt-imgur-cache.ptt-relay-8xquy.workers.dev";
+    expect(classifyOfflineRequest(`${W}/twimg/orig/HKlOUYHawAAczvg.jpg`)).toBe("image");
+    expect(classifyOfflineRequest(`${W}/catbox/rdpjcp.png`)).toBe("image");
+    expect(classifyOfflineRequest(`${W}/L976tXr.webp`)).toBe("image");
+  });
+
   test("查詢字串在副檔名之後仍算圖片", () => {
     expect(classifyOfflineRequest("https://ex.com/a.jpg?w=100")).toBe("image");
     expect(classifyOfflineRequest("https://ex.com/a.png#frag")).toBe("image");

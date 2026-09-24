@@ -9,7 +9,7 @@ import {
   tenorResolveUrl,
   tenorMediaDescriptor,
 } from "../../src/js/tenor.js";
-import { DEFAULT_IMGUR_PROXY_BASE } from "../../src/js/imgur_proxy.js";
+import { DEFAULT_IMGUR_PROXY_BASE } from "../../src/js/image_proxy.js";
 
 describe("RE_TENOR", () => {
   test.each([
@@ -51,7 +51,7 @@ describe("tenorResolveUrl", () => {
     );
   });
 
-  test("使用者自訂 base（裸 host／尾端斜線）沿用 imgur_proxy 的正規化", () => {
+  test("使用者自訂 base（裸 host／尾端斜線）沿用 image_proxy 的正規化", () => {
     expect(
       tenorResolveUrl("https://tenor.com/bgOd4.gif", {
         enabled: true,
@@ -64,10 +64,17 @@ describe("tenorResolveUrl", () => {
 
   // 代理關掉 = 使用者不想把瀏覽紀錄送給專案方 Worker ⇒ tenor 也一併停用。
   test.each([
-    [{ enabled: false, base: DEFAULT_IMGUR_PROXY_BASE }, "代理關閉"],
+    [{ enabled: false, base: DEFAULT_IMGUR_PROXY_BASE }, "代理總開關關閉"],
+    [{ enabled: true, base: DEFAULT_IMGUR_PROXY_BASE, sites: { tenor: false } }, "tenor 站開關關閉"],
     [null, "無設定"],
   ])("回 null（%#：%s）", (config) => {
     expect(tenorResolveUrl("https://tenor.com/bgOd4.gif", config)).toBe(null);
+  });
+
+  test("關掉其他站不影響 tenor", () => {
+    expect(
+      tenorResolveUrl("https://tenor.com/bgOd4.gif", { ...on, sites: { imgur: false, twimg: false } }),
+    ).not.toBe(null);
   });
 
   test("非 tenor 連結一律回 null（別讓 Worker 變成任意站台跳板）", () => {

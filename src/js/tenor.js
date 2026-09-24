@@ -9,14 +9,14 @@
 // 後回 JSON（proxy/imgur-worker/src/index.js 的 /tenor 路由）。實測數據見
 // docs/media-preview-addons.md 的 tenor 段。
 //
-// 開關沿用 imgur 快取代理（useImgurProxy，預設開）：同一個 Worker、同一個營運者，
-// 使用者關掉代表不想把瀏覽紀錄送過去 ⇒ tenor 一併停用（連結維持原樣、不預覽，
-// 仍優於現況的「破圖」）。
-import { normalizeImgurProxyBase } from "./imgur_proxy.js";
+// 開關＝圖片代理總開關（useImgurProxy）∧ tenor 站開關（imageProxyTenor），皆預設開：
+// 同一個 Worker、同一個營運者，使用者關掉代表不想把瀏覽紀錄送過去 ⇒ tenor 停用
+// （連結維持原樣、不預覽，仍優於現況的「破圖」）。
+import { normalizeImgurProxyBase, siteProxyEnabled } from "./image_proxy.js";
 import { RE_TENOR } from "./image_url_detect.js";
 
 export const tenorResolveUrl = (pageUrl, config) => {
-  if (!config || !config.enabled) return null;
+  if (!siteProxyEnabled(config, "tenor")) return null;
   // 二次確認來源網域：呼叫端已用 RE_TENOR 過濾，這裡是不讓任何路徑把非 tenor 的
   // URL 送進 Worker 的 ?url=（Worker 端也有白名單，兩層都要在）。
   if (!pageUrl || !RE_TENOR.test(pageUrl)) return null;

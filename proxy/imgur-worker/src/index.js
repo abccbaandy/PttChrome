@@ -1,4 +1,6 @@
-// i.imgur.com 快取代理（Cloudflare Worker）。
+// 圖片快取代理（Cloudflare Worker）：i.imgur.com 起家，後來加上 pbs.twimg.com 與
+// files.catbox.moe（路由表見 upstreamFor）。以下原因段落是 imgur 的；twimg／catbox
+// 的量測在 docs/imgur-latency-research.md 各自的節。
 //
 // 為什麼需要：imgur 的 CDN 是 Fastly，但它把台灣流量導到**美國西岸 BUR（Burbank）**
 // POP（其他 Fastly 客戶如 pypi/fastly.com 都導到 NRT 東京）。跨太平洋鏈路在有負載時
@@ -22,7 +24,33 @@
 // 影片一律 fail-open 導回 i.imgur.com 原址，維持現行行為。
 const RE_ASSET = /^\/([A-Za-z0-9]{1,12})\.(jpg|jpeg|png|gif|webp)$/;
 
+// pbs.twimg.com：瓶頸不同於 imgur——TTFB 穩，但對台灣的 body 吞吐只有 24–70 KB/s，
+// app 第一候選 `:orig`（實測 2.38 MB）直連 20 次有 14 次撞 40 s 上限。量測見
+// docs/imgur-latency-research.md 的 twimg 節。
+// 尺寸放 path 不放 query、且以圖片副檔名結尾：前者避免快取碎片，後者讓 offline e2e
+// 的攔截層（tests/e2e/helpers/replay.js#classifyOfflineRequest）認得出這是圖。
+// twimg 的 format 只有 jpg／png／webp 三種。
+const RE_TWIMG_ASSET =
+  /^\/twimg\/(orig|large|medium|small|4096x4096)\/([A-Za-z0-9_-]{1,32})\.(jpg|png|webp)$/;
+
+// files.catbox.moe：單一 nginx origin、無 CDN。影片（catbox 大宗）同 imgur 一律不收。
+const RE_CATBOX_ASSET = /^\/catbox\/([A-Za-z0-9]{1,16})\.(jpg|jpeg|png|gif|webp)$/;
+
+// 路徑 → 回源位址（也是 fail-open 302 的目的地），不在白名單回 null。
+// **這是安全邊界**：回源 host 只能是下面三個寫死的，路徑片段只能是白名單字元。
+export const upstreamFor = (pathname) => {
+  let m = RE_ASSET.exec(pathname);
+  if (m) return `https://i.imgur.com/${m[1]}.${m[2]}`;
+  m = RE_TWIMG_ASSET.exec(pathname);
+  if (m) return `https://pbs.twimg.com/media/${m[2]}?format=${m[3]}&name=${m[1]}`;
+  m = RE_CATBOX_ASSET.exec(pathname);
+  if (m) return `https://files.catbox.moe/${m[1]}.${m[2]}`;
+  return null;
+};
+
 const IMMUTABLE = "public, max-age=31536000, immutable";
+
+const UPSTREAM_UA = "ptt-image-proxy/1.0 (+https://github.com/abccbaandy/PttChrome)";
 
 // ---------------------------------------------------------------------------
 // `/tenor` 解析路由
@@ -79,7 +107,7 @@ const isTenorMediaUrl = (v) => {
 // 逐個 <meta> tag 掃描、再從單一 tag 取屬性。
 // **刻意不寫 `<meta[^>]+property="og:video"[^>]+content="([^"]+)"`**：雙 `[^>]+`
 // 是多項式回溯（CodeQL js/polynomial-redos），而輸入是外部網頁。同理見
-// src/js/imgur_proxy.js 的 stripTrailingSlashes 註解。
+// src/js/image_proxy.js 的 stripTrailingSlashes 註解。
 const attr = (tag, name) => {
   const m =
     new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i").exec(tag) ||
@@ -213,9 +241,9 @@ export const passthroughHeaders = (upstream, { cacheable, nowMs }) => {
   return h;
 };
 
-const redirectToOrigin = (id, ext) =>
-  // fail-open：代理出任何狀況都退回直連 imgur，體感等於現況，不會比不裝代理更差。
-  Response.redirect(`https://i.imgur.com/${id}.${ext}`, 302);
+const redirectToOrigin = (origin) =>
+  // fail-open：代理出任何狀況都退回直連原站，體感等於現況，不會比不裝代理更差。
+  Response.redirect(origin, 302);
 
 export default {
   async fetch(request) {
@@ -239,10 +267,12 @@ export default {
       return handleTenor(request, url);
     }
 
-    const m = RE_ASSET.exec(url.pathname);
-    if (!m) {
+    const origin = upstreamFor(url.pathname);
+    if (!origin) {
       return new Response(
         "not found\nusage: /<imgur-id>.<jpg|jpeg|png|gif|webp>\n" +
+          "       /twimg/<orig|large|medium|small|4096x4096>/<media-id>.<jpg|png|webp>\n" +
+          "       /catbox/<name>.<jpg|jpeg|png|gif|webp>\n" +
           "       /tenor?url=<tenor 分享連結>\n",
         {
           status: 404,
@@ -250,31 +280,36 @@ export default {
         },
       );
     }
-    const [, id, ext] = m;
 
     let upstream;
     try {
-      upstream = await fetch(`https://i.imgur.com/${id}.${ext}`, {
+      upstream = await fetch(origin, {
         method: request.method,
         // imgur 對 Referer: *.ptt.cc 直接 403（見 ImagePreviewer 的 needsReferer）。
         // Worker 回源時完全不帶 referer，順帶把前端那組 referer workaround 也解掉。
-        headers: { accept: request.headers.get("accept") || "image/*,*/*" },
+        headers: {
+          accept: request.headers.get("accept") || "image/*,*/*",
+          // Workers 的 fetch 預設不帶 User-Agent，而 files.catbox.moe 對無 UA 的請求
+          // 直接斷線（Cloudflare 回 520；本機 `curl -A ""` 同樣重現成連線重置）。
+          // 帶一個誠實的識別字串即可，不偽裝成瀏覽器。
+          "user-agent": UPSTREAM_UA,
+        },
         redirect: "follow",
       });
     } catch (e) {
-      return redirectToOrigin(id, ext);
+      return redirectToOrigin(origin);
     }
 
     // 上游掛掉／限流／資產不存在 → 一律導回原址，讓瀏覽器自己去要（含 imgur 的
     // removed.png 302 也會由瀏覽器原樣處理）。
     if (!upstream.ok) {
-      return redirectToOrigin(id, ext);
+      return redirectToOrigin(origin);
     }
 
     // imgur 對非圖片路徑會回 HTML 錯誤頁；只放行真的是圖片的回應。
     const ct = (upstream.headers.get("content-type") || "").toLowerCase();
     if (ct.indexOf("image/") !== 0) {
-      return redirectToOrigin(id, ext);
+      return redirectToOrigin(origin);
     }
 
     return new Response(request.method === "HEAD" ? null : upstream.body, {

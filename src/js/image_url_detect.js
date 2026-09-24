@@ -15,6 +15,10 @@ export const RE_IMGUR_SINGLE =
 export const RE_TWIMG =
   /^https?:\/\/pbs\.twimg\.com\/media\/([\w-]+)(?:\.(\w+))?(?:\?.*?format=(\w+))?/i;
 export const RE_MEEE = /^https?:\/\/meee\.com\.tw\/(\w+)(?:\.(\w+))?/i;
+// catbox 直連圖。只收圖片副檔名（影片交給泛用影片 resolver 直連）；名稱字元集對齊
+// 代理 Worker 的 RE_CATBOX_ASSET。isImageLikeUrl 不必列它——RE_IMAGE_EXT 已涵蓋。
+export const RE_CATBOX =
+  /^https?:\/\/files\.catbox\.moe\/([A-Za-z0-9]{1,16})\.(jpe?g|png|gif|webp)(?:$|[?#])/i;
 
 // tenor 的**分享頁**（HTML，不是媒體檔）：短連結 tenor.com/<code>.gif 與
 // tenor.com/view/<slug>-<id>。刻意不含 media*.tenor.com——那是直連檔，交給泛用的

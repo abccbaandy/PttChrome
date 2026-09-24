@@ -86,13 +86,22 @@ export const DEFAULT_PREFS = {
   // 多數人不會去翻設定，預設關等於功能沒人用。median 幾乎不變，賣點是「不再卡住」
   // 不是「更快」。額度的計費單位是**回源次數**（快取命中時 Worker 不執行），加上
   // PTT 熱門文重複率高 ⇒ 100k/day 的消耗遠低於直覺。額度用盡或 Worker 掛掉時
-  // srcset 會自動退回 i.imgur.com（見 imgur_proxy.js#imgurCandidates），不會更差。
+  // srcset 會自動退回 i.imgur.com（見 image_proxy.js#imgurCandidates），不會更差。
   // 隱私：代理由專案方持有，會看到「哪個 IP 在看哪張圖」（Worker 不留任何 log），
   // 設定 UI 有明確揭露文字。量測見 docs/imgur-latency-research.md。
-  // 空字串 = 用專案方的 Worker（imgur_proxy.js#DEFAULT_IMGUR_PROXY_BASE，UI 拿它當
+  // 空字串 = 用專案方的 Worker（image_proxy.js#DEFAULT_IMGUR_PROXY_BASE，UI 拿它當
   // placeholder），理由同 proxyUrl。
+  //
+  // 2026-09 起 useImgurProxy 升格為**圖片代理總開關**（涵蓋 imgur／twimg／catbox／tenor），
+  // 各站再各有一個開關（image_proxy.js#IMAGE_PROXY_SITES）。總開關刻意沿用舊 key：
+  // 本 repo 沒有 pref 遷移，改 key 會讓以前為隱私關掉代理的人被新 key 的預設值
+  // 重新打開；沿用它則新站台對他們也維持關閉。imgurProxyUrl 同理沿用（已是共用位址）。
   useImgurProxy: true,
   imgurProxyUrl: "",
+  imageProxyImgur: true,
+  imageProxyTwimg: true,
+  imageProxyCatbox: true,
+  imageProxyTenor: true,
 
   // 滑鼠（設定頁的「滑鼠」分頁）。決策層是純函式 js/mouse_regions.js，合約與
   // 舊→新 key 對照見 docs/mouse.md。

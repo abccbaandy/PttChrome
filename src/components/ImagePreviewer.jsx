@@ -7,10 +7,16 @@ import {
   RE_TWIMG,
   RE_MEEE,
   RE_TENOR,
+  RE_CATBOX,
   flickrBase58Decode,
 } from "../js/image_url_detect";
 import { probeImgurAsset } from "../js/imgur_probe";
-import { getImgurProxyConfig, imgurCandidates } from "../js/imgur_proxy";
+import {
+  getImageProxyConfig,
+  imgurCandidates,
+  twimgCandidates,
+  catboxCandidates,
+} from "../js/image_proxy";
 import { tenorResolveUrl, tenorMediaDescriptor } from "../js/tenor";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 
@@ -454,12 +460,12 @@ const STATIC_IMGUR_EXT = new Set(["jpg", "jpeg", "png"]);
 //
 // 圖片候選一律經 imgurCandidates()：代理位置放第一順位、i.imgur.com 原址墊在後面，
 // Worker 掛掉／額度用盡時由 FallbackImage 自動退回現況（代理關閉時輸出與整合前逐字
-// 相同）。**影片分支絕不能碰**——代理白名單擋影片會回 404，見 imgur_proxy.js。
+// 相同）。**影片分支絕不能碰**——代理白名單擋影片會回 404，見 image_proxy.js。
 // 只有一個候選時不放 srcset：descriptor 形狀與整合代理前逐字相同（代理關閉時
 // 整條路徑的輸出完全不變），FallbackImage 的 `descriptor.srcset || [descriptor.src]`
 // 本來就等價。
 const imgurImage = (id, exts) => {
-  const candidates = imgurCandidates(id, exts, getImgurProxyConfig());
+  const candidates = imgurCandidates(id, exts, getImageProxyConfig());
   return candidates.length > 1
     ? { type: "image", src: candidates[0], srcset: candidates }
     : { type: "image", src: candidates[0] };
@@ -564,7 +570,9 @@ const imageUrlResolvers = [
     },
   },
   {
-    /* twitter / X — request :orig with png/large/plain fallbacks */
+    /* twitter / X — request :orig with png/large/plain fallbacks.
+       代理開啟時代理的 orig 排第一（twimg 對台灣吞吐 24–70 KB/s，:orig 直連常 30 s+），
+       直連四候選原樣墊後，見 image_proxy.js#twimgCandidates。 */
     regex: RE_TWIMG,
     test(src) {
       return this.regex.test(src);
@@ -573,17 +581,8 @@ const imageUrlResolvers = [
       const [, id, dotExt, queryExt] = this.regex.exec(src);
       let ext = (dotExt || queryExt || "jpg").toLowerCase();
       if (ext === "webp") ext = "jpg";
-      const base = `https://pbs.twimg.com/media/${id}`;
-      return Promise.resolve({
-        type: "image",
-        src: `${base}.${ext}:orig`,
-        srcset: [
-          `${base}.${ext}:orig`,
-          `${base}.png:orig`,
-          `${base}.${ext}:large`,
-          `${base}.${ext}`,
-        ],
-      });
+      const srcset = twimgCandidates(id, ext, getImageProxyConfig());
+      return Promise.resolve({ type: "image", src: srcset[0], srcset });
     },
   },
   {
@@ -687,7 +686,7 @@ const imageUrlResolvers = [
       return this.regex.test(src);
     },
     request(src) {
-      const endpoint = tenorResolveUrl(src, getImgurProxyConfig());
+      const endpoint = tenorResolveUrl(src, getImageProxyConfig());
       // 代理關閉 → 不預覽（reject），**不可**掉回泛用規則，否則又變回破圖。
       if (!endpoint)
         return Promise.reject(new Error("tenor: resolver disabled"));
@@ -701,6 +700,24 @@ const imageUrlResolvers = [
           if (!descriptor) throw new Error("tenor: no media");
           return descriptor;
         });
+    },
+  },
+  {
+    /* catbox 直連圖（files.catbox.moe/<name>.<圖片副檔名>）：代理第一、原址墊底。
+       影片副檔名 RE_CATBOX 不收，照舊落到下面的泛用影片 resolver 直連（Worker 不代理影片）。
+       只有一個候選（代理關閉／不可代理）時不放 srcset：descriptor 與泛用圖片 resolver 逐字相同。 */
+    regex: RE_CATBOX,
+    test(src) {
+      return this.regex.test(src);
+    },
+    request(src) {
+      const [, name, ext] = this.regex.exec(src);
+      const candidates = catboxCandidates(name, ext, getImageProxyConfig());
+      return Promise.resolve(
+        candidates.length > 1
+          ? { type: "image", src: candidates[0], srcset: candidates }
+          : { type: "image", src },
+      );
     },
   },
   {

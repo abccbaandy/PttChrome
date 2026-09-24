@@ -1,4 +1,4 @@
-# ptt-imgur-cache — imgur 快取代理（Cloudflare Worker）
+# ptt-imgur-cache — 圖片快取代理（Cloudflare Worker：imgur／twimg／catbox）
 
 根因與量測數據見 [`docs/imgur-latency-research.md`](../../docs/imgur-latency-research.md)。
 一句話：imgur 的 Fastly 把台灣流量導到美國西岸 BUR，20–25% 的請求隨機 stall 9–24 s。
@@ -23,10 +23,24 @@ MISS 也比直連快（LAX→BUR 是美國境內），冷門圖同樣受益：`a
 
 ```
 GET|HEAD  https://<worker>/<imgur-id>.<jpg|jpeg|png|gif|webp>
+          → 回源 https://i.imgur.com/<id>.<ext>
+GET|HEAD  https://<worker>/twimg/<orig|large|medium|small|4096x4096>/<media-id>.<jpg|png|webp>
+          → 回源 https://pbs.twimg.com/media/<id>?format=<ext>&name=<size>
+GET|HEAD  https://<worker>/catbox/<name>.<jpg|jpeg|png|gif|webp>
+          → 回源 https://files.catbox.moe/<name>.<ext>
+
+三者共用：
           → 200 圖片，Cache-Control: public, max-age=31536000, immutable
-          → 302 https://i.imgur.com/<id>.<ext>   （上游 4xx/5xx/非圖片/連線失敗）
+          → 302 回源位址   （上游 4xx/5xx/非圖片/連線失敗）
           → 404 （路徑不合白名單）
 ```
+
+- 路由表是 `src/index.js#upstreamFor`（**安全邊界**：回源 host 寫死三個、片段只放白名單字元），
+  守護 `test/path.test.js`。路徑刻意以圖片副檔名結尾（主專案 offline e2e 的攔截層靠副檔名接住請求）。
+- **回源必帶 User-Agent**（`UPSTREAM_UA`）：catbox 對無 UA 的請求直接斷線 ⇒ Cloudflare 回 520 ⇒
+  全數 fail-open。守護 `test/fetch.test.js`。twimg／catbox 量測見 research doc 文末兩節。
+- **驗證新路由不必動 prod**：`npx wrangler dev --remote` 跑在 Cloudflare 邊緣（本機 localhost 轉送），
+  回源行為與 prod 相同。
 
 - **mp4／webm 刻意不支援**：Cloudflare 服務條款允許 Workers 服務圖片／音訊，**排除影片檔**。
   影片維持直連 imgur。

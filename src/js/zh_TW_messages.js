@@ -688,16 +688,28 @@
     "message": "圖片載入代理"
   },
   "tooltip_imgurProxy": {
-    "message": "imgur 的 CDN 把台灣流量導到美國，同一張圖偶爾會卡住 9～24 秒。開啟後 imgur 圖片改由本專案的 Cloudflare Worker 轉發並快取，可消除這種卡住的情況 (一般情況下的載入速度不會變快)。該服務會看到你的 IP 與所讀取的圖片位址，但不留存任何紀錄；代理失效時會自動退回直連 imgur。影片 (mp4) 一律直連，不經過代理。同一個服務也負責解析 tenor 的 GIF 分享連結 (tenor.com/xxxxx.gif 其實是網頁不是圖檔，只能由伺服端代為解析)，關閉後這類連結不會顯示預覽。"
+    "message": "圖片載入代理：由本專案的 Cloudflare Worker 轉發並快取下列圖床的圖片，解決「某些圖偶爾要等很久」的問題。imgur 的 CDN 把台灣流量導到美國，同一張圖偶爾會卡住 9～24 秒，經代理後不再卡住 (一般情況下的速度不會變快)；X/Twitter 的原圖對台灣傳輸很慢，大圖直連常要 30 秒以上，經代理約 1.5 秒；catbox 只有單一台主機，經代理後熱門圖片不必再回到那台主機。該服務會看到你的 IP 與所讀取的圖片位址，但不留存任何紀錄；代理失效時會自動退回直連原站。影片 (mp4 等) 一律直連，不經過代理。同一個服務也負責解析 tenor 的 GIF 分享連結 (tenor.com/xxxxx.gif 其實是網頁不是圖檔，只能由伺服端代為解析)，關閉後這類連結不會顯示預覽。"
   },
   "options_useImgurProxy": {
-    "message": "透過代理載入 imgur 圖片 (重新整理後生效)"
+    "message": "透過專案代理載入圖片 (重新整理後生效)"
+  },
+  "options_imageProxySite_imgur": {
+    "message": "imgur (i.imgur.com)"
+  },
+  "options_imageProxySite_twimg": {
+    "message": "X / Twitter (pbs.twimg.com)"
+  },
+  "options_imageProxySite_catbox": {
+    "message": "catbox (files.catbox.moe)"
+  },
+  "options_imageProxySite_tenor": {
+    "message": "tenor GIF 分享連結解析 (tenor.com)"
   },
   "options_imgurProxyUrl": {
     "message": "圖片代理位址"
   },
   "tooltip_imgurProxyUrl": {
-    "message": "如 https://your-worker.workers.dev，自架版本見 proxy/imgur-worker"
+    "message": "所有站台共用這個位址。如 https://your-worker.workers.dev，自架版本見 proxy/imgur-worker"
   },
   "options_copyOnSelect": {
     "message": "選取文字時自動複製文字"

@@ -1,7 +1,7 @@
 // 設定面板「連線」分頁的 UI 契約（jsdom + @testing-library/react）。
 // 這個分頁把「連線相關」的設定從一般分頁抽出來獨立成一頁，收兩組：
 //   1) BBS proxy（useProxy / proxyUrl）——原本埋在一般分頁最下面
-//   2) imgur 圖片快取代理（useImgurProxy / imgurProxyUrl）
+//   2) 圖片快取代理（總開關 useImgurProxy ＋ 各站 imageProxy* ＋ 共用位址 imgurProxyUrl）
 // 兩組形狀相同：Checkbox 當閘門，URL 欄位在閘門關閉時反灰但**值保留**，
 // 且 URL 欄位預設就填好可用位址（使用者不必知道要填什麼）。
 //
@@ -12,7 +12,7 @@ import { MantineProvider } from "@mantine/core";
 import { PrefModal } from "../../src/components/ContextMenu/PrefModal";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
-import { DEFAULT_IMGUR_PROXY_BASE } from "../../src/js/imgur_proxy";
+import { DEFAULT_IMGUR_PROXY_BASE, IMAGE_PROXY_SITES } from "../../src/js/image_proxy";
 import { DEFAULT_PROXY_HOST } from "../../src/js/util";
 
 // 雲端同步不是本測試的標的，且會拉 Firebase SDK。
@@ -134,13 +134,49 @@ describe("連線分頁：閘門與 URL 欄位", () => {
     openConnectionTab({ imgurProxyUrl: "https://my.example.dev" });
     fireEvent.change(field("imgurProxyUrl"), { target: { value: "" } });
     expect(field("imgurProxyUrl").value).toBe("");
-    // 回退本身守在 imgur_proxy.test.js / proxy_site.test.js（純函式層）。
+    // 回退本身守在 image_proxy.test.js / proxy_site.test.js（純函式層）。
   });
 
   test("imgur 代理預設開啟", () => {
     openConnectionTab();
     expect(field("useImgurProxy")).toBeChecked();
     expect(field("imgurProxyUrl")).not.toBeDisabled();
+  });
+});
+
+// 各站開關：清單＝image_proxy.js#IMAGE_PROXY_SITES。PrefModal 為了讓設定搜尋的
+// 靜態掃描認得，逐項寫死 name="…"；這組測試守「註冊表加了站，畫面沒跟上」。
+describe("連線分頁：圖片代理各站開關", () => {
+  const siteKeys = IMAGE_PROXY_SITES.map((s) => s.prefKey);
+
+  test("註冊表的每一站都有 checkbox，且預設勾選", () => {
+    openConnectionTab();
+    for (const key of siteKeys) {
+      expect([key, !!field(key)]).toEqual([key, true]);
+      expect(field(key)).toBeChecked();
+      expect(field(key)).not.toBeDisabled();
+    }
+  });
+
+  test("每一站的標籤文字有渲染（列出支援的站台）", () => {
+    openConnectionTab();
+    for (const site of IMAGE_PROXY_SITES) {
+      expect(screen.getByText(i18n(site.labelKey))).toBeInTheDocument();
+    }
+  });
+
+  test("總開關關閉：各站反灰但逐站選擇保留", () => {
+    openConnectionTab({ useImgurProxy: false, imageProxyTwimg: false });
+    for (const key of siteKeys) expect(field(key)).toBeDisabled();
+    expect(field("imageProxyTwimg")).not.toBeChecked();
+    expect(field("imageProxyCatbox")).toBeChecked();
+  });
+
+  test("可單獨關掉一站", () => {
+    openConnectionTab();
+    fireEvent.click(field("imageProxyCatbox"));
+    expect(field("imageProxyCatbox")).not.toBeChecked();
+    expect(field("imageProxyTwimg")).toBeChecked();
   });
 });
 

@@ -48,7 +48,11 @@ import { ImageUploadController, isUploadLayerTarget } from './image_upload_contr
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { setTimer } from './util';
-import { normalizeImgurProxyBase, setImgurProxyConfig } from './imgur_proxy';
+import {
+  IMAGE_PROXY_SITES,
+  normalizeImgurProxyBase,
+  setImageProxyConfig
+} from './image_proxy';
 import PasteShortcutAlert from '../components/PasteShortcutAlert';
 import ConnectionAlert from '../components/ConnectionAlert';
 import ContextMenu from '../components/ContextMenu';
@@ -1472,14 +1476,14 @@ App.prototype.onPrefChange = function(name, value) {
       // src/render/），所以真相源必須活在渲染鏈能同步讀到的地方，不是預覽元件裡。
       this.view.enablePicPreview = value;
       break;
-    // imgur 快取代理：只更新 imgur_proxy.js 的模組 config，**不 redraw**。已解析過的
+    // 圖片快取代理（useImgurProxy＝總開關）：只更新 image_proxy.js 的模組 config，**不 redraw**。已解析過的
     // 預覽有 module cache（requestPreview 以 href 為鍵、probeCache 以 id 為鍵），切換
     // 只對之後新解析的連結生效 ⇒ 設定 UI 的文案標「重新整理後生效」。
     case 'useImgurProxy':
-      setImgurProxyConfig({ enabled: value });
+      setImageProxyConfig({ enabled: value });
       break;
     case 'imgurProxyUrl':
-      setImgurProxyConfig({ base: normalizeImgurProxyBase(value) });
+      setImageProxyConfig({ base: normalizeImgurProxyBase(value) });
       break;
     case 'enableNotifications':
       this.view.enableNotifications = value;
@@ -1599,6 +1603,14 @@ App.prototype.onPrefChange = function(name, value) {
       this.onWindowResize();
       break;
     default:
+      // 圖片代理的各站開關（imageProxy*）：清單在 image_proxy.js#IMAGE_PROXY_SITES，
+      // 加站台不必動這裡。語意同上面的 useImgurProxy（重新整理後生效）。
+      var proxySite = IMAGE_PROXY_SITES.find(function(site) { return site.prefKey === name; });
+      if (proxySite) {
+        var sites = {};
+        sites[proxySite.id] = !!value;
+        setImageProxyConfig({ sites: sites });
+      }
       break;
     }
   } catch(e) {

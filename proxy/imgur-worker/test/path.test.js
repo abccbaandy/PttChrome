@@ -1,7 +1,7 @@
 // RE_ASSET 是這個 Worker 唯一有分支的純邏輯，也是它的安全邊界：
 // 決定「什麼會被代理」。破了就變成開放 proxy，或把影片代理出去（違反 Cloudflare ToS）。
 import { describe, test, expect } from "vitest";
-import { RE_ASSET } from "../src/index.js";
+import { RE_ASSET, upstreamFor } from "../src/index.js";
 
 const accepts = (p) => RE_ASSET.test(p);
 
@@ -56,5 +56,42 @@ describe("RE_ASSET 白名單", () => {
     const m = RE_ASSET.exec("/L976tXr.webp");
     expect(m[1]).toBe("L976tXr");
     expect(m[2]).toBe("webp");
+  });
+});
+
+// twimg／catbox 路由。與 RE_ASSET 同一條安全邊界：回源 host 寫死、片段只放白名單字元。
+describe("upstreamFor 路由表", () => {
+  test.each([
+    ["/L976tXr.jpg", "https://i.imgur.com/L976tXr.jpg"],
+    [
+      "/twimg/orig/HSWhvjqbMAIr5Ux.jpg",
+      "https://pbs.twimg.com/media/HSWhvjqbMAIr5Ux?format=jpg&name=orig",
+    ],
+    [
+      "/twimg/large/Ab-c_D.png",
+      "https://pbs.twimg.com/media/Ab-c_D?format=png&name=large",
+    ],
+    ["/catbox/rdpjcp.png", "https://files.catbox.moe/rdpjcp.png"],
+    ["/catbox/rdpjcp.gif", "https://files.catbox.moe/rdpjcp.gif"],
+  ])("%s → %s", (path, origin) => {
+    expect(upstreamFor(path)).toBe(origin);
+  });
+
+  test.each([
+    ["/twimg/orig/abc.mp4", "twimg 影片"],
+    ["/twimg/orig/abc.gif", "twimg 沒有 gif format"],
+    ["/twimg/huge/abc.jpg", "尺寸不在白名單"],
+    ["/twimg/abc.jpg", "缺尺寸段"],
+    ["/twimg/orig/../x.jpg", "路徑穿越"],
+    ["/twimg/orig/a.b.jpg", "id 含點"],
+    ["/catbox/rdpjcp.mp4", "catbox 影片（Cloudflare ToS）"],
+    ["/catbox/rdpjcp.webm", "catbox 影片"],
+    ["/catbox/a/b.png", "多層路徑"],
+    ["/catbox/rdp-jcp.png", "catbox 名稱非英數"],
+    ["/catbox/rdpjcp.PNG", "大寫副檔名（快取碎片）"],
+    ["/catbox//evil.com/x.png", "protocol-relative"],
+    ["/other/abc.jpg", "未知前綴"],
+  ])("拒絕 %s（%s）", (path) => {
+    expect(upstreamFor(path)).toBe(null);
   });
 });

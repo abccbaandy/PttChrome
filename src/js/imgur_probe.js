@@ -17,7 +17,7 @@
 // method（不觸發 preflight）、content-type 屬 CORS-safelisted response header，
 // 所以瀏覽器端讀得到。走 HEAD 而非 imgur API：不吃 API 額度、不需 client_id。
 
-import { getImgurProxyConfig, proxiedImgurUrl } from "./imgur_proxy.js";
+import { getImageProxyConfig, proxiedImgurUrl } from "./image_proxy.js";
 
 export const IMGUR_PROBE_TIMEOUT_MS = 3000;
 
@@ -79,7 +79,7 @@ const runProbe = (id, opts) => {
   const jpgUrl = proxiedImgurUrl(
     id,
     "jpg",
-    opts.proxyConfig || getImgurProxyConfig(),
+    opts.proxyConfig || getImageProxyConfig(),
   );
   // 兩發並行 → 延遲只有一個 RTT。
   return Promise.all([head(jpgUrl), head(`https://i.imgur.com/${id}.mp4`)]).then(

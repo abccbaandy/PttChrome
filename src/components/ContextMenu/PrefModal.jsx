@@ -49,7 +49,7 @@ import {
   localCredentialStatus,
 } from "./pref_credential";
 import { DEFAULT_PROXY_HOST, downloadAsFile } from "../../js/util";
-import { DEFAULT_IMGUR_PROXY_BASE } from "../../js/imgur_proxy";
+import { DEFAULT_IMGUR_PROXY_BASE } from "../../js/image_proxy";
 import {
   BUILTIN_QUICK_SEARCH,
   MATCH_ANY,
@@ -1237,6 +1237,44 @@ export const PrefModal = ({
                 >
                   {i18n("options_useImgurProxy")}
                 </PrefCheckbox>
+                {/* 各站開關（清單＝image_proxy.js#IMAGE_PROXY_SITES）。刻意逐項寫死而非
+                  map：設定搜尋的靜態守護（pref_search_index.test.js）只認得字面
+                  name="…"；註冊表 ↔ 畫面的一致性由 pref_modal_connection_tab.test.jsx 守。
+                  總開關關閉時反灰但值保留，重開即恢復原本的逐站選擇。 */}
+                <div className="PrefModal__SubOptions">
+                  <PrefCheckbox
+                    name="imageProxyImgur"
+                    checked={values.imageProxyImgur}
+                    disabled={!values.useImgurProxy}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_imageProxySite_imgur")}
+                  </PrefCheckbox>
+                  <PrefCheckbox
+                    name="imageProxyTwimg"
+                    checked={values.imageProxyTwimg}
+                    disabled={!values.useImgurProxy}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_imageProxySite_twimg")}
+                  </PrefCheckbox>
+                  <PrefCheckbox
+                    name="imageProxyCatbox"
+                    checked={values.imageProxyCatbox}
+                    disabled={!values.useImgurProxy}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_imageProxySite_catbox")}
+                  </PrefCheckbox>
+                  <PrefCheckbox
+                    name="imageProxyTenor"
+                    checked={values.imageProxyTenor}
+                    disabled={!values.useImgurProxy}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_imageProxySite_tenor")}
+                  </PrefCheckbox>
+                </div>
                 <TextInput
                   label={i18n("options_imgurProxyUrl")}
                   description={i18n("tooltip_imgurProxyUrl")}

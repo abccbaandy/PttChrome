@@ -12,9 +12,9 @@ import ImagePreviewer, {
 } from "../../src/components/ImagePreviewer";
 import { clearImgurProbeCache } from "../../src/js/imgur_probe";
 import {
-  resetImgurProxyConfig,
-  setImgurProxyConfig,
-} from "../../src/js/imgur_proxy";
+  resetImageProxyConfig,
+  setImageProxyConfig,
+} from "../../src/js/image_proxy";
 
 const resolve = (src) => resolveSrcToImageUrl({ src });
 const B = "https://i.imgur.com";
@@ -229,10 +229,10 @@ describe("imgur 快取代理：代理優先、原址墊底", () => {
 
   beforeEach(() => {
     clearImgurProbeCache();
-    setImgurProxyConfig({ enabled: true, base: PROXY });
+    setImageProxyConfig({ enabled: true, base: PROXY });
   });
   afterEach(() => {
-    resetImgurProxyConfig();
+    resetImageProxyConfig();
     vi.unstubAllGlobals();
   });
 

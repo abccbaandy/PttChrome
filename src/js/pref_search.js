@@ -17,6 +17,7 @@
 import { zh_TW } from "./zh_TW_messages";
 import { en_US } from "./en_US_messages";
 import { getLang } from "./i18n";
+import { IMAGE_PROXY_SITES } from "./image_proxy";
 
 // 下拉最多顯示幾筆。**刻意壓在「不需要捲動」的高度內**：Mantine Modal 用
 // RemoveScroll 包住自己且沒傳 shards，會 preventDefault() 掉 portal 出去的
@@ -259,6 +260,10 @@ export const PREF_SEARCH_ITEMS = [
   ]),
   ...inSection("connection", "options_imgurProxy", "tooltip_imgurProxy", [
     { key: "useImgurProxy", titleKey: "options_useImgurProxy" },
+    ...IMAGE_PROXY_SITES.map((site) => ({
+      key: site.prefKey,
+      titleKey: site.labelKey,
+    })),
     {
       key: "imgurProxyUrl",
       titleKey: "options_imgurProxyUrl",

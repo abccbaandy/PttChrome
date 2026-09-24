@@ -689,16 +689,28 @@ export const en_US = {
     "message": "Image loading proxy"
   },
   "tooltip_imgurProxy": {
-    "message": "imgur's CDN routes Taiwan traffic to the US, so an image occasionally stalls for 9-24 seconds. When enabled, imgur images are fetched and cached through this project's Cloudflare Worker, which removes those stalls (it does not make normal loads faster). That service sees your IP and which image you are viewing, but keeps no logs; if it fails, requests fall back to i.imgur.com automatically. Videos (mp4) always go direct and never through the proxy. The same service also resolves tenor GIF share links (tenor.com/xxxxx.gif is a web page, not an image file, so it can only be resolved server-side); when disabled, those links show no preview."
+    "message": "Image loading proxy: images from the hosts below are fetched and cached through this project's Cloudflare Worker, fixing images that occasionally take very long to load. imgur's CDN routes Taiwan traffic to the US, so an image occasionally stalls for 9-24 seconds; the proxy removes those stalls (it does not make normal loads faster). X/Twitter original-size images transfer very slowly to Taiwan (large ones often take 30+ seconds direct, about 1.5 seconds through the proxy). catbox runs on a single server; through the proxy, popular images no longer depend on it. That service sees your IP and which image you are viewing, but keeps no logs; if it fails, requests fall back to the original host automatically. Videos (mp4 etc.) always go direct and never through the proxy. The same service also resolves tenor GIF share links (tenor.com/xxxxx.gif is a web page, not an image file, so it can only be resolved server-side); when disabled, those links show no preview."
   },
   "options_useImgurProxy": {
-    "message": "Load imgur images through a proxy (takes effect after reload)"
+    "message": "Load images through the project proxy (takes effect after reload)"
+  },
+  "options_imageProxySite_imgur": {
+    "message": "imgur (i.imgur.com)"
+  },
+  "options_imageProxySite_twimg": {
+    "message": "X / Twitter (pbs.twimg.com)"
+  },
+  "options_imageProxySite_catbox": {
+    "message": "catbox (files.catbox.moe)"
+  },
+  "options_imageProxySite_tenor": {
+    "message": "tenor GIF share link resolving (tenor.com)"
   },
   "options_imgurProxyUrl": {
     "message": "Image proxy address"
   },
   "tooltip_imgurProxyUrl": {
-    "message": "e.g. https://your-worker.workers.dev; to self-host see proxy/imgur-worker"
+    "message": "Shared by all hosts. e.g. https://your-worker.workers.dev; to self-host see proxy/imgur-worker"
   },
   "options_copyOnSelect": {
     "message": "Copy text when selected."

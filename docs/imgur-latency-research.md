@@ -1,8 +1,8 @@
-# imgur 台灣連線慢 — 量測與根因
+# imgur／twimg／catbox 台灣連線慢 — 量測與根因
 
 > **狀態：已落地。** Worker 在 `proxy/imgur-worker/`（已部署），app 端整合已完成
-> （2026-08-08）：pref `useImgurProxy`（**預設開**）／`imgurProxyUrl`，UI 在設定的
-> 「連線」分頁，改寫層 `src/js/imgur_proxy.js`。契約與守護測試見
+> （imgur 2026-08-08；twimg／catbox 2026-09-25，見文末兩節）：pref `useImgurProxy`（總開關，**預設開**）＋
+> 各站 `imageProxy*`／`imgurProxyUrl`，UI 在設定的「連線」分頁，改寫層 `src/js/image_proxy.js`。契約與守護測試見
 > `docs/enhanced-addon.md`「設定」節的「連線」分頁段。**不要重做本文的量測。**
 
 量測環境：台灣家用寬頻（IPv4），2026-08-08 台灣時間 00:2x（**非尖峰**，尖峰只會更差）。
@@ -98,4 +98,48 @@
 for i in $(seq 1 20); do curl -s -o /dev/null --referer "" -w "%{time_total}\n" https://i.imgur.com/L976tXr.jpg; done
 curl -s -o /dev/null -D - --referer "" https://i.imgur.com/L976tXr.jpg | grep -i x-served-by
 curl -s https://www.cloudflare.com/cdn-cgi/trace | grep -E '^colo|^loc'
+```
+
+## twimg（pbs.twimg.com）— CONFIRMED，2026-09-25
+
+量測：台灣家用寬頻，凌晨非尖峰，樣本 `HSWhvjqbMAIr5Ux`。
+
+| 項目 | 結果 |
+|---|---|
+| 預設尺寸（175 KB）直連 ×20 | 0.62–5.34 s；TTFB 穩 ~0.4 s ⇒ **卡在 body 傳輸** |
+| `:orig`（2.38 MB，app 第一候選）直連 ×20 | 27.5–40 s，**14/20 撞 40 s 上限**（24–70 KB/s） |
+| `:large`／`name=large`／webp large | 16.7／7.1／4.2 s（同樣 24–70 KB/s） |
+| 同機到 Cloudflare 同大小 2.38 MB ×5 | 0.34–0.45 s（5–7 MB/s）⇒ 不是本機頻寬 |
+| **prod Worker `/twimg/orig/…`（HIT）×20** | **1.424–1.477 s，median 1.444**（部署後量） |
+| `wrangler dev --remote` 預覽 ×20 | 0.58–1.52 s，median 0.59（多一段本機轉送、連線重用，偏樂觀） |
+| 同時段直連 `:orig` ×5 | 24.1–40.0 s |
+
+- `x-served-by` 走 `cache-tw-ZZZ1`（twimg 自家台灣節點），吞吐卻只有 ~50 KB/s ⇒ 問題在 twimg 對台灣的交付。
+- 與 imgur 不同，**這裡代理是真的變快**（不只消除離群值）。
+- 部署前的閘門量測用 `wrangler dev --remote`（跑在 Cloudflare 邊緣，colo SJC）；它比 prod 快，
+  **引用數字一律用 prod 那列**。
+
+## catbox（files.catbox.moe）— CONFIRMED，2026-09-25
+
+| 項目 | 結果 |
+|---|---|
+| 47 KB 直連 ×20 | 0.84–1.00 s，全穩（單一 origin，nginx，無 CDN） |
+| **prod Worker `/catbox/…`（HIT）×20** | **0.591–0.618 s，median 0.608** |
+| `wrangler dev --remote` 預覽 ×20 | 0.36–0.40 s（偏樂觀，理由同上） |
+
+- 使用者回報的「偶爾慢」在非尖峰量不到；代理的價值是 HIT 後不再依賴那台單點 origin。
+- **踩坑：catbox 對無 User-Agent 的請求直接斷線**，而 Workers 的 `fetch` 預設不帶 UA
+  ⇒ Cloudflare 回 **520**，整條代理全數 fail-open 成 302（看起來像「代理沒效果」而不是錯誤）。
+  本機 `curl -A "" https://files.catbox.moe/…` 可重現（回 000）。Worker 回源一律帶
+  `UPSTREAM_UA`，守護 `proxy/imgur-worker/test/fetch.test.js`。
+- 公用代理無法拿來近似 Worker 效果（wsrv.nl 302／corsproxy.io 401／Photon 400 不吃 `:orig`／codetabs 522），
+  要驗證只能用自家 Worker（`wrangler dev --remote`）。
+
+重現：
+
+```bash
+for i in $(seq 1 20); do curl -s -o /dev/null --referer "" -w "%{time_total}\n" "https://pbs.twimg.com/media/HSWhvjqbMAIr5Ux.jpg:orig"; done
+W=https://ptt-imgur-cache.ptt-relay-8xquy.workers.dev
+for i in $(seq 1 20); do curl -s -o /dev/null -w "%{time_total}\n" "$W/twimg/orig/HSWhvjqbMAIr5Ux.jpg"; done
+for i in $(seq 1 20); do curl -s -o /dev/null -w "%{time_total}\n" "$W/catbox/rdpjcp.png"; done
 ```

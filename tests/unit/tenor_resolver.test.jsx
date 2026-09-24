@@ -11,10 +11,10 @@ import ImagePreviewer, {
   resolveSrcToImageUrl,
 } from "../../src/components/ImagePreviewer";
 import {
-  resetImgurProxyConfig,
-  setImgurProxyConfig,
+  resetImageProxyConfig,
+  setImageProxyConfig,
   DEFAULT_IMGUR_PROXY_BASE,
-} from "../../src/js/imgur_proxy";
+} from "../../src/js/image_proxy";
 
 const resolve = (src) => resolveSrcToImageUrl({ src });
 const SHORT = "https://tenor.com/bgOd4.gif";
@@ -28,10 +28,10 @@ const stubWorker = (body, ok = true) =>
   );
 
 describe("tenor 分享連結 resolver", () => {
-  beforeEach(() => setImgurProxyConfig({ enabled: true }));
+  beforeEach(() => setImageProxyConfig({ enabled: true }));
   afterEach(() => {
     vi.unstubAllGlobals();
-    resetImgurProxyConfig();
+    resetImageProxyConfig();
   });
 
   // 這條是本 bug 的核心守護：泛用 .gif resolver 不得先攔截 tenor 連結。
@@ -76,7 +76,7 @@ describe("tenor 分享連結 resolver", () => {
   // 使用者關掉 imgur 快取代理 = 不想把瀏覽紀錄送給專案方 Worker ⇒ tenor 一併停用。
   // 但**仍不可退回泛用 .gif 規則**，否則又變回破圖。
   test("代理關閉 → reject，不得退回把網頁當圖載", async () => {
-    resetImgurProxyConfig();
+    resetImageProxyConfig();
     stubWorker({ mp4: MP4 });
     await expect(resolve(SHORT)).rejects.toThrow();
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -93,10 +93,10 @@ describe("tenor 分享連結 resolver", () => {
 
 // 症狀層：鎖「渲染成什麼元素、怎麼播」而非 descriptor 形狀。
 describe("tenor 內嵌播放：GIF 語意", () => {
-  beforeEach(() => setImgurProxyConfig({ enabled: true }));
+  beforeEach(() => setImageProxyConfig({ enabled: true }));
   afterEach(() => {
     vi.unstubAllGlobals();
-    resetImgurProxyConfig();
+    resetImageProxyConfig();
   });
 
   test("渲染成自動循環靜音的 <video>，無控制列，且畫面上不得出現 <img>", async () => {

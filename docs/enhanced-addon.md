@@ -565,21 +565,26 @@ index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**�
 |---|---|---|
 | `useProxy` | false | BBS 連線走 relay。套用在 `main.jsx` 啟動時（`util.js#proxySiteFromPrefs`），故標「重新整理後生效」 |
 | `proxyUrl` | `""` | 裸 host 或完整 `ws(s)telnet://`；**空＝`util.js#DEFAULT_PROXY_HOST`**。容錯全在 `proxySiteFromPrefs` |
-| `useImgurProxy` | **true** | imgur 圖片走快取代理（`proxy/imgur-worker`）。預設開：多數人不翻設定，關掉等於功能沒人用；額度計費單位是回源次數，快取命中不計 |
-| `imgurProxyUrl` | `""` | 裸 host 或完整 URL；**空＝`imgur_proxy.js#DEFAULT_IMGUR_PROXY_BASE`**。容錯在 `normalizeImgurProxyBase` |
+| `useImgurProxy` | **true** | **圖片代理總開關**（`proxy/imgur-worker`）。key 名沿用 imgur 單站時代：無 pref 遷移機制，改名會讓以前為隱私關掉的人被新 key 預設值打開。預設開：多數人不翻設定；額度計費單位是回源次數，快取命中不計 |
+| `imageProxyImgur`／`Twimg`／`Catbox`／`Tenor` | **true** | 各站開關，清單＝`image_proxy.js#IMAGE_PROXY_SITES`（UI 逐項寫死 `name="…"` 給設定搜尋靜態掃描；註冊表↔畫面一致性由 `pref_modal_connection_tab.test.jsx` 守）。總開關關閉時反灰、值保留 |
+| `imgurProxyUrl` | `""` | 所有站台共用的 Worker 位址。裸 host 或完整 URL；**空＝`image_proxy.js#DEFAULT_IMGUR_PROXY_BASE`**。容錯在 `normalizeImgurProxyBase` |
 
 - 兩組形狀相同：Checkbox 當閘門、URL 欄位 `disabled={!閘門}`（值保留）、UI 層零驗證（容錯下放純函式）。
-- **預設位址放 `placeholder`，不寫進 pref 值**：欄位空著＝用預設，使用者才能把自訂位址整段刪掉回到預設，而不是刪成「開著卻沒有位址」。說明文字改掛 `description`（原本佔著 placeholder）。回退由兩個純函式各自負責，守在 `proxy_site.test.js` / `imgur_proxy.test.js`。
-- imgur 代理的改寫層 `src/js/imgur_proxy.js`：白名單 `^[A-Za-z0-9]{1,12}$` + `jpg|jpeg|png|gif|webp`，**逐字對齊 Worker 的 `RE_ASSET`**；對不上一律回原址 ⇒ 影片、未知副檔名、異常 id 全被同一條規則擋掉（影片送過去會撞 Worker 的 **404**，不是 fail-open 的 302）。
+- **預設位址放 `placeholder`，不寫進 pref 值**：欄位空著＝用預設，使用者才能把自訂位址整段刪掉回到預設，而不是刪成「開著卻沒有位址」。說明文字改掛 `description`（原本佔著 placeholder）。回退由兩個純函式各自負責，守在 `proxy_site.test.js` / `image_proxy.test.js`。
+- 代理改寫層 `src/js/image_proxy.js`，判斷一律走 `siteProxyEnabled(config, id)`＝總開關 ∧ 該站未關（`sites` 缺項視為開）。
+  twimg：`twimgCandidates`＝代理 `/twimg/orig/<id>.<jpg|png|webp>` 第一＋整合前四個直連候選原樣墊後。
+  catbox：`catboxCandidates`＝`[代理 /catbox/<name>.<圖片副檔名>, 原址]`，resolver 在泛用直連圖之前；影片仍走泛用影片 resolver 直連。
+  兩者白名單逐字對齊 Worker 的 `RE_TWIMG_ASSET`／`RE_CATBOX_ASSET`，Worker 路徑刻意以圖片副檔名結尾（offline e2e 攔截層靠副檔名接住）。
+- imgur 白名單 `^[A-Za-z0-9]{1,12}$` + `jpg|jpeg|png|gif|webp`，**逐字對齊 Worker 的 `RE_ASSET`**；對不上一律回原址 ⇒ 影片、未知副檔名、異常 id 全被同一條規則擋掉（影片送過去會撞 Worker 的 **404**，不是 fail-open 的 302）。
 - `imgurCandidates()` 產「代理第一、`i.imgur.com` 墊底」的候選陣列，交給既有的 `FallbackImage`；Worker 掛掉／額度用盡（Error 1027）自動退回現況。候選只有一個時不放 `srcset`，代理關閉時 descriptor 與整合前逐字相同。
-- 模組級 config **預設 `enabled:false` 是 fail-safe**，真值由 `onPrefChange` 注入（`setImgurProxyConfig`）；沒接上 pref 的路徑（含 unit 測試）維持直連。
+- 模組級 config **預設 `enabled:false` 是 fail-safe**，真值由 `onPrefChange` 注入（`setImageProxyConfig`，各站走 `default` 分支查註冊表）；沒接上 pref 的路徑（含 unit 測試）維持直連。
 - 型別探測（`imgur_probe.js`）**只有 `.jpg` 那一發走代理**，`.mp4` 硬寫直連——代理擋影片回 404 → `mp4Ok=false` → 影片型動圖被誤判成 `static` → 動圖被靜音。
 - 切換**不 redraw**：`requestPreview`（href 為鍵）與 `probeCache`（id 為鍵）都是 module cache，只對之後新解析的連結生效 ⇒ 文案標「重新整理後生效」。
 - 隱私：代理由專案方持有，會看到「哪個 IP 在看哪張圖」；**Worker 程式碼不主動寫入任何請求紀錄**
   （Cloudflare 平台層仍有 metrics／`wrangler tail`／Logs 這類站方視角，不在我方保存範圍）。設定 UI 有
   揭露段（`tooltip_imgurProxy`）。**別加上會留存使用者請求的紀錄。**
-- 賣點是**「不再卡住」而非「更快」**（median 幾乎不變，max 15.7 s → 1.04 s、stall 0/20）。文案不得宣稱加速。量測見 `docs/imgur-latency-research.md`。
-- 守護：`tests/unit/imgur_proxy.test.js`（白名單/候選/config）、`imgur_probe.test.js`（`.jpg` 走代理、`.mp4` 不走）、`imgur_webp_resolver.test.jsx`（代理優先原址墊底、影片不代理）、`pref_modal_connection_tab.test.jsx`（分頁 UI 契約）、`ui_behavior.offline.spec.js`（分頁切換可見性）。
+- imgur 的賣點是**「不再卡住」而非「更快」**（median 幾乎不變，max 15.7 s → 1.04 s、stall 0/20），文案不得宣稱 imgur 加速；twimg 大圖則是真的變快（`:orig` 直連 24–40 s → 1.4 s）。量測見 `docs/imgur-latency-research.md`。
+- 守護：`tests/unit/image_proxy.test.js`（白名單/候選/config/各站開關）、`image_proxy_resolver.test.jsx`（twimg／catbox 代理優先、影片不代理、各站獨立）、`offline_network_route.test.js`（代理路徑歸 image）、`proxy/imgur-worker/test/{path,fetch}.test.js`（路由白名單、回源帶 UA）、`imgur_probe.test.js`（`.jpg` 走代理、`.mp4` 不走）、`imgur_webp_resolver.test.jsx`（代理優先原址墊底、影片不代理）、`pref_modal_connection_tab.test.jsx`（分頁 UI 契約）、`ui_behavior.offline.spec.js`（分頁切換可見性）。
 
 **「AI」分頁**（2026-08 從增強功能分頁獨立出來）——所有裝置端 AI 設定收攏於此：
 

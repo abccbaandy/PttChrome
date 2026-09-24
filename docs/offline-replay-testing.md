@@ -230,7 +230,7 @@ CONFIRMED 事實（實測，別再重驗）：
   是**真的送上公網**的。所以 `redirect` 情境驗得到的仍只是「圖床回 3xx ⇒ 圖拿不到」，
   **驗不到**「跟隨轉址後再 404」；斷言照實際能觀察到的寫。
 - **這就是轉址終點的 origin 絕不可沿用原址的原因。** 原本沿用，而產品預設 `useImgurProxy:true`
-  會把 imgur 網址改寫成自架 Worker 位址（`src/js/imgur_proxy.js`）⇒ 終點被鑄在正式基礎設施上，
+  會把 imgur 網址改寫成自架 Worker 位址（`src/js/image_proxy.js`）⇒ 終點被鑄在正式基礎設施上，
   每輪 offline e2e 都真的去打它。發現方式是 Cloudflare access log 出現
   `GET https://ptt-imgur-cache.…workers.dev/__offline-gone__/783.png`（`fnv1a` 對得上，逐字吻合）。
   同一機制也對 `i.imgur.com`／`pbs.twimg.com`／`i.urusai.cc` 等圖床發出真實請求，只是看不到別人的 log。
