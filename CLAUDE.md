@@ -181,8 +181,15 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   2026-09-24 臨時手寫的版本把 `351661` 解成 `2026661`、多出 `116;18H…` 殘渣，看起來像 PTT 送的。
   錄製是中途開始的，第一次整頁重繪前的畫面不完整。守護 `tests/unit/debug_screens.test.js`。
 - 待辦交接：`docs/handoff/`，一個 `.md` = 一個尚未完成的功能/修復；挑一個做完即**刪掉該 md**。詳見 `docs/handoff/README.md`。
-- git：**不開新功能分支**，直接在現有分支（`dev`）修改與 commit。
-- 不主動 commit
+- git 規則依執行環境分兩套（判準：env `CLAUDE_CODE_REMOTE=true` ＝雲端 session，Claude Code on the web；否則＝本機）：
+  - **本機**：**不開新功能分支**，直接在現有分支（`dev`）修改；**不主動 commit**（等使用者說）。
+  - **雲端 session**：以 session 指定的工作分支（通常 `claude/*`）為準，**不要切回或直推 `dev`**；
+    做完**要自己 commit＋push 到該分支**（雲端容器結束即銷毀，沒 push＝工作全丟），需要時開 PR 到 `dev`。
+    上面兩條本機規則在雲端**不適用**；其餘 commit 前檢查（隱私 `git diff` 自查、`--stat` 行數相稱、補測試、README 新功能列表）照舊。
+  - 雲端 CI：`deploy.yml` 只在 push `dev` 觸發，`claude/*` 分支要**開 PR 後**才會跑 `pr.yml`（同一份 `test.yml`）；
+    `yarn ci:status --branch <工作分支>` 查它（需 `GH_TOKEN`；沒有就明講「CI 未驗」，不可當綠）。
+  - 雲端是 Linux：本文中 Windows 專屬的坑（IPv6-only 綁定、`STATUS_DLL_INIT_FAILED`、Firefox `spawn UNKNOWN`／content sandbox、無 `jq`/`gh`）不一定適用；
+    live e2e 帳密（`PTT_USER`/`PTT_PASS`）通常不在雲端 env，**不要在雲端跑 live e2e**（登入預算／BOT 封鎖風險，見「測試」節），改跑 unit＋offline e2e 並在交付時註明。
 - **換行一律 LF**，由 `.gitattributes`（`* text=auto eol=lf`）強制，不依賴各機器的
   `core.autocrlf`。2026-08-17 已一次性 `git add --renormalize .`（commit `76afcc6`），
   在那之前有 7 個 fork 來的 `src/js` 檔以 CRLF 儲存 ⇒ 工具寫 LF 就整檔被當成全改
