@@ -1046,6 +1046,9 @@ export const en_US = {
   "hint_easyReadingUseBrowserFind": {
     "message": "In easy reading, press %s to search with the browser"
   },
+  "hint_easyReadingReverse": {
+    "message": "Jumped to the end, loading upward…"
+  },
   "hint_deepLinkHandoffReceived": {
     "message": "Picked up an external link:"
   },

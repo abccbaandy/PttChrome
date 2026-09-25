@@ -890,6 +890,8 @@ server 送的是編碼後的 ANSI，client 看不到 flag，只看得到結果�
 | P7 | **goto-line 是確定性的絕對定位**：`:` → `pageMode = (ch != ':') == 0` → `getdata_buf(b_lines-1, 0, PMORE_MSG_GOTO_LINE「跳至第幾行: 」, buf, 8, DOECHO)` → `i = atoi(buf)` → `if (i-- > 0) mf_goto(i)` → `mf.disps = mf.start; mf.lineno = 0; mf_forward(N-1)` ⇒ 送 `:N\r` 後 **footer 的 `S` 恰為 N**（超過末頁被 `maxdisps` 夾住只會更小）。`;` 與 `1`-`9` 走**頁**模式。輸入緩衝 **8 bytes**。prompt 期間底部列是 `跳至第幾行: `，**不匹配 footer 格式** | `pmore.c` goto 區塊（`case '1'..'9'/';'/':'`）、`mf_goto`(1067)、`PMORE_MSG_GOTO_LINE`(147) |
 | P8 | **畫面沒變就零「畫面回應」**：`refresh` 走 `doupdate` 逐 cell diff，結尾 `fterm_rawcursor` → `fterm_rawmove_opt`（已在該位置則不輸出）⇒ **已在第 1 行時再送 Home（`mf_goTop`）可能完全沒有回應**。任何以 Home 當 request/response 交易的路徑都要先確認 `S > 1`。**2026-09 修訂：不再是「零 bytes」** —— DEC 2026 同步輸出讓每個 `doupdate()` 都吐一對 `ESC[?2026h/l`（連 `!ft.dirty` 早退路徑也吐，見 §1.1）⇒ 線上固定 16 bytes。但那兩條序列在 client 端不寫任何一格、不動游標 ⇒ **不 re-arm settle timer**，所以所有建立在這條上的 client 推論（「零回應只能等 timeout」⇒ `fullRepaint: true` 附 `\f`）**結論不變**。判準要改用「有沒有 settle」而不是「有沒有 byte」 | `pfterm.c#doupdate`／`fterm_rawmove_opt`、`mf_goTop`(1046)；§1.1 |
 | P9 | **goto／搜尋不受 P1 約束，可往回**：`:N`／`;N`／`1`-`9` 走 `mf_goto`（P7），`/`／`n`／`N` 走 `mf_search`：起點是**PTT 端目前頁**（`mf_forward(1)` 後往下找，`N` 往上），找到則 `disps` 停在命中那行、畫面上所有命中處加 `ANSI_REVERSE`；**找不到則 `disps = maxdisps`（跳到末頁）** | `pmore.c#mf_search`(1125)、`pmore_cmd_search`(2549)、`mf_display` 的 `sr.search_str` 分支(1835) |
+| P10 | **PgUp ＝ `mf_backward(MFNAV_PAGE = t_lines-2)`，以檔案行計** ⇒ 無 wrap 時新頁 `E' == S`（重疊一行，P1 的鏡像）。**wrap 模式（`bpref` 預設 `MFDISP_WRAP_WRAP`）下 `E'` 可能 `< S`**：往回退 22 個檔案行，畫 23 個顯示列時續列佔掉名額。`E` ＝ `lineno + dispedlines`，而 `dispedlines` 在一行**開始**顯示時就 +1 ⇒ 畫面最後一列可能只畫了第 `E` 行的前半段 ⇒ 「`E' == S-1` 相鄰」**不算接得上**。第 1 行按 PgUp：`PMORE_AUTONEXT_ON_PAGEFLIP`（→ `READ_PREV` 開上一篇）**只在 `M3_USE_PMORE` 區塊定義，PTT 沒有** ⇒ `mf_backward` 原地不動 ⇒ P8 **零回應**（會跳上一篇的是 `Ctrl-H`／`↑` 的 `pmore_cmd_bksp`／`pmore_cmd_up`） | `pmore.c#pmore_cmd_pgup`(2419)、`mf_backward`(1033)、`MFNAV_PAGE`(510)、`bpref`(567)、`mf_display` 的 `dispedlines++`(1590)、footer(2229-2235)、AUTONEXT 定義(106/268，後者在 245–297 的 `#ifdef M3_USE_PMORE` 內) |
+| P11 | **End ＝ `mf_goBottom`（`disps = maxdisps`），線上只有一幀**，但因 `PMORE_ACCURATE_WRAPEND`，`maxdisps` 只延長 `wraplines` ⇒ **落地頁可能 <100%**，要再 PageDown 才到底。`$`／`G` 同一個 handler | `pmore.c#pmore_cmd_end`(2500)、`mf_display` 的 maxdisps 延長(2083-2108) |
 
 client 端推論（改這段 code 前先讀）：
 
@@ -917,6 +919,10 @@ client 端推論（改這段 code 前先讀）：
    （與 4. 的自癒同形）。舊版走 append 把 `_accEndRow` 設成落地頁的 E（倒退）⇒ 之後每次 PageDown
    都把已累積的內容重複接到尾巴。**原生搜尋在好讀下因此不可用**：好讀早就把 PTT 指標翻到文末，
    `/` 的起點與使用者看的位置無關 ⇒ 好讀文章的搜尋改交給瀏覽器（`docs/easy-reading.md`）。
+4d. **反向讀取（好讀讀取中按 End）**＝End（P11）→ 往下補到 100% → PgUp 逐頁往上（P10），
+   新頁插在已讀 head 與文末 tail 之間。同一套單一 in-flight 交易；`S==1` 絕不送 PgUp（P10 零回應）；
+   wrap 缺口（`E' < S_t`）以 goto（P7）重新對準；接合後再送一次 End 把指標停回文末（4c 的
+   seekBack realign 與 functionMode resume 都假設指標在文末）。見 `docs/easy-reading.md`「反向讀取」。
 5. **parser 不可要求 part3**（P5）。
 6. **強制重繪一律走 `term_buf.notify()`**，不可直接 `view.redraw()`：`updateCharAttr()` 只在
    notify 裡跑，它是 Big5 lead byte 標上 `isLeadByte` 的地方。settle 可能落在「bytes 已到、

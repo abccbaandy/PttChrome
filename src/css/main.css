@@ -443,6 +443,17 @@ a:link,a:visited,a:active,a:hover {
   line-height: 1.3;
 }
 
+/* 反向讀取（End）的接合點：tail 的第一列，表示「上面還有一段沒讀到」。只在反向
+   期間存在（接合後 annotation 不再帶 reverseJunction）。
+   **必須不佔版面**：用 text-decoration 而不是 border／margin／padding —— 插入新頁時
+   瀏覽器的 scroll anchoring 會錨在 tail 的列上，這一列的高度一變就會把讀者推走；
+   也不得違反上面「推文區塊行距」那段的禁止事項 1、2。 */
+#mainContainer .reverseJunction {
+  text-decoration-line: overline;
+  text-decoration-style: dashed;
+  text-decoration-color: rgba(160, 160, 160, 0.7);
+}
+
 /* 自動開影片：尺寸上限比照 .easyReadingImg（19em/39em），**必須有 max-height**——
    直式影片（如 480×854）在舊的固定 width:640px 下高度會撐到 1138px，遠超過視窗，
    而影片不像圖片能靠捲動一段段看，播放控制列被推到畫面外就沒法操作。

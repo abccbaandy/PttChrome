@@ -11,7 +11,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
-import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
+import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
@@ -20,6 +20,7 @@ import { isArticleListFooter, isBoardListFooter } from './screen_captions';
 import { OWNER_BOARD_LIST } from './list_render_owner';
 import { readValuesWithDefault } from './pref_storage';
 import { cursorOffsets, paintedRowsAreBufRows } from './cursor_anchor';
+import { offsetTopWithin } from './scroll_anchor';
 import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
@@ -378,6 +379,16 @@ export function TermView() {
   // landed in a cursor-only notify window, so redraw was never called for it) and
   // forces one redraw. Reset with the rest of the tracking in hideEasyReadingOverlays.
   this._lastAccumulatedSig = null;
+  // 反向讀取（End）的累積事實；null＝沒有在反向讀取。見 beginReverse 與
+  // docs/easy-reading.md「反向讀取」。
+  //   junction      J＝開始反向時 pageLines 的長度（head 的列數）；新頁一律插在這裡
+  //   headEndLine   H_E＝開始反向時的 _accEndRow（head 凍結，不再往後長）
+  //   tailStartLine / tailEndLine  tail 覆蓋的行號範圍（null＝End 的落地頁還沒到）
+  //   tailComplete  tail 的末頁已是 100%（否則要先往下補）
+  this._reverse = null;
+  // 上一段反向讀取怎麼結束的（EasyReading 讀它決定收尾）：null | 'stitched' |
+  // 'joined' | 'dropped'。由 beginReverse 清掉。
+  this._reverseResult = null;
 
 
   this.lineWrap = 78;
@@ -831,6 +842,7 @@ TermView.prototype = {
         // Auto-open images INLINE (the long scroll page) — matches the old
         // appendRows(showsLinkPreview=true) behaviour. Hover preview off (inline
         // already shows them; avoids a duplicate floating popup).
+        var wasReverse = !!this._reverse;
         this.accumulatePageLines();
         if (!this.buf.pageLines.length) {
           // 防黑守門：累積頁是空的（accumulatePageLines 判這幀 incomplete → 'skip'，
@@ -846,7 +858,14 @@ TermView.prototype = {
           this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { changedRows: changedRows });
         } else {
           this._gridRender = false;
-          this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, STABLE_ROWS);
+          // 反向讀取接合的這一幀：接合點拿掉 ⇒ 全量重算（樓層補上）⇒ 每一列節點都換新，
+          // 瀏覽器的捲動錨點跟著舊節點一起消失、這一幀不補償。插在讀者上方的最後一段
+          // 就會把讀者推走（offline e2e 實測 300px）。只有這一幀自己錨一次；其餘每一頁
+          // 的插入交給瀏覽器（節點沿用，錨點還在）。
+          var stitchAnchor = wasReverse && !this._reverse && this._reverseResult === 'stitched'
+            ? this._captureRowAnchor() : null;
+          this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, this._pageRenderOverrides());
+          if (stitchAnchor) this._restoreRowAnchor(stitchAnchor);
         }
       } else if (
         this.useEasyReadingMode &&
@@ -865,7 +884,7 @@ TermView.prototype = {
         // just keep showing the accumulated page and accumulate nothing. Teardown for a
         // real exit moved to EasyReading._teardownAccumulationOffArticle (settle-driven).
         this._gridRender = false;
-        this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, STABLE_ROWS);
+        this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, this._pageRenderOverrides());
       } else {
         // Native screen, OR easy reading sitting on a list/menu (pageState != 3):
         // one fixed screen. Hide the easy-reading overlay rows first when on.
@@ -2398,6 +2417,19 @@ TermView.prototype = {
       transition: transition,
       healInFlight: healing
     });
+    // 反向讀取（End）期間，forward 的 gap／seekBack／append 判定都不適用（往上讀的
+    // 每一頁在 forward 眼裡都是 'backward'）。只有 rebuild（換文章）與 P6 的 skip
+    // 維持原本的優先序：換文章防線必須贏過一切。
+    if (this._reverse) {
+      if (branch === 'rebuild') {
+        this.clearReverse('dropped');
+      } else {
+        if (branch !== 'skip' && result)
+          this._accumulateReverse(result, newRows);
+        this._mirrorStatusRowToFooter();
+        return;
+      }
+    }
     if (branch === 'gap') {
       // Lost page. Leave pageLines untouched (a hole is worse than a stale tail) and
       // raise the flag EasyReading consumes on the next viewUpdate/settle.
@@ -2488,6 +2520,159 @@ TermView.prototype = {
     // (h)說明…, with the genuine colours) instead of a hardcoded string, so it always
     // matches what native shows. See _mirrorStatusRowToFooter.
     this._mirrorStatusRowToFooter();
+  },
+
+  // ---- 反向讀取（End）----
+  // EasyReading 在送出 End 的同一刻呼叫：凍結 head（目前的 pageLines 與 _accEndRow），
+  // 之後 accumulatePageLines 走 _accumulateReverse。見 docs/easy-reading.md「反向讀取」。
+  beginReverse: function() {
+    this._reverse = {
+      junction: this.buf.pageLines.length,
+      headEndLine: this._accEndRow,
+      tailStartLine: null,
+      tailEndLine: null,
+      tailComplete: false
+    };
+    this._reverseResult = null;
+  },
+
+  // outcome：'stitched'（接合完成）｜'joined'（落地頁直接接上 head）｜'dropped'
+  // （換文章／離開文章／放棄）。只有真的在反向中才記，避免 hideEasyReadingOverlays
+  // 這類一般清除點蓋掉上一段的結果。
+  clearReverse: function(outcome) {
+    if (!this._reverse) return;
+    this._reverse = null;
+    this._reverseResult = outcome || 'dropped';
+  },
+
+  // 放棄反向讀取：丟掉 tail（pageLines 回到 head），行號基準回到 H_E。PTT 的頁指標
+  // 由呼叫端（EasyReading）負責拉回 head 尾。
+  abortReverse: function() {
+    var rv = this._reverse;
+    if (!rv) return;
+    this.buf.pageLines = this.buf.pageLines.slice(0, rv.junction);
+    this._accEndRow = rv.headEndLine;
+    this._lastAccumulatedSig = null;
+    this.clearReverse('dropped');
+  },
+
+  // 讀者視窗頂端那一列（以**列物件**記，不是 index：接合會讓 index 位移）＋它與
+  // 視窗頂端的距離。量的是上一幀畫出來的節點（_renderedLines 是那一幀的 lines）。
+  // 座標一律 offsetTop 系（.main 有 transform:scale，見 scroll_anchor.js）。
+  _captureRowAnchor: function() {
+    var disp = this.mainDisplay, mc = this.mainContainer, prev = this._renderedLines;
+    if (!disp || !mc || !prev || typeof mc.querySelectorAll !== 'function') return null;
+    var st = disp.scrollTop;
+    var rows = mc.querySelectorAll('[type="bbsrow"][srow]');
+    for (var i = 0; i < rows.length; ++i) {
+      var top = offsetTopWithin(rows[i], disp);
+      if (top + rows[i].offsetHeight > st) {
+        var ref = prev[Number(rows[i].getAttribute('srow'))];
+        return ref ? { ref: ref, offset: top - st } : null;
+      }
+    }
+    return null;
+  },
+
+  _restoreRowAnchor: function(anchor) {
+    var idx = this.buf.pageLines.indexOf(anchor.ref);
+    if (idx < 0) return;
+    var el = this.mainContainer.querySelector('[type="bbsrow"][srow="' + idx + '"]');
+    if (!el) return;
+    this.mainDisplay.scrollTop = offsetTopWithin(el, this.mainDisplay) - anchor.offset;
+  },
+
+  // 給 renderer 的 enhance 覆寫：反向期間多帶接合點（tail 不編樓層、跨列掃描在 J
+  // 斷開、接合點畫標記，見 screen_annotations.computeAnnotations）。其餘時候就是
+  // 凍結常數 STABLE_ROWS，forward 路徑一字不變。
+  _pageRenderOverrides: function() {
+    var rv = this._reverse;
+    if (!rv) return STABLE_ROWS;
+    return { stableRows: true, reverseJunction: rv.junction };
+  },
+
+  // 反向分支本體（純決策在 comment_parse.decideReverseBranch）。result＝這一幀的
+  // parseStatusRow，newRows＝畫面上 23 列內文。只在 complete 幀被呼叫。
+  //
+  // **tail 原有列的物件參考一律不動**：prepend 只從新頁的底部裁掉重疊，再 splice
+  // 進 J。renderer 靠「前綴＋後綴參考不變」判定這一幀是純插入、沿用 tail 的標註與
+  // 節點（screen_annotate_cache.spliceShape）；在這裡 clone 或裁 tail 的頭，每一頁
+  // 都會退回全量重算（O(n²)）並把 tail 所有圖片佔位盒收掉重掛。
+  _accumulateReverse: function(result, newRows) {
+    var rv = this._reverse;
+    var S = result.rowIndexStart, E = result.rowIndexEnd;
+    // 完整的狀態列幀：goto 的「跳至第幾行:」提示已經不在了 ⇒ 放下 heal 閘門
+    // （反向的重新對準也走 _seekLine，見 EasyReading._maybeSendReverse）。
+    this.buf.easyReadingHealInFlight = false;
+    this.buf.easyReadingSeekBack = null;
+    this._lastAccumulatedSig = S + '~' + E;
+    var rb = decideReverseBranch({
+      complete: true,
+      statusStart: S,
+      statusEnd: E,
+      headEndLine: rv.headEndLine,
+      tailStartLine: rv.tailStartLine,
+      tailEndLine: rv.tailEndLine
+    });
+    if (rb === 'ignore' || rb === 'skip') return;
+    var pl = this.buf.pageLines;
+    var J = rv.junction;
+    var W = this.buf.rows * 2;
+    var newTexts = newRows.map(rowToText);
+    var full = result.pagePercent != null && result.pagePercent >= 100;
+    if (rb === 'joinForward') {
+      // tail 還沒建立 ⇒ pageLines 就是 head，這就是一次普通的往後接。
+      var kj = resolveJoinOverlap({
+        upperEndLine: rv.headEndLine, lowerStartLine: S,
+        upperTexts: pl.slice(-W).map(rowToText), lowerTexts: newTexts, window: W
+      });
+      this.buf.pageLines = pl.concat(newRows.slice(kj).map(cloneRow));
+      this._accEndRow = E;
+      this.clearReverse('joined');
+      return;
+    }
+    if (rb === 'seed') {
+      this.buf.pageLines = pl.concat(newRows.map(cloneRow));
+      rv.tailStartLine = S;
+      rv.tailEndLine = E;
+      rv.tailComplete = full;
+      this._accEndRow = E;
+      return;
+    }
+    if (rb === 'extend') {
+      var ke = resolveJoinOverlap({
+        upperEndLine: rv.tailEndLine, lowerStartLine: S,
+        upperTexts: pl.slice(Math.max(J, pl.length - W)).map(rowToText),
+        lowerTexts: newTexts, window: W
+      });
+      this.buf.pageLines = pl.concat(newRows.slice(ke).map(cloneRow));
+      rv.tailEndLine = E;
+      rv.tailComplete = full;
+      this._accEndRow = E;
+      return;
+    }
+    // prepend / stitch：這一頁的尾巴與 tail 的頭重疊 ⇒ 從這一頁的底部裁掉。
+    var kp = resolveJoinOverlap({
+      upperEndLine: E, lowerStartLine: rv.tailStartLine,
+      upperTexts: newTexts,
+      lowerTexts: pl.slice(J, J + W).map(rowToText), window: W
+    });
+    var mid = newRows.slice(0, newRows.length - kp).map(cloneRow);
+    if (rb === 'prepend') {
+      this.buf.pageLines = pl.slice(0, J).concat(mid, pl.slice(J));
+      rv.tailStartLine = S;
+      return;
+    }
+    // stitch：mid ++ tail 的頭與 head 的尾巴重疊 ⇒ 從 mid ++ tail 的頭丟掉。
+    var lower = mid.concat(pl.slice(J));
+    var ks = resolveJoinOverlap({
+      upperEndLine: rv.headEndLine, lowerStartLine: S,
+      upperTexts: pl.slice(Math.max(0, J - W), J).map(rowToText),
+      lowerTexts: lower.slice(0, W).map(rowToText), window: W
+    });
+    this.buf.pageLines = pl.slice(0, J).concat(lower.slice(ks));
+    this._accEndRow = rv.tailEndLine;
+    this.clearReverse('stitched');
   },
 
   // Render the real bottom status row (buf.lines[rows-1]) into the footer overlay
@@ -2919,6 +3104,12 @@ TermView.prototype = {
     // article's first page-down (see accumulatePageLines / resolvePageOverlap).
     this._accEndRow = null;
     this._lastAccumulatedSig = null;
+    // 反向讀取的 head/tail 事實跟著累積頁一起丟（同 clearReverse('dropped')；這裡
+    // 內聯是因為本函式也被當成獨立函式呼叫，見 easy_reading_overlay_reset.test.js）。
+    if (this._reverse) {
+      this._reverse = null;
+      this._reverseResult = 'dropped';
+    }
     this.buf.easyReadingGapDetected = false;
     this.buf.easyReadingHealInFlight = false;
     this.buf.easyReadingSeekBack = null;

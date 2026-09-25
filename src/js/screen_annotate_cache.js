@@ -38,6 +38,31 @@ export function isAppendOnly(prevLines, nextLines) {
   return reusablePrefix(prevLines, nextLines) === prevLines.length;
 }
 
+// 上一次 → 這一次 lines 的「形狀」（比較的是**列物件參考**）：
+//   prefix   共同前綴列數
+//   suffix   共同後綴列數（與前綴不重疊）
+//   inserted 這一次多出來、夾在前後綴之間的列數
+//   removed  上一次有、這一次不見的列數
+// 純 append ⇒ suffix 0、removed 0；反向讀取（End）把新頁插在接合點 ⇒ removed 0 但
+// suffix > 0（見 docs/easy-reading.md「反向讀取」）。呼叫端只在 removed === 0 時
+// 重用快取；中段插入另有條件（插入點不得早於接合點，見 render/screen.js#_render）。
+export function spliceShape(prevLines, nextLines) {
+  if (!prevLines || !nextLines) return null;
+  const prefix = reusablePrefix(prevLines, nextLines);
+  const room = Math.min(prevLines.length, nextLines.length) - prefix;
+  let suffix = 0;
+  while (
+    suffix < room &&
+    prevLines[prevLines.length - 1 - suffix] === nextLines[nextLines.length - 1 - suffix]
+  ) ++suffix;
+  return {
+    prefix,
+    suffix,
+    inserted: nextLines.length - prefix - suffix,
+    removed: prevLines.length - prefix - suffix
+  };
+}
+
 // Set / Array / 純值 → 穩定字串。blacklist 是 Set、titleBlacklist 是 Array，兩者
 // 的**參考**會隨偏好重讀而換掉（readValuesWithDefault 每次都建新的），所以只能比
 // 內容；排序後 join 讓「同一組黑名單」永遠得到同一個簽章。
@@ -96,6 +121,10 @@ export function annotationsKey(input) {
     stable(e.inListContext),
     stable(e.listEasyReading),
     stable(e.dropHidden),
+    // 反向讀取的接合點：它決定哪些列不編樓層、跨列掃描在哪裡斷開。整段反向期間
+    // 不變（新頁一律插在同一點），接合完成變回 undefined ⇒ **一次**全量重算，樓層
+    // 在這時補上。
+    stable(e.reverseJunction),
     // 功能鍵按鈕：**一定要在**。列表好讀視窗走 rowIdentityStable，render/screen.js
     // 的節點重用條件是 `rowIdentityStable || !changedRows.has(row)` ⇒ changedRows
     // 根本不參與判斷。漏了它，切 pref 之後 row 1 / row 23 的節點會被無條件沿用，

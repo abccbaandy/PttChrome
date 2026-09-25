@@ -220,6 +220,7 @@ export function computeAnnotations(
   aiLink,
   aiFix,
   reuse,
+  shape,
 ) {
   const result = new Array(lines.length);
   if (!enhance) return { annotations: result, cache: null };
@@ -245,21 +246,40 @@ export function computeAnnotations(
     // ---- 增量重算的起點（見 screen_annotate_cache.js 檔頭）----
     // reuse 非 null ⇒ 這一幀只是把新的一頁接在後面：前綴的 texts / base 標註 /
     // 樓層計數器 / AI 候選清單全部沿用，下面所有逐列工作只跑 [from, n)。
+    //
+    // shape（可為 null ＝ 純 append）：反向讀取（End）把新頁插在接合點 J，前後綴的
+    // 列參考都不變（screen_annotate_cache.spliceShape）。[insFrom, insTo) 是這一幀
+    // 新插入的列，其餘列 prevOf(row) 對回上一幀的 index。純 append 時
+    // insFrom＝上一幀長度、insTo＝n，prevOf 退化成恆等 —— 與導入 shape 之前逐字相同。
     const n = lines.length;
-    let from = reuse ? reuse.texts.length : 0;
+    // 反向讀取的接合點（null＝沒有在反向）。J 之後（tail）的列**不編樓層**：上面還
+    // 有多少則推文未知；接合完成後 J 消失 ⇒ 快取鍵變 ⇒ 全量重算一次補上正確樓層。
+    const J =
+      easyReading && enhance.reverseJunction != null
+        ? enhance.reverseJunction
+        : null;
+    let insFrom = reuse ? (shape ? shape.prefix : reuse.texts.length) : 0;
+    let insTo = reuse ? (shape ? shape.prefix + shape.inserted : n) : n;
+    const prevOf = (row) =>
+      row < insFrom ? row : row >= insTo ? row - (insTo - insFrom) : -1;
     const texts = new Array(n);
-    for (let row = 0; row < from; ++row) texts[row] = reuse.texts[row];
-    for (let row = from; row < n; ++row) texts[row] = rowToText(lines[row]);
+    for (let row = 0; row < n; ++row) {
+      const p = reuse ? prevOf(row) : -1;
+      texts[row] = p >= 0 ? reuse.texts[p] : rowToText(lines[row]);
+    }
     // Steamgifts giveaway 代碼連結的文章層 gate（整篇提到 steamgifts 才啟用，
     // 見 steamgifts_parse.js）。偵測本體抽在 detectRowExtras（合併塊共用）。
     // 它是**逐列偵測的輸入**：一旦某一頁首次把它翻成 true，前面每一列的偵測條件
     // 都變了 ⇒ 這一幀退回全量重算（一篇文章最多發生一次）。
     let hasSteamgifts = reuse ? reuse.hasSteamgifts : false;
     if (!hasSteamgifts)
-      hasSteamgifts = articleHasSteamgifts(from ? texts.slice(from) : texts);
+      hasSteamgifts = articleHasSteamgifts(
+        reuse ? texts.slice(insFrom, insTo) : texts,
+      );
     if (reuse && hasSteamgifts && !reuse.hasSteamgifts) {
       reuse = null;
-      from = 0;
+      insFrom = 0;
+      insTo = n;
     }
     // 「開燈」偵測（軌 A／軌 B，見 js/hidden_text.js）。逐列獨立 ⇒ 純累加即可，
     // **不必**像 hasSteamgifts 那樣「首次翻 true 就全量重算」：那個是逐列偵測的
@@ -268,7 +288,7 @@ export function computeAnnotations(
     // 已經在跑的兩次 groupImageCaptionBlocks（全量）便宜得多。
     let litRows = reuse ? reuse.litRows : 0;
     let erasedRows = reuse ? reuse.erasedRows : 0;
-    for (let row = from; row < n; ++row) {
+    for (let row = insFrom; row < insTo; ++row) {
       const hid = detectHiddenRow(lines[row]);
       if (hid.lit) ++litRows;
       if (hid.erased) ++erasedRows;
@@ -293,13 +313,24 @@ export function computeAnnotations(
       highlightAuthor,
       articleAuthor,
     };
+    // tail（row ≥ J）用的 ctx：不帶計數器 ⇒ annotateComment 不編樓層、也不推進
+    // head 那個計數器的狀態，所以 tail 列的 base 標註只取決於該列本身，插入新頁後
+    // 可以原封沿用（位移重用的前提）。
+    const tailCtx = J != null ? { ...ctx, floorCounter: undefined } : ctx;
+    // 反向期間，跨列掃描的輸入只到 J 為止（head 與 tail 在文章裡並不相鄰）。
+    const headTexts = J != null ? texts.slice(0, J) : texts;
     // 圖文合併（好讀限定）：先重建整篇純文字做跨行分組（per-row 的 annotateComment
     // 看不到鄰列）。無論開關與否都要算——關閉時浮動按鈕的顯示條件也需要塊數。
     // 塊數取兩方向（上圖下文/上文下圖）的 max，讓純「上文下圖」文章也出得了按鈕。
     let captionBlocks;
     if (easyReading) {
-      const imageFirstBlocks = groupImageCaptionBlocks(texts, "imageFirst");
-      const captionFirstBlocks = groupImageCaptionBlocks(texts, "captionFirst");
+      // 反向期間只對 head 分組：塊遇第一則推文就停，tail 幾乎全是推文；接合後
+      // 全量重算時整篇再分一次。
+      const imageFirstBlocks = groupImageCaptionBlocks(headTexts, "imageFirst");
+      const captionFirstBlocks = groupImageCaptionBlocks(
+        headTexts,
+        "captionFirst",
+      );
       result.imageCaptionBlockCount = Math.max(
         imageFirstBlocks.length,
         captionFirstBlocks.length,
@@ -311,7 +342,7 @@ export function computeAnnotations(
       // 幾段」，applyAiKeep 據此重建塊；沒有答案的塊原封不動（見
       // caption_ai_logic.js 的零回歸不變量）。
       if (captionAi && mergeCaption) {
-        const spans = buildCaptionSpans(texts, mergeCaption);
+        const spans = buildCaptionSpans(headTexts, mergeCaption);
         result.captionSpans = spans;
         // 內容型簽章：好讀翻頁會重算 spans，內容沒變就不該重跑推論。
         result.captionSpansSig = spans.map(spanKey).join(",");
@@ -346,8 +377,11 @@ export function computeAnnotations(
     // 候選收集分成兩段陣列，順序必須與全量重算完全一致（簽章是 join 出來的）：
     // 先是逐列（依列序），再是合併推文塊（依 run 序）。故逐列的收在
     // baseDomainCands/baseFixCands（可跨幀沿用），合併塊的每幀從 run 快取重播。
-    const baseDomainCands = reuse ? reuse.domainCands.slice() : [];
-    const baseFixCands = reuse ? reuse.fixCands.slice() : [];
+    // 候選按列存（rowCands[row] ＝ { d, f } 或 undefined），每幀依列序串起來：中段
+    // 插入之後，「上一幀的扁平清單＋新列」就不再是列序了。
+    const rowCands = new Array(n);
+    const baseDomainCands = [];
+    const baseFixCands = [];
     const withUrlAi = (extras, dCands, fCands) => {
       let out = extras;
       if (extras.bareDomains) {
@@ -365,15 +399,25 @@ export function computeAnnotations(
     // **參考穩定**：沒有被圖文合併或推文合併裝飾到的列，result[row] 就是上一幀那
     // 同一個物件 ⇒ 下面的 <Row> 元素快取才有得重用（React 才會 bailout）。
     const base = new Array(n);
-    for (let row = 0; row < from; ++row) base[row] = reuse.base[row];
-    for (let row = from; row < n; ++row) {
+    for (let row = 0; row < n; ++row) {
+      const p = reuse ? prevOf(row) : -1;
+      if (p >= 0) {
+        base[row] = reuse.base[p];
+        rowCands[row] = reuse.rowCands[p];
+        continue;
+      }
       const text = texts[row];
-      const ann = annotateComment(text, ctx) || undefined;
+      const ann =
+        annotateComment(text, J != null && row >= J ? tailCtx : ctx) ||
+        undefined;
+      const dC = [];
+      const fC = [];
       const { fixedUrls, mentions, aids, giveaways, bareDomains } = withUrlAi(
         detectRowExtras(lines[row], text, ann, detectOpts),
-        baseDomainCands,
-        baseFixCands,
+        dC,
+        fC,
       );
+      if (dC.length || fC.length) rowCands[row] = { d: dC, f: fC };
       let r = ann;
       if (fixedUrls) r = { ...(r || {}), fixedUrls };
       if (mentions) r = { ...(r || {}), mentions };
@@ -382,7 +426,14 @@ export function computeAnnotations(
       if (bareDomains) r = { ...(r || {}), bareDomains };
       base[row] = r;
     }
-    for (let row = 0; row < n; ++row) result[row] = base[row];
+    for (let row = 0; row < n; ++row) {
+      result[row] = base[row];
+      const c = rowCands[row];
+      if (c) {
+        for (let i = 0; i < c.d.length; ++i) baseDomainCands.push(c.d[i]);
+        for (let i = 0; i < c.f.length; ++i) baseFixCands.push(c.f[i]);
+      }
+    }
     // 內文跨行連結（src/js/body_wrap.js）：被切成兩列的網址，兩列都渲染成同一條
     // <a>（href 是接好的完整網址）。逐列偵測兩層都只看得到殘段 ⇒ 只有這裡（手上
     // 有整份 lines）做得到。
@@ -403,7 +454,18 @@ export function computeAnnotations(
         const a = base[row];
         return !!(a && (a.pusher !== undefined || a.hidden));
       };
-      const wrapped = detectBodyWrappedUrls(lines, isSkipRow);
+      // 反向期間 head 與 tail 分開掃：J-1 與 J 在文章裡不相鄰，不可接成一條網址。
+      const wrapped =
+        J != null
+          ? detectBodyWrappedUrls(lines.slice(0, J), isSkipRow).concat(
+              detectBodyWrappedUrls(lines.slice(J), (row) =>
+                isSkipRow(row + J),
+              ).map((w) => ({
+                ...w,
+                parts: w.parts.map((pt) => ({ ...pt, row: pt.row + J })),
+              })),
+            )
+          : detectBodyWrappedUrls(lines, isSkipRow);
       for (let k = 0; k < wrapped.length; ++k) {
         const w = wrapped[k];
         for (let i = 0; i < w.parts.length; ++i) {
@@ -459,20 +521,48 @@ export function computeAnnotations(
     // 改變**最後一個** run（新的一則接在後面），前面所有 run 直接重播上一幀的結果，
     // 連裝飾出來的 annotation 物件都是同一個（元素快取才有得重用）。
     const runCache = new Map();
+    const runByFirstBase = new Map();
     if (easyReading && mergeSameAuthorComments) {
       const prevRuns = reuse ? reuse.runCache : null;
-      const runs = groupSameAuthorRuns(result);
+      const prevRunsByFirst = reuse ? reuse.runByFirstBase : null;
+      // 反向期間 run 在 J 斷開（head 最後一則與 tail 第一則在文章裡不相鄰）。
+      const runs = groupSameAuthorRuns(result, J);
+      const sameRefs = (e, run) => {
+        if (!e || e.baseRefs.length !== run.rows.length) return false;
+        for (let i = 0; i < run.rows.length; ++i)
+          if (e.baseRefs[i] !== base[run.rows[i]]) return false;
+        return true;
+      };
       for (let k = 0; k < runs.length; ++k) {
         const run = runs[k];
         const rKey = mergeRunKey(run);
         const prevEntry = prevRuns && prevRuns.get(rKey);
-        let entry = null;
-        if (prevEntry && prevEntry.baseRefs.length === run.rows.length) {
-          entry = prevEntry;
-          for (let i = 0; i < run.rows.length; ++i) {
-            if (prevEntry.baseRefs[i] !== base[run.rows[i]]) {
-              entry = null;
-              break;
+        let entry = sameRefs(prevEntry, run) ? prevEntry : null;
+        // 反向讀取插入一頁之後，tail 的 run 整批位移（mergeRunKey 含列號 ⇒ 撞不到）。
+        // 以首列的 base 參考找回上一幀的同一個 run：列參考全同、相對間距全同 ⇒ 內容
+        // 完全一樣，只是換了 index。首列的裝飾物件（不含列號）原樣沿用，最貴的
+        // buildMergedCommentChars 不重跑；後續列的 { mergedIntoComment: 首列 } 帶列號，
+        // 重建成新 index 的淺物件。
+        if (!entry && prevRunsByFirst) {
+          const cand = prevRunsByFirst.get(base[run.rows[0]]);
+          if (sameRefs(cand, run) && cand.decorated.length) {
+            const delta = run.rows[0] - cand.decorated[0][0];
+            let aligned = cand.decorated.length === run.rows.length;
+            for (let i = 0; aligned && i < run.rows.length; ++i)
+              if (cand.decorated[i][0] + delta !== run.rows[i]) aligned = false;
+            if (aligned) {
+              const first = run.rows[0];
+              entry = {
+                ...cand,
+                decorated: cand.decorated.map(([r, a], i) =>
+                  i === 0
+                    ? [first, a]
+                    : [
+                        r + delta,
+                        { ...result[r + delta], mergedIntoComment: first },
+                      ],
+                ),
+              };
             }
           }
         }
@@ -572,7 +662,13 @@ export function computeAnnotations(
           fixCands.push(entry.fixCands[i]);
         }
         runCache.set(rKey, entry);
+        runByFirstBase.set(base[run.rows[0]], entry);
       }
+    }
+    // 反向讀取的接合點標記（淡虛線，main.css `.reverseJunction`）：tail 的第一列。
+    // 每幀是新物件 ⇒ 只有這一列（以及上一幀是它、這一幀被推下去的那一列）重建。
+    if (J != null && J < n) {
+      result[J] = { ...(result[J] || {}), reverseJunction: true };
     }
     // 內容型簽章：好讀翻頁只是往後長，前面已判過的候選 key 不變 → effect 不重跑。
     result.domainCands = domainCands;
@@ -591,8 +687,10 @@ export function computeAnnotations(
         erasedRows,
         domainCands: baseDomainCands,
         fixCands: baseFixCands,
+        rowCands,
         captionCache,
         runCache,
+        runByFirstBase,
       },
     };
   } else if (pageState === PAGE_LIST || inListContext) {

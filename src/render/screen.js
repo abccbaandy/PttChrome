@@ -12,7 +12,7 @@
 //
 // 逐列標註仍走 src/js/screen_annotations.js（與 React 版共用的純函式）。
 // 兩層快取的**判準**一字沿用舊版，只是產物從 React element 換成 DOM 節點：
-//   1. 標註層 — screen_annotate_cache 的 annotationsKey/sameKey/isAppendOnly，
+//   1. 標註層 — screen_annotate_cache 的 annotationsKey/sameKey/spliceShape，
 //      只在 enhance.stableRows（好讀累積長頁的快照列）為真時啟用。
 //   2. 節點層 — 列參考 + annotation 參考 + 該列高亮狀態都沒變就沿用同一個 DOM 節點。
 // 沒有這兩層，8000 列的累積頁每頁都要重建 8000 列（長文「越讀越慢」的來源，
@@ -59,8 +59,25 @@ import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import {
   annotationsKey,
   sameKey,
-  isAppendOnly,
+  spliceShape,
 } from "../js/screen_annotate_cache";
+
+// 沿用的列節點換了 index（反向讀取在接合點插入新頁 ⇒ 之後的列整批位移）：把節點
+// 本身與子孫的 srow／data-row 改成新值。這兩個屬性是外部契約（row.js 檔頭：選取
+// 反查、_scrollToPageRow、合併塊排版），節點裡沒有其他地方記著列號（link_segment
+// 只把 this.row 寫進 data-row 屬性，不進任何閉包）。
+function shiftRowIndex(node, delta) {
+  if (!delta || !node || node.nodeType !== 1) return;
+  const bump = (e) => {
+    const s = e.getAttribute("srow");
+    if (s !== null) e.setAttribute("srow", String(Number(s) + delta));
+    const d = e.getAttribute("data-row");
+    if (d !== null) e.setAttribute("data-row", String(Number(d) + delta));
+  };
+  bump(node);
+  const inner = node.querySelectorAll("[srow],[data-row]");
+  for (let i = 0; i < inner.length; ++i) bump(inner[i]);
+}
 
 // 游標底色的「沒有」值。凍結成模組常數讓「已經是不上色」的重複呼叫在比較階段就
 // 被吃掉。col＝底色從第幾欄畫起（0＝整列），與可點區同源
@@ -567,13 +584,21 @@ export class ScreenController {
       ),
     );
     const prevCache = this._cache;
-    const reusable =
-      stableRows &&
-      prevCache &&
-      sameKey(prevCache.key, cacheKey) &&
-      isAppendOnly(prevCache.lines, lines)
-        ? prevCache
-        : null;
+    // 可重用的形狀：純 append（suffix 0）；或反向讀取（End）把新頁插在接合點 J
+    // （suffix > 0）。後者只在插入點不早於 J 時成立 —— tail 不編樓層，J 之後的列
+    // 標註只取決於該列本身；插在 J 之前會讓後面每一列的樓層都變，只能全量重算。
+    let shape = null;
+    if (stableRows && prevCache && sameKey(prevCache.key, cacheKey)) {
+      const sh = spliceShape(prevCache.lines, lines);
+      const J = enhance ? enhance.reverseJunction : null;
+      if (
+        sh &&
+        sh.removed === 0 &&
+        (sh.suffix === 0 || (J != null && sh.prefix >= J))
+      )
+        shape = sh;
+    }
+    const reusable = shape ? prevCache : null;
     const computed = computeAnnotations(
       lines,
       enhance,
@@ -583,6 +608,7 @@ export class ScreenController {
       this._aiLink,
       this._aiFix,
       reusable ? reusable.cache : null,
+      shape,
     );
     const annotations = computed.annotations;
 
@@ -598,6 +624,7 @@ export class ScreenController {
     const changedRows =
       enhance && enhance.changedRows ? new Set(enhance.changedRows) : null;
     const nodes = this._buildNodes(lines, annotations, reusable, stableRows, {
+      shape,
       key: cacheKey,
       rowIndependent,
       changedRows,
@@ -635,7 +662,9 @@ export class ScreenController {
 
   // ---- 每列節點快取 ----
   // 重用條件三件（與舊版 Screen.jsx 的元素快取一字對應）：列內容（chars 參考，由
-  // isAppendOnly 保證）、最終 annotation 物件參考、以及這一列的高亮狀態。
+  // spliceShape 保證）、最終 annotation 物件參考、以及這一列的高亮狀態。
+  // 反向讀取插入一頁之後，接合點之後的列整批位移：上一幀的節點照樣沿用，只把節點
+  // 裡的 srow／data-row 改成新 index（shiftRowIndex）—— 圖片佔位盒與捲動錨點都保住。
   // mergeBlock 列例外——它的內容還取決於右欄那些說明行的 annotation，條件不只自己
   // 這一列，直接重建（只有使用者手動開「圖文並排」時才存在，且塊數有限）。
   _buildNodes(lines, annotations, reusable, stableRows, frame) {
@@ -673,18 +702,25 @@ export class ScreenController {
       this.props.enhance && this.props.enhance.rowIdentityStable
     );
 
+    const shape = frame.shape;
+    const insFrom = shape ? shape.prefix : prevNodes ? prevNodes.length : 0;
+    const insTo = shape ? shape.prefix + shape.inserted : lines.length;
     const nodes = new Array(lines.length);
     for (let row = 0; row < lines.length; ++row) {
       const ann = annotations[row];
+      const p =
+        row < insFrom ? row : row >= insTo ? row - (insTo - insFrom) : -1;
       if (
         prevNodes &&
-        row < prevNodes.length &&
-        prevAnnotations[row] === ann &&
+        p >= 0 &&
+        p < prevNodes.length &&
+        prevAnnotations[p] === ann &&
         sameHighlightCls &&
-        (prevHighlight.row === row) === (this.highlight.row === row) &&
+        (prevHighlight.row === p) === (this.highlight.row === row) &&
         !(ann && ann.mergeBlock)
       ) {
-        nodes[row] = prevNodes[row];
+        if (prevNodes[p] && p !== row) shiftRowIndex(prevNodes[p], row - p);
+        nodes[row] = prevNodes[p];
         continue;
       }
       // ---- dirty-row 逐列重用 ----
@@ -709,6 +745,8 @@ export class ScreenController {
         continue;
       }
       const built = this._buildRowNode(row, lines, annotations);
+      if (built && ann && ann.reverseJunction)
+        built.classList.add("reverseJunction");
       // 原生／列表（非 stableRows）每幀都要重算，但畫面內容往往一字未變。序列化
       // 比對後沿用舊節點，可以省掉整列的 DOM 抽換——選取範圍與捲動位置因此不會
       // 每 30ms 被打斷一次。長頁走上面的參考快取，不必付這個序列化成本。
@@ -974,10 +1012,26 @@ export class ScreenController {
   }
 
   _patchInto(parent, nodes, stop) {
+    // 這一幀不再需要的舊節點：走到它時**當場移除**，不可以把它留在 cursor 上。
+    // 留著的話，它之後每一個沿用的節點都會被 insertBefore 到它前面 ＝ 整段搬家
+    // （移出再插回）。反向讀取（End）每頁都會遇到：接合點那一列換了節點，之後整段
+    // tail 都是沿用的 ⇒ 每頁搬上千個節點，而**搬動含有捲動錨點的節點會讓瀏覽器丟掉
+    // 錨點**、scroll anchoring 當幀不補償 ⇒ 往上插入的內容把讀者一路推走。
+    // forward 的純 append 沒踩到，只是因為舊節點從來只出現在尾端。
+    const wanted = new Set();
+    for (let i = 0; i < nodes.length; ++i) if (nodes[i]) wanted.add(nodes[i]);
     let cursor = parent.firstChild;
+    const skipStale = () => {
+      while (cursor && cursor !== stop && !wanted.has(cursor)) {
+        const next = cursor.nextSibling;
+        cursor.remove();
+        cursor = next;
+      }
+    };
     for (let i = 0; i < nodes.length; ++i) {
       const want = nodes[i];
       if (!want) continue;
+      skipStale();
       if (cursor === want) {
         cursor = cursor.nextSibling;
         continue;

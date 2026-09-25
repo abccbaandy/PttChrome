@@ -849,6 +849,72 @@ export function decideAccumulateBranch({
   return 'append';
 }
 
+// ---- 反向讀取（End，見 docs/easy-reading.md「反向讀取」）----
+//
+// 好讀讀取中按 End：保留已從頭累積的 head，從文末建立 tail，逐頁往上把新頁插在
+// head 與 tail 之間（接合點 J＝head 長度，整段反向期間不變），碰到 head 就接合。
+// 以下兩個純函式是 term_view.accumulatePageLines 的反向分支。
+//
+// 行號事實（pmore.c，協定 §13 P10/P11）：
+//   - 狀態列 `第 S~E 行` 的 E＝lineno + dispedlines，而 dispedlines 在一行**開始**
+//     顯示時就 +1 ⇒ wrap 模式（預設）下畫面最後一列可能只顯示第 E 行的前半段。
+//     所以「剛好相鄰」(E' == S_t-1) **不能**當成接得上：第 S_t-1 行的後半段沒收到。
+//     prepend 要求 E' ≥ S_t（至少重疊一行），接合要求 S_t ≤ H_E，理由相同。
+//   - tail 的第一頁一定從畫面頂端開始畫（S_t 那一行完整），head 的末頁則可能在 H_E
+//     截斷 —— 重疊區永遠以「下面那段」為準（裁上面那段的尾巴 / 裁下面那段的頭，
+//     由 resolveJoinOverlap 以內容為下界量出列數）。
+//
+// 回傳：
+//   'skip'        非完整幀（P6）或沒有狀態列
+//   'ignore'      這一幀帶不來新內容（舊 head 幀、tail 內部、wrap 缺口）——不動；
+//                 要不要重新對準由 EasyReading 的決策端判斷
+//   'joinForward' tail 還沒建立，落地頁已與 head 重疊（短文 / head 快讀完了）
+//                 ⇒ 就是一次普通的往後接，反向讀取結束
+//   'seed'        End 的落地頁：接在 J 之後成為 tail
+//   'extend'      落地頁 <100%（PMORE_ACCURATE_WRAPEND）時往下補 tail
+//   'prepend'     往上讀到的一頁：插在 J
+//   'stitch'      往上讀到的一頁已碰到 head：插入並接合
+export function decideReverseBranch({
+  complete, statusStart, statusEnd, headEndLine, tailStartLine, tailEndLine
+}) {
+  if (complete === false || statusStart == null || statusEnd == null) return 'skip';
+  if (tailStartLine == null) {
+    if (statusEnd <= headEndLine) return 'ignore';
+    if (statusStart <= headEndLine) return 'joinForward';
+    return 'seed';
+  }
+  if (statusStart >= tailStartLine) {
+    // 往下補：P1 保證 S' ≤ E_tail；超出就是掉頁，交給決策端重新對準。
+    if (statusEnd > tailEndLine && statusStart <= tailEndLine) return 'extend';
+    return 'ignore';
+  }
+  if (statusEnd < tailStartLine) return 'ignore';  // wrap 缺口：接不上
+  return statusStart <= headEndLine ? 'stitch' : 'prepend';
+}
+
+// 兩段累積內容接起來時，重疊了幾個顯示列（＝要從**下面那段**開頭丟掉幾列，或等價地
+// 從上面那段尾巴丟掉幾列）。就是 resolvePageOverlap 的兩段版：upper＝上面那段（以
+// upperEndLine 結尾），lower＝下面那段（從 lowerStartLine 開始）。
+//   - 行號給出重疊的**行數**，wrap 會讓顯示列更多 ⇒ findPageOverlap 的內容比對是下界
+//     （與 forward 同一條規則，見 resolvePageOverlap）。
+//   - 兩段都只取靠近接縫的 `window` 列：重疊不會超過一頁（反向每次最多退 t_lines-2
+//     行），window 取兩頁寬留給 wrap。
+export function resolveJoinOverlap({ upperEndLine, lowerStartLine, upperTexts, lowerTexts, window }) {
+  const w = window || 48;
+  const upperTail = upperTexts.slice(-w);
+  const lowerHead = lowerTexts.slice(0, w);
+  const maxK = Math.min(upperTail.length, lowerHead.length);
+  if (!maxK) return 0;
+  return resolvePageOverlap({
+    accEndRow: upperEndLine,
+    statusStart: lowerStartLine,
+    kContent: findPageOverlap(upperTail, lowerHead),
+    maxK,
+    accTail: upperTail,
+    newTexts: lowerHead
+  });
+}
+
 // Where does the screen PTT just painted sit inside the accumulated long page?
 // Used on a seekBack landing (goto / search from functionMode) to scroll the long page
 // to the jump target, and as the safety gate for re-aligning PTT's page pointer: if

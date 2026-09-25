@@ -258,16 +258,106 @@ export function nextPageDownDecision({
     return keep;
   if (pagePercent >= 100)
     return { action: 'done', inFlightSig: null, retries: 0, reachedPageEnd: true };
-  if (inFlightSig != null && sig === inFlightSig) {
-    const elapsed = sinceSentMs == null ? Infinity : sinceSentMs;
-    const grace = graceMs == null ? PAGE_DOWN_GRACE_MS : graceMs;
-    if (!recovery || elapsed < grace)
-      return { action: 'wait', inFlightSig, retries, reachedPageEnd: false };
-    if (retries < PAGE_DOWN_MAX_RETRIES)
-      return { action: 'retry', inFlightSig, retries: retries + 1, reachedPageEnd: false };
-    return { action: 'giveup', inFlightSig, retries, reachedPageEnd: false };
-  }
+  const gate = inFlightGate({ sig, inFlightSig, retries, recovery, sinceSentMs, graceMs });
+  if (gate)
+    return { action: gate.action, inFlightSig, retries: gate.retries, reachedPageEnd: false };
   return { action: 'send', inFlightSig: sig, retries: 0, reachedPageEnd: false };
+}
+
+// 單一 in-flight 交易的閘門（nextPageDownDecision 與 nextReverseReadDecision 共用）：
+// 畫面簽章仍等於送鍵當下的簽章 ⇒ 回應還沒到。回 null ＝ 線上沒有未回應的鍵（可以送下
+// 一個）；否則回 { action: 'wait' | 'retry' | 'giveup', retries }。grace／retry 的理由
+// 見 nextPageDownDecision 上方的長註解（P4、sinceSentMs）。
+export function inFlightGate({ sig, inFlightSig, retries, recovery, sinceSentMs, graceMs }) {
+  if (inFlightSig == null || sig !== inFlightSig) return null;
+  const elapsed = sinceSentMs == null ? Infinity : sinceSentMs;
+  const grace = graceMs == null ? PAGE_DOWN_GRACE_MS : graceMs;
+  if (!recovery || elapsed < grace) return { action: 'wait', retries };
+  if (retries < PAGE_DOWN_MAX_RETRIES) return { action: 'retry', retries: retries + 1 };
+  return { action: 'giveup', retries };
+}
+
+// 反向讀取：wrap 缺口每個 tail 起點最多重新對準幾次（見 nextReverseReadDecision）。
+export const REVERSE_RESEEK_MAX = 3;
+
+// debugRecorder `easyReading.reverse` 的送鍵事件名稱。
+const REVERSE_KEY_NAMES = {
+  '\x1b[4~': 'sendEnd',
+  '\x1b[5~': 'sendPageUp',
+  '\x1b[6~': 'sendPageDown'
+};
+
+// 反向讀取（End）的純決策。docs/easy-reading.md「反向讀取」；協定依據 pmore.c：
+//   End ＝ pmore_cmd_end → mf_goBottom，線上只有一幀，落地**可能 <100%**
+//        （PMORE_ACCURATE_WRAPEND，P11）⇒ tail 先往下補到 100%（PageDown，P1）。
+//   PgUp ＝ pmore_cmd_pgup → mf_backward(t_lines-2)，以檔案行計 ⇒ 新頁 E' == S（重疊
+//        一行）。PTT 的 build 沒有 PMORE_AUTONEXT_ON_PAGEFLIP（只在 M3_USE_PMORE 區塊
+//        定義），第 1 行按 PgUp **零回應** ⇒ 交易永遠等不到 ack，絕不能在 S==1 送。
+//        wrap 模式（bpref 預設）下 dispedlines 不含續列 ⇒ 可能 E' < S_t（缺口）⇒
+//        用 goto-line（`:N`，同 _healAtLine）重新對準，每個 S_t 最多 REVERSE_RESEEK_MAX 次。
+//
+// 交易模型與 forward 相同（單一 in-flight、ack＝簽章改變、stamp-after-send），所以先過
+// inFlightGate。`accumulated`＝這個畫面已經進過 accumulatePageLines（它的簽章等於
+// view._lastAccumulatedSig）：決策一律建立在「累積狀態已反映這個畫面」之上。
+//
+// 輸入的 tail 事實來自 term_view._reverse；`result`＝它結束的方式（view._reverse 已清）：
+//   'stitched' 接合完成 ⇒ 若指標不在文末就送 End 停回去（seekBack／functionMode resume／
+//              pagePercent===100 都假設指標在文末），然後 done
+//   'joined' / 'dropped' ⇒ cancel（回 forward：前者照常往下讀，後者什麼都不剩）
+//
+// 回傳 action：none | wait | retry | giveup | cancel | done | abort |
+//   send（keys 帶在 keys 欄位：End／PgUp／PgDn）| goto（line；reseek 旗標表示消耗重新
+//   對準額度）
+export function nextReverseReadDecision({
+  enabled, functionMode, complete, isStatusRow, sig, accumulated,
+  statusStart, statusEnd, pagePercent, pageRows,
+  phase, result, headEndLine, tailStartLine, tailEndLine, tailComplete,
+  inFlightSig, retries, recovery, sinceSentMs, graceMs, reseeks
+}) {
+  const keep = { action: 'none', inFlightSig, retries };
+  if (!enabled || functionMode || !complete || !isStatusRow || sig == null)
+    return keep;
+  const gate = inFlightGate({ sig, inFlightSig, retries, recovery, sinceSentMs, graceMs });
+  if (gate) return { action: gate.action, inFlightSig, retries: gate.retries };
+  if (!accumulated) return keep;
+  const free = { inFlightSig: null, retries: 0 };
+  if (phase === 'requested') {
+    // 在途的 PageDown 已回來、也接進 head 了。剛好讀完 ⇒ 沒有反向的必要。
+    if (pagePercent >= 100) return { action: 'cancel', ...free };
+    return { action: 'send', keys: '\x1b[4~', begin: true, inFlightSig: sig, retries: 0 };
+  }
+  if (result === 'stitched') {
+    if (pagePercent >= 100) return { action: 'done', ...free };
+    return { action: 'send', keys: '\x1b[4~', inFlightSig: sig, retries: 0 };
+  }
+  if (result) return { action: 'cancel', ...free };
+  // End 已回應卻什麼都沒建立（落地頁不在 head 之後）：不該發生，放棄反向。
+  if (tailStartLine == null) return { action: 'abort', ...free };
+  const send = (keys) => ({ action: 'send', keys, inFlightSig: sig, retries: 0 });
+  const goto = (line, reseek) =>
+    line === statusStart || line < 1
+      ? { action: 'abort', ...free }   // 落地簽章不會變 ⇒ 等不到 ack
+      : { action: 'goto', line, reseek: !!reseek, inFlightSig: sig, retries: 0 };
+  if (!tailComplete) {
+    // 往下補 tail（End 落地 <100%）。指標在 tail 尾端 ⇒ PageDown；否則拉回尾端。
+    if (statusEnd === tailEndLine) return send('\x1b[6~');
+    return goto(tailEndLine, false);
+  }
+  // 往上讀。指標就停在 tail 的第一頁 ⇒ PgUp（S==1 絕不送：接合條件是 S_t ≤ H_E，而
+  // head 一定含第 1 行，走到這裡還是 1 代表狀態壞了）。
+  if (statusStart === tailStartLine)
+    return statusStart > 1 ? send('\x1b[5~') : { action: 'abort', ...free };
+  // wrap 缺口：落地頁在 tail 之上、卻沒碰到 S_t（E' < S_t，缺了中間幾行）。把落地點往
+  // 下挪「差了幾行」，最多挪到 S_t-1（該行一開頭就顯示 ⇒ 下一行 S_t 一定在畫面內，
+  // 除非一行 wrap 超過一整頁）。
+  if (statusStart < tailStartLine && statusEnd < tailStartLine) {
+    if (reseeks >= REVERSE_RESEEK_MAX) return { action: 'abort', ...free };
+    const line = Math.min(tailStartLine - 1, statusStart + (tailStartLine - statusEnd));
+    return line > statusStart ? goto(line, true) : { action: 'abort', ...free };
+  }
+  // 指標在別處（剛補完 tail 停在文末、functionMode 裡被移動過…）⇒ 直接跳到「tail 上面
+  // 那一頁」的起點，落地頁的結尾正好是 S_t（與 PgUp 同形，重疊一行）。
+  return goto(Math.max(1, tailStartLine - pageRows), false);
 }
 
 // Pure decision for leaving functionMode, evaluated on each settle (screenSettled)
@@ -355,6 +445,12 @@ export function EasyReading(core, view, termBuf) {
   // article can never loop.
   this._healGotoCount = 0;
   this._healHomeUsed = false;
+  // 反向讀取（End）的交易狀態；null＝沒有在反向。per-article（_resetPagingState 清）。
+  //   phase       'requested'（按了 End，等在途的 PageDown 回來）| 'running'（End 已送）
+  //   reseeks / reseekFor  wrap 缺口重新對準的額度，對「哪一個 tail 起點」計
+  //   followBottom  tail 還沒補完之前，每次重畫都貼齊底部（讀者要看的是文末）
+  // 累積事實（head/tail 行號、接合點）在 term_view._reverse。
+  this._reverse = null;
   // functionMode: while the user is interacting with a native PTT prompt/menu/editor
   // triggered from inside the article (r 回應、X/% 推文、y 收暫存檔…), we stop the
   // easy-reading accumulation/overlay illusion and mirror the native 24-row screen
@@ -526,6 +622,13 @@ EasyReading.prototype._applyRowState = function(rowState) {
   this.startedEasyReading = rowState.startedEasyReading;
   this.easyReadingReachedPageEnd = rowState.reachedPageEnd;
   this.sendCommandAfterUpdate = rowState.sendCommandAfterUpdate;
+  // 反向讀取中：畫面的百分比描述的是 PTT 指標（在 tail 某處），不是累積頁完不完整
+  // ——End 落地就是 100%，但中段還沒讀。forward 的「排一個 PageDown」也不適用，翻頁
+  // 由 _maybeSendReverse 決定。接合完成（done）後這條不再成立，回到照實計算。
+  if (this._reverse) {
+    this.easyReadingReachedPageEnd = false;
+    if (this.sendCommandAfterUpdate !== 'skipOne') this.sendCommandAfterUpdate = '';
+  }
   if (rowState.consumeIgnoreOneUpdate)
     this.ignoreOneUpdate = false;
   if (rowState.pageStateOverride !== null)
@@ -617,6 +720,10 @@ EasyReading.prototype._resetPagingState = function() {
   // 「剛看過 pmore 設定頁」是 per-post 的一次性旗標。留著它，之後**每一個** prompt
   // （推文、回應、搜尋…）退出 functionMode 時都會誤觸整篇重讀。
   this._pmorePrefSeen = false;
+  // 反向讀取是 per-post 的：交易狀態（上面已清）與 view 端的 head/tail 事實一起丟。
+  this._reverse = null;
+  if (this._view && typeof this._view.clearReverse === 'function')
+    this._view.clearReverse('dropped');
 };
 
 // Arm the recovery timer for the outstanding request. _watchdogSig is the identity
@@ -660,6 +767,10 @@ EasyReading.prototype._maybeSendPageDown = function(keys, recovery) {
     });
     return 'blocked';
   }
+  // 反向讀取（End）接管翻頁：同一個 choke point ⇒ 延後補送、stamp-after-send、
+  // watchdog 重送 _inFlightKeys、onWireIdle 全部原樣沿用。
+  if (this._reverse)
+    return this._maybeSendReverse(recovery);
   const status = this._currentPageStatus();
   const sinceSentMs = this._inFlightSentAt == null
     ? null : Date.now() - this._inFlightSentAt;
@@ -758,6 +869,23 @@ EasyReading.prototype._maybeSendPageDown = function(keys, recovery) {
 // for the key to be swallowed by (P4). Does nothing once the status row says 100%
 // (pmore answers a PageDown at the bottom with silence anyway, P3).
 EasyReading.prototype._kickPageDown = function() {
+  // 反向讀取中：PTT 的指標本來就在文章中段（pagePercent < 100 是常態），送 PageDown
+  // 只會打亂 tail。而且反向時讀者**本來就停在底部**（tail 是文末），在底部按 PgDn
+  // 是常態、不代表卡住 ⇒ 不可以像 forward 那樣無條件清交易重送（在途的 PgUp 還沒
+  // 回來就再送一個 ＝ P4）。只在交易已經超過 grace（等同 giveup）時補一次額度，其餘
+  // 交給 inFlightGate 判斷（未過 grace ⇒ wait）。
+  if (this._reverse) {
+    const since = this._inFlightSentAt == null ? null : Date.now() - this._inFlightSentAt;
+    if (since == null || since >= PAGE_DOWN_GRACE_MS) {
+      this._core.debugRecorder?.log('easyReading.reverse', {
+        action: 'kick', inFlightSig: this._inFlightSig, retries: this._pageDownRetries,
+        sinceSentMs: since
+      });
+      this._pageDownRetries = 0;
+    }
+    this._maybeSendPageDown(null, /* recovery */ true);
+    return;
+  }
   const status = this._currentPageStatus();
   if (!status || status.pagePercent >= 100)
     return;
@@ -771,6 +899,190 @@ EasyReading.prototype._kickPageDown = function() {
   this._inFlightSentAt = null;  // user-driven: the grace has nothing to measure against
   this._clearWatchdog();
   this._maybeSendPageDown('\x1b[6~', /* recovery */ true);
+};
+
+// ---- 反向讀取（End）----
+// 讀取中按 End：保留已從頭累積的 head，跳到文末建立 tail，逐頁往上讀、插在 head 與
+// tail 之間，碰到 head 就接合。已經讀完就只捲到底（呼叫端先捲，這裡判斷要不要反向）。
+// 回傳是否真的啟動了反向讀取。
+EasyReading.prototype._requestReverse = function() {
+  if (!this._enabled || this._functionMode || !this.startedEasyReading) return false;
+  if (this._reverse || this.easyReadingReachedPageEnd) return false;
+  if (this._termBuf.easyReadingHealInFlight) return false;
+  const view = this._view;
+  if (!view || typeof view.beginReverse !== 'function' || view._accEndRow == null)
+    return false;
+  const status = this._currentPageStatus();
+  if (!status || status.pagePercent >= 100) return false;
+  this._reverse = { phase: 'requested', reseeks: 0, reseekFor: null, followBottom: true };
+  // 已經掛著的 seekBack realign 就作廢：反向讀取自己會把指標帶到該去的地方。
+  this._termBuf.easyReadingSeekBack = null;
+  this._core.debugRecorder?.log('easyReading.reverse', {
+    action: 'request',
+    sig: status.rowIndexStart + '~' + status.rowIndexEnd,
+    headEndLine: view._accEndRow,
+    inFlightSig: this._inFlightSig
+  });
+  if (this._view.flashListHint)
+    this._view.flashListHint(String(i18n('hint_easyReadingReverse') || ''), 2500);
+  // 從按鍵觸發 ⇒ 不是 recovery：若有 PageDown 在途，決策回 wait，等它的回應（或它
+  // 自己的 watchdog）再推下一步 —— 同時只有一個鍵在線上（P4）。
+  this._maybeSendPageDown(null, /* recovery */ false);
+  return true;
+};
+
+// 反向讀取的單一出口（由 _maybeSendPageDown 轉進來，因此已經過 _wireBusy）。決策在純
+// 函式 nextReverseReadDecision，這裡只收集事實、寫回交易狀態、送至多一個鍵。
+EasyReading.prototype._maybeSendReverse = function(recovery) {
+  const rv = this._reverse;
+  const view = this._view;
+  const vr = view ? view._reverse : null;
+  const status = this._currentPageStatus();
+  const sig = status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null;
+  const sinceSentMs = this._inFlightSentAt == null
+    ? null : Date.now() - this._inFlightSentAt;
+  const tailStart = vr ? vr.tailStartLine : null;
+  const d = nextReverseReadDecision({
+    enabled: this._enabled,
+    functionMode: this._functionMode,
+    complete: this._termBuf.cur_y === this._termBuf.rows - 1 &&
+              this._termBuf.cur_x === this._termBuf.cols - 1,
+    isStatusRow: !!status,
+    sig: sig,
+    accumulated: !!view && sig != null && view._lastAccumulatedSig === sig,
+    statusStart: status ? status.rowIndexStart : null,
+    statusEnd: status ? status.rowIndexEnd : null,
+    pagePercent: status ? status.pagePercent : null,
+    pageRows: this._termBuf.rows - 2,   // MFNAV_PAGE = t_lines-2
+    phase: rv.phase,
+    result: rv.phase === 'running' && !vr ? (view._reverseResult || 'dropped') : null,
+    headEndLine: vr ? vr.headEndLine : null,
+    tailStartLine: tailStart,
+    tailEndLine: vr ? vr.tailEndLine : null,
+    tailComplete: vr ? vr.tailComplete : false,
+    inFlightSig: this._inFlightSig,
+    retries: this._pageDownRetries,
+    recovery: !!recovery,
+    sinceSentMs: sinceSentMs,
+    graceMs: PAGE_DOWN_GRACE_MS,
+    reseeks: rv.reseekFor === tailStart ? rv.reseeks : 0
+  });
+  if (d.action === 'none' || d.action === 'wait')
+    return d.action;
+  this._core.debugRecorder?.log('easyReading.reverse', {
+    action: d.action === 'send' ? (REVERSE_KEY_NAMES[d.keys] || 'send') : d.action,
+    recovery: !!recovery,
+    sig: sig,
+    line: d.line,
+    headEndLine: vr ? vr.headEndLine : null,
+    tailStartLine: tailStart,
+    tailEndLine: vr ? vr.tailEndLine : null,
+    result: vr ? null : (view && view._reverseResult),
+    wasInFlightSig: this._inFlightSig,
+    wasRetries: this._pageDownRetries,
+    sinceSentMs: sinceSentMs
+  });
+  switch (d.action) {
+    case 'retry': {
+      const bytes = this._inFlightKeys;
+      if (!bytes || !this._send(bytes)) {
+        this._deferredPageDownKeys = bytes || '\x1b[6~';
+        return 'blocked';
+      }
+      this._inFlightSentAt = Date.now();
+      this._pageDownRetries = d.retries;
+      this._armWatchdog();
+      return d.action;
+    }
+    case 'giveup':
+      this._pageDownRetries = d.retries;
+      this._clearWatchdog();
+      this._termBuf.easyReadingHealInFlight = false;
+      return d.action;
+    case 'cancel':
+    case 'done':
+      this._endReverse(d.action);
+      return d.action;
+    case 'abort':
+      this._abortReverse();
+      return d.action;
+    case 'goto':
+      // _seekLine 自帶 stamp-after-send 與 heal 閘門（「跳至第幾行:」提示幀可能讓
+      // pageState 掉出 3，見那裡的註解）。送不出去 ⇒ 留一個待補送的觸發，等 idle。
+      if (!this._seekLine(d.line)) {
+        this._deferredPageDownKeys = '\x1b[6~';
+        return 'blocked';
+      }
+      if (d.reseek) {
+        rv.reseeks = (rv.reseekFor === tailStart ? rv.reseeks : 0) + 1;
+        rv.reseekFor = tailStart;
+      }
+      return d.action;
+    case 'send': {
+      // stamp-after-send（同 _maybeSendPageDown）：送不出去就什麼都不寫。
+      if (!this._send(d.keys)) {
+        this._deferredPageDownKeys = d.keys;
+        return 'blocked';
+      }
+      // End 真的上線了才凍結 head：回應不可能在這個同步區塊裡被解析，所以先送後凍結
+      // 沒有競態，而且送失敗時 head 仍是可以往下長的一般累積頁。
+      if (d.begin) {
+        view.beginReverse();
+        rv.phase = 'running';
+      }
+      this._inFlightSig = d.inFlightSig;
+      this._inFlightKeys = d.keys;
+      this._inFlightSentAt = Date.now();
+      this._pageDownRetries = 0;
+      this._armWatchdog();
+      return d.action;
+    }
+  }
+  return d.action;
+};
+
+// 反向讀取結束（'done'＝接合並停回文末；'cancel'＝不需要／被別的路徑收掉）。之後
+// 回到 forward：若累積頁還沒到底（'joined'），forward 決策照常送 PageDown。
+EasyReading.prototype._endReverse = function(action) {
+  this._reverse = null;
+  if (this._view && typeof this._view.clearReverse === 'function')
+    this._view.clearReverse('dropped');
+  this._inFlightSig = null;
+  this._pageDownRetries = 0;
+  this._clearWatchdog();
+  this._termBuf.easyReadingHealInFlight = false;
+  if (action === 'done') {
+    this.easyReadingReachedPageEnd = true;
+    return;
+  }
+  this._maybeSendPageDown('\x1b[6~', /* recovery */ false);
+};
+
+// 放棄反向讀取：丟掉 tail，把 PTT 的指標拉回 head 尾（goto，落地與 _healAtLine 同形
+// ⇒ forward 的 continuation），之後照常往下讀。只在病態 wrap 或狀態壞掉時走到。
+EasyReading.prototype._abortReverse = function() {
+  const view = this._view;
+  const headEnd = view && view._reverse ? view._reverse.headEndLine : null;
+  this._reverse = null;
+  if (view && typeof view.abortReverse === 'function') view.abortReverse();
+  this._inFlightSig = null;
+  this._pageDownRetries = 0;
+  this._clearWatchdog();
+  this._termBuf.easyReadingHealInFlight = false;
+  // 刻意不 _forceRepaint：此刻畫面停在 tail 某處，以 H_E 為基準重跑 accumulate 會判成
+  // forward 的 'gap' 而啟動缺頁自癒，與下面這個 goto 疊送。畫面由 goto 的落地幀重畫。
+  if (headEnd != null && headEnd >= 1) this._seekLine(headEnd);
+};
+
+// tail 還沒補完之前（End 落地、往下補的那一兩頁），每次重畫都把長頁貼齊底部：讀者
+// 按 End 要看的是文末。tail 補完就放手 —— 之後的插入都在接合點（視窗上方），交給
+// 瀏覽器內建的 scroll anchoring 保持位置（docs/easy-reading.md「長頁的捲動位置」）。
+EasyReading.prototype._followReverseBottom = function() {
+  const rv = this._reverse;
+  const vr = this._view ? this._view._reverse : null;
+  if (!rv || !rv.followBottom || !vr || vr.tailStartLine == null) return;
+  this._scrollBottom();
+  if (vr.tailComplete) rv.followBottom = false;
 };
 
 // Gap self-heal (pmore invariant P1, raised by term_view.accumulatePageLines as
@@ -1047,6 +1359,13 @@ EasyReading.prototype._onScreenSettled = function() {
     return;
   }
 
+  // 反向讀取：End 落地是 100%，forward 的 row-state 不會再排任何指令，所以 settle
+  // 必須自己推一次（recovery：可以依 grace 判定重送）。
+  if (this._reverse && this.sendCommandAfterUpdate !== 'skipOne') {
+    this._maybeSendPageDown(null, /* recovery */ true);
+    return;
+  }
+
   if (this.sendCommandAfterUpdate)  // a command is mid-flight (incl. skipOne) — let the frame loop drive
     return;
   // NOTE: deliberately NO `if (this.easyReadingReachedPageEnd) return;` here. The
@@ -1284,6 +1603,16 @@ EasyReading.prototype._onViewUpdated = function(e) {
   if (this._enabled && !this._functionMode && this._needsRealign()) {
     this.sendCommandAfterUpdate = '';
     this._realignAfterSeek();
+    return;
+  }
+  // 反向讀取（End）：每一個剛接進累積頁的畫面都推一次反向的下一步。不能等
+  // sendCommandAfterUpdate —— End 落地是 100%，forward 的 row-state 什麼都不會排。
+  if (this._reverse && this._enabled && !this._functionMode &&
+      this.sendCommandAfterUpdate !== 'skipOne') {
+    this.sendCommandAfterUpdate = '';
+    this._maybeSendPageDown(null, false);
+    this._followReverseBottom();
+    this._advanceScrollRestore();
     return;
   }
   if (this.sendCommandAfterUpdate) {
@@ -1921,6 +2250,9 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
       case '$':
       case 'G':
         stop = this._scrollBottom();
+        // 還在讀取中 ⇒ 反向讀取：直接跳到文末、往上讀（docs/easy-reading.md
+        // 「反向讀取」）。已讀完就只是上面那一行的捲到底。
+        this._requestReverse();
         break;
       case 'Tab':
         stop = true;

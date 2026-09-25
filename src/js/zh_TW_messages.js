@@ -1045,6 +1045,9 @@
   "hint_easyReadingUseBrowserFind": {
     "message": "好讀模式請按 %s 使用瀏覽器搜尋"
   },
+  "hint_easyReadingReverse": {
+    "message": "跳到文末，往上讀取中…"
+  },
   "hint_deepLinkHandoffReceived": {
     "message": "已從外部連結接手"
   },

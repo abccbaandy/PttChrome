@@ -111,7 +111,9 @@ export function commentContentCells(chars) {
 
 // 逐列 annotation（Screen#computeAnnotations 產出，推文列帶 userid / hidden）→
 // 合併 run 清單 [{ userid, rows }]（rows 為可見推文列 index、≥2 才成 run）。
-export function groupSameAuthorRuns(anns) {
+// breakAt（可省略）：在這一列之前強制斷 run —— 反向讀取時 head 的最後一則與 tail 的
+// 第一則在文章裡並不相鄰（見 docs/easy-reading.md「反向讀取」）。
+export function groupSameAuthorRuns(anns, breakAt) {
   const runs = [];
   let current = null;
   const close = () => {
@@ -119,6 +121,7 @@ export function groupSameAuthorRuns(anns) {
     current = null;
   };
   for (let i = 0; i < anns.length; ++i) {
+    if (i === breakAt) close();
     const a = anns[i];
     if (a && a.userid) {
       if (a.hidden) continue; // 黑名單列透明：不斷 run、不入 run

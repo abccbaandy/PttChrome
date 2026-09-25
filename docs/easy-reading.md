@@ -67,6 +67,26 @@
   - **兩邊身分任一讀不到就不重啟**（寧可留在原生）：fail-safe，熱鍵永遠還在。舊版「`nativeArticleKey` 為 null ⇒ 視為可重啟」是 **fail-OPEN**，只要捕捉漏一次，同一篇按 Home 就會被切回好讀。這條路徑本來就只為「使用者主動切原生後跳文」存在，一般 `列表→文章` 由 `nextEasyReadingState` 負責，不靠它。
 - 退化情形（guess）：連線在**畫面中途**停 >`SETTLE_MS`（網路卡）才可能 premature settle；最壞首篇自動 enable 漏一次（捲動/重進即恢復），非 crash。`SETTLE_MS` 為可調常數，slow link premature-settle 就調高。
 
+## 反向讀取（讀取中按 End，2026-09，CONFIRMED unit＋offline e2e）
+
+行為：讀取中（`pagePercent<100` ∧ `!reachedPageEnd`）按 End／`$`／`G`（後兩者只在切原生 pref 沒攔走時）⇒ 保留已讀的 head，跳文末建立 tail，逐頁往上插在兩者之間，碰到 head 接合；已讀完 ⇒ 只 `_scrollBottom`。協定依據 `docs/pttbbs-screen-protocol.md` §13 P10／P11。
+
+- **狀態分兩處**：`term_view._reverse`＝累積事實 `{junction J, headEndLine H_E, tailStartLine S_t, tailEndLine, tailComplete}`；`EasyReading._reverse`＝交易 `{phase requested|running, reseeks, reseekFor, followBottom}`。`view._reverseResult`（`stitched|joined|dropped`）告訴 EasyReading 累積端怎麼收的。`buf.pageLines = head ++ tail` 仍是唯一 render／選取來源；J 整段反向期間不變（新頁一律插在 J）。
+- **單一 choke point**：`_maybeSendPageDown` 過 `_wireBusy` 後 `if (this._reverse) return _maybeSendReverse()` ⇒ 延後補送、stamp-after-send、watchdog 重送 `_inFlightKeys`、`onWireIdle` 全部沿用。純決策 `nextReverseReadDecision`（與 `nextPageDownDecision` 共用 `inFlightGate`）。`_onViewUpdated`／`_onScreenSettled` 各有 reverse hook（End 落地是 100%，forward 的 row-state 不會排任何指令）。
+- **流程**：requested（等在途 PageDown 回來，P4）→ 送 End 當下 `view.beginReverse()` 凍結 head → 落地 <100% 先 PageDown 補 tail → 指標在 tail 首頁送 PgUp、在別處 goto `max(1,S_t-22)` → wrap 缺口（`E'<S_t`）goto `min(S_t-1, S'+(S_t-E'))`，每個 S_t 最多 `REVERSE_RESEEK_MAX=3` 次，用完 abort → 接合後指標不在文末就再送 End（park）→ done（`reachedPageEnd=true`）。`S==1` 絕不送 PgUp（P10 零回應）。abort＝丟 tail＋goto `H_E` 回 forward。
+- **累積分支**：`accumulatePageLines` 算完 forward 分支後，`_reverse` 存在時只認 `rebuild`（換文章防線優先，清 reverse）與 P6 `skip`，其餘走 `_accumulateReverse` → 純函式 `comment_parse.decideReverseBranch`（skip/ignore/joinForward/seed/extend/prepend/stitch）。接得上的條件是 `E' ≥ S_t`、接合是 `S_t ≤ H_E`（**不是 +1**：E 那一行可能只畫前半段，P10）。重疊一律 `resolveJoinOverlap`（`resolvePageOverlap` 的兩段版，內容為下界）。**prepend 只裁新頁的底部，tail 原有列參考不動**（renderer 的前提）。
+- **renderer（`reverseJunction` 進 enhance ＋ annotationsKey）**：
+  - `screen_annotate_cache.spliceShape`：可重用＝`removed===0 ∧ (suffix===0 ∨ prefix ≥ J)`。forward 走到的程式碼與改版前逐字相同。
+  - `computeAnnotations` 依 shape 的 `prevOf(row)` 位移沿用 texts/base/rowCands；**J 之後不帶 floorCounter**（不編樓層，base 只取決於該列 ⇒ 可位移重用）；`groupSameAuthorRuns(result, J)`、`detectBodyWrappedUrls` 在 J 斷開；圖文分組／AI spans 只算 head；run 快取多一條以首列 base 參考找回位移後的 run（`runByFirstBase`）。接合後 J 消失 ⇒ **一次**全量重算補樓層。
+  - `_buildNodes` 位移沿用舊節點並 `shiftRowIndex` 改 `srow`／`data-row`（外部契約）。接合點列帶 `.reverseJunction`（text-decoration 淡虛線，**不可佔版面**）。
+  - **`_patchInto` 走到不再需要的舊節點當場移除**：留在 cursor 上會把之後每個沿用節點 insertBefore 到它前面＝整段搬家 ⇒ 搬走捲動錨點 ⇒ scroll anchoring 不補償（實測 scrollTop 釘死、上方長 5 萬 px 把讀者推走）。守護 `screen_reverse_splice.test.js`「不得搬動任何沿用的節點」。
+- **捲動**：tail 補完前每幀 `_scrollBottom`（`followBottom`）；之後插入在視窗上方 ⇒ 交給瀏覽器 scroll anchoring（節點沿用，錨點還在）。**接合那一幀全量重建 ⇒ 錨點消失**，由 `term_view._captureRowAnchor/_restoreRowAnchor` 以「視窗頂端那一列的**列物件**＋偏移」自己錨一次（不能用距底部距離：停在 head 讀的人會被推走）。
+- **`_kickPageDown` 反向時不清交易**：讀者本來就停在底部，按 PgDn 是常態；只在超過 grace 時補一次重試額度。
+- **per-article**：`_resetPagingState` 清兩端 reverse；`hideEasyReadingOverlays` 內聯清 view 端（該函式會被當獨立函式呼叫）。
+- debugRecorder `easyReading.reverse`：`request|kick|sendEnd|sendPageUp|sendPageDown|goto|retry|giveup|cancel|done|abort`，payload 含 `headEndLine/tailStartLine/tailEndLine/line/result/sinceSentMs`。
+- 已知邊界：反向期間有人推文 ⇒ 文章行數變，tail 的尾巴可能過時（forward 同樣有）。反向期間 tail 不做圖文並排（接合後補）。
+- 守護：`easy_reading_reverse.test.js`（真 EasyReading＋真 accumulate 對 `tests/e2e/helpers/pmore_sim.js` 逐幀：等價、P4、wrap reseek、<100% 落地、短文、functionMode、watchdog、wire busy）、`easy_reading_reverse_logic.test.js`（純函式）、`screen_reverse_splice.test.js`（DOM 等價／成本常數級／節點沿用與位移／不搬家／樓層／標記／run 斷點）、offline `easy_reading_reverse.offline.spec.js`（真瀏覽器：先見文末、逐列等價、每幀貼底、head 讀者不動）。**pmore_sim 的狀態列必須 ≤80 欄**（P5：part3 依剩餘欄寬截斷）；超過會換行捲屏，症狀像「End 之後好讀被拆掉」。
+
 ## render 單軌（兩模式同走 `ScreenController`）
 
 > **DEC 2026 同步輸出（2026-09）不參與 settle，只擋畫面。**
