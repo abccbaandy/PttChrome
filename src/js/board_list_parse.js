@@ -10,11 +10,7 @@
 //      例外：`newflag`（按 `c` 的「新文章」模式）印的是文章總數 `B_TOTAL`，
 //      群組板／無權限板則印 `%7s` 空白 —— 那種畫面**一律不 engage**，靠 row2
 //      的「總數／編號」字樣就分得出來（board.c:1338）。
-//   3. footer 三變體由 `IS_LISTING_FAV()` / `IN_CLASS()` 決定（board.c:1279-1290），
-//      是「我的最愛／分類子分類／全部看板」唯一可靠的指紋。
-//      新版（2026-09-20 公告「動態指令列與看板資訊改版」，guess）caption 本身就分
-//      「看板列表／我的最愛／分類看板」，但中段提示改成動態（依權限／寬度增減）。
-//      caption 判定收在 screen_captions.js。
+//   3. 變體（我的最愛／分類子分類／全部看板）的指紋，新舊兩版不同 —— 見 boardListVariant。
 //
 // 本期只 engage 我的最愛（fav）與分類看板子分類（class）；全部看板／熱門看板
 // （all）與分類看板根（row0 是【分類看板】，這裡直接不命中）不做。
@@ -26,7 +22,7 @@ import {
   rowHasTitle
 } from './screen_titles';
 import {
-  boardListCaptionVariant,
+  footerCaption,
   isArticleListFooter,
   isBoardListFooter
 } from './screen_captions';
@@ -103,18 +99,37 @@ export function boardListRowNums(rowTexts, rows) {
   return out;
 }
 
-// 靠中段按鍵提示分變體。新版「我的最愛」光看 caption 就定案（呼叫端先問
-// boardListCaptionVariant），舊版「選擇看板」與新版「看板列表」只能走這裡。
-// 判序照 board.c:1279-1290 的三元式反推。'all' 要**先於** 'class' 判：兩者
-// 都以 `(m)加入/移出最愛` 開頭，只有第二個選項不同。
-// 已知風險（新版，guess）：「看板列表」底下若 `(y)只列最愛` 被動態隱藏而 `(m)` 還在，
-// 全部看板會被當成 class engage —— 功能照常（evict 上限在），只是 all 本期未驗體感。
-// 兩個提示都被藏掉則是 'unknown'＝不 engage＝原生，安全。
-function boardListHintVariant(foot) {
+// 看板列表變體。'unknown' ＝不 engage＝原生，安全。
+//
+// 舊版（CONFIRMED @ 03cdf5eb board.c:1279-1290）：caption 一律「選擇看板」，變體只能
+// 看 footer 三元式 —— IS_LISTING_FAV →「(a)增加看板…」；IN_CLASS →「(m)加入/移出最愛
+// (s)進入已知板名…」；其餘 →「(m)加入/移出最愛 (y)只列最愛…」。'all' 要**先於**
+// 'class' 判：兩者都以 `(m)加入/移出最愛` 開頭。
+//
+// 新版（CONFIRMED @ piaip.newui 7e35b24e）：caption＝board.c#brdlist_caption，提示＝
+// psb.c#vs_cmd_bar(VS_SUB_HEADER|VS_FOOTER)：prio ≥ HIGH 進底列 " (k)名"、≤ NORM 進
+// row1 "[k]名"。IS_LISTING_FAV 用 myfav_cmds（`(a)增加看板` HIGH），否則 board_fav_cmds
+// （`(m)加入最愛` HIGH、`[y]只列最愛` NORM）。
+//   「我的最愛」＝class_bid==0，**不看 yank_flag** ⇒ 按 `y` 列出全站看板時 caption 不變，
+//     必須靠提示分 fav／all。
+//   「看板列表」＝class_bid<0（熱門）或 >1（分類子層）：指令表是靜態的，兩者畫面
+//     **完全相同** ⇒ 一律當 class（使用者 2026-09-25 定案）。代價：熱門看板的排序
+//     會動態變化，跨頁拼接可能出現重複／漏板；退出看板時仍有板名比對兜底。
+// `(a)增加看板` 新舊字面相同，放最前面兩版共用。
+function boardListVariant(foot, row1) {
   if (foot.indexOf('(a)增加看板') >= 0) return 'fav';
-  if (foot.indexOf('(y)只列最愛') >= 0) return 'all';
-  if (foot.indexOf('(m)加入/移出最愛') >= 0) return 'class';
-  return 'unknown';
+  switch (footerCaption(foot)) {
+    case '我的最愛':
+      if (row1.indexOf('[y]列出全部') >= 0) return 'fav';
+      if (foot.indexOf('(m)加入最愛') >= 0 || row1.indexOf('[y]只列最愛') >= 0) return 'all';
+      return 'unknown';
+    case '看板列表':
+      return 'class';
+    default:
+      if (foot.indexOf('(y)只列最愛') >= 0) return 'all';
+      if (foot.indexOf('(m)加入/移出最愛') >= 0) return 'class';
+      return 'unknown';
+  }
 }
 
 // 一幀畫面是不是看板列表，以及是哪一種。回 null ＝根本不是（文章列表／主功能表／
@@ -138,7 +153,7 @@ export function classifyBoardListScreen(facts) {
   const newflag = header.indexOf('總數') >= 0;
   if (!newflag && header.indexOf('編號') < 0) return null;
 
-  const variant = boardListCaptionVariant(foot) || boardListHintVariant(foot);
+  const variant = boardListVariant(foot, rowTexts[1] || '');
 
   const nums = boardListRowNums(rowTexts, rows);
   const curY = facts.curY;

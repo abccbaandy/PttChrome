@@ -9,23 +9,26 @@ pref `enableBoardListSmoothScroll`（**2026-09-16 起預設 `true`**）。實作
 
 ---
 
-## 1. 範圍（CONFIRMED，由 footer 指紋決定）
+## 1. 範圍（CONFIRMED，由 caption＋指令提示決定）
 
-`show_brdlist` 的三種畫面在 **footer 文案**上完全可分辨（`board.c:1279-1290` 的三元式，
-輸入是 `yank_flag`/`class_bid`）。這就是判準，不必另外推測。
+變體由 `class_bid`／`yank_flag` 決定。舊版（03cdf5eb）靠 footer 三元式（`board.c:1279-1290`）；新版
+（`origin/piaip.newui`，PTT1 10/18 預定）caption 由 `board.c#brdlist_caption` 依 `class_bid` 給，提示由
+`psb.c#vs_cmd_bar` 依指令表產生（prio ≥ HIGH 進底列 ` (k)名`、≤ NORM 進 row 1 `[k]名`）。細節見
+`docs/pttbbs-screen-protocol.md` §11.10。判定：`board_list_parse.js#boardListVariant`。
 
-| 畫面 | 進入方式 | footer 片段（指紋） | engage？ |
-|---|---|---|---|
-| 我的最愛（含子目錄） | 主功能表 `F` → `class_bid=0` + `LIST_FAV()` | `(a)增加看板` | ✅ `fav` |
-| 分類看板子分類 | 【分類看板】選一類 → `class_bid>1` | `(m)加入/移出最愛` ＋ `(s)進入已知板名` | ✅ `class` |
-| 全部看板／熱門看板 | 最愛按 `y`／`TopBoards()` | `(m)加入/移出最愛` ＋ `(y)只列最愛` | ❌ `all`（上萬列，evict 體感未驗） |
-| 「新文章」模式 | 任一看板列表按 `c` | 同上三者之一 | ❌ `newflag` |
-| 分類看板**根** | 主功能表 `C`（`class_bid==1`） | 無 footer（不走 `clsflag` 分支） | ❌ 指紋不命中（row0 是【分類看板】） |
+| 畫面 | 進入方式 | 舊指紋（footer） | 新指紋 | engage？ |
+|---|---|---|---|---|
+| 我的最愛（含子目錄） | 主功能表 `F` → `class_bid=0` + `LIST_FAV()` | `(a)增加看板` | caption `我的最愛` ＋ `(a)增加看板`／row 1 `[y]列出全部` | ✅ `fav` |
+| 分類看板子分類 | 【分類看板】選一類 → `class_bid>1` | `(m)加入/移出最愛` ＋ `(s)進入已知板名` | caption `看板列表` | ✅ `class` |
+| 熱門看板 | `TopBoards()`／`BRD_TOP` 群組 → `class_bid=-1` | `(m)加入/移出最愛` ＋ `(y)只列最愛` | caption `看板列表`（**與分類子分類無法區分**） | 舊 ❌ `all`／新 ✅ `class`（使用者定案，排序動態 ⇒ 拼接可能重複／漏板） |
+| 全部看板 | 最愛按 `y` → `class_bid=0` + `LIST_BRD()` | 同熱門看板 | caption **仍是** `我的最愛` ＋ `(m)加入最愛`／row 1 `[y]只列最愛` | ❌ `all`（上萬列，evict 體感未驗） |
+| 「新文章」模式 | 任一看板列表按 `c` | 同上之一 | 同上之一 | ❌ `newflag`（row2「總數」） |
+| 分類看板**根** | 主功能表 `C`（`class_bid==1`） | 無 footer | caption `分類看板` | ❌ 指紋不命中（row0 是【分類看板】） |
 
-判序（`classifyBoardListScreen`）：row0 以 `【看板列表】` 開頭（比對走 `src/js/screen_titles.js#rowHasTitle`，**`【X】` 與去括號的 ` X ` 兩種形狀都吃**；理由見 `docs/pttbbs-screen-protocol.md` §11.9） **且** footer caption 是看板列表（`src/js/screen_captions.js#isBoardListFooter`：舊「選擇看板」＋新版「看板列表／我的最愛／分類看板」guess，見 protocol §11.10；新版「我的最愛」直接定 fav）
-為前提 → row2 是「編號」還是「總數」（`board.c:1338`，畫面自己就分得出 newflag，
-不必攔 `c` 鍵）→ footer 變體（**`(y)只列最愛` 要先於 `(m)加入/移出最愛` 判**，兩者
-都以 `(m)` 開頭）→ 游標停在 body 且該列有編號。
+前提：row0 以 `【看板列表】` 開頭（`src/js/screen_titles.js#rowHasTitle`，**`【X】` 與 ` X ` 兩種形狀都吃**，理由見
+protocol §11.9）**且** footer caption 是看板列表（`src/js/screen_captions.js#isBoardListFooter`）→ row2 是「編號」
+還是「總數」（`board.c:1338`，畫面自己就分得出 newflag，不必攔 `c` 鍵）→ 變體 → 游標停在 body 且該列有編號。
+舊版 **`(y)只列最愛` 要先於 `(m)加入/移出最愛` 判**，兩者都以 `(m)` 開頭。
 
 **終端機列數不限 24**：engage 條件（`board_list_session._engageEligible`）只要求
 `buf.rows >= 24`（下界＝server 端 clamp，`mbbsd/term.c:55`）。2026-09-11 之前寫死
@@ -299,7 +302,7 @@ guest 可達，footer 變體與我的最愛只差一句文案 ⇒ 渲染／捲�
 
 ## 7. 未做（明確的 out of scope）
 
-- 「全部看板」「熱門看板」：上萬列，`MAX_LIST_ROWS=300` 的 evict 體感未驗。
+- 「全部看板」：上萬列，`MAX_LIST_ROWS=300` 的 evict 體感未驗。「熱門看板」舊版不 engage、新版因無法與分類子分類區分而會 engage（§1）。
 - resume 舊緩衝：目前每次進入重新 seed（`y`/`c`/`/`／進出分類都會換掉整個編號空間）。
   要做的話指紋要能分辨「同一份清單」（footer 變體 ＋ row1 ＋ brdnum 推估）。
 - 背景 prefetch 的頁數上限目前寫死 3 頁（`FILL_MAX_PAGES`），與文章列表共用

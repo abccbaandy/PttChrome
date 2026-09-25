@@ -382,20 +382,30 @@ describe("functionKeyRows", () => {
   });
 });
 
-// ─── PTT 動態指令列改版（2026-09-20 公告，PTT1 10/18 預定；**guess**）─────────
-// 公告第 2 點：Row 1 統一「[按鍵]名稱」、Row 23 中段統一「 (按鍵)名稱」（逐項空白分隔，
-// 不再有「(y)回應(X)推文」緊貼或「(/?a)」合併），最右側靠右「(h)說明」或
-// 「(←)離開 (h)說明」；第 5 點：pmore 右下改成「(←)離開 (h)說明」。
+// ─── PTT 動態指令列改版（PTT1 10/18 預定）────────────────────────────────────
+// CONFIRMED（讀碼 @ pttbbs origin/piaip.newui 7e35b24e，psb.c#vs_cmd_bar /
+// #format_cmd_for_row / #psb_key_name）：Row 1 是 "[k]名"（首項不帶前導空白）、
+// 底列是 " (k)名" 逐項，右端 "\t(h)說明" 或 "\t(←)名 (h)說明"。鍵名：
+// Ctrl 鍵一律 "^X"、方向鍵 "←→↑↓"、另有 "Tab"／"Enter"／"DEL"／"Home"／"End"。
+// 主選單狀態列右側是 "(←)回到上層 (h)說明 "（menu.c#show_status；公告寫的 "(?)" 是錯的）。
 // tokenizer 本來就吃這兩種括號，這組鎖的是「新格式照樣每顆都點得到、送對鍵」。
-describe("findFunctionKeyTokens：新版動態指令列（guess）", () => {
+describe("findFunctionKeyTokens：新版動態指令列", () => {
   test("Row 1「[按鍵]名稱」空白分隔", () => {
-    const t = findFunctionKeyTokens("[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [h]說明");
+    const t = findFunctionKeyTokens("[←]離開 [→]閱讀 [^P]發表 [Tab]文摘 [^X]轉錄 [d]刪除");
     expect(t.map((x) => x.label)).toEqual([
-      "[←]", "[→]", "[Ctrl-P]", "[d]", "[h]",
+      "[←]", "[→]", "[^P]", "[Tab]", "[^X]", "[d]",
     ]);
     expect(t.map((x) => keyBytesFor(x.inner))).toEqual([
-      KeyMap["ArrowLeft"], KeyMap["ArrowRight"], "\x10", "d", "h",
+      KeyMap["ArrowLeft"], KeyMap["ArrowRight"], "\x10", KeyMap["Tab"], "\x18", "d",
     ]);
+  });
+
+  test("主選單子選單狀態列「(←)回到上層 (h)說明」：← 送左方向鍵", () => {
+    const t = findFunctionKeyTokens(
+      " 休閒遊樂 [ 秋分 ]       9/25 週四 10:06 | someuser    (←)回到上層 (h)說明 "
+    );
+    expect(t.map((x) => x.label)).toEqual(["(←)", "(h)"]);
+    expect(keyBytesFor("←")).toBe(KeyMap["ArrowLeft"]);
   });
 
   test("Row 23「 文章列表 」＋逐項 (按鍵)名稱＋靠右 (h)說明", () => {

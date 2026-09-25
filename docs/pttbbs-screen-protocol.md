@@ -271,7 +271,7 @@ Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，�
 | 1 | 固定提示列 `[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明` | `mbbsd/bbs.c` |
 | 2 | 反白表頭 `   編號    <日 期|價 格> 作  者       文  章  標  題`＋右端 `人氣:N`（vbarf ANSI_REVERSE；cassette 實測 30;47）。日期欄字樣依 LISTMODE 變動 ⇒ **只認「編號」最穩** | `mbbsd/bbs.c` vbarf |
 | 3..rows-2 | entry 列，每頁 `headers_size = p_lines` 筆（24 列＝20 筆） | `mbbsd/read.c`（PARTUPDATE 內 realloc）、游標列算式 `3 + n - top`（`cursor_pos`） |
-| rows-1 | feeter 反白 ` 文章選讀 `＋` (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面`；**RMAIL 是 ` 鴻雁往返 `＋` (R/y)回信 (x)站內轉寄 (d/D)刪信 (^P)寄發新信 \t(←/q)離開`**（不是「郵件選讀」）。新版（2026-09-20 公告，**guess**）caption 改 `文章列表`／`系列文章`／`文摘列表`／`信件列表`，見 §11.10；判定一律走 `screen_captions.js` | `mbbsd/read.c` READ_REDRAW 的 `vs_footer` |
+| rows-1 | feeter 反白 ` 文章選讀 `＋` (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面`；**RMAIL 是 ` 鴻雁往返 `＋` (R/y)回信 (x)站內轉寄 (d/D)刪信 (^P)寄發新信 \t(←/q)離開`**（不是「郵件選讀」）。新版（CONFIRMED 讀碼 @ piaip.newui `read.c#i_read_caption`）caption 改 `文章列表`／`系列文章`／`文摘列表`／`信件列表`，見 §11.10；判定一律走 `screen_captions.js` | `mbbsd/read.c` READ_REDRAW 的 `vs_footer` |
 
 entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推出的 0-indexed 螢幕欄位：
 
@@ -371,7 +371,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 
 修法是把 `parseListRow` 校準回真實的 `show_status`（**不是**加 reset 分支，沿用仍然是刻意的）。
 
-**2026-09-20 更新**：PTT 官方改版把 `show_status` 整列換掉（見 §11.9），上面那個「校準回真實 `show_status`」的結果因此又一次失效。現行實作改成**新舊聯集**，並且因為新格式只有公告文字、沒有 source，指紋刻意放到最寬（只認兩個一定存在的錨點）—— 這正是下一段「不可與被測程式共用假設」的直接應用：猜錯了也不會壞。重新校準的條件見 `docs/handoff/status-row-recalibrate.md`。
+**2026-09-20 更新**：PTT 官方改版把 `show_status` 整列換掉（見 §11.9），上面那個「校準回真實 `show_status`」的結果因此又一次失效。現行實作是**新舊聯集**：舊、新格式各一條照 source 寫的精確指紋（新格式讀碼 @ `origin/piaip.newui`）。只照公告文字寫的那一版曾以「線上N人」當共同錨點，讀碼後才發現 80 欄子選單會把它截掉 —— 又一次印證下一段「不可與被測程式共用假設」。
 守護：`tests/unit/term_buf_page_state.test.js`、`tests/unit/string_util.test.js`。
 **這一輪真正的教訓是測試面的**：當時的 unit fixture 是照著同一個錯誤假設手寫的，於是
 「程式錯 ＋ 測試錯」互相背書，一條恆假的指紋全綠躺了很久。**畫面指紋的 fixture 一律要來自
@@ -536,7 +536,7 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 | client | 官方出處 | 契約 |
 |---|---|---|
 | `parseStatusRow` | `pmore.c#mf_display_footer` ＋ `more.c#common_pmore_footer_handler` | part1 `"  瀏覽 第 %1d[/%1d] 頁 (%3d%%) "`（頁碼**無位數上限**，實錄已見 540/540）；part2 `" 目前顯示: 第 %02d~%02d 行"`／**`" 顯示範圍: %d~%d 欄位, %02d~%02d 行"`（`mf.xpos>0` 左右捲動）**；**part3 完全不比對**——它會整段消失（見 §13 P5），要求它會讓整列失配 → 掉出 pageState 3 → 好讀累積頁被清空。`bpref.oldstatusbar` 的 `"  瀏覽 P.%d(%d%%)  "` 目前**不支援**（非預設） |
-| `parseListRow` | 舊：`menu.c#show_status`（CONFIRMED）；新：2026-09-20 公告（**guess**） | **兩種格式都要吃**，見 §11.9。舊：`"%d/%d周%c%c %d:%02d"` ＋ `"%-14s"`(today_is) ＋ `" 線上%d人,我是%s,呼叫器%s"` ＋ `"	(h)說明"`（靠右，**不比對**）。新：`選單名稱 \| 節氣 \| M/D 週X HH:MM \| ID \| 線上N人  [(?)回到上層] (h)說明`。實作只留兩個**新舊都成立**的錨點：日期＋`[周週]X`＋時間、以及「線上N人」；**拿掉 `^` 錪定**（新版最左側是選單標籤），誤命中由 `setPageState` 的 row0 反白閘門吸收。**這是 `menu.c#domenu` 子選單唯一的指紋** |
+| `parseListRow` | `menu.c#show_status`（舊 CONFIRMED @ 03cdf5eb；新 CONFIRMED 讀碼 @ piaip.newui） | **兩種格式都要吃**，見 §11.9。舊：`%d/%d周X H:MM` ＋ `線上N人`（尾端 `(h)說明` 靠右，**不比對**）。新：`%d/%d 週X H:MM \| `（`線上N人` 在 80 欄子選單會被截掉，**不可當錨點**）。兩條都不錨 `^`，誤命中由 `setPageState` 的 row0 反白閘門吸收。**這是 `menu.c#domenu` 子選單唯一的指紋** |
 | `parseWaterball` | `mbbsd.c#show_call_in` | 見 §9 |
 | `parsePushInitText`（消費者：`image_upload.js`） | `bbs.c#recommend`／`angel.c` | `您覺得這篇文章 `；`FormatCommentString` 的輸入 prompt「→ id:」**無行尾時間戳** |
 | `comment_parse.COMMENT_RE` | `comments.c#FormatCommentString`＋`common/bbs/names.c#is_validuserid` | `<attr><推/噓/→><空格>ESC[33m<id>ESC[m:<msg 補到 maxlength>ESC[m<tail>`；id 長度 **2..IDLEN(12)**、首 isalpha 其餘 isalnum；`BRD_ALIGNEDCMT` 時 id 以 `%-*s` 補到 12 寬（故 `:` 前可有空格）；tail＝`[%15s ]MM/DD HH:MM`（`Cdate_mdHM` ＝ `"%m/%d %H:%M"`，IP 僅 `BRD_IPLOGRECMD`／guest） |
@@ -545,7 +545,7 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 | `easy_reading.reachedPageEnd` | `pmore.c` FOOTER1 配色 | VIEWALL `ANSI_COLOR(37;44)`＝fg7/bg4（＝看完）；VIEWNONE `33;45`；一般 `34;46` |
 | `term_buf.isTextWrappedRow` | `pmore.c` `MFDISP_WRAP_INDICATOR ANSI_COLOR(0;1;37) "\\"` | 80 欄下 `maxcol = 77`（`dispw = DBCS_HEADERWIDTH(79) = 78`）⇒ indicator 落在 **col 78**（ASCII 斷行）或 **col 77**（DBCS 跨界被回退擦掉 lead byte）；顏色 fg7/bright/bg0。TRUNC 用 `>`、WNAV 用 `<`，不可混 |
 | `term_buf.setPageState` | `vtuikit.h`／`edit.c`／`angel.c` | `VMSG_PAUSE " 請按任意鍵繼續 "`；`請按 空白鍵 繼續`＝`angel.c` 的新手提示；編輯器底列＝`vs_footer(" 編輯文章 ", " (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開\t%s│%c%c%c%c%3d:%3d")`。判定只認 caption `編輯文章` ＋ 右側狀態框（`term_buf.js#EDITOR_STATUS_BOX_RE`），中段提示不比對（新版動態化，§11.10） |
-| `screen_captions.js` | `read.c:1234-1238`／`board.c:1285`／`edit.c:470`（舊，CONFIRMED）＋ 2026-09-20 公告（新，**guess**） | 最後一列**行首** token ∈ 已知 caption 集合。消費端：`classifyListScreen`、`classifyBoardListScreen`／`boardListContextKind`、`term_view` 兩個 footer 快取、`setPageState` 編輯器、`isCursorOnInputField` 例外。見 §11.10 |
+| `screen_captions.js` | 舊 `read.c:1234-1238`／`board.c:1285`／`edit.c:470`（CONFIRMED @ 03cdf5eb）＋新 `read.c#i_read_caption`／`board.c#brdlist_caption`／`edit.c#edit_msg`（CONFIRMED 讀碼 @ piaip.newui） | 最後一列**行首** token ∈ 已知 caption 集合。消費端：`classifyListScreen`、`classifyBoardListScreen`／`boardListContextKind`、`term_view` 兩個 footer 快取、`setPageState` 編輯器、`isCursorOnInputField` 例外。見 §11.10 |
 | `term_keyboard` | `common/sys/vtkbd.c`＋`include/vtkbd.h` | `ESC[A/B/C/D`→`KEY_UP+(c-'A')`；`ESC[1~`→HOME、`ESC[2~`→INS、`ESC[3~/4~/5~/6~`→`KEY_DEL+(c-'3')`＝DEL/END/PGUP/PGDN（`vtkbd.h` 註明 "must follow vt220 ordering"）。全部對上 |
 | `aid_parse` | `mbbsd/aids.c#aidu2aidc` | 字母表 `0-9A-Za-z-_`（64 字），產出**恆 8 字**；反向 `aidc2aidu` 不限長度但畫面上只會出現產生端形式 |
 | `symbol_table.js` | — | **不適用**：是 client 端 Unicode→顯示寬度分類表（1/2＝強制全形、3＝壞 DBCS），與 server 邏輯無關 |
@@ -1202,93 +1202,95 @@ server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複�
 * **AltGr**（Windows US-International ＝ `ctrlKey+altKey`）：被 `!ctrlKey` 排除，打出的
   字元仍走 keypress → `#t` → `onInput`。守護在 `tests/unit/alt_ctrl_remap.test.js`。
 
-## 11.9 標題列與主選單狀態列改版（2026-09-20 公告，**guess**）
+## 11.9 標題列與主選單狀態列改版（CONFIRMED，讀碼 @ `origin/piaip.newui` 7e35b24e）
 
-⚠️ **本節是全檔唯一不是讀碼得來的一段**。該改動**還沒進公開的 pttbbs repo**
-（`3rd_script/pttbbs` HEAD 的 `menu.c#show_status` 與 `vtuikit.c#vs_header` 都還是舊的），
-只有公告文字。上線：PTT2 09/20（測試中）、PTT1 10/04。
-**重新校準是義務，不是選項** —— 條件與步驟見 `docs/handoff/status-row-recalibrate.md`。
+來源：`3rd_script/pttbbs` 分支 `origin/piaip.newui`（master b15fb6be 只併了一部分，`show_status` 仍舊版）。
+上線：PTT2 09/20、PTT1 10/04。公告文字與 source 有出入時**以 source 為準**（下表已標出）。
 
-### 三種標題形狀，公告只動了兩種
+### 三種標題形狀
 
-| 形狀 | 函式 | 現行（CONFIRMED） | 公告的新樣子（guess） |
+| 形狀 | 函式 | 舊 | 新 |
 |---|---|---|---|
-| 三段式 | `vtuikit.c#vs_header`（`menu.c#showtitle` 呼叫） | `【title】` ＋ 中段 ＋ 右段（`VMSG_HEADER_PREFIX/POSTFIX` = `【`/`】`） | **無變動**。公告第 1 點還特地保證「頂端 Row 0 左側仍維持「【主功能表】」不變」 |
-| 單段式 | `vtuikit.c#vs_hdr` | `【 title 】`（`VMSG_HDR_PREFIX/POSTFIX` = `"【 "`/`" 】"`） | `【title】`（移除內側空白） |
-| 兩段式 | `vtuikit.c#vs_hdr2bar` | 左分類（呼叫端自帶 `【】`）＋ 右說明列 | 移除左半部的 `【】`，改為**前後各一格半形空白**；左半部統一站台標題色、右半部 `ESC[0;30;47m` 填到行尾 |
+| 三段式 | `vtuikit.c#vs_header(title, mid, right, mid_cb)`（`menu.c#showtitle` 呼叫） | `【title】` ＋ 中段 ＋ 右段 | **不變**（只多 `mid_cb` 參數） |
+| 單段式 | `vtuikit.c#vs_hdr` | `【 title 】` | `【title】`（`VMSG_HDR_*` 改指向 `VMSG_HEADER_*`） |
+| 兩段式 | `vtuikit.c#vs_draw_hdr2` | 呼叫端自帶 `【】` | `VCLR_HDR2_LEFT " " left " "` ＋ `VCLR_HDR2_RIGHT`（`VCLR_STANDOUT`=0;30;47）右段填到行尾 |
 
-⇒ 本專案判畫面用的四個標題（主功能表／分類看板／精華文章／看板列表）**全部走三段式**，
-這次不會壞。但既然括號會動，判定已收斂成 `src/js/screen_titles.js` 一處並**同時吃兩種形狀**
-（`【X】…` 與 ` X …`），下次再動不必翻八個檔案。守護 `tests/unit/screen_titles.test.js`。
+⇒ 本專案判畫面用的四個標題（主功能表／分類看板／精華文章／看板列表）**全部走三段式**，不受影響。
+判定收斂在 `src/js/screen_titles.js`，**同時吃 `【X】…` 與 ` X …`**。守護 `tests/unit/screen_titles.test.js`。
+配色常數整組改名（`THEME_BG`／`VCLR_TITLE`／`VCLR_MODE`=0;34;46／`VCLR_STANDOUT`=0;30;47），實際色值不變。
 
-公告另外點名的改名（對我們無影響，記著備查）：`(U) Customize 個人化設定` → `偏好設定列表`，
-其標題從三段式的「【個人設定】個人化設定」改成兩段式的「 偏好設定列表 」＋「 調整介面顯示與操作偏好」。
-
-### 主選單底部狀態列（`menu.c#show_status`）
+### 主選單底部狀態列（`menu.c#show_status(menu_index, cmdtitle)`）
 
 ```
-舊：ESC[34;46m M/D周X HH:MM ESC[1;33;45m 節氣/活動
-    ESC[30;47m 線上N人,我是ID,呼叫器XX  (h)說明
-新：ESC[34;46m 選單名稱 ESC[1;33;45m 節氣/活動 ESC[30;47m
-    M/D 週X HH:MM | ID | 線上N人  [(?)回到上層] (h)說明
+舊：ESC[34;46m %d/%d周%s %d:%02d ESC[1;33;45m %-14s(today_is)
+    ESC[30;47m 線上N人,我是ID,呼叫器XX  \t(h)說明
+新：VCLR_FOOTER_CAPTION " %s "(cmdtitle) ESC[1;33;45m %-14s(today_is)
+    ESC[30;47m " %d/%d 週%s %d:%02d | " ESC[31m ID ESC[30m [" | 線上" ESC[31m N ESC[30m "人"]
+    vbarlr 靠右：子選單 "(←)回到上層 (h)說明 "、主選單（M_MMENU）"(h)說明 "
 ```
 
-公告列的差異：
-(a) 最左側改為目前所在的選單分類標籤（「主功能表」「休閒遊樂」…）
-(b) 欄位改用「 | 」分隔，星期由「周X」改為「**週X**」
-(c) **移除「我是」與「,呼叫器XX」**
-(d) 子選單右側若空間夠會多出「(?)回到上層 (h)說明 」
-(e) `Ctrl-Z` 快速切換列的左側標籤由「*快速切換:」改為「快速切換」（本專案沒有消費它）
-
-⇒ 舊 `parseListRow` 的每一個錨點都失效。現行實作只留**新舊都成立**的兩個錨點
-（日期＋`[周週]X`＋時間、以及「線上N人」），並拿掉 `^` 錨定。細節與代價見 §11 的對照表列。
+- **子選單在 `stream_width(lbuf)+22 > t_columns-1` 時 `lbuf[n]='\0'`，整段「 | 線上N人」被截掉**（80 欄幾乎必然）
+  ⇒ 線上人數**不是**新格式的錨點。
+- 公告寫的 `(?)回到上層` 是錯的，source 是 `(←)`（`footer_keys` 照吃，送左方向鍵）。
+- `parseListRow` 實作：舊 `%d/%d周X H:MM` ＋ `線上N人`，**或**新 `%d/%d 週X H:MM | `；兩條都不錨 `^`，
+  誤命中由 `setPageState` 的 row0 反白閘門吸收。**這是 `menu.c#domenu` 子選單唯一的指紋**。
 
 ### 官方給第三方的三條建議（照抄，因為它們就是我們的設計依據）
 
-1. 判「已登入並回到主選單」：Row 0 左側仍是「【主功能表】」，**而且**底部狀態列最左側
-   現在也固定顯示「 主功能表 」。官方自己補了一句：頂端在閱讀／編輯文章時會顯示文章內容，
-   **有判定錯誤的可能；左下幾乎不會判定錯誤**。
-2. 擷取 ID／線上人數／時間的規則要更新，**不要再依賴「我是」「呼叫器」「周」定位**；
-   「可以的話只辨識最開頭的分類標籤就好，不要管時間、ID 與人數等動態內容」。
-   —— 本專案**沒有採用**這條：分類標籤集合無法窮舉，而且舊格式根本沒有這一段，
-   照做會退化成只認新版。兩週的 PTT1/PTT2 上線時間差內兩種格式會同時存在。
-3. **不要對顏色做判定**：「顏色在不同站台可能有不同配色，也可能因為各種需要而臨時修改。
-   請注意日後改變顏色的修改不會預先公告。」
-   —— 這條對本專案是**已知負債**：`setPageState` 的 `isUnicolor(0,0,29)` row0 反白閘門、
-   `isCursorOnInputField` 的 fg0/bg7、`easy_reading` 的 FOOTER1 配色 fallback 都在看顏色。
-   目前都有「顏色只是閘門、內容才是判準」的結構（見 §5.1、§13 P3），暫不動；真要改是另一件事。
+1. 判「已登入並回到主選單」：Row 0 左側仍是「【主功能表】」，**而且**底部狀態列最左側也固定是「 主功能表 」。
+2. 「可以的話只辨識最開頭的分類標籤就好」—— 本專案**沒有採用**：標籤集合無法窮舉，而且舊格式沒有這一段，
+   照做會退化成只認新版。改用上面兩條各自精確的指紋。
+3. **不要對顏色做判定**（配色會不預告地改）—— 對本專案是**已知負債**：`setPageState` 的 `isUnicolor(0,0,29)`
+   row0 反白閘門、`isCursorOnInputField` 的 fg0/bg7、`easy_reading` 的 FOOTER1 配色 fallback 都在看顏色。
+   目前都有「顏色只是閘門、內容才是判準」的結構（見 §5.1、§13 P3），暫不動。
 
-## 11.10 動態指令列與看板資訊改版（2026-09-20 公告，**guess**）
+## 11.10 動態指令列與看板資訊改版（CONFIRMED，讀碼 @ `origin/piaip.newui` 7e35b24e）
 
-⚠️ 同 §11.9：**只有公告文字**，`3rd_script/pttbbs` 已同步到 upstream 03cdf5eb（2026-09-23）仍無
-`vs_cmd_bar`／新 caption。上線：PTT2 09/20、PTT1 10/18（預定）。
-重新校準見 `docs/handoff/list-caption-recalibrate.md`。實作一律「新舊都吃、猜錯退原生」。
+上線：PTT2 09/20、PTT1 10/18（預定）。實作一律「新舊都吃」。
+
+### 指令列產生器：`psb.c#vs_cmd_bar(row_type, prompt, cmd_layers)`
+
+- 候選＝各 layer 裡有 label、`prio > CMD_PRIO_NONE`、權限過、（`need_item` 時列表非空）的指令；同一鍵以先出現的 layer 為準。
+  依 prio 由高到低排（`CMD_PRIO_NAV 10／LOW 30／NORM 50／HIGH 80／TOP 90／MAX 100`，`include/psb.h`）。
+- 格式（`format_cmd_for_row`／`psb_key_name`）：底列 `" (k)名"`；其他列 `"[k]名"`（首項無前導空白）。
+  鍵名：Ctrl 鍵 `^X`、方向鍵 `←→↑↓`、`Tab`／`Enter`／`DEL`／`Home`／`End`／`PgUp`／`PgDn`，其餘字元原樣。
+- 兩列模式（`VS_SUB_HEADER|VS_FOOTER`，文章列表與看板列表）：`KEY_LEFT` 先放 row 1；**prio ≤ NORM 進 row 1、
+  ≥ HIGH 進底列**，放不下的再溢位到任一列。底列右端 `"\t(h)說明"`；單列（`VS_FOOTER` only）且有 `KEY_LEFT` 時右端是
+  `"\t(←)名 (h)說明"`。
+- 底列走 `vs_footer(caption, msg)`：caption 配 `VCLR_FOOTER_CAPTION`(0;34;46)、其餘 `VCLR_FOOTER`(0;30;47)，
+  `(` 起切 `VCLR_FOOTER_QUOTE`；最後以 30;47 `outc(' ')` 填 col 79。caption 為 NULL 時從 `vgetx()` 接著印（pmore 用）。
+- `read_header` 單獨重畫時 row 1 會以 caption 開頭（`sub_prompt`）；完整重畫時 `read_footer` 再把 row 1 蓋成不含 caption 的版本。本專案不讀 row 1 的 caption。
 
 ### 底列 caption（判定收在 `src/js/screen_captions.js`，只認**行首** token）
 
-| 畫面 | 舊（CONFIRMED） | 新（guess） | 本專案用途 |
+| 畫面 | 舊（CONFIRMED @ 03cdf5eb） | 新（CONFIRMED） | 本專案用途 |
 |---|---|---|---|
-| 文章列表（非信箱的所有 i_read：一般／搜尋結果／文摘） | ` 文章選讀 `（read.c:1237） | ` 文章列表 `／` 系列文章 `（`/ ? a Z G # =` 篩選）／` 文摘列表 `（Tab） | 列表好讀 clean-list、footer 快取、看板列表情境 `article-list` |
-| 信箱 | ` 鴻雁往返 `（read.c:1234） | ` 信件列表 ` | **排除**（信箱不得 engage 列表好讀） |
-| 看板列表 | `  選擇看板  `（board.c:1285，三變體共用） | ` 看板列表 `（一般／熱門／分類子層）／` 我的最愛 `／` 分類看板 `（分類根） | 平滑捲動指紋；新版「我的最愛」直接定 fav，「看板列表」仍靠中段提示分 class/all |
-| 精華區 | ` 【功能鍵】 `／` 【板  主】 `／`【已標記(複製) N 項】`（announce.c:259） | ` 精華列表 `／` 精華管理 `／` 標記項目 ` | 無消費端（精華區靠 row0【精華文章】） |
-| 編輯器 | ` 編輯文章 `＋`\t%s│%c%c%c%c%3d:%3d`（edit.c:470-479） | caption 與右側狀態框**不變**，中段動態化 | pageState 6（圖片上傳 `send` 路徑） |
+| 文章列表（非信箱） | ` 文章選讀 `（read.c:1237） | `read.c#i_read_caption`：MODE_DIGEST→` 文摘列表 `、MODE_SELECT→` 系列文章 `、其餘→` 文章列表 ` | 列表好讀 clean-list、footer 快取、看板列表情境 `article-list` |
+| 信箱 | ` 鴻雁往返 `（read.c:1234） | RMAIL→` 信件列表 ` | **排除**（信箱不得 engage 列表好讀） |
+| 看板列表 | `  選擇看板  `（board.c:1285，三變體共用） | `board.c#brdlist_caption`：IN_CLASSROOT→` 分類看板 `、IN_FAVORITE（`class_bid==0`）→` 我的最愛 `、其餘→` 看板列表 ` | 平滑捲動指紋；變體見下 |
+| 編輯器 | ` 編輯文章 `＋`\t%s│%c%c%c%c%3d:%3d` | `edit.c#edit_msg`：caption 與狀態框**不變**（公告範例 `||插入|5ipr||` 是錯的），中段 ` (^X)存檔 (^C)色碼 …` 塞得下才印 | pageState 6（圖片上傳 `send` 路徑） |
 
-新舊集合一對一：舊版「文章選讀」涵蓋的正好是新版那三種。
+### 看板列表變體（`board_list_parse.js#boardListVariant`）
+
+- **「我的最愛」≠ fav**：IN_FAVORITE 不看 `yank_flag`，在最愛按 `y`（`fav_cmd_yank` → `LIST_BRD`）列出**全站看板**時
+  caption 不變。分法看指令表：`IS_LISTING_FAV` → `myfav_cmds`（底列 `(a)增加看板` HIGH、row 1 `[y]列出全部`）；
+  否則 `board_fav_cmds`（底列 `(m)加入最愛` HIGH、row 1 `[y]只列最愛`）。兩者都不見 ⇒ unknown。
+- **「看板列表」＝熱門（`class_bid<0`）或分類子層（`>1`）**：指令表是靜態的，兩者畫面完全相同 ⇒ **一律當 class**
+  （2026-09-25 使用者定案）。代價：熱門看板排序動態變化，跨頁拼接可能重複／漏板；退出看板時仍有板名比對兜底。
+- 舊版仍靠 footer 三元式：`(a)增加看板`→fav、`(y)只列最愛`→all、`(m)加入/移出最愛`→class。
 
 ### 其他變更與影響
 
-- **Row 1／Row 23 中段動態化**（依指令優先權／權限／空列表／終端機寬度增減）：本專案**不以提示文字判畫面**，
-  只有 `footer_keys.js` 做功能鍵 tokenize（新格式 `[k]名`／` (k)名` 照吃）與 `board_list_parse` 的 class/all
-  分辨（提示被藏掉 ⇒ `unknown` ⇒ 不 engage）。
-- **空列表**：不畫 `>`、游標停 (23,79)、row3 `    沒有文章...`（這串 read.c:1225 舊版就有）。
+- **空列表**（`psb.c#psb_main`）：`total==0` 只呼叫 `empty_renderer`（read.c：`    沒有文章...`），不畫 `>`，
+  最後 `move(b_lines, t_columns-1)` ⇒ 游標停在 (23,79)，那格是 vs_footer 的 30;47 ＝ fg0/bg7。
   ⇒ `classifyListScreen` 判 `prompt`（非 clean-list）＝原生，安全。
-  ⇒ 連帶：vs_footer 右段 `VCLR_FOOTER`=0;30;47（vtuikit.h:41）＝fg0/bg7，游標 park 在那裡會被
-  `isCursorOnInputField` 誤判成輸入框（後果：返回手勢被擋、滑鼠整幀 NONE、點擊送 Ctrl-C）。
-  已加例外：游標在最後一列且該列是 `parseStatusRow` 或已知 caption ⇒ false（舊版游標 park 在列表底列右下角時也會中，
-  測試 `term_buf_input_field.test.js` 有舊版 case）。
-- **pmore 右下**：`(h)說明(→)離開 `／`(h)說明 (←/q)離開 ` → `(←)離開 (h)說明`，左半不變。
-  `parseStatusRow` 不比對 part3（§11 表）⇒ 無影響；`parsePagerFooterContext` 單向推論，新版仍含 `(y)回應` 才判 reading，否則 unknown＝既有降級。
-- **`[i]` 看板資訊**：改成全螢幕可捲動列表，**必須 `q` 或 `←` 才離開**（Space／PgDn 變翻頁），板主熱鍵要先 `Ctrl-P` 切編輯模式。
-  本專案**沒有**自動送 `i`、也沒有對它送「任意鍵」收尾；`aid_navigation` 逃生鍵是 ←（新版可離開）；
-  `screen_dismiss` 只在「請按任意鍵」／vmsg／輸入欄才動作 ⇒ 無需改。**日後若要自動化 `[i]`，離開一律送 ←。**
+  ⇒ `isCursorOnInputField` 已加例外：游標在最後一列且該列是 `parseStatusRow` 或已知 caption ⇒ false
+  （誤判後果：返回手勢被擋、滑鼠整幀 NONE、點擊送 Ctrl-C）。
+- **pmore 底列**：part1／part2（`pmore.c` 2206-2233）不變；part3 改由 `more.c#pager_on_footer` →
+  `vs_cmd_bar(VS_FOOTER, NULL)`：READING 的 ` (y)回應 (X)推文`（HIGH，排最前）…`\t(←)離開 (h)說明`；RMAIL 是
+  ` (y)回信`。`parseStatusRow` 不比對 part3；`parsePagerFooterContext` 單向推論照舊成立（寬度不夠擠掉時退 unknown）。
+- **`[i]` 看板資訊**：改成全螢幕可捲動列表（`board.c` 的 bconfig PSB），**必須 `q` 或 `←` 才離開**（Space／PgDn 變翻頁），
+  板主熱鍵要先 `Ctrl-P` 切編輯模式。本專案沒有自動送 `i`；`aid_navigation` 逃生鍵是 ←；`screen_dismiss` 只在
+  「請按任意鍵」／vmsg／輸入欄才動作 ⇒ 無需改。**日後若要自動化 `[i]`，離開一律送 ←。**
+- **滑鼠**：新版伺服器端有 locator 反白與指令列 hotspot（`vtuikit.c#vs_locator_*`、`cmd_bar_*hotspot*`），只在
+  client 送 xterm 滑鼠回報時才有作用。本專案未送，未稽核（見 `docs/handoff/psb-rewrite-audit.md`）。

@@ -255,49 +255,42 @@ export function parseStatusRow(str) {
 //   "\t"（vbarf 之後靠右對齊） ANSI "(h)" ANSI "說明"
 //   實例：`9/10周四 17:09 [ 射手時 ]    線上25809人,我是<id>,呼叫器開啟          (h)說明`
 //
-// 新格式（**guess** @ 2026-09-20 公告「介面調整: 標題列與主選單底部狀態列改版」，
-// PTT2 09/20 測試中、PTT1 10/04；該改動**還沒進公開的 pttbbs repo**，只有公告文字）：
-//   ANSI(34;46) " 選單名稱 " ANSI(1;33;45) " 節氣/活動 " ANSI(30;47)
-//   "M/D 週X HH:MM | ID | 線上N人  [(?)回到上層] (h)說明"
-//   公告點名的差異：最左側改成選單分類標籤、欄位改用「 | 」分隔、「周X」→「週X」、
-//   **移除「我是」與「,呼叫器XX」**。
+// 新格式（CONFIRMED @ pttbbs origin/piaip.newui 7e35b24e，menu.c#show_status(menu_index, cmdtitle)）：
+//   VCLR_FOOTER_CAPTION " %s "(cmdtitle) ANSI(1;33;45) "%-14s"(today_is)
+//   ANSI(30;47) " %d/%d 週%s %d:%02d | " ANSI(31) "%s"(userid) ANSI(30)
+//   然後才接 " | 線上" ANSI(31) "%d" ANSI(30) "人"；vbarlr 靠右
+//   子選單 "(←)回到上層 (h)說明 "、主選單 "(h)說明 "。
+//   **子選單在 stream_width(lbuf)+22 > t_columns-1 時 lbuf[n]=0，整段「 | 線上N人」
+//   被截掉**（80 欄幾乎必然）⇒ 線上人數不是新格式的錨點。
 //
-// ⇒ 舊 regex 的每一個錨點（`^` 錨定、`周`、`人,我是`、`,呼叫器`、PAGER_MODES）
-//   在新格式下全部失效。改成只留「新舊都成立」的兩個錨點，兩者都要命中：
-//     A. 日期＋星期＋時間（`周`/`週` 兩收，空白寬鬆）
-//     B. 線上人數
-//
+// ⇒ 兩種格式各用自己精確的指紋，任一命中即為選單狀態列：
+//   舊：`%d/%d周%s %d:%02d` ＋ `線上N人`
+//   新：`%d/%d 週%s %d:%02d | `（週、前後空白、「 | 」分隔都是 show_status 的必印段）
 // 不採用公告建議的「只辨識最開頭的分類標籤」：標籤集合（主功能表／休閒遊樂／…）
-// 無法窮舉，而且舊格式根本沒有這一段，那樣會退化成只認新版。
+// 無法窮舉，而且舊格式根本沒有這一段。
 //
-// 誤命中由**既有的**閘門吸收，所以拿掉 `^` 是安全的：
+// 兩條都不錨定 `^`（新格式最左側是 cmdtitle）；誤命中由**既有的**閘門吸收：
 //   term_buf.setPageState 先要求 row 0 是反白標題列
 //     （isUnicolor(0,0,29) && isUnicolor(0, cols-20, cols-10)）才會走到這裡；
 //   list_session.classifyListScreen 另有 row0 白名單。
 //
 // ⚠️ 2026-09 之前這裡寫的是 `[%d/%d 星期%c%c %d:%02d] … [呼叫器]%s`，**那個格式
-// pttbbs 史上不存在**（`git -C 3rd_script/pttbbs log -S'星期' -- mbbsd/menu.c` 零筆，
-// 「星期」二字全 source 都沒有），連 PAGER_MODES 的第二項都抄成「打開」（實際是
-// 「開啟」）⇒ parseListRow **恆為 false**，是一段沒人發現的死碼。當時的 unit test
-// fixture 是照同一個錯誤假設生出來的，於是把錯誤一起鎖死 —— 教訓：**指紋的 fixture
-// 必須來自 source 或線上實測位元組，不可與被測程式共用同一個假設**（CLAUDE.md
-// 「PTT 邏輯不准猜」）。
+// pttbbs 史上不存在**（「星期」二字全 source 都沒有）⇒ parseListRow 恆為 false 的死碼，
+// 當時的 fixture 照同一個錯誤假設生成而把錯誤鎖死 —— **指紋的 fixture 必須來自
+// source 或線上實測位元組，不可與被測程式共用同一個假設**。
 //
-// **這次的新格式正是踩在同一個坑邊上**：它是照公告文字寫的，不是照 source 或實測
-// 位元組。所以規則刻意放到最寬（只認兩個一定存在的錨點），而且必須重新校準 ——
-// 條件與步驟見 docs/handoff/status-row-recalibrate.md。
-//
-// 舊格式仍要照著寫的細節（新格式的 regex 一律不假設這些）：
+// 舊格式的細節：
 //  1. `周%c%c` 取的是 myweek = "日一二三四五六" 的**兩個 Big5 位元組＝一個字**。
 //  2. today_is 是站長可改的任意文字（`%-14s` 補的是位元組寬度）⇒ 不對它做任何假設。
-//  3. 尾端的 `\t` → `(h)說明` 不比對：與 STATUS_ROW_RE 對 part3 的處理同理，
-//     會消失／被擠掉的段落一旦要求就整列失配（代價見上面 STATUS_ROW_RE 的長註解）。
-const LIST_ROW_DATE_RE = /\d{1,2}\/\d{1,2} ?[周週][日一二三四五六] +\d{1,2}:\d{2}/;
-const LIST_ROW_ONLINE_RE = /線上\s*\d+\s*人/;
+//  3. 尾端的 `\t` → `(h)說明` 不比對：會消失／被擠掉的段落一旦要求就整列失配。
+const LIST_ROW_OLD_DATE_RE = /\d{1,2}\/\d{1,2}周[日一二三四五六] +\d{1,2}:\d{2}/;
+const LIST_ROW_OLD_ONLINE_RE = /線上\s*\d+\s*人/;
+const LIST_ROW_NEW_RE = /\d{1,2}\/\d{1,2} 週[日一二三四五六] \d{1,2}:\d{2} \| /;
 
 export function parseListRow(str) {
   if (!str) return false;
-  return LIST_ROW_DATE_RE.test(str) && LIST_ROW_ONLINE_RE.test(str);
+  if (LIST_ROW_NEW_RE.test(str)) return true;
+  return LIST_ROW_OLD_DATE_RE.test(str) && LIST_ROW_OLD_ONLINE_RE.test(str);
 };
 
 // \u6c34\u7403\uff0f\u5ee3\u64ad\u3002\u5403\u7684\u662f b2u(\u539f\u59cb WS bytes)\uff08pttchrome.jsx\uff09\uff0c\u4e0d\u662f\u6e32\u67d3\u5f8c\u7684\u756b\u9762\u3002

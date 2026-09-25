@@ -1,12 +1,11 @@
 // 底部狀態列左側 Caption 的畫面判定（src/js/screen_captions.js）。
 //
-// 舊格式 fixture 逐字取自 pttbbs 03cdf5eb（CONFIRMED）；新格式照 2026-09-20 公告
-// 「介面調整: 動態指令列與看板資訊改版」組的（**guess**，該改動還沒進公開 repo），
-// 重新校準見 docs/handoff/list-caption-recalibrate.md。
+// 舊格式 fixture 逐字取自 pttbbs 03cdf5eb（CONFIRMED）；新格式依 pttbbs
+// origin/piaip.newui 7e35b24e 讀碼（CONFIRMED）：read.c#i_read_caption、
+// board.c#brdlist_caption、psb.c#vs_cmd_bar（底列 " (k)名"，右端靠右 "(h)說明"）。
 //
-// PTT1/PTT2 上線差約一個月，兩種格式會並存 ⇒ 舊格式這一組一條都不准刪。
+// PTT1/PTT2 上線時間不同，兩種格式會並存 ⇒ 舊格式這一組一條都不准刪。
 import {
-  boardListCaptionVariant,
   footerCaption,
   isArticleListFooter,
   isBoardListFooter,
@@ -23,9 +22,9 @@ const OLD_BOARD = "  選擇看板    (a)增加看板 (s)進入已知板名 (y)�
 const OLD_EDITOR =
   " 編輯文章  (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開        插入│aipr  1:  1";
 
-// 公告第 2 點：中段「 (按鍵)名稱」逐項空白分隔，最右側靠右「(h)說明」（guess）。
+// vs_footer(caption, msg)：msg 是 vs_cmd_bar 組的 " (k)名" 逐項，tab 之後靠右。
 const newFooter = (caption, mid = " (y)回應 (X)推文 (^X)轉錄") =>
-  " " + caption + " " + mid + "            (h)說明";
+  " " + caption + " " + mid + "            (h)說明 ";
 
 describe("footerCaption — 舊格式（CONFIRMED）", () => {
   test.each([
@@ -46,13 +45,9 @@ describe("footerCaption — 舊格式（CONFIRMED）", () => {
     expect(isBoardListFooter(OLD_BOARD)).toBe(true);
     expect(isBoardListFooter(OLD_ARTICLE)).toBe(false);
   });
-
-  test("舊看板列表的變體光看 caption 定不出來（交給按鍵提示）", () => {
-    expect(boardListCaptionVariant(OLD_BOARD)).toBe(null);
-  });
 });
 
-describe("footerCaption — 新格式（guess）", () => {
+describe("footerCaption — 新格式（CONFIRMED，讀碼）", () => {
   test.each(["文章列表", "系列文章", "文摘列表"])(
     "「%s」是文章列表",
     (caption) => {
@@ -61,18 +56,13 @@ describe("footerCaption — 新格式（guess）", () => {
   );
 
   test("「信件列表」不是文章列表（信箱不得 engage 列表好讀）", () => {
-    const row = newFooter("信件列表", " (R)回信 (x)站內轉寄 (d)刪信");
+    const row = newFooter("信件列表", " (y)回信 (x)站內轉寄 (d)刪信");
     expect(footerCaption(row)).toBe("信件列表");
     expect(isArticleListFooter(row)).toBe(false);
   });
 
   test.each(["看板列表", "我的最愛", "分類看板"])("「%s」是看板列表", (caption) => {
-    expect(isBoardListFooter(newFooter(caption, " (m)加入/移出最愛"))).toBe(true);
-  });
-
-  test("「我的最愛」光看 caption 就定 fav；「看板列表」不定", () => {
-    expect(boardListCaptionVariant(newFooter("我的最愛", " (a)增加看板"))).toBe("fav");
-    expect(boardListCaptionVariant(newFooter("看板列表", " (m)加入/移出最愛"))).toBe(null);
+    expect(isBoardListFooter(newFooter(caption, " (m)加入最愛"))).toBe(true);
   });
 });
 
@@ -85,7 +75,7 @@ describe("footerCaption — 只認行首", () => {
 
   test("主選單新狀態列（左側是選單分類標籤）不命中", () => {
     const row =
-      " 主功能表  射手時 9/20 週六 17:09 | someuser | 線上25809人          (h)說明";
+      " 主功能表 [ 秋分 ]       9/25 週四 10:06 | someuser | 線上25809人    (h)說明 ";
     expect(footerCaption(row)).toBe(null);
   });
 

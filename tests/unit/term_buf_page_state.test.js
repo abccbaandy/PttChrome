@@ -172,19 +172,17 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
 
   // ─── PTT 2026-09-20 改版後的同一批畫面 ───────────────────────────────────
   //
-  // 狀態：**guess**。公告「介面調整: 標題列與主選單底部狀態列改版」
-  // （PTT2 09/20 測試中、PTT1 10/04）把底列改成
-  //   *[34;46m 選單名稱 *[1;33;45m 節氣/活動 *[30;47m
-  //   M/D 週X HH:MM | ID | 線上N人  [(?)回到上層] (h)說明
-  // ⇒ 舊的 parseListRow 錨點（`^`、`周`、`人,我是`、`,呼叫器`）全部失效。
-  // 該改動還沒進公開的 pttbbs repo，所以這裡是照公告文字組的，重新校準見
-  // docs/handoff/status-row-recalibrate.md。
+  // CONFIRMED（讀碼 @ pttbbs origin/piaip.newui 7e35b24e，menu.c#show_status）：
+  //   *[0;34;46m %s *[1;33;45m%-14s *[30;47m %d/%d 週%s %d:%02d | <ID>[ | 線上N人]
+  //   vbarlr 靠右：子選單 "(←)回到上層 (h)說明 "、主選單 "(h)說明 "
+  // 子選單在 stream_width(lbuf)+22 > t_columns-1 時把「 | 線上N人」整段截掉
+  // （80 欄幾乎必然）⇒ 下面的子選單 fixture 照 source 不含線上人數。
+  // ⇒ 舊的 parseListRow 錨點（`周`、`人,我是`、`,呼叫器`、線上人數）新版都不可靠。
   //
-  // 上面那一批 CONFIRMED 的測試一條都不准刪：PTT1/PTT2 上線差兩週，
-  // 兩種格式會同時存在。
-  const newStatusRow = (label, tail = "(h)說明", user = "someuser") =>
+  // 上面那一批舊格式的測試一條都不准刪：PTT1/PTT2 上線時間不同，兩種格式並存。
+  const newStatusRow = (label, { tail = "(h)說明 ", online = " | 線上25809人" } = {}) =>
     padCols(
-      " " + label + "  射手時 9/20 週六 17:09 | " + user + " | 線上25809人",
+      " " + label + " [ 秋分 ]       9/25 週四 10:06 | someuser" + online,
       COLS - width(tail)
     ) + tail;
 
@@ -200,7 +198,7 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
     "(X)info         《查看系統資訊》" +
     at(ROWS - 1, 0) +
     "\x1b[34;46m" +
-    newStatusRow("工具程式", "(?)回到上層 (h)說明") +
+    newStatusRow("工具程式", { tail: "(←)回到上層 (h)說明 ", online: "" }) +
     "\x1b[m" +
     at(12, 20);
 
@@ -263,8 +261,9 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
   // ─── 編輯器（vedit）底列 → pageState 6 ────────────────────────────────────
   // 舊版 CONFIRMED @ edit.c:470-479：
   //   vs_footer(" 編輯文章 ", " (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開\t%s│%c%c%c%c%3d:%3d")
-  // 新版（2026-09-20 公告「動態指令列與看板資訊改版」第 5 點，PTT1 10/18 預定；**guess**）：
-  //   左側「 編輯文章 」與最右側狀態框【不變】，中段改成動態指令列。
+  // 新版 CONFIRMED（讀碼 @ piaip.newui，edit.c#edit_msg）：caption「 編輯文章 」與
+  //   右側 `%s│%c%c%c%c%3d:%3d` 格式不變，中段改成 " (^X)存檔 (^C)色碼 …"（塞得下才印）
+  //   ＋靠右 "(Esc-h)… (^Z)…"，整段右對齊到 t_columns-2。
   // 以前比對的是整段中段提示 ⇒ 新版一上線 pageState 6 就失效，編輯器內的圖片上傳
   // （image_upload.js 的 pageState 6 → send）會走錯路徑。
   const editorScreen = (mid) =>
@@ -286,7 +285,7 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
     expect(t.buf.pageState).toBe(6);
   });
 
-  test("新版編輯器底列（動態指令列中段；guess）→ 6", () => {
+  test("新版編輯器底列（動態指令列中段）→ 6", () => {
     const t = makeBuf();
     t.paint(editorScreen(" (^X)存檔 (^C)色碼 (^V)彩色 (Esc-h)按鍵 (^Z)說明"));
     expect(t.buf.pageState).toBe(6);

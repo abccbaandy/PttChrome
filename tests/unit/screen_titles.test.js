@@ -34,9 +34,9 @@ describe("rowHasTitle（row 0 標題指紋）", () => {
     expect(rowHasTitle(row, name)).toBe(true);
   });
 
-  // 公告描述的去括號形狀：「固定前後各留一格半形空白」。
-  // 狀態：guess（該改動還沒進公開的 pttbbs repo），重新校準見
-  // docs/handoff/status-row-recalibrate.md。
+  // 去括號形狀：vtuikit.c#vs_draw_hdr2 的 `outs(VCLR_HDR2_LEFT " "); outs(left);
+  // outs(" " VCLR_HDR2_RIGHT " ")`（CONFIRMED 讀碼 @ piaip.newui 7e35b24e）。
+  // 本專案判畫面的四個標題走 vs_header，仍是【X】；這組守的是容錯。
   test.each([
     [" 主功能表  Welcome                       ", MAIN_MENU],
     [" 看板列表  目前顯示: 全部                ", BOARD_LIST],

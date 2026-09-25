@@ -125,7 +125,8 @@ export function parseBoardName(row0Text) {
 // feeter 文字對 mbbsd/read.c#i_read 的 READ_REDRAW 分支（pttbbs @ c1ff72df）：
 //   vs_footer(" 文章選讀 ", " (y)回應(X)推文(^X)轉錄 …")   一般看板
 //   vs_footer(" 鴻雁往返 ", " (R/y)回信 (x)站內轉寄 …")     currstat == RMAIL
-// 新版（2026-09-20 公告，guess）拆成 文章列表／系列文章／文摘列表 與 信件列表；
+// 新版（CONFIRMED 讀碼 @ piaip.newui read.c#i_read_caption）拆成 文章列表／系列文章／
+// 文摘列表 與 信件列表；
 // caption 集合收在 screen_captions.js。只認文章列表 caption 正好把信箱擋在外面
 // （信箱不得 engage 列表好讀）。
 // row2 表頭來自 bbs.c 的 vbarf(ANSI_REVERSE "   編號    %s 作  者       文  章  標  題\t人氣:%d ")，

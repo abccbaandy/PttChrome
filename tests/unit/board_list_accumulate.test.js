@@ -189,12 +189,12 @@ describe("buildBoardListWindowLines", () => {
     expect(textOf(lines[3 + 6]).startsWith(">")).toBe(false);
   });
 
-  // PTT 動態指令列改版（2026-09-20 公告，PTT1 10/18 預定；**guess**）：caption 由
-  // 「  選擇看板  」改成「 看板列表 / 我的最愛 / 分類看板 」。只認舊字樣時 footer 快取
+  // PTT 動態指令列改版（PTT1 10/18 預定；CONFIRMED 讀碼 @ piaip.newui board.c#brdlist_caption）：
+  // caption 由「  選擇看板  」改成「 看板列表 / 我的最愛 / 分類看板 」。只認舊字樣時 footer 快取
   // 永遠是空的 ⇒ buildBoardListWindowLines 回 null ⇒ 平滑捲動整個退回原生。
   test.each(["我的最愛", "看板列表"])("新版 caption「%s」的 footer 也進快取", (caption) => {
     const texts = screenTexts({ count: 4 });
-    texts[texts.length - 1] = " " + caption + "  (a)增加看板 (s)進入已知板名           (h)說明";
+    texts[texts.length - 1] = " " + caption + "  (a)增加看板 (d)刪除 (v)已讀/未讀           (h)說明 ";
     const v = fakeView(texts);
     v.bbscore = { activeListSession: () => fakeSession(v) };
     v.accumulateBoardListLines();

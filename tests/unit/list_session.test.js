@@ -131,10 +131,11 @@ describe("classifyListScreen", () => {
     expect(r.kind).not.toBe("clean-list");
   });
 
-  // ─── PTT 動態指令列改版（2026-09-20 公告，PTT1 10/18 預定；**guess**）───
-  // 舊版 read.c:1237 對非信箱的所有列表一律印「文章選讀」；新版拆成三種 caption，
-  // 集合一對一。信箱（read.c:1234 鴻雁往返 → 信件列表）照舊不 engage。
-  // 重新校準見 docs/handoff/list-caption-recalibrate.md。
+  // ─── PTT 動態指令列改版（PTT1 10/18 預定）───
+  // CONFIRMED（讀碼 @ piaip.newui read.c#i_read_caption）：舊版 read.c:1237 對非信箱的
+  // 所有列表一律印「文章選讀」；新版拆成三種 caption，集合一對一。信箱（鴻雁往返 →
+  // 信件列表）照舊不 engage。底列由 read_footer → vs_cmd_bar(VS_SUB_HEADER|VS_FOOTER)
+  // 組：HIGH 以上的 " (k)名" 進底列、右端 "(h)說明"；[←] 放在 row 1。
   const newFeeter = (caption) =>
     " " + caption + "  (y)回應 (X)推文 (^X)轉錄 (/)搜尋標題            (h)說明";
 
@@ -159,12 +160,13 @@ describe("classifyListScreen", () => {
   });
 
   test("新版空列表（row3「沒有文章...」、無 > 游標、游標停 23,79）→ 不是 clean-list", () => {
-    // 公告第 4 點：空列表不畫游標字元，硬體游標停在右下角。
-    // row3 字樣是 read.c:1225 舊版就有的 outs("    沒有文章...")。
+    // psb.c#psb_main：total==0 只呼叫 empty_renderer（read.c#read_empty_renderer
+    // outs("    沒有文章...")）、不畫游標字元，最後 move(b_lines, t_columns-1)。
+    // need_item 的指令被 cmd_set_has_item(false) 藏掉，底列幾乎只剩 caption 與 (h)說明。
     const rows = listRows.slice(0, 3);
     rows[3] = "    沒有文章...";
     for (let i = 4; i <= 22; ++i) rows[i] = "";
-    rows[23] = " 文章列表                                               (←)離開 (h)說明";
+    rows[23] = " 文章列表  (^P)發表                                             (h)說明 ";
     const r = classifyListScreen(
       facts({ rowTexts: rows, curY: rows.length - 1, curX: 79 })
     );

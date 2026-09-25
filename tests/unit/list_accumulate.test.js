@@ -116,8 +116,8 @@ describe("accumulateListLines（置底文收录）", () => {
   const feeter = " 文章選讀  (y)回應(X)推文";
 
   // footer 快取（buildListWindowLines 組 24 列好讀視窗用）。PTT 動態指令列改版
-  // （2026-09-20 公告，PTT1 10/18 預定；**guess**）把 read.c:1237 的「文章選讀」拆成
-  // 「文章列表／系列文章／文摘列表」。只認舊字樣時快取永遠空 ⇒ 好讀視窗組不出來。
+  // （PTT1 10/18 預定；CONFIRMED 讀碼 @ piaip.newui read.c#i_read_caption）把 read.c:1237
+  // 的「文章選讀」拆成「文章列表／系列文章／文摘列表」。只認舊字樣時快取永遠空 ⇒ 好讀視窗組不出來。
   test.each([
     " 文章選讀  (y)回應(X)推文",
     " 文章列表  (y)回應 (X)推文            (h)說明",

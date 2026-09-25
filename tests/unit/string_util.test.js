@@ -320,13 +320,20 @@ describe("parsePagerFooterContext（more.c#common_pmore_footer_handler）", () =
     ).toBe("reading");
   });
 
-  // PTT 動態指令列改版（2026-09-20 公告第 5 點，PTT1 10/18 預定；**guess**）：
-  // 右半改由動態指令列產生、結尾統一「(←)離開 (h)說明」。只要仍有「(y)回應」就還是
-  // reading；若被寬度擠掉，退回 unknown ＝既有的安全降級，不會誤判。
-  test("新版動態指令列（guess）→ reading", () => {
+  // 新版動態指令列（CONFIRMED，讀碼 @ piaip.newui：more.c#pager_on_footer →
+  // psb.c#vs_cmd_bar(VS_FOOTER, NULL)）：part3 是依 prio 排的 " (k)名"，READING 的
+  // `y 回應`／`X 推文` 是 CMD_PRIO_HIGH 排最前，結尾 "\t(←)離開 (h)說明"。
+  // 被寬度擠掉時退回 unknown ＝既有的安全降級。
+  test("新版動態指令列 → reading", () => {
     expect(
-      parsePagerFooterContext(withStatus("(y)回應 (X)推文 (←)離開 (h)說明"))
+      parsePagerFooterContext(withStatus(" (y)回應 (X)推文        (←)離開 (h)說明 "))
     ).toBe("reading");
+  });
+
+  test("新版動態指令列（信箱 pager_mail_cmds）→ mail", () => {
+    expect(
+      parsePagerFooterContext(withStatus(" (y)回信 (])同主題下篇  (←)離開 (h)說明 "))
+    ).toBe("mail");
   });
 
   test("FOOTERMSG_MAIL_LONG → mail（實錄 ptt-debug 站內信）", () => {
@@ -466,79 +473,61 @@ describe("parseListRow（主選單狀態列, menu.c#show_status）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// parseListRow — **新版**狀態列（PTT2 2026-09-20 測試中、PTT1 10/04）
+// parseListRow — **新版**狀態列（PTT2 2026-09-20、PTT1 10/04）
 //
-// ⚠️ 狀態：**guess**，不是 CONFIRMED。
-// 來源是 2026-09-20 公告「介面調整: 標題列與主選單底部狀態列改版」的文字描述；
-// 該改動**還沒進公開的 pttbbs repo**（`3rd_script/pttbbs` HEAD 的 menu.c#show_status
-// 仍是舊格式），所以這裡沒有 source 也沒有實測位元組可抄。
+// CONFIRMED（讀碼 @ pttbbs origin/piaip.newui 7e35b24e，menu.c#show_status）：
+//   lbuf = VCLR_FOOTER_CAPTION " %s "            ← cmdtitle（主功能表／休閒遊樂…）
+//          ANSI(1;33;45) "%-14s"                  ← SHM->today_is
+//          ANSI(30;47) " %d/%d 週%s %d:%02d | "
+//          ANSI(31) "%s" ANSI(30)                 ← cuser.userid
+//   n = 上面的長度；再接 " | 線上" ANSI(31) "%d" ANSI(30) "人"
+//   子選單（menu_index != M_MMENU）若 stream_width(lbuf)+22 > t_columns-1
+//     ⇒ lbuf[n] = '\0'，**整段「 | 線上N人」被截掉**（80 欄幾乎必然）
+//   rbuf（vbarlr 靠右）：子選單 "(←)回到上層 (h)說明 "，主選單 "(h)說明 "
+//   ⇒ 公告寫的「(?)回到上層」是錯的；「週X H:MM | ID」才是必印段。
 //
-// 公告原文：
-//   舊版格式：
-//     *[34;46m M/D周X HH:MM *[1;33;45m 節氣/活動
-//     *[30;47m 線上N人,我是ID,呼叫器XX  (h)說明
-//   新版格式：
-//     *[34;46m 選單名稱 *[1;33;45m 節氣/活動 *[30;47m
-//     M/D 週X HH:MM | ID | 線上N人  [(?)回到上層] (h)說明
-//   差異：(a) 最左側改為選單分類標籤 (b)「 | 」分隔、「周X」→「週X」
-//        (c) 移除「我是」與「,呼叫器XX」 (d) 子選單多 "(?)回到上層"
-//
-// 上面那段 CONFIRMED 的 describe 一條都不准刪：PTT1 上線前現行 server 還是舊格式，
-// 而且 PTT1/PTT2 的上線時間差了兩週，兩種格式會同時存在。
-//
-// **重新校準的義務**：PTT1 10/04 之後（或更早能連到 PTT2 時）要用實測位元組把這一段
-// 從 guess 升成 CONFIRMED，步驟見 docs/handoff/status-row-recalibrate.md。
-// 在那之前，regex 刻意只認兩個「新舊都一定存在」的錨點（日期時間、線上人數），
-// 不對分隔符、欄位順序、標籤內容做任何假設 —— 這正是為了讓 guess 猜錯時也不會壞。
+// 上面那段舊格式 describe 一條都不准刪：PTT1/PTT2 上線時間不同，兩種格式並存。
 // ---------------------------------------------------------------------------
-describe("parseListRow（新版狀態列, 2026-09-20 公告；guess）", () => {
-  // 公告字面組出來的一列（ANSI 已被 term_buf 吃掉，parseListRow 拿到的是純文字）。
-  const newRow = (label, festival, user = "someuser", tail = " (h)說明") =>
-    ` ${label}  ${festival} 9/20 週六 17:09 | ${user} | 線上25809人 ${tail}`;
+describe("parseListRow（新版狀態列，menu.c#show_status）", () => {
+  // ANSI 已被 term_buf 吃掉，parseListRow 拿到的是純文字。帳號是佔位符。
+  const newRow = (label, { online = " | 線上25809人", tail = "(h)說明 " } = {}) =>
+    ` ${label} [ 秋分 ]       9/25 週四 10:06 | someuser${online}` +
+    "          " + tail;
 
   test("主功能表底列", () => {
-    expect(parseListRow(newRow("主功能表", "射手時"))).toBe(true);
+    expect(parseListRow(newRow("主功能表"))).toBe(true);
   });
 
-  test("子選單底列（含 (?)回到上層）", () => {
-    expect(
-      parseListRow(newRow("休閒遊樂", "秋分", "someuser", " (?)回到上層 (h)說明"))
-    ).toBe(true);
+  test("子選單底列（寬度夠，含線上人數與 (←)回到上層）", () => {
+    expect(parseListRow(newRow("休閒遊樂", { tail: "(←)回到上層 (h)說明 " }))).toBe(true);
   });
 
-  // 公告的 (b)：「周X」→「週X」。兩種都要收——PTT1 與 PTT2 上線差兩週。
-  test.each(["周", "週"])("星期寫成「%s」都認得", (week) => {
-    expect(
-      parseListRow(` 主功能表  射手時 9/20 ${week}六 17:09 | someuser | 線上1人 `)
-    ).toBe(true);
+  // bug 重現：80 欄子選單的「 | 線上N人」被 lbuf[n]='\0' 截掉。舊實作要求線上人數
+  // ⇒ 失配 ⇒ setPageState 進不了 MENU、classifyListScreen 判不出 menu。
+  test("子選單截掉「 | 線上N人」仍命中", () => {
+    const row = newRow("休閒遊樂", { online: "", tail: "(←)回到上層 (h)說明 " });
+    expect(row.includes("線上")).toBe(false);
+    expect(parseListRow(row)).toBe(true);
   });
 
-  // 公告的 (c)：移除「我是」與「,呼叫器XX」之後仍要命中。這是舊 regex 死掉的主因。
   test("沒有「我是」也沒有「呼叫器」仍命中", () => {
-    const row = " 主功能表  射手時 9/20 週六 17:09 | someuser | 線上25809人  (h)說明";
+    const row = newRow("主功能表");
     expect(row.includes("我是")).toBe(false);
     expect(row.includes("呼叫器")).toBe(false);
     expect(parseListRow(row)).toBe(true);
   });
 
-  // 拿掉 `^` 錨定的直接後果：日期不再在第 0 欄。
-  test("日期不在第 0 欄仍命中（新版最左側是分類標籤）", () => {
-    expect(parseListRow(newRow("系統資訊", "小雪"))).toBe(true);
-    expect(newRow("系統資訊", "小雪").indexOf("9/20")).toBeGreaterThan(0);
+  test("個位數月/日/時（%d/%d、%d:%02d）", () => {
+    expect(parseListRow(" 主功能表 [ 端午 ]       1/2 週一 9:05 | ab | 線上100人 ")).toBe(true);
   });
 
-  test("個位數月/日/時", () => {
-    expect(parseListRow(" 主功能表  端午 1/2 週一 9:05 | ab | 線上100人 ")).toBe(true);
-  });
-
-  // 放寬 `^` 之後最該擔心的事：別的畫面被誤判成選單。
-  // 這幾列都少了至少一個錨點，且 setPageState 另有 row 0 反白閘門擋在前面。
+  // 別的畫面不可被誤判成選單。setPageState 另有 row 0 反白閘門擋在前面。
   test.each([
-    [" 文章選讀 (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面  ", "文章列表 feeter"],
-    ["  瀏覽 第 1/5 頁 (  9%)  目前顯示: 第 01~20 行  (←q)離開 ", "pmore 狀態列"],
-    [" 選擇看板 (a)增加看板 (y)只列最愛 (m)加入/移出最愛 ", "看板列表 feeter"],
-    ["9/20 週六 17:09 今日主題", "只有日期、沒有線上人數"],
-    [" 主功能表  射手時 | someuser | 線上25809人 ", "只有線上人數、沒有日期"],
+    [" 文章列表  (y)回應 (X)推文 (^X)轉錄                   (h)說明 ", "新版文章列表 footer"],
+    ["  瀏覽 第 1/5 頁 (  9%)  目前顯示: 第 01~20 行  (y)回應 (X)推文    (←)離開 (h)說明 ", "新版 pmore 狀態列"],
+    [" 看板列表  (m)加入最愛 (v)已讀/未讀                    (h)說明 ", "新版看板列表 footer"],
+    ["9/25 週四 10:06 今日主題", "新版日期後沒有「 | 」"],
+    [" 主功能表 [ 秋分 ]       9/25 週四 10:06 someuser 線上1人", "新版星期卻沒有「 | 」分隔"],
     ["", "空列"],
   ])("%s → false（%s）", (row) => {
     expect(parseListRow(row)).toBe(false);

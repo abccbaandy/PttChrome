@@ -94,9 +94,10 @@ describe("isCursorOnInputField", () => {
 // vs_footer 的右段配色是 VCLR_FOOTER = ANSI_COLOR(0;30;47)（vtuikit.h:41）＝ fg0/bg7，
 // 正好是輸入欄的指紋；caption 是 VCLR_FOOTER_CAPTION = 34;46（vtuikit.h:40），不反白
 // ⇒ 光看顏色，「游標停在 vs_footer 右段」會被誤判成輸入框。
-// PTT 2026-09-20 公告「動態指令列與看板資訊改版」（**guess**）讓這件事變常態：
-//   第 4 點：空列表不畫 > 游標，硬體游標停在 (23,79)（＝vs_footer 右段）
-//   第 5 點：pmore 右半改由動態指令列產生、「統一色碼」
+// PTT 動態指令列改版讓這件事變常態（CONFIRMED 讀碼 @ piaip.newui 7e35b24e）：
+//   psb.c#psb_main：空列表不畫 > 游標，最後 move(b_lines, t_columns-1)（＝vs_footer 右段，
+//     vs_footer 以 VCLR_FOOTER outc(" ") 填到 col 79）
+//   more.c#pager_on_footer：pmore 右半改由 vs_cmd_bar 產生，同樣走 vs_footer 的 30;47
 // 誤判的後果：nav_key_gate 擋掉觸控板返回／上一頁、mouse_regions 整幀 NONE
 // （文章左側退出帶失效）、點擊改送 Ctrl-C（列表上＝ClearTagList）。
 // 輸入框不可能與這兩種狀態列同時存在：vgetstring 的 prompt 從 col 0 覆寫整列。
@@ -136,12 +137,12 @@ describe("isCursorOnInputField — 游標停在狀態列右下角", () => {
     padCols(right, 80 - width(left)) +
     "\x1b[m";
 
-  test("新版 pmore 狀態列（右半統一成 30;47；guess）⇒ false", () => {
+  test("新版 pmore 狀態列（右半是 vs_footer 的 30;47）⇒ false", () => {
     const buf = paint(
       "\x1b[1;1H內文" +
         footer(
           "  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~22 行",
-          "  (y)回應 (X)推文 (←)離開 (h)說明"
+          "  (y)回應 (X)推文       (←)離開 (h)說明 "
         ) +
         PARK
     );
@@ -150,12 +151,12 @@ describe("isCursorOnInputField — 游標停在狀態列右下角", () => {
     expect(buf.isCursorOnInputField()).toBe(false);
   });
 
-  test("新版空文章列表（無 > 游標、游標停 23,79；guess）⇒ false", () => {
+  test("新版空文章列表（無 > 游標、游標停 23,79）⇒ false", () => {
     const buf = paint(
       "\x1b[1;1H\x1b[30;47m" +
         padCols("【板主:none】  看板《Test》", 80) +
         "\x1b[m\x1b[4;1H    沒有文章..." +
-        footer(" 文章列表 ", "                                        (←)離開 (h)說明") +
+        footer(" 文章列表 ", " (^P)發表                                            (h)說明 ") +
         PARK
     );
     expect(buf.isCursorOnInputField()).toBe(false);

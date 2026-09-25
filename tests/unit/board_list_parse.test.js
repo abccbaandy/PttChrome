@@ -54,6 +54,7 @@ const FOOT_ALL =
 // 一整幀看板列表。body 從 startNum 起連號（分頁對齊 ⇒ 編號＝絕對位置）。
 function brdScreen({
   foot = FOOT_FAV,
+  hotkeys = HOTKEY_ROW,
   header = HEADER_NUM,
   startNum = 1,
   count = 20,
@@ -61,7 +62,7 @@ function brdScreen({
   curX = 0,
   bodyRows = null,
 } = {}) {
-  const rowTexts = ["【看板列表】 批踢踢實業坊", HOTKEY_ROW, header];
+  const rowTexts = ["【看板列表】 批踢踢實業坊", hotkeys, header];
   const body =
     bodyRows ||
     Array.from({ length: count }, (_, i) =>
@@ -305,50 +306,67 @@ describe("抓頁：跳號目標與落地判定", () => {
   });
 });
 
-// ─── PTT 動態指令列改版（2026-09-20 公告，PTT1 10/18 預定；**guess**）─────────
-// 舊版 board.c:1285 三變體共用「  選擇看板  」，變體只能靠按鍵提示分。新版 caption
-// 依列表類型分三種（前後各 1 格空白）：「看板列表」一般・熱門・分類子層／
-// 「我的最愛」／「分類看板」分類根；中段提示改為動態（依權限／寬度／空列表增減）。
-// ⇒「我的最愛」光看 caption 就定 fav；「看板列表」仍要靠提示分 class/all，
-//   提示被隱藏時退成 unknown（不 engage＝原生，安全）。
-// 重新校準見 docs/handoff/list-caption-recalibrate.md。
-describe("classifyBoardListScreen — 新版 caption（guess）", () => {
+// ─── PTT 動態指令列改版（PTT1 10/18 預定）──────────────────────────────────────
+// CONFIRMED（讀碼 @ pttbbs origin/piaip.newui 7e35b24e）：
+//   caption：board.c#brdlist_caption —— IN_CLASSROOT→「 分類看板 」、
+//            IN_FAVORITE（class_bid==0，**不看 yank_flag**）→「 我的最愛 」、其餘→「 看板列表 」
+//   提示：board.c#brdlist_foot → psb.c#vs_cmd_bar(VS_SUB_HEADER|VS_FOOTER)：
+//         prio ≥ HIGH 進底列 " (k)名"，≤ NORM 進 row1 "[k]名"。
+//         IS_LISTING_FAV → myfav_cmds：(a)增加看板 HIGH、[y]列出全部 NORM
+//         否則          → board_fav_cmds：(m)加入最愛 HIGH、[y]只列最愛 NORM
+//   ⇒「我的最愛」按 y（fav_cmd_yank → LIST_BRD）後列的是**全站看板**，caption 不變；
+//     「看板列表」的熱門（class_bid<0）與分類子層（>1）畫面完全相同，一律當 class。
+describe("classifyBoardListScreen — 新版 caption（brdlist_caption / vs_cmd_bar）", () => {
   const newFoot = (caption, mid) =>
-    " " + caption + "  " + mid + "                 (h)說明";
+    " " + caption + " " + mid + "                 (h)說明 ";
+  const ROW1_FAV = "[←]回上層 [y]列出全部 [→]進入 [s]找看板 [/]搜尋 [c]新文章 [S]排序";
+  const ROW1_BRD = "[←]回上層 [y]只列最愛 [→]進入 [s]找看板 [/]搜尋 [c]新文章 [S]排序";
+  const NEW_FOOT_FAV = newFoot("我的最愛", " (a)增加看板 (d)刪除 (g)新增目錄 (M)移動位置 (v)已讀/未讀");
+  const NEW_FOOT_BRD = (caption) => newFoot(caption, " (m)加入最愛 (v)已讀/未讀");
 
-  test("「我的最愛」即使中段沒有 (a)增加看板 也是 fav、可 engage", () => {
-    const r = classifyBoardListScreen(
-      brdScreen({ foot: newFoot("我的最愛", "(s)進入已知板名") })
-    );
+  test("「我的最愛」＋(a)增加看板 → fav、可 engage", () => {
+    const r = classifyBoardListScreen(brdScreen({ foot: NEW_FOOT_FAV, hotkeys: ROW1_FAV }));
     expect(r.variant).toBe("fav");
     expect(r.engageable).toBe(true);
   });
 
-  test("「看板列表」＋(m)加入/移出最愛（無 (y)只列最愛）→ class", () => {
+  // bug 重現：舊實作「caption 是我的最愛 ⇒ fav」，在最愛按 y 列出全站看板時會 engage。
+  test("「我的最愛」按 y 之後（board_fav_cmds）→ all，不 engage", () => {
     const r = classifyBoardListScreen(
-      brdScreen({ foot: newFoot("看板列表", "(m)加入/移出最愛 (s)進入已知板名") })
-    );
-    expect(r.variant).toBe("class");
-    expect(r.engageable).toBe(true);
-  });
-
-  test("「看板列表」＋(y)只列最愛 → all，不 engage", () => {
-    const r = classifyBoardListScreen(
-      brdScreen({ foot: newFoot("看板列表", "(m)加入/移出最愛 (y)只列最愛") })
+      brdScreen({ foot: NEW_FOOT_BRD("我的最愛"), hotkeys: ROW1_BRD })
     );
     expect(r.variant).toBe("all");
     expect(r.engageable).toBe(false);
   });
 
-  test("「看板列表」但提示全被動態隱藏 → unknown，不 engage", () => {
-    const r = classifyBoardListScreen(brdScreen({ foot: newFoot("看板列表", "") }));
+  test("「我的最愛」兩種指令都看不到 → unknown，不 engage", () => {
+    const r = classifyBoardListScreen(
+      brdScreen({ foot: newFoot("我的最愛", ""), hotkeys: "" })
+    );
     expect(r.variant).toBe("unknown");
+    expect(r.engageable).toBe(false);
+  });
+
+  // 熱門看板與分類子層不可分辨（使用者決定：一律 class）。提示被動態藏掉也一樣。
+  test.each([
+    ["有 row1 與底列提示", NEW_FOOT_BRD("看板列表"), ROW1_BRD],
+    ["提示全被擠掉", newFoot("看板列表", ""), ""],
+  ])("「看板列表」（%s）→ class、可 engage", (_label, foot, hotkeys) => {
+    const r = classifyBoardListScreen(brdScreen({ foot, hotkeys }));
+    expect(r.variant).toBe("class");
+    expect(r.engageable).toBe(true);
+  });
+
+  test("「看板列表」＋row2 總數（newflag）→ 不 engage", () => {
+    const r = classifyBoardListScreen(
+      brdScreen({ foot: NEW_FOOT_BRD("看板列表"), hotkeys: ROW1_BRD, header: HEADER_TOTAL })
+    );
     expect(r.engageable).toBe(false);
   });
 
   test("新版信件列表／文章列表 caption 放在看板列表 row0 下 ⇒ 不命中", () => {
     expect(
-      classifyBoardListScreen(brdScreen({ foot: newFoot("文章列表", "(y)回應") }))
+      classifyBoardListScreen(brdScreen({ foot: newFoot("文章列表", " (y)回應") }))
     ).toBeNull();
   });
 
@@ -357,7 +375,7 @@ describe("classifyBoardListScreen — 新版 caption（guess）", () => {
     (caption) => {
       const rowTexts = new Array(24).fill("");
       rowTexts[0] = " 【板主:none】看板《Test》";
-      rowTexts[23] = newFoot(caption, "(y)回應 (X)推文");
+      rowTexts[23] = newFoot(caption, " (y)回應 (X)推文");
       expect(boardListContextKind({ rowTexts, curX: 0, curY: 3, rows: 24 })).toBe(
         "article-list"
       );
@@ -367,7 +385,7 @@ describe("classifyBoardListScreen — 新版 caption（guess）", () => {
   test("boardListContextKind：新版信件列表 ≠ article-list", () => {
     const rowTexts = new Array(24).fill("");
     rowTexts[0] = " 【板主:none】看板《Test》";
-    rowTexts[23] = newFoot("信件列表", "(R)回信");
+    rowTexts[23] = newFoot("信件列表", " (y)回信");
     expect(boardListContextKind({ rowTexts, curX: 0, curY: 3, rows: 24 })).not.toBe(
       "article-list"
     );
