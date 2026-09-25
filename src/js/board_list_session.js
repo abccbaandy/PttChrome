@@ -591,13 +591,13 @@ BoardListSession.prototype = {
     }
   },
 
-  // 白名單即合約。同義鍵集合照 board.c:1751-1840 的 switch：
+  // 白名單即合約。同義鍵集合照 board.c:1751-1840 的 switch（newui：`board.c#boardlist_cmds`，同一組）：
   //   PgUp: KEY_PGUP / 'P' / 'b'（**多了 'b'**，read.c 沒有）
   //   PgDn: KEY_PGDN / ' ' / 'N'
   //   ↑: KEY_UP / 'p' / 'k'   ↓: KEY_DOWN / 'n' / 'j'
   //   End: KEY_END / '$'      Home: KEY_HOME / '0'（'0' 在 board.c 就是 Home）
   //   開: KEY_RIGHT / KEY_ENTER / 'r' / 'l'
-  //   離開: KEY_LEFT / 'q'（**沒有 'e'**，那是 read.c 才有的同義鍵）
+  //   離開: KEY_LEFT / 'q' / 'e'（舊 choose_board `case 'e'` fall through 到 'q'；newui `board_cmd_quit`）
   // Ctrl-F/Ctrl-B 刻意不納入，維持 Ctrl 組合與瀏覽器快捷鍵的分界（同 list_session）。
   _classifyKey: function(e) {
     // 送不出任何 byte 的鍵（CapsLock / F1-F12 / NumLock…）：吞掉、不轉態。
@@ -634,6 +634,7 @@ BoardListSession.prototype = {
         return { class: 'open' };
       case 'ArrowLeft':
       case 'q':
+      case 'e':
         return { class: 'leave' };
       default:
         if (/^[1-9]$/.test(e.key)) return { class: 'jump-digit', digit: e.key };

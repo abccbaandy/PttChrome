@@ -419,13 +419,16 @@ describe("鍵盤白名單（board.c:1751-1840 的同義鍵）", () => {
     expect(cls("$")).toEqual({ class: "nav", op: "end" });
   });
 
-  test("開／離開：'r'/'l' 也是開，但 'e' **不是**離開（那是 read.c 才有的）", () => {
+  // 'e' 在 board.c 新舊兩代都是離開：舊 choose_board `case 'e': case KEY_LEFT: … ch = 'q'`、
+  // newui `board.c#boardlist_cmds` `{ 'e', …, board_cmd_quit }`。以前誤分成 passthrough
+  // （切原生鏡像繞一圈才離開）。
+  test("開／離開：'r'/'l' 也是開，'e' 也是離開（board.c 新舊版皆然）", () => {
     expect(cls("Enter").class).toBe("open");
     expect(cls("r").class).toBe("open");
     expect(cls("l").class).toBe("open");
     expect(cls("ArrowLeft").class).toBe("leave");
     expect(cls("q").class).toBe("leave");
-    expect(cls("e").class).toBe("passthrough");
+    expect(cls("e").class).toBe("leave");
   });
 
   test("1-9 收集跳號；改寫清單／換編號空間的鍵一律 passthrough（回來要整份重建）", () => {

@@ -94,7 +94,9 @@ pref `enableEasyReadingList`（**2026-09-16 起預設 on**）＋`easyReadingList
   依 resolved num 重寫 cells[0,7) 為 `%7d`），游標只畫在 render-time clone。
 - 導航空間＝**過濾後序列**：`visibleListIndices`（黑名單）→ `windowVisibleSequence`
   （pinned 門控）。`_sequence()` 有記憶化（O(緩衝列數) 的 rowToText，捲動每幀都要問）。
-- **鍵盤語意**（白名單一律零 server、零 byte；serverOp 的邊界判準照抄 read.c:842-880）：
+- **鍵盤語意**（白名單一律零 server、零 byte；serverOp 的邊界判準照抄 read.c:842-880。newui 搬成
+  `read.c#read_nav_cmds` → `read_cmd_up/down/pgup/pgdn/home/end` ＋ `read_move_cursor`（＝舊 `cursor_pos`，
+  含 from_top 語意與 ↑ 在第 1 列 wrap 到 `last_line`），同義鍵集合與邊界逐鍵相同，CONFIRMED 2026-09-25）：
 
   | 鍵（含同義鍵） | 游標 | 捲動 |
   |---|---|---|
@@ -161,8 +163,9 @@ pref `enableEasyReadingList`（**2026-09-16 起預設 on**）＋`easyReadingList
   - **零回應由 `fullRepaint` 兜住**：單發 End 在游標已於底端時 PTT 一個 byte 都不送
     （live-tested），而 queue 對 `fullRepaint` 送的是「鍵 ＋ Ctrl-L」，igetch 的全域
     熱鍵保證回一個完整幀給 expect 判（協定 §6）。這正是舊碼繞去 `99999999` ＋ Enter
-    的唯一理由，而 `open-pinned-end` 早就用同一招。順帶：跳號走 `search_num` 只夾到
-    最大**編號**文章，原生 End 的 `last_line` 才含置底列。
+    的唯一理由，而 `open-pinned-end` 早就用同一招。順帶：跳號的 `search_num(ch, last_line)`
+    夾到的也是含置底的 `last_line`（舊 read.c NEWDIRECT 分支／newui `read.c#read_loader`），超大號
+    會落在最後一個 ★ 列——舊文件寫「只夾到最大編號文章」是錯的。
   - **前景優先，不再靜默丟棄**：舊碼開頭 `if (!this._queue.idle) return;` 讓佇列忙碌時
     整個按鍵零 byte 消失（見不變量 18）。現在改為 `flushPendingKind('prefetch')` ＋
     `expedite(250)` ＋ 排在在飛的那筆後面（**不 flush 它**，不變量 7），並
@@ -175,8 +178,8 @@ pref `enableEasyReadingList`（**2026-09-16 起預設 on**）＋`easyReadingList
     `_sequence()` 的首/末位置，所以落點頁被 evict/prune 丟掉時它就落在**舊緩衝**的
     邊上（使用者體感＝「只移到列表頂/底部」），接著 demand prefetch 還會用舊邊界
     當 anchor 跳號把 server 游標一起拉回舊位置。三道守門見不變量 19。
-  - 看板列表（`board_list_session.js`）一字不差地照做（board.c:1768/1830、psb.c:58-64
-    CONFIRMED），前綴用 `BRD_CMD_PREFIX`。
+  - 看板列表（`board_list_session.js`）一字不差地照做（board.c:1768/1830 CONFIRMED；newui
+    `board.c#board_cmd_home/end`），前綴用 `BRD_CMD_PREFIX`。
 - **pinned 門控**：置底列只在 `_edgeDown`（已確認板尾）時進導航序列（native：置底只存在
   last page）→ 舊文區往下讀不會先看到置底文。seed/resume 時畫面含 ★ ⇒ `_edgeDown=true`。
 - **缺口 prune**：序號是連續整數，`pruneListToSegment` 在 accumulate（merge 後、**evict 前**）

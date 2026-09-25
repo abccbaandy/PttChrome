@@ -47,21 +47,26 @@ protocol §11.9）**且** footer caption 是看板列表（`src/js/screen_captio
 讀碼備忘：該 repo 是 **Big5**，`grep` 要加 `-a`，搜中文先 `iconv -f UTF-8 -t BIG5`，
 讀片段 `| iconv -c -f BIG5 -t UTF-8`。
 
-| 事實 | 出處 |
-|---|---|
-| 版型：`showtitle` row0 → 熱鍵列 row1 → `vbarf` 欄位列 row2 → body row 3..22（`myrow=2; while (++myrow < b_lines)`，b_lines=23、p_lines=20）→ `vs_footer` 在 row 23 | `board.c:1306-1364`、`var.c:297-299` |
-| **分頁對齊**：`head = (num / p_lines) * p_lines` ⇒ 頁永遠是 `[0,20) [20,40) …`，**跨頁零重疊** | `board.c:1710-1716` |
-| 序號欄 `prints("%7d", head)`（head 已 ++）⇒ **編號＝1-based 絕對位置**，可直接當 merge key／跳號目標 | `board.c:1374,1390,1427,1462` |
-| 游標＝`cursor_key(3 + num - head, 0)` → 半形 `>` 後 move 回同格。`%7d` 右對齊 ⇒ `>` 只蓋前置空白，**永遠不蓋數字** | `board.c:1717-1720`、`stuff.c:214-251` |
-| `search_num` 把 `clen > max` 夾到 `max`（＝brdnum），之後 `brdlist_foot()` **重畫 footer** ⇒ 跳號落地幀是完整的看板列表（與 read.c 不同，那邊底列會留空） | `stuff.c:189-208`、`board.c:1843-1845` |
-| newflag 時 `%7d` 印的是 `B_TOTAL`（文章總數）；群組板／無權限板印 `%7s` 空白 | `board.c:1462-1466`、`1376,1425,1471` |
-| 無權限板：`prints("%7d", head)` **緊接** `prints("X%c …")` ⇒ 數字後面沒有空白 | `board.c:1427-1435` |
-| `num` 是 **`static int`** ⇒ 游標位置跨進出保留（等同 read.c 的 getkeep 語意） | `board.c:1646` |
-| Enter 的三種落點：一般看板 → `Read()`；目錄／群組看板 → 遞迴 `choose_board`（新的編號空間）；**分隔線（`NBRD_LINE`）與無權限板 → switch 直接 break，零回應** | `board.c:1928-2018` |
+行號出處＝舊版（03cdf5eb）；「newui」欄＝`origin/piaip.newui` 7e35b24e 的函式（`choose_board` 已搬進
+`psb.c#psb_main`，2026-09-25 逐條重驗）。
+
+| 事實 | 出處（舊） | newui |
+|---|---|---|
+| 版型：`showtitle` row0 → 熱鍵列 row1 → `vbarf` 欄位列 row2 → body row 3..22（`myrow=2; while (++myrow < b_lines)`，b_lines=23、p_lines=20）→ `vs_footer` 在 row 23 | `board.c:1306-1364`、`var.c:297-299` | CONFIRMED：`header_lines=3`／`footer_lines=1`、`rows = t_lines - 4`（`board.c#choose_board`、`psb.c#psb_main`）；row1 改 `vs_cmd_bar(VS_SUB_HEADER)`（§11.10） |
+| **分頁對齊**：`head = (num / p_lines) * p_lines` ⇒ 頁永遠是 `[0,20) [20,40) …`，**跨頁零重疊** | `board.c:1710-1716` | CONFIRMED（鍵盤路徑）：`psb.c#psb_sync_cache` 游標出窗才 `base = (curr / rows) * rows`。**例外**：server 端滑鼠滾輪 `base ± 1`（`psb.c#cmd_dispatch_layers`），只在 client 送 SGR 回報時發生，見 §2.2 |
+| 序號欄 `prints("%7d", head)`（head 已 ++）⇒ **編號＝1-based 絕對位置**，可直接當 merge key／跳號目標 | `board.c:1374,1390,1427,1462` | CONFIRMED：`board.c#brdlist_renderer` `head = idx + 1` |
+| 游標＝`cursor_key(3 + num - head, 0)` → 半形 `>` 後 move 回同格。`%7d` 右對齊 ⇒ `>` 只蓋前置空白，**永遠不蓋數字** | `board.c:1717-1720`、`stuff.c:214-251` | CONFIRMED：`psb_main` `header_lines + curr - base` → `board.c#brdlist_cursor`（分類根是 col 10） |
+| `search_num` 把 `clen > max` 夾到 `max`（＝brdnum），之後 `brdlist_foot()` **重畫 footer** ⇒ 跳號落地幀是完整的看板列表 | `stuff.c:189-208`、`board.c:1843-1845` | CONFIRMED：`board.c#board_cmd_num`（`curr = total` → `psb_sync_cache` 夾到 `total-1`；`redraw_footer_lines = 1`）。newui 的 read.c 跳號也改成重畫 footer（協定 §4 ✚） |
+| newflag 時 `%7d` 印的是 `B_TOTAL`（文章總數）；群組板／無權限板印 `%7s` 空白 | `board.c:1462-1466`、`1376,1425,1471` | CONFIRMED：`brdlist_renderer` |
+| 無權限板：`prints("%7d", head)` **緊接** `prints("X%c …")` ⇒ 數字後面沒有空白 | `board.c:1427-1435` | CONFIRMED：`brdlist_renderer` |
+| `num` 是 **`static int`** ⇒ 游標位置跨進出保留（等同 read.c 的 getkeep 語意） | `board.c:1646` | **變了**：`choose_board` 仍把 `num` 傳進 `cmd.curr`，但 `psb.c#psb_init_defaults` 在 loader 之前看到 `total == 0` 就把 `curr` 歸零 ⇒ **每次重新進 `choose_board` 都落在第 1 列**（newflag 時是 `board_find_first_unread`）。進板→退板仍在同一個 `psb_main` 迴圈，游標保留 |
+| Enter 的三種落點：一般看板 → `Read()`；目錄／群組看板 → 遞迴 `choose_board`（新的編號空間）；**分隔線（`NBRD_LINE`）與無權限板 → switch 直接 break，零回應** | `board.c:1928-2018` | CONFIRMED：`board.c#board_cmd_select` → `board_enter_normal`（`!HasBoardPerm` 直接 return）／`board_enter_group`／`board_enter_fav_folder`；`NBRD_LINE` return 0 且無任何 dirty ⇒ 零回應 |
+| 離開：`←`/`q`/`e`/EOF；有 `/` 關鍵字篩選時先清篩選（留在列表） | choose_board `case 'e': case KEY_LEFT: case EOF: ch='q'` | CONFIRMED：`board.c#boardlist_cmds` → `board_cmd_quit` |
 
 ### 2.1 ⚠ 導覽鍵會 wrap（與 read.c 不同，設計的承重點）
 
-`choose_board` 的 switch 刻意用 fall-through 做 wrap（`board.c:1751-1840`）：
+`choose_board` 的 switch 刻意用 fall-through 做 wrap（`board.c:1751-1840`；newui 搬成
+`board.c#board_cmd_pgup/pgdn/up/down/home/end`，語意逐鍵相同，CONFIRMED；另多了 `Ctrl-B`/`Ctrl-F` 翻頁）：
 
 | 鍵 | 行為 |
 |---|---|
@@ -73,6 +78,15 @@ protocol §11.9）**且** footer caption 是看板列表（`src/js/screen_captio
 
 **本地游標照 web 慣例夾住，不照抄 wrap**（2026-09-02 使用者拍板）。守護在
 `board_list_session.test.js`「本地導覽（游標夾住…）」那組。
+
+### 2.2 server 端滑鼠（newui）
+
+`psb.c#cmd_dispatch_layers` 只在 `key == KEY_MOUSE`（client 送 SGR 回報）時處理滑鼠：滾輪把
+`base` 移 ±1（**打破分頁對齊**）、左鍵＝選取＋Enter。本 client 只在 `listRenderMode === 'native'`
+且 pref `mouseServerReport` 開、主機也開了 tracking 時才回報（`pttchrome.jsx#_serverMouseReportable`、
+`mouse_regions.js#resolveMouseGates`）⇒ 好讀接管期間不會送。原生鏡像（functionMode）期間的滾輪可能讓
+server `base` 不對齊：抓頁以**絕對編號** merge、`boardListFetchVerdict` 只看游標落點 ⇒ 正確性不受影響，
+只是那一腿補到的新列變少。**日後若在接管期間送回報，必須先處理 base 不對齊。**
 
 ---
 
@@ -198,7 +212,8 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 
 #### 背景填充要**雙向**（2026-09-03 live 實測）
 
-`choose_board` 的 `num` 是 static ⇒ PTT 記得上次離開的位置，**進來常常直接落在最後一頁**。
+`choose_board` 的 `num` 是 static ⇒ 舊版 PTT 記得上次離開的位置，**進來常常直接落在最後一頁**
+（newui 一律從第 1 列進來，見 §2；但進板→退板仍會落在任意位置，雙向照樣需要）。
 只往下填的話那一腿一次就撞到板尾（`search_num` 夾值），背景填充就此結束 —— 實測
 `buffered=4`、視口 20 列、上面整份清單要等使用者自己按 ↑ 才補得回來。
 `_maybeFill` 因此是「先往下、下面到邊了再往上」，而且**視口還沒填滿時無條件補**
@@ -234,7 +249,7 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 ### 4.5 鍵盤白名單（枚舉即合約）
 
 同義鍵照 `board.c:1751-1840`，**與 read.c 有兩處不同**：PgUp 多一個 `b`、`0` 是 Home；
-離開只有 `←`/`q`（**沒有 `e`**）。開是 `Enter`/`→`/`r`/`l`。`1-9` 走本地浮層收集跳號。
+離開是 `←`/`q`/`e`（`e` 在 board.c 新舊版都是離開；2026-09-25 前誤分成 passthrough）。開是 `Enter`/`→`/`r`/`l`。`1-9` 走本地浮層收集跳號。
 **A 類鍵（原地重繪，2026-09-03）＝`t`／`v`／`V`**：`t` 是 `fav_tag`/admtag 後 fall through 到
 `KEY_DOWN`（游標下移一列），`v`/`V` 是 `brc_toggle_all_read` → `show_brdlist(head,0,newflag)` 原地重畫
 （board.c:1802/1871）。三者都不開 prompt、不換編號空間 ⇒ 走**凍結交易**（`native-inplace`），

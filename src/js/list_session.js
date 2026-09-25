@@ -1820,8 +1820,9 @@ ListSession.prototype = {
       // \f 在 prompt／pmore／編輯器內都是零副作用的（協定 §6）。
       fullRepaint: true,
       // **不可以寫成 kind === 'clean-list'**（陷阱 T1）：這個鍵前面若剛跑過
-      // inplace-sync-jump，server 虛擬螢幕的底列是空的（協定 §4 ✚），redrawwin
-      // 重繪的是**現狀**而不是推進狀態 ⇒ \f 之後仍然不是 clean-list。用 park 指紋。
+      // inplace-sync-jump，舊版 server 虛擬螢幕的底列是空的（協定 §4 ✚），redrawwin
+      // 重繪的是**現狀**而不是推進狀態 ⇒ \f 之後仍然不是 clean-list。newui 的
+      // read.c#read_cmd_num 會重畫 footer（變 clean-list）；park 指紋兩代通吃。
       expect: function(snap, facts) {
         if (
           facts.curX <= 1 &&
@@ -2809,9 +2810,10 @@ ListSession.prototype = {
       keys: String(num) + '\r',
       kind: 'open-jump',
       expect: function(snap, facts) {
-        // Recorded protocol fact (protocol §4 ✚): after a number jump the
-        // bottom row stays EMPTY until the next response — transient, never
+        // Recorded protocol fact (protocol §4 ✚): on the old server the
+        // bottom row stays EMPTY after a number jump — transient, never
         // clean-list (a \f redraw repaints that same virtual screen, §6).
+        // newui (read.c#read_cmd_num) repaints the footer ⇒ clean-list.
         // Accept the landing by the cursor PARK position on the target.
         return (
           facts.cursorRowNum === num &&
@@ -3736,9 +3738,9 @@ ListSession.prototype = {
   },
 
   // End = 原生 End 直通（`\x1b[4~`）。read.c:893-902 CONFIRMED：
-  // `KEY_END`/`$` → `new_ln = last_line`，**含置底文**——比舊做法的
-  // `99999999\r`（search_num 只夾到最大**編號**文章，read.c:190-210）更接近
-  // 「末頁」的直覺。
+  // `KEY_END`/`$` → `new_ln = last_line`，**含置底文**。舊做法的
+  // `99999999\r` 其實落點相同（search_num 夾到 last_line，而 last_line 本來就含
+  // 置底：舊 read.c NEWDIRECT 分支／newui read.c#read_loader），原生鍵只是少一段 prompt。
   //
   // 「游標已在底端時 End 零回應會 timeout（live-tested）」是舊做法繞開原生鍵的
   // 唯一理由，`fullRepaint` 已經把它解決掉了：queue 送的是 `\x1b[4~\f`，
@@ -3776,8 +3778,9 @@ ListSession.prototype = {
         self._prunePivotOverride = null; // keep the landing (max-number) segment
       },
       expect: function(snap, facts) {
-        // Jump landing fingerprint (protocol §4 ✚: bottom row stays empty →
-        // transient, never clean-list): parked in the entry area, on a row at
+        // Jump landing fingerprint (protocol §4 ✚: the old server leaves the
+        // bottom row empty → transient; newui repaints the footer): parked in
+        // the entry area, on a row at
         // or past our previous bottom edge (a pinned row parses as null num).
         // anchor == null（buffer 裡一列編號都沒有）不再靜默 return —— 那是不變量
         // 17 的死局殘留；沒有錨點就純粹不拿它當條件，命令照樣送得出去。

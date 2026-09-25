@@ -300,7 +300,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 - 刪除文 `iscorpse = (owner[0]=='-' && owner[1]==0)` ⇒ 作者欄是單一 `-`。
 - **owner 欄不一定是 userid**（CONFIRMED）：`mbbsd/syspost.c#post_msg2` 直接 `STRLCPY(fhdr.owner, author)`，呼叫端傳 `"[系統]"`／`"[" BBSMNAME "法院]"`；匿名板 `bbs.c` HAVE_ANONYMOUS 分支 owner＝`real_name + "."`；列表原樣 `%-13.12s` 印出。live PttCurrent 看到的是無括號「系統」（guess：站方用 `bbs.c` 的改作者欄功能改過）。文章檔頭同源 ⇒ pmore 顯示 `作者  [系統]`，`comment_parse.js#parseArticleHeader` 對此回 `{author:null, board}`（仍算 header，清掉上一篇原PO）。
 - client 對應常數：`comment_parse.js` 的 `LIST_AUTHOR_COL_START=17` / `LIST_AUTHOR_COL_END=29`（owner 內容 end-exclusive）／`LIST_TITLE_COL_START=30`（mark 起點）。**兩者差一格 padding，別混用**。
-- **置底文只出現在板尾頁**：`get_records_and_bottom`（`mbbsd/read.c` ~1052）當 `n >= headers_size` **或 `MODE_SELECT|MODE_DIGEST`** 走純 `get_records` 不含置底。⇒ 非板尾頁、`/` 篩選清單、文摘模式**必無**置底列。
+- **置底文只出現在板尾頁**：`get_records_and_bottom`（`mbbsd/read.c` ~1052）當 `n >= headers_size` **或 `MODE_SELECT|MODE_DIGEST`** 走純 `get_records` 不含置底。⇒ 非板尾頁、`/` 篩選清單、文摘模式**必無**置底列。newui（`.DIR.bottom` 改存 `boardheader_t.bottom[]`）CONFIRMED 同：置底是序列尾端的虛擬延伸（`read.c#read_loader` `last_line = btotal + bottom_count`、`read_renderer` 只對 `disp_num > bottom_line` 設 `FILE_BOTTOM`），MODE_SELECT/DIGEST 的 `bottom_count = 0`；★ 仍是 `bbs.c` doent 的 `"  " … "  ★ "`。
 
 ## 4. burst 特徵（一次按鍵回應動了哪些列）
 
@@ -313,7 +313,8 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 | 文章內翻頁 | pmore 自管；底列狀態列 `  瀏覽 第 %d/%d 頁 (%d%%)`（單頁版 :2137）＋`目前顯示: 第 %02d~%02d 行` | `mbbsd/pmore.c:2130,2137,2166` |
 | 文章返回列表 | i_read 收 FULLUPDATE → row0-2＋row3..rows-1 全重建 | `mbbsd/read.c:1172-` |
 | prompt（`/` 搜尋、數字跳號…） | 畫在底列附近，游標 park 在輸入點；結束後 dirty 更新還原 | `mbbsd/read.c`（各 key handler）＋vget 系 |
-| **數字跳號完成後** ✚ | prompt 行被清掉、**底列留空**（feeter「文章選讀」要到**下一個**回應才重畫）；游標 park 在目標 entry 列 col≤1 | `tests/e2e/cassettes/cchat-list-nav.json` jump step 實錄（settle 畫面末列全空）。client 端 open-jump 完成判定因此**不能**等 clean-list，改用 park＋目標序號（`list_session.js#_beginOpen`） |
+| **數字跳號完成後** ✚ | 舊版：prompt 行被清掉、**底列留空**（feeter「文章選讀」要到**下一個**回應才重畫）；游標 park 在目標 entry 列 col≤1。**newui：`read.c#read_cmd_num` 設 `redraw_footer_lines = 1` ⇒ 底列當場重畫成 caption（clean-list）**（看板列表 `board_cmd_num` 同，CONFIRMED 讀碼）；guess：落地頁以 clean-list 被 accumulate 無害，**上線後錄 cassette 驗** | `tests/e2e/cassettes/cchat-list-nav.json` jump step 實錄（舊版，settle 畫面末列全空）。client 端 open-jump 完成判定因此**不能**等 clean-list，改用 park＋目標序號（`list_session.js#_beginOpen`）——兩代通吃 |
+| newui 的列表重畫粒度 | `psb.c#psb_main`：同頁移動只重畫新舊游標兩列；換頁（`base` 變）＝`cmd.redraw` → `clear()` 全畫面（pfterm 只送差異 ⇒ 沒變的 row0-2 零 byte）；新信只重畫 header 3 列。client 看的是 TermBuf 全畫面 ⇒「一幀＝完整列表」不受影響 | CONFIRMED 讀碼 |
 
 ## 5. 游標 park 位置（page fingerprint）
 
@@ -382,12 +383,12 @@ pttbbs source 或線上實測位元組，不可與被測程式共用同一個假
 - **igetch 全域熱鍵**：`Ctrl('L')` → `redrawwin()+refresh()` 後 `continue`（`mbbsd/io.c` igetch switch）——`\f` 永不回傳給呼叫者，等同「插入一幀全幅重繪」。`vkey()`＝`igetch()`（io.c `vkey`），故**所有走 vkey 的輸入點都吃這條**。
 - **getdata/vget 中途誤送安全**：`getdata` → `vgets` → `vgetstring`（`mbbsd/stuff.c:372`→`mbbsd/vtuikit.c:1154`）主迴圈 `c = vkey()` → `\f` 在 igetch 層就被攔掉，不進輸入 buffer、不炸，且照樣觸發全幅重繪（游標 park 回輸入點）。即使未被攔，content filter `c < ' '` 也只 `bell(); continue`。
 - **pmore 內安全**：pmore 主迴圈 `ch = vkey()`（`mbbsd/pmore.c:2537`）→ 同樣被 igetch 攔截全幅重繪。開文/退文交易尾附 `\f` 可行。
-- **read.c 列表層再保險**：`i_read_key` 自己也有 `case Ctrl('L'): redrawwin()+refresh()`（`mbbsd/read.c:735`）。
+- **read.c 列表層再保險**：`i_read_key` 自己也有 `case Ctrl('L'): redrawwin()+refresh()`（`mbbsd/read.c:735`）。newui 已刪（`read_nav_cmds` 無 Ctrl-L），由 `io.c#igetch` 的全域熱鍵兜住，行為不變。
 - typeahead 交互（BePTT 實證＋§2 推論）：`指令+\f` 同送 → 中間增量重繪被跳繪吞 → client 恰見一幀全幅畫面。單獨 `\f`＝零副作用「我在哪」探針。
 - **推論（2026-08-15 live 實錯）：`\f` 關不掉任何「按任意鍵」**。`pressanykey()`＝`vmsg(NULL)` 的 `do { i = vkey(); } while (i == 0)`——`\f` 在 `system_key_hook`（`io.c:196-203`）就回 `KEY_INCOMPLETE`，`vkey()` 對它 `continue`（`io.c:432-434`），**那個 byte 根本不會成為一個「鍵」**。拿它當關框鍵的後果是**整串位移一格**：框沒關掉 → 下一個字元被拿去關框 → 剩下的字串被 pager／列表當快捷鍵逐鍵吃掉（實錯：`\f` + `sC_Chat\r` → `s` 關框、`h` 開說明、`a` 跳作者下一篇，人直接跑到別篇文章）。要關 pressanykey 一律用**空白鍵**。
 - **零回應跳號（CONFIRMED，2026-08-25 live 錄製）：跳號到真游標「已經所在」的那一列 ⇒ 畫面零增量 ⇒ server 送 0 bytes。** 證據 `ptt-debug-20260825-105701#t=12562`：t=10151 的 prefetch 錨定腿已送過 `2381\r` 把游標停在 2381，t=12562 的 open-jump 又送同一個 `2381\r` → 整整 4002ms 一個 byte 都沒有，直到 client 的軟逾時探針才問出答案。**這不是「server 偶發抽風」，是可重現的協定行為**（PTT 只送畫面差異）。⇒ client 端所有 `<數字>\r` 交易一律尾附 `\f`（見 `src/js/list_session.js` 的跳號腿與 `docs/easy-reading-list.md` 不變量 7g）；同理，任何「目標可能等於現況」的鍵（End 於底端、Home 於頂端）都屬同一類。
 - `\f` 不取代 settle：全幅重繪仍拆包（OBUFSIZE 3072），settle 判「何時看」、`\f` 保證「必有得看」。
-- **重要限制（M1 實測，cchat-list-nav `\f` 版卷）：`redrawwin` 重繪的是 server 虛擬螢幕「現狀」，不會推進畫面狀態**——跳號完成後 server 虛擬螢幕的底列本來就空（§4 ✚：feeter 要到下一個 PARTUPDATE 才重畫），`跳號+\f` 的全幅重繪底列**仍空**＝classify 仍 transient、永非 clean-list。⇒ jump 落點判定必須維持 park 指紋（§4/§5），「jump 尾附 `\f` 換 clean-list expect」不成立。`\f` 的真實價值＝**零回應情境的確定性化**：timeout 探針（強制產生一幀可判定畫面）、相對命令 miss（`鍵+\f` 保證有回應）。
+- **重要限制（M1 實測，cchat-list-nav `\f` 版卷）：`redrawwin` 重繪的是 server 虛擬螢幕「現狀」，不會推進畫面狀態**——跳號完成後（舊版）server 虛擬螢幕的底列本來就空（§4 ✚：feeter 要到下一個 PARTUPDATE 才重畫；newui 當場重畫，見 §4 ✚），`跳號+\f` 的全幅重繪底列**仍空**＝classify 仍 transient、永非 clean-list。⇒ jump 落點判定必須維持 park 指紋（§4/§5），「jump 尾附 `\f` 換 clean-list expect」不成立。`\f` 的真實價值＝**零回應情境的確定性化**：timeout 探針（強制產生一幀可判定畫面）、相對命令 miss（`鍵+\f` 保證有回應）。
 
 ## 6.1 「等一個按鍵」的三種畫面：指紋與收尾鍵（2026-09 CONFIRMED）
 
@@ -463,13 +464,14 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 
 - 進入：`/` → `select_read(locmem, RS_KEYWORD)`（`mbbsd/read.c:811-813`；舊記的 `:776` 現在是 Ctrl-H 的 `RS_NEWPOST`，行號會漂、以函式名為準）→ `getdata(b_lines, 0, "搜尋標題: ", …, DOECHO)`（Enter 收尾；空字串→`READ_REDRAW` 回原列表）→ 命中 count>0：`currmode |= MODE_SELECT` ＋ `NEWDIRECT`（全幅重建搜尋清單，序號空間獨立、無置底，見 §3）；count==0：`READ_REDRAW`（回原列表全幅重繪，底列 vmsg 類訊息）。
 - 已在 MODE_SELECT 再 `/`＝「增加條件」疊加篩選。
-- **退出：`q`／`e`／`←`**（`read.c:712-725`）→ `board_select()` 回主 directory ＋ `NEWDIRECT` 全幅重建主列表；**top=crs-p_lines+1（游標在視窗底列）**。
+- **newui（SR.* 換成 `search.svc`）CONFIRMED 讀碼**：`read.c#select_read` 命中 → `NEWDIRECT`、`sr_locmem` 落在末列（`read_loader` `is_newdirect`）；`total <= 0` → `READ_REDRAW`；序號＝`read_view_v2p`＝結果內 1-based（獨立空間、`bottom_count = 0`）。退出由 `read_cmd_quit` 以 `read_view_real_recno` 換回**主目錄的實體序號**當 `crs_ln`（舊版用 `refer`）⇒ 下一條「落點＝已讀進度」在 newui 是 guess，應改為落在剛才游標那篇，**上線後實測**。
+- **退出：`q`／`e`／`←`**（`read.c:712-725`；newui `read.c#read_cmd_quit`，CONFIRMED 同）→ `board_select()` 回主 directory ＋ `NEWDIRECT` 全幅重建主列表；**top=crs-p_lines+1（游標在視窗底列）**。
 - **退出落點 = 帳號已讀進度，非進 select 前位置**（live CONFIRMED 2026-07-06，C_Chat 三次重測落點恆定於同一舊序號）：`crs_ln=refer` 的 refer 解析回主列表時採該板閱讀進度。⇒ client 不得假設退回畫面含進板時取樣的最新序號（re-seed 後 fill 只向上，buffer 可能整段低於進板頁）；測試判準用「序號回到主空間（> select 清單 max）」。
 - **select 清單 row0 指紋**：板名前綴由「看板」變「**系列**《板名》」（live CONFIRMED）——可做輔助指紋，但主要區分仍靠 client 自身交易狀態。
 
 ## 8.1 `#` AID 搜尋交易（`select_by_aid`，CONFIRMED）
 
-`mbbsd/read.c:366-481`；入口 `i_read_key` 的 `case '#'`（`read.c:766-768`）。**不走 `read_comms[]` onekey 表**（`bbs.c` 表中 35 號為 `{0,NULL}`）⇒ 一般/mail/man/digest 各模式一律生效。
+`mbbsd/read.c:366-481`；入口 `i_read_key` 的 `case '#'`（`read.c:766-768`；newui `read.c#read_common_cmds` → `read_cmd_aid`，成功仍 `move(b_lines)+clrtoeol`＋`DONOTHING` ⇒ 同頁落點底列留空、換頁則 psb 全幅重畫；置底改搜 `boardheader_t.bottom[]`，落點 `btotal + slot`，CONFIRMED）。**不走 `read_comms[]` onekey 表**（`bbs.c` 表中 35 號為 `{0,NULL}`）⇒ 一般/mail/man/digest 各模式一律生效。
 
 - prompt：`getdata(b_lines, 0, "搜尋" AID_DISPLAYNAME ": #", aidc, 20, DOECHO)` ⇒ 底列全文 **`搜尋文章代碼(AID): #`**（`AID_DISPLAYNAME` 見 `include/common.h:151`）。尾端 `#` **印死在 prompt 裡**，非使用者輸入。
 - `DOECHO`＝`VGET_DEFAULT` → `vgets`/`vgetstring`（`vtuikit.c:1150`）：**Enter 收尾**；ESC 或空字串＝取消（`move(b_lines,0); clrtoeol(); return FULLUPDATE`）。buffer len 20 ⇒ 實收上限 19 bytes。
@@ -1010,15 +1012,17 @@ underline** ⇒ reverse 更早就被攤平成 fg/bg 互換），所以擦除條�
 
 | 畫面 | source | `KEY_HOME`（同義 `0`） | `KEY_END`（同義 `$`） |
 |---|---|---|---|
-| 文章列表 | `mbbsd/read.c:893-902` | `new_ln = 0; new_top = 0` | `new_ln = last_line; new_top = p_lines-1` |
-| 看板列表 | `mbbsd/board.c:1830 / 1768` | `num = 0` | `num = brdnum - 1` |
-| psb 通用清單 | `mbbsd/psb.c:58-64` | `return 0` | `return total-1` |
+| 文章列表 | `mbbsd/read.c:893-902`（newui `read.c#read_cmd_home/end`，CONFIRMED 同義） | `new_ln = 0; new_top = 0` | `new_ln = last_line; new_top = p_lines-1` |
+| 看板列表 | `mbbsd/board.c:1830 / 1768`（newui `board.c#board_cmd_home/end`） | `num = 0` | `num = brdnum - 1` |
+| psb 通用清單 | `mbbsd/psb.c:58-64`（newui `psb.c#psb_cmd_home/end`） | `return 0` | `return total-1` |
 
 兩個會影響 client 設計的事實：
 
 - **`last_line` 含置底文**（read.c 的 `last_line` 是 entry 總數 - 1，置底列也在裡面）⇒ 原生 End 落在
-  真正的板尾；而跳號 `<很大的數字>` + `⏎` 走 `search_num`（`stuff.c:189-208`）只夾到最大**編號**文章，
-  停在置底列**之前**。要「跳到末頁」就該用原生 End。
+  真正的板尾。跳號 `<很大的數字>` + `⏎` 的 `search_num(ch, last_line)`（`stuff.c:189-208`）夾到的**也是**
+  這個 `last_line` ⇒ 同樣落在最後一個 ★ 列（2026-09-25 讀碼更正：舊版本節寫「只夾到最大編號文章」是錯的，
+  舊 read.c NEWDIRECT 分支就已 `last_line += getbottomtotal`；newui `read.c#read_loader` 同）。
+  用原生 End 的理由是少一段 prompt、少一次 `search_num` 畫面。
 - **游標已經在落點上時 PTT 一個 byte 都不送**（live-tested）。這正是舊 client 繞去跳號的理由，
   現在由 §6 的 `\f` 解決：交易送「鍵 ＋ Ctrl-L」，igetch 的全域熱鍵保證回一個完整幀。
 
@@ -1043,6 +1047,8 @@ prefetch 的落點）。所以任何「對游標所在那一列動作」的鍵�
 
 ### 文章列表（`mbbsd/read.c#i_read_key`）
 
+newui 搬到 `read.c#read_common_cmds`（`read_cmd_query/edituser/tag/tag_thread/tag_prune/clear_tag`，一律取 `headers[curr - base]`），吃真游標這件事 CONFIRMED 不變。
+
 | 鍵 | 行 | 實作 | 吃真游標？ |
 |---|---|---|---|
 | `Ctrl-Q` | :904 | `my_query(headers[locmem->crs_ln - locmem->top_ln].owner)` | **是**（查詢作者） |
@@ -1057,6 +1063,8 @@ prefetch 的落點）。所以任何「對游標所在那一列動作」的鍵�
 | `Ctrl-F` / `Ctrl-B` | :880 / :886 | 翻頁同義鍵 | 否（刻意不納白名單，維持與瀏覽器快捷鍵的分界） |
 
 ### 看板列表（`mbbsd/board.c`）
+
+newui 搬到 `board.c#boardlist_cmds`（`Ctrl-S` `board_cmd_search_local`、`Ctrl-W`/`Ctrl-Y` `board_cmd_whereami`、`t` `board_cmd_tag`，皆以 `ctx->curr` 為準），CONFIRMED 不變。
 
 | 鍵 | 行 | 實作 | 吃真游標？ |
 |---|---|---|---|
@@ -1293,4 +1301,4 @@ server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複�
   板主熱鍵要先 `Ctrl-P` 切編輯模式。本專案沒有自動送 `i`；`aid_navigation` 逃生鍵是 ←；`screen_dismiss` 只在
   「請按任意鍵」／vmsg／輸入欄才動作 ⇒ 無需改。**日後若要自動化 `[i]`，離開一律送 ←。**
 - **滑鼠**：新版伺服器端有 locator 反白與指令列 hotspot（`vtuikit.c#vs_locator_*`、`cmd_bar_*hotspot*`），只在
-  client 送 xterm 滑鼠回報時才有作用。本專案未送，未稽核（見 `docs/handoff/psb-rewrite-audit.md`）。
+  client 送 xterm 滑鼠回報時才有作用（`psb.c#cmd_dispatch_layers` 只處理 `KEY_MOUSE`）。2026-09-25 稽核：滾輪把 `base` 移 ±1 會打破看板列表的分頁對齊；本 client 只在原生畫面（`listRenderMode === 'native'`）且使用者開了 `mouseServerReport` 才回報，正確性不受影響，細節見 `docs/board-list-smooth-scroll.md` §2.2。
