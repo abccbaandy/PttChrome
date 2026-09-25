@@ -13,9 +13,8 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 ## 跑起來（踩雷點，務必照做）
 - 啟動 dev server：`yarn start` → http://localhost:8080（= `vite`）
   - **收工前務必手動關掉：`yarn kill:dev`**。這是規範不是自動化——**只要這個 session 起過 dev server（`yarn start`），結束前就要自己跑一次**，別指望 hook。
-    - `.claude/settings.json` 只剩兩個 hook：PostToolUse 記旗標檔 `.claude/.dev-server-running`（Bash/PowerShell 跑到 `yarn start`/`vite` 時），SessionEnd 才殺——**只殺 Claude 自己開的**，不動使用者手動開的 server。
-    - **Stop hook 已於 2026-09-04 移除，不要再加回去。** 它是「每個 assistant turn 結束」就觸發（不是 session 結束），會把 **Playwright 自己起的 dev server** 砍掉 ⇒ e2e 跑到一半整批 `page.goto: net::ERR_CONNECTION_REFUSED`（實測一次 254 條裡 129 條這樣紅），看起來像被測 code 大爆炸。而且 PostToolUse 的 `grep -qE '\bvite\b'` 吃的是 tool 的**輸入＋輸出**，光是 `cat playwright.config.js` 就會立起旗標 ⇒ 連前景跑也中槍。用「收工手動 `yarn kill:dev`」換掉這個自動化是刻意的取捨。
-  - 踩坑：Windows 上 vite 只綁 **IPv6** `[::1]:8080`，舊版 `kill-dev-server.js` 用 `netstat -ano -p tcp`（僅列 IPv4）→ 抓不到 PID、腳本又一律 exit 0 → `yarn kill:dev` **靜默沒殺到**。已改用不帶 `-p` 的 `netstat -ano` 自行篩（純函式守護 `tests/unit/kill_dev_server_parse.test.js`）。
+    - `.claude/settings.json` 的 hook 只在 SessionEnd 殺 Claude 自己開的 server。不要加 Stop hook：它每個 assistant turn 結束都會觸發，會砍掉 Playwright 自己起的 dev server，讓 e2e 整批 `ERR_CONNECTION_REFUSED`。
+  - Windows 上 vite 只綁 IPv6 `[::1]:8080`，所以 `kill-dev-server.js` 用不帶 `-p` 的 `netstat -ano` 篩 PID（守護 `tests/unit/kill_dev_server_parse.test.js`）。
   - 用 **Node**（dev server ≥20.19；`test:unit` 的 jsdom 30 另需 `^22.22.2 || ^24.15.0 || >=26` → 裝最新 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
   - 套件管理用 **yarn**（Yarn v4，`node-modules` linker，設定於 `.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。**勿用 npm**（會產生多餘 `package-lock.json`）。CI 安裝用 `yarn install --immutable`。Yarn v4 不跑自訂 `pre*`/`post*` script；build 產物清理由 Vite `emptyOutDir` 處理（無 `clean` script）。Yarn v4 script 是 portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數（`record:cassette` 用此，勿再引入 cross-env）。
 - dev server 內建 `/bbs` WebSocket proxy，改寫 Origin→term.ptt.cc，直連 `wss://ws.ptt.cc/bbs`。開頁即自動連真 PTT，**不需任何中繼**。
@@ -71,10 +70,8 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     `tests/e2e/README.md`「登入預算」。
     理由：PTT 有登入頻率限制，開源碼讀得到的下界是「同一分鐘 >3 次 delay／>10 次 reject、
     同一小時 >20 次 delay」（`daemon/utmpd/utmpserver3.c#action_frequently`，完整表在
-    `docs/pttbbs-screen-protocol.md` §11.2）。2026-08-25 之前一輪要登入十幾次
-    （`easy-reading-list.spec.js` 一支就 9 次），連跑兩輪直接把帳號打進封鎖；
-    2026-08-26 一輪 3 次時，為了做一次「乾淨樹 ↔ 有改動」的對照連跑五輪又被鎖一次
-    ——**對照實驗一輪就該收手**，別重複這個錯。
+    `docs/pttbbs-screen-protocol.md` §11.2），多輪連跑就會把帳號打進封鎖。
+    同理，「乾淨樹 ↔ 有改動」的對照實驗只跑一輪。
   - **被 PTT 鎖住時絕對不可以重跑**：畫面出現「[PTT DDoS/BOT 偵測系統] …已被暫時禁止登入／暫停連線」
     ＝PTT 站方私有的防濫用層（**不在 pttbbs 開源碼**）。封鎖畫面自己寫明：**無法申請手動解除**、
     「**無任何登入行為**之後最多 **12 小時**後會恢復」、「在暫停期間若持續嘗試登入…**將無限期延長**」。
@@ -87,24 +84,21 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     「查無」而不是報錯 ⇒ 很容易誤判成「這行為不在開源碼裡」。用
     `grep -rlF "$(printf '登入太頻繁' | iconv -f UTF-8 -t BIG5)" --include=*.c 3rd_script/pttbbs`，
     讀片段時 `| iconv -f BIG5 -t UTF-8`。
-  - **live spec 的選文／等待不准靠執行順序或固定 timeout**（2026-08-29「樓層編號」整輪紅、單獨跑綠）：
-    pref 會跨 spec 殘留（`resetSession` 現在一併關 `enableEasyReadingList`）、`End`＋`Enter` 會開到
+  - **live spec 的選文／等待不准靠執行順序或固定 timeout**（否則整輪紅、單獨跑綠）：
+    pref 會跨 spec 殘留（`resetSession` 會一併關 `enableEasyReadingList`）、`End`＋`Enter` 會開到
     置底公告（read.c `last_line` 含置底 ⇒ 十幾頁、常常零推文）。選文用
     `helpers/ptt.js#pickListArticleWithComments`＋`openArticleByNumber`（推文數列表上就看得到，
     開文前即可保證），等待綁內容條件。詳見 `tests/e2e/README.md`「選文與等待」。
   - **`page.goto: net::ERR_CONNECTION_REFUSED` 大面積紅 ＝ dev server 被砍，不是被測 code 壞**：
-    判準是「前面若干條全綠、之後**整批**同一個錯、每條耗時一致」。2026-09-04 之前的元凶是
-    `.claude/settings.json` 的 Stop hook（每個 assistant turn 結束就跑 `kill-dev-server.js`），
-    **該 hook 已移除**（理由見「跑起來」節，別加回去）。真的再遇到就先確認 8080 還活著，
+    判準是「前面若干條全綠、之後**整批**同一個錯、每條耗時一致」。先確認 8080 還活著，
     別往被測 code 追。
   - **整套 offline e2e 約 10 分鐘**，超過 Bash 工具的 600s 上限會被移到背景。**分批前景跑**
     （依 spec 檔切三、四批，各 2–3 分鐘）比丟背景好讀也好判斷：背景跑拿不到即時 exit code，
     而「exit code 就是結論」的規矩對 `playwright test` 一樣適用（禁接管線，見「push 後必查 CI」）。
-  - **Playwright 升版後（含 Dependabot bump）本機必跑 `yarn playwright install chromium`**：新版綁新 browser binary，
-    沒裝會整批 e2e 秒掛（症狀：`browserType.launch: Executable doesn't exist`），與被測 code 無關。CI 每次都重裝所以不受影響。
-    - 更早一步的症狀：`yarn test:e2e*` 直接 `command not found: playwright`＝**本機 node_modules 落後 lockfile**
-      （Dependabot 升版後沒重裝）。修法 `yarn install --immutable` → `yarn playwright install chromium`，不是 script 壞了。
-- **強制規範：改到渲染/畫面這類易壞 code，提交前必跑 e2e**（`yarn test:e2e`，至少 `easy-reading.spec.js`+`enhance.spec.js`）。
+  - **e2e 整批秒掛、零 AssertionError ＝本機環境問題，不是被測 code 壞**（Playwright 升版後沒裝瀏覽器、
+    Windows 上 `STATUS_DLL_INIT_FAILED`／Firefox `spawn UNKNOWN`／content sandbox 等）。症狀→處置對照表見
+    `docs/local-env-troubleshooting.md`，先查它再動 code。
+- **改到渲染/畫面這類易壞 code，提交前必跑 e2e**（`yarn test:e2e`，至少 `easy-reading.spec.js`+`enhance.spec.js`）。
   適用 `term_view.js`、`term_ui.js`、`src/render/**`、`src/components/**`、`easy_reading.js`、`pttchrome.jsx` 渲染/切換路徑、`term_buf.js` 渲染相關等。
   理由：unit（jsdom + testing-library）仍**不跑真瀏覽器/真 WebSocket/完整 boot 鏈**，捕捉不到「一進文章即炸」這類 runtime 崩潰
   （例：`pageLines` 用 `JSON` 克隆剝掉 TermChar prototype 方法 → `ch.isStartOfURL is not a function`）。不可只靠 unit + build 綠就交付。
@@ -119,29 +113,12 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     外加跑 **`yarn test:e2e:offline:adverse`**（圖片改成 慢 5.2s／404／301／混合四桶，決定性）。
     CI 有對應的平行 job `test-e2e-offline-adverse`。情境表與 CONFIRMED 事實（產品端**沒有**圖片載入
     timeout；Chromium 不跟隨 `route.fulfill` 的 301）見 `docs/offline-replay-testing.md`。
-    - **本機（Windows）連續開太多 Chromium 會整個 worker 掛掉**：`worker process exited unexpectedly
-      (code=3221225794)`＝`STATUS_DLL_INIT_FAILED`（新進程連 DLL 都初始化不了）。判準＝**零
-      AssertionError、失敗案例耗時 0ms、同批 spec 在一般 offline 全綠** ⇒ 環境問題，
-      **不要因此去改被測 code**。這條已自動化：該 script 走 `scripts/run-adverse-e2e.mjs`
-      （一桶一個獨立 playwright 進程＋冷卻＋只在命中指紋時 `--last-failed` 補跑；本機關掉錄影）。
-      **exit code 分三種：0 綠／1 真失敗／2 環境問題**。逃生門 `--only=<桶,桶>`／`--batch=spec`／
-      `--no-retry`。細節與「為何重用 BrowserContext 沒用」見 `docs/offline-replay-testing.md`。
+    該 script（`scripts/run-adverse-e2e.mjs`）**exit code 分三種：0 綠／1 真失敗／2 環境問題**。
   素材一次性錄製：`yarn record:cassette`（**guest-only**，capture 為 article-scoped 不含帳號）。細節見 `docs/offline-replay-testing.md`。
   - **`yarn test:e2e:offline` 含 `offline-firefox` project**（只跑 `selection.offline.spec.js`）：**本機需先
     `yarn playwright install firefox`**，否則整批 `browserType.launch: Executable doesn't exist`。選取／複製類
     症狀 Chromium 測不出來（見 `docs/enhanced-addon.md` 踩坑 A「終端機的任何祖先都不可有 `user-select: none`」）。
-    - **Windows 上 Firefox 的 content sandbox 起不來時，那一批會整包 `browserContext.newPage: Test timeout`**
-      （瀏覽器 log 只有 `RenderCompositorSWGL failed mapping default framebuffer`＋`remoteTab is null`＝content
-      process 沒生出來，連空白頁都開不了，看起來卻像被測 code 大爆炸）。判準：**還原 code 後照樣紅**＝環境問題。
-      修法已寫進 `playwright.config.js` 的 `offline-firefox` project：`launchOptions.env` 加
-      `MOZ_DISABLE_CONTENT_SANDBOX=1`（2026-08-15 實測：headless/有頭、關 WebRender、關硬體加速、
-      `security.sandbox.content.level=0`、關 fission/e10s 全都無效，只有這個有用）。
-    - **`browserType.launch: spawn UNKNOWN` ＝這台機器的 Firefox 二進位根本起不來**（2026-09-17 實測）：
-      整批在 launch 階段就掛、**零 AssertionError**，`yarn playwright install firefox` 重裝也沒用，
-      直接執行那顆 `firefox.exe` 會回 `Permission denied`（Windows 端的防毒／執行阻擋，非 Playwright
-      也非被測 code）。判準：同一支 spec 在 `offline` (Chromium) project 全綠。處置＝**本機略過
-      `offline-firefox`，靠 CI 那一輪**（Linux runner 不受影響），不要為此改被測 code 或 config。
-- **強制規範：改 code 要連帶補測試，不准「只改不測」。**
+- **改 code 要連帶補測試，不准「只改不測」。**
   - **每修一個 bug 必先寫一個會重現該 bug 的 test（紅）→ 修到綠**，當回歸守護。沒有對應 test 的修復視為未完成，不可交付／commit。
   - 新功能／行為改動同理補對應 test。能用純邏輯重現的（逐列判斷、解析、轉碼等）一律下放 unit（首選，最穩），抽進
     `comment_parse.annotateComment` 之類純函式再於 `tests/unit/` 守護；只有 DOM/React/網路耦合、unit 抓不到的（一進文章即炸這類 runtime 崩潰）才上 e2e。
@@ -191,9 +168,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   - 雲端是 Linux：本文中 Windows 專屬的坑（IPv6-only 綁定、`STATUS_DLL_INIT_FAILED`、Firefox `spawn UNKNOWN`／content sandbox、無 `jq`/`gh`）不一定適用；
     live e2e 帳密（`PTT_USER`/`PTT_PASS`）通常不在雲端 env，**不要在雲端跑 live e2e**（登入預算／BOT 封鎖風險，見「測試」節），改跑 unit＋offline e2e 並在交付時註明。
 - **換行一律 LF**，由 `.gitattributes`（`* text=auto eol=lf`）強制，不依賴各機器的
-  `core.autocrlf`。2026-08-17 已一次性 `git add --renormalize .`（commit `76afcc6`），
-  在那之前有 7 個 fork 來的 `src/js` 檔以 CRLF 儲存 ⇒ 工具寫 LF 就整檔被當成全改
-  （改 10 行的 `term_view.js` 噴出 3904 行 diff）。勿再把任何檔案轉回 CRLF。
+  `core.autocrlf`。勿把任何檔案轉成 CRLF：工具寫 LF 時整檔會被當成全改。
   - **原始碼裡不可以放真正的 NUL 位元組**（要用就寫跳脫序列）：git 看到一個 NUL 就把
     整份檔案當二進位 ⇒ `text=auto` 對它失效、diff 退化成「Binary files differ」。
     `caption_ai_logic.js` 的 `spanKey` 踩過，已改成跳脫序列並就地註解。
@@ -205,32 +180,16 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     參數：`--branch <b>`／`--sha <sha>`／`--no-wait`（只看當下）／`--rerun-failed`（僅在它判定為已知 flaky 時才會送出重跑）。
     exit code：`0` 全綠、`1` 有失敗、`2` 工具或設定問題（**刻意分三種**，「查不到」不可被當成「沒問題」）。
     **「只查到 `Push on dev`（`event: dynamic`）」不等於全綠**：那是 CodeQL default setup 的 run，
-    本專案的 `Deploy to GitHub Pages` 可能只是還沒被建立（2026-08-27 實測 push 事件到 run 建立
-    延遲了 **11 分鐘**）。舊版會因為 CodeQL 那顆已完成就印「CI 全綠」exit 0 —— 已改成必須看到
-    本專案的 workflow run（`isProjectRun`，排除 `dynamic/*`）才判定，等不到就 exit 2；CI 逾時
-    也改成從「本專案 run 出現」那刻起算。守護 `tests/unit/ci_status_parse.test.js`。
-    `--sha` 吃短 sha／`HEAD`／tag（腳本會自己 `git rev-parse` 展開；GitHub runs API 的 `head_sha` **只吃完整 40 字元**，
-    直接送短 sha 會回空陣列＝假的「查無 run」）。剛 push 完 run 尚未建立時會寬限等 90s 才判定查無（2026-08 補，三坑都實際踩過）。
-  - **本機沒有 `jq`，也沒有 `gh` CLI**。**禁止**再用 `curl … | jq` 或 `gh run …` 拼輪詢迴圈：jq 不存在 → 解析永遠是空字串 → 判不出「跑完了沒」而空轉到逾時，錯誤又常被 `2>/dev/null` 吞掉，看起來像 CI 卡住（實際早就綠了）。此坑已重複踩多次，故改用 Node 腳本（Node 是專案硬需求，Bash／PowerShell 兩種工具都跑得動）。純函式守護在 `tests/unit/ci_status_parse.test.js`。
+    本專案的 `Deploy to GitHub Pages` 可能只是還沒被建立（push 到 run 建立可延遲十分鐘以上）；
+    腳本必須看到本專案的 workflow run（`isProjectRun`）才判定，等不到就 exit 2。
+    `--sha` 吃短 sha／`HEAD`／tag（腳本自己 `git rev-parse` 展開；runs API 的 `head_sha` 只吃完整 40 字元）。
+    守護 `tests/unit/ci_status_parse.test.js`。
+  - **本機沒有 `jq`，也沒有 `gh` CLI**。**禁止**再用 `curl … | jq` 或 `gh run …` 拼輪詢迴圈：jq 不存在 → 解析永遠是空字串 → 判不出「跑完了沒」而空轉到逾時，錯誤又常被 `2>/dev/null` 吞掉，看起來像 CI 卡住（實際早就綠了）。
   - **`ci:status` 收尾禁用 `process.exit()`**：Windows 上 Node 內建 fetch（undici）的 keep-alive socket 還開著時強制退出，
     會撞 libuv `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 94` → 進程回 **`exit=127`**，
-    把刻意分的 0/1/2 整個蓋掉（實例：短 sha 查不到時本該回 2，卻回 127）。已改成設 `process.exitCode` + 主動收連線池，勿改回去。
+    把刻意分的 0/1/2 整個蓋掉。收尾一律設 `process.exitCode` + 主動收連線池。
   - **禁止把 `yarn ci:status` 接管線**（`| tail`／`| grep`／`| head`）：shell 的管線 exit code 取自**最後一個**指令，`tail` 幾乎永遠回 0 → 上面刻意分的三種 exit code 被整個吃掉，紅的 CI 會被讀成綠的（實例：deploy job failure 卻回報 `exit=0`）。而且 `head -N` 會提早關閉管線送出 SIGPIPE，可能把還在等 run 的 `ci:status` 直接砍掉。**一律 `yarn ci:status ... > <file> 2>&1; echo "EXIT=$?"` 再讀檔**。同理適用任何「exit code 就是結論」的指令（`yarn test:unit`、`playwright test`）。
-  - **deploy job 偶發 `actions/deploy-pages@v5` timeout**：Pages 服務端卡在 `deployment_in_progress`，輪詢約 76s 後 `##[error]Timeout reached, aborting!` 並取消部署 → **測試/build 全綠但 run 紅、站台停在舊 commit**。屬 Pages 基礎設施問題，非本專案 code。判準：該 run 只有 `deploy` 一個 job 紅、`test-*`／`build` 全綠。處置：重跑失敗 job（`POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`；`ci:status --rerun-failed` 目前只認 integration flaky，不會自動重跑它）。**事後必須確認 `github-pages` 環境最新一筆 deployment 的 sha 是本次 commit 且 state=success**，否則站台仍是舊版。
-  - **e2e job 紅在「裝瀏覽器」而不是測試**：`npx playwright install --with-deps` 會先跑 `apt-get update`，
-    只要 runner image 內建的**第三方 apt 來源**處於發布中間態（`Release` 宣告的雜湊 ≠ 實際 `Packages.gz`），
-    `apt-get update` 就整包回 100 ⇒ `Failed to install browsers` / `exited with code: 100` ⇒ 瀏覽器連下載都沒開始、
-    **一條測試都沒跑**，但看起來像 e2e 整批爆炸。判準：失敗 step 的 log 只有 apt 的 `Hash Sum mismatch`，
-    沒有任何 spec 名稱；`test-unit`／`test-integration` 全綠。**重跑無效**（不是隨機掉包，是上游 index 不一致，
-    可直接抓 `dists/stable/Release` 與 `Packages.gz` 自行比對 sha256 確認）。
-    已於 2026-09-09 移除用不到的 Google Chrome 來源（`sudo rm -f /etc/apt/sources.list.d/google-chrome*`，
-    兩個 e2e job 各一步，順序必須在 install 之前）——Playwright 用自帶瀏覽器、系統依賴全來自 Ubuntu 官方 archive。
-    守護 `tests/unit/ci_apt_sources.test.js`（新增 e2e job 時別漏這一步）。
-  - **integration job（Firebase Emulator in Docker）偶發 timeout** 是已知 flaky（CI 冷啟動拉 image + 首次 Firestore 寫入超過 poll deadline，症狀 `waitForCloud timeout: upload`）。緩解手段已用盡（`INTEGRATION_TIMEOUT_MS`、CI vitest `retry: 2`、`scripts/run-integration.mjs` 的 `waitHttp` 就緒輪詢）→ 確認非真錯後用 `yarn ci:status --rerun-failed`。本機跑 `yarn test:integration` 需 **Docker**（無 Docker 只能靠 CI）。
-  - **GITHUB_TOKEN 造成的事件不會再觸發 workflow**（GitHub 防遞迴，例外只有 `workflow_dispatch`／`repository_dispatch`）：任何在 Actions 內做 merge／push 的步驟若用 `secrets.GITHUB_TOKEN`，產生的 push **不會**觸發 `deploy.yml` 的 `on: push` → 站台靜默停在舊 commit（實例 PR #16）。`dependabot-auto-merge.yml` 因此改用 GitHub App installation token（secret `AUTOMERGE_APP_CLIENT_ID`／`AUTOMERGE_APP_PRIVATE_KEY`），勿改回 GITHUB_TOKEN。查驗方式：merge commit 的 SHA 上要看得到 `Deploy to GitHub Pages` run（只有 `Push on dev` 那個 `dynamic` run 是 CodeQL default setup，不算）。
-  - **Code scanning（CodeQL default setup）的 alert 用 REST API 處理**：`PATCH /repos/{o}/{r}/code-scanning/alerts/{n}`，body `{state, dismissed_reason, dismissed_comment}`；`dismissed_reason` 只吃 `false positive`／`won't fix`／`used in tests`。兩個硬限制：**`dismissed_comment` 上限 280 字元**（超過回 422，訊息才會說「Only 280 characters are allowed」，先寫長版會白做一次）、**已 dismissed 的 alert 不能直接改 comment**（回 400 `Alert is already dismissed.`），要改必須先 `{"state":"open"}` 再重新 dismiss。
-  - **新增 CI job 時步驟順序必須是 `setup-node（取 node）→ corepack enable → setup-node（帶 cache:yarn）`**（照抄現有 job）：`cache: yarn` 會在 corepack 生效前跑 `yarn cache dir`，命中 runner 內建 yarn 1.22 → 遇 `packageManager: yarn@4.x` 直接掛在 setup-node 步（症狀 `current global version of Yarn is 1.22.22`）。**例外：`test-imgur-worker` 是 npm 子專案**（`proxy/imgur-worker` 自帶 package-lock），不走 corepack，用 `cache: npm` + `cache-dependency-path`。
-  - **新增 CI job 後要同步分支保護的 required checks**（`dev` 分支，repo 設定、**repo 裡看不到** ⇒ 最容易漏）：目前五個 `test / *` job 全是必跑 gate。漏加的後果是 Dependabot 的 `--auto` 合併不等那個 job ⇒ 它紅著也會被併進去。用 append endpoint 加，**別用整份覆蓋的 PUT**（會把其他保護欄位清成預設）：`POST /repos/{o}/{r}/branches/dev/protection/required_status_checks/contexts`，body `{"contexts":["test / <job>"]}`。context 名是 `<workflow job 名稱前綴> / <job id>`，reusable workflow 下就是 `test / <job>`。
+  - **CI 紅了但失敗的 job／step 看起來跟被測 code 無關**（deploy-pages timeout、裝瀏覽器時 apt `Hash Sum mismatch`、integration emulator timeout、GITHUB_TOKEN 觸發不了 workflow），以及 Code scanning alert 的 API 處理、**新增 CI job 的步驟順序與 required checks**：見 `docs/ci-troubleshooting.md`。
 - 增強功能整合的活躍陷阱（讀畫面用 `buf.getRowText` 而非 innerText、勿把 build.target 降回舊瀏覽器等）見 `docs/enhanced-addon.md`「踩坑筆記」A 段。
 - 渲染已統一單路徑（兩模式都走 `ScreenController`）見 `docs/easy-reading.md`「render 單軌」。改渲染路徑前先讀它。
 - **核心渲染鏈的 DOM 是外部契約，由整份 golden 快照守**：`tests/unit/fixtures/screen_golden/*.html`
@@ -257,7 +216,6 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   界線：`showsInputHelper`／`showsLiveArticleHelper` 刻意**不算** modal（終端機仍收鍵盤），勿順手納入。
 - **`view.conn` 只在 `App.onConnect` 被設**：連線從未成功時是 `undefined`。送資料一律走
   `view._send()`／`_convSend()`（內含 `if (this.conn)`），禁止直接 `this.view.conn.send(...)`。
-- 改渲染/畫面易壞 code 必跑 e2e（見「測試」段強制規範）。
 - **用腳本改檔案時，`String.replace(old, neu)` 的 neu 一律傳「回傳字串的函式」**
   （`s.replace(old, () => neu)`）：replacement 字串裡的 `$` 開頭序列是特殊語法，本專案
   的 md/註解大量出現反引號與 `$`，一個 `$` 後面接反引號就等於「把匹配點之前的全文再
@@ -269,7 +227,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   **字面值**就永遠 assert 失敗，而且看起來像「檔案內容跟我讀到的不一樣」。
   **anchor 一律挑不含反斜線的片段**，含反斜線的改動改用 Write／Edit 工具。
   實例：`long_push.js` 裡那行判斷段末是否為全形字的 `line.charAt(end - 1)` 比較式。
-- 每次踩坑如果後續session也會踩，就要寫進md
+- 踩坑後若判斷**多數**後續 session 也會踩，就寫進 md：寫進該主題的 `docs/*.md`；只有每個 session 都會碰到的才進本檔（本檔每 session 都付 token）。寫現行規則＋一句理由，不寫事件經過與日期。
 - 每次commit前都要檢查本次更動是否含新功能，如果有的話要更新README.md新功能列表，新功能定義：以一般使用者角度，所以優化、修bug都不算
 - 重大技術升級（框架/建置/依賴的升版或替換，如 React 升版、換 UI 庫、建置/測試工具替換）要同步更新「設定 → 關於」的「重大技術升級」區塊：`src/js/zh_TW_messages.js` 與 `src/js/en_US_messages.js` 的 `about_new_content`（兩語系都要改）
 - **依賴／建置鏈已全面現代化（2026-07，見 `docs/build-modernization.md` 掃描表），維持此狀態**：遇坑優先升級／換套件（並提報使用者），不要堆疊 workaround／`!important` 硬調。穩定性與現代化優先於最小改動。
