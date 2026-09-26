@@ -20,8 +20,15 @@
   修法已寫進 `playwright.config.js` 的 `offline-firefox` project：`launchOptions.env` 加
   `MOZ_DISABLE_CONTENT_SANDBOX=1`（2026-08-15 實測：headless/有頭、關 WebRender、關硬體加速、
   `security.sandbox.content.level=0`、關 fission/e10s 全都無效，只有這個有用）。
-- **`browserType.launch: spawn UNKNOWN` ＝這台機器的 Firefox 二進位根本起不來**（2026-09-17 實測）：
-  整批在 launch 階段就掛、**零 AssertionError**，`yarn playwright install firefox` 重裝也沒用，
-  直接執行那顆 `firefox.exe` 會回 `Permission denied`（Windows 端的防毒／執行阻擋，非 Playwright
-  也非被測 code）。判準：同一支 spec 在 `offline` (Chromium) project 全綠。處置＝**本機略過
-  `offline-firefox`，靠 CI 那一輪**（Linux runner 不受影響），不要為此改被測 code 或 config。
+- **`browserType.launch: spawn UNKNOWN`（Firefox 整批 launch 即掛、零 AssertionError）＝瀏覽器被裝進
+  Claude 桌面版的 MSIX 虛擬化 AppData**。CONFIRMED 機制：
+  - 在 Claude 桌面 app（MSIX 套件）內跑 `yarn playwright install`，寫進 `%LOCALAPPDATA%\ms-playwright`
+    的檔案實際落在 `%LOCALAPPDATA%\Packages\Claude_<hash>\LocalCache\Local\ms-playwright`；
+    套件內（Bash 工具）看到的是重導後的視角，套件外（一般終端機）看不到。
+  - 從套件內啟動**位於該重導路徑**的 `firefox.exe` ⇒ `Permission denied`（改檔名也一樣；無 Defender／
+    CodeIntegrity／AppLocker 事件）。同一顆 binary 從套件外啟動、或複製到非 AppData 路徑後從套件內啟動都正常。
+    Chromium 不受影響（原因 unknown）。重裝不會好——裝到哪還是被重導。
+  - 修法：使用者層級 env `PLAYWRIGHT_BROWSERS_PATH=%USERPROFILE%\.cache\ms-playwright`（家目錄不被 MSIX
+    重導），重開 Claude app 讓 env 生效，再 `yarn playwright install chromium firefox`。
+    **不要寫進 repo／config**（CI 與其他機器不需要）。
+  - 判準：`ls "$LOCALAPPDATA/ms-playwright"` 在 Bash 與一般 PowerShell 內容不一致 ⇒ 就是這個。
