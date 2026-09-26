@@ -5,8 +5,9 @@
 //      （reverseJunction 拿掉）＝ 從頭讀完的 DOM。
 //   2. 增量 —— 插入一頁只重算／重建常數級的列（不然每頁 O(文章)，整篇 O(n²)，
 //      正是 docs/easy-reading.md「累積頁的每頁 render 成本」那條 1196ms/頁 的曲線）。
-//   3. 節點沿用 —— tail 的列節點是同一個物件（圖片佔位盒、捲動錨點都靠它），而且
-//      srow／data-row 已改成新 index（選取反查、_scrollToPageRow 的外部契約）。
+//   3. 節點沿用 —— tail 的列節點是同一個物件（圖片佔位盒、捲動錨點都靠它）。位移的
+//      srow／data-row **延遲結算**：插入當幀零屬性寫入，讀的人先呼叫
+//      syncRowIndex()（選取反查、_scrollToPageRow 的外部契約）。
 //   4. tail 不編樓層、跨列合併在 J 斷開、接合點有標記。
 const counters = vi.hoisted(() => ({ rowToText: 0, rowRender: 0 }));
 
@@ -146,6 +147,7 @@ describe("反向讀取：逐頁插入與一次到位等價", () => {
     const step = mountScreen(propsFor(steps[0], { reverseJunction: J }));
     for (let i = 1; i < steps.length; ++i) {
       step.update(propsFor(steps[i], { reverseJunction: J }));
+      step.controller.syncRowIndex();
       const fresh = mountScreen(propsFor(steps[i], { reverseJunction: J }));
       expect(step.container.innerHTML).toBe(fresh.container.innerHTML);
       fresh.destroy();
@@ -194,6 +196,7 @@ describe("反向讀取：tail 的呈現", () => {
     // 插入一頁：標記跟著 J（新插入的第一列），舊的那一列不再帶
     const more = full.slice(0, J).concat(full.slice(PAGE * 4));
     s.update(propsFor(more, { reverseJunction: J }));
+    s.controller.syncRowIndex();
     expect(s.container.querySelectorAll(".reverseJunction").length).toBe(1);
     s.update(propsFor(full));
     expect(s.container.querySelectorAll(".reverseJunction").length).toBe(0);
@@ -232,7 +235,25 @@ describe("反向讀取：成本與節點沿用", () => {
     expect(counters.rowRender).toBeLessThan(80);
   });
 
-  test("tail 的列節點沿用同一個物件，srow／data-row 位移到新 index", () => {
+  // REGRESSION（超長文反向讀取每頁週期 20ms → 90ms，O(n²)）：舊版每插入一頁就對
+  // 整段 tail 做 querySelectorAll + setAttribute，tail 8000 列時是每幀數萬次 DOM 寫入。
+  test("插入一頁：沿用的 tail 節點零屬性寫入（位移延遲到 syncRowIndex）", async () => {
+    const full = makeArticle(PAGE * 3 + LONG + PAGE);
+    const J = PAGE * 3;
+    const before = full.slice(0, J).concat(full.slice(J + PAGE));
+    const s = mountScreen(propsFor(before, { reverseJunction: J }));
+    let attrWrites = 0;
+    const mo = new MutationObserver((list) => {
+      for (const m of list) if (m.type === "attributes") ++attrWrites;
+    });
+    mo.observe(s.container, { attributes: true, subtree: true });
+    s.update(propsFor(full, { reverseJunction: J }));
+    await Promise.resolve();
+    mo.disconnect();
+    expect(attrWrites).toBeLessThan(10);
+  });
+
+  test("tail 的列節點沿用同一個物件，syncRowIndex 後 srow／data-row 位移到新 index", () => {
     const full = makeArticle(PAGE * 10);
     const J = PAGE * 2;
     const before = full.slice(0, J).concat(full.slice(PAGE * 5));
@@ -250,7 +271,11 @@ describe("反向讀取：成本與節點沿用", () => {
     const beforeIdx = tailBefore.map(firstSrow);
     const after = full.slice(0, J).concat(full.slice(PAGE * 4));
     s.update(propsFor(after, { reverseJunction: J }));
-    const shift = after.length - before.length;
+    // 連插兩頁再結算：位移要累加，不是只記最後一次
+    const after2 = full.slice(0, J).concat(full.slice(PAGE * 3));
+    s.update(propsFor(after2, { reverseJunction: J }));
+    s.controller.syncRowIndex();
+    const shift = after2.length - before.length;
     const nowTops = tops();
     // 除了 J 那一列（接合點標記換手，必然重建），其餘 tail 節點都是同一個物件
     tailBefore.forEach((node, i) => {
@@ -262,7 +287,7 @@ describe("反向讀取：成本與節點沿用", () => {
       );
     });
     // 位移後與全新 render 逐字相同
-    const fresh = mountScreen(propsFor(after, { reverseJunction: J }));
+    const fresh = mountScreen(propsFor(after2, { reverseJunction: J }));
     expect(s.container.innerHTML).toBe(fresh.container.innerHTML);
   });
 

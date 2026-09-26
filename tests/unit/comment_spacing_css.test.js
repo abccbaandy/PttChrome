@@ -9,7 +9,10 @@
 //      term_view.fixedResize 的 .wpadding 寬度契約、mouse_geometry.colFromClientX
 //      的推文列點擊欄位判定、.floorBadge 的零寬盒全部跟著壞；
 //  (4) 不得用 margin-bottom —— #easyReadingLastRow 以 margin-top:-1em 疊在
-//      #mainContainer 的 paddingBottom:1em 上，尾端多出的 margin 會把它推離。
+//      #mainContainer 的 paddingBottom:1em 上，尾端多出的 margin 會把它推離；
+//  (5) 兩個值都要 round(…, 1px) 成整數像素 —— 字級不是 20 的倍數時 0.55em／1.3
+//      是小數像素，反向讀取（End）每在視窗上方插入一頁推文，scroll anchoring
+//      補償後視窗內文字就差半個像素 ⇒ 整段預讀期間文字細微震動。
 import fs from "node:fs";
 import path from "node:path";
 
@@ -34,9 +37,18 @@ const ruleFor = (selectorFragment) => {
   return null;
 };
 
-const emValue = (body, prop) => {
+const rawValue = (body, prop) => {
   const m = body && body.match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`));
-  return m ? parseFloat(m[1]) : null;
+  return m ? m[1].trim() : null;
+};
+// 整數像素的寫法：round(0.55em, 1px)
+const ROUNDED = /^round\(\s*([\d.]+)em\s*,\s*1px\s*\)$/;
+// round(0.55em, 1px) → 0.55；沒包 round 的舊寫法照樣取數字
+const emValue = (body, prop) => {
+  const v = rawValue(body, prop);
+  if (v == null) return null;
+  const m = v.match(ROUNDED);
+  return parseFloat(m ? m[1] : v);
 };
 
 describe("main.css 的推文區塊行距契約", () => {
@@ -61,6 +73,15 @@ describe("main.css 的推文區塊行距契約", () => {
     const lh = emValue(ruleFor(".mergedCommentBlock span"), "line-height");
     // line-height: 1.3 ⇒ 每則之間多出 0.3em。
     expect(lh - 1).toBeLessThan(outer);
+  });
+
+  test("間距與行高都四捨五入成整數像素（反向讀取插入時不震動）", () => {
+    expect(
+      rawValue(ruleFor('span[type="bbsrow"][data-pusher]'), "margin-top"),
+    ).toMatch(ROUNDED);
+    expect(rawValue(ruleFor(".mergedCommentBlock span"), "line-height")).toMatch(
+      ROUNDED,
+    );
   });
 
   test("不得出現任何影響橫向格線的屬性", () => {

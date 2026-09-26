@@ -78,8 +78,9 @@
 - **renderer（`reverseJunction` 進 enhance ＋ annotationsKey）**：
   - `screen_annotate_cache.spliceShape`：可重用＝`removed===0 ∧ (suffix===0 ∨ prefix ≥ J)`。forward 走到的程式碼與改版前逐字相同。
   - `computeAnnotations` 依 shape 的 `prevOf(row)` 位移沿用 texts/base/rowCands；**J 之後不帶 floorCounter**（不編樓層，base 只取決於該列 ⇒ 可位移重用）；`groupSameAuthorRuns(result, J)`、`detectBodyWrappedUrls` 在 J 斷開；圖文分組／AI spans 只算 head；run 快取多一條以首列 base 參考找回位移後的 run（`runByFirstBase`）。接合後 J 消失 ⇒ **一次**全量重算補樓層。
-  - `_buildNodes` 位移沿用舊節點並 `shiftRowIndex` 改 `srow`／`data-row`（外部契約）。接合點列帶 `.reverseJunction`（text-decoration 淡虛線，**不可佔版面**）。
+  - `_buildNodes` 位移沿用舊節點；`srow`／`data-row`（外部契約）的位移**延遲結算**：只記進 `ScreenController._pendingShift`，**讀這兩個屬性的人先呼叫 `componentScreen.syncRowIndex()`**（選取反查 `getSelectionColRow`、`_scrollToPageRow`、接合幀 `_captureRowAnchor`、`_toggleRowClass`）。理由：當幀改寫＝每頁對整段 tail `querySelectorAll`+`setAttribute`，tail 8000 列時每幀數萬次 DOM 寫入、整篇 O(n²)（超長文每頁週期 20→90ms，按鍵跟著卡）。接合／abort 都會換掉這些節點 ⇒ 反向結束後屬性契約不變。**新增讀 srow／data-row 的地方必須先 sync**。守護 `screen_reverse_splice.test.js`「零屬性寫入」。接合點列帶 `.reverseJunction`（text-decoration 淡虛線，**不可佔版面**）。
   - **`_patchInto` 走到不再需要的舊節點當場移除**：留在 cursor 上會把之後每個沿用節點 insertBefore 到它前面＝整段搬家 ⇒ 搬走捲動錨點 ⇒ scroll anchoring 不補償（實測 scrollTop 釘死、上方長 5 萬 px 把讀者推走）。守護 `screen_reverse_splice.test.js`「不得搬動任何沿用的節點」。
+- **插在視窗上方的內容高度必須是整數像素**：`.commentSpacing` 的間距／合併塊行高用 `round(…, 1px)`。小數像素（chh 非 20 倍數時 0.55em、1.3）⇒ scroll anchoring 補償後捲動位置被對齊 ⇒ 視窗內文字每幀 ±0.5px 震動到預讀完。守護 offline `easy_reading_longpost_perf.offline.spec.js`（每個 rAF 追同一列，位移必須為 0；舊的 reverse spec 容許 chh 誤差且用字級 20，量不到）。
 - **捲動**：tail 補完前每幀 `_scrollBottom`（`followBottom`）；之後插入在視窗上方 ⇒ 交給瀏覽器 scroll anchoring（節點沿用，錨點還在）。**接合那一幀全量重建 ⇒ 錨點消失**，由 `term_view._captureRowAnchor/_restoreRowAnchor` 以「視窗頂端那一列的**列物件**＋偏移」自己錨一次（不能用距底部距離：停在 head 讀的人會被推走）。
 - **`_kickPageDown` 反向時不清交易**：讀者本來就停在底部，按 PgDn 是常態；只在超過 grace 時補一次重試額度。
 - **per-article**：`_resetPagingState` 清兩端 reverse；`hideEasyReadingOverlays` 內聯清 view 端（該函式會被當獨立函式呼叫）。

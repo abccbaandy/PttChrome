@@ -63,9 +63,11 @@ import {
 } from "../js/screen_annotate_cache";
 
 // 沿用的列節點換了 index（反向讀取在接合點插入新頁 ⇒ 之後的列整批位移）：把節點
-// 本身與子孫的 srow／data-row 改成新值。這兩個屬性是外部契約（row.js 檔頭：選取
-// 反查、_scrollToPageRow、合併塊排版），節點裡沒有其他地方記著列號（link_segment
-// 只把 this.row 寫進 data-row 屬性，不進任何閉包）。
+// 本身與子孫的 srow／data-row 改成新值。**不在每幀呼叫**——只由
+// ScreenController.syncRowIndex() 對累積起來的位移結算一次（理由見該方法）。
+// 這兩個屬性是外部契約（row.js 檔頭：選取反查、_scrollToPageRow、合併塊排版），
+// 節點裡沒有其他地方記著列號（link_segment 只把 this.row 寫進 data-row 屬性，
+// 不進任何閉包）。
 function shiftRowIndex(node, delta) {
   if (!delta || !node || node.nodeType !== 1) return;
   const bump = (e) => {
@@ -158,6 +160,8 @@ export class ScreenController {
     // buffer 上不成立。
     this._prevFrame = null; // { lines, key, highlight, sizeMode, rowIndependent }
     this._nodes = []; // 上一幀每一列的節點（null ＝ 這一列不佔版面）
+    // 還沒寫進 DOM 的列號位移（節點 → 累計 delta，見 syncRowIndex）。
+    this._pendingShift = new Map();
     this._annotations = []; // 上一幀的 annotations（與 _nodes 逐列對齊）
     this._liveSlots = new Set(); // 目前掛著的佔位盒（imagesEnlarged 切換要通知）
     this._overlayNodes = []; // 尾端固定浮層（兩顆按鈕 + hover 預覽宿主）
@@ -293,6 +297,22 @@ export class ScreenController {
     this._render();
   }
 
+  // 把反向讀取累積下來的列號位移寫進 DOM（srow／data-row）。
+  //
+  // 反向讀取每插入一頁，接合點之後的每個沿用節點都位移同一段。舊版當幀就對整段
+  // tail 逐節點 querySelectorAll + setAttribute ⇒ tail 8000 列時每幀數萬次 DOM
+  // 寫入、整篇 O(n²)（超長文反向讀取每頁週期 20ms 一路變慢到 90ms，按鍵跟著卡）。
+  // 現在只記在 _pendingShift，**讀 srow／data-row 的人先呼叫這裡**：選取反查
+  // （term_view.getSelectionColRow）、_scrollToPageRow、接合幀的 _captureRowAnchor、
+  // 本檔的 _toggleRowClass。沒有待結算的位移時是 O(1)。
+  // 接合（J 消失 ⇒ annotationsKey 改變 ⇒ 全量重建）與 abort（tail 丟掉）都會換掉
+  // 這些節點，所以反向結束後 DOM 契約與改版前逐字相同。
+  syncRowIndex() {
+    if (!this._pendingShift.size) return;
+    for (const [node, delta] of this._pendingShift) shiftRowIndex(node, delta);
+    this._pendingShift.clear();
+  }
+
   // 游標底色的套用點。term_view.applyCursorHighlight 是唯一呼叫者。
   //
   // 快路徑：整列底色（col 0，絕大多數情形）只是把 class 從舊列搬到新列，**不重畫**
@@ -343,6 +363,7 @@ export class ScreenController {
     destroyUrlAi();
     for (let i = 0; i < this._nodes.length; ++i) disposeNode(this._nodes[i]);
     this._nodes = [];
+    this._pendingShift.clear();
     this._annotations = [];
     this._liveSlots.clear();
     if (this._hoverHost) unmountFrom(this._hoverHost);
@@ -719,7 +740,13 @@ export class ScreenController {
         (prevHighlight.row === p) === (this.highlight.row === row) &&
         !(ann && ann.mergeBlock)
       ) {
-        if (prevNodes[p] && p !== row) shiftRowIndex(prevNodes[p], row - p);
+        if (prevNodes[p] && p !== row) {
+          const node = prevNodes[p];
+          this._pendingShift.set(
+            node,
+            (this._pendingShift.get(node) || 0) + (row - p),
+          );
+        }
         nodes[row] = prevNodes[p];
         continue;
       }
@@ -764,7 +791,10 @@ export class ScreenController {
     const keep = new Set();
     for (let i = 0; i < nodes.length; ++i) if (nodes[i]) keep.add(nodes[i]);
     for (let i = 0; i < oldNodes.length; ++i) {
-      if (oldNodes[i] && !keep.has(oldNodes[i])) disposeNode(oldNodes[i]);
+      if (oldNodes[i] && !keep.has(oldNodes[i])) {
+        disposeNode(oldNodes[i]);
+        this._pendingShift.delete(oldNodes[i]);
+      }
     }
     return nodes;
   }
@@ -1222,6 +1252,7 @@ export class ScreenController {
       .split(/\s+/)
       .filter(Boolean);
     if (!tokens.length) return;
+    this.syncRowIndex();
     const spans = this.container.querySelectorAll(
       `[data-type="bbsline"][data-row="${row}"]`,
     );

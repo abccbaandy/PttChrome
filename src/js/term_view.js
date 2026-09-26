@@ -401,6 +401,7 @@ export function TermView() {
     setCursorHighlight() {},
     setSelectedPusher() {},
     notifyLayoutChanged() {},
+    syncRowIndex() {},
   };
 
   this.selection = null;
@@ -2215,6 +2216,8 @@ TermView.prototype = {
   },
 
   getSelectionColRow: function() {
+    // 反向讀取期間 tail 的 data-row 是延遲結算的（render/screen.js#syncRowIndex）。
+    if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
     let r = window.getSelection().getRangeAt(0);
     return {
       start: this.countCol(r.startContainer, r.startOffset),
@@ -2563,6 +2566,8 @@ TermView.prototype = {
     var disp = this.mainDisplay, mc = this.mainContainer, prev = this._renderedLines;
     if (!disp || !mc || !prev || typeof mc.querySelectorAll !== 'function') return null;
     var st = disp.scrollTop;
+    // 反向期間 tail 的 srow 是延遲結算的（render/screen.js#syncRowIndex）。
+    if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
     var rows = mc.querySelectorAll('[type="bbsrow"][srow]');
     for (var i = 0; i < rows.length; ++i) {
       var top = offsetTopWithin(rows[i], disp);

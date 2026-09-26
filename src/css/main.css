@@ -434,13 +434,17 @@ a:link,a:visited,a:active,a:hover {
    3. 不得改 .main 或全域的 line-height —— 那是 term_view.setTermFontSize 的 inline
       style（= chh px）在管，原生 24 列的整套座標建立在 line-height === chh 上。
       這裡只覆寫合併塊自己的 bbsrow。
+   4. 兩個值都必須 round(…, 1px) 成**整數像素**：字級（= chh）不是 20 的倍數時，
+      0.55em／1.3 是小數像素。反向讀取（End）每在視窗上方插入一頁推文，上方總高就多
+      一段小數，scroll anchoring 補償後的捲動位置被對齊到整數 ⇒ 視窗內文字每幀差半個
+      像素＝整段預讀期間細微震動。量測見 easy_reading_longpost_perf.offline.spec.js。
    守護：tests/unit/comment_spacing_css.test.js、tests/unit/comment_spacing_class.test.js */
 #mainContainer.commentSpacing > span[type="bbsrow"][data-pusher],
 #mainContainer.commentSpacing > .mergedCommentBlock {
-  margin-top: 0.55em;
+  margin-top: round(0.55em, 1px);
 }
 #mainContainer.commentSpacing > .mergedCommentBlock span[type="bbsrow"] {
-  line-height: 1.3;
+  line-height: round(1.3em, 1px);
 }
 
 /* 反向讀取（End）的接合點：tail 的第一列，表示「上面還有一段沒讀到」。只在反向

@@ -325,6 +325,9 @@
   `base[row]`**（同 `applyFunctionKeys` 的規則：`base` 的參考身分是 `captionCache`/`runCache` 的鍵）。
 - **刻意每幀全掃、不吃增量**：斷點可能剛好落在 append 邊界（左列在上一幀就算完、`from` 之後不會
   再跑到它），只掃新列必漏接。第一個條件是單一格子的 `isUrlCell`，幾乎所有列瞬間出局。
+  **掃描每幀做，裝飾出來的物件卻要跨幀沿用**（`wrapCache`：`base[row]` 參考 → range 簽章 → 物件，
+  鍵不含列號以相容反向讀取的位移）。每幀新物件 ⇒ 節點快取失效 ⇒ 這兩列每翻一頁就重建、佔位盒重掛。
+  守護 `screen_incremental_render.test.js`「內文跨行連結的兩列」。
 - **重疊排除**（`applyWrapUrlRange`）：落在範圍內的 `mentions`/`aids`/`giveaways`/`bareDomains`
   一律丟掉。左列殘段本來就被 `uriRegEx` 標了所以其他偵測器自己會避開，**右列的殘段沒有**
   （`404.html` 對 `uriRegEx` 完全不成立）⇒ 這條必須自己補，不然同一段文字會被包成兩個 `<a>`。

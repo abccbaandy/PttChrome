@@ -299,6 +299,34 @@ describe("好讀累積頁增量重算：成本是 O(新增列) 不是 O(文章)"
     expect(counters.rowRender).toBeLessThan(80);
   });
 
+  // REGRESSION：內文跨行連結（body_wrap.applyWrapUrlRange）每一幀都產生新的
+  // annotation 物件 ⇒ 那兩列的節點快取永遠失效，每翻一頁就重建一次（佔位盒
+  // destroy 後重掛、圖片 remount）。正向、反向讀取都會發生。
+  test("內文跨行連結的兩列：append 一頁後節點沿用同一個", () => {
+    const pad80 = (s) => line(s.padEnd(80));
+    const LEFT = "https://www.ptt.cc/bbs/PttBug/M.1788041180.A."; // 收在 col 77
+    const head = [
+      pad80("author poster board Test"),
+      pad80("title wrap"),
+      pad80(""),
+      pad80(" ".repeat(78 - LEFT.length) + LEFT),
+      pad80("404.html"),
+      pad80(""),
+    ];
+    const full = head.concat(makeArticle(LONG + PAGE).slice(11));
+    const step = renderAll(full.slice(0, LONG));
+    const nodeOf = (row) =>
+      step.container
+        .querySelector(`[data-type="bbsline"][data-row="${row}"]`)
+        .closest("#mainContainer > *");
+    // 前提：真的被接成一條連結（否則這支測試什麼都沒守到）
+    expect(step.container.querySelectorAll('a[href$="A.404.html"]').length).toBe(2);
+    const before = [nodeOf(3), nodeOf(4)];
+    step.update(propsFor(full.slice(0, LONG + PAGE)));
+    expect(nodeOf(3)).toBe(before[0]);
+    expect(nodeOf(4)).toBe(before[1]);
+  });
+
   test("同一份 lines 再 render 一次（強制重繪）⇒ 幾乎零工作", () => {
     const full = makeArticle(LONG);
     const step = renderAll(full);

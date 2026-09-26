@@ -1175,6 +1175,8 @@ EasyReading.prototype._scrollToPageRow = function(row) {
   const mc = view && view.mainContainer;
   if (!disp || !mc || typeof mc.querySelector !== 'function')
     return false;
+  // 反向讀取期間 tail 的 srow 是延遲結算的（render/screen.js#syncRowIndex）。
+  if (view.componentScreen && view.componentScreen.syncRowIndex) view.componentScreen.syncRowIndex();
   const n = (this._termBuf.pageLines || []).length;
   const limit = Math.min(n, row + (this._termBuf.rows || 24));
   for (let r = row; r < limit; ++r) {

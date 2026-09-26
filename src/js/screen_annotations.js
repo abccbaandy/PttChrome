@@ -449,6 +449,7 @@ export function computeAnnotations(
     // 放在 caption / run 兩個裝飾 pass **之前**：它們用 {...result[row], ...extra}
     // 疊上去會保留 wrapUrls；而某一對 (r-1, r) 的判定在 pageLines append-only 之下
     // 不會改變，所以被烘進那兩個快取也安全。
+    const wrapCache = new Map();
     if (autoFixUrl) {
       const isSkipRow = (row) => {
         const a = base[row];
@@ -466,17 +467,40 @@ export function computeAnnotations(
               })),
             )
           : detectBodyWrappedUrls(lines, isSkipRow);
+      // 同一列可能有多段（依出現順序疊上去）。
+      const rangesByRow = new Map();
       for (let k = 0; k < wrapped.length; ++k) {
         const w = wrapped[k];
         for (let i = 0; i < w.parts.length; ++i) {
           const p = w.parts[i];
-          result[p.row] = applyWrapUrlRange(result[p.row], {
+          if (!rangesByRow.has(p.row)) rangesByRow.set(p.row, []);
+          rangesByRow.get(p.row).push({
             startCol: p.startCol,
             endCol: p.endCol,
             href: w.href,
             preview: p.preview,
           });
         }
+      }
+      // 裝飾出來的物件要跨幀沿用（與 captionCache 同理）：applyWrapUrlRange 每次都
+      // 回新物件，不快取的話這幾列的節點每翻一頁就重建一次（佔位盒 destroy 後重掛、
+      // 圖片 remount）。身分＝base 參考＋這一列的 range 簽章；反向讀取位移後列號
+      // 會變，所以鍵裡不放列號。
+      const prevWrap = reuse ? reuse.wrapCache : null;
+      for (const [row, ranges] of rangesByRow) {
+        const key = ranges
+          .map((r) => r.startCol + ":" + r.endCol + ":" + r.preview + ":" + r.href)
+          .join("|");
+        const byKey = prevWrap && prevWrap.get(base[row]);
+        let ann = byKey && byKey.get(key);
+        if (!ann) {
+          ann = result[row];
+          for (let i = 0; i < ranges.length; ++i)
+            ann = applyWrapUrlRange(ann, ranges[i]);
+        }
+        result[row] = ann;
+        if (!wrapCache.has(base[row])) wrapCache.set(base[row], new Map());
+        wrapCache.get(base[row]).set(key, ann);
       }
     }
     const domainCands = baseDomainCands.slice();
@@ -691,6 +715,7 @@ export function computeAnnotations(
         captionCache,
         runCache,
         runByFirstBase,
+        wrapCache,
       },
     };
   } else if (pageState === PAGE_LIST || inListContext) {
