@@ -414,3 +414,35 @@ test("uninstall 拆得乾淨（listener 不殘留）", () => {
   expect(t.win.count("pointerdown")).toBe(0);
   expect(t.win.count("keydown")).toBe(0);
 });
+
+// 返回手勢「有時失效」只在實機重現 ⇒ 擋下時要把原因寫進 debug 錄製檔。
+describe("debug log", () => {
+  test("擋下時記 backGuard.blocked 與原因；送出時記 backGuard.sent", () => {
+    const t = setup({ sent: false });
+    const logs = [];
+    t.app.debugRecorder = { log: (tag, info) => logs.push([tag, info]) };
+    t.app.navKeyBlockReason = () => "pageState:5";
+    t.app.buf = { pageState: 5, cur_x: 3, cur_y: 7 };
+    t.app._openModals = new Set();
+    t.activate();
+    t.back();
+    expect(logs).toEqual([
+      [
+        "backGuard.blocked",
+        { reason: "pageState:5", pageState: 5, cur_x: 3, cur_y: 7, modals: [] },
+      ],
+    ]);
+
+    t.settleForward(1);
+    t.app.sendNavKeyAsUser = () => true;
+    t.back();
+    expect(logs[1][0]).toBe("backGuard.sent");
+  });
+
+  test("沒開錄製（debugRecorder 為 null）不炸", () => {
+    const t = setup({ sent: false });
+    t.app.debugRecorder = null;
+    t.activate();
+    expect(() => t.back()).not.toThrow();
+  });
+});

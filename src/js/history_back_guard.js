@@ -116,6 +116,25 @@ export function installHistoryBackGuard(app, win, opts) {
     }, RESTORE_CHECK_MS);
   }
 
+  // 返回手勢「有時失效」這類只在實機重現的問題：錄製檔每筆已有 pageState 快照，
+  // 這裡補「被哪一道擋下」，配 yarn debug:screens 看當下畫面即可定案。
+  function logBack(sent) {
+    const rec = app.debugRecorder;
+    if (!rec || typeof rec.log !== 'function') return;
+    if (sent) {
+      rec.log('backGuard.sent');
+      return;
+    }
+    const buf = app.buf;
+    rec.log('backGuard.blocked', {
+      reason: app.navKeyBlockReason ? app.navKeyBlockReason() : null,
+      pageState: buf ? buf.pageState : null,
+      cur_x: buf ? buf.cur_x : null,
+      cur_y: buf ? buf.cur_y : null,
+      modals: app._openModals ? Array.from(app._openModals) : []
+    });
+  }
+
   function onActivation() {
     // pref 是後來才打開的話，下一次使用者動作就會補上（listener 刻意常駐）。
     if (!armed && gateOn()) armed = pushSentinel();
@@ -155,7 +174,9 @@ export function installHistoryBackGuard(app, win, opts) {
       passThrough = false;
       return;
     }
-    if (app.sendNavKeyAsUser && app.sendNavKeyAsUser('ArrowLeft')) {
+    const sent = !!(app.sendNavKeyAsUser && app.sendNavKeyAsUser('ArrowLeft'));
+    logBack(sent);
+    if (sent) {
       // 送得出去就不吵（畫面自己會退出文章／列表），也不算逃生門的一次——
       // 連退好幾層是正常操作，不可以因此把使用者丟出站。
       lastBlockedAt = 0;

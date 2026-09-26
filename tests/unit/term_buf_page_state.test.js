@@ -15,6 +15,7 @@
 //      不在 nextEasyReadingState 的來源集 {1,2} ⇒ 好讀「有時」不啟用。
 // 故本檔鎖的是**症狀**：「離開一個非選單畫面回到子選單時，pageState 必須回到 1」。
 import { TermBuf } from "../../src/js/term_buf";
+import { navKeyAllowed } from "../../src/js/nav_key_gate";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import { u2b } from "../../src/js/string_util";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
@@ -298,5 +299,25 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
       CLEAR + at(0, 0) + "隨便一段內文" + at(ROWS - 1, 0) + " 編輯文章 的心得分享" + at(0, 0)
     );
     expect(t.buf.pageState).not.toBe(6);
+  });
+
+  // 觸控板左滑「有時」失效（nav_key_gate 擋下 ←、閃離站提示，進一篇文章才恢復）：
+  // setPageState 刻意沒有 reset 分支 ⇒ pressanykey 之後落在判不出的畫面時黏在 5。
+  // isPassScreenNow 是「本幀」的事實，讓消費端認得出這個 5 是殘留。
+  test("pressanykey(5) 之後落在判不出的畫面 ⇒ pageState 黏 5，但 isPassScreenNow() 為 false、← 可送", () => {
+    const t = makeBuf();
+    t.paint(pressAnyKeyScreen());
+    expect(t.buf.pageState).toBe(5);
+    expect(t.buf.isPassScreenNow()).toBe(true);
+
+    // row0 不是反白標題列、末列非空 ⇒ setPageState 每個分支都不命中。
+    t.paint(
+      CLEAR + at(0, 0) + "看板規則與說明" + at(5, 0) + "一段內文" +
+      at(ROWS - 1, 0) + "(←)離開 (h)說明" + at(5, 0)
+    );
+    expect(t.buf.pageState).toBe(5);
+    expect(t.buf.isPassScreenNow()).toBe(false);
+    const core = { modalShown: false, conn: { isConnected: true }, buf: t.buf };
+    expect(navKeyAllowed(core)).toBe(true);
   });
 });

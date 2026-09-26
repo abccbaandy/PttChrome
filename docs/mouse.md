@@ -425,7 +425,12 @@ frozen 之後畫面會自己再捲幾像素。
 
 送鍵守門 `nav_key_gate.navKeyAllowed(core)`：`modalShown` 關、未連線關、`pageState`
 只允許 1/2/3/4（0/5/6 不送，與 `resolveMouseRegion` 的動作集合一致）、
-`buf.isCursorOnInputField()` 為真時不送。**刻意不含 `serializedOpHint`**：那道在
+`buf.isCursorOnInputField()` 為真時不送。
+**例外：`pageState` 5 且 `buf.isPassScreenNow()` 為假 ⇒ 送**——`setPageState` 沒有 reset 分支，
+pressanykey 之後落在判不出的畫面會黏在 5（症狀：左滑有原生動畫、沒送 `←`、閃離站提示，
+進一篇文章才恢復）；本幀已不是 pass 畫面就是殘留。擋下的原因由 `navKeyBlockReason` 回傳，
+guard 寫進 debug 錄製檔（`backGuard.blocked {reason,pageState,cur_x,cur_y,modals}`／`backGuard.sent`），
+下次「有時失效」先看它的 reason 再追。**刻意不含 `serializedOpHint`**：那道在
 `view.onKeyDown` 開頭就有且會自己 `flashListHint`，重複擋只會讓提示閃兩次。
 
 `←` 之外**沒有前進方向**：右滑 →「開文章」在 native-first 下拿不到（sentinel 被吃掉

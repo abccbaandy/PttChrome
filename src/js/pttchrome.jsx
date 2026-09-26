@@ -41,7 +41,7 @@ import {
   rawModeKey,
   rawModePrefRowVisible
 } from './pmore_pref';
-import { navKeyAllowed } from './nav_key_gate';
+import { navKeyAllowed, navKeyBlockReason } from './nav_key_gate';
 import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
@@ -1138,6 +1138,11 @@ App.prototype.sendNavKeyAsUser = function(keyName) {
   if (!navKeyAllowed(this)) return false;
   this.view.sendKeyAsUser(keyName);
   return true;
+};
+
+// 送不出去時是哪一道擋下（null＝可送）。只給 debug log 用，見 history_back_guard。
+App.prototype.navKeyBlockReason = function() {
+  return navKeyBlockReason(this);
 };
 
 // 各滑鼠入口的生效與否。總開關（buf.useMouseBrowsing）與四個子開關（view 上的

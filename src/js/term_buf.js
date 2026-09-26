@@ -1331,12 +1331,30 @@ TermBuf.prototype = {
     return false;
   },
 
+  // 本幀是不是「pageState 5（PASS）」的畫面 —— setPageState 那兩條 5 的唯一真相源。
+  // 為什麼要能單獨問：setPageState 沒有 reset 分支，pressanykey 之後落在判不出的畫面
+  // 時 pageState 會黏在 5。消費端（nav_key_gate）用它分辨「真的 pass 畫面」與殘留。
+  _isPauseRow: function(lastRowText) {
+    return lastRowText.indexOf('請按任意鍵繼續') > 0 || lastRowText.indexOf('請按 空白鍵 繼續') > 0;
+  },
+
+  // ansi drawing screen to pass：row0 不是反白標題列、末列中段同色、游標 park 在右下角。
+  _isAnsiPassFrame: function() {
+    var lastRowNum = this.rows - 1;
+    return !(this.isUnicolor(0, 0, 29) && this.isUnicolor(0, this.cols-20, this.cols-10)) &&
+      this.isUnicolor(lastRowNum, 28, 53) && this.cur_y == lastRowNum && this.cur_x == this.cols-1;
+  },
+
+  isPassScreenNow: function() {
+    return this._isPauseRow(this.getRowText(this.rows - 1, 0, this.cols)) || this._isAnsiPassFrame();
+  },
+
   setPageState: function() {
     let lastRowNum = this.rows - 1;
     let cols = this.cols;
     //this.pageState = 0; //NORMAL
     var lastRowText = this.getRowText(lastRowNum, 0, cols);
-    if (lastRowText.indexOf('請按任意鍵繼續') > 0 || lastRowText.indexOf('請按 空白鍵 繼續') > 0) {
+    if (this._isPauseRow(lastRowText)) {
       //console.log('pageState = 5 (PASS)');
       this.pageState = 5; // some ansi drawing screen to pass
       return;
@@ -1362,7 +1380,7 @@ TermBuf.prototype = {
         //console.log('pageState = 2 (LIST)');
         this.pageState = 2; // LIST
       }
-    } else if ( this.isUnicolor(lastRowNum, 28, 53) && this.cur_y == lastRowNum && this.cur_x == cols-1) {
+    } else if (this._isAnsiPassFrame()) {
       //console.log('pageState = 5 (PASS)');
       this.pageState = 5; // some ansi drawing screen to pass
     }

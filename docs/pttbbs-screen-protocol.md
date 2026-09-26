@@ -372,6 +372,9 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 
 修法是把 `parseListRow` 校準回真實的 `show_status`（**不是**加 reset 分支，沿用仍然是刻意的）。
 
+沿用的第三個消費端：返回手勢的 `nav_key_gate`。黏住的 5 不靠猜是哪個畫面判不出來，改問
+`term_buf.isPassScreenNow()`（setPageState 兩條 5 的條件抽出的本幀事實）：已非 pass 畫面 ⇒ 殘留，照送 `←`。
+
 **2026-09-20 更新**：PTT 官方改版把 `show_status` 整列換掉（見 §11.9），上面那個「校準回真實 `show_status`」的結果因此又一次失效。現行實作是**新舊聯集**：舊、新格式各一條照 source 寫的精確指紋（新格式讀碼 @ `origin/piaip.newui`）。只照公告文字寫的那一版曾以「線上N人」當共同錨點，讀碼後才發現 80 欄子選單會把它截掉 —— 又一次印證下一段「不可與被測程式共用假設」。
 守護：`tests/unit/term_buf_page_state.test.js`、`tests/unit/string_util.test.js`。
 **這一輪真正的教訓是測試面的**：當時的 unit fixture 是照著同一個錯誤假設手寫的，於是
