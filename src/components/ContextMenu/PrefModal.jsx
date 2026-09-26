@@ -1,4 +1,5 @@
 import {
+  cloneElement,
   useState,
   useCallback,
   useEffect,
@@ -180,12 +181,14 @@ const storeCredential = (values) => {
   }
 };
 
-const replaceI18n = (id, replacements) => {
+// Returns an array of children. The link elements are shared module-level
+// instances, so the key is assigned here per position (not inside link()).
+export const replaceI18n = (id, replacements) => {
   return i18n(id)
     .split(/#(\S+)#/gi)
     .map((it, index) => {
       if (index % 2 === 1 && it in replacements) {
-        return replacements[it];
+        return cloneElement(replacements[it], { key: index });
       } else {
         return it;
       }
@@ -220,7 +223,7 @@ const selectData = (keys) =>
 
 // The About tab's version blurb embeds clickable links; these never change, so
 // build them once at module load (was recompose's static initial state).
-const replacements = {
+export const ABOUT_LINKS = {
   link_github_iamchucky: link("Chuck Yang", "https://github.com/iamchucky"),
   link_github_robertabcd: link("robertabcd", "https://github.com/robertabcd"),
   link_robertabcd_PttChrome: link(
@@ -1813,15 +1816,15 @@ export const PrefModal = ({
                   PttChrome
                   <small> - {i18n("about_appName_subtitle")}</small>
                 </Title>
-                <Text>{replaceI18n("about_description", replacements)}</Text>
+                <Text>{replaceI18n("about_description", ABOUT_LINKS)}</Text>
               </div>
               {/* 「關於」頁沒有 fieldset（版面是 Title + 清單），所以分區錨點
                 掛在 PrefAnchor 上而不是 PrefSection。 */}
               <PrefAnchor anchorKey="section:about_version_title">
                 <Title order={5}>{i18n("about_version_title")}</Title>
                 <ul>
-                  <li>{replaceI18n("about_version_current", replacements)}</li>
-                  <li>{replaceI18n("about_version_original", replacements)}</li>
+                  <li>{replaceI18n("about_version_current", ABOUT_LINKS)}</li>
+                  <li>{replaceI18n("about_version_original", ABOUT_LINKS)}</li>
                   <li>
                     build: <code>{process.env.GIT_COMMIT}</code> (
                     {process.env.BUILD_TIME})
