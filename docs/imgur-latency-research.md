@@ -143,3 +143,67 @@ W=https://ptt-imgur-cache.ptt-relay-8xquy.workers.dev
 for i in $(seq 1 20); do curl -s -o /dev/null -w "%{time_total}\n" "$W/twimg/orig/HSWhvjqbMAIr5Ux.jpg"; done
 for i in $(seq 1 20); do curl -s -o /dev/null -w "%{time_total}\n" "$W/catbox/rdpjcp.png"; done
 ```
+
+## 根因：HiNet→Fastly 的國際出口尖峰壅塞 — CONFIRMED，2026-09-27
+
+量測：HiNet 家用寬頻（IPv4，無 IPv6），**尖峰** 21:20–21:50，同一張 twimg `:orig`（2.38 MB）。
+前面各節是「症狀＋解法」，本節回答「為什麼」。
+
+### 共同分母是 Fastly，不是 twimg／imgur／GitHub 各自的問題
+
+| 服務 | 實際 CDN | HiNet 出去的路徑（tracert） |
+|---|---|---|
+| `pbs/abs/video.twimg.com` | Fastly（`*.twitter.map.fastly.net`） | 經 **PCCW**（63.21x.x.x）→ NRT，或 HiNet 國際線→SIN |
+| `i.imgur.com` | Fastly | HiNet 國際線（202.39.x）→ Any2 LA → BUR |
+| `*.github.io`、`*.githubusercontent.com`、`github.githubassets.com` | Fastly（185.199.108–111/22 anycast） | HiNet 國際線（220.128.6.165）→ SIN |
+| `x.com`（HTML/API） | **Cloudflare** | HiNet↔CF **台北直連**，10 ms |
+| `github.com`（HTML） | Azure 日本東 | — |
+
+⇒ x.com／github.com 本體不慢，慢的是它們掛在 Fastly 上的靜態資源（圖、JS、avatar、Pages）。
+Fastly 對 HiNet 沒有台灣境內交付點（`x-served-by` 的 `cache-tw-ZZZ1` 不是實體 POP，RTT 仍是國際線），
+Cloudflare 有 TPE 且與 HiNet 境內互連。
+
+### 決定性實驗：同一台 Fastly NRT、只換進入的 IP（=換路徑），交錯取樣 ×8
+
+| 連到 | 路徑 | 2.38 MB 耗時 |
+|---|---|---|
+| `151.101.76.159`（1.1.1.1／8.8.8.8 給的） | HiNet→PCCW | 7.8–30 s，**4/8 撞 30 s 上限** |
+| `151.101.192.159`（Fastly 全域 anycast） | HiNet→**NTT**（129.250.x）→東京 | median ~0.85 s，1/8 4.3 s |
+| `162.159.137.232`（Cloudflare） | HiNet↔CF 台北 | **0.32–0.60 s** |
+| 對照 `speed.cloudflare.com` 同大小 | 同上 | 0.37 s（6.3 MB/s）⇒ 非本機頻寬 |
+
+- `x-served-by` 都是同一組 NRT cache ⇒ **Fastly 伺服器端沒差，差在 HiNet 選的那條國際路徑**。
+- TCP connect／TTFB 都正常（0.08／0.3 s），卡在 body ⇒ 典型壅塞丟包＋重傳（ping 丟包 5/60；GitHub avatar 出現 `conn=1.08 s`＝SYN 重傳一次）。
+- 本專案 GitHub Pages 主 bundle（1 MB）同時段 ×8：1.4–21.4 s ⇒ 「deploy 後要開一下子才開得起來」同一根因。
+
+### 使用者實驗逐條解釋
+
+| 實驗 | 結果 | 原因 |
+|---|---|---|
+| VPN | 有用 | 流量先進 VPN 伺服器，再從對方的上游出國，繞過 HiNet→Fastly 壅塞段 |
+| Cloudflare WARP | 有用 | HiNet↔CF 台北直連（不出國），CF 骨幹再去 Fastly。＝本專案 Worker 代理有效的同一機制 |
+| 改 DNS（1.1.1.1、8.8.8.8） | 沒用 | 兩者都回 `151.101.76.159`（最差那條）。168.95.1.1／9.9.9.9／101.101.101.101 回別的 Fastly IP（SIN），實測同樣慢——**不管 Fastly 哪個 POP，只要走 HiNet 國際出口就慢**；DNS 只能換 POP，換不了 HiNet 的出口路由 |
+| hosts `162.159.137.232` | 使用者稱沒用；**本機 curl 實測有效** | 該 IP 是 Cloudflare，對 `pbs.twimg.com` 回 200、有效憑證、`CF-RAY …-TPE`（X 的多 CDN 之一）。`unknown` 為何使用者無效，候選：只改了 `pbs` 沒改 `abs`／`video.twimg.com`；瀏覽器沿用既有連線／DNS 快取（未重啟）；瀏覽器 DoH 設定。未驗證，勿當結論 |
+
+### 對本專案的含意
+
+- 代理的效益來自「繞開 HiNet→Fastly 國際段」，**對所有 Fastly 圖床都成立**；新增圖床前先查它是不是 Fastly（`curl -sI … | grep -i x-served-by`）。
+- hosts 釘 CF IP 不是可交付解法（X 隨時可換、HTTPS 憑證靠對方配合）。
+- GitHub Pages 本身的慢無法由 app 解（HTML/JS 就在 Fastly 上）；若要解只能換託管（例如 Cloudflare Pages）——`unknown`，未評估。
+
+重現（尖峰時段）：
+
+```bash
+U="https://pbs.twimg.com/media/HSWhvjqbMAIr5Ux.jpg:orig"
+for i in 1 2 3 4 5 6 7 8; do for ip in 151.101.76.159 151.101.192.159 162.159.137.232; do curl -s -o /dev/null --referer "" --max-time 30 --resolve pbs.twimg.com:443:$ip -w "%{remote_ip} %{time_total}\n" "$U"; done; done
+```
+```powershell
+tracert -d 151.101.76.159; tracert -d 151.101.192.159; tracert -d 162.159.137.232
+```
+
+### 繞路入口（hosts 用；2026-09-27 尖峰實測）
+
+- IP 歸屬用 RDAP 查（`curl -s https://rdap.org/ip/<ip>`）：Fastly 的網段名稱是 `SKYCA-*`；PCCW＝`PCCWG-*`；NTT＝`NTTA-129-250`；HiNet＝`HINET-NET`；Cloudflare＝`CLOUDFLARENET`。
+- **X 的 Cloudflare 入口可從 DNS 查到**：`<host>.cdn.cloudflare.net`（`pbs.`／`abs.`／`video.twimg.com` 都有，＝X 在 CF 上設好的 CNAME 接入）。CF 是 anycast＋依 SNI 分流，**任何 CF IP 都能服務這幾個 host**（x.com 的 `162.159.140.229` 同樣可用）。pbs 2.38 MB 0.33 s、`CF-RAY …-TPE`。
+- **github.io 沒有 CF 入口**，但 Fastly 全域 anycast `151.101.0.133`／`151.101.192.133`（HiNet→NTT）可服務 `*.github.io`、`avatars.`／`raw.`／`objects.githubusercontent.com`：1 MB bundle 0.62–0.84 s vs 官方 `185.199.108–111.153` 5.3–30 s（×3 each）。`github.githubassets.com` 在該 IP TLS 失敗，不能這樣繞。
+- 路徑好壞取決於 HiNet 當下的 BGP 選路，`CONFIRMED` 僅限量測當日；換 IP 前用 `curl --resolve host:443:<ip>` 實測。
