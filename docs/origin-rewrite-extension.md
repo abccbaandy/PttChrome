@@ -109,6 +109,19 @@ https://<PAGES_URL>/?site=wsstelnet://ws.ptt.cc/bbs
 
 少數 Chrome 版本可能擋 `Origin` 的 modifyHeaders。改用 `webRequest` + `onBeforeSendHeaders`（CORS 類擴充常用、較老牌）：manifest 改 MV2 或 MV3 service worker 內監聽 `chrome.webRequest.onBeforeSendHeaders`（含 `extraHeaders`/`requestHeaders`），對 `wss://ws.ptt.cc/*` 把 `Origin` 設為 `https://term.ptt.cc`。原理同，只是攔截點不同。
 
+## 連線失敗診斷（app 內）
+
+直連從未 open 時，`App.onClose` 經 proxy 另開一條 WS 探測（open 即關、不登入 ⇒ 不計入 utmpd 登入頻率；會多一條經 proxy 的短連線，使用者 IP 會送到 proxy）。瀏覽器拿不到握手 403（只給 close 1006），這是唯一能分辨「Origin 被擋」與「PTT 不可達」的訊號。
+
+| 條件 | 結果 | 提示 |
+|---|---|---|
+| 這次連線 open 過 | `disconnected`，不探測 | 只給重連 |
+| 站台 ≠ `DEFAULT_SITE`（已走 proxy／`?site=`） | `null`，不探測 | 只給重連 |
+| 直連未 open，proxy 通 | `origin` | 設定不正確或未設定＋README 方法一連結＋「改用 Proxy？」（是 ⇒ 寫 `useProxy` 並直接連 proxy） |
+| 直連未 open，proxy 不通／逾時 8s | `unreachable` | PTT 連不上；不問 proxy |
+
+實作 `src/js/connection_probe.js`（決策表 `diagnoseConnectFailure`）、UI `src/components/ConnectionAlert.jsx`。守護 `tests/unit/connection_probe.test.js`、`connection_alert_diagnosis.test.jsx`、`tests/e2e/offline/connect_failure.offline.spec.js`（`installReplay` 的 `neverOpenExceptHost`）。dev 的 `DEFAULT_SITE`（vite `/bbs`）同樣走此表。
+
 ## 相關檔案 pointer
 
 - 連線 URL / scheme 解析：`src/js/pttchrome.jsx`（`wsstelnet`→`wss:443`）

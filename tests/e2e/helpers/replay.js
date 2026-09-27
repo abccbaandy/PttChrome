@@ -87,10 +87,14 @@ function isBbsSocketUrl(raw) {
 //   page.routeWebSocket() 做不到这件事：它会把 mock 的 WebSocket 在页面里**开起来**
 //   （types.d.ts「Playwright assumes that WebSocket will be mocked, and opens the
 //   WebSocket inside the page」），onConnect 照跑。
+// opts.neverOpenExceptHost='<host>'：同 neverOpen，但该 host 的 /bbs socket 照常开。
+//   模拟「直连被 Origin 白名单挡、经 proxy 却连得上」（连线失败诊断的 origin 分支，
+//   见 src/js/connection_probe.js）。
 async function installReplay(page, opts = {}) {
-  const neverOpen = opts.neverOpen === true;
+  const openHost = opts.neverOpenExceptHost || null;
+  const neverOpen = opts.neverOpen === true || !!openHost;
   const isBbsSrc = isBbsSocketUrl.toString();
-  await page.addInitScript(({ neverOpen, isBbsSrc }) => {
+  await page.addInitScript(({ neverOpen, openHost, isBbsSrc }) => {
     // 判准的**唯一来源**是模组里那支纯函式（有 unit 守护）；addInitScript 的
     // callback 会被序列化送进页面、看不到模组作用域，所以把原始码一起带进来。
     const isBbsSocketUrl = new Function('return (' + isBbsSrc + ')')();
@@ -110,7 +114,7 @@ async function installReplay(page, opts = {}) {
         window.__stubWS = this;
         // 异步 fire open，让 App.onConnect 在事件回圈里跑（与原生 WS 行为一致）。
         setTimeout(() => {
-          if (neverOpen) {
+          if (neverOpen && !(openHost && new URL(String(url)).host === openHost)) {
             this.readyState = 3; // CLOSED
             this._emit('error', {});
             this._emit('close', {});
@@ -161,7 +165,7 @@ async function installReplay(page, opts = {}) {
     StubWebSocket.CLOSING = 2;
     StubWebSocket.CLOSED = 3;
     window.WebSocket = StubWebSocket;
-  }, { neverOpen, isBbsSrc });
+  }, { neverOpen, openHost, isBbsSrc });
 }
 
 // 等 app 离线「连上」（onConnect 把 connectState 设 1）。

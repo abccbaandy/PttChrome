@@ -954,6 +954,27 @@ export const en_US = {
   "alert_connectionReconnect": {
     "message": "Reconnect (ENTER)"
   },
+  "alert_connectionChecking": {
+    "message": "Checking the connection setup…"
+  },
+  "alert_connectionOriginBad": {
+    "message": "The Origin spoofing (term.ptt.cc) is misconfigured or not set up."
+  },
+  "alert_connectionOriginHelp": {
+    "message": "Setup guide"
+  },
+  "alert_connectionUnreachable": {
+    "message": "PTT is unreachable right now (maintenance or network issue); this is not caused by the Origin setup."
+  },
+  "alert_connectionProxyAsk": {
+    "message": "Connect through the proxy instead? Traffic is relayed by a proxy server, so typing will lag a little."
+  },
+  "alert_connectionProxyYes": {
+    "message": "Yes, enable proxy and reconnect"
+  },
+  "alert_connectionProxyNo": {
+    "message": "No"
+  },
 
   "alert_pasteShortcutHeader": {
     "message": "Paste"

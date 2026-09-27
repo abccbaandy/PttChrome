@@ -35,7 +35,9 @@ import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
 import { serializedOpHint } from './serialized_op_gate';
 import { decideKeepAlive, KEEP_ALIVE_TIMEOUT_MS } from './keep_alive';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
-import { readValuesWithDefault } from './pref_storage';
+import { readValuesWithDefault, writeValues } from './pref_storage';
+import * as prefSync from './pref_sync';
+import { diagnoseConnectFailure, probeWebSocket, siteToWsUrl } from './connection_probe';
 import {
   MFDISP_RAW_PLAIN,
   rawModeKey,
@@ -47,7 +49,7 @@ import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
-import { setTimer } from './util';
+import { proxySiteFromPrefs, setTimer } from './util';
 import {
   IMAGE_PROXY_SITES,
   normalizeImgurProxyBase,
@@ -329,22 +331,24 @@ App.prototype.connect = function(url) {
   this.connectState = 0;
   console.log('connect: ' + url);
 
-  var parsed = this._parseURLSimple(url);
-  if (parsed.protocol == 'wsstelnet') {
-    this._setupWebsocketConn('wss://' + parsed.hostname + parsed.path);
-  } else if (parsed.protocol == 'wstelnet') {
-    this._setupWebsocketConn('ws://' + parsed.hostname + parsed.path);
-  } else {
-    console.log('unsupport connect url protocol: ' + parser.protocol);
+  var wsUrl = siteToWsUrl(url);
+  if (!wsUrl) {
+    console.log('unsupport connect url: ' + url);
     return;
   }
-
+  var parsed = this._parseURLSimple(url);
+  // connectedUrl 先於 _setupWebsocketConn 建立：連線失敗的 close 可能早於任何
+  // 使用者動作，onClose 要讀得到這次的 url/opened。
   this.connectedUrl = {
     url: url,
     site: parsed.hostname,
     port: parsed.port,
-    easyReadingSupported: true
+    easyReadingSupported: true,
+    // 這次連線是否 open 過：連線失敗診斷分辨「從未連上」與「中途斷線」
+    //（connection_probe.js#diagnoseConnectFailure）。
+    opened: false
   };
+  this._setupWebsocketConn(wsUrl);
 };
 
 App.prototype._parseURLSimple = function(url) {
@@ -399,6 +403,7 @@ App.prototype.onConnect = function() {
   console.info("pttchrome onConnect");
   this.debugRecorder?.log('app.onConnect');
   this.connectState = 1;
+  if (this.connectedUrl) this.connectedUrl.opened = true;
   this.updateTabIcon('connect');
   this._keepAliveProbeAt = null;
   var self = this;
@@ -461,13 +466,39 @@ App.prototype.onClose = function() {
   this.connectState = 2;
   this._keepAliveProbeAt = null;
 
+  // 連線失敗診斷：直連從未 open ⇒ 經 proxy 探測，分辨「Origin 偽裝沒設好」與
+  // 「PTT 連不上」；前者再問要不要一鍵改走 proxy。決策表見 connection_probe.js。
+  const failed = this.connectedUrl;
+  const proxySite = proxySiteFromPrefs({ ...readValuesWithDefault(), useProxy: true });
+  const diagnose = () => diagnoseConnectFailure({
+    site: failed.url,
+    opened: failed.opened,
+    defaultSite: process.env.DEFAULT_SITE,
+    proxySite: proxySite,
+    probe: probeWebSocket
+  });
   const onDismiss = () => {
     unmountFrom(container);
     this.connect(this.connectedUrl.url);
-  }
+  };
+  const onEnableProxy = () => {
+    unmountFrom(container);
+    this.enableProxyAndReconnect();
+  };
   const container = document.getElementById('reactAlert');
-  renderInto(container, <MantineRoot><ConnectionAlert onDismiss={onDismiss} /></MantineRoot>);
+  renderInto(container, <MantineRoot><ConnectionAlert
+    onDismiss={onDismiss} diagnose={diagnose} onEnableProxy={onEnableProxy} /></MantineRoot>);
   this.updateTabIcon('disconnect');
+};
+
+// 連線失敗提示的「是，開啟 Proxy 並重連」：與設定頁同一條持久化管線
+//（localStorage → 雲端同步 → onValuesPrefChange），然後直接連 proxy，不必重新整理。
+App.prototype.enableProxyAndReconnect = function() {
+  var values = { ...readValuesWithDefault(), useProxy: true };
+  writeValues(values);
+  prefSync.savePrefs(values);
+  this.onValuesPrefChange(values);
+  this.connect(proxySiteFromPrefs(values));
 };
 
 App.prototype.sendData = function(str) {

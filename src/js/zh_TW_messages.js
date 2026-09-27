@@ -953,6 +953,27 @@
   "alert_connectionReconnect": {
     "message": "重新連線 (ENTER)"
   },
+  "alert_connectionChecking": {
+    "message": "正在檢查連線設定…"
+  },
+  "alert_connectionOriginBad": {
+    "message": "Origin 偽裝（term.ptt.cc）設定不正確或未設定。"
+  },
+  "alert_connectionOriginHelp": {
+    "message": "設定教學"
+  },
+  "alert_connectionUnreachable": {
+    "message": "目前連不上 PTT（可能維護中或網路問題），與 Origin 設定無關。"
+  },
+  "alert_connectionProxyAsk": {
+    "message": "要改用 Proxy 連線嗎？連線會經代理伺服器轉送，操作會有延遲。"
+  },
+  "alert_connectionProxyYes": {
+    "message": "是，開啟 Proxy 並重連"
+  },
+  "alert_connectionProxyNo": {
+    "message": "否"
+  },
 
   "alert_pasteShortcutHeader": {
     "message": "貼上"

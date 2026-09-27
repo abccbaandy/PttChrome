@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Transition } from "@mantine/core";
+import {
+  Alert,
+  Anchor,
+  Button,
+  Group,
+  Loader,
+  Transition,
+} from "@mantine/core";
 import { i18n } from "../js/i18n";
+import { ORIGIN_SETUP_URL } from "../js/connection_probe";
 import "./PageTopAlert.css";
 
 // 斷線提示掛著時仍須正常運作的 UI：設定對話框、右鍵選單、以及任何表單元素。
@@ -8,9 +16,28 @@ import "./PageTopAlert.css";
 const PASSTHROUGH =
   '[role="dialog"], [role="menu"], input, textarea, select, [contenteditable]';
 
-export const ConnectionAlert = ({ onDismiss }) => {
+// diagnose：回傳 Promise<'origin'|'unreachable'|'disconnected'|null>（決策表在
+// js/connection_probe.js#diagnoseConnectFailure）。沒給就是原本只有重連的提示。
+// onEnableProxy：使用者在「改用 Proxy？」選是 ⇒ App 開 useProxy 並重連。
+export const ConnectionAlert = ({ onDismiss, diagnose, onEnableProxy }) => {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  const [verdict, setVerdict] = useState(diagnose ? "checking" : null);
+  const [proxyAsked, setProxyAsked] = useState(true);
+  useEffect(() => {
+    if (!diagnose) return;
+    let alive = true;
+    Promise.resolve()
+      .then(diagnose)
+      .catch(() => "unreachable")
+      .then((v) => {
+        if (alive) setVerdict(v);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [diagnose]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -49,6 +76,44 @@ export const ConnectionAlert = ({ onDismiss }) => {
           onClose={onDismiss}
           title={i18n("alert_connectionHeader")}
         >
+          {verdict === "checking" && (
+            <Group gap="xs">
+              <Loader size="xs" color="red" />
+              <span>{i18n("alert_connectionChecking")}</span>
+            </Group>
+          )}
+          {verdict === "origin" && (
+            <p>
+              <span>{i18n("alert_connectionOriginBad")}</span>{" "}
+              <Anchor
+                href={ORIGIN_SETUP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {i18n("alert_connectionOriginHelp")}
+              </Anchor>
+            </p>
+          )}
+          {verdict === "unreachable" && (
+            <p>{i18n("alert_connectionUnreachable")}</p>
+          )}
+          {verdict === "origin" && onEnableProxy && proxyAsked && (
+            <>
+              <p>{i18n("alert_connectionProxyAsk")}</p>
+              <Group gap="xs" mb="sm">
+                <Button color="red" variant="outline" onClick={onEnableProxy}>
+                  {i18n("alert_connectionProxyYes")}
+                </Button>
+                <Button
+                  color="gray"
+                  variant="subtle"
+                  onClick={() => setProxyAsked(false)}
+                >
+                  {i18n("alert_connectionProxyNo")}
+                </Button>
+              </Group>
+            </>
+          )}
           <p>{i18n("alert_connectionText")}</p>
           <Button color="red" onClick={onDismiss}>
             {i18n("alert_connectionReconnect")}

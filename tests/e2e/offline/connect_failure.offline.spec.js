@@ -112,3 +112,52 @@ test.describe('連線失敗（從未連上）', () => {
     await expect(page.locator('.PrefModal')).toBeHidden();
   });
 });
+
+// 連線失敗診斷（src/js/connection_probe.js）：直連從未 open ⇒ 經 proxy 探測。
+// 決策表的每一列在 unit 守護；這裡驗真瀏覽器／完整 boot 鏈上的整條路：
+// onClose → 探測 → 提示 → 「是」⇒ 寫入 useProxy 並直接連上 proxy（不必重新整理）。
+test.describe('連線失敗診斷', () => {
+  // util.js#DEFAULT_PROXY_HOST（proxyUrl 留空 ＝ 內建 relay）。
+  const PROXY_HOST = 'ptt-proxy.ptt-relay-8xquy.workers.dev';
+
+  test('直連不通、proxy 通 ⇒ 提示 Origin 設定錯，選「是」改走 proxy 並連上', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await installReplay(page, { neverOpenExceptHost: PROXY_HOST });
+    await installOfflineNetwork(page);
+    await page.goto('/');
+
+    const alert = page
+      .locator('.PageTopAlert')
+      .filter({ hasText: await label(page, 'alert_connectionHeader') });
+    await expect(alert.getByText(await label(page, 'alert_connectionOriginBad'))).toBeVisible();
+    await expect(
+      alert.getByRole('link', { name: await label(page, 'alert_connectionOriginHelp') })
+    ).toHaveAttribute('href', /github\.com\/abccbaandy\/PttChrome#/);
+    expect(await page.evaluate(() => window.__app.isConnected())).toBe(false);
+
+    await alert.getByRole('button', { name: await label(page, 'alert_connectionProxyYes') }).click();
+
+    await expect.poll(() => page.evaluate(() => window.__app.isConnected())).toBe(true);
+    expect(await page.evaluate(() => window.__app.connectedUrl.url)).toContain(PROXY_HOST);
+    expect(await page.evaluate(() => window.__readPrefs().useProxy)).toBe(true);
+    await expect(page.locator('.PageTopAlert')).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test('直連與 proxy 都不通 ⇒ 說明 PTT 連不上，且不問要不要開 proxy', async ({ page }) => {
+    await installReplay(page, { neverOpen: true });
+    await installOfflineNetwork(page);
+    await page.goto('/');
+
+    const alert = page
+      .locator('.PageTopAlert')
+      .filter({ hasText: await label(page, 'alert_connectionHeader') });
+    await expect(alert.getByText(await label(page, 'alert_connectionUnreachable'))).toBeVisible();
+    await expect(
+      alert.getByRole('button', { name: await label(page, 'alert_connectionProxyYes') })
+    ).toHaveCount(0);
+    await expect(alert.getByText(await label(page, 'alert_connectionOriginBad'))).toHaveCount(0);
+    expect(await page.evaluate(() => window.__readPrefs().useProxy)).toBe(false);
+  });
+});
