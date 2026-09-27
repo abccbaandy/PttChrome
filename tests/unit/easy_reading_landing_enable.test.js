@@ -55,6 +55,7 @@ function harness({
     },
     _navActive: EasyReading.prototype._navActive,
     _currentPageStatus: EasyReading.prototype._currentPageStatus,
+    _isJumpParkedListNow: EasyReading.prototype._isJumpParkedListNow,
     // _onScreenSettled 第一件事就是掃 pmore 設定頁（見該函式）。用真的那一份，
     // 這個 harness 的畫面不是設定頁 ⇒ 回 false，不會動到旗標。
     _notePmorePrefScreen: EasyReading.prototype._notePmorePrefScreen,

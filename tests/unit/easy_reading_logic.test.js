@@ -107,6 +107,20 @@ describe("nextEasyReadingState", () => {
   it("0→3 仍不開：那是 ensureEnabledOnArticle 的職責，不是放寬 edge", () => {
     expect(decide({ prevSettledPageState: 0 })).toBe(false);
   });
+
+  // REGRESSION 2026-09-26（「文章好讀偶爾失效」）：舊版 server 跳號後底列留空，
+  // 使用者停在落點 ⇒ settled 0 ⇒ Enter 進文是 0→3。只有「上一張靜止畫面是跳號
+  // 落點列表」時 0 才算列表；其他 0（文章中途 dip、AID 搜尋落地）維持不開。
+  it("0→3 且上一張靜止畫面是跳號落點列表 → 開", () => {
+    expect(decide({ prevSettledPageState: 0, prevSettledParkedList: true })).toBe(true);
+  });
+  it("0→3 但上一張不是列表 → 不開（P4 防線不動）", () => {
+    expect(decide({ prevSettledPageState: 0, prevSettledParkedList: false })).toBe(false);
+  });
+  it("parkedList 只對 0 有意義：5／6 不會因它被當成列表", () => {
+    expect(decide({ prevSettledPageState: 5, prevSettledParkedList: true })).toBe(false);
+    expect(decide({ prevSettledPageState: 6, prevSettledParkedList: true })).toBe(false);
+  });
 });
 
 // 第三條自動開好讀的路線：外部導航（AID 跳文／deep link）的落地。

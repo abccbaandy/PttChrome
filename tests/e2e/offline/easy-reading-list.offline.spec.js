@@ -848,6 +848,38 @@ test.describe('文章列表好读模式（离线）', () => {
     }
   });
 
+  // REGRESSION 2026-09-26（「文章好讀偶爾失效，停在原生」）的原生列表版：列表好讀
+  // 關著時沒有 list_session 替你補開，全靠文章好讀自己的 settle 邊緣。舊版 server
+  // 跳號後底列留空 ⇒ 使用者停在落點 ⇒ settled 0 ⇒ Enter 進文是 0→3。
+  // 直接餵 cassette 的三幀（列表 → 跳號落點 → 文章），不經鍵盤：原生逐字打號碼
+  // 對不上 jump 的整串門控，而這裡要驗的是 settle 串流，不是送鍵。
+  test('原生列表：跳號落點靜置後開文，文章好讀照樣啟動', async ({ page }) => {
+    const logs = ptt.attachConsole(page);
+    try {
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
+      await replayListCassette(page, nav); // 只喂 start：看板列表
+      await page.waitForFunction(() => window.__app.buf.settledPageState === 2);
+
+      const jumpIdx = nav.steps.findIndex((st, i) => st.num != null && nav.steps[i + 1]?.on === 'open');
+      expect(jumpIdx).toBeGreaterThan(0);
+      await page.evaluate((r) => window.__app.onData(atob(r)), nav.steps[jumpIdx].recv);
+      // 本卷的跳號落點就是底列空白那一型（前提；不成立這條就不是在測這個 bug）。
+      await page.waitForFunction(() => window.__app.buf.settledPageState === 0);
+
+      await page.evaluate((r) => window.__app.onData(atob(r)), nav.steps[jumpIdx + 1].recv);
+      await page.waitForFunction(() => window.__app.buf.settledPageState === 3);
+      // 修前：prev settled 0 ⇒ nextEasyReadingState 不成立 ⇒ 停在原生。
+      await page.waitForFunction(() => window.__app.easyReading._enabled === true, null, {
+        timeout: 5000,
+      });
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-20)) console.log(l);
+      throw e;
+    }
+  });
+
   test('PgUp 游标停新页顶＋开文返回画面不变（native parity 闭环）', async ({ page }) => {
     test.setTimeout(90000);
     const logs = ptt.attachConsole(page);
@@ -904,7 +936,10 @@ test.describe('文章列表好读模式（离线）', () => {
       s = await waitState(page, (x) => x.state === 'suspended', 20000);
       expect(s.pageState).toBe(3);
       expect(s.renderMode).toBe('native');
-      expect(s.cursorHidden).toBe(false);
+      // 文章好讀必須接手（pref 預設開）。本卷的開文前一刻是跳號落點（底列空 ⇒
+      // settled 0），文章踩 0→3 進來 —— 修前好讀永遠不開、停在原生，這裡曾把那個
+      // 症狀寫成預期（游標可見）。守護 list_session 的 enable-article-reading。
+      await page.waitForFunction(() => window.__app.easyReading._enabled === true);
 
       // ← 返回列表 → resume-in-place：server 落点（游标停在刚读的文章）在
       // 缓冲内 ⇒ 只採用它當選取，maps 不重建（listLen 不缩水），

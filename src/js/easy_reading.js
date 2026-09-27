@@ -7,6 +7,7 @@ import { altRemapCharCode, isAltRemapEvent } from './term_keyboard';
 import { i18n } from './i18n';
 import { findShortcutLabel } from './platform';
 import { offsetTopWithin } from './scroll_anchor';
+import { isJumpParkedListScreen } from './list_session';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
 // (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
@@ -23,7 +24,9 @@ import { offsetTopWithin } from './scroll_anchor';
 // longer re-enable against the user's choice; likewise a pass/edit/normal screen
 // (5/6/0) is excluded, so e.g. returning from in-article help does not re-enable.
 // See docs/easy-reading.md.
-export function nextEasyReadingState({ settledPageState, prevSettledPageState, enabled, enablePref, supported, navActive }) {
+export function nextEasyReadingState({
+  settledPageState, prevSettledPageState, prevSettledParkedList, enabled, enablePref, supported, navActive
+}) {
   // navActive：AID 跳文／deep link 正在驅動畫面。導航途中的每一張畫面都是「別人
   // 的」—— 尤其進板畫面是不折不扣的 pmore（與文章同形，pageState 3），在主功能表
   // (1) 之後就構成一個 1→3 edge，好讀會把進板公告當成文章開始累積（送鍵雖然被
@@ -40,8 +43,18 @@ export function nextEasyReadingState({ settledPageState, prevSettledPageState, e
   // article directly from them (you pass through a board LIST first), so a 1->3 edge
   // in practice only comes from 精華區.
   return settledPageState === 3 &&
-    (prevSettledPageState === 2 || prevSettledPageState === 1) &&
+    settledFromListOrMenu(prevSettledPageState, prevSettledParkedList) &&
     !enabled && enablePref && supported;
+}
+
+// 「上一張靜止畫面是能直接開文的列表／選單」。0 只在 prevSettledParkedList 時算數：
+// 舊版 server 跳號後底列留空（list_session#isJumpParkedListScreen），使用者停在
+// 落點再 Enter，文章就踩 settled 0→3 進來。**不是放寬成「0→3 都算」**：文章中途
+// 的 0 dip（footer 半畫）不會長成列表指紋，那條仍然不開（P4，見下方
+// nextEasyReadingExternalLanding 的註解）。
+export function settledFromListOrMenu(prevSettledPageState, prevSettledParkedList) {
+  if (prevSettledPageState === 2 || prevSettledPageState === 1) return true;
+  return prevSettledPageState === 0 && !!prevSettledParkedList;
 }
 
 // Pure decision for the SECOND auto-enable route: easy reading is off because the user
@@ -480,6 +493,10 @@ export function EasyReading(core, view, termBuf) {
   // navigation's onDone fires before the screen is necessarily complete, so it may
   // ask to be re-evaluated on the NEXT settle — once, then dropped.
   this._pendingEnableOnArticle = false;
+  // 上一次 screenSettled 的畫面是不是「跳號落點列表」（底列空 ⇒ pageState 0）。
+  // 同一次 settle 裡 pageStateSettled 先於 screenSettled ⇒ _onPageStateSettled 讀到
+  // 的永遠是**前一張**靜止畫面的判定。見 settledFromListOrMenu。
+  this._lastSettleParkedList = false;
   // Article identity (作者/標題/時間 rows) — see nextEasyReadingReentry. _articleKey is
   // re-read on every confirmed first-page frame while easy reading is on (_applyRowState,
   // which is the only capture point that covers all the ways a post becomes current);
@@ -514,6 +531,23 @@ export function EasyReading(core, view, termBuf) {
   this._termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
 };
 
+// 只在 pageState 0 時才讀畫面：其餘狀態這個判定不會被用到（settledFromListOrMenu
+// 只對 0 問它），也省掉文章好讀每次 settle 的整頁 getRowText。
+EasyReading.prototype._isJumpParkedListNow = function() {
+  const buf = this._termBuf;
+  if (buf.pageState !== 0 || !buf.getRowText || !buf.isUnicolor) return false;
+  const rowTexts = [];
+  for (let r = 0; r < buf.rows; ++r) rowTexts.push(buf.getRowText(r, 0, buf.cols));
+  return isJumpParkedListScreen({
+    rowTexts,
+    curX: buf.cur_x,
+    curY: buf.cur_y,
+    rows: buf.rows,
+    row0Reversed: buf.isUnicolor(0, 0, 29),
+    row2Reversed: buf.isUnicolor(2, 0, buf.cols - 10)
+  });
+};
+
 // Fired once per term_buf settle edge. Auto-enable easy reading when we have just
 // settled from a board list (2) into an article (3) with the pref on.
 EasyReading.prototype._onPageStateSettled = function() {
@@ -531,7 +565,8 @@ EasyReading.prototype._onPageStateSettled = function() {
   // the typeahead-skip page loss (P4) the transaction exists to prevent.
   const settled = this._termBuf.settledPageState;
   const prevSettled = this._termBuf.prevSettledPageState;
-  const enteringArticle = settled === 3 && (prevSettled === 1 || prevSettled === 2);
+  const prevParkedList = this._lastSettleParkedList;
+  const enteringArticle = settled === 3 && settledFromListOrMenu(prevSettled, prevParkedList);
   const leavingArticle = prevSettled === 3 && (settled === 1 || settled === 2);
   if (enteringArticle || leavingArticle)
     this._resetPagingState();
@@ -540,6 +575,7 @@ EasyReading.prototype._onPageStateSettled = function() {
   const shouldEnable = nextEasyReadingState({
     settledPageState: this._termBuf.settledPageState,
     prevSettledPageState: this._termBuf.prevSettledPageState,
+    prevSettledParkedList: prevParkedList,
     enabled: this._enabled,
     enablePref: values.enableEasyReading,
     supported: this._core.connectedUrl.easyReadingSupported,
@@ -1294,6 +1330,7 @@ EasyReading.prototype._healFromTop = function() {
 // against the fast path so a slow PTT response cannot trigger a double page-down (which
 // would skip a page). See docs/easy-reading.md.
 EasyReading.prototype._onScreenSettled = function() {
+  this._lastSettleParkedList = this._isJumpParkedListNow();
   // pmore 設定頁的偵測要在**停在設定頁的那一幀**做：離開之後那一幀，設定頁的字
   // 已經被文章蓋掉了。好讀關著時也照掃 —— rawmode 是 per-connection 的全域狀態，
   // 「開燈」按鈕的標籤在原生模式下也要跟得上（決策 D3）。
@@ -2064,7 +2101,9 @@ export function nextScrollRestoreStep({
 }
 
 // 導航（AID 跳文／deep link）落地在目標文章上時呼叫，補上 settle edge 給不了的那次
-// 開啟。回傳是否真的開了好讀。
+// 開啟。回傳是否真的開了好讀。另一個呼叫端是列表好讀自己開文的落地
+// （list_session 的 enable-article-reading，reason 'listOpen'）：跳號後底列留空的
+// 列表畫面會 settle 成 0，同樣讓 edge 不成立。
 //
 // allowRetry：來自落地 callback 時傳 true —— 判斷不過就留一個一次性旗標，由**下一
 // 次** screenSettled 再試一次然後丟掉（_onScreenSettled 的 disabled 分支消費）。與
@@ -2075,7 +2114,7 @@ export function nextScrollRestoreStep({
 // _onScreenSettled → CommandQueue 的 onDone（後者由 list_session._onScreenSettled
 // 驅動，而 pttchrome.jsx 先建 easyReading 才建 listSession）。既有 edge 路線若成立，
 // _enabled 早已是 true，nextEasyReadingExternalLanding 第一個條件就直接擋掉。
-EasyReading.prototype.ensureEnabledOnArticle = function(allowRetry) {
+EasyReading.prototype.ensureEnabledOnArticle = function(allowRetry, reason) {
   this._pendingEnableOnArticle = false;
   const values = readValuesWithDefault();
   const status = this._currentPageStatus();
@@ -2094,7 +2133,7 @@ EasyReading.prototype.ensureEnabledOnArticle = function(allowRetry) {
     if (allowRetry && !this._enabled) this._pendingEnableOnArticle = true;
     return false;
   }
-  this._core.debugRecorder?.log('easyReading.enter', { reason: 'externalLanding' });
+  this._core.debugRecorder?.log('easyReading.enter', { reason: reason || 'externalLanding' });
   this.enterEasyReading();
   return true;
 };

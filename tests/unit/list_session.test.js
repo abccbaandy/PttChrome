@@ -12,6 +12,7 @@ import {
   evictListBuffer,
   parseBoardName,
   classifyListScreen,
+  isJumpParkedListScreen,
   classifyListBurst,
   transitionListSession,
   mergeListPage,
@@ -51,6 +52,56 @@ function facts(overrides = {}) {
     ...overrides,
   };
 }
+
+// 跳號落點（舊版 server 底列留空，協定 §4 ✚）——文章好讀靠它認出 settled 0 其實是
+// 列表，見 easy_reading.settledFromListOrMenu。
+describe("isJumpParkedListScreen", () => {
+  const parked = (overrides = {}) => {
+    const rows = listRows.slice();
+    rows[rows.length - 1] = "";
+    return facts({ rowTexts: rows, ...overrides });
+  };
+
+  test("底列全空＋其餘是完整列表＋游標停在編號列 → true", () => {
+    expect(isJumpParkedListScreen(parked())).toBe(true);
+  });
+
+  test("底列有 footer（乾淨列表）→ false：那是 pageState 2，不歸它管", () => {
+    expect(isJumpParkedListScreen(facts())).toBe(false);
+  });
+
+  test("文章中途的 footer 半畫 dip：row0/row2 不是反白列表表頭 → false", () => {
+    const body = listRows.map(() => "這是一段內文，不是列表");
+    body[body.length - 1] = "";
+    expect(
+      isJumpParkedListScreen(parked({ rowTexts: body }))
+    ).toBe(false);
+    // 即使內文碰巧沒有顏色（isUnicolor 為真）也一樣：缺《板名》與「編號」。
+    expect(
+      isJumpParkedListScreen(
+        parked({ rowTexts: body, row0Reversed: true, row2Reversed: true })
+      )
+    ).toBe(false);
+  });
+
+  test("表頭沒反白 → false", () => {
+    expect(isJumpParkedListScreen(parked({ row0Reversed: false }))).toBe(false);
+    expect(isJumpParkedListScreen(parked({ row2Reversed: false }))).toBe(false);
+  });
+
+  test("游標不在 entry 區列首（prompt／半畫）→ false", () => {
+    expect(isJumpParkedListScreen(parked({ curX: 12 }))).toBe(false);
+    expect(isJumpParkedListScreen(parked({ curY: listRows.length - 1 }))).toBe(false);
+    expect(isJumpParkedListScreen(parked({ curY: 1 }))).toBe(false);
+  });
+
+  test("游標列是空白列 → false", () => {
+    const rows = listRows.slice();
+    rows[rows.length - 1] = "";
+    rows[5] = "";
+    expect(isJumpParkedListScreen(facts({ rowTexts: rows, curY: 5 }))).toBe(false);
+  });
+});
 
 describe("parseBoardName", () => {
   test("extracts the 《board》 from the reversed title row", () => {
@@ -468,7 +519,11 @@ describe("transitionListSession (full table)", () => {
   });
 
   test("opening", () => {
-    T("opening", settle("article"), "suspended", ["handoff-article"]);
+    // 自己開的文一律補開文章好讀：不能只靠 settled 2→3 edge（見下方 REGRESSION）。
+    T("opening", settle("article"), "suspended", [
+      "handoff-article",
+      "enable-article-reading",
+    ]);
     T("opening", settle("clean-list"), "opening", []); // stage-1 landing: queue's expect consumes it
     T("opening", settle("prompt"), "opening", []); // jump-prompt frames are EXPECTED here
     T("opening", settle("transient"), "opening", []);
@@ -1247,6 +1302,41 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
     s._onScreenSettled();
     expect(sent[sent.length - 1]).toBe("115\r\f"); // open-jump
     vi.useRealTimers();
+  });
+});
+
+// REGRESSION 2026-09-26（使用者回報「文章好讀偶爾失效，進文章停在原生」，錄製檔
+// ptt-debug-20260926-201535）：看板裡 `/` 搜標題 → 搜尋結果只有 6 篇 → 列表好讀
+// 背景補頁送 `6⏎^L` 後就沒有下一腿了。舊版 server 跳號後底列留空（協定 §4 ✚，
+// ^L 也補不回來）⇒ term_buf 判 pageState 0，列表在那張畫面靜置 ⇒ settled = 0。
+// 使用者開 1 號文 ⇒ 文章踩 settled 0→3 進來，文章好讀只認 1|2→3 edge ⇒ 永遠不開。
+// 修法：列表好讀自己開的文，落地時直接叫 ensureEnabledOnArticle（與 AID 跳文同一條
+// 補償路線；edge 已開過時由它自己的 enabled gate no-op）。
+describe("列表好讀開文落地：補開文章好讀，不依賴 settled 2→3 edge", () => {
+  function openingSession() {
+    const calls = [];
+    const ctx = demandSession({ numStart: 1, count: 6 });
+    ctx.s._core.easyReading = {
+      ensureEnabledOnArticle: (...args) => calls.push(args),
+    };
+    ctx.s._forceRedraw = () => {};
+    ctx.s.state = "opening";
+    return { ...ctx, calls };
+  }
+
+  test("opening → 文章 settle ⇒ 呼叫 ensureEnabledOnArticle(allowRetry=true)", () => {
+    const { s, calls } = openingSession();
+    s._dispatch({ type: "settle", kind: "article" }, null);
+    expect(s.state).toBe("suspended");
+    expect(calls).toEqual([[true, "listOpen"]]);
+  });
+
+  test("不是自己開的文（原生鏡像下使用者開文）不代開：那條路由既有 edge 決定", () => {
+    const { s, calls } = openingSession();
+    s.state = "functionMode";
+    s._dispatch({ type: "settle", kind: "article" }, null);
+    expect(s.state).toBe("suspended");
+    expect(calls).toEqual([]);
   });
 });
 

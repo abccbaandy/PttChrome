@@ -199,6 +199,24 @@ export function classifyListScreen(facts) {
   return { kind: 'transient', boardName };
 }
 
+// 「跳號落點」的文章列表：舊版 server 跳號（`N⏎`）後底列留空、`^L` 也補不回來
+// （協定 §4 ✚）⇒ term_buf 判 pageState 0，classifyListScreen 判 transient。畫面
+// 其餘部分就是一張完整列表。給文章好讀的 auto-enable 用：列表停在這張畫面再
+// Enter，文章是踩 settled 0→3 進來的，要靠它認出「0 其實是列表」。
+// 指紋刻意比 clean-list 只少 footer 一項，且**要求底列全空**：文章中途的 0 dip
+// （footer 半畫）row0 不會有反白《板名》、row2 不會有反白「編號」表頭。
+// facts 形狀同 classifyListScreen。
+export function isJumpParkedListScreen(facts) {
+  const { rowTexts, curX, curY, rows, row0Reversed, row2Reversed } = facts;
+  if (!row0Reversed || !row2Reversed) return false;
+  if (parseBoardName(rowTexts[0]) == null) return false;
+  if ((rowTexts[2] || '').indexOf('編號') < 0) return false;
+  if ((rowTexts[rows - 1] || '').trim()) return false;
+  if (curY < 3 || curY > rows - 2 || curX > 1) return false;
+  const row = rowTexts[curY] || '';
+  return parseListArticleNumLoose(row) != null || isPinnedListRow(row);
+}
+
 // Classify one settle window's dirty-row burst (term_buf settleSnapshot
 // .changedRows — the rows the SERVER wrote during the quiet period). This is a
 // fast-path HINT only: completion decisions always use the final screen
@@ -494,8 +512,12 @@ export function transitionListSession(state, event) {
         // clean-list settles mid-open (jump prompt echoes, the cursor landing
         // on the target) are consumed by the CommandQueue expects — the reducer
         // just waits for the article.
+        // enable-article-reading：這篇是我們自己開的，不能只靠文章好讀的
+        // settled 2→3 edge —— 舊版 server 跳號後底列留空（協定 §4 ✚），
+        // 列表若在那張畫面靜置（MODE_SELECT 搜尋結果太短、補頁鏈停在
+        // `N\r\f`），settled 就是 0，文章踩 0→3 進來永遠不開好讀。
         if (event.kind === 'article') {
-          return { next: 'suspended', actions: ['handoff-article'] };
+          return { next: 'suspended', actions: ['handoff-article', 'enable-article-reading'] };
         }
         return stay;
       }
@@ -1134,6 +1156,13 @@ ListSession.prototype = {
         return this._rebuild(facts);
       case 'handoff-article':
         return this._handoffArticle();
+      case 'enable-article-reading': {
+        // 既有 edge 路線若已開好讀，ensureEnabledOnArticle 的 enabled gate 讓這裡
+        // no-op（同一次 settle 裡 _onPageStateSettled 先跑）。
+        const er = this._core.easyReading;
+        if (er && er.ensureEnabledOnArticle) er.ensureEnabledOnArticle(true, 'listOpen');
+        return;
+      }
       case 'enter-function-mode':
         return this._enterFunctionMode(facts);
       case 'resume-buffer':
