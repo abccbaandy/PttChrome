@@ -462,6 +462,28 @@ describe("EasyReading._onKeyDownProcessUI End handling", () => {
     expect(mainDisplay.scrollTop).toBe(mainDisplay.scrollHeight);
   });
 
+  // End 之後黏在文末（bottom_stick.js）；讀者按別的鍵捲動就放手。
+  it("End 黏在文末；之後按別的鍵放手", () => {
+    readValuesWithDefault.mockReturnValue({
+      easyReadingEndSwitchNative: false, easyReadingEndSwitchKey: "End"
+    });
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    try {
+      const mainDisplay = document.createElement("div");
+      const mainContainer = document.createElement("div");
+      const er = new EasyReading({}, { mainDisplay, mainContainer }, { addEventListener() {} });
+      er._scrollBy = vi.fn(() => true);
+      er._onKeyDownProcessUI(keyEvent("End"));
+      expect(er._bottomStick.engaged).toBe(true);
+      er._onKeyDownProcessUI(keyEvent("G"));
+      expect(er._bottomStick.engaged).toBe(true);
+      er._onKeyDownProcessUI(keyEvent("k"));
+      expect(er._bottomStick.engaged).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("$ / G still switch to native when the pref is on (fixed vi aliases)", () => {
     for (const key of ["$", "G"]) {
       const { er } = makeER({

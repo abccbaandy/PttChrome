@@ -8,6 +8,7 @@ import { i18n } from './i18n';
 import { findShortcutLabel } from './platform';
 import { offsetTopWithin } from './scroll_anchor';
 import { isJumpParkedListScreen } from './list_session';
+import { createBottomStick } from './bottom_stick';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
 // (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
@@ -760,6 +761,8 @@ EasyReading.prototype._resetPagingState = function() {
   this._reverse = null;
   if (this._view && typeof this._view.clearReverse === 'function')
     this._view.clearReverse('dropped');
+  // 「按了 End、黏在文末」也是這一篇的。
+  if (this._bottomStick) this._bottomStick.release();
 };
 
 // Arm the recovery timer for the outstanding request. _watchdogSig is the identity
@@ -2204,8 +2207,23 @@ EasyReading.prototype._scrollBottom = function() {
   return true;
 };
 
+// End：捲到底並黏住，之後才載入長高的行內預覽不會把文末推出視窗（bottom_stick.js）。
+EasyReading.prototype._stickBottom = function() {
+  const view = this._view;
+  if (!this._bottomStick && view.mainDisplay && view.mainContainer)
+    this._bottomStick = createBottomStick({
+      scroller: view.mainDisplay, content: view.mainContainer
+    });
+  if (!this._bottomStick) return this._scrollBottom();
+  this._bottomStick.engage();
+  return true;
+};
+
 EasyReading.prototype._onKeyDownProcessUI = function(e) {
   var stop = false;
+  // 讀者按了別的鍵（捲動、翻頁、進 prompt…）⇒ 不再黏在文末。
+  if (this._bottomStick && !(e.key === 'End' || e.key === '$' || e.key === 'G'))
+    this._bottomStick.release();
   // Configurable "switch to native at bottom" key (default End; $/G kept as fixed
   // vi aliases). When the pref is off we don't preventDefault, so the key falls
   // through to the native terminal (term_view.onKeyDown continues past us).
@@ -2290,7 +2308,7 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
       case 'End':
       case '$':
       case 'G':
-        stop = this._scrollBottom();
+        stop = this._stickBottom();
         // 還在讀取中 ⇒ 反向讀取：直接跳到文末、往上讀（docs/easy-reading.md
         // 「反向讀取」）。已讀完就只是上面那一行的捲到底。
         this._requestReverse();

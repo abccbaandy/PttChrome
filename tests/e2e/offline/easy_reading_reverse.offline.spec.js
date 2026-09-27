@@ -16,6 +16,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline } = require('../helpers/replay');
+const { waitPreviewsSettled } = require('../helpers/layout');
 
 const SIM_SRC = fs.readFileSync(path.join(__dirname, '..', 'helpers', 'pmore_sim.js'), 'utf8');
 const TOTAL = 1200;
@@ -25,16 +26,19 @@ const LATENCY_MS = 80;
 const FIRST_COMMENT = 120;
 
 // 在頁面裡裝模擬器＋回應器。回應一律非同步（下一個 task），與真實 WS 相同。
-async function installSim(page, simOpts) {
+// imageLines：這些行改成圖片網址推文（行內預覽佔位盒，載入後才長高）。
+async function installSim(page, simOpts, imageLines = []) {
   await page.evaluate(
-    ({ src, simOpts, firstComment, LATENCY_MS }) => {
+    ({ src, simOpts, firstComment, LATENCY_MS, imageLines }) => {
       const module = { exports: {} };
       new Function('module', 'exports', src)(module, module.exports);
       const { createPmoreSim } = module.exports;
       // 前段是內文，FIRST_COMMENT 起是推文（作者輪替，不會被同作者合併）
       const authors = ['alice', 'bob', 'carol', 'dave'];
       const lineText = (n) =>
-        n < firstComment
+        imageLines.includes(n)
+          ? `推 ${authors[n % authors.length]}: https://i.imgur.com/rev${n}.png`.padEnd(66) + '09/25 10:00'
+          : n < firstComment
           ? `article line ${n}`
           : `推 ${authors[n % authors.length]}: comment ${n}`.padEnd(66) + '09/25 10:00';
       const rows = window.__app.buf.rows;
@@ -74,14 +78,17 @@ async function installSim(page, simOpts) {
       // 開文：第一頁
       window.__app.onData(encode(sim.screen()));
     },
-    { src: SIM_SRC, simOpts, firstComment: FIRST_COMMENT, LATENCY_MS }
+    { src: SIM_SRC, simOpts, firstComment: FIRST_COMMENT, LATENCY_MS, imageLines }
   );
 }
 
-async function openArticle(page, simOpts) {
-  await bootOffline(page, ptt);
-  await ptt.applyPrefs(page, { enableEasyReadingList: false, showFloorNumbers: true });
-  await installSim(page, simOpts);
+async function openArticle(page, simOpts, { imageLines = [], imageProfile } = {}) {
+  await bootOffline(page, ptt, imageProfile ? { imageProfile } : undefined);
+  await ptt.applyPrefs(page, {
+    enableEasyReadingList: false, showFloorNumbers: true,
+    ...(imageLines.length ? { enablePicPreview: true } : {})
+  });
+  await installSim(page, simOpts, imageLines);
   await page.waitForFunction(() => window.__app.buf.pageState === 3);
   // 好讀的自動開啟靠「列表→文章」的 settle 邊緣；這裡沒有列表，直接走唯一入口。
   await page.evaluate(() => window.__app.easyReading.enterEasyReading());
@@ -200,6 +207,33 @@ test.describe('好讀反向讀取（End，離線）', () => {
     expect(Math.max(...r.gaps), JSON.stringify(r.gaps)).toBeLessThanOrEqual(r.chh);
   });
 
+  // 回歸實錄 ptt-debug-20260927-183720：End 落地那一頁就是文末（100%）⇒ tail 第一幀
+  // 就補完、followBottom 只貼底一次就放手；可是文末那頁有圖片推文，佔位盒之後才載入長高
+  // （在視窗內、錨點下方）⇒ scroll anchoring 保住的是視窗頂端，文末被推出視窗下緣。
+  // 使用者症狀：「按 End 沒到底，離底部有點距離」。slow 情境讓圖在接合之後才回來。
+  test('文末有圖：圖片在 End 之後才載入長高，讀者仍停在文末', async ({ page }) => {
+    const imageLines = [TOTAL - 20, TOTAL - 12, TOTAL - 5];
+    await openArticle(page, { total: TOTAL }, { imageLines, imageProfile: 'slow' });
+    await page.keyboard.press('End');
+    await page.waitForFunction(
+      () => !window.__app.easyReading._reverse && window.__app.easyReading.easyReadingReachedPageEnd,
+      null, { timeout: 60000 }
+    );
+    await waitPreviewsSettled(page);
+    const r = await page.evaluate(() => {
+      const m = document.querySelector('.main');
+      return {
+        gap: Math.round(m.scrollHeight - m.clientHeight - m.scrollTop),
+        imgs: Array.from(document.querySelectorAll('#mainContainer img.hyperLinkPreview'))
+          .filter((im) => im.offsetHeight > 0).length,
+        chh: window.__app.view.chh
+      };
+    });
+    // 前提：圖真的載出來了（否則這條量不到任何東西）
+    expect(r.imgs).toBeGreaterThan(0);
+    expect(r.gap, JSON.stringify(r)).toBeLessThanOrEqual(r.chh);
+  });
+
   test('反向期間停在 head 讀的人，接合時位置不動', async ({ page }) => {
     await openArticle(page, { total: TOTAL });
     await page.keyboard.press('End');
@@ -207,9 +241,12 @@ test.describe('好讀反向讀取（End，離線）', () => {
       () => window.__app.view._reverse && window.__app.view._reverse.tailComplete,
       null, { timeout: 15000 }
     );
-    // 讀者捲回 head 的第 10 列
+    // 讀者捲回 head 的第 10 列。按過 End 的讀者黏在文末（bottom_stick.js），只有讀者
+    // 自己的輸入會放手，純程式設 scrollTop 不算 ⇒ 先派一個 wheel 事件（不用
+    // page.mouse.wheel：原生滾動是非同步動畫，會在下面量完 before 之後才落地）。
     const before = await page.evaluate(() => {
       const m = document.querySelector('.main');
+      m.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
       const el = document.querySelector('#mainContainer [type="bbsrow"][srow="10"]');
       m.scrollTop = el.offsetTop - document.querySelector('#mainContainer').offsetTop;
       return el.getBoundingClientRect().top;
