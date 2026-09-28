@@ -1,6 +1,6 @@
 ﻿import { App } from './pttchrome';
 import { setupI18n, i18n } from './i18n';
-import { getQueryVariable, proxySiteFromPrefs } from './util';
+import { defaultSite, getQueryVariable, proxySiteFromPrefs } from './util';
 import { readValuesWithDefault } from './pref_storage';
 import { pageArticleNums } from './comment_parse';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
@@ -57,7 +57,7 @@ function startApp() {
     app.connect(
       (process.env.ALLOW_SITE_IN_QUERY && getQueryVariable('site'))
       || proxySiteFromPrefs(prefs)
-      || process.env.DEFAULT_SITE);
+      || defaultSite());
     console.log("load pref from storage");
     app.onValuesPrefChange(prefs);
     // Cloud prefs (Firestore) arrive later — and keep arriving via the
@@ -77,7 +77,8 @@ function startApp() {
     installHistoryBackGuard(app);
     app.setInputAreaFocus();
     document.getElementById('BBSWindow').style.display = '';
-    app.onWindowResize();
+    // immediate：顯示前量到的滑鼠座標原點是 0，不可等 resizer 的 debounce。
+    app.onWindowResize({ immediate: true });
   }
 }
 

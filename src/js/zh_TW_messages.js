@@ -783,6 +783,27 @@
   "options_fixedTermSize": {
     "message": "固定終端機大小"
   },
+  "options_mobileLayout": {
+    "message": "手機版面"
+  },
+  "tooltip_mobileLayout": {
+    "message": "手機版面會在右下角顯示按鍵列（方向鍵、PgUp/PgDn、Home/End 等手機鍵盤沒有的按鍵），點畫面不再叫出鍵盤，要打字時按按鍵列的鍵盤鈕。自動：觸控裝置且螢幕較小時啟用。"
+  },
+  "options_mobileLayoutAuto": {
+    "message": "自動"
+  },
+  "options_mobileLayoutOn": {
+    "message": "開啟"
+  },
+  "options_mobileLayoutOff": {
+    "message": "關閉"
+  },
+  "mobileKeypad_toggle": {
+    "message": "按鍵列"
+  },
+  "mobileKeypad_keyboard": {
+    "message": "叫出／收起鍵盤"
+  },
   "options_fixedFontSize": {
     "message": "固定字體大小"
   },

@@ -90,6 +90,25 @@ module.exports = defineConfig({
       name: 'offline',
       use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK },
       testMatch: 'offline/**/*.spec.js',
+      testIgnore: 'offline/mobile_*.spec.js',
+    },
+    {
+      // offline-mobile：手機版面（docs/mobile.md）。Pixel 7 模擬 ＝ hasTouch + isMobile
+      // ⇒ Chromium 回報 pointer: coarse、hover: none，App 自動進手機模式。
+      // 桌機 project 排除 mobile_* spec（它們斷言的是手機行為）。
+      // 列表好讀那支兩邊都跑：非整數 DPR（2.625）⇒ 列高是小數，是 scrollTop 量化
+      // 少算一列（手機 PgUp「卡住」，list_scroll.js#SCROLL_QUANT_EPS）唯一測得到的環境。
+      //
+      // 視窗高刻意壓到 390（Pixel 7 的寬度／DPR／觸控照舊）：手機模式的列數＝高度 / 16px
+      // （mobile_layout.mobileTermGeometry），而**錄製檔全是 24 列**——原生 839px 高會
+      // 給 52 列，重放永遠湊不成完整一屏（好讀等不到翻頁）。390 ⇒ 24 列。
+      name: 'offline-mobile',
+      use: {
+        ...devices['Pixel 7'],
+        viewport: { width: 412, height: 390 },
+        proxy: OFFLINE_NO_NETWORK,
+      },
+      testMatch: ['offline/mobile_*.spec.js', 'offline/easy-reading-list.offline.spec.js'],
     },
     {
       // offline-firefox：只跑「選取文字」那支。issue #22 的兩個症狀（選取自動複製、

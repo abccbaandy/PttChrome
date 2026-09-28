@@ -64,6 +64,23 @@ describe("termLayoutOffsets（.main 的垂直位移）", () => {
     expect(termLayoutOffsets({ ...base, innerHeight: 400, margin: 8 }).marginTop).toBe(8);
   });
 
+  // 手機軟鍵盤（docs/mobile.md Phase 2）：Android 叫鍵盤只縮 visualViewport，
+  // layout 高度不變 ⇒ 不處理的話，PTT 底列的輸入列就在鍵盤底下。
+  test("bottomInset：在沒被鍵盤蓋住的區域裡置中", () => {
+    // 可視 1000-300=700，內容 576 ⇒ (700-576)/2
+    expect(termLayoutOffsets({ ...base, innerHeight: 1000, bottomInset: 300 }).marginTop).toBe(62);
+  });
+
+  test("bottomInset：放不下時底對齊可視區（輸入列在底列），頂端被推出畫面", () => {
+    // 可視 800-300=500 < 576 ⇒ 底部貼齊 500 ⇒ marginTop = 500-576
+    expect(termLayoutOffsets({ ...base, innerHeight: 800, bottomInset: 300 }).marginTop).toBe(-76);
+  });
+
+  test("bottomInset 0／未給：行為與以前完全相同（桌機零改動）", () => {
+    expect(termLayoutOffsets({ ...base, innerHeight: 400, bottomInset: 0 }).marginTop).toBe(0);
+    expect(termLayoutOffsets({ ...base, innerHeight: 1000 }).marginTop).toBe(212);
+  });
+
   test("LOCKED：不回傳任何水平位移（置中是 BBSWin 的 align=center 在做）", () => {
     const o = termLayoutOffsets({ ...base, innerHeight: 1000 });
     expect(o.marginLeft).toBeUndefined();

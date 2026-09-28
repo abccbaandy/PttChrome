@@ -233,6 +233,9 @@ export function TermView() {
   this.mouseFunctionKeys = true;
   //this.highlightFG = 7;
   this.fontFitWindowWidth = false;
+  // 手機軟鍵盤蓋住的底部高度（px），App._onVisualViewport 寫、setTermFontSize 讀。
+  // 見 mobile_layout.keyboardInset、term_size.termLayoutOffsets。
+  this.keyboardInset = 0;
   //new pref - end
 
   this.bbsViewMargin = 0;
@@ -1442,7 +1445,8 @@ TermView.prototype = {
         innerHeight: innerBounds.height,
         chh: this.chh,
         rows: this.buf.rows,
-        margin: this.bbsViewMargin
+        margin: this.bbsViewMargin,
+        bottomInset: this.keyboardInset
       }).marginTop + 'px';
 
     this.firstGridOffset = this.bbscore.getFirstGridOffsets();
@@ -1452,6 +1456,15 @@ TermView.prototype = {
     this.updateCursorPos();
 
     if (widthChanged) this.componentScreen.notifyLayoutChanged();
+  },
+
+  // 字級不變、只重排位置（手機軟鍵盤開關）。走 setTermFontSize 而不是只改
+  // marginTop：firstGridOffset（滑鼠座標原點）、提示帶、游標都依賴它之後的重量測。
+  setKeyboardInset: function(px) {
+    var inset = px > 0 ? px : 0;
+    if (inset === this.keyboardInset) return;
+    this.keyboardInset = inset;
+    if (this.chh) this.setTermFontSize(this.chw, this.chh);
   },
 
   // 提示帶的水平幾何。**必須與 App.clientToPos 同源**（兩者都走

@@ -17,6 +17,14 @@ export const POS_EPS = 1e-6;
 // 可見性比較用的容差（px）。瀏覽器的 scrollTop 可以是小數（高 DPI／縮放），
 // 差半個像素不該算成「露出視口外」——否則 nearest 會每次都想捲一下。
 export const VISIBLE_EPS = 0.5;
+// scrollTop → 列號的容差（px）。**必須是像素單位，不可只靠 POS_EPS（列單位）**：
+// 非整數 DPR 下 fixedResize 給的列高是小數（Pixel 7：26/2.625 = 9.9047…），寫進
+// scrollTop 的 pos*rowH 會被瀏覽器量化（裝置像素、Chrome LayoutUnit 1/64px），
+// 讀回來可能比列邊界少零點零幾 px ⇒ floor 少算一列 ⇒ 手機上 PgUp 每次被吃掉一列
+// （「卡住」）。量化誤差恆小於 1 裝置像素 ≤ 1 CSS px；取 0.5 與 VISIBLE_EPS 同源。
+// 代價：真的停在「列邊界上方 < 0.5px」的位置會被當成下一列、frac 0 —— 看不見的差距。
+// 守護 tests/unit/list_scroll.test.js「非整數 DPR 下 scrollTop 量化」。
+export const SCROLL_QUANT_EPS = VISIBLE_EPS;
 
 // 內容總高：render 端會把短板補 blank 列到 bodyRows，所以內容至少一個視口高。
 export function contentPx({ len, bodyRows, rowH }) {
@@ -35,7 +43,7 @@ export function topPosFromScrollTop({ scrollTop, rowH }) {
   const h = Number(rowH);
   if (!(h > 0)) return { pos: 0, frac: 0 };
   const st = Math.max(0, Number(scrollTop) || 0);
-  const pos = Math.floor(st / h + POS_EPS);
+  const pos = Math.floor((st + SCROLL_QUANT_EPS) / h + POS_EPS);
   return { pos: pos, frac: Math.max(0, st - pos * h) };
 }
 

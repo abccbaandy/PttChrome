@@ -155,6 +155,11 @@ export const PREF_SEARCH_ITEMS = [
     { key: "termSize.rows", titleKey: "options_rows" },
     { key: "fontFitWindowWidth", titleKey: "options_fontFitWindowWidth" },
     { key: "fontSize", titleKey: "options_fontSize" },
+    {
+      key: "mobileLayout",
+      titleKey: "options_mobileLayout",
+      tooltipKey: "tooltip_mobileLayout",
+    },
   ]),
   ...inSection("general", "options_cursorHighlight", null, [
     {

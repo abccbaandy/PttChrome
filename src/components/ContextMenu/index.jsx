@@ -9,6 +9,7 @@ import LongPushModal from "./LongPushModal";
 import LongPushProgressModal from "./LongPushProgressModal";
 import LongPushErrorModal from "./LongPushErrorModal";
 import DebugRecordButton from "../DebugRecordButton";
+import MobileKeypad from "../MobileKeypad";
 import { onPrefSaveImpl } from "./pref_save";
 import { downloadAsFile } from "../../js/util";
 import { readValuesWithDefault, writeValues } from "../../js/pref_storage";
@@ -903,6 +904,7 @@ export const ContextMenu = ({ pttchrome }) => {
         onDebugModeChange={onDebugModeChange}
       />
       {debugMode && <DebugRecordButton pttchrome={pttchrome} />}
+      <MobileKeypad pttchrome={pttchrome} hidden={modalOpen} />
     </Fragment>
   );
 };

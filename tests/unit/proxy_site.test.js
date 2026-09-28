@@ -1,4 +1,4 @@
-import { DEFAULT_PROXY_HOST, proxySiteFromPrefs } from "../../src/js/util";
+import { DEFAULT_PROXY_HOST, proxySiteFromPrefs, resolveDefaultSite } from "../../src/js/util";
 
 // proxySiteFromPrefs turns the proxy prefs (useProxy + proxyUrl) into a connect()
 // target. main.js uses it between the ?site override and DEFAULT_SITE.
@@ -46,5 +46,39 @@ describe("proxySiteFromPrefs", () => {
   it("appends /bbs to a bare host that carries a port but no path", () => {
     expect(proxySiteFromPrefs({ useProxy: true, proxyUrl: "host.dev:443" }))
       .toBe("wsstelnet://host.dev:443/bbs");
+  });
+});
+
+// REGRESSION（手機用區網位址開 dev server 連不上／Origin 沒被改寫）：dev 的預設站台
+// 以前寫死 wstelnet://localhost:8080/bbs，手機上的 localhost 是手機自己。
+// 現在 vite.config.mjs 給的是 {pageHost} 佔位符，runtime 換成 location.host。
+describe("resolveDefaultSite", () => {
+  it("dev：換成頁面自己的 host（含 port），區網位址開站也打回同一台 dev server", () => {
+    expect(resolveDefaultSite("wstelnet://{pageHost}/bbs", "192.168.1.20:8080")).toBe(
+      "wstelnet://192.168.1.20:8080/bbs"
+    );
+    expect(resolveDefaultSite("wstelnet://{pageHost}/bbs", "localhost:8080")).toBe(
+      "wstelnet://localhost:8080/bbs"
+    );
+  });
+
+  it("prod：沒有佔位符就原樣回傳", () => {
+    expect(resolveDefaultSite("wsstelnet://ws.ptt.cc/bbs", "example.github.io")).toBe(
+      "wsstelnet://ws.ptt.cc/bbs"
+    );
+  });
+
+  it("沒有 host 可用時退回 localhost:8080；沒有 site 回空字串", () => {
+    expect(resolveDefaultSite("wstelnet://{pageHost}/bbs", "")).toBe("wstelnet://localhost:8080/bbs");
+    expect(resolveDefaultSite(undefined, "x")).toBe("");
+  });
+
+  it("vite.config.mjs 的 dev 預設站台必須用佔位符，不可寫死 localhost", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const cfg = fs.readFileSync(path.join(__dirname, "..", "..", "vite.config.mjs"), "utf8");
+    const line = cfg.split("\n").find((l) => l.includes("'process.env.DEFAULT_SITE'"));
+    expect(line).toContain("{pageHost}");
+    expect(line).not.toContain("localhost:8080");
   });
 });

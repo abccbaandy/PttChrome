@@ -70,9 +70,15 @@ async function dumpListState(page) {
 // 畫面是不是「看起來仍是 24 列」。全序列渲染後 DOM 的列數 = 3 header + 序列
 // （不足 bodyRows 補到 bodyRows）+ 1 footer，而**視口高度**才是使用者看到的
 // 那 20 列 —— 這才是原本 `domRows === 24` 想守的東西。
+// clientHeight 依規格取整數；非整數 DPR（offline-mobile 的 Pixel 7）下列高是小數
+// （26/2.625），完全相等只在桌機 DPR 1 成立 ⇒ 比較一律容許 < 1px。
+function expectPxNear(actual, expected) {
+  expect(Math.abs(actual - expected), `${actual} vs ${expected}`).toBeLessThan(1);
+}
+
 function expectListViewport(s) {
   expect(s.domRows).toBe(4 + Math.max(s.seqLen, 20));
-  expect(s.viewportPx).toBe(20 * s.chh); // bodyRows × 列高
+  expectPxNear(s.viewportPx, 20 * s.chh); // bodyRows × 列高
 }
 
 // 24 行视窗的 DOM 文字（好读与原生同一渲染单轨，可直接互 diff）。
@@ -536,14 +542,17 @@ test.describe('文章列表好读模式（离线）', () => {
           scrollHeight: v.scrollHeight
         };
       });
-      expect(geom.clientHeight).toBe(20 * geom.chh); // 畫面仍是 20 列 body
+      expectPxNear(geom.clientHeight, 20 * geom.chh); // 畫面仍是 20 列 body
       expect(geom.scrollHeight).toBeGreaterThan(geom.clientHeight); // 有可捲距離
 
       const topPos0 = await windowTopPos(page);
       expect(topPos0).toBeGreaterThan(3); // 上方要有捲得動的空間
 
       // 捲到一個**不是列高整數倍**的位置：畫面停得住半列（原生捲動的自然結果）。
-      const target = (topPos0 - 3) * geom.chh + 7;
+      // 偏移必須 < 半列：windowTopPos 用 round 判讀，桌機列高 26px 時 7px 沒問題，
+      // 手機（offline-mobile）列高 9.9px 時 7px 就過半、會被讀成下一列。
+      const off = Math.min(7, Math.floor(geom.chh / 3));
+      const target = (topPos0 - 3) * geom.chh + off;
       await page.evaluate((top) => {
         document.querySelector('#mainContainer .listBodyView').scrollTop = top;
       }, target);
@@ -556,7 +565,8 @@ test.describe('文章列表好读模式（离线）', () => {
       );
       // scroll handler 是 rAF 合併的，等錨真的跟上。
       await page.waitForFunction(
-        (t) => window.__app.listSession._lastScrollTop === t,
+        // scrollTop 會被量化（非整數 DPR），不可用 ===，見 expectPxNear。
+        (t) => Math.abs(window.__app.listSession._lastScrollTop - t) < 1,
         target,
         { timeout: 5000 }
       );
@@ -566,7 +576,7 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(await windowTopPos(page)).toBe(topPos0 - 3);
       expect(
         await page.evaluate(() => window.__app.listSession._scrollFrac)
-      ).toBeCloseTo(7, 0);
+      ).toBeCloseTo(off, 0);
       // 2) 游標**不被拉走**（網頁式語意：它可以被捲出視野）。
       expect(after.selectedNum).toBe(before.selectedNum);
       // 3) 捲動不改變 DOM 列數（沒有重繪、沒有視窗切片）。
@@ -839,7 +849,7 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(res.hasAuthor).toBe(false);
       // 隱藏列直接從序列消失（不留空隙），畫面高度不變。
       expect(res.domRows).toBe(4 + Math.max(res.seqLen, 20));
-      expect(res.viewportPx).toBe(20 * res.chh);
+      expectPxNear(res.viewportPx, 20 * res.chh);
       expect(res.listLen).toBeGreaterThanOrEqual(20); // 缓冲仍保留隐藏列
     } catch (e) {
       console.log('--- console tail ---');

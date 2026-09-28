@@ -24,6 +24,26 @@ export function setTimer(repeat, func, timelimit) {
   }
 }
 
+// DEFAULT_SITE 裡代表「頁面自己的 host（含 port）」的佔位符。dev 的預設站台是
+// 自己 dev server 的 /bbs WebSocket proxy（vite.config.mjs 改寫 Origin），以前寫死
+// `localhost:8080` ⇒ 從手機用區網位址（`yarn start --host`、http://192.168.x.x:8080）
+// 開站時，`localhost` 指的是**手機自己**，根本連不到 dev server 的 proxy（只剩
+// useProxy 偏好那條路，Origin 也沒被改寫）。守護 tests/unit/proxy_site.test.js。
+export const PAGE_HOST_TOKEN = '{pageHost}';
+
+export function resolveDefaultSite(site, pageHost) {
+  if (!site) return '';
+  return site.split(PAGE_HOST_TOKEN).join(pageHost || 'localhost:8080');
+}
+
+// 實際使用的預設站台（main.jsx 的連線優先序最後一順位、連線失敗診斷的比對基準）。
+export function defaultSite() {
+  return resolveDefaultSite(
+    process.env.DEFAULT_SITE,
+    typeof location !== 'undefined' ? location.host : ''
+  );
+}
+
 // 專案方提供的公用 relay。**空欄位就是用它**（UI 把它放在 placeholder），使用者想
 // 自架時才填自己的位址，刪空即回到這個預設——不會出現「刪掉就永遠沒有位址」。
 export const DEFAULT_PROXY_HOST = 'ptt-proxy.ptt-relay-8xquy.workers.dev';

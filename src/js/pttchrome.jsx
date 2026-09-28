@@ -47,9 +47,10 @@ import { navKeyAllowed, navKeyBlockReason } from './nav_key_gate';
 import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
+import { inputModeFor, isMobileEnv, keyboardInset, mobileTermGeometry } from './mobile_layout';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
-import { proxySiteFromPrefs, setTimer } from './util';
+import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
 import {
   IMAGE_PROXY_SITES,
   normalizeImgurProxyBase,
@@ -226,6 +227,16 @@ export const App = function() {
 
   this.lastSelection = null;
 
+  // 手機模式（mobile_layout.js、docs/mobile.md）。runtime 狀態，不寫回 prefs。
+  //   mobileLayoutMode：pref mobileLayout（onPrefChange 寫）
+  //   mobile          ：推導值，唯一寫入點 applyMobileLayout
+  //   softKeyboard    ：使用者用按鍵列的鍵盤鈕叫出了軟鍵盤
+  this.mobileLayoutMode = 'auto';
+  this.mobile = false;
+  this.softKeyboard = false;
+  this._mobileListeners = new Set();
+  this._keyboardSeen = false;
+
   this.waterball = { userId: '', message: '' };
   this.appFocused = true;
 
@@ -321,6 +332,21 @@ export const App = function() {
   this.onWindowResize();
   this.setupContextMenus();
   this.contextMenuShown = false;
+
+  // 指標能力會在執行中改變（Chrome DevTools 切裝置模擬、平板接上滑鼠）。
+  if (typeof window.matchMedia === 'function') {
+    ['(pointer: coarse)', '(hover: none)'].forEach((q) => {
+      var mql = window.matchMedia(q);
+      if (mql && mql.addEventListener)
+        mql.addEventListener('change', () => this.applyMobileLayout());
+    });
+  }
+  if (window.visualViewport) {
+    var onVV = () => this._onVisualViewport();
+    window.visualViewport.addEventListener('resize', onVV);
+    window.visualViewport.addEventListener('scroll', onVV);
+  }
+  this.applyMobileLayout();
 };
 
 App.prototype.isConnected = function() {
@@ -473,7 +499,7 @@ App.prototype.onClose = function() {
   const diagnose = () => diagnoseConnectFailure({
     site: failed.url,
     opened: failed.opened,
-    defaultSite: process.env.DEFAULT_SITE,
+    defaultSite: defaultSite(),
     proxySite: proxySite,
     probe: probeWebSocket
   });
@@ -578,6 +604,94 @@ App.prototype.setInputAreaFocus = function() {
     return;
   //this.DocInputArea.disabled="";
   this.inputArea.focus({ preventScroll: true });
+};
+
+// 手機模式的唯一推導點：重算 this.mobile，把結果套到 DOM（body class、#t 的
+// inputmode），有變化才通知訂閱者（按鍵列）。入口：建構子、matchMedia change、
+// onWindowResize、pref mobileLayout。
+App.prototype.applyMobileLayout = function() {
+  var mq = function(q) {
+    return typeof window.matchMedia === 'function' && window.matchMedia(q).matches;
+  };
+  var mobile = isMobileEnv({
+    mode: this.mobileLayoutMode,
+    coarse: mq('(pointer: coarse)'),
+    hoverNone: mq('(hover: none)'),
+    width: window.innerWidth,
+    height: window.innerHeight
+  });
+  var changed = mobile !== this.mobile;
+  this.mobile = mobile;
+  if (!mobile) this.softKeyboard = false;
+  document.body.classList.toggle('mobile-layout', mobile);
+  this._applyInputMode();
+  if (!changed) return;
+  // 尺寸規則換了一套（手機無視 termSizeMode）。_termSizeValues 未定義＝prefs 還沒
+  // 載入（建構子階段），等 onValuesPrefChange 自己套。
+  if (this._termSizeValues !== undefined) this.applyTermSize();
+  this._onVisualViewport();
+  this._emitMobileState();
+};
+
+App.prototype._emitMobileState = function() {
+  var mobile = this.mobile;
+  var kb = this.softKeyboard;
+  this._mobileListeners.forEach(function(fn) { fn(mobile, kb); });
+};
+
+App.prototype._applyInputMode = function() {
+  var mode = inputModeFor({ mobile: this.mobile, softKeyboard: this.softKeyboard });
+  if (mode) this.inputArea.setAttribute('inputmode', mode);
+  else this.inputArea.removeAttribute('inputmode');
+};
+
+// 按鍵列訂閱手機狀態 fn(mobile, softKeyboard)；回傳取消訂閱。
+App.prototype.onMobileChange = function(fn) {
+  this._mobileListeners.add(fn);
+  return () => this._mobileListeners.delete(fn);
+};
+
+// 按鍵列的鍵盤鈕。**必須在使用者手勢（click handler）裡同步呼叫**：瀏覽器只在
+// user activation 內才肯因 focus 叫出軟鍵盤。inputmode 對已經有焦點的欄位不會
+// 即時生效（鍵盤不會自己彈出／收起），所以切換後 blur→focus 讓瀏覽器重新判斷。
+// 回傳新狀態。
+App.prototype.toggleSoftKeyboard = function() {
+  if (!this.mobile || this.modalShown) return this.softKeyboard;
+  this.softKeyboard = !this.softKeyboard;
+  this._keyboardSeen = false;
+  this._applyInputMode();
+  this.inputArea.blur();
+  this.inputArea.focus({ preventScroll: true });
+  this._onVisualViewport();
+  return this.softKeyboard;
+};
+
+// visualViewport resize/scroll（建構子掛）。兩件事：
+//   1. 鍵盤蓋住的高度 → term_view.setKeyboardInset（終端機排進可視區）＋ CSS 變數
+//      --kb-inset（按鍵列是 position:fixed，錨在 layout viewport，不推就被鍵盤蓋住）。
+//   2. 鍵盤被**別的方式**收起（Android 返回鍵、點網址列）：看過鍵盤出現、之後又
+//      不見了 ⇒ softKeyboard 歸零，否則下次按鍵盤鈕會是「收起」、要按兩下才叫得出來。
+//      「看過出現」是必要條件：剛按下鍵盤鈕的那幾幀鍵盤還沒升起，inset 也是 0。
+App.prototype._onVisualViewport = function() {
+  var vv = window.visualViewport;
+  var inset = vv ? keyboardInset({
+    mobile: this.mobile,
+    softKeyboard: this.softKeyboard,
+    layoutHeight: document.documentElement.clientHeight,
+    vvHeight: vv.height,
+    vvOffsetTop: vv.offsetTop,
+    vvScale: vv.scale
+  }) : 0;
+  if (inset > 0) {
+    this._keyboardSeen = true;
+  } else if (this._keyboardSeen && this.softKeyboard) {
+    this._keyboardSeen = false;
+    this.softKeyboard = false;
+    this._applyInputMode();
+    this._emitMobileState();
+  }
+  document.documentElement.style.setProperty('--kb-inset', inset + 'px');
+  if (this.view && this.view.setKeyboardInset) this.view.setKeyboardInset(inset);
 };
 
 // modalShown 是終端機鍵盤／焦點的總閘門（讀取點散在 term_view.js 的 shouldAcceptInput
@@ -969,13 +1083,20 @@ App.prototype.setAutoPushthreadUpdate = function(seconds) {
   this.maxPushthreadAutoUpdateCount = seconds;
 };
 
-App.prototype.onWindowResize = function() {
+// opts.immediate：跳過 resizer 的 500ms debounce 當場重算。只給「終端機剛從
+// display:none 變成可見」用（main.jsx 開站）：隱藏時量到的滑鼠座標原點
+// （view.firstGridOffset）是 0，debounce 的那半秒內點擊整片偏移。
+App.prototype.onWindowResize = function(opts) {
   this.view.innerBounds = this.getWindowInnerBounds();
+  this.applyMobileLayout();
 
   if (this.resizeTimeout) {
     clearTimeout(this.resizeTimeout);
+    this.resizeTimeout = null;
   }
-  if (this.resizer) {
+  if (this.resizer && opts && opts.immediate) {
+    this.resizer();
+  } else if (this.resizer) {
     this.resizeTimeout = setTimeout(() => {
       this.resizeTimeout = null;
       if (this.resizer) {
@@ -1348,11 +1469,42 @@ App.prototype.onValuesPrefChange = function(values, opts) {
     );
   }
 
-  // These prefs have to be processed as a whole.
+  // These prefs have to be processed as a whole. 存起來：手機模式切換時
+  // （applyMobileLayout）要用同一組值重套一次。真實呼叫端都傳整份 prefs；只帶
+  // 部分 key 的呼叫不動尺寸。
+  if (values.termSizeMode === undefined) return;
+  this._termSizeValues = {
+    termSizeMode: values.termSizeMode,
+    termSize: values.termSize,
+    fontSize: values.fontSize,
+    fontFitWindowWidth: values.fontFitWindowWidth
+  };
+  this.applyTermSize();
+};
+
+// 終端機尺寸的唯一套用點。手機模式**無視 termSizeMode**（runtime 覆寫，pref 原封
+// 不動 —— 它會同步回桌機），改用 mobile_layout.mobileTermGeometry；見 docs/mobile.md。
+App.prototype.applyTermSize = function() {
+  var values = this._termSizeValues || {};
   try {
     this.resizer = null;
 
-    switch (values.termSizeMode) {
+    if (this.mobile) {
+      this.view.fontFitWindowWidth = false;
+      this.resizer = () => {
+        var b = this.view.innerBounds;
+        var g = mobileTermGeometry({
+          width: b.width,
+          height: b.height,
+          dpr: window.devicePixelRatio || 1
+        });
+        if (!(g.chh > 0)) return;
+        this.setTermSize(g.cols, g.rows);
+        this.view.fixedResize(g.chh);
+        this.view.redraw(true);
+      };
+      this.resizer();
+    } else switch (values.termSizeMode) {
       case 'fixed-term-size':
         this.view.fontFitWindowWidth = values.fontFitWindowWidth;
 
@@ -1398,6 +1550,10 @@ App.prototype.onPrefChange = function(name, value) {
       // class) and is derived from the NATIVE bg palette — it has to be told,
       // or it goes invisible on the grayed-out reverse-video input rows.
       if (this.view) this.view.setWorkMode(!!value);
+      break;
+    case 'mobileLayout':
+      this.mobileLayoutMode = value;
+      this.applyMobileLayout();
       break;
     case 'autoHideBlinkCursor':
       // 純顯示切換：只影響 #cursor 的 display，不需 redraw。

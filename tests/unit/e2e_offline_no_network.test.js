@@ -21,11 +21,12 @@ describe("offline e2e：瀏覽器層硬斷網", () => {
       "offline-broken",
       "offline-firefox",
       "offline-mixed",
+      "offline-mobile",
       "offline-slow",
     ]);
   });
 
-  test.each(["offline", "offline-broken", "offline-firefox", "offline-mixed", "offline-slow"])(
+  test.each(["offline", "offline-broken", "offline-firefox", "offline-mixed", "offline-mobile", "offline-slow"])(
     "%s 必須把出口指向連不上的 proxy",
     (name) => {
       const proxy = offlineProjects.find((p) => p.name === name).use.proxy;

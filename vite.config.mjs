@@ -37,7 +37,9 @@ export default defineConfig(({ command }) => {
     assetsInclude: ['**/*.bin', '**/*.bmp'],
     define: {
       'process.env.PTTCHROME_PAGE_TITLE': JSON.stringify(process.env.PTTCHROME_PAGE_TITLE || 'PttChrome'),
-      'process.env.DEFAULT_SITE': JSON.stringify(DEVELOPER_MODE ? 'wstelnet://localhost:8080/bbs' : 'wsstelnet://ws.ptt.cc/bbs'),
+      // dev：`{pageHost}` 在 runtime 換成 location.host（util.js#resolveDefaultSite），
+      // 所以從區網位址開站（手機實測）也會打到這台 dev server 的 /bbs proxy。
+      'process.env.DEFAULT_SITE': JSON.stringify(DEVELOPER_MODE ? 'wstelnet://{pageHost}/bbs' : 'wsstelnet://ws.ptt.cc/bbs'),
       // Default OFF: ignore ?site= in the URL (a page-author/link could otherwise
       // point the client at an arbitrary WebSocket host). Users who want a custom
       // proxy set it in Preferences instead (useProxy + proxyUrl, see pref_storage.js).

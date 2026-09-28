@@ -939,6 +939,21 @@ export const PrefModal = ({
                     {...anchor("fontSize")}
                   />
                 )}
+                <Select
+                  label={i18n("options_mobileLayout")}
+                  description={i18n("tooltip_mobileLayout")}
+                  name="mobileLayout"
+                  value={values.mobileLayout}
+                  allowDeselect={false}
+                  onChange={(val) => onSelectStr("mobileLayout", val)}
+                  data={[
+                    { value: "auto", label: i18n("options_mobileLayoutAuto") },
+                    { value: "on", label: i18n("options_mobileLayoutOn") },
+                    { value: "off", label: i18n("options_mobileLayoutOff") },
+                  ]}
+                  mb="xs"
+                  {...anchor("mobileLayout")}
+                />
               </PrefSection>
               {/* 游標所在列：滑鼠與鍵盤共用同一條渲染管線與同一組樣式，所以獨立成
                 一區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。滑鼠那條

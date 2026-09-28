@@ -46,6 +46,28 @@ describe("topPosFromScrollTop", () => {
     expect(r.pos).toBe(4);
   });
 
+  // REGRESSION（手機「列表 PgUp 會卡住」）：非整數 DPR（Pixel 7 = 2.625）下
+  // fixedResize 給的列高是 26/2.625 = 9.9047… 這種小數。寫進 scrollTop 的 pos*rowH
+  // 會被瀏覽器量化（裝置像素、Chrome LayoutUnit 1/64px），讀回來可能差零點零幾 px，
+  // 以前的「列單位 1e-6」容差吃不下 ⇒ floor 少算一列 ⇒ PgUp 每次都被吃掉一列。
+  test.each([
+    ["DPR 2.625、fixed-term-size", 26 / 2.625, 2.625],
+    ["DPR 2.625、fixed-font-size 20", 52 / 2.625, 2.625],
+    ["DPR 1.25（Windows 125%）", 37 / 1.25, 1.25],
+  ])("非整數 DPR 下 scrollTop 量化不得少算一列：%s", (_label, rowH, dpr) => {
+    const quantizers = [
+      (x) => Math.floor(x * 64) / 64, // LayoutUnit 向下
+      (x) => Math.round(x * dpr) / dpr, // 對齊裝置像素
+      (x) => Math.floor(x * dpr) / dpr,
+    ];
+    for (const q of quantizers) {
+      for (let pos = 0; pos <= 400; pos++) {
+        const st = q(pos * rowH);
+        expect(topPosFromScrollTop({ scrollTop: st, rowH }).pos).toBe(pos);
+      }
+    }
+  });
+
   test("負值／rowH 未知時退回原點，不得回 NaN", () => {
     expect(topPosFromScrollTop({ scrollTop: -50, rowH: ROW })).toEqual({ pos: 0, frac: 0 });
     expect(topPosFromScrollTop({ scrollTop: 100, rowH: 0 })).toEqual({ pos: 0, frac: 0 });

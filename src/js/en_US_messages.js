@@ -784,6 +784,27 @@ export const en_US = {
   "options_fixedTermSize": {
     "message": "Fixed term size"
   },
+  "options_mobileLayout": {
+    "message": "Mobile layout"
+  },
+  "tooltip_mobileLayout": {
+    "message": "Shows a key bar in the bottom-right corner (arrows, PgUp/PgDn, Home/End and other keys phone keyboards lack). Tapping the screen no longer brings up the keyboard; use the keyboard button on the key bar to type. Auto: on for touch devices with a small screen."
+  },
+  "options_mobileLayoutAuto": {
+    "message": "Auto"
+  },
+  "options_mobileLayoutOn": {
+    "message": "On"
+  },
+  "options_mobileLayoutOff": {
+    "message": "Off"
+  },
+  "mobileKeypad_toggle": {
+    "message": "Key bar"
+  },
+  "mobileKeypad_keyboard": {
+    "message": "Show / hide keyboard"
+  },
   "options_fixedFontSize": {
     "message": "Fixed font size"
   },

@@ -15,7 +15,7 @@ yarn start
 
 ## 為何只要一個指令
 
-`vite`（dev server）**已內建** `/bbs` 的 WebSocket 反向代理，並把 `Origin` 改寫成 `https://term.ptt.cc` 以通過 PTT 白名單（見 `vite.config.mjs` 的 `server.proxy`）。dev 模式預設連線站台正好是 `wstelnet://localhost:8080/bbs`（`vite.config.mjs` 的 `define` → `process.env.DEFAULT_SITE`），剛好打到自己的 dev server proxy。
+`vite`（dev server）**已內建** `/bbs` 的 WebSocket 反向代理，並把 `Origin` 改寫成 `https://term.ptt.cc` 以通過 PTT 白名單（見 `vite.config.mjs` 的 `server.proxy`）。dev 模式預設連線站台是 `wstelnet://{pageHost}/bbs`（`vite.config.mjs` 的 `define` → `process.env.DEFAULT_SITE`），runtime 由 `util.js#resolveDefaultSite` 把 `{pageHost}` 換成 `location.host`，所以永遠打到「開這個頁面的那台」dev server proxy。**不可寫死 `localhost`**：手機用區網位址（`yarn start --host`）開站時 `localhost` 是手機自己，連不到 proxy。
 
 ```
 瀏覽器 :8080 ──ws /bbs──▶ Vite dev server proxy（改 Origin→term.ptt.cc）──▶ wss://ws.ptt.cc/bbs

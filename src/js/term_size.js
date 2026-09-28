@@ -43,12 +43,15 @@ export function calcTermSize({ height, fontSizePx }) {
 // 置中 ＋ `transform-origin: center`。把水平位移改成「貼左」會讓退出提示帶整條
 // 跑掉。所以那個 deprecated 的 align 屬性**不是可以順手刪的遺跡**，守護在
 // tests/e2e/offline/term_size.offline.spec.js。
-export function termLayoutOffsets({ innerHeight, chh, rows, margin = 0 }) {
+//
+// `bottomInset` ＝手機軟鍵盤蓋住的底部高度（mobile_layout.keyboardInset，0 ＝沒有）。
+// 置中改在「沒被蓋住的那一段」裡做；放不下時**底對齊**可視區（頂端幾列被推出畫面），
+// 因為這時使用者正在打字，而 PTT 的輸入列幾乎都在底列（vtuikit.c 的 b_lines）。
+export function termLayoutOffsets({ innerHeight, chh, rows, margin = 0, bottomInset = 0 }) {
   const contentHeight = chh * rows;
-  return {
-    marginTop:
-      contentHeight < innerHeight
-        ? (innerHeight - contentHeight) / 2 + margin
-        : margin
-  };
+  const inset = bottomInset > 0 ? bottomInset : 0;
+  const avail = innerHeight - inset;
+  if (contentHeight < avail) return { marginTop: (avail - contentHeight) / 2 + margin };
+  if (inset > 0) return { marginTop: avail - contentHeight };
+  return { marginTop: margin };
 }

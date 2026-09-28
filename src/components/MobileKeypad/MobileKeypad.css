@@ -1,0 +1,61 @@
+/* 手機按鍵列（MobileKeypad/index.jsx）。位於終端機之外（#cmenuReact 底下），
+   所以這裡的 user-select: none 不影響終端機的選取（main.css 的 issue #22 限制只
+   針對終端機的祖先）。按鍵最小 44px：觸控目標的常見下限。 */
+.mobileKeypad {
+  position: fixed;
+  right: 8px;
+  /* --kb-inset：軟鍵盤蓋住的高度（App._onVisualViewport 寫）。position:fixed 錨在
+     layout viewport，而 Android 預設叫鍵盤只縮 visual viewport ⇒ 不加就被鍵盤蓋住。 */
+  bottom: calc(8px + var(--kb-inset, 0px));
+  z-index: 2500;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.mobileKeypadGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(44px, 1fr));
+  gap: 4px;
+  padding: 4px;
+  max-width: calc(100vw - 16px);
+  background: rgba(20, 20, 24, 0.88);
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
+}
+
+.mobileKeypadKey,
+.mobileKeypadFab {
+  min-height: 44px;
+  padding: 0 6px;
+  border: 1px solid #555;
+  border-radius: 6px;
+  background: #2b2b30;
+  color: #eee;
+  font-size: 15px;
+  font-family: system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.mobileKeypadKey:active,
+.mobileKeypadFab:active {
+  background: #44444c;
+}
+
+.mobileKeypadAux {
+  background: #1f2a3a;
+}
+
+.mobileKeypadAux.active {
+  background: #2f6fd0;
+  border-color: #5a8ee0;
+}
+
+.mobileKeypadFab {
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 24px;
+  font-size: 20px;
+  opacity: 0.85;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+}

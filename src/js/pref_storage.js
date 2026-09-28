@@ -204,6 +204,10 @@ export const DEFAULT_PREFS = {
   termSize: { cols: 80, rows: 24 },
   termSizeMode: "fixed-term-size",
   bbsMargin: 0,
+  // 手機版面（mobile_layout.js、docs/mobile.md）：auto ＝依裝置判斷（觸控＋不能 hover
+  // ＋短邊 < 800px）；on/off 強制。手機模式本身的調整一律是 runtime 覆寫、不寫回
+  // prefs（prefs 會同步到其他裝置）。
+  mobileLayout: "auto",
   // PTT 自己畫了 '>' 游標的畫面（列表／選單）不再疊一個閃爍游標 —— 兩個游標同框是
   // 重複資訊。輸入框／編輯器不走 pttbbs 的 cursor_show，閃爍游標照舊顯示，位置資訊
   // 不會消失，所以預設開。判定見 comment_parse.js#hasServerCursorMark。

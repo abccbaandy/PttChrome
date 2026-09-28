@@ -41,7 +41,7 @@
     "ci:status": "node scripts/ci-status.mjs",
     "debug:screens": "node scripts/debug-screens.mjs",
     "test:e2e": "yarn kill:dev && playwright test --project=live",
-    "test:e2e:offline": "yarn kill:dev && playwright test --project=offline --project=offline-firefox",
+    "test:e2e:offline": "yarn kill:dev && playwright test --project=offline --project=offline-firefox --project=offline-mobile",
     "test:e2e:offline:firefox": "yarn kill:dev && playwright test --project=offline-firefox",
     "test:e2e:offline:adverse": "yarn kill:dev && node scripts/run-adverse-e2e.mjs",
     "test:e2e:headed": "yarn kill:dev && playwright test --project=live --headed",
