@@ -12,6 +12,16 @@ const {
   comparePusherSequences,
   inspectFloorGaps,
 } = require('./helpers/ptt');
+const { listRowAuthor, isListIndexRow } = require('./helpers/list_row');
+
+// 當前畫面每列文字（buf 是真相源；DOM 慢一幀，見 CLAUDE.md）。
+const readBufRows = (page) =>
+  page.evaluate(() => {
+    const buf = window.__app.buf;
+    const out = [];
+    for (let r = 0; r < buf.rows; ++r) out.push(buf.getRowText(r, 0, buf.cols));
+    return out;
+  });
 
 // Enhanced Add-on：樓層編號 + 黑名單。連真 PTT，需好讀模式。
 // 對應 src/js/comment_parse.js / Screen.js / term_view.js(appendRows)。
@@ -235,20 +245,15 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       await gotoBoard(page, 'C_Chat'); // 停在 C_Chat 列表
       await page.waitForTimeout(1000);
 
-      const r = await page.evaluate(() => {
+      // 選列表中第一個合法作者。讀 buf.getRowText 並依**終端機欄位**切作者欄：
+      // 推文數「爆」／置底 ★／舊游標 ● 是雙寬字（1 個 JS char 佔 2 欄），直接
+      // substring 會把作者砍頭（"+爆 9/28 laptic" → "aptic"），見 helpers/list_row.js。
+      const rows = await readBufRows(page);
+      const target = listRowAuthor(rows.find(isListIndexRow) || '');
+
+      const r = await page.evaluate((target) => {
         const app = window.__app;
         const sel = '#mainContainer > span[type="bbsrow"]';
-        // textContent（非 innerText）：visibility:hidden 的列 innerText 會是空字串。
-        const authorCol = (el) => el.textContent.substring(17, 29).trim();
-        // 行首＝空白／游標標記。游標兩代：新 '>'（半形，pttbbs b9a5029f 起）與
-        // 舊 '●'（全形，會吃掉序號最高位 → 只剩 5 位）。
-        const isIndexRow = (el) =>
-          /^[ >●]?\d{5,6}\s/.test(el.textContent) && /^[0-9A-Za-z]+$/.test(authorCol(el));
-        // 選列表中第一個合法作者
-        let target = '';
-        for (const el of document.querySelectorAll(sel)) {
-          if (isIndexRow(el)) { target = authorCol(el); break; }
-        }
         // 走真實 pref handler（會 parseBlacklist + redraw）
         app.onPrefChange('blacklist', target);
         const after = Array.from(document.querySelectorAll(sel)).map((el) => ({
@@ -265,7 +270,7 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
           noticeCount: noticeRows.length,
           noticeHidden: noticeRows.some((x) => x.vis === 'hidden'),
         };
-      });
+      }, target);
       console.log('LIST BLACKLIST:', JSON.stringify(r));
 
       expect(r.target).not.toBe('');
@@ -290,17 +295,13 @@ test.describe.serial('enhanced add-on（共用 session）', () => {
       await gotoBoard(page, 'C_Chat');
       await page.waitForTimeout(1000);
 
-      const rows = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"]')).map(
-          (el) => el.innerText
-        )
-      );
+      const rows = await readBufRows(page);
       expect(rows.length).toBeGreaterThan(0);
 
-      // 一般索引列：開頭為（空白/游標標記 >／●）+ 5~6 位編號。對這些列取 cols 17~28
-      // 應為合法帳號。新游標 '>' 是半形、不位移欄位；舊 '●' 是全形，會左移一格。
+      // 一般索引列：開頭為（空白/游標標記 >／●）+ 5~6 位編號。對這些列依**終端機欄位**
+      // 取 cols 17~28 應為合法帳號（雙寬字「爆」／●的位移由 helpers/list_row.js 處理）。
       const indexRows = rows.filter((r) => /^[ >●]?\d{5,6}\s/.test(r));
-      const valid = indexRows.filter((r) => /^[0-9A-Za-z]+$/.test(r.substring(17, 29).trim()));
+      const valid = indexRows.filter((r) => listRowAuthor(r) !== '');
       console.log(`INDEX ROWS: ${indexRows.length}, AUTHOR COL VALID: ${valid.length}`);
 
       expect(indexRows.length).toBeGreaterThan(0);
