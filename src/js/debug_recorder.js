@@ -3,6 +3,7 @@
 // 錄下雙向 bytes ＋ 每事件輕量狀態快照 ＋ 關鍵路徑 log（app.debugRecorder?.log(tag, info)）。
 // 序列化 / redact / cassette 導出在 debug_recorder_logic.js（純邏輯，unit 測）。
 import { serializeRecording } from './debug_recorder_logic';
+import { setDiagSink } from './diag';
 
 // 輕量狀態快照：純讀取，不深拷貝 buf。欄位缺就缺（防呆）。
 //
@@ -107,6 +108,9 @@ export class DebugRecorder {
     this._t0 = 0;
     this._origOnData = null;
     this._origSendRaw = null;
+    this._scroller = null;
+    this._onWheel = null;
+    this._onScroll = null;
   }
 
   _push(ev) {
@@ -138,7 +142,45 @@ export class DebugRecorder {
       };
     }
 
+    // 渲染鏈的診斷 log（圖片尺寸模式、佔位盒掛載／卸載／高度）走 module 級出口，
+    // 見 diag.js。
+    setDiagSink((tag, info) => this.log(tag, info));
+    this._watchScroller(app.view && app.view.mainDisplay);
+
     this.log('record.start', { url: app.connectedUrl && app.connectedUrl.url });
+  }
+
+  // 好讀長頁的捲動軌跡：使用者的滾輪輸入（main.wheel）對照實際捲動位置
+  // （main.scroll）。「滾輪往上捲不動、畫面上下抖」這類問題只看 bytes 完全看不出來
+  // （2026-09 的 ptt-debug-20260928-181323：開文後 23 秒一筆事件都沒有）。
+  // 只在錄製期間掛 listener；scroll 事件本身一幀最多一次，量 scrollHeight 的 reflow
+  // 成本只有錄製時才付。
+  _watchScroller(scroller) {
+    if (!scroller || typeof scroller.addEventListener !== 'function') return;
+    this._scroller = scroller;
+    this._onWheel = (e) =>
+      this.log('main.wheel', {
+        dy: Math.round(e.deltaY),
+        mode: e.deltaMode,
+        top: Math.round(scroller.scrollTop),
+      });
+    this._onScroll = () =>
+      this.log('main.scroll', {
+        top: Math.round(scroller.scrollTop),
+        sh: scroller.scrollHeight,
+        ch: scroller.clientHeight,
+      });
+    scroller.addEventListener('wheel', this._onWheel, { passive: true });
+    scroller.addEventListener('scroll', this._onScroll, { passive: true });
+  }
+
+  _unwatchScroller() {
+    if (!this._scroller) return;
+    this._scroller.removeEventListener('wheel', this._onWheel, { passive: true });
+    this._scroller.removeEventListener('scroll', this._onScroll, { passive: true });
+    this._scroller = null;
+    this._onWheel = null;
+    this._onScroll = null;
   }
 
   log(tag, info) {
@@ -151,6 +193,8 @@ export class DebugRecorder {
     if (!this.isRecording) return null;
     this.log('record.stop');
     this.isRecording = false;
+    setDiagSink(null);
+    this._unwatchScroller();
     if (this._origOnData) this.app.onData = this._origOnData;
     if (this._origSendRaw && this._patchedConn) this._patchedConn._sendRaw = this._origSendRaw;
     this._origOnData = null;

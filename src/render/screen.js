@@ -56,6 +56,8 @@ import {
   invalidateInlinePreviewHeights,
 } from "./inline_preview_slot";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
+import { imageSizeMode, stepImageZoom } from "../js/image_zoom";
+import { diag } from "../js/diag";
 import {
   annotationsKey,
   sameKey,
@@ -125,6 +127,9 @@ export class ScreenController {
     this._hoverPos = { left: undefined, top: undefined };
     // 好讀自動開圖「一鍵放大全部圖片至視窗寬度」；點任一張內嵌預覽圖切換。
     this._imagesEnlarged = false;
+    // 好讀自動開圖的「整頁圖片倍率」（圖上浮現的 －／＋，見 js/image_zoom.js）。作用在
+    // 小圖模式；放大態優先、倍率保留。生命週期同 imagesEnlarged。
+    this._imageZoom = 1;
     // 開燈（隱藏文字提亮）。**只是軌 A 的 CSS 開關**——軌 B（server 已擦掉的內容）
     // 由 App 切 pmore rawmode 處理，狀態在 enhance.rawMode，不在這裡。與
     // imagesEnlarged 同生命週期：同篇 page-down 保留、換文章（articleId 變）重置。
@@ -180,10 +185,13 @@ export class ScreenController {
     // hover 預覽的 OnHover img 無此 class，不受影響。
     this._onContainerClick = this._onContainerClick.bind(this);
     this._onContainerMouseMove = this._onContainerMouseMove.bind(this);
+    this._onPreviewZoom = this._onPreviewZoom.bind(this);
     this.onHyperLinkMouseOver = this.onHyperLinkMouseOver.bind(this);
     this.onHyperLinkMouseOut = this.onHyperLinkMouseOut.bind(this);
     this.container.addEventListener("click", this._onContainerClick);
     this.container.addEventListener("mousemove", this._onContainerMouseMove);
+    // 倍率列的按鈕（inline_preview_slot.js）派發的 bubbling 事件。
+    this.container.addEventListener("previewzoom", this._onPreviewZoom);
 
     this._mergeButton = null;
     this._aiButton = null;
@@ -272,6 +280,7 @@ export class ScreenController {
       // 走唯一入口：直接賦值欄位會漏掉容器 class（＝圖片尺寸的真正決定者）與
       // 存活中 slot 的 sizeMode，下一篇就會一開場就是大圖。
       this._setImagesEnlarged(false);
+      this._setImageZoom(1);
       // 單張圖的暫時性灰階同理走唯一入口（直接清 Set 會漏掉已經掛著、還帶著
       // data-gray 的節點 ⇒ 下一篇一開場就有幾張莫名其妙的灰圖）。
       this._resetImagesGray();
@@ -374,6 +383,7 @@ export class ScreenController {
     this.onListScroll = null;
     this.container.removeEventListener("click", this._onContainerClick);
     this.container.removeEventListener("mousemove", this._onContainerMouseMove);
+    this.container.removeEventListener("previewzoom", this._onPreviewZoom);
     this.container.remove();
     this._cache = null;
     this._prevFrame = null;
@@ -389,17 +399,35 @@ export class ScreenController {
     const t = e.target;
     if (!t || t.tagName !== "IMG" || !t.classList.contains("hyperLinkPreview"))
       return;
+    this._withImageAnchor(t, () =>
+      this._setImagesEnlarged(!this._imagesEnlarged),
+    );
+  }
+
+  // 倍率列：dir +1／-1 一格、0 回 100%。錨點取按鈕所屬那張圖（同點圖放大）。
+  _onPreviewZoom(e) {
+    const detail = e.detail || {};
+    const next = stepImageZoom(this._imageZoom, detail.dir);
+    const img = detail.img && detail.img.isConnected ? detail.img : null;
+    const apply = () => this._setImageZoom(next);
+    if (img) this._withImageAnchor(img, apply);
+    else apply();
+    this._refocusTerminal();
+  }
+
+  // 套用一個會改變圖片尺寸的動作，並把 `el` 釘在原本的視窗位置（見上方說明）。
+  _withImageAnchor(el, fn) {
     const scroller = this.container.closest(".main");
     const anchor = scroller
       ? {
-          el: t,
+          el,
           scroller,
-          topBefore: offsetTopWithin(t, this.container),
-          heightBefore: t.offsetHeight,
+          topBefore: offsetTopWithin(el, this.container),
+          heightBefore: el.offsetHeight,
           scrollBefore: scroller.scrollTop,
         }
       : null; // 拿不到捲動容器就單純切換，不補償（不 crash）。
-    this._setImagesEnlarged(!this._imagesEnlarged);
+    fn();
     if (!anchor || !anchor.el.isConnected) return;
     anchor.scroller.scrollTop = computeAnchoredScrollTop({
       topBefore: anchor.topBefore,
@@ -526,8 +554,32 @@ export class ScreenController {
       this.container.classList.contains("imagesEnlarged") === next;
     if (this._imagesEnlarged === next && domInSync) return;
     this._imagesEnlarged = next;
-    this.container.classList.toggle("imagesEnlarged", next);
-    const mode = next ? "enlarged" : "normal";
+    this._syncImageSize();
+  }
+
+  // 整頁圖片倍率（同 imagesEnlarged 的形狀：容器 class + CSS 變數決定尺寸，不重建列）。
+  _setImageZoom(next) {
+    const domInSync =
+      this.container.classList.contains("imagesZoomed") ===
+      (next !== 1 && !this._imagesEnlarged);
+    if (this._imageZoom === next && domInSync) return;
+    this._imageZoom = next;
+    this._syncImageSize();
+  }
+
+  // 圖片尺寸的 DOM 同步唯一入口：兩個容器 class 互斥（放大態優先），倍率走
+  // --img-zoom（寫在容器上：slot/content 不得有 runtime inline style，見
+  // inline_preview_slot.js 檔頭硬不變量），再把 sizeMode 廣播給存活中的 slot。
+  _syncImageSize() {
+    const enlarged = this._imagesEnlarged;
+    const zoomed = !enlarged && this._imageZoom !== 1;
+    this.container.classList.toggle("imagesEnlarged", enlarged);
+    this.container.classList.toggle("imagesZoomed", zoomed);
+    if (zoomed)
+      this.container.style.setProperty("--img-zoom", String(this._imageZoom));
+    else this.container.style.removeProperty("--img-zoom");
+    const mode = this._sizeMode();
+    diag("image.size", { mode, slots: this._liveSlots.size });
     for (const slot of this._liveSlots) slot.setSizeMode(mode);
   }
 
@@ -937,7 +989,7 @@ export class ScreenController {
   }
 
   _sizeMode() {
-    return this._imagesEnlarged ? "enlarged" : "normal";
+    return imageSizeMode(this._imagesEnlarged, this._imageZoom);
   }
 
   // 把這一列建立的佔位盒掛到它的頂層節點上，並記進存活集合（imagesEnlarged 切換

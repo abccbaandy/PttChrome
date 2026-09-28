@@ -66,6 +66,7 @@ describe("main.css：內嵌預覽的命中範圍", () => {
       ".previewLoading",
       ".previewError",
       ".previewGrayBtn",
+      ".previewZoomBar",
     ]) {
       expect(selector, `${need} 沒有取回 pointer-events`).toContain(need);
     }

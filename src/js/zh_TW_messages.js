@@ -382,6 +382,15 @@
   "imageGray_off": {
     "message": "還原色彩"
   },
+  "imageZoom_out": {
+    "message": "縮小圖片（整篇）"
+  },
+  "imageZoom_in": {
+    "message": "放大圖片（整篇）"
+  },
+  "imageZoom_reset": {
+    "message": "回到 100%"
+  },
   "lightsOn_on": {
     "message": "開燈（顯示隱藏文字）"
   },

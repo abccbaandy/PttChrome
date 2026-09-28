@@ -383,6 +383,15 @@ export const en_US = {
   "imageGray_off": {
     "message": "Restore colors"
   },
+  "imageZoom_out": {
+    "message": "Zoom out images (whole article)"
+  },
+  "imageZoom_in": {
+    "message": "Zoom in images (whole article)"
+  },
+  "imageZoom_reset": {
+    "message": "Reset to 100%"
+  },
   "lightsOn_on": {
     "message": "Lights on (reveal hidden text)"
   },

@@ -168,6 +168,13 @@
 - **`buf.pageLines` 既是 render source 又是選取 source，clone 用 `term_view.cloneRow`**（`Object.assign(Object.create(Object.getPrototypeOf(ch)), ch)`），保留 TermChar prototype 方法（`isStartOfURL`/`getColor`…）；勿用 `JSON.parse(JSON.stringify())`（剝 prototype → render 即炸）。WHY 見 `term_view.js#cloneRow` 註解。
 - **跨頁去重 `resolvePageOverlap`（狀態列行號為主，2026-07，治「重複區塊」race，CONFIRMED unit+offline/live e2e 守護）**。2026-08 起半畫幀已被上面的「完整回應幀」閘擋在外，本節的 drift guard 因此退居第二道保險而非主力。`findPageOverlap` 取最大內文相符 `k`，在半畫好中間 frame（重疊區某列未 settle）會 lock 到偏小 `k` → 少跳 → 重複追加 → 畫面重複段落（難重現、非特定文章）。改以狀態列 `目前顯示: 第 S~E 行`（`parseStatusRow` 的 `rowIndexStart/End`）算重疊：`kStatus = accEndRow - statusStart + 1`（`accEndRow` = `pageLines` 末列文章行號＝上頁 rowIndexEnd，`term_view._accEndRow` 追蹤；首頁 seed、`hideEasyReadingOverlays` 重置）。規則：**content 為重疊下界**（`findPageOverlap` 找到的相符列確定重複、必跳，`kStatus<=kContent` 用 `kContent`；長「行」可 wrap 成 2 顯示列使 kStatus 偏小，故不得低於 content）；僅 `kStatus>kContent`（content 因 race 少算）時用 `kStatus` 補回，並過 **drift guard**（該重疊區與 accTail 非空列相符率 <0.5 視為 `accEndRow` 漂移 → 退回 `kContent`）。純函式在 `comment_parse.resolvePageOverlap`，守護 `tests/unit/comment_parse.test.js` `describe("resolvePageOverlap")` + offline `replay_fixture.test.jsx` 鏡像同路徑。
 - **換篇不得與舊篇串接（`decideAccumulateBranch` 雙保險，CONFIRMED unit＋replay 合成守護）**：分支決策抽純函式 `comment_parse.decideAccumulateBranch`，`accumulatePageLines` 依其三路 rebuild/append/skip 分流。**`leaveCurrentPost` 的一次性 `prevPageState=0` 不可信**——會被 redraw 每幀末的 `prevPageState=pageState` 覆寫，leave 與新文章第一頁之間夾任何 pageState 3 幀（舊文殘幀）就吃掉旗標 → 兩篇串接且此後恆串接。故：(1) **sticky 旗標 `buf.easyReadingPendingReset`**——`leaveCurrentPost`/`enterEasyReading` 設 true，只在「確認文章第一頁」（`statusStart===1`）時消費，functionMode resume 與 `hideEasyReadingOverlays` 顯式清 false；(2) **身分自癒**——續接時 `statusStart===1 ∧ kContent===0 ∧ acc 非空` ⇒ 不可能是同篇下一頁 → 強制 rebuild（未知路徑漏旗標也能復原；誤判代價僅「從第一頁重新累積」）。守護：`comment_parse.test.js` `describe("decideAccumulateBranch")`＋`replay_fixture.test.jsx` 合成 race 案例。
+- **整頁圖片倍率（`src/js/image_zoom.js`＋`.previewZoomBar`，2026-09）**：與 `imagesEnlarged` 並存、互斥（放大態優先，倍率保留）。
+  - 尺寸唯一入口 `render/screen.js#_syncImageSize`：容器 class `imagesEnlarged`／`imagesZoomed` 二擇一＋容器上的 `--img-zoom`，再廣播 `sizeMode` 給 `_liveSlots`。`_setImagesEnlarged`／`_setImageZoom` 都只設欄位後呼叫它。生命週期同 `imagesEnlarged`（`articleId` 變 ⇒ `_setImageZoom(1)`）。
+  - `sizeMode` 字串鍵擴成 `"normal"|"enlarged"|"zoom@<z>"` ⇒ `lazy_media` 分模式記高度零修改，每個倍率各一格；100% 仍是 `"normal"`（既有 memo 不失效）。
+  - 寬度公式 `min(--nat-w px, 39em, 19em×--nat-w/--nat-h) × --img-zoom`（main.css `.imagesZoomed`）＝小圖寬×倍率，`max-width:100%` 封頂。`--nat-w/--nat-h` 由 `ImagePreviewer.jsx#FallbackImage` onLoad 與替身盒 `syncGhost` 各自寫在自己身上（替身盒與真圖同一組輸入 ⇒ 佔位高度仍逐像素準）。
+  - **slot 是單欄 grid，欄寬必須釘死 `grid-template-columns: minmax(0, 1fr)`**（CONFIRMED offline e2e，ptt-debug-20260928-181323）：implicit auto 軌道會被子孫的內容貢獻撐寬。倍率態替身盒是 `<div>`、寬是絕對值、上限只剩 `max-width:100%`（對 auto 軌道是循環參照 ⇒ 貢獻照原值）⇒ 軌道被撐寬、同格真圖跟著被撐出版面、替身盒與真圖高度不一致 ⇒ 捲動時掛載／卸載來回改高度，症狀「150% 滾輪往上捲不動、畫面上下抖」＋ `ResizeObserver loop completed`。`<img>` 不受影響（百分比上限的替換元素內容貢獻算 0），放大態不受影響（`width:100%` 無絕對寬）。
+  - 倍率列**水平置中**於圖片上緣（不貼邊角）：倍率改變圖寬時中線不動、上緣由錨定補償釘住 ⇒ 可原地連點。
+  - 倍率列按鈕派發 bubbling `previewzoom`（`detail.dir` ±1／0，`detail.img` 當捲動錨點），controller 在容器上接；錨點補償與點圖放大共用 `_withImageAnchor`。只掛單張已佈局 img（同灰階鈕條件）。守護 `tests/unit/image_zoom*.test.js`、`screen_image_zoom.test.js`、`tests/e2e/offline/image_zoom.offline.spec.js`。
 - **圖片放大/縮小的捲動錨定（2026-07-25，CONFIRMED unit＋offline e2e）**：點內嵌預覽圖切換整頁 `.imagesEnlarged`（`src/render/screen.js#_onContainerClick`）會讓內容總高驟變，而 `.main` 的 `scrollTop` 不變 → 視窗相對文章整個位移，剛在看的那張圖跑出視野（實測放大態縮小後偏 ~1700px）。修法：click 當下（套用 class 之前 ⇒ 讀到的是**舊 layout**，正是 before 值）以被點的 img 為錨點記 `{topBefore,heightBefore,scrollBefore}`，切換完成後立刻用 `scroll_anchor.computeAnchoredScrollTop` 換算並寫回 `scrollTop`（同步、無閃爍）。錨定分兩式：圖頂仍在視窗內 ⇒ 維持固定間距；圖頂已捲出視窗上方（看大圖常態）⇒ 視窗頂端維持落在圖內同一比例處（縮小後必然仍在圖範圍內）。
   - **座標系鐵則**：量測一律 `offsetTop`/`offsetHeight`，**不可用 `getBoundingClientRect()`**——`.main` 整體被 `transform: scale()`、`img.hyperLinkPreview` 另被套反向 scale（`term_view.setTermFontSize`/`updateReverseScaleCss`），rect 含 transform，與 layout 座標的 `scrollTop` 不同尺規。`offsetTopWithin` 用「兩端各自沿 offsetParent 鏈累加後相減」，因 `#mainContainer` 未設 position、鏈會跳過它（單邊累加會多算）。
   - **已知限制**：只補償同步高度變化。錨點**上方**尚未載入完成的圖（未載入時只佔一行 `LoadingOverlay`）之後撐開仍會推走位置，本次未處理（需 ResizeObserver 限時校正，與使用者捲動/自動翻頁互動難測）。
@@ -254,6 +261,11 @@ webfont 落地時序：`@font-face` 用 `font-display: block`，`main.jsx` 的 `
 debug 錄製器已可直接判定這一類問題：`snapshotState` 帶 `fnMode / gridRender / srowIsBufRow / chw / chh /
 scaleX / scaleY / dpr / fontsReady`，另有 `cursor.geom` 取樣（游標真的移動時才記，含
 `#cursor`／該列／`.main` 的矩形與 `scrollTop/scrollHeight/clientHeight`；只錄數字座標）。
+捲動／圖片版面類問題另有：`main.wheel`（滾輪 deltaY＋當下 scrollTop）、`main.scroll`
+（scrollTop/scrollHeight/clientHeight）、`image.size`（尺寸模式 normal/enlarged/zoom@z 切換）、
+`preview.slot`（佔位盒 mount/unmount/resize：href、mode、slot／content／floor 高度、替身盒尺寸）。
+渲染鏈的 log 走 `src/js/diag.js` 的 module 級 sink（錄製時由 DebugRecorder 掛上）；會觸發 layout
+的量測一律先檢查 `diagActive()`。
 
 ## 文章 functionMode（按非導覽鍵 → 鏡像原生 LIVE，CONFIRMED 讀碼+unit）
 

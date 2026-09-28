@@ -60,6 +60,7 @@ import React from "react";
 import ImagePreviewer, { requestPreview } from "../components/ImagePreviewer";
 import { renderInto, unmountFrom } from "../js/react_root";
 import { i18n } from "../js/i18n";
+import { diag, diagActive } from "../js/diag";
 import { el } from "./dom";
 import {
   LAZY_MEDIA_SELECTOR,
@@ -70,6 +71,12 @@ import {
   recordSlotHeight,
   slotFloorHeight,
 } from "../js/lazy_media";
+import {
+  formatZoomLabel,
+  isMaxImageZoom,
+  isMinImageZoom,
+  zoomFromSizeMode,
+} from "../js/image_zoom";
 
 const callbacks = new WeakMap();
 let nearObserver = null;
@@ -216,7 +223,7 @@ export function resetLazyObserversForTest() {
 // destroy()，否則 observer 與 React root 都會留著（純 JS 化唯一新增的洩漏面，
 // tests/unit/render_dispose.test.js 守）。
 //
-// sizeMode（"normal" | "enlarged"）原本走 React context（Screen 的 imagesEnlarged），
+// sizeMode（"normal" | "enlarged" | "zoom@<倍率>"，見 js/image_zoom.js）原本走 React context（Screen 的 imagesEnlarged），
 // 純 JS 版改由 ScreenController 對存活中的 slot 逐一 setSizeMode()。
 export function createInlinePreviewSlot(href, sizeMode = "normal") {
   const supported = lazyPreviewSupported();
@@ -292,6 +299,9 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
       class: "easyReadingImg inlinePreviewGhost",
       style: {
         "--ghost-w": `${want.w}px`,
+        // 倍率態（.imagesZoomed）的寬度公式吃原尺寸，替身盒要與真圖同一組輸入。
+        "--nat-w": String(want.w),
+        "--nat-h": String(want.h),
         aspectRatio: `${want.w} / ${want.h}`,
       },
     });
@@ -376,6 +386,88 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     grayButton = null;
   }
 
+  // ------------------------------------------------------------ 倍率列
+  // 「－ 125% ＋」：整頁圖片倍率（js/image_zoom.js）。與灰階鈕同一套機制：hover 媒體盒
+  // 才浮現、grid item 疊在同一格、上緣靠量到的 --img-top（寫在 bar 自己身上）。
+  // 水平**置中**（不貼圖片邊角）：倍率改變圖寬時中線不動 ⇒ 可原地連點（見 main.css）。
+  //
+  // 倍率是整頁共用的狀態，住在 ScreenController：按鈕只派發 bubbling 的
+  // `previewzoom` 事件（detail.dir：+1／-1／0＝回 100%），不必把回呼穿過
+  // buildRow/link_segment。倍率顯示由 state.sizeMode 反推，不另存。
+  let zoomBar = null;
+
+  function zoomButton(cls, text, dir) {
+    const b = el("button", { class: cls, type: "button" }, text);
+    // 不搶終端機焦點（隱藏 input #t）：焦點一被按鈕拿走，方向鍵就失效。
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", (e) => {
+      // 同灰階鈕：不冒到容器的「點圖放大」委派、也不走終端機的滑鼠路徑。
+      e.stopPropagation();
+      e.preventDefault();
+      const img = singleLaidOutImage();
+      node.dispatchEvent(
+        new CustomEvent("previewzoom", {
+          bubbles: true,
+          detail: { dir, img },
+        }),
+      );
+    });
+    return b;
+  }
+
+  function syncZoomBar() {
+    if (!zoomBar) return;
+    const z = zoomFromSizeMode(state.sizeMode);
+    if (z == null) return; // 放大態：CSS 已經把整列藏起來
+    const [out, label, inn] = zoomBar.children;
+    label.textContent = formatZoomLabel(z);
+    out.disabled = isMinImageZoom(z);
+    inn.disabled = isMaxImageZoom(z);
+  }
+
+  function ensureZoomBar(img) {
+    if (!zoomBar) {
+      zoomBar = el("div", { class: "previewZoomBar" });
+      const out = zoomButton("previewZoomOut", "－", -1);
+      const label = zoomButton("previewZoomLabel", "", 0);
+      const inn = zoomButton("previewZoomIn", "＋", 1);
+      out.title = i18n("imageZoom_out");
+      label.title = i18n("imageZoom_reset");
+      inn.title = i18n("imageZoom_in");
+      zoomBar.appendChild(out);
+      zoomBar.appendChild(label);
+      zoomBar.appendChild(inn);
+      node.appendChild(zoomBar);
+    }
+    zoomBar.style.setProperty(
+      "--img-top",
+      `${img.offsetTop - content.offsetTop}px`,
+    );
+    syncZoomBar();
+  }
+
+  function removeZoomBar() {
+    if (!zoomBar) return;
+    zoomBar.remove();
+    zoomBar = null;
+  }
+
+  // 錄製期間的佔位盒軌跡（tag preview.slot，見 js/diag.js）。高度類問題（捲動時
+  // 版面跳動）要看的是「哪一張、在哪個模式、內容／佔位／替身盒各多高」。會觸發
+  // layout 的量測只在錄製時做。
+  function logSlot(ev) {
+    if (!diagActive()) return;
+    diag("preview.slot", {
+      ev,
+      href,
+      mode: state.sizeMode,
+      h: node.offsetHeight,
+      content: content.offsetHeight,
+      floor: slotFloorHeight(state.pinned, state.sizeMode) || 0,
+      ghost: ghost ? [ghost.offsetWidth, ghost.offsetHeight] : null,
+    });
+  }
+
   // 量到的東西一律回寫 memo，下一次重建才接得住。
   function remember() {
     rememberSize(href, state.pinned, state.aspect);
@@ -394,6 +486,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     // 替身盒**不在這裡拿掉**：真圖佔到版面之前它還得繼續頂著（見 syncGhost）。
     syncGhost();
     applyFloorHeight();
+    logSlot("mount");
   }
 
   function unmount() {
@@ -403,8 +496,10 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     // 圖沒了，按鈕就沒有對象可指（純 JS 渲染鏈要自己收生命週期）。灰階**態**仍留在
     // module 級的 grayHrefs 裡 ⇒ 捲回來重新掛載時圖還是灰的。
     removeGrayButton();
+    removeZoomBar();
     syncGhost();
     applyFloorHeight();
+    logSlot("unmount");
   }
 
   function onIntersect(kind, isIntersecting) {
@@ -465,9 +560,15 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     // 灰階鈕跟著量到的圖寬走。onResize 已經涵蓋「圖片載入完成／放大縮小／字級與
     // 視窗改變」三種會動到圖寬的時機，不必新增任何監聽。
     const img = singleLaidOutImage();
-    if (img) ensureGrayButton(img);
-    else removeGrayButton();
+    if (img) {
+      ensureGrayButton(img);
+      ensureZoomBar(img);
+    } else {
+      removeGrayButton();
+      removeZoomBar();
+    }
     if (state.pinned !== prevPinned || state.aspect !== prevAspect) remember();
+    logSlot("resize");
   }
 
   // memo 命中 ⇒ 這個節點在**第一幀**就要有高度，不能等 observer 回報（那是下一個
@@ -524,6 +625,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
       if (state.sizeMode === mode || state.destroyed) return;
       state.sizeMode = mode;
       applyFloorHeight();
+      syncZoomBar();
     },
     // 版面寬度變了 ⇒ 這個 slot 的 pinned 也過期。規則同
     // invalidateInlinePreviewHeights：有替身盒可頂就丟掉，沒有就留著當最佳猜測。
@@ -548,6 +650,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
         sizeTeardown.delete(node);
       }
       removeGrayButton();
+      removeZoomBar();
       if (state.mounted) {
         state.mounted = false;
         unmountFrom(content);

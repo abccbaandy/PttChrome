@@ -309,6 +309,23 @@ a:link,a:visited,a:active,a:hover {
   width: 100%;
   height: auto;
 }
+/* 整頁圖片倍率（圖上的 －／＋，js/image_zoom.js；與上面的一鍵放大互斥，放大態優先，
+   class 由 render/screen.js#_syncImageSize 保證不會同時存在）。
+   顯示寬 ＝「小圖模式的寬」×倍率，上限容器寬，高度等比。小圖模式的寬就是
+   min(原寬, 39em, 19em×寬高比) —— 正是上面 max-width/max-height 兩條上限對
+   replaced element 的結果，所以 100% 與小圖逐像素相同。
+   --nat-w/--nat-h（無單位原尺寸）由 ImagePreviewer 的 FallbackImage 與替身盒
+   （inline_preview_slot.js syncGhost）各自寫在**自己**身上；--img-zoom 寫在容器上。
+   原尺寸未知時整條 width 無效 ⇒ 退回 auto＋max-width:100%，不會壞版。 */
+#mainContainer.imagesZoomed .easyReadingImg {
+  max-width: 100%;
+  max-height: none;
+  width: calc(
+    min(var(--nat-w) * 1px, 39em, 19em * var(--nat-w) / var(--nat-h)) *
+      var(--img-zoom, 1)
+  );
+  height: auto;
+}
 /* 真圖還沒佔到版面時的替身盒（inline_preview_slot.js）。刻意也掛 .easyReadingImg，
    好讓 max-width/max-height、放大態的 width:100% 等**完全同一組規則**替它算高度 ——
    佔位高度因此與真圖逐像素相同，兩種尺寸模式都準，JS 端不必複製任何 CSS 常數。
@@ -870,6 +887,14 @@ span {
 .inlinePreviewSlot {
   display: grid;
   grid-template-areas: "stack";
+  /* 欄寬釘死在 slot 寬（不隨內容長）。implicit 的 auto 軌道會被子孫的內容貢獻撐寬：
+     倍率態（.imagesZoomed）的替身盒是 <div>、寬度是「小圖寬×倍率」的絕對值，上限只剩
+     max-width:100% —— 百分比對 auto 軌道是循環參照，貢獻照原值算 ⇒ 軌道被撐到比 slot
+     還寬 ⇒ 100% 跟著變大，連同格的真圖也被撐出版面，替身盒與真圖高度對不上，捲動時
+     slot 高度在掛載／卸載間來回跳（「150% 滾輪往上捲不動、畫面上下抖」）。
+     <img> 自己不會踩到：百分比上限的替換元素內容貢獻算 0。
+     守護：tests/unit/image_zoom_css.test.js、tests/e2e/offline/image_zoom.offline.spec.js。 */
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   /* slot 是**整列寬**的區塊（沒有 width 宣告，逐層繼承 .main 的 chw*80+10px），
      而圖片只有 max-width:39em + margin:auto 置中 ⇒ 直式圖／小圖左右各留下數十欄
@@ -894,7 +919,8 @@ span {
 .inlinePreviewSlot iframe,
 .inlinePreviewSlot .previewLoading,
 .inlinePreviewSlot .previewError,
-.inlinePreviewSlot > .previewGrayBtn {
+.inlinePreviewSlot > .previewGrayBtn,
+.inlinePreviewSlot > .previewZoomBar {
   pointer-events: auto;
 }
 .inlinePreviewSlot > .inlinePreviewContent,
@@ -960,6 +986,56 @@ span {
 .inlinePreviewSlot:hover > .previewGrayBtn,
 .inlinePreviewSlot > .previewGrayBtn:focus-visible {
   visibility: visible;
+}
+/* 整頁圖片倍率列「－ 125% ＋」（render/inline_preview_slot.js#ensureZoomBar）。
+   定位機制與上面的灰階鈕同一套（grid item 疊同一格、--img-top 由 JS 量、position:relative
+   取得自己的堆疊脈絡、hover 媒體盒才浮現）。
+   **水平置中、不貼圖片邊角**：圖片是水平置中的（margin auto），倍率一變寬度就變，貼
+   左上角的按鈕會跟著左緣跑 ⇒ 使用者無法原地連點（要追著按鈕移游標）。置中後中線不動，
+   上緣又由 screen.js#_withImageAnchor 釘在原視窗位置 ⇒ 按鈕留在游標底下。
+   守護：tests/e2e/offline/image_zoom.offline.spec.js「連點 ＋」。
+   放大態（一鍵放大）時藏起來：那時倍率不作用，縮回來才回到原倍率。 */
+.inlinePreviewSlot > .previewZoomBar {
+  grid-area: stack;
+  justify-self: center;
+  align-self: start;
+  margin-top: var(--img-top, 0px);
+  position: relative;
+  z-index: 1;
+  visibility: hidden;
+  display: flex;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 4px;
+  overflow: hidden;
+  color: #fff;
+  background: rgba(33, 37, 41, 0.75);
+  border: 1px solid #ced4da;
+}
+.inlinePreviewSlot:hover > .previewZoomBar,
+.inlinePreviewSlot > .previewZoomBar:focus-within {
+  visibility: visible;
+}
+#mainContainer.imagesEnlarged .previewZoomBar {
+  display: none;
+}
+.previewZoomBar > button {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 2px 8px;
+}
+.previewZoomBar > button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+}
+.previewZoomBar > button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.previewZoomBar > .previewZoomLabel {
+  min-width: 4em;
 }
 /* 只打真圖：替身盒 .inlinePreviewGhost 雖然也掛 .easyReadingImg，但它是 <div>。 */
 .inlinePreviewSlot[data-gray="1"] img.easyReadingImg {

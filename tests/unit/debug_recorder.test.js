@@ -1,4 +1,5 @@
 import { DebugRecorder, snapshotState, cursorGeomSample } from "../../src/js/debug_recorder";
+import { diag, diagActive } from "../../src/js/diag";
 
 // mock app：只給 recorder 用到的面。onData / conn._sendRaw 保留原行為可驗證。
 function makeApp() {
@@ -186,6 +187,49 @@ describe("DebugRecorder", () => {
     const recvEv = out.events.find((e) => e.dir === "recv");
     const decoded = Buffer.from(recvEv.data, "base64").toString("latin1");
     expect(decoded).toBe("code xxxxxxxxxxxxxxxx end");
+  });
+
+  // ptt-debug-20260928-181323：「150% 滾輪往上捲不動、畫面上下抖」的錄製檔在開文後
+  // 23 秒一筆事件都沒有 —— 捲動軌跡、倍率切換、佔位盒高度全都沒錄到。
+  it("錄製期間收進渲染鏈的診斷 log（diag），停止後不再收", () => {
+    const { app } = makeApp();
+    const rec = new DebugRecorder(app);
+    expect(diagActive()).toBe(false);
+    rec.start();
+    expect(diagActive()).toBe(true);
+    diag("image.size", { mode: "zoom@1.5", slots: 3 });
+    const ev = rec.events.find((e) => e.tag === "image.size");
+    expect(ev && ev.info).toEqual({ mode: "zoom@1.5", slots: 3 });
+
+    rec.stop();
+    expect(diagActive()).toBe(false);
+    const n = rec.events.length;
+    diag("image.size", { mode: "normal" });
+    expect(rec.events).toHaveLength(n);
+  });
+
+  it("錄製期間記下好讀捲動容器的滾輪輸入與捲動位置，停止後拆掉 listener", () => {
+    const { app } = makeApp();
+    const main = document.createElement("div");
+    Object.defineProperty(main, "scrollHeight", { configurable: true, value: 5000 });
+    Object.defineProperty(main, "clientHeight", { configurable: true, value: 900 });
+    main.scrollTop = 1200;
+    app.view.mainDisplay = main;
+    const rec = new DebugRecorder(app);
+    rec.start();
+
+    main.dispatchEvent(new window.WheelEvent("wheel", { deltaY: -100 }));
+    main.dispatchEvent(new window.Event("scroll"));
+    const wheel = rec.events.find((e) => e.tag === "main.wheel");
+    const scroll = rec.events.find((e) => e.tag === "main.scroll");
+    expect(wheel.info).toMatchObject({ dy: -100, top: 1200 });
+    expect(scroll.info).toEqual({ top: 1200, sh: 5000, ch: 900 });
+
+    rec.stop();
+    const n = rec.events.length;
+    main.dispatchEvent(new window.WheelEvent("wheel", { deltaY: -100 }));
+    main.dispatchEvent(new window.Event("scroll"));
+    expect(rec.events).toHaveLength(n);
   });
 
   it("未錄製時 log() no-op；重複 stop 回 null", () => {
