@@ -16,6 +16,7 @@ import {
   projectRuns,
   runMark,
   runsFailed,
+  DEFAULT_DEADLINE_MS,
 } from "../../scripts/ci-status.mjs";
 
 test("import 純函式不得觸發網路（fetch 未被呼叫）", async () => {
@@ -260,4 +261,10 @@ describe("runMark / runsFailed", () => {
     expect(runsFailed([depSkipped])).toBe(true);
     expect(runsFailed([])).toBe(true);
   });
+});
+
+// 預設逾時必須蓋得過最慢的 CI job（test-e2e-offline-adverse 實測約 18 分鐘）。
+// 舊預設 15 分鐘 ⇒ 每次都在它跑完前逾時，還沒跑完的 run 被判「不綠」回 exit 1。
+test("預設等待時間蓋得過最慢的 job（>= 30 分鐘）", () => {
+  expect(DEFAULT_DEADLINE_MS).toBeGreaterThanOrEqual(30 * 60 * 1000);
 });
