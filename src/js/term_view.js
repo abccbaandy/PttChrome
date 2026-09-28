@@ -1755,6 +1755,7 @@ TermView.prototype = {
         'color:#ffd;padding:4px 12px;border-radius:12px;font-size:13px;' +
         'z-index:2000;pointer-events:none;';
       el.textContent = '讀取中…';
+      el.className = 'ListLoadingHint';
       document.body.appendChild(el);
       this._listLoadingEl = el;
     }
