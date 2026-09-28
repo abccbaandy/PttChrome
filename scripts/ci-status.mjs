@@ -109,6 +109,24 @@ export function allSettled(runs) {
   return (runs || []).length > 0 && runs.every((r) => r.status === "completed");
 }
 
+// 單顆 run 的顯示標記。`skipped` 是正常結果：dependabot-auto-merge.yml 用
+// pull_request_target 觸發、job 只對 dependabot 開，所以每個非 dependabot 的 PR
+// 都會留一顆 skipped run —— 舊版把它標成 FAIL，外部 PR 全綠也回 exit 1。
+export function runMark(r) {
+  if (r.status !== "completed") return "... ";
+  if (r.conclusion === "success") return "OK  ";
+  if (r.conclusion === "skipped") return "SKIP";
+  return "FAIL";
+}
+
+// 整體是否「不綠」。skipped 不算失敗，但**至少要有一顆 success**：全部 skipped
+// ＝什麼都沒真的跑過，不可當成全綠（同 allSettled 對空清單的立場）。
+export function runsFailed(runs) {
+  const list = runs || [];
+  if (list.some((r) => runMark(r) === "FAIL" || runMark(r) === "... ")) return true;
+  return !list.some((r) => r.conclusion === "success");
+}
+
 // ---- I/O ----
 
 function sh(cmd, args) {
@@ -257,15 +275,11 @@ async function main() {
     await sleep(POLL_MS);
   }
 
-  let failed = false;
   for (const r of summarizeRuns(runs)) {
-    const mark = r.conclusion === "success" ? "OK  " : r.status !== "completed" ? "... " : "FAIL";
-    console.log(`${mark} ${r.name} [${r.sha}] ${r.conclusion || r.status}`);
-    if (r.conclusion && r.conclusion !== "success") failed = true;
-    if (r.status !== "completed") failed = true;
+    console.log(`${runMark(r)} ${r.name} [${r.sha}] ${r.conclusion || r.status}`);
   }
 
-  if (!failed) {
+  if (!runsFailed(runs)) {
     console.log("CI 全綠。");
     return 0;
   }

@@ -14,6 +14,8 @@ import {
   isFullSha,
   isProjectRun,
   projectRuns,
+  runMark,
+  runsFailed,
 } from "../../scripts/ci-status.mjs";
 
 test("import 純函式不得觸發網路（fetch 未被呼叫）", async () => {
@@ -225,5 +227,37 @@ describe("isProjectRun / projectRuns", () => {
     // path 欄位缺席時只能靠 event 判斷。
     expect(isProjectRun({ name: "x", event: "push" })).toBe(true);
     expect(isProjectRun({ name: "x", event: "dynamic" })).toBe(false);
+  });
+});
+
+describe("runMark / runsFailed", () => {
+  const prTest = { name: "PR Test", status: "completed", conclusion: "success" };
+  // pull_request_target 的 dependabot workflow：非 dependabot 的 PR 一律 skipped。
+  const depSkipped = {
+    name: "Dependabot auto-merge",
+    status: "completed",
+    conclusion: "skipped",
+  };
+
+  test("skipped 的 run 不算失敗（REGRESSION：外部 PR 全綠卻 exit 1）", () => {
+    expect(runMark(depSkipped)).toBe("SKIP");
+    expect(runsFailed([prTest, depSkipped])).toBe(false);
+  });
+
+  test("success / 跑中 / failure 的標記", () => {
+    expect(runMark(prTest)).toBe("OK  ");
+    expect(runMark({ status: "in_progress", conclusion: null })).toBe("... ");
+    expect(runMark({ status: "completed", conclusion: "failure" })).toBe("FAIL");
+  });
+
+  test("有失敗或還在跑 → 不綠", () => {
+    expect(runsFailed([prTest, { status: "completed", conclusion: "failure" }])).toBe(true);
+    expect(runsFailed([prTest, { status: "in_progress", conclusion: null }])).toBe(true);
+    expect(runsFailed([{ status: "completed", conclusion: "cancelled" }])).toBe(true);
+  });
+
+  test("全部 skipped、沒有任何一顆 success → 不綠（沒跑過不可當全綠）", () => {
+    expect(runsFailed([depSkipped])).toBe(true);
+    expect(runsFailed([])).toBe(true);
   });
 });
