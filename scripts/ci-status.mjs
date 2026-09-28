@@ -12,6 +12,7 @@
 //   yarn ci:status --branch dev    指定分支
 //   yarn ci:status --sha <sha>     只看某個 commit 的 run（短 sha / HEAD 也吃，會自動展開）
 //   yarn ci:status --no-wait       只看當下狀態，不等
+//   yarn ci:status --timeout-ms <ms>  等 CI 的上限（預設 30 分鐘，從本專案 run 出現起算）
 //   yarn ci:status --rerun-failed  跑完若失敗，自動重跑失敗 job（僅限已知 flaky）
 //
 // 需要環境變數 GH_TOKEN。exit code：0 全綠 / 1 有失敗 / 2 工具或設定問題
@@ -22,7 +23,10 @@ import path from "node:path";
 
 const API = "https://api.github.com";
 const POLL_MS = 20000;
-const DEFAULT_DEADLINE_MS = 15 * 60 * 1000;
+// 預設等 CI 30 分鐘（從本專案 run 出現起算）：最慢的 test-e2e-offline-adverse job
+// 本身就要跑約 18 分鐘，舊的 15 分鐘預設每次都先逾時 ⇒ 還沒跑完的 run 被當成
+// 「不綠」回 exit 1。要更長／更短用 `--timeout-ms <ms>` 覆寫。
+export const DEFAULT_DEADLINE_MS = 30 * 60 * 1000;
 // 剛 push 完 GitHub 建立 workflow run 有延遲（實測數秒~數十秒）。這段寬限期內
 // 「查無 run」只當成「還沒建立」繼續等，不可直接 exit 2 —— 那會看起來像工具壞了
 // 或 CI 沒被觸發，實際上再等幾秒就有了。
@@ -206,7 +210,7 @@ async function main() {
   const appearDeadline = Date.now() + RUN_APPEAR_GRACE_MS;
   const projectAppearDeadline = Date.now() + PROJECT_RUN_APPEAR_GRACE_MS;
   // CI 本身的逾時要從「本專案 run 真的出現」那一刻起算，不能把等 run 建立的時間
-  // 也算進去 —— 2026-08-27 那次光等 run 建立就吃掉 11 分鐘，預設 15 分鐘的
+  // 也算進去 —— 2026-08-27 那次光等 run 建立就吃掉 11 分鐘，當時預設 15 分鐘的
   // deadline 只剩 4 分鐘，於是 run 一出現就馬上被判「等 CI 逾時」。
   let deadline = Date.now() + Number(arg("timeout-ms", DEFAULT_DEADLINE_MS));
   let sawProjectRun = false;
