@@ -51,6 +51,7 @@ import { inputModeFor, isMobileEnv, keyboardInset, mobileTermGeometry } from './
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
+import { isAndroidApp, androidImeInset, onAndroidIme } from './android_bridge';
 import {
   IMAGE_PROXY_SITES,
   normalizeImgurProxyBase,
@@ -346,6 +347,8 @@ export const App = function() {
     window.visualViewport.addEventListener('resize', onVV);
     window.visualViewport.addEventListener('scroll', onVV);
   }
+  // Android APK：鍵盤高度由原生回報（見 android_bridge.js 'pttandroid:ime'）。
+  if (isAndroidApp()) onAndroidIme(() => this._onVisualViewport());
   this.applyMobileLayout();
 };
 
@@ -512,8 +515,11 @@ App.prototype.onClose = function() {
     this.enableProxyAndReconnect();
   };
   const container = document.getElementById('reactAlert');
+  // Android APK 的連線永遠是原生本機 proxy：「Origin 沒設好 → 改走 proxy」這條
+  // 診斷在那裡不成立，只給單純的重連提示。
   renderInto(container, <MantineRoot><ConnectionAlert
-    onDismiss={onDismiss} diagnose={diagnose} onEnableProxy={onEnableProxy} /></MantineRoot>);
+    onDismiss={onDismiss} diagnose={isAndroidApp() ? undefined : diagnose}
+    onEnableProxy={onEnableProxy} /></MantineRoot>);
   this.updateTabIcon('disconnect');
 };
 
@@ -680,7 +686,8 @@ App.prototype._onVisualViewport = function() {
     layoutHeight: document.documentElement.clientHeight,
     vvHeight: vv.height,
     vvOffsetTop: vv.offsetTop,
-    vvScale: vv.scale
+    vvScale: vv.scale,
+    hostInset: androidImeInset()
   }) : 0;
   if (inset > 0) {
     this._keyboardSeen = true;

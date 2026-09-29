@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PttChrome</string>
+    <string name="notif_channel">PTT 連線</string>
+    <string name="notif_title">PttChrome</string>
+    <string name="notif_connected">已連線到 PTT，切到背景也會保持連線</string>
+    <string name="notif_idle">未連線</string>
+    <string name="notif_disconnect">中斷連線並關閉</string>
+    <string name="webview_unsupported">系統的 Android System WebView 太舊，請到 Play 商店更新後再開啟。</string>
+    <string name="page_error">無法載入 PttChrome：%1$s\n請確認網路後按返回鍵重試。</string>
+    <string name="asset_statements" translatable="false">[{\"include\": \"https://abccbaandy.github.io/.well-known/assetlinks.json\"}]</string>
+</resources>

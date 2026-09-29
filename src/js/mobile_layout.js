@@ -86,9 +86,15 @@ export function mobileTermGeometry({ width, height, dpr }) {
 //   - 小於 KEYBOARD_MIN_PX 視為雜訊（網址列伸縮之類），不是鍵盤。
 export const KEYBOARD_MIN_PX = 80;
 
-export function keyboardInset({ mobile, softKeyboard, layoutHeight, vvHeight, vvOffsetTop, vvScale }) {
+// hostInset：Android APK 殼回報的鍵盤高度（android_bridge.js#androidImeInset）。
+// APK 裡鍵盤疊在 WebView 上、visualViewport 量不到，取兩者較大者（不相加：
+// 若某版 WebView 自己也縮了 visualViewport，兩邊量的是同一塊）。
+export function keyboardInset({ mobile, softKeyboard, layoutHeight, vvHeight, vvOffsetTop, vvScale, hostInset }) {
   if (!mobile || !softKeyboard) return 0;
   if (Math.abs((Number(vvScale) || 1) - 1) > 0.01) return 0;
-  const hidden = (Number(layoutHeight) || 0) - ((Number(vvOffsetTop) || 0) + (Number(vvHeight) || 0));
+  const hidden = Math.max(
+    (Number(layoutHeight) || 0) - ((Number(vvOffsetTop) || 0) + (Number(vvHeight) || 0)),
+    Number(hostInset) || 0
+  );
   return hidden >= KEYBOARD_MIN_PX ? Math.round(hidden) : 0;
 }

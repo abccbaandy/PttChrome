@@ -11,9 +11,12 @@
 // Credential sources, in order (see _resolveCredential):
 //   1. session cache — set when PrefModal saves, or by an earlier resolution;
 //      keeps reconnects from re-prompting the browser chooser.
-//   2. browser credential store (Credential Management API / PasswordCredential,
-//      e.g. Google Password Manager). mediation 'optional': silent once the user
-//      enables auto sign-in, otherwise shows the account chooser on page load.
+//   2. password manager via credential_store.js: the browser's Credential
+//      Management API (PasswordCredential, e.g. Google Password Manager;
+//      mediation 'optional': silent once the user enables auto sign-in,
+//      otherwise shows the account chooser on page load), or — inside the
+//      Android APK, whose WebView has no PasswordCredential — the native
+//      Credential Manager over android_bridge.js.
 //   3. legacy plaintext prefs in localStorage (pre-migration data, unsupported
 //      browsers like Firefox/Safari, and e2e injection).
 // The stored password may carry the 2FA secret alongside it (credential_pack.js)
@@ -30,6 +33,11 @@ import {
   clearLegacyAutoLoginCredential
 } from './pref_storage';
 import { packCredential, unpackCredential } from './credential_pack';
+import {
+  credentialStoreAvailable,
+  getStoredCredential,
+  storeCredential
+} from './credential_store';
 import {
   isValidOtpSecret,
   totpCode,
@@ -82,10 +90,6 @@ const OTP_EXTRA_MS = 75000;
 // Page-lifetime cache: { user, pass, otpSecret, legacy, needsStore }.
 let sessionCred = null;
 
-const credentialApiAvailable = () =>
-  typeof window !== 'undefined' && !!window.PasswordCredential &&
-  !!(navigator.credentials && navigator.credentials.get);
-
 export function AutoLogin(app) {
   this._app = app;
 }
@@ -126,16 +130,13 @@ AutoLogin.prototype._resolveCredential = async function(v) {
     return null;
   };
 
-  if (!credentialApiAvailable()) {
-    console.info('auto_login: Credential Management API unavailable');
+  if (!credentialStoreAvailable()) {
+    console.info('auto_login: no password manager available');
     return legacy();
   }
 
   try {
-    const cred = await navigator.credentials.get({
-      password: true,
-      mediation: 'optional'
-    });
+    const cred = await getStoredCredential();
     if (cred && cred.password) {
       console.info('auto_login: credential source = browser store');
       const unpacked = unpackCredential(cred.password);
@@ -173,16 +174,11 @@ AutoLogin.prototype._resolveCredential = async function(v) {
 // yet (legacy plaintext) or holds a copy without the OTP secret → offer to
 // save/update them. Plaintext is wiped later, on a successful get().
 AutoLogin.prototype._maybeMigrate = function() {
-  if (!(this._usedLegacy || this._needsStore) || !credentialApiAvailable()) return;
-  try {
-    navigator.credentials
-      .store(new PasswordCredential({
-        id: this._user,
-        password: packCredential(this._pass, this._otpSecret),
-        name: 'PTT'
-      }))
-      .catch(() => {});
-  } catch (e) {}
+  if (!(this._usedLegacy || this._needsStore) || !credentialStoreAvailable()) return;
+  storeCredential({
+    id: this._user,
+    password: packCredential(this._pass, this._otpSecret)
+  }).catch(() => {});
 };
 
 AutoLogin.prototype.start = async function() {

@@ -278,3 +278,77 @@ describe("_maybeMigrate", () => {
     expect(calls.stored).toHaveLength(0);
   });
 });
+
+// Android APK：WebView 沒有 PasswordCredential，密碼管理員走原生 bridge
+// （android_bridge.js / credential_store.js）。以前在 APK 裡一律退回「無憑證」。
+describe("Android APK (native Credential Manager bridge)", () => {
+  function installAndroid(reply) {
+    const listeners = [];
+    const sent = [];
+    window.__PTT_ANDROID__ = { site: "wstelnet://127.0.0.1:1/bbs/t" };
+    window.PttAndroid = {
+      postMessage: str => {
+        const msg = JSON.parse(str);
+        sent.push(msg);
+        const out = { id: msg.id, ...reply(msg) };
+        queueMicrotask(() =>
+          listeners.forEach(fn => fn({ data: JSON.stringify(out) }))
+        );
+      },
+      addEventListener: (t, fn) => listeners.push(fn)
+    };
+    return sent;
+  }
+
+  afterEach(() => {
+    delete window.__PTT_ANDROID__;
+    delete window.PttAndroid;
+  });
+
+  test("resolves the credential from the native password manager", async () => {
+    installAndroid(() => ({
+      ok: true,
+      user: "testuser",
+      password: packCredential("secretpass", SECRET)
+    }));
+    writePrefs({ autoLoginUser: "olduser", autoLoginPassword: "oldpass" });
+
+    const al = await freshAutoLogin();
+    const cred = await al._resolveCredential(readValuesWithDefault());
+
+    expect(cred).toMatchObject({
+      user: "testuser",
+      pass: "secretpass",
+      otpSecret: SECRET,
+      legacy: false
+    });
+    expect(readValuesWithDefault().autoLoginPassword).toBe("");
+  });
+
+  test("cancelled chooser falls back to local plaintext", async () => {
+    installAndroid(() => ({ ok: false }));
+    writePrefs({ autoLoginUser: "u", autoLoginPassword: "p" });
+    const al = await freshAutoLogin();
+    const cred = await al._resolveCredential(readValuesWithDefault());
+    expect(cred).toMatchObject({ user: "u", pass: "p", legacy: true });
+  });
+
+  test("legacy login is offered to the native store (packed)", async () => {
+    const sent = installAndroid(() => ({ ok: true }));
+    const al = await freshAutoLogin();
+    Object.assign(al, {
+      _user: "testuser",
+      _pass: "secretpass",
+      _otpSecret: SECRET,
+      _usedLegacy: true,
+      _needsStore: false
+    });
+    al._maybeMigrate();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      op: "storePassword",
+      user: "testuser",
+      password: packCredential("secretpass", SECRET)
+    });
+  });
+});

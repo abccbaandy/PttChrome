@@ -50,6 +50,11 @@ import {
   localCredentialStatus,
 } from "./pref_credential";
 import { DEFAULT_PROXY_HOST, downloadAsFile } from "../../js/util";
+import {
+  credentialStoreAvailable,
+  storeCredential as storeCredentialInManager,
+} from "../../js/credential_store";
+import { isAndroidApp } from "../../js/android_bridge";
 import { DEFAULT_IMGUR_PROXY_BASE } from "../../js/image_proxy";
 import {
   BUILTIN_QUICK_SEARCH,
@@ -155,12 +160,8 @@ const PrefAnchor = ({ anchorKey, children, className, ...rest }) => {
   );
 };
 
-const credentialApiAvailable = () =>
-  !!window.PasswordCredential &&
-  !!(navigator.credentials && navigator.credentials.store);
-
-// Offer the credentials to the browser's password manager (Google Password
-// Manager etc.), with the 2FA secret packed into the password field.
+// Offer the credentials to the password manager (browser's, or the Android
+// APK's native one — see credential_store.js), with the 2FA secret packed into the password field.
 //
 // Deliberately does NOT strip anything from what gets written to localStorage:
 // store() resolves before the user answers the browser's save prompt, so
@@ -169,16 +170,11 @@ const credentialApiAvailable = () =>
 // later credentials.get() proves the store really has it.
 const storeCredential = (values) => {
   const cred = credentialToStore(values, {
-    supported: credentialApiAvailable(),
+    supported: credentialStoreAvailable(),
   });
   if (!cred) return;
-  try {
-    navigator.credentials
-      .store(new PasswordCredential({ ...cred, name: "PTT" }))
-      .catch(() => {});
-  } catch (e) {
-    // unsupported/blocked → the local copy above is the fallback
-  }
+  // unsupported/blocked → the local copy above is the fallback
+  storeCredentialInManager(cred).catch(() => {});
 };
 
 // Returns an array of children. The link elements are shared module-level
@@ -585,7 +581,7 @@ export const PrefModal = ({
 
   // 這台機器根本用不了（沒 API／裝置不符）→ 連總開關都不給勾。null（還在探測）
   // 不算 unusable，避免開啟面板的瞬間閃一下反灰。
-  const credentialApi = credentialApiAvailable();
+  const credentialApi = credentialStoreAvailable();
   // 狀態說明看的是「開啟設定頁當下 localStorage 有什麼」；清除鈕看的是目前表單
   // （按下去就該立刻反灰）。兩者刻意不同來源。
   const credentialStatus = localCredentialStatus(storedSnapshot, {
@@ -1219,29 +1215,37 @@ export const PrefModal = ({
               </PrefSection>
             </Tabs.Panel>
             <Tabs.Panel value="connection">
-              <PrefSection legendKey="options_connection_bbs">
-                <PrefCheckbox
-                  name="useProxy"
-                  checked={values.useProxy}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_useProxy")}
-                </PrefCheckbox>
-                {/* placeholder 放的是**實際生效的預設位址**（不是說明文字）：欄位
+              {/* Android APK：連線固定走原生前景服務的本機 proxy（android_bridge.js），
+                這組設定在 APK 裡不會生效，顯示出來只會誤導。 */}
+              {isAndroidApp() ? (
+                <PrefSection legendKey="options_connection_bbs">
+                  <Text size="sm">{i18n("options_androidProxyNote")}</Text>
+                </PrefSection>
+              ) : (
+                <PrefSection legendKey="options_connection_bbs">
+                  <PrefCheckbox
+                    name="useProxy"
+                    checked={values.useProxy}
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_useProxy")}
+                  </PrefCheckbox>
+                  {/* placeholder 放的是**實際生效的預設位址**（不是說明文字）：欄位
                   留空就是用它，使用者把自訂位址刪光也回得到預設。說明文字改掛
                   description。imgur 那組同理。 */}
-                <TextInput
-                  label={i18n("options_proxyUrl")}
-                  description={i18n("tooltip_proxyUrl")}
-                  name="proxyUrl"
-                  disabled={!values.useProxy}
-                  value={values.proxyUrl}
-                  placeholder={DEFAULT_PROXY_HOST}
-                  onChange={onTextInputChange}
-                  mb="xs"
-                  {...anchor("proxyUrl")}
-                />
-              </PrefSection>
+                  <TextInput
+                    label={i18n("options_proxyUrl")}
+                    description={i18n("tooltip_proxyUrl")}
+                    name="proxyUrl"
+                    disabled={!values.useProxy}
+                    value={values.proxyUrl}
+                    placeholder={DEFAULT_PROXY_HOST}
+                    onChange={onTextInputChange}
+                    mb="xs"
+                    {...anchor("proxyUrl")}
+                  />
+                </PrefSection>
+              )}
               <PrefSection legendKey="options_imgurProxy">
                 {/* 隱私揭露：代理由專案方持有，會看到「哪個 IP 在看哪張圖」。
                   預設開啟，所以這段文字必須在使用者第一次翻到這裡就看得到。 */}
@@ -1793,7 +1797,13 @@ export const PrefModal = ({
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_sync")}
                 </Text>
-                {syncUser ? (
+                {/* Google 禁止在 WebView 內做 OAuth（disallowed_useragent），APK 裡
+                  按登入只會失敗。原生登入見 docs/handoff/android-google-signin.md。 */}
+                {isAndroidApp() ? (
+                  <Text size="sm">
+                    {i18n("options_syncAndroidUnsupported")}
+                  </Text>
+                ) : syncUser ? (
                   <div>
                     <Text>
                       {i18n("options_syncSignedInAs")}

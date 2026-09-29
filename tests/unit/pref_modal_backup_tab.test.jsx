@@ -267,3 +267,19 @@ describe("設定備份分頁：雲端同步", () => {
     ).toBeInTheDocument();
   });
 });
+
+// Google 禁止在 WebView 內做 OAuth（disallowed_useragent）⇒ APK 裡按登入只會失敗。
+describe("設定備份分頁：Android APK 內的雲端同步", () => {
+  afterEach(() => delete window.__PTT_ANDROID__);
+
+  test("APK 內不給登入鈕，改顯示暫不支援", () => {
+    window.__PTT_ANDROID__ = { site: "wstelnet://127.0.0.1:1/bbs/t" };
+    openBackupTab();
+    expect(
+      screen.queryByRole("button", { name: i18n("options_syncSignIn") }),
+    ).toBeNull();
+    expect(
+      screen.getByText(i18n("options_syncAndroidUnsupported")),
+    ).toBeInTheDocument();
+  });
+});

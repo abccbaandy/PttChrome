@@ -1,0 +1,81 @@
+name: Android APK
+
+# android/ 的建置與發佈（docs/android-app.md）。網頁本體仍由 deploy.yml 部署到 GitHub Pages，
+# APK 只是載入它的殼，所以這裡只看 android/ 的變動。
+#   push dev／PR：JVM unit test ＋ 產 APK（artifact）
+#   push tag android-v*：同上，並建立 GitHub Release 附上簽章 APK
+on:
+  push:
+    branches: [dev]
+    tags: ['android-v*']
+    paths: ['android/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # 簽章 keystore 只存在 secrets（不入 repo）。沒設定時（例如 fork 的 PR）照樣跑 test，
+      # 只是 release APK 不簽，改上傳 debug APK。
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > release.jks
+            echo "ANDROID_KEYSTORE_FILE=release.jks" >> "$GITHUB_ENV"
+          fi
+
+      - name: Version
+        run: |
+          echo "ANDROID_VERSION_CODE=${{ github.run_number }}" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_REF" == refs/tags/android-v* ]]; then
+            echo "ANDROID_VERSION_NAME=${GITHUB_REF#refs/tags/android-v}" >> "$GITHUB_ENV"
+          else
+            echo "ANDROID_VERSION_NAME=0.0.${{ github.run_number }}-dev" >> "$GITHUB_ENV"
+          fi
+
+      - name: Test and build
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_FILE" ]; then
+            ./gradlew --no-daemon test assembleRelease
+            cp app/build/outputs/apk/release/app-release.apk pttchrome.apk
+          else
+            ./gradlew --no-daemon test assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk pttchrome.apk
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pttchrome-apk
+          path: android/pttchrome.apk
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/android-v') && env.ANDROID_KEYSTORE_FILE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" pttchrome.apk \
+            --title "Android $ANDROID_VERSION_NAME" \
+            --notes "PttChrome Android App $ANDROID_VERSION_NAME（安裝說明見 docs/android-app.md）"

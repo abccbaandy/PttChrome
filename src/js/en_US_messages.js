@@ -599,6 +599,12 @@ export const en_US = {
   "tooltip_sync": {
     "message": "Sign in with Google to sync preferences across browsers and devices. Your PTT password is never uploaded."
   },
+  "options_syncAndroidUnsupported": {
+    "message": "Cloud sync sign-in is not available in the Android app yet; use the browser version to set it up."
+  },
+  "options_androidProxyNote": {
+    "message": "The Android app always connects to PTT through its on-device connection service (stays connected in the background); no proxy setting needed."
+  },
   "options_syncSignIn": {
     "message": "Sign in with Google to sync"
   },

@@ -128,4 +128,19 @@ describe("keyboardInset", () => {
   test("小於門檻的差距（網址列伸縮）視為雜訊", () => {
     expect(keyboardInset({ ...kb, vvHeight: 800 - (KEYBOARD_MIN_PX - 1) })).toBe(0);
   });
+
+  // Android APK：鍵盤疊在 WebView 上（刻意不縮 WebView，否則改列數重送 NAWS），
+  // visualViewport 完全沒變，高度只能靠原生回報。
+  test("APK：visualViewport 沒變時採用原生回報的鍵盤高度", () => {
+    expect(keyboardInset({ ...kb, vvHeight: 800, hostInset: 300 })).toBe(300);
+  });
+
+  test("APK：兩邊都量到同一塊鍵盤時取較大者，不相加", () => {
+    expect(keyboardInset({ ...kb, vvHeight: 500, hostInset: 280 })).toBe(300);
+  });
+
+  test("APK：原生回報也受 softKeyboard／縮放閘門管", () => {
+    expect(keyboardInset({ ...kb, vvHeight: 800, hostInset: 300, softKeyboard: false })).toBe(0);
+    expect(keyboardInset({ ...kb, vvHeight: 800, hostInset: 300, vvScale: 2 })).toBe(0);
+  });
 });

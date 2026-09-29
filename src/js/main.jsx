@@ -1,6 +1,7 @@
 ﻿import { App } from './pttchrome';
 import { setupI18n, i18n } from './i18n';
-import { defaultSite, getQueryVariable, proxySiteFromPrefs } from './util';
+import { getQueryVariable } from './util';
+import { bootSite } from './boot_site';
 import { readValuesWithDefault } from './pref_storage';
 import { pageArticleNums } from './comment_parse';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
@@ -51,13 +52,10 @@ function startApp() {
   });
 
   function bootstrap() {
-    // connect. Priority: ?site override (off by default, see vite.config.mjs ALLOW_SITE_IN_QUERY)
-    // -> user proxy from prefs -> the built-in DEFAULT_SITE.
+    // connect：優先序見 boot_site.js。
     const prefs = readValuesWithDefault();
-    app.connect(
-      (process.env.ALLOW_SITE_IN_QUERY && getQueryVariable('site'))
-      || proxySiteFromPrefs(prefs)
-      || defaultSite());
+    app.connect(bootSite(prefs,
+      process.env.ALLOW_SITE_IN_QUERY ? getQueryVariable('site') : ''));
     console.log("load pref from storage");
     app.onValuesPrefChange(prefs);
     // Cloud prefs (Firestore) arrive later — and keep arriving via the

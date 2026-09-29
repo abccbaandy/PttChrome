@@ -186,3 +186,17 @@ describe("連線分頁：隱私揭露", () => {
     expect(screen.getByText(i18n("tooltip_imgurProxy"))).toBeInTheDocument();
   });
 });
+
+// APK 的連線固定走原生本機 proxy（boot_site.js），useProxy/proxyUrl 在那裡不生效。
+describe("連線分頁：Android APK", () => {
+  afterEach(() => delete window.__PTT_ANDROID__);
+
+  test("APK 內不顯示 BBS proxy 欄位，改顯示說明；圖片代理照舊", () => {
+    window.__PTT_ANDROID__ = { site: "wstelnet://127.0.0.1:1/bbs/t" };
+    openConnectionTab();
+    expect(field("useProxy")).toBeNull();
+    expect(field("proxyUrl")).toBeNull();
+    expect(field("useImgurProxy")).toBeInTheDocument();
+    expect(screen.getByText(i18n("options_androidProxyNote"))).toBeInTheDocument();
+  });
+});
