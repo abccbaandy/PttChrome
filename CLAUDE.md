@@ -179,7 +179,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   - **一律用 `yarn ci:status`**（`scripts/ci-status.mjs`，需 env `GH_TOKEN`）：等該 commit 的所有 run 跑完 → 印每個 run 結果 → 失敗時自動挖出失敗 job/step 並印 log 尾巴。
     參數：`--branch <b>`／`--sha <sha>`／`--no-wait`（只看當下）／`--rerun-failed`（僅在它判定為已知 flaky 時才會送出重跑）。
     exit code：`0` 全綠、`1` 有失敗、`2` 工具或設定問題（**刻意分三種**，「查不到」不可被當成「沒問題」）。
-    **「只查到 `Push on dev`（`event: dynamic`）」不等於全綠**：那是 CodeQL default setup 的 run，
+    **「只查到 `event: dynamic` 的 run」不等於全綠**：那是 GitHub 動態 workflow（Dependabot 等）的 run，
     本專案的 `Deploy to GitHub Pages` 可能只是還沒被建立（push 到 run 建立可延遲十分鐘以上）；
     腳本必須看到本專案的 workflow run（`isProjectRun`）才判定，等不到就 exit 2。
     `--sha` 吃短 sha／`HEAD`／tag（腳本自己 `git rev-parse` 展開；runs API 的 `head_sha` 只吃完整 40 字元）。

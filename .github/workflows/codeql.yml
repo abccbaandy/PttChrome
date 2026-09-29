@@ -1,0 +1,61 @@
+name: CodeQL
+
+# CodeQL advanced setup（取代 repo 設定裡的 default setup）。
+# 為什麼不用 default setup：它偵測到 android/ 的 Kotlin 後自動加入 java-kotlin，但只會用
+# build-mode none，而 Kotlin 必須實際編譯才能分析 ⇒ 每次 push 都紅
+#（"could not process any of it using the 'none' build mode"）。
+# 查詢組合沿用原本 default setup 的 extended（＝security-extended），category 與 default
+# setup 相同（/language:<lang>），既有 alert 延續不會重開。
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  security-events: write
+  contents: read
+  actions: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: java-kotlin
+            build-mode: manual
+    steps:
+      - uses: actions/checkout@v7
+
+      - if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+
+      - if: matrix.language == 'java-kotlin'
+        uses: gradle/actions/setup-gradle@v6
+
+      # 只編譯 app 的 Kotlin 原始碼（debug 不需要簽章 secrets；ubuntu runner 內建 Android SDK）。
+      - if: matrix.language == 'java-kotlin'
+        working-directory: android
+        run: ./gradlew --no-daemon :app:compileDebugKotlin
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}

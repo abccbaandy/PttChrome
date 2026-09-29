@@ -65,7 +65,8 @@ WebView  https://abccbaandy.github.io/PttChrome/
   }
 ]
 ```
-- 未上線前 APK 仍可用 GPM，只是存的是 App 專屬的一筆（跟 Chrome 那筆分開）。
+- 已上線（repo `abccbaandy/abccbaandy.github.io`），Google Digital Asset Links API 驗證通過：
+  `https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://abccbaandy.github.io&relation=delegate_permission/common.get_login_creds`。
 - applicationId `io.github.abccbaandy.pttchrome` 與簽章一旦發佈就不可改（assetlinks 綁它、使用者覆蓋安裝也要同簽章）。
 
 ## 建置
@@ -73,10 +74,11 @@ WebView  https://abccbaandy.github.io/PttChrome/
   `android/local.properties` 寫 `sdk.dir=`（gitignored）。新版 cmdline-tools 的 `sdkmanager` 已改為 `android sdk install platforms/android-37.0 build-tools/37.0.0`。
 - `cd android && ./gradlew test assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`。
 - JVM test：`WsProtocolTest`（握手／frame）、`LocalWebSocketProxyTest`（MockWebServer 當假 PTT：Origin 改寫、雙向轉送、token／Origin 拒絕）。
-- CI：`.github/workflows/android.yml`（`android/**` 變動才跑）。沒有簽章 secrets 時上傳 debug APK。
+- CI：`.github/workflows/android.yml`（`android/**` 變動才跑；不可設為 required check）。沒有簽章 secrets 時上傳 debug APK。CodeQL 的 java-kotlin 分析在 `codeql.yml`（會編譯 `:app:compileDebugKotlin`）。
 - Windows 上新增 `gradlew` 要 `git update-index --chmod=+x android/gradlew`，否則 CI `Permission denied`。
 
 ## 發佈
+- 已完成：keystore（`~/.android-keys/pttchrome/`，不入 repo，**遺失＝之後無法更新 App**，須另行備份）、4 個 secrets、assetlinks。本機 release 簽章：把同目錄的 `keystore.properties` 複製到 `android/`（gitignored）。
 1. 使用者本機產 keystore（**不入 repo**）：`keytool -genkeypair -v -keystore release.jks -alias pttchrome -keyalg RSA -keysize 4096 -validity 36500`
 2. GitHub secrets：`ANDROID_KEYSTORE_B64`（`base64 -w0 release.jks`）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。
 3. push tag `android-v<版本>` → CI 建 Release 附 `pttchrome.apk`。versionCode ＝ `github.run_number`。
@@ -88,5 +90,5 @@ WebView  https://abccbaandy.github.io/PttChrome/
 | JVM test（WsProtocol／proxy） | CONFIRMED |
 | 真機：背景長時間不斷線 | `unknown`（demo 只在模擬器驗 30 秒） |
 | 真機：https 頁連 `ws://127.0.0.1`（`MIXED_CONTENT_ALWAYS_ALLOW`） | `guess`（demo 同設定可連） |
-| 真機：GPM 底部選單＋與 Chrome 共用 | `unknown`（需 assetlinks 上線） |
+| 真機：GPM 底部選單＋與 Chrome 共用 | `unknown`（assetlinks 已上線，待真機驗） |
 | renderer 被系統回收 | 已處理成「重建 WebView 重新連線」；網頁狀態會丟。未來可做「上游保留＋重接後 Ctrl+L」 |
