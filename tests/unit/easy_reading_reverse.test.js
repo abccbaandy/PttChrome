@@ -55,12 +55,18 @@ function setup(simOpts) {
     easyReadingPendingReset: false,
     lineChangeds: new Array(ROWS).fill(false),
     changed: false,
+    // 真 TermBuf：bytes 寫進 lines 之後，要等 30ms 的 notify 計時器跑 updateCharAttr
+    // 才標 isLeadByte；這段空窗 getRowText 回的是沒解碼的 Big5（全形字變兩個亂碼）。
+    stale: false,
     getRowText(r) {
-      return rowToText(this.lines[r]);
+      const t = rowToText(this.lines[r]);
+      return this.stale ? t.replace(/[^\x00-\x7f]/g, "\u00a1\u00b0") : t;
     },
     addEventListener() {},
     // 與 term_buf.notify 同序：'change' → view.update（redraw → accumulate）→ 'viewUpdate'
     notify() {
+      this.stale = false;
+      this.changed = false;
       er._onChanged();
       if (er._functionMode) {
         // functionMode：redraw 鏡像原生畫面，不累積
@@ -85,13 +91,22 @@ function setup(simOpts) {
   er = new EasyReading(core, view, buf);
   er._enabled = true;
 
-  const deliverFrame = (f) => {
+  const writeFrame = (f) => {
     buf.lines = f.texts.map(cells);
     buf.cur_y = f.cursor.y;
     buf.cur_x = f.cursor.x;
     buf.lineChangeds.fill(true);
     buf.changed = true;
+  };
+  const deliverFrame = (f) => {
+    writeFrame(f);
     buf.notify();
+  };
+  // 回應線上最早的那個鍵，但**不** notify：停在「bytes 已寫入、notify 計時器還沒跑」。
+  const stepUnflushed = () => {
+    const resp = sim.press(wire.shift());
+    resp.frames.forEach(writeFrame);
+    buf.stale = true;
   };
   // 回應線上最早的那個鍵；回傳是否有回應。
   const step = () => {
@@ -111,7 +126,7 @@ function setup(simOpts) {
     er._onKeyDownProcessUI({ key: k, ctrlKey: false, altKey: false, preventDefault() {} });
   const texts = () => buf.pageLines.map((r) => rowToText(r).replace(/\s+$/, ""));
   const expected = () => sim.allRows();
-  return { sim, er, view, buf, wire, sent, logs, step, pump, open, key, texts, expected,
+  return { sim, er, view, buf, wire, sent, logs, step, stepUnflushed, pump, open, key, texts, expected,
     get overlaps() { return overlaps; } };
 }
 
@@ -158,6 +173,28 @@ describe("反向讀取（End）", () => {
     expect(h.view._reverse).toBeNull();
     expect(h.er.easyReadingReachedPageEnd).toBe(true);
     // 真的是往上讀（不是 End 之後又從 head 一路 PageDown 下去）
+    expect(h.sent.filter((k) => k === PGUP).length).toBeGreaterThan(5);
+  });
+
+  // CI 偶發紅的實錄（offline e2e「反向期間：tail 不編樓層…」）：End 落在 PageDown 的
+  // 回應剛寫進 TermBuf、notify 計時器還沒跑的空窗 ⇒ 狀態列讀成亂碼 ⇒ _requestReverse
+  // 判定「不在文章裡」靜默放棄，End 只捲到底，文章照舊往下讀完。
+  test("End 落在「新幀已寫入、還沒 notify」的空窗：照樣啟動反向讀取", () => {
+    const h = setup({ total: 300 });
+    h.open();
+    h.stepUnflushed(); // PageDown 的回應到了，但 lead byte 還沒標
+    expect(h.buf.stale).toBe(true);
+    h.key("End");
+    expect(h.er._reverse).not.toBeNull();
+    // flush 那一幀時 forward 已經送出下一個 PageDown ⇒ End 等它回來（P4）
+    expect(h.wire).toEqual([PGDN]);
+    h.step();
+    expect(h.wire).toEqual([END]);
+    h.step(); // End 落地
+    expect(h.texts().at(-1)).toBe("article line 300");
+    h.pump();
+    expect(h.overlaps).toBe(0);
+    expect(h.texts()).toEqual(h.expected());
     expect(h.sent.filter((k) => k === PGUP).length).toBeGreaterThan(5);
   });
 
