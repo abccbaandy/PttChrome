@@ -296,6 +296,7 @@ debug 錄製，`render/merge_buttons.js` 的純 `button`）在點擊優先權表
 | 滾輪平滑捲動 | `useMouseBrowsing && mouseWheel !== 0 && mouseWheelSmoothScroll`（`resolveMouseGates` 的 `wheelSmoothScroll`；只有列表好讀分支會問這一格） |
 | 瀏覽器返回（含觸控板左滑手勢） | `useMouseBrowsing && mouseBackNav !== 0`（`backNav`）—— **刻意不經過 `mouseWheel`**，見下節 |
 | 回報給 PTT server | `useMouseBrowsing && mouseServerReport && buf.mouseReport.isActive()`（`serverReport`）—— 為真時**強制關掉** `leftClick`／`cursorIcon`／`misclickGuard`／`wheel`／`wheelSmoothScroll`，見下方「PTT server 端的滑鼠回報」 |
+| 手機換行版面（`reflow`，`term_view.reflow`） | 為真時 `misclickGuard`／`edgePaging` 關掉，`resolveMouseRegion` 對 pageState 3 早退 NONE（格子座標不對應折行後的字，見 `docs/mobile.md`「Phase 3」） |
 | 連結／圖片／`copyOnSelect`／右鍵選單 | **不受任何滑鼠 pref 影響** |
 | `[data-pusher]` 推文者高亮 | 不受滑鼠 pref 影響，**但 `serverReport` 為真時整條分支跳過**（理由見下節） |
 

@@ -133,10 +133,7 @@ DeepLinkController.prototype = {
   // 與 aid_navigation._currentLineIndex 同一套算法。
   _currentLineIndex: function() {
     const view = this._view;
-    const disp = view && view.mainDisplay;
-    const chh = view && view.chh;
-    if (!disp || !chh) return null;
-    return Math.round(disp.scrollTop / chh);
+    return view && view.currentLineIndex ? view.currentLineIndex() : null;
   },
 
   // board 可能是 null（站內信／精華區，pttbbs 在 currboard 空時印「不明」）：

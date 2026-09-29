@@ -635,3 +635,26 @@ describe("邊緣翻頁區：pref 關掉＝零回歸", () => {
     expect(at({ ...on, dismiss: { bytes: " " } }).hintBand).toBe(null);
   });
 });
+
+// 手機換行版面（Phase 3，term_view.reflow）：好讀文章的一列折成好幾行，格子座標對不上
+// 畫面上的字 ⇒ 以 col 判斷的區域整組關掉，否則 tap 內文會被當成「左側退出帶」而跳出文章。
+describe("手機換行版面（reflow）", () => {
+  test("文章：左 7 欄退出帶、上下半翻頁、底列 End 全部不成立", () => {
+    for (const [row, col] of [[5, 0], [5, 3], [2, 40], [20, 40], [23, 40]]) {
+      const r = at({ pageState: 3, row, col, edgePaging: true, reflow: true });
+      expect(r.action).toBe(ACT_NONE);
+      expect(r.cursor).toBe(CUR_AUTO);
+      expect(r.hintBand).toBe(null);
+    }
+  });
+
+  test("沒有 reflow 時文章的退出帶照舊（桌機零改動）", () => {
+    expect(at({ pageState: 3, row: 5, col: 0 }).action).toBe(ACT_EXIT_ARTICLE);
+  });
+
+  test("只管文章：列表（格線畫面）不受影響", () => {
+    expect(at({ pageState: 2, row: 5, col: LIST_TITLE_COL_START, reflow: true }).action).toBe(
+      ACT_ENTER,
+    );
+  });
+});

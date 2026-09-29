@@ -9,8 +9,8 @@
 |---|---|---|
 | 1 | tap 不叫鍵盤＋虛擬按鍵列＋鍵盤鈕＋viewport 解鎖縮放 | CONFIRMED（Android 真機實測） |
 | 2 | 版面不被切（所有畫面縮到塞滿）＋軟鍵盤不蓋底列 | 已實作（真機 `guess`：待實測） |
-| 3 | 文章好讀：正常字級＋超寬換行（`mobileReflow`），reflow 下關掉以 col 判斷的滑鼠區域 | 未做 |
-| 4 | 文章列表／看板列表：手機卡片版（固定高 `K*chh` 保住 `list_scroll` 等高假設） | 未做 |
+| 3 | 文章好讀：正常字級＋超寬換行（`mobileReflow`），reflow 下關掉以 col 判斷的滑鼠區域 | 已實作（真機 `guess`：待實測） |
+| 4 | 文章列表／看板列表：手機卡片版（固定高 `K*chh` 保住 `list_scroll` 等高假設） | 已實作（真機 `guess`：待實測） |
 
 使用者定案：文章只支援好讀模式、要換行不要縮小；列表做卡片；其他 80 欄格線畫面（主選單等）只求不被切。
 
@@ -54,9 +54,11 @@
 
 ## 測試
 
-- unit：`mobile_layout.test.js`、`mobile_keypad.test.jsx`、`app_mobile_layout.test.js`
-- offline e2e：project `offline-mobile`（Pixel 7 模擬，`offline/mobile_*.spec.js` ＋
-  `easy-reading-list.offline.spec.js`；`offline` project 以 testIgnore 排除 mobile_*），已併入
+- unit：`mobile_layout.test.js`、`mobile_keypad.test.jsx`、`app_mobile_layout.test.js`、`mobile_surface.test.js`、
+  `list_card.test.js`（含兩個 session 的卡片換算；看板列表沒有錄製素材，這是它唯一的守護）；
+  reflow 相關另在 `mouse_regions`／`mouse_gating`／`scroll_restore`／`context_menu_items` 各有一組
+- offline e2e：project `offline-mobile`（Pixel 7 模擬，只跑 `offline/mobile_*.spec.js`：換行版面與長按選單在
+  `mobile_reflow`、卡片在 `mobile_list_cards`；`offline` project 以 testIgnore 排除 mobile_*），已併入
   `yarn test:e2e:offline`。**視窗高壓到 390px**：錄製檔全是 24 列，Pixel 7 原生高度會給 52 列、
   重放湊不成完整一屏；390 ⇒ 24 列。
 - Windows 本機跑 `offline-mobile` 會用到 local 細明體，小字級下半形字寬被 hinting 取整（實測 5.0 vs
@@ -68,19 +70,58 @@
 
 - **列表 PgUp／PgDn 卡住**：非整數 DPR 下列高是小數（Pixel 7：26/2.625），`scrollTop` 被瀏覽器
   量化後讀回來略小於 `pos*rowH` ⇒ `list_scroll.topPosFromScrollTop` 的 floor 少算一列。容差改為像素單位
-  `SCROLL_QUANT_EPS`。`easy-reading-list.offline.spec.js` 同時跑在 `offline-mobile`（唯一測得到的環境）；
-  該 spec 的 px 比較一律容許 < 1px（`clientHeight` 取整數、`scrollTop` 被量化）。
+  `SCROLL_QUANT_EPS`。手機的列表現在是卡片（高＝2×15.619px，同樣是小數），守護在
+  `mobile_list_cards.offline.spec.js` 的 PgUp／PgDn 那條（`easy-reading-list` 是 80 欄格線的斷言，只在桌機跑）。
 - 已知未修：瀏覽器實際排版的列距是 LayoutUnit（Chrome 1/64px）量化後的值（實測 `chh` 9.90476 → 列距
   9.90625），列表捲動數學用的仍是 `chh` ⇒ 每列累積 ~0.0015px 誤差（300 列 < 0.5px，在容差內）。
 
-## Phase 3–4 設計要點（未實作，交接見 `docs/handoff/mobile-phase3-4.md`）
+## 畫面類型（surface，Phase 3–4 共用）
 
-- surface：`article`（好讀文章）／`list`（列表好讀 session engaged）改用 `MOBILE_ROW_FONT_PX` 字級、
-  寬＝視窗寬；其餘維持 Phase 2 的塞滿縮放。rows 不隨 surface 變 ⇒ 不重送 NAWS。
-  字級可調時再開 pref `mobileFontSize`（與桌機 `fontSize` 分開），且 rows 要跟著它算。
-- reflow：`.main > span` 改 `white-space: pre-wrap; overflow-wrap: anywhere`（`.wpadding` 是
-  inline-block，自然成斷行原子）；`nextScrollRestoreStep` 的 `lineIndex*chh` 在換行下失準 ⇒
-  手機分支改用 `data-row` 節點 `offsetTop`；`resolveMouseGates` 加 `reflow` gate 關掉以 col 判斷的區域。
-- 卡片：`list_session._rowHeight()`／`board_list_session._rowHeight()` 手機分支回 `K*chh`；
-  保留 `data-row`、`data-list-author/-title` 契約；卡片 element-level click 走
-  `list_session` 列點擊開文合約；看板列表欄位先讀 pttbbs `board.c`，不猜。
+- `term_view.mobileSurface` ∈ `grid`／`article`／`list`，推導＝**這一幀畫的是什麼**（`_frameSurface`）：
+  好讀長頁（`!_gridRender`）＝ article、列表好讀視窗（`_renderScreenLines` 帶 `listScroll`）＝ list，
+  其餘（functionMode 原生鏡像、空頁防黑、原生列表、主選單…）＝ grid。不看好讀旗標。
+- 對帳點 `term_view._syncMobileSurface`（`_renderScreenLines` 開頭，**render 之前**：forceWidth 與列表視口
+  高度取當下 chh，同一幀就畫對）→ `App._applyMobileGeometry(surface)`（唯一套幾何點；resizer 不帶參數
+  ＝沿用上一幀的）→ `view.setMobileSurface`（旗標 `reflow`／`listCards` ＋ `.main` 的 class）＋ `fixedResize`。
+- 幾何 `mobileTermGeometry({ surface })`：article／list 的 chh ＝ min(`MOBILE_ROW_FONT_PX`, 塞滿高) 對齊裝置
+  像素、`mainWidth` ＝視窗寬（`view.reflowWidth` → `setTermFontSize`）。**rows 與 surface 無關 ⇒ 不重送
+  NAWS**。`.main` 高仍是 `chh*rows+10`（`_scrollBy` 下界 LOCKED）。
+- 列表視口高度：呼叫端只給 `listScroll.viewportRows`，px 由 `_renderScreenLines` 在對帳**之後**換算。
+
+## Phase 3：好讀文章換行版面（`term_view.reflow`）
+
+- CSS `.main.mobileReflow #mainContainer span[type="bbsrow"]`：`pre-wrap` ＋ `overflow-wrap: anywhere`
+  （ID 選擇器壓過 `#mainContainer > span` 與合併塊的 `pre`）；`.easyReadingImg` 上限改 100%。不宣告 `user-select`。
+- 閱讀位置：`view.currentLineIndex()`（AID 回跳／deep link 記錄）與 `view.pageRowTop(row)`
+  （`nextScrollRestoreStep` 的 `targetTop`）在 reflow 下量 `srow` 節點，格線版面維持 `scrollTop/chh`。
+- 滑鼠：`resolveMouseRegion({ reflow })` 對 pageState 3 早退 NONE（左側退出帶、邊緣翻頁全關），
+  `resolveMouseGates({ reflow })` 關 `misclickGuard`／`edgePaging`（推文者高亮退回整列可點）。
+  元素層（連結、圖片、`a.fnKey`、合併按鈕）不受影響。右鍵選單的推文者黑名單在 reflow 下整列都算 id 區。
+- 已知接受：ANSI 圖／表格換行後會散（使用者定案）；`#easyReadingLastRow`（footer overlay）只改寬度不換行，超出視窗寬的部分被裁。
+
+## 長按選單（觸控 contextmenu）
+
+Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不為空。`context_menu_items.menuTargetFlags`
+的 `touchLongPress`（`isTouchContextMenu`：`pointerType === 'touch'`，退回 `sourceCapabilities.firesTouchEvents`）
+讓 `normalEnabled` 不看選取（黑名單／前已讀後未讀／貼上照出），`selEnabled` 照舊（仍可複製那個字）。
+
+## Phase 4：列表卡片（`term_view.listCards`）
+
+- 只換 body 列：`render/screen.js#_renderRow` 在 `enhance.listCards`（＝ `'article'`／`'board'`，由
+  `listScroll.kind` 帶）且列在 `[bodyStart, lines.length-1)` 時改走 `render/list_card.js#buildListCard`；
+  header／footer 照舊是 80 欄列（超出視窗寬的部分被 `.main` 的 `overflow-x: hidden` 裁掉）。
+  `listCards` 進 `annotationsKey`（同一批列物件切換卡片模式要整批重建）。
+- 版型（欄位按 **cell** 切，出處見 `list_card.js` 檔頭）：文章列表＝標題 [29,80)／序號・標記・推文數・日期
+  [0,17)＋作者 [17,29)；看板列表＝序號・未讀・板名・類別 [0,28)＋人氣 [64,67)／◎敘述 [28,64)＋板主 [67,80)。
+- **卡片固定高 2em（`LIST_CARD_ROWS`=2 × chh）是承重條件**：`list_scroll.js` 的位置↔scrollTop 是純乘除。
+  分隔線只能用 inset box-shadow，不可 border／margin／padding-block。兩個 session 的 `_rowHeight()` ＝
+  `chh × listRowSpan(listCards)`；`_pageRows()`（PgUp/PgDn 一次翻幾筆）＝ `listPageRows(bodyRows)`；
+  `_bodyRows()` 仍是 server 的 p_lines（抓頁單位），**不可**跟著換。
+- 契約保留：`span[type=bbsrow][srow]`、`data-list-author/-title`、`.listCardBody[data-type=bbsline][data-row]`
+  （游標底色的 class 下在這裡 ⇒ 整張卡片上色）。
+- 點擊：`App.clientToPos` 的 body 列號除數換成卡片高（`listRowSpan`）；`App.mouse_click` 在 listCards 下
+  不做退出帶／邊緣翻頁，點卡片任何位置＝ `onMouseClick(row, LIST_TITLE_COL_START)`（走 session 的列點擊開文
+  合約）。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵列的 ←。
+- 長按選單的黑名單區域在 listCards 下看 DOM（`.listCardAuthor`／`.listCardTitle`），不看 col；「前已讀後
+  未讀」用 `clientToPos` 的列號（已是卡片座標）。
+- 字級可調時再開 pref `mobileFontSize`（與桌機 `fontSize` 分開），且 rows 要跟著它算。

@@ -221,6 +221,10 @@ export function resolveMouseRegion(input) {
   //   - highlightRow 恆 -1      ⇒ setHighlight 不宣告滑鼠優先權，hover 底色自動
   //                                消失、鍵盤游標列照常（cursor_highlight.js 不用改）
   if (o.serverMouse) return NONE;
+  // 手機換行版面（Phase 3，term_view.reflow）：好讀文章的一列會折成好幾行，格子座標
+  // （col/row）與畫面上的字對不起來 ⇒ 以 col 判斷的區域（左側退出帶、邊緣翻頁、
+  // 列點擊送鍵）整組不成立。元素層（連結、圖片、功能鍵、合併按鈕）不走這裡，照常。
+  if (o.reflow && o.pageState === 3) return NONE;
   // 框開著（pressanykey／vmsg 橫幅／vgetstring 輸入欄，呼叫端用
   // screen_dismiss.resolveDismiss 判）⇒ 整個畫面都是「點空白處關框」的目標，
   // **只換指標、不上底色**：框在時下方整片是殘影，上底色會讓人以為那裡可以點。
@@ -393,6 +397,10 @@ export function resolveMouseGates(prefs) {
   // backNav 是瀏覽器導航，兩者都不是「終端機格子上的滑鼠」，不該送給 PTT。
   // `move` 也保持 on：座標快取還要繼續更新（term_buf.onMouse_move）。
   const left = on && !!p.mouseLeftClick && !serverReport;
+  // 手機換行版面（App 傳 term_view.reflow）：col 不再對應畫面上的字 ⇒ 以 col 判斷的
+  // 防誤觸（推文者可點區起始欄）與邊緣翻頁關掉；區域本身由 resolveMouseRegion 的
+  // reflow 早退關掉。推文者高亮因此退回整列可點。
+  const reflow = !!p.reflow;
   return {
     move: on,
     serverReport: serverReport,
@@ -402,11 +410,11 @@ export function resolveMouseGates(prefs) {
     // 防誤觸也**跟著總開關走**：總開關關掉時左鍵、指標、左側提示帶全滅，沒有任何
     // 誤觸要防（推文列的 pusher 高亮此時退回整列可點＝改版前的行為）。設定頁那顆
     // checkbox 因此能與其他子項一樣 disabled={!useMouseBrowsing}。
-    misclickGuard: on && !!p.mouseMisclickGuard && !serverReport,
+    misclickGuard: on && !!p.mouseMisclickGuard && !serverReport && !reflow,
     // 邊緣翻頁區（頂列 Home／底列 End／右緣與文章上下半翻頁）。跟著總開關走，
     // serverReport 時整組讓位 —— 它與「點標題開文」同類，都是我們自己發明的
     // 滑鼠語意，不是瀏覽器語意。
-    edgePaging: on && !!p.mouseEdgePaging && !serverReport,
+    edgePaging: on && !!p.mouseEdgePaging && !serverReport && !reflow,
     middleClick: on ? Number(p.mouseMiddleClick) || 0 : 0,
     wheel: on && !!p.mouseWheel && !serverReport,
     // 平滑捲動是滾輪的子行為 ⇒ 必須先過滾輪本身這一關（列表好讀模式才有作用）。

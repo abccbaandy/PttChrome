@@ -12,6 +12,7 @@
 //      at a time (pttbbs typeahead skips repaints when keys race — protocol §2).
 // Misclassification always degrades toward NATIVE (functionMode mirrors the raw
 // screen), never toward a stale buffer.
+import { listRowSpan, listPageRows } from './mobile_layout';
 import {
   parseListAuthor,
   parseListTitle,
@@ -2223,9 +2224,20 @@ ListSession.prototype = {
     });
   },
 
-  // 未縮放的列高（＝畫面上的 chh）。
+  // 一筆在捲動視口裡的高度（未縮放）。一般＝chh；手機卡片（view.listCards，
+  // docs/mobile.md「Phase 4」）＝ LIST_CARD_ROWS × chh。list_scroll.js 的數學只要
+  // 「每筆等高」，所以整個捲動／錨定／reveal 只靠這一支就換成卡片座標。
   _rowHeight: function() {
-    return (this._view && this._view.chh) || 0;
+    const v = this._view;
+    return ((v && v.chh) || 0) * listRowSpan(!!(v && v.listCards));
+  },
+
+  // PgUp／PgDn 一次翻幾筆＝視口放得下幾筆。卡片模式一筆佔 LIST_CARD_ROWS 列，
+  // 翻 bodyRows 筆會跳過半屏沒看過的東西。**只給視口操作用**：_bodyRows 仍是
+  // server 的 p_lines（抓頁／補頁的單位），不可以一起換。
+  _pageRows: function() {
+    const v = this._view;
+    return listPageRows(this._bodyRows(), !!(v && v.listCards));
   },
 
   // 左鍵單擊某一列（App.mouse_click 已把 client 座標換成**渲染後**的列號）＝
@@ -3703,12 +3715,12 @@ ListSession.prototype = {
         next = Math.min(cursor + 1, len - 1); // read.c KEY_DOWN：到底不 wrap
         break;
       case 'pgup':
-        next = Math.max(0, top - B);
+        next = Math.max(0, top - this._pageRows());
         break;
       case 'pgdn':
         // read.c 允許 over-scroll（top 越過 maxTop、下面全是空白列）；這裡照 web
         // 慣例夾住（v5 合約允許偏離 read.c，見 docs/easy-reading-list.md）。
-        next = Math.min(top + B, len - 1);
+        next = Math.min(top + this._pageRows(), len - 1);
         break;
       // Home/End 一律走 server（原生鍵直通，2026-09-05 使用者決定）。以前只在
       // 「該方向的板邊還沒確認」時才發交易，其餘本地瞬移 —— 那讓落點取決於

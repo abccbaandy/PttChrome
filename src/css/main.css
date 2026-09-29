@@ -224,6 +224,54 @@ a:link,a:visited,a:active,a:hover {
   white-space: pre;
 }
 
+/* 手機 Phase 3：好讀文章長頁的換行版面（term_view.setMobileSurface，docs/mobile.md）。
+   正常字級、`.main` 寬＝視窗寬，超寬列自動換行；全形字的 `.wpadding` 是
+   inline-block，自然成為斷行原子。ID 選擇器是為了壓過上面的 `#mainContainer > span`
+   與合併塊的 `white-space: pre`。**不得宣告 user-select**（css_user_select.test.js）。 */
+.main.mobileReflow #mainContainer span[type="bbsrow"] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 圖片上限 39em 是照 80 欄寬訂的，換行版面的欄寬只剩視窗寬。 */
+.main.mobileReflow .easyReadingImg {
+  max-width: 100%;
+}
+
+/* 手機 Phase 4：列表好讀的卡片（render/list_card.js，docs/mobile.md「Phase 4」）。
+   **高度鎖死 2em（＝LIST_CARD_ROWS × chh，.main 的 font-size 就是 chh）**：
+   list_scroll.js 的位置↔scrollTop 是純乘除，卡片高一變整套捲動就錯位。所以分隔線
+   用 inset box-shadow（不佔版面），不可以用 border／margin／padding-block。
+   每行單行＋省略號；游標底色的 class 下在 .listCardBody（整張卡片上色）。 */
+.main.mobileListCards .listBodyView > span.listCard {
+  display: block;
+  height: 2em;
+  overflow: hidden;
+  white-space: pre;
+  box-shadow: inset 0 -1px 0 #333;
+}
+.listCard .listCardBody,
+.listCard .listCardLine {
+  display: block;
+}
+.listCard .listCardLine {
+  height: 1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-inline: 0.25em;
+}
+/* LinkSegmentBuilder 的輸出是區塊 div 包 bbsline span（一列一個區塊）；卡片裡一行
+   要放好幾段欄位 ⇒ 攤平成行內。 */
+.listCard .listCardLine div {
+  display: inline;
+}
+.listCard .listCardAuthor {
+  margin-left: 0.5em;
+}
+.listCard .listCardPopularity,
+.listCard .listCardBM {
+  margin-left: 0.5em;
+}
+
 /* 列表好讀模式的 body 捲動視口。高度由 JS 設成 body 列數 × 列高，內容是整段
    緩衝（≤ MAX_LIST_ROWS 列）⇒ 有真正的可捲距離，捲動交給瀏覽器（與文章好讀
    同一套引擎）。`overflow-y` 也由 JS 控（auto／hidden，見 screen.js

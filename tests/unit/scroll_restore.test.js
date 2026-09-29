@@ -53,3 +53,25 @@ test("全文載完且完全不需捲動 → scrollTop 0，不出現負值", () =
 test("次數用盡 → 放棄（自動翻頁卡住時不無限掛著）", () => {
   expect(step({ tries: MAX_SCROLL_RESTORE_TRIES + 1 }).action).toBe("giveup");
 });
+
+// 手機換行版面（term_view.reflow）：一列可能折成好幾行，lineIndex*chh 失準 ⇒ 呼叫端
+// 改量 srow 節點的頂端（term_view.pageRowTop）傳 targetTop。
+describe("換行版面：targetTop（量到的列頂端）取代 lineIndex*chh", () => {
+  test("量到的位置優先於算術（換行後同一列比算術位置更低）", () => {
+    expect(step({ scrollHeight: 9000, targetTop: 3500 })).toEqual({
+      action: "apply",
+      scrollTop: 3500
+    });
+  });
+
+  test("那一列還沒畫出來（null）→ 等，即使算術位置已經捲得到", () => {
+    expect(step({ scrollHeight: 9000, targetTop: null }).action).toBe("wait");
+  });
+
+  test("全文載完仍量不到（該列被黑名單拿掉之類）→ 夾到底收工", () => {
+    expect(step({ scrollHeight: 1000, targetTop: null, reachedPageEnd: true })).toEqual({
+      action: "apply",
+      scrollTop: 400
+    });
+  });
+});

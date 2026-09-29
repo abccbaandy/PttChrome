@@ -1568,7 +1568,9 @@ TermBuf.prototype = {
       serverMouse: !!(
         this.mouseReport.isActive() &&
         this.view && this.view.mouseServerReport
-      )
+      ),
+      // 手機換行版面：好讀文章的格子座標不對應畫面（見 resolveMouseRegion）。
+      reflow: !!(this.view && this.view.reflow)
     });
   },
 

@@ -236,6 +236,19 @@ export function TermView() {
   // 手機軟鍵盤蓋住的底部高度（px），App._onVisualViewport 寫、setTermFontSize 讀。
   // 見 mobile_layout.keyboardInset、term_size.termLayoutOffsets。
   this.keyboardInset = 0;
+  // 手機版面的畫面類型（docs/mobile.md「Phase 3」「Phase 4」）：
+  //   mobileSurface  'grid'（塞滿縮放）｜'article'（好讀長頁換行）｜'list'（列表卡片）。
+  //                  唯一寫入點 setMobileSurface，由 App._applyMobileGeometry 呼叫；
+  //                  推導在 _syncMobileSurface（每次 render 前對帳）。
+  //   reflow         ＝ 'article'（`.main.mobileReflow`）。以 col 判斷的滑鼠區域全關
+  //                  （mouse_regions.resolveMouseGates/Region 的 reflow）。
+  //   listCards      ＝ 'list'（`.main.mobileListCards`）。body 列畫成固定高卡片
+  //                  （render/list_card.js），列表 session 的列高＝LIST_CARD_ROWS*chh。
+  //   reflowWidth    非 grid 時 `.main` 的寬（px，＝視窗寬），null ＝照 chw*cols 算。
+  this.mobileSurface = 'grid';
+  this.reflow = false;
+  this.listCards = false;
+  this.reflowWidth = null;
   //new pref - end
 
   this.bbsViewMargin = 0;
@@ -804,7 +817,10 @@ TermView.prototype = {
             rowIdentityStable: true,
             listScroll: {
               bodyStart: isBrdList ? BRD_HEADER_ROWS : LIST_HEADER_ROWS,
-              viewportPx: lsBodyRows * this.chh,
+              // px 由 _renderScreenLines 在手機畫面對帳之後換算（字級可能剛換過）。
+              viewportRows: lsBodyRows,
+              // 手機卡片的版型（render/list_card.js）：兩種列表的欄位完全不同。
+              kind: isBrdList ? 'board' : 'article',
               scrollable:
                 this.buf.listRenderMode === 'buffer' && this._listWheelGates().wheelSmoothScroll
             }
@@ -934,6 +950,16 @@ TermView.prototype = {
   // author / pusher highlight) lives entirely in Screen#computeAnnotations now,
   // shared by both modes.
   _renderScreenLines: function(lines, dropHidden, inlinePreview, hoverPreview, enhanceOverrides) {
+    // 手機畫面類型的對帳（每條分支都先設好 _gridRender 才走到這裡）。
+    this._syncMobileSurface(this._frameSurface(enhanceOverrides));
+    // 列表視口高度＝body 列數 × **對帳後**的 chh（呼叫端只給列數），卡片模式也一樣：
+    // 視口佔的畫面面積不變，只是一筆佔 LIST_CARD_ROWS 列。
+    // 卡片旗標與種類一併帶給 render 層（進 annotationsKey ⇒ 切換時整批重建）。
+    var lsOv = enhanceOverrides && enhanceOverrides.listScroll;
+    if (lsOv) {
+      lsOv.viewportPx = (lsOv.viewportRows || 0) * this.chh;
+      enhanceOverrides.listCards = this.listCards ? lsOv.kind : undefined;
+    }
     // 這一幀實際畫出去的那一份 lines。`data-row` 的定義就是「傳給 <Screen> 的
     // lines index」（dropHidden 移除的列不位移其餘列的 data-row），所以凡是拿
     // 選取座標反查內容的消費端（App.doCopyAnsi）都只能用這一份 —— 七條 render
@@ -1397,7 +1423,9 @@ TermView.prototype = {
     this.chw = cw;
     this.chh = ch;
     var fontSize = this.chh + 'px';
-    var mainWidth = (this.chw * this.buf.cols + 10) + 'px';
+    var mainWidth = (this.reflowWidth > 0
+      ? this.reflowWidth
+      : this.chw * this.buf.cols + 10) + 'px';
     this.mainDisplay.style.fontSize = fontSize;
     this.mainDisplay.style.lineHeight = fontSize;
     this.bbsCursor.style.fontSize = fontSize;
@@ -1465,6 +1493,75 @@ TermView.prototype = {
     if (inset === this.keyboardInset) return;
     this.keyboardInset = inset;
     if (this.chh) this.setTermFontSize(this.chw, this.chh);
+  },
+
+  // 手機畫面類型的開關（見建構子 mobileSurface）。只切旗標與 class；字級／寬度由
+  // 呼叫端（App._applyMobileGeometry）接著走 fixedResize 套。
+  setMobileSurface: function(surface) {
+    var s = surface === 'article' || surface === 'list' ? surface : 'grid';
+    this.mobileSurface = s;
+    this.reflow = s === 'article';
+    this.listCards = s === 'list';
+    if (this.mainDisplay) {
+      this.mainDisplay.classList.toggle('mobileReflow', this.reflow);
+      this.mainDisplay.classList.toggle('mobileListCards', this.listCards);
+    }
+  },
+
+  // 這一幀要畫的畫面類型（不看是不是手機）：好讀長頁（!_gridRender）＝ article、
+  // 列表好讀視窗（帶 listScroll）＝ list，其餘格線畫面＝ grid。
+  _frameSurface: function(enhanceOverrides) {
+    if (!this._gridRender) return 'article';
+    if (enhanceOverrides && enhanceOverrides.listScroll) return 'list';
+    return 'grid';
+  },
+
+  // 每次 render 前（_renderScreenLines 開頭）對帳：手機模式下依這一幀的畫面類型
+  // 套幾何（article／list 正常字級＋視窗寬，grid 塞滿縮放）。rows 相同 ⇒ 只換字級與
+  // 寬度，不重送 NAWS。必須在 render **之前**：forceWidth（全形字寬）與列表視口高度
+  // 取的是這一刻的 chh，換字級後同一幀就畫對，不必再 redraw 一次。
+  _syncMobileSurface: function(surface) {
+    var app = this.bbscore;
+    this._wantSurface = surface;
+    var mobile = !!(app && app.mobile);
+    var want = mobile ? surface : 'grid';
+    if (want === this.mobileSurface) return;
+    if (mobile && app._applyMobileGeometry) app._applyMobileGeometry(want);
+    else this.setMobileSurface('grid');
+  },
+
+  // 好讀長頁第 row 列（pageLines 索引＝srow）的頂端（.main 內容座標，px）。黑名單列被
+  // 整列拿掉時往後找最近的一列（同 easy_reading._scrollToPageRow）。沒畫出來回 null。
+  pageRowTop: function(row) {
+    var disp = this.mainDisplay, mc = this.mainContainer;
+    if (!disp || !mc || typeof mc.querySelector !== 'function') return null;
+    if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
+    var n = (this.buf && this.buf.pageLines ? this.buf.pageLines.length : 0);
+    var limit = Math.min(n, row + (this.buf ? this.buf.rows : 24));
+    for (var r = row; r < limit; ++r) {
+      var el = mc.querySelector('[type="bbsrow"][srow="' + r + '"]');
+      if (el) return offsetTopWithin(el, disp);
+    }
+    return null;
+  },
+
+  // 閱讀位置（行索引，給 AID 回跳／deep link 記錄用；文章回來時會重讀，像素值對不上）。
+  // 格線版面每列等高 ⇒ scrollTop/chh；換行版面一列可能折成好幾行 ⇒ 量節點，取視窗
+  // 頂端那一列的 srow。
+  currentLineIndex: function() {
+    var disp = this.mainDisplay;
+    if (!disp || !this.chh) return null;
+    if (!this.reflow) return Math.round(disp.scrollTop / this.chh);
+    var mc = this.mainContainer;
+    if (!mc || typeof mc.querySelectorAll !== 'function') return null;
+    if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
+    var st = disp.scrollTop;
+    var rows = mc.querySelectorAll('[type="bbsrow"][srow]');
+    for (var i = 0; i < rows.length; ++i) {
+      if (offsetTopWithin(rows[i], disp) + rows[i].offsetHeight > st)
+        return Number(rows[i].getAttribute('srow')) || 0;
+    }
+    return null;
   },
 
   // 提示帶的水平幾何。**必須與 App.clientToPos 同源**（兩者都走
@@ -1637,6 +1734,8 @@ TermView.prototype = {
   // （視窗裡的空白列不影響邊緣區）。
   listEdgeRegion: function(screenRow, col) {
     if (screenRow == null || screenRow < 0 || !this.buf) return null;
+    // 手機卡片：畫面不是 80 欄格線，格子座標的邊緣區不成立（docs/mobile.md「Phase 4」）。
+    if (this.listCards) return null;
     var region = resolveMouseRegion({
       pageState: 2,
       row: screenRow,
@@ -1673,7 +1772,9 @@ TermView.prototype = {
     // 只在「可點的文章列」上成立 —— header／footer 那幾列有功能鍵按鈕，
     // 不該同時是退出區，這樣「提示帶亮＝點得下去」的合約才成立。
     var iconsEnabled = !!(this.buf.useMouseBrowsing && this.mouseLeftClick);
-    var onExitBand = hover >= 0 && col >= 0 && col < EXIT_COL_END;
+    // 手機卡片：col 對不上卡片裡的字 ⇒ 沒有退出帶，整張卡片都可點（見 App.mouse_click）。
+    var cards = !!this.listCards;
+    var onExitBand = !cards && hover >= 0 && col >= 0 && col < EXIT_COL_END;
     // 邊緣翻頁區。**吃螢幕列號而不是序列列號**（見 listEdgeRegion 的說明）：
     // 列表好讀的視窗與原生 24 列同版面（header 3 列／body／footer），所以逐格套用
     // 原生列表那張表就對了，不必另寫一份判斷。
@@ -1705,7 +1806,7 @@ TermView.prototype = {
       var clickable =
         hover >= 0 &&
         !!this.mouseLeftClick &&
-        col >= clickableColStart(2, !!(this.buf.useMouseBrowsing && this.mouseMisclickGuard));
+        (cards || col >= clickableColStart(2, !!(this.buf.useMouseBrowsing && this.mouseMisclickGuard)));
       // 兩個字面值改走 cursorCss（唯一真相源），總開關關掉時連 pointer 都不給。
       if (this.buf.BBSWin)
         this.buf.BBSWin.style.cursor = cursorCss(

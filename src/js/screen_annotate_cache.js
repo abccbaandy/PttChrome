@@ -130,6 +130,9 @@ export function annotationsKey(input) {
     // 根本不參與判斷。漏了它，切 pref 之後 row 1 / row 23 的節點會被無條件沿用，
     // 按鈕該出現不出現、該消失不消失，直到視窗捲動換掉那些列物件為止。
     stable(e.functionKeyRows),
+    // 手機列表卡片（'article'｜'board'｜undefined）：同一批列物件改畫成卡片，節點
+    // 重用條件（rowIdentityStable）看不到這件事 ⇒ 必須進 key，切換時整批重建。
+    stable(e.listCards),
     stable(input.mergeCaption),
     stable(input.captionAi),
     stable(input.aiKeep),

@@ -107,6 +107,38 @@ describe("mobileTermGeometry（Phase 2：畫面不被切）", () => {
   test("尺寸未知不回負值", () => {
     expect(mobileTermGeometry({ width: 0, height: 0, dpr: 1 }).chh).toBe(0);
   });
+
+  test("格線畫面沒有 mainWidth（照 80 欄算寬）", () => {
+    expect(mobileTermGeometry({ width: 412, height: 800, dpr: 2.625 }).mainWidth).toBe(null);
+  });
+});
+
+describe("mobileTermGeometry surface 'article'（Phase 3：好讀文章換行）", () => {
+  const dpr = 2.625;
+
+  test("rows 與 surface 無關 ⇒ 進出好讀不重送 NAWS", () => {
+    for (const [w, h] of [[412, 800], [390, 750], [844, 360], [412, 390]]) {
+      const grid = mobileTermGeometry({ width: w, height: h, dpr });
+      const art = mobileTermGeometry({ width: w, height: h, dpr, surface: "article" });
+      expect(art.rows).toBe(grid.rows);
+      expect(art.cols).toBe(80);
+    }
+  });
+
+  test("正常字級（不再為塞 80 欄縮小），`.main` 寬＝視窗寬", () => {
+    // 812 = 50 列 × 16 + 12：高度有餘裕時就是完整的 16px
+    const g = mobileTermGeometry({ width: 412, height: 812, dpr, surface: "article" });
+    expect(g.chh).toBe(MOBILE_ROW_FONT_PX);
+    expect(g.mainWidth).toBe(412);
+    expect(g.chh).toBeGreaterThan(mobileTermGeometry({ width: 412, height: 812, dpr }).chh);
+  });
+
+  test("高度仍塞得下（.main 高 chh*rows+10 不出視窗），並對齊裝置像素", () => {
+    const g = mobileTermGeometry({ width: 412, height: 390, dpr, surface: "article" });
+    expect(g.chh * g.rows + 10).toBeLessThanOrEqual(390 + 1e-9);
+    expect(g.chh).toBeLessThanOrEqual(MOBILE_ROW_FONT_PX);
+    expect(Math.abs(g.chh * dpr - Math.round(g.chh * dpr))).toBeLessThan(1e-9);
+  });
 });
 
 describe("keyboardInset", () => {

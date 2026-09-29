@@ -69,13 +69,45 @@ export const MOBILE_ROW_FONT_PX = 16;
 //         再做一次是冪等的）。刻意**不用** transform scale：縮小時 layout box 比視窗
 //         寬，align=center 置中失效、mouse_geometry 的縮放分支前提（box 置中）不成立。
 //   -10：.main 的寬高都多 10px（term_view.setTermFontSize：chw*cols+10、chh*rows+10）。
-export function mobileTermGeometry({ width, height, dpr }) {
+//
+// surface：
+//   'article'（Phase 3）＝好讀文章長頁（term_view.reflow），超寬列由 CSS `mobileReflow` 換行。
+//   'list'   （Phase 4）＝列表好讀視窗（term_view.listCards），body 列畫成卡片（render/list_card.js）。
+// 兩者都改用正常字級 MOBILE_ROW_FONT_PX（仍不超過「rows 列塞滿高」，`.main` 高度
+// chh*rows+10 才不出視窗）、`.main` 寬＝視窗寬（mainWidth）。
+// **rows 與 surface 無關** ⇒ 畫面切換不重送 NAWS。'grid' 的 mainWidth 為 null（照 80 欄算）。
+export const MOBILE_SURFACES = ['grid', 'article', 'list'];
+
+export function mobileTermGeometry({ width, height, dpr, surface }) {
   const rows = calcTermSize({ height: height, fontSizePx: MOBILE_ROW_FONT_PX }).rows;
   const byWidth = (2 * (width - 10)) / TERM_COLS;
   const byHeight = (height - 10) / rows;
-  const raw = Math.max(0, Math.min(byWidth, byHeight));
+  const wide = surface === 'article' || surface === 'list';
+  const raw = Math.max(0, Math.min(wide ? MOBILE_ROW_FONT_PX : byWidth, byHeight));
   const d = dpr > 0 ? dpr : 1;
-  return { cols: TERM_COLS, rows: rows, chh: Math.floor(raw * d) / d };
+  return {
+    cols: TERM_COLS,
+    rows: rows,
+    chh: Math.floor(raw * d) / d,
+    mainWidth: wide ? Math.max(0, Math.floor(Number(width) || 0)) : null
+  };
+}
+
+// ---- Phase 4：列表卡片 -------------------------------------------------------
+
+// 一張卡片佔幾個列高（標題一行＋推文數・日期・作者一行）。**固定高**是承重條件：
+// list_scroll.js 的「序列位置 ↔ scrollTop」是純乘除（每列等高），卡片模式下列高
+// 換成 LIST_CARD_ROWS*chh，那套數學原封不動（list_session/_rowHeight）。
+export const LIST_CARD_ROWS = 2;
+
+// 列表 session 用：卡片模式下一列（＝一筆）佔幾個 chh，以及一屏放得下幾筆。
+// bodyRows ＝ server 的 p_lines（rows-4），視口高度仍是 bodyRows*chh。
+export function listRowSpan(cards) {
+  return cards ? LIST_CARD_ROWS : 1;
+}
+
+export function listPageRows(bodyRows, cards) {
+  return Math.max(1, Math.floor((Number(bodyRows) || 0) / listRowSpan(cards)));
 }
 
 // 軟鍵盤蓋住 layout viewport 底部的高度（px）。Android Chrome 預設

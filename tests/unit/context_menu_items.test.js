@@ -6,6 +6,7 @@
 // 但 selectedText 是空字串 ⇒ 點了什麼都沒發生。
 import {
   menuTargetFlags,
+  isTouchContextMenu,
   copyTextFor,
   copyPreviews,
   truncateMiddle
@@ -121,5 +122,42 @@ describe("copyPreviews", () => {
     const url = "https://cdn.example.com/" + "a".repeat(200) + "/Pn3XurX.jpeg";
     const previews = copyPreviews({ contextOnUrl: url }, HREF);
     expect(previews.copyLinkUrl).toBe(truncateMiddle(url));
+  });
+});
+
+// REGRESSION（手機長按）：Chromium 長按先選字、後發 contextmenu ⇒ 照桌機規則
+// normalEnabled 恆 false，「加入黑名單」「前已讀後未讀」整組消失。
+describe("menuTargetFlags：觸控長按", () => {
+  test("長按自動選到的字不算刻意選取：一般項目照出，複製那個字也保留", () => {
+    expect(
+      menuTargetFlags({ contextOnUrl: "", selectionCollapsed: false, touchLongPress: true })
+    ).toEqual({ urlEnabled: false, normalEnabled: true, selEnabled: true });
+  });
+
+  test("長按在連結上：仍是連結那一組（不因觸控多出一般項目）", () => {
+    expect(
+      menuTargetFlags({ contextOnUrl: "https://i.imgur.com/a.jpg", selectionCollapsed: false, touchLongPress: true })
+    ).toEqual({ urlEnabled: true, normalEnabled: false, selEnabled: true });
+  });
+
+  test("滑鼠右鍵＋有選取：維持桌機規則", () => {
+    expect(
+      menuTargetFlags({ contextOnUrl: "", selectionCollapsed: false, touchLongPress: false })
+    ).toEqual({ urlEnabled: false, normalEnabled: false, selEnabled: true });
+  });
+});
+
+describe("isTouchContextMenu", () => {
+  test("PointerEvent 的 pointerType", () => {
+    expect(isTouchContextMenu({ pointerType: "touch" })).toBe(true);
+    expect(isTouchContextMenu({ pointerType: "mouse" })).toBe(false);
+    expect(isTouchContextMenu({ pointerType: "pen" })).toBe(false);
+  });
+
+  test("沒有 pointerType 時退回 sourceCapabilities.firesTouchEvents", () => {
+    expect(isTouchContextMenu({ sourceCapabilities: { firesTouchEvents: true } })).toBe(true);
+    expect(isTouchContextMenu({ sourceCapabilities: { firesTouchEvents: false } })).toBe(false);
+    expect(isTouchContextMenu({})).toBe(false);
+    expect(isTouchContextMenu(null)).toBe(false);
   });
 });

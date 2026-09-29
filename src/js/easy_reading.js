@@ -2090,13 +2090,17 @@ EasyReading.prototype._onKeyDown = function(e) {
 // Pure so it can be unit-tested: no DOM, no state.
 export const MAX_SCROLL_RESTORE_TRIES = 120;
 
+//
+// targetTop：量到的該列頂端（px）。手機換行版面（term_view.reflow）一列可能折成好幾
+// 行，lineIndex*chh 失準 ⇒ 呼叫端改量 srow 節點（term_view.pageRowTop）；那一列還沒
+// 畫出來時是 null ＝還到不了。undefined ＝格線版面，照 lineIndex*chh 算。
 export function nextScrollRestoreStep({
-  lineIndex, tries, chh, scrollHeight, clientHeight, reachedPageEnd
+  lineIndex, tries, chh, targetTop, scrollHeight, clientHeight, reachedPageEnd
 }) {
   if (tries > MAX_SCROLL_RESTORE_TRIES) return { action: 'giveup' };
   const max = Math.max(0, scrollHeight - clientHeight);
-  const target = lineIndex * chh;
-  if (max >= target) return { action: 'apply', scrollTop: target };
+  const target = targetTop === undefined ? lineIndex * chh : targetTop;
+  if (target != null && max >= target) return { action: 'apply', scrollTop: target };
   // Whole article loaded and it still isn't that tall (window resized, images
   // collapsed, the post shrank): land as close as we can instead of hanging on.
   if (reachedPageEnd) return { action: 'apply', scrollTop: max };
@@ -2161,6 +2165,7 @@ EasyReading.prototype._advanceScrollRestore = function() {
     lineIndex: pending.lineIndex,
     tries: pending.tries,
     chh: this._view.chh,
+    targetTop: this._view.reflow ? this._view.pageRowTop(pending.lineIndex) : undefined,
     scrollHeight: disp.scrollHeight,
     clientHeight: disp.clientHeight,
     reachedPageEnd: this.easyReadingReachedPageEnd

@@ -242,3 +242,16 @@ describe("serverReport：滑鼠交給 PTT server", () => {
     expect(off).toEqual(base);
   });
 });
+
+// 手機換行版面（Phase 3）：col 不對應畫面上的字 ⇒ 以 col 判斷的兩格關掉。
+describe("reflow：手機好讀文章換行版面", () => {
+  test("防誤觸（推文者可點區起始欄）與邊緣翻頁關掉，其餘不動", () => {
+    const g = resolveMouseGates({ ...ALL_ON, reflow: true });
+    expect(g.misclickGuard).toBe(false);
+    expect(g.edgePaging).toBe(false);
+    const base = resolveMouseGates(ALL_ON);
+    expect(g.leftClick).toBe(base.leftClick);
+    expect(g.wheel).toBe(base.wheel);
+    expect(g.backNav).toBe(base.backNav);
+  });
+});

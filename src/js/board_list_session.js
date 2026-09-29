@@ -23,6 +23,7 @@
 //
 // 詳細設計與 PTT 端事實見 docs/board-list-smooth-scroll.md。
 
+import { listRowSpan, listPageRows } from './mobile_layout';
 import {
   BRD_HEADER_ROWS,
   classifyBoardListScreen,
@@ -1553,10 +1554,10 @@ BoardListSession.prototype = {
         next = Math.min(cursor + 1, len - 1);
         break;
       case 'pgup':
-        next = Math.max(0, top - B);
+        next = Math.max(0, top - this._pageRows());
         break;
       case 'pgdn':
-        next = Math.min(top + B, len - 1);
+        next = Math.min(top + this._pageRows(), len - 1);
         break;
       // Home/End 一律走 server（與 list_session 同一個決定，理由見該檔）。
       case 'home':
@@ -1859,8 +1860,20 @@ BoardListSession.prototype = {
     });
   },
 
+  // 一筆在捲動視口裡的高度（未縮放）。一般＝chh；手機卡片（view.listCards，
+  // docs/mobile.md「Phase 4」）＝ LIST_CARD_ROWS × chh。list_scroll.js 的數學只要
+  // 「每筆等高」，所以整個捲動／錨定／reveal 只靠這一支就換成卡片座標。
   _rowHeight: function() {
-    return (this._view && this._view.chh) || 0;
+    const v = this._view;
+    return ((v && v.chh) || 0) * listRowSpan(!!(v && v.listCards));
+  },
+
+  // PgUp／PgDn 一次翻幾筆＝視口放得下幾筆。卡片模式一筆佔 LIST_CARD_ROWS 列，
+  // 翻 bodyRows 筆會跳過半屏沒看過的東西。**只給視口操作用**：_bodyRows 仍是
+  // server 的 p_lines（抓頁／補頁的單位），不可以一起換。
+  _pageRows: function() {
+    const v = this._view;
+    return listPageRows(this._bodyRows(), !!(v && v.listCards));
   },
 
   _screen: function() {

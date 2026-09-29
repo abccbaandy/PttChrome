@@ -31,6 +31,7 @@ import {
 } from "../../js/article_link_target";
 import {
   menuTargetFlags,
+  isTouchContextMenu,
   contextMenuDisposition,
   copyTextFor,
   copyPreviews,
@@ -295,6 +296,7 @@ export const ContextMenu = ({ pttchrome }) => {
       const { urlEnabled, normalEnabled, selEnabled } = menuTargetFlags({
         contextOnUrl,
         selectionCollapsed: window.getSelection().isCollapsed,
+        touchLongPress: isTouchContextMenu(event),
       });
       // 偏好一次讀完給下面幾個判定共用（快速搜尋／黑名單／選單開關）。
       const prefs = readValuesWithDefault();
@@ -354,14 +356,25 @@ export const ContextMenu = ({ pttchrome }) => {
         const listAuthor = rowElement.getAttribute("data-list-author");
         const listTitle = rowElement.getAttribute("data-list-title");
         if (pusher) {
+          // 手機換行版面（term_view.reflow）一列會折成好幾行，col 對不上畫面上的字
+          // ⇒ 整列推文都算 id 區（該列的作者只有一個，不會加錯人）。
           if (
-            col >= COMMENT_USERID_COL &&
-            col < COMMENT_USERID_COL + pusher.length
+            pttchrome.view.reflow ||
+            (col >= COMMENT_USERID_COL &&
+              col < COMMENT_USERID_COL + pusher.length)
           ) {
             blacklistAuthorTarget = pusher;
           }
         } else {
-          const region = listColRegion(col);
+          // 手機卡片（view.listCards）：卡片不是 80 欄格線，col 沒意義 ⇒ 看長按落在
+          // 卡片的哪一段（render/list_card.js 的 .listCardAuthor／.listCardTitle）。
+          const region = pttchrome.view.listCards
+            ? target.closest(".listCardAuthor")
+              ? "author"
+              : target.closest(".listCardTitle")
+                ? "title"
+                : null
+            : listColRegion(col);
           if (region === "author" && listAuthor) {
             blacklistAuthorTarget = listAuthor;
           } else if (region === "title" && listTitle) {

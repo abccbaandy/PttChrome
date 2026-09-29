@@ -69,7 +69,7 @@ test.describe('手機版面：畫面不被切（離線重放）', () => {
 
   test.describe('文章好讀', () => {
     test.skip(!articles.length, '尚無 article cassette');
-    test('好讀文章同樣完整落在畫面內（Phase 3 前的過渡：整體縮到塞滿寬）', async ({ page }) => {
+    test('好讀文章同樣完整落在畫面內（Phase 3 換行版面：寬＝視窗寬）', async ({ page }) => {
       test.setTimeout(90000);
       await bootOffline(page, ptt);
       await ptt.applyPrefs(page, { enableEasyReading: true });

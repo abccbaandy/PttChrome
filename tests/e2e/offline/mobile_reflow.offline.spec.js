@@ -1,0 +1,190 @@
+// 手機版面 Phase 3（docs/mobile.md）：好讀文章改正常字級＋超寬自動換行（term_view.reflow）。
+// 只在 offline-mobile project 跑（Pixel 7 模擬、視窗高 390 ⇒ 24 列）。
+//
+// 同檔另守「長按叫出的選單」：Chromium 長按先選字、後發 contextmenu，舊規則把那個
+// 自動選取當成使用者的選取 ⇒ 「加入黑名單」「前已讀後未讀」整組消失（使用者回報）。
+const { test, expect } = require('@playwright/test');
+const ptt = require('../helpers/ptt');
+const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
+const { waitPreviewsSettled, scrollIntoViewStable } = require('../helpers/layout');
+
+const article = findCassette('article');
+
+// NAWS（IAC SB NAWS）＝重送終端機尺寸。換行版面只換字級與寬度，不可以改列數。
+const nawsCount = (page) =>
+  page.evaluate(
+    () => (window.__replay ? window.__replay.sent : []).filter((s) => String(s).includes('\xff\xfa\x1f')).length
+  );
+
+const layout = (page) =>
+  page.evaluate(() => {
+    const app = window.__app;
+    const main = document.querySelector('.main');
+    const r = main.getBoundingClientRect();
+    const rows = Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"]'));
+    const chh = app.view.chh;
+    return {
+      reflow: app.view.reflow,
+      cls: main.classList.contains('mobileReflow'),
+      chh,
+      rows: app.buf.rows,
+      mainLeft: r.left,
+      mainWidth: r.width,
+      mainScrollWidth: main.scrollWidth,
+      mainClientWidth: main.clientWidth,
+      innerWidth: window.innerWidth,
+      docScrollWidth: document.documentElement.scrollWidth,
+      // 只有文字、沒有預覽盒的列，高度超過 1.5 列 ＝ 被折成多行
+      wrapped: rows.filter(
+        (el) => !el.querySelector('.inlinePreviewSlot, img, video, iframe') && el.getBoundingClientRect().height > chh * 1.5
+      ).length,
+    };
+  });
+
+test.describe('手機 Phase 3：好讀文章換行版面（離線重放）', () => {
+  test.skip(!article, '尚無 article cassette');
+
+  test('好讀文章：正常字級、寬＝視窗寬、不橫向溢出、超寬列換行；列數不變不重送 NAWS', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    const before = await page.evaluate(() => ({ rows: window.__app.buf.rows, chh: window.__app.view.chh }));
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+
+    const g = await layout(page);
+    expect(g.cls).toBe(true);
+    expect(g.chh).toBeGreaterThan(before.chh);
+    expect(g.chh).toBeLessThanOrEqual(16);
+    expect(g.rows).toBe(before.rows);
+    expect(Math.abs(g.mainWidth - g.innerWidth)).toBeLessThanOrEqual(1);
+    expect(g.mainLeft).toBeGreaterThanOrEqual(-0.5);
+    expect(g.mainScrollWidth).toBeLessThanOrEqual(g.mainClientWidth + 1);
+    expect(g.docScrollWidth).toBeLessThanOrEqual(g.innerWidth);
+    expect(g.wrapped).toBeGreaterThan(0);
+    expect(await nawsCount(page)).toBe(0);
+  });
+
+  test('進 functionMode（原生鏡像）／退出好讀 ⇒ 回到 Phase 2 的塞滿縮放', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    const grid = await page.evaluate(() => window.__app.view.chh);
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+
+    await page.evaluate(() => window.__app.easyReading._enterFunctionMode());
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(false);
+    let g = await layout(page);
+    expect(g.cls).toBe(false);
+    expect(g.chh).toBeCloseTo(grid, 5);
+    expect(g.mainLeft).toBeGreaterThanOrEqual(0);
+    expect(g.mainLeft + g.mainWidth).toBeLessThanOrEqual(g.innerWidth + 0.5);
+
+    await page.evaluate(() => window.__app.easyReading.exitEasyReading());
+    await expect.poll(() => page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(false);
+    g = await layout(page);
+    expect(g.reflow).toBe(false);
+    expect(g.chh).toBeCloseTo(grid, 5);
+    expect(await nawsCount(page)).toBe(0);
+  });
+
+  test('換行版面下 tap 內文左緣不會被當成「左側退出帶」跳出文章', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    const sentBefore = await page.evaluate(() => window.__replay.sent.length);
+    const box = await page.locator('.main').boundingBox();
+    // tap 的 click handler 是同步送鍵的：tap() resolve 時該送的早就送了。
+    await page.touchscreen.tap(box.x + 4, box.y + 60);
+    const sent = await page.evaluate((n) => window.__replay.sent.slice(n), sentBefore);
+    expect(sent.join('')).not.toContain('\x1b[D');
+    expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);
+  });
+});
+
+test.describe('長按選單（觸控 contextmenu）', () => {
+  test.skip(!article, '尚無 article cassette');
+
+  // 模擬 Chromium 的長按：先把手指下那個字選起來，再發 pointerType=touch 的 contextmenu。
+  const longPress = (page, pointerType) =>
+    page.evaluate((pointerType) => {
+      const el = document.querySelector('[data-e2e-target] [data-type="bbsline"]') ||
+        document.querySelector('[data-e2e-target]');
+      const r = el.getBoundingClientRect();
+      const x = r.left + Math.min(r.width - 2, 60);
+      const y = r.top + 4;
+      const range = document.caretRangeFromPoint(x, y);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      if (range) {
+        range.expand ? range.expand('word') : range.setEnd(range.startContainer, Math.min(range.startOffset + 1, range.startContainer.length || 0));
+        sel.addRange(range);
+      }
+      const collapsed = sel.isCollapsed;
+      el.dispatchEvent(
+        new PointerEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          pointerType,
+        })
+      );
+      return { collapsed };
+    }, pointerType);
+
+  const markPusherRow = async (page) => {
+    const pusher = await page.evaluate(() => {
+      const el = document.querySelector('#mainContainer span[type="bbsrow"][data-pusher]');
+      if (!el) return null;
+      el.setAttribute('data-e2e-target', '1');
+      return el.getAttribute('data-pusher');
+    });
+    if (pusher) await scrollIntoViewStable(page, '[data-e2e-target]');
+    return pusher;
+  };
+
+  const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
+  const menu = (page) => page.locator('.DropdownMenu').first();
+
+  test('REGRESSION：長按推文列（手指下的字已被選起來）仍出現「加入黑名單」', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    const pusher = await markPusherRow(page);
+    test.skip(!pusher, '這份 cassette 沒有推文列');
+
+    const { collapsed } = await longPress(page, 'touch');
+    expect(collapsed).toBe(false); // 前提：事件發生時真的有選取（Chromium 長按的現場）
+    const add = await label(page, 'cmenu_addAuthorBlacklist');
+    const item = menu(page).getByRole('menuitem').filter({ hasText: add });
+    await expect(item).toBeVisible();
+    await expect(item).toContainText(pusher, { ignoreCase: true });
+    // 選到的字仍可複製
+    await expect(menu(page).getByRole('menuitem').filter({ hasText: await label(page, 'cmenu_copy') }).first()).toBeVisible();
+  });
+
+  test('滑鼠右鍵＋有選取：維持桌機規則（只有複製那一組）', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    const pusher = await markPusherRow(page);
+    test.skip(!pusher, '這份 cassette 沒有推文列');
+
+    await longPress(page, 'mouse');
+    await expect(menu(page)).toBeVisible();
+    const add = await label(page, 'cmenu_addAuthorBlacklist');
+    await expect(menu(page).getByRole('menuitem').filter({ hasText: add })).toHaveCount(0);
+  });
+});

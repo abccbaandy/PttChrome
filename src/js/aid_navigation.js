@@ -401,11 +401,9 @@ AidNavigation.prototype = {
   // Scroll position as a LINE index rather than pixels: the article is re-read
   // from the server on the way back, so a raw scrollTop would only be right if
   // every row rendered at exactly the same height again.
+  // 換算在 term_view.currentLineIndex（手機換行版面要量節點，不能 scrollTop/chh）。
   _currentLineIndex: function() {
-    const disp = this._view.mainDisplay;
-    const chh = this._view.chh;
-    if (!disp || !chh) return null;
-    return Math.round(disp.scrollTop / chh);
+    return this._view.currentLineIndex();
   },
 
   // Shared entry for every run: lock input, put the REAL native screen on

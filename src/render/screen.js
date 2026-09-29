@@ -19,6 +19,7 @@
 // 見 screen_annotate_cache.js 檔頭的實測）。
 import { el } from "./dom";
 import { buildRow } from "./row";
+import { buildListCard } from "./list_card";
 import {
   createMergeImageCaptionButton,
   createMergeImageCaptionAiButton,
@@ -949,6 +950,28 @@ export class ScreenController {
   _renderRow(row, lines, annotations, slots) {
     const { forceWidth, enableLinkInlinePreview } = this.props;
     const ann = annotations[row];
+    // 手機列表卡片（term_view.listCards，docs/mobile.md「Phase 4」）：只換 body 列，
+    // header／footer（容器直系子層）照舊。body 範圍與 _patchRows 同一個定義。
+    const enhance = this.props.enhance;
+    const ls = enhance && enhance.listScroll;
+    if (
+      enhance &&
+      enhance.listCards &&
+      ls &&
+      row >= ls.bodyStart &&
+      row < lines.length - 1
+    ) {
+      return buildListCard({
+        chars: lines[row],
+        row,
+        kind: enhance.listCards,
+        forceWidth,
+        highlightClass:
+          this.highlight.row === row ? this.highlight.cls : undefined,
+        listAuthor: ann && ann.listAuthor,
+        listTitle: ann && ann.listTitle,
+      }).node;
+    }
     const built = buildRow({
       chars: lines[row],
       row,

@@ -112,7 +112,18 @@ describe('App 手機模式：終端機尺寸', () => {
       fontResize: vi.fn(),
       redraw: vi.fn(),
       setKeyboardInset: vi.fn(),
-      calcTermSizeFromFont: () => ({ cols: 80, rows: 37 })
+      calcTermSizeFromFont: () => ({ cols: 80, rows: 37 }),
+      // 這一幀畫的是格線畫面（非好讀長頁）；Phase 3 的 surface 由它推導。
+      _gridRender: true,
+      mobileSurface: 'grid',
+      reflow: false,
+      listCards: false,
+      reflowWidth: null,
+      setMobileSurface: vi.fn(function(s) {
+        this.mobileSurface = s;
+        this.reflow = s === 'article';
+        this.listCards = s === 'list';
+      })
     };
     return app;
   };
@@ -143,6 +154,60 @@ describe('App 手機模式：終端機尺寸', () => {
     app.applyMobileLayout();
     expect(app.view.fixedResize).toHaveBeenLastCalledWith(20);
     expect(app.setTermSize).toHaveBeenLastCalledWith(80, 37);
+  });
+
+  test('Phase 3：好讀文章長頁 ⇒ 換行版面（正常字級、寬＝視窗寬），列數不變（不重送 NAWS）', () => {
+    const app = makeApp('on');
+    app.applyMobileLayout();
+    app.onValuesPrefChange(synced);
+    const gridChh = app.view.fixedResize.mock.calls.at(-1)[0];
+    const rows = app.buf.rows;
+    const sizeCalls = app.setTermSize.mock.calls.length;
+    expect(app._applyMobileGeometry('article')).toBe(true);
+    const artChh = app.view.fixedResize.mock.calls.at(-1)[0];
+    expect(app.view.reflow).toBe(true);
+    expect(app.view.reflowWidth).toBe(390);
+    expect(artChh).toBeGreaterThan(gridChh);
+    expect(artChh).toBeLessThanOrEqual(16);
+    expect(app.buf.rows).toBe(rows);
+    // setTermSize 照呼叫，但尺寸相同 ⇒ 真實 App.setTermSize 早退、不送 NAWS
+    expect(app.setTermSize.mock.calls.slice(sizeCalls).every(([c, r]) => c === 80 && r === rows)).toBe(true);
+  });
+
+  test('Phase 3–4：手機模式關掉 ⇒ 換行版面／卡片一併收掉', () => {
+    const app = makeApp('on');
+    app.applyMobileLayout();
+    app.onValuesPrefChange(synced);
+    app._applyMobileGeometry('list');
+    expect(app.view.listCards).toBe(true);
+    app.mobileLayoutMode = 'off';
+    app.applyMobileLayout();
+    expect(app.view.reflow).toBe(false);
+    expect(app.view.listCards).toBe(false);
+    expect(app.view.reflowWidth).toBe(null);
+  });
+
+  test('Phase 4：列表卡片同樣正常字級＋寬＝視窗寬，列數不變', () => {
+    const app = makeApp('on');
+    app.applyMobileLayout();
+    app.onValuesPrefChange(synced);
+    const rows = app.buf.rows;
+    const gridChh = app.view.fixedResize.mock.calls.at(-1)[0];
+    expect(app._applyMobileGeometry('list')).toBe(true);
+    expect(app.view.listCards).toBe(true);
+    expect(app.view.reflow).toBe(false);
+    expect(app.view.reflowWidth).toBe(390);
+    expect(app.view.fixedResize.mock.calls.at(-1)[0]).toBeGreaterThan(gridChh);
+    expect(app.buf.rows).toBe(rows);
+  });
+
+  test('resizer（沒帶 surface）沿用上一次的畫面類型', () => {
+    const app = makeApp('on');
+    app.applyMobileLayout();
+    app.onValuesPrefChange(synced);
+    app._applyMobileGeometry('list');
+    app.resizer();
+    expect(app.view.setMobileSurface).toHaveBeenLastCalledWith('list');
   });
 
   test('prefs 載入前（建構子階段）切換手機模式不套尺寸', () => {

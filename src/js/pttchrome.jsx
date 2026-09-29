@@ -13,7 +13,7 @@ import { AidNavigation } from './aid_navigation';
 import { LongPushSession } from './long_push_session';
 import { DeepLinkController } from './deep_link_controller';
 import { AutoLogin } from './auto_login';
-import { parseBlacklist, parseTitleBlacklist } from './comment_parse';
+import { LIST_TITLE_COL_START, parseBlacklist, parseTitleBlacklist } from './comment_parse';
 import { MouseButtonTracker } from './mouse_button_tracker';
 import {
   ACT_NONE,
@@ -47,7 +47,7 @@ import { navKeyAllowed, navKeyBlockReason } from './nav_key_gate';
 import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
-import { inputModeFor, isMobileEnv, keyboardInset, mobileTermGeometry } from './mobile_layout';
+import { inputModeFor, isMobileEnv, keyboardInset, listRowSpan, mobileTermGeometry } from './mobile_layout';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
@@ -1224,8 +1224,11 @@ App.prototype.clientToPos = function(cX, cY) {
     var bodyTop = listHeaderRows * rowH;
     var bodyRows = this.buf.rows - 4;
     if (y >= bodyTop && y < bodyTop + bodyRows * rowH) {
+      // 手機卡片（view.listCards）：一筆佔 LIST_CARD_ROWS 列（固定高，見
+      // render/list_card.js）⇒ 同一條算式、除數換成卡片高。視口高度仍是 bodyRows 列。
+      var itemH = rowH * listRowSpan(!!this.view.listCards);
       var bodyIdx = Math.floor(
-        (y - bodyTop + listTop * this.view.scaleY) / rowH
+        (y - bodyTop + listTop * this.view.scaleY) / itemH
       );
       if (bodyIdx < 0) bodyIdx = 0;
       return { col: col, row: listHeaderRows + bodyIdx };
@@ -1331,7 +1334,8 @@ App.prototype.mouseGates = function() {
     mouseBackNav: this.view.mouseBackNav,
     // 使用者偏好 × 主機宣告的事實，兩個都要真才會把滑鼠讓給 PTT。
     mouseServerReport: this.view.mouseServerReport,
-    serverMouse: this.buf.mouseReport.isActive()
+    serverMouse: this.buf.mouseReport.isActive(),
+    reflow: this.view.reflow
   });
 };
 
@@ -1489,6 +1493,30 @@ App.prototype.onValuesPrefChange = function(values, opts) {
   this.applyTermSize();
 };
 
+// 手機模式的幾何（不 redraw）。surface 由 term_view 這一幀畫的是什麼決定（見
+// term_view._frameSurface）：好讀文章長頁＝ 'article'（正常字級＋換行，Phase 3）、
+// 列表好讀視窗＝ 'list'（正常字級＋卡片，Phase 4），其餘＝ 'grid'（塞滿縮放）。
+// 呼叫端：applyTermSize 的 resizer（沒帶 surface ＝沿用上一幀的，接著 redraw），以及
+// term_view._syncMobileSurface（render 前對帳，同一幀接著就畫）。回傳是否真的套用了
+// （尺寸未知時不動）。
+App.prototype._applyMobileGeometry = function(surface) {
+  var view = this.view;
+  var s = surface || view._wantSurface || view.mobileSurface || 'grid';
+  var b = view.innerBounds;
+  var g = mobileTermGeometry({
+    width: b.width,
+    height: b.height,
+    dpr: window.devicePixelRatio || 1,
+    surface: s
+  });
+  if (!(g.chh > 0)) return false;
+  this.setTermSize(g.cols, g.rows);
+  view.setMobileSurface(s);
+  view.reflowWidth = g.mainWidth;
+  view.fixedResize(g.chh);
+  return true;
+};
+
 // 終端機尺寸的唯一套用點。手機模式**無視 termSizeMode**（runtime 覆寫，pref 原封
 // 不動 —— 它會同步回桌機），改用 mobile_layout.mobileTermGeometry；見 docs/mobile.md。
 App.prototype.applyTermSize = function() {
@@ -1499,19 +1527,16 @@ App.prototype.applyTermSize = function() {
     if (this.mobile) {
       this.view.fontFitWindowWidth = false;
       this.resizer = () => {
-        var b = this.view.innerBounds;
-        var g = mobileTermGeometry({
-          width: b.width,
-          height: b.height,
-          dpr: window.devicePixelRatio || 1
-        });
-        if (!(g.chh > 0)) return;
-        this.setTermSize(g.cols, g.rows);
-        this.view.fixedResize(g.chh);
+        if (!this._applyMobileGeometry()) return;
         this.view.redraw(true);
       };
       this.resizer();
-    } else switch (values.termSizeMode) {
+    } else {
+      // 桌機規則沒有換行版面／卡片（手機 Phase 3–4 專屬）。
+      this.view.setMobileSurface('grid');
+      this.view.reflowWidth = null;
+    }
+    if (!this.mobile) switch (values.termSizeMode) {
       case 'fixed-term-size':
         this.view.fontFitWindowWidth = values.fontFitWindowWidth;
 
@@ -1947,11 +1972,16 @@ App.prototype.mouse_click = function(e) {
           // 邊緣翻頁區（與 hover 同一支判斷，term_view.listEdgeRegion）。送鍵走
           // sendNavKeyAsUser ⇒ ListSession 自己的 nav 交易會接手（_classifyKey 的
           // pgup/pgdn/home/end），不會繞過 CommandQueue。
-          var ledge = this.view.listEdgeRegion(
+          // 手機卡片（view.listCards）：卡片不是 80 欄格線，col 沒有意義 ⇒ 退出帶與
+          // 邊緣翻頁都不成立（退出用按鍵列的 ←），點卡片任何位置＝開那一筆。
+          // 以標題欄當 col 傳：session 的防誤觸只放行標題欄，點卡片本來就是在點標題。
+          var ledge = this.view.listCards ? null : this.view.listEdgeRegion(
             rowFromClientY(e.clientY, this.gridGeometry()),
             lpos.col
           );
-          if (ledge)
+          if (this.view.listCards)
+            clickOwner.onMouseClick(lpos.row, LIST_TITLE_COL_START);
+          else if (ledge)
             this.sendNavKeyAsUser(EDGE_NAV_KEY[ledge.action]);
           else if (lpos.col >= 0 && lpos.col < EXIT_COL_END)
             clickOwner.onMouseExitClick();

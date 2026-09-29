@@ -16,13 +16,28 @@ import { buildDeepLink } from "./deep_link";
 // （urlEnabled=true ⇒ normalEnabled=false）會算出 selEnabled=true ⇒ 畫出
 // 「複製」「複製 (包含 ANSI 顏色)」，但 selectedText 是空字串 ⇒ 點了什麼都沒發生。
 // 那個情境要的是「複製連結網址」，本來就另外有一項。
-export function menuTargetFlags({ contextOnUrl, selectionCollapsed }) {
+//
+// touchLongPress（手機長按）：Chromium 處理長按手勢時**先選字、後發 contextmenu**
+// （GestureManager::HandleGestureLongPress）⇒ 事件到這裡時選取必定不是空的。照桌機
+// 規則算，normalEnabled 恆 false ⇒ 「加入黑名單」「前已讀後未讀」「貼上」等整組消失
+// （使用者回報）。長按選到的那個字不是使用者刻意的選取，所以 normalEnabled 不看選取；
+// selEnabled 照舊（「複製」那個字仍有用）。
+export function menuTargetFlags({ contextOnUrl, selectionCollapsed, touchLongPress }) {
   const urlEnabled = !!contextOnUrl;
   return {
     urlEnabled,
-    normalEnabled: !urlEnabled && !!selectionCollapsed,
+    normalEnabled: !urlEnabled && (!!selectionCollapsed || !!touchLongPress),
     selEnabled: !selectionCollapsed
   };
+}
+
+// 這次 contextmenu 是不是觸控長按。Chrome 的 contextmenu 是 PointerEvent（帶
+// pointerType）；舊一點的版本退回 InputDeviceCapabilities.firesTouchEvents。
+export function isTouchContextMenu(event) {
+  if (!event) return false;
+  if (event.pointerType === "touch") return true;
+  const caps = event.sourceCapabilities;
+  return !!(caps && caps.firesTouchEvents);
 }
 
 // eventKey → 實際會被寫進剪貼簿的字串（null = 該項不適用／當下算不出來）。
