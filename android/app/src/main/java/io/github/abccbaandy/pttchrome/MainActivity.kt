@@ -118,6 +118,10 @@ class MainActivity : ComponentActivity() {
         wv.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
+            // 預設是 true：頁面（或文章裡的惡意連結）可以讀 content:// 與 file://。本 App 用不到
+            //（上傳圖片走 onShowFileChooser，不受影響），關掉。CodeQL websettings-allow-content-access。
+            allowContentAccess = false
+            allowFileAccess = false
             setSupportMultipleWindows(false)
             // https 頁面連 ws://127.0.0.1 的本機 proxy。network_security_config 只放行 127.0.0.1 明文。
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
