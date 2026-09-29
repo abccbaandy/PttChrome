@@ -86,6 +86,11 @@ export default defineConfig(({ command }) => {
     // server 冷快取時 mid-session 才發現 → re-optimize → 強制 full reload
     //（會把跑到一半的 e2e 頁面重載炸掉）。
     optimizeDeps: {
+      // 依賴掃描只從 app 自己的入口出發。預設會掃專案底下**所有** .html，連到
+      // gitignore 掉的 3rd_script/（別人的專案原始碼，研究用）⇒ 每次開 dev server 都印
+      // 一整串「Failed to run dependency scan … Are they installed?」，還會因此跳過整個
+      // 預打包（firebase 那組 include 一起失效）。守護 tests/unit/vite_dep_scan_entries.test.js。
+      entries: ['index.html'],
       include: [
         'firebase/app',
         'firebase/auth',
