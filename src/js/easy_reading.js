@@ -945,6 +945,13 @@ EasyReading.prototype._kickPageDown = function() {
 // tail 之間，碰到 head 就接合。已經讀完就只捲到底（呼叫端先捲，這裡判斷要不要反向）。
 // 回傳是否真的啟動了反向讀取。
 EasyReading.prototype._requestReverse = function() {
+  // 按鍵可能落在「新一幀已寫進 TermBuf、30ms notify 計時器還沒跑」的空窗：此時 lead
+  // byte 還沒標（updateCharAttr 只在 notify 裡跑），狀態列讀出來是沒解碼的 Big5 ⇒
+  // parseStatusRow 失配 ⇒ End 被靜默吃掉。先把那一幀 flush 掉（等同計時器提早觸發，
+  // 同 _forceRepaint 走 notify 的理由）；下面的守門要看 flush 之後的狀態（這一幀可能
+  // 剛好讀到文末）。
+  if (this._termBuf.changed && typeof this._termBuf.notify === 'function')
+    this._termBuf.notify();
   if (!this._enabled || this._functionMode || !this.startedEasyReading) return false;
   if (this._reverse || this.easyReadingReachedPageEnd) return false;
   if (this._termBuf.easyReadingHealInFlight) return false;
