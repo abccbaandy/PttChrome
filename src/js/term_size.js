@@ -6,14 +6,17 @@
 
 // PTT 的畫面協定固定 80 欄：文章內文本來就只有 ~78 欄，看板／文章列表的欄位
 // 起始位置也是照 80 欄排的（本專案的欄位解析、黑名單比對、mouse_regions 的
-// 區域表全依賴它）。server 端雖然吃 80..200 欄的 NAWS（`mbbsd/term.c:56`），
-// 但加寬只會讓列表標題欄變長（`bbs.c:745` 的 `t_columns-34`）＋右側整片留白，
-// 對閱讀沒有任何收益，卻要賠上一整層未驗證的欄位解析風險。
+// 區域表全依賴它）。server 端雖然吃 80..200 欄的 NAWS（`include/config.h`
+// `VALID_TERM_COLS`），但加寬只會讓列表標題欄變長（`bbs.c` 的 `t_columns-34`）＋
+// 右側整片留白，對閱讀沒有任何收益，卻要賠上一整層未驗證的欄位解析風險。
+// upstream 已放寬到最少 20 欄（portrait mode），但畫面層仍照 80 欄排，窄欄同樣
+// 不採用（手機窄版面走 client 端 reflow／卡片），見 docs/terminal-size.md §3。
 // **LOCKED**：欄數恆 80，不要改回「依視窗寬反推」。
 export const TERM_COLS = 80;
 
-// 列數的上下界照抄 server：`mbbsd/term.c:55` `MAX(24, MIN(100, h))`。送超出
-// 範圍的 NAWS 只會讓兩邊對 rows 的認知分歧（client 畫 120 列、server 只認 100）。
+// 列數的上下界照抄 server：`include/config.h` `VALID_TERM_ROWS`（24..100；upstream
+// 已放寬上限到 150，ptt.cc 部署未確認前維持 100）。送超出範圍的 NAWS 只會讓兩邊
+// 對 rows 的認知分歧（client 畫 120 列、server 只認 100）。
 export const MIN_ROWS = 24;
 export const MAX_ROWS = 100;
 

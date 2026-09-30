@@ -43,6 +43,8 @@
   比視窗寬，`align=center` 置中失效，`mouse_geometry` 縮放分支的前提不成立。
   `onValuesPrefChange` 把尺寸 prefs 存進 `_termSizeValues`，手機模式切換時用同一組值重套（桌機規則還原）；
   值裡沒有 `termSizeMode` 不動尺寸。
+- **手機欄數同樣恆 80，不送窄欄 NAWS**：pttbbs 雖已允許 20 欄（`dc30d74`），但畫面層沒跟著重排，
+  理由見 `docs/terminal-size.md` §3。
 - **軟鍵盤蓋住底列（PTT 的輸入列）**：**不可**加 `interactive-widget=resizes-content`（鍵盤開關變成
   layout resize ⇒ 重算字級、改列數、重送 NAWS）。維持 Android 預設 `resizes-visual`（layout 高度不變 ⇒
   列數穩定），`App._onVisualViewport` 以 `mobile_layout.keyboardInset` 算被蓋住的高度 →
