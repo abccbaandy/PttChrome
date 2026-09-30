@@ -115,15 +115,17 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   `listCards` 進 `annotationsKey`（同一批列物件切換卡片模式要整批重建）。
 - 版型（欄位按 **cell** 切，出處見 `list_card.js` 檔頭）：文章列表＝標題 [29,80)／序號・標記・推文數・日期
   [0,17)＋作者 [17,29)；看板列表＝序號・未讀・板名・類別 [0,28)＋人氣 [64,67)／◎敘述 [28,64)＋板主 [67,80)。
-- **卡片固定高 2em（`LIST_CARD_ROWS`=2 × chh）是承重條件**：`list_scroll.js` 的位置↔scrollTop 是純乘除。
-  分隔線只能用 inset box-shadow，不可 border／margin／padding-block。兩個 session 的 `_rowHeight()` ＝
+- **卡片固定高 2.5em（`LIST_CARD_ROWS`=2.5 × chh）是承重條件**：`list_scroll.js` 的位置↔scrollTop 是純乘除。
+  兩行內容（`LIST_CARD_LINES`=2）＋ 0.5em 卡片間距＝border-box 固定高內的 `padding-block`；分隔線用 inset
+  box-shadow；不可 border／margin（加在固定高之外）。CSS 高度與常數一致由 `list_card_css.test.js` 守。
+  次行（`.listCardMeta`）縮字 0.8em＋淡化，行框仍 1 chh（height/line-height 寫 1.25em）。兩個 session 的 `_rowHeight()` ＝
   `chh × listRowSpan(listCards)`；`_pageRows()`（PgUp/PgDn 一次翻幾筆）＝ `listPageRows(bodyRows)`；
   `_bodyRows()` 仍是 server 的 p_lines（抓頁單位），**不可**跟著換。
 - 契約保留：`span[type=bbsrow][srow]`、`data-list-author/-title`、`.listCardBody[data-type=bbsline][data-row]`
   （游標底色的 class 下在這裡 ⇒ 整張卡片上色）。
 - 點擊：`App.clientToPos` 的 body 列號除數換成卡片高（`listRowSpan`）；`App.mouse_click` 在 listCards 下
-  不做退出帶／邊緣翻頁，點卡片任何位置＝ `onMouseClick(row, LIST_TITLE_COL_START)`（走 session 的列點擊開文
-  合約）。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵列的 ←。
+  不做退出帶／邊緣翻頁，點卡片本體＝ `onMouseClick(row, LIST_TITLE_COL_START)`（走 session 的列點擊開文
+  合約）；點到間距（`mobile_layout.isListCardGapTarget`：在 `.listBodyView` 內、`.listCardBody` 外）吞掉不開文（防誤點）。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵列的 ←。
 - 長按選單的黑名單區域在 listCards 下看 DOM（`.listCardAuthor`／`.listCardTitle`），不看 col；「前已讀後
   未讀」用 `clientToPos` 的列號（已是卡片座標）。
 - 字級可調時再開 pref `mobileFontSize`（與桌機 `fontSize` 分開），且 rows 要跟著它算。

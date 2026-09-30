@@ -420,6 +420,12 @@
   "options_mergeSameAuthorComments": {
     "message": "合併連續同作者推文成一段 (僅好讀模式，顯示時間與樓層範圍)"
   },
+  "options_dimReadArticles": {
+    "message": "已讀文章低亮顯示"
+  },
+  "tooltip_dimReadArticles": {
+    "message": "文章列表中已讀過的文章整列調暗，未讀文章（+ 標記）一眼就能分辨。"
+  },
   "options_commentBlockSpacing": {
     "message": "推文區塊加大行距 (僅好讀模式，同作者合併的推文自成一組)"
   },

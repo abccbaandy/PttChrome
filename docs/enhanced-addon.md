@@ -186,6 +186,16 @@
   的回歸鎖）、`comment_merge.offline.spec.js`「推文區塊行距」（真幾何：
   `outerGap > innerGap > 0`，關掉即兩者收斂回 0）。
 
+### 已讀文章低亮（`dimReadArticles`，預設開）
+
+- 判定：`comment_parse#isListRowRead`（按 cell 讀 cell 8 的 type 字元，規則表與 pttbbs
+  `bbs.c#readdoent` 出處在函式註解）。`!`／`D` 蓋掉未讀資訊 ⇒ 不低亮；刪除列不處理。
+- 標註層（`screen_annotations.js` 列表分支）**無條件**標 `listRead` ⇒ `data-list-read`
+  （`row.js`／`list_card.js`）；pref 只 toggle 容器 class `#mainContainer.dimReadList`
+  （`render/screen.js#_setDimRead`，同 `_setCommentSpacing` 形狀）⇒ **不進 `annotationsKey`**、切換不重建列。
+- CSS 排除游標列（`:has()` 看 bbsline／`.listCardBody` 是否帶 highlight class）。
+- 測試：`list_read.test.js`（判定表）、`dim_read_class.test.js`（接線）、`list_card_css.test.js`（CSS 契約）。
+
 ## URL 結尾修剪（`src/js/url_trim.js`）
 **一條純函式、四個消費點**：結尾的句尾標點（`. , ; : ! ?`）與**不成對**的 `) ] }` 屬於句子不屬於 URL。
 
@@ -512,7 +522,7 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用�
 （`showFloorNumbers`/`blacklist`→`view.*`+`redraw(true)`）。i18n 鍵在 zh_TW/en_US `options_*`。
 
 **「增強功能」分頁**：`showFloorNumbers`(true)、`mergeSameAuthorComments`(true)、
-`commentBlockSpacing`(true)、
+`commentBlockSpacing`(true)、`dimReadArticles`(true)、
 `highlightAuthorComments`(true)、`enableAutoFixUrl`(true)、`enableXMentionLink`(true)、
 `enableBareDomainLink`(true)、`blacklist`/`titleBlacklist`("" 換行)。
 

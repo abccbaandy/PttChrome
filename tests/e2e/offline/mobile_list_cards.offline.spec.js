@@ -8,11 +8,12 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayListCassette } = require('../helpers/replay');
-const { waitScrollStable } = require('../helpers/layout');
+const { waitScrollStable, waitRectStable, OVERRIDING_SEL } = require('../helpers/layout');
 
 const nav = loadCassette('cchat-list-nav');
 
-const CARD_ROWS = 2;
+// 兩行內容＋0.5 列間距（mobile_layout.LIST_CARD_ROWS）。
+const CARD_ROWS = 2.5;
 
 const state = (page) =>
   page.evaluate(() => {
@@ -95,11 +96,11 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     expect(g.outerCards).toBe(0);
     expect(g.firstTitle.trim().length).toBeGreaterThan(0);
     for (const h of g.heights) expect(Math.abs(h - CARD_ROWS * s.chh)).toBeLessThan(0.1);
-    // 視口高度仍是 body 那 20 列（畫面面積不變，只是一筆佔兩列）
+    // 視口高度仍是 body 那 20 列（畫面面積不變，只是一筆佔 CARD_ROWS 列）
     expect(Math.abs(s.viewportPx - (s.rows - 4) * s.chh)).toBeLessThan(1);
   });
 
-  test('PgUp／PgDn 一次翻一屏卡片（bodyRows/2 筆），小數卡片高下不被量化吃掉一筆', async ({ page }) => {
+  test('PgUp／PgDn 一次翻一屏卡片（floor(bodyRows/CARD_ROWS) 筆），小數卡片高下不被量化吃掉一筆', async ({ page }) => {
     test.setTimeout(90000);
     await engage(page);
     const s0 = await state(page);
@@ -150,6 +151,65 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     // 左緣不是退出帶：沒有送左方向鍵
     const sent = await page.evaluate((n) => window.__replay.sent.slice(n).join(''), sentBefore);
     expect(sent).not.toContain('\x1b[D');
+  });
+
+  // 防誤點：卡片間距（.listCard 的 padding-block，本體之外）點了不開文；同一張卡片
+  // 點本體照開 ⇒ 證明是間距被吞，不是 handler 整個失效。
+  test('tap 卡片間距不開文；tap 同一張卡片本體才開', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    const target = await page.evaluate(() => {
+      const v = document.querySelector('#mainContainer .listBodyView');
+      const vr = v.getBoundingClientRect();
+      const cards = Array.from(v.querySelectorAll(':scope > .listCard'));
+      const seq = window.__app.listSession._sequence();
+      const header = window.__app.listSession.headerRows();
+      for (const c of cards) {
+        const r = c.getBoundingClientRect();
+        if (r.top < vr.top + 2 || r.bottom > vr.bottom - 2) continue;
+        const idx = Number(c.getAttribute('srow')) - header;
+        const num = window.__app.buf.listLineNums[seq[idx]];
+        if (num == null || num === window.__app.listSession._selectedNum) continue;
+        c.setAttribute('data-e2e-gap-card', '1');
+        return { num };
+      }
+      return null;
+    });
+    expect(target).not.toBeNull();
+    await waitRectStable(page, '[data-e2e-gap-card]');
+    Object.assign(
+      target,
+      await page.evaluate(() => {
+        const c = document.querySelector('[data-e2e-gap-card]');
+        const r = c.getBoundingClientRect();
+        const b = c.querySelector('.listCardBody').getBoundingClientRect();
+        return {
+          x: r.left + r.width / 2,
+          gapY: (r.top + b.top) / 2,
+          bodyY: (b.top + b.bottom) / 2,
+          gapPx: b.top - r.top,
+        };
+      })
+    );
+    expect(target.gapPx).toBeGreaterThan(1);
+    const before = await state(page);
+    const sentBefore = await page.evaluate(() => window.__replay.sent.length);
+    // 間距點下去的那一刻確實是卡片外框、不是本體，也不是會搶點擊的連結類元素
+    const hit = await page.evaluate(
+      ({ x, y, sel }) => {
+        const el = document.elementFromPoint(x, y);
+        return !!el && !!el.closest('.listCard') && !el.closest('.listCardBody') && !el.closest(sel);
+      },
+      { x: target.x, y: target.gapY, sel: OVERRIDING_SEL }
+    );
+    expect(hit).toBe(true);
+    await page.touchscreen.tap(target.x, target.gapY);
+    // click handler 是同步的；等兩個 rAF 讓任何後續排程有機會發生
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    expect((await state(page)).selectedNum).toBe(before.selectedNum);
+    expect(await page.evaluate(() => window.__replay.sent.length)).toBe(sentBefore);
+    await page.touchscreen.tap(target.x, target.bodyY);
+    await expect.poll(async () => (await state(page)).selectedNum).toBe(target.num);
   });
 
   test('長按卡片的作者 → 選單有「加入黑名單」；長按標題 → 「加入標題黑名單」', async ({ page }) => {

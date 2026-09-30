@@ -14,6 +14,7 @@ import {
   matchTitleBlacklist,
   isDeletedListRow,
   isListShapedRow,
+  isListRowRead,
   blacklistNoticeText,
   FloorCounter,
 } from "./comment_parse";
@@ -779,10 +780,16 @@ export function computeAnnotations(
         continue;
       }
       // native + deleted → no annotation (render exactly as the server sent it).
-      if (listAuthor || listTitle) {
+      // listRead：已讀文章低亮（pref dimReadArticles）。**永遠標**，開關是容器 class
+      // （render/screen.js#_setDimRead），切換 pref 不必重建任何一列。只看該列自己
+      // 的 cell ⇒ 逐列獨立，annotationsAreRowIndependent 不必跟著改。刪除列在上面
+      // 就 continue／不標（本來就是灰的）。
+      const listRead = !deleted && isListRowRead(lines[row]);
+      if (listAuthor || listTitle || listRead) {
         result[row] = {
           listAuthor: listAuthor || undefined,
           listTitle: listTitle || undefined,
+          listRead: listRead || undefined,
         };
       }
     }

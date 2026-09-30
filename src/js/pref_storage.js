@@ -232,6 +232,10 @@ export const DEFAULT_PREFS = {
   // #mainContainer 上 toggle 一個 class（render/screen.js#_setCommentSpacing），不重建
   // 任何一列、也不進 annotationsKey。預設開——這是純排版改善，不改文字內容。
   commentBlockSpacing: true,
+  // 已讀文章低亮（文章列表，桌機＋手機）：pttbbs 的已讀標記（`+` 消失）太小不好認，
+  // 已讀列整列低亮。判定見 comment_parse#isListRowRead；**純 CSS**：列永遠帶
+  // data-list-read，這個 pref 只 toggle #mainContainer.dimReadList。預設開。
+  dimReadArticles: true,
   highlightAuthorComments: true,
   enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
   // 裸網域（無 scheme、無路徑，如 indiegametw.com）原位變成可點連結。

@@ -62,6 +62,8 @@ function noticeSegments(text, forceWidth) {
 //   js/screen_annotations#computeAnnotations) → exposed as data-list-author /
 //   data-list-title so the right-click quick-add-blacklist menu can read the row
 //   under the cursor.
+// listRead: 已讀文章列（comment_parse#isListRowRead）→ data-list-read。低亮與否由
+//   容器 class #mainContainer.dimReadList 決定（pref dimReadArticles），不在這裡。
 // pusherHighlight: true → this comment is by the currently selected pusher; tint
 //   the WHOLE row via .pusherHighlight (char spans are b0/transparent, so the
 //   tint shows through without overriding any ANSI colours).
@@ -91,6 +93,7 @@ export function buildRow({
   pusherContentCol,
   listAuthor,
   listTitle,
+  listRead,
   pusherHighlight,
   authorIdStart,
   authorIdEnd,
@@ -157,6 +160,7 @@ export function buildRow({
         "data-pusher-col": pusherContentCol,
         "data-list-author": listAuthor,
         "data-list-title": listTitle,
+        "data-list-read": listRead ? "" : undefined,
         class: pusherHighlight ? "pusherHighlight" : undefined,
         style: hidden ? { visibility: "hidden" } : undefined,
       },

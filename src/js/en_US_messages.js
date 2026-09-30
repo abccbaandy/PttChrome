@@ -421,6 +421,12 @@ export const en_US = {
   "options_mergeSameAuthorComments": {
     "message": "Merge consecutive comments by the same author into one paragraph (easy reading only; shows time and floor range)"
   },
+  "options_dimReadArticles": {
+    "message": "Dim read articles"
+  },
+  "tooltip_dimReadArticles": {
+    "message": "Dims already-read rows in the article list so unread ones (+ mark) stand out at a glance."
+  },
   "options_commentBlockSpacing": {
     "message": "Add spacing between comment blocks (easy reading only; merged same-author comments stay grouped)"
   },

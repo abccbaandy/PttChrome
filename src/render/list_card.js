@@ -2,8 +2,9 @@
 // 只在 term_view.listCards（手機＋列表好讀視窗）時由 render/screen.js#_renderRow 取代
 // buildRow；桌機零改動（golden 快照不經過這裡）。
 //
-// 一筆 ＝ 固定 LIST_CARD_ROWS（2）個列高：list_scroll.js 的位置↔scrollTop 換算是純乘除，
-// 卡片高一旦不固定整套捲動數學就失效（CSS `.listCard` 鎖 height: 2em，em ＝ chh）。
+// 一筆 ＝ 固定 LIST_CARD_ROWS（2.5）個列高＝兩行內容＋0.5 列間距：list_scroll.js 的
+// 位置↔scrollTop 換算是純乘除，卡片高一旦不固定整套捲動數學就失效（CSS `.listCard`
+// 鎖 height: 2.5em，em ＝ chh；間距是 border-box 內的 padding-block）。
 //
 // 欄位一律**按 cell 切**（TermChar 陣列恆 80 格、DBCS 佔兩格）——不走 rowToText 的
 // 字串索引，所以舊游標 ●／置底 ★ 這類全形前綴造成的位移（comment_parse.realignListColumns
@@ -83,6 +84,7 @@ export function buildListCard({
   highlightClass,
   listAuthor,
   listTitle,
+  listRead,
 }) {
   const layout = CARD_LAYOUT[kind] || CARD_LAYOUT.article;
   const line = (parts) =>
@@ -96,6 +98,7 @@ export function buildListCard({
         class: "listCard",
         "data-list-author": listAuthor,
         "data-list-title": listTitle,
+        "data-list-read": listRead ? "" : undefined,
       },
       el(
         "span",

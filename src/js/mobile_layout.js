@@ -95,10 +95,13 @@ export function mobileTermGeometry({ width, height, dpr, surface }) {
 
 // ---- Phase 4：列表卡片 -------------------------------------------------------
 
-// 一張卡片佔幾個列高（標題一行＋推文數・日期・作者一行）。**固定高**是承重條件：
-// list_scroll.js 的「序列位置 ↔ scrollTop」是純乘除（每列等高），卡片模式下列高
-// 換成 LIST_CARD_ROWS*chh，那套數學原封不動（list_session/_rowHeight）。
-export const LIST_CARD_ROWS = 2;
+// 一張卡片佔幾個列高：兩行內容（標題一行＋推文數・日期・作者一行，LIST_CARD_LINES）
+// ＋ 0.5 列的卡片間距（css `.listCard` 的 padding-block，防誤點）。**固定高**是承重
+// 條件：list_scroll.js 的「序列位置 ↔ scrollTop」是純乘除（每列等高），卡片模式下
+// 列高換成 LIST_CARD_ROWS*chh，那套數學原封不動（list_session/_rowHeight）。
+// 必須與 main.css `.listCard` 的 height（em）一致，守護 tests/unit/list_card_css.test.js。
+export const LIST_CARD_ROWS = 2.5;
+export const LIST_CARD_LINES = 2;
 
 // 列表 session 用：卡片模式下一列（＝一筆）佔幾個 chh，以及一屏放得下幾筆。
 // bodyRows ＝ server 的 p_lines（rows-4），視口高度仍是 bodyRows*chh。
@@ -108,6 +111,14 @@ export function listRowSpan(cards) {
 
 export function listPageRows(bodyRows, cards) {
   return Math.max(1, Math.floor((Number(bodyRows) || 0) / listRowSpan(cards)));
+}
+
+// 點擊落在卡片間距（`.listCard` 的 padding，或視口裡卡片之外的空白）嗎？是 ⇒
+// App.mouse_click 吞掉不開文（防誤點）。只認 body 視口內：header／footer（含功能鍵
+// 按鈕）不在 .listBodyView 裡，照舊交給原本的路徑。
+export function isListCardGapTarget(target) {
+  if (!target || typeof target.closest !== 'function') return false;
+  return !!target.closest('.listBodyView') && !target.closest('.listCardBody');
 }
 
 // 軟鍵盤蓋住 layout viewport 底部的高度（px）。Android Chrome 預設

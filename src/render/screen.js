@@ -138,6 +138,8 @@ export class ScreenController {
     // 推文區塊行距的容器 class（pref commentBlockSpacing）。每幀由 _render 推導，
     // 這裡只是欄位種子（見 _setCommentSpacing 的 DOM 同步守衛）。
     this._commentSpacing = false;
+    // 已讀文章低亮的容器 class（pref dimReadArticles），同 _commentSpacing 的形狀。
+    this._dimRead = false;
     // 好讀「圖左字右合併」三態：null（關）→ "imageFirst" → "captionFirst" → null。
     // 與 imagesEnlarged 同生命週期——同篇 page-down 保留、換文章／退出再進
     // （articleId 變）才重置，所以不會「換到沒按鈕的文章卻還開著、關不掉」。
@@ -612,6 +614,16 @@ export class ScreenController {
     this.container.classList.toggle("commentSpacing", next);
   }
 
+  // 已讀文章低亮（pref dimReadArticles）：列本身永遠帶 data-list-read（標註層
+  // 無條件標），這裡只 toggle 容器 class ⇒ 切 pref 不重建任何一列、不進 annotationsKey。
+  // 只有列表列會帶該屬性，所以不必再判畫面類型。守護：tests/unit/dim_read_class.test.js
+  _setDimRead(next) {
+    const domInSync = this.container.classList.contains("dimReadList") === next;
+    if (this._dimRead === next && domInSync) return;
+    this._dimRead = next;
+    this.container.classList.toggle("dimReadList", next);
+  }
+
   // 版面**寬度**改變的唯一入口（字級／視窗 resize 走 term_view.setTermFontSize，
   // 圖左字右合併走 _toggleMergeCaption）。佔位盒記的 pinned 高度是在舊寬度下量到
   // 的，換寬度就過期；aspect（原尺寸）與寬度無關，一律保留讓替身盒接手。
@@ -657,6 +669,7 @@ export class ScreenController {
         stableRows
       ),
     );
+    this._setDimRead(!!(enhance && enhance.dimReadArticles));
     const prevCache = this._cache;
     // 可重用的形狀：純 append（suffix 0）；或反向讀取（End）把新頁插在接合點 J
     // （suffix > 0）。後者只在插入點不早於 J 時成立 —— tail 不編樓層，J 之後的列
@@ -970,6 +983,7 @@ export class ScreenController {
           this.highlight.row === row ? this.highlight.cls : undefined,
         listAuthor: ann && ann.listAuthor,
         listTitle: ann && ann.listTitle,
+        listRead: ann && ann.listRead,
       }).node;
     }
     const built = buildRow({
@@ -987,6 +1001,7 @@ export class ScreenController {
       pusherContentCol: ann && ann.contentCol,
       listAuthor: ann && ann.listAuthor,
       listTitle: ann && ann.listTitle,
+      listRead: ann && ann.listRead,
       pusherHighlight: isPusherHighlighted(ann, this._selectedPusher),
       authorIdStart: ann && ann.authorIdStart,
       authorIdEnd: ann && ann.authorIdEnd,

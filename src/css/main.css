@@ -238,13 +238,18 @@ a:link,a:visited,a:active,a:hover {
 }
 
 /* 手機 Phase 4：列表好讀的卡片（render/list_card.js，docs/mobile.md「Phase 4」）。
-   **高度鎖死 2em（＝LIST_CARD_ROWS × chh，.main 的 font-size 就是 chh）**：
-   list_scroll.js 的位置↔scrollTop 是純乘除，卡片高一變整套捲動就錯位。所以分隔線
-   用 inset box-shadow（不佔版面），不可以用 border／margin／padding-block。
+   **高度鎖死 2.5em（＝LIST_CARD_ROWS × chh，.main 的 font-size 就是 chh）**：
+   list_scroll.js 的位置↔scrollTop 是純乘除，卡片高一變整套捲動就錯位。
+   兩行內容各 1em，剩下 0.5em 是卡片間距：用 border-box 固定高內的 padding-block
+   （不改外框高度）；**不可以**用 margin／border（會加在固定高之外）。分隔線用 inset
+   box-shadow（不佔版面）。間距落在 .listCardBody 之外 ⇒ 點到間距不開文
+   （App.mouse_click 的 listCards 分支，防誤點）。守護 tests/unit/list_card_css.test.js。
    每行單行＋省略號；游標底色的 class 下在 .listCardBody（整張卡片上色）。 */
 .main.mobileListCards .listBodyView > span.listCard {
   display: block;
-  height: 2em;
+  box-sizing: border-box;
+  height: 2.5em;
+  padding-block: 0.25em;
   overflow: hidden;
   white-space: pre;
   box-shadow: inset 0 -1px 0 #333;
@@ -264,12 +269,32 @@ a:link,a:visited,a:active,a:hover {
 .listCard .listCardLine div {
   display: inline;
 }
+/* 次行（文章：序號・推文數・日期・作者；看板：敘述・板主）縮小＋淡化，讓標題行
+   一眼掃得過去。只縮字，行框仍是 1 個 chh：em 跟著自己的 font-size 走 ⇒
+   height／line-height 寫 1.25em（＝0.8 × 1.25 ＝ 父層 1em）。 */
+.listCard .listCardMeta {
+  font-size: 0.8em;
+  height: 1.25em;
+  line-height: 1.25em;
+  opacity: 0.6;
+}
 .listCard .listCardAuthor {
   margin-left: 0.5em;
 }
 .listCard .listCardPopularity,
 .listCard .listCardBM {
   margin-left: 0.5em;
+}
+
+/* 已讀文章低亮（pref dimReadArticles，預設開，桌機＋手機）。列由標註層無條件帶
+   data-list-read（comment_parse#isListRowRead），容器 class 由
+   render/screen.js#_setDimRead 掛。游標／hover 所在列（bbsline 或 .listCardBody
+   帶了底色／提亮 class）不低亮，選中項保持可辨識。 */
+#mainContainer.dimReadList
+  span[type="bbsrow"][data-list-read]:not(
+    :has(> div > [data-type="bbsline"][class]:not([class=""]))
+  ):not(:has(> .listCardBody:not([class="listCardBody"]))) {
+  opacity: 0.45;
 }
 
 /* 列表好讀模式的 body 捲動視口。高度由 JS 設成 body 列數 × 列高，內容是整段

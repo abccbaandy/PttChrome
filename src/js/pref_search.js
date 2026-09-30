@@ -139,6 +139,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_autoHideBlinkCursor",
       tooltipKey: "tooltip_autoHideBlinkCursor",
     },
+    {
+      key: "dimReadArticles",
+      titleKey: "options_dimReadArticles",
+      tooltipKey: "tooltip_dimReadArticles",
+    },
     { kind: "ui", key: "ui:theme", titleKey: "options_theme" },
     {
       key: "fontFace",

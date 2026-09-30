@@ -47,7 +47,7 @@ import { navKeyAllowed, navKeyBlockReason } from './nav_key_gate';
 import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
-import { inputModeFor, isMobileEnv, keyboardInset, listRowSpan, mobileTermGeometry } from './mobile_layout';
+import { inputModeFor, isListCardGapTarget, isMobileEnv, keyboardInset, listRowSpan, mobileTermGeometry } from './mobile_layout';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
@@ -1727,6 +1727,10 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.commentBlockSpacing = value;
       this.view.redraw(true);
       break;
+    case 'dimReadArticles':
+      this.view.dimReadArticles = value;
+      this.view.redraw(true);
+      break;
     case 'enableAi':
       this.view.enableAi = value;
       this.view.redraw(true);
@@ -1979,8 +1983,11 @@ App.prototype.mouse_click = function(e) {
             rowFromClientY(e.clientY, this.gridGeometry()),
             lpos.col
           );
-          if (this.view.listCards)
-            clickOwner.onMouseClick(lpos.row, LIST_TITLE_COL_START);
+          // 卡片間距（padding）不開文：防誤點，見 mobile_layout.isListCardGapTarget。
+          if (this.view.listCards) {
+            if (!isListCardGapTarget(e.target))
+              clickOwner.onMouseClick(lpos.row, LIST_TITLE_COL_START);
+          }
           else if (ledge)
             this.sendNavKeyAsUser(EDGE_NAV_KEY[ledge.action]);
           else if (lpos.col >= 0 && lpos.col < EXIT_COL_END)

@@ -345,6 +345,9 @@ export function TermView() {
   // 推文區塊行距（內緊外鬆）：純 CSS，容器 class 由 render/screen.js 掛。
   // Set via App.onPrefChange.
   this.commentBlockSpacing = true;
+  // 已讀文章低亮（列表）：純 CSS，容器 class 由 render/screen.js#_setDimRead 掛。
+  // Set via App.onPrefChange.
+  this.dimReadArticles = true;
   // 裝置端 AI（Chrome Prompt API）總開關。每個 AI 子功能的生效條件都是
   // `enableAi && <子開關>`，AND 在下面 _renderScreenLines 匯總（單一 choke point）。
   // Set via App.onPrefChange.
@@ -1041,6 +1044,8 @@ TermView.prototype = {
           // 推文區塊行距。**刻意不進 annotationsKey**（js/screen_annotate_cache.js
           // 的白名單）：它只影響容器 class，不改變任何一列的標註。
           commentBlockSpacing: this.commentBlockSpacing,
+          // 已讀文章低亮：同上，只影響容器 class、不進 annotationsKey。
+          dimReadArticles: this.dimReadArticles,
           captionAiEnabled: this.enableAi && this.enableCaptionAi,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,

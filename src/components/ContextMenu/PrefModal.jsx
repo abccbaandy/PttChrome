@@ -846,6 +846,16 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_autoHideBlinkCursor")}
                 </Text>
+                <PrefCheckbox
+                  name="dimReadArticles"
+                  checked={values.dimReadArticles}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_dimReadArticles")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_dimReadArticles")}
+                </Text>
                 <PrefAnchor anchorKey="ui:theme">
                   <Text size="sm" fw={500} mb={4}>
                     {i18n("options_theme")}

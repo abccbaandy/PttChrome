@@ -427,6 +427,23 @@ export function isDeletedListRow(text) {
   return row.substring(LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END).trim() === '-';
 }
 
+// 已讀文章低亮（pref dimReadArticles）的已讀判定。**按 cell 讀**（TermChar[]，不走
+// rowToText）：pttbbs `mbbsd/bbs.c#readdoent` 把 type 字元畫在 cell 8 —— `%7d` 序號
+// ＋ `" %s%c"`（空白＋typeattr ANSI＋type）；置底列 `"  " "  ★ "` 同樣 7 格。
+//   已讀：' '（無標記）、m（M 已讀）、s（S 已讀）、*（板主模式文摘已讀）
+//   未讀：+、~（讀過但有新推文）、M、=、S、#（文摘未讀）
+//   其餘（! solved、D tag）蓋掉了未讀資訊 ⇒ 不判定（回 false，不低亮）。
+// 前 7 格須含序號數字或 ★（擋掉表頭與空白列），cell 7 須為空白。
+const LIST_TYPE_COL = 8;
+const LIST_READ_TYPES = new Set([' ', 'm', 's', '*']);
+export function isListRowRead(chars) {
+  if (!chars || chars.length <= LIST_TYPE_COL) return false;
+  const lead = rowToText(chars.slice(0, LIST_TYPE_COL - 1));
+  if (!/[0-9★]/.test(lead)) return false;
+  if (chars[LIST_TYPE_COL - 1].ch !== ' ') return false;
+  return LIST_READ_TYPES.has(chars[LIST_TYPE_COL].ch);
+}
+
 // Native-mode blacklisted list row → a deleted-article-style notice line, structured
 // to match the way pttbbs paints a deleted row so it lines up in the grid:
 //   "  62349 + 6 7/09 -            □ （本文已被黑名單） someone"
