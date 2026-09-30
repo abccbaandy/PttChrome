@@ -3,14 +3,21 @@
 //  2. mousedown 被 preventDefault（按鍵不可以把焦點從 #t 搶走 ⇒ 軟鍵盤收起）；
 //  3. 滑鼠事件不外洩到 window（App 的滑鼠入口會把它當成點終端機）。
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { MobileKeypad } from "../../src/components/MobileKeypad";
+import { MobileKeypad, LOGOUT_CONFIRM_MS } from "../../src/components/MobileKeypad";
+import { KEYPAD_POS_STORAGE_KEY } from "../../src/js/mobile_layout";
 
 function makeCore({ mobile = true } = {}) {
   const listeners = new Set();
   const core = {
     mobile,
     softKeyboard: false,
+    mobileSelectMode: false,
     view: { sendKeyAsUser: vi.fn() },
+    startLogout: vi.fn(() => true),
+    setMobileSelectMode: vi.fn((on) => {
+      core.mobileSelectMode = !!on;
+      return core.mobileSelectMode;
+    }),
     toggleSoftKeyboard: vi.fn(() => {
       core.softKeyboard = !core.softKeyboard;
       return core.softKeyboard;
@@ -19,16 +26,25 @@ function makeCore({ mobile = true } = {}) {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
-    emit: (m, kb = false) => {
+    emit: (m, kb = false, sel = false) => {
       core.mobile = m;
       core.softKeyboard = kb;
-      listeners.forEach((fn) => fn(m, kb));
+      core.mobileSelectMode = sel;
+      listeners.forEach((fn) => fn(m, kb, sel));
     },
   };
   return core;
 }
 
 const byKey = (k) => document.querySelector(`[data-key="${k}"]`);
+
+beforeEach(() => {
+  try {
+    window.localStorage.clear();
+  } catch (e) {
+    // jsdom 一定有；保險
+  }
+});
 
 describe("MobileKeypad", () => {
   test("非手機不渲染；mobile 變化時跟著出現／消失", () => {
@@ -110,5 +126,103 @@ describe("MobileKeypad", () => {
       for (const t of ["mousedown", "mouseup", "click"]) window.removeEventListener(t, spy);
     }
     expect(seen).toEqual([]);
+  });
+});
+
+describe("第三列：推文／選取模式／登出", () => {
+  test("推文鍵送 X（走 sendKeyAsUser，跟實體鍵盤按 X 同一條分派）", () => {
+    const core = makeCore();
+    render(<MobileKeypad pttchrome={core} />);
+    fireEvent.click(byKey("__open"));
+    fireEvent.click(byKey("X"));
+    expect(core.view.sendKeyAsUser).toHaveBeenCalledWith("X");
+  });
+
+  test("選取模式開關：呼叫 setMobileSelectMode，亮燈跟著 App 狀態", () => {
+    const core = makeCore();
+    render(<MobileKeypad pttchrome={core} />);
+    fireEvent.click(byKey("__open"));
+    expect(byKey("__select").getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(byKey("__select"));
+    expect(core.setMobileSelectMode).toHaveBeenCalledWith(true);
+    expect(byKey("__select").getAttribute("aria-pressed")).toBe("true");
+    act(() => core.emit(true, false, false));
+    expect(byKey("__select").getAttribute("aria-pressed")).toBe("false");
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+  });
+
+  test("登出要兩段：第一下只出確認，✓ 才呼叫 startLogout", () => {
+    const core = makeCore();
+    render(<MobileKeypad pttchrome={core} />);
+    fireEvent.click(byKey("__open"));
+    fireEvent.click(byKey("__logout"));
+    expect(core.startLogout).not.toHaveBeenCalled();
+    expect(byKey("__logoutAsk")).not.toBeNull();
+    fireEvent.click(byKey("__logoutYes"));
+    expect(core.startLogout).toHaveBeenCalledTimes(1);
+    expect(byKey("__logout")).not.toBeNull();
+  });
+
+  test("登出確認按 ✕ ⇒ 取消，不登出", () => {
+    const core = makeCore();
+    render(<MobileKeypad pttchrome={core} />);
+    fireEvent.click(byKey("__open"));
+    fireEvent.click(byKey("__logout"));
+    fireEvent.click(byKey("__logoutNo"));
+    expect(core.startLogout).not.toHaveBeenCalled();
+    expect(byKey("__logout")).not.toBeNull();
+  });
+
+  test("登出確認放著不動 ⇒ 自動收回（防口袋誤觸）", () => {
+    vi.useFakeTimers();
+    try {
+      const core = makeCore();
+      render(<MobileKeypad pttchrome={core} />);
+      fireEvent.click(byKey("__open"));
+      fireEvent.click(byKey("__logout"));
+      act(() => vi.advanceTimersByTime(LOGOUT_CONFIRM_MS + 10));
+      expect(byKey("__logoutYes")).toBeNull();
+      expect(core.startLogout).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("浮動拖曳", () => {
+  const drag = (node, dx, dy) => {
+    fireEvent.pointerDown(node, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(node, { pointerId: 1, clientX: 100 + dx, clientY: 100 + dy });
+    fireEvent.pointerUp(node, { pointerId: 1, clientX: 100 + dx, clientY: 100 + dy });
+  };
+  const root = () => document.getElementById("mobileKeypad");
+
+  test("拖把手 ⇒ 位置改變並存進 localStorage（不是 prefs）", () => {
+    render(<MobileKeypad pttchrome={makeCore()} />);
+    fireEvent.click(byKey("__open"));
+    drag(byKey("__drag"), -50, -60);
+    expect(root().style.right).toBe("58px");
+    expect(root().style.bottom).toContain("68px");
+    expect(JSON.parse(window.localStorage.getItem(KEYPAD_POS_STORAGE_KEY))).toEqual({
+      right: 58,
+      bottom: 68,
+    });
+  });
+
+  test("重新掛載沿用存下的位置", () => {
+    window.localStorage.setItem(KEYPAD_POS_STORAGE_KEY, JSON.stringify({ right: 40, bottom: 90 }));
+    render(<MobileKeypad pttchrome={makeCore()} />);
+    expect(root().style.right).toBe("40px");
+  });
+
+  test("收合圓鈕：小位移仍是點擊（展開），拖過就不展開", () => {
+    render(<MobileKeypad pttchrome={makeCore()} />);
+    drag(byKey("__open"), 3, 2);
+    fireEvent.click(byKey("__open"));
+    expect(byKey("PageDown")).not.toBeNull();
+    fireEvent.click(byKey("__close"));
+    drag(byKey("__open"), -40, -40);
+    fireEvent.click(byKey("__open"));
+    expect(byKey("PageDown")).toBeNull();
   });
 });

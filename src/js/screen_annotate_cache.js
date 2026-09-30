@@ -133,6 +133,8 @@ export function annotationsKey(input) {
     // 手機列表卡片（'article'｜'board'｜undefined）：同一批列物件改畫成卡片，節點
     // 重用條件（rowIdentityStable）看不到這件事 ⇒ 必須進 key，切換時整批重建。
     stable(e.listCards),
+    // 手機推文卡片：同理（同一批列物件在換行版面切換時改畫成卡片），整批重建。
+    stable(e.commentCards),
     stable(input.mergeCaption),
     stable(input.captionAi),
     stable(input.aiKeep),

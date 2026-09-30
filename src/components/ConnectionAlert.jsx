@@ -19,7 +19,14 @@ const PASSTHROUGH =
 // diagnose：回傳 Promise<'origin'|'unreachable'|'disconnected'|null>（決策表在
 // js/connection_probe.js#diagnoseConnectFailure）。沒給就是原本只有重連的提示。
 // onEnableProxy：使用者在「改用 Proxy？」選是 ⇒ App 開 useProxy 並重連。
-export const ConnectionAlert = ({ onDismiss, diagnose, onEnableProxy }) => {
+// loggedOut：使用者自己按了登出（App.logout，server 正常關線）⇒ 不是連線失敗，
+// 換成藍色的「已登出」標題，只留重新連線。
+export const ConnectionAlert = ({
+  onDismiss,
+  diagnose,
+  onEnableProxy,
+  loggedOut,
+}) => {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -70,11 +77,13 @@ export const ConnectionAlert = ({ onDismiss, diagnose, onEnableProxy }) => {
       {(styles) => (
         <Alert
           style={styles}
-          color="red"
+          color={loggedOut ? "blue" : "red"}
           className="PageTopAlert"
           withCloseButton
           onClose={onDismiss}
-          title={i18n("alert_connectionHeader")}
+          title={i18n(
+            loggedOut ? "alert_loggedOutHeader" : "alert_connectionHeader",
+          )}
         >
           {verdict === "checking" && (
             <Group gap="xs">
@@ -115,7 +124,7 @@ export const ConnectionAlert = ({ onDismiss, diagnose, onEnableProxy }) => {
             </>
           )}
           <p>{i18n("alert_connectionText")}</p>
-          <Button color="red" onClick={onDismiss}>
+          <Button color={loggedOut ? "blue" : "red"} onClick={onDismiss}>
             {i18n("alert_connectionReconnect")}
           </Button>
         </Alert>

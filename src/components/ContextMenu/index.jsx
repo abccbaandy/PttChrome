@@ -33,6 +33,7 @@ import {
   menuTargetFlags,
   isTouchContextMenu,
   contextMenuDisposition,
+  shouldClearTouchSelection,
   copyTextFor,
   copyPreviews,
 } from "../../js/context_menu_items";
@@ -247,9 +248,12 @@ export const ContextMenu = ({ pttchrome }) => {
       // 任何網頁 API 叫得出來。三個分支的**順序**由 contextMenuDisposition 決定
       // （純函式，守護 tests/unit/context_menu_disposition.test.js）。
       const { CmdHandler } = pttchrome;
+      const touch = isTouchContextMenu(event);
       const disposition = contextMenuDisposition({
         nativeTarget: isNativeMenuTarget(event.target),
         doDOMMouseScroll: CmdHandler.getAttribute("doDOMMouseScroll") === "1",
+        touchSelectMode:
+          touch && !!pttchrome.mobile && !!pttchrome.mobileSelectMode,
       });
       if (disposition === "swallow") {
         // 「按住右鍵滾輪翻頁」放開右鍵時補發的那一次，照舊吞掉。
@@ -262,6 +266,14 @@ export const ContextMenu = ({ pttchrome }) => {
       event.stopPropagation();
       event.preventDefault();
       pttchrome.contextMenuShown = true;
+      if (
+        shouldClearTouchSelection({
+          mobile: pttchrome.mobile,
+          touch,
+          selectMode: pttchrome.mobileSelectMode,
+        })
+      )
+        window.getSelection().removeAllRanges();
       // just in case the selection get de-selected
       if (window.getSelection().isCollapsed) {
         pttchrome.lastSelection = null;
@@ -296,7 +308,7 @@ export const ContextMenu = ({ pttchrome }) => {
       const { urlEnabled, normalEnabled, selEnabled } = menuTargetFlags({
         contextOnUrl,
         selectionCollapsed: window.getSelection().isCollapsed,
-        touchLongPress: isTouchContextMenu(event),
+        touchLongPress: touch,
       });
       // 偏好一次讀完給下面幾個判定共用（快速搜尋／黑名單／選單開關）。
       const prefs = readValuesWithDefault();

@@ -1089,7 +1089,11 @@ TermView.prototype = {
             this.bbscore && this.bbscore.easyReading
               ? this.bbscore.easyReading.rawMode
               : null,
-          onLightsRawMode: this.onLightsRawMode
+          onLightsRawMode: this.onLightsRawMode,
+          // 手機推文卡片（render/comment_card.js，docs/mobile.md「推文卡片」）：換行版面
+          // （reflow）且畫的是好讀長頁（stableRows）才開。寫在這個 base 物件而**不是**
+          // enhanceOverrides：好讀分支傳進來的是凍結的 STABLE_ROWS。進 annotationsKey。
+          commentCards: !!(this.reflow && enhanceOverrides && enhanceOverrides.stableRows)
         },
         // List easy reading pins pageState:2 so computeAnnotations applies list
         // blacklist rules to the accumulated buffer even on transient frames.
@@ -1267,7 +1271,13 @@ TermView.prototype = {
   //  3. 用 this.onKeyDown(ev) **直接呼叫**，不要 dispatchEvent：#t 上已掛了 keydown
   //     listener，dispatch 會讓同一個事件跑兩次分派。
   sendKeyAsUser: function(keyName) {
-    this.onKeyDown(new KeyboardEvent('keydown', { key: keyName, cancelable: true }));
+    var down = new KeyboardEvent('keydown', { key: keyName, cancelable: true });
+    this.onKeyDown(down);
+    // 單一字元（手機按鍵列的推文 X）：真鍵盤的字元是 keypress 送的
+    // （term_keyboard._onKeyDown 對單字元 return false），合成的 keydown 沒有後續
+    // keypress ⇒ 沒人接手（例如 pushKeyOpensLongPush 關掉時）就補走同一條 keypress。
+    if (!down.defaultPrevented && keyName.length === 1)
+      this._keyboard.onKeyPress(new KeyboardEvent('keypress', { key: keyName, cancelable: true }));
   },
 
   onKeyDown: function(e) {

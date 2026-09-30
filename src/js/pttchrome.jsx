@@ -11,6 +11,7 @@ import { OWNER_BOARD_LIST, listRenderOwnerOf } from './list_render_owner';
 import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { LongPushSession } from './long_push_session';
+import { LogoutSession } from './logout_session';
 import { DeepLinkController } from './deep_link_controller';
 import { AutoLogin } from './auto_login';
 import { LIST_TITLE_COL_START, parseBlacklist, parseTitleBlacklist } from './comment_parse';
@@ -166,6 +167,9 @@ export const App = function() {
   // 與 aidNavigation 共用同一條 CommandQueue（一次只有一個鍵在線上），並同樣用
   // `active` 擋住使用者輸入。
   this.longPush = new LongPushSession(this, this.view, this.buf, this.commandQueue);
+  // 一鍵登出（手機按鍵列）：走 Goodbye → y → 任意鍵，由 server 自己關線。同一條
+  // CommandQueue、同樣以 `active` 擋使用者輸入（serialized_op_gate）。
+  this.logout = new LogoutSession(this, this.view, this.buf, this.commandQueue);
   this.view.onAidClick = (aid, board) => {
     this.aidNavigation.start(aid, board || this.view._articleBoard);
   };
@@ -235,6 +239,9 @@ export const App = function() {
   this.mobileLayoutMode = 'auto';
   this.mobile = false;
   this.softKeyboard = false;
+  //   mobileSelectMode：按鍵列的「選取模式」（長按＝原生選字複製，不開我們的選單）。
+  //                     預設關、不存（重整回到關），唯一寫入點 setMobileSelectMode。
+  this.mobileSelectMode = false;
   this._mobileListeners = new Set();
   this._keyboardSeen = false;
 
@@ -352,6 +359,12 @@ export const App = function() {
   this.applyMobileLayout();
 };
 
+// 按鍵列「登出」鈕（確認過後）。回 true ＝登出序列開始了。
+App.prototype.startLogout = function() {
+  if (!this.isConnected() || serializedOpHint(this)) return false;
+  return this.logout.start();
+};
+
 App.prototype.isConnected = function() {
   return this.connectState == 1 && !!this.conn;
 };
@@ -467,6 +480,8 @@ App.prototype.onData = function(data) {
 App.prototype.onClose = function() {
   console.info("pttchrome onClose");
   this.debugRecorder?.log('app.onClose');
+  // 先問：這次斷線是不是我們自己登出造成的（要在下面 disable 清佇列之前收攤）。
+  const loggedOut = this.logout.onConnectionClosed();
   if (this.timerEverySec) {
     this.timerEverySec.cancel();
   }
@@ -515,6 +530,13 @@ App.prototype.onClose = function() {
     this.enableProxyAndReconnect();
   };
   const container = document.getElementById('reactAlert');
+  if (loggedOut) {
+    // 正常登出：不是連線失敗，不跑診斷，只給「已登出／重新連線」。
+    renderInto(container, <MantineRoot><ConnectionAlert
+      onDismiss={onDismiss} loggedOut /></MantineRoot>);
+    this.updateTabIcon('disconnect');
+    return;
+  }
   // Android APK 的連線永遠是原生本機 proxy：「Origin 沒設好 → 改走 proxy」這條
   // 診斷在那裡不成立，只給單純的重連提示。
   renderInto(container, <MantineRoot><ConnectionAlert
@@ -628,8 +650,12 @@ App.prototype.applyMobileLayout = function() {
   });
   var changed = mobile !== this.mobile;
   this.mobile = mobile;
-  if (!mobile) this.softKeyboard = false;
+  if (!mobile) {
+    this.softKeyboard = false;
+    this.mobileSelectMode = false;
+  }
   document.body.classList.toggle('mobile-layout', mobile);
+  document.body.classList.toggle('mobileSelectMode', mobile && this.mobileSelectMode);
   this._applyInputMode();
   if (!changed) return;
   // 尺寸規則換了一套（手機無視 termSizeMode）。_termSizeValues 未定義＝prefs 還沒
@@ -642,7 +668,8 @@ App.prototype.applyMobileLayout = function() {
 App.prototype._emitMobileState = function() {
   var mobile = this.mobile;
   var kb = this.softKeyboard;
-  this._mobileListeners.forEach(function(fn) { fn(mobile, kb); });
+  var sel = this.mobileSelectMode;
+  this._mobileListeners.forEach(function(fn) { fn(mobile, kb, sel); });
 };
 
 App.prototype._applyInputMode = function() {
@@ -651,10 +678,24 @@ App.prototype._applyInputMode = function() {
   else this.inputArea.removeAttribute('inputmode');
 };
 
-// 按鍵列訂閱手機狀態 fn(mobile, softKeyboard)；回傳取消訂閱。
+// 按鍵列訂閱手機狀態 fn(mobile, softKeyboard, selectMode)；回傳取消訂閱。
 App.prototype.onMobileChange = function(fn) {
   this._mobileListeners.add(fn);
   return () => this._mobileListeners.delete(fn);
+};
+
+// 按鍵列的「選取模式」開關（docs/mobile.md「選取模式」）。只在手機上有意義；
+// 消費端是 ContextMenu 的 contextmenu handler（開＝觸控長按放行原生選取）與 CSS
+// body.mobileSelectMode。回傳新狀態。
+App.prototype.setMobileSelectMode = function(on) {
+  var next = !!on && this.mobile;
+  if (next === this.mobileSelectMode) return next;
+  this.mobileSelectMode = next;
+  document.body.classList.toggle('mobileSelectMode', next);
+  // 關掉時把殘留的原生選取收掉，免得選取把手留在畫面上跟下一次長按選單打架。
+  if (!next && window.getSelection) window.getSelection().removeAllRanges();
+  this._emitMobileState();
+  return next;
 };
 
 // 按鍵列的鍵盤鈕。**必須在使用者手勢（click handler）裡同步呼叫**：瀏覽器只在

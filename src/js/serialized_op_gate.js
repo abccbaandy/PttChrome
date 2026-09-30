@@ -22,6 +22,8 @@ export function serializedOpHint(core) {
   // 提示字隨階段不同（探路／送出），由 session 自己給——active 為真時一定有值。
   if (core.longPush && core.longPush.active)
     return core.longPush.opHint || '長推文送出中，請稍候…';
+  if (core.logout && core.logout.active)
+    return core.logout.opHint || '登出中，請稍候…';
   return null;
 }
 

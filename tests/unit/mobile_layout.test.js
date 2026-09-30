@@ -8,6 +8,11 @@ import {
   mobileTermGeometry,
   keyboardInset,
   KEYBOARD_MIN_PX,
+  clampKeypadPos,
+  loadKeypadPos,
+  saveKeypadPos,
+  KEYPAD_DEFAULT_POS,
+  KEYPAD_POS_STORAGE_KEY,
 } from "../../src/js/mobile_layout";
 import { KeyMap } from "../../src/js/term_keyboard";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
@@ -174,5 +179,51 @@ describe("keyboardInset", () => {
   test("APK：原生回報也受 softKeyboard／縮放閘門管", () => {
     expect(keyboardInset({ ...kb, vvHeight: 800, hostInset: 300, softKeyboard: false })).toBe(0);
     expect(keyboardInset({ ...kb, vvHeight: 800, hostInset: 300, vvScale: 2 })).toBe(0);
+  });
+});
+
+// 浮動按鍵列的位置：存 localStorage（不寫 prefs：prefs 會同步到桌機）。
+describe("按鍵列位置", () => {
+  const vp = { vw: 390, vh: 700, w: 300, h: 150 };
+
+  test("夾回視窗內：整個按鍵列看得到", () => {
+    expect(clampKeypadPos({ right: -20, bottom: -5 }, vp)).toEqual({ right: 0, bottom: 0 });
+    expect(clampKeypadPos({ right: 500, bottom: 900 }, vp)).toEqual({ right: 90, bottom: 550 });
+    expect(clampKeypadPos({ right: 40.4, bottom: 60.6 }, vp)).toEqual({ right: 40, bottom: 61 });
+  });
+
+  test("視窗比按鍵列小 ⇒ 貼齊（不出現負值）", () => {
+    expect(clampKeypadPos({ right: 30, bottom: 30 }, { vw: 200, vh: 100, w: 300, h: 150 })).toEqual({
+      right: 0,
+      bottom: 0,
+    });
+  });
+
+  test("壞值退回預設", () => {
+    expect(clampKeypadPos({ right: NaN, bottom: "x" }, vp)).toEqual(KEYPAD_DEFAULT_POS);
+    expect(clampKeypadPos(null, vp)).toEqual(KEYPAD_DEFAULT_POS);
+  });
+
+  test("存取 round-trip；存的是專用 key，不是 prefs", () => {
+    const mem = new Map();
+    const st = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, v) };
+    expect(loadKeypadPos(st)).toEqual(KEYPAD_DEFAULT_POS);
+    saveKeypadPos({ right: 12, bottom: 34 }, st);
+    expect([...mem.keys()]).toEqual([KEYPAD_POS_STORAGE_KEY]);
+    expect(loadKeypadPos(st)).toEqual({ right: 12, bottom: 34 });
+  });
+
+  test("storage 會 throw（私密視窗）／內容壞掉 ⇒ 預設位置，不炸", () => {
+    const boom = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("denied");
+      },
+    };
+    expect(loadKeypadPos(boom)).toEqual(KEYPAD_DEFAULT_POS);
+    expect(() => saveKeypadPos({ right: 1, bottom: 2 }, boom)).not.toThrow();
+    expect(loadKeypadPos({ getItem: () => "{bad json" })).toEqual(KEYPAD_DEFAULT_POS);
   });
 });

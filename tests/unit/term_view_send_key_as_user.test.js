@@ -105,3 +105,42 @@ describe("分派去向", () => {
     expect(view.seen.hints).toHaveLength(1);
   });
 });
+
+// 手機按鍵列的推文鍵 X（單一字元）。真鍵盤的字元是 keypress 送的
+// （term_keyboard._onKeyDown 對單字元 return false），合成的 keydown 不會有後續
+// keypress ⇒ 以前在「推文鍵開長推文」關掉時，按鍵列的 X 什麼都沒送出。
+describe("單一字元鍵補走 keypress", () => {
+  function withKeyPress(view) {
+    view._keyboard.onKeyPress = vi.fn();
+    return view;
+  }
+
+  test("沒有人接手 ⇒ 補一次 keypress，字元送得出去", () => {
+    const view = withKeyPress(makeView());
+    view.sendKeyAsUser("X");
+    expect(view._keyboard.onKeyPress).toHaveBeenCalledTimes(1);
+    const e = view._keyboard.onKeyPress.mock.calls[0][0];
+    expect(e.type).toBe("keypress");
+    expect(e.key).toBe("X");
+  });
+
+  test("keydown 已被接手（preventDefault）⇒ 不再補，避免送兩次", () => {
+    const view = withKeyPress(makeView({ useEasyReadingMode: true }));
+    view.bbscore.easyReading._onKeyDown = vi.fn((e) => e.preventDefault());
+    view.sendKeyAsUser("X");
+    expect(view._keyboard.onKeyPress).not.toHaveBeenCalled();
+  });
+
+  test("序列化操作在途 ⇒ 吞掉，不補 keypress", () => {
+    const view = withKeyPress(makeView());
+    view.bbscore.aidNavigation.active = true;
+    view.sendKeyAsUser("X");
+    expect(view._keyboard.onKeyPress).not.toHaveBeenCalled();
+  });
+
+  test("具名鍵（ArrowLeft）不補 keypress", () => {
+    const view = withKeyPress(makeView());
+    view.sendKeyAsUser("ArrowLeft");
+    expect(view._keyboard.onKeyPress).not.toHaveBeenCalled();
+  });
+});

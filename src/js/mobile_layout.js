@@ -46,6 +46,62 @@ export const MOBILE_KEYPAD_ROWS = [
   ]
 ];
 
+// 第三列：不在 KeyMap 的鍵與動作鈕（MobileKeypad 自己畫）。
+//   X     推文鍵 —— 單一字元，同樣走 sendKeyAsUser（term_view 對單字元補 keypress）；
+//         預設 pref pushKeyOpensLongPush 下會開長推文輸入框，跟實體鍵盤按 X 一樣。
+export const MOBILE_KEYPAD_PUSH_KEY = 'X';
+
+// ---- 浮動按鍵列的位置（docs/mobile.md「按鍵列」）-------------------------------
+// 以「離視窗右緣／下緣的距離（px）」表示，跟原本 CSS 的 right/bottom 錨點同一套，
+// 軟鍵盤的 --kb-inset 照舊加在 bottom 上。**存 localStorage、不寫 prefs**：prefs 經
+// pref_sync 同步到其他裝置，手機的按鍵列位置對桌機沒有意義（同「手機模式是 runtime
+// 覆寫」那條規則）。
+export const KEYPAD_POS_STORAGE_KEY = 'pttchrome.mobileKeypadPos';
+export const KEYPAD_DEFAULT_POS = { right: 8, bottom: 8 };
+// 拖多遠才算拖曳（收合的圓鈕：小於這個就是點擊＝展開）。
+export const KEYPAD_DRAG_THRESHOLD_PX = 8;
+
+// 把位置夾回視窗內：整個按鍵列（w×h）都要看得到。視窗比按鍵列還小時貼齊左上。
+export function clampKeypadPos(pos, { vw, vh, w, h }) {
+  const p = pos || KEYPAD_DEFAULT_POS;
+  const maxRight = Math.max(0, (Number(vw) || 0) - (Number(w) || 0));
+  const maxBottom = Math.max(0, (Number(vh) || 0) - (Number(h) || 0));
+  const clamp = (v, max, d) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return Math.min(d, max);
+    return Math.round(Math.min(Math.max(n, 0), max));
+  };
+  return {
+    right: clamp(p.right, maxRight, KEYPAD_DEFAULT_POS.right),
+    bottom: clamp(p.bottom, maxBottom, KEYPAD_DEFAULT_POS.bottom)
+  };
+}
+
+// storage 注入（測試用）；預設 window.localStorage。私密視窗／封鎖網站資料時存取會
+// throw ⇒ 一律退回預設位置，不影響功能。
+export function loadKeypadPos(storage) {
+  try {
+    const st = storage || window.localStorage;
+    const raw = st.getItem(KEYPAD_POS_STORAGE_KEY);
+    if (!raw) return { ...KEYPAD_DEFAULT_POS };
+    const v = JSON.parse(raw);
+    if (!v || !Number.isFinite(v.right) || !Number.isFinite(v.bottom))
+      return { ...KEYPAD_DEFAULT_POS };
+    return { right: v.right, bottom: v.bottom };
+  } catch (e) {
+    return { ...KEYPAD_DEFAULT_POS };
+  }
+}
+
+export function saveKeypadPos(pos, storage) {
+  try {
+    const st = storage || window.localStorage;
+    st.setItem(KEYPAD_POS_STORAGE_KEY, JSON.stringify({ right: pos.right, bottom: pos.bottom }));
+  } catch (e) {
+    // 存不了就只在這次開頁有效。
+  }
+}
+
 // #t 的 inputmode。手機上預設 'none'：焦點照舊停在 #t（既有十幾個 setInputAreaFocus
 // 呼叫點、實體鍵盤全部不動），但瀏覽器不會因為 focus 就叫出軟鍵盤 —— 否則每一次
 // tap（合成 mousedown/up/click）都同時是「滑鼠瀏覽點擊」＋「叫鍵盤」。

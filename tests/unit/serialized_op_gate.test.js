@@ -31,6 +31,13 @@ describe("serializedOpHint 述詞", () => {
     expect(serializedOpHint({ longPush: { active: true } })).toBe(PUSH_HINT);
   });
 
+  test("一鍵登出進行中 → 登出提示", () => {
+    expect(serializedOpHint({ logout: { active: true, opHint: "" } })).toBe(
+      "登出中，請稍候…",
+    );
+    expect(serializedOpHint({ logout: { active: false } })).toBe(null);
+  });
+
   test("探路階段的提示與送出階段不同（使用者要知道自己在等什麼）", () => {
     const preflight = { active: true, opHint: "正在確認能不能推文，請稍候…" };
     expect(serializedOpHint({ longPush: preflight })).toBe(preflight.opHint);

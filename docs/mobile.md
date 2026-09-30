@@ -36,6 +36,14 @@
   - `mousedown` preventDefault（不搶 `#t` 焦點）＋ mousedown/mouseup/click stopPropagation
     （App 的滑鼠入口在 window）。守護 `tests/unit/mobile_keypad.test.jsx`。
   - 按鍵表 `MOBILE_KEYPAD_ROWS`，每個 key 必須在 `term_keyboard.KeyMap`。
+  - 第三列（元件自己畫）：推文 `X`（單字元：`sendKeyAsUser` 在 keydown 沒人接手時補走
+    `_keyboard.onKeyPress`，因為字元原本靠 keypress 送）、`__select` 選取模式、`__logout`
+    登出（inline 二段確認，`LOGOUT_CONFIRM_MS` 無動作自動收回）、`__drag` 拖曳把手。
+  - **浮動位置**：`{right,bottom}` px 存 localStorage `pttchrome.mobileKeypadPos`
+    （`mobile_layout.load/saveKeypadPos`，try/catch），**不寫 prefs**（同上：prefs 會同步到桌機）。
+    `clampKeypadPos` 夾回視窗；`--kb-inset` 照舊加在 bottom。拖曳走 pointer events＋
+    `setPointerCapture`（把手與收合圓鈕 `touch-action:none`）；圓鈕位移 < `KEYPAD_DRAG_THRESHOLD_PX`
+    才算點擊。
 - `index.html` viewport **不鎖** `user-scalable`（原生雙指縮放是後援）。
 - **尺寸（Phase 2）**：`App.applyTermSize` 是唯一套用點；手機分支無視 `termSizeMode`，用
   `mobile_layout.mobileTermGeometry`：rows ＝ 高度 / `MOBILE_ROW_FONT_PX`(16)（`calcTermSize`，欄數恆 80），
@@ -56,11 +64,11 @@
 
 ## 測試
 
-- unit：`mobile_layout.test.js`、`mobile_keypad.test.jsx`、`app_mobile_layout.test.js`、`mobile_surface.test.js`、
+- unit：`mobile_layout.test.js`、`mobile_keypad.test.jsx`、`logout_session.test.js`、`comment_card.test.js`、`app_mobile_layout.test.js`、`mobile_surface.test.js`、
   `list_card.test.js`（含兩個 session 的卡片換算；看板列表沒有錄製素材，這是它唯一的守護）；
   reflow 相關另在 `mouse_regions`／`mouse_gating`／`scroll_restore`／`context_menu_items` 各有一組
-- offline e2e：project `offline-mobile`（Pixel 7 模擬，只跑 `offline/mobile_*.spec.js`：換行版面與長按選單在
-  `mobile_reflow`、卡片在 `mobile_list_cards`；`offline` project 以 testIgnore 排除 mobile_*），已併入
+- offline e2e：project `offline-mobile`（Pixel 7 模擬，只跑 `offline/mobile_*.spec.js`：換行版面、長按選單與推文卡片在
+  `mobile_reflow`、列表卡片在 `mobile_list_cards`、按鍵列拖曳在 `mobile_keypad`；`offline` project 以 testIgnore 排除 mobile_*），已併入
   `yarn test:e2e:offline`。**視窗高壓到 390px**：錄製檔全是 24 列，Pixel 7 原生高度會給 52 列、
   重放湊不成完整一屏；390 ⇒ 24 列。
 - Windows 本機跑 `offline-mobile` 會用到 local 細明體，小字級下半形字寬被 hinting 取整（實測 5.0 vs
@@ -101,11 +109,49 @@
   元素層（連結、圖片、`a.fnKey`、合併按鈕）不受影響。右鍵選單的推文者黑名單在 reflow 下整列都算 id 區。
 - 已知接受：ANSI 圖／表格換行後會散（使用者定案）；`#easyReadingLastRow`（footer overlay）只改寬度不換行，超出視窗寬的部分被裁。
 
-## 長按選單（觸控 contextmenu）
+## 長按選單與選取模式（觸控 contextmenu）
 
 Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不為空。`context_menu_items.menuTargetFlags`
 的 `touchLongPress`（`isTouchContextMenu`：`pointerType === 'touch'`，退回 `sourceCapabilities.firesTouchEvents`）
-讓 `normalEnabled` 不看選取（黑名單／前已讀後未讀／貼上照出），`selEnabled` 照舊（仍可複製那個字）。
+讓 `normalEnabled` 不看選取（黑名單／前已讀後未讀／貼上照出）。
+
+使用者定案：長按的兩種用途用按鍵列「選取」開關切，**預設關**。狀態 `App.mobileSelectMode`（runtime、不存，
+唯一寫入點 `setMobileSelectMode`，body class `mobileSelectMode`，非手機恆關）。
+- 關：開我們的選單，並 `removeAllRanges()`（`shouldClearTouchSelection`）⇒ 不留原生選取把手，複製類項目不出現。
+  對象（黑名單／前已讀後未讀）仍是長按位置，與桌機右鍵同一條路徑。CSS 另加 `-webkit-touch-callout: none`。
+  **不用 `user-select: none` 擋選字**（終端機祖先禁用，`css_user_select.test.js`）。
+- 開：`contextMenuDisposition({touchSelectMode})` 回 `'native'`（排在 swallow 之後）⇒ 不 preventDefault，
+  Chrome 原生選取把手＋複製工具列。關掉時順手清選取。
+- 守護：unit `context_menu_disposition.test.js`；offline e2e `mobile_reflow` 的長按兩條。
+
+## 一鍵登出（`logout_session.js`）
+
+**不可以 `conn.close()`**：server 端 utmp 不會當下清掉，帳號卡在線上。走 PTT 正常流程，server 自己關線。
+- pttbbs：`menu.c:1354` Goodbye（level 0、主選單唯一 G）；`menu.c:566-581` 主選單上 ← 只移游標到 G；
+  `xyz.c:59-85` `getdata` 確認「您確定要離開…(Y/N)？[N]」（LCECHO，要 `y\r`）→ `vmsg` 停留時間（未註冊：
+  「尚未完成註冊程序。」）→ 任意鍵 → `u_exit`（`mbbsd.c:187-209`）close fd。
+- 序列（CommandQueue，一次一鍵、內容確認）：逃回主選單（每步 `resolveDismiss`：輸入欄 ^C／pressanykey 空白，
+  否則 ←；畫面沒變或超過 `MAX_ESCAPE_STEPS` 停手）→ `G\r`（expect 確認列＋游標在輸入欄）→ `y\r`（expect
+  pressanykey）→ 空白（`probe:false`；再遇 pressanykey 最多補 `MAX_FINAL_KEYS` 次）。認不出的畫面一律停手、不盲送。
+- 前置同 `aid_navigation._begin`（autoLogin.stop、好讀 functionMode、兩個列表 session beginExternalNavigation）；
+  `serialized_op_gate` 期間吞使用者鍵。完成判定：`App.onClose` → `logout.onConnectionClosed()` 為真 ⇒
+  `ConnectionAlert loggedOut`（藍色「已登出」＋重新連線，不跑連線失敗診斷）。
+- 守護：unit `logout_session.test.js`（byte 序列＋停手條件）。live e2e 不跑（會斷掉共用登入 session）。
+
+## 推文卡片（`render/comment_card.js`）
+
+換行版面下推文列原樣 pre-wrap ⇒ 時間前的補位空白先折行，時間跑到下一行左邊。
+- 旗標 `enhance.commentCards` ＝ `term_view.reflow && stableRows`（寫在 `_renderScreenLines` 的 base 物件，
+  不可寫進凍結的 `STABLE_ROWS`），進 `annotationsKey`。桌機 golden 不經過。
+- 切換點兩處：`screen.js#_renderRow`（單列）與 `_buildRowNode` 的 `mergeCommentRun`（合併塊不經 `_renderRow`）。
+  區段來自 `comment_merge.commentContentCells`／`buildMergedCommentChars` 的 `tailStart`／`timeStart`；
+  認不出推文形狀 ⇒ 退回 buildRow。
+- 版型：標頭 `推/噓/→`・`.floorBadge[data-floor]`（卡片內改一般行內字）・id（原PO `.commentByAuthor`），
+  右靠 `.commentCardMeta`（IP＋時間，0.8em 淡化）；內容 `.commentCardText` 以原欄號餵 LinkSegmentBuilder
+  （連結／AID／預覽照舊）。
+- 契約：外層 `span[type=bbsrow][srow][data-pusher][data-pusher-col]`（`.commentSpacing` 直接子選擇器、長按黑名單），
+  標頭與內容每行都是 `[data-type=bbsline][data-row]`。
+- 守護：unit `comment_card.test.js`；offline e2e `mobile_reflow`「手機推文卡片」。
 
 ## Phase 4：列表卡片（`term_view.listCards`）
 

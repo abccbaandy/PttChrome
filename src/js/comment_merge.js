@@ -205,6 +205,15 @@ export function buildMergedCommentChars(lines, run) {
   const lastRow = lines[run.rows[lastContentful]];
   const lastInfo = infos[lastContentful];
   const tailEnd = lastInfo.timeStart + lastInfo.time.length;
+  // tailStart／timeStart：段尾（padding＋可選 IP＋時間）在合併序列裡的位置。手機推文
+  // 卡片（render/comment_card.js）把它們搬到標頭列，內容只畫 [contentStart, tailStart)。
+  const tailStart = out.length;
   for (let c = lastInfo.end; c < tailEnd; ++c) out.push(lastRow[c]);
-  return { chars: out, contentStart: infos[0].start, breaks };
+  return {
+    chars: out,
+    contentStart: infos[0].start,
+    breaks,
+    tailStart,
+    timeStart: tailStart + (lastInfo.timeStart - lastInfo.end),
+  };
 }

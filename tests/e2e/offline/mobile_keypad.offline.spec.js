@@ -4,6 +4,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassettes, bootOffline, replayCassette } = require('../helpers/replay');
+const { waitRectStable } = require('../helpers/layout');
 
 const articles = findCassettes('article');
 
@@ -51,4 +52,47 @@ test.describe('手機按鍵列（離線重放）', () => {
       expect(await inputMode(page)).toBe('none');
     });
   });
+});
+
+// 浮動可拖曳（docs/mobile.md「按鍵列」）。拖曳邏輯在 tests/unit/mobile_keypad.test.jsx；
+// 這裡鎖真瀏覽器裡 pointer capture＋fixed 定位真的會動、位置存進 localStorage、不出視窗。
+const keypadRect = (page) =>
+  page.evaluate(() => {
+    const r = document.getElementById('mobileKeypad').getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  });
+
+test('展開後拖把手 ⇒ 按鍵列跟著移動、位置存進 localStorage、不出視窗', async ({ page }) => {
+  test.setTimeout(60000);
+  await bootOffline(page, ptt);
+  await page.locator('[data-key="__open"]').click();
+  const handle = page.locator('[data-key="__drag"]');
+  await expect(handle).toBeVisible();
+  // 展開後按鍵列會重新夾回視窗內（useLayoutEffect）：等位置停了再量、再拖。
+  await waitRectStable(page, '#mobileKeypad');
+  const before = await keypadRect(page);
+  const h = await waitRectStable(page, '[data-key="__drag"]');
+  const x = h.left + h.width / 2;
+  const y = h.top + h.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 40, y - 80, { steps: 6 });
+  await page.mouse.up();
+
+  const after = await keypadRect(page);
+  expect(before.top - after.top).toBeGreaterThan(60);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('pttchrome.mobileKeypadPos')));
+  expect(saved.bottom).toBeGreaterThan(60);
+
+  // 往外拖超出視窗 ⇒ 夾在視窗內。
+  const h2 = await waitRectStable(page, '[data-key="__drag"]');
+  await page.mouse.move(h2.left + 5, h2.top + 5);
+  await page.mouse.down();
+  await page.mouse.move(h2.left - 2000, h2.top - 2000, { steps: 6 });
+  await page.mouse.up();
+  const clamped = await keypadRect(page);
+  const vp = page.viewportSize();
+  expect(clamped.left).toBeGreaterThanOrEqual(-0.5);
+  expect(clamped.top).toBeGreaterThanOrEqual(-0.5);
+  expect(clamped.right).toBeLessThanOrEqual(vp.width + 0.5);
 });

@@ -3,9 +3,11 @@
    針對終端機的祖先）。按鍵最小 44px：觸控目標的常見下限。 */
 .mobileKeypad {
   position: fixed;
+  /* right／bottom 由元件的 inline style 給（可拖曳、位置存 localStorage）；這裡是
+     inline style 還沒套上前的預設值。--kb-inset：軟鍵盤蓋住的高度
+     （App._onVisualViewport 寫）。position:fixed 錨在 layout viewport，而 Android
+     預設叫鍵盤只縮 visual viewport ⇒ 不加就被鍵盤蓋住。 */
   right: 8px;
-  /* --kb-inset：軟鍵盤蓋住的高度（App._onVisualViewport 寫）。position:fixed 錨在
-     layout viewport，而 Android 預設叫鍵盤只縮 visual viewport ⇒ 不加就被鍵盤蓋住。 */
   bottom: calc(8px + var(--kb-inset, 0px));
   z-index: 2500;
   user-select: none;
@@ -58,4 +60,34 @@
   font-size: 20px;
   opacity: 0.85;
   box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+}
+
+/* 第三列：推文／選取模式／登出／拖曳把手（6 欄＝1+1+3+1）。 */
+.mobileKeypadWide {
+  grid-column: span 3;
+}
+
+.mobileKeypadAsk {
+  grid-column: span 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffd27a;
+  font-size: 15px;
+  font-family: system-ui, sans-serif;
+}
+
+.mobileKeypadDanger {
+  background: #8a2626;
+  border-color: #c04a4a;
+}
+
+/* 拖曳：瀏覽器不可以把這個手勢拿去捲動／縮放頁面（pointermove 才收得到）。 */
+.mobileKeypadDrag,
+.mobileKeypadFab {
+  touch-action: none;
+}
+
+.mobileKeypadDrag {
+  cursor: grab;
 }

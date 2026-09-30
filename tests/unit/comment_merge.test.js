@@ -151,6 +151,20 @@ describe("buildMergedCommentChars", () => {
     );
   });
 
+  // 手機推文卡片（render/comment_card.js）把段尾搬到標頭列：tailStart／timeStart 是段尾
+  // 與時間戳在合併序列裡的位置。
+  test("回傳段尾與時間戳在合併序列裡的位置（手機推文卡片用）", () => {
+    const lines = [
+      chars("PU aaa: hello        07/20 14:23"),
+      chars("PU aaa: world   1.2.3.4 07/20 14:31"),
+    ];
+    const r = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1] });
+    const t = textOf(r.chars);
+    expect(t.slice(r.contentStart, r.tailStart)).toBe("hello\nworld");
+    expect(t.slice(r.tailStart, r.timeStart).trim()).toBe("1.2.3.4");
+    expect(t.slice(r.timeStart)).toBe("07/20 14:31");
+  });
+
   // 使用者回報（AI_Art M.1785606011 三連推）：中間那則「剛好打滿到欄位最後一格」，
   // 舊的 gap 門檻因此把三則黏成一段。打滿與否不再影響斷行。
   test("打滿到欄位最後一格的列，仍與下一則分行", () => {

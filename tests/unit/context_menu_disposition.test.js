@@ -8,7 +8,10 @@
 // 滾輪翻頁」放開右鍵時補發的那次 contextmenu）**必須先判**。把圖片判斷排到它前面，
 // 在圖片上做那個手勢就會走 'native' 直接 return ⇒ 旗標留著 '1' ⇒ 下一次正常右鍵被
 // 靜默吞掉一次。症狀是「右鍵選單偶爾叫不出來」，極難回推。
-import { contextMenuDisposition } from "../../src/js/context_menu_items";
+import {
+  contextMenuDisposition,
+  shouldClearTouchSelection,
+} from "../../src/js/context_menu_items";
 
 describe("contextMenuDisposition", () => {
   test("一般文字區、旗標滅 ⇒ 開我們的選單", () => {
@@ -34,5 +37,33 @@ describe("contextMenuDisposition", () => {
     expect(
       contextMenuDisposition({ nativeTarget: true, doDOMMouseScroll: true }),
     ).toBe("swallow");
+  });
+});
+
+// 手機按鍵列的「選取模式」（docs/mobile.md「選取模式」）。
+describe("選取模式（觸控長按）", () => {
+  test("選取模式開 ⇒ 放行原生（選取把手＋複製工具列），不開我們的選單", () => {
+    expect(
+      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: false, touchSelectMode: true }),
+    ).toBe("native");
+  });
+
+  test("選取模式關 ⇒ 照舊開我們的選單", () => {
+    expect(
+      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: false, touchSelectMode: false }),
+    ).toBe("menu");
+  });
+
+  test("右鍵滾輪旗標仍然先判（旗標只在這裡被消費）", () => {
+    expect(
+      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: true, touchSelectMode: true }),
+    ).toBe("swallow");
+  });
+
+  test("只有「手機＋觸控＋選取模式關」才清掉長按選到的字", () => {
+    expect(shouldClearTouchSelection({ mobile: true, touch: true, selectMode: false })).toBe(true);
+    expect(shouldClearTouchSelection({ mobile: true, touch: true, selectMode: true })).toBe(false);
+    expect(shouldClearTouchSelection({ mobile: true, touch: false, selectMode: false })).toBe(false);
+    expect(shouldClearTouchSelection({ mobile: false, touch: true, selectMode: false })).toBe(false);
   });
 });

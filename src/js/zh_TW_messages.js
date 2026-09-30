@@ -813,6 +813,30 @@
   "mobileKeypad_toggle": {
     "message": "按鍵列"
   },
+  "alert_loggedOutHeader": {
+    "message": "已登出"
+  },
+  "mobileKeypad_push": {
+    "message": "推文 (X)"
+  },
+  "mobileKeypad_logout": {
+    "message": "登出"
+  },
+  "mobileKeypad_logoutConfirm": {
+    "message": "確定登出？"
+  },
+  "mobileKeypad_logoutYes": {
+    "message": "確定登出"
+  },
+  "mobileKeypad_logoutNo": {
+    "message": "取消"
+  },
+  "mobileKeypad_select": {
+    "message": "選取模式（長按選字複製）"
+  },
+  "mobileKeypad_drag": {
+    "message": "拖曳移動按鍵列"
+  },
   "mobileKeypad_keyboard": {
     "message": "叫出／收起鍵盤"
   },

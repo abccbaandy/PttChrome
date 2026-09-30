@@ -126,7 +126,7 @@ test.describe('長按選單（觸控 contextmenu）', () => {
         sel.addRange(range);
       }
       const collapsed = sel.isCollapsed;
-      el.dispatchEvent(
+      const notCancelled = el.dispatchEvent(
         new PointerEvent('contextmenu', {
           bubbles: true,
           cancelable: true,
@@ -135,7 +135,11 @@ test.describe('長按選單（觸控 contextmenu）', () => {
           pointerType,
         })
       );
-      return { collapsed };
+      return {
+        collapsed,
+        defaultPrevented: !notCancelled,
+        collapsedAfter: window.getSelection().isCollapsed,
+      };
     }, pointerType);
 
   const markPusherRow = async (page) => {
@@ -162,14 +166,40 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     const pusher = await markPusherRow(page);
     test.skip(!pusher, '這份 cassette 沒有推文列');
 
-    const { collapsed } = await longPress(page, 'touch');
+    const { collapsed, collapsedAfter } = await longPress(page, 'touch');
     expect(collapsed).toBe(false); // 前提：事件發生時真的有選取（Chromium 長按的現場）
     const add = await label(page, 'cmenu_addAuthorBlacklist');
     const item = menu(page).getByRole('menuitem').filter({ hasText: add });
     await expect(item).toBeVisible();
     await expect(item).toContainText(pusher, { ignoreCase: true });
-    // 選到的字仍可複製
-    await expect(menu(page).getByRole('menuitem').filter({ hasText: await label(page, 'cmenu_copy') }).first()).toBeVisible();
+    // 選取模式關（預設）：長按選到的字被收掉，不留原生選取把手跟選單打架；
+    // 複製類項目跟著不出現（要選字複製就開選取模式）。
+    expect(collapsedAfter).toBe(true);
+    // 「複製」項目認它的快捷鍵字樣（cmenu_copy 的字面也是「複製本篇文章連結」等的子字串）。
+    await expect(menu(page).getByRole('menuitem').filter({ hasText: 'Ctrl+C' })).toHaveCount(0);
+  });
+
+  test('選取模式開：長按＝一般網頁操作（不 preventDefault、不開我們的選單、選取留著）', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    const pusher = await markPusherRow(page);
+    test.skip(!pusher, '這份 cassette 沒有推文列');
+
+    // 走按鍵列的開關（真的 UI 入口），不是直接改 App 狀態。
+    await page.locator('[data-key="__open"]').click();
+    await page.locator('[data-key="__select"]').click();
+    await expect(page.locator('[data-key="__select"]')).toHaveAttribute('aria-pressed', 'true');
+    expect(await page.evaluate(() => document.body.classList.contains('mobileSelectMode'))).toBe(true);
+
+    const r = await longPress(page, 'touch');
+    expect(r.collapsed).toBe(false);
+    expect(r.defaultPrevented).toBe(false);
+    expect(r.collapsedAfter).toBe(false);
+    await expect(page.locator('.DropdownMenu')).toHaveCount(0);
   });
 
   test('滑鼠右鍵＋有選取：維持桌機規則（只有複製那一組）', async ({ page }) => {
@@ -186,5 +216,46 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     await expect(menu(page)).toBeVisible();
     const add = await label(page, 'cmenu_addAuthorBlacklist');
     await expect(menu(page).getByRole('menuitem').filter({ hasText: add })).toHaveCount(0);
+  });
+});
+
+// 推文卡片（render/comment_card.js、docs/mobile.md「推文卡片」）。症狀：換行版面下
+// 推文列照 80 欄原樣折行，時間被擠到下一行的最左邊。
+test.describe('手機推文卡片', () => {
+  test.skip(!article, '尚無 article cassette');
+
+  test('每則推文的時間與 id 同一行、靠右；內容不含時間', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    const cards = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('#mainContainer > span.commentCard')).map((c) => {
+        const card = c.getBoundingClientRect();
+        const id = c.querySelector('.commentCardId').getBoundingClientRect();
+        const time = c.querySelector('.commentCardTime');
+        const t = time ? time.getBoundingClientRect() : null;
+        return {
+          idTop: id.top,
+          idBottom: id.bottom,
+          timeMid: t ? (t.top + t.bottom) / 2 : null,
+          timeRight: t ? t.right : null,
+          cardRight: card.right,
+          body: c.querySelector('.commentCardText').textContent,
+          time: time ? time.textContent : null,
+        };
+      })
+    );
+    test.skip(cards.length === 0, '這份 cassette 沒有推文列');
+    for (const c of cards) {
+      expect(c.time).toMatch(/\d{1,2}\/\d{2} \d{2}:\d{2}/);
+      // 時間的垂直中線落在 id 那一行之內 ⇒ 同一行（字級不同，比 top 會差幾 px）。
+      expect(c.timeMid).toBeGreaterThanOrEqual(c.idTop);
+      expect(c.timeMid).toBeLessThanOrEqual(c.idBottom);
+      expect(c.cardRight - c.timeRight).toBeLessThan(24);
+      expect(c.body).not.toContain(c.time);
+    }
   });
 });

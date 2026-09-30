@@ -232,9 +232,64 @@ a:link,a:visited,a:active,a:hover {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* 手機「選取模式」關著時，長按開的是我們的選單（ContextMenu 的 contextmenu handler，
+   docs/mobile.md「選取模式」）：擋掉系統的長按呼出（iOS callout）。**不用 user-select:
+   none 擋選字**：終端機的祖先不可以有它（css_user_select.test.js），選字殘留改由
+   handler 開選單時 removeAllRanges 收掉。 */
+body.mobile-layout:not(.mobileSelectMode) #mainContainer {
+  -webkit-touch-callout: none;
+}
 /* 圖片上限 39em 是照 80 欄寬訂的，換行版面的欄寬只剩視窗寬。 */
 .main.mobileReflow .easyReadingImg {
   max-width: 100%;
+}
+
+/* 手機推文卡片（render/comment_card.js，docs/mobile.md「推文卡片」）：只在換行版面。
+   標頭列＝推/噓/→・樓號・id，IP＋時間右靠縮小淡化；內容另起一行縮排、自然換行。
+   等寬格線在換行版面本來就不存在（防誤觸與以欄判斷的滑鼠區域在 reflow 下全關），
+   所以「推文區塊行距」那段的格線禁令不適用；仍守：高度整數 px、不用 margin-bottom
+   （會推開 #easyReadingLastRow）、不宣告 user-select（css_user_select.test.js）。 */
+.main.mobileReflow #mainContainer span[type="bbsrow"].commentCard {
+  display: block;
+  padding-block: 3px;
+  box-shadow: inset 0 -1px 0 #333;
+}
+.commentCard .commentCardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.5em;
+  padding-inline-end: 0.25em;
+  white-space: pre;
+}
+.commentCard .commentCardMeta {
+  display: flex;
+  column-gap: 0.5em;
+  margin-left: auto;
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+.commentCard .commentCardText {
+  display: block;
+  padding-left: 1em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 樓層徽章在卡片裡是一般行內字（桌機那套零寬盒＋上標是為了不位移等寬格線）。
+   color 仍留在 .floorBadge 本層（上班模式 color.css 覆寫它）。 */
+.commentCard .floorBadge {
+  position: static;
+  left: auto;
+  width: auto;
+  font-size: 0.8em;
+  vertical-align: baseline;
+  text-shadow: none;
+}
+.commentCard .floorBadgeNum {
+  transform: none;
+}
+.commentCard .floorBadgeNum::before {
+  content: "#";
 }
 
 /* 手機 Phase 4：列表好讀的卡片（render/list_card.js，docs/mobile.md「Phase 4」）。

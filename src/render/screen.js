@@ -21,6 +21,11 @@ import { el } from "./dom";
 import { buildRow } from "./row";
 import { buildListCard } from "./list_card";
 import {
+  buildCommentCard,
+  commentCardRegions,
+  mergedCommentCardRegions,
+} from "./comment_card";
+import {
   createMergeImageCaptionButton,
   createMergeImageCaptionAiButton,
   createLightsOnButton,
@@ -881,6 +886,18 @@ export class ScreenController {
 
     if (ann && ann.mergeCommentRun) {
       const m = ann.mergeCommentRun;
+      // 手機推文卡片（docs/mobile.md「推文卡片」）：合併塊不經 _renderRow，這裡另接一次。
+      const card =
+        enhance && enhance.commentCards
+          ? this._buildCommentCardNode(
+              row,
+              m.chars,
+              mergedCommentCardRegions(m),
+              ann,
+              m,
+            )
+          : null;
+      if (card) return card;
       // data-row＝run 首列的絕對 pageLines index。塊內複製以 DOM 選取為準
       // （^C 走 window.getSelection().toString()）；getText 的 col 對映在合併段內
       // 失真，已知取捨（同 mergedImageBlock 的脈絡）。
@@ -966,6 +983,20 @@ export class ScreenController {
     // 手機列表卡片（term_view.listCards，docs/mobile.md「Phase 4」）：只換 body 列，
     // header／footer（容器直系子層）照舊。body 範圍與 _patchRows 同一個定義。
     const enhance = this.props.enhance;
+    // 手機推文卡片：單一推文列（合併塊在 _buildRowNode 另接）。認不出推文形狀退回 buildRow。
+    if (enhance && enhance.commentCards && ann && ann.pusher && !ann.hidden) {
+      const card = this._buildCommentCard(
+        row,
+        lines[row],
+        commentCardRegions(lines[row]),
+        ann,
+        ann,
+      );
+      if (card) {
+        for (let i = 0; i < card.slots.length; ++i) slots.push(card.slots[i]);
+        return card.node;
+      }
+    }
     const ls = enhance && enhance.listScroll;
     if (
       enhance &&
@@ -1024,6 +1055,43 @@ export class ScreenController {
     });
     for (let i = 0; i < built.slots.length; ++i) slots.push(built.slots[i]);
     return built.node;
+  }
+
+  // 推文卡片（render/comment_card.js）。links ＝帶 fixedUrls／mentions…的來源：單列是
+  // ann 本身，合併塊是 ann.mergeCommentRun（欄號對應合併後的 chars）。regions 為 null
+  // ＝認不出推文形狀 ⇒ 回 null，caller 照舊畫。
+  _buildCommentCard(row, chars, regions, ann, links) {
+    if (!regions) return null;
+    const { forceWidth, enableLinkInlinePreview } = this.props;
+    return buildCommentCard({
+      chars,
+      regions,
+      row,
+      forceWidth,
+      enableLinkInlinePreview,
+      highlightClass:
+        this.highlight.row === row ? this.highlight.cls : undefined,
+      floor: ann.floor,
+      pusher: ann.pusher,
+      pusherContentCol: ann.contentCol,
+      pusherHighlight: isPusherHighlighted(ann, this._selectedPusher),
+      authorIdStart: ann.authorIdStart,
+      fixedUrls: links.fixedUrls,
+      mentions: links.mentions,
+      aids: links.aids,
+      giveaways: links.giveaways,
+      bareDomains: links.bareDomains,
+      onHyperLinkMouseOver: this.onHyperLinkMouseOver,
+      onHyperLinkMouseOut: this.onHyperLinkMouseOut,
+      sizeMode: this._sizeMode(),
+    });
+  }
+
+  _buildCommentCardNode(row, chars, regions, ann, links) {
+    const card = this._buildCommentCard(row, chars, regions, ann, links);
+    if (!card) return null;
+    this._adopt(card.node, card.slots);
+    return card.node;
   }
 
   _sizeMode() {

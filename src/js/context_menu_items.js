@@ -109,8 +109,19 @@ export function copyPreviews(state, href) {
 // 它前面，使用者在圖片上做「按住右鍵滾輪翻頁」時會走 'native' 直接 return ⇒ 旗標
 // 留著 '1' ⇒ 下一次（任何地方的）正常右鍵被靜默吞掉一次，看起來像「右鍵選單偶爾
 // 叫不出來」。守護：tests/unit/context_menu_disposition.test.js
-export function contextMenuDisposition({ nativeTarget, doDOMMouseScroll }) {
+//
+// touchSelectMode：手機按鍵列的「選取模式」開著、且這次是觸控長按 ⇒ 長按＝一般網頁
+// 操作（Chrome 原生選取把手＋複製工具列），我們的選單不出來。排在 swallow 之後，
+// 理由同上（旗標只在這裡被消費）。見 docs/mobile.md「選取模式」。
+export function contextMenuDisposition({ nativeTarget, doDOMMouseScroll, touchSelectMode }) {
   if (doDOMMouseScroll) return "swallow";
-  if (nativeTarget) return "native";
+  if (nativeTarget || touchSelectMode) return "native";
   return "menu";
+}
+
+// 手機、選取模式關著的觸控長按：開我們的選單，並且**不留原生選取**（Chromium 長按
+// 先選字、後發 contextmenu ⇒ 那個字的選取把手會跟選單搶畫面／搶手指）。使用者要
+// 選字複製就去開選取模式。
+export function shouldClearTouchSelection({ mobile, touch, selectMode }) {
+  return !!mobile && !!touch && !selectMode;
 }

@@ -659,6 +659,8 @@ export function computeAnnotations(
                 mergeCommentRun: {
                   chars: merged.chars,
                   contentStart: merged.contentStart,
+                  tailStart: merged.tailStart,
+                  timeStart: merged.timeStart,
                   ...withUrlAi(extras, runDomainCands, runFixCands),
                 },
               },

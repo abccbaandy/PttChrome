@@ -814,6 +814,30 @@ export const en_US = {
   "mobileKeypad_toggle": {
     "message": "Key bar"
   },
+  "alert_loggedOutHeader": {
+    "message": "Logged out"
+  },
+  "mobileKeypad_push": {
+    "message": "Push (X)"
+  },
+  "mobileKeypad_logout": {
+    "message": "Log out"
+  },
+  "mobileKeypad_logoutConfirm": {
+    "message": "Log out?"
+  },
+  "mobileKeypad_logoutYes": {
+    "message": "Log out"
+  },
+  "mobileKeypad_logoutNo": {
+    "message": "Cancel"
+  },
+  "mobileKeypad_select": {
+    "message": "Selection mode (long-press to select text)"
+  },
+  "mobileKeypad_drag": {
+    "message": "Drag to move the key bar"
+  },
   "mobileKeypad_keyboard": {
     "message": "Show / hide keyboard"
   },
