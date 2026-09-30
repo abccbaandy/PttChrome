@@ -1,4 +1,5 @@
 // Parser for ANSI escape sequence
+import { OSC_PAYLOAD_MAX, parseOsc8 } from './osc_hyperlink';
 
 export function AnsiParser(termbuf) {
   this.termbuf = termbuf;
@@ -6,6 +7,14 @@ export function AnsiParser(termbuf) {
   this.esc = '';        // CSI 的參數位元組區（0x30-0x3F）
   this.escInter = '';   // CSI 的中間位元組區（0x20-0x2F）
   this.escDrop = false; // 這條 CSI 已判定要丟棄，但還要吃到終結字元
+  // 控制字串（STATE_STRING）的狀態。只有 OSC（`ESC ]`）會累積 payload，其餘只吞。
+  this.strKind = '';        // 開頭的那個字元：] P _ ^ X
+  this.strBuf = '';         // OSC payload（超過 OSC_PAYLOAD_MAX 就清空並設 strOverflow）
+  this.strOverflow = false;
+  this.strOverflowOsc8 = false; // 爆掉的那條是不是 OSC 8（是的話收尾時當作「關閉連結」）
+  // 看到 OSC 裡的 ESC 時先暫存 payload，下一個字元是 `\`（湊成 ST）才生效；
+  // 是別的字元＝OSC 被新序列打斷，丟棄。
+  this.pendingOsc = null;
 };
 
 AnsiParser.STATE_TEXT = 0;
@@ -37,6 +46,9 @@ AnsiParser.prototype._decPrivate = function(term, params, set) {
       if (set) term.beginSyncUpdate?.();
       else term.endSyncUpdate?.();
       break;
+    case 7: // DECAWM：自動折行。PTT 連線當下送 `?7l`、登出送 `?7h`（mbbsd/term.c）
+      term.setAutoWrap?.(set);
+      break;
     case 1000: // XTerm mouse tracking: normal（點擊）
     case 1002: //                       button-event（拖曳）
     case 1003: //                       any-event（含 hover motion）
@@ -47,6 +59,17 @@ AnsiParser.prototype._decPrivate = function(term, params, set) {
     default: // 其餘一律安靜忽略
     }
   }
+};
+
+// OSC 收尾（ST 或 BEL）。目前只認 OSC 8（超連結），其餘 OSC 一律安靜丟棄。
+// `term.setHyperlink?.()` 用 optional call：unit test 常餵精簡的 termbuf stub。
+AnsiParser.prototype._dispatchOsc = function(term, payload, overflowOsc8) {
+  if (overflowOsc8) { // 網址長到不合理：不開連結，也不讓前一條連結延續到後面的字
+    term.setHyperlink?.('');
+    return;
+  }
+  var osc8 = parseOsc8(payload);
+  if (osc8) term.setHyperlink?.(osc8.uri);
 };
 
 AnsiParser.prototype.feed = function(data) {
@@ -312,24 +335,14 @@ AnsiParser.prototype.feed = function(data) {
         case 'P':
           term.del(params[0]>0 ? params[0] : 1);
           break;
-        // DECSTBM（設捲動範圍）。PTT 走的是 pfterm，它從不發這個序列——整份
-        // pfterm.c 只吐 [2J / [K / [H / [J 與 ESC D（IND）／ESC M（RI），而唯一會發
-        // DECSTBM 的 change_scroll_range()（mbbsd/screen.c）整份包在
-        // #if !defined(USE_PFTERM) 裡。⇒ 實務上 scrollStart/scrollEnd 恆為 0..rows-1，
-        // 真正用到它們的是下面 C1 分支的 ESC D / ESC M → term.scroll()。
-        // 這條留著只是通用 VT100 相容；不必為它補「DECSTBM 應同時 home 游標」那半段。
+        // DECSTBM（設捲動範圍）。PTT 只在 client 列數 > MAX_TERM_ROWS(150) 時送
+        // `ESC[1;150r`、回到範圍內或登出時送 `ESC[r`，兩者之後緊接 CUP 復位游標
+        // （mbbsd/term.c#term_set_size，2026-09-29 公告）。本專案列數上限 100 ⇒ 實務上
+        // 收不到，但夾限／無效範圍／游標歸位全在 TermBuf.setScrollRegion 處理：舊碼
+        // 直接把 150 寫進 scrollEnd，lineFeed 會把游標推出 buffer 而炸。
+        // 守護：tests/unit/ansi_parser_decawm_decstbm.test.js
         case 'r':
-          if (params.length < 2) {
-            term.scrollStart=0;
-            term.scrollEnd=term.rows-1;
-          } else {
-            if (params[0] > 0)
-              --params[0];
-            if (params[1] > 0)
-              --params[1];
-            term.scrollStart=params[0];
-            term.scrollEnd=params[1];
-          }
+          term.setScrollRegion?.(params[0], params.length > 1 ? params[1] : 0);
           break;
         case 's':
           term.cur_x_sav=term.cur_x;
@@ -374,26 +387,44 @@ AnsiParser.prototype.feed = function(data) {
       }
       break;
     case AnsiParser.STATE_STRING:
-      // OSC / DCS / APC / PM / SOS 的 payload。**唯一的工作是吃到終止子**，
-      // 內容一律丟棄（PTT 目前不送，但公告明說「預計未來會不定期增加輸出的
-      // 控制碼類形」）。沒有這個狀態時 `ESC ] 0;title BEL` 會變成：`]` 被 C1
-      // 吞掉、`0;title` 當文字印到畫面上、BEL 還會響一聲。
+      // OSC / DCS / APC / PM / SOS 的 payload。**首要工作是吃到終止子**；只有 OSC
+      // 會累積內容（目前只認 OSC 8 超連結，見 _dispatchOsc），其餘一律丟棄。沒有
+      // 這個狀態時 `ESC ] 0;title BEL` 會變成：`]` 被 C1 吞掉、`0;title` 當文字印到
+      // 畫面上、BEL 還會響一聲。
       //
       // 終止子三種：
-      //   BEL(0x07)        —— xterm 的 OSC 慣例
-      //   CAN(0x18)/SUB(0x1a) —— ECMA-48 的中止字元
-      //   ESC(0x1b)        —— 一律結束並**退回重新處理**。正規的 ST 是 `ESC \`，
-      //                       退回後 ESC 重開序列、`\` 落進 C1 被吃掉一個位元組，
-      //                       結果等效；順便也處理了「字串被新的 CSI 打斷」。
+      //   BEL(0x07)        —— xterm 的 OSC 慣例，收尾並生效
+      //   CAN(0x18)/SUB(0x1a) —— ECMA-48 的中止字元，整條丟棄
+      //   ESC(0x1b)        —— 一律結束並**退回重新處理**。正規的 ST 是 `ESC \`：
+      //                       OSC 先暫存成 pendingOsc，STATE_ESC 看到 `\` 才生效；
+      //                       ESC 後接別的字元＝字串被新序列打斷，丟棄並照常執行新序列。
       // **不可以認 8-bit ST（0x9C）**：這條資料流是 latin1 位元組，0x9C 落在
       // Big5 的 trail byte 範圍內，正文會誤命中而把後面的序列全部吞掉。
+      //
+      // 累積上限 OSC_PAYLOAD_MAX：超過就「放棄內容但繼續吞」，理由同檔頭 CSI_MAX
+      // 下方那段 —— 中途放棄吞只會把剩下的 payload 印成垃圾字。
       if (ch == '\x1b') {
+        if (this.strKind == ']')
+          this.pendingOsc = { payload: this.strBuf, overflowOsc8: this.strOverflowOsc8 };
+        this.strBuf = '';
         this.state = AnsiParser.STATE_TEXT;
         --i;
-      } else if (ch == '\x07' || ch == '\x18' || ch == '\x1a') {
+      } else if (ch == '\x07') {
+        if (this.strKind == ']')
+          this._dispatchOsc(term, this.strBuf, this.strOverflowOsc8);
+        this.strBuf = '';
         this.state = AnsiParser.STATE_TEXT;
+      } else if (ch == '\x18' || ch == '\x1a') {
+        this.strBuf = '';
+        this.state = AnsiParser.STATE_TEXT;
+      } else if (this.strKind == ']' && !this.strOverflow) {
+        this.strBuf += ch;
+        if (this.strBuf.length > OSC_PAYLOAD_MAX) {
+          this.strOverflow = true;
+          this.strOverflowOsc8 = this.strBuf.slice(0, 2) == '8;';
+          this.strBuf = '';
+        }
       }
-      // 其餘一律吞掉，不累積也不設上限（理由見檔頭 CSI_MAX 的註解）。
       break;
     case AnsiParser.STATE_C1:
       var C1_End = true;
@@ -445,6 +476,16 @@ AnsiParser.prototype.feed = function(data) {
       this.state = AnsiParser.STATE_TEXT;
       break;
     case AnsiParser.STATE_ESC:
+      if (this.pendingOsc) {
+        var osc = this.pendingOsc;
+        this.pendingOsc = null;
+        if (ch == '\\') { // ST 湊齊：OSC 生效，`\` 本身吃掉
+          this._dispatchOsc(term, osc.payload, osc.overflowOsc8);
+          this.state = AnsiParser.STATE_TEXT;
+          break;
+        }
+        // 否則 OSC 被新序列打斷 ⇒ 丟棄，這個字元照一般 ESC 序列處理。
+      }
       if (ch == '[') {
         this.state=AnsiParser.STATE_CSI;
         this.esc = '';
@@ -454,6 +495,10 @@ AnsiParser.prototype.feed = function(data) {
         // OSC(]) / DCS(P) / APC(_) / PM(^) / SOS(X)：後面接的是任意長度的
         // payload，要吃到終止子為止，不能像 C1 那樣只吞一個位元組。
         this.state=AnsiParser.STATE_STRING;
+        this.strKind = ch;
+        this.strBuf = '';
+        this.strOverflow = false;
+        this.strOverflowOsc8 = false;
       } else {
         this.state=AnsiParser.STATE_C1;
         --i;

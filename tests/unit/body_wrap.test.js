@@ -128,6 +128,23 @@ describe("detectBodyWrappedUrls", () => {
     expect(detectBodyWrappedUrls(lines, noSkip)).toEqual([]);
   });
 
+  // OSC 8（PTT 2026-09-30）：server 已經明確指定了連結範圍與 href，就不是「被切斷的
+  // 純文字網址」。不擋的話 body_wrap 的 _wrapUrl 會蓋掉 TermChar 的 fullurl，把
+  // 使用者點的連結換成我們猜出來的那條。
+  test("左片段帶 OSC 8 連結（server 指定）⇒ 不接", () => {
+    const left = rowEndingAt(LEFT, { linked: false });
+    for (const c of left) if (c.ch !== " ") c.hyperlink = "https://server.example/";
+    expect(detectBodyWrappedUrls([left, row(seg(RIGHT))], noSkip)).toEqual([]);
+  });
+
+  test("右片段帶 OSC 8 連結 ⇒ 不接", () => {
+    const right = row(seg(RIGHT));
+    for (let i = 0; i < RIGHT.length; ++i) right[i].hyperlink = "https://server.example/";
+    expect(
+      detectBodyWrappedUrls([row(seg(PREFIX), link(LEFT, LEFT)), right], noSkip),
+    ).toEqual([]);
+  });
+
   test("左片段以媒體副檔名收尾 ⇒ 反向守門，不接", () => {
     const media = "https://i.imgur.com/AbCdEfGh.jpeg";
     const lines = [rowEndingAt(media), row(seg("xyz.html"))];

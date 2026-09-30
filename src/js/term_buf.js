@@ -5,6 +5,7 @@ import { ColorState } from './term_ui';
 import { u2b, b2u, parseStatusRow, parseListRow } from './string_util';
 import { cjkUrlExtension } from './url_cjk';
 import { trimUrlTailLength } from './url_trim';
+import { oscHyperlinkHref } from './osc_hyperlink';
 import { ringBell } from './bell';
 import { MOUSE_CURSOR_URLS } from './mouse_cursors';
 import {
@@ -111,6 +112,10 @@ function TermChar(ch) {
   this.partOfKeyWord = false;
   this.keyWordColor = '#ff0000';
   this.fullurl = '';
+  // server 以 OSC 8 指定的連結（已過白名單的 href，'' ＝沒有）。寫入時由
+  // TermBuf.puts 從「目前的連結狀態」蓋上，擦除時清掉；updateCharAttr 以它為準
+  // 產生 URL 旗標（優先於 uriRegEx）。
+  this.hyperlink = '';
 }
 
 // static variable for all TermChar objects
@@ -207,6 +212,7 @@ TermChar.prototype = {
   copyFromNewChar: function() {
     this.ch = TermChar.newChar.ch;
     this.isLeadByte = TermChar.newChar.isLeadByte;
+    this.hyperlink = '';
     this.resetAttr();
   },
 
@@ -283,6 +289,11 @@ export function TermBuf(cols, rows) {
   this.cur_y_sav = -1;
   this.scrollStart = 0;
   this.scrollEnd = rows-1;
+  // DECAWM（`ESC[?7h/l`）。預設 ON ＝ VT100 預設，也是舊版 PTT（不送 ?7）下的原行為；
+  // 新版 PTT 連線當下送 `?7l`（mbbsd/term.c#term_init）。
+  this.autoWrap = true;
+  // OSC 8 的「目前連結」：之後 puts 寫進的每一格都蓋上它（見 setHyperlink）。
+  this.hyperlink = '';
   this._nowHighlight = -1;
   Object.defineProperty(this, 'nowHighlight', {
     set: this.setHighlight.bind(this),
@@ -415,6 +426,7 @@ TermBuf.prototype = {
     // 是 undefined、新建的 TermChar 是 needUpdate = false ⇒ 不補這一行的話新列
     // 永遠不會被畫出來。
     this.lineChangeds.fill(true);
+    this.scrollStart = 0;
     this.scrollEnd = rows - 1;
     this.lines.length = rows;
     for (let r = 0; r < rows; r++) {
@@ -478,10 +490,17 @@ TermBuf.prototype = {
       //    //dump('Unhandled invisible char' + ch.charCodeAt(0)+ '\n');
 
       if (this.cur_x >= cols) {
-        // next line
-        if(!this.disableLinefeed) this.lineFeed();
-        this.cur_x=0;
-        line = lines[this.cur_y];
+        if (this.autoWrap) {
+          // next line
+          if(!this.disableLinefeed) this.lineFeed();
+          this.cur_x=0;
+          line = lines[this.cur_y];
+        } else {
+          // DECAWM off：停在最後一格覆寫（xterm 行為）。pfterm 在 FTCONF_AUTO_WRAP=0
+          // 下自己就不會寫出第 80 欄（pfterm.c#out_ftchar），會走到這裡的只有
+          // 亂碼／DBCS 被切半這類 server 也算不準寬度的情形 —— 正是公告要防的破版。
+          this.cur_x = cols - 1;
+        }
         this.posChanged=true;
       }
 
@@ -493,6 +512,7 @@ TermBuf.prototype = {
         var ch2 = line[this.cur_x];
         ch2.ch=ch;
         ch2.copyAttr(this.attr);
+        ch2.hyperlink = this.hyperlink;
         ch2.needUpdate=true;
         ++this.cur_x;
         if (ch2.isLeadByte) // previous state before this function
@@ -501,6 +521,7 @@ TermBuf.prototype = {
           ch2 = line[this.cur_x];
           ch2.ch = '';
           ch2.copyAttr(this.attr);
+          ch2.hyperlink = this.hyperlink;
           ch2.needUpdate = true;
           ++this.cur_x;
           // assume server will handle mouse moving on full-width char
@@ -627,6 +648,24 @@ TermBuf.prototype = {
           // dump('found URI: ' + res[0] + '\n');
         }
 
+        // OSC 8：server 指定的連結範圍＝連續、hyperlink 相同的格子。它優先於
+        // uriRegEx（PTT 公告建議 2）：重疊的 regex 命中整條丟掉，否則連結文字本身
+        // 長得像網址時會被切成兩個 <a>、其中一段指向錯的 href。uri[3] 帶 href。
+        var oscSpans = null;
+        for (var col = 0; col < cols; ) {
+          var link = line[col].hyperlink;
+          if (!link) { ++col; continue; }
+          var spanStart = col;
+          while (col < cols && line[col].hyperlink === link) ++col;
+          if (!oscSpans) oscSpans = [];
+          oscSpans.push([spanStart, col, '', link]);
+        }
+        if (oscSpans) {
+          uris = (uris || []).filter(function(u) {
+            return !oscSpans.some(function(o) { return u[0] < o[1] && o[0] < u[1]; });
+          }).concat(oscSpans).sort(function(a, b) { return a[0] - b[0]; });
+        }
+
         if (uris) {
           line.uris = uris;
           // dump(line.uris.length + "uris found\n");
@@ -658,7 +697,9 @@ TermBuf.prototype = {
             }
             var urlTemp2 = urlTemp.toLowerCase();
             line[uri[0]].startOfURL = true;
-            if (urlTemp2.substr(0,6) == 'pid://') {
+            if (uri[3]) {
+              line[uri[0]].fullurl = uri[3];
+            } else if (urlTemp2.substr(0,6) == 'pid://') {
               line[uri[0]].fullurl='http://www.pixiv.net/member_illust.php?mode=big&illust_id='+urlTemp2.substr(6,15);
             } else {
               // CJK extension: urlTemp's tail is raw Big5 bytes — swap it for
@@ -872,6 +913,9 @@ TermBuf.prototype = {
   },
 
   deleteLine: function(param) {
+    // 游標在捲動範圍外時 DL 是 no-op（VT100）。不擋的話 scrollStart 會被設到
+    // scrollEnd 之後，scroll() 的防呆退回全螢幕 ⇒ 範圍外的一個 DL 捲掉整個畫面。
+    if (this.cur_y < this.scrollStart || this.cur_y > this.scrollEnd) return;
     var scrollStart = this.scrollStart;
     this.scrollStart = this.cur_y;
     this.scroll(false, param);
@@ -969,14 +1013,42 @@ TermBuf.prototype = {
     this.queueUpdate();
   },
 
+  // 只有游標**正好在**捲動範圍底線上才捲；在範圍下方時往下走到畫面最後一列為止
+  // （VT100 IND 語意）。舊寫法 `cur_y < scrollEnd ? ++ : scroll` 在範圍非全螢幕時
+  // 會讓範圍外的換行去捲範圍內的列。全螢幕範圍下兩者完全等價。
   lineFeed: function() {
-    if (this.cur_y < this.scrollEnd) {
+    if (this.cur_y == this.scrollEnd) { // at bottom of scroll region
+      this.scroll(false, 1);
+    } else if (this.cur_y < this.rows - 1) {
       ++this.cur_y;
       this.posChanged = true;
       this.queueUpdate();
-    } else { // at bottom of screen
-      this.scroll(false, 1);
     }
+  },
+
+  // DECSTBM（`ESC[top;bottomr`，1-based，0 ＝預設）。
+  //   - bottom 超過畫面夾到最後一列（xterm 同做法）：PTT 對 >150 列的 client 送
+  //     `ESC[1;150r`，列數較少時直接寫進 scrollEnd 會讓游標被推出 buffer。
+  //   - top >= bottom 是無效範圍，整條忽略（VT100）。
+  //   - 生效後游標回原點（VT100；PTT 自己會緊接 CUP 復位，兩者不衝突）。
+  setScrollRegion: function(top, bottom) {
+    var t = (top > 0 ? top : 1) - 1;
+    var b = (bottom > 0 ? Math.min(bottom, this.rows) : this.rows) - 1;
+    if (t >= b) return;
+    this.scrollStart = t;
+    this.scrollEnd = b;
+    this.gotoPos(0, 0);
+  },
+
+  // DECAWM（`ESC[?7h` / `ESC[?7l`）。
+  setAutoWrap: function(on) {
+    this.autoWrap = !!on;
+  },
+
+  // OSC 8：之後寫入的字帶這條連結；'' ＝結束連結。白名單（只收 http/https）與
+  // Big5 網址的解碼都在 osc_hyperlink.js，這裡只存結果。
+  setHyperlink: function(uri) {
+    this.hyperlink = oscHyperlinkHref(uri, b2u);
   },
 
   // BSU（`ESC[?2026h`）：server 宣告「這一幀我還沒寫完」。壓住重繪直到 ESU。
@@ -1016,6 +1088,12 @@ TermBuf.prototype = {
     this._syncSafetyTimer = null;
     this.inSyncUpdate = false;
     this.mouseReport.reset();
+    // 下一條連線可能是舊版 server（不送 ?7l / ESC[r / 關閉連結的 OSC 8），
+    // 上一條連線留下的模式不可以帶過去。
+    this.autoWrap = true;
+    this.hyperlink = '';
+    this.scrollStart = 0;
+    this.scrollEnd = this.rows - 1;
   },
 
   // AnsiParser 的 DECSET/DECRST 轉發（`ESC[?1000h` 這類）。

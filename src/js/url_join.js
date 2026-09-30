@@ -26,9 +26,11 @@ const HOST_RE = new RegExp(
 
 // chars[i] 是不是「可以當 URL 一部分」的格子。DBCS 守門不可省：Big5 的 trail byte
 // 有可能剛好是 0x40 = '@' 這種 URL 合法字元。
+// 帶 OSC 8 連結（`hyperlink`，PTT 2026-09-30 起由 server 指定）的格子不算：那段的
+// 範圍與 href 是 server 給的定論，不是需要我們猜著接回去的純文字殘段。
 export function isUrlCell(chars, i) {
   const c = chars[i];
-  return !!c && !isDbcsCell(chars, i) && URL_CHAR_RE.test(c.ch);
+  return !!c && !c.hyperlink && !isDbcsCell(chars, i) && URL_CHAR_RE.test(c.ch);
 }
 
 // 併起來的字串是不是一個值得連的網址 → { fixed, host, trimmed }，否則 null。

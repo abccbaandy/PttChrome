@@ -65,7 +65,7 @@ source 裡的 `ANSI_COLOR(...)` 字面。實例見 §9 水球。
 
 PTT 公告 2026-09-08 預告、約 09-20 上線（2026-09-20 又一次發了六篇，見下方 CPR / SGR 66 / ECMA-48 三節）。**server 吐的 DEC 私有序列全集只有下列十條**
 （`grep -rn '"\[?' 3rd_script/pttbbs` 的全部結果）：`?2026h/l`、`?1000h/l`、`?1002h/l`、
-`?1003h/l`、`?1006h/l`。沒有 `?25`（游標顯示）、`?1049`（alt screen）、`?7`（autowrap）。
+`?1003h/l`、`?1006h/l`。2026-09-29 起再加 `?7h/l`（DECAWM，見 §1.1.1）。沒有 `?25`（游標顯示）、`?1049`（alt screen）。
 
 ### Synchronized Output（DEC 2026 / BSU・ESU）
 
@@ -165,11 +165,32 @@ UTF-8 ⇒ 整站亂碼。守護 `tests/unit/ansi_parser_cpr.test.js`（斷言**�
 其餘 C0 退回重新處理／≥0x80 丟棄），兩邊對「被截斷的序列」要有同一套認知。
 
 兩條設計決定，別順手改回去：
-1. **控制字串刻意沒有長度上限**（CSI 參數區有，`CSI_MAX = 128`）。那條路徑只吞不存，
-   沒有東西會溢位；「超過 N 就放棄」的唯一效果是把剩下的 payload 印成畫面垃圾字，
-   嚴格劣於繼續吞。救援靠下一個 ESC，而 PTT 每一幀都以 `ESC[?2026h` 開頭。
+1. **控制字串刻意沒有「吞」的長度上限**（CSI 參數區有，`CSI_MAX = 128`）。只有 OSC 會
+   累積 payload（OSC 8 要用），超過 `OSC_PAYLOAD_MAX` 就放棄內容但**繼續吞**到終止子；
+   「超過 N 就跳回文字態」的唯一效果是把剩下的 payload 印成畫面垃圾字，嚴格劣於繼續吞。
+   救援靠下一個 ESC，而 PTT 每一幀都以 `ESC[?2026h` 開頭。
 2. **不可以把 8-bit ST（0x9C）當終止子**：WS 那條資料流是 latin1 位元組，0x9C 落在 Big5
    的 trail byte 範圍內（例 0xA49C），正文會誤命中而把後面的序列全部吞掉。
+
+### 1.1.1 2026-09-29／30 三條新指令（DECAWM、DECSTBM、OSC 8；CONFIRMED @ pttbbs c4ab8773）
+
+PttCurrent 公告上線：PTT2 09-29／09-30、PTT1 10-04（DECAWM、DECSTBM）／10-11（OSC 8）。
+公告另聲明「此類 ECMA-48 可正常處理的指令未來不再預先公告」⇒ parser 的通用吞法
+（CSI 終結字元範圍、控制字串終止子）是底線，不能退。
+
+| 指令 | server 何時送（source） | client 實作 | 舊版 server（不送）時 |
+|---|---|---|---|
+| `ESC[?7l` / `ESC[?7h` | `mbbsd/term.c#term_init` 連線即送 `?7l`；`term_uninit` 送 `?7h`。pfterm 同步改 `FTCONF_AUTO_WRAP=0`（`out_ftchar` 不寫第 80 欄之後） | `TermBuf.autoWrap`，預設 true；OFF 時寫過行尾停在最後一格覆寫（xterm） | 預設 ON ＝原行為 |
+| `ESC[1;150r` / `ESC[r` | `term.c#term_set_size`：**只在 client 列數 > `MAX_TERM_ROWS`(150)** 時送，回到範圍內或登出送 `ESC[r`；兩者後面都緊接 CUP 復位 | `TermBuf.setScrollRegion`：bottom 夾到畫面列數、top>=bottom 忽略、游標歸位；`lineFeed` 在範圍下方不捲範圍；`deleteLine` 範圍外 no-op | 本專案列數上限 100 ⇒ 實務上收不到；夾限是防呆（舊碼收到會把游標推出 buffer 而炸） |
+| `ESC]8;;<url>ESC\` … `ESC]8;;ESC\` | `pfterm.c#fterm_rawurl`：params 恆空、終止子恆 7-bit ST；url 來源是 pmore 的 markdown `[文字](url)`（`common/sys/string.c#match_markdown_url` 只收 http/https、不含空白與 `(`，**不擋**非 ASCII）。pmore 正常模式**只顯示「文字」**，網址只在 OSC 裡 | parser 只累積 OSC payload（上限 `OSC_PAYLOAD_MAX`）；`TermBuf.hyperlink` 是游標狀態、寫入時蓋在每格 `TermChar.hyperlink`；`updateCharAttr` 把連續同 href 的格子當 URL 範圍，**優先於 uriRegEx**（重疊的 regex 命中丟棄） | 沒有 OSC ⇒ regex 自動連結照舊 |
+
+OSC 8 的四條不變量（`src/js/osc_hyperlink.js` 檔頭）：
+- **狀態跟游標走**，換列／CUP 不會自動關；只有 `8;;` 空 URI、擦除（`copyFromNewChar`）、斷線重設會清。
+- **只放行 http/https**、含控制字元整條不收；非 ASCII 位元組經 `b2u` 解碼後只對非 ASCII 段做百分比編碼（整條 `encodeURI` 會把既有 `%xx` 二次編碼）。
+- ST 要湊齊 `ESC \` 才生效：ESC 後接別的字元＝被新序列打斷，OSC 丟棄、新序列照常執行；CAN/SUB 丟棄；BEL 也收（xterm 慣例）。
+- 帶 `hyperlink` 的格子不算「URL 字元」（`url_join.isUrlCell`）⇒ body_wrap 不會拿猜的網址蓋掉 server 指定的 href。
+
+守護：`ansi_parser_osc8.test.js`、`osc_hyperlink.test.js`、`ansi_parser_decawm_decstbm.test.js`、`body_wrap.test.js`「OSC 8」兩條。
 
 ### 連線底層換 NIOS
 
