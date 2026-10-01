@@ -53,6 +53,7 @@ import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
 import { isAndroidApp, androidImeInset, onAndroidIme } from './android_bridge';
+import { shouldWarnBeforeUnload } from './unload_guard';
 import {
   IMAGE_PROXY_SITES,
   normalizeImgurProxyBase,
@@ -326,7 +327,11 @@ export const App = function() {
   };
 
   window.addEventListener('beforeunload', (e) => {
-    if (this.conn && this.conn.isConnected && this.buf.pageState != 0) {
+    if (shouldWarnBeforeUnload({
+      connected: !!(this.conn && this.conn.isConnected),
+      pageState: this.buf.pageState,
+      androidApp: isAndroidApp(),
+    })) {
       e.returnValue = 'You are currently connected. Are you sure?';
       return e.returnValue;
     }

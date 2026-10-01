@@ -7,6 +7,8 @@
     <string name="notif_idle">未連線</string>
     <string name="notif_disconnect">中斷連線並關閉</string>
     <string name="webview_unsupported">系統的 Android System WebView 太舊，請到 Play 商店更新後再開啟。</string>
+    <string name="renderer_recreated">在背景時畫面程序被系統回收，已重新載入並重新連線</string>
+    <string name="process_restored">App 在背景時被系統關閉，已重新啟動並重新連線</string>
     <string name="page_error">無法載入 PttChrome：%1$s\n請確認網路後按返回鍵重試。</string>
     <string name="asset_statements" translatable="false">[{\"include\": \"https://abccbaandy.github.io/.well-known/assetlinks.json\"}]</string>
 </resources>

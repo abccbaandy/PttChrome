@@ -37,7 +37,8 @@ WebView  https://abccbaandy.github.io/PttChrome/
 6. **不注入 telnet 指令保活**（demo 的 `IAC DO TIMING-MARK` 已拿掉：PTT 的回應會流進網頁 telnet parser）。保活靠 OkHttp ping。實機若驗出 NAT 逾時再議。
 7. **背景不暫停 WebView**：不呼叫 `onPause()`／`pauseTimers()`；`setRendererPriorityPolicy(IMPORTANT, false)`。
 8. **軟鍵盤不縮 WebView**：insets 只讓系統列／瀏海，IME 高度以 `pttandroid:ime` 事件交給網頁（`mobile_layout.keyboardInset` 的 `hostInset`）。縮 WebView＝layout resize ⇒ 改列數、重送 NAWS（`docs/mobile.md`）。
-9. FGS 型別 `specialUse`（`dataSync` 在 Android 15 起每 24h 限 6h）。不上 Play，無 specialUse 審核問題。
+9. **新視窗一律轉外部瀏覽器**：`setSupportMultipleWindows(true)`＋`onCreateWindow` 給不掛畫面的暫時 WebView，只取網址就丟。關掉多視窗時 `target=_blank` 會變本頁導航 ⇒ 網頁 `beforeunload` 先跳「離開這個網站？」。網頁端另在 APK 內停用 beforeunload 確認（`src/js/unload_guard.js`，守護 `tests/unit/unload_guard.test.js`）。
+10. FGS 型別 `specialUse`（`dataSync` 在 Android 15 起每 24h 限 6h）。不上 Play，無 specialUse 審核問題。
 
 ## APK 內刻意關掉的網頁功能
 - 設定「連線 → BBS proxy」：不生效，改顯示說明（`options_androidProxyNote`）。
@@ -91,4 +92,5 @@ WebView  https://abccbaandy.github.io/PttChrome/
 | 真機：背景長時間不斷線 | `unknown`（demo 只在模擬器驗 30 秒） |
 | 真機：https 頁連 `ws://127.0.0.1`（`MIXED_CONTENT_ALWAYS_ALLOW`） | `guess`（demo 同設定可連） |
 | 真機：GPM 底部選單＋與 Chrome 共用 | `unknown`（assetlinks 已上線，待真機驗） |
+| 回前景黑畫面數秒 | 成因 CONFIRMED 非回收（使用者實測：恢復後停在原畫面）＝renderer 活著但出幀慢。對策 `offscreenPreRaster`＋PixelCopy 快照遮罩（`MainActivity` onPause 拍／onStart 蓋／visual state callback 後掀，上限 5s），效果 `unknown` 待實機；`adb logcat -s PttChromeApp` 看 `away=`／`firstFrame=`。真回收會跳 Toast |
 | renderer 被系統回收 | 已處理成「重建 WebView 重新連線」；網頁狀態會丟。未來可做「上游保留＋重接後 Ctrl+L」 |
