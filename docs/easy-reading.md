@@ -65,6 +65,7 @@
     | F8 toggle 從中段切回好讀 | **內文**（`reenterFromTop` 先 `enterEasyReading()` 再送 Home，捕捉當下還在中段） |
     `enterEasyReading()` 改為只清成 null；`leaveCurrentPost()` 也清（跳文路徑的結構性保險）；`exitEasyReading()` 把它搬到 `_nativeArticleKey`。捕捉點受 `_enabled ∧ !_functionMode` 閘（`_onChanged` 早退），prompt/選單幀不會污染。
   - **兩邊身分任一讀不到就不重啟**（寧可留在原生）：fail-safe，熱鍵永遠還在。舊版「`nativeArticleKey` 為 null ⇒ 視為可重啟」是 **fail-OPEN**，只要捕捉漏一次，同一篇按 Home 就會被切回好讀。這條路徑本來就只為「使用者主動切原生後跳文」存在，一般 `列表→文章` 由 `nextEasyReadingState` 負責，不靠它。
+- **settle 不在「已寫入、未 flush」時觸發**（CONFIRMED unit `settle_gating.test.js`＋offline 高負載重現）：計時器只在 notify 時 re-arm，但 server 回應是 `onData` 先寫進 TermBuf、30ms 後才 notify（BSU 期間更久）。計時器到期時 `timerUpdate || inSyncUpdate` ⇒ 不發 settle、重新 arm。否則 listener 讀到沒跑 `updateCharAttr` 的畫面 ⇒ 狀態列 Big5 未解 ⇒ `_onScreenSettled` 判成 pageState 5、`startedEasyReading=false` ⇒ 該窗口內按的 End／PgDn 原生送出（反向讀取沒啟動、改走缺頁自癒）。CPU 忙時才放大成偶發。**新增讀畫面的 settle listener 可依賴「settle 時 buffer 已 flush」**。
 - 退化情形（guess）：連線在**畫面中途**停 >`SETTLE_MS`（網路卡）才可能 premature settle；最壞首篇自動 enable 漏一次（捲動/重進即恢復），非 crash。`SETTLE_MS` 為可調常數，slow link premature-settle 就調高。
 
 ## 反向讀取（讀取中按 End，2026-09，CONFIRMED unit＋offline e2e）

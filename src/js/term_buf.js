@@ -1212,6 +1212,18 @@ TermBuf.prototype = {
     clearTimeout(this._settleTimer);
     this._settleTimer = setTimeout(() => {
       this._settleTimer = null;
+      // Server output already written into the buffer but not yet flushed by
+      // notify() (the 30ms queueUpdate timer, or held by BSU) ⇒ NOT quiet. Firing
+      // here would hand listeners a half-processed buffer: updateCharAttr has not
+      // run, so the Big5 status row is undecoded ⇒ parseStatusRow misses ⇒
+      // EasyReading takes the article for a "press any key" screen and drops
+      // startedEasyReading (an End pressed in that window went to PTT natively).
+      // The pending notify re-arms us; re-arming here too keeps the settle from
+      // ever being lost. Guard: tests/unit/settle_gating.test.js.
+      if (this.timerUpdate || this.inSyncUpdate) {
+        this._armSettleTimer();
+        return;
+      }
       // Freeze the settle snapshot BEFORE dispatching: a listener may send keys /
       // force repaints that start filling the NEXT window's set — swapping first
       // keeps each snapshot scoped to exactly one quiet period. The screen is
