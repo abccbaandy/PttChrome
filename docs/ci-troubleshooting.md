@@ -15,6 +15,10 @@
   `playwright-version` job 從 yarn.lock 讀出（`scripts/playwright-version.mjs`），**不准寫死**（Dependabot 只改 yarn.lock）。
   新增 e2e job 照抄 `container:` 區塊（含 `--user 1001 --ipc=host`），不要加 `playwright install`。
   守護 `tests/unit/ci_playwright_container.test.js`。若 image 拉不到（`manifest unknown`）＝該版 image 尚未發布，等官方發布即可。
+- **部署鎖只鎖 `deploy` job**（`deploy.yml`，`concurrency: pages`）：放 workflow 層級會讓連續 push 的測試整輪排隊
+  （畫面「waiting for Deploy to GitHub Pages #N to complete」）。代價是舊 commit 可能晚於新 commit 拿到鎖 ⇒
+  deploy job 拿鎖後先比對 branch head，不是最新就略過部署（step 顯示 skipped 屬正常）。新 commit 若測試紅，
+  站台停在更早的版本，修好再 push 即可。守護 `tests/unit/ci_deploy_concurrency.test.js`。
 - **integration job（Firebase Emulator in Docker）偶發 timeout** 是已知 flaky（CI 冷啟動拉 image + 首次 Firestore 寫入超過 poll deadline，症狀 `waitForCloud timeout: upload`）。緩解手段已用盡（`INTEGRATION_TIMEOUT_MS`、CI vitest `retry: 2`、`scripts/run-integration.mjs` 的 `waitHttp` 就緒輪詢）→ 確認非真錯後用 `yarn ci:status --rerun-failed`。本機跑 `yarn test:integration` 需 **Docker**（無 Docker 只能靠 CI）。
 - **GITHUB_TOKEN 造成的事件不會再觸發 workflow**（GitHub 防遞迴，例外只有 `workflow_dispatch`／`repository_dispatch`）：任何在 Actions 內做 merge／push 的步驟若用 `secrets.GITHUB_TOKEN`，產生的 push **不會**觸發 `deploy.yml` 的 `on: push` → 站台靜默停在舊 commit（實例 PR #16）。`dependabot-auto-merge.yml` 因此改用 GitHub App installation token（secret `AUTOMERGE_APP_CLIENT_ID`／`AUTOMERGE_APP_PRIVATE_KEY`），勿改回 GITHUB_TOKEN。查驗方式：merge commit 的 SHA 上要看得到 `Deploy to GitHub Pages` run（`event: dynamic` 的 run 是 GitHub 動態 workflow，不算）。
 - **CodeQL 是 advanced setup（`.github/workflows/codeql.yml`），default setup 已停用，勿再開**：default setup 對 java-kotlin 只能 `build-mode: none`，而 Kotlin（`android/`）必須編譯 ⇒ 每次 push 紅 `could not process any of it using the 'none' build mode`。兩者不能並存（advanced 上傳會被拒）。新增語言改 matrix；category 維持 `/language:<lang>`（與舊 default setup 相同，alert 才延續）。

@@ -11,11 +11,6 @@ permissions:
   pages: write
   id-token: write
 
-# 同時只跑一個部署，新 push 取代進行中的（不取消已完成的 run）
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   # test 定義抽到 test.yml（reusable），與 pr.yml 共用。任一測試 job 失敗即擋下 build/deploy。
   test:
@@ -50,12 +45,35 @@ jobs:
         with:
           path: dist
 
+  # concurrency 只鎖這個 job，不鎖整個 workflow：兩個部署同時寫 Pages 才會互蓋，測試沒有
+  # 這個問題。鎖在 workflow 層級時，連續 push 的測試要整輪排隊（一輪卡住後面全等）。
+  # cancel-in-progress: false ＝不砍正在部署的那個；排隊中的只留最新一個（GitHub 語意）。
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # 鎖只在這個 job ⇒ 各輪測試平行跑，舊 commit 的測試若比較慢，它的部署可能排在新
+      # commit 之後，把站台蓋回舊版。這一步在**拿到鎖之後**才檢查，branch 已經有更新的
+      # commit 就不部署（那個更新的 run 會自己部署）。守護 tests/unit/ci_deploy_concurrency.test.js。
+      - name: Skip if a newer commit is already on the branch
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head="$(gh api "repos/${{ github.repository }}/commits/${{ github.ref_name }}" --jq .sha)"
+          if [ "$head" = "${{ github.sha }}" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "${{ github.ref_name }} 已前進到 $head，略過 ${{ github.sha }} 的部署。"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - id: deployment
+        if: steps.latest.outputs.deploy == 'true'
         uses: actions/deploy-pages@v5
