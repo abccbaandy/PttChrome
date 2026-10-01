@@ -207,7 +207,12 @@ class MainActivity : ComponentActivity() {
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
                 if (!isUserGesture) return false
                 val popup = WebView(this@MainActivity)
-                popup.settings.javaScriptEnabled = false
+                // 只用來拿網址，什麼都不需要；跟主 WebView 一樣關掉 content:// 與 file://（CodeQL）。
+                popup.settings.apply {
+                    javaScriptEnabled = false
+                    allowContentAccess = false
+                    allowFileAccess = false
+                }
                 popup.webViewClient = object : WebViewClient() {
                     private var handled = false
                     private fun forward(url: Uri?) {
