@@ -41,3 +41,25 @@ describe("deploy.yml：部署鎖只鎖 deploy job", () => {
     expect(deployJob).toContain("${{ github.sha }}");
   });
 });
+
+// build 與 test 平行跑（省掉 build 排在測試後面的那段），但 deploy 必須同時等兩者：
+// 漏了 test 就是「測試紅也照樣部署」。
+const buildJob = (() => {
+  const start = YAML.search(/^ {2}build:\s*$/m);
+  const rest = YAML.slice(start + 1);
+  const next = rest.search(/^ {2}[A-Za-z][\w-]*:\s*$/m);
+  return next < 0 ? YAML.slice(start) : YAML.slice(start, start + 1 + next);
+})();
+
+describe("deploy.yml：build 不等測試，deploy 等測試與 build", () => {
+  test("build 沒有 needs", () => {
+    expect(buildJob).toMatch(/^ {2}build:/);
+    expect(buildJob).not.toMatch(/^ {4}needs:/m);
+  });
+
+  test("deploy needs 同時含 test 與 build", () => {
+    const m = /^ {4}needs: \[([^\]]*)\]\s*$/m.exec(deployJob);
+    expect(m, "deploy 的 needs 必須是陣列形式").not.toBeNull();
+    expect(m[1].split(",").map((s) => s.trim()).sort()).toEqual(["build", "test"]);
+  });
+});

@@ -10,10 +10,14 @@
 //   - image tag 必須取自 playwright-version job（＝yarn.lock 的版本），不准寫死 ——
 //     版本不一致 ⇒ `Executable doesn't exist` 整批秒掛，而 Dependabot 只改 yarn.lock；
 //   - 不准再跑 `playwright install`（跑了＝又回到 apt）；
-//   - `--ipc=host`：Docker 預設 /dev/shm 64MB，多 worker 的 Chromium 會被撐爆。
+//   - `--ipc=host`：Docker 預設 /dev/shm 64MB，多 worker 的 Chromium 會被撐爆；
+//   - e2e 是 matrix job（offline 拆 shard、adverse 每桶一個），required checks 綁的
+//     `test-e2e-offline`／`test-e2e-offline-adverse` 改由收斂 job 扛 —— 收斂 job 必須
+//     `if: always()` 並斷言上游 result，否則上游紅時它是 skipped，而 skipped 算通過。
 import fs from "node:fs";
 import path from "node:path";
 import { playwrightVersionFromLock } from "../../scripts/playwright-version.mjs";
+import { ADVERSE_PROJECTS } from "../../scripts/run-adverse-e2e.mjs";
 
 const ROOT = path.join(__dirname, "..", "..");
 const YAML = fs.readFileSync(path.join(ROOT, ".github", "workflows", "test.yml"), "utf8");
@@ -40,12 +44,14 @@ const jobs = () => {
 const E2E_CMD = /^\s*yarn test:e2e/m;
 const e2eJobs = () => jobs().filter((j) => E2E_CMD.test(j.body));
 
+const E2E_JOBS = ["test-e2e-offline-shard", "test-e2e-offline-adverse-bucket"];
+
 describe("test.yml：e2e job 跑在 Playwright 官方 image", () => {
   test("找得到 e2e job（切割沒失效）", () => {
-    expect(e2eJobs().map((j) => j.name)).toEqual(["test-e2e-offline", "test-e2e-offline-adverse"]);
+    expect(e2eJobs().map((j) => j.name)).toEqual(E2E_JOBS);
   });
 
-  test.each(["test-e2e-offline", "test-e2e-offline-adverse"])("%s：image 版本取自 playwright-version job", (name) => {
+  test.each(E2E_JOBS)("%s：image 版本取自 playwright-version job", (name) => {
     const job = jobs().find((j) => j.name === name);
     expect(job.body).toMatch(/^\s*needs: playwright-version\s*$/m);
     expect(job.body).toMatch(
@@ -56,11 +62,39 @@ describe("test.yml：e2e job 跑在 Playwright 官方 image", () => {
 
   // 沒設就是 GitHub 預設 360 分鐘；deploy.yml 的 concurrency 不取消舊 run，一個卡住的
   // e2e job 會讓之後所有 push 排隊幾個小時。
-  test.each(["test-e2e-offline", "test-e2e-offline-adverse"])("%s：有 timeout-minutes 且不超過 60", (name) => {
+  test.each(E2E_JOBS)("%s：有 timeout-minutes 且不超過 60", (name) => {
     const job = jobs().find((j) => j.name === name);
     const m = /^ {4}timeout-minutes: (\d+)\s*$/m.exec(job.body);
     expect(m, `${name} 沒設 timeout-minutes`).not.toBeNull();
     expect(Number(m[1])).toBeLessThanOrEqual(60);
+  });
+
+  test("offline 拆 shard：matrix 的每個 shard 都傳進 --shard，分母等於 shard 數", () => {
+    const job = jobs().find((j) => j.name === "test-e2e-offline-shard");
+    const shards = /^\s*shard: \[([\d, ]+)\]\s*$/m.exec(job.body);
+    expect(shards, "沒有 matrix.shard").not.toBeNull();
+    const n = shards[1].split(",").length;
+    expect(shards[1].split(",").map(Number)).toEqual(Array.from({ length: n }, (_, i) => i + 1));
+    const lines = job.body.split("\n").map((l) => l.trim());
+    expect(lines).toContain(`yarn test:e2e:offline --shard=\${{ matrix.shard }}/${n}`);
+  });
+
+  test("adverse 每桶一個 job：matrix 涵蓋 runner 的全部桶，且以 --only 只跑該桶", () => {
+    const job = jobs().find((j) => j.name === "test-e2e-offline-adverse-bucket");
+    const buckets = [...job.body.matchAll(/^\s*- bucket: ([\w-]+)\s*$/gm)].map((m) => m[1]);
+    expect(buckets.sort()).toEqual([...ADVERSE_PROJECTS].sort());
+    expect(job.body).toMatch(/^\s*yarn test:e2e:offline:adverse --only=\$\{\{ matrix\.bucket \}\}\s*$/m);
+  });
+
+  test.each([
+    ["test-e2e-offline", "test-e2e-offline-shard"],
+    ["test-e2e-offline-adverse", "test-e2e-offline-adverse-bucket"],
+  ])("收斂 job %s：always() 且斷言 %s 的 result", (gate, upstream) => {
+    const job = jobs().find((j) => j.name === gate);
+    expect(job, `${gate} 不見了 ⇒ 分支保護的 required check 永遠 pending`).toBeDefined();
+    expect(job.body.split("\n").map((l) => l.trim())).toContain(`needs: ${upstream}`);
+    expect(job.body).toMatch(/^\s*if: always\(\)\s*$/m);
+    expect(job.body).toContain(`test "\${{ needs.${upstream}.result }}" = success`);
   });
 
   test("沒有任何 job 再跑 playwright install（那就是 apt）", () => {

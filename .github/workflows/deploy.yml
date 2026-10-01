@@ -12,12 +12,13 @@ permissions:
   id-token: write
 
 jobs:
-  # test 定義抽到 test.yml（reusable），與 pr.yml 共用。任一測試 job 失敗即擋下 build/deploy。
+  # test 定義抽到 test.yml（reusable），與 pr.yml 共用。任一測試 job 失敗即擋下 deploy。
   test:
     uses: ./.github/workflows/test.yml
 
+  # build 不等測試、與 test 平行跑（省 ~20s）；測試紅時 Pages artifact 照樣上傳，但 deploy
+  # 被 needs: test 擋住，不會部署。
   build:
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -49,7 +50,7 @@ jobs:
   # 這個問題。鎖在 workflow 層級時，連續 push 的測試要整輪排隊（一輪卡住後面全等）。
   # cancel-in-progress: false ＝不砍正在部署的那個；排隊中的只留最新一個（GitHub 語意）。
   deploy:
-    needs: build
+    needs: [test, build]
     runs-on: ubuntu-latest
     concurrency:
       group: pages

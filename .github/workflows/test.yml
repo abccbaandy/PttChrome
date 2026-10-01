@@ -25,6 +25,13 @@ jobs:
           node-version: 24
           cache: yarn
 
+      # 同一份設定 unit 耗時在 64s～171s 間跳（各階段比例幾乎不變 ⇒ 疑似 runner 機型差異）。
+      # 印機型供對照 log 裡 vitest 的 Duration；確認與 CPU 相關再調 --maxWorkers。
+      - name: Runner CPU
+        run: |
+          nproc
+          lscpu | grep 'Model name' || true
+
       - name: Unit tests
         run: |
           yarn install --immutable
@@ -85,9 +92,17 @@ jobs:
   # 來源連坐（Google Chrome 來源發布中間態 ⇒ apt-get update 整包回 100）。
   # `--user 1001`＝runner 使用者，checkout／cache 的檔案權限才對得上；`--ipc=host` 是
   # Playwright 官方建議：Docker 預設 /dev/shm 只有 64MB，多 worker 的 Chromium 會被它撐爆。
-  test-e2e-offline:
+  #
+  # 拆兩個 shard 平行跑（fullyParallel ⇒ 以 test 為單位切，兩邊各約一半）。shard 數再加
+  # 不划算：每個 job 固定付 ~30s 拉 image＋yarn install。
+  test-e2e-offline-shard:
     needs: playwright-version
     runs-on: ubuntu-latest
+    strategy:
+      # 一個 shard 紅不砍另一個：要看到整輪所有失敗，而不是修一條才冒下一條。
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     # 卡住保險：預設 360 分鐘，而 deploy.yml 的 concurrency 不取消舊 run ⇒ 一個卡住的 job
     # 會讓之後所有 push 排隊（2026-10-01：dev server 沒起來、子進程撐住 node 不退出）。
     # 數值＝串行時代的實測耗時（14／17 分）再放兩倍多，正常不可能碰到。
@@ -112,10 +127,22 @@ jobs:
 
       # firefox 是 offline-firefox project 用的（tests/e2e/offline/selection.offline.spec.js）：
       # issue #22 的選取／複製症狀只在 Firefox 出現，Chromium 永遠綠。image 已內建。
-      - name: Offline E2E tests (Playwright replay)
+      # Yarn v4 把多出的參數接在 script 尾端 ⇒ --shard 落在 playwright 指令上。
+      - name: Offline E2E tests (Playwright replay, shard ${{ matrix.shard }}/2)
         run: |
           yarn install --immutable
-          yarn test:e2e:offline
+          yarn test:e2e:offline --shard=${{ matrix.shard }}/2
+
+  # required checks 綁的是 job 名（`test / test-e2e-offline`），matrix 會把名字變成
+  # `test-e2e-offline-shard (1)` ⇒ 用這個收斂 job 維持原名，分支保護不必跟著 shard 數改。
+  # `if: always()` 不能省：上游失敗時沒有它，這個 job 會是 skipped，而 skipped 對
+  # required check 等於通過。守護 tests/unit/ci_playwright_container.test.js。
+  test-e2e-offline:
+    needs: test-e2e-offline-shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test-e2e-offline-shard.result }}" = success
 
   # 逆境 offline e2e：同一批版面／座標敏感的 spec，但圖片改成「壞掉／很慢／混合」。
   # 目的是把 CI 偶發紅變成**必現紅** —— 本機 fixture 圖秒回，版面在測試量座標之前就
@@ -123,10 +150,26 @@ jobs:
   #（50fa35c 的現場）。與上面三個 job 平行跑，牆鐘時間不變。
   # 情境是決定性的（固定延遲、URL 雜湊分桶），純函式守護在
   # tests/unit/offline_image_profile.test.js。
-  test-e2e-offline-adverse:
+  #
+  # 三桶各一個 job 平行跑（matrix）。本機 runner 串行是為了 Windows 的 STATUS_DLL_INIT_FAILED
+  #（scripts/run-adverse-e2e.mjs 檔頭），CI 是 Linux 沒有這個限制。
+  test-e2e-offline-adverse-bucket:
     needs: playwright-version
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # workers：slow 桶的時間大多花在等刻意延遲的圖片（Playwright 進程裡的計時器，
+        # 不吃 CPU），可以開得比 vCPU 多；broken／mixed 吃 CPU（2→8 workers 幾乎沒變快），
+        # 一台 4 vCPU 就給 4。
+        include:
+          - bucket: offline-slow
+            workers: 8
+          - bucket: offline-broken
+            workers: 4
+          - bucket: offline-mixed
+            workers: 4
     container:
       image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
       options: --user 1001 --ipc=host
@@ -145,15 +188,21 @@ jobs:
           node-version: 24
           cache: yarn
 
-      # E2E_WORKERS：逆境桶的時間大多花在等刻意延遲的圖片（Playwright 進程裡的計時器，
-      # 不吃 CPU），所以 worker 數可以開得比 vCPU 多；其餘 offline job 用預設值
-      #（tests/e2e/workers_policy.js）。
-      - name: Adverse-image offline E2E (slow / broken / mixed)
+      # E2E_WORKERS 見上面 matrix 註解；其餘 offline job 用預設值（tests/e2e/workers_policy.js）。
+      - name: Adverse-image offline E2E (${{ matrix.bucket }})
         env:
-          E2E_WORKERS: "8"
+          E2E_WORKERS: ${{ matrix.workers }}
         run: |
           yarn install --immutable
-          yarn test:e2e:offline:adverse
+          yarn test:e2e:offline:adverse --only=${{ matrix.bucket }}
+
+  # 同 test-e2e-offline 的收斂 job：維持 required check 名稱 `test / test-e2e-offline-adverse`。
+  test-e2e-offline-adverse:
+    needs: test-e2e-offline-adverse-bucket
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test-e2e-offline-adverse-bucket.result }}" = success
 
   # proxy/imgur-worker 是獨立的 npm 子專案（Cloudflare Worker 代理，非 yarn workspace），
   # 上面四個 job 一條都掃不到它 —— 它們跑的是 yarn 的 test:unit / test:integration /

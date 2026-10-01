@@ -183,7 +183,7 @@ describe("逆境 project 設定", () => {
     }
   });
 
-  test("CI 有一個獨立的逆境 job（與現有三個平行）", () => {
+  test("CI 有獨立的逆境 job（與其他 job 平行）", () => {
     const wf = fs.readFileSync(path.join(ROOT, ".github", "workflows", "test.yml"), "utf8");
     expect(wf).toContain("test-e2e-offline-adverse:");
     expect(wf).toContain("yarn test:e2e:offline:adverse");

@@ -246,7 +246,7 @@ CONFIRMED 事實（實測，別再重驗）：
 ### 逆境 project 與 CI job
 
 `yarn test:e2e:offline:adverse` ＝ `offline-slow` + `offline-broken` + `offline-mixed`，
-CI 另開一個平行 job `test-e2e-offline-adverse`（`.github/workflows/test.yml`）。
+CI 另開平行 job（`.github/workflows/test.yml`）：`test-e2e-offline-adverse-bucket` 是 matrix，三桶各一個 job（`--only=<桶>`，slow 8 workers／broken、mixed 4 workers），再由收斂 job `test-e2e-offline-adverse` 扛 required check 名稱。本機 runner 照舊串行（Windows 限制）。`offline` 本身也拆成 `test-e2e-offline-shard`（`--shard=1/2`、`2/2`）＋收斂 job `test-e2e-offline`。
 清單在 `playwright.config.js` 的 `ADVERSE_LAYOUT_SPECS` / `ADVERSE_IMAGE_SPECS`：
 
 | Tier | 內容 | 跑哪些 profile | 理由 |
