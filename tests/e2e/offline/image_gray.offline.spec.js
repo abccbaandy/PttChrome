@@ -18,6 +18,12 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
 const {
+  recordContextMenu,
+  lastContextMenu,
+  rightClickElement,
+  rightClickPlainText,
+} = require('../helpers/real_input');
+const {
   scrollIntoViewStable,
   waitPreviewsSettled,
   waitRectStable,
@@ -71,22 +77,16 @@ async function seekGrayableImage(page) {
   return false;
 }
 
-// 對某個元素派發 contextmenu 並回報「有沒有被 preventDefault」。
-// 手法照抄 article_link_menu.offline.spec.js：真滑鼠右鍵在 headless 下座標對位太脆。
-const dispatchContextMenu = (page, selector) =>
-  page.evaluate((sel) => {
-    const el = document.querySelector(sel);
-    if (!el) throw new Error('未渲染到畫面，測試前提失效: ' + sel);
-    const rect = el.getBoundingClientRect();
-    const ev = new MouseEvent('contextmenu', {
-      bubbles: true,
-      cancelable: true,
-      clientX: Math.round(rect.left + rect.width / 2),
-      clientY: Math.round(rect.top + rect.height / 2),
-    });
-    el.dispatchEvent(ev);
-    return ev.defaultPrevented;
-  }, selector);
+// 對某個元素按真右鍵，回報那次 contextmenu「有沒有被 preventDefault」。
+// 事件物件在 capture 階段先抓住，等派發完才讀 defaultPrevented（helpers/real_input）。
+// 圖片沒被 preventDefault 時 headless 不畫原生選單，不會卡住後續操作。
+async function rightClickAndReport(page, selector) {
+  await recordContextMenu(page);
+  await rightClickElement(page, selector);
+  const ev = await lastContextMenu(page);
+  expect(ev.isTrusted).toBe(true);
+  return ev.defaultPrevented;
+}
 
 const styleOf = (page, selector, prop) =>
   page.evaluate(
@@ -211,7 +211,7 @@ test.describe('圖片灰階鈕與原生右鍵選單（離線重放）', () => {
     await boot(page);
     expect(await seekGrayableImage(page)).toBe(true);
 
-    const prevented = await dispatchContextMenu(page, TARGET_IMG_SEL);
+    const prevented = await rightClickAndReport(page, TARGET_IMG_SEL);
     expect(
       prevented,
       'preventDefault 過 ⇒ 另存圖片／複製圖片／智慧鏡頭整組叫不出來'
@@ -223,11 +223,12 @@ test.describe('圖片灰階鈕與原生右鍵選單（離線重放）', () => {
     test.setTimeout(180000);
     await boot(page);
 
-    const prevented = await dispatchContextMenu(
-      page,
-      '#mainContainer [data-type="bbsline"]'
-    );
-    expect(prevented).toBe(true);
+    // 純文字處（不壓在連結／預覽上；helpers/layout 的 OVERRIDING_SEL 排除清單）。
+    await recordContextMenu(page);
+    await rightClickPlainText(page);
+    const ev = await lastContextMenu(page);
+    expect(ev.isTrusted).toBe(true);
+    expect(ev.defaultPrevented).toBe(true);
     await expect(page.locator('.DropdownMenu').first()).toBeVisible();
   });
 });

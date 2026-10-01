@@ -8,6 +8,7 @@
 //   - 多檔一次插入、面板的「插入」鈕走同一條路
 const { test, expect } = require('@playwright/test');
 const { installReplay, waitConnected } = require('../helpers/replay');
+const { dragFiles, dropFiles: realDropFiles } = require('../helpers/real_input');
 
 const uploadJson = (id) =>
   JSON.stringify({
@@ -82,27 +83,16 @@ async function drawPushPrompt(page) {
   await page.waitForTimeout(200);
 }
 
-// 拖放一批檔案到視窗（controller 綁在 window 上）。
+// 真拖放（CDP Input.dispatchDragEvent，helpers/real_input）：先拖進視窗（遮罩亮），
+// 再由 releaseDrop 放開。DataTransfer 與 File.type 都由瀏覽器依實體檔案生成。
+let pendingDrag = null;
 async function dropFiles(page, names) {
-  await page.evaluate((fileNames) => {
-    const dt = new DataTransfer();
-    for (const name of fileNames) {
-      dt.items.add(
-        new File([new Uint8Array([1, 2, 3, 4])], name, { type: 'image/png' })
-      );
-    }
-    window.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true }));
-    window.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true }));
-    window.__dropDt = dt;
-  }, names);
+  pendingDrag = await dragFiles(page, names);
 }
 
-async function releaseDrop(page) {
-  await page.evaluate(() => {
-    window.dispatchEvent(
-      new DragEvent('drop', { dataTransfer: window.__dropDt, bubbles: true })
-    );
-  });
+async function releaseDrop() {
+  await pendingDrag.drop();
+  pendingDrag = null;
 }
 
 test.describe('圖片上傳（離線）', () => {
@@ -181,12 +171,7 @@ test.describe('圖片上傳（離線）', () => {
       if (req.url().indexOf('api-v1-t2-upload.urusai.cc') >= 0) requested = true;
     });
 
-    await page.evaluate(() => {
-      const dt = new DataTransfer();
-      dt.items.add(new File(['hello'], 'note.txt', { type: 'text/plain' }));
-      window.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true }));
-      window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }));
-    });
+    await realDropFiles(page, ['note.txt']);
 
     await expect(page.locator('.ImageUploadCard--notice')).toBeVisible();
     await expect(page.locator('.ImageUploadCard--notice')).toContainText('note.txt');

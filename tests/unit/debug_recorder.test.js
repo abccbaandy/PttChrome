@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// real-input: tests/e2e/offline/debug_record.offline.spec.js
+//   （好讀長頁的真滾輪寫進錄製檔；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 import { DebugRecorder, snapshotState, cursorGeomSample } from "../../src/js/debug_recorder";
 import { diag, diagActive } from "../../src/js/diag";
 

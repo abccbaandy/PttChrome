@@ -291,6 +291,46 @@ localStorage 空 ⇒ **直接吃到好讀**；live 這邊 `resetSession` 仍把�
 | `blacklist_quick_add.offline` | 列表好讀重畫整份列表 ⇒ 標好的 `[data-e2e-target]` 連同那一列消失，錯在 `waitRectStable：找不到元素` |
 | `long_push.offline`（文章列表按 X） | 列表 session engage 後自己往線路送機器鍵 ⇒ 「只送出一個 `X`」的斷言收到多餘 bytes，錯訊息看起來是 `Expected: "X" / Received: "X"` |
 
+## 規範：瀏覽器負責的輸入一律走真輸入管線（2026-10）
+
+**由瀏覽器／OS 決定形狀或順序的輸入**（右鍵、觸控長按、滾輪、捲動、拖放、剪貼簿、IME 組字、焦點、
+全螢幕、圖片 load/error）不准在 e2e 裡手捏（`new XxxEvent`＋`dispatchEvent`、直呼 `view.onKeyDown`）。
+一律走 `helpers/real_input.js`（Playwright `page.mouse`／`keyboard`／`touchscreen`，或 CDP `Input.*`）。
+unit 可以手捏來測分支邏輯，但檔案要有 `// real-input: tests/e2e/...` 指向對應的真輸入 e2e。
+守護 `tests/unit/e2e_real_input.test.js`（純靜態掃描；豁免表 `E2E_EXEMPT`／`UNIT_EXEMPT` 必附理由，過期會紅）。
+範圍外：自己畫的按鈕被 `fireEvent.click`、unit 的鍵盤、WebSocket data/close。
+
+改成真輸入後變紅，**先懷疑原本的測試在說謊**，不要改回手捏。每條改寫都要做一次變異驗證（拿掉被守的那行
+產品碼 → 要紅），並補「前提斷言」（該點本來就有可觀察的後果），否則會沉默地永真。
+
+| 事件 | 真輸入（helper） |
+|---|---|
+| 右鍵 contextmenu | `rightClickSelectedText`（真拖曳選字＋範圍內右鍵）／`rightClickElement`／`rightClickPlainText` |
+| contextmenu 有沒有被 preventDefault | `recordContextMenu`＋`lastContextMenu`（capture 抓事件物件，派發完才讀） |
+| 觸控長按 | **桌機 Chromium 做不出來**（CDP 長按不發 contextmenu，CONFIRMED 見 `docs/mobile.md`）⇒ 只能 Android emulator；豁免中 |
+| 拖把手後的非定位 contextmenu | CDP `Input.dispatchKeyEvent` ContextMenu 鍵（同一個 Blink `ShowNonLocatedContextMenu`） |
+| click／mousedown／mousemove | `page.mouse.*`（點之前 `assertElementUnder`） |
+| wheel | `page.mouse.wheel` |
+| wheel＋按住某鍵 | `mousePress`＋`mouseWheel(…, { buttons })`（CDP）。`page.mouse.wheel` 恆 `buttons=0`（實測） |
+| 鍵盤 | `page.keyboard.press`（先 `#t` focus） |
+| paste（文字） | `pasteText`：`grantPermissions(['clipboard-read','clipboard-write'])` 後寫剪貼簿＋`ControlOrMeta+V` |
+| paste（截圖） | `navigator.clipboard.write([new ClipboardItem({'image/png': canvasBlob})])`＋`ControlOrMeta+V` |
+| IME 組字 | `imeSetComposition`＋`imeCommit`（CDP `Input.imeSetComposition`／`insertText`） |
+| 拖放檔案 | `dragFiles`（回 `{drop, cancel}`）／`dropFiles`：CDP `Input.dispatchDragEvent`，檔案寫進 test output 目錄，MIME 由副檔名決定 |
+| window blur | 見下表 |
+
+window 失焦（Playwright 1.62 實測，`isTrusted`／`document.hasFocus()`）：Playwright 預設開 focus emulation，
+一般的切頁／`bringToFront`／popup **都不會**發 blur。可用：
+- headless：焦點移進 iframe（`frameLocator(...).locator(...).focus()`）⇒ 真 window blur（trusted），`hasFocus` 仍 true；Firefox 不發。`wheel_stuck_button` 路徑 A 用這條。
+- 最接近 alt-tab：有頭＋CDP `Emulation.setFocusEmulationEnabled({enabled:false})`＋另開 context 視窗 `bringToFront` ⇒ 真 blur／`hasFocus=false`。需獨立 headed project；xvfb 無 WM 時能否切 OS 焦點 UNVERIFIED。headless＋關 emulation 不發 blur。
+
+改寫時量到的瀏覽器事實（CONFIRMED，Chromium headless）：
+- InputHelper 標題列在 pointerdown 上 preventDefault ⇒ 真滑鼠在那裡**不發 mousedown**（只有 pointerdown＋click）。
+- app 的 wheel listener 是 window **capture** 且原生模式會 `stopPropagation` ⇒ 測試自己的 wheel listener 要掛 capture，掛在 `.main` 上的（如 debug recorder）只有好讀下收得到。
+- `page.mouse.wheel` 的捲動在 promise 回來**之後**才落地，之後程式設 `scrollTop` 不會中止它 ⇒ 要量「滾完的位置」先等 `scrollend`。
+- passive wheel listener 執行時合成器可能已經捲完（錄到的 `scrollTop` 已是新值）。
+- contextmenu 時機依 OS：Windows 在 mouseup 發、Linux／macOS 在 mousedown 發 ⇒「按住右鍵滾輪」類斷言要依實際觀察到的時機分支，不寫死平台。
+
 ## 規範：evaluate 內點擊後不可同步讀 React 產物
 
 React 19 起，`el.click()` 觸發的 setState 在事件 task **之後**才 commit——同一個 `page.evaluate`

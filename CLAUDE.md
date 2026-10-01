@@ -99,6 +99,11 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   - **e2e 整批秒掛、零 AssertionError ＝本機環境問題，不是被測 code 壞**（Playwright 升版後沒裝瀏覽器、
     Windows 上 `STATUS_DLL_INIT_FAILED`／Firefox `spawn UNKNOWN`／content sandbox 等）。症狀→處置對照表見
     `docs/local-env-troubleshooting.md`，先查它再動 code。
+- **由瀏覽器／OS 決定形狀或順序的輸入**（右鍵、觸控長按、滾輪、捲動、拖放、剪貼簿、IME 組字、
+  焦點、全螢幕、圖片 load/error），e2e 不准手捏事件（`new XxxEvent`＋`dispatchEvent`、直呼 `onKeyDown`），
+  一律走 `tests/e2e/helpers/real_input.js`（`page.mouse`／`keyboard` 或 CDP `Input.*`）。unit 可以手捏測分支，
+  但要有 `// real-input: tests/e2e/...` 指向真輸入 e2e。守護 `tests/unit/e2e_real_input.test.js`；
+  對照表、豁免與量到的瀏覽器事實見 `tests/e2e/README.md`「真輸入」。改成真輸入後變紅，先懷疑原測試在說謊。
 - **改到渲染/畫面這類易壞 code，提交前必跑 e2e**（`yarn test:e2e`，至少 `easy-reading.spec.js`+`enhance.spec.js`）。
   適用 `term_view.js`、`term_ui.js`、`src/render/**`、`src/components/**`、`easy_reading.js`、`pttchrome.jsx` 渲染/切換路徑、`term_buf.js` 渲染相關等。
   理由：unit（jsdom + testing-library）仍**不跑真瀏覽器/真 WebSocket/完整 boot 鏈**，捕捉不到「一進文章即炸」這類 runtime 崩潰

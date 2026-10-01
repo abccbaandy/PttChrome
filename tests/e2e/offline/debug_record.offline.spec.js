@@ -5,7 +5,17 @@
 //   3) 重新整理 → Switch 回到關閉、按鈕消失（不記憶 / 不落地）
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { installReplay, waitConnected, feedRaw } = require('../helpers/replay');
+const {
+  installReplay,
+  waitConnected,
+  feedRaw,
+  findCassette,
+  bootOffline,
+  replayCassette,
+} = require('../helpers/replay');
+const { waitPreviewsSettled, waitScrollStable } = require('../helpers/layout');
+
+const article = findCassette('article');
 
 const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
@@ -97,5 +107,46 @@ test.describe('Debug 錄製模式（offline）', () => {
     await expect(page.locator('#debugRecordBtn')).toHaveCount(0);
     await openAboutTab(page);
     await expect(page.locator('#pref-debug-mode')).not.toBeChecked();
+  });
+
+  // 好讀長頁的捲動軌跡（main.wheel／main.scroll）：真滾輪捲過去，錄製檔要記到
+  // 「輸入」與「實際位置」兩筆。listener 的掛拆（分支邏輯）在
+  // tests/unit/debug_recorder.test.js；這裡守真瀏覽器下 wheel 真的到得了捲動容器
+  //（原生 24 列模式下 window capture 的滾輪 handler 會 stopPropagation，到不了 ——
+  // 所以這條必須在好讀裡跑）。
+  test('錄製期間：好讀長頁的真滾輪與捲動位置寫進錄製檔', async ({ page }) => {
+    test.skip(!article, '尚無 article cassette；先 yarn record:cassette');
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await openAboutTab(page);
+    await page.locator('#pref-debug-mode').check();
+    await page.locator('.PrefModal [aria-label="Close"]').click();
+    await expect(page.locator('.PrefModal')).toBeHidden();
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await waitPreviewsSettled(page);
+
+    const btn = page.locator('#debugRecordBtn');
+    await btn.click();
+    await expect(btn).toContainText(await label(page, 'debugRecord_stop'));
+
+    const main = await page.locator('.main').boundingBox();
+    const topBefore = await page.evaluate(() => document.querySelector('.main').scrollTop);
+    await page.mouse.move(main.x + main.width / 2, main.y + main.height / 2);
+    await page.mouse.wheel(0, 300);
+    await waitScrollStable(page, '.main');
+
+    const [download] = await Promise.all([page.waitForEvent('download'), btn.click()]);
+    const chunks = [];
+    for await (const c of await download.createReadStream()) chunks.push(c);
+    const json = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const logs = json.events.filter((e) => e.dir === 'log');
+    const wheel = logs.find((e) => e.tag === 'main.wheel');
+    expect(wheel, '錄製檔裡沒有 main.wheel').toBeTruthy();
+    expect(wheel.info.dy).toBe(300);
+    const scrolls = logs.filter((e) => e.tag === 'main.scroll');
+    expect(scrolls.length).toBeGreaterThan(0);
+    // wheel 那筆的 top 不能拿來比：passive listener 跑的時候合成器可能已經捲完了。
+    expect(scrolls[scrolls.length - 1].info.top).toBeGreaterThan(topBefore);
   });
 });

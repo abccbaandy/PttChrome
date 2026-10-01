@@ -216,6 +216,9 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     test.setTimeout(90000);
     await engage(page);
     const label = (k) => page.evaluate((key) => window.__i18n(key), k);
+    // **只能手捏**：桌機 Chromium 的 CDP 觸控長按（synthesizeTapGesture／
+    // dispatchTouchEvent 按住）不發 contextmenu（CONFIRMED，docs/mobile.md「長按選單與
+    // 選取模式」），拿它斷言會是假陽性。真機驗證只能走 Android emulator。
     const longPress = (sel) =>
       page.evaluate((sel) => {
         const v = document.querySelector('#mainContainer .listBodyView');

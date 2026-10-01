@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// real-input: tests/e2e/offline/image_zoom.offline.spec.js
+//   （真滑鼠點倍率列；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // 內嵌預覽圖上的倍率列「－ 100% ＋」（src/render/inline_preview_slot.js）。
 //
 // 倍率本身住在 ScreenController（tests/unit/screen_image_zoom.test.js），這裡守 slot 端：

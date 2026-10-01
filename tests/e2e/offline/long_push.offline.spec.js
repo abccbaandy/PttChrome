@@ -11,6 +11,12 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline, feedRaw } = require('../helpers/replay');
+const {
+  rightClickPlainText,
+  imeSetComposition,
+  imeCommit,
+  pasteText,
+} = require('../helpers/real_input');
 
 // pmore 的底部狀態列＝「這頁是文章」的決定性指紋（term_buf.setPageState → 3）。
 // 含「回應」⇒ currstat == READING ⇒ 按 X 推得到文（string_util 的說明）。
@@ -172,16 +178,9 @@ const toBig5 = (page, s) =>
     return out;
   }, s);
 
-// 對終端機派發 contextmenu（真滑鼠右鍵在 headless 下座標對位太脆，
-// 同 article_link_menu / quick_search 的手法）。
+// 在終端機純文字處按真右鍵（helpers/real_input）。
 async function openContextMenu(page) {
-  await page.evaluate(() => {
-    document
-      .getElementById('mainContainer')
-      .dispatchEvent(
-        new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 })
-      );
-  });
+  await rightClickPlainText(page);
   await expect(page.locator('.DropdownMenu').first()).toBeVisible();
 }
 
@@ -343,12 +342,14 @@ test.describe('長推文一鍵發送（離線）', () => {
       .toBe(false);
   });
 
-  // 送 bytes 給 PTT 的四條使用者入口在送出期間都必須噤聲。鍵盤那條走真按鍵；
-  // IME 與貼上沒有可靠的離線觸發方式（IME 的 composition 在 headless 造不出來），
-  // 所以直接戳產品自己的漏斗 view.onTextInput / App.onPasteDone——那正是
-  // image_upload_controller 與 doPaste 走的同一個入口。
+  // 送 bytes 給 PTT 的四條使用者入口在送出期間都必須噤聲。全部走真輸入：鍵盤
+  // （page.keyboard）、IME（CDP imeSetComposition／insertText）、貼上（系統剪貼簿＋
+  // Ctrl/Cmd+V）。另外再直接戳一次產品自己的漏斗 view.onTextInput / App.onPasteDone
+  // ——那是 image_upload_controller 與 doPaste 走的入口，前面的真輸入若被更早的一層
+  // 擋掉（例如進度遮罩），閘門本身就沒被量到，這兩行補上。
   // 純邏輯在 tests/unit/serialized_op_gate.test.js，這裡守的是真物件的接線。
-  test('送出期間鍵盤／IME／貼上都不會漏到 PTT', async ({ page }) => {
+  test('送出期間鍵盤／IME／貼上都不會漏到 PTT', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await boot(page);
     await submitLongPush(page, '安安');
     await expect.poll(() => sentText(page)).toBe('X');
@@ -356,6 +357,10 @@ test.describe('長推文一鍵發送（離線）', () => {
     // 序列真的在途才驗得到守門（進度遮罩上的按鍵會結束這一輪，所以注入排在
     // 鍵盤那兩下**之前**）。
     expect(await page.evaluate(() => window.__app.longPush.active)).toBe(true);
+    await page.locator('#t').focus();
+    await imeSetComposition(page, '測');
+    await imeCommit(page, '測');
+    await pasteText(page, '貼');
     await page.evaluate(() => window.__app.view.onTextInput('測'));
     await page.evaluate(() => window.__app.onPasteDone('測'));
 

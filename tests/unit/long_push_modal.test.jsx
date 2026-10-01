@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// real-input: tests/e2e/offline/long_push_image_upload.offline.spec.js
+//   （「截圖 Ctrl+V 貼進輸入框」；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // 長推文輸入框（src/components/ContextMenu/LongPushModal.jsx）。
 //
 // 守三件會直接害到使用者的事：

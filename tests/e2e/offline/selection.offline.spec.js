@@ -2,9 +2,10 @@
 //   1) copyOnSelect：放開滑鼠自動把選取寫進剪貼簿
 //   2) 右鍵選單的快速搜尋：關鍵字要帶入選取內容
 //
-// **一定要用真滑鼠拖曳**選字（page.mouse.down/move/up）。其他 offline spec 為了穩定
-// 是用程式化 addRange + dispatchEvent('contextmenu')，那條路徑繞過瀏覽器自己的選取
-// 機制與 app 的焦點竊取（#t），Firefox 下照樣會綠 —— 等於測不到這個 bug。
+// **一定要用真滑鼠拖曳**選字（page.mouse.down/move/up）。程式化 addRange +
+// dispatchEvent('contextmenu') 會繞過瀏覽器自己的選取機制與 app 的焦點竊取（#t），
+// Firefox 下照樣會綠 —— 等於測不到這個 bug。2026-10 起所有 offline spec 都改走真輸入
+// （helpers/real_input.js，守護 tests/unit/e2e_real_input.test.js）。
 //
 // 本檔同時跑 chromium（offline project）與 firefox（offline-firefox project）。
 const { test, expect } = require('@playwright/test');

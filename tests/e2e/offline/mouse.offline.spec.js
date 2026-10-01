@@ -23,8 +23,10 @@ const {
   assertElementUnder,
   assertPlainTextUnder,
   plainLeftEdge,
+  scrollIntoViewStable,
   stableCommentRow,
   waitPreviewsSettled,
+  waitScrollStable,
 } = require('../helpers/layout');
 
 const article = findCassette('article');
@@ -244,49 +246,142 @@ test.describe('滑鼠（離線重放）', () => {
     expect(probe.outside).toBe(7);
   });
 
-  test('連結優先於左側退出：點在連結內層 span 上也不會退出文章', async ({ page }) => {
-    test.setTimeout(90000);
-    await bootOffline(page, ptt);
-    await ptt.applyPrefs(page, {
-      enableEasyReading: true,
-      useMouseBrowsing: true,
-      mouseLeftClick: true,
-    });
-    await replayCassette(page, article, { easyReading: true });
-
-    await waitPreviewsSettled(page);
-    // 連結內部最深可到 a > span > span（TwoColorWord / ForceWidthWord）。
-    // 舊的 isAnchorTarget 只往上找一層 ⇒ 點在那種字上會漏判成終端機動作。
-    const deep = await page.evaluate(() => {
-      const a = Array.from(document.querySelectorAll('#mainContainer a')).find(
-        (el) => el.querySelector('span span')
-      );
-      if (!a) return null;
-      const inner = a.querySelector('span span');
-      inner.setAttribute('data-e2e-deep-link', '1');
-      return true;
-    });
-    test.skip(!deep, 'cassette 裡沒有含巢狀 span 的連結');
-
-    // 關鍵：先把滑鼠停在退出帶上，讓 buf.mouseAction === 'exitArticle'。只有這個
-    // 組合才驗得到「連結優先」——否則點擊落點本來就沒有動作，測了等於沒測。
-    const spot = await plainLeftEdge(page);
-    await page.mouse.move(spot.x, spot.y);
+  // 真滑鼠 hover 到 selector 上 → 回傳點擊座標與當下的 mouseAction。
+  // hover 路徑純看格子座標、不看 DOM ⇒ 這裡量到的就是「若點擊被當成終端機動作，會發生什麼」。
+  async function hoverElement(page, selector) {
+    // target=_blank 的連結被真點擊會開新分頁；離線測試不需要它。
+    page.context().on('page', (p) => p.close().catch(() => {}));
+    await scrollIntoViewStable(page, selector);
+    const pt = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      const r = el.getClientRects()[0] || el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, selector);
+    await page.mouse.move(pt.x, pt.y);
     await page.waitForTimeout(50); // hover → mouseAction 更新
-    await assertPlainTextUnder(page, spot.x, spot.y);
-    expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('exitArticle');
+    const hit = await page.evaluate(
+      ({ x, y, sel }) => {
+        const at = document.elementFromPoint(x, y);
+        const el = document.querySelector(sel);
+        return at === el;
+      },
+      { x: pt.x, y: pt.y, sel: selector }
+    );
+    expect(hit, 'elementFromPoint 不是目標元素本身（版面位移，或量到的是外層）').toBe(true);
+    return { pt, action: await page.evaluate(() => window.__app.buf.mouseAction) };
+  }
 
-    await startCapture(page);
-    await page.evaluate(() => {
-      document
-        .querySelector('[data-e2e-deep-link]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  // 懸停預覽（原生畫面＋enablePicPreview；好讀下不開）：真滑鼠滑進圖片連結，預覽要
+  // 貼著游標出現（OnHover 的 left＝clientX＋20）。座標的分支邏輯（mouseover 當下就記
+  // 座標、非有限值退回 0）在 tests/unit/hover_preview_position.test.js。
+  test('懸停預覽：滑進圖片連結，預覽貼著游標出現', async ({ page }) => {
+    const errors = [];
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
     });
-    await page.waitForTimeout(150);
-    expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enablePicPreview: true });
+    await page.evaluate(() =>
+      window.__app.onData('\x1b[2J\x1b[H' + '\x1b[5;10Hhttps://i.imgur.com/hover.jpg')
+    );
+    await expect(page.locator('#mainContainer a')).toHaveCount(1);
+
+    const HOVER_SEL =
+      '#mainContainer .previewSpinner, #mainContainer img[referrerpolicy="no-referrer"]';
+    // 逆境桶（圖 404）下轉圈只會閃一下就換成「什麼都不畫」⇒ 輪詢 DOM 抓不到。改在
+    // 掛上去的當下記下它的位置（MutationObserver 在 commit 後的 microtask 就會跑）。
+    await page.evaluate((sel) => {
+      window.__hoverLefts = [];
+      new MutationObserver(() => {
+        for (const el of document.querySelectorAll(sel)) {
+          window.__hoverLefts.push(parseFloat(el.style.left));
+        }
+      }).observe(document.getElementById('mainContainer'), {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style'],
+      });
+    }, HOVER_SEL);
+
+    const box = await page.locator('#mainContainer a').boundingBox();
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x - 200, y + 100);
+    await page.mouse.move(x, y, { steps: 6 });
+    await assertElementUnder(page, x, y, 'A.y', { closest: 'a' });
+
+    await expect
+      .poll(() => page.evaluate(() => window.__hoverLefts.length))
+      .toBeGreaterThan(0);
+    const lefts = await page.evaluate(() => window.__hoverLefts);
+    // 最後一次量到的位置貼著游標（中途的值可能是 steps 移動途中的座標）。
+    expect(lefts.every(Number.isFinite), JSON.stringify(lefts)).toBe(true);
+    expect(Math.abs(lefts[lefts.length - 1] - (x + 20))).toBeLessThanOrEqual(1);
+    const hover = page.locator(HOVER_SEL);
+    expect(errors.filter((t) => /NaN/.test(t))).toEqual([]);
+
+    await page.mouse.move(x, y + 200);
+    await expect(hover).toHaveCount(0);
   });
 
-  test('內嵌預覽圖優先：點圖只切放大，不會退出文章', async ({ page }) => {
+  // 素材裡的連結**沒有**任何一條真的有 a > span > span（2026-10 掃過全部 article
+  // cassette）：以前用 `a.querySelector('span span')` 挑目標，外層那個 span 其實是 <a>
+  // 之外的列節點 ⇒ 挑到的是 <a> 的直接子節點，舊的「只往上找一層」照樣認得 —— 這條
+  // 從來沒測到它名字說的東西。改成自己畫一條：網址中段放一個前後半色不同的雙位元組字，
+  // ColorSegmentBuilder 會把它包成 TwoColorWord（a > span > span）。
+  //
+  // 原生文章畫面（pageState 3、不進好讀）：下半部是邊緣翻頁的 PageDown 區，而原生模式
+  // 的翻頁會**真的送 \x1b[6~ 上線** ⇒ 漏判成終端機動作時看得到 byte。
+  test('連結優先於邊緣翻頁：點在連結內層 span（雙色字）上不會翻頁', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { useMouseBrowsing: true, mouseLeftClick: true });
+    await page.evaluate(() => {
+      const u2b = (str) => {
+        let out = '';
+        for (const ch of str) {
+          const c = ch.charCodeAt(0);
+          if (c < 0x80) { out += ch; continue; }
+          out += String.fromCharCode(window.lib.u2bArray[2 * c]) +
+            String.fromCharCode(window.lib.u2bArray[2 * c + 1]);
+        }
+        return out;
+      };
+      const zh = u2b('台');
+      window.__app.onData(
+        '\x1b[2J\x1b[H' + 'article body' +
+        '\x1b[17;1H' + 'https://ex.com/' + zh[0] + '\x1b[1;33m' + zh[1] + '\x1b[m/x' +
+        '\x1b[24;1H' +
+        u2b('  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~23 行  (y)回應(X%)推文(h)說明(←)離開 ')
+      );
+    });
+    await expect.poll(() => page.evaluate(() => window.__app.buf.pageState)).toBe(3);
+    const deep = await page.evaluate(() => {
+      for (const a of document.querySelectorAll('#mainContainer a')) {
+        const inner = a.querySelector(':scope span span');
+        if (!inner) continue;
+        inner.setAttribute('data-e2e-deep-link', '1');
+        return inner.parentElement !== a;
+      }
+      return false;
+    });
+    expect(deep, '前提：畫面上有 a > span > span').toBe(true);
+
+    const { action } = await hoverElement(page, '[data-e2e-deep-link]');
+    expect(action, '前提：那一格若被當成終端機點擊會翻頁').toBe('pageDown');
+
+    await startCapture(page);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+    const sent = await takeCapture(page);
+    expect(sent).not.toContain(PAGE_DOWN);
+    expect(sent).not.toContain(PAGE_UP);
+    expect(sent).not.toContain(ARROW_LEFT);
+  });
+
+  test('內嵌預覽圖優先：點圖只切放大，不會翻頁或退出文章', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, {
@@ -297,27 +392,57 @@ test.describe('滑鼠（離線重放）', () => {
     });
     await replayCassette(page, article, { easyReading: true });
 
+    // 圖是延遲載入的：先把佔位盒捲進視窗、等它載完，再找畫出來的那張圖。
     await waitPreviewsSettled(page);
-    const slot = await page.evaluate(
-      () => !!document.querySelector('.inlinePreviewSlot')
-    );
-    test.skip(!slot, 'cassette 裡沒有內嵌預覽插槽');
-
-    // 同理：先讓 mouseAction 是 exitArticle，才驗得到「預覽優先於退出」。
-    const spot = await plainLeftEdge(page);
-    await page.mouse.move(spot.x, spot.y);
-    await page.waitForTimeout(50); // hover → mouseAction 更新
-    await assertPlainTextUnder(page, spot.x, spot.y);
-    expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('exitArticle');
-
-    await startCapture(page);
-    await page.evaluate(() => {
-      document
-        .querySelector('.inlinePreviewSlot')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    const slot = await page.evaluate(() => {
+      const el = document.querySelector('.inlinePreviewSlot');
+      if (el) el.setAttribute('data-e2e-preview-slot', '1');
+      return !!el;
     });
+    test.skip(!slot, 'cassette 裡沒有內嵌預覽插槽');
+    await scrollIntoViewStable(page, '[data-e2e-preview-slot]');
+    const img = await page.evaluate(() => {
+      const el = Array.from(
+        document.querySelectorAll('[data-e2e-preview-slot] img.hyperLinkPreview')
+      ).find((im) => im.offsetWidth > 0 && im.offsetHeight > 0);
+      if (!el) return false;
+      el.setAttribute('data-e2e-preview-img', '1');
+      return true;
+    });
+    // 逆境桶（404／慢）下圖不會畫出來 ⇒ 沒有可點的圖，這條的現場不存在。
+    test.skip(!img, '這個圖片情境下預覽圖沒有畫出來');
+
+    const { action } = await hoverElement(page, '[data-e2e-preview-img]');
+    // 前提：漏判成終端機點擊時**看得到後果**（捲動或送鍵）。翻頁要往有空間的方向。
+    const room = await page.evaluate(() => {
+      const m = document.querySelector('.main');
+      return { up: m.scrollTop > 0, down: m.scrollTop < m.scrollHeight - m.clientHeight - 1 };
+    });
+    const observable =
+      action === 'exitArticle' ||
+      (action === 'pageUp' && room.up) ||
+      ((action === 'pageDown' || action === 'end') && room.down);
+    expect(observable, `前提：mouseAction=${action} 在此捲動位置有可觀察的後果 ${JSON.stringify(room)}`).toBe(true);
+
+    const enlarged = () =>
+      page.evaluate(() =>
+        document.getElementById('mainContainer').classList.contains('imagesEnlarged')
+      );
+    const before = await enlarged();
+    const scrollBefore = await page.evaluate(() => document.querySelector('.main').scrollTop);
+    await startCapture(page);
+    await page.mouse.down();
+    await page.mouse.up();
     await page.waitForTimeout(150);
     expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
+    // 「只切放大」：點圖的那個動作確實發生了。
+    expect(await enlarged()).toBe(!before);
+    // 沒有被翻頁捲走。放大本身靠 scroll anchoring 不動 scrollTop（實測 0px）；容忍
+    // 一列以內。**不可放寬到「幾列」**：翻頁撞到頂只會捲剩下的距離（實測 235px ≈ 8 列），
+    // 放寬到 10 列時拿掉 isPreviewTarget 這條照樣是綠的。
+    const scrollAfter = await waitScrollStable(page, '.main');
+    const chh = await page.evaluate(() => window.__app.view.chh);
+    expect(Math.abs(scrollAfter - scrollBefore)).toBeLessThan(chh);
   });
 
   // 2026-09 回報：有圖時左側退出點擊區幾乎點不到。.inlinePreviewSlot 是**整列寬**的

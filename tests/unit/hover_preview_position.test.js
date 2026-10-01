@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// real-input: tests/e2e/offline/mouse.offline.spec.js
+//   （「懸停預覽：滑進圖片連結，預覽貼著游標出現」；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // 懸停預覽的座標守護。
 //
 // 症狀（live e2e 主控台）：`NaN` is an invalid value for the `left` css style

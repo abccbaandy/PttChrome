@@ -18,6 +18,7 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayCassette } = require('../helpers/replay');
 const { waitPreviewsSettled } = require('../helpers/layout');
+const { rightClickElement } = require('../helpers/real_input');
 
 const article = loadCassette('pttbug-body-urlwrap');
 
@@ -45,16 +46,9 @@ async function stubClipboard(page) {
   });
 }
 
-// 對某個 <a> 派發 contextmenu（真滑鼠右鍵在 headless 下座標對位太脆，
-// 同 article_link_menu.offline.spec.js 的手法）。
+// 對某個 <a> 按真右鍵（helpers/real_input：捲進視窗、等版面停、確認底下是它才按）。
 async function rightClickAnchor(page, selector) {
-  await page.evaluate(sel => {
-    const a = document.querySelector(sel);
-    if (!a) throw new Error('未渲染到畫面，測試前提失效: ' + sel);
-    a.dispatchEvent(
-      new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 10 })
-    );
-  }, selector);
+  await rightClickElement(page, selector);
   await expect(page.locator('.DropdownMenu').first()).toBeVisible();
 }
 

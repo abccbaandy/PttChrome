@@ -10,6 +10,7 @@
 //     而言算「點外面」，closeOnClickOutside 沒關掉就整段稿子沒了）
 const { test, expect } = require('@playwright/test');
 const { installReplay, waitConnected } = require('../helpers/replay');
+const { rightClickPlainText, dropFiles: realDropFiles } = require('../helpers/real_input');
 
 // 文章畫面（pmore 狀態列）＝右鍵選單出現「長推文一鍵發送」的前提
 // （ContextMenu 的 gating：enableLongPush && buf.pageState === 3）。
@@ -105,14 +106,9 @@ async function collectSent(page) {
 const sentText = (page) => page.evaluate(() => (window.__sent || []).join(''));
 const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
+// 在終端機純文字處按真右鍵（helpers/real_input）。
 async function openContextMenu(page) {
-  await page.evaluate(() => {
-    document
-      .getElementById('mainContainer')
-      .dispatchEvent(
-        new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 })
-      );
-  });
+  await rightClickPlainText(page);
   await expect(page.locator('.DropdownMenu').first()).toBeVisible();
 }
 
@@ -138,21 +134,19 @@ async function openLongPushModal(page) {
   await expect(page.locator('[name="longPushText"]')).toBeVisible();
 }
 
-// 真 DataTransfer 拖放（controller 綁在 window 上）。
+// 真拖放（CDP Input.dispatchDragEvent，helpers/real_input）：輸入框開著就放在它上面
+// —— 使用者「拖圖進輸入框」的落點；Textarea 對檔案拖放的原生預設行為（開檔／插入
+// 路徑）若沒被擋下，這裡會看得到。輸入框關著就落在視窗中央。
 async function dropImage(page, name) {
-  await page.evaluate((fileName) => {
-    const dt = new DataTransfer();
-    dt.items.add(
-      new File([new Uint8Array([1, 2, 3, 4])], fileName, { type: 'image/png' })
-    );
-    window.dispatchEvent(
-      new DragEvent('dragenter', { dataTransfer: dt, bubbles: true })
-    );
-    window.dispatchEvent(
-      new DragEvent('dragover', { dataTransfer: dt, bubbles: true })
-    );
-    window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }));
-  }, name);
+  const box = await page.locator('[name="longPushText"]').boundingBox({ timeout: 1000 })
+    .catch(() => null);
+  await realDropFiles(
+    page,
+    [name],
+    box
+      ? { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) }
+      : undefined
+  );
 }
 
 test.describe('長推文輸入框的圖片上傳（離線）', () => {
@@ -185,6 +179,31 @@ test.describe('長推文輸入框的圖片上傳（離線）', () => {
     // 原本打的字還在，網址接在後面（插入是插進游標處，不是整段覆蓋）。
     await expect(box).toHaveValue(/^先打一段話 /);
     // 底下的畫面是文章：走 send 的話網址每個字元都會變成 pmore 快捷鍵。
+    expect(await sentText(page)).toBe('');
+  });
+
+  // 截圖直接 Ctrl+V：真的把一張 PNG 寫進系統剪貼簿，再在輸入框裡按 Ctrl/Cmd+V，
+  // paste 事件（含 clipboardData.files）由瀏覽器生成。Textarea → tryClipboardImage
+  // 的接線（分支邏輯）在 tests/unit/long_push_modal.test.jsx。
+  test('截圖 Ctrl+V 貼進輸入框 → 上傳並把網址插進 Textarea', async ({ page }) => {
+    await openLongPushModal(page);
+    const box = page.locator('[name="longPushText"]');
+    await box.fill('先打一段話');
+    await collectSent(page);
+
+    await page.evaluate(async () => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 4;
+      const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    });
+    await box.focus();
+    await page.keyboard.press('ControlOrMeta+V');
+
+    await expect(box).toHaveValue(/https:\/\/i\.urusai\.cc\/img1\.png/, {
+      timeout: 15000
+    });
+    await expect(box).toHaveValue(/^先打一段話 /);
     expect(await sentText(page)).toBe('');
   });
 

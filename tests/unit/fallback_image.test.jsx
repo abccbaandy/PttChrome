@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// real-input: tests/e2e/offline/image_load_conditions.offline.spec.js
+//   （逆境桶（offline-broken／slow／mixed）下瀏覽器自己發的 load/error；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // Regression for the "自動開圖載入失敗靜默塌掉" bug (per-domain transient host
 // failure, e.g. i.urusai.cc rate-limit/hotlink): the old FallbackImage advanced
 // on a single onError and rendered `false` once candidates ran out — no loading

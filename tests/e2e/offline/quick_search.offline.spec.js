@@ -9,6 +9,7 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { installReplay, waitConnected, feedRaw } = require('../helpers/replay');
 const { waitRectStable } = require('../helpers/layout');
+const { rightClickSelectedText } = require('../helpers/real_input');
 
 const label = (page, key) => page.evaluate(k => window.__i18n(k), key);
 
@@ -29,27 +30,9 @@ async function stubOpenAndPrefs(page, prefs) {
   }, prefs || null);
 }
 
-// 程式化選取畫面上的字串再派發 contextmenu：真滑鼠右鍵的 mousedown 若落在選取範圍
-// 外會先收合選取，headless 下座標對位太脆（同 ui_behavior 的「複製」那條）。
+// 真滑鼠拖曳選字，再在選取範圍內按真右鍵（helpers/real_input）。
 async function selectAndRightClick(page, needle) {
-  await page.evaluate(text => {
-    const walker = document.createTreeWalker(
-      document.getElementById('mainContainer'), NodeFilter.SHOW_TEXT);
-    for (let node; (node = walker.nextNode()); ) {
-      const idx = node.textContent.indexOf(text);
-      if (idx < 0) continue;
-      const range = document.createRange();
-      range.setStart(node, idx);
-      range.setEnd(node, idx + text.length);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-      document.getElementById('BBSWindow').dispatchEvent(
-        new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 10 }));
-      return;
-    }
-    throw new Error('未渲染到畫面，測試前提失效: ' + text);
-  }, needle);
+  await rightClickSelectedText(page, needle);
 }
 
 async function boot(page, { prefs } = {}) {

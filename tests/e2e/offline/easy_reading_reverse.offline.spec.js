@@ -242,22 +242,36 @@ test.describe('好讀反向讀取（End，離線）', () => {
       null, { timeout: 15000 }
     );
     // 讀者捲回 head 的第 10 列。按過 End 的讀者黏在文末（bottom_stick.js），只有讀者
-    // 自己的輸入會放手，純程式設 scrollTop 不算 ⇒ 先派一個 wheel 事件（不用
-    // page.mouse.wheel：原生滾動是非同步動畫，會在下面量完 before 之後才落地）。
+    // 自己的輸入會放手，純程式設 scrollTop 不算 ⇒ 先用真滾輪放手。
+    // 原生滾動是非同步的：滾輪的捲動會在 page.mouse.wheel 回來**之後**才落地（實測：
+    // 不等的話它蓋在下面設好的位置上，剛好偏 100px），所以先等這次捲動的 scrollend。
+    // 下面的 stillReverse 前提確保量 before 時接合還沒發生（否則這條沉默地永真）。
+    await page.evaluate(() => {
+      window.__wheelScrollEnd = false;
+      document.querySelector('.main').addEventListener(
+        'scrollend', () => { window.__wheelScrollEnd = true; }, { once: true });
+    });
+    const vp = page.viewportSize();
+    await page.mouse.move(vp.width / 2, vp.height / 2);
+    await page.mouse.wheel(0, -100);
+    await expect.poll(() => page.evaluate(() => window.__wheelScrollEnd)).toBe(true);
     const before = await page.evaluate(() => {
       const m = document.querySelector('.main');
-      m.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
       const el = document.querySelector('#mainContainer [type="bbsrow"][srow="10"]');
       m.scrollTop = el.offsetTop - document.querySelector('#mainContainer').offsetTop;
-      return el.getBoundingClientRect().top;
+      return {
+        top: el.getBoundingClientRect().top,
+        stillReverse: !!window.__app.easyReading._reverse,
+      };
     });
+    expect(before.stillReverse, '前提：設定閱讀位置時反向讀取還在進行').toBe(true);
     await page.waitForFunction(
       () => !window.__app.easyReading._reverse && window.__app.easyReading.easyReadingReachedPageEnd,
       null, { timeout: 60000 }
     );
     const after = await page.evaluate(() =>
       document.querySelector('#mainContainer [type="bbsrow"][srow="10"]').getBoundingClientRect().top);
-    expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after - before.top)).toBeLessThanOrEqual(1);
   });
 
   test('已讀完再按 End：只捲到底，不送任何鍵', async ({ page }) => {

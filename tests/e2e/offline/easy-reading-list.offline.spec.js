@@ -20,6 +20,7 @@ const {
 // 滾輪 smoke 會量 rect 又會動指標 ⇒ 版面穩定契約要求走這個模組
 // （tests/unit/e2e_layout_settle.test.js 靜態守護）。
 const { waitRectStable, waitScrollStable } = require('../helpers/layout');
+const { pasteText, imeSetComposition, imeCommit } = require('../helpers/real_input');
 
 const nav = loadCassette('cchat-list-nav');
 const prompt = loadCassette('cchat-list-prompt');
@@ -414,7 +415,7 @@ test.describe('文章列表好读模式（离线）', () => {
     }
   });
 
-  test('贴上原生指令一次生效：Shift+Insert 不被吞、paste 走 native-paste 只送一次', async ({ page }) => {
+  test('贴上原生指令一次生效：Shift+Insert 不被吞、paste 走 native-paste 只送一次', async ({ page, context }) => {
     // 回归（2026-08「AID 文章码要贴两次」）：Shift+Insert 曾落 passthrough →
     // preventDefault 取消浏览器贴上 → #t 收不到 paste 事件，PTT 只收到 \x1b[2~。
     // 这里锁两件事：① 该按键本身不送任何 byte、不切原生；② 真正的 paste 事件
@@ -441,19 +442,10 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(afterKey.state).toBe('active');
       expect(afterKey.renderMode).toBe('buffer');
 
-      // ② 真 paste 事件（浏览器在贴上成功时会发的那个）。seed 落点 server 游标
-      // ＝选取 → 免 sync 腿，整串直接进 native-paste。
-      await page.evaluate((text) => {
-        const dt = new DataTransfer();
-        dt.setData('text', text);
-        document.getElementById('t').dispatchEvent(
-          new ClipboardEvent('paste', {
-            clipboardData: dt,
-            bubbles: true,
-            cancelable: true
-          })
-        );
-      }, AID);
+      // ② 真贴上：写进剪贴簿 → Ctrl/Cmd+V，paste 事件由浏览器生成（helpers/real_input）。
+      // seed 落点 server 游标＝选取 → 免 sync 腿，整串直接进 native-paste。
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await pasteText(page, AID);
 
       const after = await waitState(
         page,
@@ -755,12 +747,10 @@ test.describe('文章列表好读模式（离线）', () => {
       );
       const topPos2 = await windowTopPos(page);
       expect(topPos2).toBeGreaterThan(3);
-      // pref 關掉時走 window handler（不需要 default action）⇒ 合成事件可用。
-      await page.evaluate(() => {
-        window.dispatchEvent(
-          new WheelEvent('wheel', { deltaY: -100, deltaMode: 0, cancelable: true })
-        );
-      });
+      // pref 關掉時走 window handler（一次一頁）。真滾輪打在列表視口上。
+      const bodyBox = await page.locator('#mainContainer .listBodyView').boundingBox();
+      await page.mouse.move(bodyBox.x + bodyBox.width / 2, bodyBox.y + bodyBox.height / 2);
+      await page.mouse.wheel(0, -100);
       // 翻頁也走平滑捲動 ⇒ 要等它**到站**再量，不能看到動一下就收工
       //（動畫中間值會讓這裡量到「只捲了一列」）。
       const wantTop = Math.max(0, topPos2 - 20);
@@ -1449,21 +1439,19 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
 test.describe('中文輸入法（離線）', () => {
   test.skip(!nav, '缺 cchat-list-nav cassette（yarn record:cassette 先錄一次）');
 
-  // 真 IME 事件序：compositionstart（框出現）→ 填字 → compositionend（送出）。
-  async function composeStart(page) {
+  // 真 IME（CDP Input.imeSetComposition／insertText，helpers/real_input）：
+  // 組字中（compositionstart＋update，框出現）→ 確定（compositionend＋input，送出）。
+  // 事件序與 #t.value 的變化都由瀏覽器產生，不是我們寫的。
+  async function composeStart(page, text = '測') {
     await page.evaluate(() => {
       const t = document.getElementById('t');
       t.focus();
       t.style.width = '40px'; // 避免右邊界 clamp 介入量測
-      t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
     });
+    await imeSetComposition(page, text);
   }
   async function composeEnd(page, text) {
-    await page.evaluate((s) => {
-      const t = document.getElementById('t');
-      t.value = s;
-      t.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: s }));
-    }, text);
+    await imeCommit(page, text);
   }
 
   // prefetch: 0 ＝只有 seed 那 20 列，body 剛好塞滿視口、捲不動。要驗「錨到捲出

@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// real-input: tests/e2e/offline/easy-reading-list.offline.spec.js
+//   （page.mouse.wheel 平滑捲動；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // 列表好讀的 body 捲動視口（瀏覽器原生捲動）。
 //
 // golden（render_dom_equivalence 的 list_easy_reading_scrolled）鎖的是靜態結構；

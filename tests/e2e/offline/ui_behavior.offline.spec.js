@@ -9,6 +9,8 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { installReplay, waitConnected, feedRaw } = require('../helpers/replay');
+const { rightClickSelectedText } = require('../helpers/real_input');
+const { waitRectStable, elementUnder } = require('../helpers/layout');
 
 // locale 無關的 label 查詢（dev build 暴露 window.__i18n）。
 const label = (page, key) => page.evaluate(k => window.__i18n(k), key);
@@ -486,7 +488,12 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
   // 回歸：Mantine 圖示是 <svg>，其 className 是 SVGAnimatedString（物件），App.mouse_down
   // → checkClass 直接 .indexOf 會 `cn.indexOf is not a function`。mouse_down 綁在 window 且
-  // 有 `if (modalShown) return`，故要用「非 modal」的浮層（InputHelper Paper）來觸發。
+  // 有 `if (modalShown) return`，故要用「非 modal」浮層上的 Mantine 圖示來觸發。
+  //
+  // 目標**不能**是 InputHelper 標題列的關閉鈕：標題列的拖曳 handler 在 pointerdown 上
+  // preventDefault ⇒ 瀏覽器不再補發相容的 mousedown（真滑鼠實測只有 pointerdown＋click）。
+  // 以前手捏 mousedown 打在那裡，量的是一條真實使用走不到的路徑。改用 debug 錄製浮動鈕
+  // 下載後出現的 CloseButton（非 modal、無 pointerdown 攔截）。
   test('滑鼠事件：點到 Mantine 圖示(SVG) 不崩潰（checkClass 守門）', async ({ page }) => {
     const errors = [];
     page.on('pageerror', (e) => {
@@ -496,15 +503,46 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await page.goto('/');
     await waitConnected(page);
 
-    await openInputHelper(page);
+    await openSettings(page);
+    await page
+      .locator('.PrefModal__Grid__Col--left')
+      .getByText(await label(page, 'options_about'), { exact: true })
+      .click();
+    await page.locator('#pref-debug-mode').check();
+    await page.locator('.PrefModal [aria-label="Close"]').click();
+    await expect(page.locator('.PrefModal')).toBeHidden();
+    const btn = page.locator('#debugRecordBtn');
+    await btn.click(); // 開始錄製
+    await Promise.all([page.waitForEvent('download'), btn.click()]); // 停止 → 下載
+    const close = page.locator('[aria-label="Close"]').filter({ has: page.locator('svg') }).last();
+    await expect(close).toBeVisible();
+    expect(await page.evaluate(() => window.__app.modalShown)).toBe(false);
 
-    // 直接在 SVG 上派發 mousedown（e.target=SVG）→ window mousedown → App.mouse_down
+    // 真滑鼠在 SVG 上按下（e.target=SVG）→ window mousedown → App.mouse_down
     // → checkClass(SVGAnimatedString)。修正前會 throw（pageerror）。
+    await close.locator('svg').evaluate((el) => el.setAttribute('data-e2e-svg', '1'));
+    const r = await waitRectStable(page, '[data-e2e-svg]');
+    const svg = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    expect(
+      await elementUnder(page, svg.x, svg.y, { closest: '[data-e2e-svg]', attribute: 'data-e2e-svg' }),
+      '指標底下不是那個 SVG（e.target 不會是 SVG，測不到 checkClass）'
+    ).toBe('1');
     await page.evaluate(() => {
-      const svg = document.querySelector('.InputHelperModal__Dialog svg');
-      if (!svg) throw new Error('InputHelper 內找不到 SVG，測試前提失效');
-      svg.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      window.__svgDown = null;
+      window.addEventListener('mousedown', (e) => {
+        window.__svgDown = {
+          trusted: e.isTrusted,
+          svgClass: typeof e.target.className !== 'string',
+        };
+      }, { capture: true, once: true });
     });
+    await page.mouse.move(svg.x, svg.y);
+    await page.mouse.down();
+    await page.mouse.up();
+    // 前提：瀏覽器真的對 SVG 發了 mousedown（className 不是字串＝SVGAnimatedString）。
+    await expect
+      .poll(() => page.evaluate(() => window.__svgDown))
+      .toEqual({ trusted: true, svgClass: true });
     await page.waitForTimeout(50);
     expect(errors, errors.join('\n')).toHaveLength(0);
   });
@@ -538,27 +576,8 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await feedRaw(page, '\x1b[2J\x1b[HCOPYSMOKE');
     await page.waitForTimeout(200);
 
-    // 程式化選取畫面上的字，再直接派發 contextmenu（真滑鼠右鍵的 mousedown 落點
-    // 若在選取範圍外會先收合選取，headless 下座標對位太脆）。ContextMenu 的
-    // handler 讀的是事件當下的 window.getSelection()，與拖曳選取等價。
-    await page.evaluate(() => {
-      const walker = document.createTreeWalker(
-        document.getElementById('mainContainer'), NodeFilter.SHOW_TEXT);
-      for (let node; (node = walker.nextNode()); ) {
-        const idx = node.textContent.indexOf('COPYSMOKE');
-        if (idx < 0) continue;
-        const range = document.createRange();
-        range.setStart(node, idx);
-        range.setEnd(node, idx + 'COPYSMOKE'.length);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-        document.getElementById('BBSWindow').dispatchEvent(
-          new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 10 }));
-        return;
-      }
-      throw new Error('COPYSMOKE 未渲染到畫面，測試前提失效');
-    });
+    // 真滑鼠拖曳選字 → 在選取範圍內按真右鍵（helpers/real_input）。
+    await rightClickSelectedText(page, 'COPYSMOKE');
 
     const menu = page.locator('.DropdownMenu').first();
     await expect(menu).toBeVisible();

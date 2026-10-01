@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// real-input: tests/e2e/offline/easy_reading_reverse.offline.spec.js
+//   （真滾輪放手（反向期間停在 head 讀的人）；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // 好讀按 End 之後黏在文末（src/js/bottom_stick.js）。真瀏覽器的症狀守在 offline
 // easy_reading_reverse.offline.spec.js「文末有圖」；這裡鎖放手條件。
 import { createBottomStick } from '../../src/js/bottom_stick';

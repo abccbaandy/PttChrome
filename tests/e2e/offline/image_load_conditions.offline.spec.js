@@ -225,17 +225,18 @@ test.describe('行內開圖：圖片載入情境（離線重放）', () => {
       '這一測的前提是此刻真的有圖在載'
     ).toBeGreaterThan(0);
 
-    const sent = await page.evaluate(async () => {
-      const out = [];
-      window.__stubWSSent = (s) => out.push(s);
-      const input = document.getElementById('t');
-      input.focus();
-      window.__app.view.onKeyDown(
-        Object.assign(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), {})
-      );
-      await new Promise((r) => setTimeout(r, 200));
-      return out.join('');
+    await page.evaluate(() => {
+      window.__keySent = [];
+      window.__stubWSSent = (s) => window.__keySent.push(s);
     });
-    expect(sent, '圖片載入不得卡住終端機的送鍵路徑').toContain('\x1b[D');
+    // 真鍵盤（瀏覽器生成 keydown → #t 的 listener → term_view.onKeyDown）。
+    await page.locator('#t').focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect
+      .poll(() => page.evaluate(() => window.__keySent.join('')), {
+        message: '圖片載入不得卡住終端機的送鍵路徑',
+        timeout: 2000,
+      })
+      .toContain('\x1b[D');
   });
 });

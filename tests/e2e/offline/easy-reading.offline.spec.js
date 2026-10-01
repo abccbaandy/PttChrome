@@ -470,11 +470,9 @@ test.describe('好读 End 切回原生（离线重放）', () => {
     // src/js/easy_reading.js#_send）。量 window.__replay.sent 直接证明 byte 到了
     // socket —— 那才是这条测试真正在乎的事，也不会再被「换了哪个出口」弄假。
     const before = await page.evaluate(() => window.__replay.sent.length);
-    await page.evaluate(() => {
-      const a = window.__app;
-      // 走真实键盘路径：term_view.onKeyDown 的原生分支才是拦截点
-      a.view.onKeyDown(Object.assign(new KeyboardEvent('keydown', { key: 'F8' }), {}));
-    });
+    // 真键盘：keydown 由浏览器生成，经 #t 的 listener 进 term_view.onKeyDown 的原生分支。
+    await page.locator('#t').focus();
+    await page.keyboard.press('F8');
     await page.waitForTimeout(300);
 
     expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);

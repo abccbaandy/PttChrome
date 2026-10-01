@@ -24,6 +24,7 @@ const {
   replayCassette,
   feedRaw,
 } = require('../helpers/replay');
+const { rightClickElement, rightClickPlainText } = require('../helpers/real_input');
 
 const cassette = findCassette('article');
 
@@ -70,16 +71,9 @@ async function setupRows(page) {
   await page.waitForTimeout(800);
 }
 
-// 對某個 <a> 派發 contextmenu（真滑鼠右鍵在 headless 下座標對位太脆，
-// 同 quick_search / ui_behavior 的手法）。
+// 對某個 <a> 按真右鍵（helpers/real_input：捲進視窗、等版面停、確認底下是它才按）。
 async function rightClickAnchor(page, selector) {
-  await page.evaluate(sel => {
-    const a = document.querySelector(sel);
-    if (!a) throw new Error('未渲染到畫面，測試前提失效: ' + sel);
-    a.dispatchEvent(
-      new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 10 })
-    );
-  }, selector);
+  await rightClickElement(page, selector);
   await expect(page.locator('.DropdownMenu').first()).toBeVisible();
 }
 
@@ -210,14 +204,8 @@ test.describe('文章連結的右鍵選單（離線重放）', () => {
   test('輸入小幫手／Live 文小幫手：預設不在選單，開了才出現', async ({ page }) => {
     test.setTimeout(90000);
     await boot(page);
-    // 空白處右鍵（normalEnabled 那一組才有這兩項）。
-    await page.evaluate(() => {
-      document
-        .getElementById('BBSWindow')
-        .dispatchEvent(
-          new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 10 })
-        );
-    });
+    // 純文字處右鍵（normalEnabled 那一組才有這兩項）。
+    await rightClickPlainText(page);
     await expect(page.locator('.DropdownMenu').first()).toBeVisible();
     await expect(
       itemByText(page, await label(page, 'cmenu_showInputHelper'))
@@ -231,13 +219,7 @@ test.describe('文章連結的右鍵選單（離線重放）', () => {
       enableInputHelper: true,
       enableLiveArticleHelper: true,
     });
-    await page.evaluate(() => {
-      document
-        .getElementById('BBSWindow')
-        .dispatchEvent(
-          new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 10 })
-        );
-    });
+    await rightClickPlainText(page);
     await expect(page.locator('.DropdownMenu').first()).toBeVisible();
     await expect(
       itemByText(page, await label(page, 'cmenu_showInputHelper'))
