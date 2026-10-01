@@ -93,7 +93,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     判準是「前面若干條全綠、之後**整批**同一個錯、每條耗時一致」。先確認 8080 還活著，
     別往被測 code 追。
   - **offline e2e 多 worker 並行、live 恆 1 worker**（`tests/e2e/workers_policy.js`：只有這輪全是
-    `offline*` project 才放開，本機 `50%` 核心／CI 2；live 多一個 worker＝多一次登入）。本機整套 offline
+    `offline*` project 才放開，本機 `50%` 核心／CI 4、逆境 job 8；live 多一個 worker＝多一次登入）。本機整套 offline
     約 2.5 分、adverse 約 3 分，前景跑即可。offline spec 之間**不准有相依性**（`fullyParallel: true`，
     同檔的 test 也會被拆到不同 worker）：不准 `describe.serial`／`beforeAll` 共用 page、不准寫共用檔或佔固定 port。
   - **e2e 整批秒掛、零 AssertionError ＝本機環境問題，不是被測 code 壞**（Playwright 升版後沒裝瀏覽器、

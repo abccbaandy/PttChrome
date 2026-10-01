@@ -11,8 +11,9 @@
 // 判斷方向刻意是「證明全是 offline 才放開」，而不是「看到 live 才收緊」：
 // 漏判只會變慢，不會多登入。
 //
-// 本機 '50%'＝邏輯核心數的一半；CI（GitHub ubuntu-latest 4 vCPU）用 2，每個 worker
-// 還要撐一個 Chromium 加上共用的單一 Vite 進程。
+// 本機 '50%'＝邏輯核心數的一半；CI（GitHub ubuntu-latest 4 vCPU）用 4。實測 CI 2 workers
+// 時 offline 13–14 分 → 8.3 分（只快 1.6 倍，本機 8 workers 快 4 倍）⇒ 2 沒吃滿 CPU。
+// 逆境 job 在 workflow 另以 E2E_WORKERS 開更多（等延遲圖片不吃 CPU）。
 // env E2E_WORKERS 可覆寫並行值（只影響「全是 offline」的情況；CLI `--workers` 本來就優先於 config）。
 
 function projectsFromArgv(argv) {
@@ -29,8 +30,17 @@ function e2eWorkers(argv, env) {
   const projects = projectsFromArgv(argv);
   const offlineOnly = projects.length > 0 && projects.every((p) => p.startsWith('offline'));
   if (!offlineOnly) return 1;
-  if (env.E2E_WORKERS) return env.E2E_WORKERS;
-  return env.CI ? 2 : '50%';
+  if (env.E2E_WORKERS) return parseWorkersEnv(env.E2E_WORKERS);
+  return env.CI ? 4 : '50%';
+}
+
+// env 只能是字串，Playwright 的 config.workers 卻只收「正整數或百分比字串」——裸 "3"
+// 會讓 config 載入丟錯。格式不合直接丟錯，不默默退回預設（否則 CI 設了等於沒設）。
+function parseWorkersEnv(raw) {
+  const v = String(raw).trim();
+  if (/^[1-9]\d*$/.test(v)) return Number(v);
+  if (/^[1-9]\d*%$/.test(v)) return v;
+  throw new Error(`E2E_WORKERS 必須是正整數或百分比（如 4、50%），收到：${raw}`);
 }
 
 module.exports = { e2eWorkers, projectsFromArgv };

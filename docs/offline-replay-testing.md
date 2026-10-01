@@ -89,7 +89,7 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 - 沒錄過任何 cassette/fixture：offline 文章/增強 spec 與 Layer2 unit **skip**（非失敗）；
   `harness.offline.spec.js` 永遠不需素材（驗離線 boot+onData 渲染）。
 - 並行：`workers` 由 `tests/e2e/workers_policy.js#e2eWorkers` 從命令列推導——這輪**全是** `offline*`
-  project 才多 worker（本機 `50%`、CI 2、env `E2E_WORKERS` 覆寫），其餘恆 1（live 共用 session 是
+  project 才多 worker（本機 `50%`、CI 4、env `E2E_WORKERS` 覆寫——CI 逆境 job 設 8，因為等延遲圖片不吃 CPU），其餘恆 1（live 共用 session 是
   worker-scoped，多 worker＝多登入）。offline project 皆 `fullyParallel: true` ⇒ 每條 test 必須自足
   （自己 `bootOffline`、不共用檔案／port）。守護 `tests/unit/e2e_workers_policy.test.js`。
   實測（16 邏輯核）：offline 三 project 約 2.3 分（原串行約 10 分）、adverse 三桶 8 workers 約 3 分且未撞 DLL 崩潰。

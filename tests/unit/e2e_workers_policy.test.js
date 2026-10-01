@@ -21,18 +21,26 @@ describe("e2eWorkers", () => {
     expect(e2eWorkers([...node, ...args], { CI: "true", E2E_WORKERS: "8" })).toBe(1);
   });
 
-  test("全是 offline* ⇒ 本機 50%、CI 2", () => {
+  test("全是 offline* ⇒ 本機 50%、CI 4", () => {
     const argv = [...node, "--project=offline", "--project=offline-firefox", "--project=offline-mobile"];
     expect(e2eWorkers(argv, {})).toBe("50%");
-    expect(e2eWorkers(argv, { CI: "true" })).toBe(2);
+    expect(e2eWorkers(argv, { CI: "true" })).toBe(4);
   });
 
   test("逆境桶也算 offline", () => {
     expect(e2eWorkers([...node, "--project=offline-slow"], {})).toBe("50%");
   });
 
-  test("E2E_WORKERS 覆寫並行值", () => {
-    expect(e2eWorkers([...node, "--project=offline"], { E2E_WORKERS: "3" })).toBe("3");
+  // env 只能給字串，但 Playwright 的 config.workers 只收「數字或百分比字串」，
+  // 裸字串 "3" 會讓 config 載入直接丟錯（must be a number or percentage）。
+  test("E2E_WORKERS 覆寫並行值：整數轉成 number、百分比原樣保留", () => {
+    expect(e2eWorkers([...node, "--project=offline"], { E2E_WORKERS: "3" })).toBe(3);
+    expect(e2eWorkers([...node, "--project=offline"], { E2E_WORKERS: "75%" })).toBe("75%");
+  });
+
+  test("E2E_WORKERS 格式不合就丟錯（不可默默退回預設，否則設了等於沒設）", () => {
+    expect(() => e2eWorkers([...node, "--project=offline"], { E2E_WORKERS: "eight" })).toThrow(/E2E_WORKERS/);
+    expect(() => e2eWorkers([...node, "--project=offline"], { E2E_WORKERS: "0" })).toThrow(/E2E_WORKERS/);
   });
 
   test("projectsFromArgv 兩種寫法都認", () => {

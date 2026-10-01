@@ -1,6 +1,6 @@
 name: Test
 
-# Reusable workflow：五個測試 job（不含 live e2e）。
+# Reusable workflow：五個測試 job（不含 live e2e）＋一個給 e2e job 讀 Playwright 版本的小 job。
 # 由 deploy.yml（push dev，後接 build/deploy）與 pr.yml（pull_request，只跑 test）共用。
 on:
   workflow_call:
@@ -61,8 +61,36 @@ jobs:
           yarn install --immutable
           yarn test:integration
 
-  test-e2e-offline:
+  # e2e job 用的 Playwright 官方 Docker image 版本（＝yarn.lock 裡 @playwright/test 的版本）。
+  # 不寫死在下面的 container.image：image 內建瀏覽器必須與 npm 套件同版，Dependabot 升版
+  # 只改 yarn.lock，寫死就是每次升版都紅。只讀檔不 install，約 10 秒。
+  # 守護：tests/unit/ci_playwright_container.test.js。
+  playwright-version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            yarn.lock
+            scripts/playwright-version.mjs
+          sparse-checkout-cone-mode: false
+      - id: v
+        run: node scripts/playwright-version.mjs >> "$GITHUB_OUTPUT"
+
+  # e2e job 一律跑在 Playwright 官方 image 裡：瀏覽器與系統依賴都已內建，不跑
+  # `playwright install --with-deps`。理由：那一步底下是 apt，速度看 Ubuntu 鏡像站臉色
+  #（實測同一輪兩個 job，一個 37 秒、另一個卡 414 秒），還會被 runner 內建的第三方 apt
+  # 來源連坐（Google Chrome 來源發布中間態 ⇒ apt-get update 整包回 100）。
+  # `--user 1001`＝runner 使用者，checkout／cache 的檔案權限才對得上；`--ipc=host` 是
+  # Playwright 官方建議：Docker 預設 /dev/shm 只有 64MB，多 worker 的 Chromium 會被它撐爆。
+  test-e2e-offline:
+    needs: playwright-version
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
+      options: --user 1001 --ipc=host
     steps:
       - uses: actions/checkout@v7
 
@@ -78,24 +106,11 @@ jobs:
           node-version: 24
           cache: yarn
 
-      # `playwright install --with-deps` 會先跑 apt-get update。GitHub runner image 內建
-      # 一個 Google Chrome 的 apt 來源，而它一旦處在「Release 宣告的雜湊與實際 Packages.gz
-      # 對不起來」的發布中間態，apt-get update 就整包回 100 ⇒ 瀏覽器連下載都沒開始、
-      # **一條測試都沒跑**，看起來卻像 e2e 整批爆炸（2026-09-09 實測：Release 宣告
-      # 233e56de…、實際檔案 bc1428ab…，重跑兩次同樣紅，直接對 dl.google.com 抓下來比對
-      # 也是同一組值 ⇒ 上游還在壞，不是隨機掉包，重跑無效）。
-      # 我們跑的是 Playwright 自帶的 Chromium/Firefox，系統依賴全來自 Ubuntu 官方 archive，
-      # **用不到**這個第三方來源 ⇒ 移掉它，CI 就不再被 Google 的發布狀態連坐。
-      # 守護：tests/unit/ci_apt_sources.test.js（新增 e2e job 時別漏這一步）。
-      - name: Drop unused Google Chrome apt source
-        run: sudo rm -f /etc/apt/sources.list.d/google-chrome*
-
       # firefox 是 offline-firefox project 用的（tests/e2e/offline/selection.offline.spec.js）：
-      # issue #22 的選取／複製症狀只在 Firefox 出現，Chromium 永遠綠。
+      # issue #22 的選取／複製症狀只在 Firefox 出現，Chromium 永遠綠。image 已內建。
       - name: Offline E2E tests (Playwright replay)
         run: |
           yarn install --immutable
-          npx playwright install --with-deps chromium firefox
           yarn test:e2e:offline
 
   # 逆境 offline e2e：同一批版面／座標敏感的 spec，但圖片改成「壞掉／很慢／混合」。
@@ -105,7 +120,11 @@ jobs:
   # 情境是決定性的（固定延遲、URL 雜湊分桶），純函式守護在
   # tests/unit/offline_image_profile.test.js。
   test-e2e-offline-adverse:
+    needs: playwright-version
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
+      options: --user 1001 --ipc=host
     steps:
       - uses: actions/checkout@v7
 
@@ -121,16 +140,14 @@ jobs:
           node-version: 24
           cache: yarn
 
-      # 同上面 test-e2e-offline 的說明（apt-get update 被內建的 Google Chrome 來源拖垮）。
-      - name: Drop unused Google Chrome apt source
-        run: sudo rm -f /etc/apt/sources.list.d/google-chrome*
-
-      # 只裝 chromium：逆境 project 不含 offline-firefox（那支是單行 feedLine，
-      # 結構上不受延遲載入影響，見 tests/unit/e2e_layout_settle.test.js 的豁免名單）。
+      # E2E_WORKERS：逆境桶的時間大多花在等刻意延遲的圖片（Playwright 進程裡的計時器，
+      # 不吃 CPU），所以 worker 數可以開得比 vCPU 多；其餘 offline job 用預設值
+      #（tests/e2e/workers_policy.js）。
       - name: Adverse-image offline E2E (slow / broken / mixed)
+        env:
+          E2E_WORKERS: "8"
         run: |
           yarn install --immutable
-          npx playwright install --with-deps chromium
           yarn test:e2e:offline:adverse
 
   # proxy/imgur-worker 是獨立的 npm 子專案（Cloudflare Worker 代理，非 yarn workspace），

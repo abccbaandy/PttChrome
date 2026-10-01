@@ -18,7 +18,7 @@ const YAML = fs.readFileSync(
   "utf8",
 );
 
-// 以 job 為單位切開（頂層 job 是 2 空格縮排的 `<name>:`）——與 ci_apt_sources.test.js 同法。
+// 以 job 為單位切開（頂層 job 是 2 空格縮排的 `<name>:`）——與 ci_playwright_container.test.js 同法。
 const jobs = () => {
   const out = [];
   let cur = null;
