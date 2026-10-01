@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 開站 connect() 目標的優先序（src/js/boot_site.js）。
 // 重點守護：Android APK 的本機 proxy 只在讀取端覆寫，**不寫回 prefs**。
 // 第三方 demo 曾把 useProxy/proxyUrl 寫進 localStorage，prefs 經 pref_sync

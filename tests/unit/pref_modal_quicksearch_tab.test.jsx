@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 設定面板「快速搜尋」分頁的 UI 契約。
 // 內建項目只能停用（pref 只存被停用的 id，見 pref_storage.js#quickSearchDisabled），
 // 自訂項目可新增／編輯／刪除；全部走既有的「關閉時才寫入 localStorage」路徑。

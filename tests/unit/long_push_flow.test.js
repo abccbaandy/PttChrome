@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 長推文送出序列的狀態機（src/js/long_push_session.js）。
 //
 // 用**真的** CommandQueue ＋ 假的 buf/view（harness 形狀同 aid_navigation.test.js），

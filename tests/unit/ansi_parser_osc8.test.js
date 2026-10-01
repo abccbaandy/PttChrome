@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // OSC 8 超連結的整條接線：AnsiParser → TermBuf.setHyperlink → 逐格 hyperlink →
 // updateCharAttr 的 URL 旗標（partOfURL / startOfURL / fullurl）→ 渲染鏈。
 //

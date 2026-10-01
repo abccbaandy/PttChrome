@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 已讀文章低亮（pref dimReadArticles）的已讀判定：comment_parse#isListRowRead。
 // 規則出處 pttbbs `mbbsd/bbs.c#readdoent`：type 字元畫在 cell 8（`%7d` + 空白 + type），
 // 置底列（"  " + "  ★ "）同樣剛好 7 格。判定按 cell 讀，不走 rowToText 字串索引。

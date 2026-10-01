@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 好讀「左圖右文」AI 校正的渲染接線守護（仿 merge_image_caption_render）。
 // 回歸來源：翻譯被空行切成多段時規則只配到第一段（打蚊子那篇）——這裡用假的
 // window.LanguageModel 驗「AI 回 keep=N → 整段翻譯搬進右欄」。

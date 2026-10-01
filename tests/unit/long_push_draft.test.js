@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 長推文草稿（src/js/long_push_draft.js）。
 //
 // 守三件事：

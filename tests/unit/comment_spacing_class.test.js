@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 推文區塊行距的容器 class 接線（render/screen.js#_setCommentSpacing）。
 //
 // 樣式本身是純 CSS（守護在 comment_spacing_css.test.js），這一支守的是**什麼時候

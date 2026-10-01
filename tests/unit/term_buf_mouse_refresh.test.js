@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 「server 重畫之後，滑鼠沒有物理移動」時 `buf.mouseAction` 必須仍然有效。
 //
 // 壞掉的行為：`notify()` 的每個 changed 幀都呼叫 `clearHighlight()`，它把

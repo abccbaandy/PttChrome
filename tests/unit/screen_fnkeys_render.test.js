@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 功能鍵按鈕的渲染契約（`<a class="fnKey">`）。
 //
 // 為什麼一定要有這一支：`<a>` 是**刻意**選的 —— App.mouse_click 的 isAnchorTarget

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 好讀累積長頁的**增量重算**（src/render/screen.js + screen_annotate_cache.js）。
 //
 // 背景：好讀文章每收到一頁就同步重繪整份累積頁。原本每幀對全部 n 列重跑

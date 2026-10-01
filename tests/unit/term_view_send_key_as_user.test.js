@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // view.sendKeyAsUser（src/js/term_view.js）——手勢與瀏覽器返回鍵的唯一出口。
 //
 // 它合成一個 keydown 再走既有的 onKeyDown 分派鏈，所以三種 render 分支各自的

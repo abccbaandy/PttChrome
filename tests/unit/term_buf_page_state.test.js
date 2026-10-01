@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // `TermBuf.setPageState` 對 **menu.c#domenu 子選單**的分類。
 //
 // 為什麼要有這一份：`setPageState` **刻意沒有 reset 分支**

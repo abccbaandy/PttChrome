@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 「點空白處關框」在 App.mouse_click 的接線鎖（判斷本身另有 screen_dismiss.test.js）。
 //
 // 這裡鎖的是三件純函式看不到的事：

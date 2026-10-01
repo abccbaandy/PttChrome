@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 vi.mock("../../src/js/pref_storage", () => ({
   readValuesWithDefault: vi.fn(() => ({ enableEasyReading: true }))
 }));

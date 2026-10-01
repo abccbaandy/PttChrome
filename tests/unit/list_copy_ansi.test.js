@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 「複製為 ANSI」取到的必須是**畫面上那一份 lines**，不是 server 的真實 24 列。
 //
 // 壞掉的行為（改成原生捲動前就已存在）：`App.doCopyAnsi` 只在文章好讀

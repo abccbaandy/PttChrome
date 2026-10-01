@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 斷線提示（ConnectionAlert）掛在 window capture 階段的 keydown 攔截器。
 //
 // 回歸守護（實際回報：PTT 維護期間開設定頁，欄位完全打不了字）：原本的攔截器對

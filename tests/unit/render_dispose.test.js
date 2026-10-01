@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 純 JS 渲染鏈的**生命週期**守護。
 //
 // 為什麼需要：React 卸載一棵子樹時會自動跑每個元件的 cleanup（unobserve、abort、

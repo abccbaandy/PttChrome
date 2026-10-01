@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 「開燈」的隱藏文字偵測（src/js/hidden_text.js）——軌 A／軌 B 的逐列判定。
 //
 // 用真 TermBuf + AnsiParser + 真 Big5 表跑真的 escape 序列，不自己造假 TermChar：

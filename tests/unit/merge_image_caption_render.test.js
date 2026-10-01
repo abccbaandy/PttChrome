@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 好讀「圖左字右合併」的渲染接線守護（仿 screen_dropHidden.test.js）：
 //   - 合併狀態是 renderer 的內部 state（浮動按鈕切換）：開啟時翻譯行從頂層消失、
 //     搬進所屬圖行的 .mergedCaptionCol；data-row 保留絕對 index。

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 非導覽操作完成後自動切回好讀（pref enableListNativeAutoResume，2026-09-03）。
 //
 // 兩半：

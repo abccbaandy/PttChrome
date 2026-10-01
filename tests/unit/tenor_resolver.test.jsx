@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 回報案例：https://tenor.com/bgOd4.gif 自動開圖打不開，點連結只會跳到網頁。
 //
 // 症狀成因：該 URL 以 .gif 結尾但其實是 HTML 頁（301 → /view/<slug>-<id>），

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Unit tests for DeepLinkController (src/js/deep_link_controller.js): 決定
 // 「什麼時候可以跳」與「用哪個入口跳」。AidNavigation 用假物件（它自己的序列
 // 已經在 aid_navigation.test.js 驗過了），這裡守的是排程行為。

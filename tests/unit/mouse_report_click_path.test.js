@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // XTerm SGR 滑鼠回報在 App.mouse_click / App.mouse_scroll 的接線鎖。
 //
 // 編碼與狀態機另有 mouse_report_encode / mouse_report_modes；這裡鎖的是純函式

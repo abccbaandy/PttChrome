@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // List easy reading v4 pure-layer guards: screen classification (fingerprint
 // predicates over a REAL captured C_Chat board page + synthetic variants),
 // burst classification, the full state-machine transition table (every row of

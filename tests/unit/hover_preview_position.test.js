@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 懸停預覽的座標守護。
 //
 // 症狀（live e2e 主控台）：`NaN` is an invalid value for the `left` css style

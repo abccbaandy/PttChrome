@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 好讀按 End 之後黏在文末（src/js/bottom_stick.js）。真瀏覽器的症狀守在 offline
 // easy_reading_reverse.offline.spec.js「文末有圖」；這裡鎖放手條件。
 import { createBottomStick } from '../../src/js/bottom_stick';

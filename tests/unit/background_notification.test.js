@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 背景通知（水球 / deep link 交接共用）—— TermView 的三個方法。
 //
 // 用 prototype call + 假 this 測（同 easy_reading_send_gate 的風格）：真正要守的是

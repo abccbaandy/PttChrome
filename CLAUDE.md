@@ -34,7 +34,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 - 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，npm modular SDK 走 dynamic `import()` 拆 lazy chunk，未登入零下載；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。App Check（reCAPTCHA Enterprise）擋 script 直打 API 燒額度；dev 走 debug token（機器 env `APPCHECK_DEBUG_TOKEN`，**不入 repo**）。詳見 `docs/pref-sync-firestore.md`。
 
 ## 測試
-- **Unit（首選，穩定）**：`yarn test:unit`（Vitest，jsdom env，不連網；設定 `vitest.config.mjs` unit project）。`tests/unit/` 30+ 檔＝
+- **Unit（首選，穩定）**：`yarn test:unit`（Vitest，不連網；設定 `vitest.config.mjs` unit project）。**預設 node env＋`threads` pool**，需要 DOM 的檔案第一行寫 `// @vitest-environment jsdom`（jsdom 每檔重建是最大成本，純邏輯檔別宣告；守護 `tests/unit/unit_environment.test.js`）。`tests/unit/` 30+ 檔＝
   純邏輯（解析／狀態機／轉碼）＋核心畫面渲染（`tests/unit/helpers/mount_screen.js` 掛 `ScreenController`／
   `buildRow` + 假 TermChar；週邊 React UI 仍用 @testing-library/react）。
   **含 JSX 的測試檔用 `.test.jsx`**。mock/timer 用 `vi.*`（globals 開啟，`describe/test/expect` 免 import）。
@@ -92,9 +92,10 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   - **`page.goto: net::ERR_CONNECTION_REFUSED` 大面積紅 ＝ dev server 被砍，不是被測 code 壞**：
     判準是「前面若干條全綠、之後**整批**同一個錯、每條耗時一致」。先確認 8080 還活著，
     別往被測 code 追。
-  - **整套 offline e2e 約 10 分鐘**，超過 Bash 工具的 600s 上限會被移到背景。**分批前景跑**
-    （依 spec 檔切三、四批，各 2–3 分鐘）比丟背景好讀也好判斷：背景跑拿不到即時 exit code，
-    而「exit code 就是結論」的規矩對 `playwright test` 一樣適用（禁接管線，見「push 後必查 CI」）。
+  - **offline e2e 多 worker 並行、live 恆 1 worker**（`tests/e2e/workers_policy.js`：只有這輪全是
+    `offline*` project 才放開，本機 `50%` 核心／CI 2；live 多一個 worker＝多一次登入）。本機整套 offline
+    約 2.5 分、adverse 約 3 分，前景跑即可。offline spec 之間**不准有相依性**（`fullyParallel: true`，
+    同檔的 test 也會被拆到不同 worker）：不准 `describe.serial`／`beforeAll` 共用 page、不准寫共用檔或佔固定 port。
   - **e2e 整批秒掛、零 AssertionError ＝本機環境問題，不是被測 code 壞**（Playwright 升版後沒裝瀏覽器、
     Windows 上 `STATUS_DLL_INIT_FAILED`／Firefox `spawn UNKNOWN`／content sandbox 等）。症狀→處置對照表見
     `docs/local-env-troubleshooting.md`，先查它再動 code。

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 右鍵選單的快速搜尋區塊：**一層平鋪**（不再是「快速搜尋 →」子選單），每項自帶
 // 關鍵字，點擊把整個 item 交回上層（上層再用 buildQuickSearchUrl 組網址）。
 //

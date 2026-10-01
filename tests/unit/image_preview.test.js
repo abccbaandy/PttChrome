@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 自動開圖的接線守護。好讀模式的文章頁走 ScreenController（enableLinkInlinePreview）
 // → buildRow → link_segment，替每個超連結掛一個延遲載入佔位盒；佔位盒在視野內時
 // 掛上 <ImagePreviewer component={Inline}>。曾經回歸過：term_view 傳

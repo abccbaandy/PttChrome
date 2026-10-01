@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Unit guard for auto-login credential resolution and migration
 // (AutoLogin._resolveCredential / _maybeMigrate / setSessionCredential,
 // src/js/auto_login.js) — previously untested, and now the place where the 2FA

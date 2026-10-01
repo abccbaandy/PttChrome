@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 長推文輸入框（src/components/ContextMenu/LongPushModal.jsx）。
 //
 // 守三件會直接害到使用者的事：

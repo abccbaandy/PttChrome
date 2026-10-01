@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 密碼管理員單一入口（src/js/credential_store.js）：瀏覽器 PasswordCredential
 // 或 Android APK 原生 Credential Manager（bridge）。Android WebView 沒有
 // PasswordCredential ⇒ 以前 APK 內自動登入永遠拿不到密碼（本檔要守的 bug）。

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // SGR 擴充色（38/48/58）的子參數必須整組吃掉。
 //
 // 背景：`TermChar.assignParams` 原本用 `params.forEach`，把每個數字都當成獨立的

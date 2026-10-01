@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // lineChangeds 是不是真的「這一幀哪幾列變了」。
 //
 // 背景：TermChar.needUpdate 從 fork 來的第一天起就只設 true、從來不清（sticky），

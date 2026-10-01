@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Regression for the "自動開圖載入失敗靜默塌掉" bug (per-domain transient host
 // failure, e.g. i.urusai.cc rate-limit/hotlink): the old FallbackImage advanced
 // on a single onError and rendered `false` once candidates ran out — no loading

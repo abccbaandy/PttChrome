@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Cursor Position Report（`ESC[6n`）—— **本專案刻意不回應**，這支測試就是那個決定的閂鎖。
 //
 // PTT 2026-09-20 公告「新指令: Cursor Position Report」，PTT1 9/27、PTT2 9/20 上線：

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 手機 Phase 3–4 的畫面類型對帳（docs/mobile.md）。
 // term_view._syncMobileSurface 是 render 前的對帳點：手機模式下，好讀長頁（!_gridRender）
 // ⇒ 'article'（換行版面）、列表好讀視窗（帶 listScroll）⇒ 'list'（卡片），其餘 ⇒ 'grid'。

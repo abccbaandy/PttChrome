@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // dirty-row 逐列 patch（src/render/screen.js#_buildNodes 的第三層重用）。
 //
 // 背景：原生／列表畫面每收到一幀就整份重畫。去 React 化之後 renderer 仍然每列都

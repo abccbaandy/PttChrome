@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 右鍵選單的「前已讀後未讀」項：有目標才畫、點下去要走 markReadUnread handler。
 //
 // gating 刻意**全部**收在 list_session.markReadTargetAtRow（狀態／置底文／header

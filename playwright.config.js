@@ -1,4 +1,5 @@
 const { defineConfig, devices } = require('@playwright/test');
+const { e2eWorkers } = require('./tests/e2e/workers_policy');
 
 // 逆境 project 的 spec 清單（詳見下方 offline-slow 的註解）。
 // 這兩個常數被 tests/unit/e2e_layout_settle.test.js 讀去做靜態守護，改名要一起改。
@@ -56,7 +57,8 @@ module.exports = defineConfig({
   timeout: 60000,
   expect: { timeout: 15000 },
   fullyParallel: false,
-  workers: 1,
+  // 只跑 offline* 時多 worker，其餘（含 live、未指定 project）恆 1。理由見 tests/e2e/workers_policy.js。
+  workers: e2eWorkers(process.argv, process.env),
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://localhost:8080',
@@ -88,6 +90,7 @@ module.exports = defineConfig({
     },
     {
       name: 'offline',
+      fullyParallel: true,
       use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK },
       testMatch: 'offline/**/*.spec.js',
       testIgnore: 'offline/mobile_*.spec.js',
@@ -105,6 +108,7 @@ module.exports = defineConfig({
       // （mobile_layout.mobileTermGeometry），而**錄製檔全是 24 列**——原生 839px 高會
       // 給 52 列，重放永遠湊不成完整一屏（好讀等不到翻頁）。390 ⇒ 24 列。
       name: 'offline-mobile',
+      fullyParallel: true,
       use: {
         ...devices['Pixel 7'],
         viewport: { width: 412, height: 390 },
@@ -128,6 +132,7 @@ module.exports = defineConfig({
       // 環境變數能救。測試瀏覽器只載入本機 dev server 與 fixture，關掉 content
       // sandbox 沒有實際風險。
       name: 'offline-firefox',
+      fullyParallel: true,
       use: {
         ...devices['Desktop Firefox'],
         proxy: OFFLINE_NO_NETWORK,
@@ -153,18 +158,21 @@ module.exports = defineConfig({
     {
       name: 'offline-slow',
       use: ADVERSE_USE,
+      fullyParallel: true,
       timeout: 300000,
       testMatch: [...ADVERSE_LAYOUT_SPECS, ...ADVERSE_IMAGE_SPECS],
     },
     {
       name: 'offline-broken',
       use: ADVERSE_USE,
+      fullyParallel: true,
       timeout: 300000,
       testMatch: ADVERSE_LAYOUT_SPECS,
     },
     {
       name: 'offline-mixed',
       use: ADVERSE_USE,
+      fullyParallel: true,
       timeout: 300000,
       testMatch: ADVERSE_LAYOUT_SPECS,
     },

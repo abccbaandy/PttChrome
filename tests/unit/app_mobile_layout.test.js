@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { App } from '../../src/js/pttchrome';
 
 // App 的手機模式接線（applyMobileLayout／toggleSoftKeyboard，docs/mobile.md）。

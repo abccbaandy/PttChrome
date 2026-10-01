@@ -224,7 +224,7 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
 `tests/unit/e2e_login_budget.test.js`）。這裡只寫怎麼用。
 
 - `helpers/fixtures.js`：worker-scoped fixture `shared`（`{ page, logs }`），整個 worker 只登入一次，
-  跨 spec 檔重用同一個已登入 page（`workers:1`）。
+  跨 spec 檔重用同一個已登入 page（live 恆 `workers:1`，由 `workers_policy.js` 保證；offline 才並行）。
 - **規則**（新 test 預設照此寫）：
   - `const { test, expect } = require('./helpers/fixtures')`，case 收進 `test.describe.serial`。
   - 每個 case 開頭：`logs.length = 0` → `await resetSession(page)`（回主選單 + prefs baseline）→

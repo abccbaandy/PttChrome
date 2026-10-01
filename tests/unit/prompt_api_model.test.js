@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 設定頁 AI **總開關**用的模型暖機入口（src/js/prompt_api.js#ensurePromptApiModel）。
 // 它與各功能的 ensure*Ready 差在：功能中性、且成功後立刻 destroy 不進 session 快取
 // ——總開關不知道使用者接下來要用哪個功能，預先常駐某個功能的 base session 只是

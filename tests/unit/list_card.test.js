@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 手機 Phase 4：列表卡片（render/list_card.js、docs/mobile.md「Phase 4」）。
 // 鎖三件事：欄位切在哪（出處 bbs.c#readdoent／board.c#brdlist_renderer）、外部契約
 // （srow／data-row／data-list-*）、以及只在 enhance.listCards 時才取代 buildRow。

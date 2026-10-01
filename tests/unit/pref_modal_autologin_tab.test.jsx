@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 設定面板「自動登入」分頁的 UI 契約（jsdom + @testing-library/react）。
 // 這個分頁把原本散在「增強功能」（開關／重複登入／跳過歡迎，會上雲）與「本機設定」
 // （帳號／密碼，local-only）兩處的自動登入設定集中起來，並補上 2FA 密鑰欄位。

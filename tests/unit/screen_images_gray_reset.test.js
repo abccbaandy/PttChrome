@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 「換文章卻還有幾張莫名其妙的灰圖」的回歸守護（比照 screen_images_enlarged_reset）。
 //
 // 單張圖的灰階態放在 module 級的 Set（鍵＝href，見 src/render/inline_preview_slot.js

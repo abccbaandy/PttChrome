@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 好讀自動開圖的延遲載入／遠離卸載（src/render/inline_preview_slot.js ＋
 // src/js/lazy_media.js）。
 //

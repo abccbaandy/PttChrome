@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 設定頁「一般 → 右鍵選單」區塊：兩個小幫手的顯示開關。
 //
 // 這兩項**預設關**（enableInputHelper / enableLiveArticleHelper）—— 它們是小眾

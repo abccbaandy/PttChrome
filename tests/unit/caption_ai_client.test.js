@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 裝置端 AI 瀏覽器層（src/js/caption_ai.js）的守護：假 window.LanguageModel
 // 驗 availability 對映、佇列、structured output 解析、以及**每一種失敗都退回規則**。
 // 真實模型能力不在 CI 量（見 tools/caption-ai-eval.html）。

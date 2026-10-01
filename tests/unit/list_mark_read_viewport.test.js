@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 右鍵「前已讀後未讀」做完回到好讀列表：閱讀進度（視口頂端那一列）必須還原。
 //
 // 為什麼會丟：markReadUnreadBefore 走原生 passthrough → _enterFunctionMode 清掉

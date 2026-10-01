@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 設定面板「設定備份」分頁的 UI 契約（jsdom + @testing-library/react）。
 // 這個分頁收三件事：匯出成檔案、從檔案匯入、雲端同步（從一般分頁搬過來）。
 // 守的重點：

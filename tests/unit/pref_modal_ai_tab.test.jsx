@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 設定面板「AI」分頁的 UI 契約（jsdom + @testing-library/react）。
 // 守的是使用者定案的三條規則：
 //   1) 總開關 enableAi 是**總閘門**——關閉時所有子選項反灰，但值原樣保留。

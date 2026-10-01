@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Android APK 殼 ↔ 網頁的 bridge（src/js/android_bridge.js）。原生端是
 // androidx.webkit WebMessageListener：物件有 postMessage(string)，回覆以
 // MessageEvent（data＝字串）送回。這裡用假物件模擬原生端。

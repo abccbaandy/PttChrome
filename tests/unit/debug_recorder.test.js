@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { DebugRecorder, snapshotState, cursorGeomSample } from "../../src/js/debug_recorder";
 import { diag, diagActive } from "../../src/js/diag";
 

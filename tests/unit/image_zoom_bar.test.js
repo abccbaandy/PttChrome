@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 內嵌預覽圖上的倍率列「－ 100% ＋」（src/render/inline_preview_slot.js）。
 //
 // 倍率本身住在 ScreenController（tests/unit/screen_image_zoom.test.js），這裡守 slot 端：

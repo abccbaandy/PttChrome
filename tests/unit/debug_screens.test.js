@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // scripts/debug-screens.mjs（`yarn debug:screens`）：把 debug 錄製檔解回畫面／時間軸。
 //
 // 為什麼要守：這是分析使用者回報的主要工具，它錯了會**看起來像 PTT 送了那些東西**

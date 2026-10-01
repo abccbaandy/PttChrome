@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 列表好讀「貼上」合約（2026-08 起）：貼上＝T3 整串 passthrough。
 // 舊行為：貼上完全繞過 ListSession（App.onPasteDone → view.onTextInput →
 // _convSend 裸送），加上 Shift+Insert 被 passthrough 的 preventDefault 吃掉，

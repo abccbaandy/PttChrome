@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // ECMA-48 控制字串（OSC / DCS / APC / PM / SOS）的終止子解析。
 //
 // 背景：fork 來的 parser 只把 `ESC [` 當獨立狀態，其餘 ESC 序列全掉進 STATE_C1，

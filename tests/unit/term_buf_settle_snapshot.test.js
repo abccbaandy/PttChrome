@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // M2 regression guard for the settle snapshot (docs/handoff blueprint risk #1):
 // the snapshot must be frozen INSIDE the settle-timer callback, BEFORE the
 // settled events dispatch, and the per-window changed-rows set must be swapped

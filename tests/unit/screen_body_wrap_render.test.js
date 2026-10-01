@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 內文跨行連結（src/js/body_wrap.js）的 Screen 接線守護。
 //
 // 使用者 2026-08-30 回報：`※ 文章網址:` 那行被 PTT 切成兩列之後，

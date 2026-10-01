@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // DEC 2026 Synchronized Output（BSU/ESU）＝ **只擋畫面，不碰 settle**。
 //
 // 為什麼要做：PTT 2026-09 起 `mbbsd/pfterm.c` 把整個 `doupdate()` 包在

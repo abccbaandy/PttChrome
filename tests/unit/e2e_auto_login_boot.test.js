@@ -1,5 +1,3 @@
-// @vitest-environment node
-//
 // 共用 session 的開機（`tests/e2e/helpers/ptt.js#autoLoginBoot`）＝整輪 live e2e 的
 // **唯一一次登入**。它同時也是「開站自動登入」那條 spec 的被測行為。
 //

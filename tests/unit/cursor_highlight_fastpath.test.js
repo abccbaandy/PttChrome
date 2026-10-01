@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 游標底色的快路徑（src/render/screen.js#setCursorHighlight）。
 //
 // 舊 React 版把游標底色放在 useState，每動一次就 re-render 整個 <Screen>（靠逐列

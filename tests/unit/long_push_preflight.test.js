@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 長推文的**探路**（src/js/long_push_session.js#startPreflight）。
 //
 // 使用者按下 X 之後、輸入框出現之前，先送一個 X 問 PTT「這篇我推得了嗎」，

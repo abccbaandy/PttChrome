@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 設定面板「連線」分頁的 UI 契約（jsdom + @testing-library/react）。
 // 這個分頁把「連線相關」的設定從一般分頁抽出來獨立成一頁，收兩組：
 //   1) BBS proxy（useProxy / proxyUrl）——原本埋在一般分頁最下面

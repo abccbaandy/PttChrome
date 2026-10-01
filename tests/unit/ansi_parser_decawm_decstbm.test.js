@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // DECAWM（`ESC[?7h/l`）與 DECSTBM（`ESC[t;br` / `ESC[r`）。
 //
 // PTT PttCurrent 2026-09-29 兩篇公告，server 端 CONFIRMED @ 3rd_script/pttbbs mbbsd/term.c：

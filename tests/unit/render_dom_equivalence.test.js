@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 核心畫面渲染鏈的 **DOM 契約 golden**。
 //
 // 為什麼是整份快照而不是逐條斷言：渲染鏈的產物有一票消費端在 unit 測不到的地方

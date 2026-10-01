@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // DEC private mode 序列必須是**完全惰性**的（Phase A：相容性保證，零行為改變）。
 //
 // 背景：PTT 2026-09-08 公告，約 09-20 起 server 會送

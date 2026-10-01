@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 手機按鍵列（src/components/MobileKeypad）。鎖三件事：
 //  1. 送鍵走 view.sendKeyAsUser（鍵盤同一條分派），不是裸送 byte；
 //  2. mousedown 被 preventDefault（按鍵不可以把焦點從 #t 搶走 ⇒ 軟鍵盤收起）；

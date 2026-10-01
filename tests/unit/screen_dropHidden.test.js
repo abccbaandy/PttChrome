@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Rendering test for Screen's dropHidden behaviour. After unifying the render path
 // (easy reading also draws through the same renderer), the only per-mode difference is how a
 // blacklisted comment row is treated:

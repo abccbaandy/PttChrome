@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // SGR 66（一字雙色）—— PTTBBS 自訂碼，**本專案永遠收不到，忽略即完全正確**。
 //
 // PTT 2026-09-20 公告「新指令: SGR 66 一字雙色」，PTT1 9/20、PTT2 9/19 上線：

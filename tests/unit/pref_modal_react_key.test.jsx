@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 「關於」分頁的 i18n 字串內嵌連結：replaceI18n 回傳陣列，裡面的 <Anchor>
 // 必須有 key，否則一開設定頁就噴 React「unique key」警告（Tabs keepMounted
 // ⇒ 不用點開「關於」也會渲染）。

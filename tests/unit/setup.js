@@ -1,7 +1,7 @@
-// Render tests run under jsdom + @testing-library/react (vitest.config.mjs
-// testEnvironment:"jsdom"). jest-dom adds DOM matchers; testing-library sets
-// IS_REACT_ACT_ENVIRONMENT and wraps render in act() itself, so no global React
-// or test-renderer shim is needed.
+// Render tests run under jsdom + @testing-library/react（unit 預設 node env，
+// 這些檔案自己在第一行宣告 `@vitest-environment jsdom`，見 vitest.config.mjs）。
+// jest-dom adds DOM matchers; testing-library sets IS_REACT_ACT_ENVIRONMENT and
+// wraps render in act() itself, so no global React or test-renderer shim is needed.
 import "@testing-library/jest-dom";
 
 // jsdom 沒有實作 Element.prototype.scrollIntoView（不是回傳假值，是整個不存在）。
@@ -9,8 +9,8 @@ import "@testing-library/jest-dom";
 // 走鍵盤操作下拉的測試沒有這個 stub 就會直接丟 TypeError。設定搜尋
 // （PrefSearchBox）是第一個會踩到的。
 //
-// 這個 setup 檔對**整個 unit project** 生效，其中有少數檔案用
-// `@vitest-environment node`（純靜態掃描不需要 DOM）⇒ 下面一律先確認全域存在，
+// 這個 setup 檔對**整個 unit project** 生效，而 unit 預設是 node env（只有宣告
+// jsdom 的檔案才有 DOM）⇒ 下面一律先確認全域存在，
 // 否則那些檔案會整支掛在 `ReferenceError: Element is not defined`。
 if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {};

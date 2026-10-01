@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // CSI 終結字元（final byte）的範圍守護。
 //
 // 背景：fork 來的 `ansi_parser.js` 判定 CSI 結束用的是

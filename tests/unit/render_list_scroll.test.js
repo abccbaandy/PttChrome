@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 列表好讀的 body 捲動視口（瀏覽器原生捲動）。
 //
 // golden（render_dom_equivalence 的 list_easy_reading_scrolled）鎖的是靜態結構；

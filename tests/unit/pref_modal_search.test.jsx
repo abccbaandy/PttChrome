@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 設定頁搜尋框的 UI 契約。
 //
 // 純邏輯（比對／排序）在 pref_search.test.js，索引覆蓋度在

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 看板列表平滑捲動的 render 合約（term_view 交給 render/screen.js 的那份 enhance）。
 //
 // 捲動視口本身的機制（overflow 開關、scroll 接線、切走時要收掉）已由

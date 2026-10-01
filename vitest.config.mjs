@@ -20,8 +20,14 @@ export default defineConfig({
         extends: true,
         test: {
           // 純邏輯 + Row/Screen 渲染（jsdom + @testing-library/react），離線。
+          // 預設 node：一個 jsdom 環境每檔都要重建，佔掉 unit 一半以上的時間，而過半的檔案
+          // 是純邏輯／靜態掃描根本用不到。需要 DOM 的檔案在檔頭第一行宣告
+          // `// @vitest-environment jsdom`（漏寫會很大聲地紅：document is not defined）。
+          // threads 比預設的 forks 起 worker 輕；不准在 unit 裡用 process.chdir（threads 不支援）。
+          // 守護 tests/unit/unit_environment.test.js。
           name: 'unit',
-          environment: 'jsdom',
+          environment: 'node',
+          pool: 'threads',
           include: ['tests/unit/**/*.test.{js,jsx}'],
           setupFiles: ['tests/unit/setup.js'],
         },

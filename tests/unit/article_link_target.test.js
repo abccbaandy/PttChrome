@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 右鍵選單「游標下這個 <a> 指向哪一篇文章」的判斷（src/js/article_link_target.js）。
 //
 // 這裡用**真的 DOM 元素**（unit project 跑 jsdom）：判斷會讀 classList 與
