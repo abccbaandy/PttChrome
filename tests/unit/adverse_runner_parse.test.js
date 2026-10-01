@@ -13,6 +13,8 @@ import {
   parseAdverseSpecs,
   parseArgs,
   splitPassthrough,
+  devServerProbeUrls,
+  waitForDevServer,
 } from "../../scripts/run-adverse-e2e.mjs";
 
 const ROOT = path.join(__dirname, "..", "..");
@@ -175,4 +177,48 @@ describe("splitPassthrough", () => {
       filters: ["mouse.offline.spec.js"],
     });
   });
+});
+
+// 2026-10-01 CI 現場：容器裡 dev server 180s 沒起來，丟錯後**沒收掉 vite 子進程**
+// ⇒ node 的 event loop 被它撐著不退出，job 卡在 in_progress 直到 GitHub 逾時（6 小時），
+// 又因為 deploy.yml 的 concurrency 不取消舊 run，後面的 push 全部排隊。
+describe("waitForDevServer", () => {
+  const fakeChild = () => {
+    const c = { exitCode: null, killed: 0, kill() { this.killed++; } };
+    return c;
+  };
+  let t;
+  const clock = { now: () => t, sleep: async (ms) => { t += ms; } };
+  beforeEach(() => { t = 0; });
+
+  test("起來了就回傳，不殺子進程", async () => {
+    const child = fakeChild();
+    let calls = 0;
+    await waitForDevServer({ child, probe: async () => ++calls >= 3, timeoutMs: 10000, ...clock });
+    expect(child.killed).toBe(0);
+  });
+
+  test("逾時：先收掉子進程再丟錯，錯誤訊息帶上 vite 輸出", async () => {
+    const child = fakeChild();
+    await expect(
+      waitForDevServer({ child, probe: async () => false, timeoutMs: 3000, output: () => "VITE SAYS HI", ...clock }),
+    ).rejects.toThrow(/3s 內沒起來[\s\S]*VITE SAYS HI/);
+    expect(child.killed).toBe(1);
+  });
+
+  test("子進程提前結束：丟錯並帶上輸出", async () => {
+    const child = fakeChild();
+    child.exitCode = 1;
+    await expect(
+      waitForDevServer({ child, probe: async () => false, timeoutMs: 3000, output: () => "EADDRINUSE", ...clock }),
+    ).rejects.toThrow(/提前結束[\s\S]*EADDRINUSE/);
+  });
+});
+
+test("探測位址同時涵蓋 localhost／IPv4／IPv6（vite 綁哪一個依平台與 /etc/hosts 而定）", () => {
+  expect(devServerProbeUrls(8080)).toEqual([
+    "http://localhost:8080/",
+    "http://127.0.0.1:8080/",
+    "http://[::1]:8080/",
+  ]);
 });

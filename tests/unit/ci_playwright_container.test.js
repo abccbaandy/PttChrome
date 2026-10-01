@@ -54,6 +54,15 @@ describe("test.yml：e2e job 跑在 Playwright 官方 image", () => {
     expect(job.body).toMatch(/^\s*options: .*--ipc=host/m);
   });
 
+  // 沒設就是 GitHub 預設 360 分鐘；deploy.yml 的 concurrency 不取消舊 run，一個卡住的
+  // e2e job 會讓之後所有 push 排隊幾個小時。
+  test.each(["test-e2e-offline", "test-e2e-offline-adverse"])("%s：有 timeout-minutes 且不超過 60", (name) => {
+    const job = jobs().find((j) => j.name === name);
+    const m = /^ {4}timeout-minutes: (\d+)\s*$/m.exec(job.body);
+    expect(m, `${name} 沒設 timeout-minutes`).not.toBeNull();
+    expect(Number(m[1])).toBeLessThanOrEqual(60);
+  });
+
   test("沒有任何 job 再跑 playwright install（那就是 apt）", () => {
     const offenders = jobs().filter((j) => /^\s*(npx|yarn) playwright install/m.test(j.body));
     expect(offenders.map((j) => j.name)).toEqual([]);

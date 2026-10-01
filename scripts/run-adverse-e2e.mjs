@@ -20,7 +20,6 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 8080;
-const BASE_URL = `http://localhost:${PORT}/`;
 
 // 桶名必須與 playwright.config.js 的逆境 project 對齊；漂移由
 // tests/unit/adverse_runner_parse.test.js 擋下。
@@ -106,6 +105,35 @@ export function splitPassthrough(passthrough) {
   return { flags, filters };
 }
 
+// dev server 探測位址。vite 綁哪個位址依平台與 /etc/hosts 而定（Windows 只綁 IPv6
+// [::1]；容器裡 localhost 可能解析成另一族），任何一個通就算起來了。
+export function devServerProbeUrls(port) {
+  return [`http://localhost:${port}/`, `http://127.0.0.1:${port}/`, `http://[::1]:${port}/`];
+}
+
+// 等 dev server 起來。**失敗一律先收掉子進程再丟錯**：子進程還活著，node 的 event loop
+// 就被它撐著不退出 ⇒ CI job 卡在 in_progress 直到 GitHub 逾時（2026-10-01 容器現場）。
+// 錯誤訊息帶上 vite 自己的輸出尾巴，否則「為什麼沒起來」完全看不到。
+// probe／sleep／now 可注入，unit 守護：tests/unit/adverse_runner_parse.test.js。
+export async function waitForDevServer({ child, probe, timeoutMs, output = () => "", sleep: wait = sleep, now = Date.now }) {
+  const deadline = now() + timeoutMs;
+  const fail = (msg) => {
+    try {
+      child.kill();
+    } catch {
+      /* 已經死了 */
+    }
+    const tail = String(output()).trim().split("\n").slice(-40).join("\n");
+    return new Error(`${msg}\n---- vite 輸出（尾 40 行）----\n${tail || "（無輸出）"}`);
+  };
+  for (;;) {
+    if (await probe()) return;
+    if (child.exitCode !== null) throw fail(`dev server 提前結束（code=${child.exitCode}）`);
+    if (now() > deadline) throw fail(`dev server ${Math.round(timeoutMs / 1000)}s 內沒起來`);
+    await wait(500);
+  }
+}
+
 // ---- 以下有副作用 ----
 
 function readConfigSource() {
@@ -113,13 +141,23 @@ function readConfigSource() {
 }
 
 // 探測 dev server 是否已經在跑（手動 yarn start，或上一批留下的）。
+// 「起來了」的判準照抄 Playwright webServer 的 url 檢查（200 ≤ status < 404），而不是
+// res.ok：同一個容器裡 Playwright 自己起的 vite 判定得到，這裡卻 180s 判不到。
+// 每個位址最後一次的結果留在 lastProbe，失敗時印出來（連不上 vs 回了什麼狀態碼）。
+let lastProbe = "（尚未探測）";
 async function serverUp(timeoutMs = 1500) {
-  try {
-    const res = await fetch(BASE_URL, { signal: AbortSignal.timeout(timeoutMs) });
-    return res.ok;
-  } catch {
-    return false;
+  const seen = [];
+  for (const url of devServerProbeUrls(PORT)) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (res.status >= 200 && res.status < 404) return true;
+      seen.push(`${url} → HTTP ${res.status}`);
+    } catch (e) {
+      seen.push(`${url} → ${e.cause?.code || e.name}`);
+    }
   }
+  lastProbe = seen.join("；");
+  return false;
 }
 
 // 起一次 vite 給所有批次共用。playwright.config.js 的 reuseExistingServer:true 會讓
@@ -127,15 +165,22 @@ async function serverUp(timeoutMs = 1500) {
 async function startDevServer() {
   const child = spawn(process.execPath, [path.join("node_modules", "vite", "bin", "vite.js")], {
     cwd: ROOT,
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  const deadline = Date.now() + 180000;
-  for (;;) {
-    if (await serverUp()) return child;
-    if (child.exitCode !== null) throw new Error(`dev server 提前結束（code=${child.exitCode}）`);
-    if (Date.now() > deadline) throw new Error("dev server 180s 內沒起來");
-    await sleep(500);
-  }
+  // 只留最後 64KB：vite 整輪都會印（HMR、轉發的瀏覽器錯誤），全留會一直長。
+  let output = "";
+  const keep = (d) => {
+    output = (output + d).slice(-65536);
+  };
+  child.stdout.on("data", keep);
+  child.stderr.on("data", keep);
+  await waitForDevServer({
+    child,
+    probe: () => serverUp(),
+    timeoutMs: 180000,
+    output: () => `最後一次探測：${lastProbe}\n${output}`,
+  });
+  return child;
 }
 
 // 收 dev server：kill-dev-server.js 已處理「Vite 在 Windows 只綁 IPv6」與進程樹強殺。

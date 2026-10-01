@@ -88,6 +88,10 @@ jobs:
   test-e2e-offline:
     needs: playwright-version
     runs-on: ubuntu-latest
+    # 卡住保險：預設 360 分鐘，而 deploy.yml 的 concurrency 不取消舊 run ⇒ 一個卡住的 job
+    # 會讓之後所有 push 排隊（2026-10-01：dev server 沒起來、子進程撐住 node 不退出）。
+    # 數值＝串行時代的實測耗時（14／17 分）再放兩倍多，正常不可能碰到。
+    timeout-minutes: 30
     container:
       image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
       options: --user 1001 --ipc=host
@@ -122,6 +126,7 @@ jobs:
   test-e2e-offline-adverse:
     needs: playwright-version
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     container:
       image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
       options: --user 1001 --ipc=host
