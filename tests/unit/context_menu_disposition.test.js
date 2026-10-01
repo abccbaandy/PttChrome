@@ -41,22 +41,48 @@ describe("contextMenuDisposition", () => {
 });
 
 // 手機按鍵列的「選取模式」（docs/mobile.md「選取模式」）。
-describe("選取模式（觸控長按）", () => {
-  test("選取模式開 ⇒ 放行原生（選取把手＋複製工具列），不開我們的選單", () => {
+//
+// 判斷**只看模式、不看事件來源**：Android Chrome 拖完選取把手放手時會再補發一次
+// contextmenu（ShowContextMenuAtTouchHandle → Blink ShowNonLocatedContextMenu），
+// 那次是 pointerType 'mouse'、firesTouchEvents false。舊規則要求「觸控＋選取模式」
+// ⇒ 那次走 'menu' ⇒ 我們的選單跳出來、原生「複製」工具列被 preventDefault 吃掉。
+// 所以這裡的函式簽名刻意不收「是不是觸控」。
+describe("選取模式", () => {
+  test("手機＋選取模式開 ⇒ 放行原生（選取把手＋複製工具列），不開我們的選單", () => {
     expect(
-      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: false, touchSelectMode: true }),
+      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: false, mobile: true, selectMode: true }),
+    ).toBe("native");
+  });
+
+  // REGRESSION：拖完把手補發的那次 contextmenu 沒有任何觸控標記。呼叫端不會也不該
+  // 傳 touch 進來；即使把舊參數塞進來表明「這次不是觸控」，結果也必須是 native。
+  test("REGRESSION：選取模式開＋非觸控（拖把手後的非定位 contextmenu）⇒ 仍放行原生", () => {
+    expect(
+      contextMenuDisposition({
+        nativeTarget: false,
+        doDOMMouseScroll: false,
+        mobile: true,
+        selectMode: true,
+        touchSelectMode: false,
+      }),
     ).toBe("native");
   });
 
   test("選取模式關 ⇒ 照舊開我們的選單", () => {
     expect(
-      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: false, touchSelectMode: false }),
+      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: false, mobile: true, selectMode: false }),
+    ).toBe("menu");
+  });
+
+  test("非手機版面 ⇒ 選取模式旗標不算數", () => {
+    expect(
+      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: false, mobile: false, selectMode: true }),
     ).toBe("menu");
   });
 
   test("右鍵滾輪旗標仍然先判（旗標只在這裡被消費）", () => {
     expect(
-      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: true, touchSelectMode: true }),
+      contextMenuDisposition({ nativeTarget: false, doDOMMouseScroll: true, mobile: true, selectMode: true }),
     ).toBe("swallow");
   });
 

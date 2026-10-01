@@ -252,8 +252,9 @@ export const ContextMenu = ({ pttchrome }) => {
       const disposition = contextMenuDisposition({
         nativeTarget: isNativeMenuTarget(event.target),
         doDOMMouseScroll: CmdHandler.getAttribute("doDOMMouseScroll") === "1",
-        touchSelectMode:
-          touch && !!pttchrome.mobile && !!pttchrome.mobileSelectMode,
+        // 不帶 touch：拖選取把手後補發的 contextmenu 沒有觸控標記（見該函式註解）。
+        mobile: pttchrome.mobile,
+        selectMode: pttchrome.mobileSelectMode,
       });
       if (disposition === "swallow") {
         // 「按住右鍵滾輪翻頁」放開右鍵時補發的那一次，照舊吞掉。

@@ -110,37 +110,72 @@ test.describe('手機 Phase 3：好讀文章換行版面（離線重放）', () 
 test.describe('長按選單（觸控 contextmenu）', () => {
   test.skip(!article, '尚無 article cassette');
 
-  // 模擬 Chromium 的長按：先把手指下那個字選起來，再發 pointerType=touch 的 contextmenu。
-  const longPress = (page, pointerType) =>
-    page.evaluate((pointerType) => {
+  // 每次 contextmenu 在 window capture 階段記下：當下選取是否為空、事件本身（事後讀
+  // defaultPrevented）、pointerType。capture 在 React 的 listener 之前跑 ⇒ 看到的是
+  // 我們的 handler 動手前的選取。
+  const recordContextMenu = (page) =>
+    page.evaluate(() => {
+      window.__cm = [];
+      if (window.__cmInstalled) return;
+      window.__cmInstalled = true;
+      window.addEventListener(
+        'contextmenu',
+        (ev) => window.__cm.push({ ev, collapsed: window.getSelection().isCollapsed }),
+        true
+      );
+    });
+  const lastContextMenu = async (page) => {
+    await expect.poll(() => page.evaluate(() => window.__cm.length)).toBeGreaterThan(0);
+    return page.evaluate(() => {
+      const { ev, collapsed } = window.__cm[window.__cm.length - 1];
+      return {
+        collapsed,
+        defaultPrevented: ev.defaultPrevented,
+        pointerType: ev.pointerType,
+        collapsedAfter: window.getSelection().isCollapsed,
+      };
+    });
+  };
+
+  const targetPoint = (page) =>
+    page.evaluate(() => {
       const el = document.querySelector('[data-e2e-target] [data-type="bbsline"]') ||
         document.querySelector('[data-e2e-target]');
       const r = el.getBoundingClientRect();
-      const x = r.left + Math.min(r.width - 2, 60);
-      const y = r.top + 4;
+      return { x: Math.round(r.left + Math.min(r.width - 2, 60)), y: Math.round(r.top + 4) };
+    });
+
+  // 把手指下那個字選起來（Chromium 長按的第一步；也是「使用者已選取」的狀態布置）。
+  const selectWordAt = (page, { x, y }) =>
+    page.evaluate(({ x, y }) => {
       const range = document.caretRangeFromPoint(x, y);
       const sel = window.getSelection();
       sel.removeAllRanges();
       if (range) {
-        range.expand ? range.expand('word') : range.setEnd(range.startContainer, Math.min(range.startOffset + 1, range.startContainer.length || 0));
+        range.expand('word');
         sel.addRange(range);
       }
-      const collapsed = sel.isCollapsed;
-      const notCancelled = el.dispatchEvent(
-        new PointerEvent('contextmenu', {
-          bubbles: true,
-          cancelable: true,
-          clientX: x,
-          clientY: y,
-          pointerType,
-        })
+    }, { x, y });
+
+  // 模擬 Chromium 的長按：先選字，再發 pointerType=touch 的 contextmenu。
+  // **只能手捏**：CDP 的觸控長按（Input.synthesizeTapGesture duration 900／
+  // dispatchTouchEvent 按住 1.2s）在桌機 Chromium（headless shell、new headless、headed
+  // 皆然）只產生 pointerdown/up，**不發 contextmenu** —— 拿它斷言「選單 0 個」會是假陽性。
+  // 這個 helper 只代表長按事件序列的**第一個**事件；拖選取把手後補發的那次見下方
+  // ContextMenu 鍵的 REGRESSION case。
+  const longPress = async (page) => {
+    const pt = await targetPoint(page);
+    await selectWordAt(page, pt);
+    await recordContextMenu(page);
+    await page.evaluate(({ x, y }) => {
+      const el = document.querySelector('[data-e2e-target] [data-type="bbsline"]') ||
+        document.querySelector('[data-e2e-target]');
+      el.dispatchEvent(
+        new PointerEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerType: 'touch' })
       );
-      return {
-        collapsed,
-        defaultPrevented: !notCancelled,
-        collapsedAfter: window.getSelection().isCollapsed,
-      };
-    }, pointerType);
+    }, pt);
+    return lastContextMenu(page);
+  };
 
   const markPusherRow = async (page) => {
     const pusher = await page.evaluate(() => {
@@ -166,7 +201,8 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     const pusher = await markPusherRow(page);
     test.skip(!pusher, '這份 cassette 沒有推文列');
 
-    const { collapsed, collapsedAfter } = await longPress(page, 'touch');
+    const { collapsed, collapsedAfter, pointerType } = await longPress(page);
+    expect(pointerType).toBe('touch');
     expect(collapsed).toBe(false); // 前提：事件發生時真的有選取（Chromium 長按的現場）
     const add = await label(page, 'cmenu_addAuthorBlacklist');
     const item = menu(page).getByRole('menuitem').filter({ hasText: add });
@@ -195,8 +231,44 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     await expect(page.locator('[data-key="__select"]')).toHaveAttribute('aria-pressed', 'true');
     expect(await page.evaluate(() => document.body.classList.contains('mobileSelectMode'))).toBe(true);
 
-    const r = await longPress(page, 'touch');
+    const r = await longPress(page);
     expect(r.collapsed).toBe(false);
+    expect(r.defaultPrevented).toBe(false);
+    expect(r.collapsedAfter).toBe(false);
+    await expect(page.locator('.DropdownMenu')).toHaveCount(0);
+  });
+
+  // REGRESSION：拖完選取把手放手，Android Chrome 會再補發一次 contextmenu
+  // （RenderWidgetHostViewAndroid::ShowContextMenuAtTouchHandle → Blink
+  // EventHandler::ShowNonLocatedContextMenu），事件是 pointerType 'mouse'、沒有觸控標記。
+  // 舊規則（觸控＋選取模式才放行）讓那次跳出我們的選單、原生複製工具列被吃掉。
+  // 桌機的 ContextMenu 鍵走的是**同一個** Blink 函式、事件形狀相同，所以用它當替身。
+  test('REGRESSION：選取模式開，拖把手後補發的非觸控 contextmenu 也不開我們的選單', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    const pusher = await markPusherRow(page);
+    test.skip(!pusher, '這份 cassette 沒有推文列');
+
+    await page.locator('[data-key="__open"]').click();
+    await page.locator('[data-key="__select"]').click();
+    await expect(page.locator('[data-key="__select"]')).toHaveAttribute('aria-pressed', 'true');
+
+    // 拖完把手後的現場：有選取、把手在。選取用 Selection API 布置（狀態準備），
+    // 觸發用真的 ContextMenu 鍵（瀏覽器自己造 contextmenu，不是測試手捏）。
+    await selectWordAt(page, await targetPoint(page));
+    await recordContextMenu(page);
+    const cdp = await page.context().newCDPSession(page);
+    const key = { key: 'ContextMenu', code: 'ContextMenu', windowsVirtualKeyCode: 93, nativeVirtualKeyCode: 93 };
+    await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...key });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key });
+    const r = await lastContextMenu(page);
+    expect(r.collapsed).toBe(false);
+    // 前提：這次真的是「沒有觸控標記」的那種事件，不然測不到舊 bug。
+    expect(r.pointerType).not.toBe('touch');
     expect(r.defaultPrevented).toBe(false);
     expect(r.collapsedAfter).toBe(false);
     await expect(page.locator('.DropdownMenu')).toHaveCount(0);
@@ -212,7 +284,14 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     const pusher = await markPusherRow(page);
     test.skip(!pusher, '這份 cassette 沒有推文列');
 
-    await longPress(page, 'mouse');
+    // 先選一段字（使用者已選取），再用真的滑鼠右鍵點在選取上。
+    const pt = await targetPoint(page);
+    await selectWordAt(page, pt);
+    await recordContextMenu(page);
+    await page.mouse.click(pt.x, pt.y, { button: 'right' });
+    const r = await lastContextMenu(page);
+    expect(r.pointerType).toBe('mouse');
+    expect(r.collapsed).toBe(false);
     await expect(menu(page)).toBeVisible();
     const add = await label(page, 'cmenu_addAuthorBlacklist');
     await expect(menu(page).getByRole('menuitem').filter({ hasText: add })).toHaveCount(0);

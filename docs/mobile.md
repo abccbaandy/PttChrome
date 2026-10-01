@@ -120,9 +120,21 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - 關：開我們的選單，並 `removeAllRanges()`（`shouldClearTouchSelection`）⇒ 不留原生選取把手，複製類項目不出現。
   對象（黑名單／前已讀後未讀）仍是長按位置，與桌機右鍵同一條路徑。CSS 另加 `-webkit-touch-callout: none`。
   **不用 `user-select: none` 擋選字**（終端機祖先禁用，`css_user_select.test.js`）。
-- 開：`contextMenuDisposition({touchSelectMode})` 回 `'native'`（排在 swallow 之後）⇒ 不 preventDefault，
+- 開：`contextMenuDisposition({mobile, selectMode})` 回 `'native'`（排在 swallow 之後）⇒ 不 preventDefault，
   Chrome 原生選取把手＋複製工具列。關掉時順手清選取。
-- 守護：unit `context_menu_disposition.test.js`；offline e2e `mobile_reflow` 的長按兩條。
+  **只看模式、不看事件來源**：Android Chrome 拖完選取把手放手會再補發一次 contextmenu
+  （`RenderWidgetHostViewAndroid::ShowContextMenuAtTouchHandle` → Blink `EventHandler::ShowNonLocatedContextMenu`），
+  事件是 `pointerType:'mouse'`、`pointerId:1`、`firesTouchEvents:false`，沒有觸控標記。舊規則「觸控＋選取模式」
+  讓那次開出我們的選單、原生複製工具列被吃掉。代價：手機版面接滑鼠、選取模式開時右鍵也走原生（使用者自己開的模式，接受）。
+  選取模式關的路徑不受影響：長按後已清選取 ⇒ 沒有把手 ⇒ 不會有那次補發。
+- 守護：unit `context_menu_disposition.test.js`；offline e2e `mobile_reflow`「長按選單」describe：
+  - 補發那次用**真的 ContextMenu 鍵**（CDP `Input.dispatchKeyEvent`，vk 93）當替身：桌機的 ContextMenu 鍵走同一個
+    `ShowNonLocatedContextMenu`，事件形狀相同（實測 `mouse|1|false`）。
+  - 滑鼠右鍵＋有選取走 `page.mouse.click(..., { button: 'right' })`。
+  - 觸控長按**仍是手捏** `PointerEvent('contextmenu', { pointerType: 'touch' })`：CDP 觸控長按
+    （`Input.synthesizeTapGesture` duration 900／`dispatchTouchEvent` 按住 1.2s）在桌機 Chromium
+    （headless shell、new headless、headed 皆然，Pixel 7 模擬）只產生 pointerdown/up、**不發 contextmenu**
+    （CONFIRMED，Windows 本機）⇒ 拿它斷言「選單 0 個」是假陽性。真長按序列留給 Android emulator（`docs/handoff/android-emulator-e2e.md`）。
 
 ## 一鍵登出（`logout_session.js`）
 

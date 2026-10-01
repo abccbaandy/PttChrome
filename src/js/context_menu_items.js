@@ -110,12 +110,20 @@ export function copyPreviews(state, href) {
 // 留著 '1' ⇒ 下一次（任何地方的）正常右鍵被靜默吞掉一次，看起來像「右鍵選單偶爾
 // 叫不出來」。守護：tests/unit/context_menu_disposition.test.js
 //
-// touchSelectMode：手機按鍵列的「選取模式」開著、且這次是觸控長按 ⇒ 長按＝一般網頁
-// 操作（Chrome 原生選取把手＋複製工具列），我們的選單不出來。排在 swallow 之後，
-// 理由同上（旗標只在這裡被消費）。見 docs/mobile.md「選取模式」。
-export function contextMenuDisposition({ nativeTarget, doDOMMouseScroll, touchSelectMode }) {
+// mobile＋selectMode：手機按鍵列的「選取模式」開著 ⇒ 右鍵／長按＝一般網頁操作（Chrome
+// 原生選取把手＋複製工具列），我們的選單不出來。排在 swallow 之後，理由同上（旗標只在
+// 這裡被消費）。
+// **只看模式，不看事件來源**：Android Chrome 拖完選取把手放手時會再補發一次
+// contextmenu（RenderWidgetHostViewAndroid::ShowContextMenuAtTouchHandle → Blink
+// EventHandler::ShowNonLocatedContextMenu），造出來的事件是 pointerType 'mouse'、
+// firesTouchEvents false —— 沒有任何觸控標記，靠 isTouchContextMenu 判斷會走 'menu'，
+// 我們的選單跳出來、原生複製工具列被 preventDefault 吃掉。代價：手機版面接滑鼠、開著
+// 選取模式時右鍵也走原生（使用者自己開的模式，可接受）。桌機不受影響
+// （applyMobileLayout 在非手機時強制 mobileSelectMode=false，這裡也再看一次 mobile）。
+// 見 docs/mobile.md「長按選單與選取模式」。
+export function contextMenuDisposition({ nativeTarget, doDOMMouseScroll, mobile, selectMode }) {
   if (doDOMMouseScroll) return "swallow";
-  if (nativeTarget || touchSelectMode) return "native";
+  if (nativeTarget || (!!mobile && !!selectMode)) return "native";
   return "menu";
 }
 
