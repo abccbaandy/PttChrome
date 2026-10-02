@@ -1,0 +1,16 @@
+{
+  "name": "ptt-announcements-worker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cloudflare Worker cron：PttCurrent [開發資訊] 公告 → GitHub issue → Claude routine",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.0",
+    "wrangler": "^4.145.0"
+  }
+}

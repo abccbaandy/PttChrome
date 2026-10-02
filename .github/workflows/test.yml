@@ -230,3 +230,22 @@ jobs:
         run: |
           npm ci
           npm test
+
+  # 同上理由：proxy/ptt-announcements-worker 也是獨立 npm 子專案。這裡只測 Worker 殼；
+  # 核心邏輯（core.js）由根目錄 test:unit 的 tests/unit/ptt_announcements.test.js 守護。
+  test-ptt-announcements-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: proxy/ptt-announcements-worker/package-lock.json
+
+      - name: Worker tests (npm)
+        working-directory: proxy/ptt-announcements-worker
+        run: |
+          npm ci
+          npm test

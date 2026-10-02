@@ -71,12 +71,21 @@ describe("test.yml：獨立的 npm 子專案要有自己的 CI job", () => {
     }
   });
 
-  test("那個 job 用 npm ci（不是 npm install）並真的跑測試", () => {
-    const job = jobs().find((j) => j.name === "test-imgur-worker");
-    expect(job, "test-imgur-worker job 不見了").toBeTruthy();
-    // npm ci 才會照 lock 裝——Dependabot 改的就是 lock，用 npm install 等於驗了別的東西。
-    expect(job.body).toMatch(/^\s*npm ci\s*$/m);
-    expect(job.body).toMatch(/^\s*npm test\s*$/m);
+  test("掃得到第二個子專案（ptt-announcements-worker）", () => {
+    expect(npmSubprojects()).toContain("proxy/ptt-announcements-worker");
+  });
+
+  test("那些 job 用 npm ci（不是 npm install）並真的跑測試", () => {
+    for (const dir of npmSubprojects()) {
+      const job = jobs().find((j) =>
+        new RegExp(`^\\s*working-directory:\\s*${dir}\\s*$`, "m").test(j.body),
+      );
+      expect(job, `${dir} 的 job 不見了`).toBeTruthy();
+      // npm ci 才會照 lock 裝——Dependabot 改的就是 lock，用 npm install 等於驗了別的東西。
+      expect(job.body).toMatch(/^\s*npm ci\s*$/m);
+      expect(job.body).toMatch(/^\s*npm test\s*$/m);
+      expect(job.body).toContain(`cache-dependency-path: ${dir}/package-lock.json`);
+    }
   });
 
   test("子專案的 test script 存在（job 不會跑到空氣）", () => {

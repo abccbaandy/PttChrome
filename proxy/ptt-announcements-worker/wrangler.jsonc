@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ptt-announcements",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  // core.js 用 node:crypto 算內文 hash（同一份 code 也給本機 CLI 用）。
+  "compatibility_flags": ["nodejs_compat"],
+
+  // 分鐘避開 :00。UTC。
+  "triggers": {
+    "crons": ["23 */6 * * *"]
+  },
+
+  // 公開設定放這裡；token 一律用 `wrangler secret put`（見 docs/ptt-announcement-bot.md）。
+  "vars": {
+    "GITHUB_REPO": "abccbaandy/PttChrome"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

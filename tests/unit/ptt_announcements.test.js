@@ -1,4 +1,4 @@
-// scripts/ptt-announcements.mjs 的純函式守護（無網路）。fixture 是 2026-10-02 抓的真
+// PttCurrent 公告 bot 核心（proxy/ptt-announcements-worker/src/core.js）的守護（無網路）。fixture 是 2026-10-02 抓的真
 // PttCurrent feed 與兩篇系統公告（一般使用者的帳號／內文已換成佔位字）：
 //   M.1790827526.A.744：純文字標頭、無推文
 //   M.1789902495.A.1C6：article-metaline 標頭、有一則推文
@@ -18,7 +18,10 @@ import {
   SEED_HANDLED,
   LABEL,
   QUEUED_LABEL,
-} from "../../scripts/ptt-announcements.mjs";
+  sync,
+  ConfigError,
+  FEED_URL,
+} from "../../proxy/ptt-announcements-worker/src/core.js";
 
 const dir = path.join(__dirname, "fixtures", "ptt_announcements");
 const read = (f) => fs.readFileSync(path.join(dir, f), "utf8");
@@ -54,10 +57,10 @@ const toIssues = (actions) =>
     labels: [{ name: LABEL }],
   }));
 
-test("import 純函式不得觸發網路", async () => {
+test("import CLI 不得觸發網路", async () => {
   const spy = vi.spyOn(globalThis, "fetch");
   const mod = await import("../../scripts/ptt-announcements.mjs");
-  expect(typeof mod.parseFeed).toBe("function");
+  expect(mod).toBeTruthy();
   expect(spy).not.toHaveBeenCalled();
   spy.mockRestore();
 });
@@ -204,5 +207,180 @@ describe("pickFireTargets", () => {
     expect(pickFireTargets(issues).map((i) => i.number)).toEqual([0, 3]);
     const text = renderFireText("o/r", pickFireTargets(issues));
     expect(text).toContain("#3 c https://github.com/o/r/issues/3");
+  });
+});
+
+// ---- sync 整輪流程：假的 ptt.cc＋GitHub＋routine，全在記憶體 ----
+
+const FIRE_URL = "https://fire.example/fire";
+function fakeWorld() {
+  const w = {
+    pages: {},
+    issues: [],
+    fires: [],
+    fireStatus: 200,
+    writes: 0,
+  };
+  for (const e of official) {
+    w.pages[e.url] =
+      `<div id="main-content" class="bbs-screen bbs-content">作者  [系統] 看板  PttCurrent\n標題  ${e.title}\n` +
+      `時間  Mon Sep 21 00:00:00 CST 2026\n\nfake ${e.aid}\n<span class="f2">※ 發信站: 批踢踢實業坊(ptt.cc)\n</span></div>`;
+  }
+  w.pages["https://www.ptt.cc/bbs/PttCurrent/M.1790827526.A.744.html"] = A744;
+  w.pages["https://www.ptt.cc/bbs/PttCurrent/M.1789902495.A.1C6.html"] = A1C6;
+  const json = (v, status = 200) => new Response(JSON.stringify(v), { status });
+  const find = (n) => w.issues.find((i) => i.number === Number(n));
+  w.fetch = vi.fn(async (url, init = {}) => {
+    const u = new URL(url);
+    const method = init.method || "GET";
+    const body = init.body ? JSON.parse(init.body) : null;
+    if (u.href === FEED_URL) return new Response(FEED, { status: 200 });
+    if (u.host === "www.ptt.cc") return new Response(w.pages[u.href] ?? "", { status: w.pages[u.href] ? 200 : 404 });
+    if (u.href === FIRE_URL) {
+      w.fires.push(body.text);
+      return w.fireStatus === 200
+        ? json({ type: "routine_fire", claude_code_session_url: `https://claude.ai/code/s${w.fires.length}` })
+        : json({ error: "x" }, w.fireStatus);
+    }
+    expect(u.host).toBe("api.github.com");
+    expect(new Headers(init.headers).get("user-agent")).toMatch(/\S/);
+    if (method !== "GET") w.writes++;
+    let m;
+    if (method === "GET" && u.pathname === "/repos/o/r/issues") {
+      const label = u.searchParams.get("labels");
+      const st = u.searchParams.get("state");
+      const page = Number(u.searchParams.get("page"));
+      const hit = w.issues.filter((i) => i.labels.includes(label) && (st === "all" || i.state === st));
+      return json(page === 1 ? hit.map((i) => ({ ...i, labels: i.labels.map((name) => ({ name })) })) : []);
+    }
+    if (method === "POST" && u.pathname === "/repos/o/r/issues") {
+      const iss = { number: w.issues.length + 1, title: body.title, body: body.body, state: "open", labels: [...body.labels], comments: [] };
+      w.issues.push(iss);
+      return json(iss, 201);
+    }
+    if (method === "PATCH" && (m = u.pathname.match(/^\/repos\/o\/r\/issues\/(\d+)$/))) {
+      Object.assign(find(m[1]), body);
+      return json(find(m[1]));
+    }
+    if (method === "POST" && (m = u.pathname.match(/^\/repos\/o\/r\/issues\/(\d+)\/comments$/))) {
+      find(m[1]).comments.push(body.body);
+      return json({}, 201);
+    }
+    if (method === "POST" && (m = u.pathname.match(/^\/repos\/o\/r\/issues\/(\d+)\/labels$/))) {
+      const iss = find(m[1]);
+      for (const l of body.labels) if (!iss.labels.includes(l)) iss.labels.push(l);
+      return json([]);
+    }
+    if (method === "DELETE" && (m = u.pathname.match(/^\/repos\/o\/r\/issues\/(\d+)\/labels\/(.+)$/))) {
+      const iss = find(m[1]);
+      if (!iss.labels.includes(m[2])) return json({}, 404);
+      iss.labels = iss.labels.filter((l) => l !== m[2]);
+      return json([]);
+    }
+    throw new Error(`unexpected ${method} ${u.href}`);
+  });
+  w.run = (opts = {}) =>
+    sync({
+      fetch: w.fetch,
+      env: { GITHUB_REPO: "o/r", GH_TOKEN: "t", CLAUDE_ROUTINE_FIRE_URL: FIRE_URL, CLAUDE_ROUTINE_TOKEN: "rt" },
+      ...opts,
+    });
+  return w;
+}
+const VCOL = "[開發資訊] 介面調整: 列表模式導入動態分欄架構";
+
+describe("sync 整輪", () => {
+  test("seed：12 篇建好（11 closed），不 fire", async () => {
+    const w = fakeWorld();
+    await w.run({ seed: true });
+    expect(w.issues).toHaveLength(12);
+    expect(w.issues.filter((i) => i.state === "open").map((i) => i.title)).toEqual([VCOL]);
+    expect(w.fires).toEqual([]);
+  });
+
+  test("seed 後正常跑：fire 一次、貼 claude-queued、留 session 網址；再跑一次 0 寫入 0 fire", async () => {
+    const w = fakeWorld();
+    await w.run({ seed: true });
+    await w.run();
+    expect(w.fires).toHaveLength(1);
+    expect(w.fires[0]).toContain(VCOL);
+    const vcol = w.issues.find((i) => i.title === VCOL);
+    expect(vcol.labels).toContain(QUEUED_LABEL);
+    expect(vcol.comments.join("\n")).toContain("https://claude.ai/code/s1");
+    const writes = w.writes;
+    await w.run();
+    expect(w.writes).toBe(writes);
+    expect(w.fires).toHaveLength(1);
+  });
+
+  test("忘了 seed 直接跑：舊公告照樣 closed，只叫 Claude 看 VCOL", async () => {
+    const w = fakeWorld();
+    await w.run();
+    expect(w.issues.filter((i) => i.state === "open")).toHaveLength(1);
+    expect(w.fires).toHaveLength(1);
+    expect(w.fires[0]).not.toContain("SGR");
+  });
+
+  test("subrequest 額度不夠：分兩輪做完，不重複建、只 fire 一次", async () => {
+    const w = fakeWorld();
+    const r1 = await w.run({ subrequestLimit: 30 });
+    expect(r1.deferred.length).toBeGreaterThan(0);
+    expect(w.fires).toHaveLength(0);
+    expect(w.fetch.mock.calls.length).toBeLessThanOrEqual(30);
+    w.fetch.mockClear();
+    await w.run({ subrequestLimit: 30 });
+    expect(w.fetch.mock.calls.length).toBeLessThanOrEqual(30);
+    expect(w.issues).toHaveLength(12);
+    expect(new Set(w.issues.map((i) => parseMarker(i.body).aid)).size).toBe(12);
+    expect(w.fires).toHaveLength(1);
+    expect(w.issues.find((i) => i.title === VCOL).labels).toContain(QUEUED_LABEL);
+  });
+
+  test("公告被修改：更新 body、reopen、拿掉 claude-queued、重新 fire", async () => {
+    const w = fakeWorld();
+    await w.run();
+    const url = "https://www.ptt.cc/bbs/PttCurrent/M.1790827526.A.744.html";
+    const vcol = w.issues.find((i) => i.title === VCOL);
+    vcol.state = "closed"; // Claude 處理完關掉了
+    w.pages[url] = editBody(A744);
+    await w.run();
+    expect(vcol.state).toBe("open");
+    expect(vcol.body).toContain("全站各列表式界面");
+    expect(w.fires).toHaveLength(2);
+    expect(vcol.labels).toContain(QUEUED_LABEL);
+    expect(vcol.comments.some((c) => c.includes("已修改"))).toBe(true);
+    // 推文不算修改
+    const before = w.pages[url];
+    w.pages[url] = before.replace(/(※ 發信站[\s\S]*?<\/span>)/, (m) => `${m}<div class="push">推 x: y</div>`);
+    expect(w.pages[url]).not.toBe(before);
+    await w.run();
+    expect(w.fires).toHaveLength(2);
+  });
+
+  test("fire 失敗 → 丟錯、不貼 claude-queued；下一輪重試", async () => {
+    const w = fakeWorld();
+    w.fireStatus = 500;
+    await expect(w.run()).rejects.toThrow("500");
+    expect(w.issues.find((i) => i.title === VCOL).labels).not.toContain(QUEUED_LABEL);
+    w.fireStatus = 200;
+    await w.run();
+    expect(w.fires).toHaveLength(2);
+    expect(w.issues.find((i) => i.title === VCOL).labels).toContain(QUEUED_LABEL);
+  });
+
+  test("有待處理 issue 但缺 routine secret → ConfigError（issue 已建好）", async () => {
+    const w = fakeWorld();
+    await expect(
+      sync({ fetch: w.fetch, env: { GITHUB_REPO: "o/r", GH_TOKEN: "t" } }),
+    ).rejects.toThrow(ConfigError);
+    expect(w.issues).toHaveLength(12);
+  });
+
+  test("feed 被擋（403）→ 丟錯，不碰 GitHub", async () => {
+    const w = fakeWorld();
+    const blocked = vi.fn(async () => new Response("Forbidden", { status: 403 }));
+    await expect(sync({ fetch: blocked, env: { GITHUB_REPO: "o/r", GH_TOKEN: "t" } })).rejects.toThrow(FetchError);
+    expect(blocked).toHaveBeenCalledTimes(1);
+    expect(w.issues).toHaveLength(0);
   });
 });
