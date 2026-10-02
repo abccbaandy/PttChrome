@@ -1,0 +1,53 @@
+name: PttCurrent announcements
+
+# PttCurrent 的 [開發資訊] 公告 → issue → Claude routine。邏輯全在
+# scripts/ptt-announcements.mjs（設計見 docs/ptt-announcement-bot.md）。
+# 刻意獨立：不掛 test.yml／deploy.yml，紅了也不影響部署。
+on:
+  schedule:
+    # 分鐘避開 :00（整點排程常被延後）
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 第一次執行：照常建 issue 但不叫 Claude
+        type: boolean
+        default: false
+      dry_run:
+        description: 只印計畫，不寫入
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+# 兩輪重疊會重複開 issue
+concurrency:
+  group: ptt-announcements
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # 腳本只用 Node 內建 fetch／crypto，不必 yarn install。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Sync announcements
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_ROUTINE_FIRE_URL: ${{ secrets.CLAUDE_ROUTINE_FIRE_URL }}
+          CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
+          SEED: ${{ inputs.seed }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=()
+          if [ "$SEED" = "true" ]; then args+=(--seed); fi
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          node scripts/ptt-announcements.mjs "${args[@]}"

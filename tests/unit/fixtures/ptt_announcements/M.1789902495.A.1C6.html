@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>[開發資訊] 介面調整: 標題列與主選單底部狀態列改版 - 看板 PttCurrent - 批踢踢實業坊</title>
+<meta name="robots" content="all">
+<meta name="keywords" content="Ptt BBS 批踢踢">
+<meta name="description" content="PTT 終端機畫面解析注意事項
+   新版標題列 (Header) 與主選單底部狀態列 (Footer) 即將上線，
+   若有透過畫面文字、座標或 ANSI 色碼進行解析 (Screen Scraping)
+   的 App / Bot / 外掛開發者，請及早測試 &amp; 更新。
+   上線時間: PTT2 - 09/20 (測試中)
+">
+<meta property="og:site_name" content="Ptt 批踢踢實業坊">
+<meta property="og:title" content="[開發資訊] 介面調整: 標題列與主選單底部狀態列改版">
+<meta property="og:description" content="PTT 終端機畫面解析注意事項
+   新版標題列 (Header) 與主選單底部狀態列 (Footer) 即將上線，
+   若有透過畫面文字、座標或 ANSI 色碼進行解析 (Screen Scraping)
+   的 App / Bot / 外掛開發者，請及早測試 &amp; 更新。
+   上線時間: PTT2 - 09/20 (測試中)
+">
+<link rel="canonical" href="https://www.ptt.cc/bbs/PttCurrent/M.1789902495.A.1C6.html">
+
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/bbs-common.css">
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/bbs-base.css" media="screen">
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/bbs-custom.css">
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/pushstream.css" media="screen">
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/bbs-print.css" media="print">
+
+
+
+
+
+	</head>
+    <body><a href="https://www.ptt.cc/cdn-cgi/content?id=PKVqQzuhMoBKzLHjUIaPXNgtuCgGveTLmWLodTg4p1Q-1790943409.1986856-1.2.1.1-mliQMTXlkIoVRqu6XQuWPTcQCapTHgzigQLCl7OC3irPDmCTy4fOruY6mRcbz9M_" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a>
+		
+<div id="topbar-container">
+	<div id="topbar" class="bbs-content">
+		<a id="logo" href="/bbs/">批踢踢實業坊</a>
+		<span>&rsaquo;</span>
+		<a class="board" href="/bbs/PttCurrent/index.html"><span class="board-label">看板 </span>PttCurrent</a>
+		<a class="right small" href="/about.html">關於我們</a>
+		<a class="right small" href="/contact.html">聯絡資訊</a>
+	</div>
+</div>
+<div id="navigation-container">
+	<div id="navigation" class="bbs-content">
+		<a class="board" href="/bbs/PttCurrent/index.html">返回看板</a>
+		<div class="bar"></div>
+	</div>
+</div>
+<div id="main-container">
+    <div id="main-content" class="bbs-screen bbs-content"><div class="article-metaline"><span class="article-meta-tag">作者</span><span class="article-meta-value">[系統]</span></div><div class="article-metaline-right"><span class="article-meta-tag">看板</span><span class="article-meta-value">PttCurrent</span></div><div class="article-metaline"><span class="article-meta-tag">標題</span><span class="article-meta-value">[開發資訊] 介面調整: 標題列與主選單底部狀態列改版</span></div><div class="article-metaline"><span class="article-meta-tag">時間</span><span class="article-meta-value">Sun Sep 20 19:07:36 CST 2026</span></div>
+PTT 終端機畫面解析注意事項
+
+   新版標題列 (Header) 與主選單底部狀態列 (Footer) 即將上線，
+   若有透過畫面文字、座標或 ANSI 色碼進行解析 (Screen Scraping)
+   的 App / Bot / 外掛開發者，請及早測試 &amp; 更新。
+
+   上線時間: PTT2 - 09/20 (測試中)
+             PTT1 - 10/04
+   影響範圍: 所有依賴 Row 0 (頂端標題列) 與最後一列 (主選單狀態列)
+             固定字串格式、括號或色碼做畫面判讀的 Client。
+
+   說明：
+
+   為了讓站內各功能的視覺層級更一致、並為後續介面現代化做準備，
+   我們對全站的「頂端標題列」與「主選單底部狀態列」進行了格式與
+   配色的標準化調整：
+
+   1. 頂端標題列 (Row 0) 格式與配色統一
+      - 標準三段式 (左中右) 標題，也就是進主選單時上面的標題：
+        無變動
+      - 單段式簡易標題： (如給予Ptt幣的界面)
+        移除括號內側多餘空白，由原本的【 標題 】統一改為【標題】，
+        與主功能表/看板列表的【主功能表】格式一致。
+      - 兩段式標題列 (左分類 + 右說明列)：
+        * 統一移除左半部舊有的【】括號，改為固定前後各留一格半形空白
+          (即「 左分類 」+「 右說明...」)。
+        * 配色標準化：
+          左半部統一為站台標題色 (PTT1 為 *[0;1;37;44m 藍底亮白字)
+          右半部統一為反白狀態色 *[0;30;47m   (白底黑字，填滿至行尾)
+      - 部份頁面名稱與標題調整：
+        (U) 個人設定區中的「(U) Customize 個人化設定」更名為「偏好設定列表」，
+        其頂端標題由原本的「【個人設定】個人化設定」調整為兩段式標題
+        「 偏好設定列表 」+「 調整介面顯示與操作偏好」。
+
+   2. 選單底部狀態列 (最後一列) 改版
+      - 舊版格式：
+	*[34;46m M/D周X HH:MM *[1;33;45m 節氣/活動
+        *[30;47m 線上N人,我是ID,呼叫器XX  (h)說明
+      - 新版格式：
+	*[34;46m 選單名稱 *[1;33;45m 節氣/活動 *[30;47m
+        M/D 週X HH:MM | ID | 線上N人  [(?)回到上層] (h)說明
+
+      主要差異如下：
+      (a) 最左側改為顯示目前所在的選單分類標籤(如「主功能表」、「休閒遊樂」等，
+          與其它模式的狀態列一致。
+      (b) 日期與資訊欄位改用「 | 」分隔，且星期由「周X」改為「週X」：
+          「 M/D 週X HH:MM | 使用者ID | 線上N人」。
+      (c) 移除底部狀態列中舊有的「我是」字樣與「,呼叫器XX」欄位。
+      (d) 在子選單畫面時，最右側若空間夠會額外顯示「(?)回到上層 (h)說明 」。
+      (e) Ctrl-Z 快速切換列的左側標籤由「*快速切換:」調整為「快速切換」。
+
+   * 給第三方程式開發者的建議
+   1. 若您的程式需要判斷「使用者已完成登入並回到主選單」，頂端 Row 0 左側
+      仍維持「【主功能表】」不變，同時底部狀態列最左側現在也會固定顯示
+      「 主功能表 」，兩者皆可作為判定依據。事實上，由於頂端在閱讀
+      文章與編輯文章時會顯示文章內容，有判定錯誤的可能性。
+      左下幾乎不會判定錯誤。
+   2. 若您的程式透過底部狀態列擷取「使用者 ID」、「線上人數」或「目前時間」，
+      請更新 Regex / 解析規則以相容新版的「 | 」分隔格式，不要再依賴
+      「我是」、「呼叫器」或「周」等關鍵字定位。 可以的話只辨識最開頭的
+      分類標籤就好，不要管時間、ID 與人數等動態內容。
+   3. 若您的程式透過頂端標題列判斷目前所在功能畫面，請注意簡易標題已無內側
+      空白 (【標題】)，且兩段式標題左側已不再包含【】括號。
+   4. 建議不要對顏色作判定，因為顏色在不同站台可能有不同配色，而且也可能
+      因為各種需要而臨時修改。 請注意日後改變顏色的修改不會預先公告。
+
+--
+<span class="f2">※ 發信站: 批踢踢實業坊(ptt.cc)
+</span><span class="f2">※ 文章網址: <a href="https://www.ptt.cc/bbs/PttCurrent/M.1789902495.A.1C6.html" target="_blank" rel="noreferrer noopener nofollow">https://www.ptt.cc/bbs/PttCurrent/M.1789902495.A.1C6.html</a>
+</span><div class="push"><span class="hl push-tag">推 </span><span class="f3 hl push-userid">someuser</span><span class="f3 push-content">: 底部狀態列 那個日期 星期看得很難過</span><span class="push-ipdatetime"> 09/29 09:05
+</span></div></div>
+    
+    <div id="article-polling" data-pollurl="/poll/PttCurrent/M.1789902495.A.1C6.html?cacheKey=2116-554270083&amp;offset=3358&amp;offset-sig=6011d5fb3fffe6c4dfa61443f5a90647d44522d0" data-longpollurl="/v1/longpoll?id=b43cf9d8fb5d70ca2520892ab2cd73ae269f5c10" data-offset="3358"></div>
+    
+
+    
+</div>
+
+		
+
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-DZ6Y3BY9GW"></script>
+<script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-DZ6Y3BY9GW');
+</script>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-32365737-1', {
+    cookieDomain: 'ptt.cc',
+    legacyCookieDomain: 'ptt.cc'
+  });
+  ga('send', 'pageview');
+</script>
+
+
+		
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+<script src="//images.ptt.cc/bbs/v2.27/bbs.js"></script>
+
+    <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a443a3f3790ac501',t:'MTc5MDk0MzQwOQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

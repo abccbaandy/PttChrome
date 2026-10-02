@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>閱讀文章 - 看板 PttCurrent - 批踢踢實業坊</title>
+<meta name="robots" content="all">
+<meta name="keywords" content="Ptt BBS 批踢踢">
+<meta name="description" content="作者  [系統] 看板  PttCurrent
+標題  [開發資訊] 介面調整: 列表模式導入動態分欄架構
+時間  Thu Oct  1 11:15:00 CST 2026
+PTT 終端機畫面解析注意事項
+   全站各列表式介面 (使用者名單、看板列表、文章列表、信件列表等)
+">
+<meta property="og:site_name" content="Ptt 批踢踢實業坊">
+
+<meta property="og:description" content="作者  [系統] 看板  PttCurrent
+標題  [開發資訊] 介面調整: 列表模式導入動態分欄架構
+時間  Thu Oct  1 11:15:00 CST 2026
+PTT 終端機畫面解析注意事項
+   全站各列表式介面 (使用者名單、看板列表、文章列表、信件列表等)
+">
+<link rel="canonical" href="https://www.ptt.cc/bbs/PttCurrent/M.1790827526.A.744.html">
+
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/bbs-common.css">
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/bbs-base.css" media="screen">
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/bbs-custom.css">
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/pushstream.css" media="screen">
+<link rel="stylesheet" type="text/css" href="//images.ptt.cc/bbs/v2.27/bbs-print.css" media="print">
+
+
+
+
+
+	</head>
+    <body><a href="https://www.ptt.cc/cdn-cgi/content?id=jxS7dt1Cx5HYuSzhW8LI74_z3ju1yeGOSMsEmjoag1g-1790943408.45051-1.2.1.1-XyBummwlAX3C25SVd.pT.d4Fr6ynzlbJR_.AssURe4RAZd4Blm9L6FxZvuQfOyAD" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a>
+		
+<div id="topbar-container">
+	<div id="topbar" class="bbs-content">
+		<a id="logo" href="/bbs/">批踢踢實業坊</a>
+		<span>&rsaquo;</span>
+		<a class="board" href="/bbs/PttCurrent/index.html"><span class="board-label">看板 </span>PttCurrent</a>
+		<a class="right small" href="/about.html">關於我們</a>
+		<a class="right small" href="/contact.html">聯絡資訊</a>
+	</div>
+</div>
+<div id="navigation-container">
+	<div id="navigation" class="bbs-content">
+		<a class="board" href="/bbs/PttCurrent/index.html">返回看板</a>
+		<div class="bar"></div>
+	</div>
+</div>
+<div id="main-container">
+    <div id="main-content" class="bbs-screen bbs-content">作者  [系統] 看板  PttCurrent
+標題  [開發資訊] 介面調整: 列表模式導入動態分欄架構
+時間  Thu Oct  1 11:15:00 CST 2026
+
+PTT 終端機畫面解析注意事項
+   全站各列表式介面 (使用者名單、看板列表、文章列表、信件列表等)
+   將改版至動態分欄排版框架 (VCOL)。
+   若有透過畫面文字、固定字元座標進行解析 (Screen Scraping)
+   的 App / Bot / 外掛開發者，請及早檢視並調整解析邏輯。
+
+   上線時間: PTT2 - 9/30
+             PTT1 - 10/4 (10/4 在 80x24 的畫面會保持不變)
+   影響範圍: 所有依賴看板列表、文章列表、信件列表、使用者名單
+             之資料列固定欄位座標 (例如固定以 Col 0~79 絕對字元位置切片)
+             進行內容擷取與狀態判讀的 App / Client。
+   說明：
+   為改善過往各列表硬編碼固定寬度輸出、無法適應不同終端機尺寸、
+   以及雙位元組字元在欄位截斷時容易破字等歷史問題，系統已導入
+   動態分欄式輸出架構 (Virtual Columns, VCOL)。
+
+   主要變更與排版原則說明如下：
+   1. 支援依終端機寬度動態排版
+      - 系統將依據使用者連線時回報的終端機寬度 (t_columns)，依各欄位之
+        「最小寬度」、「最大寬度」與「優先權權重」動態計算配置。
+      - 寬螢幕終端 (如 &gt;80 欄)：
+        文章標題、信件標題、看板中文敘述及板主名單等內容，會自動向右
+        延展展開，顯示更多完整資訊。
+      - 窄螢幕或限制環境：
+        系統會優先滿足高優先級核心資訊，並視情況依序縮減次要內容、
+        或省略部分欄位 (如在空間不足時省略編號、發呆時間等)。
+   2. 多位元組安全截斷機制
+      - 過往部分列表使用生硬的 byte 數截斷，容易將 Big5 雙位元組中文字
+        切半造成破字或畫面亂碼。
+      - 新架構全面導入安全的雙位元組欄位截斷機制，當欄寬不足以容納完整
+        文字時，將在字元邊界安全截斷並統一以全形省略符號「…」結尾。
+   3. 標準 80x24 畫面佈局原則與後續維護
+      - 在最普遍的標準 80x24 終端機解析度下，系統【原則上會盡量維持原有
+        經典排版與視覺體驗不變】。
+      - 然而，為了改善舊代碼中殘留的標題與數值未對齊、歷史欄位位移等
+        顯示瑕疵，開發團隊日後會不定期視實際排版情況進行各種小調整
+        (例如：加減空白分隔符、文字對齊方向微調、防折行欄位邊界微調等)。
+      - 【此類微幅排版、空格加減或欄位對齊之小調整，日後將不再另行公告】。
+
+   * 給第三方程式開發者的建議
+   1. 請勿寫死絕對座標 (Hardcoded Columns)：
+      解析文章列表、信件列表、板名清單或使用者名單時，切勿依賴固定的
+      「第 X 欄到第 Y 欄為某欄位」字元切片方式。
+   2. 建議採用彈性解析策略：
+      - 請改以「連續空白切分 (Whitespace Delimiter Tokenization)」、
+        「前後標記特徵比對」或「正規表示式 (Regular Expression)」
+        提取資料。
+      - 例如文章列表的作者帳號、推文標記、文章標題，建議以作者前後
+        空白特徵與標題前綴 (如 □, R:, 轉, 鎖) 作為錨點擷取，避免因
+        前置編號欄增減空白或右側延展而抓錯偏移。
+   3. 標題擷取請容許「…」省略號：
+      第三方 App 在擷取文章與看板描述時，請預先處理尾端可能出現的
+      「…」省略字元，勿將其視為標題本文的固有內容。
+
+--
+<span class="f2">※ 發信站: 批踢踢實業坊(ptt.cc)
+</span></div>
+    
+    <div id="article-polling" data-pollurl="/poll/PttCurrent/M.1790827526.A.744.html?cacheKey=2116-538208405&amp;offset=2768&amp;offset-sig=40829909df5f3d77b8d47c041399658d2840ee79" data-longpollurl="/v1/longpoll?id=822cfa44e0fd238d3fc7abda5442fa345356af84" data-offset="2768"></div>
+    
+
+    
+</div>
+
+		
+
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-DZ6Y3BY9GW"></script>
+<script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-DZ6Y3BY9GW');
+</script>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-32365737-1', {
+    cookieDomain: 'ptt.cc',
+    legacyCookieDomain: 'ptt.cc'
+  });
+  ga('send', 'pageview');
+</script>
+
+
+		
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+<script src="//images.ptt.cc/bbs/v2.27/bbs.js"></script>
+
+    <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a443a3eece0eeb24',t:'MTc5MDk0MzQwOA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
