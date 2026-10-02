@@ -79,7 +79,7 @@ Worker secret（`npx wrangler secret put <名稱>`，**不准寫進 repo**）：
 
 ## routine
 
-已建：「PttCurrent 公告實作」（`RemoteTrigger` API 建立；環境 PttChrome、model claude-sonnet-5-5、
+已建：「PttCurrent 公告實作」（`RemoteTrigger` API 建立；環境 PttChrome、model **明確指定** claude-opus-5-5（網頁上選「預設」對 routine 會解析成 Sonnet，不是帳號預設的 Opus）、
 無 MCP connector）。建立 API 規定要有排程 ⇒ 放了一個 2099-01-01 的單次排程當佔位，prompt 第 0 條讓它
 沒有 payload 時直接結束（佔位排程之後已在網頁上刪掉）。API trigger 的 token **只能在網頁 UI 產生**
 （CLI／API 都不行）。2026-10-02 上線：seed 建 #39–#50，fire #50 成功起 session，再跑一輪不重複 fire。
