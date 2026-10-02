@@ -203,12 +203,32 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
       { x: target.x, y: target.gapY, sel: OVERRIDING_SEL }
     );
     expect(hit).toBe(true);
+    // 兩下 tap 只隔幾十 ms、相距 ~17px ⇒ Chromium 把第二下算成**雙擊**（mousedown
+    // detail=2，實測 Windows 40ms）。雙擊的預設動作是選字，App.mouse_click 在選取非空時
+    // 不處理點擊 ⇒ 第二下被吞、游標不動（CI Linux 必現：落點換到頁底後，量到的卡片
+    // 本體中央剛好壓在字上）。真實使用者不會 40ms 內連點兩張卡片 ⇒ 等雙擊判定窗過期，
+    // 讓第二下是一次獨立的單擊。等的是輸入語意，不是版面。
+    await page.evaluate(() => {
+      window.__e2eTapDetail = [];
+      document.addEventListener('mousedown', (e) => window.__e2eTapDetail.push(e.detail), true);
+    });
     await page.touchscreen.tap(target.x, target.gapY);
+    const firstTapAt = await page.evaluate(() => performance.now());
     // click handler 是同步的；等兩個 rAF 讓任何後續排程有機會發生
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     expect((await state(page)).selectedNum).toBe(before.selectedNum);
     expect(await page.evaluate(() => window.__replay.sent.length)).toBe(sentBefore);
+    // Chromium aura 的 double_tap_timeout 400ms，留餘裕。
+    await page.waitForFunction((t0) => performance.now() - t0 > 600, firstTapAt);
     await page.touchscreen.tap(target.x, target.bodyY);
+    const tap = await page.evaluate(() => ({
+      detail: window.__e2eTapDetail[window.__e2eTapDetail.length - 1],
+      selection: String(document.getSelection()),
+    }));
+    expect(tap, '第二下必須是單擊、且沒有選到字（否則 mouse_click 不處理）').toEqual({
+      detail: 1,
+      selection: '',
+    });
     await expect.poll(async () => (await state(page)).selectedNum).toBe(target.num);
   });
 
