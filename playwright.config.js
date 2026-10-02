@@ -90,7 +90,7 @@ module.exports = defineConfig({
       name: 'live',
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['preflight'],
-      testIgnore: ['offline/**', 'tools/**', 'preflight.setup.js'],
+      testIgnore: ['offline/**', 'android/**', 'tools/**', 'preflight.setup.js'],
     },
     {
       name: 'offline',
@@ -179,6 +179,17 @@ module.exports = defineConfig({
       fullyParallel: true,
       timeout: 300000,
       testMatch: ADVERSE_LAYOUT_SPECS,
+    },
+    {
+      // android：真 Android Chrome（模擬器）。`yarn test:e2e:android`（scripts/run-android-e2e.mjs）
+      // 負責找／開模擬器；page/context 由 android/fixtures.js 覆寫成手機裡的 Chrome，
+      // 桌機瀏覽器不會啟動。只有一台模擬器 ⇒ 名稱不得以 offline 開頭（workers_policy 恆 1）。
+      // 見 docs/android-e2e.md。
+      name: 'android',
+      timeout: 120000,
+      // 錄影走桌機 screencast，launchBrowser 的 context 不支援；失敗現場留截圖。
+      use: { video: 'off', trace: 'off' },
+      testMatch: 'android/**/*.android.spec.js',
     },
     {
       name: 'record',

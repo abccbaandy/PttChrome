@@ -701,4 +701,5 @@ module.exports = {
   getPref,
   comparePusherSequences,
   inspectFloorGaps,
+  PREF_KEY,
 };

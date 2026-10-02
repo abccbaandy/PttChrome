@@ -27,6 +27,9 @@ app 端會刻意停在驗證碼畫面把鍵盤交還使用者**（該降級路�
 
 dev server 由 `playwright.config.js` 的 `webServer` 自動啟動（已手動 `yarn start` 時 `reuseExistingServer` 會重用）。
 
+真 Android Chrome（模擬器）的 e2e 在 `android/`，另一條跑法 `yarn test:e2e:android`（不連 PTT、不登入），
+見 `docs/android-e2e.md`。
+
 ## PTT 連不上時（preflight 連線健檢）
 
 `live` 與 `record` project 都 `dependencies: ['preflight']`（`preflight.setup.js`）。

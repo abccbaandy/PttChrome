@@ -134,7 +134,9 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   - 觸控長按**仍是手捏** `PointerEvent('contextmenu', { pointerType: 'touch' })`：CDP 觸控長按
     （`Input.synthesizeTapGesture` duration 900／`dispatchTouchEvent` 按住 1.2s）在桌機 Chromium
     （headless shell、new headless、headed 皆然，Pixel 7 模擬）只產生 pointerdown/up、**不發 contextmenu**
-    （CONFIRMED，Windows 本機）⇒ 拿它斷言「選單 0 個」是假陽性。真長按序列留給 Android emulator（`docs/handoff/android-emulator-e2e.md`）。
+    （CONFIRMED，Windows 本機）⇒ 拿它斷言「選單 0 個」是假陽性。
+  - 真長按序列＋拖把手＋原生 Copy 工具列：Android 模擬器 e2e `tests/e2e/android/select_mode.android.spec.js`
+    （`yarn test:e2e:android`，`docs/android-e2e.md`）。補發事件形狀在真 Android Chrome 上 CONFIRMED，替身前提成立。
 
 ## 一鍵登出（`logout_session.js`）
 

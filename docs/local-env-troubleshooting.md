@@ -36,3 +36,6 @@
   沒設 locale 時 Chromium 對**非 ASCII 檔案路徑**的 CDP 拖放照樣派發 drag 事件，但 `dataTransfer.types` 是空的（沒有 `Files`）。
   已修：`tests/e2e/helpers/drop_files.js` 把拖放檔寫到 `os.tmpdir()` 下的 ASCII mkdtemp 目錄（不再用含中文 spec 標題的 `outputPath`），
   守護 `tests/unit/e2e_drop_files.test.js`。若又出現，先查是不是有人把檔案寫回非 ASCII 路徑。
+- **`yarn test:e2e:android` 回 exit 2**＝環境沒準備好（沒 adb／emulator／AVD、Windows 沒開 WHPX、
+  開機逾時，或失敗全帶 `[android-env]`：座標換算／對話框蓋住畫面）。一次性安裝步驟與模擬器踩坑表見
+  `docs/android-e2e.md`；失敗時先看 `test-results/**/device-screen.png`（整個螢幕，不只網頁）。

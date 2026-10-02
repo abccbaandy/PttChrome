@@ -10,6 +10,8 @@
 // 出口：**任何 offline project 都必須設死路 proxy**，少一個就紅。
 //
 // 純靜態，不連網、不開瀏覽器 ⇒ 放 unit（比照 tests/unit/e2e_layout_settle.test.js）。
+import fs from "fs";
+import path from "path";
 import config from "../../playwright.config.js";
 
 const offlineProjects = config.projects.filter((p) => p.name.startsWith("offline"));
@@ -48,5 +50,20 @@ describe("offline e2e：瀏覽器層硬斷網", () => {
     for (const p of config.projects.filter((x) => !x.name.startsWith("offline"))) {
       expect((p.use || {}).proxy, `${p.name} 不該設 proxy`).toBeUndefined();
     }
+  });
+});
+
+// android project 的瀏覽器跑在模擬器裡，上面那道 proxy 吃不到（launchBrowser 不走
+// project 的 use.proxy）⇒ 改在 OS 層斷：worker fixture 開瀏覽器前 `svc wifi/data disable`。
+// adb reverse 走 adbd，不受影響（實測：localhost 照通、外網 fetch 失敗）。
+describe("android e2e：OS 層斷網", () => {
+  const src = fs.readFileSync(path.join(__dirname, "../e2e/android/fixtures.js"), "utf8");
+  test("worker fixture 關掉 wifi 與行動數據", () => {
+    expect(src).toMatch(/svc wifi disable/);
+    expect(src).toMatch(/svc data disable/);
+  });
+  test("斷網發生在 launchBrowser 之前（worker 層，不在 test 層）", () => {
+    expect(src.indexOf("await device.shell('svc wifi disable")).toBeGreaterThan(0);
+    expect(src.indexOf("await device.shell('svc wifi disable")).toBeLessThan(src.indexOf("android.device.launchBrowser("));
   });
 });
