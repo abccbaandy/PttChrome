@@ -29,7 +29,7 @@ Cloudflare Worker cron（23 */6 * * * UTC）
 ## CONFIRMED（2026-10-02）
 
 - feed `https://www.ptt.cc/atom/PttCurrent.xml`：20 筆、新的在前、不需 over18。本機 Node fetch 200，
-  Actions runner 403。`<content>` 只有前 5 行；**feed title ≠ 內文標題** ⇒ issue 標題取全文的 `標題` 行。
+  Actions runner 403，**Cloudflare Worker 200**（部署後手動入口 `dry_run=1` 實測，feed＋12 篇全文都抓得到）。`<content>` 只有前 5 行；**feed title ≠ 內文標題** ⇒ issue 標題取全文的 `標題` 行。
 - feed 涵蓋全部系統公告（看板上作者「系統」的 12 篇都在 feed 裡）。
 - 文章頁標頭**有兩種輸出**：一般是 `article-metaline` div（A.1C6），也有純文字
   `作者  [系統] 看板  PttCurrent`（A.744）。hash＝`標題`＋去掉標頭的內文（到 `※ 發信站` 前）。
@@ -74,16 +74,25 @@ Worker secret（`npx wrangler secret put <名稱>`，**不准寫進 repo**）：
 
 ## UNVERIFIED
 
-- Worker 從 Cloudflare 網路抓 ptt.cc 會不會被擋：部署後用手動入口 `dry_run=1` 驗。被擋 ⇒ 退回本機排程跑
-  `scripts/ptt-announcements.mjs`（本機 IP 抓得到）。
+- 日後 Worker 若也被擋（錯誤 issue 會寫 403）⇒ 退回本機排程跑 `scripts/ptt-announcements.mjs`（本機 IP 抓得到）。
 - routine 的 Default 環境能否讀 GitHub issue：fire text 只帶編號＋標題＋網址，全文要 session 自己讀。
 
-## routine prompt（建 routine 時貼上）
+## routine
+
+已建：「PttCurrent 公告實作」（`RemoteTrigger` API 建立；環境 PttChrome、model claude-sonnet-5-5、
+無 MCP connector）。建立 API 規定要有排程 ⇒ 放了一個 2099-01-01 的單次排程當佔位，prompt 第 0 條讓它
+沒有 payload 時直接結束（佔位排程之後已在網頁上刪掉）。API trigger 的 token **只能在網頁 UI 產生**
+（CLI／API 都不行）。2026-10-02 上線：seed 建 #39–#50，fire #50 成功起 session，再跑一輪不重複 fire。
+fire 回 401 `OAuth access token is invalid` ＝ Worker 裡的 `CLAUDE_ROUTINE_TOKEN` 不是現行那把
+（被 Regenerate 過或貼錯），重新產生後 `secret put` 即可；前後空白／引號／`Bearer ` 前綴 core 會自己去掉。
+
+prompt：
 
 ```
 你是 PttChrome 的協定維護者。routine-fire-payload 列出的 GitHub issue 編號是 PTT 站方
 （PttCurrent 板，作者「系統」）的改版公告，issue body 是公告全文。請逐一處理：
 
+0. 如果沒有 routine-fire-payload，或裡面沒有 issue 編號，什麼都不做，直接結束。
 1. 先讀 CLAUDE.md、docs/pttbbs-screen-protocol.md。公告是規格來源；PTT 的實際行為以
    3rd_script/pttbbs 原始碼為準（如果原始碼裡還沒有，就照公告文字，並在 PR 註明）。
 2. 先研判，在 issue 留言寫出分類：「需實作」／「已支援」（附 commit 或檔案）／「可忽略」（附理由，

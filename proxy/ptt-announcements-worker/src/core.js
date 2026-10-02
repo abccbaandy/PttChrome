@@ -236,6 +236,15 @@ export function renderFireText(repo, targets) {
   ].join("\n");
 }
 
+// `wrangler secret put` 是手貼的：去掉前後空白與成對引號（routine token 另外去掉
+// `Bearer ` 前綴，網頁上的 curl 範例就是帶前綴的那一串）。
+export function cleanSecret(v) {
+  return String(v || "")
+    .trim()
+    .replace(/^(["'])(.*)\1$/s, "$2")
+    .trim();
+}
+
 // ---- I/O（fetch 由呼叫端注入：Worker 傳全域 fetch，unit test 傳假的）----
 
 function makeClient({ fetch, env, limit }) {
@@ -370,17 +379,19 @@ export async function sync({ fetch, env, log = () => {}, dryRun = false, seed = 
     log(`seed 模式不 fire（待處理 ${targets.map((i) => `#${i.number}`).join(" ")}）`);
     return { actions: done, deferred, fired: false };
   }
-  if (!env.CLAUDE_ROUTINE_FIRE_URL || !env.CLAUDE_ROUTINE_TOKEN) {
+  const fireUrl = cleanSecret(env.CLAUDE_ROUTINE_FIRE_URL);
+  const fireToken = cleanSecret(env.CLAUDE_ROUTINE_TOKEN).replace(/^Bearer\s+/i, "");
+  if (!fireUrl || !fireToken) {
     throw new ConfigError("有待處理的 issue，但缺 CLAUDE_ROUTINE_FIRE_URL／CLAUDE_ROUTINE_TOKEN。");
   }
   if (c.left() < fireCost(targets.length)) {
     log("subrequest 額度不夠 fire，留到下一輪");
     return { actions: done, deferred, fired: false };
   }
-  const res = await c.call(env.CLAUDE_ROUTINE_FIRE_URL, {
+  const res = await c.call(fireUrl, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.CLAUDE_ROUTINE_TOKEN}`,
+      Authorization: `Bearer ${fireToken}`,
       "anthropic-beta": "experimental-cc-routine-2026-04-01",
       "anthropic-version": "2023-06-01",
       "Content-Type": "application/json",

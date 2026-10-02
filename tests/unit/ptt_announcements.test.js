@@ -384,3 +384,25 @@ describe("sync 整輪", () => {
     expect(w.issues).toHaveLength(0);
   });
 });
+
+describe("routine secret 手貼容錯", () => {
+  test.each([
+    ["rt"],
+    ["  rt\n"],
+    ['"rt"'],
+    ["Bearer rt"],
+    ["'Bearer rt' "],
+  ])("token %j → 送出 Bearer rt", async (token) => {
+    const w = fakeWorld();
+    const calls = [];
+    const spy = vi.fn((url, init) => {
+      if (String(url).startsWith(FIRE_URL)) calls.push({ url: String(url), auth: new Headers(init.headers).get("authorization") });
+      return w.fetch(url, init);
+    });
+    await sync({
+      fetch: spy,
+      env: { GITHUB_REPO: "o/r", GH_TOKEN: "t", CLAUDE_ROUTINE_FIRE_URL: ` ${FIRE_URL}\n`, CLAUDE_ROUTINE_TOKEN: token },
+    });
+    expect(calls).toEqual([{ url: FIRE_URL, auth: "Bearer rt" }]);
+  });
+});
