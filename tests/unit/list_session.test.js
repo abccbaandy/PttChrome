@@ -2325,6 +2325,74 @@ describe("回 buffer（原生鏡像落點）：視野停在 server 落點那一�
   });
 });
 
+// 手機卡片（view.listCards）：一筆佔 LIST_CARD_ROWS 列，一屏只放 8 筆，
+// 原生落點頁（20 列）塞不下。症狀（APK）：從看板列表進板，游標停在最新文章（頁底），
+// 視口卻停在原生頁頂端 ⇒ 最新文章在視口外，要再往下滑一段才看得到。
+describe("手機卡片：採用原生落點時游標必須在視口內", () => {
+  const CHH = 20;
+  const CARD = CHH * 2.5;
+  const VP = 20 * CHH; // 視口＝bodyRows × chh ⇒ 8 張卡片
+
+  const setup = ({ cards = true } = {}) => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    h.s._renderMode = "buffer";
+    h.s._edgeUp = true;
+    h.s._edgeDown = true;
+    h.s._view.listCards = cards;
+    h.screen = fakeScreen(0, VP, /* live */ false);
+    h.s._view.componentScreen = h.screen;
+    return h;
+  };
+  const frame = (s, screen) => {
+    s.captureScrollAnchor();
+    screen.live = true;
+    s.applyScrollAfterRender();
+  };
+
+  test("進板（_seedAnchors）：游標在頁底 ⇒ 頁底貼齊視口底，游標看得到", () => {
+    const { s, screen } = setup();
+    s._seedAnchors(pageFacts(140, 159)); // 落點 140..159、游標最新的 159
+    frame(s, screen);
+    const seq = s._sequence();
+    expect(s._isPosVisible(seq, s._cursorPos(seq))).toBe(true);
+    expect(s._topNum).toBe(152);
+    expect(screen.top).toBe(52 * CARD);
+  });
+
+  test("回 buffer（_resumeBuffer）同一條規則", () => {
+    const { s, screen } = setup();
+    s._resumeBuffer(pageFacts(140, 159));
+    frame(s, screen);
+    const seq = s._sequence();
+    expect(s._isPosVisible(seq, s._cursorPos(seq))).toBe(true);
+    expect(screen.top).toBe(52 * CARD);
+  });
+
+  test("游標在頁中段 ⇒ 游標貼視口頂（不被捲出），不再往下", () => {
+    const { s, screen } = setup();
+    s._seedAnchors(pageFacts(140, 145));
+    frame(s, screen);
+    expect(s._topNum).toBe(145);
+  });
+
+  test("只套一次：之後使用者自己捲回原生頁頂端不會被拉走", () => {
+    const { s, screen } = setup();
+    s._seedAnchors(pageFacts(140, 159));
+    frame(s, screen);
+    screen.top = 40 * CARD;
+    frame(s, screen);
+    expect(s._topNum).toBe(140);
+  });
+
+  test("桌機（無卡片）：原生頁恰好一屏 ⇒ 錨＝原生頁頂端，行為不變", () => {
+    const { s, screen } = setup({ cards: false });
+    s._seedAnchors(pageFacts(140, 159));
+    frame(s, screen);
+    expect(s._topNum).toBe(140);
+    expect(screen.top).toBe(40 * CHH);
+  });
+});
+
 // 平滑捲動動畫（PgUp/Home/End/把游標拉回視野）與**背景補頁**必然重疊：實測每次
 // PgUp 都會觸發 prefetch，回應約 110ms 後落地，而動畫要 200~400ms
 //（錄製檔 ptt-debug-20260830-175318 / -175419）。

@@ -53,7 +53,8 @@ import {
   revealScrollTop,
   revealPlan,
   maxScrollTopFor,
-  isRowVisible
+  isRowVisible,
+  landingTopPos
 } from './list_scroll';
 import { LEFT_ARROW } from './function_key_plan';
 import { readValuesWithDefault } from './pref_storage';
@@ -858,6 +859,9 @@ export function ListSession(core, view, termBuf, queue) {
   // { topNum, topPinnedKey, scrollFrac, boardName, cursorNum, at } / null。
   // 見 _adoptPendingViewport / _tryApplyPendingViewport。
   this._pendingViewport = null;
+  // 採用原生落點時那一頁的最後一列（{ num, pinnedKey }）。下一次 applyScrollAfterRender
+  // 用 landingTopPos 把視口調到游標可見（手機卡片一屏放不下原生一頁）後清掉。
+  this._landingFit = null;
   this._fillTarget = 0;
   this._fillPages = 0;
   this._edgeUp = false;
@@ -2515,6 +2519,7 @@ ListSession.prototype = {
     this._selectedNum = facts ? facts.cursorRowNum : null;
     this._selectedPinnedKey = null;
     this._topNum = null;
+    this._landingFit = null;
     // 錨的三個欄位是一組，重設要一起（漏掉 pinned key 會讓 _anchorPos 拿舊的
     // 置底列去對位，畫面定位到別的地方）。
     this._topPinnedKey = null;
@@ -2535,6 +2540,7 @@ ListSession.prototype = {
         }
       }
       if (hasPinned) this._edgeDown = true;
+      this._armLandingFit(facts);
       if (this._selectedNum == null) {
         const ct = facts.rowTexts[facts.curY] || '';
         if (isPinnedListRow(ct) && ct.indexOf('★') >= 0) {
@@ -3187,8 +3193,56 @@ ListSession.prototype = {
           break;
         }
       }
+      this._armLandingFit(facts);
     }
     this._forceRedraw();
+  },
+
+  // 記下原生落點頁的最後一列（有編號＝num，置底列＝pinned key）。見 _landingFit。
+  _armLandingFit: function(facts) {
+    this._landingFit = null;
+    for (let r = facts.rows - 2; r >= 3; --r) {
+      if (facts.nums[r] != null) {
+        this._landingFit = { num: facts.nums[r], pinnedKey: null };
+        return;
+      }
+      const t = facts.rowTexts[r] || '';
+      if (t.indexOf('★') >= 0 && isPinnedListRow(t)) {
+        this._landingFit = { num: null, pinnedKey: pinnedRowKey(t) };
+        return;
+      }
+    }
+  },
+
+  // 消費 _landingFit：卡片模式一屏只放 _pageRows() 筆，原生頁頂端當錨會讓頁底的
+  // 游標（進板＝最新文章）落在視口外。桌機原生頁恰好一屏 ⇒ landingTopPos 回原錨。
+  _applyLandingFit: function(seq) {
+    const lf = this._landingFit;
+    if (!lf) return;
+    this._landingFit = null;
+    const top = this._anchorPos(seq);
+    if (top === -1) return;
+    const nums = this._termBuf.listLineNums || [];
+    let last = -1;
+    if (lf.num != null) {
+      const abs = nums.indexOf(lf.num);
+      if (abs !== -1) last = seq.indexOf(abs);
+    } else {
+      for (let i = seq.length - 1; i >= 0; --i)
+        if (nums[seq[i]] == null && this._pinnedKeyAt(seq[i]) === lf.pinnedKey) {
+          last = i;
+          break;
+        }
+    }
+    // 頁底那列被黑名單隱藏／門控拿掉 ⇒ 至少保證游標看得到。
+    const cursor = this._cursorPos(seq);
+    const pos = landingTopPos({
+      topPos: top,
+      cursorPos: cursor,
+      lastPos: last === -1 ? cursor : Math.max(last, cursor),
+      pageRows: this._pageRows()
+    });
+    if (pos !== top) this._setAnchorPos(seq, pos, 0);
   },
 
   _cleanup: function() {
@@ -3554,7 +3608,10 @@ ListSession.prototype = {
       rowH: rowH,
       viewportPx: viewportPx
     });
+    // 待還原的閱讀進度（使用者自己捲出來的視野）優先於落點調整。
+    if (this._pendingViewport) this._landingFit = null;
     this._tryApplyPendingViewport(seq, rowH, maxScrollTop);
+    this._applyLandingFit(seq);
     let pos = this._anchorPos(seq);
     if (pos === -1) {
       // 錨遺失（那一列被 evict／黑名單／pinned 門控拿掉）。退路：游標 → 0。
@@ -3657,6 +3714,7 @@ ListSession.prototype = {
   _cancelScroll: function() {
     this._pendingReveal = null;
     this._anchorOverride = false;
+    this._landingFit = null;
     this._lastScrollTop = 0;
     this._scrollAnim = null;
     this._lastNavAt = 0; // 交易凍結後的第一發不該被誤判成連發

@@ -179,6 +179,10 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   次行（`.listCardMeta`）縮字 0.8em＋淡化，行框仍 1 chh（height/line-height 寫 1.25em）。兩個 session 的 `_rowHeight()` ＝
   `chh × listRowSpan(listCards)`；`_pageRows()`（PgUp/PgDn 一次翻幾筆）＝ `listPageRows(bodyRows)`；
   `_bodyRows()` 仍是 server 的 p_lines（抓頁單位），**不可**跟著換。
+- **採用原生落點（進板 `_seedAnchors`／回 buffer `_resumeBuffer`／看板列表 `_adoptLanding`）**：錨＝原生頁頂端
+  只在桌機成立（一屏＝一頁）；卡片一屏只放 `_pageRows()` 筆 ⇒ 落點後第一次 `applyScrollAfterRender` 用
+  `list_scroll.landingTopPos` 把原生頁底貼齊視口底、但游標不得出頂端（`_landingFit`／`_landingLastNum`，一次性；
+  待還原閱讀進度 `_pendingViewport` 優先）。在 apply 才算是因為 seed 當下 `listCards` 可能還沒對帳。守護 `list_session.test.js`／`board_list_session.test.js`「手機卡片：採用原生落點」。
 - 契約保留：`span[type=bbsrow][srow]`、`data-list-author/-title`、`.listCardBody[data-type=bbsline][data-row]`
   （游標底色的 class 下在這裡 ⇒ 整張卡片上色）。
 - 點擊：`App.clientToPos` 的 body 列號除數換成卡片高（`listRowSpan`）；`App.mouse_click` 在 listCards 下

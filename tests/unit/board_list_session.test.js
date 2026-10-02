@@ -1363,3 +1363,50 @@ describe("Alt remap 全 26 字母（看板列表）", () => {
     }
   });
 });
+
+// 手機卡片：一屏只放 8 筆，原生落點頁（20 列）塞不下 ⇒ 游標若在頁底會落在視口外。
+describe("手機卡片：採用原生落點時游標必須在視口內（看板列表）", () => {
+  const CHH = 20;
+  const VP = 20 * CHH;
+  const setup = (cards) => {
+    const h = makeSession();
+    seedBuffer(h.termBuf, 1, 40);
+    h.s.state = "active";
+    h.s._renderMode = "buffer";
+    h.view.chh = CHH;
+    h.view.listCards = cards;
+    h.screen = {
+      top: 0,
+      hasListViewport: () => true,
+      getListScrollTop() { return this.top; },
+      getListViewportPx: () => VP,
+      setListScrollTop(px) { this.top = px; },
+      scrollListTo(px) { this.top = px; },
+    };
+    h.view.componentScreen = h.screen;
+    return h;
+  };
+  // 落點頁 21..40（row 3..22）、游標停在 40（頁底）。
+  const landing = (cursorNum) => {
+    const nums = new Array(24).fill(null);
+    for (let r = 3; r <= 22; ++r) nums[r] = 21 + (r - 3);
+    return { brd: { variant: "fav", nums, cursorNum, topNum: 21 } };
+  };
+
+  test("游標在頁底 ⇒ 頁底貼齊視口底", () => {
+    const { s, screen } = setup(true);
+    s._adoptLanding(landing(40));
+    s.applyScrollAfterRender();
+    expect(s._topNum).toBe(33); // 40 - 8 + 1
+    expect(s._isPosVisible(s._cursorPos())).toBe(true);
+    expect(screen.top).toBe(32 * CHH * 2.5);
+  });
+
+  test("桌機（無卡片）：錨＝原生頁頂端，行為不變", () => {
+    const { s, screen } = setup(false);
+    s._adoptLanding(landing(40));
+    s.applyScrollAfterRender();
+    expect(s._topNum).toBe(21);
+    expect(screen.top).toBe(20 * CHH);
+  });
+});

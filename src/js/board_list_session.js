@@ -42,7 +42,8 @@ import {
   revealScrollTop,
   revealPlan,
   maxScrollTopFor,
-  isRowVisible
+  isRowVisible,
+  landingTopPos
 } from './list_scroll';
 import {
   defineOwnedRenderMode,
@@ -294,6 +295,9 @@ export function BoardListSession(core, view, termBuf, queue) {
   this._seqCache = null;
 
   this._anchorOverride = false;
+  // 採用原生落點時那一頁最後一列的編號。下一次 applyScrollAfterRender 用
+  // landingTopPos 把視口調到游標可見（手機卡片一屏放不下原生一頁）後清掉。
+  this._landingLastNum = null;
   this._pendingReveal = null;
   this._scrollRaf = null;
   this._lastScrollTop = 0;
@@ -1030,6 +1034,13 @@ BoardListSession.prototype = {
     this._selectedNum = brd ? brd.cursorNum : null;
     this._topNum = brd ? brd.topNum : null;
     this._scrollFrac = 0;
+    this._landingLastNum = null;
+    if (brd && brd.nums)
+      for (let r = brd.nums.length - 1; r >= 0; --r)
+        if (brd.nums[r] != null) {
+          this._landingLastNum = brd.nums[r];
+          break;
+        }
     // 這一幀的錨由 action 指定，不要讓緊接著的 captureScrollAnchor 拿「還沒掛回
     // DOM 的視口」（scrollTop 恆 0）覆寫掉它。
     this._anchorOverride = true;
@@ -1723,6 +1734,7 @@ BoardListSession.prototype = {
       rowH: rowH,
       viewportPx: viewportPx
     });
+    this._applyLandingFit();
     let pos = this._anchorPos();
     if (pos === -1) {
       pos = Math.max(0, this._cursorPos());
@@ -1817,9 +1829,30 @@ BoardListSession.prototype = {
 
   // 停住捲動：作廢排隊中的 reveal 與 rAF，並取消瀏覽器還在跑的平滑動畫
   //（`overflow:hidden` 只擋使用者輸入，不會取消已排定的 scrollTo）。
+  // 消費 _landingLastNum（同 list_session._applyLandingFit）：卡片模式一屏只放
+  // _pageRows() 筆，原生頁頂端當錨會讓頁底的游標落在視口外。桌機 ⇒ 錨不變。
+  _applyLandingFit: function() {
+    const lastNum = this._landingLastNum;
+    if (lastNum == null) return;
+    this._landingLastNum = null;
+    const top = this._anchorPos();
+    if (top === -1) return;
+    const cursor = this._posOfNum(this._selectedNum);
+    if (cursor === -1) return;
+    const last = this._posOfNum(lastNum);
+    const pos = landingTopPos({
+      topPos: top,
+      cursorPos: cursor,
+      lastPos: Math.max(last, cursor),
+      pageRows: this._pageRows()
+    });
+    if (pos !== top) this._setAnchorPos(pos, 0);
+  },
+
   _breakScroll: function() {
     this._pendingReveal = null;
     this._anchorOverride = false;
+    this._landingLastNum = null;
     this._lastScrollTop = 0;
     this._scrollAnim = null;
     this._lastNavAt = 0;

@@ -55,6 +55,20 @@ export function anchorScrollTop({ pos, frac, rowH, maxScrollTop }) {
   return clamp(p * h + f, maxScrollTop);
 }
 
+// 採用原生落點（進板／退回好讀）時的視口頂端。原生錨是「原生頁第一列」——桌機
+// 一屏 bodyRows 列＝原生一頁，剛好整頁對上；手機卡片一屏只放 pageRows 筆
+// （listPageRows），停在原生頁頂端會把頁底的游標（進板＝最新文章）擠出視口。
+// 規則：盡量讓原生頁的最後一列貼齊視口底，但不得把游標捲出頂端、也不得高於原生頁頂。
+// 原生頁塞得進一屏（桌機恆成立）⇒ 回傳 topPos，行為不變。任一位置未知（-1）⇒ topPos。
+export function landingTopPos({ topPos, cursorPos, lastPos, pageRows }) {
+  const top = Number(topPos);
+  const cur = Number(cursorPos);
+  const last = Number(lastPos);
+  const n = Number(pageRows) || 0;
+  if (!(top >= 0) || !(cur >= 0) || !(last >= 0) || !(n > 0)) return topPos;
+  return Math.max(top, Math.min(cur, last - n + 1));
+}
+
 // 某一列是否完整落在視口內。
 export function isRowVisible({ pos, scrollTop, rowH, viewportPx }) {
   const h = Number(rowH) || 0;

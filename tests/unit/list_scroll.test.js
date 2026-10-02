@@ -13,6 +13,7 @@ import {
   isRowVisible,
   revealScrollTop,
   revealPlan,
+  landingTopPos,
 } from "../../src/js/list_scroll";
 
 const ROW = 26; // chh
@@ -99,6 +100,25 @@ describe("anchorScrollTop（不變量 6 的原生捲動版）", () => {
     const shortMax = maxScrollTopFor({ len: 25, bodyRows: BODY, rowH: ROW });
     expect(anchorScrollTop({ pos: 200, frac: 0, rowH: ROW, maxScrollTop: shortMax })).toBe(shortMax);
     expect(anchorScrollTop({ pos: -3, frac: 0, rowH: ROW, maxScrollTop: shortMax })).toBe(0);
+  });
+});
+
+// 採用原生落點時的視口頂端（手機卡片一屏放不下原生一頁）。
+describe("landingTopPos", () => {
+  test("原生頁塞得進一屏（桌機）⇒ 原錨不動", () => {
+    expect(landingTopPos({ topPos: 40, cursorPos: 59, lastPos: 59, pageRows: 20 })).toBe(40);
+  });
+  test("卡片一屏 8 筆、游標在頁底 ⇒ 頁底貼齊視口底，游標看得到", () => {
+    expect(landingTopPos({ topPos: 40, cursorPos: 59, lastPos: 59, pageRows: 8 })).toBe(52);
+  });
+  test("游標下方還有置底列 ⇒ 露出頁底，但游標不得被捲出頂端", () => {
+    expect(landingTopPos({ topPos: 40, cursorPos: 50, lastPos: 59, pageRows: 8 })).toBe(50);
+    expect(landingTopPos({ topPos: 40, cursorPos: 55, lastPos: 59, pageRows: 8 })).toBe(52);
+  });
+  test("不得高於原生頁頂；任一位置未知 ⇒ 原錨", () => {
+    expect(landingTopPos({ topPos: 40, cursorPos: 40, lastPos: 44, pageRows: 8 })).toBe(40);
+    expect(landingTopPos({ topPos: 40, cursorPos: -1, lastPos: 59, pageRows: 8 })).toBe(40);
+    expect(landingTopPos({ topPos: 40, cursorPos: 59, lastPos: -1, pageRows: 8 })).toBe(40);
   });
 });
 
