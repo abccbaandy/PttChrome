@@ -46,9 +46,9 @@ const e2eJobs = () => jobs().filter((j) => E2E_CMD.test(j.body));
 
 const E2E_JOBS = ["test-e2e-offline-shard", "test-e2e-offline-adverse-bucket"];
 
-// 失敗現場要留得下來：offline 偶發紅常常本機重現不出來，CI 沒上傳 test-results／沒錄
-// trace 時只剩一行 Received 可猜（issue #53 後續那次 long_push_image_upload 的偶發紅）。
-describe("test.yml：e2e job 失敗時上傳 test-results，且 CI 會留 trace", () => {
+// 失敗現場要留得下來：offline 偶發紅常常本機重現不出來，CI 沒上傳 test-results 時
+// 只剩一行 Received 可猜（issue #53 後續那次 long_push_image_upload 的偶發紅）。
+describe("test.yml：e2e job 失敗時上傳 test-results；trace 不全錄", () => {
   test.each(E2E_JOBS)("%s：if: failure() 上傳 test-results/", (name) => {
     const job = jobs().find((j) => j.name === name);
     const step = job.body.split(/^\s*- /m).find((s) => /actions\/upload-artifact@/.test(s));
@@ -59,9 +59,13 @@ describe("test.yml：e2e job 失敗時上傳 test-results，且 CI 會留 trace"
     expect(step).toMatch(/name: .*\$\{\{ matrix\.\w+ \}\}.*\$\{\{ github\.run_attempt \}\}/);
   });
 
-  test("playwright.config 在 CI 用 retain-on-failure（CI 沒 retry，on-first-retry＝永遠不錄）", () => {
+  // 反方向的坑：trace 改成每條都錄（'on'／'retain-on-failure'），錄製開銷會改變時序，
+  // CI 上好讀類 spec 整批假紅（實測 4 條：PageDown 送兩次、游標未即時移動）。
+  test("playwright.config 的 trace 不准每條都錄（開銷改變時序）", () => {
     const cfg = fs.readFileSync(path.join(ROOT, "playwright.config.js"), "utf8");
-    expect(cfg).toMatch(/trace: process\.env\.CI \? 'retain-on-failure'/);
+    const traces = [...cfg.matchAll(/^\s*trace:\s*(.+?),?\s*$/gm)].map((m) => m[1]);
+    expect(traces.length).toBeGreaterThan(0);
+    for (const t of traces) expect(t).not.toMatch(/'on'|retain-on-failure/);
   });
 });
 

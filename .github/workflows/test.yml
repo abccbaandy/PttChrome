@@ -133,7 +133,7 @@ jobs:
           yarn install --immutable
           yarn test:e2e:offline --shard=${{ matrix.shard }}/2
 
-      # 失敗現場（截圖／影片／trace）。offline 偶發紅在本機常重現不出來，沒留檔就只剩
+      # 失敗現場（截圖／影片；trace 刻意不全錄，見 playwright.config.js）。offline 偶發紅在本機常重現不出來，沒留檔就只剩
       # 一行 Received 可猜。守護 tests/unit/ci_playwright_container.test.js。
       - name: Upload failure artifacts
         if: failure()
