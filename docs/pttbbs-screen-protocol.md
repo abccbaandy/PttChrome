@@ -308,6 +308,20 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 | 32 | `outc(' ')` | |
 | 33- | title | `w = t_columns - 34` |
 
+- **VCOL 動態分欄（2026-10-01 PttCurrent 公告；PTT2 9/30、PTT1 10/4；CONFIRMED @ pttbbs 36b5fd4d）**：
+  列表改走 `psb.c#render_columns` → `vtuikit.c#vs_cols_layout_ex`／`vs_col_render`，欄位定義
+  `bbs.c#bbs_coldefs`＝游標 1／編號 6／標記推文 4／日期 6／作者 13／標題 16..TTLEN+1，
+  可用寬度 `t_columns - col_paddings(1)`。**80 欄下每一格位置與上表相同**（游標欄 1 格＋`%6d`＝舊 `%7d`；
+  置底 `" " ANSI "  ★ "` 的 ★ 仍在 cols 4-5）；寬於 80 欄時前五欄 min==max 不動，只有標題延展到上限
+  65 格。看板列表 `board.c#brdlist_coldefs` 同理（`%6d%c%s` 前接 1 格游標欄＝舊 `%7d%c%s`，板名仍起於
+  col 10；80 欄時 minw 總和恰 79，沒有欄位延展）。**唯一可見差異**：超寬字串在字元邊界截斷並補全形
+  `…`（`VCOL_ELLIPSIS`）⇒ 截斷標題的列表 subject 可能以 `…` 結尾，比對文章標頭時要走
+  `long_push_anchor.js#subjectMatches` 的前綴比對。表頭仍是整列 `ANSI_REVERSE` 且含「編號」。
+  守護：`tests/unit/ptt_vcol_list_layout.test.js`（移植排版演算法、經 AnsiParser/TermBuf 跑本專案解析器）。
+  窄於 80 欄時 phase 1 放不下的欄位依 pri 由低到高**整欄省略**（編號 pri 20 最先）：看板列表 minw 總和恰 79，
+  **79 欄就沒有編號欄**（看板列表平滑捲動讀不到編號 ⇒ 不 engage，fail-safe）；文章列表要 <47 欄才開始省略。
+  本專案預設恆送 80 欄，只有使用者在 fixed-term-size 手設 <80 才會遇到（`docs/terminal-size.md` §3）。
+
 - **游標欄（兩代，`include/common.h`）**：
 
   | | 字串 | 佔用 | 蓋掉 | 欄位位移 |
