@@ -46,6 +46,25 @@ const e2eJobs = () => jobs().filter((j) => E2E_CMD.test(j.body));
 
 const E2E_JOBS = ["test-e2e-offline-shard", "test-e2e-offline-adverse-bucket"];
 
+// 失敗現場要留得下來：offline 偶發紅常常本機重現不出來，CI 沒上傳 test-results／沒錄
+// trace 時只剩一行 Received 可猜（issue #53 後續那次 long_push_image_upload 的偶發紅）。
+describe("test.yml：e2e job 失敗時上傳 test-results，且 CI 會留 trace", () => {
+  test.each(E2E_JOBS)("%s：if: failure() 上傳 test-results/", (name) => {
+    const job = jobs().find((j) => j.name === name);
+    const step = job.body.split(/^\s*- /m).find((s) => /actions\/upload-artifact@/.test(s));
+    expect(step).toBeDefined();
+    expect(step).toMatch(/^\s*if: failure\(\)\s*$/m);
+    expect(step).toMatch(/^\s*path: test-results\/?\s*$/m);
+    // matrix 各格、重跑各次都要不同名，否則上傳撞名直接失敗。
+    expect(step).toMatch(/name: .*\$\{\{ matrix\.\w+ \}\}.*\$\{\{ github\.run_attempt \}\}/);
+  });
+
+  test("playwright.config 在 CI 用 retain-on-failure（CI 沒 retry，on-first-retry＝永遠不錄）", () => {
+    const cfg = fs.readFileSync(path.join(ROOT, "playwright.config.js"), "utf8");
+    expect(cfg).toMatch(/trace: process\.env\.CI \? 'retain-on-failure'/);
+  });
+});
+
 describe("test.yml：e2e job 跑在 Playwright 官方 image", () => {
   test("找得到 e2e job（切割沒失效）", () => {
     expect(e2eJobs().map((j) => j.name)).toEqual(E2E_JOBS);

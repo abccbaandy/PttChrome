@@ -10,7 +10,7 @@
 //     而言算「點外面」，closeOnClickOutside 沒關掉就整段稿子沒了）
 const { test, expect } = require('@playwright/test');
 const { installReplay, waitConnected } = require('../helpers/replay');
-const { rightClickPlainText, dropFiles: realDropFiles } = require('../helpers/real_input');
+const { rightClickPlainText, dragFiles } = require('../helpers/real_input');
 
 // 文章畫面（pmore 狀態列）＝右鍵選單出現「長推文一鍵發送」的前提
 // （ContextMenu 的 gating：enableLongPush && buf.pageState === 3）。
@@ -137,16 +137,20 @@ async function openLongPushModal(page) {
 // 真拖放（CDP Input.dispatchDragEvent，helpers/real_input）：輸入框開著就放在它上面
 // —— 使用者「拖圖進輸入框」的落點；Textarea 對檔案拖放的原生預設行為（開檔／插入
 // 路徑）若沒被擋下，這裡會看得到。輸入框關著就落在視窗中央。
+// 先等遮罩亮起才放開（同 image_upload.offline.spec.js）：遮罩＝app 已經吃下
+// dragenter、宣告接受這次拖放；拖進去立刻放開時序沒有任何保證。
 async function dropImage(page, name) {
   const box = await page.locator('[name="longPushText"]').boundingBox({ timeout: 1000 })
     .catch(() => null);
-  await realDropFiles(
+  const drag = await dragFiles(
     page,
     [name],
     box
       ? { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) }
       : undefined
   );
+  await expect(page.locator('.ImageUploadDropZone')).toBeVisible();
+  await drag.drop();
 }
 
 test.describe('長推文輸入框的圖片上傳（離線）', () => {

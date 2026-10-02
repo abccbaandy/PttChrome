@@ -40,7 +40,7 @@ const OFFLINE_NO_NETWORK = {
 // 189 份 screencast 通道與暫存檔 handle，是本機 Windows 撞 STATUS_DLL_INIT_FAILED
 // （見 scripts/run-adverse-e2e.mjs 開頭）的養分之一。CI 是 Linux，沒有那個 session
 // 資源上限，影片又是唯一能回看逆境現場的東西 ⇒ 只在本機關。
-// screenshot/trace 不動：前者只在失敗時抓、後者沒 retry 就不錄，成本近乎零。
+// screenshot/trace 不動：前者只在失敗時抓、後者本機沒 retry 就不錄（CI 才 retain-on-failure）。
 const ADVERSE_USE = {
   ...devices['Desktop Chrome'],
   proxy: OFFLINE_NO_NETWORK,
@@ -65,7 +65,9 @@ module.exports = defineConfig({
     headless: true,
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    trace: 'on-first-retry',
+    // CI 沒有 retry ⇒ on-first-retry 等於永遠不錄；偶發紅只在 CI 出現，trace 是唯一能
+    // 回看事件序列的東西（.github/workflows/test.yml 失敗時上傳 test-results/）。
+    trace: process.env.CI ? 'retain-on-failure' : 'on-first-retry',
   },
   // 各 project 共用同一个 webServer（Vite dev server）：
   // - preflight：连线健检（tests/e2e/preflight.setup.js），只验「连得到 PTT」。

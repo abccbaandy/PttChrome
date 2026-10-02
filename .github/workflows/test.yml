@@ -133,6 +133,16 @@ jobs:
           yarn install --immutable
           yarn test:e2e:offline --shard=${{ matrix.shard }}/2
 
+      # 失敗現場（截圖／影片／trace）。offline 偶發紅在本機常重現不出來，沒留檔就只剩
+      # 一行 Received 可猜。守護 tests/unit/ci_playwright_container.test.js。
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-offline-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
+
   # required checks 綁的是 job 名（`test / test-e2e-offline`），matrix 會把名字變成
   # `test-e2e-offline-shard (1)` ⇒ 用這個收斂 job 維持原名，分支保護不必跟著 shard 數改。
   # `if: always()` 不能省：上游失敗時沒有它，這個 job 會是 skipped，而 skipped 對
@@ -195,6 +205,15 @@ jobs:
         run: |
           yarn install --immutable
           yarn test:e2e:offline:adverse --only=${{ matrix.bucket }}
+
+      # 同 test-e2e-offline-shard 的失敗現場上傳。
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-offline-adverse-${{ matrix.bucket }}-attempt-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
 
   # 同 test-e2e-offline 的收斂 job：維持 required check 名稱 `test / test-e2e-offline-adverse`。
   test-e2e-offline-adverse:
