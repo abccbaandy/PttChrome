@@ -32,3 +32,7 @@
     重導），重開 Claude app 讓 env 生效，再 `yarn playwright install chromium firefox`。
     **不要寫進 repo／config**（CI 與其他機器不需要）。
   - 判準：`ls "$LOCALAPPDATA/ms-playwright"` 在 Bash 與一般 PowerShell 內容不一致 ⇒ 就是這個。
+- **拖放 spec 整批 `.ImageUploadDropZone` not found、`LANG`／`LC_ALL` 空**（雲端容器、部分 Docker／WSL；CI 官方映像有設 UTF-8 所以測不出）：
+  沒設 locale 時 Chromium 對**非 ASCII 檔案路徑**的 CDP 拖放照樣派發 drag 事件，但 `dataTransfer.types` 是空的（沒有 `Files`）。
+  已修：`tests/e2e/helpers/drop_files.js` 把拖放檔寫到 `os.tmpdir()` 下的 ASCII mkdtemp 目錄（不再用含中文 spec 標題的 `outputPath`），
+  守護 `tests/unit/e2e_drop_files.test.js`。若又出現，先查是不是有人把檔案寫回非 ASCII 路徑。

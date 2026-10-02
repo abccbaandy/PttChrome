@@ -14,6 +14,7 @@ const {
   plainLeftEdge,
   assertPlainTextUnder,
 } = require('./layout');
+const { writeDropFiles } = require('./drop_files');
 
 // CDP session 每頁一個（Chromium only；offline-firefox 只跑 selection.offline，不會走到）。
 const cdpSessions = new WeakMap();
@@ -197,19 +198,10 @@ async function imeCommit(page, text) {
 }
 
 // 真拖放檔案：CDP Input.dispatchDragEvent，DataTransfer（含 File 的 type）由瀏覽器依
-// 實體檔案生成。names 是檔名（副檔名決定 MIME）；檔案寫在該 test 的 output 目錄。
+// 實體檔案生成。names 是檔名（副檔名決定 MIME）；檔案寫在純 ASCII 的暫存目錄（理由見 drop_files.js）。
 // 回傳 { drop, cancel }：dragEnter＋dragOver 已送出（遮罩該亮了），由呼叫端決定何時放開。
 async function dragFiles(page, names, { x, y } = {}) {
-  const fs = require('fs');
-  const { test } = require('@playwright/test');
-  const files = names.map((name) => {
-    const p = test.info().outputPath('drop-' + name);
-    fs.writeFileSync(
-      p,
-      /\.txt$/.test(name) ? 'hello' : Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4])
-    );
-    return p;
-  });
+  const files = writeDropFiles(names);
   const vp = page.viewportSize() || { width: 1280, height: 720 };
   const at = { x: x ?? Math.round(vp.width / 2), y: y ?? Math.round(vp.height / 2) };
   const data = { items: [], files, dragOperationsMask: 1 | 2 | 16 };
