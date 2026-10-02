@@ -414,6 +414,7 @@ export function TermView() {
 
   //this.DBDetection = false;
   this.blinkOn = false;
+  this._blinkPhase = false; // toggleBlinkPhase：true＝游標可見、閃爍字變透明的那半秒
 
   // React
   this.componentScreen = {
@@ -608,10 +609,24 @@ export function TermView() {
 TermView.prototype = {
 
   onBlink: function() {
+    // 頁面隱藏時不閃（看不到）。App 的 timerEverySec 仍照跑 antiIdle。
+    if (document.hidden) return;
     this.blinkOn=true;
-    //   if(this.buf && this.buf.changed)
     this.buf.queueUpdate(true);
-    //   else this.update();
+  },
+
+  // 每秒閃爍相位（TermBuf.notify 尾端呼叫）。省電不變量（守護 tests/unit/blink_phase.test.js，
+  // 數據見 docs/handoff/android-battery-drain.md）：
+  //   - 游標只切換自己的 class：CSS 只動 visibility ⇒ 只需要 paint，不觸發 layout。
+  //   - body.blink--active（SGR 5 閃爍字 .qq* 的 CSS 開關）只在 DOM 真的有閃爍字時才掛。
+  //     切換 body class 會讓整棵樹做一次樣式失效，成本跟著節點數變大。
+  //     toggle(force) 狀態不變時是 no-op；querySelector 每兩拍只跑一次，而且找到第一個就停。
+  //     用整份 document 查，所以 InputHelperModal 的預覽也會閃。
+  toggleBlinkPhase: function() {
+    this._blinkPhase = !this._blinkPhase;
+    this.bbsCursor.classList.toggle('cursor--blink-on', this._blinkPhase);
+    var want = this._blinkPhase && !!document.querySelector('[class*="qq"]');
+    document.body.classList.toggle('blink--active', want);
   },
 
   setBuf: function(buf) {
@@ -1684,8 +1699,8 @@ TermView.prototype = {
     this.updateCursorPos();
   },
 
-  // 唯一寫 #cursor display 的地方。inline 'none' 蓋過 CSS 的 .blink--active 規則
-  // （main.css），設回 '' 就把顯示權交還給每秒 toggle class 的閃爍機制。
+  // 唯一寫 #cursor display 的地方。inline 'none' 蓋過 CSS 的 display:block（main.css），
+  // 設回 '' 就把顯示權交還給閃爍機制（toggleBlinkPhase 切換 visibility）。
   // 四個獨立來源做 OR：手動隱藏（list_session）、PTT 自己畫了游標（autoHideBlinkCursor）、
   // 這一幀不是格線畫面（好讀累積長頁 —— 格線座標在那裡沒有意義，見 _gridRender）、
   // 以及游標座標落在格線外（_cursorOutOfRange，見宣告處）。
@@ -2150,8 +2165,8 @@ TermView.prototype = {
   // border/padding ⇒ **它的 padding box 原點就是 viewport 原點**，所以 viewport
   // 座標可以直接當 `#t`（position:absolute）的 left/top，不需要任何換算。
   //
-  // **不要改用 #cursor 的 rect 當錨**：#cursor 基底 CSS 是 display:none，靠
-  // body.blink--active 每秒 toggle ⇒ 有一半時間量到全 0。
+  // **不要改用 #cursor 的 rect 當錨**：它會被 _applyCursorVisibility 設成 inline
+  // display:none（列表好讀、PTT 自己畫了游標…）⇒ 這時量到全 0。
   //
   // 沒有可錨的列（好讀累積長頁：格線座標在那裡沒有意義；列表好讀視窗：srow 是序列
   // index，不是 buf 列號 —— 兩者 _rowAnchor 都回 null）時

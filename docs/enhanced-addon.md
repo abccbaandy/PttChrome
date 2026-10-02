@@ -549,7 +549,9 @@ index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**�
 **`_cursorSuppressed` 與列表好讀的 `_cursorHidden` 是兩個獨立來源、OR 合併**——共用一個旗標會讓
 `list_session` 的 `showCursor()` 誤清抑制狀態，且 `_cursorHidden` 會讓 `updateCursorPos` 提早 return。
 守護：`tests/unit/server_cursor_mark.test.js`、`tests/e2e/offline/blink_cursor.offline.spec.js`
-（computed display 才看得到 inline style 疊 `.blink--active` CSS 的最終結果）。
+（inline display:none 疊上閃爍的 `visibility`，要看 computed 值才知道最終結果）。
+閃爍本身只切換 `#cursor.cursor--blink-on`，並只動 visibility；`body.blink--active` 只在畫面有 SGR 5 閃爍字時才掛
+（`term_view.toggleBlinkPhase`，省電，守護 `tests/unit/blink_phase.test.js`）。
 
 **「自動登入」分頁**（2026-08 從增強功能＋本機設定兩處集中過來）——整條登入流程一頁看完，
 內部兩個 fieldset 各自標示同步性質：

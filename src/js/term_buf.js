@@ -1187,8 +1187,7 @@ TermBuf.prototype = {
 
     if (this.view.blinkOn) {
       this.view.blinkOn = false;
-
-      document.body.classList.toggle('blink--active')
+      this.view.toggleBlinkPhase();
     }
   },
 

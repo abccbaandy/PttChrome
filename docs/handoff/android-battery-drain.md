@@ -1,6 +1,6 @@
 # Android APK 耗電分析（使用者體感掉電過快，懷疑是 APK）
 
-狀態：**分析中**。第一階段（讀 code）＋模擬器量測已完成；實機已有一份 batterystats 快照（見「實機 batterystats 快照」）。CPU A/B（U5）還沒在實機上跑。**還沒有任何 code 改動。**
+狀態：**分析中**。第一階段（讀 code）＋模擬器量測已完成；實機已有一份 batterystats 快照（見「實機 batterystats 快照」）。CPU A/B（U5）還沒在實機上跑。CONFIRMED #1（閃爍）**已實作**，其餘都是研究項目。
 前置閱讀：`docs/android-app.md`（不變量 6、7 跟這裡直接相關）。
 
 ## 使用者情境（決定優先序）
@@ -10,7 +10,10 @@
 
 ## 已確定可優化（CONFIRMED）
 
-### 1. 游標閃爍每秒整頁重算樣式＋重畫 ⇒ 前景閒置時的主要成本
+### 1. 游標閃爍每秒整頁重算樣式＋重畫 ⇒ 前景閒置時的主要成本 —— **已實作**
+- 實作：`term_view.js#toggleBlinkPhase`（游標只切換自己的 `.cursor--blink-on`，CSS 只動 visibility；`body.blink--active` 只在 DOM 裡有 `.qq*` 時才掛）＋`onBlink` 在 `document.hidden` 時直接 return。
+  守護：`tests/unit/blink_phase.test.js`、`tests/e2e/offline/blink_cursor.offline.spec.js`「閃爍相位的省電不變量」。
+- 實機的省電幅度**未驗**（U5）。以下是實作前的分析，保留下來當作對照基準。
 - 位置：`pttchrome.jsx` `onConnect` 的 `timerEverySec`（每秒）→ `term_view.onBlink`（`blinkOn=true`＋`queueUpdate(true)`）
   → `term_buf.notify` 尾端 `document.body.classList.toggle('blink--active')`。
   `color.css` 有 24 條 `.blink--active .qq*` 子孫選擇器，`main.css` 有 `.blink--active #cursor {display:block}`。
@@ -47,7 +50,7 @@
   筆記在 `docs/local/phone-standby-drain.md`（gitignored，只存在使用者的本機。內容含個人裝置與已安裝 App，依隱私規範不進 repo）。
 
 ### 下一步建議（依實機數據重排優先序）
-1. CONFIRMED #1（閃爍）仍然是第一優先：前景 CPU 是 PttChrome 唯一大於螢幕以外的成本。
+1. CONFIRMED #1（閃爍）已實作。下一步是用 U5 的方法在實機上量修改前後的前景 CPU。
 2. 新增 U7：前景 70 分鐘 216 MB 流量的來源（預覽圖、tenor 動圖、`<video>`）。用 CDP `Network` 或 `performance.getEntriesByType('resource')` 量一篇文章的位元組數。
 3. U3（動圖持續解碼）的權重上調：在 165Hz 下，`<video autoplay loop>` 的合成成本更高。
 

@@ -59,7 +59,8 @@ export function snapshotState(app) {
 // 「游標真的動了才取樣」的節流，且只在 isRecording 時才進來 —— 這裡會強制 reflow。
 //
 // 錄三個東西就足以判定「算術 vs layout 是否脫鉤」：
-//   cursor  #cursor 的螢幕矩形（display:none 的閃爍暗相位會是全 0，照錄不修飾）
+//   cursor  #cursor 的螢幕矩形（被 inline display:none 藏起來時是全 0，照錄不修飾；
+//           閃爍暗相位只是 visibility:hidden，矩形照樣量得到）
 //   row     buf.cur_y 那一列**真正被畫出來**的節點矩形
 //   main    捲動容器（含 scrollTop/scrollHeight/clientHeight ⇒ 「鏡像不可捲」不變量）
 export function cursorGeomSample(view, doc) {

@@ -24,12 +24,12 @@ const CURSOR_ON_BLANK =
 const CUR_ROW = 9;
 const CUR_COL = 19;
 
-// 量測前先把 body.blink--active 掛上：閃爍相位剛好在「暗」的那半秒時 #cursor 是
-// display:none，rect 會全 0（量到的不是位置錯，而是根本沒量到東西）。
+// 量測前先把 #cursor 的 cursor--blink-on 掛上，固定在可見相位。暗相位只是
+// visibility:hidden（rect 量得到），這裡固定住是為了讓 visibility 的斷言不受相位影響。
 async function measure(page, row, col) {
   return page.evaluate(
     ({ row, col }) => {
-      document.body.classList.add('blink--active');
+      document.getElementById('cursor').classList.add('cursor--blink-on');
       const el = document.getElementById('cursor');
       const cs = getComputedStyle(el);
       const rowEl = (r) =>
@@ -40,6 +40,7 @@ async function measure(page, row, col) {
       };
       return {
         display: cs.display,
+        visibility: cs.visibility,
         backgroundColor: cs.backgroundColor,
         color: cs.color,
         boxShadow: cs.boxShadow,
@@ -72,6 +73,7 @@ test.describe('打字游標是閃爍直線且不出格（離線）', () => {
   test('形狀：細長直立（寬約 2px、高＝一格列高），不是底線', async ({ page }) => {
     const m = await measure(page, CUR_ROW, CUR_COL);
     expect(m.display).toBe('block');
+    expect(m.visibility).toBe('visible'); // CSS 真的有接上 cursor--blink-on
     // 直線：寬遠小於高。底線的形狀正好相反（寬一格、高 2~3px）。
     expect(m.cursor.width).toBeGreaterThan(0);
     expect(m.cursor.width).toBeLessThanOrEqual(4);
@@ -251,7 +253,7 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
 
     // 人為讓 `.main` 可捲並捲到底（模擬任何殘留 padding / 使用者滾輪），**不重繪**。
     const m = await page.evaluate((row) => {
-      document.body.classList.add('blink--active');
+      document.getElementById('cursor').classList.add('cursor--blink-on');
       const view = window.__app.view;
       document.getElementById('mainContainer').style.paddingBottom = '3em';
       view.mainDisplay.scrollTop = 9999;
@@ -320,7 +322,7 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
     await page.waitForTimeout(400);
 
     const m = await page.evaluate(() => {
-      document.body.classList.add('blink--active');
+      document.getElementById('cursor').classList.add('cursor--blink-on');
       return {
         gridRender: window.__app.view._gridRender,
         display: getComputedStyle(document.getElementById('cursor')).display,
@@ -353,10 +355,10 @@ function pushPromptReverseFrame({ rows }) {
   );
 }
 
-// #cursor 與反白帶（.b7）的矩形。量之前掛 blink--active，否則暗相位量到全 0。
+// #cursor 與反白帶（.b7）的矩形。量之前固定在可見相位（cursor--blink-on）。
 async function measureBand(page, row) {
   return page.evaluate((row) => {
-    document.body.classList.add('blink--active');
+    document.getElementById('cursor').classList.add('cursor--blink-on');
     const rect = (e) => {
       if (!e) return null;
       const b = e.getBoundingClientRect();

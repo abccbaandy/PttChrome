@@ -160,17 +160,22 @@
    - currentColor：顏色由 term_view.updateCursorPos 的 inline style 決定
      （原生＝背景反色、上班模式＝固定淺灰，見 cursor_color.js），這裡自動跟著走。
      光暈用 box-shadow —— 沒有文字了，text-shadow 不會有任何效果。
-   守護：tests/e2e/offline/cursor_shape.offline.spec.js */
+   - 閃爍＝只切換自己的 .cursor--blink-on（term_view.toggleBlinkPhase），而且只動
+     visibility：只需要 paint，不觸發 layout，也不讓整棵樹做樣式失效。**不要改回
+     display 切換或掛在 body class 上**（省電，見 tests/unit/blink_phase.test.js）。
+     真的要藏游標時走 inline display:none（term_view._applyCursorVisibility）。
+   守護：tests/e2e/offline/cursor_shape.offline.spec.js、blink_cursor.offline.spec.js */
 #cursor {
-  display: none;
+  display: block;
+  visibility: hidden;
   width: 2px;
   height: 1em;
   background-color: currentColor;
   box-shadow: 0 0 4px currentColor;
 }
 
-.blink--active #cursor {
-  display: block;
+#cursor.cursor--blink-on {
+  visibility: visible;
 }
 
 .main, #easyReadingLastRow {
