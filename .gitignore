@@ -33,8 +33,8 @@ dist/*
 .idea/
 3rd_script/
 
-# Claude Code hook 的旗標檔（本 session 是否啟動過 dev server；見 .claude/settings.json）
-.claude/.dev-server-running
+# Claude Code 建的 git worktree（多 session 並行；規則見 CLAUDE.md「多 session 並行」）
+.claude/worktrees/
 .claude/settings.local.json
 # 個人裝置的研究筆記與原始量測（含裝置／已安裝 App 等隱私資訊，絕不入 repo）
 docs/local/

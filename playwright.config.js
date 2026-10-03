@@ -1,5 +1,11 @@
 const { defineConfig, devices } = require('@playwright/test');
 const { e2eWorkers } = require('./tests/e2e/workers_policy');
+const { assertNotWorktree } = require('./scripts/worktree');
+
+// git worktree 裡禁跑任何 Playwright project（exit 2），理由與逃生門見 scripts/worktree.js。
+// 放在 config 而非 package.json：直接 `npx playwright test` 也擋得到。
+// unit 會 import 本檔讀設定（VITEST 由 vitest 設定），不可在那時 exit。
+if (!process.env.VITEST) assertNotWorktree('Playwright e2e');
 
 // 逆境 project 的 spec 清單（詳見下方 offline-slow 的註解）。
 // 這兩個常數被 tests/unit/e2e_layout_settle.test.js 讀去做靜態守護，改名要一起改。

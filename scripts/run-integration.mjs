@@ -10,6 +10,7 @@
 // mounted (read-only) into the image's home dir, so the emulator's debug logs
 // write inside the container (no repo pollution, no mount-permission issues).
 import { spawnSync } from "node:child_process";
+import worktree from "./worktree.js";
 
 const IMAGE = "andreysenov/firebase-tools:15.22.3-node-22"; // bundles OpenJDK
 const CONTAINER = "ptt-fb-emu";
@@ -45,6 +46,9 @@ async function waitHttp(label, url, timeoutMs) {
 }
 
 async function main() {
+  // 容器名與 port 全機唯一，worktree 裡跑會 `docker rm -f` 掉主目錄正在跑的 emulator。
+  worktree.assertNotWorktree("integration（Firebase emulator）");
+
   if (spawnSync("docker", ["--version"], { stdio: "ignore" }).status !== 0) {
     console.error(
       "Docker is required for integration tests (the Firebase emulator runs in a container).\n" +

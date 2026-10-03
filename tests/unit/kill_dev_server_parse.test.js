@@ -6,7 +6,7 @@
 //
 // 這裡把「netstat 輸出 → PID 清單」抽成純函式守護，兩種位址族都必須抓得到。
 
-import { parseListeningPids } from "../../scripts/kill-dev-server.js";
+import { parseListeningPids, selectPidsToKill } from "../../scripts/kill-dev-server.js";
 
 const PORT = 8080;
 
@@ -53,5 +53,25 @@ describe("kill-dev-server：netstat 輸出解析", () => {
       "911",
       "912",
     ]);
+  });
+});
+
+// 多 session 並行：SessionEnd hook 跑 `--own`，只能砍本 checkout pidfile 記的那個 PID。
+// 舊版無條件砍 8080 ⇒ 任何 session 結束都會讓主目錄正在跑的 e2e 整批 ERR_CONNECTION_REFUSED。
+describe("kill-dev-server：--own 只砍自己的", () => {
+  test("ownOnly：只留 pidfile 記的 PID", () => {
+    expect(selectPidsToKill(["111", "222"], { ownOnly: true, ownPid: "222\n" })).toEqual(["222"]);
+  });
+
+  test("ownOnly 但 8080 是別人的 ⇒ 一個都不砍", () => {
+    expect(selectPidsToKill(["111"], { ownOnly: true, ownPid: "999" })).toEqual([]);
+  });
+
+  test("ownOnly 但沒有 pidfile（本 checkout 沒起過 server）⇒ 一個都不砍", () => {
+    expect(selectPidsToKill(["111"], { ownOnly: true, ownPid: null })).toEqual([]);
+  });
+
+  test("預設模式（yarn kill:dev 於主目錄）照舊全砍", () => {
+    expect(selectPidsToKill(["111", "222"])).toEqual(["111", "222"]);
   });
 });

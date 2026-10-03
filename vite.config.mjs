@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { DEV_SERVER_PIDFILE } from './scripts/kill-dev-server.js';
 
 // Build identity, surfaced in the About tab and the startup console line so a
 // running page can be matched to a commit (stale-deploy debugging).
@@ -26,13 +29,32 @@ const htmlVars = () => ({
   },
 });
 
+// dev server 開起來時把自己的 PID 寫進本 checkout 的 pidfile。
+// SessionEnd hook 跑 `kill-dev-server.js --own` 只殺這個 PID ⇒ 多個 worktree session
+// 並行時，誰結束都不會砍到別人的 dev server（8080 上是誰的，只看 port 分不出來）。
+const devServerPidfile = () => ({
+  name: 'pttchrome:dev-server-pidfile',
+  apply: 'serve',
+  configureServer(server) {
+    try {
+      fs.mkdirSync(path.dirname(DEV_SERVER_PIDFILE), { recursive: true });
+      fs.writeFileSync(DEV_SERVER_PIDFILE, String(process.pid));
+    } catch (e) {}
+    server.httpServer?.once('close', () => {
+      try {
+        if (fs.readFileSync(DEV_SERVER_PIDFILE, 'utf8') === String(process.pid)) fs.unlinkSync(DEV_SERVER_PIDFILE);
+      } catch (e) {}
+    });
+  },
+});
+
 export default defineConfig(({ command }) => {
   // dev server（vite serve）＝ developer mode；vite build ＝ production。
   const DEVELOPER_MODE = command === 'serve';
   return {
     // 部署在 GitHub Pages 子路徑，所有資源引用走相對路徑。
     base: './',
-    plugins: [react(), htmlVars()],
+    plugins: [react(), htmlVars(), devServerPidfile()],
     // .bin（Big5 轉碼表）與 .bmp 不在 Vite 內建 asset 清單，明確納入。
     assetsInclude: ['**/*.bin', '**/*.bmp'],
     define: {
@@ -104,7 +126,7 @@ export default defineConfig(({ command }) => {
       watch: {
         // build 產物與測試報告非 source：一旦被監看，e2e 進行中跑 `yarn build`
         // 或 Playwright 寫報告會觸發 dev server 廣播 full reload，炸掉被測頁面。
-        ignored: ['**/dist/**', '**/playwright-report/**', '**/test-results/**', '**/3rd_script/**'],
+        ignored: ['**/dist/**', '**/playwright-report/**', '**/test-results/**', '**/3rd_script/**', '**/.claude/worktrees/**'],
       },
       proxy: {
         // dev 內建 /bbs WebSocket proxy：改寫 Origin→term.ptt.cc 直連真 PTT

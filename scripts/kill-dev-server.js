@@ -3,8 +3,17 @@
 // 避免誤殺其他佔 8080 的服務（如 java）。永不 fail（一律 exit 0），CI 上無孤兒時是 no-op。
 //
 // 用法：node scripts/kill-dev-server.js（或 yarn kill:dev）。
+//   --own：只殺「本 checkout 自己起的」dev server（PID 由 vite.config.mjs 寫進
+//   DEV_SERVER_PIDFILE）。SessionEnd hook 用這個模式；在 git worktree 裡自動套用。
+//   理由：多個 session 並行時 8080 上是誰的 server 只看 port 分不出來，
+//   不加這層，任何一個 session 結束都會砍掉別人正在跑 e2e 的 server。
 
 const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const { isLinkedWorktree } = require('./worktree');
+
+const DEV_SERVER_PIDFILE = path.resolve(__dirname, '..', 'node_modules', '.cache', 'pttchrome-dev-server.pid');
 
 const PORT = 8080;
 const isWin = process.platform === 'win32';
@@ -51,6 +60,22 @@ function parseListeningPids(out, port, { lsof = false } = {}) {
   return [...pids];
 }
 
+// 從 listen 中的 PID 挑出要砍的（純函式，守護 tests/unit/kill_dev_server_parse.test.js）。
+// ownOnly 時只留 pidfile 記的那一個；pidfile 不存在 ⇒ 本 checkout 沒起過 server ⇒ 一個都不砍。
+function selectPidsToKill(pids, { ownOnly = false, ownPid = null } = {}) {
+  if (!ownOnly) return pids;
+  if (!ownPid) return [];
+  return pids.filter((pid) => String(pid) === String(ownPid).trim());
+}
+
+function readOwnPid() {
+  try {
+    return fs.readFileSync(DEV_SERVER_PIDFILE, 'utf8').trim() || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // 找出正在 listen PORT 的 PID 清單。
 function findListeningPids() {
   return isWin
@@ -84,7 +109,9 @@ function main() {
   } catch (e) {
     return; // 工具不存在等 → 視為沒有孤兒
   }
-  if (!pids.length) return; // 8080 沒人佔，靜默
+  const ownOnly = process.argv.includes('--own') || isLinkedWorktree();
+  pids = selectPidsToKill(pids, { ownOnly, ownPid: ownOnly ? readOwnPid() : null });
+  if (!pids.length) return; // 8080 沒人佔（或不是自己的），靜默
 
   for (const pid of pids) {
     try {
@@ -106,4 +133,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { parseListeningPids };
+module.exports = { parseListeningPids, selectPidsToKill, DEV_SERVER_PIDFILE };

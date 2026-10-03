@@ -4,6 +4,7 @@
 // 測試下 process.env.* 直接讀 Node 真實環境變數，無需 define。
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import worktree from './scripts/worktree.js';
 
 // 整合測試 in-test poll deadline（tests/integration/pref_sync.test.js 由同一
 // env 推導）；外層 per-test timeout 須大於它，留兩輪 sequential poll 的餘裕。
@@ -11,10 +12,15 @@ const pollDeadline =
   Number(process.env.INTEGRATION_TIMEOUT_MS) ||
   (process.env.CI ? 30000 : 10000);
 
+// maxWorkers 是全域選項（不吃 project 層），testTimeout 只套 unit project。
+const { maxWorkers, testTimeout } = worktree.unitLimits(worktree.isLinkedWorktree());
+const unitTimeout = testTimeout ? { testTimeout } : {};
+
 export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
+    ...(maxWorkers ? { maxWorkers } : {}),
     projects: [
       {
         extends: true,
@@ -30,6 +36,8 @@ export default defineConfig({
           pool: 'threads',
           include: ['tests/unit/**/*.test.{js,jsx}'],
           setupFiles: ['tests/unit/setup.js'],
+          // git worktree 裡限流（scripts/worktree.js#unitLimits）：不搶主 session 的 CPU。
+          ...unitTimeout,
         },
       },
       {

@@ -13,7 +13,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 ## 跑起來（踩雷點，務必照做）
 - 啟動 dev server：`yarn start` → http://localhost:8080（= `vite`）
   - **收工前務必手動關掉：`yarn kill:dev`**。這是規範不是自動化——**只要這個 session 起過 dev server（`yarn start`），結束前就要自己跑一次**，別指望 hook。
-    - `.claude/settings.json` 的 hook 只在 SessionEnd 殺 Claude 自己開的 server。不要加 Stop hook：它每個 assistant turn 結束都會觸發，會砍掉 Playwright 自己起的 dev server，讓 e2e 整批 `ERR_CONNECTION_REFUSED`。
+    - `.claude/settings.json` 的 hook 只在 SessionEnd 跑 `kill-dev-server.js --own`：只殺本 checkout 的 vite（PID 由 `vite.config.mjs` 寫 pidfile），不碰別的 session／worktree 的 server。不要加 Stop hook：它每個 assistant turn 結束都會觸發，會砍掉 Playwright 自己起的 dev server，讓 e2e 整批 `ERR_CONNECTION_REFUSED`。
   - Windows 上 vite 只綁 IPv6 `[::1]:8080`，所以 `kill-dev-server.js` 用不帶 `-p` 的 `netstat -ano` 篩 PID（守護 `tests/unit/kill_dev_server_parse.test.js`）。
   - 用 **Node**（dev server ≥20.19；`test:unit` 的 jsdom 30 另需 `^22.22.2 || ^24.15.0 || >=26` → 裝最新 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
   - 套件管理用 **yarn**（Yarn v4，`node-modules` linker，設定於 `.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。**勿用 npm**（會產生多餘 `package-lock.json`）。CI 安裝用 `yarn install --immutable`。Yarn v4 不跑自訂 `pre*`/`post*` script；build 產物清理由 Vite `emptyOutDir` 處理（無 `clean` script）。Yarn v4 script 是 portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數（`record:cassette` 用此，勿再引入 cross-env）。
@@ -164,8 +164,16 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   2026-09-24 臨時手寫的版本把 `351661` 解成 `2026661`、多出 `116;18H…` 殘渣，看起來像 PTT 送的。
   錄製是中途開始的，第一次整頁重繪前的畫面不完整。守護 `tests/unit/debug_screens.test.js`。
 - 待辦交接：`docs/handoff/`，一個 `.md` = 一個尚未完成的功能/修復；挑一個做完即**刪掉該 md**。詳見 `docs/handoff/README.md`。
-- git 規則依執行環境分兩套（判準：env `CLAUDE_CODE_REMOTE=true` ＝雲端 session，Claude Code on the web；否則＝本機）：
-  - **本機**：**不開新功能分支**，直接在現有分支（`dev`）修改；**不主動 commit**（等使用者說）。
+- git 規則依執行環境分三套（判準：env `CLAUDE_CODE_REMOTE=true` ＝雲端 session，Claude Code on the web；
+  否則 `.git` 是檔案且指向 `.git/worktrees/` ＝本機 worktree（`scripts/worktree.js#isLinkedWorktree`）；其餘＝本機主目錄）：
+  - **本機主目錄**：**不開新功能分支**，直接在現有分支（`dev`）修改；**不主動 commit**（等使用者說）。
+  - **本機 worktree（多 session 並行）**：測試只跑 `yarn test:unit`（自動限流 `maxWorkers` 2、`testTimeout` 20s）；
+    e2e／integration／record／android 由 `scripts/worktree.js` 以 **exit 2 拒絕**（會搶 8080／Docker 容器／PTT 登入預算／CPU，
+    且 Playwright `reuseExistingServer` 會靜默測到主目錄的 code）。逃生門 `ALLOW_WORKTREE_E2E=1` 只在使用者確認主目錄沒在跑測試時用。
+    ⇒ 自己開分支 `claude/<主題>`、commit、push、開 PR 到 `dev`，`yarn ci:status --branch <分支>` loop 修到全綠。
+    停止條件：失敗與被測 code 無關 ⇒ 照 `docs/ci-troubleshooting.md` 判斷／`--rerun-failed`，不改 code；
+    同一個失敗修 3 輪仍紅 ⇒ 停手回報。**不自行合併**（等使用者）。live e2e 由主目錄 session 合回 `dev` 後統一跑一輪（登入預算）。
+    「改渲染提交前必跑 e2e」在 worktree 以 CI 的 offline＋adverse 代替，交付時註明 live 未跑。
   - **雲端 session**：以 session 指定的工作分支（通常 `claude/*`）為準，**不要切回或直推 `dev`**；
     做完**要自己 commit＋push 到該分支**（雲端容器結束即銷毀，沒 push＝工作全丟），需要時開 PR 到 `dev`。
     上面兩條本機規則在雲端**不適用**；其餘 commit 前檢查（隱私 `git diff` 自查、`--stat` 行數相稱、補測試、README 新功能列表）照舊。
