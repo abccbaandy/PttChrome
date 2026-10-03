@@ -80,3 +80,4 @@ spike 實測（20 次平行 ×2 輪，2026-10）：
 - 開機秒數（runner 起算到 script 開始）：81–128s，中位數約 95s；整個 job 140–196s。
 - 版本：執行器開跑前印一行 `裝置：<serial>｜<fingerprint>｜映像 … r<rev>｜Chrome <ver>`（本機與 CI 皆有），
   與「CONFIRMED 事實」節的 Chrome 113／r14 不同時，GPU 當機與選取把手的結論要重驗。
+  CONFIRMED（2026-10）：CI 為 r14、Chrome 113.0.5672.136、fingerprint `…emu64xa:14/UE1A.230829.050/12077443…`，與本機同版。
