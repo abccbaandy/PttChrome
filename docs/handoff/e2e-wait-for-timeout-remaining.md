@@ -14,9 +14,16 @@ offline 的固定時間等待（`waitForTimeout`、evaluate 內自包的 `setTim
 
 ## 2. 發現但未處理：「點圖縮小後仍在視野內（捲動錨定）」量不到位移
 `offline/easy-reading.offline.spec.js`「点图缩小后被点的图仍在视野内」三卷素材 before／after 的 `scrollTop`、`rel`
-**完全相同**（舊版 sleep 寫法也一樣，非本次改壞）。推測：延遲載入後錨點上方只剩被 spacer 釘高的佔位盒，縮放不改
-上方高度 ⇒ 位移恆 0，斷言恆綠，錨定邏輯沒被驗到（註解說「stock-end 的 9 張涵蓋強情境」已不成立）。要修：讓錨點
-上方確實有已掛載、會隨放大改高的圖（例如先確認錨點上方 mounted 圖數 > 0 並斷言 before/after 的 scrollTop 有變）。
+**完全相同**（舊版 sleep 寫法也一樣，非本次改壞）⇒ 位移恆 0、斷言恆綠，錨定邏輯沒被驗到。
+
+根因（probe 實測，guess→高可信）：**整頁同時只掛得上一張圖**。逐一把 stock-end 的 11 個 slot 捲到中央、
+`waitPreviewsSettled` 後，已掛載的 `img.hyperLinkPreview` 永遠只有視野內那一張；相距約 900px 的鄰居既不預載
+（應在 `LAZY_MOUNT_MARGIN_PX`=1500 內）也立刻被卸掉（應在 `LAZY_UNMOUNT_MARGIN_PX`=6000 內）。
+`render/inline_preview_slot.js#ensureObservers` 的兩個 IntersectionObserver **沒給 root**（隱式 root＝viewport），
+而 slot 在捲動容器 `.main` 裡：規格上 rootMargin 只擴 root，祖先捲動容器的裁切照算 ⇒ 兩個 margin 實際≈0
+（預載與遲滯都失效：捲到才開始載、捲出就卸，往回捲重新下載／解碼）。修法候選：`root: .main`（注意 `.main`
+有 transform scale、且 observer 是 module 級共用、`.main` 可能重建）。產品 bug ⇒ 先寫會紅的 e2e（例：捲到某 slot
+中央後，鄰近 <1500px 的 slot 必須已掛載）再修；修完這條錨定測試才量得到位移，屆時補「before/after scrollTop 必須有變」的前提斷言。
 
 ## 3. live e2e（tests/e2e/*.spec.js、helpers/ptt.js，約 100 處）
 未分類。限制：登入預算（每輪只登入一次）、PTT 維護／BOT 封鎖時不可重跑 ⇒ 無法用 `--repeat-each` 壓測驗證，
