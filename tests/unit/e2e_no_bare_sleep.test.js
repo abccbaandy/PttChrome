@@ -23,13 +23,17 @@ const offlineSpecs = fs
   .filter((f) => f.endsWith(".spec.js"))
   .sort();
 
-// 回傳沒有 `sleep-ok:` 標記的 waitForTimeout 呼叫（1-based 行號）。
+// 固定時間等待的三種寫法：Playwright 的 waitForTimeout、page.evaluate 裡自己包的
+// setTimeout Promise、自訂 sleep() 的定義（定義處標一次即可，呼叫處不再掃）。
+const SLEEP = /\bwaitForTimeout\(|setTimeout\(\s*(r|res|resolve)\s*,|\bconst sleep\s*=/;
+
+// 回傳沒有 `sleep-ok:` 標記的固定時間等待（1-based 行號）。
 // 標記可在同一行，或在緊鄰上方、連續的 `//` 註解區塊裡。
 function bareSleeps(src) {
   const lines = src.split("\n");
   const out = [];
   lines.forEach((line, i) => {
-    if (!/\bwaitForTimeout\(/.test(line)) return;
+    if (!SLEEP.test(line)) return;
     if (line.trim().startsWith("//")) return; // 註解裡提到它不算
     if (/sleep-ok:\s*\S/.test(line)) return;
     for (let j = i - 1; j >= 0; j--) {
@@ -58,9 +62,14 @@ describe("offline e2e 不拿 sleep 當等待", () => {
     ).toEqual([3]);
     expect(bareSleeps("// sleep-ok:\nawait page.waitForTimeout(1);")).toEqual([2]);
     expect(bareSleeps("// 不用 waitForTimeout(…)")).toEqual([]);
+    // page.evaluate 裡的自製 sleep 也算。
+    expect(bareSleeps("await new Promise((r) => setTimeout(r, 100));")).toEqual([1]);
+    expect(
+      bareSleeps("const sleep = (ms) => new Promise((r) => setTimeout(r, ms));"),
+    ).toEqual([1]);
   });
 
-  test("每一個 waitForTimeout 都要有 sleep-ok 理由", () => {
+  test("每一個固定時間等待都要有 sleep-ok 理由", () => {
     const offenders = [];
     for (const f of offlineSpecs) {
       const src = fs.readFileSync(path.join(OFFLINE_DIR, f), "utf8");

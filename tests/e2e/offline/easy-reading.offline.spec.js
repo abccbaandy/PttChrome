@@ -19,7 +19,7 @@ const {
   waitScreenSettled,
 } = require('../helpers/replay');
 // 量座標／量媒體之前一律先等版面停（helpers/layout.js 是判準的單一來源）。
-const { waitPreviewsSettled } = require('../helpers/layout');
+const { waitPreviewsSettled, waitRectStable } = require('../helpers/layout');
 
 // 推文列（textContent，可能含好读 floor badge：marker 后紧跟楼号数字）。
 const COMMENT_RE = /^(推|噓|→)\d*\s+[0-9A-Za-z]+\s*:/;
@@ -290,46 +290,62 @@ test.describe('好读模式翻页（离线重放）', () => {
       ).toBe(true);
       expect(await loadedImgCount(), 'imgs vanished after enlarge').toBeGreaterThan(0);
 
-      const r = await page.evaluate(async (sel) => {
-        const scroller = document.querySelector('.main');
-        const mc = document.getElementById('mainContainer');
-        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      // 取中间那张当锚点（上方压着大量被放大的内容 → 缩小时位移最大）。只有一张时
+      // 就是它自己：位移较小、讯号较弱，但断言完全成立（强情境由 stock-end 的 9
+      // 张涵盖）。
+      await page.evaluate((sel) => {
         const imgs = Array.from(document.querySelectorAll(sel)).filter(
           (im) => im.offsetWidth > 0 && im.offsetHeight > 0
         );
-        // 取中间那张当锚点（上方压着大量被放大的内容 → 缩小时位移最大）。只有一张时
-        // 就是它自己：位移较小、讯号较弱，但断言完全成立（强情境由 stock-end 的 9
-        // 张涵盖）。
-        const img = imgs[Math.floor(imgs.length / 2)];
+        imgs[Math.floor(imgs.length / 2)].setAttribute('data-e2e-anchor', '1');
+      }, SEL);
+      // 卷到图顶位于视窗上方 30% 处（图顶在视窗内）。.main 有 scale 时一次卷不准，
+      // 每卷一次等一帧让版面更新再量（收敛单调）。
+      await page.evaluate(async () => {
+        const scroller = document.querySelector('.main');
+        const img = document.querySelector('[data-e2e-anchor]');
         const rel = () => img.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-        const viewH = scroller.getBoundingClientRect().height;
-        const target = viewH * 0.3; // 卷到图顶位于视窗上方 30% 处（图顶在视窗内）
+        const target = scroller.getBoundingClientRect().height * 0.3;
         for (let i = 0; i < 30; i++) {
           const d = rel() - target;
           if (Math.abs(d) < 3) break;
-          scroller.scrollTop += d; // .main 有 scale 时收敛较慢但单调
-          await sleep(30);
+          scroller.scrollTop += d;
+          await new Promise((r) => requestAnimationFrame(r));
         }
-        const before = { rel: rel(), scrollTop: scroller.scrollTop, viewH };
+      });
+      await waitRectStable(page, '[data-e2e-anchor]');
+      const measure = () =>
+        page.evaluate(() => {
+          const scroller = document.querySelector('.main');
+          const mr = scroller.getBoundingClientRect();
+          const ir = document.querySelector('[data-e2e-anchor]').getBoundingClientRect();
+          return {
+            rel: ir.top - mr.top,
+            scrollTop: scroller.scrollTop,
+            viewH: mr.height,
+            visible: Math.min(ir.bottom, mr.bottom) - Math.max(ir.top, mr.top),
+          };
+        });
+      const before = await measure();
 
-        // 点同一张图 → 缩小。React 19：click 的 setState 在事件 task 之后才 commit。
-        img.click();
-        await sleep(500);
-
-        const mr = scroller.getBoundingClientRect();
-        const ir = img.getBoundingClientRect();
-        return {
-          before,
-          after: { rel: ir.top - mr.top, scrollTop: scroller.scrollTop },
-          visible: Math.min(ir.bottom, mr.bottom) - Math.max(ir.top, mr.top),
-          enlarged: mc.classList.contains('imagesEnlarged'),
-        };
-      }, SEL);
+      // 点同一张图 → 缩小。React 19：click 的 setState 在事件 task 之后才 commit ⇒
+      // 等 class 真的拿掉、整页版面与锚点图都停了才量（旧版是 sleep(500) 后单次量）。
+      await page.evaluate(() => document.querySelector('[data-e2e-anchor]').click());
+      await page.waitForFunction(
+        () => !document.getElementById('mainContainer').classList.contains('imagesEnlarged')
+      );
+      await waitPreviewsSettled(page);
+      await waitRectStable(page, '[data-e2e-anchor]');
+      const after = await measure();
+      const r = {
+        before,
+        after: { rel: after.rel, scrollTop: after.scrollTop },
+        visible: after.visible,
+      };
 
       console.log(`[anchor] ${cassette.__file}: ${JSON.stringify(r)}`);
       // 各项前提（图载出来 / 点了有放大 / 放大后图还在）已在上面逐条硬红，不再有
       // r.error 这种把所有失败原因揉成一句话的回传值。
-      expect(r.enlarged).toBe(false);
       // 核心症状：缩小后该图仍须与视窗相交（旧 code 会卷过头 → 交集 <= 0）。
       expect(r.visible).toBeGreaterThan(0);
       // 图顶原本在视窗内 → 应维持固定间距（容忍 layout 取整 / scale 误差）。
@@ -729,64 +745,86 @@ test.describe('长文连续累积（离线重放）', () => {
       await ptt.applyPrefs(page, { enableEasyReading: true });
       await replayCassette(page, cassette, { easyReading: true });
 
-      const r = await page.evaluate(async () => {
-        const MEDIA =
-          '#mainContainer img.hyperLinkPreview, #mainContainer video.easyReadingVideo, #mainContainer iframe';
-        const scroller = document.querySelector('.main');
-        if (!scroller) return { error: 'no scroller' };
-        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-        const slots = document.querySelectorAll('.inlinePreviewSlot').length;
+      // 捲动迴圈由 Node 驱动：每步捲完都等 waitPreviewsSettled（含 Node 端在途图片
+      // 请求），卸载则等它真的发生 —— 旧版整段在 page.evaluate 里靠 sleep(200~1500)
+      // 推进，机器一忙「还没挂上／还没卸掉」就会被读成结论。
+      const MEDIA =
+        '#mainContainer img.hyperLinkPreview, #mainContainer video.easyReadingVideo, #mainContainer iframe';
+      const setScroll = (y) =>
+        page.evaluate((top) => {
+          document.querySelector('.main').scrollTop = top;
+        }, y);
+      const mediaCount = () =>
+        page.evaluate((sel) => document.querySelectorAll(sel).length, MEDIA);
+      const geom = await page.evaluate(() => {
+        const sc = document.querySelector('.main');
+        return sc
+          ? {
+              h: sc.scrollHeight,
+              ch: sc.clientHeight,
+              slots: document.querySelectorAll('.inlinePreviewSlot').length,
+            }
+          : null;
+      });
+      expect(geom, '找不到捲动容器 .main').not.toBeNull();
 
-        scroller.scrollTop = 0;
-        await sleep(600);
-        const mountedAtTop = document.querySelectorAll(MEDIA).length;
+      await setScroll(0);
+      await waitPreviewsSettled(page);
+      const mountedAtTop = await mediaCount();
 
-        // 由下往上找一个「卷到才挂得出媒体」的位置。
-        const step = Math.max(200, scroller.clientHeight * 0.8);
-        let target = null;
-        let mountedDeep = 0;
-        for (let y = scroller.scrollHeight; y > step * 3; y -= step) {
-          scroller.scrollTop = y;
-          await sleep(200);
-          const m = document.querySelectorAll(MEDIA);
-          if (m.length) {
-            mountedDeep = m.length;
-            target = m[0].closest('.inlinePreviewSlot');
-            break;
-          }
-        }
-        if (!target) return { error: 'no deep media', slots, mountedAtTop };
-        await sleep(600);
-        const heightWhenMounted = target.offsetHeight;
+      // 由下往上找一个「卷到才挂得出媒体」的位置。
+      const step = Math.max(200, geom.ch * 0.8);
+      let mountedDeep = 0;
+      for (let y = geom.h; y > step * 3; y -= step) {
+        await setScroll(y);
+        await waitPreviewsSettled(page);
+        mountedDeep = await mediaCount();
+        if (mountedDeep) break;
+      }
+      expect(mountedDeep, 'no deep media').toBeGreaterThan(0); // 卷到就挂得出来
+      const heightWhenMounted = await page.evaluate((sel) => {
+        const slot = document.querySelector(sel).closest('.inlinePreviewSlot');
+        slot.setAttribute('data-e2e-lazy', '1');
+        return slot.offsetHeight;
+      }, MEDIA);
 
-        // 卷回顶端 → 目标已远离视野，应被卸掉释放记忆体，但佔位高度留着。
-        scroller.scrollTop = 0;
-        await sleep(1500);
+      // 卷回顶端 → 目标已远离视野，应被卸掉释放记忆体，但佔位高度留着。
+      // 等的是「卸掉」这件事本身（far observer 非同步回报）。
+      await setScroll(0);
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const t = document.querySelector('[data-e2e-lazy]');
+              return t ? t.querySelectorAll('img, video, iframe').length : -1;
+            }),
+          { timeout: 15000 }
+        )
+        .toBe(0);
+      const tail = await page.evaluate(() => {
+        const target = document.querySelector('[data-e2e-lazy]');
         return {
-          slots,
-          mountedAtTop,
-          mountedDeep,
-          heightWhenMounted,
-          connected: target.isConnected,
-          stillMounted: target.querySelectorAll('img, video, iframe').length,
-          // 佔位高度寫在 spacer（兄弟節點）上，不是 slot 自己 —— 寫祖先會抑制
+          connected: !!target && target.isConnected,
+          // 佔位高度写在 spacer（兄弟节点）上，不是 slot 自己 —— 写祖先会抑制
           // 浏览器的捲动补偿，见 src/render/inline_preview_slot.js 档头。
           slotMinHeight:
-            parseFloat(
-              target.querySelector('.inlinePreviewSpacer').style.minHeight
-            ) || 0,
+            parseFloat(target.querySelector('.inlinePreviewSpacer').style.minHeight) || 0,
         };
       });
+      const r = {
+        slots: geom.slots,
+        mountedAtTop,
+        mountedDeep,
+        heightWhenMounted,
+        ...tail,
+      };
 
       console.log(`[lazy] ${cassette.__file}: ${JSON.stringify(r)}`);
-      expect(r.error).toBeUndefined();
       expect(r.slots).toBeGreaterThan(20); // 素材真的有一堆连结可延迟
-      expect(r.mountedDeep).toBeGreaterThan(0); // 卷到就挂得出来
       // 没卷到的连结完全不解析／不下载（旧行为：全部立刻载入 ⇒ 这里会 ≈ slots）。
       expect(r.mountedAtTop).toBeLessThan(r.slots / 3);
       // 卷远了卸掉，且佔位高度保留 → 阅读位置不会因为内容塌陷而位移。
       expect(r.connected).toBe(true);
-      expect(r.stillMounted).toBe(0);
       expect(r.heightWhenMounted).toBeGreaterThan(0);
       expect(r.slotMinHeight).toBe(r.heightWhenMounted);
     });

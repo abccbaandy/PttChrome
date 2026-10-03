@@ -38,6 +38,7 @@ async function observeCursor(page, ms = 2600) {
     while (Date.now() < deadline) {
       const cs = getComputedStyle(el);
       seen.add(cs.display === 'none' ? 'none' : cs.visibility);
+      // sleep-ok: 閃爍是時間語意，要的就是牆鐘時間窗內的取樣
       await new Promise((r) => setTimeout(r, 100));
     }
     return [...seen];
@@ -130,6 +131,7 @@ async function observePhase(page, ms = 2600) {
     while (Date.now() < deadline) {
       cursor.add(getComputedStyle(el).visibility);
       body.add(document.body.classList.contains('blink--active'));
+      // sleep-ok: 閃爍是時間語意，要的就是牆鐘時間窗內的取樣
       await new Promise((r) => setTimeout(r, 100));
     }
     return { cursor: [...cursor].sort(), body: [...body].sort() };
