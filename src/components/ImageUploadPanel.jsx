@@ -62,8 +62,8 @@ export const ImageUploadPanel = ({
       </Text>
     ) : (
       <div className="ImageUploadPanel__Scroll nomouse_command">
-        {/* 捲動用原生 overflow 而不是 Mantine ScrollArea：後者在 jsdom 需要
-            ResizeObserver（測試環境沒有），而這裡只是一段清單，換不到任何行為。
+        {/* 捲動用原生 overflow 而不是 Mantine ScrollArea：這裡只是一段清單，
+            換成 ScrollArea 換不到任何行為。
             面板內滾動不會變成 PTT 翻頁——pttchrome 的 mouse_scroll 會先讓開。 */}
         <ul className="ImageUploadPanel__List nomouse_command">
           {history.map((item) => (

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // real-input: tests/e2e/offline/image_zoom.offline.spec.js
 //   （真滑鼠點倍率列；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // 內嵌預覽圖上的倍率列「－ 100% ＋」（src/render/inline_preview_slot.js）。
@@ -79,8 +79,8 @@ describe("內嵌預覽圖的倍率列", () => {
   beforeEach(() => {
     sizeObservers.length = 0;
     resetLazyObserversForTest();
-    global.IntersectionObserver = FakeIO;
-    global.ResizeObserver = FakeRO;
+    globalThis.IntersectionObserver = FakeIO;
+    globalThis.ResizeObserver = FakeRO;
   });
 
   afterEach(() => {
@@ -89,8 +89,8 @@ describe("內嵌預覽圖的倍率列", () => {
       s.destroy();
       s.el.remove();
     }
-    delete global.IntersectionObserver;
-    delete global.ResizeObserver;
+    delete globalThis.IntersectionObserver;
+    delete globalThis.ResizeObserver;
     resetLazyObserversForTest();
   });
 

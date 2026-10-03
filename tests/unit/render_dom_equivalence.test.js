@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 核心畫面渲染鏈的 **DOM 契約 golden**。
 //
 // 為什麼是整份快照而不是逐條斷言：渲染鏈的產物有一票消費端在 unit 測不到的地方
@@ -13,9 +13,7 @@
 //
 // ImagePreviewer（唯一留在核心畫面裡的 React 葉子島）的內部已被 normalizeHtml 剪掉。
 
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { commands } from "vitest/browser";
 import { ScreenController } from "../../src/render/screen";
 import {
   SCENARIOS,
@@ -23,11 +21,8 @@ import {
   normalizeHtml,
 } from "./helpers/screen_fixtures";
 
-const GOLDEN_DIR = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "fixtures",
-  "screen_golden",
-);
+// unit-browser 沒有 fs：讀寫都走 Vitest Browser Mode 的 server command（路徑相對 repo 根）。
+const GOLDEN_DIR = "tests/unit/fixtures/screen_golden";
 
 const UPDATE = !!process.env.UPDATE_GOLDEN;
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -61,15 +56,13 @@ describe("核心畫面渲染鏈的 DOM 契約", () => {
       }
 
       const html = normalizeHtml(controller.container);
-      const goldenPath = path.join(GOLDEN_DIR, sc.name + ".html");
+      const goldenPath = `${GOLDEN_DIR}/${sc.name}.html`;
       if (UPDATE) {
         // 唯一的寫檔點。沒帶 UPDATE_GOLDEN 時這一段完全不執行 ⇒ 一般 CI／本機
         // 跑測試絕不可能覆寫 golden。
-        fs.writeFileSync(goldenPath, html + "\n");
+        await commands.writeFile(goldenPath, html + "\n");
       } else {
-        const golden = fs
-          .readFileSync(goldenPath, "utf8")
-          .replace(/\n$/, "");
+        const golden = (await commands.readFile(goldenPath)).replace(/\n$/, "");
         expect(html).toBe(golden);
       }
 

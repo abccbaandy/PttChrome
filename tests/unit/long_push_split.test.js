@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 長推文分段的純邏輯（src/js/long_push.js）。
 //
 // 這批數字全部來自 3rd_script/pttbbs 的 mbbsd/bbs.c#recommend 與

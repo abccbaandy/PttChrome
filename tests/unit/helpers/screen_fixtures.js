@@ -12,7 +12,7 @@
 import { isDBCSLead, u2b } from "../../../src/js/string_util";
 import { loadBig5Tables } from "./load_big5_tables";
 
-// b2u/u2b 讀裸全域 `lib`（= jsdom 的 window.lib）。cell 工廠在 module 載入時就會
+// b2u/u2b 讀裸全域 `lib`（瀏覽器的 window.lib）。cell 工廠在 module 載入時就會
 // 呼叫 u2b，故這裡就要備妥表。
 loadBig5Tables();
 

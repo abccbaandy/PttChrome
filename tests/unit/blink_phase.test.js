@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 每秒閃爍相位（App timerEverySec → TermView.onBlink → TermBuf.notify 尾端）的省電不變量。
 //
 // 前身是每秒無條件切換 `body.blink--active`：整棵樹做一次樣式失效，再加上 #cursor 的

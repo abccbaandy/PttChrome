@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // lineChangeds 是不是真的「這一幀哪幾列變了」。
 //
 // 背景：TermChar.needUpdate 從 fork 來的第一天起就只設 true、從來不清（sticky），
@@ -13,16 +13,21 @@
 //   2. 真的收斂 —— 至少要有「只有少數列變髒」的幀，否則整條優化是 no-op。
 //
 // 用真 TermBuf + AnsiParser + 真 Big5 表（同 term_buf_settle_snapshot.test.js）。
-import fs from "fs";
-import path from "path";
+import cchatList from "../e2e/cassettes/cchat-list.json";
+import cchatListNav from "../e2e/cassettes/cchat-list-nav.json";
+import testXmen from "../e2e/cassettes/test-xmen.json";
 import { TermBuf } from "../../src/js/term_buf";
 import { TermView } from "../../src/js/term_view";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import { loadBig5Tables, decodeRecv } from "./helpers/load_big5_tables";
 
-const cassettePath = (name) =>
-  path.join(__dirname, "..", "e2e", "cassettes", name);
-const load = (name) => JSON.parse(fs.readFileSync(cassettePath(name), "utf8"));
+const CASSETTES = {
+  "cchat-list.json": cchatList,
+  "cchat-list-nav.json": cchatListNav,
+  "test-xmen.json": testXmen,
+};
+// 深拷貝：JSON import 是共用的模組實例，測試不得互相汙染。
+const load = (name) => structuredClone(CASSETTES[name]);
 
 // view stub 的 update() 就是 term_view.redraw 的 dirty 迴圈：把 lineChangeds
 // 讀成一份 changedRows 再清成 false。清除點只有 redraw，這裡要一模一樣。

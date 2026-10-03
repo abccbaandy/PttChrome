@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 長推文「放手」時必須主動叫醒好讀的自動翻頁。
 //
 // REGRESSION（使用者回報 + ptt-debug-20260917-221112）：在文章裡按 X 叫出長推文

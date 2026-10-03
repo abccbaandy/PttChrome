@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 內文跨行連結接合（src/js/body_wrap.js）的純邏輯守護。
 //
 // 實例來自 2026-08-30 的 PttBug 錄製：`※ 文章網址:` 那行被切成兩列，

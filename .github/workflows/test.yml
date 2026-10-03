@@ -7,8 +7,15 @@ on:
 
 jobs:
   # 五個測試 job 平行跑。不含 live e2e：連真實 PTT、guest 名額常滿會 fast-fail，不適合當 gate。
+  # 跑在 Playwright image 裡：unit-browser project（Vitest Browser Mode）要真 Chromium，
+  # 理由同下方 e2e job（不跑 playwright install）。
   test-unit:
+    needs: playwright-version
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
+      options: --user 1001 --ipc=host
     steps:
       - uses: actions/checkout@v7
 
@@ -32,11 +39,10 @@ jobs:
           nproc
           lscpu | grep 'Model name' || true
 
-      # vitest 預設 maxWorkers＝核心數−1＝3；試驗 4（本機 16 核量到約 -15%，4 核 runner 上的效果待量）。
       - name: Unit tests
         run: |
           yarn install --immutable
-          yarn test:unit --maxWorkers=4
+          yarn test:unit
 
   test-integration:
     runs-on: ubuntu-latest

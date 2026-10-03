@@ -90,6 +90,12 @@ const OTP_EXTRA_MS = 75000;
 // Page-lifetime cache: { user, pass, otpSecret, legacy, needsStore }.
 let sessionCred = null;
 
+// 測試用：清掉 page-lifetime 快取（瀏覽器原生 ESM 不能重新執行模組，
+// vi.resetModules() 在 unit-browser 無效）。
+export function _resetSessionCredentialForTest() {
+  sessionCred = null;
+}
+
 export function AutoLogin(app) {
   this._app = app;
 }

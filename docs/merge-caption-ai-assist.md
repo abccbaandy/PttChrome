@@ -161,7 +161,7 @@ CONFIRMED：**中文讀得懂**（smoke 前兩題穩過），且顯著優於現�
 |---|---|---|
 | unit | `tests/unit/caption_ai_logic.test.js` | 打蚊子篇回歸（4 段候選、ruleKeep=1、keep=4 → 右欄涵蓋到 row 23）、零回歸不變量、closed、keep 檢核、prompt/schema/解析 |
 | unit | `tests/unit/caption_ai_client.test.js` | availability 五態、clone 推論、逾時／例外／垃圾回覆全部 fallback 回規則、abort、`ensureCaptionAiReady` 不偷下載 |
-| unit(jsdom) | `tests/unit/merge_image_caption_ai_render.test.js` | 按鈕出現條件（含「有 API 沒模型」）、右欄擴張、可逆、換文章重置 |
+| unit(browser) | `tests/unit/merge_image_caption_ai_render.test.js` | 按鈕出現條件（含「有 API 沒模型」）、右欄擴張、可逆、換文章重置 |
 | offline e2e | `tests/e2e/offline/merge-image-caption-ai.offline.spec.js` | 真瀏覽器／真渲染：stub LanguageModel → 右欄列數 > 純規則、總列數不變（零遺失） |
 
 真實模型能力**不進 CI**（輸出不定、且 CI runner 沒有模型）——那是評估頁的工作。

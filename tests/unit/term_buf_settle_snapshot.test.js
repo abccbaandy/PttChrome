@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // M2 regression guard for the settle snapshot (docs/handoff blueprint risk #1):
 // the snapshot must be frozen INSIDE the settle-timer callback, BEFORE the
 // settled events dispatch, and the per-window changed-rows set must be swapped
@@ -8,18 +8,12 @@
 // Uses the REAL TermBuf + AnsiParser fed with the recorded C_Chat board-list
 // cassette (tests/e2e/cassettes/cchat-list.json), the real Big5 tables, and
 // vitest fake timers to drive the 30ms notify + 50ms settle chain.
-import fs from "fs";
-import path from "path";
+import cassette from "../e2e/cassettes/cchat-list.json";
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import { loadBig5Tables, decodeRecv } from "./helpers/load_big5_tables";
 
-const cassette = JSON.parse(
-  fs.readFileSync(
-    path.join(__dirname, "..", "e2e", "cassettes", "cchat-list.json"),
-    "utf8"
-  )
-);
+
 
 function makeBuf() {
   const buf = new TermBuf(cassette.cols, cassette.rows);

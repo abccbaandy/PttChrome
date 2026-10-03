@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // real-input: tests/e2e/offline/easy_reading_reverse.offline.spec.js
 //   （真滾輪放手（反向期間停在 head 讀的人）；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // 好讀按 End 之後黏在文末（src/js/bottom_stick.js）。真瀏覽器的症狀守在 offline
@@ -12,29 +12,42 @@ class FakeRO {
   disconnect() { this.targets = []; this.disconnected = true; }
 }
 
+// 真版面（unit-browser）：視窗 100px、內容一開始 1000px ⇒ 底部＝scrollTop 900。
+// ResizeObserver 仍用替身：真的 RO 在下一幀才回呼，測試要同步控制「長高」那一刻。
+const VIEW = 100;
 function setup() {
   const scroller = document.createElement('div');
+  scroller.style.cssText = `height: ${VIEW}px; overflow-y: auto`;
   const content = document.createElement('div');
   scroller.appendChild(content);
+  document.body.appendChild(scroller);
   let h = 1000;
-  Object.defineProperty(scroller, 'scrollHeight', { get: () => h });
+  content.style.height = h + 'px';
   const stick = createBottomStick({ scroller, content });
-  const grow = (dh) => { h += dh; observers.forEach((o) => o.targets.length && o.cb([])); };
+  const grow = (dh) => {
+    h += dh;
+    content.style.height = h + 'px';
+    observers.forEach((o) => o.targets.length && o.cb([]));
+  };
   return { scroller, stick, grow };
 }
+const bottom = (h) => h - VIEW;
 
 beforeEach(() => {
   observers = [];
   vi.stubGlobal('ResizeObserver', FakeRO);
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  document.body.replaceChildren();
+});
 
 test('engage 捲到底；內容之後長高仍貼底', () => {
   const { scroller, stick, grow } = setup();
   stick.engage();
-  expect(scroller.scrollTop).toBe(1000);
+  expect(scroller.scrollTop).toBe(bottom(1000));
   grow(500);
-  expect(scroller.scrollTop).toBe(1500);
+  expect(scroller.scrollTop).toBe(bottom(1500));
 });
 
 test.each(['wheel', 'pointerdown', 'touchstart'])('讀者輸入（%s）放手，之後長高不再拉回', (type) => {
@@ -55,7 +68,7 @@ test('scroll 事件不放手（程式自己的捲動、anchoring 補償也會發
   scroller.dispatchEvent(new Event('scroll'));
   expect(stick.engaged).toBe(true);
   grow(300);
-  expect(scroller.scrollTop).toBe(1300);
+  expect(scroller.scrollTop).toBe(bottom(1300));
 });
 
 test('重複 engage 不疊 observer', () => {

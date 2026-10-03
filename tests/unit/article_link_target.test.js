@@ -1,7 +1,7 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 右鍵選單「游標下這個 <a> 指向哪一篇文章」的判斷（src/js/article_link_target.js）。
 //
-// 這裡用**真的 DOM 元素**（unit project 跑 jsdom）：判斷會讀 classList 與
+// 這裡用**真的 DOM 元素**（unit-browser，真 Chromium）：判斷會讀 classList 與
 // getAttribute，用假物件測等於在測假物件。
 
 import {

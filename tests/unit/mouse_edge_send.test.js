@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 邊緣翻頁區的**出口**鎖（區域判斷本身在 mouse_regions.test.js）。
 //
 // 這裡鎖的是一件純函式看不到、但一漏就壞得很難看的事：

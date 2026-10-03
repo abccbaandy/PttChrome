@@ -1,11 +1,10 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // List easy reading v4 pure-layer guards: screen classification (fingerprint
 // predicates over a REAL captured C_Chat board page + synthetic variants),
 // burst classification, the full state-machine transition table (every row of
 // the docs table gets at least one case), and the accumulation/selection
 // primitives ported from the v3 wip branch.
-import fs from "fs";
-import path from "path";
+import fixture from "./fixtures/replay/cchat-list.page.json";
 import { CommandQueue } from "../../src/js/command_queue";
 import {
   ListSession,
@@ -25,12 +24,7 @@ import {
 } from "../../src/js/list_session";
 import { LIST_HEADER_ROWS } from "../../src/js/list_window";
 
-const fixture = JSON.parse(
-  fs.readFileSync(
-    path.join(__dirname, "fixtures", "replay", "cchat-list.page.json"),
-    "utf8"
-  )
-);
+
 const listRows = fixture.pageScreens[0]; // 24 decoded rows of a real C_Chat page
 
 const STATUS_ROW = "  瀏覽 第 1/8 頁 ( 12%)  目前顯示: 第 01~23 行 (←)離開 ";

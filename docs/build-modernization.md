@@ -32,9 +32,62 @@
 | classnames | 保留 | 仍維護、React 生態常青；clsx 更小但收益微小，不值得動 |
 | firebase／`@mantine/*`／react／react-dom | 保留 | 皆現行主流大版本 |
 | `@playwright/test`、`@testing-library/*`、husky、lint-staged、prettier、postcss 系 | 保留 | 現代且活躍；postcss-preset-mantine + postcss-simple-vars 是 Mantine 官方建議鏈 |
-| jsdom | 保留（vitest unit env） | Vitest 不自帶 |
+| jsdom、happy-dom | 已移除，**勿加回**（守護 `unit_environment.test.js`） | DOM 模擬跟真瀏覽器不一致時測試全綠、實際卻壞。unit 的 DOM 測試改 Vitest Browser Mode（下節）；`yarn debug:screens` 改純 node（解析路徑本來就不需要 DOM，`term_buf_no_dom.test.js`） |
+| `@vitest/browser-playwright`、`playwright` | 新增（unit-browser project） | Vitest 官方的 Browser Mode provider；peer 是**精確**的 vitest 版本，`playwright` 必須與 `@playwright/test` 同版（Dependabot 以 group 綁一起升） |
 
 掃描結論（2026-07）：**無其他「過時陣營」殘留**。新增依賴時比照上表——先查是否已有內建／主流替代，無維護的小套件優先內聯。
+
+### jsdom → happy-dom 評估（2026-10，happy-dom 20.14.5 vs jsdom 30.1.1，Vitest 5.0.2）
+
+做法：把 127 支宣告 jsdom 的 unit 檔全換成 `happy-dom` 後跑，本機 `--maxWorkers=3`，每種各跑 2 輪。
+
+| 範圍 | jsdom | happy-dom |
+|---|---|---|
+| 只跑 jsdom 檔 | 59.3／57.6s | 40.3／40.1s（-31%） |
+| 整套 unit | 73.5／74.1s | 56.4／56.5s（-24%） |
+
+7 個檔案、46 支測試紅，全部是環境行為不同，不是產品 bug：
+
+| 差異 | 檔案 | 哪邊接近真瀏覽器 |
+|---|---|---|
+| `navigator.credentials` 是唯讀 getter，測試直接賦值會 throw | `auto_login_credentials`、`credential_store`、`pref_modal_autologin_tab` | happy-dom（瀏覽器也是唯讀）⇒ 改用 `Object.defineProperty`／`vi.stubGlobal` |
+| inline style 顏色不會正規化成 `rgb()`（`#fff` 原樣保留） | `long_push_modal`、`render_dom_equivalence`（golden `article_caption_merge`） | jsdom（瀏覽器會正規化）⇒ golden 會跟真瀏覽器輸出不一樣 |
+| 有 `IntersectionObserver` 但永遠不觸發；jsdom 沒有它，會走「立即掛載」的 fallback | `image_preview` | 都不像 ⇒ 改成注入假 IO（`inline_preview_slot.js` 已有測試用入口） |
+| `localStorage.setItem` 是 instance 自己的屬性，spy `Storage.prototype` 攔不到 | `long_push_draft` | jsdom ⇒ 改 spy instance |
+
+判定：不採用，改評估 Browser Mode（見下節）。happy-dom 跟 jsdom 一樣是模擬環境，只是偏差的地方不同；Browser Mode 更快也更真實。
+
+### jsdom → Vitest Browser Mode（2026-10 採用，`@vitest/browser-playwright`＋`playwright`，Chromium headless）
+
+現行設定：`vitest.config.mjs` 拆兩個 project。`unit`（node）跑純邏輯；檔案第一行是 `// @unit-env browser`（`scripts/unit-browser-marker.mjs`）的檔案跑 `unit-browser`（真 Chromium）。用檔頭標記分流而不是改檔名，是為了不讓 docs 裡大量 `<file>#…` pointer 失效。CI 的 `test-unit` 跑在 Playwright image 裡。守護 `tests/unit/unit_environment.test.js`、`ci_playwright_container.test.js`。
+
+| 範圍（本機 16 核、預設 workers，牆鐘時間） | jsdom | 採用後 |
+|---|---|---|
+| 整套 unit | 73.5／74.1s | 16.2–17.2s（連跑 4 輪） |
+| 整套 unit，worktree 限流 `--maxWorkers=2` | — | 28.9s |
+
+換過去時要改的東西（日後新寫的測試照同一套做法）：
+
+| 類別 | 做法 |
+|---|---|
+| src 讀 `process.env.*`（瀏覽器沒有 `process`） | browser project 用 `define` 轉發，目前只有 `UPDATE_GOLDEN` |
+| 測試讀 fixture／原始碼用 `fs`／`path`／`require`／`__dirname` | JSON 直接 import、原始碼用 `?raw`、Big5 表用 `?inline`＋`atob`（`helpers/load_big5_tables.js`，node／browser 共用）、golden 讀寫用 `vitest/browser` 的 `commands.readFile`／`writeFile` |
+| `Buffer`、`global` | `atob`、`globalThis` |
+| `vi.mock` factory 沒列出被用到的 named export：node 要等存取時才報錯，瀏覽器的 ESM 在載入時就失敗 | factory 先 `...actual` 再覆寫 |
+| `vi.resetModules()` 無效（原生 ESM 不重跑模組） | 模組 export 測試用 reset 函式（`auto_login.js#_resetSessionCredentialForTest`） |
+| `navigator.credentials`／`window` 是唯讀 getter；真 Chromium 本來就有 `PasswordCredential` | `Object.defineProperty`／`vi.spyOn`；「環境不支援」要主動藏起來（`helpers/credential_api.js`） |
+| 真版面：沒有可捲動內容時 `scrollTop` 會被夾回 0 | 給元素真的高度＋overflow，斷言改成量真 rect（`bottom_stick`、`inline_video_fullscreen`、`debug_recorder`） |
+| 真的 `IntersectionObserver`（非同步） | 要測立即掛載就 `vi.stubGlobal('IntersectionObserver', undefined)`＋`resetLazyObserversForTest`（`image_preview`） |
+| `new ClipboardEvent({clipboardData})` 只吃真 `DataTransfer` | 傳 `new DataTransfer()` |
+| node 的 `unhandledRejection` | `window` 的 `unhandledrejection` 事件 |
+| golden HTML 序列化不同：屬性值裡的 `<`／`>` 會跳脫、`box-shadow` 會正規化 | 以真瀏覽器為準重產 golden（消費端用 `getAttribute`，值不變） |
+
+多 session／worktree（CONFIRMED）：
+- 不碰 8080／Docker／PTT。browser API server 預設 port 63315，被佔用時自動往下一個 port（實測兩份同時跑分到 63315／63316，結果完全一樣）。
+- 平行的測試檔之間 `localStorage` 互相隔離（實測 `maxWorkers=2` 時兩檔各自寫入、互相看不到）。
+- worktree 的 `unitLimits`（maxWorkers 2）一樣適用。
+- Chromium 執行檔放在 Playwright 的共用快取，所有 checkout 共用；升 Playwright 版本時要重裝（`yarn playwright install chromium`）。
+- `screenshotFailures: false`；`.vitest/` 已列入 `.gitignore`。
 
 ## Deprecated 瀏覽器 API
 

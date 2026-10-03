@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 捲動錨定純邏輯回歸守護。
 // 症狀來源：好讀模式捲到文章中段後點某張圖縮小，內容整體變短但 scrollTop 不變
 // → 視窗落到文章更後面，被點的圖跑出視野（放大時往前偏，同源）。

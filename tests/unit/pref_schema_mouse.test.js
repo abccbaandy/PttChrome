@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 滑鼠 pref 的 schema 契約（2026-08 重新設計）。
 //
 // 重點是「舊 key 的殘值不可以復活」：readValuesWithDefault 是

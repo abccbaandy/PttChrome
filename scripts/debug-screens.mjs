@@ -7,6 +7,8 @@
 // 的依賴鏈含圖檔 import，純 node 載不動），不是另寫一個迷你 VT：手寫的模擬器漏
 // 處理序列時會解出**看起來像 PTT 送的**亂碼（2026-09-24 實例：`116;18Hj0o0h0n0`），
 // 那比沒有工具更糟。
+// **純 node、不模擬 DOM**：解析路徑本來就不需要 DOM（tests/unit/term_buf_no_dom.test.js 守），
+// 以前用 jsdom 假造 document，等於夾一層跟使用者瀏覽器不同的模擬環境，已拿掉。
 //
 // 用法：
 //   yarn debug:screens <錄製檔>                 時間軸（send 解成可讀字串＋log 事件）
@@ -102,7 +104,7 @@ function makeBuf(TermBuf, cols, rows) {
 }
 
 // 依序餵 recv，在每個要求的時間點（「t ≤ 該時間點的 recv 全部餵完」）拍一張畫面。
-// 需要全域 window.lib 的 Big5 表（CLI 由 loadBig5Tables 載；unit 由測試 helper 載）。
+// 需要全域 lib 的 Big5 表（CLI 由 loadBig5Tables 載；unit 由測試 helper 載）。
 // 回傳 [{ at, lastRecvT, curX, curY, pageState, rows: [text] }]。
 export function replayScreens(rec, times, deps) {
   const { TermBuf, AnsiParser } = deps;
@@ -168,24 +170,14 @@ export function parseArgs(argv) {
 // CLI
 // ---------------------------------------------------------------------------
 
-// TermBuf 的建構式會碰 document（#BBSWindow 等），用 unit 測試同一套 jsdom 提供
-// DOM 環境；Big5 表掛在 window.lib，與 main.jsx 的 bootstrap 同一個位置。
-async function installDom() {
-  const { JSDOM } = await import('jsdom');
-  const dom = new JSDOM('<!doctype html><html><body></body></html>');
-  globalThis.window = dom.window;
-  globalThis.document = dom.window.document;
-  globalThis.CustomEvent = globalThis.CustomEvent || dom.window.CustomEvent;
-}
-
+// string_util.b2u 讀的是**裸全域** `lib`（瀏覽器由 main.jsx 掛在 window.lib，window 即
+// globalThis）。node 沒有 window，直接掛 globalThis。
 function loadBig5Tables() {
   const dir = path.join(ROOT, 'src', 'conv');
-  window.lib = window.lib || {};
-  window.lib.b2uArray = new Uint8Array(fs.readFileSync(path.join(dir, 'b2u_table.bin')));
-  window.lib.u2bArray = new Uint8Array(fs.readFileSync(path.join(dir, 'u2b_table.bin')));
-  // string_util.b2u 讀的是**裸全域** `lib`：瀏覽器與 vitest(jsdom) 裡 window 就是
-  // global，node 不是 ⇒ 要另外掛一份到 globalThis。
-  globalThis.lib = window.lib;
+  globalThis.lib = {
+    b2uArray: new Uint8Array(fs.readFileSync(path.join(dir, 'b2u_table.bin'))),
+    u2bArray: new Uint8Array(fs.readFileSync(path.join(dir, 'u2b_table.bin')))
+  };
 }
 
 async function main() {
@@ -209,7 +201,6 @@ async function main() {
     console.log(formatTimeline(rec, { from: args.from, to: args.to }));
     return;
   }
-  await installDom();
   loadBig5Tables();
   const { createServer } = await import('vite');
   const server = await createServer({

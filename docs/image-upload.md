@@ -96,7 +96,7 @@ LongPushModal **不註冊**——註冊了會判成 `target` 卻沒東西可插�
 容器 `#imageUploadReact` **獨立於 `#reactAlert`**：後者被 ConnectionAlert／PasteShortcutAlert／
 DeepLinkHandoffAlert 輪流獨占（共用同一個 react root cache），上傳浮層必須能與它們並存。
 
-面板捲動用原生 `overflow-y`，**不用 Mantine `ScrollArea`**：後者在 jsdom 需要 `ResizeObserver`（測試環境沒有）。
+面板捲動用原生 `overflow-y`，**不用 Mantine `ScrollArea`**：原生捲動就夠用，少一層 Mantine 自繪捲軸。
 
 ## pref / storage
 

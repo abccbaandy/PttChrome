@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // Rendering test for Screen's dropHidden behaviour. After unifying the render path
 // (easy reading also draws through the same renderer), the only per-mode difference is how a
 // blacklisted comment row is treated:
@@ -8,7 +8,7 @@
 //   - dropHidden:false (fixed native 24-row grid)           → row kept but hidden
 //     via visibility:hidden, so the terminal grid alignment is preserved.
 //
-// @testing-library/react under jsdom (no network). Cells are single-char (isLeadByte
+// @testing-library/react in real Chromium (no network). Cells are single-char (isLeadByte
 // false) so rowToText just concatenates .ch — the Big5 b2u path (needs window.lib)
 // is never exercised, and the 推/噓/→ marker is a plain Unicode char here.
 

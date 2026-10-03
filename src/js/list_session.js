@@ -87,7 +87,7 @@ const SCROLL_ANIM_MAX_MS = 1000;
 const NAV_BURST_MS = 250;
 
 // 使用者要求減少動態效果時，程式化捲動一律 instant（作業系統／瀏覽器的無障礙
-// 設定）。matchMedia 在 jsdom 可能不存在 ⇒ 沒有就當作沒開。
+// 設定）。matchMedia 在 node 測試環境不存在 ⇒ 沒有就當作沒開。
 function prefersReducedMotion() {
   return !!(
     typeof window !== 'undefined' &&

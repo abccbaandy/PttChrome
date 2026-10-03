@@ -1,5 +1,7 @@
-// @vitest-environment jsdom
+// @unit-env browser
 import { App } from '../../src/js/pttchrome';
+// 原始碼掃描（下方 main.jsx 契約）：瀏覽器沒有 fs，用 ?raw 讀進來。
+import mainJsxSource from '../../src/js/main.jsx?raw';
 
 // App 的手機模式接線（applyMobileLayout／toggleSoftKeyboard，docs/mobile.md）。
 // 症狀：手機上 tap 畫面會同時觸發滑鼠瀏覽點擊與叫出軟鍵盤。修法是 #t 的
@@ -337,9 +339,7 @@ describe('App.onWindowResize({ immediate })', () => {
   });
 
   test('main.jsx 顯示終端機後的那一次必須是 immediate', () => {
-    const fs = require('node:fs');
-    const path = require('node:path');
-    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'js', 'main.jsx'), 'utf8');
+    const src = mainJsxSource;
     const i = src.indexOf("document.getElementById('BBSWindow').style.display = ''");
     expect(i).toBeGreaterThan(-1);
     expect(src.slice(i, i + 200)).toContain('app.onWindowResize({ immediate: true })');

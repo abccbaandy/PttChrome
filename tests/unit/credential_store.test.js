@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 密碼管理員單一入口（src/js/credential_store.js）：瀏覽器 PasswordCredential
 // 或 Android APK 原生 Credential Manager（bridge）。Android WebView 沒有
 // PasswordCredential ⇒ 以前 APK 內自動登入永遠拿不到密碼（本檔要守的 bug）。
@@ -7,6 +7,7 @@ import {
   getStoredCredential,
   storeCredential
 } from "../../src/js/credential_store";
+import { hideCredentialApi, setNavigatorCredentials } from "./helpers/credential_api";
 
 function installBrowserApi(stored) {
   window.PasswordCredential = class {
@@ -14,10 +15,10 @@ function installBrowserApi(stored) {
       Object.assign(this, o);
     }
   };
-  navigator.credentials = {
+  setNavigatorCredentials({
     get: vi.fn(async () => stored),
     store: vi.fn(async c => c)
-  };
+  });
 }
 
 // 模擬 WebView：沒有 PasswordCredential，只有 bridge。
@@ -39,9 +40,11 @@ function installAndroid(reply) {
   return sent;
 }
 
+// 真 Chromium 本來就有這組 API ⇒ 每個 test 從「都沒有」開始。
+beforeEach(hideCredentialApi);
+
 afterEach(() => {
-  delete window.PasswordCredential;
-  delete navigator.credentials;
+  hideCredentialApi();
   delete window.__PTT_ANDROID__;
   delete window.PttAndroid;
 });

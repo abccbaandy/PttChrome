@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 已讀文章低亮（pref dimReadArticles）的渲染接線：
 //   1. 標註層對已讀的列表列無條件標 listRead ⇒ 列帶 data-list-read，未讀不帶；
 //   2. 容器 class dimReadList 只跟 pref 走，且切換當場生效（設定頁走 redraw(true)）；

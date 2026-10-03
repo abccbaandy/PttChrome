@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 右鍵「前已讀後未讀」做完回到好讀列表：閱讀進度（視口頂端那一列）必須還原。
 //
 // 為什麼會丟：markReadUnreadBefore 走原生 passthrough → _enterFunctionMode 清掉
@@ -8,18 +8,10 @@
 //
 // 「前已讀後未讀」只改已讀旗標、不動編號空間與看板 ⇒ 舊錨仍然有效（同 N6「退文
 // 不得動捲動錨」）。條件：同板＋真游標仍停在發起的那一篇。
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import fixture from "./fixtures/replay/cchat-list.page.json";
 import { ListSession } from "../../src/js/list_session";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fixture = JSON.parse(
-  fs.readFileSync(
-    path.join(__dirname, "fixtures", "replay", "cchat-list.page.json"),
-    "utf8"
-  )
-);
+
 const listRows = fixture.pageScreens[0]; // 真實 C_Chat 一頁：350024..350039＋置底
 
 const PREF_KEY = "pttchrome.pref.v1";

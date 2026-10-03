@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // Pure-logic unit tests for src/js/string_util.js (vitest, no DOM / no network).
 //
 // 這批 parser 全部是「靠讀 PTT server 畫上來的文字反推狀態」的邏輯，被

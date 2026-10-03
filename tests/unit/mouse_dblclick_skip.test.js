@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 雙擊選字在「滑鼠瀏覽」開啟時被殺掉的回歸鎖。
 //
 // 病灶：App.mouse_down 對「350ms 內的第二次 mousedown」呼叫 e.preventDefault()，

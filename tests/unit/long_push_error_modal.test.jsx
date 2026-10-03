@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 長推文推不出去時的錯誤框（src/components/ContextMenu/LongPushErrorModal.jsx）。
 //
 // 這支守的是本功能最重要的一條規矩：**PTT 說的話原文照錄**。

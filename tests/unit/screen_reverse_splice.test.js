@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 反向讀取（End）的 renderer：新頁插在接合點 J（head 與 tail 之間），不是 append。
 //
 // 守護四件事：

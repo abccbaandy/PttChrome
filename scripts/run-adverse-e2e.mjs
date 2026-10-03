@@ -30,7 +30,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---- 純函式（unit 守護：tests/unit/adverse_runner_parse.test.js）----
 
 // 從 playwright.config.js 原始碼取出兩份逆境 spec 清單。`--batch=spec` 用它切更細的批。
-// 直接 require config 會把 @playwright/test 拉進 vitest 的 jsdom 環境，故改為讀原始碼。
+// 直接 require config 會把 @playwright/test 拉進 vitest 的測試環境，故改為讀原始碼。
 export function parseAdverseSpecs(source) {
   const grab = (name) => {
     const m = new RegExp(`const\\s+${name}\\s*=\\s*\\[([^\\]]*)\\]`).exec(source);

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 看板列表平滑捲動的 session 守護（src/js/board_list_session.js）。
 //
 // 三塊：純 reducer 的轉移表、鍵盤白名單（board.c 的同義鍵集合）、以及會送到

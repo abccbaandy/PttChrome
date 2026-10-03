@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 好讀自動開圖的延遲載入／遠離卸載（src/render/inline_preview_slot.js ＋
 // src/js/lazy_media.js）。
 //
@@ -250,14 +250,14 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     sizeObservers.length = 0;
     spies.requestPreview = 0;
     resetLazyObserversForTest();
-    global.IntersectionObserver = FakeIO;
-    global.ResizeObserver = FakeRO;
+    globalThis.IntersectionObserver = FakeIO;
+    globalThis.ResizeObserver = FakeRO;
   });
 
   afterEach(() => {
     destroySlots();
-    delete global.IntersectionObserver;
-    delete global.ResizeObserver;
+    delete globalThis.IntersectionObserver;
+    delete globalThis.ResizeObserver;
     resetLazyObserversForTest();
   });
 
@@ -548,7 +548,7 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
   });
 
   test("環境沒有 IntersectionObserver ⇒ 立即掛載（行為與沒這功能時相同）", () => {
-    delete global.IntersectionObserver;
+    delete globalThis.IntersectionObserver;
     resetLazyObserversForTest();
     const slot = mountSlot(HREF).el;
     expect(spies.requestPreview).toBe(1);

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 迴歸守護（真實回報）：好讀模式的內嵌影片按播放器內建全螢幕、再退出後，
 // 文章會滾到很後面——與「點圖放大/縮小跑掉」（16c5398）同一類：進全螢幕時
 // <video> 被提到全螢幕層、原位高度塌陷 → 內容變短、scrollTop 被夾到新的
@@ -19,20 +19,25 @@ const setFullscreenElement = (el) => {
   document.dispatchEvent(new Event("fullscreenchange"));
 };
 
-// jsdom 不做 layout（offsetTop/offsetHeight 恆 0），故偽造尺寸。
-const fake = (el, props) => {
-  for (const [k, v] of Object.entries(props)) {
-    Object.defineProperty(el, k, { value: v, configurable: true });
-  }
-};
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+// 真版面（unit-browser）：視窗 800px，影片前面 3000px、後面 6000px 的內容，影片本身 400px。
+const block = (h) => {
+  const el = document.createElement("div");
+  el.style.height = h + "px";
+  return el;
+};
 
 const setup = () => {
   const scroller = document.createElement("div");
   scroller.className = "main";
+  scroller.style.cssText = "height: 800px; overflow-y: auto";
   const container = document.createElement("div");
   container.id = "mainContainer";
+  container.style.position = "relative";
+  const host = document.createElement("div");
+  container.append(block(3000), host, block(6000));
   scroller.appendChild(container);
   document.body.appendChild(scroller);
 
@@ -40,14 +45,19 @@ const setup = () => {
     <ImagePreviewer.Inline
       value={{ type: "video", src: "https://i.imgur.com/8MYpXhr.mp4" }}
     />,
-    { container },
+    { container: host },
   );
 
   const video = container.querySelector("video");
-  fake(container, { offsetTop: 0, offsetParent: null });
-  fake(video, { offsetTop: 3000, offsetHeight: 400, offsetParent: container });
-  fake(scroller, { clientHeight: 800, scrollHeight: 10000 });
+  video.style.cssText += "; display: block; height: 400px";
   return { scroller, video };
+};
+
+// 影片中心離視窗中心多遠（px）。
+const offCenter = (scroller, video) => {
+  const s = scroller.getBoundingClientRect();
+  const v = video.getBoundingClientRect();
+  return Math.abs(v.top + v.height / 2 - (s.top + s.height / 2));
 };
 
 describe("內嵌影片：退出全螢幕後把影片捲回視野", () => {
@@ -65,8 +75,7 @@ describe("內嵌影片：退出全螢幕後把影片捲回視野", () => {
     setFullscreenElement(null);
     await nextFrame();
 
-    // top - (viewportHeight - height) / 2 = 3000 - 200
-    expect(scroller.scrollTop).toBe(2800);
+    expect(offCenter(scroller, video)).toBeLessThanOrEqual(1);
   });
 
   test("別的元素全螢幕（本影片沒進過）→ 不得亂動捲動位置", async () => {

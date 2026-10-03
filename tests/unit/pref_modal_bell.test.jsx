@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 設定頁「一般」的終端機提示音開關。
 //
 // **預設開**：PTT 送 BEL 本來就是終端機該出聲的時候，而且 bell.js 有節流，連發也

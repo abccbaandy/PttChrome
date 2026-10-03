@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 上傳紀錄（本機）：面板要能挑一張舊圖再插入，所以清單順序與去重是行為的一部分。
 import {
   MAX_HISTORY,

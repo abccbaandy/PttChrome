@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 「這一幀是不是看板列表」的指紋（`buf.isBoardListScreen`）。
 //
 // 為什麼需要它：pageState 1 底下有兩種完全不同的畫面，而它們的 Home/End 在 PTT 端

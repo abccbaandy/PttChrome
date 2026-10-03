@@ -1169,8 +1169,8 @@ export class ScreenController {
   }
 
   // ---- 列表好讀的捲動存取（唯一入口）----------------------------------------
-  // ListSession 一律透過這幾支動 DOM，不直接碰節點：jsdom 沒有 Element.scrollTo，
-  // 而捲動語意的 unit 測試全都在 jsdom 下跑。
+  // ListSession 一律透過這幾支動 DOM，不直接碰節點：捲動語意的 unit 測試以替身
+  // controller 驅動，集中在這裡才替換得乾淨。
   // 視口節點現在還在 DOM 上嗎。它是常駐快取（切到文章／原生鏡像時被 _patchRows
   // 移出容器，物件本身留著），而 **detached 節點的 scrollTop 恆為 0** —— 那是
   // 「沒有資訊」，不是「捲到最上面」。ListSession 的 captureScrollAnchor 必須靠

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 好讀文章的搜尋交給瀏覽器（pref easyReadingBrowserFind，預設開）。
 //
 // 原生 `/` 在好讀下結構性不可用：pmore 的 mf_search 從 PTT 端目前頁起找，而好讀早就

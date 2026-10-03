@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 import { WordSegmentBuilder } from "../../src/render/word_segment";
 import { color } from "./helpers/screen_fixtures";
 

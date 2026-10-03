@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 設定面板「滑鼠」分頁的 UI 契約（2026-08 整套滑鼠功能重新設計）。
 //
 // 守住三件事：

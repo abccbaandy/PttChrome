@@ -1,15 +1,17 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // Unit guard for auto-login credential resolution and migration
 // (AutoLogin._resolveCredential / _maybeMigrate / setSessionCredential,
 // src/js/auto_login.js) — previously untested, and now the place where the 2FA
 // secret is packed into / unpacked out of the browser credential store
 // (src/js/credential_pack.js).
 //
-// The module keeps a page-lifetime credential cache, so every test re-imports
-// the module after vi.resetModules().
+// The module keeps a page-lifetime credential cache, so every test starts from
+// _resetSessionCredentialForTest()（瀏覽器原生 ESM 不能 vi.resetModules() 重載）。
 
 import { App } from "../../src/js/pttchrome";
+import { AutoLogin, _resetSessionCredentialForTest } from "../../src/js/auto_login";
 import { packCredential } from "../../src/js/credential_pack";
+import { hideCredentialApi, setNavigatorCredentials } from "./helpers/credential_api";
 import { DEFAULT_PREFS, readValuesWithDefault } from "../../src/js/pref_storage";
 
 const PREF_KEY = "pttchrome.pref.v1";
@@ -27,8 +29,7 @@ const writePrefs = prefs =>
 function installCredentialApi({ stored = null, supported = true } = {}) {
   const calls = { stored: [] };
   if (!supported) {
-    delete window.PasswordCredential;
-    delete navigator.credentials;
+    hideCredentialApi();
     return calls;
   }
   window.PasswordCredential = class PasswordCredential {
@@ -36,26 +37,24 @@ function installCredentialApi({ stored = null, supported = true } = {}) {
       Object.assign(this, { id, password, name });
     }
   };
-  navigator.credentials = {
+  setNavigatorCredentials({
     get: vi.fn(async () => stored),
     store: vi.fn(async cred => {
       calls.stored.push(cred);
       return cred;
     })
-  };
+  });
   return calls;
 }
 
 async function freshAutoLogin() {
-  vi.resetModules();
-  const { AutoLogin } = await import("../../src/js/auto_login");
+  _resetSessionCredentialForTest();
   return new AutoLogin({ connectState: 1 });
 }
 
 beforeEach(() => {
   window.localStorage.clear();
-  delete window.PasswordCredential;
-  delete navigator.credentials;
+  hideCredentialApi();
 });
 
 describe("_resolveCredential: browser store", () => {

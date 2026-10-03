@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 手機推文卡片（render/comment_card.js、docs/mobile.md「推文卡片」）。
 // 症狀：換行版面下推文列照 80 欄原樣 pre-wrap，時間戳前的補位空白先折行 ⇒ 時間
 // 被擠到下一行最左邊。卡片把 IP／時間搬到標頭列（右靠），內容另起一行。

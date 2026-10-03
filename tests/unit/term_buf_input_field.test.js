@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 「畫面正在等使用者輸入」的偵測（`buf.isCursorOnInputField`）。
 //
 // 依據 mbbsd/vtuikit.c#vgetstring（1211-1240）：每次重畫輸入欄都是

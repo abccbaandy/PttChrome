@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 好讀「整頁圖片倍率」的控制器行為（src/render/screen.js）。
 //
 // 倍率列的按鈕住在佔位盒裡，按下去是派發 bubbling 的 `previewzoom` CustomEvent，

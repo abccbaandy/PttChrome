@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 設定頁關閉時的通知權限檢查。
 //
 // REGRESSION（實測回報）：原本只在勾選 checkbox 的當下問權限，但兩個通知 pref 的

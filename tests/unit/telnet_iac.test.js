@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // TelnetConnection 的 IAC（0xFF）跳脫 —— RFC 854 §"IAC IAC"。
 //
 // 為什麼是真 bug 而不是理論問題：string_util.u2b 對「轉不出 Big5」的字元回

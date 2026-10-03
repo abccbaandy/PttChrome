@@ -995,7 +995,7 @@ export const en_US = {
       'Build tooling: Vite 8 (Rolldown core, replacing webpack + Babel), Yarn 4; tests on Vitest 5 (replacing Jest).',
       'Removed jQuery and hammerjs in favor of native APIs; no CDN library dependencies left.',
       'Firebase npm modular SDK (lazy chunk) + App Check protection.',
-      'Test infrastructure: Playwright E2E, Firebase Emulator Suite (Docker) integration tests, offline byte-cassette replay tests.',
+      'Test infrastructure: DOM unit tests run in real Chromium (Vitest Browser Mode, replacing jsdom; the unit suite runs about 4x faster), Playwright E2E, Firebase Emulator Suite (Docker) integration tests, offline byte-cassette replay tests.',
       'CI: GitHub Pages deploy gated on tests; all Dependabot / CodeQL alerts cleared.'
     ]
   },

@@ -1,6 +1,6 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 一列的渲染契約（同作者高亮／推文者高亮／範圍型連結／樓層徽章／黑名單通知列）。
-// jsdom、不連網。Fake TermChar cells 一律 ASCII，所以 DBCS 路徑（需要 window.lib
+// 真 Chromium、不連網。Fake TermChar cells 一律 ASCII，所以 DBCS 路徑（需要 window.lib
 // 的 Big5 表）不會被走到——那條由 render_dom_equivalence 的 golden 場景覆蓋。
 //
 // The marker (推/噓/→) is a 2-col DBCS char in reality; here two placeholder ASCII

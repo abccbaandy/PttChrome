@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 功能鍵提示列解析的守護。
 //
 // 素材依據（pttbbs 原始碼，非畫面反推）：

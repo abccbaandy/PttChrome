@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // real-input: tests/e2e/offline/debug_record.offline.spec.js
 //   （好讀長頁的真滾輪寫進錄製檔；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 import { DebugRecorder, snapshotState, cursorGeomSample } from "../../src/js/debug_recorder";
@@ -168,7 +168,7 @@ describe("DebugRecorder", () => {
       rec.stop({ prefs: { autoLoginUser: "myuser", autoLoginPassword: "secret99" } })
     );
     const recvEv = out.events.find((e) => e.dir === "recv");
-    const decoded = Buffer.from(recvEv.data, "base64").toString("latin1");
+    const decoded = atob(recvEv.data);
     expect(decoded).toBe("hi xxxxxx xxxxxxxx end");
   });
 
@@ -188,7 +188,7 @@ describe("DebugRecorder", () => {
       })
     );
     const recvEv = out.events.find((e) => e.dir === "recv");
-    const decoded = Buffer.from(recvEv.data, "base64").toString("latin1");
+    const decoded = atob(recvEv.data);
     expect(decoded).toBe("code xxxxxxxxxxxxxxxx end");
   });
 
@@ -213,9 +213,13 @@ describe("DebugRecorder", () => {
 
   it("錄製期間記下好讀捲動容器的滾輪輸入與捲動位置，停止後拆掉 listener", () => {
     const { app } = makeApp();
+    // 真版面（unit-browser）：scrollTop 只有在真的可捲動時才會停在 1200。
     const main = document.createElement("div");
-    Object.defineProperty(main, "scrollHeight", { configurable: true, value: 5000 });
-    Object.defineProperty(main, "clientHeight", { configurable: true, value: 900 });
+    main.style.cssText = "height: 900px; overflow-y: auto";
+    const content = document.createElement("div");
+    content.style.height = "5000px";
+    main.appendChild(content);
+    document.body.appendChild(main);
     main.scrollTop = 1200;
     app.view.mainDisplay = main;
     const rec = new DebugRecorder(app);
@@ -233,6 +237,7 @@ describe("DebugRecorder", () => {
     main.dispatchEvent(new window.WheelEvent("wheel", { deltaY: -100 }));
     main.dispatchEvent(new window.Event("scroll"));
     expect(rec.events).toHaveLength(n);
+    main.remove();
   });
 
   it("未錄製時 log() no-op；重複 stop 回 null", () => {

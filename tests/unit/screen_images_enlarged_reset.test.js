@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 好讀模式「進新文章卻是大圖」的回歸守護。
 //
 // 圖片尺寸完全由容器 class 決定（#mainContainer.imagesEnlarged .easyReadingImg），

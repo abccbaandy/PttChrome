@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 單張圖的暫時性灰階切換鈕（src/render/inline_preview_slot.js）。
 //
 // 動線：把某張圖轉灰階 → 用瀏覽器內建的「以圖找圖」查。灰階只能是 CSS filter
@@ -117,14 +117,14 @@ describe("內嵌預覽圖的灰階切換鈕", () => {
     observers.length = 0;
     sizeObservers.length = 0;
     resetLazyObserversForTest();
-    global.IntersectionObserver = FakeIO;
-    global.ResizeObserver = FakeRO;
+    globalThis.IntersectionObserver = FakeIO;
+    globalThis.ResizeObserver = FakeRO;
   });
 
   afterEach(() => {
     destroySlots();
-    delete global.IntersectionObserver;
-    delete global.ResizeObserver;
+    delete globalThis.IntersectionObserver;
+    delete globalThis.ResizeObserver;
     resetLazyObserversForTest();
   });
 

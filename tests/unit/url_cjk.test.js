@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // Regression guard: auto-link must extend into CJK path segments
 // (https://zh.wikipedia.org/wiki/戈黛娃夫人) without absorbing Chinese prose
 // that merely follows a URL. Two layers:

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 「開燈」的渲染接線守護（仿 merge_image_caption_render.test.js）：
 //   - 偵測到隱藏文字 ⇒ 浮動按鈕出現；沒偵測到就不出現（原生模式也要出現）；
 //   - 點一下在 #mainContainer 加上 .lightsOn（軌 A：容器 class 決定樣式，

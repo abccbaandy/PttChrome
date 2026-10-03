@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // term_buf 收到 BEL（^G）要真的去響 —— 上游是 `case '\x07': continue`，整個吞掉。
 //
 // 這條與 bell.test.js 互補：那邊測「響的規則」（gating／節流／不 throw），

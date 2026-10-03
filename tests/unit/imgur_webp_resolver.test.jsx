@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // imgur 原圖（jpeg/png）的傳輸在 imgur 端有 per-request 長尾：真 Chromium、獨立
 // 快取、同一瞬間請求同一 URL 實測 0.8s / 2.5s / 8.8s。同一 hash 的 `.webp` 衍生檔
 // 解析度完全相同、體積約 1/5，且量測中不出現長尾 → 一律優先要 webp，並把原副檔名

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 右鍵選單的三件事：複製選項的預覽行、兩個小幫手的顯示開關，以及
 // 「在連結上沒選取時不該出現複製項」那條回歸。
 //

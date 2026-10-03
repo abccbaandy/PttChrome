@@ -15,7 +15,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   - **收工前務必手動關掉：`yarn kill:dev`**。這是規範不是自動化——**只要這個 session 起過 dev server（`yarn start`），結束前就要自己跑一次**，別指望 hook。
     - `.claude/settings.json` 的 hook 只在 SessionEnd 跑 `kill-dev-server.js --own`：只殺本 checkout 的 vite（PID 由 `vite.config.mjs` 寫 pidfile），不碰別的 session／worktree 的 server。不要加 Stop hook：它每個 assistant turn 結束都會觸發，會砍掉 Playwright 自己起的 dev server，讓 e2e 整批 `ERR_CONNECTION_REFUSED`。
   - Windows 上 vite 只綁 IPv6 `[::1]:8080`，所以 `kill-dev-server.js` 用不帶 `-p` 的 `netstat -ano` 篩 PID（守護 `tests/unit/kill_dev_server_parse.test.js`）。
-  - 用 **Node**（dev server ≥20.19；`test:unit` 的 jsdom 30 另需 `^22.22.2 || ^24.15.0 || >=26` → 裝最新 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
+  - 用 **Node**（dev server ≥20.19；Vitest 5 需 ≥22 → 裝最新 v24）跑，**不要用 bun**（bun 的 ws proxy 不轉發 upgrade）。
   - 套件管理用 **yarn**（Yarn v4，`node-modules` linker，設定於 `.yarnrc.yml`）。Node 內建 corepack：`corepack enable` 即可用 `yarn`（版本由 `package.json` 的 `packageManager` 鎖定 4.x）。**勿用 npm**（會產生多餘 `package-lock.json`）。CI 安裝用 `yarn install --immutable`。Yarn v4 不跑自訂 `pre*`/`post*` script；build 產物清理由 Vite `emptyOutDir` 處理（無 `clean` script）。Yarn v4 script 是 portable shell，跨平台支援 `VAR=1 cmd` 行內環境變數（`record:cassette` 用此，勿再引入 cross-env）。
 - dev server 內建 `/bbs` WebSocket proxy，改寫 Origin→term.ptt.cc，直連 `wss://ws.ptt.cc/bbs`。開頁即自動連真 PTT，**不需任何中繼**。
 - dev 預設站台 `wstelnet://localhost:8080/bbs`（vite.config.mjs `define` → `DEFAULT_SITE`）。
@@ -34,14 +34,24 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 - 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，npm modular SDK 走 dynamic `import()` 拆 lazy chunk，未登入零下載；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。App Check（reCAPTCHA Enterprise）擋 script 直打 API 燒額度；dev 走 debug token（機器 env `APPCHECK_DEBUG_TOKEN`，**不入 repo**）。詳見 `docs/pref-sync-firestore.md`。
 
 ## 測試
-- **Unit（首選，穩定）**：`yarn test:unit`（Vitest，不連網；設定 `vitest.config.mjs` unit project）。**預設 node env＋`threads` pool**，需要 DOM 的檔案第一行寫 `// @vitest-environment jsdom`（jsdom 每檔重建是最大成本，純邏輯檔別宣告；守護 `tests/unit/unit_environment.test.js`）。`tests/unit/` 30+ 檔＝
-  純邏輯（解析／狀態機／轉碼）＋核心畫面渲染（`tests/unit/helpers/mount_screen.js` 掛 `ScreenController`／
-  `buildRow` + 假 TermChar；週邊 React UI 仍用 @testing-library/react）。
+- **Unit（首選，穩定）**：`yarn test:unit`（Vitest，不連網；設定 `vitest.config.mjs`）＝兩個 project：
+  `unit`（node env＋`threads` pool，純邏輯／解析／靜態掃描）與 `unit-browser`（**Vitest Browser Mode，真 headless
+  Chromium**，DOM／渲染／React 週邊 UI）。需要 DOM 的檔案**第一行**寫 `// @unit-env browser`（純邏輯檔別寫）；
+  **本機需先 `yarn playwright install chromium`**（e2e 本來就要）。守護 `tests/unit/unit_environment.test.js`。
+  - browser 檔**不能用 node API**（`fs`／`path`／`Buffer`／`require`／`__dirname`／`global`）：fixture 用 JSON
+    或 `?raw` import，寫檔用 `vitest/browser` 的 `commands`（`render_dom_equivalence.test.js` 範例），`global`→`globalThis`。
+  - 真瀏覽器的唯讀全域（`navigator.credentials`、`window`）不能賦值：用 `Object.defineProperty`／`vi.spyOn`
+    （`tests/unit/helpers/credential_api.js`）。版面是真的：要 `scrollTop` 就給元素真的高度＋overflow，不准偽造
+    `scrollHeight`／`offsetTop`。`IntersectionObserver` 是真的且非同步，要同步控制就 stub 或注入假的。
+  - `vi.resetModules()` 在 browser 無效（原生 ESM 不重跑模組）：有 page-lifetime 快取的模組改 export 測試用
+    reset 函式（`auto_login.js#_resetSessionCredentialForTest`）。**jsdom／happy-dom 已移除且禁止帶回**（DOM 模擬跟真
+    瀏覽器不一致時測試全綠、實際卻壞；`yarn debug:screens` 也改純 node）。評估與實測見 `docs/build-modernization.md`。
+  `tests/unit/` ＝純邏輯（解析／狀態機／轉碼）＋核心畫面渲染（`tests/unit/helpers/mount_screen.js` 掛
+  `ScreenController`／`buildRow` + 假 TermChar；週邊 React UI 仍用 @testing-library/react）。
   **含 JSX 的測試檔用 `.test.jsx`**。mock/timer 用 `vi.*`（globals 開啟，`describe/test/expect` 免 import）。
   **模組載入一律放檔案層級，不准在 test body 裡 `await import('../../src/...')`**：那會把整條依賴鏈的
   冷載入算進該 case 的 5000ms testTimeout ⇒ 機器忙時偶發紅（`Test timed out in 5000ms`），單獨重跑又綠，
-  而且紅的是一支跟載入無關的測試名稱。唯一例外是模組有 page-lifetime 快取、必須配 `vi.resetModules()`
-  重載（如 `auto_login_credentials.test.js`）。靜態守護 `tests/unit/module_load_cost.test.js`。
+  而且紅的是一支跟載入無關的測試名稱。靜態守護 `tests/unit/module_load_cost.test.js`。
   增強功能的逐列判斷一律放 `comment_parse.annotateComment` 並在此回歸守護（e2e 素材不穩，純邏輯先測）。
 - **Integration（雲端同步流程）**：`yarn test:integration`（Vitest + 官方 **Firebase Emulator Suite**：真 modular SDK
   + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）。emulator 跑在 **Docker**（pinned `andreysenov/firebase-tools`，內含 firebase-tools+JDK；vitest 在 host 連容器埠），所以**本機跑需 Docker**（不再需本機裝 Java/firebase-tools）。orchestration 見 `scripts/run-integration.mjs`。
@@ -106,7 +116,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   對照表、豁免與量到的瀏覽器事實見 `tests/e2e/README.md`「真輸入」。改成真輸入後變紅，先懷疑原測試在說謊。
 - **改到渲染/畫面這類易壞 code，提交前必跑 e2e**（`yarn test:e2e`，至少 `easy-reading.spec.js`+`enhance.spec.js`）。
   適用 `term_view.js`、`term_ui.js`、`src/render/**`、`src/components/**`、`easy_reading.js`、`pttchrome.jsx` 渲染/切換路徑、`term_buf.js` 渲染相關等。
-  理由：unit（jsdom + testing-library）仍**不跑真瀏覽器/真 WebSocket/完整 boot 鏈**，捕捉不到「一進文章即炸」這類 runtime 崩潰
+  理由：unit（unit-browser 雖是真 Chromium，但只掛單一元件）仍**不跑真 WebSocket/完整 boot 鏈**，捕捉不到「一進文章即炸」這類 runtime 崩潰
   （例：`pageLines` 用 `JSON` 克隆剝掉 TermChar prototype 方法 → `ch.isStartOfURL is not a function`）。不可只靠 unit + build 綠就交付。
 - **離線重放（不連真實 PTT 也能驗依賴特定文章的 case）**：`yarn test:e2e:offline`（stub WebSocket 重放 byte cassette，
   真瀏覽器/真渲染）；Layer2 `tests/unit/replay_fixture.test.js` 用真實 `findPageOverlap` 純 node 重建跨頁去重。

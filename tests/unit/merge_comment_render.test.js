@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 好讀「連續同作者推文合併」的渲染接線守護（仿
 // merge_image_caption_render.test.js）。守的是使用者 2026-08 回報的症狀：
 //   1. 三則連推被黏成一段 → 現在一則一行（塊內換行數 = 則數 - 1）。

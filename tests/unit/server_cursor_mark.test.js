@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 閃爍底線抑制（autoHideBlinkCursor）：PTT 自己畫了游標的畫面不再疊一個閃爍 `_`。
 //
 // 判定依據是 pttbbs 的不變量（`mbbsd/stuff.c#cursor_show`）：

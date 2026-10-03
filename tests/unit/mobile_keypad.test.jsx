@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // real-input: tests/e2e/offline/mobile_keypad.offline.spec.js
 //   （真滑鼠拖曳／touchscreen.tap；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // 手機按鍵列（src/components/MobileKeypad）。鎖三件事：

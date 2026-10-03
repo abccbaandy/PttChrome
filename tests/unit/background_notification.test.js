@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 背景通知（水球 / deep link 交接共用）—— TermView 的三個方法。
 //
 // 用 prototype call + 假 this 測（同 easy_reading_send_gate 的風格）：真正要守的是
@@ -82,9 +82,8 @@ describe("_createNotification（永遠不可 throw）", () => {
     // 這是**唯一**能切分頁的路：通知的 click handler 帶有 user activation，
     // 背景分頁自己呼叫 window.focus() 是無效的。
     const made = installNotification();
-    const focus = vi.fn();
-    const orig = globalThis.window;
-    globalThis.window = { focus };
+    // 真瀏覽器的 window 是唯讀 getter，只能 spy 它的方法。
+    const focus = vi.spyOn(window, "focus").mockImplementation(() => {});
     try {
       const n = call("_createNotification", ctxFor(), {
         title: "t",
@@ -97,7 +96,7 @@ describe("_createNotification（永遠不可 throw）", () => {
       expect(focus).toHaveBeenCalledTimes(1);
       expect(n.closed).toBe(true);
     } finally {
-      globalThis.window = orig;
+      focus.mockRestore();
     }
   });
 });

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 vi.mock("../../src/js/pref_storage", () => ({
   readValuesWithDefault: vi.fn(() => ({ enableEasyReading: true }))
 }));
@@ -8,13 +8,12 @@ vi.mock("../../src/js/pref_storage", () => ({
 // isStatusRow / the page signature directly — parser correctness has its own tests
 // (string_util / comment_parse). The pure nextEasyReading* functions below take
 // booleans and never touch string_util, so the mock does not affect them.
-// COMMENT_TIME_RE 不是這裡要控制的東西，但一定要給：easy_reading → mouse_regions
-// → comment_parse 這條 import 鏈在**模組載入期**就用它組 COMMENT_RE，缺了整個
-// test file 會在 import 階段就掛掉（不是某條 assertion 紅）。
+// 其餘 export 一律沿用真實作：瀏覽器原生 ESM 在**載入期**就檢查 named import，
+// mock 少給一個（例如 import 鏈上某處用到的 b2u）整個 test file 就載入失敗。
 vi.mock("../../src/js/string_util", async (importOriginal) => {
   const actual = await importOriginal();
   return {
-    COMMENT_TIME_RE: actual.COMMENT_TIME_RE,
+    ...actual,
     parseStatusRow: vi.fn()
   };
 });

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 純 JS 渲染鏈的**生命週期**守護。
 //
 // 為什麼需要：React 卸載一棵子樹時會自動跑每個元件的 cleanup（unobserve、abort、
@@ -99,13 +99,13 @@ describe("渲染鏈的佔位盒生命週期", () => {
     observers.length = 0;
     sizeObservers.length = 0;
     resetLazyObserversForTest();
-    global.IntersectionObserver = FakeIO;
-    global.ResizeObserver = FakeRO;
+    globalThis.IntersectionObserver = FakeIO;
+    globalThis.ResizeObserver = FakeRO;
   });
 
   afterEach(() => {
-    delete global.IntersectionObserver;
-    delete global.ResizeObserver;
+    delete globalThis.IntersectionObserver;
+    delete globalThis.ResizeObserver;
     resetLazyObserversForTest();
   });
 

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // App（純 JS）→ React 的橋接：pttchrome.openLongPushModal。
 //
 // 攔截推文鍵的三條入口都在非 React 的那一側（term_view / App），而長推文輸入框是

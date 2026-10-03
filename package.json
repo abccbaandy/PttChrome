@@ -16,15 +16,16 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@vitejs/plugin-react": "^6.1.1",
+    "@vitest/browser-playwright": "^5.0.3",
     "husky": "^9.0.0",
-    "jsdom": "^30.1.1",
     "lint-staged": "^17.5.1",
+    "playwright": "^1.63.0",
     "postcss": "^8.5.28",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
     "prettier": "^3.9.9",
     "vite": "^8.3.1",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.3"
   },
   "lint-staged": {
     "*.json": "prettier --write",
@@ -35,7 +36,7 @@
     "prepare": "husky",
     "build": "vite build",
     "start": "vite",
-    "test:unit": "vitest run --project unit",
+    "test:unit": "vitest run --project unit --project unit-browser",
     "test:integration": "node scripts/run-integration.mjs",
     "kill:dev": "node scripts/kill-dev-server.js",
     "ci:status": "node scripts/ci-status.mjs",

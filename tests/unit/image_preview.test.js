@@ -1,17 +1,19 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 自動開圖的接線守護。好讀模式的文章頁走 ScreenController（enableLinkInlinePreview）
 // → buildRow → link_segment，替每個超連結掛一個延遲載入佔位盒；佔位盒在視野內時
 // 掛上 <ImagePreviewer component={Inline}>。曾經回歸過：term_view 傳
 // enableLinkInlinePreview=false，所有內嵌圖片就靜默消失，這裡守那條鏈。
 //
-// jsdom 沒有 IntersectionObserver ⇒ 佔位盒立即掛載（lazyPreviewSupported() 為
-// false 的行為，與這個功能不存在時相同）。一般圖片網址的 resolver 鏈是
+// 本檔把 IntersectionObserver 藏起來 ⇒ 佔位盒立即掛載（lazyPreviewSupported() 為
+// false 的行為，與這個功能不存在時相同）。延遲載入本身由 lazy_inline_preview.test.js 守；
+// 這裡只守「有沒有接上」，不必等真 IO 的非同步回呼。一般圖片網址的 resolver 鏈是
 // Promise.resolve({type:"image"})，在同步斷言之後的 microtask 才 resolve ⇒ 斷言當下
 // ImagePreviewer 還是 undefined → Inline 畫 <LoadingOverlay>（.previewLoading）。
 // 數那些節點：一個掛上的 inline ImagePreviewer 一個。
 
 import { mountScreen, mountRow, unmountAll } from "./helpers/mount_screen";
 import { requestPreview } from "../../src/components/ImagePreviewer";
+import { resetLazyObserversForTest } from "../../src/render/inline_preview_slot";
 
 const COLOR = {
   fg: 7,
@@ -37,7 +39,15 @@ function urlRow(url) {
 
 const IMG_URL = "http://example.com/a.jpg";
 
-afterEach(unmountAll);
+beforeEach(() => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  resetLazyObserversForTest();
+});
+afterEach(() => {
+  unmountAll();
+  vi.unstubAllGlobals();
+  resetLazyObserversForTest();
+});
 
 // 掛載後立刻數載入指示器（一個掛上的 inline ImagePreviewer 一個），再讓 resolver
 // 鏈跨兩輪 macrotask 沉澱。指示器數量在掛載當下就固定（value 還是 undefined），
@@ -108,18 +118,19 @@ describe("inline image preview wiring", () => {
 describe("requestPreview 不可預覽連結不產生 unhandled rejection", () => {
   test("建立後放置一輪 event loop：無 unhandledRejection；消費端仍收到 reject", async () => {
     const events = [];
-    const onUnhandled = (reason) => events.push(reason);
-    process.on("unhandledRejection", onUnhandled);
+    // 瀏覽器端的回報管道（dev overlay 聽的就是這個事件）。
+    const onUnhandled = (e) => events.push(e.reason);
+    window.addEventListener("unhandledrejection", onUnhandled);
     try {
       const p = requestPreview("https://example.com/not-media-page.html");
-      // 故意先不掛 handler，跨一輪 macrotask 讓 node 有機會回報 unhandled。
+      // 故意先不掛 handler，跨一輪 macrotask 讓瀏覽器有機會回報 unhandled。
       await new Promise((res) => setTimeout(res, 0));
       await new Promise((res) => setTimeout(res, 0));
       expect(events).toEqual([]);
       // 消費端照常收到 reject（ImagePreviewer 的 state.error 路徑不變）。
       await expect(p).rejects.toThrow("Unimplemented");
     } finally {
-      process.removeListener("unhandledRejection", onUnhandled);
+      window.removeEventListener("unhandledrejection", onUnhandled);
     }
   });
 });

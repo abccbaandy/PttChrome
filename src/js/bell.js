@@ -25,7 +25,7 @@ let ctx = null;
 let lastRingAt = -Infinity;
 let contextFactory = () => new window.AudioContext();
 
-// 純決策，抽出來讓 unit 測得到（jsdom 沒有 Web Audio）。
+// 純決策，抽出來讓 unit 不必真的發聲就測得到。
 export function shouldRing(now, state) {
   if (!state.enabled) return false;
   const interval =

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 「換文章卻還有幾張莫名其妙的灰圖」的回歸守護（比照 screen_images_enlarged_reset）。
 //
 // 單張圖的灰階態放在 module 級的 Set（鍵＝href，見 src/render/inline_preview_slot.js
@@ -112,16 +112,16 @@ describe("換文章重置單張圖的灰階", () => {
   beforeEach(() => {
     sizeObservers.length = 0;
     resetLazyObserversForTest();
-    global.IntersectionObserver = FakeIO;
-    global.ResizeObserver = FakeRO;
+    globalThis.IntersectionObserver = FakeIO;
+    globalThis.ResizeObserver = FakeRO;
     mount();
   });
 
   afterEach(() => {
     controller.destroy();
     root.remove();
-    delete global.IntersectionObserver;
-    delete global.ResizeObserver;
+    delete globalThis.IntersectionObserver;
+    delete globalThis.ResizeObserver;
     resetLazyObserversForTest();
   });
 

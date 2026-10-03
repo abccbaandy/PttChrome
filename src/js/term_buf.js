@@ -413,7 +413,9 @@ export function TermBuf(cols, rows) {
     this.lines[rows] = line;
     //this.keyWordLine[rows]=false;
   }
-  this.BBSWin = document.getElementById('BBSWindow');
+  // 解析路徑不需要 DOM：#BBSWindow 只用來設滑鼠游標樣式（用到處已判斷存在）。
+  // `yarn debug:screens` 在純 node 裡跑同一份 TermBuf（tests/unit/term_buf_no_dom.test.js）。
+  this.BBSWin = typeof document === 'undefined' ? null : document.getElementById('BBSWindow');
 }
 
 TermBuf.prototype = {

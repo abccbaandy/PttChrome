@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // TelnetConnection 的裸 ESC 守門（送出端鏡像 pttbbs vtkbd 的狀態機）。
 //
 // 重現的真實症狀（錄製檔 ptt-debug-20260916-011413.json#t=5494,6922,6933）：

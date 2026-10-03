@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // real-input: tests/e2e/offline/long_push_image_upload.offline.spec.js
 //   （「截圖 Ctrl+V 貼進輸入框」；本檔手捏事件只測分支邏輯，見 tests/unit/e2e_real_input.test.js）
 // 長推文輸入框（src/components/ContextMenu/LongPushModal.jsx）。
@@ -264,7 +264,8 @@ describe("圖片上傳插入目標", () => {
   test("Textarea 的貼上轉給 tryClipboardImage（截圖直接 Ctrl+V）", () => {
     const imageUpload = fakeUpload();
     renderModal({ imageUpload });
-    fireEvent.paste(textarea(), { clipboardData: { files: [], items: [] } });
+    // 真 Chromium 的 ClipboardEvent 只收真的 DataTransfer（空的＝沒有圖）。
+    fireEvent.paste(textarea(), { clipboardData: new DataTransfer() });
     expect(imageUpload.tryClipboardImage).toHaveBeenCalled();
   });
 

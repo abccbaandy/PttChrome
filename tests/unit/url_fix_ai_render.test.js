@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // URL 修復 gray 候選的渲染接線守護（仿 merge_image_caption_ai_render）。
 // 回歸來源：`The goal was to match a modern Call of Duty. It does not.` 被修成
 // https://Duty.It（`it` = 義大利 ccTLD，剛好也是英文單字）。

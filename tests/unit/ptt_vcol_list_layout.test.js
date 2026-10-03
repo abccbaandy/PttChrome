@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // PTT「列表模式導入動態分欄架構（VCOL）」公告（PttCurrent，2026-10-01；PTT2 9/30、
 // PTT1 10/4 上線）的相容性證明：**server 改用 VCOL 排版後，本專案的列表欄位解析
 // 在 80 欄下照舊正確**，寬於 80 欄時欄位起點也不動。

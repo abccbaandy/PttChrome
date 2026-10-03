@@ -10,7 +10,9 @@
 // 載入發生在 vitest 收集階段，不佔任何一條 case 的預算。
 //
 // 唯一豁免：檔案裡有 `vi.resetModules()`（模組有 page-lifetime 快取，每條 case 必須
-// 拿到全新實例，例如 auto_login_credentials.test.js）。那種情況是刻意重載，不是順手寫的。
+// 拿到全新實例）。那種情況是刻意重載，不是順手寫的。只適用 node 的 unit project：
+// unit-browser 裡 resetModules 無效（原生 ESM 不重跑模組），改由模組 export 測試用
+// reset 函式（例：auto_login.js#_resetSessionCredentialForTest）。
 import fs from "fs";
 import path from "path";
 

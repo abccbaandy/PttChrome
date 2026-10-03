@@ -38,3 +38,6 @@ dist/*
 .claude/settings.local.json
 # 個人裝置的研究筆記與原始量測（含裝置／已安裝 App 等隱私資訊，絕不入 repo）
 docs/local/
+
+# Vitest Browser Mode（unit-browser）的附件／截圖目錄
+.vitest/

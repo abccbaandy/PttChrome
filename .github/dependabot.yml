@@ -4,7 +4,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # 先比對到的 group 優先。下面兩組不分升級類型（含 major）一律一起升：
+    #   - @vitest/browser-playwright 的 peer 是**精確**的 vitest 版本；
+    #   - unit-browser 用 playwright 的瀏覽器，CI image tag 卻取自 @playwright/test
+    #     （守護 tests/unit/ci_playwright_container.test.js）。
     groups:
+      vitest:
+        patterns: ["vitest", "@vitest/*"]
+      playwright:
+        patterns: ["playwright", "@playwright/*"]
       minor-and-patch:
         update-types: ["minor", "patch"]
     open-pull-requests-limit: 5

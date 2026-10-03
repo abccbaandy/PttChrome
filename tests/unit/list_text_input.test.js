@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 列表好讀「文字輸入（IME）」合約：組字送出＝T3 整串 passthrough，與貼上同源。
 //
 // 舊行為：中文輸入法組完字後 compositionend → term_view.onInput → onTextInput →

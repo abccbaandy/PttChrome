@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 非導覽操作完成後自動切回好讀（pref enableListNativeAutoResume，2026-09-03）。
 //
 // 兩半：
@@ -10,18 +10,10 @@
 //   洞 1 PTT 還在等輸入的畫面被誤判 → classifyListScreen 的 curX<=1 已擋住（不變量 N9）
 //   洞 2 命令還在線上就判定       → queue.inFlightKind
 //   洞 3 一個回應 settle 兩次      → 時鐘從 max(server 活動, 使用者送 byte) 起算
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import fixture from "./fixtures/replay/cchat-list.page.json";
 import { ListSession, transitionListSession } from "../../src/js/list_session";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fixture = JSON.parse(
-  fs.readFileSync(
-    path.join(__dirname, "fixtures", "replay", "cchat-list.page.json"),
-    "utf8"
-  )
-);
+
 const listRows = fixture.pageScreens[0]; // 真實 C_Chat 一頁的 24 列
 
 const PREF_KEY = "pttchrome.pref.v1";

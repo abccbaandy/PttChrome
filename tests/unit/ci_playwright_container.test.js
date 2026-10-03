@@ -120,6 +120,19 @@ describe("test.yml：e2e job 跑在 Playwright 官方 image", () => {
     expect(job.body).toContain(`test "\${{ needs.${upstream}.result }}" = success`);
   });
 
+  // unit-browser project 要真 Chromium；不在 image 裡就只能 playwright install（＝apt）。
+  test("跑 yarn test:unit 的 job 也在 Playwright image 裡", () => {
+    const unitJobs = jobs().filter((j) => /^\s*yarn test:unit\s*$/m.test(j.body));
+    expect(unitJobs.map((j) => j.name)).toEqual(["test-unit"]);
+    const [job] = unitJobs;
+    expect(job.body).toMatch(/^\s*needs: playwright-version\s*$/m);
+    expect(job.body).toMatch(
+      /^\s*image: mcr\.microsoft\.com\/playwright:v\$\{\{ needs\.playwright-version\.outputs\.version \}\}-noble\s*$/m,
+    );
+    expect(job.body).toMatch(/^\s*options: .*--ipc=host/m);
+    expect(job.body).toMatch(/^ {4}timeout-minutes: \d+\s*$/m);
+  });
+
   test("沒有任何 job 再跑 playwright install（那就是 apt）", () => {
     const offenders = jobs().filter((j) => /^\s*(npx|yarn) playwright install/m.test(j.body));
     expect(offenders.map((j) => j.name)).toEqual([]);
@@ -141,6 +154,14 @@ describe("playwrightVersionFromLock", () => {
       fs.readFileSync(path.join(ROOT, "node_modules", "@playwright", "test", "package.json"), "utf8"),
     ).version;
     expect(playwrightVersionFromLock(lock)).toBe(installed);
+  });
+
+  // unit-browser（Vitest Browser Mode）走的是 `playwright` 套件的瀏覽器，image tag 卻取自
+  // @playwright/test ⇒ 兩者不同版時 test-unit 會 `Executable doesn't exist` 整批秒掛。
+  test("playwright 與 @playwright/test 鎖在同一版（test-unit 的 image 才對得上）", () => {
+    const v = (pkg) =>
+      JSON.parse(fs.readFileSync(path.join(ROOT, "node_modules", ...pkg.split("/"), "package.json"), "utf8")).version;
+    expect(v("playwright")).toBe(v("@playwright/test"));
   });
 
   test("不會誤抓 playwright／playwright-core 的條目", () => {

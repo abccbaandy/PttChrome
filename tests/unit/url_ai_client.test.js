@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 裸網域 AI 複核瀏覽器層（src/js/url_ai.js）的守護：假 window.LanguageModel 驗
 // availability 對映、佇列、structured output 解析，以及**每一種失敗都保留連結**
 // （link === null → 呼叫端不撤，見 url_ai_logic 的單向收縮契約）。

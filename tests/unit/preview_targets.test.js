@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @unit-env browser
 // 「這一下壓在哪」的兩組判準（src/js/preview_targets.js）。
 //
 // 兩條選擇器**刻意不同**，這支測試守的就是那個差別：

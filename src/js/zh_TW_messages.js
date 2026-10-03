@@ -994,7 +994,7 @@
       '建置工具：Vite 8（Rolldown 核心，取代 webpack + Babel）、Yarn 4；測試框架 Vitest 5（取代 Jest）',
       '移除 jQuery 與 hammerjs，全部原生 API，無 CDN 程式庫依賴',
       'Firebase npm modular SDK（lazy chunk）＋ App Check 防護',
-      '測試基建：Playwright E2E、Firebase Emulator Suite（Docker）整合測試、離線 byte-cassette 重放測試',
+      '測試基建：DOM 單元測試改跑真 Chromium（Vitest Browser Mode，取代 jsdom，整套 unit 快約 4 倍）、Playwright E2E、Firebase Emulator Suite（Docker）整合測試、離線 byte-cassette 重放測試',
       'CI：GitHub Pages 部署以測試通過為前提；Dependabot / CodeQL 安全警示全數清除'
     ]
   },
