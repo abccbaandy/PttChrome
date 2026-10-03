@@ -16,12 +16,21 @@ import {
   clearBotBlock,
   assertNotBotBlocked,
   MARKER,
+  markerPath,
+  isolateBotBlockMarkerForTest,
 } from "../e2e/helpers/bot_block";
 import {
   classifyLoginScreen,
   createLoginState,
   decideLoginAction,
 } from "../e2e/helpers/login_flow";
+
+// 閂鎖指到本檔自己的暫存路徑（理由見 bot_block.js#markerPath）。
+let restoreMarker;
+beforeAll(() => {
+  restoreMarker = isolateBotBlockMarkerForTest();
+});
+afterAll(() => restoreMarker());
 
 // 實錄的兩種句型（帳號遮成 ***，這是公開 repo）。
 const BLOCKED_A =
@@ -93,16 +102,19 @@ describe("describeBotBlock", () => {
 });
 
 describe("閂鎖（跨 worker：寫檔）", () => {
-  const wasMarked = (() => {
-    try {
-      return fs.readFileSync(MARKER, "utf8");
-    } catch (e) {
-      return null;
-    }
-  })();
   afterEach(() => clearBotBlock());
-  afterAll(() => {
-    if (wasMarked != null) markBotBlocked(wasMarked);
+
+  // 回歸守護：unit 不可以碰真 e2e 的閂鎖檔。以前直接讀寫 test-results/ 底下那一份，
+  // 並行的測試檔互清對方剛立的閂鎖（整組跑必紅一支），也會清掉真 e2e 那一輪的閂鎖。
+  test("env 覆寫後讀寫都落在覆寫路徑，預設路徑原封不動", () => {
+    const before = fs.existsSync(MARKER) ? fs.readFileSync(MARKER, "utf8") : null;
+    expect(markerPath()).not.toBe(MARKER);
+    markBotBlocked("x");
+    expect(fs.readFileSync(markerPath(), "utf8")).toBe("x");
+    clearBotBlock();
+    expect(fs.existsSync(markerPath())).toBe(false);
+    const after = fs.existsSync(MARKER) ? fs.readFileSync(MARKER, "utf8") : null;
+    expect(after).toBe(before);
   });
 
   test("沒立閂鎖時 assertNotBotBlocked 放行", () => {

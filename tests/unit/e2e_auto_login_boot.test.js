@@ -8,9 +8,20 @@
 //
 // node env（非 unit-browser）：helper 裡的 page.evaluate 閉包只讀 window/document，
 // 這裡自己塞一份最小的假全域，比在真瀏覽器上改測試頁自己的 document 乾淨。
-import { afterEach, beforeEach } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { autoLoginBoot } from "../e2e/helpers/ptt";
-import { clearBotBlock, readBotBlock } from "../e2e/helpers/bot_block";
+import {
+  clearBotBlock,
+  readBotBlock,
+  isolateBotBlockMarkerForTest,
+} from "../e2e/helpers/bot_block";
+
+// 閂鎖指到本檔自己的暫存路徑（理由見 bot_block.js#markerPath）。
+let restoreMarker;
+beforeAll(() => {
+  restoreMarker = isolateBotBlockMarkerForTest();
+});
+afterAll(() => restoreMarker());
 
 const MAIN_MENU = "【主功能表】 心情不好嗎？找人聊聊吧！";
 const BOT_BLOCK =

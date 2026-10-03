@@ -16,10 +16,33 @@
 // globalSetup 在每輪開跑前刪掉，所以它只在「同一輪」內有效。
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // 放 test-results/ 底下：那是 Playwright 自己的輸出目錄，不會進 git。
 const MARKER = path.join(process.cwd(), 'test-results', '.ptt-bot-blocked');
+
+// env PTT_BOT_BLOCK_MARKER 可覆寫，**每次呼叫現讀**（不在載入時定案）。給 unit 用：
+// 測試檔是並行的，共用預設路徑會互清對方剛立的閂鎖（整組跑必紅一支），還會清掉
+// 真 e2e 那一輪的閂鎖。用 env 而非模組 setter：ptt.js 走 CJS require、測試檔走 ESM
+// import，兩邊拿到的可能不是同一個模組實例，env 才是兩邊都看得到的那一份。
+function markerPath() {
+  return process.env.PTT_BOT_BLOCK_MARKER || MARKER;
+}
+
+// unit 測試檔在 beforeAll 呼叫、afterAll 呼叫回傳的還原函式：把閂鎖指到這個檔自己
+// 的暫存路徑。env 在 worker thread 內各自一份，並行的測試檔看不到彼此的設定。
+// （放這裡而不是 tests/unit/helpers/：那裡是 browser 檔共用區，禁用 node API。）
+function isolateBotBlockMarkerForTest() {
+  const saved = process.env.PTT_BOT_BLOCK_MARKER;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ptt-bot-block-'));
+  process.env.PTT_BOT_BLOCK_MARKER = path.join(dir, '.ptt-bot-blocked');
+  return function restore() {
+    if (saved === undefined) delete process.env.PTT_BOT_BLOCK_MARKER;
+    else process.env.PTT_BOT_BLOCK_MARKER = saved;
+    fs.rmSync(dir, { recursive: true, force: true });
+  };
+}
 
 // 純函式（unit 守護）：畫面是不是 PTT 的 DDoS/BOT 封鎖頁？
 // 實錄兩種句型：
@@ -58,7 +81,7 @@ function describeBotBlock(screen) {
 // 這一輪已經被判定封鎖了嗎？回結論字串，沒有就 null。
 function readBotBlock() {
   try {
-    return fs.readFileSync(MARKER, 'utf8');
+    return fs.readFileSync(markerPath(), 'utf8');
   } catch (e) {
     return null;
   }
@@ -67,8 +90,9 @@ function readBotBlock() {
 // 立閂鎖：之後任何一條 spec 的 login() 都會在**送出任何連線之前**直接失敗。
 function markBotBlocked(message) {
   try {
-    fs.mkdirSync(path.dirname(MARKER), { recursive: true });
-    fs.writeFileSync(MARKER, message);
+    const p = markerPath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, message);
   } catch (e) {
     // 寫不進去就算了：頂多退回舊行為（會多試幾次），不該因此讓測試爆在別的地方。
   }
@@ -77,7 +101,7 @@ function markBotBlocked(message) {
 // globalSetup 用：每輪開跑前清掉，閂鎖只在同一輪內有效。
 function clearBotBlock() {
   try {
-    fs.unlinkSync(MARKER);
+    fs.unlinkSync(markerPath());
   } catch (e) {
     // 本來就沒有
   }
@@ -92,6 +116,8 @@ function assertNotBotBlocked() {
 
 module.exports = {
   MARKER,
+  markerPath,
+  isolateBotBlockMarkerForTest,
   isBotBlockScreen,
   describeBotBlock,
   readBotBlock,
