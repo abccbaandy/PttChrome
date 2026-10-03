@@ -123,6 +123,9 @@ export default defineConfig(({ command }) => {
     server: {
       port: 8080,
       strictPort: true,
+      // 明確開：Vite 8 預設是「偵測到 AI agent 才開」⇒ CI／人手跑的 dev server 行為不同
+      //（offline harness 的 HMR 流量測試本機綠、CI 必紅）。守護 tests/unit/vite_forward_console.test.js。
+      forwardConsole: true,
       watch: {
         // build 產物與測試報告非 source：一旦被監看，e2e 進行中跑 `yarn build`
         // 或 Playwright 寫報告會觸發 dev server 廣播 full reload，炸掉被測頁面。
