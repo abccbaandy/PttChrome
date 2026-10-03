@@ -31,6 +31,15 @@ test.describe('离线重放 harness', () => {
   //   实际拿到 'X{"type":"custom","event":"vite:forward-console",...}'。
   // 触发条件＝页面里冒出 console error / unhandled rejection，所以这里主动制造一个。
   test('送出纪录只收 BBS 那条连线的 bytes，不混进 Vite HMR 流量', async ({ page }) => {
+    // 柵欄：Node 端直接看 HMR socket 真的把 forward-console 送出去了，才断言「没混进来」。
+    // 只 sleep 的话，慢机器上转发还没发生也会绿。
+    let forwarded = false;
+    page.on('websocket', (ws) => {
+      if (ws.url().includes('/bbs')) return;
+      ws.on('framesent', (f) => {
+        if (String(f.payload).includes('vite:forward-console')) forwarded = true;
+      });
+    });
     await installReplay(page);
     await page.goto('/');
     await waitConnected(page);
@@ -45,7 +54,9 @@ test.describe('离线重放 harness', () => {
       Promise.reject(new Error('offline harness: forced console forward'));
       console.error('offline harness: forced console forward');
     });
-    await page.waitForTimeout(500);
+    await expect
+      .poll(() => forwarded, '前提：Vite client 真的经 HMR socket 转发了 console')
+      .toBe(true);
 
     expect(await page.evaluate(() => (window.__sent || []).join(''))).toBe('');
   });

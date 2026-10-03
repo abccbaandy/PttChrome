@@ -366,9 +366,11 @@ test.describe('長推文一鍵發送（離線）', () => {
 
     await page.keyboard.press('a');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(200);
-    // 只有狀態機自己送出去的那個 X。
-    expect(await sentText(page)).toBe('X');
+    // 柵欄：讓 server 往下走一步，狀態機必定送出下一個 byte（型別 1）。前面若有任何
+    // 漏網的 byte，一定排在它前面 ⇒ 線路上必須**恰好**是狀態機自己的 X、1。
+    await drawLastRow(page, TYPE_MENU);
+    await expect.poll(() => sentText(page)).toContain('1');
+    expect(await sentText(page)).toBe('X1');
   });
 
   test('取消：送 Ctrl-C 收尾，剩餘內容留給使用者', async ({ page, context }) => {
@@ -634,8 +636,8 @@ test.describe('長推文一鍵發送（離線）', () => {
     await expect
       .poll(() => page.evaluate(() => window.__app.longPush.busy))
       .toBe(false);
-    // 給漏網的 keydown 一點時間落地再斷言「什麼都沒有」。
-    await page.waitForTimeout(200);
+    // 不用 sleep 等「漏網的 keydown」：keydown 的派發是同步的，keyboard.press 回來時
+    // 每一層 listener 都已跑完；上面兩個輪詢又保證關框的 React update 已落地。
     expect(await page.evaluate(() => window.__termKeys)).toEqual([]);
     expect(await sentText(page)).not.toContain('');
 

@@ -21,7 +21,12 @@ const {
 // 滾輪 smoke 會量 rect 又會動指標 ⇒ 版面穩定契約要求走這個模組
 // （tests/unit/e2e_layout_settle.test.js 靜態守護）。
 const { waitRectStable, waitScrollStable } = require('../helpers/layout');
-const { pasteText, imeSetComposition, imeCommit } = require('../helpers/real_input');
+const {
+  pasteText,
+  imeSetComposition,
+  imeCommit,
+  nextFrames,
+} = require('../helpers/real_input');
 
 const nav = loadCassette('cchat-list-nav');
 const prompt = loadCassette('cchat-list-prompt');
@@ -132,14 +137,21 @@ async function cursorRowInViewport(page) {
 }
 
 async function waitState(page, pred, timeout = 15000) {
-  const deadline = Date.now() + timeout;
   let last = null;
-  while (Date.now() < deadline) {
-    last = await dumpListState(page);
-    if (pred(last)) return last;
-    await page.waitForTimeout(200);
+  try {
+    await expect
+      .poll(
+        async () => {
+          last = await dumpListState(page);
+          return pred(last);
+        },
+        { timeout, intervals: [100, 200] }
+      )
+      .toBe(true);
+  } catch {
+    throw new Error('waitState 超时：' + JSON.stringify(last));
   }
-  throw new Error('waitState 超时：' + JSON.stringify(last));
+  return last;
 }
 
 // 门控机制 smoke：不开 list 好读，直接用键盘 / conn.send 触发
@@ -381,9 +393,10 @@ test.describe('文章列表好读模式（离线）', () => {
       // ① CapsLock / F2：完全无作用（不切原生、不送 byte、不动选取）。
       for (const k of ['CapsLock', 'F2']) {
         await page.keyboard.press(k);
-        await page.waitForTimeout(200);
       }
-      const dead = await dumpListState(page);
+      // 柵欄＝佇列清空：按鍵若排了任何指令，是在 keydown 裡同步入列的，queueIdle
+      // 要等它真的送完才成立 ⇒ 讀到的 sentCount 不會是「還沒送」的假 0。
+      const dead = await waitState(page, (x) => x.queueIdle);
       expect(dead.state).toBe('active');
       expect(dead.renderMode).toBe('buffer'); // 画面仍是好读视窗，不是 server 镜像
       expect(dead.sentCount).toBe(before.sentCount);
@@ -435,8 +448,8 @@ test.describe('文章列表好读模式（离线）', () => {
       // ① Shift+Insert 本身：不送 byte、不转态（旧码会送 \x1b[2~ 并切原生）。
       await page.locator('#t').focus();
       await page.keyboard.press('Shift+Insert');
-      await page.waitForTimeout(300);
-      const afterKey = await dumpListState(page);
+      // 柵欄同 ①：按鍵排進佇列的指令要等它送完 queueIdle 才成立。
+      const afterKey = await waitState(page, (x) => x.queueIdle);
       expect(afterKey.sentCount).toBe(before.sentCount);
       expect(afterKey.state).toBe('active');
       expect(afterKey.renderMode).toBe('buffer');
@@ -484,7 +497,7 @@ test.describe('文章列表好读模式（离线）', () => {
       await page.locator('#t').focus();
       for (let i = 0; i < 3; i++) {
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(50);
+        await page.waitForTimeout(50); // sleep-ok: 按鍵節奏（模擬人手連按），不是等待
       }
       // 游标已本地移动（即使 demand 还在途）。
       const after = await waitState(page, (x) => x.selectedNum === before.selectedNum - 3);
@@ -578,7 +591,9 @@ test.describe('文章列表好读模式（离线）', () => {
         const v = document.querySelector('#mainContainer .listBodyView');
         v.scrollTop = v.scrollHeight;
       });
-      await page.waitForTimeout(300);
+      // scroll 事件在下一幀的 scroll steps 派發（先於 rAF callback）⇒ 等過一幀，
+      // 捲動 handler 排的 demand 已入列，下面的 queueIdle 才不會在它入列前就成立。
+      await nextFrames(page);
       const grown = await waitState(page, (x) => x.queueIdle, 15000);
       expect(grown.state).toBe('active'); // 捲動零 byte、不轉態
       expect(await page.evaluate(() => window.__replay.fed)).toBeGreaterThanOrEqual(
@@ -904,7 +919,6 @@ test.describe('文章列表好读模式（离线）', () => {
       // 不足一页 → demand-up 送「锚定 jump + PgUp」对（精确序号门控）。
       const fedBefore = await page.evaluate(() => window.__replay.fed);
       await page.keyboard.press('PageUp');
-      await page.waitForTimeout(300);
       // 游标 = 视口第一列（PgUp 以視口頂為基準，游標落在新頁頂）。
       await page.waitForFunction(() => {
         const v = document.querySelector('#mainContainer .listBodyView');

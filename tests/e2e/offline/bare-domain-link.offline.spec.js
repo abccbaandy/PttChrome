@@ -124,6 +124,7 @@ test.describe('裸網域自動連結（離線重放）', () => {
     await replayCassette(page, cassette, { easyReading: false });
 
     await writeRow(page, 'go indiegametw.com now');
+    // sleep-ok: 證明「沒有推論」的觀察窗（AI 推論鏈沒有對外的 idle 訊號；要拔掉得先在產品端加探針）
     await page.waitForTimeout(1500); // 給「若真有推論早該回來」的餘裕
     await expect(page.locator('a.bareDomainLink')).toHaveCount(1);
     expect(await page.evaluate(() => window.__lmPrompts || 0)).toBe(0);
@@ -144,6 +145,7 @@ test.describe('裸網域自動連結（離線重放）', () => {
     await replayCassette(page, cassette, { easyReading: false });
 
     await writeRow(page, 'go indiegametw.com now');
+    // sleep-ok: 證明「沒有推論」的觀察窗（AI 推論鏈沒有對外的 idle 訊號；要拔掉得先在產品端加探針）
     await page.waitForTimeout(1500); // 給「就算真有推論也早該回來」的餘裕
     await expect(page.locator('a.bareDomainLink')).toHaveCount(1);
   });

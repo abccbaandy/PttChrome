@@ -541,8 +541,15 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await expect
       .poll(() => page.evaluate(() => window.__svgDown))
       .toEqual({ trusted: true, svgClass: true });
-    await page.waitForTimeout(50);
-    expect(errors, errors.join('\n')).toHaveLength(0);
+    // 柵欄：pageerror 經 CDP 依序送回 Node。自己丟一個記號錯誤，等它到了，前面那次
+    // mousedown 若有 throw 必然已經先到 ⇒ 錯誤清單必須**恰好**只有記號。
+    await page.evaluate(() =>
+      setTimeout(() => {
+        throw new Error('e2e-pageerror-fence');
+      })
+    );
+    await expect.poll(() => errors.length).toBeGreaterThan(0);
+    expect(errors, errors.join('\n')).toEqual(['e2e-pageerror-fence']);
   });
 
   // 新功能：主題切換（PrefModal 外觀區 SegmentedControl）實際改變 color scheme。

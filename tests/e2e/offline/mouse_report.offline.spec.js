@@ -29,6 +29,11 @@ async function feedRaw(page, bytes) {
   await page.evaluate((b) => window.__app.onData(b), bytes);
 }
 
+// 一次左鍵點擊「處理完了」的訊號：滑鼠瀏覽開著 ⇒ mousedown 必立 dblclickTimer，
+// 回報／瀏覽指令都在 mousedown～click 的派發內同步送出 ⇒ timer 清空時早已落地。
+const waitClickSettled = (page) =>
+  page.waitForFunction(() => !window.__app.dblclickTimer, null, { timeout: 5000 });
+
 // 終端機 (col, row) 格子中心的畫面座標（與 mouse.offline.spec.js 同一套）。
 async function cellXY(page, col, row) {
   return page.evaluate(
@@ -84,7 +89,7 @@ test.describe('滑鼠回報給 PTT server（離線重放）', () => {
     await startCapture(page);
     const { x, y } = await cellXY(page, 4, 9);
     await page.mouse.click(x, y);
-    await page.waitForTimeout(100);
+    await waitClickSettled(page);
     expect(await takeCapture(page)).not.toContain('\x1b[<');
   });
 
@@ -98,7 +103,7 @@ test.describe('滑鼠回報給 PTT server（離線重放）', () => {
     await startCapture(page);
     const { x, y } = await cellXY(page, 4, 9);
     await page.mouse.click(x, y);
-    await page.waitForTimeout(100);
+    await waitClickSettled(page);
     expect(await takeCapture(page)).not.toContain('\x1b[<');
   });
 
@@ -113,7 +118,7 @@ test.describe('滑鼠回報給 PTT server（離線重放）', () => {
     await startCapture(page);
     const { x, y } = await cellXY(page, 4, 9);
     await page.mouse.click(x, y);
-    await page.waitForTimeout(100);
+    await waitClickSettled(page);
     expect(await takeCapture(page)).not.toContain('\x1b[<');
   });
 
@@ -143,7 +148,9 @@ test.describe('滑鼠回報給 PTT server（離線重放）', () => {
     await startCapture(page);
     const { x, y } = await cellXY(page, 30, 8);
     await page.mouse.click(x, y, { button: 'right' });
-    await page.waitForTimeout(200);
+    // 柵欄：選單出來了 ⇒ 這次右鍵整組事件已派發完；回報若有，是在 mousedown／mouseup
+    // 裡同步送的，早已落地。
+    await expect(page.locator('.DropdownMenu').first()).toBeVisible();
 
     // 右鍵完全不回報（只回報左鍵）。
     expect(await takeCapture(page)).not.toContain('\x1b[<');

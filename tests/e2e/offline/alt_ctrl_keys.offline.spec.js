@@ -18,9 +18,17 @@ const {
   bootOffline,
   replayListCassette,
 } = require('../helpers/replay');
-const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
+const {
+  startCapture,
+  peekCapture,
+  takeCapture,
+  expectOnlyFence,
+} = require('../helpers/capture');
 
 const list = findCassette('list');
+
+// 否定斷言的對照動作：同一條鍵盤管道上必定會送的一顆（Alt+Q ＝ 0x11）。
+const fenceKey = (page) => () => page.keyboard.press('Alt+KeyQ');
 
 test.describe('Alt ＝ PTT 的 Ctrl（離線重放）', () => {
   if (!list) {
@@ -88,8 +96,7 @@ test.describe('Alt ＝ PTT 的 Ctrl（離線重放）', () => {
     for (const key of ['Alt+ArrowLeft', 'Alt+Digit5', 'Alt+BracketLeft']) {
       await startCapture(page);
       await page.keyboard.press(key);
-      await page.waitForTimeout(30);
-      expect(await takeCapture(page), key).toBe('');
+      await expectOnlyFence(page, fenceKey(page), '', key);
     }
   });
 
@@ -97,7 +104,6 @@ test.describe('Alt ＝ PTT 的 Ctrl（離線重放）', () => {
     test.setTimeout(90000);
     await startCapture(page);
     await page.keyboard.press('Alt+Shift+KeyT');
-    await page.waitForTimeout(30);
-    expect(await takeCapture(page)).toBe('');
+    await expectOnlyFence(page, fenceKey(page), '', 'Alt+Shift+T');
   });
 });

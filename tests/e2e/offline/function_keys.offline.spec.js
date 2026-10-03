@@ -18,7 +18,12 @@ const {
   loadCassette,
   waitScreenSettled,
 } = require('../helpers/replay');
-const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
+const {
+  startCapture,
+  peekCapture,
+  takeCapture,
+  expectOnlyFence,
+} = require('../helpers/capture');
 
 const article = findCassette('article');
 
@@ -382,15 +387,23 @@ test.describe('複合鍵逐鍵可點：文章 footer 的 (X%)（離線重放）'
     const at = await groupStartCol(page);
     expect(at).toBeGreaterThanOrEqual(0);
 
+    // 每一下之後都等 dblclickTimer 清空：350ms 內的下一下會被當成雙擊而整個略過
+    // （App.mouse_down 的 SkipMouseClick）⇒ 不等的話第二個括號根本沒被測到。
+    // 點擊的送出在 mouseup → click 的同一次派發內同步完成，timer 清空時早已落地。
+    const settled = () =>
+      page.waitForFunction(() => !window.__app.dblclickTimer, null, { timeout: 5000 });
+
     await startCapture(page);
     // `(X%)`：`(` 在 at、`)` 在 at+3。
     await clickCell(page, at);
+    await settled();
     await clickCell(page, at + 3);
-    await page.waitForTimeout(250);
+    await settled();
     // 括號留在畫面上當視覺分隔，但**不屬於任何一顆按鈕**：「指哪就觸發該鍵」
     // 不容許把 `(` 或 `)` 算進某一顆的範圍。
     // （這個 describe 關掉了邊緣點擊翻頁，見 openArticle 的說明 ⇒ 底列在這裡
     // 沒有 End 區域，量到的就是「括號自己送不送 byte」。）
-    expect(await takeCapture(page)).toBe('');
+    // 對照組：緊鄰的 `X` 那一格點下去必定送 X ⇒ 同一條點擊管道是活的，記錄恰好只有它。
+    await expectOnlyFence(page, () => clickCell(page, at + 1), 'X', '點括號');
   });
 });

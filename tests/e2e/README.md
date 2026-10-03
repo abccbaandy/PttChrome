@@ -377,6 +377,21 @@ live 測試讀的是**最新文章**，熱門板（C_Chat）的推文會在斷�
 - 舊式「開了發現不合用 → 退回列表 → 往上一篇再試」的重試迴圈（本檔黑名單／pusher 兩案）
   仍在，能動就先不動；新測試一律用上面的選文 helper。
 
+### offline：`waitForTimeout` 一律要具名理由（守護 `tests/unit/e2e_no_bare_sleep.test.js`）
+
+offline spec 的每個 `waitForTimeout` 都要在同行或緊鄰上方註解寫 `sleep-ok: <理由>`，否則 unit 紅。
+合法理由只有：按鍵節奏、找不到 idle 訊號的「沒發生」觀察窗、刻意抽樣中間態、存活型觀察窗。替代品：
+
+| 想等的事 | 用這個 |
+|---|---|
+| 餵畫面後讀畫面 | `helpers/replay.js#waitScreenSettled(page, rows?)` |
+| 動作後讀值 | `expect.poll`／多條斷言包 `expect(async () => {…}).toPass()` |
+| 「這個動作沒送 byte」 | `helpers/capture.js#expectOnlyFence`：之後做一個同管道必送的對照動作，斷言紀錄**恰好**是它 |
+| 左鍵點擊處理完（滑鼠瀏覽開著） | 等 `__app.dblclickTimer` 清空。**連點兩下之間也要等**：350ms 內第二下被當雙擊整個略過 |
+| 列表好讀的按鍵副作用落地 | `waitState(page, x => x.queueIdle)`（指令在 keydown 裡同步入列） |
+| `page.mouse.wheel` 真的派發了 | 自己掛 capture `wheel` listener 計數（`mouse.wheel` 不等派發） |
+| hover／`scrollTop =` 後的 handler 跑了 | `helpers/real_input.js#nextFrames` |
+
 ### 好讀累積與行內預覽的等待（2026-08-29，`easy-reading.spec.js`「自動行內開圖」）
 
 同一條 spec 整輪 live 紅／紅／綠，乾淨樹對照過 ⇒ 不是被測 code，是等待條件在賭：

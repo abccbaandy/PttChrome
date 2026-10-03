@@ -82,6 +82,8 @@ async function dragSelect(page, rect) {
   await page.mouse.down();
   await page.mouse.move(rect.x + rect.width - 1, y, { steps: 12 });
   await page.mouse.up();
+  // sleep-ok: 存活型觀察窗——選取立刻成立，要證的是「之後沒被重繪打斷」；改 poll
+  // 第一下就過、反而變弱（要拔掉需要「重繪已發生」的明確訊號）
   await page.waitForTimeout(150);
 }
 
@@ -152,6 +154,8 @@ test.describe('選取文字（offline）', () => {
 
     const rect = await wordRect(page, WORD);
     await page.mouse.dblclick(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    // sleep-ok: 存活型觀察窗——選取立刻成立，要證的是「之後沒被重繪打斷」；改 poll
+    // 第一下就過、反而變弱（要拔掉需要「重繪已發生」的明確訊號）
     await page.waitForTimeout(150);
 
     const info = await probe(page);
@@ -169,6 +173,8 @@ test.describe('選取文字（offline）', () => {
     const x = rect.x + rect.width / 2;
     const y = rect.y + rect.height / 2;
     await page.mouse.click(x, y, { clickCount: 3 });
+    // sleep-ok: 存活型觀察窗——選取立刻成立，要證的是「之後沒被重繪打斷」；改 poll
+    // 第一下就過、反而變弱（要拔掉需要「重繪已發生」的明確訊號）
     await page.waitForTimeout(150);
 
     const info = await probe(page);

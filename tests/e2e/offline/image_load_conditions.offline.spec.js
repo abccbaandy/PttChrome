@@ -187,6 +187,7 @@ test.describe('行內開圖：圖片載入情境（離線重放）', () => {
         document.querySelector('.main').scrollTop = top;
       }, y);
       // 佔位盒掛上到 <img> 發出請求只要幾幀；圖本身要 5.2 秒。
+      // sleep-ok: 慢圖情境刻意「不等 settle」的抽樣點（要看的正是讀取中的中間態）
       await page.waitForTimeout(500);
       const mid = await outcome(page);
       if (mid.loading > 0) {

@@ -161,6 +161,8 @@ test.describe('推文者高亮（offline）', () => {
 
     await assertUnderRow(page, row);
     await page.mouse.dblclick(row.contentX, row.y);
+    // sleep-ok: 存活型觀察窗——選取立刻成立，要證的是「之後沒被重繪打斷」；改 poll
+    // 第一下就過、反而變弱（要拔掉需要「重繪已發生」的明確訊號）
     await page.waitForTimeout(300);
 
     const info = await selectionInfo(page);

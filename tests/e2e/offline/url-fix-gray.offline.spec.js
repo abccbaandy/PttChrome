@@ -132,6 +132,7 @@ test.describe('URL 修復 gray 候選（離線重放）', () => {
     });
     await replayCassette(page, cassette, { easyReading: false });
     await setupRows(page);
+    // sleep-ok: 證明「沒有推論」的觀察窗（AI 推論鏈沒有對外的 idle 訊號；要拔掉得先在產品端加探針）
     await page.waitForTimeout(1500); // 給「若真有推論早該回來」的餘裕
 
     const hrefs = await fixedHrefs(page);
@@ -155,6 +156,7 @@ test.describe('URL 修復 gray 候選（離線重放）', () => {
     });
     await replayCassette(page, cassette, { easyReading: false });
     await setupRows(page);
+    // sleep-ok: 同上，證明「沒有推論」的觀察窗
     await page.waitForTimeout(1500);
 
     const hrefs = await fixedHrefs(page);

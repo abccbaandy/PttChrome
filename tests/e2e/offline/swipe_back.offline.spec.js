@@ -91,10 +91,15 @@ test.describe('瀏覽器返回 → 左方向鍵（離線重放）', () => {
     test.setTimeout(90000);
     await bootArticle(page, { mouseBackNav: 0, mouseLeftClick: false });
     await page.mouse.click(5, 5);
-    await page.waitForTimeout(200);
+    // 疊 sentinel 是在 window capture 的 pointerdown 裡同步做的（history_back_guard.js
+    // onActivation）⇒ click 回來時要疊早就疊了，不需要再等。
     expect(
       await page.evaluate(() => !!(window.history.state && window.history.state.pttchromeBackGuard))
     ).toBe(false);
+    // 對照組：同一個點擊、開關打開就會疊 ⇒ 上面的 false 不是「點擊根本沒到」。
+    await ptt.applyPrefs(page, { mouseBackNav: 1 });
+    await page.mouse.click(5, 5);
+    await waitOnSentinel(page);
   });
 
   // 回歸鎖（2026-09-05 實機回報：按側鍵／Alt+← 都會被導回文章裡）。

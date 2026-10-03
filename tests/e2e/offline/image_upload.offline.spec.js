@@ -199,9 +199,10 @@ test.describe('圖片上傳（離線）', () => {
 
     await page.locator('#t').focus();
     await page.keyboard.press('Control+v');
-    await page.waitForTimeout(200);
 
-    expect(await page.evaluate(() => window.__lastKeyPrevented)).toBe(false);
+    // 柵欄：null → false 證明這次 keydown 已整個派發完（後掛 listener 排在 app 之後），
+    // app 若要送 ^V 也是在同一次派發裡同步送的 ⇒ 下面的否定斷言不是「還沒送」。
+    await expect.poll(() => page.evaluate(() => window.__lastKeyPrevented)).toBe(false);
     expect(await sentText(page)).not.toContain('');
   });
 

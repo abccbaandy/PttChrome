@@ -16,7 +16,12 @@ const {
   replayListCassette,
   waitScreenSettled,
 } = require('../helpers/replay');
-const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
+const {
+  startCapture,
+  peekCapture,
+  takeCapture,
+  expectOnlyFence,
+} = require('../helpers/capture');
 const { nextFrames } = require('../helpers/real_input');
 // 量座標前一律先等版面停：好讀長頁的行內預覽會在 scrollIntoView 之後才撐高。
 // 判準與 helper 的單一來源在 helpers/layout.js（靜態掃描守護
@@ -51,6 +56,12 @@ const longArticle = findCassettes('article').sort(
 const ARROW_LEFT = '\x1b[D';
 const PAGE_UP = '\x1b[5~';
 const PAGE_DOWN = '\x1b[6~';
+
+// 一次左鍵點擊「處理完了」的訊號：滑鼠瀏覽開著時 mousedown 必立 dblclickTimer，
+// 點擊的送出在 mouseup → click 的同一次派發內同步完成 ⇒ timer 清空時早已落地。
+// 等的是 timer 本身，不是猜一個 > 350ms 的固定值（機器忙時 timer 會晚跑）。
+const waitClickSettled = (page) =>
+  page.waitForFunction(() => !window.__app.dblclickTimer, null, { timeout: 5000 });
 
 // 終端機第 col 欄的畫面 x（取格子中心，避開邊界的 ±0.5 誤差）。
 async function colX(page, col) {
@@ -360,7 +371,7 @@ test.describe('滑鼠（離線重放）', () => {
     await startCapture(page);
     await page.mouse.down();
     await page.mouse.up();
-    await page.waitForTimeout(150);
+    await waitClickSettled(page);
     const sent = await takeCapture(page);
     expect(sent).not.toContain(PAGE_DOWN);
     expect(sent).not.toContain(PAGE_UP);
@@ -495,7 +506,7 @@ test.describe('滑鼠（離線重放）', () => {
     await startCapture(page);
     await page.mouse.down();
     await page.mouse.up();
-    await page.waitForTimeout(150);
+    await waitClickSettled(page);
     expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
   });
 
@@ -510,18 +521,28 @@ test.describe('滑鼠（離線重放）', () => {
       mouseWheel: 1, // 上下頁
     });
 
+    // 中鍵與滾輪的 handler 都是同步送出。中鍵：mouse.up 回來時派發已完成；滾輪：
+    // page.mouse.wheel **不等**事件派發 ⇒ 自己數 wheel 事件真的到了頁面才算做完。
+    await page.evaluate(() => {
+      window.__wheels = 0;
+      window.addEventListener('wheel', () => window.__wheels++, true);
+    });
     const exercise = async () => {
       await startCapture(page);
+      await page.evaluate(() => {
+        window.__wheels = 0;
+      });
       await page.mouse.move(300, 300);
       await page.mouse.down({ button: 'middle' });
       await page.mouse.up({ button: 'middle' });
       await page.mouse.wheel(0, -120);
       await page.mouse.wheel(0, 120);
-      await page.waitForTimeout(200);
-      return takeCapture(page);
+      await expect.poll(() => page.evaluate(() => window.__wheels)).toBe(2);
     };
 
-    expect(await exercise()).toBe('');
+    await exercise();
+    // 對照組：同一個畫面上鍵盤必定送得出去 ⇒ 記帳有接上，且前面若有漏網 byte 會排在它前面。
+    await expectOnlyFence(page, () => page.locator('#t').press('x'), 'x', '總開關關閉');
 
     // 關閉時 mouse_scroll 是裸 return（不 preventDefault）＝把滾輪交還瀏覽器。
     // 前提是原生模式根本沒有可捲距離，否則畫面會被捲走。
@@ -538,10 +559,13 @@ test.describe('滑鼠（離線重放）', () => {
 
     // 打開總開關後兩者都活過來
     await ptt.applyPrefs(page, { useMouseBrowsing: true });
-    const on = await exercise();
-    expect(on).toContain(ARROW_LEFT); // 中鍵
-    expect(on).toContain(PAGE_UP);
-    expect(on).toContain(PAGE_DOWN);
+    await exercise();
+    await expect(async () => {
+      const on = await peekCapture(page);
+      expect(on).toContain(ARROW_LEFT); // 中鍵
+      expect(on).toContain(PAGE_UP);
+      expect(on).toContain(PAGE_DOWN);
+    }).toPass();
   });
 
   test('好讀長頁捲到中段後，左側帶仍覆蓋整個視窗高度且點擊仍退出', async ({ page }) => {
@@ -779,9 +803,7 @@ test.describe('滑鼠（離線重放）', () => {
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
-      await page.waitForFunction(() => !window.__app.dblclickTimer, null, {
-        timeout: 5000,
-      });
+      await waitClickSettled(page);
       return takeCapture(page);
     };
 

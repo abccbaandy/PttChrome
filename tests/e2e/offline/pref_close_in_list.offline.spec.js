@@ -91,6 +91,8 @@ test.describe('列表好读：关设定页（离线）', () => {
       await page.evaluate(() =>
         window.__app.switchToEasyReadingMode(window.__app.view.useEasyReadingMode)
       );
+      // sleep-ok: 證明「關框後狀態不轉移」的觀察窗（^L 回應→settle→ADOPT 的整條鏈沒有
+      // 單一 idle 訊號；^L 本身是同步送出，下面另有肯定斷言）
       await page.waitForTimeout(400);
 
       const after = await dump(page);

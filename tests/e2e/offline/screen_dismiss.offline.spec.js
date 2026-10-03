@@ -17,6 +17,7 @@ const {
   feedRaw,
   findCassette,
   replayCassette,
+  waitScreenSettled,
 } = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const { nextFrames } = require('../helpers/real_input');
@@ -87,6 +88,13 @@ async function clickCell(page, col, row) {
   const { x, y } = await cellXY(page, col, row);
   await page.mouse.click(x, y);
 }
+
+// 一次點擊「處理完了」的訊號：滑鼠瀏覽開著 ⇒ mousedown 必立 dblclickTimer，點擊的
+// 送出在 mouseup → click 的同一次派發內同步完成 ⇒ timer 清空時早已落地。
+// 連點兩下之間**也必須**等它：350ms 內的第二下會被當成雙擊而整個略過
+// （App.mouse_down 的 SkipMouseClick），等於沒測到。
+const waitClickSettled = (page) =>
+  page.waitForFunction(() => !window.__app.dblclickTimer, null, { timeout: 5000 });
 
 async function boot(page, prefs) {
   await bootOffline(page, ptt);
@@ -168,7 +176,7 @@ test.describe('點空白處關框（離線合成畫面）', () => {
 
     await startCapture(page);
     await clickCell(page, 40, 23);
-    await page.waitForTimeout(200);
+    await waitClickSettled(page);
     // 那一列是使用者正在打的字（pressanykey 的橫幅也在那一列）。
     expect(await takeCapture(page)).toBe('');
   });
@@ -182,8 +190,9 @@ test.describe('點空白處關框（離線合成畫面）', () => {
 
     await startCapture(page);
     await clickCell(page, 40, 10);
+    await waitClickSettled(page);
     await clickCell(page, 40, 5);
-    await page.waitForTimeout(250);
+    await waitClickSettled(page);
     // 沒有「安全鍵」可送：Ctrl-C 在文章列表會清標記清單（read.c:950）、
     // 空白鍵在文章裡是翻頁。判不出框就必須什麼都不做。
     expect(await takeCapture(page)).toBe('');
@@ -198,7 +207,7 @@ test.describe('點空白處關框（離線合成畫面）', () => {
 
     await startCapture(page);
     await clickCell(page, 40, 10);
-    await page.waitForTimeout(200);
+    await waitClickSettled(page);
     expect(await takeCapture(page)).toBe('');
   });
 
@@ -259,7 +268,8 @@ test.describe('輸入欄開著時不畫功能鍵按鈕（離線重放）', () =>
         '\x1b[m\x1b[24;13H'
     );
     await page.waitForFunction(() => window.__app.buf.isCursorOnInputField());
-    await page.waitForTimeout(250);
+    // 柵欄：這一幀真的畫進 DOM 了（重繪與 settle 都清空，且最後一列已是新提示）。
+    await waitScreenSettled(page, { 23: '確定' });
 
     // 點 `Y` 只會把字打進欄位、不會送出 ⇒ 這種畫面一顆按鈕都不該有。
     expect(await count()).toBe(0);

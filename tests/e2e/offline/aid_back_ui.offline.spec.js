@@ -108,10 +108,16 @@ test.describe('AID 返回鈕', () => {
     await page.locator('#t').press('a');
     await page.evaluate(() => window.__app.view.onTextInput('測'));
     await page.evaluate(() => window.__app.onPasteDone('#1gIeu-3A'));
-    await page.waitForTimeout(200);
-
-    expect(await page.evaluate(() => window.__sent.join(''))).toBe('');
     // 吞掉不得無聲：每一條都要看得到提示帶。
     await expect(page.locator('.ListHint')).toContainText('AID 跳文中');
+
+    // 對照組（柵欄）：放開閘門後同一條鍵盤管道必定送得出去 ⇒ 記帳有接上；而且前面
+    // 若有漏網的 byte，一定排在它前面 ⇒ 整份記錄必須**恰好**是這一顆。
+    await page.evaluate(() => {
+      window.__app.aidNavigation.active = false;
+    });
+    await page.locator('#t').press('b');
+    await expect.poll(() => page.evaluate(() => window.__sent.join(''))).toContain('b');
+    expect(await page.evaluate(() => window.__sent.join(''))).toBe('b');
   });
 });

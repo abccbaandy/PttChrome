@@ -36,14 +36,21 @@ async function dumpListState(page) {
 }
 
 async function waitState(page, pred, timeout = 15000) {
-  const deadline = Date.now() + timeout;
   let last = null;
-  while (Date.now() < deadline) {
-    last = await dumpListState(page);
-    if (pred(last)) return last;
-    await page.waitForTimeout(200);
+  try {
+    await expect
+      .poll(
+        async () => {
+          last = await dumpListState(page);
+          return pred(last);
+        },
+        { timeout, intervals: [100, 200] }
+      )
+      .toBe(true);
+  } catch {
+    throw new Error('waitState 逾時：' + JSON.stringify(last));
   }
-  throw new Error('waitState 逾時：' + JSON.stringify(last));
+  return last;
 }
 
 // 進板 → 開列表好讀（不預讀，序列＝畫面那一頁 ⇒ 不必捲動就點得到）。
