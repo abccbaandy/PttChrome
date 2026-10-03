@@ -768,16 +768,20 @@ test.describe('滑鼠（離線重放）', () => {
         };
       });
 
-    // 連續點擊之間**必須等超過 350ms**：mouse_down 在 dblclickTimer 還活著時會立
+    // 連續點擊之間**必須等雙擊窗口關閉**：mouse_down 在 dblclickTimer 還活著時會立
     // SkipMouseClick（雙擊選詞不可以順便翻兩頁，見 App.setDblclickTimer）。少等的話
-    // 第二下之後全部被吞掉，看起來像功能壞了。
+    // 第二下之後全部被吞掉，看起來像功能壞了。等的是 timer 本身清空，不是猜一個
+    // 「> 350ms」的固定值：機器忙時 timer 會晚於 350ms 才跑，固定 sleep 就壓不住。
+    // 點擊的送出在 mouseup → click 的同一次派發內同步完成，窗口關閉時早已落地。
     const clickAt = async (page, x, y) => {
       await page.mouse.move(x, y);
       await nextFrames(page);
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
-      await page.waitForTimeout(400);
+      await page.waitForFunction(() => !window.__app.dblclickTimer, null, {
+        timeout: 5000,
+      });
       return takeCapture(page);
     };
 

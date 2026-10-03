@@ -210,6 +210,9 @@ test.describe('deep link', () => {
     await expect.poll(() => connectState(page)).toBe(1);
     const baseTitle = await page.title();
     expect(baseTitle).not.toBe('');
+    // 「沒排程」用假時鐘快轉證明（決定性、不必真的等 3 秒）。開機之後才裝：boot
+    // 鏈的 timer 照真時間跑，只有之後才建立的 setInterval 歸假時鐘管。
+    await page.clock.install();
 
     expect(
       await page.evaluate(
@@ -221,8 +224,18 @@ test.describe('deep link', () => {
 
     // 橫幅照出（不受任何 gate 控制）。
     await expect(page.locator('.ListHint')).toContainText(AID);
-    // 標題閃爍每 1500ms 一次；等過兩個週期確認它真的沒被排程。
-    await page.waitForTimeout(3200);
+    // 標題閃爍每 1500ms 一次；快轉兩個多週期確認它真的沒被排程。
+    await page.clock.runFor(3200);
+    expect(await page.title()).toBe(baseTitle);
+
+    // 對照組：同一個假時鐘下，真的排了閃爍就會在一個週期內換標題 ⇒ 上面的「沒動」
+    // 不是因為假時鐘沒接上 app 的 setInterval 而假綠。
+    await page.evaluate(() =>
+      window.__app.view.showBackgroundNotification({ title: 't', titleText: 'FLASH' })
+    );
+    await page.clock.runFor(1600);
+    expect(await page.title()).toBe('FLASH');
+    await page.evaluate(() => window.__app.view.stopTitleFlash());
     expect(await page.title()).toBe(baseTitle);
     expect(errors).toEqual([]);
   });

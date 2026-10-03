@@ -30,10 +30,9 @@
 - `offline/selection.offline.spec.js`：`dragSelect` 收尾、雙擊、三擊後各 150ms
 - `offline/pusher_highlight.offline.spec.js`：雙擊推文列選字不被高亮重繪打斷
 
-## 第 4 類：時間語意本身
-可改用 Playwright `page.clock` 快轉（更快、決定性），不是 flaky 來源。
-- `offline/deep_link.offline.spec.js`：3200ms＝兩個標題閃爍週期，證明沒排程
-- `offline/mouse.offline.spec.js#clickAt`：400ms＞dblclickTimer 350ms（連點間隔）
+## 時間語意的處理法（第 4 類已完成，供第 2 類參考）
+- 證明「沒排程」→ 開機後 `page.clock.install()` ＋ `runFor`，並在同一假時鐘下放一個對照組證明時鐘有接上（`offline/deep_link.offline.spec.js`「分頁已在前景」）。開機前裝會連 boot 鏈的 timer 一起凍住。
+- 等某個 app 內 timer 到期 → `waitForFunction` 等該 timer 本身清空，不猜固定毫秒（`offline/mouse.offline.spec.js#clickAt` 等 `__app.dblclickTimer`）。
 
 ## 其他（非 sleep-as-wait）
 - 輪詢迴圈內的間隔：`easy-reading-list` 與 `list_mark_read` 的 `waitState`（200ms）
