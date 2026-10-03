@@ -8,6 +8,7 @@ import {
   parseFeed,
   isOfficialAnnouncement,
   parseArticle,
+  stripTags,
   parseMarker,
   renderMarker,
   renderIssueBody,
@@ -130,6 +131,15 @@ describe("parseArticle", () => {
 
   test("找不到 main-content → FetchError", () => {
     expect(() => parseArticle("<html>over18</html>")).toThrow(FetchError);
+  });
+});
+
+describe("stripTags", () => {
+  test("巢狀／交錯的 tag 片段剝完不留任何 tag", () => {
+    for (const s of ["a<scr<b>ipt>b", "<<script>script>x", "<div><span>t</span></div>"]) {
+      expect(stripTags(s)).not.toMatch(/<[^>]*>/);
+    }
+    expect(stripTags("<div><span>t</span></div>")).toBe("t");
   });
 });
 

@@ -66,6 +66,18 @@ export function decodeEntities(s) {
   });
 }
 
+// 剝到穩定為止：單輪剝除遇到巢狀／殘缺 tag 可能留下新的 tag 片段
+// （CodeQL js/incomplete-multi-character-sanitization）。最終輸出另有 escapeHtml 把關。
+export function stripTags(s) {
+  let prev;
+  let out = String(s);
+  do {
+    prev = out;
+    out = out.replace(/<[^>]*>/g, "");
+  } while (out !== prev);
+  return out;
+}
+
 const tagText = (xml, tag) => {
   const m = xml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`));
   return m ? decodeEntities(m[1]).trim() : "";
@@ -113,13 +125,14 @@ export function parseArticle(html) {
   const sig = raw.indexOf("※ 發信站");
   if (sig >= 0) raw = raw.slice(0, sig);
   const text = decodeEntities(
-    raw
-      .replace(
-        /<span class="article-meta-tag">([^<]*)<\/span><span class="article-meta-value">([^<]*)<\/span>/g,
-        (_, k, v) => `${k}  ${v}`,
-      )
-      .replace(/<\/div>/g, "\n")
-      .replace(/<[^>]*>/g, ""),
+    stripTags(
+      raw
+        .replace(
+          /<span class="article-meta-tag">([^<]*)<\/span><span class="article-meta-value">([^<]*)<\/span>/g,
+          (_, k, v) => `${k}  ${v}`,
+        )
+        .replace(/<\/div>/g, "\n"),
+    ),
   )
     .split("\n")
     .map((l) => l.replace(/\s+$/, ""));

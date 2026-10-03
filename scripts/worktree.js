@@ -22,11 +22,11 @@ function isLinkedWorktreeGitFile(content) {
   return !!m && /[\\/]worktrees[\\/][^\\/]+[\\/]?$/.test(m[1]);
 }
 
+// 直接讀、不先 stat：先 stat 再讀是 TOCTOU（CodeQL js/file-system-race）。
+// `.git` 是資料夾（主目錄）時 readFileSync 丟 EISDIR，不存在丟 ENOENT ⇒ 一律 null。
 function readGitFile(root) {
   try {
-    const p = path.join(root, '.git');
-    if (!fs.statSync(p).isFile()) return null;
-    return fs.readFileSync(p, 'utf8');
+    return fs.readFileSync(path.join(root, '.git'), 'utf8');
   } catch (e) {
     return null;
   }
@@ -67,6 +67,7 @@ module.exports = {
   ALLOW_ENV,
   isLinkedWorktreeGitFile,
   isLinkedWorktree,
+  readGitFile,
   isBlocked,
   worktreeBlockMessage,
   assertNotWorktree,

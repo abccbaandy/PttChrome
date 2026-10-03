@@ -8,10 +8,13 @@
 //   3. SessionEnd hook 只殺自己 checkout 的 dev server（--own），不殺 8080 上別人的。
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   ALLOW_ENV,
   isLinkedWorktreeGitFile,
+  isLinkedWorktree,
+  readGitFile,
   isBlocked,
   worktreeBlockMessage,
   unitLimits,
@@ -34,6 +37,34 @@ describe("isLinkedWorktreeGitFile", () => {
   test("主目錄（.git 是資料夾 ⇒ 讀不到內容）不算", () => {
     expect(isLinkedWorktreeGitFile(null)).toBe(false);
     expect(isLinkedWorktreeGitFile("")).toBe(false);
+  });
+});
+
+describe("readGitFile／isLinkedWorktree", () => {
+  const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "wt-guard-"));
+
+  test("`.git` 是資料夾（主目錄）⇒ null，不是 worktree", () => {
+    const d = tmp();
+    fs.mkdirSync(path.join(d, ".git"));
+    expect(readGitFile(d)).toBe(null);
+    expect(isLinkedWorktree(d)).toBe(false);
+  });
+
+  test("`.git` 不存在 ⇒ null", () => {
+    expect(readGitFile(tmp())).toBe(null);
+  });
+
+  test("`.git` 是指向 worktrees 的檔案 ⇒ 是 worktree", () => {
+    const d = tmp();
+    fs.writeFileSync(path.join(d, ".git"), "gitdir: /repo/.git/worktrees/feat-a\n");
+    expect(readGitFile(d)).toContain("gitdir:");
+    expect(isLinkedWorktree(d)).toBe(true);
+  });
+
+  test("不先 stat 再讀（CodeQL js/file-system-race）", () => {
+    const src = read("scripts/worktree.js");
+    const fn = src.slice(src.indexOf("function readGitFile"), src.indexOf("function isLinkedWorktree("));
+    expect(fn).not.toMatch(/statSync|existsSync/);
   });
 });
 
