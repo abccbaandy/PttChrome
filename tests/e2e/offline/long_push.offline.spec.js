@@ -10,7 +10,7 @@
 //   - 取消送出 Ctrl-C 收尾
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw } = require('../helpers/replay');
+const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
 const {
   rightClickPlainText,
   imeSetComposition,
@@ -59,7 +59,7 @@ async function drawRows(page, rows) {
       data += '\x1b[' + (Number(k) + 1) + ';1H' + u2b(map[k]);
     window.__app.onData(data);
   }, rows);
-  await page.waitForTimeout(300);
+  await waitScreenSettled(page, rows);
 }
 
 // 完整的文章畫面（標頭＋網址列＋pmore 狀態列）。
@@ -127,7 +127,7 @@ async function drawBoardList(page, rows, cursorRow) {
     },
     { rows, curY: 3 + cursorRow }
   );
-  await page.waitForTimeout(300);
+  await waitScreenSettled(page, { 2: '編號', 23: '文章選讀' });
 }
 
 async function drawLastRow(page, text) {
@@ -149,7 +149,7 @@ async function drawLastRow(page, text) {
     window.__app.onData('\x1b[2J\x1b[24;1H' + u2b(s));
   }, text);
   // settle 是 50ms 的安靜窗，等它 dispatch 之後 CommandQueue 才判得到這一幀。
-  await page.waitForTimeout(300);
+  await waitScreenSettled(page, { 23: text });
 }
 
 async function collectSent(page) {
@@ -747,7 +747,7 @@ test.describe('長推文一鍵發送（離線）', () => {
         },
         { rows: { 0: ARTICLE_HEADER, 1: ARTICLE_TITLE, 20: ARTICLE_URL }, footer }
       );
-      await page.waitForTimeout(300);
+      await waitScreenSettled(page, { 0: ARTICLE_HEADER, 23: footer });
     };
     const footerAt = (page1, page2, pct, start, end) =>
       `  瀏覽 第 ${page1}/${page2} 頁 (${String(pct).padStart(3)}%)  ` +

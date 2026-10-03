@@ -9,7 +9,7 @@
 //   - 點通知卡的「開啟上傳紀錄」不會關掉 modal（那是另一個 React root，對 Modal
 //     而言算「點外面」，closeOnClickOutside 沒關掉就整段稿子沒了）
 const { test, expect } = require('@playwright/test');
-const { installReplay, waitConnected } = require('../helpers/replay');
+const { installReplay, waitConnected, waitScreenSettled } = require('../helpers/replay');
 const { rightClickPlainText, dragFiles } = require('../helpers/real_input');
 
 // 文章畫面（pmore 狀態列）＝右鍵選單出現「長推文一鍵發送」的前提
@@ -85,16 +85,7 @@ async function drawRows(page, rows) {
       data += '\x1b[' + (Number(k) + 1) + ';1H' + u2b(map[k]);
     window.__app.onData(data);
   }, rows);
-  // 等到這一幀真的生效：每列字都進了 buf，而且 30ms debounce 的 notify 已經跑完
-  // （pageState、畫面、狀態機的反應都在 notify 裡）。固定 sleep 在 renderer 忙的時候
-  // 不夠，pageState 還停在上一幀。
-  await page.waitForFunction((map) => {
-    const buf = window.__app.buf;
-    if (buf.timerUpdate) return false;
-    return Object.keys(map).every((k) =>
-      buf.getRowText(Number(k), 0, buf.cols).includes(map[k].trim())
-    );
-  }, rows);
+  await waitScreenSettled(page, rows);
 }
 
 const drawArticle = (page) =>
