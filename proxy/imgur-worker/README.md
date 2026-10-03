@@ -39,6 +39,9 @@ GET|HEAD  https://<worker>/catbox/<name>.<jpg|jpeg|png|gif|webp>
   守護 `test/path.test.js`。路徑刻意以圖片副檔名結尾（主專案 offline e2e 的攔截層靠副檔名接住請求）。
 - **回源必帶 User-Agent**（`UPSTREAM_UA`）：catbox 對無 UA 的請求直接斷線 ⇒ Cloudflare 回 520 ⇒
   全數 fail-open。守護 `test/fetch.test.js`。twimg／catbox 量測見 research doc 文末兩節。
+- **twimg `orig` 只有原始上傳格式，且只有 jpg／png 兩種**（其他尺寸才轉檔）：推文寫 `.jpg` 但原圖是
+  png 時 `format=jpg&name=orig` 回 404。`orig` 回 404 時依序換集合內其他格式回源，快取在原路徑下
+  （`src/index.js#twimgAltOrigins`）；429／5xx 不換。前端對應正規化在 `src/js/image_proxy.js#twimgOrigFormat`。守護 `test/fetch.test.js`「twimg orig 格式猜錯」。
 - **驗證新路由不必動 prod**：`npx wrangler dev --remote` 跑在 Cloudflare 邊緣（本機 localhost 轉送），
   回源行為與 prod 相同。
 

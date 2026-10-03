@@ -84,6 +84,13 @@ export const imgurCandidates = (id, exts, config) =>
 const RE_TWIMG_ID = /^[A-Za-z0-9_-]{1,32}$/;
 const TWIMG_EXT = new Set(["jpg", "png", "webp"]);
 
+// twimg `name=orig` 只提供**原始上傳格式**，而原始格式只有 jpg／png 兩種（實測 jpeg／webp／
+// gif／avif 搭 orig 一律 404，`format=jpeg` 連 large 都 404）。推文網址的副檔名是貼文者寫的，
+// 不代表原始格式 ⇒ 一律正規化到這兩者之一：明寫 png 才是 png，其餘（含缺省）都當 jpg。
+// 猜錯的那一半由後面的 `.png:orig` 直連候選與 Worker 的換格式回源
+// （proxy/imgur-worker/src/index.js#twimgAltOrigins）接住。
+export const twimgOrigFormat = (ext) => ((ext || "").toLowerCase() === "png" ? "png" : "jpg");
+
 // 現行直連候選（:orig → .png:orig → :large → 無尺寸），順序即整合前的 srcset。
 export const twimgDirectCandidates = (id, ext) => {
   const base = `https://pbs.twimg.com/media/${id}`;

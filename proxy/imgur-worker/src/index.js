@@ -48,6 +48,22 @@ export const upstreamFor = (pathname) => {
   return null;
 };
 
+// twimg `name=orig` 只提供**原始上傳格式**，原始格式只有 jpg／png 兩種（其他尺寸才會轉檔；
+// jpeg／webp／gif／avif 搭 orig 實測一律 404）。PTT 推文裡的副檔名是貼文者寫的，不代表原始
+// 格式 ⇒ 原圖 png 時 `format=jpg&name=orig` 回 404（實測 HTboysvbgAAWRv5）。orig 404 時依序
+// 換成集合裡其他格式回源，結果快取在原請求路徑下（下次直接命中）。只對 404 換格式：
+// 429／5xx 不是格式問題，重打只會加重上游。前端的對應正規化見 src/js/image_proxy.js#twimgOrigFormat。
+const TWIMG_ORIG_FORMATS = ["jpg", "png"];
+
+// 回傳「換格式後的回源位址」清單（依序嘗試），不適用回空陣列。
+export const twimgAltOrigins = (pathname) => {
+  const m = RE_TWIMG_ASSET.exec(pathname);
+  if (!m || m[1] !== "orig") return [];
+  return TWIMG_ORIG_FORMATS.filter((f) => f !== m[3]).map(
+    (f) => `https://pbs.twimg.com/media/${m[2]}?format=${f}&name=orig`,
+  );
+};
+
 const IMMUTABLE = "public, max-age=31536000, immutable";
 
 const UPSTREAM_UA = "ptt-image-proxy/1.0 (+https://github.com/abccbaandy/PttChrome)";
@@ -281,9 +297,8 @@ export default {
       );
     }
 
-    let upstream;
-    try {
-      upstream = await fetch(origin, {
+    const fetchUpstream = (target) =>
+      fetch(target, {
         method: request.method,
         // imgur 對 Referer: *.ptt.cc 直接 403（見 ImagePreviewer 的 needsReferer）。
         // Worker 回源時完全不帶 referer，順帶把前端那組 referer workaround 也解掉。
@@ -296,6 +311,16 @@ export default {
         },
         redirect: "follow",
       });
+
+    let upstream;
+    try {
+      upstream = await fetchUpstream(origin);
+      if (upstream.status === 404) {
+        for (const alt of twimgAltOrigins(url.pathname)) {
+          upstream = await fetchUpstream(alt);
+          if (upstream.status !== 404) break;
+        }
+      }
     } catch (e) {
       return redirectToOrigin(origin);
     }

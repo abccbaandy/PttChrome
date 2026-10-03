@@ -15,6 +15,7 @@ import {
   getImageProxyConfig,
   imgurCandidates,
   twimgCandidates,
+  twimgOrigFormat,
   catboxCandidates,
 } from "../js/image_proxy";
 import { tenorResolveUrl, tenorMediaDescriptor } from "../js/tenor";
@@ -592,8 +593,7 @@ const imageUrlResolvers = [
     },
     request(src) {
       const [, id, dotExt, queryExt] = this.regex.exec(src);
-      let ext = (dotExt || queryExt || "jpg").toLowerCase();
-      if (ext === "webp") ext = "jpg";
+      const ext = twimgOrigFormat(dotExt || queryExt);
       const srcset = twimgCandidates(id, ext, getImageProxyConfig());
       return Promise.resolve({ type: "image", src: srcset[0], srcset });
     },

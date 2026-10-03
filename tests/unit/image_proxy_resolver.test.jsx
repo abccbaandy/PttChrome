@@ -50,6 +50,19 @@ describe("代理開啟", () => {
     expect(out.srcset).toContain(`${TW}.png:orig`);
   });
 
+  // twimg `name=orig` 只有原始上傳格式 jpg／png 兩種（`format=jpeg`／`.jpeg` 上游一律 404）
+  // ⇒ 網址寫什麼副檔名都要先正規化到這兩者之一，png 以外一律當 jpg（Worker 404 時會換 png）。
+  test.each([["jpeg"], ["JPEG"], ["webp"], ["gif"]])(
+    "twimg .%s 正規化成 jpg（代理與直連都不送上游不認得的格式）",
+    async (ext) => {
+      expect(await resolve(`${TW}.${ext}`)).toEqual({
+        type: "image",
+        src: `${PROXY}/twimg/orig/HSWhvjqbMAIr5Ux.jpg`,
+        srcset: [`${PROXY}/twimg/orig/HSWhvjqbMAIr5Ux.jpg`, ...TW_DIRECT],
+      });
+    },
+  );
+
   test("catbox 圖：[代理, 原址]", async () => {
     expect(await resolve(`${CB}/rdpjcp.png`)).toEqual({
       type: "image",
