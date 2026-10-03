@@ -10,7 +10,7 @@
 // 本檔同時跑 chromium（offline project）與 firefox（offline-firefox project）。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { installReplay, waitConnected, feedRaw } = require('../helpers/replay');
+const { installReplay, waitConnected, feedRaw, waitScreenSettled } = require('../helpers/replay');
 
 const WORD = 'SELECTSMOKE';
 
@@ -48,7 +48,7 @@ async function boot(page, prefs) {
 
 async function feedLine(page, text) {
   await feedRaw(page, '\x1b[2J\x1b[H' + text);
-  await page.waitForTimeout(200);
+  await waitScreenSettled(page);
 }
 
 // 畫面上那串字的可視矩形（含 .main 的 transform 縮放）。

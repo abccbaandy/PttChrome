@@ -16,6 +16,7 @@ const {
   loadCassette,
   bootOffline,
   replayListCassette,
+  waitScreenSettled,
 } = require('../helpers/replay');
 // 滾輪 smoke 會量 rect 又會動指標 ⇒ 版面穩定契約要求走這個模組
 // （tests/unit/e2e_layout_settle.test.js 靜態守護）。
@@ -399,9 +400,7 @@ test.describe('文章列表好读模式（离线）', () => {
       );
       const sel = (x) => JSON.stringify([x.selectedNum, x.selectedPinnedKey]);
       await page.keyboard.press('Space');
-      await page.waitForTimeout(300);
-      const down = await dumpListState(page);
-      expect(sel(down)).not.toBe(sel(up)); // 确实翻了（选取往下走）
+      const down = await waitState(page, (x) => sel(x) !== sel(up)); // 确实翻了（选取往下走）
       expect(down.state).toBe('active');
       expect(down.renderMode).toBe('buffer'); // 仍是好读视窗
       expect(down.cursorHidden).toBe(true);
@@ -488,8 +487,7 @@ test.describe('文章列表好读模式（离线）', () => {
         await page.waitForTimeout(50);
       }
       // 游标已本地移动（即使 demand 还在途）。
-      const after = await dumpListState(page);
-      expect(after.selectedNum).toBe(before.selectedNum - 3);
+      const after = await waitState(page, (x) => x.selectedNum === before.selectedNum - 3);
       expect(after.state).toBe('active');
       expect(after.renderMode).toBe('buffer');
       // demand 背景补页最终成功（缓冲往旧成长）。
@@ -821,7 +819,14 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(author).toBeTruthy();
 
       await ptt.applyPrefs(page, { blacklist: author });
-      await page.waitForTimeout(500);
+      await expect
+        .poll(() =>
+          page.evaluate((a) =>
+            Array.from(document.querySelectorAll('#mainContainer [data-type="bbsline"]')).some(
+              (el) => el.textContent.toLowerCase().includes(a)
+            ), author)
+        )
+        .toBe(false);
       const res = await page.evaluate((a) => {
         const lines = Array.from(
           document.querySelectorAll('#mainContainer [data-type="bbsline"]')
@@ -911,9 +916,12 @@ test.describe('文章列表好读模式（离线）', () => {
         return i - 3 - Math.round(v.scrollTop / window.__app.view.chh) === 0;
       });
       const cursorNumBefore = (await dumpListState(page)).selectedNum;
+      // 先等 demand 真的出门：queueIdle／listLen 在 demand 发出之前就可能已经成立，
+      // 单靠下面的 waitState 会在 renderer 忙时抢先返回、读到还没前进的 fed。
+      await expect
+        .poll(() => page.evaluate(() => window.__replay.fed), { timeout: 15000 })
+        .toBeGreaterThan(fedBefore); // demand 确实走了锚定对
       s = await waitState(page, (x) => x.queueIdle && x.listLen > 50, 15000);
-      const fedAfter = await page.evaluate(() => window.__replay.fed);
-      expect(fedAfter).toBeGreaterThan(fedBefore); // demand 确实走了锚定对
       // prepend 之后视口以内容锚定（不变量 6）—— 游标仍停在同一篇、也仍在视口顶，
       // 新页没有把画面往下挤。
       expect((await dumpListState(page)).selectedNum).toBe(cursorNumBefore);
@@ -928,7 +936,7 @@ test.describe('文章列表好读模式（离线）', () => {
         ls._selectedPinnedKey = null;
         ls._forceRedraw();
       }, openNum);
-      await page.waitForTimeout(200);
+      await waitScreenSettled(page);
       const rowsBeforeOpen = await dumpScreenRows(page);
 
       // Enter → opening(frozen) → 两段序列化命令 → 文章 → suspended。
@@ -950,7 +958,6 @@ test.describe('文章列表好读模式（离线）', () => {
       expect(s.listLen).toBeGreaterThan(50);
       expect(s.selectedNum).toBe(openNum);
       expect(s.cursorHidden).toBe(true);
-      await page.waitForTimeout(300);
 
       // 视口顶列＝锚（_topNum）那一列，刚读的那篇在视野内。
       // **下面的逐行 diff 抓不到这件事**——全序列渲染后 dumpScreenRows
@@ -961,14 +968,16 @@ test.describe('文章列表好读模式（离线）', () => {
       // 行为看不出差别。那条回归由 unit 守：list_session.test.js
       // 「退文回列表：視野停在使用者自己捲到的位置」＋ render_list_scroll.test.js
       // 的 hasListViewport()。这里守的是「视口位置与锚一致、游标可见」。
-      const topPos = await page.evaluate(() => {
-        const ls = window.__app.listSession;
-        const nums = window.__app.buf.listLineNums || [];
-        return ls._sequence().indexOf(nums.indexOf(ls._topNum));
-      });
-      expect(topPos).toBeGreaterThanOrEqual(0); // 锚没丢
-      expect(await windowTopPos(page)).toBe(topPos);
-      expect(await cursorRowInViewport(page)).not.toBeNull();
+      await expect(async () => {
+        const topPos = await page.evaluate(() => {
+          const ls = window.__app.listSession;
+          const nums = window.__app.buf.listLineNums || [];
+          return ls._sequence().indexOf(nums.indexOf(ls._topNum));
+        });
+        expect(topPos).toBeGreaterThanOrEqual(0); // 锚没丢
+        expect(await windowTopPos(page)).toBe(topPos);
+        expect(await cursorRowInViewport(page)).not.toBeNull();
+      }).toPass();
 
       const rowsAfterRestore = await dumpScreenRows(page);
       // body + footer（rows 3..23）逐行严格相同。两处「原生也会变」的合法差异
@@ -1032,29 +1041,32 @@ test.describe('文章列表好读模式（离线）', () => {
         cursorRowBackground: true,
         mouseBrowsingHighlightColor: 9
       });
-      await page.waitForTimeout(300);
-      const r = await page.evaluate(() => {
-        const rows = Array.from(
-          document.querySelectorAll('#mainContainer [data-type="bbsline"]')
-        );
-        return {
-          curY: window.__app.buf.cur_y,
-          painted: rows
-            .map((el, i) => (el.classList.contains('b9') ? i : -1))
-            .filter((i) => i !== -1)
-        };
-      });
-      expect(r.painted).toEqual([r.curY]);
+      await expect(async () => {
+        const r = await page.evaluate(() => {
+          const rows = Array.from(
+            document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+          );
+          return {
+            curY: window.__app.buf.cur_y,
+            painted: rows
+              .map((el, i) => (el.classList.contains('b9') ? i : -1))
+              .filter((i) => i !== -1)
+          };
+        });
+        expect(r.painted).toEqual([r.curY]);
+      }).toPass();
 
       // 關掉鍵盤底色 → 立即消失（不必等下一次畫面更新）。
       await ptt.applyPrefs(page, { keyboardCursorHighlight: false });
-      await page.waitForTimeout(200);
-      const after = await page.evaluate(
-        () =>
-          document.querySelectorAll('#mainContainer [data-type="bbsline"].b9')
-            .length
-      );
-      expect(after).toBe(0);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              document.querySelectorAll('#mainContainer [data-type="bbsline"].b9')
+                .length
+          )
+        )
+        .toBe(0);
     } catch (e) {
       console.log('--- console tail ---');
       for (const l of logs.slice(-25)) console.log(l);
@@ -1121,18 +1133,20 @@ test.describe('文章列表好读模式（离线）', () => {
 
       // 關掉防誤觸 ⇒ 整列可點、整列上底色（class 回到 bbsline 本身）。
       await ptt.applyPrefs(page, { mouseMisclickGuard: false });
-      await page.waitForTimeout(200);
-      const wholeRow = await page.evaluate(() =>
-        Array.from(
-          document.querySelectorAll('#mainContainer [data-type="bbsline"]')
-        )
-          .map((el, i) => (el.classList.contains('b6') ? i : -1))
-          .filter((i) => i !== -1)
-      );
-      expect(wholeRow).toEqual([await cursorRowIndex(page)]);
+      await expect(async () => {
+        const wholeRow = await page.evaluate(() =>
+          Array.from(
+            document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+          )
+            .map((el, i) => (el.classList.contains('b6') ? i : -1))
+            .filter((i) => i !== -1)
+        );
+        expect(wholeRow).toEqual([await cursorRowIndex(page)]);
+      }).toPass();
       await ptt.applyPrefs(page, { mouseMisclickGuard: true });
-      await page.waitForTimeout(200);
-      expect(await litRows()).toEqual([await cursorRowIndex(page)]);
+      await expect(async () => {
+        expect(await litRows()).toEqual([await cursorRowIndex(page)]);
+      }).toPass();
 
       // 開文目標＝錄製的第三個 jump（cassette 只對這個序號有開文素材）。先把視窗
       // 帶到它附近（純視窗定位，不是本案要測的東西），再用 ↓ 把選取移開兩列 ——
@@ -1149,12 +1163,13 @@ test.describe('文章列表好读模式（离线）', () => {
         ls._selectedPinnedKey = null;
         ls._forceRedraw();
       }, openNum);
-      await page.waitForTimeout(200);
+      await waitScreenSettled(page);
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('ArrowDown');
-      await page.waitForTimeout(300);
-      const beforeClick = await dumpListState(page);
-      expect(beforeClick.selectedNum).not.toBe(openNum);
+      const beforeClick = await waitState(
+        page,
+        (x) => x.queueIdle && x.selectedNum !== openNum
+      );
 
       const rows = await dumpScreenRows(page);
       // 全序列渲染後目標列可能在視口外（body 的 data-row 是絕對序列位置）。
@@ -1297,7 +1312,7 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
       );
       // 原生 prompt 画面已喂入 → 逐键打字（query 门控在 helper 侧累积到 \r）。
       const q = (search.steps.find((st) => st.on === 'query') || {}).query || 'Re';
-      await page.waitForTimeout(300);
+      await waitScreenSettled(page);
       await page.keyboard.type(q, { delay: 30 });
       await page.keyboard.press('Enter');
 

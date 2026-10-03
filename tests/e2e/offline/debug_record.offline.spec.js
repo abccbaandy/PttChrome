@@ -12,6 +12,7 @@ const {
   findCassette,
   bootOffline,
   replayCassette,
+  waitScreenSettled,
 } = require('../helpers/replay');
 const { waitPreviewsSettled, waitScrollStable } = require('../helpers/layout');
 
@@ -21,7 +22,7 @@ const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
 async function openAboutTab(page) {
   await feedRaw(page, '\x1b[2J\x1b[H  DEBUG RECORD TEST LINE  ');
-  await page.waitForTimeout(200);
+  await waitScreenSettled(page);
   await page.locator('#BBSWindow').click({ button: 'right', position: { x: 40, y: 20 } });
   const menu = page.locator('.DropdownMenu').first();
   await expect(menu).toBeVisible();

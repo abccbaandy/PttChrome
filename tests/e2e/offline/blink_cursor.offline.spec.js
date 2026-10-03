@@ -13,7 +13,7 @@
 // —— 印完游標記號後把終端機游標移回同一格。這正是判定依據。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw } = require('../helpers/replay');
+const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
 
 // PTT 畫游標：在第 5 列列首印 '>'，游標停回同一格。
 const LIST_ROW_WITH_CURSOR =
@@ -56,7 +56,7 @@ test.describe('PTT 有游標時隱藏閃爍游標（離線）', () => {
     expect(await ptt.getPref(page, 'autoHideBlinkCursor')).toBe(true);
 
     await feedRaw(page, LIST_ROW_WITH_CURSOR);
-    await page.waitForTimeout(400); // term_buf 的 30ms notify debounce + render flush
+    await waitScreenSettled(page);
     expect(await observeCursor(page)).toEqual(['none']);
   });
 
@@ -69,7 +69,7 @@ test.describe('PTT 有游標時隱藏閃爍游標（離線）', () => {
     });
 
     await feedRaw(page, PLAIN_ROW_NO_CURSOR);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     expect(await observeCursor(page)).toContain('visible');
   });
 
@@ -82,17 +82,17 @@ test.describe('PTT 有游標時隱藏閃爍游標（離線）', () => {
     });
 
     await feedRaw(page, LIST_ROW_WITH_CURSOR);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     expect(await observeCursor(page)).toEqual(['none']);
 
     // 離開列表進到輸入狀態：游標移到空白格 → 閃爍游標回來
     await feedRaw(page, PLAIN_ROW_NO_CURSOR);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     expect(await observeCursor(page)).toContain('visible');
 
     // 再回列表 → 又消失
     await feedRaw(page, LIST_ROW_WITH_CURSOR);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     expect(await observeCursor(page)).toEqual(['none']);
   });
 
@@ -106,7 +106,7 @@ test.describe('PTT 有游標時隱藏閃爍游標（離線）', () => {
     });
 
     await feedRaw(page, LIST_ROW_WITH_CURSOR);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     expect(await observeCursor(page)).toContain('visible');
   });
 });
@@ -146,7 +146,7 @@ test.describe('閃爍相位的省電不變量（離線）', () => {
     });
 
     await feedRaw(page, PLAIN_ROW_NO_CURSOR);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     const seen = await observePhase(page);
     expect(seen.cursor).toEqual(['hidden', 'visible']);
     expect(seen.body).toEqual([false]);
@@ -161,7 +161,7 @@ test.describe('閃爍相位的省電不變量（離線）', () => {
     });
 
     await feedRaw(page, SCREEN_WITH_BLINK_TEXT);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     // 前提：渲染鏈真的掛上了閃爍 class
     expect(await page.evaluate(() => !!document.querySelector('#mainContainer [class*="qq"]'))).toBe(true);
     const seen = await observePhase(page);

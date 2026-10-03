@@ -5,7 +5,7 @@
 //   3) 把任意 bytes 喂进 App.onData 会经 parser→termBuf→<Screen> 渲染到 #mainContainer。
 // 这条永远不需要连真实 PTT，也不依赖任何录制素材。
 const { test, expect } = require('@playwright/test');
-const { installReplay, waitConnected, feedRaw } = require('../helpers/replay');
+const { installReplay, waitConnected, feedRaw, waitScreenSettled } = require('../helpers/replay');
 const { readScreen } = require('../helpers/ptt');
 
 test.describe('离线重放 harness', () => {
@@ -18,7 +18,7 @@ test.describe('离线重放 harness', () => {
 
     // 喂一段最小 ANSI：清屏 + home + 一行可辨识文字。
     await feedRaw(page, '\x1b[2J\x1b[H  HELLO OFFLINE REPLAY  ');
-    await page.waitForTimeout(500);
+    await waitScreenSettled(page);
 
     const screen = await readScreen(page);
     expect(screen).toContain('HELLO OFFLINE REPLAY');

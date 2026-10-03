@@ -7,7 +7,7 @@
 //   - 非輸入狀態下**一個 byte 都不送**（走剪貼簿）——這條若壞掉就是在列表亂按指令
 //   - 多檔一次插入、面板的「插入」鈕走同一條路
 const { test, expect } = require('@playwright/test');
-const { installReplay, waitConnected } = require('../helpers/replay');
+const { installReplay, waitConnected, waitScreenSettled } = require('../helpers/replay');
 const { dragFiles, dropFiles: realDropFiles } = require('../helpers/real_input');
 
 const uploadJson = (id) =>
@@ -80,7 +80,7 @@ async function drawPushPrompt(page) {
     };
     window.__app.onData('\x1b[2J\x1b[24;1H' + u2b('推 testuser: '));
   });
-  await page.waitForTimeout(200);
+  await waitScreenSettled(page);
 }
 
 // 真拖放（CDP Input.dispatchDragEvent，helpers/real_input）：先拖進視窗（遮罩亮），
@@ -124,7 +124,7 @@ test.describe('圖片上傳（離線）', () => {
   test('不在推文列／編輯器時一個 byte 都不送（改走剪貼簿）', async ({ page }) => {
     // 空畫面＝既不是編輯器也不是推文列；送字等於在列表亂按指令。
     await page.evaluate(() => window.__app.onData('\x1b[2J\x1b[H  BOARD LIST  '));
-    await page.waitForTimeout(200);
+    await waitScreenSettled(page);
 
     await dropFiles(page, ['a.png']);
     await releaseDrop(page);

@@ -15,7 +15,7 @@
 //     mouseover/mouseup 永久把焦點搶回隱藏 input #t，只能重整。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { installReplay, installOfflineNetwork, feedRaw } = require('../helpers/replay');
+const { installReplay, installOfflineNetwork, feedRaw, waitScreenSettled } = require('../helpers/replay');
 
 // window.__i18n 是 main.jsx 在 `new App()` **之後**才掛的 e2e 探針，而 page.goto
 // 只等到 load —— 機器忙的時候（整包 offline 一起跑）module script 可能還沒執行完，
@@ -29,7 +29,7 @@ const label = async (page, key) => {
 // #mainContainer 有東西可以按，不需要連線。
 async function openContextMenu(page) {
   await feedRaw(page, '\x1b[2J\x1b[H  OFFLINE CONNECT FAILURE TEST  ');
-  await page.waitForTimeout(200);
+  await waitScreenSettled(page);
   await page.locator('#BBSWindow').click({ button: 'right', position: { x: 40, y: 20 } });
 }
 

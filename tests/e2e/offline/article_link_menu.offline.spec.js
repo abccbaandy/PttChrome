@@ -23,6 +23,7 @@ const {
   bootOffline,
   replayCassette,
   feedRaw,
+  waitScreenSettled,
 } = require('../helpers/replay');
 const { rightClickElement, rightClickPlainText } = require('../helpers/real_input');
 
@@ -55,7 +56,7 @@ async function stubClipboard(page) {
 
 async function setupRows(page) {
   await page.evaluate(() => window.__app.easyReading.enterEasyReading());
-  await page.waitForTimeout(200);
+  await waitScreenSettled(page);
   const { rows, cols } = await page.evaluate(() => ({
     rows: window.__app.buf.rows,
     cols: window.__app.buf.cols,
@@ -68,7 +69,7 @@ async function setupRows(page) {
       at(11, 'url ' + PTT_URL + ' here') +
       `\x1b[${rows};${cols}H`
   );
-  await page.waitForTimeout(800);
+  await waitScreenSettled(page);
 }
 
 // 對某個 <a> 按真右鍵（helpers/real_input：捲進視窗、等版面停、確認底下是它才按）。

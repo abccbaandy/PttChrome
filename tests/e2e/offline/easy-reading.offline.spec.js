@@ -16,6 +16,7 @@ const {
   offlineServedUrls,
   offlineExternalUrls,
   seekInlineMedia,
+  waitScreenSettled,
 } = require('../helpers/replay');
 // 量座標／量媒體之前一律先等版面停（helpers/layout.js 是判準的單一來源）。
 const { waitPreviewsSettled } = require('../helpers/layout');
@@ -399,24 +400,25 @@ test.describe('好读 End 切回原生（离线重放）', () => {
 
     // 触发 End：switchToNativeAtBottom 送 \x1b[4~ → player 喂 'end' step（原生底部画面）。
     await page.evaluate(() => window.__app.easyReading.switchToNativeAtBottom());
-    await page.waitForTimeout(1500);
 
-    const after = await page.evaluate(() => {
-      const a = window.__app;
-      const lr = document.getElementById('easyReadingLastRow');
-      const mc = document.getElementById('mainContainer');
-      return {
-        useEasyReadingMode: a.view.useEasyReadingMode,
-        mcChildren: mc ? mc.childNodes.length : -1,
-        lastRowDisplay: lr ? getComputedStyle(lr).display : 'no-el',
-        screen: mc ? mc.innerText : '',
-      };
-    });
+    await expect(async () => {
+      const after = await page.evaluate(() => {
+        const a = window.__app;
+        const lr = document.getElementById('easyReadingLastRow');
+        const mc = document.getElementById('mainContainer');
+        return {
+          useEasyReadingMode: a.view.useEasyReadingMode,
+          mcChildren: mc ? mc.childNodes.length : -1,
+          lastRowDisplay: lr ? getComputedStyle(lr).display : 'no-el',
+          screen: mc ? mc.innerText : '',
+        };
+      });
 
-    expect(after.useEasyReadingMode).toBe(false); // 切回原生
-    expect(after.mcChildren).toBeLessThanOrEqual(24); // 单页原生 DOM，非好读累积
-    expect(after.screen).toContain('說明'); // 原生状态列
-    expect(after.screen).toContain('100%'); // 在最底
+      expect(after.useEasyReadingMode).toBe(false); // 切回原生
+      expect(after.mcChildren).toBeLessThanOrEqual(24); // 单页原生 DOM，非好读累积
+      expect(after.screen).toContain('說明'); // 原生状态列
+      expect(after.screen).toContain('100%'); // 在最底
+    }).toPass();
   });
 
   // 切原生的**本地保险**：exitEasyReading 不得依赖 ^L 的伺服器往返才收掉长页。
@@ -439,20 +441,21 @@ test.describe('好读 End 切回原生（离线重放）', () => {
       a.sendMachineBytes = () => false;
       a.easyReading.exitEasyReading();
     });
-    await page.waitForTimeout(300);
 
-    const after = await page.evaluate(() => ({
-      useEasyReadingMode: window.__app.view.useEasyReadingMode,
-      startedEasyReading: window.__app.buf.startedEasyReading,
-      // 只数 bbsline：#mainContainer 里还有 previewSpinner 之类的非列节点。
-      rows: document.querySelectorAll('#mainContainer [data-type="bbsline"]').length,
-      scrollTop: window.__app.view.mainDisplay.scrollTop,
-    }));
-    expect(after.useEasyReadingMode).toBe(false);
-    expect(after.rows).toBeLessThanOrEqual(24); // 长页已收回单页原生
-    expect(after.scrollTop).toBe(0);
-    // 列表好读的 engage 闸读这个旗标；留着 true 就是「半永久原生模式」。
-    expect(after.startedEasyReading).toBe(false);
+    await expect(async () => {
+      const after = await page.evaluate(() => ({
+        useEasyReadingMode: window.__app.view.useEasyReadingMode,
+        startedEasyReading: window.__app.buf.startedEasyReading,
+        // 只数 bbsline：#mainContainer 里还有 previewSpinner 之类的非列节点。
+        rows: document.querySelectorAll('#mainContainer [data-type="bbsline"]').length,
+        scrollTop: window.__app.view.mainDisplay.scrollTop,
+      }));
+      expect(after.useEasyReadingMode).toBe(false);
+      expect(after.rows).toBeLessThanOrEqual(24); // 长页已收回单页原生
+      expect(after.scrollTop).toBe(0);
+      // 列表好读的 engage 闸读这个旗标；留着 true 就是「半永久原生模式」。
+      expect(after.startedEasyReading).toBe(false);
+    }).toPass();
   });
 
   // toggle 的另一半：原生模式下再按一次热键切回好读，并倒回文章开头重新累积。
@@ -462,8 +465,9 @@ test.describe('好读 End 切回原生（离线重放）', () => {
     await ptt.applyPrefs(page, { enableEasyReading: true });
     await replayCassette(page, endCassette, { easyReading: true });
     await page.evaluate(() => window.__app.easyReading.switchToNativeAtBottom());
-    await page.waitForTimeout(800);
-    expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(false);
+    await expect.poll(() => page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(false);
+    // 原生底部那一幀（player 喂的 'end' step）落地之后才按热键。
+    await waitScreenSettled(page);
 
     // 断言点是**线路**而不是某个出口函式（2026-09-20）：reenterFromTop 的 Home 是
     // 机器 byte，走 App.sendMachineBytes 而不是 view._send（推导见
@@ -473,15 +477,12 @@ test.describe('好读 End 切回原生（离线重放）', () => {
     // 真键盘：keydown 由浏览器生成，经 #t 的 listener 进 term_view.onKeyDown 的原生分支。
     await page.locator('#t').focus();
     await page.keyboard.press('F8');
-    await page.waitForTimeout(300);
 
-    expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);
     // 在文末按下 → 必须送 Home 倒回第 1 行，否则长页只会有文末那一屏
-    const sent = await page.evaluate(
-      (n) => window.__replay.sent.slice(n).join(''),
-      before
-    );
-    expect(sent).toContain('\x1b[1~');
+    await expect
+      .poll(() => page.evaluate((n) => window.__replay.sent.slice(n).join(''), before))
+      .toContain('\x1b[1~');
   });
 });
 
@@ -913,15 +914,15 @@ test.describe('跨文章自动翻页（离线重放）', () => {
       // 第二轮补送额度用完 ⇒ giveup ⇒ 零送键。
       const openNextArticle = async () => {
         await feedRaw(page, await page.evaluate((b64) => atob(b64), listStart.recv));
-        await page.waitForTimeout(300); // > SETTLE_MS：settle 到列表(2)
+        await waitScreenSettled(page);
         await collect();
         await feedRaw(page, await page.evaluate((b64) => atob(b64), artStart.recv));
-        await page.waitForTimeout(600); // 等快路径 + settle 补送
-        return pagedDownCount();
+        // 快路径 + settle 补送：等到真的送出翻页键（旧 code 是零送键，会逾时）。
+        await expect.poll(pagedDownCount).toBeGreaterThan(0);
       };
 
-      expect(await openNextArticle()).toBeGreaterThan(0); // 第二篇
-      expect(await openNextArticle()).toBeGreaterThan(0); // 第三篇 ← 旧 code 在这里挂
+      await openNextArticle(); // 第二篇
+      await openNextArticle(); // 第三篇 ← 旧 code 在这里挂
       expect(errors).toEqual([]);
     });
   }

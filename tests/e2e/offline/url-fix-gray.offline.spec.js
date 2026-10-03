@@ -20,6 +20,7 @@ const {
   bootOffline,
   replayCassette,
   feedRaw,
+  waitScreenSettled,
 } = require('../helpers/replay');
 
 const cassette = findCassette('article');
@@ -36,7 +37,7 @@ const FIXED_PROSE = 'https://duty.it/';
 // 進好讀 → 一次餵完三列測試內容（＋游標 park）→ 等 accumulate/render flush。
 async function setupRows(page) {
   await page.evaluate(() => window.__app.easyReading.enterEasyReading());
-  await page.waitForTimeout(200);
+  await waitScreenSettled(page);
   const { rows, cols } = await page.evaluate(() => ({
     rows: window.__app.buf.rows,
     cols: window.__app.buf.cols,
@@ -47,7 +48,7 @@ async function setupRows(page) {
     page,
     at(10, PROSE) + at(11, WITH_PATH) + at(12, SPACED) + `\x1b[${rows};${cols}H`
   );
-  await page.waitForTimeout(800);
+  await waitScreenSettled(page);
 }
 
 const fixedHrefs = (page) =>

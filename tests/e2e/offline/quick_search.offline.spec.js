@@ -7,7 +7,7 @@
 // 不需 cassette：stub WebSocket 離線 boot 後直接餵畫面。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { installReplay, waitConnected, feedRaw } = require('../helpers/replay');
+const { installReplay, waitConnected, feedRaw, waitScreenSettled } = require('../helpers/replay');
 const { waitRectStable } = require('../helpers/layout');
 const { rightClickSelectedText } = require('../helpers/real_input');
 
@@ -44,7 +44,7 @@ async function boot(page, { prefs } = {}) {
 
 async function feedLine(page, text) {
   await feedRaw(page, '\x1b[2J\x1b[H' + text);
-  await page.waitForTimeout(200);
+  await waitScreenSettled(page);
 }
 
 const quickItems = page => page.locator('.DropdownMenu__QuickSearch');

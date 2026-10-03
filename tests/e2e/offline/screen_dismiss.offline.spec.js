@@ -18,6 +18,8 @@ const {
   findCassette,
   replayCassette,
 } = require('../helpers/replay');
+const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
+const { nextFrames } = require('../helpers/real_input');
 
 // ---- 合成畫面（latin1；中文以 Big5 位元組直接寫死）----------------------------
 //
@@ -66,21 +68,6 @@ const INPUT_FIELD = screen(
 const NO_FRAME = screen('offline footer without any frame'.padEnd(79, ' '), [
   24, 80,
 ]);
-
-// ---- 送出收集器（與 mouse.offline.spec.js 同一套 hook）-----------------------
-async function startCapture(page) {
-  await page.evaluate(() => {
-    window.__sentLog = [];
-    window.__stubWSSent = (s) => window.__sentLog.push(s);
-  });
-}
-async function takeCapture(page) {
-  return page.evaluate(() => {
-    const out = window.__sentLog.join('');
-    window.__sentLog = [];
-    return out;
-  });
-}
 
 // 終端機第 (col,row) 格的畫面座標（取格子中心，避開邊界的 ±0.5 誤差）。
 // 與 mouse.offline.spec.js 同一份公式，來源是 view.firstGridOffset / chw / chh。
@@ -144,10 +131,9 @@ test.describe('點空白處關框（離線合成畫面）', () => {
 
     await startCapture(page);
     await clickCell(page, 40, 10);
-    await page.waitForTimeout(200);
     // **一定要是空白鍵**：`\f`(Ctrl-L) 會被 io.c#system_key_hook 吃掉（不算按鍵），
     // 用它關框會整串位移一格。
-    expect(await takeCapture(page)).toBe(' ');
+    await expect.poll(() => peekCapture(page)).toBe(' ');
   });
 
   test('vmsg 橫幅（ ◆ … [按任意鍵繼續]）同樣送空白鍵', async ({ page }) => {
@@ -157,8 +143,7 @@ test.describe('點空白處關框（離線合成畫面）', () => {
 
     await startCapture(page);
     await clickCell(page, 40, 10);
-    await page.waitForTimeout(200);
-    expect(await takeCapture(page)).toBe(' ');
+    await expect.poll(() => peekCapture(page)).toBe(' ');
   });
 
   test('vgetstring 輸入欄：點空白處送 Ctrl-C（取消）', async ({ page }) => {
@@ -172,8 +157,7 @@ test.describe('點空白處關框（離線合成畫面）', () => {
 
     await startCapture(page);
     await clickCell(page, 40, 10);
-    await page.waitForTimeout(200);
-    expect(await takeCapture(page)).toBe('\x03');
+    await expect.poll(() => peekCapture(page)).toBe('\x03');
   });
 
   test('REGRESSION：點在游標那一列一個 byte 都不送（D2）', async ({ page }) => {
@@ -225,7 +209,7 @@ test.describe('點空白處關框（離線合成畫面）', () => {
 
     const { x, y } = await cellXY(page, 40, 10);
     await page.mouse.move(x, y);
-    await page.waitForTimeout(100);
+    await nextFrames(page);
     expect(
       await page.evaluate(() => window.__app.buf.BBSWin.style.cursor)
     ).toBe('pointer');

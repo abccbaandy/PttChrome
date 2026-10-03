@@ -16,24 +16,11 @@ const {
   replayCassette,
   replayListCassette,
   loadCassette,
+  waitScreenSettled,
 } = require('../helpers/replay');
+const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 
 const article = findCassette('article');
-
-// 送出收集器（與 mouse.offline.spec.js 同一套 hook）。
-async function startCapture(page) {
-  await page.evaluate(() => {
-    window.__sentLog = [];
-    window.__stubWSSent = (s) => window.__sentLog.push(s);
-  });
-}
-async function takeCapture(page) {
-  return page.evaluate(() => {
-    const out = window.__sentLog.join('');
-    window.__sentLog = [];
-    return out;
-  });
-}
 
 const fnKeyLabels = (page, scope = '#mainContainer') =>
   page.evaluate(
@@ -107,7 +94,7 @@ test.describe('功能鍵可點（離線重放）', () => {
 
     await startCapture(page);
     await target.click();
-    await page.waitForTimeout(200);
+    await expect.poll(() => peekCapture(page)).not.toBe('');
     const sent = await takeCapture(page);
 
     expect(sent.length).toBeGreaterThan(0);
@@ -156,12 +143,10 @@ test.describe('功能鍵可點（離線重放）', () => {
 
     // dirty-row 逐列 patch 之下 server 一列都沒重畫 ⇒ 沒有 redraw(true) 就不會變。
     await page.evaluate(() => window.__app.onPrefChange('mouseFunctionKeys', true));
-    await page.waitForTimeout(200);
-    expect((await fnKeyLabels(page)).length).toBeGreaterThan(0);
+    await expect.poll(async () => (await fnKeyLabels(page)).length).toBeGreaterThan(0);
 
     await page.evaluate(() => window.__app.onPrefChange('mouseFunctionKeys', false));
-    await page.waitForTimeout(200);
-    expect(await fnKeyLabels(page)).toEqual([]);
+    await expect.poll(() => fnKeyLabels(page)).toEqual([]);
   });
 
   test('文章好讀：底部 footer overlay 也是按鈕（那條路不經 computeAnnotations）', async ({
@@ -206,12 +191,11 @@ test.describe('功能鍵可點（離線重放）', () => {
 
     await startCapture(page);
     await target.click();
-    await page.waitForTimeout(250);
 
-    expect(await takeCapture(page)).not.toBe('');
-    expect(
-      await page.evaluate(() => !!window.__app.buf.easyReadingFunctionMode),
-    ).toBe(true);
+    await expect.poll(() => peekCapture(page)).not.toBe('');
+    await expect
+      .poll(() => page.evaluate(() => !!window.__app.buf.easyReadingFunctionMode))
+      .toBe(true);
   });
 });
 
@@ -241,7 +225,7 @@ test.describe('功能鍵可點：看板列表（離線重放）', () => {
       mouseFunctionKeys: true,
     });
     await replayListCassette(page, listCassette);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     const rows = await page.evaluate(() =>
       Array.from(document.querySelectorAll('#mainContainer a.fnKey')).map((a) =>
@@ -265,7 +249,7 @@ test.describe('功能鍵可點：看板列表（離線重放）', () => {
       mouseFunctionKeys: false,
     });
     await replayListCassette(page, listCassette);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     expect(await fnKeyLabels(page)).toEqual([]);
   });
 
@@ -284,7 +268,7 @@ test.describe('功能鍵可點：看板列表（離線重放）', () => {
       mouseFunctionKeys: true,
     });
     await replayListCassette(page, listCassette);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     const labels = await fnKeyLabels(page);
     ['=', '[', ']', '<', '>', '/', '?', 'a'].forEach((k) =>
@@ -381,13 +365,11 @@ test.describe('複合鍵逐鍵可點：文章 footer 的 (X%)（離線重放）'
 
     await startCapture(page);
     await x.click();
-    await page.waitForTimeout(200);
-    expect(await takeCapture(page)).toBe('X');
+    await expect.poll(() => peekCapture(page)).toBe('X');
 
     await startCapture(page);
     await pct.click();
-    await page.waitForTimeout(200);
-    expect(await takeCapture(page)).toBe('%');
+    await expect.poll(() => peekCapture(page)).toBe('%');
   });
 
   test('REGRESSION（D3）：括號本身不可點 —— 點 ( 或 ) 一個 byte 都不送', async ({

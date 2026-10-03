@@ -219,11 +219,11 @@ test.describe('行內開圖：圖片載入情境（離線重放）', () => {
       const s = document.querySelector('.main');
       s.scrollTop = Math.min(s.scrollHeight, s.clientHeight * 2);
     });
-    await page.waitForTimeout(500);
-    expect(
-      (await outcome(page)).loading,
-      '這一測的前提是此刻真的有圖在載'
-    ).toBeGreaterThan(0);
+    await expect
+      .poll(async () => (await outcome(page)).loading, {
+        message: '這一測的前提是此刻真的有圖在載',
+      })
+      .toBeGreaterThan(0);
 
     await page.evaluate(() => {
       window.__keySent = [];

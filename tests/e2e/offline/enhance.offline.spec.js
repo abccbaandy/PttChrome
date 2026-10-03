@@ -173,14 +173,19 @@ test.describe('增强 · 文章（离线重放）', () => {
           }))
         );
 
+      // 列文字含行内预览自己长出的 UI（倍率列「◐－100%＋」只在图载完才出现），
+      // redraw 后图要重载 ⇒ before／after 都必须在预览终局时取，才是同一种状态。
+      await waitPreviewsSettled(page);
       const before = await readRows();
       expect(before.some((r) => r.pusher === target)).toBe(true);
 
       await ptt.applyPrefs(page, { blacklist: target }); // runtime 套用 → redraw
-      await page.waitForTimeout(800);
 
+      await expect
+        .poll(async () => (await readRows()).some((r) => r.pusher === target))
+        .toBe(false); // 该 pusher 消失
+      await waitPreviewsSettled(page);
       const after = await readRows();
-      expect(after.some((r) => r.pusher === target)).toBe(false); // 该 pusher 消失
       // cassette 是固定 bytes、同一页 redraw ⇒ 内容可**完全等值**比对：after 必须逐列等于
       // before 滤掉 target 推文列。这才是严格的「不留空行」守护（列数比较太弱，且 live
       // 那边因为文章会长根本不能比，见 enhance.spec.js 黑名单案的注解）。
@@ -204,23 +209,20 @@ test.describe('增强 · 文章（离线重放）', () => {
       await replayCassette(page, article, { easyReading: true });
 
       await page.evaluate((t) => window.__app.view.togglePusherHighlight(t), target);
-      await page.waitForTimeout(500);
 
-      const highlighted = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"].pusherHighlight')).map(
-          (el) => el.getAttribute('data-pusher')
-        )
-      );
-      expect(highlighted.length).toBeGreaterThan(0);
+      const readHighlighted = () =>
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"].pusherHighlight')).map(
+            (el) => el.getAttribute('data-pusher')
+          )
+        );
+      await expect.poll(async () => (await readHighlighted()).length).toBeGreaterThan(0);
+      const highlighted = await readHighlighted();
       expect(highlighted.every((p) => p === target)).toBe(true);
 
       // 再 toggle 回去应清空高亮（重绘不重复 append）。
       await page.evaluate((t) => window.__app.view.togglePusherHighlight(t), target);
-      await page.waitForTimeout(500);
-      const cleared = await page.evaluate(
-        () => document.querySelectorAll('#mainContainer > span[type="bbsrow"].pusherHighlight').length
-      );
-      expect(cleared).toBe(0);
+      await expect.poll(async () => (await readHighlighted()).length).toBe(0);
     });
   }
 });
@@ -235,7 +237,6 @@ test.describe('增强 · 看板列表（离线重放）', () => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await replayCassette(page, list, { easyReading: false });
-    await page.waitForTimeout(500);
 
     // 从渲染出的列表抓一个作者（cols 17-28），把它列入黑名单。
     const target = await page.evaluate(() => {
@@ -259,9 +260,8 @@ test.describe('增强 · 看板列表（离线重放）', () => {
 
     const before = await counts();
     await ptt.applyPrefs(page, { blacklist: target });
-    await page.waitForTimeout(800);
+    await expect.poll(async () => (await counts()).notice).toBeGreaterThan(before.notice); // 至少多一列通知
     const after = await counts();
-    expect(after.notice).toBeGreaterThan(before.notice); // 至少多一列通知
     expect(after.hidden).toBe(before.hidden); // 原生模式不隐藏
   });
 
@@ -269,7 +269,6 @@ test.describe('增强 · 看板列表（离线重放）', () => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await replayCassette(page, list, { easyReading: false });
-    await page.waitForTimeout(500);
 
     // 从渲染出的列表抓一列标题，取其中一个中文/英数字片段当关键字。
     // **只能挑真的文章列**（data-list-title 就是渲染层判定的结果）：2026-09-05
@@ -298,8 +297,6 @@ test.describe('增强 · 看板列表（离线重放）', () => {
 
     const before = await noticeCnt();
     await ptt.applyPrefs(page, { titleBlacklist: keyword });
-    await page.waitForTimeout(800);
-    const after = await noticeCnt();
-    expect(after).toBeGreaterThan(before); // 至少多一列通知
+    await expect.poll(noticeCnt).toBeGreaterThan(before); // 至少多一列通知
   });
 });

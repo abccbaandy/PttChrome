@@ -18,22 +18,9 @@ const {
   bootOffline,
   replayListCassette,
 } = require('../helpers/replay');
+const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 
 const list = findCassette('list');
-
-async function startCapture(page) {
-  await page.evaluate(() => {
-    window.__sentLog = [];
-    window.__stubWSSent = (s) => window.__sentLog.push(s);
-  });
-}
-async function takeCapture(page) {
-  return page.evaluate(() => {
-    const out = window.__sentLog.join('');
-    window.__sentLog = [];
-    return out;
-  });
-}
 
 test.describe('Alt ＝ PTT 的 Ctrl（離線重放）', () => {
   if (!list) {
@@ -58,9 +45,7 @@ test.describe('Alt ＝ PTT 的 Ctrl（離線重放）', () => {
       const L = letters[i];
       await startCapture(page);
       await page.keyboard.press('Alt+Key' + L);
-      await page.waitForTimeout(30);
-      const sent = await takeCapture(page);
-      expect(sent, 'Alt+' + L).toBe(String.fromCharCode(i + 1));
+      await expect.poll(() => peekCapture(page), 'Alt+' + L).toBe(String.fromCharCode(i + 1));
     }
   });
 
@@ -75,8 +60,7 @@ test.describe('Alt ＝ PTT 的 Ctrl（離線重放）', () => {
     ]) {
       await startCapture(page);
       await page.keyboard.press(key);
-      await page.waitForTimeout(30);
-      expect(await takeCapture(page), key).toBe(out);
+      await expect.poll(() => peekCapture(page), key).toBe(out);
     }
   });
 
@@ -86,12 +70,12 @@ test.describe('Alt ＝ PTT 的 Ctrl（離線重放）', () => {
     for (const L of ['Q', 'W', 'S', 'D', 'Z', 'T', 'P', 'Y']) {
       await startCapture(page);
       await page.keyboard.press('Control+Key' + L);
-      await page.waitForTimeout(30);
+      await expect.poll(() => peekCapture(page), 'Ctrl+' + L).toHaveLength(1);
       const viaCtrl = await takeCapture(page);
 
       await startCapture(page);
       await page.keyboard.press('Alt+Key' + L);
-      await page.waitForTimeout(30);
+      await expect.poll(() => peekCapture(page), 'Alt+' + L).toHaveLength(1);
       const viaAlt = await takeCapture(page);
 
       expect(viaAlt, 'Alt+' + L + ' 應與 Ctrl+' + L + ' 同 byte').toBe(viaCtrl);

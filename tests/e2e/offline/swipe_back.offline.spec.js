@@ -17,23 +17,11 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
+const { startCapture, peekCapture } = require('../helpers/capture');
+const { nextFrames } = require('../helpers/real_input');
 
 const article = findCassette('article');
 const ARROW_LEFT = '\x1b[D';
-
-async function startCapture(page) {
-  await page.evaluate(() => {
-    window.__sentLog = [];
-    window.__stubWSSent = (s) => window.__sentLog.push(s);
-  });
-}
-async function takeCapture(page) {
-  return page.evaluate(() => {
-    const out = window.__sentLog.join('');
-    window.__sentLog = [];
-    return out;
-  });
-}
 
 async function bootArticle(page, prefs = {}) {
   await bootOffline(page, ptt);
@@ -50,6 +38,13 @@ async function bootArticle(page, prefs = {}) {
 // 左鍵功能已在 bootArticle 關掉（不然那一下會落在左側退出帶而自己送一個 ←）。
 async function armSentinel(page) {
   await page.mouse.click(5, 5);
+  await waitOnSentinel(page);
+}
+
+// 站在 sentinel 那一層上。返回被接住之後 guard 用 history.forward() 走回來，那是
+// 非同步的 traversal —— 下一次返回、或檢查 traversal 的副作用（hashchange），都要
+// 等它真的落地。
+async function waitOnSentinel(page) {
   await page.waitForFunction(
     () => !!(window.history.state && window.history.state.pttchromeBackGuard)
   );
@@ -67,8 +62,7 @@ test.describe('瀏覽器返回 → 左方向鍵（離線重放）', () => {
 
     await startCapture(page);
     await page.goBack();
-    await page.waitForTimeout(300);
-    expect(await takeCapture(page)).toContain(ARROW_LEFT);
+    await expect.poll(() => peekCapture(page)).toContain(ARROW_LEFT);
     // 還在同一個 document（沒有重載、沒有離站）
     expect(await page.evaluate(() => !!window.__app)).toBe(true);
   });
@@ -83,13 +77,12 @@ test.describe('瀏覽器返回 → 左方向鍵（離線重放）', () => {
     await armSentinel(page);
 
     await startCapture(page);
+    const lefts = async () => (await peekCapture(page)).split(ARROW_LEFT).length - 1;
     await page.goBack();
-    await page.waitForTimeout(300);
+    await expect.poll(lefts).toBe(1);
+    await waitOnSentinel(page);
     await page.goBack();
-    await page.waitForTimeout(300);
-
-    const sent = await takeCapture(page);
-    expect(sent.split(ARROW_LEFT).length - 1).toBe(2);
+    await expect.poll(lefts).toBe(2);
     // 送得出去的返回不算逃生門的一次 ⇒ 連退兩層不可以把使用者丟出站。
     expect(await page.evaluate(() => !!window.__app)).toBe(true);
   });
@@ -143,9 +136,12 @@ test.describe('瀏覽器返回 → 左方向鍵（離線重放）', () => {
     });
     await startCapture(page);
     await page.goBack();
-    await page.waitForTimeout(500);
 
-    expect(await takeCapture(page)).toContain(ARROW_LEFT);
+    await expect.poll(() => peekCapture(page)).toContain(ARROW_LEFT);
+    // bug 是 forward() 走回 sentinel 那一下的 hashchange ⇒ 等 traversal 落地、再讓
+    // 排在它後面的事件跑完，才斷言「沒有被當成 deep link」。
+    await waitOnSentinel(page);
+    await nextFrames(page);
     expect(await page.evaluate(() => window.__deepLinkRequests)).toEqual([]);
   });
 

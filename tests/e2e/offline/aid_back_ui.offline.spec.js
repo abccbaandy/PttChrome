@@ -15,7 +15,8 @@ const {
   installReplay,
   installOfflineNetwork,
   feedRaw,
-  waitConnected
+  waitConnected,
+  waitScreenSettled,
 } = require('../helpers/replay');
 
 async function boot(page) {
@@ -27,7 +28,7 @@ async function boot(page) {
   // main.jsx 要先把 conv/*.bin 抓下來才 new App()，goto 回來時 __app 還不存在。
   await waitConnected(page);
   await feedRaw(page, '\x1b[2J\x1b[H  OFFLINE AID BACK BUTTON TEST  ');
-  await page.waitForTimeout(200);
+  await waitScreenSettled(page);
 }
 
 test.describe('AID 返回鈕', () => {

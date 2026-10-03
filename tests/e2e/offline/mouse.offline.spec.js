@@ -14,7 +14,10 @@ const {
   bootOffline,
   replayCassette,
   replayListCassette,
+  waitScreenSettled,
 } = require('../helpers/replay');
+const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
+const { nextFrames } = require('../helpers/real_input');
 // 量座標前一律先等版面停：好讀長頁的行內預覽會在 scrollIntoView 之後才撐高。
 // 判準與 helper 的單一來源在 helpers/layout.js（靜態掃描守護
 // tests/unit/e2e_layout_settle.test.js）。
@@ -76,7 +79,7 @@ async function hoverCell(page, col, row) {
     row
   );
   await page.mouse.move(x, y);
-  await page.waitForTimeout(50);
+  await nextFrames(page);
   return page.evaluate(() => ({
     band: document.getElementById('exitHintBand').classList.contains('active'),
     cursor: window.__app.buf.BBSWin.style.cursor,
@@ -94,22 +97,6 @@ const highlightedPushers = (page) =>
       document.querySelectorAll('#mainContainer > span[type="bbsrow"].pusherHighlight')
     ).map((el) => el.getAttribute('data-pusher'))
   );
-
-// 常駐的送出收集器：__stubWSSent 是 replay 的 hook（見 helpers/replay.js），
-// 這裡接成一個可清空的陣列，好讓斷言橫跨「真實輸入」這種非同步操作。
-async function startCapture(page) {
-  await page.evaluate(() => {
-    window.__sentLog = [];
-    window.__stubWSSent = (s) => window.__sentLog.push(s);
-  });
-}
-async function takeCapture(page) {
-  return page.evaluate(() => {
-    const out = window.__sentLog.join('');
-    window.__sentLog = [];
-    return out;
-  });
-}
 
 // 找一張「左側留白整段蓋過左側退出帶」的內嵌圖，回傳一個落在那片留白裡、且仍在
 // 退出帶之內的座標（取圖片的垂直中心，確定跟圖片同高）。找不到回 null。
@@ -184,15 +171,14 @@ test.describe('滑鼠（離線重放）', () => {
     // 點左側 → 真的送出左方向鍵
     const spot = await plainLeftEdge(page);
     await page.mouse.move(spot.x, spot.y);
-    await page.waitForTimeout(50); // hover → mouseAction 更新
+    await nextFrames(page); // hover → mouseAction 更新
     // 探測點的 y 來自格子數學所以自己不會飄，但**底下的內容會**（上方預覽長高會把
     // 連結／預覽推進這一列）—— 連結與內嵌圖在 App.mouse_click 的優先權高過退出帶。
     await assertPlainTextUnder(page, spot.x, spot.y);
     await startCapture(page);
     await page.mouse.down();
     await page.mouse.up();
-    await page.waitForTimeout(150);
-    expect(await takeCapture(page)).toContain(ARROW_LEFT);
+    await expect.poll(() => peekCapture(page)).toContain(ARROW_LEFT);
   });
 
   test('提示帶不吃滑鼠事件：底下的元素照樣是 elementFromPoint 的命中目標', async ({ page }) => {
@@ -258,7 +244,7 @@ test.describe('滑鼠（離線重放）', () => {
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
     }, selector);
     await page.mouse.move(pt.x, pt.y);
-    await page.waitForTimeout(50); // hover → mouseAction 更新
+    await nextFrames(page); // hover → mouseAction 更新
     const hit = await page.evaluate(
       ({ x, y, sel }) => {
         const at = document.elementFromPoint(x, y);
@@ -433,10 +419,9 @@ test.describe('滑鼠（離線重放）', () => {
     await startCapture(page);
     await page.mouse.down();
     await page.mouse.up();
-    await page.waitForTimeout(150);
+    // 「只切放大」：點圖的那個動作確實發生了（先等它，下面的「沒送 ←」才有意義）。
+    await expect.poll(enlarged).toBe(!before);
     expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
-    // 「只切放大」：點圖的那個動作確實發生了。
-    expect(await enlarged()).toBe(!before);
     // 沒有被翻頁捲走。放大本身靠 scroll anchoring 不動 scrollTop（實測 0px）；容忍
     // 一列以內。**不可放寬到「幾列」**：翻頁撞到頂只會捲剩下的距離（實測 235px ≈ 8 列），
     // 放寬到 10 列時拿掉 isPreviewTarget 這條照樣是綠的。
@@ -476,17 +461,15 @@ test.describe('滑鼠（離線重放）', () => {
     await assertPlainTextUnder(page, spot.x, spot.y);
 
     await page.mouse.move(spot.x, spot.y);
-    await page.waitForTimeout(50); // hover → mouseAction 更新
+    await nextFrames(page); // hover → mouseAction 更新
     expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('exitArticle');
 
     await startCapture(page);
     await page.mouse.down();
     await page.mouse.up();
-    await page.waitForTimeout(150);
-    expect(
-      await takeCapture(page),
-      '提示帶亮著、指標是 back，點下去卻 0 byte'
-    ).toContain(ARROW_LEFT);
+    await expect
+      .poll(() => peekCapture(page), '提示帶亮著、指標是 back，點下去卻 0 byte')
+      .toContain(ARROW_LEFT);
   });
 
   test('左鍵功能關閉：沒有提示帶、沒有自訂指標、點了不送鍵', async ({ page }) => {
@@ -505,7 +488,7 @@ test.describe('滑鼠（離線重放）', () => {
 
     const spot = await plainLeftEdge(page);
     await page.mouse.move(spot.x, spot.y);
-    await page.waitForTimeout(50); // hover → mouseAction 更新
+    await nextFrames(page); // hover → mouseAction 更新
     // 探測點的 y 來自格子數學所以自己不會飄，但**底下的內容會**（上方預覽長高會把
     // 連結／預覽推進這一列）—— 連結與內嵌圖在 App.mouse_click 的優先權高過退出帶。
     await assertPlainTextUnder(page, spot.x, spot.y);
@@ -617,7 +600,7 @@ test.describe('滑鼠（離線重放）', () => {
 
       const row = await stableCommentRow(page);
       await page.mouse.move(row.leftX, row.y);
-      await page.waitForTimeout(50); // hover → mouseAction 更新
+      await nextFrames(page); // hover → mouseAction 更新
       await assertElementUnder(page, row.leftX, row.y, row.pusher, {
         closest: '[data-pusher]',
         attribute: 'data-pusher',
@@ -629,8 +612,7 @@ test.describe('滑鼠（離線重放）', () => {
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
-      await page.waitForTimeout(150);
-      expect(await takeCapture(page)).toContain(ARROW_LEFT);
+      await expect.poll(() => peekCapture(page)).toContain(ARROW_LEFT);
       expect(await highlightedPushers(page)).toEqual([]);
     });
 
@@ -640,7 +622,7 @@ test.describe('滑鼠（離線重放）', () => {
 
       const row = await stableCommentRow(page);
       await page.mouse.move(row.contentX, row.y);
-      await page.waitForTimeout(50); // hover → mouseAction 更新
+      await nextFrames(page); // hover → mouseAction 更新
       // 點擊前再確認一次指標底下還是同一列：版面若在量測之後又位移，這裡會直接說出
       // 「預期 X、實際 Y」，而不是讓斷言退化成看不出原因的「高亮 0 列」。
       await assertElementUnder(page, row.contentX, row.y, row.pusher, {
@@ -650,11 +632,11 @@ test.describe('滑鼠（離線重放）', () => {
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
-      await page.waitForTimeout(150);
 
+      // 先等高亮真的上了，下面的「沒送 ←」才有意義。
+      await expect.poll(async () => (await highlightedPushers(page)).length).toBeGreaterThan(0);
       expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
       const on = await highlightedPushers(page);
-      expect(on.length).toBeGreaterThan(0);
       on.forEach((p) => expect(p).toBe(row.pusher));
     });
 
@@ -664,7 +646,7 @@ test.describe('滑鼠（離線重放）', () => {
 
       const row = await stableCommentRow(page);
       await page.mouse.move(row.leftX, row.y);
-      await page.waitForTimeout(50); // hover → mouseAction 更新
+      await nextFrames(page); // hover → mouseAction 更新
       await assertElementUnder(page, row.leftX, row.y, row.pusher, {
         closest: '[data-pusher]',
         attribute: 'data-pusher',
@@ -672,11 +654,11 @@ test.describe('滑鼠（離線重放）', () => {
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
-      await page.waitForTimeout(150);
 
+      // 先等高亮真的上了，下面的「沒送 ←」才有意義。
+      await expect.poll(async () => (await highlightedPushers(page)).length).toBeGreaterThan(0);
       expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
       const on = await highlightedPushers(page);
-      expect(on.length).toBeGreaterThan(0);
       on.forEach((p) => expect(p).toBe(row.pusher));
     });
   });
@@ -698,7 +680,7 @@ test.describe('滑鼠（離線重放）', () => {
         ...prefs,
       });
       await replayListCassette(page, listCassette);
-      await page.waitForTimeout(400);
+      await waitScreenSettled(page);
       const ps = await page.evaluate(() => window.__app.buf.pageState);
       expect(ps, '重放後應停在看板列表').toBe(2);
     };
@@ -723,8 +705,7 @@ test.describe('滑鼠（離線重放）', () => {
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
-      await page.waitForTimeout(150);
-      expect(await takeCapture(page)).toContain(ARROW_LEFT);
+      await expect.poll(() => peekCapture(page)).toContain(ARROW_LEFT);
     });
 
     test('防誤觸關閉也一樣成立（固定手勢，不是欄位判定）', async ({ page }) => {
@@ -756,7 +737,7 @@ test.describe('滑鼠（離線重放）', () => {
         ...prefs,
       });
       await replayListCassette(page, listCassette2);
-      await page.waitForTimeout(400);
+      await waitScreenSettled(page);
       expect(await page.evaluate(() => window.__app.buf.pageState)).toBe(2);
     };
 
@@ -792,7 +773,7 @@ test.describe('滑鼠（離線重放）', () => {
     // 第二下之後全部被吞掉，看起來像功能壞了。
     const clickAt = async (page, x, y) => {
       await page.mouse.move(x, y);
-      await page.waitForTimeout(60);
+      await nextFrames(page);
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
@@ -936,12 +917,12 @@ test.describe('滑鼠（離線重放）', () => {
 
       // 帶子右緣就是行尾：往內 2px 仍是 Home。
       await page.mouse.move(band.right - 2, await rowY(page, 0));
-      await page.waitForTimeout(60);
+      await nextFrames(page);
       expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('home');
 
       // 帶子下緣往下 2px ⇒ 不再是 Home 區，帶子也要熄掉（row 1 是 PgUp，不畫帶子）。
       await page.mouse.move(await colX(page, 40), band.bottom + 2);
-      await page.waitForTimeout(60);
+      await nextFrames(page);
       expect(await page.evaluate(() => window.__app.buf.mouseAction)).not.toBe('home');
       expect((await edgeBand(page)).active).toBe(false);
     });
@@ -982,7 +963,7 @@ test.describe('滑鼠（離線重放）', () => {
       await bootNativeList(page, { mouseEdgePaging: false });
 
       await page.mouse.move(await colX(page, 70), await rowY(page, 6));
-      await page.waitForTimeout(60);
+      await nextFrames(page);
       expect((await edgeBand(page)).active).toBe(false);
       expect(await page.evaluate(() => window.__app.buf.mouseAction)).not.toMatch(
         /^page/
@@ -1125,7 +1106,7 @@ test.describe('滑鼠（離線重放）', () => {
       await settle();
       await startCapture(page);
       await page.mouse.move(await colX(page, 40), await rowY(page, 0));
-      await page.waitForTimeout(60);
+      await nextFrames(page);
       await page.mouse.down();
       await page.mouse.up();
       await expect

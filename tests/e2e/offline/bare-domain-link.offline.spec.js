@@ -15,6 +15,7 @@ const {
   bootOffline,
   replayCassette,
   feedRaw,
+  waitScreenSettled,
 } = require('../helpers/replay');
 
 const cassette = findCassette('article');
@@ -24,7 +25,7 @@ const cassette = findCassette('article');
 async function writeRow(page, text) {
   await feedRaw(page, '\x1b[10;1H' + ' '.repeat(79));
   await feedRaw(page, '\x1b[10;1H' + text);
-  await page.waitForTimeout(400);
+  await waitScreenSettled(page);
 }
 
 // 回答 link:false 的 stub —— 記錄問了幾次，供「真的有送出推論」斷言。

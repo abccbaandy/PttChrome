@@ -378,7 +378,9 @@ test.describe('長推文一鍵發送（離線）', () => {
     await drawLastRow(page, TYPE_MENU);
     await drawLastRow(page, PROMPT);
 
+    // 鎖在進度對話框裡找：輸入框的「取消」可能還在關閉動畫中，全域找會撞到兩顆。
     await page
+      .getByRole('dialog', { name: await label(page, 'longPushProgress_title') })
       .getByRole('button', { name: await label(page, 'longPushProgress_cancel') })
       .click();
     // vgetstring 的 Ctrl-C＝清空 + abort ⇒ recommend() 什麼都不寫就 return。

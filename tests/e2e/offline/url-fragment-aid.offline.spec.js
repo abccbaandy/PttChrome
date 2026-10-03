@@ -23,6 +23,7 @@ const {
   bootOffline,
   replayCassette,
   feedRaw,
+  waitScreenSettled,
 } = require('../helpers/replay');
 
 const cassette = findCassette('article');
@@ -38,7 +39,7 @@ const REAL_AID = '#1gIeu-3A';
 
 async function setupRows(page) {
   await page.evaluate(() => window.__app.easyReading.enterEasyReading());
-  await page.waitForTimeout(200);
+  await waitScreenSettled(page);
   const { rows, cols } = await page.evaluate(() => ({
     rows: window.__app.buf.rows,
     cols: window.__app.buf.cols,
@@ -52,7 +53,7 @@ async function setupRows(page) {
       at(12, 'new ' + URL_FN + ' here') +
       `\x1b[${rows};${cols}H`
   );
-  await page.waitForTimeout(800);
+  await waitScreenSettled(page);
 }
 
 test.describe('網址 fragment 不被當成 AID（離線重放）', () => {

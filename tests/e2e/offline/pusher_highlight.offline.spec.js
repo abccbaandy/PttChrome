@@ -118,11 +118,10 @@ test.describe('推文者高亮（offline）', () => {
 
     await assertUnderRow(page, row);
     await page.mouse.click(row.contentX, row.y);
-    await page.waitForTimeout(400);
 
     // 高亮真的上了，而且只上在同一個人身上。
+    await expect.poll(async () => (await highlighted(page)).length).toBeGreaterThan(0);
     const on = await highlighted(page);
-    expect(on.length).toBeGreaterThan(0);
     on.forEach((p) => expect(p).toBe(row.pusher));
 
     // 核心不變量：一個節點都沒被換掉。
@@ -145,13 +144,11 @@ test.describe('推文者高亮（offline）', () => {
 
     await assertUnderRow(page, row);
     await page.mouse.click(row.contentX, row.y);
-    await page.waitForTimeout(300);
-    expect((await highlighted(page)).length).toBeGreaterThan(0);
+    await expect.poll(async () => (await highlighted(page)).length).toBeGreaterThan(0);
 
     await assertUnderRow(page, row);
     await page.mouse.click(row.contentX, row.y);
-    await page.waitForTimeout(300);
-    expect(await highlighted(page)).toEqual([]);
+    await expect.poll(() => highlighted(page)).toEqual([]);
     expect(await survivedMarks(page)).toBe(marks);
   });
 

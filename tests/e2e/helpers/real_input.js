@@ -219,6 +219,15 @@ async function dropFiles(page, names, at) {
   await drag.drop();
 }
 
+// 等 rAF 對齊的輸入（mousemove／wheel 等連續事件）真的派發到頁面：Chromium 把它們
+// 合併到下一幀開頭才跑 handler，page.mouse.move 回來時 handler 不一定跑過了。兩個
+// animation frame 之後必定已派發 —— 取代「hover 完固定 sleep 50ms」。
+async function nextFrames(page, n = 2) {
+  await page.evaluate(async (count) => {
+    for (let i = 0; i < count; i++) await new Promise((r) => requestAnimationFrame(r));
+  }, n);
+}
+
 module.exports = {
   cdp,
   textRect,
@@ -236,4 +245,5 @@ module.exports = {
   imeCommit,
   dragFiles,
   dropFiles,
+  nextFrames,
 };

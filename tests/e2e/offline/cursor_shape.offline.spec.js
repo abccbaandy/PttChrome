@@ -13,7 +13,7 @@
 // autoHideBlinkCursor 抑制成 display:none（見 blink_cursor.offline.spec.js）。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw } = require('../helpers/replay');
+const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
 
 // 第 10 列（0-based 9）有內容，游標停在第 10 列第 20 欄（0-based x=19）的空白格上。
 const CURSOR_ON_BLANK =
@@ -67,7 +67,7 @@ test.describe('打字游標是閃爍直線且不出格（離線）', () => {
       enableEasyReadingList: false,
     });
     await feedRaw(page, CURSOR_ON_BLANK);
-    await page.waitForTimeout(400); // term_buf 的 30ms notify debounce + render flush
+    await waitScreenSettled(page);
   });
 
   test('形狀：細長直立（寬約 2px、高＝一格列高），不是底線', async ({ page }) => {
@@ -113,19 +113,21 @@ test.describe('打字游標是閃爍直線且不出格（離線）', () => {
       window.__app.view.fontFitWindowWidth = true;
       window.__app.onWindowResize();
     });
-    await page.waitForTimeout(300);
-    const m = await measure(page, CUR_ROW, CUR_COL);
-    expect(m.scaleY).not.toBe(1); // 前提成立：真的在縮放
-    // 高度跟著 scale 一起放大（＝直線真的被 transform 縮放到，不是漏網之魚）。
-    expect(Math.abs(m.cursor.height - m.chh * m.scaleY)).toBeLessThanOrEqual(1);
-    // 垂直：直接跟該列**實際量到的** rect 比，容差 1px。
-    // 舊的格線公式垂直原點用 chh*rows，但 `.main` 實際高 chh*rows+10 且
-    // transform-origin 是 center ⇒ 系統性誤差 5*(1-scaleY) px（scaleY=1.4 約 2px）。
-    // 水平方向那個 +10 剛好在兩式間抵消，所以只有垂直會漂。
-    expect(Math.abs(m.cursor.top - m.row.top)).toBeLessThanOrEqual(1);
-    expect(m.cursor.bottom).toBeLessThanOrEqual(m.nextRow.top + 1);
-    // 水平同樣貼齊該格。
-    expect(Math.abs(m.cursor.left - (m.row.left + m.col * m.chw * m.scaleX))).toBeLessThanOrEqual(1);
+    // 重新排版不保證在 evaluate 回來前完成 ⇒ 量測與斷言整段重試到成立。
+    await expect(async () => {
+      const m = await measure(page, CUR_ROW, CUR_COL);
+      expect(m.scaleY).not.toBe(1); // 前提成立：真的在縮放
+      // 高度跟著 scale 一起放大（＝直線真的被 transform 縮放到，不是漏網之魚）。
+      expect(Math.abs(m.cursor.height - m.chh * m.scaleY)).toBeLessThanOrEqual(1);
+      // 垂直：直接跟該列**實際量到的** rect 比，容差 1px。
+      // 舊的格線公式垂直原點用 chh*rows，但 `.main` 實際高 chh*rows+10 且
+      // transform-origin 是 center ⇒ 系統性誤差 5*(1-scaleY) px（scaleY=1.4 約 2px）。
+      // 水平方向那個 +10 剛好在兩式間抵消，所以只有垂直會漂。
+      expect(Math.abs(m.cursor.top - m.row.top)).toBeLessThanOrEqual(1);
+      expect(m.cursor.bottom).toBeLessThanOrEqual(m.nextRow.top + 1);
+      // 水平同樣貼齊該格。
+      expect(Math.abs(m.cursor.left - (m.row.left + m.col * m.chw * m.scaleX))).toBeLessThanOrEqual(1);
+    }).toPass();
   });
 });
 
@@ -204,9 +206,9 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
 
     const d = await dims(page);
     await feedBig5(page, articleFrame(d));
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     await page.evaluate(() => window.__app.easyReading.enterEasyReading());
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     // 前提：好讀累積頁替 footer overlay 保留了一列底部 padding。
     expect(
@@ -216,7 +218,7 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
     // 按 X 推文 → functionMode，畫面換成原生 24 列鏡像。
     await page.evaluate(() => window.__app.easyReading._enterFunctionMode());
     await feedBig5(page, pushPromptFrame(d));
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     const m = await page.evaluate(() => {
       const main = window.__app.view.mainDisplay;
@@ -249,7 +251,7 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
     // 原生固定 24 列畫面，游標停在末列輸入位置。
     await feedBig5(page, articleFrame(d));
     await feedBig5(page, pushPromptFrame(d));
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     // 人為讓 `.main` 可捲並捲到底（模擬任何殘留 padding / 使用者滾輪），**不重繪**。
     const m = await page.evaluate((row) => {
@@ -286,7 +288,7 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await feedRaw(page, CURSOR_ON_BLANK);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     const m = await page.evaluate(() => {
       const el = document.getElementById('cursor');
@@ -317,9 +319,9 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
 
     const d = await dims(page);
     await feedBig5(page, articleFrame(d));
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     await page.evaluate(() => window.__app.easyReading.enterEasyReading());
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     const m = await page.evaluate(() => {
       document.getElementById('cursor').classList.add('cursor--blink-on');
@@ -397,12 +399,12 @@ test.describe('推文：游標落在反白輸入帶裡（離線）', () => {
 
     const d = await dims(page);
     await feedBig5(page, articleFrame(d));
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     await page.evaluate(() => window.__app.easyReading.enterEasyReading());
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
     await page.evaluate(() => window.__app.easyReading._enterFunctionMode());
     await feedBig5(page, pushPromptReverseFrame(d));
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     expect(await page.evaluate(() => !!window.__app.buf.easyReadingFunctionMode)).toBe(true);
     expectCursorInsideBand(await measureBand(page, d.rows - 1));
@@ -424,7 +426,7 @@ test.describe('推文：游標落在反白輸入帶裡（離線）', () => {
     const d = await dims(page);
     await feedBig5(page, articleFrame(d));
     await feedBig5(page, pushPromptReverseFrame(d));
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     const before = await measureBand(page, d.rows - 1);
     expectCursorInsideBand(before); // 前提：撐高之前本來就是好的
@@ -449,7 +451,7 @@ test.describe('推文：游標落在反白輸入帶裡（離線）', () => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await feedRaw(page, CURSOR_ON_BLANK); // 第 10 列是純 ASCII（abc + 空白補滿）
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     const m = await page.evaluate((row) => ({
       fontLoaded: document.fonts.check('26px SymMingLiu'),
@@ -523,7 +525,7 @@ test.describe('注音輸入匡 #t 錨在該格（離線）', () => {
     const d = await dims(page);
     await feedBig5(page, articleFrame(d));
     await feedBig5(page, pushPromptReverseFrame(d));
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     expectInputAlignedToCell(await measureInputBox(page, d.rows - 1));
   });
@@ -540,7 +542,7 @@ test.describe('注音輸入匡 #t 錨在該格（離線）', () => {
     const d = await dims(page);
     await feedBig5(page, articleFrame(d));
     await feedBig5(page, pushPromptReverseFrame(d));
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     // 人為讓 `.main` 可捲並捲到底（模擬任何殘留 padding／使用者滾輪）。
     await page.evaluate(() => {

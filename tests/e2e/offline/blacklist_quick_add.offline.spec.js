@@ -98,7 +98,6 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
     // 2026-09-16 起預設開，會把整份列表重畫成累積長頁 ⇒ 明確關掉，別靠預設。
     await ptt.applyPrefs(page, { enableEasyReadingList: false });
     await replayCassette(page, list, { easyReading: false });
-    await page.waitForTimeout(500);
 
     const t = await targetAt(page, 'data-list-author', 20); // col 20 ∈ 作者欄 [17,29)
     expect(t).not.toBeNull();
@@ -118,12 +117,11 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
       );
     const before = await noticeCnt();
     await item.click();
-    await page.waitForTimeout(800);
 
-    expect(await noticeCnt()).toBeGreaterThan(before); // 原生模式 → 通知列
-    expect((await readPref(page, 'blacklist')).toLowerCase()).toContain(
-      t.value.toLowerCase()
-    );
+    await expect.poll(noticeCnt).toBeGreaterThan(before); // 原生模式 → 通知列
+    await expect
+      .poll(async () => (await readPref(page, 'blacklist')).toLowerCase())
+      .toContain(t.value.toLowerCase());
   });
 
   test('標題欄右鍵 → Modal 預填完整標題 → 確認 → 通知列出現且 pref 落地', async ({ page }) => {
@@ -133,7 +131,6 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
     // 2026-09-16 起預設開，會把整份列表重畫成累積長頁 ⇒ 明確關掉，別靠預設。
     await ptt.applyPrefs(page, { enableEasyReadingList: false });
     await replayCassette(page, list, { easyReading: false });
-    await page.waitForTimeout(500);
 
     const t = await targetAt(page, 'data-list-title', 45); // col 45 ∈ 標題區 (≥29)
     expect(t).not.toBeNull();
@@ -158,11 +155,10 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
       );
     const before = await noticeCnt();
     await page.getByRole('button', { name: await label(page, 'titleBlacklistModal_confirm') }).click();
-    await page.waitForTimeout(800);
 
     await expect(input).toBeHidden();
-    expect(await noticeCnt()).toBeGreaterThan(before);
-    expect(await readPref(page, 'titleBlacklist')).toContain(t.value);
+    await expect.poll(noticeCnt).toBeGreaterThan(before);
+    await expect.poll(() => readPref(page, 'titleBlacklist')).toContain(t.value);
   });
 
   test('已在黑名單的作者 → 選項反灰不可點', async ({ page }) => {
@@ -172,7 +168,6 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
     // 2026-09-16 起預設開，會把整份列表重畫成累積長頁 ⇒ 明確關掉，別靠預設。
     await ptt.applyPrefs(page, { enableEasyReadingList: false });
     await replayCassette(page, list, { easyReading: false });
-    await page.waitForTimeout(500);
 
     const t = await targetAt(page, 'data-list-author', 20);
     expect(t).not.toBeNull();
@@ -198,7 +193,6 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
     // 2026-09-16 起預設開，會把整份列表重畫成累積長頁 ⇒ 明確關掉，別靠預設。
     await ptt.applyPrefs(page, { enableEasyReadingList: false });
     await replayCassette(page, list, { easyReading: false });
-    await page.waitForTimeout(500);
 
     const t = await targetAt(page, 'data-list-author', 5); // col 5 = 序號/推文數區
     expect(t).not.toBeNull();
@@ -236,19 +230,21 @@ test.describe('黑名單快速新增 · 文章推文列（離線重放）', () =
     await expect(item).toBeVisible();
     await expect(item).toContainText(t.value);
     await item.click();
-    await page.waitForTimeout(800);
 
     // 好讀模式 → 該 pusher 的推文整列移除。
-    const remaining = await page.evaluate(
-      (p) =>
-        document.querySelectorAll(
-          `#mainContainer span[type="bbsrow"][data-pusher="${p}"]`
-        ).length,
-      t.value
-    );
-    expect(remaining).toBe(0);
-    expect((await readPref(page, 'blacklist')).toLowerCase()).toContain(
-      t.value.toLowerCase()
-    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (p) =>
+            document.querySelectorAll(
+              `#mainContainer span[type="bbsrow"][data-pusher="${p}"]`
+            ).length,
+          t.value
+        )
+      )
+      .toBe(0);
+    await expect
+      .poll(async () => (await readPref(page, 'blacklist')).toLowerCase())
+      .toContain(t.value.toLowerCase());
   });
 });

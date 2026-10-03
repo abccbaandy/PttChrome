@@ -14,7 +14,7 @@
 // unit 層守護：tests/unit/switch_mode_plan.test.js、tests/unit/easy_reading_text_input.test.js。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { findCassettes, bootOffline, replayCassette, feedRaw } = require('../helpers/replay');
+const { findCassettes, bootOffline, replayCassette, feedRaw, waitScreenSettled } = require('../helpers/replay');
 
 // PTT 推文輸入框的畫面特徵（合成，不用真帳號）：底部那一列被換成輸入框、游標停在
 // 輸入欄。這兩點就是全黑 bug 的全部前提 ——
@@ -67,7 +67,7 @@ test.describe('好讀模式停在 prompt 上（離線重放）', () => {
     // X 推文 → 好讀切成原生鏡像（keydown 路徑）
     await ptt.sendKey(page, 'X');
     await feedRaw(page, PUSH_PROMPT);
-    await page.waitForTimeout(200);
+    await waitScreenSettled(page);
     expect(await functionMode(page)).toBe(true);
     const mirrored = await rowCount(page);
     expect(mirrored).toBeGreaterThan(0);
@@ -79,7 +79,7 @@ test.describe('好讀模式停在 prompt 上（離線重放）', () => {
     // ^L 送出後 PTT 的整頁重繪：文章內容 + 底部仍是推文輸入框（游標停在輸入欄）
     await feedRaw(page, lastPageBytes(cassette));
     await feedRaw(page, PUSH_PROMPT);
-    await page.waitForTimeout(300);
+    await waitScreenSettled(page);
 
     // 修前：pageLines 被清空 + functionMode 被清掉 ⇒ 渲染 0 列 ⇒ 全黑
     expect(await rowCount(page)).toBeGreaterThan(0);
@@ -100,7 +100,7 @@ test.describe('好讀模式停在 prompt 上（離線重放）', () => {
     // 字元由 input 事件 → view.onTextInput 送出。
     await page.evaluate(() => window.__app.view.onTextInput('X'));
     await feedRaw(page, PUSH_PROMPT);
-    await page.waitForTimeout(300);
+    await waitScreenSettled(page);
 
     expect(await functionMode(page)).toBe(true);
     const text = await page.evaluate(() => document.querySelector('#mainContainer').textContent);

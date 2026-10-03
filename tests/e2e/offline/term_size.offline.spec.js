@@ -10,18 +10,18 @@
 //      一個看起來很像遺跡、其實是硬需求的 deprecated 屬性，所以要有測試釘住它。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw } = require('../helpers/replay');
+const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
 
 // 隨便一個有內容的畫面，讓每一列都有可以量的節點。
 const SCREEN = '\x1b[2J\x1b[1;1H  [test board]\x1b[5;1Habcdefg\x1b[5;1H';
 
 // 設定頁的「終端機大小」走 onValuesPrefChange（整份值）而不是逐 key 的
-// onPrefChange，所以不能用 ptt.applyPrefs。
+// onPrefChange，所以不能用 ptt.applyPrefs。套用後的版面量測一律包在 toPass 裡
+// （重新排版／字級換算不保證在這個 evaluate 回來前完成）。
 async function applyTermSize(page, patch) {
   await page.evaluate((p) => {
     window.__app.onValuesPrefChange(Object.assign({}, window.__readPrefs(), p));
   }, patch);
-  await page.waitForTimeout(300);
 }
 
 async function geom(page) {
@@ -54,7 +54,7 @@ test.describe('BBS 終端機大小（離線）', () => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await feedRaw(page, SCREEN);
-    await page.waitForTimeout(400); // term_buf 的 30ms notify debounce + render flush
+    await waitScreenSettled(page);
   });
 
   test('固定終端機大小（預設 80×24）：畫面水平置中，座標消費端跟得上', async ({ page }) => {
@@ -88,15 +88,17 @@ test.describe('BBS 終端機大小（離線）', () => {
 
   test('固定字體大小：欄數恆 80（LOCKED），列數隨視窗高度變多', async ({ page }) => {
     await applyTermSize(page, { termSizeMode: 'fixed-font-size', fontSize: 20 });
-    const g = await geom(page);
-    expect(g.cols).toBe(80); // ← 改成依視窗寬反推就會紅
-    expect(g.rows).toBeGreaterThan(24); // 一頁真的看得到更多列
-    expect(g.chh).toBe(20); // 字級固定，不隨視窗縮放
-    expect(g.scaleX).toBe(1); // 這個模式永遠不縮放
-    // 欄數鎖住之後，終端機比視窗窄 ⇒ 置中才看得出來（這就是使用者要的版面）。
-    expect(g.mainWidth).toBeLessThan(g.innerWidth - 100);
-    expect(Math.abs(g.mainLeft - (g.innerWidth - g.mainWidth) / 2)).toBeLessThanOrEqual(1);
-    expect(Math.abs(g.firstGridLeft - g.mainLeft)).toBeLessThanOrEqual(1);
+    await expect(async () => {
+      const g = await geom(page);
+      expect(g.cols).toBe(80); // ← 改成依視窗寬反推就會紅
+      expect(g.rows).toBeGreaterThan(24); // 一頁真的看得到更多列
+      expect(g.chh).toBe(20); // 字級固定，不隨視窗縮放
+      expect(g.scaleX).toBe(1); // 這個模式永遠不縮放
+      // 欄數鎖住之後，終端機比視窗窄 ⇒ 置中才看得出來（這就是使用者要的版面）。
+      expect(g.mainWidth).toBeLessThan(g.innerWidth - 100);
+      expect(Math.abs(g.mainLeft - (g.innerWidth - g.mainWidth) / 2)).toBeLessThanOrEqual(1);
+      expect(Math.abs(g.firstGridLeft - g.mainLeft)).toBeLessThanOrEqual(1);
+    }).toPass();
   });
 
   test('縮放模式（把字體拉大來補滿畫面）：提示帶與 clientToPos 的公式原點仍成立', async ({
@@ -109,12 +111,14 @@ test.describe('BBS 終端機大小（離線）', () => {
       fontFitWindowWidth: true,
       termSize: { cols: 80, rows: 24 },
     });
-    const g = await geom(page);
-    expect(g.scaleX).not.toBe(1); // 前提成立：真的在縮放
-    // 縮放分支的原點是公式推的（mouse_geometry.gridOriginX），前提是 layout box
-    // 置中 ＋ transform-origin: center。改成貼左，這條就會整條跑掉。
-    const expectedBand = (g.innerWidth - g.chw * g.cols * g.scaleX) / 2;
-    expect(Math.abs(g.bandLeft - expectedBand)).toBeLessThanOrEqual(1);
-    expect(g.marginLeft).toBe(0);
+    await expect(async () => {
+      const g = await geom(page);
+      expect(g.scaleX).not.toBe(1); // 前提成立：真的在縮放
+      // 縮放分支的原點是公式推的（mouse_geometry.gridOriginX），前提是 layout box
+      // 置中 ＋ transform-origin: center。改成貼左，這條就會整條跑掉。
+      const expectedBand = (g.innerWidth - g.chw * g.cols * g.scaleX) / 2;
+      expect(Math.abs(g.bandLeft - expectedBand)).toBeLessThanOrEqual(1);
+      expect(g.marginLeft).toBe(0);
+    }).toPass();
   });
 });

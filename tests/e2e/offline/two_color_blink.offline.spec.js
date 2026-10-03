@@ -7,7 +7,7 @@
 // 「頭尾兩格屬性不同、其中有一格在閃」的全形字進去，看它有沒有走到 twoColorWord。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw } = require('../helpers/replay');
+const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
 
 // Big5「中」= 0xA4 0xA4。頭那格帶 blink（SGR 5）＋亮白，尾那格換成黃色且不閃
 // ⇒ ColorState.equals 為 false ⇒ ColorSegmentBuilder 走 appendTwoColorWord。
@@ -45,7 +45,7 @@ test.describe('二色 DBCS 的閃爍（離線）', () => {
     });
 
     await feedRaw(page, TWO_COLOR_BLINK_CHAR);
-    await page.waitForTimeout(400); // term_buf 的 30ms notify debounce + render flush
+    await waitScreenSettled(page);
 
     const on = await colorsWithBlink(page, true);
     expect(on).not.toBeNull(); // 沒掛上 qq2 就是渲染鏈沒走到 twoColorWord
@@ -67,7 +67,7 @@ test.describe('二色 DBCS 的閃爍（離線）', () => {
     });
 
     await feedRaw(page, TWO_COLOR_PLAIN_CHAR);
-    await page.waitForTimeout(400);
+    await waitScreenSettled(page);
 
     expect(await colorsWithBlink(page, true)).toBeNull();
     // 對照組本身要真的有走到二色路徑，否則這條測試什麼都沒守到

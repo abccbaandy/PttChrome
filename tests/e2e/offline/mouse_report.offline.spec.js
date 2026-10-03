@@ -15,6 +15,7 @@ const {
   bootOffline,
   replayListCassette,
 } = require('../helpers/replay');
+const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 
 const list = findCassette('list');
 
@@ -22,20 +23,6 @@ const list = findCassette('list');
 const ENABLE_CLICK = '\x1b[?1003l\x1b[?1000h\x1b[?1006h';
 // 沒有 UF_MOUSE 的使用者實際會收到的關閉四連。
 const DISABLE_ALL = '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l';
-
-async function startCapture(page) {
-  await page.evaluate(() => {
-    window.__sentLog = [];
-    window.__stubWSSent = (s) => window.__sentLog.push(s);
-  });
-}
-async function takeCapture(page) {
-  return page.evaluate(() => {
-    const out = window.__sentLog.join('');
-    window.__sentLog = [];
-    return out;
-  });
-}
 
 // 讓 server「宣告」它要滑鼠回報：直接餵進 app 的收資料入口，走真 parser。
 async function feedRaw(page, bytes) {
@@ -83,10 +70,9 @@ test.describe('滑鼠回報給 PTT server（離線重放）', () => {
     await startCapture(page);
     const { x, y } = await cellXY(page, 4, 9);
     await page.mouse.click(x, y);
-    await page.waitForTimeout(100);
 
     // 恰好一對 press+release，座標是 1-based 的 (5, 10)。
-    expect(await takeCapture(page)).toBe('\x1b[<0;5;10M\x1b[<0;5;10m');
+    await expect.poll(() => peekCapture(page)).toBe('\x1b[<0;5;10M\x1b[<0;5;10m');
   });
 
   test('主機沒開 tracking ⇒ 一個 byte 都不送（走回原本的滑鼠瀏覽）', async ({ page }) => {
@@ -139,13 +125,11 @@ test.describe('滑鼠回報給 PTT server（離線重放）', () => {
 
     await startCapture(page);
     await page.mouse.wheel(0, 120);
-    await page.waitForTimeout(100);
-    expect(await takeCapture(page)).toContain('\x1b[<65;');
+    await expect.poll(() => peekCapture(page)).toContain('\x1b[<65;');
 
     await startCapture(page);
     await page.mouse.wheel(0, -120);
-    await page.waitForTimeout(100);
-    expect(await takeCapture(page)).toContain('\x1b[<64;');
+    await expect.poll(() => peekCapture(page)).toContain('\x1b[<64;');
   });
 
   // 「選字仍然正常」那條**刻意不放在這裡**：拖曳任意格子座標會因為那片剛好是

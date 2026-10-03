@@ -80,7 +80,6 @@ test.describe('游標整列提亮（離線重放）', () => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await replayCassette(page, list, { easyReading: false });
-    await page.waitForTimeout(500);
 
     const line = await cursorLine(page);
     expect(line).not.toBeNull();
@@ -107,42 +106,43 @@ test.describe('游標整列提亮（離線重放）', () => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await replayCassette(page, list, { easyReading: false });
-    await page.waitForTimeout(500);
 
     await page.evaluate(() => {
       window.__app.onPrefChange('cursorRowBrighten', false);
       window.__app.onPrefChange('cursorRowBackground', true);
     });
-    await page.waitForTimeout(200);
 
-    const line = await cursorLine(page);
-    expect(line.classes).not.toContain('cursorBrighten');
-    expect(line.classes.filter((c) => /^b\d+$/.test(c)).length).toBe(1);
-    expect(TRANSPARENT).not.toContain(line.background);
+    await expect(async () => {
+      const line = await cursorLine(page);
+      expect(line.classes).not.toContain('cursorBrighten');
+      expect(line.classes.filter((c) => /^b\d+$/.test(c)).length).toBe(1);
+      expect(TRANSPARENT).not.toContain(line.background);
+    }).toPass();
   });
 
   test('兩種樣式都開 → 疊在同一列；都關 → 整列什麼都不畫', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await replayCassette(page, list, { easyReading: false });
-    await page.waitForTimeout(500);
 
     await page.evaluate(() =>
       window.__app.onPrefChange('cursorRowBackground', true)
     );
-    await page.waitForTimeout(200);
-    let line = await cursorLine(page);
-    expect(line.classes).toContain('cursorBrighten');
-    expect(line.classes.filter((c) => /^b\d+$/.test(c)).length).toBe(1);
+    await expect(async () => {
+      const line = await cursorLine(page);
+      expect(line.classes).toContain('cursorBrighten');
+      expect(line.classes.filter((c) => /^b\d+$/.test(c)).length).toBe(1);
+    }).toPass();
 
     await page.evaluate(() => {
       window.__app.onPrefChange('cursorRowBrighten', false);
       window.__app.onPrefChange('cursorRowBackground', false);
     });
-    await page.waitForTimeout(200);
-    line = await cursorLine(page);
-    expect(line.classes).not.toContain('cursorBrighten');
-    expect(line.classes.filter((c) => /^b\d+$/.test(c))).toEqual([]);
-    expect(TRANSPARENT).toContain(line.background);
+    await expect(async () => {
+      const line = await cursorLine(page);
+      expect(line.classes).not.toContain('cursorBrighten');
+      expect(line.classes.filter((c) => /^b\d+$/.test(c))).toEqual([]);
+      expect(TRANSPARENT).toContain(line.background);
+    }).toPass();
   });
 });
