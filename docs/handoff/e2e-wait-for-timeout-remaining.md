@@ -44,8 +44,8 @@
 ## live e2e（tests/e2e/*.spec.js、helpers/ptt.js，約 100 處）
 未分類。限制：登入預算（每輪只登入一次）、PTT 維護／BOT 封鎖時不可重跑 ⇒ 無法用 `--repeat-each` 壓測驗證，改動需在主目錄合回 dev 後統一跑一輪。`tools/record-cassette.spec.js` 是錄製工具，不是測試。
 
-## 待查（疑似產品端競態，非 sleep 造成）
-`offline/easy-reading-list.offline.spec.js`「原生列表：鍵盤游標底色上在真游標列」：6 倍 CPU 節流、整檔 repeat-each=3 時出現一次 `painted` 恆為 `[]`（toPass 輪詢 60s 都沒畫上）。單跑該測試 8/8 綠（新舊版皆同）。舊版 300ms 單次讀值遇到同狀態一樣會紅 ⇒ 不是本次改動引入。懷疑 `applyPrefs` 與列表重放／好讀 disengage 的先後導致底色那一幀沒重畫。
+## 已知陷阱：列表 cassette 要先關列表好讀再餵
+`enableEasyReadingList` 預設開。`replayListCassette` 之後才 `applyPrefs({enableEasyReadingList:false})` ＝與 start step 的 settle 賽跑：輸了就 engage 送錨定 jump，`cchat-list-nav` 的 jump recv 沒有 Ctrl+L 全幅重繪 ⇒ footer 空白 ⇒ `pageState` 0。新 spec 一律先關再餵（範例 `offline/easy-reading-list.offline.spec.js`「原生列表：鍵盤游標底色」）。
 
 ## 防回歸（未做）
 靜態守護：新增的 `waitForTimeout` 後面不准緊接單次讀值的肯定斷言（參考 `tests/unit/e2e_layout_settle.test.js` 的掃描手法）。

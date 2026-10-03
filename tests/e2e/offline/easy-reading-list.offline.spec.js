@@ -1030,10 +1030,14 @@ test.describe('文章列表好读模式（离线）', () => {
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀必須在餵 cassette **之前**關掉：pref 預設開，晚關的話 start step 一
+      // settle 就 engage、送出錨定 jump（351359 + CR + FF）。cassette 那一步的 recv 只有
+      // 「清掉 b_lines 的跳號提示」、沒有 FF（Ctrl+L）換來的全幅重繪 ⇒ footer 留白 ⇒
+      // pageState 掉成 0 ⇒ 正確地不上色，toPass 輪到逾時（CPU 節流 8 倍下約 1/10）。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, nav);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
-        enableEasyReadingList: false,
         useMouseBrowsing: false, // 純鍵盤：標示不該再依賴滑鼠瀏覽
         keyboardCursorHighlight: true,
         // 樣式層：這條驗的是「哪一列 + 什麼顏色」⇒ 要明確開底色樣式
