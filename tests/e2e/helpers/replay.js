@@ -359,7 +359,9 @@ async function replayCassette(page, cassette, opts = {}) {
     const st = await page.evaluate(() => window.__replay).catch(() => null);
     console.log('replayCassette 未喂完所有 step（可能 cassette 与当前逻辑不符）：', JSON.stringify(st));
   }
-  await page.waitForTimeout(300); // 让最后一页 settle/render flush
+  // 让最后一页 settle/render flush：渲染在 notify 里同步完成（无 rAF），好读的
+  // 后续反应挂在 settle 上 ⇒ 两个计时器都清空才算这一页真的落地。
+  await waitScreenSettled(page);
 }
 
 // 重放一卷「list 多 step」cassette（tools/record-cassette.spec.js 的
