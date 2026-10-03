@@ -85,7 +85,16 @@ async function drawRows(page, rows) {
       data += '\x1b[' + (Number(k) + 1) + ';1H' + u2b(map[k]);
     window.__app.onData(data);
   }, rows);
-  await page.waitForTimeout(300);
+  // 等到這一幀真的生效：每列字都進了 buf，而且 30ms debounce 的 notify 已經跑完
+  // （pageState、畫面、狀態機的反應都在 notify 裡）。固定 sleep 在 renderer 忙的時候
+  // 不夠，pageState 還停在上一幀。
+  await page.waitForFunction((map) => {
+    const buf = window.__app.buf;
+    if (buf.timerUpdate) return false;
+    return Object.keys(map).every((k) =>
+      buf.getRowText(Number(k), 0, buf.cols).includes(map[k].trim())
+    );
+  }, rows);
 }
 
 const drawArticle = (page) =>
@@ -122,14 +131,23 @@ async function openContextMenu(page) {
 // 在這個函式**之後**——探路那幾個 byte 不在計數窗內。**不要把 collectSent 往前搬。**
 async function openLongPushModal(page) {
   await openContextMenu(page);
+  const base = await sentText(page);
   await page
     .locator('.DropdownMenu')
     .first()
     .getByText(await label(page, 'cmenu_longPush'), { exact: true })
     .click();
+  // 一問一答：每一幀都要等狀態機對上一幀送出回應才畫。搶先畫的話狀態機還沒在等
+  // 那一幀（以前靠固定 sleep 錯開，renderer 一忙就對不上）。
+  const answered = (bytes) =>
+    expect.poll(() => sentText(page).then((s) => s.slice(base.length))).toBe(bytes);
+  await answered('X');
   await drawRows(page, { 23: TYPE_MENU }); // 推得了
+  await answered('X\x03');
   await drawRows(page, { 23: PUSH_PROMPT }); // 第 1 個 Ctrl-C → 輸入列
+  await answered('X\x03\x03');
   await drawRows(page, { 23: ARTICLE_FOOTER }); // 第 2 個 Ctrl-C → 退出
+  await answered('X\x03\x03\r');
   await drawArticle(page); // ⏎ 回到文章
   await expect(page.locator('[name="longPushText"]')).toBeVisible();
 }
