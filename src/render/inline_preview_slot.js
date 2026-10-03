@@ -6,11 +6,13 @@
 // 關鍵：**沒進入視野就連 requestPreview() 都不呼叫** —— 它一被呼叫就開始解析網址
 // （imgur 無副檔名的還會發兩個 HEAD 探測），單純給 <img> 加 loading="lazy" 攔不到。
 //
-// 兩個共用的 IntersectionObserver（root ＝ viewport；.main 的裁切會被算進交集，
-// 所以捲出捲動容器的列自然回報 isIntersecting=false）：
+// 兩個共用的 IntersectionObserver（**root ＝ 捲動容器 `.main`**，見 scrollRoot）：
 //   near — rootMargin LAZY_MOUNT_MARGIN_PX  → 相交即掛載
 //   far  — rootMargin LAZY_UNMOUNT_MARGIN_PX → 不相交即卸載（釋放已解碼的點陣圖）
 // 兩個邊界之間是遲滯區，避免在邊界來回捲動時反覆重載。
+// root 不可省略（省略＝隱式 root viewport）：rootMargin 只擴 root，祖先捲動容器 `.main`
+// 的裁切照算 ⇒ 兩個 margin 實際≈0，捲到才開始載、捲出就卸（往回捲重新下載／解碼）。
+// 守護 tests/e2e/offline/lazy_preview_margin.offline.spec.js。
 //
 // **ImagePreviewer 仍是 React**（唯一留在核心畫面裡的 React 葉子島）：一張圖進視野
 // 才開一個 root、捲遠就 unmount，同時存活的數量是「視野內」等級，不在每幀熱路徑上。
@@ -79,8 +81,9 @@ import {
 } from "../js/image_zoom";
 
 const callbacks = new WeakMap();
-let nearObserver = null;
-let farObserver = null;
+// root → { root, near, far }。實務上只有一個 `.main`；root 為 null（找不到捲動容器，
+// 例如 unit 測試直接掛在 body）走隱式 root，行為等同沒有捲動容器的頁面。
+let observerPairs = new Map();
 
 // 媒體載入完成／尺寸改變時把高度記進當下模式那一格，這樣「還沒在這個模式下卸載過」
 // 的圖也有高度可用（見 lazy_media.recordSlotHeight 的時機說明）。
@@ -182,20 +185,34 @@ function measureIntrinsic(node) {
   };
 }
 
-function ensureObservers() {
-  if (nearObserver || !lazyPreviewSupported()) return;
+// 好讀長頁的捲動容器。slot 建立當下還沒接進 DOM（closest 找不到），所以直接查文件；
+// 萬一 slot 最後不在它裡面，onIntersect 會改綁隱式 root（見 rebindIfOutsideRoot）。
+function scrollRoot() {
+  return document.querySelector(".main");
+}
+
+function observersFor(root) {
+  let pair = observerPairs.get(root);
+  if (pair) return pair;
   const dispatch = (kind) => (entries) => {
     for (let i = 0; i < entries.length; ++i) {
       const cb = callbacks.get(entries[i].target);
       if (cb) cb(kind, entries[i].isIntersecting);
     }
   };
-  nearObserver = new IntersectionObserver(dispatch("near"), {
-    rootMargin: LAZY_MOUNT_MARGIN_PX + "px 0px",
-  });
-  farObserver = new IntersectionObserver(dispatch("far"), {
-    rootMargin: LAZY_UNMOUNT_MARGIN_PX + "px 0px",
-  });
+  pair = {
+    root,
+    near: new IntersectionObserver(dispatch("near"), {
+      root,
+      rootMargin: LAZY_MOUNT_MARGIN_PX + "px 0px",
+    }),
+    far: new IntersectionObserver(dispatch("far"), {
+      root,
+      rootMargin: LAZY_UNMOUNT_MARGIN_PX + "px 0px",
+    }),
+  };
+  observerPairs.set(root, pair);
+  return pair;
 }
 
 function ensureSizeObserver() {
@@ -212,8 +229,7 @@ function ensureSizeObserver() {
 // 把 module 級的 observer 丟掉重建。量測 memo 同為 module 級狀態，一併清掉 ——
 // 既有測試都已在 beforeEach/afterEach 呼叫它，跨測試隔離因此自動成立。
 export function resetLazyObserversForTest() {
-  nearObserver = null;
-  farObserver = null;
+  observerPairs = new Map();
   sizeObserver = null;
   sizeMemo.clear();
   grayHrefs.clear();
@@ -502,8 +518,33 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     logSlot("unmount");
   }
 
+  // 這次用的 observer 組（destroy 要 unobserve 的對象）：module 級的組合可能已經被換掉
+  // （測試的 resetLazyObserversForTest），不能靠讀當下的模組狀態。
+  let pair = null;
+  function observe(p) {
+    pair = p;
+    callbacks.set(node, onIntersect);
+    p.near.observe(node);
+    p.far.observe(node);
+  }
+  function unobserve() {
+    if (!pair) return;
+    pair.near.unobserve(node);
+    pair.far.unobserve(node);
+    pair = null;
+  }
+  // 指定 root 卻不在它裡面 ⇒ 交集永遠回報 false，佔位盒永遠不掛。改綁隱式 root。
+  function rebindIfOutsideRoot() {
+    if (!pair || !pair.root || !node.isConnected || pair.root.contains(node))
+      return false;
+    unobserve();
+    observe(observersFor(null));
+    return true;
+  }
+
   function onIntersect(kind, isIntersecting) {
     if (state.destroyed) return;
+    if (rebindIfOutsideRoot()) return;
     if (kind === "near") facts.near = isIntersecting;
     else facts.far = !isIntersecting;
     const action = nextLazyState(facts);
@@ -514,8 +555,11 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
       // 先量再卸：卸載後高度歸零，這個值就拿不到了。同時確認 slot 內是不是**真的**
       // 有媒體：只有「讀取中…」指示器／載入失敗提示／非媒體網址時，量到的高度不是
       // 內容高度，釘住它會變成永久空白（recordSlotHeight 的註解有實例）。
+      // 判準與 onResize 相同用 hasLoadedMedia：讀取中的 <img> 已在 DOM（display:none），
+      // 只看 querySelector 會把指示器高度當成圖高釘住。預載生效後「讀取中就被推出卸載
+      // 邊界」是常態（前面的圖載完撐高版面），不是邊角情況。
       const measured = content.offsetHeight;
-      const hasMedia = !!content.querySelector(LAZY_MEDIA_SELECTOR);
+      const hasMedia = hasLoadedMedia(content);
       const prevPinned = state.pinned;
       const prevAspect = state.aspect;
       state.pinned = recordSlotHeight(
@@ -583,18 +627,10 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   syncGray();
 
   if (supported) {
-    ensureObservers();
-    // 抓住**這次**用的 observer 交給 destroy：module 級的變數可能已經被換掉
-    // （測試的 resetLazyObserversForTest），unobserve 不能靠讀當下的模組狀態。
-    const nearObs = nearObserver;
-    const farObs = farObserver;
-    callbacks.set(node, onIntersect);
-    nearObs.observe(node);
-    farObs.observe(node);
+    observe(observersFor(scrollRoot()));
     slotTeardown.set(node, () => {
       callbacks.delete(node);
-      nearObs.unobserve(node);
-      farObs.unobserve(node);
+      unobserve();
     });
   } else {
     // 不支援 IntersectionObserver（測試刻意藏起來／很舊的環境）⇒ 直接照舊立即掛載，

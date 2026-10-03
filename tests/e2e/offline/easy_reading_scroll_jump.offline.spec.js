@@ -21,7 +21,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayCassette } = require('../helpers/replay');
-const { waitPreviewsSettled } = require('../helpers/layout');
+const { waitPreviewsSettled, waitRectStable } = require('../helpers/layout');
 
 // 需要「圖夠多、總高夠長」的素材：短文整篇都在視野內，永遠不會有 slot 在 PgUp 的
 // 同一幀掛載／卸載 ⇒ 測試恆綠。stock-end 有 9 張圖，總高足夠連按數次 PgUp。
@@ -102,26 +102,6 @@ const clickAnyLoadedImg = (page) =>
     return true;
   });
 
-// 固定的「起讀位置」：第一個佔位盒往上留一點空間。
-//
-// **刻意不用「由上往下逐格掃到有圖為止」**（2026-09-05 CI 紅的根因）：掃到第幾格才停
-// 取決於當下的載入節奏，而停在哪裡就決定了「哪幾張圖在 normal 模式下被量過高度」
-// （pinned[normal]）—— 那正是本測試挑候選佔位盒時的**排除**條件。掃描式起點 ⇒ 候選
-// 集合隨機器快慢而變，慢的機器上會歸零，測試就紅在「素材太短」（實錄：
-// actions/runs/33955762422，同一份素材本機與其他四輪 CI 全綠）。
-// 改成由**素材本身**（第一個 slot 的位置）決定起點，與時序無關。
-async function gotoFirstSlot(page) {
-  const ok = await page.evaluate((topOfSrc) => {
-    const topOf = eval(topOfSrc);
-    const slot = document.querySelector('.inlinePreviewSlot');
-    if (!slot) return false;
-    document.querySelector('.main').scrollTop = Math.max(0, topOf(slot) - 200);
-    return true;
-  }, TOP_OF);
-  if (ok) await waitPreviewsSettled(page);
-  return ok;
-}
-
 // 捲到底。整趟放大態走完之後**明確**回到一個決定性的位置：點縮小那一下會讓整頁高度
 // 塌掉好幾倍，最終的 scrollTop 是瀏覽器的 scroll anchoring 決定的，測試不該拿它當前提
 // （同一份素材本機恆為 6824，CI 上顯然落在別處 ⇒ 上方一個候選都不剩）。
@@ -133,10 +113,41 @@ async function gotoBottom(page) {
   await waitPreviewsSettled(page);
 }
 
+// 用倍率列把整頁切到「倍率」尺寸模式（真 hover＋click，同 image_zoom.offline.spec.js
+// 的 revealBar：倍率列平時 visibility:hidden，要 hover 圖片上緣左側才浮現）。
+// 目標取視野內最後一張已載入的圖，把它的上緣捲到視窗頂。
+async function zoomInHere(page) {
+  const IMG = '[data-e2e-zoom-target]';
+  const marked = await page.evaluate(() => {
+    const imgs = Array.from(document.querySelectorAll('img.hyperLinkPreview')).filter(
+      (im) => im.offsetWidth > 0 && im.offsetHeight > 0
+    );
+    const img = imgs[imgs.length - 1];
+    if (!img) return false;
+    img.setAttribute('data-e2e-zoom-target', '1');
+    img.scrollIntoView({ block: 'start' });
+    return true;
+  });
+  if (!marked) return false;
+  await waitPreviewsSettled(page);
+  await waitRectStable(page, IMG);
+  const box = await page.locator(IMG).boundingBox();
+  await page.locator(IMG).hover({ position: { x: Math.round(box.width / 4), y: 8 } });
+  await page
+    .locator('.inlinePreviewSlot', { has: page.locator(IMG) })
+    .locator('.previewZoomBar > .previewZoomIn')
+    .click();
+  await waitPreviewsSettled(page);
+  return page.evaluate(() =>
+    document.getElementById('mainContainer').classList.contains('imagesZoomed')
+  );
+}
+
 // 「已卸載＋只剩替身盒頂著」而且**保證不會自己掛回來**的佔位盒。
 // 三個條件缺一不可（缺了就抓不到 bug，只是靜默變成恆綠）：
-//   a. slot 裡沒有媒體 ⇒ 真的卸載了；
-//   b. spacer 沒有 inline min-height ⇒ normal 這格從沒量過，高度純靠替身盒；
+//   a. 內容層是空的 ⇒ 真的卸載了。只看「沒有媒體」不夠：預載會讓視野外的盒子先掛上，
+//      'slow' 情境下它在讀取中（還沒有媒體、替身盒頂著）—— 挑到它就量不到掛載那一幀；
+//   b. spacer 沒有 inline min-height ⇒ 當下尺寸模式那格從沒量過，高度純靠替身盒；
 //   c. 整個 slot 落在「視野 + LAZY_MOUNT_MARGIN_PX」之外 ⇒ 它在原地不會被 near
 //      observer 掛回來。少了 c 就會挑到邊界上的 slot：在慢一點的機器上它早就掛回來、
 //      圖也載好了（本地 fixture 秒回）⇒ 條件 a 反過來把它刷掉。
@@ -160,12 +171,13 @@ const pickGhostOnlySlot = (page) =>
           y: Math.round(y),
           h: s.offsetHeight,
           media: !!s.querySelector(mediaSel),
+          mounted: s.querySelector('.inlinePreviewContent').childNodes.length > 0,
           minHeight: spacer ? spacer.style.minHeight : null,
           ghostHeight: ghost ? ghost.offsetHeight : null,
         };
         table.push(row);
         if (chosen) continue;
-        if (row.media) continue;
+        if (row.media || row.mounted) continue;
         if (row.minHeight) continue;
         if (!(row.ghostHeight >= 200)) continue;
         if (y + row.h > limit) continue;
@@ -191,14 +203,15 @@ const pickGhostOnlySlot = (page) =>
 // ---------------------------------------------------------------------------
 // 測試 1：掛載那一幀不得塌陷（**這條就是 bug 的機制，舊碼必紅**）。
 //
-// 動線就是 §3 case 1：整篇只在**放大態**看過 ⇒ 那些圖的 normal 高度從沒被量到
-// （pinned[normal] 為空），卸載後只剩替身盒頂著。點縮小、往回捲，舊碼在 mount()
-// 當下先把替身盒拿掉、再放進「讀取中…」指示器 ⇒ slot 從 ~570px 掉到 ~56px。
+// 動線是 §3 case 1 的同型：某些圖在**目前的尺寸模式**下從沒被量到高度（pinned 為空），
+// 卸載後只剩替身盒頂著。往回捲時舊碼在 mount() 當下先把替身盒拿掉、再放進「讀取中…」
+// 指示器 ⇒ slot 從 ~570px 掉到 ~56px。（原本用 normal 模式；延遲載入的預載／遲滯邊界
+// 修好之後 stock-end 太短，normal 做不出候選，改用倍率模式，見測試本體開頭。）
 // 那一次塌陷（實測 438px ＝ 一次 PgUp 的 76.6%）就是使用者「PgUp 捲不上去」的量。
 //
 // 用 ResizeObserver 逐幀採樣而不是事後量一次：事後量到的是已經撐回來的值 ⇒ 恆綠。
 //
-// **每一個捲動位置都由素材決定、不由載入節奏決定**（見 gotoFirstSlot／gotoBottom）：
+// **每一個捲動位置都由素材決定、不由載入節奏決定**（見 gotoBottom／zoomInHere）：
 // 這條測試的前提（找得到「只剩替身盒」的佔位盒）本身就是被那些位置決定的，起點一飄
 // 前提就會落空，紅的還是一句看不出原因的「素材太短」。
 //
@@ -222,23 +235,23 @@ test('往回捲時佔位盒掛載：高度不得塌陷（替身盒讓位給讀�
   await replayCassette(page, article, { easyReading: true });
   await waitPreviewsSettled(page);
 
-  // 1. 停在第一個佔位盒上點放大（此時只有最前面那幾張圖在 normal 模式下量過高度），
-  //    之後整趟往下都在放大態 ⇒ 中後段的圖**只**在放大態載入過，normal 那格永遠是空的。
-  expect(await gotoFirstSlot(page), '素材裡沒有任何行內預覽佔位盒').toBe(true);
-  expect(await clickAnyLoadedImg(page), '起讀位置應有可點的圖來切換放大').toBe(true);
+  // 「某尺寸模式從沒量過、又已經卸載」的佔位盒要靠模式切換做出來，而延遲載入會預載
+  // 視野 ± LAZY_MOUNT_MARGIN_PX、離開 LAZY_UNMOUNT_MARGIN_PX 才卸載 ⇒ 重放時（圖還沒
+  // 撐開、整篇很短）前段的盒子早就在 normal 下量過了，normal 不可能有候選。改用第三種
+  // 模式「倍率」：
+  // 1. 文末點放大，放大態由頂走到底 —— 每張圖都在放大態載入過（量到 aspect），離文末
+  //    超過卸載邊界的前段幾張在走到底時被卸載。
+  await gotoBottom(page);
+  expect(await clickAnyLoadedImg(page), '文末應有可點的圖來切換放大').toBe(true);
   await waitPreviewsSettled(page);
   expect(
     await page.evaluate(() =>
       document.getElementById('mainContainer').classList.contains('imagesEnlarged')
     )
   ).toBe(true);
-
   await walkDown(page);
 
-  // 2. 回到同一個起讀位置點縮小（回到 normal）。回到原位再點，是為了讓「哪幾張圖被
-  //    量過 normal 高度」這件事一路都由位置決定 —— 在文末隨便點一張，被量到的就是
-  //    文末那幾張，候選集合又變成看運氣。
-  expect(await gotoFirstSlot(page), '縮小前回不到起讀位置').toBe(true);
+  // 2. 就地（文末）點縮小、再按倍率 ＋。前段那幾張全程卸載著，倍率那格從沒量過。
   expect(await clickAnyLoadedImg(page), '縮小前視野內應有可點的圖').toBe(true);
   await waitPreviewsSettled(page);
   expect(
@@ -246,6 +259,7 @@ test('往回捲時佔位盒掛載：高度不得塌陷（替身盒讓位給讀�
       document.getElementById('mainContainer').classList.contains('imagesEnlarged')
     )
   ).toBe(false);
+  expect(await zoomInHere(page), '文末應能用倍率列切到倍率模式').toBe(true);
 
   // 3. 捲到底（決定性的觀察位置），再找一個「已卸載、只剩替身盒頂著、而且遠在掛載
   //    邊界之外」的佔位盒，在它身上裝 ResizeObserver 逐幀記高度。
@@ -257,6 +271,14 @@ test('往回捲時佔位盒掛載：高度不得塌陷（替身盒讓位給讀�
       `scrollTop=${target.scrollTop}、候選須整個落在 y+h ≤ ${target.limit}，` +
       `佔位盒現況：${JSON.stringify(target.slots)}`
   ).toBe(true);
+
+  // 掛載那一刻的圖必須真的走一次（'slow' 的）網路：它在放大態走過時已經載入過，
+  // Chromium 的記憶體快取會讓同一個 URL 的 <img> 在一幀內就佔到版面 ⇒ 「讀取中」那段
+  // 中間態根本不存在，把 syncGhost 改回舊判準也照樣綠（實測 samples 全程 743）。
+  // 關快取之後同一個突變穩定塌到 65px 撐 5.2 秒。
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
 
   // 4. 捲回去讓它進入掛載範圍。
   await page.evaluate((y) => {

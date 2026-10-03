@@ -152,7 +152,8 @@ test.describe('增强 · 文章（离线重放）', () => {
 
     test(`黑名单：好读移除该 pusher 推文且不留空行 ${tag}`, async ({ page }) => {
       test.setTimeout(90000);
-      const target = article.meta.firstCommentAuthor;
+      // data-pusher 是小写正规化过的 ID（comment_parse 的 pusher），meta 保留原大小写。
+      const target = (article.meta.firstCommentAuthor || '').toLowerCase();
       test.skip(!target, 'cassette 无 firstCommentAuthor');
 
       await bootOffline(page, ptt);
@@ -165,16 +166,20 @@ test.describe('增强 · 文章（离线重放）', () => {
       await replayCassette(page, article, { easyReading: true });
 
       // 逐列快照：pusher 读 data-pusher 属性（楼号徽章数字会混进 textContent）。
+      // 列文字**不含**行内预览佔位盒里的东西（倍率列「◐－100%＋」、灰阶钮只在图掛上且载完
+      // 才出现）：那是延迟载入的 UI，不是 BBS 内容，而且掛不掛取决于捲动历史——先前掛上的
+      // 靠卸载遲滯（LAZY_UNMOUNT_MARGIN_PX）留着，黑名单 redraw 重建的新佔位盒只看预载边界
+      // ⇒ before／after 同一张图可以一个有倍率列一个没有。
       const readRows = () =>
         page.evaluate(() =>
-          Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"]')).map((el) => ({
-            pusher: el.getAttribute('data-pusher'),
-            text: el.textContent,
-          }))
+          Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"]')).map((el) => {
+            const c = el.cloneNode(true);
+            c.querySelectorAll('.inlinePreviewSlot').forEach((s) => s.remove());
+            return { pusher: el.getAttribute('data-pusher'), text: c.textContent };
+          })
         );
 
-      // 列文字含行内预览自己长出的 UI（倍率列「◐－100%＋」只在图载完才出现），
-      // redraw 后图要重载 ⇒ before／after 都必须在预览终局时取，才是同一种状态。
+      // redraw 后图要重载 ⇒ before／after 仍在预览终局时取（版面稳定才读）。
       await waitPreviewsSettled(page);
       const before = await readRows();
       expect(before.some((r) => r.pusher === target)).toBe(true);
@@ -196,7 +201,8 @@ test.describe('增强 · 文章（离线重放）', () => {
 
     test(`pusher 高亮：togglePusherHighlight 只高亮该 pusher 的列 ${tag}`, async ({ page }) => {
       test.setTimeout(90000);
-      const target = article.meta.firstCommentAuthor;
+      // data-pusher 是小写正规化过的 ID（comment_parse 的 pusher），meta 保留原大小写。
+      const target = (article.meta.firstCommentAuthor || '').toLowerCase();
       test.skip(!target, 'cassette 无 firstCommentAuthor');
 
       await bootOffline(page, ptt);

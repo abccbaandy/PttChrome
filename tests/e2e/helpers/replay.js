@@ -222,7 +222,33 @@ async function waitScreenSettled(page, rows = {}) {
 //   window.__replay.sent：本次重放中 client 送出的所有 bytes（含自动翻页键），
 //     window.__replay.sends：[{data, sig}]，sig = 送出当下所在页的状态列签章，
 //     供「同一页不得送两次 PageDown」这类断言用。
+// 錄製當下的終端機大小（cassette.rows／cols；舊卷沒寫＝80×24）。畫面 bytes 是按那個大小
+// 畫的（狀態列在最後一列、游標定址到第 rows 列），用別的列數重放＝超出範圍的列被夾到
+// 最後一列、整頁錯亂。所以餵資料前先把終端機設成同一個大小 —— 走 pref 的整組套用路徑
+// （onValuesPrefChange，同 term_size.offline.spec.js），不另開後門。80×24 時什麼都不做。
+async function applyCassetteTermSize(page, cassette) {
+  const rows = (cassette && cassette.rows) || 24;
+  const cols = (cassette && cassette.cols) || 80;
+  if (rows === 24 && cols === 80) return;
+  await page.evaluate(
+    ({ rows, cols }) => {
+      window.__app.onValuesPrefChange(
+        Object.assign({}, window.__readPrefs(), {
+          termSizeMode: 'fixed-term-size',
+          termSize: { cols, rows },
+        })
+      );
+    },
+    { rows, cols }
+  );
+  await page.waitForFunction(
+    ({ rows, cols }) => window.__app.buf.rows === rows && window.__app.buf.cols === cols,
+    { rows, cols }
+  );
+}
+
 async function replayCassette(page, cassette, opts = {}) {
+  await applyCassetteTermSize(page, cassette);
   const easyReading = opts.easyReading !== false;
   const splitFrames = opts.splitFrames === true ? true : (opts.splitFrames || false);
   const dropSteps = opts.dropSteps || [];
@@ -256,8 +282,9 @@ async function replayCassette(page, cassette, opts = {}) {
         const bytes = atob(step.recv); // atob → latin1 bytes string（每 char = 1 byte）
         window.__replay.fed = idx;
         // 半画帧合成：只拆 pagedown（start 是全屏首绘、end 是 End 键，不在 race 路径上）。
-        // splitFrames === true → 切在**状态列补丁之前**（第一个 ESC[24;）：第一段只有
-        //   内容列，状态列还是上一页的旧值，游标也还没 park。
+        // splitFrames === true → 切在**状态列补丁之前**（第一个 ESC[<rows>;，状态列是
+        //   最后一列，28 列的卷就是 ESC[28;）：第一段只有内容列，状态列还是上一页的
+        //   旧值，游标也还没 park。
         // splitFrames === <0..1 数值> → 切在该比例的 byte 位置：让第一段只画到画面
         //   中途，其余列还留着**上一页的内容**（pfterm 只送 dirty cell，未送到的位置
         //   自然维持旧画面）。这才是内容列本身被撕开的现场。
@@ -266,7 +293,7 @@ async function replayCassette(page, cassette, opts = {}) {
           cut =
             typeof splitFrames === 'number'
               ? Math.floor(bytes.length * splitFrames)
-              : bytes.indexOf('\x1b[24;');
+              : bytes.indexOf('\x1b[' + (cassette.rows || 24) + ';');
         }
         if (cut > 0) {
           window.__replay.split++;
@@ -373,6 +400,7 @@ async function replayCassette(page, cassette, opts = {}) {
 //   open/cancel: 单独 '\r'      back: ←    slash: '/'
 // 送出的所有 bytes 也记进 window.__replay.sent，供「本地导航不送键」类断言用。
 async function replayListCassette(page, cassette) {
+  await applyCassetteTermSize(page, cassette);
   await page.evaluate(
     ({ cassette }) => {
       const app = window.__app;

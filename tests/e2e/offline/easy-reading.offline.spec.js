@@ -71,7 +71,9 @@ test.describe('好读模式翻页（离线重放）', () => {
 
       // 第一则推文必须重现（regression：曾整列消失，黃仁勳那篇即 bluebird5566）。
       if (cassette.meta.firstCommentAuthor) {
-        const present = rows.some((t) => t.toLowerCase().includes(cassette.meta.firstCommentAuthor));
+        // 兩邊都轉小寫：ID 大小寫不拘（cchat-many-images 的首推是 KNTS）。
+        const first = cassette.meta.firstCommentAuthor.toLowerCase();
+        const present = rows.some((t) => t.toLowerCase().includes(first));
         expect(present).toBe(true);
       }
 
@@ -293,11 +295,14 @@ test.describe('好读模式翻页（离线重放）', () => {
       // 取中间那张当锚点（上方压着大量被放大的内容 → 缩小时位移最大）。只有一张时
       // 就是它自己：位移较小、讯号较弱，但断言完全成立（强情境由 stock-end 的 9
       // 张涵盖）。
-      await page.evaluate((sel) => {
+      // 回傳锚点上方已载出的图数：>0 时缩小必然让上方内容变矮，scrollTop 必须跟着变。
+      const imgsAboveAnchor = await page.evaluate((sel) => {
         const imgs = Array.from(document.querySelectorAll(sel)).filter(
           (im) => im.offsetWidth > 0 && im.offsetHeight > 0
         );
-        imgs[Math.floor(imgs.length / 2)].setAttribute('data-e2e-anchor', '1');
+        const i = Math.floor(imgs.length / 2);
+        imgs[i].setAttribute('data-e2e-anchor', '1');
+        return i;
       }, SEL);
       // 卷到图顶位于视窗上方 30% 处（图顶在视窗内）。.main 有 scale 时一次卷不准，
       // 每卷一次等一帧让版面更新再量（收敛单调）。
@@ -348,6 +353,13 @@ test.describe('好读模式翻页（离线重放）', () => {
       // r.error 这种把所有失败原因揉成一句话的回传值。
       // 核心症状：缩小后该图仍须与视窗相交（旧 code 会卷过头 → 交集 <= 0）。
       expect(r.visible).toBeGreaterThan(0);
+      // 前提：上方有被缩小的图却量不到 scrollTop 变化 ⇒ 锚定根本没被考验（延迟载入的
+      // observer margin 失效时就是这样：整页只挂得上视野内那张，位移恒 0、断言恒绿）。
+      if (imgsAboveAnchor > 0) {
+        expect(r.after.scrollTop, '锚点上方有图却没有位移，锚定没被验到').not.toBe(
+          r.before.scrollTop
+        );
+      }
       // 图顶原本在视窗内 → 应维持固定间距（容忍 layout 取整 / scale 误差）。
       expect(Math.abs(r.after.rel - r.before.rel)).toBeLessThan(r.before.viewH * 0.15);
     });

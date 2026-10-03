@@ -22,6 +22,7 @@ const ADVERSE_LAYOUT_SPECS = [
 const ADVERSE_IMAGE_SPECS = [
   'offline/lazy_preview_blank.offline.spec.js',
   'offline/lazy_preview_enlarge_blank.offline.spec.js',
+  'offline/lazy_preview_margin.offline.spec.js',
   'offline/easy-reading.offline.spec.js',
   'offline/easy_reading_scroll_jump.offline.spec.js',
 ];

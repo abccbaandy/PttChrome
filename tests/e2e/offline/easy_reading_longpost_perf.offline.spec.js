@@ -7,6 +7,10 @@
 // easy_reading_reverse.offline.spec.js 只在 viewUpdate 時量「離底部多遠」、容許誤差到
 // chh，而且用預設字級 20（0.55em＝11px 剛好整數）⇒ 量不到。
 //
+// 同型的第二個來源（2026-10）：自動開圖的「讀取中」指示器在視窗外被預載時，外框高度
+// 是小數（字級 32：74.09375px）⇒ 出現時 +0.094、被真圖取代時 −0.094。並行壓力下約
+// 1/12 次重現；成因由 tests/unit/preview_indicator_height.test.js 決定性鎖住。
+//
 // 這裡每個 rAF 追蹤同一個列節點相對 .main 的位置，任何非零位移都算震動。
 // 內容全部合成（tests/e2e/helpers/pmore_sim.js），不含任何真實文章。
 // 每幀 render 成本只印出來不斷言（機器快慢差太多）；O(n²) 的結構性回歸由 unit

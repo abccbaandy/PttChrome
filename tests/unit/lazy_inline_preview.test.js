@@ -64,6 +64,7 @@ class FakeIO {
   constructor(cb, opts) {
     this.cb = cb;
     this.rootMargin = opts && opts.rootMargin;
+    this.root = (opts && opts.root) || null;
     this.targets = new Set();
     observers.push(this);
   }
@@ -442,6 +443,24 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     expect(floorOf(slot)).toBe("");
   });
 
+  // 同一個判準在**卸載**路徑也要成立。延遲載入的預載／遲滯邊界生效後，視窗外的盒子
+  // 先掛上開始載入，前面的圖陸續載完撐高版面，就會把還在讀取中的盒子推出卸載邊界 ⇒
+  // 卸載當下 <img> 已在 DOM（display:none），只看 querySelector 會把「讀取中…」指示器
+  // 的 57px 當成 normal 高度釘住（cchat-many-images 實測整排 minHeight:57px）。
+  test("媒體還沒載完就被卸載 ⇒ 不得把讀取中指示器的高度釘進佔位", () => {
+    const slot = mountSlot(HREF).el;
+    near().emit(true);
+    setContentHeight(slot, 57); // 「讀取中…」指示器
+    const img = document.createElement("img");
+    img.className = "easyReadingImg hyperLinkPreview";
+    fakeHeight(img, 0);
+    contentOf(slot).appendChild(img);
+    near().emit(false);
+    far().emit(false);
+    expect(contentKids(slot)).toBe(1); // 卸載了（只剩手動放的 img；React 的指示器已拿掉）
+    expect(floorOf(slot)).toBe("");
+  });
+
   // 症狀級回歸（使用者實測：每篇文章推文區前面多一塊空白）。
   // 「※ 文章網址」那行的 URL 是 PTT 文章 HTML 頁，不是媒體：捲過去只會顯示
   // 「讀取中…」指示器，判定後內容消失。卸載時**不得**把那個指示器的高度釘住，
@@ -548,6 +567,52 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     near().emit(true);
     near().emit(false); // 捲出視野，但 far 仍相交
     expect(contentKids(slot)).toBeGreaterThan(0);
+  });
+
+  // root 必須是捲動容器 `.main`：隱式 root（viewport）下 rootMargin 被 `.main` 的裁切吃掉，
+  // 預載／遲滯邊界實際≈0（真瀏覽器症狀守護：tests/e2e/offline/lazy_preview_margin.offline.spec.js）。
+  describe("observer 的 root", () => {
+    let main;
+    beforeEach(() => {
+      main = document.createElement("div");
+      main.className = "main";
+      document.body.appendChild(main);
+    });
+    afterEach(() => main.remove());
+
+    const pairFor = (root) =>
+      observers.filter((o) => o.root === root && o.targets.size > 0);
+
+    test("有 .main ⇒ 兩個 observer 都以它為 root", () => {
+      const handle = createInlinePreviewSlot(HREF);
+      liveSlots.push(handle);
+      main.appendChild(handle.el);
+      const used = observers.filter((o) => o.targets.has(handle.el));
+      expect(used).toHaveLength(2);
+      expect(used.every((o) => o.root === main)).toBe(true);
+    });
+
+    test("slot 最後不在 .main 裡 ⇒ 第一次回報時改綁隱式 root，之後照常掛載", () => {
+      const slot = mountSlot(HREF).el; // 掛在 body，不在 .main 裡
+      const [n] = pairFor(main).filter((o) =>
+        o.rootMargin.startsWith(String(LAZY_MOUNT_MARGIN_PX)),
+      );
+      n.emit(false); // 不在 root 裡的 target 永遠回報不相交
+      expect(pairFor(main)).toHaveLength(0);
+      const implicitNear = pairFor(null).find((o) =>
+        o.rootMargin.startsWith(String(LAZY_MOUNT_MARGIN_PX)),
+      );
+      expect(implicitNear).toBeTruthy();
+      implicitNear.emit(true);
+      expect(contentKids(slot)).toBeGreaterThan(0);
+    });
+
+    test("destroy 解除的是改綁後的那組", () => {
+      const handle = mountSlot(HREF);
+      pairFor(main)[0].emit(false);
+      handle.destroy();
+      expect(observers.some((o) => o.targets.has(handle.el))).toBe(false);
+    });
   });
 
   test("環境沒有 IntersectionObserver ⇒ 立即掛載（行為與沒這功能時相同）", () => {

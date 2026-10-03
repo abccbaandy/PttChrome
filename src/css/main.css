@@ -1178,14 +1178,21 @@ span {
 /* 自動開圖「讀取中」指示器：解析中 + 媒體下載中共用。
    <img>/<video> 無法回報真實進度，故用不定式（indeterminate）滑動色塊。 */
 /* display 是 flex 而非 inline-flex、外加 width:fit-content：inline-level 元素的
-   `margin: auto` 解析成 0 ⇒ 指示器其實整片貼在第 0 欄，把左側退出帶壓掉。 */
+   `margin: auto` 解析成 0 ⇒ 指示器其實整片貼在第 0 欄，把左側退出帶壓掉。
+   **外框高度必須是整數像素**（垂直 margin 與 height 都 round(…, 1px)，高度用
+   border-box 固定、不靠內容撐）：延遲載入會在視窗外預載，指示器出現／被真圖取代時
+   上方總高多一段小數，scroll anchoring 補償後捲動位置被對齊到整數 ⇒ 視窗內文字
+   差一個次像素再跳回來（同 .commentSpacing 禁止事項 4）。1.6em 容得下字行與
+   1em＋4px 的 spinner。守護：tests/unit/preview_indicator_height.test.js */
 .previewLoading {
   display: flex;
+  box-sizing: border-box;
   width: fit-content;
+  height: round(1.6em, 1px);
   align-items: center;
   gap: 0.5em;
-  margin: 0.5em auto;
-  padding: 0.15em 0;
+  margin: round(0.5em, 1px) auto;
+  padding: 0;
   font-size: 0.9em;
   color: #aaa;
 }
@@ -1223,13 +1230,15 @@ span {
 
 /* 自動開圖載入失敗（重試耗盡）：可見、可點重試的提示，取代靜默空白 */
 /* 同 .previewLoading：inline-flex 的 margin:auto 是 no-op ⇒ 靠左壓掉退出帶。
-   收斂後可點重試的命中區也剛好縮到文字本身。 */
+   收斂後可點重試的命中區也剛好縮到文字本身。外框高度同樣要整數像素（理由同上；
+   純文字可能折行，所以靠整數 line-height × 行數，不固定 height）。 */
 .previewError {
   display: flex;
   width: fit-content;
   align-items: center;
-  margin: 0.5em auto;
-  padding: 0.15em 0.5em;
+  margin: round(0.5em, 1px) auto;
+  padding: round(0.15em, 1px) 0.5em;
+  line-height: round(1.3em, 1px);
   font-size: 0.9em;
   color: #e06666;
   cursor: pointer;

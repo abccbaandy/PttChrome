@@ -121,6 +121,13 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
   丟掉列表那個 `on:'jump'` step，只留文章頁並把 `on` 改成 `start`（文章頁自己就是整屏
   首繪 —— `ESC[H` 起、每列都有 clrtoeol，單獨餵就是乾淨的一頁）。
   **那個版面是 PTT 端寫檔的 bug，不是新 spec**（依據見 `docs/pttbbs-screen-protocol.md` §11.1.1）。
+- 實例：`cchat-many-images.json`（ptt-debug-20261004-012553 轉出，4 頁 10 推、30 張 imgur 圖，
+  好讀 normal 總高約 2.4 萬 px）——**28 列終端機**錄的。`replayCassette`／`replayListCassette`
+  會先依 `cassette.rows`／`cols` 設定終端機大小（`helpers/replay.js#applyCassetteTermSize`，
+  走 `onValuesPrefChange` 整組套用；80×24 不動作），`splitFrames` 的狀態列切點也跟著列數走。
+  不設的話超出的列被夾到最後一列，這卷逐卷 spec 會 11 條全紅（推文數 0）。`mode:'article'`，
+  逐卷 spec 都跑得到。裁剪：丟掉列表 `jump` step，`open` 改 `start`。首推 `KNTS` 是大寫：
+  比對 `data-pusher`（小寫正規化）或列文字時兩邊都要轉小寫。
 - 守護測試：`tests/unit/redact.test.js`、`tests/unit/debug_recorder_logic.test.js`、
   `tests/unit/debug_recorder.test.js`、`tests/e2e/offline/debug_record.offline.spec.js`。
 
@@ -328,12 +335,19 @@ apply`…）當防禦，避免圖載不到就假紅。**圖改本地 fixture 後
 ### 前提不可以由「載入節奏」決定（2026-09-05 CI 紅）
 
 `easy_reading_scroll_jump.offline.spec.js` 測試 1 的前提是「找得到一個已卸載、只剩替身盒
-頂著、而且 normal 高度從沒量過的佔位盒」。原版用兩個**時序決定**的位置去湊出這個狀態，
-兩個都會飄：
+頂著、而且目前尺寸模式的高度從沒量過的佔位盒」。原版用兩個**時序決定**的位置去湊出這個狀態，
+兩個都會飄（下表）。2026-10 延遲載入的預載／遲滯邊界修好後，**normal 模式在結構上做不出
+決定性的候選**：重放當下圖還沒撐開、整篇很短，所有盒子都在預載範圍內先在 normal 下掛上，
+哪幾張在被推出邊界前載完（＝量到 normal 高度）取決於載入時序（`cchat-many-images` 實測
+候選集合隨負載變動）。改用第三種模式「倍率」：文末放大 → 放大態由頂走到底（前段被卸載）→
+文末縮小＋倍率列 ＋（真 hover／click）—— 倍率模式到最後才進入，前段那幾張必然沒量過。
+另兩點：捲回前以 CDP `Network.setCacheDisabled` 讓掛載真的走 slow 網路（記憶體快取命中時
+「讀取中」那段不存在，突變也綠）；條件 a 改成「內容層為空」（預載會讓視野外的盒子在讀取中、
+沒有媒體卻已掛載）。
 
 | 原作法 | 為什麼會飄 | 改成 |
 |---|---|---|
-| 由上往下逐格掃到「有圖載出來」才停，在那裡點放大 | 停在第幾格取決於當下載入節奏；而停點決定了**哪幾張圖被量過 normal 高度**（`pinned[normal]`）＝候選的排除條件 | `gotoFirstSlot()`：捲到**第一個** `.inlinePreviewSlot` 上方 200px，位置由素材決定 |
+| 由上往下逐格掃到「有圖載出來」才停，在那裡點放大 | 停在第幾格取決於當下載入節奏；而停點決定了**哪幾張圖被量過 normal 高度**（`pinned[normal]`）＝候選的排除條件 | 捲到由素材決定的位置（2026-09 為 `gotoFirstSlot()`，現為文末 `gotoBottom()`）再點 |
 | 點縮小之後就地找候選 | 縮小那一下整頁高度塌好幾倍，最終 `scrollTop` 是瀏覽器 scroll anchoring 決定的（本機恆為 6824，CI 顯然落在別處 ⇒ 上方一個候選都不剩） | `gotoBottom()`：明確捲到底再找 |
 | 候選只要求「在目前位置上方 500px」 | 掛載邊界是 `LAZY_MOUNT_MARGIN_PX`＝1500px ⇒ 500～1500px 那段的 slot 會自己掛回來、圖秒回 ⇒ 反被「slot 裡沒有媒體」刷掉 | 要求整個 slot 落在 `scrollTop − (1500 + 200)` 之外，保證留在卸載態 |
 
