@@ -12,7 +12,7 @@
 | `tests/e2e/android/*.android.spec.js` | spec（project `android`，`playwright.config.js`） |
 | `scripts/run-android-e2e.mjs` | `yarn test:e2e:android`：找／建 AVD、開機、跑、分類 exit 0/1/2、自己開的自己關 |
 | `scripts/android-e2e-needed.mjs` | `--if-changed[=base]` 的檔案名單（預設 base `origin/dev`） |
-| `.github/workflows/android-e2e-spike.yml` | CI 抖動量測（20 次平行） |
+| `.github/workflows/test.yml` job `test-e2e-android` | CI：每次都跑，emulator-runner 開機＋`--no-boot` |
 | 守護 | `tests/unit/android_e2e.test.js`、`tests/unit/e2e_offline_no_network.test.js`「android e2e：OS 層斷網」 |
 
 ## 跑法
@@ -61,6 +61,7 @@ API 35 google_apis（Chrome 124，GPU 不當）試過、**棄用**：
 | `device.info` 拋 `NullPointerException` | driver 對「找不到節點」的回應方式 | 視同找不到 |
 | `device.wait` 逾時但截圖裡目標就在畫面上 | wait 等的是 UI 變化；目標在 wait 前就出現、之後不再變 ⇒ 永遠等不到 | 一律 `expect.poll(device.info)`（守護禁用 `device.wait`） |
 | 偶發「Chrome keeps stopping」蓋住畫面 | 映像的 Chrome 113 GPU 程序在模擬器軟體 GPU 上初始化即 SIGSEGV（`pc 0`），每次啟動 ~6 次後退回軟體繪圖；`--disable-features=EnableDrDc`／`--use-angle=swiftshader`／`-gpu swangle_indirect`、`guest` 皆無效 | `settings put global hide_error_dialogs 1`；當機只限 `privileged_process*`（GPU），頁面與觸控照常，失敗時附 `logcat-crash` |
+| 「Pixel Launcher isn't responding」蓋住畫面（CI 冷開機） | launcher 在 fixture 設 `hide_error_dialogs` **之前**就 ANR；該設定即時生效（ATMS `SettingObserver`）但只擋之後的對話框，已顯示的不收 | 設定後再 `am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS`（`BaseErrorDialog` 收到即關；shell 有 `BROADCAST_CLOSE_SYSTEM_DIALOGS`）。AOSP android14-release 原始碼 CONFIRMED |
 | 測試卡在 setting up "context" 直到 timeout | Chrome 起不來時 `launchBrowser` 不會自己逾時 ⇒ 被算成真失敗 | 自帶 60s 逾時，丟 `[android-env]` |
 | 實機也在 adb 上 | 開發機常連著無線 adb 的手機 | `pickEmulatorSerial` 只收 `emulator-N`；多台要 `ANDROID_SERIAL` |
 
@@ -68,8 +69,14 @@ API 35 google_apis（Chrome 124，GPU 不當）試過、**棄用**：
   不需要「一屏 24 列」；曾用 `-skin 1080x1366` 湊 24 列，比例失真，已棄用。
 - 預設 `screenshot` 只拍網頁；系統／Chrome UI 看 `device-screen.png`（失敗時自動存）。
 
-## CI spike（未完成）
+## CI（`test.yml` job `test-e2e-android`）
 
-狀態：workflow 已寫、**未跑**（交接：`docs/handoff/android-emulator-e2e.md`）。判準：斷言紅（`test-fail`）一次都不接受；`env`／`boot-fail` 是基礎設施，
-可在 job 內重試**開機**（不重試測試）。降不下來 ⇒ `test-e2e-android` 先 non-required，判讀寫進
-`docs/ci-troubleshooting.md`。結果填回本節後，再決定是否把 job 加進 `test.yml`／required checks。
+ubuntu-latest＋KVM、`ReactiveCircus/android-emulator-runner`（API 34 google_apis x86_64、`pixel_6`、`-gpu swiftshader_indirect`）。
+不重試；exit 1／2 都是紅，判讀見 `docs/ci-troubleshooting.md`。
+
+spike 實測（20 次平行 ×2 輪，2026-10）：
+- 第 1 輪：pass 17／env 3／test-fail 0／boot-fail 0。env 3 次同一原因：Launcher ANR 對話框（見踩坑表）。
+- 修法後第 2 輪：pass 20/20。
+- 開機秒數（runner 起算到 script 開始）：81–128s，中位數約 95s；整個 job 140–196s。
+- 版本：執行器開跑前印一行 `裝置：<serial>｜<fingerprint>｜映像 … r<rev>｜Chrome <ver>`（本機與 CI 皆有），
+  與「CONFIRMED 事實」節的 Chrome 113／r14 不同時，GPU 當機與選取把手的結論要重驗。

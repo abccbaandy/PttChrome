@@ -87,6 +87,26 @@ function systemImageInstalled() {
   return fs.existsSync(dir);
 }
 
+// 一行版本資訊：Chrome／映像不同版時行為可能不同（GPU 當機、選取把手），CI 出事先對這行。
+// host 端映像 revision 只代表 SDK 裝的那份；已在跑的模擬器以 fingerprint 為準。查不到印「?」，不擋測試。
+function logDeviceInfo(serial) {
+  const sh = (...args) => {
+    const r = adb(["-s", serial, "shell", ...args]);
+    return r.status === 0 ? r.stdout.trim() : "";
+  };
+  let revision = null;
+  try {
+    revision = env.parseImageRevision(
+      fs.readFileSync(path.join(env.sdkRoot(), ...env.SYSTEM_IMAGE.split(";"), "source.properties"), "utf8")
+    );
+  } catch (e) {}
+  const chrome = env.parseVersionName(sh("dumpsys", "package", "com.android.chrome"));
+  console.log(
+    `裝置：${serial}｜${sh("getprop", "ro.build.fingerprint") || "?"}｜` +
+      `映像 ${env.SYSTEM_IMAGE} r${revision || "?"}｜Chrome ${chrome || "?"}`
+  );
+}
+
 function createAvd() {
   const avdmanager = env.sdkTool("avdmanager");
   if (!avdmanager) return false;
@@ -201,6 +221,8 @@ async function main() {
     booted = true;
     console.log(`開機完成：${serial}（${Math.round((Date.now() - t0) / 1000)}s）`);
   }
+
+  logDeviceInfo(serial);
 
   try {
     const inst = spawnSync(process.execPath, [PLAYWRIGHT_CLI, "install", "android"], { cwd: ROOT, stdio: "inherit" });

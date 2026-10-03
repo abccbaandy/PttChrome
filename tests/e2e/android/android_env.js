@@ -37,6 +37,19 @@ function parseAdbDevices(text) {
     .map((m) => m[1]);
 }
 
+// 裝置資訊 log 用（CI 與本機各裝哪一版，出事時對照 docs/android-e2e.md 的 CONFIRMED 版本）。
+// 系統映像 source.properties 的 Pkg.Revision；沒有 ⇒ null。
+function parseImageRevision(text) {
+  const m = /^Pkg\.Revision\s*=\s*(\S+)/m.exec(String(text || ''));
+  return m ? m[1] : null;
+}
+
+// `dumpsys package <pkg>` 的第一個 versionName；沒有 ⇒ null。
+function parseVersionName(text) {
+  const m = /versionName=(\S+)/.exec(String(text || ''));
+  return m ? m[1] : null;
+}
+
 function sdkRoot(env = process.env, platform = process.platform) {
   if (env.ANDROID_HOME) return env.ANDROID_HOME;
   if (env.ANDROID_SDK_ROOT) return env.ANDROID_SDK_ROOT;
@@ -62,6 +75,8 @@ module.exports = {
   pickEmulatorSerial,
   toDevicePoint,
   parseAdbDevices,
+  parseImageRevision,
+  parseVersionName,
   sdkRoot,
   sdkTool,
 };

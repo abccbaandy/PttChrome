@@ -223,6 +223,59 @@ jobs:
     steps:
       - run: test "${{ needs.test-e2e-offline-adverse-bucket.result }}" = success
 
+  # Android 模擬器上的真 Chrome：長按／選取把手（desktop 模擬觸控測不到，見 docs/android-e2e.md）。
+  # 每次都跑（本機才用 --if-changed）。exit code 直接決定紅綠：0 綠／1 斷言紅／2 環境問題
+  #（失敗全帶 [android-env]）—— 2 也是紅，判讀見 docs/ci-troubleshooting.md。
+  # 不重試：斷言紅一次都不能吞；環境類的已知源（ANR／GPU 當機對話框）fixture 已處理。
+  # 實測（spike 20 輪）開機 81–128s、整個 job 約 3 分，與其他 job 平行，牆鐘時間不變。
+  test-e2e-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # Yarn v4/corepack：先 enable 再讓 setup-node 做 cache:yarn（詳見 test-unit 註解）。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: corepack enable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --immutable
+
+      # 沒有 KVM 的模擬器開機 13–20 分鐘、adb 動不動 offline；ubuntu runner 有 /dev/kvm 但要開權限。
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # --no-boot：模擬器由 emulator-runner 開（序號 emulator-5554，pickEmulatorSerial 自己挑到）。
+      - name: Android e2e (emulator)
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          avd-name: pttchrome_e2e
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: node scripts/run-android-e2e.mjs --no-boot
+
+      # 失敗現場：device-screen.png＝整個螢幕（系統／Chrome 對話框在網頁外面）、logcat-crash 附件。
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-android-attempt-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
+
   # proxy/imgur-worker 是獨立的 npm 子專案（Cloudflare Worker 代理，非 yarn workspace），
   # 上面四個 job 一條都掃不到它 —— 它們跑的是 yarn 的 test:unit / test:integration /
   # test:e2e:offline*，include 全指向根目錄的 tests/。所以在這個 job 之前，Dependabot

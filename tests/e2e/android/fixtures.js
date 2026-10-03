@@ -75,7 +75,13 @@ const test = base.extend({
       // 軟體繪圖，頁面與觸控選取照常。被測行為不受影響；會擋路的只有系統的「Chrome keeps
       // stopping」對話框（蓋住整個畫面，UIAutomator 讀不到 WebView）⇒ 關掉系統錯誤對話框。
       // 當機紀錄照樣進 crash buffer，失敗時附在 logcat-crash（只有 privileged_process＝GPU 才是這條）。
-      await device.shell('settings put global hide_error_dialogs 1; logcat -b crash -c');
+      // 這個設定即時生效，但只擋**之後**的：已經顯示的對話框不會收（CI 冷開機後 Pixel Launcher
+      // 常在這之前就 ANR）⇒ 再廣播 CLOSE_SYSTEM_DIALOGS，錯誤／ANR 對話框收到就自己關。
+      // 先設再關，兩步之間冒出的 ANR 才不會漏網。AOSP 依據見 docs/android-e2e.md。
+      await device.shell(
+        'settings put global hide_error_dialogs 1; logcat -b crash -c; ' +
+          'am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS'
+      );
 
       const bridge = await startBridge();
       adb(serial, ['reverse', `tcp:${PORT}`, `tcp:${bridge.address().port}`]);

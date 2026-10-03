@@ -75,6 +75,18 @@ describe("classifyReport：0／1／2 的依據", () => {
   });
 });
 
+describe("裝置資訊 log 的解析", () => {
+  test("parseImageRevision 取 Pkg.Revision；沒有 ⇒ null", () => {
+    expect(androidEnv.parseImageRevision("Pkg.Desc=Google APIs\r\nPkg.Revision=14\r\n")).toBe("14");
+    expect(androidEnv.parseImageRevision("Pkg.Desc=x")).toBe(null);
+  });
+  test("parseVersionName 取第一個 versionName；沒有 ⇒ null", () => {
+    const dump = "Packages:\n  Package [com.android.chrome]\n    versionCode=567 minSdk=29\n    versionName=113.0.5672.136\n    versionName=110.0.1\n";
+    expect(androidEnv.parseVersionName(dump)).toBe("113.0.5672.136");
+    expect(androidEnv.parseVersionName("")).toBe(null);
+  });
+});
+
 describe("parseArgs", () => {
   test("--if-changed 預設 base 為 origin/dev；其餘透傳", () => {
     expect(parseArgs(["--if-changed", "--grep", "x"])).toMatchObject({ ifChanged: "origin/dev", passthrough: ["--grep", "x"] });
@@ -139,6 +151,15 @@ describe("android fixture：擋畫面的對話框", () => {
   test("關掉系統錯誤對話框（模擬器軟體 GPU 上 Chrome 的 GPU 程序會當，跳「keeps stopping」）", () => {
     expect(src).toMatch(/settings put global hide_error_dialogs 1/);
   });
+  // CI spike 20 輪有 3 輪：開機後、fixture 設 hide_error_dialogs 之前 Pixel Launcher 就 ANR，
+  // 對話框已經掛在畫面上 —— 這個設定只擋之後的，不收已顯示的。順序要先設再關：反過來
+  // 的話，兩步之間冒出的 ANR 照樣會顯示。
+  test("設完 hide_error_dialogs 再廣播 CLOSE_SYSTEM_DIALOGS，收掉設定前就跳出來的 ANR 對話框", () => {
+    const hide = src.indexOf("settings put global hide_error_dialogs 1");
+    const close = src.indexOf("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS");
+    expect(close).toBeGreaterThan(-1);
+    expect(close).toBeGreaterThan(hide);
+  });
   test("launchBrowser 有自己的逾時，卡住時歸類為環境問題", () => {
     expect(src).toMatch(/LAUNCH_TIMEOUT_MS/);
     expect(src).toMatch(/Promise\.race\(\[\s*android\.device\.launchBrowser/);
@@ -159,4 +180,23 @@ describe("android spec：不准用 device.wait", () => {
       expect(code).not.toMatch(/\bdevice\s*\.\s*wait\s*\(/);
     });
   }
+});
+
+// CI job：exit code 必須直接決定紅綠。spike 用的 continue-on-error＋把 exit 寫檔分類那套
+// 一旦被抄進來，job 永遠綠、斷言紅也被吞掉；沒開 KVM 則開機 13–20 分鐘、adb 常 offline。
+describe("test.yml：test-e2e-android job", () => {
+  const yaml = fs.readFileSync(path.join(ROOT, ".github/workflows/test.yml"), "utf8");
+  const m = /\n {2}test-e2e-android:\n([\s\S]*?)(?=\n {2}[A-Za-z][\w-]*:\n)/.exec(yaml);
+  const body = m ? m[1] : "";
+  test("存在，script 直接跑 run-android-e2e --no-boot，不吞 exit code", () => {
+    expect(body).toMatch(/script: node scripts\/run-android-e2e\.mjs --no-boot\s*$/m);
+    expect(body).not.toMatch(/continue-on-error/);
+    expect(body).not.toMatch(/e2e\.exit|\|\| true/);
+  });
+  test("開模擬器前先開 KVM 權限", () => {
+    const kvm = body.indexOf("udevadm trigger --name-match=kvm");
+    const emu = body.indexOf("android-emulator-runner@");
+    expect(kvm).toBeGreaterThan(-1);
+    expect(emu).toBeGreaterThan(kvm);
+  });
 });
