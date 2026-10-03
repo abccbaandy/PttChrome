@@ -550,7 +550,7 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
    單一節點恆定 ⇒ 不觸發，與 .inlinePreviewSlot 的 display:grid 同類。
    與上面的 padding-left **成對**：只留其中一條，圖會凸出容器左緣。
    守護：tests/unit/merged_comment_image_css.test.js（CSS 契約）、
-   tests/e2e/offline/comment_merge.offline.spec.js（真幾何，jsdom 量不到）。 */
+   tests/e2e/offline/comment_merge.offline.spec.js（真幾何，unit 量不到）。 */
 .mergedCommentBlock .inlinePreviewSlot {
   margin-left: calc(-1 * var(--merged-comment-indent, 0px));
 }

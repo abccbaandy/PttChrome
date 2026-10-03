@@ -94,8 +94,8 @@ describe("Screen 推文合併 render", () => {
   test("懸掛縮排寬度＝內容起始欄×半形字寬（CSS 由這個 var 推導）", () => {
     const { container: c } = renderScreen();
     const block = c.querySelector(".mergedCommentBlock");
-    // inline CSS var（jsdom 不算 calc，直接驗變數值；bbsrow padding-left 與首則
-    // bbsline 的負 margin 都由它推導）
+    // inline CSS var（bbsrow padding-left 與首則 bbsline 的負 margin 都由它推導；
+    // 那兩條規則在 main.css、unit 不載，算出來的幾何由 offline e2e 量 ⇒ 這裡直接驗變數值）
     expect(block.style.getPropertyValue("--merged-comment-indent")).toBe(
       `${(PREFIX_COLS * FORCE_WIDTH) / 2}px`,
     );

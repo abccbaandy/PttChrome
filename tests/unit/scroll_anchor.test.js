@@ -164,27 +164,32 @@ describe("computeCenteredScrollTop", () => {
 });
 
 describe("offsetTopWithin", () => {
-  // jsdom 不做 layout（offsetTop 恆 0），故偽造 offsetTop/offsetParent 鏈。
-  const node = (offsetTop, offsetParent) => {
+  // 真版面（unit-browser）：offsetTop／offsetParent 由瀏覽器排出來，不偽造。
+  const div = (css, parent = document.body) => {
     const el = document.createElement("div");
-    Object.defineProperty(el, "offsetTop", { value: offsetTop });
-    Object.defineProperty(el, "offsetParent", { value: offsetParent });
+    el.style.cssText = css;
+    parent.appendChild(el);
     return el;
   };
+  afterEach(() => document.body.replaceChildren());
 
   test("ancestor 在 offsetParent 鏈上 → 中間層距離累加", () => {
-    const root = node(10, null);
-    const container = node(40, root);
-    const wrapper = node(100, container);
-    const img = node(25, wrapper);
+    const container = div("position: relative; margin-top: 40px; height: 500px");
+    const wrapper = div("position: absolute; top: 100px; height: 200px", container);
+    const img = div("position: absolute; top: 25px; height: 50px", wrapper);
+    // 前提：鏈是 img → wrapper → container。
+    expect(img.offsetParent).toBe(wrapper);
+    expect(wrapper.offsetParent).toBe(container);
     expect(offsetTopWithin(img, container)).toBe(125);
   });
 
   test("ancestor 不在鏈上（未設 position，鏈跳過它）→ 相減法仍正確", () => {
     // 真實情境：#mainContainer 未設 position，img 的 offsetParent 鏈直達 body。
-    const body = node(0, null);
-    const container = node(40, body); // #mainContainer 自身距 body 40
-    const img = node(165, body); // img 距 body 165 → 距 container 應為 125
+    const container = div("margin-top: 40px");
+    div("height: 125px", container);
+    const img = div("height: 50px", container);
+    // 前提：鏈跳過 container（img.offsetParent 直接是 body）。
+    expect(img.offsetParent).toBe(document.body);
     expect(offsetTopWithin(img, container)).toBe(125);
   });
 });

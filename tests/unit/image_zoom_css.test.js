@@ -1,6 +1,6 @@
 // 整頁圖片倍率的 CSS 契約（src/css/main.css）。
 //
-// jsdom 不排版也不解 calc()/var()，真幾何（圖寬 ≈ 小圖寬 × 倍率）交給
+// 這支是 node 環境的靜態掃描。真幾何（圖寬 ≈ 小圖寬 × 倍率）要整份 main.css＋真圖，交給
 // tests/e2e/offline/image_zoom.offline.spec.js。這裡守的是「改壞了不會有其他測試紅」的
 // 那幾條：倍率公式的輸入、倍率列的定位與 hover 浮現、放大態隱藏倍率列。
 // 手法照抄 image_gray_css.test.js。

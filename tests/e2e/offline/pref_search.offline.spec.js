@@ -1,7 +1,7 @@
 // 設定搜尋的離線 e2e（真瀏覽器、真渲染、不連 PTT）。
 //
-// 為什麼這條非 e2e 不可：jsdom 沒有版面，unit 那層的 scrollIntoView 是
-// tests/unit/setup.js 的空 stub ⇒「右欄真的捲到那一項了嗎」只有真瀏覽器量得到。
+// 為什麼這條非 e2e 不可：unit 只掛 PrefModal 單一元件，entry.js 載的 Mantine 全域樣式
+// 不在 ⇒ Modal／右欄的尺寸不是真的 ⇒「右欄真的捲到那一項了嗎」只有完整頁面量得到。
 // 比對／排序在 tests/unit/pref_search.test.js，索引覆蓋度在
 // tests/unit/pref_search_index.test.js，UI 接線在 tests/unit/pref_modal_search.test.jsx。
 //
@@ -61,7 +61,7 @@ test.describe('設定搜尋（offline）', () => {
     await expect(target).toBeVisible();
     await expect(target).toHaveClass(/PrefModal__Anchor--flash/);
 
-    // 目標確實落在右欄的可視範圍內（這是 jsdom 測不到的那一半）。
+    // 目標確實落在右欄的可視範圍內（這是 unit 測不到的那一半）。
     await waitRectStable(page, `[data-pref-anchor="enableWorkMode"]`);
     const col = await rightCol(page).boundingBox();
     const rect = await target.boundingBox();

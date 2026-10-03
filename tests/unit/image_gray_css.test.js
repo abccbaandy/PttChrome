@@ -1,7 +1,7 @@
 // 單張圖灰階切換鈕的 CSS 契約（src/css/main.css）。
 //
-// jsdom 沒有排版、也不解 var()/calc()，所以真幾何（按鈕右緣是否貼齊圖片右緣、
-// filter 的計算值）只能在真瀏覽器量（tests/e2e/offline/image_gray.offline.spec.js）。
+// 這支是 node 環境的靜態掃描。真幾何（按鈕右緣是否貼齊圖片右緣、filter 的計算值）
+// 要整份 main.css＋真圖＋終端機字級，只能在完整頁面量（tests/e2e/offline/image_gray.offline.spec.js）。
 // 這裡守的是「那幾條規則還在、而且沒有被改成寫死尺寸」——三條都是**改壞了也不會有
 // 任何測試紅**的那種：
 //   1. filter: grayscale(...) 是整個功能的效果本身；

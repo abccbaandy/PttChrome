@@ -32,28 +32,6 @@ vi.mock("../../src/js/prompt_api", () => ({
 
 const PREF_KEY = "pttchrome.pref.v1";
 
-// jsdom 沒有 matchMedia / ResizeObserver，Mantine 的 useMantineColorScheme 與
-// Modal 會直接炸。最小 stub，與被測行為無關。
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
-window.ResizeObserver =
-  window.ResizeObserver ||
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
-window.scrollTo = window.scrollTo || (() => {});
-
 const openConnectionTab = (prefs = {}) => {
   window.localStorage.setItem(
     PREF_KEY,

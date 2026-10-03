@@ -136,8 +136,8 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
   });
 
   // 使用者 2026-08 回報症狀 2：合併後的第 2 則回到第 0 欄。懸掛縮排是純 CSS
-  // （bbsrow padding-left + 首則 bbsline 的負 margin），jsdom 無 layout 量不到
-  // → 只能在真瀏覽器守。
+  // （bbsrow padding-left + 首則 bbsline 的負 margin），規則在 main.css、unit 不載整份
+  // 樣式量不到 → 只能在完整頁面守。
   test('懸掛縮排：第 2 行起與第一則內容同一起始 x', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
@@ -176,7 +176,7 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
   // 先被 padding-left 扣掉一截。修法是 main.css 給它等量負 margin-left
   // （靜態規則；runtime 不得改寫 slot 樣式，見 render/inline_preview_slot.js 檔頭）。
   // 縮排只該管文字，圖要跟非合併推文的圖一樣寬。CSS 契約另由
-  // tests/unit/merged_comment_image_css.test.js 守（jsdom 無 layout，真幾何只能在這裡量）。
+  // tests/unit/merged_comment_image_css.test.js 守（那支是靜態掃 CSS 規則，真幾何只能在這裡量）。
   const markTargetBlock = (page) =>
     page.evaluate(() => {
       const el = Array.from(document.querySelectorAll('.mergedCommentBlock')).find((b) => {

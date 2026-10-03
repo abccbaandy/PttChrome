@@ -8,7 +8,7 @@
 //
 // 修法是一條等量負 margin-left（區塊盒 `margin-left + width(auto) = 容器寬` ⇒ 同時
 // 拉回左緣並補回寬度）。這裡守的是「規則還在、沒被改成寫死尺寸」——
-// jsdom 沒有 layout、也不解 var()/calc()，真幾何只能在真瀏覽器量
+// 這支是 node 環境的靜態掃描，真幾何要整份 main.css 與完整畫面，只能在 e2e 量
 // （tests/e2e/offline/comment_merge.offline.spec.js 的「自動開圖不吃懸掛縮排」）。
 //
 // 手法照抄 tests/unit/comment_spacing_css.test.js：讀檔、剝註解、正則取規則體。

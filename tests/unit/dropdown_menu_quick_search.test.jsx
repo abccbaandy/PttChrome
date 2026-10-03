@@ -10,24 +10,6 @@ import DropdownMenu from "../../src/components/ContextMenu/DropdownMenu";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { visibleQuickSearchItems } from "../../src/js/quick_search";
 
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
-window.ResizeObserver =
-  window.ResizeObserver ||
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
 
 const renderMenu = (props = {}) => {
   const onQuickSearchSelect = vi.fn();

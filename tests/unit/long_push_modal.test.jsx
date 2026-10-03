@@ -19,33 +19,6 @@ import {
   resetDraftCacheForTests,
 } from "../../src/js/long_push_draft";
 
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
-window.ResizeObserver =
-  window.ResizeObserver ||
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
-window.scrollTo = window.scrollTo || (() => {});
-// Mantine 的 Textarea autosize 會掛在 document.fonts 的 loadingdone 上（等字體
-// 載完重算高度），jsdom 沒有 FontFaceSet ⇒ 不補會在 mount 就 throw。
-if (!document.fonts)
-  Object.defineProperty(document, "fonts", {
-    value: { addEventListener() {}, removeEventListener() {} },
-    configurable: true,
-  });
-
 beforeAll(() => {
   loadBig5Tables();
   setupI18n();

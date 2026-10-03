@@ -566,7 +566,7 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
   // 回歸：doCopy 由 execCommand('copy')+DOM copy 事件攔截改為
   // navigator.clipboard.writeText 後，真瀏覽器的「選取 → 右鍵複製 → 系統剪貼簿」
-  // 全鏈必須仍通。jsdom 驗不到 Clipboard API 的 secure context/權限行為，只能在此守。
+  // 全鏈必須仍通。unit 不走真的右鍵選單全鏈，也不涵蓋 Clipboard API 的權限行為，只能在此守。
   test('右鍵選單「複製」：選取文字後寫入系統剪貼簿', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await installReplay(page);

@@ -18,17 +18,6 @@ import {
 } from "../../src/js/image_upload_controller";
 import { setupI18n, i18n } from "../../src/js/i18n";
 
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
 
 setupI18n();
 

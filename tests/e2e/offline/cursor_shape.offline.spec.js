@@ -2,7 +2,7 @@
 //
 // 為什麼一定要上 e2e：游標是絕對定位的細長方塊，最終效果由「inline style 的 left/top」
 // ×「CSS 的 width/height/transform-origin」×「字級（font-size 是 inline，1em = 一格列高）」
-// 三者疊出來，jsdom 量不到任何一項。
+// 三者疊出來，要整份 main.css＋真字級；unit 只掛單一元件，量不到。
 //
 // 這裡鎖兩件使用者可見的事：
 //   1. 游標是**直線**（細長直立），不是底線（2026-08 從 `_` 字元改成方塊，見 main.css #cursor）。

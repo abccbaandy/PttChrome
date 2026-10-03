@@ -9,17 +9,6 @@ import ConnectionAlert from "../../src/components/ConnectionAlert";
 import { ORIGIN_SETUP_URL } from "../../src/js/connection_probe";
 import { setupI18n, i18n } from "../../src/js/i18n";
 
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
 
 const deferred = () => {
   let resolve;

@@ -13,17 +13,6 @@ import { MantineProvider } from "@mantine/core";
 import ConnectionAlert from "../../src/components/ConnectionAlert";
 import { setupI18n, i18n } from "../../src/js/i18n";
 
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
 
 const onDismiss = vi.fn();
 

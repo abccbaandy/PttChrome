@@ -331,7 +331,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   // 只有「content 裡剛好一張、而且已經佈局出來」的 <img> 才配按鈕：
   //   * 非媒體 slot（「※ 文章網址」那行）、影片、iframe、相簿（多張）不該長出
   //     一顆指涉不明的按鈕；
-  //   * 連帶讓 jsdom（圖片永不載入 ⇒ offsetWidth 恆 0）完全不會生成它 ⇒
+  //   * 連帶讓 golden 快照（掛載當下圖片還沒載入 ⇒ offsetWidth 恆 0）不會生成它 ⇒
   //     tests/unit/fixtures/screen_golden/*.html 不受影響。
   function singleLaidOutImage() {
     const imgs = content.querySelectorAll("img.easyReadingImg");

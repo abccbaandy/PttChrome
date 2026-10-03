@@ -1,7 +1,7 @@
 // AID 返回鈕的 UI 整合守門（真瀏覽器、離線）。
 //
 // stack 與按鍵序列的邏輯已由 tests/unit/{nav_history,aid_navigation}.test.js 覆蓋；
-// 這裡守的是 jsdom 抓不到的三個整合點（都是本專案踩過的坑）：
+// 這裡守的是 unit（只掛單一元件、不載整份樣式）抓不到的三個整合點（都是本專案踩過的坑）：
 //   1. 它必須是「可以按的」——flashListHint 家族是 pointer-events:none，直接沿用
 //      會做出一顆按不下去的按鈕。
 //   2. className 要進 App.checkClass 的白名單（nomouse_command），否則滑鼠瀏覽

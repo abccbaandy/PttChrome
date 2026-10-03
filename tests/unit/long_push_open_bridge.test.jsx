@@ -35,33 +35,6 @@ vi.mock("../../src/js/pref_sync", () => ({
 const PREF_KEY = "pttchrome.pref.v1";
 const AUTO_LOGIN_USER = "someuserid";
 
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
-window.ResizeObserver =
-  window.ResizeObserver ||
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
-window.scrollTo = window.scrollTo || (() => {});
-// Mantine 的 Textarea autosize 會掛在 document.fonts 上，jsdom 沒有 FontFaceSet
-// ⇒ 不補會在 mount 就 throw（同 long_push_modal.test.jsx）。
-if (!document.fonts)
-  Object.defineProperty(document, "fonts", {
-    value: { addEventListener() {}, removeEventListener() {} },
-    configurable: true,
-  });
-
 const makePttchrome = () => ({
   buf: {
     pageState: 3,

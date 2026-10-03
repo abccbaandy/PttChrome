@@ -1,5 +1,5 @@
 // 已讀文章低亮（pref dimReadArticles，預設開）—— 真瀏覽器驗 CSS 真的生效。
-// unit 只驗得到屬性與容器 class（jsdom 不算 :has() 選擇器、不算 computed style），
+// unit 只驗得到屬性與容器 class（規則在整份樣式表裡，unit 不載 ⇒ :has() 與 computed style 驗不到），
 // 這支補「規則真的套上去、游標列真的被排除、pref 關掉真的全亮」。
 // 判定表本身在 tests/unit/list_read.test.js。
 const { test, expect } = require('@playwright/test');

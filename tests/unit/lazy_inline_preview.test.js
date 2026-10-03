@@ -216,8 +216,9 @@ describe("nextLazyState / recordSlotHeight（純決策）", () => {
 //   .inlinePreviewSlot           display:grid（**runtime 永不寫 inline style**）
 //     .inlinePreviewContent      真內容（React root / 真圖 / 讀取中指示器）
 //     .inlinePreviewSpacer       佔位高度（min-height）＋替身盒
-// 兩層疊在同一個 grid area ⇒ slot 高度 = max(內容, 佔位)。jsdom 沒有排版，所以這裡
-// 用 laidOutHeight() 把那條 CSS 合約模型化（真瀏覽器端由 offline e2e 守）。
+// 兩層疊在同一個 grid area ⇒ slot 高度 = max(內容, 佔位)。那條規則在 main.css（unit
+// 不載），內容高度又是下面覆寫出來的（理由見 fakeLoadedMedia）⇒ 這裡用 laidOutHeight()
+// 把那條 CSS 合約模型化；真瀏覽器端由 tests/e2e/offline/easy_reading_scroll_jump.offline.spec.js 守。
 const contentOf = (slotEl) => slotEl.querySelector(".inlinePreviewContent");
 const spacerOf = (slotEl) => slotEl.querySelector(".inlinePreviewSpacer");
 // 寫進 spacer 的佔位高度（＝舊版寫在 slot 自己 min-height 上的那個值）。
@@ -275,16 +276,18 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     expect(contentKids(slot)).toBeGreaterThan(0);
   });
 
-  // jsdom 沒有排版也沒有網路：offsetHeight 恆為 0，ImagePreviewer 也停在「讀取中」。
+  // 內容層裡的 ImagePreviewer 是真的（會真的解析網址、發請求），它撐出的高度隨網路
+  // 與字型而變 ⇒ 要重現「卸載前量到多少」只能覆寫 offsetHeight（值取自實測：讀取中
+  // 指示器 56／65px 等）。這是為了決定性，不是環境缺 API。
   // 釘高度的前提是「slot 內真的有媒體、卸載後會塌陷」，所以要複現該情境就得把兩件
-  // 事都做出來：偽造高度 ＋ 放一個真媒體節點（React 只管自己 render 的 children，
+  // 事都做出來：指定高度 ＋ 放一個真媒體節點（React 只管自己 render 的 children，
   // 手動 append 的節點不會被卸載動作移除，正好模擬「圖已經載出來了」）。
   function fakeLoadedMedia(slot, height, natural) {
     fakeHeight(contentOf(slot), height);
     const img = document.createElement("img");
     img.className = "easyReadingImg hyperLinkPreview";
     if (natural) {
-      // jsdom 不解碼圖片 ⇒ naturalWidth/Height 恆為 0，要自己給。
+      // 這個 img 沒有 src（測試不連網、也不等非同步解碼）⇒ naturalWidth/Height 要自己給。
       Object.defineProperty(img, "naturalWidth", { value: natural.w });
       Object.defineProperty(img, "naturalHeight", { value: natural.h });
     }

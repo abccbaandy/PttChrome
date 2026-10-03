@@ -11,8 +11,8 @@ import {
 // 放檔案層級，載入成本就不算進任何一條 case 的預算裡。
 import { App } from "../../src/js/pttchrome";
 
-// 終端機提示音（PTT 的 ^G）。jsdom 沒有 Web Audio，所以 AudioContext 用可注入的
-// 假工廠；真正要守的是三件事：pref 關著就不出聲、連發只響一次、任何情況下都不 throw
+// 終端機提示音（PTT 的 ^G）。node 環境沒有 Web Audio（測試也不該真的出聲），
+// 所以 AudioContext 用可注入的假工廠；真正要守的是三件事：pref 關著就不出聲、連發只響一次、任何情況下都不 throw
 // （呼叫點在 term_buf.puts() 的逐字元迴圈裡，丟例外等於整個畫面解析中斷）。
 function fakeAudio() {
   const started = [];

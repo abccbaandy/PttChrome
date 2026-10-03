@@ -375,7 +375,7 @@ describe("列 merged-comment extensions", () => {
 
 // 樓層徽章的 DOM 契約。徽章是零寬盒（不位移等寬格線），數字靠內層 .floorBadgeNum
 // 以 translateX(-100%) 對齊「作者 id 起始欄」向左生長 → 高樓層往標記字方向溢出，
-// 永遠不會蓋到作者 id。幾何只能在 e2e 量（jsdom 無 layout），這裡守 DOM 結構契約。
+// 永遠不會蓋到作者 id。幾何要整份 main.css＋等寬字型，只能在 e2e 量，這裡守 DOM 結構契約。
 describe("列 樓層徽章", () => {
   const renderFloor = seq =>
     mountRow({ chars: chars("PU wowbenny: hi"), row: 0, floor: { seq, sub: 3, type: "推" } });

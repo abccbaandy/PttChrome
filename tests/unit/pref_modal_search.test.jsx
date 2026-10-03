@@ -6,8 +6,9 @@
 // 不會出下拉、選了之後有沒有真的切分頁並標出那一項，以及不能誤傷的既有契約
 // （Escape 的歸屬、e2e marker、不會多寫一次 pref）。
 //
-// 「有沒有真的捲動」測不到（jsdom 沒有版面，scrollIntoView 是 setup.js 的
-// stub）——那條在 tests/e2e/offline/pref_search.offline.spec.js。
+// 「右欄有沒有真的捲到那一項」不在這裡量：unit 只掛 PrefModal 單一元件，
+// entry.js 載的 Mantine 全域樣式不在 ⇒ Modal／右欄的尺寸不是使用者看到的那個——
+// 那條在 tests/e2e/offline/pref_search.offline.spec.js。
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import {
@@ -34,25 +35,6 @@ vi.mock("../../src/js/prompt_api", () => ({
 
 const PREF_KEY = "pttchrome.pref.v1";
 
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
-window.ResizeObserver =
-  window.ResizeObserver ||
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
-window.scrollTo = window.scrollTo || (() => {});
 
 const onSave = vi.fn();
 
@@ -96,7 +78,7 @@ const dropdown = () => document.querySelector(".PrefModal__Search__Dropdown");
 const anchorOf = (key) => document.querySelector(`[data-pref-anchor="${key}"]`);
 
 beforeAll(() => {
-  // jsdom 預設語系是 en-US，i18n 與 searchPrefSettings 都讀它。不釘成 zh-TW
+  // headless Chromium 預設語系是 en-US，i18n 與 searchPrefSettings 都讀它。不釘成 zh-TW
   // 的話「好讀」這種查詢會走到「另一語系命中」那條分支，測到的就不是預期的
   // 情境（而且不會畫高亮，因為 ranges 只在當前語系標題命中時才有值）。
   Object.defineProperty(navigator, "languages", {
@@ -185,7 +167,6 @@ describe("設定搜尋框", () => {
     openModal();
     const box = type("好讀");
     await waitFor(() => expect(options().length).toBeGreaterThan(1));
-    // 沒有 setup.js 的 scrollIntoView stub 的話，這一行會直接丟 TypeError。
     fireEvent.keyDown(box, { key: "ArrowDown", code: "ArrowDown" });
     const second = options()[1];
     expect(second.getAttribute("data-combobox-selected")).toBe("true");

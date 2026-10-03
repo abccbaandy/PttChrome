@@ -3,7 +3,7 @@
 // 斷言一律鎖**行為**（哪一項會被找到、靠什麼命中、誰排前面），不鎖分數的實際
 // 數值——調權重是預期會發生的事，調了就該只有排序測試需要跟著看。
 //
-// 一律顯式傳 lang：不傳的話會走 getLang() 讀 navigator.languages，jsdom 下是
+// 一律顯式傳 lang：不傳的話會走 getLang() 讀 navigator.languages，node 下是
 // 跑測試那台機器的語系 ⇒ 換一台機器結果就變。
 import {
   searchPrefSettings,

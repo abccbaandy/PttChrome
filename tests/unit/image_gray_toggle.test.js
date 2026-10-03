@@ -4,11 +4,12 @@
 // 動線：把某張圖轉灰階 → 用瀏覽器內建的「以圖找圖」查。灰階只能是 CSS filter
 // （本地產不出真正灰階的位元組，理由見該檔的 grayHrefs 註解），所以這裡守的是
 // 「按鈕在不在、data-gray 翻不翻、--img-w 有沒有量到」——真幾何（按鈕右緣是否貼齊
-// 圖片右緣、filter 的實際計算值）jsdom 不解 calc()/var() 也沒有排版，交給
-// tests/e2e/offline/image_gray.offline.spec.js。
+// 圖片右緣、filter 的實際計算值）要整份 main.css 與終端機字級，unit 只掛單一 slot，
+// 交給 tests/e2e/offline/image_gray.offline.spec.js。
 //
-// 假 IntersectionObserver / ResizeObserver 與 offsetWidth stub 的手法照抄
-// tests/unit/lazy_inline_preview.test.js。
+// IntersectionObserver / ResizeObserver 用替身：真的 observer 非同步回呼，測試要
+// 自己決定「進出視窗」「尺寸變了」發生在哪一刻（手法同 tests/unit/lazy_inline_preview.test.js）。
+// 尺寸則是真版面量出來的。
 
 import { setupI18n } from "../../src/js/i18n";
 import {
@@ -70,7 +71,10 @@ const resized = () => sizeObservers[sizeObservers.length - 1];
 const liveSlots = [];
 function mountSlot(href, sizeMode) {
   const slot = createInlinePreviewSlot(href, sizeMode);
-  document.body.appendChild(slot.el);
+  // slot 前面墊一段：content 的 offsetTop 不是 0，--img-top「圖減內容層」的相減才驗得到。
+  const above = document.createElement("div");
+  above.style.height = "50px";
+  document.body.append(above, slot.el);
   liveSlots.push(slot);
   return slot;
 }
@@ -78,6 +82,7 @@ function destroySlots() {
   while (liveSlots.length) {
     const s = liveSlots.pop();
     s.destroy();
+    s.el.previousElementSibling?.remove();
     s.el.remove();
   }
 }
@@ -86,22 +91,25 @@ const contentOf = (slotEl) => slotEl.querySelector(".inlinePreviewContent");
 const btnOf = (slotEl) => slotEl.querySelector(".previewGrayBtn");
 const grayAttr = (slotEl) => slotEl.getAttribute("data-gray");
 
-function fake(node, prop, value) {
-  Object.defineProperty(node, prop, { configurable: true, value });
-}
+// unit 不載 main.css；只補產品 CSS 裡影響這裡量測的那一條：slot 是 grid
+// （src/css/main.css `.inlinePreviewSlot`）⇒ content 是 grid item，圖的 margin-top
+// 不會穿出 content 疊掉，--img-top 才量得到那一截。
+const slotCss = document.createElement("style");
+slotCss.textContent = ".inlinePreviewSlot { display: grid; }";
+document.head.appendChild(slotCss);
 
-// 「圖真的畫出來了」＝ content 裡有一張 offsetWidth/Height > 0 的 img.easyReadingImg。
-// jsdom 不排版也不載圖，兩者都要自己造。
+// 「圖真的畫出來了」＝ content 裡有一張佈局出尺寸的 img.easyReadingImg。測試不連網，
+// 用明確的 CSS 尺寸代替「圖載完撐開」；offset* 全由瀏覽器排版量出。
+// 圖片是 `margin: 0.5em auto`，上緣比內容層低一截（這裡的 top）；兩者 offsetParent
+// 相同，產品端相減得到 --img-top。
+function setImageBox(img, { width, height, top }) {
+  img.style.cssText =
+    `display: block; width: ${width}px; height: ${height}px; margin: ${top}px auto 0`;
+}
 function addLoadedImage(slotEl, { width = 640, height = 480, top = 0 } = {}) {
   const img = document.createElement("img");
   img.className = "easyReadingImg hyperLinkPreview";
-  fake(img, "offsetWidth", width);
-  fake(img, "offsetHeight", height);
-  // 圖片是 `margin: 0.5em auto`，上緣比內容層低一截；兩者 offsetParent 相同，
-  // 產品端相減得到 --img-top。
-  fake(img, "offsetTop", top);
-  fake(contentOf(slotEl), "offsetHeight", height);
-  fake(contentOf(slotEl), "offsetTop", 0);
+  setImageBox(img, { width, height, top });
   contentOf(slotEl).appendChild(img);
   return img;
 }
@@ -162,23 +170,23 @@ describe("內嵌預覽圖的灰階切換鈕", () => {
     expect(btnOf(handle.el).style.getPropertyValue("--img-top")).toBe("6px");
 
     const img = contentOf(handle.el).querySelector("img");
-    fake(img, "offsetWidth", 800);
-    fake(img, "offsetTop", 12);
+    setImageBox(img, { width: 800, height: 600, top: 12 });
     resized().emit();
     expect(btnOf(handle.el).style.getPropertyValue("--img-w")).toBe("800px");
     expect(btnOf(handle.el).style.getPropertyValue("--img-top")).toBe("12px");
   });
 
   // 「非媒體 slot（※ 文章網址那行）／影片／iframe／相簿」一律不配按鈕 —— 那顆按鈕
-  // 指涉不明，而且連帶讓 jsdom 下的 golden 快照完全不受影響。
+  // 指涉不明，而且連帶讓 golden 快照（掛載當下圖都還沒載入）完全不受影響。
   test("沒有圖的 slot（讀取中指示器／非媒體連結）⇒ 不長按鈕", () => {
     const slot = mountSlot(
       "https://www.ptt.cc/bbs/ask/M.1786465191.A.DBD.html",
     ).el;
     const loading = document.createElement("div");
     loading.className = "previewLoading";
-    fake(loading, "offsetWidth", 200);
     contentOf(slot).appendChild(loading);
+    // 前提：它是佈局出寬度的節點，擋掉按鈕的是「不是 img」而不是「寬度 0」。
+    expect(loading.offsetWidth).toBeGreaterThan(0);
     resized().emit();
     expect(btnOf(slot)).toBeNull();
   });

@@ -3,7 +3,7 @@
 // bottom padding added for the footer overlay AND reset scrollTop — a leftover
 // scroll offset leaves the fixed 24-row screen shifted up ~one row inside `.main`.
 // The reset is plain DOM-prop assignment, so we drive the real method on a minimal
-// stub view (no jsdom needed).
+// stub view (no DOM needed).
 
 import { TermView } from "../../src/js/term_view";
 

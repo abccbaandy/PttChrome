@@ -56,7 +56,7 @@ export function CommandQueue(opts) {
   this._send = opts.send;
   // Wrap the globals instead of storing them bare: calling a detached
   // setTimeout as this._setTimeout(...) makes `this` the queue → Chrome throws
-  // "Illegal invocation" (jsdom is lenient, the browser is not).
+  // "Illegal invocation".
   this._setTimeout =
     opts.setTimeout ||
     function(fn, ms) {

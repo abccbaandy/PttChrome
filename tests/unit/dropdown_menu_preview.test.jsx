@@ -11,24 +11,6 @@ import DropdownMenu from "../../src/components/ContextMenu/DropdownMenu";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { copyPreviews } from "../../src/js/context_menu_items";
 
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
-window.ResizeObserver =
-  window.ResizeObserver ||
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
 
 const renderMenu = (props = {}) =>
   render(

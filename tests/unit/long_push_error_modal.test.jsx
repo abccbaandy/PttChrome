@@ -13,30 +13,6 @@ import { MantineProvider } from "@mantine/core";
 import LongPushErrorModal from "../../src/components/ContextMenu/LongPushErrorModal";
 import { setupI18n, i18n } from "../../src/js/i18n";
 
-window.matchMedia =
-  window.matchMedia ||
-  (() => ({
-    matches: false,
-    media: "",
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  }));
-window.ResizeObserver =
-  window.ResizeObserver ||
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
-window.scrollTo = window.scrollTo || (() => {});
-if (!document.fonts)
-  Object.defineProperty(document, "fonts", {
-    value: { addEventListener() {}, removeEventListener() {} },
-    configurable: true,
-  });
 
 beforeAll(() => setupI18n());
 

@@ -9,8 +9,8 @@
 //
 // 為什麼這幾條非 e2e 不可（純邏輯與 CSS 契約已分別由 tests/unit/image_gray_toggle、
 // image_gray_css、context_menu_disposition、preview_targets 守）：
-//   * 按鈕的位置是 `calc((100% - var(--img-w)) / 2)` 算出來的，jsdom 不解 calc()/var()
-//     也沒有排版 —— 「右緣有沒有貼齊圖片右緣」只有真瀏覽器量得到；
+//   * 按鈕的位置是 `calc((100% - var(--img-w)) / 2)` 算出來的，規則在 main.css、還要
+//     真圖與終端機字級 —— 「右緣有沒有貼齊圖片右緣」只有完整頁面量得到；
 //   * `filter: grayscale(1)` 的計算值同理；
 //   * 「contextmenu 有沒有被 preventDefault」牽涉到 capture 階段的真實事件傳播，以及
 //     React 選單是否真的開出來，那是三個檔案協作的結果。

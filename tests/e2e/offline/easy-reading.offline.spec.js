@@ -721,7 +721,7 @@ test.describe('长文连续累积（离线重放）', () => {
     // 全部解析＋下载＋解码、到离开文章前永不释放 —— 已解码的点阵图是「记忆体吃满」
     // 的最大宗。纯逻辑与掛/卸决策在 tests/unit/lazy_inline_preview.test.jsx；这里守
     // 真浏览器里「IntersectionObserver 真的看得到 .main 的裁切」这一条 —— .main 有
-    // transform scale 且是捲动容器，jsdom 验不到。
+    // transform scale 且是捲动容器，unit 只掛单一 slot（observer 是替身），验不到。
     test(`自动开图延迟载入：没卷到不载、卷远了卸掉 [${cassette.__file}]`, async ({ page }) => {
       test.setTimeout(120000);
       await bootOffline(page, ptt);

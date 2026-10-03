@@ -182,15 +182,11 @@ describe("渲染鏈的佔位盒生命週期", () => {
     const slotEl = () =>
       controller.container.querySelector(".inlinePreviewSlot");
     const content = slotEl().querySelector(".inlinePreviewContent");
-    // 灰階鈕只在量得到圖寬時才建立；jsdom 不排版也不載圖，兩者都要自己造。
+    // 灰階鈕只在量得到圖寬時才建立。測試不連網：用明確的 CSS 尺寸代替「圖載完撐開」，
+    // 寬度由真版面量出。
     const img = document.createElement("img");
     img.className = "easyReadingImg hyperLinkPreview";
-    Object.defineProperty(img, "offsetWidth", { configurable: true, value: 600 });
-    Object.defineProperty(img, "offsetHeight", { configurable: true, value: 400 });
-    Object.defineProperty(content, "offsetHeight", {
-      configurable: true,
-      value: 400,
-    });
+    img.style.cssText = "display: block; width: 600px; height: 400px";
     content.appendChild(img);
     sizeObservers[0].emit();
     const btn = slotEl().querySelector(".previewGrayBtn");

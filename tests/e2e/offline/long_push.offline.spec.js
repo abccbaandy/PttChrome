@@ -300,8 +300,8 @@ test.describe('長推文一鍵發送（離線）', () => {
 
   // 鍵盤送出。unit（long_push_modal.test.jsx）已經守了「Ctrl+Enter 會呼叫
   // onConfirm」，這裡守只有真瀏覽器看得到的兩件事：
-  //   1. preventDefault 真的擋掉了 textarea 自己的換行（jsdom 不會插那個字元，
-  //      fireEvent 的回傳值只證明「有呼叫 preventDefault」）——送不出去的空白狀態
+  //   1. preventDefault 真的擋掉了 textarea 自己的換行（fireEvent 送的合成事件不會
+  //      觸發瀏覽器預設動作，本來就不會插那個字元；它的回傳值只證明「有呼叫 preventDefault」）——送不出去的空白狀態
   //      下按一次最看得出來：框還開著，內容必須仍是空的。
   //   2. 這一下沒漏給 PTT：modalShown 擋著 term_view 的 global keydown，線路上
   //      第一個 byte 必須就是長推文自己送的 X。

@@ -6,7 +6,7 @@
 //   - 離線 e2e：Vite HMR client 把這顆 unhandled rejection 轉發回 dev server
 //     （vite:forward-console），流量又被 stub WebSocket 記成「app 送出的 bytes」
 //     → long_push / mouse 這些讀 __sent 的 spec 偶發紅。
-// 另外 jsdom / 非 secure context 下 navigator.clipboard 根本不存在，裸呼叫是
+// 另外非 secure context（http 的區網 IP 等）下 navigator.clipboard 根本不存在，裸呼叫是
 // 同步 TypeError，會把呼叫端整條路徑炸斷（長推文取消收尾就走這條）。
 import { App } from "../../src/js/pttchrome";
 

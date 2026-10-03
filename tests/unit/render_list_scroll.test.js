@@ -91,22 +91,22 @@ describe("列表好讀 body 捲動視口", () => {
     expect(hits.length).toBe(2); // 不是 3 ⇒ 沒有重複掛
   });
 
-  test("捲動存取一律走 controller（jsdom 沒有 Element.scrollTo）", () => {
+  test("捲動存取一律走 controller：真的捲到指定位置", async () => {
     const m = mountScreen(props());
     const view = m.container.querySelector(".listBodyView");
-    const writes = [];
-    Object.defineProperty(view, "scrollTop", {
-      configurable: true,
-      get: () => 0,
-      set: (v) => writes.push(v),
-    });
+    // 真版面：40 列 body 塞在 400px 視口裡，要真的有可捲距離，下面的斷言才有意義。
+    expect(view.scrollHeight - view.clientHeight).toBeGreaterThan(100);
 
     m.controller.setListScrollTop(37);
-    expect(writes).toContain(37);
-    // smooth 在沒有 scrollTo 的環境要退回直接寫，不能整條路徑爆掉
-    view.scrollTo = undefined;
+    expect(view.scrollTop).toBe(37);
+    expect(m.controller.getListScrollTop()).toBe(37);
+
+    m.controller.scrollListTo(12);
+    expect(view.scrollTop).toBe(12);
+
+    // smooth 是瀏覽器原生動畫（非同步），只鎖終點。
     m.controller.scrollListTo(64, "smooth");
-    expect(writes).toContain(64);
+    await vi.waitFor(() => expect(view.scrollTop).toBe(64));
   });
 
   test("短板（序列比視口短）：仍是同一套結構，只是沒有可捲距離", () => {

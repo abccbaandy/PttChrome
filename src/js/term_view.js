@@ -1276,8 +1276,8 @@ TermView.prototype = {
   //  1. **cancelable: true 絕不可省**。整條鏈靠 e.defaultPrevented 判斷「上游有沒
   //     有接手」；cancelable 為 false 時 preventDefault() 是 no-op ⇒ easyReading／
   //     listSession 明明接手了，_keyboard 還會再送一次 [D。（已實測：對一個
-  //     從未 dispatch 的合成事件呼叫 preventDefault，Chromium／Firefox／jsdom 三
-  //     者的 defaultPrevented 都會變 true，這是 DOM 標準行為。）
+  //     從未 dispatch 的合成事件呼叫 preventDefault，Chromium／Firefox 的
+  //     defaultPrevented 都會變 true，這是 DOM 標準行為。）
   //  2. 合成事件的 e.code 是空字串、isTrusted 為 false、target 為 null。目前鏈上
   //     只有 term_keyboard 的 altRemapCharCode 與 isAltRemapEvent 讀 e.code，兩者
   //     都經過 `e.code || ''`（isAltRemapEvent 也用不到：合成事件 altKey 為 false，

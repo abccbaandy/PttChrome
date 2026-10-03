@@ -191,8 +191,9 @@ describe("showBackgroundNotification", () => {
 describe("notifyDeepLinkHandoff", () => {
   const TARGET = { board: "movie", aid: "1gIeu-3A" };
 
-  // jsdom 預設是 visible + hasFocus() === true（＝前景），但這個通知的整個前提就是
-  // 「使用者的眼睛在別的分頁」。除了前景那條測試，其餘一律先把分頁壓成背景。
+  // 測試頁的 hasFocus() 由 runner 決定（headless Chromium 裡的測試 iframe 有沒有焦點
+  // 不保證），而這個通知的整個前提就是「使用者的眼睛在別的分頁」⇒ 每條都顯式釘：
+  // 除了前景那條測試，其餘一律先把分頁壓成背景。
   const asBackground = () =>
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
 

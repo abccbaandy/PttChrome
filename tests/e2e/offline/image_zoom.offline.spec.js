@@ -1,7 +1,7 @@
 // 整頁圖片倍率「－ 100% ＋」（離線重放：真瀏覽器、真渲染、零網路）。
 //
 // 純邏輯與 CSS 契約已由 tests/unit/image_zoom*、screen_image_zoom 守；這裡只驗
-// jsdom 量不到的：`calc(min(--nat-w…, 39em, 19em×寬高比) × --img-zoom)` 真的算出
+// unit 量不到的（要整份 main.css＋真圖原尺寸＋終端機字級）：`calc(min(--nat-w…, 39em, 19em×寬高比) × --img-zoom)` 真的算出
 // 「小圖寬 × 倍率」、與一鍵放大互不干擾、被點的那張圖留在視野內。
 //
 // 寬度一律量 offsetWidth（layout 空間）：img 身上有反向 scale（term_view.js

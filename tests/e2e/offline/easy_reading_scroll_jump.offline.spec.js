@@ -11,8 +11,8 @@
 // 於是讀者被整整推走那麼多：兩張圖就吃掉一整次 PgUp。
 // 修法見 src/render/inline_preview_slot.js 檔頭「疊層佔位」。
 //
-// 為什麼一定要 e2e：suppression 是真瀏覽器的排版行為，jsdom 沒有捲動也沒有
-// anchoring，unit 只驗得到「高度寫在哪、掛載時塌不塌陷」
+// 為什麼一定要 e2e：suppression 是瀏覽器的排版行為，要完整的 .main 捲動容器、
+// 整份樣式與真圖的載入時序；unit 只掛單一 slot（高度覆寫、observer 是替身），只驗得到「高度寫在哪、掛載時塌不塌陷」
 // （tests/unit/lazy_inline_preview.test.js），驗不到「讀者有沒有被推走」。
 //
 // 也跑 offline-slow（`yarn test:e2e:offline:adverse`，圖固定慢 5.2s）：那是「圖遲遲

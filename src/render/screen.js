@@ -1194,8 +1194,7 @@ export class ScreenController {
   scrollListTo(px, behavior) {
     const v = this._bodyView;
     if (!v) return;
-    if (behavior === "smooth" && typeof v.scrollTo === "function")
-      v.scrollTo({ top: px || 0, behavior: "smooth" });
+    if (behavior === "smooth") v.scrollTo({ top: px || 0, behavior: "smooth" });
     else v.scrollTop = px || 0;
   }
 

@@ -42,11 +42,7 @@ function makeCore({ mobile = true } = {}) {
 const byKey = (k) => document.querySelector(`[data-key="${k}"]`);
 
 beforeEach(() => {
-  try {
-    window.localStorage.clear();
-  } catch (e) {
-    // jsdom 一定有；保險
-  }
+  window.localStorage.clear();
 });
 
 describe("MobileKeypad", () => {
