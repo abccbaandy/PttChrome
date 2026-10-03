@@ -25,17 +25,18 @@ jobs:
           node-version: 24
           cache: yarn
 
-      # 同一份設定 unit 耗時在 64s～171s 間跳（各階段比例幾乎不變 ⇒ 疑似 runner 機型差異）。
-      # 印機型供對照 log 裡 vitest 的 Duration；確認與 CPU 相關再調 --maxWorkers。
+      # unit 耗時差異來自 runner 的 CPU 型號，不是核心數（nproc 恆 4；EPYC 7763 ~115-120s，
+      # 較新晶片 70-107s）。印機型以便同機型比較 log 裡 vitest 的 Duration。
       - name: Runner CPU
         run: |
           nproc
           lscpu | grep 'Model name' || true
 
+      # vitest 預設 maxWorkers＝核心數−1＝3；試驗 4（本機 16 核量到約 -15%，4 核 runner 上的效果待量）。
       - name: Unit tests
         run: |
           yarn install --immutable
-          yarn test:unit
+          yarn test:unit --maxWorkers=4
 
   test-integration:
     runs-on: ubuntu-latest

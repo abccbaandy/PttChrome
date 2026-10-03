@@ -6,12 +6,18 @@
 
 ## CI unit 耗時變異
 
-- 現象：同一份設定 `Unit tests` step 64s～176s（run #245–#254）。vitest `Duration` 各階段比例幾乎相同
-  （environment ~35%），runner region 各不相同（westus／eastus／centralus／westus2）⇒ 疑似機型差異。`guess`。
-- 已做：`test-unit` 開頭的 `Runner CPU` step 印 `nproc`＋`lscpu` Model name。
-- 下一步：累積 5 輪以上，對照 `Runner CPU` 與 log 的 vitest `Duration`。若與 CPU 數有關，試
-  `--maxWorkers`（threads 預設＝可用核心數−1）後量。
-- 剩餘成本：jsdom 仍佔 ~33%（約 124 檔宣告 `@vitest-environment jsdom`）。可選方向：
+- 根因 CONFIRMED（run #255–#267＋PR Test #51，共 14 輪）：`nproc` 恆 4，耗時只跟 CPU 型號有關。
+  - AMD EPYC 7763：115–121s（9 輪，很穩，可當對照組）
+  - EPYC 9V74／9V45、Xeon 8573C／6973P-C：70–107s
+  - vitest `Duration` 各階段比例每輪都一樣（environment ~35%、tests ~34%、setup 14%、import 12%）
+  - ⇒ runner 機型無法選，這部分變異不用處理。
+- 試驗中：`test-unit` 改成 `yarn test:unit --maxWorkers=4`（vitest 5 預設＝`availableParallelism()-1`＝3）。
+  本機 16 核量到 3 worker 73.5/74.1s、4 worker 65.3/58.5s；4 核 runner 上的效果 `unknown`，因為第 4 個
+  worker 會跟主執行緒搶核心。
+- 下一步：累積 ≥3 輪 **EPYC 7763** 的 run，`Unit tests` 的 Duration 跟基準 115–119s 比。沒有明顯變快
+  （< 5%）或 flaky 變多 ⇒ 改回不帶參數。撈資料方式：runs API → 找名稱含 unit 的 job → job logs，
+  用 regex 抓 `Model name:` 和 `Duration`。
+- 剩餘成本：jsdom 仍佔 ~35%（約 124 檔宣告 `@vitest-environment jsdom`）。可選方向：
   - 逐檔檢查是否只為少數 DOM API 才用 jsdom，抽純邏輯改測純函式；
   - 評估 happy-dom（較快，但行為差異會讓既有斷言變動；依 `docs/build-modernization.md` 先寫評估紀錄）。
 
