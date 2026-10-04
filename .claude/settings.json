@@ -22,6 +22,17 @@
         ]
       }
     ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/sync-3rd-script.mjs\"; true"
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
