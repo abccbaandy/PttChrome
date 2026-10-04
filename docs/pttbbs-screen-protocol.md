@@ -589,7 +589,7 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 | `screen_captions.js` | 舊 `read.c:1234-1238`／`board.c:1285`／`edit.c:470`（CONFIRMED @ 03cdf5eb）＋新 `read.c#i_read_caption`／`board.c#brdlist_caption`／`edit.c#edit_msg`（CONFIRMED 讀碼 @ piaip.newui） | 最後一列**行首** token ∈ 已知 caption 集合。消費端：`classifyListScreen`、`classifyBoardListScreen`／`boardListContextKind`、`term_view` 兩個 footer 快取、`setPageState` 編輯器、`isCursorOnInputField` 例外。見 §11.10 |
 | `term_keyboard` | `common/sys/vtkbd.c`＋`include/vtkbd.h` | `ESC[A/B/C/D`→`KEY_UP+(c-'A')`；`ESC[1~`→HOME、`ESC[2~`→INS、`ESC[3~/4~/5~/6~`→`KEY_DEL+(c-'3')`＝DEL/END/PGUP/PGDN（`vtkbd.h` 註明 "must follow vt220 ordering"）。全部對上 |
 | `aid_parse` | `mbbsd/aids.c#aidu2aidc` | 字母表 `0-9A-Za-z-_`（64 字），產出**恆 8 字**；反向 `aidc2aidu` 不限長度但畫面上只會出現產生端形式 |
-| `symbol_table.js` | — | **不適用**：是 client 端 Unicode→顯示寬度分類表（1/2＝強制全形、3＝壞 DBCS），與 server 邏輯無關 |
+| `symbol_table.js` | — | **不適用**：是 client 端壞 DBCS 表（畫成 `??`；撐寬規則在 `render/color_segment.js#shouldForceWidth`），與 server 邏輯無關 |
 
 ## 11.1 推文列欄位寬度與輸入上限（2026-08 CONFIRMED）
 

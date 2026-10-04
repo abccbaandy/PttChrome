@@ -166,7 +166,7 @@ const ARTICLE_NATIVE_LINES = [
   row(seg("內文第一行，含一條網址："), link("https://i.imgur.com/abc.jpg")),
   row(seg("這一行有全形字：測試中文寬度對齊")),
   row(twoColor("雙色", color(1, 0), color(4, 0)), seg(" 兩個位元組不同色")),
-  // symbolTable 判定 1/2 的字（Big5 全形、Unicode 卻是窄字）→ ForceWidthWord 的
+  // CJK 區塊以外的 DBCS 字（Big5 佔兩格、Unicode 卻是窄字／Ambiguous）→ ForceWidthWord 的
   // .wpadding，term_view.fixedResize 直接掃 DOM 改它的 width，是硬契約。
   row(seg("符號 ° ± × ÷ Α Ω 對齊")),
   // b2u 轉不出來的位元組對 → Conversion error 分支（兩個 '?'）。

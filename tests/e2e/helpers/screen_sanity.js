@@ -9,7 +9,8 @@
 //   4. overflow #mainContainer 沒有水平捲動
 //
 // 欄位一律由 buf 的 TermChar 推（`isLeadByte` 配對），不用 Unicode 寬度猜：Big5 的
-// 「×」（A1D1）解成 U+00D7 是窄字，但在終端機上佔 2 欄。
+// 「×」（A1D1）解成 U+00D7、「‼」（91F7）解成 U+203C 都是窄字，但在終端機上佔 2 欄。
+// （渲染端對應的撐寬規則：render/color_segment.js#shouldForceWidth。）
 //
 // screenSanity 回傳**報告**（失敗訊息直接帶出哪一列、差多少），門檻在 expectScreenSane。
 const { expect } = require('@playwright/test');

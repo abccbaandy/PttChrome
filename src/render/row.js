@@ -15,10 +15,11 @@ import { shouldForceWidth } from "./color_segment";
 import { forceWidthStyle } from "./word_segment";
 
 // Render a plain notice string (blacklistNotice) into the same monospace grid the
-// normal char path uses: ASCII/narrow chars flow as text, full-width glyphs (●, □,
-// CJK …) get an explicit inline-block of `forceWidth` px so they occupy exactly two
-// cells and line up with every other row. Narrow runs are grouped into one span to
-// keep the node count small.
+// normal char path uses: ASCII and CJK-block chars flow as text, every other non-ASCII
+// glyph (●, □, ‼ …, whose font advance is not reliably 1em) gets an explicit
+// inline-block of `forceWidth` px so it occupies exactly two cells and lines up with
+// every other row (shouldForceWidth). Text runs are grouped into one span to keep the
+// node count small.
 function noticeSegments(text, forceWidth) {
   const out = [];
   let run = "";
