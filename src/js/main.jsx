@@ -38,6 +38,11 @@ function startApp() {
     // e2e 要驗「產出的分享連結指向哪一篇」。連結是檔名形式（#<Board>/M.…html），
     // 肉眼比對不了 AID，所以把合約的解析端本身開出去讓測試呼叫。
     window.__parseDeepLink = parseDeepLink;
+    // live e2e 每輪的錄製檔與 scenario 錄製器用產品自己的 DebugRecorder（同一份
+    // schema，`yarn debug:screens` 直接讀得懂）。dynamic import：正式版整段被
+    // DEVELOPER_MODE 剪掉，不進 bundle。
+    window.__loadDebugRecorder = () =>
+      import('./debug_recorder').then((m) => m.DebugRecorder);
   }
 
   // 外部連結（#<Board>/<AID>）進來的話，先問問看有沒有已經登入好的分頁可以

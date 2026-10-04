@@ -387,7 +387,7 @@ best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原
 - `term_view.onKeyDown`：`if useEasyReadingMode && startedEasyReading && !reply/pushInit` → `easyReading._onKeyDown`→`_onKeyDownProcessUI`。切原生後 useEasyReadingMode=false ⇒ 走原生 `_keyboard.onKeyDown`，左鍵`\x1b[D`原生離開文章。
 - 原生鍵序：`term_keyboard.js` KeyMap，End=`\x1b[4~`、Left=`\x1b[D`、PageDown=`\x1b[6~`。
 
-## e2e 測試要點（tests/e2e/easy-reading.spec.js）
+## e2e 測試要點（offline：`easy-reading.offline`／`er_function_mode.offline`；live 只剩 `core.spec.js` 的好讀不跑版＋開圖）
 
 - **好讀預設 true（2026-09-16 翻預設）**：要測「原生」的 spec 反過來得自己關（live 走 `helpers/ptt.js#applyPrefs`，offline 走全新 context 的 localStorage），否則吃到的是好讀。舊約定（測試自己寫 `{values:{enableEasyReading:true}}` 才會啟動）已失效。
 - app 未掛全域：`main.jsx` 僅 `DEVELOPER_MODE`(dev build 有)下 `window.__app=app` 供測試讀 `view.useEasyReadingMode`/`buf.pageState`。

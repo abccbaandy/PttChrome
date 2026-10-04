@@ -1395,6 +1395,28 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
     expect(nav.findLocalPostAid()).toBeNull();
   });
 
+  // REGRESSION（2026-10，scn-aid-back 錄製抓到；movie 板置底「電影板板規 2021/9/4」）：
+  // 從**信箱**轉錄到看板（mbbsd/mail.c:2067 `※ [本文轉錄自 <id> 信箱]` ＋整封信 ＋
+  // addforwardsignature）。信裡那篇可以來自同一個看板 ⇒ 看板守門擋不住；轉錄文本身
+  // 沒有自己的「※ 文章網址」（只有 ※ 發信站／※ 轉錄者）。舊碼把原文的 AID 當本篇 ⇒
+  // AID 跳文後「返回」落到原文、F2／右鍵複製到原文的連結。
+  test("信箱轉錄文：轉錄標頭之後的網址屬於被轉錄的原文（即使同板）→ null，退回按 Q", () => {
+    const rows = screen({ last: STATUS_ROW });
+    rows[3] = "※ [本文轉錄自 someone 信箱]";
+    rows[10] = URL_ROW("Browsers", BROWSERS_FN);
+    rows[12] = "※ 轉錄者: someone (1.2.3.4 臺灣), 09/04/2021 19:59:47";
+    const { nav } = makeHarness({ pageState: 3, articleBoard: "Browsers", screenRows: rows });
+    expect(nav.findLocalPostAid()).toBeNull();
+  });
+
+  test("信箱轉錄文（好讀累積頁，標頭與網址分在不同次掃描）→ null", () => {
+    const acc = ["作者 someone (某人) 看板 Browsers", "標題 Fw: [公告] 板規", "", "※ [本文轉錄自 someone 信箱]"];
+    const { nav, termBuf } = makeHarness({ pageState: 3, articleBoard: "Browsers", pageLines: acc });
+    expect(nav.findLocalPostAid()).toBeNull();
+    termBuf.pageLines = acc.concat(["原文內文……", URL_ROW("Browsers", BROWSERS_FN)]);
+    expect(nav.findLocalPostAid()).toBeNull();
+  });
+
   test("引言列（回文帶進來的原文網址）不算", () => {
     const rows = screen({ last: STATUS_ROW });
     rows[5] = ": " + URL_ROW("Browsers", BROWSERS_FN);

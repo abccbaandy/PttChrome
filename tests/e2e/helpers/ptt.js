@@ -1,6 +1,7 @@
 // 可重用的 PTT E2E 工具：讀畫面、等畫面、打字、登入、擷取 console。
 // 設計成「讀畫面 → 比對 → 回應」的容錯輪詢，PTT 中間提示頁不固定也能撐住。
 
+const { expect } = require('@playwright/test');
 const { totpCode, isValidOtpSecret } = require('../../../src/js/totp');
 
 // 登入互動的決策層（純函式，unit 守護 tests/unit/e2e_login_flow.test.js）。
@@ -196,22 +197,27 @@ async function login(page) {
         if (decision.phase === 'bot-blocked') markBotBlocked(decision.message);
         throw new Error(decision.message);
 
-      case 'send-otp':
+      // 送鍵之後等畫面真的變了（不是固定睡 800ms：回應晚到時下一輪還判在舊畫面上，
+      // 就會多送一次 —— 對 pressanykey 是多一個空白、對 2FA 是多燒一次驗證碼）。
+      case 'send-otp': {
+        const before = await page.evaluate(bufScreenSig);
         await typeLine(
           page,
           await totpCode(otpSecret, { atMs: Date.now() + decision.otpSkew * 30000 })
         );
-        await page.waitForTimeout(800);
+        await waitScreenChanged(page, before);
         break;
+      }
 
-      case 'answer-no':
+      case 'answer-no': {
+        const before = await page.evaluate(bufScreenSig);
         await typeLine(page, 'n');
-        await page.waitForTimeout(800);
+        await waitScreenChanged(page, before);
         break;
+      }
 
       case 'press-any-key':
-        await sendKey(page, 'Space');
-        await page.waitForTimeout(800);
+        await pressAndSettle(page, 'Space');
         break;
 
       case 'reconnect':
@@ -432,63 +438,135 @@ async function getPref(page, key) {
   return page.evaluate((k) => window.__readPrefs()[k], key);
 }
 
-// 共用 session 的每個 case 開頭呼叫：容錯迴圈回主選單 + prefs 重設 baseline，避免狀態污染。
+// ---- 內容條件的按鍵等待（live／record 共用）-------------------------------------
+//
+// **不准「按鍵 → 固定睡 → 判一次」**：回應比睡的時間晚到，判斷就落在舊畫面上，接著
+// 多按一個鍵 —— 2026-10 錄製實錄：進板畫面的空白鍵多按一次，落在列表上把文章打開了。
+// 一律「按鍵 → 等 buf 畫面真的變了 → 等 settle」。buf 是真相源（DOM 慢一幀）。
+
+const bufScreenSig = () => {
+  const b = window.__app.buf;
+  const out = [];
+  for (let r = 0; r < b.rows; r++) out.push(b.getRowText(r, 0, b.cols));
+  return out.join('\n') + '|' + b.cur_y + ',' + b.cur_x;
+};
+
+// 畫面 settle：30ms notify 與 50ms settle 兩個計時器都清空。
+async function waitScreenIdle(page, timeout = 10000) {
+  await page.waitForFunction(
+    () => {
+      const b = window.__app.buf;
+      return !b.timerUpdate && !b._settleTimer;
+    },
+    null,
+    { timeout }
+  );
+}
+
+// 等 buf 畫面與 before 不同（逾時不丟錯，回 false）。waitForFunction 的 callback 看不到
+// 模組作用域，所以把 bufScreenSig 的原始碼帶進去重建（同 replay.js#isBbsSocketUrl 的作法）。
+function waitScreenChanged(page, before, timeout = 10000) {
+  return page
+    .waitForFunction(
+      ({ src, before }) => new Function('return (' + src + ')()')() !== before,
+      { src: bufScreenSig.toString(), before },
+      { timeout }
+    )
+    .then(() => true)
+    .catch(() => false);
+}
+
+// 按一個鍵，等畫面真的變了（PTT 對某些鍵零回應 ⇒ 等不到不丟錯，回 false）再等 settle。
+async function pressAndSettle(page, key, opts = {}) {
+  const before = await page.evaluate(bufScreenSig);
+  await sendKey(page, key);
+  const changed = await waitScreenChanged(page, before, opts.timeout);
+  await waitScreenIdle(page);
+  return changed;
+}
+
+// 共用 session 的每個 case 開頭呼叫：prefs 重設 baseline + 回主選單，避免狀態污染。
+//
+// **先關 pref、再退**：好讀／列表好讀／看板列表接管中按 ←，走的是它們自己的交易路徑
+// （好讀長頁上甚至可能被當成本地捲動）⇒ 畫面不一定變，「按 ← 等畫面變」會原地空轉
+// （2026-10 錄製：AID 返回後停在好讀文章裡，連按 12 次 ← 都沒離開）。關掉之後畫面一律
+// 是原生鏡像，← 就是單純的 PTT 離開鍵。
+// 三顆接管 pref 也是**跨 spec 殘留**的來源：沒人關的話，下一支在「接管中」的狀態下操作。
 async function resetSession(page) {
-  const deadline = Date.now() + 25000;
-  let screen = '';
-  while (Date.now() < deadline) {
-    screen = await readScreen(page);
-    if (screen.includes('主功能表')) break;
-    if (screen.includes('請按任意鍵') || screen.includes('按任意鍵') || screen.includes('任意鍵繼續')) {
-      await sendKey(page, 'Space');
-    } else {
-      await sendKey(page, 'ArrowLeft');
-    }
-    await page.waitForTimeout(800);
-  }
-  if (!screen.includes('主功能表')) {
-    throw new Error(`resetSession 無法回到主選單\n--- 當前畫面 ---\n${screen}\n----------------`);
-  }
-  // enableEasyReadingList 也要關：它是**跨 spec 殘留**的來源 —— easy-reading-list.spec
-  // 把它打開之後就沒人關，之後跑的 spec（enhance/easy-reading）於是在「列表好讀開著」
-  // 的狀態下操作列表，End/Enter 走的是 ListSession 的交易路徑，落點與原生不同。
-  // 2026-08-29 live：樓層編號那條因此開到十幾頁的置底公告，累積跑不完 → 60s test
-  // timeout；單獨重跑（pref 關著）同一條 7.2 秒就綠。測試之間不該靠執行順序。
+  const wasEasyReading = await page.evaluate(() => !!window.__app.view.useEasyReadingMode);
+  const before = await page.evaluate(bufScreenSig);
   await applyPrefs(page, {
     enableEasyReading: false,
     showFloorNumbers: false,
     blacklist: '',
     enableEasyReadingList: false,
-    // 同理（看板列表平滑捲動）：它一旦被某支 spec 打開就沒人關，之後的 spec 在
-    // 「看板列表接管中」的狀態下按鍵，走的是 BoardListSession 的交易路徑而不是原生。
     enableBoardListSmoothScroll: false,
   });
-  // 關閉好讀會送 Ctrl-L 觸發整頁重畫（見 applyPrefs 註解），等它完成再繼續
-  await page.waitForTimeout(800);
+  // 關好讀會送 Ctrl-L 要整頁重畫（見 applyPrefs）⇒ 只有那時才需要等重畫回來。
+  if (wasEasyReading) await waitScreenChanged(page, before);
+  await waitScreenIdle(page);
+
+  const atMenu = () =>
+    page.evaluate(() => {
+      const b = window.__app.buf;
+      // pass 畫面要排除文章（pageState 3）：pmore 的狀態列「末列中段同色＋游標停右下角」
+      // 也滿足 _isAnsiPassFrame ⇒ 會被當成 pass 按空白鍵＝翻頁（2026-10 live：連翻 12 頁）。
+      return {
+        menu: b.getRowText(0, 0, b.cols).includes('主功能表'),
+        pass: b.pageState !== 3 && b.isPassScreenNow(),
+      };
+    });
+  let st = await atMenu();
+  for (let i = 0; i < 12 && !st.menu; i++) {
+    await pressAndSettle(page, st.pass ? 'Space' : 'ArrowLeft');
+    st = await atMenu();
+  }
+  if (!st.menu) {
+    const screen = await readScreen(page);
+    throw new Error(`resetSession 無法回到主選單\n--- 當前畫面 ---\n${screen}\n----------------`);
+  }
 }
 
-// 主選單 → s 搜尋看板 → 進到看板文章列表（處理加入最愛等中間提示）。
+// 主選單 → s 搜尋看板 → 進到看板文章列表（處理進板畫面、加入最愛等中間提示）。
+//
+// 落地判準「有序號列＋不是 pass 畫面」：以前只看「看板」＋「標題/人氣」，**進板畫面**
+// （movie 板是一張 ANSI 圖）也可能滿足 ⇒ 誤判已進板，下一個鍵被 pressanykey 吃掉。
 async function gotoBoard(page, board) {
-  const inBoardList = (s) => s.includes('看板') && (s.includes('標題') || s.includes('人氣'));
+  const where = () =>
+    page.evaluate(() => {
+      const b = window.__app.buf;
+      if (b.pageState !== 3 && b.isPassScreenNow()) return 'pass'; // 排除文章，理由見 resetSession
+      const rows = [];
+      for (let r = 0; r < b.rows; r++) rows.push(b.getRowText(r, 0, b.cols));
+      const text = rows.join('\n');
+      const numbered = rows.slice(3, b.rows - 1).some((t) => /^[>\s]*\d+\s/.test(t));
+      if (numbered && text.includes('看板') && (text.includes('標題') || text.includes('人氣')))
+        return 'list';
+      if (/加入|訂閱|我的最愛/.test(rows[b.rows - 1] + rows[b.rows - 2]) && b.isCursorOnInputField())
+        return 'ask';
+      return null;
+    });
 
   await sendKey(page, 's');
   // 必須等搜尋 prompt 真的出現再打字：太早打，板名字元會被主選單當捷徑吃掉
   // （實測 "C_Chat" 的 C 選到 (C)lass 進了分組討論區）。
-  await waitForScreen(page, ['請輸入看板名稱', '搜尋看板', '自動搜尋'], { timeout: 10000 });
+  await page.waitForFunction(() => window.__app.buf.isCursorOnInputField(), null, { timeout: 10000 });
   await typeLine(page, board);
-  await page.waitForTimeout(1500);
-  let s = '';
   for (let i = 0; i < 6; i++) {
-    s = await readScreen(page);
-    if (inBoardList(s)) return;
-    if (s.includes('加入') || s.includes('訂閱') || s.includes('我的最愛')) await typeLine(page, 'y');
-    else await sendKey(page, 'Space');
-    await page.waitForTimeout(800);
+    let w = null;
+    await expect
+      .poll(async () => (w = await where()), { timeout: 15000 })
+      .not.toBeNull()
+      .catch(() => {});
+    if (w === 'list') return waitScreenIdle(page);
+    if (w === 'pass') await pressAndSettle(page, 'Space');
+    else if (w === 'ask') {
+      await typeLine(page, 'y');
+      await expect.poll(where, { timeout: 15000 }).not.toBe('ask');
+    } else break;
   }
-  s = await readScreen(page);
-  if (!inBoardList(s)) {
-    throw new Error(`gotoBoard(${board}) 未能進入看板列表\n--- 當前畫面 ---\n${s}\n----------------`);
-  }
+  const s = await readScreen(page);
+  throw new Error(`gotoBoard(${board}) 未能進入看板列表\n--- 當前畫面 ---\n${s}\n----------------`);
 }
 
 // 等文章好讀「整篇累積完畢」：easyReadingReachedPageEnd（＝footer 100%，見
@@ -570,48 +648,6 @@ async function readListCandidates(page, opts) {
   return listArticleNumbers(rows, opts);
 }
 
-// 從**列表畫面**挑一篇「推文數落在 [min,max]」的文章，回傳 { num, push }；找不到回 null。
-//
-// 為什麼不沿用 End → Enter（2026-08-29 樓層編號 live 失敗的根因）：
-//   1. End ＝ read.c 的 last_line，**包含置底文**。C_Chat 的置底是十幾頁的公告，
-//      好讀累積要跑很久 → 撞 60s test timeout；而且公告常常一則推文都沒有，
-//      「樓層/推文者」類斷言必紅。
-//   2. 「開了才知道不合用 → 退回列表 → 往上一篇再試」的重試迴圈（本檔多處）每輪都要
-//      一次完整累積，慢且仍不保證。
-// ⇒ **開文之前就能挑**，上界順便擋掉爆文（累積過久）。欄位依據見 listArticleNumbers。
-async function pickListArticleWithComments(page, opts = {}) {
-  const min = opts.min == null ? 8 : opts.min;
-  const max = opts.max == null ? 99 : opts.max;
-  const pages = opts.pages || 3;
-  for (let p = 0; p < pages; p++) {
-    let best = null;
-    for (const c of await readListCandidates(page, { min, max })) {
-      if (!best || c.push > best.push) best = c;
-    }
-    if (best) return best;
-    await sendKey(page, 'PageUp'); // 往舊翻一頁再找
-    await page.waitForTimeout(800);
-  }
-  return null;
-}
-
-// 跳號 → 開文。等的是**內容條件**（游標列的序號＝目標）而不是固定 timeout：
-// 跳號回應的到達時間取決於連線，睡固定秒數不是慢就是不夠。
-async function openArticleByNumber(page, num) {
-  await page.evaluate((n) => window.__app.conn.send(String(n) + '\r'), num);
-  await page.waitForFunction(
-    (n) => {
-      const buf = window.__app.buf;
-      const text = buf.getRowText(buf.cur_y, 0, buf.cols);
-      const m = /^[>\s]*(\d+)\s/.exec(text || '');
-      return !!m && parseInt(m[1], 10) === n;
-    },
-    num,
-    { timeout: 10000 }
-  );
-  await sendKey(page, 'Enter');
-}
-
 // 收集 console 與 pageerror，測試失敗時可印出。回傳 logs 陣列。
 // opts.echo（或 env E2E_ECHO_CONSOLE）為真時即時印到 stdout，debug 免再自行 filter/join。
 function attachConsole(page, opts = {}) {
@@ -624,60 +660,6 @@ function attachConsole(page, opts = {}) {
   page.on('console', (msg) => push(`[console.${msg.type()}] ${msg.text()}`));
   page.on('pageerror', (err) => push(`[pageerror] ${err.message}`));
   return logs;
-}
-
-// ---- 黑名單 e2e 的判定純函式（unit 守護：tests/unit/blacklist_pusher_diff.test.js）----
-//
-// 為什麼不比列數：live 測在同一篇文章讀兩次（封鎖前／後），但熱門板的推文會在兩次之間
-// 繼續長，新增列數可以蓋過黑名單移除的列數 ⇒ 任何「c2 < c1」「列數差 >= targetCount」
-// 的斷言都會偽紅（實例：黑名單確實生效、目標作者完全消失，卻量到 c2=412 > c1=289）。
-// 判定一律走「內容前綴 + 樓號缺口」，對第二次多出的新推文免疫。
-
-// 前後兩次累積的推文者序列比對：before 去掉 target 之後，必須是 after 的前綴；
-// after 尾端多出來的就是期間新推文，允許存在。
-function comparePusherSequences(before, after, target) {
-  const expectedPrefix = before.filter((p) => p !== target);
-  const actualPrefix = after.slice(0, expectedPrefix.length);
-  let firstMismatch = null;
-  for (let i = 0; i < expectedPrefix.length; i++) {
-    if (actualPrefix[i] !== expectedPrefix[i]) {
-      firstMismatch = { index: i, expected: expectedPrefix[i], actual: actualPrefix[i] };
-      break;
-    }
-  }
-  return {
-    targetInBefore: before.filter((p) => p === target).length,
-    targetInAfter: after.filter((p) => p === target).length,
-    expectedPrefix,
-    actualPrefix,
-    prefixMatches: firstMismatch === null,
-    firstMismatch,
-    appended: after.slice(expectedPrefix.length),
-  };
-}
-
-// 單次讀取內的樓號結構檢查。entries 依畫面順序：[{ floor: number|null, blank: boolean }]。
-// 樓號是絕對編號（黑名單列仍占樓號），所以「跳號」＝確實有列被整列移除；
-// 跳號區間內若出現空白列，代表退化成「隱藏但占行」，就是真回歸。
-function inspectFloorGaps(entries) {
-  const gaps = [];
-  let strictlyIncreasing = true;
-  let prevFloor = null;
-  let prevIndex = -1;
-  entries.forEach((e, i) => {
-    if (e.floor == null || Number.isNaN(e.floor)) return;
-    if (prevFloor !== null) {
-      if (e.floor <= prevFloor) strictlyIncreasing = false;
-      else if (e.floor - prevFloor > 1) {
-        let blankRowsBetween = 0;
-        for (let k = prevIndex + 1; k < i; k++) if (entries[k].blank) blankRowsBetween++;
-        gaps.push({ from: prevFloor, to: e.floor, blankRowsBetween });
-      }
-    }
-    prevFloor = e.floor;
-    prevIndex = i;
-  });
-  return { gaps, blankInGaps: gaps.filter((g) => g.blankRowsBetween > 0), strictlyIncreasing };
 }
 
 module.exports = {
@@ -694,12 +676,10 @@ module.exports = {
   applyPrefs,
   resetSession,
   gotoBoard,
-  pickListArticleWithComments,
+  pressAndSettle,
+  waitScreenIdle,
   listArticleNumbers,
   readListCandidates,
-  openArticleByNumber,
   getPref,
-  comparePusherSequences,
-  inspectFloorGaps,
   PREF_KEY,
 };

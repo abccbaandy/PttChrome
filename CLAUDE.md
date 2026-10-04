@@ -60,6 +60,13 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   e2e 不連 Firebase，同步流程只能在這驗。細節見 `docs/pref-sync-firestore.md`。
 - **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額常滿會 fast-fail）。
   失敗自動截圖/錄影 + console dump。helper：`tests/e2e/helpers/ptt.js`。細節見 `tests/e2e/README.md`。
+  - **live 只有核心（2026-10 定案）**：`tests/e2e/core.spec.js` ＝登入／主選單・文章列表・文章不跑版不亂碼
+    （`helpers/screen_sanity.js`：DOM＝buf、格線、Big5 可解、無水平溢出，**不比對畫面內容**）／開圖。
+    其餘功能一律 offline；需要新的 PTT 往返就錄 scenario 卷（`yarn record:scenarios`，一次登入，
+    見 `docs/offline-replay-testing.md`「scenario 卷」）。守護 `e2e_login_budget`（live 只准 `core.spec.js`）。
+    每輪 live 自動存 DebugRecorder 錄製檔到 `tests/e2e/__recordings__/`（gitignored）：live 紅在新版面／
+    新協定時，拿它到 offline 重現修綠，live 只再跑一輪確認。
+  - **live／record 跑的期間不准改 `src/`**：Vite HMR 整頁重載 ⇒ 產品自動登入**再登一次**（吃登入額度）。
   - **`live`／`record` project 前置 `preflight`**（`tests/e2e/preflight.setup.js`）：只驗「連得到 PTT」，
     紅了整包 live 不跑，只留一則明確結論（區分「app 沒 boot＝本專案問題」／`connectState=2`＝**PTT 端不可達或維護中**／
     連上但不吐畫面＝維護模式）。**PTT 維護中 live e2e 必紅屬預期**，先開 https://term.ptt.cc 確認站台，別往本專案 code 追。
@@ -71,13 +78,9 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     （`tests/e2e/helpers/fixtures.js` 的 `shared` fixture），**不准自己 `page.goto('/')`、
     `login()` 或 `browser.newContext()`**。守護 `tests/unit/e2e_login_budget.test.js`
     （純靜態掃描，違反就紅）。
-    那一次開機**就是產品自己的自動登入**（`helpers/ptt.js#autoLoginBoot`：注入 autoLogin
-    prefs → 開站 → 完全不按鍵等主功能表），所以「開站自動登入」那條 spec 改成斷言
-    `shared.boot`；deep link 改走 hashchange（同一個已登入分頁再貼一次連結，
-    `deep_link_entry.js` 明列的第 2 條進入路徑）。流程＝**開機（唯一一次登入，順帶驗
-    自動登入）→ deep link → 其餘 spec**。換掉的兩塊覆蓋度（重複登入提示、deep link 的
-    登入前暫存排程）都已有 unit 守護，**不要為了它們再加登入**，對照表見
-    `tests/e2e/README.md`「登入預算」。
+    那一次開機**就是產品自己的自動登入**（`helpers/ptt.js#autoLoginBoot`），核心 spec 的登入測項
+    斷言的就是它（`shared.boot`）。重複登入提示、deep link 的登入前暫存排程只由 unit 守，
+    **不要為了它們再加登入**。record（`record:cassette`／`record:scenarios`）每跑一次也是一次登入。
     理由：PTT 有登入頻率限制，開源碼讀得到的下界是「同一分鐘 >3 次 delay／>10 次 reject、
     同一小時 >20 次 delay」（`daemon/utmpd/utmpserver3.c#action_frequently`，完整表在
     `docs/pttbbs-screen-protocol.md` §11.2），多輪連跑就會把帳號打進封鎖。
@@ -94,11 +97,10 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     「查無」而不是報錯 ⇒ 很容易誤判成「這行為不在開源碼裡」。用
     `grep -rlF "$(printf '登入太頻繁' | iconv -f UTF-8 -t BIG5)" --include=*.c 3rd_script/pttbbs`，
     讀片段時 `| iconv -f BIG5 -t UTF-8`。
-  - **live spec 的選文／等待不准靠執行順序或固定 timeout**（否則整輪紅、單獨跑綠）：
-    pref 會跨 spec 殘留（`resetSession` 會一併關 `enableEasyReadingList`）、`End`＋`Enter` 會開到
-    置底公告（read.c `last_line` 含置底 ⇒ 十幾頁、常常零推文）。選文用
-    `helpers/ptt.js#pickListArticleWithComments`＋`openArticleByNumber`（推文數列表上就看得到，
-    開文前即可保證），等待綁內容條件。詳見 `tests/e2e/README.md`「選文與等待」。
+  - **live／record 不准「按鍵 → 固定睡 → 判一次」**：回應晚到就誤判、多按一個鍵（實錄：進板畫面的
+    空白鍵多按一次把文章打開）。按鍵用 `helpers/ptt.js#pressAndSettle`（等 buf 真的變了再 settle），
+    判 pass 畫面用產品的 `buf.isPassScreenNow()`；`End` 含置底文，選文開文前就從列表挑。
+    詳見 `tests/e2e/README.md`「live／record 的判準與等待」。
   - **`page.goto: net::ERR_CONNECTION_REFUSED` 大面積紅 ＝ dev server 被砍，不是被測 code 壞**：
     判準是「前面若干條全綠、之後**整批**同一個錯、每條耗時一致」。先確認 8080 還活著，
     別往被測 code 追。
@@ -114,7 +116,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   一律走 `tests/e2e/helpers/real_input.js`（`page.mouse`／`keyboard` 或 CDP `Input.*`）。unit 可以手捏測分支，
   但要有 `// real-input: tests/e2e/...` 指向真輸入 e2e。守護 `tests/unit/e2e_real_input.test.js`；
   對照表、豁免與量到的瀏覽器事實見 `tests/e2e/README.md`「真輸入」。改成真輸入後變紅，先懷疑原測試在說謊。
-- **改到渲染/畫面這類易壞 code，提交前必跑 e2e**（`yarn test:e2e`，至少 `easy-reading.spec.js`+`enhance.spec.js`）。
+- **改到渲染/畫面這類易壞 code，提交前必跑 e2e**（`yarn test:e2e:offline`＋`:adverse`，再跑 live 核心 `yarn test:e2e` 一輪）。
   適用 `term_view.js`、`term_ui.js`、`src/render/**`、`src/components/**`、`easy_reading.js`、`pttchrome.jsx` 渲染/切換路徑、`term_buf.js` 渲染相關等。
   理由：unit（unit-browser 雖是真 Chromium，但只掛單一元件）仍**不跑真 WebSocket/完整 boot 鏈**，捕捉不到「一進文章即炸」這類 runtime 崩潰
   （例：`pageLines` 用 `JSON` 克隆剝掉 TermChar prototype 方法 → `ch.isStartOfURL is not a function`）。不可只靠 unit + build 綠就交付。

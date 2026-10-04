@@ -44,7 +44,14 @@ const read = (f) =>
 
 describe("live e2e 登入預算", () => {
   test("掃描範圍不是空的（檔名規則改了要在這裡發現，不能靜默通過）", () => {
-    expect(liveSpecs.length).toBeGreaterThanOrEqual(7);
+    expect(liveSpecs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // 2026-10 定案：live 只保證核心（登入、主選單／列表／文章不跑版不亂碼、開圖），
+  // 其餘功能一律 offline（scenario 卷，tests/e2e/README.md「live 範圍」）。live 多一支
+  // spec ＝多一份「不能反覆跑到綠」的測試；要加必須是有意識的決定，先改這條。
+  test("live 只有核心 spec（其餘功能一律 offline）", () => {
+    expect(liveSpecs).toEqual(["core.spec.js"]);
   });
 
   test("沒有任何 live spec 自己呼叫 login()", () => {
@@ -79,19 +86,22 @@ describe("live e2e 登入預算", () => {
     expect(fixtures).toContain("await login(page)");
   });
 
-  // 「自動登入」那條 spec 現在斷言的是共用 session 開機留下的證據（shared.boot），
-  // 而那份證據只有走 autoLoginBoot 時才會是 auto:true ⇒ fixture 一旦改回手動登入，
-  // 那條 spec 會紅，而不是靜默失去覆蓋。
-  test("自動登入 spec 斷言的是共用 session 的開機證據", () => {
-    const src = read("enhance.spec.js");
+  // 核心 spec 的登入測項斷言的是共用 session 開機留下的證據（shared.boot），而那份證據
+  // 只有走 autoLoginBoot 時才會是 auto:true ⇒ fixture 一旦改回手動登入，那條會紅，
+  // 而不是靜默失去「開站自動登入」的覆蓋。
+  test("核心 spec 的登入測項斷言共用 session 的開機證據", () => {
+    const src = read("core.spec.js");
     expect(src).toContain("boot.auto");
-    expect(src).toContain("主功能表");
   });
 
-  // deep link 的入口：hashchange（deep_link_entry.js 明列的第 2 條路徑）。改回自己
-  // 開站會被上面的 page.goto 掃描擋下，這條再明講「該用哪一條」。
-  test("deep link spec 走 hashchange 而不是自己冷啟動", () => {
-    expect(read("deep-link.spec.js")).toContain("location.hash");
+  // deep link 的完整落地改由 offline 重放（scenario 卷）守，入口仍是 hashchange
+  // （deep_link_entry.js 明列的第 2 條路徑），與 live 時代同一條。
+  test("deep link 落地（offline）走 hashchange", () => {
+    const src = fs.readFileSync(
+      path.join(E2E_DIR, "offline", "deep_link_landing.offline.spec.js"),
+      "utf8"
+    );
+    expect(src).toContain("location.hash");
   });
 
   test("共用 session 在被封鎖時不會再開連線（閂鎖擋在 newContext 之前）", () => {

@@ -297,7 +297,7 @@ Ctrl 組合、Alt 重映射鍵（Alt+R/T/W/V ＝ `^R/^T/^W/^V`）與其餘一切
 | unit（累積） | `tests/unit/board_list_accumulate.test.js` | 編號 key／整列覆蓋／`>` 要被 `%7d` 蓋回／跨頁零重疊／header・footer 快取不被 prompt 污染／視窗組裝與補列 |
 | unit（渲染） | `tests/unit/board_list_render.test.js` | `bodyStart:3`、header・footer 不進視口、**pageState 必須 pin 成 1**（附對照組） |
 | unit（所有權） | `tests/unit/list_render_owner.test.js`、`command_queue.test.js` | 兩個 listener 誰先跑結果相同；`flushKind` 只清自己的 |
-| live e2e | `tests/e2e/board_list_scroll.spec.js` | 真瀏覽器＋真 PTT：接管、視口建得起來、捲得動（header 不動）、End/Home 真的移動選取、`←` 收攤、`v` 切原生。走共用 session，**零額外登入** |
+| offline e2e | `tests/e2e/offline/board_list.offline.spec.js`（素材 `scn-boardlist-class`：分類看板子清單，guest 可錄、不含個人最愛） | 真瀏覽器＋真 PTT 錄的往返：接管、視口建得起來、捲動只動 body、End/Home 真的移動選取、`/` 切原生鏡像後自動回來。`←` 收攤不重放（自動回復的重新 seed 次數依計時而異，bytes 對不上），由 unit 守。2026-10 前是 live `board_list_scroll.spec.js` |
 
 live spec 的兩條硬規則（踩過才寫的）：
 1. 主功能表的字母鍵只是**移動游標**，要 `F` 之後再 `Enter` 才進得去（menu.c 的 hotkey 語意）。

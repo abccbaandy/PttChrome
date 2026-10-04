@@ -18,6 +18,18 @@ describe("redactUser", () => {
     expect(redactUser(s, "myuser")).toBe("\xac\x4fxxxxxx ");
   });
 
+  // REGRESSION（2026-10，live scenario 錄製的隱私把關抓到）：主功能表狀態列把帳號包在
+  // 顏色碼裡「[ \x1b[1;31m<id>\x1b[0;30;47m ]」。左邊緊貼的是 SGR 結尾的 'm'（英數）⇒
+  // 舊判準認定「不是邊界」整個沒遮，debug 錄製檔與 cassette 都帶著帳號。
+  it("ANSI 控制序列左邊界：「\\x1b[1;31m<id>」也要遮", () => {
+    expect(redactUser("| \x1b[1;31mMyUser\x1b[0;30;47m |", "myuser")).toBe(
+      "| \x1b[1;31mxxxxxx\x1b[0;30;47m |"
+    );
+    expect(redactUser("\x1b[mmyuser", "myuser")).toBe("\x1b[mxxxxxx");
+    // 但一般單字裡的 m 不是邊界：「summyuser」照舊不遮。
+    expect(redactUser("summyuser", "myuser")).toBe("summyuser");
+  });
+
   it("guest / 空 id 不動作", () => {
     expect(redactUser("guest here", "guest")).toBe("guest here");
     expect(redactUser("abc", "")).toBe("abc");

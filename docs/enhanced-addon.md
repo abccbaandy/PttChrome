@@ -12,7 +12,7 @@
   userid 子樣式 `[A-Za-z][0-9A-Za-z]+`（須字母開頭、≥2 字元）依官方 `go-bbs/user_comment_record.go` 收緊，排掉 `推 1: …` 之類假推文。官方終端 byte/格式規則（型別色碼、IP iff `BRD_IPLOGRECMD`、對齊 iff `BRD_ALIGNEDCMT`、FORWARD/轉錄不計樓）內嵌 `comment_parse.js` 的「Official cross-validation」docstring；交叉驗證測試見 `comment_parse.test.js`「official cross-validation」+ fixture `IpComment_M.1621089154.txt`／`Forward_M.1644506392.txt`。背景見 `docs/ptt-official-app-research.md`。
 - `parseListAuthor(text)`→userid|null。**欄位常數 cols 17~28**（CONFIRMED 2026-06 對 C_Chat 校準）。
   fail-safe：非 userid→null→不隱藏。行首全形字（舊版 `●` 游標）造成位移→fall through（可接受的 under-hide）；現行游標是半形 `>`（pttbbs `b9a5029f`），不位移欄位。
-  守護測試：`enhance.spec.js` 「看板列表作者欄位常數仍正確」，PTT 改版位移會先紅。
+  守護測試：live `core.spec.js`「產品解析器認得列表列」（有序號的列 ≥70% 有 `data-list-author`），PTT 改版位移會先紅。
 - `FloorCounter`：`seq`(總樓)、`sub`(該 type 分項)；每篇文章 reset。含 **BePTT meta-latch 規則**
   （`nonComment(text)`，演算法來源見踩坑 B「BePTT 反編譯」）：非推文列在 `※ 發信站/※ 文章網址` latch 前一律歸零計數
   → 內文/簽名檔「帶假時間戳的假推文」拿到的暫時樓號被清掉，真推文從 1 起算。
@@ -757,7 +757,7 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **佔位盒的塌陷補償只能給「真的有媒體」的 slot**（`lazy_media.recordSlotHeight` 的 `hasMedia`）。佔位盒卸載時會把當下高度釘進 `min-height`，本意是防真圖片卸載後內容塌陷、閱讀位置位移；但好讀對**每一個**連結都掛 slot，而每篇文章結尾都有「※ 文章網址: https://www.ptt.cc/bbs/…html」這種**非媒體**連結——它捲到附近只會顯示「讀取中…」指示器（`.previewLoading`，URL 解析中／媒體下載中共用），判定後內容消失。舊碼無條件釘住那 65px ⇒ **每篇文章的推文區前面都多出一塊假空白**，而且非媒體連結永遠不會再長出內容來填它（使用者 2026-08 回報）。判準用 `LAZY_MEDIA_SELECTOR` 查 slot 內有無真媒體元素，**刻意不含** `.previewLoading`／`.previewError`。守護：`tests/unit/lazy_inline_preview.test.js` ＋ `tests/e2e/offline/lazy_preview_blank.offline.spec.js`（素材必須夠長才會觸發卸載，見 `docs/offline-replay-testing.md`「素材選用」）。
 - **送鍵（或任何副作用）不可寫在 `console.log` 的字串運算式裡**。`easy_reading._onViewUpdated` 曾寫成 `console.log("send:" + keys + " -> " + this._maybeSendPageDown(keys, false))` —— 哪天把 log 包進 `if (TRACE)` 就會連好讀唯一的翻頁動力一起關掉。每幀日誌現由 `util.js` 的 `TRACE`（= `process.env.DEVELOPER_MODE`）在**呼叫端**包住，dev/e2e 照印、prod 由 bundler 整段消除。
 - **逐列加工走單一純函式 `comment_parse.annotateComment`**，勿為某路徑另寫一份（好讀/原生曾各複製一份而發散出 bug）。逐列狀態用每圈新物件 `const ann={}`，**勿用函式作用域 `var`**（JS `var` 不每圈重設 → 非推文列繼承前列 floor/authorId 範圍，畫出整條色塊或樓號溢出到空白/※編輯/內文）。守護 `comment_parse.test.js`。
-- **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 `enhance.spec.js` 紅。
+- **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 live `core.spec.js`（解析器健康度）紅。
 - **Mantine 元件的 rest props 落在 `<input>`，不是整列外框**（`Checkbox.mjs:49,127`、`use-input-props.mjs`）。要標記／捲到／高亮「含 label 與說明文字的整列」一律用 `wrapperProps`；`Select` 更是只能靠它（`name` 會被渲染成 `<input type="hidden">`，沒有版面，`scrollIntoView` 對它無效）。
   - **但 `wrapperProps` 裡絕不可放 `className`**：它是在 `...getStyles("root")` **之後**展開的（`Checkbox.mjs:91` vs `111`）⇒ 會把 `mantine-Checkbox-root` 整個換掉、版面爆掉。加 class 走 `classNames={{ root }}`（Styles API 是 concat，安全）。設定搜尋的錨點／高亮就是踩過這組才定案，見「設定搜尋」節。
 - **Mantine `Combobox` 預設 `keepMounted: true` + `keepMountedMode: "display-none"`**：下拉的 DOM **永遠在**，關閉時只是被加上 inline `display:none`。⇒ 測試判斷「下拉開了沒」**不能數 `role=option` 的數量**（關閉後照樣是那幾個），要看可見性（`toBeVisible()`）或 target 上的 `data-mantine-stop-propagation`。同理，全域 `querySelectorAll("[role=option]")` 會把畫面上每一個 Mantine `Select` 的選項一起撈進來——要限定在自己的 dropdown 容器內。

@@ -156,6 +156,18 @@ export function parseArticleUrlLine(rowText) {
   return urlLine(ARTICLE_URL_LINE_RE, rowText);
 }
 
+// 轉錄文的標頭列（列首）。pttbbs 三種寫法：
+//   mbbsd/bbs.c:2212  ※ [本文轉錄自 <board> 看板 #<aid> ]
+//   mbbsd/bbs.c:2195  ※ [本文轉錄自某隱形看板]
+//   mbbsd/mail.c:2067 ※ [本文轉錄自 <id> 信箱]
+// 這列之後是**被轉錄的原文**（b_suckinfile 整份帶進來，含原文自己的「※ 文章網址」），
+// 轉錄文本身的結尾只有 addforwardsignature 的 ※ 發信站／※ 轉錄者，沒有網址。
+// 信箱轉錄的原文可以來自同一個看板 ⇒ findLocalPostAid 的看板守門擋不住，要靠這列。
+const CROSSPOST_HEADER_RE = /^\s*※\s*\[本文轉錄自/;
+export function isCrossPostHeaderLine(rowText) {
+  return !!rowText && CROSSPOST_HEADER_RE.test(rowText);
+}
+
 export function parsePostInfoUrl(rowText) {
   return urlLine(POST_INFO_URL_RE, rowText);
 }

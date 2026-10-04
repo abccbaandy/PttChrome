@@ -64,6 +64,10 @@ rewrite: https://abccbaandy.github.io/PttChrome/#$1
 2. 命中後**比對看板**（不分大小寫）。轉錄文會原樣複製原文內容、連原文那行一起帶進來
    （`mbbsd/bbs.c:2162-2179`）；所幸 pttbbs 擋掉同板轉錄（`bbs.c:2097`「同板不需轉錄。」）
    ⇒ 看板不符就是原文而非本篇。
+3. **掃到列首的 `※ [本文轉錄自 …]` 就整篇放棄**（`aid_parse.isCrossPostHeaderLine`）。
+   信箱轉錄（`mbbsd/mail.c:2067`）擋不住第 2 條：原文可以來自同一個看板，而轉錄文本身結尾只有
+   `※ 發信站`／`※ 轉錄者`、沒有自己的網址列。2026-10 movie 板置底的板規轉錄文實錄：
+   返回落到原文、F2 複製到原文連結。原生模式只看得到眼前 24 列，標頭捲出去時仍會誤認（已知盲點）。
 
 > `※ 文章網址:` 那行是 ptt.cc 私有 patch，不在開源 pttbbs 快照裡 ⇒ 一律當
 > best-effort，取不到就退回按 Q（行為與這條路徑不存在時完全相同）。
@@ -415,4 +419,4 @@ lastRow=""                                    ← # prompt 清掉 footer，故 t
 | unit | `tests/unit/pref_modal_notify_permission.test.jsx`（關閉設定頁時的權限檢查） |
 | e2e offline | `tests/e2e/offline/deep_link.offline.spec.js`（cassette 是固定 byte 流，只驗解析／暫存／清網址，**不驗完整跳轉**；另含交接通知：標題閃爍→`bringToFront()`→還原，且全程 `pageerror` 為空 —— 預設 context 沒有通知權限，剛好是要守的常態路徑；前景抑制另有一條，headless 無真正背景分頁故以 `addInitScript` 蓋 `document.hasFocus`） |
 | e2e offline | `tests/e2e/offline/ui_behavior.offline.spec.js`（PrefModal 的 `deepLinkHandoffNotify` 開關） |
-| e2e live | `tests/e2e/deep-link.spec.js`（唯一驗得到「主功能表→切板→跳文→落地」完整鏈的地方；需 `PTT_USER`/`PTT_PASS`，AID 先按 Q 撈真的。落地後斷言 `useEasyReadingMode === true` 且 `easyReadingFunctionMode === false`）。**2026-08-26 起不自己冷啟動**：整輪 live e2e 只登入一次（見 `tests/e2e/README.md`「登入預算」），改在共用的已登入分頁設 `location.hash` 走 hashchange 進入路徑 —— 跳轉本體與冷啟動同一段 code（`consume()`→`request`→`_dispatch`→`startExternal`，前置是 `startedEasyReading === false`）。冷啟動特有的「連結先到、人還沒登入」暫存排程由 `tests/unit/deep_link_controller.test.js` 的 `_hold`/`_pending` 守 |
+| e2e offline | `tests/e2e/offline/deep_link_landing.offline.spec.js`（素材 `scn-deep-link`，真 PTT 錄的「主功能表→切板→進板畫面→跳文→落地」完整往返＋F2 複製連結；需帳號錄製）。入口是 hashchange —— 跳轉本體與冷啟動同一段 code（`consume()`→`request`→`_dispatch`→`startExternal`，前置是 `startedEasyReading === false`）。冷啟動特有的「連結先到、人還沒登入」暫存排程由 `tests/unit/deep_link_controller.test.js` 的 `_hold`/`_pending` 守。2026-10 前是 live `deep-link.spec.js` |

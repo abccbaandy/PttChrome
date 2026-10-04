@@ -66,16 +66,34 @@ export function eventsToCassetteSteps(events) {
 // 序列化整卷錄製 → JSON 字串（含 redact + base64 + cassette 導出）。
 //   events: [{t, dir, data(latin1) | tag/info, state?}]
 //   redact: { ids: [...], secrets: [...] }
+// 遮蔽要對「串流」做，不能逐 event 做：WebSocket 封包可以把帳號／密碼切成兩半
+// （「我是my」＋「user]」），兩半各自都不像帳號 ⇒ 逐 event 遮蔽時原樣留下，接起來
+// 就是完整的帳號（2026-10 live 錄製的把關抓到）。同方向的 event 接成一條串流 scrub，
+// 再依原長度切回 —— scrub 全部是等長替換，所以切點不變。回傳 Map(event → 遮蔽後 data)。
+function scrubByStream(events, clean) {
+  const out = new Map();
+  for (const dir of ['recv', 'send']) {
+    const evs = events.filter((ev) => ev.dir === dir);
+    const cleaned = clean(evs.map((ev) => ev.data).join(''));
+    let off = 0;
+    for (const ev of evs) {
+      out.set(ev, cleaned.slice(off, off + ev.data.length));
+      off += ev.data.length;
+    }
+  }
+  return out;
+}
+
 export function serializeRecording({ events, meta = {}, cols = 80, rows = 24, redact = {} }) {
   const ids = (redact.ids || []).filter(Boolean);
   const secrets = (redact.secrets || []).filter(Boolean);
-  const clean = (s) => scrub(s, ids, secrets);
+  const cleaned = scrubByStream(events, (s) => scrub(s, ids, secrets));
 
   const outEvents = events.map((ev) => {
     if (ev.dir === 'log') {
       return { t: ev.t, dir: 'log', tag: ev.tag, info: ev.info };
     }
-    const o = { t: ev.t, dir: ev.dir, data: b64encode(clean(ev.data)) };
+    const o = { t: ev.t, dir: ev.dir, data: b64encode(cleaned.get(ev)) };
     if (ev.state) o.state = ev.state;
     return o;
   });
@@ -83,7 +101,7 @@ export function serializeRecording({ events, meta = {}, cols = 80, rows = 24, re
   const cassetteSteps = eventsToCassetteSteps(
     events
       .filter((ev) => ev.dir !== 'log')
-      .map((ev) => Object.assign({}, ev, { data: clean(ev.data) }))
+      .map((ev) => Object.assign({}, ev, { data: cleaned.get(ev) }))
   );
 
   const out = {

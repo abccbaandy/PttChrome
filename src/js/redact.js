@@ -25,6 +25,9 @@ export function redactUser(str, user) {
         const p2 = str[i - 2];
         if (p >= 0x40 && p <= 0x7e && p2 !== undefined && p2.charCodeAt(0) >= 0x80)
           leftOk = true; // Big5 尾位元組
+        // ANSI CSI 序列的結尾（主功能表狀態列「\x1b[1;31m<id>\x1b[0;30;47m」）：
+        // 前面那個 'm' 是控制序列的一部分，不是字。
+        else if (/\x1b\[[0-9;]*[A-Za-z]$/.test(str.slice(Math.max(0, i - 16), i))) leftOk = true;
       }
       if (rightOk && leftOk) {
         out += 'x'.repeat(user.length);
@@ -38,8 +41,12 @@ export function redactUser(str, user) {
 }
 
 // 遮 IPv4（「※ 發信站: …, 來自: <IP>」屬個資）。等長替換保欄位對齊。
+// 邊界是「前後不是數字或點」而不是 \b：串流裡 IP 後面可能直接接英文字（下一個封包
+// 的內容），\b 在 `4p` 之間不成立 ⇒ 整個 IP 漏遮（debug_recorder_logic#scrubByStream）。
 export function redactIPs(str) {
-  return str.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, (m) => 'x'.repeat(m.length));
+  return str.replace(/(?<![\d.])\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?![\d.])/g, (m) =>
+    'x'.repeat(m.length)
+  );
 }
 
 // 密碼等機密字串：不做邊界判斷，凡出現即等長遮蔽（密碼可能緊貼任何字元）。

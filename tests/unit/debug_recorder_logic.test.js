@@ -113,6 +113,31 @@ describe("serializeRecording", () => {
     expect(b64decode(out.cassette.steps[1].recv)).toBe("xxxxx page2");
   });
 
+  // REGRESSION（2026-10，live scenario 錄製的隱私把關抓到）：redact 原本逐個 event 做，
+  // 帳號被 WebSocket 切成兩個封包時（「我是my」＋「user]」）兩半各自都不像帳號 ⇒ 原樣
+  // 留在錄製檔裡；導出的 cassette 把 recv 接起來之後帳號就完整出現了。密碼同理。
+  it("帳號／密碼被切在兩個封包之間也要遮掉（events 與 cassette 都是）", () => {
+    const out = JSON.parse(
+      serializeRecording({
+        events: [
+          { t: 0, dir: "recv", data: "[\xa7\xda\xac\x4fmy" },
+          { t: 1, dir: "recv", data: "user] 1.2." },
+          { t: 2, dir: "recv", data: "3.4 ok" },
+          { t: 3, dir: "send", data: "pw" },
+          { t: 4, dir: "send", data: "123\r" },
+          { t: 5, dir: "recv", data: "next" },
+        ],
+        redact: { ids: ["myuser"], secrets: ["pw123"] },
+      })
+    );
+    const ev = out.events.map((e) => b64decode(e.data));
+    expect(ev.join("")).not.toMatch(/myuser|pw123|1\.2\.3\.4/i);
+    // 等長替換、封包邊界不變（逐 event 的長度與原始相同）。
+    expect(ev).toEqual(["[\xa7\xda\xac\x4fxx", "xxxx] xxxx", "xxx ok", "xx", "xxx\r", "next"]);
+    const steps = out.cassette.steps.map((s) => b64decode(s.recv) + (s.send ? b64decode(s.send) : ""));
+    expect(steps.join("")).not.toMatch(/myuser|pw123|1\.2\.3\.4/i);
+  });
+
   it("b64 round-trip 支援 8-bit bytes（Big5）", () => {
     const s = "\xac\x4f\xff\x00A";
     expect(b64decode(b64encode(s))).toBe(s);

@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "mode": "scenario",
+    "recordedAs": "account",
+    "recordedAt": "2026-10-04T06:41:11.196Z",
+    "scenario": "board-search-prompt",
+    "prefs": {
+      "enableBoardListSmoothScroll": false,
+      "useMouseBrowsing": true,
+      "highlightCursor": true,
+      "keyboardCursorHighlight": true,
+      "mouseMisclickGuard": true,
+      "mouseLeftClick": true,
+      "mouseBrowsingHighlightColor": 1,
+      "enableEasyReading": false
+    }
+  },
+  "cols": 80,
+  "rows": 24,
+  "steps": [
+    {
+      "on": "start",
+      "recv": "G1s/MjAyNmgbW0gbWzJKG1sxOzM3OzQ0baFprN2qT6ZDqu2haiAgICAgICAgICAgICAgICAgICAgIBtbMzNtp+W98L3wueq3fqd7G1swOzE7Mzc7NDRtICAgICAgICAgICAgICCs3apPoW1OQ0NVTmV3Qm9hcmShbg0KG1ttW6H2XVtxXaZepFe8aCBbofddW3JdvlzFqiBbofSh9V2/777cIFtQZ1VwXVtQZ0RuXcK9rbYgW2Ndt3Ok5bO5IFsvXbdqtE0gW2hdqESnVQ0KG1szMDs0N20gICC9c7i5ICAgrN0gIKpPICAgICAgIMP+p08gICCkpCAgIKTlICAgtPogICCteiAgICAgICAgICAgICAgIKRIrvAgqk8gICClRCAgICAgDQobW20+ICAgIDIxICAgTkNDVTA0X1JUViAgIBtbMzJtvHO5cSAbW22ht0FQUExFIFNIT09UILxzuXExN7KmrmkNG1syNDsxSBtbMzQ7NDZtICC/777crN2qTyAgG1szMDs0N20gIBtbMzFtKG0pG1szMG2lW6RKL7K+pVizzLdSIBtbMzFtKHMpG1szMG22aaRKpHeqvqpPplcgG1szMW0odi9WKRtbMzBtpHfFqi+lvMWqICAgICAgICAgICAgICAgICAgG1ttG1s0OzFIG1s/MjAyNmw="
+    },
+    {
+      "recv": "G1s/MjAyNmgbW0gbWzMwOzQ3baFpILdqtE2l/q+4rN2qTyChahtbbSAgKK1ZrW6tral3t2q0Tb1ks/KssKXYq2WmQ6rtvdCn76XOIEN0cmwtUykbW0sNCr3Qv+mkSqzdqk+mV7rZKKv2qsWl1cHkptuwyrdqtE0pOiAbWzMwOzQ3bSAgICAgICAgICAgICAbW20bW0sbWzI7MzVIG1s/MjAyNmw=",
+      "on": "raw",
+      "send": "cw=="
+    },
+    {
+      "recv": "G1s/MjAyNmgbW0gbWzE7Mzc7NDRtoWms3apPpkOq7aFqICAgICAgICAgICAgICAgICAgICAgG1szM22n5b3wvfC56rd+p3sbWzA7MTszNzs0NG0gICAgICAgICAgICAgIKzdqk+hbU5DQ1VOZXdCb2FyZKFuDQobW21bofZdW3Fdpl6kV7xoIFuh911bcl2+XMWqIFuh9KH1Xb/vvtwgW1BnVXBdW1BnRG5dwr2ttiBbY123c6Tls7kgWy9dt2q0TSBbaF2oRKdVDQoKG1s/MjAyNmw=",
+      "on": "open"
+    }
+  ]
+}

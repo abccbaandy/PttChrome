@@ -43,18 +43,16 @@ const read = (f) => stripComments(fs.readFileSync(path.join(E2E_DIR, f), "utf8")
 // 「這支 spec 會對好讀**累積出來的長頁**做內容斷言」的代理判準：開了文章好讀，
 // 而且真的去讀累積頁的 DOM。
 const ENABLES_EASY_READING = /enableEasyReading:\s*true/;
-const READS_ACCUMULATED_DOM = /data-type="bbsline"|inlinePreviewSlot|hyperLinkPreview/;
+// screenSanity／seekMountedPreview 也算：核心 spec 透過它們讀累積頁的 DOM。
+const READS_ACCUMULATED_DOM =
+  /data-type="bbsline"|inlinePreviewSlot|hyperLinkPreview|screenSanity|seekMountedPreview/;
 
-// 具名豁免：**必須寫理由**，而且理由要是「結構上不需要文章累積的終點」。
-const EXEMPT = {
-  // 列表好讀（ListSession）不是文章累積長頁：它讀的 bbsline 是列表列，終點判定走
-  // 這支自己的 settledActive（交易 settle + 狀態旗標），不是 easyReadingReachedPageEnd。
-  "easy-reading-list.spec.js": "列表好讀，非文章累積頁；等待走 list session 的 settle",
-};
+// 具名豁免：**必須寫理由**，而且理由要是「結構上不需要文章累積的終點」。目前沒有。
+const EXEMPT = {};
 
 describe("live e2e 等待條件契約", () => {
   test("掃描範圍不是空的（檔名規則改了要在這裡發現）", () => {
-    expect(liveSpecs.length).toBeGreaterThanOrEqual(5);
+    expect(liveSpecs.length).toBeGreaterThanOrEqual(1);
   });
 
   // 規則一：累積等待一律用 helper，不准用固定睡眠賭。

@@ -11,17 +11,10 @@
 // ## 一輪一次登入是怎麼做到的（2026-08-26）
 //
 // 這一次的開機**就是產品自己的自動登入**（`autoLoginBoot` 注入 autoLogin prefs →
-// 開站 → 完全不按鍵等主功能表），所以：
+// 開站 → 完全不按鍵等主功能表），core.spec.js 的登入測項斷言的就是它（`shared.boot`），
+// 零額外登入。（2026-10 起 live 只剩核心；deep link 等功能改由 offline scenario 卷守。）
 //
-//   1. 「開站自動登入」不必再自己開一個 page —— enhance.spec.js 那條改成斷言
-//      `shared.boot`（這一次開機留下的證據），零額外登入。
-//   2. deep link 也不必自己開站 —— 改用 `location.hash`（hashchange）在**同一個已登入
-//      的分頁**再貼一次連結，走的是 deep_link_entry.js 明列的第 2 條進入路徑
-//      「同一個分頁再貼一次連結，不重載、不用重新登入」。
-//
-// 於是整輪流程就是：開機（＝唯一一次登入，順帶驗自動登入）→ deep link → 其餘 spec。
-//
-// 這樣換掉的覆蓋度（**刻意的**，兩者都另有 unit 守護）：
+// 換掉的覆蓋度（**刻意的**，兩者都另有 unit 守護）：
 //   - 「重複登入」提示：以前靠「共用 session 還掛著時再開一條」製造，現在整輪只有
 //     一條連線就製造不出來。auto_login 的 one-shot guard（_answeredDup/_answeredErr）
 //     守在 tests/unit/auto_login_2fa.test.js 與 auto_login_logic.test.js。
@@ -49,6 +42,12 @@
 const base = require('@playwright/test');
 const { login, autoLoginBoot, attachConsole } = require('./ptt');
 const { assertNotBotBlocked } = require('./bot_block');
+const {
+  startRecorder,
+  markRecorder,
+  stopRecorder,
+  saveLiveRecording,
+} = require('./recording');
 
 const test = base.test.extend({
   shared: [
@@ -61,7 +60,7 @@ const test = base.test.extend({
       const page = await context.newPage();
       const logs = attachConsole(page);
 
-      // boot ＝這一次開機留下的證據，供 enhance.spec.js 的「開站自動登入」斷言。
+      // boot ＝這一次開機留下的證據，供 core.spec.js 的登入測項斷言（開站自動登入）。
       // auto:false ＝沒有帳密、走 guest 手動登入，那條 spec 會自己 skip。
       let boot;
       if (process.env.PTT_USER && process.env.PTT_PASS) {
@@ -78,11 +77,33 @@ const test = base.test.extend({
         boot = { auto: false, message };
       }
 
+      // 每輪 live 都錄一份（登入之後才開錄 ⇒ 不含帳密往返；仍走 redact＋把關）。
+      // 寫到 tests/e2e/__recordings__/（gitignored），失敗現場與新版面／新協定可搬去
+      // offline 反覆修，見 helpers/recording.js 檔頭。
+      await startRecorder(page);
       await use({ page, logs, boot });
+      try {
+        const rec = await stopRecorder(page);
+        if (rec) console.log(`LIVE RECORDING: ${saveLiveRecording(rec)}`);
+      } catch (e) {
+        console.log(`LIVE RECORDING 未寫入：${e.message}`);
+      }
       await context.close();
     },
     // worker scope：跨 test/跨 spec 檔共用；登入含節流退避（30s×2 + 重連）可能很慢，給寬鬆 timeout。
     { scope: 'worker', timeout: 240000 },
+  ],
+  // 錄製檔裡的段落標記：每條 test 的開始／結束（含結果），讀錄製檔時一眼找到失敗那段。
+  _recordingMarks: [
+    async ({ shared }, use, testInfo) => {
+      await markRecorder(shared.page, 'test.begin', { title: testInfo.title });
+      await use();
+      await markRecorder(shared.page, 'test.end', {
+        title: testInfo.title,
+        status: testInfo.status,
+      });
+    },
+    { auto: true },
   ],
 });
 

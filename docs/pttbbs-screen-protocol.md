@@ -375,7 +375,7 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 列表狀態列 `fg=4/bg=6`、pmore 文章底部狀態列 `fg=7/bg=4` ⇒ 都不會誤判。
 推文輸入欄**也是反白**（舊版本節誤記成 fg=7/bg=0，已推翻）：`ESC[30;47m` ＋ `maxlength` 格，欄內 echo 同色
 （`ptt-debug-20260924-221056.json#t=4660/17273/6148`）⇒ 欄寬可量，`term_buf.inputFieldWidth`，消費端見 §11.3 末。
-守護：`tests/e2e/search_prompt.spec.js`（live，這條只有連真 PTT 量得到）。
+守護：`tests/e2e/offline/board_list.offline.spec.js`「搜尋看板 prompt」（素材 `scn-board-search-prompt`＝真 PTT 錄下的 bytes，含 pfterm 實際吐的 fg=0/bg=7；2026-10 前是 live `search_prompt.spec.js`）。
 
 **列表上叫出的 prompt 不改變 `pageState`（client 推論，CONFIRMED 讀碼）**：`mbbsd/board.c#search_local_board`
 （`s`／`Ctrl-S` 搜尋看板）只 `move(0,0); clrtoeol()` 後印兩列 prompt，下方列表整片殘留 ⇒ row 0 不再是整列
@@ -537,7 +537,8 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 - **本篇無合法 AID（`fn2aidu()<=0`）時只印一根 `│`**（`bbs.c:3707`）⇒ client 不可假設一定讀得到。
 - **AIDc ⇄ 檔名 `M.<v1>.A.<v2>` 完全可逆、可離線算**（`mbbsd/aids.c`：`fn2aidu`/`aidu2aidc`/`aidc2aidu`/`aidu2fn`）。位元佈局、64 字表、`%03X` 等細節**內嵌在 `src/js/aid_codec.js` 的檔頭**（逐行標了 aids.c 行號），此處不重抄。看板名不在 AIDc 裡 ⇒ 短碼還原成完整網址一定得外部提供看板。
   - 因此 client 有**免費**取得「本篇 AID」的第二條路：讀本文的 `※ 文章網址: https://www.ptt.cc/bbs/<Board>/<檔名>.html` 再換算，不必按 `Q`（`aid_navigation.findLocalPostAid`）。守則與取捨見 `docs/deep-link.md`「本篇 AID 的兩條取得路徑」。
-  - **同板轉錄被擋**（`bbs.c:2097`「同板不需轉錄。」）⇒ 「網址裡的看板 ≠ 目前看板」足以判定那行是轉錄帶進來的**原文**網址。
+  - **同板轉錄被擋**（`bbs.c:2097`「同板不需轉錄。」）⇒ 「網址裡的看板 ≠ 目前看板」足以判定**看板間**轉錄帶進來的**原文**網址。
+  - **信箱轉錄不擋**（`mail.c:2067`：`※ [本文轉錄自 <id> 信箱]` ＋ `b_suckinfile` 整封信 ＋ `addforwardsignature`）：原文可以來自同一個看板，轉錄文本身沒有網址列 ⇒ 看板守門失效，要靠列首的「※ [本文轉錄自」標頭判（`aid_parse.isCrossPostHeaderLine`）。三種標頭寫法：`bbs.c:2212`（看板 ＋ `#aid`）、`bbs.c:2195`（某隱形看板）、`mail.c:2067`（信箱）。
 - **MODE_SELECT 下數值仍正確**：`view_postinfo` 讀的是 `fhdr->filename`（篩選清單的 record 帶的是真實檔名），不碰 `bbs.c:3732` 註記會亂掉的 `multi`。
 - **收尾 `pressanykey()`（`bbs.c:3773`）＝ `vmsg(NULL)`（`proto.h:636`／`vtuikit.c:439-455`）吃掉正好一個鍵**，然後 `FULLUPDATE`。
   - **框畫在「剛離開的文章畫面」上**（`view_postinfo` 用 `grayout()` 壓灰背景），要等 `pressanykey` 收掉後才由 `read_post` 的 `return FULLUPDATE` 重繪**列表** ⇒ 框在時 client 看到的底色仍是文章。

@@ -56,7 +56,12 @@
 import { parseStatusRow, parsePagerFooterContext } from './string_util';
 import { subjectOfListText } from './list_session';
 import { NavHistory, chooseAnchor } from './nav_history';
-import { parsePostInfoAid, parseArticleUrlLine, parsePostInfoUrl } from './aid_parse';
+import {
+  parsePostInfoAid,
+  parseArticleUrlLine,
+  parsePostInfoUrl,
+  isCrossPostHeaderLine
+} from './aid_parse';
 import { isPinnedListRow } from './comment_parse';
 import { MAIN_MENU, rowHasTitle } from './screen_titles';
 
@@ -216,6 +221,7 @@ export function AidNavigation(core, view, termBuf, queue, history) {
   this._urlScanRow = 0;
   this._urlScanLen = 0;
   this._urlScanHit = null;
+  this._urlScanForwarded = false; // 掃到轉錄標頭了：之後的網址都不是本篇
 }
 
 AidNavigation.prototype = {
@@ -505,7 +511,10 @@ AidNavigation.prototype = {
   //
   // **看板守門不可省**：轉錄文會原樣複製原文內容、連原文那行網址一起帶進來
   // （mbbsd/bbs.c:2162-2179）。所幸 pttbbs 擋掉同板轉錄（bbs.c:2097「同板不需轉錄。」），
-  // 所以「網址裡的看板 ≠ 目前文章的看板」就足以判定那是原文而非本篇。
+  // 所以「網址裡的看板 ≠ 目前文章的看板」就足以判定看板間轉錄的原文。
+  // **但信箱轉錄擋不住**（mbbsd/mail.c:2067：先把文章寄到自己信箱、再從信箱轉回同一個
+  // 看板 ⇒ 網址看板與本篇相同）：轉錄文本身沒有網址列，所以一看到列首的
+  // 「※ [本文轉錄自 …]」就整篇放棄免費路徑、退回按 Q（aid_parse.isCrossPostHeaderLine）。
   findLocalPostAid: function() {
     const buf = this._termBuf;
     // pageState 3 = READING。不在文章裡時畫面上的網址列不代表「本篇」。
@@ -525,9 +534,15 @@ AidNavigation.prototype = {
       if (acc.length < this._urlScanLen || head !== this._urlScanHead)
         this.resetLocalPostAidScan();
       this._urlScanHead = head;
-      if (!this._urlScanHit) {
+      if (!this._urlScanHit && !this._urlScanForwarded) {
         for (let r = this._urlScanRow; r < acc.length; ++r) {
-          const found = parseArticleUrlLine(buf.getRowText(r, 0, buf.cols, acc));
+          const text = buf.getRowText(r, 0, buf.cols, acc);
+          // 轉錄標頭在網址之前 ⇒ 之後的網址都是被轉錄的原文（見 aid_parse.isCrossPostHeaderLine）。
+          if (isCrossPostHeaderLine(text)) {
+            this._urlScanForwarded = true;
+            break;
+          }
+          const found = parseArticleUrlLine(text);
           if (found) {
             this._urlScanHit = found;
             break;
@@ -536,12 +551,17 @@ AidNavigation.prototype = {
         this._urlScanRow = acc.length;
       }
       this._urlScanLen = acc.length;
-      hit = this._urlScanHit;
+      hit = this._urlScanForwarded ? null : this._urlScanHit;
     } else {
       // 原生模式沒有累積頁，只有眼前這 24 列——每次重掃即可（便宜，也不會過期）。
+      // 轉錄標頭可能已經捲出這一屏：只看得到網址時仍會誤認 ⇒ 這是原生模式的已知
+      // 盲點（看不到就不知道），好讀累積頁從第一列掃起才是完整判準。
       this.resetLocalPostAidScan();
-      for (let r = 0; r < buf.rows && !hit; ++r)
-        hit = parseArticleUrlLine(buf.getRowText(r, 0, buf.cols));
+      for (let r = 0; r < buf.rows && !hit; ++r) {
+        const text = buf.getRowText(r, 0, buf.cols);
+        if (isCrossPostHeaderLine(text)) return null;
+        hit = parseArticleUrlLine(text);
+      }
     }
     if (!hit) return null;
     return String(hit.board).toLowerCase() === String(board).toLowerCase()
@@ -554,6 +574,7 @@ AidNavigation.prototype = {
     this._urlScanLen = 0;
     this._urlScanHead = '';
     this._urlScanHit = null;
+    this._urlScanForwarded = false;
   },
 
   // 取得本篇 AID 的統一入口：先試免費路徑，落空才按 Q。

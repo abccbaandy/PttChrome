@@ -1,6 +1,42 @@
-# E2E 測試（Playwright，連真實 PTT）
+# E2E 測試（Playwright）
 
-用真實 Chromium 驅動 app 連真 PTT，驗證功能。出錯時自動截圖/錄影 + dump 瀏覽器 console。
+| 層 | 指令 | 連 PTT | 範圍 |
+|---|---|---|---|
+| live | `yarn test:e2e` | 是（整輪 1 次登入） | **只有核心**：`core.spec.js` |
+| offline | `yarn test:e2e:offline`（＋`:adverse`） | 否（cassette 重放） | 其餘所有功能 |
+| record | `yarn record:cassette`／`yarn record:scenarios` | 是（每次 1 次登入） | 產素材，不是測試 |
+
+## live 範圍（2026-10 定案）
+
+PTT 有登入額度（見「登入預算」）⇒ live 不能像 offline 一樣反覆跑到綠。live **只保證核心**，
+其餘一律 offline：
+
+| `core.spec.js` | 判準（**不比對畫面內容**，PTT 改版頻繁） |
+|---|---|
+| 登入 | 有帳密＝產品自動登入（`shared.boot.auto`），落地 `pageState 1` |
+| 主選單／文章列表（原生＋列表好讀）／文章（原生＋好讀）不跑版不亂碼 | `helpers/screen_sanity.js`：每列 DOM 文字＝`buf`、末字右緣＝欄位×`chw`、Big5 每對都解得出、`#mainContainer` 無水平溢出。畫面種類問 `buf.pageState` |
+| 列表解析器健康度 | 有序號的列 ≥70% 有 `data-list-author`（產品的 `parseListAuthor`）。取代以前寫死 cols 17-28 的測項 |
+| 開圖 | 好讀累積到文末 → `seekMountedPreview` 試 ≤8 張，**至少一張真的畫出來** |
+
+唯一寫死的是選文條件：Stock 板 `/盤後閒聊` 的最新一篇（長文、圖多、天天有新的）。
+同一個檢查器在 offline 逐卷跑（`offline/screen_sanity.offline.spec.js`，含突變自證）。
+
+**每輪 live 自動錄一份**（`helpers/fixtures.js` → `tests/e2e/__recordings__/live-*.json`，gitignored，
+留最近 10 份，每條 test 的起訖有 `test.begin`／`test.end` log 標記）。格式＝使用者的
+`ptt-debug-*.json`：`yarn debug:screens <檔> [ms]` 看畫面；要轉成素材照
+`docs/offline-replay-testing.md`「使用者 Debug 錄製檔 → cassette」。**live 紅在新版面／新協定
+時的流程：拿錄製檔到 offline 重現 → 修到綠 → live 只再跑一輪確認。**
+
+2026-10 前的 live 測項去向（全部改由 scenario 卷重放，素材 `cassettes/scn-*.json`）：
+
+| 舊 live | offline |
+|---|---|
+| `easy-reading.spec`（h 說明、:N、`/` 提示）、`enhance.spec` 回文選單 | `er_function_mode.offline` |
+| `easy-reading-list.spec` `]`、游標捲出視野 ↓ | `scenario_navigation.offline` |
+| `aid-navigation.spec` ×3 | `scenario_navigation.offline`（`aid-back` 卷、`aid-back-search` 卷） |
+| `deep-link.spec`（落地＋F2） | `deep_link_landing.offline` |
+| `board_list_scroll.spec` ×5、`search_prompt.spec` | `board_list.offline`（分類看板子清單，guest 可錄，不含個人最愛） |
+| 其餘（樓層、黑名單、pusher、列表好讀各站、第一則推文、End 切原生、行內開圖） | 早已有同名 offline 版（`enhance`／`easy-reading`／`easy-reading-list`／`pusher_highlight`…） |
 
 ## 跑
 
@@ -87,31 +123,16 @@ preflight 只管「連得到 PTT」；**帳密送出之後**卡住是另一回�
 | 同一分鐘 > 3 次 / > 10 次 | delay / reject |
 | 同一小時 > 20 次 / > 60 次 | delay / reject |
 
-一輪的登入次數盤點（27 條 live test 總共 **1 次**）：
+一輪 live 只有 `helpers/fixtures.js` 的 `shared` 這 **1 次**登入，而且那一次開機**就是產品
+自己的自動登入**（`helpers/ptt.js#autoLoginBoot`：注入 autoLogin prefs → 開站 → 完全不按鍵
+等主功能表）⇒ `core.spec.js` 的登入測項斷言的就是它（`shared.boot`）。沒有 `PTT_USER`/`PTT_PASS`
+時退回 guest + 手動 `login()`。
 
-| 來源 | 次數 | 說明 |
-|---|---|---|
-| `helpers/fixtures.js` 的 `shared` | 1 | 27 條**全部**共用它 |
+**錄製素材也吃同一份額度**：`record:cassette`／`record:scenarios` 每跑一次＝一次登入；
+`record:scenarios` 一次登入錄完全部 scenario，失敗的那段記下來繼續錄下一段（不重登）。
 
-這一次開機**就是產品自己的自動登入**（`helpers/ptt.js#autoLoginBoot`：注入 autoLogin
-prefs → 開站 → 完全不按鍵等主功能表），所以它同時是「開站自動登入」那條 spec 的被測
-行為；沒有 `PTT_USER`/`PTT_PASS` 時退回 guest + 手動 `login()`，相關 spec 自己 skip。
-
-整輪流程：**開機（＝唯一一次登入，順帶驗自動登入）→ deep link → 其餘 spec**。
-
-### 兩條以前有豁免權的 spec 怎麼改的（2026-08-26）
-
-| spec | 以前 | 現在 |
-|---|---|---|
-| `enhance.spec.js` 自動登入 | 自己開一個 page 冷啟動 | 斷言 `shared.boot`（fixture 那一次開機留下的證據：`auto`/`screen`/`waitedMs`） |
-| `deep-link.spec.js` | 自己開一個 page 帶 `#Board/AID` 冷啟動 | 在**已登入的共用分頁**設 `location.hash` ⇒ 走 `deep_link_entry.js` 明列的第 2 條進入路徑（hashchange，「同一個分頁再貼一次連結，不重載、不用重新登入」） |
-
-deep link 的跳轉本體與冷啟動是**同一段 code**：`consume()` → `DeepLinkController.request`
-→ `_canNavigate()` → `_dispatch()`，而 `_dispatch` 在 `startedEasyReading === false` 時走
-`nav.startExternal()`，正是冷啟動那一支。所以 spec 開跳前先 `resetSession`（回主功能表
-＋關好讀）把前置狀態對齊。
-
-**刻意換掉的兩塊覆蓋度**（都另有 unit 守護，別再為了它們加登入）：
+deep link 的冷啟動暫存排程與「重複登入」提示，因為整輪只有一條連線而做不出來，
+**刻意**只由 unit 守（別再為了它們加登入）：
 
 | 失去的 | 為什麼 | 誰在守 |
 |---|---|---|
@@ -197,9 +218,13 @@ fixture 重建 ⇒ 又登入一次。所以失敗多的那一輪，登入次數�
   `auto_login: credential source = …`、`page state: 0->0`）——這就是判準：
   測試中途出現開機 log ＝ 頁面被重載，不是被測 code 壞掉。
 
-實錄：`aid-navigation.spec.js` 的「從好讀文章內點 AID」在整輪裡紅，單獨重跑（乾淨樹
-與有改動的樹各一次）都是 14.1 秒全綠。**判斷順序**：先確認是不是自己在跑的時候動了
-檔案，再去懷疑被測 code —— 重跑一次要付一次登入額度（見上方「登入預算」）。
+**而且會多登入一次**：重載後的頁面照樣開站即 connect，localStorage 裡還有自動登入的
+prefs ⇒ 產品自己又登了一次（2026-10 錄製 scenario 時改 `src/js/redact.js` 實際發生）。
+⇒ live／record 在跑的期間只准改 `tests/`、`docs/`（不在 app 的 module graph 裡，不會觸發
+重載）；要改 `src/` 就等它跑完。
+
+**判斷順序**：先確認是不是自己在跑的時候動了檔案，再去懷疑被測 code —— 重跑一次要付一次
+登入額度（見上方「登入預算」）。
 
 ## 孤兒進程 / stale bundle
 
@@ -238,10 +263,9 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
   - 共用 page 非內建 fixture，失敗不會自動截圖/錄影 → catch 內自行 `page.screenshot`。
   - 某 case 失敗 → serial 後續 skip、Playwright 重啟 worker → fixture 重建（多登入一次）。
     **`describe.serial` 就是為了壓這個放大器**：沒有它，一塊裡 N 條紅就是 N 次重登。
-- **例外只有兩條**：`enhance.spec.js` 的自動登入與 `deep-link.spec.js` —— 被測行為本身
-  就是「開站自動登入」，不可能共用已登入的 page。名單鎖死在
-  `tests/unit/e2e_login_budget.test.js`，要加第三條必須是有意識的決定。
-  `connect-login.spec.js` **不**在例外裡：它斷言的就是 fixture 那一次登入的結果。
+- 沒有例外：自己開站的 spec 名單是空的（`tests/unit/e2e_login_budget.test.js`）。
+- fixture 同時掛 DebugRecorder（登入**之後**才開錄）與每條 test 的 `test.begin`／`test.end`
+  標記（auto fixture `_recordingMarks`），worker 收尾時寫錄製檔，見「live 範圍」。
 - `login()` 兩道保險（處置相反，別搞混）：
   - 「登入太頻繁」（`mbbsd/talk.c`，開源碼有）→ 等 30s 重新連線重送帳密，最多 2 次；
   - 「[PTT DDoS/BOT 偵測系統]…」（PTT 私有）→ **直接 fail 並立閂鎖，整輪不再連線**。
@@ -258,6 +282,12 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
   - `attachConsole`：收集 console / pageerror
   - `applyPrefs` / `resetSession` / `gotoBoard`：共用 session 專用（runtime prefs、回主選單復位、進看板）
   - `getPref(page, key)`：runtime 讀「有效 pref 值」（`DEFAULT_PREFS` 疊 localStorage），見下方規範
+- `helpers/screen_sanity.js`：不跑版／不亂碼的結構檢查（live 核心與 offline 共用）
+- `helpers/recording.js`：DebugRecorder 開／停／redact 把關、live 錄製檔存檔、錄製檔 → scenario cassette、
+  `waitWireQuiet`（往返靜止＋背景佇列 idle）
+- `tools/record-scenarios.spec.js`：scenario 錄製器（見 `docs/offline-replay-testing.md`「scenario 卷」）
+- `helpers/fixtures.js`：共用登入 session fixture（見上）
+- `core.spec.js`：live 核心（見「live 範圍」）
 
 ## 規範：可設定的快捷鍵不准 hardcode
 
@@ -274,11 +304,6 @@ await sendKey(page, switchKey);
 
 底層：dev build 由 `src/js/main.js` 暴露 `window.__readPrefs = readValuesWithDefault`（與 `window.__app` 同 gate，
 production 不洩漏）。**例外**：PTT 原生熱鍵（`End`/`Enter`/`Space`/`ArrowLeft`/`Slash` 等）非本 app 設定項，照常寫死。
-- `helpers/fixtures.js`：共用登入 session fixture（見上）
-- `connect-login.spec.js`：登入到主選單（獨立登入）
-- `search_prompt.spec.js`：看板列表按 `s` 的搜尋 prompt —— 不上游標底色、殘留列表不可點、prompt 文字不破字。
-  **刻意是 live**：判準（輸入欄的實際顏色）是 pfterm 重新編碼後的結果，離線／unit 量不到，見
-  `docs/pttbbs-screen-protocol.md` §5.1。
 
 ## 規範：要測「原生模式」就自己關好讀（2026-09-16 翻預設之後）
 
@@ -340,42 +365,23 @@ React 19 起，`el.click()` 觸發的 setState 在事件 task **之後**才 comm
 內點完立刻讀 `classList`／DOM 恆讀到舊值（假紅，實例：點圖放大 `imagesEnlarged` 恆 false，2026-07）。
 點擊後 `await new Promise(r => setTimeout(r, 300))` 再讀（或拆兩次 evaluate）。
 
-## 規範：live 斷言不准跨兩次讀取比列數
+## 規範：live／record 的判準與等待
 
-live 測試讀的是**最新文章**，熱門板（C_Chat）的推文會在斷言之間持續灌入。任何形如
-「第二次的列數 < 第一次」「兩次的數量差 >= N」的判定都會被新推文蓋過去 ⇒ 偽紅、重跑才綠
-（實例：黑名單案量到 `c2=412 > c1=289`，但目標作者其實完全消失、pusher 由 32 降到 13）。
-
-**判定一律用內容，不用計數**：
-- 序列前綴：第一次的列（濾掉預期被移除的）必須是第二次的**前綴**，尾端多出來的就是期間新增，允許。
-- 穩定識別碼：樓號是絕對編號，新推文只會往後拿更大的號碼、不會位移既有樓號 ⇒ 「某些樓號整組消失」
-  是可靠的移除證據。
-- 空行等結構性質在**單次讀取內**判定（如「樓號缺口區間內不得有空白列」），不跨時間比。
-
-實作：`helpers/ptt.js` 的 `comparePusherSequences` / `inspectFloorGaps`（純函式，unit 守護在
-`tests/unit/blacklist_pusher_diff.test.js`），用法見 `enhance.spec.js` 的黑名單案。
-需要「完全等值」等級的嚴格比對就寫離線 cassette 版（bytes 固定，可逐列 `toEqual`），
-見 `offline/enhance.offline.spec.js` 同名案。
-
-## 規範：選文與等待不准靠執行順序或固定 timeout
-
-2026-08-29 `enhance.spec.js`「樓層編號」在整輪 live 裡紅（60s test timeout），單獨重跑
-卻 7 秒就綠 —— 兩個原因疊在一起，都是**判定法**的問題，不是 PTT 不穩：
-
-| 症狀來源 | 事實 | 修法 |
-|---|---|---|
-| pref 跨 spec 殘留 | `easy-reading-list.spec` 打開 `enableEasyReadingList` 之後沒人關，之後跑的 spec 在「列表好讀開著」的狀態下操作列表，End/Enter 走的是 ListSession 交易路徑，落點與原生不同 | `resetSession` 一併關掉它（`helpers/ptt.js`）。**測試之間不該靠執行順序** |
-| 用 End → Enter 當「開最新一篇」 | End ＝ read.c 的 `last_line`，**包含置底文**。C_Chat 的置底是十幾頁的公告 ⇒ 累積跑不完；公告常常零推文 ⇒ 樓層／推文者類斷言必紅 | `pickListArticleWithComments(page, {min, max})`：推文數就印在列表上（`bbs.c#readdoent`：1..99 印 `%2d`、≥100 印「爆」）⇒ **開文前**就能保證「有推文且不是爆文」，再 `openArticleByNumber` 跳號開文 |
-
-連帶規則：
-
-- **等待綁內容條件**：`openArticleByNumber` 等的是「游標列的序號＝目標」（`waitForFunction`），
-  不是 `waitForTimeout(1200)`。跳號回應的到達時間取決於連線，睡固定秒數不是慢就是不夠。
-- **把前提斷言出來**：`waitEasyReadingComplete` 逾時不丟例外，呼叫端要自己
-  `expect(acc.reachedEnd).toBe(true)`；否則「只累積到一半」會紅在後面的遞增檢查上，
-  看起來像功能壞了。
-- 舊式「開了發現不合用 → 退回列表 → 往上一篇再試」的重試迴圈（本檔黑名單／pusher 兩案）
-  仍在，能動就先不動；新測試一律用上面的選文 helper。
+- **不比對畫面內容**：畫面種類問 `buf.pageState`／`listRenderOwner`，版面用 `screen_sanity`。
+  例外只有「選文條件」（板名＋搜尋字）與錄製器裡導覽用的提示字。
+- **不跨兩次讀取比計數**：熱門板的推文、看板列表的「人氣」都會在兩次讀取之間變
+  （2026-10 錄製器拿整頁文字當清單指紋，每次回來都對不上）。判「回到哪一層」問產品狀態。
+- **等待綁內容條件，不准「按鍵 → 固定睡 → 判一次」**：回應還沒到就判 ⇒ 誤判 ⇒ 多按一個鍵
+  （2026-10 錄製器：進板畫面的空白鍵多按一次，落在列表上把文章打開了）。用 `waitForFunction`／
+  `expect.poll` 等內容出現；錄製器的動作邊界用 `helpers/recording.js#waitWireQuiet`，
+  沒在錄時要先 `installRecvCounter` 它才看得到 recv。
+- **進板畫面**（movie 是一張 ANSI 圖，不是「請按任意鍵」列）：判 pass 一律用產品的
+  `buf.isPassScreenNow()`；`gotoBoard` 的落地判準＝有序號列＋不是 pass 畫面（只看「看板」＋
+  「標題/人氣」會被進板畫面騙過，之後第一個鍵被 pressanykey 吃掉）。
+- 按鍵後等畫面：`helpers/ptt.js#pressAndSettle`（按 → 等 buf 真的變了 → 等 settle；零回應的鍵
+  回 false 不丟錯）。`resetSession`／`gotoBoard` 已全面改用，沒有固定睡眠。
+- **選文開文前就挑好**：列表上就看得到推文數與是否置底（`readListCandidates`）；`End` 含置底文。
+- **把前提斷言出來**：`waitEasyReadingComplete` 逾時不丟例外，呼叫端自己 `expect(acc.reachedEnd)`。
 
 ### offline：`waitForTimeout` 一律要具名理由（守護 `tests/unit/e2e_no_bare_sleep.test.js`）
 
@@ -395,17 +401,11 @@ offline spec 的每個 `waitForTimeout` 都要在同行或緊鄰上方註解寫 
 | 裝置端 AI「沒有推論」／「推論都回來了」 | `helpers/replay.js#aiTaskStats`（`screen.js#aiTaskStats`）：沒推論＝`runs === 0`（任務只在 render 裡同步啟動）；回來了＝`runs > 0 && inFlight === 0` |
 | 時間語意（閃爍等 `setInterval`） | `page.clock`：開機**前** `install()`（之後才建的 timer 才歸它管）、取樣時 `pauseAt`＋逐拍 `runFor`、取完 `resume()`（範例 `offline/blink_cursor.offline.spec.js`） |
 
-### 好讀累積與行內預覽的等待（2026-08-29，`easy-reading.spec.js`「自動行內開圖」）
+### 好讀累積與行內預覽的等待（live 開圖，`core.spec.js`）
 
-同一條 spec 整輪 live 紅／紅／綠，乾淨樹對照過 ⇒ 不是被測 code，是等待條件在賭：
-
-| 舊寫法 | 事實 | 後果 |
-|---|---|---|
-| `Enter` 後 `waitForTimeout(4500)` 當「累積完」 | 好讀是自動翻頁，時間隨文長／連線變動 | 長文那時還在翻，`easy_reading` 同時在控 `.main` 的 scrollTop ⇒ 測試自己寫的 `scrollTop = y` 被拉走，佔位盒從沒進視野 |
-| 手寫單趟 seek：每格固定 `sleep(250)` 就往下捲 | mount 鏈＝IntersectionObserver → `renderInto`（React root）→ `requestPreview` promise → commit | 掃過去那格接著被 far observer 卸掉 ⇒ 掃完整篇 0 個預覽節點（現場：7 個可預覽連結、`found=0`、`scrollTop=1752`） |
-| `End` → `Enter` 開最新一篇 | `End` 含置底公告 | 開到十幾頁的公告 ⇒ 更難累積完 |
-
-規則（守護 `tests/unit/e2e_live_wait_contract.test.js`，純靜態掃描）：
+規則（守護 `tests/unit/e2e_live_wait_contract.test.js`，純靜態掃描）。由來：2026-08 舊 live 開圖
+測項用「Enter 後睡 4.5 秒當累積完」＋「每格睡 250ms 手寫 seek」，長文還在自動翻頁時
+`easy_reading` 在控 scrollTop ⇒ 佔位盒從沒進視野，整輪紅／紅／綠。
 
 - 累積一律 `waitEasyReadingComplete`，**不准**用固定睡眠當終點。
 - 行內預覽的 seek 一律 `helpers/layout.js#seekMountedPreview`（`scrollIntoView` +
@@ -414,18 +414,20 @@ offline spec 的每個 `waitForTimeout` 都要在同行或緊鄰上方註解寫 
   （imgur stall，`docs/imgur-latency-research.md`）＋「產品端沒有圖片載入 timeout」
   ⇒ 讀取指示器可以永遠留著 ⇒ settle 必逾時，只是換一種假紅。它是 offline 專用
   （那邊有受控 route 與在途請求計數）。
-- **斷言分三層**，因為相依對象不同：
-  1. 有可預覽連結 ⇒ 必有 `.inlinePreviewSlot`（`enableLinkInlinePreview` 被寫死 false
-     時一個都不會建 —— 這就是本 spec 要守的 regression）。與外網無關，必驗。
-  2. 捲到 slot ⇒ `seek.mounted`（slot 裡出現預覽產物，含讀取中指示器）。與外網無關，必驗。
-  3. `seek.mediaFound`（img/video/iframe 任一）⇒ 驗媒體節點；
-     `seek.loadedImage`（**真的有一張 `<img>` 畫出來**）⇒ 才驗點圖放大／縮回。
-     兩級刻意分開：放大只對 `img` 成立，把 iframe 算進來的話「首圖是 YouTube」的
-     文章會通過守門、然後在找不到 img 的斷言上 TypeError（2026-09-03 live 實錄）。
-     **依賴圖床**，載不出來就 console 記錄後略過，不讓圖床決定 CI 顏色
-     （圖片載入的完整情境覆蓋在 offline 的 cache/slow/404/301 四桶）。
+- **斷言分層**：有圖片連結 ⇒ 必有 `.inlinePreviewSlot`（與外網無關）→ 捲到 ⇒ `seek.mounted`
+  （與外網無關）→ `seek.loadedImage`（**真的有一張 `<img>` 畫出來**）。2026-10 起第三層在 live
+  也是**必驗**（「開圖正常」是核心）：一次試最多 8 張，單一圖床偶發失敗不會紅，全部載不出來
+  才紅——那對使用者也是「開圖壞了」。圖片載入的完整情境（慢／404／301）在 offline 四桶。
+  `loadedImage` 只算 `img`（iframe/YouTube 不算），不然「首圖是 YouTube」會被當成載到。
 
 ## 擴充
 
-新 spec 用 `shared` fixture + `resetSession`/`applyPrefs`/`gotoBoard`（見「共用登入 session」規則），例如
-`easy-reading.spec.js`：復位→進看板→開文章→驗證自動翻頁/捲到底（對應 `src/js/easy_reading.js`）。
+**live 不再加功能測項**（見「live 範圍」）。新功能／修 bug 的 e2e 一律 offline：
+1. 既有 cassette 夠用就直接寫 offline spec；
+2. 需要新的 PTT 往返 ⇒ 在 `tools/record-scenarios.spec.js` 加一段 scenario（prep 不錄、
+   開錄後首幀 Ctrl-L、每個動作前後 `waitWireQuiet`、prefs 寫進 meta），`yarn record:scenarios`
+   （`RECORD_SCENARIOS_ONLY=<名稱>` 只錄那段）＝**一次登入**；
+3. offline spec 用 `helpers/replay.js#bootScenario` ＋ `waitFed` 照錄製時的節拍操作。
+   細節見 `docs/offline-replay-testing.md`「scenario 卷」。
+
+live 只在「核心路徑本身」需要新的判準時才動 `core.spec.js`，而且仍不准比對畫面內容。

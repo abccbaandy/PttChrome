@@ -52,7 +52,7 @@ pref `enableEasyReadingList`（**2026-09-16 起預設 on**）＋`easyReadingList
 | render：redraw buffer/frozen 分支（`buildListWindowLines`＝header/footer 快取＋`getListView()` 的整段序列＋`>` 游標裝飾）、`accumulateListLines`（merge→evict→prune→flatten→chrome 快取）、`relabelListCursorRow` | `src/js/term_view.js` |
 | body 捲動視口（`.listBodyView`）：`_patchRows`／`_ensureBodyView`／`getListScrollTop`／`setListScrollTop`／`scrollListTo`／`getListViewportPx`／scroll listener | `src/render/screen.js`（unit：`render_list_scroll.test.js`） |
 | 鍵盤 hook（僅 buffer/frozen；native 全直通）；滾輪：`pttchrome.jsx mouse_scroll` buffer 分支 → **early return 交給瀏覽器**（pref 關才走 `ListSession.onWheel`） | `term_view.js onKeyDown`／`pttchrome.jsx` |
-| 測試 | offline `tests/e2e/offline/easy-reading-list.offline.spec.js`（CI gate）；live `tests/e2e/easy-reading-list.spec.js`（soak＝白名單操作輪播，新增白名單操作時同步補站）；素材 `cchat-list-nav/prompt/pinned/mark/search`（**新 `>` 游標世代**，2026-08 重錄）＋ `cchat-list-*-wide`（**舊 `●` 世代**，只被「雙支援」那一條用；勿刪，它是兩代 parser 的唯一真瀏覽器覆蓋） |
+| 測試 | offline `tests/e2e/offline/easy-reading-list.offline.spec.js`（CI gate）＋ `scenario_navigation.offline.spec.js`（`]` 凍結交易、游標捲出視野 ↓；素材 `scn-list-bracket`）；live 只剩 `core.spec.js` 的列表好讀不跑版檢查（2026-10 起 live 只保證核心，soak 已退役）；素材 `cchat-list-nav/prompt/pinned/mark/search`（**新 `>` 游標世代**，2026-08 重錄）＋ `cchat-list-*-wide`（**舊 `●` 世代**，只被「雙支援」那一條用；勿刪，它是兩代 parser 的唯一真瀏覽器覆蓋） |
 
 ## 視圖模型（render 層）
 
@@ -433,7 +433,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 
 守護：`tests/unit/list_native_resume.test.js`（reducer 全枚舉＋假時鐘的探針行為＋凍結交易全鏈＋pref 關掉的逐位元回退）、
 `tests/unit/list_keys.test.js`（A/B 分類）、`tests/unit/board_list_session.test.js`（看板列表版）、
-`tests/e2e/offline/easy-reading-list.offline.spec.js`（`/`／`v` 兩條的自動回復）、`tests/e2e/easy-reading-list.spec.js`（live：A 類鍵全程不見原生）。
+`tests/e2e/offline/easy-reading-list.offline.spec.js`（`/`／`v` 兩條的自動回復）、`tests/e2e/offline/scenario_navigation.offline.spec.js`（A 類鍵全程不見原生，素材 `scn-list-bracket`）。
 
 ## 已知限制
 

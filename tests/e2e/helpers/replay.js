@@ -405,6 +405,7 @@ async function replayCassette(page, cassette, opts = {}) {
 // 门控 map：依 step.on 匹配送出的 bytes，按 cassette 顺序逐步喂。
 //   pageup/pagedown: 翻页键     jump: 整串「数字+\r」（跳号开文第一段）
 //   open/cancel: 单独 '\r'      back: ←    slash: '/'
+//   raw: step.send（base64）逐位元组相同 —— scenario 卷的通用门控
 // 送出的所有 bytes 也记进 window.__replay.sent，供「本地导航不送键」类断言用。
 async function replayListCassette(page, cassette) {
   await applyCassetteTermSize(page, cassette);
@@ -449,6 +450,10 @@ async function replayListCassette(page, cassette) {
         cancel: (d) => d === '\r',
         // 'v' 已读设定（2026-07-10 起为 passthrough 代送，bytes 不变）。
         mark: (d) => d === 'v',
+        // raw：scenario 卷（tools/record-scenarios.spec.js，DebugRecorder 导出）里
+        // classifySend 认不得的键（h／r／:／]／s／逐字打的板名…）。送出的 bytes 与
+        // 录制时逐位元组相同才喂（两边都剥掉交易尾的 \f）。
+        raw: (d, step) => d === stripFF(atob(step.send)),
         // query：搜寻关键字提交。passthrough 后关键字是「原生逐键打字」送出
         //（一键一个 send，convSend 逐字 Big5），不再是旧交易的整串 kw+\r——
         // 门控改为在 step 上累积，累到 \r 结尾且（有记录 query 时）与其 Big5
@@ -705,6 +710,34 @@ async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-un
   await waitConnected(page);
 }
 
+// scenario 卷（tools/record-scenarios.spec.js）的開機：錄製前一律 resetSession，所以
+// 重放前要先套同一組 baseline，再疊 meta.prefs，然後才餵首幀（列表好讀的 pref 一定要
+// 在列表畫面之前就定案，見 docs/handoff 舊陷阱「列表 cassette 要先關列表好讀再餵」）。
+// 兩個列表接管 pref（`enableEasyReadingList`／`enableBoardListSmoothScroll`）在錄製時是
+// **開錄之後**才開（engage 的預讀 jump 在素材裡），所以這裡一律先關著，由 spec 在首幀
+// 之後自己 applyPrefs 打開。
+const SCENARIO_BASE_PREFS = {
+  enableEasyReading: false,
+  showFloorNumbers: false,
+  blacklist: '',
+  enableEasyReadingList: false,
+  enableBoardListSmoothScroll: false,
+};
+async function bootScenario(page, ptt, cassette, opts = {}) {
+  await bootOffline(page, ptt, opts);
+  const prefs = Object.assign({}, SCENARIO_BASE_PREFS, cassette.meta.prefs || {}, opts.prefs || {});
+  prefs.enableEasyReadingList = false;
+  prefs.enableBoardListSmoothScroll = false;
+  await ptt.applyPrefs(page, prefs);
+  await replayListCassette(page, cassette);
+  await waitScreenSettled(page);
+}
+
+// 重放進度：已餵到第幾步（含首幀）。scenario spec 用它等「這個動作的回應已經餵進去」。
+async function waitFed(page, n, timeout = 20000) {
+  await page.waitForFunction((k) => window.__replay && window.__replay.fed >= k, n, { timeout });
+}
+
 // 好讀的自動開圖是**延遲載入**的（src/render/inline_preview_slot.js：捲到附近才解析網址
 // 並掛上 <ImagePreviewer>，捲遠了再卸掉釋放已解碼的點陣圖）。所以「replay 完就去
 // querySelector('img')」永遠只會量到空的佔位盒 —— 要驗預覽，一律先用這兩個 helper 把
@@ -807,4 +840,6 @@ module.exports = {
   replayCassette,
   replayListCassette,
   bootOffline,
+  bootScenario,
+  waitFed,
 };

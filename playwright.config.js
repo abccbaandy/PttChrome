@@ -202,7 +202,7 @@ module.exports = defineConfig({
       name: 'record',
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['preflight'],
-      testMatch: 'tools/record-cassette.spec.js',
+      testMatch: ['tools/record-cassette.spec.js', 'tools/record-scenarios.spec.js'],
     },
   ],
   webServer: {

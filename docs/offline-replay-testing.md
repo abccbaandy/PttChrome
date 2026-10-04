@@ -73,7 +73,14 @@ offline spec 遍歷所有 article cassette 逐卷守門；End 測試自動挑帶
 - redact 是手動掃描（`redactUser`）：id 須右側非英數邊界；左側認「非英數 / 字串開頭 / Big5 尾位元組」
   （前一位元組 0x40-0x7E 且其前 ≥0x80）。故 article 的「→ 你的id:」「推 你的id:」與 list 狀態列
   「我是<id>」（id 緊貼 Big5「是」0xAC4F，trail 0x4F='O'）都能正確遮成 xxxx → **article / list 用真實帳號皆可**。
-- `assertNoLeak` 是最後防線：萬一 redact 漏了就拋錯不寫。實測 stock-huang / stock-end / cchat-list 三卷
+- redact 的兩個邊界坑（2026-10 scenario 錄製的把關抓到，都已修＋unit 守護）：
+  1. **帳號被 WebSocket 切在兩個封包之間**（「我是my」＋「user]」）：逐 event 遮蔽兩半都不像帳號。
+     `debug_recorder_logic#scrubByStream` 把同方向 event 接成串流 scrub 再按原長度切回（等長替換）。
+     IPv4 的邊界因此改成「前後不是數字或點」（串流裡 IP 後面可能直接接英文字，`\b` 不成立）。
+  2. **帳號左邊是 ANSI 控制序列**（主功能表狀態列 `\x1b[1;31m<id>\x1b[0;30;47m`）：前一字元 `m`
+     是英數 ⇒ 舊判準不算邊界。`redactUser` 認 CSI 結尾為左邊界。
+- `assertNoLeak` 是最後防線：萬一 redact 漏了就拋錯不寫（`helpers/recording.js` 版會印出命中處前後
+  的 bytes、帳號換成 `<ID>`，分得出是邊界判準漏了還是真的出現在內容裡）。實測 stock-huang / stock-end / cchat-list 三卷
   獨立掃描皆 0 洩漏。
 - commit 前仍務必 `git diff` 複查產出檔不含帳號 / 本機路徑 / OS 使用者名。文章內容是公開 PTT，可入 repo。
 
@@ -93,6 +100,37 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
   worker-scoped，多 worker＝多登入）。offline project 皆 `fullyParallel: true` ⇒ 每條 test 必須自足
   （自己 `bootOffline`、不共用檔案／port）。守護 `tests/unit/e2e_workers_policy.test.js`。
   實測（16 邏輯核）：offline 三 project 約 2.3 分（原串行約 10 分）、adverse 三桶 8 workers 約 3 分且未撞 DLL 崩潰。
+
+## scenario 卷（`yarn record:scenarios`，2026-10）
+一段「要真 PTT 往返」的操作錄成可重放素材，取代 live e2e 的功能測項（live 只剩核心，見
+`tests/e2e/README.md`「live 範圍」）。錄製器 `tests/e2e/tools/record-scenarios.spec.js`，
+**整輪一次登入**；`RECORD_SCENARIOS_ONLY=a,b` 只錄指定段，失敗段記下來繼續錄下一段（不重登）。
+- 機制：產品自己的 DebugRecorder（`tests/e2e/helpers/recording.js`）錄雙向 bytes → 從錄製器送出的
+  第一個 Ctrl-L 起切成 cassette（`toScenarioCassette`：首幀＝`start`）→ 每個 send 一個 step；
+  `classifySend` 認得的鍵是具名 step，其餘 `on:'raw'`＋`send`（base64 原始 bytes）。
+- 格式：`{ meta:{mode:'scenario', scenario, board?, aid?, keyword?, prefs, recordedAs}, cols, rows, steps }`。
+  `mode:'scenario'` ⇒ `findCassettes('article'|'list')` 不撿，逐卷 spec 不受影響；spec 以
+  `loadCassette('scn-<名稱>')` 指名載入。
+- 重放：`helpers/replay.js#bootScenario`（baseline prefs＝錄製前 `resetSession` 那組 ＋ `meta.prefs`）→
+  `replayListCassette`（門控在 stub WS 送出層，`raw` 逐位元組比對、兩邊剝交易尾 `\f`）。
+  進度用 `waitFed(page, n)`。**兩個列表接管 pref（`enableEasyReadingList`／`enableBoardListSmoothScroll`）
+  在錄製時都是開錄之後才開**（engage 的預讀 jump 才會在素材裡）⇒ `bootScenario` 一律先關，spec 首幀後自己開。
+- 錄製紀律（違反＝重放對不上、卡在某一步 timeout）：
+  1. prep（找文章、撈 AID、進板）**不錄**；開錄後先送 Ctrl-L 拿首幀。
+  2. 每個動作前後 `waitWireQuiet`（錄製事件數靜止＋settle 計時器清空＋背景佇列 idle）。重放端回應是
+     瞬間到的，錄製時讓使用者鍵與背景補頁交錯，送出順序就對不上。offline spec 照同樣節拍操作。
+  3. 沒在錄的 prep 階段要先 `installRecvCounter`，不然 `waitWireQuiet` 看不到「回應還在路上」。
+- 素材是快照：錄到什麼就是什麼（例：`scn-aid-back` 第一次錄到的原文剛好是置底的信箱轉錄文，
+  抓出 `findLocalPostAid` 的 bug，見 `docs/deep-link.md`「本篇 AID 的兩條取得路徑」第 3 條）。
+  產品端修改會改變送出的 bytes 時（例：免費 AID 路徑改成按 Q），對應的卷要重錄。
+
+| 卷 | 內容 | spec |
+|---|---|---|
+| `scn-er-help`／`scn-er-reply`／`scn-er-seekback` | 好讀 h 說明、r 回應至（需帳號）、`:N` 往回跳 | `er_function_mode.offline` |
+| `scn-list-bracket` | 列表好讀 `]`（A 類凍結交易） | `scenario_navigation.offline` |
+| `scn-aid-back`／`scn-aid-back-search` | AID 跳文 → 返回（列表好讀開文／`/` 搜尋結果開文） | `scenario_navigation.offline` |
+| `scn-deep-link` | hashchange deep link 完整落地＋F2（需帳號） | `deep_link_landing.offline` |
+| `scn-boardlist-class`／`scn-board-search-prompt` | 分類看板子清單平滑捲動、按 s 搜尋 prompt | `board_list.offline` |
 
 ## 使用者 Debug 錄製檔 → cassette
 使用者在「設定 → 關於」開 Debug 錄製模式錄下的檔（`ptt-debug-*.json`，schema 見
@@ -431,6 +469,10 @@ project 名，同 `image_load_conditions.offline.spec.js`）。這樣兩個 job 
   等於測試早就在測「imgur 的錯誤圖」而非我們的渲染路徑。
 
 ## 踩坑
+- **列表 cassette 要先關列表好讀再餵**：`enableEasyReadingList` 預設開。`replayListCassette` 之後才
+  `applyPrefs({enableEasyReadingList:false})` ＝與 start step 的 settle 賽跑：輸了就 engage 送錨定 jump，
+  `cchat-list-nav` 的 jump recv 沒有 Ctrl+L 全幅重繪 ⇒ footer 空白 ⇒ `pageState` 0。範例
+  `offline/easy-reading-list.offline.spec.js`「原生列表：鍵盤游標底色」；scenario 卷的 `bootScenario` 已內建。
 - 必須先 `applyPrefs(enableEasyReading:true)` 寫 localStorage **再** `enterEasyReading()`，否則
   `easy_reading.js` 的 `_onChanged` 讀到 pref off 會立刻 `exitEasyReading`。
 - `installReplay()` 的 `addInitScript` 必須在 `page.goto` **之前**（覆寫 `window.WebSocket` 要早於 bundle）。

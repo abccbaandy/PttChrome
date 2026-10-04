@@ -18,6 +18,8 @@ package-lock.json
 test-results/
 playwright-report/
 tests/e2e/__screenshots__/
+# live e2e 每輪的 DebugRecorder 錄製檔（已 redact，但仍屬個人連線紀錄，不入 repo）
+tests/e2e/__recordings__/
 # 录制 cassette 用的 PTT 凭证（绝不入 repo）
 tests/e2e/.ptt-creds.json
 

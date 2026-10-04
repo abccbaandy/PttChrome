@@ -242,18 +242,18 @@ test.describe('增强 · 看板列表（离线重放）', () => {
   test('列表黑名单：黑名单作者的列 → 原生显示「(本文已被黑名单)」通知列（不隐藏）', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
+    // 測原生列表：列表好讀預設開，不關的話列住在 .listBodyView 裡、走的是好讀規則（隱藏）。
+    // 2026-10 前漏了這行 ⇒ 下面一列都找不到 ⇒ 兩條都靜默 skip（覆蓋缺口）。
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
     await replayCassette(page, list, { easyReading: false });
 
-    // 从渲染出的列表抓一个作者（cols 17-28），把它列入黑名单。
+    // 作者取渲染層自己解析的 data-list-author（右鍵加黑名單同一個來源）。以前切
+    // textContent 的 cols 17-28：寬版素材（cchat-list-mark-wide）欄位不同 ⇒ 抓不到。
     const target = await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"]'));
-      for (const el of rows) {
-        const a = el.textContent.substring(17, 29).trim();
-        if (/^[0-9A-Za-z]+$/.test(a)) return a.toLowerCase();
-      }
-      return null;
+      const el = document.querySelector('#mainContainer > span[type="bbsrow"][data-list-author]');
+      return el ? el.getAttribute('data-list-author').toLowerCase() : null;
     });
-    test.skip(!target, '列表没抓到可辨识作者栏');
+    expect(target, `素材 ${list.__file} 沒有任何一列解析得出作者`).toBeTruthy();
 
     const counts = () =>
       page.evaluate(() => {
@@ -274,6 +274,7 @@ test.describe('增强 · 看板列表（离线重放）', () => {
   test('标题黑名单：标题含关键字的列 → 通知列（不隐藏）', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReadingList: false }); // 理由同上一條
     await replayCassette(page, list, { easyReading: false });
 
     // 从渲染出的列表抓一列标题，取其中一个中文/英数字片段当关键字。
@@ -291,7 +292,7 @@ test.describe('增强 · 看板列表（离线重放）', () => {
       }
       return null;
     });
-    test.skip(!keyword, '列表没抓到可用标题关键字');
+    expect(keyword, `素材 ${list.__file} 沒有可用的標題關鍵字`).toBeTruthy();
 
     const noticeCnt = () =>
       page.evaluate(
