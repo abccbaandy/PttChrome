@@ -9,12 +9,18 @@
 //   stop()                       ≈ 卸載時的 cleanup
 //
 // 「簽章相同就不重跑」是效能關鍵：好讀翻頁只是往後長，前面已經問過的候選 key 不變。
+//
+// run 回傳 Promise 時，任務會記帳：stats() ＝ { runs: 啟動過幾輪, inFlight: 還沒
+// settle 的輪數 }（被 abort 的那輪也要等它的 Promise 收尾才算結束）。這是推論鏈唯一
+// 的 idle 訊號 —— e2e 要證「沒有推論／推論都回來了」靠它，不靠固定睡眠。
 export function createSignatureTask(run, options) {
   const onCancel = (options && options.onCancel) || null;
   let sig = null;
   let enabled = false;
   let controller = null;
   let cancelled = false;
+  let runs = 0;
+  let inFlight = 0;
 
   function abort() {
     cancelled = true;
@@ -38,11 +44,22 @@ export function createSignatureTask(run, options) {
         typeof AbortController === "function" ? new AbortController() : null;
       cancelled = false;
       const myController = controller;
-      run(todo, {
+      runs++;
+      const pending = run(todo, {
         signal: myController ? myController.signal : undefined,
         // 回填前先確認這一輪還沒被取消（舊版的 `if (cancelled) return`）。
         isCancelled: () => cancelled || controller !== myController,
       });
+      if (pending && typeof pending.then === "function") {
+        inFlight++;
+        const done = () => {
+          inFlight--;
+        };
+        pending.then(done, done);
+      }
+    },
+    stats() {
+      return { runs, inFlight };
     },
     stop() {
       if (enabled) abort();

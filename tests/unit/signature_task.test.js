@@ -74,4 +74,40 @@ describe("createSignatureTask", () => {
     task.sync(true, "sig", () => ["x"]);
     expect(seen.length).toBe(2);
   });
+
+  // stats() 是 e2e 唯一的推論 idle 訊號（取代「等 1500ms 證明沒推論」的觀察窗）：
+  // runs 必須只算真的啟動的輪，inFlight 必須等 Promise 收尾（含被 abort 的那輪、
+  // 含 reject）才歸零，否則 e2e 會在推論還在途時就斷言。
+  test("stats()：runs 只算真的啟動的輪，inFlight 等 Promise 收尾才歸零", async () => {
+    const resolvers = [];
+    const task = createSignatureTask(
+      () =>
+        new Promise((resolve, reject) => resolvers.push({ resolve, reject })),
+    );
+    expect(task.stats()).toEqual({ runs: 0, inFlight: 0 });
+
+    task.sync(false, "sig", () => ["x"]); // 關著 → 不啟動
+    task.sync(true, "sig", () => []); // todo 空 → 不啟動
+    expect(task.stats()).toEqual({ runs: 0, inFlight: 0 });
+
+    task.sync(true, "sig-a", () => ["a"]);
+    task.sync(true, "sig-b", () => ["b"]); // abort 上一輪，但它的 Promise 還沒收尾
+    expect(task.stats()).toEqual({ runs: 2, inFlight: 2 });
+
+    resolvers[0].reject(new Error("aborted"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(task.stats()).toEqual({ runs: 2, inFlight: 1 });
+
+    resolvers[1].resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(task.stats()).toEqual({ runs: 2, inFlight: 0 });
+  });
+
+  test("stats()：run 不回 Promise 時不記在途（同步完成）", () => {
+    const task = createSignatureTask(() => undefined);
+    task.sync(true, "sig", () => ["x"]);
+    expect(task.stats()).toEqual({ runs: 1, inFlight: 0 });
+  });
 });

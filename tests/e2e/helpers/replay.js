@@ -196,6 +196,13 @@ async function waitScreenSettled(page, rows = {}) {
   }, rows);
 }
 
+// 裝置端 AI 推論鏈的 idle 訊號（src/render/screen.js#aiTaskStats）：
+// { caption|url|fix: { runs, inFlight } }。「沒有推論」斷言 runs === 0；
+// 「推論都回來了」等 inFlight === 0。取代固定時間的觀察窗。
+async function aiTaskStats(page) {
+  return page.evaluate(() => window.__app.view.componentScreen.aiTaskStats());
+}
+
 // 重放一卷 cassette。
 //   opts.easyReading（预设 true）：进好读、逐页累积（翻页回归 / End→原生 / 行内开图 / 楼层 / 黑名单 / pusher）。
 //   opts.easyReading=false：静态单页（看板列表黑名单 / 作者栏），只喂 start step、不进好读。
@@ -796,6 +803,7 @@ module.exports = {
   waitConnected,
   feedRaw,
   waitScreenSettled,
+  aiTaskStats,
   replayCassette,
   replayListCassette,
   bootOffline,

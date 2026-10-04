@@ -218,7 +218,7 @@ export class ScreenController {
         this._aiPending = todo.length;
         this._syncAiButton();
         // 逐塊推論、逐塊回填：規則結果早就畫出來了，AI 只是漸進式修正。
-        classifySpans(todo, {
+        return classifySpans(todo, {
           signal: ctx.signal,
           onResult: (span, r) => {
             if (ctx.isCancelled()) return;
@@ -243,7 +243,7 @@ export class ScreenController {
       },
     );
 
-    this._urlAiTask = createSignatureTask((todo, ctx) => {
+    this._urlAiTask = createSignatureTask((todo, ctx) =>
       classifyDomains(todo, {
         signal: ctx.signal,
         onResult: (cand, r) => {
@@ -253,10 +253,10 @@ export class ScreenController {
           this._aiLink = { ...this._aiLink, [domainKey(cand)]: r.link };
           this._rerender();
         },
-      }).catch(() => {});
-    });
+      }).catch(() => {}),
+    );
 
-    this._fixAiTask = createSignatureTask((todo, ctx) => {
+    this._fixAiTask = createSignatureTask((todo, ctx) =>
       classifyBrokenUrls(todo, {
         signal: ctx.signal,
         onResult: (cand, r) => {
@@ -264,8 +264,18 @@ export class ScreenController {
           this._aiFix = { ...this._aiFix, [fixKey(cand)]: r.link };
           this._rerender();
         },
-      }).catch(() => {});
-    });
+      }).catch(() => {}),
+    );
+  }
+
+  // 三套推論的記帳（signature_task.js#stats）。e2e 用它當推論鏈的 idle 訊號：
+  // 「沒有推論」＝runs 為 0；「推論都回來了」＝inFlight 為 0。
+  aiTaskStats() {
+    return {
+      caption: this._captionAiTask.stats(),
+      url: this._urlAiTask.stats(),
+      fix: this._fixAiTask.stats(),
+    };
   }
 
   // ------------------------------------------------------------------- 入口

@@ -228,6 +228,27 @@ async function nextFrames(page, n = 2) {
   }, n);
 }
 
+// 「滑鼠手勢之後 app 排下的延遲反應全都跑完了」的柵欄，給存活型斷言用（選取／高亮
+// 在手勢當下就成立，要證的是「之後沒被打斷」）。會在手勢之後才動手的只有這幾條：
+//   dblclickTimer（350ms，滑鼠瀏覽的單／雙擊判定）、mbTimer（100ms）、
+//   inputAreaFocusTimer（10ms，選取為空時把焦點搶回 #t —— Firefox 的 focus() 會收合選取）、
+//   term_buf 的 notify／settle 計時器（重繪走這裡）。
+// 全部清空後再等兩幀（render 之後的 layout／選取更新）。固定睡眠在這裡是**錯的**：
+// 舊版的 150ms 連 dblclickTimer 都撐不過。
+async function waitClickSettled(page) {
+  await page.waitForFunction(() => {
+    const app = window.__app;
+    return (
+      !app.dblclickTimer &&
+      !app.mbTimer &&
+      !app.inputAreaFocusTimer &&
+      !app.buf.timerUpdate &&
+      !app.buf._settleTimer
+    );
+  });
+  await nextFrames(page);
+}
+
 module.exports = {
   cdp,
   textRect,
@@ -246,4 +267,5 @@ module.exports = {
   dragFiles,
   dropFiles,
   nextFrames,
+  waitClickSettled,
 };

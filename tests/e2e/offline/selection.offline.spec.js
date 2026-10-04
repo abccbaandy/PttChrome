@@ -11,6 +11,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { installReplay, waitConnected, feedRaw, waitScreenSettled } = require('../helpers/replay');
+const { waitClickSettled } = require('../helpers/real_input');
 
 const WORD = 'SELECTSMOKE';
 
@@ -82,9 +83,9 @@ async function dragSelect(page, rect) {
   await page.mouse.down();
   await page.mouse.move(rect.x + rect.width - 1, y, { steps: 12 });
   await page.mouse.up();
-  // sleep-ok: 存活型觀察窗——選取立刻成立，要證的是「之後沒被重繪打斷」；改 poll
-  // 第一下就過、反而變弱（要拔掉需要「重繪已發生」的明確訊號）
-  await page.waitForTimeout(150);
+  // 存活型：選取當下就成立，要證的是「之後沒被打斷」⇒ 等 app 對這個手勢的延遲反應
+  // 全部跑完再讀（helpers/real_input.js#waitClickSettled），不是固定睡眠。
+  await waitClickSettled(page);
 }
 
 // 失敗時要能一眼看出是「選取本身沒了」還是「讀取端讀錯」。
@@ -154,9 +155,9 @@ test.describe('選取文字（offline）', () => {
 
     const rect = await wordRect(page, WORD);
     await page.mouse.dblclick(rect.x + rect.width / 2, rect.y + rect.height / 2);
-    // sleep-ok: 存活型觀察窗——選取立刻成立，要證的是「之後沒被重繪打斷」；改 poll
-    // 第一下就過、反而變弱（要拔掉需要「重繪已發生」的明確訊號）
-    await page.waitForTimeout(150);
+    // 存活型：選取當下就成立，要證的是「之後沒被打斷」⇒ 等 app 對這個手勢的延遲反應
+    // 全部跑完再讀（helpers/real_input.js#waitClickSettled），不是固定睡眠。
+    await waitClickSettled(page);
 
     const info = await probe(page);
     expect(info, `雙擊後的選取狀態: ${JSON.stringify(info)}`).toMatchObject({
@@ -173,9 +174,9 @@ test.describe('選取文字（offline）', () => {
     const x = rect.x + rect.width / 2;
     const y = rect.y + rect.height / 2;
     await page.mouse.click(x, y, { clickCount: 3 });
-    // sleep-ok: 存活型觀察窗——選取立刻成立，要證的是「之後沒被重繪打斷」；改 poll
-    // 第一下就過、反而變弱（要拔掉需要「重繪已發生」的明確訊號）
-    await page.waitForTimeout(150);
+    // 存活型：選取當下就成立，要證的是「之後沒被打斷」⇒ 等 app 對這個手勢的延遲反應
+    // 全部跑完再讀（helpers/real_input.js#waitClickSettled），不是固定睡眠。
+    await waitClickSettled(page);
 
     const info = await probe(page);
     expect(info, `三擊後的選取狀態: ${JSON.stringify(info)}`).toMatchObject({

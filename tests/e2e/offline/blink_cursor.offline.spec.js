@@ -27,28 +27,48 @@ const PLAIN_ROW_NO_CURSOR =
   '\x1b[5;1H  350024 + 2 6/14 someuser   R: [test] hello' +
   '\x1b[10;20H';
 
-// 取樣 #cursor 看不看得到（每 100ms 一次，窗口涵蓋 ≥2 次閃爍 toggle，閃爍週期 1s，
-// 見 pttchrome.jsx 的 timerEverySec）。display:none 記成 'none'，否則記 visibility
-// （閃爍相位）。回傳看過的所有值。
-async function observeCursor(page, ms = 2600) {
-  return page.evaluate(async (ms) => {
-    const el = document.getElementById('cursor');
-    const seen = new Set();
-    const deadline = Date.now() + ms;
-    while (Date.now() < deadline) {
-      const cs = getComputedStyle(el);
-      seen.add(cs.display === 'none' ? 'none' : cs.visibility);
-      // sleep-ok: 閃爍是時間語意，要的就是牆鐘時間窗內的取樣
-      await new Promise((r) => setTimeout(r, 100));
+// 閃爍由 pttchrome.jsx 的 timerEverySec（1s setInterval → view.onBlink → 30ms notify →
+// toggleBlinkPhase）驅動。用假時鐘逐拍快轉取樣，不用牆鐘：每個 runFor(1000) 視窗
+// 恰好含一次 interval（相位必換一次），所以連續 ticks 次取樣必定看過兩個相位 ——
+// 慢機器上牆鐘窗口可能一次 toggle 都沒跑到。
+//
+// 假時鐘必須在開機**之前**裝（timerEverySec 在 onConnect 建立，之後才裝就不歸它管）；
+// 裝了但不暫停 ＝ 時間照常流動，開機／餵畫面／waitScreenSettled 都不受影響。只在取樣
+// 期間暫停，取完 resume。
+async function bootWithClock(page) {
+  await page.clock.install();
+  await bootOffline(page, ptt);
+}
+
+async function sampleTicks(page, ticks, read) {
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(now + 100);
+  const out = [];
+  try {
+    for (let i = 0; i < ticks; i++) {
+      await page.clock.runFor(1000);
+      out.push(await page.evaluate(read));
     }
-    return [...seen];
-  }, ms);
+  } finally {
+    await page.clock.resume();
+  }
+  return out;
+}
+
+// #cursor 看不看得到：display:none 記成 'none'，否則記 visibility（閃爍相位）。
+// 回傳看過的所有值。
+async function observeCursor(page, ticks = 4) {
+  const samples = await sampleTicks(page, ticks, () => {
+    const cs = getComputedStyle(document.getElementById('cursor'));
+    return cs.display === 'none' ? 'none' : cs.visibility;
+  });
+  return [...new Set(samples)];
 }
 
 test.describe('PTT 有游標時隱藏閃爍游標（離線）', () => {
   test('預設開啟：PTT 畫了 > 的列表畫面，閃爍游標完全不顯示', async ({ page }) => {
     test.setTimeout(90000);
-    await bootOffline(page, ptt);
+    await bootWithClock(page);
     await ptt.applyPrefs(page, {
       enableEasyReading: false,
       enableEasyReadingList: false,
@@ -63,7 +83,7 @@ test.describe('PTT 有游標時隱藏閃爍游標（離線）', () => {
 
   test('同一個設定下，沒有 PTT 游標的畫面（輸入框）游標照舊閃爍', async ({ page }) => {
     test.setTimeout(90000);
-    await bootOffline(page, ptt);
+    await bootWithClock(page);
     await ptt.applyPrefs(page, {
       enableEasyReading: false,
       enableEasyReadingList: false,
@@ -76,7 +96,7 @@ test.describe('PTT 有游標時隱藏閃爍游標（離線）', () => {
 
   test('同一次連線內，游標移進／移出 > 那一格會即時切換', async ({ page }) => {
     test.setTimeout(90000);
-    await bootOffline(page, ptt);
+    await bootWithClock(page);
     await ptt.applyPrefs(page, {
       enableEasyReading: false,
       enableEasyReadingList: false,
@@ -99,7 +119,7 @@ test.describe('PTT 有游標時隱藏閃爍游標（離線）', () => {
 
   test('設定關閉 → 列表畫面游標照舊閃爍（兩個游標同框）', async ({ page }) => {
     test.setTimeout(90000);
-    await bootOffline(page, ptt);
+    await bootWithClock(page);
     await ptt.applyPrefs(page, {
       enableEasyReading: false,
       enableEasyReadingList: false,
@@ -121,27 +141,22 @@ const SCREEN_WITH_BLINK_TEXT =
   '\x1b[3;1H\x1b[5;31mBLINK\x1b[m' +
   '\x1b[10;20H';
 
-// 取樣 ms 毫秒，回傳 { cursor: 看過的 visibility, body: 看過的 body.blink--active }。
-async function observePhase(page, ms = 2600) {
-  return page.evaluate(async (ms) => {
-    const el = document.getElementById('cursor');
-    const cursor = new Set();
-    const body = new Set();
-    const deadline = Date.now() + ms;
-    while (Date.now() < deadline) {
-      cursor.add(getComputedStyle(el).visibility);
-      body.add(document.body.classList.contains('blink--active'));
-      // sleep-ok: 閃爍是時間語意，要的就是牆鐘時間窗內的取樣
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    return { cursor: [...cursor].sort(), body: [...body].sort() };
-  }, ms);
+// 逐拍取樣，回傳 { cursor: 看過的 visibility, body: 看過的 body.blink--active }。
+async function observePhase(page, ticks = 4) {
+  const samples = await sampleTicks(page, ticks, () => ({
+    cursor: getComputedStyle(document.getElementById('cursor')).visibility,
+    body: document.body.classList.contains('blink--active'),
+  }));
+  return {
+    cursor: [...new Set(samples.map((s) => s.cursor))].sort(),
+    body: [...new Set(samples.map((s) => s.body))].sort(),
+  };
 }
 
 test.describe('閃爍相位的省電不變量（離線）', () => {
   test('沒有閃爍字：游標照常明暗交替，body.blink--active 從頭到尾不掛', async ({ page }) => {
     test.setTimeout(90000);
-    await bootOffline(page, ptt);
+    await bootWithClock(page);
     await ptt.applyPrefs(page, {
       enableEasyReading: false,
       enableEasyReadingList: false,
@@ -156,7 +171,7 @@ test.describe('閃爍相位的省電不變量（離線）', () => {
 
   test('有閃爍字：body.blink--active 照常交替（閃爍字仍會閃）', async ({ page }) => {
     test.setTimeout(90000);
-    await bootOffline(page, ptt);
+    await bootWithClock(page);
     await ptt.applyPrefs(page, {
       enableEasyReading: false,
       enableEasyReadingList: false,

@@ -6,7 +6,9 @@
 //     capture 根本沒接上時一樣綠。
 // 替代品：餵畫面後 helpers/replay.js#waitScreenSettled；動作後讀值 expect.poll／
 // toPass；否定斷言補一個「必定會發生」的柵欄再斷言（helpers/capture.js#expectOnlyFence、
-// 等 `__app.dblclickTimer` 清空）；hover 後 helpers/real_input.js#nextFrames。
+// 等 `__app.dblclickTimer` 清空）；hover 後 helpers/real_input.js#nextFrames；存活型
+// helpers/real_input.js#waitClickSettled；AI 推論 helpers/replay.js#aiTaskStats；
+// 時間語意用 page.clock。對照表在 tests/e2e/README.md。
 //
 // 真的需要固定時間的（按鍵節奏、證明「沒發生」又找不到 idle 訊號的觀察窗、刻意抽樣
 // 中間態）＝**具名豁免**：同一行或緊鄰的上方註解寫 `sleep-ok: <理由>`。

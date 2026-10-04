@@ -391,6 +391,9 @@ offline spec 的每個 `waitForTimeout` 都要在同行或緊鄰上方註解寫 
 | 列表好讀的按鍵副作用落地 | `waitState(page, x => x.queueIdle)`（指令在 keydown 裡同步入列） |
 | `page.mouse.wheel` 真的派發了 | 自己掛 capture `wheel` listener 計數（`mouse.wheel` 不等派發） |
 | hover／`scrollTop =` 後的 handler 跑了 | `helpers/real_input.js#nextFrames` |
+| 選取／高亮「之後沒被打斷」（存活型） | `helpers/real_input.js#waitClickSettled`：dblclick／mb／#t 焦點計時器＋notify／settle 全清空再兩幀。固定睡眠撐不過 350ms 的 dblclickTimer |
+| 裝置端 AI「沒有推論」／「推論都回來了」 | `helpers/replay.js#aiTaskStats`（`screen.js#aiTaskStats`）：沒推論＝`runs === 0`（任務只在 render 裡同步啟動）；回來了＝`runs > 0 && inFlight === 0` |
+| 時間語意（閃爍等 `setInterval`） | `page.clock`：開機**前** `install()`（之後才建的 timer 才歸它管）、取樣時 `pauseAt`＋逐拍 `runFor`、取完 `resume()`（範例 `offline/blink_cursor.offline.spec.js`） |
 
 ### 好讀累積與行內預覽的等待（2026-08-29，`easy-reading.spec.js`「自動行內開圖」）
 

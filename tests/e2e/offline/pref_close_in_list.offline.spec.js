@@ -25,6 +25,7 @@ const {
   bootOffline,
   replayListCassette,
 } = require('../helpers/replay');
+const { nextFrames } = require('../helpers/real_input');
 
 const nav = loadCassette('cchat-list-nav');
 
@@ -91,9 +92,16 @@ test.describe('列表好读：关设定页（离线）', () => {
       await page.evaluate(() =>
         window.__app.switchToEasyReadingMode(window.__app.view.useEasyReadingMode)
       );
-      // sleep-ok: 證明「關框後狀態不轉移」的觀察窗（^L 回應→settle→ADOPT 的整條鏈沒有
-      // 單一 idle 訊號；^L 本身是同步送出，下面另有肯定斷言）
-      await page.waitForTimeout(400);
+      // 柵欄：switchToEasyReadingMode 整條是同步的（^L 經 sendMachineBytes 出線；修前的
+      // ADOPT → _beginPassthroughBytes → _enterFunctionMode 也是同步），重放端不回應裸
+      // ^L ⇒ 之後唯一還會動的是它排下的延遲工作：term_buf 的 notify／settle 計時器
+      // （改 renderMode、收掉 .listBodyView 都走這裡）與 CommandQueue 的在途腿。
+      // 三者都清空 = 狀態轉移若要發生早已發生。
+      await page.waitForFunction(() => {
+        const app = window.__app;
+        return !app.buf.timerUpdate && !app.buf._settleTimer && app.commandQueue.idle;
+      });
+      await nextFrames(page);
 
       const after = await dump(page);
       const probe = await page.evaluate(() => window.__probe);

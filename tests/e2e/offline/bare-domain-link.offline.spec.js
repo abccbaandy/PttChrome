@@ -16,6 +16,7 @@ const {
   replayCassette,
   feedRaw,
   waitScreenSettled,
+  aiTaskStats,
 } = require('../helpers/replay');
 
 const cassette = findCassette('article');
@@ -124,9 +125,11 @@ test.describe('裸網域自動連結（離線重放）', () => {
     await replayCassette(page, cassette, { easyReading: false });
 
     await writeRow(page, 'go indiegametw.com now');
-    // sleep-ok: 證明「沒有推論」的觀察窗（AI 推論鏈沒有對外的 idle 訊號；要拔掉得先在產品端加探針）
-    await page.waitForTimeout(1500); // 給「若真有推論早該回來」的餘裕
+    // 推論任務只在 render 裡同步啟動（screen.js#_syncAiTasks），waitScreenSettled
+    // 之後 render 已經跑完 ⇒ runs 是 0 就代表這一幀沒有、之後也不會有推論。
+    // 正對照：候選確實存在（規則層的連結畫出來了），否則 runs 0 是假綠。
     await expect(page.locator('a.bareDomainLink')).toHaveCount(1);
+    expect((await aiTaskStats(page)).url.runs).toBe(0);
     expect(await page.evaluate(() => window.__lmPrompts || 0)).toBe(0);
   });
 
@@ -145,8 +148,17 @@ test.describe('裸網域自動連結（離線重放）', () => {
     await replayCassette(page, cassette, { easyReading: false });
 
     await writeRow(page, 'go indiegametw.com now');
-    // sleep-ok: 證明「沒有推論」的觀察窗（AI 推論鏈沒有對外的 idle 訊號；要拔掉得先在產品端加探針）
-    await page.waitForTimeout(1500); // 給「就算真有推論也早該回來」的餘裕
+    // 推論鏈真的跑過一輪、而且收尾了（availability 不支援 → link null → 不寫 cache），
+    // 才斷言連結還在 —— 不是「還沒輪到它」。
+    await expect
+      .poll(
+        async () => {
+          const s = (await aiTaskStats(page)).url;
+          return s.runs > 0 && s.inFlight === 0;
+        },
+        { timeout: 15000 }
+      )
+      .toBe(true);
     await expect(page.locator('a.bareDomainLink')).toHaveCount(1);
   });
 });

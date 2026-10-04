@@ -29,6 +29,7 @@ const {
   stableCommentRow,
   waitPreviewsSettled,
 } = require('../helpers/layout');
+const { waitClickSettled } = require('../helpers/real_input');
 
 const article = findCassette('article');
 
@@ -161,9 +162,9 @@ test.describe('推文者高亮（offline）', () => {
 
     await assertUnderRow(page, row);
     await page.mouse.dblclick(row.contentX, row.y);
-    // sleep-ok: 存活型觀察窗——選取立刻成立，要證的是「之後沒被重繪打斷」；改 poll
-    // 第一下就過、反而變弱（要拔掉需要「重繪已發生」的明確訊號）
-    await page.waitForTimeout(300);
+    // 存活型：選取當下就成立，要證的是「之後沒被重繪打斷」⇒ 等 app 對這個手勢的延遲
+    // 反應（含 350ms 的單／雙擊判定）全部跑完再讀（helpers/real_input.js#waitClickSettled）。
+    await waitClickSettled(page);
 
     const info = await selectionInfo(page);
     expect(info, `雙擊後的選取狀態: ${JSON.stringify(info)}`).toMatchObject({

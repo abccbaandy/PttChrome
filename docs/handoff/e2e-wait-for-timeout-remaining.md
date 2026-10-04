@@ -1,20 +1,16 @@
-# e2e 剩餘的固定睡眠（offline 已收斂；剩 sleep-ok 候選＋live）
+# e2e 剩餘的固定睡眠（offline 已清完；剩 live）
 
-offline 的固定時間等待（`waitForTimeout`、evaluate 內自包的 `setTimeout` Promise、自訂 `sleep` 定義）已全數改成
-柵欄／輪詢，或標上 `sleep-ok:`（靜態守護 `tests/unit/e2e_no_bare_sleep.test.js`；替代品對照表在
-`tests/e2e/README.md`「offline：`waitForTimeout` 一律要具名理由」）。驗證法：在 `helpers/replay.js#installReplay`
-開頭暫時注入 CDP `Emulation.setCPUThrottlingRate`（6～8 倍）＋ `--repeat-each` 新舊版對照，不要只看一般速度全綠。
+offline 的固定時間等待已全數改成柵欄／輪詢／假時鐘；剩下的 `sleep-ok:` 只有按鍵節奏
+（`easy-reading-list`）與刻意抽樣中間態（`image_load_conditions`），屬合法豁免。靜態守護
+`tests/unit/e2e_no_bare_sleep.test.js`；替代品對照表在 `tests/e2e/README.md`「offline：`waitForTimeout`
+一律要具名理由」。驗證法：在 `helpers/replay.js#installReplay` 開頭暫時注入 CDP
+`Emulation.setCPUThrottlingRate`（6～8 倍）＋ `--repeat-each` 新舊版對照，並做一次突變（把被守的
+修法退回）確認新柵欄會紅。
 
-## 1. sleep-ok 裡可再強化的（需要先在產品端加訊號）
-- `bare-domain-link`×2、`url-fix-gray`×2：1500ms「沒有推論」觀察窗。缺 AI 推論鏈的 idle 訊號
-  （`render/signature_task.js` 的任務沒對外狀態）。要拔掉：讓 screen 暴露 urlAi/fixAi 任務在途數。
-- `pref_close_in_list`：400ms「關框後不轉移」。缺 ^L 回應→settle→ADOPT 的單一 idle 訊號。
-- 存活型（`selection`×3、`pusher_highlight`×1）：需要「重繪已發生」的明確訊號再斷言選取仍在。
-- `blink_cursor`×2：閃爍是時間語意，牆鐘取樣合理；要更硬可改 `page.clock` 快轉 `timerEverySec`。
-
-## 2. live e2e（tests/e2e/*.spec.js、helpers/ptt.js，約 100 處）
+## live e2e（tests/e2e/*.spec.js、helpers/ptt.js，約 100 處）
 未分類。限制：登入預算（每輪只登入一次）、PTT 維護／BOT 封鎖時不可重跑 ⇒ 無法用 `--repeat-each` 壓測驗證，
 改動需在主目錄合回 dev 後統一跑一輪。`tools/record-cassette.spec.js` 是錄製工具，不是測試。
+offline 的替代品（`waitClickSettled`、`aiTaskStats`、`page.clock`）多半可直接沿用。
 
 ## 已知陷阱：列表 cassette 要先關列表好讀再餵
 `enableEasyReadingList` 預設開。`replayListCassette` 之後才 `applyPrefs({enableEasyReadingList:false})` ＝與 start
