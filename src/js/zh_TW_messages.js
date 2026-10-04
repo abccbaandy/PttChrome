@@ -604,9 +604,6 @@
   "tooltip_sync": {
     "message": "登入 Google 後，偏好設定會同步到雲端，換瀏覽器或裝置不會遺失。PTT 密碼絕不會上傳。"
   },
-  "options_syncAndroidUnsupported": {
-    "message": "Android App 暫不支援雲端同步登入，請改用瀏覽器版設定。"
-  },
   "options_androidProxyNote": {
     "message": "Android App 固定經由手機上的本機連線服務連到 PTT（背景不斷線），不需設定 Proxy。"
   },

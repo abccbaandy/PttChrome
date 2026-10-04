@@ -36,6 +36,7 @@ import {
   destroyPromptApi,
 } from "../../js/prompt_api";
 import { deepEqual } from "../../js/pref_sync_logic";
+import { isSignInCancelled } from "../../js/google_sign_in";
 import { ensureNotifyPermission } from "../../js/notification_gate";
 import {
   buildExportPayload,
@@ -498,6 +499,11 @@ export const PrefModal = ({
       .signIn((merged) => setValues(merged))
       .then(() => setSyncStatus("synced"))
       .catch((e) => {
+        // 使用者自己關掉登入視窗／選單：回到未登入，不顯示同步失敗。
+        if (isSignInCancelled(e)) {
+          setSyncStatus("idle");
+          return;
+        }
         console.warn("pref_sync: sign-in failed", e);
         setSyncStatus("error");
       });
@@ -1807,13 +1813,7 @@ export const PrefModal = ({
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_sync")}
                 </Text>
-                {/* Google 禁止在 WebView 內做 OAuth（disallowed_useragent），APK 裡
-                  按登入只會失敗。原生登入見 docs/handoff/android-google-signin.md。 */}
-                {isAndroidApp() ? (
-                  <Text size="sm">
-                    {i18n("options_syncAndroidUnsupported")}
-                  </Text>
-                ) : syncUser ? (
+                {syncUser ? (
                   <div>
                     <Text>
                       {i18n("options_syncSignedInAs")}

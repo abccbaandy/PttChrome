@@ -20,6 +20,7 @@ import {
   classifySnapshot,
   deepEqual
 } from "./pref_sync_logic";
+import { authenticateGoogle, clearGoogleSignInState } from "./google_sign_in";
 
 // Set after the first successful sign-in so the next startup knows to load
 // the SDK and restore the session; cleared on sign-out. Keeping it separate
@@ -292,12 +293,11 @@ export const startIfPreviouslySignedIn = () => {
 // subsequent snapshots go to the registered app-level callback.
 // authenticate is an injection seam for the emulator tests (signInWithPopup
 // needs a browser UI; tests pass a signInWithCredential step instead) —
-// production callers omit it.
+// production callers omit it and get authenticateGoogle (popup in browsers,
+// native Credential Manager + signInWithCredential inside the Android APK).
 export const signIn = async (onCloudValues, authenticate) => {
   const f = await init();
-  await (authenticate
-    ? authenticate(f)
-    : f.authM.signInWithPopup(f.auth, new f.authM.GoogleAuthProvider()));
+  await (authenticate || authenticateGoogle)(f);
   try {
     window.localStorage.setItem(SYNC_FLAG_KEY, "1");
   } catch (e) {}
@@ -315,6 +315,7 @@ export const signOut = async () => {
   try {
     window.localStorage.removeItem(SYNC_FLAG_KEY);
   } catch (e) {}
+  clearGoogleSignInState();
   if (!loadPromise) return;
   const f = await init();
   return f.authM.signOut(f.auth);

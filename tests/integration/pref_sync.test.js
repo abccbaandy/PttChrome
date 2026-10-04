@@ -422,6 +422,66 @@ describe("lifecycle", () => {
       });
   });
 
+  // APK（WebView）不能 signInWithPopup：signIn 不帶 authenticate 時改向原生 bridge
+  // 要 Google ID token 再 signInWithCredential（src/js/google_sign_in.js）。
+  // 這裡的「原生」是假 bridge，回的是 Auth emulator 收的假 unsigned token；
+  // Firebase 這半段（signInWithCredential→旗標→listener→merge）全是真的。
+  describe("Android APK sign-in", () => {
+    let sent;
+    beforeEach(() => {
+      sent = [];
+      const listeners = [];
+      window.__PTT_ANDROID__ = { site: "wstelnet://127.0.0.1:1/bbs/t" };
+      window.PttAndroid = {
+        postMessage: str => {
+          const req = JSON.parse(str);
+          sent.push(req);
+          const out =
+            req.op === "googleSignIn"
+              ? { ok: true, idToken: tokenFor(testSub) }
+              : { ok: true };
+          queueMicrotask(() =>
+            listeners.forEach(fn =>
+              fn({ data: JSON.stringify({ id: req.id, ...out }) })
+            )
+          );
+        },
+        addEventListener: (type, fn) => {
+          if (type === "message") listeners.push(fn);
+        }
+      };
+    });
+    afterEach(() => {
+      delete window.__PTT_ANDROID__;
+      delete window.PttAndroid;
+    });
+
+    it("signs in through the bridge ID token and restores cloud prefs", () => {
+      writeStoredPrefs({ fontSize: 16 });
+      const modalCb = vi.fn();
+
+      return seedDoc({ prefs: { fontSize: 21 } })
+        .then(() => prefSync.signIn(modalCb))
+        .then(values => {
+          expect(sent.map(m => m.op)).toEqual(["googleSignIn"]);
+          expect(prefSync.getUser().uid).toBe(uid);
+          expect(values.fontSize).toBe(21);
+          expect(modalCb).toHaveBeenCalledTimes(1);
+          expect(readStoredPrefs().fontSize).toBe(21);
+        });
+    });
+
+    it("signOut also clears the native sign-in state", () => {
+      return prefSync
+        .signIn()
+        .then(() => prefSync.signOut())
+        .then(() => {
+          expect(sent.map(m => m.op)).toEqual(["googleSignIn", "googleSignOut"]);
+          expect(prefSync.getUser()).toBe(null);
+        });
+    });
+  });
+
   it("savePrefs is a no-op before sign-in", () => {
     const values = { fontSize: 12 };
     return prefSync

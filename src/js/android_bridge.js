@@ -8,7 +8,15 @@
 // 訊息合約（JSON 字串）：
 //   → { id, op: 'getPassword' }                          ← { id, ok, user, password }
 //   → { id, op: 'storePassword', user, password }        ← { id, ok }
+//   → { id, op: 'googleSignIn', serverClientId }         ← { id, ok, idToken } | { id, ok:false, error }
+//   → { id, op: 'googleSignOut' }                        ← { id, ok }
 // ok:false ＝使用者取消／沒有存任何密碼／原生出錯，一律當「沒有」處理。
+// googleSignIn（雲端同步登入，google_sign_in.js）：原生 Credential Manager
+//   GetSignInWithGoogleOption 取 Google ID token；serverClientId ＝ Firebase Google provider
+//   的 Web OAuth client（firebase_config.js#GOOGLE_WEB_CLIENT_ID），原生只接受
+//   `<數字>-<英數>.apps.googleusercontent.com` 形狀。error：'cancelled'（使用者關掉）／
+//   'badClientId'／'failed'（其餘，含 Google Cloud 沒註冊 Android OAuth client 的 developer error）。
+// googleSignOut：CredentialManager.clearCredentialState，下次登入才會重新讓使用者選帳號。
 //
 // 原生 → 網頁的單向通知（window 上的 CustomEvent，由原生 evaluateJavascript 發出）：
 //   'pttandroid:ime'  detail: { inset }  軟鍵盤蓋住 WebView 底部的高度（CSS px）。

@@ -63,6 +63,7 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play)
+    implementation(libs.googleid)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.fragment)
     implementation(libs.kotlinx.coroutines.android)

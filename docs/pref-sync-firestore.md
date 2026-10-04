@@ -45,7 +45,8 @@
 - 前置：**Docker**（本機跑 integration 必需；無 Docker 則只能靠 CI 驗）。emulator 設定檔（`firebase.json`/`firestore.rules`/`firestore.indexes.json`）以 read-only 掛進容器 `/home/node`；vitest 透過 `FIRESTORE_EMULATOR_HOST`/`FIREBASE_AUTH_EMULATOR_HOST` env 連線（`tests/integration/setup.js`）。orchestration 細節：`scripts/run-integration.mjs`（拉起容器 → `waitHttp`（HTTP 健康檢查，非 TCP） 輪詢就緒 → 跑 vitest → `finally` 拆容器）。
 - port：firestore **8089**（預設 8080 與 dev server 衝突）、auth 9099（`firebase.json` emulators 段，已設 `host: 0.0.0.0` 供容器埠映射）。
 - `demo-` 前綴 project id：保證純離線、不需 `firebase login`、不可能打到正式專案。
-- 登入：auth emulator 接受**假 unsigned Google ID token**（官方功能）——`signInWithCredential(auth, GoogleAuthProvider.credential('{"sub":...,"email":...}'))`。`signInWithPopup` 需要真瀏覽器 UI，headless 不可行 → `prefSync.signIn(onCloudValues, authenticate)` 第二參數是測試注入縫；production 呼叫端不傳（走 popup），流程其餘部分（旗標、attach、merge、callback）全是真路徑。
+- 登入：auth emulator 接受**假 unsigned Google ID token**（官方功能）——`signInWithCredential(auth, GoogleAuthProvider.credential('{"sub":...,"email":...}'))`。`signInWithPopup` 需要真瀏覽器 UI，headless 不可行 → `prefSync.signIn(onCloudValues, authenticate)` 第二參數是測試注入縫；production 呼叫端不傳（走 `google_sign_in.js#authenticateGoogle`：瀏覽器 popup／Android APK 原生 ID token＋`signInWithCredential`，見 `docs/android-app.md`「雲端同步 Google 登入」），流程其餘部分（旗標、attach、merge、callback）全是真路徑。APK 分支在 integration 以假 bridge 回假 token 走真 SDK。
+- 使用者取消登入（popup 關掉／APK 選單取消）由 `isSignInCancelled` 判定，PrefModal 回 idle 不顯示錯誤。
 - 隔離策略：**每個測試換新 uid**（token 換 `sub`）而非清庫——(1) REST 清庫清不掉主 client 的 in-memory cache，殘留 doc 會污染下個測試的 fromCache snapshot；(2) 刪 auth 帳號會讓另一個 client 的 token 失效。換 uid 兩個都繞開。
 - 「另一台裝置」= 第二個 SDK app instance（`initializeApp(cfg, "seeder")`）以同 `sub` 登入（同 uid → 過 rules）讀寫 `users/{uid}`。
 - vitest integration project 用 **node env 不用 jsdom**（`vitest.config.mjs`）：jsdom 下 Firestore 走 WebChannel/XHR（無真瀏覽器不穩）；node env 解析到 SDK 的 node build 走 gRPC。`window.localStorage` 用 Map shim（`tests/integration/setup.js`）。

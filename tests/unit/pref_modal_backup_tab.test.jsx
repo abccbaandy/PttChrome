@@ -13,6 +13,7 @@ import { PrefModal } from "../../src/components/ContextMenu/PrefModal";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 import { downloadAsFile } from "../../src/js/util";
+import * as prefSync from "../../src/js/pref_sync";
 
 // 雲端同步不是本測試的標的，且會拉 Firebase SDK。
 vi.mock("../../src/js/pref_sync", () => ({
@@ -247,18 +248,49 @@ describe("設定備份分頁：雲端同步", () => {
   });
 });
 
-// Google 禁止在 WebView 內做 OAuth（disallowed_useragent）⇒ APK 裡按登入只會失敗。
+// APK 內登入改走原生 Credential Manager（google_sign_in.js），入口與瀏覽器相同。
 describe("設定備份分頁：Android APK 內的雲端同步", () => {
   afterEach(() => delete window.__PTT_ANDROID__);
 
-  test("APK 內不給登入鈕，改顯示暫不支援", () => {
+  test("APK 內照樣給登入鈕", () => {
     window.__PTT_ANDROID__ = { site: "wstelnet://127.0.0.1:1/bbs/t" };
     openBackupTab();
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n("options_syncSignIn") }),
+    );
+    expect(prefSync.signIn).toHaveBeenCalled();
+  });
+});
+
+describe("設定備份分頁：登入結果", () => {
+  test("使用者取消登入 ⇒ 回到未登入，不顯示同步失敗", async () => {
+    prefSync.signIn.mockImplementationOnce(() =>
+      Promise.reject(Object.assign(new Error("x"), { code: "cancelled" })),
+    );
+    openBackupTab();
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n("options_syncSignIn") }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: i18n("options_syncSignIn") }),
+      ).toBeEnabled(),
+    );
+    expect(screen.queryByText(i18n("options_syncStatusError"))).toBeNull();
+    expect(screen.queryByText(i18n("options_syncStatusSyncing"))).toBeNull();
+  });
+
+  test("其他登入錯誤 ⇒ 顯示同步失敗", async () => {
+    prefSync.signIn.mockImplementationOnce(() =>
+      Promise.reject(Object.assign(new Error("x"), { code: "failed" })),
+    );
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    openBackupTab();
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n("options_syncSignIn") }),
+    );
     expect(
-      screen.queryByRole("button", { name: i18n("options_syncSignIn") }),
-    ).toBeNull();
-    expect(
-      screen.getByText(i18n("options_syncAndroidUnsupported")),
+      await screen.findByText(i18n("options_syncStatusError")),
     ).toBeInTheDocument();
   });
 });
