@@ -71,7 +71,10 @@ class MainActivity : ComponentActivity() {
             val s = (binder as ConnectionService.LocalBinder).service
             service = s
             s.onQuitRequested = { finishAndRemoveTask() }
-            if (webView == null) createWebView(s.site)
+            if (webView == null) {
+                BootTrace.mark("serviceConnected")
+                createWebView(s.site)
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -80,6 +83,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        BootTrace.mark("onCreate")
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // savedInstanceState 非 null＝整個 App process 曾在背景被系統砍掉、這次是系統還原
@@ -169,6 +173,15 @@ class MainActivity : ComponentActivity() {
         }
 
         wv.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) = BootTrace.mark("pageStarted")
+            override fun onPageCommitVisible(view: WebView, url: String?) = BootTrace.mark("pageCommitVisible")
+            override fun onPageFinished(view: WebView, url: String?) {
+                BootTrace.mark("pageFinished")
+                view.postDelayed({
+                    view.evaluateJavascript(BootTrace.RESOURCE_TIMING_JS) { BootTrace.mark("timing $it") }
+                }, 10_000)
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
                 if (isAppPage(url)) return false

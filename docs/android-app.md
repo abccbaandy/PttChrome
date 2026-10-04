@@ -99,6 +99,7 @@ WebView  https://abccbaandy.github.io/PttChrome/
 | 真機：背景長時間不斷線 | `unknown`（demo 只在模擬器驗 30 秒） |
 | 真機：https 頁連 `ws://127.0.0.1`（`MIXED_CONTENT_ALWAYS_ALLOW`） | `guess`（demo 同設定可連） |
 | 真機：GPM 底部選單＋與 Chrome 共用 | `unknown`（assetlinks 已上線，待真機驗） |
+| 冷啟動黑畫面數秒 | 成因 CONFIRMED（實機 2026-10）：HTTP 快取未命中（清快取／Pages 新部署換 hash）時重抓主 JS 等 ~450KB，手機到 GitHub Pages 線路不穩（同檔 `curl` 0.6–5.2s；WebView 實測主 JS 9s）。有快取時快。連 PTT 非瓶頸（上游 open＋首筆資料 ~130ms）。網頁在主 JS＋轉碼表載完才 connect。診斷：`adb logcat -s PttChromeApp` 看 `boot:`（`BootTrace.kt`：pageStarted／CommitVisible／Finished、proxyAccept、upstreamOpen／FirstData，pageFinished 後 10s 印 Resource Timing）。對策：開站載入提示（`index.html#bootLoading`＋`src/js/boot_loading.js`，分段進度，零額外請求）。**不做** Service Worker 快取 app shell：使用者要求更新一定拿得到（HTTP 快取晚一點可以，保證先跑舊版不行）。`BootTrace` 只在冷啟動／每次 ws session 各印數行，耗電可忽略（`docs/handoff/android-battery-drain.md`：主成本是前景出幀） |
 | 回前景黑畫面數秒 | 成因 CONFIRMED 非回收（使用者實測：恢復後停在原畫面）＝renderer 活著但出幀慢。對策 `offscreenPreRaster`＋PixelCopy 快照遮罩（`MainActivity` onPause 拍／onStart 蓋／visual state callback 後掀，上限 5s），效果 `unknown` 待實機；`adb logcat -s PttChromeApp` 看 `away=`／`firstFrame=`。真回收會跳 Toast |
 | 真機：雲端同步 Google 登入 | `unknown`（未實機驗；Android OAuth client 前置已完成） |
 | 真機：App Check（reCAPTCHA Enterprise）在 WebView 拿得到 token | `unknown`（頁面 origin 同網頁版，`guess` 可過；拿不到 ⇒ Firestore permission-denied） |

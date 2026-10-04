@@ -31,6 +31,8 @@ class LocalWebSocketProxy(
     private val upstreamOrigin: String = AppConfig.UPSTREAM_ORIGIN,
     private val allowedPageOrigin: String = AppConfig.PAGE_ORIGIN,
     private val onStateChanged: (activeSessions: Int) -> Unit = {},
+    /** 診斷事件（連上游耗時、第一筆 PTT 資料）；ConnectionService 接到 logcat（BootTrace）。 */
+    private val onEvent: (String) -> Unit = {},
 ) {
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -99,6 +101,7 @@ class LocalWebSocketProxy(
                         return
                     }
                     is WsProtocol.Handshake.Accept -> {
+                        onEvent("proxyAccept")
                         if (!connectUpstream()) {
                             o.write(WsProtocol.httpError(502, "PTT Upstream Failed")); o.flush()
                             return
@@ -126,19 +129,33 @@ class LocalWebSocketProxy(
         private fun connectUpstream(): Boolean {
             val done = CountDownLatch(1)
             val request = Request.Builder().url(upstreamUrl).header("Origin", upstreamOrigin).build()
+            val started = System.nanoTime()
+            fun elapsed() = (System.nanoTime() - started) / 1_000_000
+            var gotFirst = false
+            fun first() {
+                if (!gotFirst) { gotFirst = true; onEvent("upstreamFirstData +${elapsed()}ms") }
+            }
             upstream = client.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
+                    onEvent("upstreamOpen +${elapsed()}ms")
                     upstreamOpened = true
                     done.countDown()
                 }
-                override fun onMessage(webSocket: WebSocket, bytes: ByteString) = toLocal(WsProtocol.OP_BINARY, bytes.toByteArray())
-                override fun onMessage(webSocket: WebSocket, text: String) = toLocal(WsProtocol.OP_TEXT, text.toByteArray(Charsets.UTF_8))
+                override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                    first()
+                    toLocal(WsProtocol.OP_BINARY, bytes.toByteArray())
+                }
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    first()
+                    toLocal(WsProtocol.OP_TEXT, text.toByteArray(Charsets.UTF_8))
+                }
                 override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                     webSocket.close(code, reason)
                     sendClose(code, reason)
                     close()
                 }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    onEvent("upstreamFailure +${elapsed()}ms ${t.javaClass.simpleName}")
                     done.countDown()
                     sendClose(1011, "upstream failed")
                     close()

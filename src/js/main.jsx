@@ -10,6 +10,7 @@ import { installHistoryBackGuard } from './history_back_guard';
 import { parseDeepLink } from './deep_link';
 import { renderInto, unmountFrom } from './react_root';
 import { MantineRoot } from '../components/MantineRoot';
+import { setBootStage, failBootLoading, finishBootLoading } from './boot_loading';
 import b2uTableUrl from '../conv/b2u_table.bin?url';
 import u2bTableUrl from '../conv/u2b_table.bin?url';
 
@@ -52,6 +53,7 @@ function startApp() {
   // 延後到使用者按掉為止，讓 dev 與正式版的 boot 時序不一致 —— deep link 這種
   // 「開站當下就要消費 URL」的功能在 dev 下量到的行為因此不可信。
   claimDeepLink().then(({ target, taken }) => {
+    finishBootLoading();
     if (taken) return showHandoffTaken(target, bootstrap);
     bootstrap();
   });
@@ -135,6 +137,7 @@ function loadTerminalFont() {
 }
 
 function loadResources() {
+  setBootStage('resources');
   Promise.all([
     loadTable(b2uTableUrl),
     loadTable(u2bTableUrl),
@@ -143,6 +146,7 @@ function loadResources() {
     window.lib = window.lib || {};
     window.lib.b2uArray = new Uint8Array(binData[0]);
     window.lib.u2bArray = new Uint8Array(binData[1]);
+    setBootStage('starting');
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', startApp);
     } else {
@@ -150,6 +154,7 @@ function loadResources() {
     }
   }, function(e) {
     console.log('loadResources failed: ' + e);
+    failBootLoading();
   });
 }
 

@@ -41,6 +41,7 @@ class ConnectionService : Service() {
         proxy = LocalWebSocketProxy(
             token = randomToken(),
             onStateChanged = { n -> main.post { updateNotification(n > 0) } },
+            onEvent = BootTrace::mark,
         )
         proxy.start()
     }

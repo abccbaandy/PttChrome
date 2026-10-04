@@ -32,9 +32,51 @@
       jquery / hammerjs / bootstrap / react-bootstrap have been removed entirely.
     -->
     <script type="module" src="/src/entry.js"></script>
+
+    <!-- 開站載入提示（src/js/boot_loading.js）。快取沒命中時主程式下載可達數秒，原本整片黑。
+         樣式／文字全部 inline：**不准**在這塊加任何外部資源（會跟主程式搶頻寬、拖慢下載），
+         守護 tests/unit/boot_loading.test.js。延遲 400ms 才淡入：有快取的快速開站不會閃一下。
+         動畫只動 transform（合成層，不重排），拆掉元素即停。 -->
+    <style>
+      html, body { background: #000; }
+      #bootLoading {
+        position: fixed; inset: 0; z-index: 3;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 12px; color: #aaa; font: 15px sans-serif;
+        opacity: 0; animation: bootFadeIn 0.2s 0.4s forwards;
+      }
+      #bootLoading [data-boot="track"] {
+        width: min(240px, 60vw); height: 4px; border-radius: 2px;
+        background: #333; overflow: hidden;
+      }
+      #bootLoading [data-boot="bar"] {
+        position: relative; overflow: hidden;
+        width: 40%; height: 100%; background: #4a90d9;
+        transition: width 0.3s ease-out;
+      }
+      #bootLoading [data-boot="bar"]::after {
+        content: ""; position: absolute; inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+        transform: translateX(-100%); animation: bootShimmer 1.2s linear infinite;
+      }
+      #bootLoading[data-failed] [data-boot="track"] { display: none; }
+      @keyframes bootFadeIn { to { opacity: 1; } }
+      @keyframes bootShimmer { to { transform: translateX(100%); } }
+      @media (prefers-reduced-motion: reduce) {
+        #bootLoading [data-boot="bar"]::after { animation: none; }
+      }
+    </style>
   </head>
 
   <body>
+    <div id="bootLoading" role="status">
+      <div data-boot="track"><div data-boot="bar"></div></div>
+      <div data-boot="label">Downloading…</div>
+      <script>
+        if (/^zh/i.test(navigator.language || ''))
+          document.querySelector('#bootLoading [data-boot="label"]').textContent = '下載程式中…';
+      </script>
+    </div>
     <span id="cmdHandler"></span>
 
     <div id="cmenuReact"></div>
