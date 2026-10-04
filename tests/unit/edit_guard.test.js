@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { classifyShellCommand, findDuplicateBlock, inspectContent } from '../../scripts/edit-guard.mjs';
+import { classifyShellCommand, findDuplicateBlock, inspectContent, snapshotPath } from '../../scripts/edit-guard.mjs';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCRIPT = path.join(ROOT, 'scripts/edit-guard.mjs');
@@ -112,18 +112,36 @@ describe('hook CLI 協定（exit 2＋stderr 回饋給模型）', () => {
 
   test('post-tool：Edit 寫出 CRLF 回 2；專案外的檔不查', () => {
     const dir = fs.mkdtempSync(path.join(ROOT, 'node_modules', '.edit-guard-test-'));
-    const outside = path.join(os.tmpdir(), `edit-guard-${process.pid}.js`);
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'edit-guard-'));
     try {
       const file = path.join(dir, 'a.js');
       fs.writeFileSync(file, 'a\r\nb\r\n');
       const r = run('--post-tool', { tool_name: 'Edit', tool_input: { file_path: file } });
       expect(r.status).toBe(2);
       expect(r.stderr).toMatch(/CRLF/);
+      const outside = path.join(outsideDir, 'a.js');
       fs.writeFileSync(outside, 'a\r\nb\r\n');
       expect(run('--post-tool', { tool_name: 'Write', tool_input: { file_path: outside } }).status).toBe(0);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
-      fs.rmSync(outside, { force: true });
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  // pre-tool 寫、post-tool 讀的起點快照檔名可預測，放共用 os.tmpdir() 會被別的使用者搶先佈置
+  // （CodeQL js/insecure-temporary-file）⇒ 必須在專案內。
+  test('shell 起點快照放專案內，pre→post 來回後清掉', () => {
+    const input = { tool_name: 'Bash', tool_input: { command: 'ls' }, tool_use_id: `snap-${process.pid}` };
+    const snap = snapshotPath(ROOT, input);
+    expect(path.relative(ROOT, snap)).toBe(path.join('node_modules', '.cache', 'edit-guard', `${input.tool_use_id}.json`));
+    expect(path.relative(os.tmpdir(), snap).startsWith('..')).toBe(true);
+    try {
+      expect(run('--pre-tool', input).status).toBe(0);
+      expect(JSON.parse(fs.readFileSync(snap, 'utf8')).start).toEqual(expect.any(Number));
+      expect(run('--post-tool', input).status).toBe(0);
+      expect(fs.existsSync(snap)).toBe(false);
+    } finally {
+      fs.rmSync(snap, { force: true });
     }
   });
 });

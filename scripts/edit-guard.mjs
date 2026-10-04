@@ -20,7 +20,6 @@
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -155,21 +154,31 @@ function toRel(root, file) {
   return rel.split(path.sep).join('/');
 }
 
+// 同一個 fd 先 fstat 再讀：分開 stat(path)＋read(path) 之間檔案可能被換掉（CodeQL js/file-system-race）。
 function inspectWorktreeFile(root, rel) {
-  const abs = path.join(root, rel);
-  let stat;
+  let fd;
   try {
-    stat = fs.statSync(abs);
+    fd = fs.openSync(path.join(root, rel), 'r');
   } catch {
     return [];
   }
-  if (!stat.isFile() || stat.size > 2 * 1024 * 1024) return [];
-  return inspectContent(rel, fs.readFileSync(abs), gitBlob(root, `HEAD:${rel}`));
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.size > 2 * 1024 * 1024) return [];
+    return inspectContent(rel, fs.readFileSync(fd), gitBlob(root, `HEAD:${rel}`));
+  } catch {
+    return [];
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
-function snapshotPath(input) {
+// pre-tool 記起點、post-tool 讀回，所以檔名必須可預測 ⇒ 放專案內（gitignored），不放共用的
+// os.tmpdir()：那裡別的使用者可搶先建同名檔／symlink（CodeQL js/insecure-temporary-file）。
+// 與 kill-dev-server 的 pidfile 同一個目錄慣例。
+export function snapshotPath(root, input) {
   const id = String(input.tool_use_id || input.session_id || 'default').replace(/[^\w-]/g, '_');
-  return path.join(os.tmpdir(), 'pttchrome-edit-guard', `${id}.json`);
+  return path.join(root, 'node_modules', '.cache', 'edit-guard', `${id}.json`);
 }
 
 function changedFilesSince(root, since) {
@@ -194,7 +203,7 @@ function changedFilesSince(root, since) {
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
-function runPreTool(input) {
+function runPreTool(input, root) {
   if (!SHELL_TOOLS.has(input.tool_name)) return 0;
   const { block, reason } = classifyShellCommand(input.tool_input?.command);
   if (block) {
@@ -202,7 +211,7 @@ function runPreTool(input) {
     return 2;
   }
   try {
-    const snap = snapshotPath(input);
+    const snap = snapshotPath(root, input);
     fs.mkdirSync(path.dirname(snap), { recursive: true });
     fs.writeFileSync(snap, JSON.stringify({ start: Date.now() }));
   } catch {}
@@ -215,7 +224,7 @@ function runPostTool(input, root) {
     const rel = toRel(root, input.tool_input?.file_path || input.tool_input?.notebook_path || '');
     if (rel) issues = inspectWorktreeFile(root, rel);
   } else if (SHELL_TOOLS.has(input.tool_name)) {
-    const snap = snapshotPath(input);
+    const snap = snapshotPath(root, input);
     let start = null;
     try {
       start = JSON.parse(fs.readFileSync(snap, 'utf8')).start;
@@ -254,7 +263,7 @@ function main(argv) {
     return 0;
   }
   const root = process.env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
-  if (mode === '--pre-tool') return runPreTool(input);
+  if (mode === '--pre-tool') return runPreTool(input, root);
   if (mode === '--post-tool') return runPostTool(input, root);
   process.stderr.write('用法：node scripts/edit-guard.mjs --pre-tool|--post-tool|--staged\n');
   return 2;
