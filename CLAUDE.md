@@ -240,20 +240,11 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   界線：`showsInputHelper`／`showsLiveArticleHelper` 刻意**不算** modal（終端機仍收鍵盤），勿順手納入。
 - **`view.conn` 只在 `App.onConnect` 被設**：連線從未成功時是 `undefined`。送資料一律走
   `view._send()`／`_convSend()`（內含 `if (this.conn)`），禁止直接 `this.view.conn.send(...)`。
-- **用腳本改檔案時，`String.replace(old, neu)` 的 neu 一律傳「回傳字串的函式」**
-  （`s.replace(old, () => neu)`）：replacement 字串裡的 `$` 開頭序列是特殊語法，本專案
-  的 md/註解大量出現反引號與 `$`，一個 `$` 後面接反引號就等於「把匹配點之前的全文再
-  貼一次」—— 實例：改 `docs/easy-reading-list.md` 的鍵盤表（欄位裡有 End 的同義鍵
-  `$`）時整份文件被塞進表格中間，而且腳本回報成功。
-- **Bash 工具的 heredoc 會把連續兩個反斜線折成一個**：用內嵌 python 腳本（`python - <<PY`）
-  改檔時，腳本裡本來要表示「一個反斜線」的雙反斜線寫法會被折掉一層 ⇒ 送到解譯器時
-  已經變成那個跳脫序列所代表的**位元組本身**。拿它當 anchor 去比對原始碼裡的跳脫序列
-  **字面值**就永遠 assert 失敗，而且看起來像「檔案內容跟我讀到的不一樣」。
-  **anchor 一律挑不含反斜線的片段**，含反斜線的改動改用 Write／Edit 工具。
-  同理 replacement 裡的跳脫序列字面值（例如 End 鍵的那串）會被折成真的控制字元寫進原始碼。
-  另外 **Windows 上 python 的 `open(p, 'w')` 文字模式會把 `\n` 寫成 CRLF**（整檔變全改）⇒
-  讀寫一律加 `newline=''`。
-  實例：`long_push.js` 裡那行判斷段末是否為全形字的 `line.charAt(end - 1)` 比較式。
+- **改專案檔一律用 Edit／Write，不准經 shell**（`sed -i`、heredoc／`-c`／`-e` 行內腳本寫檔、
+  重導向、`Set-Content`）：由 hook `scripts/edit-guard.mjs` 強制擋下，寫入後也會檢查
+  NUL／CRLF／大段重複；pre-commit 再查一次 staged 內容。理由與規則都寫在該檔開頭。
+  被擋時照訊息做，**別去找繞過的寫法**。批次改動先用 Write 寫腳本檔再 `node` 執行；
+  腳本裡的 `String.replace` 替換值一律傳函式（`s.replace(old, () => neu)`），因為 `$` 序列會把全文再貼一次。
 - 踩坑後若判斷**多數**後續 session 也會踩，就寫進 md：寫進該主題的 `docs/*.md`；只有每個 session 都會碰到的才進本檔（本檔每 session 都付 token）。寫現行規則＋一句理由，不寫事件經過與日期。
 - 每次commit前都要檢查本次更動是否含新功能，如果有的話要更新README.md新功能列表，新功能定義：以一般使用者角度，所以優化、修bug都不算
 - 重大技術升級（框架/建置/依賴的升版或替換，如 React 升版、換 UI 庫、建置/測試工具替換）要同步更新「設定 → 關於」的「重大技術升級」區塊：`src/js/zh_TW_messages.js` 與 `src/js/en_US_messages.js` 的 `about_new_content`（兩語系都要改）

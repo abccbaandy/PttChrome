@@ -118,7 +118,8 @@ describe("SessionEnd hook 只殺自己的 dev server", () => {
     const settings = JSON.parse(read(".claude/settings.json"));
     const cmds = JSON.stringify(settings.hooks.SessionEnd);
     expect(cmds).toContain("kill-dev-server.js\\\" --own");
-    expect(settings.hooks.PostToolUse).toBeUndefined();
+    // PostToolUse 可以有別的用途（edit-guard），但不准再掛殺 dev server 的那套。
+    expect(JSON.stringify(settings.hooks.PostToolUse || [])).not.toMatch(/kill-dev-server|dev-server/);
   });
 
   test("vite dev server 會寫 pidfile（--own 的依據）", () => {
