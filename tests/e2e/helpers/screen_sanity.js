@@ -160,16 +160,22 @@ function describeSanity(r, label) {
   );
 }
 
-// live 與 offline 共用的門檻：全部為零。落單高位元組（orphanHighBytes）只記錄不判紅——
+// live／offline／錄製檔分流（helpers/triage_runner.js）共用的門檻，**唯一真相源**：
+// 回傳違規種類（空陣列＝健全）。落單高位元組（orphanHighBytes）只記錄不判紅——
 // PTT 端本身就可能把全形字切在畫面右緣（pfterm 同樣受限，見 term_buf.updateCharAttr 註解）。
-function expectScreenSane(r, label) {
-  const msg = describeSanity(r, label);
-  expect(r.decoderReady, msg).toBe(true);
-  expect(r.checked, msg).toBeGreaterThan(0);
-  expect(r.textMismatch, msg).toEqual([]);
-  expect(r.gridMisaligned, msg).toEqual([]);
-  expect(r.decodeFail, msg).toEqual([]);
-  expect(r.horizontalOverflow, msg).toBeLessThanOrEqual(0);
+function sanityViolations(r) {
+  const out = [];
+  if (r.decoderReady !== true) out.push('decoderNotReady');
+  if (!(r.checked > 0)) out.push('noRowsChecked');
+  if (r.textMismatch.length) out.push('textMismatch');
+  if (r.gridMisaligned.length) out.push('gridMisaligned');
+  if (r.decodeFail.length) out.push('decodeFail');
+  if (r.horizontalOverflow > 0) out.push('horizontalOverflow');
+  return out;
 }
 
-module.exports = { screenSanity, describeSanity, expectScreenSane };
+function expectScreenSane(r, label) {
+  expect(sanityViolations(r), describeSanity(r, label)).toEqual([]);
+}
+
+module.exports = { screenSanity, describeSanity, sanityViolations, expectScreenSane };

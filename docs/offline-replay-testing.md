@@ -132,6 +132,41 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 | `scn-deep-link` | hashchange deep link 完整落地＋F2（需帳號） | `deep_link_landing.offline` |
 | `scn-boardlist-class`／`scn-board-search-prompt` | 分類看板子清單平滑捲動、按 s 搜尋 prompt | `board_list.offline` |
 
+## live 錄製檔分流（`yarn triage:recordings`）
+live 核心只驗幾個畫面；這個工具把整卷 live 錄製檔**每一幀**都驗一次，紅幀自動切成待轉素材。
+零網路零登入（project `offline-triage`，同 offline 硬斷網），live 跑完隨時可跑、可反覆跑。
+- 入口 `tests/e2e/tools/triage-recordings.spec.js`，一卷一條 test；有紅幀 ⇒ test 紅（exit code 即結論）。
+  輸入預設 `tests/e2e/__recordings__/`；env `TRIAGE_RECORDINGS=<檔或目錄>[,…]` 可指定別的
+  （例：使用者給的 `ptt-debug-*.json`）。**不在 `test:e2e:offline` 裡**（會寫檔）。
+- 幀：`rec.cassette` 每個 step 的 recv 以 `ESC[?2026l`（pfterm sync frame 結尾，`docs/pttbbs-screen-protocol.md` §1.1「Synchronized Output」）切；沒有 ESU 的尾巴
+  自成一幀。逐幀 `App.onData` 直餵、等 notify／settle／BSU 保險絲清空，再跑 `screenSanity`，門檻
+  `screen_sanity.js#sanityViolations`（與 live、offline 共用唯一真相源）。
+- 只驗**終端機渲染鏈**：接管畫面的 pref 全關（`SCENARIO_BASE_PREFS`），因為錄製檔的 send 是當時按的鍵，
+  新開的 app 不會自己再按 ⇒ 好讀累積、列表好讀捲動視窗這類「client 送鍵才長得出來」的畫面不在範圍。
+- **第一個整頁重繪之前的幀不驗**：錄製是中途開始的，沒被寫到的格子不是真畫面（Big5 lead 配舊空白＝假 decodeFail）。
+- 切點（`recording_triage.js#cutCandidates`）：
+  - `clear`＝幀內含 `ESC[H ESC[2J`（`pfterm.c#fterm_rawclear`，redrawwin／Ctrl-L 都走它）。CONFIRMED：從這裡餵空白終端機得到同一畫面。保底切點。
+  - `home`＝幀以 `ESC[H` 起頭。pfterm 的翻頁 diff 也常從 home 起 ⇒ **不保證整屏**，只當較短切段候選：
+    runner 在新頁面只餵該段，buf 逐格指紋相同且違規重現才採用（最多試 4 個），否則退回 clear。
+  - 實況：PTT 很少送 `ESC[2J`（一卷 live 常只有進板那一次），所以段可能很長（數百幀），但保證可重現。
+- 併段：連續且違規種類相同的紅幀併成一段，只切第一幀；一卷最多切 5 段，其餘只計數（`omittedRuns`）。
+- 產出（`tests/e2e/cassettes/pending/`，gitignored；`findCassettes` 不掃子目錄）：
+  - `<錄製檔名>--f<幀>.json`：`meta.mode:'pending'`（任何 spec 都不會誤撿），`steps[0].on:'start'`，
+    中間 step 保留 `on/num/send`（`bootScenario` 可門控），末段 recv 截到紅幀為止。
+  - `<錄製檔名>.list.json`：每段的 `frame`／`step`／`t`（餵 `yarn debug:screens <錄製檔> <t>`）／`test`
+    （所在 live test，取自 `test.begin/end` 標記）／`violations`／`cut`／`reproduced`／`sameBuf`／`detail`。
+  - 重跑時先清掉**該卷**上一輪的產物；全綠＝只清不寫，連目錄都不建。
+- 隱私把關（`writePending`，全部在記憶體過完才落地，任一段失敗整卷不寫）：env 帳密**對串流**再 redact
+  （同 `scrubByStream` 理由）→ `assertNoLeak` → 本機家目錄／OS 使用者名稱不得出現在輸出文字
+  （`assertNoLocalInfo`；source 只寫 basename）；清單明文同樣 redact＋把關。env 沒 `PTT_USER` 時只能靠
+  錄製當下的 redact（會印提示）。
+- 待轉 → 正式素材：讀 `.list.json` 與 `debug:screens` 確認是本專案的 bug（不是 PTT 端寫壞，例 `docs/pttbbs-screen-protocol.md` §11.1.1）→
+  改名搬進 `cassettes/`、`meta.mode` 改成 spec 要的值、補 golden meta → 寫紅的 spec → 修綠。
+  入 repo 前照「使用者 Debug 錄製檔 → cassette」人工複查隱私。
+- 守護：`tests/unit/recording_triage.test.js`（切幀／切點／切段／時間對應／把關）、
+  `tests/e2e/offline/recording_triage.offline.spec.js`（scn 卷合成錄製檔：乾淨卷零產出；注入
+  `0x81 0x30` 壞幀 ⇒ 恰好紅在該幀、切段重現、寫出的素材自足重放）。
+
 ## 使用者 Debug 錄製檔 → cassette
 使用者在「設定 → 關於」開 Debug 錄製模式錄下的檔（`ptt-debug-*.json`，schema 見
 `src/js/debug_recorder_logic.js`）內建 `cassette` 欄位（`meta.mode:'debug-derived'`）：

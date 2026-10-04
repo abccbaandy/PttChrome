@@ -3,7 +3,8 @@
 //   1. live e2e 每輪自動錄一份（helpers/fixtures.js）→ tests/e2e/__recordings__/（gitignored）。
 //      live 有登入預算、不能反覆跑；這份錄製檔讓失敗現場與「新版面／新協定」可以搬到
 //      offline 反覆修：`yarn debug:screens <檔> [ms]` 看畫面，或依 docs/offline-replay-testing.md
-//      「使用者 Debug 錄製檔 → cassette」裁成素材。
+//      「使用者 Debug 錄製檔 → cassette」裁成素材；`yarn triage:recordings`
+//      （helpers/recording_triage.js）逐幀驗並自動切出紅幀素材。
 //   2. scenario 錄製器（tools/record-scenarios.spec.js）→ tests/e2e/cassettes/scn-*.json。
 //
 // 格式與使用者在「設定 → 關於」錄的 ptt-debug-*.json 完全相同（同一個 serializeRecording），

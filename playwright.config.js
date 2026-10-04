@@ -204,6 +204,16 @@ module.exports = defineConfig({
       dependencies: ['preflight'],
       testMatch: ['tools/record-cassette.spec.js', 'tools/record-scenarios.spec.js'],
     },
+    {
+      // offline-triage：live 錄製檔逐幀重放＋不跑版檢查，紅幀切成待轉素材
+      // （`yarn triage:recordings`，見 docs/offline-replay-testing.md「live 錄製檔分流」）。
+      // 零網路（同 offline 硬斷網）；會寫 cassettes/pending/，所以**不在** test:e2e:offline 裡。
+      // 每卷寫自己檔名開頭的檔、彼此無相依 ⇒ 名稱以 offline 開頭，可多 worker。
+      name: 'offline-triage',
+      fullyParallel: true,
+      use: { ...devices['Desktop Chrome'], proxy: OFFLINE_NO_NETWORK, video: 'off' },
+      testMatch: 'tools/triage-recordings.spec.js',
+    },
   ],
   webServer: {
     // 直接跑單一 node 進程（vite bin），不經 npx/yarn 多層 wrapper，

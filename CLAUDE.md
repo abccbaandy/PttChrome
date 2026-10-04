@@ -65,7 +65,8 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     其餘功能一律 offline；需要新的 PTT 往返就錄 scenario 卷（`yarn record:scenarios`，一次登入，
     見 `docs/offline-replay-testing.md`「scenario 卷」）。守護 `e2e_login_budget`（live 只准 `core.spec.js`）。
     每輪 live 自動存 DebugRecorder 錄製檔到 `tests/e2e/__recordings__/`（gitignored）：live 紅在新版面／
-    新協定時，拿它到 offline 重現修綠，live 只再跑一輪確認。
+    新協定時，拿它到 offline 重現修綠，live 只再跑一輪確認。`yarn triage:recordings`（零登入）把錄製檔
+    逐幀過 `screen_sanity`，紅幀自動切成 `cassettes/pending/`（gitignored）＋清單，全綠不產出。
   - **live／record 跑的期間不准改 `src/`**：Vite HMR 整頁重載 ⇒ 產品自動登入**再登一次**（吃登入額度）。
   - **`live`／`record` project 前置 `preflight`**（`tests/e2e/preflight.setup.js`）：只驗「連得到 PTT」，
     紅了整包 live 不跑，只留一則明確結論（區分「app 沒 boot＝本專案問題」／`connectState=2`＝**PTT 端不可達或維護中**／

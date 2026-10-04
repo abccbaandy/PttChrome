@@ -839,7 +839,9 @@ module.exports = {
   aiTaskStats,
   replayCassette,
   replayListCassette,
+  applyCassetteTermSize,
   bootOffline,
+  SCENARIO_BASE_PREFS,
   bootScenario,
   waitFed,
 };

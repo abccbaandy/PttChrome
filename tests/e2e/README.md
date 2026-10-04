@@ -27,6 +27,10 @@ PTT 有登入額度（見「登入預算」）⇒ live 不能像 offline 一樣�
 `docs/offline-replay-testing.md`「使用者 Debug 錄製檔 → cassette」。**live 紅在新版面／新協定
 時的流程：拿錄製檔到 offline 重現 → 修到綠 → live 只再跑一輪確認。**
 
+**每輪 live 之後跑 `yarn triage:recordings`**（零網路零登入）：錄製檔逐幀重放＋同一個檢查器，
+每一幀都驗（live 核心只驗幾個畫面）；紅幀自動切成 `cassettes/pending/*.json`＋`<錄製檔>.list.json`
+清單，全綠不產出。詳見 `docs/offline-replay-testing.md`「live 錄製檔分流」。
+
 2026-10 前的 live 測項去向（全部改由 scenario 卷重放，素材 `cassettes/scn-*.json`）：
 
 | 舊 live | offline |
@@ -285,6 +289,9 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
 - `helpers/screen_sanity.js`：不跑版／不亂碼的結構檢查（live 核心與 offline 共用）
 - `helpers/recording.js`：DebugRecorder 開／停／redact 把關、live 錄製檔存檔、錄製檔 → scenario cassette、
   `waitWireQuiet`（往返靜止＋背景佇列 idle）
+- `helpers/recording_triage.js`（純邏輯：切幀／切點／切段／再 redact／寫檔把關）＋
+  `helpers/triage_runner.js`（瀏覽器逐幀重放與切段驗證）＋`tools/triage-recordings.spec.js`（入口，
+  project `offline-triage`）：live 錄製檔分流，見 `docs/offline-replay-testing.md`「live 錄製檔分流」
 - `tools/record-scenarios.spec.js`：scenario 錄製器（見 `docs/offline-replay-testing.md`「scenario 卷」）
 - `helpers/fixtures.js`：共用登入 session fixture（見上）
 - `core.spec.js`：live 核心（見「live 範圍」）
