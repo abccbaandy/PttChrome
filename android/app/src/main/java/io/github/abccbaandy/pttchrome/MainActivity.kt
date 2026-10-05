@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
- * WebView 殼：載入線上網頁版，並注入兩樣東西（只給 [AppConfig.PAGE_ORIGIN]）：
+ * WebView 殼：載入線上網頁版（或 App 設定的 dev server，[PageSource]），並注入兩樣東西（只給當前來源的 origin）：
  *  - `window.__PTT_ANDROID__`（document-start script）：本機 proxy 的連線位址
  *  - `window.PttAndroid`（WebMessageListener）：密碼管理員 bridge（[CredentialBridge]）
  * 網頁端對應 src/js/android_bridge.js。架構與限制見 docs/android-app.md。
@@ -59,6 +59,9 @@ class MainActivity : ComponentActivity() {
     private var service: ConnectionService? = null
     private var bound = false
     private val credentials by lazy { CredentialBridge(this) }
+    private val settings by lazy { AppSettings(this) }
+    /** 目前 WebView 載入的來源；注入規則跟著 WebView 建立時決定，換來源＝重建 WebView。 */
+    private var pageSource = PageSource.PRODUCTION
     private var fileCallback: ValueCallback<Array<Uri>>? = null
 
     private val fileChooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -118,6 +121,8 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
 
+        SettingsActivity.publishShortcut(this)
+
         val intent = Intent(this, ConnectionService::class.java)
         startForegroundService(intent)
         bound = bindService(intent, connection, Context.BIND_AUTO_CREATE)
@@ -159,7 +164,10 @@ class MainActivity : ComponentActivity() {
         // 背景時 renderer 仍維持高優先度，降低被系統回收（回收＝網頁狀態全失、連線跟著斷）的機率。
         wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
 
-        val origins = setOf(AppConfig.PAGE_ORIGIN)
+        val page = settings.pageSource()
+        pageSource = page
+        if (page.isDev) Toast.makeText(this, getString(R.string.dev_mode_toast, page.origin), Toast.LENGTH_LONG).show()
+        val origins = setOf(page.origin)
         val config = JSONObject()
             .put("version", BuildConfig.VERSION_NAME)
             .put("site", site)
@@ -167,23 +175,40 @@ class MainActivity : ComponentActivity() {
             wv, "window.__PTT_ANDROID__ = Object.freeze($config);", origins
         )
         WebViewCompat.addWebMessageListener(wv, "PttAndroid", origins) { _, message, sourceOrigin, isMainFrame, reply ->
-            if (!isMainFrame || sourceOrigin.toString() != AppConfig.PAGE_ORIGIN) return@addWebMessageListener
+            if (!isMainFrame || sourceOrigin.toString() != page.origin) return@addWebMessageListener
             val request = try { JSONObject(message.data ?: return@addWebMessageListener) } catch (_: Exception) { return@addWebMessageListener }
+            if (request.optString("op") == "openAppSettings") {
+                openSettings()
+                reply.postMessage(JSONObject().put("id", request.optInt("id")).put("ok", true).toString())
+                return@addWebMessageListener
+            }
             lifecycleScope.launch { reply.postMessage(credentials.handle(request)) }
         }
 
         wv.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) = BootTrace.mark("pageStarted")
             override fun onPageCommitVisible(view: WebView, url: String?) = BootTrace.mark("pageCommitVisible")
+            // 網頁的 history sentinel（history_back_guard.js）每次 pushState／back 都會再觸發
+            // onPageFinished ⇒ Resource Timing 每個 WebView 只排一次；10 秒內 WebView 可能已被換掉
+            //（切換頁面來源、renderer 回收），回呼前確認它還是現役的那個。
+            private var timingScheduled = false
+
             override fun onPageFinished(view: WebView, url: String?) {
                 BootTrace.mark("pageFinished")
+                if (timingScheduled) return
+                timingScheduled = true
                 view.postDelayed({
+                    if (webView !== view) return@postDelayed
                     view.evaluateJavascript(BootTrace.RESOURCE_TIMING_JS) { BootTrace.mark("timing $it") }
                 }, 10_000)
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
+                if (url.scheme == APP_LINK_SCHEME) {
+                    handleAppLink(url)
+                    return true
+                }
                 if (isAppPage(url)) return false
                 // 文章裡的網址、圖片原圖等：交給系統瀏覽器，不要把 BBS 畫面換掉。
                 openInExternalBrowser(url)
@@ -192,13 +217,7 @@ class MainActivity : ComponentActivity() {
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) {
-                    view.loadDataWithBaseURL(
-                        null,
-                        "<body style='background:#000;color:#ccc;font:16px sans-serif;padding:24px'>" +
-                            getString(R.string.page_error, error.description).replace("\n", "<br>") +
-                            "<p><a style='color:#4a90d9' href='${AppConfig.PAGE_URL}'>重新載入</a></p></body>",
-                        "text/html", "utf-8", null,
-                    )
+                    view.loadDataWithBaseURL(null, errorPageHtml(error.description), "text/html", "utf-8", null)
                 }
             }
 
@@ -266,7 +285,45 @@ class MainActivity : ComponentActivity() {
 
         root.addView(wv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         webView = wv
-        wv.loadUrl(AppConfig.PAGE_URL)
+        wv.loadUrl(page.url)
+    }
+
+    // ---- 載入失敗頁＋App 設定入口 ----
+    // 失敗頁是 data: 頁，上面的連結用自訂 scheme 回到原生（shouldOverrideUrlLoading 攔下）。
+    // dev server 模式最常見的失敗是電腦沒開 dev server，所以多給「改回正式版」。
+
+    private fun errorPageHtml(description: CharSequence): String {
+        val esc = { s: String -> android.text.Html.escapeHtml(s) }
+        val link = { href: String, label: String -> "<p><a style='color:#4a90d9' href='$href'>${esc(label)}</a></p>" }
+        val sb = StringBuilder("<body style='background:#000;color:#ccc;font:16px sans-serif;padding:24px'>")
+        sb.append(esc(getString(R.string.page_error, description)).replace("\n", "<br>"))
+        if (pageSource.isDev) sb.append("<p>").append(esc(getString(R.string.page_error_dev, pageSource.origin))).append("</p>")
+        sb.append(link(pageSource.url, getString(R.string.page_error_reload)))
+        if (pageSource.isDev) sb.append(link("$APP_LINK_SCHEME://use-production", getString(R.string.page_error_use_production)))
+        sb.append(link("$APP_LINK_SCHEME://settings", getString(R.string.settings_title)))
+        return sb.append("</body>").toString()
+    }
+
+    private fun handleAppLink(url: Uri) {
+        when (url.host) {
+            "settings" -> openSettings()
+            "use-production" -> {
+                settings.devServerEnabled = false
+                applyPageSourceChange()
+            }
+        }
+    }
+
+    private fun openSettings() {
+        startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    /** App 設定改了頁面來源：重建 WebView（注入的 origin 規則只能在建立時給）。回傳是否有重建。 */
+    private fun applyPageSourceChange(): Boolean {
+        if (webView == null || settings.pageSource() == pageSource) return false
+        service?.refreshNotification()
+        recreateWebView()
+        return true
     }
 
     private var lastImeInset = -1
@@ -312,6 +369,11 @@ class MainActivity : ComponentActivity() {
         if (rendererRecreated) {
             rendererRecreated = false
             Toast.makeText(this, R.string.renderer_recreated, Toast.LENGTH_LONG).show()
+        }
+        // 從 App 設定回來：來源變了就換新的 WebView，不必蓋舊快照。
+        if (applyPageSourceChange()) {
+            snapshot = null
+            return
         }
         val wv = webView ?: return
         if (stoppedAt == 0L) return
@@ -378,9 +440,10 @@ class MainActivity : ComponentActivity() {
         service?.let { createWebView(it.site) }
     }
 
-    private fun isAppPage(url: Uri): Boolean =
-        "${url.scheme}://${url.host}" == AppConfig.PAGE_ORIGIN &&
-            (url.path ?: "").startsWith(AppConfig.PAGE_URL.toUri().path ?: "/")
+    private fun isAppPage(url: Uri): Boolean {
+        val origin = if (url.port == -1) "${url.scheme}://${url.host}" else "${url.scheme}://${url.host}:${url.port}"
+        return origin == pageSource.origin && (url.path ?: "").startsWith(pageSource.url.toUri().path ?: "/")
+    }
 
     private fun showMessage(text: String) {
         root.addView(TextView(this).apply {
@@ -397,7 +460,8 @@ class MainActivity : ComponentActivity() {
         service?.onQuitRequested = null
         if (bound) unbindService(connection)
         if (isFinishing) stopService(Intent(this, ConnectionService::class.java))
-        webView?.destroy()
+        // 先從視窗拆下再 destroy（還掛著就 destroy 會印 cr_AwContents 警告）。
+        webView?.let { root.removeView(it); it.destroy() }
         webView = null
         super.onDestroy()
     }
@@ -406,5 +470,7 @@ class MainActivity : ComponentActivity() {
         const val TAG = "PttChromeApp"
         /** 快照最多蓋這麼久：出幀回呼沒來也要掀開，不能讓使用者對著舊畫面操作。 */
         const val SNAPSHOT_MAX_MS = 5000L
+        /** 載入失敗頁上的原生動作連結（[handleAppLink]）。 */
+        const val APP_LINK_SCHEME = "pttchrome-app"
     }
 }

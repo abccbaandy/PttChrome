@@ -55,7 +55,7 @@ import {
   credentialStoreAvailable,
   storeCredential as storeCredentialInManager,
 } from "../../js/credential_store";
-import { isAndroidApp } from "../../js/android_bridge";
+import { isAndroidApp, openAppSettings } from "../../js/android_bridge";
 import { DEFAULT_IMGUR_PROXY_BASE } from "../../js/image_proxy";
 import {
   BUILTIN_QUICK_SEARCH,
@@ -1236,6 +1236,15 @@ export const PrefModal = ({
               {isAndroidApp() ? (
                 <PrefSection legendKey="options_connection_bbs">
                   <Text size="sm">{i18n("options_androidProxyNote")}</Text>
+                  {/* APK 自己的設定（dev server 模式等）在原生頁面，不進網頁 prefs（不同步到桌機）。 */}
+                  <Button
+                    variant="default"
+                    size="xs"
+                    mt="xs"
+                    onClick={openAppSettings}
+                  >
+                    {i18n("options_androidAppSettings")}
+                  </Button>
                 </PrefSection>
               ) : (
                 <PrefSection legendKey="options_connection_bbs">

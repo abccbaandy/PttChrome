@@ -7,6 +7,7 @@ import {
   androidSite,
   androidBridgeAvailable,
   requestAndroid,
+  openAppSettings,
   androidImeInset,
   onAndroidIme,
   IME_EVENT,
@@ -100,6 +101,21 @@ describe("requestAndroid", () => {
     respond({ id: sent[0].id, ok: true, user: "x", password: "y" });
     await expect(second).resolves.toMatchObject({ user: "x" });
     first.catch(() => {});
+  });
+});
+
+describe("openAppSettings", () => {
+  test("asks native to open the App settings screen", async () => {
+    const { sent, respond } = installAndroid();
+    const p = openAppSettings();
+    expect(sent).toEqual([{ id: sent[0].id, op: "openAppSettings" }]);
+    respond({ id: sent[0].id, ok: true });
+    await expect(p).resolves.toEqual({ id: sent[0].id, ok: true });
+  });
+
+  // 網頁設定頁的按鈕直接呼叫它：不在 APK 裡（或 bridge 壞了）不能變成 unhandled rejection。
+  test("never rejects without a bridge", async () => {
+    await expect(openAppSettings()).resolves.toBeNull();
   });
 });
 

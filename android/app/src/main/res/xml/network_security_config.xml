@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 明文只放行本機前景服務的 WebSocket proxy。 -->
+<!-- 明文只放行本機：前景服務的 WebSocket proxy（127.0.0.1），以及 App 設定的 dev server 模式
+     （adb reverse 的 localhost／127.0.0.1，見 PageSource）。debug APK 另有覆寫檔（src/debug）。 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
     </domain-config>
 </network-security-config>

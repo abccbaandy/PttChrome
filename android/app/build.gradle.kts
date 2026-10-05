@@ -40,6 +40,12 @@ android {
     }
 
     buildTypes {
+        // 本機 debug APK 跟正式版並存（不同 applicationId ⇒ 不會覆蓋安裝）。名稱與明文設定由
+        // src/debug/res 覆寫。Firebase（Google 登入）與 assetlinks 都另外註冊了 .debug 這個套件。
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

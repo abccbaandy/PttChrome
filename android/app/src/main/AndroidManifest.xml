@@ -34,6 +34,12 @@
             </intent-filter>
         </activity>
 
+        <!-- App 設定（dev server 模式等）。入口：網頁 bridge、動態捷徑、載入失敗頁，都是本 App 自己開。 -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_title" />
+
         <!-- specialUse 而非 dataSync：dataSync 在 Android 15 起每 24 小時限 6 小時。 -->
         <service
             android:name=".ConnectionService"

@@ -608,6 +608,9 @@ export const en_US = {
   "options_androidProxyNote": {
     "message": "The Android app always connects to PTT through its on-device connection service (stays connected in the background); no proxy setting needed."
   },
+  "options_androidAppSettings": {
+    "message": "App settings"
+  },
   "options_syncSignIn": {
     "message": "Sign in with Google to sync"
   },

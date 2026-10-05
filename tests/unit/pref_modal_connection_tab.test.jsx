@@ -178,4 +178,23 @@ describe("連線分頁：Android APK", () => {
     expect(field("useImgurProxy")).toBeInTheDocument();
     expect(screen.getByText(i18n("options_androidProxyNote"))).toBeInTheDocument();
   });
+
+  // APK 自己的設定（dev server 模式）在原生頁；網頁設定頁是主要入口。
+  test("「App 設定」按鈕經 bridge 請原生開設定頁", () => {
+    const sent = [];
+    window.__PTT_ANDROID__ = { site: "wstelnet://127.0.0.1:1/bbs/t" };
+    window.PttAndroid = { postMessage: (s) => sent.push(JSON.parse(s)), addEventListener() {} };
+    try {
+      openConnectionTab();
+      fireEvent.click(screen.getByRole("button", { name: i18n("options_androidAppSettings") }));
+      expect(sent.map((m) => m.op)).toEqual(["openAppSettings"]);
+    } finally {
+      delete window.PttAndroid;
+    }
+  });
+
+  test("一般瀏覽器沒有「App 設定」按鈕", () => {
+    openConnectionTab();
+    expect(screen.queryByRole("button", { name: i18n("options_androidAppSettings") })).toBeNull();
+  });
 });

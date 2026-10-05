@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<!-- TypographyDashes：字串裡的雙減號是 yarn start 的指令參數，不是破折號。 -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="TypographyDashes">
     <string name="app_name">PttChrome</string>
     <string name="notif_channel">PTT 連線</string>
     <string name="notif_title">PttChrome</string>
@@ -10,5 +11,21 @@
     <string name="renderer_recreated">在背景時畫面程序被系統回收，已重新載入並重新連線</string>
     <string name="process_restored">App 在背景時被系統關閉，已重新啟動並重新連線</string>
     <string name="page_error">無法載入 PttChrome：%1$s\n請確認網路後按返回鍵重試。</string>
+    <string name="page_error_reload">重新載入</string>
+    <string name="page_error_dev">目前是開發模式，載入的是 %1$s。請確認電腦上的 dev server 有開（yarn start --host），以及 adb reverse tcp:8080 tcp:8080。</string>
+    <string name="page_error_use_production">改回正式版</string>
+    <string name="notif_title_dev">PttChrome（開發模式：%1$s）</string>
+    <string name="dev_mode_toast">開發模式：載入 %1$s</string>
+    <string name="settings_title">App 設定</string>
+    <string name="settings_developer">開發者</string>
+    <string name="settings_dev_server">載入電腦上的 dev server</string>
+    <string name="settings_dev_help">改網頁程式不必推版就能在 App 內測試。電腦執行 yarn start --host，手機接 USB（或無線偵錯）後在電腦執行 adb reverse tcp:8080 tcp:8080，網址填 http://localhost:8080/。正式版只接受 localhost。</string>
+    <string name="settings_dev_help_lan">改網頁程式不必推版就能在 App 內測試。電腦執行 yarn start --host，然後二擇一：\n• adb reverse tcp:8080 tcp:8080，網址填 http://localhost:8080/\n• 同一區網，網址填 http://&lt;電腦區網 IP&gt;:8080/（電腦防火牆要放行 8080）</string>
+    <string name="settings_dev_invalid">只接受 http://localhost:&lt;port&gt;/ 或 http://127.0.0.1:&lt;port&gt;/</string>
+    <string name="settings_dev_invalid_lan">只接受 http:// 加 localhost、127.0.0.1 或私有區網 IP（10.x／172.16–31.x／192.168.x）</string>
+    <string name="settings_save">儲存並返回</string>
+    <string name="settings_saved">已儲存</string>
+    <string name="settings_about">關於</string>
+    <string name="settings_password_note">App 存的 PTT 密碼與網頁版（Chrome）分開：Google 密碼管理員只會關聯上架 Google Play 的 App，本 App 從 GitHub 安裝，所以兩邊各存一份。</string>
     <string name="asset_statements" translatable="false">[{\"include\": \"https://abccbaandy.github.io/.well-known/assetlinks.json\"}]</string>
 </resources>

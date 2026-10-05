@@ -607,6 +607,9 @@
   "options_androidProxyNote": {
     "message": "Android App 固定經由手機上的本機連線服務連到 PTT（背景不斷線），不需設定 Proxy。"
   },
+  "options_androidAppSettings": {
+    "message": "App 設定"
+  },
   "options_syncSignIn": {
     "message": "使用 Google 登入並同步"
   },

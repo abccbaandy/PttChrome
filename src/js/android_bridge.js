@@ -1,6 +1,7 @@
 // Android APK 殼（android/，見 docs/android-app.md）與網頁之間的 bridge。
 //
-// 兩個由原生注入的全域（都只注入給 https://abccbaandy.github.io，別的 origin 看不到）：
+// 兩個由原生注入的全域（只注入給當前頁面來源的 origin：正式版 https://abccbaandy.github.io，
+// 或 APK「App 設定」開了 dev server 模式時的 http://localhost:8080 之類；別的 origin 看不到）：
 //   window.__PTT_ANDROID__  document-start script 設的設定：{ version, site }
 //                           site ＝本機前景服務的 WebSocket proxy（wstelnet://127.0.0.1:<port>/bbs/<token>）
 //   window.PttAndroid       androidx.webkit WebMessageListener 物件：postMessage(string)／onmessage
@@ -10,6 +11,7 @@
 //   → { id, op: 'storePassword', user, password }        ← { id, ok }
 //   → { id, op: 'googleSignIn', serverClientId }         ← { id, ok, idToken } | { id, ok:false, error }
 //   → { id, op: 'googleSignOut' }                        ← { id, ok }
+//   → { id, op: 'openAppSettings' }                      ← { id, ok }   開原生「App 設定」頁
 // ok:false ＝使用者取消／沒有存任何密碼／原生出錯，一律當「沒有」處理。
 // googleSignIn（雲端同步登入，google_sign_in.js）：原生 Credential Manager
 //   GetSignInWithGoogleOption 取 Google ID token；serverClientId ＝ Firebase Google provider
@@ -100,6 +102,12 @@ export function requestAndroid(op, payload = {}) {
       reject(e);
     }
   });
+}
+
+// 原生「App 設定」頁（dev server 模式等 APK 自己的設定）。失敗（舊版 APK 不認得這個 op 不會回覆）
+// 不影響網頁，呼叫端不必處理。
+export function openAppSettings() {
+  return requestAndroid('openAppSettings').catch(() => null);
 }
 
 export const IME_EVENT = 'pttandroid:ime';

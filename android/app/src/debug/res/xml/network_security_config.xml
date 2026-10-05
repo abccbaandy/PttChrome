@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- debug APK 專用（覆寫 main）：dev server 模式可填任意私有區網 IP，而 network-security-config
+     無法只放行 IP 範圍 ⇒ debug 版整體放行明文。正式版維持 main 的白名單（只放行本機）。
+     網址白名單本身在 PageSource.parseDevServer。 -->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>

@@ -29,6 +29,7 @@ class ConnectionService : Service() {
     private val binder = LocalBinder()
     private val main = Handler(Looper.getMainLooper())
     private lateinit var proxy: LocalWebSocketProxy
+    private lateinit var settings: AppSettings
 
     /** MainActivity 綁上時設定：通知的「中斷連線並關閉」要連畫面一起收掉。 */
     var onQuitRequested: (() -> Unit)? = null
@@ -38,8 +39,10 @@ class ConnectionService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        settings = AppSettings(this)
         proxy = LocalWebSocketProxy(
             token = randomToken(),
+            allowedPageOrigin = { settings.pageSource().origin },
             onStateChanged = { n -> main.post { updateNotification(n > 0) } },
             onEvent = BootTrace::mark,
         )
@@ -71,6 +74,9 @@ class ConnectionService : Service() {
         super.onDestroy()
     }
 
+    /** App 設定切換頁面來源後由 MainActivity 呼叫：通知上的「開發模式」標示要跟著變。 */
+    fun refreshNotification() = updateNotification(proxy.activeSessions > 0)
+
     private fun updateNotification(connected: Boolean) {
         getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification(connected))
     }
@@ -86,9 +92,12 @@ class ConnectionService : Service() {
             Intent(this, ConnectionService::class.java).setAction(ACTION_QUIT),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // dev server 模式要一直看得到：正式版也能開，開著忘了關＝一直在跑電腦上的網頁。
+        val page = settings.pageSource()
+        val title = if (page.isDev) getString(R.string.notif_title_dev, page.origin) else getString(R.string.notif_title)
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_terminal)
-            .setContentTitle(getString(R.string.notif_title))
+            .setContentTitle(title)
             .setContentText(getString(if (connected) R.string.notif_connected else R.string.notif_idle))
             .setContentIntent(open)
             .setOngoing(true)

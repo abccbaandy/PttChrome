@@ -29,7 +29,8 @@ class LocalWebSocketProxy(
     private val token: String,
     private val upstreamUrl: String = AppConfig.UPSTREAM_URL,
     private val upstreamOrigin: String = AppConfig.UPSTREAM_ORIGIN,
-    private val allowedPageOrigin: String = AppConfig.PAGE_ORIGIN,
+    /** 握手當下才取值：App 設定切換 dev server 後，proxy 只認新的頁面 origin（[PageSource]）。 */
+    private val allowedPageOrigin: () -> String = { AppConfig.PAGE_ORIGIN },
     private val onStateChanged: (activeSessions: Int) -> Unit = {},
     /** 診斷事件（連上游耗時、第一筆 PTT 資料）；ConnectionService 接到 logcat（BootTrace）。 */
     private val onEvent: (String) -> Unit = {},
@@ -95,7 +96,7 @@ class LocalWebSocketProxy(
                 val o = local.getOutputStream()
                 out = o
                 val req = WsProtocol.parseHttpRequest(WsProtocol.readHttpHeader(input))
-                when (val verdict = WsProtocol.evaluate(req, path, allowedPageOrigin)) {
+                when (val verdict = WsProtocol.evaluate(req, path, allowedPageOrigin())) {
                     is WsProtocol.Handshake.Reject -> {
                         o.write(WsProtocol.httpError(verdict.code, verdict.reason)); o.flush()
                         return

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- debug APK（applicationId 加 .debug，與正式版並存）：桌面圖示名稱分得出來。 -->
+<resources>
+    <string name="app_name">PttChrome Debug</string>
+</resources>

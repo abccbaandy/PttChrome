@@ -29,6 +29,7 @@ class LocalWebSocketProxyTest {
     private val pttReceived = LinkedBlockingQueue<ByteString>()
     private val pttClosed = java.util.concurrent.CountDownLatch(1)
     private var pttSocket: WebSocket? = null
+    @Volatile private var pageOrigin = AppConfig.PAGE_ORIGIN
 
     @Before fun setUp() {
         ptt.enqueue(MockResponse.Builder().webSocketUpgrade(object : WebSocketListener() {
@@ -46,6 +47,7 @@ class LocalWebSocketProxyTest {
         proxy = LocalWebSocketProxy(
             token = "tok",
             upstreamUrl = ptt.url("/bbs").toString().replace("http://", "ws://"),
+            allowedPageOrigin = { pageOrigin },
         )
         proxy.start()
     }
@@ -102,6 +104,16 @@ class LocalWebSocketProxyTest {
         val (_, ev) = connect(origin = "https://evil.example")
         assertEquals(403, ev.failures.poll(5, TimeUnit.SECONDS)?.code)
         assertEquals(0, ptt.requestCount)
+    }
+
+    // App 設定切到 dev server：proxy 改認 dev 頁的 origin，正式版 origin 反而被拒（同一時間只認一個）。
+    @Test fun followsCurrentPageOrigin() {
+        pageOrigin = "http://localhost:8080"
+        val (_, rejected) = connect(origin = AppConfig.PAGE_ORIGIN)
+        assertEquals(403, rejected.failures.poll(5, TimeUnit.SECONDS)?.code)
+
+        val (_, ev) = connect(origin = "http://localhost:8080")
+        assertEquals("banner", ev.messages.poll(5, TimeUnit.SECONDS)?.utf8())
     }
 
     @Test fun siteUsesLoopbackAndToken() {
