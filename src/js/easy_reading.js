@@ -1664,6 +1664,16 @@ EasyReading.prototype._onViewUpdated = function(e) {
     this._advanceScrollRestore();
     return;
   }
+  // 推完回文章的「落在文末」（requestScrollToBottom）要排在 forward 送鍵**之前**：
+  // 先送了 PageDown，End 就得等它回來（P4），白讀一頁。啟動了反向讀取就把這一幀
+  // 交給它（同上面的反向分支）。
+  if (this._pendingScrollRestore && this._pendingScrollRestore.bottom) {
+    this._advanceScrollRestore();
+    if (this._reverse) {
+      this.sendCommandAfterUpdate = '';
+      return;
+    }
+  }
   if (this.sendCommandAfterUpdate) {
     const keys = this.sendCommandAfterUpdate;
     this.sendCommandAfterUpdate = '';
@@ -2159,6 +2169,13 @@ EasyReading.prototype.requestScrollRestore = function(lineIndex) {
   this._pendingScrollRestore = { lineIndex: lineIndex, tries: 0 };
 };
 
+// 長推文送完回到文章：落在文末（＝按 End：捲到底黏住，讀取中則反向讀取直接跳文末）。
+// 與 requestScrollRestore 共用同一個 one-shot 欄位 ⇒ 離開文章／使用者按鍵接手的清除
+// 點一併適用，兩者也不會同時掛著。
+EasyReading.prototype.requestScrollToBottom = function() {
+  this._pendingScrollRestore = { bottom: true, tries: 0 };
+};
+
 EasyReading.prototype._advanceScrollRestore = function() {
   const pending = this._pendingScrollRestore;
   if (!pending) return;
@@ -2168,6 +2185,18 @@ EasyReading.prototype._advanceScrollRestore = function() {
     return;
   }
   pending.tries++;
+  if (pending.bottom) {
+    // 要等好讀真的接手、累積頁有東西了，End 的兩個動作才有對象。
+    if (!this._enabled || this._functionMode || !this.startedEasyReading ||
+        this._view._accEndRow == null) {
+      if (pending.tries > MAX_SCROLL_RESTORE_TRIES) this._pendingScrollRestore = null;
+      return;
+    }
+    this._pendingScrollRestore = null;
+    this._stickBottom();
+    this._requestReverse();
+    return;
+  }
   const step = nextScrollRestoreStep({
     lineIndex: pending.lineIndex,
     tries: pending.tries,

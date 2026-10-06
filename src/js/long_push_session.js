@@ -860,10 +860,11 @@ LongPushSession.prototype = {
       // recommend() 一律 return FULLUPDATE（bbs.c:2467-2473），上游會把人丟回文章
       // 列表。使用者是從文章裡按的，就把他送回去——但**先確認游標還在原篇**：
       // 開錯文章比推錯更糟（使用者會在錯的地方繼續讀、繼續推）。
+      // 推完回文章落在**文末**（剛推的那幾則就在那），不還原推之前的閱讀位置。
       return this._gate(result.facts, function() {
         self._enqueueReopen(function() {
           self._finishDone(total);
-        });
+        }, { toBottom: true });
       });
     }
     this._finishDone(total);
@@ -988,13 +989,18 @@ LongPushSession.prototype = {
 
   // 按 ⏎ 回到原文章並還原閱讀位置。兩個消費者：送完全部推文的收工，以及探路
   // 之後的歸位（被擋下來的人也要回得去）。land(facts) 的 facts 在回不去時是 null。
-  _enqueueReopen: function(onLanded) {
+  // opts.toBottom：送完推文的收工 ⇒ 落在文末看自己剛推的，而不是推之前的位置。
+  _enqueueReopen: function(onLanded, opts) {
     const self = this;
+    const toBottom = !!(opts && opts.toBottom);
     const land = function(facts) {
       const er = self._core.easyReading;
+      if (toBottom) {
+        if (er && er.requestScrollToBottom) er.requestScrollToBottom();
+      }
       // 按 Q 取 AID 會把使用者踢出文章（view_postinfo 也 return FULLUPDATE），
       // 不還原閱讀位置等於把他的進度吃掉。
-      if (self._readLineIndex && er && er.requestScrollRestore)
+      else if (self._readLineIndex && er && er.requestScrollRestore)
         er.requestScrollRestore(self._readLineIndex);
       onLanded(facts);
     };

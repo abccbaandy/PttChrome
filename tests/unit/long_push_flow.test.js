@@ -534,7 +534,9 @@ describe("取得文章代碼", () => {
     expect(h.sent).not.toContain("X");
   });
 
-  test("推完回文章時把閱讀位置還回去", () => {
+  // 推完要看到自己剛推的那幾則 ⇒ 落在文末，**不是**推之前的閱讀位置
+  // （舊行為：還原到按 X 那一刻的位置，等於把人丟回剛才讀到的地方）。
+  test("推完回文章時落在文末，不還原推之前的閱讀位置", () => {
     const h = harness();
     h.session._readLineIndex = 42;
     h.session.start({ text: "內容", type: "push" });
@@ -544,7 +546,8 @@ describe("取得文章代碼", () => {
     h.settle(CONFIRM);
     h.settleList([ANCHOR_ROW(1234, true)], 0);
     h.settle(ARTICLE_FOOTER);
-    expect(h.restored).toEqual([42]);
+    expect(h.restored).toEqual([]);
+    expect(h.toBottom).toBe(1);
   });
 });
 

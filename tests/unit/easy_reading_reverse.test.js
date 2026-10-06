@@ -151,6 +151,37 @@ describe("前提：forward 讀完＝整篇逐列一次", () => {
   });
 });
 
+// 長推文推完回到文章（long_push_session._enqueueReopen toBottom）：落在文末看自己剛推的，
+// 等同按 End —— 不可以停在文章開頭，也不可以還原推之前的閱讀位置。
+describe("推完回文章：requestScrollToBottom", () => {
+  test("讀取中：下一個回應起走反向讀取，文末立刻可見，且不疊送鍵", () => {
+    const h = setup({ total: 300 });
+    h.open(); // reopen 落地＝文章第一頁；此刻 forward 已送出一個 PageDown
+    expect(h.wire).toEqual([PGDN]);
+    h.er.requestScrollToBottom();
+    h.step(); // PageDown 的回應到了 ⇒ 這一幀消費 pending，送 End
+    expect(h.er._pendingScrollRestore).toBeNull();
+    expect(h.wire).toEqual([END]);
+    h.step(); // End 落地
+    expect(h.texts().at(-1)).toBe("article line 300");
+    h.pump();
+    expect(h.texts()).toEqual(h.expected());
+    expect(h.overlaps).toBe(0);
+  });
+
+  test("短文（一頁就 100%）：只捲到底，不送任何多餘的鍵", () => {
+    const h = setup({ total: 10 });
+    h.open();
+    h.pump();
+    h.er.requestScrollToBottom();
+    h.view.mainDisplay.scrollTop = 0;
+    h.buf.notify();
+    expect(h.er._pendingScrollRestore).toBeNull();
+    expect(h.view.mainDisplay.scrollTop).toBe(h.view.mainDisplay.scrollHeight);
+    expect(h.wire).toEqual([]);
+  });
+});
+
 describe("反向讀取（End）", () => {
   test("讀取中按 End：下一個回應就看得到文末，最後與從頭讀完逐列相同", () => {
     const h = setup({ total: 300 });

@@ -326,12 +326,16 @@ term.ptt.cc 送來的實錄（`ptt-debug-20260917-221112` t=9736，`\e[1m` 已�
    `modalShown` 會 true→false→true，中間那一幀終端機會把焦點搶回隱藏 input `#t`。
 9. **攔截時不可以提前 `_enterFunctionMode()`**。那個函式結尾的同步 redraw 會把
    `mainDisplay.scrollTop` 歸零，而序幕的 ORDER INVARIANT 要在那之前用 scrollTop
-   算閱讀位置、並讀文章標頭錨點 ⇒ 提前進入＝送完回不到原閱讀位置。這就是三個
+   算閱讀位置、並讀文章標頭錨點 ⇒ 提前進入＝探路／取消後回不到原閱讀位置。這就是三個
    攔截點都排在各自分派鏈**最前面**的原因（`startPreflight()` 自己會在正確時機
    呼叫它）。
 10. **沒接手就不准 `preventDefault()`／吞 byte**。順序永遠是「先接手成功、再吞」，
     見上面的橋接合約。吞掉按鍵又什麼都不做＝使用者按 X 完全沒反應，是這個功能最嚴重
     的失敗模式。
+10b. **回文章時的落點**（`_enqueueReopen`）：**送完推文**＝`requestScrollToBottom`（落在文末看自己
+    剛推的，等同按 End：讀取中走反向讀取，判斷排在 forward 送 PageDown 之前，見
+    `easy_reading._onViewUpdated`）；**探路／被擋**＝`requestScrollRestore(閱讀位置)`。
+    守護 `long_push_flow.test.js`、`easy_reading_reverse.test.js`「推完回文章」。
 11. **ORDER INVARIANT 的採樣權屬於 `startPreflight()`**：閱讀位置、文章標頭錨點與
     **AID** 都只在那裡採一次，`start()` 一律沿用 `_armed`、**絕不重採**（那時畫面早就
     進過 functionMode，scrollTop 已歸零、游標列可能換人，重採等於把污染當成基準）。

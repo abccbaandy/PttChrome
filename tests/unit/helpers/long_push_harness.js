@@ -109,6 +109,7 @@ export function harness(opts) {
     easyReading: {
       _enterFunctionMode() {},
       requestScrollRestore: (i) => restored.push(i),
+      requestScrollToBottom: () => (api.toBottom += 1),
       onWireIdle: (opts) => wireIdle.push(opts),
     },
     listSession: { beginExternalNavigation() {} },
@@ -158,7 +159,7 @@ export function harness(opts) {
     );
   };
 
-  return {
+  const api = {
     session,
     sent,
     copied,
@@ -168,8 +169,11 @@ export function harness(opts) {
     settleList,
     queue,
     restored,
+    // 推完回文章時 requestScrollToBottom 被叫了幾次。
+    toBottom: 0,
     wireIdle,
     core,
   };
+  return api;
 }
 
