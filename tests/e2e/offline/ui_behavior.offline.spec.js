@@ -11,6 +11,7 @@ const ptt = require('../helpers/ptt');
 const { installReplay, waitConnected, feedRaw, waitScreenSettled } = require('../helpers/replay');
 const { rightClickSelectedText } = require('../helpers/real_input');
 const { waitRectStable, elementUnder } = require('../helpers/layout');
+const { isResizeObserverLoopMessage } = require('../helpers/resize_observer_guard');
 
 // locale 無關的 label 查詢（dev build 暴露 window.__i18n）。
 const label = (page, key) => page.evaluate(k => window.__i18n(k), key);
@@ -494,8 +495,10 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
   // 下載後出現的 CloseButton（非 modal、無 pointerdown 攔截）。
   test('滑鼠事件：點到 Mantine 圖示(SVG) 不崩潰（checkClass 守門）', async ({ page }) => {
     const errors = [];
+    // RO loop 由 installReplay 的守護分類判定（Mantine 右鍵選單關閉的那則是良性的），
+    // 這裡只收其他錯誤。
     page.on('pageerror', (e) => {
-      if (!/ResizeObserver loop/.test(e.message)) errors.push(e.message);
+      if (!isResizeObserverLoopMessage(e.message)) errors.push(e.message);
     });
     await installReplay(page);
     await page.goto('/');

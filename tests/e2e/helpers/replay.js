@@ -10,6 +10,7 @@
 // src/js/pttchrome.js:252（App.onData）、src/js/easy_reading.js:82,318（_send）。
 const fs = require('fs');
 const path = require('path');
+const { installResizeObserverGuard } = require('./resize_observer_guard');
 const {
   beginImageRequest,
   endImageRequest,
@@ -94,6 +95,7 @@ async function installReplay(page, opts = {}) {
   const openHost = opts.neverOpenExceptHost || null;
   const neverOpen = opts.neverOpen === true || !!openHost;
   const isBbsSrc = isBbsSocketUrl.toString();
+  await installResizeObserverGuard(page);
   await page.addInitScript(({ neverOpen, openHost, isBbsSrc }) => {
     // 判准的**唯一来源**是模组里那支纯函式（有 unit 守护）；addInitScript 的
     // callback 会被序列化送进页面、看不到模组作用域，所以把原始码一起带进来。
