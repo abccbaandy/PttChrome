@@ -290,6 +290,16 @@ export const PREF_SEARCH_ITEMS = [
     },
     { key: "commentBlockSpacing", titleKey: "options_commentBlockSpacing" },
     {
+      key: "showMergeCaptionButton",
+      titleKey: "options_showMergeCaptionButton",
+      tooltipKey: "tooltip_showMergeCaptionButton",
+    },
+    {
+      key: "showLightsOnButton",
+      titleKey: "options_showLightsOnButton",
+      tooltipKey: "tooltip_showLightsOnButton",
+    },
+    {
       key: "highlightAuthorComments",
       titleKey: "options_highlightAuthorComments",
     },

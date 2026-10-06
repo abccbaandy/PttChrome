@@ -252,7 +252,8 @@ debug 錄製，`render/merge_buttons.js` 的純 `button`）在點擊優先權表
 **浮動按鈕那條是回歸修復**：它們沒有 class（`checkClass` 認不出來）、不是 `<a>`、也
 不是預覽 ⇒ 找回翻頁區之前文章區沒有動作所以沒事，之後每按一次就會順便送一個翻頁鍵
 給 PTT（實錄：`lights_on.offline.spec.js` 量到送出的 bytes 從 `\` 變成 `\` ＋ End）。
-守門是 `isOwnControlTarget`（**用標籤名，不逐一列舉 id**），回歸鎖在
+守門是 `isOwnControlTarget`（**用標籤名＋`[data-own-control]`，不逐一列舉 id**；後者涵蓋
+「⋯」浮動工具展開面板裡按鈕之間的間隙），回歸鎖在
 `tests/unit/mouse_edge_send.test.js`。
 
 ### 寫測試時會踩的兩個坑

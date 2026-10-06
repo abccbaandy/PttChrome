@@ -59,6 +59,57 @@
   padding: 16px 20px;
 }
 
+/* ── 窄螢幕（PrefModal.jsx PREF_NARROW_QUERY）：全螢幕＋頂端橫向分頁 ──────────
+   左欄變成頂端一條（搜尋框＋可左右滑的分頁），內容佔滿下方全寬。 */
+.PrefModal--narrow .mantine-Modal-header {
+  padding: 4px 8px 4px 12px;
+}
+
+.PrefModal--narrow .PrefModal__Grid {
+  flex-direction: column;
+}
+
+.PrefModal--narrow .PrefModal__Grid__Col--left {
+  width: 100%;
+  height: auto;
+  padding: 0 8px;
+  border-right: none;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.PrefModal--narrow .PrefModal__Grid__Col--left .mantine-Tabs-list {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* 水平 Tabs 預設有 border-bottom，左欄自己已有。 */
+  border-bottom: none;
+}
+
+.PrefModal--narrow .PrefModal__Grid__Col--left .mantine-Tabs-tab {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.PrefModal--narrow .PrefModal__Grid__Col--right {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+}
+
+.PrefModal__Grid__Col--right__Reset {
+  margin-top: 8px;
+}
+
+/* 快速搜尋自訂項目：一列塞不下 5 個欄位 ⇒ 換行，網址佔滿一整行。 */
+.PrefModal--narrow .PrefModal__QuickSearchRow {
+  flex-wrap: wrap;
+}
+
+.PrefModal--narrow .PrefModal__QuickSearchRow__Url {
+  flex-basis: 100%;
+  order: 1;
+}
+
 .PrefModal__Grid__Col--right__Fieldset {
   border: none;
   margin: 0 0 12px;

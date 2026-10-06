@@ -61,9 +61,15 @@ export const KEYPAD_DEFAULT_POS = { right: 8, bottom: 8 };
 // 拖多遠才算拖曳（收合的圓鈕：小於這個就是點擊＝展開）。
 export const KEYPAD_DRAG_THRESHOLD_PX = 8;
 
-// 把位置夾回視窗內：整個按鍵列（w×h）都要看得到。視窗比按鍵列還小時貼齊左上。
-export function clampKeypadPos(pos, { vw, vh, w, h }) {
-  const p = pos || KEYPAD_DEFAULT_POS;
+// 文章頁浮動工具鈕（render/merge_buttons.js#createFloatingTools：開燈／圖文並排／AI
+// 校正收成的「⋯」）的位置，同一套 {right,bottom} 表示法與存放規則。預設＝桌機舊位置；
+// 手機上剛好在按鍵列收合圓鈕（bottom 8，高 48）正上方。
+export const FLOAT_TOOLS_POS_STORAGE_KEY = 'pttchrome.floatToolsPos';
+export const FLOAT_TOOLS_DEFAULT_POS = { right: 16, bottom: 64 };
+
+// 把位置夾回視窗內：整個浮層（w×h）都要看得到。視窗比浮層還小時貼齊左上。
+export function clampFloatPos(pos, { vw, vh, w, h }, defaults) {
+  const p = pos || defaults;
   const maxRight = Math.max(0, (Number(vw) || 0) - (Number(w) || 0));
   const maxBottom = Math.max(0, (Number(vh) || 0) - (Number(h) || 0));
   const clamp = (v, max, d) => {
@@ -72,34 +78,46 @@ export function clampKeypadPos(pos, { vw, vh, w, h }) {
     return Math.round(Math.min(Math.max(n, 0), max));
   };
   return {
-    right: clamp(p.right, maxRight, KEYPAD_DEFAULT_POS.right),
-    bottom: clamp(p.bottom, maxBottom, KEYPAD_DEFAULT_POS.bottom)
+    right: clamp(p.right, maxRight, defaults.right),
+    bottom: clamp(p.bottom, maxBottom, defaults.bottom)
   };
 }
 
 // storage 注入（測試用）；預設 window.localStorage。私密視窗／封鎖網站資料時存取會
 // throw ⇒ 一律退回預設位置，不影響功能。
-export function loadKeypadPos(storage) {
+export function loadFloatPos(key, defaults, storage) {
   try {
     const st = storage || window.localStorage;
-    const raw = st.getItem(KEYPAD_POS_STORAGE_KEY);
-    if (!raw) return { ...KEYPAD_DEFAULT_POS };
+    const raw = st.getItem(key);
+    if (!raw) return { ...defaults };
     const v = JSON.parse(raw);
     if (!v || !Number.isFinite(v.right) || !Number.isFinite(v.bottom))
-      return { ...KEYPAD_DEFAULT_POS };
+      return { ...defaults };
     return { right: v.right, bottom: v.bottom };
   } catch (e) {
-    return { ...KEYPAD_DEFAULT_POS };
+    return { ...defaults };
   }
 }
 
-export function saveKeypadPos(pos, storage) {
+export function saveFloatPos(key, pos, storage) {
   try {
     const st = storage || window.localStorage;
-    st.setItem(KEYPAD_POS_STORAGE_KEY, JSON.stringify({ right: pos.right, bottom: pos.bottom }));
+    st.setItem(key, JSON.stringify({ right: pos.right, bottom: pos.bottom }));
   } catch (e) {
     // 存不了就只在這次開頁有效。
   }
+}
+
+export function clampKeypadPos(pos, dims) {
+  return clampFloatPos(pos, dims, KEYPAD_DEFAULT_POS);
+}
+
+export function loadKeypadPos(storage) {
+  return loadFloatPos(KEYPAD_POS_STORAGE_KEY, KEYPAD_DEFAULT_POS, storage);
+}
+
+export function saveKeypadPos(pos, storage) {
+  saveFloatPos(KEYPAD_POS_STORAGE_KEY, pos, storage);
 }
 
 // #t 的 inputmode。手機上預設 'none'：焦點照舊停在 #t（既有十幾個 setInputAreaFocus

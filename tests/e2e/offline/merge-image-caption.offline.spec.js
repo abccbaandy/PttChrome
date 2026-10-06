@@ -13,6 +13,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassettes, bootOffline, replayCassette } = require('../helpers/replay');
+const { hoverFloatTools } = require('../helpers/real_input');
 
 const cassette = findCassettes('article-caption')[0];
 
@@ -26,8 +27,10 @@ test.describe('好讀圖文合併（離線重放）', () => {
       await ptt.applyPrefs(page, { enableEasyReading: true });
       await replayCassette(page, cassette, { easyReading: true });
 
-      // 1) 偵測到圖文結構 → 浮動按鈕出現，且尚未合併。
+      // 1) 偵測到圖文結構 → 浮動按鈕出現（收在「⋯」裡，真滑鼠移上去展開），且尚未合併。
       const btn = page.locator('#mergeImageCaptionBtn');
+      await expect(page.locator('#floatTools')).toBeVisible();
+      await hoverFloatTools(page);
       await expect(btn).toBeVisible();
       await expect(page.locator('.mergedImageBlock')).toHaveCount(0);
 

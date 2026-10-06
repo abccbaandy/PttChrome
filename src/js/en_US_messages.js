@@ -424,6 +424,21 @@ export const en_US = {
   "options_dimReadArticles": {
     "message": "Dim read articles"
   },
+  "options_showMergeCaptionButton": {
+    "message": "Show the \"image + caption side by side\" button on articles"
+  },
+  "tooltip_showMergeCaptionButton": {
+    "message": "When easy reading detects several image + caption groups, the button appears in the \"⋯\" menu at the bottom right. Turning it off hides the button and restores the layout; the AI correction button depends on it and is hidden too."
+  },
+  "options_showLightsOnButton": {
+    "message": "Show the \"lights on\" button on articles"
+  },
+  "tooltip_showLightsOnButton": {
+    "message": "When an article contains hidden text (same foreground and background color), the button appears in the \"⋯\" menu at the bottom right. Turning it off hides the button and un-reveals the text; if plain-text mode was switched on, the button stays until you switch back."
+  },
+  "floatTools_toggle": {
+    "message": "Article tools"
+  },
   "tooltip_dimReadArticles": {
     "message": "Dims already-read rows in the article list so unread ones (+ mark) stand out at a glance."
   },

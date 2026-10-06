@@ -355,6 +355,10 @@ export function TermView() {
   // 好讀「左圖右文」的裝置端 AI 校正開關。只是「讓 AI 浮動按鈕出得來」，實際推論
   // 仍要使用者按下該按鈕。Set via App.onPrefChange.
   this.enableCaptionAi = false;
+  // 文章頁「⋯」浮動工具裡的圖文並排／開燈鈕能不能出現（關掉時效果一併還原，見
+  // render/screen.js#update）。Set via App.onPrefChange.
+  this.showMergeCaptionButton = true;
+  this.showLightsOnButton = true;
   // Same-author comment highlighting: tint comments written by the 原PO.
   // _articleAuthor is parsed from the article header (first page only) and kept
   // across page-downs; see redraw().
@@ -1062,6 +1066,9 @@ TermView.prototype = {
           // 已讀文章低亮：同上，只影響容器 class、不進 annotationsKey。
           dimReadArticles: this.dimReadArticles,
           captionAiEnabled: this.enableAi && this.enableCaptionAi,
+          // 浮動鈕開關：只影響尾端浮層，不進 annotationsKey。
+          mergeCaptionButton: this.showMergeCaptionButton,
+          lightsButton: this.showLightsOnButton,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,
           // 高亮本身**不由這條路生效**（它不進 annotationsKey，見

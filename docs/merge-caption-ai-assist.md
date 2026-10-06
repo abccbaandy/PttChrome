@@ -10,7 +10,7 @@ recommendation: **已實作**（2026-08，opt-in、預設關）。2026-07／2026
 | `src/js/caption_ai.js` | 瀏覽器層：`window.LanguageModel` session／佇列／逾時／fallback |
 | `src/js/screen_annotations.js` | 標註：spans 掛在 annotations |
 | `src/render/screen.js` | 接線：逐塊推論（`signature_task`）、結果回填重繪 |
-| `src/components/MergeImageCaptionAiButton.jsx` | 第二顆浮動按鈕（`#mergeImageCaptionAiBtn`，bottom:112） |
+| `src/render/merge_buttons.js` | AI 校正按鈕（`#mergeImageCaptionAiBtn`），收在「⋯」浮動工具面板裡（`docs/mobile.md`「文章浮動工具」） |
 | `tools/caption-ai-eval.html` | 能力評估頁（dev-only，用真 Chrome 開） |
 
 ## 重啟理由（2026-08，使用者回報）

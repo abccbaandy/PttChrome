@@ -83,8 +83,9 @@ function isAnchorTarget(el) {
 }
 
 // True when the click landed on one of our own in-page controls —— 目前是畫面右下角
-// 那疊浮動按鈕（開燈／圖文並排／AI 校正／debug 錄製，`render/merge_buttons.js` 的
-// 純 <button>，沒有 class 可以給 checkClass 認）。
+// 的「⋯」浮動工具（開燈／圖文並排／AI 校正，`render/merge_buttons.js` 的純
+// <button>，沒有 class 可以給 checkClass 認）與 debug 錄製鈕。
+// `[data-own-control]` 涵蓋「⋯」整塊（展開面板裡按鈕之間的間隙不是 button）。
 //
 // 2026-09 找回邊緣點擊翻頁之後這條才變成必要的：在那之前文章區的 col >= 7 沒有任何
 // 滑鼠動作，點按鈕只會觸發按鈕自己的 listener；現在那片是「上半／下半翻頁」，不擋的話
@@ -93,7 +94,7 @@ function isAnchorTarget(el) {
 //
 // 用標籤名而不是逐一列舉 id：日後再加一顆浮動鈕不必回來改這裡。
 function isOwnControlTarget(el) {
-  return !!(el && el.closest && el.closest('button'));
+  return !!(el && el.closest && el.closest('button, [data-own-control]'));
 }
 
 // hover 時「這一格其實不歸終端機管」的合併判準：連結／功能鍵按鈕／我們自己的浮動
@@ -1783,6 +1784,14 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     case 'enableCaptionAi':
       this.view.enableCaptionAi = value;
+      this.view.redraw(true);
+      break;
+    case 'showMergeCaptionButton':
+      this.view.showMergeCaptionButton = value;
+      this.view.redraw(true);
+      break;
+    case 'showLightsOnButton':
+      this.view.showLightsOnButton = value;
       this.view.redraw(true);
       break;
     case 'highlightAuthorComments':

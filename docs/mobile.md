@@ -62,13 +62,33 @@
 - **開站原點**：`#BBSWindow` 顯示前量到的 `firstGridOffset` 是 0；`main.jsx` 顯示後呼叫
   `onWindowResize({ immediate: true })` 跳過 resizer 的 500ms debounce（手機與桌機 fixed-font-size 都有 resizer）。
 
+## 文章浮動工具「⋯」（`render/merge_buttons.js#createFloatingTools`，桌機＋手機共用）
+
+圖文並排／AI 校正／開燈收在一顆圓鈕裡（攤開的一疊在 reflow 版面會蓋住文章字、且與按鍵列重疊）。
+- 展開：桌機純 CSS `@media (hover: hover) .floatTools:hover`；觸控 tap 圓鈕 toggle `data-open`，點了面板裡的工具自動收合。
+  一個工具都不用顯示 ⇒ 整個「⋯」不出現（`screen.js#_syncOverlays`）。
+- 面板 absolute 貼在圓鈕外側（`data-vdir`／`data-hdir` 依圓鈕在視窗哪一半），**圓鈕永遠不動**；與圓鈕的間距用 padding。
+  兩者都是為了 hover 不掉。按下工具時面板 `min-width` 釘住（label 點完變短 ⇒ 按鈕縮走 ⇒ 游標落出面板），
+  `pointerleave` 才解除，**不可**在 `setOpen(false)` 解除。守護 `float_tools.test.js`。
+- 位置 `{right,bottom}` 存 localStorage `pttchrome.floatToolsPos`（`mobile_layout.load/saveFloatPos`，不寫 prefs），可拖曳，
+  預設 `FLOAT_TOOLS_DEFAULT_POS`＝在按鍵列收合圓鈕正上方。手機 z-index 2400 < 按鍵列 2500。
+- `data-own-control` ⇒ `pttchrome.jsx#isOwnControlTarget` 把整塊（含面板間隙）當成自己的控制項，不落到邊緣翻頁。
+- pref `showMergeCaptionButton`／`showLightsOnButton`（預設 true，增強分頁）→ `enhance.mergeCaptionButton`／`lightsButton`。
+  關掉時 `screen.js#update` 還原效果（合併狀態、軌 A）；軌 B（已切純文字）要送鍵，按鈕保留到使用者切回。
+
+## 設定頁窄版（`PrefModal.jsx` `PREF_NARROW_QUERY` = max-width 640px）
+
+看視窗寬、不看 App 的 mobile 旗標（桌機拉窄同樣適用）。`fullScreen`＋Tabs `horizontal`＋content class `PrefModal--narrow`
+（CSS：左欄變頂端一條、分頁列橫向捲動、右欄滿寬）；標題移到 Modal header；「重設」移到右欄最底。
+守護 `pref_modal_narrow.test.jsx`（真版面，CSS 以 `?raw` 注入）、offline-mobile `mobile_float_tools.offline.spec.js`。
+
 ## 測試
 
-- unit：`mobile_layout.test.js`、`mobile_keypad.test.jsx`、`logout_session.test.js`、`comment_card.test.js`、`app_mobile_layout.test.js`、`mobile_surface.test.js`、
+- unit：`mobile_layout.test.js`、`float_tools.test.js`、`pref_modal_narrow.test.jsx`、`mobile_keypad.test.jsx`、`logout_session.test.js`、`comment_card.test.js`、`app_mobile_layout.test.js`、`mobile_surface.test.js`、
   `list_card.test.js`（含兩個 session 的卡片換算；看板列表沒有錄製素材，這是它唯一的守護）；
   reflow 相關另在 `mouse_regions`／`mouse_gating`／`scroll_restore`／`context_menu_items` 各有一組
 - offline e2e：project `offline-mobile`（Pixel 7 模擬，只跑 `offline/mobile_*.spec.js`：換行版面、長按選單與推文卡片在
-  `mobile_reflow`、列表卡片在 `mobile_list_cards`、按鍵列拖曳在 `mobile_keypad`；`offline` project 以 testIgnore 排除 mobile_*），已併入
+  `mobile_reflow`、列表卡片在 `mobile_list_cards`、按鍵列拖曳在 `mobile_keypad`、「⋯」與設定頁窄版在 `mobile_float_tools`；`offline` project 以 testIgnore 排除 mobile_*），已併入
   `yarn test:e2e:offline`。**視窗高壓到 390px**：錄製檔全是 24 列，Pixel 7 原生高度會給 52 列、
   重放湊不成完整一屏；390 ⇒ 24 列。
 - Windows 本機跑 `offline-mobile` 會用到 local 細明體，小字級下半形字寬被 hinting 取整（實測 5.0 vs

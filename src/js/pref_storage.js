@@ -225,6 +225,10 @@ export const DEFAULT_PREFS = {
   enableUrlAi: false,
 
   // enhanced add-on
+  // 文章頁「⋯」浮動工具（render/merge_buttons.js）裡的圖文並排／開燈鈕。關掉＝按鈕
+  // 不出現且效果還原（AI 校正鈕依附圖文並排鈕，由 enableCaptionAi 另管）。
+  showMergeCaptionButton: true,
+  showLightsOnButton: true,
   showFloorNumbers: true,
   mergeSameAuthorComments: true, // 好讀：連續同作者推文合併成一段
   // 推文區塊行距（僅文章好讀累積長頁）：推文之間拉開距離，同作者合併塊內部的

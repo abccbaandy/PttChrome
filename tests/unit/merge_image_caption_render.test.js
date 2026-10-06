@@ -140,6 +140,34 @@ describe("圖文合併 render", () => {
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(0);
   });
 
+  test("設定關掉圖文並排鈕（enhance.mergeCaptionButton=false）→ 無按鈕、無「⋯」", () => {
+    const { container: c } = mountScreen({
+      lines,
+      forceWidth: FORCE_WIDTH,
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: { ...enhanceFor({}), mergeCaptionButton: false },
+    });
+    expect(c.querySelector("#mergeImageCaptionBtn")).toBeNull();
+    expect(c.querySelector("#floatTools")).toBeNull();
+  });
+
+  test("並排中關掉設定 → 排版還原（按鈕不見、效果不可留著）", () => {
+    const screen = renderScreen({});
+    const c = screen.container;
+    c.querySelector("#mergeImageCaptionBtn").click();
+    expect(c.querySelectorAll(".mergedImageBlock").length).toBe(2);
+    screen.update({
+      lines,
+      forceWidth: FORCE_WIDTH,
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: { ...enhanceFor({}), mergeCaptionButton: false },
+    });
+    expect(c.querySelectorAll(".mergedImageBlock").length).toBe(0);
+    expect(c.querySelector("#mergeImageCaptionBtn")).toBeNull();
+  });
+
   test("非好讀模式：不分組、無按鈕", () => {
     const { container: c } = renderScreen({ easyReading: false });
     expect(c.querySelectorAll(".mergedImageBlock").length).toBe(0);

@@ -1247,3 +1247,77 @@ span {
 .previewError:hover {
   text-decoration: underline;
 }
+
+/* 文章頁浮動工具（render/merge_buttons.js#createFloatingTools）：開燈／圖文並排／AI
+   校正收在一顆「⋯」圓鈕。right/bottom 由 JS 給（可拖曳、存 localStorage）。
+   面板 absolute 貼在圓鈕外側，圓鈕本身永遠不動（撐大外框會把圓鈕推離滑鼠 ⇒
+   :hover 來回閃）；面板 padding（不是 margin）當作與圓鈕之間的間距，滑鼠從圓鈕
+   移到面板途中不會掉出 :hover。 */
+.floatTools {
+  position: fixed;
+  z-index: 3000;
+}
+/* 手機：低於 MobileKeypad（2500）⇒ 展開的按鍵列永遠在上面，不會被「⋯」蓋住按鍵。 */
+body.mobile-layout .floatTools {
+  z-index: 2400;
+}
+.floatTools__fab {
+  display: block;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 2px solid #ced4da;
+  border-radius: 50%;
+  background: #495057;
+  color: #fff;
+  font: 18px/1 system-ui, sans-serif;
+  opacity: 0.75;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  /* 拖曳：瀏覽器不可以把這個手勢拿去捲動頁面（pointermove 才收得到）。 */
+  touch-action: none;
+}
+.floatTools:hover .floatTools__fab,
+.floatTools[data-open] .floatTools__fab {
+  opacity: 1;
+}
+/* 有工具作用中：收合時也看得出來。 */
+.floatTools[data-active] .floatTools__fab {
+  border-color: #12b886;
+  background: #0ca678;
+}
+/* stretch：工具按鈕同寬（＝最寬的那顆）；按下時 JS 會把面板寬度釘住（min-width），
+   label 變短時按鈕不縮、游標不會掉出面板。 */
+.floatTools__panel {
+  display: none;
+  position: absolute;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  white-space: nowrap;
+}
+.floatTools[data-vdir="up"] .floatTools__panel {
+  bottom: 100%;
+  padding-bottom: 6px;
+  flex-direction: column-reverse;
+}
+.floatTools[data-vdir="down"] .floatTools__panel {
+  top: 100%;
+  padding-top: 6px;
+}
+/* data-hdir ＝圓鈕在視窗的哪一半：面板往視窗內側展開。 */
+.floatTools[data-hdir="right"] .floatTools__panel {
+  right: 0;
+}
+.floatTools[data-hdir="left"] .floatTools__panel {
+  left: 0;
+}
+/* 桌機滑鼠移過去自動展開；觸控裝置沒有 hover（避免點一下後 :hover 黏住）。 */
+@media (hover: hover) {
+  .floatTools:hover .floatTools__panel {
+    display: flex;
+  }
+}
+.floatTools[data-open] .floatTools__panel {
+  display: flex;
+}

@@ -249,7 +249,16 @@ async function waitClickSettled(page) {
   await nextFrames(page);
 }
 
+// 文章頁浮動工具「⋯」（render/merge_buttons.js#createFloatingTools）：桌機用真滑鼠
+// 移到圓鈕上讓 CSS :hover 展開面板，等面板真的可見才回來。之後 page.click 面板裡的
+// 按鈕時滑鼠直線移過去，途中仍在 .floatTools 範圍內（面板用 padding 接圓鈕），不會收合。
+async function hoverFloatTools(page) {
+  await page.hover('#floatTools .floatTools__fab');
+  await page.locator('#floatTools .floatTools__panel').waitFor({ state: 'visible' });
+}
+
 module.exports = {
+  hoverFloatTools,
   cdp,
   textRect,
   dragSelectText,

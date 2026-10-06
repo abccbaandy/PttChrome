@@ -11,6 +11,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayCassette } = require('../helpers/replay');
+const { hoverFloatTools } = require('../helpers/real_input');
 
 const cassette = loadCassette('cchat-caption-mosquito');
 
@@ -55,6 +56,8 @@ test.describe('好讀圖文合併 × 裝置端 AI（離線重放）', () => {
 
     const mergeBtn = page.locator('#mergeImageCaptionBtn');
     const aiBtn = page.locator('#mergeImageCaptionAiBtn');
+    await expect(page.locator('#floatTools')).toBeVisible();
+    await hoverFloatTools(page);
     await expect(mergeBtn).toBeVisible();
     await expect(aiBtn).toBeVisible();
     await expect(aiBtn).toHaveAttribute('data-ai', 'off');
@@ -102,6 +105,8 @@ test.describe('好讀圖文合併 × 裝置端 AI（離線重放）', () => {
     });
     await replayCassette(page, cassette, { easyReading: true });
 
+    await expect(page.locator('#floatTools')).toBeVisible();
+    await hoverFloatTools(page);
     await expect(page.locator('#mergeImageCaptionBtn')).toBeVisible();
     await expect(page.locator('#mergeImageCaptionAiBtn')).toHaveCount(0);
     await page.locator('#mergeImageCaptionBtn').click();

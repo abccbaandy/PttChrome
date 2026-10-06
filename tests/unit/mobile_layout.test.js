@@ -13,6 +13,11 @@ import {
   saveKeypadPos,
   KEYPAD_DEFAULT_POS,
   KEYPAD_POS_STORAGE_KEY,
+  clampFloatPos,
+  loadFloatPos,
+  saveFloatPos,
+  FLOAT_TOOLS_DEFAULT_POS,
+  FLOAT_TOOLS_POS_STORAGE_KEY,
 } from "../../src/js/mobile_layout";
 import { KeyMap } from "../../src/js/term_keyboard";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
@@ -225,5 +230,54 @@ describe("按鍵列位置", () => {
     expect(loadKeypadPos(boom)).toEqual(KEYPAD_DEFAULT_POS);
     expect(() => saveKeypadPos({ right: 1, bottom: 2 }, boom)).not.toThrow();
     expect(loadKeypadPos({ getItem: () => "{bad json" })).toEqual(KEYPAD_DEFAULT_POS);
+  });
+});
+
+describe("浮動工具「⋯」位置（泛用版）", () => {
+  const vp = { vw: 390, vh: 700, w: 36, h: 36 };
+  const memStorage = () => {
+    const mem = new Map();
+    return {
+      mem,
+      getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+      setItem: (k, v) => mem.set(k, v),
+    };
+  };
+
+  test("壞值退回自己的預設，不是按鍵列的", () => {
+    expect(clampFloatPos(null, vp, FLOAT_TOOLS_DEFAULT_POS)).toEqual(FLOAT_TOOLS_DEFAULT_POS);
+    expect(FLOAT_TOOLS_DEFAULT_POS).not.toEqual(KEYPAD_DEFAULT_POS);
+  });
+
+  test("預設位置在按鍵列收合圓鈕（bottom 8＋高 48）之上，不重疊", () => {
+    expect(FLOAT_TOOLS_DEFAULT_POS.bottom).toBeGreaterThanOrEqual(KEYPAD_DEFAULT_POS.bottom + 48);
+  });
+
+  test("與按鍵列各存各的 key，互不覆蓋", () => {
+    const st = memStorage();
+    saveFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, { right: 5, bottom: 6 }, st);
+    saveKeypadPos({ right: 7, bottom: 8 }, st);
+    expect(loadFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, FLOAT_TOOLS_DEFAULT_POS, st)).toEqual({
+      right: 5,
+      bottom: 6,
+    });
+    expect(loadKeypadPos(st)).toEqual({ right: 7, bottom: 8 });
+    expect([...st.mem.keys()].sort()).toEqual(
+      [FLOAT_TOOLS_POS_STORAGE_KEY, KEYPAD_POS_STORAGE_KEY].sort(),
+    );
+  });
+
+  test("storage throw／壞 JSON ⇒ 預設位置", () => {
+    const boom = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+    };
+    expect(loadFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, FLOAT_TOOLS_DEFAULT_POS, boom)).toEqual(
+      FLOAT_TOOLS_DEFAULT_POS,
+    );
+    expect(
+      loadFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, FLOAT_TOOLS_DEFAULT_POS, { getItem: () => "[" }),
+    ).toEqual(FLOAT_TOOLS_DEFAULT_POS);
   });
 });

@@ -88,6 +88,18 @@ const setFlashKey = (key) => {
 };
 const useFlashKey = () => useSyncExternalStore(subscribeFlash, getFlashKey);
 
+// 窄螢幕（手機直向）版型：全螢幕＋頂端橫向分頁（PrefModal.css `.PrefModal--narrow`）。
+// 寬版的 160px 左欄在 ~400px 寬的手機上會把內容擠到只剩一半。看視窗寬而不是
+// App 的 mobile 旗標：桌機把視窗拉窄同樣需要。
+export const PREF_NARROW_QUERY = "(max-width: 640px)";
+const subscribeNarrow = (cb) => {
+  const mq = window.matchMedia(PREF_NARROW_QUERY);
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+};
+const getNarrow = () => window.matchMedia(PREF_NARROW_QUERY).matches;
+const useNarrow = () => useSyncExternalStore(subscribeNarrow, getNarrow);
+
 export const PREF_FLASH_CLASS = "PrefModal__Anchor--flash";
 // 略長於 PrefModal.css 的 animation duration，讓動畫跑完才移除 class。
 export const PREF_FLASH_MS = 1700;
@@ -245,6 +257,7 @@ export const PrefModal = ({
   onDebugModeChange,
 }) => {
   const [navActiveKey, setNavActiveKey] = useState("general");
+  const narrow = useNarrow();
   const [values, setValues] = useState(readValuesWithDefault);
   // What localStorage held when the dialog opened. `values` follows the user's
   // typing, so only this can answer "is there still a plaintext copy here?".
@@ -609,27 +622,32 @@ export const PrefModal = ({
       onClose={onCloseClick}
       // marker 放在 content（可見的對話框本體）而非 mantine-Modal-root（外層 0 尺寸
       // wrapper，Playwright 會判定 hidden）。
-      classNames={{ content: "PrefModal" }}
+      classNames={{
+        content: narrow ? "PrefModal PrefModal--narrow" : "PrefModal",
+      }}
       withCloseButton
       closeButtonProps={{ "aria-label": "Close" }}
       padding={0}
       // 用 Mantine 正規 size（--modal-size）給固定寬度：寬版（接近舊版），Mantine 會
       // 自動以視窗寬度為上限縮放（RWD），且固定寬度 → 切分頁不會忽寬忽窄。
+      // 窄螢幕改全螢幕：標題移到 Modal header（與關閉鈕同一列），省下一列高度。
       size="900px"
+      fullScreen={narrow}
+      title={narrow ? i18n("menu_settings") : undefined}
       styles={{
-        content: { height: "90%" },
+        content: narrow ? undefined : { height: "90%" },
         body: { height: "100%" },
       }}
     >
       <Tabs
         value={navActiveKey}
         onChange={setNavActiveKey}
-        orientation="vertical"
+        orientation={narrow ? "horizontal" : "vertical"}
         className="PrefModal__Tabs"
       >
         <div className="PrefModal__Grid">
           <div className="PrefModal__Grid__Col--left">
-            <Title order={3}>{i18n("menu_settings")}</Title>
+            {!narrow && <Title order={3}>{i18n("menu_settings")}</Title>}
             <PrefSearchBox onJump={onSearchJump} resetToken={show} />
             <Tabs.List>
               <Tabs.Tab value="general">{i18n("options_general")}</Tabs.Tab>
@@ -649,13 +667,15 @@ export const PrefModal = ({
               <Tabs.Tab value="backup">{i18n("options_backup")}</Tabs.Tab>
               <Tabs.Tab value="about">{i18n("options_about")}</Tabs.Tab>
             </Tabs.List>
-            <Button
-              variant="default"
-              className="PrefModal__Grid__Col--left__Reset"
-              onClick={onResetClick}
-            >
-              {i18n("options_reset")}
-            </Button>
+            {!narrow && (
+              <Button
+                variant="default"
+                className="PrefModal__Grid__Col--left__Reset"
+                onClick={onResetClick}
+              >
+                {i18n("options_reset")}
+              </Button>
+            )}
           </div>
           <div className="PrefModal__Grid__Col--right">
             <Tabs.Panel value="general">
@@ -1359,6 +1379,26 @@ export const PrefModal = ({
                   {i18n("options_commentBlockSpacing")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="showMergeCaptionButton"
+                  checked={values.showMergeCaptionButton}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_showMergeCaptionButton")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_showMergeCaptionButton")}
+                </Text>
+                <PrefCheckbox
+                  name="showLightsOnButton"
+                  checked={values.showLightsOnButton}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_showLightsOnButton")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_showLightsOnButton")}
+                </Text>
+                <PrefCheckbox
                   name="highlightAuthorComments"
                   checked={values.highlightAuthorComments}
                   onChange={onCheckboxChange}
@@ -1898,6 +1938,16 @@ export const PrefModal = ({
                 </ul>
               </PrefAnchor>
             </Tabs.Panel>
+            {/* 窄版沒有左欄的底部空間：重設放在內容最底。 */}
+            {narrow && (
+              <Button
+                variant="default"
+                className="PrefModal__Grid__Col--right__Reset"
+                onClick={onResetClick}
+              >
+                {i18n("options_reset")}
+              </Button>
+            )}
           </div>
         </div>
       </Tabs>

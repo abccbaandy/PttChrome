@@ -423,6 +423,21 @@
   "options_dimReadArticles": {
     "message": "已讀文章低亮顯示"
   },
+  "options_showMergeCaptionButton": {
+    "message": "文章頁顯示「圖文並排」按鈕"
+  },
+  "tooltip_showMergeCaptionButton": {
+    "message": "好讀模式偵測到多組「圖＋說明」時，右下角「⋯」裡出現圖文並排按鈕。關閉後按鈕不出現、已並排的排版會還原；AI 校正按鈕依附它，也一併不出現。"
+  },
+  "options_showLightsOnButton": {
+    "message": "文章頁顯示「開燈」按鈕"
+  },
+  "tooltip_showLightsOnButton": {
+    "message": "文章含隱藏文字（字色與底色相同）時，右下角「⋯」裡出現開燈按鈕。關閉後按鈕不出現、已提亮的文字會還原；若已切成純文字模式，按鈕會保留到你切回為止。"
+  },
+  "floatTools_toggle": {
+    "message": "文章工具"
+  },
   "tooltip_dimReadArticles": {
     "message": "文章列表中已讀過的文章整列調暗，未讀文章（+ 標記）一眼就能分辨。"
   },

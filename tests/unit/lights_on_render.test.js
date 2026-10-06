@@ -132,6 +132,56 @@ describe("軌 A：容器 class", () => {
   });
 });
 
+describe("設定關掉開燈鈕（pref showLightsOnButton → enhance.lightsButton）", () => {
+  test("偵測到隱藏文字也不出現；整個「⋯」也不出現", () => {
+    const s = render(LIT_LINES, { lightsButton: false });
+    expect(btn(s.container)).toBe(null);
+    expect(s.container.querySelector("#floatTools")).toBe(null);
+  });
+
+  test("燈亮著時關掉設定 ⇒ 軌 A 熄燈、按鈕消失（不留關不掉的效果）", () => {
+    const s = render(LIT_LINES);
+    btn(s.container).click();
+    expect(s.container.classList.contains("lightsOn")).toBe(true);
+    s.update({
+      lines: LIT_LINES,
+      forceWidth: FORCE_WIDTH,
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: {
+        pageState: 3,
+        easyReading: true,
+        dropHidden: true,
+        articleId: 1,
+        lightsButton: false,
+      },
+    });
+    expect(s.container.classList.contains("lightsOn")).toBe(false);
+    expect(btn(s.container)).toBe(null);
+  });
+
+  test("已切成純文字（軌 B）⇒ 設定關掉仍保留按鈕，讓使用者切回來", () => {
+    const s = render(PLAIN_LINES, {
+      rawMode: MFDISP_RAW_PLAIN,
+      lightsButton: false,
+    });
+    expect(btn(s.container)).not.toBe(null);
+    expect(btn(s.container).getAttribute("data-lights")).toBe("on");
+  });
+});
+
+describe("收在「⋯」浮動工具裡", () => {
+  test("按鈕在 #floatTools 的面板內；燈亮時「⋯」標示作用中", () => {
+    const s = render(LIT_LINES);
+    const tools = s.container.querySelector("#floatTools");
+    expect(tools).not.toBe(null);
+    expect(tools.querySelector(".floatTools__panel #lightsOnBtn")).toBe(btn(s.container));
+    expect(tools.hasAttribute("data-active")).toBe(false);
+    btn(s.container).click();
+    expect(tools.hasAttribute("data-active")).toBe(true);
+  });
+});
+
 describe("軌 B：請 App 切 pmore 的色彩顯示模式", () => {
   test("偵測到被擦掉的內容 → 開燈時要求切成純文字(2)", () => {
     const calls = [];

@@ -17,6 +17,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline, feedRaw } = require('../helpers/replay');
+const { hoverFloatTools } = require('../helpers/real_input');
 
 const ESC = '\x1b';
 // 中文測試（Big5：a4a4 a4e5 b4fa b8d5）—— DBCS 例外，真實 PTT 也會原樣送出（軌 A）。
@@ -96,9 +97,39 @@ async function boot(page, prefs) {
     null,
     { timeout: 15000 }
   );
+  // 按鈕收在「⋯」裡：真滑鼠移上去展開，之後的 page.click 都在展開範圍內。
+  await hoverFloatTools(page);
 }
 
 test.describe('開燈（離線）', () => {
+  test('按鈕收在「⋯」：預設收合看不到，滑鼠移上去才展開', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: false });
+    await feedRaw(page, articleFrame());
+    await page.waitForFunction(
+      () => !!document.querySelector('#mainContainer #lightsOnBtn'),
+      null,
+      { timeout: 15000 }
+    );
+    await expect(page.locator('#floatTools .floatTools__fab')).toBeVisible();
+    await expect(page.locator('#lightsOnBtn')).toBeHidden();
+    await hoverFloatTools(page);
+    await expect(page.locator('#lightsOnBtn')).toBeVisible();
+    await page.mouse.move(5, 5);
+    await expect(page.locator('#lightsOnBtn')).toBeHidden();
+  });
+
+  test('設定關掉開燈鈕 → 「⋯」不出現', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: false, showLightsOnButton: false });
+    await feedRaw(page, articleFrame());
+    await page.waitForFunction(() => window.__app.buf.pageState === 3, null, {
+      timeout: 15000,
+    });
+    expect(await page.locator('#lightsOnBtn').count()).toBe(0);
+    expect(await page.locator('#floatTools').count()).toBe(0);
+  });
+
   test('偵測到隱藏文字 → 按鈕出現；點下去真的把字提亮（真 CSSOM）', async ({ page }) => {
     await boot(page);
 

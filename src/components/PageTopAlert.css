@@ -3,8 +3,9 @@
   position: relative;
   z-index: 2;
 
-  width: 400px;
-  left: 50%;
-  margin-left: -200px;
+  /* 手機寬度不到 400px 時不可被切掉：上限 400、兩側至少各留 16px。置中用
+     margin-inline:auto（不用 transform：Transition 的 inline style 可能覆寫它）。 */
+  width: min(400px, calc(100vw - 32px));
+  margin-inline: auto;
   box-shadow: 0px 0px 20px black;
 }

@@ -233,6 +233,17 @@ describe("App.mouse_click：自家的浮動按鈕不得觸發翻頁", () => {
     expect(app.view._send).not.toHaveBeenCalled();
   });
 
+  test("點「⋯」展開面板裡按鈕之間的間隙（不是 button）同樣不送", () => {
+    const tools = document.createElement("div");
+    tools.setAttribute("data-own-control", "");
+    const panel = document.createElement("div");
+    tools.appendChild(panel);
+    const { app, event } = makeNativeApp(panel);
+    app.mouse_click(event);
+    expect(app.sendNavKeyAsUser).not.toHaveBeenCalled();
+    expect(app.view._send).not.toHaveBeenCalled();
+  });
+
   test("點按鈕裡的文字節點（closest 才抓得到）同樣不送", () => {
     const btn = document.createElement("button");
     const span = document.createElement("span");

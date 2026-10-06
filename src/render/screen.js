@@ -29,6 +29,7 @@ import {
   createMergeImageCaptionButton,
   createMergeImageCaptionAiButton,
   createLightsOnButton,
+  createFloatingTools,
 } from "./merge_buttons";
 import { createSignatureTask } from "./signature_task";
 import React from "react";
@@ -177,7 +178,7 @@ export class ScreenController {
     this._pendingShift = new Map();
     this._annotations = []; // 上一幀的 annotations（與 _nodes 逐列對齊）
     this._liveSlots = new Set(); // 目前掛著的佔位盒（imagesEnlarged 切換要通知）
-    this._overlayNodes = []; // 尾端固定浮層（兩顆按鈕 + hover 預覽宿主）
+    this._overlayNodes = []; // 尾端固定浮層（「⋯」工具鈕 + hover 預覽宿主）
     this._captionAiEnabledSeen = null;
     this._availabilityToken = 0;
 
@@ -204,6 +205,7 @@ export class ScreenController {
     this._mergeButton = null;
     this._aiButton = null;
     this._lightsButton = null;
+    this._floatTools = null; // 收那三顆工具的「⋯」（merge_buttons.js#createFloatingTools）
     this._hoverHost = null;
 
     this._initAiTasks();
@@ -315,6 +317,20 @@ export class ScreenController {
       this._aiLink = {};
       this._aiFix = {};
     }
+    // 設定關掉某顆浮動鈕 ⇒ 它的效果一併還原，否則「按鈕不見、效果還在、關不掉」。
+    // 開燈只還原軌 A（CSS）：軌 B 要送鍵給 PTT，不在 render 裡做，按鈕會因
+    // rawMode 仍是純文字而繼續顯示（見 _syncOverlays）。
+    const enh = props.enhance;
+    if (
+      enh &&
+      enh.mergeCaptionButton === false &&
+      this._mergeCaption !== null
+    ) {
+      this._mergeCaption = null;
+      this._captionAi = false;
+      this.notifyLayoutChanged();
+    }
+    if (enh && enh.lightsButton === false) this._setLightsOn(false);
     // selectedPusher 由 term_view 帶進來（它仍是唯一真相），但 render 時一律讀
     // this._selectedPusher —— setCursorHighlight 慢路徑那種「不換 props 的
     // _render()」才不會讀到過期值。這行同時是**新建 controller 的種子**。
@@ -561,6 +577,7 @@ export class ScreenController {
   _syncLightsButton() {
     if (!this._lightsButton) return;
     this._lightsButton.update(this._lightsActive());
+    this._syncFloatToolsActive();
   }
 
   // imagesEnlarged 不需要重建任何一列：容器 class 決定圖片尺寸，佔位盒只要知道
@@ -1244,13 +1261,17 @@ export class ScreenController {
   }
 
   // ------------------------------------------------------------- 尾端浮層
-  // 兩顆浮動按鈕與 hover 圖片預覽住在 #mainContainer 尾端，位置固定、不參與列 diff。
-  // 需要顯示的組合改變時整段重排（一次至多 3 個節點，且只在使用者操作時發生）。
+  // 「⋯」浮動工具鈕與 hover 圖片預覽住在 #mainContainer 尾端，位置固定、不參與列
+  // diff。需要顯示的組合改變時整段重排（一次至多 2 個節點，且只在使用者操作時發生）。
+  // 三顆工具按鈕收在「⋯」的面板裡（merge_buttons.js#createFloatingTools），一顆都
+  // 不用顯示時整個「⋯」也不出現。
   _syncOverlays(annotations, enhance) {
     // 浮動「圖文並排」按鈕：好讀文章頁且偵測到 ≥2 個「圖＋說明」塊才出現。純結構
     // 啟發式（見 image_caption_group.js），不確定那段字是不是翻譯 → opt-in 手動切換。
+    // 設定可關（pref showMergeCaptionButton → enhance.mergeCaptionButton）。
     const showMergeButton = !!(
       enhance &&
+      enhance.mergeCaptionButton !== false &&
       enhance.easyReading &&
       enhance.pageState === PAGE_READING &&
       (annotations.imageCaptionBlockCount || 0) >= 2
@@ -1263,15 +1284,18 @@ export class ScreenController {
     // 開燈鈕：文章頁偵測到隱藏文字就出現（**原生模式也要**——隱藏文字在原生一樣
     // 看不見）。第三個條件是燈已經亮著：軌 B 切成純文字之後畫面上再也偵測不到
     // 隱藏文字，少了它按鈕會消失、使用者關不掉燈。
+    // 設定關掉（enhance.lightsButton === false）時只剩「燈還亮著」這一條：軌 A 已在
+    // update() 熄掉，剩下的只會是軌 B 的純文字模式，留著按鈕讓使用者切回來。
+    const lightsAllowed = !!(enhance && enhance.lightsButton !== false);
     const showLightsButton = !!(
       enhance &&
       enhance.pageState === PAGE_READING &&
-      (annotations.hasLitHidden ||
-        annotations.hasErasedHidden ||
+      ((lightsAllowed &&
+        (annotations.hasLitHidden || annotations.hasErasedHidden)) ||
         this._lightsActive())
     );
 
-    const wanted = [];
+    const tools = [];
     if (showMergeButton) {
       if (!this._mergeButton) {
         this._mergeButton = createMergeImageCaptionButton(() =>
@@ -1279,7 +1303,7 @@ export class ScreenController {
         );
       }
       this._mergeButton.update(this._mergeCaption);
-      wanted.push(this._mergeButton.el);
+      tools.push(this._mergeButton.el);
     }
     if (showCaptionAiButton) {
       if (!this._aiButton) {
@@ -1291,14 +1315,25 @@ export class ScreenController {
         this._captionAi,
         this._captionAi ? this._aiPending : 0,
       );
-      wanted.push(this._aiButton.el);
+      tools.push(this._aiButton.el);
     }
     if (showLightsButton) {
       if (!this._lightsButton) {
         this._lightsButton = createLightsOnButton(() => this._toggleLights());
       }
       this._lightsButton.update(this._lightsActive());
-      wanted.push(this._lightsButton.el);
+      tools.push(this._lightsButton.el);
+    }
+
+    const wanted = [];
+    if (tools.length) {
+      if (!this._floatTools) this._floatTools = createFloatingTools();
+      this._floatTools.setTools(tools);
+      this._syncFloatToolsActive();
+      wanted.push(this._floatTools.el);
+    } else if (this._floatTools) {
+      // 下次出現時從收合開始（換文章／離開文章頁不該留著上一次釘開的面板）。
+      this._floatTools.setOpen(false);
     }
     if (this._hoverPreview !== undefined) {
       if (!this._hoverHost) this._hoverHost = el("div", null);
@@ -1325,6 +1360,15 @@ export class ScreenController {
     this._aiButton.update(
       this._captionAi,
       this._captionAi ? this._aiPending : 0,
+    );
+    this._syncFloatToolsActive();
+  }
+
+  // 「⋯」收合時也要看得出有工具作用中（圖文並排／AI／燈）。
+  _syncFloatToolsActive() {
+    if (!this._floatTools) return;
+    this._floatTools.setActive(
+      this._mergeCaption !== null || this._captionAi || this._lightsActive(),
     );
   }
 
