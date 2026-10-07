@@ -390,6 +390,14 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 .listBodyView::-webkit-scrollbar {
   display: none;
 }
+/* 頂端保留區（screen.js#absorbListShift）。用偽元素而不是 padding-top：保留區可以
+   比視口還高，border-box 下 padding 超過指定高度會把視口撐大。也不是 DOM 子節點，
+   逐列 patch 與 golden 快照都看不到它。 */
+.listBodyView::before {
+  content: "";
+  display: block;
+  height: var(--list-reserve, 0px);
+}
 .listBodyView > span {
   display: block;
   color: #C0C0C0;

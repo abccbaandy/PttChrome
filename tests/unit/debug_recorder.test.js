@@ -240,6 +240,54 @@ describe("DebugRecorder", () => {
     main.remove();
   });
 
+  // 列表好讀的捲動視口在 render 層、可能在錄製開始後才建立 ⇒ 必須在 document capture
+  // 層收（scroll 不冒泡）。錄製檔 ptt-debug-20261008-003701 就是少了這段，「往上捲卡住」
+  // 只剩 bytes 可看。
+  it("列表視口 .listBodyView 的 scroll／觸控／滾輪寫進錄製檔（視口晚於 start 建立也收得到）", () => {
+    const { app } = makeApp();
+    app.buf.listRenderOwner = "article-list";
+    app.listSession = { state: "active", _renderMode: "buffer", _topNum: 351699, _edgeUp: false, _edgeDown: true };
+    app.commandQueue = { idle: false, inFlightKind: "prefetch-up" };
+    app.view.componentScreen = { _listReservePx: 400, getListScrollTop: () => 800 };
+    const rec = new DebugRecorder(app);
+    rec.start();
+
+    const v = document.createElement("div");
+    v.className = "listBodyView";
+    v.style.cssText = "height:300px;overflow-y:auto";
+    const content = document.createElement("span");
+    content.style.cssText = "display:block;height:3000px";
+    v.appendChild(content);
+    document.body.appendChild(v);
+    v.scrollTop = 1200;
+
+    v.dispatchEvent(new window.Event("scroll"));
+    content.dispatchEvent(new window.TouchEvent("touchstart", { bubbles: true }));
+    content.dispatchEvent(new window.WheelEvent("wheel", { deltaY: -50, bubbles: true }));
+    document.body.dispatchEvent(new window.TouchEvent("touchend", { bubbles: true }));
+
+    const scroll = rec.events.find((e) => e.tag === "list.scroll");
+    expect(scroll.info).toMatchObject({
+      top: 1200, ctop: 800, res: 400, sh: 3000, ch: 300, ov: "auto",
+      own: "article-list", st: "active", rm: "buffer", topNum: 351699,
+      eu: false, ed: true, idle: false, fl: "prefetch-up",
+    });
+    const touches = rec.events.filter((e) => e.tag === "touch");
+    expect(touches.map((e) => [e.info.type, e.info.inList])).toEqual([
+      ["touchstart", true],
+      ["touchend", false],
+    ]);
+    expect(touches[0].info.topNum).toBe(351699);
+    expect(rec.events.find((e) => e.tag === "list.wheel").info).toMatchObject({ dy: -50, top: 1200 });
+
+    rec.stop();
+    const n = rec.events.length;
+    v.dispatchEvent(new window.Event("scroll"));
+    content.dispatchEvent(new window.TouchEvent("touchstart", { bubbles: true }));
+    expect(rec.events).toHaveLength(n);
+    v.remove();
+  });
+
   it("未錄製時 log() no-op；重複 stop 回 null", () => {
     const { app } = makeApp();
     const rec = new DebugRecorder(app);

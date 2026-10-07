@@ -10,6 +10,9 @@ import {
   ListSession,
   bufferEdgeNum,
   evictListBuffer,
+  EVICT_PROTECT_BELOW,
+  EVICT_PROTECT_ABOVE,
+  listGrowthDir,
   parseBoardName,
   classifyListScreen,
   isJumpParkedListScreen,
@@ -695,6 +698,51 @@ describe("evictListBuffer (total-row cap)", () => {
     const r = evictListBuffer(m, 4, 3);
     expect(r).toEqual({ evictedUp: true, evictedDown: true });
     expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([3, 4, 5]);
+  });
+  // 錄製檔 ptt-debug-20261008-014654：緩衝滿、視口在中段時，往上補進來的那一頁被
+  // 原樣砍掉（樞紐上下序號距離已平衡），緩衝不長 ⇒ demand 水位永遠不到 ⇒ 無限補頁。
+  const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+  const sorted = (m) => Array.from(m.keys()).sort((a, b) => a - b);
+  it("往上補頁（grewDir=-1）：剛補進的頂端留下，改砍底端", () => {
+    const m = mapOf(range(954, 1299)); // 舊 1000..1299 ＋ 新頁 954..999
+    const r = evictListBuffer(m, 1150, 300, -1);
+    expect(sorted(m)[0]).toBe(954);
+    expect(sorted(m).length).toBe(300);
+    expect(r).toEqual({ evictedUp: false, evictedDown: true });
+    // 對照：不帶方向（舊行為）砍的正是剛補進來的那頁。
+    const m2 = mapOf(range(954, 1299));
+    evictListBuffer(m2, 1150, 300);
+    expect(sorted(m2)[0]).toBeGreaterThan(999);
+  });
+  it("往下補頁（grewDir=1）：剛補進的底端留下，改砍頂端", () => {
+    const m = mapOf(range(1000, 1345));
+    const r = evictListBuffer(m, 1150, 300, 1);
+    expect(sorted(m)[299]).toBe(1345);
+    expect(r).toEqual({ evictedUp: true, evictedDown: false });
+  });
+  // 錄製檔 ptt-debug-20261008-020516：往下補時視口頂上方只有幾十列，對稱保護 100 列
+  // 讓頂端一列都砍不了 ⇒ 退回平衡規則、剛補的底端被砍 ⇒ 長度卡住、無限往下補。
+  it("往下補頁、視口頂上方只有幾十列：仍砍頂端（上方只留 EVICT_PROTECT_ABOVE 列）", () => {
+    const m = mapOf(range(1000, 1345)); // 舊 1000..1299 ＋ 新頁 1300..1345
+    evictListBuffer(m, 1060, 300, 1); // 視口頂在第 60 列
+    expect(sorted(m)[299]).toBe(1345);
+    expect(sorted(m)[0]).toBe(1046);
+    // 上方保護區：樞紐上方至少留 EVICT_PROTECT_ABOVE 列。
+    const m2 = mapOf(range(1000, 1345));
+    evictListBuffer(m2, 1020, 300, 1);
+    expect(sorted(m2)[0]).toBe(1020 - EVICT_PROTECT_ABOVE);
+  });
+  it("另一端只砍到保護區為止（往上長：樞紐以下 EVICT_PROTECT_BELOW 列），其餘退回平衡規則", () => {
+    // 樞紐離底端只剩 50 列：底端一列都不能砍（會切進視口），全部退回平衡規則。
+    const m = mapOf(range(954, 1299));
+    evictListBuffer(m, 1250, 300, -1);
+    expect(sorted(m)).toContain(1299);
+    expect(sorted(m)[0]).toBeGreaterThan(954);
+    // 底端剛好多出幾列可砍：先砍那幾列，剩下的才交給平衡規則。
+    const m2 = mapOf(range(954, 1299));
+    const pivot = 1299 - EVICT_PROTECT_BELOW - 10;
+    evictListBuffer(m2, pivot, 300, -1);
+    expect(sorted(m2)[299]).toBe(1299 - 10);
   });
   it("null pivot (pinned tail) is treated as bottom → evicts the top", () => {
     const m = mapOf([10, 11, 12, 13]);
@@ -2875,5 +2923,117 @@ describe("退文回列表：視野停在使用者自己捲到的位置", () => {
     settleBack(s, facts);
     frame(s, screen);
     expect(s._edgeDown).toBe(true);
+  });
+});
+
+// 錄製檔 ptt-debug-20261008-003701（APK，列表往上甩）：6.5 秒連送約 50 次 PgUp、畫面卡住。
+// 真 Android Chrome 實測：慣性甩動進行中，JS 寫進捲動容器的 scrollTop 會被 compositor
+// 蓋回去 ⇒ 補頁後的「寫 scrollTop 補償」遺失 ⇒ 下一幀錨從 DOM 讀成「快到頂」⇒ 又補一頁。
+// 替身照真瀏覽器的行為：flinging 時寫入被丟掉；頂端保留區（absorbListShift）不需寫入。
+describe("甩動中補頁（scrollTop 寫入被 compositor 蓋掉）", () => {
+  const ROW = 20;
+  const flingScreen = () => ({
+    dom: 0, // DOM 座標的 scrollTop（含保留區）
+    reserve: 0,
+    flinging: false,
+    setCalls: 0,
+    hasListViewport() { return true; },
+    getListScrollTop() { return this.dom - this.reserve; },
+    getListViewportPx() { return 20 * ROW; },
+    setListScrollTop(px) {
+      this.setCalls++;
+      if (!this.flinging) this.dom = px + this.reserve;
+    },
+    scrollListTo(px) { this.setListScrollTop(px); },
+    absorbListShift(d) {
+      const next = this.reserve - d;
+      if (next < 0) return false;
+      this.reserve = next;
+      return true;
+    },
+    setListReserveTarget(px) {
+      if (this.flinging || px === this.reserve) return;
+      this.dom += px - this.reserve;
+      this.reserve = px;
+    },
+  });
+
+  const prependPage = (termBuf, n = 20) => {
+    const first = termBuf.listLineNums[0];
+    const nums = [];
+    const rows = [];
+    for (let i = 0; i < n; ++i) {
+      nums.push(first - n + i);
+      rows.push(termBuf.listLines[0]);
+    }
+    termBuf.listLines = rows.concat(termBuf.listLines);
+    termBuf.listLineNums = nums.concat(termBuf.listLineNums);
+  };
+
+  const setup = () => {
+    const h = demandSession({ numStart: 100, count: 60 });
+    h.s._renderMode = "buffer";
+    h.s._edgeDown = true;
+    h.s._topNum = 100;
+    h.s._selectedNum = 110;
+    h.screen = flingScreen();
+    h.s._view.componentScreen = h.screen;
+    h.s.applyScrollAfterRender(); // 靜止時：保留區就位
+    h.screen.dom = h.screen.reserve + 5 * ROW; // 使用者往上捲到第 105 篇
+    h.screen.flinging = true; // 手指放開，慣性還在跑
+    return h;
+  };
+
+  test("補頁落地：看著的那一列不變（錨不被拉到新內容頂端）、不寫 scrollTop", () => {
+    const { s, screen, termBuf } = setup();
+    s.captureScrollAnchor();
+    expect(s._topNum).toBe(105);
+    prependPage(termBuf); // 補進 80..99
+    s.applyScrollAfterRender();
+    expect(screen.setCalls).toBe(0);
+    // 下一幀（甩動還在跑、DOM 沒被寫）：錨仍是第 105 篇。修前讀回第 85 篇 ⇒ 永遠 < 2B ⇒ 一直補。
+    s.captureScrollAnchor();
+    expect(s._topNum).toBe(105);
+  });
+
+  test("補足兩頁餘裕後 demand 停手（不再無限往上補）", () => {
+    const { s, screen, termBuf, enqueued } = setup();
+    let pages = 0;
+    for (; pages < 10; ++pages) {
+      s.captureScrollAnchor();
+      enqueued.length = 0;
+      s._maybeDemand(-1);
+      if (!enqueued.some((c) => c.kind === "prefetch-up")) break;
+      prependPage(termBuf);
+      s.applyScrollAfterRender();
+    }
+    expect(pages).toBe(2); // 105 → 位置 5 → 25 → 45 ≥ 2B
+    expect(screen.setCalls).toBe(0);
+  });
+
+  test("吸收時同步 _lastScrollTop：下一個 scroll 事件不被誤判成往下捲", () => {
+    const { s, termBuf } = setup();
+    s.captureScrollAnchor();
+    s._lastScrollTop = 5 * ROW;
+    prependPage(termBuf);
+    s.applyScrollAfterRender();
+    expect(s._lastScrollTop).toBe(25 * ROW);
+  });
+});
+
+describe("listGrowthDir（這一頁讓緩衝往哪端長）", () => {
+  const map = (nums) => new Map(nums.map((n) => [n, "r"]));
+  const page = (nums) => nums.map((n) => ({ num: n }));
+  test("頂端長 → -1；底端長 → 1", () => {
+    expect(listGrowthDir(map([100, 101, 102]), page([97, 98, 99, 100]))).toBe(-1);
+    expect(listGrowthDir(map([100, 101, 102]), page([102, 103]))).toBe(1);
+  });
+  test("沒長、兩端都長、緩衝原本是空的 → 0", () => {
+    expect(listGrowthDir(map([100, 101, 102]), page([101]))).toBe(0);
+    expect(listGrowthDir(map([100, 101, 102]), page([1, 500]))).toBe(0);
+    expect(listGrowthDir(map([]), page([1, 2]))).toBe(0);
+  });
+  test("置底列（num=null）不算", () => {
+    expect(listGrowthDir(map([100, 101]), [{ num: null }, { num: 99 }])).toBe(-1);
   });
 });

@@ -43,7 +43,9 @@ import {
   revealPlan,
   maxScrollTopFor,
   isRowVisible,
-  landingTopPos
+  landingTopPos,
+  listReservePx,
+  shiftOnlyDelta
 } from './list_scroll';
 import {
   defineOwnedRenderMode,
@@ -1120,6 +1122,14 @@ BoardListSession.prototype = {
   _enqueueFetch: function(dir, origin) {
     const nums = this._termBuf.brdListLineNums || [];
     const base = bufferEdgeNum(nums, dir);
+    this._core.debugRecorder?.log('boardList.fetch', {
+      origin: origin,
+      dir: dir,
+      base: base,
+      top: nums.length ? this._viewportTopPos() : null,
+      topNum: this._topNum,
+      len: nums.length
+    });
     if (base == null) return;
     const target = boardListFetchTarget({ base: base, dir: dir });
     if (target == null) {
@@ -1722,6 +1732,7 @@ BoardListSession.prototype = {
   // 緩衝索引、錨＝看板編號」。
 
   captureScrollAnchor: function() {
+    this._capturedAnchor = null;
     if (this._anchorOverride) {
       this._anchorOverride = false;
       return;
@@ -1735,6 +1746,7 @@ BoardListSession.prototype = {
     if (!this._sequenceLength()) return;
     const t = topPosFromScrollTop({ scrollTop: screen.getListScrollTop(), rowH: rowH });
     this._setAnchorPos(t.pos, t.frac);
+    this._capturedAnchor = { pos: t.pos, num: this._topNum };
   },
 
   applyScrollAfterRender: function() {
@@ -1745,6 +1757,10 @@ BoardListSession.prototype = {
     const len = this._sequenceLength();
     if (!len) return;
     const B = this._bodyRows();
+    const cap = this._capturedAnchor;
+    this._capturedAnchor = null;
+    if (screen.setListReserveTarget)
+      screen.setListReserveTarget(listReservePx({ edgeUp: this._edgeUp, bodyRows: B, rowH: rowH }));
     const viewportPx = screen.getListViewportPx() || B * rowH;
     const maxScrollTop = maxScrollTopFor({
       len: len,
@@ -1767,7 +1783,31 @@ BoardListSession.prototype = {
     // **序列沒位移時一格都不准寫**：同步寫 scrollTop 會取消瀏覽器進行中的平滑
     // 捲動（_breakScroll 正是靠這個副作用停住畫面的）。
     const cur = screen.getListScrollTop ? screen.getListScrollTop() : top;
-    const compensated = Math.abs(top - cur) >= 0.5;
+    // 純位移交給頂端保留區吸收、不寫 scrollTop（理由同 list_session：甩動中寫入會被
+    // compositor 蓋掉，screen.js#absorbListShift）。
+    const shift = shiftOnlyDelta({
+      capturedPos: cap && cap.num === this._topNum ? cap.pos : null,
+      pos: pos,
+      rowH: rowH,
+      top: top,
+      cur: cur
+    });
+    const absorbed = shift != null && !!screen.absorbListShift && screen.absorbListShift(shift);
+    if (absorbed) {
+      if (this._scrollAnim) this._scrollAnim.px += shift;
+      this._lastScrollTop += shift;
+    }
+    const compensated = !absorbed && Math.abs(top - cur) >= 0.5;
+    if (absorbed || compensated)
+      this._core.debugRecorder?.log('boardList.scrollApply', {
+        cur: Math.round(cur),
+        top: Math.round(top),
+        pos: pos,
+        capPos: cap ? cap.pos : null,
+        shift: shift,
+        absorbed: absorbed,
+        topNum: this._topNum
+      });
     if (compensated) {
       screen.setListScrollTop(top);
       this._lastScrollTop = top;

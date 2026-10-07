@@ -14,6 +14,9 @@ import {
   revealScrollTop,
   revealPlan,
   landingTopPos,
+  listReservePx,
+  shiftOnlyDelta,
+  LIST_RESERVE_PAGES,
 } from "../../src/js/list_scroll";
 
 const ROW = 26; // chh
@@ -209,5 +212,33 @@ describe("revealPlan（behavior 政策）", () => {
 
   test("單發（沒有 repeat）維持 smooth —— 第一下的平滑捲動不能被這條規則吃掉", () => {
     expect(revealPlan("pgdn", { repeat: false }).behavior).toBe("smooth");
+  });
+});
+
+describe("shiftOnlyDelta（純位移才交給頂端保留區吸收）", () => {
+  const H = 20;
+  test("錨上方多 10 列、差距恰好 10 列高 → 回傳差距", () => {
+    expect(shiftOnlyDelta({ capturedPos: 5, pos: 15, rowH: H, top: 15 * H + 3, cur: 5 * H + 3 })).toBe(10 * H);
+  });
+  test("頂端 evict（上方少列）→ 負的差距", () => {
+    expect(shiftOnlyDelta({ capturedPos: 30, pos: 20, rowH: H, top: 20 * H, cur: 30 * H })).toBe(-10 * H);
+  });
+  test("錨不是擷取來的（action 指定落點）→ null，照舊寫入", () => {
+    expect(shiftOnlyDelta({ capturedPos: null, pos: 15, rowH: H, top: 15 * H, cur: 5 * H })).toBeNull();
+  });
+  test("差距不等於列位移（clamp、視口在保留區裡）→ null", () => {
+    expect(shiftOnlyDelta({ capturedPos: 5, pos: 15, rowH: H, top: 12 * H, cur: 5 * H })).toBeNull();
+    // 視口停在保留區（內容座標為負）：擷取時 clamp 成 0，差距大於位移。
+    expect(shiftOnlyDelta({ capturedPos: 0, pos: 10, rowH: H, top: 10 * H, cur: -300 })).toBeNull();
+  });
+  test("沒位移 → null（不吸收也不寫）", () => {
+    expect(shiftOnlyDelta({ capturedPos: 5, pos: 5, rowH: H, top: 5 * H, cur: 5 * H })).toBeNull();
+  });
+});
+
+describe("listReservePx", () => {
+  test("往上還有東西＝固定頁數；到頂＝0", () => {
+    expect(listReservePx({ edgeUp: false, bodyRows: 20, rowH: 10 })).toBe(LIST_RESERVE_PAGES * 200);
+    expect(listReservePx({ edgeUp: true, bodyRows: 20, rowH: 10 })).toBe(0);
   });
 });

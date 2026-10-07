@@ -1410,3 +1410,53 @@ describe("手機卡片：採用原生落點時游標必須在視口內（看板�
     expect(screen.top).toBe(20 * CHH);
   });
 });
+
+// 同 list_session.test.js「甩動中補頁」：甩動中寫進捲動容器的 scrollTop 會被 compositor
+// 蓋回去（真 Android Chrome 實測，錄製檔 ptt-debug-20261008-003701）。往上補頁的位移
+// 必須交給頂端保留區吸收，不靠寫入。
+describe("甩動中補頁（看板列表，scrollTop 寫入被 compositor 蓋掉）", () => {
+  const CHH = 20;
+  test("補頁落地：錨仍是原本看著的那一列、不寫 scrollTop", () => {
+    const h = makeSession();
+    seedBuffer(h.termBuf, 101, 40);
+    h.s.state = "active";
+    h.s._renderMode = "buffer";
+    h.view.chh = CHH;
+    h.s._topNum = 101;
+    const screen = {
+      dom: 0,
+      reserve: 0,
+      flinging: false,
+      setCalls: 0,
+      hasListViewport: () => true,
+      getListScrollTop() { return this.dom - this.reserve; },
+      getListViewportPx: () => 20 * CHH,
+      setListScrollTop(px) {
+        this.setCalls++;
+        if (!this.flinging) this.dom = px + this.reserve;
+      },
+      scrollListTo(px) { this.setListScrollTop(px); },
+      absorbListShift(d) {
+        if (this.reserve - d < 0) return false;
+        this.reserve -= d;
+        return true;
+      },
+      setListReserveTarget(px) {
+        if (this.flinging || px === this.reserve) return;
+        this.dom += px - this.reserve;
+        this.reserve = px;
+      },
+    };
+    h.view.componentScreen = screen;
+    h.s.applyScrollAfterRender();
+    screen.dom = screen.reserve + 5 * CHH; // 看著 106
+    screen.flinging = true;
+    h.s.captureScrollAnchor();
+    expect(h.s._topNum).toBe(106);
+    seedBuffer(h.termBuf, 81, 60); // 上方補進 81..100
+    h.s.applyScrollAfterRender();
+    expect(screen.setCalls).toBe(0);
+    h.s.captureScrollAnchor();
+    expect(h.s._topNum).toBe(106);
+  });
+});

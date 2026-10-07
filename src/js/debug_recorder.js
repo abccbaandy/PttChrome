@@ -4,6 +4,7 @@
 // 序列化 / redact / cassette 導出在 debug_recorder_logic.js（純邏輯，unit 測）。
 import { serializeRecording } from './debug_recorder_logic';
 import { setDiagSink } from './diag';
+import { OWNER_BOARD_LIST } from './list_render_owner';
 
 // 輕量狀態快照：純讀取，不深拷貝 buf。欄位缺就缺（防呆）。
 //
@@ -101,6 +102,47 @@ export function cursorGeomSample(view, doc) {
   }
 }
 
+// 列表好讀捲動視口（`.listBodyView`）的一筆狀態取樣（tag `list.scroll`／`touch`）。
+// 只錄數字與狀態旗標，不錄文字。會量 scrollHeight（reflow），只在錄製期間、而且是
+// scroll／touch 事件處理裡（不在 render 同步路徑上）才呼叫。
+//   top/ctop  DOM scrollTop／內容座標（扣掉頂端保留區，screen.getListScrollTop）
+//   res       頂端保留區 px（screen.absorbListShift）
+//   ov        overflow-y（hidden＝交易 frozen 或 pref 關掉，使用者捲不動）
+//   own       誰在畫列表（article-list／board-list／null＝原生）
+//   st/rm     session 狀態／renderMode；topNum 視口錨；eu/ed 到頂／到底旗標
+//   idle/fl   CommandQueue 是否閒置／在飛命令的 kind
+export function listViewSample(app, v) {
+  try {
+    const buf = app.buf;
+    const own = (buf && buf.listRenderOwner) || null;
+    const ls = own === OWNER_BOARD_LIST ? app.boardListSession : app.listSession;
+    const scr = app.view && app.view.componentScreen;
+    const q = app.commandQueue;
+    const out = {
+      top: v ? Math.round(v.scrollTop) : null,
+      ctop: scr && scr.getListScrollTop ? Math.round(scr.getListScrollTop()) : null,
+      res: scr ? Math.round(scr._listReservePx || 0) : null,
+      sh: v ? v.scrollHeight : null,
+      ch: v ? v.clientHeight : null,
+      ov: v ? v.style.overflowY : null,
+      own,
+      st: ls ? ls.state : null,
+      rm: ls ? ls._renderMode : null,
+      topNum: ls ? ls._topNum : null,
+      eu: ls ? !!ls._edgeUp : null,
+      ed: ls ? !!ls._edgeDown : null,
+      idle: q ? !!q.idle : null,
+      fl: q ? q.inFlightKind || null : null,
+    };
+    return out;
+  } catch (e) {
+    return { error: String(e) };
+  }
+}
+
+const LIST_VIEW_SEL = '.listBodyView';
+const TOUCH_TYPES = ['touchstart', 'touchend', 'touchcancel'];
+
 export class DebugRecorder {
   constructor(app) {
     this.app = app;
@@ -147,6 +189,7 @@ export class DebugRecorder {
     // 見 diag.js。
     setDiagSink((tag, info) => this.log(tag, info));
     this._watchScroller(app.view && app.view.mainDisplay);
+    this._watchList();
 
     this.log('record.start', { url: app.connectedUrl && app.connectedUrl.url });
   }
@@ -175,6 +218,54 @@ export class DebugRecorder {
     scroller.addEventListener('scroll', this._onScroll, { passive: true });
   }
 
+  // 列表好讀的捲動視口是 render 層的常駐節點，但錄製開始時可能還沒建立（或之後被重建），
+  // 所以掛在 document 的 capture 階段（scroll 不冒泡，capture 收得到），用 target 篩。
+  // 觸控一律記（含不在列表上的），才看得出「手指有放上去、卻沒有任何 scroll 事件」
+  //（捲不動）這種卡住；在列表上的那幾筆附上 listViewSample。
+  _watchList() {
+    if (typeof document === 'undefined') return;
+    const app = this.app;
+    const listOf = (t) => (t && t.closest ? t.closest(LIST_VIEW_SEL) : null);
+    this._onListScroll = (e) => {
+      const t = e.target;
+      if (!t || !t.matches || !t.matches(LIST_VIEW_SEL)) return;
+      this.log('list.scroll', listViewSample(app, t));
+    };
+    this._onListWheel = (e) => {
+      const v = listOf(e.target);
+      if (!v) return;
+      this.log('list.wheel', { dy: Math.round(e.deltaY), mode: e.deltaMode, top: Math.round(v.scrollTop) });
+    };
+    this._onTouch = (e) => {
+      const p = (e.changedTouches && e.changedTouches[0]) || null;
+      const v = listOf(e.target);
+      const info = {
+        type: e.type,
+        n: e.touches ? e.touches.length : 0,
+        x: p ? Math.round(p.clientX) : null,
+        y: p ? Math.round(p.clientY) : null,
+        inList: !!v,
+      };
+      if (v) Object.assign(info, listViewSample(app, v));
+      this.log('touch', info);
+    };
+    const opt = { capture: true, passive: true };
+    document.addEventListener('scroll', this._onListScroll, opt);
+    document.addEventListener('wheel', this._onListWheel, opt);
+    for (const type of TOUCH_TYPES) document.addEventListener(type, this._onTouch, opt);
+  }
+
+  _unwatchList() {
+    if (typeof document === 'undefined' || !this._onListScroll) return;
+    const opt = { capture: true, passive: true };
+    document.removeEventListener('scroll', this._onListScroll, opt);
+    document.removeEventListener('wheel', this._onListWheel, opt);
+    for (const type of TOUCH_TYPES) document.removeEventListener(type, this._onTouch, opt);
+    this._onListScroll = null;
+    this._onListWheel = null;
+    this._onTouch = null;
+  }
+
   _unwatchScroller() {
     if (!this._scroller) return;
     this._scroller.removeEventListener('wheel', this._onWheel, { passive: true });
@@ -196,6 +287,7 @@ export class DebugRecorder {
     this.isRecording = false;
     setDiagSink(null);
     this._unwatchScroller();
+    this._unwatchList();
     if (this._origOnData) this.app.onData = this._origOnData;
     if (this._origSendRaw && this._patchedConn) this._patchedConn._sendRaw = this._origSendRaw;
     this._origOnData = null;

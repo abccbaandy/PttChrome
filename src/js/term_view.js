@@ -12,7 +12,7 @@ import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, normalizePasteText } from './string_util';
 import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
-import { mergeListPage, flattenListBuffer, evictListBuffer, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
+import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
 import { BOARD_LIST, rowHasTitle } from './screen_titles';
@@ -3012,6 +3012,8 @@ TermView.prototype = {
         });
       }
     }
+    // 合併前量「緩衝往哪端長」：evict 不砍剛長出來的那一端（evictListBuffer 註解）。
+    var grewDir = listGrowthDir(this._listNumMap, entries);
     mergeListPage(this._listNumMap, this._listPinnedMap, entries);
     // Contiguity guard: the window must never span pages we skipped over (far
     // jumps: End / Home / open-pinned). Keep only the pivot's segment; the
@@ -3037,7 +3039,8 @@ TermView.prototype = {
     var ev = evictListBuffer(
       this._listNumMap,
       ls ? ls.evictPivot() : null,
-      MAX_LIST_ROWS
+      MAX_LIST_ROWS,
+      grewDir
     );
     if (ls && ev.evictedUp) ls.noteEvicted(-1);
     if (ls && ev.evictedDown) ls.noteEvicted(1);
@@ -3179,6 +3182,11 @@ TermView.prototype = {
     for (var r = 0; r < buf.rows; ++r) rowTexts.push(buf.getRowText(r, 0, buf.cols));
     var nums = boardListRowNums(rowTexts, buf.rows);
     var bs = listOwnerOf(this.bbscore);
+    // 合併前量「緩衝往哪端長」（與文章列表同一條規則，見 evictListBuffer 註解）。
+    var pageEntries = [];
+    for (var j = BRD_HEADER_ROWS; j <= buf.rows - 2; ++j)
+      if (nums[j] != null) pageEntries.push({ num: nums[j] });
+    var grewDir = listGrowthDir(this._brdNumMap, pageEntries);
     for (var i = BRD_HEADER_ROWS; i <= buf.rows - 2; ++i) {
       if (nums[i] == null) continue;
       var row = cloneRow(buf.lines[i]);
@@ -3194,7 +3202,7 @@ TermView.prototype = {
     var pr = pruneListToSegment(this._brdNumMap, bs ? bs.prunePivot() : null);
     if (bs && pr.prunedUp) bs.noteEvicted(-1);
     if (bs && pr.prunedDown) bs.noteEvicted(1);
-    var ev = evictListBuffer(this._brdNumMap, bs ? bs.evictPivot() : null, MAX_LIST_ROWS);
+    var ev = evictListBuffer(this._brdNumMap, bs ? bs.evictPivot() : null, MAX_LIST_ROWS, grewDir);
     if (bs && ev.evictedUp) bs.noteEvicted(-1);
     if (bs && ev.evictedDown) bs.noteEvicted(1);
     var flat = flattenListBuffer(this._brdNumMap, EMPTY_PINNED_MAP);

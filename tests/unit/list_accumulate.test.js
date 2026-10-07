@@ -750,6 +750,41 @@ describe("accumulateListLines（遠跳落點頁不得被 evict 砍掉）", () =>
     expect(ls.noteEvicted).toHaveBeenCalledWith(1);
   });
 
+  // 錄製檔 ptt-debug-20261008-014654：緩衝已滿、視口在中段，往上補的那頁每次都被
+  // evict 原樣砍掉 ⇒ 緩衝不長、demand 一直補（約每 90ms 一頁），進文章重建才恢復。
+  test("往上補頁落地：緩衝已滿且視口在中段，新頁留下、改砍底端", () => {
+    const ls = fakeListSession();
+    ls._selectedNum = OLD_LO + 150; // 視口在中段
+    const body = [];
+    for (let n = OLD_LO - 20; n < OLD_LO; ++n) body.push(listRow(n));
+    const v = fakeView(header.concat(body, [footer]), 3, ls);
+    seedOldBuffer(v);
+    v.accumulateListLines();
+    const nums = v.buf.listLineNums;
+    expect(nums[0]).toBe(OLD_LO - 20);
+    expect(nums).not.toContain(OLD_HI);
+    expect(nums.length).toBe(300);
+    expect(ls.noteEvicted).toHaveBeenCalledWith(1);
+    expect(ls.noteEvicted).not.toHaveBeenCalledWith(-1);
+  });
+
+  // 錄製檔 ptt-debug-20261008-020516：往下補時視口頂上方只有幾十列，新頁照樣被砍。
+  test("往下補頁落地：緩衝已滿、視口頂上方只有 60 列，新頁留下、改砍頂端", () => {
+    const ls = fakeListSession();
+    ls._selectedNum = OLD_LO + 60;
+    const body = [];
+    for (let n = OLD_HI + 1; n <= OLD_HI + 20; ++n) body.push(listRow(n));
+    const v = fakeView(header.concat(body, [footer]), 3, ls);
+    seedOldBuffer(v);
+    v.accumulateListLines();
+    const nums = v.buf.listLineNums;
+    expect(nums[nums.length - 1]).toBe(OLD_HI + 20);
+    expect(nums).toContain(OLD_LO + 60);
+    expect(nums.length).toBe(300);
+    expect(ls.noteEvicted).toHaveBeenCalledWith(-1);
+    expect(ls.noteEvicted).not.toHaveBeenCalledWith(1);
+  });
+
   test("連續成長（沒洞）仍然照舊以視口為樞紐砍邊界", () => {
     const ls = fakeListSession();
     // 視口頂在舊段最上面 ⇒ 超過上限時該砍掉離它最遠的那一端（大號端）。

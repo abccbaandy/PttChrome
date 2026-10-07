@@ -144,6 +144,7 @@ server `base` 不對齊：抓頁以**絕對編號** merge、`boardListFetchVerdi
 | 序列 | ＝整份緩衝（無黑名單過濾、無置底門控）⇒ 位置就是索引 |
 | 上限／連續段 | 共用 `evictListBuffer` / `pruneListToSegment`（key 換成看板編號） |
 | 捲動數學 | 共用 `js/list_scroll.js`（`topPosFromScrollTop`/`anchorScrollTop`/`revealScrollTop`/`revealPlan`…） |
+| 補頁位移 | 共用頂端保留區（`screen.absorbListShift`，甩動中不寫 scrollTop；見 `docs/easy-reading-list.md`「純位移不寫 scrollTop」） |
 | 渲染輸出 | 共用 `_listWindowLines` / `_listCursorRow`（`clientToPos`／游標底色／複製選取都讀它） |
 
 **enhance 的 `pageState` pin 成 1（MENU）且不帶 `listEasyReading`／`inListContext`**：

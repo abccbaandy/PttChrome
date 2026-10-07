@@ -156,6 +156,36 @@ pref `enableEasyReadingList`（**2026-09-16 起預設 on**）＋`easyReadingList
   補償的另一半在 CSS：`.listBodyView` 的 `overflow-anchor: none` —— 瀏覽器內建的
   scroll anchoring 也會在前置插入時調 scrollTop，兩邊各補一次就是補過頭。
   守護：`list_session.test.js`「平滑捲動 × 背景補頁（回捲的回歸）」六條。
+- **純位移不寫 scrollTop：頂端保留區吸收**（`render/screen.js#absorbListShift`，兩種列表共用）。
+  CONFIRMED（Android 14 模擬器 Chrome 113，`adb input swipe` 真甩動）：**觸控捲動／慣性甩動進行中，
+  JS 寫進捲動容器的 scrollTop 會被 compositor 蓋回去**——`scrollTop=`、`scrollBy`、先切
+  `overflow:hidden` 再寫、改開 `overflow-anchor:auto`（瀏覽器沒有自己補）全部一樣。舊補償因此遺失 ⇒
+  畫面跳一頁，下一幀錨從 DOM 讀成「快到頂」⇒ 又補一頁 ⇒ 無限往上補（錄製檔
+  `ptt-debug-20261008-003701`：APK 6.5 秒連送約 50 次 PgUp，畫面卡住）。
+  機制：視口頂端一段空白（`.listBodyView::before`，高度 css 變數 `--list-reserve`；**不可用 padding-top**，
+  border-box 下 padding 超過指定高度會把視口撐高）。`screen.get/setListScrollTop`／`scrollListTo`
+  一律是**內容座標**（不含保留區，保留區在視野裡時為負）。`applyScrollAfterRender` 用
+  `list_scroll.shiftOnlyDelta` 判斷「差距＝錨上方增減的列」⇒ `absorbListShift` 縮／放保留區，不寫入
+  （同步 `_lastScrollTop`／`_scrollAnim.px` 加 shift）；其餘（落點、還原、clamp、保留區不夠）照舊寫。
+  保留區目標＝`listReservePx`（未到頂 `LIST_RESERVE_PAGES`=4 頁，到頂 0），回補需寫入 ⇒ 只在靜止時做
+  （`LIST_RESERVE_IDLE_MS` 內無 scroll 事件；**不追蹤觸控**：按下的那列被重畫換掉時 touchend 傳不到視口／document，計數會卡住）。
+  守護：`render_list_reserve.test.js`（真 DOM：不寫入、列原地、不撐高視口）、
+  `list_session.test.js`／`board_list_session.test.js`「甩動中補頁」（替身照實測丟掉甩動中的寫入）。
+  e2e 不收：模擬器軟體繪圖下取樣太稀，「甩動位移」與「補頁跳頁」量不出差別（修前修後同紅同綠）。
+- **evict 不砍剛長出來的那一端**（`evictListBuffer` 的 `grewDir`，由 `listGrowthDir` 在合併前算；兩種列表共用）。
+  CONFIRMED（錄製檔 `ptt-debug-20261008-014654` t≈5169 起）：緩衝滿 300、視口在中段時，舊規則「砍離樞紐序號最遠的
+  那端」把剛補進的那頁原樣砍掉（序號距離已平衡），但 demand 水位是**可見**列數 `top < 2B`，刪文／黑名單隱藏列讓
+  可見數永遠不到 ⇒ 長度卡在 230、每 ~90ms 補一頁停不下來；進文章重建緩衝才恢復。另一端只砍到離樞紐
+  保護區為止、其餘退回平衡規則；**保護區不對稱**（樞紐＝視口頂）：砍底端時保住樞紐以下 `EVICT_PROTECT_BELOW`=100 列，
+  砍頂端時只留樞紐以上 `EVICT_PROTECT_ABOVE`=10 列（對稱 100 列時往下補照樣卡死，錄製檔 `ptt-debug-20261008-020516`）。守護：`list_session.test.js`「evictListBuffer」、
+  `list_accumulate.test.js`「往上補頁落地：緩衝已滿且視口在中段」。
+- **錄製檔的列表捲動 tag**（debug 錄製期間才有）：`list.scroll`／`touch`／`list.wheel`（`debug_recorder.js#_watchList`，
+  document capture 層收，視口晚建也收得到；欄位見 `listViewSample` 註解）、`listView.write`（每次程式寫 scrollTop，
+  `busy`＝寫入當下在捲／觸控中）、`listView.absorb`、`listView.reserve`（applied／deferred／detached）、
+  `listView.overflow`（hidden＝使用者捲不動）、`listSession.prefetch`（每次補頁的 origin 與當下 top/B）、
+  `listSession.scrollApply`（吸收或寫入的決策）、`listSession.loading`；看板列表對應 `boardList.fetch`／`boardList.scrollApply`。
+  判讀：「卡住」先看有沒有 `touch` 卻沒有 `list.scroll`（捲不動，查 `ov`）、`prefetch` 的 top 是否隨補頁增加、
+  `write` 之後的 `list.scroll` 是否被蓋回去。
 - **Home/End 一律走 server，且直送原生鍵**（2026-09-05 使用者決定「真的直通原生」）：
   End→`_requestEnd`（`ESC[4~`，read.c:898-902 `KEY_END`/`$` → `new_ln = last_line`，
   **含置底文**）；Home→`_requestHome`（`ESC[1~`，read.c:893-896 `KEY_HOME` →

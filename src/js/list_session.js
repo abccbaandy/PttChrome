@@ -54,7 +54,9 @@ import {
   revealPlan,
   maxScrollTopFor,
   isRowVisible,
-  landingTopPos
+  landingTopPos,
+  listReservePx,
+  shiftOnlyDelta
 } from './list_scroll';
 import { LEFT_ARROW } from './function_key_plan';
 import { readValuesWithDefault } from './pref_storage';
@@ -2701,6 +2703,21 @@ ListSession.prototype = {
     const base = chained
       ? this._chainState.lastLanded
       : bufferEdgeNum(this._termBuf.listLineNums, dir);
+    // 每一次補頁的起因與當下視口（錄製期間）：「補頁停不下來」要看的是 top 有沒有
+    // 隨補頁增加（demand 的水位是 top < 2B）。
+    if (this._core.debugRecorder && this._core.debugRecorder.isRecording) {
+      const seq = this._sequence();
+      this._diag('listSession.prefetch', {
+        origin: origin,
+        dir: dir,
+        chained: chained,
+        base: base,
+        top: seq.length ? this._viewportTopPos(seq) : null,
+        topNum: this._topNum,
+        len: seq.length,
+        B: this._bodyRows()
+      });
+    }
     if (base == null) {
       // buffer 裡一列編號都沒有 ⇒ 沒有錨點可跳，這條腿送不出去。reducer 的
       // 不變量 17 守門後不該再發生；真發生了就是「卡在這一頁、按鍵沒反應」的
@@ -3157,6 +3174,8 @@ ListSession.prototype = {
   // transaction freezes the render, and while a demand prefetch is filling
   // past a window edge the user is pressing against. View-optional (tests).
   _setLoading: function(on) {
+    if (!!on !== !!this._loadingShown) this._diag('listSession.loading', { on: !!on });
+    this._loadingShown = !!on;
     if (this._view.setListLoading) this._view.setListLoading(on);
   },
 
@@ -3569,6 +3588,7 @@ ListSession.prototype = {
   // 重繪前：把 DOM 現在的 scrollTop 轉成內容錨。accumulate 會讓整段序列上下位移
   // （merge/evict/prune），位置留不住、錨留得住。
   captureScrollAnchor: function() {
+    this._capturedAnchor = null;
     if (this._anchorOverride) {
       // 這一幀的錨由 action 指定（開文落地／End/Home／re-seed），不從 DOM 擷取。
       this._anchorOverride = false;
@@ -3593,6 +3613,8 @@ ListSession.prototype = {
       rowH: rowH
     });
     this._setAnchorPos(seq, t.pos, t.frac);
+    // 重繪後用來分辨「錨上方多了幾列」與「位置本身被改了」（shiftOnlyDelta）。
+    this._capturedAnchor = { pos: t.pos, num: this._topNum, key: this._topPinnedKey };
   },
 
   // 重繪後：錨 → 新的序列位置 → scrollTop。接著消費 _pendingReveal。
@@ -3604,6 +3626,10 @@ ListSession.prototype = {
     const seq = this._sequence();
     if (!seq.length) return;
     const B = this._bodyRows();
+    const cap = this._capturedAnchor;
+    this._capturedAnchor = null;
+    if (screen.setListReserveTarget)
+      screen.setListReserveTarget(listReservePx({ edgeUp: this._edgeUp, bodyRows: B, rowH: rowH }));
     const viewportPx = screen.getListViewportPx() || B * rowH;
     const maxScrollTop = maxScrollTopFor({
       len: seq.length,
@@ -3642,7 +3668,35 @@ ListSession.prototype = {
     // 現值相同」的值 ⇒ 動畫被殺，而下面的 _scrollAnim 分支又因為「目標沒變」不重發
     // ⇒ 單按一次 PgUp 只要中途來一幀就捲到一半停住。
     const cur = screen.getListScrollTop ? screen.getListScrollTop() : top;
-    const compensated = Math.abs(top - cur) >= 0.5;
+    // 純粹是錨上方多了／少了幾列（補頁、頂端 evict）⇒ 交給頂端保留區吸收，**不寫
+    // scrollTop**：甩動中寫入會被 compositor 蓋掉（screen.js#absorbListShift）。
+    const shift = shiftOnlyDelta({
+      capturedPos:
+        cap && cap.num === this._topNum && cap.key === this._topPinnedKey ? cap.pos : null,
+      pos: pos,
+      rowH: rowH,
+      top: top,
+      cur: cur
+    });
+    const absorbed = shift != null && !!screen.absorbListShift && screen.absorbListShift(shift);
+    // 吸收後 DOM 座標沒動 ⇒ 進行中的平滑動畫目標（內容座標）跟著位移，不必重發。
+    // _lastScrollTop 同理（內容座標整段平移了 shift）——不跟上的話下一個 scroll 事件
+    // 會被 _onScrollFrame 讀成「使用者往反方向捲」而偷送一次反向 demand。
+    if (absorbed) {
+      if (this._scrollAnim) this._scrollAnim.px += shift;
+      this._lastScrollTop += shift;
+    }
+    const compensated = !absorbed && Math.abs(top - cur) >= 0.5;
+    if (absorbed || compensated)
+      this._diag('listSession.scrollApply', {
+        cur: Math.round(cur),
+        top: Math.round(top),
+        pos: pos,
+        capPos: cap ? cap.pos : null,
+        shift: shift,
+        absorbed: absorbed,
+        topNum: this._topNum
+      });
     if (compensated) {
       screen.setListScrollTop(top);
       // 程式化定位＝新的基準。不同步的話它引發的 scroll 事件會被 _onScrollFrame
@@ -4120,10 +4174,24 @@ export function pinnedRowKey(text) {
 // 選取被淘汰掉的降級是既有且正確的——_cursorPos 會 snap 到最近的存活列，而
 // 開文走的是序號 jump 交易、不依賴那一列還在 buffer 裡。
 //
+// **剛長出來的那一端不砍**（grewDir，見 listGrowthDir）：補頁只朝使用者捲的方向抓，
+// 該丟的是另一端。只看「離樞紐的序號距離」會在樞紐落在中段時把剛補進來的那一頁
+// 原樣砍掉 ⇒ 緩衝不長、demand 的水位（**可見**列數 top < 2B）永遠不到 ⇒ 每 ~90ms
+// 再補一頁、停不下來。序號距離與可見列數的落差來自刪文／黑名單隱藏列（C_Chat 刪文
+// 多就容易踩到）；錄製檔 ptt-debug-20261008-014654（t≈5169 起長度卡在 230 不再增加，
+// 進一篇文章重建緩衝才恢復）。另一端只砍到保護區為止，再多的才退回下面的平衡規則。
+// **保護區兩邊不對稱**：樞紐＝視口**頂**，視口在它下方 ⇒ 往上長（砍底端）要保住樞紐
+// 以下 EVICT_PROTECT_BELOW 列（視口＋餘裕）；往下長（砍頂端）時樞紐以上根本不在畫面
+// 裡，只留 EVICT_PROTECT_ABOVE 列餘裕。對稱保護 100 列時往下補照樣卡死（錄製檔
+// ptt-debug-20261008-020516 t≈2788 起長度卡在 222：視口上方只有幾十列，全在保護區內
+// ⇒ 退回平衡規則、又把剛補的底端砍掉）。grewDir=0（兩端都動、遠跳、不知道）＝原規則。
+//
 // Mutates numMap in place; the pinned map is never evicted (a handful of rows at
 // most). Returns which end(s) got dropped so the session can clear the matching
 // _edgeUp/_edgeDown flag — demand must be able to re-fetch an evicted segment.
-export function evictListBuffer(numMap, pivotNum, cap) {
+export const EVICT_PROTECT_BELOW = 100;
+export const EVICT_PROTECT_ABOVE = 10;
+export function evictListBuffer(numMap, pivotNum, cap, grewDir) {
   const r = { evictedUp: false, evictedDown: false };
   if (!numMap || numMap.size <= cap) return r;
   const nums = Array.from(numMap.keys()).sort((a, b) => a - b);
@@ -4131,6 +4199,24 @@ export function evictListBuffer(numMap, pivotNum, cap) {
   let lo = 0;
   let hi = nums.length - 1;
   let excess = nums.length - cap;
+  if (grewDir) {
+    let pivotIdx = nums.length;
+    for (let i = 0; i < nums.length; ++i)
+      if (nums[i] >= sel) {
+        pivotIdx = i;
+        break;
+      }
+    while (excess > 0) {
+      if (grewDir < 0 && hi - pivotIdx > EVICT_PROTECT_BELOW) {
+        numMap.delete(nums[hi--]);
+        r.evictedDown = true;
+      } else if (grewDir > 0 && pivotIdx - lo > EVICT_PROTECT_ABOVE) {
+        numMap.delete(nums[lo++]);
+        r.evictedUp = true;
+      } else break;
+      --excess;
+    }
+  }
   while (excess-- > 0) {
     if (sel - nums[lo] >= nums[hi] - sel) {
       numMap.delete(nums[lo++]);
@@ -4141,6 +4227,28 @@ export function evictListBuffer(numMap, pivotNum, cap) {
     }
   }
   return r;
+}
+
+// 這一頁合併進緩衝後，緩衝往哪一端長：-1＝頂端（更舊的序號，往上補頁）、1＝底端、
+// 0＝兩端都動／都沒動／緩衝原本是空的（交給 evictListBuffer 的平衡規則）。
+// entries 是 accumulateListLines 準備合併的列（num 為 null 的置底列不算）。
+export function listGrowthDir(numMap, entries) {
+  if (!numMap || !numMap.size || !entries) return 0;
+  let prevMin = Infinity;
+  let prevMax = -Infinity;
+  for (const n of numMap.keys()) {
+    if (n < prevMin) prevMin = n;
+    if (n > prevMax) prevMax = n;
+  }
+  let up = false;
+  let down = false;
+  for (let i = 0; i < entries.length; ++i) {
+    const n = entries[i].num;
+    if (n == null) continue;
+    if (n < prevMin) up = true;
+    if (n > prevMax) down = true;
+  }
+  return up === down ? 0 : up ? -1 : 1;
 }
 
 // The article number at a buffer edge: smallest (direction<0, the "older" top)

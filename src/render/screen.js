@@ -64,7 +64,7 @@ import {
 } from "./inline_preview_slot";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import { imageSizeMode, stepImageZoom } from "../js/image_zoom";
-import { diag } from "../js/diag";
+import { diag, diagActive } from "../js/diag";
 import {
   annotationsKey,
   sameKey,
@@ -94,6 +94,8 @@ function shiftRowIndex(node, delta) {
 // 被吃掉。col＝底色從第幾欄畫起（0＝整列），與可點區同源
 // （js/mouse_regions.clickableColStart）。
 const NO_HIGHLIGHT = Object.freeze({ row: -1, cls: null, col: 0 });
+// 列表視口「捲動靜止」的判準：這麼久沒有 scroll 事件（慣性甩動每幀都有一個）。
+const LIST_RESERVE_IDLE_MS = 250;
 // 推文者高亮的整列底色（main.css .pusherHighlight）。
 const PUSHER_HIGHLIGHT_CLASS = "pusherHighlight";
 
@@ -187,8 +189,14 @@ export class ScreenController {
     this._bodyView = null;
     this.onListScroll = null;
     this._onListScroll = () => {
+      this._listScrollAt = performance.now();
       if (this.onListScroll) this.onListScroll();
     };
+    // 頂端保留區（見 absorbListShift）與它的「捲動靜止」判斷。
+    this._listReservePx = 0;
+    this._listReserveTarget = 0;
+    this._listReserveTimer = null;
+    this._listScrollAt = -Infinity;
 
     // 事件委派：點到內嵌預覽圖（.hyperLinkPreview）即切換整頁圖片放大/縮小。
     // hover 預覽的 OnHover img 無此 class，不受影響。
@@ -414,6 +422,8 @@ export class ScreenController {
       this._bodyView.removeEventListener("scroll", this._onListScroll);
       this._bodyView = null;
     }
+    if (this._listReserveTimer != null) clearTimeout(this._listReserveTimer);
+    this._listReserveTimer = null;
     this.onListScroll = null;
     this.container.removeEventListener("click", this._onContainerClick);
     this.container.removeEventListener("mousemove", this._onContainerMouseMove);
@@ -1186,12 +1196,18 @@ export class ScreenController {
       this._bodyView.addEventListener("scroll", this._onListScroll, {
         passive: true,
       });
+      this._setListReserve(this._listReserveTarget);
     }
     const h = (ls.viewportPx || 0) + "px";
     if (this._bodyView.style.height !== h) this._bodyView.style.height = h;
     const ov = ls.scrollable ? "auto" : "hidden";
-    if (this._bodyView.style.overflowY !== ov)
+    if (this._bodyView.style.overflowY !== ov) {
+      diag("listView.overflow", {
+        from: this._bodyView.style.overflowY,
+        to: ov,
+      });
       this._bodyView.style.overflowY = ov;
+    }
     return this._bodyView;
   }
 
@@ -1206,8 +1222,12 @@ export class ScreenController {
     return !!(this._bodyView && this._bodyView.isConnected);
   }
 
+  // 以下的 px 一律是**內容座標**（第一列的頂端＝0），不含頂端保留區。保留區在
+  // 視野裡時讀到負值。
   getListScrollTop() {
-    return this._bodyView ? this._bodyView.scrollTop : 0;
+    const v = this._bodyView;
+    if (!v || !v.isConnected) return v ? v.scrollTop : 0;
+    return v.scrollTop - this._listReservePx;
   }
 
   getListViewportPx() {
@@ -1215,14 +1235,144 @@ export class ScreenController {
   }
 
   setListScrollTop(px) {
-    if (this._bodyView) this._bodyView.scrollTop = px || 0;
+    const v = this._bodyView;
+    if (!v) return;
+    const before = v.scrollTop;
+    v.scrollTop = (px || 0) + this._listReservePx;
+    this._diagWrite("set", px, before);
+  }
+
+  // 每一次程式寫入 scrollTop（錄製期間）。busy＝寫入當下使用者正在捲／觸控中——
+  // 那時寫入可能被 compositor 蓋掉，搭配之後的 list.scroll 就看得出有沒有生效。
+  _diagWrite(kind, px, before) {
+    if (!diagActive()) return;
+    const v = this._bodyView;
+    diag("listView.write", {
+      kind,
+      px: Math.round(px || 0),
+      before: Math.round(before),
+      after: v ? Math.round(v.scrollTop) : null,
+      res: Math.round(this._listReservePx),
+      busy: this._listScrollBusy(),
+    });
   }
 
   scrollListTo(px, behavior) {
     const v = this._bodyView;
     if (!v) return;
-    if (behavior === "smooth") v.scrollTo({ top: px || 0, behavior: "smooth" });
-    else v.scrollTop = px || 0;
+    const top = (px || 0) + this._listReservePx;
+    const before = v.scrollTop;
+    if (behavior === "smooth") {
+      // 平滑動畫的第一個 scroll 事件要等下一幀，這段空窗也不准重設保留區
+      //（那一次寫入會把剛排定的動畫殺掉）。
+      this._listScrollAt = performance.now();
+      v.scrollTo({ top: top, behavior: "smooth" });
+    } else v.scrollTop = top;
+    this._diagWrite(behavior === "smooth" ? "smooth" : "to", px, before);
+  }
+
+  // ---- 頂端保留區（往上補頁不寫 scrollTop）-----------------------------------
+  // **觸控捲動／慣性甩動進行中，JS 寫進捲動容器的 scrollTop 會被 compositor 蓋回去**
+  //（真 Android Chrome 實測：補頁後補償 1765→3522，14ms 後的 scroll 事件讀回 1757；
+  // scrollBy、先切 overflow:hidden、改開 overflow-anchor 全部一樣）。往上補頁把列
+  // 插在視口上方，舊做法靠寫 scrollTop 把畫面推回原處 ⇒ 甩動中補償遺失，視口留在
+  // 新內容的頂端附近 ⇒ 下一幀的錨從 DOM 讀成「快到頂」⇒ 又補一頁 ⇒ 停不下來
+  //（錄製檔 ptt-debug-20261008-003701：6.5 秒連送約 50 次 PgUp，畫面卡住）。
+  //
+  // 做法：視口頂端留一段空白（css `.listBodyView::before`）。補進 n 列的同一幀把它縮 n 列高 ⇒ 舊列的 DOM
+  // 位置一格不動，完全不必寫 scrollTop，甩動照常跑完。保留區耗盡才退回寫入。
+  // 往下捲時從頂端 evict 的列也反向吸收（保留區變大）。保留區回到目標大小
+  // 需要一次寫入，所以只在**捲動靜止**（LIST_RESERVE_IDLE_MS 內無 scroll 事件）時做，
+  // 那時寫入不會被蓋掉。
+  //
+  // 回傳 true＝已吸收（呼叫端不必、也不准再寫 scrollTop）。
+  absorbListShift(dPx) {
+    const v = this._bodyView;
+    if (!v || !v.isConnected || !(Math.abs(dPx) >= 0.5)) return false;
+    const next = this._listReservePx - dPx;
+    diag("listView.absorb", {
+      d: Math.round(dPx),
+      res: Math.round(this._listReservePx),
+      ok: next >= 0,
+    });
+    if (next < 0) return false;
+    this._setListReserve(next);
+    this._scheduleListReserveSync();
+    return true;
+  }
+
+  // 保留區的目標大小（px）。session 每幀告知：到頂（_edgeUp）＝0，其餘＝固定頁數。
+  setListReserveTarget(px) {
+    const t = Math.max(0, Math.round(px || 0));
+    if (t === this._listReserveTarget) return;
+    this._listReserveTarget = t;
+    this._syncListReserve();
+  }
+
+  _setListReserve(px) {
+    this._listReservePx = px;
+    const v = this._bodyView;
+    if (!v) return;
+    // 高度在 css `.listBodyView::before`；0 時拿掉變數（golden 快照不帶它）。
+    if (px > 0) v.style.setProperty("--list-reserve", px + "px");
+    else v.style.removeProperty("--list-reserve");
+  }
+
+  // **不追蹤觸控**：手指按下的那一列若在觸控中被重畫換掉，touchend 會發到已脫離 DOM
+  // 的舊節點，傳不到視口（也傳不到 document）⇒ 計數卡住、保留區永遠不回補（錄製檔
+  // ptt-debug-20261008-014654 t=1106..2111 `touches:1` 一路 deferred）。手指按著不動時
+  // 沒有進行中的捲動，寫入不會被蓋掉；之後再拖是以當下位置加位移繼續捲。
+  _listScrollBusy() {
+    return performance.now() - this._listScrollAt < LIST_RESERVE_IDLE_MS;
+  }
+
+  // 把保留區調回目標。視口不在 DOM 上（scrollTop 恆 0、沒有位置可保）直接改；
+  // 捲動中延後；靜止時改保留區＋同量寫 scrollTop，內容在畫面上的位置不變。
+  _syncListReserve() {
+    const v = this._bodyView;
+    const delta = this._listReserveTarget - this._listReservePx;
+    if (!delta) return;
+    const info = diagActive()
+      ? { from: Math.round(this._listReservePx), to: this._listReserveTarget }
+      : null;
+    if (!v || !v.isConnected) {
+      this._setListReserve(this._listReserveTarget);
+      if (info)
+        diag("listView.reserve", Object.assign(info, { action: "detached" }));
+      return;
+    }
+    if (this._listScrollBusy()) {
+      if (info)
+        diag("listView.reserve", Object.assign(info, { action: "deferred" }));
+      // 只等到「最後一個 scroll 事件後滿 LIST_RESERVE_IDLE_MS」，不是再等一整段。
+      this._scheduleListReserveSync(
+        LIST_RESERVE_IDLE_MS - (performance.now() - this._listScrollAt) + 1,
+      );
+      return;
+    }
+    const top = v.scrollTop;
+    this._setListReserve(this._listReserveTarget);
+    v.scrollTop = top + delta;
+    if (info)
+      diag(
+        "listView.reserve",
+        Object.assign(info, {
+          action: "applied",
+          before: Math.round(top),
+          after: Math.round(v.scrollTop),
+        }),
+      );
+  }
+
+  _scheduleListReserveSync(delay = LIST_RESERVE_IDLE_MS) {
+    if (this._listReserveTimer != null) return;
+    this._listReserveTimer = setTimeout(
+      () => {
+        this._listReserveTimer = null;
+        this._syncListReserve();
+      },
+      Math.max(1, delay),
+    );
   }
 
   _patchInto(parent, nodes, stop) {

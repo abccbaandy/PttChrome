@@ -55,6 +55,28 @@ export function anchorScrollTop({ pos, frac, rowH, maxScrollTop }) {
   return clamp(p * h + f, maxScrollTop);
 }
 
+// 頂端保留區的目標大小（screen.js#absorbListShift）：往上還有東西＝這麼多頁（一頁＝
+// bodyRows 筆），到頂＝0。每補一頁吃掉一頁；甩動中連補幾頁都不必寫 scrollTop，
+// 停下來才回補。保留區在視野裡時是空白（內容補進來就原地出現）。
+export const LIST_RESERVE_PAGES = 4;
+export function listReservePx({ edgeUp, bodyRows, rowH }) {
+  if (edgeUp) return 0;
+  return LIST_RESERVE_PAGES * (Number(bodyRows) || 0) * (Number(rowH) || 0);
+}
+
+// 重繪前後 scrollTop 的差距是不是**全部**來自「錨那一列的上方多了／少了幾列」
+//（補頁 prepend、頂端 evict）。是 ⇒ 回傳該差距（px，正＝上方變多），可交給
+// render 層的頂端保留區吸收、不寫 scrollTop（screen.js#absorbListShift）；否 ⇒ null，
+// 照舊寫入（落點調整、還原閱讀進度、clamp 這類「位置本身要變」的情況）。
+// capturedPos：重繪前從 DOM 擷取時錨所在的序列位置；null＝這一幀的錨不是擷取來的。
+export function shiftOnlyDelta({ capturedPos, pos, rowH, top, cur }) {
+  if (capturedPos == null || !(pos >= 0) || !(rowH > 0)) return null;
+  const shift = (pos - capturedPos) * rowH;
+  const delta = top - cur;
+  if (Math.abs(delta) < 0.5 || Math.abs(delta - shift) >= 0.5) return null;
+  return delta;
+}
+
 // 採用原生落點（進板／退回好讀）時的視口頂端。原生錨是「原生頁第一列」——桌機
 // 一屏 bodyRows 列＝原生一頁，剛好整頁對上；手機卡片一屏只放 pageRows 筆
 // （listPageRows），停在原生頁頂端會把頁底的游標（進板＝最新文章）擠出視口。

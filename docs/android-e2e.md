@@ -40,6 +40,11 @@
 - 把修法改回「觸控＋選取模式才放行」⇒ 主 spec 紅在補發那次 `defaultPrevented`（反向驗證過）。
 - `launchBrowser` 會自己略過 Chrome FRE；`addInitScript`、`context.route`、`baseURL`、`args` 都可用。
 - 映像內建 Chrome **113**（固定版本，無 Play Store 不會升級）。app 照常 boot。
+- 慣性甩動中 JS 寫入捲動容器的 scrollTop 會被 compositor 蓋回去（寫法全試過，見
+  `docs/easy-reading-list.md`「純位移不寫 scrollTop」）。量法：`adb shell input swipe … 60` 連甩，
+  頁面掛 scroll listener＋包 `setListScrollTop` 記寫入前後值。
+- `Emulation.setDeviceMetricsOverride` 在 Android Chrome 可用來湊手機版面列數（列數＝視窗高 / 16，
+  要對上 cassette 的 rows）；寬度給 `screen.width` 觸控座標才 1:1。
 
 ### 為什麼是 API 34（Chrome 113）而不是更新的映像
 
