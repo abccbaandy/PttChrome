@@ -12,6 +12,10 @@
 //   → { id, op: 'googleSignIn', serverClientId }         ← { id, ok, idToken } | { id, ok:false, error }
 //   → { id, op: 'googleSignOut' }                        ← { id, ok }
 //   → { id, op: 'openAppSettings' }                      ← { id, ok }   開原生「App 設定」頁
+//   → { id, op: 'saveFile', filename, mime, text }       ← { id, ok } | { id, ok:false, error }
+//     WebView 不支援 a[download]／blob: 下載（util.js#downloadAsFile 的 APK 分支）。原生跳系統
+//     「儲存檔案」對話框（SAF CreateDocument），使用者選位置後寫入 UTF-8。error：'cancelled'／'busy'
+//    （上一個還沒選完）／'failed'。舊版 APK 回 'unknown op'。
 // ok:false ＝使用者取消／沒有存任何密碼／原生出錯，一律當「沒有」處理。
 // googleSignIn（雲端同步登入，google_sign_in.js）：原生 Credential Manager
 //   GetSignInWithGoogleOption 取 Google ID token；serverClientId ＝ Firebase Google provider

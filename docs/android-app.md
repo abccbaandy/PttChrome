@@ -24,6 +24,7 @@ WebView  https://abccbaandy.github.io/PttChrome/
 | `.../LocalWebSocketProxy.kt` | loopback 中繼（session 生命週期） |
 | `.../WsProtocol.kt` | RFC 6455 握手／frame 純邏輯（JVM test 守護） |
 | `.../CredentialBridge.kt` | Credential Manager：get/create password、雲端同步 Google 登入（ID token）／登出 |
+| `.../FileSave.kt` | bridge `saveFile` 的檔名清理（存檔流程本身在 `MainActivity`） |
 | `.../PageSource.kt` | 頁面來源（正式版／dev server）與 dev 網址白名單（JVM `PageSourceTest`） |
 | `.../AppSettings.kt`／`SettingsActivity.kt` | APK 自己的設定（SharedPreferences，不經 pref_sync）＋原生設定頁 |
 | `src/js/android_bridge.js` | 網頁端偵測＋request/reply（訊息合約在檔頭） |
@@ -45,7 +46,13 @@ WebView  https://abccbaandy.github.io/PttChrome/
 ## APK 內刻意關掉的網頁功能
 - 設定「連線 → BBS proxy」：不生效，改顯示說明（`options_androidProxyNote`）。
 - 連線失敗提示不做 Origin／proxy 診斷（`pttchrome.jsx` onClose：`isAndroidApp()` 時不給 `diagnose`）。
-- 已知不支援（未處理）：`a[download]` blob 下載（設定備份匯出）、Web Notification。
+- 已知不支援（未處理）：Web Notification。
+
+## 檔案下載（錄製檔／設定備份匯出）
+- WebView 不處理 `a[download]`／`blob:` 下載：點了靜默無反應（原生端也讀不到 `blob:` 網址，裝 `DownloadListener` 沒用）。
+- `util.js#downloadAsFile` 在 APK 走 bridge `saveFile`（`{ filename, mime, text }`）→ `MainActivity.saveFile` 開 SAF `ACTION_CREATE_DOCUMENT` 讓使用者選位置 → IO thread 寫 UTF-8 → Toast。免儲存權限。檔名經 `FileSave.kt#safeFileName`（JVM `FileSaveTest`）。
+- 同時只一個（第二個回 `busy`）。舊版 APK 回 `unknown op`＝仍下載不了，需更新 APK。
+- 守護：`tests/unit/download_as_file.test.js`。真機 `unknown`。
 
 ## 雲端同步 Google 登入
 - Google 禁止 WebView 內 OAuth（`disallowed_useragent`）⇒ `signInWithPopup` 在 APK 必失敗。改走：網頁 `google_sign_in.js#authenticateGoogle`（`pref_sync.signIn` 預設）→ bridge `googleSignIn` → 原生 `GetSignInWithGoogleOption` 取 ID token → 網頁 `signInWithCredential`。Firestore／App Check 照舊在網頁端跑。登出另送 `googleSignOut`（`clearCredentialState`）。
@@ -86,7 +93,11 @@ WebView  https://abccbaandy.github.io/PttChrome/
 - applicationId `io.github.abccbaandy.pttchrome` 與簽章一旦發佈就不可改（assetlinks 綁它、使用者覆蓋安裝也要同簽章）。
 
 ## 建置
-- 本機：需 JDK 17+（**完整 JDK**，只有 JRE 會 `No Java compiler found`）＋ Android SDK（platform 37、build-tools 37）。
+- 本機：需 JDK 17+（**完整 JDK**，只有 JRE 會 `No Java compiler found` 或 `Toolchain installation '<jre>' does not provide the required capabilities: [JAVA_COMPILER]`）＋ Android SDK（platform 37、build-tools 37）。
+  - 判準：`"$JAVA_HOME/bin/javac" -version` 要成功。系統層 `JAVA_HOME` 指向 JRE 時，在**使用者層**設 `JAVA_HOME` 指向完整 JDK 覆蓋它；改完要重開 Claude 才生效，當下 session 先在指令前加 `JAVA_HOME=<jdk> ./gradlew ...`。
+  - `local.properties` 的 `sdk.dir` 要跟 env `ANDROID_HOME` 一致（指到不存在的目錄＝`sdk.dir property ... Directory does not exist`）。
+- 推到實機（無線 adb）：`adb mdns services` 找 `_adb-tls-connect` 的 `IP:port` → `adb connect <IP:port>`（已配對過就不需配對碼；沒配對過要手機「無線偵錯 → 以配對碼配對」後 `adb pair`）→ `adb -s <IP:port> install -r app/build/outputs/apk/debug/app-debug.apk`。
+  - 網頁端改動要在 App 內測：`yarn start --host`＋`adb -s <IP:port> reverse tcp:8080 tcp:8080`，debug App 開 dev server 模式。免手動點設定：`am force-stop` 後用 `run-as io.github.abccbaandy.pttchrome.debug` 寫 `shared_prefs/app_settings.xml`（`dev_server_enabled`=true、`dev_server_url`=`http://localhost:8080/`，鍵名見 `AppSettings.kt`）。只有 debug APK 能 `run-as`。
   `android/local.properties` 寫 `sdk.dir=`（gitignored）。新版 cmdline-tools 的 `sdkmanager` 已改為 `android sdk install platforms/android-37.0 build-tools/37.0.0`。
 - `cd android && ./gradlew test assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`。
 - JVM test：`WsProtocolTest`（握手／frame）、`LocalWebSocketProxyTest`（MockWebServer 當假 PTT：Origin 改寫、雙向轉送、token／Origin 拒絕、跟隨當前頁面 origin）、`PageSourceTest`（dev 網址白名單）。

@@ -1,3 +1,5 @@
+import { androidBridgeAvailable, requestAndroid } from './android_bridge';
+
 // 每幀（~30ms 一次）都會跑到的追蹤日誌開關。好讀長文一篇會產生上千筆
 // 「page state: 3->3」/「view update」，字串組裝本身不貴，但開著 DevTools 時全部
 // 留在記憶體，而長文的記憶體正是使用者回報的症狀之一。
@@ -63,7 +65,16 @@ export function proxySiteFromPrefs(prefs) {
 }
 
 // 觸發瀏覽器下載一段文字內容（Blob + a[download]）。
+// Android APK 的 WebView 不處理 a[download]／blob: 下載（點了什麼都不會發生），改走 bridge
+// 'saveFile' 由原生跳系統「儲存檔案」對話框（docs/android-app.md）。回傳值只有 APK 路徑有意義。
 export function downloadAsFile(filename, text, mime) {
+  if (androidBridgeAvailable()) {
+    return requestAndroid('saveFile', {
+      filename: filename,
+      mime: mime || 'application/json',
+      text: text,
+    }).catch(function() { return { ok: false }; });
+  }
   var blob = new Blob([text], { type: mime || 'application/json' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');

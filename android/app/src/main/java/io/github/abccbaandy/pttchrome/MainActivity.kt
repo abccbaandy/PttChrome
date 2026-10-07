@@ -44,7 +44,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
@@ -67,6 +69,34 @@ class MainActivity : ComponentActivity() {
     private val fileChooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         fileCallback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data))
         fileCallback = null
+    }
+
+    /** bridge 'saveFile' 等使用者在系統「儲存檔案」對話框選位置；同一時間只有一個。 */
+    private var pendingSave: PendingSave? = null
+
+    private class PendingSave(val id: Int, val text: String, val reply: (JSONObject) -> Unit)
+
+    private val saveDocument = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val p = pendingSave ?: return@registerForActivityResult
+        pendingSave = null
+        val uri = result.data?.data
+        val out = JSONObject().put("id", p.id)
+        if (result.resultCode != RESULT_OK || uri == null) {
+            p.reply(out.put("ok", false).put("error", "cancelled"))
+            return@registerForActivityResult
+        }
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                try {
+                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(p.text.toByteArray(Charsets.UTF_8)) } != null
+                } catch (e: Exception) {
+                    Log.w(TAG, "saveFile: $e")
+                    false
+                }
+            }
+            Toast.makeText(this@MainActivity, if (ok) R.string.file_saved else R.string.file_save_failed, Toast.LENGTH_SHORT).show()
+            p.reply(if (ok) out.put("ok", true) else out.put("ok", false).put("error", "failed"))
+        }
     }
 
     private val connection = object : ServiceConnection {
@@ -177,10 +207,16 @@ class MainActivity : ComponentActivity() {
         WebViewCompat.addWebMessageListener(wv, "PttAndroid", origins) { _, message, sourceOrigin, isMainFrame, reply ->
             if (!isMainFrame || sourceOrigin.toString() != page.origin) return@addWebMessageListener
             val request = try { JSONObject(message.data ?: return@addWebMessageListener) } catch (_: Exception) { return@addWebMessageListener }
-            if (request.optString("op") == "openAppSettings") {
-                openSettings()
-                reply.postMessage(JSONObject().put("id", request.optInt("id")).put("ok", true).toString())
-                return@addWebMessageListener
+            when (request.optString("op")) {
+                "openAppSettings" -> {
+                    openSettings()
+                    reply.postMessage(JSONObject().put("id", request.optInt("id")).put("ok", true).toString())
+                    return@addWebMessageListener
+                }
+                "saveFile" -> {
+                    saveFile(request) { reply.postMessage(it.toString()) }
+                    return@addWebMessageListener
+                }
             }
             lifecycleScope.launch { reply.postMessage(credentials.handle(request)) }
         }
@@ -316,6 +352,30 @@ class MainActivity : ComponentActivity() {
 
     private fun openSettings() {
         startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    // WebView 不處理 a[download]／blob: 下載（設定未裝 DownloadListener，且 blob: 網址原生端也讀不到），
+    // 網頁的 downloadAsFile 改把內容經 bridge 交過來，由系統「儲存檔案」對話框（SAF）讓使用者選位置。
+    // SAF 不需要儲存權限，minSdk 26 起都可用。
+    private fun saveFile(request: JSONObject, reply: (JSONObject) -> Unit) {
+        val id = request.optInt("id")
+        if (pendingSave != null) {
+            reply(JSONObject().put("id", id).put("ok", false).put("error", "busy"))
+            return
+        }
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = request.optString("mime").ifEmpty { "application/octet-stream" }
+            putExtra(Intent.EXTRA_TITLE, safeFileName(request.optString("filename")))
+        }
+        pendingSave = PendingSave(id, request.optString("text"), reply)
+        try {
+            saveDocument.launch(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "saveFile launch: $e")
+            pendingSave = null
+            reply(JSONObject().put("id", id).put("ok", false).put("error", "failed"))
+        }
     }
 
     /** App 設定改了頁面來源：重建 WebView（注入的 origin 規則只能在建立時給）。回傳是否有重建。 */

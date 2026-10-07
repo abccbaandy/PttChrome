@@ -12,6 +12,8 @@
     <string name="process_restored">App 在背景時被系統關閉，已重新啟動並重新連線</string>
     <string name="page_error">無法載入 PttChrome：%1$s\n請確認網路後按返回鍵重試。</string>
     <string name="page_error_reload">重新載入</string>
+    <string name="file_saved">已儲存檔案</string>
+    <string name="file_save_failed">檔案儲存失敗</string>
     <string name="page_error_dev">目前是開發模式，載入的是 %1$s。請確認電腦上的 dev server 有開（yarn start --host），以及 adb reverse tcp:8080 tcp:8080。</string>
     <string name="page_error_use_production">改回正式版</string>
     <string name="notif_title_dev">PttChrome（開發模式：%1$s）</string>
