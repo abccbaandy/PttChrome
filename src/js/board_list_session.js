@@ -1135,6 +1135,7 @@ BoardListSession.prototype = {
     if (target == null) {
       // 已經在第 1 項：上緣確定，不必送任何 byte。
       this._edgeUp = true;
+      this._syncReserveTarget();
       return;
     }
     const self = this;
@@ -1178,8 +1179,10 @@ BoardListSession.prototype = {
       // 已有的內容），永遠不切模式。
       onFail: function() {
         self._serverNum = null;
-        if (dir < 0) self._edgeUp = true;
-        else self._edgeDown = true;
+        if (dir < 0) {
+          self._edgeUp = true;
+          self._syncReserveTarget();
+        } else self._edgeDown = true;
       }
     });
   },
@@ -1731,6 +1734,26 @@ BoardListSession.prototype = {
   // 與 list_session 同一套（js/list_scroll.js 的純函式），差別只有「序列位置＝
   // 緩衝索引、錨＝看板編號」。
 
+  // 上緣已知：看板編號從 1 起算（board.c 的 num），緩衝含第 1 項就是到頂，不必等
+  // 探邊那一腿回來。我的最愛常態就是從第 1 項進來。
+  _atTopEdge: function() {
+    return this._edgeUp || bufferEdgeNum(this._termBuf.brdListLineNums || [], -1) === 1;
+  },
+
+  // 告知 render 層頂端保留區的目標（screen.js#absorbListShift）。**到頂一定要是 0**：
+  // 保留區是視口頂端的空白，到頂還留著就捲得進去（錄製檔 ptt-debug-20261008-024024：
+  // 我的最愛從第 1 項進來，滾輪往上捲出 3072px 空白）。上緣在沒有重繪的路徑上確認
+  // （_enqueueFetch 的「已在第 1 項」、抓頁失敗）時也要呼叫，不能只靠下一幀。
+  _syncReserveTarget: function() {
+    const screen = this._screen();
+    if (!screen || !screen.setListReserveTarget) return;
+    const rowH = this._rowHeight();
+    if (!(rowH > 0)) return;
+    screen.setListReserveTarget(
+      listReservePx({ edgeUp: this._atTopEdge(), bodyRows: this._bodyRows(), rowH: rowH })
+    );
+  },
+
   captureScrollAnchor: function() {
     this._capturedAnchor = null;
     if (this._anchorOverride) {
@@ -1759,8 +1782,7 @@ BoardListSession.prototype = {
     const B = this._bodyRows();
     const cap = this._capturedAnchor;
     this._capturedAnchor = null;
-    if (screen.setListReserveTarget)
-      screen.setListReserveTarget(listReservePx({ edgeUp: this._edgeUp, bodyRows: B, rowH: rowH }));
+    this._syncReserveTarget();
     const viewportPx = screen.getListViewportPx() || B * rowH;
     const maxScrollTop = maxScrollTopFor({
       len: len,

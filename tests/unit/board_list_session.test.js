@@ -1460,3 +1460,53 @@ describe("甩動中補頁（看板列表，scrollTop 寫入被 compositor 蓋掉
     expect(h.s._topNum).toBe(106);
   });
 });
+
+// 錄製檔 ptt-debug-20261008-024024：我的最愛從第 1 項進來，頂端保留區（4 頁空白）
+// 卻一直留著 ⇒ 滾輪往上捲出一大塊空白（PgUp 走 server，不經保留區所以沒事）。
+// 到頂時保留區目標必須是 0，而且上緣在「沒有重繪」的路徑上確認時也要立刻告知。
+describe("頂端保留區：到頂一定是 0（看板列表）", () => {
+  const CHH = 20;
+  const setup = (startNum) => {
+    const h = makeSession();
+    seedBuffer(h.termBuf, startNum, 40);
+    h.s.state = "active";
+    h.s._renderMode = "buffer";
+    h.view.chh = CHH;
+    const targets = [];
+    h.view.componentScreen = {
+      top: 0,
+      hasListViewport: () => true,
+      getListScrollTop() { return this.top; },
+      getListViewportPx: () => 20 * CHH,
+      setListScrollTop(px) { this.top = px; },
+      scrollListTo(px) { this.top = px; },
+      absorbListShift: () => false,
+      setListReserveTarget: (px) => targets.push(px),
+    };
+    return { ...h, targets };
+  };
+
+  test("緩衝含第 1 項的第一幀就不留保留區（不必等探邊）", () => {
+    const { s, targets } = setup(1);
+    s._topNum = 1;
+    s.applyScrollAfterRender();
+    expect(targets.at(-1)).toBe(0);
+  });
+
+  test("緩衝不含第 1 項 ⇒ 照常留保留區", () => {
+    const { s, targets } = setup(21);
+    s._topNum = 21;
+    s.applyScrollAfterRender();
+    expect(targets.at(-1)).toBeGreaterThan(0);
+  });
+
+  test("往上抓頁失敗當成到頂：當場收掉保留區（這條路徑不重繪）", () => {
+    const { s, targets, enqueued } = setup(21);
+    s._topNum = 21;
+    s.applyScrollAfterRender();
+    s._enqueueFetch(-1, "key");
+    enqueued[0].onFail("timeout");
+    expect(s._edgeUp).toBe(true);
+    expect(targets.at(-1)).toBe(0);
+  });
+});
