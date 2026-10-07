@@ -6,7 +6,8 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import SearchModal from "../../src/components/ContextMenu/SearchModal";
-import { setupI18n } from "../../src/js/i18n";
+// 標籤一律經 i18n 取：CI 是英文語系，寫死中文字面在那裡找不到。
+import { setupI18n, i18n } from "../../src/js/i18n";
 import { rememberSearch, readSearchHistory } from "../../src/js/search_history";
 
 beforeAll(() => {
@@ -105,7 +106,7 @@ test("推文數不是非零整數 ⇒ 不送出", () => {
 
 test("切換種類：送出的是切換後的種類", () => {
   const { input, onConfirm } = renderModal();
-  fireEvent.click(screen.getByText("看板 (s)"));
+  fireEvent.click(screen.getByText(i18n("searchModal_kindBoard")));
   fireEvent.change(input, { target: { value: "C_Chat" } });
   fireEvent.submit(input.closest("form"));
   expect(onConfirm).toHaveBeenCalledWith({ kind: "board", text: "C_Chat" });
@@ -113,5 +114,5 @@ test("切換種類：送出的是切換後的種類", () => {
 
 test("只有一個可用種類時不畫切換列", () => {
   renderModal({ kind: "board", kinds: ["board"] });
-  expect(screen.queryByText("標題 (/)")).toBeNull();
+  expect(screen.queryByText(i18n("searchModal_kindTitle"))).toBeNull();
 });
