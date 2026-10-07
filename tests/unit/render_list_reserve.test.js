@@ -51,8 +51,13 @@ const rowY = (m, n) => {
 
 const rowH = (m) => view(m).children[0].getBoundingClientRect().height;
 
-// 捲動靜止判準（LIST_RESERVE_IDLE_MS）之後。
-const afterIdle = () => new Promise((r) => setTimeout(r, 400));
+// 等保留區回補到 px（捲動靜止判準 LIST_RESERVE_IDLE_MS 之後才會做）。用輪詢不用固定
+// 等待：setListScrollTop 引發的 scroll 事件是非同步的，機器一忙就會再延後一輪（CI 實錄）。
+const untilReserve = (m, px) =>
+  vi.waitFor(
+    () => expect(view(m).style.getPropertyValue("--list-reserve")).toBe(px ? px + "px" : ""),
+    { timeout: 3000 }
+  );
 
 describe("列表視口頂端保留區", () => {
   test("保留區比視口還高也不撐高視口；內容座標不含保留區", () => {
@@ -128,7 +133,7 @@ describe("列表視口頂端保留區", () => {
     v.dispatchEvent(new Event("scroll"));
     m.controller.setListReserveTarget(3001);
     expect(v.scrollTop).toBe(shrunk);
-    await afterIdle();
+    await untilReserve(m, 3001);
     expect(v.scrollTop).toBeCloseTo(shrunk + 10 * h + 1, 0);
     expect(rowY(m, 105)).toBeCloseTo(y, 0);
   });
@@ -140,7 +145,7 @@ describe("列表視口頂端保留區", () => {
     m.controller.setListScrollTop(5 * h);
     const y = rowY(m, 105);
     m.controller.setListReserveTarget(0);
-    await afterIdle();
+    await untilReserve(m, 0);
     expect(view(m).scrollTop).toBeCloseTo(5 * h, 0);
     expect(view(m).style.getPropertyValue("--list-reserve")).toBe("");
     expect(rowY(m, 105)).toBeCloseTo(y, 0);
@@ -157,10 +162,13 @@ describe("列表視口頂端保留區", () => {
     m.controller.absorbListShift(10 * h);
     view(m).dispatchEvent(new Event("scroll"));
     m.controller.setListReserveTarget(3001);
-    await afterIdle();
+    await untilReserve(m, 3001);
     // 建立視口時的 overflow 初值（"" → auto）也會記一筆，這裡只看捲動位置相關的三類。
+    // 延後幾輪取決於 scroll 事件的時序（非同步），只鎖「至少延後一次、最後回補」。
     const pos = logs.filter(([t]) => t !== "listView.overflow");
-    const tags = pos.map(([t, i]) => t + (i.action ? ":" + i.action : ""));
+    const tags = pos
+      .map(([t, i]) => t + (i.action ? ":" + i.action : ""))
+      .filter((t, i, a) => !(t === "listView.reserve:deferred" && a[i - 1] === t));
     expect(tags).toEqual([
       "listView.reserve:applied",
       "listView.write",
@@ -185,7 +193,6 @@ describe("列表視口頂端保留區", () => {
     m.update(props(200, 240)); // 整批換列：按下的那個節點離開 DOM
     target.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [t] }));
     m.controller.setListReserveTarget(1000);
-    await afterIdle();
-    expect(v.style.getPropertyValue("--list-reserve")).toBe("1000px");
+    await untilReserve(m, 1000);
   });
 });
