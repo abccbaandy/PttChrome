@@ -46,24 +46,51 @@ export const MOBILE_KEYPAD_ROWS = [
   ]
 ];
 
-// 第三列：不在 KeyMap 的鍵與動作鈕（MobileKeypad 自己畫）。
+// 第三列：手機軟鍵盤打不出來的鍵（Gboard／三星鍵盤都沒有 Esc、Tab、Delete，也沒有
+// Ctrl）。Ctrl 不是一個鍵而是「下一個按鍵加上 Ctrl」的黏滯開關，元件自己畫
+// （key '__ctrl'），其餘同樣必須在 KeyMap 裡。
+export const MOBILE_KEYPAD_EXTRA_ROW = [
+  { key: 'Escape', label: 'Esc', aria: 'Escape' },
+  { key: 'Tab', label: 'Tab', aria: 'Tab' },
+  { key: 'Delete', label: 'Del', aria: 'Delete' }
+];
+
 //   X     推文鍵 —— 單一字元，同樣走 sendKeyAsUser（term_view 對單字元補 keypress）；
 //         預設 pref pushKeyOpensLongPush 下會開長推文輸入框，跟實體鍵盤按 X 一樣。
+//         2026-10 起由底部工具列的「推」送出（MobileToolbar）。
 export const MOBILE_KEYPAD_PUSH_KEY = 'X';
 
-// ---- 浮動按鍵列的位置（docs/mobile.md「按鍵列」）-------------------------------
-// 以「離視窗右緣／下緣的距離（px）」表示，跟原本 CSS 的 right/bottom 錨點同一套，
-// 軟鍵盤的 --kb-inset 照舊加在 bottom 上。**存 localStorage、不寫 prefs**：prefs 經
-// pref_sync 同步到其他裝置，手機的按鍵列位置對桌機沒有意義（同「手機模式是 runtime
-// 覆寫」那條規則）。
-export const KEYPAD_POS_STORAGE_KEY = 'pttchrome.mobileKeypadPos';
-export const KEYPAD_DEFAULT_POS = { right: 8, bottom: 8 };
-// 拖多遠才算拖曳（收合的圓鈕：小於這個就是點擊＝展開）。
+// 底部工具列的高度（px）。**常駐**，所以直接從終端機可用高度扣掉
+// （App.getWindowInnerBounds）⇒ 列數穩定，只在進出手機模式時重算一次。
+// 必須與 MobileToolbar.css 的 .mobileToolbarBar height 一致（守護
+// tests/unit/mobile_toolbar.test.jsx）。
+export const MOBILE_TOOLBAR_PX = 48;
+
+// 黏滯 Ctrl：按了 Ctrl 之後的下一個字元 → 要合成的按鍵（交給 term_view.sendKeyAsUser）。
+//   - 字母走 **Alt remap**（term_keyboard.isAltRemapEvent：Alt+字母 ＝ PTT 的 Ctrl，
+//     byte 逐位元相同）。不走 ctrlKey 是刻意的：term_view 會把 Ctrl+A／Ctrl+C 攔成
+//     全選／複製、term_keyboard 會把 Ctrl+V 讓給瀏覽器貼上 ——那些是實體鍵盤的 UI 快捷
+//     鍵，手機上按 Ctrl 再按 V 的人要的是 ^V。Alt 那條路正是「繞過 app 的 UI 快捷鍵、
+//     但不繞過好讀模式的模擬」（term_keyboard.js 檔頭不變量）。
+//   - CtrlShiftMap 的符號（@ [ \ ] ^ _ ?）沒有 Alt 對應 ⇒ 用 ctrlKey。
+//   - 其他字元回 null ＝ 沒有對應的控制碼（解除 Ctrl、字照常送出）。
+const CTRL_SYMBOLS = '@[\\]^_?';
+export function mobileCtrlKey(ch) {
+  if (typeof ch !== 'string' || ch.length !== 1) return null;
+  if (/^[a-zA-Z]$/.test(ch)) return { key: ch.toLowerCase(), altKey: true };
+  if (CTRL_SYMBOLS.indexOf(ch) >= 0) return { key: ch, ctrlKey: true };
+  return null;
+}
+
+// ---- 浮動元件的位置 -----------------------------------------------------------
+// 拖多遠才算拖曳（「⋯」圓鈕：小於這個就是點擊＝展開）。
 export const KEYPAD_DRAG_THRESHOLD_PX = 8;
 
 // 文章頁浮動工具鈕（render/merge_buttons.js#createFloatingTools：開燈／圖文並排／AI
-// 校正收成的「⋯」）的位置，同一套 {right,bottom} 表示法與存放規則。預設＝桌機舊位置；
-// 手機上剛好在按鍵列收合圓鈕（bottom 8，高 48）正上方。
+// 校正收成的「⋯」）的位置：以「離視窗右緣／下緣的距離（px）」表示。**存
+// localStorage、不寫 prefs**：prefs 經 pref_sync 同步到其他裝置（同「手機模式是
+// runtime 覆寫」那條規則）。預設＝桌機舊位置；手機上在底部工具列（MOBILE_TOOLBAR_PX）
+// 上方 16px。
 export const FLOAT_TOOLS_POS_STORAGE_KEY = 'pttchrome.floatToolsPos';
 export const FLOAT_TOOLS_DEFAULT_POS = { right: 16, bottom: 64 };
 
@@ -106,18 +133,6 @@ export function saveFloatPos(key, pos, storage) {
   } catch (e) {
     // 存不了就只在這次開頁有效。
   }
-}
-
-export function clampKeypadPos(pos, dims) {
-  return clampFloatPos(pos, dims, KEYPAD_DEFAULT_POS);
-}
-
-export function loadKeypadPos(storage) {
-  return loadFloatPos(KEYPAD_POS_STORAGE_KEY, KEYPAD_DEFAULT_POS, storage);
-}
-
-export function saveKeypadPos(pos, storage) {
-  saveFloatPos(KEYPAD_POS_STORAGE_KEY, pos, storage);
 }
 
 // #t 的 inputmode。手機上預設 'none'：焦點照舊停在 #t（既有十幾個 setInputAreaFocus

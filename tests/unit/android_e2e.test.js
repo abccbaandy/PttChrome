@@ -109,7 +109,7 @@ describe("--if-changed 名單", () => {
       matchAndroidE2e([
         "src/js/context_menu_items.js",
         "src\\components\\ContextMenu\\index.jsx",
-        "src/components/MobileKeypad/index.jsx",
+        "src/components/MobileToolbar/index.jsx",
         "tests/e2e/android/fixtures.js",
         "src/js/term_view.js",
         "docs/mobile.md",
@@ -117,7 +117,7 @@ describe("--if-changed 名單", () => {
     ).toEqual([
       "src/js/context_menu_items.js",
       "src/components/ContextMenu/index.jsx",
-      "src/components/MobileKeypad/index.jsx",
+      "src/components/MobileToolbar/index.jsx",
       "tests/e2e/android/fixtures.js",
     ]);
   });

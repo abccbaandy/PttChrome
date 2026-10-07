@@ -10,6 +10,15 @@ const { waitPreviewsSettled, scrollIntoViewStable } = require('../helpers/layout
 
 const article = findCassette('article');
 
+// 選取模式在底部工具列的「更多」裡；切換後選單自動收起，再開一次讀亮燈、再收起。
+async function enableSelectMode(page) {
+  await page.locator('[data-key="__more"]').click();
+  await page.locator('[data-key="__select"]').click();
+  await page.locator('[data-key="__more"]').click();
+  await expect(page.locator('[data-key="__select"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('[data-key="__more"]').click();
+}
+
 // NAWS（IAC SB NAWS）＝重送終端機尺寸。換行版面只換字級與寬度，不可以改列數。
 const nawsCount = (page) =>
   page.evaluate(
@@ -225,10 +234,8 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     const pusher = await markPusherRow(page);
     test.skip(!pusher, '這份 cassette 沒有推文列');
 
-    // 走按鍵列的開關（真的 UI 入口），不是直接改 App 狀態。
-    await page.locator('[data-key="__open"]').click();
-    await page.locator('[data-key="__select"]').click();
-    await expect(page.locator('[data-key="__select"]')).toHaveAttribute('aria-pressed', 'true');
+    // 走底部工具列「更多」裡的開關（真的 UI 入口），不是直接改 App 狀態。
+    await enableSelectMode(page);
     expect(await page.evaluate(() => document.body.classList.contains('mobileSelectMode'))).toBe(true);
 
     const r = await longPress(page);
@@ -253,9 +260,7 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     const pusher = await markPusherRow(page);
     test.skip(!pusher, '這份 cassette 沒有推文列');
 
-    await page.locator('[data-key="__open"]').click();
-    await page.locator('[data-key="__select"]').click();
-    await expect(page.locator('[data-key="__select"]')).toHaveAttribute('aria-pressed', 'true');
+    await enableSelectMode(page);
 
     // 拖完把手後的現場：有選取、把手在。選取用 Selection API 布置（狀態準備），
     // 觸發用真的 ContextMenu 鍵（瀏覽器自己造 contextmenu，不是測試手捏）。

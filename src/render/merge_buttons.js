@@ -29,8 +29,8 @@ function floatingButton(id, onToggle) {
   return button;
 }
 
-// 「⋯」圓鈕＋工具面板。位置 {right,bottom} 存 localStorage（不寫 prefs，同
-// MobileKeypad：prefs 會同步到其他裝置），可拖曳；位移 < KEYPAD_DRAG_THRESHOLD_PX 才算點擊。
+// 「⋯」圓鈕＋工具面板。位置 {right,bottom} 存 localStorage（不寫 prefs：prefs 會
+// 同步到其他裝置），可拖曳；位移 < KEYPAD_DRAG_THRESHOLD_PX 才算點擊。
 //
 // 面板 absolute 貼在圓鈕外側（data-vdir：圓鈕在視窗下半 ⇒ 往上展開，否則往下；
 // data-hdir＝圓鈕在視窗的哪一半，面板往內側展開），**圓鈕本身永遠不動**——若面板

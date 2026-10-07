@@ -1538,7 +1538,10 @@ ListSession.prototype = {
         if (step.onDone) step.onDone(result);
         if (i + 1 < steps.length) self._enqueuePassthroughStep(steps, i + 1);
       },
-      onFail: step.onFail
+      onFail: step.onFail,
+      // opt-in（command_queue cmd.onFlushed）：握著輸入閘門的呼叫端（搜尋彈窗的
+      // searchInFlight）要在被 flush 時解除。
+      onFlushed: step.onFlushed
     });
   },
 

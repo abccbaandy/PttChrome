@@ -213,6 +213,9 @@ test.describe('AID 跳文 → 返回（scenario 重放）', () => {
     test.skip(!aidBackSearch, '缺 scn-aid-back-search（yarn record:scenarios）');
     await bootScenario(page, ptt, aidBackSearch);
     await watchHints(page);
+    // 卷裡錄的是原生 `/` prompt 逐字打；搜尋彈窗（預設開）會把 `/` 攔走，這條守的是
+    // AID 返回錨點，不是搜尋入口 ⇒ 走原生路徑。
+    await ptt.applyPrefs(page, { searchKeyOpensModal: false });
 
     await ptt.sendKey(page, 'Slash');
     await waitFed(page, 2);

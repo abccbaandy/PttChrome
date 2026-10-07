@@ -25,6 +25,11 @@ import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
+import { tryOpenSearchModal } from './article_search';
+import { mobileCtrlKey } from './mobile_layout';
+
+// 單獨按下修飾鍵本身（實體鍵盤按 Shift 準備打大寫）不算「下一個按鍵」，黏滯 Ctrl 不解除。
+var MODIFIER_KEY_NAMES = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph'];
 import { keyEventPredatesModalClose } from './modal_key_gate';
 import icon128 from '../icon/icon_128.png';
 import { MOUSE_CURSOR_URLS } from './mouse_cursors';
@@ -1232,6 +1237,17 @@ TermView.prototype = {
       this.flashListHint(busyHint);
       return;
     }
+    // 手機黏滯 Ctrl 的軟鍵盤入口：Android 軟鍵盤的字幾乎都走 input 事件（keydown 是
+    // 229/Unidentified），所以 onKeyDown 那道接不到。只吃第一個字元，其餘照常送。
+    if (!isPasting && this.bbscore.mobileCtrlArmed && text) {
+      var ctrlMods = mobileCtrlKey(text.charAt(0));
+      this.bbscore.setMobileCtrlArmed(false);
+      if (ctrlMods) {
+        this.sendKeyAsUser(ctrlMods.key, ctrlMods);
+        if (text.length > 1) this.onTextInput(text.slice(1), false);
+        return;
+      }
+    }
     // 推文鍵的第三條入口：IME。中文輸入法開著時 keydown 的 keyCode 是 229，被
     // keyEventFilter 擋在 onKeyDown 之外，字改從 input 事件進到這裡 ⇒ 少了這道，
     // 「IME 開著按 X」會得到原生推文、關掉才是長推文，行為不一致（easy_reading.js
@@ -1246,6 +1262,9 @@ TermView.prototype = {
           }) && this.bbscore.openLongPushModal && this.bbscore.openLongPushModal())
         return;
     }
+    // 搜尋鍵的 IME／Android 軟鍵盤入口（軟鍵盤的字多半走 input 事件，不經 keydown）。
+    if (!isPasting && tryOpenSearchModal(this.bbscore, text, null))
+      return;
     // 送字給 PTT ≠ 按鍵。兩種好讀模式都是在 keydown 決定要不要切成原生鏡像
     // （functionMode），而 IME（keydown 的 e.key 是 'Process'、keyCode 229，被
     // keyEventFilter 擋在 onKeyDown 之外）與貼上都繞得過那道判斷 → PTT 開了推文／
@@ -1292,13 +1311,19 @@ TermView.prototype = {
   //     **日後在鏈上新增讀 e.code／e.target／e.isTrusted 的邏輯就會靜默壞掉。**
   //  3. 用 this.onKeyDown(ev) **直接呼叫**，不要 dispatchEvent：#t 上已掛了 keydown
   //     listener，dispatch 會讓同一個事件跑兩次分派。
-  sendKeyAsUser: function(keyName) {
-    var down = new KeyboardEvent('keydown', { key: keyName, cancelable: true });
+  // mods（選用）：{ ctrlKey, altKey }——手機黏滯 Ctrl 合成組合鍵用（mobile_layout.mobileCtrlKey）。
+  sendKeyAsUser: function(keyName, mods) {
+    var ctrl = !!(mods && mods.ctrlKey);
+    var alt = !!(mods && mods.altKey);
+    var down = new KeyboardEvent('keydown', {
+      key: keyName, ctrlKey: ctrl, altKey: alt, cancelable: true
+    });
     this.onKeyDown(down);
-    // 單一字元（手機按鍵列的推文 X）：真鍵盤的字元是 keypress 送的
+    // 單一字元（手機工具列的推文 X）：真鍵盤的字元是 keypress 送的
     // （term_keyboard._onKeyDown 對單字元 return false），合成的 keydown 沒有後續
     // keypress ⇒ 沒人接手（例如 pushKeyOpensLongPush 關掉時）就補走同一條 keypress。
-    if (!down.defaultPrevented && keyName.length === 1)
+    // 組合鍵沒有 keypress（瀏覽器本來就不發），控制碼由 keydown 那條送。
+    if (!down.defaultPrevented && keyName.length === 1 && !ctrl && !alt)
       this._keyboard.onKeyPress(new KeyboardEvent('keypress', { key: keyName, cancelable: true }));
   },
 
@@ -1311,6 +1336,18 @@ TermView.prototype = {
       e.preventDefault();
       this.flashListHint(busyHint);
       return;
+    }
+    // 手機黏滯 Ctrl：下一個按鍵改送組合鍵（用一次就解除）。重新走 sendKeyAsUser ⇒
+    // 整條分派（好讀／列表好讀／原生）照組合鍵的語意處理。
+    if (this.bbscore.mobileCtrlArmed && !e.ctrlKey && !e.altKey && !e.metaKey &&
+        MODIFIER_KEY_NAMES.indexOf(e.key) < 0) {
+      var ctrlMods = mobileCtrlKey(e.key);
+      this.bbscore.setMobileCtrlArmed(false);
+      if (ctrlMods) {
+        e.preventDefault();
+        this.sendKeyAsUser(ctrlMods.key, ctrlMods);
+        return;
+      }
     }
     // "返回原文" hotkey (pref aidNavBackKey, default F9). Claimed BEFORE every
     // other handler because it must work in easy reading AND native, in a post
@@ -1367,6 +1404,13 @@ TermView.prototype = {
         e.preventDefault();
         return;
       }
+    }
+    // 搜尋鍵（文章列表的 / ? a Z）改開搜尋彈窗（pref searchKeyOpensModal，預設開；
+    // docs/article-search.md）。排在列表好讀 keyOwner 之前：那邊會把它當 passthrough
+    // 直接送出去。同樣「先開成功、再吞」。
+    if (tryOpenSearchModal(this.bbscore, e.key, e)) {
+      e.preventDefault();
+      return;
     }
     if (this.useEasyReadingMode && this.buf.startedEasyReading &&
         !this.buf.easyReadingFunctionMode) {

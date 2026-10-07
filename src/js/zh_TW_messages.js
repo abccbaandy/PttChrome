@@ -244,6 +244,60 @@
   "tooltip_pushKeyOpensLongPush": {
     "message": "關閉後按 X 會回到 PTT 原生的單則推文。文章列表按 X 一律維持原生。"
   },
+  "options_searchKeyOpensModal": {
+    "message": "按搜尋鍵（/ ? a Z s）改開搜尋彈窗"
+  },
+  "tooltip_searchKeyOpensModal": {
+    "message": "PTT 原生的輸入記憶會被列表好讀的跳號塞滿數字，彈窗改在本機記住你的關鍵字（按 ↑ 叫回）。關閉後回到 PTT 原生 prompt。"
+  },
+  "searchModal_title": {
+    "message": "搜尋"
+  },
+  "searchModal_kindTitle": {
+    "message": "標題 (/)"
+  },
+  "searchModal_kindAuthor": {
+    "message": "作者 (a)"
+  },
+  "searchModal_kindPush": {
+    "message": "推文數 (Z)"
+  },
+  "searchModal_kindBoard": {
+    "message": "看板 (s)"
+  },
+  "searchModal_placeholderTitle": {
+    "message": "標題關鍵字，↑ 叫回之前的"
+  },
+  "searchModal_placeholderAuthor": {
+    "message": "作者帳號，↑ 叫回之前的"
+  },
+  "searchModal_placeholderPush": {
+    "message": "推文數高於多少（負數＝噓文數），↑ 叫回之前的"
+  },
+  "searchModal_placeholderBoard": {
+    "message": "看板名稱，↑ 叫回之前的"
+  },
+  "searchModal_recent": {
+    "message": "最近"
+  },
+  "searchModal_forget": {
+    "message": "刪除紀錄"
+  },
+  "searchModal_forgetAll": {
+    "message": "全部清除"
+  },
+  "searchModal_cancel": {
+    "message": "取消"
+  },
+  "searchModal_confirm": {
+    "message": "搜尋"
+  },
+  "searchModal_failed": {
+    "message": "PTT 沒有開出搜尋輸入列，關鍵字未送出"
+  },
+  "searchModal_busy": {
+    "message": "指令處理中，請稍候再試"
+  },
 
   // options nav
   "options_general": {
@@ -854,6 +908,30 @@
   },
   "mobileKeypad_keyboard": {
     "message": "叫出／收起鍵盤"
+  },
+  "mobileKeypad_ctrl": {
+    "message": "Ctrl（作用在下一個按鍵）"
+  },
+  "mobileKeypad_esc": {
+    "message": "Esc"
+  },
+  "mobileKeypad_tab": {
+    "message": "Tab"
+  },
+  "mobileKeypad_del": {
+    "message": "Delete"
+  },
+  "mobileToolbar_search": {
+    "message": "搜尋"
+  },
+  "mobileToolbar_keys": {
+    "message": "按鍵"
+  },
+  "mobileToolbar_more": {
+    "message": "更多"
+  },
+  "mobileToolbar_settings": {
+    "message": "設定"
   },
   "options_fixedFontSize": {
     "message": "固定字體大小"

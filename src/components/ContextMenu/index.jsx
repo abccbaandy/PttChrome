@@ -8,8 +8,9 @@ import TitleBlacklistModal from "./TitleBlacklistModal";
 import LongPushModal from "./LongPushModal";
 import LongPushProgressModal from "./LongPushProgressModal";
 import LongPushErrorModal from "./LongPushErrorModal";
+import SearchModal from "./SearchModal";
 import DebugRecordButton from "../DebugRecordButton";
-import MobileKeypad from "../MobileKeypad";
+import MobileToolbar from "../MobileToolbar";
 import { onPrefSaveImpl } from "./pref_save";
 import { downloadAsFile } from "../../js/util";
 import { readValuesWithDefault, writeValues } from "../../js/pref_storage";
@@ -42,6 +43,13 @@ import { pushMaxBytes } from "../../js/long_push";
 import { longPushAvailable } from "../../js/long_push_gate";
 import { clearDraft } from "../../js/long_push_draft";
 import { serializedOpHint } from "../../js/serialized_op_gate";
+import {
+  availableSearchKinds,
+  normalizeSearchText,
+  searchGateFacts,
+  submitSearch,
+} from "../../js/article_search";
+import { rememberSearch } from "../../js/search_history";
 
 function noop() {}
 
@@ -158,6 +166,11 @@ const initialState = {
   longPushError: null,
   showsLiveArticleHelper: false,
   showsSettings: false,
+  // 搜尋彈窗（docs/article-search.md）：種類＝觸發的鍵／工具列選的那項；
+  // searchKinds＝開的當下這個畫面能用的種類（切換用）。
+  showsSearch: false,
+  searchKind: "title",
+  searchKinds: [],
   // --- LiveHelper state ---
   liveHelperEnabled: false,
   liveHelperSec: 1,
@@ -196,6 +209,7 @@ export const ContextMenu = ({ pttchrome }) => {
     state.showsSettings ||
     state.showsTitleBlacklist ||
     state.showsLongPush ||
+    state.showsSearch ||
     !!state.longPushProgress ||
     !!state.longPushError;
   useEffect(() => {
@@ -616,6 +630,49 @@ export const ContextMenu = ({ pttchrome }) => {
     if (pttchrome.longPush) pttchrome.longPush.cancel();
   }, [pttchrome]);
 
+  // 搜尋彈窗的唯一入口（鍵盤攔截經 pttchrome.openSearchModal、手機工具列直接呼叫）。
+  // 回傳值是合約（同 openLongPushModal）：true ＝我接手了這次按鍵。可用種類每次現算
+  // （availableSearchKinds，與工具列同一個判準）。
+  const openSearch = useCallback(
+    (kind) => {
+      if (serializedOpHint(pttchrome)) return false;
+      const kinds = availableSearchKinds(searchGateFacts(pttchrome));
+      if (kinds.indexOf(kind) < 0) return false;
+      update({
+        ...initialState,
+        showsSearch: true,
+        searchKind: kind,
+        searchKinds: kinds,
+      });
+      return true;
+    },
+    [pttchrome, update],
+  );
+  useEffect(() => {
+    pttchrome.openSearchModal = openSearch;
+    return () => {
+      pttchrome.openSearchModal = noop;
+    };
+  }, [pttchrome, openSearch]);
+  const onSearchHide = useCallback(
+    () => update({ showsSearch: false }),
+    [update],
+  );
+  const onSearchConfirm = useCallback(
+    ({ kind, text }) => {
+      update({ showsSearch: false });
+      const value = normalizeSearchText(kind, text);
+      if (!value) return;
+      rememberSearch(kind, value);
+      const hint = (msg) => pttchrome.view?.flashListHint?.(msg, 3000);
+      const sent = submitSearch(pttchrome, kind, value, {
+        onFail: () => hint(i18n("searchModal_failed")),
+      });
+      if (!sent) hint(serializedOpHint(pttchrome) || i18n("searchModal_busy"));
+    },
+    [pttchrome, update],
+  );
+
   const onLiveArticleHelperClick = useCallback(
     (event) => {
       event.stopPropagation();
@@ -634,6 +691,22 @@ export const ContextMenu = ({ pttchrome }) => {
     },
     [pttchrome, update],
   );
+
+  // 手機底部工具列（MobileToolbar）的兩個入口：與鍵盤／右鍵選單同一個實作。
+  const onToolbarSearch = useCallback(
+    (kind) => {
+      if (!openSearch(kind))
+        pttchrome.view?.flashListHint?.(
+          serializedOpHint(pttchrome) || i18n("searchModal_busy"),
+          3000,
+        );
+    },
+    [pttchrome, openSearch],
+  );
+  const onToolbarSettings = useCallback(() => {
+    pttchrome.onDisableLiveHelperModalState();
+    update({ ...initialState, showsSettings: true });
+  }, [pttchrome, update]);
 
   const onQuickSearchSelect = useCallback(
     (item, event) => {
@@ -851,6 +924,9 @@ export const ContextMenu = ({ pttchrome }) => {
     titleBlacklistDraft,
     showsLiveArticleHelper,
     showsSettings,
+    showsSearch,
+    searchKind,
+    searchKinds,
     liveHelperSec,
   } = state;
 
@@ -922,6 +998,13 @@ export const ContextMenu = ({ pttchrome }) => {
         onHide={onLongPushErrorHide}
         onCopy={onLongPushCopyRest}
       />
+      <SearchModal
+        show={showsSearch}
+        kind={searchKind}
+        kinds={searchKinds}
+        onHide={onSearchHide}
+        onConfirm={onSearchConfirm}
+      />
       <PrefModal
         show={showsSettings}
         onSave={onPrefSave}
@@ -930,7 +1013,12 @@ export const ContextMenu = ({ pttchrome }) => {
         onDebugModeChange={onDebugModeChange}
       />
       {debugMode && <DebugRecordButton pttchrome={pttchrome} />}
-      <MobileKeypad pttchrome={pttchrome} hidden={modalOpen} />
+      <MobileToolbar
+        pttchrome={pttchrome}
+        hidden={modalOpen}
+        onOpenSearch={onToolbarSearch}
+        onOpenSettings={onToolbarSettings}
+      />
     </Fragment>
   );
 };

@@ -1,13 +1,13 @@
 # 手機版面（`mobileLayout`）
 
 目標裝置：Android Chrome 現代版（iOS Safari `unknown`，未驗）；Android APK 殼（背景不斷線）見 `docs/android-app.md`，其鍵盤高度由原生回報（`keyboardInset` 的 `hostInset`）。動 `mobile_layout.js`、
-`App.applyMobileLayout`、`MobileKeypad`、`#t` 的 `inputmode` 前先讀。
+`App.applyMobileLayout`、`MobileToolbar`、`#t` 的 `inputmode` 前先讀。
 
 ## 狀態
 
 | Phase | 內容 | 狀態 |
 |---|---|---|
-| 1 | tap 不叫鍵盤＋虛擬按鍵列＋鍵盤鈕＋viewport 解鎖縮放 | CONFIRMED（Android 真機實測） |
+| 1 | tap 不叫鍵盤＋虛擬按鍵（2026-10 起為底部工具列）＋鍵盤鈕＋viewport 解鎖縮放 | CONFIRMED（Android 真機實測） |
 | 2 | 版面不被切（所有畫面縮到塞滿）＋軟鍵盤不蓋底列 | 已實作（真機 `guess`：待實測） |
 | 3 | 文章好讀：正常字級＋超寬換行（`mobileReflow`），reflow 下關掉以 col 判斷的滑鼠區域 | 已實作（真機 `guess`：待實測） |
 | 4 | 文章列表／看板列表：手機卡片版（固定高 `K*chh` 保住 `list_scroll` 等高假設） | 已實作（真機 `guess`：待實測） |
@@ -25,25 +25,32 @@
   body 掛 `mobile-layout` class；訂閱 `App.onMobileChange(fn)`。
 - **tap 不叫鍵盤＝`#t` 的 `inputmode="none"`**，不是改 `setInputAreaFocus` 的呼叫點：
   焦點照舊停在 `#t`（十幾個呼叫點、實體鍵盤全不動），只是 focus 不彈軟鍵盤。
-  軟鍵盤只由按鍵列的鍵盤鈕 `App.toggleSoftKeyboard()` 叫出：切 `inputmode=text` 後
+  軟鍵盤只由按鍵面板的鍵盤鈕 `App.toggleSoftKeyboard()` 叫出：切 `inputmode=text` 後
   `blur()`→`focus()`（inputmode 對已有焦點的欄位不即時生效），**必須在 click handler
   內同步呼叫**（user activation）。被別的方式收起（Android 返回鍵）由 `App._onVisualViewport`
-  偵測：看過 inset>0 之後回到 0 ⇒ `softKeyboard` 歸零、通知按鍵列（`onMobileChange(fn(mobile, kb))`）。
+  偵測：看過 inset>0 之後回到 0 ⇒ `softKeyboard` 歸零、通知工具列（`onMobileChange(fn(mobile, kb, sel, ctrl))`）。
   「看過出現」是必要條件：剛按鍵盤鈕那幾幀鍵盤還沒升起。
-- 按鍵列（`src/components/MobileKeypad`，掛在 ContextMenu 內，`modalOpen` 時隱藏）：
-  - 送鍵只走 `view.sendKeyAsUser(keyName)`。不可 `view._send`（列表好讀＝在序列化交易
+- 底部工具列（`src/components/MobileToolbar`，掛在 ContextMenu 內，`modalOpen` 時隱藏；2026-10 取代浮動按鍵列）：
+  - 固定貼底（`bottom: var(--kb-inset)`），高 `MOBILE_TOOLBAR_PX`（48，與 CSS `.mobileToolbarBar` 一致，unit 守）。
+    **常駐 ⇒ 從列數扣**：`App._applyMobileGeometry` 用 `innerBounds.height - MOBILE_TOOLBAR_PX` 算 rows；
+    位置由 `_onVisualViewport` 把工具列併進 `view.setKeyboardInset`（＝軟鍵盤 inset ＋ 工具列 ＋ 展開中的按鍵面板）。
+    `--kb-inset` 只算軟鍵盤。`innerBounds` 本身不扣（測試以 `Object.create(App.prototype)` 直接塞它）。
+  - 按鈕依畫面（`mobile_toolbar.toolbarContextFromFacts`，App 在 `screenSettled` 重算、`onScreenContextChange(fn)` 有變才通知）：
+    推＝文章（pageState 3 且這一幀是 pager 狀態列、非信件）；搜尋＝`article_search.availableSearchKinds` 非空時出現，點了**直接開搜尋彈窗**（預設第一個可用種類，無子選單；見 `docs/article-search.md`）；
+    按鍵、更多常駐。更多＝選取模式／設定／登出（inline 二段確認，`LOGOUT_CONFIRM_MS` 無動作自動收回）。
+    彈出選單畫在 root 底下（**不用 Mantine Menu**：portal 出去的 click 會到 window 的 App 滑鼠入口）。
+  - 送鍵只走 `view.sendKeyAsUser(keyName, mods?)`。不可 `view._send`（列表好讀＝在序列化交易
     中途插隊）、不可 `App.onFunctionKey`（文章好讀會先進 functionMode ⇒ PgDn 不捲動）。
+    推文 `X` 是單字元：`sendKeyAsUser` 在 keydown 沒人接手時補走 `_keyboard.onKeyPress`。
   - `mousedown` preventDefault（不搶 `#t` 焦點）＋ mousedown/mouseup/click stopPropagation
-    （App 的滑鼠入口在 window）。守護 `tests/unit/mobile_keypad.test.jsx`。
-  - 按鍵表 `MOBILE_KEYPAD_ROWS`，每個 key 必須在 `term_keyboard.KeyMap`。
-  - 第三列（元件自己畫）：推文 `X`（單字元：`sendKeyAsUser` 在 keydown 沒人接手時補走
-    `_keyboard.onKeyPress`，因為字元原本靠 keypress 送）、`__select` 選取模式、`__logout`
-    登出（inline 二段確認，`LOGOUT_CONFIRM_MS` 無動作自動收回）、`__drag` 拖曳把手。
-  - **浮動位置**：`{right,bottom}` px 存 localStorage `pttchrome.mobileKeypadPos`
-    （`mobile_layout.load/saveKeypadPos`，try/catch），**不寫 prefs**（同上：prefs 會同步到桌機）。
-    `clampKeypadPos` 夾回視窗；`--kb-inset` 照舊加在 bottom。拖曳走 pointer events＋
-    `setPointerCapture`（把手與收合圓鈕 `touch-action:none`）；圓鈕位移 < `KEYPAD_DRAG_THRESHOLD_PX`
-    才算點擊。
+    （App 的滑鼠入口在 window）。守護 `tests/unit/mobile_toolbar.test.jsx`。
+  - 按鍵面板（`#mobileKeypad`，6 欄 grid 貼在工具列上方）：`MOBILE_KEYPAD_ROWS` ＋ ⌨（`toggleSoftKeyboard`）＋ Ctrl ＋
+    `MOBILE_KEYPAD_EXTRA_ROW`（Esc／Tab／Del：Gboard 等軟鍵盤打不出來）。每個 key 必須在 `term_keyboard.KeyMap`。
+    展開時以 `App.setMobileKeysPanelInset(offsetHeight)` 回報 ⇒ 終端機排到面板上方（暫態，不改列數、不重送 NAWS）。
+  - **黏滯 Ctrl**：`App.mobileCtrlArmed`（唯一寫入點 `setMobileCtrlArmed`，經 `onMobileChange` 第 4 參數亮燈）。
+    term_view `onKeyDown`（單按修飾鍵不算）與 `onTextInput`（軟鍵盤字走 input 事件）吃下一個字元 →
+    `mobile_layout.mobileCtrlKey`：字母走 **Alt remap**（`altKey`；byte 同 Ctrl，但繞過 Ctrl+A/C/V 的全選／複製／貼上），
+    `@[\]^_?` 走 `ctrlKey`，其他字元解除不轉。用一次就解除。守護 `mobile_ctrl.test.js`。
 - `index.html` viewport **不鎖** `user-scalable`（原生雙指縮放是後援）。
 - **尺寸（Phase 2）**：`App.applyTermSize` 是唯一套用點；手機分支無視 `termSizeMode`，用
   `mobile_layout.mobileTermGeometry`：rows ＝ 高度 / `MOBILE_ROW_FONT_PX`(16)（`calcTermSize`，欄數恆 80），
@@ -57,21 +64,21 @@
   layout resize ⇒ 重算字級、改列數、重送 NAWS）。維持 Android 預設 `resizes-visual`（layout 高度不變 ⇒
   列數穩定），`App._onVisualViewport` 以 `mobile_layout.keyboardInset` 算被蓋住的高度 →
   `view.setKeyboardInset` → `term_size.termLayoutOffsets({bottomInset})`：在可視區內置中，放不下就底對齊
-  （頂端列被推出畫面）。同一個值寫進 CSS 變數 `--kb-inset` 推高按鍵列（fixed 錨在 layout viewport）。
+  （頂端列被推出畫面）。同一個值寫進 CSS 變數 `--kb-inset` 推高底部工具列（fixed 錨在 layout viewport）；終端機的 inset 另加工具列與按鍵面板（見上）。
   只在 `softKeyboard` 時算；`visualViewport.scale ≠ 1`（雙指縮放）不算。
 - **開站原點**：`#BBSWindow` 顯示前量到的 `firstGridOffset` 是 0；`main.jsx` 顯示後呼叫
   `onWindowResize({ immediate: true })` 跳過 resizer 的 500ms debounce（手機與桌機 fixed-font-size 都有 resizer）。
 
 ## 文章浮動工具「⋯」（`render/merge_buttons.js#createFloatingTools`，桌機＋手機共用）
 
-圖文並排／AI 校正／開燈收在一顆圓鈕裡（攤開的一疊在 reflow 版面會蓋住文章字、且與按鍵列重疊）。
+圖文並排／AI 校正／開燈收在一顆圓鈕裡（攤開的一疊在 reflow 版面會蓋住文章字）。
 - 展開：桌機純 CSS `@media (hover: hover) .floatTools:hover`；觸控 tap 圓鈕 toggle `data-open`，點了面板裡的工具自動收合。
   一個工具都不用顯示 ⇒ 整個「⋯」不出現（`screen.js#_syncOverlays`）。
 - 面板 absolute 貼在圓鈕外側（`data-vdir`／`data-hdir` 依圓鈕在視窗哪一半），**圓鈕永遠不動**；與圓鈕的間距用 padding。
   兩者都是為了 hover 不掉。按下工具時面板 `min-width` 釘住（label 點完變短 ⇒ 按鈕縮走 ⇒ 游標落出面板），
   `pointerleave` 才解除，**不可**在 `setOpen(false)` 解除。守護 `float_tools.test.js`。
 - 位置 `{right,bottom}` 存 localStorage `pttchrome.floatToolsPos`（`mobile_layout.load/saveFloatPos`，不寫 prefs），可拖曳，
-  預設 `FLOAT_TOOLS_DEFAULT_POS`＝在按鍵列收合圓鈕正上方。手機 z-index 2400 < 按鍵列 2500。
+  預設 `FLOAT_TOOLS_DEFAULT_POS`＝在底部工具列上方。手機 z-index 2400 < 工具列 2500。
 - `data-own-control` ⇒ `pttchrome.jsx#isOwnControlTarget` 把整塊（含面板間隙）當成自己的控制項，不落到邊緣翻頁。
 - pref `showMergeCaptionButton`／`showLightsOnButton`（預設 true，增強分頁）→ `enhance.mergeCaptionButton`／`lightsButton`。
   關掉時 `screen.js#update` 還原效果（合併狀態、軌 A）；軌 B（已切純文字）要送鍵，按鈕保留到使用者切回。
@@ -84,11 +91,11 @@
 
 ## 測試
 
-- unit：`mobile_layout.test.js`、`float_tools.test.js`、`pref_modal_narrow.test.jsx`、`mobile_keypad.test.jsx`、`logout_session.test.js`、`comment_card.test.js`、`app_mobile_layout.test.js`、`mobile_surface.test.js`、
+- unit：`mobile_layout.test.js`、`float_tools.test.js`、`pref_modal_narrow.test.jsx`、`mobile_toolbar.test.jsx`、`mobile_toolbar.test.js`、`mobile_ctrl.test.js`、`logout_session.test.js`、`comment_card.test.js`、`app_mobile_layout.test.js`、`mobile_surface.test.js`、
   `list_card.test.js`（含兩個 session 的卡片換算；看板列表沒有錄製素材，這是它唯一的守護）；
   reflow 相關另在 `mouse_regions`／`mouse_gating`／`scroll_restore`／`context_menu_items` 各有一組
 - offline e2e：project `offline-mobile`（Pixel 7 模擬，只跑 `offline/mobile_*.spec.js`：換行版面、長按選單與推文卡片在
-  `mobile_reflow`、列表卡片在 `mobile_list_cards`、按鍵列拖曳在 `mobile_keypad`、「⋯」與設定頁窄版在 `mobile_float_tools`；`offline` project 以 testIgnore 排除 mobile_*），已併入
+  `mobile_reflow`、列表卡片在 `mobile_list_cards`、工具列／按鍵面板／黏滯 Ctrl 在 `mobile_toolbar`、「⋯」與設定頁窄版在 `mobile_float_tools`；`offline` project 以 testIgnore 排除 mobile_*），已併入
   `yarn test:e2e:offline`。**視窗高壓到 390px**：錄製檔全是 24 列，Pixel 7 原生高度會給 52 列、
   重放湊不成完整一屏；390 ⇒ 24 列。
 - Windows 本機跑 `offline-mobile` 會用到 local 細明體，小字級下半形字寬被 hinting 取整（實測 5.0 vs
@@ -135,7 +142,7 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 的 `touchLongPress`（`isTouchContextMenu`：`pointerType === 'touch'`，退回 `sourceCapabilities.firesTouchEvents`）
 讓 `normalEnabled` 不看選取（黑名單／前已讀後未讀／貼上照出）。
 
-使用者定案：長按的兩種用途用按鍵列「選取」開關切，**預設關**。狀態 `App.mobileSelectMode`（runtime、不存，
+使用者定案：長按的兩種用途用工具列「更多 → 選取模式」開關切，**預設關**。狀態 `App.mobileSelectMode`（runtime、不存，
 唯一寫入點 `setMobileSelectMode`，body class `mobileSelectMode`，非手機恆關）。
 - 關：開我們的選單，並 `removeAllRanges()`（`shouldClearTouchSelection`）⇒ 不留原生選取把手，複製類項目不出現。
   對象（黑名單／前已讀後未讀）仍是長按位置，與桌機右鍵同一條路徑。CSS 另加 `-webkit-touch-callout: none`。
@@ -209,7 +216,7 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   （游標底色的 class 下在這裡 ⇒ 整張卡片上色）。
 - 點擊：`App.clientToPos` 的 body 列號除數換成卡片高（`listRowSpan`）；`App.mouse_click` 在 listCards 下
   不做退出帶／邊緣翻頁，點卡片本體＝ `onMouseClick(row, LIST_TITLE_COL_START)`（走 session 的列點擊開文
-  合約）；點到間距（`mobile_layout.isListCardGapTarget`：在 `.listBodyView` 內、`.listCardBody` 外）吞掉不開文（防誤點）。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵列的 ←。
+  合約）；點到間距（`mobile_layout.isListCardGapTarget`：在 `.listBodyView` 內、`.listCardBody` 外）吞掉不開文（防誤點）。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵面板的 ←。
 - 長按選單的黑名單區域在 listCards 下看 DOM（`.listCardAuthor`／`.listCardTitle`），不看 col；「前已讀後
   未讀」用 `clientToPos` 的列號（已是卡片座標）。
 - 字級可調時再開 pref `mobileFontSize`（與桌機 `fontSize` 分開），且 rows 要跟著它算。

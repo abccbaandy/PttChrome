@@ -1,7 +1,7 @@
 // 手機 RWD（docs/mobile.md「浮動工具」「設定頁窄版」）：只在 `offline-mobile` project
 // 跑（Pixel 7 模擬：hasTouch + isMobile ⇒ hover: none，桌機的 :hover 展開不成立）。
 //   - 文章工具收在「⋯」：預設只佔一顆圓鈕（不蓋文章字），tap 展開、點了工具自動收合；
-//   - 「⋯」與按鍵列的收合圓鈕不重疊；展開的按鍵列疊在「⋯」上面（z-index）；
+//   - 「⋯」與底部工具列不重疊；工具列與展開的按鍵面板疊在「⋯」上面（z-index）；
 //   - 「⋯」可以用真觸控拖走（位置存 localStorage）；
 //   - 設定頁全螢幕、分頁在頂端、內容佔滿寬度。
 // 拖曳／展開方向的分支邏輯在 tests/unit/float_tools.test.js。
@@ -66,19 +66,19 @@ test.describe('手機：文章浮動工具「⋯」', () => {
     await expect(page.locator('#floatTools')).toHaveAttribute('data-active', '');
   });
 
-  test('「⋯」不與按鍵列的收合圓鈕重疊；展開的按鍵列疊在上面', async ({ page }) => {
+  test('「⋯」不與底部工具列重疊；工具列（含展開的按鍵面板）疊在上面', async ({ page }) => {
     await bootArticle(page);
     const fab = await waitRectStable(page, '#floatTools .floatTools__fab');
-    const keypadFab = await waitRectStable(page, '[data-key="__open"]');
-    expect(overlap(fab, keypadFab)).toBe(false);
+    const bar = await waitRectStable(page, '.mobileToolbarBar');
+    expect(overlap(fab, bar)).toBe(false);
 
-    await page.locator('[data-key="__open"]').tap();
+    await page.locator('[data-key="__keys"]').tap();
     await waitRectStable(page, '#mobileKeypad');
     const z = await page.evaluate(() => ({
       tools: Number(getComputedStyle(document.getElementById('floatTools')).zIndex),
-      keypad: Number(getComputedStyle(document.getElementById('mobileKeypad')).zIndex),
+      toolbar: Number(getComputedStyle(document.getElementById('mobileToolbar')).zIndex),
     }));
-    expect(z.tools).toBeLessThan(z.keypad);
+    expect(z.tools).toBeLessThan(z.toolbar);
   });
 
   test('真觸控拖「⋯」⇒ 跟著移動、位置存進 localStorage', async ({ page }) => {

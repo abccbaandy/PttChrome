@@ -1314,7 +1314,11 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
         enableEasyReadingList: true,
-        easyReadingListPrefetchCount: 0
+        easyReadingListPrefetchCount: 0,
+        // 這條守的是**原生** `/` passthrough（卷裡錄的是原生 prompt 打字）；預設的搜尋
+        // 彈窗會先把 `/` 攔走（docs/article-search.md），那條路另由
+        // article_search.offline.spec.js 守。
+        searchKeyOpensModal: false
       });
       let s = await waitState(page, (x) => x.state === 'active' && x.queueIdle);
       const mainNums = s.nums.filter((n) => n != null);

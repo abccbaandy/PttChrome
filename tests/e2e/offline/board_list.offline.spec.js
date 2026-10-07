@@ -151,6 +151,9 @@ const promptState = (page) =>
 test('搜尋看板 prompt：不破字、整個畫面不上底色、殘留列表不可點', async ({ page }) => {
   test.skip(!prompt, '缺 scn-board-search-prompt（yarn record:scenarios）');
   await bootScenario(page, ptt, prompt);
+  // 這條守的是**原生** s prompt 的渲染（卷裡錄的就是它）；搜尋彈窗（預設開）會把 s 攔走，
+  // 那條路由 article_search.offline.spec.js 守。
+  await ptt.applyPrefs(page, { searchKeyOpensModal: false });
   const list = await promptState(page);
   expect(list.pageState).toBe(2);
   expect(list.onInputField).toBe(false);

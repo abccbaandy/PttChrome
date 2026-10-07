@@ -11,9 +11,9 @@ export const ANDROID_E2E_GLOBS = [
   // 被測行為：長按的去留（contextMenuDisposition 等）與選單本身
   "src/js/context_menu_items.js",
   "src/components/ContextMenu/**",
-  // 手機版面判斷／按鍵列（選取模式開關在按鍵列上）
+  // 手機版面判斷／底部工具列（選取模式開關在工具列的「更多」裡）
   "src/js/mobile_layout.js",
-  "src/components/MobileKeypad/**",
+  "src/components/MobileToolbar/**",
   // -webkit-touch-callout、終端機祖先的 user-select 規則
   "src/css/main.css",
   // 這套測試自己的設施

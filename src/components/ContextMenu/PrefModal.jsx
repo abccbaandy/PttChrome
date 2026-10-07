@@ -860,6 +860,16 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_pushKeyOpensLongPush")}
                 </Text>
+                <PrefCheckbox
+                  name="searchKeyOpensModal"
+                  checked={values.searchKeyOpensModal}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_searchKeyOpensModal")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_searchKeyOpensModal")}
+                </Text>
               </PrefSection>
               <PrefSection legendKey="options_appearance">
                 <PrefCheckbox

@@ -24,6 +24,8 @@ export function serializedOpHint(core) {
     return core.longPush.opHint || '長推文送出中，請稍候…';
   if (core.logout && core.logout.active)
     return core.logout.opHint || '登出中，請稍候…';
+  // 搜尋彈窗送出的兩步（搜尋鍵 → 等 prompt → 關鍵字），見 article_search.js。
+  if (core.searchInFlight) return '搜尋中，請稍候…';
   return null;
 }
 

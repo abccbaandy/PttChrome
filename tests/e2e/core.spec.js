@@ -16,7 +16,6 @@
 const { test, expect } = require('./helpers/fixtures');
 const {
   sendKey,
-  typeLine,
   applyPrefs,
   resetSession,
   gotoBoard,
@@ -52,16 +51,22 @@ async function checkScreen(page, label, opts) {
 }
 
 // Stock → `/` 盤後閒聊 → End（最新一篇）。停在搜尋結果列表、游標在那一篇。
+// `/` 走預設的搜尋彈窗（docs/article-search.md）：這是唯一能在真 PTT 上驗「搜尋鍵 →
+// 等 prompt 幀（read.c 的字串指紋）→ 才送關鍵字」整條鏈的地方，不多花登入。
 async function gotoLatestThread(page) {
   await gotoBoard(page, BOARD);
   await sendKey(page, 'Slash');
-  // 搜尋 prompt 出現＝游標進了輸入欄（產品自己的判準，不認 prompt 文字）。
-  await page.waitForFunction(() => window.__app.buf.isCursorOnInputField(), null, {
-    timeout: 10000,
-  });
-  await typeLine(page, SEARCH);
+  const box = page.locator('input[name="searchKeyword"]');
+  await box.waitFor({ state: 'visible', timeout: 10000 });
+  await box.fill(SEARCH);
+  await box.press('Enter');
+  // 送出是兩步（`/` → 等 prompt → 關鍵字），在途期間鍵盤被閘門吞掉 ⇒ 等產品自己的
+  // searchInFlight 收尾，不能只看「列表＋游標不在輸入欄」（送出前那一刻就成立）。
   await page.waitForFunction(
-    () => window.__app.buf.pageState === 2 && !window.__app.buf.isCursorOnInputField(),
+    () =>
+      window.__app.searchInFlight === false &&
+      window.__app.buf.pageState === 2 &&
+      !window.__app.buf.isCursorOnInputField(),
     null,
     { timeout: 20000 }
   );

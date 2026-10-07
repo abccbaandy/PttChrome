@@ -294,7 +294,8 @@ test.describe('cassette 录制器', () => {
     }
 
     // ---- article 模式：进好读、逐页累积，录 byte 分页 + 每页文字快照 ----
-    await applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true });
+    // searchKeyOpensModal：下面 RECORD_SEARCH 走原生 `/` prompt 逐字打。
+    await applyPrefs(page, { enableEasyReading: true, showFloorNumbers: true, searchKeyOpensModal: false });
 
     // 定位目标文章（装 hook 前先到目标列，避免列表移动 recv 污染第一页）：
     //  - RECORD_SEARCH 设了 → '/' 标题搜寻指定文章（如黃仁勳那篇）；找不到(过期)即抛错。

@@ -270,6 +270,12 @@ export const DEFAULT_PREFS = {
   // 若在某個畫面誤判，關掉就回到原生推文。文章列表按 X 一律不攔。
   pushKeyOpensLongPush: true,
 
+  // 按搜尋鍵（文章列表的 / ? a Z；文章列表／看板列表／主功能表的 s）時改開搜尋彈窗，
+  // 不送 PTT 原生 prompt。理由：PTT 的
+  // 輸入記憶被列表好讀的跳號污染（article_search.js 檔頭），彈窗自己記關鍵字（只存
+  // 本機）。預設開；關掉＝逃生門，回到原生 prompt。手機工具列的搜尋鈕不受它影響。
+  searchKeyOpensModal: true,
+
   blacklist: "", // newline-separated user ids
   titleBlacklist: "", // newline-separated title keywords (board-list only)
 

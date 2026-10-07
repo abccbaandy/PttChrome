@@ -25,10 +25,13 @@ const geometry = (page) =>
     };
   });
 
+// 底部工具列常駐（mobile_layout.MOBILE_TOOLBAR_PX）：終端機內容必須完整落在它上面。
+const TOOLBAR_PX = 48;
+
 const assertFits = (g) => {
   expect(g.left).toBeGreaterThanOrEqual(0);
   expect(g.right).toBeLessThanOrEqual(g.innerWidth + 0.5);
-  expect(g.bottom).toBeLessThanOrEqual(g.innerHeight + 0.5);
+  expect(g.bottom).toBeLessThanOrEqual(g.innerHeight - TOOLBAR_PX + 0.5);
   expect(g.scrollWidth).toBeLessThanOrEqual(g.innerWidth);
   expect(g.cols).toBe(80);
   expect(g.rows).toBeGreaterThanOrEqual(24);
@@ -59,10 +62,13 @@ test.describe('手機版面：畫面不被切（離線重放）', () => {
     await bootOffline(page, ptt);
     await page.setViewportSize({ width: 915, height: 412 });
     await expect.poll(async () => (await geometry(page)).innerWidth).toBe(915);
-    // onWindowResize 的 resizer 有 500ms debounce
+    // onWindowResize 的 resizer 有 500ms debounce。列數從工具列上方的高度算：
+    // (412 - 48) / 16 = 22.75 ⇒ 夾到下限 24（term_size 的 LOCKED 範圍）。
     await expect.poll(async () => {
       const g = await geometry(page);
-      return g.right <= g.innerWidth + 0.5 && g.bottom <= g.innerHeight + 0.5 && g.rows === 25;
+      return (
+        g.right <= g.innerWidth + 0.5 && g.bottom <= g.innerHeight - TOOLBAR_PX + 0.5 && g.rows === 24
+      );
     }).toBe(true);
     assertFits(await geometry(page));
   });

@@ -8,11 +8,9 @@ import {
   mobileTermGeometry,
   keyboardInset,
   KEYBOARD_MIN_PX,
-  clampKeypadPos,
-  loadKeypadPos,
-  saveKeypadPos,
-  KEYPAD_DEFAULT_POS,
-  KEYPAD_POS_STORAGE_KEY,
+  MOBILE_KEYPAD_EXTRA_ROW,
+  MOBILE_TOOLBAR_PX,
+  mobileCtrlKey,
   clampFloatPos,
   loadFloatPos,
   saveFloatPos,
@@ -187,49 +185,33 @@ describe("keyboardInset", () => {
   });
 });
 
-// 浮動按鍵列的位置：存 localStorage（不寫 prefs：prefs 會同步到桌機）。
-describe("按鍵列位置", () => {
-  const vp = { vw: 390, vh: 700, w: 300, h: 150 };
-
-  test("夾回視窗內：整個按鍵列看得到", () => {
-    expect(clampKeypadPos({ right: -20, bottom: -5 }, vp)).toEqual({ right: 0, bottom: 0 });
-    expect(clampKeypadPos({ right: 500, bottom: 900 }, vp)).toEqual({ right: 90, bottom: 550 });
-    expect(clampKeypadPos({ right: 40.4, bottom: 60.6 }, vp)).toEqual({ right: 40, bottom: 61 });
+// 黏滯 Ctrl：字母走 Alt remap（繞過 Ctrl+A／C／V 的 UI 快捷鍵），符號走 ctrlKey。
+describe("mobileCtrlKey", () => {
+  test("字母 ⇒ Alt remap（byte 與 Ctrl 相同，不被全選／複製／貼上攔走）", () => {
+    expect(mobileCtrlKey("p")).toEqual({ key: "p", altKey: true });
+    expect(mobileCtrlKey("V")).toEqual({ key: "v", altKey: true });
+    for (const c of ["a", "c", "v"]) expect(mobileCtrlKey(c).ctrlKey).toBeUndefined();
   });
-
-  test("視窗比按鍵列小 ⇒ 貼齊（不出現負值）", () => {
-    expect(clampKeypadPos({ right: 30, bottom: 30 }, { vw: 200, vh: 100, w: 300, h: 150 })).toEqual({
-      right: 0,
-      bottom: 0,
-    });
+  test("CtrlShiftMap 的符號 ⇒ ctrlKey", () => {
+    for (const c of ["@", "[", "\\", "]", "^", "_", "?"])
+      expect(mobileCtrlKey(c)).toEqual({ key: c, ctrlKey: true });
   });
-
-  test("壞值退回預設", () => {
-    expect(clampKeypadPos({ right: NaN, bottom: "x" }, vp)).toEqual(KEYPAD_DEFAULT_POS);
-    expect(clampKeypadPos(null, vp)).toEqual(KEYPAD_DEFAULT_POS);
+  test("沒有控制碼的字元／多字元 ⇒ null", () => {
+    expect(mobileCtrlKey("1")).toBeNull();
+    expect(mobileCtrlKey("中")).toBeNull();
+    expect(mobileCtrlKey("ab")).toBeNull();
+    expect(mobileCtrlKey("")).toBeNull();
   });
+});
 
-  test("存取 round-trip；存的是專用 key，不是 prefs", () => {
-    const mem = new Map();
-    const st = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, v) };
-    expect(loadKeypadPos(st)).toEqual(KEYPAD_DEFAULT_POS);
-    saveKeypadPos({ right: 12, bottom: 34 }, st);
-    expect([...mem.keys()]).toEqual([KEYPAD_POS_STORAGE_KEY]);
-    expect(loadKeypadPos(st)).toEqual({ right: 12, bottom: 34 });
+describe("MOBILE_KEYPAD_EXTRA_ROW（手機鍵盤打不出來的鍵）", () => {
+  test("Esc／Tab／Delete，且都在 KeyMap", () => {
+    expect(MOBILE_KEYPAD_EXTRA_ROW.map((k) => k.key)).toEqual(["Escape", "Tab", "Delete"]);
+    for (const k of MOBILE_KEYPAD_EXTRA_ROW) expect(KeyMap[k.key]).toBeDefined();
   });
-
-  test("storage 會 throw（私密視窗）／內容壞掉 ⇒ 預設位置，不炸", () => {
-    const boom = {
-      getItem: () => {
-        throw new Error("denied");
-      },
-      setItem: () => {
-        throw new Error("denied");
-      },
-    };
-    expect(loadKeypadPos(boom)).toEqual(KEYPAD_DEFAULT_POS);
-    expect(() => saveKeypadPos({ right: 1, bottom: 2 }, boom)).not.toThrow();
-    expect(loadKeypadPos({ getItem: () => "{bad json" })).toEqual(KEYPAD_DEFAULT_POS);
+  test("與前兩列不重複", () => {
+    const names = [...MOBILE_KEYPAD_ROWS.flat(), ...MOBILE_KEYPAD_EXTRA_ROW].map((k) => k.key);
+    expect(new Set(names).size).toBe(names.length);
   });
 });
 
@@ -244,27 +226,26 @@ describe("浮動工具「⋯」位置（泛用版）", () => {
     };
   };
 
-  test("壞值退回自己的預設，不是按鍵列的", () => {
+  test("壞值退回預設；夾回視窗內", () => {
     expect(clampFloatPos(null, vp, FLOAT_TOOLS_DEFAULT_POS)).toEqual(FLOAT_TOOLS_DEFAULT_POS);
-    expect(FLOAT_TOOLS_DEFAULT_POS).not.toEqual(KEYPAD_DEFAULT_POS);
+    expect(clampFloatPos({ right: -20, bottom: 900 }, vp, FLOAT_TOOLS_DEFAULT_POS)).toEqual({
+      right: 0,
+      bottom: 664,
+    });
   });
 
-  test("預設位置在按鍵列收合圓鈕（bottom 8＋高 48）之上，不重疊", () => {
-    expect(FLOAT_TOOLS_DEFAULT_POS.bottom).toBeGreaterThanOrEqual(KEYPAD_DEFAULT_POS.bottom + 48);
+  test("預設位置在手機底部工具列之上，不重疊", () => {
+    expect(FLOAT_TOOLS_DEFAULT_POS.bottom).toBeGreaterThanOrEqual(MOBILE_TOOLBAR_PX + 8);
   });
 
-  test("與按鍵列各存各的 key，互不覆蓋", () => {
+  test("存取 round-trip；存的是專用 key，不是 prefs", () => {
     const st = memStorage();
     saveFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, { right: 5, bottom: 6 }, st);
-    saveKeypadPos({ right: 7, bottom: 8 }, st);
     expect(loadFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, FLOAT_TOOLS_DEFAULT_POS, st)).toEqual({
       right: 5,
       bottom: 6,
     });
-    expect(loadKeypadPos(st)).toEqual({ right: 7, bottom: 8 });
-    expect([...st.mem.keys()].sort()).toEqual(
-      [FLOAT_TOOLS_POS_STORAGE_KEY, KEYPAD_POS_STORAGE_KEY].sort(),
-    );
+    expect([...st.mem.keys()]).toEqual([FLOAT_TOOLS_POS_STORAGE_KEY]);
   });
 
   test("storage throw／壞 JSON ⇒ 預設位置", () => {

@@ -48,7 +48,8 @@ import { navKeyAllowed, navKeyBlockReason } from './nav_key_gate';
 import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
-import { inputModeFor, isListCardGapTarget, isMobileEnv, keyboardInset, listRowSpan, mobileTermGeometry } from './mobile_layout';
+import { inputModeFor, isListCardGapTarget, isMobileEnv, keyboardInset, listRowSpan, mobileTermGeometry, MOBILE_TOOLBAR_PX } from './mobile_layout';
+import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
@@ -172,6 +173,8 @@ export const App = function() {
   // 一鍵登出（手機按鍵列）：走 Goodbye → y → 任意鍵，由 server 自己關線。同一條
   // CommandQueue、同樣以 `active` 擋使用者輸入（serialized_op_gate）。
   this.logout = new LogoutSession(this, this.view, this.buf, this.commandQueue);
+  // 搜尋彈窗送出的兩步在途（article_search.submitSearch 寫、serialized_op_gate 讀）。
+  this.searchInFlight = false;
   this.view.onAidClick = (aid, board) => {
     this.aidNavigation.start(aid, board || this.view._articleBoard);
   };
@@ -244,8 +247,18 @@ export const App = function() {
   //   mobileSelectMode：按鍵列的「選取模式」（長按＝原生選字複製，不開我們的選單）。
   //                     預設關、不存（重整回到關），唯一寫入點 setMobileSelectMode。
   this.mobileSelectMode = false;
+  //   mobileCtrlArmed ：按鍵面板的黏滯 Ctrl（下一個字元送控制碼，用一次就解除）。
+  //                     唯一寫入點 setMobileCtrlArmed；消費端 term_view（keydown／input）。
+  this.mobileCtrlArmed = false;
   this._mobileListeners = new Set();
   this._keyboardSeen = false;
+  //   _keysPanelInset ：底部工具列的按鍵面板展開時蓋住的高度。暫態 ⇒ 不改列數，
+  //                     併進 view.setKeyboardInset（同軟鍵盤），見 setMobileKeysPanelInset。
+  this._keysPanelInset = 0;
+  //   _screenContext  ：底部工具列該顯示哪些按鈕（mobile_toolbar.js），screenSettled 時重算。
+  this._screenContext = EMPTY_TOOLBAR_CONTEXT;
+  this._screenContextListeners = new Set();
+  this.buf.addEventListener('screenSettled', () => this._refreshScreenContext());
 
   this.waterball = { userId: '', message: '' };
   this.appFocused = true;
@@ -659,6 +672,8 @@ App.prototype.applyMobileLayout = function() {
   if (!mobile) {
     this.softKeyboard = false;
     this.mobileSelectMode = false;
+    this.mobileCtrlArmed = false;
+    this._keysPanelInset = 0;
   }
   document.body.classList.toggle('mobile-layout', mobile);
   document.body.classList.toggle('mobileSelectMode', mobile && this.mobileSelectMode);
@@ -669,13 +684,52 @@ App.prototype.applyMobileLayout = function() {
   if (this._termSizeValues !== undefined) this.applyTermSize();
   this._onVisualViewport();
   this._emitMobileState();
+  this._refreshScreenContext();
 };
 
 App.prototype._emitMobileState = function() {
   var mobile = this.mobile;
   var kb = this.softKeyboard;
   var sel = this.mobileSelectMode;
-  this._mobileListeners.forEach(function(fn) { fn(mobile, kb, sel); });
+  var ctrl = this.mobileCtrlArmed;
+  this._mobileListeners.forEach(function(fn) { fn(mobile, kb, sel, ctrl); });
+};
+
+// 黏滯 Ctrl 的唯一寫入點（按鍵面板的 Ctrl 鍵、term_view 消費後解除）。回傳新狀態。
+App.prototype.setMobileCtrlArmed = function(on) {
+  var next = !!on && this.mobile;
+  if (next === this.mobileCtrlArmed) return next;
+  this.mobileCtrlArmed = next;
+  this._emitMobileState();
+  return next;
+};
+
+// 底部工具列的按鍵面板高度（展開＝面板高，收合＝0）。併進終端機的底部 inset：
+// 面板蓋住的那段不排終端機，放不下就底對齊（PTT 的輸入列在底列，見 term_size）。
+App.prototype.setMobileKeysPanelInset = function(px) {
+  var v = this.mobile && px > 0 ? Math.round(px) : 0;
+  if (v === this._keysPanelInset) return;
+  this._keysPanelInset = v;
+  this._onVisualViewport();
+};
+
+// 工具列訂閱「這個畫面能做什麼」fn(context)；回傳取消訂閱。訂閱當下先回一次現值。
+App.prototype.onScreenContextChange = function(fn) {
+  this._screenContextListeners.add(fn);
+  // 訂閱前沒人算過（_refreshScreenContext 沒訂閱者時跳過）⇒ 先算一次現值。
+  if (this.mobile) this._screenContext = mobileToolbarContext(this);
+  fn(this._screenContext);
+  return () => this._screenContextListeners.delete(fn);
+};
+
+// 只在手機模式算（桌機沒有工具列，不白掃 24 列）。有變才通知。
+App.prototype._refreshScreenContext = function() {
+  // 沒人訂閱（測試以 Object.create 造的 App、工具列還沒 mount）就不必算。
+  if (!this._screenContextListeners || !this._screenContextListeners.size) return;
+  var next = this.mobile ? mobileToolbarContext(this) : EMPTY_TOOLBAR_CONTEXT;
+  if (sameToolbarContext(next, this._screenContext)) return;
+  this._screenContext = next;
+  this._screenContextListeners.forEach(function(fn) { fn(next); });
 };
 
 App.prototype._applyInputMode = function() {
@@ -744,8 +798,13 @@ App.prototype._onVisualViewport = function() {
     this._applyInputMode();
     this._emitMobileState();
   }
+  // --kb-inset 只算軟鍵盤（工具列靠它浮在鍵盤上）。終端機的底部 inset 另加常駐的
+  // 底部工具列與展開中的按鍵面板：終端機只排在它們上面（term_size.termLayoutOffsets）。
   document.documentElement.style.setProperty('--kb-inset', inset + 'px');
-  if (this.view && this.view.setKeyboardInset) this.view.setKeyboardInset(inset);
+  if (this.view && this.view.setKeyboardInset)
+    this.view.setKeyboardInset(
+      inset + (this.mobile ? MOBILE_TOOLBAR_PX + (this._keysPanelInset || 0) : 0)
+    );
 };
 
 // modalShown 是終端機鍵盤／焦點的總閘門（讀取點散在 term_view.js 的 shouldAcceptInput
@@ -804,6 +863,10 @@ App.prototype.onDisableLiveHelperModalState = noop;
 // 等答案回來才開，中間蓋一層遮罩。線路上仍然只有那一個 X，淨效果與原生按 X 一致
 // （使用者本來就是要推文才按的）。詳見 docs/long-push.md「探路（preflight）」。
 App.prototype.openLongPushModal = noop;
+
+// 搜尋彈窗（文章列表的 / ? a Z、工具列的各類搜尋）。合約同上：noop ＝ ContextMenu
+// 未 mount ⇒ 回 undefined ⇒ 攔截入口不吞鍵，照原生送出。見 article_search.js。
+App.prototype.openSearchModal = noop;
 
 App.prototype.switchToEasyReadingMode = function(doSwitch) {
   this.debugRecorder?.log('app.switchToEasyReadingMode', { doSwitch: !!doSwitch });
@@ -1552,7 +1615,10 @@ App.prototype._applyMobileGeometry = function(surface) {
   var b = view.innerBounds;
   var g = mobileTermGeometry({
     width: b.width,
-    height: b.height,
+    // 底部工具列常駐（components/MobileToolbar）⇒ 列數從它上面的高度算，只在進出
+    // 手機模式時變（不因按鍵面板／軟鍵盤開關重送 NAWS）。位置由 _onVisualViewport
+    // 把工具列併進 view 的底部 inset。
+    height: Math.max(0, b.height - MOBILE_TOOLBAR_PX),
     dpr: window.devicePixelRatio || 1,
     surface: s
   });

@@ -132,6 +132,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_pushKeyOpensLongPush",
       tooltipKey: "tooltip_pushKeyOpensLongPush",
     },
+    {
+      key: "searchKeyOpensModal",
+      titleKey: "options_searchKeyOpensModal",
+      tooltipKey: "tooltip_searchKeyOpensModal",
+    },
   ]),
   ...inSection("general", "options_appearance", null, [
     {

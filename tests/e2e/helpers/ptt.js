@@ -548,10 +548,24 @@ async function gotoBoard(page, board) {
     });
 
   await sendKey(page, 's');
-  // 必須等搜尋 prompt 真的出現再打字：太早打，板名字元會被主選單當捷徑吃掉
+  // 兩條路：預設 pref searchKeyOpensModal 開著 ⇒ `s` 開搜尋彈窗（docs/article-search.md），
+  // 彈窗自己「s → 等 prompt → 板名」；關著（錄製工具）⇒ 原生 prompt。
+  // 原生那條必須等搜尋 prompt 真的出現再打字：太早打，板名字元會被主選單當捷徑吃掉
   // （實測 "C_Chat" 的 C 選到 (C)lass 進了分組討論區）。
-  await page.waitForFunction(() => window.__app.buf.isCursorOnInputField(), null, { timeout: 10000 });
-  await typeLine(page, board);
+  await page.waitForFunction(
+    () => !!document.querySelector('input[name="searchKeyword"]') || window.__app.buf.isCursorOnInputField(),
+    null,
+    { timeout: 10000 }
+  );
+  const box = page.locator('input[name="searchKeyword"]');
+  if (await box.count()) {
+    await box.fill(board);
+    await box.press('Enter');
+    // 兩步在途期間鍵盤被閘門吞掉（serialized_op_gate）⇒ 等它收尾再往下。
+    await page.waitForFunction(() => window.__app.searchInFlight === false, null, { timeout: 20000 });
+  } else {
+    await typeLine(page, board);
+  }
   for (let i = 0; i < 6; i++) {
     let w = null;
     await expect

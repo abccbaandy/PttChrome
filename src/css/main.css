@@ -1257,7 +1257,7 @@ span {
   position: fixed;
   z-index: 3000;
 }
-/* 手機：低於 MobileKeypad（2500）⇒ 展開的按鍵列永遠在上面，不會被「⋯」蓋住按鍵。 */
+/* 手機：低於底部工具列 MobileToolbar（2500）⇒ 工具列與展開的面板永遠在上面，不會被「⋯」蓋住按鍵。 */
 body.mobile-layout .floatTools {
   z-index: 2400;
 }

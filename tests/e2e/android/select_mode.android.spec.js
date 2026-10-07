@@ -41,9 +41,14 @@ async function openScreen(page) {
 }
 
 async function setSelectMode(page, on) {
-  await page.locator('[data-key="__open"]').click();
-  if (on) await page.locator('[data-key="__select"]').click();
+  // 選取模式在底部工具列的「更多」裡；切換後選單自動收起，再開一次讀狀態。
+  await page.locator('[data-key="__more"]').click();
+  if (on) {
+    await page.locator('[data-key="__select"]').click();
+    await page.locator('[data-key="__more"]').click();
+  }
   await expect(page.locator('[data-key="__select"]')).toHaveAttribute('aria-pressed', String(on));
+  await page.locator('[data-key="__more"]').click();
 }
 
 // capture 階段記下每個 contextmenu／觸控 pointerdown（React listener 之前），事後讀
@@ -71,7 +76,7 @@ const selectionText = (page) => page.evaluate(() => String(window.getSelection()
 // 目標：按鍵列上方、視窗內第一個有字列的某個非空白字元中心（CSS px）。
 const targetChar = (page) =>
   page.evaluate(() => {
-    const kp = document.getElementById('mobileKeypad');
+    const kp = document.getElementById('mobileToolbar');
     const bottom = Math.min(innerHeight, kp ? kp.getBoundingClientRect().top : innerHeight) - 8;
     for (const row of document.querySelectorAll('#mainContainer span[type="bbsrow"]')) {
       const rr = row.getBoundingClientRect();

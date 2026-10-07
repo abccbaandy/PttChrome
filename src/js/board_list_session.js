@@ -774,23 +774,14 @@ BoardListSession.prototype = {
       keyClass: 'passthrough'
     });
     this.state = r.next;
+    // bytes 是字串 ＝ 一步；是陣列 ＝ 多步序列（每步 {keys, kind, expect, onDone,
+    // onFail}），合約同 list_session._beginPassthroughBytes：第 n+1 步只在第 n 步的
+    // onDone 裡 enqueue（搜尋彈窗的「s → 等 prompt → 板名」靠它，article_search.js）。
+    const steps = Array.isArray(bytes) ? bytes : [{ keys: bytes, kind: kind }];
     const self = this;
     const finish = function() {
       self._enterNative();
-      self._queue.enqueue({
-        keys: bytes,
-        kind: BRD_CMD_PREFIX + kind,
-        // 尾附 \f（同 list_session._enqueuePassthroughStep）：PTT 完全忽略某個鍵時
-        // （無權限、非最愛清單按 `*`…）是**零 byte 零 settle**，命令只能等滿
-        // NATIVE_PASSTHROUGH_MS(3s) 才 timeout ⇒ 使用者盯著原生畫面發呆，
-        // 「操作完成後自動回平滑捲動」也無從觸發。協定 §6：igetch 全域攔截，
-        // getdata/vgets/pmore/編輯器一律吃這條，零副作用。
-        fullRepaint: true,
-        expect: function() {
-          return true; // 任何 settle 都是回應（畫面已經是原生鏡像，畫什麼都對）
-        },
-        timeoutMs: NATIVE_PASSTHROUGH_MS
-      });
+      self._enqueuePassthroughStep(steps, 0);
       if (hint && self._view.flashListHint) self._view.flashListHint(hint, 4000);
     };
     if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
@@ -799,6 +790,33 @@ BoardListSession.prototype = {
       return;
     }
     finish();
+  },
+
+  _enqueuePassthroughStep: function(steps, i) {
+    const self = this;
+    const step = steps[i];
+    this._queue.enqueue({
+      keys: step.keys,
+      kind: BRD_CMD_PREFIX + (step.kind || 'native-key'),
+      // 尾附 \f（同 list_session._enqueuePassthroughStep）：PTT 完全忽略某個鍵時
+      // （無權限、非最愛清單按 `*`…）是**零 byte 零 settle**，命令只能等滿
+      // NATIVE_PASSTHROUGH_MS(3s) 才 timeout ⇒ 使用者盯著原生畫面發呆，
+      // 「操作完成後自動回平滑捲動」也無從觸發。協定 §6：igetch 全域攔截，
+      // getdata/vgets/pmore/編輯器一律吃這條，零副作用。
+      fullRepaint: 'fullRepaint' in step ? step.fullRepaint : true,
+      expect:
+        step.expect ||
+        function() {
+          return true; // 任何 settle 都是回應（畫面已經是原生鏡像，畫什麼都對）
+        },
+      timeoutMs: step.timeoutMs || NATIVE_PASSTHROUGH_MS,
+      onDone: function(result) {
+        if (step.onDone) step.onDone(result);
+        if (i + 1 < steps.length) self._enqueuePassthroughStep(steps, i + 1);
+      },
+      onFail: step.onFail,
+      onFlushed: step.onFlushed
+    });
   },
 
   // ---- A 類鍵的凍結交易（L1：原地重繪的鍵全程不切原生）------------------------

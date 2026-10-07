@@ -244,6 +244,60 @@ export const en_US = {
   "tooltip_pushKeyOpensLongPush": {
     "message": "Turn off to get PTT's native single comment prompt back. X in the article list is always native."
   },
+  "options_searchKeyOpensModal": {
+    "message": "Search keys (/ ? a Z s) open the search dialog"
+  },
+  "tooltip_searchKeyOpensModal": {
+    "message": "PTT's own input history gets filled with article numbers by list easy reading, so the dialog keeps your keywords on this device (press ↑ to recall). Turn off to use PTT's native prompt."
+  },
+  "searchModal_title": {
+    "message": "Search"
+  },
+  "searchModal_kindTitle": {
+    "message": "Title (/)"
+  },
+  "searchModal_kindAuthor": {
+    "message": "Author (a)"
+  },
+  "searchModal_kindPush": {
+    "message": "Push count (Z)"
+  },
+  "searchModal_kindBoard": {
+    "message": "Board (s)"
+  },
+  "searchModal_placeholderTitle": {
+    "message": "Title keyword, ↑ to recall"
+  },
+  "searchModal_placeholderAuthor": {
+    "message": "Author ID, ↑ to recall"
+  },
+  "searchModal_placeholderPush": {
+    "message": "Pushes above N (negative = boos), ↑ to recall"
+  },
+  "searchModal_placeholderBoard": {
+    "message": "Board name, ↑ to recall"
+  },
+  "searchModal_recent": {
+    "message": "Recent"
+  },
+  "searchModal_forget": {
+    "message": "Delete entry"
+  },
+  "searchModal_forgetAll": {
+    "message": "Clear all"
+  },
+  "searchModal_cancel": {
+    "message": "Cancel"
+  },
+  "searchModal_confirm": {
+    "message": "Search"
+  },
+  "searchModal_failed": {
+    "message": "PTT did not open the search prompt; the keyword was not sent"
+  },
+  "searchModal_busy": {
+    "message": "A command is in progress, please try again"
+  },
 
   // options nav
   "options_general": {
@@ -855,6 +909,30 @@ export const en_US = {
   },
   "mobileKeypad_keyboard": {
     "message": "Show / hide keyboard"
+  },
+  "mobileKeypad_ctrl": {
+    "message": "Ctrl (applies to the next key)"
+  },
+  "mobileKeypad_esc": {
+    "message": "Esc"
+  },
+  "mobileKeypad_tab": {
+    "message": "Tab"
+  },
+  "mobileKeypad_del": {
+    "message": "Delete"
+  },
+  "mobileToolbar_search": {
+    "message": "Search"
+  },
+  "mobileToolbar_keys": {
+    "message": "Keys"
+  },
+  "mobileToolbar_more": {
+    "message": "More"
+  },
+  "mobileToolbar_settings": {
+    "message": "Settings"
   },
   "options_fixedFontSize": {
     "message": "Fixed font size"

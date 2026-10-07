@@ -502,6 +502,8 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 
 - 進入：`/` → `select_read(locmem, RS_KEYWORD)`（`mbbsd/read.c:811-813`；舊記的 `:776` 現在是 Ctrl-H 的 `RS_NEWPOST`，行號會漂、以函式名為準）→ `getdata(b_lines, 0, "搜尋標題: ", …, DOECHO)`（Enter 收尾；空字串→`READ_REDRAW` 回原列表）→ 命中 count>0：`currmode |= MODE_SELECT` ＋ `NEWDIRECT`（全幅重建搜尋清單，序號空間獨立、無置底，見 §3）；count==0：`READ_REDRAW`（回原列表全幅重繪，底列 vmsg 類訊息）。
 - 已在 MODE_SELECT 再 `/`＝「增加條件」疊加篩選。
+- 其他搜尋鍵（`a` 作者、`Z` 推文數…）同走 `read.c#ask_filter_predicate`，prompt 字串表見 `docs/article-search.md`。
+- **輸入記憶（↑↓）是全 session 共用一份**（`vtuikit.c` `static InputHistory ih`，508 bytes、≥2 bytes 才存、只有 `VGET_NOECHO` 不存），跳號 ` 跳至第幾項: `（NUMECHO）也會存 ⇒ client 送的 `N\r` 會擠掉搜尋關鍵字。CONFIRMED；client 對策見 `docs/article-search.md`。
 - **newui（SR.* 換成 `search.svc`）CONFIRMED 讀碼**：`read.c#select_read` 命中 → `NEWDIRECT`、`sr_locmem` 落在末列（`read_loader` `is_newdirect`）；`total <= 0` → `READ_REDRAW`；序號＝`read_view_v2p`＝結果內 1-based（獨立空間、`bottom_count = 0`）。退出由 `read_cmd_quit` 以 `read_view_real_recno` 換回**主目錄的實體序號**當 `crs_ln`（舊版用 `refer`）⇒ 下一條「落點＝已讀進度」在 newui 是 guess，應改為落在剛才游標那篇，**上線後實測**。
 - **退出：`q`／`e`／`←`**（`read.c:712-725`；newui `read.c#read_cmd_quit`，CONFIRMED 同）→ `board_select()` 回主 directory ＋ `NEWDIRECT` 全幅重建主列表；**top=crs-p_lines+1（游標在視窗底列）**。
 - **退出落點 = 帳號已讀進度，非進 select 前位置**（live CONFIRMED 2026-07-06，C_Chat 三次重測落點恆定於同一舊序號）：`crs_ln=refer` 的 refer 解析回主列表時採該板閱讀進度。⇒ client 不得假設退回畫面含進板時取樣的最新序號（re-seed 後 fill 只向上，buffer 可能整段低於進板頁）；測試判準用「序號回到主空間（> select 清單 max）」。
@@ -512,7 +514,7 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 `mbbsd/read.c:366-481`；入口 `i_read_key` 的 `case '#'`（`read.c:766-768`；newui `read.c#read_common_cmds` → `read_cmd_aid`，成功仍 `move(b_lines)+clrtoeol`＋`DONOTHING` ⇒ 同頁落點底列留空、換頁則 psb 全幅重畫；置底改搜 `boardheader_t.bottom[]`，落點 `btotal + slot`，CONFIRMED）。**不走 `read_comms[]` onekey 表**（`bbs.c` 表中 35 號為 `{0,NULL}`）⇒ 一般/mail/man/digest 各模式一律生效。
 
 - prompt：`getdata(b_lines, 0, "搜尋" AID_DISPLAYNAME ": #", aidc, 20, DOECHO)` ⇒ 底列全文 **`搜尋文章代碼(AID): #`**（`AID_DISPLAYNAME` 見 `include/common.h:151`）。尾端 `#` **印死在 prompt 裡**，非使用者輸入。
-- `DOECHO`＝`VGET_DEFAULT` → `vgets`/`vgetstring`（`vtuikit.c:1150`）：**Enter 收尾**；ESC 或空字串＝取消（`move(b_lines,0); clrtoeol(); return FULLUPDATE`）。buffer len 20 ⇒ 實收上限 19 bytes。
+- `DOECHO`＝`VGET_DEFAULT` → `vgets`/`vgetstring`（`vtuikit.c:1150`）：**Enter 收尾**；Ctrl-C 或空字串＝取消（`move(b_lines,0); clrtoeol(); return FULLUPDATE`）。**ESC 不是取消鍵**：`vgetstring` 的離開鍵只有 `KEY_ENTER`／`Ctrl('C')`，`KEY_ESC` 非可列印 ⇒ `bell()`（2026-10 讀碼更正，舊文寫「ESC＝取消」）。buffer len 20 ⇒ 實收上限 19 bytes。
 - 輸入前處理（`read.c:394-399`）：strip 前置空白與**一個** `#` ⇒ 送 `#1gIeu-3A` 與 `1gIeu-3A` 等價。`aidc2aidu()` 遇非法字元回 0。
 - **成功（`read.c:477-481`）：`*pnew_ln = n+1; move(b_lines,0); clrtoeol(); return DONOTHING;`** ⇒ **只把游標移到目標序號、不重繪清單、不自動開文**。畫面指紋與「數字跳號」完全相同（底列留空）⇒ **client 直接沿用 §4 ✚ 的 park 判定**，不可等 clean-list。
 - 失敗（`read.c:464-475`）：`move(21,0); clrtobot(); move(22,0)` ＋ `不合法的文章代碼(AID)，請確定輸入是正確的` / `找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了` ＋ `pressanykey()` ＋ `FULLUPDATE`。

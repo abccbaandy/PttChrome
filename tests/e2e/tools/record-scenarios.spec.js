@@ -350,7 +350,8 @@ const SCENARIOS = {
 
   // `/` 標題搜尋的清單裡開文 → AID 跳文 → 返回（aid 錨點，免疫序號位移）。
   'aid-back-search': async (page) => {
-    const prefs = { enableEasyReading: true, mergeSameAuthorComments: false };
+    // searchKeyOpensModal：錄的是原生 `/` prompt 逐字打（搜尋彈窗另由 offline spec 守）。
+    const prefs = { enableEasyReading: true, mergeSameAuthorComments: false, searchKeyOpensModal: false };
     await resetSession(page);
     await gotoBoard(page, 'movie');
     // 關鍵字：最新一頁第一篇一般文章標題的前三個字（分類 [xx] 之後）——搜尋結果至少有它。
@@ -447,6 +448,8 @@ const SCENARIOS = {
   // 看板列表按 s：搜尋看板 prompt（游標格 fg=0/bg=7、整頁不上底色、殘留列表不可點）。
   'board-search-prompt': async (page) => {
     const prefs = {
+      // 錄的是原生 s prompt（搜尋彈窗另由 offline spec 守）。
+      searchKeyOpensModal: false,
       enableBoardListSmoothScroll: false,
       useMouseBrowsing: true,
       highlightCursor: true,

@@ -1,5 +1,6 @@
 // @unit-env browser
 import { App } from '../../src/js/pttchrome';
+import { MOBILE_TOOLBAR_PX, mobileTermGeometry } from '../../src/js/mobile_layout';
 // 原始碼掃描（下方 main.jsx 契約）：瀏覽器沒有 fs，用 ?raw 讀進來。
 import mainJsxSource from '../../src/js/main.jsx?raw';
 
@@ -149,6 +150,16 @@ describe('App 手機模式：終端機尺寸', () => {
     expect(app.setTermSize).toHaveBeenLastCalledWith(80, expect.any(Number));
   });
 
+  test('手機：列數從底部工具列上方的高度算（工具列不蓋住 PTT 的底列）', () => {
+    const app = makeApp('on');
+    app.applyMobileLayout();
+    app.onValuesPrefChange(synced);
+    const want = mobileTermGeometry({ width: 390, height: 750 - MOBILE_TOOLBAR_PX, dpr: 1, surface: 'grid' });
+    expect(app.setTermSize).toHaveBeenLastCalledWith(80, want.rows);
+    const chh = app.view.fixedResize.mock.calls.at(-1)[0];
+    expect(chh * want.rows + 10).toBeLessThanOrEqual(750 - MOBILE_TOOLBAR_PX);
+  });
+
   test('手機模式關掉 ⇒ 用同一組 prefs 重套桌機規則（fixed-font-size 20px）', () => {
     const app = makeApp('on');
     app.applyMobileLayout();
@@ -273,12 +284,39 @@ describe('App 手機模式：軟鍵盤與 visualViewport', () => {
     return app;
   };
 
-  test('鍵盤升起：終端機與按鍵列一起往上推', () => {
+  // 終端機的底部 inset ＝ 軟鍵盤 ＋ 常駐的底部工具列（＋展開中的按鍵面板）；
+  // --kb-inset 只算軟鍵盤（工具列自己靠它浮在鍵盤上）。
+  test('鍵盤升起：終端機與工具列一起往上推', () => {
     const app = makeApp();
     app.toggleSoftKeyboard();
     setVV(480);
-    expect(app.view.setKeyboardInset).toHaveBeenLastCalledWith(320);
+    expect(app.view.setKeyboardInset).toHaveBeenLastCalledWith(320 + MOBILE_TOOLBAR_PX);
     expect(document.documentElement.style.getPropertyValue('--kb-inset')).toBe('320px');
+  });
+
+  test('沒有軟鍵盤時終端機也排在工具列上方', () => {
+    const app = makeApp();
+    expect(app.view.setKeyboardInset).toHaveBeenLastCalledWith(MOBILE_TOOLBAR_PX);
+  });
+
+  test('按鍵面板展開：面板高度併進終端機底部 inset（不改 --kb-inset），收起歸還', () => {
+    const app = makeApp();
+    app.setMobileKeysPanelInset(156);
+    expect(app.view.setKeyboardInset).toHaveBeenLastCalledWith(MOBILE_TOOLBAR_PX + 156);
+    expect(document.documentElement.style.getPropertyValue('--kb-inset')).toBe('0px');
+    app.setMobileKeysPanelInset(0);
+    expect(app.view.setKeyboardInset).toHaveBeenLastCalledWith(MOBILE_TOOLBAR_PX);
+  });
+
+  test('黏滯 Ctrl：setMobileCtrlArmed 通知訂閱者（第 4 個參數），非手機無效', () => {
+    const app = makeApp();
+    const seen = [];
+    app.onMobileChange((m, kb, sel, ctrl) => seen.push(ctrl));
+    expect(app.setMobileCtrlArmed(true)).toBe(true);
+    expect(app.setMobileCtrlArmed(false)).toBe(false);
+    expect(seen).toEqual([true, false]);
+    app.mobile = false;
+    expect(app.setMobileCtrlArmed(true)).toBe(false);
   });
 
   test('REGRESSION：Android 返回鍵收起鍵盤 ⇒ softKeyboard 歸零、inputmode 回 none、通知按鍵列', () => {
@@ -291,7 +329,7 @@ describe('App 手機模式：軟鍵盤與 visualViewport', () => {
     expect(app.softKeyboard).toBe(false);
     expect(input.getAttribute('inputmode')).toBe('none');
     expect(seen).toEqual([false]);
-    expect(app.view.setKeyboardInset).toHaveBeenLastCalledWith(0);
+    expect(app.view.setKeyboardInset).toHaveBeenLastCalledWith(MOBILE_TOOLBAR_PX);
   });
 
   test('剛按下鍵盤鈕、鍵盤還沒升起（inset 0）不可誤判成已收起', () => {
