@@ -341,6 +341,9 @@ test.describe('文章列表好读模式（离线）', () => {
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, nav);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
@@ -381,6 +384,9 @@ test.describe('文章列表好读模式（离线）', () => {
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, nav);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
@@ -437,6 +443,9 @@ test.describe('文章列表好读模式（离线）', () => {
     const AID = '#1gTTD8RU';
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, nav);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
@@ -483,6 +492,9 @@ test.describe('文章列表好读模式（离线）', () => {
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, nav);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       // 预读 0：seed 后不 fill；↑ 的方向性 demand 会在背景补页，但游标移动
@@ -810,6 +822,9 @@ test.describe('文章列表好读模式（离线）', () => {
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, nav);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
@@ -905,6 +920,9 @@ test.describe('文章列表好读模式（离线）', () => {
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, nav);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       // 预读 30：fill 只吃第一对锚定命令；第二对留给 PgUp 的 demand。
@@ -1100,6 +1118,9 @@ test.describe('文章列表好读模式（离线）', () => {
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, nav);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
@@ -1242,6 +1263,9 @@ test.describe('置底文 Enter 开启（离线，pinned 卷）', () => {
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, pinned);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
@@ -1310,6 +1334,9 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, search);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
@@ -1394,6 +1421,9 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
     const logs = ptt.attachConsole(page);
     try {
       await bootOffline(page, ptt);
+      // 列表好讀預設開：不先關的話首幀會自己 engage、用預設預抓 200 開始 fill，
+      // 搶在下面設定預抓數之前（時紅時綠）。先關，下面打開時才 engage。
+      await ptt.applyPrefs(page, { enableEasyReadingList: false });
       await replayListCassette(page, mark);
       await page.waitForFunction(() => window.__app.buf.pageState === 2);
       await ptt.applyPrefs(page, {
