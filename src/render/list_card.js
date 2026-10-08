@@ -28,6 +28,7 @@ import LinkSegmentBuilder from "./link_segment";
 import {
   LIST_AUTHOR_COL_START,
   LIST_AUTHOR_COL_END,
+  hasServerCursorMark,
 } from "../js/comment_parse";
 
 // [start, end) cell 範圍 → 一段上色的 DOM（沒有內容回 null）。邊界落在 DBCS 中間時
@@ -87,8 +88,18 @@ export function buildListCard({
   listRead,
 }) {
   const layout = CARD_LAYOUT[kind] || CARD_LAYOUT.article;
+  // 游標記號（labelListCursor 的半形 `>`，舊 server 的全形 ● 佔兩格）蓋在 cell 0：
+  // 它不是空白，cardSegment 剪不掉 ⇒ 連同後面 %7d 的補白一起留下，游標那張卡片整行
+  // 右移。抽出來放進每張卡片都有的固定寬游標欄，欄位一律從記號之後切。
+  const cursorCells = hasServerCursorMark(chars, 0)
+    ? chars[0].isLeadByte
+      ? 2
+      : 1
+    : 0;
   const line = (parts) =>
-    parts.map(([a, b, cls]) => cardSegment(chars, a, b, forceWidth, row, cls));
+    parts.map(([a, b, cls]) =>
+      cardSegment(chars, Math.max(a, cursorCells), b, forceWidth, row, cls),
+    );
   return {
     node: el(
       "span",
@@ -108,11 +119,10 @@ export function buildListCard({
           "data-row": row,
         },
         [
-          el(
-            "span",
-            { class: "listCardLine listCardTitle" },
-            line(layout.title),
-          ),
+          el("span", { class: "listCardLine listCardTitle" }, [
+            el("span", { class: "listCardCursor" }, cursorCells ? ">" : " "),
+            ...line(layout.title),
+          ]),
           el("span", { class: "listCardLine listCardMeta" }, line(layout.meta)),
         ],
       ),

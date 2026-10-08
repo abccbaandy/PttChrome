@@ -92,6 +92,48 @@ describe("buildListCard：看板列表（board.c#brdlist_renderer 欄位）", ()
     expect(text(node.querySelector(".listCardBM"))).toBe("mod1/mod2");
   });
 
+  // 回歸：游標列 cell 0 的 `>`（labelListCursor）不是空白剪不掉，連同 %7d 補白留在
+  // 序號前 ⇒ 游標那張卡片整行右移（「>   102   SYSOP」對上「101   Shadowverse」）。
+  test("游標列：記號進固定寬游標欄，序號欄與非游標列同形", () => {
+    const cur = row(
+      seg(">   102  "),
+      seg(" "),
+      seg("SYSOP        "),
+      seg("本站 "),
+      seg("◎"),
+      seg("被盜帳號發廣告" + " ".repeat(20)),
+      seg("  2"),
+      seg("站長"),
+    );
+    const other = row(
+      seg("    101  "),
+      seg(" "),
+      seg("Shadowverse  "),
+      seg("線上 "),
+      seg("◎"),
+      seg("[闇影詩章]" + " ".repeat(24)),
+      seg("   "),
+      seg("wen17"),
+    );
+    const a = buildListCard({ chars: cur, row: 3, kind: "board", forceWidth: 16 }).node;
+    const b = buildListCard({ chars: other, row: 4, kind: "board", forceWidth: 16 }).node;
+    expect(text(a.querySelector(".listCardInfo")).startsWith("102")).toBe(true);
+    expect(text(b.querySelector(".listCardInfo")).startsWith("101")).toBe(true);
+    expect(text(a.querySelector(".listCardCursor"))).toBe(">");
+    expect(text(b.querySelector(".listCardCursor"))).toBe(" ");
+    // 游標欄是標題行的第一個子節點，兩張卡片的欄位起點一致
+    expect(a.querySelector(".listCardTitle").firstChild.className).toBe("listCardCursor");
+    expect(b.querySelector(".listCardTitle").firstChild.className).toBe("listCardCursor");
+  });
+
+  test("文章列表游標列同理：記號不進序號欄", () => {
+    const chars = listRow("someone", "□ 測試");
+    chars[0].ch = ">";
+    const { node } = buildListCard({ chars, row: 5, kind: "article", forceWidth: 16 });
+    expect(text(node.querySelector(".listCardInfo")).startsWith("350024")).toBe(true);
+    expect(text(node.querySelector(".listCardCursor"))).toBe(">");
+  });
+
   test("版型表的 cell 範圍前後相接、不重疊", () => {
     for (const kind of Object.keys(CARD_LAYOUT)) {
       const spans = [...CARD_LAYOUT[kind].title, ...CARD_LAYOUT[kind].meta]

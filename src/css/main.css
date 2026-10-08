@@ -341,6 +341,12 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 .listCard .listCardAuthor {
   margin-left: 0.5em;
 }
+/* 游標欄：每張卡片都有、固定一個半形寬（em ＝ chh），游標那張填 `>`，其餘空白
+   ⇒ 游標移動時欄位不左右跳（render/list_card.js）。 */
+.listCard .listCardCursor {
+  display: inline-block;
+  width: 0.5em;
+}
 .listCard .listCardPopularity,
 .listCard .listCardBM {
   margin-left: 0.5em;
