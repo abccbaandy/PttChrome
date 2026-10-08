@@ -38,7 +38,6 @@ import {
   getFirestore,
   connectFirestoreEmulator,
   doc,
-  getDoc,
   setDoc,
   disableNetwork,
   enableNetwork,
@@ -96,23 +95,15 @@ const credAuth = f =>
 
 // Second SDK app instance = "the other device". Signs in with the same fake
 // token (same sub => same uid), so the real firestore.rules let it at
-// users/{uid}. One fresh instance per test sub: re-signing ONE instance in as
-// the next test's user left its Firestore client answering "no such doc" for
-// users/{newUid} for 30s+ even though the emulator had it (REST read 200,
-// getDocFromServer still exists=false) — ~25% of runs locally, 7/10 on CI,
-// hidden for months by the old CI retry. Per-sub instances: 0/15 locally.
+// users/{uid}. Created once; re-signs in whenever the test sub changed.
+// It only WRITES (plays the other device); reading the server truth goes
+// through readCloudDoc's REST oracle below.
 let seederHandle = null;
-let seederSeq = 0;
 const seeder = () => {
-  if (seederHandle && seederHandle.sub && seederHandle.sub !== testSub) {
-    const old = seederHandle;
-    seederHandle = null;
-    return terminate(old.db).then(() => deleteApp(old.app)).then(seeder);
-  }
   if (!seederHandle) {
     const app = initializeApp(
       { ...FIREBASE_CONFIG, projectId: PROJECT_ID },
-      "seeder-" + ++seederSeq
+      "seeder"
     );
     const auth = getAuth(app);
     connectAuthEmulator(
@@ -140,10 +131,40 @@ const seeder = () => {
 
 const seedDoc = data => seeder().then(s => setDoc(doc(s.db, "users", s.uid), data));
 
+// Firestore REST value → plain JS (only the types pref docs use).
+const fromRest = v => {
+  if ("mapValue" in v) return fromRestFields(v.mapValue.fields || {});
+  if ("arrayValue" in v) return (v.arrayValue.values || []).map(fromRest);
+  if ("integerValue" in v) return Number(v.integerValue);
+  if ("doubleValue" in v) return v.doubleValue;
+  if ("nullValue" in v) return null;
+  if ("timestampValue" in v) return v.timestampValue;
+  return v.stringValue !== undefined ? v.stringValue : v.booleanValue;
+};
+const fromRestFields = fields =>
+  Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, fromRest(v)]));
+
+// The server truth for users/{uid}, read through the emulator's REST API as
+// owner (bypasses rules; the writes under test already went through them).
+// NOT through a second SDK client: the seeder's Firestore client, after being
+// re-signed-in as the next test's user, kept answering "no such doc" — getDoc
+// and getDocFromServer alike — for 30s+ while REST returned 200 for the same
+// path. That was the long-hidden `waitForCloud timeout: upload` flake (7/10 on
+// CI once retry was removed, #63); a fresh seeder per test only cut it to 1/10.
 const readCloudDoc = () =>
   seeder()
-    .then(s => getDoc(doc(s.db, "users", s.uid)))
-    .then(snap => (snap.exists() ? snap.data() : undefined));
+    .then(s =>
+      fetch(
+        "http://" + process.env.FIRESTORE_EMULATOR_HOST + "/v1/projects/" +
+          PROJECT_ID + "/databases/(default)/documents/users/" + s.uid,
+        { headers: { Authorization: "Bearer owner" } }
+      )
+    )
+    .then(res => {
+      if (res.status === 404) return undefined;
+      if (!res.ok) throw new Error("readCloudDoc: HTTP " + res.status);
+      return res.json().then(body => fromRestFields(body.fields || {}));
+    });
 
 // Poll the cloud doc through the seeder until cond(doc) holds; resolves with
 // the doc.
