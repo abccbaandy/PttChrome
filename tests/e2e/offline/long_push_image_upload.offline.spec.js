@@ -141,6 +141,13 @@ async function openLongPushModal(page) {
   await answered('X\x03\x03\r');
   await drawArticle(page); // ⏎ 回到文章
   await expect(page.locator('[name="longPushText"]')).toBeVisible();
+  // 探路的進度框（LongPushProgressModal）此時還在跑關閉動畫，疊在輸入框**上面**：
+  // 拖放的命中元素是它，而 Mantine 在動畫結束才卸載它。卸載若剛好落在 drop 前那次
+  // dragover 與 drop 之間，Chromium 會把 drop 派給已脫離文件的節點 ⇒ 事件到不了
+  // window 上的 listener、沒人 preventDefault ⇒ 遮罩卡住、瀏覽器改開新分頁載入檔案
+  // （CI 偶發紅的現場；本機在 dragover 後把命中元素移除可 100% 重現）。
+  // ⇒ 等進度框真的卸載才算「輸入框開好了」。
+  await expect(page.getByTestId('longPushProgressStatus')).toHaveCount(0);
 }
 
 // 真拖放（CDP Input.dispatchDragEvent，helpers/real_input）：輸入框開著就放在它上面
@@ -160,6 +167,9 @@ async function dropImage(page, name) {
   );
   await expect(page.locator('.ImageUploadDropZone')).toBeVisible();
   await drag.drop();
+  // drop 有送進 app（_onDrop 收掉遮罩）。沒有這條的話，drop 沒落地只會在後面顯示成
+  // 「15 秒內等不到提示卡」，看不出是拖放本身沒到。
+  await expect(page.locator('.ImageUploadDropZone')).toHaveCount(0);
 }
 
 test.describe('長推文輸入框的圖片上傳（離線）', () => {

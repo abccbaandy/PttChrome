@@ -140,7 +140,9 @@ jobs:
   # 紅了要讓人看得到：排程 run 的失敗通知只寄給最後改 cron 的人，很容易漏。
   report:
     needs: [unit-repeat, integration-repeat, e2e-offline-repeat]
-    if: failure()
+    # 只有 dev 的紅才開 issue：在工作分支上手動 dispatch 是拿來驗修正或收證據的
+    # （常帶暫時的除錯碼），那邊的紅看 run 本身就好，開 issue 只會誤報。
+    if: failure() && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
       issues: write
