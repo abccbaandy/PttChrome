@@ -573,8 +573,20 @@ async function gotoBoard(page, board) {
       .not.toBeNull()
       .catch(() => {});
     if (w === 'list') return waitScreenIdle(page);
-    if (w === 'pass') await pressAndSettle(page, 'Space');
-    else if (w === 'ask') {
+    if (w === 'pass') {
+      // 跳過進板畫面（pref skipBoardEntryScreen，預設開）從送出板名那一刻就 active，會自己
+      // 代按收掉進板畫面 ⇒ 先等它收完再重判，別跟它搶鍵：它的鍵先到時，這裡的空白會落進
+      // 文章列表（docs/board-note-skip.md）。pref 關／它放手時 active 為 false，照舊自己按。
+      await page
+        .waitForFunction(() => !(window.__app.boardNoteSkip && window.__app.boardNoteSkip.active), null, {
+          timeout: 15000,
+        })
+        .catch(() => {});
+      await waitScreenIdle(page);
+      if ((await where()) === 'pass') await pressAndSettle(page, 'Space');
+      continue;
+    }
+    if (w === 'ask') {
       await typeLine(page, 'y');
       await expect.poll(where, { timeout: 15000 }).not.toBe('ask');
     } else break;

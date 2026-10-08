@@ -729,6 +729,12 @@
   "tooltip_enableListNativeAutoResume": {
     "message": "在列表按下非導覽鍵（搜尋、標記、推文、設定已讀…）時，操作完成、畫面靜下來就自動切回好讀模式。只移動游標的鍵（[ ] = \\ + - < > , . { } t，看板列表的 t v V）更是全程不切原生。關掉＝停在原生模式，要開啟文章或離開看板才回好讀。"
   },
+  "options_skipBoardEntryScreen": {
+    "message": "跳過進板畫面"
+  },
+  "tooltip_skipBoardEntryScreen": {
+    "message": "從看板列表或「選擇看板」進入看板時，自動收掉進板畫面（含動畫），直接進入文章列表。在文章列表按 b 仍可查看進板畫面。"
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "好讀模式按熱鍵跳到文末並切回原生模式"
   },

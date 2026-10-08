@@ -12,6 +12,7 @@ import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { LongPushSession } from './long_push_session';
 import { LogoutSession } from './logout_session';
+import { BoardNoteSkip } from './board_note_skip';
 import { DeepLinkController } from './deep_link_controller';
 import { AutoLogin } from './auto_login';
 import { LIST_TITLE_COL_START, parseBlacklist, parseTitleBlacklist } from './comment_parse';
@@ -173,6 +174,11 @@ export const App = function() {
   // 一鍵登出（手機按鍵列）：走 Goodbye → y → 任意鍵，由 server 自己關線。同一條
   // CommandQueue、同樣以 `active` 擋使用者輸入（serialized_op_gate）。
   this.logout = new LogoutSession(this, this.view, this.buf, this.commandQueue);
+  // 跳過進板畫面（pref skipBoardEntryScreen）：同一條 CommandQueue 代按一鍵。
+  // **順序有意義**：它的 screenSettled listener 排在 listSession／boardListSession
+  // 之後 ⇒ 開板命令（brd-open-board）已在同一個 settle 完成，我們的鍵才排得上線。
+  // arm 由送出出口觸發（_attachConn 的 conn.onDataSent）。
+  this.boardNoteSkip = new BoardNoteSkip(this, this.view, this.buf, this.commandQueue);
   // 搜尋彈窗送出的兩步在途（article_search.submitSearch 寫、serialized_op_gate 讀）。
   this.searchInFlight = false;
   this.view.onAidClick = (aid, board) => {
@@ -443,6 +449,9 @@ App.prototype._setupWebsocketConn = function(url) {
 App.prototype._attachConn = function(conn) {
   var self = this;
   this.conn = conn;
+  conn.onDataSent = function(bytes) {
+    self.boardNoteSkip.noteSent(bytes);
+  };
   this.conn.addEventListener('open', this.onConnect.bind(this));
   this.conn.addEventListener('close', this.onClose.bind(this));
   this.conn.addEventListener('data', function(e) {
@@ -479,6 +488,7 @@ App.prototype.onConnect = function() {
 };
 
 App.prototype.onData = function(data) {
+  this.boardNoteSkip.noteRecv();
   this.parser.feed(data);
 
   if (!this.appFocused && this.view.enableNotifications) {
@@ -516,6 +526,7 @@ App.prototype.onClose = function() {
   // Same for the AID back stack: its anchors are replayed as key sequences and
   // rely on this session's per-board cursors (pttbbs getkeep), which die with it.
   this.aidNavigation.reset();
+  this.boardNoteSkip.reset();
   // 長推文的探路成果同理：錨點是這條連線的列表游標（pttbbs getkeep），斷線就失效。
   // 不丟掉的話，重連後按下「送出」會拿舊錨點去比對新畫面。
   this.longPush.disarm();

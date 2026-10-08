@@ -24,6 +24,9 @@ export function serializedOpHint(core) {
     return core.longPush.opHint || '長推文送出中，請稍候…';
   if (core.logout && core.logout.active)
     return core.logout.opHint || '登出中，請稍候…';
+  // 跳過進板畫面：代按的那一鍵在線上。使用者此時自己按鍵會先收掉畫面，我們的鍵
+  // 就落進文章列表（← 會直接離板）。只擋 in-flight 這一個來回，arm 等待期不擋。
+  if (core.boardNoteSkip && core.boardNoteSkip.busy) return '略過進板畫面中，請稍候…';
   // 搜尋彈窗送出的兩步（搜尋鍵 → 等 prompt → 關鍵字），見 article_search.js。
   if (core.searchInFlight) return '搜尋中，請稍候…';
   return null;

@@ -484,6 +484,11 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 （`BRD_GROUPBOARD`）遞迴進另一份 `choose_board` 之前也跑同一段
 （`board.c:1992-1998`，gate 換成 `time4_lt(now, bupdate)`）。
 
+動畫公告（CONFIRMED 讀碼 `pmore.c`）：`PMORE_AUTO_EXIT` 下 movie 自動播放；播放中任何鍵被
+`mf_movieWaitKey` 讀掉 ⇒ STOP_MOVIE、`retval = READ_NEXT`（3196-3202）⇒ **不再 pressanykey**，直接 i_read。
+互動式動畫會遮罩按鍵，但 `q`／Ctrl-C 不可遮罩（3871-3887）。自然播完 retval 0 ⇒ pressanykey。
+client 端自動收掉見 `docs/board-note-skip.md`。
+
 `(b)進板畫面` 走 `read_comms[]` 的 `{ 0, b_notes }`（`bbs.c:4601`），`b_notes` 是同一段
 （`bbs.c:4061-4081`，`mr==-1` 時另印「本看板尚無進板畫面。」）。
 `[i]看板資訊`（`b_config`，`board.c:326`）對非板主也是 `pressanykey(); return FULLUPDATE;`

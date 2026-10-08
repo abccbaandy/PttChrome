@@ -589,9 +589,13 @@ EasyReading.prototype._onPageStateSettled = function() {
 
 // AID 跳文／deep link 正在驅動畫面嗎？導航途中的畫面不屬於使用者的閱讀動線，
 // 兩條自動開好讀的路線都要避開它（見 nextEasyReadingState 的 navActive 註解）。
+//
+// 跳過進板畫面（board_note_skip）同理：arm／代按期間出現的 pmore 是進板公告，
+// 好讀若在 2→3 edge 上把它當文章開，會送 PageDown 跟我們搶那一鍵。
 EasyReading.prototype._navActive = function() {
   const nav = this._core.aidNavigation;
-  return !!(nav && nav.active);
+  const skip = this._core.boardNoteSkip;
+  return !!((nav && nav.active) || (skip && skip.active));
 };
 
 EasyReading.prototype._onChanged = function(e) {

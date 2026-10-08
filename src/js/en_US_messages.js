@@ -730,6 +730,12 @@ export const en_US = {
   "tooltip_enableListNativeAutoResume": {
     "message": "When a non-navigation key is pressed in a listing (search, tag, push, mark-as-read...), switch back to the easy-reading view as soon as the action completes and the screen goes quiet. Cursor-only keys ([ ] = \\ + - < > , . { } t, and t v V in the board list) never show the native mirror at all. Turn this off to stay native until an article is opened or the board is left."
   },
+  "options_skipBoardEntryScreen": {
+    "message": "Skip the board entry screen"
+  },
+  "tooltip_skipBoardEntryScreen": {
+    "message": "When entering a board from a board list or the board selector, dismiss its entry screen (including animated ones) automatically and land straight on the article list. Press b in the article list to view it anyway."
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."
   },

@@ -32,6 +32,10 @@ export const DEFAULT_PREFS = {
   // 預設關等於沒做。關掉＝逐位元回到 2026-09-03 之前（黏性原生：開文／離板
   // 才回好讀），這是使用者拍板的逃生門 —— 判定類功能的最後一道防線就是設定開關。
   enableListNativeAutoResume: true,
+  // 跳過進板畫面（js/board_note_skip.js）：從看板列表／選擇看板進板時，進板公告
+  // （含動畫）由程式代按一鍵收掉，直接落在文章列表。預設開；文章列表按 `b` 看
+  // 進板畫面不受影響。
+  skipBoardEntryScreen: true,
   // Target number of VISIBLE (non-blacklisted) rows the background prefetch
   // accumulates before stopping; continuation is demand-driven (navigate near
   // an edge). 0 disables the background fill (current page + demand only).

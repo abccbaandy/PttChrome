@@ -1,0 +1,22 @@
+{
+  "meta": {
+    "mode": "scenario",
+    "scenario": "board-note-select",
+    "recordedAs": "guest",
+    "derivedFrom": "全合成（主功能表＋選擇看板 prompt），接 scn-board-note-movie 的 recv 用",
+    "prefs": {}
+  },
+  "cols": 80,
+  "rows": 48,
+  "steps": [
+    {
+      "on": "start",
+      "recv": "G1tIG1syShtbMTsxSBtbN22haaVEpVyv4KrtoWogICAgICAgICAgICAgICAgICAgICCn5b3wvfC56rd+p3sgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIBtbbRtbMTQ7MUggICAgICAgICAgICAgICAgICAgICAgKEIpb2FyZHMgICAgICAgoWkgrN2qT6ZDqu0goWobW20bWzQ4OzFIG1s3bSClRL/vs+YgICAoaCm7oan6G1ttG1sxNDsyMUg="
+    },
+    {
+      "on": "raw",
+      "send": "cw==",
+      "recv": "G1sxOzFIG1s3baFpIL/vvtys3apPIKFqG1ttG1tLG1syOzFIvdC/6aRKrN2qT6ZXutkoq/aqxaXVweSm27DKt2q0TSk6G1tL"
+    }
+  ]
+}

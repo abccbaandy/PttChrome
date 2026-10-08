@@ -87,6 +87,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_enableListNativeAutoResume",
     },
     {
+      key: "skipBoardEntryScreen",
+      titleKey: "options_skipBoardEntryScreen",
+      tooltipKey: "tooltip_skipBoardEntryScreen",
+    },
+    {
       key: "easyReadingBrowserFind",
       titleKey: "options_easyReadingBrowserFind",
       tooltipKey: "tooltip_easyReadingBrowserFind",

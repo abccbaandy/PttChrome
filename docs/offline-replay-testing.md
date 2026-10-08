@@ -131,6 +131,7 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 | `scn-aid-back`／`scn-aid-back-search` | AID 跳文 → 返回（列表好讀開文／`/` 搜尋結果開文） | `scenario_navigation.offline` |
 | `scn-deep-link` | hashchange deep link 完整落地＋F2（需帳號） | `deep_link_landing.offline` |
 | `scn-boardlist-class`／`scn-board-search-prompt` | 分類看板子清單平滑捲動、按 s 搜尋 prompt | `board_list.offline` |
+| `scn-board-note-movie` | 看板列表 ⏎ → Android 動畫進板畫面＋pressanykey → 文章列表（80×48；ptt-debug-20261008-105506 轉出，**首幀合成**：原檔首幀是使用者的我的最愛）；`scn-board-note-select` 全合成（主功能表→s→選擇看板 prompt），spec 把它接在前者的 recv 前面 | `board_note_skip.offline` |
 
 ## live 錄製檔分流（`yarn triage:recordings`）
 live 核心只驗幾個畫面；這個工具把整卷 live 錄製檔**每一幀**都驗一次，紅幀自動切成待轉素材。

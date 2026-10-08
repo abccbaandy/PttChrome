@@ -232,6 +232,9 @@ TelnetConnection.prototype.convSendUserKey = function(unicode_str) {
 // 之前**：vtkbd 看到的是解 IAC 之後的資料流。理由見 vtkbd_send_state.js 檔頭。
 TelnetConnection.prototype._sendEscaped = function(str, opts) {
   if (!str) return;
+  // 資料 bytes 的唯一匯流點 ⇒ 「剛剛送了什麼鍵」的觀察者掛這裡（board_note_skip 的
+  // arm 判定）。協商／keep-alive 走 _sendRaw，本來就不是按鍵，不經過這裡。
+  if (this.onDataSent) this.onDataSent(str);
   const guarded = guardEscSequence(this._vkState, str, opts);
   // 送出**之前**的狀態：debug recorder 要錄的是這個（send 那一列的 snapshotState
   // 在 _sendRaw 裡才跑，那時 _vkState 已經被下一行覆寫）。要證實「這個鍵有沒有被

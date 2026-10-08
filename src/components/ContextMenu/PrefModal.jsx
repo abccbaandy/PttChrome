@@ -741,6 +741,16 @@ export const PrefModal = ({
                   {i18n("tooltip_enableListNativeAutoResume")}
                 </Text>
                 <PrefCheckbox
+                  name="skipBoardEntryScreen"
+                  checked={values.skipBoardEntryScreen}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_skipBoardEntryScreen")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_skipBoardEntryScreen")}
+                </Text>
+                <PrefCheckbox
                   name="easyReadingBrowserFind"
                   checked={values.easyReadingBrowserFind}
                   onChange={onCheckboxChange}
