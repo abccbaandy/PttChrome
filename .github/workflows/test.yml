@@ -101,8 +101,10 @@ jobs:
   # `--user 1001`＝runner 使用者，checkout／cache 的檔案權限才對得上；`--ipc=host` 是
   # Playwright 官方建議：Docker 預設 /dev/shm 只有 64MB，多 worker 的 Chromium 會被它撐爆。
   #
-  # 拆兩個 shard 平行跑（fullyParallel ⇒ 以 test 為單位切，兩邊各約一半）。shard 數再加
-  # 不划算：每個 job 固定付 ~30s 拉 image＋yarn install。
+  # 拆 4 個 shard 平行跑（fullyParallel ⇒ 以 test 為單位切，各約四分之一）。每個 job 固定付
+  # ~50s（拉 image ~30s＋checkout／setup-node／yarn install），所以 shard 數跟著測試量調：
+  # 2026-10 兩個 shard 時每片 ~215 條、測試本體 200–350s，是整輪的關鍵路徑（量測與取捨見
+  # docs/ci-troubleshooting.md「CI 耗時」）。
   test-e2e-offline-shard:
     needs: playwright-version
     runs-on: ubuntu-latest
@@ -110,7 +112,7 @@ jobs:
       # 一個 shard 紅不砍另一個：要看到整輪所有失敗，而不是修一條才冒下一條。
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     # 卡住保險：預設 360 分鐘，而 deploy.yml 的 concurrency 不取消舊 run ⇒ 一個卡住的 job
     # 會讓之後所有 push 排隊（2026-10-01：dev server 沒起來、子進程撐住 node 不退出）。
     # 數值＝串行時代的實測耗時（14／17 分）再放兩倍多，正常不可能碰到。
@@ -133,13 +135,20 @@ jobs:
           node-version: 24
           cache: yarn
 
+      # 同 test-unit：e2e 耗時也隨 runner 抽到的 CPU 型號浮動（同一份 code 單片 200s／350s
+      # 都見過），比較耗時前先對機型。
+      - name: Runner CPU
+        run: |
+          nproc
+          lscpu | grep 'Model name' || true
+
       # firefox 是 offline-firefox project 用的（tests/e2e/offline/selection.offline.spec.js）：
       # issue #22 的選取／複製症狀只在 Firefox 出現，Chromium 永遠綠。image 已內建。
       # Yarn v4 把多出的參數接在 script 尾端 ⇒ --shard 落在 playwright 指令上。
-      - name: Offline E2E tests (Playwright replay, shard ${{ matrix.shard }}/2)
+      - name: Offline E2E tests (Playwright replay, shard ${{ matrix.shard }}/4)
         run: |
           yarn install --immutable
-          yarn test:e2e:offline --shard=${{ matrix.shard }}/2
+          yarn test:e2e:offline --shard=${{ matrix.shard }}/4
 
       # 失敗現場（截圖／影片；trace 刻意不全錄，見 playwright.config.js）。offline 偶發紅在本機常重現不出來，沒留檔就只剩
       # 一行 Received 可猜。守護 tests/unit/ci_playwright_container.test.js。
@@ -181,13 +190,26 @@ jobs:
         # workers：slow 桶的時間大多花在等刻意延遲的圖片（Playwright 進程裡的計時器，
         # 不吃 CPU），可以開得比 vCPU 多；broken／mixed 吃 CPU（2→8 workers 幾乎沒變快），
         # 一台 4 vCPU 就給 4。
+        # shard／shards：slow 桶條數最多（Tier A＋B）且每條都在等慢圖，單一 job 要 ~4 分、
+        # 是 offline 拆 4 片後的關鍵路徑 ⇒ 再拆兩片。每桶的 shard 必須 1..shards 一個不漏，
+        # 漏一片＝那片的測試靜默不跑（守護 tests/unit/ci_playwright_container.test.js）。
         include:
           - bucket: offline-slow
             workers: 8
+            shard: 1
+            shards: 2
+          - bucket: offline-slow
+            workers: 8
+            shard: 2
+            shards: 2
           - bucket: offline-broken
             workers: 4
+            shard: 1
+            shards: 1
           - bucket: offline-mixed
             workers: 4
+            shard: 1
+            shards: 1
     container:
       image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
       options: --user 1001 --ipc=host
@@ -206,20 +228,26 @@ jobs:
           node-version: 24
           cache: yarn
 
+      - name: Runner CPU
+        run: |
+          nproc
+          lscpu | grep 'Model name' || true
+
       # E2E_WORKERS 見上面 matrix 註解；其餘 offline job 用預設值（tests/e2e/workers_policy.js）。
-      - name: Adverse-image offline E2E (${{ matrix.bucket }})
+      # --shard 由 run-adverse-e2e.mjs 原封透傳給 playwright。
+      - name: Adverse-image offline E2E (${{ matrix.bucket }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
         env:
           E2E_WORKERS: ${{ matrix.workers }}
         run: |
           yarn install --immutable
-          yarn test:e2e:offline:adverse --only=${{ matrix.bucket }}
+          yarn test:e2e:offline:adverse --only=${{ matrix.bucket }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
 
       # 同 test-e2e-offline-shard 的失敗現場上傳。
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-offline-adverse-${{ matrix.bucket }}-attempt-${{ github.run_attempt }}
+          name: e2e-offline-adverse-${{ matrix.bucket }}-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
           path: test-results/
           retention-days: 14
 

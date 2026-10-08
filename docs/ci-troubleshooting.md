@@ -31,5 +31,13 @@
 - **新增 CI job 後要同步分支保護的 required checks**（`dev` 分支，repo 設定、**repo 裡看不到** ⇒ 最容易漏）：目前七個 `test / *` job 全是必跑 gate。漏加的後果是 Dependabot 的 `--auto` 合併不等那個 job ⇒ 它紅著也會被併進去。用 append endpoint 加，**別用整份覆蓋的 PUT**（會把其他保護欄位清成預設）：`POST /repos/{o}/{r}/branches/dev/protection/required_status_checks/contexts`，body `{"contexts":["test / <job>"]}`。context 名是 `<workflow job 名稱前綴> / <job id>`，reusable workflow 下就是 `test / <job>`。
 - **`test-unit` 也跑在 Playwright image 裡**（unit-browser project 要真 Chromium，見 `docs/build-modernization.md`「Vitest Browser Mode」）：容器規則與 e2e job 相同。`Executable doesn't exist` ＝ `playwright` 與 `@playwright/test` 版本不一致（守護 `ci_playwright_container.test.js`）。
 - **unit 耗時看 runner 抽到的 CPU 型號，不是核心數**（CONFIRMED，14 輪：`nproc` 恆 4，AMD EPYC 7763 比較新的 EPYC 9V74／Xeon 8573C 等慢約 1.5 倍）：同一份 code 耗時差一倍屬正常，`Runner CPU` step 印了型號可對照。`--maxWorkers` 調參沒有意義。
-- **已判定不做**：e2e 再多拆 shard／job（每個 job 固定 ~30–40s 拉 image＋10–20s `yarn install`，現在每個 job 只剩幾分鐘，再拆不划算）；live e2e 並行（共用 session 是 worker-scoped，多 worker＝多登入）。
+- **CI 耗時（shard 數怎麼定）**：整輪牆鐘＝最慢的測試 job＋build＋deploy。e2e job 每個固定付 ~50s
+  （拉 image ~30s＋checkout／setup-node／`yarn install`），測試本體則隨條數線性長。2026-10-08 量 24 輪
+  （GitHub API 的 job／step 時間＋Playwright log）：offline 從 2×184 條長到 2×215 條，單片測試本體
+  200s→200–350s，整輪 4.5→6.5–9 分，關鍵路徑是 offline 兩片，其次 adverse slow 桶（~4 分）。
+  ⇒ offline 拆 4 片、slow 桶拆 2 片（其餘 job 都在 3 分內）。同一份 code 單片耗時可差 1.5 倍
+  （runner CPU 型號，見上一條；e2e job 也印 `Runner CPU`），比較前先對機型、看多輪。
+  **再慢時的判準**：最慢的 e2e job 測試本體 > ~3 分就加片；加到單片本體 < ~1.5 分就不划算
+  （固定成本過半）。不改 worker 數：4 vCPU 跑 4 workers 已吃滿 CPU（slow 桶例外，見 test.yml）。
+- **已判定不做**：關掉每條都錄的 video（失敗現場唯一的影像，見 `playwright.config.js`）；live e2e 並行（共用 session 是 worker-scoped，多 worker＝多登入）。
 - **容器裡 adverse runner 的 dev server 180s 等不到**（2026-10-01 發生一次，根因 `unknown`）：再發生時看 `scripts/run-adverse-e2e.mjs#waitForDevServer` 附的 vite 輸出與各位址探測結果，不要從頭猜。
