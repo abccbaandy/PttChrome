@@ -10,12 +10,12 @@ name: Flaky Hunt
 # 不含 live e2e（PTT 登入預算）與 android（模擬器開機成本高、已有 test.yml 每次跑）。
 on:
   schedule:
-    - cron: "0 19 * * *" # 台灣時間 03:00
+    - cron: "0 21 * * *" # 台灣時間 05:00
   workflow_dispatch:
     inputs:
       repeat:
         description: "每個套件重複幾輪"
-        default: "3"
+        default: "10"
 
 permissions:
   contents: read
@@ -25,7 +25,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  REPEAT: ${{ github.event.inputs.repeat || '3' }}
+  # 預設 10 輪：以最近部署紅率估（22 次裡 2 次是 flaky，單輪約 9%），每晚抓到的機率
+  # 3 輪 25%、10 輪 61%；單輪 2% 的低頻 flaky 10 輪也有 18%。
+  REPEAT: ${{ github.event.inputs.repeat || '10' }}
 
 jobs:
   # 同 test.yml：e2e／unit 的 container image 版本＝yarn.lock 裡的 @playwright/test。
@@ -109,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
       image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
       options: --user 1001 --ipc=host
@@ -123,10 +125,10 @@ jobs:
         with:
           node-version: 24
           cache: yarn
-      - name: Offline E2E × ${{ env.REPEAT }} (shard ${{ matrix.shard }}/4)
+      - name: Offline E2E × ${{ env.REPEAT }} (shard ${{ matrix.shard }}/8)
         run: |
           yarn install --immutable
-          yarn test:e2e:offline --repeat-each="$REPEAT" --shard=${{ matrix.shard }}/4
+          yarn test:e2e:offline --repeat-each="$REPEAT" --shard=${{ matrix.shard }}/8
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
