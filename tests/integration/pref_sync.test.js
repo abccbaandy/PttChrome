@@ -96,13 +96,23 @@ const credAuth = f =>
 
 // Second SDK app instance = "the other device". Signs in with the same fake
 // token (same sub => same uid), so the real firestore.rules let it at
-// users/{uid}. Created once; re-signs in whenever the test sub changed.
+// users/{uid}. One fresh instance per test sub: re-signing ONE instance in as
+// the next test's user left its Firestore client answering "no such doc" for
+// users/{newUid} for 30s+ even though the emulator had it (REST read 200,
+// getDocFromServer still exists=false) — ~25% of runs locally, 7/10 on CI,
+// hidden for months by the old CI retry. Per-sub instances: 0/15 locally.
 let seederHandle = null;
+let seederSeq = 0;
 const seeder = () => {
+  if (seederHandle && seederHandle.sub && seederHandle.sub !== testSub) {
+    const old = seederHandle;
+    seederHandle = null;
+    return terminate(old.db).then(() => deleteApp(old.app)).then(seeder);
+  }
   if (!seederHandle) {
     const app = initializeApp(
       { ...FIREBASE_CONFIG, projectId: PROJECT_ID },
-      "seeder"
+      "seeder-" + ++seederSeq
     );
     const auth = getAuth(app);
     connectAuthEmulator(
@@ -144,7 +154,9 @@ const waitForCloud = (cond, what) => {
       if (cond(d)) return d;
       if (Date.now() > deadline)
         return Promise.reject(
-          new Error("waitForCloud timeout: " + (what || ""))
+          new Error(
+            "waitForCloud timeout: " + (what || "") + "\n" + syncTrace(d)
+          )
         );
       return flush(100).then(tick);
     });
@@ -159,6 +171,16 @@ const writeStoredPrefs = values =>
 
 let infoSpy;
 let warnSpy;
+
+// Timeout diagnostics: what pref_sync logged (console is mocked, so a failure
+// would otherwise show nothing but "timeout") plus the last cloud doc seen.
+const syncTrace = lastDoc =>
+  [
+    "uid=" + uid + " seederUid=" + (seederHandle && seederHandle.uid),
+    "last cloud doc: " + JSON.stringify(lastDoc),
+    ...infoSpy.mock.calls.map(c => "info: " + c.map(String).join(" ")),
+    ...warnSpy.mock.calls.map(c => "warn: " + c.map(String).join(" "))
+  ].join("\n");
 
 // The snapshot handler logs "snapshot action=<x>" for every snapshot it
 // classifies — the only deterministic signal for "listener attached and the
