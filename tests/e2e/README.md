@@ -364,6 +364,10 @@ window 失焦（Playwright 1.62 實測，`isTrusted`／`document.hasFocus()`）�
 - app 的 wheel listener 是 window **capture** 且原生模式會 `stopPropagation` ⇒ 測試自己的 wheel listener 要掛 capture，掛在 `.main` 上的（如 debug recorder）只有好讀下收得到。
 - `page.mouse.wheel` 的捲動在 promise 回來**之後**才落地，之後程式設 `scrollTop` 不會中止它 ⇒ 要量「滾完的位置」先等 `scrollend`。
 - passive wheel listener 執行時合成器可能已經捲完（錄到的 `scrollTop` 已是新值）。
+- CDP 拖放的 drop 是「先 dragover、再 drop」兩段 IPC，drop 派給 dragover 當下的命中元素。命中元素若在兩段之間
+  被卸載（例如還在跑關閉動畫的 Mantine Modal），drop 會派給脫離文件的節點 ⇒ window 上的 listener 收不到、沒人
+  preventDefault ⇒ 瀏覽器改開新分頁載入檔案，app 的遮罩卡住。⇒ **拖放前先等上一個對話框真的卸載**
+  （`long_push_image_upload.offline.spec.js#openLongPushModal`）。
 - contextmenu 時機依 OS：Windows 在 mouseup 發、Linux／macOS 在 mousedown 發 ⇒「按住右鍵滾輪」類斷言要依實際觀察到的時機分支，不寫死平台。
 
 ## 規範：evaluate 內點擊後不可同步讀 React 產物
