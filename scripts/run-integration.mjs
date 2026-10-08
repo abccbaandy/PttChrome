@@ -45,6 +45,40 @@ async function waitHttp(label, url, timeoutMs) {
   }
 }
 
+// "Answers HTTP" is not "warm": the Firestore emulator's first document write
+// after boot pays the JVM/class-loading cost (measured ~1.5s locally, more on a
+// cold CI runner), which used to land inside the first test's poll deadline —
+// the root cause of the old `waitForCloud timeout: upload` CI flake that a
+// vitest `retry` papered over. Pay it here, once, outside any test deadline.
+// Auth gets the same treatment (first signUp also lazy-initialises).
+async function warmUp() {
+  const t0 = Date.now();
+  const post = async (label, url, headers, body) => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60000)
+    });
+    if (!res.ok) throw new Error(`${label} warm-up failed: HTTP ${res.status} ${await res.text()}`);
+  };
+  await post(
+    "auth",
+    `http://127.0.0.1:${AUTH_PORT}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=warmup`,
+    {},
+    { returnSecureToken: true }
+  );
+  // `Bearer owner` = emulator admin, bypasses firestore.rules; the doc lives
+  // outside users/ so no test can ever read it.
+  await post(
+    "firestore",
+    `http://127.0.0.1:${FIRESTORE_PORT}/v1/projects/${PROJECT}/databases/(default)/documents/warmup?documentId=w`,
+    { Authorization: "Bearer owner" },
+    { fields: { at: { integerValue: String(t0) } } }
+  );
+  console.log(`emulator warm-up: ${Date.now() - t0}ms`);
+}
+
 async function main() {
   // 容器名與 port 全機唯一，worktree 裡跑會 `docker rm -f` 掉主目錄正在跑的 emulator。
   worktree.assertNotWorktree("integration（Firebase emulator）");
@@ -81,6 +115,7 @@ async function main() {
   try {
     await waitHttp("auth emulator", `http://127.0.0.1:${AUTH_PORT}/`, 120000);
     await waitHttp("firestore emulator", `http://127.0.0.1:${FIRESTORE_PORT}/`, 120000);
+    await warmUp();
   } catch (e) {
     console.error("Emulator failed to become ready:", e.message);
     spawnSync("docker", ["logs", CONTAINER], { stdio: "inherit" });
