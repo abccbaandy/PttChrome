@@ -28,6 +28,10 @@ const bufText = (page) =>
     return out.join('\n');
   });
 
+// 已餵的 bytes 都畫進 buf 且 settle 完（pageState 已依本幀重算）。
+const waitBufSettled = (page) =>
+  page.waitForFunction(() => !window.__app.buf.timerUpdate && !window.__app.buf._settleTimer);
+
 // 列表首幀 → Enter 開文 → 等自動翻頁把素材裡的頁數全吃完、好讀累積到文末。
 async function openAndAccumulate(page, cassette) {
   // 第一個 open 之後連續的 pagedown 才是這篇的自動翻頁（之後的 open 屬於後面的動作）。
@@ -58,6 +62,10 @@ test.describe('好讀 functionMode（scenario 重放）', () => {
     await ptt.sendKey(page, 'h');
     await waitFed(page, fed + 1);
     await expect.poll(() => fnMode(page)).toBe(true);
+    // fnMode 在 keydown 當下就設（_enterFunctionMode），waitFed 只代表 bytes 進了 parser；
+    // pageState 要等 queueUpdate 的 30ms timer → notify → setPageState 才更新。先等 buf
+    // settle 再判，否則負載高時會讀到上一幀（文章）的 3。
+    await waitBufSettled(page);
     expect(await page.evaluate(() => window.__app.buf.pageState)).not.toBe(3); // 說明頁不是文章畫面
 
     await ptt.sendKey(page, 'Space');
