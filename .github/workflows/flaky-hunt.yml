@@ -1,0 +1,162 @@
+name: Flaky Hunt
+
+# 每晚把 unit／integration／offline e2e 在 dev 上重複跑 N 輪，主動找出偶發紅。
+# 單次 push 的 CI（test.yml）一輪就過，偶發紅要等它剛好擋到部署才會被看到；這裡把
+# 「機率性」換成「重複次數」，在使用者 push 前先抓到。測試框架層刻意不 retry
+# （tests/unit/no_test_retry.test.js），所以任何一輪紅＝真的 flaky。
+#
+# 紅了會開（或在既有的上面留言）一個 issue，標題固定「Nightly flaky hunt 失敗」。
+# `yarn ci:status` 不把這個 workflow 算進「這次 push 的 CI」（scripts/ci-status.mjs#isProjectRun）。
+# 不含 live e2e（PTT 登入預算）與 android（模擬器開機成本高、已有 test.yml 每次跑）。
+on:
+  schedule:
+    - cron: "0 19 * * *" # 台灣時間 03:00
+  workflow_dispatch:
+    inputs:
+      repeat:
+        description: "每個套件重複幾輪"
+        default: "3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flaky-hunt
+  cancel-in-progress: true
+
+env:
+  REPEAT: ${{ github.event.inputs.repeat || '3' }}
+
+jobs:
+  # 同 test.yml：e2e／unit 的 container image 版本＝yarn.lock 裡的 @playwright/test。
+  playwright-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            yarn.lock
+            scripts/playwright-version.mjs
+          sparse-checkout-cone-mode: false
+      - id: v
+        run: node scripts/playwright-version.mjs >> "$GITHUB_OUTPUT"
+
+  # 每輪都跑完再判（不在第一個紅停下）：要看到「N 輪紅幾輪」，log 裡逐輪標示。
+  unit-repeat:
+    needs: playwright-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
+      options: --user 1001 --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+      - run: yarn install --immutable
+      - name: Unit tests × ${{ env.REPEAT }}
+        run: |
+          fails=0
+          for i in $(seq "$REPEAT"); do
+            echo "::group::unit round $i/$REPEAT"
+            if yarn test:unit; then echo "round $i: pass"; else echo "::error::unit round $i/$REPEAT failed"; fails=$((fails+1)); fi
+            echo "::endgroup::"
+          done
+          echo "unit: $fails/$REPEAT rounds failed"
+          test "$fails" = 0
+
+  integration-repeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+      - run: yarn install --immutable
+      # 每輪 run-integration.mjs 都重開容器 ⇒ 每輪都是冷啟動（舊 flaky 的觸發條件）。
+      - name: Integration tests × ${{ env.REPEAT }}
+        env:
+          INTEGRATION_TIMEOUT_MS: "30000"
+        run: |
+          fails=0
+          for i in $(seq "$REPEAT"); do
+            echo "::group::integration round $i/$REPEAT"
+            if yarn test:integration; then echo "round $i: pass"; else echo "::error::integration round $i/$REPEAT failed"; fails=$((fails+1)); fi
+            echo "::endgroup::"
+          done
+          echo "integration: $fails/$REPEAT rounds failed"
+          test "$fails" = 0
+
+  # --repeat-each：每條 test 跑 N 次，fullyParallel 下會被拆到不同 worker／shard。
+  e2e-offline-repeat:
+    needs: playwright-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
+      options: --user 1001 --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+      - name: Offline E2E × ${{ env.REPEAT }} (shard ${{ matrix.shard }}/4)
+        run: |
+          yarn install --immutable
+          yarn test:e2e:offline --repeat-each="$REPEAT" --shard=${{ matrix.shard }}/4
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flaky-hunt-e2e-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
+
+  # 紅了要讓人看得到：排程 run 的失敗通知只寄給最後改 cron 的人，很容易漏。
+  report:
+    needs: [unit-repeat, integration-repeat, e2e-offline-repeat]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the flaky issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: "unit=${{ needs.unit-repeat.result }} integration=${{ needs.integration-repeat.result }} e2e-offline=${{ needs.e2e-offline-repeat.result }}"
+        run: |
+          title="Nightly flaky hunt 失敗"
+          body="$(printf '%s\n\n- run: %s\n- commit: %s\n- 結果: %s\n- 每個套件重複 %s 輪；測試框架不 retry，任一輪紅即為 flaky。' \
+            "$(date -u +%F) 的 nightly 重複測試抓到偶發紅。" "$RUN_URL" "$GITHUB_SHA" "$RESULTS" "$REPEAT")"
+          num="$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

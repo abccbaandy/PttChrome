@@ -225,6 +225,12 @@ describe("isProjectRun / projectRuns", () => {
     ).toBe(true);
   });
 
+  test("nightly flaky-hunt 不算這次 push 的 CI（同 sha 也排除；它的紅另開 issue）", () => {
+    const hunt = { ...deploy, name: "Flaky Hunt", event: "schedule", path: ".github/workflows/flaky-hunt.yml" };
+    expect(isProjectRun(hunt)).toBe(false);
+    expect(isProjectRun({ ...hunt, event: "workflow_dispatch" })).toBe(false);
+  });
+
   test("只有 CodeQL run 時 projectRuns 為空（REGRESSION：曾被當成全綠）", () => {
     expect(projectRuns([codeql])).toEqual([]);
     // 這正是誤判的現場：allSettled 對「只有 CodeQL」是成立的，所以不能只靠它。

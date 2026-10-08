@@ -3,6 +3,8 @@
 `yarn ci:status` 紅了、但失敗的 job／step 看起來與被測 code 無關時查這裡；新增 CI job 前讀最後兩條。
 （由 CLAUDE.md「push 後必查 CI」節搬出；那邊只留一行指標。）
 
+- **nightly `Flaky Hunt`（`.github/workflows/flaky-hunt.yml`）**：每晚在 dev 上把 unit／integration 各連跑 N 輪、offline e2e `--repeat-each=N`（預設 3，`workflow_dispatch` 可改），紅了開／續寫 issue「Nightly flaky hunt 失敗」。它的紅＝**真的 flaky**（框架層不 retry），處置是照該 issue 找根因修，不是重跑。`yarn ci:status` 不把它算進 push 的 CI（同 sha 也排除）。
+
 - **deploy job 偶發 `actions/deploy-pages@v5` timeout**：Pages 服務端卡在 `deployment_in_progress`，輪詢約 76s 後 `##[error]Timeout reached, aborting!` 並取消部署 → **測試/build 全綠但 run 紅、站台停在舊 commit**。屬 Pages 基礎設施問題，非本專案 code。判準：該 run 只有 `deploy` 一個 job 紅、`test-*`／`build` 全綠。處置：重跑失敗 job（`POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`；`ci:status --rerun-failed` 目前只認 integration flaky，不會自動重跑它）。**事後必須確認 `github-pages` 環境最新一筆 deployment 的 sha 是本次 commit 且 state=success**，否則站台仍是舊版。
 - **e2e job 紅在「裝瀏覽器」而不是測試**：`npx playwright install --with-deps` 會先跑 `apt-get update`，
   只要 runner image 內建的**第三方 apt 來源**處於發布中間態（`Release` 宣告的雜湊 ≠ 實際 `Packages.gz`），
