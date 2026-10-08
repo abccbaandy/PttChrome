@@ -103,6 +103,9 @@ export function isProjectRun(run) {
   if (!run) return false;
   if (run.event === "dynamic") return false;
   if (/^dynamic\//.test(String(run.path || ""))) return false;
+  // nightly 壓力測試跑在 dev 當下的 head sha 上，跟 push 的 run 同 sha；它答的是「有沒有
+  // flaky」不是「這次 push 綠不綠」，紅了自己開 issue（.github/workflows/flaky-hunt.yml）。
+  if (/(^|\/)flaky-hunt\.yml$/.test(String(run.path || ""))) return false;
   return true;
 }
 
