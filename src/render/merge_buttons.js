@@ -1,7 +1,7 @@
-// 文章畫面右下角的浮動工具（原 src/components/MergeImageCaptionButton.jsx 與
-// MergeImageCaptionAiButton.jsx 的純 JS 版，後來又多了「開燈」）。
+// 右下角的浮動工具（原 src/components/MergeImageCaptionButton.jsx 與
+// MergeImageCaptionAiButton.jsx 的純 JS 版，後來又多了「開燈」與 debug 錄製鈕）。
 //
-// 三顆工具按鈕收在一顆「⋯」圓鈕（createFloatingTools）裡：平常只佔一顆圓鈕的面積，
+// 工具按鈕收在一顆「⋯」圓鈕（createFloatingTools）裡：平常只佔一顆圓鈕的面積，
 // 桌機滑鼠移上去自動展開（純 CSS :hover，main.css `.floatTools`），觸控點一下展開、
 // 選完自動收合。理由：手機換行版面的文字佔滿全寬，攤開的一疊按鈕會蓋住文章／推文。
 //
@@ -185,6 +185,11 @@ export function createFloatingTools(storage) {
       if (active) root.setAttribute("data-active", "");
       else root.removeAttribute("data-active");
     },
+    // debug 錄製中 ⇒ 圓鈕變紅（收合時也要看得出正在錄）。
+    setRecording(recording) {
+      if (recording) root.setAttribute("data-recording", "");
+      else root.removeAttribute("data-recording");
+    },
     setOpen,
   };
 }
@@ -206,7 +211,6 @@ function restyle(button, background, border) {
 
 // 「圖左字右合併」三態循環（mode）：null（關）→ "imageFirst"（上圖下文）→
 // "captionFirst"（上文下圖）→ null；label 一律顯示「點下去會發生什麼」。
-// 「⋯」預設 bottom:64 避開 debug 錄製按鈕的 bottom:16。
 export function createMergeImageCaptionButton(onToggle) {
   const button = floatingButton("mergeImageCaptionBtn", onToggle);
   return {
@@ -270,6 +274,26 @@ export function createLightsOnButton(onToggle) {
         active ? "2px solid #ffd43b" : "2px solid #ced4da",
       );
       button.textContent = active ? i18n("lightsOn_off") : i18n("lightsOn_on");
+    },
+  };
+}
+
+// Debug 錄製鈕（面板裡排最後，debug 模式開著時任何畫面都出現）。開始／停止與下載
+// 由 App 負責（js/debug_record_control.js），這裡只畫狀態。
+export function createDebugRecordButton(onToggle) {
+  const button = floatingButton("debugRecordBtn", onToggle);
+  return {
+    el: button,
+    update(recording) {
+      button.setAttribute("data-recording", recording ? "on" : "off");
+      restyle(
+        button,
+        recording ? "#e03131" : "#495057",
+        recording ? "2px solid #fa5252" : "2px solid #ced4da",
+      );
+      button.textContent = recording
+        ? "■ " + i18n("debugRecord_stop")
+        : "● " + i18n("debugRecord_start");
     },
   };
 }

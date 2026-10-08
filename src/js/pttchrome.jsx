@@ -39,6 +39,7 @@ import { decideKeepAlive, KEEP_ALIVE_TIMEOUT_MS } from './keep_alive';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { readValuesWithDefault, writeValues } from './pref_storage';
 import * as prefSync from './pref_sync';
+import { stopDebugRecording, toggleDebugRecording } from './debug_record_control';
 import { diagnoseConnectFailure, probeWebSocket, siteToWsUrl } from './connection_probe';
 import {
   MFDISP_RAW_PLAIN,
@@ -199,9 +200,16 @@ export const App = function() {
   // 圖片上傳（urusai）：拖放／貼上截圖／右鍵選單 → 上傳 → 網址送進推文列或編輯器。
   // 自己綁 window 的 drag* 事件；右鍵選單透過 this.imageUpload 呼叫它。
   this.imageUpload = new ImageUploadController(this);
-  // Debug 錄製器（src/js/debug_recorder.js）：由 DebugRecordButton 掛上/卸下，
+  // Debug 錄製器（src/js/debug_recorder.js）：由 debug_record_control.js 掛上/卸下，
   // 純 runtime、不落地。關鍵路徑用 this.debugRecorder?.log(tag, info) 留痕。
   this.debugRecorder = null;
+  // Debug 模式（設定→關於，runtime-only）：開著時「⋯」浮動工具裡出現錄製鈕。
+  // 唯一寫入點 setDebugMode。
+  this.debugMode = false;
+  this._debugRecordDownloadedListeners = new Set();
+  // 錄製鈕的點擊入口（render/screen.js 經 enhance.onDebugRecord 呼叫）。
+  // **只指派這一次，引用從此不變**（同 onFunctionKey 的理由）。
+  this.view.onDebugRecord = () => this.toggleDebugRecording();
 
   //new pref - start
   // 單位是毫秒（pref 存秒，onValuesPrefChange 乘 1000）；對應 DEFAULT_PREFS.antiIdleTime。
@@ -1105,6 +1113,36 @@ App.prototype.onFunctionKey = function(bytes, label) {
   // **不用 _convSend**（會做 u2b 轉碼，對 [D 這種控制序列無意義），
   // **不用 setBBSCmd**（那是翻頁語意的分派器），**絕不用 this.view.conn.send**。
   this.view._send(bytes);
+};
+
+// Debug 模式開關（PrefModal 的 Switch 經 ContextMenu 呼叫）。關閉時若仍在錄製：
+// 先停止並下載（不丟資料），再讓「⋯」裡的錄製鈕消失。
+App.prototype.setDebugMode = function(enabled) {
+  const on = !!enabled;
+  if (!on && stopDebugRecording(this)) this._notifyDebugRecordDownloaded();
+  if (this.debugMode === on) return;
+  this.debugMode = on;
+  this.view.debugRecordButton = on;
+  this.view.redraw(true);
+};
+
+// 錄製鈕的點擊：開始／停止（停止＝下載錄製檔）。回傳切換後是否在錄。
+App.prototype.toggleDebugRecording = function() {
+  const result = toggleDebugRecording(this);
+  if (result.downloaded) this._notifyDebugRecordDownloaded();
+  // 焦點還給終端機隱藏輸入框，避免按鈕吃掉鍵盤。
+  this.setInputAreaFocus();
+  return result.recording;
+};
+
+// 「已下載錄製檔」提示（React 週邊 UI：components/DebugRecordNotice）的訂閱入口。
+App.prototype.onDebugRecordDownloaded = function(fn) {
+  this._debugRecordDownloadedListeners.add(fn);
+  return () => this._debugRecordDownloadedListeners.delete(fn);
+};
+
+App.prototype._notifyDebugRecordDownloaded = function() {
+  this._debugRecordDownloadedListeners.forEach((fn) => fn());
 };
 
 // 「開燈」按鈕的軌 B：替使用者切 pmore 的色彩顯示模式（bpref.rawmode）。

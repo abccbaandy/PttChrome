@@ -86,8 +86,8 @@ export function mobileCtrlKey(ch) {
 // 拖多遠才算拖曳（「⋯」圓鈕：小於這個就是點擊＝展開）。
 export const KEYPAD_DRAG_THRESHOLD_PX = 8;
 
-// 文章頁浮動工具鈕（render/merge_buttons.js#createFloatingTools：開燈／圖文並排／AI
-// 校正收成的「⋯」）的位置：以「離視窗右緣／下緣的距離（px）」表示。**存
+// 浮動工具鈕（render/merge_buttons.js#createFloatingTools：開燈／圖文並排／AI
+// 校正／debug 錄製收成的「⋯」）的位置：以「離視窗右緣／下緣的距離（px）」表示。**存
 // localStorage、不寫 prefs**：prefs 經 pref_sync 同步到其他裝置（同「手機模式是
 // runtime 覆寫」那條規則）。預設＝桌機舊位置；手機上在底部工具列（MOBILE_TOOLBAR_PX）
 // 上方 16px。

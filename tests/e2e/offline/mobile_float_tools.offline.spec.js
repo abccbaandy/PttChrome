@@ -137,3 +137,38 @@ test('手機：設定頁全螢幕、分頁在頂端、內容佔滿寬度', async
     .click();
   await expect(page.locator('.PrefModal input[name="showLightsOnButton"]')).toBeVisible();
 });
+
+// 回歸：debug 錄製鈕原本是獨立的 fixed 按鈕（right/bottom 16），手機上疊在底部工具列
+// 上。現在收進「⋯」：非文章畫面也出現，且不與工具列重疊。
+test('手機：debug 錄製鈕收在「⋯」裡，不與底部工具列重疊', async ({ page }) => {
+  await bootOffline(page, ptt);
+  await feedRaw(page, `${ESC}[2J${ESC}[H  MOBILE DEBUG RECORD TEST LINE  `);
+  await waitScreenSettled(page);
+  await page.locator('#BBSWindow').click({ button: 'right', position: { x: 40, y: 20 } });
+  const menu = page.locator('.DropdownMenu').first();
+  await expect(menu).toBeVisible();
+  await menu.getByText(await label(page, 'cmenu_settings'), { exact: true }).click();
+  await expect(page.locator('.PrefModal')).toBeVisible();
+  await page
+    .locator('.PrefModal [role="tablist"]')
+    .getByText(await label(page, 'options_about'), { exact: true })
+    .click();
+  await page.locator('#pref-debug-mode').check();
+  await page.locator('.PrefModal [aria-label="Close"]').first().click();
+  await expect(page.locator('.PrefModal')).toBeHidden();
+
+  const record = page.locator('#debugRecordBtn');
+  await expect(record).toHaveCount(1);
+  expect(await record.evaluate((el) => !!el.closest('#floatTools .floatTools__panel'))).toBe(true);
+  const fab = await waitRectStable(page, '#floatTools .floatTools__fab');
+  const bar = await waitRectStable(page, '.mobileToolbarBar');
+  expect(overlap(fab, bar)).toBe(false);
+
+  await page.locator('#floatTools .floatTools__fab').tap();
+  await expect(record).toBeVisible();
+  const btn = await waitRectStable(page, '#debugRecordBtn');
+  expect(overlap(btn, bar)).toBe(false);
+  await record.tap();
+  await expect(page.locator('#floatTools')).toHaveAttribute('data-recording', '');
+  await expect(record).toBeHidden();
+});

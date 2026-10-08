@@ -69,11 +69,16 @@
 - **開站原點**：`#BBSWindow` 顯示前量到的 `firstGridOffset` 是 0；`main.jsx` 顯示後呼叫
   `onWindowResize({ immediate: true })` 跳過 resizer 的 500ms debounce（手機與桌機 fixed-font-size 都有 resizer）。
 
-## 文章浮動工具「⋯」（`render/merge_buttons.js#createFloatingTools`，桌機＋手機共用）
+## 浮動工具「⋯」（`render/merge_buttons.js#createFloatingTools`，桌機＋手機共用）
 
-圖文並排／AI 校正／開燈收在一顆圓鈕裡（攤開的一疊在 reflow 版面會蓋住文章字）。
+圖文並排／AI 校正／開燈（文章頁）與 debug 錄製鈕（debug 模式下任何畫面）收在一顆圓鈕裡（攤開的一疊在 reflow 版面會蓋住文章字；
+獨立的錄製鈕曾疊在底部工具列上）。**不要再加獨立的 fixed 浮動鈕**，一律進這個面板。
 - 展開：桌機純 CSS `@media (hover: hover) .floatTools:hover`；觸控 tap 圓鈕 toggle `data-open`，點了面板裡的工具自動收合。
   一個工具都不用顯示 ⇒ 整個「⋯」不出現（`screen.js#_syncOverlays`）。
+- debug 錄製：`App.setDebugMode`（唯一寫入點，PrefModal Switch 經 ContextMenu 呼叫）→ `view.debugRecordButton` → `enhance.debugRecordButton`；
+  錄製狀態真相在 `app.debugRecorder`（`js/debug_record_control.js`），每幀以 `enhance.debugRecording` 對帳，點擊走 `enhance.onDebugRecord`（引用穩定）。
+  錄製中「⋯」掛 `data-recording`（紅）。「已下載」隱私提示是 React（`components/DebugRecordNotice`，`App.onDebugRecordDownloaded` 訂閱）。
+  守護 `debug_record_render.test.js`、`app_debug_mode.test.js`、offline `debug_record`／`mobile_float_tools`。
 - 面板 absolute 貼在圓鈕外側（`data-vdir`／`data-hdir` 依圓鈕在視窗哪一半），**圓鈕永遠不動**；與圓鈕的間距用 padding。
   兩者都是為了 hover 不掉。按下工具時面板 `min-width` 釘住（label 點完變短 ⇒ 按鈕縮走 ⇒ 游標落出面板），
   `pointerleave` 才解除，**不可**在 `setOpen(false)` 解除。守護 `float_tools.test.js`。

@@ -364,6 +364,10 @@ export function TermView() {
   // render/screen.js#update）。Set via App.onPrefChange.
   this.showMergeCaptionButton = true;
   this.showLightsOnButton = true;
+  // Debug 錄製鈕（也收在「⋯」裡，任何畫面都出現）：App.setDebugMode 設定；
+  // onDebugRecord 由 App 在啟動時指派一次（引用穩定）。
+  this.debugRecordButton = false;
+  this.onDebugRecord = null;
   // Same-author comment highlighting: tint comments written by the 原PO.
   // _articleAuthor is parsed from the article header (first page only) and kept
   // across page-downs; see redraw().
@@ -1074,6 +1078,13 @@ TermView.prototype = {
           // 浮動鈕開關：只影響尾端浮層，不進 annotationsKey。
           mergeCaptionButton: this.showMergeCaptionButton,
           lightsButton: this.showLightsOnButton,
+          debugRecordButton: this.debugRecordButton,
+          debugRecording: !!(
+            this.bbscore &&
+            this.bbscore.debugRecorder &&
+            this.bbscore.debugRecorder.isRecording
+          ),
+          onDebugRecord: this.onDebugRecord,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,
           // 高亮本身**不由這條路生效**（它不進 annotationsKey，見

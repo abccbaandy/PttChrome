@@ -9,10 +9,9 @@ import LongPushModal from "./LongPushModal";
 import LongPushProgressModal from "./LongPushProgressModal";
 import LongPushErrorModal from "./LongPushErrorModal";
 import SearchModal from "./SearchModal";
-import DebugRecordButton from "../DebugRecordButton";
+import DebugRecordNotice from "../DebugRecordNotice";
 import MobileToolbar from "../MobileToolbar";
 import { onPrefSaveImpl } from "./pref_save";
-import { downloadAsFile } from "../../js/util";
 import { readValuesWithDefault, writeValues } from "../../js/pref_storage";
 import * as prefSync from "../../js/pref_sync";
 import {
@@ -804,16 +803,11 @@ export const ContextMenu = ({ pttchrome }) => {
     [pttchrome, update],
   );
 
-  // 關閉 debug 模式時若仍在錄製：先停止並下載（不丟資料），再卸下按鈕。
+  // 錄製鈕在「⋯」浮動工具裡（純 JS 渲染鏈），由 App 的 debugMode 決定出不出現；
+  // 關閉時若仍在錄製，App.setDebugMode 會先停止並下載（不丟資料）。
   const onDebugModeChange = useCallback(
     (enabled) => {
-      if (!enabled && pttchrome.debugRecorder?.isRecording) {
-        const json = pttchrome.debugRecorder.stop({
-          prefs: readValuesWithDefault(),
-        });
-        pttchrome.debugRecorder = null;
-        if (json) downloadAsFile("ptt-debug-" + Date.now() + ".json", json);
-      }
+      pttchrome.setDebugMode(enabled);
       setDebugMode(enabled);
     },
     [pttchrome],
@@ -1012,7 +1006,7 @@ export const ContextMenu = ({ pttchrome }) => {
         debugMode={debugMode}
         onDebugModeChange={onDebugModeChange}
       />
-      {debugMode && <DebugRecordButton pttchrome={pttchrome} />}
+      <DebugRecordNotice pttchrome={pttchrome} />
       <MobileToolbar
         pttchrome={pttchrome}
         hidden={modalOpen}

@@ -9,7 +9,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { installReplay, waitConnected, feedRaw, waitScreenSettled } = require('../helpers/replay');
-const { rightClickSelectedText } = require('../helpers/real_input');
+const { rightClickSelectedText, hoverFloatTools } = require('../helpers/real_input');
 const { waitRectStable, elementUnder } = require('../helpers/layout');
 const { isResizeObserverLoopMessage } = require('../helpers/resize_observer_guard');
 
@@ -491,8 +491,8 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
   //
   // 目標**不能**是 InputHelper 標題列的關閉鈕：標題列的拖曳 handler 在 pointerdown 上
   // preventDefault ⇒ 瀏覽器不再補發相容的 mousedown（真滑鼠實測只有 pointerdown＋click）。
-  // 以前手捏 mousedown 打在那裡，量的是一條真實使用走不到的路徑。改用 debug 錄製浮動鈕
-  // 下載後出現的 CloseButton（非 modal、無 pointerdown 攔截）。
+  // 以前手捏 mousedown 打在那裡，量的是一條真實使用走不到的路徑。改用 debug 錄製
+  // 下載後出現的提示（DebugRecordNotice）的 CloseButton（非 modal、無 pointerdown 攔截）。
   test('滑鼠事件：點到 Mantine 圖示(SVG) 不崩潰（checkClass 守門）', async ({ page }) => {
     const errors = [];
     // RO loop 由 installReplay 的守護分類判定（Mantine 右鍵選單關閉的那則是良性的），
@@ -513,9 +513,10 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     await page.locator('.PrefModal [aria-label="Close"]').click();
     await expect(page.locator('.PrefModal')).toBeHidden();
     const btn = page.locator('#debugRecordBtn');
+    await hoverFloatTools(page);
     await btn.click(); // 開始錄製
     await Promise.all([page.waitForEvent('download'), btn.click()]); // 停止 → 下載
-    const close = page.locator('[aria-label="Close"]').filter({ has: page.locator('svg') }).last();
+    const close = page.locator('#debugRecordNotice [aria-label="Close"]');
     await expect(close).toBeVisible();
     expect(await page.evaluate(() => window.__app.modalShown)).toBe(false);
 

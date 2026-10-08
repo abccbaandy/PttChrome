@@ -53,6 +53,7 @@ const makePttchrome = () => ({
   doCopy: vi.fn(),
   imageUpload: { setInsertTarget: vi.fn(), clearInsertTarget: vi.fn() },
   setModalOpen: vi.fn(),
+  onDebugRecordDownloaded: () => () => {},
   contextMenuShown: false,
   // ContextMenu 掛載時會覆蓋這個，卸載時還原 —— 初值比照 App.prototype 的 noop。
   openLongPushModal: function noop() {},

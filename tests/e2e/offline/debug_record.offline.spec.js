@@ -1,10 +1,12 @@
 // Debug 錄製模式 offline e2e：不連真實 PTT（stub WebSocket），驗
-//   1) 設定→關於 開啟 Switch → 主畫面出現錄製按鈕
-//   2) 開始錄製 → feedRaw 餵 bytes → 停止 → 觸發下載，檔案 JSON 可解析、
-//      events 含 recv/send、cassette 為既有 schema（on/recv base64）
-//   3) 重新整理 → Switch 回到關閉、按鈕消失（不記憶 / 不落地）
+//   1) 設定→關於 開啟 Switch → 「⋯」浮動工具出現（非文章畫面也要有），面板裡有錄製鈕
+//   2) 開始錄製 → 「⋯」標示錄製中 → feedRaw 餵 bytes → 停止 → 觸發下載，檔案 JSON
+//      可解析、events 含 recv/send、cassette 為既有 schema（on/recv base64）
+//   3) 錄製中關掉 Switch ⇒ 自動停止並下載、「⋯」消失
+//   4) 重新整理 → Switch 回到關閉、按鈕消失（不記憶 / 不落地）
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
+const { hoverFloatTools } = require('../helpers/real_input');
 const {
   installReplay,
   waitConnected,
@@ -54,11 +56,15 @@ test.describe('Debug 錄製模式（offline）', () => {
     await page.locator('.PrefModal [aria-label="Close"]').click();
     await expect(page.locator('.PrefModal')).toBeHidden();
 
-    // 按鈕出現 → 開始錄製
-    const btn = page.locator('#debugRecordBtn');
-    await expect(btn).toBeVisible();
+    // 非文章畫面也出現「⋯」；錄製鈕收在面板裡 → 開始錄製
+    const tools = page.locator('#floatTools');
+    await expect(tools).toBeVisible();
+    const btn = page.locator('#floatTools .floatTools__panel #debugRecordBtn');
+    await expect(btn).toBeHidden();
+    await hoverFloatTools(page);
     await btn.click();
     await expect(btn).toContainText(await label(page, 'debugRecord_stop'));
+    await expect(tools).toHaveAttribute('data-recording', '');
 
     // 餵 server bytes（走真 App.onData → 被 recorder 記到）＋ 模擬 client 送鍵
     await feedRaw(page, '\x1b[2J\x1b[Hhello from server');
@@ -66,6 +72,7 @@ test.describe('Debug 錄製模式（offline）', () => {
     await feedRaw(page, 'page two bytes');
 
     // 停止 → 攔下載
+    await hoverFloatTools(page);
     const [download] = await Promise.all([page.waitForEvent('download'), btn.click()]);
     expect(download.suggestedFilename()).toMatch(/^ptt-debug-.*\.json$/);
     const stream = await download.createReadStream();
@@ -94,13 +101,29 @@ test.describe('Debug 錄製模式（offline）', () => {
 
     // 停止後按鈕回到「錄製」且 patch 已還原（再餵 bytes 不會炸）
     await expect(btn).toContainText(await label(page, 'debugRecord_start'));
+    await expect(tools).not.toHaveAttribute('data-recording', '');
 
     // 警告訊息出現，且可用 X 關閉
     const warning = page.getByText(await label(page, 'debugRecord_downloaded_warning'));
     await expect(warning).toBeVisible();
-    await warning.locator('..').locator('[aria-label="Close"]').click();
+    await page.locator('#debugRecordNotice [aria-label="Close"]').click();
     await expect(warning).toHaveCount(0);
     await feedRaw(page, 'after stop');
+
+    // 錄製中關掉 debug 模式 ⇒ 自動停止並下載（不丟資料），「⋯」跟著消失
+    await hoverFloatTools(page);
+    await btn.click();
+    await expect(tools).toHaveAttribute('data-recording', '');
+    await openAboutTab(page);
+    const [autoDownload] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('#pref-debug-mode').uncheck(),
+    ]);
+    expect(autoDownload.suggestedFilename()).toMatch(/^ptt-debug-.*\.json$/);
+    await page.locator('.PrefModal [aria-label="Close"]').click();
+    await expect(page.locator('.PrefModal')).toBeHidden();
+    await expect(page.locator('#floatTools')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__app.debugRecorder)).toBe(null);
 
     // 重新整理：不記憶 → Switch 關閉、按鈕消失
     await page.reload();
@@ -128,6 +151,7 @@ test.describe('Debug 錄製模式（offline）', () => {
     await waitPreviewsSettled(page);
 
     const btn = page.locator('#debugRecordBtn');
+    await hoverFloatTools(page);
     await btn.click();
     await expect(btn).toContainText(await label(page, 'debugRecord_stop'));
 
@@ -137,6 +161,7 @@ test.describe('Debug 錄製模式（offline）', () => {
     await page.mouse.wheel(0, 300);
     await waitScrollStable(page, '.main');
 
+    await hoverFloatTools(page);
     const [download] = await Promise.all([page.waitForEvent('download'), btn.click()]);
     const chunks = [];
     for await (const c of await download.createReadStream()) chunks.push(c);

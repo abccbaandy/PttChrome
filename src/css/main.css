@@ -1262,8 +1262,8 @@ span {
   text-decoration: underline;
 }
 
-/* 文章頁浮動工具（render/merge_buttons.js#createFloatingTools）：開燈／圖文並排／AI
-   校正收在一顆「⋯」圓鈕。right/bottom 由 JS 給（可拖曳、存 localStorage）。
+/* 浮動工具（render/merge_buttons.js#createFloatingTools）：開燈／圖文並排／AI
+   校正（文章頁）與 debug 錄製（任何畫面）收在一顆「⋯」圓鈕。right/bottom 由 JS 給（可拖曳、存 localStorage）。
    面板 absolute 貼在圓鈕外側，圓鈕本身永遠不動（撐大外框會把圓鈕推離滑鼠 ⇒
    :hover 來回閃）；面板 padding（不是 margin）當作與圓鈕之間的間距，滑鼠從圓鈕
    移到面板途中不會掉出 :hover。 */
@@ -1299,6 +1299,12 @@ body.mobile-layout .floatTools {
 .floatTools[data-active] .floatTools__fab {
   border-color: #12b886;
   background: #0ca678;
+}
+/* debug 錄製中：比「作用中」優先，收合時一眼看得出正在錄。 */
+.floatTools[data-recording] .floatTools__fab {
+  border-color: #fa5252;
+  background: #e03131;
+  opacity: 1;
 }
 /* stretch：工具按鈕同寬（＝最寬的那顆）；按下時 JS 會把面板寬度釘住（min-width），
    label 變短時按鈕不縮、游標不會掉出面板。 */

@@ -29,6 +29,7 @@ import {
   createMergeImageCaptionButton,
   createMergeImageCaptionAiButton,
   createLightsOnButton,
+  createDebugRecordButton,
   createFloatingTools,
 } from "./merge_buttons";
 import { createSignatureTask } from "./signature_task";
@@ -213,7 +214,9 @@ export class ScreenController {
     this._mergeButton = null;
     this._aiButton = null;
     this._lightsButton = null;
-    this._floatTools = null; // 收那三顆工具的「⋯」（merge_buttons.js#createFloatingTools）
+    this._debugRecordButton = null;
+    this._debugRecording = false;
+    this._floatTools = null; // 收那些工具的「⋯」（merge_buttons.js#createFloatingTools）
     this._hoverHost = null;
 
     this._initAiTasks();
@@ -1413,8 +1416,9 @@ export class ScreenController {
   // ------------------------------------------------------------- 尾端浮層
   // 「⋯」浮動工具鈕與 hover 圖片預覽住在 #mainContainer 尾端，位置固定、不參與列
   // diff。需要顯示的組合改變時整段重排（一次至多 2 個節點，且只在使用者操作時發生）。
-  // 三顆工具按鈕收在「⋯」的面板裡（merge_buttons.js#createFloatingTools），一顆都
-  // 不用顯示時整個「⋯」也不出現。
+  // 工具按鈕收在「⋯」的面板裡（merge_buttons.js#createFloatingTools），一顆都
+  // 不用顯示時整個「⋯」也不出現。文章工具只在文章頁；debug 錄製鈕在 debug 模式下
+  // 任何畫面都出現（登入／選單／列表都可能要錄）。
   _syncOverlays(annotations, enhance) {
     // 浮動「圖文並排」按鈕：好讀文章頁且偵測到 ≥2 個「圖＋說明」塊才出現。純結構
     // 啟發式（見 image_caption_group.js），不確定那段字是不是翻譯 → opt-in 手動切換。
@@ -1474,6 +1478,19 @@ export class ScreenController {
       this._lightsButton.update(this._lightsActive());
       tools.push(this._lightsButton.el);
     }
+    // 錄製狀態的真相在 App（app.debugRecorder），每幀由 enhance 帶進來對帳；點擊時
+    // 以 onDebugRecord 的回傳值立即更新（不必等下一幀）。
+    const showDebugRecord = !!(enhance && enhance.debugRecordButton);
+    this._debugRecording = showDebugRecord && !!enhance.debugRecording;
+    if (showDebugRecord) {
+      if (!this._debugRecordButton) {
+        this._debugRecordButton = createDebugRecordButton(() =>
+          this._toggleDebugRecord(),
+        );
+      }
+      this._debugRecordButton.update(this._debugRecording);
+      tools.push(this._debugRecordButton.el);
+    }
 
     const wanted = [];
     if (tools.length) {
@@ -1514,12 +1531,23 @@ export class ScreenController {
     this._syncFloatToolsActive();
   }
 
-  // 「⋯」收合時也要看得出有工具作用中（圖文並排／AI／燈）。
+  // 「⋯」收合時也要看得出有工具作用中（圖文並排／AI／燈），以及正在錄製。
   _syncFloatToolsActive() {
     if (!this._floatTools) return;
     this._floatTools.setActive(
       this._mergeCaption !== null || this._captionAi || this._lightsActive(),
     );
+    this._floatTools.setRecording(this._debugRecording);
+  }
+
+  _toggleDebugRecord() {
+    const enhance = this.props && this.props.enhance;
+    const toggle = enhance && enhance.onDebugRecord;
+    if (!toggle) return;
+    this._debugRecording = !!toggle();
+    if (this._debugRecordButton)
+      this._debugRecordButton.update(this._debugRecording);
+    this._syncFloatToolsActive();
   }
 
   _syncHoverPreview() {

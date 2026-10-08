@@ -128,6 +128,20 @@ test("setActive ⇒ data-active（收合時看得出有工具作用中）", () =
   expect(t.el.hasAttribute("data-active")).toBe(false);
 });
 
+test("setRecording ⇒ data-recording，圓鈕變紅且不透明（壓過 data-active）", () => {
+  const { t } = mountTools();
+  const before = getComputedStyle(t.fab).backgroundColor;
+  t.setActive(true);
+  t.setRecording(true);
+  expect(t.el.hasAttribute("data-recording")).toBe(true);
+  const cs = getComputedStyle(t.fab);
+  expect(cs.backgroundColor).toBe("rgb(224, 49, 49)");
+  expect(cs.backgroundColor).not.toBe(before);
+  expect(cs.opacity).toBe("1");
+  t.setRecording(false);
+  expect(t.el.hasAttribute("data-recording")).toBe(false);
+});
+
 test("預設位置＝FLOAT_TOOLS_DEFAULT_POS；存過的位置會被讀回來", () => {
   const { t } = mountTools();
   expect(t.el.style.right).toBe(FLOAT_TOOLS_DEFAULT_POS.right + "px");

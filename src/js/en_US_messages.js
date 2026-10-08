@@ -411,7 +411,7 @@ export const en_US = {
     "message": "Debug recording mode"
   },
   "options_debugMode_desc": {
-    "message": "Shows a record button on the main screen to capture connection traffic and app state for bug reports. This setting is never saved and resets to off on page reload."
+    "message": "Adds a record button to the floating \"⋯\" tools at the bottom right (on every screen) to capture connection traffic and app state for bug reports. This setting is never saved and resets to off on page reload."
   },
   "mergeImageCaption_on": {
     "message": "Merge captions (image above)"
@@ -491,7 +491,7 @@ export const en_US = {
     "message": "When an article contains hidden text (same foreground and background color), the button appears in the \"⋯\" menu at the bottom right. Turning it off hides the button and un-reveals the text; if plain-text mode was switched on, the button stays until you switch back."
   },
   "floatTools_toggle": {
-    "message": "Article tools"
+    "message": "Tools"
   },
   "tooltip_dimReadArticles": {
     "message": "Dims already-read rows in the article list so unread ones (+ mark) stand out at a glance."
