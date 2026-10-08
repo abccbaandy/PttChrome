@@ -542,7 +542,8 @@ export function parseListArticleNumLoose(text) {
 //
 // 判準（三者取聯集，順序即成本）：
 //   1. 作者欄是 '-' ＝ 被刪除文（parseListAuthor 會拒絕它，所以要先問）。
-//   2. **先要求合法的 userid 作者欄**。少了這關就形同虛設：parseListArticleNumLoose
+//   2. **先要求合法的 userid 作者欄**（或日期欄像日期＋作者欄非空，見
+//      hasNonUseridOwner）。少了這關就形同虛設：parseListArticleNumLoose
 //      是 `^(\d+)\b`，板規的「1. 不得…」會回 1 而放行。
 //   3. 有編號（loose ⇒ 連舊全形 ● 游標蓋掉最高位的那一列也算）或有 ★（置底文沒有
 //      編號，PTT 把 ★ 印在編號欄）。★ 這關與 list_session.js 既有的
@@ -553,8 +554,22 @@ export function parseListArticleNumLoose(text) {
 export function isListShapedRow(text) {
   if (!text) return false;
   if (isDeletedListRow(text)) return true;
-  if (parseListAuthor(text) == null) return false;
+  if (parseListAuthor(text) == null && !hasNonUseridOwner(text)) return false;
   return parseListArticleNumLoose(text) != null || text.indexOf('★') >= 0;
+}
+
+// 作者欄不是 userid 的文章列（PttCurrent 的「系統」公告：owner 是任意字串，
+// `mbbsd/bbs.c#readdoent` 照樣 %s 印出）。parseListAuthor 拒絕它，改以日期欄
+// （`%-6.5s` 的 ent->date，col 11-15，如 " 9/20"／"10/01"）＋作者欄非空認列表形。
+// 只用在 isListShapedRow；黑名單作者比對仍只認 userid。
+const LIST_DATE_COL_START = 11;
+const LIST_DATE_RE = /^[ \d]\d\/\d\d$/;
+function hasNonUseridOwner(text) {
+  if (text.length < LIST_AUTHOR_COL_START) return false;
+  const row = realignListColumns(text);
+  if (!LIST_DATE_RE.test(row.substring(LIST_DATE_COL_START, LIST_DATE_COL_START + 5)))
+    return false;
+  return row.substring(LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END).trim() !== '';
 }
 
 // Recover a cursor row's full article number from its visible suffix and a clean

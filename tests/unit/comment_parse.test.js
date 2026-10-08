@@ -362,6 +362,18 @@ describe("isListShapedRow（黑名單標註的逐列守門）", () => {
     ).toBe(true);
   });
 
+  // REGRESSION 2026-10-08（錄製檔 ptt-debug-20261008-203421，PttCurrent 板）：作者欄
+  // 「系統」不是合法 userid ⇒ 整列被當成非列表列，已讀低亮（listRead）永遠不標。
+  // 作者不是 userid 時改用日期欄（%-6.5s，col 11-15）認列表形。
+  test("作者欄不是 userid（系統公告）→ 仍是列表列", () => {
+    expect(isListShapedRow("   1650     9/20 系統         □ [開發資訊] 請實作ECMA-48")).toBe(true);
+    expect(isListShapedRow(">  1662    10/01 系統         □ [開發資訊] 介面調整")).toBe(true);
+    // 作者欄空白不算
+    expect(isListShapedRow("   1650     9/20              □ [開發資訊] x")).toBe(false);
+    // 日期欄不像日期也不算
+    expect(isListShapedRow("  1. 不得張貼廣告或 系統 商業性質文章，違者水桶。")).toBe(false);
+  });
+
   test("發文分類畫面的那一列 → false（本次 bug 的現場）", () => {
     // 錄製檔 t=7161 的最後一列。col≥29 是「26夏 5.心得 6.情報 7.Vtub 8.自介 …」
     // ⇒ 標題黑名單 'vtub' 命中 ⇒ 整列被 blacklistNoticeText 換掉。

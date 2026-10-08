@@ -19,6 +19,9 @@ const LINES = [
   listLine(" ", "readuser", "□ [心得] 已讀文章"),
   listLine("+", "newuser", "□ [心得] 未讀文章"),
   listLine("~", "newpush", "R: [心得] 有新推文"),
+  // 作者不是 userid（PttCurrent 的「系統」公告，2026-10-08 錄製檔）也要能低亮。
+  row(seg("   1650     9/20 系統         □ [開發資訊] 請實作ECMA-48")),
+  row(seg("   1651 +   9/20 系統         □ [開發資訊] 未讀")),
   row(seg("  文章選讀  (y)回應(X)推文(^X)轉錄")),
 ];
 
@@ -34,12 +37,12 @@ const readRows = (m) =>
 
 describe("已讀文章低亮", () => {
   test("只有已讀的列表列帶 data-list-read", () => {
-    expect(readRows(mountScreen(props(true)))).toEqual(["3"]);
+    expect(readRows(mountScreen(props(true)))).toEqual(["3", "6"]);
   });
 
   test("pref 關 ⇒ 屬性照帶、容器不掛 dimReadList", () => {
     const m = mountScreen(props(false));
-    expect(readRows(m)).toEqual(["3"]);
+    expect(readRows(m)).toEqual(["3", "6"]);
     expect(m.container.classList.contains("dimReadList")).toBe(false);
   });
 
