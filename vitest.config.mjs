@@ -92,8 +92,9 @@ export default defineConfig({
           include: ['tests/integration/**/*.test.js'],
           setupFiles: ['tests/integration/setup.js'],
           testTimeout: pollDeadline * 2 + 10000,
-          // CI 已知 flaky（emulator 冷啟動）：自動重試，對應舊 jest.retryTimes(2)。
-          retry: process.env.CI ? 2 : 0,
+          // 刻意不設 retry：重試會把 flaky 吞成綠。舊的 CI 冷啟動逾時根因（emulator 首次寫入
+          // 的暖機成本落在第一條測試的 deadline 裡）已在 scripts/run-integration.mjs#warmUp 處理。
+          // 守護 tests/unit/no_test_retry.test.js。
         },
       },
     ],

@@ -76,11 +76,13 @@ export function pickFailures(jobs) {
   return out;
 }
 
-// 已知 flaky：integration job 的 Firebase Emulator 冷啟動逾時（CLAUDE.md 有記）。
-// 認得出來才敢建議 rerun——其他失敗一律當真錯，不可自動重跑。
+// 已知基礎設施問題：integration job 的 Firebase Emulator 沒起來（拉 image／boot／暖機失敗，
+// 測試還沒開始跑；scripts/run-integration.mjs 印的訊息）。認得出來才敢建議 rerun——
+// 其他失敗一律當真錯，不可自動重跑。測試內的 `waitForCloud timeout` 不算：暖機已在
+// 測試前付掉（run-integration.mjs#warmUp），再逾時就是真問題（docs/ci-troubleshooting.md）。
 export function isKnownFlaky(jobName, log) {
   if (!/integration/i.test(String(jobName))) return false;
-  return /waitForCloud timeout|not ready in \d+ms|emulator/i.test(String(log || ""));
+  return /not ready in \d+ms|Emulator failed to become ready|warm-up failed/.test(String(log || ""));
 }
 
 // GitHub runs API 的 `head_sha` 參數**只吃完整 40 字元 SHA**：短 sha 一律回空陣列，
@@ -302,7 +304,7 @@ async function main() {
 
   if (flakyJobs.length) {
     console.log(
-      `\n偵測到已知 flaky（integration/emulator 冷啟動）：${flakyJobs.map((f) => f.name).join(", ")}`,
+      `\n偵測到已知基礎設施問題（integration emulator 沒起來，測試未執行）：${flakyJobs.map((f) => f.name).join(", ")}`,
     );
     if (flag("rerun-failed")) {
       const ids = [...new Set(flakyJobs.map((f) => f.runId))];

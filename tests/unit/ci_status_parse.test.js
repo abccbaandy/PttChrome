@@ -146,13 +146,28 @@ describe("pickFailures", () => {
 });
 
 describe("isKnownFlaky", () => {
-  test("integration job 的 emulator 冷啟動逾時 → 已知 flaky", () => {
-    expect(isKnownFlaky("test / test-integration", "Error: waitForCloud timeout: upload")).toBe(
-      true,
-    );
+  test("integration job 的 emulator 起不來（測試還沒跑）→ 已知基礎設施問題", () => {
     expect(isKnownFlaky("test / test-integration", "firestore emulator not ready in 60000ms")).toBe(
       true,
     );
+    expect(
+      isKnownFlaky("test / test-integration", "Emulator failed to become ready: firestore warm-up failed: HTTP 503"),
+    ).toBe(true);
+  });
+
+  test("測試內的 waitForCloud 逾時 → 真錯，不可自動重跑（暖機已在測試前付掉）", () => {
+    expect(isKnownFlaky("test / test-integration", "Error: waitForCloud timeout: upload")).toBe(
+      false,
+    );
+  });
+
+  test("log 裡出現 emulator 字樣的斷言失敗 → 不算 flaky（step 名就含 Emulator）", () => {
+    expect(
+      isKnownFlaky(
+        "test / test-integration",
+        "Integration tests (Firebase Emulator in Docker)\nAssertionError: expected 1 to be 2",
+      ),
+    ).toBe(false);
   });
 
   test("同樣訊息但不是 integration job → 不算（不可亂重跑）", () => {

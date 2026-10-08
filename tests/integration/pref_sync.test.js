@@ -49,17 +49,16 @@ const SYNC_FLAG_KEY = "pttchrome.prefsync.enabled";
 const PREF_KEY = "pttchrome.pref.v1";
 const PROJECT_ID = process.env.GCLOUD_PROJECT;
 
-// CI cold-starts the emulator (jar download + JVM warmup), so the first Firestore
-// round-trip can be slow. Give the polls more headroom on CI and auto-retry a flaky
-// test there. A successful poll resolves as soon as its condition holds (~200ms
+// CI cold-starts the emulator (jar download + JVM warmup). The first-write warmup
+// is paid by scripts/run-integration.mjs#warmUp before vitest starts; the larger CI
+// ceiling only absorbs a slow runner. There is deliberately NO retry (a retry turns
+// a flake green; tests/unit/no_test_retry.test.js). A successful poll resolves as soon as its condition holds (~200ms
 // locally), so a bigger ceiling NEVER slows the happy path — it only absorbs the
 // cold-start tail. Locally the deadline stays tight so a real hang fails fast.
 // (vitest.config.mjs integration project testTimeout derives its outer guard from the same env.)
 const POLL_DEADLINE_MS =
   Number(process.env.INTEGRATION_TIMEOUT_MS) ||
   (process.env.CI ? 30000 : 10000);
-// CI flaky 重試改由 vitest.config.mjs integration project 的 `retry: 2` 承接
-//（Vitest 無 runtime retryTimes API）。
 
 // ---- helpers ---------------------------------------------------------------
 

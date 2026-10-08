@@ -68,8 +68,9 @@ jobs:
       # scripts/run-integration.mjs / docs/pref-sync-firestore.md.
       - name: Integration tests (Firebase Emulator in Docker)
         env:
-          # Cushion the in-test poll deadline against cold-start latency; the test
-          # also auto-retries (vitest retry) on CI. See tests/integration/.
+          # Cushion the in-test poll deadline against a slow runner. No retry: the
+          # emulator's first-write warmup is paid before vitest starts
+          # (scripts/run-integration.mjs#warmUp). See tests/integration/.
           INTEGRATION_TIMEOUT_MS: "30000"
         run: |
           yarn install --immutable
