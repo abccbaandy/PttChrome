@@ -11,7 +11,7 @@
 //     版本不一致 ⇒ `Executable doesn't exist` 整批秒掛，而 Dependabot 只改 yarn.lock；
 //   - 不准再跑 `playwright install`（跑了＝又回到 apt）；
 //   - `--ipc=host`：Docker 預設 /dev/shm 64MB，多 worker 的 Chromium 會被撐爆；
-//   - e2e 是 matrix job（offline 拆 shard、adverse 每桶一個），required checks 綁的
+//   - e2e 是 matrix job（offline 拆 shard、adverse 每桶一個且可再拆 shard），required checks 綁的
 //     `test-e2e-offline`／`test-e2e-offline-adverse` 改由收斂 job 扛 —— 收斂 job 必須
 //     `if: always()` 並斷言上游 result，否則上游紅時它是 skipped，而 skipped 算通過。
 import fs from "node:fs";
@@ -102,11 +102,38 @@ describe("test.yml：e2e job 跑在 Playwright 官方 image", () => {
     expect(lines).toContain(`yarn test:e2e:offline --shard=\${{ matrix.shard }}/${n}`);
   });
 
-  test("adverse 每桶一個 job：matrix 涵蓋 runner 的全部桶，且以 --only 只跑該桶", () => {
+  // matrix.include 切成一格一格（每格以 `- bucket:` 開頭，後面縮排的 key 屬於它）。
+  const adverseCells = () => {
     const job = jobs().find((j) => j.name === "test-e2e-offline-adverse-bucket");
-    const buckets = [...job.body.matchAll(/^\s*- bucket: ([\w-]+)\s*$/gm)].map((m) => m[1]);
+    const include = /^\s*include:\s*$([\s\S]*?)^ {4}\w/m.exec(job.body);
+    expect(include, "沒有 matrix.include").not.toBeNull();
+    return include[1]
+      .split(/^\s*- (?=bucket:)/m)
+      .slice(1)
+      .map((cell) => Object.fromEntries([...cell.matchAll(/^\s*(\w+): ([\w-]+)\s*$/gm)].map((m) => [m[1], m[2]])));
+  };
+
+  test("adverse 每桶（或桶的每片）一個 job：matrix 涵蓋 runner 的全部桶，且以 --only 只跑該桶", () => {
+    const job = jobs().find((j) => j.name === "test-e2e-offline-adverse-bucket");
+    const buckets = [...new Set(adverseCells().map((c) => c.bucket))];
     expect(buckets.sort()).toEqual([...ADVERSE_PROJECTS].sort());
-    expect(job.body).toMatch(/^\s*yarn test:e2e:offline:adverse --only=\$\{\{ matrix\.bucket \}\}\s*$/m);
+    expect(job.body).toMatch(
+      /^\s*yarn test:e2e:offline:adverse --only=\$\{\{ matrix\.bucket \}\} --shard=\$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.shards \}\}\s*$/m,
+    );
+  });
+
+  // 漏一片＝那片的測試靜默不跑、CI 照樣全綠；重複一片＝白跑一個 job。
+  test("adverse 拆片：每桶的 shard 恰好是 1..shards 各一格，shards 一致", () => {
+    const byBucket = {};
+    for (const c of adverseCells()) (byBucket[c.bucket] ||= []).push(c);
+    for (const [bucket, cells] of Object.entries(byBucket)) {
+      const totals = [...new Set(cells.map((c) => c.shards))];
+      expect(totals, `${bucket} 的 shards 不一致`).toHaveLength(1);
+      const n = Number(totals[0]);
+      expect(n, `${bucket} 沒有 shards`).toBeGreaterThan(0);
+      const got = cells.map((c) => Number(c.shard)).sort((a, b) => a - b);
+      expect(got, bucket).toEqual(Array.from({ length: n }, (_, i) => i + 1));
+    }
   });
 
   test.each([
