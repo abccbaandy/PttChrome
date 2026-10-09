@@ -217,11 +217,10 @@ describe("[ ] 跳同标题：新文章不得叠加在旧文章后（race 回归�
 const fixtures = loadArticleFixtures();
 
 describe("好读跨页累积重建（离线 fixture）", () => {
-  if (!fixtures.length) {
-    // 还没录过任何 article fixture：保留一个 skip 占位（vitest 要求每个 suite ≥1 test）。
-    test.skip("尚无 article fixture；先 yarn record:cassette（guest）", () => {});
-    return;
-  }
+  // 素材已入庫：過濾成空（meta.mode 改名、路徑錯）時必須紅，不能整組退化成 skip 照綠。
+  test("載入得到 article fixture（掃描範圍不是空的）", () => {
+    expect(fixtures.length).toBeGreaterThan(0);
+  });
   for (const fx of fixtures) {
     describe(`${fx.meta.board} (${fx.pageScreens.length}页)`, () => {
       const transitions = [];
@@ -234,6 +233,9 @@ describe("好读跨页累积重建（离线 fixture）", () => {
       // 更大 ⇒ 中间整页被 typeahead 跳绘吞掉（P4），文字永久掉了。
       // 这条守护实录素材本身：一旦录到掉页，测试直接红，而不是默默 append 出破洞。
       test("P1：相邻页 S' <= 上一页 E（不得掉页）", () => {
+        // 判不出狀態列的頁會被 continue 掉 ⇒ 全部判不出時零斷言照綠。pageScreens 都是
+        // 文章畫面，每一個轉換都該分得出類別。
+        expect(transitions.filter((t) => t.kind === null)).toEqual([]);
         for (const t of transitions) {
           if (t.kind === null) continue; // 无状态列（不该发生在 pageScreens，但不硬失败）
           expect({ page: t.page, kind: t.kind }).toEqual({
@@ -249,7 +251,7 @@ describe("好读跨页累积重建（离线 fixture）", () => {
       test("P2：累积显示列数 >= 末页文章行号（去重没吃掉内容）", () => {
         const last = fx.pageScreens[fx.pageScreens.length - 1];
         const status = parseStatusRow(last[last.length - 1]);
-        if (!status) return;
+        expect(status).toBeTruthy(); // 末頁一定是文章畫面；判不出就是素材或解析壞了
         expect(acc.length).toBeGreaterThanOrEqual(status.rowIndexEnd);
       });
 

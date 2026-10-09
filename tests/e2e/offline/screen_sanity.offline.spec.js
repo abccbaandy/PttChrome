@@ -77,7 +77,7 @@ test.describe('畫面健全性（離線逐卷）', () => {
   }
 
   // 檢查器的牙齒：三種破壞各自要被抓到（突變驗證寫成常駐測試）。
-  test('檢查器會抓到：漏字／格線位移／水平溢出', async ({ page }) => {
+  test('檢查器會抓到：漏字／格線位移／水平溢出／整列漏畫', async ({ page }) => {
     test.skip(!list, '尚無 list cassette');
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReadingList: false });
@@ -121,5 +121,19 @@ test.describe('畫面健全性（離線逐卷）', () => {
     });
     const garbled = await screenSanity(page);
     expect(garbled.decodeFail.map((d) => d.row)).toContain(6);
+
+    // 5) 整列漏畫：buf 有字、DOM 沒有那一列（逐列比對只走 DOM 有的列，看不到它）。
+    const gone = await page.evaluate(() => {
+      const buf = window.__app.buf;
+      for (let r = 7; r < buf.rows; r++) {
+        if (!buf.getRowText(r, 0, buf.cols).trim()) continue;
+        document.querySelector(`#mainContainer [data-type="bbsline"][data-row="${r}"]`).remove();
+        return r;
+      }
+      return -1;
+    });
+    expect(gone).toBeGreaterThan(0);
+    const missing = await screenSanity(page);
+    expect(missing.missingRows.map((m) => m.row)).toContain(gone);
   });
 });

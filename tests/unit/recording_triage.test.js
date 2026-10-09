@@ -243,6 +243,7 @@ describe("sanityViolations（live／offline／分流共用門檻）", () => {
   const ok = {
     decoderReady: true,
     checked: 24,
+    missingRows: [],
     textMismatch: [],
     gridMisaligned: [],
     decodeFail: [],
@@ -255,6 +256,7 @@ describe("sanityViolations（live／offline／分流共用門檻）", () => {
   test("每種違規各自報出", () => {
     expect(sanityViolations({ ...ok, decoderReady: false })).toEqual(["decoderNotReady"]);
     expect(sanityViolations({ ...ok, checked: 0 })).toEqual(["noRowsChecked"]);
+    expect(sanityViolations({ ...ok, missingRows: [{}] })).toEqual(["missingRows"]);
     expect(sanityViolations({ ...ok, textMismatch: [{}] })).toEqual(["textMismatch"]);
     expect(sanityViolations({ ...ok, gridMisaligned: [{}] })).toEqual(["gridMisaligned"]);
     expect(sanityViolations({ ...ok, decodeFail: [{}] })).toEqual(["decodeFail"]);

@@ -45,9 +45,12 @@ const STAY = screen({
   row0: "",
   last: " ◆ 此次停留時間: 0 小時 12 分                                  [按任意鍵繼續]",
 });
+// pttbbs mbbsd/bbs.c#do_reply：getdata(b_lines - 1, …) ⇒ prompt 在倒數第 2 列，
+// 最後一列仍是文章的 pmore 狀態列（看起來像「在文章裡」，但游標在輸入欄）。
 const REPLY_PROMPT = screen({
-  row0: " 作者  someone (某人)                                  看板  Test",
-  last: "▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] ",
+  row0: ARTICLE.rows[0],
+  secondLast: "▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F] ",
+  last: ARTICLE.rows[ROWS - 1],
   input: true,
 });
 

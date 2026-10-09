@@ -15,8 +15,9 @@ const ADVERSE_LAYOUT_SPECS = [
   'offline/blacklist_quick_add.offline.spec.js',
   'offline/comment_merge.offline.spec.js',
   'offline/enhance.offline.spec.js',
-  'offline/quick_search.offline.spec.js',
 ];
+// quick_search 不在清單：它不走 bootOffline／installOfflineNetwork（沒有圖片網路），
+// 放進來三個逆境桶只是同一條原封不動重跑三次（守護 e2e_layout_settle.test.js）。
 // image_load_conditions 刻意**不在**逆境清單裡：它自己用 bootOffline 的 imageProfile
 // 逐條指定情境（明確傳入的優先序高於 project 名），放進來只會原封不動再跑一次。
 const ADVERSE_IMAGE_SPECS = [

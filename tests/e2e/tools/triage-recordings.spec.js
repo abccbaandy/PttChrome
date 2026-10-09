@@ -47,6 +47,8 @@ test.describe('錄製檔分流', () => {
       const { entries, summary } = await triageToPending(page, rec, file);
       const written = writePending(PENDING_DIR, base, entries, summary);
       console.log(`[triage] ${base}: ${JSON.stringify(summary)}`);
+      // 整卷沒有整頁重繪幀 ⇒ 一幀都沒檢查。這不是「全綠」，是「沒驗」，要明講。
+      expect(summary.checked, `${base}：沒有可檢查的幀（找不到第一次整頁重繪）`).toBeGreaterThan(0);
       for (const e of entries)
         console.log(
           `[triage]   frame ${e.frame} (step ${e.step}, t=${e.t}ms, ${e.test || '不在 test 內'}) ` +

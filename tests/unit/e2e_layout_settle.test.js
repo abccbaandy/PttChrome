@@ -11,15 +11,15 @@
 // 純靜態掃描，不連網、不開瀏覽器 ⇒ 放 unit（比照 tests/unit/e2e_login_budget.test.js）。
 import fs from "fs";
 import path from "path";
+import { offlineSpecFiles } from "../../scripts/e2e-project-files.mjs";
+import playwrightConfig from "../../playwright.config.js";
 
 const ROOT = path.join(__dirname, "..", "..");
 const OFFLINE_DIR = path.join(ROOT, "tests", "e2e", "offline");
 const HELPERS_DIR = path.join(ROOT, "tests", "e2e", "helpers");
 
-const offlineSpecs = fs
-  .readdirSync(OFFLINE_DIR)
-  .filter((f) => f.endsWith(".spec.js"))
-  .sort();
+// 範圍取自 playwright.config.js 的 offline* project（遞迴），見 scripts/e2e-project-files.mjs。
+const offlineSpecs = offlineSpecFiles();
 
 // 只掃**程式碼**：這些檔案的註解本來就在談 getBoundingClientRect 與 scrollIntoView
 //（那正是規範的內容），連註解一起掃會被自己的說明文字誤判。
@@ -37,7 +37,10 @@ const read = (f) => stripComments(fs.readFileSync(path.join(OFFLINE_DIR, f), "ut
 // —— 那是常數，不會被延遲載入推走。
 const MEASURES_GEOMETRY = /getBoundingClientRect\(|elementFromPoint\(|\.boundingBox\(\)/;
 // 真的把指標放到那個點上。
-const DRIVES_POINTER = /page\.mouse\./;
+// 除了 page.mouse，CDP 入口（helpers/real_input.js）與帶座標的 locator 點擊／hover 一樣
+// 會把指標放到量出來的點上。
+const DRIVES_POINTER =
+  /page\.mouse\.|\b(mousePress|mouseRelease|mouseWheel|rightClickElement|rightClickPlainText|dragSelectText|hoverFloatTools)\(|\.(click|dblclick|hover)\(\s*\{[^}]*position/;
 
 // 具名豁免：**必須寫理由**，而且理由要是「結構上不可能受延遲載入影響」，
 // 不是「目前看起來還好」。
@@ -104,7 +107,7 @@ describe("offline e2e 版面穩定契約", () => {
       if (EXEMPT[f]) return false;
       const src = read(f);
       if (!MEASURES_GEOMETRY.test(src) || !DRIVES_POINTER.test(src)) return false;
-      return !/require\(['"]\.\.\/helpers\/layout['"]\)/.test(src);
+      return !/(require\(|from\s+)['"]\.\.\/helpers\/layout(\.js)?['"]/.test(src);
     });
     expect(offenders).toEqual([]);
   });
@@ -166,6 +169,22 @@ describe("逆境 project 設定", () => {
     for (const f of listed) {
       expect(offlineSpecs, `逆境清單指到不存在的 spec：${f}`).toContain(f);
     }
+  });
+
+  // 逆境桶只改「圖片怎麼回」（installOfflineNetwork 的 profile）。不經過它的 spec 放進來
+  // ＝同一條重跑三次，宣稱的逆境覆蓋其實不存在。
+  test("逆境清單裡的 spec 都會裝離線圖片網路（profile 才有作用）", () => {
+    const listed = [
+      ...new Set(
+        playwrightConfig.projects
+          .filter((p) => ["offline-slow", "offline-broken", "offline-mixed"].includes(p.name))
+          .flatMap((p) => p.testMatch)
+          .map((f) => f.replace(/^offline\//, ""))
+      ),
+    ];
+    expect(listed.length).toBeGreaterThan(0);
+    const inert = listed.filter((f) => !/\b(bootOffline|installOfflineNetwork|bootScenario)\(/.test(read(f)));
+    expect(inert).toEqual([]);
   });
 
   // 2026-08-29 起這個 script 不再直接呼叫 playwright，而是委派給分批執行器
