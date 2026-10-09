@@ -21,7 +21,10 @@
 //  2. **user activation**：Chrome 的 History Manipulation Intervention 會把「該
 //     document 從未取得 user activation 時 pushState 出來的 entry」在 back 時直接
 //     跳過且不發 popstate ⇒ 使用者直接離站。所以第一層 sentinel 等第一次
-//     pointerdown/keydown 才疊。
+//     **會給 activation 的**輸入才疊（HTML 規範 activation-triggering input event）：
+//     keydown、滑鼠的 pointerdown、**觸控／觸控筆要等 pointerup**——觸控的 pointerdown
+//     還不是 activation，在那裡疊 ⇒ Android 返回鍵一按就離站（真 Android e2e
+//     `tests/e2e/android/mobile_input.android.spec.js` 抓到的）。
 //  3. **sentinel 補回來只能用 traversal，不可以 pushState**（最重要）：**觸控板
 //     返回手勢本身不是 user activation**（只有 click／pointerdown／keydown 等才
 //     是）⇒ 在 popstate handler 裡 pushState 出來的那一層同樣會被 intervention
@@ -139,6 +142,14 @@ export function installHistoryBackGuard(app, win, opts) {
     // pref 是後來才打開的話，下一次使用者動作就會補上（listener 刻意常駐）。
     if (!armed && gateOn()) armed = pushSentinel();
   }
+  // 坑 2：滑鼠在 pointerdown 就給 activation；觸控／觸控筆要到 pointerup 才給。
+  const isMousePointer = (e) => !e || !e.pointerType || e.pointerType === 'mouse';
+  function onPointerDown(e) {
+    if (isMousePointer(e)) onActivation();
+  }
+  function onPointerUp(e) {
+    if (!isMousePointer(e)) onActivation();
+  }
 
   // 長按上一頁的下拉選單可以一次跳好幾層。單看 popstate 分不出「退一層」和
   // 「退五層」⇒ 有 Navigation API（Chrome/Edge/Firefox 都有）時用 index 差算
@@ -196,7 +207,8 @@ export function installHistoryBackGuard(app, win, opts) {
     if (app.view && app.view.flashListHint) app.view.flashListHint(ESCAPE_HINT);
   }
 
-  w.addEventListener('pointerdown', onActivation, true);
+  w.addEventListener('pointerdown', onPointerDown, true);
+  w.addEventListener('pointerup', onPointerUp, true);
   w.addEventListener('keydown', onActivation, true);
   w.addEventListener('popstate', onPopState);
   if (w.navigation && w.navigation.addEventListener)
@@ -206,7 +218,8 @@ export function installHistoryBackGuard(app, win, opts) {
     // pref 關掉時**不自動退回**（那會在使用者沒按上一頁時偷偷改網址），只停止
     // 補 sentinel —— 下一次 back 會被 onPopState 的 gateOn() 放行。
     uninstall() {
-      w.removeEventListener('pointerdown', onActivation, true);
+      w.removeEventListener('pointerdown', onPointerDown, true);
+      w.removeEventListener('pointerup', onPointerUp, true);
       w.removeEventListener('keydown', onActivation, true);
       w.removeEventListener('popstate', onPopState);
       if (w.navigation && w.navigation.removeEventListener)

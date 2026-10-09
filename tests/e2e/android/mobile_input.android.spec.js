@@ -1,4 +1,4 @@
-// 真 Android Chrome（模擬器）上的底部工具列、軟鍵盤、系統返回鍵、下拉重整。
+// 真 Android Chrome（模擬器）上的底部工具列、軟鍵盤、系統返回鍵。
 // 守的是桌機 offline e2e（Pixel 7 模擬，`offline/mobile_toolbar.offline.spec.js`）只能替身測、
 // 或根本測不到的那層（docs/mobile.md「規則」、docs/android-e2e.md）：
 //   1. `#t` 的 inputmode="none"：真觸控 tap 終端機／工具列，Android 真的不彈軟鍵盤；
@@ -7,10 +7,13 @@
 //   3. 鍵盤開著時按系統返回鍵：IME 吃掉返回、只收鍵盤，不可以走到 history sentinel 送 ←；
 //      收起後 softKeyboard 歸零（`_onVisualViewport`）⇒ 再按 ⌨ 一次就叫得出來；
 //   4. 系統返回鍵 → history sentinel → ←，連按都接得住（返回鍵不是 user activation，
-//      sentinel 補回來必須走 traversal，見 history_back_guard.js 坑 3）；
-//   5. 下拉不會觸發 Chrome 的 pull-to-refresh（重整＝斷線）。
+//      sentinel 補回來必須走 traversal，見 history_back_guard.js 坑 3）。第一層 sentinel
+//      必須等觸控的 pointerup 才疊（觸控 pointerdown 還不是 activation，坑 2）——這條測試
+//      在修正前是紅的：返回鍵一按就離站。
+// 下拉重整（pull-to-refresh）沒有測：拿掉 overscroll-behavior 的對照組在模擬器上也拉不出
+// 重整（body 是 overflow:hidden），否定斷言證明不了什麼。
 // 觸控與按鍵一律走 OS 的 input injection（screen.js）。
-const { test, expect, webviewOrigin } = require('./fixtures');
+const { test, expect } = require('./fixtures');
 const {
   article,
   openScreen,
@@ -21,7 +24,6 @@ const {
   sentText,
   keyboardCover,
 } = require('./screen');
-const { toDevicePoint } = require('./android_env');
 
 const ARROW_LEFT = '\x1b[D';
 // 左鍵關掉：真 tap 落在終端機上時不可以自己送鍵（左側退出帶、邊緣翻頁）。
@@ -131,52 +133,4 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
     }
     expect(await page.evaluate(() => window.__sameDocument)).toBe(true);
   });
-
-  // 下拉重整會重新載入頁面 ⇒ WebSocket 斷線（PTT 連線沒了）。
-  for (const easyReading of [false, true]) {
-    test(`下拉不觸發重新整理（${easyReading ? '文章好讀' : '終端機格線'}）`, async ({ page, android }) => {
-      test.setTimeout(120000);
-      await openScreen(page, { ...PREFS, enableEasyReading: easyReading });
-      expect(await pullDown(page, android.device)).toBe(false);
-    });
-  }
-
-  // 對照組：拿掉 overscroll-behavior 之後同一個手勢**會**觸發重整 ⇒ 上面的 false 不是
-  // 「這個手勢在模擬器上本來就拉不出重整」。
-  test('對照組：拿掉 overscroll-behavior ⇒ 同一個下拉手勢會重新整理', async ({ page, android }) => {
-    test.setTimeout(120000);
-    await openScreen(page, PREFS);
-    await page.addStyleTag({
-      content: 'html, body, .main, .listBodyView { overscroll-behavior: auto !important; }',
-    });
-    expect(await pullDown(page, android.device)).toBe(true);
-  });
 });
-
-// 從終端機頂端往下拉 400 CSS px（手指放開才會觸發重整）。回傳頁面有沒有被重新載入。
-async function pullDown(page, device) {
-  await page.evaluate(() => {
-    window.__noReload = true;
-    window.__touchEnded = false;
-    const end = () => {
-      window.__touchEnded = true;
-    };
-    window.addEventListener('touchend', end, true);
-    window.addEventListener('touchcancel', end, true);
-  });
-  const pt = await page.evaluate(() => {
-    const r = document.getElementById('mainContainer').getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: Math.max(r.top, 0) + 30, dpr: devicePixelRatio };
-  });
-  const origin = await webviewOrigin(device);
-  const from = toDevicePoint(origin, pt.dpr, pt);
-  const to = toDevicePoint(origin, pt.dpr, { x: pt.x, y: pt.y + 400 });
-  await device.shell(`input swipe ${from.x} ${from.y} ${to.x} ${to.y} 600`);
-  // 重整是放手後才開始的導航；頁面一旦換掉，舊的 window 狀態就讀不到了（evaluate 落在新
-  // document 或導航中途丟錯）。先確認手勢收尾，再給它一段觀察窗。
-  const alive = () => page.evaluate(() => window.__noReload === true).catch(() => false);
-  await expect.poll(async () => (await alive()) === false || (await page.evaluate(() => window.__touchEnded).catch(() => true))).toBe(true);
-  // 觀察窗：放手後 3s 內有沒有導航（Chrome 的重整在放手後立刻開始，動畫不到 1s）。
-  await page.waitForEvent('framenavigated', { timeout: 3000 }).catch(() => null);
-  return !(await alive());
-}

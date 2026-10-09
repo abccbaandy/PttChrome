@@ -103,6 +103,8 @@
   `mobile_reflow`、列表卡片在 `mobile_list_cards`、工具列／按鍵面板／黏滯 Ctrl 在 `mobile_toolbar`、「⋯」與設定頁窄版在 `mobile_float_tools`；`offline` project 以 testIgnore 排除 mobile_*），已併入
   `yarn test:e2e:offline`。**視窗高壓到 390px**：錄製檔全是 24 列，Pixel 7 原生高度會給 52 列、
   重放湊不成完整一屏；390 ⇒ 24 列。
+- 真 Android Chrome（模擬器）：`tests/e2e/android/mobile_input.android.spec.js`（真 tap 不彈鍵盤、⌨ 後的版面、
+  返回鍵收鍵盤／送 ←）與 `select_mode`，跑法見 `docs/android-e2e.md`。
 - Windows 本機跑 `offline-mobile` 會用到 local 細明體，小字級下半形字寬被 hinting 取整（實測 5.0 vs
   chw 4.952）；Android／CI Linux 沒有細明體，走內建 webfont `SymMingLiu`（精確 0.5em）。量座標的斷言
   以欄數 × 誤差估容差，別因本機多幾 px 就改產品。

@@ -445,7 +445,9 @@ guard 寫進 debug 錄製檔（`backGuard.blocked {reason,pageState,cur_x,cur_y,
    安裝點在 `main.jsx` 的 `bootstrap()`，緊接在 `installDeepLink(app)` 之後。
 2. **user activation**：Chrome 的 History Manipulation Intervention 會把「該 document
    從未取得 user activation 時 `pushState` 出來的 entry」在 back 時**跳過且不發
-   `popstate`** ⇒ 直接離站。所以第一層 sentinel 等第一次 `pointerdown`／`keydown` 才疊
+   `popstate`** ⇒ 直接離站。所以第一層 sentinel 等第一次**會給 activation 的**輸入才疊：
+   `keydown`、滑鼠的 `pointerdown`、觸控／觸控筆的 `pointerup`（觸控的 `pointerdown` 還不是
+   activation，在那裡疊 ⇒ Android 返回鍵一按就離站；真 Android e2e `mobile_input` 守）
    （listener 常駐，pref 後來才開也補得上）。
 3. **補回 sentinel 只能用 traversal，不可以 `pushState`**（本次改版的核心）：
    **觸控板返回手勢本身不是 user activation**（只有 click／pointerdown／keydown 等才

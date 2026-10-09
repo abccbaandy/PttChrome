@@ -1,7 +1,12 @@
 # Android 模擬器 e2e（真 Android Chrome）
 
-守**我們對 Android 的假設**（桌機 offline e2e 只能用替身測的那層）。第一個 case：選取模式的長按／拖把手
-（`docs/mobile.md`「長按選單與選取模式」）。
+守**我們對 Android 的假設**（桌機 offline e2e 只能用替身測的那層）。涵蓋：
+- `select_mode`：選取模式的長按／拖把手（`docs/mobile.md`「長按選單與選取模式」）；
+- `mobile_input`：真 tap 工具列不彈鍵盤、⌨ 叫出軟鍵盤後工具列／終端機底列在鍵盤上方、鍵盤開著按返回只收鍵盤、
+  系統返回鍵 → ←（連按）。
+- 試過但沒收：「下拉不觸發 Chrome 重新整理」——拿掉 overscroll-behavior 的對照組在模擬器上也拉不出重整
+  （body `overflow:hidden`），否定斷言證明不了什麼。
+- 未涵蓋：APK（WebView 殼）的返回鍵與原生 bridge——要在 CI 另建 debug APK 裝進模擬器。
 
 ## 檔案
 
@@ -9,6 +14,7 @@
 |---|---|
 | `tests/e2e/android/android_env.js` | 純函式：選模擬器、CSS px→device px、adb 輸出解析、SDK 工具定位 |
 | `tests/e2e/android/fixtures.js` | worker：選機→OS 斷網→清 Chrome→IPv4 轉送＋adb reverse；test：`launchBrowser` 覆寫 `page`；失敗存整個螢幕 |
+| `tests/e2e/android/screen.js` | spec 共用：強制手機版面開畫面、OS 層真 tap（含落點自檢）／keyevent、收送出的 bytes、軟鍵盤蓋住的高度 |
 | `tests/e2e/android/*.android.spec.js` | spec（project `android`，`playwright.config.js`） |
 | `scripts/run-android-e2e.mjs` | `yarn test:e2e:android`：找／建 AVD、開機、跑、分類 exit 0/1/2、自己開的自己關 |
 | `scripts/android-e2e-needed.mjs` | `--if-changed[=base]` 的檔案名單（預設 base `origin/dev`） |

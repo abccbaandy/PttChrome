@@ -94,7 +94,8 @@ const sentText = (page) => page.evaluate(() => (window.__sent || []).join(''));
 const keyboardCover = (page) =>
   page.evaluate(() => {
     const vv = window.visualViewport;
-    return Math.round(document.documentElement.clientHeight - (vv.offsetTop + vv.height));
+    // Math.max 也把 -0 正規化成 0（toBe 用 Object.is）。
+    return Math.max(0, Math.round(document.documentElement.clientHeight - (vv.offsetTop + vv.height)));
   });
 
 module.exports = {
