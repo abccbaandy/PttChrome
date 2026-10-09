@@ -13,12 +13,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const SRC = path.join(process.cwd(), "src/js");
+// 整個 src（遞迴）：只掃 src/js 頂層的話 src/components、src/render 裡的違規看不到。
+const SRC = path.join(process.cwd(), "src");
 
 function readAll() {
   return fs
-    .readdirSync(SRC)
+    .readdirSync(SRC, { recursive: true })
     .filter((f) => /\.jsx?$/.test(f))
+    .map((f) => f.split(path.sep).join("/"))
     .map((f) => ({
       name: f,
       // 去掉行註解：這幾個名字在檔頭的說明文字裡大量出現。
@@ -29,14 +31,14 @@ function readAll() {
 }
 
 const FILES = readAll();
-const fileNamed = (n) => FILES.find((f) => f.name === n);
+const fileNamed = (n) => FILES.find((f) => f.name === "js/" + n);
 
 describe("userKey 送出入口只有 term_view 一個", () => {
   test("沒有別的模組叫 conn.sendUserKey / convSendUserKey", () => {
     const offenders = FILES.filter(
       (f) =>
-        f.name !== "term_view.js" &&
-        f.name !== "telnet.js" &&
+        f.name !== "js/term_view.js" &&
+        f.name !== "js/telnet.js" &&
         /\.(send|convSend)UserKey\s*\(/.test(f.code),
     ).map((f) => f.name);
     expect(offenders).toEqual([]);
@@ -96,8 +98,8 @@ describe("機器送出的入口一個都不能漏掉守門", () => {
   test("沒有任何模組繞過 TelnetConnection 直接 socket.send", () => {
     const offenders = FILES.filter(
       (f) =>
-        f.name !== "websocket.js" &&
-        f.name !== "telnet.js" &&
+        f.name !== "js/websocket.js" &&
+        f.name !== "js/telnet.js" &&
         /\bsocket\.send\s*\(/.test(f.code),
     ).map((f) => f.name);
     expect(offenders).toEqual([]);

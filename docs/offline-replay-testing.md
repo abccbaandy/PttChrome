@@ -332,7 +332,7 @@ CI 另開平行 job（`.github/workflows/test.yml`）：`test-e2e-offline-advers
 
 | Tier | 內容 | 跑哪些 profile | 理由 |
 |---|---|---|---|
-| A `ADVERSE_LAYOUT_SPECS` | 版面／座標敏感，但與圖片**成敗**無關（mouse、pusher_highlight、blacklist_quick_add、comment_merge、enhance、quick_search） | slow / broken / mixed | 斷言語義完全不變，三種都成立才算穩 |
+| A `ADVERSE_LAYOUT_SPECS` | 版面／座標敏感，但與圖片**成敗**無關（mouse、pusher_highlight、blacklist_quick_add、comment_merge、enhance）。清單裡的 spec 必須走 `bootOffline`／`installOfflineNetwork`，否則 profile 沒作用、三桶只是重跑（守護 `e2e_layout_settle.test.js`） | slow / broken / mixed | 斷言語義完全不變，三種都成立才算穩 |
 | B `ADVERSE_IMAGE_SPECS` | 主題就是圖片本身（lazy_preview_*、easy-reading） | 只跑 slow | 「圖有高度」是它們的前提；`broken` 下語義會變，那條路徑由 `image_load_conditions.offline.spec.js` 專門驗 |
 
 `image_load_conditions.offline.spec.js` 刻意**不在**逆境清單裡：它自己逐條指定 profile

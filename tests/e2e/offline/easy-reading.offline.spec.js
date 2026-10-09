@@ -110,6 +110,9 @@ test.describe('好读模式翻页（离线重放）', () => {
       const re =
         /(\.(?:jpe?g|png|gif|webp|bmp|apng|avif|mp4|webm|ogg)(?:$|[?#]))|imgur\.com|pbs\.twimg\.com|youtu\.?be|youtube\.com|meee\.com\.tw|clips\.twitch\.tv|flic\.kr|flickr\.com/i;
 
+      // 適用與否由**卷內文字**決定（產生測試時就知道），不看渲染結果：從 DOM 的
+      // a[href] 判斷的話，連結渲染一壞這條就變 skip，CI 照綠。
+      test.skip(!re.test(cassetteText(cassette)), '此 cassette 文章无可预览连结（内容相依）');
       await bootOffline(page, ptt);
       // 「有請求真的出去了」的證據：page 層看到的外部請求，必須每一筆都被離線
       // 規則接住（served）。少了路由就會有 URL 出現在這裡卻不在 served 裡。
@@ -122,7 +125,7 @@ test.describe('好读模式翻页（离线重放）', () => {
       const links = await page.evaluate(() =>
         Array.from(document.querySelectorAll('#mainContainer a[href]')).map((a) => a.getAttribute('href'))
       );
-      test.skip(!links.some((h) => re.test(h)), '此 cassette 文章无可预览连结（内容相依）');
+      expect(links.some((h) => re.test(h)), `卷內有可預覽連結，畫面上卻沒有：${JSON.stringify(links)}`).toBe(true);
 
       // 自动开图是**延迟载入**的（LazyInlinePreview：卷到附近才解析网址并挂上
       // <ImagePreviewer>，卷远了再卸掉释放已解码的点阵图）——超长文 287 张图全部
@@ -638,6 +641,9 @@ test.describe('掉页（typeahead 跳绘）侦测与自癒（离线重放）', (
       // 在 4700 行的超长文上，Home 重读就是使用者回报的「读到一半跳回第一页」。
       expect(state.gotos && state.gotos.length).toBeGreaterThan(0);
       expect(state.home || 0).toBe(0);
+      // harness 不管 N 是多少都補被吞那一頁 ⇒ 要核對 N 就是那一頁的起始行號
+      // （pmore `:N` → mf_goto(N-1)，頁頂＝第 N 行），否則自癒算錯行號照綠。
+      for (const g of state.gotoLanded) expect(g.n, `落地狀態列：${g.status}`).toBe(g.start);
 
       const rows = await readBbsLines(page);
       const joined = rows.join('\n');

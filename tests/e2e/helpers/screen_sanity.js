@@ -82,6 +82,9 @@ async function screenSanity(page, opts = {}) {
         rowsInBuf: source.length,
         domRows: lineEls.length,
         checked: 0,
+        // buf 有字、DOM 卻沒有對應 data-row 的列（整列漏畫）。逐列比對只走 DOM 有的列，
+        // 不另外查這個的話渲染器整列漏畫、只畫前幾列都會綠。
+        missingRows: [],
         textMismatch: [],
         gridMisaligned: [],
         decodeFail: [],
@@ -91,6 +94,13 @@ async function screenSanity(page, opts = {}) {
         // 轉碼表沒載入時 decode 檢查等於沒做 ⇒ 呼叫端要斷言它為 true，不能默默放行。
         decoderReady: !!b2u,
       };
+
+      const domRowSet = new Set(lineEls.map((el) => Number(el.getAttribute('data-row'))));
+      for (let row = 0; row < Math.min(source.length, maxRows); row++) {
+        if (!source[row] || domRowSet.has(row)) continue;
+        const text = norm(buf.getRowText(row, 0, cols, sourceArg));
+        if (text.trim()) report.missingRows.push({ row, text });
+      }
 
       for (const el of lineEls.slice(0, maxRows)) {
         const row = Number(el.getAttribute('data-row'));
@@ -154,7 +164,8 @@ function describeSanity(r, label) {
   return (
     `[${label}] pageState=${r.pageState} er=${r.er} listWindow=${r.listWindow} decoder=${r.decoderReady} ` +
     `checked=${r.checked}/${r.domRows} ` +
-    `overflowX=${r.horizontalOverflow} | textMismatch=${r.textMismatch.length} ${head(r.textMismatch)} ` +
+    `overflowX=${r.horizontalOverflow} | missing=${r.missingRows.length} ${head(r.missingRows)} ` +
+    `| textMismatch=${r.textMismatch.length} ${head(r.textMismatch)} ` +
     `| grid=${r.gridMisaligned.length} ${head(r.gridMisaligned)} ` +
     `| decodeFail=${r.decodeFail.length} ${head(r.decodeFail)} ` +
     `| orphan=${r.orphanHighBytes.length} ${head(r.orphanHighBytes)}`
@@ -168,6 +179,7 @@ function sanityViolations(r) {
   const out = [];
   if (r.decoderReady !== true) out.push('decoderNotReady');
   if (!(r.checked > 0)) out.push('noRowsChecked');
+  if (r.missingRows.length) out.push('missingRows');
   if (r.textMismatch.length) out.push('textMismatch');
   if (r.gridMisaligned.length) out.push('gridMisaligned');
   if (r.decodeFail.length) out.push('decodeFail');

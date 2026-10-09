@@ -73,9 +73,11 @@ describe("_createNotification（永遠不可 throw）", () => {
 
   test("建構子自己 throw（舊 Safari 等）→ 回 null，不炸", () => {
     installNotification({ throws: true });
-    expect(() =>
-      call("_createNotification", ctxFor(), { title: "t" })
-    ).not.toThrow();
+    let result;
+    expect(() => {
+      result = call("_createNotification", ctxFor(), { title: "t" });
+    }).not.toThrow();
+    expect(result).toBeNull();
   });
 
   test("有權限 → 建出通知，點擊會把瀏覽器切到本分頁", () => {

@@ -28,9 +28,16 @@ function stripComments(src) {
 }
 
 const files = fs
-  .readdirSync(UNIT_DIR)
+  .readdirSync(UNIT_DIR, { recursive: true })
   .filter((f) => /\.test\.jsx?$/.test(f))
+  // 本檔的守護自證裡就寫著這些樣本。
+  .filter((f) => f !== path.basename(__filename))
   .sort();
+
+// 縮排 > 0 ＝ 在某個 callback 裡；頂層 `await import(...)` 不受限（它跟一般 import
+// 一樣在收集階段就跑完了）。引號與樣板字串都算，有沒有 await 都算（`.then` 一樣在
+// case 裡載入），`vi.importActual` 同理。
+const IN_BODY_IMPORT = /^\s+.*\b(import|vi\.importActual)\(\s*['"`]\.\.\/\.\.\/src\//;
 
 test("test body 裡不得動態 import src/ 模組（載入成本會吃掉 case 的 timeout）", () => {
   const offenders = [];
@@ -38,12 +45,22 @@ test("test body 裡不得動態 import src/ 模組（載入成本會吃掉 case 
     const src = stripComments(fs.readFileSync(path.join(UNIT_DIR, file), "utf8"));
     if (/vi\.resetModules\(\)/.test(src)) continue; // 刻意重載，見上方豁免說明
     for (const line of src.split("\n")) {
-      // 縮排 > 0 ＝ 在某個 callback 裡；頂層 `await import(...)` 不受限（它跟
-      // 一般 import 一樣在收集階段就跑完了）。
-      if (/^\s+.*await import\(\s*['"]\.\.\/\.\.\/src\//.test(line)) {
+      if (IN_BODY_IMPORT.test(line)) {
         offenders.push(`${file}: ${line.trim()}`);
       }
     }
   }
   expect(offenders, `把這些 import 提到檔案層級：\n${offenders.join("\n")}`).toEqual([]);
+});
+
+test("規則抓得到各種寫法（守護自證）", () => {
+  for (const line of [
+    "    await import('../../src/js/a.js');",
+    "    await import(`../../src/js/a.js`);",
+    "    import('../../src/js/a.js').then((m) => m);",
+    "    await vi.importActual('../../src/js/a.js');",
+  ]) {
+    expect(IN_BODY_IMPORT.test(line), line).toBe(true);
+  }
+  expect(IN_BODY_IMPORT.test("const m = await import('../../src/js/a.js');")).toBe(false);
 });

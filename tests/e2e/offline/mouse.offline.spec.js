@@ -15,6 +15,7 @@ const {
   replayCassette,
   replayListCassette,
   waitScreenSettled,
+  offlineImageProfile,
 } = require('../helpers/replay');
 const {
   startCapture,
@@ -52,6 +53,14 @@ const article = findCassette('article');
 const longArticle = findCassettes('article').sort(
   (a, b) => (b.meta.pages || 0) - (a.meta.pages || 0)
 )[0];
+
+// 「現場不存在」只在逆境圖片情境（慢／404／混合）下成立：cache 情境圖片秒回、素材固定，
+// 現場一定在。從渲染結果決定 skip 的話，渲染一退化這條就變 skip、CI 照綠 ⇒ cache 下改成斷言。
+function requireScene(ok, why) {
+  if (ok) return;
+  if (offlineImageProfile() !== 'cache') test.skip(true, why);
+  expect(ok, `cache 情境下現場應該存在：${why}`).toBeTruthy();
+}
 
 const ARROW_LEFT = '\x1b[D';
 const PAGE_UP = '\x1b[5~';
@@ -396,7 +405,8 @@ test.describe('滑鼠（離線重放）', () => {
       if (el) el.setAttribute('data-e2e-preview-slot', '1');
       return !!el;
     });
-    test.skip(!slot, 'cassette 裡沒有內嵌預覽插槽');
+    // 插槽是佔位盒，跟圖片載不載得到無關；素材有圖片連結 ⇒ 一定要有。
+    expect(slot, '好讀長頁沒有任何內嵌預覽插槽').toBe(true);
     await scrollIntoViewStable(page, '[data-e2e-preview-slot]');
     const img = await page.evaluate(() => {
       const el = Array.from(
@@ -407,7 +417,7 @@ test.describe('滑鼠（離線重放）', () => {
       return true;
     });
     // 逆境桶（404／慢）下圖不會畫出來 ⇒ 沒有可點的圖，這條的現場不存在。
-    test.skip(!img, '這個圖片情境下預覽圖沒有畫出來');
+    requireScene(img, '這個圖片情境下預覽圖沒有畫出來');
 
     const { action } = await hoverElement(page, '[data-e2e-preview-img]');
     // 前提：漏判成終端機點擊時**看得到後果**（捲動或送鍵）。翻頁要往有空間的方向。
@@ -465,7 +475,7 @@ test.describe('滑鼠（離線重放）', () => {
     await waitPreviewsSettled(page);
 
     const spot = await seekWidePadding(page);
-    test.skip(!spot, 'cassette 裡沒有左右留白寬於退出帶的內嵌圖');
+    requireScene(!!spot, 'cassette 裡沒有左右留白寬於退出帶的內嵌圖');
 
     // 座標在圖片之外、退出帶之內。改動前 elementFromPoint 會回 .inlinePreviewSlot
     // （它在 helpers/layout.js 的 OVERRIDING_SEL 裡）⇒ 這一行就先紅。
@@ -974,7 +984,8 @@ test.describe('滑鼠（離線重放）', () => {
         const r = a.getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
       });
-      test.skip(!key, '這一幀沒有功能鍵按鈕');
+      // 素材固定 ⇒ 功能鍵按鈕一定在；找不到是渲染壞了。
+      expect(key, '這一幀沒有功能鍵按鈕').toBeTruthy();
 
       const sent = await clickAt(page, key.x, key.y);
       // 送出去的是那顆按鍵本身，翻頁序列一個都不能混進去。
@@ -1150,40 +1161,8 @@ test.describe('滑鼠（離線重放）', () => {
       expect(afterHome.mode).toBe('buffer');
     });
 
-    // 風險項：好讀長頁是捲動視口，右緣有瀏覽器捲軸 —— 拖它不可以被當成翻頁點擊。
-    test('拖捲軸不會翻頁', async ({ page }) => {
-      test.setTimeout(90000);
-      await bootArticle(page);
-      await waitPreviewsSettled(page);
-
-      const bar = await page.evaluate(() => {
-        const m = document.querySelector('.main');
-        const r = m.getBoundingClientRect();
-        const w = r.width - m.clientWidth; // 捲軸寬度（overlay 捲軸為 0）
-        return w > 0 ? { x: r.right - w / 2, top: r.top + 20 } : null;
-      });
-      test.skip(!bar, '這個環境的捲軸是 overlay（不佔寬度）');
-
-      await page.evaluate(() => {
-        document.querySelector('.main').scrollTop = 0;
-      });
-      // 歸零是一次捲動 ⇒ 版面還會再動一輪（同上一條測試的理由）。
-      await waitPreviewsSettled(page);
-      await startCapture(page);
-      await page.mouse.move(bar.x, bar.top);
-      await page.mouse.down();
-      await page.mouse.move(bar.x, bar.top + 120, { steps: 5 });
-      await page.mouse.up();
-      // 先等**拖曳真的把頁面捲起來**，再斷言沒送 byte。固定 sleep 除了碰運氣之外
-      // 還有一個更糟的失效模式：拖曳根本沒生效時「沒送 byte」也會綠。
-      await expect
-        .poll(() => page.evaluate(() => document.querySelector('.main').scrollTop), {
-          timeout: 5000,
-        })
-        .toBeGreaterThan(0);
-      // 拖捲軸就只是捲動：不得送出任何 byte。
-      expect(await takeCapture(page)).toBe('');
-    });
+    // 「拖捲軸不會翻頁」在 mouse_scrollbar.offline.spec.js（要拿掉 --hide-scrollbars，
+    // 那是 worker 級設定，只能放檔案頂層）。
   });
 });
 

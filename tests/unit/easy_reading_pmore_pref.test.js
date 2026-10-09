@@ -34,8 +34,10 @@ const PREF_OPTIONS =
 const PREF_PROMPT =
   " ◆ 請調整設定 (1-3 可直接選定，\\可切換) 或其它任意鍵結束。     [按任意鍵繼續]  ";
 // 一般 in-post prompt（X 推文）：不是設定頁，但一樣走 functionMode。
-const PUSH_PROMPT =
-  "  這是一篇好文章嗎? [1.推薦] 2.噓文 3.註解 4.取消 [1]:                          ";
+// 字串照 pttbbs mbbsd/bbs.c#recommend：move(b_lines, 0) 後印「您覺得這篇文章 」＋
+// ctype_long（"值得推薦"／"給它噓聲"／"只加→註解"）＋「[1]? 」，游標停在 prompt 尾。
+const PUSH_PROMPT = "您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ";
+const PUSH_PROMPT_CUR_X = 55; // 上面字串的顯示寬（全形 2 格）
 
 function makeHarness() {
   const sent = [];
@@ -144,10 +146,16 @@ describe("離開 pmore 設定頁 → 整篇重讀", () => {
     const h = makeHarness();
     h.rows.fill("");
     h.rows[23] = PUSH_PROMPT;
-    h.buf.pageState = 5;
+    // 真實畫面：推文 prompt 不是 pass 畫面（無「請按任意鍵繼續」、游標不在右下角），
+    // 末列也不是狀態列 ⇒ setPageState 沒有分支會改寫 ⇒ 沿用文章的 3（見 term_buf.js）。
+    h.buf.pageState = 3;
+    h.buf.cur_y = ROWS - 1;
+    h.buf.cur_x = PUSH_PROMPT_CUR_X;
     settle(h);
+    expect(h.er._functionMode).toBe(true); // 非狀態列 ⇒ 'stay'，仍在鏡像原生
     expect(h.er._pmorePrefSeen).toBe(false);
     showArticle(h);
+    h.buf.cur_x = COLS - 1;
     settle(h);
     expect(h.er._functionMode).toBe(false);
     expect(h.sent).toEqual([]);

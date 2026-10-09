@@ -16,7 +16,7 @@
 //     React 選單是否真的開出來，那是三個檔案協作的結果。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
+const { findCassette, bootOffline, replayCassette, offlineImageProfile } = require('../helpers/replay');
 const {
   recordContextMenu,
   lastContextMenu,
@@ -171,7 +171,9 @@ test.describe('圖片灰階鈕與原生右鍵選單（離線重放）', () => {
         img: { x: Math.round(ir.left + ir.width / 2), y },
       };
     }, SLOT_SEL);
-    test.skip(!spots, '這張圖寬到沒有左右留白');
+    // 圖寬由素材決定（cache 情境是本地 fixture，決定性）⇒ 只有逆境情境才可能沒現場。
+    if (!spots && offlineImageProfile() !== 'cache') test.skip(true, '這張圖寬到沒有左右留白');
+    expect(spots, '這張圖寬到沒有左右留白').toBeTruthy();
 
     await page.mouse.move(spots.pad.x, spots.pad.y);
     expect(

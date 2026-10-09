@@ -16,18 +16,20 @@
 // 純靜態掃描 ⇒ 放 unit（比照 tests/unit/e2e_layout_settle.test.js）。
 import fs from "fs";
 import path from "path";
+import { offlineSpecFiles } from "../../scripts/e2e-project-files.mjs";
 
 const ROOT = path.join(__dirname, "..", "..");
 const OFFLINE_DIR = path.join(ROOT, "tests", "e2e", "offline");
 
-const offlineSpecs = fs
-  .readdirSync(OFFLINE_DIR)
-  .filter((f) => f.endsWith(".spec.js"))
-  .sort();
+// 範圍取自 playwright.config.js 的 offline* project（遞迴），見 scripts/e2e-project-files.mjs。
+const offlineSpecs = offlineSpecFiles();
 
 // 固定時間等待的三種寫法：Playwright 的 waitForTimeout、page.evaluate 裡自己包的
 // setTimeout Promise、自訂 sleep() 的定義（定義處標一次即可，呼叫處不再掃）。
-const SLEEP = /\bwaitForTimeout\(|setTimeout\(\s*(r|res|resolve)\s*,|\bconst sleep\s*=/;
+// setTimeout 包 Promise 的寫法很多（`setTimeout(r, ms)`、`setTimeout(() => r(), ms)`、
+// `setTimeout(done, ms)`）：只要回呼是 resolve 類名字就算。
+const SLEEP =
+  /\bwaitForTimeout\(|setTimeout\(\s*(\(\)\s*=>\s*)?(r|res|resolve|done|ok)\b\s*(\(\s*\))?\s*,|\bconst sleep\s*=/;
 
 // 回傳沒有 `sleep-ok:` 標記的固定時間等待（1-based 行號）。
 // 標記可在同一行，或在緊鄰上方、連續的 `//` 註解區塊裡。

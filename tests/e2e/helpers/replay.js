@@ -228,6 +228,7 @@ async function aiTaskStats(page) {
 //     （PageDown == mf_forward(dispedlines-1) ⇒ S' == E）被吞那一页的起始行号**就是**
 //     上一页的结束行号，所以「行号 N」与「被吞的 step」一一对应。P1 若被推翻，这个
 //     harness 会绿而真实链路会坏。
+//   opts.allowIncomplete=true：30 秒內沒餵完也不丟錯（只印 log）。預設會丟錯。
 //   window.__replay.sent：本次重放中 client 送出的所有 bytes（含自动翻页键），
 //     window.__replay.sends：[{data, sig}]，sig = 送出当下所在页的状态列签章，
 //     供「同一页不得送两次 PageDown」这类断言用。
@@ -280,12 +281,29 @@ async function replayCassette(page, cassette, opts = {}) {
         if (idx >= steps.length || steps[idx].on === 'end') window.__replay.done = true;
       };
       const dropped = new Set(dropSteps);
+      // 錄到的 recv 是 pfterm 的**差分**（只送跟上一幀不同的 cell），只有照錄製順序
+      // 餵才會得到正確畫面。跳號（dropSteps）或倒回（goto／Home）時直接餵那一步的差分
+      // ＝套在錯的底圖上 ⇒ 畫面是兩頁的混合（stock-huang 實錄：自癒落地幀內容對不上，
+      // 重送 goto 後停住，舊 harness 不丟錯所以照綠）。真實 pfterm 送的差分永遠相對
+      // client 手上的畫面，所以這裡改成「清屏＋從頭重播到該步」一次餵完：parser 同步
+      // 吃完，渲染有 30ms debounce，中間的頁不會被畫出來 ⇒ 等同 server 整頁重繪。
+      const repaintTo = (k) =>
+        '\x1b[H\x1b[2J' + steps.slice(0, k + 1).map((s) => atob(s.recv)).join('');
+      let outOfOrder = false;
       const feed = () => {
         // typeahead 跳绘（P4）：被标记的 step 整个画面不送，直接跳到下一个 step 的
         // 画面 —— server 端翻过去了，但中间那页 client 永远收不到。
         while (dropped.has(idx) && idx + 1 < steps.length) {
           window.__replay.dropped = (window.__replay.dropped || 0) + 1;
           idx++;
+          outOfOrder = true;
+        }
+        if (outOfOrder) {
+          outOfOrder = false;
+          app.onData(repaintTo(idx++));
+          window.__replay.fed = idx;
+          markDoneIfPaged();
+          return;
         }
         const step = steps[idx++];
         const bytes = atob(step.recv); // atob → latin1 bytes string（每 char = 1 byte）
@@ -353,6 +371,7 @@ async function replayCassette(page, cassette, opts = {}) {
           window.__replay.home = (window.__replay.home || 0) + 1;
           dropped.clear(); // 被吞的那页这次会正常送达
           idx = 0;
+          outOfOrder = true;
           while (idx < steps.length && steps[idx].on === 'start') feed();
           return ok;
         }
@@ -363,8 +382,17 @@ async function replayCassette(page, cassette, opts = {}) {
           window.__replay.gotos.push(Number(goto[1]));
           const first = dropSteps.length ? Math.min.apply(null, dropSteps) : idx;
           dropped.clear(); // 这次不再吞
+          // 倒回的這一步要整頁重繪：client 手上是跳號後的畫面，不是錄製時的前一頁。
           idx = first;
+          outOfOrder = true;
           feed();
+          // 記下補回那一頁的起始行號（parser 同步寫進 buf），讓測試核對 N：harness
+          // 不管 N 是多少都補同一頁，不核對的話自癒算錯行號照綠。
+          const status = app.buf.getRowText(app.buf.rows - 1, 0, app.buf.cols);
+          // getRowText 在這裡回的是 Big5 原始位元組（未轉 Unicode），只比 ASCII 的「S~E」。
+          const m = / 0*(\d+)~0*(\d+) /.exec(status);
+          window.__replay.gotoLanded = window.__replay.gotoLanded || [];
+          window.__replay.gotoLanded.push({ n: Number(goto[1]), start: m ? Number(m[1]) : null, status });
           return ok;
         }
         if (idx < steps.length) {
@@ -386,14 +414,20 @@ async function replayCassette(page, cassette, opts = {}) {
     { cassette, easyReading, splitFrames, dropSteps, answerHome, answerGoto }
   );
 
-  // 等所有 step 喂完（逐页翻页跨 timer tick 推进）；逾时不抛，交给断言抓问题。
+  // 等所有 step 喂完（逐页翻页跨 timer tick 推进）。餵不完一律丟錯：好讀自動翻頁
+  // 壞掉時重放會停在第一頁，之後只驗「當下畫面」的斷言照綠（31 支呼叫端只有一支
+  // 自己查 fed===total）。刻意只要部分餵完的呼叫端傳 opts.allowIncomplete。
   try {
     await page.waitForFunction(() => window.__replay && window.__replay.done, null, {
       timeout: 30000,
     });
   } catch (e) {
     const st = await page.evaluate(() => window.__replay).catch(() => null);
-    console.log('replayCassette 未喂完所有 step（可能 cassette 与当前逻辑不符）：', JSON.stringify(st));
+    const brief = st && { fed: st.fed, total: st.total, dropped: st.dropped, gotos: st.gotos };
+    if (!opts.allowIncomplete) {
+      throw new Error('replayCassette 未餵完所有 step（好讀自動翻頁沒推進？）：' + JSON.stringify(brief));
+    }
+    console.log('replayCassette 未餵完所有 step（allowIncomplete）：', JSON.stringify(brief));
   }
   // 让最后一页 settle/render flush：渲染在 notify 里同步完成（无 rAF），好读的
   // 后续反应挂在 settle 上 ⇒ 两个计时器都清空才算这一页真的落地。

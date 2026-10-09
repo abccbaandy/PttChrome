@@ -208,7 +208,8 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
     await waitPreviewsSettled(page);
     const pusher = await markPusherRow(page);
-    test.skip(!pusher, '這份 cassette 沒有推文列');
+    // 素材固定且有推文（golden commentCount > 0）⇒ 找不到推文列是渲染壞了，不是沒現場。
+    expect(pusher, '找不到推文列').toBeTruthy();
 
     const { collapsed, collapsedAfter, pointerType } = await longPress(page);
     expect(pointerType).toBe('touch');
@@ -232,7 +233,8 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
     await waitPreviewsSettled(page);
     const pusher = await markPusherRow(page);
-    test.skip(!pusher, '這份 cassette 沒有推文列');
+    // 素材固定且有推文（golden commentCount > 0）⇒ 找不到推文列是渲染壞了，不是沒現場。
+    expect(pusher, '找不到推文列').toBeTruthy();
 
     // 走底部工具列「更多」裡的開關（真的 UI 入口），不是直接改 App 狀態。
     await enableSelectMode(page);
@@ -258,7 +260,8 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
     await waitPreviewsSettled(page);
     const pusher = await markPusherRow(page);
-    test.skip(!pusher, '這份 cassette 沒有推文列');
+    // 素材固定且有推文（golden commentCount > 0）⇒ 找不到推文列是渲染壞了，不是沒現場。
+    expect(pusher, '找不到推文列').toBeTruthy();
 
     await enableSelectMode(page);
 
@@ -287,7 +290,8 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
     await waitPreviewsSettled(page);
     const pusher = await markPusherRow(page);
-    test.skip(!pusher, '這份 cassette 沒有推文列');
+    // 素材固定且有推文（golden commentCount > 0）⇒ 找不到推文列是渲染壞了，不是沒現場。
+    expect(pusher, '找不到推文列').toBeTruthy();
 
     // 先選一段字（使用者已選取），再用真的滑鼠右鍵點在選取上。
     const pt = await targetPoint(page);
@@ -332,7 +336,7 @@ test.describe('手機推文卡片', () => {
         };
       })
     );
-    test.skip(cards.length === 0, '這份 cassette 沒有推文列');
+    expect(cards.length, '找不到推文卡片').toBeGreaterThan(0);
     for (const c of cards) {
       expect(c.time).toMatch(/\d{1,2}\/\d{2} \d{2}:\d{2}/);
       // 時間的垂直中線落在 id 那一行之內 ⇒ 同一行（字級不同，比 top 會差幾 px）。

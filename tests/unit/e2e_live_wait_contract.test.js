@@ -18,15 +18,14 @@
 // 純靜態掃描，不連網、不開瀏覽器（比照 e2e_login_budget / e2e_layout_settle）。
 import fs from "fs";
 import path from "path";
+import { e2eProjectFiles } from "../../scripts/e2e-project-files.mjs";
 
 const ROOT = path.join(__dirname, "..", "..");
 const E2E_DIR = path.join(ROOT, "tests", "e2e");
 const HELPERS_DIR = path.join(E2E_DIR, "helpers");
 
-const liveSpecs = fs
-  .readdirSync(E2E_DIR)
-  .filter((f) => f.endsWith(".spec.js"))
-  .sort();
+// 範圍取自 playwright.config.js 的 live project（遞迴），見 scripts/e2e-project-files.mjs。
+const liveSpecs = e2eProjectFiles("live");
 
 // 只掃**程式碼**：這些檔案的註解本來就在談 waitForTimeout / scrollTop（那正是規範
 // 的內容），連註解一起掃會被自己的說明文字誤判。
@@ -108,7 +107,10 @@ describe("seekMountedPreview（live/offline 共用的行內預覽 seek）", () =
   // （imgur stall，docs/imgur-latency-research.md）加上「產品端沒有圖片載入 timeout」
   // ⇒ 讀取指示器可以永遠留著 ⇒ settle 必逾時，只是換一種假紅。
   test("它不呼叫 waitPreviewsSettled（那是 offline 專用的終局判定）", () => {
-    const body = src.slice(src.indexOf("async function seekMountedPreview"));
+    // 找不到定義（改名／改箭頭函式）時 indexOf=-1 ⇒ slice(-1) 只剩最後一個字元 ⇒ 恆綠。
+    const start = src.indexOf("async function seekMountedPreview");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const body = src.slice(start);
     const end = body.indexOf("\nmodule.exports");
     expect(body.slice(0, end > 0 ? end : undefined)).not.toContain("waitPreviewsSettled");
   });

@@ -19,13 +19,11 @@
 // 純靜態掃描，不連網、不開瀏覽器，所以放 unit（e2e 素材不穩，見 CLAUDE.md 測試段）。
 import fs from "fs";
 import path from "path";
+import { e2eProjectFiles, E2E_DIR } from "../../scripts/e2e-project-files.mjs";
 
-const E2E_DIR = path.join(__dirname, "..", "e2e");
-
-const liveSpecs = fs
-  .readdirSync(E2E_DIR)
-  .filter((f) => f.endsWith(".spec.js"))
-  .sort();
+// 範圍取自 playwright.config.js 的 live project（遞迴、含 .test.js／.spec.mjs）：
+// 自己 readdirSync 頂層會漏掉子目錄的 spec，而 Playwright 照樣會在 live 跑它。
+const liveSpecs = e2eProjectFiles("live");
 
 // 只掃**程式碼**：這些檔案的註解本來就在談 login() 與 page.goto('/')（那正是規範的
 // 內容），連註解一起掃會被自己的說明文字誤判。
@@ -55,7 +53,8 @@ describe("live e2e 登入預算", () => {
   });
 
   test("沒有任何 live spec 自己呼叫 login()", () => {
-    const offenders = liveSpecs.filter((f) => /\blogin\s*\(/.test(read(f)));
+    // 也擋改名呼叫（`const { login: doLogin } = …` → `doLogin(`）：任何 *login( 都算。
+    const offenders = liveSpecs.filter((f) => /\w*login\s*\(/i.test(read(f)));
     expect(offenders).toEqual([]);
   });
 

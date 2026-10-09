@@ -13,8 +13,10 @@ import { isBrowserTestSource } from './scripts/unit-browser-marker.mjs';
 // 其餘跑 node（unit project）。以檔頭標記分流而不是檔名，是為了不讓上百個檔改名
 // （docs 裡大量 `<file>#…` pointer 會全斷）。守護 tests/unit/unit_environment.test.js。
 const UNIT_DIR = 'tests/unit';
+// 遞迴：unit project 的 include 是 `tests/unit/**`，只看頂層的話子目錄的 DOM 測試會被丟到 node。
 const browserFiles = fs
-  .readdirSync(UNIT_DIR)
+  .readdirSync(UNIT_DIR, { recursive: true })
+  .map((f) => f.split('\\').join('/'))
   .filter((f) => /\.test\.jsx?$/.test(f))
   .filter((f) => isBrowserTestSource(fs.readFileSync(`${UNIT_DIR}/${f}`, 'utf8')))
   .map((f) => `${UNIT_DIR}/${f}`);

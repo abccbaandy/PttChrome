@@ -298,6 +298,10 @@ describe("好讀累積頁增量重算：成本是 O(新增列) 不是 O(文章)"
     // 但遠低於「整篇重算」的 1022。舊 code 會是 1000+。
     expect(counters.rowToText).toBeLessThan(80);
     expect(counters.rowRender).toBeLessThan(80);
+    // 正向對照：新增的那頁一定要被標註／render 到。少了這條，vi.mock 沒接上（計數
+    // 恆為 0）時上面兩條「小於 80」照綠。
+    expect(counters.rowToText).toBeGreaterThan(0);
+    expect(counters.rowRender).toBeGreaterThan(0);
   });
 
   // REGRESSION：內文跨行連結（body_wrap.applyWrapUrlRange）每一幀都產生新的

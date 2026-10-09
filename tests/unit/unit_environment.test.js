@@ -16,8 +16,10 @@ const UNIT_DIR = __dirname;
 const ROOT = path.join(UNIT_DIR, "..", "..");
 const DOM_EMULATORS = ["jsdom", "happy-dom"];
 
+// 遞迴：vitest 的 include 是 `tests/unit/**`，子目錄的測試一樣會跑，守護範圍要一致。
 const files = fs
-  .readdirSync(UNIT_DIR)
+  .readdirSync(UNIT_DIR, { recursive: true })
+  .map((f) => f.split(path.sep).join("/"))
   .filter((f) => /\.test\.jsx?$/.test(f))
   // 本檔自己就含這些字串（當作比對目標）。
   .filter((f) => f !== path.basename(__filename))
