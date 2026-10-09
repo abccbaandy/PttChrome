@@ -66,10 +66,30 @@ const centerOf = (page, selector) =>
     return { x: r.left + r.width / 2, y: r.top + r.height / 2, dpr: devicePixelRatio };
   }, selector);
 
-// 真 tap（OS 層 `input tap`）。需先 recordTouches。
-async function tap(page, device, selector) {
-  const pt = await centerOf(page, selector);
-  expect(pt, `${selector} 不在畫面上`).not.toBeNull();
+// 終端機上一個「點了不會做任何事」的點：可視範圍內、底下沒有連結／按鈕的空白列。
+// **不可以點 #mainContainer 中心**：cassette 的 24 列畫在上半部，中心常剛好落在文章網址
+// 連結上 ⇒ 開新分頁（實測：之後的返回鍵是在關那個分頁，不是被測的 sentinel）。
+const blankTerminalPoint = (page) =>
+  page.evaluate(() => {
+    const main = document.getElementById('mainContainer').getBoundingClientRect();
+    const bar = document.querySelector('.mobileToolbarBar');
+    const bottom = Math.min(main.bottom, bar ? bar.getBoundingClientRect().top : innerHeight) - 24;
+    for (let y = bottom; y > main.top + 8; y -= 8) {
+      const x = main.left + 24;
+      const mc = document.getElementById('mainContainer');
+      const el = document.elementFromPoint(x, y);
+      if (!el || !mc.contains(el)) continue;
+      if (el.closest('a, button, [link="true"], [data-own-control], img')) continue;
+      if (el !== mc && (el.textContent || '').trim()) continue;
+      return { x, y, dpr: devicePixelRatio };
+    }
+    return null;
+  });
+
+// 真 tap（OS 層 `input tap`）。target：selector（點元素中心）或 'blank-terminal'。需先 recordTouches。
+async function tap(page, device, target) {
+  const pt = target === 'blank-terminal' ? await blankTerminalPoint(page) : await centerOf(page, target);
+  expect(pt, `${target} 不在畫面上`).not.toBeNull();
   const before = await page.evaluate(() => window.__down.filter((d) => d.type === 'touch').length);
   const origin = await webviewOrigin(device);
   const p = toDevicePoint(origin, pt.dpr, pt);

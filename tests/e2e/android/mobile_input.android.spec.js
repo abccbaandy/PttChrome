@@ -60,7 +60,7 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
     await recordTouches(page);
     expect(await keyboardCover(page)).toBe(0);
 
-    await tap(page, device, '#mainContainer');
+    await tap(page, device, 'blank-terminal');
     await tap(page, device, byKey('__keys'));
     await expect(page.locator('#mobileKeypad')).toBeVisible();
     await collectSent(page);
@@ -119,7 +119,7 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
     await openScreen(page, PREFS);
     await recordTouches(page);
     // sentinel 等第一次 user activation 才疊（History Manipulation Intervention）。
-    await tap(page, device, '#mainContainer');
+    await tap(page, device, 'blank-terminal');
     await waitOnSentinel(page);
     await page.evaluate(() => {
       window.__sameDocument = true;
