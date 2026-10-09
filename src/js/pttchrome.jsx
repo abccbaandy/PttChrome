@@ -50,8 +50,9 @@ import { navKeyAllowed, navKeyBlockReason } from './nav_key_gate';
 import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
-import { inputModeFor, isListCardGapTarget, menuCardTargetRow, isMobileEnv, keyboardInset, listRowSpan, mobileTermGeometry, MOBILE_TOOLBAR_PX } from './mobile_layout';
+import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
+import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown } from './mobile_busy';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
@@ -272,7 +273,13 @@ export const App = function() {
   //   _screenContext  ：底部工具列該顯示哪些按鈕（mobile_toolbar.js），screenSettled 時重算。
   this._screenContext = EMPTY_TOOLBAR_CONTEXT;
   this._screenContextListeners = new Set();
-  this.buf.addEventListener('screenSettled', () => this._refreshScreenContext());
+  this.buf.addEventListener('screenSettled', () => {
+    this._refreshScreenContext();
+    this._busyEvent({ type: 'settled' });
+  });
+  //   _busy           ：手機 App Bar 的等待進度條（mobile_busy.js），唯一寫入點 _busyEvent。
+  this._busy = BUSY_IDLE;
+  this._busyListeners = new Set();
 
   this.waterball = { userId: '', message: '' };
   this.appFocused = true;
@@ -459,6 +466,8 @@ App.prototype._attachConn = function(conn) {
   this.conn = conn;
   conn.onDataSent = function(bytes) {
     self.boardNoteSkip.noteSent(bytes);
+    // 手機等待進度條：只有「我們的 UI 剛被按」之後的送出才算（mobile_busy.js）。
+    if (self.mobile) self._busyEvent({ type: 'sent' });
   };
   this.conn.addEventListener('open', this.onConnect.bind(this));
   this.conn.addEventListener('close', this.onClose.bind(this));
@@ -732,6 +741,61 @@ App.prototype.setMobileKeysPanelInset = function(px) {
   this._onVisualViewport();
 };
 
+// 我們自己的手機 UI 剛被按（底部導覽、按鍵面板、選單大按鈕、列表卡片）。接著
+// BUSY_ACTION_WINDOW_MS 內真的送出 byte 才進入等待（mobile_busy.js）。
+App.prototype.noteUserAction = function() {
+  if (this.mobile) this._busyEvent({ type: 'action' });
+};
+
+// 進度條狀態的唯一寫入點。計時器只在進入 pending 時排（顯示延遲、逾時各一個）。
+App.prototype._busyEvent = function(ev) {
+  if (!this._busyListeners) return; // 測試以 Object.create 造的 App
+  var now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  var prev = this._busy;
+  var next = busyNext(prev, Object.assign({ t: now }, ev));
+  this._busy = next;
+  if (next.phase === 'pending' && prev.phase !== 'pending') {
+    var self = this;
+    setTimeout(function() { self._busyEvent({ type: 'tick' }); }, BUSY_SHOW_DELAY_MS);
+    setTimeout(function() { self._busyEvent({ type: 'tick' }); }, BUSY_TIMEOUT_MS);
+  }
+  var shown = isBusyShown(next);
+  if (shown !== isBusyShown(prev))
+    this._busyListeners.forEach(function(fn) { fn(shown); });
+};
+
+// App Bar 訂閱進度條顯示與否 fn(shown)；回傳取消訂閱。
+App.prototype.onBusyChange = function(fn) {
+  this._busyListeners.add(fn);
+  fn(isBusyShown(this._busy));
+  return () => this._busyListeners.delete(fn);
+};
+
+// 手機 bottom sheet（components/MobileSheet）開著時登記自己的關閉函式；回傳取消登記。
+// 系統返回（history_back_guard）先問 dismissTopSheet：有 sheet 開著就收最上面那個、
+// 回 true（這一次返回被 sheet 用掉，不送 ←）。Android 原生 App 的返回語意。
+App.prototype.registerSheetDismiss = function(fn) {
+  if (!this._sheetDismissers) this._sheetDismissers = [];
+  var list = this._sheetDismissers;
+  list.push(fn);
+  return function() {
+    var i = list.lastIndexOf(fn);
+    if (i >= 0) list.splice(i, 1);
+  };
+};
+
+App.prototype.dismissTopSheet = function() {
+  var list = this._sheetDismissers;
+  if (!list || !list.length) return false;
+  var fn = list[list.length - 1];
+  try {
+    fn();
+  } catch (e) {
+    // 關閉函式出錯也算用掉這次返回：不能讓返回落到送 ← 去動 PTT 畫面。
+  }
+  return true;
+};
+
 // 工具列訂閱「這個畫面能做什麼」fn(context)；回傳取消訂閱。訂閱當下先回一次現值。
 App.prototype.onScreenContextChange = function(fn) {
   this._screenContextListeners.add(fn);
@@ -800,7 +864,7 @@ App.prototype.toggleSoftKeyboard = function() {
 //      「看過出現」是必要條件：剛按下鍵盤鈕的那幾幀鍵盤還沒升起，inset 也是 0。
 App.prototype._onVisualViewport = function() {
   var vv = window.visualViewport;
-  var inset = vv ? keyboardInset({
+  var vvFacts = vv ? {
     mobile: this.mobile,
     softKeyboard: this.softKeyboard,
     layoutHeight: document.documentElement.clientHeight,
@@ -808,7 +872,13 @@ App.prototype._onVisualViewport = function() {
     vvOffsetTop: vv.offsetTop,
     vvScale: vv.scale,
     hostInset: androidImeInset()
-  }) : 0;
+  } : null;
+  var inset = vvFacts ? keyboardInset(vvFacts) : 0;
+  // 手機 bottom sheet 的輸入框（搜尋）叫出的鍵盤：只讓浮層讓位（CSS 變數），
+  // 終端機幾何不動。見 mobile_layout.overlayKeyboardInset。
+  document.documentElement.style.setProperty(
+    '--vv-kb-inset', (vvFacts ? overlayKeyboardInset(vvFacts) : 0) + 'px'
+  );
   if (inset > 0) {
     this._keyboardSeen = true;
   } else if (this._keyboardSeen && this.softKeyboard) {
@@ -817,13 +887,47 @@ App.prototype._onVisualViewport = function() {
     this._applyInputMode();
     this._emitMobileState();
   }
-  // --kb-inset 只算軟鍵盤（工具列靠它浮在鍵盤上）。終端機的底部 inset 另加常駐的
-  // 底部工具列與展開中的按鍵面板：終端機只排在它們上面（term_size.termLayoutOffsets）。
+  // --kb-inset 只算軟鍵盤（工具列靠它浮在鍵盤上）。終端機的上／下 inset 另加常駐的
+  // App Bar、底部工具列、展開中的按鍵面板與 safe-area：終端機只排在它們中間
+  // （mobile_layout.mobileChromeInsets → term_size.termLayoutOffsets）。
   document.documentElement.style.setProperty('--kb-inset', inset + 'px');
+  var safe = this.mobile ? this._readSafeInsets() : { top: 0, bottom: 0 };
+  var chrome = mobileChromeInsets({
+    kb: inset,
+    keysPanel: this._keysPanelInset || 0,
+    safeTop: safe.top,
+    safeBottom: safe.bottom
+  });
+  document.documentElement.style.setProperty('--safe-top', chrome.safeTop + 'px');
+  document.documentElement.style.setProperty('--safe-bottom', chrome.safeBottom + 'px');
+  if (this.view && this.view.setTopInset)
+    this.view.setTopInset(this.mobile ? chrome.top : 0);
   if (this.view && this.view.setKeyboardInset)
-    this.view.setKeyboardInset(
-      inset + (this.mobile ? MOBILE_TOOLBAR_PX + (this._keysPanelInset || 0) : 0)
-    );
+    this.view.setKeyboardInset(this.mobile ? chrome.bottom : inset);
+};
+
+// 瀏海／手勢列的 safe-area（index.html 的 viewport-fit=cover 才會不是 0）。JS 讀不到
+// env()，用一個不可見的探針元素把它變成 padding 再量。Android APK 殼自己對 WebView 做了
+// systemBars padding（MainActivity），那裡的 env() 恆為 0 ⇒ 不會重複讓位。
+App.prototype._readSafeInsets = function() {
+  try {
+    var p = this._safeProbe;
+    if (!p) {
+      p = this._safeProbe = document.createElement('div');
+      p.setAttribute('aria-hidden', 'true');
+      p.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;' +
+        'pointer-events:none;padding-top:env(safe-area-inset-top,0px);' +
+        'padding-bottom:env(safe-area-inset-bottom,0px)';
+    }
+    if (!p.isConnected) document.body.appendChild(p);
+    var cs = getComputedStyle(p);
+    return {
+      top: parseFloat(cs.paddingTop) || 0,
+      bottom: parseFloat(cs.paddingBottom) || 0
+    };
+  } catch (e) {
+    return { top: 0, bottom: 0 };
+  }
 };
 
 // modalShown 是終端機鍵盤／焦點的總閘門（讀取點散在 term_view.js 的 shouldAcceptInput
@@ -1380,11 +1484,16 @@ App.prototype.clientToPos = function(cX, cY) {
   var listTop = listSession ? this._listScrollTop() : null;
   if (listTop != null) {
     var listHeaderRows = listSession.headerRows();
-    var bodyTop = listHeaderRows * rowH;
-    var bodyRows = this.buf.rows - 4;
+    // 視口的位置與高度（列）：桌機＝header 下面 rows-4 列；手機卡片＝header／footer
+    // 收起、從頂端起整個高（mobile_layout.listViewportGeometry，與 term_view 同源）。
+    var vg = listViewportGeometry({
+      rows: this.buf.rows, headerRows: listHeaderRows, cards: !!this.view.listCards
+    });
+    var bodyTop = vg.bodyTopRows * rowH;
+    var bodyRows = vg.viewportRows;
     if (y >= bodyTop && y < bodyTop + bodyRows * rowH) {
       // 手機卡片（view.listCards）：一筆佔 LIST_CARD_ROWS 列（固定高，見
-      // render/list_card.js）⇒ 同一條算式、除數換成卡片高。視口高度仍是 bodyRows 列。
+      // render/list_card.js）⇒ 同一條算式、除數換成卡片高。
       var itemH = rowH * listRowSpan(!!this.view.listCards);
       var bodyIdx = Math.floor(
         (y - bodyTop + listTop * this.view.scaleY) / itemH
@@ -1392,8 +1501,9 @@ App.prototype.clientToPos = function(cX, cY) {
       if (bodyIdx < 0) bodyIdx = 0;
       return { col: col, row: listHeaderRows + bodyIdx };
     }
-    // footer：全序列渲染後它的列號 ＝ 這一幀 lines 的最後一個 index。
-    if (y >= bodyTop + bodyRows * rowH) {
+    // footer：全序列渲染後它的列號 ＝ 這一幀 lines 的最後一個 index。手機卡片的
+    // footer 是收起的（點不到），視口以下只剩 .main 的留白。
+    if (!this.view.listCards && y >= bodyTop + bodyRows * rowH) {
       var wl = this.view._listWindowLines;
       if (wl && wl.length) return { col: col, row: wl.length - 1 };
     }
@@ -1669,10 +1779,10 @@ App.prototype._applyMobileGeometry = function(surface) {
   var b = view.innerBounds;
   var g = mobileTermGeometry({
     width: b.width,
-    // 底部工具列常駐（components/MobileToolbar）⇒ 列數從它上面的高度算，只在進出
-    // 手機模式時變（不因按鍵面板／軟鍵盤開關重送 NAWS）。位置由 _onVisualViewport
-    // 把工具列併進 view 的底部 inset。
-    height: Math.max(0, b.height - MOBILE_TOOLBAR_PX),
+    // 頂部 App Bar 與底部工具列都常駐 ⇒ 列數從兩者中間的高度算，只在進出手機模式
+    // 時變（不因按鍵面板／軟鍵盤開關、畫面切換重送 NAWS）。位置由 _onVisualViewport
+    // 把兩條 bar 併進 view 的上／下 inset。
+    height: mobileRowsHeight(b.height, this._readSafeInsets()),
     dpr: window.devicePixelRatio || 1,
     surface: s
   });
@@ -2145,6 +2255,7 @@ App.prototype.mouse_click = function(e) {
           return;
         }
         this.onDisableLiveHelperModalState();
+        this.noteUserAction();
         this._sendRowEnter(menuCardTargetRow(e.target));
         this.setInputAreaFocus();
         return;
@@ -2175,10 +2286,13 @@ App.prototype.mouse_click = function(e) {
             rowFromClientY(e.clientY, this.gridGeometry()),
             lpos.col
           );
-          // 卡片間距（padding）不開文：防誤點，見 mobile_layout.isListCardGapTarget。
+          // 只有點在卡片本體才開文：卡片間距（padding）防誤點，視口以外（header／
+          // footer 已收起）什麼都不是。見 mobile_layout.isListCardBodyTarget。
           if (this.view.listCards) {
-            if (!isListCardGapTarget(e.target))
+            if (isListCardBodyTarget(e.target)) {
+              this.noteUserAction();
               clickOwner.onMouseClick(lpos.row, LIST_TITLE_COL_START);
+            }
           }
           else if (ledge)
             this.sendNavKeyAsUser(EDGE_NAV_KEY[ledge.action]);

@@ -1367,7 +1367,8 @@ describe("Alt remap 全 26 字母（看板列表）", () => {
 // 手機卡片：一屏只放 8 筆，原生落點頁（20 列）塞不下 ⇒ 游標若在頁底會落在視口外。
 describe("手機卡片：採用原生落點時游標必須在視口內（看板列表）", () => {
   const CHH = 20;
-  const VP = 20 * CHH;
+  // 視口：桌機＝body 20 列；卡片＝header／footer 收起、整個 24 列（listViewportGeometry）。
+  const vp = (cards) => (cards ? 24 : 20) * CHH;
   const setup = (cards) => {
     const h = makeSession();
     seedBuffer(h.termBuf, 1, 40);
@@ -1379,7 +1380,7 @@ describe("手機卡片：採用原生落點時游標必須在視口內（看板�
       top: 0,
       hasListViewport: () => true,
       getListScrollTop() { return this.top; },
-      getListViewportPx: () => VP,
+      getListViewportPx: () => vp(cards),
       setListScrollTop(px) { this.top = px; },
       scrollListTo(px) { this.top = px; },
     };
@@ -1397,9 +1398,11 @@ describe("手機卡片：採用原生落點時游標必須在視口內（看板�
     const { s, screen } = setup(true);
     s._adoptLanding(landing(40));
     s.applyScrollAfterRender();
-    expect(s._topNum).toBe(33); // 40 - 8 + 1
+    // 落點規則要 40-9+1 = 32（位置 31），但緩衝在 40 結束 ⇒ 夾在 總高 − 視口
+    // （40 張 × 50px − 480px ＝ 1520px ＝ 第 30.4 張）。
     expect(s._isPosVisible(s._cursorPos())).toBe(true);
-    expect(screen.top).toBe(32 * CHH * 2.5);
+    expect(screen.top).toBe(Math.min(31 * CHH * 2.5, 40 * CHH * 2.5 - vp(true)));
+    expect(s._topNum).toBe(31);
   });
 
   test("桌機（無卡片）：錨＝原生頁頂端，行為不變", () => {

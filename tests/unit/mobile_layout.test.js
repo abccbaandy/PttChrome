@@ -7,6 +7,10 @@ import {
   MOBILE_ROW_FONT_PX,
   mobileTermGeometry,
   keyboardInset,
+  overlayKeyboardInset,
+  mobileChromeInsets,
+  mobileRowsHeight,
+  MOBILE_APPBAR_PX,
   KEYBOARD_MIN_PX,
   MOBILE_KEYPAD_EXTRA_ROW,
   MOBILE_TOOLBAR_PX,
@@ -146,6 +150,44 @@ describe("mobileTermGeometry surface 'article'（Phase 3：好讀文章換行）
     expect(g.chh * g.rows + 10).toBeLessThanOrEqual(390 + 1e-9);
     expect(g.chh).toBeLessThanOrEqual(MOBILE_ROW_FONT_PX);
     expect(Math.abs(g.chh * dpr - Math.round(g.chh * dpr))).toBeLessThan(1e-9);
+  });
+});
+
+// 兩條常駐 bar＋safe-area（viewport-fit=cover 的瀏海／手勢列）。
+describe("mobileChromeInsets／mobileRowsHeight", () => {
+  test("沒有 safe-area：上＝App Bar、下＝工具列＋按鍵面板＋鍵盤", () => {
+    expect(mobileChromeInsets({ kb: 0, keysPanel: 0 })).toEqual({
+      top: MOBILE_APPBAR_PX,
+      bottom: MOBILE_TOOLBAR_PX,
+      safeTop: 0,
+      safeBottom: 0,
+    });
+    expect(mobileChromeInsets({ kb: 300, keysPanel: 150 }).bottom).toBe(300 + MOBILE_TOOLBAR_PX + 150);
+  });
+  test("safe-area 併進上下；鍵盤升起時手勢列被蓋住 ⇒ 下緣 safe 歸 0", () => {
+    const a = mobileChromeInsets({ kb: 0, keysPanel: 0, safeTop: 24, safeBottom: 16 });
+    expect(a).toMatchObject({ top: MOBILE_APPBAR_PX + 24, bottom: MOBILE_TOOLBAR_PX + 16, safeBottom: 16 });
+    const b = mobileChromeInsets({ kb: 300, keysPanel: 0, safeTop: 24, safeBottom: 16 });
+    expect(b).toMatchObject({ bottom: 300 + MOBILE_TOOLBAR_PX, safeBottom: 0 });
+  });
+  test("列數高度扣兩條 bar 與兩邊 safe-area", () => {
+    expect(mobileRowsHeight(800)).toBe(800 - MOBILE_APPBAR_PX - MOBILE_TOOLBAR_PX);
+    expect(mobileRowsHeight(800, { top: 24, bottom: 16 })).toBe(800 - 96 - 40);
+  });
+});
+
+// 手機 bottom sheet 裡的搜尋框叫出的鍵盤：不是按鍵面板 ⌨ 叫的（softKeyboard 為 false），
+// 但 sheet 仍要讓位。只寫 CSS 變數，不推終端機。
+describe("overlayKeyboardInset", () => {
+  const f = { mobile: true, softKeyboard: false, layoutHeight: 800, vvOffsetTop: 0, vvScale: 1 };
+  test("不看 softKeyboard 閘門", () => {
+    expect(keyboardInset({ ...f, vvHeight: 480 })).toBe(0);
+    expect(overlayKeyboardInset({ ...f, vvHeight: 480 })).toBe(320);
+  });
+  test("其餘規則相同：非手機／雙指縮放／雜訊 ⇒ 0", () => {
+    expect(overlayKeyboardInset({ ...f, vvHeight: 480, mobile: false })).toBe(0);
+    expect(overlayKeyboardInset({ ...f, vvHeight: 400, vvScale: 2 })).toBe(0);
+    expect(overlayKeyboardInset({ ...f, vvHeight: 800 - (KEYBOARD_MIN_PX - 1) })).toBe(0);
   });
 });
 

@@ -5,26 +5,42 @@ import {
   useRef,
   useLayoutEffect,
 } from "react";
+import {
+  IconThumbUp,
+  IconMessageReply,
+  IconMail,
+  IconShare2,
+  IconPencilPlus,
+  IconSearch,
+  IconKeyboard,
+  IconDots,
+} from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
+import MobileSheet from "../MobileSheet";
 import {
   MOBILE_KEYPAD_ROWS,
   MOBILE_KEYPAD_EXTRA_ROW,
-  MOBILE_KEYPAD_PUSH_KEY,
 } from "../../js/mobile_layout";
-import { EMPTY_TOOLBAR_CONTEXT } from "../../js/mobile_toolbar";
+import {
+  EMPTY_TOOLBAR_CONTEXT,
+  TOOLBAR_KEYS,
+  THREAD_NAV_KEYS,
+} from "../../js/mobile_toolbar";
 import "./MobileToolbar.css";
 
-// 手機底部工具列（docs/mobile.md「底部工具列」）。只在 pttchrome.mobile 時渲染。
-// 取代 2026-09 的浮動按鍵列：常用動作固定在底部，按鈕依畫面顯示
-// （App.onScreenContextChange ← mobile_toolbar.js）：
-//   推    文章裡才有（送 X ⇒ 預設開長推文，與實體鍵盤同一條分派）
-//   搜尋  直接開搜尋彈窗（不開子選單；種類在彈窗上方切）。文章列表：標題／作者／推文數／
-//         看板；看板列表、主功能表：看板（article_search.js）
+// 手機底部導覽（docs/mobile.md「底部導覽」）。只在 pttchrome.mobile 時渲染。
+// Material 風格：icon＋小字，動作依畫面換（App.onScreenContextChange ← mobile_toolbar.js）：
+//   文章      推 X／回文 y／分享／按鍵／更多（更多裡有同主題前下首篇、列表前下篇）
+//   信件      回信 y／按鍵／更多
+//   文章列表  搜尋／發文 Ctrl+P／按鍵／更多
+//   其他      搜尋（有可用種類時）／按鍵／更多
+//   搜尋  直接開搜尋彈窗（不開子選單；種類在彈窗上方切，article_search.js）
 //   按鍵  展開方向鍵面板（貼在工具列上方；含軟鍵盤開關與黏滯 Ctrl／Esc／Tab／Del）
-//   更多  選取模式／設定／登出
+//   更多  文章導覽／選取模式／設定／登出
+// 沒有返回：交給系統邊緣滑動／返回鍵（history_back_guard.js）。
 //
 // 三條不可以踩的線（同舊按鍵列，守護 tests/unit/mobile_toolbar.test.jsx）：
-//   1. 送鍵一律 view.sendKeyAsUser(keyName)：走鍵盤同一條 onKeyDown 分派（文章好讀／
+//   1. 送鍵一律 view.sendKeyAsUser(keyName, mods)：走鍵盤同一條 onKeyDown 分派（文章好讀／
 //      列表好讀／原生三種語意）。不可 view._send（列表好讀底下是在序列化交易中途
 //      插隊），也不可 App.onFunctionKey（文章好讀會先切 functionMode）。
 //   2. mousedown 必須 preventDefault：預設動作會把焦點移到按鈕上 ⇒ #t 失焦 ⇒
@@ -40,8 +56,21 @@ const keepFocus = (e) => {
   e.stopPropagation();
 };
 
+// 觸覺回饋：短震一下（Android Chrome；沒有 API／APK 沒給 VIBRATE 權限時靜默）。
+export const HAPTIC_MS = 8;
+const haptic = () => {
+  try {
+    if (typeof navigator !== "undefined" && navigator.vibrate)
+      navigator.vibrate(HAPTIC_MS);
+  } catch (e) {
+    // 被瀏覽器擋（沒有 user activation 之類）就算了。
+  }
+};
+
 // 登出確認的自動復原時間：按了第一下之後沒動作就收回，防口袋誤觸。
 export const LOGOUT_CONFIRM_MS = 3000;
+
+const ICON_PROPS = { size: 22, stroke: 1.75, "aria-hidden": true };
 
 export const MobileToolbar = ({
   pttchrome,
@@ -108,15 +137,36 @@ export const MobileToolbar = ({
   );
 
   const sendKey = useCallback(
-    (key) => {
-      pttchrome.view.sendKeyAsUser(key);
+    (key, mods) => {
+      // 等待進度條：接著真的送出 byte 才會亮（mobile_busy.js）。
+      if (typeof pttchrome.noteUserAction === "function")
+        pttchrome.noteUserAction();
+      if (mods) pttchrome.view.sendKeyAsUser(key, mods);
+      else pttchrome.view.sendKeyAsUser(key);
     },
     [pttchrome],
+  );
+
+  const sendAction = useCallback(
+    (name) => {
+      const k = TOOLBAR_KEYS[name];
+      setPanel(null);
+      setConfirmLogout(false);
+      sendKey(k.key, k.mods);
+    },
+    [sendKey],
   );
 
   const togglePanel = useCallback((p) => {
     setConfirmLogout(false);
     setPanel((cur) => (cur === p ? null : p));
+  }, []);
+
+  // 「更多」sheet 的關閉（遮罩、拖把手、系統返回）。引用穩定：MobileSheet 拿它登記
+  // 系統返回的關閉函式。
+  const closeMore = useCallback(() => {
+    setConfirmLogout(false);
+    setPanel((cur) => (cur === "more" ? null : cur));
   }, []);
 
   const onKeyboard = useCallback(() => {
@@ -141,6 +191,16 @@ export const MobileToolbar = ({
     setConfirmLogout(false);
     if (onOpenSearch && context.search.length) onOpenSearch(context.search[0]);
   }, [onOpenSearch, context]);
+
+  // 系統分享面板（Web Share API）。**同步**呼叫：免費路徑要在這個 click 的 user
+  // activation 內叫出 navigator.share（deep_link_controller.shareCurrentPostLink）。
+  const onShare = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    const dl = pttchrome.deepLinkController;
+    if (dl && typeof dl.shareCurrentPostLink === "function")
+      dl.shareCurrentPostLink(context.appBar ? context.appBar.title : "");
+  }, [pttchrome, context]);
 
   const onSettings = useCallback(() => {
     setPanel(null);
@@ -168,22 +228,27 @@ export const MobileToolbar = ({
     </button>
   );
 
-  const toolBtn = (key, label, onClick, opts) => {
+  const navBtn = (key, Icon, label, onClick, opts) => {
     const o = opts || {};
     return (
       <button
         key={key}
         type="button"
         className={
-          "nomouse_command mobileToolbarBtn" + (o.active ? " active" : "")
+          "nomouse_command mobileToolbarBtn pttRipple" +
+          (o.active ? " active" : "")
         }
         aria-label={o.aria || label}
         aria-pressed={o.pressed}
         aria-expanded={o.expanded}
         data-key={key}
-        onClick={onClick}
+        onClick={() => {
+          haptic();
+          onClick();
+        }}
       >
-        {label}
+        <Icon {...ICON_PROPS} />
+        <span className="mobileToolbarLabel">{label}</span>
       </button>
     );
   };
@@ -229,16 +294,41 @@ export const MobileToolbar = ({
         {MOBILE_KEYPAD_EXTRA_ROW.map((k) => keyBtn(k, " mobileKeypadWide2"))}
       </div>
     );
-  } else if (panel === "more") {
-    panelEl = (
-      <div
-        className="nomouse_command mobileToolbarMenu mobileToolbarMenuEnd"
-        data-panel="more"
-      >
+  }
+
+  // 「更多」是 bottom sheet（components/MobileSheet）：開著算 modal、系統返回＝收起。
+  // 它畫在 portal 裡，不在工具列的事件攔截範圍內 —— 遮罩／項目的點擊靠 modalShown
+  // 擋住 App 的滑鼠入口（MobileSheet 檔頭）。
+  const moreSheet = (
+    <MobileSheet
+      pttchrome={pttchrome}
+      opened={panel === "more"}
+      onClose={closeMore}
+      sheetKey="more"
+    >
+      <div data-panel="more">
+        {context.threadNav ? (
+          <div className="mobileToolbarNavGrid" data-key="__threadNav">
+            {THREAD_NAV_KEYS.map((k) => (
+              <button
+                key={k.key}
+                type="button"
+                className="nomouse_command mobileSheetItem pttRipple"
+                data-key={k.key}
+                onClick={() => {
+                  setPanel(null);
+                  sendKey(k.key);
+                }}
+              >
+                {i18n(k.label)}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <button
           type="button"
           className={
-            "nomouse_command mobileToolbarMenuItem" +
+            "nomouse_command mobileSheetItem pttRipple" +
             (selectMode ? " active" : "")
           }
           aria-pressed={selectMode}
@@ -249,7 +339,7 @@ export const MobileToolbar = ({
         </button>
         <button
           type="button"
-          className="nomouse_command mobileToolbarMenuItem"
+          className="nomouse_command mobileSheetItem pttRipple"
           data-key="__settings"
           onClick={onSettings}
         >
@@ -280,7 +370,7 @@ export const MobileToolbar = ({
         ) : (
           <button
             type="button"
-            className="nomouse_command mobileToolbarMenuItem"
+            className="nomouse_command mobileSheetItem mobileSheetDanger pttRipple"
             data-key="__logout"
             onClick={() => setConfirmLogout(true)}
           >
@@ -288,8 +378,8 @@ export const MobileToolbar = ({
           </button>
         )}
       </div>
-    );
-  }
+    </MobileSheet>
+  );
 
   return (
     <div
@@ -300,20 +390,41 @@ export const MobileToolbar = ({
       onClick={swallow}
     >
       {panelEl}
-      <div className="nomouse_command mobileToolbarBar">
+      {moreSheet}
+      <nav className="nomouse_command mobileToolbarBar">
         {context.push &&
-          toolBtn(
-            MOBILE_KEYPAD_PUSH_KEY,
-            "推",
-            () => sendKey(MOBILE_KEYPAD_PUSH_KEY),
-            {
-              aria: i18n("mobileKeypad_push"),
-            },
+          navBtn(
+            TOOLBAR_KEYS.push.key,
+            IconThumbUp,
+            i18n("mobileToolbar_push"),
+            () => sendAction("push"),
+            { aria: i18n("mobileKeypad_push") },
           )}
+        {context.reply &&
+          navBtn(
+            "__reply",
+            context.mail ? IconMail : IconMessageReply,
+            i18n(
+              context.mail ? "mobileToolbar_replyMail" : "mobileToolbar_reply",
+            ),
+            () => sendAction("reply"),
+          )}
+        {context.share &&
+          navBtn("__share", IconShare2, i18n("mobileToolbar_share"), onShare)}
         {context.search.length > 0 &&
-          toolBtn("__search", i18n("mobileToolbar_search"), onSearch)}
-        {toolBtn(
+          navBtn(
+            "__search",
+            IconSearch,
+            i18n("mobileToolbar_search"),
+            onSearch,
+          )}
+        {context.post &&
+          navBtn("__post", IconPencilPlus, i18n("mobileToolbar_post"), () =>
+            sendAction("post"),
+          )}
+        {navBtn(
           "__keys",
+          IconKeyboard,
           i18n("mobileToolbar_keys"),
           () => togglePanel("keys"),
           {
@@ -321,8 +432,9 @@ export const MobileToolbar = ({
             expanded: panel === "keys",
           },
         )}
-        {toolBtn(
+        {navBtn(
           "__more",
+          IconDots,
           i18n("mobileToolbar_more"),
           () => togglePanel("more"),
           {
@@ -330,7 +442,7 @@ export const MobileToolbar = ({
             expanded: panel === "more",
           },
         )}
-      </div>
+      </nav>
     </div>
   );
 };

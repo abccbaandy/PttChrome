@@ -66,6 +66,41 @@ export const MOBILE_KEYPAD_PUSH_KEY = 'X';
 // tests/unit/mobile_toolbar.test.jsx）。
 export const MOBILE_TOOLBAR_PX = 48;
 
+// 頂部 App Bar（components/MobileAppBar）的高度（px）。同樣**常駐**（手機模式下每個畫面
+// 都有）⇒ 列數從兩條 bar 中間的高度算，畫面切換不重送 NAWS。必須與 MobileAppBar.css 的
+// .mobileAppBar height 一致（守護 tests/unit/mobile_app_bar.test.jsx）。
+export const MOBILE_APPBAR_PX = 48;
+
+// 手機模式下終端機可用的高度（決定列數）：視窗高扣掉兩條常駐 bar。軟鍵盤／按鍵面板
+// 是暫態，不在這裡扣（它們只改位置，見 term_size.termLayoutOffsets 的 inset）。
+// safe：瀏海／手勢列的 safe-area（viewport-fit=cover 時 env(safe-area-inset-*)，
+// App._readSafeInsets 量），兩條 bar 各自往內讓，同樣常駐 ⇒ 一起扣。
+export function mobileRowsHeight(innerHeight, safe) {
+  const s = safe || {};
+  return Math.max(
+    0,
+    (Number(innerHeight) || 0) - MOBILE_APPBAR_PX - MOBILE_TOOLBAR_PX -
+      (Number(s.top) || 0) - (Number(s.bottom) || 0)
+  );
+}
+
+// 終端機的上／下 inset（px）與底部 safe-area 的實際值。
+//   top    ＝ App Bar ＋ 上緣 safe-area
+//   bottom ＝ 軟鍵盤 ＋ 工具列 ＋ 展開中的按鍵面板 ＋ 下緣 safe-area
+//   safeBottom：軟鍵盤升起時手勢列被鍵盤蓋住 ⇒ 0（不然工具列下面多一截空白）。
+// 呼叫端：App._onVisualViewport（寫 view 的 inset 與 CSS 變數 --safe-top/--safe-bottom）。
+export function mobileChromeInsets({ kb, keysPanel, safeTop, safeBottom }) {
+  const k = kb > 0 ? kb : 0;
+  const sb = k > 0 ? 0 : Math.max(0, Number(safeBottom) || 0);
+  const st = Math.max(0, Number(safeTop) || 0);
+  return {
+    top: MOBILE_APPBAR_PX + st,
+    bottom: k + MOBILE_TOOLBAR_PX + (keysPanel > 0 ? keysPanel : 0) + sb,
+    safeTop: st,
+    safeBottom: sb
+  };
+}
+
 // 黏滯 Ctrl：按了 Ctrl 之後的下一個字元 → 要合成的按鍵（交給 term_view.sendKeyAsUser）。
 //   - 字母走 **Alt remap**（term_keyboard.isAltRemapEvent：Alt+字母 ＝ PTT 的 Ctrl，
 //     byte 逐位元相同）。不走 ctrlKey 是刻意的：term_view 會把 Ctrl+A／Ctrl+C 攔成
@@ -204,27 +239,41 @@ export function listPageRows(bodyRows, cards) {
   return Math.max(1, Math.floor((Number(bodyRows) || 0) / listRowSpan(cards)));
 }
 
-// 點擊落在卡片間距（`.listCard` 的 padding，或視口裡卡片之外的空白）嗎？是 ⇒
-// App.mouse_click 吞掉不開文（防誤點）。只認 body 視口內：header／footer（含功能鍵
-// 按鈕）不在 .listBodyView 裡，照舊交給原本的路徑。
-export function isListCardGapTarget(target) {
+// 列表好讀的捲動視口在終端機裡的位置與高度（單位：chh 列）。
+//   桌機／格線：header（headerRows 列）在上、footer 一列在下，視口＝中間 rows-4 列。
+//   手機卡片：header／footer 收起（資訊已在 App Bar／底部導覽，render/collapsed_row.js），
+//            視口從頂端起、吃下整個終端機高 rows 列。
+// 三個消費端必須同源：term_view 的視口 px、App.clientToPos 的列號換算、兩個列表
+// session 的 _pageRows（PgUp/PgDn 一次幾筆）。**不是**抓頁單位：_bodyRows（server 的
+// p_lines ＝ rows-4）與這裡無關。
+export function listViewportGeometry({ rows, headerRows, cards }) {
+  const r = Number(rows) || 0;
+  if (cards) return { bodyTopRows: 0, viewportRows: r };
+  return { bodyTopRows: Number(headerRows) || 0, viewportRows: Math.max(0, r - 4) };
+}
+
+// 點的是卡片本體嗎（App.mouse_click 卡片模式只在這時開文）。卡片間距（`.listCard` 的
+// padding）不算 ⇒ 防誤點；header／footer 收起之後（listViewportGeometry），視口以外只剩
+// `.main` 的留白，同樣不能落回列號換算去開某一筆。
+export function isListCardBodyTarget(target) {
   if (!target || typeof target.closest !== 'function') return false;
-  return !!target.closest('.listBodyView') && !target.closest('.listCardBody');
+  return !!target.closest('.listBodyView .listCardBody');
 }
 
 // 手機主功能表（Phase 5）的 `.main` 高與上緣位移。grid 幾何是「80 欄塞滿寬」⇒ 直式手機上
 // chh*rows 只佔可視高的六成左右，而大按鈕（固定 px 高）比格線列高得多 ⇒ 把 `.main`
 // 撐到整個可視高（扣軟鍵盤／工具列 inset），貼頂；可視高本來就不夠時退回格線規則
 // （term_size.termLayoutOffsets，內容超出由 .main 的 overflow-y:auto 捲動）。
-export function mobileMenuLayout({ innerHeight, bottomInset, chh, rows, margin }) {
+export function mobileMenuLayout({ innerHeight, bottomInset, topInset, chh, rows, margin }) {
   const base = chh * rows + 10;
   const inset = bottomInset > 0 ? bottomInset : 0;
-  const avail = Math.floor((Number(innerHeight) || 0) - inset);
-  if (avail > base) return { height: avail, marginTop: 0 };
+  const top = topInset > 0 ? topInset : 0;
+  const avail = Math.floor((Number(innerHeight) || 0) - inset - top);
+  if (avail > base) return { height: avail, marginTop: top };
   return {
     height: base,
     marginTop: termLayoutOffsets({
-      innerHeight, chh, rows, margin: margin || 0, bottomInset: inset
+      innerHeight, chh, rows, margin: margin || 0, bottomInset: inset, topInset: top
     }).marginTop
   };
 }
@@ -250,6 +299,13 @@ export const KEYBOARD_MIN_PX = 80;
 // hostInset：Android APK 殼回報的鍵盤高度（android_bridge.js#androidImeInset）。
 // APK 裡鍵盤疊在 WebView 上、visualViewport 量不到，取兩者較大者（不相加：
 // 若某版 WebView 自己也縮了 visualViewport，兩邊量的是同一塊）。
+// 頁內浮層（手機 bottom sheet 裡的搜尋框）叫出的鍵盤：同一套量法，但**不看**終端機的
+// softKeyboard 閘門（那個鍵盤不是按鍵面板的 ⌨ 叫的）。結果只寫 CSS 變數 --vv-kb-inset
+// 讓浮層讓位，不碰終端機幾何（不改列數、不推終端機）。
+export function overlayKeyboardInset(o) {
+  return keyboardInset({ ...(o || {}), softKeyboard: true });
+}
+
 export function keyboardInset({ mobile, softKeyboard, layoutHeight, vvHeight, vvOffsetTop, vvScale, hostInset }) {
   if (!mobile || !softKeyboard) return 0;
   if (Math.abs((Number(vvScale) || 1) - 1) > 0.01) return 0;

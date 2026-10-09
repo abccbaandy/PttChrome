@@ -12,7 +12,7 @@
 //      at a time (pttbbs typeahead skips repaints when keys race — protocol §2).
 // Misclassification always degrades toward NATIVE (functionMode mirrors the raw
 // screen), never toward a stale buffer.
-import { listRowSpan, listPageRows } from './mobile_layout';
+import { listRowSpan, listPageRows, listViewportGeometry } from './mobile_layout';
 import {
   parseListAuthor,
   parseListTitle,
@@ -2249,11 +2249,16 @@ ListSession.prototype = {
   },
 
   // PgUp／PgDn 一次翻幾筆＝視口放得下幾筆。卡片模式一筆佔 LIST_CARD_ROWS 列，
-  // 翻 bodyRows 筆會跳過半屏沒看過的東西。**只給視口操作用**：_bodyRows 仍是
-  // server 的 p_lines（抓頁／補頁的單位），不可以一起換。
+  // 翻 bodyRows 筆會跳過半屏沒看過的東西；視口高也不同（header／footer 收起，
+  // mobile_layout.listViewportGeometry，與 term_view／clientToPos 同源）。
+  // **只給視口操作用**：_bodyRows 仍是 server 的 p_lines（抓頁／補頁的單位），不可以一起換。
   _pageRows: function() {
     const v = this._view;
-    return listPageRows(this._bodyRows(), !!(v && v.listCards));
+    const cards = !!(v && v.listCards);
+    const vg = listViewportGeometry({
+      rows: this._termBuf.rows, headerRows: this.headerRows(), cards: cards
+    });
+    return listPageRows(vg.viewportRows, cards);
   },
 
   // 左鍵單擊某一列（App.mouse_click 已把 client 座標換成**渲染後**的列號）＝

@@ -2395,7 +2395,11 @@ describe("回 buffer（原生鏡像落點）：視野停在 server 落點那一�
 describe("手機卡片：採用原生落點時游標必須在視口內", () => {
   const CHH = 20;
   const CARD = CHH * 2.5;
-  const VP = 20 * CHH; // 視口＝bodyRows × chh ⇒ 8 張卡片
+  // 視口：桌機＝body 20 列；卡片＝header／footer 收起、整個 24 列（listViewportGeometry），
+  // 9.6 張卡片 ⇒ 一屏 9 筆。
+  const vp = (cards) => (cards ? 24 : 20) * CHH;
+  // 緩衝 100..159 共 60 筆、游標在最後一筆 ⇒ 卡片模式捲到底就被夾在 總高 − 視口。
+  const CARD_MAX_TOP = 60 * CARD - vp(true);
 
   const setup = ({ cards = true } = {}) => {
     const h = demandSession({ numStart: 100, count: 60 });
@@ -2403,7 +2407,7 @@ describe("手機卡片：採用原生落點時游標必須在視口內", () => {
     h.s._edgeUp = true;
     h.s._edgeDown = true;
     h.s._view.listCards = cards;
-    h.screen = fakeScreen(0, VP, /* live */ false);
+    h.screen = fakeScreen(0, vp(cards), /* live */ false);
     h.s._view.componentScreen = h.screen;
     return h;
   };
@@ -2419,8 +2423,9 @@ describe("手機卡片：採用原生落點時游標必須在視口內", () => {
     frame(s, screen);
     const seq = s._sequence();
     expect(s._isPosVisible(seq, s._cursorPos(seq))).toBe(true);
-    expect(s._topNum).toBe(152);
-    expect(screen.top).toBe(52 * CARD);
+    // 落點規則要 159-9+1 = 151，但緩衝在 159 結束 ⇒ 夾在最底（2520px ＝ 第 50.4 筆）。
+    expect(screen.top).toBe(Math.min(51 * CARD, CARD_MAX_TOP));
+    expect(s._topNum).toBe(150);
   });
 
   test("回 buffer（_resumeBuffer）同一條規則", () => {
@@ -2429,7 +2434,7 @@ describe("手機卡片：採用原生落點時游標必須在視口內", () => {
     frame(s, screen);
     const seq = s._sequence();
     expect(s._isPosVisible(seq, s._cursorPos(seq))).toBe(true);
-    expect(screen.top).toBe(52 * CARD);
+    expect(screen.top).toBe(Math.min(51 * CARD, CARD_MAX_TOP));
   });
 
   test("游標在頁中段 ⇒ 游標貼視口頂（不被捲出），不再往下", () => {

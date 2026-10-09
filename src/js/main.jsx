@@ -7,6 +7,7 @@ import { pageArticleNums } from './comment_parse';
 import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
 import { installDeepLink, claimDeepLink } from './deep_link_entry';
 import { installHistoryBackGuard } from './history_back_guard';
+import { installRipple } from './ripple';
 import { parseDeepLink } from './deep_link';
 import { renderInto, unmountFrom } from './react_root';
 import { MantineRoot } from '../components/MantineRoot';
@@ -25,6 +26,8 @@ function startApp() {
       ")"
   );
   setupI18n();
+  // 按下的波紋回饋（全站一個委派；核心畫面 #mainContainer 內一律跳過）。
+  installRipple();
 
   const app = new App();
   // Expose the app for e2e inspection only in developer/dev builds.

@@ -10,14 +10,20 @@ const { waitPreviewsSettled, scrollIntoViewStable } = require('../helpers/layout
 
 const article = findCassette('article');
 
-// 選取模式在底部工具列的「更多」裡；切換後選單自動收起，再開一次讀亮燈、再收起。
+// 選取模式在底部工具列的「更多」sheet 裡；切換後 sheet 自動收起，再開一次讀亮燈、再收起
+// （sheet 的遮罩蓋住工具列，收起用 Esc）。
 async function enableSelectMode(page) {
   await page.locator('[data-key="__more"]').click();
   await page.locator('[data-key="__select"]').click();
+  await expect(page.locator('[data-sheet="more"]')).toHaveCount(0);
   await page.locator('[data-key="__more"]').click();
   await expect(page.locator('[data-key="__select"]')).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('[data-key="__more"]').click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-sheet="more"]')).toHaveCount(0);
 }
+
+// 手機的長按／右鍵選單是 bottom sheet（ContextMenu/ContextSheet.jsx），不是桌機的 .DropdownMenu。
+const CONTEXT_SHEET = '[data-sheet="context"]';
 
 // NAWS（IAC SB NAWS）＝重送終端機尺寸。換行版面只換字級與寬度，不可以改列數。
 const nawsCount = (page) =>
@@ -198,7 +204,9 @@ test.describe('長按選單（觸控 contextmenu）', () => {
   };
 
   const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
-  const menu = (page) => page.locator('.DropdownMenu').first();
+  const menu = (page) => page.locator(CONTEXT_SHEET).first();
+  // sheet 的項目（data-cmenu＝context_menu_entries.js 的 key）。
+  const items = (page) => menu(page).locator('[data-cmenu]');
 
   test('REGRESSION：長按推文列（手指下的字已被選起來）仍出現「加入黑名單」', async ({ page }) => {
     test.setTimeout(90000);
@@ -215,14 +223,13 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     expect(pointerType).toBe('touch');
     expect(collapsed).toBe(false); // 前提：事件發生時真的有選取（Chromium 長按的現場）
     const add = await label(page, 'cmenu_addAuthorBlacklist');
-    const item = menu(page).getByRole('menuitem').filter({ hasText: add });
+    const item = items(page).filter({ hasText: add });
     await expect(item).toBeVisible();
     await expect(item).toContainText(pusher, { ignoreCase: true });
     // 選取模式關（預設）：長按選到的字被收掉，不留原生選取把手跟選單打架；
     // 複製類項目跟著不出現（要選字複製就開選取模式）。
     expect(collapsedAfter).toBe(true);
-    // 「複製」項目認它的快捷鍵字樣（cmenu_copy 的字面也是「複製本篇文章連結」等的子字串）。
-    await expect(menu(page).getByRole('menuitem').filter({ hasText: 'Ctrl+C' })).toHaveCount(0);
+    await expect(menu(page).locator('[data-cmenu="copy"]')).toHaveCount(0);
   });
 
   test('選取模式開：長按＝一般網頁操作（不 preventDefault、不開我們的選單、選取留著）', async ({ page }) => {
@@ -244,7 +251,7 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     expect(r.collapsed).toBe(false);
     expect(r.defaultPrevented).toBe(false);
     expect(r.collapsedAfter).toBe(false);
-    await expect(page.locator('.DropdownMenu')).toHaveCount(0);
+    await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
   });
 
   // REGRESSION：拖完選取把手放手，Android Chrome 會再補發一次 contextmenu
@@ -279,7 +286,7 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     expect(r.pointerType).not.toBe('touch');
     expect(r.defaultPrevented).toBe(false);
     expect(r.collapsedAfter).toBe(false);
-    await expect(page.locator('.DropdownMenu')).toHaveCount(0);
+    await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
   });
 
   test('滑鼠右鍵＋有選取：維持桌機規則（只有複製那一組）', async ({ page }) => {
@@ -303,7 +310,8 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     expect(r.collapsed).toBe(false);
     await expect(menu(page)).toBeVisible();
     const add = await label(page, 'cmenu_addAuthorBlacklist');
-    await expect(menu(page).getByRole('menuitem').filter({ hasText: add })).toHaveCount(0);
+    await expect(items(page).filter({ hasText: add })).toHaveCount(0);
+    await expect(menu(page).locator('[data-cmenu="copy"]')).toBeVisible();
   });
 });
 
@@ -345,5 +353,36 @@ test.describe('手機推文卡片', () => {
       expect(c.cardRight - c.timeRight).toBeLessThan(24);
       expect(c.body).not.toContain(c.time);
     }
+  });
+
+  // 檔頭與 80 欄狀態列（docs/mobile.md「收起終端機標頭／狀態列」）：標題在 App Bar、
+  // 按鍵在底部導覽；檔頭換成卡片，分隔線與 footer overlay 收起。
+  test('檔頭變卡片（作者／完整標題／時間）、分隔線與 80 欄狀態列收起、不橫向溢出', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    const m = await page.evaluate(() => {
+      const q = (s) => document.querySelector('#mainContainer ' + s);
+      const footer = document.getElementById('easyReadingLastRow');
+      const rule = document.querySelector('#mainContainer .articleMetaRule');
+      return {
+        author: q('.articleMeta--author') ? q('.articleMeta--author').textContent : null,
+        title: q('.articleMeta--title') ? q('.articleMeta--title').textContent : null,
+        time: !!q('.articleMeta--time'),
+        ruleH: rule ? rule.getBoundingClientRect().height : null,
+        footerShown: getComputedStyle(footer).display !== 'none',
+        appTitle: window.__app.view._articleTitle,
+        docScrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      };
+    });
+    expect(m.author).toContain(await page.evaluate(() => window.__app.view._articleAuthor));
+    expect(m.title).toBe(m.appTitle);
+    expect(m.time).toBe(true);
+    expect(m.ruleH).toBe(0);
+    expect(m.footerShown).toBe(false);
+    expect(m.docScrollWidth).toBeLessThanOrEqual(m.innerWidth);
   });
 });

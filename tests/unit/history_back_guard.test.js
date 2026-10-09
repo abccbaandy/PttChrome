@@ -446,3 +446,46 @@ describe("debug log", () => {
     expect(() => t.back()).not.toThrow();
   });
 });
+
+// 手機 bottom sheet（components/MobileSheet）開著時，系統返回＝收起 sheet（Android 原生
+// App 的語意）。sheet 開著時 modalShown 為真 ⇒ 不攔的話會落到「送不出去」那條，被算成
+// 第一次逃生並閃提示，再按一次就離站。
+describe("手機 bottom sheet", () => {
+  test("有 sheet 開著：返回只收 sheet，不送 ←、不出提示、補回 sentinel", () => {
+    const t = setup();
+    const dismissed = [];
+    t.app.dismissTopSheet = () => {
+      dismissed.push(1);
+      return true;
+    };
+    t.activate();
+    t.back();
+    expect(dismissed).toHaveLength(1);
+    expect(t.keys).toEqual([]);
+    expect(t.hints).toEqual([]);
+    expect(t.win.calls.at(-1)).toEqual(["forward"]);
+  });
+
+  test("收完 sheet 之後的返回照常送 ←，也不算逃生窗內的第二次", () => {
+    const t = setup();
+    let open = true;
+    t.app.dismissTopSheet = () => {
+      if (!open) return false;
+      open = false;
+      return true;
+    };
+    t.activate();
+    t.back();
+    t.settleForward(1);
+    t.back();
+    expect(t.keys).toEqual(["ArrowLeft"]);
+  });
+
+  test("沒有 sheet（dismissTopSheet 回 false）：行為不變", () => {
+    const t = setup();
+    t.app.dismissTopSheet = () => false;
+    t.activate();
+    t.back();
+    expect(t.keys).toEqual(["ArrowLeft"]);
+  });
+});

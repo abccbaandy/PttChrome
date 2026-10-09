@@ -931,11 +931,50 @@ export const en_US = {
   "mobileToolbar_search": {
     "message": "Search"
   },
+  "mobileToolbar_push": {
+    "message": "Push"
+  },
+  "mobileToolbar_reply": {
+    "message": "Reply"
+  },
+  "mobileToolbar_replyMail": {
+    "message": "Reply"
+  },
+  "mobileToolbar_share": {
+    "message": "Share"
+  },
+  "mobileToolbar_post": {
+    "message": "Post"
+  },
+  "mobileToolbar_threadPrev": {
+    "message": "Prev in thread"
+  },
+  "mobileToolbar_threadNext": {
+    "message": "Next in thread"
+  },
+  "mobileToolbar_threadFirst": {
+    "message": "First in thread"
+  },
+  "mobileToolbar_articlePrev": {
+    "message": "Previous post"
+  },
+  "mobileToolbar_articleNext": {
+    "message": "Next post"
+  },
   "mobileToolbar_keys": {
     "message": "Keys"
   },
   "mobileToolbar_more": {
     "message": "More"
+  },
+  "mobileAppBar_defaultTitle": {
+    "message": "PTT"
+  },
+  "mobileAppBar_newMail": {
+    "message": "New mail"
+  },
+  "mobileAppBar_busy": {
+    "message": "Waiting for response"
   },
   "mobileToolbar_settings": {
     "message": "Settings"

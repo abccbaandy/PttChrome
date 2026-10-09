@@ -7,9 +7,10 @@
 //  3. mousedown 被 preventDefault（不搶 #t 焦點）、滑鼠事件不外洩到 window；
 //  4. 工具列高度 ＝ MOBILE_TOOLBAR_PX（終端機可用高度扣的就是它）。
 import { render, fireEvent, act } from "@testing-library/react";
-import { MobileToolbar, LOGOUT_CONFIRM_MS } from "../../src/components/MobileToolbar";
+import { MantineProvider } from "@mantine/core";
+import { MobileToolbar, LOGOUT_CONFIRM_MS, HAPTIC_MS } from "../../src/components/MobileToolbar";
 import { MOBILE_TOOLBAR_PX } from "../../src/js/mobile_layout";
-import { setupI18n } from "../../src/js/i18n";
+import { setupI18n, i18n } from "../../src/js/i18n";
 import toolbarCss from "../../src/components/MobileToolbar/MobileToolbar.css?raw";
 
 beforeAll(() => {
@@ -62,8 +63,19 @@ function makeCore({ mobile = true, context } = {}) {
 }
 
 const byKey = (k) => document.querySelector(`[data-key="${k}"]`);
+// 「更多」是 Mantine Drawer：內容在 transition 開始後才掛上、結束後才卸下（非同步）。
+const openMore = async () => {
+  fireEvent.click(byKey("__more"));
+  await vi.waitFor(() => expect(byKey("__select")).not.toBeNull());
+};
+const sheetClosed = () => vi.waitFor(() => expect(byKey("__select")).toBeNull());
+// 「更多」是 Mantine Drawer（components/MobileSheet）⇒ 要 MantineProvider。
 const renderBar = (core, props = {}) =>
-  render(<MobileToolbar pttchrome={core} {...props} />);
+  render(
+    <MantineProvider>
+      <MobileToolbar pttchrome={core} {...props} />
+    </MantineProvider>,
+  );
 
 describe("顯示", () => {
   test("非手機不渲染；mobile 變化時跟著出現／消失", () => {
@@ -139,6 +151,80 @@ describe("推／搜尋", () => {
   });
 });
 
+describe("依畫面的動作（文章／信件／文章列表）", () => {
+  const ARTICLE = { push: true, reply: true, mail: false, share: true, threadNav: true, post: false, search: [] };
+
+  test("文章：推／回文／分享，回文送 y（pager_common_cmds）", () => {
+    const core = makeCore({ context: ARTICLE });
+    renderBar(core);
+    expect(["X", "__reply", "__share", "__keys", "__more"].every((k) => byKey(k))).toBe(true);
+    expect(byKey("__post")).toBeNull();
+    expect(byKey("__reply").textContent).toBe(i18n("mobileToolbar_reply"));
+    fireEvent.click(byKey("__reply"));
+    expect(core.view.sendKeyAsUser).toHaveBeenLastCalledWith("y");
+  });
+
+  test("信件 pager：只有回信（label 換成回信），沒有推／分享", () => {
+    renderBar(makeCore({ context: { ...ARTICLE, push: false, share: false, threadNav: false, mail: true } }));
+    expect(byKey("__reply").textContent).toBe(i18n("mobileToolbar_replyMail"));
+    expect(byKey("X")).toBeNull();
+    expect(byKey("__share")).toBeNull();
+  });
+
+  test("分享：同步呼叫 deepLinkController.shareCurrentPostLink（帶 App Bar 標題）", () => {
+    const core = makeCore({
+      context: { ...ARTICLE, appBar: { kind: "article", title: "[問卦] 測試", subtitle: "", newMail: false } },
+    });
+    core.deepLinkController = { shareCurrentPostLink: vi.fn(() => true) };
+    renderBar(core);
+    fireEvent.click(byKey("__share"));
+    expect(core.deepLinkController.shareCurrentPostLink).toHaveBeenCalledWith("[問卦] 測試");
+  });
+
+  test("文章列表：發文送 Ctrl+P（Alt remap，繞過瀏覽器的列印）", () => {
+    const core = makeCore({ context: { push: false, search: ["title"], post: true } });
+    renderBar(core);
+    fireEvent.click(byKey("__post"));
+    expect(core.view.sendKeyAsUser).toHaveBeenLastCalledWith("p", { altKey: true });
+  });
+
+  test("更多：文章導覽只在文章出現，送 [ ] = b f 並收起 sheet", async () => {
+    const core = makeCore({ context: ARTICLE });
+    renderBar(core);
+    for (const k of ["[", "]", "=", "b", "f"]) {
+      await openMore();
+      fireEvent.click(byKey(k));
+      await sheetClosed();
+    }
+    expect(core.view.sendKeyAsUser.mock.calls.map((c) => c[0])).toEqual(["[", "]", "=", "b", "f"]);
+    act(() => core.setContext({ push: false, search: [] }));
+    await openMore();
+    expect(byKey("__threadNav")).toBeNull();
+  });
+
+  test("按下有觸覺回饋（navigator.vibrate 短震）", () => {
+    const vibrate = vi.fn(() => true);
+    const orig = Object.getOwnPropertyDescriptor(Navigator.prototype, "vibrate");
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: vibrate });
+    try {
+      renderBar(makeCore({ context: ARTICLE }));
+      fireEvent.click(byKey("__reply"));
+      expect(vibrate).toHaveBeenCalledWith(HAPTIC_MS);
+    } finally {
+      delete navigator.vibrate;
+      if (orig) Object.defineProperty(Navigator.prototype, "vibrate", orig);
+    }
+  });
+
+  test("每個按鈕都有 icon＋文字 label", () => {
+    renderBar(makeCore({ context: ARTICLE }));
+    for (const btn of document.querySelectorAll(".mobileToolbarBtn")) {
+      expect(btn.querySelector("svg")).not.toBeNull();
+      expect(btn.querySelector(".mobileToolbarLabel").textContent.length).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("按鍵面板", () => {
   test("預設收起，按「按鍵」展開，按鍵走 sendKeyAsUser", () => {
     const core = makeCore();
@@ -191,40 +277,62 @@ describe("按鍵面板", () => {
   });
 });
 
-describe("更多", () => {
-  test("選取模式：呼叫 setMobileSelectMode", () => {
+describe("更多（bottom sheet）", () => {
+  test("選取模式：呼叫 setMobileSelectMode", async () => {
     const core = makeCore();
     renderBar(core);
-    fireEvent.click(byKey("__more"));
+    await openMore();
     expect(byKey("__select").getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(byKey("__select"));
     expect(core.setMobileSelectMode).toHaveBeenCalledWith(true);
   });
 
-  test("設定：交給 onOpenSettings", () => {
+  test("設定：交給 onOpenSettings", async () => {
     const onOpenSettings = vi.fn();
     renderBar(makeCore(), { onOpenSettings });
-    fireEvent.click(byKey("__more"));
+    await openMore();
     fireEvent.click(byKey("__settings"));
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 
-  test("登出要二次確認；確認才呼叫 startLogout", () => {
+  test("登出要二次確認；確認才呼叫 startLogout", async () => {
     const core = makeCore();
     renderBar(core);
-    fireEvent.click(byKey("__more"));
+    await openMore();
     fireEvent.click(byKey("__logout"));
     expect(core.startLogout).not.toHaveBeenCalled();
     fireEvent.click(byKey("__logoutYes"));
     expect(core.startLogout).toHaveBeenCalledTimes(1);
   });
 
-  test("登出確認沒動作會自己收回（防口袋誤觸）", () => {
+  // sheet 開著＝modal（遮罩點下去的 click 會到 window 上的 App 滑鼠入口，靠 modalShown
+  // 早退）；系統返回＝收起（向 App 登記關閉函式，history_back_guard 先問它）。
+  test("開著時以具名來源設 modal、登記系統返回；收起時兩者都撤銷", async () => {
+    const core = makeCore();
+    const sources = new Set();
+    core.setModalOpen = vi.fn((s, on) => (on ? sources.add(s) : sources.delete(s)));
+    const dismissers = [];
+    core.registerSheetDismiss = vi.fn((fn) => {
+      dismissers.push(fn);
+      return () => dismissers.splice(dismissers.indexOf(fn), 1);
+    });
+    renderBar(core);
+    expect(sources.size).toBe(0);
+    await openMore();
+    expect(sources.size).toBe(1);
+    expect(dismissers).toHaveLength(1);
+    act(() => dismissers[0]()); // 系統返回
+    await sheetClosed();
+    expect(sources.size).toBe(0);
+    expect(dismissers).toHaveLength(0);
+  });
+
+  test("登出確認沒動作會自己收回（防口袋誤觸）", async () => {
+    const core = makeCore();
+    renderBar(core);
+    await openMore();
     vi.useFakeTimers();
     try {
-      const core = makeCore();
-      renderBar(core);
-      fireEvent.click(byKey("__more"));
       fireEvent.click(byKey("__logout"));
       expect(byKey("__logoutYes")).not.toBeNull();
       act(() => vi.advanceTimersByTime(LOGOUT_CONFIRM_MS + 10));
@@ -244,16 +352,18 @@ describe("焦點與事件邊界", () => {
     expect(ev.defaultPrevented).toBe(true);
   });
 
-  test("工具列與彈出選單的 mousedown／mouseup／click 不外洩到 window", () => {
+  // 「更多」sheet 在 portal 裡、不在這道攔截內：它開著算 modal，App 的滑鼠入口靠
+  // modalShown 早退（見上面「更多（bottom sheet）」的 modal 測試）。
+  test("工具列與按鍵面板的 mousedown／mouseup／click 不外洩到 window", () => {
     renderBar(makeCore({ context: { push: false, search: ["title"] } }));
-    fireEvent.click(byKey("__more"));
+    fireEvent.click(byKey("__keys"));
     const seen = [];
     const spy = (e) => seen.push(e.type);
     for (const t of ["mousedown", "mouseup", "click"]) window.addEventListener(t, spy);
     try {
-      for (const k of ["__search", "__settings"])
+      for (const k of ["__search", "PageDown"])
         for (const t of ["mousedown", "mouseup", "click"])
-          byKey(k)?.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true }));
+          byKey(k).dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true }));
     } finally {
       for (const t of ["mousedown", "mouseup", "click"]) window.removeEventListener(t, spy);
     }

@@ -1,0 +1,102 @@
+/* 手機頂部 App Bar（MobileAppBar/index.jsx）。位於終端機之外（#cmenuReact 底下），
+   user-select: none 不影響終端機選取（同 MobileToolbar.css 的說明）。 */
+.mobileAppBar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* 高度必須等於 mobile_layout.MOBILE_APPBAR_PX（列數扣的就是它；守護
+     tests/unit/mobile_app_bar.test.jsx）＋上緣 safe-area（--safe-top，App._onVisualViewport
+     寫；viewport-fit=cover 的瀏海，平常是 0）。 */
+  height: calc(48px + var(--safe-top, 0px));
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--safe-top, 0px) 16px 0;
+  /* 低於 Mantine overlay（200）：對話框的遮罩要蓋得住它。高於終端機與 PageTopAlert。 */
+  z-index: 150;
+  background: rgba(20, 20, 24, 0.96);
+  border-bottom: 1px solid #333;
+  color: #eee;
+  font-family: system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobileAppBarText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.mobileAppBarTitle,
+.mobileAppBarSubtitle {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobileAppBarTitle {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.mobileAppBarSubtitle {
+  font-size: 12px;
+  line-height: 16px;
+  opacity: 0.65;
+}
+
+/* 等待 PTT 回應：App Bar 底邊的 indeterminate 進度條（Material linear progress）。
+   只動 transform（合成層）；reduced-motion 時改成靜態的一條。 */
+.mobileAppBarProgress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+  background: rgba(168, 199, 250, 0.2);
+}
+
+.mobileAppBarProgress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: #a8c7fa;
+  animation: mobileAppBarProgress 1.1s ease-in-out infinite;
+}
+
+@keyframes mobileAppBarProgress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobileAppBarProgress::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+}
+
+.mobileAppBarBadge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #b3261e;
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+}

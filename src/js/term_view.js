@@ -11,7 +11,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, statusSignature, normalizePasteText } from './string_util';
-import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
+import { rowToText, parseArticleHeader, parseArticleTitle, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
@@ -26,7 +26,7 @@ import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { tryOpenSearchModal } from './article_search';
-import { mobileCtrlKey, mobileMenuLayout } from './mobile_layout';
+import { mobileCtrlKey, mobileMenuLayout, listViewportGeometry } from './mobile_layout';
 
 // 單獨按下修飾鍵本身（實體鍵盤按 Shift 準備打大寫）不算「下一個按鍵」，黏滯 Ctrl 不解除。
 var MODIFIER_KEY_NAMES = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph'];
@@ -241,6 +241,8 @@ export function TermView() {
   // 手機軟鍵盤蓋住的底部高度（px），App._onVisualViewport 寫、setTermFontSize 讀。
   // 見 mobile_layout.keyboardInset、term_size.termLayoutOffsets。
   this.keyboardInset = 0;
+  // 手機頂部 App Bar 蓋住的高度（px），App._onVisualViewport 寫（setTopInset）。0 ＝桌機。
+  this.topInset = 0;
   // 手機版面的畫面類型（docs/mobile.md「Phase 3」「Phase 4」）：
   //   mobileSurface  'grid'（塞滿縮放）｜'article'（好讀長頁換行）｜'list'（列表卡片）。
   //                  唯一寫入點 setMobileSurface，由 App._applyMobileGeometry 呼叫；
@@ -396,6 +398,8 @@ export function TermView() {
   // Board of the article being read (same header line); fallback board for a
   // boardless #AID link. Assigned by the App like flashListHint etc.
   this._articleBoard = null;
+  // 文章檔頭「標題」列（同一個 header 事件），手機 App Bar 的標題。
+  this._articleTitle = null;
   this.onAidClick = null;
   // 「開燈」需要切 pmore 色彩顯示模式時的入口（App 指派，見 pttchrome.jsx）。
   this.onLightsRawMode = null;
@@ -741,6 +745,8 @@ TermView.prototype = {
       if (header) {
         this._articleAuthor = header.author;
         this._articleBoard = header.board;
+        // 手機 App Bar 的標題（mobile_app_bar.js）：同一個事件、第二列。
+        this._articleTitle = lines[1] ? parseArticleTitle(rowToText(lines[1])) : null;
       }
     } else {
       // Leaving the article clears any pusher highlight selection. 只設欄位就好：
@@ -851,6 +857,8 @@ TermView.prototype = {
           // pin 成 1 只跑 applyFunctionKeys，而 functionKeyRows(1, n) 與 (2, n) 回傳
           // 相同（footer_keys.js）⇒ row1／footer 的功能鍵按鈕行為零損失。
           // 滑鼠的欄位規則讀的是 buf.pageState（在看板列表仍是 2），不受此 override 影響。
+          // 視口列數在 _renderScreenLines 對帳之後才定（手機卡片吃下整個高，
+          // listViewportGeometry）；這裡先給格線的值。
           var lsBodyRows = this.buf.rows - 4;
           this._renderScreenLines(windowLines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, Object.assign({
             rowIdentityStable: true,
@@ -996,6 +1004,11 @@ TermView.prototype = {
     // 卡片旗標與種類一併帶給 render 層（進 annotationsKey ⇒ 切換時整批重建）。
     var lsOv = enhanceOverrides && enhanceOverrides.listScroll;
     if (lsOv) {
+      // 卡片模式下 header／footer 收起，視口改吃整個終端機高（listViewportGeometry）。
+      // 必須在對帳之後算：listCards 是這一幀才定的。
+      lsOv.viewportRows = listViewportGeometry({
+        rows: this.buf.rows, headerRows: lsOv.bodyStart, cards: this.listCards
+      }).viewportRows;
       lsOv.viewportPx = (lsOv.viewportRows || 0) * this.chh;
       enhanceOverrides.listCards = this.listCards ? lsOv.kind : undefined;
     }
@@ -1572,7 +1585,8 @@ TermView.prototype = {
       chh: this.chh,
       rows: this.buf.rows,
       margin: this.bbsViewMargin,
-      bottomInset: this.keyboardInset
+      bottomInset: this.keyboardInset,
+      topInset: this.topInset
     };
     if (this.menuCards) {
       // 手機主功能表大按鈕：`.main` 撐到整個可視高（見 mobile_layout.mobileMenuLayout）。
@@ -1602,15 +1616,32 @@ TermView.prototype = {
     if (this.chh) this.setTermFontSize(this.chw, this.chh);
   },
 
+  // 同上，頂部（手機 App Bar）。
+  setTopInset: function(px) {
+    var inset = px > 0 ? px : 0;
+    if (inset === this.topInset) return;
+    this.topInset = inset;
+    if (this.chh) this.setTermFontSize(this.chw, this.chh);
+  },
+
   // 手機畫面類型的開關（見建構子 mobileSurface）。只切旗標與 class；字級／寬度由
   // 呼叫端（App._applyMobileGeometry）接著走 fixedResize 套。
   setMobileSurface: function(surface) {
     var s = surface === 'article' || surface === 'list' || surface === 'menu' ?
       surface : 'grid';
+    var wasReflow = this.reflow;
     this.mobileSurface = s;
     this.reflow = s === 'article';
     this.listCards = s === 'list';
     this.menuCards = s === 'menu';
+    // 好讀 footer（#easyReadingLastRow）：換行版面收起，離開時還原成顯示中
+    // （_mirrorStatusRowToFooter 是它唯一的「顯示」寫入點，這裡只跟著版面切換）。
+    if (this.lastRowDiv && wasReflow !== this.reflow) {
+      if (this.reflow && this.lastRowDiv.style.display === 'block')
+        this.lastRowDiv.style.display = 'none';
+      else if (!this.reflow && this.lastRowDiv.style.display === 'none' && !this._gridRender)
+        this.lastRowDiv.style.display = 'block';
+    }
     if (this.mainDisplay) {
       this.mainDisplay.classList.toggle('mobileReflow', this.reflow);
       this.mainDisplay.classList.toggle('mobileListCards', this.listCards);
@@ -1654,7 +1685,9 @@ TermView.prototype = {
     var limit = Math.min(n, row + (this.buf ? this.buf.rows : 24));
     for (var r = row; r < limit; ++r) {
       var el = mc.querySelector('[type="bbsrow"][srow="' + r + '"]');
-      if (el) return offsetTopWithin(el, disp);
+      // 手機收起來的列（render/collapsed_row.js，display:none）沒有版面位置：
+      // offsetTop 讀到 0 會把捲動還原拉回頂端 ⇒ 跳過，取下一個看得到的列。
+      if (el && el.offsetParent !== null) return offsetTopWithin(el, disp);
     }
     return null;
   },
@@ -2958,7 +2991,8 @@ TermView.prototype = {
       renderOverlayRow(statusChars, this.chh, el, fnKeys);
       this.setSingleChild(this.lastRowDiv.childNodes[0], el);
     }
-    this.lastRowDiv.style.display = 'block';
+    // 手機換行版面不顯示這條 80 欄狀態列（被裁掉一半、按鍵已在底部導覽）。
+    this.lastRowDiv.style.display = this.reflow ? 'none' : 'block';
   },
 
   // Toggle whole-row highlight for all comments by `userid` (click handler).

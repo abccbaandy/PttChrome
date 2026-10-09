@@ -1,6 +1,8 @@
 import { Fragment, useState, useRef, useCallback, useEffect } from "react";
 import { i18n } from "../../js/i18n";
 import DropdownMenu from "./DropdownMenu";
+import ContextSheet from "./ContextSheet";
+import { useMobile } from "../useMobile";
 import InputHelperModal from "./InputHelperModal";
 import LiveHelperModal from "./LiveHelperModal";
 import PrefModal from "./PrefModal";
@@ -11,6 +13,7 @@ import LongPushErrorModal from "./LongPushErrorModal";
 import SearchModal from "./SearchModal";
 import DebugRecordNotice from "../DebugRecordNotice";
 import MobileToolbar from "../MobileToolbar";
+import MobileAppBar from "../MobileAppBar";
 import { onPrefSaveImpl } from "./pref_save";
 import { readValuesWithDefault, writeValues } from "../../js/pref_storage";
 import * as prefSync from "../../js/pref_sync";
@@ -182,6 +185,8 @@ export const ContextMenu = ({ pttchrome }) => {
   // 路徑會 update(initialState) 全量 reset，混進去會被誤關。runtime-only：不進
   // pref_storage/pref_sync，重新整理即重設為關閉。
   const [debugMode, setDebugMode] = useState(false);
+  // 手機版面：長按選單與搜尋改成 bottom sheet（components/MobileSheet）。
+  const mobile = useMobile(pttchrome);
   // Several handlers both read state for a side-effect AND set it, so we mirror
   // state into a ref (synced every render) and read stateRef.current in
   // callbacks to avoid stale closures.
@@ -926,9 +931,14 @@ export const ContextMenu = ({ pttchrome }) => {
     liveHelperSec,
   } = state;
 
+  // 長按／右鍵選單的外殼：手機＝bottom sheet，桌機＝游標旁的 Mantine Menu。項目清單
+  // 與所有判斷共用（context_menu_entries.js、上面的 onContextMenu）。
+  const MenuShell = mobile ? ContextSheet : DropdownMenu;
+
   return (
     <Fragment>
-      <DropdownMenu
+      <MenuShell
+        pttchrome={pttchrome}
         open={open}
         onHide={onHide}
         pageX={pageX}
@@ -1000,6 +1010,8 @@ export const ContextMenu = ({ pttchrome }) => {
         kinds={searchKinds}
         onHide={onSearchHide}
         onConfirm={onSearchConfirm}
+        mobile={mobile}
+        pttchrome={pttchrome}
       />
       <PrefModal
         show={showsSettings}
@@ -1009,6 +1021,7 @@ export const ContextMenu = ({ pttchrome }) => {
         onDebugModeChange={onDebugModeChange}
       />
       <DebugRecordNotice pttchrome={pttchrome} />
+      <MobileAppBar pttchrome={pttchrome} />
       <MobileToolbar
         pttchrome={pttchrome}
         hidden={modalOpen}

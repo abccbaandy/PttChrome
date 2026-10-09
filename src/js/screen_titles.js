@@ -45,6 +45,16 @@ export function rowHasAnyTitle(rowText, names) {
   return false;
 }
 
+// row 0 的三段式標題文字（`【X】` 的 X，去頭尾空白）；不是這個形狀回 null。
+// 只認 col 0 起的【】（理由同 rowHasTitle）。手機 App Bar 的標題來源
+// （mobile_app_bar.js）；文章列表的 `【板主:xxx】` 也是這個形狀，呼叫端自己先判列表。
+const HEADER_TITLE_RE = /^【\s*([^【】]*?)\s*】/;
+export function parseHeaderTitle(rowText) {
+  if (!rowText) return null;
+  var m = rowText.match(HEADER_TITLE_RE);
+  return m && m[1] ? m[1] : null;
+}
+
 // setPageState / classifyListScreen / boardListContextKind 共用的「選單畫面」
 // 白名單。三份原本各自抄一遍字面值，這裡收成一處。
 export const MENU_TITLES = [MAIN_MENU, CLASS_LIST, ARCHIVE_LIST];

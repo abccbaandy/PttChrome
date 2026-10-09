@@ -23,7 +23,7 @@
 //
 // 詳細設計與 PTT 端事實見 docs/board-list-smooth-scroll.md。
 
-import { listRowSpan, listPageRows } from './mobile_layout';
+import { listRowSpan, listPageRows, listViewportGeometry } from './mobile_layout';
 import {
   BRD_HEADER_ROWS,
   classifyBoardListScreen,
@@ -1986,7 +1986,12 @@ BoardListSession.prototype = {
   // server 的 p_lines（抓頁／補頁的單位），不可以一起換。
   _pageRows: function() {
     const v = this._view;
-    return listPageRows(this._bodyRows(), !!(v && v.listCards));
+    const cards = !!(v && v.listCards);
+    // 視口高見 mobile_layout.listViewportGeometry（卡片模式 header／footer 收起）。
+    const vg = listViewportGeometry({
+      rows: this._termBuf.rows, headerRows: this.headerRows(), cards: cards
+    });
+    return listPageRows(vg.viewportRows, cards);
   },
 
   _screen: function() {

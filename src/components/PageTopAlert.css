@@ -9,3 +9,8 @@
   margin-inline: auto;
   box-shadow: 0px 0px 20px black;
 }
+
+/* 手機：讓開常駐的頂部 App Bar（MOBILE_APPBAR_PX）。 */
+body.mobile-layout .PageTopAlert {
+  margin-top: calc(48px + 15px);
+}

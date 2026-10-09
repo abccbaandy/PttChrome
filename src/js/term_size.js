@@ -50,11 +50,15 @@ export function calcTermSize({ height, fontSizePx }) {
 // `bottomInset` ＝手機軟鍵盤蓋住的底部高度（mobile_layout.keyboardInset，0 ＝沒有）。
 // 置中改在「沒被蓋住的那一段」裡做；放不下時**底對齊**可視區（頂端幾列被推出畫面），
 // 因為這時使用者正在打字，而 PTT 的輸入列幾乎都在底列（vtuikit.c 的 b_lines）。
-export function termLayoutOffsets({ innerHeight, chh, rows, margin = 0, bottomInset = 0 }) {
+//
+// `topInset` ＝手機頂部 App Bar（＋瀏海 safe area）蓋住的高度。可視區從它下面算起，
+// 所有分支都以它為原點；0 ＝與以前完全相同（桌機零改動）。
+export function termLayoutOffsets({ innerHeight, chh, rows, margin = 0, bottomInset = 0, topInset = 0 }) {
   const contentHeight = chh * rows;
   const inset = bottomInset > 0 ? bottomInset : 0;
-  const avail = innerHeight - inset;
-  if (contentHeight < avail) return { marginTop: (avail - contentHeight) / 2 + margin };
-  if (inset > 0) return { marginTop: avail - contentHeight };
-  return { marginTop: margin };
+  const top = topInset > 0 ? topInset : 0;
+  const avail = innerHeight - inset - top;
+  if (contentHeight < avail) return { marginTop: top + (avail - contentHeight) / 2 + margin };
+  if (inset > 0) return { marginTop: top + avail - contentHeight };
+  return { marginTop: top + margin };
 }

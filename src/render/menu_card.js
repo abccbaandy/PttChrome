@@ -19,6 +19,7 @@ import cx from "classnames";
 import { el } from "./dom";
 import { rowToText } from "../js/comment_parse";
 import { parseMenuItemRow } from "../js/menu_items";
+import { buildCollapsedRow } from "./collapsed_row";
 
 export const MENU_CARD_PX = 44;
 
@@ -65,11 +66,7 @@ export function buildMenuCard({ chars, row, highlightClass }) {
   };
 }
 
-// menuCards 模式的空白列：保留 bbsrow／data-row 契約，但不佔高度。
-export function buildCollapsedRow(row) {
-  return el(
-    "span",
-    { type: "bbsrow", srow: row, class: "menuBlankRow" },
-    el("span", { "data-type": "bbsline", "data-row": row }),
-  );
+// menuCards 模式的空白列：保留 bbsrow／data-row 契約，但不佔高度（共用 collapsed_row.js）。
+export function buildMenuBlankRow(row) {
+  return buildCollapsedRow(row, "menuBlankRow");
 }

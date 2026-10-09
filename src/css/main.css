@@ -249,6 +249,62 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   max-width: 100%;
 }
 
+/* 按下的波紋回饋（src/js/ripple.js 插入 .pttRippleWave）。宿主是我們自己的按鈕／
+   Mantine 元件（theme classNames），**不會**出現在 #mainContainer 裡（委派直接跳過）。 */
+.pttRipple {
+  position: relative;
+  overflow: hidden;
+}
+.pttRippleWave {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  background: currentColor;
+  opacity: 0.2;
+  transform: scale(0);
+  animation: pttRipple 450ms ease-out forwards;
+}
+@keyframes pttRipple {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* 手機好讀文章的檔頭卡片（render/article_meta_card.js）：作者／完整標題／時間，取代
+   80 欄反白的檔頭列；分隔線收起（.mobileCollapsedRow）。只在換行版面出現。
+   不宣告 user-select（css_user_select.test.js）；不用 margin-bottom（會推開
+   #easyReadingLastRow，同推文卡片的理由）。 */
+.main.mobileReflow #mainContainer span[type="bbsrow"].articleMeta {
+  display: block;
+  padding-inline: 0.25em;
+}
+.articleMeta .articleMetaLabel {
+  margin-right: 0.5em;
+  opacity: 0.55;
+  font-size: 0.8em;
+}
+.articleMeta--author {
+  padding-top: 0.5em;
+  color: #9ecbff;
+}
+.articleMeta--title {
+  padding-block: 0.25em;
+  color: #f0f0f0;
+  font-size: 1.15em;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.articleMeta--time {
+  padding-bottom: 0.5em;
+  font-size: 0.8em;
+  color: #9a9aa0;
+  box-shadow: inset 0 -1px 0 #333;
+}
+.articleMeta--time .articleMetaLabel {
+  font-size: 1em;
+}
+
 /* 手機推文卡片（render/comment_card.js，docs/mobile.md「推文卡片」）：只在換行版面。
    標頭列＝推/噓/→・樓號・id，IP＋時間右靠縮小淡化；內容另起一行縮排、自然換行。
    等寬格線在換行版面本來就不存在（防誤觸與以欄判斷的滑鼠區域在 reflow 下全關），
@@ -379,8 +435,10 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   color: #00ffff;
   font-weight: bold;
 }
-/* 選單項之後的空白列不佔高度（讓給按鈕）；bbsrow／data-row 契約保留。 */
-.main.mobileMenu #mainContainer > span.menuBlankRow {
+/* 手機收起來的列（render/collapsed_row.js）：選單的空白列與標題／狀態列、列表卡片的
+   header／footer、好讀文章檔頭的分隔線。不佔高度；bbsrow／data-row 契約保留。
+   選擇器不綁畫面 class：只有手機分支會產生這個節點（桌機 golden 不經過）。 */
+#mainContainer span.mobileCollapsedRow {
   display: none;
 }
 /* 格線游標的 row×chh 座標在大按鈕版面對不上；選中項由按鈕底色表示。 */

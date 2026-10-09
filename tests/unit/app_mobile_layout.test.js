@@ -1,6 +1,6 @@
 // @unit-env browser
 import { App } from '../../src/js/pttchrome';
-import { MOBILE_TOOLBAR_PX, mobileTermGeometry } from '../../src/js/mobile_layout';
+import { MOBILE_APPBAR_PX, MOBILE_TOOLBAR_PX, mobileRowsHeight, mobileTermGeometry } from '../../src/js/mobile_layout';
 // 原始碼掃描（下方 main.jsx 契約）：瀏覽器沒有 fs，用 ?raw 讀進來。
 import mainJsxSource from '../../src/js/main.jsx?raw';
 
@@ -150,14 +150,16 @@ describe('App 手機模式：終端機尺寸', () => {
     expect(app.setTermSize).toHaveBeenLastCalledWith(80, expect.any(Number));
   });
 
-  test('手機：列數從底部工具列上方的高度算（工具列不蓋住 PTT 的底列）', () => {
+  test('手機：列數從頂部 App Bar 與底部工具列中間的高度算（兩條 bar 都不蓋住 PTT 的列）', () => {
     const app = makeApp('on');
     app.applyMobileLayout();
     app.onValuesPrefChange(synced);
-    const want = mobileTermGeometry({ width: 390, height: 750 - MOBILE_TOOLBAR_PX, dpr: 1, surface: 'grid' });
+    const usable = 750 - MOBILE_APPBAR_PX - MOBILE_TOOLBAR_PX;
+    expect(mobileRowsHeight(750)).toBe(usable);
+    const want = mobileTermGeometry({ width: 390, height: usable, dpr: 1, surface: 'grid' });
     expect(app.setTermSize).toHaveBeenLastCalledWith(80, want.rows);
     const chh = app.view.fixedResize.mock.calls.at(-1)[0];
-    expect(chh * want.rows + 10).toBeLessThanOrEqual(750 - MOBILE_TOOLBAR_PX);
+    expect(chh * want.rows + 10).toBeLessThanOrEqual(usable);
   });
 
   test('手機模式關掉 ⇒ 用同一組 prefs 重套桌機規則（fixed-font-size 20px）', () => {
@@ -297,6 +299,20 @@ describe('App 手機模式：軟鍵盤與 visualViewport', () => {
   test('沒有軟鍵盤時終端機也排在工具列上方', () => {
     const app = makeApp();
     expect(app.view.setKeyboardInset).toHaveBeenLastCalledWith(MOBILE_TOOLBAR_PX);
+  });
+
+  test('頂部 App Bar：終端機排在它下面；離開手機模式歸零（桌機零改動）', () => {
+    const app = makeApp();
+    app.view.setTopInset = vi.fn();
+    app._onVisualViewport();
+    expect(app.view.setTopInset).toHaveBeenLastCalledWith(MOBILE_APPBAR_PX);
+    // 軟鍵盤升起不影響頂部
+    app.toggleSoftKeyboard();
+    setVV(480);
+    expect(app.view.setTopInset).toHaveBeenLastCalledWith(MOBILE_APPBAR_PX);
+    app.mobileLayoutMode = 'off';
+    app.applyMobileLayout();
+    expect(app.view.setTopInset).toHaveBeenLastCalledWith(0);
   });
 
   test('按鍵面板展開：面板高度併進終端機底部 inset（不改 --kb-inset），收起歸還', () => {

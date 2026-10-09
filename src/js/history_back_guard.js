@@ -174,7 +174,15 @@ export function installHistoryBackGuard(app, win, opts) {
       passThrough = false;
       return;
     }
-    const sent = !!(app.sendNavKeyAsUser && app.sendNavKeyAsUser('ArrowLeft'));
+    // 手機 bottom sheet 開著：返回＝收起它（Android 原生 App 的返回語意），不送 ←、
+    // 不出逃生門提示。sheet 開著時 modalShown 為真，不攔的話這一下會落到「送不出去」
+    // 那條而被算成第一次逃生。
+    if (app.dismissTopSheet && app.dismissTopSheet()) {
+      lastBlockedAt = 0;
+      restoreSentinel();
+      return;
+    }
+    const sent =!!(app.sendNavKeyAsUser && app.sendNavKeyAsUser('ArrowLeft'));
     logBack(sent);
     if (sent) {
       // 送得出去就不吵（畫面自己會退出文章／列表），也不算逃生門的一次——

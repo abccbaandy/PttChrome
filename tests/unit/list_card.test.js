@@ -8,7 +8,8 @@ import { row, seg, listRow } from "./helpers/screen_fixtures";
 import {
   listRowSpan,
   listPageRows,
-  isListCardGapTarget,
+  isListCardBodyTarget,
+  listViewportGeometry,
   LIST_CARD_ROWS,
   LIST_CARD_LINES,
 } from "../../src/js/mobile_layout";
@@ -180,7 +181,7 @@ describe("ScreenController：只在 enhance.listCards 時畫卡片", () => {
     },
   });
 
-  test("卡片模式：body 列變卡片，header／footer 照舊", () => {
+  test("卡片模式：body 列變卡片，header／footer 不在視口裡", () => {
     const m = mountScreen(props("article"));
     const view = m.container.querySelector(".listBodyView");
     const cards = view.querySelectorAll(":scope > .listCard");
@@ -190,9 +191,22 @@ describe("ScreenController：只在 enhance.listCards 時畫卡片", () => {
     expect(m.container.querySelectorAll(":scope > .listCard").length).toBe(0);
   });
 
-  test("桌機（沒有 listCards）：一張卡片都沒有", () => {
+  // 看板名在 App Bar、動作在底部導覽（docs/mobile.md「收起終端機標頭／狀態列」）。
+  test("卡片模式：header 三列與 footer 收起，DOM 契約（srow／data-row）保留", () => {
+    const m = mountScreen(props("article"));
+    for (const r of [0, 1, 2, 5]) {
+      const n = m.container.querySelector(`:scope > [type="bbsrow"][srow="${r}"]`);
+      expect(n.classList.contains("mobileCollapsedRow")).toBe(true);
+      expect(n.querySelector(`[data-type="bbsline"][data-row="${r}"]`)).not.toBe(null);
+      expect(n.textContent).toBe("");
+    }
+  });
+
+  test("桌機（沒有 listCards）：一張卡片都沒有、header／footer 照畫", () => {
     const m = mountScreen(props(undefined));
     expect(m.container.querySelectorAll(".listCard").length).toBe(0);
+    expect(m.container.querySelectorAll(".mobileCollapsedRow").length).toBe(0);
+    expect(m.container.textContent).toContain("看板《Test》");
   });
 
   test("同一批列物件切換卡片模式 ⇒ 節點重建（listCards 進 annotationsKey）", () => {
@@ -215,20 +229,6 @@ describe("列表 session 的卡片換算（mobile_layout）", () => {
     expect(listPageRows(1, true)).toBe(1);
   });
 
-  // 防誤點：點到卡片間距（.listCard 的 padding）不開文，點卡片本體才開。
-  test("isListCardGapTarget：只有 body 視口內、卡片本體外才算間距", () => {
-    document.body.innerHTML =
-      '<div class="listBodyView"><span class="listCard" id="card">' +
-      '<span class="listCardBody"><span class="listCardLine" id="line">x</span></span>' +
-      '</span></div><span id="footer">footer</span>';
-    expect(isListCardGapTarget(document.getElementById("card"))).toBe(true);
-    expect(isListCardGapTarget(document.querySelector(".listBodyView"))).toBe(true);
-    expect(isListCardGapTarget(document.getElementById("line"))).toBe(false);
-    expect(isListCardGapTarget(document.querySelector(".listCardBody"))).toBe(false);
-    expect(isListCardGapTarget(document.getElementById("footer"))).toBe(false);
-    expect(isListCardGapTarget(null)).toBe(false);
-    document.body.innerHTML = "";
-  });
 });
 
 // 兩個列表 session 的捲動數學只靠 _rowHeight（每筆等高）與 _pageRows（PgUp/PgDn）。
@@ -241,6 +241,7 @@ describe.each([
     _view: { chh: 15, listCards },
     _termBuf: { rows: 24 },
     _bodyRows: Session.prototype._bodyRows,
+    headerRows: Session.prototype.headerRows,
   });
 
   test("_rowHeight：卡片＝LIST_CARD_ROWS × chh，一般＝chh", () => {
@@ -248,9 +249,38 @@ describe.each([
     expect(Session.prototype._rowHeight.call(fake(true))).toBe(15 * LIST_CARD_ROWS);
   });
 
-  test("_pageRows：卡片一次翻 floor(bodyRows/LIST_CARD_ROWS) 筆；_bodyRows（抓頁單位）不變", () => {
+  // 卡片模式 header／footer 收起，視口吃下整個 24 列（listViewportGeometry）。
+  test("_pageRows：卡片一次翻 floor(rows/LIST_CARD_ROWS) 筆；_bodyRows（抓頁單位）不變", () => {
     expect(Session.prototype._pageRows.call(fake(false))).toBe(20);
-    expect(Session.prototype._pageRows.call(fake(true))).toBe(8);
+    expect(Session.prototype._pageRows.call(fake(true))).toBe(9);
     expect(Session.prototype._bodyRows.call(fake(true))).toBe(20);
+  });
+});
+
+describe("listViewportGeometry（term_view／clientToPos／_pageRows 同源）", () => {
+  test("格線：header 下面 rows-4 列；卡片：從頂端起整個高", () => {
+    expect(listViewportGeometry({ rows: 24, headerRows: 3, cards: false })).toEqual({
+      bodyTopRows: 3,
+      viewportRows: 20,
+    });
+    expect(listViewportGeometry({ rows: 24, headerRows: 3, cards: true })).toEqual({
+      bodyTopRows: 0,
+      viewportRows: 24,
+    });
+  });
+
+  // 防誤點：點到卡片間距（.listCard 的 padding）或視口外的留白不開文，點卡片本體才開。
+  test("isListCardBodyTarget：只有卡片本體（視口外的留白、間距都不開文）", () => {
+    document.body.innerHTML =
+      '<div class="main"><div class="listBodyView"><span class="listCard" id="card">' +
+      '<span class="listCardBody"><span class="listCardLine" id="line">x</span></span>' +
+      '</span></div><span id="blank">x</span></div>';
+    expect(isListCardBodyTarget(document.getElementById("line"))).toBe(true);
+    expect(isListCardBodyTarget(document.querySelector(".listCardBody"))).toBe(true);
+    expect(isListCardBodyTarget(document.getElementById("card"))).toBe(false);
+    expect(isListCardBodyTarget(document.getElementById("blank"))).toBe(false);
+    expect(isListCardBodyTarget(document.querySelector(".main"))).toBe(false);
+    expect(isListCardBodyTarget(null)).toBe(false);
+    document.body.innerHTML = "";
   });
 });

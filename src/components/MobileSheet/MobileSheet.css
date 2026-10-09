@@ -1,0 +1,132 @@
+/* 手機 bottom sheet（MobileSheet/index.jsx）。Drawer 的內容盒透明，外觀畫在
+   .mobileSheet 上（拖曳時位移的是它，不跟 Mantine 的 transition transform 打架）。 */
+.mobileSheetInner {
+  /* 頁內輸入框（搜尋）叫出的軟鍵盤：Android 預設 resizes-visual，fixed 元素錨在 layout
+     viewport ⇒ 不讓開就被鍵盤蓋住。--vv-kb-inset 由 App._onVisualViewport 寫
+     （mobile_layout.overlayKeyboardInset，不經終端機的 softKeyboard 閘門）。 */
+  padding-bottom: var(--vv-kb-inset, 0px);
+}
+
+/* 高度跟內容走、貼底（inner 是 align-items: flex-end）。Drawer 的 size="auto" 在
+   Mantine 9 解析成未定義的 --drawer-size-auto ⇒ content 被撐成全高、內容貼頂，
+   這裡明確給 auto（選擇器多一層壓過 Mantine 的單一 class）。 */
+.mobileSheetInner .mobileSheetContent {
+  height: auto;
+  max-height: 100%;
+}
+
+.mobileSheetContent {
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.mobileSheetBody {
+  padding: 0;
+}
+
+.mobileSheet {
+  max-height: calc(100dvh - 48px - var(--vv-kb-inset, 0px));
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 0 12px 12px;
+  border-radius: 16px 16px 0 0;
+  background: #1d1d22;
+  color: #eee;
+  font-family: system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 120ms ease-out;
+}
+
+/* 拖曳把手：只有這一塊接手勢（touch-action: none ⇒ 不被瀏覽器拿去捲動）。 */
+.mobileSheetHandle {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 8px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.mobileSheetHandle > span {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: #66666e;
+}
+
+.mobileSheetTitle {
+  flex: none;
+  padding: 0 4px 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mobileSheetScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+/* sheet 裡的清單項（更多／長按選單共用）。觸控目標最小 48px。 */
+.mobileSheetItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobileSheetItem:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Drawer 打開時把焦點放進第一個項目（focus trap）：觸控使用者不該看到焦點框，
+   只有鍵盤操作（:focus-visible）才畫。 */
+.mobileSheetItem:focus {
+  outline: none;
+}
+
+.mobileSheetItem:focus-visible {
+  outline: 2px solid #a8c7fa;
+  outline-offset: -2px;
+}
+
+.mobileSheetItem:disabled {
+  opacity: 0.45;
+}
+
+.mobileSheetItem.active {
+  color: #a8c7fa;
+}
+
+.mobileSheetItemPreview {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+.mobileSheetDivider {
+  height: 1px;
+  margin: 4px 8px;
+  background: #333;
+}
+
+.mobileSheetDanger {
+  color: #ffb4ab;
+}

@@ -110,6 +110,40 @@ test.describe('手機底部工具列（離線重放）', () => {
     expect(await focusedIsT(page)).toBe(true);
   });
 
+  test('文章列表：發文按鈕送 ^P（Alt remap，不叫出瀏覽器列印）', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
+    await drawArticleList(page);
+    await expect(byKey(page, '__post')).toBeVisible();
+    await collectSent(page);
+    await byKey(page, '__post').tap();
+    await expect.poll(() => sentText(page)).toBe('\x10');
+    expect(await focusedIsT(page)).toBe(true);
+  });
+
+  // 等待進度條（mobile_busy.js）：真 tap → 真的送出 byte → 300ms 後亮；離線重放的 stub
+  // 不回應這個鍵 ⇒ 等不到 settle，BUSY_TIMEOUT_MS 後自己收。
+  test('App Bar 等待進度條：送出後沒有回應就亮，逾時自己收', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
+    await drawArticleList(page);
+    const busy = page.locator('#mobileAppBar [data-key="__busy"]');
+    await expect(busy).toHaveCount(0);
+    await byKey(page, '__post').tap();
+    await expect(busy).toBeVisible();
+    await expect(busy).toHaveCount(0, { timeout: 6000 });
+  });
+
+  test('UI 動作之後沒有送出 byte（例：列表好讀的本地捲動）不會亮進度條', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
+    await drawArticleList(page);
+    // 按鍵面板的鍵也是 UI 動作；這裡驗的是「沒有送出就不亮」：直接記一次 action，不送任何 byte。
+    await page.evaluate(() => window.__app.noteUserAction());
+    await page.evaluate(() => new Promise((r) => setTimeout(r, 450))); // sleep-ok: 等過 BUSY_SHOW_DELAY_MS（300）確認沒亮，否定式斷言只能等時間
+    await expect(page.locator('#mobileAppBar [data-key="__busy"]')).toHaveCount(0);
+  });
+
   test('更多：選取模式、設定、登出二段確認', async ({ page }) => {
     await bootOffline(page, ptt);
     await byKey(page, '__more').tap();
@@ -154,6 +188,27 @@ test.describe('手機底部工具列（離線重放）', () => {
       expect(await focusedIsT(page)).toBe(true);
       await byKey(page, '__keyboard').tap();
       expect(await inputMode(page)).toBe('none');
+    });
+
+    test('文章裡：回文送 y、分享鈕出現、更多裡的同主題下篇送 ]；沒有發文', async ({ page }) => {
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, { enableEasyReading: true });
+      await replayCassette(page, articles[0], { easyReading: true });
+      await expect(byKey(page, '__reply')).toBeVisible();
+      await expect(byKey(page, '__share')).toBeVisible();
+      await expect(byKey(page, '__post')).toHaveCount(0);
+
+      await collectSent(page);
+      await byKey(page, '__more').tap();
+      await byKey(page, ']').tap();
+      await expect.poll(() => sentText(page)).toContain(']');
+      // 點了導覽項面板自動收起
+      await expect(byKey(page, '__threadNav')).toHaveCount(0);
+
+      await collectSent(page);
+      await byKey(page, '__reply').tap();
+      await expect.poll(() => sentText(page)).toContain('y');
+      expect(await focusedIsT(page)).toBe(true);
     });
   });
 });

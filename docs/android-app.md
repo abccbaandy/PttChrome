@@ -40,6 +40,7 @@ WebView  https://abccbaandy.github.io/PttChrome/
 6. **不注入 telnet 指令保活**（demo 的 `IAC DO TIMING-MARK` 已拿掉：PTT 的回應會流進網頁 telnet parser）。保活靠 OkHttp ping。實機若驗出 NAT 逾時再議。
 7. **背景不暫停 WebView**：不呼叫 `onPause()`／`pauseTimers()`；`setRendererPriorityPolicy(IMPORTANT, false)`。
 8. **軟鍵盤不縮 WebView**：insets 只讓系統列／瀏海，IME 高度以 `pttandroid:ime` 事件交給網頁（`mobile_layout.keyboardInset` 的 `hostInset`）。縮 WebView＝layout resize ⇒ 改列數、重送 NAWS（`docs/mobile.md`）。
+   系統列由原生 padding 讓掉且 insets `CONSUMED` ⇒ WebView 裡 `env(safe-area-inset-*)` 為 0，網頁的 safe-area 讓位（`App._readSafeInsets`，`index.html` viewport-fit=cover）不會重複。`guess`：未在 APK 實測 env 值。
 9. **新視窗一律轉外部瀏覽器**：`setSupportMultipleWindows(true)`＋`onCreateWindow` 給不掛畫面的暫時 WebView，只取網址就丟。關掉多視窗時 `target=_blank` 會變本頁導航 ⇒ 網頁 `beforeunload` 先跳「離開這個網站？」。網頁端另在 APK 內停用 beforeunload 確認（`src/js/unload_guard.js`，守護 `tests/unit/unload_guard.test.js`）。
 10. FGS 型別 `specialUse`（`dataSync` 在 Android 15 起每 24h 限 6h）。不上 Play，無 specialUse 審核問題。
 

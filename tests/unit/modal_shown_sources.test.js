@@ -6,6 +6,37 @@ import { App } from '../../src/js/pttchrome';
 // 手動兩邊維護 —— 一條路徑漏掉復位，就會「畫面上還有對話框、app 卻以為沒有」→
 // keyup/mouseover/mouseup 永久把焦點搶回隱藏 input #t，整頁只能重整。
 // 症狀層守護：tests/e2e/offline/connect_failure.offline.spec.js。
+// 手機 bottom sheet 的系統返回登記（components/MobileSheet → history_back_guard）。
+describe('App.registerSheetDismiss／dismissTopSheet', () => {
+  const makeApp = () => Object.create(App.prototype);
+
+  test('沒有 sheet ⇒ false（返回照常送 ←）', () => {
+    expect(makeApp().dismissTopSheet()).toBe(false);
+  });
+
+  test('收最上面那個；取消登記後換下一個', () => {
+    const app = makeApp();
+    const a = vi.fn();
+    const b = vi.fn();
+    app.registerSheetDismiss(a);
+    const offB = app.registerSheetDismiss(b);
+    expect(app.dismissTopSheet()).toBe(true);
+    expect(b).toHaveBeenCalledTimes(1);
+    expect(a).not.toHaveBeenCalled();
+    offB();
+    expect(app.dismissTopSheet()).toBe(true);
+    expect(a).toHaveBeenCalledTimes(1);
+  });
+
+  test('關閉函式 throw 仍算用掉這次返回（不能落到送 ← 去動 PTT 畫面）', () => {
+    const app = makeApp();
+    app.registerSheetDismiss(() => {
+      throw new Error('boom');
+    });
+    expect(app.dismissTopSheet()).toBe(true);
+  });
+});
+
 describe('App.setModalOpen', () => {
   const makeApp = () => {
     const app = Object.create(App.prototype);

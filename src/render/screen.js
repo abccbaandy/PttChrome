@@ -20,7 +20,12 @@
 import { el } from "./dom";
 import { buildRow } from "./row";
 import { buildListCard } from "./list_card";
-import { buildMenuCard, buildCollapsedRow, isBlankRow } from "./menu_card";
+import { buildMenuCard, buildMenuBlankRow, isBlankRow } from "./menu_card";
+import { buildCollapsedRow } from "./collapsed_row";
+import {
+  buildArticleMetaRow,
+  ARTICLE_META_MAX_ROWS,
+} from "./article_meta_card";
 import {
   buildCommentCard,
   commentCardRegions,
@@ -1024,6 +1029,12 @@ export class ScreenController {
     // 手機列表卡片（term_view.listCards，docs/mobile.md「Phase 4」）：只換 body 列，
     // header／footer（容器直系子層）照舊。body 範圍與 _patchRows 同一個定義。
     const enhance = this.props.enhance;
+    // 手機好讀文章的檔頭（render/article_meta_card.js）：作者／標題／時間改成卡片、分隔線
+    // 收起。只看該列自己（列號＋文字形狀），認不出就照舊。
+    if (enhance && enhance.commentCards && row < ARTICLE_META_MAX_ROWS) {
+      const meta = buildArticleMetaRow(lines[row], row);
+      if (meta) return meta;
+    }
     // 手機推文卡片：單一推文列（合併塊在 _buildRowNode 另接）。認不出推文形狀退回 buildRow。
     if (enhance && enhance.commentCards && ann && ann.pusher && !ann.hidden) {
       const card = this._buildCommentCard(
@@ -1039,9 +1050,13 @@ export class ScreenController {
       }
     }
     // 手機主功能表（enhance.menuCards，docs/mobile.md「Phase 5」）：選單項畫成大按鈕，
-    // 標題／狀態列以外的空白列收起來讓出高度。兩者都只看該列自己 ⇒ dirty-row patch
-    // 的列獨立前提不破（menuCards 進 annotationsKey，切換時整批重建）。
-    if (enhance && enhance.menuCards && row > 0 && row < lines.length - 1) {
+    // 空白列收起來讓出高度；標題列（第 0 列，標題已在 App Bar）與狀態列（末列）也收起。
+    // 都只看該列自己 ⇒ dirty-row patch 的列獨立前提不破（menuCards 進 annotationsKey，
+    // 切換時整批重建）。末列是 prompt 時 buf.isMenuScreen() 不成立 ⇒ 不是 menu 畫面，
+    // 收不到它。
+    if (enhance && enhance.menuCards) {
+      if (row === 0 || row === lines.length - 1)
+        return buildCollapsedRow(row, "menuChromeRow");
       const card = buildMenuCard({
         chars: lines[row],
         row,
@@ -1049,9 +1064,18 @@ export class ScreenController {
           this.highlight.row === row ? this.highlight.cls : undefined,
       });
       if (card) return card.node;
-      if (isBlankRow(lines[row])) return buildCollapsedRow(row);
+      if (isBlankRow(lines[row])) return buildMenuBlankRow(row);
     }
     const ls = enhance && enhance.listScroll;
+    // 手機列表卡片：header（看板名、按鍵說明、欄位標題）與 footer 收起 —— 看板名在
+    // App Bar、動作在底部導覽；視口吃下整個高（mobile_layout.listViewportGeometry）。
+    if (
+      enhance &&
+      enhance.listCards &&
+      ls &&
+      (row < ls.bodyStart || row === lines.length - 1)
+    )
+      return buildCollapsedRow(row, "listChromeRow");
     if (
       enhance &&
       enhance.listCards &&

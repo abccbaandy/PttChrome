@@ -96,12 +96,23 @@ describe("render：menuCards", () => {
     }
   });
 
-  test("選單項之後的空白列收起來，狀態列照舊", () => {
+  test("選單項之後的空白列收起來", () => {
     const s = render(true);
     for (let r = 23; r <= 26; ++r)
       expect(rowNode(s, r).classList.contains("menuBlankRow")).toBe(true);
     expect(rowNode(s, 27).classList.contains("menuBlankRow")).toBe(false);
-    expect(rowNode(s, 27).textContent).toContain("(h)說明");
+  });
+
+  // 標題已在 App Bar、按鍵在底部導覽（docs/mobile.md「收起終端機標頭／狀態列」）。
+  test("標題列（第 0 列）與狀態列（末列）收起，DOM 契約（srow／data-row）保留", () => {
+    const s = render(true);
+    for (const r of [0, 27]) {
+      const n = rowNode(s, r);
+      expect(n.classList.contains("mobileCollapsedRow")).toBe(true);
+      expect(n.getAttribute("type")).toBe("bbsrow");
+      expect(n.querySelector(`[data-type="bbsline"][data-row="${r}"]`)).not.toBe(null);
+      expect(n.textContent).toBe("");
+    }
   });
 
   test("游標底色下在按鈕本體", () => {
@@ -124,7 +135,9 @@ describe("render：menuCards", () => {
       SUBMENU_ITEM_ROWS,
     );
     expect(cards[6].querySelector(".menuCardKey").textContent).toBe("(2)");
-    expect(rowNode(s, 23).textContent).toContain("回到上層");
+    // 狀態列（「回到上層」那一列）收起；標題列同樣
+    expect(rowNode(s, 23).classList.contains("mobileCollapsedRow")).toBe(true);
+    expect(rowNode(s, 0).classList.contains("mobileCollapsedRow")).toBe(true);
   });
 
   test("桌機（沒有 menuCards）一列都不換", () => {
@@ -167,6 +180,12 @@ describe("mobileMenuLayout", () => {
     expect(
       mobileMenuLayout({ innerHeight: 300, bottomInset: 0, chh: 10, rows: 45 }),
     ).toEqual({ height: 460, marginTop: 0 });
+  });
+
+  test("頂部 App Bar：撐滿兩條 bar 之間、貼在 App Bar 下面", () => {
+    expect(
+      mobileMenuLayout({ innerHeight: 780, bottomInset: 48, topInset: 48, chh: 10, rows: 45 }),
+    ).toEqual({ height: 684, marginTop: 48 });
   });
 });
 

@@ -81,6 +81,29 @@ describe("termLayoutOffsets（.main 的垂直位移）", () => {
     expect(termLayoutOffsets({ ...base, innerHeight: 1000 }).marginTop).toBe(212);
   });
 
+  // 手機頂部 App Bar：可視區從它下面算起，三個分支都以它為原點。
+  test("topInset：置中在 App Bar 與底部 inset 之間", () => {
+    // avail = 1000 - 48 - 48 = 904；(904 - 576)/2 = 164；+48
+    expect(termLayoutOffsets({ ...base, innerHeight: 1000, topInset: 48, bottomInset: 48 }).marginTop).toBe(212);
+  });
+
+  test("topInset：放不下＋有底部 inset ⇒ 底對齊（頂端被推到 App Bar 底下）", () => {
+    // avail = 600 - 48 - 48 = 504；48 + 504 - 576 = -24
+    expect(termLayoutOffsets({ ...base, innerHeight: 600, topInset: 48, bottomInset: 48 }).marginTop).toBe(-24);
+  });
+
+  test("topInset：放不下且沒有底部 inset ⇒ 貼在 App Bar 下面", () => {
+    expect(termLayoutOffsets({ ...base, innerHeight: 400, topInset: 48, margin: 8 }).marginTop).toBe(56);
+  });
+
+  test("topInset 0／未給：與以前完全相同（桌機零改動）", () => {
+    for (const h of [400, 576, 800, 1000])
+      for (const b of [0, 48, 300])
+        expect(termLayoutOffsets({ ...base, innerHeight: h, bottomInset: b, topInset: 0 })).toEqual(
+          termLayoutOffsets({ ...base, innerHeight: h, bottomInset: b })
+        );
+  });
+
   test("LOCKED：不回傳任何水平位移（置中是 BBSWin 的 align=center 在做）", () => {
     const o = termLayoutOffsets({ ...base, innerHeight: 1000 });
     expect(o.marginLeft).toBeUndefined();

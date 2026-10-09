@@ -81,8 +81,17 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
         docScrollWidth: document.documentElement.scrollWidth,
         cards: cards.length,
         heights: hs,
-        // header／footer 仍是一般列（容器直系子層）
+        // header／footer 不是卡片（容器直系子層），而且收起（看板名在 App Bar）
         outerCards: document.querySelectorAll('#mainContainer > .listCard').length,
+        chromeRows: Array.from(document.querySelectorAll('#mainContainer > [type="bbsrow"]')).map((n) => ({
+          collapsed: n.classList.contains('mobileCollapsedRow'),
+          h: n.getBoundingClientRect().height,
+        })),
+        viewTop: document.querySelector('#mainContainer .listBodyView').getBoundingClientRect().top,
+        mainTop: main.getBoundingClientRect().top,
+        appBarTitle: document.querySelector('#mobileAppBar [data-key="__title"]').textContent,
+        // 看板名的真相：server 畫面 row 0 的《板名》（list_session.parseBoardName 同規則）。
+        boardName: (/《([^《》]+)》/.exec(window.__app.buf.getRowText(0, 0, 80)) || [])[1] || null,
         firstTitle: cards[0] && cards[0].querySelector('.listCardTitle').textContent,
       };
     });
@@ -96,15 +105,25 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     expect(g.outerCards).toBe(0);
     expect(g.firstTitle.trim().length).toBeGreaterThan(0);
     for (const h of g.heights) expect(Math.abs(h - CARD_ROWS * s.chh)).toBeLessThan(0.1);
-    // 視口高度仍是 body 那 20 列（畫面面積不變，只是一筆佔 CARD_ROWS 列）
-    expect(Math.abs(s.viewportPx - (s.rows - 4) * s.chh)).toBeLessThan(1);
+    // header 三列＋footer 一列收起（不佔高度），視口從 .main 頂端起、吃下整個 rows 列
+    // （mobile_layout.listViewportGeometry）。
+    expect(g.chromeRows).toHaveLength(4);
+    for (const r of g.chromeRows) {
+      expect(r.collapsed).toBe(true);
+      expect(r.h).toBe(0);
+    }
+    expect(Math.abs(g.viewTop - g.mainTop)).toBeLessThan(1);
+    expect(Math.abs(s.viewportPx - s.rows * s.chh)).toBeLessThan(1);
+    expect(g.boardName).toBeTruthy();
+    expect(g.appBarTitle).toBe(g.boardName);
   });
 
-  test('PgUp／PgDn 一次翻一屏卡片（floor(bodyRows/CARD_ROWS) 筆），小數卡片高下不被量化吃掉一筆', async ({ page }) => {
+  test('PgUp／PgDn 一次翻一屏卡片（floor(rows/CARD_ROWS) 筆），小數卡片高下不被量化吃掉一筆', async ({ page }) => {
     test.setTimeout(90000);
     await engage(page);
     const s0 = await state(page);
-    const PAGE = Math.floor((s0.rows - 4) / CARD_ROWS);
+    // 卡片模式視口＝整個 rows 列（header／footer 收起）。
+    const PAGE = Math.floor(s0.rows / CARD_ROWS);
     const cardH = CARD_ROWS * s0.chh;
     const topPos = () =>
       page.evaluate((h) => {
@@ -260,19 +279,19 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
         );
         return card.getAttribute('data-list-author');
       }, sel);
-    const menu = page.locator('.DropdownMenu').first();
+    // 手機的長按選單是 bottom sheet（ContextMenu/ContextSheet.jsx）。
+    const menu = page.locator('[data-sheet="context"]').first();
+    const items = menu.locator('[data-cmenu]');
 
     const author = await longPress('.listCardAuthor');
     const addAuthor = await label('cmenu_addAuthorBlacklist');
-    const item = menu.getByRole('menuitem').filter({ hasText: addAuthor });
+    const item = items.filter({ hasText: addAuthor });
     await expect(item).toBeVisible();
     await expect(item).toContainText(author);
     await page.keyboard.press('Escape');
-    await expect(menu).toBeHidden();
+    await expect(menu).toHaveCount(0);
 
     await longPress('.listCardTitleText');
-    await expect(
-      menu.getByRole('menuitem').filter({ hasText: await label('cmenu_addTitleBlacklist') })
-    ).toBeVisible();
+    await expect(items.filter({ hasText: await label('cmenu_addTitleBlacklist') })).toBeVisible();
   });
 });

@@ -930,11 +930,50 @@
   "mobileToolbar_search": {
     "message": "搜尋"
   },
+  "mobileToolbar_push": {
+    "message": "推文"
+  },
+  "mobileToolbar_reply": {
+    "message": "回文"
+  },
+  "mobileToolbar_replyMail": {
+    "message": "回信"
+  },
+  "mobileToolbar_share": {
+    "message": "分享"
+  },
+  "mobileToolbar_post": {
+    "message": "發文"
+  },
+  "mobileToolbar_threadPrev": {
+    "message": "同主題前篇"
+  },
+  "mobileToolbar_threadNext": {
+    "message": "同主題下篇"
+  },
+  "mobileToolbar_threadFirst": {
+    "message": "同主題首篇"
+  },
+  "mobileToolbar_articlePrev": {
+    "message": "前一篇"
+  },
+  "mobileToolbar_articleNext": {
+    "message": "下一篇"
+  },
   "mobileToolbar_keys": {
     "message": "按鍵"
   },
   "mobileToolbar_more": {
     "message": "更多"
+  },
+  "mobileAppBar_defaultTitle": {
+    "message": "批踢踢"
+  },
+  "mobileAppBar_newMail": {
+    "message": "新信件"
+  },
+  "mobileAppBar_busy": {
+    "message": "等待回應中"
   },
   "mobileToolbar_settings": {
     "message": "設定"

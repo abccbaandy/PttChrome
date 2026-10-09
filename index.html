@@ -17,8 +17,12 @@
          雙指縮放是瀏覽器原生行為，看不清時的後援（CLAUDE.md「原生行為一律接入」）。
          刻意**還沒**加 interactive-widget=resizes-content：它讓軟鍵盤開關變成 layout
          resize ⇒ onWindowResize 重算字級，fixed-font-size 下還會改列數、重送 NAWS。
-         鍵盤遮住底列的處理見 docs/mobile.md Phase 2。 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+         鍵盤遮住底列的處理見 docs/mobile.md Phase 2。
+         viewport-fit=cover：內容畫到瀏海／手勢列底下（原生 App 的 edge-to-edge），
+         手機的 App Bar／底部工具列以 env(safe-area-inset-*) 讓位（App._readSafeInsets）。
+         theme-color：瀏覽器網址列／狀態列與 App Bar 同色。守護 tests/unit/index_html_meta.test.js。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#141418">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 
     <!-- 好讀模式自動開圖最常打 i.imgur.com；提前完成 DNS+TLS（實測 connect 約

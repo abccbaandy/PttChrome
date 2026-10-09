@@ -348,6 +348,89 @@ describe("複製本篇連結", () => {
   });
 });
 
+// 手機底部導覽的「分享」：同一條 AID 解析，交件走系統分享面板（Web Share API）。
+describe("分享本篇連結", () => {
+  const BASE = "https://example.github.io/pttchrome/";
+  const LINK = BASE + "#movie/" + FN;
+
+  function seams(ctl, { share, clip } = {}) {
+    const shared = [];
+    const written = [];
+    ctl._locationHref = () => BASE;
+    ctl._share = share === null ? () => null : () => (data) => {
+      shared.push(data);
+      return share ? share(data) : Promise.resolve();
+    };
+    ctl._clipboard = () => ({
+      writeText: (t) => {
+        written.push(t);
+        return clip ? clip(t) : Promise.resolve();
+      },
+    });
+    return { shared, written };
+  }
+  const flush = async () => {
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+  };
+
+  test("免費路徑：當場（同步）叫出分享面板，帶標題與連結；不按 Q、不進 functionMode", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    const s = seams(h.ctl);
+    expect(h.ctl.shareCurrentPostLink("[新聞] 測試")).toBe(true);
+    expect(s.shared).toEqual([{ title: "[新聞] 測試", url: LINK }]);
+    expect(h.nav.queries).toEqual([]);
+    expect(h.easyReading.functionModeCalls).toBe(0);
+    expect(s.written).toEqual([]);
+  });
+
+  test("Q 路徑：問到 AID 後分享並回原處", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    const s = seams(h.ctl);
+    h.ctl.shareCurrentPostLink("");
+    h.nav.queries[0].onDone({ aid: "1gIeu-3A", board: "movie" });
+    expect(s.shared).toEqual([{ url: LINK }]);
+    expect(h.nav.reopenArgs).toHaveLength(1);
+  });
+
+  test("使用者自己關掉分享面板（AbortError）＝完成，不補複製", async () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    const err = new Error("abort");
+    err.name = "AbortError";
+    const s = seams(h.ctl, { share: () => Promise.reject(err) });
+    h.ctl.shareCurrentPostLink("t");
+    await flush();
+    expect(s.written).toEqual([]);
+  });
+
+  test("分享被拒（activation 過期等）⇒ 退回複製", async () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    const err = new Error("no");
+    err.name = "NotAllowedError";
+    const s = seams(h.ctl, { share: () => Promise.reject(err) });
+    h.ctl.shareCurrentPostLink("t");
+    await flush();
+    expect(s.written).toEqual([LINK]);
+  });
+
+  test("沒有 Web Share API ⇒ 直接複製", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    const s = seams(h.ctl, { share: null });
+    h.ctl.shareCurrentPostLink("t");
+    expect(s.written).toEqual([LINK]);
+  });
+
+  test("不在文章畫面 ⇒ 不做", () => {
+    const h = makeHarness({ lastRow: "" });
+    const s = seams(h.ctl);
+    expect(h.ctl.shareCurrentPostLink("t")).toBe(false);
+    expect(s.shared).toEqual([]);
+  });
+});
+
 // 外部連結一定開新分頁，交接是唯一「使用者的眼睛在別的分頁」的情境 —— 這個分頁
 // 不出聲的話，跳轉等於靜默發生（實測回報：分頁本身沒有任何反應，得自己翻分頁找）。
 describe("跨分頁接手時的通知", () => {

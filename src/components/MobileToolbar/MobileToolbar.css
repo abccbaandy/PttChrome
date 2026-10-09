@@ -8,10 +8,15 @@
   /* --kb-inset：軟鍵盤蓋住的高度（App._onVisualViewport 寫）。position:fixed 錨在
      layout viewport，而 Android 預設叫鍵盤只縮 visual viewport ⇒ 不加就被鍵盤蓋住。 */
   bottom: var(--kb-inset, 0px);
+  /* 下緣 safe-area（手勢列，viewport-fit=cover 時才不是 0；鍵盤升起時 App 寫成 0）。 */
+  padding-bottom: var(--safe-bottom, 0px);
+  background: rgba(20, 20, 24, 0.96);
   z-index: 2500;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
+  /* 按壓回饋由 :active／ripple 自己畫；Chrome 預設的整塊藍色 tap highlight 關掉。 */
+  -webkit-tap-highlight-color: transparent;
   font-family: system-ui, sans-serif;
 }
 
@@ -19,38 +24,69 @@
    tests/unit/mobile_toolbar.test.jsx）。 */
 .mobileToolbarBar {
   display: flex;
-  gap: 4px;
   box-sizing: border-box;
   height: 48px;
-  padding: 2px 4px;
+  padding: 0 4px;
   background: rgba(20, 20, 24, 0.96);
-  border-top: 1px solid #444;
+  border-top: 1px solid #333;
 }
 
+/* Material bottom navigation：icon 在上、小字 label 在下，無框。按下的回饋＝
+   :active 底色＋ripple（src/js/ripple.js 的 .pttRipple）。 */
 .mobileToolbarBtn {
   flex: 1 1 0;
   min-width: 44px;
-  border: 1px solid #555;
-  border-radius: 6px;
-  background: #2b2b30;
-  color: #eee;
-  font-size: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #c8c8d0;
   font-family: inherit;
   cursor: pointer;
 }
 
-.mobileToolbarBtn:active,
+.mobileToolbarLabel {
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.mobileToolbarBtn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .mobileToolbarMenuItem:active,
 .mobileKeypadKey:active {
   background: #44444c;
 }
 
+/* 展開中（按鍵／更多）：Material 的 active indicator 色。 */
 .mobileToolbarBtn.active {
-  background: #2f6fd0;
-  border-color: #5a8ee0;
+  color: #a8c7fa;
 }
 
-/* 面板（按鍵／搜尋／更多）貼在工具列正上方，與工具列同一個 fixed 容器。 */
+.mobileToolbarBtn.active svg {
+  border-radius: 10px;
+  background: rgba(168, 199, 250, 0.18);
+  box-shadow: 0 0 0 4px rgba(168, 199, 250, 0.18);
+}
+
+/* 「更多」裡的文章導覽（同主題前／下／首篇、列表前／下篇）。 */
+.mobileToolbarNavGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #333;
+}
+
+/* 按鍵面板貼在工具列正上方，與工具列同一個 fixed 容器（常駐開著也能看終端機，所以不做成
+   sheet）。 */
 .mobileKeypadGrid {
   display: grid;
   grid-template-columns: repeat(6, minmax(44px, 1fr));
@@ -87,25 +123,7 @@
   grid-column: span 2;
 }
 
-.mobileToolbarMenu {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  width: max-content;
-  min-width: 160px;
-  max-width: calc(100vw - 16px);
-  margin: 0 8px 4px;
-  padding: 4px;
-  background: rgba(20, 20, 24, 0.96);
-  border-radius: 8px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
-}
-
-.mobileToolbarMenuEnd {
-  margin-left: auto;
-}
-
+/* 「更多」sheet 裡登出二段確認的 ✓／✕（sheet 本身見 MobileSheet.css）。 */
 .mobileToolbarMenuItem {
   min-height: 44px;
   padding: 0 12px;

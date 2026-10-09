@@ -34,6 +34,7 @@
 | firebase／`@mantine/*`／react／react-dom | 保留 | 皆現行主流大版本 |
 | `@playwright/test`、`@testing-library/*`、husky、lint-staged、prettier、postcss 系 | 保留 | 現代且活躍；postcss-preset-mantine + postcss-simple-vars 是 Mantine 官方建議鏈 |
 | jsdom、happy-dom | 已移除，**勿加回**（守護 `unit_environment.test.js`） | DOM 模擬跟真瀏覽器不一致時測試全綠、實際卻壞。unit 的 DOM 測試改 Vitest Browser Mode（下節）；`yarn debug:screens` 改純 node（解析路徑本來就不需要 DOM，`term_buf_no_dom.test.js`） |
+| `@tabler/icons-react` | 新增（2026-10，手機底部導覽的 icon） | Mantine 官方文件採用的 icon 庫、tree-shake（只打包有 import 的那幾顆）；不手刻 inline SVG。只被 src 深處 import ⇒ 已列進 `vitest.config.mjs` unit-browser 的 `optimizeDeps.include`（否則測試中途重新預打包、瀏覽器斷線） |
 | `@vitest/browser-playwright`、`playwright` | 新增（unit-browser project） | Vitest 官方的 Browser Mode provider；peer 是**精確**的 vitest 版本，`playwright` 必須與 `@playwright/test` 同版（Dependabot 以 group 綁一起升） |
 
 掃描結論（2026-07）：**無其他「過時陣營」殘留**。新增依賴時比照上表——先查是否已有內建／主流替代，無維護的小套件優先內聯。

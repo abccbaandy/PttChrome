@@ -9,6 +9,7 @@ import {
   CloseButton,
 } from "@mantine/core";
 import { i18n } from "../../js/i18n";
+import MobileSheet from "../MobileSheet";
 import { normalizeSearchText } from "../../js/article_search";
 import {
   readSearchHistory,
@@ -37,7 +38,17 @@ const KIND_PLACEHOLDER_KEY = {
 // 直接列出來可點的筆數（其餘仍可用 ↑ 叫回）。
 export const SEARCH_RECENT_SHOWN = 6;
 
-export const SearchModal = ({ show, kind, kinds, onHide, onConfirm }) => {
+// mobile：手機版面改用 bottom sheet 外殼（components/MobileSheet，系統返回＝收起），
+// 內容（表單、記憶、送出）完全相同。
+export const SearchModal = ({
+  show,
+  kind,
+  kinds,
+  onHide,
+  onConfirm,
+  mobile,
+  pttchrome,
+}) => {
   const [currentKind, setCurrentKind] = useState(kind || "title");
   const [value, setValue] = useState("");
   const [history, setHistory] = useState(() => readSearchHistory());
@@ -121,6 +132,91 @@ export const SearchModal = ({ show, kind, kinds, onHide, onConfirm }) => {
 
   const shownKinds = kinds && kinds.length ? kinds : [currentKind];
 
+  const form = (
+    <form onSubmit={onSubmit} data-search-modal>
+      {shownKinds.length > 1 && (
+        <SegmentedControl
+          fullWidth
+          mb="sm"
+          value={currentKind}
+          onChange={onKindChange}
+          data={shownKinds.map((k) => ({
+            value: k,
+            label: i18n(KIND_LABEL_KEY[k]),
+          }))}
+        />
+      )}
+      <TextInput
+        data-autofocus
+        ref={inputRef}
+        name="searchKeyword"
+        label={
+          shownKinds.length > 1 ? undefined : i18n(KIND_LABEL_KEY[currentKind])
+        }
+        placeholder={i18n(KIND_PLACEHOLDER_KEY[currentKind])}
+        inputMode={currentKind === "push" ? "numeric" : undefined}
+        autoComplete="off"
+        value={value}
+        onChange={onChange}
+        onKeyDown={onKeyDown}
+      />
+      {list.length > 0 && (
+        <Group gap={6} mt="sm" data-search-recent>
+          <Text size="xs" c="dimmed">
+            {i18n("searchModal_recent")}
+          </Text>
+          {list.slice(0, SEARCH_RECENT_SHOWN).map((it) => (
+            <Group key={it} gap={0} wrap="nowrap">
+              <Button
+                size="compact-xs"
+                variant="light"
+                data-search-recent-item={it}
+                onClick={() => submit(it)}
+              >
+                {it}
+              </Button>
+              <CloseButton
+                size="sm"
+                aria-label={i18n("searchModal_forget") + " " + it}
+                data-search-forget={it}
+                onClick={() => onForget(it)}
+              />
+            </Group>
+          ))}
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            color="gray"
+            data-search-forget-all
+            onClick={onForgetAll}
+          >
+            {i18n("searchModal_forgetAll")}
+          </Button>
+        </Group>
+      )}
+      <Group justify="flex-end" mt="md">
+        <Button variant="default" onClick={onHide}>
+          {i18n("searchModal_cancel")}
+        </Button>
+        <Button type="submit" disabled={!valid}>
+          {i18n("searchModal_confirm")}
+        </Button>
+      </Group>
+    </form>
+  );
+
+  if (mobile)
+    return (
+      <MobileSheet
+        pttchrome={pttchrome}
+        opened={show}
+        onClose={onHide}
+        title={i18n("searchModal_title")}
+        sheetKey="search"
+      >
+        {form}
+      </MobileSheet>
+    );
   return (
     <Modal
       opened={show}
@@ -129,78 +225,7 @@ export const SearchModal = ({ show, kind, kinds, onHide, onConfirm }) => {
       centered
       size="lg"
     >
-      <form onSubmit={onSubmit} data-search-modal>
-        {shownKinds.length > 1 && (
-          <SegmentedControl
-            fullWidth
-            mb="sm"
-            value={currentKind}
-            onChange={onKindChange}
-            data={shownKinds.map((k) => ({
-              value: k,
-              label: i18n(KIND_LABEL_KEY[k]),
-            }))}
-          />
-        )}
-        <TextInput
-          data-autofocus
-          ref={inputRef}
-          name="searchKeyword"
-          label={
-            shownKinds.length > 1
-              ? undefined
-              : i18n(KIND_LABEL_KEY[currentKind])
-          }
-          placeholder={i18n(KIND_PLACEHOLDER_KEY[currentKind])}
-          inputMode={currentKind === "push" ? "numeric" : undefined}
-          autoComplete="off"
-          value={value}
-          onChange={onChange}
-          onKeyDown={onKeyDown}
-        />
-        {list.length > 0 && (
-          <Group gap={6} mt="sm" data-search-recent>
-            <Text size="xs" c="dimmed">
-              {i18n("searchModal_recent")}
-            </Text>
-            {list.slice(0, SEARCH_RECENT_SHOWN).map((it) => (
-              <Group key={it} gap={0} wrap="nowrap">
-                <Button
-                  size="compact-xs"
-                  variant="light"
-                  data-search-recent-item={it}
-                  onClick={() => submit(it)}
-                >
-                  {it}
-                </Button>
-                <CloseButton
-                  size="sm"
-                  aria-label={i18n("searchModal_forget") + " " + it}
-                  data-search-forget={it}
-                  onClick={() => onForget(it)}
-                />
-              </Group>
-            ))}
-            <Button
-              size="compact-xs"
-              variant="subtle"
-              color="gray"
-              data-search-forget-all
-              onClick={onForgetAll}
-            >
-              {i18n("searchModal_forgetAll")}
-            </Button>
-          </Group>
-        )}
-        <Group justify="flex-end" mt="md">
-          <Button variant="default" onClick={onHide}>
-            {i18n("searchModal_cancel")}
-          </Button>
-          <Button type="submit" disabled={!valid}>
-            {i18n("searchModal_confirm")}
-          </Button>
-        </Group>
-      </form>
+      {form}
     </Modal>
   );
 };

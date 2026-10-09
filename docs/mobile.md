@@ -12,8 +12,14 @@
 | 3 | 文章好讀：正常字級＋超寬換行（`mobileReflow`），reflow 下關掉以 col 判斷的滑鼠區域 | 已實作（真機 `guess`：待實測） |
 | 4 | 文章列表／看板列表：手機卡片版（固定高 `K*chh` 保住 `list_scroll` 等高假設） | 已實作（真機 `guess`：待實測） |
 | 5 | 選單（主功能表＋所有 domenu 子選單）：選單項大按鈕（ANSI 圖仍縮小格線） | 已實作（真機 `guess`：待實測） |
+| 6 | 頂部 App Bar（標題＝看板／文章／選單名）＋上緣幾何 | 已實作（真機 `guess`） |
+| 7 | 底部導覽依畫面換動作（icon＋label）＋系統分享 | 已實作（真機 `guess`） |
+| 8 | 收起終端機標頭／狀態列（列表卡片、好讀文章、選單大按鈕） | 已實作（真機 `guess`） |
+| 9 | Bottom sheet（更多／長按選單／搜尋）＋系統返回收 sheet | 已實作（真機 `guess`） |
+| 10 | safe-area／theme-color／等待進度條／點擊波紋（波紋桌機共用） | 已實作（真機 `guess`） |
 
 使用者定案：文章只支援好讀模式、要換行不要縮小；列表做卡片；選單項做大按鈕（主功能表與子選單一致；ANSI 圖保留縮小在上方、點一下直接進入）；其他 80 欄格線畫面只求不被切。
+2026-10 原生 App 化定案：App Bar **不放返回鍵**（返回＝系統邊緣滑動／返回鍵，`history_back_guard`）；標頭／狀態列只在卡片／文章／選單畫面收起；文章左右滑換篇**不做**（與捲動、選取、系統返回手勢互搶）。
 
 ## 規則
 
@@ -31,16 +37,24 @@
   內同步呼叫**（user activation）。被別的方式收起（Android 返回鍵）由 `App._onVisualViewport`
   偵測：看過 inset>0 之後回到 0 ⇒ `softKeyboard` 歸零、通知工具列（`onMobileChange(fn(mobile, kb, sel, ctrl))`）。
   「看過出現」是必要條件：剛按鍵盤鈕那幾幀鍵盤還沒升起。
-- 底部工具列（`src/components/MobileToolbar`，掛在 ContextMenu 內，`modalOpen` 時隱藏；2026-10 取代浮動按鍵列）：
-  - 固定貼底（`bottom: var(--kb-inset)`），高 `MOBILE_TOOLBAR_PX`（48，與 CSS `.mobileToolbarBar` 一致，unit 守）。
-    **常駐 ⇒ 從列數扣**：`App._applyMobileGeometry` 用 `innerBounds.height - MOBILE_TOOLBAR_PX` 算 rows；
-    位置由 `_onVisualViewport` 把工具列併進 `view.setKeyboardInset`（＝軟鍵盤 inset ＋ 工具列 ＋ 展開中的按鍵面板）。
+- 底部導覽（`src/components/MobileToolbar`，掛在 ContextMenu 內，`modalOpen` 時隱藏；Material bottom navigation，icon＝`@tabler/icons-react`）：
+  - 固定貼底（`bottom: var(--kb-inset)`、`padding-bottom: var(--safe-bottom)`），bar 高 `MOBILE_TOOLBAR_PX`（48，與 CSS `.mobileToolbarBar` 一致，unit 守）。
+    **常駐 ⇒ 從列數扣**：`App._applyMobileGeometry` 用 `mobile_layout.mobileRowsHeight(h, safe)`（扣 App Bar＋工具列＋safe-area）算 rows；
+    位置由 `_onVisualViewport` 經 `mobileChromeInsets` 寫 `view.setTopInset`／`setKeyboardInset`（下＝軟鍵盤＋工具列＋展開中的按鍵面板＋safeBottom，鍵盤升起時 safeBottom＝0）。
     `--kb-inset` 只算軟鍵盤。`innerBounds` 本身不扣（測試以 `Object.create(App.prototype)` 直接塞它）。
-  - 按鈕依畫面（`mobile_toolbar.toolbarContextFromFacts`，App 在 `screenSettled` 重算、`onScreenContextChange(fn)` 有變才通知）：
-    推＝文章（pageState 3 且這一幀是 pager 狀態列、非信件）；搜尋＝`article_search.availableSearchKinds` 非空時出現，點了**直接開搜尋彈窗**（預設第一個可用種類，無子選單；見 `docs/article-search.md`）；
-    按鍵、更多常駐。更多＝選取模式／設定／登出（inline 二段確認，`LOGOUT_CONFIRM_MS` 無動作自動收回）。
-    彈出選單畫在 root 底下（**不用 Mantine Menu**：portal 出去的 click 會到 window 的 App 滑鼠入口）。
-  - 送鍵只走 `view.sendKeyAsUser(keyName, mods?)`。不可 `view._send`（列表好讀＝在序列化交易
+  - 動作依畫面（`mobile_toolbar.toolbarContextFromFacts`，App 在 `screenSettled` 重算、`onScreenContextChange(fn)` 有變才通知；鍵出處 `mbbsd/more.c pager_common_cmds`、`bbs.c` Ctrl('P')）：
+
+    | 畫面 | 動作 |
+    |---|---|
+    | 文章 pager（非信件） | 推文 X／回文 y／分享／按鍵／更多（更多內：`[` `]` `=` 同主題、`b` `f` 前後篇，`THREAD_NAV_KEYS`） |
+    | 信件 pager | 回信 y／按鍵／更多 |
+    | 文章列表（非輸入欄） | 搜尋／發文 Ctrl+P（`{key:'p',altKey}` Alt remap，避開瀏覽器列印）／按鍵／更多 |
+    | 其他 | 搜尋（`availableSearchKinds` 非空）／按鍵／更多 |
+
+    搜尋**直接開搜尋彈窗**（預設第一個可用種類，無子選單；見 `docs/article-search.md`）。分享＝`deep_link_controller.shareCurrentPostLink(title)`（與複製本篇連結同一條 AID 解析；`navigator.share`，AbortError＝完成，其他拒絕／無 API 退回複製；**click 內同步呼叫**）。
+    更多＝bottom sheet（見「Bottom sheet」）：文章導覽／選取模式／設定／登出（inline 二段確認，`LOGOUT_CONFIRM_MS` 無動作自動收回）。
+    觸覺回饋 `navigator.vibrate(HAPTIC_MS)`（APK 無 VIBRATE 權限＝no-op）。
+  - 送鍵只走 `view.sendKeyAsUser(keyName, mods?)`，並先 `App.noteUserAction()`（等待進度條）。不可 `view._send`（列表好讀＝在序列化交易
     中途插隊）、不可 `App.onFunctionKey`（文章好讀會先進 functionMode ⇒ PgDn 不捲動）。
     推文 `X` 是單字元：`sendKeyAsUser` 在 keydown 沒人接手時補走 `_keyboard.onKeyPress`。
   - `mousedown` preventDefault（不搶 `#t` 焦點）＋ mousedown/mouseup/click stopPropagation
@@ -99,9 +113,14 @@
 
 - unit：`mobile_layout.test.js`、`float_tools.test.js`、`pref_modal_narrow.test.jsx`、`mobile_toolbar.test.jsx`、`mobile_toolbar.test.js`、`mobile_ctrl.test.js`、`logout_session.test.js`、`comment_card.test.js`、`app_mobile_layout.test.js`、`mobile_surface.test.js`、
   `list_card.test.js`（含兩個 session 的卡片換算；看板列表沒有錄製素材，這是它唯一的守護）；
-  reflow 相關另在 `mouse_regions`／`mouse_gating`／`scroll_restore`／`context_menu_items` 各有一組
-- offline e2e：project `offline-mobile`（Pixel 7 模擬，只跑 `offline/mobile_*.spec.js`：換行版面、長按選單與推文卡片在
-  `mobile_reflow`、列表卡片在 `mobile_list_cards`、工具列／按鍵面板／黏滯 Ctrl 在 `mobile_toolbar`、「⋯」與設定頁窄版在 `mobile_float_tools`；`offline` project 以 testIgnore 排除 mobile_*），已併入
+  reflow 相關另在 `mouse_regions`／`mouse_gating`／`scroll_restore`／`context_menu_items` 各有一組；
+  Phase 6–10：`mobile_app_bar.test.js(x)`、`article_meta_card.test.js`、`page_row_top_collapsed.test.js`、`context_sheet.test.jsx`、
+  `mobile_busy.test.js`、`ripple.test.js`、`index_html_meta.test.js`、`history_back_guard`（sheet）、`modal_shown_sources`（sheet 登記）、`deep_link_controller`（分享）
+- offline e2e：project `offline-mobile`（Pixel 7 模擬，只跑 `offline/mobile_*.spec.js`：換行版面、長按選單、推文卡片與檔頭卡片在
+  `mobile_reflow`、列表卡片在 `mobile_list_cards`、底部導覽／按鍵面板／黏滯 Ctrl／進度條在 `mobile_toolbar`、「⋯」與設定頁窄版在 `mobile_float_tools`、
+  App Bar 在 `mobile_app_bar`、sheet（遮罩不漏點、返回收 sheet、拖把手、搜尋 sheet）在 `mobile_sheet`；`offline` project 以 testIgnore 排除 mobile_*）。
+  手機的長按／右鍵選單是 `[data-sheet="context"]`（項目 `[data-cmenu=<key>]`），**不是** `.DropdownMenu`；Drawer 內容非同步掛上、
+  有 slide-up 動畫 ⇒ 先 `toBeVisible` 再 `waitRectStable` 才量座標。已併入
   `yarn test:e2e:offline`。**視窗高壓到 390px**：錄製檔全是 24 列，Pixel 7 原生高度會給 52 列、
   重放湊不成完整一屏；390 ⇒ 24 列。
 - 真 Android Chrome（模擬器）：`tests/e2e/android/mobile_input.android.spec.js`（真 tap 不彈鍵盤、⌨ 後的版面、
@@ -206,7 +225,7 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 
 - 只換 body 列：`render/screen.js#_renderRow` 在 `enhance.listCards`（＝ `'article'`／`'board'`，由
   `listScroll.kind` 帶）且列在 `[bodyStart, lines.length-1)` 時改走 `render/list_card.js#buildListCard`；
-  header／footer 照舊是 80 欄列（超出視窗寬的部分被 `.main` 的 `overflow-x: hidden` 裁掉）。
+  header（`[0,bodyStart)`）與 footer（末列）收起（Phase 8，`render/collapsed_row.js`）。
   `listCards` 進 `annotationsKey`（同一批列物件切換卡片模式要整批重建）。
 - 版型（欄位按 **cell** 切，出處見 `list_card.js` 檔頭）：文章列表＝標題 [29,80)／序號・標記・推文數・日期
   [0,17)＋作者 [17,29)；看板列表＝序號・未讀・板名・類別 [0,28)＋人氣 [64,67)／◎敘述 [28,64)＋板主 [67,80)。
@@ -214,8 +233,11 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   兩行內容（`LIST_CARD_LINES`=2）＋ 0.5em 卡片間距＝border-box 固定高內的 `padding-block`；分隔線用 inset
   box-shadow；不可 border／margin（加在固定高之外）。CSS 高度與常數一致由 `list_card_css.test.js` 守。
   次行（`.listCardMeta`）縮字 0.8em＋淡化，行框仍 1 chh（height/line-height 寫 1.25em）。兩個 session 的 `_rowHeight()` ＝
-  `chh × listRowSpan(listCards)`；`_pageRows()`（PgUp/PgDn 一次翻幾筆）＝ `listPageRows(bodyRows)`；
+  `chh × listRowSpan(listCards)`；`_pageRows()`（PgUp/PgDn 一次翻幾筆）＝ `listPageRows(視口列數)`；
   `_bodyRows()` 仍是 server 的 p_lines（抓頁單位），**不可**跟著換。
+- **視口幾何單一真相源 `mobile_layout.listViewportGeometry({rows, headerRows, cards})`**：桌機＝header 下 `rows-4` 列；
+  卡片＝`bodyTopRows:0`、`viewportRows: rows`（header／footer 收起）。消費端三處必須同源：`term_view._renderScreenLines`
+  的 `listScroll.viewportPx`（對帳**之後**算）、`App.clientToPos`、兩個 session 的 `_pageRows()`。
 - **採用原生落點（進板 `_seedAnchors`／回 buffer `_resumeBuffer`／看板列表 `_adoptLanding`）**：錨＝原生頁頂端
   只在桌機成立（一屏＝一頁）；卡片一屏只放 `_pageRows()` 筆 ⇒ 落點後第一次 `applyScrollAfterRender` 用
   `list_scroll.landingTopPos` 把原生頁底貼齊視口底、但游標不得出頂端（`_landingFit`／`_landingLastNum`，一次性；
@@ -224,7 +246,8 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   （游標底色的 class 下在這裡 ⇒ 整張卡片上色）。
 - 點擊：`App.clientToPos` 的 body 列號除數換成卡片高（`listRowSpan`）；`App.mouse_click` 在 listCards 下
   不做退出帶／邊緣翻頁，點卡片本體＝ `onMouseClick(row, LIST_TITLE_COL_START)`（走 session 的列點擊開文
-  合約）；點到間距（`mobile_layout.isListCardGapTarget`：在 `.listBodyView` 內、`.listCardBody` 外）吞掉不開文（防誤點）。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵面板的 ←。
+  合約）；**只有點在卡片本體才開**（`mobile_layout.isListCardBodyTarget`）：間距防誤點、視口外的 `.main` 留白
+  （footer 收起後）不落回列號換算；`clientToPos` 的 footer 分支在 listCards 下關閉。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵面板的 ←。
 - 長按選單的黑名單區域在 listCards 下看 DOM（`.listCardAuthor`／`.listCardTitle`），不看 col；「前已讀後
   未讀」用 `clientToPos` 的列號（已是卡片座標）。
 - 字級可調時再開 pref `mobileFontSize`（與桌機 `fontSize` 分開），且 rows 要跟著它算。
@@ -241,7 +264,8 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   `mobile_layout.mobileMenuLayout`：`.main` 撐到可視高（扣 inset）貼頂；不夠高退回格線規則，超出由 `.main` 捲動。
 - 渲染：`render/screen.js#_renderRow` 在 `enhance.menuCards`（進 `annotationsKey`）時，選單項 →
   `render/menu_card.js#buildMenuCard`（高 `MENU_CARD_PX`=44、字級 16px，寫死 px 不跟 chh；CSS 一致由
-  `menu_card.test.js` 守）；標題／狀態列以外的整列空白 → `buildCollapsedRow`（display:none，契約保留）。
+  `menu_card.test.js` 守）；整列空白 → `buildMenuBlankRow`；第 0 列（標題）與末列（`show_status_bar`）→
+  `buildCollapsedRow`（Phase 8；末列是 prompt 時 `isMenuScreen` 不成立，收不到它）。
   兩者都只看該列自己 ⇒ dirty-row patch 的列獨立前提不破。按鈕文字**不走 LinkSegmentBuilder**（`.wpadding`
   被 `fixedResize` 改成 chh 寬會疊字）。`#cursor` 在 `.main.mobileMenu` 下隱藏（row×chh 座標對不上）。
 - 點擊：`App.mouse_click` 在 `view.menuCards` 下以 DOM 目標取列（`mobile_layout.menuCardTargetRow`，
@@ -249,3 +273,53 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   `resolveMouseRegion({ menuCards })` 早退 NONE（觸控 tap 的相容 mousemove 不在錯的按鈕上底色）。
 - 守護：unit `menu_items`／`menu_card`／`main_menu_mouse`／`mouse_regions`；offline e2e `main_menu`（桌機 hover／點擊）、
   `mobile_main_menu`（按鈕高、真 tap 送鍵）。素材是合成畫面 `tests/e2e/helpers/main_menu.js`。
+
+## Phase 6：App Bar（`components/MobileAppBar`）
+
+- 標題純函式 `mobile_app_bar.appBarFromFacts(facts, {pageState, articleTitle, articleBoard, prev})`，與底部導覽同一次計算
+  （`mobileToolbarContext` 的 `appBar` 欄位、`sameToolbarContext` 一併比）。判斷順序：pageState 3 → article（`view._articleTitle`，
+  與 `_articleAuthor/_articleBoard` 同一個檔頭事件記；副標＝看板）；文章列表（listOwner 或 `boardListContextKind==='article-list'`；
+  row 0 是 `【板主:x】` ⇒ 必須先於 menu）→ `parseBoardName`；看板列表 → row 0【X】；其他 row 0【X】（`screen_titles.parseHeaderTitle`）→ menu；
+  都不是 ⇒ 沿用 prev（不閃）。`newMail`＝row 0 含「你有新信件」（`menu.c#redraw_title`）。
+- **無返回鍵**（使用者定案）。事件規則同工具列（mousedown preventDefault＋stopPropagation）。z-index 150（低於 Mantine overlay 200）。
+- 幾何：高 `MOBILE_APPBAR_PX`(48)＋`--safe-top`，**全畫面常駐** ⇒ rows 與 surface 無關（不重送 NAWS）。上緣經
+  `term_size.termLayoutOffsets({topInset})`（0＝桌機舊值）、`mobileMenuLayout({topInset})`、`view.setTopInset`。`.main` 高公式不動。
+  `PageTopAlert` 手機下 margin-top 讓開 48px。
+
+## Phase 8：收起終端機標頭／狀態列
+
+- 共用 `render/collapsed_row.js#buildCollapsedRow(row, cls)`（`.mobileCollapsedRow` display:none，bbsrow/srow/data-row 契約保留）。
+  `_renderRow` 三個分支都只看列號＋該列文字 ⇒ `annotationsAreRowIndependent` 不動；桌機 golden 不經過。
+  - listCards：`row < bodyStart || row === last`（視口幾何見 Phase 4）；menuCards：第 0 列與末列。
+  - 好讀文章（`enhance.commentCards`）前 `ARTICLE_META_MAX_ROWS`(5) 列：`render/article_meta_card.js`（pmore `_fh_disp_heads`
+    作者/標題/時間/轉信 → 卡片；整列 `─` 分隔線 → 收起；形狀不吻合照舊）。
+- 好讀 footer `#easyReadingLastRow`：reflow 下 `display:none`（`_mirrorStatusRowToFooter` 與 `setMobileSurface` 切換時）。
+  好讀累積頁底部 1em padding 仍在（無害）。
+- `term_view.pageRowTop` 跳過 `offsetParent===null` 的列（收起列 offsetTop＝0 會把閱讀位置還原拉回頂端）。
+
+## Phase 9：Bottom sheet（`components/MobileSheet`，Mantine Drawer position bottom）
+
+- 用在：「更多」（`MobileToolbar` 自己持有，`panel==='more'`）、長按選單（`ContextMenu` 在 `useMobile` 時畫 `ContextSheet`，
+  項目清單 `ContextMenu/context_menu_entries.js` 與桌機 `DropdownMenu` 共用）、搜尋（`SearchModal` 的 `mobile` prop 換外殼）。
+  長按的 disposition／touchLongPress／清選取都在 render 前，**不動**。
+- 開著＝modal：每個實例 `setModalOpen('mobileSheet'+useId, opened)`。遮罩是一般 div、Drawer 在 portal ⇒ 點擊會到 window 的 App 滑鼠入口，
+  **靠 modalShown 早退**才不會被當成點終端機。z-index 3000（蓋過工具列 2500）。
+- 系統返回＝收起：開著時 `App.registerSheetDismiss(onClose)`；`history_back_guard#onPopState` 在送 ← 之前問
+  `App.dismissTopSheet()`，true ⇒ 補 sentinel、不送 ←、不出逃生提示（接住原生返回，非模擬）。
+- 拖把手（`[data-sheet-handle]`，`touch-action:none`）往下 > `SHEET_DISMISS_DRAG_PX`(80) 收起。
+- Mantine 9 Drawer `size="auto"` 會解析成未定義變數 ⇒ content 被撐全高、內容貼頂；`MobileSheet.css` 明給 `height:auto`。
+- sheet 裡的輸入框（搜尋）叫出的鍵盤不經 `softKeyboard`：`mobile_layout.overlayKeyboardInset` → CSS `--vv-kb-inset`
+  （`.mobileSheetInner` padding-bottom），不碰終端機幾何。真機 `guess`。
+- 新依賴只在 src 深處 import ⇒ 列進 `vitest.config.mjs` unit-browser 的 `optimizeDeps.include`（否則中途重新預打包、瀏覽器斷線）。
+
+## Phase 10：系統整合
+
+- `index.html`：`viewport-fit=cover`、`theme-color` #141418（＝manifest，`index_html_meta.test.js` 守；仍禁 interactive-widget／鎖縮放）。
+- safe-area：`App._readSafeInsets`（探針元素的 `env(safe-area-inset-*)` padding）→ `mobileChromeInsets` → CSS `--safe-top/--safe-bottom`
+  ＋終端機 inset；`mobileRowsHeight(h, safe)` 扣掉。APK 原生已 padding ⇒ env＝0（`docs/android-app.md` 第 8 點）。
+- 等待進度條：`mobile_busy.busyNext`（action → 500ms 內真的 `conn.onDataSent` → pending → 300ms 後 shown → `screenSettled` 或 3s 逾時收）。
+  action 只來自我們的 UI（`App.noteUserAction`：底部導覽 sendKey、選單大按鈕、列表卡片 tap）⇒ 列表本地捲動、實體鍵盤不亮。
+  畫在 App Bar 底邊，reduced-motion 靜態。
+- 點擊波紋 `src/js/ripple.js#installRipple`（main.jsx 開站一次）：document capture-passive pointerdown 委派，只處理 `.pttRipple`，
+  **`#mainContainer` 內一律跳過**；Mantine `Button`／`ActionIcon`／`Menu.Item` 由 `MantineRoot` theme classNames 掛（桌機也有）；
+  手機底部導覽、sheet 項目手動掛。核心畫面卡片只用 CSS `:active`。工具列／App Bar 關掉 `-webkit-tap-highlight-color`。

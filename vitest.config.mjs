@@ -61,6 +61,10 @@ export default defineConfig({
       {
         extends: true,
         define: { 'process.env': JSON.stringify(browserEnv) },
+        // 只被 src 深處 import、測試檔本身沒直接 import 的依賴，Vite 要等跑到才發現 ⇒
+        // 中途重新預打包並重載瀏覽器，整批 browser 測試斷線（VITEST_BROWSER_CONNECTION_CLOSED）。
+        // 這種依賴列在這裡預先打包。
+        optimizeDeps: { include: ['@mantine/hooks', '@tabler/icons-react'] },
         test: {
           // DOM／渲染／React 週邊 UI，跑在真 Chromium（Vitest Browser Mode）。2026-10 從 jsdom
           // 換過來：同一批檔案 59s → 15s，而且 layout、scrollTop、IntersectionObserver、

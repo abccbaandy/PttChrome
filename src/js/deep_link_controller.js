@@ -78,6 +78,19 @@ DeepLinkController.prototype = {
   // 差別在收尾：按 Q 那條路會被 FULLUPDATE 抛回文章列表，這裡沒有下一個指令，得自己
   // 走 reopenAfterPostInfo 回原處；免費路徑則什麼都不必做。
   copyCurrentPostLink: function() {
+    return this._resolveCurrentPost(null);
+  },
+
+  // 手機底部導覽的「分享」：同一條 AID 解析，交件改走系統分享面板
+  // （navigator.share；Web Share API 是瀏覽器／OS 的原生 UI，接上去而不是自己畫）。
+  // title：分享標題（App Bar 的文章標題）。沒有 share API／被拒（非取消）退回複製。
+  // **必須在 click handler 裡同步呼叫**：免費路徑當場 share，user activation 還在；
+  // 按 Q 那條路是非同步的，activation 多半已過期 ⇒ share 被拒 ⇒ 退回複製／顯示連結。
+  shareCurrentPostLink: function(title) {
+    return this._resolveCurrentPost({ share: true, title: title || '' });
+  },
+
+  _resolveCurrentPost: function(deliverOpts) {
     const nav = this._core.aidNavigation;
     if (!nav || nav.active || this._core.connectState !== 1) return false;
     const buf = this._termBuf;
@@ -92,7 +105,7 @@ DeepLinkController.prototype = {
     // 不記閱讀位置、不重開文章。所以先問一次，問到了就直接交件。
     const local = nav.findLocalPostAid && nav.findLocalPostAid();
     if (local) {
-      this._deliverLink(local);
+      this._deliverLink(local, deliverOpts);
       return true;
     }
     // 以下是按 Q 那條路。讀 AID 是有代價的：mbbsd/bbs.c:2375-2377 對 Q 的回應是
@@ -120,7 +133,7 @@ DeepLinkController.prototype = {
       onDone: function(info) {
         // 回原處永遠要做，就算沒問到 AID —— 不然使用者被丟在列表上。
         nav.reopenAfterPostInfo(lineIndex);
-        self._deliverLink(info);
+        self._deliverLink(info, deliverOpts);
       },
       onFail: function() {
         self._hint('複製連結失敗：讀不到文章代碼', 3000);
@@ -138,7 +151,7 @@ DeepLinkController.prototype = {
 
   // board 可能是 null（站內信／精華區，pttbbs 在 currboard 空時印「不明」）：
   // 沒有看板的 AID 跳不回去（# 只搜 currboard），所以那種連結不該產生。
-  _deliverLink: function(info) {
+  _deliverLink: function(info, opts) {
     const link =
       info && buildDeepLink(this._locationHref(), info.board, info.aid);
     if (!link) {
@@ -146,6 +159,22 @@ DeepLinkController.prototype = {
       return;
     }
     const self = this;
+    const share = opts && opts.share ? this._share() : null;
+    if (share) {
+      let p;
+      try {
+        p = share(opts.title ? { title: opts.title, url: link } : { url: link });
+      } catch (e) {
+        p = Promise.reject(e);
+      }
+      // 使用者自己關掉分享面板（AbortError）＝完成，不再補複製。其他（activation
+      // 過期的 NotAllowedError、不支援的資料）退回複製。
+      Promise.resolve(p).then(null, function(err) {
+        if (err && err.name === 'AbortError') return;
+        self._deliverLink(info, null);
+      });
+      return;
+    }
     const fallback = function() {
       // 剪貼簿被擋（非 secure context、或 user activation 已經過期）：至少把
       // 連結顯示出來，使用者還能自己選起來複製。
@@ -214,6 +243,12 @@ DeepLinkController.prototype = {
 
   _clipboard: function() {
     return typeof navigator === 'undefined' ? null : navigator.clipboard;
+  },
+
+  // 系統分享（Web Share API）；沒有就 null。
+  _share: function() {
+    if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') return null;
+    return navigator.share.bind(navigator);
   },
 
   _hint: function(msg, ms) {
