@@ -2,6 +2,7 @@
 //   1. remote 沒新 commit ⇒ stdout 必須完全空（不打擾 session）。
 //   2. remote 有新 commit ⇒ 輸出 SessionStart JSON，additionalContext 要求先 pull。
 //   3. 沒 upstream ⇒ 靜默。分岔／dirty 給對應指示。
+//   4. 依賴升版：新 commit 動 yarn.lock ⇒ 提醒 install；本地 node_modules／Playwright 瀏覽器沒跟上 ⇒ 提醒。
 // 用真 git repo（暫存目錄），不 mock。
 
 import { execFileSync } from 'node:child_process';
@@ -9,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildNotice, checkRemote } from '../../scripts/check-remote-commits.mjs';
+import { browsersDir, buildNotice, checkLocalDeps, checkRemote } from '../../scripts/check-remote-commits.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/check-remote-commits.mjs', import.meta.url));
 const GIT_ENV = {
@@ -91,6 +92,85 @@ describe('check-remote-commits', () => {
     const notice = buildNotice(r);
     expect(notice).toContain('git pull --rebase');
     expect(notice).toContain('git stash');
+  });
+
+  test('新 commit 動到 yarn.lock 且 @playwright/test 升版 ⇒ 提醒 install＋裝瀏覽器', () => {
+    const lock = (v) => `"@playwright/test@npm:^1.0.0":\n  version: ${v}\n  resolution: "x"\n`;
+    fs.writeFileSync(path.join(author, 'yarn.lock'), lock('1.63.0'));
+    git(author, 'add', '.');
+    git(author, 'commit', '-qm', 'lock');
+    git(author, 'push', '-q');
+    git(local, 'pull', '-q');
+    fs.writeFileSync(path.join(author, 'yarn.lock'), lock('1.64.0'));
+    git(author, 'commit', '-qam', 'bump playwright');
+    git(author, 'push', '-q');
+    const r = checkRemote(local);
+    expect(r).toMatchObject({ lockChanged: true, playwright: { from: '1.63.0', to: '1.64.0' } });
+    const notice = buildNotice(r, { yarnInstall: true, missingBrowsers: [] });
+    expect(notice).toContain('pull 完執行 `yarn install`');
+    expect(notice).toContain('yarn playwright install chromium firefox');
+    // remote 已要求 install ⇒ 不重複出本地 [依賴未更新]
+    expect(notice).not.toContain('[依賴未更新]');
+  });
+
+  test('沒動 yarn.lock 的新 commit ⇒ 不提 install', () => {
+    commit(author, 'b.txt', 'two');
+    git(author, 'push', '-q');
+    const r = checkRemote(local);
+    expect(r.lockChanged).toBe(false);
+    expect(buildNotice(r)).not.toContain('yarn install');
+  });
+
+  test('本地：yarn.lock 比 .yarn-state.yml 新 ⇒ yarn install（沒落後也要提醒）', () => {
+    const nm = path.join(local, 'node_modules');
+    fs.mkdirSync(nm);
+    fs.writeFileSync(path.join(nm, '.yarn-state.yml'), '');
+    fs.writeFileSync(path.join(local, 'yarn.lock'), '');
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(path.join(nm, '.yarn-state.yml'), old, old);
+    expect(checkLocalDeps(local, tmp)).toEqual({ yarnInstall: true, missingBrowsers: [] });
+    const out = JSON.parse(runHook(local));
+    expect(out.hookSpecificOutput.additionalContext).toContain('[依賴未更新]');
+
+    // install 過（state 比 lock 新）⇒ 不提醒
+    const now = new Date();
+    fs.utimesSync(path.join(nm, '.yarn-state.yml'), now, now);
+    fs.utimesSync(path.join(local, 'yarn.lock'), old, old);
+    expect(checkLocalDeps(local, tmp).yarnInstall).toBe(false);
+  });
+
+  test('本地：playwright-core 要求的瀏覽器 revision 不在 ⇒ 列出缺的', () => {
+    const nm = path.join(local, 'node_modules');
+    fs.mkdirSync(path.join(nm, 'playwright-core'), { recursive: true });
+    fs.writeFileSync(path.join(local, 'yarn.lock'), '');
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(path.join(local, 'yarn.lock'), old, old);
+    fs.writeFileSync(path.join(nm, '.yarn-state.yml'), '');
+    fs.writeFileSync(
+      path.join(nm, 'playwright-core', 'browsers.json'),
+      JSON.stringify({
+        browsers: [
+          { name: 'chromium', revision: '1200' },
+          { name: 'firefox', revision: '1500' },
+          { name: 'webkit', revision: '2200' },
+        ],
+      }),
+    );
+    const dir = path.join(tmp, 'ms-playwright');
+    fs.mkdirSync(path.join(dir, 'chromium-1200'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'firefox-1499'));
+    expect(checkLocalDeps(local, dir)).toEqual({ yarnInstall: false, missingBrowsers: ['firefox'] });
+    expect(buildNotice(null, { yarnInstall: false, missingBrowsers: ['firefox'] })).toContain(
+      'yarn playwright install firefox',
+    );
+    fs.mkdirSync(path.join(dir, 'firefox-1500'));
+    expect(checkLocalDeps(local, dir).missingBrowsers).toEqual([]);
+  });
+
+  test('browsersDir：PLAYWRIGHT_BROWSERS_PATH 優先，否則各平台預設', () => {
+    expect(browsersDir({ PLAYWRIGHT_BROWSERS_PATH: '/x/pw' }, 'win32', '/h')).toBe('/x/pw');
+    expect(browsersDir({}, 'linux', '/h')).toBe(path.join('/h', '.cache', 'ms-playwright'));
+    expect(browsersDir({}, 'darwin', '/h')).toBe(path.join('/h', 'Library', 'Caches', 'ms-playwright'));
   });
 
   test('超過列出上限 ⇒ 標示剩餘數量', () => {
