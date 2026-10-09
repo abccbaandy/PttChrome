@@ -50,7 +50,12 @@
   `docs/easy-reading-list.md`「純位移不寫 scrollTop」）。量法：`adb shell input swipe … 60` 連甩，
   頁面掛 scroll listener＋包 `setListScrollTop` 記寫入前後值。
 - `Emulation.setDeviceMetricsOverride` 在 Android Chrome 可用來湊手機版面列數（列數＝視窗高 / 16，
-  要對上 cassette 的 rows）；寬度給 `screen.width` 觸控座標才 1:1。
+  要對上 cassette 的 rows）；寬度給 `screen.width` 觸控 x 才 1:1，**y 仍會偏**（壓到 24 列時實測偏 ~5%）⇒
+  壓了高度的畫面改用 keyevent 等不靠座標的輸入（`mobile_input` 的返回鍵測試）。
+- 系統返回鍵（`input keyevent KEYCODE_BACK`）在 Chrome 113 會變成 popstate、sentinel 接得住；第一層 sentinel
+  在觸控 `pointerdown` 疊（規範上觸控要到 pointerup 才算 activation）**沒有**被 History Manipulation
+  Intervention 跳過（實測：返回照樣收到 popstate、仍在站內）。
+- 鍵盤開著時按返回：IME 吃掉、只收鍵盤，頁面收不到 popstate。
 
 ### 為什麼是 API 34（Chrome 113）而不是更新的映像
 

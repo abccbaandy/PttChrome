@@ -28,7 +28,8 @@ async function forceMobileLayout(page, prefs = {}) {
 // opts.rows：要「server 的真實畫面」判讀對（pageState 等看底列）時，把視窗高壓成剛好
 // cassette 的列數（列數＝(視窗高 − 工具列) / 16，見 docs/mobile.md「尺寸」）。49 列時 cassette
 // 的狀態列落在第 24 列、底列是空的 ⇒ pageState 0，← 會被 nav_key_gate 正確地擋下。
-// 寬度維持 screen.width ⇒ 觸控座標仍是 1:1（docs/android-e2e.md「CONFIRMED 事實」）。
+// 寬度維持 screen.width ⇒ 觸控 x 仍是 1:1，但 **y 不是**（實測偏 ~5%，tap 的落點自檢會丟
+// [android-env]）⇒ 壓了列數的畫面不要用 tap，改用 keyevent 之類不靠座標的輸入。
 async function openScreen(page, prefs = {}, opts = {}) {
   await forceMobileLayout(page, prefs);
   if (opts.rows) {

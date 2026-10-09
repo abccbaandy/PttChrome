@@ -123,9 +123,9 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
     await expect.poll(() => page.evaluate(() => window.__app.buf.pageState)).toBe(3);
     await recordTouches(page);
     // sentinel 等第一次 user activation 才疊（History Manipulation Intervention）。
-    // 點工具列的「更多」開、關各一次：真觸控、不送鍵、不會點到文章裡的連結。
-    await tap(page, device, byKey('__more'));
-    await tap(page, device, byKey('__more'));
+    // 用 OS 層按一下 Shift（keydown＝activation；單按修飾鍵不送給 PTT）。不用真 tap：
+    // 壓視窗高（setDeviceMetricsOverride）之後觸控 y 座標不再 1:1（實測偏 ~5%），x 仍準。
+    await keyevent(device, 'KEYCODE_SHIFT_LEFT');
     await waitOnSentinel(page);
     await page.evaluate(() => {
       window.__sameDocument = true;
