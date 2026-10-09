@@ -162,32 +162,6 @@ describe("sentinel 的疊法", () => {
     win.fire("pointerdown", {});
     expect(win.pushed).toHaveLength(1);
   });
-
-  // 回歸鎖：觸控的 pointerdown 還不是 user activation（HTML activation-triggering
-  // input event：觸控要到 pointerup）。在那裡疊的 sentinel 會被 History Manipulation
-  // Intervention 標成可跳過 ⇒ Android 返回鍵一按就直接離站。
-  // real-input: tests/e2e/android/mobile_input.android.spec.js
-  test("觸控：pointerdown 不疊，pointerup 才疊", () => {
-    const t = setup();
-    t.win.fire("pointerdown", { pointerType: "touch" });
-    expect(t.win.pushed).toHaveLength(0);
-    t.win.fire("pointerup", { pointerType: "touch" });
-    expect(t.win.pushed).toHaveLength(1);
-  });
-
-  test("觸控筆同觸控；滑鼠在 pointerdown 就疊、pointerup 不重複疊", () => {
-    const pen = setup();
-    pen.win.fire("pointerdown", { pointerType: "pen" });
-    expect(pen.win.pushed).toHaveLength(0);
-    pen.win.fire("pointerup", { pointerType: "pen" });
-    expect(pen.win.pushed).toHaveLength(1);
-
-    const mouse = setup();
-    mouse.win.fire("pointerdown", { pointerType: "mouse" });
-    expect(mouse.win.pushed).toHaveLength(1);
-    mouse.win.fire("pointerup", { pointerType: "mouse" });
-    expect(mouse.win.pushed).toHaveLength(1);
-  });
 });
 
 describe("back 的攔截", () => {
@@ -438,7 +412,6 @@ test("uninstall 拆得乾淨（listener 不殘留）", () => {
   t.guard.uninstall();
   expect(t.win.count("popstate")).toBe(0);
   expect(t.win.count("pointerdown")).toBe(0);
-  expect(t.win.count("pointerup")).toBe(0);
   expect(t.win.count("keydown")).toBe(0);
 });
 

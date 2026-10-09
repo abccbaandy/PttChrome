@@ -24,9 +24,27 @@ async function forceMobileLayout(page, prefs = {}) {
 
 // 一般終端機畫面（預設不開好讀）。不開好讀 ⇒ 不需要「一屏 24 列」，模擬器用原生 Pixel 6
 // 尺寸（49 列，cassette 的 24 列畫在上半部）——跟真手機同一個長條比例。
-async function openScreen(page, prefs = {}) {
+//
+// opts.rows：要「server 的真實畫面」判讀對（pageState 等看底列）時，把視窗高壓成剛好
+// cassette 的列數（列數＝(視窗高 − 工具列) / 16，見 docs/mobile.md「尺寸」）。49 列時 cassette
+// 的狀態列落在第 24 列、底列是空的 ⇒ pageState 0，← 會被 nav_key_gate 正確地擋下。
+// 寬度維持 screen.width ⇒ 觸控座標仍是 1:1（docs/android-e2e.md「CONFIRMED 事實」）。
+async function openScreen(page, prefs = {}, opts = {}) {
   await forceMobileLayout(page, prefs);
+  if (opts.rows) {
+    const cdp = await page.context().newCDPSession(page);
+    const { width, dpr } = await page.evaluate(() => ({ width: screen.width, dpr: devicePixelRatio }));
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width,
+      height: opts.rows * 16 + 48 + 8,
+      deviceScaleFactor: dpr,
+      mobile: true,
+    });
+  }
   await bootOffline(page, ptt);
+  if (opts.rows) {
+    await expect.poll(() => page.evaluate(() => window.__app.buf.rows)).toBe(opts.rows);
+  }
   if (!(await page.evaluate(() => window.__app.mobile))) {
     throw envError('沒有進手機版面（mobileLayout pref 沒套上）');
   }

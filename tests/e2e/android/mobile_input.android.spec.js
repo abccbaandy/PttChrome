@@ -7,9 +7,9 @@
 //   3. 鍵盤開著時按系統返回鍵：IME 吃掉返回、只收鍵盤，不可以走到 history sentinel 送 ←；
 //      收起後 softKeyboard 歸零（`_onVisualViewport`）⇒ 再按 ⌨ 一次就叫得出來；
 //   4. 系統返回鍵 → history sentinel → ←，連按都接得住（返回鍵不是 user activation，
-//      sentinel 補回來必須走 traversal，見 history_back_guard.js 坑 3）。第一層 sentinel
-//      必須等觸控的 pointerup 才疊（觸控 pointerdown 還不是 activation，坑 2）——這條測試
-//      在修正前是紅的：返回鍵一按就離站。
+//      sentinel 補回來必須走 traversal，見 history_back_guard.js 坑 3）。第一層 sentinel 在
+//      觸控 pointerdown 疊（HTML 規範上觸控要到 pointerup 才算 activation）在 Chrome 113 上
+//      實測不會被跳過：返回照樣變成 popstate（CI 現場紀錄）。
 // 下拉重整（pull-to-refresh）沒有測：拿掉 overscroll-behavior 的對照組在模擬器上也拉不出
 // 重整（body 是 overflow:hidden），否定斷言證明不了什麼。
 // 觸控與按鍵一律走 OS 的 input injection（screen.js）。
@@ -116,10 +116,11 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
   test('系統返回鍵 ⇒ 送 ←，連按三次都接得住、沒有離站', async ({ page, android }) => {
     test.setTimeout(120000);
     const { device } = android;
-    // 文章好讀（pageState 3）：← 只在送得出去的畫面才送（nav_key_gate）；格線重放停在
-    // pageState 0，返回會被正確地擋下（實測現場 `block: "pageState:0"`），測不到送鍵。
-    // 同 offline/swipe_back.offline.spec.js 的設定。
-    await openScreen(page, { ...PREFS, enableEasyReading: true });
+    // ← 只在送得出去的畫面才送（nav_key_gate）。原生 49 列時 cassette 的狀態列不在底列 ⇒
+    // pageState 0，返回被正確地擋下（實測現場 `block: "pageState:0"`），測不到送鍵 ⇒ 壓成
+    // 24 列，畫面才是真的文章頁（pageState 3）。好讀同 offline/swipe_back.offline.spec.js。
+    await openScreen(page, { ...PREFS, enableEasyReading: true }, { rows: 24 });
+    await expect.poll(() => page.evaluate(() => window.__app.buf.pageState)).toBe(3);
     await recordTouches(page);
     // sentinel 等第一次 user activation 才疊（History Manipulation Intervention）。
     // 點工具列的「更多」開、關各一次：真觸控、不送鍵、不會點到文章裡的連結。
