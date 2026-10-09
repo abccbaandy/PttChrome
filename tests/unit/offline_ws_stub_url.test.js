@@ -18,6 +18,8 @@ describe("離線重放：只攔 BBS 那條 WebSocket", () => {
       "ws://[::1]:8080/bbs",
       "wss://ws.ptt.cc/bbs",
       "wss://ptt-proxy.example.workers.dev/bbs",
+      // Android APK 的原生本機 proxy（LocalWebSocketProxy.kt：/bbs/<token>）
+      "ws://127.0.0.1:41234/bbs/Zq3x9",
     ]) {
       expect(isBbsSocketUrl(u)).toBe(true);
     }
@@ -29,6 +31,7 @@ describe("離線重放：只攔 BBS 那條 WebSocket", () => {
       "ws://localhost:8080/",
       "ws://127.0.0.1:5173/?token=x",
       "ws://localhost:8080/__vite_hmr",
+      "ws://localhost:8080/bbs/a/b",
     ]) {
       expect(isBbsSocketUrl(u)).toBe(false);
     }

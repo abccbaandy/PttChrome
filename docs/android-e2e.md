@@ -7,14 +7,19 @@
   以免觸發「送不出 ← 時連按兩次離站」的逃生門，不離站）。
 - 試過但沒收：「下拉不觸發 Chrome 重新整理」——拿掉 overscroll-behavior 的對照組在模擬器上也拉不出重整
   （body `overflow:hidden`），否定斷言證明不了什麼。
-- 未涵蓋：APK（WebView 殼）的返回鍵與原生 bridge——要在 CI 另建 debug APK 裝進模擬器。
+- `apk`：debug APK（WebView 殼）——返回鍵退到底只丟背景不斷線、疊了 sentinel 交給網頁 guard；文章網址交給
+  外部瀏覽器、BBS 畫面留著；軟鍵盤疊在 WebView 上不縮、原生 `pttandroid:ime` 回報高度、工具列浮在鍵盤上、
+  返回只收鍵盤。APK 以 dev server 模式載 host 的 dev server（fixture 用 `run-as` 寫 `shared_prefs`），
+  PTT 連線一樣離線重放（stub 也攔 APK 本機 proxy 的 `/bbs/<token>`）。本機要先
+  `cd android && ./gradlew assembleDebug`（或設 `ANDROID_E2E_APK`），沒有 APK 就略過；CI 缺 APK＝exit 2。
+- 未涵蓋：密碼管理員／Google 登入 bridge（模擬器上沒有 Google 帳號與已存密碼）、檔案選擇器。
 
 ## 檔案
 
 | 路徑 | 職責 |
 |---|---|
 | `tests/e2e/android/android_env.js` | 純函式：選模擬器、CSS px→device px、adb 輸出解析、SDK 工具定位 |
-| `tests/e2e/android/fixtures.js` | worker：選機→OS 斷網→清 Chrome→IPv4 轉送＋adb reverse；test：`launchBrowser` 覆寫 `page`；失敗存整個螢幕 |
+| `tests/e2e/android/fixtures.js` | worker：選機→OS 斷網→清 Chrome→IPv4 轉送＋adb reverse、裝 debug APK；test：`launchBrowser` 覆寫 `page`、`apk`（清 App→dev server 模式→連 WebView）；失敗存整個螢幕 |
 | `tests/e2e/android/screen.js` | spec 共用：強制手機版面開畫面、OS 層真 tap（含落點自檢）／keyevent、收送出的 bytes、軟鍵盤蓋住的高度 |
 | `tests/e2e/android/*.android.spec.js` | spec（project `android`，`playwright.config.js`） |
 | `scripts/run-android-e2e.mjs` | `yarn test:e2e:android`：找／建 AVD、開機、跑、分類 exit 0/1/2、自己開的自己關 |
@@ -90,6 +95,7 @@ API 35 google_apis（Chrome 124，GPU 不當）試過、**棄用**：
 ## CI（`test.yml` job `test-e2e-android`）
 
 ubuntu-latest＋KVM、`ReactiveCircus/android-emulator-runner`（API 34 google_apis x86_64、`pixel_6`、`-gpu swiftshader_indirect`）。
+開機前先 `./gradlew assembleDebug`（setup-java 21＋setup-gradle 快取），路徑經 env `ANDROID_E2E_APK` 交給 fixture。
 不重試；exit 1／2 都是紅，判讀見 `docs/ci-troubleshooting.md`。
 
 spike 實測（20 次平行 ×2 輪，2026-10）：

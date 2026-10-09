@@ -50,6 +50,29 @@ function parseVersionName(text) {
   return m ? m[1] : null;
 }
 
+// `dumpsys activity activities` → 現在在前景（resumed）的 App 套件名；讀不到 ⇒ null。
+// 例：`topResumedActivity=ActivityRecord{3d2a1b u0 com.android.chrome/org.chromium...Activity t15}`。
+function parseResumedPackage(text) {
+  const m = /(?:topResumedActivity|mResumedActivity)[:=]\s*ActivityRecord\{\S+ u\d+ ([\w.]+)\//.exec(String(text || ''));
+  return m ? m[1] : null;
+}
+
+// debug APK（`android/` 的 assembleDebug）：applicationId 多 `.debug`，Activity 類別名不變。
+const APK_PKG = 'io.github.abccbaandy.pttchrome.debug';
+const APK_ACTIVITY = `${APK_PKG}/io.github.abccbaandy.pttchrome.MainActivity`;
+
+// 要裝的 APK：env ANDROID_E2E_APK（CI）或本機 gradle 的預設輸出位置。
+function apkPath(env = process.env, root = path.resolve(__dirname, '../../..')) {
+  return env.ANDROID_E2E_APK || path.join(root, 'android/app/build/outputs/apk/debug/app-debug.apk');
+}
+
+// APK 的 SharedPreferences（AppSettings.kt）：開 dev server 模式。網址不給 ⇒ 預設
+// http://localhost:8080/（PageSource.DEFAULT_DEV_URL），adb reverse 正好接到 host 的 dev server。
+// 屬性值用單引號：整段要包在 `sh -c "…echo \"…\"…"` 裡。
+const APK_DEV_PREFS_XML =
+  "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>" +
+  "<map><boolean name='dev_server_enabled' value='true' /></map>";
+
 function sdkRoot(env = process.env, platform = process.platform) {
   if (env.ANDROID_HOME) return env.ANDROID_HOME;
   if (env.ANDROID_SDK_ROOT) return env.ANDROID_SDK_ROOT;
@@ -77,6 +100,11 @@ module.exports = {
   parseAdbDevices,
   parseImageRevision,
   parseVersionName,
+  parseResumedPackage,
+  APK_PKG,
+  APK_ACTIVITY,
+  APK_DEV_PREFS_XML,
+  apkPath,
   sdkRoot,
   sdkTool,
 };

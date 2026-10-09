@@ -87,6 +87,45 @@ describe("裝置資訊 log 的解析", () => {
   });
 });
 
+// APK spec 用它判「App 在前景／被丟到背景／外部瀏覽器起來了」。
+describe("parseResumedPackage：前景 App", () => {
+  test("Android 14 的 topResumedActivity", () => {
+    const dump =
+      "  Task display areas in top down Z order:\n" +
+      "    topResumedActivity=ActivityRecord{3d2a1b u0 com.android.chrome/org.chromium.chrome.browser.ChromeTabbedActivity t15}\n" +
+      "    mResumedActivity: ActivityRecord{3d2a1b u0 com.android.chrome/org.chromium.chrome.browser.ChromeTabbedActivity t15}\n";
+    expect(androidEnv.parseResumedPackage(dump)).toBe("com.android.chrome");
+  });
+  test("舊格式 mResumedActivity: 也認；debug APK 的套件名帶 .debug", () => {
+    const dump = "  mResumedActivity: ActivityRecord{9f u0 io.github.abccbaandy.pttchrome.debug/io.github.abccbaandy.pttchrome.MainActivity t3}";
+    expect(androidEnv.parseResumedPackage(dump)).toBe(androidEnv.APK_PKG);
+  });
+  test("沒有前景 Activity ⇒ null", () => {
+    expect(androidEnv.parseResumedPackage("topResumedActivity=null")).toBe(null);
+    expect(androidEnv.parseResumedPackage("")).toBe(null);
+  });
+});
+
+// debug APK 的 dev server 設定要對上 AppSettings.kt 的檔名與 key（改名＝APK 靜默載正式站）。
+describe("APK dev server 設定", () => {
+  const kt = fs.readFileSync(path.join(ROOT, "android/app/src/main/java/io/github/abccbaandy/pttchrome/AppSettings.kt"), "utf8");
+  test("檔名 app_settings、key dev_server_enabled 與 AppSettings.kt 一致", () => {
+    expect(kt).toMatch(/FILE = "app_settings"/);
+    expect(kt).toMatch(/KEY_DEV_ENABLED = "dev_server_enabled"/);
+    expect(androidEnv.APK_DEV_PREFS_XML).toContain("name='dev_server_enabled' value='true'");
+    expect(fs.readFileSync(path.join(ROOT, "tests/e2e/android/fixtures.js"), "utf8")).toMatch(/shared_prefs\/app_settings\.xml/);
+  });
+  test("預設 dev 網址就是 localhost:8080（adb reverse 接的那個埠）", () => {
+    const ps = fs.readFileSync(path.join(ROOT, "android/app/src/main/java/io/github/abccbaandy/pttchrome/PageSource.kt"), "utf8");
+    expect(ps).toMatch(/DEFAULT_DEV_URL = "http:\/\/localhost:8080\/"/);
+  });
+  test("applicationIdSuffix .debug ⇒ APK_PKG", () => {
+    const gradle = fs.readFileSync(path.join(ROOT, "android/app/build.gradle.kts"), "utf8");
+    expect(gradle).toMatch(/applicationIdSuffix = "\.debug"/);
+    expect(androidEnv.APK_PKG).toBe("io.github.abccbaandy.pttchrome.debug");
+  });
+});
+
 describe("parseArgs", () => {
   test("--if-changed 預設 base 為 origin/dev；其餘透傳", () => {
     expect(parseArgs(["--if-changed", "--grep", "x"])).toMatchObject({ ifChanged: "origin/dev", passthrough: ["--grep", "x"] });
@@ -198,5 +237,13 @@ describe("test.yml：test-e2e-android job", () => {
     const emu = body.indexOf("android-emulator-runner@");
     expect(kvm).toBeGreaterThan(-1);
     expect(emu).toBeGreaterThan(kvm);
+  });
+  // 少了這步，apk.android.spec.js 在 CI 會以「找不到 debug APK」整輪 exit 2。
+  test("開模擬器前先建 debug APK，並把路徑交給 e2e", () => {
+    const build = body.indexOf("assembleDebug");
+    const emu = body.indexOf("android-emulator-runner@");
+    expect(build).toBeGreaterThan(-1);
+    expect(emu).toBeGreaterThan(build);
+    expect(body).toMatch(/ANDROID_E2E_APK: .*app-debug\.apk/);
   });
 });
