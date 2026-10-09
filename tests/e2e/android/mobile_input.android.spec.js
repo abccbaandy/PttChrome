@@ -16,6 +16,12 @@
 const { test, expect } = require('./fixtures');
 const {
   article,
+  byKey,
+  rectOf,
+  lastRowBottom,
+  waitOnSentinel,
+  recordBackGuard,
+  backGuardDiag,
   openScreen,
   recordTouches,
   tap,
@@ -28,25 +34,10 @@ const {
 // 左鍵關掉：真 tap 落在終端機上時不可以自己送鍵（左側退出帶、邊緣翻頁）。
 const PREFS = { mouseLeftClick: false };
 
-const byKey = (k) => `[data-key="${k}"]`;
 const inputMode = (page) => page.evaluate(() => document.getElementById('t').getAttribute('inputmode'));
 const focusedIsT = (page) => page.evaluate(() => document.activeElement === document.getElementById('t'));
-const rectOf = (page, sel) =>
-  page.evaluate((s) => {
-    const r = document.querySelector(s).getBoundingClientRect();
-    return { top: r.top, bottom: r.bottom };
-  }, sel);
-const lastRowBottom = (page) =>
-  page.evaluate(() => {
-    const rows = document.querySelectorAll('#mainContainer [data-type="bbsline"]');
-    return rows[rows.length - 1].getBoundingClientRect().bottom;
-  });
 // 可視區（visual viewport）底，CSS px。
 const visibleBottom = (page) => page.evaluate(() => window.visualViewport.offsetTop + window.visualViewport.height);
-
-// 站在 sentinel 那一層上（返回被接住之後 guard 用 history.forward() 走回來，非同步）。
-const waitOnSentinel = (page, opts) =>
-  page.waitForFunction(() => !!(window.history.state && window.history.state.pttchromeBackGuard), null, opts);
 
 test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／真按鍵）', () => {
   test.skip(!article, '尚無 article cassette');
@@ -127,26 +118,9 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
     await waitOnSentinel(page);
     await page.evaluate(() => {
       window.__sameDocument = true;
-      // 失敗時的現場：返回鍵有沒有變成 popstate、送鍵出口被呼叫幾次、提示閃了幾次。
-      window.__diag = { pops: [], navs: [], hints: [] };
-      window.addEventListener('popstate', (e) => window.__diag.pops.push(JSON.stringify(e.state)), true);
-      const app = window.__app;
-      const orig = app.sendNavKeyAsUser.bind(app);
-      app.sendNavKeyAsUser = (k) => {
-        window.__diag.navs.push(k);
-        window.__diag.lastNavAt = performance.now();
-        return orig(k);
-      };
-      const flash = app.view.flashListHint.bind(app.view);
-      app.view.flashListHint = (h) => {
-        window.__diag.hints.push(h);
-        return flash(h);
-      };
     });
-    const diag = () =>
-      page
-        .evaluate(() => JSON.stringify({ ...window.__diag, state: history.state, length: history.length }))
-        .catch((e) => String(e));
+    await recordBackGuard(page);
+    const diag = () => backGuardDiag(page);
     const navs = () => page.evaluate(() => window.__diag.navs.length).catch(() => -1);
     const DOUBLE_BACK_MS = 800;
 

@@ -3,7 +3,15 @@
 // 返回鍵管線 —— 這正是桌機 CDP 做不出來的那段。
 const { expect, webviewOrigin, envError } = require('./fixtures');
 const ptt = require('../helpers/ptt');
-const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
+const {
+  findCassette,
+  bootOffline,
+  replayCassette,
+  installReplay,
+  installOfflineNetwork,
+  offlineImageProfile,
+  waitConnected,
+} = require('../helpers/replay');
 const { toDevicePoint } = require('./android_env');
 
 const article = findCassette('article');
@@ -26,9 +34,18 @@ async function forceMobileLayout(page, prefs = {}) {
 // 尺寸（49 列，cassette 的 24 列畫在上半部）——跟真手機同一個長條比例。
 // 注意：49 列時 cassette 的狀態列不在底列 ⇒ pageState 0（不是「文章頁」），依畫面判讀的
 // 行為（nav_key_gate 等）會照實擋下。
-async function openScreen(page, prefs = {}) {
+// opts.reload：頁面已經開著（APK 的 WebView 開機就載好了）⇒ 裝好 stub／init script 後 reload，
+// 不 goto（goto 會多一筆 history）。
+async function openScreen(page, prefs = {}, opts = {}) {
   await forceMobileLayout(page, prefs);
-  await bootOffline(page, ptt);
+  if (opts.reload) {
+    await installReplay(page);
+    await installOfflineNetwork(page, { profile: offlineImageProfile() });
+    await page.reload();
+    await waitConnected(page);
+  } else {
+    await bootOffline(page, ptt);
+  }
   if (!(await page.evaluate(() => window.__app.mobile))) {
     throw envError('沒有進手機版面（mobileLayout pref 沒套上）');
   }
@@ -120,8 +137,56 @@ const keyboardCover = (page) =>
     return Math.max(0, Math.round(document.documentElement.clientHeight - (vv.offsetTop + vv.height)));
   });
 
+// 底部工具列的按鍵（MobileToolbar 的 data-key）。
+const byKey = (k) => `[data-key="${k}"]`;
+const rectOf = (page, sel) =>
+  page.evaluate((s) => {
+    const r = document.querySelector(s).getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom };
+  }, sel);
+// 終端機最底列的下緣（CSS px）。
+const lastRowBottom = (page) =>
+  page.evaluate(() => {
+    const rows = document.querySelectorAll('#mainContainer [data-type="bbsline"]');
+    return rows[rows.length - 1].getBoundingClientRect().bottom;
+  });
+
+// 站在 history sentinel 那一層上（返回被接住之後 guard 用 history.forward() 走回來，非同步）。
+const waitOnSentinel = (page, opts) =>
+  page.waitForFunction(() => !!(window.history.state && window.history.state.pttchromeBackGuard), null, opts);
+
+// 記下 guard 交給送鍵出口的每一次（sendNavKeyAsUser）與閃過的提示；失敗時的現場一併收 popstate。
+async function recordBackGuard(page) {
+  await page.evaluate(() => {
+    window.__diag = { pops: [], navs: [], hints: [] };
+    window.addEventListener('popstate', (e) => window.__diag.pops.push(JSON.stringify(e.state)), true);
+    const app = window.__app;
+    const orig = app.sendNavKeyAsUser.bind(app);
+    app.sendNavKeyAsUser = (k) => {
+      window.__diag.navs.push(k);
+      window.__diag.lastNavAt = performance.now();
+      return orig(k);
+    };
+    const flash = app.view.flashListHint.bind(app.view);
+    app.view.flashListHint = (h) => {
+      window.__diag.hints.push(h);
+      return flash(h);
+    };
+  });
+}
+const backGuardDiag = (page) =>
+  page
+    .evaluate(() => JSON.stringify({ ...window.__diag, state: history.state, length: history.length }))
+    .catch((e) => String(e));
+
 module.exports = {
   article,
+  byKey,
+  rectOf,
+  lastRowBottom,
+  waitOnSentinel,
+  recordBackGuard,
+  backGuardDiag,
   openScreen,
   recordTouches,
   checkLanding,

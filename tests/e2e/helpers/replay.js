@@ -67,6 +67,8 @@ function findCassette(mode) {
 // prod 走 wss://ws.ptt.cc/bbs（vite.config.mjs 的 DEFAULT_SITE + pttchrome.jsx
 // #connect 的 wstelnet/wsstelnet → ws/wss 转换）。Vite HMR 是 ws://host:port/?token=…
 // ⇒ pathname '/' ⇒ 不攔。
+// Android APK 的原生本機 proxy 是 ws://127.0.0.1:<port>/bbs/<token>（LocalWebSocketProxy.kt）
+// ⇒ /bbs 後面多一段 token 也算。
 // 纯函式守护：tests/unit/offline_ws_stub_url.test.js。
 function isBbsSocketUrl(raw) {
   if (typeof raw !== 'string' && !(raw && typeof raw.toString === 'function')) return false;
@@ -76,7 +78,7 @@ function isBbsSocketUrl(raw) {
   } catch (e) {
     return false;
   }
-  return /(^|\/)bbs$/.test(url.pathname);
+  return /(^|\/)bbs(\/[^/]+)?$/.test(url.pathname);
 }
 
 // addInitScript：必须在 page.goto 之前呼叫，覆写 window.WebSocket。

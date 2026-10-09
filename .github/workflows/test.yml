@@ -284,6 +284,19 @@ jobs:
 
       - run: yarn install --immutable
 
+      # apk.android.spec.js 要裝的 debug APK（只有 debug 版開 WebView 除錯，Playwright 才連得進去；
+      # android.yml 有簽章 secrets 時產的是 release 版，而且只在改到 android/ 時才跑）。
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
       # 沒有 KVM 的模擬器開機 13–20 分鐘、adb 動不動 offline；ubuntu runner 有 /dev/kvm 但要開權限。
       - name: Enable KVM
         run: |
@@ -294,6 +307,8 @@ jobs:
       # --no-boot：模擬器由 emulator-runner 開（序號 emulator-5554，pickEmulatorSerial 自己挑到）。
       - name: Android e2e (emulator)
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          ANDROID_E2E_APK: ${{ github.workspace }}/android/app/build/outputs/apk/debug/app-debug.apk
         with:
           api-level: 34
           target: google_apis

@@ -8,7 +8,16 @@
 const net = require('net');
 const { spawnSync } = require('child_process');
 const { test: base, expect, _android } = require('@playwright/test');
-const { ENV_ERROR_TAG, pickEmulatorSerial, sdkTool } = require('./android_env');
+const fs = require('fs');
+const {
+  ENV_ERROR_TAG,
+  pickEmulatorSerial,
+  sdkTool,
+  APK_PKG,
+  APK_ACTIVITY,
+  APK_DEV_PREFS_XML,
+  apkPath,
+} = require('./android_env');
 
 const PORT = 8080;
 const CHROME = 'com.android.chrome';
@@ -116,6 +125,58 @@ const test = base.extend({
   page: async ({ context }, use) => {
     const page = context.pages()[0] || (await context.newPage());
     await use(page);
+  },
+
+  // ---- APK（WebView 殼，docs/android-app.md）----
+// worker 層裝一次 debug APK（只有 debug 版開 WebView 除錯，Playwright 才連得進去）。
+// 沒有 APK：CI 一律環境錯誤（job 自己 assembleDebug，缺了是設定壞掉）；本機略過並說怎麼建。
+  apkInstalled: [
+    async ({ android }, use) => {
+      const file = apkPath();
+      if (!fs.existsSync(file)) {
+        if (process.env.CI) throw envError(`找不到 debug APK：${file}（CI 的 assembleDebug 步驟沒產出？）`);
+        await use(null);
+        return;
+      }
+      adb(android.serial, ['install', '-r', '-t', '-g', file]);
+      await use(file);
+    },
+    { scope: 'worker', timeout: 120000 },
+  ],
+
+  // test 層：每條測試從乾淨的 App 開始（pm clear），開 dev server 模式 ⇒ WebView 載入
+  // http://localhost:8080/（adb reverse → host 的 dev server，跟 Chrome 那組同一條）。
+  // 回傳 WebView 的 page；測試自己裝 stub／init script 後 reload（不 goto：goto 會多一筆
+  // history，返回鍵「退到底」就測不到了）。
+  apk: async ({ android, apkInstalled }, use, testInfo) => {
+    testInfo.skip(!apkInstalled, '沒有 debug APK：先 `cd android && ./gradlew assembleDebug`（或設 ANDROID_E2E_APK）');
+    const { device } = android;
+    await device.shell(`am force-stop ${APK_PKG}; pm clear ${APK_PKG}`);
+    await device.shell(
+      `run-as ${APK_PKG} sh -c "mkdir -p shared_prefs && echo \\"${APK_DEV_PREFS_XML}\\" > shared_prefs/app_settings.xml"`
+    );
+    // pm clear 會收回執行期權限 ⇒ 重新授權，否則 MainActivity 開頭跳通知權限對話框蓋住畫面。
+    await device.shell(`pm grant ${APK_PKG} android.permission.POST_NOTIFICATIONS`);
+    await device.shell(`am start -W -n ${APK_ACTIVITY}`);
+    let timer;
+    const webView = await Promise.race([
+      device.webView({ pkg: APK_PKG }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(envError(`APK 的 WebView ${LAUNCH_TIMEOUT_MS / 1000}s 內沒出現`)), LAUNCH_TIMEOUT_MS);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    const page = await webView.page();
+    // dev server 模式沒套上 ⇒ 載的是正式站（斷網＝錯誤頁），不是被測行為。
+    await expect
+      .poll(() => page.url(), { timeout: 15000, message: `${ENV_ERROR_TAG} APK 沒有載入 dev server（shared_prefs 沒寫進去？）` })
+      .toMatch(new RegExp(`^http://localhost:${PORT}/`));
+    await use({ device, page, pkg: APK_PKG, activity: APK_ACTIVITY });
+    await device.shell(`am force-stop ${APK_PKG}`).catch(() => {});
+    // 外部連結那條會用 intent 叫起 Chrome（不經 launchBrowser，首次啟動狀態留在 Chrome 裡）
+    // ⇒ 還原成 worker 開頭的乾淨狀態，後面 Chrome 那組才不受影響。
+    await device
+      .shell(`am force-stop ${CHROME}; pm clear ${CHROME}; pm grant ${CHROME} android.permission.POST_NOTIFICATIONS`)
+      .catch(() => {});
   },
 
   // 失敗時另存**整個螢幕**：預設的 screenshot 只拍得到網頁，蓋住畫面的系統／Chrome
