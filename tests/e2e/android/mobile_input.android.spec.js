@@ -45,8 +45,8 @@ const lastRowBottom = (page) =>
 const visibleBottom = (page) => page.evaluate(() => window.visualViewport.offsetTop + window.visualViewport.height);
 
 // 站在 sentinel 那一層上（返回被接住之後 guard 用 history.forward() 走回來，非同步）。
-const waitOnSentinel = (page) =>
-  page.waitForFunction(() => !!(window.history.state && window.history.state.pttchromeBackGuard));
+const waitOnSentinel = (page, opts) =>
+  page.waitForFunction(() => !!(window.history.state && window.history.state.pttchromeBackGuard), null, opts);
 
 test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／真按鍵）', () => {
   test.skip(!article, '尚無 article cassette');
@@ -113,10 +113,11 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
 
   // Android 專屬的那段是「系統返回鍵 → popstate → guard 接住 → 用 traversal 補回 sentinel」；
   // 接住之後送不送得出 ←（nav_key_gate 依畫面判斷）與平台無關，由 offline/swipe_back 與 unit 守。
-  // 原生 49 列下 cassette 畫面是 pageState 0，guard 會照實被擋（送不出 ←、閃離站提示），
-  // 所以這裡斷言的是 guard 每次都收到返回並交給 sendNavKeyAsUser，而且三次都還在站內。
+  // 原生 49 列下 cassette 畫面是 pageState 0 ⇒ ← 照實被擋：guard 補回 sentinel 並閃離站提示，
+  // 而 DOUBLE_BACK_MS 內的第二次被擋返回是逃生門（放行離站，history_back_guard.js 坑 5）。
+  // 所以每次返回之間隔開超過 DOUBLE_BACK_MS，斷言每一次都被接住、sentinel 都補得回來、還在站內。
   // （壓 setDeviceMetricsOverride 湊 24 列試過：觸控 y 會偏、返回鍵也不再產生 popstate，棄用。）
-  test('系統返回鍵 ⇒ guard 接住並交給送鍵出口，連按三次都接得住、沒有離站', async ({ page, android }) => {
+  test('系統返回鍵 ⇒ guard 接住並交給送鍵出口、補回 sentinel，連按三次都接得住、沒有離站', async ({ page, android }) => {
     test.setTimeout(120000);
     const { device } = android;
     await openScreen(page, PREFS);
@@ -126,14 +127,20 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
     await waitOnSentinel(page);
     await page.evaluate(() => {
       window.__sameDocument = true;
-      // 失敗時的現場：返回鍵有沒有變成 popstate、送鍵出口被呼叫幾次。
-      window.__diag = { pops: [], navs: [] };
+      // 失敗時的現場：返回鍵有沒有變成 popstate、送鍵出口被呼叫幾次、提示閃了幾次。
+      window.__diag = { pops: [], navs: [], hints: [] };
       window.addEventListener('popstate', (e) => window.__diag.pops.push(JSON.stringify(e.state)), true);
       const app = window.__app;
       const orig = app.sendNavKeyAsUser.bind(app);
       app.sendNavKeyAsUser = (k) => {
         window.__diag.navs.push(k);
+        window.__diag.lastNavAt = performance.now();
         return orig(k);
+      };
+      const flash = app.view.flashListHint.bind(app.view);
+      app.view.flashListHint = (h) => {
+        window.__diag.hints.push(h);
+        return flash(h);
       };
     });
     const diag = () =>
@@ -141,8 +148,13 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
         .evaluate(() => JSON.stringify({ ...window.__diag, state: history.state, length: history.length }))
         .catch((e) => String(e));
     const navs = () => page.evaluate(() => window.__diag.navs.length).catch(() => -1);
+    const DOUBLE_BACK_MS = 800;
 
     for (let i = 1; i <= 3; i++) {
+      if (i > 1) {
+        // 跟上一次被擋的返回隔開超過 DOUBLE_BACK_MS（頁面時鐘，不是固定睡），否則就是逃生門。
+        await page.waitForFunction((ms) => performance.now() - window.__diag.lastNavAt > ms, DOUBLE_BACK_MS + 200);
+      }
       await keyevent(device, 'KEYCODE_BACK');
       await expect
         .poll(navs, { message: `第 ${i} 次返回沒有被 guard 接住` })
@@ -150,9 +162,14 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
         .catch(async (e) => {
           throw new Error(`${e.message}\n現場：${await diag()}`);
         });
-      await waitOnSentinel(page);
+      await waitOnSentinel(page, { timeout: 10000 }).catch(async (e) => {
+        throw new Error(`第 ${i} 次返回後 sentinel 沒補回來：${e.message}\n現場：${await diag()}`);
+      });
     }
-    expect(await page.evaluate(() => window.__diag.navs)).toEqual(['ArrowLeft', 'ArrowLeft', 'ArrowLeft']);
+    const d = await page.evaluate(() => window.__diag);
+    expect(d.navs).toEqual(['ArrowLeft', 'ArrowLeft', 'ArrowLeft']);
+    // 送不出 ← 不可以無聲吞掉：每一次都要告訴使用者怎麼離站。
+    expect(d.hints).toHaveLength(3);
     expect(await page.evaluate(() => window.__sameDocument)).toBe(true);
   });
 });

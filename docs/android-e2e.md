@@ -3,7 +3,8 @@
 守**我們對 Android 的假設**（桌機 offline e2e 只能用替身測的那層）。涵蓋：
 - `select_mode`：選取模式的長按／拖把手（`docs/mobile.md`「長按選單與選取模式」）；
 - `mobile_input`：真 tap 工具列不彈鍵盤、⌨ 叫出軟鍵盤後工具列／終端機底列在鍵盤上方、鍵盤開著按返回只收鍵盤、
-  系統返回鍵 → sentinel 接住並交給送鍵出口（連按三次、不離站）。
+  系統返回鍵 → sentinel 接住並交給送鍵出口、補回 sentinel（連按三次、每次隔開超過 `DOUBLE_BACK_MS`
+  以免觸發「送不出 ← 時連按兩次離站」的逃生門，不離站）。
 - 試過但沒收：「下拉不觸發 Chrome 重新整理」——拿掉 overscroll-behavior 的對照組在模擬器上也拉不出重整
   （body `overflow:hidden`），否定斷言證明不了什麼。
 - 未涵蓋：APK（WebView 殼）的返回鍵與原生 bridge——要在 CI 另建 debug APK 裝進模擬器。
