@@ -1,0 +1,27 @@
+name: Code scanning dismiss
+
+# 依 .github/code-scanning-dismissals.json 把 CodeQL 的誤判 alert 自動 dismiss
+#（scripts/dismiss-code-scanning.mjs）。每次 dev 上的 CodeQL 跑完接著跑，也可手動觸發。
+# GITHUB_TOKEN 的 security-events: write 就能 dismiss，不需要 PAT。
+on:
+  workflow_run:
+    workflows: [CodeQL]
+    types: [completed]
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  dismiss:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node scripts/dismiss-code-scanning.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

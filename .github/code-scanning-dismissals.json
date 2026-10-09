@@ -1,0 +1,53 @@
+{
+  "$comment": "CodeQL 誤判／刻意設計的 dismiss 清單，由 .github/workflows/code-scanning-dismiss.yml 套用（scripts/dismiss-code-scanning.mjs）。以 rule＋path 比對（行號會隨改動位移，不比）。reason 只能是 false positive／won't fix／used in tests；comment 上限 280 字元。新增一列前先確認該檔同規則沒有別的真問題：比對到的 open alert 會整批關掉。",
+  "dismissals": [
+    {
+      "rule": "js/client-side-request-forgery",
+      "path": "src/js/websocket.js",
+      "reason": "false positive",
+      "comment": "?site= 只在建置旗標 ALLOW_SITE_IN_QUERY=yes 時才讀（vite define，預設 false，正式版整段被編譯掉）。CodeQL 看不到 define，路徑實際不可達。"
+    },
+    {
+      "rule": "js/clear-text-logging",
+      "path": "scripts/ptt-announcements.mjs",
+      "reason": "false positive",
+      "comment": "e.message 只含 GitHub API 路徑（/repos/<repo>/issues…）、狀態碼與 GitHub 回的錯誤 body，不含 GH_TOKEN（token 只在 Authorization header）。repo 名稱不是機密。"
+    },
+    {
+      "rule": "js/file-access-to-http",
+      "path": "proxy/imgur-worker/scripts/usage.mjs",
+      "reason": "false positive",
+      "comment": "本機維運腳本：讀 wrangler 自己的 OAuth token 檔，當 Bearer 打 Cloudflare API 查用量。把檔案裡的 token 送到 api.cloudflare.com 就是這支腳本的用途。"
+    },
+    {
+      "rule": "java/android/websettings-javascript-enabled",
+      "path": "android/app/src/main/java/io/github/abccbaandy/pttchrome/MainActivity.kt",
+      "reason": "false positive",
+      "comment": "App 本身就是 WebView 殼載入自家網頁（BBS 終端機是 JS 寫的），必須開 JS。非自家網址一律交系統瀏覽器（shouldOverrideUrlLoading），且已關 file/content access。"
+    },
+    {
+      "rule": "java/potentially-weak-cryptographic-algorithm",
+      "path": "android/app/src/main/java/io/github/abccbaandy/pttchrome/WsProtocol.kt",
+      "reason": "false positive",
+      "comment": "這是 RFC 6455 規定的 Sec-WebSocket-Accept 計算（SHA-1(key+GUID)），協定強制用 SHA-1，不是拿來做安全用途的雜湊。"
+    },
+    {
+      "rule": "js/clear-text-storage-of-sensitive-data",
+      "path": "src/js/pref_storage.js",
+      "reason": "won't fix",
+      "comment": "刻意設計：沒有 Credential Management API 的瀏覽器（Firefox/Safari）只能存 localStorage，UI 有明文警語；有 API 時打包進瀏覽器密碼管理員，取回確認後自動清掉本機副本。不上雲。見 docs/enhanced-addon.md。"
+    },
+    {
+      "rule": "js/clear-text-storage-of-sensitive-data",
+      "path": "tests/e2e/offline/blacklist_quick_add.offline.spec.js",
+      "reason": "used in tests",
+      "comment": "e2e 測試在測試用瀏覽器裡改寫 prefs，資料是假的測試值。"
+    },
+    {
+      "rule": "js/clear-text-storage-of-sensitive-data",
+      "path": "tests/integration/pref_sync.test.js",
+      "reason": "used in tests",
+      "comment": "integration 測試在測試用瀏覽器裡改寫 prefs，資料是假的測試值。"
+    }
+  ]
+}
