@@ -6,7 +6,7 @@
 //      工具列（--kb-inset）與終端機底列（setKeyboardInset）都被推到鍵盤上方；
 //   3. 鍵盤開著時按系統返回鍵：IME 吃掉返回、只收鍵盤，不可以走到 history sentinel 送 ←；
 //      收起後 softKeyboard 歸零（`_onVisualViewport`）⇒ 再按 ⌨ 一次就叫得出來；
-//   4. 系統返回鍵 → history sentinel → ←，連按都接得住（返回鍵不是 user activation，
+//   4. 系統返回鍵 → history sentinel → 送鍵出口，連按都接得住（返回鍵不是 user activation，
 //      sentinel 補回來必須走 traversal，見 history_back_guard.js 坑 3）。第一層 sentinel 在
 //      觸控 pointerdown 疊（HTML 規範上觸控要到 pointerup 才算 activation）在 Chrome 113 上
 //      實測不會被跳過：返回照樣變成 popstate（CI 現場紀錄）。
@@ -25,7 +25,6 @@ const {
   keyboardCover,
 } = require('./screen');
 
-const ARROW_LEFT = '\x1b[D';
 // 左鍵關掉：真 tap 落在終端機上時不可以自己送鍵（左側退出帶、邊緣翻頁）。
 const PREFS = { mouseLeftClick: false };
 
@@ -44,7 +43,6 @@ const lastRowBottom = (page) =>
   });
 // 可視區（visual viewport）底，CSS px。
 const visibleBottom = (page) => page.evaluate(() => window.visualViewport.offsetTop + window.visualViewport.height);
-const countLefts = async (page) => (await sentText(page)).split(ARROW_LEFT).length - 1;
 
 // 站在 sentinel 那一層上（返回被接住之後 guard 用 history.forward() 走回來，非同步）。
 const waitOnSentinel = (page) =>
@@ -113,59 +111,48 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
     await expect.poll(() => keyboardCover(page), { timeout: 10000 }).toBeGreaterThan(100);
   });
 
-  test('系統返回鍵 ⇒ 送 ←，連按三次都接得住、沒有離站', async ({ page, android }) => {
+  // Android 專屬的那段是「系統返回鍵 → popstate → guard 接住 → 用 traversal 補回 sentinel」；
+  // 接住之後送不送得出 ←（nav_key_gate 依畫面判斷）與平台無關，由 offline/swipe_back 與 unit 守。
+  // 原生 49 列下 cassette 畫面是 pageState 0，guard 會照實被擋（送不出 ←、閃離站提示），
+  // 所以這裡斷言的是 guard 每次都收到返回並交給 sendNavKeyAsUser，而且三次都還在站內。
+  // （壓 setDeviceMetricsOverride 湊 24 列試過：觸控 y 會偏、返回鍵也不再產生 popstate，棄用。）
+  test('系統返回鍵 ⇒ guard 接住並交給送鍵出口，連按三次都接得住、沒有離站', async ({ page, android }) => {
     test.setTimeout(120000);
     const { device } = android;
-    // ← 只在送得出去的畫面才送（nav_key_gate）。原生 49 列時 cassette 的狀態列不在底列 ⇒
-    // pageState 0，返回被正確地擋下（實測現場 `block: "pageState:0"`），測不到送鍵 ⇒ 壓成
-    // 24 列，畫面才是真的文章頁（pageState 3）。好讀同 offline/swipe_back.offline.spec.js。
-    await openScreen(page, { ...PREFS, enableEasyReading: true }, { rows: 24 });
-    await expect.poll(() => page.evaluate(() => window.__app.buf.pageState)).toBe(3);
+    await openScreen(page, PREFS);
     await recordTouches(page);
     // sentinel 等第一次 user activation 才疊（History Manipulation Intervention）。
-    // 用 OS 層按一下 Shift（keydown＝activation；單按修飾鍵不送給 PTT）。不用真 tap：
-    // 壓視窗高（setDeviceMetricsOverride）之後觸控 y 座標不再 1:1（實測偏 ~5%），x 仍準。
-    await keyevent(device, 'KEYCODE_SHIFT_LEFT');
+    await tap(page, device, 'blank-terminal');
     await waitOnSentinel(page);
     await page.evaluate(() => {
       window.__sameDocument = true;
-      // 失敗時的現場：返回鍵到底有沒有變成 popstate、keydown，送鍵被哪一道擋下。
-      window.__diag = { pops: [], keys: [], navs: [] };
+      // 失敗時的現場：返回鍵有沒有變成 popstate、送鍵出口被呼叫幾次。
+      window.__diag = { pops: [], navs: [] };
       window.addEventListener('popstate', (e) => window.__diag.pops.push(JSON.stringify(e.state)), true);
-      window.addEventListener('keydown', (e) => window.__diag.keys.push(e.key), true);
       const app = window.__app;
       const orig = app.sendNavKeyAsUser.bind(app);
       app.sendNavKeyAsUser = (k) => {
-        window.__diag.navs.push({ k, block: app.navKeyBlockReason() });
+        window.__diag.navs.push(k);
         return orig(k);
       };
     });
-    const diag = async () =>
-      JSON.stringify({
-        page: await page.evaluate(() => ({
-          ...window.__diag,
-          state: history.state,
-          length: history.length,
-          active: document.activeElement && document.activeElement.id,
-          inputmode: document.getElementById('t').getAttribute('inputmode'),
-        })).catch((e) => String(e)),
-        ime: (await device.shell('dumpsys input_method').then(String, () => ''))
-          .split('\n')
-          .filter((l) => /mInputShown|mShowRequested|mIsInputViewShown|mWindowVisible/.test(l))
-          .map((l) => l.trim()),
-      });
+    const diag = () =>
+      page
+        .evaluate(() => JSON.stringify({ ...window.__diag, state: history.state, length: history.length }))
+        .catch((e) => String(e));
+    const navs = () => page.evaluate(() => window.__diag.navs.length).catch(() => -1);
 
-    await collectSent(page);
     for (let i = 1; i <= 3; i++) {
       await keyevent(device, 'KEYCODE_BACK');
       await expect
-        .poll(() => countLefts(page), { message: `第 ${i} 次返回沒有送 ←` })
+        .poll(navs, { message: `第 ${i} 次返回沒有被 guard 接住` })
         .toBe(i)
         .catch(async (e) => {
           throw new Error(`${e.message}\n現場：${await diag()}`);
         });
       await waitOnSentinel(page);
     }
+    expect(await page.evaluate(() => window.__diag.navs)).toEqual(['ArrowLeft', 'ArrowLeft', 'ArrowLeft']);
     expect(await page.evaluate(() => window.__sameDocument)).toBe(true);
   });
 });

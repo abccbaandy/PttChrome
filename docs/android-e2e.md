@@ -3,7 +3,7 @@
 守**我們對 Android 的假設**（桌機 offline e2e 只能用替身測的那層）。涵蓋：
 - `select_mode`：選取模式的長按／拖把手（`docs/mobile.md`「長按選單與選取模式」）；
 - `mobile_input`：真 tap 工具列不彈鍵盤、⌨ 叫出軟鍵盤後工具列／終端機底列在鍵盤上方、鍵盤開著按返回只收鍵盤、
-  系統返回鍵 → ←（連按）。
+  系統返回鍵 → sentinel 接住並交給送鍵出口（連按三次、不離站）。
 - 試過但沒收：「下拉不觸發 Chrome 重新整理」——拿掉 overscroll-behavior 的對照組在模擬器上也拉不出重整
   （body `overflow:hidden`），否定斷言證明不了什麼。
 - 未涵蓋：APK（WebView 殼）的返回鍵與原生 bridge——要在 CI 另建 debug APK 裝進模擬器。
@@ -50,8 +50,9 @@
   `docs/easy-reading-list.md`「純位移不寫 scrollTop」）。量法：`adb shell input swipe … 60` 連甩，
   頁面掛 scroll listener＋包 `setListScrollTop` 記寫入前後值。
 - `Emulation.setDeviceMetricsOverride` 在 Android Chrome 可用來湊手機版面列數（列數＝視窗高 / 16，
-  要對上 cassette 的 rows）；寬度給 `screen.width` 觸控 x 才 1:1，**y 仍會偏**（壓到 24 列時實測偏 ~5%）⇒
-  壓了高度的畫面改用 keyevent 等不靠座標的輸入（`mobile_input` 的返回鍵測試）。
+  要對上 cassette 的 rows）；寬度給 `screen.width` 觸控 x 才 1:1，**y 仍會偏**（壓到 24 列時實測偏 ~5%），
+  而且壓過之後系統返回鍵**不再產生 popstate**（實測）⇒ 返回鍵測試不壓高度，在原生 49 列（pageState 0）
+  上斷言 guard 有接住並交給 `sendNavKeyAsUser`；送不送得出 ← 由 offline `swipe_back` 守。
 - 系統返回鍵（`input keyevent KEYCODE_BACK`）在 Chrome 113 會變成 popstate、sentinel 接得住；第一層 sentinel
   在觸控 `pointerdown` 疊（規範上觸控要到 pointerup 才算 activation）**沒有**被 History Manipulation
   Intervention 跳過（實測：返回照樣收到 popstate、仍在站內）。
