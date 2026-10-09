@@ -7,38 +7,8 @@
 // 觸控一律走 OS 的 input injection（`adb shell input swipe`），會經過 Android 自己的
 // TouchSelectionController —— 這正是桌機 CDP 做不出來的那段。
 const { test, expect, webviewOrigin, envError } = require('./fixtures');
-const ptt = require('../helpers/ptt');
-const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
+const { article, openScreen } = require('./screen');
 const { toDevicePoint } = require('./android_env');
-
-const article = findCassette('article');
-
-// 模擬器的觸控螢幕帶 STYLUS source ⇒ Chrome 回報 pointer: fine（實測，CDP 的
-// setEmulatedMedia 蓋不掉）⇒ auto 判不成手機。用產品自己的逃生門 pref 強制手機版面；
-// 觸控與選取本身仍是真的。必須在 goto 前就位（開站即套版面）。
-async function forceMobileLayout(page) {
-  await page.addInitScript(
-    ({ KEY }) => {
-      const cur = JSON.parse(window.localStorage.getItem(KEY) || '{}');
-      const values = Object.assign({}, cur.values, { mobileLayout: 'on', enableEasyReading: false });
-      window.localStorage.setItem(KEY, JSON.stringify({ values }));
-    },
-    { KEY: ptt.PREF_KEY }
-  );
-}
-
-// 一般終端機畫面（不開好讀）：被測的是 Chrome 的長按／把手，跟畫面是哪種模式無關。
-// 不開好讀 ⇒ 不需要「一屏 24 列」，模擬器用原生 Pixel 6 尺寸（49 列，cassette 的 24 列
-// 畫在上半部）——跟真手機同一個長條比例。
-async function openScreen(page) {
-  await forceMobileLayout(page);
-  await bootOffline(page, ptt);
-  if (!(await page.evaluate(() => window.__app.mobile))) {
-    throw envError('沒有進手機版面（mobileLayout pref 沒套上）');
-  }
-  await replayCassette(page, article, { easyReading: false });
-  await expect.poll(() => page.evaluate(() => window.__app.buf.getRowText(0).trim().length)).toBeGreaterThan(0);
-}
 
 async function setSelectMode(page, on) {
   // 選取模式在底部工具列的「更多」裡；切換後選單自動收起，再開一次讀狀態。

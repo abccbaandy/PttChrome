@@ -16,6 +16,8 @@ export const ANDROID_E2E_GLOBS = [
   "src/components/MobileToolbar/**",
   // -webkit-touch-callout、終端機祖先的 user-select 規則
   "src/css/main.css",
+  // 系統返回鍵 → ←（history sentinel）
+  "src/js/history_back_guard.js",
   // 這套測試自己的設施
   "tests/e2e/android/**",
   "scripts/run-android-e2e.mjs",
