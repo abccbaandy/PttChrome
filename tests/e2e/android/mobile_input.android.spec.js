@@ -116,10 +116,15 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
   test('系統返回鍵 ⇒ 送 ←，連按三次都接得住、沒有離站', async ({ page, android }) => {
     test.setTimeout(120000);
     const { device } = android;
-    await openScreen(page, PREFS);
+    // 文章好讀（pageState 3）：← 只在送得出去的畫面才送（nav_key_gate）；格線重放停在
+    // pageState 0，返回會被正確地擋下（實測現場 `block: "pageState:0"`），測不到送鍵。
+    // 同 offline/swipe_back.offline.spec.js 的設定。
+    await openScreen(page, { ...PREFS, enableEasyReading: true });
     await recordTouches(page);
     // sentinel 等第一次 user activation 才疊（History Manipulation Intervention）。
-    await tap(page, device, 'blank-terminal');
+    // 點工具列的「更多」開、關各一次：真觸控、不送鍵、不會點到文章裡的連結。
+    await tap(page, device, byKey('__more'));
+    await tap(page, device, byKey('__more'));
     await waitOnSentinel(page);
     await page.evaluate(() => {
       window.__sameDocument = true;
