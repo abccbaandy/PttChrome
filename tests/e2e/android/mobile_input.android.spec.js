@@ -123,12 +123,41 @@ test.describe('Android Chrome：工具列、軟鍵盤、返回鍵（真觸控／
     await waitOnSentinel(page);
     await page.evaluate(() => {
       window.__sameDocument = true;
+      // 失敗時的現場：返回鍵到底有沒有變成 popstate、keydown，送鍵被哪一道擋下。
+      window.__diag = { pops: [], keys: [], navs: [] };
+      window.addEventListener('popstate', (e) => window.__diag.pops.push(JSON.stringify(e.state)), true);
+      window.addEventListener('keydown', (e) => window.__diag.keys.push(e.key), true);
+      const app = window.__app;
+      const orig = app.sendNavKeyAsUser.bind(app);
+      app.sendNavKeyAsUser = (k) => {
+        window.__diag.navs.push({ k, block: app.navKeyBlockReason() });
+        return orig(k);
+      };
     });
+    const diag = async () =>
+      JSON.stringify({
+        page: await page.evaluate(() => ({
+          ...window.__diag,
+          state: history.state,
+          length: history.length,
+          active: document.activeElement && document.activeElement.id,
+          inputmode: document.getElementById('t').getAttribute('inputmode'),
+        })).catch((e) => String(e)),
+        ime: (await device.shell('dumpsys input_method').then(String, () => ''))
+          .split('\n')
+          .filter((l) => /mInputShown|mShowRequested|mIsInputViewShown|mWindowVisible/.test(l))
+          .map((l) => l.trim()),
+      });
 
     await collectSent(page);
     for (let i = 1; i <= 3; i++) {
       await keyevent(device, 'KEYCODE_BACK');
-      await expect.poll(() => countLefts(page)).toBe(i);
+      await expect
+        .poll(() => countLefts(page), { message: `第 ${i} 次返回沒有送 ←` })
+        .toBe(i)
+        .catch(async (e) => {
+          throw new Error(`${e.message}\n現場：${await diag()}`);
+        });
       await waitOnSentinel(page);
     }
     expect(await page.evaluate(() => window.__sameDocument)).toBe(true);
