@@ -20,6 +20,12 @@
       "comment": "本機維運腳本：讀 wrangler 自己的 OAuth token 檔，當 Bearer 打 Cloudflare API 查用量。把檔案裡的 token 送到 api.cloudflare.com 就是這支腳本的用途。"
     },
     {
+      "rule": "js/file-access-to-http",
+      "path": "scripts/dismiss-code-scanning.mjs",
+      "reason": "false positive",
+      "comment": "送出的是 repo 內 .github/code-scanning-dismissals.json 的 dismiss 原因與留言，本來就要寫進 GitHub code scanning API。檔案受 PR 審查，不含機密。"
+    },
+    {
       "rule": "java/android/websettings-javascript-enabled",
       "path": "android/app/src/main/java/io/github/abccbaandy/pttchrome/MainActivity.kt",
       "reason": "false positive",
