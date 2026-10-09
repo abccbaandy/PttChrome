@@ -20,6 +20,7 @@
 import { el } from "./dom";
 import { buildRow } from "./row";
 import { buildListCard } from "./list_card";
+import { buildMenuCard, buildCollapsedRow, isBlankRow } from "./menu_card";
 import {
   buildCommentCard,
   commentCardRegions,
@@ -1037,6 +1038,19 @@ export class ScreenController {
         return card.node;
       }
     }
+    // 手機主功能表（enhance.menuCards，docs/mobile.md「Phase 5」）：選單項畫成大按鈕，
+    // 標題／狀態列以外的空白列收起來讓出高度。兩者都只看該列自己 ⇒ dirty-row patch
+    // 的列獨立前提不破（menuCards 進 annotationsKey，切換時整批重建）。
+    if (enhance && enhance.menuCards && row > 0 && row < lines.length - 1) {
+      const card = buildMenuCard({
+        chars: lines[row],
+        row,
+        highlightClass:
+          this.highlight.row === row ? this.highlight.cls : undefined,
+      });
+      if (card) return card.node;
+      if (isBlankRow(lines[row])) return buildCollapsedRow(row);
+    }
     const ls = enhance && enhance.listScroll;
     if (
       enhance &&
@@ -1478,10 +1492,15 @@ export class ScreenController {
       this._lightsButton.update(this._lightsActive());
       tools.push(this._lightsButton.el);
     }
-    // 錄製狀態的真相在 App（app.debugRecorder），每幀由 enhance 帶進來對帳；點擊時
-    // 以 onDebugRecord 的回傳值立即更新（不必等下一幀）。
+    // 錄製狀態的真相在 App（app.debugRecorder），每次都經 enhance.isDebugRecording
+    // **現問**；點擊時以 onDebugRecord 的回傳值立即更新（不必等下一幀）。
+    // **不可以改回讀布林快照**：setCursorHighlight 的慢路徑（主選單底色從 col 8 起）
+    // 是不換 props 的 _render()，快照是點擊前算的 ⇒ 滑鼠一動就把錄製中蓋回灰色。
     const showDebugRecord = !!(enhance && enhance.debugRecordButton);
-    this._debugRecording = showDebugRecord && !!enhance.debugRecording;
+    this._debugRecording =
+      showDebugRecord &&
+      typeof enhance.isDebugRecording === "function" &&
+      !!enhance.isDebugRecording();
     if (showDebugRecord) {
       if (!this._debugRecordButton) {
         this._debugRecordButton = createDebugRecordButton(() =>

@@ -3,7 +3,7 @@
 //   - enhance.debugRecordButton ⇒ 任何畫面（列表／主選單）都出現，不限文章頁；
 //   - 關掉 ⇒ 沒有其他工具時整個「⋯」不出現；
 //   - 點下去呼叫 enhance.onDebugRecord，以回傳值立即更新 label 與「⋯」的錄製中標示；
-//   - 錄製狀態以 enhance.debugRecording 每幀對帳（App 端才是真相）；
+//   - 錄製狀態每次 render 都經 enhance.isDebugRecording 現問（App 端才是真相）；
 //   - 與文章工具並存時排在面板最後。
 // 回歸：舊版是獨立 fixed 按鈕（right/bottom 16），手機上疊在底部工具列上
 // （真版面守護在 tests/e2e/offline/mobile_float_tools.offline.spec.js）。
@@ -84,8 +84,28 @@ test("點一下 ⇒ 呼叫 onDebugRecord，依回傳值立即切到錄製中；�
   expect(tools(s).hasAttribute("data-recording")).toBe(false);
 });
 
-test("錄製狀態以 enhance.debugRecording 對帳；關掉 debug 模式 ⇒ 鈕與「⋯」消失", () => {
-  const s = render(MENU_LINES, { debugRecordButton: true, debugRecording: true });
+// 回歸（主選單按錄製不變紅）：主選單的滑鼠底色從 col 8 起（MENU_COL_START）⇒
+// setCursorHighlight 走慢路徑 _render()，不換 props。舊版 _syncOverlays 讀的是 props
+// 裡的錄製狀態**快照**（點擊前算的 false）⇒ 滑鼠一動就把錄製鈕蓋回灰色。
+test("開始錄製後，部分欄底色的重畫（不換 props）不可以把錄製中蓋回去", () => {
+  let recording = false;
+  const s = render(MENU_LINES, {
+    debugRecordButton: true,
+    isDebugRecording: () => recording,
+    onDebugRecord: () => (recording = !recording),
+  });
+  rec(s).click();
+  expect(rec(s).getAttribute("data-recording")).toBe("on");
+  s.controller.setCursorHighlight({ row: 1, cls: "b2", col: 8 });
+  expect(rec(s).getAttribute("data-recording")).toBe("on");
+  expect(tools(s).hasAttribute("data-recording")).toBe(true);
+});
+
+test("錄製狀態以 enhance.isDebugRecording 對帳；關掉 debug 模式 ⇒ 鈕與「⋯」消失", () => {
+  const s = render(MENU_LINES, {
+    debugRecordButton: true,
+    isDebugRecording: () => true,
+  });
   expect(rec(s).getAttribute("data-recording")).toBe("on");
   expect(tools(s).hasAttribute("data-recording")).toBe(true);
   s.update({

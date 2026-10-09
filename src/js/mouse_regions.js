@@ -192,6 +192,9 @@ function listEdgeRegion(row, col, rows, cols, bodyTop, bodyBottom) {
 //   boardList      這一幀是不是看板列表（term_buf.isBoardListScreen）。只有
 //                  pageState 1 會看它 —— 主功能表的 Home/End 語意相反，見
 //                  listEdgeRegion。
+//   menuScreen     這一幀是不是選單（主功能表或子選單，menu_items.isMenuScreen）。只有 pageState 1 看。
+//   menuItemRow    選單的這一列是不是選單項（menu_items.parseMenuItemRow）。
+//                  menuScreen 時不是選單項的列（ANSI 圖區）一律 NONE。
 //   inputPrompt    PTT 開著 vgetstring 輸入框（buf.isCursorOnInputField()）
 //   dismiss        這一幀有沒有滑鼠關得掉的框（screen_dismiss.resolveDismiss 的
 //                  結果，null ＝沒有）。**優先於 inputPrompt**，見下方。
@@ -225,6 +228,10 @@ export function resolveMouseRegion(input) {
   // （col/row）與畫面上的字對不起來 ⇒ 以 col 判斷的區域（左側退出帶、邊緣翻頁、
   // 列點擊送鍵）整組不成立。元素層（連結、圖片、功能鍵、合併按鈕）不走這裡，照常。
   if (o.reflow && o.pageState === 3) return NONE;
+  // 手機主功能表大按鈕（term_view.menuCards）：按鈕高 ≠ chh，格子列號對不上畫面
+  // ⇒ 格子層整組不成立（觸控點一下也會先發相容 mousemove，不擋的話底色會落在
+  // 別顆按鈕上）。點按鈕由 App.mouse_click 以 DOM 目標取列（menuCardTargetRow）。
+  if (o.menuCards) return NONE;
   // 框開著（pressanykey／vmsg 橫幅／vgetstring 輸入欄，呼叫端用
   // screen_dismiss.resolveDismiss 判）⇒ 整個畫面都是「點空白處關框」的目標，
   // **只換指標、不上底色**：框在時下方整片是殘影，上底色會讓人以為那裡可以點。
@@ -310,6 +317,10 @@ export function resolveMouseRegion(input) {
     case 1: {
       if (!(row > 0 && row < rows - 1))
         return (edgeOn && listEdgeRegion(row, col, rows, cols, 0, rows - 1)) || NONE;
+      // 選單（主功能表與子選單）：上半是 adbanner 的 ANSI 圖／心情點播，不是選單項
+      // ⇒ 什麼都不是（不上底色、點了不送 ↑↓＋Enter、也沒有退出帶）。選單項由列文字
+      // 形狀判（menu_items.parseMenuItemRow，呼叫端算好傳進來），依據見該檔檔頭。
+      if (o.menuScreen && !o.menuItemRow) return NONE;
       // 同 case 2/4：左 7 欄恆為退出，不看 misclickGuard。
       if (col >= 0 && col < EXIT_COL_END) {
         return {

@@ -352,6 +352,42 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   margin-left: 0.5em;
 }
 
+/* 手機 Phase 5：主功能表大按鈕（render/menu_card.js，docs/mobile.md「Phase 5」）。
+   ANSI 圖／標題／狀態列仍是縮小的 80 欄格線；選單項換成這個。高度與字級寫死 px
+   （＝MENU_CARD_PX／MOBILE_ROW_FONT_PX，守護 tests/unit/menu_card.test.js），不跟 .main
+   的 font-size（塞滿寬的 chh，約 10px）走。游標底色 class 下在 .menuCardBody ⇒ 整顆上色。 */
+.main.mobileMenu #mainContainer > span.menuCard {
+  display: block;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 2px 8px;
+}
+.menuCard .menuCardBody {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-inline: 12px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px #444;
+  font-size: 16px;
+  line-height: 1.2;
+  white-space: pre;
+  overflow: hidden;
+  color: #c0c0c0;
+}
+.menuCard .menuCardKey {
+  color: #00ffff;
+  font-weight: bold;
+}
+/* 選單項之後的空白列不佔高度（讓給按鈕）；bbsrow／data-row 契約保留。 */
+.main.mobileMenu #mainContainer > span.menuBlankRow {
+  display: none;
+}
+/* 格線游標的 row×chh 座標在大按鈕版面對不上；選中項由按鈕底色表示。 */
+.main.mobileMenu #cursor {
+  display: none;
+}
+
 /* 已讀文章低亮（pref dimReadArticles，預設開，桌機＋手機）。列由標註層無條件帶
    data-list-read（comment_parse#isListRowRead），容器 class 由
    render/screen.js#_setDimRead 掛。游標／hover 所在列（bbsline 或 .listCardBody

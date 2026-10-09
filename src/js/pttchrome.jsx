@@ -50,7 +50,7 @@ import { navKeyAllowed, navKeyBlockReason } from './nav_key_gate';
 import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
-import { inputModeFor, isListCardGapTarget, isMobileEnv, keyboardInset, listRowSpan, mobileTermGeometry, MOBILE_TOOLBAR_PX } from './mobile_layout';
+import { inputModeFor, isListCardGapTarget, menuCardTargetRow, isMobileEnv, keyboardInset, listRowSpan, mobileTermGeometry, MOBILE_TOOLBAR_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
@@ -1570,18 +1570,23 @@ App.prototype.onMouse_click = function (e) {
     case ACT_END:
       this.sendNavKeyAsUser(EDGE_NAV_KEY[action]);
       break;
-    case ACT_ENTER: {
-      if (targetRow < 0)
-        break;
-      var delta = targetRow - this.buf.cur_y;
-      var step = delta > 0 ? '\x1b[B' : '\x1b[A'; //Arrow Down / Up
-      this.view._send(step.repeat(Math.abs(delta)) + '\r');
+    case ACT_ENTER:
+      this._sendRowEnter(targetRow);
       break;
-    }
     default:
       //do nothing
       break;
   }
+};
+
+// 原生列表／選單：把 server 的真游標從 cur_y 移到 targetRow 再 Enter（ACT_ENTER 與
+// 手機主功能表按鈕共用）。targetRow < 0 ＝什麼都不做。
+App.prototype._sendRowEnter = function(targetRow) {
+  if (!(targetRow >= 0))
+    return;
+  var delta = targetRow - this.buf.cur_y;
+  var step = delta > 0 ? '\x1b[B' : '\x1b[A'; //Arrow Down / Up
+  this.view._send(step.repeat(Math.abs(delta)) + '\r');
 };
 
 // overAnchor ＝指標正壓在一個 <a> 上（連結／AID 連結／功能鍵按鈕）。那些是**元素層**
@@ -2126,6 +2131,23 @@ App.prototype.mouse_click = function(e) {
             this.view._send(dismiss.bytes);
           return;
         }
+      }
+      // 手機主功能表大按鈕（view.menuCards，docs/mobile.md「Phase 5」）：按鈕高 ≠ chh，
+      // clientToPos 的列號對不上 ⇒ 以 DOM 目標取列（data-menu-row ＝ buf 列號）。
+      // 點到按鈕＝直接進入（使用者定案，同桌機點選單列）；按鈕以外（縮小的 ANSI 圖）
+      // 什麼都不做。標題／狀態列的功能鍵是 <a>，上面已經 return。
+      if (this.view.menuCards && this.buf.listRenderMode === 'native' &&
+          this.mouseGates().leftClick) {
+        e.preventDefault();
+        // 同 onMouse_click：AID 跳文在途時不插鍵進序列。
+        if (this.aidNavigation.active) {
+          this.view.flashListHint('AID 跳文中，請稍候…');
+          return;
+        }
+        this.onDisableLiveHelperModalState();
+        this._sendRowEnter(menuCardTargetRow(e.target));
+        this.setInputAreaFocus();
+        return;
       }
       // List easy reading buffer/frozen render: the click is OURS — 單擊＝把選取
       // 移到那一列並開文（與原生滑鼠瀏覽同語意）。座標換算後交給 ListSession 走

@@ -126,6 +126,32 @@ describe("選單／看板列表（pageState 1）", () => {
   });
 });
 
+// 回歸：選單（主功能表與子選單）上半的 ANSI 圖／心情點播被當成選單項 —— 滑鼠移上去
+// 上底色、點下去送 ↑↓＋Enter 到別的項。選單項判定見 menu_items.js（menu.c#menu_renderer）。
+describe("選單（pageState 1、menuScreen）", () => {
+  const menu = (over) => at({ pageState: 1, menuScreen: true, ...over });
+
+  test.each([1, 5, 11, 12])("ANSI 圖區 row %i：不可點、不上底色、沒有退出帶", (row) => {
+    for (const col of [0, 3, MENU_COL_START, 40, 79]) {
+      const r = menu({ row, col, menuItemRow: false });
+      expect(r.action).toBe(ACT_NONE);
+      expect(r.highlightRow).toBe(-1);
+      expect(r.cursor).toBe(CUR_AUTO);
+    }
+  });
+
+  test("選單項列照舊：可點＋上底色", () => {
+    const r = menu({ row: 14, col: 30, menuItemRow: true });
+    expect(r.action).toBe(ACT_ENTER);
+    expect(r.row).toBe(14);
+    expect(r.highlightRow).toBe(14);
+  });
+
+  test("看板列表（menuScreen 未設）不受影響", () => {
+    expect(at({ pageState: 1, row: 5, col: 40 }).action).toBe(ACT_ENTER);
+  });
+});
+
 // 2026-08 重新加回「列表左緣離開」。當初移除是因為舊版 15 種動作誤觸率高又完全
 // 沒有提示；提示帶（#exitHintBand）＋ back 指標補上之後 affordance 問題已解決，
 // 使用者要求把它帶回列表／看板列表。見 docs/mouse.md「移除的舊動作」。

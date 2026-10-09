@@ -19,6 +19,7 @@ import {
 } from './mouse_regions';
 import { MouseReportState } from './mouse_report';
 import { resolveDismiss } from './screen_dismiss';
+import { parseMenuItemRow, isMenuScreen } from './menu_items';
 import { EDITOR_CAPTION, footerCaption } from './screen_captions';
 import {
   BOARD_LIST,
@@ -1591,6 +1592,17 @@ TermBuf.prototype = {
     return rowHasTitle(title, BOARD_LIST);
   },
 
+  // pageState 1 的另一種畫面：選單（mbbsd/menu.c#domenu，主功能表與子選單）。
+  // 判定見 menu_items.js。
+  isMenuScreen: function() {
+    if (this.pageState !== 1) return false;
+    return isMenuScreen(
+      this.pageState,
+      this.getRowText(0, 0, this.cols),
+      this.getRowText(this.rows - 1, 0, this.cols)
+    );
+  },
+
   // 滑鼠移到 (tcol, trow)：算出這一格的語意、更新游標底色列、換滑鼠指標、開關
   // 文章左側的退出提示帶。決策本身在純函式 mouse_regions.resolveMouseRegion
   // （逐格的行為表與依據見那裡與 docs/mouse.md），這裡只負責套用。
@@ -1631,6 +1643,10 @@ TermBuf.prototype = {
       (this.pageState === 2 || this.pageState === 4) &&
       trow >= 0 && trow < this.rows ?
         this.isLineEmpty(trow) : false;
+    // 選單的 ANSI 圖區不可點（見 mouse_regions case 1），同樣只有 pageState 1 才掃。
+    var menuScreen = this.isMenuScreen();
+    var menuItemRow = menuScreen && trow >= 0 && trow < this.rows ?
+      !!parseMenuItemRow(this.getRowText(trow, 0, this.cols)) : false;
 
     return resolveMouseRegion({
       pageState: this.pageState,
@@ -1646,6 +1662,8 @@ TermBuf.prototype = {
       // pageState 1 的兩種畫面在 PTT 端的 Home/End 語意相反，只有看板列表能用
       // （見 mouse_regions.listEdgeRegion 的註解）。
       boardList: this.isBoardListScreen(),
+      menuScreen: menuScreen,
+      menuItemRow: menuItemRow,
       // 防誤觸（可點區＝底色區的起始欄）跟著總開關走，見 resolveMouseGates。
       misclickGuard: !!(
         this.useMouseBrowsing && this.view && this.view.mouseMisclickGuard
@@ -1661,7 +1679,9 @@ TermBuf.prototype = {
         this.view && this.view.mouseServerReport
       ),
       // 手機換行版面：好讀文章的格子座標不對應畫面（見 resolveMouseRegion）。
-      reflow: !!(this.view && this.view.reflow)
+      reflow: !!(this.view && this.view.reflow),
+      // 手機主功能表大按鈕：格子座標同樣對不上（見 resolveMouseRegion）。
+      menuCards: !!(this.view && this.view.menuCards)
     });
   },
 

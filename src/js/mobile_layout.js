@@ -5,7 +5,7 @@
 // 其他裝置。手機上把某個顯示設定「修正」後存回去，桌機下次開站就會吃到手機的值
 // （反方向就是手機被桌機的 fixed-font-size 20px 切掉右半邊的成因）。
 
-import { TERM_COLS, calcTermSize } from './term_size';
+import { TERM_COLS, calcTermSize, termLayoutOffsets } from './term_size';
 
 // pref `mobileLayout` 的值域。auto ＝依裝置判斷；on/off ＝使用者強制（誤判逃生門，
 // 也讓桌機可以直接看手機版面）。
@@ -164,8 +164,10 @@ export const MOBILE_ROW_FONT_PX = 16;
 //   'list'   （Phase 4）＝列表好讀視窗（term_view.listCards），body 列畫成卡片（render/list_card.js）。
 // 兩者都改用正常字級 MOBILE_ROW_FONT_PX（仍不超過「rows 列塞滿高」，`.main` 高度
 // chh*rows+10 才不出視窗）、`.main` 寬＝視窗寬（mainWidth）。
-// **rows 與 surface 無關** ⇒ 畫面切換不重送 NAWS。'grid' 的 mainWidth 為 null（照 80 欄算）。
-export const MOBILE_SURFACES = ['grid', 'article', 'list'];
+//   'menu'   （Phase 5）＝主功能表（term_view.menuCards）：幾何與 'grid' 相同（ANSI 圖仍縮小
+//            塞滿寬），只有選單項畫成固定 px 高的大按鈕（render/menu_card.js）。
+// **rows 與 surface 無關** ⇒ 畫面切換不重送 NAWS。'grid'／'menu' 的 mainWidth 為 null（照 80 欄算）。
+export const MOBILE_SURFACES = ['grid', 'article', 'list', 'menu'];
 
 export function mobileTermGeometry({ width, height, dpr, surface }) {
   const rows = calcTermSize({ height: height, fontSizePx: MOBILE_ROW_FONT_PX }).rows;
@@ -208,6 +210,33 @@ export function listPageRows(bodyRows, cards) {
 export function isListCardGapTarget(target) {
   if (!target || typeof target.closest !== 'function') return false;
   return !!target.closest('.listBodyView') && !target.closest('.listCardBody');
+}
+
+// 手機主功能表（Phase 5）的 `.main` 高與上緣位移。grid 幾何是「80 欄塞滿寬」⇒ 直式手機上
+// chh*rows 只佔可視高的六成左右，而大按鈕（固定 px 高）比格線列高得多 ⇒ 把 `.main`
+// 撐到整個可視高（扣軟鍵盤／工具列 inset），貼頂；可視高本來就不夠時退回格線規則
+// （term_size.termLayoutOffsets，內容超出由 .main 的 overflow-y:auto 捲動）。
+export function mobileMenuLayout({ innerHeight, bottomInset, chh, rows, margin }) {
+  const base = chh * rows + 10;
+  const inset = bottomInset > 0 ? bottomInset : 0;
+  const avail = Math.floor((Number(innerHeight) || 0) - inset);
+  if (avail > base) return { height: avail, marginTop: 0 };
+  return {
+    height: base,
+    marginTop: termLayoutOffsets({
+      innerHeight, chh, rows, margin: margin || 0, bottomInset: inset
+    }).marginTop
+  };
+}
+
+// 手機主功能表（Phase 5）：點到的是哪一顆選單按鈕（render/menu_card.js 的
+// data-menu-row ＝ buf 列號）。不是按鈕回 -1。按鈕高 ≠ chh ⇒ 不可用 clientToPos 換算。
+export function menuCardTargetRow(target) {
+  if (!target || typeof target.closest !== 'function') return -1;
+  var card = target.closest('[data-menu-row]');
+  if (!card) return -1;
+  var row = Number(card.getAttribute('data-menu-row'));
+  return Number.isInteger(row) && row >= 0 ? row : -1;
 }
 
 // 軟鍵盤蓋住 layout viewport 底部的高度（px）。Android Chrome 預設

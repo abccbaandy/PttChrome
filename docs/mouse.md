@@ -215,6 +215,9 @@ term.ptt.cc 原版把畫面切成六個區域，2026-08 的重新設計只留下
    （`mf_goTop` / `mf_goBottom`）都對得上。判準是標題列的 `【看板列表】`（走 `screen_titles.js#rowHasTitle`，兼容去括號形狀）
    （`term_buf.isBoardListScreen`，與 `board_list_parse.classifyBoardListScreen`
    的第一條判斷同一個指紋）。
+   選單（主功能表與 domenu 子選單）另有一條：**只有選單項列可點／上底色**，上半的 ANSI 圖／心情點播／
+   分隔線整列 NONE（含左側退出帶）。判定 `menu_items.isMenuScreen`＋`parseMenuItemRow`（列文字形狀，不寫死列號：
+   header_lines 是 12 或 13），`term_buf._resolveMouseRegionAt` 傳 `menuScreen`／`menuItemRow`。
 
 3. **左側退出帶優先於底列 End**（與改版前的 row 23 特例相反，刻意的）：
    `#exitHintBand` 是整片高度的一條帶子，讓 End 吃掉它最底下那一格的話，帶子會在

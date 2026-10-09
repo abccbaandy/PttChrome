@@ -11,8 +11,9 @@
 | 2 | 版面不被切（所有畫面縮到塞滿）＋軟鍵盤不蓋底列 | 已實作（真機 `guess`：待實測） |
 | 3 | 文章好讀：正常字級＋超寬換行（`mobileReflow`），reflow 下關掉以 col 判斷的滑鼠區域 | 已實作（真機 `guess`：待實測） |
 | 4 | 文章列表／看板列表：手機卡片版（固定高 `K*chh` 保住 `list_scroll` 等高假設） | 已實作（真機 `guess`：待實測） |
+| 5 | 選單（主功能表＋所有 domenu 子選單）：選單項大按鈕（ANSI 圖仍縮小格線） | 已實作（真機 `guess`：待實測） |
 
-使用者定案：文章只支援好讀模式、要換行不要縮小；列表做卡片；其他 80 欄格線畫面（主選單等）只求不被切。
+使用者定案：文章只支援好讀模式、要換行不要縮小；列表做卡片；選單項做大按鈕（主功能表與子選單一致；ANSI 圖保留縮小在上方、點一下直接進入）；其他 80 欄格線畫面只求不被切。
 
 ## 規則
 
@@ -76,7 +77,7 @@
 - 展開：桌機純 CSS `@media (hover: hover) .floatTools:hover`；觸控 tap 圓鈕 toggle `data-open`，點了面板裡的工具自動收合。
   一個工具都不用顯示 ⇒ 整個「⋯」不出現（`screen.js#_syncOverlays`）。
 - debug 錄製：`App.setDebugMode`（唯一寫入點，PrefModal Switch 經 ContextMenu 呼叫）→ `view.debugRecordButton` → `enhance.debugRecordButton`；
-  錄製狀態真相在 `app.debugRecorder`（`js/debug_record_control.js`），每幀以 `enhance.debugRecording` 對帳，點擊走 `enhance.onDebugRecord`（引用穩定）。
+  錄製狀態真相在 `app.debugRecorder`（`js/debug_record_control.js`），每次 render 經 `enhance.isDebugRecording()` 現問（**不可改回布林快照**：游標底色慢路徑是不換 props 的重畫，快照會把錄製中蓋回灰），點擊走 `enhance.onDebugRecord`（引用穩定）。
   錄製中「⋯」掛 `data-recording`（紅）。「已下載」隱私提示是 React（`components/DebugRecordNotice`，`App.onDebugRecordDownloaded` 訂閱）。
   守護 `debug_record_render.test.js`、`app_debug_mode.test.js`、offline `debug_record`／`mobile_float_tools`。
 - 面板 absolute 貼在圓鈕外側（`data-vdir`／`data-hdir` 依圓鈕在視窗哪一半），**圓鈕永遠不動**；與圓鈕的間距用 padding。
@@ -121,9 +122,9 @@
 
 ## 畫面類型（surface，Phase 3–4 共用）
 
-- `term_view.mobileSurface` ∈ `grid`／`article`／`list`，推導＝**這一幀畫的是什麼**（`_frameSurface`）：
+- `term_view.mobileSurface` ∈ `grid`／`article`／`list`／`menu`，推導＝**這一幀畫的是什麼**（`_frameSurface`）：
   好讀長頁（`!_gridRender`）＝ article、列表好讀視窗（`_renderScreenLines` 帶 `listScroll`）＝ list，
-  其餘（functionMode 原生鏡像、空頁防黑、原生列表、主選單…）＝ grid。不看好讀旗標。
+  選單（`buf.isMenuScreen()`，主功能表與子選單）＝ menu，其餘（functionMode 原生鏡像、空頁防黑、原生列表…）＝ grid。不看好讀旗標。
 - 對帳點 `term_view._syncMobileSurface`（`_renderScreenLines` 開頭，**render 之前**：forceWidth 與列表視口
   高度取當下 chh，同一幀就畫對）→ `App._applyMobileGeometry(surface)`（唯一套幾何點；resizer 不帶參數
   ＝沿用上一幀的）→ `view.setMobileSurface`（旗標 `reflow`／`listCards` ＋ `.main` 的 class）＋ `fixedResize`。
@@ -227,3 +228,24 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - 長按選單的黑名單區域在 listCards 下看 DOM（`.listCardAuthor`／`.listCardTitle`），不看 col；「前已讀後
   未讀」用 `clientToPos` 的列號（已是卡片座標）。
 - 字級可調時再開 pref `mobileFontSize`（與桌機 `fontSize` 分開），且 rows 要跟著它算。
+
+## Phase 5：選單大按鈕（`term_view.menuCards`）
+
+- 判定：`menu_items.isMenuScreen`＝pageState 1、標題不是 `看板列表`／`分類看板`，且（標題 `MAIN_MENU` 或末列
+  `string_util.parseListRow`＝`menu.c#show_status_bar` 的指紋，新舊格式都吃，與 setPageState 判子選單同一支）
+  ⇒ 主功能表與所有 domenu 子選單（個人設定、私人信件、聊天、系統資訊、娛樂、名單…含巢狀）一致。
+  分類看板根目錄也用 show_status，靠標題排除。選單項＝`parseMenuItemRow`（列文字形狀，快捷鍵可為數字如 `(2)FA`，
+  依據 `mbbsd/menu.c#menu_renderer`／`stuff.c#cursor_show`，見檔頭）。
+  同一組判定也讓桌機的 ANSI 圖區不可點、不上底色（`mouse_regions` case 1 的 `menuScreen && !menuItemRow`）。
+- 幾何同 grid（chh 塞滿寬、rows 不變、不重送 NAWS）。`setTermFontSize` 在 menuCards 下改用
+  `mobile_layout.mobileMenuLayout`：`.main` 撐到可視高（扣 inset）貼頂；不夠高退回格線規則，超出由 `.main` 捲動。
+- 渲染：`render/screen.js#_renderRow` 在 `enhance.menuCards`（進 `annotationsKey`）時，選單項 →
+  `render/menu_card.js#buildMenuCard`（高 `MENU_CARD_PX`=44、字級 16px，寫死 px 不跟 chh；CSS 一致由
+  `menu_card.test.js` 守）；標題／狀態列以外的整列空白 → `buildCollapsedRow`（display:none，契約保留）。
+  兩者都只看該列自己 ⇒ dirty-row patch 的列獨立前提不破。按鈕文字**不走 LinkSegmentBuilder**（`.wpadding`
+  被 `fixedResize` 改成 chh 寬會疊字）。`#cursor` 在 `.main.mobileMenu` 下隱藏（row×chh 座標對不上）。
+- 點擊：`App.mouse_click` 在 `view.menuCards` 下以 DOM 目標取列（`mobile_layout.menuCardTargetRow`，
+  `data-menu-row`），走 `App._sendRowEnter`（與 ACT_ENTER 同一份「↑↓ × delta ＋ \r」）；按鈕外什麼都不送。
+  `resolveMouseRegion({ menuCards })` 早退 NONE（觸控 tap 的相容 mousemove 不在錯的按鈕上底色）。
+- 守護：unit `menu_items`／`menu_card`／`main_menu_mouse`／`mouse_regions`；offline e2e `main_menu`（桌機 hover／點擊）、
+  `mobile_main_menu`（按鈕高、真 tap 送鍵）。素材是合成畫面 `tests/e2e/helpers/main_menu.js`。

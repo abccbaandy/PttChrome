@@ -26,7 +26,7 @@ import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { tryOpenSearchModal } from './article_search';
-import { mobileCtrlKey } from './mobile_layout';
+import { mobileCtrlKey, mobileMenuLayout } from './mobile_layout';
 
 // 單獨按下修飾鍵本身（實體鍵盤按 Shift 準備打大寫）不算「下一個按鍵」，黏滯 Ctrl 不解除。
 var MODIFIER_KEY_NAMES = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph'];
@@ -368,6 +368,14 @@ export function TermView() {
   // onDebugRecord 由 App 在啟動時指派一次（引用穩定）。
   this.debugRecordButton = false;
   this.onDebugRecord = null;
+  // 錄製中與否交給 render 端**現問**（不是每幀的布林快照）：screen.js 有不換 props 的
+  // 重畫（游標底色慢路徑），快照會在那裡把錄製中蓋回去。引用穩定。
+  this.isDebugRecording = () =>
+    !!(
+      this.bbscore &&
+      this.bbscore.debugRecorder &&
+      this.bbscore.debugRecorder.isRecording
+    );
   // Same-author comment highlighting: tint comments written by the 原PO.
   // _articleAuthor is parsed from the article header (first page only) and kept
   // across page-downs; see redraw().
@@ -1079,11 +1087,7 @@ TermView.prototype = {
           mergeCaptionButton: this.showMergeCaptionButton,
           lightsButton: this.showLightsOnButton,
           debugRecordButton: this.debugRecordButton,
-          debugRecording: !!(
-            this.bbscore &&
-            this.bbscore.debugRecorder &&
-            this.bbscore.debugRecorder.isRecording
-          ),
+          isDebugRecording: this.isDebugRecording,
           onDebugRecord: this.onDebugRecord,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,
@@ -1118,6 +1122,9 @@ TermView.prototype = {
           // **引用必須穩定**，annotationsKey.refs 與 outerHTML 節點重用都靠它）。
           functionKeyRows: fnRows,
           onFunctionKey: this.onFunctionKey,
+          // 手機主功能表大按鈕（render/menu_card.js）。旗標已由本函式開頭的
+          // _syncMobileSurface 對帳成這一幀的值。進 annotationsKey。
+          menuCards: this.menuCards || undefined,
           // 「開燈」的軌 B：目前的 pmore 色彩顯示模式（0/1/2，null＝還沒看過設定
           // 頁）＋切換入口。App 在啟動時指派 onLightsRawMode，**引用必須穩定**
           // （同 onFunctionKey/onAidClick 的 view-optional callback 慣例）。
@@ -1560,14 +1567,22 @@ TermView.prototype = {
     // termLayoutOffsets 的 LOCKED 註記（置中由 #BBSWindow 的 align="center"
     // 提供，這裡再加一次就是雙重置中）。
     // 順序上必須在 getFirstGridOffsets() 之前：那一行量的就是這裡寫的位移。
-    this.mainDisplay.style.marginTop =
-      termLayoutOffsets({
-        innerHeight: innerBounds.height,
-        chh: this.chh,
-        rows: this.buf.rows,
-        margin: this.bbsViewMargin,
-        bottomInset: this.keyboardInset
-      }).marginTop + 'px';
+    var layoutInput = {
+      innerHeight: innerBounds.height,
+      chh: this.chh,
+      rows: this.buf.rows,
+      margin: this.bbsViewMargin,
+      bottomInset: this.keyboardInset
+    };
+    if (this.menuCards) {
+      // 手機主功能表大按鈕：`.main` 撐到整個可視高（見 mobile_layout.mobileMenuLayout）。
+      var menuLayout = mobileMenuLayout(layoutInput);
+      this.mainDisplay.style.height = menuLayout.height + 'px';
+      this.mainDisplay.style.marginTop = menuLayout.marginTop + 'px';
+    } else {
+      this.mainDisplay.style.marginTop =
+        termLayoutOffsets(layoutInput).marginTop + 'px';
+    }
 
     this.firstGridOffset = this.bbscore.getFirstGridOffsets();
 
@@ -1590,21 +1605,28 @@ TermView.prototype = {
   // 手機畫面類型的開關（見建構子 mobileSurface）。只切旗標與 class；字級／寬度由
   // 呼叫端（App._applyMobileGeometry）接著走 fixedResize 套。
   setMobileSurface: function(surface) {
-    var s = surface === 'article' || surface === 'list' ? surface : 'grid';
+    var s = surface === 'article' || surface === 'list' || surface === 'menu' ?
+      surface : 'grid';
     this.mobileSurface = s;
     this.reflow = s === 'article';
     this.listCards = s === 'list';
+    this.menuCards = s === 'menu';
     if (this.mainDisplay) {
       this.mainDisplay.classList.toggle('mobileReflow', this.reflow);
       this.mainDisplay.classList.toggle('mobileListCards', this.listCards);
+      this.mainDisplay.classList.toggle('mobileMenu', this.menuCards);
     }
   },
 
   // 這一幀要畫的畫面類型（不看是不是手機）：好讀長頁（!_gridRender）＝ article、
-  // 列表好讀視窗（帶 listScroll）＝ list，其餘格線畫面＝ grid。
+  // 列表好讀視窗（帶 listScroll）＝ list、選單（主功能表與子選單；原生格線、列是 buf
+  // 本身）＝ menu，
+  // 其餘格線畫面＝ grid。
   _frameSurface: function(enhanceOverrides) {
     if (!this._gridRender) return 'article';
     if (enhanceOverrides && enhanceOverrides.listScroll) return 'list';
+    if (this.buf && this.buf.isMenuScreen && this.buf.isMenuScreen())
+      return 'menu';
     return 'grid';
   },
 
