@@ -31,6 +31,15 @@
             "command": "node \"$CLAUDE_PROJECT_DIR/scripts/sync-3rd-script.mjs\"; true"
           }
         ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/check-remote-commits.mjs\"; true"
+          }
+        ]
       }
     ],
     "SessionEnd": [
