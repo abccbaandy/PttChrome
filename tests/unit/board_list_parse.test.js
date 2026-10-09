@@ -158,6 +158,18 @@ describe("列型態判定（Enter 前的本地守門）", () => {
     expect(isBoardListSeparatorRow(HEADER_NUM)).toBe(false);
   });
 
+  // board.c#brdlist_separator：`"%7d %c "` 的 %c 在被 t 標記（NBRD_TAG）時是 'D'；
+  // newflag 版面印 `"%7s   "`（沒有序號）。兩種按 Enter 一樣零回應。
+  test("被標記（D）與沒有序號（newflag）的分隔線列也認得出來", () => {
+    const tagged = pad7(3) + " D " + "-".repeat(12) + "      " + "-".repeat(42);
+    expect(isBoardListSeparatorRow(tagged)).toBe(true);
+    const noNum = " ".repeat(7) + "   " + "-".repeat(12) + "      " + "-".repeat(42);
+    expect(isBoardListSeparatorRow(noNum)).toBe(true);
+    // 被標記的一般看板列不是分隔線。
+    expect(isBoardListSeparatorRow(pad7(3) + " D Gossiping    綜合  ｜閒聊")).toBe(false);
+    expect(isBoardListSeparatorRow("")).toBe(false);
+  });
+
   test("禁入／隱板列：認得出來（HasBoardPerm 為假 ⇒ Enter 同樣零回應）", () => {
     expect(isBoardListBlockedRow(blockedRow(4, "SYSOP"))).toBe(true);
     expect(

@@ -52,10 +52,18 @@ export function parseBoardListNum(text) {
 // 分隔線列（`NBRD_LINE`，board.c:1374）：`%7d %c ` 之後整段都是 `-`。
 // **必須認得出來**：對它按 Enter 時 board.c 直接 `break` ⇒ server 一個 byte 都不回，
 // 開文交易只能等到逾時。認出來就在本地擋掉並提示，零 round-trip。
+//
+// 欄位照 board.c#brdlist_separator：
+//   - 一般：`"%7d %c "`，`%c` 是標記欄 —— 被 t 標記（NBRD_TAG）時印 'D'，所以 col 8
+//     可能是 'D' 而不是空白；
+//   - newflag：`"%7s   "`，序號欄整段空白、沒有數字。
 export function isBoardListSeparatorRow(text) {
   if (!text) return false;
-  if (parseBoardListNum(text) == null) return false;
-  return /^\s*-{6,}/.test(text.slice(NUM_COL_END + 1));
+  const rest = text.slice(NUM_COL_END + 1);
+  if (parseBoardListNum(text) == null) {
+    return /^\s*$/.test(text.slice(0, NUM_COL_END + 1)) && /^\s+-{6,}/.test(rest);
+  }
+  return /^D?\s*-{6,}/.test(rest);
 }
 
 // 禁入／隱板列（board.c:1427-1441）：`HasBoardPerm` 為假的看板。Enter 同樣

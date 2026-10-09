@@ -19,6 +19,7 @@ import {
   listColRegion,
   appendBlacklistEntry,
   COMMENT_USERID_COL,
+  isBlacklistableUserId,
 } from "../../js/comment_parse";
 import {
   normalizeQuickSearchQuery,
@@ -381,7 +382,8 @@ export const ContextMenu = ({ pttchrome }) => {
         const pusher = rowElement.getAttribute("data-pusher");
         const listAuthor = rowElement.getAttribute("data-list-author");
         const listTitle = rowElement.getAttribute("data-list-title");
-        if (pusher) {
+        // 小天使匿名推文（「<暱稱>小天使」）不是帳號，不給加黑名單。
+        if (pusher && isBlacklistableUserId(pusher)) {
           // 手機換行版面（term_view.reflow）一列會折成好幾行，col 對不上畫面上的字
           // ⇒ 整列推文都算 id 區（該列的作者只有一個，不會加錯人）。
           if (

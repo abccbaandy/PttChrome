@@ -105,6 +105,8 @@ export function big5ByteLength(text) {
 //   maxlength = 78 - 3(lead) - 6(date) - 1(space) - 6(time)      = 62
 //               [- 15 if (BRD_IPLOGRECMD || isGuest)]            → 47
 //               - strlen(myid)
+// BRD_ALIGNEDCMT 板（bbs.c#recommend 的 aligncmt）先把 id 補成 `%-*s` IDLEN 才
+// strlen ⇒ 扣的永遠是 12，不是 id 實際長度（alignedCmt）。
 // term.ptt.cc 的私有版本在 ':' 後多一格空白，實測比上游少一格
 // （docs/pttbbs-screen-protocol.md §11.1／§12）⇒ 61 / 46。
 // vgetstring 的 size check 是 `iend+1 >= len → bell()`（vtuikit.c:1399）
@@ -112,7 +114,8 @@ export function big5ByteLength(text) {
 export function pushMaxBytes(opts) {
   const o = opts || {};
   if (o.fieldWidth >= 2) return o.fieldWidth - 1;
-  const idLen = (o.userId || '').length || 12; // 拿不到 id 就用 IDLEN 保守估
+  // 拿不到 id 就用 IDLEN 保守估；對齊推文板一律扣 IDLEN。
+  const idLen = o.alignedCmt ? 12 : (o.userId || '').length || 12;
   const base = o.ipLogged === false ? 61 : 46; // 判不出來時當 IP 板（較短＝安全）
   return Math.max(1, base - idLen - 1);
 }

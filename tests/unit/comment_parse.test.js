@@ -26,6 +26,9 @@ import {
   parseListArticleNumLoose,
   isPinnedListRow,
   isDeletedListRow,
+  isBlacklistableUserId,
+  isLockedListRow,
+  isUnopenableListRow,
   isListShapedRow,
   blacklistNoticeText,
   recoverCursorArticleNum,
@@ -74,6 +77,35 @@ describe("parseComment", () => {
       contentCol: 17
     });
   });
+  // 小天使匿名推文（mbbsd/bbs.c#recommend：myid = angel_load_my_fullnick 的
+  // 「<暱稱>小天使」，mynick[IDLEN+1] ⇒ 暱稱 ≤ 6 bytes，可以是中文）。
+  test("小天使匿名推文：id 是「<暱稱>小天使」，照樣是推文", () => {
+    // 「推 喵喵小天使: 加油」：推(0-1) 空格(2) 喵喵小天使(3-12，5 個全形) ':'(13) ' '(14) 內容(15)
+    expect(parseComment(ts("推 喵喵小天使: 加油"))).toEqual({
+      type: "推",
+      userid: "喵喵小天使",
+      contentCol: 15,
+      anonymous: true
+    });
+    // 沒有暱稱（檔案空白）也一樣：只剩「小天使」。
+    expect(parseComment(ts("→ 小天使: x"))).toMatchObject({ userid: "小天使", anonymous: true });
+    // ASCII 暱稱。
+    expect(parseComment(ts("噓 abc小天使: x"))).toMatchObject({
+      userid: "abc小天使",
+      contentCol: 3 + 3 + 6 + 2,
+      anonymous: true
+    });
+  });
+  test("一般帳號不能是中文（只有小天使後綴例外）", () => {
+    expect(parseComment(ts("推 喵喵: x"))).toBeNull();
+  });
+  test("isBlacklistableUserId：只有帳號形狀可加黑名單", () => {
+    expect(isBlacklistableUserId("wowbenny")).toBe(true);
+    expect(isBlacklistableUserId("喵喵小天使")).toBe(false);
+    expect(isBlacklistableUserId("abc小天使")).toBe(false);
+    expect(isBlacklistableUserId("")).toBe(false);
+  });
+
   test("comment shape but NO timestamp → null (body text)", () => {
     expect(parseComment("→ tony32135 : 明天開盤幾乎跌停你下得去手嗎")).toBeNull();
     expect(parseComment("推 bbignose : 你從哪來的錯覺能賣掉")).toBeNull();
@@ -475,6 +507,35 @@ describe("isDeletedListRow", () => {
   });
 });
 
+// 鎖文：pttbbs mbbsd/bbs.c#readdoent 對 SUBJECT_LOCKED 印 mark「鎖」、推文欄 "--"；
+// bbs.c#read_post 對檔名 'L' 開頭回 READ_SKIP（Enter 畫面不動）。欄位照 render_columns：
+// cols 0-6 序號、8 type、9-10 推文、11-16 日期、17-29 作者、30 mark、32- 標題。
+describe("isLockedListRow／isUnopenableListRow", () => {
+  const LOCKED = "  12345  -- 6/05 someone      鎖 [問卦] 被鎖的文章";
+  test("推文欄 -- 且 mark 是「鎖」→ 鎖文", () => {
+    expect(isLockedListRow(LOCKED)).toBe(true);
+    expect(isLockedListRow(">" + LOCKED.slice(1))).toBe(true); // 新版 > 游標蓋頭
+    expect(isLockedListRow("●" + LOCKED.slice(2))).toBe(true); // 舊版 ● 游標蓋頭
+  });
+  test("鎖文也是列表形列（作者欄是正常 id）", () => {
+    expect(isListShapedRow(LOCKED)).toBe(true);
+  });
+  test("只有一個條件成立 → 不是鎖文", () => {
+    // 標題以「鎖」開頭的一般文章：mark 是 □。
+    expect(isLockedListRow("  12345 +  5 6/05 someone      □ 鎖國的歷史")).toBe(false);
+    // 推文欄恰好是 "--" 以外的值。
+    expect(isLockedListRow("  12345  XX 6/05 someone      鎖 [問卦] x")).toBe(false);
+    expect(isLockedListRow(" 352960 + 4 6/05 HarunoYukino R: foo")).toBe(false);
+    expect(isLockedListRow("")).toBe(false);
+    expect(isLockedListRow(null)).toBe(false);
+  });
+  test("打不開的列＝刪除文或鎖文", () => {
+    expect(isUnopenableListRow(LOCKED)).toBe(true);
+    expect(isUnopenableListRow(" 203599     7/04 -            □ (本文已被刪除) <wh40917>")).toBe(true);
+    expect(isUnopenableListRow(" 352960 + 4 6/05 HarunoYukino R: foo")).toBe(false);
+  });
+});
+
 describe("blacklistNoticeText（原生模式黑名單列 → 被刪除樣式通知）", () => {
   test("保留序號/日期欄，作者欄改 '-'，標題放全形括號「（本文已被黑名單） <原作者>」", () => {
     const out = blacklistNoticeText(
@@ -849,6 +910,13 @@ describe("annotateComment", () => {
 
   test("non-comment row → null", () => {
     expect(annotateComment("作者 wowbenny", baseCtx())).toBeNull();
+  });
+
+  test("小天使匿名推文佔樓層：後面的樓號不會少 1", () => {
+    const ctx = baseCtx();
+    expect(annotateComment(ts("推 kidla: x"), ctx).floor.seq).toBe(1);
+    expect(annotateComment(ts("推 喵喵小天使: 加油"), ctx).floor.seq).toBe(2);
+    expect(annotateComment(ts("→ kidla: y"), ctx).floor.seq).toBe(3);
   });
 
   test("body text in comment shape (no timestamp) → null, takes no floor", () => {
@@ -1240,6 +1308,29 @@ describe("decideAccumulateBranch", () => {
     expect(
       d({ complete: false, healInFlight: true, prevPageState: 0, pendingReset: false, statusStart: 44, kContent: 1, hasAcc: true })
     ).toBe("skip");
+  });
+
+  // 狀態列沒有行號（pmore override_msg／oldstatusbar，string_util.parseStatusRow 的 rowsUnknown）。
+  describe("rowsUnknown", () => {
+    const base = { complete: true, prevPageState: 3, pendingReset: false, statusStart: null, hasAcc: true, rowsUnknown: true };
+    test("一般翻頁 → 照內容重疊接上（修前是 skip ＝ 這頁永久遺失）", () => {
+      expect(d({ ...base, kContent: 1 })).toBe("appendByContent");
+      expect(d({ ...base, kContent: 0 })).toBe("appendByContent");
+    });
+    test("文章中段第 0 列與作者列不同是常態：headerChanged 不得觸發重建", () => {
+      expect(d({ ...base, kContent: 0, headerChanged: true })).toBe("appendByContent");
+    });
+    test("[ ] 換文章：零重疊 → rebuild；有重疊（舊文章殘幀）→ skip", () => {
+      expect(d({ ...base, pendingReset: true, kContent: 0 })).toBe("rebuild");
+      expect(d({ ...base, pendingReset: true, kContent: 3 })).toBe("skip");
+    });
+    test("heal 在途 → skip（核對不了 :N 落地）", () => {
+      expect(d({ ...base, healInFlight: true, kContent: 1 })).toBe("skip");
+    });
+    test("進文章第一幀（prevPageState≠3）→ rebuild；半畫幀 → skip", () => {
+      expect(d({ ...base, prevPageState: 0, kContent: 0 })).toBe("rebuild");
+      expect(d({ ...base, complete: false, kContent: 1 })).toBe("skip");
+    });
   });
 });
 

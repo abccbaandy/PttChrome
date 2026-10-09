@@ -59,13 +59,26 @@ export function isSearchPromptFrame(kind, facts) {
   return facts.curY === rows - 1 && startsWithAny(rowTexts[rows - 1] || '', prefixes);
 }
 
+// server 端輸入欄最多收幾個 byte：read.c#ask_filter_predicate 的 getdata 欄寬是
+// 推文數 7、作者 IDLEN+1、標題 TTLEN（include/pttstruct.h：IDLEN 12、TTLEN 64），
+// vgetstring 只收「欄寬 − 1」個 byte，多打的響 bell 丟掉 ⇒ 送出去的條件會被靜默截斷。
+const SEARCH_MAX_BYTES = { push: 6, author: 12, title: 63 };
+
+// Big5 長度：ASCII 1 byte、其餘 2 bytes（Big5 沒有 3-byte 字）。
+function big5Length(s) {
+  let n = 0;
+  for (let i = 0; i < s.length; ++i) n += s.charCodeAt(i) > 0x7f ? 2 : 1;
+  return n;
+}
+
 // 推文數只收非零整數（可負＝噓文數）。PTT 端 `atoi(keyword) == 0` 就當取消
-// （read.c ask_filter_predicate），送一個一定被丟掉的值只是多一趟。欄寬 7（含負號）。
+// （read.c ask_filter_predicate），送一個一定被丟掉的值只是多一趟。
 export function normalizeSearchText(kind, text) {
   const t = String(text == null ? '' : text).trim();
   if (!t) return '';
+  if (SEARCH_MAX_BYTES[kind] && big5Length(t) > SEARCH_MAX_BYTES[kind]) return '';
   if (kind === 'push') {
-    if (!/^-?\d{1,6}$/.test(t)) return '';
+    if (!/^-?\d+$/.test(t)) return '';
     return parseInt(t, 10) === 0 ? '' : String(parseInt(t, 10));
   }
   // 看板名稱：namecomplete 是 VGET_ASCII_ONLY（name.c#namecomplete_internal），

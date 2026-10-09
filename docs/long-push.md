@@ -70,7 +70,9 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 沿用；之後量不到的幀（落回列表、假 buf）不會退回保守值。唯一計算點 `_calibrate`。
 
 **量不到才退回公式**（`pushMaxBytes` 的 userId／ipLogged）：帳號取 prompt 上的 id，IP 取畫面上既有推文列
-有沒有 IP 欄，判不出來當 IP 板（較短）。**使用者回報的「非 IP 板尾巴固定空 15 格」就是這條退路**：
+有沒有 IP 欄，判不出來當 IP 板（較短）。對齊推文板（`BRD_ALIGNEDCMT`，`bbs.c#recommend` 先把 id
+`%-*s` 補到 IDLEN 再 strlen）一律扣 12 而不是 id 實際長度，由 `push_screen.detectAlignedComments`
+從畫面上既有推文列的冒號位置判斷（`alignedCmt`）。**使用者回報的「非 IP 板尾巴固定空 15 格」就是這條退路**：
 停在文章開頭或推完落回列表時看不到推文列。開輸入框前的第一個估值是
 `pushMaxBytes({ userId: prefs.autoLoginUser })`，探路回來就會被取代。
 

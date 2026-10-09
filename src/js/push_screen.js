@@ -85,6 +85,25 @@ export function detectIpLogged(rowTexts) {
   return seen;
 }
 
+// 掃畫面上已完成的推文列，判斷這塊看板是不是 BRD_ALIGNEDCMT（推文 id 對齊）。
+// bbs.c#recommend：aligncmt 時 `SNPRINTF(buf, "%-*s", IDLEN, myid)` ⇒ id 一律補空白到
+// 12 格，冒號固定在 text index 2+12。id 恰好 12 字的列兩種看板長得一樣，跳過。
+// 回 true/false；一列都判不出來回 null。
+const COMMENT_ID_RE = /^(?:推|噓|→) ([A-Za-z][0-9A-Za-z]{1,11})( *):/;
+export function detectAlignedComments(rowTexts) {
+  if (!rowTexts) return null;
+  let seen = null;
+  for (let i = 0; i < rowTexts.length; ++i) {
+    const text = rowTexts[i] || '';
+    if (!DONE_COMMENT_RE.test(text)) continue;
+    const m = COMMENT_ID_RE.exec(text);
+    if (!m || m[1].length >= 12) continue;
+    if (m[1].length + m[2].length === 12) return true;
+    seen = false;
+  }
+  return seen;
+}
+
 // ---------------------------------------------------------------------------
 // 畫面分類
 // ---------------------------------------------------------------------------

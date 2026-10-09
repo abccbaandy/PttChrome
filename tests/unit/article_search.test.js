@@ -170,6 +170,20 @@ describe("normalizeSearchText", () => {
   test("空白一律不送", () => {
     expect(normalizeSearchText("title", "   ")).toBe("");
   });
+  // read.c#ask_filter_predicate 的 getdata 欄寬：推文數 7、作者 IDLEN+1(13)、標題
+  // TTLEN(64)；vgetstring 最多收「欄寬 − 1」個 byte，多打的只會響 bell 被丟掉 ⇒
+  // 送出去的條件跟使用者輸入的不一樣（-123456 → -12345）。超過就不送，讓彈窗擋下。
+  test("超過 server 輸入欄寬的不送（推文數 6 字、作者 12 字、標題 63 bytes）", () => {
+    expect(normalizeSearchText("push", "-12345")).toBe("-12345");
+    expect(normalizeSearchText("push", "-123456")).toBe("");
+    expect(normalizeSearchText("push", "123456")).toBe("123456");
+    expect(normalizeSearchText("push", "1234567")).toBe("");
+    expect(normalizeSearchText("author", "abcdefghijkl")).toBe("abcdefghijkl");
+    expect(normalizeSearchText("author", "abcdefghijklm")).toBe("");
+    // 標題按 Big5 byte 算：全形 2 bytes。
+    expect(normalizeSearchText("title", "測".repeat(31) + "a")).toBe("測".repeat(31) + "a");
+    expect(normalizeSearchText("title", "測".repeat(32))).toBe("");
+  });
 });
 
 describe("buildSearchSteps", () => {

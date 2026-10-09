@@ -21,6 +21,7 @@ import {
   parseListArticleNumLoose,
   isPinnedListRow,
   isDeletedListRow,
+  isUnopenableListRow,
   isListShapedRow,
   rowToText,
   parseListTitleRaw,
@@ -32,6 +33,7 @@ import {
 import { clickableColStart } from './mouse_regions';
 import {
   parseStatusRow,
+  isMoviePromptRow,
   parseListRow,
   u2b,
   ansiHalfColorConv,
@@ -179,6 +181,11 @@ export function classifyListScreen(facts) {
 
   // Article (pmore): the bottom status row 「瀏覽 第 x/y 頁 …」 is decisive.
   if (parseStatusRow(lastRowText)) return { kind: 'article', boardName };
+  // ASCII 動畫的第一頁：底列是「要開始播放嗎？ [Y/n]」取代狀態列，一樣是開好的文章
+  // （見 string_util.isMoviePromptRow）。會對 'article' 送鍵的只有進板畫面那兩條
+  // （board_note_skip、aid_navigation 的 dismiss），而進板畫面是 PMORE_AUTO_EXIT，
+  // 有動畫就直接自動播放、不畫這一列（pmore.c `promptend == PMORE_AUTO_EXIT`）。
+  if (isMoviePromptRow(lastRowText)) return { kind: 'article', boardName };
 
   // Menus: top-level 【主功能表】/【分類看板】/【精華文章】 titles, or the
   // board-MENU footer parseListRow matches (the thing clean-list must NOT use).
@@ -4284,10 +4291,11 @@ export function visibleListIndices(rowTexts, blacklistSet, titleKeywords) {
       out.push(i);
       continue;
     }
-    // Deleted articles ((本文已被刪除) / (已被xxx刪除), author column "-") are
-    // hidden unconditionally: they cannot be opened (the serialized open would
-    // wedge on them) — treated exactly like a blacklist hit.
-    let hide = isDeletedListRow(text);
+    // Deleted articles ((本文已被刪除) / (已被xxx刪除), author column "-") and
+    // locked articles（鎖, 推文欄 --）are hidden unconditionally: they cannot be
+    // opened (pttbbs read_post → READ_SKIP, the screen never changes, so the
+    // serialized open would wedge on them) — treated exactly like a blacklist hit.
+    let hide = isUnopenableListRow(text);
     if (!hide && hasBlacklist) {
       const author = parseListAuthor(text);
       if (author && blacklistSet.has(author)) hide = true;

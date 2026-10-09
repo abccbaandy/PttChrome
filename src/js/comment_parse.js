@@ -70,8 +70,14 @@ export function rowToText(chars) {
 //     其餘 isalnum；include/pttstruct.h `#define IDLEN 12`（fileheader_t.owner 也只有
 //     IDLEN+1 bytes）。所以 id 恰是 [A-Za-z][0-9A-Za-z]{1,11}；沒有上限時，內文裡
 //     更長的 "推 xxxxxxxxxxxxxx: …" 假冒行會被當成真推文而多吃一個樓層。
+//   - 小天使匿名推文 — mbbsd/bbs.c#recommend：板有 BRD_ANGELANONYMOUS、推文者是小天使
+//     且選了匿名時 `myid = mynick`，mynick 由 angel.c#angel_load_my_fullnick 填成
+//     「<小天使暱稱>小天使」，緩衝區 mynick[IDLEN+1] ⇒ 整段 ≤ 12 bytes、暱稱 ≤ 6 bytes
+//     （可以是中文）。這種列一樣佔樓層，漏認的話之後的樓號全部少 1。
+const ANGEL_SUFFIX = '小天使';
 const COMMENT_RE = new RegExp(
-  /^(推|噓|→)\s+([A-Za-z][0-9A-Za-z]{1,11})\s*:.*/.source + COMMENT_TIME_RE.source
+  /^(推|噓|→)\s+([A-Za-z][0-9A-Za-z]{1,11}|[^\s:]{0,6}小天使)\s*:.*/.source +
+    COMMENT_TIME_RE.source
 );
 
 // The user id starts at col 3: the 推/噓/→ marker is a 2-col DBCS char (cols 0-1)
@@ -89,12 +95,21 @@ export const COMMENT_USERID_COL = 3;
 // App／bot 走的路徑不見得經過 vgetstring），沒有就少跳一格。
 // 與 comment_merge.commentContentCells 的 `start` 同語意，那邊是逐格掃 TermChar
 // （合併塊要真的搬 cell），這裡只為了一個欄號，走純文字不必碰 80 格。
+// 小天使匿名推文的 id 可以含中文（全形 2 格）⇒ 冒號之前每多一個全形字，欄號再加 1。
 function commentContentCol(text, userid) {
   const idAt = text.indexOf(userid, 1);
   if (idAt < 0) return COMMENT_USERID_COL;
   const colon = text.indexOf(':', idAt + userid.length);
   if (colon < 0) return COMMENT_USERID_COL;
-  return colon + 2 + (text[colon + 1] === ' ' ? 1 : 0);
+  let wide = 0;
+  for (let i = 1; i < colon; ++i) if (text.charCodeAt(i) > 0x7f) wide++;
+  return colon + 2 + wide + (text[colon + 1] === ' ' ? 1 : 0);
+}
+
+// 能不能當黑名單項目：只有真帳號（names.c#is_validuserid 的形狀）。小天使匿名推文的
+// 「<暱稱>小天使」不是帳號，加進黑名單只會變成一條永遠不中的規則。
+export function isBlacklistableUserId(id) {
+  return typeof id === 'string' && /^[A-Za-z][0-9A-Za-z]{1,11}$/.test(id);
 }
 
 export function parseComment(text) {
@@ -104,7 +119,9 @@ export function parseComment(text) {
   return {
     type: m[1],
     userid: m[2].toLowerCase(),
-    contentCol: commentContentCol(text, m[2])
+    contentCol: commentContentCol(text, m[2]),
+    // 小天使匿名：不是帳號 ⇒ 不能拿去加黑名單（見 isBlacklistableUserId）。
+    ...(m[2].endsWith(ANGEL_SUFFIX) ? { anonymous: true } : {})
   };
 }
 
@@ -425,6 +442,23 @@ export function isDeletedListRow(text) {
   if (!text || text.length < LIST_AUTHOR_COL_START) return false;
   const row = realignListColumns(text);
   return row.substring(LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END).trim() === '-';
+}
+
+// A locked-article row（鎖文）。pttbbs mbbsd/bbs.c#readdoent：檔名以 'L' 開頭 ⇒
+// title_type = SUBJECT_LOCKED ⇒ mark「鎖」、推文欄固定 "--"（`STRLCPY(recom, "0m--")`）。
+// 跟刪除文一樣打不開：bbs.c#read_post 開頭 `fhdr->filename[0] == 'L'` → READ_SKIP，
+// read.c 的 `if (mode == READ_SKIP) mode = lastmode;` ⇒ 畫面完全不動（序列化開文會
+// 等到逾時）。兩個條件同時成立才算：推文欄（cols 9-10）是 "--"，且 mark 欄（col 30）
+// 是「鎖」。
+export function isLockedListRow(text) {
+  if (!text || text.length <= LIST_TITLE_COL_START) return false;
+  const row = realignListColumns(text);
+  return row.substring(9, 11) === '--' && row.charAt(LIST_TITLE_COL_START) === '鎖';
+}
+
+// 列表上「按 Enter 不會開出文章」的列：刪除文＋鎖文。列表好讀把它們當黑名單命中隱藏。
+export function isUnopenableListRow(text) {
+  return isDeletedListRow(text) || isLockedListRow(text);
 }
 
 // 已讀文章低亮（pref dimReadArticles）的已讀判定。**按 cell 讀**（TermChar[]，不走
@@ -864,10 +898,25 @@ export function decideAccumulateBranch({
   hasAcc, // eslint-disable-line no-unused-vars -- kept for call-site readability
   headerChanged,
   transition,
-  healInFlight
+  healInFlight,
+  rowsUnknown
 }) {
   if (complete === false) return 'skip';
   if (!healInFlight && prevPageState !== 3) return 'rebuild';
+  // 狀態列是文章 pager、但沒有行號（string_util.parseStatusRow 的 rowsUnknown：
+  // pmore override_msg 警告／oldstatusbar）。P1 的 gap／backward 判定與「第 1 行」都
+  // 無從判斷，只剩內容重疊可用：
+  //   - heal 在途：落地頁核對不了 `:N`，不動（heal 自己的 watchdog 會往下升級）；
+  //   - pendingReset（[ ] 換文章）：零重疊＝新文章 → rebuild；有重疊＝舊文章的殘幀 → skip。
+  //     headerChanged 的自癒**不**套用：文章中段的第 0 列本來就跟累積頁的作者列不同，
+  //     少了 statusStart===1 這道前提就會把整篇累積清掉；
+  //   - 其餘照內容重疊接上（'appendByContent'），呼叫端把 _accEndRow 設成未知，
+  //     下一張有行號的頁會走 accEndRow==null 的內容接法，再從它的 E 接回行號追蹤。
+  if (rowsUnknown) {
+    if (healInFlight) return 'skip';
+    if (pendingReset) return kContent === 0 ? 'rebuild' : 'skip';
+    return 'appendByContent';
+  }
   if (statusStart == null) return 'skip';
   if (!healInFlight && statusStart === 1 && (pendingReset || (kContent === 0 && headerChanged)))
     return 'rebuild';

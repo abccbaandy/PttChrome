@@ -143,6 +143,18 @@ describe("classifyListScreen", () => {
     ).toBe("article");
   });
 
+  // ASCII 動畫文章的第一頁：pmore.c PMORE_MSG_MOVIE_DETECTED 畫在 b_lines，取代狀態列。
+  // 修前判成 prompt ⇒ 開文交易等不到 'article'，一路等到逾時。
+  test("ASCII 動畫詢問列 → article（開文落地）", () => {
+    const rows = listRows.slice();
+    rows[0] = " 作者  someone (某人)                                    看板  C_Chat";
+    rows[rows.length - 1] =
+      " ★ 這份文件是可播放的文字動畫，要開始播放嗎？ [Y/n]                         ";
+    expect(
+      classifyListScreen(facts({ rowTexts: rows, curY: rows.length - 1, curX: 79 })).kind
+    ).toBe("article");
+  });
+
   test("board MENU footer (parseListRow) → menu, NOT clean-list (v3 trap #3)", () => {
     const rows = listRows.slice();
     rows[rows.length - 1] = BOARD_MENU_FOOTER;
@@ -1669,6 +1681,16 @@ describe("visibleListIndices (mirrors Screen#computeAnnotations PAGE_LIST)", () 
     expect(
       visibleListIndices(withDeleted, new Set(["harunoyukino"]), [])
     ).toEqual([0]);
+  });
+  // pttbbs bbs.c#read_post：檔名 'L' 開頭（鎖文）→ READ_SKIP，Enter 畫面不動，跟刪除文
+  // 一樣會讓序列化開文等到逾時。列表上的樣子是 mark「鎖」＋推文欄 "--"（bbs.c#readdoent）。
+  it("鎖文（鎖、推文欄 --）即使無黑名單也隱藏（開文會 wedge，比照刪除文）", () => {
+    const withLocked = [
+      rows[0],
+      " 350025  -- 7/04 someone      鎖 [問卦] 被鎖的文章",
+      rows[2],
+    ];
+    expect(visibleListIndices(withLocked, new Set(), [])).toEqual([0, 2]);
   });
 });
 
