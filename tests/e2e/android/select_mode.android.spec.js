@@ -10,15 +10,22 @@ const { test, expect, webviewOrigin, envError } = require('./fixtures');
 const { article, openScreen } = require('./screen');
 const { toDevicePoint } = require('./android_env');
 
+// 手機的長按選單是 bottom sheet（ContextMenu/ContextSheet.jsx），不是桌機的 .DropdownMenu。
+const CONTEXT_SHEET = '[data-sheet="context"]';
+const MORE_SHEET = '[data-sheet="more"]';
+
 async function setSelectMode(page, on) {
-  // 選取模式在底部工具列的「更多」裡；切換後選單自動收起，再開一次讀狀態。
+  // 選取模式在底部工具列的「更多」sheet 裡；切換後 sheet 自動收起，再開一次讀狀態。
+  // sheet 的遮罩蓋住工具列 ⇒ 收起用 Esc，不能再點「更多」。
   await page.locator('[data-key="__more"]').click();
   if (on) {
     await page.locator('[data-key="__select"]').click();
+    await expect(page.locator(MORE_SHEET)).toHaveCount(0);
     await page.locator('[data-key="__more"]').click();
   }
   await expect(page.locator('[data-key="__select"]')).toHaveAttribute('aria-pressed', String(on));
-  await page.locator('[data-key="__more"]').click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator(MORE_SHEET)).toHaveCount(0);
 }
 
 // capture 階段記下每個 contextmenu／觸控 pointerdown（React listener 之前），事後讀
@@ -107,7 +114,7 @@ test.describe('Android Chrome：長按與選取把手（真觸控）', () => {
     expect(press).toEqual({ pointerType: 'touch', firesTouchEvents: true, defaultPrevented: false });
     const before = await selectionText(page);
     expect(before.trim().length).toBeGreaterThan(0);
-    await expect(page.locator('.DropdownMenu')).toHaveCount(0);
+    await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
 
     // 拖結尾把手往右：把手畫在選取右下方。
     const rect = await selectionRect(page);
@@ -124,7 +131,7 @@ test.describe('Android Chrome：長按與選取把手（真觸控）', () => {
     expect(handle.firesTouchEvents).toBe(false);
     // 被測行為：放行 ⇒ 沒有我們的選單、選取是拖過之後的範圍。
     expect(handle.defaultPrevented).toBe(false);
-    await expect(page.locator('.DropdownMenu')).toHaveCount(0);
+    await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
     expect((await selectionText(page)).length).toBeGreaterThan(before.length);
     // 結果：原生複製工具列（模擬器固定 en-US）。**輪詢 device.info，不用 device.wait**：
     // wait 等的是 UI 變化，工具列若在 wait 開始前就出現、之後畫面不再變，畫面上明明有它
@@ -153,7 +160,7 @@ test.describe('Android Chrome：長按與選取把手（真觸控）', () => {
 
     const cms = await contextMenus(page);
     expect(cms).toEqual([{ pointerType: 'touch', firesTouchEvents: true, defaultPrevented: true }]);
-    await expect(page.locator('.DropdownMenu')).toHaveCount(1);
+    await expect(page.locator(CONTEXT_SHEET)).toBeVisible(); // Drawer 內容非同步掛上
     expect(await page.evaluate(() => window.getSelection().isCollapsed)).toBe(true);
   });
 });
