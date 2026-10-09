@@ -29,6 +29,13 @@ describe("listArticleNumbers（列表選文的欄位解析）", () => {
     expect(listArticleNumbers(rows).map((c) => c.num)).toEqual([1240, 1241]);
   });
 
+  // pttbbs bbs.c#readdoent：鎖文推文欄固定 "--"；bbs.c#read_post 對它回 READ_SKIP（開不了）。
+  test("鎖文（推文欄 --）不會成為候選，min=0 也一樣", () => {
+    const locked = row({ num: "   1236", push: "--" }).replace("□", "鎖");
+    expect(listArticleNumbers([locked])).toEqual([]);
+    expect(listArticleNumbers([locked], { min: 0 })).toEqual([]);
+  });
+
   test("置底文沒有序號 ⇒ 不會成為候選（這就是不用 End 的理由）", () => {
     // 置底列的 cols 0-6 是同寬的 ★，rowToText 後沒有數字。
     const pinned = "    ★  " + " " + "  " + "8/29  " + "SYSOP        " + "□ " + " [公告] 板規";

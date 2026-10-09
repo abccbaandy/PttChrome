@@ -14,7 +14,7 @@ import {
   splitPushSegments,
   findUrlSpans,
 } from "../../src/js/long_push";
-import { detectIpLogged } from "../../src/js/push_screen";
+import { detectIpLogged, detectAlignedComments } from "../../src/js/push_screen";
 
 beforeAll(() => loadBig5Tables());
 
@@ -70,6 +70,28 @@ describe("pushMaxBytes", () => {
   test("判不出 IP 板時取較短的（安全方向），沒有 id 時用 IDLEN=12 保守估", () => {
     expect(pushMaxBytes({ userId: "testuser" })).toBe(37);
     expect(pushMaxBytes({})).toBe(33);
+  });
+
+  // bbs.c#recommend：aligncmt 時先 SNPRINTF(buf, "%-*s", IDLEN, myid) 再
+  // maxlength -= strlen(myid) ⇒ 扣的是補滿的 12，不是 id 實際長度。
+  test("對齊推文板（BRD_ALIGNEDCMT）一律扣 IDLEN=12", () => {
+    expect(pushMaxBytes({ userId: "testuser", ipLogged: false, alignedCmt: true })).toBe(48);
+    expect(pushMaxBytes({ userId: "testuser", ipLogged: false, alignedCmt: false })).toBe(52);
+  });
+});
+
+describe("detectAlignedComments", () => {
+  const done = (id, pad) => "推 " + id + " ".repeat(pad) + ": hi 08/26 12:00";
+  test("id 補空白到 12 格才接冒號 → 對齊推文板", () => {
+    expect(detectAlignedComments([done("someone", 5)])).toBe(true);
+  });
+  test("冒號緊接 id → 一般看板", () => {
+    expect(detectAlignedComments([done("someone", 0)])).toBe(false);
+  });
+  test("id 恰好 12 字分不出來、沒有推文列 → null", () => {
+    expect(detectAlignedComments([done("abcdefghijkl", 0)])).toBeNull();
+    expect(detectAlignedComments(["內文"])).toBeNull();
+    expect(detectAlignedComments(null)).toBeNull();
   });
 });
 

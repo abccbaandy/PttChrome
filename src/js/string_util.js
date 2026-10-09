@@ -202,6 +202,21 @@ export const COMMENT_TIME_RE = /\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/;
 const STATUS_ROW_RE =
   /  瀏覽 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  (?:目前顯示: 第|顯示範圍: \d+~\d+ 欄位,) 0*(\d+)~0*(\d+) 行/;
 
+// 同一列的兩種**沒有行號**的變體——一樣是文章 pager，只是 part2 拿不到：
+//
+//   override_msg  part2 整段換成警告（mf_display_footer `if (override_msg)` 分支）。
+//                 文章裡有 `ESC *s` 這類會依讀者展開的碼（mf_display_handle_esc_star →
+//                 PMORE_MSG_WARN_FAKEUSERINFO）或移位碼（PMORE_MSG_WARN_MOVECMD）時，
+//                 **每次**畫到那一頁都會印——不是罕見畫面，「\x1b*s 你好」就會觸發。
+//   oldstatusbar  使用者在 pmore 設定裡切到舊式狀態列：只印 "  瀏覽 P.%d(%d%%)  " 就 return。
+//
+// 認不出來的代價跟 part3 那段一樣：整列失配 → pageState 掉出 3 → 好讀累積頁被清空。
+// 回傳的 rowIndexStart/End 是 null、rowsUnknown 為 true；呼叫端要畫面簽章時一律走
+// statusSignature，不可自己拼 `S~E`（兩個 null 會讓每一頁簽章都相同 ⇒ 翻頁交易卡死）。
+const STATUS_ROW_OVERRIDE_RE =
+  /  瀏覽 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  ▲此頁內容(?:含移位碼|會依閱讀者不同)/;
+const STATUS_ROW_OLD_RE = /^  瀏覽 P\.(\d+)\( *(\d+)%\)  /;
+
 // 同一列 part3（HELP）反推 pmore 當下的 `currstat` ——「這個畫面按 s / # 有沒有用」。
 // mbbsd/more.c:102-112：pager 的 `s`(RET_SELECTBRD) 與 `#`(RET_SELECTAID) 都寫死
 //   if (!HasUserPerm(PERM_BASIC) || currstat != READING) break;
@@ -237,8 +252,51 @@ export function parseStatusRow(str) {
     };
   }
 
+  result = STATUS_ROW_OVERRIDE_RE.exec(str);
+  if (result) {
+    return {
+      pageIndex:     parseInt(result[1]),
+      pageTotal:     parseInt(result[2]),
+      pagePercent:   parseInt(result[3]),
+      rowIndexStart: null,
+      rowIndexEnd:   null,
+      rowsUnknown:   true
+    };
+  }
+
+  result = STATUS_ROW_OLD_RE.exec(str || '');
+  if (result) {
+    return {
+      pageIndex:     parseInt(result[1]),
+      pageTotal:     NaN,
+      pagePercent:   parseInt(result[2]),
+      rowIndexStart: null,
+      rowIndexEnd:   null,
+      rowsUnknown:   true
+    };
+  }
+
   return null;
 };
+
+// pmore 的 ASCII 動畫詢問列（pmore.c PMORE_MSG_MOVIE_DETECTED，畫在 b_lines 取代
+// 狀態列）。這張畫面**也是文章 pager**——開文的落地判斷要認它，否則等到逾時。
+// 但它停在 vkey()：除了 n／↑／←／q，任何鍵（含 PgDn、空白、Enter）都會開始播放
+// （pmore.c `if (w != 'n' && w != KEY_UP && w != KEY_LEFT && w != 'q')`），所以它
+// **刻意不算** parseStatusRow：好讀的自動翻頁只在有狀態列時送鍵，留給使用者回答。
+const MOVIE_PROMPT_TEXT = '這份文件是可播放的文字動畫，要開始播放嗎？';
+export function isMoviePromptRow(str) {
+  return String(str || '').indexOf(MOVIE_PROMPT_TEXT) >= 0;
+}
+
+// 這一頁的畫面簽章（翻頁交易的 ack、累積去重的鍵）。有行號就是 "S~E"；沒有行號的
+// 變體（rowsUnknown）退而用頁碼＋百分比——每次 PageDown 都會讓 dispe 前進，兩者
+// 至少一個會變；萬一兩個都沒變，最壞是那一頁的交易等到 watchdog 放棄，不會送重複鍵。
+export function statusSignature(status) {
+  if (!status) return null;
+  if (status.rowsUnknown) return 'p' + status.pageIndex + '@' + status.pagePercent + '%';
+  return status.rowIndexStart + '~' + status.rowIndexEnd;
+}
 
 // 選單畫面底部狀態列＝ MENU 指紋（term_buf.setPageState / classifyListScreen）。
 //
@@ -312,8 +370,10 @@ export function parseListRow(str) {
 //   - \u4e2d\u6bb5\u6536 "37;45"\uff08upstream \u5b57\u9762\uff09\u8207 "0;1;37;45"\uff08\u7dda\u4e0a pfterm \u7522\u7269\uff09\u5169\u7a2e
 //   - \u5c3e\u7aef ESC "[K"\uff08\u6e05\u5230\u884c\u5c3e\uff09\u53ea\u6709\u65b0\u8a0a\u606f\u6bd4\u524d\u4e00\u5247\u77ed\u6642\u624d\u6703\u9001\uff0c\u820a\u7248\u5f37\u5236\u8981\u6c42\u5b83
 //     \u2192 \u8a0a\u606f\u8b8a\u9577\u7684\u90a3\u4e00\u5247\u6574\u500b\u6f0f\u6293
+// \u767c\u9001\u8005\u6b04\u4e0d\u53ea\u662f ASCII \u5e33\u865f\uff1a\u81ea\u5df1\u7684\u5c0f\u5929\u4f7f\u56de\u7684\u6c34\u7403\uff0cmbbsd/wmsg.c\uff08WATERBALL_ANSWER\uff09\u628a
+// from_id \u63db\u6210 angel_load_my_fullnick \u7684\u300c<\u66b1\u7a31>\u5c0f\u5929\u4f7f\u300d\uff08\u53ef\u4ee5\u662f\u4e2d\u6587\uff09\u21d2 \u4e0d\u80fd\u7528 \w\u3002
 const WATERBALL_RE =
-  /\x1b\[1;3[37];46m\u2605(\w+)\x1b\[(?:0;1;)?37;45m (.+?) \x1b\[m/;
+  /\x1b\[1;3[37];46m\u2605([^\x1b\s]+)\x1b\[(?:0;1;)?37;45m (.+?) \x1b\[m/;
 // \u5ee3\u64ad\uff0f\u7cfb\u7d71\u8a0a\u606f\uff1adoupdate \u7684 rel_move \u5148\u628a\u6e38\u6a19\u5b9a\u4f4d\u5230\u5e95\u5217\u518d\u4e0a\u8272\u3002
 const BROADCAST_RE =
   /\x1b\[24;\d{2}H\x1b\[1;37;45m([^\x1b]+)(?:\x1b\[24;18H)?\x1b\[m/;

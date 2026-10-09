@@ -44,7 +44,7 @@
 
 import { u2b, ansiHalfColorConv } from './string_util';
 import { PUSH_TYPE_KEY, pushMaxBytes, splitPushSpans } from './long_push';
-import { classifyPushScreen, detectIpLogged } from './push_screen';
+import { classifyPushScreen, detectIpLogged, detectAlignedComments } from './push_screen';
 import {
   articleAnchor,
   captureCursorAnchor,
@@ -1072,10 +1072,13 @@ LongPushSession.prototype = {
     if (fieldWidth) this._fieldWidth = fieldWidth;
     const ip = detectIpLogged(rowTexts || null);
     if (ip !== null) this._ipLogged = ip;
+    const aligned = detectAlignedComments(rowTexts || null);
+    if (aligned !== null) this._alignedCmt = aligned;
     this._maxBytes = pushMaxBytes({
       fieldWidth: this._fieldWidth,
       userId: this._userId,
-      ipLogged: this._ipLogged
+      ipLogged: this._ipLogged,
+      alignedCmt: this._alignedCmt
     });
   },
 

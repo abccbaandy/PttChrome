@@ -10,7 +10,7 @@ import { calcTermSize, termLayoutOffsets } from './term_size';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
-import { u2b, parseStatusRow, normalizePasteText } from './string_util';
+import { u2b, parseStatusRow, statusSignature, normalizePasteText } from './string_util';
 import { rowToText, parseArticleHeader, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
@@ -2647,7 +2647,8 @@ TermView.prototype = {
       hasAcc: this.buf.pageLines.length > 0,
       headerChanged: headerChanged,
       transition: transition,
-      healInFlight: healing
+      healInFlight: healing,
+      rowsUnknown: !!(result && result.rowsUnknown)
     });
     // 反向讀取（End）期間，forward 的 gap／seekBack／append 判定都不適用（往上讀的
     // 每一頁在 forward 眼裡都是 'backward'）。只有 rebuild（換文章）與 P6 的 skip
@@ -2721,10 +2722,19 @@ TermView.prototype = {
       this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(beginIndex).map(cloneRow));
       // Advance the tracked article-line position to this screen's end.
       this._accEndRow = result.rowIndexEnd;
-      this._lastAccumulatedSig = result.rowIndexStart + '~' + result.rowIndexEnd;
+      this._lastAccumulatedSig = statusSignature(result);
       // The gap seek landed and its rows are spliced in — drop the gate.
       if (healing) this.buf.easyReadingHealInFlight = false;
       // PTT's pointer is back on the accumulated tail: any seekBack is settled.
+      this.buf.easyReadingSeekBack = null;
+    } else if (branch === 'appendByContent') {
+      // 狀態列沒有行號（pmore override_msg／oldstatusbar，見 parseStatusRow）：只能靠
+      // 內容重疊去重。行號追蹤在這一頁斷開（_accEndRow = null），下一張有行號的頁由
+      // classifyPageTransition 判 'restart' → append，resolvePageOverlap 走內容，
+      // 再把 _accEndRow 接回它的 E。簽章仍要記，否則 settle 的補畫會一直重放這一幀。
+      this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(kContent).map(cloneRow));
+      this._accEndRow = null;
+      this._lastAccumulatedSig = statusSignature(result);
       this.buf.easyReadingSeekBack = null;
     } else if (branch === 'rebuild') {
       // First page of a (new) article: restart the accumulated page as this whole
@@ -2732,7 +2742,10 @@ TermView.prototype = {
       // Consume the sticky flag only on a CONFIRMED first article page; a stale
       // mid-article frame that lands here (prevPageState!=3) must not eat it, or
       // the race the flag defends against re-opens.
-      if (result && result.rowIndexStart === 1)
+      // 沒有行號的頁只在 decideAccumulateBranch 的 pendingReset 規則下才會以
+      // prevPageState 3 走到這裡（零重疊＝新文章），那就是確認過的換文章。
+      if (result && (result.rowIndexStart === 1 ||
+                     (result.rowsUnknown && this.buf.prevPageState == 3)))
         this.buf.easyReadingPendingReset = false;
       // 同 redraw 的清空點：只設欄位，由隨後的 render 同步給 ScreenController。
       this._selectedPusher = null;
@@ -2744,7 +2757,7 @@ TermView.prototype = {
       // transient non-article frame — resolvePageOverlap then falls back to content).
       this._accEndRow = result ? result.rowIndexEnd : null;
       this._lastAccumulatedSig =
-        result ? (result.rowIndexStart + '~' + result.rowIndexEnd) : null;
+        statusSignature(result);
     }
     // branch === 'skip': transient half-painted frame while continuing — leave the
     // accumulated page untouched (footer mirror below still guards itself).

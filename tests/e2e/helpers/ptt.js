@@ -654,6 +654,9 @@ function listArticleNumbers(rows, opts = {}) {
     // 「爆」（≥MAX_RECOMMENDS）與 X/XX（負推）一律不要：兩者都是推文數以百計的長文，
     // 好讀累積跑很久。min=0（不挑推文數）時尤其必要 —— 否則它們會混在候選裡。
     if (/爆|X/i.test(raw)) continue;
+    // 鎖文（推文欄 "--"，pttbbs bbs.c#readdoent）打不開：read_post 回 READ_SKIP，
+    // Enter 畫面不動。min=0 時 "--" 解不出數字會被當成「推文數不明」收進候選。
+    if (raw === '--') continue;
     const push = parseInt(raw, 10);
     const hasPush = Number.isFinite(push);
     if (min > 0 && (!hasPush || push < min)) continue;

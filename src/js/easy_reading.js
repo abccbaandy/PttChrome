@@ -1,4 +1,4 @@
-import { parseStatusRow } from './string_util';
+import { parseStatusRow, statusSignature } from './string_util';
 import { readValuesWithDefault } from './pref_storage';
 import { ACT_EXIT_ARTICLE } from './mouse_regions';
 import { TRACE } from './util';
@@ -697,7 +697,7 @@ EasyReading.prototype._applyRowState = function(rowState) {
 // null off a status row. Used to dedup the per-frame send against the settle recovery.
 EasyReading.prototype._currentPageSignature = function() {
   const s = this._currentPageStatus();
-  return s ? (s.rowIndexStart + '~' + s.rowIndexEnd) : null;
+  return statusSignature(s);
 };
 
 // parseStatusRow of the CURRENT bottom row (null off an article page).
@@ -825,7 +825,7 @@ EasyReading.prototype._maybeSendPageDown = function(keys, recovery) {
               this._termBuf.cur_x === this._termBuf.cols - 1,
     isStatusRow: !!status,
     pagePercent: status ? status.pagePercent : null,
-    sig: status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null,
+    sig: statusSignature(status),
     inFlightSig: this._inFlightSig,
     retries: this._pageDownRetries,
     recovery: !!recovery,
@@ -843,7 +843,7 @@ EasyReading.prototype._maybeSendPageDown = function(keys, recovery) {
     this._core.debugRecorder?.log('easyReading.pageDown', {
       action: d.action,
       recovery: !!recovery,
-      sig: status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null,
+      sig: statusSignature(status),
       // state BEFORE the decision is applied — that is what explains the action
       wasInFlightSig: this._inFlightSig,
       wasRetries: this._pageDownRetries,
@@ -878,7 +878,7 @@ EasyReading.prototype._maybeSendPageDown = function(keys, recovery) {
         action: 'sendFailed',
         decided: d.action,
         recovery: !!recovery,
-        sig: status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null,
+        sig: statusSignature(status),
         wasInFlightSig: this._inFlightSig,
         wasRetries: this._pageDownRetries
       });
@@ -933,7 +933,7 @@ EasyReading.prototype._kickPageDown = function() {
   if (!status || status.pagePercent >= 100)
     return;
   this._core.debugRecorder?.log('easyReading.pageDownKick', {
-    sig: status.rowIndexStart + '~' + status.rowIndexEnd,
+    sig: statusSignature(status),
     inFlightSig: this._inFlightSig,
     retries: this._pageDownRetries
   });
@@ -969,7 +969,7 @@ EasyReading.prototype._requestReverse = function() {
   this._termBuf.easyReadingSeekBack = null;
   this._core.debugRecorder?.log('easyReading.reverse', {
     action: 'request',
-    sig: status.rowIndexStart + '~' + status.rowIndexEnd,
+    sig: statusSignature(status),
     headEndLine: view._accEndRow,
     inFlightSig: this._inFlightSig
   });
@@ -988,7 +988,7 @@ EasyReading.prototype._maybeSendReverse = function(recovery) {
   const view = this._view;
   const vr = view ? view._reverse : null;
   const status = this._currentPageStatus();
-  const sig = status ? (status.rowIndexStart + '~' + status.rowIndexEnd) : null;
+  const sig = statusSignature(status);
   const sinceSentMs = this._inFlightSentAt == null
     ? null : Date.now() - this._inFlightSentAt;
   const tailStart = vr ? vr.tailStartLine : null;
@@ -1881,7 +1881,7 @@ EasyReading.prototype.tryReenterFromNative = function(e) {
 // otherwise issue a PageDown from the middle of the post — arming the rewind as the
 // outstanding transaction first is what keeps exactly one key in flight (P4).
 EasyReading.prototype.reenterFromTop = function(status) {
-  const sig = status.rowIndexStart + '~' + status.rowIndexEnd;
+  const sig = statusSignature(status);
   this.enterEasyReading();
   // pfterm diffs the screen and parks the cursor with fterm_rawmove_opt, so a Home that
   // changes nothing is answered with ZERO bytes — an unanswerable transaction. Only

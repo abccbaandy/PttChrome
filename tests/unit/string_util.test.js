@@ -17,6 +17,8 @@ import {
   wrapText,
   normalizeCopyText,
   parseStatusRow,
+  statusSignature,
+  isMoviePromptRow,
   parsePagerFooterContext,
   parseListRow,
   parseWaterball,
@@ -294,6 +296,83 @@ describe("parseStatusRow（pmore footer, pmore.c#mf_display_footer）", () => {
     expect(
       parseStatusRow(" 文章選讀 (y)回應(X)推文(^X)轉錄 (b)進板畫面  ")
     ).toBeNull(); // 看板列表 feeter，不是文章
+  });
+
+  // override_msg 分支：part2 整段換成警告（pmore.c#mf_display_footer `if (override_msg)`）。
+  // 字串取自 pmore.c 的 PMORE_MSG_WARN_FAKEUSERINFO（ESC *s 這類依讀者展開的碼，
+  // mf_display_handle_esc_star）與 PMORE_MSG_WARN_MOVECMD（移位碼）。修前這兩種頁
+  // 直接失配 → pageState 掉出 3 → 好讀累積頁被清空。
+  test("override_msg：依讀者展開碼警告 → 仍是文章頁，行號未知", () => {
+    const row =
+      "  瀏覽 第 2/5 頁 ( 31%)  ▲此頁內容會依閱讀者不同,原文未必有您的資料 " +
+      "(h)說明 (←/q)離開 ";
+    expect(parseStatusRow(row)).toEqual({
+      pageIndex: 2,
+      pageTotal: 5,
+      pagePercent: 31,
+      rowIndexStart: null,
+      rowIndexEnd: null,
+      rowsUnknown: true
+    });
+  });
+
+  test("override_msg：移位碼警告（總頁未知）", () => {
+    const row = "  瀏覽 第 1 頁 (  7%)  ▲此頁內容含移位碼,可能會顯示偽造的系統訊息 ";
+    const r = parseStatusRow(row);
+    expect(r).not.toBeNull();
+    expect(r.pageIndex).toBe(1);
+    expect(r.pagePercent).toBe(7);
+    expect(r.rowsUnknown).toBe(true);
+    expect(r.rowIndexStart).toBeNull();
+  });
+
+  // bpref.oldstatusbar：pmore 設定切到舊式狀態列，只印 "  瀏覽 P.%d(%d%%)  " 就 return。
+  test("oldstatusbar：舊式狀態列 → 仍是文章頁，行號未知", () => {
+    const row = "  瀏覽 P.3( 45%)    (h)求助  →↓[PgUp][PgDn][Home][End]游標移動  ←[q]結束   ";
+    expect(parseStatusRow(row)).toMatchObject({
+      pageIndex: 3,
+      pagePercent: 45,
+      rowIndexStart: null,
+      rowIndexEnd: null,
+      rowsUnknown: true
+    });
+  });
+});
+
+// pmore.c PMORE_MSG_MOVIE_DETECTED：文章 pager，但不是狀態列——它停在 vkey()，
+// 除 n／↑／←／q 之外任何鍵都會開始播放，好讀的自動翻頁不可以把它當狀態列。
+describe("isMoviePromptRow（ASCII 動畫詢問列）", () => {
+  const row = " ★ 這份文件是可播放的文字動畫，要開始播放嗎？ [Y/n]                         ";
+  test("認得出來", () => {
+    expect(isMoviePromptRow(row)).toBe(true);
+  });
+  test("不算狀態列（不得觸發自動翻頁）", () => {
+    expect(parseStatusRow(row)).toBeNull();
+  });
+  test("其他列 → false", () => {
+    expect(isMoviePromptRow("  瀏覽 第 1/5 頁 (  9%)  目前顯示: 第 01~20 行  ")).toBe(false);
+    expect(isMoviePromptRow(" >>> 動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")).toBe(false);
+    expect(isMoviePromptRow(null)).toBe(false);
+  });
+});
+
+describe("statusSignature（翻頁交易的 ack／累積去重的鍵）", () => {
+  test("有行號 → S~E", () => {
+    expect(
+      statusSignature(parseStatusRow("  瀏覽 第 1/5 頁 (  9%)  目前顯示: 第 01~20 行  "))
+    ).toBe("1~20");
+  });
+
+  test("沒有行號的兩頁簽章不得相同（否則翻頁交易永遠等不到 ack）", () => {
+    const a = parseStatusRow("  瀏覽 第 2/5 頁 ( 31%)  ▲此頁內容含移位碼,可能會顯示偽造的系統訊息 ");
+    const b = parseStatusRow("  瀏覽 第 3/5 頁 ( 52%)  ▲此頁內容含移位碼,可能會顯示偽造的系統訊息 ");
+    expect(statusSignature(a)).not.toBeNull();
+    expect(statusSignature(a)).not.toBe(statusSignature(b));
+    expect(statusSignature(a)).not.toContain("null");
+  });
+
+  test("不是狀態列 → null", () => {
+    expect(statusSignature(null)).toBeNull();
   });
 });
 
@@ -576,6 +655,13 @@ describe("parseWaterball（show_call_in / outmsg）", () => {
   test("PLAY_ANGEL 小天使變體（[1;37;46m 開頭）", () => {
     const wire = "\x1b[1;37;46m★angelid\x1b[37;45m 神諭 \x1b[m";
     expect(parseWaterball(wire)).toEqual({ userId: "angelid", message: "神諭" });
+  });
+
+  // 自己的小天使回水球：mbbsd/wmsg.c 的 WATERBALL_ANSWER 分支把 from_id 換成
+  // angel.c#angel_load_my_fullnick 的「<暱稱>小天使」，發送者欄是中文。
+  test("小天使回的水球（發送者是「<暱稱>小天使」）", () => {
+    const wire = "\x1b[1;33;46m★喵喵小天使\x1b[37;45m 收到囉 \x1b[m";
+    expect(parseWaterball(wire)).toEqual({ userId: "喵喵小天使", message: "收到囉" });
   });
 
   // 廣播/系統訊息 fallback：doupdate 的 rel_move 先定位到第 24 列再上色。
