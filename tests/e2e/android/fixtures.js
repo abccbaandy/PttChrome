@@ -83,6 +83,10 @@ const test = base.extend({
           'am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS'
       );
 
+      // AVD 常帶 hw.keyboard=yes（有實體鍵盤時 Android 預設不彈軟鍵盤）⇒ 軟鍵盤相關
+      // 測試在那種 AVD 上永遠等不到鍵盤。強制「有實體鍵盤也顯示軟鍵盤」，跟真手機一致。
+      await device.shell('settings put secure show_ime_with_hard_keyboard 1');
+
       const bridge = await startBridge();
       adb(serial, ['reverse', `tcp:${PORT}`, `tcp:${bridge.address().port}`]);
       try {

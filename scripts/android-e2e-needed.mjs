@@ -14,8 +14,10 @@ export const ANDROID_E2E_GLOBS = [
   // 手機版面判斷／底部工具列（選取模式開關在工具列的「更多」裡）
   "src/js/mobile_layout.js",
   "src/components/MobileToolbar/**",
-  // -webkit-touch-callout、終端機祖先的 user-select 規則
+  // -webkit-touch-callout、終端機祖先的 user-select 規則、overscroll-behavior（下拉重整）
   "src/css/main.css",
+  // 系統返回鍵 → ←（history sentinel）
+  "src/js/history_back_guard.js",
   // 這套測試自己的設施
   "tests/e2e/android/**",
   "scripts/run-android-e2e.mjs",
