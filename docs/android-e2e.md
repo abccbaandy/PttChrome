@@ -5,13 +5,17 @@
 - `mobile_input`：真 tap 工具列不彈鍵盤、⌨ 叫出軟鍵盤後工具列／終端機底列在鍵盤上方、鍵盤開著按返回只收鍵盤、
   系統返回鍵 → sentinel 接住並交給送鍵出口、補回 sentinel（連按三次、每次隔開超過 `DOUBLE_BACK_MS`
   以免觸發「送不出 ← 時連按兩次離站」的逃生門，不離站）。
+- `list_card_blacklist`：真長按文章列表卡片的序號・日期／作者／標題三段，都要同時給作者與標題黑名單
+  （整張卡片＝同一組，`docs/mobile.md`）。列表 cassette 是 24 列 ⇒ 測試內 `wm size 1080x1400` 縮螢幕高，
+  讓手機版面 rows 夾到下限 24（觸控座標仍 1:1，不像 setDeviceMetricsOverride 會偏），`finally` 裡 `wm size reset`。
 - 試過但沒收：「下拉不觸發 Chrome 重新整理」——拿掉 overscroll-behavior 的對照組在模擬器上也拉不出重整
   （body `overflow:hidden`），否定斷言證明不了什麼。
 - `apk`：debug APK（WebView 殼）——返回鍵退到底只丟背景不斷線、疊了 sentinel 交給網頁 guard；文章網址交給
   外部瀏覽器、BBS 畫面留著；軟鍵盤疊在 WebView 上不縮、原生 `pttandroid:ime` 回報高度、工具列浮在鍵盤上、
   返回只收鍵盤。APK 以 dev server 模式載 host 的 dev server（fixture 用 `run-as` 寫 `shared_prefs`），
-  PTT 連線一樣離線重放（stub 也攔 APK 本機 proxy 的 `/bbs/<token>`）。本機要先
-  `cd android && ./gradlew assembleDebug`（或設 `ANDROID_E2E_APK`），沒有 APK 就略過；CI 缺 APK＝exit 2。
+  PTT 連線一樣離線重放（stub 也攔 APK 本機 proxy 的 `/bbs/<token>`）。執行器每輪開機前先
+  `gradlew assembleDebug`（增量，沒改動幾秒；編不過＝exit 2）⇒ 不會拿 build 目錄裡的舊 APK 測新 code。
+  `ANDROID_E2E_APK` 已設（CI）或 `--no-build` 時不建；沒有 APK 就略過，CI 缺 APK＝exit 2。
 - 未涵蓋：密碼管理員／Google 登入 bridge（模擬器上沒有 Google 帳號與已存密碼）、檔案選擇器。
 
 ## 檔案
@@ -20,7 +24,7 @@
 |---|---|
 | `tests/e2e/android/android_env.js` | 純函式：選模擬器、CSS px→device px、adb 輸出解析、SDK 工具定位 |
 | `tests/e2e/android/fixtures.js` | worker：選機→OS 斷網→清 Chrome→IPv4 轉送＋adb reverse、裝 debug APK；test：`launchBrowser` 覆寫 `page`、`apk`（清 App→dev server 模式→連 WebView）；失敗存整個螢幕 |
-| `tests/e2e/android/screen.js` | spec 共用：強制手機版面開畫面、OS 層真 tap（含落點自檢）／keyevent、收送出的 bytes、軟鍵盤蓋住的高度 |
+| `tests/e2e/android/screen.js` | spec 共用：強制手機版面開畫面（`openScreen`／列表卡片 `openListCards`）、OS 層真 tap（含落點自檢）／keyevent、收送出的 bytes、軟鍵盤蓋住的高度 |
 | `tests/e2e/android/*.android.spec.js` | spec（project `android`，`playwright.config.js`） |
 | `scripts/run-android-e2e.mjs` | `yarn test:e2e:android`：找／建 AVD、開機、跑、分類 exit 0/1/2、自己開的自己關 |
 | `scripts/android-e2e-needed.mjs` | `--if-changed[=base]` 的檔案名單（預設 base `origin/dev`） |
@@ -30,7 +34,7 @@
 ## 跑法
 
 - `yarn test:e2e:android`：手動或有改動才跑。`--if-changed` 沒命中名單⇒印「略過」exit 0。
-  `--keep-emulator` 留著模擬器（下一輪省開機）；`--no-boot` 只用已在跑的（CI）。其餘參數透傳 playwright。
+  `--keep-emulator` 留著模擬器（下一輪省開機）；`--no-boot` 只用已在跑的（CI）；`--no-build` 跳過建 APK。其餘參數透傳 playwright。
 - exit：0 綠／1 真失敗／2 環境（沒 adb、沒 AVD、開機逾時、失敗全帶 `[android-env]`）。**2 不可當綠**；
   環境錯混到任何一條真斷言紅 ⇒ 1。
 - 已有在跑的模擬器就用它；沒有就用 AVD `pttchrome_e2e`（`pixel_6`＋`system-images;android-34;google_apis;x86_64`），沒 AVD 就建。

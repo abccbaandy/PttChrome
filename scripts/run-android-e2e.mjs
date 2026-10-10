@@ -1,14 +1,18 @@
 // Android 模擬器 e2e 的執行器（`yarn test:e2e:android`）。設計見 docs/android-e2e.md。
 //
 //   1. （--if-changed[=<base>]）沒改到相關檔案 ⇒ 印「略過」exit 0（名單：android-e2e-needed.mjs）
-//   2. 找模擬器：已經有一台在跑就用它；沒有就用 AVD `pttchrome_e2e`（原生 Pixel 6）開一台，
+//   2. 建 debug APK（`android/gradlew assembleDebug`，增量建置，沒改動只要幾秒）：apk spec
+//      裝的是 android_env.apkPath 那份檔案，不重建就會拿舊 APK 測新 code。env ANDROID_E2E_APK
+//      已指定（CI 自己 build 過）或 --no-build ⇒ 跳過。
+//   3. 找模擬器：已經有一台在跑就用它；沒有就用 AVD `pttchrome_e2e`（原生 Pixel 6）開一台，
 //      沒有 AVD 就建
-//   3. playwright test --project=android，依 JSON 報告分類結論
-//   4. 自己開的模擬器自己關（--keep-emulator 留著，下一輪省開機時間）
+//   4. playwright test --project=android，依 JSON 報告分類結論
+//   5. 自己開的模擬器自己關（--keep-emulator 留著，下一輪省開機時間）
 //
 // exit code（刻意分三種，比照 scripts/run-adverse-e2e.mjs）：
 //   0 全綠／略過｜1 有真失敗｜2 環境沒準備好、未取得有效結論（不可以當綠）
 // --no-boot：只用已經在跑的模擬器（CI：emulator-runner 已經開好）。
+// --no-build：不建 APK，直接用現有的那份（只在確定 android/ 沒改動、要省幾秒時用）。
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -29,15 +33,28 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---- 純函式（unit 守護：tests/unit/android_e2e.test.js）----
 
 export function parseArgs(argv) {
-  const opts = { ifChanged: null, keepEmulator: false, boot: true, passthrough: [] };
+  const opts = { ifChanged: null, keepEmulator: false, boot: true, build: true, passthrough: [] };
   for (const arg of argv) {
     const m = /^--if-changed(?:=(.+))?$/.exec(arg);
     if (m) opts.ifChanged = m[1] || "origin/dev";
     else if (arg === "--keep-emulator") opts.keepEmulator = true;
     else if (arg === "--no-boot") opts.boot = false;
+    else if (arg === "--no-build") opts.build = false;
     else opts.passthrough.push(arg);
   }
   return opts;
+}
+
+// 這輪要不要建 APK、怎麼建。null ＝ 不建。
+// Windows 的 .bat 只能經 shell 執行：給**絕對路徑**（cmd.exe 不保證在 cwd 找執行檔，實測
+// 'gradlew.bat' 不是內部或外部命令）、整條組成一個字串（args 陣列＋shell 會觸發 DEP0190）。
+export function apkBuildPlan(opts, processEnv = process.env, platform = process.platform) {
+  if (!opts.build || processEnv.ANDROID_E2E_APK) return null;
+  const cwd = path.join(ROOT, "android");
+  if (platform === "win32") {
+    return { cmd: `"${path.join(cwd, "gradlew.bat")}" assembleDebug`, args: [], cwd, shell: true };
+  }
+  return { cmd: path.join(cwd, "gradlew"), args: ["assembleDebug"], cwd, shell: false };
 }
 
 // playwright JSON 報告 → 'pass' | 'fail' | 'env'。
@@ -179,6 +196,20 @@ async function main() {
       return 0;
     }
     console.log(r.reason ? `無法判斷改動（${r.reason}）⇒ 照跑` : `命中：${r.matched.join(", ")}`);
+  }
+
+  // 先建 APK 再開機：編不過就不必白開一台模擬器。
+  const build = apkBuildPlan(opts);
+  if (build) {
+    console.log("建置 debug APK（gradlew assembleDebug）…");
+    const r = spawnSync(build.cmd, build.args, { cwd: build.cwd, shell: build.shell, stdio: "inherit" });
+    if (r.status !== 0) {
+      console.error(
+        `[環境] assembleDebug 失敗（exit ${r.status}${r.error ? `，${r.error.message}` : ""}）：` +
+          "android/ 編不過或 JDK／SDK 沒設好，見 docs/android-app.md。未取得測試結論。"
+      );
+      return 2;
+    }
   }
 
   const before = adbSerials();

@@ -10,7 +10,7 @@ import path from "path";
 import config from "../../playwright.config.js";
 import androidEnv from "../e2e/android/android_env.js";
 import { ANDROID_E2E_GLOBS, globToRegExp, matchAndroidE2e } from "../../scripts/android-e2e-needed.mjs";
-import { classifyReport, parseArgs } from "../../scripts/run-android-e2e.mjs";
+import { apkBuildPlan, classifyReport, parseArgs } from "../../scripts/run-android-e2e.mjs";
 
 const { ENV_ERROR_TAG, pickEmulatorSerial, toDevicePoint, parseAdbDevices } = androidEnv;
 const ROOT = path.resolve(__dirname, "../..");
@@ -134,6 +134,33 @@ describe("parseArgs", () => {
       boot: false,
       keepEmulator: true,
     });
+  });
+  test("--no-build；預設要建", () => {
+    expect(parseArgs([]).build).toBe(true);
+    expect(parseArgs(["--no-build"])).toMatchObject({ build: false, passthrough: [] });
+  });
+});
+
+// 回歸：本機原本不建 APK，直接裝 build 輸出目錄裡的舊檔 ⇒ apk spec 測的是舊 code。
+describe("apkBuildPlan：每輪先建 APK", () => {
+  test("本機預設要建；Windows 走 shell＋絕對路徑的 gradlew.bat（整條一個字串）", () => {
+    const android = path.join(ROOT, "android");
+    expect(apkBuildPlan(parseArgs([]), {}, "win32")).toEqual({
+      cmd: `"${path.join(android, "gradlew.bat")}" assembleDebug`,
+      args: [],
+      cwd: android,
+      shell: true,
+    });
+    expect(apkBuildPlan(parseArgs([]), {}, "linux")).toEqual({
+      cmd: path.join(android, "gradlew"),
+      args: ["assembleDebug"],
+      cwd: android,
+      shell: false,
+    });
+  });
+  test("CI 已指定 ANDROID_E2E_APK 或 --no-build ⇒ 不建", () => {
+    expect(apkBuildPlan(parseArgs([]), { ANDROID_E2E_APK: "/x/app-debug.apk" }, "linux")).toBeNull();
+    expect(apkBuildPlan(parseArgs(["--no-build"]), {}, "win32")).toBeNull();
   });
 });
 
