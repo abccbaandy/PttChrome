@@ -57,7 +57,7 @@ const taskStack = (device) =>
     .then((b) =>
       String(b)
         .split('\n')
-        .filter((l) => /^\s*\* Task\{|Hist\s+#|ResumedActivity/.test(l))
+        .filter((l) => /^\s*\* Task\{/.test(l) || /Hist\s+#|ResumedActivity/.test(l))
         .join('\n')
     )
     .then(async (s) => {
