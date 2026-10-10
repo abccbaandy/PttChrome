@@ -263,6 +263,9 @@ export const DEFAULT_PREFS = {
   enableInputHelper: false,
   enableLiveArticleHelper: false,
 
+  // 右鍵／長按選單開著時，把選單作用的那篇文章框起來（js/menu_target_highlight.js）。
+  highlightMenuTarget: true,
+
   // 長推文一鍵發送（右鍵選單→輸入一大段話，自動依 PTT 單則上限分段依序推出）。
   // 預設開：不點就不會作用，而且 PTT 本來就沒有「一次推一長串」的辦法。
   enableLongPush: true,

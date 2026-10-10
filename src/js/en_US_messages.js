@@ -229,6 +229,9 @@ export const en_US = {
   "options_contextMenu": {
     "message": "Context menu"
   },
+  "options_highlightMenuTarget": {
+    "message": "Outline the article you right-click / long-press"
+  },
   "options_enableInputHelper": {
     "message": "Show \"Input helper\" (ANSI colors, symbols, emoticons)"
   },

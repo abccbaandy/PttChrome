@@ -23,6 +23,14 @@ const menu = (page) => page.locator('.DropdownMenu').first();
 const menuItem = (page, text) =>
   menu(page).getByRole('menuitem').filter({ hasText: text });
 
+// 被右鍵選單標出來（外框）的列。
+const markedTitles = (page) =>
+  page.evaluate(() =>
+    Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"]'))
+      .filter((r) => getComputedStyle(r).boxShadow.includes('168, 199, 250'))
+      .map((r) => r.getAttribute('data-list-title'))
+  );
+
 async function dumpListState(page) {
   return page.evaluate(() => {
     const app = window.__app;
@@ -121,8 +129,12 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
       const item = menuItem(page, itemLabel);
       await expect(item).toBeVisible();
 
+      // 選單開著時標出作用的那一列（js/menu_target_highlight.js），其他列不標。
+      await expect.poll(() => markedTitles(page)).toEqual([t.title]);
+
       const before = (await dumpListState(page)).sent.length;
       await item.click();
+      await expect.poll(() => markedTitles(page)).toEqual([]);
 
       // 第一步：把 server 真游標搬到目標列（絕不直接送 v）。
       await page.waitForFunction(
@@ -180,5 +192,20 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
     await expect(menuItem(page, itemLabel)).toHaveCount(0);
     const settings = await label(page, 'cmenu_settings');
     await expect(menu(page).getByText(settings, { exact: true })).toBeVisible();
+  });
+
+  test('關掉「框起選中的文章」→ 右鍵文章列不標', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    await ptt.applyPrefs(page, { highlightMenuTarget: false });
+
+    const num = (mark.steps.find((s) => s.on === 'jump') || {}).num;
+    const t = await targetRow(page, num);
+    expect(t).not.toBeNull();
+    await page.mouse.click(t.x, t.y, { button: 'right' });
+
+    const item = menuItem(page, await label(page, 'cmenu_markReadUnread'));
+    await expect(item).toBeVisible();
+    expect(await markedTitles(page)).toEqual([]);
   });
 });

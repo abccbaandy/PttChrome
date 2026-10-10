@@ -89,3 +89,16 @@ test("開著＝modal（具名來源），收起即撤銷", async () => {
   );
   expect(sources.size).toBe(0);
 });
+
+// 長按 sheet 項目（「前已讀後未讀」…）不可叫出原生選字框；搜尋 sheet 的輸入框照常可選。
+test("sheet 項目不可選字，輸入框例外", async () => {
+  setup();
+  await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+  const item = document.querySelector('[data-cmenu="markReadUnread"]');
+  expect(getComputedStyle(item).userSelect).toBe("none");
+  const sheet = document.querySelector('[data-sheet="context"]');
+  const input = document.createElement("input");
+  sheet.appendChild(input);
+  expect(getComputedStyle(input).userSelect).not.toBe("none");
+  input.remove();
+});

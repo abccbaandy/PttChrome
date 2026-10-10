@@ -229,6 +229,9 @@
   "options_contextMenu": {
     "message": "右鍵選單"
   },
+  "options_highlightMenuTarget": {
+    "message": "右鍵／長按文章時，把選中的文章框起來"
+  },
   "options_enableInputHelper": {
     "message": "顯示「輸入小幫手」（打 ANSI 色碼／符號／表情）"
   },

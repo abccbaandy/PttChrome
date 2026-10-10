@@ -53,6 +53,10 @@ import {
   submitSearch,
 } from "../../js/article_search";
 import { rememberSearch } from "../../js/search_history";
+import {
+  menuTargetFromElement,
+  setMenuTargetHighlight,
+} from "../../js/menu_target_highlight";
 
 function noop() {}
 
@@ -136,6 +140,9 @@ const initialState = {
   // 列表好讀模式下，右鍵那一列可不可以做「前已讀後未讀」（{ num } / null）。
   // 判定全在 listSession.markReadTargetAtRow（狀態、置底文、header 列）。
   markReadTarget: null,
+  // 選單作用的那篇文章（列表列／手機卡片；js/menu_target_highlight.js）。選單開著
+  // 時在畫面上標出來，避免對錯的文章操作。null ＝ 不是在文章列上開的。
+  menuTarget: null,
   // 右鍵當下是不是在文章畫面（決定「複製本篇連結」出不出現）。
   articleLinkEnabled: false,
   // Quick search items shown for the current selection (already filtered by the
@@ -446,6 +453,10 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistAuthorExists,
         blacklistTitleTarget,
         markReadTarget,
+        menuTarget:
+          normalEnabled && prefs.highlightMenuTarget
+            ? menuTargetFromElement(target)
+            : null,
         quickSearchItems,
         quickSearchQuery,
         // 「複製本篇連結」只在文章畫面有意義（要按 Q 問文章資訊框）。pageState 3
@@ -491,11 +502,21 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistAuthorExists: false,
         blacklistTitleTarget: null,
         markReadTarget: null,
+        menuTarget: null,
         quickSearchItems: [],
         quickSearchQuery: "",
       });
     }
   }, [pttchrome, update]);
+
+  // 選中文章的標示跟著 render state 走（同 modalOpen 的推導手法）：關選單的路徑
+  // 不只一條（onHide、onMenuSelect、各 modal 入口的 update(initialState)），由
+  // state 推導就不會漏清。
+  const menuTargetShown = state.open ? state.menuTarget : null;
+  useEffect(() => {
+    setMenuTargetHighlight(menuTargetShown);
+    return () => setMenuTargetHighlight(null);
+  }, [menuTargetShown]);
 
   const onMenuSelect = useCallback(
     (eventKey, event) => {

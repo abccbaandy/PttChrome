@@ -288,8 +288,17 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     const item = items.filter({ hasText: addAuthor });
     await expect(item).toBeVisible();
     await expect(item).toContainText(author);
+    // sheet 開著時標出長按的那張卡片（js/menu_target_highlight.js），收起就消失。
+    const markedCards = () =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll('#mainContainer .listCard'))
+          .filter((c) => getComputedStyle(c).boxShadow.includes('168, 199, 250'))
+          .map((c) => c.getAttribute('data-list-author'))
+      );
+    await expect.poll(markedCards).toEqual([author]);
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
+    await expect.poll(markedCards).toEqual([]);
 
     await longPress('.listCardTitleText');
     await expect(items.filter({ hasText: await label('cmenu_addTitleBlacklist') })).toBeVisible();

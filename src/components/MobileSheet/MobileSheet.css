@@ -37,6 +37,20 @@
   font-family: system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
   transition: transform 120ms ease-out;
+  /* 選單不是內容：長按項目不可以叫出原生選字框（實錄：長按「前已讀後未讀」）。
+     sheet 由 Drawer portal 到 body，不是終端機祖先 ⇒ 不受 main.css issue #22 限制。
+     守護 tests/unit/context_sheet.test.jsx。 */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 搜尋 sheet 的輸入框要照常選字／貼上。 */
+.mobileSheet input,
+.mobileSheet textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /* 拖曳把手：只有這一塊接手勢（touch-action: none ⇒ 不被瀏覽器拿去捲動）。 */

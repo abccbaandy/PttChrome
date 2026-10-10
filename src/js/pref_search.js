@@ -126,6 +126,7 @@ export const PREF_SEARCH_ITEMS = [
     { key: "lineWrap", titleKey: "options_lineWrap" },
   ]),
   ...inSection("general", "options_contextMenu", null, [
+    { key: "highlightMenuTarget", titleKey: "options_highlightMenuTarget" },
     { key: "enableInputHelper", titleKey: "options_enableInputHelper" },
     {
       key: "enableLiveArticleHelper",

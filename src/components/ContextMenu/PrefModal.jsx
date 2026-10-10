@@ -839,6 +839,13 @@ export const PrefModal = ({
               </PrefSection>
               <PrefSection legendKey="options_contextMenu">
                 <PrefCheckbox
+                  name="highlightMenuTarget"
+                  checked={values.highlightMenuTarget}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_highlightMenuTarget")}
+                </PrefCheckbox>
+                <PrefCheckbox
                   name="enableInputHelper"
                   checked={values.enableInputHelper}
                   onChange={onCheckboxChange}
