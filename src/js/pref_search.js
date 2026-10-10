@@ -223,12 +223,10 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mouseLeftClick",
     },
   ]),
-  ...inSection("mouse", "options_mouseMisclickGuard", null, [
-    {
-      key: "mouseMisclickGuard",
-      titleKey: "options_enableMouseMisclickGuard",
-      tooltipKey: "tooltip_mouseMisclickGuard",
-    },
+  ...inSection("mouse", "options_mouseClickRange", "tooltip_mouseClickRange", [
+    { key: "mouseListClickStart", titleKey: "options_mouseListClickStart" },
+    { key: "mousePushClickStart", titleKey: "options_mousePushClickStart" },
+    { key: "mousePushClickEnd", titleKey: "options_mousePushClickEnd" },
   ]),
   ...inSection("mouse", "options_mouseEdgePaging", null, [
     {

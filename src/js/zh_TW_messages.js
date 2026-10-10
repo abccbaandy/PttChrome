@@ -1021,16 +1021,49 @@
     "message": "啟用左鍵操作"
   },
   "tooltip_mouseLeftClick": {
-    "message": "列表：點一下開文章／進看板（整條可點還是只有標題欄，由下面的「防誤觸模式」決定）。文章：點畫面最左側離開文章，滑鼠靠近時會亮出提示帶。文章裡的連結與圖片一律優先，不會誤退。關掉之後滑鼠指標也不再變化。"
+    "message": "列表：點一下開文章／進看板（從哪一欄起可點，由下面的「點擊範圍」決定）。文章：點畫面最左側離開文章，滑鼠靠近時會亮出提示帶。文章裡的連結與圖片一律優先，不會誤退。關掉之後滑鼠指標也不再變化。"
   },
-  "options_mouseMisclickGuard": {
-    "message": "防誤觸模式"
+  "options_mouseClickRange": {
+    "message": "點擊範圍"
   },
-  "options_enableMouseMisclickGuard": {
-    "message": "只有文字內容區才接受點擊"
+  "tooltip_mouseClickRange": {
+    "message": "設定文章列表與推文哪一段可以點。列表游標底色的範圍一律等於可點範圍；畫面最左邊那一小條永遠是「回上一層」。推文預設只有內容文字可點（點了高亮同一個推文者），左右兩側留給「離開文章」與「點擊翻頁」。"
   },
-  "tooltip_mouseMisclickGuard": {
-    "message": "開啟：列表只有點標題欄才會開文（點日期或作者欄沒反應），文章裡只有點推文的內容文字才會高亮同一個推文者 —— 左側因此空出來給「點一下離開文章」的提示帶。關閉：整條都能點。游標底色的範圍一律等於可點範圍。"
+  "options_mouseListClickStart": {
+    "message": "文章列表：從哪一欄起可點"
+  },
+  "options_clickFromPush": {
+    "message": "推文數"
+  },
+  "options_clickFromDate": {
+    "message": "日期"
+  },
+  "options_clickFromAuthor": {
+    "message": "作者"
+  },
+  "options_clickFromTitle": {
+    "message": "文章標題"
+  },
+  "options_mousePushClickStart": {
+    "message": "推文：可點起點"
+  },
+  "options_clickFromPusher": {
+    "message": "推文者 ID"
+  },
+  "options_clickFromContent": {
+    "message": "推文內容開頭"
+  },
+  "options_mousePushClickEnd": {
+    "message": "推文：可點終點"
+  },
+  "options_clickToContent": {
+    "message": "推文內容結尾"
+  },
+  "options_clickToDate": {
+    "message": "日期"
+  },
+  "options_clickToTime": {
+    "message": "時間（整列到底）"
   },
   "options_mouseEdgePaging": {
     "message": "邊緣點擊翻頁"

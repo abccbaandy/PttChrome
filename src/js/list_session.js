@@ -2282,17 +2282,13 @@ ListSession.prototype = {
     // 出來、由瀏覽器捲），所以 body index 直接是序列位置。
     const idx = renderRow - this.headerRows();
     if (idx < 0) return; // header
-    // 防誤觸模式開啟時只有標題欄可以開文，與原生一致（避免點到日期／作者欄誤開）。
+    // 可點起始欄（pref mouseListClickStart）與原生一致（避免點到左邊欄位誤開）。
     // 虛擬視窗的欄位與 server 的 readdoent 逐格對齊（buildListWindowLines 取的就是
     // 同一批 80 格 TermChar；relabelListCursorRow 只重寫 cols 0-6、labelListCursor
     // 的半形 '>' 只佔 cell 0），所以 comment_parse 的欄位表在這裡照樣成立。
-    const guard = !!(
-      this._termBuf &&
-      this._termBuf.useMouseBrowsing &&
-      this._view &&
-      this._view.mouseMisclickGuard
-    );
-    if (col < clickableColStart(2, guard)) return;
+    const rangeOn = !!(this._termBuf && this._termBuf.useMouseBrowsing);
+    const start = this._view && this._view.mouseListClickStart;
+    if (col < clickableColStart(2, rangeOn, start)) return;
     const view = this.getListView();
     if (!view) return;
     // idx >= seq.length ＝ 短板補到 bodyRows 的空白列（或 footer），沒有文章可點。

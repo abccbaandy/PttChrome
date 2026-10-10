@@ -185,7 +185,7 @@ describe("複合鍵：同一組括號裡的相鄰多顆按鈕", () => {
 });
 
 describe("與其他裝飾共存", () => {
-  test("部分底色 wrapper（防誤觸模式）之下仍然產生按鈕", () => {
+  test("部分底色 wrapper（點擊範圍）之下仍然產生按鈕", () => {
     const { container } = mount([{ ...FN_D, onClick: () => {} }], {
       highlightClass: "b2",
       highlightColStart: 2,

@@ -151,6 +151,37 @@ describe("buildMergedCommentChars", () => {
     );
   });
 
+  // 滑鼠推文可點區（issue #56）照位置比照合併塊：懸掛縮排讓每行內容從首則內容欄起，
+  // 所以逐行內容結尾欄＝內容欄＋該則內容長；日期欄與原生同欄、全塊共用。
+  test("lineEnds 逐行內容結尾欄、dateEnd 日期結尾欄（與原生逐列同欄）", () => {
+    const lines = [
+      chars("PU aaa: hello        07/20 14:23"),
+      chars("PU aaa: hi           07/20 14:31"),
+      chars("PU aaa: worlds       07/20 14:35"),
+    ];
+    const r = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1, 2] });
+    // 內容起始欄 8：hello→13、hi→10、worlds→14（各自同原列的 commentContentCells.end）
+    expect(r.lineEnds).toEqual(
+      lines.map((l) => commentContentCells(l).end),
+    );
+    expect(r.lineEnds).toEqual([13, 10, 14]);
+    // 日期 07/20 在原列 col 21-25 ⇒ 結尾 26。
+    const last = commentContentCells(lines[2]);
+    expect(r.dateEnd).toBe(last.timeStart + 5);
+    expect(r.dateEnd).toBe(26);
+  });
+
+  test("空內容的則不成行 ⇒ lineEnds 只算有內容的行（與 bbsline 一一對應）", () => {
+    const lines = [
+      chars("PU aaa: hello        07/20 14:23"),
+      chars("PU aaa:              07/20 14:24"),
+      chars("PU aaa: hi           07/20 14:31"),
+    ];
+    const r = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1, 2] });
+    expect(textOf(r.chars).split("\n").length).toBe(2);
+    expect(r.lineEnds).toEqual([13, 10]);
+  });
+
   // 手機推文卡片（render/comment_card.js）把段尾搬到標頭列：tailStart／timeStart 是段尾
   // 與時間戳在合併序列裡的位置。
   test("回傳段尾與時間戳在合併序列裡的位置（手機推文卡片用）", () => {

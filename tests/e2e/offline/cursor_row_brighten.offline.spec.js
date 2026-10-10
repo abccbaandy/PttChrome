@@ -14,10 +14,10 @@ const { findCassette, bootOffline, replayCassette } = require('../helpers/replay
 
 const list = findCassette('list');
 
-// 游標所在列的**標示載體**。防誤觸模式（預設開）下標示只覆蓋可點區
-// （clickableColStart：列表 col 30 起）⇒ class 掛在 LinkSegmentBuilder 包出來的
+// 游標所在列的**標示載體**。標示只覆蓋可點區（clickableColStart：列表從
+// pref mouseListClickStart 那一欄起）⇒ class 掛在 LinkSegmentBuilder 包出來的
 // .cursorHighlight wrapper 上，不是 bbsline 本身（bbsline 是 block 級，掛上去就滿版）。
-// 防誤觸關掉時 col=0，才會回到 bbsline。兩種都要認得。
+// 總開關關掉時 col=0，才會回到 bbsline。兩種都要認得。
 async function cursorLine(page) {
   return page.evaluate(() => {
     const row = window.__app.buf.cur_y;
@@ -39,7 +39,7 @@ async function cursorLine(page) {
 }
 
 // 標示範圍內第一個帶 .qN 前景 class 的字元 span 的實際顏色 + 它掛的 qN。
-// **一定要從標示載體往下找**：防誤觸下 col 0-29 不在標示範圍內，從 bbsline 找到的
+// **一定要從標示載體往下找**：列表起點之前的欄（如預設的 col 0-16）不在標示範圍內，從 bbsline 找到的
 // 第一個字元根本沒被提亮，量出來會與基準色相同（假紅）。
 async function firstColoredCell(page) {
   return page.evaluate(() => {

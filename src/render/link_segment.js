@@ -71,7 +71,7 @@ export class LinkSegmentBuilder {
     this.highlightClass = highlightClass;
     // 底色從第幾欄畫起（0/undefined＝整列，DOM 與 2026-08 之前一字不動）。>0 時
     // 底色改掛在一個從該欄包到行尾的 span 上，class **不**掛在 bbsline span ——
-    // 那是 block 級元素，掛上去就是滿版。範圍與可點區同源（防誤觸模式，見
+    // 那是 block 級元素，掛上去就是滿版。範圍與可點區同源（點擊範圍設定，見
     // js/mouse_regions.clickableColStart），三種範圍（列表標題欄／選單選項欄／
     // 推文內容欄）都是「到行尾」⇒ 只有開邊界、沒有關邊界。
     // 沒有底色 class 就沒有包裝的必要（也不該憑空多切一段 segment 出來）。

@@ -179,6 +179,10 @@ export function buildMergedCommentChars(lines, run) {
     });
   let lastContentful = -1;
   const breaks = [];
+  // 每一行（＝每一則有內容的推文）內容結尾的**畫面欄號**。懸掛縮排把第 2 則起對齊
+  // 首則內容起始欄 ⇒ 第 n 行內容佔 [infos[0].start, infos[0].start + 內容長)，欄位與
+  // 原生逐列相同。給滑鼠推文可點區逐行比照（mouse_regions.pusherClickRange）。
+  const lineEnds = [];
   for (let n = 0; n < run.rows.length; ++n) {
     const rowChars = lines[run.rows[n]];
     const info = infos[n];
@@ -196,6 +200,7 @@ export function buildMergedCommentChars(lines, run) {
       out.push(newlineCell());
     }
     for (let c = info.start; c < info.end; ++c) out.push(rowChars[c]);
+    lineEnds.push(infos[0].start + (info.end - info.start));
     lastContentful = n;
   }
   if (lastContentful < 0) return null; // 整組空內容：沒東西可合併
@@ -215,5 +220,12 @@ export function buildMergedCommentChars(lines, run) {
     breaks,
     tailStart,
     timeStart: tailStart + (lastInfo.timeStart - lastInfo.end),
+    lineEnds,
+    // 日期 MM/DD 結尾的畫面欄號（只有末行真的畫出時間；其餘行在同一欄位是空白，
+    // 位置語意相同 ⇒ 全塊共用這一欄）。
+    dateEnd:
+      infos[0].start +
+      (lastInfo.timeStart - lastInfo.start) +
+      lastInfo.time.indexOf(' '),
   };
 }

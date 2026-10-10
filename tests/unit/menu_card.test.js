@@ -219,7 +219,7 @@ function makeApp({ cur_y = MAIN_MENU_CURSOR_ROW, leftClick = true } = {}) {
   app.clientToPos = vi.fn(() => ({ col: 40, row: 3 }));
   app.mouseGates = vi.fn(() => ({
     leftClick,
-    misclickGuard: true,
+    clickRange: true,
     serverReport: false,
     wheel: true,
   }));

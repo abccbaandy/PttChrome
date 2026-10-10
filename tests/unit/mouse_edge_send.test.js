@@ -197,7 +197,7 @@ describe("App.mouse_click：自家的浮動按鈕不得觸發翻頁", () => {
     app.dblclickTimer = null;
     app.setDblclickTimer = vi.fn();
     app.clientToPos = vi.fn(() => ({ col: 40, row: 20 }));
-    app.mouseGates = vi.fn(() => ({ leftClick: true, misclickGuard: false }));
+    app.mouseGates = vi.fn(() => ({ leftClick: true, clickRange: false }));
     app.activeListSession = vi.fn(() => null);
     app.sendNavKeyAsUser = vi.fn(() => true);
     app.easyReading = { _onMouseClick: vi.fn() };

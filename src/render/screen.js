@@ -809,7 +809,7 @@ export class ScreenController {
     const prevNodes = reusable ? reusable.nodes : null;
     const prevAnnotations = reusable ? reusable.annotations : null;
     const prevHighlight = reusable ? reusable.highlight : NO_HIGHLIGHT;
-    // 顏色（cls）或起始欄（col）換掉時整批失效——使用者在設定頁改底色／切防誤觸
+    // 顏色（cls）或起始欄（col）換掉時整批失效——使用者在設定頁改底色／改列表點擊起點
     // 才會發生，罕見到不值得逐列記住上一次用的值。
     const sameHighlightCls =
       prevHighlight.cls === this.highlight.cls &&
@@ -961,6 +961,10 @@ export class ScreenController {
         floor: ann.floor,
         pusher: ann.pusher,
         pusherContentCol: ann.contentCol,
+        // 逐行（每則一行）的內容結尾欄 → data-pusher-end="a,b,c"；日期欄全塊共用。
+        // 懸掛縮排讓欄位與原生逐列相同，滑鼠可點區照位置比照（App.pusherClickRangeOf）。
+        pusherContentEnd: m.lineEnds ? m.lineEnds.join(",") : undefined,
+        pusherDateEnd: m.dateEnd,
         pusherHighlight: isPusherHighlighted(ann, this._selectedPusher),
         authorIdStart: ann.authorIdStart,
         authorIdEnd: ann.authorIdEnd,
@@ -1108,6 +1112,8 @@ export class ScreenController {
       hidden: ann && ann.hidden,
       pusher: ann && ann.pusher,
       pusherContentCol: ann && ann.contentCol,
+      pusherContentEnd: ann && ann.contentEnd,
+      pusherDateEnd: ann && ann.dateEnd,
       listAuthor: ann && ann.listAuthor,
       listTitle: ann && ann.listTitle,
       listRead: ann && ann.listRead,

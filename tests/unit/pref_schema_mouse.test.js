@@ -25,9 +25,13 @@ describe("DEFAULT_PREFS", () => {
     // 會在升級後憑空消失。
     expect(DEFAULT_PREFS.useMouseBrowsing).toBe(true);
     expect(DEFAULT_PREFS.mouseLeftClick).toBe(true);
-    // 防誤觸模式（可點區＝底色區的欄位限制）預設開：它就是「點日期／作者欄不會
-    // 誤開文章」與「文章左側點得到退出帶」這兩件事的來源。
-    expect(DEFAULT_PREFS.mouseMisclickGuard).toBe(true);
+    // 點擊範圍（issue #56，取代舊的防誤觸開關）：列表從作者欄起可點；推文只有
+    // 內容文字可點 ⇒ 左側退出帶與右側翻頁在推文區都點得到。
+    expect(DEFAULT_PREFS.mouseListClickStart).toBe("author");
+    expect(DEFAULT_PREFS.mousePushClickStart).toBe("content");
+    expect(DEFAULT_PREFS.mousePushClickEnd).toBe("content");
+    // 舊 key 已移除（不遷移，理由見 docs/mouse.md「舊 → 新 key 對照」）。
+    expect("mouseMisclickGuard" in DEFAULT_PREFS).toBe(false);
     // 功能鍵可點預設開：`[d]刪除`／`(y)回應` 這類提示變按鈕（js/footer_keys.js）。
     expect(DEFAULT_PREFS.mouseFunctionKeys).toBe(true);
     // 邊緣點擊翻頁預設開：2026-09 找回 term.ptt.cc 原版就有的四個區域（頂列 Home／
@@ -80,7 +84,7 @@ describe("既有使用者的 localStorage 殘值", () => {
     );
     const v = readValuesWithDefault();
     expect(v.mouseLeftClick).toBe(true);
-    expect(v.mouseMisclickGuard).toBe(true);
+    expect(v.mouseListClickStart).toBe("author");
     expect(v.mouseFunctionKeys).toBe(true);
     // 新 key ⇒ 淺層合併補得到，改過舊設定的既有使用者照樣拿得到這個預設。
     expect(v.mouseEdgePaging).toBe(true);
@@ -111,12 +115,15 @@ describe("既有使用者的 localStorage 殘值", () => {
     expect(readValuesWithDefault().mouseBackNav).toBe(1);
   });
 
-  test("使用者關過防誤觸的話照樣尊重", () => {
+  test("殘留的舊防誤觸 key 不影響點擊範圍的預設值；新 key 改過照樣尊重", () => {
     window.localStorage.setItem(
       PREF_KEY,
-      JSON.stringify({ values: { mouseMisclickGuard: false } }),
+      JSON.stringify({ values: { mouseMisclickGuard: false, mousePushClickEnd: "time" } }),
     );
-    expect(readValuesWithDefault().mouseMisclickGuard).toBe(false);
+    const v = readValuesWithDefault();
+    expect(v.mouseListClickStart).toBe("author");
+    expect(v.mousePushClickStart).toBe("content");
+    expect(v.mousePushClickEnd).toBe("time");
   });
 
   test("使用者關過功能鍵可點的話照樣尊重", () => {

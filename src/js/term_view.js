@@ -3,7 +3,7 @@
 import { TermKeyboard, isAltRemapEvent } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
 import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow } from './cursor_highlight';
-import { clickableColStart, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion, visibleHintBand } from './mouse_regions';
+import { clickableColStart, DEFAULT_LIST_CLICK_START, DEFAULT_PUSH_CLICK_START, DEFAULT_PUSH_CLICK_END, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion, visibleHintBand } from './mouse_regions';
 import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { edgeBandRect, exitBandRect } from './mouse_geometry';
 import { calcTermSize, termLayoutOffsets } from './term_size';
@@ -228,9 +228,13 @@ export function TermView() {
   // mouseServerReport：把滑鼠事件回報給 PTT server（XTerm SGR）。預設關，理由見
   // pref_storage.js。真的要送還得主機自己開了 tracking（buf.mouseReport.isActive()）。
   this.mouseServerReport = false;
-  // 防誤觸模式（pref mouseMisclickGuard，預設開）：可點區＝底色區的起始欄，
-  // 決策在 mouse_regions.clickableColStart。
-  this.mouseMisclickGuard = true;
+  // 點擊範圍（pref mouseListClickStart / mousePushClickStart / mousePushClickEnd）：
+  // 文章列表的可點起始欄（＝底色起始欄）與推文列可點區的起訖。決策在
+  // mouse_regions.clickableColStart / pusherClickRange；生效與否跟著總開關
+  // （listClickRangeOn）。
+  this.mouseListClickStart = DEFAULT_LIST_CLICK_START;
+  this.mousePushClickStart = DEFAULT_PUSH_CLICK_START;
+  this.mousePushClickEnd = DEFAULT_PUSH_CLICK_END;
   // 邊緣翻頁區（pref mouseEdgePaging，預設開）：頂列 Home／底列 End／右緣上下半
   // 翻頁（文章內是整片上下半）。與總開關 and 過之後餵進 resolveMouseRegion。
   this.mouseEdgePaging = true;
@@ -1229,7 +1233,8 @@ TermView.prototype = {
     var col = highlightColStart({
       mode: mode,
       pageState: this.buf.pageState,
-      misclickGuard: !!(this.buf.useMouseBrowsing && this.mouseMisclickGuard)
+      clickRange: !!this.buf.useMouseBrowsing,
+      listClickStart: this.mouseListClickStart
     });
     // 樣式層：兩種都關掉時 cls 是空字串 ⇒ 直接當成「不標示」，省掉整條
     // render/patch（也讓 Screen._toggleRowClass 不必處理空 token）。
@@ -1878,7 +1883,7 @@ TermView.prototype = {
   // 兩者的列意義並不對應。這裡只回答一個問題：滑鼠停在哪一個「可點的文章列」上。
   // frozen（開文交易進行中）比照鍵盤：不接受互動，清掉 hover。
   //
-  // 底色與 pointer 的**範圍**一致（防誤觸開＝標題欄、關＝整列，見
+  // 底色與 pointer 的**範圍**一致（從 pref mouseListClickStart 那一欄起、總開關關＝整列，見
   // mouse_regions.clickableColStart），但**條件**不同：底色只要停在可點的列上就給，
   // pointer 還要 mouseLeftClick 也開著。底色的 gate 在 applyCursorHighlight
   // （唯一真相源），這裡只 gate 總開關與 pointer。
@@ -1935,7 +1940,7 @@ TermView.prototype = {
       }
     }
     // 左側退出帶（cols 0..EXIT_COL_END）：與原生列表同一個手勢，同樣**不看
-    // misclickGuard**（見 mouse_regions.resolveMouseRegion 的 case 2/4）。
+    // 點擊範圍設定**（見 mouse_regions.resolveMouseRegion 的 case 2/4）。
     // 只在「可點的文章列」上成立 —— header／footer 那幾列有功能鍵按鈕，
     // 不該同時是退出區，這樣「提示帶亮＝點得下去」的合約才成立。
     var iconsEnabled = !!(this.buf.useMouseBrowsing && this.mouseLeftClick);
@@ -1973,7 +1978,7 @@ TermView.prototype = {
       var clickable =
         hover >= 0 &&
         !!this.mouseLeftClick &&
-        (cards || col >= clickableColStart(2, !!(this.buf.useMouseBrowsing && this.mouseMisclickGuard)));
+        (cards || col >= clickableColStart(2, !!this.buf.useMouseBrowsing, this.mouseListClickStart));
       // 兩個字面值改走 cursorCss（唯一真相源），總開關關掉時連 pointer 都不給。
       if (this.buf.BBSWin)
         this.buf.BBSWin.style.cursor = cursorCss(

@@ -159,7 +159,7 @@
 - 閱讀位置：`view.currentLineIndex()`（AID 回跳／deep link 記錄）與 `view.pageRowTop(row)`
   （`nextScrollRestoreStep` 的 `targetTop`）在 reflow 下量 `srow` 節點，格線版面維持 `scrollTop/chh`。
 - 滑鼠：`resolveMouseRegion({ reflow })` 對 pageState 3 早退 NONE（左側退出帶、邊緣翻頁全關），
-  `resolveMouseGates({ reflow })` 關 `misclickGuard`／`edgePaging`（推文者高亮退回整列可點）。
+  `resolveMouseGates({ reflow })` 關 `clickRange`／`edgePaging`（推文者高亮退回整列可點）。
   元素層（連結、圖片、`a.fnKey`、合併按鈕）不受影響。右鍵選單的推文者黑名單在 reflow 下整列都算 id 區。
 - 已知接受：ANSI 圖／表格換行後會散（使用者定案）；`#easyReadingLastRow`（footer overlay）只改寬度不換行，超出視窗寬的部分被裁。
 

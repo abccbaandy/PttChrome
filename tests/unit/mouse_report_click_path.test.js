@@ -55,7 +55,7 @@ function makeApp({
   app.clientToPos = vi.fn(() => ({ col, row }));
   app.mouseGates = vi.fn(() => ({
     leftClick: !serverReport,
-    misclickGuard: false,
+    clickRange: false,
     serverReport,
     wheel: !serverReport
   }));
@@ -216,7 +216,7 @@ describe("App.mouse_scroll：SGR 回報", () => {
     const app = makeApp({ serverReport: false });
     app.mouseGates = vi.fn(() => ({
       leftClick: true,
-      misclickGuard: false,
+      clickRange: false,
       serverReport: false,
       wheel: true
     }));

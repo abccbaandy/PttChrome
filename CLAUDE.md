@@ -224,7 +224,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 - 渲染已統一單路徑（兩模式都走 `ScreenController`）見 `docs/easy-reading.md`「render 單軌」。改渲染路徑前先讀它。
 - **核心渲染鏈的 DOM 是外部契約，由整份 golden 快照守**：`tests/unit/fixtures/screen_golden/*.html`
   ＋`tests/unit/render_dom_equivalence.test.js`。`data-type="bbsline"`／`data-row`（選取複製反查）、
-  `.wpadding`（`fixedResize` 直接掃 DOM 改寬度）、`data-pusher-col`（滑鼠防誤觸）、`data-list-author/-title`
+  `.wpadding`（`fixedResize` 直接掃 DOM 改寬度）、`data-pusher-col/-end/-date-end`（推文可點區）、`data-list-author/-title`
   （右鍵加黑名單）這些消費端都在 unit 測不到的地方，漏一個就靜默壞掉。**刻意**要改渲染輸出時才
   `UPDATE_GOLDEN=1 yarn test:unit render_dom_equivalence`，並逐行看 diff。
 - **dirty-row 逐列 patch 的守門在 `src/js/screen_annotations.js#annotationsAreRowIndependent`，不在 `term_view`**：

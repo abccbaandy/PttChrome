@@ -93,21 +93,38 @@ describe("列 pusher highlight", () => {
     expect(row.classList.contains("pusherHighlight")).toBe(false);
   });
 
-  // 滑鼠防誤觸模式讀這個屬性判斷「這一點落在可點的內容區還是左邊的作者區」
-  // （App.mouse_click）。沒有它，推文列會整列攔下左鍵 ⇒ 文章左側的退出帶點不到。
-  test("data-pusher-col 帶出內容起始欄", () => {
+  // 推文可點區（mouse_regions.pusherClickRange）讀這幾個屬性判斷「這一點落在哪一段」
+  // （App.mouse_click 點擊、App.onMouse_move 指標）。沒有它們，推文列會整列攔下左鍵
+  // ⇒ 文章左側的退出帶與右側翻頁點不到。
+  test("data-pusher-col / -end / -date-end 帶出內容起訖與日期結尾欄", () => {
+    const { container } = mountRow({
+      chars: chars("PU wowbenny: hi"),
+      row: 0,
+      pusher: "wowbenny",
+      pusherContentCol: 13,
+      pusherContentEnd: 15,
+      pusherDateEnd: 70,
+    });
+    const row = bbsrow(container);
+    expect(row.getAttribute("data-pusher-col")).toBe("13");
+    expect(row.getAttribute("data-pusher-end")).toBe("15");
+    expect(row.getAttribute("data-pusher-date-end")).toBe("70");
+  });
+
+  test("沒給終點欄位（合併塊）⇒ 不輸出屬性（點擊端放寬成整列到底）", () => {
     const { container } = mountRow({ chars: chars("PU wowbenny: hi"), row: 0, pusher: "wowbenny", pusherContentCol: 13 });
-    expect(bbsrow(container).getAttribute("data-pusher-col")).toBe("13");
+    expect(bbsrow(container).hasAttribute("data-pusher-end")).toBe(false);
+    expect(bbsrow(container).hasAttribute("data-pusher-date-end")).toBe(false);
   });
 });
 
 // 游標底色的範圍＝可點區範圍（使用者 2026-08 定案）。底色 class 掛在 block 級的
 // bbsline span 上就是滿版，所以部分寬度必須改掛在一個「從該欄包到行尾」的 span。
-describe("列 部分寬度底色（防誤觸模式）", () => {
+describe("列 部分寬度底色（點擊範圍）", () => {
   const bbsline = (container) =>
     container.querySelector('span[data-type="bbsline"]');
 
-  test("highlightColStart 未給（防誤觸關）：class 掛整列，DOM 與改版前一致", () => {
+  test("highlightColStart 未給（點擊範圍不生效）：class 掛整列，DOM 與改版前一致", () => {
     const { container } = mountRow({ chars: chars("PU wowbenny: hi"), row: 0, highlightClass: "b7" });
     expect(bbsline(container).classList.contains("b7")).toBe(true);
     expect(container.querySelectorAll(".b7").length).toBe(1);
@@ -128,7 +145,7 @@ describe("列 部分寬度底色（防誤觸模式）", () => {
     expect(bbsline(container).textContent).toBe(text);
   });
 
-  test("起始欄 0 等同整列（防誤觸關掉時的實際值）", () => {
+  test("起始欄 0 等同整列（總開關關掉時的實際值）", () => {
     const { container } = mountRow({ chars: chars("PU wowbenny: hi"), row: 0, highlightClass: "b7", highlightColStart: 0 });
     expect(bbsline(container).classList.contains("b7")).toBe(true);
   });

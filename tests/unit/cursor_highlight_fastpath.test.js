@@ -7,7 +7,7 @@
 //
 // 這條測試鎖的是**行為**：
 //   1. col 0（整列底色，絕大多數情形）→ 一個 DOM 節點都不換，class 正確搬家
-//   2. col > 0（防誤觸的部分底色，包在 wrapper span 裡）→ 只有相關的列被換掉
+//   2. col > 0（點擊範圍的部分底色，包在 wrapper span 裡）→ 只有相關的列被換掉
 //   3. 快路徑不可以讓快取與 DOM 失步：之後的 append 重繪要看得到正確的底色
 import { ScreenController } from "../../src/render/screen";
 import { row, seg, color } from "./helpers/screen_fixtures";

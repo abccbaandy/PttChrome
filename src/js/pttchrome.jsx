@@ -28,6 +28,8 @@ import {
   ACT_END,
   EDGE_NAV_KEY,
   EXIT_COL_END,
+  pusherClickRange,
+  pusherLineContentEnd,
   resolveMouseGates
 } from './mouse_regions';
 import { colFromClientX, gridOriginY, rowFromClientY, rowHeight } from './mouse_geometry';
@@ -1584,8 +1586,8 @@ App.prototype.navKeyBlockReason = function() {
   return navKeyBlockReason(this);
 };
 
-// 各滑鼠入口的生效與否。總開關（buf.useMouseBrowsing）與四個子開關（view 上的
-// mouseLeftClick / mouseMisclickGuard / mouseMiddleClick / mouseWheel）在純函式
+// 各滑鼠入口的生效與否。總開關（buf.useMouseBrowsing）與子開關（view 上的
+// mouseLeftClick / mouseEdgePaging / mouseMiddleClick / mouseWheel…）在純函式
 // resolveMouseGates 匯總，所以「總開關關掉＝中鍵與滾輪也失效」只有一個真相源。
 // 這一幀的畫面是不是「server 的真實 24 列」——只有它成立時，clientToPos 的列號
 // 才與 PTT 端的終端機座標對得起來，回報出去才不會點錯格。
@@ -1603,7 +1605,6 @@ App.prototype.mouseGates = function() {
   return resolveMouseGates({
     useMouseBrowsing: this.buf.useMouseBrowsing,
     mouseLeftClick: this.view.mouseLeftClick,
-    mouseMisclickGuard: this.view.mouseMisclickGuard,
     mouseEdgePaging: this.view.mouseEdgePaging,
     mouseMiddleClick: this.view.mouseMiddleClick,
     mouseWheel: this.view.mouseWheel,
@@ -1712,7 +1713,46 @@ App.prototype._sendRowEnter = function(targetRow) {
 // 身上，比 window 的 mouse_click 早跑）⇒ 邊緣翻頁的提示帶這時必須讓位，否則帶子
 // 亮著說「這裡是翻頁」、點下去卻送出那顆功能鍵。指標本身不必特別處理：元素自己的
 // CSS cursor 本來就蓋過 BBSWin 的。
-App.prototype.onMouse_move = function(cX, cY, overAnchor) {
+// 推文列（[data-pusher]）的可點區（格子空間 {start,end}）；不在推文列上＝null。
+// **點擊（mouse_click）與指標（onMouse_move）共用這一支**，兩邊不可能分岔。
+// 滑鼠交給 PTT 時一律 null：推文高亮是純裝飾，不該吃掉回報（見 mouse_click）。
+App.prototype.pusherClickRangeOf = function(target, clientY) {
+  var gates = this.mouseGates();
+  if (gates.serverReport) return null;
+  var el = target && target.closest && target.closest('[data-pusher]');
+  if (!el) return null;
+  var num = function(name) {
+    var v = el.getAttribute(name);
+    return v == null || v === '' ? NaN : Number(v);
+  };
+  // 合併推文塊每則一行（各自一個 bbsline）⇒ 內容結尾逐行取，見 pusherLineContentEnd。
+  // 行號**用 y 找**，不用事件目標：非末行的內容後面沒有補空白字元，點在內容右側的
+  // 空白處時目標是外層容器、不是那一行。y 落在任何一行之外（行間的預覽插槽）⇒
+  // 不是推文文字 ⇒ null，交回區域決策（退出帶／翻頁）。
+  var endAttr = el.getAttribute('data-pusher-end');
+  var lineIdx = -1;
+  if (endAttr && endAttr.indexOf(',') >= 0) {
+    var lines = el.querySelectorAll('[data-type="bbsline"]');
+    for (var i = 0; i < lines.length; ++i) {
+      var r = lines[i].getBoundingClientRect();
+      if (clientY >= r.top && clientY < r.bottom) { lineIdx = i; break; }
+    }
+    if (lineIdx < 0) return null;
+  }
+  return pusherClickRange(
+    {
+      contentCol: num('data-pusher-col'),
+      contentEnd: pusherLineContentEnd(el.getAttribute('data-pusher-end'), lineIdx),
+      dateEnd: num('data-pusher-date-end')
+    },
+    gates.clickRange,
+    this.view.mousePushClickStart,
+    this.view.mousePushClickEnd
+  );
+};
+
+// target：事件目標（算推文列可點區用，見 pusherClickRangeOf，另吃 cY 判合併塊的行）。
+App.prototype.onMouse_move = function(cX, cY, overAnchor, target) {
   var pos = this.clientToPos(cX, cY);
   // 列表好讀模式的畫面是我們自己組的虛擬視窗，term_buf.onMouse_move 那套（可點列
   // 判斷、欄位、該列是否為空）全部依 server 的真實 24 列判斷，套上去只會得到錯的
@@ -1728,7 +1768,7 @@ App.prototype.onMouse_move = function(cX, cY, overAnchor) {
     );
     return;
   }
-  this.buf.onMouse_move(pos.col, pos.row, overAnchor);
+  this.buf.onMouse_move(pos.col, pos.row, overAnchor, this.pusherClickRangeOf(target, cY));
 };
 
 App.prototype.resetMouseCursor = function() {
@@ -1924,13 +1964,21 @@ App.prototype.onPrefChange = function(name, value) {
         this.view.setExitAffordance(false);
       this.buf.resetMousePos();
       break;
-    // 防誤觸同時管「可點區」與「底色區」⇒ 兩邊都要立刻重算：resetMousePos 重跑
+    // 列表點擊起點同時管「可點區」與「底色區」⇒ 兩邊都要立刻重算：resetMousePos 重跑
     // 目前這一格的區域決策（指標／提示帶／nowHighlight），applyCursorHighlight
     // 補上「滑鼠沒動、只有鍵盤游標列上色」的那種畫面。
-    case 'mouseMisclickGuard':
-      this.view.mouseMisclickGuard = !!value;
+    case 'mouseListClickStart':
+      this.view.mouseListClickStart = value;
       this.buf.resetMousePos();
       this.view.applyCursorHighlight();
+      break;
+    // 推文可點區起訖：點擊當下才從 DOM 現算（pusherClickRangeOf），不必重畫；
+    // 指標等下一次滑鼠移動自然更新。
+    case 'mousePushClickStart':
+      this.view.mousePushClickStart = value;
+      break;
+    case 'mousePushClickEnd':
+      this.view.mousePushClickEnd = value;
       break;
     // 邊緣翻頁區：只改「點下去做什麼／指標／提示帶」，不影響底色 ⇒ resetMousePos
     // 就夠（它重跑目前這一格的區域決策）。關掉時還要主動收掉可能正亮著的帶子，
@@ -2202,26 +2250,20 @@ App.prototype.mouse_click = function(e) {
       // Pusher highlight: clicking a comment row toggles a whole-row highlight of
       // all comments by that pusher. Runs regardless of mouse browsing; return
       // early to suppress browsing nav / left-button command.
-      // 防誤觸開啟時**只有內容文字**算數（data-pusher-col＝該列的內容起始欄，見
-      // comment_parse.annotateComment）：左邊「型別符＋id＋冒號」那一塊要留給文章的
-      // 左側退出帶——它佔 cols 0-6，整列都吃掉的話那個手勢在推文區永遠點不到。
-      // 欄位不合時**不 return**，讓下面的滑鼠瀏覽分支接手（＝退出文章）。
-      // 屬性缺失（理論上不會，parseComment 命中就一定算得出來）⇒ 0＝整列可點，
-      // 方向安全（退回改版前的行為）。
-      // 滑鼠交給 PTT 時**整條 pusher 分支跳過**：它是純裝飾（本地高亮），不該
-      // 吃掉一整片的回報。而且 serverReport 會強制關掉 misclickGuard
-      // ⇒ pusherColStart 退回 0 ⇒ 不跳過的話整個推文區永遠回報不出去。
-      var pusherEl = this.mouseGates().serverReport
-        ? null
-        : (e.target && e.target.closest && e.target.closest('[data-pusher]'));
-      if (pusherEl) {
-        var pusherColStart = this.mouseGates().misclickGuard
-          ? Number(pusherEl.getAttribute('data-pusher-col')) || 0
-          : 0;
+      // **只有使用者選的可點區**算數（pref mousePushClickStart／End，預設＝內容文字
+      // 起訖，見 mouse_regions.pusherClickRange）：左邊「型別符＋id＋冒號」留給文章的
+      // 左側退出帶（cols 0-6），右邊 IP／日期／時間留給邊緣翻頁的上下頁。
+      // 區間外**不 return**，讓下面的滑鼠瀏覽分支接手（＝退出文章／翻頁）。
+      // 滑鼠交給 PTT 時 pusherClickRangeOf 回 null ＝整條 pusher 分支跳過：它是純裝飾
+      // （本地高亮），不該吃掉一整片的回報。
+      var pusherRange = this.pusherClickRangeOf(e.target, e.clientY);
+      if (pusherRange) {
         // row 在好讀長頁會被 clamp，但 col 是純幾何（mouse_geometry.colFromClientX），
         // 兩種 render 分支都可信。
-        if (this.clientToPos(e.clientX, e.clientY).col >= pusherColStart) {
-          this.view.togglePusherHighlight(pusherEl.getAttribute('data-pusher'));
+        var pcol = this.clientToPos(e.clientX, e.clientY).col;
+        if (pcol >= pusherRange.start && pcol < pusherRange.end) {
+          this.view.togglePusherHighlight(
+            e.target.closest('[data-pusher]').getAttribute('data-pusher'));
           e.preventDefault();
           return;
         }
@@ -2294,7 +2336,7 @@ App.prototype.mouse_click = function(e) {
           // pgup/pgdn/home/end），不會繞過 CommandQueue。
           // 手機卡片（view.listCards）：卡片不是 80 欄格線，col 沒有意義 ⇒ 退出帶與
           // 邊緣翻頁都不成立（退出用按鍵列的 ←），點卡片任何位置＝開那一筆。
-          // 以標題欄當 col 傳：session 的防誤觸只放行標題欄，點卡片本來就是在點標題。
+          // 以標題欄當 col 傳：標題欄 ≥ 任何可點起始欄選項，點卡片本來就是在點標題。
           var ledge = this.view.listCards ? null : this.view.listEdgeRegion(
             rowFromClientY(e.clientY, this.gridGeometry()),
             lpos.col
@@ -2351,7 +2393,7 @@ App.prototype.mouse_click = function(e) {
         if (skipMouseClick) {
           doMouseCommand = false;
           var pos = this.clientToPos(e.clientX, e.clientY);
-          this.buf.onMouse_move(pos.col, pos.row);
+          this.buf.onMouse_move(pos.col, pos.row, false, this.pusherClickRangeOf(e.target, e.clientY));
         }
         if (doMouseCommand) {
           this.onMouse_click(e);
@@ -2443,7 +2485,7 @@ App.prototype.mouse_up = function(e) {
   if (e.button === 0 || e.button == 2) { //left or right button
     if (window.getSelection().isCollapsed) { //no anything be select
       if (this.buf.useMouseBrowsing)
-        this.onMouse_move(e.clientX, e.clientY, isClickableTarget(e.target));
+        this.onMouse_move(e.clientX, e.clientY, isClickableTarget(e.target), e.target);
 
       this.setInputAreaFocus();
       if (e.button === 0) {
@@ -2481,7 +2523,7 @@ App.prototype.mouse_move = function(e) {
   if (this.buf.useMouseBrowsing) {
     if (window.getSelection().isCollapsed) {
       if(!this.mouseButtons.left)
-        this.onMouse_move(e.clientX, e.clientY, isClickableTarget(e.target));
+        this.onMouse_move(e.clientX, e.clientY, isClickableTarget(e.target), e.target);
     } else
       this.resetMouseCursor();
   }

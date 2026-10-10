@@ -613,8 +613,9 @@ test.describe('滑鼠（離線重放）', () => {
   // 2026-08 回報：推文區的左側退出區點不到。data-pusher 掛在**整列**上，而
   // App.mouse_click 的 pusher 分支走在滑鼠瀏覽 gate 之前 ⇒ 推文列的 cols 0-6
   // 一律被 pusher 高亮吃掉，退出手勢在整個推文區失效。
-  // 防誤觸模式（預設開）改成只有內容文字算數，左側因此還給退出帶。
-  test.describe('推文列的可點區（防誤觸模式）', () => {
+  // 推文可點區（issue #56，取代防誤觸開關）預設「內容起 → 內容止」：左側還給退出帶、
+  // 右側（IP／日期／時間）還給邊緣翻頁；起訖可在設定頁改。
+  test.describe('推文列的可點區（點擊範圍）', () => {
     const boot = async (page, prefs) => {
       await bootOffline(page, ptt);
       await ptt.applyPrefs(page, {
@@ -628,9 +629,9 @@ test.describe('滑鼠（離線重放）', () => {
       await replayCassette(page, article, { easyReading: true });
     };
 
-    test('防誤觸開啟：推文列左側＝離開文章，不會變成 pusher 高亮', async ({ page }) => {
+    test('預設：推文列左側＝離開文章，不會變成 pusher 高亮', async ({ page }) => {
       test.setTimeout(90000);
-      await boot(page, { mouseMisclickGuard: true });
+      await boot(page, {});
 
       const row = await stableCommentRow(page);
       await page.mouse.move(row.leftX, row.y);
@@ -650,13 +651,16 @@ test.describe('滑鼠（離線重放）', () => {
       expect(await highlightedPushers(page)).toEqual([]);
     });
 
-    test('防誤觸開啟：點推文內容＝同作者高亮，且不會離開文章', async ({ page }) => {
+    test('預設：點推文內容＝同作者高亮，且不會離開文章；hover 是 pointer', async ({ page }) => {
       test.setTimeout(90000);
-      await boot(page, { mouseMisclickGuard: true });
+      await boot(page, {});
 
       const row = await stableCommentRow(page);
       await page.mouse.move(row.contentX, row.y);
       await nextFrames(page); // hover → mouseAction 更新
+      // 指標＝點下去會發生的事：可點區裡是 pointer，沒有退出帶／翻頁的提示。
+      expect(await page.evaluate(() => window.__app.buf.BBSWin.style.cursor)).toBe('pointer');
+      expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('none');
       // 點擊前再確認一次指標底下還是同一列：版面若在量測之後又位移，這裡會直接說出
       // 「預期 X、實際 Y」，而不是讓斷言退化成看不出原因的「高亮 0 列」。
       await assertElementUnder(page, row.contentX, row.y, row.pusher, {
@@ -674,17 +678,54 @@ test.describe('滑鼠（離線重放）', () => {
       on.forEach((p) => expect(p).toBe(row.pusher));
     });
 
-    test('防誤觸關閉：整條推文列都能觸發同作者高亮（改版前的行為）', async ({ page }) => {
+    test('預設：推文列右側（日期欄）＝邊緣翻頁，不會變成 pusher 高亮', async ({ page }) => {
       test.setTimeout(90000);
-      await boot(page, { mouseMisclickGuard: false });
+      await boot(page, { mouseEdgePaging: true });
 
       const row = await stableCommentRow(page);
-      await page.mouse.move(row.leftX, row.y);
-      await nextFrames(page); // hover → mouseAction 更新
-      await assertElementUnder(page, row.leftX, row.y, row.pusher, {
+      expect(row.tailX, '素材的推文列應量得到日期欄').not.toBeNull();
+      await page.mouse.move(row.tailX, row.y);
+      await nextFrames(page);
+      await assertElementUnder(page, row.tailX, row.y, row.pusher, {
         closest: '[data-pusher]',
         attribute: 'data-pusher',
       });
+      expect(['pageUp', 'pageDown']).toContain(
+        await page.evaluate(() => window.__app.buf.mouseAction)
+      );
+      await page.mouse.down();
+      await page.mouse.up();
+      await nextFrames(page);
+      expect(await highlightedPushers(page)).toEqual([]);
+    });
+
+    test('起點＝推文者、終點＝時間：整條推文列（含左側與日期）都觸發同作者高亮', async ({ page }) => {
+      test.setTimeout(90000);
+      await boot(page, { mousePushClickStart: 'author', mousePushClickEnd: 'time' });
+
+      // 日期欄同樣算可點（終點＝時間）。
+      const row = await stableCommentRow(page);
+      expect(row.tailX).not.toBeNull();
+      await page.mouse.move(row.tailX, row.y);
+      await nextFrames(page);
+      expect(await page.evaluate(() => window.__app.buf.BBSWin.style.cursor)).toBe('pointer');
+
+      // 左側：取 id 的第一格（col 3，在退出帶 0-6 內）——使用者選了推文者起點，推文高亮贏。
+      const idX = await colX(page, 3);
+      await page.mouse.move(idX, row.y);
+      await nextFrames(page); // hover → mouseAction 更新
+      await assertElementUnder(page, idX, row.y, row.pusher, {
+        closest: '[data-pusher]',
+        attribute: 'data-pusher',
+      });
+      expect(await page.evaluate(() => window.__app.buf.BBSWin.style.cursor)).toBe('pointer');
+      // 退出提示帶不可亮著（affordance 不說謊）。
+      expect(
+        await page.evaluate(() =>
+          document.getElementById('exitHintBand').classList.contains('active')
+        )
+      ).toBe(false);
+
       await startCapture(page);
       await page.mouse.down();
       await page.mouse.up();
@@ -694,6 +735,102 @@ test.describe('滑鼠（離線重放）', () => {
       expect(await takeCapture(page)).not.toContain(ARROW_LEFT);
       const on = await highlightedPushers(page);
       on.forEach((p) => expect(p).toBe(row.pusher));
+    });
+  });
+
+  // 合併推文塊（同作者連推一則一行，懸掛縮排）照位置比照：每一行內容結尾以右是翻頁區，
+  // 不是整行到底都算推文。非末行的內容後面**沒有**空白字元 ⇒ 點那裡的事件目標是外層
+  // 容器，行號要用 y 找（App.pusherClickRangeOf）。unit 守在 pusher_click_range_dom。
+  test.describe('合併推文塊的可點區（逐行比照）', () => {
+    // stock-end：rz2x 七連推合成一塊（comment_merge.offline 指名斷言的同一卷）。
+    const stockEnd = findCassettes('article').find((a) => a.__file === 'stock-end.json');
+    test.skip(!stockEnd, '缺 stock-end cassette');
+    test('非首行：內容＝高亮＋pointer；內容右側空白＝翻頁、不高亮', async ({ page }) => {
+      test.setTimeout(90000);
+      await bootOffline(page, ptt);
+      await ptt.applyPrefs(page, {
+        enableEasyReading: true,
+        useMouseBrowsing: true,
+        mouseLeftClick: true,
+        mouseEdgePaging: true,
+        mergeSameAuthorComments: true,
+      });
+      await replayCassette(page, stockEnd, { easyReading: true });
+      await waitPreviewsSettled(page, { timeout: 60000 });
+
+      const found = await page.evaluate(() => {
+        const rows = document.querySelectorAll(
+          '#mainContainer .mergedCommentBlock span[type="bbsrow"][data-pusher]'
+        );
+        for (const el of rows) {
+          const ends = (el.getAttribute('data-pusher-end') || '').split(',').map(Number);
+          const col = Number(el.getAttribute('data-pusher-col'));
+          const dateEnd = Number(el.getAttribute('data-pusher-date-end'));
+          const lines = el.querySelectorAll('[data-type="bbsline"]');
+          // 第 2 行起（非首行，沒有前綴）挑一行：內容 ≥2 格、沒有連結（連結優先於推文
+          // 高亮，是另一條規則）、內容右側到日期之間有空白可點。
+          for (let i = 1; i < ends.length && i < lines.length; ++i) {
+            if (!(ends[i] > col + 1) || !(dateEnd - 3 > ends[i])) continue;
+            if (lines[i].querySelector('a')) continue;
+            // 整塊（7 則＋預覽圖）可能比視窗高 ⇒ 只把這一行捲進來。
+            lines[i].setAttribute('data-e2e-line2', '1');
+            return { col: col, end: ends[i], pusher: el.getAttribute('data-pusher') };
+          }
+        }
+        return null;
+      });
+      requireScene(found, '素材裡找不到「非首行、純文字、右側有空白」的合併推文行');
+
+      // 合併塊的 row 不是 #mainContainer 直系子層 ⇒ 不能用 highlightedPushers。
+      const anyHighlighted = () =>
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll('#mainContainer .pusherHighlight')).map(
+            (el) => el.getAttribute('data-pusher')
+          )
+        );
+      await scrollIntoViewStable(page, '[data-e2e-line2="1"]');
+      // 該行的 y（每則一個 bbsline）。
+      const lineY = () =>
+        page.evaluate(() => {
+          const r = document.querySelector('[data-e2e-line2="1"]').getBoundingClientRect();
+          return (r.top + r.bottom) / 2;
+        });
+
+      // 內容右側空白（內容結尾 +1 格，仍在日期之前）＝翻頁區。
+      let y = await lineY();
+      const blankX = await colX(page, found.end + 1);
+      await page.mouse.move(blankX, y);
+      await nextFrames(page);
+      expect(['pageUp', 'pageDown']).toContain(
+        await page.evaluate(() => window.__app.buf.mouseAction)
+      );
+      expect(await page.evaluate(() => window.__app.buf.BBSWin.style.cursor)).not.toBe(
+        'pointer'
+      );
+      // 點下去不高亮（翻頁在好讀是捲動，捲完再量下一點）。
+      await page.mouse.down();
+      await page.mouse.up();
+      // 等雙擊判定窗口過去：否則下一下會被當成雙擊（瀏覽器選字 ⇒ 推文分支跳過）。
+      await waitClickSettled(page);
+      await nextFrames(page);
+      expect(await anyHighlighted()).toEqual([]);
+
+      // 內容第一格 ＝ 推文可點區：pointer、點了高亮同一人。
+      await scrollIntoViewStable(page, '[data-e2e-line2="1"]');
+      y = await lineY();
+      const contentX = await colX(page, found.col);
+      await page.mouse.move(contentX, y);
+      await nextFrames(page);
+      await assertElementUnder(page, contentX, y, found.pusher, {
+        closest: '[data-pusher]',
+        attribute: 'data-pusher',
+      });
+      await assertPlainTextUnder(page, contentX, y);
+      expect(await page.evaluate(() => window.__app.buf.BBSWin.style.cursor)).toBe('pointer');
+      await page.mouse.down();
+      await page.mouse.up();
+      await expect.poll(async () => (await anyHighlighted()).length).toBeGreaterThan(0);
+      (await anyHighlighted()).forEach((p) => expect(p).toBe(found.pusher));
     });
   });
 
@@ -742,9 +879,9 @@ test.describe('滑鼠（離線重放）', () => {
       await expect.poll(() => peekCapture(page)).toContain(ARROW_LEFT);
     });
 
-    test('防誤觸關閉也一樣成立（固定手勢，不是欄位判定）', async ({ page }) => {
+    test('列表起點改成推文數也一樣成立（固定手勢，不是欄位判定）', async ({ page }) => {
       test.setTimeout(90000);
-      await bootList(page, { mouseMisclickGuard: false });
+      await bootList(page, { mouseListClickStart: 'push' });
 
       const near = await hoverCell(page, 1, 10);
       expect(near.action).toBe('exit');

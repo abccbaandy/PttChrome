@@ -20,7 +20,7 @@
 | 類 | 操作 | 處置 |
 |---|---|---|
 | T0 忽略鍵 | `keyEventToBytes(e) == null` 的鍵：CapsLock／F1–F12／NumLock／ScrollLock／不可映射的 Ctrl+Shift 組合 | `_classifyKey` 回 keyClass `ignore` → 吞掉、**不轉態、不 preventDefault**。判準即「這個鍵交給原生鍵盤路徑會不會送出 byte」，不硬列鍵清單。**Alt remap（`Alt+A~Z` ＝ PTT 的 `Ctrl+A~Z`）不歸此類**：`keyEventToBytes` 對 `altKey` 一律回 null（**刻意的**，見不變量 12），但它們經 `altRemapCharCode` 送得出對應控制碼 ⇒ 由 `onKeyDown` 在 `_classifyKey` **之前**攔下改走 T3-B |
-| T1 本地 | ↑↓ jk／PgUp PgDn／Home End（buffer 內）／滾輪；read.c 同義鍵 `空白`＝`N`＝PgDn、`P`＝PgUp、`p`＝↑、`n`＝↓、`$`＝End | 零 server。視窗/游標語意＝web 慣例，不 read.c 逐格對齊（同義鍵集合本身照 read.c:858-902，**Ctrl-F/Ctrl-B 不納入**，維持 Ctrl 組合與瀏覽器快捷鍵的分界）。滑鼠 hover＝上游標底色（`term_view.onListMouseMove`，只對有文章的 body 列；**防誤觸模式開啟時只有標題欄 col≥30 給 pointer 並接受點擊，底色也只蓋那一段**，見 `docs/mouse.md`） |
+| T1 本地 | ↑↓ jk／PgUp PgDn／Home End（buffer 內）／滾輪；read.c 同義鍵 `空白`＝`N`＝PgDn、`P`＝PgUp、`p`＝↑、`n`＝↓、`$`＝End | 零 server。視窗/游標語意＝web 慣例，不 read.c 逐格對齊（同義鍵集合本身照 read.c:858-902，**Ctrl-F/Ctrl-B 不納入**，維持 Ctrl 組合與瀏覽器快捷鍵的分界）。滑鼠 hover＝上游標底色（`term_view.onListMouseMove`，只對有文章的 body 列；**只有列表起點（pref `mouseListClickStart`，預設作者欄 col≥17）以右給 pointer 並接受點擊，底色也只蓋那一段**，見 `docs/mouse.md`） |
 | T2 列表內交易 | 開文（Enter／**左鍵單擊該列**）、數字跳號、End/Home 邊界確認、`←`/q/e 離板 | 腳本交易（CommandQueue 序列化） |
 | **T3-A 原地重繪（凍結交易，全程不切原生）** | `INPLACE_KEYS`＝`=` `\` `]` `+` `[` `-` `<` `,` `.` `>` `{` `}` `t`（read.c#i_read_key 的 `thread()`／`search_read()`／`ToggleTagItem` 三組 case，**枚舉即合約**，不得改成「猜會不會開 prompt」的啟發式）| `_beginInplaceTransaction`：state→functionMode（吸收 settle／吞鍵）但 **render=frozen**，選取≠`_serverNum` 時先 `inplace-sync-jump` → `native-inplace` 命令（尾附 `\f`）→ expect＝**park 指紋**（`curX<=1 ∧ 3<=curY<=rows-2 ∧ (cursorRowNum≠null ∨ kind='clean-list')`；**不可寫成 `kind==='clean-list'`**：跳號腿之後底列本來就空，`redrawwin` 重繪的是現狀，協定 §4✚/§6）→ `_resumeInPlace`：採用落點當選取／`_serverNum`，**錨（`_topNum`/`_scrollFrac`）一律不動**、只 reveal（不變量 N6）。`_boardName` 全程保留 ⇒ 不丟 cache。落點不在緩衝→退回 `_resumeBuffer`+`rebuild`。失敗＝`_degradeToNative`（banner＋原生）。**Ctrl-C（ClearTagList）不在此組**：FULLUPDATE 只重畫當前頁，緩衝其他頁的 tag 標記會殘留 ⇒ 歸 B 類 |
 | T3-B 一鍵切原生 passthrough | `v`、`/`、`s`、`a`、`Z`、Ctrl-P、Ctrl-Q、Alt+任一字母、`z`……**其餘一切未列鍵** | 單按即生效：有序號選取且 `_serverNum` 未同步→先 `native-sync-jump`（frozen＋吞鍵）→ `enter-function-mode`（原生 excursion，不變量 15 拋 cache）→ 代送原鍵（`native-key` 佇列命令，**尾附 `\f`**：PTT 完全忽略某鍵時零 byte 零 settle，沒有它只能等滿 3s）＋提示「已切至原生（操作完成後自動恢復好讀）」。**Ctrl 組合與 Alt remap（`Alt+A~Z`，全 26 字母）一律代送**（2026-09-13 修，見不變量 12）；只有算不出 bytes 的鍵（Ctrl+Shift／`CtrlShiftMap` 無對應）才不代送、事件放行原生鍵盤路徑。**hold＝`'passthrough'`**：clean-list settle **本身**一律 stay（settle 不解除 hold），由靜置探針決定何時回好讀；article／menu 情境切換照舊立即解除 |
@@ -230,8 +230,8 @@ pref `enableEasyReadingList`（**2026-09-16 起預設 on**）＋`easyReadingList
   `floor((y - bodyTop + scrollTop×scaleY)/rowH)`），再經 `LIST_HEADER_ROWS`（=3）換算
   body index ＝**序列位置**，用 `getListView().seq[idx]` 反查絕對索引。
   - hover → `term_view.onListMouseMove`：只有「body 區且 idx < seq.length（非補列）」才
-    上游標底色；`cursor:pointer` 另需 `mouseLeftClick` 且落在可點區（防誤觸開＝標題欄
-    col≥30，關＝整列，`mouse_regions.clickableColStart`）—— **底色的範圍與可點區相同、
+    上游標底色；`cursor:pointer` 另需 `mouseLeftClick` 且落在可點區（列表起點以右、
+    總開關關＝整列，`mouse_regions.clickableColStart`）—— **底色的範圍與可點區相同、
     條件不同**（底色不看 `mouseLeftClick`），與原生一致。整條路徑受總開關
     `useMouseBrowsing` gate；frozen 一律清掉。**不得走 `term_buf.onMouse_move`**。
   - 左鍵單擊 → `ListSession.onMouseClick(renderRow, col)`：寫回序號錨 → `_forceRedraw`

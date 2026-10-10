@@ -196,7 +196,8 @@ const OVERRIDING_SEL =
 //   isAnchorTarget      → a
 //   isPreviewTarget     → preview_targets.js#PREVIEW_CLICK_SELECTOR（含 .previewError）
 //   isOwnControlTarget  → 任何 button（開燈／圖文並排／AI 校正／debug 錄製浮動鈕）
-//   pusher 高亮分支      → [data-pusher]（col >= data-pusher-col 時 toggle 完就 return）
+//   pusher 高亮分支      → [data-pusher]（col 落在推文可點區內時 toggle 完就 return，
+//                          可點區見 mouse_regions.pusherClickRange）
 // 少一種就是「點下去其實觸發了別的功能」，而斷言退化成沉默的 0 —— 那不是時序問題，
 // 是量座標時用錯了清單。**改 pttchrome.jsx 的早退順序時要同步這裡。**
 const EDGE_PAGING_BLOCKERS = OVERRIDING_SEL + ', button, [data-pusher]';
@@ -228,7 +229,10 @@ async function assertPlainTextUnder(page, x, y, { sel = OVERRIDING_SEL } = {}) {
 // 一份拷貝（後者始終沒補上 settle，是 50fa35c 那個 bug 的活體），合併到這裡。
 //
 // 排除：黑名單列（visibility:hidden ⇒ 不是 hit-test 目標）、內容欄不在退出帶右邊的列、
-// 左緣或內容被連結／預覽蓋住的列。
+// 內容短到 contentX 落在內容結尾之後的列、左緣或內容被連結／預覽蓋住的列。
+//
+// 回傳的 tailX ＝日期欄裡的一點（內容結尾之後、日期結尾之前；預設的推文可點區
+// 「內容起→內容止」以外，屬於邊緣翻頁）。量不到（無日期欄位／被蓋住）時為 null。
 //
 // opts.capHalfRow=true ⇒ y 取 `top + min(height/2, chh/2)`（pusher_highlight 的取法：
 // 合併塊是多行 div，取整塊中點會落到第二行）。預設取整列中點（mouse.offline 的取法）。
@@ -246,8 +250,18 @@ async function stableCommentRow(page, { capHalfRow = false, settleTimeout = 6000
       if (el.style.visibility === 'hidden') continue;
       const col = Number(el.getAttribute('data-pusher-col'));
       if (!(col > 7)) continue; // 內容區要真的在退出帶右邊才有得比
+      // contentX 取 col+1 那一格 ⇒ 內容至少要兩格，否則點的是內容結尾之後。
+      const end = Number(el.getAttribute('data-pusher-end'));
+      if (Number.isFinite(end) && end > 0 && !(end > col + 1)) continue;
+      const dateEnd = Number(el.getAttribute('data-pusher-date-end'));
       el.setAttribute('data-e2e-row-key', key);
-      out.push({ key: key, col: col, pusher: el.getAttribute('data-pusher') });
+      out.push({
+        key: key,
+        col: col,
+        end: Number.isFinite(end) && end > 0 ? end : null,
+        dateEnd: Number.isFinite(dateEnd) && dateEnd > 0 ? dateEnd : null,
+        pusher: el.getAttribute('data-pusher'),
+      });
     }
     return out;
   });
@@ -266,7 +280,7 @@ async function stableCommentRow(page, { capHalfRow = false, settleTimeout = 6000
     if (rect.height <= 0) continue;
 
     const pos = await page.evaluate(
-      ({ s, col, capHalfRow, over }) => {
+      ({ s, col, end, dateEnd, capHalfRow, over }) => {
         const el = document.querySelector(s);
         if (!el) return null;
         const v = window.__app.view;
@@ -284,9 +298,24 @@ async function stableCommentRow(page, { capHalfRow = false, settleTimeout = 6000
         const leftX = xOf(1);
         const contentX = xOf(col + 1);
         if (!hit(leftX) || !hit(contentX)) return null;
-        return { y: y, leftX: leftX, contentX: contentX, text: el.textContent };
+        // 日期欄的最後一格（MM/DD 的末位數字）。
+        const tailX = end != null && dateEnd != null && dateEnd - 1 >= end ? xOf(dateEnd - 1) : null;
+        return {
+          y: y,
+          leftX: leftX,
+          contentX: contentX,
+          tailX: tailX != null && hit(tailX) ? tailX : null,
+          text: el.textContent,
+        };
       },
-      { s: sel, col: c.col, capHalfRow: capHalfRow, over: OVERRIDING_SEL }
+      {
+        s: sel,
+        col: c.col,
+        end: c.end,
+        dateEnd: c.dateEnd,
+        capHalfRow: capHalfRow,
+        over: OVERRIDING_SEL,
+      }
     );
     if (!pos) continue;
     return Object.assign({ col: c.col, pusher: c.pusher, selector: sel }, pos);

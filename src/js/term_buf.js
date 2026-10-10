@@ -305,6 +305,8 @@ export function TermBuf(cols, rows) {
   // 指標壓在 <a>／我們自己的浮動按鈕上（App.onMouse_move 傳進來）。它們是元素層的
   // 可點物件，在點擊優先權表上贏過滑鼠瀏覽 ⇒ 邊緣翻頁的提示帶要讓位。
   this._overAnchor = false;
+  // 指標底下那一列推文的可點區（{start,end}，不在推文列上＝null），見 onMouse_move。
+  this._pusherRange = null;
   // 滑鼠停在哪一格代表什麼動作（mouse_regions 的 ACT_*）與它的目標列。
   // 改版前是 0..14 的 mouseCursor 數字，同時兼任「長什麼樣」與「點了做什麼」。
   this.mouseAction = ACT_NONE;
@@ -1611,7 +1613,7 @@ TermBuf.prototype = {
   // 與 server 的真實 24 列並不對應，一律由 term_view.onListMouseMove 處理
   // （App.onMouse_move 分流）；這裡再擋一次，涵蓋 resetMousePos 這類不經 App 的
   // 呼叫者。
-  onMouse_move: function(tcol, trow, overAnchor){
+  onMouse_move: function(tcol, trow, overAnchor, pusherRange){
     if (this.listRenderMode === 'buffer' || this.listRenderMode === 'frozen')
       return;
     this.tempMouseCol = tcol;
@@ -1619,6 +1621,9 @@ TermBuf.prototype = {
     // 指標壓在 <a> 上（連結／功能鍵按鈕）＝元素層贏，邊緣提示帶讓位。快取起來讓
     // refreshMouseAction（重畫後的重算，滑鼠沒動）也看得到同一個事實。
     this._overAnchor = !!overAnchor;
+    // 指標底下推文列的可點區（mouse_regions.pusherClickRange，App 由 DOM 目標算）。
+    // 同樣快取給 refreshMouseAction；不經 App 的呼叫（resetMousePos）傳不進來＝null。
+    this._pusherRange = pusherRange || null;
 
     var region = this._resolveMouseRegionAt(tcol, trow);
 
@@ -1664,10 +1669,12 @@ TermBuf.prototype = {
       boardList: this.isBoardListScreen(),
       menuScreen: menuScreen,
       menuItemRow: menuItemRow,
-      // 防誤觸（可點區＝底色區的起始欄）跟著總開關走，見 resolveMouseGates。
-      misclickGuard: !!(
-        this.useMouseBrowsing && this.view && this.view.mouseMisclickGuard
-      ),
+      // 點擊範圍（可點區＝底色區的起始欄）跟著總開關走，見 resolveMouseGates。
+      clickRange: !!this.useMouseBrowsing,
+      listClickStart: this.view && this.view.mouseListClickStart,
+      // 指標底下那一列推文的可點區（App.onMouse_move 由 DOM 目標算好帶進來，
+      // 同 _overAnchor 的快取語意）。只有 pageState 3 看。
+      pusherRange: this._pusherRange || null,
       // PTT 開著輸入框 ⇒ 這一幀什麼都不能點也不上色（見 resolveMouseRegion）。
       inputPrompt: this.isCursorOnInputField(),
       // 框開著（pressanykey／vmsg／輸入欄）⇒ 整片是「點空白處關框」的目標，

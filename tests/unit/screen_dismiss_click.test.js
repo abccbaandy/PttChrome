@@ -40,7 +40,7 @@ function makeApp({
   app.dblclickTimer = null;
   app.setDblclickTimer = vi.fn();
   app.clientToPos = vi.fn(() => ({ col: 40, row: clickRow }));
-  app.mouseGates = vi.fn(() => ({ leftClick, misclickGuard: false }));
+  app.mouseGates = vi.fn(() => ({ leftClick, clickRange: false }));
   app.activeListSession = vi.fn(() => null);
   app.onMouse_click = vi.fn();
   app.setInputAreaFocus = vi.fn();

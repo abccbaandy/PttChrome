@@ -27,7 +27,9 @@
 | `cursorRowBackground` | `false` | bool | **樣式層**：整列上底色（UI 在「一般」分頁） |
 | `mouseBrowsingHighlightColor` | `2` | 1..15 | 底色樣式的顏色，滑鼠與鍵盤共用（UI 在「一般」分頁） |
 | `mouseLeftClick` | `true` | bool | 列表點標題開文＋文章左側退出＋自訂指標 |
-| `mouseMisclickGuard` | `true` | bool | 防誤觸模式：**可點區＝底色區**的起始欄（見下方「防誤觸模式」） |
+| `mouseListClickStart` | `'author'` | push / date / author / title | 文章列表從哪一欄起可點（＝底色起始欄），見下方「點擊範圍」 |
+| `mousePushClickStart` | `'content'` | author / content | 推文列可點區（點了高亮同一推文者）的起點 |
+| `mousePushClickEnd` | `'content'` | content / date / time | 同上終點（time＝整列到底） |
 | `mouseFunctionKeys` | `true` | bool | 畫面上的功能鍵提示變成按鈕（見下方「功能鍵按鈕」） |
 | `mouseEdgePaging` | `true` | bool | 邊緣點擊翻頁：頂列 Home／底列 End／右緣上下半翻頁（文章內是整片上下半），見下方「邊緣翻頁區」 |
 | `mouseMiddleClick` | `2` | 0 關閉 / 1 貼上 / 2 左方向鍵 | 預設 2（＝回上一層）：BBS 的「返回」是最高頻操作，中鍵貼上在這個 client 幾乎用不到（2026-09-16 從 `0` 翻） |
@@ -46,6 +48,7 @@
 | `mouseWheelFunction1/2/3` | 0 無 / 1 上下行 / 2 上下頁 / 3 同標題前後篇 | 刪除 → 單一 `mouseWheel`；按住左／右鍵的兩組設定整個移除 |
 | `mouseSwipeHorizontal` | 0 關 / 1 左右方向鍵 | 刪除 → `mouseBackNav`（2026-09 兩者合併成同一條實作，永遠一起開關；右滑「進文」一併移除） |
 | `mouseBackButton` | 0 關 / 1 左方向鍵 | 刪除 → `mouseBackNav` |
+| `mouseMisclickGuard` | bool | 刪除 → `mouseListClickStart`／`mousePushClickStart`／`mousePushClickEnd`（2026-10，issue #56；開關變三個範圍選項，殘留的 `false` 不再有作用） |
 
 不遷移的理由：語意不是一對一（左鍵從「送哪個鍵」變成「開文／退出」、滾輪從三組
 變一組），寫一份遷移只會把舊值硬塞進意義不同的新格子。`readValuesWithDefault` 是
@@ -59,8 +62,9 @@
 
 座標一律是**格子空間**（`clientToPos` 的輸出）。
 
-`S` ＝ `clickableColStart(pageState, misclickGuard)`：防誤觸開啟時列表 30、選單 8，
-其餘（含防誤觸關閉）一律 0。**可點區與底色區共用它**。
+`S` ＝ `clickableColStart(pageState, clickRange, listClickStart)`：列表＝使用者選的起點欄
+（推文數 8／日期 11／作者 17／標題 30，預設作者）、選單 8，其餘 0；`clickRange` 為假
+（總開關關／server 回報／換行版面）一律 0。**可點區與底色區共用它**。
 
 **第一條早退是 `serverMouse`**（排在 `dismiss` 與 `inputPrompt` 之前）：滑鼠已交給
 PTT server 時整張表都不作數，一律回 `NONE`。一條早退同時關掉四件事 —— `action` 恆
@@ -75,6 +79,7 @@ PTT server 時整張表都不作數，一律回 `NONE`。一條早退同時關�
 | 4（LIST 變體） | `1 < row < rows-2`，其餘同上兩列 | 同上 | 同上 | 同上 |
 | 1（MENU／看板列表） | `0 < row < rows-1` 且 `col < 7` | `exit` | `back`（PNG） | 不上色 |
 | 1 | `0 < row < rows-1` | `col >= S` → `enter(row)`，否則 `none` | 可點區 `pointer` | `[S, 行尾)` |
+| 3（READING） | 指標在推文列且 `col ∈ pusherRange` | `none`（點擊由推文高亮分支接手） | `pointer` | 不上色 |
 | 3（READING） | `col < 7` | `exitArticle` | `back`（PNG） | 不上色 |
 | 3 | 其餘 | `none` | `auto` | 不上色 |
 | 0 / 5 / 6 | — | `none` | `auto` | 不上色 |
@@ -99,7 +104,7 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 「可點區＝底色區」。守護：`tests/unit/mouse_regions.test.js`、`cursor_highlight.test.js`、
 `cursor_highlight_arbitration.test.js`、`term_buf_input_field.test.js`。
 
-**左 7 欄（`EXIT_COL_END`）的退出帶三種畫面共用**，且**不看 `mouseMisclickGuard`**
+**左 7 欄（`EXIT_COL_END`）的退出帶三種畫面共用**，且**不看點擊範圍設定**
 （使用者 2026-08 定案）：它是一個固定手勢，不是「哪一欄算內容」的欄位判定。
 
 `exit`（列表／選單）與 `exitArticle`（文章）**刻意是兩個常數**，雖然兩者都送
@@ -122,20 +127,36 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 - **`realignListColumns` 絕不可套在滑鼠 col 上**：那是文字空間的 DBCS 折疊補償
   （`rowToText` 把兩格併一個字元），格子空間沒有位移。
 
-## 防誤觸模式（`mouseMisclickGuard`，預設開）
+## 點擊範圍（2026-10 取代「防誤觸模式」開關，issue #56）
 
-**合約：可點區＝底色區**（使用者 2026-08 定案）。唯一真相源是
-`mouse_regions.clickableColStart(pageState, guard)`，底色端經
-`cursor_highlight.highlightColStart({ mode, pageState, misclickGuard })` 委派它。
+**合約：可點區＝底色區**（使用者 2026-08 定案）；**指標＝點下去會發生的事**。
+生效與否 ＝ `resolveMouseGates().clickRange`（`useMouseBrowsing && !serverReport && !reflow`），
+不生效＝整列。值由使用者選：
 
-| | 文章列表／選單 | 文章推文列（pusher 高亮） |
-|---|---|---|
-| 開 | 只有標題（選項）欄可點，底色也只蓋那一段 | 只有內容文字可點（該列的 `contentCol`） |
-| 關 | 整列可點、整列上底色 | 整列可點（＝改版前的行為） |
+| 畫面 | pref | 選項 → 欄（格子空間） | 預設 | 純函式 |
+|---|---|---|---|---|
+| 文章列表（含列表好讀、看板列表平滑捲動） | `mouseListClickStart` | push 8／date 11／author 17／title 30（readdoent 欄位，見上「依據」） | author | `clickableColStart`／`listClickColStart`（未知值退回預設） |
+| 選單（pageState 1） | 無 | 固定 `MENU_COL_START` 8 | — | `clickableColStart` |
+| 推文列起點 | `mousePushClickStart` | author＝`COMMENT_USERID_COL` 3／content＝`contentCol` | content | `pusherClickRange` |
+| 推文列終點 | `mousePushClickEnd` | content＝`contentEnd`／date＝`dateEnd`／time＝∞ | content | `pusherClickRange` |
 
-- **推文列的欄位不是全畫面共用**：`contentCol` 由 `comment_parse.annotateComment`
-  逐列算（`推 id: ` 的長度隨 id 變），經 `Row` 輸出成 `data-pusher-col`，
-  `App.mouse_click` 讀它。文章頁**不上 hover 底色**（維持原樣），所以那裡只有可點區。
+預設推文「內容起 → 內容止」：左 0-6 欄留給退出帶、右側（IP／日期／時間）留給邊緣翻頁的上下頁。
+
+- **推文列的欄位不是全畫面共用**：`contentCol`／`contentEnd`／`dateEnd` 由
+  `comment_parse.annotateComment` 逐列算（`commentTailCols`：去尾空白、排除 IP 欄、
+  全形字 2 格），經 `Row` 輸出成 `data-pusher-col`／`-end`／`-date-end`。
+  **合併推文塊照位置比照**：懸掛縮排讓每則（一行一個 bbsline）的欄位與原生逐列相同 ⇒
+  `-end` 是逐行清單 `"a,b,c"`（`comment_merge.buildMergedCommentChars` 的 `lineEnds`，
+  只算有內容的則，與 bbsline 一一對應），`-date-end` 全塊共用（末則的日期欄）。
+  **行號用指標 y 找**（`getBoundingClientRect`），不用事件目標：非末行內容後面沒有補空白
+  字元，點在內容右側空白處時目標是外層容器。y 不在任何一行上（行間預覽插槽）⇒ null。
+  推文卡片（換行版面，範圍不生效）不帶後兩者。
+- **點擊與指標共用 `App.pusherClickRangeOf(target, clientY)`**：`mouse_click` 的推文高亮分支用它判
+  落點；`onMouse_move` 把它傳進 `buf.onMouse_move` → `resolveMouseRegion({ pusherRange })`，
+  pageState 3 落在區間內＝pointer、無退出帶／翻頁提示（排在退出帶與上下頁之前，與點擊優先權同序）。
+  起點選 author 時區間會蓋到退出帶的 col 3-6：使用者明確選的，推文高亮贏、退出帶提示不亮。
+  `serverReport` 時回 null（整條推文分支跳過）。文章頁**不上 hover 底色**，所以那裡只有可點區。
+- 舊 key 不遷移（同「舊 → 新 key 對照」政策）：關過防誤觸的人回到預設範圍。
 - **底色不分 `lastMover`**：鍵盤游標與滑鼠 hover 共用同一個寬度。兩種光棒不一樣長
   只會讓人以為畫面壞了。
 - 2026-08 之前是「整列上底色、只有標題欄可點」，兩者刻意不一致 —— 代價是使用者
@@ -276,7 +297,7 @@ debug 錄製，`render/merge_buttons.js` 的純 `button`）在點擊優先權表
 - **底色的關邊界**：右緣帶上一律不上底色（與左側退出帶同處理）就足以避免誤點 ——
   指標就在帶子上。要讓中間那條底色在第 64 欄**收掉**得動
   `render/link_segment.js` 的開關 span 舞步 ＋ `row.js` ＋ `screen.js` ＋整份 golden，
-  屬核心渲染鏈；而且「防誤觸關閉時底色蓋到左側退出帶」這個同型的不精確現況已經接受。
+  屬核心渲染鏈；而且「總開關關掉時底色蓋到左側退出帶」這個同型的不精確現況已經接受。
 - **`[`／`]`／`=`／重新整理／同標題末篇**：使用者這次沒有要（它們佔極左 2 欄／極右
   4 欄，會把新的頂／底列帶切碎）。
 - **功能鍵按鈕列不特別讓開**：底列同時是 End 區與按鈕列，按鈕自己贏（元素層 listener
@@ -294,13 +315,13 @@ debug 錄製，`render/merge_buttons.js` 的純 `button`）在點擊優先權表
 | 功能鍵按鈕 | `useMouseBrowsing && mouseFunctionKeys`（`term_view._renderScreenLines` 與 `_mirrorStatusRowToFooter` 兩處各 gate 一次） |
 | 邊緣翻頁區（含指標與提示帶） | `useMouseBrowsing && mouseEdgePaging`（`edgePaging`）—— **刻意不跟 `mouseLeftClick`**：關掉「點標題開文」不該換來一個點得下去卻沒有提示的翻頁區 |
 | 點空白處關框 | `useMouseBrowsing && mouseLeftClick`（`resolveMouseGates().leftClick`，**沿用左鍵那顆 pref，沒有新 key**）＋ `buf.listRenderMode === 'native'` |
-| 防誤觸（可點區＝底色區的起始欄） | `useMouseBrowsing && mouseMisclickGuard` —— **跟著總開關走**，總開關關掉時左鍵／指標／提示帶全滅，沒有誤觸要防；設定頁那顆 checkbox 因此能與其他子項一樣 `disabled` |
+| 點擊範圍（可點區＝底色區的起始欄、推文可點區起訖） | `useMouseBrowsing`（`clickRange`）—— **跟著總開關走**，總開關關掉時沒有東西要分區；設定頁那三個下拉因此與其他子項一樣 `disabled` |
 | 中鍵 | `useMouseBrowsing && mouseMiddleClick !== 0` |
 | 滾輪 | `useMouseBrowsing && mouseWheel !== 0` |
 | 滾輪平滑捲動 | `useMouseBrowsing && mouseWheel !== 0 && mouseWheelSmoothScroll`（`resolveMouseGates` 的 `wheelSmoothScroll`；只有列表好讀分支會問這一格） |
 | 瀏覽器返回（含觸控板左滑手勢） | `useMouseBrowsing && mouseBackNav !== 0`（`backNav`）—— **刻意不經過 `mouseWheel`**，見下節 |
-| 回報給 PTT server | `useMouseBrowsing && mouseServerReport && buf.mouseReport.isActive()`（`serverReport`）—— 為真時**強制關掉** `leftClick`／`cursorIcon`／`misclickGuard`／`wheel`／`wheelSmoothScroll`，見下方「PTT server 端的滑鼠回報」 |
-| 手機換行版面（`reflow`，`term_view.reflow`） | 為真時 `misclickGuard`／`edgePaging` 關掉，`resolveMouseRegion` 對 pageState 3 早退 NONE（格子座標不對應折行後的字，見 `docs/mobile.md`「Phase 3」） |
+| 回報給 PTT server | `useMouseBrowsing && mouseServerReport && buf.mouseReport.isActive()`（`serverReport`）—— 為真時**強制關掉** `leftClick`／`cursorIcon`／`clickRange`／`wheel`／`wheelSmoothScroll`，見下方「PTT server 端的滑鼠回報」 |
+| 手機換行版面（`reflow`，`term_view.reflow`） | 為真時 `clickRange`／`edgePaging` 關掉，`resolveMouseRegion` 對 pageState 3 早退 NONE（格子座標不對應折行後的字，見 `docs/mobile.md`「Phase 3」） |
 | 連結／圖片／`copyOnSelect`／右鍵選單 | **不受任何滑鼠 pref 影響** |
 | `[data-pusher]` 推文者高亮 | 不受滑鼠 pref 影響，**但 `serverReport` 為真時整條分支跳過**（理由見下節） |
 
@@ -554,7 +575,7 @@ sentinel 兜底」，改版後只會更一致。若它的整頁 snapshot 動畫�
 |---|---|---|---|
 | 來源 | 哪一列 | `resolveHighlightRow` | `mouseBrowsingHighlight` / `keyboardCursorHighlight`（＋ `lastMover` 仲裁） |
 | 樣式 | 畫什麼 | `cursorHighlightClasses` | `cursorRowBrighten` / `cursorRowBackground` |
-| 寬度 | 從第幾欄畫起 | `highlightColStart` | `mouseMisclickGuard`（＝可點區，見上） |
+| 寬度 | 從第幾欄畫起 | `highlightColStart` | `mouseListClickStart`（＝可點區，見上） |
 
 樣式層回一個 **class 字串**，可能是多個 class（`"cursorBrighten b2"`）：
 
@@ -652,7 +673,7 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 4. **`closest('a')`** —— 連結、AID 連結、**功能鍵按鈕**（`a.fnKey`）
 5. **`closest(PREVIEW_CLICK_SELECTOR)`** —— 內嵌預覽（命中範圍＝**媒體盒本身**，不含圖片左右的置中留白，見下）
 6. `getSelection().isCollapsed`
-7. `closest('[data-pusher]')` —— 推文者高亮（防誤觸開啟時還要 `col >= data-pusher-col`；**欄位不合不 return**，讓下面的左側退出帶接手）。**`serverReport` 為真時整條跳過**：它是純裝飾，不該吃掉一整片的回報；而且 `serverReport` 會強制關掉 `misclickGuard` ⇒ `pusherColStart` 退回 0 ⇒ 不跳過的話整個推文區永遠回報不出去
+7. `closest('[data-pusher]')` —— 推文者高亮（`col` 要落在 `pusherClickRangeOf` 的區間內；**區間外不 return**，讓下面的左側退出帶／邊緣翻頁接手）。**`serverReport` 為真時整條跳過**（`pusherClickRangeOf` 回 null）：它是純裝飾，不該吃掉一整片的回報；而且 `serverReport` 會關掉 `clickRange` ⇒ 區間退回整列 ⇒ 不跳過的話整個推文區永遠回報不出去
 8. **點空白處關框**（`listRenderMode === 'native'` ＋ `mouseGates().leftClick` ＋ `buf.dismissTarget()` 非 null）—— 見下方「點空白處關框」
 9. `listRenderMode` buffer/frozen 分支
 9.5. **回報給 PTT server**（`gates.serverReport && App._serverMouseReportable()`）—— 送 SGR press+release、`preventDefault`、return
@@ -1054,7 +1075,7 @@ PTT 從 2026-09 起會送 `ESC[?1000h` / `ESC[?1006h` 這類序列要求終端�
 
 | 類別 | 例子 | serverReport 時 |
 |---|---|---|
-| 我們發明的滑鼠語意 | 點標題開文、左側退出帶、自訂指標、防誤觸、滾輪翻頁、hover 底色 | **讓位** |
+| 我們發明的滑鼠語意 | 點標題開文、左側退出帶、自訂指標、點擊範圍、滾輪翻頁、hover 底色 | **讓位** |
 | 真的是另一個東西 | 連結／AID 連結／功能鍵按鈕（`<a>`）、內嵌預覽、**已選取的文字** | **仍然優先**（優先權表第 4-6 條） |
 | 瀏覽器語意 | 中鍵貼上、返回導航（`backNav`）、原生右鍵選單 | **不受影響** |
 | 虛擬視窗 | 列表好讀 buffer/frozen、文章好讀長頁 | **不回報**（見下） |
@@ -1091,7 +1112,7 @@ motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、D
 
 | 檔案 | 鎖什麼 |
 |---|---|
-| `tests/unit/mouse_regions.test.js` | 區域決策表逐格 + `clickableColStart` + 防誤觸關閉時整列可點 + `cursorCss` 括號平衡（含四顆邊緣指標）+ **邊緣翻頁區逐格**（邊界 col 63/64、row 12/13、主功能表不給、`edgePaging:false` 時逐格零回歸） |
+| `tests/unit/mouse_regions.test.js` | 區域決策表逐格 + `clickableColStart`／列表起點逐選項／`pusherClickRange`（含文章 hover pointer 優先）+ 範圍不生效時整列可點 + `cursorCss` 括號平衡（含四顆邊緣指標）+ **邊緣翻頁區逐格**（邊界 col 63/64、row 12/13、主功能表不給、`edgePaging:false` 時逐格零回歸） |
 | `tests/unit/mouse_edge_send.test.js` | 邊緣區的出口：四種動作都走 `sendNavKeyAsUser`、`view._send` 零 byte、列表好讀分支吃螢幕列號、**自家浮動按鈕不得觸發翻頁** |
 | `tests/unit/mouse_geometry.test.js` | 帶子右緣 ↔ 可點區右緣往返（三組幾何）＋ `edgeBandRect` 的四邊 ↔ `rowFromClientY`／`colFromClientX` 往返 |
 | `tests/unit/mouse_gating.test.js` | 總開關關掉 ⇒ 中鍵與滾輪也關；`edgePaging` 跟總開關與 `serverReport` 走、與 `mouseLeftClick` 互不牽連 |
@@ -1105,7 +1126,8 @@ motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、D
 | `tests/unit/pref_schema_cursor_row.test.js` | 兩個樣式 pref 的預設值 + 既有使用者也拿得到新預設 |
 | `tests/unit/cursor_highlight_fastpath.test.js` | 快路徑：多 class 搬家、空 cls 不噴 `InvalidCharacterError` |
 | `tests/e2e/offline/cursor_row_brighten.offline.spec.js` | 真 CSS：提亮列的實際顏色＝q(n+8)、背景仍透明；切樣式即時生效 |
-| `tests/unit/row_render.test.js` | 部分寬度底色的 DOM（包裝 span 的範圍／`data-pusher-col`） |
+| `tests/unit/row_render.test.js` | 部分寬度底色的 DOM（包裝 span 的範圍／`data-pusher-col`／`-end`／`-date-end`） |
+| `tests/unit/pusher_click_range_dom.test.js` | `App.pusherClickRangeOf`：合併塊逐行取內容結尾（行號用 y、點在內容右側空白也對）、預覽插槽 ⇒ null |
 | `tests/unit/comment_parse.test.js` | `contentCol`（推文內容起始欄） |
 | `tests/unit/cursor_highlight_arbitration.test.js` | `applyCursorHighlight` 的來源判定：鍵盤搶得走、滑鼠拿得回、模式切換不算移動 |
 | `tests/unit/list_hover_gating.test.js` | 列表 hover 的三個 gate、底色 vs pointer 條件不同、**邊緣區吃螢幕列號**（同一個序列列在上半／下半給不同動作） |
@@ -1120,7 +1142,7 @@ motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、D
 | `tests/unit/screen_dirty_rows.test.js` | 切 pref 後按鈕真的出現／消失（`annotationsKey` 的回歸鎖，兩條分支各一） |
 | `tests/unit/mouse_dblclick_skip.test.js` | 第二次 mousedown 不得 `preventDefault`（雙擊選字） |
 | `tests/unit/fixtures/screen_golden/list_native_fnkeys.html`／`article_footer_fnkeys.html` | 整列 DOM 快照（含複合組拆成的相鄰多顆 `a.fnKey`） |
-| `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關／推文列可點區（防誤觸三態）／列表左側退出帶／**邊緣翻頁區**（原生送真按鍵、好讀是捲動且 0 byte、功能鍵按鈕仍贏、pref 關掉零回歸、拖捲軸不翻頁） |
+| `tests/e2e/offline/mouse.offline.spec.js` | 提示帶／pointer-events／像素對齊／優先權／總開關／推文列可點區（預設內容起訖：左退出／右翻頁／內容 pointer＋高亮；推文者起＋時間止）／列表左側退出帶／**邊緣翻頁區**（原生送真按鍵、好讀是捲動且 0 byte、功能鍵按鈕仍贏、pref 關掉零回歸、拖捲軸不翻頁） |
 | `tests/e2e/offline/function_keys.offline.spec.js` | 三條 render 分支各自都接上了、點了真的送鍵、切 pref 立即生效、**`(X%)` 逐鍵送不同鍵＋括號不可點（D3）** |
 | `tests/unit/screen_dismiss.test.js` | 關框判斷：三種指紋／輸入欄優先／`pageState 5` 第二來源不得誤判／游標列不算空白處 |
 | `tests/unit/screen_dismiss_click.test.js` | `App.mouse_click` 的接線：現算而非讀 `mouseAction`、gate、buffer/frozen 不直送、連結優先 |
@@ -1133,5 +1155,5 @@ motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、D
 | `tests/unit/term_view_send_key_as_user.test.js` | 合成事件三條硬規則（`cancelable`／上游接手不重送／列表好讀走 `ListSession`） |
 | `tests/unit/wheel_horizontal.test.js` | **水平 wheel 不得翻頁**的回歸鎖 ＋ 手勢入口的 pref 獨立性 |
 | `tests/e2e/offline/swipe_back.offline.spec.js` | 真 wheel 事件只送一次 `←`、真 History API 上 `goBack()` 被吃掉且沒離站 |
-| `tests/e2e/offline/easy-reading-list.offline.spec.js` | 列表好讀的底色左緣＝標題欄、切防誤觸後回到整列 |
+| `tests/e2e/offline/easy-reading-list.offline.spec.js` | 列表好讀的底色左緣＝列表起點（預設作者、改標題即時跟上） |
 | `tests/e2e/offline/wheel_stuck_button.offline.spec.js` | 按鍵旗標卡死的三條路徑 |

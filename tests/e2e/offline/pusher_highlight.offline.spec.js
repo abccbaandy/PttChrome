@@ -93,7 +93,6 @@ async function boot(page) {
     showFloorNumbers: true,
     useMouseBrowsing: true,
     mouseLeftClick: true,
-    mouseMisclickGuard: true,
     // 合併塊在場才是 bug 回報的現場（塊內的圖最多）。
     mergeSameAuthorComments: true,
   });

@@ -3,7 +3,7 @@
 //
 // 守住 2026-08 滑鼠重新設計的三件事：
 //  (1) 總開關關掉 ⇒ 連 hover 都不該有（改版前這條路徑完全不看 useMouseBrowsing）；
-//  (2) 防誤觸開啟時 pointer 只給標題欄（col >= 30），關閉則整列都給；hover 列
+//  (2) pointer 只給列表起點以右（pref mouseListClickStart；測試預設標題欄 col >= 30）；hover 列
 //      （＝要上底色的列）兩種情況都認整列，底色的**寬度**另由 applyCursorHighlight
 //      決定（與可點區同源，見 cursor_highlight.highlightColStart）；
 //  (3) 左側退出帶（cols 0..EXIT_COL_END，2026-08 重新加回列表）：停在正文列的
@@ -20,7 +20,7 @@ const bodyRow = (idx) => LIST_HEADER_ROWS + idx;
 function makeView({
   useMouseBrowsing = true,
   mouseLeftClick = true,
-  mouseMisclickGuard = true,
+  mouseListClickStart = "title",
   mouseEdgePaging = true,
   listRenderMode = "buffer",
   bodyLen = 10,
@@ -29,7 +29,7 @@ function makeView({
   const highlightCalls = [];
   const v = Object.create(TermView.prototype);
   v.mouseLeftClick = mouseLeftClick;
-  v.mouseMisclickGuard = mouseMisclickGuard;
+  v.mouseListClickStart = mouseListClickStart;
   v.mouseEdgePaging = mouseEdgePaging;
   v._listHoverRow = -1;
   v.buf = {
@@ -75,15 +75,15 @@ describe("onListMouseMove", () => {
     expect(highlightCalls).toEqual([bodyRow(2)]);
   });
 
-  test("防誤觸關閉：作者欄也給 pointer（整列可點）", () => {
-    const { v, highlightCalls } = makeView({ mouseMisclickGuard: false });
+  test("列表起點＝推文數：作者欄也給 pointer", () => {
+    const { v, highlightCalls } = makeView({ mouseListClickStart: "push" });
     v.onListMouseMove(bodyRow(2), AUTHOR_COL);
     expect(v.buf.BBSWin.style.cursor).toBe("pointer");
     expect(v._listHoverRow).toBe(bodyRow(2));
     expect(highlightCalls).toEqual([bodyRow(2)]);
   });
 
-  test("總開關關掉 ⇒ 防誤觸也不生效（但整列本來就沒有 hover）", () => {
+  test("總開關關掉 ⇒ 點擊範圍也不生效（但整列本來就沒有 hover）", () => {
     const { v } = makeView({ useMouseBrowsing: false });
     v.onListMouseMove(bodyRow(2), AUTHOR_COL);
     expect(v.buf.BBSWin.style.cursor).toBe("auto");
@@ -171,8 +171,8 @@ describe("左側退出帶（2026-08 重新加回列表）", () => {
     expect(affordance).toEqual([false]);
   });
 
-  test("**不看**防誤觸（固定手勢，不是欄位判定）", () => {
-    const { v, affordance } = makeView({ mouseMisclickGuard: false });
+  test("**不看**列表點擊起點（固定手勢，不是欄位判定）", () => {
+    const { v, affordance } = makeView({ mouseListClickStart: "push" });
     v.onListMouseMove(bodyRow(2), 0);
     expect(affordance).toEqual([true]);
   });

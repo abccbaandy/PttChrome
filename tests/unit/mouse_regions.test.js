@@ -21,15 +21,27 @@ import {
   EXIT_COL_END,
   MENU_COL_START,
   clickableColStart,
+  listClickColStart,
+  LIST_CLICK_START_COLS,
+  DEFAULT_LIST_CLICK_START,
+  pusherClickRange,
+  pusherLineContentEnd,
   resolveMouseRegion,
   visibleHintBand,
   cursorCss,
 } from "../../src/js/mouse_regions";
-import { LIST_TITLE_COL_START } from "../../src/js/comment_parse";
+import { LIST_TITLE_COL_START, COMMENT_USERID_COL } from "../../src/js/comment_parse";
 
-// 預設帶著防誤觸模式（pref 預設就是開）；關掉的那一半另有 describe。
+// 點擊範圍生效、列表起點＝標題欄（最窄的選項，欄位邊界最好鎖）；各起點與
+// 「範圍不生效」另有 describe。
 const at = (over) =>
-  resolveMouseRegion({ rows: 24, lineEmpty: false, misclickGuard: true, ...over });
+  resolveMouseRegion({
+    rows: 24,
+    lineEmpty: false,
+    clickRange: true,
+    listClickStart: "title",
+    ...over,
+  });
 
 describe("文章列表（pageState 2）", () => {
   test("只有標題欄（col >= 30）可以開文", () => {
@@ -168,13 +180,14 @@ describe("列表／選單的左側退出帶（pageState 1/2/4）", () => {
       }
     });
 
-    test(`pageState ${pageState}：防誤觸開或關都成立（固定手勢，不是欄位判定）`, () => {
-      [true, false].forEach((misclickGuard) => {
+    test(`pageState ${pageState}：點擊範圍生效與否都成立（固定手勢，不是欄位判定）`, () => {
+      [true, false].forEach((clickRange) => {
         expect(
           resolveMouseRegion({
             rows: 24,
             lineEmpty: false,
-            misclickGuard,
+            clickRange,
+            listClickStart: "push",
             pageState,
             row: 5,
             col: 0,
@@ -310,28 +323,176 @@ describe("點空白處關框（dismiss）", () => {
   });
 });
 
-// 防誤觸模式（pref mouseMisclickGuard，預設開）＝「可點區＝底色區」的起始欄。
-// 關掉之後整列可點、整列上底色（＝改版前的行為）。
+// 點擊範圍（issue #56，取代舊的防誤觸開關）＝「可點區＝底色區」的起始欄。
+// 範圍不生效（總開關關／server 回報／換行版面）⇒ 整列可點、整列上底色。
 describe("clickableColStart（可點區＝底色區的唯一真相源）", () => {
-  test("防誤觸開啟：列表 30、選單 8、其餘 0", () => {
-    expect(clickableColStart(2, true)).toBe(LIST_TITLE_COL_START);
-    expect(clickableColStart(4, true)).toBe(LIST_TITLE_COL_START);
-    expect(clickableColStart(1, true)).toBe(MENU_COL_START);
-    [0, 3, 5, 6, undefined].forEach((ps) => {
-      expect(clickableColStart(ps, true)).toBe(0);
+  test("列表起點四個選項對 readdoent 欄位：推文數 8、日期 11、作者 17、標題 30", () => {
+    expect(LIST_CLICK_START_COLS).toEqual({
+      push: 8,
+      date: 11,
+      author: 17,
+      title: LIST_TITLE_COL_START,
+    });
+    for (const [key, col] of Object.entries(LIST_CLICK_START_COLS)) {
+      expect(clickableColStart(2, true, key)).toBe(col);
+      expect(clickableColStart(4, true, key)).toBe(col);
+    }
+  });
+
+  test("預設＝作者欄；未知值（舊版殘留）退回預設，不會變成 undefined", () => {
+    expect(DEFAULT_LIST_CLICK_START).toBe("author");
+    [undefined, null, "", "bogus", true].forEach((v) => {
+      expect(listClickColStart(v)).toBe(17);
+      expect(clickableColStart(2, true, v)).toBe(17);
     });
   });
 
-  test("防誤觸關閉：一律 0（整列）", () => {
+  test("選單固定 8（不受列表起點影響）、其餘 0", () => {
+    ["push", "title"].forEach((key) => {
+      expect(clickableColStart(1, true, key)).toBe(MENU_COL_START);
+      [0, 3, 5, 6, undefined].forEach((ps) => {
+        expect(clickableColStart(ps, true, key)).toBe(0);
+      });
+    });
+  });
+
+  test("範圍不生效：一律 0（整列）", () => {
     [0, 1, 2, 3, 4, 5, 6, undefined].forEach((ps) => {
-      expect(clickableColStart(ps, false)).toBe(0);
+      expect(clickableColStart(ps, false, "title")).toBe(0);
     });
   });
 });
 
-describe("防誤觸關閉：整列可點、整列上底色", () => {
+describe("列表起點逐選項：起點以左不開文、以右開文，底色從起點畫", () => {
+  const withStart = (listClickStart, over) =>
+    resolveMouseRegion({
+      rows: 24,
+      lineEmpty: false,
+      clickRange: true,
+      listClickStart,
+      ...over,
+    });
+  for (const [key, col] of Object.entries(LIST_CLICK_START_COLS)) {
+    test(`${key}（col ${col}）`, () => {
+      const on = withStart(key, { pageState: 2, row: 5, col });
+      expect(on.action).toBe(ACT_ENTER);
+      expect(on.cursor).toBe(CUR_POINTER);
+      expect(on.highlightColStart).toBe(col);
+      const before = withStart(key, { pageState: 2, row: 5, col: col - 1 });
+      // col-1 在退出帶（col 7 以前）時是退出；否則是不可點的空隙。
+      if (col - 1 < EXIT_COL_END) expect(before.action).toBe(ACT_EXIT);
+      else {
+        expect(before.action).toBe(ACT_NONE);
+        expect(before.cursor).toBe(CUR_AUTO);
+        expect(before.highlightColStart).toBe(col);
+      }
+    });
+  }
+});
+
+describe("推文列可點區（pusherClickRange）", () => {
+  // 「推 abc: hi … 01/02 03:04」：內容 9 起、內容結尾 11、日期結尾 ~（假設欄位）
+  const cols = { contentCol: 9, contentEnd: 11, dateEnd: 70 };
+
+  test("預設＝內容起 → 內容止（左留退出帶、右留翻頁）", () => {
+    expect(pusherClickRange(cols, true, "content", "content")).toEqual({
+      start: 9,
+      end: 11,
+    });
+  });
+
+  test("起點 author ＝ id 起（col 3）；終點 date ＝日期結尾、time ＝整列到底", () => {
+    expect(pusherClickRange(cols, true, "author", "date")).toEqual({
+      start: COMMENT_USERID_COL,
+      end: 70,
+    });
+    expect(pusherClickRange(cols, true, "content", "time")).toEqual({
+      start: 9,
+      end: Infinity,
+    });
+  });
+
+  test("範圍不生效 ⇒ 整列", () => {
+    expect(pusherClickRange(cols, false, "content", "content")).toEqual({
+      start: 0,
+      end: Infinity,
+    });
+  });
+
+  test("欄位缺失（卡片不帶終點、合併塊量不到行號）⇒ 該端放寬，方向安全", () => {
+    expect(
+      pusherClickRange({ contentCol: 9, contentEnd: NaN }, true, "content", "content"),
+    ).toEqual({ start: 9, end: Infinity });
+    expect(pusherClickRange({}, true, "content", "date")).toEqual({
+      start: 0,
+      end: Infinity,
+    });
+    // 空內容（結尾 == 起點）不會變成點不到的空區間。
+    expect(
+      pusherClickRange({ contentCol: 9, contentEnd: 9 }, true, "content", "content"),
+    ).toEqual({ start: 9, end: Infinity });
+  });
+
+  test("pusherLineContentEnd：單值不看行號；合併塊逐行取；行號量不到 ⇒ NaN（放寬）", () => {
+    expect(pusherLineContentEnd("16", -1)).toBe(16);
+    expect(pusherLineContentEnd("16", 3)).toBe(16);
+    expect(pusherLineContentEnd("13,10,14", 0)).toBe(13);
+    expect(pusherLineContentEnd("13,10,14", 1)).toBe(10);
+    expect(pusherLineContentEnd("13,10,14", 2)).toBe(14);
+    expect(pusherLineContentEnd("13,10,14", -1)).toBeNaN();
+    expect(pusherLineContentEnd("13,10,14", 3)).toBeNaN();
+    expect(pusherLineContentEnd(null, 0)).toBeNaN();
+    expect(pusherLineContentEnd("", 0)).toBeNaN();
+  });
+
+  test("合併塊第 2 行：內容結尾以右照樣是區外（不會整行到底都可點）", () => {
+    const cols = {
+      contentCol: 8,
+      contentEnd: pusherLineContentEnd("13,10,14", 1),
+      dateEnd: 26,
+    };
+    expect(pusherClickRange(cols, true, "content", "content")).toEqual({
+      start: 8,
+      end: 10,
+    });
+    expect(pusherClickRange(cols, true, "content", "date")).toEqual({
+      start: 8,
+      end: 26,
+    });
+  });
+
+  test("文章頁 hover：落在可點區 ⇒ pointer 且優先於退出帶與上下頁；區外照舊", () => {
+    const pr = { start: COMMENT_USERID_COL, end: 20 };
+    // col 3 在退出帶內，但使用者選了 author 起點 ⇒ 推文高亮贏（與點擊端同序）。
+    const inExit = at({ pageState: 3, row: 5, col: 3, pusherRange: pr, edgePaging: true });
+    expect(inExit.action).toBe(ACT_NONE);
+    expect(inExit.cursor).toBe(CUR_POINTER);
+    expect(inExit.highlightRow).toBe(-1);
+    expect(inExit.hintBand).toBeNull();
+    expect(
+      at({ pageState: 3, row: 5, col: 15, pusherRange: pr, edgePaging: true }).cursor,
+    ).toBe(CUR_POINTER);
+    // 區外：左邊退出、右邊翻頁。
+    expect(
+      at({ pageState: 3, row: 5, col: 1, pusherRange: pr, edgePaging: true }).action,
+    ).toBe(ACT_EXIT_ARTICLE);
+    expect(
+      at({ pageState: 3, row: 5, col: 20, pusherRange: pr, edgePaging: true }).action,
+    ).toBe(ACT_PAGE_UP);
+    // 列表畫面不看 pusherRange。
+    expect(at({ pageState: 2, row: 5, col: 3, pusherRange: pr }).action).toBe(ACT_EXIT);
+  });
+});
+
+describe("點擊範圍不生效：整列可點、整列上底色", () => {
   const off = (over) =>
-    resolveMouseRegion({ rows: 24, lineEmpty: false, misclickGuard: false, ...over });
+    resolveMouseRegion({
+      rows: 24,
+      lineEmpty: false,
+      clickRange: false,
+      listClickStart: "title",
+      ...over,
+    });
 
   test("文章列表：序號／日期／作者欄都開得了文（退出帶以外）", () => {
     [7, 8, 16, 17, 29, 30, 79].forEach((col) => {
@@ -354,10 +515,10 @@ describe("防誤觸關閉：整列可點、整列上底色", () => {
       ACT_NONE,
     );
     expect(off({ pageState: 2, row: 0, col: 0 }).action).toBe(ACT_NONE);
-    // 退出帶也**不看防誤觸**（使用者定案），關掉照樣成立。
+    // 退出帶也**不看點擊範圍**（使用者定案），不生效照樣成立。
     expect(off({ pageState: 2, row: 5, col: 0 }).action).toBe(ACT_EXIT);
     expect(off({ pageState: 1, row: 5, col: 0 }).action).toBe(ACT_EXIT);
-    // 文章的左側退出帶是固定手勢，與防誤觸無關。
+    // 文章的左側退出帶是固定手勢，與點擊範圍無關。
     expect(off({ pageState: 3, row: 10, col: 1 }).action).toBe(ACT_EXIT_ARTICLE);
     expect(off({ pageState: 3, row: 10, col: 40 }).action).toBe(ACT_NONE);
   });

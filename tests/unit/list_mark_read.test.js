@@ -25,7 +25,7 @@ function makeSession({ count = 8, pinned = 0, rows = 24 } = {}) {
     setListLoading() {},
     blacklist: new Set(),
     titleBlacklist: [],
-    mouseMisclickGuard: true,
+    mouseListClickStart: "title",
   };
   const listLines = [];
   const listLineNums = [];

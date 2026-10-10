@@ -149,13 +149,17 @@ export const DEFAULT_PREFS = {
   // 左鍵：列表點標題欄開文章／進看板 + 文章內點左側離開 + 自訂滑鼠指標圖示。
   // 單一開關，不再是「送 Enter／送右方向鍵」那種按鍵層級的設定。
   mouseLeftClick: true,
-  // 防誤觸模式（預設開）：可點區＝底色區，兩者的起始欄由 mouse_regions
-  // .clickableColStart 統一決定。
-  //   開 列表／選單只有標題（選項）欄可點且只有那一段上底色；文章推文列只有
-  //      內容文字可觸發同作者高亮 ⇒ 左側 0-6 欄還給「點一下離開文章」的退出帶
-  //   關 整列可點、整列上底色（改版前的行為）
-  // 跟著 useMouseBrowsing 走（resolveMouseGates）：總開關關掉時沒有誤觸要防。
-  mouseMisclickGuard: true,
+  // 點擊範圍（2026-10 取代舊的 mouseMisclickGuard 開關，issue #56；舊 key 不遷移，
+  // 理由同 docs/mouse.md「舊 → 新 key 對照」）。決策在 mouse_regions。
+  //   mouseListClickStart  文章列表從哪一欄起可點（＝底色起始欄）：
+  //                        push 推文數 / date 日期 / author 作者 / title 標題
+  //   mousePushClickStart  推文列可點區（點了高亮同一推文者）起點：author / content
+  //   mousePushClickEnd    同上終點：content 內容結尾 / date 日期 / time 行尾
+  // 預設「列表從作者起、推文只有內容文字」：推文列左側 0-6 欄留給退出帶、右側
+  // IP／日期／時間留給邊緣翻頁。跟著 useMouseBrowsing 走（resolveMouseGates.clickRange）。
+  mouseListClickStart: "author",
+  mousePushClickStart: "content",
+  mousePushClickEnd: "content",
   // 邊緣翻頁區（預設開）：頂列＝第一頁(Home)、底列＝最後一頁(End)、右緣上半／下半
   // ＝上一頁／下一頁；文章內沒有右緣帶，改成整片上半／下半翻頁、底列 End。
   // 2026-09 從 term.ptt.cc 原版找回來的功能（004c2c9 曾整組移除，理由是「沒有任何

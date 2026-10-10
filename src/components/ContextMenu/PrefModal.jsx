@@ -1156,21 +1156,65 @@ export const PrefModal = ({
                   {i18n("tooltip_mouseLeftClick")}
                 </Text>
               </PrefSection>
-              {/* 防誤觸：可點區＝底色區的起始欄（js/mouse_regions.clickableColStart）。
-                與其他子項一樣 disabled={!useMouseBrowsing} —— 總開關關掉時左鍵、
-                指標、提示帶全滅，沒有誤觸要防（resolveMouseGates 同步 gate 掉）。 */}
-              <PrefSection legendKey="options_mouseMisclickGuard">
-                <PrefCheckbox
-                  name="mouseMisclickGuard"
-                  checked={values.mouseMisclickGuard}
-                  disabled={!values.useMouseBrowsing}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableMouseMisclickGuard")}
-                </PrefCheckbox>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseMisclickGuard")}
+              {/* 點擊範圍（取代舊的防誤觸開關，issue #56）：列表可點起始欄＝底色
+                起始欄（js/mouse_regions.clickableColStart）、推文列可點區起訖
+                （pusherClickRange）。與其他子項一樣 disabled={!useMouseBrowsing}
+                —— 總開關關掉時沒有東西要分區（resolveMouseGates.clickRange）。 */}
+              <PrefSection legendKey="options_mouseClickRange">
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_mouseClickRange")}
                 </Text>
+                <Select
+                  label={i18n("options_mouseListClickStart")}
+                  aria-label={i18n("options_mouseListClickStart")}
+                  name="mouseListClickStart"
+                  value={values.mouseListClickStart}
+                  allowDeselect={false}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={(val) => onSelectStr("mouseListClickStart", val)}
+                  data={[
+                    { value: "push", label: i18n("options_clickFromPush") },
+                    { value: "date", label: i18n("options_clickFromDate") },
+                    { value: "author", label: i18n("options_clickFromAuthor") },
+                    { value: "title", label: i18n("options_clickFromTitle") },
+                  ]}
+                  mb="xs"
+                  {...anchor("mouseListClickStart")}
+                />
+                <Select
+                  label={i18n("options_mousePushClickStart")}
+                  aria-label={i18n("options_mousePushClickStart")}
+                  name="mousePushClickStart"
+                  value={values.mousePushClickStart}
+                  allowDeselect={false}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={(val) => onSelectStr("mousePushClickStart", val)}
+                  data={[
+                    { value: "author", label: i18n("options_clickFromPusher") },
+                    {
+                      value: "content",
+                      label: i18n("options_clickFromContent"),
+                    },
+                  ]}
+                  mb="xs"
+                  {...anchor("mousePushClickStart")}
+                />
+                <Select
+                  label={i18n("options_mousePushClickEnd")}
+                  aria-label={i18n("options_mousePushClickEnd")}
+                  name="mousePushClickEnd"
+                  value={values.mousePushClickEnd}
+                  allowDeselect={false}
+                  disabled={!values.useMouseBrowsing}
+                  onChange={(val) => onSelectStr("mousePushClickEnd", val)}
+                  data={[
+                    { value: "content", label: i18n("options_clickToContent") },
+                    { value: "date", label: i18n("options_clickToDate") },
+                    { value: "time", label: i18n("options_clickToTime") },
+                  ]}
+                  mb="xs"
+                  {...anchor("mousePushClickEnd")}
+                />
               </PrefSection>
               {/* 邊緣點擊翻頁（2026-09 從 term.ptt.cc 原版找回）：頂列 Home／底列
                 End／右緣與文章上下半翻頁。送鍵走鍵盤那條分派鏈，所以兩種好讀

@@ -85,9 +85,9 @@ const COMMENT_RE = new RegExp(
 // So the id occupies cols [COMMENT_USERID_COL, COMMENT_USERID_COL + userid.length).
 export const COMMENT_USERID_COL = 3;
 
-// 推文列「內容文字」的起始欄（cell 空間）。滑鼠的防誤觸模式用它把左邊
+// 推文列「內容文字」的起始欄（cell 空間）。滑鼠的推文可點區（起點＝內容）用它把左邊
 // 「型別符＋id＋冒號」整塊排除在可點區之外，好把 cols 0-6 還給文章的左側退出帶
-// （docs/mouse.md「點擊優先權」）。
+// （docs/mouse.md「點擊範圍」）。
 //
 // 文字空間 → cell 空間只差型別符那一個 DBCS 字（rowToText 把 2 格收合成 1 個字元，
 // 其後的 id／冒號全是 ASCII）⇒ 欄號 = 文字 index + 1。冒號後的那一格空白是
@@ -104,6 +104,38 @@ function commentContentCol(text, userid) {
   let wide = 0;
   for (let i = 1; i < colon; ++i) if (text.charCodeAt(i) > 0x7f) wide++;
   return colon + 2 + wide + (text[colon + 1] === ' ' ? 1 : 0);
+}
+
+// 文字 index → cell 欄號：rowToText 把每個 DBCS 字收合成 1 個字元（佔 2 格），
+// 所以每多一個非 ASCII 字元欄號就多 1。
+function cellColOf(text, idx) {
+  let wide = 0;
+  for (let i = 0; i < idx; ++i) if (text.charCodeAt(i) > 0x7f) wide++;
+  return idx + wide;
+}
+
+// 推文列右側的欄位（cell 空間，半開）：
+//   contentEnd 內容文字結尾（去掉尾端空白；有 IP 欄時排除 IP）
+//   dateEnd    日期 MM/DD 的結尾
+// 版面＝go-pttbbs FormatCommentString：`<內容><padding> <IP?> MM/DD HH:MM`（見檔頭）。
+// IP 欄只在 BRD_IPLOGRECMD 板出現；內容本身恰好以 IP 形狀結尾的列會被當成 IP 切掉，
+// 代價只是可點區短一截（方向安全）。給滑鼠的推文可點區用（mouse_regions.pusherClickRange）。
+const COMMENT_DATE_RE = /^(\d{1,2}\/\d{2})\s+\d{2}:\d{2}/;
+const COMMENT_IP_TAIL_RE = /\s\d{1,3}(?:\.\d{1,3}){3}\s*$/;
+export function commentTailCols(text, contentCol) {
+  const t = text.match(COMMENT_TIME_RE);
+  if (!t) return {};
+  const dateAt = t.index + 1;
+  const d = text.slice(dateAt).match(COMMENT_DATE_RE);
+  if (!d) return {};
+  let head = text.slice(0, t.index);
+  const ip = head.match(COMMENT_IP_TAIL_RE);
+  if (ip) head = head.slice(0, ip.index);
+  const contentEnd = Math.max(cellColOf(text, head.trimEnd().length), contentCol);
+  return {
+    contentEnd,
+    dateEnd: cellColOf(text, dateAt + d[1].length),
+  };
 }
 
 // 能不能當黑名單項目：只有真帳號（names.c#is_validuserid 的形狀）。小天使匿名推文的
@@ -140,10 +172,11 @@ export function parseComment(text) {
 //   highlightAuthor: bool
 //   articleAuthor:  lower id | null   (原PO)
 // }
-// Result: { type, userid, floor?, hidden, pusher, contentCol,
+// Result: { type, userid, floor?, hidden, pusher, contentCol, contentEnd?, dateEnd?,
 //           authorIdStart?, authorIdEnd? }
-// contentCol＝內容文字起始欄 → Row 輸出成 data-pusher-col，滑鼠防誤觸模式據此判斷
-// 「這一點落在可點的內容區還是左邊的作者區」（App.mouse_click）。
+// contentCol／contentEnd／dateEnd ＝內容起始／內容結尾／日期結尾欄 → Row 輸出成
+// data-pusher-col／-end／-date-end，滑鼠的推文可點區（使用者自選起訖，
+// mouse_regions.pusherClickRange）據此判斷這一點落在哪一段（App.mouse_click）。
 export function annotateComment(text, ctx) {
   const c = parseComment(text);
   if (!c) {
@@ -163,7 +196,8 @@ export function annotateComment(text, ctx) {
     floor,
     hidden,
     pusher: c.userid,
-    contentCol: c.contentCol
+    contentCol: c.contentCol,
+    ...commentTailCols(text, c.contentCol)
   };
   if (!hidden) {
     // 原PO comment → highlight only the user-id columns [start, end).

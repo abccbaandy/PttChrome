@@ -6,7 +6,6 @@ import { resolveMouseGates } from "../../src/js/mouse_regions";
 const ALL_ON = {
   useMouseBrowsing: true,
   mouseLeftClick: true,
-  mouseMisclickGuard: true,
   mouseEdgePaging: true,
   mouseMiddleClick: 1,
   mouseWheel: 1,
@@ -26,9 +25,9 @@ describe("總開關", () => {
     // 返回攔截一樣歸總開關管：關掉之後不疊 history sentinel，瀏覽器的上一頁
     // （含觸控板左滑手勢）回到原本的行為＝真的離站。
     expect(g.backNav).toBe(0);
-    // 總開關關掉時左鍵／指標／提示帶全滅 ⇒ 沒有誤觸要防，防誤觸也一併關掉
+    // 總開關關掉時左鍵／指標／提示帶全滅 ⇒ 沒有東西要分區，點擊範圍也一併不生效
     // （推文列的 pusher 高亮因此退回整列可點）。
-    expect(g.misclickGuard).toBe(false);
+    expect(g.clickRange).toBe(false);
   });
 
   test("開啟時各子開關各自生效", () => {
@@ -36,7 +35,7 @@ describe("總開關", () => {
     expect(g.move).toBe(true);
     expect(g.leftClick).toBe(true);
     expect(g.cursorIcon).toBe(true);
-    expect(g.misclickGuard).toBe(true);
+    expect(g.clickRange).toBe(true);
     expect(g.middleClick).toBe(1);
     expect(g.wheel).toBe(true);
     expect(g.wheelSmoothScroll).toBe(true);
@@ -62,11 +61,11 @@ describe("D1：關框與複合鍵沿用既有 pref，resolveMouseGates 不得多
   test("回傳欄位就是這十個，一個不多", () => {
     expect(Object.keys(resolveMouseGates(ALL_ON)).sort()).toEqual([
       "backNav",
+      "clickRange",
       "cursorIcon",
       "edgePaging",
       "leftClick",
       "middleClick",
-      "misclickGuard",
       "move",
       "serverReport",
       "wheel",
@@ -114,16 +113,15 @@ describe("子開關互不牽連", () => {
     expect(g.wheel).toBe(true);
   });
 
-  test("防誤觸關 ⇒ 只有它自己關，左鍵與底色照舊", () => {
+  // 舊的防誤觸開關已移除（issue #56）：殘留在 localStorage 的 false 不得再關掉範圍。
+  test("舊 key mouseMisclickGuard:false 殘值不影響點擊範圍", () => {
     const g = resolveMouseGates({ ...ALL_ON, mouseMisclickGuard: false });
-    expect(g.misclickGuard).toBe(false);
-    expect(g.leftClick).toBe(true);
-    expect(g.move).toBe(true);
+    expect(g.clickRange).toBe(true);
   });
 
-  test("左鍵關不影響防誤觸（推文的 pusher 高亮不歸左鍵管）", () => {
+  test("左鍵關不影響點擊範圍（推文的 pusher 高亮不歸左鍵管）", () => {
     expect(
-      resolveMouseGates({ ...ALL_ON, mouseLeftClick: false }).misclickGuard,
+      resolveMouseGates({ ...ALL_ON, mouseLeftClick: false }).clickRange,
     ).toBe(true);
   });
 
@@ -147,7 +145,7 @@ describe("子開關互不牽連", () => {
 test("缺值一律當關閉，不會意外發鍵", () => {
   const g = resolveMouseGates();
   expect(g.leftClick).toBe(false);
-  expect(g.misclickGuard).toBe(false);
+  expect(g.clickRange).toBe(false);
   expect(g.middleClick).toBe(0);
   expect(g.wheel).toBe(false);
   expect(g.backNav).toBe(0);
@@ -193,7 +191,7 @@ describe("滾輪平滑捲動（列表好讀模式）", () => {
 // 2026-09 PTT server 端的滑鼠回報（XTerm SGR）。
 //
 // 仲裁規則只有一條：`serverReport` 為真時，**我們自己發明的滑鼠語意**整組讓位
-// （左鍵開文／退出帶／自訂指標／防誤觸／滾輪翻頁），但**真的是另一個東西**的
+// （左鍵開文／退出帶／自訂指標／點擊範圍／滾輪翻頁），但**真的是另一個東西**的
 // 仍然保留 —— 中鍵貼上是瀏覽器語意、backNav 是瀏覽器導航，兩者都不是「終端機
 // 格子上的滑鼠」，不該送給 PTT。
 const SERVER_ON = {
@@ -218,7 +216,7 @@ describe("serverReport：滑鼠交給 PTT server", () => {
     const g = resolveMouseGates(SERVER_ON);
     expect(g.leftClick).toBe(false);
     expect(g.cursorIcon).toBe(false);
-    expect(g.misclickGuard).toBe(false);
+    expect(g.clickRange).toBe(false);
     expect(g.wheel).toBe(false);
     expect(g.wheelSmoothScroll).toBe(false);
   });
@@ -245,9 +243,9 @@ describe("serverReport：滑鼠交給 PTT server", () => {
 
 // 手機換行版面（Phase 3）：col 不對應畫面上的字 ⇒ 以 col 判斷的兩格關掉。
 describe("reflow：手機好讀文章換行版面", () => {
-  test("防誤觸（推文者可點區起始欄）與邊緣翻頁關掉，其餘不動", () => {
+  test("點擊範圍（推文者可點區起訖欄）與邊緣翻頁關掉，其餘不動", () => {
     const g = resolveMouseGates({ ...ALL_ON, reflow: true });
-    expect(g.misclickGuard).toBe(false);
+    expect(g.clickRange).toBe(false);
     expect(g.edgePaging).toBe(false);
     const base = resolveMouseGates(ALL_ON);
     expect(g.leftClick).toBe(base.leftClick);

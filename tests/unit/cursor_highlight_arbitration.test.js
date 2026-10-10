@@ -24,7 +24,8 @@ function makeView({ listRenderMode = "native", styles } = {}) {
   v.keyboardCursorHighlight = true;
   v.useEasyReadingMode = false;
   v.mouseLeftClick = true;
-  v.mouseMisclickGuard = true;
+  // 點擊範圍：列表起點設成標題欄（最窄，欄位邊界最好鎖）。
+  v.mouseListClickStart = "title";
   // 建構子預設（term_view.js）
   v._highlightMover = "mouse";
   v._highlightMode = null;
@@ -96,7 +97,7 @@ describe("applyCursorHighlight：原生畫面", () => {
 
   // 底色範圍＝可點區範圍（使用者 2026-08 定案），且**不分來源** —— 鍵盤游標與滑鼠
   // hover 共用同一個寬度，兩種光棒不一樣長只會讓人以為畫面壞了。
-  test("底色起始欄跟著防誤觸走，鍵盤來源也是同一個寬度", () => {
+  test("底色起始欄跟著列表點擊起點走，鍵盤來源也是同一個寬度", () => {
     const { v } = makeView();
     const seen = [];
     v.componentScreen = { setCursorHighlight: (h) => seen.push(h) };
@@ -114,12 +115,16 @@ describe("applyCursorHighlight：原生畫面", () => {
       col: LIST_TITLE_COL_START,
     });
 
-    v.mouseMisclickGuard = false;
+    // 改起點 ⇒ 底色起始欄立刻跟著改（可點區＝底色區）。
+    v.mouseListClickStart = "push";
     v.applyCursorHighlight("mouse");
-    expect(seen[seen.length - 1].col).toBe(0);
+    expect(seen[seen.length - 1].col).toBe(8);
+    v.mouseListClickStart = "author";
+    v.applyCursorHighlight();
+    expect(seen[seen.length - 1].col).toBe(17);
   });
 
-  test("總開關關掉就沒有誤觸要防：底色回到整列", () => {
+  test("總開關關掉就沒有點擊範圍：底色回到整列", () => {
     const { v } = makeView();
     const seen = [];
     v.componentScreen = { setCursorHighlight: (h) => seen.push(h) };

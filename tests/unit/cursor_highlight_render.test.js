@@ -84,7 +84,7 @@ describe("一列的游標底色 class", () => {
     expect([...line.classList].some((c) => BG_CLASSES.includes(c))).toBe(false);
   });
 
-  // 防誤觸模式：底色／提亮只覆蓋可點區（col >= start），包在 wrapper span 裡。
+  // 點擊範圍：底色／提亮只覆蓋可點區（col >= start），包在 wrapper span 裡。
   // .cursorHighlight 只是識別標記（無樣式），真正生效的是後面那些 class。
   test("部分寬度（col > 0）時提亮包在 .cursorHighlight wrapper 上", () => {
     const { container } = mountRow({

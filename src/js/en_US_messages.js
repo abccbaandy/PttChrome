@@ -1022,16 +1022,49 @@ export const en_US = {
     "message": "Enable left button actions"
   },
   "tooltip_mouseLeftClick": {
-    "message": "List: a click opens the post / board (which part of the row counts is set by \"Misclick guard\" below). Post: click the far left edge to leave; a hint band lights up as the mouse approaches. Links and images always win, so you never leave by accident. With this off the mouse pointer stops changing shape too."
+    "message": "List: a click opens the post / board (which column the clickable part starts at is set by \"Click areas\" below). Post: click the far left edge to leave; a hint band lights up as the mouse approaches. Links and images always win, so you never leave by accident. With this off the mouse pointer stops changing shape too."
   },
-  "options_mouseMisclickGuard": {
-    "message": "Misclick guard"
+  "options_mouseClickRange": {
+    "message": "Click areas"
   },
-  "options_enableMouseMisclickGuard": {
-    "message": "Only the text area responds to clicks"
+  "tooltip_mouseClickRange": {
+    "message": "Choose which part of a post-list row and of a comment responds to clicks. In lists the highlight bar always covers exactly the clickable part, and the thin strip at the far left always goes back. By default only a comment's text is clickable (it highlights that commenter), leaving the left edge for \"leave the post\" and the right side for click paging."
   },
-  "tooltip_mouseMisclickGuard": {
-    "message": "On: in a list only the title column opens the post, and in a post only a comment's text toggles the same-commenter highlight — so the left edge stays free for the \"leave the post\" band. Off: the whole row responds. The highlight bar always covers exactly the clickable area."
+  "options_mouseListClickStart": {
+    "message": "Post list: clickable from"
+  },
+  "options_clickFromPush": {
+    "message": "Push count"
+  },
+  "options_clickFromDate": {
+    "message": "Date"
+  },
+  "options_clickFromAuthor": {
+    "message": "Author"
+  },
+  "options_clickFromTitle": {
+    "message": "Title"
+  },
+  "options_mousePushClickStart": {
+    "message": "Comment: clickable from"
+  },
+  "options_clickFromPusher": {
+    "message": "Commenter ID"
+  },
+  "options_clickFromContent": {
+    "message": "Start of comment text"
+  },
+  "options_mousePushClickEnd": {
+    "message": "Comment: clickable to"
+  },
+  "options_clickToContent": {
+    "message": "End of comment text"
+  },
+  "options_clickToDate": {
+    "message": "Date"
+  },
+  "options_clickToTime": {
+    "message": "Time (end of row)"
   },
   "options_mouseEdgePaging": {
     "message": "Edge click paging"

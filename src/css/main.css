@@ -307,7 +307,7 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 
 /* 手機推文卡片（render/comment_card.js，docs/mobile.md「推文卡片」）：只在換行版面。
    標頭列＝推/噓/→・樓號・id，IP＋時間右靠縮小淡化；內容另起一行縮排、自然換行。
-   等寬格線在換行版面本來就不存在（防誤觸與以欄判斷的滑鼠區域在 reflow 下全關），
+   等寬格線在換行版面本來就不存在（點擊範圍與以欄判斷的滑鼠區域在 reflow 下全關），
    所以「推文區塊行距」那段的格線禁令不適用；仍守：高度整數 px、不用 margin-bottom
    （會推開 #easyReadingLastRow）、不宣告 user-select（css_user_select.test.js）。 */
 .main.mobileReflow #mainContainer span[type="bbsrow"].commentCard {
@@ -685,7 +685,7 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
    **禁止事項**（動這一段之前先讀）：
    1. 不得出現 letter-spacing / padding / font-weight —— 等寬格線一位移，三個消費端
       靜默壞掉：term_view.fixedResize（直接掃 DOM 改 .wpadding 的 width）、
-      mouse_geometry.colFromClientX（推文列點擊的防誤觸欄位判定）、.floorBadge 的
+      mouse_geometry.colFromClientX（推文列點擊的可點區欄位判定）、.floorBadge 的
       零寬盒契約。同 .lightsOn / .fnKey 的既有禁令。
    2. 不得用 margin-bottom —— #easyReadingLastRow 以 margin-top:-1em 疊在
       #mainContainer 的 paddingBottom:1em 上，尾端多出的 margin 會把 footer overlay 推離。

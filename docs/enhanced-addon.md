@@ -71,17 +71,17 @@
 - pref `highlightAuthorComments`(true)；`pttchrome.onPrefChange`→`view.*`+`redraw(true)`。i18n `options_highlightAuthorComments`。
 
 ## 點選推文者高亮（pusher highlight，整列）
-- 左鍵點推文列的**內容文字**（防誤觸模式關閉時＝整列任一處，見 `docs/mouse.md`）→ 高亮該推文者**本篇所有推文列**
+- 左鍵點推文列的**可點區**（預設內容文字起訖，使用者可改，見 `docs/mouse.md`「點擊範圍」）→ 高亮該推文者**本篇所有推文列**
   （整列 navy `.pusherHighlight` `#000080`；`#mainContainer>span` 為 block→整行寬）。再點同一人取消、點別人切換。
 - 觸發：`pttchrome.mouse_click`（**非** `onMouse_click`——後者只在 mouse browsing 開時跑）。在 `getSelection().isCollapsed`
   分支最前面：`e.target.closest('[data-pusher]')` 命中→`view.togglePusherHighlight(id)`+`preventDefault`+`return`
   （抑制 browsing 導航/leftButtonFunction）。
-- **欄位條件（2026-08）**：防誤觸開啟時還要 `clientToPos().col >= data-pusher-col`（該列的內容起始欄，
-  `annotateComment.contentCol`）。欄位不合**不 return**，讓下面的左側退出帶接手 —— 整列都攔的話，文章左側
-  0-6 欄的「點一下離開文章」在整個推文區永遠點不到（使用者回報）。
+- **欄位條件**：`clientToPos().col` 要落在 `App.pusherClickRangeOf`（→ `mouse_regions.pusherClickRange`，
+  欄位來自 `data-pusher-col`／`-end`／`-date-end`）的區間內。區間外**不 return**，讓下面的左側退出帶／邊緣翻頁
+  接手 —— 整列都攔的話，左側「點一下離開文章」與右側翻頁在整個推文區永遠點不到（使用者回報）。
 - 偵測一律走 DOM（**好讀畫面是重排長卷、不對應 buf 24 列網格**，不能用 `getRowText`；`clientToPos` 的 **col**
-  是純幾何、兩模式都可信，**row** 才是被 clamp 的那個）。推文列 `data-pusher`(lower id) 與 `data-pusher-col`
-  由 `buildRow` 的外層 span（參數 `pusher`／`pusherContentCol`，來自 `ann.pusher`／`ann.contentCol`）統一掛上，兩模式同。
+  是純幾何、兩模式都可信，**row** 才是被 clamp 的那個）。推文列 `data-pusher`(lower id) 與 `data-pusher-col`／`-end`／`-date-end`
+  由 `buildRow` 的外層 span（參數 `pusher`／`pusherContentCol`／`pusherContentEnd`／`pusherDateEnd`，來自 `ann.*`）統一掛上，兩模式同（合併塊的 `-end` 是逐行清單，見 `docs/mouse.md`「點擊範圍」）。
 - 狀態 `view._selectedPusher`（唯一真相）；`togglePusherHighlight` 兩模式同：設 `_selectedPusher`
   + `componentScreen.setSelectedPusher(id)` → renderer 逐列搬 `.pusherHighlight` class，**不重畫**
   （同 `setCursorHighlight` 的快路徑）。build 時的判斷由 `comment_parse.isPusherHighlighted(ann, selected)`

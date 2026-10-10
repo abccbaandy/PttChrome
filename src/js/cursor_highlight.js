@@ -93,8 +93,9 @@ export function resolveHighlightRow(input) {
 }
 
 // 底色從第幾欄畫起（0 = 整列）。**與可點區同一個真相源**（mouse_regions.
-// clickableColStart），使用者 2026-08 定案「點擊區域＝底色區域」：防誤觸開啟時那條
-// 底色本身就是「這裡點得下去」的提示，關掉就整列上色。
+// clickableColStart），使用者 2026-08 定案「點擊區域＝底色區域」：那條底色本身就是
+// 「這裡點得下去」的提示（列表起點由 pref mouseListClickStart 選），範圍不生效
+// （clickRange false：總開關關）就整列上色。
 //
 // 不分 lastMover —— 鍵盤游標與滑鼠 hover 共用同一個寬度（同上定案）：兩種來源畫出
 // 不同寬度的光棒只會讓人以為畫面壞了。
@@ -104,6 +105,7 @@ export function resolveHighlightRow(input) {
 export function highlightColStart(input) {
   const o = input || {};
   if (o.mode === "article") return 0;
-  if (o.mode === "listBuffer") return clickableColStart(2, o.misclickGuard);
-  return clickableColStart(o.pageState, o.misclickGuard);
+  if (o.mode === "listBuffer")
+    return clickableColStart(2, o.clickRange, o.listClickStart);
+  return clickableColStart(o.pageState, o.clickRange, o.listClickStart);
 }

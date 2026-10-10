@@ -1138,8 +1138,8 @@ test.describe('文章列表好读模式（离线）', () => {
       let s = await waitState(page, (x) => x.state === 'active' && x.listLen > 30 && x.queueIdle, 20000);
 
       // 鍵盤游標底色：'>' 那一列（且只有那一列）帶著 pref 指定的 b6。
-      // 防誤觸模式（預設開）下底色只蓋標題欄 ⇒ class 掛在列內的包裝 span 上，
-      // 不在 block 級的 bbsline 上（掛上去就是滿版）。
+      // 點擊範圍：底色只從列表起點（預設作者欄 col 17）蓋起 ⇒ class 掛在列內的
+      // 包裝 span 上，不在 block 級的 bbsline 上（掛上去就是滿版）。
       const litRows = () =>
         page.evaluate(() =>
           Array.from(
@@ -1156,35 +1156,35 @@ test.describe('文章列表好读模式（离线）', () => {
         );
       expect(await litRows()).toEqual([await cursorRowIndex(page)]);
 
-      // 底色左緣＝可點區左緣（標題欄 col 30）：使用者 2026-08 定案「點擊區域＝
+      // 底色左緣＝可點區左緣（預設作者欄 col 17）：使用者 2026-08 定案「點擊區域＝
       // 底色區域」，那條光棒本身就是「這裡點得下去」的提示。
-      const tintLeft = await page.evaluate(() => {
-        const el = document.querySelector(
-          '#mainContainer [data-type="bbsline"] .cursorHighlight.b6'
-        );
-        const v = window.__app.view;
-        return {
-          x: el.getBoundingClientRect().left,
-          want: parseFloat(v.firstGridOffset.left) + v.chw * 30,
-        };
-      });
-      expect(Math.abs(tintLeft.x - tintLeft.want)).toBeLessThan(2);
+      const tintLeft = (col) =>
+        page.evaluate((c) => {
+          const el = document.querySelector(
+            '#mainContainer [data-type="bbsline"] .cursorHighlight.b6'
+          );
+          const v = window.__app.view;
+          return {
+            x: el ? el.getBoundingClientRect().left : NaN,
+            want: parseFloat(v.firstGridOffset.left) + v.chw * c,
+          };
+        }, col);
+      {
+        const t = await tintLeft(17);
+        expect(Math.abs(t.x - t.want)).toBeLessThan(2);
+      }
 
-      // 關掉防誤觸 ⇒ 整列可點、整列上底色（class 回到 bbsline 本身）。
-      await ptt.applyPrefs(page, { mouseMisclickGuard: false });
+      // 改列表起點＝標題 ⇒ 底色左緣立刻跟到 col 30（不必動滑鼠／鍵盤）。
+      await ptt.applyPrefs(page, { mouseListClickStart: 'title' });
       await expect(async () => {
-        const wholeRow = await page.evaluate(() =>
-          Array.from(
-            document.querySelectorAll('#mainContainer [data-type="bbsline"]')
-          )
-            .map((el, i) => (el.classList.contains('b6') ? i : -1))
-            .filter((i) => i !== -1)
-        );
-        expect(wholeRow).toEqual([await cursorRowIndex(page)]);
+        const t = await tintLeft(30);
+        expect(Math.abs(t.x - t.want)).toBeLessThan(2);
       }).toPass();
-      await ptt.applyPrefs(page, { mouseMisclickGuard: true });
+      await ptt.applyPrefs(page, { mouseListClickStart: 'author' });
       await expect(async () => {
         expect(await litRows()).toEqual([await cursorRowIndex(page)]);
+        const t = await tintLeft(17);
+        expect(Math.abs(t.x - t.want)).toBeLessThan(2);
       }).toPass();
 
       // 開文目標＝錄製的第三個 jump（cassette 只對這個序號有開文素材）。先把視窗
@@ -1234,7 +1234,7 @@ test.describe('文章列表好读模式（离线）', () => {
 
       // 真的用滑鼠點那一列（clientToPos → body index → 絕對索引 → 開文交易）。
       // x 必須落在**標題欄**（col >= 30，見 comment_parse.LIST_TITLE_COL_START）：
-      // 2026-08 的滑鼠重新設計把可點區收斂到標題欄，點日期或作者欄不再開文。
+      // （任何列表起點選項都 ≤ 30，標題欄一定可點。）
       // 由 view.chw 算，字級改了也不會失準。
       const titleX = await page.evaluate(() => window.__app.view.chw * 32);
       await page

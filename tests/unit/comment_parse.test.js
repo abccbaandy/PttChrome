@@ -38,6 +38,7 @@ import {
   matchTitleBlacklist,
   FloorCounter,
   annotateComment,
+  commentTailCols,
   isPusherHighlighted,
   findPageOverlap,
   resolvePageOverlap,
@@ -1141,7 +1142,7 @@ describe("official cross-validation (Ptt-official-app fixtures)", () => {
   });
 });
 
-// 滑鼠防誤觸模式用它把「型別符＋id＋冒號」排除在可點區之外，好把 cols 0-6 還給
+// 推文可點區（起點＝內容）用它把「型別符＋id＋冒號」排除在可點區之外，好把 cols 0-6 還給
 // 文章左側的退出提示帶（docs/mouse.md）。算錯就是「點內容沒反應」或「左側點不到」。
 describe("contentCol（推文內容起始欄）", () => {
   test("與 comment_merge.commentContentCells 的 start 同語意", () => {
@@ -1170,6 +1171,48 @@ describe("contentCol（推文內容起始欄）", () => {
   test("非推文列沒有 annotation，自然也沒有 contentCol", () => {
     const ctx = { showFloorNumbers: false, floorCounter: null };
     expect(annotateComment("這是內文，不是推文", ctx)).toBeNull();
+  });
+});
+
+// 推文可點區的終點（issue #56：使用者可選「內容結尾／日期／時間」）。算錯就是
+// 「右邊點不到翻頁」或「點內容尾巴沒反應」。cell 空間：全形字佔 2 格。
+describe("commentTailCols（推文內容結尾／日期結尾欄）", () => {
+  const ctx = { showFloorNumbers: false, floorCounter: null };
+
+  test("ASCII 內容：內容結尾在最後一個非空白字之後；日期 MM/DD 的結尾", () => {
+    // "推 abc: hi" ＝ cols 0-9（hi 在 8-9）；ts() 補 17 格空白再接 " 06/06 16:11"
+    const text = ts("推 abc: hi");
+    const r = annotateComment(text, ctx);
+    expect(r.contentCol).toBe(8);
+    expect(r.contentEnd).toBe(10);
+    // 日期起點＝cell 10+17=27，"06/06" 佔 27-31 ⇒ 結尾 32
+    expect(r.dateEnd).toBe(32);
+  });
+
+  test("內容含全形字：每個全形字多佔 1 格", () => {
+    const r = annotateComment("推 abc: 中文x   06/06 16:11", ctx);
+    // 推(0-1) ' '(2) abc(3-5) ':'(6) ' '(7) 中(8-9) 文(10-11) x(12) ⇒ 結尾 13
+    expect(r.contentEnd).toBe(13);
+    // 13 + 3 格空白 ⇒ 日期起 16，"06/06" ⇒ 結尾 21
+    expect(r.dateEnd).toBe(21);
+  });
+
+  test("有 IP 欄的板（BRD_IPLOGRECMD）：內容結尾不含 IP", () => {
+    const r = annotateComment("推 abc: hi     1.2.3.4 06/06 16:11", ctx);
+    expect(r.contentEnd).toBe(10);
+    expect(r.dateEnd).toBe(10 + 5 + 7 + 1 + 5);
+  });
+
+  test("單位數月份（\\d{1,2}）與空內容：結尾不小於內容起點", () => {
+    expect(commentTailCols("推 abc: hi 6/06 16:11", 8)).toEqual({
+      contentEnd: 10,
+      dateEnd: 15,
+    });
+    expect(commentTailCols("推 abc:    06/06 16:11", 8).contentEnd).toBe(8);
+  });
+
+  test("沒有時間戳的列（理論上不會被認成推文）⇒ 不給欄位", () => {
+    expect(commentTailCols("推 abc: hi", 8)).toEqual({});
   });
 });
 

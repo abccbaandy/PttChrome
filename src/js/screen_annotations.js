@@ -661,6 +661,8 @@ export function computeAnnotations(
                   contentStart: merged.contentStart,
                   tailStart: merged.tailStart,
                   timeStart: merged.timeStart,
+                  lineEnds: merged.lineEnds,
+                  dateEnd: merged.dateEnd,
                   ...withUrlAi(extras, runDomainCands, runFixCands),
                 },
               },

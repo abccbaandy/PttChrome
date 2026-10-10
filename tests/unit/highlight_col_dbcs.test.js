@@ -1,5 +1,5 @@
 // @unit-env browser
-// 部分底色（防誤觸模式的 `[highlightColStart, 行尾)` 包裝）**不可以切在雙寬字中間**。
+// 部分底色（點擊範圍的 `[highlightColStart, 行尾)` 包裝）**不可以切在雙寬字中間**。
 //
 // 壞過的行為（使用者 2026-08 回報，看板列表按 s 的「搜尋全站看板」畫面）：
 // 底色起始欄是列表的標題欄 30（LIST_TITLE_COL_START），而 prompt 那一列的

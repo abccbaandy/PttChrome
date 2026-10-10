@@ -60,7 +60,6 @@ test.describe('主功能表：只有選單項可點', () => {
     await ptt.applyPrefs(page, {
       useMouseBrowsing: true,
       mouseLeftClick: true,
-      mouseMisclickGuard: true,
     });
     await drawMainMenu(page);
   });

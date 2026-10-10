@@ -5,7 +5,7 @@
 //   data-type/data-row  term_view.getRowLineElement → countCol → getSelectionColRow
 //                       （滑鼠選取／ANSI 複製的 row/col 反查）
 //   type/srow           main.css 的合併塊排版與 #mainContainer > span 的 display:block
-//   data-pusher(-col)   pttchrome 的點推文列高亮 + 滑鼠防誤觸欄位判定
+//   data-pusher(-col/-end/-date-end)  pttchrome 的點推文列高亮 + 推文可點區欄位判定
 //   data-list-author/-title  右鍵快速加黑名單
 // 動它們之前先看 CLAUDE.md 與 tests/unit/fixtures/screen_golden/。
 import cx from "classnames";
@@ -54,9 +54,11 @@ function noticeSegments(text, forceWidth) {
 //   entirely instead of passing hidden, so there it occupies no space at all.
 // pusher: lower-cased comment author id (when this row is a 推/噓/→ line) →
 //   exposed as data-pusher so a click can highlight all rows by the same pusher.
-// pusherContentCol: 該推文列內容文字的起始欄 → data-pusher-col。滑鼠的防誤觸模式
-//   用它把左邊「型別符＋id＋冒號」排除在可點區之外（App.mouse_click），好把 cols
-//   0-6 還給文章的左側退出帶。
+// pusherContentCol / pusherContentEnd / pusherDateEnd: 該推文列內容文字的起始欄、
+//   內容結尾欄、日期結尾欄 → data-pusher-col / -end / -date-end。滑鼠的推文可點區
+//   （使用者自選起訖，js/mouse_regions.pusherClickRange）據此判斷，App.mouse_click
+//   點擊與 App.onMouse_move 指標共用。合併推文塊的 -end 是逐行清單（"a,b,c"，每則一行），
+//   見 mouse_regions.pusherLineContentEnd。
 // highlightColStart: 底色從第幾欄畫起（0/undefined＝整列）。與可點區同源，見
 //   js/mouse_regions.clickableColStart 與 LinkSegmentBuilder 的包裝邏輯。
 // listAuthor / listTitle: board-list row's author id / raw-case title (see
@@ -92,6 +94,8 @@ export function buildRow({
   hidden,
   pusher,
   pusherContentCol,
+  pusherContentEnd,
+  pusherDateEnd,
   listAuthor,
   listTitle,
   listRead,
@@ -159,6 +163,8 @@ export function buildRow({
         srow: row,
         "data-pusher": pusher,
         "data-pusher-col": pusherContentCol,
+        "data-pusher-end": pusherContentEnd,
+        "data-pusher-date-end": pusherDateEnd,
         "data-list-author": listAuthor,
         "data-list-title": listTitle,
         "data-list-read": listRead ? "" : undefined,

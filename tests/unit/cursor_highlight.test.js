@@ -194,36 +194,40 @@ describe("resolveHighlightRow：誰最後動誰贏（lastMover）", () => {
 // mouse_regions.clickableColStart。**不分 lastMover**：鍵盤游標與滑鼠 hover 共用
 // 同一個寬度。
 describe("highlightColStart", () => {
-  test("防誤觸開啟：原生列表 30、選單 8", () => {
-    expect(highlightColStart({ mode: "native", pageState: 2, misclickGuard: true }))
+  const on = { clickRange: true, listClickStart: "title" };
+  test("點擊範圍生效：原生列表＝列表起點、選單 8", () => {
+    expect(highlightColStart({ mode: "native", pageState: 2, ...on }))
       .toBe(LIST_TITLE_COL_START);
-    expect(highlightColStart({ mode: "native", pageState: 4, misclickGuard: true }))
+    expect(highlightColStart({ mode: "native", pageState: 4, ...on }))
       .toBe(LIST_TITLE_COL_START);
-    expect(highlightColStart({ mode: "native", pageState: 1, misclickGuard: true }))
+    expect(highlightColStart({ mode: "native", pageState: 1, ...on }))
       .toBe(MENU_COL_START);
+    expect(
+      highlightColStart({ mode: "native", pageState: 2, clickRange: true, listClickStart: "date" })
+    ).toBe(11);
   });
 
   test("列表好讀的虛擬視窗與原生列表同一套欄位", () => {
     // listBuffer 的 pageState 在轉場幀可能不是 2（buildListWindowLines 自己組畫面），
     // 但欄位逐格對齊 readdoent ⇒ 一律套列表的欄位表。
     expect(
-      highlightColStart({ mode: "listBuffer", pageState: 0, misclickGuard: true })
+      highlightColStart({ mode: "listBuffer", pageState: 0, ...on })
     ).toBe(LIST_TITLE_COL_START);
   });
 
   test("好讀長頁（article）一律 0 —— 它本來就不上色", () => {
     expect(
-      highlightColStart({ mode: "article", pageState: 3, misclickGuard: true })
+      highlightColStart({ mode: "article", pageState: 3, ...on })
     ).toBe(0);
   });
 
-  test("防誤觸關閉：一律整列", () => {
+  test("點擊範圍不生效：一律整列", () => {
     [1, 2, 4].forEach((pageState) => {
-      expect(highlightColStart({ mode: "native", pageState, misclickGuard: false }))
+      expect(highlightColStart({ mode: "native", pageState, clickRange: false, listClickStart: "title" }))
         .toBe(0);
     });
     expect(
-      highlightColStart({ mode: "listBuffer", misclickGuard: false })
+      highlightColStart({ mode: "listBuffer", clickRange: false, listClickStart: "title" })
     ).toBe(0);
   });
 

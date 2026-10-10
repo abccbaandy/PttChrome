@@ -89,7 +89,6 @@ describe("設定頁：滑鼠分頁", () => {
       "useMouseBrowsing",
       "mouseBrowsingHighlight",
       "mouseLeftClick",
-      "mouseMisclickGuard",
       "mouseEdgePaging",
       "mouseFunctionKeys",
       "mouseWheelSmoothScroll",
@@ -97,19 +96,27 @@ describe("設定頁：滑鼠分頁", () => {
     ].forEach((name) => expect(field(panel, name)).toBeTruthy());
     // Mantine Select 的 input 沒有 name，用 legend 驗欄位在場。
     expect(panel.textContent).toContain(i18n("options_mouseMiddleClick"));
+    expect(panel.textContent).toContain(i18n("options_mouseClickRange"));
     expect(panel.textContent).toContain(i18n("options_mouseWheel"));
   });
 
-  test("預設值：總開關開、移動底色開、左鍵開、防誤觸開、中鍵＝左方向鍵、滾輪上下頁", () => {
+  test("預設值：總開關開、移動底色開、左鍵開、列表從作者起、推文只有內容、中鍵＝左方向鍵、滾輪上下頁", () => {
     const panel = openMouseTab();
     expect(field(panel, "useMouseBrowsing")).toBeChecked();
     expect(field(panel, "mouseBrowsingHighlight")).toBeChecked();
     expect(field(panel, "mouseLeftClick")).toBeChecked();
-    expect(field(panel, "mouseMisclickGuard")).toBeChecked();
+    expect(selectByLabel(panel, "options_mouseListClickStart").value).toBe(
+      i18n("options_clickFromAuthor"),
+    );
+    expect(selectByLabel(panel, "options_mousePushClickStart").value).toBe(
+      i18n("options_clickFromContent"),
+    );
+    expect(selectByLabel(panel, "options_mousePushClickEnd").value).toBe(
+      i18n("options_clickToContent"),
+    );
     expect(field(panel, "mouseFunctionKeys")).toBeChecked();
     expect(field(panel, "mouseEdgePaging")).toBeChecked();
     expect(DEFAULT_PREFS.mouseEdgePaging).toBe(true);
-    expect(DEFAULT_PREFS.mouseMisclickGuard).toBe(true);
     expect(DEFAULT_PREFS.mouseFunctionKeys).toBe(true);
     expect(DEFAULT_PREFS.useMouseBrowsing).toBe(true);
     expect(DEFAULT_PREFS.mouseMiddleClick).toBe(2); // 2=左方向鍵（2026-09-16 翻預設）
@@ -127,7 +134,6 @@ describe("設定頁：滑鼠分頁", () => {
     expect(field(panel, "mouseBrowsingHighlight")).toBeDisabled();
     expect(field(panel, "mouseWheelSmoothScroll")).toBeDisabled();
     expect(field(panel, "mouseLeftClick")).toBeDisabled();
-    expect(field(panel, "mouseMisclickGuard")).toBeDisabled();
     expect(field(panel, "mouseFunctionKeys")).toBeDisabled();
     expect(field(panel, "mouseEdgePaging")).toBeDisabled();
     expect(field(panel, "mouseServerReport")).toBeDisabled();
@@ -149,11 +155,50 @@ describe("設定頁：滑鼠分頁", () => {
     expect(readValuesWithDefault().mouseLeftClick).toBe(false);
   });
 
-  test("關掉防誤觸 → 寫進 pref", () => {
+  // 點擊範圍（issue #56）取代舊的防誤觸開關：舊 checkbox 不得再出現。
+  test("舊的防誤觸開關已不在設定頁上", () => {
     const panel = openMouseTab();
-    fireEvent.click(field(panel, "mouseMisclickGuard"));
+    expect(panel.querySelector("[name='mouseMisclickGuard']")).toBeNull();
+  });
+
+  test("點擊範圍三個下拉的選項與值域", () => {
+    const panel = openMouseTab();
+    expect(optionsOf(selectByLabel(panel, "options_mouseListClickStart"))).toEqual([
+      i18n("options_clickFromPush"),
+      i18n("options_clickFromDate"),
+      i18n("options_clickFromAuthor"),
+      i18n("options_clickFromTitle"),
+    ]);
+    expect(optionsOf(selectByLabel(panel, "options_mousePushClickStart"))).toEqual([
+      i18n("options_clickFromPusher"),
+      i18n("options_clickFromContent"),
+    ]);
+    expect(optionsOf(selectByLabel(panel, "options_mousePushClickEnd"))).toEqual([
+      i18n("options_clickToContent"),
+      i18n("options_clickToDate"),
+      i18n("options_clickToTime"),
+    ]);
+  });
+
+  test("改列表起點與推文終點 → 寫進 pref（字串值）", () => {
+    const panel = openMouseTab();
+    const pick = (key, label) => {
+      const input = selectByLabel(panel, key);
+      fireEvent.click(input);
+      fireEvent.click(
+        [...document
+          .getElementById(input.getAttribute("aria-controls"))
+          .querySelectorAll("[role='option']")].find(
+          (el) => el.textContent === i18n(label),
+        ),
+      );
+    };
+    pick("options_mouseListClickStart", "options_clickFromTitle");
+    pick("options_mousePushClickEnd", "options_clickToTime");
     closeModal();
-    expect(readValuesWithDefault().mouseMisclickGuard).toBe(false);
+    const v = readValuesWithDefault();
+    expect(v.mouseListClickStart).toBe("title");
+    expect(v.mousePushClickEnd).toBe("time");
   });
 
   test("關掉功能鍵可點 → 寫進 pref", () => {

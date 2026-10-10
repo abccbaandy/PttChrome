@@ -86,7 +86,7 @@ describe("重畫後 mouseAction 重算（滑鼠沒動也要有效）", () => {
       charset: "big5",
       blinkOn: false,
       mouseLeftClick: true,
-      mouseMisclickGuard: false,
+      mouseListClickStart: "push",
     });
     buf.useMouseBrowsing = true;
     const parser = new AnsiParser(buf);

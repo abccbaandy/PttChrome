@@ -23,7 +23,7 @@ function makeSession({ count = 8 } = {}) {
     setListLoading() {},
     blacklist: new Set(),
     titleBlacklist: [],
-    mouseMisclickGuard: true,
+    mouseListClickStart: "title",
   };
   const listLines = [];
   const listLineNums = [];

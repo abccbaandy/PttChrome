@@ -454,7 +454,6 @@ const SCENARIOS = {
       useMouseBrowsing: true,
       highlightCursor: true,
       keyboardCursorHighlight: true,
-      mouseMisclickGuard: true,
       mouseLeftClick: true,
       mouseBrowsingHighlightColor: 1,
       enableEasyReading: false,

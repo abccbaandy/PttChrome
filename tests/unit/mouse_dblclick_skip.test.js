@@ -40,7 +40,7 @@ function makeApp({ selectionCollapsed = true, useMouseBrowsing = true } = {}) {
   });
   app.cancelDblclickTimer = vi.fn();
   app.clientToPos = vi.fn(() => ({ col: 10, row: 5 }));
-  app.mouseGates = vi.fn(() => ({ leftClick: true, misclickGuard: false }));
+  app.mouseGates = vi.fn(() => ({ leftClick: true, clickRange: false }));
   app.onMouse_click = vi.fn();
   app.setInputAreaFocus = vi.fn();
   app.checkClass = vi.fn(() => false);
@@ -103,7 +103,8 @@ describe("App.mouse_down 的雙擊 skip 分支", () => {
 
     expect(app.onMouse_click).not.toHaveBeenCalled();
     // skip 分支仍會做冪等的 hover 更新（不送任何 byte）。
-    expect(app.buf.onMouse_move).toHaveBeenCalledWith(10, 5);
+    // 第四參數＝推文可點區（目標不是推文列 ⇒ null，見 App.pusherClickRangeOf）。
+    expect(app.buf.onMouse_move).toHaveBeenCalledWith(10, 5, false, null);
     // 旗標是一次性的，讀完就清。
     expect(app._attrs.SkipMouseClick).toBe("0");
   });

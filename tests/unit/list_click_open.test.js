@@ -14,7 +14,12 @@ function rowOf(text) {
   return text.split("").map((c) => ({ ch: c, isLeadByte: false }));
 }
 
-function makeSession({ count = 8, pinned = 0, misclickGuard = true } = {}) {
+function makeSession({
+  count = 8,
+  pinned = 0,
+  listClickStart = "title",
+  useMouseBrowsing = true,
+} = {}) {
   const sent = [];
   const enqueued = [];
   const hints = [];
@@ -27,8 +32,8 @@ function makeSession({ count = 8, pinned = 0, misclickGuard = true } = {}) {
     setListLoading() {},
     blacklist: new Set(),
     titleBlacklist: [],
-    // 防誤觸模式（pref mouseMisclickGuard，預設開）＝只有標題欄可開文。
-    mouseMisclickGuard: misclickGuard,
+    // 列表點擊起點（pref mouseListClickStart）。測試預設設成標題欄（最窄）。
+    mouseListClickStart: listClickStart,
   };
   const listLines = [];
   const listLineNums = [];
@@ -43,7 +48,7 @@ function makeSession({ count = 8, pinned = 0, misclickGuard = true } = {}) {
   const termBuf = {
     rows: 24,
     cols: 80,
-    useMouseBrowsing: true,
+    useMouseBrowsing,
     listLines,
     listLineNums,
     lineChangeds: new Array(24).fill(false),
@@ -163,9 +168,21 @@ describe("ListSession.onMouseClick", () => {
     expect(enqueued.length).toBe(1);
   });
 
-  test("防誤觸關閉：整條都能開文", () => {
+  test("起點＝作者（預設值）：作者欄第一格（col 17）可開文、日期欄最後一格不行", () => {
+    {
+      const { s, enqueued } = makeSession({ listClickStart: "author" });
+      s.onMouseClick(bodyRow(2), 16);
+      expect(enqueued).toEqual([]);
+    }
+    const { s, enqueued } = makeSession({ listClickStart: "author" });
+    s.onMouseClick(bodyRow(2), 17);
+    expect(s._selectedNum).toBe(103);
+    expect(enqueued.length).toBe(1);
+  });
+
+  test("總開關關（點擊範圍不生效）：整條都能開文", () => {
     [0, 6, 12, LIST_TITLE_COL_START - 1].forEach((col) => {
-      const { s, enqueued } = makeSession({ misclickGuard: false });
+      const { s, enqueued } = makeSession({ useMouseBrowsing: false });
       s.onMouseClick(bodyRow(2), col);
       expect(s._selectedNum).toBe(103);
       expect(enqueued.length).toBe(1);

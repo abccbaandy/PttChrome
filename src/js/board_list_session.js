@@ -953,15 +953,11 @@ BoardListSession.prototype = {
     }
     const idx = renderRow - this.headerRows();
     if (idx < 0) return; // header
-    const guard = !!(
-      this._termBuf &&
-      this._termBuf.useMouseBrowsing &&
-      this._view &&
-      this._view.mouseMisclickGuard
-    );
-    // 防誤觸的欄位規則沿用列表那一套（`buf.pageState` 在看板列表仍是 2，
+    const rangeOn = !!(this._termBuf && this._termBuf.useMouseBrowsing);
+    const start = this._view && this._view.mouseListClickStart;
+    // 可點起始欄的規則沿用列表那一套（`buf.pageState` 在看板列表仍是 2，
     // hover 底色與 pointer 也是照這個算的，見 term_view.onListMouseMove）。
-    if (col < clickableColStart(2, guard)) return;
+    if (col < clickableColStart(2, rangeOn, start)) return;
     const nums = this._termBuf.brdListLineNums || [];
     if (idx >= nums.length) return; // 短清單補到 bodyRows 的空白列
     this._selectedNum = nums[idx];

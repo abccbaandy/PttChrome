@@ -3,7 +3,7 @@
 // 為什麼要有這一份：`src/render/` 的純 JS 渲染鏈必須產生與舊 <Screen>/<Row>
 // **逐字相同**的 DOM——`data-type="bbsline"`／`data-row`（選取複製反查）、
 // `.wpadding`（term_view.fixedResize 直接掃 DOM 改寬度）、`data-pusher-col`
-// （滑鼠防誤觸）等契約漏一個就有功能靜默壞掉，而那些消費端全在 unit 測不到的
+// （推文可點區）等契約漏一個就有功能靜默壞掉，而那些消費端全在 unit 測不到的
 // term_view / ContextMenu 裡。故改寫前先用舊版把 DOM 凍成 golden，改寫後比對。
 //
 // 這裡的 cell 是**真 Big5 位元組**（經 u2b 轉出），不是 ASCII 替身：DBCS 併字、
@@ -399,7 +399,7 @@ export const SCENARIOS = [
 export const INTERACTIONS = {
   // 游標底色：整列（col 0，絕大多數情形）。
   article_native: { cursorHighlight: { row: 7, cls: "b2", col: 0 } },
-  // 游標底色：部分欄（防誤觸模式，底色包在 wrapper span 裡）。
+  // 游標底色：部分欄（點擊範圍，底色包在 wrapper span 裡）。
   list_native: { cursorHighlight: { row: 0, cls: "b2", col: 17 } },
   // 圖文合併開成「上圖下文」。
   article_caption_merge: { mergeCaption: "imageFirst" },
