@@ -54,6 +54,7 @@ import {
   submitSearch,
 } from "../../js/article_search";
 import { rememberSearch } from "../../js/search_history";
+import { HINT_ERROR } from "../../js/status_hint";
 import {
   menuTargetFromElement,
   setMenuTargetHighlight,
@@ -689,9 +690,10 @@ export const ContextMenu = ({ pttchrome }) => {
       const value = normalizeSearchText(kind, text);
       if (!value) return;
       rememberSearch(kind, value);
-      const hint = (msg) => pttchrome.view?.flashListHint?.(msg, 3000);
+      const hint = (msg, level) =>
+        pttchrome.view?.flashListHint?.(msg, 3000, level);
       const sent = submitSearch(pttchrome, kind, value, {
-        onFail: () => hint(i18n("searchModal_failed")),
+        onFail: () => hint(i18n("searchModal_failed"), HINT_ERROR),
       });
       if (!sent) hint(serializedOpHint(pttchrome) || i18n("searchModal_busy"));
     },

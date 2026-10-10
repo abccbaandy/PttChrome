@@ -74,6 +74,11 @@ export const PREF_SEARCH_ITEMS = [
     { key: "enablePicPreview", titleKey: "options_enablePicPreview" },
     { key: "enableNotifications", titleKey: "options_enableNotifications" },
     { key: "deepLinkHandoffNotify", titleKey: "options_deepLinkHandoffNotify" },
+    {
+      key: "showStatusHints",
+      titleKey: "options_showStatusHints",
+      tooltipKey: "tooltip_showStatusHints",
+    },
     { key: "enableEasyReading", titleKey: "options_enableEasyReading" },
     { key: "enableEasyReadingList", titleKey: "options_enableEasyReadingList" },
     {

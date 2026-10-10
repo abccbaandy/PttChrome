@@ -64,6 +64,7 @@ import { u2b, ansiHalfColorConv, normalizePasteText } from './string_util';
 import { clickableColStart } from './mouse_regions';
 import { LEFT_ARROW } from './function_key_plan';
 import { readValuesWithDefault } from './pref_storage';
+import { HINT_ERROR } from './status_hint';
 
 // 進佇列的命令一律帶 BRD_CMD_PREFIX（'brd-'）：那是兩個列表 session 共用同一條
 // CommandQueue 的所有權判準，定義在 js/list_render_owner.js（兩邊都 import 的葉子
@@ -1262,7 +1263,7 @@ BoardListSession.prototype = {
   _abortOpen: function(msg) {
     // reducer 已經把狀態挪到 opening（鍵盤那條路），沒送出任何 byte ⇒ 立刻回到 active。
     this.state = 'active';
-    if (this._view.flashListHint) this._view.flashListHint(msg);
+    if (this._view.flashListHint) this._view.flashListHint(msg, 0, HINT_ERROR);
   },
 
   // ←／q：回上層。同樣要先同步真游標 —— `num` 是 static，離開時的游標位置就是
@@ -1397,12 +1398,13 @@ BoardListSession.prototype = {
     if (facts && this._view.flashListHint)
       this._view.flashListHint(
         '畫面偏離看板列表格式，已切至原生模式' + nativeResumeHint(),
-        4000
+        4000,
+        HINT_ERROR
       );
   },
 
   _degradeToNative: function(msg) {
-    if (this._view.flashListHint) this._view.flashListHint(msg, 4000);
+    if (this._view.flashListHint) this._view.flashListHint(msg, 4000, HINT_ERROR);
     this.state = 'functionMode';
     this._enterNative();
   },

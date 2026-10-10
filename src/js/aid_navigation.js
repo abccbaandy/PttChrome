@@ -64,6 +64,7 @@ import {
 } from './aid_parse';
 import { isPinnedListRow } from './comment_parse';
 import { MAIN_MENU, boardNameFromKey, rowHasTitle } from './screen_titles';
+import { HINT_ERROR } from './status_hint';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -235,8 +236,8 @@ export function AidNavigation(core, view, termBuf, queue, history) {
 }
 
 AidNavigation.prototype = {
-  _hint: function(msg, ms) {
-    if (this._view.flashListHint) this._view.flashListHint(msg, ms || 4000);
+  _hint: function(msg, ms, level) {
+    if (this._view.flashListHint) this._view.flashListHint(msg, ms || 4000, level);
   },
 
   _fail: function(msg) {
@@ -245,7 +246,7 @@ AidNavigation.prototype = {
     // whole stack rather than offer a back that lands somewhere wrong.
     this._history.abort();
     this._updateBackButton();
-    this._hint('AID 跳文失敗：' + msg + '（已停在原生畫面）');
+    this._hint('AID 跳文失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
   },
 
   // The back affordance is a pure projection of (active, stack) — never
@@ -334,7 +335,7 @@ AidNavigation.prototype = {
   start: function(aid, board) {
     if (this.active) return;
     if (!board) {
-      this._hint('AID 跳文：無法判斷目標看板');
+      this._hint('AID 跳文：無法判斷目標看板', 0, HINT_ERROR);
       return;
     }
     if (!this._termBuf.startedEasyReading) {
@@ -389,7 +390,7 @@ AidNavigation.prototype = {
     if (this.active) return;
     const anchor = this._history.beginBack();
     if (!anchor) {
-      this._hint('沒有可返回的文章');
+      this._hint('沒有可返回的文章', 0, HINT_ERROR);
       return;
     }
     this._hint('返回 ' + anchor.label + '…', PROGRESS_HINT_MS);
@@ -909,7 +910,8 @@ AidNavigation.prototype = {
           self._updateBackButton();
           self._hint(
             '原文章位置已變動（可能已被刪除），已停在 ' + board + ' 列表',
-            6000
+            6000,
+            HINT_ERROR
           );
           return;
         }

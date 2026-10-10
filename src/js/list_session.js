@@ -62,6 +62,7 @@ import {
 } from './list_scroll';
 import { LEFT_ARROW } from './function_key_plan';
 import { readValuesWithDefault } from './pref_storage';
+import { HINT_ERROR } from './status_hint';
 import {
   BOARD_LIST,
   FAVOURITE,
@@ -2426,7 +2427,8 @@ ListSession.prototype = {
                     num +
                     ' 篇（含）以前設為已讀、以後設為未讀。' +
                     '已切至原生' + nativeResumeHint(),
-              4000
+              4000,
+              rejected ? HINT_ERROR : undefined
             );
           }
         }
@@ -3108,7 +3110,7 @@ ListSession.prototype = {
     // v5 contract #5: failures are visible — banner, then the reducer routes
     // opening → functionMode (native mirror).
     if (this._view.flashListHint)
-      this._view.flashListHint('開啟文章失敗，已切至原生模式', 4000);
+      this._view.flashListHint('開啟文章失敗，已切至原生模式', 4000, HINT_ERROR);
     this._dispatch({ type: 'open-timeout' }, null);
   },
 
@@ -3166,7 +3168,8 @@ ListSession.prototype = {
         (isWaterballSettle(facts)
           ? '收到水球／廣播，已切至原生模式'
           : '畫面偏離列表格式，已切至原生模式') + nativeResumeHint(),
-        4000
+        4000,
+        HINT_ERROR
       );
     }
   },
@@ -3175,7 +3178,7 @@ ListSession.prototype = {
   // probe, unexpected screens): banner + native mirror. v5 contract #5 — no
   // silent falls.
   _degradeToNative: function(msg) {
-    if (this._view.flashListHint) this._view.flashListHint(msg, 4000);
+    if (this._view.flashListHint) this._view.flashListHint(msg, 4000, HINT_ERROR);
     this._enterFunctionMode();
   },
 

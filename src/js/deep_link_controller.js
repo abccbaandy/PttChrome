@@ -15,6 +15,7 @@
 import { isMainMenuRow } from './aid_navigation';
 import { buildDeepLink, stripDeepLink } from './deep_link';
 import { parseStatusRow } from './string_util';
+import { HINT_ERROR } from './status_hint';
 
 export function DeepLinkController(core, view, termBuf) {
   this._core = core;
@@ -98,7 +99,7 @@ DeepLinkController.prototype = {
     // parsePagerFooterContext 判：長文的 footer 會被頁碼擠掉（part3 消失）
     // ⇒ context 變成 'unknown'，但那仍然是一篇正常的文章。
     if (!parseStatusRow(buf.getRowText(buf.rows - 1, 0, buf.cols))) {
-      this._hint('請在文章內使用「複製本篇連結」', 3000);
+      this._hint('請在文章內使用「複製本篇連結」', 3000, HINT_ERROR);
       return false;
     }
     // 免費路徑（畫面上讀得到「※ 文章網址:」）什麼副作用都不該有：不進 functionMode、
@@ -128,7 +129,7 @@ DeepLinkController.prototype = {
     nav.queryPostAid({
       kind: 'deeplink-copy-info',
       onFlushed: function() {
-        self._hint('複製連結失敗：畫面已變更', 3000);
+        self._hint('複製連結失敗：畫面已變更', 3000, HINT_ERROR);
       },
       onDone: function(info) {
         // 回原處永遠要做，就算沒問到 AID —— 不然使用者被丟在列表上。
@@ -136,7 +137,7 @@ DeepLinkController.prototype = {
         self._deliverLink(info, deliverOpts);
       },
       onFail: function() {
-        self._hint('複製連結失敗：讀不到文章代碼', 3000);
+        self._hint('複製連結失敗：讀不到文章代碼', 3000, HINT_ERROR);
       }
     });
     return true;
@@ -155,7 +156,7 @@ DeepLinkController.prototype = {
     const link =
       info && buildDeepLink(this._locationHref(), info.board, info.aid);
     if (!link) {
-      this._hint('這個畫面無法產生連結（沒有文章代碼或看板）', 4000);
+      this._hint('這個畫面無法產生連結（沒有文章代碼或看板）', 4000, HINT_ERROR);
       return;
     }
     const self = this;
@@ -178,7 +179,7 @@ DeepLinkController.prototype = {
     const fallback = function() {
       // 剪貼簿被擋（非 secure context、或 user activation 已經過期）：至少把
       // 連結顯示出來，使用者還能自己選起來複製。
-      self._hint('連結：' + link, 12000);
+      self._hint('連結：' + link, 12000, HINT_ERROR);
     };
     try {
       const clip = this._clipboard();
@@ -251,8 +252,8 @@ DeepLinkController.prototype = {
     return navigator.share.bind(navigator);
   },
 
-  _hint: function(msg, ms) {
-    if (this._view && this._view.flashListHint) this._view.flashListHint(msg, ms);
+  _hint: function(msg, ms, level) {
+    if (this._view && this._view.flashListHint) this._view.flashListHint(msg, ms, level);
   },
 
   _canNavigate: function() {

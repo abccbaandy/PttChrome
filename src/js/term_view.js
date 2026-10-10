@@ -24,6 +24,7 @@ import { offsetTopWithin } from './scroll_anchor';
 import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
+import { hintColors, shouldShowHint } from './status_hint';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { tryOpenSearchModal } from './article_search';
 import { mobileCtrlKey, mobileMenuLayout, listViewportGeometry } from './mobile_layout';
@@ -471,6 +472,9 @@ export function TermView() {
   // 封包」的閘門在用；兩者的騷擾曲線也不同（水球高頻、交接低頻且可操作 —— 不通知
   // 等於功能靜默失效）。見 pref_storage.deepLinkHandoffNotify。
   this.deepLinkHandoffNotify = true;
+  // 一般狀態提示（flashListHint 的一般級＋setListLoading）的總開關。錯誤級不受影響，
+  // 見 status_hint.js / pref_storage.showStatusHints。
+  this.showStatusHints = true;
   this.titleTimer = null;
   this.notif = null;
   // 閃爍前的原始 document.title，停止時還原用。null = 現在沒在閃。
@@ -1996,7 +2000,10 @@ TermView.prototype = {
   // and cannot leak into the terminal layout.
   // `ms` optional: banners (T4 waterball / transaction degrade) linger longer
   // than the default key-hint fade.
-  flashListHint: function(msg, ms) {
+  // `level` optional: HINT_ERROR（status_hint.js）＝失敗／被迫切原生，紅底且不受
+  // showStatusHints 控制；省略＝一般提示，關掉 showStatusHints 就不顯示。
+  flashListHint: function(msg, ms, level) {
+    if (!shouldShowHint(level, this.showStatusHints)) return;
     var el = this._listHintEl;
     if (!el) {
       el = document.createElement('div');
@@ -2005,12 +2012,17 @@ TermView.prototype = {
       el.className = 'ListHint';
       el.style.cssText =
         'position:fixed;left:50%;bottom:48px;transform:translateX(-50%);' +
-        'background:rgba(20,20,20,.88);color:#eee;padding:6px 14px;' +
+        'padding:6px 14px;' +
         'border-radius:6px;font-size:14px;z-index:2000;pointer-events:none;' +
         'transition:opacity .4s;opacity:0;max-width:80%;';
       document.body.appendChild(el);
       this._listHintEl = el;
     }
+    // 同一個元素輪流顯示兩級提示 ⇒ 每次都重設顏色與 data-level（測試抓手）。
+    var colors = hintColors(level);
+    el.style.background = colors.background;
+    el.style.color = colors.color;
+    el.dataset.level = level || 'info';
     el.textContent = msg;
     el.style.opacity = '1';
     if (this._listHintTimer) clearTimeout(this._listHintTimer);
@@ -2024,6 +2036,8 @@ TermView.prototype = {
   // filling past a window edge (list_session._setLoading). Small fixed pill in
   // the bottom-right corner — the frozen 24-row screen itself stays untouched.
   setListLoading: function(on) {
+    // 「讀取中…」屬一般提示：關掉 showStatusHints 就不出現（關閉仍要照常隱藏）。
+    if (on && !shouldShowHint(null, this.showStatusHints)) on = false;
     var el = this._listLoadingEl;
     if (on && !el) {
       el = document.createElement('div');

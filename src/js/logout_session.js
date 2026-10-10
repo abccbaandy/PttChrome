@@ -25,6 +25,7 @@
 
 import { isMainMenuRow } from './aid_navigation';
 import { resolveDismiss, DISMISS_ANY_KEY, KEY_DISMISS } from './screen_dismiss';
+import { HINT_ERROR } from './status_hint';
 
 const KEY_LEFT = '\x1b[D';
 export const KEY_GOODBYE = 'G\r';
@@ -86,8 +87,8 @@ export function LogoutSession(core, view, termBuf, queue) {
 }
 
 LogoutSession.prototype = {
-  _hint: function(msg, ms) {
-    if (this._view && this._view.flashListHint) this._view.flashListHint(msg, ms || 4000);
+  _hint: function(msg, ms, level) {
+    if (this._view && this._view.flashListHint) this._view.flashListHint(msg, ms || 4000, level);
   },
 
   _screen: function() {
@@ -118,7 +119,7 @@ LogoutSession.prototype = {
     this.awaitingClose = false;
     this._clearCloseTimer();
     this.opHint = '';
-    this._hint('登出失敗：' + msg + '（已停在原生畫面，可手動操作）', 6000);
+    this._hint('登出失敗：' + msg + '（已停在原生畫面，可手動操作）', 6000, HINT_ERROR);
   },
 
   _clearCloseTimer: function() {

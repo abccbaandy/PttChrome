@@ -74,6 +74,10 @@ export const DEFAULT_PREFS = {
   // 高頻、可能被刻意關掉；交接低頻且可操作，不通知等於功能靜默失效）。
   // 頁內橫幅提示不受此開關控制（成本為零，且是切回來後唯一的痕跡）。
   deepLinkHandoffNotify: true,
+  // 畫面下方的一般狀態提示（讀取中、已切至原生、推文已送出…）。給新手看懂當下發生
+  // 什麼事；熟手可關。**錯誤提示（逾時切原生、操作失敗）不受影響**，永遠顯示且紅底。
+  // 分級見 status_hint.js。
+  showStatusHints: true,
 
   // Connection proxy: when on, connect through proxyUrl instead of DEFAULT_SITE so
   // users behind a block can reach PTT without installing anything. proxyUrl may be a

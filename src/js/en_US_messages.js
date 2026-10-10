@@ -715,6 +715,12 @@ export const en_US = {
   "options_deepLinkHandoffNotifyDenied": {
     "message": "Notifications are blocked by the browser; only the tab title will flash."
   },
+  "options_showStatusHints": {
+    "message": "Show status hints (loading, switched to native mode, push sent…)"
+  },
+  "tooltip_showStatusHints": {
+    "message": "Hints at the bottom of the screen explaining what is happening. Turn off once you are familiar; error hints (timeouts that fall back to native mode, failed operations) are always shown, in red."
+  },
   "options_enableEasyReading": {
     "message": "Enable easy reading article view. (experimental)"
   },

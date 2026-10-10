@@ -35,6 +35,7 @@ import { encodeClick, encodeWheel } from './mouse_report';
 import { dismissClickAllowed } from './screen_dismiss';
 import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
 import { serializedOpHint } from './serialized_op_gate';
+import { HINT_ERROR } from './status_hint';
 import { decideKeepAlive, KEEP_ALIVE_TIMEOUT_MS } from './keep_alive';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { readValuesWithDefault, writeValues } from './pref_storage';
@@ -1311,7 +1312,7 @@ App.prototype.onLightsRawMode = function(mode) {
     onFail: function() {
       // 第一步沒等到設定頁 ⇒ **絕不送數字鍵**（會被當成 pmore 的「跳至第 N 頁」）。
       if (self.view.flashListHint)
-        self.view.flashListHint(i18n('lightsOn_switchFailed'));
+        self.view.flashListHint(i18n('lightsOn_switchFailed'), 0, HINT_ERROR);
     }
   });
 };
@@ -1998,6 +1999,11 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     case 'deepLinkHandoffNotify':
       this.view.deepLinkHandoffNotify = value;
+      break;
+    case 'showStatusHints':
+      this.view.showStatusHints = value;
+      // 關掉時，正在顯示的「讀取中…」也要收掉（它不會自己淡出）。
+      if (!value && this.view.setListLoading) this.view.setListLoading(false);
       break;
     case 'showFloorNumbers':
       this.view.showFloorNumbers = value;

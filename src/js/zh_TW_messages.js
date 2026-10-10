@@ -714,6 +714,12 @@
   "options_deepLinkHandoffNotifyDenied": {
     "message": "瀏覽器已封鎖本站的通知，只會閃爍分頁標題。"
   },
+  "options_showStatusHints": {
+    "message": "顯示狀態提示（讀取中、已切至原生、推文已送出…）"
+  },
+  "tooltip_showStatusHints": {
+    "message": "畫面下方說明當下發生什麼事的提示。熟悉操作後可關掉；錯誤提示（逾時切原生、操作失敗）不受影響，一律以紅底顯示。"
+  },
   "options_enableEasyReading": {
     "message": "啟用文章好讀模式 (實驗性)"
   },

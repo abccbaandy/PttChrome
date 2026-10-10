@@ -707,6 +707,16 @@ export const PrefModal = ({
                   </Text>
                 )}
                 <PrefCheckbox
+                  name="showStatusHints"
+                  checked={values.showStatusHints}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_showStatusHints")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_showStatusHints")}
+                </Text>
+                <PrefCheckbox
                   name="enableEasyReading"
                   checked={values.enableEasyReading}
                   onChange={onCheckboxChange}
