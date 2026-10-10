@@ -187,12 +187,7 @@ test.describe('AID 跳文 → 返回（scenario 重放）', () => {
     expect(await failedHints(page)).toEqual([]);
     expect(await articleHead(page)).not.toBe(originHead);
     expect(await page.evaluate(() => window.__app.aidNavigation.canGoBack())).toBe(true);
-    expect(
-      await page.evaluate(() => {
-        const el = window.__app.view._aidBackEl;
-        return !!el && el.style.display !== 'none';
-      })
-    ).toBe(true);
+    await expect(page.locator('#aidBackButton')).toBeVisible();
 
     // 返回。
     await page.evaluate(() => window.__app.aidNavigation.back());

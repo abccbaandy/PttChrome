@@ -75,4 +75,41 @@ test.describe('手機頂部 App Bar', () => {
     expect(await page.evaluate(() => (window.__sent || []).join(''))).toBe('');
     expect(await page.evaluate(() => document.activeElement === document.getElementById('t'))).toBe(true);
   });
+
+  // REGRESSION（使用者回報）：手機上 AID 跳文後的「返回原文」不見了。舊版固定在左下角
+  // （bottom:16px），被常駐的底部工具列（z-index 2500）整顆蓋住 ⇒ 看不到也按不到。
+  test('AID 返回鈕：在 App Bar 下方、沒被任何 bar 蓋住，tap 只跑返回不送鍵', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { useMouseBrowsing: true, mouseLeftClick: true });
+    await replayCassette(page, article, { easyReading: true });
+    await page.waitForFunction(() => window.__app.view.reflow === true);
+    await page.evaluate(() => {
+      window.__backClicks = 0;
+      window.__sent = [];
+      window.__stubWSSent = (s) => window.__sent.push(s);
+      window.__app.view.showBackButton('C_Chat 第 353218 篇', () => {
+        window.__backClicks++;
+      });
+    });
+    const pill = page.locator('#aidBackButton');
+    await expect(pill).toBeVisible();
+    // 沒被任何 UI 蓋住：Playwright 的 hit-target 檢查（別的元素攔截 pointer 就失敗）。
+    await pill.tap({ trial: true, timeout: 3000 });
+    const geo = await page.evaluate(() => {
+      const r = document.getElementById('aidBackButton').getBoundingClientRect();
+      return {
+        top: r.top,
+        bottom: r.bottom,
+        barBottom: document.getElementById('mobileAppBar').getBoundingClientRect().bottom,
+        toolbarTop: document.querySelector('.mobileToolbarBar').getBoundingClientRect().top,
+      };
+    });
+    expect(geo.top).toBeGreaterThanOrEqual(geo.barBottom);
+    expect(geo.bottom).toBeLessThanOrEqual(geo.toolbarTop);
+
+    await pill.tap();
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    expect(await page.evaluate(() => window.__backClicks)).toBe(1);
+    expect(await page.evaluate(() => window.__sent.join(''))).toBe('');
+  });
 });

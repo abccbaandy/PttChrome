@@ -984,6 +984,15 @@
   "mobileAppBar_busy": {
     "message": "等待回應中"
   },
+  "aidBack_to": {
+    "message": "返回"
+  },
+  "aidBack_default": {
+    "message": "返回原文"
+  },
+  "aidBack_tooltip": {
+    "message": "返回跳轉前的文章"
+  },
   "mobileToolbar_settings": {
     "message": "設定"
   },

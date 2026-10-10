@@ -985,6 +985,15 @@ export const en_US = {
   "mobileAppBar_busy": {
     "message": "Waiting for response"
   },
+  "aidBack_to": {
+    "message": "Back to"
+  },
+  "aidBack_default": {
+    "message": "Back to previous article"
+  },
+  "aidBack_tooltip": {
+    "message": "Return to the article before the jump"
+  },
   "mobileToolbar_settings": {
     "message": "Settings"
   },

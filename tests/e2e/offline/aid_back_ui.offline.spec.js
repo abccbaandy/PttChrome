@@ -37,34 +37,42 @@ test.describe('AID 返回鈕', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     await boot(page);
 
+    const pill = page.locator('#aidBackButton');
     // 尚未跳文 → 沒有按鈕
-    expect(await page.evaluate(() => !!window.__app.view._aidBackEl)).toBe(false);
+    await expect(pill).toHaveCount(0);
 
     await page.evaluate(() => {
       window.__backClicks = 0;
+      window.__sent = [];
+      window.__stubWSSent = (s) => window.__sent.push(s);
       window.__app.view.showBackButton('C_Chat 第 353218 篇', () => {
         window.__backClicks++;
       });
     });
 
-    const pill = page.locator('.nomouse_command', { hasText: '返回' });
     await expect(pill).toBeVisible();
     await expect(pill).toContainText('353218');
 
-    // 整合點 1/2：真的收得到滑鼠事件，且 checkClass 把它排除在終端機區域外。
+    // 整合點 1/2：真的收得到滑鼠事件（hit-target 檢查：沒被別的 UI 蓋住），
+    // 且 checkClass 把它排除在終端機區域外。
+    await pill.click({ trial: true, timeout: 3000 });
     expect(
       await page.evaluate(() => {
-        const el = window.__app.view._aidBackEl;
+        const el = document.getElementById('aidBackButton');
+        const r = el.getBoundingClientRect();
         return {
           pointerEvents: getComputedStyle(el).pointerEvents,
-          whitelisted: window.__app.checkClass(el.className)
+          whitelisted: window.__app.checkClass(el.className),
+          // 上緣置中：不再疊在 PTT 底部狀態列上
+          upperHalf: r.bottom < window.innerHeight / 2
         };
       })
-    ).toEqual({ pointerEvents: 'auto', whitelisted: true });
+    ).toEqual({ pointerEvents: 'auto', whitelisted: true, upperHalf: true });
 
-    // 整合點 3：點下去只跑 callback，不會把焦點/按鍵漏給終端機。
+    // 整合點 3：點下去只跑 callback，不會把按鍵漏給終端機（滑鼠瀏覽開著也一樣）。
     await pill.click();
     expect(await page.evaluate(() => window.__backClicks)).toBe(1);
+    expect(await page.evaluate(() => window.__sent.join(''))).toBe('');
 
     await page.evaluate(() => window.__app.view.hideBackButton());
     await expect(pill).toBeHidden();

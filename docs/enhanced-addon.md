@@ -849,10 +849,11 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   （live 實測 2026-08-13 第一次跑就撞上）。修法是 `_ownedLeave` one-shot，在 `_begin()` 武裝、
   第一次 `noteLeftPost` 消耗掉。守護：`aid_navigation.test.js`「我方落地自己會產生一次 leaveCurrentPost」。
 - **可點的 overlay 不能沿用 `flashListHint` 那一族**：它們是 `pointer-events:none`（純提示），
-  照抄會做出一顆按不下去的按鈕。返回鈕（`term_view.showBackButton`）要自己的元素 ＋
+  照抄會做出一顆按不下去的按鈕。返回鈕（`components/AidBackButton`）要
   `pointer-events:auto`，className 掛 `nomouse_command` 讓 `App.checkClass` 把它排除在終端機區域外
-  （否則滑鼠瀏覽開著時，點按鈕會連帶把游標指令送給 PTT），並在 click/mousedown 先 `stopPropagation()`
-  （window 上有 capture 階段監聽會把焦點搶回隱藏 input `#t`）。守護：`tests/e2e/offline/aid_back_ui.offline.spec.js`。
+  （否則滑鼠瀏覽開著時，點按鈕會連帶把游標指令送給 PTT），mousedown preventDefault（不搶 `#t` 焦點）、
+  mousedown/mouseup/click `stopPropagation()`（App 的滑鼠入口掛在 window）。
+  守護：`tests/unit/aid_back_button.test.jsx`、`tests/e2e/offline/aid_back_ui.offline.spec.js`、`mobile_app_bar.offline.spec.js`。
 - **live e2e 的看板選擇會互相污染**：AID 返回測試要開列表好讀（大量 prefetch）並反覆進出，
   跑在 `C_Chat` 上會改掉該板的 server 游標（`getkeep`）與 `currtitle`，後面用 `C_Chat` 的
   `enhance`／`easy-reading` 測試就會開到別篇文章——症狀是**單獨跑全綠、整包跑必紅**（而且紅的位置每次不同）。

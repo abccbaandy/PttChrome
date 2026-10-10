@@ -14,6 +14,7 @@ import SearchModal from "./SearchModal";
 import DebugRecordNotice from "../DebugRecordNotice";
 import MobileToolbar from "../MobileToolbar";
 import MobileAppBar from "../MobileAppBar";
+import AidBackButton from "../AidBackButton";
 import { onPrefSaveImpl } from "./pref_save";
 import { readValuesWithDefault, writeValues } from "../../js/pref_storage";
 import * as prefSync from "../../js/pref_sync";
@@ -1043,6 +1044,7 @@ export const ContextMenu = ({ pttchrome }) => {
       />
       <DebugRecordNotice pttchrome={pttchrome} />
       <MobileAppBar pttchrome={pttchrome} />
+      <AidBackButton pttchrome={pttchrome} />
       <MobileToolbar
         pttchrome={pttchrome}
         hidden={modalOpen}

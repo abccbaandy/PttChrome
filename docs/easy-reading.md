@@ -355,7 +355,7 @@ best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原
 - **`_openedNum` 而非 `_selectedNum`**（兩次 live 誤跳的根因）：置底文沒有序號、`_selectedNum` 會留著上一個數字列的殘值；原生模式（functionMode，例如按過 Q 資訊框）下方向鍵是 passthrough，`_selectedNum` 停在舊值。只有 list 好讀自己序列化開文時設的 `_openedNum` 保證對得上畫面上那篇。
 - **生命週期（三個純通知 hook，都不得改動對方狀態）**：`list_session._onScreenSettled`（**排在 `queue.onSettle` 之前**，clean-list/menu → `invalidate()`）、`easy_reading.leaveCurrentPost`（文章→文章鍵）、`App.onClose`（斷線 → `reset()`）。
   - **我方落地會自己產生一次 `leaveCurrentPost`**（functionMode 退出走 'leave' 分支，且發生在 `onDone` 清掉 `active` 之後）→ `_ownedLeave` one-shot 吞掉它，否則每次跳完都會把剛 push 的那層抹掉。
-- **UI**：返回鈕（`term_view.showBackButton`，`(active, stack)` 的投影）＋快捷鍵 pref `aidNavBackKey`（預設 F9；F 鍵在 `term_keyboard.KeyMap` 沒有對應、送不到 PTT，而 F8 已被 `easyReadingEndSwitchKey` 佔用）。
+- **UI**：返回鈕（`term_view.showBackButton`／`hideBackButton` 只寫狀態 `view.aidBack`，`(active, stack)` 的投影；畫面是 React `components/AidBackButton` 訂閱 `view.onAidBackChange`，桌機手機同一顆，上緣置中、手機在 App Bar 下方——**不可放底部**：桌機疊在 PTT 狀態列上、手機被底部工具列蓋掉）＋快捷鍵 pref `aidNavBackKey`（預設 F9；F 鍵在 `term_keyboard.KeyMap` 沒有對應、送不到 PTT，而 F8 已被 `easyReadingEndSwitchKey` 佔用）。
 - **捲動還原**：錨點存的是**行索引**（`scrollTop / chh`），不是像素也不是 `_savedScrollTop`（那是 functionMode 單次進出的暫存，跨文章活不下來）。返回開文後交給 `easy_reading.requestScrollRestore`，由 `_onViewUpdated` 每次併頁時用 `nextScrollRestoreStep` 判斷高度夠不夠（好讀是逐頁累積，位置一開始不可達）；`reachedPageEnd` 仍不夠高就夾到底，使用者一按鍵立刻取消。
 
 ## 切換：三個對稱入口（CONFIRMED 純邏輯/手動驗）

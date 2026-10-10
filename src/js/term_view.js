@@ -2084,46 +2084,29 @@ TermView.prototype = {
     }
   },
 
-  // "返回原文" pill for the AID back stack (aid_navigation.js). Shown exactly
-  // while a back run is available; hidden while one is in flight.
-  //
-  // Three integration points, all of them old traps in this app:
-  //   - flashListHint's family is `pointer-events:none`, so this needs its own
-  //     element with pointer-events/cursor of its own — it is CLICKABLE.
-  //   - `nomouse_command` keeps App.checkClass from treating the pill as
-  //     terminal area (mouse browsing would send keys to PTT under the click).
-  //   - the click is stopped here: window-level capture listeners (mousedown /
-  //     click in pttchrome.jsx) otherwise steal focus back to the hidden input.
+  // "返回原文" for the AID back stack (aid_navigation.js). Shown exactly while a
+  // back run is available; hidden while one is in flight. This is only the
+  // state (`aidBack` = { label, onClick } | null); the button itself is React
+  // peripheral UI (components/AidBackButton) subscribed via onAidBackChange.
   showBackButton: function(label, onClick) {
-    var el = this._aidBackEl;
-    if (!el) {
-      el = document.createElement('div');
-      el.className = 'nomouse_command';
-      el.style.cssText =
-        'position:fixed;left:16px;bottom:16px;background:rgba(20,40,70,.92);' +
-        'color:#fff;padding:6px 14px;border-radius:16px;font-size:13px;' +
-        'z-index:2000;pointer-events:auto;cursor:pointer;user-select:none;' +
-        'max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-      el.addEventListener('mousedown', function(e) {
-        e.stopPropagation();
-        e.preventDefault();
-      });
-      el.addEventListener('click', function(e) {
-        e.stopPropagation();
-        e.preventDefault();
-        if (el._onClick) el._onClick();
-      });
-      document.body.appendChild(el);
-      this._aidBackEl = el;
-    }
-    el._onClick = onClick;
-    el.textContent = label ? '← 返回 ' + label : '← 返回原文';
-    el.title = '返回跳轉前的文章';
-    el.style.display = 'block';
+    this._setAidBack({ label: label || '', onClick: onClick });
   },
 
   hideBackButton: function() {
-    if (this._aidBackEl) this._aidBackEl.style.display = 'none';
+    if (this.aidBack) this._setAidBack(null);
+  },
+
+  _setAidBack: function(next) {
+    this.aidBack = next;
+    if (this._aidBackListeners)
+      this._aidBackListeners.forEach(function(fn) { fn(next); });
+  },
+
+  onAidBackChange: function(fn) {
+    if (!this._aidBackListeners) this._aidBackListeners = new Set();
+    var set = this._aidBackListeners;
+    set.add(fn);
+    return function() { set.delete(fn); };
   },
 
   // Modal-ish input overlay for T2 keyword/number collection (`/` search,
