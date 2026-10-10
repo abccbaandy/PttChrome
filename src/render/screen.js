@@ -1035,6 +1035,9 @@ export class ScreenController {
     const enhance = this.props.enhance;
     // 手機好讀文章的檔頭（render/article_meta_card.js）：作者／標題／時間改成卡片、分隔線
     // 收起。只看該列自己（列號＋文字形狀），認不出就照舊。
+    // 手機好讀文章的文末補白（computeAnnotations 的 trailingBlank）：收起、契約保留。
+    if (enhance && enhance.commentCards && ann && ann.trailingBlank)
+      return buildCollapsedRow(row, "articleTrailingBlankRow");
     if (enhance && enhance.commentCards && row < ARTICLE_META_MAX_ROWS) {
       const meta = buildArticleMetaRow(lines[row], row);
       if (meta) return meta;

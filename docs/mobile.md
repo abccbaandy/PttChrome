@@ -221,6 +221,12 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   標頭與內容每行都是 `[data-type=bbsline][data-row]`。
 - 守護：unit `comment_card.test.js`；offline e2e `mobile_reflow`「手機推文卡片」。
 
+### 文末補白收起
+- 成因：文章短於一頁／末頁時 pmore 把 EOF 之後的列清成空白，`pageLines` 照收 ⇒ 推文區下方一大塊空白。
+- `computeAnnotations`（PAGE_READING、`commentCards`）把「最後一列非空白之後」的空白列標 `trailingBlank`（只寫 result、每幀新物件）；
+  `screen.js#_renderRow` 收成 `buildCollapsedRow(row,'articleTrailingBlankRow')`。內文中間空白不動；長出新內容 ⇒ 標註參考變 ⇒ 放回。
+- 守護：unit `article_trailing_blank.test.js`。
+
 ## Phase 4：列表卡片（`term_view.listCards`）
 
 - 只換 body 列：`render/screen.js#_renderRow` 在 `enhance.listCards`（＝ `'article'`／`'board'`，由

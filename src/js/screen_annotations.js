@@ -699,6 +699,16 @@ export function computeAnnotations(
     if (J != null && J < n) {
       result[J] = { ...(result[J] || {}), reverseJunction: true };
     }
+    // 手機文末補白（docs/mobile.md「文末補白收起」）：pmore 把 EOF 之後的列清成空白，
+    // 好讀長頁照收 ⇒ 推文區下面一大塊空白。最後一列非空白之後的空白列標起來，
+    // render 端收起。跨列判斷 ⇒ 只在 PAGE_READING（annotationsAreRowIndependent 恆 false）。
+    // 只寫 result[row]（同 applyFunctionKeys 的規則）；每幀新物件 ⇒ 長出新內容時
+    // 這幾列的標註參考變了，節點重建、放回原高。
+    if (enhance.commentCards) {
+      for (let row = n - 1; row >= 0 && !texts[row].trim(); --row) {
+        result[row] = { ...(result[row] || {}), trailingBlank: true };
+      }
+    }
     // 內容型簽章：好讀翻頁只是往後長，前面已判過的候選 key 不變 → effect 不重跑。
     result.domainCands = domainCands;
     result.domainCandsSig = domainCands.map(domainKey).join(",");
