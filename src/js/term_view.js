@@ -11,7 +11,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { u2b, parseStatusRow, statusSignature, normalizePasteText } from './string_util';
-import { rowToText, parseArticleHeader, parseArticleTitle, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
+import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
@@ -720,6 +720,22 @@ TermView.prototype = {
     this.redraw(false);
   },
 
+  // 「目前這篇」的作者／看板／標題只准成組寫入（作者與看板同一列檔頭，見 redraw）。
+  _setArticleContext: function(ctx) {
+    if (ctx.author === this._articleAuthor && ctx.board === this._articleBoard &&
+        ctx.title === this._articleTitle) return;
+    var rec = this.bbscore && this.bbscore.debugRecorder;
+    if (rec) rec.log('article.context', { author: ctx.author, board: ctx.board, title: ctx.title });
+    this._articleAuthor = ctx.author;
+    this._articleBoard = ctx.board;
+    this._articleTitle = ctx.title;
+  },
+
+  // 離開文章時整組清空（App 的 screenSettled，comment_parse.shouldClearArticleContextOnSettle）。
+  clearArticleContext: function() {
+    this._setArticleContext({ author: null, board: null, title: null });
+  },
+
   redraw: function(force) {
 
     //var start = new Date().getTime();
@@ -741,13 +757,13 @@ TermView.prototype = {
       // therefore CLEAR the board, not inherit the previous post's (a boardless
       // #AID in a mail would otherwise jump to an unrelated board). null = not a
       // header row (a later page) → keep both across page-downs.
-      var header = parseArticleHeader(rowToText(lines[0]));
-      if (header) {
-        this._articleAuthor = header.author;
-        this._articleBoard = header.board;
-        // 手機 App Bar 的標題（mobile_app_bar.js）：同一個事件、第二列。
-        this._articleTitle = lines[1] ? parseArticleTitle(rowToText(lines[1])) : null;
-      }
+      // 標題（第二列）是手機 App Bar 用的（mobile_app_bar.js）。沒有檔頭的文章首頁
+      // （系統公告）⇒ 清空，見 comment_parse.articleContextFromScreen。
+      var ctx = articleContextFromScreen(
+        rowToText(lines[0]),
+        lines[1] ? rowToText(lines[1]) : '',
+        parseStatusRow(rowToText(lines[rows - 1])));
+      if (ctx) this._setArticleContext(ctx);
     } else {
       // Leaving the article clears any pusher highlight selection. 只設欄位就好：
       // 這裡跑在 _renderScreenLines **之前**，下面那次 render 會把新值同步進

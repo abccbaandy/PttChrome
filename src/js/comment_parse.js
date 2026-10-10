@@ -258,6 +258,30 @@ export function parseArticleTitle(text) {
   return m ? m[1] : null;
 }
 
+// term_view 的「目前這篇」事實（作者／看板／標題）每幀怎麼更新。status＝末列的
+// string_util.parseStatusRow 結果。回 {author, board, title} ⇒ 整組覆寫；null ⇒ 沿用。
+// 檔頭只在文章首頁 row 0（pmore 從第 1 行畫起）⇒ 首頁卻沒有檔頭＝沒有檔頭的特殊
+// 文章（進站系統公告、動畫…），必須清空，否則 App Bar 會顯示上一篇的標題。
+const NO_ARTICLE_CONTEXT = Object.freeze({ author: null, board: null, title: null });
+
+export function articleContextFromScreen(row0, row1, status) {
+  const header = parseArticleHeader(row0);
+  if (header) {
+    return { author: header.author, board: header.board, title: parseArticleTitle(row1) };
+  }
+  if (!status) return null;
+  const atTop = status.rowIndexStart != null ? status.rowIndexStart === 1 : status.pageIndex === 1;
+  return atTop ? { ...NO_ARTICLE_CONTEXT } : null;
+}
+
+// 離開文章（settle 判定，不吃逐幀抖動）⇒ 整組清空，免得哪個消費端漏清又顯示舊值。
+// 例外都是「之後還會回到同一篇的非首頁」：好讀 functionMode（推文／回應 prompt、
+// 編輯器）、跳行修補的 prompt、按任意鍵繼續。
+export function shouldClearArticleContextOnSettle({ pageState, functionMode, healInFlight }) {
+  if (pageState === 3 || pageState === 5) return false;
+  return !functionMode && !healInFlight;
+}
+
 // Board list column map — 逐欄對 mbbsd/bbs.c#readdoent 的 printf 序列推出來的
 // （pttbbs @ c1ff72df；先前是 live 校準值，現已與官方 source 對上）：
 //

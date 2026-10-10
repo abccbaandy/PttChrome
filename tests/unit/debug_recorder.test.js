@@ -145,6 +145,12 @@ describe("DebugRecorder", () => {
     expect(calls.sendRaw).toEqual(["\x1b[6~"]);
     // 有記錄（含 record.start log）
     const dirs = rec.events.map((e) => e.dir);
+    // 起點補一筆「目前這篇」脈絡（之後只在變動時記）——App Bar 標題殘留類問題靠它定案。
+    expect(rec.events.find((e) => e.tag === "article.context").info).toEqual({
+      author: null,
+      board: null,
+      title: null,
+    });
     expect(dirs).toContain("recv");
     expect(dirs).toContain("send");
     expect(rec.events.find((e) => e.dir === "recv").state.pageState).toBe(2);

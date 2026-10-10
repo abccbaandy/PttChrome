@@ -281,6 +281,10 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   與 `_articleAuthor/_articleBoard` 同一個檔頭事件記；副標＝看板）；文章列表（listOwner 或 `boardListContextKind==='article-list'`；
   row 0 是 `【板主:x】` ⇒ 必須先於 menu）→ `parseBoardName`；看板列表 → row 0【X】；其他 row 0【X】（`screen_titles.parseHeaderTitle`）→ menu；
   都不是 ⇒ 沿用 prev（不閃）。`newMail`＝row 0 含「你有新信件」（`menu.c#redraw_title`）。
+- 「目前這篇」（作者／看板／標題）只准成組寫（`term_view._setArticleContext`）。逐幀規則 `comment_parse.articleContextFromScreen`：
+  有檔頭 ⇒ 設；首頁（`第 01~`／舊式狀態列第 1 頁）卻無檔頭（進站系統公告等）⇒ 清空；其餘沿用。離開文章 ⇒ App 的 screenSettled
+  依 `shouldClearArticleContextOnSettle` 整組清空（例外：functionMode／跳行修補／pageState 5）。守護 `tests/unit/article_context.test.js`。
+  debug 錄製有 `article.context`／`appBar` log（起點補一筆、之後只記變動；info 字串照樣 redact）。
 - **無返回鍵**（使用者定案）。事件規則同工具列（mousedown preventDefault＋stopPropagation）。z-index 150（低於 Mantine overlay 200）。
 - 幾何：高 `MOBILE_APPBAR_PX`(48)＋`--safe-top`，**全畫面常駐** ⇒ rows 與 surface 無關（不重送 NAWS）。上緣經
   `term_size.termLayoutOffsets({topInset})`（0＝桌機舊值）、`mobileMenuLayout({topInset})`、`view.setTopInset`。`.main` 高公式不動。

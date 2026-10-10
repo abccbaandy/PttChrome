@@ -15,7 +15,7 @@ import { LogoutSession } from './logout_session';
 import { BoardNoteSkip } from './board_note_skip';
 import { DeepLinkController } from './deep_link_controller';
 import { AutoLogin } from './auto_login';
-import { LIST_TITLE_COL_START, parseBlacklist, parseTitleBlacklist } from './comment_parse';
+import { LIST_TITLE_COL_START, parseBlacklist, parseTitleBlacklist, shouldClearArticleContextOnSettle } from './comment_parse';
 import { MouseButtonTracker } from './mouse_button_tracker';
 import {
   ACT_NONE,
@@ -52,6 +52,7 @@ import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
+import { sameAppBar } from './mobile_app_bar';
 import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown } from './mobile_busy';
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
@@ -274,6 +275,11 @@ export const App = function() {
   this._screenContext = EMPTY_TOOLBAR_CONTEXT;
   this._screenContextListeners = new Set();
   this.buf.addEventListener('screenSettled', () => {
+    if (shouldClearArticleContextOnSettle({
+      pageState: this.buf.pageState,
+      functionMode: this.buf.easyReadingFunctionMode,
+      healInFlight: this.buf.easyReadingHealInFlight
+    })) this.view.clearArticleContext();
     this._refreshScreenContext();
     this._busyEvent({ type: 'settled' });
   });
@@ -811,6 +817,7 @@ App.prototype._refreshScreenContext = function() {
   if (!this._screenContextListeners || !this._screenContextListeners.size) return;
   var next = this.mobile ? mobileToolbarContext(this) : EMPTY_TOOLBAR_CONTEXT;
   if (sameToolbarContext(next, this._screenContext)) return;
+  if (!sameAppBar(next.appBar, this._screenContext.appBar)) this.debugRecorder?.log('appBar', next.appBar);
   this._screenContext = next;
   this._screenContextListeners.forEach(function(fn) { fn(next); });
 };

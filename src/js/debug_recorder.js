@@ -192,6 +192,15 @@ export class DebugRecorder {
     this._watchList();
 
     this.log('record.start', { url: app.connectedUrl && app.connectedUrl.url });
+    // 錄製是中途開始的：之後只在「變了」才記 article.context／appBar（term_view
+    // _setArticleContext、App._refreshScreenContext），起點的值要先補一筆。
+    const view = app.view || {};
+    this.log('article.context', {
+      author: view._articleAuthor || null,
+      board: view._articleBoard || null,
+      title: view._articleTitle || null,
+    });
+    if (app._screenContext && app._screenContext.appBar) this.log('appBar', app._screenContext.appBar);
   }
 
   // 好讀長頁的捲動軌跡：使用者的滾輪輸入（main.wheel）對照實際捲動位置

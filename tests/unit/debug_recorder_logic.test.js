@@ -138,6 +138,31 @@ describe("serializeRecording", () => {
     expect(steps.join("")).not.toMatch(/myuser|pw123|1\.2\.3\.4/i);
   });
 
+  // log info 會帶畫面上解出來的文字（article.context 的作者、appBar 標題）：同一套遮蔽。
+  it("log info 內的字串（含巢狀）也要遮帳號／密碼／IP", () => {
+    const out = JSON.parse(
+      serializeRecording({
+        events: [
+          {
+            t: 0,
+            dir: "log",
+            tag: "article.context",
+            info: { author: "myuser", title: "Re: pw123", n: 3, ok: true, nested: { ip: "1.2.3.4" }, none: null },
+          },
+        ],
+        redact: { ids: ["myuser"], secrets: ["pw123"] },
+      })
+    );
+    expect(out.events[0].info).toEqual({
+      author: "xxxxxx",
+      title: "Re: xxxxx",
+      n: 3,
+      ok: true,
+      nested: { ip: "xxxxxxx" },
+      none: null,
+    });
+  });
+
   it("b64 round-trip 支援 8-bit bytes（Big5）", () => {
     const s = "\xac\x4f\xff\x00A";
     expect(b64decode(b64encode(s))).toBe(s);

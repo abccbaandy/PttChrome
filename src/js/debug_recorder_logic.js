@@ -84,6 +84,18 @@ function scrubByStream(events, clean) {
   return out;
 }
 
+// log info 可能帶畫面上解出來的文字（article.context 的作者、appBar 標題）⇒ 逐字串遮。
+function scrubInfo(v, ids, secrets) {
+  if (typeof v === 'string') return scrub(v, ids, secrets);
+  if (Array.isArray(v)) return v.map((x) => scrubInfo(x, ids, secrets));
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v)) o[k] = scrubInfo(v[k], ids, secrets);
+    return o;
+  }
+  return v;
+}
+
 export function serializeRecording({ events, meta = {}, cols = 80, rows = 24, redact = {} }) {
   const ids = (redact.ids || []).filter(Boolean);
   const secrets = (redact.secrets || []).filter(Boolean);
@@ -91,7 +103,7 @@ export function serializeRecording({ events, meta = {}, cols = 80, rows = 24, re
 
   const outEvents = events.map((ev) => {
     if (ev.dir === 'log') {
-      return { t: ev.t, dir: 'log', tag: ev.tag, info: ev.info };
+      return { t: ev.t, dir: 'log', tag: ev.tag, info: scrubInfo(ev.info, ids, secrets) };
     }
     const o = { t: ev.t, dir: ev.dir, data: b64encode(cleaned.get(ev)) };
     if (ev.state) o.state = ev.state;
