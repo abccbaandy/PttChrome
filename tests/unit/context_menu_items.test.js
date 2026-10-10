@@ -9,8 +9,45 @@ import {
   isTouchContextMenu,
   copyTextFor,
   copyPreviews,
-  truncateMiddle
+  truncateMiddle,
+  listBlacklistTargets
 } from "../../src/js/context_menu_items";
+
+// 回歸：手機卡片上只有長按正好落在作者那一小段／標題那一行才給黑名單選項，
+// 實際手指幾乎按不中 ⇒ 兩個選項都不出現。卡片改成整張同一組、作者與標題一起給。
+describe("listBlacklistTargets", () => {
+  const row = { listAuthor: "someone", listTitle: "[問卦] 標題" };
+
+  test("手機卡片：不論長按落在哪一段，作者與標題都給", () => {
+    for (const region of [null, "author", "title"]) {
+      expect(listBlacklistTargets({ cards: true, region, ...row })).toEqual({
+        author: "someone",
+        title: "[問卦] 標題"
+      });
+    }
+  });
+
+  test("手機卡片的刪除列：沒有作者、標題空字串 ⇒ 兩項都不給", () => {
+    expect(
+      listBlacklistTargets({ cards: true, region: null, listAuthor: null, listTitle: "" })
+    ).toEqual({ author: null, title: null });
+  });
+
+  test("桌機格線：依欄位區分作者／標題，欄位外都不給", () => {
+    expect(listBlacklistTargets({ cards: false, region: "author", ...row })).toEqual({
+      author: "someone",
+      title: null
+    });
+    expect(listBlacklistTargets({ cards: false, region: "title", ...row })).toEqual({
+      author: null,
+      title: "[問卦] 標題"
+    });
+    expect(listBlacklistTargets({ cards: false, region: null, ...row })).toEqual({
+      author: null,
+      title: null
+    });
+  });
+});
 
 const HREF = "https://example.github.io/pttchrome/?site=x#Gossiping/M.1.A.2.html";
 const BASE = "https://example.github.io/pttchrome/";

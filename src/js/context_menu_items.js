@@ -133,3 +133,19 @@ export function contextMenuDisposition({ nativeTarget, doDOMMouseScroll, mobile,
 export function shouldClearTouchSelection({ mobile, touch, selectMode }) {
   return !!mobile && !!touch && !selectMode;
 }
+
+// 文章列表列的黑名單快速新增目標。
+//   cards＝手機卡片（view.listCards）：整張卡片是同一組點選目標，作者與標題**一起**給
+//     ——卡片上的作者只是第二行的一小段字，按「長按落在哪一段」分的話手指幾乎按不中，
+//     兩個選項就都不出現（使用者回報）。
+//   否則（桌機 80 欄格線）：region（comment_parse.listColRegion）分作者欄／標題區。
+// 刪除列沒有作者、標題是空字串 ⇒ 該項為 null（不出現）。
+export function listBlacklistTargets({ cards, region, listAuthor, listTitle }) {
+  const author = listAuthor || null;
+  const title = listTitle || null;
+  if (cards) return { author, title };
+  return {
+    author: region === "author" ? author : null,
+    title: region === "title" ? title : null,
+  };
+}

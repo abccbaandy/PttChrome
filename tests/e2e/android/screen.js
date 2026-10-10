@@ -7,6 +7,7 @@ const {
   findCassette,
   bootOffline,
   replayCassette,
+  replayListCassette,
   installReplay,
   installOfflineNetwork,
   offlineImageProfile,
@@ -51,6 +52,32 @@ async function openScreen(page, prefs = {}, opts = {}) {
   }
   await replayCassette(page, article, { easyReading: !!prefs.enableEasyReading });
   await expect.poll(() => page.evaluate(() => window.__app.buf.getRowText(0).trim().length)).toBeGreaterThan(0);
+}
+
+// 列表好讀的卡片畫面（view.listCards）。cassette 是 24 列，模擬器原生 49 列 ⇒ 呼叫端要先
+// 用 `wm size` 縮螢幕高，讓手機版面的 rows 落到下限 24（mobile_layout.mobileTermGeometry）。
+// 不用 setDeviceMetricsOverride 湊列數：觸控 y 會偏（見 docs/android-e2e.md）。
+async function openListCards(page, cassette) {
+  await forceMobileLayout(page);
+  await bootOffline(page, ptt);
+  if (!(await page.evaluate(() => window.__app.mobile))) {
+    throw envError('沒有進手機版面（mobileLayout pref 沒套上）');
+  }
+  const rows = await page.evaluate(() => window.__app.buf.rows);
+  if (rows !== ((cassette && cassette.rows) || 24)) {
+    throw envError(`手機版面 rows=${rows}，對不上 cassette（wm size 沒把螢幕縮夠矮？）`);
+  }
+  await replayListCassette(page, cassette);
+  await page.waitForFunction(() => window.__app.buf.pageState === 2);
+  await ptt.applyPrefs(page, { enableEasyReadingList: true });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const app = window.__app;
+        return app.listSession.state === 'active' && app.view.listCards && app.commandQueue.idle;
+      })
+    , { timeout: 20000 })
+    .toBe(true);
 }
 
 // capture 階段記下每個觸控 pointerdown（React listener 之前），給落點自檢用。
@@ -188,6 +215,7 @@ module.exports = {
   recordBackGuard,
   backGuardDiag,
   openScreen,
+  openListCards,
   recordTouches,
   checkLanding,
   centerOf,

@@ -38,6 +38,7 @@ import {
   isTouchContextMenu,
   contextMenuDisposition,
   shouldClearTouchSelection,
+  listBlacklistTargets,
   copyTextFor,
   copyPreviews,
 } from "../../js/context_menu_items";
@@ -406,20 +407,17 @@ export const ContextMenu = ({ pttchrome }) => {
             blacklistAuthorTarget = pusher;
           }
         } else {
-          // 手機卡片（view.listCards）：卡片不是 80 欄格線，col 沒意義 ⇒ 看長按落在
-          // 卡片的哪一段（render/list_card.js 的 .listCardAuthor／.listCardTitle）。
-          const region = pttchrome.view.listCards
-            ? target.closest(".listCardAuthor")
-              ? "author"
-              : target.closest(".listCardTitle")
-                ? "title"
-                : null
-            : listColRegion(col);
-          if (region === "author" && listAuthor) {
-            blacklistAuthorTarget = listAuthor;
-          } else if (region === "title" && listTitle) {
-            blacklistTitleTarget = listTitle;
-          }
+          // 手機卡片（view.listCards）：整張卡片＝同一組，作者與標題一起給
+          // （context_menu_items.listBlacklistTargets）；桌機看 col 落在哪一欄。
+          const cards = !!pttchrome.view.listCards;
+          const t = listBlacklistTargets({
+            cards,
+            region: cards ? null : listColRegion(col),
+            listAuthor,
+            listTitle,
+          });
+          blacklistAuthorTarget = t.author;
+          blacklistTitleTarget = t.title;
         }
         if (blacklistAuthorTarget) {
           blacklistAuthorExists = parseBlacklist(prefs.blacklist).has(

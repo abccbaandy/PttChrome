@@ -251,7 +251,9 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await expect.poll(async () => (await state(page)).selectedNum).toBe(target.num);
   });
 
-  test('長按卡片的作者 → 選單有「加入黑名單」；長按標題 → 「加入標題黑名單」', async ({ page }) => {
+  // 整張卡片＝同一組點選目標：長按任一段都同時給作者與標題（作者只是第二行一小段字，
+  // 依落點分段的舊做法手指按不中，選項就都不出現）。
+  test('長按卡片任一處 → 選單同時有「加入黑名單」與「加入標題黑名單」', async ({ page }) => {
     test.setTimeout(90000);
     await engage(page);
     const label = (k) => page.evaluate((key) => window.__i18n(key), k);
@@ -283,11 +285,14 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     const menu = page.locator('[data-sheet="context"]').first();
     const items = menu.locator('[data-cmenu]');
 
-    const author = await longPress('.listCardAuthor');
     const addAuthor = await label('cmenu_addAuthorBlacklist');
+    const addTitle = await label('cmenu_addTitleBlacklist');
+    // 落在作者／標題以外的段（序號・推文數・日期）也要兩項都給。
+    const author = await longPress('.listCard[data-list-author] .listCardInfo');
     const item = items.filter({ hasText: addAuthor });
     await expect(item).toBeVisible();
     await expect(item).toContainText(author);
+    await expect(items.filter({ hasText: addTitle })).toBeVisible();
     // sheet 開著時標出長按的那張卡片（js/menu_target_highlight.js），收起就消失。
     const markedCards = () =>
       page.evaluate(() =>
@@ -300,7 +305,8 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await expect(menu).toHaveCount(0);
     await expect.poll(markedCards).toEqual([]);
 
-    await longPress('.listCardTitleText');
-    await expect(items.filter({ hasText: await label('cmenu_addTitleBlacklist') })).toBeVisible();
+    await longPress('.listCard[data-list-author] .listCardTitleText');
+    await expect(items.filter({ hasText: addAuthor })).toBeVisible();
+    await expect(items.filter({ hasText: addTitle })).toBeVisible();
   });
 });

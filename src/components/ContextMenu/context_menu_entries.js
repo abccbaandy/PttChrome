@@ -17,8 +17,8 @@ export function buildContextMenuEntries(p) {
   const previews = p.previews || {};
   const quickSearchItems = p.quickSearchItems || [];
 
-  // 黑名單快速新增：右鍵落在作者/標題區塊才出現（見 index.js onContextMenu 的
-  // 區塊判定）。作者已在黑名單 → 反灰顯示「已在黑名單」不給點（不隱藏，避免
+  // 黑名單快速新增：桌機右鍵落在作者/標題區塊才出現；手機卡片長按整張都算，兩項
+  // 一起出現（context_menu_items.listBlacklistTargets）。作者已在黑名單 → 反灰顯示「已在黑名單」不給點（不隱藏，避免
   // 看起來像選項壞掉）。
   if (p.normalEnabled && p.authorBlacklistId)
     item(

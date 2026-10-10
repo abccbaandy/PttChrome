@@ -248,7 +248,8 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   不做退出帶／邊緣翻頁，點卡片本體＝ `onMouseClick(row, LIST_TITLE_COL_START)`（走 session 的列點擊開文
   合約）；**只有點在卡片本體才開**（`mobile_layout.isListCardBodyTarget`）：間距防誤點、視口外的 `.main` 留白
   （footer 收起後）不落回列號換算；`clientToPos` 的 footer 分支在 listCards 下關閉。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵面板的 ←。
-- 長按選單的黑名單區域在 listCards 下看 DOM（`.listCardAuthor`／`.listCardTitle`），不看 col；「前已讀後
+- 長按選單的黑名單在 listCards 下**不分區域**：整張卡片＝同一組，作者與標題選項一起給
+  （`context_menu_items.listBlacklistTargets`；依落點分段時作者那一小段手指按不中，選項全不出現）；「前已讀後
   未讀」用 `clientToPos` 的列號（已是卡片座標）。
 - 字級可調時再開 pref `mobileFontSize`（與桌機 `fontSize` 分開），且 rows 要跟著它算。
 
