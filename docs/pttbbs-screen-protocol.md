@@ -288,7 +288,7 @@ Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，�
 
 | row | 內容 | 出處 |
 |---|---|---|
-| 0 | `showtitle()` 反白標題：`【title】` 從 col 0 起（**三段式 `vs_header`，2026-09-20 公告明文保證不變**；另兩種標題有改，見 §11.9），右端 `看板/系列/文摘《NAME》`（`title_tail_msgs[]`＝`看板`/`系列`/`文摘`，依 MODE_SELECT/MODE_DIGEST 決定） | `mbbsd/menu.c#showtitle`；由 `readtitle()` 呼叫 `mbbsd/bbs.c` |
+| 0 | `showtitle()` 反白標題：`【title】` 從 col 0 起（**三段式 `vs_header`，2026-09-20 公告明文保證不變**；另兩種標題有改，見 §11.9），右端 `看板/系列/文摘《NAME》`（`title_tail_msgs[]`＝`看板`/`系列`/`文摘`，依 MODE_SELECT/MODE_DIGEST 決定）。**右段不保證在**（CONFIRMED）：`vtuikit.c#vs_draw_header` 在 `szmid + szright > w` 時 `szright = 0` 整段丟掉 ⇒ 看板描述太長（例 LoL）就沒有《NAME》。title＝`currBM`，只有 `板主:xxx`（過長截成 `..`）／`徵求中` 兩種（`bbs.c` enter_board）；mid＝看板描述，有新信時換成 `你有新信件`。client 判定走 `screen_titles.js#parseBoardKey`（有板名用板名，否則整條標題列當身分鍵） | `mbbsd/menu.c#showtitle`；由 `readtitle()` 呼叫 `mbbsd/bbs.c` |
 | 1 | 固定提示列 `[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明` | `mbbsd/bbs.c` |
 | 2 | 反白表頭 `   編號    <日 期|價 格> 作  者       文  章  標  題`＋右端 `人氣:N`（vbarf ANSI_REVERSE；cassette 實測 30;47）。日期欄字樣依 LISTMODE 變動 ⇒ **只認「編號」最穩** | `mbbsd/bbs.c` vbarf |
 | 3..rows-2 | entry 列，每頁 `headers_size = p_lines` 筆（24 列＝20 筆） | `mbbsd/read.c`（PARTUPDATE 內 realloc）、游標列算式 `3 + n - top`（`cursor_pos`） |

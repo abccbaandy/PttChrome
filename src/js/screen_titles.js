@@ -58,3 +58,39 @@ export function parseHeaderTitle(rowText) {
 // setPageState / classifyListScreen / boardListContextKind 共用的「選單畫面」
 // 白名單。三份原本各自抄一遍字面值，這裡收成一處。
 export const MENU_TITLES = [MAIN_MENU, CLASS_LIST, ARCHIVE_LIST];
+
+// Board name from the row-0 title bar: 「…看板《C_Chat》…」. The reversed title
+// is repainted on every board switch (protocol §4 TITLE_REDRAW), so this is the
+// aliasing guard for accumulated article numbers across boards.
+const BOARD_NAME_RE = /《([^《》]+)》/;
+export function parseBoardName(row0Text) {
+  if (!row0Text) return null;
+  const m = row0Text.match(BOARD_NAME_RE);
+  return m ? m[1] : null;
+}
+
+// 「看板《X》」不保證在：vtuikit.c#vs_draw_header 在 `szmid + szright > w` 時整段丟掉
+// 右側（看板描述太長，例：LoL「[LoL] 世界大賽主題曲 Know My Name」）。標題列左段是
+// bbs.c#readtitle → redraw_title(currBM, …)，currBM 只有「板主:xxx」（過長截成 `..`）
+// 與「徵求中」兩種 ⇒ 用它認出「這是文章列表的標題列」。
+const ARTICLE_LIST_TITLE_RE = /^\s*【(?:板主:[^】]*|徵求中)】/;
+
+// 看板身分鍵（列表好讀的 _boardName／facts.boardName 存的就是它）：有《板名》用板名；
+// 被 server 省略時退用整條標題列文字（板主＋描述，跨板不同；以「【」起頭，永遠不會
+// 等於真的板名）。只拿來比「同一個板嗎」，要真板名（`s` 跳板、比對 deep link 目標）
+// 用 boardNameFromKey。新信件提示會換掉描述 ⇒ 身分鍵變了 ⇒ 多一次 rebuild，安全。
+export function parseBoardKey(row0Text) {
+  const name = parseBoardName(row0Text);
+  if (name != null) return name;
+  if (!row0Text || !ARTICLE_LIST_TITLE_RE.test(row0Text)) return null;
+  return row0Text.trim();
+}
+
+// 文章列表的標題列（有《板名》，或被省略但左段是 currBM）。
+export function isArticleListTitleRow(row0Text) {
+  return parseBoardKey(row0Text) != null;
+}
+
+export function boardNameFromKey(key) {
+  return key != null && key.charAt(0) !== '【' ? key : null;
+}

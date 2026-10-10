@@ -15,8 +15,7 @@
 
 import { boardListContextKind } from './board_list_parse';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
-import { parseBoardName } from './list_session';
-import { parseHeaderTitle } from './screen_titles';
+import { parseBoardName, parseHeaderTitle } from './screen_titles';
 
 export const NEW_MAIL_MARK = '你有新信件';
 

@@ -66,6 +66,8 @@ import {
   BOARD_LIST,
   FAVOURITE,
   MENU_TITLES,
+  boardNameFromKey,
+  parseBoardKey,
   rowHasAnyTitle,
   rowHasTitle
 } from './screen_titles';
@@ -104,15 +106,9 @@ function prefersReducedMotion() {
 // Screen classification (pure)
 // ---------------------------------------------------------------------------
 
-// Board name from the row-0 title bar: 「…看板《C_Chat》…」. The reversed title
-// is repainted on every board switch (protocol §4 TITLE_REDRAW), so this is the
-// aliasing guard for accumulated article numbers across boards.
-const BOARD_NAME_RE = /《([^《》]+)》/;
-export function parseBoardName(row0Text) {
-  if (!row0Text) return null;
-  const m = row0Text.match(BOARD_NAME_RE);
-  return m ? m[1] : null;
-}
+// 板名／看板身分鍵的解析在 screen_titles.js（parseBoardName／parseBoardKey），
+// re-export 給既有呼叫端。
+export { parseBoardName, parseBoardKey, boardNameFromKey } from './screen_titles';
 
 // Classify one settled screen from plain facts. facts = {
 //   rowTexts:  string[] (getRowText for every row),
@@ -121,9 +117,10 @@ export function parseBoardName(row0Text) {
 //   row0Reversed, row2Reversed: bool (caller runs buf.isUnicolor — kept out of
 //              here so the classifier stays free of TermBuf),
 // } → { kind: 'clean-list'|'article'|'menu'|'prompt'|'transient', boardName }
+//   boardName ＝ screen_titles.parseBoardKey（身分鍵，不一定是真板名）
 //
 // clean-list fingerprint (protocol doc §3/§5, all five must hold):
-//   row0 reversed title with a parsable 《board》, row2 reversed header with
+//   row0 reversed title with a parsable board key (parseBoardKey), row2 reversed header with
 //   「編號」, ≥3 parsable article numbers in the entry area (or the board-tail
 //   short-page rule below), the cursor parked in the entry area at col ≤ 1,
 //   and the bottom feeter caption is an article list (isArticleListFooter).
@@ -140,7 +137,7 @@ export function parseBoardName(row0Text) {
 export function classifyListScreen(facts) {
   const { rowTexts, curX, curY, rows, row0Reversed, row2Reversed } = facts;
   const lastRowText = rowTexts[rows - 1] || '';
-  const boardName = parseBoardName(rowTexts[0]);
+  const boardName = parseBoardKey(rowTexts[0]);
 
   if (
     row0Reversed &&
@@ -220,7 +217,7 @@ export function classifyListScreen(facts) {
 export function isJumpParkedListScreen(facts) {
   const { rowTexts, curX, curY, rows, row0Reversed, row2Reversed } = facts;
   if (!row0Reversed || !row2Reversed) return false;
-  if (parseBoardName(rowTexts[0]) == null) return false;
+  if (parseBoardKey(rowTexts[0]) == null) return false;
   if ((rowTexts[2] || '').indexOf('編號') < 0) return false;
   if ((rowTexts[rows - 1] || '').trim()) return false;
   if (curY < 3 || curY > rows - 2 || curX > 1) return false;
@@ -1250,7 +1247,7 @@ ListSession.prototype = {
   currentAnchor: function() {
     if (this._openedNum == null) return null;
     return {
-      board: this._boardName,
+      board: boardNameFromKey(this._boardName),
       num: this._openedNum,
       subject: this._lastReadTitle
     };

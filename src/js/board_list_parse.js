@@ -18,6 +18,7 @@
 import {
   BOARD_LIST,
   MENU_TITLES,
+  isArticleListTitleRow,
   rowHasAnyTitle,
   rowHasTitle
 } from './screen_titles';
@@ -205,7 +206,7 @@ export function boardListContextKind(facts) {
   const rows = (facts && facts.rows) || rowTexts.length;
   const row0 = rowTexts[0] || '';
   const foot = rowTexts[rows - 1] || '';
-  if (row0.indexOf('《') >= 0 && isArticleListFooter(foot)) return 'article-list';
+  if (isArticleListTitleRow(row0) && isArticleListFooter(foot)) return 'article-list';
   if (rowHasAnyTitle(row0, MENU_TITLES)) return 'menu';
   return 'other';
 }

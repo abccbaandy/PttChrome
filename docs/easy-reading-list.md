@@ -238,7 +238,7 @@ pref `enableEasyReadingList`（**2026-09-16 起預設 on**）＋`easyReadingList
     → 走鍵盤同一條 reducer（`open`／`open-pinned`）＋ `_beginOpen`。**永遠不得放行到
     `App.onMouse_click`**（那條依 `buf.mouseAction` 與 server 幾何直送
     `\x1b[A`×N+`\r`，座標不對應且繞過 CommandQueue）。非 active／frozen 時吞掉＋提示。
-- header/footer 快取：accumulate 時從「像 clean-list 的 live 幀」更新（row0 含《＋row2 含 編號 → header；底列 caption 是文章列表 → footer，判定 `screen_captions.js#isArticleListFooter`，新舊 caption 見 protocol §11.10）——跳號空底列不會污染 footer 快取。
+- header/footer 快取：accumulate 時從「像 clean-list 的 live 幀」更新（row0 是文章列表標題列（`screen_titles.isArticleListTitleRow`：有《板名》或左段是 `【板主:…】`／`【徵求中】`——《板名》會被 server 省略，protocol §3）＋row2 含 編號 → header；底列 caption 是文章列表 → footer，判定 `screen_captions.js#isArticleListFooter`，新舊 caption 見 protocol §11.10）——跳號空底列不會污染 footer 快取。
 
 ## 狀態機（reducer＝`transitionListSession`，unit 全枚舉為準）
 
@@ -420,6 +420,8 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
    根因在 `term_view.accumulateListLines`：它原本**先 evict 再 prune**，而 `evictPivot()` 回的是 `_topNum`＝**跳之前的視口頂**，`evictListBuffer` 砍的是「離樞紐最遠的那一端」⇒ 遠跳時那一端恰好就是剛落地的那一頁。緩衝一旦吃滿 `MAX_LIST_ROWS=300`，落點頁就在遠跳專用的 `prunePivot()` 覆寫（End=`null` 留最大段／Home=`1` 留第 1 篇段）輪到之前被砍掉。連鎖：`noteEvicted` 把 `_edgeDown`／`_edgeUp` 清回 false（onDone 剛設的 true 被它自己的 `_forceRedraw` 廢掉）→ onDone 的 `_setCursorPos(seq, seq.length - 1)` 落在**舊緩衝**末列（＝使用者說的「只移到列表底部」）→ `_maybeDemand` 看到 edge 未確認就用 `bufferEdgeNum(舊緩衝)` 跳號。**「有時」的條件就是緩衝已達 300 列**；剛進板列少時 evict 不觸發，覆寫正常生效 ⇒ 能用。
    三道一起修：(a) `accumulateListLines`／`accumulateBoardListLines` 改成 **prune 先、evict 後**（不相干的舊段先整段丟掉，evict 才量到對的列數，遠跳時通常直接變 no-op；無洞時 prune 是 early-return、evict 只剔兩端不可能製造洞 ⇒ 非遠跳路徑逐位元不變）；(b) `evictPivot()` 與 `prunePivot()` 共用同一個 `_prunePivotOverride`（落點頁與緩衝**連續**時沒有洞可 prune，(a) 救不了）；(c) onDone 最後一道 `_adoptJumpLandingIfDropped(landed, edge)`：落點編號真的不在 `listLineNums` 就照已驗證的 `_beginJumpNumber` 模式 `_rebuild(landed, edge)`（落點頁 wholesale），並留一則 `listSession.jumpLandingDropped` 診斷。`_rebuild` 的 `edge` 參數必須在 `_demandDownIfWindowShort` **之前**生效，否則板上沒有置底文時會在真板尾送一個零回應的 PgDn（見「已知限制」的滿版落點）。
    守護：`list_accumulate.test.js`「遠跳落點頁不得被 evict 砍掉」三條（真的呼叫 `TermView.prototype.accumulateListLines`，stub 的 `evictPivot` 刻意回舊視口 ⇒ 驗的就是順序本身）、`list_session.test.js`「遠跳在飛時樞紐改成落點那一側」＋「遠跳落點頁被丟掉時改成重建」五條、`board_list_session.test.js` 的同構兩條。
+20. **`_boardName`／`facts.boardName` 是看板身分鍵，不是真板名**：「看板《X》」會被 server 省略（看板描述太長，protocol §3），此時身分鍵＝整條標題列（`screen_titles.parseBoardKey`，以「【」起頭）。只拿來比「同一板嗎」；要真板名（`s` 跳板、nav_history 錨點）一律過 `boardNameFromKey`（省略時回 null，呼叫端已有 null 退路）。新增「這是文章列表嗎」的判斷不准再寫 `indexOf('《')`，走 `isArticleListTitleRow`。
+21. **認不出 ⇒ 原生，是功能的一部分**：任何指紋要素壞掉（PTT 改版／解錯）只准落到「idle 不 engage、不送命令」或「active → functionMode 鏡像」，不准「認錯 ⇒ 送鍵／畫錯清單」。突變矩陣守護：`tests/unit/parse_failure_degrade.test.js`（真實 C_Chat／LoL 畫面 × 逐一破壞指紋要素，含看板列表、文章好讀狀態列、跳過進板畫面）。新增指紋要素時同步補一條突變。
 
 ### 不變量（2026-09-03 自動回好讀新增；違反即復發）
 

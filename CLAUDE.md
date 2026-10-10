@@ -167,6 +167,9 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   **拆軸**——兩軸簡寫的 `contain`／`none` 會連瀏覽器導航一起停用）。這種「不要擋」的一行
   最容易被下一個人順手改回去，**一律補靜態守護測試**（範例
   `tests/unit/native_gesture_css.test.js`）。
+- **改寫 PTT 原生畫面行為的功能（列表好讀／看板列表捲動／文章好讀／跳過進板畫面…）必須「認不出 ⇒ 原生」**：
+  指紋任一要素失配只准不接管或退回原生鏡像，不准認錯送鍵。新增或修改畫面指紋時，在
+  `tests/unit/parse_failure_degrade.test.js` 的突變矩陣補對應突變（真實畫面 × 逐一破壞要素）。
 - **PTT 邏輯不准猜**：PTT 行為邏輯一律先讀 `3rd_script/pttbbs` 原始碼找出真實實作，禁止自行猜測或從錄製素材/畫面觀察反推規則；素材只用來驗證對 code 的理解是否有誤。詳見 `docs/pttbbs-screen-protocol.md` 開頭「研究方法規範」。
 - 編碼：PTT 是 Big5，內部轉 Unicode（`string_util.js` 的 `b2u`/`u2b`，查 `window.lib.b2uArray/u2bArray`）。
 - 改 `src/components/**` 會被 husky + lint-staged 跑 prettier。

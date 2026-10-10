@@ -15,7 +15,7 @@ import { rowToText, parseArticleHeader, parseArticleTitle, findPageOverlap, reso
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
-import { BOARD_LIST, rowHasTitle } from './screen_titles';
+import { BOARD_LIST, isArticleListTitleRow, rowHasTitle } from './screen_titles';
 import { isArticleListFooter, isBoardListFooter } from './screen_captions';
 import { OWNER_BOARD_LIST } from './list_render_owner';
 import { readValuesWithDefault } from './pref_storage';
@@ -3131,7 +3131,7 @@ TermView.prototype = {
     // live frames only (a jump response blanks the bottom row — protocol §4 ✚ —
     // and must not poison the footer cache).
     if (
-      (rowTexts[0] || '').indexOf('《') >= 0 &&
+      isArticleListTitleRow(rowTexts[0]) &&
       (rowTexts[2] || '').indexOf('編號') >= 0
     ) {
       this._listHeaderRows = [

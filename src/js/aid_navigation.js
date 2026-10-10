@@ -63,7 +63,7 @@ import {
   isCrossPostHeaderLine
 } from './aid_parse';
 import { isPinnedListRow } from './comment_parse';
-import { MAIN_MENU, rowHasTitle } from './screen_titles';
+import { MAIN_MENU, boardNameFromKey, rowHasTitle } from './screen_titles';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -132,6 +132,16 @@ const MAX_ESCAPE_STEPS = 6;
 // The last-row text guards are belt-and-braces. AID_NOT_FOUND_RE must NOT be scanned
 // any higher: on a real landing row rows-2 is an ordinary article row, and a title
 // containing 「找不到」 would become a false reject.
+// `s<board>⏎` 落地＝目標板的乾淨文章列表。facts.boardName 是看板身分鍵
+// （screen_titles.parseBoardKey）：「看板《X》」被 server 省略（看板描述太長）時沒有
+// 板名可比，只能接受。不會因此誤判落地：這一步只從文章內（pmore 的 s）或主功能表送，
+// 板名打錯時畫面留在原處，不會是 clean-list；下一步的 AID 搜尋也只在找得到時才落地。
+export function landedOnBoard(facts, boardLower) {
+  if (!facts || facts.kind !== 'clean-list' || facts.boardName == null) return false;
+  const name = boardNameFromKey(facts.boardName);
+  return name == null || name.toLowerCase() === boardLower;
+}
+
 export function aidSearchLanded(facts) {
   if (!facts || facts.boardName == null) return false;
   if (facts.curY < 3 || facts.curY > facts.rows - 2) return false;
@@ -790,12 +800,7 @@ AidNavigation.prototype = {
   // intermediate, everything else keeps waiting.
   _boardLandingExpect: function(boardLower) {
     return function(snapshot, facts) {
-      if (
-        facts.kind === 'clean-list' &&
-        facts.boardName != null &&
-        facts.boardName.toLowerCase() === boardLower
-      )
-        return { landed: true };
+      if (landedOnBoard(facts, boardLower)) return { landed: true };
       const lastRow = facts.rowTexts[facts.rows - 1] || '';
       if (PRESS_ANY_KEY_RE.test(lastRow)) return { dismiss: true };
       // We are between 主功能表 and the list here, so an article screen can only
@@ -957,11 +962,7 @@ AidNavigation.prototype = {
       expect: viaMenu
         ? this._boardLandingExpect(boardLower)
         : function(snapshot, facts) {
-            return (
-              facts.kind === 'clean-list' &&
-              facts.boardName != null &&
-              facts.boardName.toLowerCase() === boardLower
-            );
+            return landedOnBoard(facts, boardLower);
           },
       onDone: function(result) {
         if (viaMenu) self._onBoardLanding(run, result, 0);
