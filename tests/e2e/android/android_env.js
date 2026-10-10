@@ -50,11 +50,21 @@ function parseVersionName(text) {
   return m ? m[1] : null;
 }
 
-// `dumpsys activity activities` → 現在在前景（resumed）的 App 套件名；讀不到 ⇒ null。
+// `dumpsys activity activities` → 現在在前景（resumed）的 Activity：{ pkg, task }；讀不到 ⇒ null。
 // 例：`topResumedActivity=ActivityRecord{3d2a1b u0 com.android.chrome/org.chromium...Activity t15}`。
+// task 用來分辨「Chrome 的跳板（IntentDispatcher）還疊在呼叫端的 task 裡」與「Chrome 已在
+// 自己的 task 開好分頁」：只看套件名的話跳板一出現就成立，之後真分頁才把呼叫端蓋掉。
+function parseResumedActivity(text) {
+  const m = /(?:topResumedActivity|mResumedActivity)[:=]\s*ActivityRecord\{\S+ u\d+ ([\w.]+)\/\S+ t(\d+)\}/.exec(
+    String(text || '')
+  );
+  return m ? { pkg: m[1], task: Number(m[2]) } : null;
+}
+
+// 前景 App 的套件名；讀不到 ⇒ null。
 function parseResumedPackage(text) {
-  const m = /(?:topResumedActivity|mResumedActivity)[:=]\s*ActivityRecord\{\S+ u\d+ ([\w.]+)\//.exec(String(text || ''));
-  return m ? m[1] : null;
+  const r = parseResumedActivity(text);
+  return r ? r.pkg : null;
 }
 
 // debug APK（`android/` 的 assembleDebug）：applicationId 多 `.debug`，Activity 類別名不變。
@@ -101,6 +111,7 @@ module.exports = {
   parseImageRevision,
   parseVersionName,
   parseResumedPackage,
+  parseResumedActivity,
   APK_PKG,
   APK_ACTIVITY,
   APK_DEV_PREFS_XML,

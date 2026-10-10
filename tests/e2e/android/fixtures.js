@@ -21,6 +21,8 @@ const {
 
 const PORT = 8080;
 const CHROME = 'com.android.chrome';
+// Chrome on Android 在 debuggable 裝置上啟動時讀的 command-line 檔（launchBrowser 也寫這個）。
+const CHROME_CMDLINE = '/data/local/tmp/chrome-command-line';
 
 const envError = (msg) => new Error(`${ENV_ERROR_TAG} ${msg}`);
 
@@ -157,6 +159,13 @@ const test = base.extend({
     );
     // pm clear 會收回執行期權限 ⇒ 重新授權，否則 MainActivity 開頭跳通知權限對話框蓋住畫面。
     await device.shell(`pm grant ${APK_PKG} android.permission.POST_NOTIFICATIONS`);
+    // 外部連結那條由 App 用 intent 叫起 Chrome（不經 launchBrowser）。Chrome 是 pm clear 過的
+    // ⇒ IntentDispatcher 之後**非同步**再開一個 FirstRunActivity，晚於「叫回 App」就把 App 蓋掉
+    // （wm 事件實測；真手機的 Chrome 早就走完首次啟動，不會有這一步）。比照 launchBrowser 的做法
+    // 寫 command-line 檔略過（userdebug 映像的 Chrome 啟動時讀它）；Chrome 要重啟才讀 ⇒ 先 force-stop。
+    await device.shell(
+      `am force-stop ${CHROME}; echo "_ --disable-fre --no-default-browser-check" > ${CHROME_CMDLINE}`
+    );
     await device.shell(`am start -W -n ${APK_ACTIVITY}`);
     let timer;
     const webView = await Promise.race([
@@ -175,7 +184,10 @@ const test = base.extend({
     // 外部連結那條會用 intent 叫起 Chrome（不經 launchBrowser，首次啟動狀態留在 Chrome 裡）
     // ⇒ 還原成 worker 開頭的乾淨狀態，後面 Chrome 那組才不受影響。
     await device
-      .shell(`am force-stop ${CHROME}; pm clear ${CHROME}; pm grant ${CHROME} android.permission.POST_NOTIFICATIONS`)
+      .shell(
+        `am force-stop ${CHROME}; rm -f ${CHROME_CMDLINE}; pm clear ${CHROME}; ` +
+          `pm grant ${CHROME} android.permission.POST_NOTIFICATIONS`
+      )
       .catch(() => {});
   },
 

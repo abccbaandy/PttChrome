@@ -103,6 +103,16 @@ describe("parseResumedPackage：前景 App", () => {
   test("沒有前景 Activity ⇒ null", () => {
     expect(androidEnv.parseResumedPackage("topResumedActivity=null")).toBe(null);
     expect(androidEnv.parseResumedPackage("")).toBe(null);
+    expect(androidEnv.parseResumedActivity("")).toBe(null);
+  });
+  // 回歸：外部連結那條只等「前景是 Chrome」，Chrome 的跳板（疊在 App 的 task 裡）一出現就
+  // 成立 ⇒ 立刻叫回 App，0.2s 後 Chrome 才在自己的 task 開分頁把 App 蓋掉。要能分 task。
+  test("parseResumedActivity 帶 task 編號：分得出跳板與 Chrome 自己的 task", () => {
+    const trampoline =
+      "    topResumedActivity=ActivityRecord{6a u0 com.android.chrome/com.google.android.apps.chrome.IntentDispatcher t144}";
+    const tab = "    topResumedActivity=ActivityRecord{3d u0 com.android.chrome/org.chromium.chrome.browser.ChromeTabbedActivity t145}";
+    expect(androidEnv.parseResumedActivity(trampoline)).toEqual({ pkg: "com.android.chrome", task: 144 });
+    expect(androidEnv.parseResumedActivity(tab)).toEqual({ pkg: "com.android.chrome", task: 145 });
   });
 });
 

@@ -9,7 +9,7 @@
 // （stub 攔 APK 本機 proxy 那條 ws://127.0.0.1:<port>/bbs/<token>）。
 // 密碼管理員／Google 登入 bridge 沒有測：模擬器上沒有 Google 帳號與已存密碼。
 const { test, expect } = require('./fixtures');
-const { parseResumedPackage } = require('./android_env');
+const { parseResumedPackage, parseResumedActivity } = require('./android_env');
 const {
   article,
   byKey,
@@ -31,6 +31,7 @@ const PREFS = { mouseLeftClick: false };
 const CHROME = 'com.android.chrome';
 
 const resumedPackage = (device) => device.shell('dumpsys activity activities').then((b) => parseResumedPackage(String(b)));
+const resumedActivity = (device) => device.shell('dumpsys activity activities').then((b) => parseResumedActivity(String(b)));
 // 同一份文件、同一條連線：Activity／WebView 被重建的話，舊的 page 會關掉（evaluate 丟錯）或旗標不見。
 const sameDocument = (page) =>
   page.evaluate(() => !!window.__sameDocument && window.__app.isConnected()).catch(() => false);
@@ -40,9 +41,34 @@ const kbInset = (page) =>
 
 async function bringBack(apk) {
   // singleTask ⇒ 叫回既有的那個 Activity（不新建、不重載）。
-  await apk.device.shell(`am start -n ${apk.activity}`);
-  await expect.poll(() => resumedPackage(apk.device), { timeout: 15000 }).toBe(apk.pkg);
+  const started = String(await apk.device.shell(`am start -n ${apk.activity}`));
+  await expect
+    .poll(() => resumedPackage(apk.device), { timeout: 15000 })
+    .toBe(apk.pkg)
+    .catch(async (e) => {
+      throw new Error(`${e.message}\nam start：${started.trim()}\n${await taskStack(apk.device)}`);
+    });
 }
+
+// 失敗現場：各 task 裡疊了哪些 Activity（fixture 收尾會 force-stop，事後看不到）。
+const taskStack = (device) =>
+  device
+    .shell('dumpsys activity activities')
+    .then((b) =>
+      String(b)
+        .split('\n')
+        .filter((l) => /^\s*\* Task\{|Hist\s+#|ResumedActivity/.test(l))
+        .join('\n')
+    )
+    .then(async (s) => {
+      const ev = String(await device.shell('logcat -d -b events'))
+        .split('\n')
+        .filter((l) => /wm_set_resumed_activity|wm_create_activity|wm_task_to_front/.test(l))
+        .slice(-12)
+        .join('\n');
+      return `${s}\n${ev}`;
+    })
+    .catch((e) => String(e));
 
 test.describe('Android APK：返回鍵、外部連結、軟鍵盤（真觸控／真按鍵）', () => {
   test.skip(!article, '尚無 article cassette');
@@ -100,9 +126,20 @@ test.describe('Android APK：返回鍵、外部連結、軟鍵盤（真觸控／
     });
     expect(href, 'cassette 畫面上沒有可點的網址').not.toBeNull();
     const before = page.url();
+    const appTask = (await resumedActivity(device)).task;
 
     await tap(page, device, '[data-e2e-link]');
-    await expect.poll(() => resumedPackage(device), { timeout: 20000 }).toBe(CHROME);
+    // 等 Chrome 在**自己的 task** 開好分頁。只看套件名不夠：Chrome 的跳板 IntentDispatcher 先疊在
+    // App 的 task 裡（那一刻前景已是 Chrome），約 0.2s 後才開真分頁 ⇒ 太早叫回 App 會被它蓋掉（wm 事件實測）。
+    await expect
+      .poll(
+        async () => {
+          const r = await resumedActivity(device);
+          return !!r && r.pkg === CHROME && r.task !== appTask;
+        },
+        { timeout: 20000, message: '外部連結沒有在 Chrome 自己的 task 開起來' }
+      )
+      .toBe(true);
     expect(page.url()).toBe(before);
 
     await bringBack(apk);
