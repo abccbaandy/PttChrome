@@ -61,6 +61,42 @@ function parseResumedActivity(text) {
   return m ? { pkg: m[1], task: Number(m[2]) } : null;
 }
 
+// 模擬器兩次 `cat /proc/stat` 之間的 CPU 閒置比例（%，idle＋iowait 都算閒）；讀不到或差值為 0 ⇒ null。
+// 開跑前用它等冷開機的背景忙碌期過去（fixtures.js#waitSystemSettled）。
+function cpuIdlePercent(prevText, curText) {
+  const parse = (t) => {
+    const line = String(t || '').split('\n').find((l) => /^cpu\s/.test(l));
+    if (!line) return null;
+    const v = line.trim().split(/\s+/).slice(1, 9).map(Number);
+    return { total: v.reduce((a, b) => a + (b || 0), 0), idle: (v[3] || 0) + (v[4] || 0) };
+  };
+  const a = parse(prevText);
+  const b = parse(curText);
+  if (!a || !b || b.total <= a.total) return null;
+  return Math.round(((b.idle - a.idle) / (b.total - a.total)) * 100);
+}
+
+// `cmd package resolve-activity --brief -a MAIN -c HOME` → 桌面 App 套件名（最後一行 pkg/activity）。
+function parseHomePackage(text) {
+  const lines = String(text || '').trim().split(/\r?\n/);
+  const m = /^([\w.]+)\//.exec((lines[lines.length - 1] || '').trim());
+  return m ? m[1] : null;
+}
+
+// logcat（ActivityManager:E）→ 每一則「ANR in」起算的段落（到下一則 ANR 或 60 行為止）；沒有 ⇒ ''。
+function anrExcerpt(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/ANR in /.test(lines[i])) continue;
+    let j = i + 1;
+    while (j < lines.length && j < i + 60 && !/ANR in /.test(lines[j])) j++;
+    out.push(lines.slice(i, j).join('\n'));
+    i = j - 1;
+  }
+  return out.join('\n\n');
+}
+
 // 前景 App 的套件名；讀不到 ⇒ null。
 function parseResumedPackage(text) {
   const r = parseResumedActivity(text);
@@ -112,6 +148,9 @@ module.exports = {
   parseVersionName,
   parseResumedPackage,
   parseResumedActivity,
+  cpuIdlePercent,
+  parseHomePackage,
+  anrExcerpt,
   APK_PKG,
   APK_ACTIVITY,
   APK_DEV_PREFS_XML,

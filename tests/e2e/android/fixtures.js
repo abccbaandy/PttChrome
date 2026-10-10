@@ -17,6 +17,10 @@ const {
   APK_ACTIVITY,
   APK_DEV_PREFS_XML,
   apkPath,
+  parseResumedPackage,
+  cpuIdlePercent,
+  parseHomePackage,
+  anrExcerpt,
 } = require('./android_env');
 
 const PORT = 8080;
@@ -45,6 +49,46 @@ function startBridge() {
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => resolve(server));
   });
+}
+
+// 冷開機後系統還在背景忙（CI 實測：測試途中「Pixel Launcher isn't responding」，返回鍵把 App
+// 丟到背景時桌面接不回前景，前景一直停在 App）。hide_error_dialogs 只藏對話框，治不了卡住的桌面
+// ⇒ 開跑前先把桌面叫到前景、等 CPU 閒下來。只是降低機率：等不到就照跑（不擋測試），結果印進 log
+// 供日後調門檻（docs/android-e2e.md 踩坑表）。
+const SETTLE_TIMEOUT_MS = 60000;
+const SETTLE_IDLE_PCT = 50;
+const SETTLE_SAMPLE_MS = 2000;
+
+async function waitSystemSettled(device) {
+  const t0 = Date.now();
+  const sh = (cmd) => device.shell(cmd).then(String, () => '');
+  const home = parseHomePackage(
+    await sh('cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME')
+  );
+  await sh('am start -W -a android.intent.action.MAIN -c android.intent.category.HOME');
+  const homeUp = await expect
+    .poll(async () => parseResumedPackage(await sh('dumpsys activity activities')), { timeout: 30000 })
+    .toBe(home)
+    .then(() => true, () => false);
+
+  let idle = null;
+  let streak = 0;
+  let prev = await sh('cat /proc/stat');
+  while (Date.now() - t0 < SETTLE_TIMEOUT_MS) {
+    // sleep-ok: CPU 閒置率本來就是「一段時間內」的量，固定取樣間隔。
+    await new Promise((r) => setTimeout(r, SETTLE_SAMPLE_MS));
+    const cur = await sh('cat /proc/stat');
+    idle = cpuIdlePercent(prev, cur);
+    prev = cur;
+    streak = idle != null && idle >= SETTLE_IDLE_PCT ? streak + 1 : 0;
+    if (streak >= 2) break;
+  }
+  const waited = Math.round((Date.now() - t0) / 1000);
+  console.log(
+    `[android] 開跑前等系統穩定：桌面 ${home || '?'} ${homeUp ? '已在前景' : '沒到前景'}、` +
+      `CPU 閒置 ${idle == null ? '?' : idle + '%'}（門檻 ${SETTLE_IDLE_PCT}% 連兩次）、等了 ${waited}s` +
+      (streak >= 2 ? '' : '，逾時照跑')
+  );
 }
 
 function adb(serial, args) {
@@ -98,6 +142,8 @@ const test = base.extend({
       // 測試在那種 AVD 上永遠等不到鍵盤。強制「有實體鍵盤也顯示軟鍵盤」，跟真手機一致。
       await device.shell('settings put secure show_ime_with_hard_keyboard 1');
 
+      await waitSystemSettled(device);
+
       const bridge = await startBridge();
       adb(serial, ['reverse', `tcp:${PORT}`, `tcp:${bridge.address().port}`]);
       try {
@@ -109,7 +155,8 @@ const test = base.extend({
         await device.close();
       }
     },
-    { scope: 'worker', timeout: 120000 },
+    // 含 waitSystemSettled 最多 60s。
+    { scope: 'worker', timeout: 180000 },
   ],
 
   context: async ({ android }, use) => {
@@ -203,6 +250,12 @@ const test = base.extend({
         // 「Chrome keeps stopping」這類系統當機對話框：哪個程序、為什麼，只在 crash buffer 裡。
         const crash = await android.device.shell('logcat -d -b crash').then(String, () => '');
         if (crash.trim()) await testInfo.attach('logcat-crash', { body: crash, contentType: 'text/plain' });
+        // 系統忙不忙、誰在吃 CPU（「Pixel Launcher isn't responding」這類 ANR 的背景）。
+        const cpu = await android.device.shell('dumpsys cpuinfo').then(String, () => '');
+        if (cpu.trim()) await testInfo.attach('cpuinfo', { body: cpu, contentType: 'text/plain' });
+        // ANR 的現場：ActivityManager 會記「ANR in <pkg>」＋原因＋各程序 CPU 用量（/data/anr 要 root 讀不到）。
+        const anr = anrExcerpt(await android.device.shell('logcat -d -b main,system -s ActivityManager:E').then(String, () => ''));
+        if (anr) await testInfo.attach('anr', { body: anr, contentType: 'text/plain' });
       }
     },
     { auto: true },

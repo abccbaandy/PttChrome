@@ -136,6 +136,41 @@ describe("APK dev server 設定", () => {
   });
 });
 
+// 回歸：CI 冷開機後桌面 ANR，返回鍵把 App 丟到背景時桌面接不回前景。開跑前等系統穩定、
+// 失敗時附 ANR 段落；這三個解析錯了，等待會白等或永遠不停、診斷會是空的。
+describe("系統穩定等待與 ANR 診斷的解析", () => {
+  test("cpuIdlePercent：idle＋iowait 算閒，取兩次差值", () => {
+    const a = "cpu  100 0 100 700 100 0 0 0 0 0\n";
+    const b = "cpu  150 0 150 750 150 0 0 0 0 0\n"; // 差：busy 100、idle+iowait 100
+    expect(androidEnv.cpuIdlePercent(a, b)).toBe(50);
+  });
+  test("cpuIdlePercent：讀不到或沒前進 ⇒ null（不准當成 0% 閒而白等，也不准當成閒）", () => {
+    expect(androidEnv.cpuIdlePercent("", "cpu 1 1 1 1\n")).toBeNull();
+    expect(androidEnv.cpuIdlePercent("cpu 1 1 1 1\n", "cpu 1 1 1 1\n")).toBeNull();
+  });
+  test("parseHomePackage：取最後一行的 pkg", () => {
+    const out = "priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=false\n" +
+      "com.google.android.apps.nexuslauncher/.NexusLauncherActivity\n";
+    expect(androidEnv.parseHomePackage(out)).toBe("com.google.android.apps.nexuslauncher");
+    expect(androidEnv.parseHomePackage("No activity found")).toBeNull();
+  });
+  test("anrExcerpt：從「ANR in」切段，多則分開；沒有 ⇒ 空字串", () => {
+    const log = [
+      "E ActivityManager: something else",
+      "E ActivityManager: ANR in com.google.android.apps.nexuslauncher",
+      "E ActivityManager: Reason: Input dispatching timed out",
+      "E ActivityManager: Load: 8.1 / 6.0 / 3.2",
+      "E ActivityManager: ANR in com.android.systemui",
+      "E ActivityManager: Reason: Broadcast",
+    ].join("\n");
+    const out = androidEnv.anrExcerpt(log);
+    expect(out.split("\n\n")).toHaveLength(2);
+    expect(out).toContain("Load: 8.1");
+    expect(out).not.toContain("something else");
+    expect(androidEnv.anrExcerpt("E ActivityManager: fine")).toBe("");
+  });
+});
+
 describe("parseArgs", () => {
   test("--if-changed 預設 base 為 origin/dev；其餘透傳", () => {
     expect(parseArgs(["--if-changed", "--grep", "x"])).toMatchObject({ ifChanged: "origin/dev", passthrough: ["--grep", "x"] });

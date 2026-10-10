@@ -37,8 +37,9 @@
   （GitHub API 的 job／step 時間＋Playwright log）：offline 從 2×184 條長到 2×215 條，單片測試本體
   200s→200–350s，整輪 4.5→6.5–9 分，關鍵路徑是 offline 兩片，其次 adverse slow 桶（~4 分）。
   ⇒ offline 拆 4 片、slow 桶拆 2 片（其餘 job 都在 3 分內）。同一份 code 單片耗時可差 1.5 倍
-  （runner CPU 型號，見上一條；e2e job 也印 `Runner CPU`），比較前先對機型、看多輪。
+  （runner CPU 型號，見上一條；e2e job 的 `Runner resources` 也印機型），比較前先對機型、看多輪。
   **再慢時的判準**：最慢的 e2e job 測試本體 > ~3 分就加片；加到單片本體 < ~1.5 分就不划算
   （固定成本過半）。不改 worker 數：4 vCPU 跑 4 workers 已吃滿 CPU（slow 桶例外，見 test.yml）。
 - **已判定不做**：關掉每條都錄的 video（失敗現場唯一的影像，見 `playwright.config.js`）；live e2e 並行（共用 session 是 worker-scoped，多 worker＝多登入）。
+- **runner 變慢（整個 job 慢數倍、開頭一批 `page.goto` 逾時）**：e2e job 都有 `Runner resources`（`scripts/ci-resource-monitor.mjs start`：機型＋記憶體，背景每 10s 取樣）與 `if: always()` 的 `Runner resources report`（摘要＋逐筆），失敗 artifact 另帶 `ci-diagnostics/resources.jsonl`。判讀：`steal` 高＝同主機其他 VM 搶 CPU，換台機器就好 ⇒ 重跑失敗 job；`user+sys` 持續滿＝自己吃滿 ⇒ 降 worker；`iowait` 高＝卡磁碟。綠的 run 也印，先拿同一個 job 的綠 run 當基準比。實例：adverse slow 2/2 一次 17 分（平常 3 分）、重跑即綠，當時尚無取樣，根因 `unknown`。
 - **容器裡 adverse runner 的 dev server 180s 等不到**（2026-10-01 發生一次，根因 `unknown`）：再發生時看 `scripts/run-adverse-e2e.mjs#waitForDevServer` 附的 vite 輸出與各位址探測結果，不要從頭猜。

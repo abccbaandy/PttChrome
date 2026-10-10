@@ -54,7 +54,8 @@ describe("test.yml：e2e job 失敗時上傳 test-results；trace 不全錄", ()
     const step = job.body.split(/^\s*- /m).find((s) => /actions\/upload-artifact@/.test(s));
     expect(step).toBeDefined();
     expect(step).toMatch(/^\s*if: failure\(\)\s*$/m);
-    expect(step).toMatch(/^\s*path: test-results\/?\s*$/m);
+    // 單行 `path: test-results/` 或多行 `path: |` 清單裡有 test-results/（另帶 ci-diagnostics/）。
+    expect(step).toMatch(/path: (\|[\s\S]*?^\s*)?test-results\/?\s*$/m);
     // matrix 各格、重跑各次都要不同名，否則上傳撞名直接失敗。
     expect(step).toMatch(/name: .*\$\{\{ matrix\.\w+ \}\}.*\$\{\{ github\.run_attempt \}\}/);
   });

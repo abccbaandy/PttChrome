@@ -17,6 +17,8 @@ package-lock.json
 # Playwright E2E
 test-results/
 playwright-report/
+# CI runner 資源取樣（scripts/ci-resource-monitor.mjs）
+ci-diagnostics/
 tests/e2e/__screenshots__/
 # live e2e 每輪的 DebugRecorder 錄製檔（已 redact，但仍屬個人連線紀錄，不入 repo）
 tests/e2e/__recordings__/

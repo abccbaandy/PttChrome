@@ -136,11 +136,10 @@ jobs:
           cache: yarn
 
       # 同 test-unit：e2e 耗時也隨 runner 抽到的 CPU 型號浮動（同一份 code 單片 200s／350s
-      # 都見過），比較耗時前先對機型。
-      - name: Runner CPU
-        run: |
-          nproc
-          lscpu | grep 'Model name' || true
+      # 都見過），比較耗時前先對機型。start 印機型＋記憶體，並在背景每 10s 取樣 CPU（含 steal）／
+      # load／可用記憶體，收尾的 report step 印摘要（判讀見 docs/ci-troubleshooting.md「runner 變慢」）。
+      - name: Runner resources
+        run: node scripts/ci-resource-monitor.mjs start
 
       # firefox 是 offline-firefox project 用的（tests/e2e/offline/selection.offline.spec.js）：
       # issue #22 的選取／複製症狀只在 Firefox 出現，Chromium 永遠綠。image 已內建。
@@ -150,6 +149,10 @@ jobs:
           yarn install --immutable
           yarn test:e2e:offline --shard=${{ matrix.shard }}/4
 
+      - name: Runner resources report
+        if: always()
+        run: node scripts/ci-resource-monitor.mjs report
+
       # 失敗現場（截圖／影片；trace 刻意不全錄，見 playwright.config.js）。offline 偶發紅在本機常重現不出來，沒留檔就只剩
       # 一行 Received 可猜。守護 tests/unit/ci_playwright_container.test.js。
       - name: Upload failure artifacts
@@ -157,7 +160,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: e2e-offline-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
-          path: test-results/
+          path: |
+            test-results/
+            ci-diagnostics/
           retention-days: 14
 
   # required checks 綁的是 job 名（`test / test-e2e-offline`），matrix 會把名字變成
@@ -228,10 +233,9 @@ jobs:
           node-version: 24
           cache: yarn
 
-      - name: Runner CPU
-        run: |
-          nproc
-          lscpu | grep 'Model name' || true
+      # 同 test-e2e-offline-shard 的資源取樣。
+      - name: Runner resources
+        run: node scripts/ci-resource-monitor.mjs start
 
       # E2E_WORKERS 見上面 matrix 註解；其餘 offline job 用預設值（tests/e2e/workers_policy.js）。
       # --shard 由 run-adverse-e2e.mjs 原封透傳給 playwright。
@@ -242,13 +246,19 @@ jobs:
           yarn install --immutable
           yarn test:e2e:offline:adverse --only=${{ matrix.bucket }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
 
+      - name: Runner resources report
+        if: always()
+        run: node scripts/ci-resource-monitor.mjs report
+
       # 同 test-e2e-offline-shard 的失敗現場上傳。
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: e2e-offline-adverse-${{ matrix.bucket }}-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
-          path: test-results/
+          path: |
+            test-results/
+            ci-diagnostics/
           retention-days: 14
 
   # 同 test-e2e-offline 的收斂 job：維持 required check 名稱 `test / test-e2e-offline-adverse`。
@@ -304,6 +314,10 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # 同 test-e2e-offline-shard 的資源取樣（模擬器的 CPU 吃在 runner 上，看得到開機後的忙碌期）。
+      - name: Runner resources
+        run: node scripts/ci-resource-monitor.mjs start
+
       # --no-boot：模擬器由 emulator-runner 開（序號 emulator-5554，pickEmulatorSerial 自己挑到）。
       - name: Android e2e (emulator)
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
@@ -318,13 +332,19 @@ jobs:
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: node scripts/run-android-e2e.mjs --no-boot
 
+      - name: Runner resources report
+        if: always()
+        run: node scripts/ci-resource-monitor.mjs report
+
       # 失敗現場：device-screen.png＝整個螢幕（系統／Chrome 對話框在網頁外面）、logcat-crash 附件。
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: e2e-android-attempt-${{ github.run_attempt }}
-          path: test-results/
+          path: |
+            test-results/
+            ci-diagnostics/
           retention-days: 14
 
   # proxy/imgur-worker 是獨立的 npm 子專案（Cloudflare Worker 代理，非 yarn workspace），
