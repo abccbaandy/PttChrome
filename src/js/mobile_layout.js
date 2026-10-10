@@ -252,6 +252,14 @@ export function listViewportGeometry({ rows, headerRows, cards }) {
   return { bodyTopRows: Number(headerRows) || 0, viewportRows: Math.max(0, r - 4) };
 }
 
+// 一屏放得下幾筆（＝PgUp/PgDn 一次幾筆，也＝短清單補白補到幾筆）。格線＝rows-4（＝bodyRows）；
+// 卡片＝視口 rows 列放得下的張數。補白不可多於這個數：卡片高 ≠ chh，照 bodyRows 補會比
+// 視口高出一大截，清單下方多出一片捲得到的空白（docs/mobile.md「Phase 4」短清單補白）。
+// 消費端：term_view 兩個 build*ListWindowLines 的補列、兩個列表 session 的 _pageRows／_maxScrollTop。
+export function listFillRows({ rows, headerRows, cards }) {
+  return listPageRows(listViewportGeometry({ rows, headerRows, cards }).viewportRows, cards);
+}
+
 // 點的是卡片本體嗎（App.mouse_click 卡片模式只在這時開文）。卡片間距（`.listCard` 的
 // padding）不算 ⇒ 防誤點；header／footer 收起之後（listViewportGeometry），視口以外只剩
 // `.main` 的留白，同樣不能落回列號換算去開某一筆。

@@ -10,6 +10,7 @@ import {
   listPageRows,
   isListCardBodyTarget,
   listViewportGeometry,
+  listFillRows,
   LIST_CARD_ROWS,
   LIST_CARD_LINES,
 } from "../../src/js/mobile_layout";
@@ -254,6 +255,37 @@ describe.each([
     expect(Session.prototype._pageRows.call(fake(false))).toBe(20);
     expect(Session.prototype._pageRows.call(fake(true))).toBe(9);
     expect(Session.prototype._bodyRows.call(fake(true))).toBe(20);
+  });
+
+  // 實錄 ptt-debug-20261011-000540.json（47 列、chh≈15.62、我的最愛 27 個看板）：短清單
+  // 補白照桌機補到 bodyRows（43 筆）⇒ 卡片 43×39≈1677px ≫ 視口 734px ⇒ 清單下面一大塊
+  // 空白也捲得到（scrollHeight 1679、maxScrollTop 945）。卡片只補到一個視口放得下的筆數。
+  test("_maxScrollTop：短清單卡片不因補白多出可捲距離", () => {
+    const chh = 734 / 47;
+    const cardH = chh * LIST_CARD_ROWS;
+    const s = {
+      ...fake(true),
+      _view: { chh, listCards: true },
+      _termBuf: { rows: 47 },
+      _rowHeight: Session.prototype._rowHeight,
+      _pageRows: Session.prototype._pageRows,
+      _sequence: () => new Array(27).fill(0),
+      _sequenceLength: () => 27,
+      _screen: () => ({ getListViewportPx: () => 734 }),
+    };
+    expect(Session.prototype._maxScrollTop.call(s)).toBeCloseTo(27 * cardH - 734, 3);
+    s._sequence = () => new Array(5).fill(0);
+    s._sequenceLength = () => 5;
+    expect(Session.prototype._maxScrollTop.call(s)).toBe(0);
+  });
+});
+
+describe("listFillRows（短清單補白筆數，term_view 補列與 session 捲動數學同源）", () => {
+  test("格線：bodyRows（rows-4）；卡片：一個視口放得下的筆數", () => {
+    expect(listFillRows({ rows: 24, headerRows: 3, cards: false })).toBe(20);
+    expect(listFillRows({ rows: 47, headerRows: 3, cards: false })).toBe(43);
+    expect(listFillRows({ rows: 47, headerRows: 3, cards: true })).toBe(18);
+    expect(listFillRows({ rows: 47, headerRows: 3, cards: true }) * LIST_CARD_ROWS).toBeLessThanOrEqual(47);
   });
 });
 

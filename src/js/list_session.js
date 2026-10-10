@@ -12,7 +12,7 @@
 //      at a time (pttbbs typeahead skips repaints when keys race — protocol §2).
 // Misclassification always degrades toward NATIVE (functionMode mirrors the raw
 // screen), never toward a stale buffer.
-import { listRowSpan, listPageRows, listViewportGeometry } from './mobile_layout';
+import { listRowSpan, listFillRows } from './mobile_layout';
 import {
   parseListAuthor,
   parseListTitle,
@@ -2232,7 +2232,7 @@ ListSession.prototype = {
     const B = this._bodyRows();
     return maxScrollTopFor({
       len: this._sequence().length,
-      bodyRows: B,
+      bodyRows: this._pageRows(),
       rowH: rowH,
       viewportPx: (screen.getListViewportPx && screen.getListViewportPx()) || B * rowH
     });
@@ -2253,10 +2253,7 @@ ListSession.prototype = {
   _pageRows: function() {
     const v = this._view;
     const cards = !!(v && v.listCards);
-    const vg = listViewportGeometry({
-      rows: this._termBuf.rows, headerRows: this.headerRows(), cards: cards
-    });
-    return listPageRows(vg.viewportRows, cards);
+    return listFillRows({ rows: this._termBuf.rows, headerRows: this.headerRows(), cards: cards });
   },
 
   // 左鍵單擊某一列（App.mouse_click 已把 client 座標換成**渲染後**的列號）＝
@@ -3641,7 +3638,7 @@ ListSession.prototype = {
     const viewportPx = screen.getListViewportPx() || B * rowH;
     const maxScrollTop = maxScrollTopFor({
       len: seq.length,
-      bodyRows: B,
+      bodyRows: this._pageRows(),
       rowH: rowH,
       viewportPx: viewportPx
     });

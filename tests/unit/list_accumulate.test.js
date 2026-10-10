@@ -607,6 +607,7 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
     ls._lastReadTitle = lastReadTitle;
     ls.getListView = () => ({ seq: [0, 1, 2], cursorAbs, cursorPos: 0 });
     v.buildListWindowLines = TermView.prototype.buildListWindowLines;
+    v._listCardsThisFrame = TermView.prototype._listCardsThisFrame;
     v._listWindowLines = null;
     return { v, ls };
   }
@@ -667,6 +668,7 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
     v.accumulateListLines();
     ls.getListView = () => ({ seq: [0, 1, 2], cursorAbs: 1, cursorPos: 1 });
     v.buildListWindowLines = TermView.prototype.buildListWindowLines;
+    v._listCardsThisFrame = TermView.prototype._listCardsThisFrame;
     v._listWindowLines = null;
     const out = v.buildListWindowLines();
     const rendered = out[4]; // 游标＋last-read＋isonline 三合一（退文实况）

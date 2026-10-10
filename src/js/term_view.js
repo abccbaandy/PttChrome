@@ -27,7 +27,7 @@ import { serializedOpHint } from './serialized_op_gate';
 import { hintColors, shouldShowHint } from './status_hint';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { tryOpenSearchModal } from './article_search';
-import { mobileCtrlKey, mobileMenuLayout, listViewportGeometry } from './mobile_layout';
+import { mobileCtrlKey, mobileMenuLayout, listViewportGeometry, listFillRows } from './mobile_layout';
 
 // 單獨按下修飾鍵本身（實體鍵盤按 Shift 準備打大寫）不算「下一個按鍵」，黏滯 Ctrl 不解除。
 var MODIFIER_KEY_NAMES = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph'];
@@ -3255,10 +3255,11 @@ TermView.prototype = {
         out.push(srcRow);
       }
     }
-    // 短板／剛 seed：補 blank 列到 bodyRows，維持 24 列的畫面外觀（補列不產生
-    // 額外的可捲距離——內容高恰好等於視口高）。
-    var bodyRows = this.buf.rows - 4;
-    while (out.length - LIST_HEADER_ROWS < bodyRows) out.push(this._blankListRow());
+    // 短板／剛 seed：補 blank 列到一屏的筆數，維持 24 列的畫面外觀（補列不產生
+    // 額外的可捲距離——內容高恰好等於視口高）。卡片高 ≠ chh，所以筆數走
+    // listFillRows（與 session 的 _maxScrollTop 同源），不是 bodyRows。
+    var fillRows = listFillRows({ rows: this.buf.rows, headerRows: LIST_HEADER_ROWS, cards: this._listCardsThisFrame() });
+    while (out.length - LIST_HEADER_ROWS < fillRows) out.push(this._blankListRow());
     out.push(this._listFooterRow);
     this._listWindowLines = out;
     return out;
@@ -3368,12 +3369,20 @@ TermView.prototype = {
         out.push(cur);
       } else out.push(src);
     }
-    // 短清單：補 blank 列到 bodyRows，維持 24 列外觀（補列不產生額外可捲距離）。
-    var bodyRows = this.buf.rows - 4;
-    while (out.length - BRD_HEADER_ROWS < bodyRows) out.push(this._blankBoardListRow());
+    // 短清單：補 blank 列到一屏的筆數（listFillRows，同上），維持 24 列外觀（補列不產生額外可捲距離）。
+    var fillRows = listFillRows({ rows: this.buf.rows, headerRows: BRD_HEADER_ROWS, cards: this._listCardsThisFrame() });
+    while (out.length - BRD_HEADER_ROWS < fillRows) out.push(this._blankBoardListRow());
     out.push(this._brdFooterRow);
     this._listWindowLines = out;
     return out;
+  },
+
+  // 這一幀列表視窗會不會畫成卡片。兩個 build*ListWindowLines 跑在 _renderScreenLines
+  // 的 _syncMobileSurface 對帳**之前**，this.listCards 還是上一幀的值（從選單進列表那一幀
+  // 是 false ⇒ 照格線補白）。列表 buffer 分支的 surface 恆為 'list'（_frameSurface），
+  // 所以這一幀的卡片旗標就是「是不是手機」——與對帳後的 listCards 同值。
+  _listCardsThisFrame: function() {
+    return !!(this.bbscore && this.bbscore.mobile);
   },
 
   _blankBoardListRow: function() {

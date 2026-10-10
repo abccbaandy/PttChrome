@@ -23,7 +23,7 @@
 //
 // 詳細設計與 PTT 端事實見 docs/board-list-smooth-scroll.md。
 
-import { listRowSpan, listPageRows, listViewportGeometry } from './mobile_layout';
+import { listRowSpan, listFillRows } from './mobile_layout';
 import {
   BRD_HEADER_ROWS,
   classifyBoardListScreen,
@@ -1784,7 +1784,7 @@ BoardListSession.prototype = {
     const viewportPx = screen.getListViewportPx() || B * rowH;
     const maxScrollTop = maxScrollTopFor({
       len: len,
-      bodyRows: B,
+      bodyRows: this._pageRows(),
       rowH: rowH,
       viewportPx: viewportPx
     });
@@ -1965,7 +1965,7 @@ BoardListSession.prototype = {
     const B = this._bodyRows();
     return maxScrollTopFor({
       len: this._sequenceLength(),
-      bodyRows: B,
+      bodyRows: this._pageRows(),
       rowH: rowH,
       viewportPx: (screen.getListViewportPx && screen.getListViewportPx()) || B * rowH
     });
@@ -1986,10 +1986,7 @@ BoardListSession.prototype = {
     const v = this._view;
     const cards = !!(v && v.listCards);
     // 視口高見 mobile_layout.listViewportGeometry（卡片模式 header／footer 收起）。
-    const vg = listViewportGeometry({
-      rows: this._termBuf.rows, headerRows: this.headerRows(), cards: cards
-    });
-    return listPageRows(vg.viewportRows, cards);
+    return listFillRows({ rows: this._termBuf.rows, headerRows: this.headerRows(), cards: cards });
   },
 
   _screen: function() {

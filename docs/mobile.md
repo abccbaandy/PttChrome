@@ -239,8 +239,12 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   兩行內容（`LIST_CARD_LINES`=2）＋ 0.5em 卡片間距＝border-box 固定高內的 `padding-block`；分隔線用 inset
   box-shadow；不可 border／margin（加在固定高之外）。CSS 高度與常數一致由 `list_card_css.test.js` 守。
   次行（`.listCardMeta`）縮字 0.8em＋淡化，行框仍 1 chh（height/line-height 寫 1.25em）。兩個 session 的 `_rowHeight()` ＝
-  `chh × listRowSpan(listCards)`；`_pageRows()`（PgUp/PgDn 一次翻幾筆）＝ `listPageRows(視口列數)`；
+  `chh × listRowSpan(listCards)`；`_pageRows()`（PgUp/PgDn 一次翻幾筆）＝ `mobile_layout.listFillRows`；
   `_bodyRows()` 仍是 server 的 p_lines（抓頁單位），**不可**跟著換。
+- **短清單補白筆數＝`listFillRows`（一屏放得下的筆數），不是 bodyRows**：`term_view.build{,Board}ListWindowLines` 的補列與
+  session `_maxScrollTop`／`applyScrollAfterRender` 傳給 `maxScrollTopFor` 的 `bodyRows` 同源。照 bodyRows 補，卡片 43×2.5 列
+  ≫ 視口 47 列 ⇒ 清單下方一大塊捲得到的空白。組視窗跑在 `_syncMobileSurface` 對帳之前 ⇒ 卡片旗標取 `_listCardsThisFrame()`
+  （＝是否手機），不讀上一幀的 `listCards`。守護 `list_card.test.js`、`board_list_accumulate.test.js`。
 - **視口幾何單一真相源 `mobile_layout.listViewportGeometry({rows, headerRows, cards})`**：桌機＝header 下 `rows-4` 列；
   卡片＝`bodyTopRows:0`、`viewportRows: rows`（header／footer 收起）。消費端三處必須同源：`term_view._renderScreenLines`
   的 `listScroll.viewportPx`（對帳**之後**算）、`App.clientToPos`、兩個 session 的 `_pageRows()`。

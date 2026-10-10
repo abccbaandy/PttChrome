@@ -26,7 +26,9 @@ export const VISIBLE_EPS = 0.5;
 // 守護 tests/unit/list_scroll.test.js「非整數 DPR 下 scrollTop 量化」。
 export const SCROLL_QUANT_EPS = VISIBLE_EPS;
 
-// 內容總高：render 端會把短板補 blank 列到 bodyRows，所以內容至少一個視口高。
+// 內容總高：render 端會把短板補 blank 列到一屏的筆數，所以內容至少一個視口高。
+// 呼叫端的 `bodyRows` 要傳補白筆數（session 的 _pageRows ＝ mobile_layout.listFillRows），
+// 不是 server 的 p_lines：卡片模式兩者不同，傳錯就多出一段捲得到的空白。
 export function contentPx({ len, bodyRows, rowH }) {
   const n = Math.max(Number(len) || 0, Number(bodyRows) || 0);
   return n * (Number(rowH) || 0);

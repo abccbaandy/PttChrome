@@ -53,6 +53,7 @@ function fakeView(texts, session) {
     buildBoardListWindowLines: TermView.prototype.buildBoardListWindowLines,
     resetBoardListAccumulation: TermView.prototype.resetBoardListAccumulation,
     _blankBoardListRow: TermView.prototype._blankBoardListRow,
+    _listCardsThisFrame: TermView.prototype._listCardsThisFrame,
   };
 }
 
@@ -210,6 +211,19 @@ describe("buildBoardListWindowLines", () => {
     const lines = v.buildBoardListWindowLines();
     expect(lines).toHaveLength(3 + 20 + 1);
     expect(textOf(lines[3 + 4])).toBe(""); // 補的空白列
+    expect(textOf(lines[lines.length - 1])).toContain("選擇看板");
+  });
+
+  // 實錄 ptt-debug-20261011-000540.json：手機卡片照 bodyRows（rows-4）補白，卡片高 2.5 列
+  // ⇒ 補白比視口高出一大截，清單下方一大塊捲得到的空白。卡片只補到一屏放得下的張數；
+  // 判準取「這一幀」是不是手機，不讀上一幀的 listCards（從選單進來那一幀還是 false）。
+  test("手機卡片：短清單只補到一屏放得下的張數（listFillRows）", () => {
+    const v = fakeView(screenTexts({ count: 4 }));
+    v.bbscore = { activeListSession: () => fakeSession(v), mobile: true };
+    v.listCards = false; // 上一幀的值（選單）
+    v.accumulateBoardListLines();
+    const lines = v.buildBoardListWindowLines();
+    expect(lines).toHaveLength(3 + Math.floor(24 / 2.5) + 1);
     expect(textOf(lines[lines.length - 1])).toContain("選擇看板");
   });
 
