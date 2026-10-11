@@ -210,16 +210,36 @@ test('放大→捲遠→縮小→捲回：佔位盒不得留下放大態的高�
     if (r.worst && (!worst || r.worst.blank > worst.blank)) worst = r.worst;
   };
   // 步長取半個視窗：小於視窗高度才能保證「沒被跳過的東西一定會被看到」。
+  //
+  // 這個保證有兩個前提，兩個都要由迴圈自己成立，不能靠「剛好」（nightly flaky hunt
+  // 在 CI 抓到過 1/80 的「被跳過 1 個」，本機 72 輪零位移重現不出來）：
+  //   (a) **從真正的底部起掃**。pinned 收的是「放大態量過高度」的全部圖，含當下視野
+  //       裡、縮小後可能落在視野**下方**的那幾張（縮小時 .main 的 scroll anchoring
+  //       決定新的 scrollTop）；從縮小後的位置起掃，那些本來就不會經過視野。
+  //   (b) **每一步相對於實際 scrollTop**，不是預先算好的絕對座標。.main 刻意開著
+  //       scroll anchoring（見 src/render/inline_preview_slot.js 檔頭），上方佔位盒
+  //       掛載／卸載時瀏覽器會把 scrollTop 補償掉 D；絕對座標下一步等於在內容上一口氣
+  //       跳 upStep + D，D 夠大就把中間的盒子整個跳過 —— 那是測試自己跳的，不是使用者
+  //       會看到的（滾輪／PgUp 都是相對當下位置）。
+  // trace 逐步記下「目標→落點：視野內的 slot」，紅的時候直接印在訊息裡。
   const upStep = Math.max(150, geom0.clientHeight * 0.5);
-  const from = (await scrollGeometry(page)).scrollTop;
-  for (let y = from; y >= 0; y -= upStep) {
-    await scrollTo(page, y);
+  const trace = [];
+  const stepTo = async (target) => {
+    await scrollTo(page, target);
     await waitPreviewsSettled(page);
-    absorb(await probeView(page));
+    const r = await probeView(page);
+    const landed = (await scrollGeometry(page)).scrollTop;
+    trace.push(`${Math.round(target)}→${Math.round(landed)}:${r.seen.join('/')}`);
+    absorb(r);
+    return landed;
+  };
+  let cur = await stepTo((await scrollGeometry(page)).scrollHeight);
+  while (cur > 0) {
+    const next = await stepTo(Math.max(0, cur - upStep));
+    // 往上捲卻沒前進＝上方一直長高把讀者推回去：使用者也會卡住，是真 bug，直接紅。
+    expect(next, `往上捲沒有前進（卡在 ${cur}），軌跡：${trace.join(' ')}`).toBeLessThan(cur);
+    cur = next;
   }
-  await scrollTo(page, 0);
-  await waitPreviewsSettled(page);
-  absorb(await probeView(page));
 
   const missed = pinned.filter((p) => !seen.has(p.idx));
   const maxGhost = ghostHeights.length ? Math.max(...ghostHeights) : 0;
@@ -230,7 +250,7 @@ test('放大→捲遠→縮小→捲回：佔位盒不得留下放大態的高�
       pinnedWhileEnlarged: pinned.length,
       maxPinned: Math.round(Math.max(0, ...pinned.map((p) => p.h))),
       worst,
-      missed: missed.length,
+      missed: missed.map((p) => p.idx),
       ghosts: ghostHeights.length,
       maxGhost,
       realImg,
@@ -249,7 +269,8 @@ test('放大→捲遠→縮小→捲回：佔位盒不得留下放大態的高�
   // 會把上方內容推走 ⇒ 整段被跳過（使用者回報「從圖3往上直接跳到圖1」）。
   expect(
     missed.length,
-    `放大態被釘過高度的圖佔位盒共 ${pinned.length} 個，往上捲時被跳過的數量`
+    `放大態被釘過高度的圖佔位盒共 ${pinned.length} 個，往上捲時被跳過的數量` +
+      `（跳過 ${missed.map((p) => p.idx).join(',')}；軌跡：${trace.join(' ')}）`
   ).toBe(0);
   // 症狀 2 的機制：替身盒必須用**縮小態**的規則算高度（不是放大態的、也不是 0），
   // 掛回來時高度才不會變。這條直接量它，避免「剛好沒跳過」的假綠。
