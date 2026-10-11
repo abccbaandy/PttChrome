@@ -1,8 +1,10 @@
 # SGR 66 一字雙色的分色渲染
 
 狀態：**目前刻意不做**（`TermChar.assignParams` 的 `case 66:` 是有意的 no-op）
-觸發：**本專案改用 UTF-8 連線時**（`src/js/term_view.js` 的 `this.charset = 'big5'`）。
-在那之前一行都不用寫 —— Big5 連線收不到 SGR 66。
+觸發：**UTF-8 線路成為預設、或使用者回報 UTF-8 下一字雙色顯示不對時**。
+pref `connectionEncoding: 'utf8'`（實驗性，`src/js/wire_charset.js`）已可收到 SGR 66，
+目前降級為整字後半色（公告認可的行為）；預設 Big5 連線收不到 SGR 66。
+注意 UTF-8 線路經轉接層後內部仍是 Big5 lead／trail 兩格，下面第 1 步的模型照用。
 
 ## 依據（全部 CONFIRMED，出處在 docs/pttbbs-screen-protocol.md §1.1）
 

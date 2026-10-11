@@ -15,6 +15,8 @@ export function AnsiParser(termbuf) {
   // 看到 OSC 裡的 ESC 時先暫存 payload，下一個字元是 `\`（湊成 ST）才生效；
   // 是別的字元＝OSC 被新序列打斷，丟棄。
   this.pendingOsc = null;
+  // `ESC[6n` 的回呼 (row, col)，1-based。null ＝不回應（預設，見 case 'n'）。
+  this.onCursorPositionRequest = null;
 };
 
 AnsiParser.STATE_TEXT = 0;
@@ -224,21 +226,22 @@ AnsiParser.prototype.feed = function(data) {
         case 'd':
           term.gotoPos(term.cur_x, params[0]>0?params[0]-1:0);
           break;
-        // DSR（Device Status Report）。**刻意不回應**，包含 `ESC[6n`（CPR）。
+        // DSR（Device Status Report）。只有 `ESC[6n`（CPR）可能回應，而且回不回
+        // 由 `onCursorPositionRequest` 的擁有者決定（App：**只在 UTF-8 線路編碼時回**）。
         //
-        // PTT 2026-09 起在連線當下送 `\r \xc3\xa2 ESC[6n`（daemon/logind/logind.c
-        // #login_ctx_activate）來偵測 client 的編碼：`\xc3\xa2` 在 UTF-8 下是一個
-        // 字（游標停在 col 2）、在 Big5 下是一個雙位元組字（col 3）。回應的解析在
+        // PTT 在連線當下送 `\r \xc4\xa1 ESC[6n`（daemon/logind/logind.c
+        // #login_ctx_activate）來偵測 client 的編碼：`\xc4\xa1` 在 UTF-8 下是一個
+        // 半形字（游標停在 col 2）、在 Big5 下是一個雙位元組字（col 3）。回應的解析在
         // logind.c#login_conn_handle_terminal —— **只有第二個參數 == 2 時**才會把
         // `ctx.encoding` 切成 `CONV_UTF8` 並重畫登入畫面；其餘值與「完全不回應」
-        // 一樣留在 `LOGIND_INITIAL_ENCODING`（0 ＝ Big5）。
+        // 一樣留在 Big5。
         //
-        // 本專案 `term_view.js` 寫死 `charset = 'big5'`（全 repo 無第二個寫入點），
-        // 所以正確答案永遠是「留在 Big5」，而**不回應**就是零風險地達成它。
-        // 反過來說，哪天有人「順手把 CPR 實作起來」而欄位算錯成 2，代價是 server
-        // 切成 UTF-8 ⇒ 整站變亂碼。公告原文也明說「如果程式不想實作此命令可以忽略，
-        // 但請注意測試不要當掉」。守護：tests/unit/ansi_parser_cpr.test.js
+        // Big5 連線**不回應**：正確答案是「留在 Big5」，不回應零風險地達成它。
+        // UTF-8 連線回報真實游標（wire_charset.js 保證探針落在 col 2）。
+        // 守護：tests/unit/ansi_parser_cpr.test.js、tests/unit/wire_charset.test.js
         case 'n':
+          if (!firstChar && params[0] == 6 && this.onCursorPositionRequest)
+            this.onCursorPositionRequest(term.cur_y + 1, term.cur_x + 1);
           break;
         // DECSET / DECRST。目前只認 DEC 2026（Synchronized Output）：
         // `ESC[?2026h` = BSU（幀開始）、`ESC[?2026l` = ESU（幀結束）。

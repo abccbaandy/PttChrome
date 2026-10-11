@@ -282,6 +282,13 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_proxyUrl",
     },
   ]),
+  ...inSection("connection", "options_connectionEncoding", false, [
+    {
+      key: "connectionEncoding",
+      titleKey: "options_connectionEncoding",
+      tooltipKey: "tooltip_connectionEncoding",
+    },
+  ]),
   ...inSection("connection", "options_imgurProxy", "tooltip_imgurProxy", [
     { key: "useImgurProxy", titleKey: "options_useImgurProxy" },
     ...IMAGE_PROXY_SITES.map((site) => ({

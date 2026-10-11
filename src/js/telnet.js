@@ -3,6 +3,7 @@
 import { Event } from './event';
 import { u2b, ansiHalfColorConv } from './string_util';
 import { VK_NORMAL, guardEscSequence } from './vtkbd_send_state';
+import { WIRE_BIG5, WIRE_UTF8, normalizeWireCharset, createUtf8Inbound, big5ToUtf8Wire } from './wire_charset';
 
 // 真鍵盤／IME 路徑的守門模式（見 sendUserKey）。模組層常數，省得每次送鍵配一個物件。
 const USER_KEY = { userKey: true };
@@ -62,6 +63,10 @@ export function TelnetConnection(socket) {
   this._vkStatePrev = VK_NORMAL;
 
   this.termType = 'VT100';
+
+  // 線路編碼（wire_charset.js）。app 內部恆為 Big5 位元組，UTF-8 只在這一層轉。
+  this.wireCharset = WIRE_BIG5;
+  this._inbound = null;
 
   // 最後一次送出／收到任何 bytes（含協商）的時間，給防閒置判斷（keep_alive.js）。
   // 建構當下就起算：連線剛建立視為剛有過往返。
@@ -194,7 +199,16 @@ TelnetConnection.prototype._onDataAvailable = function(e) {
   }
 };
 
+// 連線建立前設定（App._attachConn）。中途切換不支援：server 那端只在登入時決定編碼。
+TelnetConnection.prototype.setWireCharset = function(charset) {
+  this.wireCharset = normalizeWireCharset(charset);
+  this._inbound = this.wireCharset === WIRE_UTF8 ? createUtf8Inbound() : null;
+};
+
 TelnetConnection.prototype._dispatchData = function(data) {
+  // 解碼放在 IAC 處理之後：UTF-8 不含 0xFF，telnet 層看到的位元組與編碼無關。
+  if (this._inbound) data = this._inbound.decode(data);
+  if (!data) return;
   this.dispatchEvent(new CustomEvent('data', {
     detail: {
       data: data
@@ -241,7 +255,8 @@ TelnetConnection.prototype._sendEscaped = function(str, opts) {
   // 懸空的 ESC 吃掉」看的就是它。
   this._vkStatePrev = this._vkState;
   this._vkState = guarded.state;
-  const data = guarded.data;
+  // UTF-8 轉碼在 ESC 守門之後（守門只看 ASCII）、IAC 加倍之前（轉完不會有 0xFF）。
+  const data = this._inbound ? big5ToUtf8Wire(guarded.data) : guarded.data;
   this._sendRaw(data.indexOf(IAC) < 0 ? data : data.split(IAC).join(IAC + IAC));
 };
 

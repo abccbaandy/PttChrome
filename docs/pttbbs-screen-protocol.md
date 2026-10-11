@@ -106,18 +106,26 @@ expect 餘掉）。本專案的實作見 `term_buf.js#beginSyncUpdate` 與 `docs
 
 | 事實 | 出處 |
 |---|---|
-| 只有 **logind 送**，而且只在連線當下送一次：`if (ctx.encoding == CONV_NORMAL) _buff_write(conn, "\r\xc3\xa2\033[6n", 7);` | `daemon/logind/logind.c#login_ctx_activate`（commit `3f031354`） |
-| `\xc3\xa2` 是刻意挑的探針，source 原註解：`is valid for both Big5&UTF8 so can be used for detection.` UTF-8 下＝一個字 U+00E2（游標停在 **col 2**）、Big5 下＝一個雙位元組字（**col 3**） | 同上 |
+| 只有 **logind 送**，而且只在連線當下送一次：`if (ctx.encoding == CONV_BIG5) _buff_write(conn, "\r\xc4\xa1\033[6n", 7);` | `daemon/logind/logind.c#login_ctx_activate`（commit `69f904fd`） |
+| `\xc4\xa1` 是刻意挑的探針，source 原註解：`is valid for both Big5&UTF8 (and not in UAO) so can be used for detection.` UTF-8 下＝一個半形字 U+0121（游標停在 **col 2**）、Big5 下＝一個雙位元組字（**col 3**） | 同上 |
 | 判定只看**第二個參數**：`if (raw_ch=='R' && csi_prefix==0 && csi_param_count==2) if (csi_params[1]==2) { ctx.encoding = CONV_UTF8; 重畫登入畫面 }` | `logind.c#login_conn_handle_terminal` |
-| 初值 `LOGIND_INITIAL_ENCODING (0)` ＝ `CONV_NORMAL` ＝ Big5 ⇒ **不回應與回應 col≠2 的結果相同** | `logind.c:116-117, 272-273` |
+| 初值 `LOGIND_INITIAL_ENCODING (0)` ＝ `CONV_BIG5` ⇒ **不回應與回應 col≠2 的結果相同** | `logind.c:116-117, 273-274` |
+| 另一個切換入口：帳號結尾加 `,`＝UTF-8、`.`＝Big5（本專案未用） | `logind.c` 密碼提示前、`mbbsd/mbbsd.c` 的 uid 處理 |
 | 回應在 `vtkbd_process` 裡是 `KEY_UNKNOWN`（final `'R'` 沒有對應 case），登入後的 mbbsd 不消費它 | `common/sys/vtkbd.c` 的 CSI `default:` |
 | 登入後 **mbbsd 從不送 `ESC[6n`**（全 repo 只有 logind 那一處） | `grep -rn '6n' 3rd_script/pttbbs` |
 
-**本 client 的決定：刻意不回應**（`src/js/ansi_parser.js` 的 `case 'n':` 空 body）。
-理由：`term_view.js` 寫死 `charset = 'big5'`（全 repo 無第二個寫入點），正確答案永遠是
-「留在 Big5」，而不回應零風險地達成它；反過來，實作時把欄位算成 2 的代價是 server 切成
-UTF-8 ⇒ 整站亂碼。守護 `tests/unit/ansi_parser_cpr.test.js`（斷言**零回送**）。
-哪天本專案真的改用 UTF-8 連線，才需要回頭實作 —— 屆時回報的是真實游標欄，Big5 下自然是 3。
+**本 client 的決定：依 pref `connectionEncoding` 分流**（`ansi_parser.js` 的 `case 'n':` 只呼叫
+`onCursorPositionRequest`，由 `pttchrome.jsx#_attachConn` 決定掛不掛）：
+- `big5`（預設）：**不回應**。正確答案是「留在 Big5」，不回應零風險；回應時欄位算成 2 的代價是整站亂碼。
+  守護 `tests/unit/ansi_parser_cpr.test.js`（斷言**零回送**）。
+- `utf8`：回報真實游標。`src/js/wire_charset.js` 在 telnet 層把 UTF-8 轉回內部 Big5 位元組，
+  探針 U+0121 不在 UAO ⇒ 半形佔位 `?` ⇒ col 2 ⇒ server 切 UTF-8。守護 `tests/unit/wire_charset.test.js`。
+  app 內部（TermBuf 格子模型、所有解析器）仍是 Big5 位元組；`term_view.charset` 維持 `'big5'`，
+  **不可改成 `'UTF-8'`**（那會啟動 term_buf 裡 PttChrome 遺留、與轉接層不相容的 Unicode 格子分支）。
+  已知限制：Big5 收不下的字顯示為 `?`／`？`（寬度依 `wire_charset.isWideCodePoint`，未逐字對齊
+  server 的 `common/sys/wcwidth.c`）；UTF-8 下送出的一字雙色降級為整字後半色。
+  上游已在做 UTF-8 化（`MB_IS_UTF8` 系統、`upgrade/convert_utf8` 站台資料遷移，2026-09 起），
+  若 server 改成內部 UTF-8，寬度表的落差與非 Big5 字元會變成實際問題，屆時要改格子模型。
 
 ### SGR 66 一字雙色（2026-09-20 公告，全部 CONFIRMED）
 

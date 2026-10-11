@@ -88,6 +88,10 @@ export const DEFAULT_PREFS = {
   // 刪成一個「開著卻沒有位址」的空設定。同理見 imgurProxyUrl。
   useProxy: false,
   proxyUrl: "",
+  // 與 PTT 之間的線路編碼：'big5'｜'utf8'（js/wire_charset.js）。app 內部恆為 Big5，
+  // UTF-8 只在 telnet 層轉碼，並靠回應 logind 的 CPR 偵測讓 server 切過去。
+  // 預設 big5（現況最穩）；utf8 是為 PTT 未來放棄 Big5 預先準備。重連後生效。
+  connectionEncoding: "big5",
 
   // imgur 圖片快取代理。**預設開**（與上面的 BBS proxy 相反）：imgur 的 CDN 把台灣
   // 流量導到美西，同一張圖 20 次取樣有 4～5 次卡住 9～24 s，代理實測 stall 0/20；

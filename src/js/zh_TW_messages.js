@@ -789,6 +789,18 @@
   "tooltip_proxyUrl": {
     "message": "如 ptt-proxy.example.workers.dev，或完整 wsstelnet:// 位址"
   },
+  "options_connectionEncoding": {
+    "message": "連線編碼 (重新連線後生效)"
+  },
+  "tooltip_connectionEncoding": {
+    "message": "與 PTT 之間傳輸文字用的編碼。目前 PTT 兩種都支援，顯示結果相同；UTF-8 是為 PTT 日後若停用 Big5 預先準備的選項。改用 UTF-8 時，Big5 收不下的字 (例如 emoji) 會顯示成問號。"
+  },
+  "options_encodingBig5": {
+    "message": "Big5 (預設)"
+  },
+  "options_encodingUtf8": {
+    "message": "UTF-8 (實驗性)"
+  },
   "options_imgurProxy": {
     "message": "圖片載入代理"
   },

@@ -1372,6 +1372,25 @@ export const PrefModal = ({
                   />
                 </PrefSection>
               )}
+              {/* 線路編碼在 telnet 層轉（js/wire_charset.js），APK 的 WebView 也走同一層，
+                所以不放進上面的 isAndroidApp 分支。 */}
+              <PrefSection legendKey="options_connectionEncoding">
+                <Select
+                  label={i18n("options_connectionEncoding")}
+                  aria-label={i18n("options_connectionEncoding")}
+                  description={i18n("tooltip_connectionEncoding")}
+                  name="connectionEncoding"
+                  value={values.connectionEncoding}
+                  allowDeselect={false}
+                  onChange={(val) => onSelectStr("connectionEncoding", val)}
+                  data={[
+                    { value: "big5", label: i18n("options_encodingBig5") },
+                    { value: "utf8", label: i18n("options_encodingUtf8") },
+                  ]}
+                  mb="xs"
+                  {...anchor("connectionEncoding")}
+                />
+              </PrefSection>
               <PrefSection legendKey="options_imgurProxy">
                 {/* 隱私揭露：代理由專案方持有，會看到「哪個 IP 在看哪張圖」。
                   預設開啟，所以這段文字必須在使用者第一次翻到這裡就看得到。 */}

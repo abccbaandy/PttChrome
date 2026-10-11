@@ -41,6 +41,7 @@ import { HINT_ERROR } from './status_hint';
 import { decideKeepAlive, KEEP_ALIVE_TIMEOUT_MS } from './keep_alive';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { readValuesWithDefault, writeValues } from './pref_storage';
+import { WIRE_UTF8, cursorPositionReport } from './wire_charset';
 import * as prefSync from './pref_sync';
 import { stopDebugRecording, toggleDebugRecording } from './debug_record_control';
 import { diagnoseConnectFailure, probeWebSocket, siteToWsUrl } from './connection_probe';
@@ -473,6 +474,15 @@ App.prototype._setupWebsocketConn = function(url) {
 App.prototype._attachConn = function(conn) {
   var self = this;
   this.conn = conn;
+  // 線路編碼：連線前讀一次（server 只在登入時決定編碼，中途改 pref 要重連才生效）。
+  // UTF-8 時回應 logind 的 CPR 編碼偵測，server 才會切過去；Big5 維持不回應。
+  conn.setWireCharset(readValuesWithDefault().connectionEncoding);
+  this.parser.onCursorPositionRequest =
+    conn.wireCharset === WIRE_UTF8
+      ? function(row, col) {
+          if (self.conn === conn) conn.send(cursorPositionReport(row, col));
+        }
+      : null;
   conn.onDataSent = function(bytes) {
     self.boardNoteSkip.noteSent(bytes);
     // 手機等待進度條：只有「我們的 UI 剛被按」之後的送出才算（mobile_busy.js）。

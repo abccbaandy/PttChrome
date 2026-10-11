@@ -185,9 +185,9 @@ TermChar.prototype = {
         // 「後半格」顏色。線路格式是 `ESC[<前半>m ESC[66;<後半>m <字>`
         // （pfterm.c#fterm_rawattr_half），快照只被下一個字元消費一次。
         //
-        // **本專案永遠收不到它**：pfterm.c 的 `FTCONF_DBCS_OUTPUT_SGR66` 是 0、
-        // `FTCONF_UTF8_OUTPUT_SGR66` 才是 1，而我們寫死 Big5 連線
-        // （term_view.js 的 `charset = 'big5'`）。公告也說「如果你目前是用 Big5
+        // **預設的 Big5 連線收不到它**：pfterm.c 的 `FTCONF_DBCS_OUTPUT_SGR66` 是 0、
+        // `FTCONF_UTF8_OUTPUT_SGR66` 才是 1。只有 pref `connectionEncoding: 'utf8'`
+        // （實驗性，wire_charset.js）會收到。公告也說「如果你目前是用 Big5
         // 與 PTT 連線，基本上不會收到」。
         //
         // 所以這裡是**有意的 no-op**，不是「剛好落在下面 default 的範圍外」。

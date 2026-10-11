@@ -1,37 +1,38 @@
 // @unit-env browser
-// Cursor Position Report（`ESC[6n`）—— **本專案刻意不回應**，這支測試就是那個決定的閂鎖。
+// Cursor Position Report（`ESC[6n`）—— **Big5 線路刻意不回應**，這支測試就是那個決定的閂鎖。
+// （UTF-8 線路的回應另由 tests/unit/wire_charset.test.js 守：那是 App 掛上
+//  `parser.onCursorPositionRequest` 才會發生，parser 預設不回。）
 //
 // PTT 2026-09-20 公告「新指令: Cursor Position Report」，PTT1 9/27、PTT2 9/20 上線：
 //   「預期行為: App/Client 用 *[r;cR 格式回應目前游標位置, 或是忽略此指令。
 //     PTT 的登入程式會利用這個命令來偵測 terminal 的狀態 (主要是 encoding)。
 //     如果程式不想實作此命令可以忽略，但請注意測試不要當掉。」
 //
-// server 端實作（3rd_script/pttbbs，commit 3f031354 "logind: Auto-detect UTF-8 terminal"）：
+// server 端實作（3rd_script/pttbbs，commit 69f904fd "logind: Auto-detect UTF-8 terminal"）：
 //   daemon/logind/logind.c#login_ctx_activate
-//       if (conn->ctx.encoding == CONV_NORMAL)
-//           _buff_write(conn, "\r\xc3\xa2\033[6n", 7);
-//     註解寫得很清楚：`\xc3\xa2 is valid for both Big5&UTF8 so can be used for detection.`
-//       UTF-8 下是一個字 U+00E2（游標停在 col 2）
+//       if (conn->ctx.encoding == CONV_BIG5)
+//           _buff_write(conn, "\r\xc4\xa1\033[6n", 7);
+//     原註解：`\xc4\xa1 is valid for both Big5&UTF8 (and not in UAO) so can be used for detection.`
+//       UTF-8 下是一個半形字 U+0121（游標停在 col 2）
 //       Big5  下是一個雙位元組字（游標停在 col 3）
 //   daemon/logind/logind.c#login_conn_handle_terminal
 //       if (raw_ch == 'R' && csi_prefix == 0 && csi_param_count == 2)
 //           if (conn->vtkbd.csi_params[1] == 2) { ctx.encoding = CONV_UTF8; ... }
 //     ⇒ **只有第二個參數 == 2** 會把 server 切成 UTF-8；其餘值與「完全不回應」
-//       一樣留在 LOGIND_INITIAL_ENCODING（0 ＝ CONV_NORMAL ＝ Big5）。
+//       一樣留在 LOGIND_INITIAL_ENCODING（0 ＝ CONV_BIG5）。
 //
-// 本專案 term_view.js 寫死 `charset = 'big5'`（全 repo 無第二個寫入點），正確答案
-// 永遠是「留在 Big5」。**不回應**零風險地達成它；而「順手把 CPR 實作起來」一旦把欄位
+// Big5 線路的正確答案是「留在 Big5」。**不回應**零風險地達成它；而回應一旦把欄位
 // 算成 2，代價是整站變亂碼。所以這裡鎖三件事：
 //   1. 收到 `ESC[6n` 不當掉、不 wedge
 //   2. **零回送**
-//   3. 登入畫面那串 `\r \xc3\xa2 ESC[6n` 的畫面效果與不含 CPR 時完全相同
+//   3. 登入畫面那串 `\r \xc4\xa1 ESC[6n` 的畫面效果與不含 CPR 時完全相同
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 const ESC = "\x1b";
 // logind 送的偵測字串，逐位元組照抄 logind.c。
-const DETECT = "\r\xc3\xa2" + ESC + "[6n";
+const DETECT = "\r\xc4\xa1" + ESC + "[6n";
 
 // 任何「回送給 server」的呼叫都會經過 view.conn / bbscore。餵一個會記帳的 stub，
 // 只要有人送東西出去就抓得到。
@@ -91,7 +92,7 @@ describe("Cursor Position Report（ESC[6n）刻意不回應", () => {
     const withCpr = makeBuf();
     new AnsiParser(withCpr.buf).feed(DETECT);
     const without = makeBuf();
-    new AnsiParser(without.buf).feed("\r\xc3\xa2");
+    new AnsiParser(without.buf).feed("\r\xc4\xa1");
 
     for (let r = 0; r < withCpr.buf.rows; ++r) {
       expect(row(withCpr.buf, r)).toBe(row(without.buf, r));
