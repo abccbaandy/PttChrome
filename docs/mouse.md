@@ -150,8 +150,12 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
   只算有內容的則，與 bbsline 一一對應），`-date-end` 全塊共用（末則的日期欄）。
   **行號用指標 y 找**（`getBoundingClientRect`），不用事件目標：非末行內容後面沒有補空白
   字元，點在內容右側空白處時目標是外層容器。y 不在任何一行上（行間預覽插槽）⇒ null。
+  每行的範圍是**行盒**（rect 上下補半個 leading），塊內行距不會變成翻頁帶。
   推文卡片（換行版面，範圍不生效）不帶後兩者。
-- **點擊與指標共用 `App.pusherClickRangeOf(target, clientY)`**：`mouse_click` 的推文高亮分支用它判
+- **推文之間的行距空隙歸最近那一列**（`App._pusherAt`）：`.commentSpacing` 的 margin-top 不屬於任何推文
+  元素，指標在那裡時目標是 `#mainContainer` 本身 ⇒ 用 `elementFromPoint` 往下找 margin 的主人、
+  比上下距離，近的是推文就算推文、是內文就照內文（null）。不在 margin 裡（容器 padding）⇒ null。
+- **點擊與指標共用 `App.pusherHitOf(target, clientX, clientY)`**（`pusherClickRangeOf` 只取 range）：`mouse_click` 的推文高亮分支用它判
   落點；`onMouse_move` 把它傳進 `buf.onMouse_move` → `resolveMouseRegion({ pusherRange })`，
   pageState 3 落在區間內＝pointer、無退出帶／翻頁提示（排在退出帶與上下頁之前，與點擊優先權同序）。
   起點選 author 時區間會蓋到退出帶的 col 3-6：使用者明確選的，推文高亮贏、退出帶提示不亮。
@@ -673,7 +677,7 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 4. **`closest('a')`** —— 連結、AID 連結、**功能鍵按鈕**（`a.fnKey`）
 5. **`closest(PREVIEW_CLICK_SELECTOR)`** —— 內嵌預覽（命中範圍＝**媒體盒本身**，不含圖片左右的置中留白，見下）
 6. `getSelection().isCollapsed`
-7. `closest('[data-pusher]')` —— 推文者高亮（`col` 要落在 `pusherClickRangeOf` 的區間內；**區間外不 return**，讓下面的左側退出帶／邊緣翻頁接手）。**`serverReport` 為真時整條跳過**（`pusherClickRangeOf` 回 null）：它是純裝飾，不該吃掉一整片的回報；而且 `serverReport` 會關掉 `clickRange` ⇒ 區間退回整列 ⇒ 不跳過的話整個推文區永遠回報不出去
+7. `pusherHitOf`（`closest('[data-pusher]')`＋行距空隙探測）—— 推文者高亮（`col` 要落在 `pusherClickRangeOf` 的區間內；**區間外不 return**，讓下面的左側退出帶／邊緣翻頁接手）。**`serverReport` 為真時整條跳過**（`pusherClickRangeOf` 回 null）：它是純裝飾，不該吃掉一整片的回報；而且 `serverReport` 會關掉 `clickRange` ⇒ 區間退回整列 ⇒ 不跳過的話整個推文區永遠回報不出去
 8. **點空白處關框**（`listRenderMode === 'native'` ＋ `mouseGates().leftClick` ＋ `buf.dismissTarget()` 非 null）—— 見下方「點空白處關框」
 9. `listRenderMode` buffer/frozen 分支
 9.5. **回報給 PTT server**（`gates.serverReport && App._serverMouseReportable()`）—— 送 SGR press+release、`preventDefault`、return
@@ -1127,7 +1131,7 @@ motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、D
 | `tests/unit/cursor_highlight_fastpath.test.js` | 快路徑：多 class 搬家、空 cls 不噴 `InvalidCharacterError` |
 | `tests/e2e/offline/cursor_row_brighten.offline.spec.js` | 真 CSS：提亮列的實際顏色＝q(n+8)、背景仍透明；切樣式即時生效 |
 | `tests/unit/row_render.test.js` | 部分寬度底色的 DOM（包裝 span 的範圍／`data-pusher-col`／`-end`／`-date-end`） |
-| `tests/unit/pusher_click_range_dom.test.js` | `App.pusherClickRangeOf`：合併塊逐行取內容結尾（行號用 y、點在內容右側空白也對）、預覽插槽 ⇒ null |
+| `tests/unit/pusher_click_range_dom.test.js` | `App.pusherClickRangeOf`：合併塊逐行取內容結尾（行號用 y、點在內容右側空白也對）、預覽插槽 ⇒ null、塊內行距＝該行、推文之間 margin 空隙歸最近那列 |
 | `tests/unit/comment_parse.test.js` | `contentCol`（推文內容起始欄） |
 | `tests/unit/cursor_highlight_arbitration.test.js` | `applyCursorHighlight` 的來源判定：鍵盤搶得走、滑鼠拿得回、模式切換不算移動 |
 | `tests/unit/list_hover_gating.test.js` | 列表 hover 的三個 gate、底色 vs pointer 條件不同、**邊緣區吃螢幕列號**（同一個序列列在上半／下半給不同動作） |

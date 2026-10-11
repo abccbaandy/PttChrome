@@ -1726,11 +1726,14 @@ App.prototype._sendRowEnter = function(targetRow) {
 // 推文列（[data-pusher]）的可點區（格子空間 {start,end}）；不在推文列上＝null。
 // **點擊（mouse_click）與指標（onMouse_move）共用這一支**，兩邊不可能分岔。
 // 滑鼠交給 PTT 時一律 null：推文高亮是純裝飾，不該吃掉回報（見 mouse_click）。
-App.prototype.pusherClickRangeOf = function(target, clientY) {
+// 回傳 { el, range }：el ＝該推文元素（[data-pusher]，點擊端讀它的 id 做高亮）。
+App.prototype.pusherHitOf = function(target, clientX, clientY) {
   var gates = this.mouseGates();
   if (gates.serverReport) return null;
-  var el = target && target.closest && target.closest('[data-pusher]');
-  if (!el) return null;
+  var hit = this._pusherAt(target, clientX, clientY);
+  if (!hit) return null;
+  var el = hit.el;
+  var y = hit.y;
   var num = function(name) {
     var v = el.getAttribute(name);
     return v == null || v === '' ? NaN : Number(v);
@@ -1739,17 +1742,22 @@ App.prototype.pusherClickRangeOf = function(target, clientY) {
   // 行號**用 y 找**，不用事件目標：非末行的內容後面沒有補空白字元，點在內容右側的
   // 空白處時目標是外層容器、不是那一行。y 落在任何一行之外（行間的預覽插槽）⇒
   // 不是推文文字 ⇒ null，交回區域決策（退出帶／翻頁）。
+  // 每行的範圍是**行盒**（rect 上下各補半個 leading）：inline 行的 rect 只有字高，
+  // 推文區塊行距（main.css .commentSpacing 的 line-height）放大的那段 leading 不在
+  // rect 裡，不補的話兩行之間會冒出一條翻頁帶。
   var endAttr = el.getAttribute('data-pusher-end');
   var lineIdx = -1;
   if (endAttr && endAttr.indexOf(',') >= 0) {
+    var lh = parseFloat(window.getComputedStyle(el).lineHeight);
     var lines = el.querySelectorAll('[data-type="bbsline"]');
     for (var i = 0; i < lines.length; ++i) {
       var r = lines[i].getBoundingClientRect();
-      if (clientY >= r.top && clientY < r.bottom) { lineIdx = i; break; }
+      var lead = lh > r.height ? (lh - r.height) / 2 : 0;
+      if (y >= r.top - lead && y < r.bottom + lead) { lineIdx = i; break; }
     }
     if (lineIdx < 0) return null;
   }
-  return pusherClickRange(
+  var range = pusherClickRange(
     {
       contentCol: num('data-pusher-col'),
       contentEnd: pusherLineContentEnd(el.getAttribute('data-pusher-end'), lineIdx),
@@ -1759,6 +1767,58 @@ App.prototype.pusherClickRangeOf = function(target, clientY) {
     this.view.mousePushClickStart,
     this.view.mousePushClickEnd
   );
+  return { el: el, range: range };
+};
+
+// pusherHitOf 的 range 部分（指標端只要區間）。
+App.prototype.pusherClickRangeOf = function(target, clientX, clientY) {
+  var hit = this.pusherHitOf(target, clientX, clientY);
+  return hit ? hit.range : null;
+};
+
+// 推文區塊行距的 margin 探測上限（px）。行距是 round(0.55em, 1px)，字級再大也到不了。
+var PUSHER_GAP_PROBE_PX = 64;
+
+// 指標底下的推文元素，與判行用的 y → { el, y }；不在推文上＝null。
+// 推文區塊之間的行距（main.css .commentSpacing 的 margin-top）不屬於任何推文元素：
+// 指標在那裡時事件目標是 #mainContainer 本身。空隙**跟著最近的那一列走**（是推文就
+// 是推文、是內文就照內文）⇒ 兩則推文中間不會冒出翻頁帶。
+// 只在目標＝容器本身時探：從文字列往外探會把隔壁的推文誤認進來。
+App.prototype._pusherAt = function(target, clientX, clientY) {
+  if (!target || !target.closest) return null;
+  var el = target.closest('[data-pusher]');
+  if (el) return { el: el, y: clientY };
+  var container = this.view.mainContainer;
+  if (!container || target !== container) return null;
+  var probe = function(y) {
+    var h = document.elementFromPoint(clientX, y);
+    return h === container ? null : h;
+  };
+  // 往下找空隙底下那一塊：margin-top 是它的。
+  var below = null;
+  var d = 1;
+  for (; d <= PUSHER_GAP_PROBE_PX; ++d) {
+    below = probe(clientY + d);
+    if (below) break;
+  }
+  if (!below || !container.contains(below)) return null;
+  var block = below;
+  while (block.parentElement !== container) block = block.parentElement;
+  var gap = parseFloat(window.getComputedStyle(block).marginTop) || 0;
+  // 不在它的 margin 裡（容器 padding 之類的空白）⇒ 不是推文行距。
+  if (!(gap > 0) || d > gap + 1) return null;
+  // 離上下哪一塊近就歸哪一塊。
+  var hitEl, y;
+  if (d <= gap - d) {
+    hitEl = below;
+    y = clientY + d;
+  } else {
+    y = clientY - (gap - d) - 1;
+    hitEl = probe(y);
+    if (!hitEl || !container.contains(hitEl)) return null;
+  }
+  var p = hitEl.closest('[data-pusher]');
+  return p ? { el: p, y: y } : null;
 };
 
 // target：事件目標（算推文列可點區用，見 pusherClickRangeOf，另吃 cY 判合併塊的行）。
@@ -1778,7 +1838,7 @@ App.prototype.onMouse_move = function(cX, cY, overAnchor, target) {
     );
     return;
   }
-  this.buf.onMouse_move(pos.col, pos.row, overAnchor, this.pusherClickRangeOf(target, cY));
+  this.buf.onMouse_move(pos.col, pos.row, overAnchor, this.pusherClickRangeOf(target, cX, cY));
 };
 
 App.prototype.resetMouseCursor = function() {
@@ -2264,16 +2324,17 @@ App.prototype.mouse_click = function(e) {
       // 起訖，見 mouse_regions.pusherClickRange）：左邊「型別符＋id＋冒號」留給文章的
       // 左側退出帶（cols 0-6），右邊 IP／日期／時間留給邊緣翻頁的上下頁。
       // 區間外**不 return**，讓下面的滑鼠瀏覽分支接手（＝退出文章／翻頁）。
-      // 滑鼠交給 PTT 時 pusherClickRangeOf 回 null ＝整條 pusher 分支跳過：它是純裝飾
-      // （本地高亮），不該吃掉一整片的回報。
-      var pusherRange = this.pusherClickRangeOf(e.target, e.clientY);
-      if (pusherRange) {
+      // 滑鼠交給 PTT 時 pusherHitOf 回 null ＝整條 pusher 分支跳過：它是純裝飾
+      // （本地高亮），不該吃掉一整片的回報。推文之間的行距空隙也算推文（目標是
+      // 容器，推文元素由 pusherHitOf 探出來，不能讀 e.target）。
+      var pusherHit = this.pusherHitOf(e.target, e.clientX, e.clientY);
+      if (pusherHit) {
+        var pusherRange = pusherHit.range;
         // row 在好讀長頁會被 clamp，但 col 是純幾何（mouse_geometry.colFromClientX），
         // 兩種 render 分支都可信。
         var pcol = this.clientToPos(e.clientX, e.clientY).col;
         if (pcol >= pusherRange.start && pcol < pusherRange.end) {
-          this.view.togglePusherHighlight(
-            e.target.closest('[data-pusher]').getAttribute('data-pusher'));
+          this.view.togglePusherHighlight(pusherHit.el.getAttribute('data-pusher'));
           e.preventDefault();
           return;
         }
@@ -2403,7 +2464,7 @@ App.prototype.mouse_click = function(e) {
         if (skipMouseClick) {
           doMouseCommand = false;
           var pos = this.clientToPos(e.clientX, e.clientY);
-          this.buf.onMouse_move(pos.col, pos.row, false, this.pusherClickRangeOf(e.target, e.clientY));
+          this.buf.onMouse_move(pos.col, pos.row, false, this.pusherClickRangeOf(e.target, e.clientX, e.clientY));
         }
         if (doMouseCommand) {
           this.onMouse_click(e);

@@ -736,6 +736,56 @@ test.describe('滑鼠（離線重放）', () => {
       const on = await highlightedPushers(page);
       on.forEach((p) => expect(p).toBe(row.pusher));
     });
+
+    // 推文區塊行距（commentBlockSpacing，預設開）的 margin-top 不屬於任何推文元素 ⇒
+    // 指標在兩則推文中間時事件目標是 #mainContainer，曾被當成「不在推文上」而變成
+    // 上下頁。空隙要跟著最近那一則推文走（App._pusherAt），unit 守在 pusher_click_range_dom。
+    test('兩則推文中間的行距空隙＝推文高亮，不是翻頁', async ({ page }) => {
+      test.setTimeout(90000);
+      await boot(page, { mouseEdgePaging: true });
+      await waitPreviewsSettled(page, { timeout: 60000 });
+
+      // 相鄰兩則推文（#mainContainer 的直系兄弟），下面那則內容至少兩格。
+      const found = await page.evaluate(() => {
+        const rows = document.querySelectorAll('#mainContainer > span[type="bbsrow"][data-pusher]');
+        for (const el of rows) {
+          const prev = el.previousElementSibling;
+          if (!prev || !prev.matches('span[type="bbsrow"][data-pusher]')) continue;
+          const col = Number(el.getAttribute('data-pusher-col'));
+          const end = Number(el.getAttribute('data-pusher-end'));
+          if (!(col > 7) || !(end > col + 1)) continue;
+          if (el.style.visibility === 'hidden' || prev.style.visibility === 'hidden') continue;
+          el.setAttribute('data-e2e-gap-row', '1');
+          return { col: col, pusher: el.getAttribute('data-pusher') };
+        }
+        return null;
+      });
+      requireScene(found, '素材裡找不到相鄰的兩則推文');
+      await scrollIntoViewStable(page, '[data-e2e-gap-row="1"]');
+
+      const x = await colX(page, found.col);
+      // 空隙裡靠下面那則的一點（margin 是它的，round(0.55em) 至少好幾 px）。
+      const y = await page.evaluate(
+        () => document.querySelector('[data-e2e-gap-row="1"]').getBoundingClientRect().top - 2
+      );
+      // 前提：這一點真的是空隙（不是任何推文元素）。
+      expect(
+        await page.evaluate(([px, py]) => document.elementFromPoint(px, py).id, [x, y])
+      ).toBe('mainContainer');
+
+      await page.mouse.move(x, y);
+      await nextFrames(page);
+      expect(await page.evaluate(() => window.__app.buf.mouseAction)).toBe('none');
+      expect(await page.evaluate(() => window.__app.buf.BBSWin.style.cursor)).toBe('pointer');
+
+      // 好讀的翻頁是本地捲動（不送鍵），所以「沒翻頁」改看捲動位置沒動。
+      const scrollBefore = await page.evaluate(() => window.__app.view.mainDisplay.scrollTop);
+      await page.mouse.down();
+      await page.mouse.up();
+      await expect.poll(async () => (await highlightedPushers(page)).length).toBeGreaterThan(0);
+      (await highlightedPushers(page)).forEach((p) => expect(p).toBe(found.pusher));
+      expect(await page.evaluate(() => window.__app.view.mainDisplay.scrollTop)).toBe(scrollBefore);
+    });
   });
 
   // 合併推文塊（同作者連推一則一行，懸掛縮排）照位置比照：每一行內容結尾以右是翻頁區，
