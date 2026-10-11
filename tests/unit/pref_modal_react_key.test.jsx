@@ -12,8 +12,11 @@ import {
   PrefModal,
   ABOUT_LINKS,
   replaceI18n,
+  fillPlaceholders,
 } from "../../src/components/ContextMenu/PrefModal";
 import { setupI18n } from "../../src/js/i18n";
+import { zh_TW as zh } from "../../src/js/zh_TW_messages";
+import { en_US as en } from "../../src/js/en_US_messages";
 
 vi.mock("../../src/js/pref_sync", () => ({
   savePrefs: vi.fn(),
@@ -36,6 +39,7 @@ beforeAll(() => {
 const ABOUT_IDS = [
   "about_description",
   "about_version_current",
+  "about_version_upstream",
   "about_version_original",
 ];
 
@@ -71,4 +75,40 @@ test.each(ABOUT_IDS)("%s 的每個 element 片段都有 key", (id) => {
   // 同一陣列內 key 不可重複。
   const keys = elements.map((el) => el.key);
   expect(new Set(keys).size).toBe(keys.length);
+});
+
+// 中文字串的佔位符兩側緊貼全形標點（「#a#（#b#」）：舊版 split 用 \S+ 會把兩個佔位符
+// 吃成一個找不到的 key ⇒ 畫面上露出 `#link_…#` 原文、連結消失。兩語系都要驗。
+test.each([
+  ["zh_TW", zh],
+  ["en_US", en],
+])("%s：關於頁每個佔位符都換成連結，不露出 # 原文", (_name, table) => {
+  ABOUT_IDS.forEach((id) => {
+    const message = table[id].message;
+    const placeholders = message.match(/#\w+#/g) || [];
+    expect(placeholders.length).toBeGreaterThan(0);
+    placeholders.forEach((p) =>
+      expect(ABOUT_LINKS).toHaveProperty(p.slice(1, -1)),
+    );
+    const parts = fillPlaceholders(message, ABOUT_LINKS);
+    expect(parts.filter(isValidElement)).toHaveLength(placeholders.length);
+    parts
+      .filter((p) => typeof p === "string")
+      .forEach((text) => expect(text).not.toMatch(/#\w+#/));
+  });
+});
+
+// fork 的「關於」曾整段照抄上游，「此版本」連到 robertabcd ⇒ 鎖住此版本指向本 fork。
+test("「此版本」連到本 fork，上游另列一條", () => {
+  const hrefs = (id) =>
+    replaceI18n(id, ABOUT_LINKS)
+      .filter(isValidElement)
+      .map((el) => el.props.href);
+  expect(hrefs("about_version_current")).toContain(
+    "https://github.com/abccbaandy/PttChrome",
+  );
+  expect(hrefs("about_version_current").join(" ")).not.toMatch(/robertabcd/);
+  expect(hrefs("about_version_upstream")).toContain(
+    "https://github.com/robertabcd/PttChrome",
+  );
 });

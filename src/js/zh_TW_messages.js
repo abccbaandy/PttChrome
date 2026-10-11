@@ -1169,20 +1169,26 @@
   },
 
   // about page
+  "about_appName_edition": {
+    "message": "增強版"
+  },
   "about_appName_subtitle": {
-    "message": "開放原始碼的 BBS 瀏覽軟體",
+    "message": "開放原始碼的 PTT 網頁版終端機",
   },
   "about_description": {
-    "message": "原作者為 #link_github_iamchucky#。此版本是由 #link_github_robertabcd# 修改，使用 Websocket 加密連線，並支援大多數瀏覽器。",
+    "message": "由 #link_github_abccbaandy# 維護，以 PTT 官方網頁版 #link_term_ptt_cc# 的原始碼為基底，加上好讀模式、自動開圖、推文樓層、黑名單、手機版面等閱讀與操作增強。原作者為 #link_github_iamchucky#，網頁版由 #link_github_robertabcd# 改寫。",
   },
   "about_version_title": {
     "message": "版本"
   },
   "about_version_current": {
-    "message": "此版本：#link_robertabcd_PttChrome#, #link_GPL20#."
+    "message": "此版本：#link_this_PttChrome#（網站：#link_this_site#），#link_GPL20#。問題回報與建議：#link_this_issues#。"
+  },
+  "about_version_upstream": {
+    "message": "上游版本：#link_robertabcd_PttChrome#（term.ptt.cc 採用的網頁版，WebSocket 連線），#link_GPL20#。"
   },
   "about_version_original": {
-    "message": "原版本：webapp12 6/2/2015, #link_iamchucky_PttChrome#, #link_GPL20#."
+    "message": "原版本：webapp12 6/2/2015，#link_iamchucky_PttChrome#（Chrome 擴充功能），#link_GPL20#。"
   },
   "about_new_title": {
     "message": "重大技術升級"

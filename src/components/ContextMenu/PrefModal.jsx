@@ -192,17 +192,18 @@ const storeCredential = (values) => {
 
 // Returns an array of children. The link elements are shared module-level
 // instances, so the key is assigned here per position (not inside link()).
-export const replaceI18n = (id, replacements) => {
-  return i18n(id)
-    .split(/#(\S+)#/gi)
-    .map((it, index) => {
-      if (index % 2 === 1 && it in replacements) {
-        return cloneElement(replacements[it], { key: index });
-      } else {
-        return it;
-      }
-    });
-};
+// 佔位符只收 \w：舊版 \S+ 會把「#a#（#b#」這種中文標點緊貼的兩個佔位符吃成一個。
+export const fillPlaceholders = (message, replacements) =>
+  message.split(/#(\w+)#/g).map((it, index) => {
+    if (index % 2 === 1 && it in replacements) {
+      return cloneElement(replacements[it], { key: index });
+    } else {
+      return it;
+    }
+  });
+
+export const replaceI18n = (id, replacements) =>
+  fillPlaceholders(i18n(id), replacements);
 
 const link = (text, url) => (
   <Anchor href={url} target="_blank" rel="noreferrer">
@@ -232,7 +233,23 @@ const selectData = (keys) =>
 
 // The About tab's version blurb embeds clickable links; these never change, so
 // build them once at module load (was recompose's static initial state).
+// 血緣：iamchucky（Chrome extension 原版）→ robertabcd（網頁版，term.ptt.cc）
+// → abccbaandy（本 fork，增強版）。
 export const ABOUT_LINKS = {
+  link_github_abccbaandy: link("abccbaandy", "https://github.com/abccbaandy"),
+  link_this_PttChrome: link(
+    "abccbaandy/PttChrome",
+    "https://github.com/abccbaandy/PttChrome",
+  ),
+  link_this_site: link(
+    "abccbaandy.github.io/PttChrome",
+    "https://abccbaandy.github.io/PttChrome/",
+  ),
+  link_this_issues: link(
+    "GitHub Issues",
+    "https://github.com/abccbaandy/PttChrome/issues",
+  ),
+  link_term_ptt_cc: link("term.ptt.cc", "https://term.ptt.cc"),
   link_github_iamchucky: link("Chuck Yang", "https://github.com/iamchucky"),
   link_github_robertabcd: link("robertabcd", "https://github.com/robertabcd"),
   link_robertabcd_PttChrome: link(
@@ -1997,7 +2014,7 @@ export const PrefModal = ({
             <Tabs.Panel value="about" className="PrefModal__about-selectable">
               <div>
                 <Title order={4}>
-                  PttChrome
+                  PttChrome {i18n("about_appName_edition")}
                   <small> - {i18n("about_appName_subtitle")}</small>
                 </Title>
                 <Text>{replaceI18n("about_description", ABOUT_LINKS)}</Text>
@@ -2008,6 +2025,7 @@ export const PrefModal = ({
                 <Title order={5}>{i18n("about_version_title")}</Title>
                 <ul>
                   <li>{replaceI18n("about_version_current", ABOUT_LINKS)}</li>
+                  <li>{replaceI18n("about_version_upstream", ABOUT_LINKS)}</li>
                   <li>{replaceI18n("about_version_original", ABOUT_LINKS)}</li>
                   <li>
                     build: <code>{process.env.GIT_COMMIT}</code> (

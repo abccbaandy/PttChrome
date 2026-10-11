@@ -253,6 +253,12 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   腳本裡的 `String.replace` 替換值一律傳函式（`s.replace(old, () => neu)`），因為 `$` 序列會把全文再貼一次。
 - 踩坑後若判斷**多數**後續 session 也會踩，就寫進 md：寫進該主題的 `docs/*.md`；只有每個 session 都會碰到的才進本檔（本檔每 session 都付 token）。寫現行規則＋一句理由，不寫事件經過與日期。
 - 每次commit前都要檢查本次更動是否含新功能，如果有的話要更新README.md新功能列表，新功能定義：以一般使用者角度，所以優化、修bug都不算
+  - **README 功能列表規範（整份 README 要能 3 分鐘看完）**：每條一行 `- **名稱** — 說明`，說明只寫 1～2 句「它做什麼」，
+    放進「## ✨ 功能特色」下對應的 `###` 分類；設定位置、限制、原理、修了什麼舊問題一律不寫（留給設定頁說明或 `docs/`）。
+    同一功能的延伸改進**改寫原條目**，不另開一條。守護 `tests/unit/readme_features.test.js`（單條 ≤100 字、≤2 句）。
+  - 「方法一：安裝擴充套件」標題是連線失敗提示框的教學錨點（`connection_probe.js#ORIGIN_SETUP_URL`），不可改字，同一支測試守護。
+- 本 repo 是 fork：對外的「本專案」連結（關於頁「此版本」、README、GitHub About）一律指向 `abccbaandy/PttChrome`；
+  上游 `robertabcd/PttChrome`、原作 `iamchucky/PttChrome` 只出現在來源／致謝處。關於頁連結表在 `PrefModal.jsx#ABOUT_LINKS`。
 - 重大技術升級（框架/建置/依賴的升版或替換，如 React 升版、換 UI 庫、建置/測試工具替換）要同步更新「設定 → 關於」的「重大技術升級」區塊：`src/js/zh_TW_messages.js` 與 `src/js/en_US_messages.js` 的 `about_new_content`（兩語系都要改）
 - **依賴／建置鏈已全面現代化（2026-07，見 `docs/build-modernization.md` 掃描表），維持此狀態**：遇坑優先升級／換套件（並提報使用者），不要堆疊 workaround／`!important` 硬調。穩定性與現代化優先於最小改動。
   - **不只升版本，還要換陣營**：實作時發現某依賴的「同類但更主流」替代品已成生態標準（如 webpack+Babel→Vite、jest→Vitest），優先評估整組替換而非原地升版。無維護的小套件（如當年的 base58）優先內聯或換維護中的主流品。評估紀錄寫進 `docs/build-modernization.md`。

@@ -1170,20 +1170,26 @@ export const en_US = {
   },
 
   // about page
+  "about_appName_edition": {
+    "message": "Enhanced"
+  },
   "about_appName_subtitle": {
-    "message": "An open source BBS client"
+    "message": "An open source web terminal for PTT"
   },
   "about_description": {
-    "message": "Originally written by #link_github_iamchucky#. This is a modified version by #link_github_robertabcd#. It supports connecting over Websocket, and works on most browsers.",
+    "message": "Maintained by #link_github_abccbaandy#. Built on the source of PTT's official web client #link_term_ptt_cc#, with reading and usability enhancements such as easy-reading mode, inline image previews, comment floor numbers, blacklists and a mobile layout. Originally written by #link_github_iamchucky#; the web version was rewritten by #link_github_robertabcd#.",
   },
   "about_version_title": {
     "message": "Version"
   },
   "about_version_current": {
-    "message": "This version: #link_robertabcd_PttChrome#, #link_GPL20#."
+    "message": "This version: #link_this_PttChrome# (site: #link_this_site#), #link_GPL20#. Bug reports and suggestions: #link_this_issues#."
+  },
+  "about_version_upstream": {
+    "message": "Upstream: #link_robertabcd_PttChrome# (the web version used by term.ptt.cc, over WebSocket), #link_GPL20#."
   },
   "about_version_original": {
-    "message": "Original version: webapp12 6/2/2015, #link_iamchucky_PttChrome#, #link_GPL20#."
+    "message": "Original version: webapp12 6/2/2015, #link_iamchucky_PttChrome# (Chrome extension), #link_GPL20#."
   },
   "about_new_title": {
     "message": "Major technical upgrades"

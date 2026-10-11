@@ -1,6 +1,15 @@
 {
   "name": "pttchrome",
   "version": "1.2.0",
+  "description": "PTT BBS 網頁版終端機增強版（基於 term.ptt.cc 的 robertabcd/PttChrome）",
+  "homepage": "https://abccbaandy.github.io/PttChrome/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abccbaandy/PttChrome.git"
+  },
+  "bugs": "https://github.com/abccbaandy/PttChrome/issues",
+  "license": "GPL-2.0-only",
+  "private": true,
   "packageManager": "yarn@4.17.0",
   "dependencies": {
     "@mantine/core": "^9",
