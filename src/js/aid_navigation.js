@@ -43,18 +43,18 @@
 // sequences, replayed on the back press), except every step is verified by
 // content here instead of being sent blind. The stack lives in nav_history.js;
 // the only difference between a forward jump and a back run is the middle step
-// (_enqueueMiddle): #<aid>, <num> or nothing at all.
+// (_enqueueMiddle): #<aid>, or nothing at all (stop on the list).
 //
 // The capture ORDER is an invariant: the anchor must be read BEFORE
 // _enterFunctionMode() / beginExternalNavigation(), because the latter clears
 // list_session's _boardName/_serverNum (list_session.js#_enterFunctionMode).
 //
-// A num anchor is verified against the landing row's subject before ⏎ goes
-// out: article numbers shift when posts are deleted, and opening the WRONG
-// article is far worse than stopping on the list.
+// Only an AID ever opens an article on the way back — never an article number
+// (shifts on deletion, separate space inside a `/` search list). Opening the
+// WRONG article is far worse than stopping on the list. So every forward jump
+// that has a board tries to learn the AID (free URL line, else Q) — see _begin.
 
 import { parseStatusRow, parsePagerFooterContext } from './string_util';
-import { subjectOfListText } from './list_session';
 import { NavHistory, chooseAnchor } from './nav_history';
 import {
   parsePostInfoAid,
@@ -347,6 +347,10 @@ AidNavigation.prototype = {
     // session (beginExternalNavigation → _enterFunctionMode clears _boardName
     // and _serverNum). Nothing is pushed until the run lands (commitJump).
     const lineIndex = this._currentLineIndex();
+    const ls = this._core.listSession;
+    // 列表好讀自己開的這篇（currentAnchor 非 null）⇒ 是從看板文章列表進來的，
+    // currstat 必為 READING。超長文 footer 被行號擠掉時（見 _begin）這是唯一的證據。
+    const listOpened = !!(ls && ls.currentAnchor && ls.currentAnchor());
     this._history.beginJump(this._captureOriginAnchor(board, lineIndex), {
       board: board,
       aid: aid
@@ -357,6 +361,7 @@ AidNavigation.prototype = {
     // built from nothing (same-board jump, 站內信): chooseAnchor returned null
     // there, so there is no previous anchor to inherit it from.
     run.originLineIndex = lineIndex;
+    run.listOpened = listOpened;
     this._begin(run);
   },
 
@@ -405,10 +410,8 @@ AidNavigation.prototype = {
   // The anchor for the article we are leaving, by priority (nav_history
   // .chooseAnchor). Must run before the mirrors are entered — see start().
   _captureOriginAnchor: function(targetBoard, lineIndex) {
-    const ls = this._core.listSession;
     return chooseAnchor({
       landed: this._history.landed(),
-      list: ls && ls.currentAnchor ? ls.currentAnchor() : null,
       articleBoard: this._view._articleBoard,
       targetBoard: targetBoard,
       lineIndex: lineIndex
@@ -455,10 +458,29 @@ AidNavigation.prototype = {
       this._enqueueBoardJump(run, true, false);
       return;
     }
-    if (this._pagerContext() !== 'reading') {
-      // Not a board article (站內信 / 精華區 / footer squeezed out): Q would
-      // describe something that is not a post we could ever navigate back to,
-      // and s/# are dead here anyway. Straight to the escape preamble.
+    let context = this._pagerContext();
+    // 超長文（行號四位數以上）的 footer 放不下「(y)回應」那段：more.c#
+    // common_pmore_footer_handler 依剩餘寬度退成「(h)說明 (←/q)離開」——與站內信／
+    // 精華區的短版一字不差，footer 本身證明不了 READING。列表好讀自己開的文章
+    // 有另一份證據（見 start()）；仍要求末列是 pager 狀態列，免得拿陳舊證據
+    // 去認一張根本不是 pager 的畫面。有這份證據就能走文章內 `s` 的快路徑；
+    // 沒有的話下面的 _enqueueOriginAidUnproven 照樣問 AID，只是改繞主功能表
+    // （錄製檔 ptt-debug-20261012-235048：舊版在這裡不按 Q，返回跑到別篇）。
+    if (
+      context === 'unknown' &&
+      run.listOpened &&
+      parseStatusRow(this._termBuf.getRowText(this._termBuf.rows - 1, 0, this._termBuf.cols))
+    )
+      context = 'reading';
+    if (context !== 'reading') {
+      // Not provably a board article (站內信 / 精華區 / footer squeezed out):
+      // s/# may be dead here, so the board jump goes via the escape preamble.
+      // The back anchor is still worth an AID whenever the header names a board
+      // — returning by article number is not allowed (see the file header).
+      if (run.dir === 'forward' && !run.external && this._view._articleBoard) {
+        this._enqueueOriginAidUnproven(run);
+        return;
+      }
       this._enqueueEscape(run, 0, this._screenSignature());
       return;
     }
@@ -508,6 +530,39 @@ AidNavigation.prototype = {
         // back anchor just stays at whatever tier chooseAnchor picked.
         // onFail 只可能來自 Q 那條路（免費路徑沒有失敗這回事）⇒ 框一定開著。
         self._enqueueBoardJump(run, false, true);
+      }
+    });
+  },
+
+  // Step 0 when the footer cannot tell READING from 站內信／精華區 (the squeezed
+  // footer of a very long post is byte-identical to theirs) but the header
+  // names a board. Same free-path-then-Q as _enqueueOriginAid; what Q does in
+  // each candidate context (CONFIRMED by reading the source):
+  //   READING  bbs.c:2381 view_postinfo → the box (pressanykey) over the list.
+  //            The box itself PROVES READING ⇒ continue exactly like the
+  //            reading path (dismiss + `s` on the list).
+  //   精華區   more() returns RET_DOQUERYINFO, announce.c:1185-1218's loop hits
+  //            `else break` ⇒ back to the 精華區 menu, no box ⇒ probe → miss →
+  //            onFail ⇒ escape preamble from wherever we now are.
+  //   站內信   has no 看板 in its header (_articleBoard null) ⇒ never gets here.
+  _enqueueOriginAidUnproven: function(run) {
+    const self = this;
+    this.resolvePostAid({
+      kind: 'aid-origin-info',
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      onDone: function(info, meta) {
+        if (info) {
+          self._history.upgradePendingOriginAid(info.board, info.aid, run.originLineIndex);
+          self._updateBackButton();
+        }
+        if (meta.boxOpen) self._enqueueBoardJump(run, false, true);
+        // Free path: nothing was sent, READING is still unproven.
+        else self._enqueueEscape(run, 0, self._screenSignature());
+      },
+      onFail: function() {
+        self._enqueueEscape(run, 0, self._screenSignature());
       }
     });
   },
@@ -749,6 +804,11 @@ AidNavigation.prototype = {
       expect: function(snapshot, facts) {
         if (isMainMenuRow(facts.rowTexts[0] || ''))
           return { menu: true };
+        // ← 往上退一層永遠不會落在文章畫面（文章→列表、信件→信箱、精華區文章→
+        // 目錄）。文章幀只可能是好讀自動翻頁那個還在線上的 PageUp/PageDown 的遲到
+        // 回應：算成「退了一層」會讓之後每一步都慢一拍，最後一個 ← 落在主功能表上
+        // （反白移到 G)oodbye）。繼續等真正的回應。
+        if (facts.kind === 'article') return false;
         const sig = screenSignature(facts.rowTexts);
         // Unchanged screen = ← did nothing (or was swallowed): NOT a level up.
         // Stay in flight → probe → miss → visible fail, never a silent retry.
@@ -841,16 +901,11 @@ AidNavigation.prototype = {
   },
 
   // The board is now open on its clean list: pick the step that parks the
-  // cursor on the target article. Anchor kinds, in order of trust — see
-  // nav_history.js for why the number needs verifying and the board kind stops.
+  // cursor on the target article: #<aid>, or stop on the list (board anchor —
+  // see nav_history.js for why there is no article-number tier).
   _enqueueMiddle: function(run) {
-    const target = run.target;
-    if (target.aid) {
+    if (run.target.aid) {
       this._enqueueAidSearch(run);
-      return;
-    }
-    if (target.num != null) {
-      this._enqueueNumberJump(run);
       return;
     }
     this._finishAtList(run);
@@ -867,64 +922,6 @@ AidNavigation.prototype = {
       '已回到 ' + run.target.board + ' 看板，游標停在原文章（按 Enter 開啟）',
       6000
     );
-  },
-
-  // Back step (num anchor): <num> ⏎ parks the cursor on that article number.
-  // Same landing fingerprint as list_session's open-jump (the number prompt
-  // leaves the footer blank, so the classifier says 'transient' on a perfectly
-  // good landing — judge by the parked cursor, not by kind).
-  _enqueueNumberJump: function(run) {
-    const self = this;
-    const num = run.target.num;
-    const board = run.target.board;
-    this._queue.enqueue({
-      keys: String(num) + '\r',
-      kind: 'aid-num-jump',
-      fullRepaint: true,
-      // Shared queue: flush() is silent by contract, and a dropped command
-      // would leave `active` stuck true (every keystroke swallowed).
-      onFlushed: function() {
-        self._fail('畫面已變更');
-      },
-      timeoutMs: STEP_PROBE_AFTER_MS,
-      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
-      hardTimeoutMs: STEP_HARD_MS,
-      expect: function(snapshot, facts) {
-        if (facts.cursorRowNum !== num) return false;
-        if (facts.curY < 3 || facts.curY > facts.rows - 2) return false;
-        if (facts.curX > 1) return false;
-        return { facts: facts };
-      },
-      onDone: function(result) {
-        const facts = result.facts;
-        const rowText = facts.rowTexts[facts.curY] || '';
-        // Article numbers shift when posts are deleted. If the subject under
-        // the cursor is not the one we left, this is NOT that article: stop on
-        // the list instead of opening whatever moved into the slot.
-        if (
-          run.target.subject &&
-          subjectOfListText(rowText) !== run.target.subject
-        ) {
-          self.active = false;
-          self._history.abort();
-          self._updateBackButton();
-          self._hint(
-            '原文章位置已變動（可能已被刪除），已停在 ' + board + ' 列表',
-            6000,
-            HINT_ERROR
-          );
-          return;
-        }
-        self._enqueueOpen(run);
-      },
-      onFail: function(reason) {
-        self._fail(
-          reason === 'miss'
-            ? '找不到第 ' + num + ' 篇（原文章可能已被刪除）'
-            : '跳序號逾時'
-        );
-      }
-    });
   },
 
   // Step 1: s <board> ⏎ — the board-search jump. Lands on the target board's
@@ -1003,17 +1000,20 @@ AidNavigation.prototype = {
         self._enqueueOpen(run);
       },
       onFail: function(reason) {
-        // Going back, the anchor may carry a number as a spare (nav_history
-        // .upgradePendingOriginAid). A miss here means the post is really gone
-        // (deleted, or we are on the wrong board) — a PINNED post is findable,
-        // see aidSearchLanded — so rather than dropping the whole stack, fall
-        // back to the number, or at least stop on the board's list.
+        // Going back, a miss means the post is really gone (deleted) — a
+        // PINNED post is findable, see aidSearchLanded. There is no number
+        // to fall back to by design: say so and stay on the board's list.
+        // (_finishAtList's 「游標停在原文章」 would be a lie: the cursor is
+        // wherever the failed search left it.)
         if (run.dir === 'back' && reason === 'miss') {
-          if (run.target.num != null) {
-            self._enqueueNumberJump(run);
-            return;
-          }
-          self._finishAtList(run);
+          self.active = false;
+          self._history.abort();
+          self._updateBackButton();
+          self._hint(
+            '找不到原文章 #' + aid + '（可能已被刪除），已停在 ' + run.target.board + ' 列表',
+            6000,
+            HINT_ERROR
+          );
           return;
         }
         self._fail(

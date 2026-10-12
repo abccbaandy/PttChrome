@@ -496,6 +496,14 @@ export function transitionListSession(state, event) {
               ? { next: 'active', actions: ['resume-buffer'] }
               : { next: 'active', actions: ['resume-buffer', 'rebuild'] };
           case 'article':
+            // 外部序列（AID 跳文／長推文）的命令還在線上時，文章幀是**別人送的鍵**
+            // 的遲到回應，不是使用者開了文章：好讀自動翻頁的最後一個 PageUp/PageDown
+            // 與序列第一個鍵同時在線上（超長文的背景載入一跑好幾秒，點 AID 幾乎
+            // 必撞）。handoff-article 會 queue.flush() ⇒ 序列第一步就被 onFlushed
+            // 殺掉（錄製檔 ptt-debug-20261012-230148：三次跳文全死在這裡）。
+            // 與下面 menu 的守門同型：等序列自己收尾（最後那個文章 settle 的
+            // inFlightKind 已是 null，照常 handoff）。
+            if (event.inFlightKind && event.holdReason === 'external') return stay;
             // User opened an article natively while mirrored.
             return { next: 'suspended', actions: ['handoff-article'] };
           case 'menu':
@@ -1224,27 +1232,15 @@ ListSession.prototype = {
     this._enterFunctionMode(null, { hold: 'external' });
   },
 
-  // Read-only snapshot of "which article is open, as a list coordinate" for
-  // aid_navigation's back stack. Valid while an article is open (suspended):
-  // _handoffArticle clears _serverNum only, so the board name, the selected
-  // number and the last-read subject all survive into the open post.
+  // Read-only snapshot of "which article is open, as a list coordinate".
+  // Non-null ⇔ the post on screen was opened by OUR serialized open from a
+  // board's article list (_openedNum; native excursions / article→article keys
+  // clear it) ⇒ aid_navigation uses it as the proof that currstat is READING
+  // when a very long post's footer cannot say so. It is NOT a back anchor: the
+  // number shifts on deletion and lives in its own space inside a `/` search
+  // (nav_history.js header).
   // MUST be read BEFORE beginExternalNavigation() — _enterFunctionMode() drops
-  // _boardName/_serverNum on entry.
-  // `board` may be null even with a usable number: a native excursion
-  // (_enterFunctionMode — any non-list screen, e.g. the Q post-info box) drops
-  // _boardName and the returning resume path does not re-seed it. The caller
-  // fills that in from the article header (nav_history.chooseAnchor).
-  // Which article is open, as a list coordinate, for aid_navigation's back
-  // stack. _openedNum (set by our own serialized open) is the ONLY number that
-  // provably matches the post on screen — two live misfires on 2026-08-13:
-  //   - a pinned (置底) post has no number at all, and _selectedNum still held
-  //     the previously selected numbered row → back opened a random article;
-  //   - with the list rendered natively (functionMode after e.g. the Q info
-  //     box), arrow keys move the server cursor without us, so _selectedNum
-  //     stayed on the row it was last told about → back opened the wrong post.
-  // `board` may be null (a native excursion drops _boardName and the resume
-  // path does not re-seed it); the caller fills it in from the article header
-  // (nav_history.chooseAnchor).
+  // _openedNum on entry.
   currentAnchor: function() {
     if (this._openedNum == null) return null;
     return {

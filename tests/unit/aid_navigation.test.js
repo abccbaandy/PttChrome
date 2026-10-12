@@ -12,6 +12,7 @@ import {
   BOARD_PROBE_AFTER_MS
 } from "../../src/js/aid_navigation";
 import { subjectOfListText } from "../../src/js/list_session";
+import { parseStatusRow } from "../../src/js/string_util";
 
 vi.useFakeTimers();
 
@@ -478,17 +479,27 @@ describe("AidNavigation 非 READING context（站內信／精華區）", () => {
 // ---------------------------------------------------------------------------
 describe("AidNavigation 返回", () => {
   const ESC_LEFT = "\x1b[D\f";
+  // 正向跳轉的第 0 步（Q）問到的「本篇自己的 AID」——返回唯一會開文的錨點。
+  const ORIGIN = "1gOrigAA";
 
   // 列表列：標題區從 col 29 起（comment_parse.LIST_AUTHOR_COL_END）。
   const listRow = title => " ".repeat(29) + title;
   const SUBJECT = subjectOfListText(listRow("[閒聊] 原本那篇"));
+  // 列表好讀開的文章（currentAnchor 帶序號）——序號只用來證明「從看板列表進來」，
+  // 絕不拿來當返回錨點。
+  const LIST_ANCHOR = { board: "C_Chat", num: 353218, subject: SUBJECT };
 
   // 走完一次成功的正向跳轉，stack 裡就有一層可以返回。
-  // originAid = null ⇒ Q 問不到本篇 AID（資訊框沒印 AID），錨點維持既有級別，
-  // 這才是舊行為（num／board 錨點）的測試路徑。
-  function jumpForward(h, aid = "1gIeu-3A", board = "Android", originAid = null) {
+  // originAid = null ⇒ Q 的資訊框沒印 AID（升級不了）。
+  function jumpForward(
+    h,
+    aid = "1gIeu-3A",
+    board = "Android",
+    originAid = ORIGIN,
+    originBoard = "C_Chat"
+  ) {
     h.nav.start(aid, board);
-    answerOriginInfo(h.queue, originAid);
+    answerOriginInfo(h.queue, originAid, originBoard);
     settle(h.queue, facts("clean-list", { boardName: board }));
     settle(
       h.queue,
@@ -497,6 +508,15 @@ describe("AidNavigation 返回", () => {
     settle(h.queue, facts("article"));
     h.sent.length = 0;
     h.hints.length = 0;
+  }
+
+  // 返回：s<原板> → #<AID> 落地（游標停在有編號的列）→ ⏎ → 文章。
+  function landBack(h, board = "C_Chat") {
+    settle(h.queue, facts("clean-list", { boardName: board }));
+    settle(
+      h.queue,
+      facts("transient", { boardName: board, cursorRowNum: 353218, curY: 12, curX: 1 })
+    );
   }
 
   test("素材有效：構造的列表列解析得出 subject", () => {
@@ -519,10 +539,8 @@ describe("AidNavigation 返回", () => {
     expect(h.sent).toEqual(["Q"]);
   });
 
-  test("num 錨點：s<原板> → <序號> → ⏎，且落地 subject 相符才開文", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 353218, subject: SUBJECT }
-    });
+  test("列表開的文章：返回用 Q 問到的 #AID，絕不送列表序號", () => {
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h);
     expect(h.nav.canGoBack()).toBe(true);
 
@@ -530,20 +548,11 @@ describe("AidNavigation 返回", () => {
     expect(h.nav.active).toBe(true);
     expect(h.sent).toEqual(["sC_Chat\r\f"]);
     settle(h.queue, facts("clean-list", { boardName: "c_chat" }));
-    expect(h.sent[1]).toBe("353218\r\f");
-
-    // 跳號落地：底列被 prompt 清空 → classifier 判 transient，只能靠游標 park。
-    const rowTexts = new Array(24).fill("");
-    rowTexts[12] = listRow("[閒聊] 原本那篇");
+    expect(h.sent[1]).toBe("#" + ORIGIN + "\r\f");
+    expect(h.sent.some(s => s.indexOf("353218") !== -1)).toBe(false);
     settle(
       h.queue,
-      facts("transient", {
-        boardName: "C_Chat",
-        cursorRowNum: 353218,
-        curY: 12,
-        curX: 1,
-        rowTexts
-      })
+      facts("transient", { boardName: "C_Chat", cursorRowNum: 353218, curY: 12, curX: 1 })
     );
     expect(h.sent[2]).toBe("\r\f");
     settle(h.queue, facts("article"));
@@ -551,64 +560,65 @@ describe("AidNavigation 返回", () => {
     expect(h.nav.canGoBack()).toBe(false); // 這層已經用掉
   });
 
-  test("REGRESSION num 錨點落地的 subject 不符（刪文位移）→ 絕不送 ⏎", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 353218, subject: SUBJECT }
-    });
-    jumpForward(h);
+  test("Q 問不到 AID：沒有序號備援 ⇒ 只回看板列表，不開文", () => {
+    const h = makeHarness({ listAnchor: LIST_ANCHOR, articleBoard: "C_Chat" });
+    jumpForward(h, "1gIeu-3A", "Android", null);
+    expect(h.backButton.label).toBe("C_Chat 看板");
     h.nav.back();
+    expect(h.sent).toEqual(["sC_Chat\r\f"]);
     settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
-    expect(h.sent[1]).toBe("353218\r\f");
-
-    const rowTexts = new Array(24).fill("");
-    rowTexts[12] = listRow("[公告] 別篇文章遞補上來了");
-    settle(
-      h.queue,
-      facts("transient", {
-        boardName: "C_Chat",
-        cursorRowNum: 353218,
-        curY: 12,
-        curX: 1,
-        rowTexts
-      })
-    );
-    expect(h.sent.length).toBe(2); // 停手：沒有第三個指令
+    expect(h.sent.length).toBe(1); // 沒有序號跳轉、沒有 ⏎
     expect(h.nav.active).toBe(false);
-    expect(h.hints.some(hint => hint.includes("位置已變動"))).toBe(true);
-    expect(h.nav.canGoBack()).toBe(false); // 位置不明 → 整個清空
+    expect(h.hints.some(hint => hint.includes("按 Enter 開啟"))).toBe(true);
+  });
+
+  test("Q 問不到 AID、也沒有看板可回 ⇒ 沒有返回鈕（不拿序號湊）", () => {
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
+    jumpForward(h, "1gIeu-3A", "Android", null);
+    expect(h.nav.canGoBack()).toBe(false);
   });
 
   test("aid 錨點（連跳兩層）：返回時用 #AID，逐層回到最初那篇", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 353218, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h, "1gIeu-3A", "Android"); // C_Chat → Android
-    jumpForward(h, "2AbCdEf0", "movie"); // Android → movie
+    // Android → movie：此時人在 Android 那篇，Q 問到的就是它自己的 AID
+    jumpForward(h, "2AbCdEf0", "movie", "1gIeu-3A", "Android");
 
     // 第一層返回：回 Android 那篇，用的是它的 AID（我們知道，因為是跳過去的）
     h.nav.back();
     expect(h.sent[0]).toBe("sAndroid\r\f");
-    settle(h.queue, facts("clean-list", { boardName: "Android" }));
+    landBack(h, "Android");
     expect(h.sent[1]).toBe("#1gIeu-3A\r\f");
-    settle(
-      h.queue,
-      facts("transient", { boardName: "Android", cursorRowNum: 7, curY: 9 })
-    );
     expect(h.sent[2]).toBe("\r\f");
     settle(h.queue, facts("article"));
     expect(h.nav.canGoBack()).toBe(true); // 還有 C_Chat 那層
 
-    // 第二層返回：回到最初的 C_Chat 序號錨點
+    // 第二層返回：回到最初那篇，同樣是 #AID
     h.sent.length = 0;
     h.nav.back();
     expect(h.sent[0]).toBe("sC_Chat\r\f");
     settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
-    expect(h.sent[1]).toBe("353218\r\f");
+    expect(h.sent[1]).toBe("#" + ORIGIN + "\r\f");
+  });
+
+  test("返回時 #AID 找不到（原文已刪）→ 停在列表、明講找不到，不退回序號", () => {
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
+    jumpForward(h);
+    h.nav.back();
+    settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
+    expect(h.sent[1]).toBe("#" + ORIGIN + "\r\f");
+    settle(h.queue, facts("prompt"));
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS); // probe
+    settle(h.queue, facts("prompt")); // miss
+    expect(h.nav.active).toBe(false);
+    expect(h.sent.some(s => /^\d+\r/.test(s))).toBe(false);
+    expect(h.hints.some(hint => hint.includes("找不到原文章 #" + ORIGIN))).toBe(true);
+    expect(h.nav.canGoBack()).toBe(false);
   });
 
   test("board 錨點：只回到看板列表就停手，不盲開文章", () => {
     const h = makeHarness({ articleBoard: "Gossiping" });
-    jumpForward(h, "1gIeu-3A", "Android");
+    jumpForward(h, "1gIeu-3A", "Android", null);
 
     h.nav.back();
     expect(h.sent).toEqual(["sGossiping\r\f"]);
@@ -620,7 +630,7 @@ describe("AidNavigation 返回", () => {
 
   test("同板跳轉沒有 board 錨點（#aid 會覆寫該板 getkeep 游標）", () => {
     const h = makeHarness({ articleBoard: "Android" });
-    jumpForward(h, "1gIeu-3A", "Android");
+    jumpForward(h, "1gIeu-3A", "Android", null);
     expect(h.nav.canGoBack()).toBe(false);
   });
 
@@ -638,9 +648,7 @@ describe("AidNavigation 返回", () => {
   });
 
   test("返回也吃退出前導段：目標 footer 判不出 READING 時先 ←", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h);
     // 落地後的畫面變成判不出 currstat 的 footer（例如寬狀態列擠掉 part3）
     h.termBuf.rowTexts = screen({ last: FOOTERLESS_STATUS_ROW });
@@ -649,24 +657,22 @@ describe("AidNavigation 返回", () => {
     expect(h.sent.some(s => s.indexOf("C_Chat") !== -1)).toBe(false);
   });
 
-  test("順序不變量：錨點必須在 beginExternalNavigation 之前擷取", () => {
+  test("順序不變量：列表證據必須在 beginExternalNavigation 之前擷取", () => {
     // harness 的 listSession 在 beginExternalNavigation() 內把 anchor 清成
-    // null（真實的 _enterFunctionMode 就是這樣清 _boardName/_serverNum）。
-    // 若擷取順序寫反，這裡就會變成「沒有錨點 → 不能返回」。
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 353218, subject: SUBJECT }
-    });
-    jumpForward(h);
+    // null（真實的 _enterFunctionMode 就是這樣清 _openedNum）。擷取順序寫反的話，
+    // 超長文（footer 被擠掉）就證明不了 READING ⇒ 第一步變成 ← 而不是文章內的 Q。
+    const SQUEEZED_ROW =
+      "  瀏覽 第 257/361 頁 ( 68%)  目前顯示: 第 6657~6683 行      (h)說明 (←/q)離開  ";
+    const h = makeHarness({ listAnchor: LIST_ANCHOR, footer: SQUEEZED_ROW });
+    h.nav.start("1gIeu-3A", "Android");
     expect(h.core.listSession.anchor).toBe(null);
-    expect(h.nav.canGoBack()).toBe(true);
-    h.nav.back();
-    expect(h.sent[0]).toBe("sC_Chat\r\f");
+    expect(h.sent).toEqual(["Q"]);
+    answerOriginInfo(h.queue, ORIGIN);
+    expect(h.sent[1]).toBe(" sAndroid\r\f");
   });
 
   test("正向跳文失敗 → 不入 stack（沒有可返回的東西）", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     h.nav.start("1gIeu-3A", "Android");
     answerOriginInfo(h.queue, "1gKF7GO4"); // Q 成功也一樣：沒落地就不入 stack
     vi.advanceTimersByTime(BOARD_PROBE_AFTER_MS); // probe
@@ -676,9 +682,7 @@ describe("AidNavigation 返回", () => {
   });
 
   test("返回途中被 flush → 解鎖 active 且整個 stack 清空", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h);
     h.nav.back();
     h.queue.flush();
@@ -687,9 +691,7 @@ describe("AidNavigation 返回", () => {
   });
 
   test("使用者自己回到列表／選單（noteSettle）→ 錨點作廢", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h);
     expect(h.nav.canGoBack()).toBe(true);
     h.nav.noteSettle(facts("clean-list", { boardName: "Android" }));
@@ -697,15 +699,13 @@ describe("AidNavigation 返回", () => {
   });
 
   test("我方導航期間的中途 list/menu settle 不得清掉 stack", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h);
     h.nav.back();
     h.nav.noteSettle(facts("clean-list", { boardName: "C_Chat" }));
     h.nav.noteLeftPost();
     settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
-    expect(h.sent[1]).toBe("1\r\f"); // 流程沒被打斷
+    expect(h.sent[1]).toBe("#" + ORIGIN + "\r\f"); // 流程沒被打斷
   });
 
   test("REGRESSION 我方落地自己會產生一次 leaveCurrentPost，不得清掉剛建立的 stack", () => {
@@ -713,18 +713,14 @@ describe("AidNavigation 返回", () => {
     // settle 時 functionMode 走 'leave' 分支 → leaveCurrentPost()，而那時 onDone
     // 已經把 active 清掉了。沒有這個 one-shot 的話，每次跳文結束都會立刻把
     // 自己剛 push 的那層抹掉 → 返回鈕永遠不出現。
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h);
     h.nav.noteLeftPost(); // ← 落地造成的那一次
     expect(h.nav.canGoBack()).toBe(true);
   });
 
   test("使用者自己的文章→文章切換（落地那次之後）→ 錨點作廢", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h);
     h.nav.noteLeftPost(); // 我方落地
     h.nav.noteLeftPost(); // 使用者按 ] 跳下一篇
@@ -732,64 +728,32 @@ describe("AidNavigation 返回", () => {
   });
 
   test("斷線 reset() 清空", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h);
     h.nav.reset();
     expect(h.nav.canGoBack()).toBe(false);
   });
 
   test("返回鈕是 (active, stack) 的投影：跳完顯示、導航中隱藏、用掉後消失", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 353218, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     expect(h.backButton.shown).toBe(false);
     jumpForward(h);
     expect(h.backButton.shown).toBe(true);
-    expect(h.backButton.label).toContain("353218");
+    expect(h.backButton.label).toBe("#" + ORIGIN);
 
     h.nav.back();
     expect(h.backButton.shown).toBe(false); // 導航中不給按第二次
-    settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
-    const rowTexts = new Array(24).fill("");
-    rowTexts[12] = listRow("[閒聊] 原本那篇");
-    settle(
-      h.queue,
-      facts("transient", {
-        boardName: "C_Chat",
-        cursorRowNum: 353218,
-        curY: 12,
-        curX: 1,
-        rowTexts
-      })
-    );
+    landBack(h);
     settle(h.queue, facts("article"));
     expect(h.backButton.shown).toBe(false); // stack 空了
   });
 
   test("捲動位置以「行索引」入錨點，返回開文後才交棒給好讀還原", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 353218, subject: SUBJECT },
-      scrollTop: 600,
-      chh: 20
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR, scrollTop: 600, chh: 20 });
     jumpForward(h); // 離開時停在第 30 行
     h.core.easyReading.callOrder.length = 0; // 只看 back run 這一趟
     h.nav.back();
-    settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
-    const rowTexts = new Array(24).fill("");
-    rowTexts[12] = listRow("[閒聊] 原本那篇");
-    settle(
-      h.queue,
-      facts("transient", {
-        boardName: "C_Chat",
-        cursorRowNum: 353218,
-        curY: 12,
-        curX: 1,
-        rowTexts
-      })
-    );
+    landBack(h);
     // 還原請求只在文章真的開起來之後才發出
     expect(h.core.easyReading.restoreCalls).toEqual([]);
     settle(h.queue, facts("article"));
@@ -800,33 +764,16 @@ describe("AidNavigation 返回", () => {
   });
 
   test("原本就在文章開頭（行索引 0）→ 不要求還原", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 1, subject: SUBJECT },
-      scrollTop: 0
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR, scrollTop: 0 });
     jumpForward(h);
     h.nav.back();
-    settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
-    const rowTexts = new Array(24).fill("");
-    rowTexts[12] = listRow("[閒聊] 原本那篇");
-    settle(
-      h.queue,
-      facts("transient", {
-        boardName: "C_Chat",
-        cursorRowNum: 1,
-        curY: 12,
-        curX: 1,
-        rowTexts
-      })
-    );
+    landBack(h);
     settle(h.queue, facts("article"));
     expect(h.core.easyReading.restoreCalls).toEqual([]);
   });
 
   test("返回鈕的 callback 就是 back()", () => {
-    const h = makeHarness({
-      listAnchor: { board: "C_Chat", num: 353218, subject: SUBJECT }
-    });
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
     jumpForward(h);
     h.backButton.cb();
     expect(h.sent[0]).toBe("sC_Chat\r\f");
@@ -899,7 +846,7 @@ describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）"
     expect(h.backButton.label).toBe("#1gIeu-3A");
   });
 
-  test("Q 逾時 → 降級成今日行為（照樣跳，錨點維持 num 級），不算失敗", () => {
+  test("Q 逾時 → 照樣跳（不算失敗），但不拿篩選序號當返回錨點", () => {
     const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
     h.nav.start("2AbCdEf0", "Gossiping");
     expect(h.sent[0]).toBe("Q");
@@ -916,10 +863,9 @@ describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）"
       facts("clean-list", { boardName: "Gossiping", cursorRowNum: 9, curY: 10 })
     );
     settle(h.queue, facts("article"));
-    h.sent.length = 0;
-    h.nav.back();
-    settle(h.queue, facts("clean-list", { boardName: "movie" }));
-    expect(h.sent[1]).toBe("3\r\f"); // 退回舊的序號錨點
+    // 問不到 AID、也沒有文章 header 的看板 ⇒ 沒有返回（舊版會留一個「movie 第 3 篇」
+    // 的序號錨點，那正是本 describe 開頭說的「回到別篇」）。
+    expect(h.nav.canGoBack()).toBe(false);
   });
 
   test("REGRESSION 關資訊框的鍵不可以是 \\f（Ctrl-L 根本送不到 handler）", () => {
@@ -969,7 +915,7 @@ describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）"
     expect(h.sent).toEqual(["smovie\r\f"]);
   });
 
-  test("aid 錨點的 #搜尋 miss（文章已消失／找錯看板）→ 退回 num 備援，不清空 stack", () => {
+  test("aid 錨點的 #搜尋 miss（文章已消失）→ 停在列表、不退回序號", () => {
     const h = makeHarness({ listAnchor: FILTERED_ANCHOR });
     h.nav.start("2AbCdEf0", "Gossiping");
     answerOriginInfo(h.queue, "1gIeu-3A", "movie");
@@ -990,9 +936,9 @@ describe("AidNavigation origin AID 錨點（/ 搜尋清單回不去的修法）"
     settle(h.queue, facts("prompt"));
     vi.advanceTimersByTime(STEP_PROBE_AFTER_MS);
     settle(h.queue, facts("prompt"));
-    // 備援：改用序號（仍會驗 subject 才開文）
-    expect(h.sent[h.sent.length - 1]).toBe("3\r\f");
-    expect(h.nav.active).toBe(true);
+    expect(h.sent.some(s => /^\d+\r/.test(s))).toBe(false);
+    expect(h.nav.active).toBe(false);
+    expect(h.hints.some(hint => hint.includes("找不到原文章 #1gIeu-3A"))).toBe(true);
   });
 });
 
@@ -1593,5 +1539,134 @@ describe("正向跳轉走免費路徑", () => {
     // 錨點升級成「本篇自己的 AID」——這正是免費路徑要拿到的東西（沒升級的話
     // 會退回列表第 100 篇那種會被刪文位移的錨點）。
     expect(h.backButton.label).toBe("#" + BROWSERS_AID);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 超長文（行號四位數以上）：more.c#common_pmore_footer_handler 依剩餘寬度挑
+// footer，放不下「(y)回應」那段時退成「(h)說明 (←/q)離開」——跟站內信／精華區的
+// 短版一字不差 ⇒ parsePagerFooterContext 只能說 'unknown'。
+// 錄製檔 ptt-debug-20261012-235048：從 `/` 搜尋清單開的超長文點 AID → 不按 Q →
+// 返回錨點只剩搜尋空間的序號 45 → 返回跑到主清單第 45 篇（別篇）。
+// ---------------------------------------------------------------------------
+describe("超長文（footer 被行號擠掉）", () => {
+  const ESC_LEFT = "\x1b[D\f";
+  // 錄製檔 t=6853 的末列原文。
+  const SQUEEZED_ROW =
+    "  瀏覽 第 257/361 頁 ( 68%)  目前顯示: 第 6657~6683 行      (h)說明 (←/q)離開  ";
+  const listRow = title => " ".repeat(29) + title;
+  const FILTERED_ANCHOR = {
+    board: "EZsoft",
+    num: 45,
+    subject: subjectOfListText(listRow("[推薦] PTT Star瀏覽器"))
+  };
+
+  test("前提：這個 footer 單看確實分不出 currstat，但仍是 pager 狀態列", () => {
+    const { nav } = makeHarness({ footer: SQUEEZED_ROW });
+    expect(nav._pagerContext()).toBe("unknown");
+    expect(parseStatusRow(SQUEEZED_ROW)).toBeTruthy();
+  });
+
+  test("REGRESSION：列表好讀開的文章 ⇒ 證明是 READING，照樣按 Q 升級成 AID 錨點", () => {
+    const h = makeHarness({ footer: SQUEEZED_ROW, listAnchor: FILTERED_ANCHOR });
+    h.nav.start("1ghhUROp", "PttCurrent");
+    expect(h.sent).toEqual(["Q"]);
+    answerOriginInfo(h.queue, "1gU3wwNZ", "EZsoft");
+    expect(h.sent[1]).toBe(" sPttCurrent\r\f");
+    settle(h.queue, facts("clean-list", { boardName: "PttCurrent" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "PttCurrent", cursorRowNum: 9, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    h.sent.length = 0;
+    // 落地的目標是短文（錄製檔：PttCurrent 那篇 1/1 頁），footer 完整。
+    h.termBuf.rowTexts = screen({ last: STATUS_ROW, mark: "目標文章" });
+    h.nav.back();
+    expect(h.sent[0]).toBe("sEZsoft\r\f");
+    settle(h.queue, facts("clean-list", { boardName: "EZsoft" }));
+    // 本 bug 的判準：#AID，不是搜尋空間的 "45\r\f"
+    expect(h.sent[1]).toBe("#1gU3wwNZ\r\f");
+  });
+
+  test("沒有列表證據也沒有看板（站內信）⇒ 不按 Q，直接走退出路徑", () => {
+    const { nav, sent } = makeHarness({ footer: SQUEEZED_ROW });
+    nav.start("1ghhUROp", "PttCurrent");
+    expect(sent).toEqual([ESC_LEFT]);
+  });
+
+  test("沒有列表證據但 header 有看板 ⇒ 照樣按 Q；資訊框出現＝證明 READING，走列表上的 s", () => {
+    const h = makeHarness({ footer: SQUEEZED_ROW, articleBoard: "EZsoft" });
+    h.nav.start("1ghhUROp", "PttCurrent");
+    expect(h.sent).toEqual(["Q"]);
+    answerOriginInfo(h.queue, "1gU3wwNZ", "EZsoft");
+    expect(h.sent[1]).toBe(" sPttCurrent\r\f");
+    settle(h.queue, facts("clean-list", { boardName: "PttCurrent" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "PttCurrent", cursorRowNum: 9, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    expect(h.backButton.label).toBe("#1gU3wwNZ");
+  });
+
+  test("精華區（Q 不出框，announce.c 直接退回目錄）⇒ probe → miss → 改走退出路徑，不失敗", () => {
+    const h = makeHarness({ footer: SQUEEZED_ROW, articleBoard: "EZsoft" });
+    h.nav.start("1ghhUROp", "PttCurrent");
+    expect(h.sent).toEqual(["Q"]);
+    const menu = screen({ row0: "【精華文章】", mark: "  1. ◆ 軟體介紹" });
+    settle(h.queue, facts("transient", { rowTexts: menu }));
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS); // probe
+    expect(h.sent[1]).toBe("\f");
+    settle(h.queue, facts("transient", { rowTexts: menu })); // miss
+    expect(h.nav.active).toBe(true);
+    expect(h.sent[2]).toBe(ESC_LEFT);
+    expect(h.sent.some(s => s.indexOf("PttCurrent") !== -1)).toBe(false);
+    settle(h.queue, facts("menu", { rowTexts: MAIN_MENU_SCREEN }));
+    expect(h.sent[3]).toBe("sPttCurrent\r\f");
+  });
+
+  test("退出路徑也先走免費路徑：累積頁讀得到本篇網址 ⇒ 返回錨點是 AID", () => {
+    const acc = ["作者 someone (某人) 看板 Browsers"];
+    acc[9300] = URL_ROW("Browsers", BROWSERS_FN);
+    const h = makeHarness({
+      footer: SQUEEZED_ROW,
+      pageState: 3,
+      articleBoard: "Browsers",
+      pageLines: acc
+    });
+    h.nav.start("1ghhUROp", "PttCurrent");
+    expect(h.sent).toEqual([ESC_LEFT]); // 免費路徑零指令
+    settle(h.queue, facts("menu", { rowTexts: MAIN_MENU_SCREEN }));
+    expect(h.sent[1]).toBe("sPttCurrent\r\f");
+    settle(h.queue, facts("clean-list", { boardName: "PttCurrent" }));
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "PttCurrent", cursorRowNum: 9, curY: 10 })
+    );
+    settle(h.queue, facts("article"));
+    expect(h.backButton.label).toBe("#" + BROWSERS_AID);
+  });
+
+  // 錄製檔 ptt-debug-20261012-230148：好讀自動翻頁的 PageUp 回應晚於第一個 ← 才到。
+  test("REGRESSION：退出途中的文章幀（遲到的翻頁回應）不算退了一層", () => {
+    const { nav, queue, sent } = makeHarness({ footer: SQUEEZED_ROW });
+    nav.start("1ghhUROp", "PttCurrent");
+    expect(sent).toEqual([ESC_LEFT]);
+    settle(
+      queue,
+      facts("article", { rowTexts: screen({ last: SQUEEZED_ROW, mark: "上一頁的內文" }) })
+    );
+    // 舊版：簽章不同 ⇒ 當成退了一層、立刻再送一個 ←（之後每步慢一拍，最後一個 ←
+    // 落在主功能表上把反白移到 G)oodbye）。
+    expect(sent).toHaveLength(1);
+    expect(nav.active).toBe(true);
+    settle(
+      queue,
+      facts("clean-list", { rowTexts: screen({ row0: "【板主:alicekey】", mark: "列表" }) })
+    );
+    expect(sent[1]).toBe(ESC_LEFT);
+    settle(queue, facts("menu", { rowTexts: MAIN_MENU_SCREEN }));
+    expect(sent[2]).toBe("sPttCurrent\r\f");
   });
 });

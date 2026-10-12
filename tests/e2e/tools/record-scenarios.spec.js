@@ -314,7 +314,7 @@ const SCENARIOS = {
     });
   },
 
-  // AID 跳文 → 返回（序號錨點＋捲動位置）。開著列表好讀（返回錨點走 listSession）。
+  // AID 跳文 → 返回（aid 錨點＋捲動位置）。開著列表好讀（同板跳文：錨點靠網址列／Q 問出本篇 AID）。
   // 列表好讀的 pref 一定要**開錄之後**才開：engage 的預讀 jump 是重放端也會送的 bytes，
   // 在準備階段先開掉的話，素材裡就沒有那幾步，重放第一個 jump 就對不上。
   'aid-back': async (page) => {

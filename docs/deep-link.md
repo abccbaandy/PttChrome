@@ -311,6 +311,41 @@ lastRow=""                                    ← # prompt 清掉 footer，故 t
 → 送 "\r\f" → kind=article（[公告] 板規）
 ```
 
+### 7. 超長文：footer 證明不了 READING（AID 點擊跳文，2026-10 實錄）
+
+`more.c#common_pmore_footer_handler` 依剩餘寬度挑 part3：READING 是
+`READ_LONG → READ_MID → SHORT → VERYSHORT`，行號到四位數時退成
+`(h)說明 (←/q)離開`——與站內信／精華區的短版一字不差 ⇒ `parsePagerFooterContext`
+＝`'unknown'` ⇒ 舊版不按 Q、只走退出前導 ⇒ 從 `/` 搜尋清單開的文章只剩搜尋空間序號
+當返回錨點 ⇒ 返回跑到別篇。
+
+**規則（2026-10 起）：返回只認 AID，沒有序號錨點**（`nav_history` 只剩 `aid`／`board`
+兩層；`aid` 也不再夾帶序號備援，返回時 `#AID` miss ⇒ 停在列表明講「找不到原文章」）。
+問不到 AID ⇒ 只回看板列表不開文；連看板都沒有（站內信）⇒ 沒有返回鈕。
+`aid_navigation._begin` 的取得順序：
+
+- `run.listOpened`（列表好讀 `currentAnchor()` 非 null ＝從看板文章列表開的）＋末列仍
+  `parseStatusRow` ⇒ 視為 `'reading'`，走原本的免費路徑→Q→文章內 `s`。
+- 判不出 READING 但 header 有看板 ⇒ `_enqueueOriginAidUnproven`：免費路徑→Q。
+  Q 各 context 的行為（讀碼 CONFIRMED）：READING 出資訊框（`bbs.c:2381`）＝證明
+  READING ⇒ 關框＋列表上 `s`；精華區 `more()` 回 997、`announce.c:1185-1218` 的迴圈
+  `break` 回目錄、不出框 ⇒ probe→miss→退出前導；站內信 header 沒有看板 ⇒ 不按 Q。
+
+### 8. 好讀背景載入的遲到回應（AID 點擊跳文）
+
+超長文好讀的自動翻頁一跑好幾秒，點 AID 時最後一個 PageUp/PageDown 常還在線上，
+其回應晚於序列第一個鍵才到（一張文章幀）。兩處各自守門：
+
+- `list_session` reducer：`functionMode` ＋ `article` settle ＋ `holdReason==='external'`
+  ＋ `inFlightKind` ⇒ stay。舊版 handoff-article → `queue.flush()` ⇒ 序列第一步就死
+  （「AID 跳文失敗：畫面已變更」）。
+- `_enqueueEscape` 的 expect：`kind==='article'` 永不算「退了一層」（← 往上退不會落在
+  文章）。算進去會每步慢一拍，最後一個 ← 落在主功能表上（反白移到 G)oodbye）。
+
+守護：`tests/unit/aid_navigation.test.js`「超長文（footer 被行號擠掉）」「AidNavigation 返回」、
+`tests/unit/nav_history.test.js`「列表序號絕不成為錨點」、
+`tests/unit/list_keys.test.js`「外部序列命令在線上時的文章幀」。
+
 ## 每一步的等待預算
 
 軟逾時**不是失敗**：它送零副作用的 `\f` 探針逼出一張完整畫面讓 `expect` 重判

@@ -17,10 +17,12 @@
 //                reached by an AID jump (NavHistory.landed()), or — the normal
 //                case — aid_navigation asked the server for it with the Q
 //                post-info box before leaving (upgradePendingOriginAid).
-//   kind 'num'   board + article number + subject. Covers the common "opened
-//                from the list" case. Numbers DO shift when posts are deleted,
-//                so the landing must be verified against `subject` before the
-//                article is opened (aid_navigation._enqueueNumberJump).
+//                **The only tier that opens an article.** There is deliberately
+//                no "article number" tier (removed 2026-10): numbers shift on
+//                every deletion and live in a separate space inside a `/`
+//                search list, so a number anchor is a guess — live it sent the
+//                user to another post (ptt-debug-20261012-235048). When the AID
+//                cannot be learned, the back run stops on the list instead.
 //   kind 'board' board only: replay `s<board>` and stop on the list. pttbbs
 //                keeps a per-board cursor (getkeep, mbbsd/read.c:105/1171 — an
 //                unbounded link block, never evicted within a session), so the
@@ -41,67 +43,23 @@
 //
 //   landed       {board, aid} of the current article when it was reached by an
 //                AID jump (NavHistory.landed()); null otherwise
-//   list         {board, num, subject} from ListSession.currentAnchor()
 //   articleBoard view._articleBoard (null inside 站內信 — its header has no 看板)
 //   targetBoard  where the jump is going (same-board jumps invalidate 'board')
 //   lineIndex    scroll position as a line index (see aid_navigation), or null
-// The number/subject an aid anchor carries as its fallback. Only accepted when
-// the list session is talking about the SAME board and it knows the subject:
-// _enqueueNumberJump opens blindly without a subject to verify, and a number
-// from another board would open a random article there.
-function numberFallback(list, board) {
-  const ok =
-    list &&
-    list.num != null &&
-    list.subject &&
-    list.board &&
-    board &&
-    String(list.board).toLowerCase() === String(board).toLowerCase();
-  return ok
-    ? { num: list.num, subject: list.subject }
-    : { num: null, subject: null };
-}
-
+// This is only the PRE-Q tier: aid_navigation then asks the server for the AID
+// (free URL line, else Q) and upgradePendingOriginAid promotes it.
 export function chooseAnchor(input) {
   const inp = input || {};
   const lineIndex = inp.lineIndex == null ? null : inp.lineIndex;
   const landed = inp.landed;
-  const list = inp.list;
   if (landed && landed.board && landed.aid) {
-    // Keep the number as a FALLBACK even though the aid wins: an aid search
-    // misses whenever the post is really gone (deleted, or we ended up on the
-    // wrong board), and aid_navigation drops back to the number in that case.
-    // (Pinned 置底 posts are NOT one of them — read.c searches .DIR.bottom
-    // first, see aid_navigation#aidSearchLanded.)
-    const spare = numberFallback(list, landed.board);
     return {
       kind: 'aid',
       board: landed.board,
       aid: landed.aid,
-      num: spare.num,
-      subject: spare.subject,
       lineIndex: lineIndex,
       label: '#' + landed.aid
     };
-  }
-
-  if (list && list.num != null) {
-    // The list session loses _boardName on any native excursion (the Q
-    // post-info box is enough) while keeping the selected number, so fall back
-    // to the article header's board — the post we are leaving is the one that
-    // number points at, in the board its own header names.
-    const board = list.board || inp.articleBoard;
-    if (board) {
-      return {
-        kind: 'num',
-        board: board,
-        aid: null,
-        num: list.num,
-        subject: list.subject || null,
-        lineIndex: lineIndex,
-        label: board + ' 第 ' + list.num + ' 篇'
-      };
-    }
   }
 
   const board = inp.articleBoard;
@@ -117,8 +75,6 @@ export function chooseAnchor(input) {
         kind: 'board',
         board: board,
         aid: null,
-        num: null,
-        subject: null,
         lineIndex: lineIndex,
         label: board + ' 看板'
       };
@@ -166,14 +122,9 @@ NavHistory.prototype = {
 
   // The Q post-info box answered with the AID of the article we are LEAVING
   // (aid_navigation._enqueueOriginAid). Promote the in-flight origin anchor to
-  // the aid tier — the only one immune to article numbers shifting, and the
-  // only one that survives a `/` search at all (MODE_SELECT numbers live in a
-  // separate space, mbbsd/read.c:661-665, so a num anchor captured there sends
-  // the user to a different article on the way back).
-  //
-  // The existing num/subject/lineIndex ride along as the fallback: an aid
-  // search still misses on a deleted post, so the aid tier must never be a
-  // downgrade.
+  // the aid tier — the only one that identifies the article (immune to
+  // deletions and to a `/` search renumbering the list, read.c:661-665).
+  // The existing lineIndex rides along.
   //
   // board may be null when the box printed a non-board name (currboard empty):
   // the old anchor's board is then reused. With no board at all we do NOT
@@ -189,8 +140,6 @@ NavHistory.prototype = {
       kind: 'aid',
       board: useBoard,
       aid: aid,
-      num: prev ? prev.num : null,
-      subject: prev ? prev.subject : null,
       // With no previous anchor there is nothing to inherit, so the caller
       // hands over the scroll position it captured before the mirrors went up.
       lineIndex: prev ? prev.lineIndex : lineIndex == null ? null : lineIndex,
@@ -228,7 +177,7 @@ NavHistory.prototype = {
     if (!p || p.type !== 'back') return null;
     const entry = this._stack.pop() || null;
     // Only an aid anchor tells us the identity of the article we landed on;
-    // after a num/board return the next jump falls back to a lower level.
+    // after a board return the next jump falls back to a lower level.
     this._landed =
       entry && entry.kind === 'aid'
         ? { board: entry.board, aid: entry.aid }

@@ -164,7 +164,7 @@ test.describe('列表好讀（scenario 重放）', () => {
 });
 
 test.describe('AID 跳文 → 返回（scenario 重放）', () => {
-  test('從列表好讀開的文章：跳文後可返回原文（序號錨點＋捲動位置）', async ({ page }) => {
+  test('從列表好讀開的文章：跳文後可返回原文（aid 錨點＋捲動位置）', async ({ page }) => {
     test.skip(!aidBack, '缺 scn-aid-back（yarn record:scenarios）');
     await bootScenario(page, ptt, aidBack);
     await engageListEasyReading(page);

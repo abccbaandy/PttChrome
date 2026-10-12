@@ -782,6 +782,30 @@ describe("functionMode clean-list settle 的 in-flight 吸收（相對命令配�
       actions: ["resume-buffer"],
     });
   });
+  // 錄製檔 ptt-debug-20261012-230148：超長文好讀背景載入時點 AID，最後一個
+  // PageUp 的回應晚於 aid-escape 的 ← 才到 ⇒ 舊版走 handoff-article → queue.flush()
+  // ⇒ 跳文第一步就被殺掉（「AID 跳文失敗：畫面已變更」）。
+  test("外部序列命令在線上時的文章幀＝遲到回應 → stay，不 handoff（不 flush 別人的序列）", () => {
+    expect(
+      transitionListSession(
+        "functionMode",
+        settle("article", { inFlightKind: "aid-escape", holdReason: "external" })
+      )
+    ).toEqual({ next: "functionMode", actions: [] });
+  });
+  test("外部序列收尾（落地文章 settle，inFlightKind 已是 null）→ 照常 handoff", () => {
+    expect(
+      transitionListSession("functionMode", settle("article", { holdReason: "external" }))
+    ).toEqual({ next: "suspended", actions: ["handoff-article"] });
+  });
+  test("passthrough 停泊下原生開文照舊 handoff（守門只限 external）", () => {
+    expect(
+      transitionListSession(
+        "functionMode",
+        settle("article", { inFlightKind: "native-sync-jump", holdReason: "passthrough" })
+      )
+    ).toEqual({ next: "suspended", actions: ["handoff-article"] });
+  });
   test.each(["passthrough", "external"])(
     "holdReason=%s → clean-list settle 一律 stay 鏡像（settle 本身不解除 hold）",
     (holdReason) => {
