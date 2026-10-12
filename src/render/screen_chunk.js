@@ -31,6 +31,15 @@
 // 5. Firefox 跨閉塊的 `Selection.toString()` 會漏字（實測 1.4 萬 vs 162 萬字）⇒ 選取
 //    期間把與選取範圍相交的塊暫時展開（`.screenChunkOpen`，content-visibility:
 //    visible），複製仍是瀏覽器原生的。由 selectionchange 驅動（原生 Ctrl+C 也涵蓋）。
+// 6. **render 之後同一個 task 裡同步讀版面，新塊量到的是估計高度**（CHUNK_ROWS 列，
+//    不是真高度）：塊照不照常渲染由瀏覽器在 rendering update（rAF 之後、paint 前）才
+//    判定。這個狀態不會被畫出來，但程式讀得到 —— scrollHeight 灌水、`scrollTop =
+//    scrollHeight` 落在假的底部、視窗內找不到捲動錨點 ⇒ 插頁當下不補償（實測 +2953，
+//    paint 前才被 content-visibility 解鎖＋bottom_stick 修正）。現有的同步讀者都有人收尾：
+//    EasyReading._scrollBottom（End 後由 bottom_stick 的 ResizeObserver 收尾）、
+//    _restoreRowAnchor／_scrollToPageRow（先 renderChunksAround）。**新增「render 後同步
+//    量座標、而且結果會拿去用」的程式碼**：先 renderChunksAround(el)，或改到下一幀量。
+//    守護 tests/unit/screen_chunk_sync_layout.test.js（真 Chromium 鎖住這個瀏覽器事實）。
 import { el } from "./dom";
 import { offsetTopWithin } from "../js/scroll_anchor";
 import { LAZY_MOUNT_MARGIN_PX, LAZY_UNMOUNT_MARGIN_PX } from "../js/lazy_media";

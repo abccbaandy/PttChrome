@@ -530,6 +530,42 @@ async function waitScrollStable(
   );
 }
 
+// 逐幀量「讀者看到的版面」：裝上之後，頁面端用 `window.__paintedFrame.add(cb)`／
+// `.remove(cb)` 掛回呼，cb 每一幀在**這一幀的 layout、content-visibility 判定與所有
+// ResizeObserver 修正都跑完之後、paint 之前**被呼叫一次。
+//
+// 為什麼不能在 requestAnimationFrame（或 viewUpdate 這種同一個 task 裡的事件）量：
+// rAF 跑在 rendering update **之前**，讀到的是「task 改完 DOM、瀏覽器還沒收尾」的中間
+// 狀態，那個狀態不一定會被畫出來。實錄（2026-10，長頁分塊之後）：End 落地那一塊剛建、
+// 還沒經過一次 rendering update（content-visibility 未判定 ⇒ 視窗裡找不到捲動錨點）時，
+// 第一頁往上插入 ⇒ rAF 量到 +2953／-986，同一幀 paint 前已由 content-visibility 解鎖＋
+// 貼底（bottom_stick 的 ResizeObserver）修正回來，錄影逐幀不動。Linux CI 重複跑約 1/10
+// 撞到（同一輪在這裡量恆為 0），本機幾乎不會 ⇒ 斷言量錯時點，不是產品 bug。
+//
+// 作法：每個 rAF 新建一個 ResizeObserver 觀察同一個探針（新的觀察一定會回報一次初始
+// 尺寸），observer 依建立順序回呼 ⇒ 每幀新建的這個永遠排在產品所有 observer 之後。
+async function installPaintedFrameProbe(page) {
+  await page.evaluate(() => {
+    if (window.__paintedFrame) return;
+    const cbs = new Set();
+    const probe = document.createElement('div');
+    probe.style.cssText =
+      'position:fixed;left:0;top:0;width:1px;height:1px;visibility:hidden;pointer-events:none';
+    document.body.appendChild(probe);
+    let ro = null;
+    const pump = () => {
+      if (ro) ro.disconnect();
+      ro = new ResizeObserver(() => {
+        for (const cb of Array.from(cbs)) cb();
+      });
+      ro.observe(probe);
+      requestAnimationFrame(pump);
+    };
+    requestAnimationFrame(pump);
+    window.__paintedFrame = { add: (cb) => cbs.add(cb), remove: (cb) => cbs.delete(cb) };
+  });
+}
+
 module.exports = {
   OVERRIDING_SEL,
   EDGE_PAGING_BLOCKERS,
@@ -540,6 +576,7 @@ module.exports = {
   assertPlainTextUnder,
   elementUnder,
   fingerprint,
+  installPaintedFrameProbe,
   loadingCount,
   plainLeftEdge,
   scrollIntoViewStable,

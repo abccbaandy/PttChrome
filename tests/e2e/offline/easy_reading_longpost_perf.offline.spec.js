@@ -11,7 +11,8 @@
 // 是小數（字級 32：74.09375px）⇒ 出現時 +0.094、被真圖取代時 −0.094。並行壓力下約
 // 1/12 次重現；成因由 tests/unit/preview_indicator_height.test.js 決定性鎖住。
 //
-// 這裡每個 rAF 追蹤同一個列節點相對 .main 的位置，任何非零位移都算震動。
+// 這裡每一幀（paint 前，見 helpers/layout.js#installPaintedFrameProbe）追蹤同一個列節點
+// 相對 .main 的位置，任何非零位移都算震動。
 // 內容全部合成（tests/e2e/helpers/pmore_sim.js），不含任何真實文章。
 // 每幀 render 成本只印出來不斷言（機器快慢差太多）；O(n²) 的結構性回歸由 unit
 // tests/unit/screen_reverse_splice.test.js「零屬性寫入」守。
@@ -21,6 +22,7 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline } = require('../helpers/replay');
 const { openLongArticle } = require('../helpers/pmore_long_article');
+const { installPaintedFrameProbe } = require('../helpers/layout');
 
 const SIM_SRC = fs.readFileSync(path.join(__dirname, '..', 'helpers', 'pmore_sim.js'), 'utf8');
 const TOTAL = Number(process.env.PERF_TOTAL || 3000);
@@ -114,12 +116,18 @@ test.describe('好讀超長文反向讀取（離線）', () => {
       () => window.__app.view._reverse && window.__app.view._reverse.tailComplete,
       null, { timeout: 15000 }
     );
+    // 量測點是 paint 前（helpers/layout.js#installPaintedFrameProbe），不是 rAF：rAF 讀到的
+    // 中間狀態不一定會被畫出來（實測 rAF 偶發 -986，同一幀 paint 前已修正）。
+    await installPaintedFrameProbe(page);
     await page.evaluate(() => {
       const m = document.querySelector('.main');
       window.__jit = [];
       let target = null, last = null;
       const tick = () => {
-        if (!window.__app.easyReading._reverse) return;
+        if (!window.__app.easyReading._reverse) {
+          window.__paintedFrame.remove(tick);
+          return;
+        }
         // 以節點本身追蹤；節點被換掉（接合點那一列）就換一個重新起算
         if (!target || !target.isConnected) {
           // 視窗中線以下的第一列（只拿來追蹤位置，不點它）
@@ -137,9 +145,8 @@ test.describe('好讀超長文反向讀取（離線）', () => {
           if (last != null) window.__jit.push(y - last);
           last = y;
         }
-        requestAnimationFrame(tick);
       };
-      requestAnimationFrame(tick);
+      window.__paintedFrame.add(tick);
     });
     await page.waitForFunction(
       () => !window.__app.easyReading._reverse && window.__app.easyReading.easyReadingReachedPageEnd,

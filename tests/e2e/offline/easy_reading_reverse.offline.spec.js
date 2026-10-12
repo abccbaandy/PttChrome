@@ -16,7 +16,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline } = require('../helpers/replay');
-const { waitPreviewsSettled } = require('../helpers/layout');
+const { installPaintedFrameProbe, waitPreviewsSettled } = require('../helpers/layout');
 
 const SIM_SRC = fs.readFileSync(path.join(__dirname, '..', 'helpers', 'pmore_sim.js'), 'utf8');
 const TOTAL = 1200;
@@ -190,11 +190,14 @@ test.describe('好讀反向讀取（End，離線）', () => {
       () => window.__app.view._reverse && window.__app.view._reverse.tailComplete,
       null, { timeout: 15000 }
     );
-    // 此後每一頁都插在接合點（視窗上方）。每一幀之後量「距離底部多遠」。
+    // 此後每一頁都插在接合點（視窗上方）。每一幀 paint 前量「距離底部多遠」—— 不在
+    // viewUpdate 量：那是同一個 task、rendering update 之前，偶發量到從未畫出的 2953px
+    // （理由見 helpers/layout.js#installPaintedFrameProbe）。
+    await installPaintedFrameProbe(page);
     await page.evaluate(() => {
       window.__gaps = [];
       const m = document.querySelector('.main');
-      window.__app.buf.addEventListener('viewUpdate', () => {
+      window.__paintedFrame.add(() => {
         window.__gaps.push(Math.round(m.scrollHeight - m.clientHeight - m.scrollTop));
       });
     });

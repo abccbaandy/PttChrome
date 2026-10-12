@@ -42,6 +42,24 @@ const MEASURES_GEOMETRY = /getBoundingClientRect\(|elementFromPoint\(|\.bounding
 const DRIVES_POINTER =
   /page\.mouse\.|\b(mousePress|mouseRelease|mouseWheel|rightClickElement|rightClickPlainText|dragSelectText|hoverFloatTools)\(|\.(click|dblclick|hover)\(\s*\{[^}]*position/;
 
+// 讀版面（位置／捲動量）。
+const READS_LAYOUT = /getBoundingClientRect\(|\.scroll(Top|Height)\b|\.offset(Top|Height)\b/;
+
+// 這段程式是否在 rendering update 之前逐幀量版面：自我重排的 rAF 迴圈
+// （`const f = … requestAnimationFrame(f)`）或 viewUpdate 監聽的本體裡讀了版面。
+function framePreLayoutSampling(src) {
+  for (const m of src.matchAll(/const (\w+) = (?:async )?\([^)]*\) => \{/g)) {
+    const end = src.indexOf(`requestAnimationFrame(${m[1]})`, m.index);
+    if (end < 0) continue;
+    if (READS_LAYOUT.test(src.slice(m.index, end))) return true;
+  }
+  for (const m of src.matchAll(/addEventListener\(\s*['"]viewUpdate['"]/g)) {
+    const end = src.indexOf("});", m.index);
+    if (READS_LAYOUT.test(src.slice(m.index, end < 0 ? undefined : end))) return true;
+  }
+  return false;
+}
+
 // 具名豁免：**必須寫理由**，而且理由要是「結構上不可能受延遲載入影響」，
 // 不是「目前看起來還好」。
 const EXEMPT = {
@@ -110,6 +128,32 @@ describe("offline e2e 版面穩定契約", () => {
       return !/(require\(|from\s+)['"]\.\.\/helpers\/layout(\.js)?['"]/.test(src);
     });
     expect(offenders).toEqual([]);
+  });
+
+  // 規則：逐幀量版面一律在 paint 前量（helpers/layout.js#installPaintedFrameProbe）。
+  // rAF 迴圈與 viewUpdate 都在 rendering update 之前，量到的中間狀態不一定會被畫出來：
+  // 長頁分塊之後 CI 約 1/10 量到從未畫出的 +2953／-986（longpost_perf 與 reverse 的
+  // scroll anchoring 兩條，2026-10）。
+  test("逐幀量版面的 spec 不在 rAF 迴圈／viewUpdate 裡量", () => {
+    const offenders = offlineSpecs.filter((f) => framePreLayoutSampling(read(f)));
+    expect(offenders).toEqual([]);
+  });
+
+  test("偵測規則認得出 2026-10 那兩種寫法（不是空轉的 regex）", () => {
+    const rafLoop = `const tick = () => {
+        const y = target.getBoundingClientRect().top;
+        requestAnimationFrame(tick);
+      };`;
+    const onViewUpdate = `window.__app.buf.addEventListener('viewUpdate', () => {
+        window.__gaps.push(Math.round(m.scrollHeight - m.clientHeight - m.scrollTop));
+      });`;
+    expect(framePreLayoutSampling(rafLoop)).toBe(true);
+    expect(framePreLayoutSampling(onViewUpdate)).toBe(true);
+    // 只是等一幀／不量版面的 rAF 不算。
+    expect(framePreLayoutSampling("await new Promise((r) => requestAnimationFrame(r));")).toBe(false);
+    expect(
+      framePreLayoutSampling("const pump = () => { probe.x = 1; requestAnimationFrame(pump); };")
+    ).toBe(false);
   });
 
   // 豁免名單只准留「結構上免疫」的檔案。哪天它開始進好讀／掛預覽了，這條會紅。
