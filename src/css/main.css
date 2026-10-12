@@ -221,12 +221,36 @@ a:link,a:visited,a:active,a:hover {
   text-decoration:none;
 }
 
-.main > span, 
-#mainContainer > span, 
+.main > span,
+#mainContainer > span,
+#mainContainer > .screenChunk > span,
 #easyReadingLastRow > span {
   display:block;
   color:#C0C0C0;
   white-space: pre;
+}
+
+/* 好讀累積長頁的分塊（render/screen_chunk.js，docs/easy-reading.md「長頁分塊」）。
+   離視窗遠的塊瀏覽器不排版、不繪製 ⇒ 超長文每次操作的成本與文章長度無關。
+   - 估計高度＝CHUNK_ROWS 列 × 列高（.main 的 line-height＝chh，`lh` 跟著字級走）。
+     `auto` 讓瀏覽器記住每塊最後的實測高度。100 必須與 CHUNK_ROWS 同值
+     （tests/unit/screen_chunk.test.js 守）。
+   - **runtime 不得對塊寫 inline style**（scroll anchoring 的 suppression trigger）。
+   - 只設高度方向：塊是 #mainContainer 的區塊子層，寬度照常撐滿。
+   - 塊是獨立的格式化脈絡（content-visibility 帶 layout containment）⇒ 子層的
+     margin 不會穿出塊外；推文行距的 margin-top 因此留在塊內，總高不變。
+   - **不得宣告 user-select**（css_user_select.test.js）。 */
+.screenChunk {
+  content-visibility: auto;
+  contain-intrinsic-height: auto 100lh;
+}
+/* 照常渲染的兩種塊：
+   - Open：與選取範圍相交（Firefox 跨閉塊的 Selection.toString() 會漏字）。
+   - Near：在延遲開圖的預載邊界內（閉塊裡的 IntersectionObserver 幾乎不回報，
+     預覽圖會等到瀏覽器自己決定渲染才開始載入）。 */
+.screenChunk.screenChunkOpen,
+.screenChunk.screenChunkNear {
+  content-visibility: visible;
 }
 
 /* 手機 Phase 3：好讀文章長頁的換行版面（term_view.setMobileSurface，docs/mobile.md）。
@@ -677,7 +701,7 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
    ⇒ 復發「推文時游標戳出反白輸入匡」，見 docs/easy-reading.md）。
 
    內緊外鬆＝同作者合併塊自成一組：
-   - 塊**間**用 margin-top（推文列與合併塊都是 #mainContainer 的直系子層，display:block）。
+   - 塊**間**用 margin-top（推文列與合併塊都是長頁分塊 .screenChunk 的直系子層，display:block）。
    - 塊**內**只能用 line-height —— 合併塊的每一則是同一個 bbsrow 裡的 **inline**
      bbsline span（見 render/link_segment.js 的多行分支），inline 元素吃不到
      margin-top 與垂直 padding。
@@ -697,11 +721,13 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
       一段小數，scroll anchoring 補償後的捲動位置被對齊到整數 ⇒ 視窗內文字每幀差半個
       像素＝整段預讀期間細微震動。量測見 easy_reading_longpost_perf.offline.spec.js。
    守護：tests/unit/comment_spacing_css.test.js、tests/unit/comment_spacing_class.test.js */
-#mainContainer.commentSpacing > span[type="bbsrow"][data-pusher],
-#mainContainer.commentSpacing > .mergedCommentBlock {
+/* 推文列與合併塊是分塊（.screenChunk）的直系子層：commentSpacing 只在累積長頁掛，
+   而累積長頁一律分塊（render/screen_chunk.js）。 */
+#mainContainer.commentSpacing > .screenChunk > span[type="bbsrow"][data-pusher],
+#mainContainer.commentSpacing > .screenChunk > .mergedCommentBlock {
   margin-top: round(0.55em, 1px);
 }
-#mainContainer.commentSpacing > .mergedCommentBlock span[type="bbsrow"] {
+#mainContainer.commentSpacing > .screenChunk > .mergedCommentBlock span[type="bbsrow"] {
   line-height: round(1.3em, 1px);
 }
 

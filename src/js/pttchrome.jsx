@@ -74,6 +74,7 @@ import ContextMenu from '../components/ContextMenu';
 import { renderInto, unmountFrom } from './react_root';
 import { setBellEnabled } from './bell';
 import { MantineRoot } from '../components/MantineRoot';
+import { isScreenChunk, readSelectionText } from '../render/screen_chunk';
 import logoIcon from '../icon/logo.png';
 import logoConnectIcon from '../icon/logo_connect.png';
 import logoDisconnectIcon from '../icon/logo_disconnect.png';
@@ -1784,15 +1785,20 @@ var PUSHER_GAP_PROBE_PX = 64;
 // 指標在那裡時事件目標是 #mainContainer 本身。空隙**跟著最近的那一列走**（是推文就
 // 是推文、是內文就照內文）⇒ 兩則推文中間不會冒出翻頁帶。
 // 只在目標＝容器本身時探：從文字列往外探會把隔壁的推文誤認進來。
+// 累積長頁的列住在分塊裡（render/screen_chunk.js）：空隙的事件目標是**塊**，列的
+// 「頂層節點」是塊的直系子層 ⇒ 塊與容器一律視為「列與列之間的空白」。
 App.prototype._pusherAt = function(target, clientX, clientY) {
   if (!target || !target.closest) return null;
   var el = target.closest('[data-pusher]');
   if (el) return { el: el, y: clientY };
   var container = this.view.mainContainer;
-  if (!container || target !== container) return null;
+  var isGap = function(h) {
+    return h === container || (isScreenChunk(h) && h.parentElement === container);
+  };
+  if (!container || !isGap(target)) return null;
   var probe = function(y) {
     var h = document.elementFromPoint(clientX, y);
-    return h === container ? null : h;
+    return isGap(h) ? null : h;
   };
   // 往下找空隙底下那一塊：margin-top 是它的。
   var below = null;
@@ -1803,7 +1809,7 @@ App.prototype._pusherAt = function(target, clientX, clientY) {
   }
   if (!below || !container.contains(below)) return null;
   var block = below;
-  while (block.parentElement !== container) block = block.parentElement;
+  while (!isGap(block.parentElement)) block = block.parentElement;
   var gap = parseFloat(window.getComputedStyle(block).marginTop) || 0;
   // 不在它的 margin 裡（容器 padding 之類的空白）⇒ 不是推文行距。
   if (!(gap > 0) || d > gap + 1) return null;
@@ -2572,7 +2578,8 @@ App.prototype.mouse_up = function(e) {
       }
     } else { //something has be select
       if (this.copyOnSelect) {
-        this.doCopy(window.getSelection().toString().replace(/\u00a0/g, " "));
+        // readSelectionText\uff1a\u9577\u9801\u5206\u584a\u7684\u9589\u584a\u8981\u5148\u5c55\u958b\uff0cFirefox \u624d\u4e0d\u6703\u6f0f\u5b57\uff08screen_chunk.js\uff09\u3002
+        this.doCopy(readSelectionText().replace(/\u00a0/g, " "));
       }
     }
   } else {

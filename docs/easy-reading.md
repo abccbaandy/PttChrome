@@ -80,7 +80,7 @@
   - `screen_annotate_cache.spliceShape`：可重用＝`removed===0 ∧ (suffix===0 ∨ prefix ≥ J)`。forward 走到的程式碼與改版前逐字相同。
   - `computeAnnotations` 依 shape 的 `prevOf(row)` 位移沿用 texts/base/rowCands；**J 之後不帶 floorCounter**（不編樓層，base 只取決於該列 ⇒ 可位移重用）；`groupSameAuthorRuns(result, J)`、`detectBodyWrappedUrls` 在 J 斷開；圖文分組／AI spans 只算 head；run 快取多一條以首列 base 參考找回位移後的 run（`runByFirstBase`）。接合後 J 消失 ⇒ **一次**全量重算補樓層。
   - `_buildNodes` 位移沿用舊節點；`srow`／`data-row`（外部契約）的位移**延遲結算**：只記進 `ScreenController._pendingShift`，**讀這兩個屬性的人先呼叫 `componentScreen.syncRowIndex()`**（選取反查 `getSelectionColRow`、`_scrollToPageRow`、接合幀 `_captureRowAnchor`、`_toggleRowClass`）。理由：當幀改寫＝每頁對整段 tail `querySelectorAll`+`setAttribute`，tail 8000 列時每幀數萬次 DOM 寫入、整篇 O(n²)（超長文每頁週期 20→90ms，按鍵跟著卡）。接合／abort 都會換掉這些節點 ⇒ 反向結束後屬性契約不變。**新增讀 srow／data-row 的地方必須先 sync**。守護 `screen_reverse_splice.test.js`「零屬性寫入」。接合點列帶 `.reverseJunction`（text-decoration 淡虛線，**不可佔版面**）。
-  - **`_patchInto` 走到不再需要的舊節點當場移除**：留在 cursor 上會把之後每個沿用節點 insertBefore 到它前面＝整段搬家 ⇒ 搬走捲動錨點 ⇒ scroll anchoring 不補償（實測 scrollTop 釘死、上方長 5 萬 px 把讀者推走）。守護 `screen_reverse_splice.test.js`「不得搬動任何沿用的節點」。
+  - **`_patchInto` 走到不再需要的舊節點當場移除**（累積長頁現在走 `ChunkLayer.patch`，同一條「不搬家」規則改以塊為單位，見下方「長頁分塊」）：留在 cursor 上會把之後每個沿用節點 insertBefore 到它前面＝整段搬家 ⇒ 搬走捲動錨點 ⇒ scroll anchoring 不補償（實測 scrollTop 釘死、上方長 5 萬 px 把讀者推走）。守護 `screen_reverse_splice.test.js`「不得搬動任何沿用的節點」。
 - **插在視窗上方的內容高度必須是整數像素**：`.commentSpacing` 的間距／合併塊行高用 `round(…, 1px)`。小數像素（chh 非 20 倍數時 0.55em、1.3）⇒ scroll anchoring 補償後捲動位置被對齊 ⇒ 視窗內文字每幀 ±0.5px 震動到預讀完。守護 offline `easy_reading_longpost_perf.offline.spec.js`（每個 rAF 追同一列，位移必須為 0；舊的 reverse spec 容許 chh 誤差且用字級 20，量不到）。
 - **捲動**：tail 補完前每幀 `_scrollBottom`（`followBottom`）；之後插入在視窗上方 ⇒ 交給瀏覽器 scroll anchoring（節點沿用，錨點還在）。**接合那一幀全量重建 ⇒ 錨點消失**，由 `term_view._captureRowAnchor/_restoreRowAnchor` 以「視窗頂端那一列的**列物件**＋偏移」自己錨一次（不能用距底部距離：停在 head 讀的人會被推走）。
 - **End 之後黏在文末（`src/js/bottom_stick.js`，End 的兩條路徑都走 `EasyReading._stickBottom`）**：scroll anchoring 只保視窗**頂端**；文末那頁（視窗內、錨點下方）的行內預覽之後才載入長高 ⇒ 文末被推出視窗（實錄 ptt-debug-20260927-183720：End 落地即 100% ⇒ `followBottom` 只貼一次就放手，圖／YouTube 之後才回來；offline 重現 gap 1200px）。ResizeObserver（content＋scroller）長高就捲回底。**放手只認讀者輸入**：`wheel`／`pointerdown`／`touchstart`＋`_onKeyDownProcessUI` 非 End/$/G 鍵；**不看 scroll 事件**（接合幀 `_restoreRowAnchor`／anchoring 補償也發 scroll，且同幀 scroll 派送早於 RO ⇒ 會在補回底部前先放手）。**不在「捲到底」時自動 engage**（forward 讀者停在底部會被新頁一路拖走）。per-article：`_resetPagingState` release。offline spec 模擬讀者捲走必須派 wheel 事件，純設 `scrollTop` 會被拉回。守護 `bottom_stick.test.js`、offline reverse spec「文末有圖」。
@@ -139,6 +139,30 @@
   - **`stableRows` 也是「推文區塊行距」容器 class 的判準**（`render/screen.js#_setCommentSpacing`，pref `commentBlockSpacing` 預設開）：純 CSS 的間距只能加在累積長頁上，functionMode 原生鏡像／防黑守門那兩條 fallback 同樣帶 `easyReading:true`＋`pageState 3`，在那裡多出任何高度就打破下面「原生鏡像期間畫面必須不可捲」的不變量 ⇒ 復發「推文時游標戳出反白輸入匡」。**別把判準放寬成 `easyReading && pageState===3`**；回歸鎖 `tests/unit/comment_spacing_class.test.js`，樣式契約見 `docs/enhanced-addon.md`。
   - 一次性全量重算仍在（改設定、切圖文合併）：超長文會卡一幀，已知取捨。**點推文者高亮已不在此列**（2026-08 改成 class 層切換）；若日後又有互動狀態被塞進 `annotationsKey`，先看那條踩坑。
   - 守護：`tests/unit/screen_annotate_cache.test.js`（純判準）、`tests/unit/screen_incremental_render.test.js`（**等價**：逐頁 append 的 DOM == 一次到位的 DOM；**增量**：append 22 列後重新標註／重建的列數 < 80，舊 code 是 1311）、offline e2e `ezsoft-longpost.json` 150 頁的 head/tail 週期曲線（修好 37→43ms；關掉快取 49→224ms）。
+- **長頁分塊（超長文流暢度，2026-10，CONFIRMED unit＋offline e2e＋同機量測）**：上面三層只壓了 JS；破千頁的大頭是瀏覽器原生 layout／paint／hit test 與 TermChar 記憶體，都與 DOM／列數成正比。三根支柱：
+  - **A 分塊**（`src/render/screen_chunk.js#ChunkLayer`，只在 `stableRows`）：頂層節點每 `CHUNK_ROWS`(100) 個包一個 `div.screenChunk`（`content-visibility:auto`＋`contain-intrinsic-height: auto 100lh`，main.css）。DOM 仍是全文（Ctrl+F／選取／scroll anchoring 靠它）；**不做虛擬捲動**（得自己重寫那三樣）。不變量寫在該檔頭，摘要：
+    1. 塊歸屬由**節點身分**決定、節點進塊後不搬家（列號會被反向讀取位移）；新節點只 append 進前一個節點的塊、插在下一個**閉塊**的開頭、或開新塊插在兩塊之間。反向讀取接合點 J（列號 ≥ J 的第一個節點；J 列可能被黑名單拿掉）一定是塊的第一個節點。
+    2. 往**照常渲染中**的塊開頭插列，Chromium scroll anchoring 只補一部分（實測 1034px 只補 885px）⇒ 只插進閉塊（`_canPrepend`）。閉塊受尺寸約束，插了高度不變。
+    3. 塊不寫 runtime inline style；全量重建**按順序沿用舊塊元素**（瀏覽器記住的實測高度留著）。
+    4. 延遲開圖：閉塊內 slot 自己的 IntersectionObserver 幾乎不回報 ⇒ 塊進預載邊界（1500）掛 `.screenChunkNear` 照常渲染，slot 自己的 observer 才可信（**掛載仍逐張**；不可改成「塊近了整塊一起掛」：短文整篇一塊＝全部圖一起載、永不卸載）；塊離開卸載邊界（6000）⇒ `slot.setChunkFar` 強制卸載。
+    5. 程式捲到某列之前先 `renderChunksAround(el)`（`_restoreRowAnchor`、`_scrollToPageRow`）：全量重建後那一塊可能還是閉塊（估計高度），量完捲過去下一幀才變真高度 ⇒ 實測一次跳 5259px（「End 後黏在文末」還會照規則捲去新底部）。
+    6. 讀選取文字一律 `readSelectionText()`（term_view `^C`、copyOnSelect、右鍵選單）：Firefox 跨閉塊 `toString()` 漏字。實測 3000 行：選取當下直接讀 30556 字、同步展開＋排版後 110085（完整）、不展開過一幀又掉回 90329 ⇒ selectionchange 非同步展開（`.screenChunkOpen`）＋讀之前同步補一次。
+    7. 逐列量 offsetTop 找視窗頂端那一列的掃描改用 `rowsFromScrollTop`（先以塊跳過視窗上方；逐列量會強迫每個閉塊排版）。新增「從上往下量列」的地方照辦。
+    8. 推文行距的空隙事件目標是塊不是容器（`pttchrome.jsx#_pusherAt` 兩者都當空白）。
+  - **B TermChar 共用化**（`src/js/term_char_intern.js`）：pageLines 的累積路徑用 `internRow`（取代 `cloneRow`），同字同屬性的格子共用一個物件；dev／測試下 `Object.freeze`（ES module strict ⇒ 誤寫當場 throw）。鍵＝`INTERN_FIELDS`，**TermChar 新增欄位必須同步**（守護 `tests/unit/term_char_intern.test.js` 以真 cassette 比 own key 集合）。列表的 `cloneRow` 不動（`blankRowLike` 會就地改寫）。
+  - **C 前沿快路徑**（`screen_annotations.js` 的 `fastFrom`／`annotationFrontier`）：每幀收尾算前沿 F＝之後只往後接新列時最早可能改變最終標註的列（結尾那串同作者推文的首列、還開著的內文跨行網址鏈、手機文末補白）；下一幀純 append ∧ 非反向 ∧ 圖文塊已定型（`captionScanEnd` < F）⇒ `result[0,F)` 沿用上一幀同一批物件，跨列掃描只從 F 起跑，回傳 `stablePrefix` 讓 `_buildNodes`／`ChunkLayer.patch` 只走尾段。**在 `computeAnnotations` 新增跨列邏輯必須同步 `annotationFrontier`**（同 `annotationsAreRowIndependent` 的規則）。`bodyWrapFrontier` 必須帶 skip 判準：真實推文列的時間戳最後一格落在 maxcol，不排除的話前沿一路退回第一則推文、快路徑在真實文章裡從不生效（實際踩過，e2e 抓到）。
+  - 同機量測（合成推文長文，前向讀取，最後 10% 每頁）：
+
+    | 指標 | 改前 22000 行 | 改後 2000／8000／22000 行 |
+    |---|---|---|
+    | 每頁 JS＋layout | 16.4ms | 2.5／2.6／3.1ms |
+    | 累積期間 longtask 總和 | 15.6s | 0 |
+    | JS heap（GC 後） | 208MB | 41／49／67MB |
+    | 讀完後 PgDn 最慢 | 57ms | 29／36／33ms |
+    | 滾輪最慢一幀 | 117ms | 17／17／33ms |
+    | 改設定全量重算 | 1351ms | 77／243／599ms |
+  - 仍是 O(n) 的（已知、未做）：改設定的全量重算；反向讀取（End）插入一頁（tail 位移後每列的合併標註帶絕對列號，12000 行時 4.6ms/頁，排版恆定）；沒有推文也沒有簽名線的長文（圖文塊未定型，快路徑不開）。
+  - 守護：`tests/unit/screen_chunk.test.js`（CSS 契約、只動尾塊、全量重建沿用塊、反向接合點切塊與合併、延遲開圖、選取展開、`rowsFromScrollTop`）、`tests/unit/screen_annotations_frontier.test.js`（種子 fuzz：逐頁 append 與全量逐列相同＋快路徑真的有走；逐一弄壞前沿各元件都會紅）、`tests/unit/term_char_intern.test.js`、offline `easy_reading_longpost_perf`「前向累積」（每幀重算尾段 ≤ 3 頁、只動 ≤ 3 個塊／容器）、`selection.offline.spec.js`「長文跨分塊選取」（offline-firefox，逐行核對）、`easy_reading_reverse`／`longpost_perf` 反向的位移守護。測試要拿頂層節點時注意多一層塊（`tests/unit/screen_reverse_splice.test.js#topNodes`）。
 - **自動開圖是延遲載入的（`src/render/inline_preview_slot.js`＋`src/js/lazy_media.js`，2026-08，CONFIRMED unit＋offline e2e）**：同一篇 8512 行長文有 **287 個圖片連結**，舊行為是文章一累積到就全部解析＋下載＋解碼、到離開文章前永不釋放 —— 已解碼的點陣圖是「記憶體吃滿」的最大宗。改成兩個共用 IntersectionObserver（**root＝`.main`**；省略 root＝隱式 viewport 時 rootMargin 只擴 viewport、`.main` 的裁切照算 ⇒ 兩個 margin 實際≈0，2026-10 修，守護 `tests/e2e/offline/lazy_preview_margin.offline.spec.js`）：接近視野（`LAZY_MOUNT_MARGIN_PX` 1500）才掛 `<ImagePreviewer>`（唯一留在核心畫面裡的 React 葉子島，一個佔位盒一個小 root），遠離（`LAZY_UNMOUNT_MARGIN_PX` 6000，遲滯區避免來回重載）就卸掉。
   - **延後的是整個元件的掛載，不是只有 `<img>` 的下載**：`requestPreview()` 一被呼叫就開始解析網址（imgur 無副檔名的還會發兩發 HEAD 探測），所以 `loading="lazy"` 攔不到它；而且現行 `<img>` 未載入時是 `display:none`，瀏覽器對 `display:none` 的元素本來就不會觸發 lazy。只加 `decoding="async"`。
   - **卸載前必須把當下 `offsetHeight` 釘進佔位盒的 `min-height`**，否則內容總高塌陷 → `scrollTop` 被夾住 → 閱讀位置整個位移（同上面放大/縮小那類問題）。

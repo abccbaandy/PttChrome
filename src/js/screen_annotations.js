@@ -20,13 +20,21 @@ import {
 } from "./comment_parse";
 import { detectFixableUrls } from "./url_fix";
 import { detectWrappedUrls } from "./url_wrap";
-import { detectBodyWrappedUrls, applyWrapUrlRange } from "./body_wrap";
+import {
+  detectBodyWrappedUrls,
+  applyWrapUrlRange,
+  bodyWrapFrontier,
+} from "./body_wrap";
 import { detectWrappedAids } from "./aid_wrap";
 import { detectBareDomains } from "./bare_domain";
 import { detectMentions } from "./mention_parse";
 import { detectAids } from "./aid_parse";
 import { articleHasSteamgifts, detectGiveawayCodes } from "./steamgifts_parse";
-import { groupImageCaptionBlocks, maxCaptionCols } from "./image_caption_group";
+import {
+  groupImageCaptionBlocks,
+  maxCaptionCols,
+  captionScanEnd,
+} from "./image_caption_group";
 import { buildCaptionSpans, applyAiKeep, spanKey } from "./caption_ai_logic";
 import { applyAiFix, applyAiLink, domainKey, fixKey } from "./url_ai_logic";
 import {
@@ -203,6 +211,50 @@ export function detectRowExtras(chars, text, ann, opts) {
   return { fixedUrls, mentions, aids, giveaways, bareDomains };
 }
 
+// 好讀累積長頁的「前沿」：之後只往後接新列時，最早可能改變最終標註的那一列
+// （computeAnnotations 的 fastFrom 用它跳過前綴）。**在 computeAnnotations 新增任何
+// 跨列邏輯時必須同步這裡**（同 annotationsAreRowIndependent 的規則），否則快路徑會
+// 沿用過期的前綴標註。目前的跨列耦合與各自的前沿：
+//   runs  ：同作者推文合併——結尾那一串同作者推文（黑名單列透明）可能再接一則
+//           ⇒ 那一串的第一列（groupSameAuthorRuns 的規則）。
+//   wrap  ：內文跨行網址鏈——最後一列寫滿 maxcol 時鏈還開著（body_wrap.bodyWrapFrontier）。
+//   blank ：手機文末補白——最後一個非空白列之後。
+// 圖文合併塊不在這裡：它由呼叫端的 captionSettled 把關（掃描停點在前沿之前才放行）。
+// 樓層（FloorCounter）、hidden text、steamgifts 是只往前推的累加，與前沿無關。
+// 反向讀取的接合點標記不適用（反向期間不算前沿）。
+function annotationFrontier(lines, texts, result, opts) {
+  const n = lines.length;
+  let f = n;
+  if (opts.runs) {
+    let r = n - 1;
+    while (r >= 0 && result[r] && result[r].userid && result[r].hidden) --r;
+    if (r >= 0 && result[r] && result[r].userid) {
+      const u = result[r].userid;
+      let k = r;
+      while (k > 0) {
+        const a = result[k - 1];
+        if (a && a.userid && (a.hidden || a.userid === u)) --k;
+        else break;
+      }
+      f = Math.min(f, k);
+    }
+  }
+  if (opts.wrap) {
+    // 與跨行網址偵測同一個 skip 判準（computeAnnotations 的 isSkipRow）。
+    const skip = (row) => {
+      const a = result[row];
+      return !!(a && (a.pusher !== undefined || a.hidden));
+    };
+    f = Math.min(f, bodyWrapFrontier(lines, skip));
+  }
+  if (opts.blank) {
+    let r = n;
+    while (r > 0 && !texts[r - 1].trim()) --r;
+    f = Math.min(f, r);
+  }
+  return f;
+}
+
 // Per-row { floor } / { hidden } annotations for the Enhanced Add-on. Native grid
 // is fixed-size, so a blacklisted row is hidden (visibility:hidden) rather than
 // removed — removing it would desync the terminal grid. Floor numbers here count
@@ -263,10 +315,19 @@ export function computeAnnotations(
     let insTo = reuse ? (shape ? shape.prefix + shape.inserted : n) : n;
     const prevOf = (row) =>
       row < insFrom ? row : row >= insTo ? row - (insTo - insFrom) : -1;
-    const texts = new Array(n);
-    for (let row = 0; row < n; ++row) {
-      const p = reuse ? prevOf(row) : -1;
-      texts[row] = p >= 0 ? reuse.texts[p] : rowToText(lines[row]);
+    // 純 append（insTo === n）：前綴整段以 slice 沿用（原生複製），只算新列。
+    const appendFrom = reuse && insTo === n ? insFrom : 0;
+    let texts;
+    if (appendFrom) {
+      texts = reuse.texts.slice(0, appendFrom);
+      for (let row = appendFrom; row < n; ++row)
+        texts.push(rowToText(lines[row]));
+    } else {
+      texts = new Array(n);
+      for (let row = 0; row < n; ++row) {
+        const p = reuse ? prevOf(row) : -1;
+        texts[row] = p >= 0 ? reuse.texts[p] : rowToText(lines[row]);
+      }
     }
     // Steamgifts giveaway 代碼連結的文章層 gate（整篇提到 steamgifts 才啟用，
     // 見 steamgifts_parse.js）。偵測本體抽在 detectRowExtras（合併塊共用）。
@@ -282,6 +343,23 @@ export function computeAnnotations(
       insFrom = 0;
       insTo = n;
     }
+    // ---- 前沿快路徑（超長文每頁 O(新增列)，docs/easy-reading.md「長頁分塊」支柱 C）----
+    // 上一幀收尾時算好前沿 F（cache.frontier，見 annotationFrontier）：之後**只往後接
+    // 新列**時，只有 F 之後的列的最終標註可能改變（推文 run 接續、內文跨行網址鏈、文末
+    // 補白）。成立條件：純 append、不在反向讀取、圖文塊已定型（分組掃描的停點在 F 之前，
+    // 塊與其裝飾都在前綴內不再變）。成立時 [0,F) 的 result 整段沿用上一幀**同一批物件**，
+    // 跨列掃描（跨行網址、推文 run）只從 F 起跑；回傳的 stablePrefix＝F 讓 renderer
+    // 連前綴的節點都不必逐列比對（render/screen.js#_buildNodes）。
+    // 不成立就是既有的全量／位移路徑，行為逐字不變。
+    const fastFrom =
+      reuse &&
+      J == null &&
+      insTo === n &&
+      reuse.frontier != null &&
+      reuse.frontier <= insFrom &&
+      reuse.captionSettled
+        ? reuse.frontier
+        : 0;
     // 「開燈」偵測（軌 A／軌 B，見 js/hidden_text.js）。逐列獨立 ⇒ 純累加即可，
     // **不必**像 hasSteamgifts 那樣「首次翻 true 就全量重算」：那個是逐列偵測的
     // 輸入（會改變前面每一列的判定），這兩個只是輸出。
@@ -380,7 +458,8 @@ export function computeAnnotations(
     // baseDomainCands/baseFixCands（可跨幀沿用），合併塊的每幀從 run 快取重播。
     // 候選按列存（rowCands[row] ＝ { d, f } 或 undefined），每幀依列序串起來：中段
     // 插入之後，「上一幀的扁平清單＋新列」就不再是列序了。
-    const rowCands = new Array(n);
+    const baseFrom = reuse && insTo === n ? insFrom : 0;
+    const rowCands = baseFrom ? reuse.rowCands.slice(0, baseFrom) : new Array(n);
     const baseDomainCands = [];
     const baseFixCands = [];
     const withUrlAi = (extras, dCands, fCands) => {
@@ -399,8 +478,13 @@ export function computeAnnotations(
     // base[row] ＝「合流裝飾之前」的逐列標註。分成 base / result 兩層是為了物件
     // **參考穩定**：沒有被圖文合併或推文合併裝飾到的列，result[row] 就是上一幀那
     // 同一個物件 ⇒ 下面的 <Row> 元素快取才有得重用（React 才會 bailout）。
-    const base = new Array(n);
-    for (let row = 0; row < n; ++row) {
+    // 純 append：前綴以 slice 沿用（同 texts），迴圈只跑新列。
+    const base = baseFrom ? reuse.base.slice(0, baseFrom) : new Array(n);
+    if (baseFrom) {
+      base.length = n;
+      rowCands.length = n;
+    }
+    for (let row = baseFrom; row < n; ++row) {
       const p = reuse ? prevOf(row) : -1;
       if (p >= 0) {
         base[row] = reuse.base[p];
@@ -427,14 +511,23 @@ export function computeAnnotations(
       if (bareDomains) r = { ...(r || {}), bareDomains };
       base[row] = r;
     }
-    for (let row = 0; row < n; ++row) {
-      result[row] = base[row];
-      const c = rowCands[row];
-      if (c) {
-        for (let i = 0; i < c.d.length; ++i) baseDomainCands.push(c.d[i]);
-        for (let i = 0; i < c.f.length; ++i) baseFixCands.push(c.f[i]);
-      }
+    // 有候選的列（遞增）。純 append 時前綴沿用、只掃新列 ⇒ 串候選是 O(候選數)。
+    let candRows;
+    if (baseFrom) {
+      candRows = reuse.candRows.slice();
+      for (let row = baseFrom; row < n; ++row) if (rowCands[row]) candRows.push(row);
+    } else {
+      candRows = [];
+      for (let row = 0; row < n; ++row) if (rowCands[row]) candRows.push(row);
     }
+    for (let k = 0; k < candRows.length; ++k) {
+      const c = rowCands[candRows[k]];
+      for (let i = 0; i < c.d.length; ++i) baseDomainCands.push(c.d[i]);
+      for (let i = 0; i < c.f.length; ++i) baseFixCands.push(c.f[i]);
+    }
+    // 前沿快路徑：前綴是上一幀**最終**的標註物件（已含跨行網址／推文合併裝飾）。
+    for (let row = 0; row < fastFrom; ++row) result[row] = reuse.annotations[row];
+    for (let row = fastFrom; row < n; ++row) result[row] = base[row];
     // 內文跨行連結（src/js/body_wrap.js）：被切成兩列的網址，兩列都渲染成同一條
     // <a>（href 是接好的完整網址）。逐列偵測兩層都只看得到殘段 ⇒ 只有這裡（手上
     // 有整份 lines）做得到。
@@ -457,8 +550,15 @@ export function computeAnnotations(
         return !!(a && (a.pusher !== undefined || a.hidden));
       };
       // 反向期間 head 與 tail 分開掃：J-1 與 J 在文章裡不相鄰，不可接成一條網址。
-      const wrapped =
-        J != null
+      // 前沿快路徑：只從 fastFrom 起掃（前沿保證沒有鏈跨過它，見 body_wrap.bodyWrapFrontier）。
+      const wrapped = fastFrom
+        ? detectBodyWrappedUrls(lines.slice(fastFrom), (row) =>
+            isSkipRow(row + fastFrom),
+          ).map((w) => ({
+            ...w,
+            parts: w.parts.map((pt) => ({ ...pt, row: pt.row + fastFrom })),
+          }))
+        : J != null
           ? detectBodyWrappedUrls(lines.slice(0, J), isSkipRow).concat(
               detectBodyWrappedUrls(lines.slice(J), (row) =>
                 isSkipRow(row + J),
@@ -488,6 +588,10 @@ export function computeAnnotations(
       // 圖片 remount）。身分＝base 參考＋這一列的 range 簽章；反向讀取位移後列號
       // 會變，所以鍵裡不放列號。
       const prevWrap = reuse ? reuse.wrapCache : null;
+      // 快路徑只重掃 [fastFrom, n)：前綴列的快取項目原樣帶到下一幀（之後若走全量／
+      // 位移路徑，它要拿整份快取找回前綴的裝飾物件）。
+      if (fastFrom && prevWrap)
+        for (const [k, v] of prevWrap) wrapCache.set(k, v);
       for (const [row, ranges] of rangesByRow) {
         const key = ranges
           .map((r) => r.startCol + ":" + r.endCol + ":" + r.preview + ":" + r.href)
@@ -545,13 +649,30 @@ export function computeAnnotations(
     // 故以 run 身分（mergeRunKey）＋ 該 run 每一列的 base 參考當快取鍵：翻頁只可能
     // 改變**最後一個** run（新的一則接在後面），前面所有 run 直接重播上一幀的結果，
     // 連裝飾出來的 annotation 物件都是同一個（元素快取才有得重用）。
-    const runCache = new Map();
-    const runByFirstBase = new Map();
+    //
+    // 前沿快路徑：只對 [fastFrom, n) 分組（前沿保證沒有 run 跨過它），兩張快取表就地
+    // 沿用（上一幀前沿之後、這一幀沒再出現的 run 在迴圈後刪掉），前綴 run 的 AI 候選
+    // 由 runCandsPrefix 接上 ⇒ 每頁不再是 O(run 數)。
+    const runCache = fastFrom ? reuse.runCache : new Map();
+    const runByFirstBase = fastFrom ? reuse.runByFirstBase : new Map();
+    // 這一幀分組到的 run 與它們的快取項目（逐一對齊），收尾算前沿時用。
+    let runs = [];
+    const runEntries = [];
     if (easyReading && mergeSameAuthorComments) {
       const prevRuns = reuse ? reuse.runCache : null;
       const prevRunsByFirst = reuse ? reuse.runByFirstBase : null;
-      // 反向期間 run 在 J 斷開（head 最後一則與 tail 第一則在文章裡不相鄰）。
-      const runs = groupSameAuthorRuns(result, J);
+      if (fastFrom) {
+        runs = groupSameAuthorRuns(result.slice(fastFrom), null).map((r) => ({
+          ...r,
+          rows: r.rows.map((x) => x + fastFrom),
+        }));
+        const pre = reuse.runCandsPrefix;
+        for (let i = 0; i < pre.d.length; ++i) domainCands.push(pre.d[i]);
+        for (let i = 0; i < pre.f.length; ++i) fixCands.push(pre.f[i]);
+      } else {
+        // 反向期間 run 在 J 斷開（head 最後一則與 tail 第一則在文章裡不相鄰）。
+        runs = groupSameAuthorRuns(result, J);
+      }
       const sameRefs = (e, run) => {
         if (!e || e.baseRefs.length !== run.rows.length) return false;
         for (let i = 0; i < run.rows.length; ++i)
@@ -692,6 +813,18 @@ export function computeAnnotations(
         }
         runCache.set(rKey, entry);
         runByFirstBase.set(base[run.rows[0]], entry);
+        runEntries.push({ key: rKey, first: base[run.rows[0]], entry });
+      }
+      // 快路徑就地沿用的表：上一幀前沿之後的 run 這一幀沒再出現（例：run 多接了一則，
+      // 鍵從 "a-b" 變 "a-c"）⇒ 刪掉，表的大小才不會每頁長一筆。
+      if (fastFrom) {
+        const live = new Set(runEntries.map((e) => e.entry));
+        for (const t of reuse.tailRuns) {
+          if (runCache.get(t.key) === t.entry && !live.has(t.entry))
+            runCache.delete(t.key);
+          if (runByFirstBase.get(t.first) === t.entry && !live.has(t.entry))
+            runByFirstBase.delete(t.first);
+        }
       }
     }
     // 反向讀取的接合點標記（淡虛線，main.css `.reverseJunction`）：tail 的第一列。
@@ -715,9 +848,52 @@ export function computeAnnotations(
     result.fixCands = fixCands;
     result.fixCandsSig = fixCands.map(fixKey).join(",");
     applyFunctionKeys(result, lines, enhance);
+    // ---- 給下一幀的前沿（見上方 fastFrom）----
+    // 反向期間不算（tail 之後還會往 J 插入，前沿的前提「只往後接」不成立）。
+    let frontier =
+      J == null
+        ? annotationFrontier(lines, texts, result, {
+            runs: !!(easyReading && mergeSameAuthorComments),
+            wrap: !!autoFixUrl,
+            blank: !!enhance.commentCards,
+          })
+        : null;
+    // 前沿只會往後走（推導見 annotationFrontier）。萬一沒有，下一幀走全量——寧可慢
+    // 一幀也不拿可能過期的前綴。
+    if (frontier != null && frontier < fastFrom) frontier = null;
+    // 圖文塊已定型：分組掃描的停點在前沿之前（塊與其裝飾都落在不再重算的前綴裡）。
+    let captionSettled = !easyReading;
+    if (easyReading && frontier != null) {
+      const brk = captionScanEnd(headTexts);
+      captionSettled = brk >= 0 && brk < frontier;
+    }
+    // 前沿之前的 run 的 AI 候選（依 run 序），與前沿之後的 run（下一幀要重分組的那些）。
+    let runCandsPrefix = { d: [], f: [] };
+    const tailRuns = [];
+    if (frontier != null) {
+      const base0 = fastFrom ? reuse.runCandsPrefix : runCandsPrefix;
+      const d = base0.d.slice();
+      const f = base0.f.slice();
+      for (let k = 0; k < runs.length; ++k) {
+        const e = runEntries[k];
+        if (runs[k].rows[0] < frontier) {
+          for (let i = 0; i < e.entry.domainCands.length; ++i) d.push(e.entry.domainCands[i]);
+          for (let i = 0; i < e.entry.fixCands.length; ++i) f.push(e.entry.fixCands[i]);
+        } else tailRuns.push(e);
+      }
+      runCandsPrefix = { d, f };
+    }
     return {
       annotations: result,
+      // 這一幀的 result[0, stablePrefix) 與上一幀是同一批物件（renderer 據此跳過前綴）。
+      stablePrefix: fastFrom,
       cache: {
+        annotations: result,
+        frontier,
+        captionSettled,
+        candRows,
+        runCandsPrefix,
+        tailRuns,
         texts,
         base,
         floorCounter: ctx.floorCounter,

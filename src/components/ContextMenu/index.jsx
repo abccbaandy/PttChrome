@@ -55,6 +55,7 @@ import {
   submitSearch,
 } from "../../js/article_search";
 import { rememberSearch } from "../../js/search_history";
+import { readSelectionText } from "../../render/screen_chunk";
 import { HINT_ERROR } from "../../js/status_hint";
 import {
   menuTargetFromElement,
@@ -332,7 +333,8 @@ export const ContextMenu = ({ pttchrome }) => {
       );
 
       // replace the &nbsp;
-      const selectedText = window.getSelection().toString().replace(/ /g, " ");
+      // readSelectionText：長頁分塊的閉塊要先展開，Firefox 才不會漏字（render/screen_chunk.js）。
+      const selectedText = readSelectionText().replace(/ /g, " ");
       // 三個旗標的定義集中在 context_menu_items.menuTargetFlags（selEnabled 曾被
       // 寫成 normalEnabled 的補集 ⇒ 在連結上沒選取也畫出點了沒作用的「複製」）。
       const { urlEnabled, normalEnabled, selEnabled } = menuTargetFlags({

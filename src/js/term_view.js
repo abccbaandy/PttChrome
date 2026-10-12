@@ -21,6 +21,8 @@ import { OWNER_BOARD_LIST } from './list_render_owner';
 import { readValuesWithDefault } from './pref_storage';
 import { cursorOffsets, paintedRowsAreBufRows } from './cursor_anchor';
 import { offsetTopWithin } from './scroll_anchor';
+import { internRow } from './term_char_intern';
+import { readSelectionText, renderChunksAround, rowsFromScrollTop } from '../render/screen_chunk';
 import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
@@ -1520,7 +1522,8 @@ TermView.prototype = {
       switch (e.key.toLowerCase()) {
         case 'c':
           if (!window.getSelection().isCollapsed) { //^C , do copy
-            var selectedText = window.getSelection().toString().replace(/\u00a0/g, " ");
+            // readSelectionText\uff1a\u9577\u9801\u5206\u584a\u7684\u9589\u584a\u8981\u5148\u5c55\u958b\uff0cFirefox \u624d\u4e0d\u6703\u6f0f\u5b57\uff08screen_chunk.js\uff09\u3002
+            var selectedText = readSelectionText().replace(/\u00a0/g, " ");
             this.bbscore.doCopy(selectedText);
             stop = true
           }
@@ -1728,7 +1731,8 @@ TermView.prototype = {
     if (!mc || typeof mc.querySelectorAll !== 'function') return null;
     if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
     var st = disp.scrollTop;
-    var rows = mc.querySelectorAll('[type="bbsrow"][srow]');
+    // 長頁分塊：先以塊跳過視窗上方（逐列量會強迫每一個閉塊排版，見 screen_chunk.js）。
+    var rows = rowsFromScrollTop(mc, disp, st);
     for (var i = 0; i < rows.length; ++i) {
       if (offsetTopWithin(rows[i], disp) + rows[i].offsetHeight > st)
         return Number(rows[i].getAttribute('srow')) || 0;
@@ -2763,14 +2767,15 @@ TermView.prototype = {
         accTail: accTail || [],
         newTexts: newTexts || newRows.map(rowToText)
       });
-      // Snapshot-clone the new tail (see cloneRow). pageLines is BOTH the render
+      // Snapshot the new tail (internRow ＝ cloneRow 的共用化版本：同字同屬性的格子
+      // 共用一個凍結物件，見 term_char_intern.js). pageLines is BOTH the render
       // source (<Screen lines={pageLines}>) and the selection source (getText reads
       // it, incl. ANSI colours). It keeps the FULL rows even for blacklisted ones,
       // so copy still has the original text — the blacklist drop happens only at
       // render time (Screen dropHidden). A forced redraw (pref/pusher toggle)
       // re-enters here with the same screen; kStatus then equals maxK so beginIndex ==
       // newRows.length and nothing is double-appended.
-      this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(beginIndex).map(cloneRow));
+      this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(beginIndex).map(internRow));
       // Advance the tracked article-line position to this screen's end.
       this._accEndRow = result.rowIndexEnd;
       this._lastAccumulatedSig = statusSignature(result);
@@ -2783,7 +2788,7 @@ TermView.prototype = {
       // 內容重疊去重。行號追蹤在這一頁斷開（_accEndRow = null），下一張有行號的頁由
       // classifyPageTransition 判 'restart' → append，resolvePageOverlap 走內容，
       // 再把 _accEndRow 接回它的 E。簽章仍要記，否則 settle 的補畫會一直重放這一幀。
-      this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(kContent).map(cloneRow));
+      this.buf.pageLines = this.buf.pageLines.concat(newRows.slice(kContent).map(internRow));
       this._accEndRow = null;
       this._lastAccumulatedSig = statusSignature(result);
       this.buf.easyReadingSeekBack = null;
@@ -2803,7 +2808,7 @@ TermView.prototype = {
       // New article (or re-entry into the same article): bump the instance id so
       // Screen resets the enlarge-images toggle back to default small images.
       ++this._articleInstanceId;
-      this.buf.pageLines = newRows.map(cloneRow);
+      this.buf.pageLines = newRows.map(internRow);
       // Seed overlap tracking from this first screen's status row (null if it's a
       // transient non-article frame — resolvePageOverlap then falls back to content).
       this._accEndRow = result ? result.rowIndexEnd : null;
@@ -2861,7 +2866,8 @@ TermView.prototype = {
     var st = disp.scrollTop;
     // 反向期間 tail 的 srow 是延遲結算的（render/screen.js#syncRowIndex）。
     if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
-    var rows = mc.querySelectorAll('[type="bbsrow"][srow]');
+    // 長頁分塊：先以塊跳過視窗上方（逐列量會強迫每一個閉塊排版，見 screen_chunk.js）。
+    var rows = rowsFromScrollTop(mc, disp, st);
     for (var i = 0; i < rows.length; ++i) {
       var top = offsetTopWithin(rows[i], disp);
       if (top + rows[i].offsetHeight > st) {
@@ -2877,6 +2883,8 @@ TermView.prototype = {
     if (idx < 0) return;
     var el = this.mainContainer.querySelector('[type="bbsrow"][srow="' + idx + '"]');
     if (!el) return;
+    // 接合幀是全量重建：錨點列所在的塊可能還是閉塊（估計高度），先讓它照常渲染再量。
+    renderChunksAround(el);
     this.mainDisplay.scrollTop = offsetTopWithin(el, this.mainDisplay) - anchor.offset;
   },
 
@@ -2924,13 +2932,13 @@ TermView.prototype = {
         upperEndLine: rv.headEndLine, lowerStartLine: S,
         upperTexts: pl.slice(-W).map(rowToText), lowerTexts: newTexts, window: W
       });
-      this.buf.pageLines = pl.concat(newRows.slice(kj).map(cloneRow));
+      this.buf.pageLines = pl.concat(newRows.slice(kj).map(internRow));
       this._accEndRow = E;
       this.clearReverse('joined');
       return;
     }
     if (rb === 'seed') {
-      this.buf.pageLines = pl.concat(newRows.map(cloneRow));
+      this.buf.pageLines = pl.concat(newRows.map(internRow));
       rv.tailStartLine = S;
       rv.tailEndLine = E;
       rv.tailComplete = full;
@@ -2943,7 +2951,7 @@ TermView.prototype = {
         upperTexts: pl.slice(Math.max(J, pl.length - W)).map(rowToText),
         lowerTexts: newTexts, window: W
       });
-      this.buf.pageLines = pl.concat(newRows.slice(ke).map(cloneRow));
+      this.buf.pageLines = pl.concat(newRows.slice(ke).map(internRow));
       rv.tailEndLine = E;
       rv.tailComplete = full;
       this._accEndRow = E;
@@ -2955,7 +2963,7 @@ TermView.prototype = {
       upperTexts: newTexts,
       lowerTexts: pl.slice(J, J + W).map(rowToText), window: W
     });
-    var mid = newRows.slice(0, newRows.length - kp).map(cloneRow);
+    var mid = newRows.slice(0, newRows.length - kp).map(internRow);
     if (rb === 'prepend') {
       this.buf.pageLines = pl.slice(0, J).concat(mid, pl.slice(J));
       rv.tailStartLine = S;

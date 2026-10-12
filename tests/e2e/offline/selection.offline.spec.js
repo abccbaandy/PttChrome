@@ -11,7 +11,8 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { installReplay, waitConnected, feedRaw, waitScreenSettled } = require('../helpers/replay');
-const { waitClickSettled } = require('../helpers/real_input');
+const { waitClickSettled, nextFrames } = require('../helpers/real_input');
+const { openLongArticle } = require('../helpers/pmore_long_article');
 
 const WORD = 'SELECTSMOKE';
 
@@ -237,4 +238,81 @@ test.describe('選取文字（offline）', () => {
     await expect(items.first()).toBeVisible();
     await expect(items.filter({ hasText: WORD })).not.toHaveCount(0);
   });
+
+  // 好讀長頁分塊（render/screen_chunk.js）：離視窗遠的塊是 content-visibility 跳過的
+  // 「閉塊」，Firefox 對跨閉塊的 Selection.toString() 會漏字（實測 1.4 萬 vs 162 萬字）。
+  // app 在 selectionchange 時把相交的塊展開（.screenChunkOpen），讀選取的地方再同步補一次
+  // （screen_chunk.readSelectionText），複製仍是原生的。copyOnSelect 與 ^C 兩條路都驗。
+  // 實測（Firefox，3000 行）：不展開的話選取後過一幀 toString 從 110085 掉回 90329 字。
+  for (const via of ['copyOnSelect', 'Ctrl+C']) {
+    test(`長文跨分塊選取：${via} 拿得到整段（含中段的閉塊）`, async ({ page, browserName }) => {
+      // 漏字只發生在 Firefox（Chromium／WebKit 跨閉塊的 toString 本來就完整，handoff 四引擎
+      // 實測）。Chromium 上 Shift+點擊延伸會被 app 把焦點搶回 #t 收合，是另一回事。
+      test.skip(browserName !== 'firefox', '跨閉塊選取漏字是 Firefox 專屬');
+      test.setTimeout(180000);
+      const prefs = { copyOnSelect: via === 'copyOnSelect', useMouseBrowsing: false };
+      await stubClipboardAndPrefs(page, prefs);
+      // 同作者連三則會併成一個節點 ⇒ 1500 行約 600 個頂層節點、6 塊。
+      await openLongArticle(page, ptt, { total: 1500, prefs });
+      await page.evaluate(() => {
+        document.querySelector('.main').scrollTop = 0;
+      });
+      // 前提：真的分了好幾塊，而且中段的塊此刻是閉塊（否則這條測不到任何東西）
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const ks = document.querySelectorAll('#mainContainer > .screenChunk');
+            const mid = ks[Math.floor(ks.length / 2)];
+            const row = mid && mid.querySelector('[type="bbsrow"]');
+            return {
+              chunks: ks.length,
+              midSkipped: !!row && !row.checkVisibility({ contentVisibilityAuto: true }),
+            };
+          })
+        )
+        .toEqual({ chunks: expect.any(Number), midSkipped: true });
+      expect(
+        await page.evaluate(() => document.querySelectorAll('#mainContainer > .screenChunk').length)
+      ).toBeGreaterThanOrEqual(5);
+
+      // 起點落在「line」上（第 0-6 欄是好讀的「點了就離開文章」帶，見 preview_targets.js）。
+      // 原生的「點一下 → 捲走 → Shift+點」延伸選取（拖曳中途程式捲動，兩個引擎都會
+      // 丟掉起點，不可靠）。
+      const first = await wordRect(page, 'line 1');
+      await page.mouse.click(first.x + 1, first.y + first.height / 2);
+      await waitClickSettled(page);
+      await page.evaluate(() => {
+        const m = document.querySelector('.main');
+        m.scrollTop = m.scrollHeight;
+      });
+      await nextFrames(page);
+      const last = await wordRect(page, 'comment 1498');
+      await page.keyboard.down('Shift');
+      await page.mouse.click(last.x + last.width - 1, last.y + last.height / 2);
+      await page.keyboard.up('Shift');
+      await waitClickSettled(page);
+      const info = await probe(page);
+      expect(info.isCollapsed, `拖曳後的選取狀態: ${JSON.stringify({ ...info, text: info.text.length })}`).toBe(false);
+      if (via === 'Ctrl+C') {
+        // 捲回文首再複製：中段與尾段都成了視窗外的閉塊（實測 Firefox 漏字就在這種狀態）。
+        await page.evaluate(() => {
+          document.querySelector('.main').scrollTop = 0;
+        });
+        await nextFrames(page, 4);
+        await page.keyboard.press('Control+c');
+      }
+
+      await expect
+        .poll(() => page.evaluate(() => window.__copied[window.__copied.length - 1] || ''))
+        .toContain('comment 1498');
+      const text = await page.evaluate(() => window.__copied[window.__copied.length - 1]);
+      // 逐行核對（漏字是整段整段掉，抽樣會剛好抽不到）：每一行的編號都要在。
+      // 第 40 倍數的行是圖片連結（沒有 `comment n` 字樣）。
+      const missing = [];
+      for (let n = 2; n < 60; ++n) if (!new RegExp(`article line ${n}\\b`).test(text)) missing.push(n);
+      for (let n = 60; n <= 1498; ++n)
+        if (n % 40 && !new RegExp(`comment ${n}\\b`).test(text)) missing.push(n);
+      expect(missing, `複製結果缺 ${missing.length} 行（長度 ${text.length}），前幾行：${missing.slice(0, 10)}`).toEqual([]);
+    });
+  }
 });

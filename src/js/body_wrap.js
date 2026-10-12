@@ -131,6 +131,27 @@ export function detectBodyWrappedUrls(lines, isSkipRow) {
   return out;
 }
 
+// 「後面再接新列」可能改變偵測結果的最早一列（好讀累積長頁的增量標註前沿，見
+// screen_annotations.js）。續行鏈只在最後一列寫滿 maxcol 時還「開著」——那時往回
+// 走過連續寫滿的列，鏈的左片段一定在其中（左片段本身也寫滿）。最後一列沒寫滿 ⇒
+// 所有鏈都已收口，新列影響不到 ⇒ 回 lines.length。保守：寧可多算幾列。
+// isSkipRow 與 detectBodyWrappedUrls 的同一個（推文列／黑名單列不屬於任何鏈）：
+// **必須傳**——真實推文列的時間戳最後一格剛好落在 maxcol，不排除的話每一則推文都
+// 「寫滿」⇒ 前沿一路退回第一則推文，快路徑在真實文章裡從不生效。
+export function bodyWrapFrontier(lines, isSkipRow) {
+  const n = lines ? lines.length : 0;
+  if (!n) return 0;
+  const cols = lines[0] ? lines[0].length : 0;
+  if (cols < 4) return n;
+  const maxcol = pmoreMaxCol(cols);
+  const full = (r) =>
+    !!lines[r] && !(isSkipRow && isSkipRow(r)) && endsAtMaxCol(lines[r], maxcol);
+  if (!full(n - 1)) return n;
+  let k = n - 1;
+  while (k > 0 && full(k - 1)) --k;
+  return k;
+}
+
 // 把一段接好的範圍寫進某一列的標註，並把落在該範圍內的其他連結候選拿掉。
 //
 // 重疊排除是硬規則（docs/enhanced-addon.md「額外連結偵測器一律要排除已被 uriRegEx

@@ -214,9 +214,9 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
           getComputedStyle(el.querySelector('span[type="bbsrow"]')).paddingLeft
         ),
         slots: Array.from(el.querySelectorAll('.inlinePreviewSlot')).map(rect),
-        // 對照組：非合併列（#mainContainer 的直系 bbsrow）裡的佔位盒。
+        // 對照組：非合併列（分塊 .screenChunk 的直系 bbsrow）裡的佔位盒。
         plain: Array.from(
-          document.querySelectorAll('#mainContainer > span[type="bbsrow"] .inlinePreviewSlot')
+          document.querySelectorAll('#mainContainer > .screenChunk > span[type="bbsrow"] .inlinePreviewSlot')
         ).map((n) => rect(n).width),
       };
     });
@@ -425,8 +425,8 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     page.evaluate(() => {
       const BBSLINE = '[data-type="bbsline"]';
       const BLOCKISH =
-        '#mainContainer > span[type="bbsrow"][data-pusher], #mainContainer > .mergedCommentBlock';
-      const block = document.querySelector('#mainContainer > .mergedCommentBlock');
+        '.screenChunk > span[type="bbsrow"][data-pusher], .screenChunk > .mergedCommentBlock';
+      const block = document.querySelector('#mainContainer > .screenChunk > .mergedCommentBlock');
       if (!block) return null;
       const inner = block.querySelector('span[type="bbsrow"] > div');
       const kids = Array.from(inner.children);

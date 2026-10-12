@@ -56,9 +56,19 @@ class FakeRO {
   }
 }
 
+// 佔位盒的觀察數。長頁分塊（render/screen_chunk.js）另有塊層的 near/far observer
+// 觀察 div.screenChunk —— 那是 controller 自己的，生命週期另外以 chunkObservedCount 鎖。
+const isChunk = (t) => t.classList && t.classList.contains("screenChunk");
 const observedCount = () =>
-  observers.reduce((n, o) => n + o.targets.size, 0) +
-  sizeObservers.reduce((n, o) => n + o.targets.size, 0);
+  observers.reduce(
+    (n, o) => n + Array.from(o.targets).filter((t) => !isChunk(t)).length,
+    0,
+  ) + sizeObservers.reduce((n, o) => n + o.targets.size, 0);
+const chunkObservedCount = () =>
+  observers.reduce(
+    (n, o) => n + Array.from(o.targets).filter(isChunk).length,
+    0,
+  );
 
 const ENHANCE = {
   blacklist: new Set(),
@@ -118,10 +128,31 @@ describe("渲染鏈的佔位盒生命週期", () => {
     // articleId 換掉 ＝ 換文章，lines 也是全新的一批 → 舊列全部丟棄。
     controller.update(props(linkLines(3, "b"), { articleId: "a2" }));
     expect(observedCount()).toBe(3 * 3);
+    // 全量重建按順序沿用舊塊（screen_chunk.js 不變量 3）：仍是一塊、near/far 各一。
+    expect(chunkObservedCount()).toBe(2);
 
     controller.destroy();
     root.remove();
     expect(observedCount()).toBe(0);
+    expect(chunkObservedCount()).toBe(0);
+  });
+
+  test("離開長頁（原生／列表畫面）時塊層 observer 一併收掉", () => {
+    const { root, controller } = mount();
+    controller.update(props(linkLines(3, "a")));
+    expect(chunkObservedCount()).toBe(2);
+    controller.update(
+      props(linkLines(2, "n"), {
+        pageState: 2,
+        easyReading: false,
+        dropHidden: false,
+        stableRows: false,
+      }),
+    );
+    expect(chunkObservedCount()).toBe(0);
+    expect(controller.container.querySelector(".screenChunk")).toBeNull();
+    controller.destroy();
+    root.remove();
   });
 
   test("純 append（好讀翻頁）不會重建既有列，也不會重複註冊 observer", () => {

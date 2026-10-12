@@ -70,6 +70,7 @@ import {
   invalidateInlinePreviewHeights,
 } from "./inline_preview_slot";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
+import { ChunkLayer } from "./screen_chunk";
 import { imageSizeMode, stepImageZoom } from "../js/image_zoom";
 import { diag, diagActive } from "../js/diag";
 import {
@@ -186,6 +187,13 @@ export class ScreenController {
     // 還沒寫進 DOM 的列號位移（節點 → 累計 delta，見 syncRowIndex）。
     this._pendingShift = new Map();
     this._annotations = []; // 上一幀的 annotations（與 _nodes 逐列對齊）
+    // 上一幀有、這一幀不要的節點（_buildNodes 收集；分塊路徑據此把它們移出所屬的塊，
+    // 不必像 _patchInto 那樣逐一走過全部 DOM 子節點）。
+    this._staleNodes = [];
+    // 這一幀 nodes[0, _stableFrom) 與上一幀相同且都已就位（_buildNodes 的前沿快路徑）。
+    this._stableFrom = 0;
+    // 好讀累積長頁的分塊（render/screen_chunk.js）。只在 enhance.stableRows 時啟用。
+    this._chunkLayer = new ChunkLayer(this.container);
     this._liveSlots = new Set(); // 目前掛著的佔位盒（imagesEnlarged 切換要通知）
     this._overlayNodes = []; // 尾端固定浮層（「⋯」工具鈕 + hover 預覽宿主）
     this._captionAiEnabledSeen = null;
@@ -423,6 +431,8 @@ export class ScreenController {
     destroyUrlAi();
     for (let i = 0; i < this._nodes.length; ++i) disposeNode(this._nodes[i]);
     this._nodes = [];
+    this._staleNodes = [];
+    this._chunkLayer.destroy();
     this._pendingShift.clear();
     this._annotations = [];
     this._liveSlots.clear();
@@ -766,6 +776,7 @@ export class ScreenController {
       key: cacheKey,
       rowIndependent,
       changedRows,
+      stablePrefix: reusable ? computed.stablePrefix || 0 : 0,
     });
     this._cache =
       computed.cache && stableRows
@@ -843,8 +854,24 @@ export class ScreenController {
     const shape = frame.shape;
     const insFrom = shape ? shape.prefix : prevNodes ? prevNodes.length : 0;
     const insTo = shape ? shape.prefix + shape.inserted : lines.length;
-    const nodes = new Array(lines.length);
-    for (let row = 0; row < lines.length; ++row) {
+    // 前沿快路徑（screen_annotations.js 的 stablePrefix）：前綴的 annotation 與上一幀
+    // 是同一批物件 ⇒ 逐列重用條件必然成立（mergeBlock 也是：圖文塊已定型，右欄說明
+    // 列的標註同樣原封不動）——只剩高亮狀態要另外確認。整段 slice 沿用，迴圈只跑尾段。
+    let from = 0;
+    if (
+      frame.stablePrefix > 0 &&
+      prevNodes &&
+      sameHighlightCls &&
+      prevHighlight.row === this.highlight.row &&
+      frame.stablePrefix <= prevNodes.length &&
+      frame.stablePrefix <= insFrom
+    ) {
+      from = frame.stablePrefix;
+    }
+    const nodes = from ? prevNodes.slice(0, from) : new Array(lines.length);
+    if (from) nodes.length = lines.length;
+    this._stableFrom = from;
+    for (let row = from; row < lines.length; ++row) {
       const ann = annotations[row];
       const p =
         row < insFrom ? row : row >= insTo ? row - (insTo - insFrom) : -1;
@@ -905,14 +932,18 @@ export class ScreenController {
       nodes[row] = built;
     }
     // 這一幀沒有留下來的舊節點：收掉它們的佔位盒。
+    // 前沿快路徑：前綴的節點兩幀相同（oldNodes 就是上一幀的 nodes），只比尾段。
     const keep = new Set();
-    for (let i = 0; i < nodes.length; ++i) if (nodes[i]) keep.add(nodes[i]);
-    for (let i = 0; i < oldNodes.length; ++i) {
+    for (let i = from; i < nodes.length; ++i) if (nodes[i]) keep.add(nodes[i]);
+    const stale = [];
+    for (let i = from; i < oldNodes.length; ++i) {
       if (oldNodes[i] && !keep.has(oldNodes[i])) {
         disposeNode(oldNodes[i]);
         this._pendingShift.delete(oldNodes[i]);
+        stale.push(oldNodes[i]);
       }
     }
+    this._staleNodes = stale;
     return nodes;
   }
 
@@ -1217,6 +1248,21 @@ export class ScreenController {
     // 列區塊的右邊界＝第一個浮層節點（浮層永遠排在最後）。取 isConnected 的那個：
     // 拿到一個已經被移出 DOM 的節點當終點，下面的清理迴圈會一路把浮層也掃掉。
     const stop = this._overlayNodes.find((n) => n.isConnected) || null;
+    const enhance = this.props.enhance;
+    if (!ls && enhance && enhance.stableRows) {
+      // 好讀累積長頁：列分塊排進 div.screenChunk（content-visibility，見 screen_chunk.js）。
+      const J = enhance.reverseJunction;
+      this._chunkLayer.patch(
+        nodes,
+        this._staleNodes,
+        stop,
+        J != null ? J : null,
+        this._stableFrom || 0,
+      );
+      return;
+    }
+    // 離開長頁：塊不在 nodes 裡 ⇒ 由 _patchInto 的清理迴圈移除，這裡只收記帳。
+    if (this._chunkLayer.size) this._chunkLayer.release();
     if (!ls) {
       // 非列表好讀：視口節點若還在，會因為不在 nodes 裡而被下面的清理迴圈移除。
       this._patchInto(this.container, nodes, stop);

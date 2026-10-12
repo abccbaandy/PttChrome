@@ -114,7 +114,8 @@ async function hoverCell(page, col, row) {
 const highlightedPushers = (page) =>
   page.evaluate(() =>
     Array.from(
-      document.querySelectorAll('#mainContainer > span[type="bbsrow"].pusherHighlight')
+      // 好讀長頁的列住在分塊 .screenChunk 裡（render/screen_chunk.js）。
+      document.querySelectorAll('#mainContainer > .screenChunk > span[type="bbsrow"].pusherHighlight')
     ).map((el) => el.getAttribute('data-pusher'))
   );
 
@@ -745,9 +746,9 @@ test.describe('滑鼠（離線重放）', () => {
       await boot(page, { mouseEdgePaging: true });
       await waitPreviewsSettled(page, { timeout: 60000 });
 
-      // 相鄰兩則推文（#mainContainer 的直系兄弟），下面那則內容至少兩格。
+      // 相鄰兩則推文（同一個分塊 .screenChunk 裡的直系兄弟），下面那則內容至少兩格。
       const found = await page.evaluate(() => {
-        const rows = document.querySelectorAll('#mainContainer > span[type="bbsrow"][data-pusher]');
+        const rows = document.querySelectorAll('#mainContainer > .screenChunk > span[type="bbsrow"][data-pusher]');
         for (const el of rows) {
           const prev = el.previousElementSibling;
           if (!prev || !prev.matches('span[type="bbsrow"][data-pusher]')) continue;
@@ -768,10 +769,14 @@ test.describe('滑鼠（離線重放）', () => {
       const y = await page.evaluate(
         () => document.querySelector('[data-e2e-gap-row="1"]').getBoundingClientRect().top - 2
       );
-      // 前提：這一點真的是空隙（不是任何推文元素）。
+      // 前提：這一點真的是空隙（不是任何推文元素）。好讀長頁的列住在分塊裡
+      // （render/screen_chunk.js），空隙的事件目標是那個塊。
       expect(
-        await page.evaluate(([px, py]) => document.elementFromPoint(px, py).id, [x, y])
-      ).toBe('mainContainer');
+        await page.evaluate(([px, py]) => {
+          const h = document.elementFromPoint(px, py);
+          return h.id === 'mainContainer' || h.classList.contains('screenChunk');
+        }, [x, y])
+      ).toBe(true);
 
       await page.mouse.move(x, y);
       await nextFrames(page);

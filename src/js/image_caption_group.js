@@ -59,6 +59,17 @@ export function skipArticleHeader(rowTexts) {
   return i;
 }
 
+// 分組掃描停下來的那一列（`--` 簽名線或第一則推文），沒遇到回 -1。與
+// groupImageCaptionBlocks 的 break 條件逐字相同：停點之後的列不影響分組結果 ⇒
+// 好讀累積長頁的增量標註據此判斷「圖文塊已定型」（screen_annotations.js 的前沿）。
+export function captionScanEnd(rowTexts) {
+  for (let i = skipArticleHeader(rowTexts); i < rowTexts.length; ++i) {
+    const text = rowTexts[i] || "";
+    if (/^-{2,}$/.test(text.trim()) || parseComment(text)) return i;
+  }
+  return -1;
+}
+
 // rowTexts: 每列的純文字（rowToText 還原後）。direction: "imageFirst"（預設，
 // 上圖下文）或 "captionFirst"（上文下圖）。
 // 回傳 [{ imageRow, captionStart, captionEnd }]（captionStart/End 皆含、

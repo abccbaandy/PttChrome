@@ -218,7 +218,8 @@ test.describe('增强 · 文章（离线重放）', () => {
 
       const readHighlighted = () =>
         page.evaluate(() =>
-          Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"].pusherHighlight')).map(
+          // 好讀長頁的列住在分塊 .screenChunk 裡（render/screen_chunk.js）。
+          Array.from(document.querySelectorAll('#mainContainer > .screenChunk > span[type="bbsrow"].pusherHighlight')).map(
             (el) => el.getAttribute('data-pusher')
           )
         );

@@ -54,6 +54,7 @@
   - floor 跨頁：好讀文章 `lines=完整 pageLines`，`computeAnnotations` 每次 `new FloorCounter()` 走完整篇
     → 樓號自然正確（無 view 端持久計數器）。
 - 測試讀列：`#mainContainer > span[type="bbsrow"]`(Row 外層) > `div` > `span[data-type="bbsline"]`(連結/徽章在此)。
+  好讀文章（累積長頁）多一層分塊：`#mainContainer > .screenChunk > span[type="bbsrow"]`（`docs/easy-reading.md`「長頁分塊」）。
   讀推文用 `[data-type="bbsline"]` 的 **textContent**（`visibility:hidden` 列 innerText 為空），推文正則需容忍
   徽章數字：`/^(推|噓|→)\d*\s+/`。好讀文章黑名單列不產生節點→DOM 無該列（childCount 下降）。
 

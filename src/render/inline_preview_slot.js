@@ -265,6 +265,13 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   };
   // 兩個 observer 各自回報一半的事實，合起來才是決策輸入。
   const facts = { mounted: !supported, near: false, far: false };
+  // 所在的長頁分塊（render/screen_chunk.js）回報的「塊已離開卸載邊界」。閉塊
+  // （content-visibility 跳過的塊）裡的元素 IntersectionObserver 幾乎不回報（四引擎實測）
+  // ⇒ 塊被跳過之後，slot 自己的 far 可能永遠停在「還在範圍內」。塊離開卸載邊界時
+  // slot 必然也在邊界外，所以補一條「塊遠了就卸」。掛載不靠塊：塊一進預載邊界就被
+  // ChunkLayer 掛上 .screenChunkNear 照常渲染，slot 自己的 near 在那裡是準的（逐張精準，
+  // 不會整塊一起掛）。
+  let chunkFar = false;
 
   let ghost = null;
   // 目前這個替身盒是用哪組原尺寸建的（recordSlotAspect 值沒變就回同一個物件，
@@ -547,7 +554,15 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     if (rebindIfOutsideRoot()) return;
     if (kind === "near") facts.near = isIntersecting;
     else facts.far = !isIntersecting;
-    const action = nextLazyState(facts);
+    decide();
+  }
+
+  function decide() {
+    const action = nextLazyState({
+      mounted: facts.mounted,
+      near: facts.near && !chunkFar,
+      far: facts.far || chunkFar,
+    });
     if (action === "mount") {
       facts.mounted = true;
       mount();
@@ -657,6 +672,14 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     // 換文章的重置由 ScreenController 清完 grayHrefs 後逐一呼叫（已掛在畫面上的
     // 節點還帶著 data-gray，只清 Set 會漏掉它們）。
     syncGray,
+    // 長頁分塊離開卸載邊界與否（見 chunkFar）。ChunkLayer 在節點放進塊時與塊的
+    // observer 每次回報時呼叫。環境沒有 IntersectionObserver 時 slot 早已立即掛載，
+    // 這裡不改變它。
+    setChunkFar(far) {
+      if (state.destroyed || !supported || chunkFar === !!far) return;
+      chunkFar = !!far;
+      decide();
+    },
     setSizeMode(mode) {
       if (state.sizeMode === mode || state.destroyed) return;
       state.sizeMode = mode;

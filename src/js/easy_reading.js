@@ -7,6 +7,7 @@ import { altRemapCharCode, isAltRemapEvent } from './term_keyboard';
 import { i18n } from './i18n';
 import { findShortcutLabel } from './platform';
 import { offsetTopWithin } from './scroll_anchor';
+import { renderChunksAround } from '../render/screen_chunk';
 import { isJumpParkedListScreen } from './list_session';
 import { createBottomStick } from './bottom_stick';
 
@@ -1232,6 +1233,8 @@ EasyReading.prototype._scrollToPageRow = function(row) {
   for (let r = row; r < limit; ++r) {
     const el = mc.querySelector('[type="bbsrow"][srow="' + r + '"]');
     if (el) {
+      // 目標列多半在離視窗很遠的閉塊裡（長頁分塊）：先讓它照常渲染再量。
+      renderChunksAround(el);
       disp.scrollTop = offsetTopWithin(el, disp);
       return true;
     }

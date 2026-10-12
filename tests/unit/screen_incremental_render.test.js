@@ -151,6 +151,17 @@ const enhance = () => ({
 
 const PAGE = 22;
 
+// 頂層節點（一列或一個合併塊）。累積長頁的列住在分塊 .screenChunk 裡
+// （render/screen_chunk.js），容器直系只有塊 —— 拿容器直系比身分只比到塊。
+const topNodes = (container) => {
+  const out = [];
+  for (const k of container.children) {
+    if (k.classList.contains("screenChunk")) out.push(...k.children);
+    else out.push(k);
+  }
+  return out;
+};
+
 const propsFor = (lines, extra) => ({
   lines,
   forceWidth: 16,
@@ -222,7 +233,7 @@ describe("好讀累積頁增量重算：與全量重算等價", () => {
   test("切換推文者高亮：不重算標註、不重建任何一列節點", () => {
     const full = makeArticle(PAGE * 8);
     const step = renderAll(full);
-    const before = Array.from(step.container.children);
+    const before = topNodes(step.container);
 
     counters.rowToText = 0;
     counters.rowRender = 0;
@@ -231,7 +242,7 @@ describe("好讀累積頁增量重算：與全量重算等價", () => {
     expect(counters.rowToText).toBe(0);
     expect(counters.rowRender).toBe(0);
     // 節點**身分**逐一相同（toEqual 對 DOM 節點是身分比對）。
-    expect(Array.from(step.container.children)).toEqual(before);
+    expect(topNodes(step.container)).toEqual(before);
 
     const on = step.container.querySelectorAll(".pusherHighlight");
     expect(on.length).toBeGreaterThan(0);
@@ -250,13 +261,13 @@ describe("好讀累積頁增量重算：與全量重算等價", () => {
   test("經 props 進來的 selectedPusher（新 controller／清空路徑）也要收斂", () => {
     const full = makeArticle(PAGE * 4);
     const step = renderAll(full);
-    const before = Array.from(step.container.children);
+    const before = topNodes(step.container);
     counters.rowRender = 0;
     step.update(propsFor(full, { selectedPusher: "alpha1" }));
     // props 這條路同樣不得抽換節點：selectedPusher 已不在 annotationsKey 裡，
     // 增量快取照樣命中，class 由 _render 收尾的對帳補上。
     expect(counters.rowRender).toBe(0);
-    expect(Array.from(step.container.children)).toEqual(before);
+    expect(topNodes(step.container)).toEqual(before);
     const fresh = renderAll(full, { selectedPusher: "alpha1" });
     expect(step.container.innerHTML).toBe(fresh.container.innerHTML);
     expect(step.container.querySelectorAll(".pusherHighlight").length).toBeGreaterThan(0);
@@ -323,7 +334,8 @@ describe("好讀累積頁增量重算：成本是 O(新增列) 不是 O(文章)"
     const nodeOf = (row) =>
       step.container
         .querySelector(`[data-type="bbsline"][data-row="${row}"]`)
-        .closest("#mainContainer > *");
+        // 頂層節點＝分塊（.screenChunk）的直系子層。取到塊本身的話這支測試會空轉變綠。
+        .closest(".screenChunk > *");
     // 前提：真的被接成一條連結（否則這支測試什麼都沒守到）
     expect(step.container.querySelectorAll('a[href$="A.404.html"]').length).toBe(2);
     const before = [nodeOf(3), nodeOf(4)];

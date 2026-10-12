@@ -77,7 +77,10 @@ describe("buildCommentCard（單一推文列）", () => {
 describe("ScreenController：只在 enhance.commentCards 時畫卡片", () => {
   test("卡片模式：合併塊一張、單則一張；黑名單列照舊移除", () => {
     const m = mountScreen(props(true));
-    const cards = m.container.querySelectorAll(":scope > .commentCard");
+    // 頂層節點（累積長頁的列住在分塊 .screenChunk 裡，見 render/screen_chunk.js）。
+    const cards = m.container.querySelectorAll(
+      ":scope > .screenChunk > .commentCard",
+    );
     expect(cards.length).toBe(2);
     expect(m.container.querySelectorAll(".mergedCommentBlock").length).toBe(0);
 

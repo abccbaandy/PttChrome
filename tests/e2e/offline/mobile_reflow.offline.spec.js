@@ -328,7 +328,8 @@ test.describe('手機推文卡片', () => {
     await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
     await waitPreviewsSettled(page);
     const cards = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('#mainContainer > span.commentCard')).map((c) => {
+      // 好讀長頁的列住在分塊 .screenChunk 裡（render/screen_chunk.js）。
+      Array.from(document.querySelectorAll('#mainContainer > .screenChunk > span.commentCard')).map((c) => {
         const card = c.getBoundingClientRect();
         const id = c.querySelector('.commentCardId').getBoundingClientRect();
         const time = c.querySelector('.commentCardTime');

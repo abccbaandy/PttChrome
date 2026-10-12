@@ -424,8 +424,23 @@ export function normalizeHtml(container) {
     Array.from(el.children).forEach(sortAttrs);
   };
   Array.from(clone.children).forEach(sortAttrs);
-  // 每個頂層列一行，golden 檔的 diff 才讀得懂。
-  return Array.from(clone.children)
-    .map((n) => n.outerHTML)
-    .join("\n");
+  // 每個頂層列一行，golden 檔的 diff 才讀得懂。累積長頁的列住在分塊
+  // （div.screenChunk，render/screen_chunk.js）裡：塊的開關標籤各佔一行、塊內每列一行，
+  // 塊的結構仍是契約的一部分（照樣逐字比），只是換行方式不同。
+  // 塊的 screenChunkNear／screenChunkOpen 是 runtime 狀態（IntersectionObserver／選取
+  // 非同步掛上的），不是渲染契約 ⇒ 剪掉，免得快照跟著 observer 的時機飄。
+  const lines = [];
+  for (const n of Array.from(clone.children)) {
+    if (!n.classList.contains("screenChunk")) {
+      lines.push(n.outerHTML);
+      continue;
+    }
+    n.classList.remove("screenChunkNear", "screenChunkOpen");
+    const open = n.cloneNode(false).outerHTML;
+    const close = "</div>";
+    lines.push(open.slice(0, open.length - close.length));
+    for (const k of Array.from(n.children)) lines.push("  " + k.outerHTML);
+    lines.push(close);
+  }
+  return lines.join("\n");
 }

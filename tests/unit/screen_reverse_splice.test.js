@@ -129,6 +129,35 @@ const propsFor = (lines, extra) => ({
 
 const PAGE = 22;
 
+// 累積長頁的列住在分塊（div.screenChunk，render/screen_chunk.js）裡。塊的切法與
+// 「怎麼讀到這裡」有關（逐頁插入時每頁一塊、一次 render 到位時每 CHUNK_ROWS 列一塊），
+// 所以等價比對以**攤平後的列**為準；塊本身的不變量另外鎖（見 chunkInvariants）。
+const isChunk = (n) => n.classList && n.classList.contains("screenChunk");
+const topNodes = (container) => {
+  const out = [];
+  for (const k of container.children) {
+    if (isChunk(k)) out.push(...k.children);
+    else out.push(k);
+  }
+  return out;
+};
+const flatHtml = (container) =>
+  topNodes(container)
+    .map((n) => n.outerHTML)
+    .join("");
+// 反向讀取期間：接合點那一列一定是某塊的第一個節點（之後每頁才插得進兩塊之間，
+// 不必搬家）；容器直系只有塊。
+// J 那一列可能不佔版面（黑名單整列移除），所以取「srow ≥ J 的第一個頂層節點」。
+function chunkInvariants(container, J) {
+  for (const k of container.children) expect(isChunk(k)).toBe(true);
+  if (J == null) return;
+  const srowOf = (n) =>
+    Number(n.getAttribute("srow") ?? n.querySelector("[srow]").getAttribute("srow"));
+  const top = topNodes(container).find((n) => srowOf(n) >= J);
+  expect(top).toBeTruthy();
+  expect(top.parentElement.firstElementChild).toBe(top);
+}
+
 // 反向讀取的累積形狀：head ＝ full[0, J)，tail 從 tailStart 起到文末；每一步把 tail
 // 往上長一頁。列物件參考全部來自 full（等同 term_view 的 cloneRow 快照只 clone 一次）。
 function reverseSteps(full, J, tailStart) {
@@ -150,7 +179,9 @@ describe("反向讀取：逐頁插入與一次到位等價", () => {
       step.update(propsFor(steps[i], { reverseJunction: J }));
       step.controller.syncRowIndex();
       const fresh = mountScreen(propsFor(steps[i], { reverseJunction: J }));
-      expect(step.container.innerHTML).toBe(fresh.container.innerHTML);
+      expect(flatHtml(step.container)).toBe(flatHtml(fresh.container));
+      chunkInvariants(step.container, J);
+      chunkInvariants(fresh.container, J);
       fresh.destroy();
     }
   });
@@ -164,6 +195,7 @@ describe("反向讀取：逐頁插入與一次到位等價", () => {
       step.update(propsFor(steps[i], { reverseJunction: J }));
     step.update(propsFor(full));
     const fresh = mountScreen(propsFor(full));
+    // 接合＝全量重建 ⇒ 按順序沿用舊塊、每 CHUNK_ROWS 列重切 ⇒ 連塊的切法都與從頭讀完相同。
     expect(step.container.innerHTML).toBe(fresh.container.innerHTML);
   });
 });
@@ -265,7 +297,7 @@ describe("反向讀取：成本與節點沿用", () => {
         n.getAttribute("srow") ?? n.querySelector("[srow]").getAttribute("srow"),
       );
     const tops = () =>
-      Array.from(s.container.children).filter(
+      topNodes(s.container).filter(
         (n) => n.getAttribute("srow") != null || n.querySelector("[srow]"),
       );
     const tailBefore = tops().filter((n) => firstSrow(n) >= J);
@@ -289,7 +321,7 @@ describe("反向讀取：成本與節點沿用", () => {
     });
     // 位移後與全新 render 逐字相同
     const fresh = mountScreen(propsFor(after2, { reverseJunction: J }));
-    expect(s.container.innerHTML).toBe(fresh.container.innerHTML);
+    expect(flatHtml(s.container)).toBe(flatHtml(fresh.container));
   });
 
   // REGRESSION（offline e2e 實錄：插入一頁 ⇒ #mainContainer 上近千筆 childList 變動）：
@@ -301,21 +333,27 @@ describe("反向讀取：成本與節點沿用", () => {
     const J = PAGE * 2;
     const before = full.slice(0, J).concat(full.slice(PAGE * 5));
     const s = mountScreen(propsFor(before, { reverseJunction: J }));
-    const oldTops = new Set(Array.from(s.container.children));
+    const oldTops = new Set(topNodes(s.container));
+    const oldChunks = new Set(Array.from(s.container.children));
     const removed = [];
     const mo = new MutationObserver((list) => {
       for (const m of list) m.removedNodes.forEach((n) => removed.push(n));
     });
-    mo.observe(s.container, { childList: true });
+    // subtree：列住在分塊裡，只看容器直系會什麼都觀察不到（測試空轉變綠）。
+    mo.observe(s.container, { childList: true, subtree: true });
     s.update(propsFor(full.slice(0, J).concat(full.slice(PAGE * 4)), { reverseJunction: J }));
     await Promise.resolve();
     mo.disconnect();
-    const now = new Set(Array.from(s.container.children));
-    // 被移除過的節點裡，不得有任何一個「更新後仍在畫面上」的（＝被搬家）
+    const now = new Set(topNodes(s.container).concat(Array.from(s.container.children)));
+    // 被移除過的節點裡，不得有任何一個「更新後仍在畫面上」的（＝被搬家），塊也一樣
     const moved = removed.filter((n) => now.has(n));
     expect(moved.length).toBe(0);
+    // 正向對照：真的有新節點插進來（否則上一條在「什麼都沒發生」時也是綠的）
+    expect(topNodes(s.container).length).toBeGreaterThan(oldTops.size);
     // 真正拿掉的只有換手的那幾個（接合點標記那一列等），不是整段 tail
     expect(removed.filter((n) => oldTops.has(n)).length).toBeLessThan(5);
+    expect(removed.filter((n) => oldChunks.has(n)).length).toBe(0);
+    chunkInvariants(s.container, J);
   });
 
   test("插入點早於接合點（不是反向形狀）⇒ 不沿用快取，全量重算且結果正確", () => {

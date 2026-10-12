@@ -20,6 +20,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline } = require('../helpers/replay');
+const { openLongArticle } = require('../helpers/pmore_long_article');
 
 const SIM_SRC = fs.readFileSync(path.join(__dirname, '..', 'helpers', 'pmore_sim.js'), 'utf8');
 const TOTAL = Number(process.env.PERF_TOTAL || 3000);
@@ -158,5 +159,71 @@ test.describe('好讀超長文反向讀取（離線）', () => {
     expect(r.jit.length).toBeGreaterThan(20);
     const moves = r.jit.filter((d) => d !== 0);
     expect(moves, JSON.stringify(moves.slice(0, 20))).toEqual([]);
+  });
+});
+
+// 前向累積（讀者一路往下讀）的每頁成本必須與文章長度無關（docs/easy-reading.md
+// 「長頁分塊」）。時間只印不斷言（機器快慢差太多）；斷言的是決定性的結構指標：
+//   - 標註／節點層：每一幀真的重算的尾段（n − stablePrefix）是常數級，不是整篇；
+//   - 分塊層：DOM 只有尾端的塊被動到（每頁 childList 變動的父節點數是常數級）。
+// 舊版（無前沿快路徑）每幀從第 0 列重走；無分塊時列直接掛在容器上。
+test.describe('好讀超長文前向累積（離線）', () => {
+  test.setTimeout(180000);
+
+  test('每一頁只重算尾段、只動尾端的塊（成本與文章長度無關）', async ({ page }) => {
+    const total = Number(process.env.PERF_TOTAL || 3000);
+    await openLongArticle(page, ptt, {
+      total,
+      read: 'forward',
+      prefs: { commentBlockSpacing: true, mergeSameAuthorComments: true },
+      onReady: () =>
+        page.evaluate(() => {
+          const ctrl = window.__app.view.componentScreen;
+          const proto = Object.getPrototypeOf(ctrl);
+          const orig = proto._render;
+          window.__frames = [];
+          let parents = new Set();
+          // 只算列層級的結構變動（容器、塊）；列內部（延遲開圖掛圖之類）不算。
+          new MutationObserver((list) => {
+            for (const m of list) {
+              const t = m.target;
+              if (t === ctrl.container || t.classList.contains('screenChunk')) parents.add(t);
+            }
+          }).observe(ctrl.container, { childList: true, subtree: true });
+          proto._render = function() {
+            const t0 = performance.now();
+            orig.call(this);
+            const t1 = performance.now();
+            void document.querySelector('.main').scrollHeight;
+            // 同步渲染的 DOM 變動要等 microtask 才送到 MutationObserver。
+            const frame = {
+              n: (this.props.lines || []).length,
+              stable: this._stableFrom || 0,
+              js: t1 - t0,
+              layout: performance.now() - t1,
+            };
+            window.__frames.push(frame);
+            queueMicrotask(() => {
+              frame.parents = parents.size;
+              parents = new Set();
+            });
+          };
+        }),
+    });
+    const frames = await page.evaluate(() => window.__frames);
+    const step = Math.ceil(total / 4);
+    for (let lo = 0; lo < total; lo += step) {
+      const xs = frames.filter((x) => x.n >= lo && x.n < lo + step);
+      const avg = (k) => (xs.length ? (xs.reduce((a, x) => a + x[k], 0) / xs.length).toFixed(1) : '-');
+      console.log(`forward n∈[${lo},${lo + step}) js=${avg('js')}ms layout=${avg('layout')}ms (${xs.length})`);
+    }
+    // 推文區開始之後（前言段沒有前沿，見 screen_annotations.js 的 captionSettled）
+    const late = frames.filter((f) => f.n >= total / 4);
+    expect(late.length).toBeGreaterThan(20);
+    const rows = await page.evaluate(() => window.__app.buf.rows);
+    const wide = late.filter((f) => f.n - f.stable > rows * 3);
+    expect(wide, `重算超過三頁的幀：${JSON.stringify(wide.slice(0, 5))}`).toEqual([]);
+    const busy = late.filter((f) => f.parents > 3);
+    expect(busy, `動到超過三個父節點的幀：${JSON.stringify(busy.slice(0, 5))}`).toEqual([]);
   });
 });
