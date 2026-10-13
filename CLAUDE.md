@@ -195,6 +195,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     上面兩條本機規則在雲端**不適用**；其餘 commit 前檢查（隱私 `git diff` 自查、`--stat` 行數相稱、補測試、README 新功能列表）照舊。
   - 雲端 CI：`deploy.yml` 只在 push `dev` 觸發，`claude/*` 分支要**開 PR 後**才會跑 `pr.yml`（同一份 `test.yml`）；
     `yarn ci:status --branch <工作分支>` 查它（需 `GH_TOKEN`；沒有就明講「CI 未驗」，不可當綠）。
+    **PR 綠 ≠ dev 綠**：merge 進 `dev` 後照下面「合進 dev 後」規則等 dev 的 run，不可 merge 完就結束 session。
   - 雲端是 Linux：本文中 Windows 專屬的坑（IPv6-only 綁定、`STATUS_DLL_INIT_FAILED`、Firefox `spawn UNKNOWN`／content sandbox、無 `jq`/`gh`）不一定適用；
     live e2e 帳密（`PTT_USER`/`PTT_PASS`）通常不在雲端 env，**不要在雲端跑 live e2e**（登入預算／BOT 封鎖風險，見「測試」節），改跑 unit＋offline e2e 並在交付時註明。
 - **換行一律 LF**，由 `.gitattributes`（`* text=auto eol=lf`）強制，不依賴各機器的
@@ -206,6 +207,17 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     `git config blame.ignoreRevsFile .git-blame-ignore-revs`）。
   - 通則：**commit 前看 `git show --stat`／`git diff --stat` 的行數是否與實際改動相稱**。
 - **push 後必查 CI**：每次 push 完都要確認 GitHub Actions（`Deploy to GitHub Pages` workflow，含 unit／integration／offline-e2e）有 pass，不能 push 完就收工。
+  - **合進 dev 後（任何環境：直推、merge PR、幫使用者 merge）必等 dev 的 run 跑完**：
+    `yarn ci:status --branch dev --sha <合進去的 commit>`。PR 的 CI 綠不算數（merge 後是不同 commit，且並行 merge 會互相疊加）。
+    紅了先判歸屬，**首紅負責、後續不重工**：
+    1. 查前一個 dev run（`git log --first-parent -2 --format=%h origin/dev` 的第二個，`yarn ci:status --sha <它> --no-wait`）。
+    2. 前一個綠 ⇒ **你是首紅，負責修到 dev 綠**：先用 GitHub API 開 issue「`[dev CI 紅] <job> / <失敗測試名>`」（附 run 連結）當認領紀錄，
+       再修（已知 flaky 才 `--rerun-failed`；否則照「每修一個 bug 先寫重現測試」修）→ 合進 dev → 再等 dev 綠 → 關 issue。
+       同一個失敗修 3 輪仍紅 ⇒ 停手，在 issue 寫清楚現況並回報使用者（issue 保持 open）。
+    3. 前一個也紅 ⇒ 比對**錯誤是否同一個**：失敗 job＋step＋**失敗測試名稱／錯誤訊息**都相同（只比 job／step 不夠：同一 shard 可紅在不同測試）。
+       相同 ⇒ 不是你造成的：到該 open issue 留言補上你的 run 連結即可結束 session；**查無 open issue**（首紅 session 沒認領就走了）⇒ 由你接手照 2. 處理。
+       不同 ⇒ 你帶進新的錯誤，你是這個錯誤的首紅，照 2. 處理。
+    理由：雲端 session 常在 PR 綠後就 merge 結束，dev 紅掉沒人知道（實例：dev run #332 起連三紅都是同一個 offline shard 失敗，無人處理）。
   - **一律用 `yarn ci:status`**（`scripts/ci-status.mjs`，需 env `GH_TOKEN`）：等該 commit 的所有 run 跑完 → 印每個 run 結果 → 失敗時自動挖出失敗 job/step 並印 log 尾巴。
     參數：`--branch <b>`／`--sha <sha>`／`--no-wait`（只看當下）／`--rerun-failed`（僅在它判定為已知 flaky 時才會送出重跑）。
     exit code：`0` 全綠、`1` 有失敗、`2` 工具或設定問題（**刻意分三種**，「查不到」不可被當成「沒問題」）。
