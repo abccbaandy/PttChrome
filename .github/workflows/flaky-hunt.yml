@@ -5,7 +5,8 @@ name: Flaky Hunt
 # 「機率性」換成「重複次數」，在使用者 push 前先抓到。測試框架層刻意不 retry
 # （tests/unit/no_test_retry.test.js），所以任何一輪紅＝真的 flaky。
 #
-# 紅了會開（或在既有的上面留言）一個 issue，標題固定「Nightly flaky hunt 失敗」。
+# 紅了會開（或在既有的上面留言）一個 issue，標題固定「Nightly flaky hunt 失敗」；新開的 issue
+# 會觸發 Claude routine 去修，所以手動 dispatch 的紅只續寫、不新開（見 report job）。
 # `yarn ci:status` 不把這個 workflow 算進「這次 push 的 CI」（scripts/ci-status.mjs#isProjectRun）。
 # 不含 live e2e（PTT 登入預算）與 android（模擬器開機成本高、已有 test.yml 每次跑）。
 on:
@@ -140,27 +141,26 @@ jobs:
   # 紅了要讓人看得到：排程 run 的失敗通知只寄給最後改 cron 的人，很容易漏。
   report:
     needs: [unit-repeat, integration-repeat, e2e-offline-repeat]
-    # 只有 dev 的紅才開 issue：在工作分支上手動 dispatch 是拿來驗修正或收證據的
+    # 只有 dev 的紅才寫 issue：在工作分支上手動 dispatch 是拿來驗修正或收證據的
     # （常帶暫時的除錯碼），那邊的紅看 run 本身就好，開 issue 只會誤報。
     if: failure() && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       issues: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/flaky-hunt-report.mjs
+          sparse-checkout-cone-mode: false
+      # 「新開 issue」會觸發 routine「fix Nightly flaky hunt 失敗」起 Claude session ⇒ 只有
+      # schedule 能開新的；workflow_dispatch（session 修完的驗證 run）只續寫既有 issue，
+      # 否則「修完驗證又紅 → 再開 issue → 再 fire」會連鎖。決策表守護在
+      # tests/unit/flaky_hunt_report.test.js。
       - name: Open or update the flaky issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RESULTS: "unit=${{ needs.unit-repeat.result }} integration=${{ needs.integration-repeat.result }} e2e-offline=${{ needs.e2e-offline-repeat.result }}"
-        run: |
-          title="Nightly flaky hunt 失敗"
-          body="$(printf '%s\n\n- run: %s\n- commit: %s\n- 結果: %s\n- 每個套件重複 %s 輪；測試框架不 retry，任一輪紅即為 flaky。' \
-            "$(date -u +%F) 的 nightly 重複測試抓到偶發紅。" "$RUN_URL" "$GITHUB_SHA" "$RESULTS" "$REPEAT")"
-          num="$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
-            --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
-          if [ -n "$num" ]; then
-            gh issue comment "$num" --body "$body"
-          else
-            gh issue create --title "$title" --body "$body"
-          fi
+        run: node scripts/flaky-hunt-report.mjs
