@@ -65,8 +65,9 @@ describe("workflow 靜態守護", () => {
   });
 
   test("dispatch 可只跑單一 suite＋grep，grep 經 env 傳（不內插進 shell）", () => {
-    expect(yaml).toMatch(/suite:\n(?:\s+.*\n)*?\s+options: \[all, unit, integration, e2e-offline\]/);
-    expect(yaml).toMatch(/\n\s+grep:\n/);
+    const inputs = yaml.slice(yaml.indexOf("\n      suite:\n"), yaml.indexOf("\npermissions:"));
+    expect(inputs).toContain("options: [all, unit, integration, e2e-offline]");
+    expect(inputs).toContain("\n      grep:\n");
     expect(yaml).not.toMatch(/run:[^\n]*\$\{\{\s*(github\.event\.)?inputs\.grep/);
     const j = jobs();
     expect(j["unit-repeat"]).toContain('"all","unit"');
