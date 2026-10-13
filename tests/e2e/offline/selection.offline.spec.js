@@ -254,6 +254,21 @@ test.describe('選取文字（offline）', () => {
       await stubClipboardAndPrefs(page, prefs);
       // 同作者連三則會併成一個節點 ⇒ 1500 行約 600 個頂層節點、6 塊。
       await openLongArticle(page, ptt, { total: 1500, prefs });
+      // openLongArticle 按了 End ⇒ 讀者黏在文末（bottom_stick.js），只有讀者自己的輸入會放手。
+      // 不放手就程式設 scrollTop=0：頂端的閉塊解鎖長高 → stick 的 ResizeObserver 要把它拉回
+      // 文末，Firefox 在同一輪 RO 派送裡重算 content-visibility ⇒ 偶發「本專案 RO 迴圈」
+      // （nightly flaky hunt #77）。真讀者捲走一定帶輸入，所以先用真滾輪放手。
+      // page.mouse.wheel 不等派發（tests/e2e/README.md「真輸入」）⇒ 等 stick 真的放手；
+      // 滾輪的捲動若晚於下面的 scrollTop=0 才落地，往上捲在頂端被夾住，不影響位置。
+      const vp = page.viewportSize();
+      await page.mouse.move(vp.width / 2, vp.height / 2);
+      await page.mouse.wheel(0, -100);
+      await expect
+        .poll(
+          () => page.evaluate(() => window.__app.easyReading._bottomStick.engaged),
+          { message: '前提：讀者的滾輪已讓文末黏附放手' }
+        )
+        .toBe(false);
       await page.evaluate(() => {
         document.querySelector('.main').scrollTop = 0;
       });
