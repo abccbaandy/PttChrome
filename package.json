@@ -16,7 +16,7 @@
     "@mantine/hooks": "^9",
     "@tabler/icons-react": "^3.49.0",
     "classnames": "^2.5.1",
-    "firebase": "^12.19.0",
+    "firebase": "^13.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
