@@ -1704,10 +1704,11 @@ TermView.prototype = {
   },
 
   // 好讀長頁第 row 列（pageLines 索引＝srow）的頂端（.main 內容座標，px）。黑名單列被
-  // 整列拿掉時往後找最近的一列（同 easy_reading._scrollToPageRow）。沒畫出來回 null。
+  // 整列拿掉時往後找最近的一列（同 easy_reading._scrollToPageRow）。沒畫出來回 null；
+  // 根本沒有 DOM 可量（假 view）回 undefined ＝呼叫端退回 lineIndex*chh。
   pageRowTop: function(row) {
     var disp = this.mainDisplay, mc = this.mainContainer;
-    if (!disp || !mc || typeof mc.querySelector !== 'function') return null;
+    if (!disp || !mc || typeof mc.querySelector !== 'function') return undefined;
     if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
     var n = (this.buf && this.buf.pageLines ? this.buf.pageLines.length : 0);
     var limit = Math.min(n, row + (this.buf ? this.buf.rows : 24));
@@ -1715,29 +1716,38 @@ TermView.prototype = {
       var el = mc.querySelector('[type="bbsrow"][srow="' + r + '"]');
       // 手機收起來的列（render/collapsed_row.js，display:none）沒有版面位置：
       // offsetTop 讀到 0 會把捲動還原拉回頂端 ⇒ 跳過，取下一個看得到的列。
-      if (el && el.offsetParent !== null) return offsetTopWithin(el, disp);
+      if (el && el.offsetParent !== null) {
+        // 目標列多半在離視窗很遠的閉塊裡（長頁分塊，screen_chunk.js 不變量 6）：閉塊以
+        // 估計高度排版，量完捲過去下一幀才真的渲染 ⇒ 內容位移。先讓它照常渲染再量。
+        renderChunksAround(el);
+        return offsetTopWithin(el, disp);
+      }
     }
     return null;
   },
 
-  // 閱讀位置（行索引，給 AID 回跳／deep link 記錄用；文章回來時會重讀，像素值對不上）。
-  // 格線版面每列等高 ⇒ scrollTop/chh；換行版面一列可能折成好幾行 ⇒ 量節點，取視窗
-  // 頂端那一列的 srow。
+  // 閱讀位置（行索引＝srow，給 AID 回跳／deep link／長推文記錄用；文章回來時會重讀，
+  // 像素值對不上）。**兩種版面都量節點**，取視窗頂端那一列的 srow：好讀長頁的列高並不
+  // 一致 —— 行內預覽佔位盒（連結卡／圖片）、推文間距、合併塊，手機換行版面一列還會折成
+  // 好幾行。舊版格線用 scrollTop/chh，把視窗上方所有預覽的高度都算成列數 ⇒ 返回落點
+  // 往下偏（ptt-debug-20261013-005651：上方一張圖＋數張連結卡，偏了 30 多列）。
+  // 量不到節點（假 view／還沒畫）時格線版面才退回算術。
   currentLineIndex: function() {
     var disp = this.mainDisplay;
     if (!disp || !this.chh) return null;
-    if (!this.reflow) return Math.round(disp.scrollTop / this.chh);
-    var mc = this.mainContainer;
-    if (!mc || typeof mc.querySelectorAll !== 'function') return null;
-    if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
     var st = disp.scrollTop;
-    // 長頁分塊：先以塊跳過視窗上方（逐列量會強迫每一個閉塊排版，見 screen_chunk.js）。
-    var rows = rowsFromScrollTop(mc, disp, st);
-    for (var i = 0; i < rows.length; ++i) {
-      if (offsetTopWithin(rows[i], disp) + rows[i].offsetHeight > st)
-        return Number(rows[i].getAttribute('srow')) || 0;
+    var mc = this.mainContainer;
+    if (mc && typeof mc.querySelectorAll === 'function') {
+      if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
+      // 長頁分塊：先以塊跳過視窗上方（逐列量會強迫每一個閉塊排版，見 screen_chunk.js）。
+      var rows = rowsFromScrollTop(mc, disp, st);
+      for (var i = 0; i < rows.length; ++i) {
+        if (offsetTopWithin(rows[i], disp) + rows[i].offsetHeight > st)
+          return Number(rows[i].getAttribute('srow')) || 0;
+      }
     }
-    return null;
+    if (this.reflow) return null;
+    return Math.round(st / this.chh);
   },
 
   // 提示帶的水平幾何。**必須與 App.clientToPos 同源**（兩者都走

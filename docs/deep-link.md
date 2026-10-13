@@ -346,6 +346,17 @@ lastRow=""                                    ← # prompt 清掉 footer，故 t
 `tests/unit/nav_history.test.js`「列表序號絕不成為錨點」、
 `tests/unit/list_keys.test.js`「外部序列命令在線上時的文章幀」。
 
+### 9. 閱讀位置一律以 srow 節點計（返回落點偏移，2026-10 實錄）
+
+返回錨點的閱讀位置是**列索引（srow）**，採樣 `term_view.currentLineIndex`、還原
+`easy_reading._advanceScrollRestore` → `term_view.pageRowTop`，**兩種版面都量節點**。
+好讀長頁的列高不一致（行內預覽佔位盒、推文間距、合併塊），舊版格線用 `scrollTop/chh`
+採樣、`lineIndex*chh` 還原：上方每張連結卡／圖片都被算成好幾列，返回後的預覽又還沒
+載入 ⇒ 兩邊誤差不抵銷（ptt-debug-20261013-005651：偏 30 多列）。`pageRowTop` 量之前
+先 `renderChunksAround`（目標列多在閉塊裡，見 `screen_chunk.js` 不變量 6）。
+量不到節點（假 view）才退回算術。長推文（`long_push_session`）共用同一個
+`currentLineIndex`。守護 `tests/unit/reading_position_preview.test.js`。
+
 ## 每一步的等待預算
 
 軟逾時**不是失敗**：它送零副作用的 `\f` 探針逼出一張完整畫面讓 `expect` 重判

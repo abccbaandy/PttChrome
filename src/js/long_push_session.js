@@ -443,13 +443,11 @@ LongPushSession.prototype = {
   },
 
   // 與 deep_link_controller._currentLineIndex / aid_navigation._currentLineIndex
-  // 同一套算法（見上面的 ORDER INVARIANT）。
+  // 同一套算法（見上面的 ORDER INVARIANT）：換算在 term_view.currentLineIndex（量 srow
+  // 節點；scrollTop/chh 會把行內預覽的高度算成列數）。
   _currentLineIndex: function() {
     const view = this._view;
-    const disp = view && view.mainDisplay;
-    const chh = view && view.chh;
-    if (!disp || !chh) return null;
-    return Math.round(disp.scrollTop / chh);
+    return view && view.currentLineIndex ? view.currentLineIndex() : null;
   },
 
   // 文章畫面最前面幾列（好讀模式下是累積頁的前幾列，原生模式就是眼前這幾列）。
