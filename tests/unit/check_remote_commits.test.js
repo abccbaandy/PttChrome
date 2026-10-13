@@ -75,6 +75,28 @@ describe('check-remote-commits', () => {
     expect(fs.existsSync(path.join(local, 'b.txt'))).toBe(false);
   });
 
+  // 實錄：桌面 app 開 session 時自己也在背景 fetch，同一秒撞上 hook 的 fetch（ref lock）
+  // ⇒ hook fetch 失敗。舊版這時直接靜默，但 upstream ref 早被 app 更新好、明明落後 9 個
+  // commit 卻一聲不吭。fetch 失敗要退回用本地現有的 upstream ref 判斷。
+  test('fetch 失敗但本地 upstream ref 已落後 ⇒ 仍提醒（註明可能不是最新）', () => {
+    commit(author, 'b.txt', 'two');
+    git(author, 'push', '-q');
+    git(local, 'fetch', '-q'); // 別人（app）已經 fetch 過
+    git(local, 'remote', 'set-url', 'origin', path.join(tmp, 'missing.git')); // hook 的 fetch 會失敗
+    const r = checkRemote(local);
+    expect(r).toMatchObject({ upstream: 'origin/dev', behind: 1, fetchFailed: true });
+    const out = JSON.parse(runHook(local));
+    const ctx = out.hookSpecificOutput.additionalContext;
+    expect(ctx).toContain('origin/dev 比本地 HEAD 多 1 個 commit');
+    expect(ctx).toContain('fetch 失敗');
+  });
+
+  test('fetch 失敗且本地 upstream ref 沒落後 ⇒ 靜默', () => {
+    git(local, 'remote', 'set-url', 'origin', path.join(tmp, 'missing.git'));
+    expect(checkRemote(local)).toBeNull();
+    expect(runHook(local)).toBe('');
+  });
+
   test('沒 upstream 的分支 ⇒ 靜默', () => {
     commit(author, 'b.txt', 'two');
     git(author, 'push', '-q');

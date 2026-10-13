@@ -53,16 +53,20 @@ export function playwrightVersionFromLock(lock) {
   return m ? m[1] : null;
 }
 
-// 回傳 null ＝不提醒；否則 { upstream, behind, ahead, dirty, commits, lockChanged, playwright }
+// 回傳 null ＝不提醒；否則 { upstream, behind, ahead, dirty, commits, lockChanged, playwright, fetchFailed }
 export function checkRemote(root) {
   const upstream = tryGit(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
   if (!upstream) return null; // 沒 upstream／detached
   const remote = upstream.split('/')[0];
   const branch = upstream.slice(remote.length + 1);
+  // fetch 失敗（離線、或桌面 app／其他 session 同時在 fetch 搶 ref lock）不可以就此靜默：
+  // 實錄是 app 開 session 時自己背景 fetch，同一秒撞上這裡 ⇒ upstream ref 其實已被 app
+  // 更新好、落後 9 個 commit 卻沒提醒。退回用本地現有的 upstream ref 判斷。
+  let fetchFailed = false;
   try {
     git(root, ['fetch', '--quiet', '--no-tags', remote, branch], FETCH_TIMEOUT_MS);
   } catch {
-    return null; // 離線／其他 session 正在 fetch（lock）⇒ 不打擾
+    fetchFailed = true;
   }
   const [ahead, behind] = git(root, ['rev-list', '--left-right', '--count', `HEAD...${upstream}`])
     .split(/\s+/)
@@ -79,7 +83,7 @@ export function checkRemote(root) {
     const to = playwrightVersionFromLock(tryGit(root, ['show', `${upstream}:yarn.lock`]));
     if (from !== to) playwright = { from, to };
   }
-  return { upstream, behind, ahead, dirty, commits, lockChanged, playwright };
+  return { upstream, behind, ahead, dirty, commits, lockChanged, playwright, fetchFailed };
 }
 
 function mtime(file) {
@@ -128,6 +132,7 @@ export function buildNotice(remote, local = { yarnInstall: false, missingBrowser
     lines.push(`[remote 有新 commit] ${remote.upstream} 比本地 HEAD 多 ${remote.behind} 個 commit：`);
     for (const c of remote.commits) lines.push(`  ${c}`);
     if (remote.behind > remote.commits.length) lines.push(`  …（另 ${remote.behind - remote.commits.length} 個）`);
+    if (remote.fetchFailed) lines.push('（這次 fetch 失敗，以上依本地現有的 upstream ref 判斷，remote 可能還有更新的 commit。）');
     if (remote.ahead > 0) {
       lines.push(`本地另有 ${remote.ahead} 個未 push 的 commit（已分岔）⇒ 用 \`git pull --rebase\`，有衝突先回報使用者。`);
     } else {
