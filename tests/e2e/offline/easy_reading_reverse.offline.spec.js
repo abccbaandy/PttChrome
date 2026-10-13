@@ -16,7 +16,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline } = require('../helpers/replay');
-const { installPaintedFrameProbe, waitPreviewsSettled } = require('../helpers/layout');
+const { installPaintedFrameProbe, waitPreviewsSettled, waitRectStable } = require('../helpers/layout');
 
 const SIM_SRC = fs.readFileSync(path.join(__dirname, '..', 'helpers', 'pmore_sim.js'), 'utf8');
 const TOTAL = 1200;
@@ -246,27 +246,30 @@ test.describe('好讀反向讀取（End，離線）', () => {
     );
     // 讀者捲回 head 的第 10 列。按過 End 的讀者黏在文末（bottom_stick.js），只有讀者
     // 自己的輸入會放手，純程式設 scrollTop 不算 ⇒ 先用真滾輪放手。
-    // 原生滾動是非同步的：滾輪的捲動會在 page.mouse.wheel 回來**之後**才落地（實測：
-    // 不等的話它蓋在下面設好的位置上，剛好偏 100px），所以先等這次捲動的 scrollend。
+    // 原生滾動是非同步的：滾輪的捲動會在 page.mouse.wheel 回來**之後**才落地，蓋在下面
+    // 設好的位置上（剛好偏 100px）。**不能靠等 scrollend**：黏住期間每插一頁，
+    // bottom_stick 的 ResizeObserver 都會用程式捲回底部，那些捲動也發 scrollend ⇒ 旗標
+    // 可能被它提早翻成 true（CI 實錄偏 100px）。改成：等放手（狀態，不是事件）→ 設位置
+    // → 等第 10 列連續取樣不動且確實貼齊視窗頂端，被晚到的滾輪蓋掉就重設再等。
     // 下面的 stillReverse 前提確保量 before 時接合還沒發生（否則這條沉默地永真）。
-    await page.evaluate(() => {
-      window.__wheelScrollEnd = false;
-      document.querySelector('.main').addEventListener(
-        'scrollend', () => { window.__wheelScrollEnd = true; }, { once: true });
-    });
     const vp = page.viewportSize();
     await page.mouse.move(vp.width / 2, vp.height / 2);
     await page.mouse.wheel(0, -100);
-    await expect.poll(() => page.evaluate(() => window.__wheelScrollEnd)).toBe(true);
-    const before = await page.evaluate(() => {
-      const m = document.querySelector('.main');
-      const el = document.querySelector('#mainContainer [type="bbsrow"][srow="10"]');
-      m.scrollTop = el.offsetTop - document.querySelector('#mainContainer').offsetTop;
-      return {
-        top: el.getBoundingClientRect().top,
-        stillReverse: !!window.__app.easyReading._reverse,
-      };
-    });
+    await page.waitForFunction(() => !window.__app.easyReading._bottomStick.engaged);
+    const ROW10 = '#mainContainer [type="bbsrow"][srow="10"]';
+    let before = null;
+    for (let i = 0; i < 10 && !before; ++i) {
+      const setTop = await page.evaluate((sel) => {
+        const m = document.querySelector('.main');
+        const el = document.querySelector(sel);
+        m.scrollTop = el.offsetTop - document.querySelector('#mainContainer').offsetTop;
+        return el.getBoundingClientRect().top;
+      }, ROW10);
+      const rect = await waitRectStable(page, ROW10);
+      const stillReverse = await page.evaluate(() => !!window.__app.easyReading._reverse);
+      if (Math.abs(rect.top - setTop) <= 1) before = { top: rect.top, stillReverse };
+    }
+    expect(before, '第 10 列設不到視窗頂端（一直被別的捲動蓋掉）').not.toBe(null);
     expect(before.stillReverse, '前提：設定閱讀位置時反向讀取還在進行').toBe(true);
     await page.waitForFunction(
       () => !window.__app.easyReading._reverse && window.__app.easyReading.easyReadingReachedPageEnd,
