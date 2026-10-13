@@ -241,4 +241,9 @@ describe("listReservePx", () => {
     expect(listReservePx({ edgeUp: false, bodyRows: 20, rowH: 10 })).toBe(LIST_RESERVE_PAGES * 200);
     expect(listReservePx({ edgeUp: true, bodyRows: 20, rowH: 10 })).toBe(0);
   });
+  test("上方剩餘列數已知 ⇒ 保留區不超過它（補到頂正好吸收完）", () => {
+    expect(listReservePx({ edgeUp: false, bodyRows: 20, rowH: 10, rowsAbove: 48 })).toBe(480);
+    expect(listReservePx({ edgeUp: false, bodyRows: 20, rowH: 10, rowsAbove: 500 })).toBe(LIST_RESERVE_PAGES * 200);
+    expect(listReservePx({ edgeUp: false, bodyRows: 20, rowH: 10, rowsAbove: null })).toBe(LIST_RESERVE_PAGES * 200);
+  });
 });
