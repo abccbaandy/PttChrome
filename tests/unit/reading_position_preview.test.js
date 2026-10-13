@@ -95,6 +95,68 @@ describe("格線版面、視窗上方有行內預覽", () => {
   });
 });
 
+// ptt-debug-20261013-213914：掛圖的那一列（文字＋圖）是一個 bbsrow 節點。停在圖中間
+// 離開，只記 srow 的話還原會貼齊列頂 ⇒ 往上偏「離開時已捲進圖裡的那段」（實錄 220px）。
+describe("視窗頂端落在掛圖那一列的中間", () => {
+  function restoreTo(view, lineIndex) {
+    const er = Object.create(EasyReading.prototype);
+    er._view = view;
+    er.easyReadingReachedPageEnd = false;
+    er.requestScrollRestore(lineIndex);
+    er._advanceScrollRestore();
+    return er;
+  }
+
+  test("來回一趟：回到圖裡的同一處，不是貼齊列頂", () => {
+    const { view, disp, rowTop } = mount();
+    try {
+      const at = rowTop(PREVIEW_ROW) + CHH + 220;
+      disp.scrollTop = at;
+      const lineIndex = view.currentLineIndex();
+      expect(Math.floor(lineIndex)).toBe(PREVIEW_ROW);
+      disp.scrollTop = 0;
+      const er = restoreTo(view, lineIndex);
+      expect(er._pendingScrollRestore).toBe(null);
+      expect(Math.abs(disp.scrollTop - at)).toBeLessThanOrEqual(1);
+    } finally {
+      disp.remove();
+    }
+  });
+
+  test("最頂端（第 0 列）停在圖中間也算有位置，不被當成「在頂端」略過", () => {
+    const { view, disp, mc } = mount();
+    try {
+      mc.querySelector('[srow="0"]').firstChild.style.height = `${CHH + 400}px`;
+      disp.scrollTop = 200;
+      const lineIndex = view.currentLineIndex();
+      expect(lineIndex).toBeGreaterThan(0);
+      expect(lineIndex).toBeLessThan(1);
+      disp.scrollTop = 0;
+      restoreTo(view, lineIndex);
+      expect(Math.abs(disp.scrollTop - 200)).toBeLessThanOrEqual(1);
+    } finally {
+      disp.remove();
+    }
+  });
+
+  test("還原時那張圖以不同高度佔位：落在圖的同一個比例處", () => {
+    const { view, disp, mc, rowTop } = mount();
+    try {
+      const row = mc.querySelector(`[srow="${PREVIEW_ROW}"]`);
+      const h0 = row.offsetHeight;
+      disp.scrollTop = rowTop(PREVIEW_ROW) + h0 / 2;
+      const lineIndex = view.currentLineIndex();
+      disp.scrollTop = 0;
+      row.lastChild.style.height = `${PREVIEW_H * 2}px`;
+      restoreTo(view, lineIndex);
+      const h1 = row.offsetHeight;
+      expect(Math.abs(disp.scrollTop - (rowTop(PREVIEW_ROW) + h1 / 2))).toBeLessThanOrEqual(1);
+    } finally {
+      disp.remove();
+    }
+  });
+});
+
 test("長頁分塊：量目標列之前先讓它所在的塊照常渲染（不以估計高度量）", () => {
   const { view, disp, mc } = mount({ chunked: true });
   try {
