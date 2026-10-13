@@ -10,6 +10,7 @@
 // mounted (read-only) into the image's home dir, so the emulator's debug logs
 // write inside the container (no repo pollution, no mount-permission issues).
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import worktree from "./worktree.js";
 
 const IMAGE = "andreysenov/firebase-tools:15.22.3-node-22"; // bundles OpenJDK
@@ -123,9 +124,12 @@ async function main() {
     process.exit(1);
   }
 
-  const vitest = spawnSync("npx vitest run --project integration", {
+  // Extra CLI args go straight to vitest (Flaky Hunt passes `-t <name>`). Run its
+  // bin through node with an argv array — no shell — so a pattern with spaces or
+  // quotes survives on every platform.
+  const vitestBin = fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import.meta.url));
+  const vitest = spawnSync(process.execPath, [vitestBin, "run", "--project", "integration", ...process.argv.slice(2)], {
     stdio: "inherit",
-    shell: true, // npx -> npx.cmd resolution on Windows
     env: {
       ...process.env,
       GCLOUD_PROJECT: PROJECT,

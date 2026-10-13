@@ -6,33 +6,76 @@ name: Flaky Hunt
 # （tests/unit/no_test_retry.test.js），所以任何一輪紅＝真的 flaky。
 #
 # 紅了會開（或在既有的上面留言）一個 issue，標題固定「Nightly flaky hunt 失敗」；新開的 issue
-# 會觸發 Claude routine 去修，所以手動 dispatch 的紅只續寫、不新開（見 report job）。
+# 會觸發 Claude routine 去修，所以手動 dispatch 的紅與過時紅只續寫、不新開（見 report job）。
+# issue 開超過 3 天還沒關 ⇒ watchdog job @ repo owner 一次。
 # `yarn ci:status` 不把這個 workflow 算進「這次 push 的 CI」（scripts/ci-status.mjs#isProjectRun）。
 # 不含 live e2e（PTT 登入預算）與 android（模擬器開機成本高、已有 test.yml 每次跑）。
+# 下面幾處「看起來多餘」的設定由 tests/unit/flaky_hunt_workflow.test.js 鎖住，別順手改回。
 on:
+  # GitHub 的 schedule 高負載時會延遲（實測天天晚 ~3h、最多 +5h）也可能直接丟，不保證；整點是全站
+  # 尖峰。所以掛三個非整點 cron 當備援，由 gate job 去重：每天（UTC 21:00 起算）只有第一個真的跑。
   schedule:
-    - cron: "0 21 * * *" # 台灣時間 05:00
+    - cron: "17 21 * * *" # 台灣時間 05:17
+    - cron: "17 3 * * *" # 台灣時間 11:17
+    - cron: "17 9 * * *" # 台灣時間 17:17
   workflow_dispatch:
     inputs:
       repeat:
         description: "每個套件重複幾輪"
         default: "10"
+      # 驗證修正時只跑出事的那條：全套 10 輪對單輪 9% 的 flaky 只有 61% 抓得到，
+      # 只跑一條就能把 repeat 拉到 50 以上。
+      suite:
+        description: "只跑哪個套件"
+        type: choice
+        default: all
+        options: [all, unit, integration, e2e-offline]
+      grep:
+        description: "只跑名稱符合的 test（傳給 vitest -t／playwright --grep；空白＝全部）"
+        default: ""
 
 permissions:
   contents: read
 
+# 按 ref 分組：不分組時，session 在 PR branch dispatch 驗證會取消 dev 正在跑的 nightly
+# （cancelled 不算 failure()，不開 issue，那天白跑也沒人知道），反之亦然。
+# 不 cancel-in-progress：多個 cron 同時在 dev 上時，後到的排隊等前一輪結束再由 gate 跳過；
+# cancel 的話後到的會砍掉先跑的，兩輪都跑不完。
 concurrency:
-  group: flaky-hunt
-  cancel-in-progress: true
+  group: flaky-hunt-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   # 預設 10 輪：以最近部署紅率估（22 次裡 2 次是 flaky，單輪約 9%），每晚抓到的機率
   # 3 輪 25%、10 輪 61%；單輪 2% 的低頻 flaky 10 輪也有 18%。
   REPEAT: ${{ github.event.inputs.repeat || '10' }}
+  GREP: ${{ github.event.inputs.grep }}
 
 jobs:
+  # 今天（UTC 21:00 起）dev 上已經有算數的 run ⇒ skip=true，其餘 job 全部跳過。
+  # workflow_dispatch 永不跳過。規則與理由見 scripts/flaky-hunt-gate.mjs。
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      skip: ${{ steps.g.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/flaky-hunt-gate.mjs
+          sparse-checkout-cone-mode: false
+      - id: g
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/flaky-hunt-gate.mjs
+
   # 同 test.yml：e2e／unit 的 container image 版本＝yarn.lock 裡的 @playwright/test。
   playwright-version:
+    needs: gate
+    if: needs.gate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
@@ -48,7 +91,8 @@ jobs:
 
   # 每輪都跑完再判（不在第一個紅停下）：要看到「N 輪紅幾輪」，log 裡逐輪標示。
   unit-repeat:
-    needs: playwright-version
+    needs: [gate, playwright-version]
+    if: needs.gate.outputs.skip != 'true' && contains(fromJSON('["all","unit"]'), inputs.suite || 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
@@ -66,17 +110,22 @@ jobs:
           cache: yarn
       - run: yarn install --immutable
       - name: Unit tests × ${{ env.REPEAT }}
+        shell: bash
         run: |
+          args=()
+          if [ -n "$GREP" ]; then args=(-t "$GREP"); fi
           fails=0
           for i in $(seq "$REPEAT"); do
             echo "::group::unit round $i/$REPEAT"
-            if yarn test:unit; then echo "round $i: pass"; else echo "::error::unit round $i/$REPEAT failed"; fails=$((fails+1)); fi
+            if yarn test:unit "${args[@]}"; then echo "round $i: pass"; else echo "::error::unit round $i/$REPEAT failed"; fails=$((fails+1)); fi
             echo "::endgroup::"
           done
           echo "unit: $fails/$REPEAT rounds failed"
           test "$fails" = 0
 
   integration-repeat:
+    needs: gate
+    if: needs.gate.outputs.skip != 'true' && contains(fromJSON('["all","integration"]'), inputs.suite || 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -92,13 +141,16 @@ jobs:
       - run: yarn install --immutable
       # 每輪 run-integration.mjs 都重開容器 ⇒ 每輪都是冷啟動（舊 flaky 的觸發條件）。
       - name: Integration tests × ${{ env.REPEAT }}
+        shell: bash
         env:
           INTEGRATION_TIMEOUT_MS: "30000"
         run: |
+          args=()
+          if [ -n "$GREP" ]; then args=(-t "$GREP"); fi
           fails=0
           for i in $(seq "$REPEAT"); do
             echo "::group::integration round $i/$REPEAT"
-            if yarn test:integration; then echo "round $i: pass"; else echo "::error::integration round $i/$REPEAT failed"; fails=$((fails+1)); fi
+            if yarn test:integration "${args[@]}"; then echo "round $i: pass"; else echo "::error::integration round $i/$REPEAT failed"; fails=$((fails+1)); fi
             echo "::endgroup::"
           done
           echo "integration: $fails/$REPEAT rounds failed"
@@ -106,7 +158,8 @@ jobs:
 
   # --repeat-each：每條 test 跑 N 次，fullyParallel 下會被拆到不同 worker／shard。
   e2e-offline-repeat:
-    needs: playwright-version
+    needs: [gate, playwright-version]
+    if: needs.gate.outputs.skip != 'true' && contains(fromJSON('["all","e2e-offline"]'), inputs.suite || 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -126,10 +179,14 @@ jobs:
         with:
           node-version: 24
           cache: yarn
+      # 帶 grep 時多數 shard 分不到 test：--pass-with-no-tests 讓空 shard 綠（grep 打錯會整批空綠，看 log 的 test 數）。
       - name: Offline E2E × ${{ env.REPEAT }} (shard ${{ matrix.shard }}/8)
+        shell: bash
         run: |
+          args=()
+          if [ -n "$GREP" ]; then args=(--grep "$GREP" --pass-with-no-tests); fi
           yarn install --immutable
-          yarn test:e2e:offline --repeat-each="$REPEAT" --shard=${{ matrix.shard }}/8
+          yarn test:e2e:offline --repeat-each="$REPEAT" --shard=${{ matrix.shard }}/8 "${args[@]}"
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
@@ -139,6 +196,7 @@ jobs:
           retention-days: 14
 
   # 紅了要讓人看得到：排程 run 的失敗通知只寄給最後改 cron 的人，很容易漏。
+  # gate 跳過時上面全是 skipped（≠ failure），這裡不會被觸發。
   report:
     needs: [unit-repeat, integration-repeat, e2e-offline-repeat]
     # 只有 dev 的紅才寫 issue：在工作分支上手動 dispatch 是拿來驗修正或收證據的
@@ -154,9 +212,8 @@ jobs:
           sparse-checkout: scripts/flaky-hunt-report.mjs
           sparse-checkout-cone-mode: false
       # 「新開 issue」會觸發 routine「fix Nightly flaky hunt 失敗」起 Claude session ⇒ 只有
-      # schedule 能開新的；workflow_dispatch（session 修完的驗證 run）只續寫既有 issue，
-      # 否則「修完驗證又紅 → 再開 issue → 再 fire」會連鎖。決策表守護在
-      # tests/unit/flaky_hunt_report.test.js。
+      # schedule、且跑的 commit 仍是 dev HEAD 時能開新的；workflow_dispatch（session 修完的驗證 run）
+      # 與過時紅只續寫既有 issue，否則會連鎖或重修。決策表守護在 tests/unit/flaky_hunt_report.test.js。
       - name: Open or update the flaky issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -164,3 +221,27 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RESULTS: "unit=${{ needs.unit-repeat.result }} integration=${{ needs.integration-repeat.result }} e2e-offline=${{ needs.e2e-offline-repeat.result }}"
         run: node scripts/flaky-hunt-report.mjs
+
+  # issue 開太久（session 中途死掉）就通知人。每次 run 都跑、不管紅綠：nightly 可能連續幾天綠，
+  # report 不會跑。規則見 scripts/flaky-hunt-watchdog.mjs。
+  watchdog:
+    needs: [gate, report]
+    if: always() && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/flaky-hunt-report.mjs
+            scripts/flaky-hunt-watchdog.mjs
+          sparse-checkout-cone-mode: false
+      - name: Flag stalled flaky issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/flaky-hunt-watchdog.mjs
