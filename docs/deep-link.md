@@ -355,7 +355,14 @@ lastRow=""                                    ← # prompt 清掉 footer，故 t
 載入 ⇒ 兩邊誤差不抵銷（ptt-debug-20261013-005651：偏 30 多列）。`pageRowTop` 量之前
 先 `renderChunksAround`（目標列多在閉塊裡，見 `screen_chunk.js` 不變量 6）。
 量不到節點（假 view）才退回算術。長推文（`long_push_session`）共用同一個
-`currentLineIndex`。守護 `tests/unit/reading_position_preview.test.js`。
+`currentLineIndex`。
+
+**位置帶小數＝視窗頂端落在該列內的比例**（`339.38`＝第 339 列往下 38%）。掛圖的列連圖
+是同一個 `bbsrow` 節點（文字 1 列＋圖 550px），只記整數 srow 會讓停在圖中間離開的人被
+拉回圖的上緣（ptt-debug-20261013-213914：偏 220px）。`pageRowTop` 以該列**還原當下**的
+高度換算比例（圖以不同高度佔位時仍落在圖的同一處）；黑名單拿掉該列而改取下一列時比例作廢。
+傳遞鏈（`nav_history`／`aid_navigation`／`long_push_session`）只把它當數字傳，0 仍是「在頂端」。
+守護 `tests/unit/reading_position_preview.test.js`。
 
 ## 每一步的等待預算
 

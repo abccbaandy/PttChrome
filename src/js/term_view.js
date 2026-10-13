@@ -1703,16 +1703,19 @@ TermView.prototype = {
     else this.setMobileSurface('grid');
   },
 
-  // 好讀長頁第 row 列（pageLines 索引＝srow）的頂端（.main 內容座標，px）。黑名單列被
-  // 整列拿掉時往後找最近的一列（同 easy_reading._scrollToPageRow）。沒畫出來回 null；
-  // 根本沒有 DOM 可量（假 view）回 undefined ＝呼叫端退回 lineIndex*chh。
+  // 好讀長頁第 row 列（pageLines 索引＝srow）的頂端（.main 內容座標，px）。row 可帶
+  // 小數＝列內比例（見 currentLineIndex），換算成該列**當下**高度的那個比例。黑名單列被
+  // 整列拿掉時往後找最近的一列（同 easy_reading._scrollToPageRow），那時比例作廢、取
+  // 該列頂端。沒畫出來回 null；根本沒有 DOM 可量（假 view）回 undefined ＝呼叫端退回
+  // lineIndex*chh。
   pageRowTop: function(row) {
     var disp = this.mainDisplay, mc = this.mainContainer;
     if (!disp || !mc || typeof mc.querySelector !== 'function') return undefined;
     if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
+    var base = Math.floor(row), frac = row - base;
     var n = (this.buf && this.buf.pageLines ? this.buf.pageLines.length : 0);
-    var limit = Math.min(n, row + (this.buf ? this.buf.rows : 24));
-    for (var r = row; r < limit; ++r) {
+    var limit = Math.min(n, base + (this.buf ? this.buf.rows : 24));
+    for (var r = base; r < limit; ++r) {
       var el = mc.querySelector('[type="bbsrow"][srow="' + r + '"]');
       // 手機收起來的列（render/collapsed_row.js，display:none）沒有版面位置：
       // offsetTop 讀到 0 會把捲動還原拉回頂端 ⇒ 跳過，取下一個看得到的列。
@@ -1720,7 +1723,8 @@ TermView.prototype = {
         // 目標列多半在離視窗很遠的閉塊裡（長頁分塊，screen_chunk.js 不變量 6）：閉塊以
         // 估計高度排版，量完捲過去下一幀才真的渲染 ⇒ 內容位移。先讓它照常渲染再量。
         renderChunksAround(el);
-        return offsetTopWithin(el, disp);
+        var top = offsetTopWithin(el, disp);
+        return r === base && frac > 0 ? top + Math.round(frac * el.offsetHeight) : top;
       }
     }
     return null;
@@ -1731,6 +1735,11 @@ TermView.prototype = {
   // 一致 —— 行內預覽佔位盒（連結卡／圖片）、推文間距、合併塊，手機換行版面一列還會折成
   // 好幾行。舊版格線用 scrollTop/chh，把視窗上方所有預覽的高度都算成列數 ⇒ 返回落點
   // 往下偏（ptt-debug-20261013-005651：上方一張圖＋數張連結卡，偏了 30 多列）。
+  // **帶小數＝視窗頂端落在該列內的比例**：掛圖的那一列連圖一起是一個節點（文字 1 列＋
+  // 圖 550px），只記 srow 會在還原時貼齊列頂 ⇒ 停在圖中間離開的人被拉回圖的上緣
+  // （ptt-debug-20261013-213914：偏 220px）。用比例而非 px：還原時那張圖若是以不同
+  // 高度佔位，比例仍落在圖的同一處。整條傳遞鏈（nav_history／aid_navigation／
+  // long_push_session）只把它當數字傳，0 仍是「在頂端」。
   // 量不到節點（假 view／還沒畫）時格線版面才退回算術。
   currentLineIndex: function() {
     var disp = this.mainDisplay;
@@ -1742,8 +1751,12 @@ TermView.prototype = {
       // 長頁分塊：先以塊跳過視窗上方（逐列量會強迫每一個閉塊排版，見 screen_chunk.js）。
       var rows = rowsFromScrollTop(mc, disp, st);
       for (var i = 0; i < rows.length; ++i) {
-        if (offsetTopWithin(rows[i], disp) + rows[i].offsetHeight > st)
-          return Number(rows[i].getAttribute('srow')) || 0;
+        var top = offsetTopWithin(rows[i], disp), h = rows[i].offsetHeight;
+        if (top + h > st) {
+          var srow = Number(rows[i].getAttribute('srow')) || 0;
+          var frac = h > 0 && st > top ? (st - top) / h : 0;
+          return srow + Math.round(frac * 1000) / 1000;
+        }
       }
     }
     if (this.reflow) return null;
