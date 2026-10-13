@@ -11,8 +11,10 @@ updates:
     groups:
       vitest:
         patterns: ["vitest", "@vitest/*"]
+      # 明列套件名：`@playwright/*` 實際沒吃到 @playwright/test（被拆進 minor-and-patch，
+      # 兩支 PR 各自單升都對不上 image）。
       playwright:
-        patterns: ["playwright", "@playwright/*"]
+        patterns: ["playwright", "playwright-core", "@playwright/test"]
       minor-and-patch:
         update-types: ["minor", "patch"]
     open-pull-requests-limit: 5

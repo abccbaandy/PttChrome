@@ -1842,15 +1842,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"playwright-core@npm:1.63.0":
-  version: 1.63.0
-  resolution: "playwright-core@npm:1.63.0"
-  bin:
-    playwright-core: cli.js
-  checksum: 10c0/39c1ebae4029ca2e9371e00a5588d962038e24b6e0bdb7d0d27374dde04838f349b83ae0c8b3b648653d0935cba7fb9011f1201adaab9dd0db7801ad6c75e9aa
-  languageName: node
-  linkType: hard
-
 "playwright-core@npm:1.64.0":
   version: 1.64.0
   resolution: "playwright-core@npm:1.64.0"
@@ -1860,7 +1851,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"playwright@npm:1.64.0":
+"playwright@npm:1.64.0, playwright@npm:^1.64.0":
   version: 1.64.0
   resolution: "playwright@npm:1.64.0"
   dependencies:
@@ -1868,17 +1859,6 @@ __metadata:
   bin:
     playwright: cli.js
   checksum: 10c0/f1ee856c280af2ac256225a1cc5e957847f0d2c56a039c89f02e31b0c9928c44e04311923a1b315bea16e3b26e5124e7c296644ad3c05e4c0a6aaa9584009933
-  languageName: node
-  linkType: hard
-
-"playwright@npm:^1.63.0":
-  version: 1.63.0
-  resolution: "playwright@npm:1.63.0"
-  dependencies:
-    playwright-core: "npm:1.63.0"
-  bin:
-    playwright: cli.js
-  checksum: 10c0/d1fd048a89be27c9aba6757dc4f70eff4a5163b49f439ad691767be8b2a482327d0dd1928b4f73c8fe0d8b33aab2c9dc2670424ab60f112d9e98e91b94e3b090
   languageName: node
   linkType: hard
 
@@ -2030,7 +2010,7 @@ __metadata:
     firebase: "npm:^13.0.0"
     husky: "npm:^9.0.0"
     lint-staged: "npm:^17.6.0"
-    playwright: "npm:^1.63.0"
+    playwright: "npm:^1.64.0"
     postcss: "npm:^8.5.29"
     postcss-preset-mantine: "npm:^1.18.0"
     postcss-simple-vars: "npm:^7.0.1"
