@@ -72,7 +72,14 @@ export function harness(opts) {
     // over.fieldWidth 設定，預設 null ＝ 量不到 ⇒ session 退回公式。
     inputFieldWidth: () => fieldWidth,
   };
-  const view = { flashListHint: (m) => hints.push(m) };
+  const view = {
+    flashListHint: (m) => hints.push(m),
+    // 同 term_view.currentLineIndex 量不到節點時的格線版面退路（真 DOM 量測見
+    // tests/unit/reading_position_preview.test.js）。
+    currentLineIndex() {
+      return this.mainDisplay && this.chh ? Math.round(this.mainDisplay.scrollTop / this.chh) : null;
+    },
+  };
   const restored = [];
   // 長推文放手（busy 翻 false）時對好讀的主動通知。queue 的 onIdle 管不到那一刻，
   // 見 long_push_session._releaseWire。

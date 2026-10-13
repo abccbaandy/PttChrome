@@ -83,7 +83,7 @@ function makeHarness({
     flashListHint: (msg, ms) => hints.push(msg),
     _articleBoard: articleBoard,
     mainDisplay: scrollTop == null ? null : { scrollTop },
-    // 同 term_view.currentLineIndex 的格線版面分支（換行版面另有 DOM 量測，見該函式）。
+    // 同 term_view.currentLineIndex 量不到節點時的格線版面退路（真 DOM 量測見該函式）。
     currentLineIndex() {
       return this.mainDisplay && this.chh ? Math.round(this.mainDisplay.scrollTop / this.chh) : null;
     },

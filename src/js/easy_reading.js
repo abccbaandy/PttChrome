@@ -2115,9 +2115,10 @@ EasyReading.prototype._onKeyDown = function(e) {
 export const MAX_SCROLL_RESTORE_TRIES = 120;
 
 //
-// targetTop：量到的該列頂端（px）。手機換行版面（term_view.reflow）一列可能折成好幾
-// 行，lineIndex*chh 失準 ⇒ 呼叫端改量 srow 節點（term_view.pageRowTop）；那一列還沒
-// 畫出來時是 null ＝還到不了。undefined ＝格線版面，照 lineIndex*chh 算。
+// targetTop：量到的該列頂端（px）。好讀長頁的列高不一致（行內預覽佔位盒、推文間距；
+// 手機換行版面一列還會折成好幾行），lineIndex*chh 失準 ⇒ 呼叫端量 srow 節點
+// （term_view.pageRowTop）；那一列還沒畫出來時是 null ＝還到不了。undefined ＝沒有
+// DOM 可量，照 lineIndex*chh 算。
 export function nextScrollRestoreStep({
   lineIndex, tries, chh, targetTop, scrollHeight, clientHeight, reachedPageEnd
 }) {
@@ -2208,7 +2209,8 @@ EasyReading.prototype._advanceScrollRestore = function() {
     lineIndex: pending.lineIndex,
     tries: pending.tries,
     chh: this._view.chh,
-    targetTop: this._view.reflow ? this._view.pageRowTop(pending.lineIndex) : undefined,
+    // 兩種版面都量節點（理由見 term_view.currentLineIndex）；量不到 DOM 才是 undefined。
+    targetTop: this._view.pageRowTop ? this._view.pageRowTop(pending.lineIndex) : undefined,
     scrollHeight: disp.scrollHeight,
     clientHeight: disp.clientHeight,
     reachedPageEnd: this.easyReadingReachedPageEnd

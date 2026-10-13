@@ -86,7 +86,7 @@ describe("TermView._syncMobileSurface", () => {
 });
 
 describe("TermView.currentLineIndex", () => {
-  test("格線版面：scrollTop / chh", () => {
+  test("格線版面、量不到節點（沒有 mainContainer）：退回 scrollTop / chh", () => {
     const v = Object.create(TermView.prototype);
     v.reflow = false;
     v.chh = 20;
