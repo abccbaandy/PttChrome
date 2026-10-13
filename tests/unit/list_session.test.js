@@ -26,6 +26,7 @@ import {
   isWaterballSettle,
 } from "../../src/js/list_session";
 import { LIST_HEADER_ROWS } from "../../src/js/list_window";
+import { LIST_CARD_ROWS } from "../../src/js/mobile_layout";
 
 
 const listRows = fixture.pageScreens[0]; // 24 decoded rows of a real C_Chat page
@@ -2394,10 +2395,11 @@ describe("回 buffer（原生鏡像落點）：視野停在 server 落點那一�
 // 視口卻停在原生頁頂端 ⇒ 最新文章在視口外，要再往下滑一段才看得到。
 describe("手機卡片：採用原生落點時游標必須在視口內", () => {
   const CHH = 20;
-  const CARD = CHH * 2.5;
+  const CARD = CHH * LIST_CARD_ROWS;
   // 視口：桌機＝body 20 列；卡片＝header／footer 收起、整個 24 列（listViewportGeometry），
-  // 9.6 張卡片 ⇒ 一屏 9 筆。
+  // 一屏放 floor(24 / LIST_CARD_ROWS) 筆。
   const vp = (cards) => (cards ? 24 : 20) * CHH;
+  const PAGE = Math.floor(24 / LIST_CARD_ROWS);
   // 緩衝 100..159 共 60 筆、游標在最後一筆 ⇒ 卡片模式捲到底就被夾在 總高 − 視口。
   const CARD_MAX_TOP = 60 * CARD - vp(true);
 
@@ -2423,9 +2425,10 @@ describe("手機卡片：採用原生落點時游標必須在視口內", () => {
     frame(s, screen);
     const seq = s._sequence();
     expect(s._isPosVisible(seq, s._cursorPos(seq))).toBe(true);
-    // 落點規則要 159-9+1 = 151，但緩衝在 159 結束 ⇒ 夾在最底（2520px ＝ 第 50.4 筆）。
-    expect(screen.top).toBe(Math.min(51 * CARD, CARD_MAX_TOP));
-    expect(s._topNum).toBe(150);
+    // 落點規則要頁底 159 貼齊視口底（頂端＝159-PAGE+1），且不超過緩衝底（總高 − 視口）。
+    const top = Math.min((60 - PAGE) * CARD, CARD_MAX_TOP);
+    expect(screen.top).toBe(top);
+    expect(s._topNum).toBe(100 + Math.floor(top / CARD));
   });
 
   test("回 buffer（_resumeBuffer）同一條規則", () => {
@@ -2434,7 +2437,7 @@ describe("手機卡片：採用原生落點時游標必須在視口內", () => {
     frame(s, screen);
     const seq = s._sequence();
     expect(s._isPosVisible(seq, s._cursorPos(seq))).toBe(true);
-    expect(screen.top).toBe(Math.min(51 * CARD, CARD_MAX_TOP));
+    expect(screen.top).toBe(Math.min((60 - PAGE) * CARD, CARD_MAX_TOP));
   });
 
   test("游標在頁中段 ⇒ 游標貼視口頂（不被捲出），不再往下", () => {

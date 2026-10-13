@@ -2,9 +2,14 @@
 // 手機 Phase 4：列表卡片（render/list_card.js、docs/mobile.md「Phase 4」）。
 // 鎖三件事：欄位切在哪（出處 bbs.c#readdoent／board.c#brdlist_renderer）、外部契約
 // （srow／data-row／data-list-*）、以及只在 enhance.listCards 時才取代 buildRow。
-import { buildListCard, cardSegment, CARD_LAYOUT } from "../../src/render/list_card";
+import {
+  buildListCard,
+  cardSegment,
+  CARD_LAYOUT,
+  layoutSpans,
+} from "../../src/render/list_card";
 import { mountScreen, unmountAll } from "./helpers/mount_screen";
-import { row, seg, listRow } from "./helpers/screen_fixtures";
+import { row, seg, color, listRow } from "./helpers/screen_fixtures";
 import {
   listRowSpan,
   listPageRows,
@@ -24,13 +29,36 @@ const text = (node) => (node ? node.textContent : "");
 describe("buildListCard：文章列表", () => {
   const chars = listRow("someone", "□ [心得] 手機卡片測試");
 
-  test("第一行標題、第二行序號・日期＋作者", () => {
+  test("第一行標題、第二行作者＋靠右的序號・日期", () => {
     const { node } = buildListCard({ chars, row: 5, kind: "article", forceWidth: 16 });
     expect(text(node.querySelector(".listCardTitle"))).toContain("[心得] 手機卡片測試");
     expect(text(node.querySelector(".listCardTitle"))).not.toContain("someone");
     expect(text(node.querySelector(".listCardAuthor")).trim()).toBe("someone");
-    expect(text(node.querySelector(".listCardInfo"))).toContain("350024");
-    expect(text(node.querySelector(".listCardInfo"))).toContain("6/14");
+    const info = node.querySelector(".listCardMeta > .listCardEnd.listCardInfo");
+    expect(text(info)).toContain("350024");
+    expect(text(info)).toContain("6/14");
+  });
+
+  // 推文數與已讀標記是列表最常掃的兩個欄位：各自進左欄（兩行同寬、上下對齊），
+  // 不混在序號・日期那串小字裡。
+  test("左欄：標題行放推文數 [9,11)、次行放已讀標記 [7,9)（顏色照原列）", () => {
+    const c = row(
+      seg("350024 "),
+      seg("+ ", color(7, 0)),
+      seg("爆", color(1, 0)),
+      seg("6/14  "),
+      seg("someone      "),
+      seg("□ 測試"),
+    );
+    const { node } = buildListCard({ chars: c, row: 5, kind: "article", forceWidth: 16 });
+    const push = node.querySelector(".listCardTitle > .listCardLead > .listCardPush");
+    const mark = node.querySelector(".listCardMeta > .listCardLead > .listCardMark");
+    expect(text(push)).toBe("爆");
+    expect(push.querySelector(".q1")).not.toBe(null);
+    expect(text(mark)).toBe("+");
+    expect(text(node.querySelector(".listCardTitle .listCardMain"))).toBe("□ 測試");
+    expect(text(node.querySelector(".listCardInfo"))).not.toContain("爆");
+    expect(text(node.querySelector(".listCardInfo"))).not.toContain("+");
   });
 
   test("外部契約：bbsrow/srow、data-list-*、data-row（游標底色靠它）", () => {
@@ -138,7 +166,7 @@ describe("buildListCard：看板列表（board.c#brdlist_renderer 欄位）", ()
 
   test("版型表的 cell 範圍前後相接、不重疊", () => {
     for (const kind of Object.keys(CARD_LAYOUT)) {
-      const spans = [...CARD_LAYOUT[kind].title, ...CARD_LAYOUT[kind].meta]
+      const spans = [...layoutSpans(CARD_LAYOUT[kind].title), ...layoutSpans(CARD_LAYOUT[kind].meta)]
         .map(([a, b]) => [a, b])
         .sort((x, y) => x[0] - y[0]);
       for (let i = 1; i < spans.length; ++i)
@@ -220,13 +248,13 @@ describe("ScreenController：只在 enhance.listCards 時畫卡片", () => {
 });
 
 describe("列表 session 的卡片換算（mobile_layout）", () => {
-  test("卡片模式一筆佔 LIST_CARD_ROWS 列（兩行＋0.5 列間距）；PgDn 翻一屏放得下的筆數", () => {
-    expect(LIST_CARD_ROWS).toBe(2.5);
+  test("卡片模式一筆佔 LIST_CARD_ROWS 列（兩行＋間距）；PgDn 翻一屏放得下的筆數", () => {
+    expect(LIST_CARD_ROWS).toBe(3);
     expect(listRowSpan(false)).toBe(1);
     expect(listRowSpan(true)).toBe(LIST_CARD_ROWS);
     expect(listPageRows(20, false)).toBe(20);
-    expect(listPageRows(20, true)).toBe(8);
-    expect(listPageRows(21, true)).toBe(8);
+    expect(listPageRows(20, true)).toBe(Math.floor(20 / LIST_CARD_ROWS));
+    expect(listPageRows(21, true)).toBe(Math.floor(21 / LIST_CARD_ROWS));
     expect(listPageRows(1, true)).toBe(1);
   });
 
@@ -253,7 +281,7 @@ describe.each([
   // 卡片模式 header／footer 收起，視口吃下整個 24 列（listViewportGeometry）。
   test("_pageRows：卡片一次翻 floor(rows/LIST_CARD_ROWS) 筆；_bodyRows（抓頁單位）不變", () => {
     expect(Session.prototype._pageRows.call(fake(false))).toBe(20);
-    expect(Session.prototype._pageRows.call(fake(true))).toBe(9);
+    expect(Session.prototype._pageRows.call(fake(true))).toBe(Math.floor(24 / LIST_CARD_ROWS));
     expect(Session.prototype._bodyRows.call(fake(true))).toBe(20);
   });
 
@@ -284,7 +312,7 @@ describe("listFillRows（短清單補白筆數，term_view 補列與 session 捲
   test("格線：bodyRows（rows-4）；卡片：一個視口放得下的筆數", () => {
     expect(listFillRows({ rows: 24, headerRows: 3, cards: false })).toBe(20);
     expect(listFillRows({ rows: 47, headerRows: 3, cards: false })).toBe(43);
-    expect(listFillRows({ rows: 47, headerRows: 3, cards: true })).toBe(18);
+    expect(listFillRows({ rows: 47, headerRows: 3, cards: true })).toBe(Math.floor(47 / LIST_CARD_ROWS));
     expect(listFillRows({ rows: 47, headerRows: 3, cards: true }) * LIST_CARD_ROWS).toBeLessThanOrEqual(47);
   });
 });

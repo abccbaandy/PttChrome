@@ -26,7 +26,7 @@ async function check(page) {
   const rows = await rowsInfo(page);
   expect(rows.some((r) => !r.read)).toBe(true);
   for (const r of rows) {
-    if (r.read && !r.cursor) expect(r.opacity).toBeCloseTo(0.45, 2);
+    if (r.read && !r.cursor) expect(r.opacity).toBeCloseTo(0.6, 2);
     else expect(r.opacity).toBe(1);
   }
   await ptt.applyPrefs(page, { dimReadArticles: false });

@@ -320,9 +320,8 @@ test.describe('長按選單（觸控 contextmenu）', () => {
 test.describe('手機推文卡片', () => {
   test.skip(!article, '尚無 article cassette');
 
-  // 版型比照 PTT 網頁版：「推 樓號 id: 內容」一條行內流，時間 float 靠右 ⇒ 放得下就與
-  // 內容同行，放不下才掉到下一行（仍靠右，不會跑到行首）。
-  test('每則推文的時間靠右不在行首、短推文與 id 同行；內容不含時間；內容黃比照網頁版', async ({ page }) => {
+  // 版型兩段：標頭一行「推 id 樓號 …… 時間」（時間靠右）＋內容另起一行用滿寬。
+  test('每則推文的時間與 id 同一行且靠右；內容另起一行、從卡片左緣起；內容不含時間；內容黃比照網頁版', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true });
@@ -337,9 +336,12 @@ test.describe('手機推文卡片', () => {
         const time = c.querySelector('.commentCardTime');
         const t = time ? time.getBoundingClientRect() : null;
         const q3 = c.querySelector('.commentCardText .q3');
+        const textRect = c.querySelector('.commentCardText').getBoundingClientRect();
         return {
           idTop: id.top,
           idBottom: id.bottom,
+          textTop: textRect.top,
+          textLeft: textRect.left,
           timeMid: t ? (t.top + t.bottom) / 2 : null,
           timeLeft: t ? t.left : null,
           timeRight: t ? t.right : null,
@@ -359,9 +361,12 @@ test.describe('手機推文卡片', () => {
       expect(c.timeLeft - c.cardLeft).toBeGreaterThan((c.cardRight - c.cardLeft) / 2);
       expect(c.body).not.toContain(c.time);
       if (c.q3Color) expect(c.q3Color).toBe('rgb(153, 153, 0)');
+      // 時間在 id 那一行；內容在下一行、吃滿寬（左緣＝卡片左緣）。
+      expect(c.timeMid).toBeGreaterThanOrEqual(c.idTop);
+      expect(c.timeMid).toBeLessThanOrEqual(c.idBottom);
+      expect(c.textTop).toBeGreaterThanOrEqual(c.idBottom - 1);
+      expect(Math.abs(c.textLeft - c.cardLeft)).toBeLessThan(1);
     }
-    // 行內流（不是「標頭一行＋內容一行」的兩段卡片）：至少一則短推文的時間落在 id 那一行。
-    expect(cards.some((c) => c.timeMid >= c.idTop && c.timeMid <= c.idBottom)).toBe(true);
   });
 
   // 檔頭與 80 欄狀態列（docs/mobile.md「收起終端機標頭／狀態列」）：標題在 App Bar、

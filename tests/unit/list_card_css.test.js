@@ -42,6 +42,21 @@ describe("列表卡片 CSS", () => {
 describe("已讀文章低亮 CSS", () => {
   const dim = rules(/\[data-list-read\]/);
 
+  // 使用者回報：0.45 太暗幾乎看不清。要「跟未讀明顯不同」但仍讀得出字。
+  test("低亮程度：仍可讀（opacity ≥ 0.55）且與未讀有明顯差異（≤ 0.75）", () => {
+    for (const r of dim) {
+      const m = r.body.match(/opacity:\s*([\d.]+)/);
+      expect(m).not.toBe(null);
+      expect(Number(m[1])).toBeGreaterThanOrEqual(0.55);
+      expect(Number(m[1])).toBeLessThanOrEqual(0.75);
+    }
+  });
+
+  // 回歸：卡片次行原本自帶 opacity 0.6，已讀再乘一次 ⇒ 0.27，作者／日期看不見。
+  test("卡片內各段不得自帶 opacity（避免與已讀低亮疊乘）", () => {
+    for (const r of rules(/\.listCard\b/)) expect(r.body).not.toMatch(/opacity:/);
+  });
+
   test("只掛在 #mainContainer.dimReadList 下", () => {
     expect(dim.length).toBeGreaterThan(0);
     for (const r of dim) expect(r.sel).toMatch(/#mainContainer\.dimReadList/);

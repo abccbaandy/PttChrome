@@ -1,8 +1,10 @@
 // 手機推文卡片：好讀文章換行版面（term_view.reflow，docs/mobile.md「推文卡片」）下，
 // 推文列不再照 80 欄原樣 pre-wrap —— 那樣時間戳前面的一大段補位空白會先折行，時間
-// 被擠到下一行最左邊。版型比照 PTT 網頁版（www.ptt.cc 的 .push）：單一行內流
-//   推/噓/→ 樓號 id: 內容（自然換行；同作者合併的每一則另起一行）      IP 時間
-// IP＋時間排在最後、float 靠右：同一行放得下就跟內容同行，放不下才自己掉到下一行。
+// 被擠到下一行最左邊。版型是兩段：
+//   推/噓/→ id 樓號 ……………………………… IP 時間   ← 標頭一行（時間靠右）
+//   內容（滿寬、自然換行；同作者合併的每一則另起一行）
+// 作者跟內容分開 ⇒ 內容吃整個寬度，合併推文（一個標頭、多則內容）一眼看得出是同一人。
+// 冒號不畫（標頭與內容已分行）。
 // 只在 enhance.commentCards（手機＋好讀長頁）時由 render/screen.js 取代 buildRow；桌機
 // 零改動（golden 快照不經過這裡）。
 //
@@ -15,6 +17,7 @@
 //     直接子選擇器、長按選單的推文者黑名單（closest('[data-pusher]')）、點推文高亮、
 //     pageRowTop／currentLineIndex 量 srow
 //   [data-type=bbsline][data-row]  —— 選取反查、游標底色（標頭列＋內容每一行都有）
+//     IP／時間在標頭的 bbsline 裡（.commentCardMeta）
 //   .floorBadge[data-floor]、textContent＝樓號  —— 樓層徽章（卡片裡改成一般行內字，
 //     css `.commentCard .floorBadge`）
 //   回傳 { node, slots }：slots 交給 screen.js#_adopt（延遲載入佔位盒的生命週期）
@@ -31,13 +34,6 @@ function idEndCol(chars) {
   let i = 3;
   while (i < chars.length && chars[i] && ASCII_ID_RE.test(chars[i].ch)) ++i;
   return i;
-}
-
-// id 後面（略過補位空白）的 ':' cell；認不出回 -1（卡片照畫，只是沒有冒號）。
-function colonCol(chars, from, limit) {
-  let i = from;
-  while (i < limit && chars[i] && chars[i].ch === " ") ++i;
-  return i < limit && chars[i] && chars[i].ch === ":" ? i : -1;
 }
 
 function floorBadge(floor) {
@@ -101,9 +97,12 @@ export function buildCommentCard({
 }) {
   const r = regions;
   const idEnd = idEndCol(chars);
-  const colon = colonCol(chars, idEnd, r.contentStart);
   const seg = (a, b, cls) => cardSegment(chars, a, b, forceWidth, row, cls);
 
+  const meta = el("span", { class: "commentCardMeta" }, [
+    seg(r.tailStart, r.timeStart, "commentCardIp"),
+    seg(r.timeStart, r.timeEnd, "commentCardTime"),
+  ]);
   const head = el(
     "span",
     {
@@ -113,19 +112,15 @@ export function buildCommentCard({
     },
     [
       seg(0, 2, "commentCardTag"),
-      floor ? floorBadge(floor) : null,
       seg(
         3,
         idEnd,
         cx("commentCardId", { commentByAuthor: authorIdStart !== undefined }),
       ),
-      colon >= 0 ? seg(colon, colon + 1, "commentCardSep") : null,
+      floor ? floorBadge(floor) : null,
+      meta,
     ],
   );
-  const meta = el("span", { class: "commentCardMeta" }, [
-    seg(r.tailStart, r.timeStart, "commentCardIp"),
-    seg(r.timeStart, r.timeEnd, "commentCardTime"),
-  ]);
 
   // 內容：原欄號餵 LinkSegmentBuilder（連結範圍以欄號標記）。合併塊的換行 cell
   // 會讓 builder 自己分行（每行一個 bbsline＋預覽 div）。
@@ -160,7 +155,7 @@ export function buildCommentCard({
         "data-pusher-col": pusherContentCol,
         class: cx("commentCard", { pusherHighlight }),
       },
-      [head, el("span", { class: "commentCardText" }, builder.build()), meta],
+      [head, el("span", { class: "commentCardText" }, builder.build())],
     ),
     slots: builder.slots,
   };

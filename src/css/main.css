@@ -330,29 +330,26 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 }
 
 /* 手機推文卡片（render/comment_card.js，docs/mobile.md「推文卡片」）：只在換行版面。
-   版型比照 PTT 網頁版 .push：「推/噓/→ 樓號 id: 內容」一條行內流自然換行，IP＋時間
-   排在最後 float 靠右（同行放得下就同行），全字級不淡化。flow-root 讓卡片包住 float。
-   builder 產出的 div／空預覽 div 收成行內，否則區塊盒會把內容或時間擠到下一行；合併塊
-   第二則起用 ::before 換行（仍是行內 ⇒ 最後一則後面還能接時間）。有圖的預覽 div 不空，
-   照舊是區塊（後面那則就不用再補換行）。
+   兩段：標頭一行（推/噓/→・id・樓號 …… IP 時間靠右）＋內容滿寬自然換行；合併塊
+   一個標頭、每則內容各一行。全字級不淡化，顏色沿用原列。
+   builder 產出的 div／空預覽 div 收成行內，否則區塊盒會把內容擠成一則一塊；合併塊
+   第二則起用 ::before 換行。有圖的預覽 div 不空，照舊是區塊（後面那則就不用再補換行）。
    等寬格線在換行版面本來就不存在（點擊範圍與以欄判斷的滑鼠區域在 reflow 下全關），
    所以「推文區塊行距」那段的格線禁令不適用；仍守：高度整數 px、不用 margin-bottom
    （會推開 #easyReadingLastRow）、不宣告 user-select（css_user_select.test.js）。 */
 .main.mobileReflow #mainContainer span[type="bbsrow"].commentCard {
-  display: flow-root;
-  padding-block: 3px;
+  display: block;
+  padding-block: 4px;
   line-height: 1.3;
   box-shadow: inset 0 -1px 0 #333;
 }
 .commentCard .commentCardHead {
-  white-space: pre-wrap;
+  display: flex;
+  align-items: baseline;
+  white-space: pre;
 }
 .commentCard .commentCardHead > * + * {
   margin-left: 0.4em;
-}
-.commentCard .commentCardHead > .commentCardSep {
-  margin-left: 0;
-  margin-right: 0.4em;
 }
 .commentCard .commentCardHead > span > div,
 .commentCard .commentCardText > div,
@@ -369,13 +366,20 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   white-space: pre;
 }
 .commentCard .commentCardText {
+  display: block;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* id 太長／IP＋時間太寬時讓 id 先讓位（省略號），時間永遠完整、靠右。 */
+.commentCard .commentCardId {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .commentCard .commentCardMeta {
-  float: right;
-  margin-left: 1em;
-  white-space: pre;
+  flex: none;
+  margin-left: auto;
+  padding-left: 1em;
 }
 .commentCard .commentCardMeta > * + * {
   margin-left: 0.5em;
@@ -413,20 +417,25 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 .main.mobileListCards .listBodyView > span.listCard {
   display: block;
   box-sizing: border-box;
-  height: 2.5em;
-  padding-block: 0.25em;
+  height: 3em;
+  padding-block: 0.3em;
   overflow: hidden;
   white-space: pre;
   box-shadow: inset 0 -1px 0 #333;
 }
-.listCard .listCardBody,
-.listCard .listCardLine {
+/* 兩行的高度加起來＝ 3em − 2×0.3em ＝ 2.4em（標題行 1.3em＋次行 1.1em）。
+   每行三段 flex：游標欄｜左欄（lead，推文數／已讀標記，兩行同寬上下對齊）｜main
+   （吃剩餘寬度，放不下省略號）｜end（靠右：序號・日期／人氣／板主）。
+   顏色一律沿用原列（LinkSegmentBuilder 逐格上色），這裡只排版。 */
+.listCard .listCardBody {
   display: block;
 }
 .listCard .listCardLine {
-  height: 1em;
+  display: flex;
+  align-items: baseline;
+  height: 1.3em;
+  line-height: 1.3em;
   overflow: hidden;
-  text-overflow: ellipsis;
   padding-inline: 0.25em;
 }
 /* LinkSegmentBuilder 的輸出是區塊 div 包 bbsline span（一列一個區塊）；卡片裡一行
@@ -434,27 +443,52 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 .listCard .listCardLine div {
   display: inline;
 }
-/* 次行（文章：序號・推文數・日期・作者；看板：敘述・板主）縮小＋淡化，讓標題行
-   一眼掃得過去。只縮字，行框仍是 1 個 chh：em 跟著自己的 font-size 走 ⇒
-   height／line-height 寫 1.25em（＝0.8 × 1.25 ＝ 父層 1em）。 */
+/* 次行（文章：作者・序號・日期；看板：敘述・板主）縮字讓標題行一眼掃得過去；
+   **不另外淡化**（已讀低亮會再乘一次 opacity，疊起來看不清）。em 跟著自己的
+   font-size 走 ⇒ 0.8em 字的 1.375em ＝ 父層 1.1em。 */
 .listCard .listCardMeta {
   font-size: 0.8em;
-  height: 1.25em;
-  line-height: 1.25em;
-  opacity: 0.6;
-}
-.listCard .listCardAuthor {
-  margin-left: 0.5em;
+  height: 1.375em;
+  line-height: 1.375em;
 }
 /* 游標欄：每張卡片都有、固定一個半形寬（em ＝ chh），游標那張填 `>`，其餘空白
-   ⇒ 游標移動時欄位不左右跳（render/list_card.js）。 */
+   ⇒ 游標移動時欄位不左右跳（render/list_card.js）。次行縮了字 ⇒ 寬度換算回父層。 */
 .listCard .listCardCursor {
-  display: inline-block;
+  flex: none;
   width: 0.5em;
 }
-.listCard .listCardPopularity,
-.listCard .listCardBM {
+.listCard .listCardMeta .listCardCursor {
+  width: 0.625em;
+}
+/* 左欄：兩格寬（推文數「爆」「99」「X1」、標記「+」「~」），置中。次行縮了字 ⇒
+   寬度換算回父層的 1.5em。 */
+.listCard .listCardLead {
+  flex: none;
+  width: 1.5em;
+  margin-right: 0.4em;
+  text-align: center;
+}
+.listCard .listCardMeta .listCardLead {
+  width: 1.875em;
+  margin-right: 0.5em;
+}
+.listCard .listCardMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.listCard .listCardEnd {
+  flex: none;
+  margin-left: 0.6em;
+}
+.listCard .listCardEnd > * + *,
+.listCard .listCardMain > * + * {
   margin-left: 0.5em;
+}
+/* 推文數是列表最想一眼看到的數字：加粗（顏色仍是 PTT 的 綠／黃／紅爆／X 灰）。 */
+.listCard .listCardPush {
+  font-weight: bold;
 }
 
 /* 手機 Phase 5：主功能表大按鈕（render/menu_card.js，docs/mobile.md「Phase 5」）。
@@ -503,7 +537,7 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   span[type="bbsrow"][data-list-read]:not(
     :has(> div > [data-type="bbsline"][class]:not([class=""]))
   ):not(:has(> .listCardBody:not([class="listCardBody"]))) {
-  opacity: 0.45;
+  opacity: 0.6;
 }
 
 /* 列表好讀模式的 body 捲動視口。高度由 JS 設成 body 列數 × 列高，內容是整段

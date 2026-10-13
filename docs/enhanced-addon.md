@@ -195,6 +195,7 @@
   （`row.js`／`list_card.js`）；pref 只 toggle 容器 class `#mainContainer.dimReadList`
   （`render/screen.js#_setDimRead`，同 `_setCommentSpacing` 形狀）⇒ **不進 `annotationsKey`**、切換不重建列。
 - CSS 排除游標列（`:has()` 看 bbsline／`.listCardBody` 是否帶 highlight class）。
+  程度 `opacity: 0.6`（使用者定案：0.45 太暗看不清，只要與未讀明顯不同；範圍 [0.55, 0.75] 由 `list_card_css.test.js` 守）。
 - 測試：`list_read.test.js`（判定表）、`dim_read_class.test.js`（接線）、`list_card_css.test.js`（CSS 契約）。
 
 ## URL 結尾修剪（`src/js/url_trim.js`）

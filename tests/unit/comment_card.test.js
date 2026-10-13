@@ -1,8 +1,8 @@
 // @unit-env browser
 // 手機推文卡片（render/comment_card.js、docs/mobile.md「推文卡片」）。
 // 症狀：換行版面下推文列照 80 欄原樣 pre-wrap，時間戳前的補位空白先折行 ⇒ 時間
-// 被擠到下一行最左邊。卡片比照 PTT 網頁版：「推 樓號 id: 內容」一條行內流，IP＋時間
-// 排在最後（CSS 靠右浮動）。
+// 被擠到下一行最左邊。卡片兩段：標頭一行「推 id 樓號 …… IP 時間」＋內容滿寬另起一行
+// （作者與內容分開，合併推文一個標頭、多則內容）。
 // 鎖：時間／IP 不在內容裡、合併塊只留最後一則的時間、外部契約保留、只在
 // enhance.commentCards 時才取代 buildRow（桌機 golden 不受影響）。
 import {
@@ -27,7 +27,7 @@ describe("buildCommentCard（單一推文列）", () => {
     seg("            1.2.3.4 06/14 12:05"),
   );
 
-  test("標頭：標記・樓號・id・冒號；IP 與時間排在內容之後；內容不含 IP／時間", () => {
+  test("標頭一行：標記・id・樓號・IP・時間；內容另起一段、不含 id／IP／時間", () => {
     const { node } = buildCommentCard({
       chars,
       regions: commentCardRegions(chars),
@@ -40,15 +40,19 @@ describe("buildCommentCard（單一推文列）", () => {
     const head = node.querySelector(".commentCardHead");
     expect(text(head.querySelector(".commentCardTag"))).toBe("推");
     expect(text(head.querySelector(".commentCardId"))).toBe("someone");
-    expect(text(head.querySelector(".commentCardSep"))).toBe(":");
     expect(text(head.querySelector(".floorBadge[data-floor]"))).toBe("7");
-    const meta = node.querySelector(":scope > .commentCardMeta");
+    // IP／時間在標頭那一行（CSS 靠右），不在內容後面。
+    const meta = head.querySelector(":scope > .commentCardMeta");
     expect(text(meta.querySelector(".commentCardIp"))).toBe("1.2.3.4");
     expect(text(meta.querySelector(".commentCardTime"))).toBe("06/14 12:05");
-    // 順序＝標頭 → 內容 → 時間（PTT 網頁版 .push 的 float:right 時間排在最後）。
+    expect(
+      Array.from(head.children).map((c) => c.className.split(" ")[0]),
+    ).toEqual(["commentCardTag", "commentCardId", "floorBadge", "commentCardMeta"]);
+    // 卡片只有兩段：標頭 → 內容。標頭與內容分行 ⇒ 不畫冒號。
     expect(
       Array.from(node.children).map((c) => c.className.split(" ")[0]),
-    ).toEqual(["commentCardHead", "commentCardText", "commentCardMeta"]);
+    ).toEqual(["commentCardHead", "commentCardText"]);
+    expect(head.querySelector(".commentCardSep")).toBe(null);
     const body = text(node.querySelector(".commentCardText"));
     expect(body).toContain("這是一則推文內容");
     expect(body).not.toContain("06/14");

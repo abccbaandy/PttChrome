@@ -12,8 +12,8 @@ const { waitScrollStable, waitRectStable, OVERRIDING_SEL } = require('../helpers
 
 const nav = loadCassette('cchat-list-nav');
 
-// 兩行內容＋0.5 列間距（mobile_layout.LIST_CARD_ROWS）。
-const CARD_ROWS = 2.5;
+// 兩行內容＋卡片間距（mobile_layout.LIST_CARD_ROWS）。
+const CARD_ROWS = 3;
 
 const state = (page) =>
   page.evaluate(() => {

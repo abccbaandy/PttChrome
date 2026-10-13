@@ -214,10 +214,10 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - 切換點兩處：`screen.js#_renderRow`（單列）與 `_buildRowNode` 的 `mergeCommentRun`（合併塊不經 `_renderRow`）。
   區段來自 `comment_merge.commentContentCells`／`buildMergedCommentChars` 的 `tailStart`／`timeStart`；
   認不出推文形狀 ⇒ 退回 buildRow。
-- 版型比照 PTT 網頁版 `.push`（www.ptt.cc，`bbs-base.css`）：一條行內流
-  `.commentCardHead`（`推/噓/→`・`.floorBadge[data-floor]`・id（原PO `.commentByAuthor`）・`.commentCardSep` 冒號）
-  → `.commentCardText`（以原欄號餵 LinkSegmentBuilder，連結／AID／預覽照舊）→ `.commentCardMeta`（IP＋時間，
-  `float:right` 全字級不淡化；同行放不下才掉行）。卡片 `display:flow-root` 包住 float。
+- 版型兩段（使用者定案：作者與推文分開，推文吃滿寬、合併推文看得出同一人；配色照 PTT 原色）：
+  `.commentCardHead`（flex 一行：`推/噓/→`・id（原PO `.commentByAuthor`，太長省略號）・`.floorBadge[data-floor]`・
+  `.commentCardMeta`（IP＋時間，`margin-left:auto` 靠右、全字級不淡化））→ `.commentCardText`（block 滿寬；以原欄號餵
+  LinkSegmentBuilder，連結／AID／預覽照舊）。不畫冒號。
   builder 的 div 與空預覽 div 在卡片內收成行內；合併塊第二則起以 `div:empty + bbsline::before` 換行。
   內容暗黃 `.q3` 在卡片內提亮為 `#990`（＝網頁版 `.f3`），`:not()` 讓出上班模式／游標列加亮。
 - 契約：外層 `span[type=bbsrow][srow][data-pusher][data-pusher-col]`（`.commentSpacing` 直接子選擇器、長按黑名單），
@@ -236,16 +236,17 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   `listScroll.kind` 帶）且列在 `[bodyStart, lines.length-1)` 時改走 `render/list_card.js#buildListCard`；
   header（`[0,bodyStart)`）與 footer（末列）收起（Phase 8，`render/collapsed_row.js`）。
   `listCards` 進 `annotationsKey`（同一批列物件切換卡片模式要整批重建）。
-- 版型（欄位按 **cell** 切，出處見 `list_card.js` 檔頭）：文章列表＝標題 [29,80)／序號・標記・推文數・日期
-  [0,17)＋作者 [17,29)；看板列表＝序號・未讀・板名・類別 [0,28)＋人氣 [64,67)／◎敘述 [28,64)＋板主 [67,80)。
-- **卡片固定高 2.5em（`LIST_CARD_ROWS`=2.5 × chh）是承重條件**：`list_scroll.js` 的位置↔scrollTop 是純乘除。
-  兩行內容（`LIST_CARD_LINES`=2）＋ 0.5em 卡片間距＝border-box 固定高內的 `padding-block`；分隔線用 inset
+- 版型（欄位按 **cell** 切，出處見 `list_card.js` 檔頭；`CARD_LAYOUT` 每行 lead｜main｜end 三段 flex）：
+  文章列表＝推文數 [9,11)｜標題 [29,80)／標記 [7,9)｜作者 [17,29)｜序號・日期（靠右）；看板列表＝未讀 [8,10)｜板名・類別
+  ｜人氣／◎敘述｜板主・序號。lead 左欄兩行同寬上下對齊（推文數加粗）。顏色全照原列（使用者定案：桌機／手機同 PTT 原色）。
+- **卡片固定高 3em（`LIST_CARD_ROWS`=3 × chh）是承重條件**：`list_scroll.js` 的位置↔scrollTop 是純乘除。
+  兩行內容（`LIST_CARD_LINES`=2，標題行 1.3em＋次行 1.1em）＋卡片間距＝border-box 固定高內的 `padding-block`；分隔線用 inset
   box-shadow；不可 border／margin（加在固定高之外）。CSS 高度與常數一致由 `list_card_css.test.js` 守。
-  次行（`.listCardMeta`）縮字 0.8em＋淡化，行框仍 1 chh（height/line-height 寫 1.25em）。兩個 session 的 `_rowHeight()` ＝
+  次行（`.listCardMeta`）只縮字 0.8em、**不自帶 opacity**（會與已讀低亮疊乘，同支測試守）。兩個 session 的 `_rowHeight()` ＝
   `chh × listRowSpan(listCards)`；`_pageRows()`（PgUp/PgDn 一次翻幾筆）＝ `mobile_layout.listFillRows`；
   `_bodyRows()` 仍是 server 的 p_lines（抓頁單位），**不可**跟著換。
 - **短清單補白筆數＝`listFillRows`（一屏放得下的筆數），不是 bodyRows**：`term_view.build{,Board}ListWindowLines` 的補列與
-  session `_maxScrollTop`／`applyScrollAfterRender` 傳給 `maxScrollTopFor` 的 `bodyRows` 同源。照 bodyRows 補，卡片 43×2.5 列
+  session `_maxScrollTop`／`applyScrollAfterRender` 傳給 `maxScrollTopFor` 的 `bodyRows` 同源。照 bodyRows 補，卡片 43×3 列
   ≫ 視口 47 列 ⇒ 清單下方一大塊捲得到的空白。組視窗跑在 `_syncMobileSurface` 對帳之前 ⇒ 卡片旗標取 `_listCardsThisFrame()`
   （＝是否手機），不讀上一幀的 `listCards`。守護 `list_card.test.js`、`board_list_accumulate.test.js`。
 - **視口幾何單一真相源 `mobile_layout.listViewportGeometry({rows, headerRows, cards})`**：桌機＝header 下 `rows-4` 列；

@@ -2,9 +2,9 @@
 // 只在 term_view.listCards（手機＋列表好讀視窗）時由 render/screen.js#_renderRow 取代
 // buildRow；桌機零改動（golden 快照不經過這裡）。
 //
-// 一筆 ＝ 固定 LIST_CARD_ROWS（2.5）個列高＝兩行內容＋0.5 列間距：list_scroll.js 的
+// 一筆 ＝ 固定 LIST_CARD_ROWS（3）個列高＝兩行內容＋卡片間距：list_scroll.js 的
 // 位置↔scrollTop 換算是純乘除，卡片高一旦不固定整套捲動數學就失效（CSS `.listCard`
-// 鎖 height: 2.5em，em ＝ chh；間距是 border-box 內的 padding-block）。
+// 鎖 height: 3em，em ＝ chh；間距是 border-box 內的 padding-block）。
 //
 // 欄位一律**按 cell 切**（TermChar 陣列恆 80 格、DBCS 佔兩格）——不走 rowToText 的
 // 字串索引，所以舊游標 ●／置底 ★ 這類全形前綴造成的位移（comment_parse.realignListColumns
@@ -55,27 +55,52 @@ function isBlankCell(ch) {
 }
 
 // 兩種列表各自的「兩行裡放哪些 cell 範圍」。純資料，測試直接讀。
+// 每行三段：lead（左欄固定寬，兩行上下對齊：推文數／已讀標記一眼掃得到）、main
+// （吃剩餘寬度，放不下省略號）、end（靠右，包在 endClass 裡）。
 export const CARD_LAYOUT = {
   article: {
-    // 標題一行；第二行＝原列的前段（序號・標記・推文數・日期）＋作者。
-    title: [[LIST_AUTHOR_COL_END, 80, "listCardTitleText"]],
-    meta: [
-      [0, LIST_AUTHOR_COL_START, "listCardInfo"],
-      [LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END, "listCardAuthor"],
-    ],
+    // 第一行：推文數 [9,11)｜標題；第二行：標記 [7,9)（+ 未讀／~ 有新推文）｜作者
+    // ……序號・日期。
+    title: {
+      lead: [9, 11, "listCardPush"],
+      main: [[LIST_AUTHOR_COL_END, 80, "listCardTitleText"]],
+      end: [],
+    },
+    meta: {
+      lead: [7, 9, "listCardMark"],
+      main: [[LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END, "listCardAuthor"]],
+      end: [
+        [0, 7, "listCardNum"],
+        [11, 17, "listCardDate"],
+      ],
+      endClass: "listCardInfo",
+    },
   },
   board: {
-    // 第一行：序號・未讀・板名・類別＋人氣；第二行：◎中文敘述＋板主。
-    title: [
-      [0, 28, "listCardInfo"],
-      [64, 67, "listCardPopularity"],
-    ],
-    meta: [
-      [28, 64, "listCardTitleText"],
-      [67, 80, "listCardBM"],
-    ],
+    // 第一行：未讀 ˇ [8,10)｜板名・類別……人氣；第二行：◎中文敘述……板主・序號。
+    title: {
+      lead: [8, 10, "listCardMark"],
+      main: [
+        [10, 23, "listCardBoard"],
+        [23, 28, "listCardClass"],
+      ],
+      end: [[64, 67, "listCardPopularity"]],
+    },
+    meta: {
+      lead: null,
+      main: [[28, 64, "listCardTitleText"]],
+      end: [
+        [67, 80, "listCardBM"],
+        [0, 8, "listCardInfo"],
+      ],
+    },
   },
 };
+
+// 一行裡用到的全部 cell 範圍（測試檢查不重疊用）。
+export function layoutSpans(line) {
+  return [line.lead, ...line.main, ...line.end].filter(Boolean);
+}
 
 export function buildListCard({
   chars,
@@ -96,10 +121,22 @@ export function buildListCard({
       ? 2
       : 1
     : 0;
-  const line = (parts) =>
-    parts.map(([a, b, cls]) =>
-      cardSegment(chars, Math.max(a, cursorCells), b, forceWidth, row, cls),
-    );
+  const part = ([a, b, cls]) =>
+    cardSegment(chars, Math.max(a, cursorCells), b, forceWidth, row, cls);
+  // 游標欄兩行都有（第二行空白）⇒ 左欄上下對齊。
+  const line = (spec, cls, cursor) =>
+    el("span", { class: cx("listCardLine", cls) }, [
+      el("span", { class: "listCardCursor" }, cursor),
+      el("span", { class: "listCardLead" }, spec.lead ? part(spec.lead) : null),
+      el("span", { class: "listCardMain" }, spec.main.map(part)),
+      spec.end.length
+        ? el(
+            "span",
+            { class: cx("listCardEnd", spec.endClass) },
+            spec.end.map(part),
+          )
+        : null,
+    ]);
   return {
     node: el(
       "span",
@@ -119,11 +156,8 @@ export function buildListCard({
           "data-row": row,
         },
         [
-          el("span", { class: "listCardLine listCardTitle" }, [
-            el("span", { class: "listCardCursor" }, cursorCells ? ">" : " "),
-            ...line(layout.title),
-          ]),
-          el("span", { class: "listCardLine listCardMeta" }, line(layout.meta)),
+          line(layout.title, "listCardTitle", cursorCells ? ">" : " "),
+          line(layout.meta, "listCardMeta", " "),
         ],
       ),
     ),

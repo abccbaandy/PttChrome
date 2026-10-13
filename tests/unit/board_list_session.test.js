@@ -9,6 +9,7 @@ import {
   transitionBoardListSession,
 } from "../../src/js/board_list_session";
 import { BRD_CMD_PREFIX } from "../../src/js/list_render_owner";
+import { LIST_CARD_ROWS } from "../../src/js/mobile_layout";
 
 const pad7 = (n) => String(n).padStart(7, " ");
 const brdRow = (num, name) =>
@@ -1398,11 +1399,13 @@ describe("手機卡片：採用原生落點時游標必須在視口內（看板�
     const { s, screen } = setup(true);
     s._adoptLanding(landing(40));
     s.applyScrollAfterRender();
-    // 落點規則要 40-9+1 = 32（位置 31），但緩衝在 40 結束 ⇒ 夾在 總高 − 視口
-    // （40 張 × 50px − 480px ＝ 1520px ＝ 第 30.4 張）。
+    // 落點規則要頁底 40 貼齊視口底（頂端位置 40 − 一屏筆數），且不超過 總高 − 視口。
+    const card = CHH * LIST_CARD_ROWS;
+    const page = Math.floor(24 / LIST_CARD_ROWS);
+    const top = Math.min((40 - page) * card, 40 * card - vp(true));
     expect(s._isPosVisible(s._cursorPos())).toBe(true);
-    expect(screen.top).toBe(Math.min(31 * CHH * 2.5, 40 * CHH * 2.5 - vp(true)));
-    expect(s._topNum).toBe(31);
+    expect(screen.top).toBe(top);
+    expect(s._topNum).toBe(1 + Math.floor(top / card));
   });
 
   test("桌機（無卡片）：錨＝原生頁頂端，行為不變", () => {
