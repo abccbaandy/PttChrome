@@ -214,9 +214,12 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - 切換點兩處：`screen.js#_renderRow`（單列）與 `_buildRowNode` 的 `mergeCommentRun`（合併塊不經 `_renderRow`）。
   區段來自 `comment_merge.commentContentCells`／`buildMergedCommentChars` 的 `tailStart`／`timeStart`；
   認不出推文形狀 ⇒ 退回 buildRow。
-- 版型：標頭 `推/噓/→`・`.floorBadge[data-floor]`（卡片內改一般行內字）・id（原PO `.commentByAuthor`），
-  右靠 `.commentCardMeta`（IP＋時間，0.8em 淡化）；內容 `.commentCardText` 以原欄號餵 LinkSegmentBuilder
-  （連結／AID／預覽照舊）。
+- 版型比照 PTT 網頁版 `.push`（www.ptt.cc，`bbs-base.css`）：一條行內流
+  `.commentCardHead`（`推/噓/→`・`.floorBadge[data-floor]`・id（原PO `.commentByAuthor`）・`.commentCardSep` 冒號）
+  → `.commentCardText`（以原欄號餵 LinkSegmentBuilder，連結／AID／預覽照舊）→ `.commentCardMeta`（IP＋時間，
+  `float:right` 全字級不淡化；同行放不下才掉行）。卡片 `display:flow-root` 包住 float。
+  builder 的 div 與空預覽 div 在卡片內收成行內；合併塊第二則起以 `div:empty + bbsline::before` 換行。
+  內容暗黃 `.q3` 在卡片內提亮為 `#990`（＝網頁版 `.f3`），`:not()` 讓出上班模式／游標列加亮。
 - 契約：外層 `span[type=bbsrow][srow][data-pusher][data-pusher-col]`（`.commentSpacing` 直接子選擇器、長按黑名單），
   標頭與內容每行都是 `[data-type=bbsline][data-row]`。
 - 守護：unit `comment_card.test.js`；offline e2e `mobile_reflow`「手機推文卡片」。

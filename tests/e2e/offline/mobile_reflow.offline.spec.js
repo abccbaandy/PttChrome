@@ -320,7 +320,9 @@ test.describe('長按選單（觸控 contextmenu）', () => {
 test.describe('手機推文卡片', () => {
   test.skip(!article, '尚無 article cassette');
 
-  test('每則推文的時間與 id 同一行、靠右；內容不含時間', async ({ page }) => {
+  // 版型比照 PTT 網頁版：「推 樓號 id: 內容」一條行內流，時間 float 靠右 ⇒ 放得下就與
+  // 內容同行，放不下才掉到下一行（仍靠右，不會跑到行首）。
+  test('每則推文的時間靠右不在行首、短推文與 id 同行；內容不含時間；內容黃比照網頁版', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true });
@@ -334,26 +336,32 @@ test.describe('手機推文卡片', () => {
         const id = c.querySelector('.commentCardId').getBoundingClientRect();
         const time = c.querySelector('.commentCardTime');
         const t = time ? time.getBoundingClientRect() : null;
+        const q3 = c.querySelector('.commentCardText .q3');
         return {
           idTop: id.top,
           idBottom: id.bottom,
           timeMid: t ? (t.top + t.bottom) / 2 : null,
+          timeLeft: t ? t.left : null,
           timeRight: t ? t.right : null,
+          cardLeft: card.left,
           cardRight: card.right,
           body: c.querySelector('.commentCardText').textContent,
           time: time ? time.textContent : null,
+          q3Color: q3 ? getComputedStyle(q3).color : null,
         };
       })
     );
     expect(cards.length, '找不到推文卡片').toBeGreaterThan(0);
     for (const c of cards) {
       expect(c.time).toMatch(/\d{1,2}\/\d{2} \d{2}:\d{2}/);
-      // 時間的垂直中線落在 id 那一行之內 ⇒ 同一行（字級不同，比 top 會差幾 px）。
-      expect(c.timeMid).toBeGreaterThanOrEqual(c.idTop);
-      expect(c.timeMid).toBeLessThanOrEqual(c.idBottom);
       expect(c.cardRight - c.timeRight).toBeLessThan(24);
+      // 原症狀＝時間跑到下一行最左邊：時間的左緣必須在卡片右半邊。
+      expect(c.timeLeft - c.cardLeft).toBeGreaterThan((c.cardRight - c.cardLeft) / 2);
       expect(c.body).not.toContain(c.time);
+      if (c.q3Color) expect(c.q3Color).toBe('rgb(153, 153, 0)');
     }
+    // 行內流（不是「標頭一行＋內容一行」的兩段卡片）：至少一則短推文的時間落在 id 那一行。
+    expect(cards.some((c) => c.timeMid >= c.idTop && c.timeMid <= c.idBottom)).toBe(true);
   });
 
   // 檔頭與 80 欄狀態列（docs/mobile.md「收起終端機標頭／狀態列」）：標題在 App Bar、

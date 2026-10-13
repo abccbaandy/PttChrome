@@ -330,35 +330,60 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 }
 
 /* 手機推文卡片（render/comment_card.js，docs/mobile.md「推文卡片」）：只在換行版面。
-   標頭列＝推/噓/→・樓號・id，IP＋時間右靠縮小淡化；內容另起一行縮排、自然換行。
+   版型比照 PTT 網頁版 .push：「推/噓/→ 樓號 id: 內容」一條行內流自然換行，IP＋時間
+   排在最後 float 靠右（同行放得下就同行），全字級不淡化。flow-root 讓卡片包住 float。
+   builder 產出的 div／空預覽 div 收成行內，否則區塊盒會把內容或時間擠到下一行；合併塊
+   第二則起用 ::before 換行（仍是行內 ⇒ 最後一則後面還能接時間）。有圖的預覽 div 不空，
+   照舊是區塊（後面那則就不用再補換行）。
    等寬格線在換行版面本來就不存在（點擊範圍與以欄判斷的滑鼠區域在 reflow 下全關），
    所以「推文區塊行距」那段的格線禁令不適用；仍守：高度整數 px、不用 margin-bottom
    （會推開 #easyReadingLastRow）、不宣告 user-select（css_user_select.test.js）。 */
 .main.mobileReflow #mainContainer span[type="bbsrow"].commentCard {
-  display: block;
+  display: flow-root;
   padding-block: 3px;
+  line-height: 1.3;
   box-shadow: inset 0 -1px 0 #333;
 }
 .commentCard .commentCardHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 0.5em;
-  padding-inline-end: 0.25em;
+  white-space: pre-wrap;
+}
+.commentCard .commentCardHead > * + * {
+  margin-left: 0.4em;
+}
+.commentCard .commentCardHead > .commentCardSep {
+  margin-left: 0;
+  margin-right: 0.4em;
+}
+.commentCard .commentCardHead > span > div,
+.commentCard .commentCardText > div,
+.commentCard .commentCardMeta > span > div {
+  display: inline;
+}
+.commentCard .commentCardHead div:empty,
+.commentCard .commentCardText div:empty,
+.commentCard .commentCardMeta div:empty {
+  display: none;
+}
+.commentCard .commentCardText div:empty + [data-type="bbsline"]::before {
+  content: "\A";
   white-space: pre;
 }
-.commentCard .commentCardMeta {
-  display: flex;
-  column-gap: 0.5em;
-  margin-left: auto;
-  font-size: 0.8em;
-  opacity: 0.6;
-}
 .commentCard .commentCardText {
-  display: block;
-  padding-left: 1em;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.commentCard .commentCardMeta {
+  float: right;
+  margin-left: 1em;
+  white-space: pre;
+}
+.commentCard .commentCardMeta > * + * {
+  margin-left: 0.5em;
+}
+/* 推文內容的暗黃（ANSI 33，.q3 #808000）在手機字級下太暗：比照 PTT 網頁版 .f3 的 #990。
+   :not() 讓出上班模式與游標列加亮（color.css 的 .work-mode-active／.cursorBrighten .q3）。 */
+.commentCard .commentCardText .q3:not(.work-mode-active *, .cursorBrighten *) {
+  color: #990;
 }
 /* 樓層徽章在卡片裡是一般行內字（桌機那套零寬盒＋上標是為了不位移等寬格線）。
    color 仍留在 .floorBadge 本層（上班模式 color.css 覆寫它）。 */
