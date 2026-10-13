@@ -144,7 +144,7 @@ server `base` 不對齊：抓頁以**絕對編號** merge、`boardListFetchVerdi
 | 序列 | ＝整份緩衝（無黑名單過濾、無置底門控）⇒ 位置就是索引 |
 | 上限／連續段 | 共用 `evictListBuffer` / `pruneListToSegment`（key 換成看板編號） |
 | 捲動數學 | 共用 `js/list_scroll.js`（`topPosFromScrollTop`/`anchorScrollTop`/`revealScrollTop`/`revealPlan`…） |
-| 補頁位移 | 共用頂端保留區（`screen.absorbListShift`，甩動中不寫 scrollTop；見 `docs/easy-reading-list.md`「純位移不寫 scrollTop」）。到頂判準 `_atTopEdge`＝`_edgeUp` **或緩衝含第 1 項**；上緣在不重繪的路徑確認時要當場 `_syncReserveTarget`，否則保留區留著＝滾輪捲得進空白 |
+| 補頁位移 | 共用頂端保留區（`screen.absorbListShift`，甩動中不寫 scrollTop；見 `docs/easy-reading-list.md`「純位移不寫 scrollTop」）。到頂判準 `_atTopEdge`＝`_edgeUp` **或緩衝含第 1 項**；上緣在不重繪的路徑確認時要當場 `_syncReserveTarget`，否則保留區留著＝滾輪捲得進空白。保留區上限＝緩衝第一項編號 − 1 列（`listReservePx` 的 `rowsAbove`）：多出來的部分要寫 scrollTop 才收得掉、捲動中一直延後，補到第 1 項時就是一塊捲得進去的空白；有上限則補到頂正好吸收完 |
 | 渲染輸出 | 共用 `_listWindowLines` / `_listCursorRow`（`clientToPos`／游標底色／複製選取都讀它） |
 
 **enhance 的 `pageState` pin 成 1（MENU）且不帶 `listEasyReading`／`inListContext`**：

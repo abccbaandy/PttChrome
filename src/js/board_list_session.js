@@ -1747,8 +1747,15 @@ BoardListSession.prototype = {
     if (!screen || !screen.setListReserveTarget) return;
     const rowH = this._rowHeight();
     if (!(rowH > 0)) return;
+    // 看板編號連續、從 1 起算 ⇒ 第一項之前最多還有 first − 1 列可補（保留區上限）。
+    const first = bufferEdgeNum(this._termBuf.brdListLineNums || [], -1);
     screen.setListReserveTarget(
-      listReservePx({ edgeUp: this._atTopEdge(), bodyRows: this._bodyRows(), rowH: rowH })
+      listReservePx({
+        edgeUp: this._atTopEdge(),
+        bodyRows: this._bodyRows(),
+        rowH: rowH,
+        rowsAbove: first > 0 ? first - 1 : null
+      })
     );
   },
 

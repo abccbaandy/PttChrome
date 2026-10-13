@@ -1503,6 +1503,50 @@ describe("頂端保留區：到頂一定是 0（看板列表）", () => {
     expect(targets.at(-1)).toBeGreaterThan(0);
   });
 
+  // 錄製檔 ptt-debug-20261013-005604：靜止時保留區回補成 4 頁（3072px），當時緩衝從
+  // 第 49 項起、上方其實只剩 48 列。之後滾輪連續往上捲，補頁兩次各吸收 24 列就到第
+  // 1 項 ⇒ 目標變 0，但收掉保留區要寫 scrollTop、捲動中一路延後 ⇒ 剩下 2304px 空白
+  // 被捲進視野。保留區不能比「緩衝第一項之前還剩的列數」大：補到第 1 項時正好吸收完。
+  test("捲動中補到第 1 項：保留區已被吸收到 0（不靠捲動停下後的回補）", () => {
+    const h = makeSession();
+    seedBuffer(h.termBuf, 49, 61);
+    h.s.state = "active";
+    h.s._renderMode = "buffer";
+    h.view.chh = CHH;
+    h.s._topNum = 49;
+    const screen = {
+      dom: 0,
+      reserve: 0,
+      flinging: false,
+      hasListViewport: () => true,
+      getListScrollTop() { return this.dom - this.reserve; },
+      getListViewportPx: () => 20 * CHH,
+      setListScrollTop(px) { if (!this.flinging) this.dom = px + this.reserve; },
+      scrollListTo(px) { this.setListScrollTop(px); },
+      absorbListShift(d) {
+        if (this.reserve - d < 0) return false;
+        this.reserve -= d;
+        return true;
+      },
+      setListReserveTarget(px) {
+        if (this.flinging || px === this.reserve) return;
+        this.dom += px - this.reserve;
+        this.reserve = px;
+      },
+    };
+    h.view.componentScreen = screen;
+    h.s.applyScrollAfterRender(); // 靜止：保留區回補
+    expect(screen.reserve).toBeGreaterThan(0);
+    expect(screen.reserve).toBeLessThanOrEqual(48 * CHH);
+    screen.flinging = true;
+    for (const start of [25, 1]) {
+      h.s.captureScrollAnchor();
+      seedBuffer(h.termBuf, start, 110 - start);
+      h.s.applyScrollAfterRender();
+    }
+    expect(screen.reserve).toBe(0);
+  });
+
   test("往上抓頁失敗當成到頂：當場收掉保留區（這條路徑不重繪）", () => {
     const { s, targets, enqueued } = setup(21);
     s._topNum = 21;
