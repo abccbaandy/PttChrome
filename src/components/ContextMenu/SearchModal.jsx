@@ -14,12 +14,14 @@ import { normalizeSearchText } from "../../js/article_search";
 import {
   sanitizeBoardQuery,
   resolvedBoardName,
+  interimCandidates,
 } from "../../js/board_search_bridge";
 import {
   readSearchHistory,
   forgetSearch,
   forgetSearchKind,
 } from "../../js/search_history";
+import "./SearchModal.css";
 
 // 搜尋彈窗（docs/article-search.md）。取代 PTT 原生的 / ? a Z s prompt：
 //   - ↑／↓ 在輸入框裡循環**這個種類**的本機記憶（↑ 從最新的開始，比照 PTT 的
@@ -108,6 +110,12 @@ export const SearchModal = ({
     board.result.query.toLowerCase() === boardQuery.toLowerCase()
       ? board.result
       : null;
+  // 上一份收下的清單：查詢在飛時拿它本地篩選先顯示（interimCandidates），清單不會
+  // 每打一個字就先清空再長回來。
+  const lastAcceptedRef = useRef(null);
+  if (!board) lastAcceptedRef.current = null;
+  else if (board.result && !board.result.rejected && !board.result.unknown)
+    lastAcceptedRef.current = board.result;
   // PTT 收不下的字（沒有看板以這串開頭）：退回到收得下的前綴，同原生的 bell＋丟字。
   const latestResult = board && board.result;
   // 使用者在回應回來前又多打了字也一樣（那些字接在被拒的字後面，一起丟）。
@@ -265,6 +273,12 @@ export const SearchModal = ({
           rejected={boardRejected}
           blocks={boardBlocks}
           ascii={!value || !!normalizeSearchText("board", value)}
+          interim={
+            boardResult
+              ? null
+              : interimCandidates(lastAcceptedRef.current, boardQuery)
+          }
+          mobile={mobile}
           onPick={submit}
         />
       )}
@@ -330,7 +344,8 @@ export const SearchModal = ({
       opened={show}
       onClose={onHide}
       title={i18n("searchModal_title")}
-      centered
+      // 貼頂不置中：置中時內容一變高（切種類、刪記憶）輸入框就跟著上下跳。
+      yOffset="10vh"
       size="lg"
     >
       {form}
@@ -339,6 +354,9 @@ export const SearchModal = ({
 };
 
 // 看板補全的狀態列＋符合清單（PTT「相關資訊一覽表」的第一頁）。
+// 版面固定（SearchModal.css）：狀態列恆佔一行、清單框恆定高度、「還有更多」放在框內，
+// 打字時彈窗不跟著結果長縮（使用者回報：邊打字視窗邊抖動）。
+// interim：查詢在飛時先顯示的清單（上一份本地篩選，淡化），result 回來就換掉。
 const BoardSuggestions = ({
   board,
   query,
@@ -346,6 +364,8 @@ const BoardSuggestions = ({
   rejected,
   blocks,
   ascii,
+  interim,
+  mobile,
   onPick,
 }) => {
   let status = null;
@@ -358,28 +378,30 @@ const BoardSuggestions = ({
     status = i18n("searchModal_boardUnavailable");
   else if (query && !result) status = i18n("searchModal_boardPending");
   else if (blocks) status = i18n("searchModal_boardAmbiguous");
-  const names = (result && result.candidates) || [];
+  const pending = !result && !!interim && interim.length > 0;
+  const names = result ? result.candidates || [] : pending ? interim : [];
   return (
-    <div data-board-suggest={board.status}>
-      {status && (
-        <Text
-          size="xs"
-          c={rejected || !ascii ? "red" : "dimmed"}
-          mt={4}
-          data-board-status
-        >
-          {status}
-        </Text>
-      )}
-      {names.length > 0 && (
-        // 一頁最多約 60 個（PTT 三欄×20 列），手機上不可把表單撐出畫面。
-        <Group
-          gap={4}
-          mt="xs"
-          mah={160}
-          style={{ overflowY: "auto" }}
-          data-board-candidates
-        >
+    <div
+      className="searchBoardSuggest"
+      data-mobile={mobile ? "" : undefined}
+      data-board-suggest={board.status}
+    >
+      <Text
+        size="xs"
+        c={rejected || !ascii ? "red" : "dimmed"}
+        className="searchBoardStatus"
+        title={status || undefined}
+        data-board-status={status ? "" : undefined}
+      >
+        {status}
+      </Text>
+      {/* 一頁最多約 60 個（PTT 三欄×20 列）：框內捲動，不把表單撐出畫面。 */}
+      <div
+        className="searchBoardCandidates"
+        data-board-candidates
+        data-board-interim={pending ? "" : undefined}
+      >
+        <Group gap={4}>
           {names.map((name) => (
             <Button
               key={name}
@@ -392,12 +414,12 @@ const BoardSuggestions = ({
             </Button>
           ))}
         </Group>
-      )}
-      {result && result.more && (
-        <Text size="xs" c="dimmed" mt={4} data-board-more>
-          {i18n("searchModal_boardMore")}
-        </Text>
-      )}
+        {result && result.more && (
+          <Text size="xs" c="dimmed" mt={4} data-board-more>
+            {i18n("searchModal_boardMore")}
+          </Text>
+        )}
+      </div>
     </div>
   );
 };

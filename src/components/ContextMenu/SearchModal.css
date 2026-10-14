@@ -1,0 +1,34 @@
+/* 搜尋彈窗的看板補全區（SearchModal.jsx BoardSuggestions）。
+   高度一律固定：狀態列恆佔一行、清單框恆定高度（內捲）。結果長短、「查詢中」出現與否都
+   不改變彈窗高度 ⇒ 打字時輸入框不會上下抖（手機 sheet 貼底、高度一變輸入框就被推動）。
+   守護 tests/unit/search_modal.test.jsx「看板補全區高度固定」。 */
+.searchBoardStatus {
+  height: 18px;
+  line-height: 18px;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.searchBoardCandidates {
+  box-sizing: border-box;
+  height: 160px;
+  margin-top: 4px;
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  transition: opacity 120ms ease-out;
+}
+
+/* 手機：軟鍵盤升起後 sheet 可用高度只剩一半左右，框縮到約四列。 */
+.searchBoardSuggest[data-mobile] .searchBoardCandidates {
+  height: 112px;
+}
+
+/* 查詢在飛時先顯示的過渡清單（上一份本地篩選）。 */
+.searchBoardCandidates[data-board-interim] {
+  opacity: 0.6;
+}

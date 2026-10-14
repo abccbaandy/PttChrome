@@ -9,6 +9,7 @@ import {
   acceptedPrefixLength,
   BoardSearchBridge,
   boardQueryResult,
+  interimCandidates,
   parseBoardPromptFrame,
   resolvedBoardName,
   sanitizeBoardQuery,
@@ -112,6 +113,20 @@ describe("純函式", () => {
     expect(resolvedBoardName(r("x", "x", [["Xa"]], true), "x")).toBe("");
     // 結論是別的字的 ⇒ 不採用
     expect(resolvedBoardName(r("goss", "Gossiping", [["Gossiping"]]), "gos")).toBe("");
+  });
+
+  test("interimCandidates：查詢在飛時拿上一份清單本地篩出以目前輸入開頭的（大小寫不分）", () => {
+    const last = boardQueryResult("go", parseBoardPromptFrame(promptFrame("go", [["GO", "Golf", "Golfer", "Gossiping"]])));
+    expect(interimCandidates(last, "gol")).toEqual(["Golf", "Golfer"]);
+    expect(interimCandidates(last, "GOS")).toEqual(["Gossiping"]);
+    // 退格回較短的字：上一份是它的子集，照樣先顯示
+    expect(interimCandidates(last, "g")).toEqual(["GO", "Golf", "Golfer", "Gossiping"]);
+    // 無關的字、空字串、沒有上一份、上一份被拒 ⇒ 不猜
+    expect(interimCandidates(last, "ba")).toEqual([]);
+    expect(interimCandidates(last, "")).toEqual([]);
+    expect(interimCandidates(null, "go")).toEqual([]);
+    const bad = boardQueryResult("bbb", parseBoardPromptFrame(promptFrame("bb", [["BB1"]])));
+    expect(interimCandidates(bad, "bbb")).toEqual([]);
   });
 });
 
