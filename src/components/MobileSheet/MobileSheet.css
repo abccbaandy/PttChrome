@@ -45,6 +45,18 @@
   -webkit-touch-callout: none;
 }
 
+/* 貼頂（長按選單的對象在畫面下半部時，js/sheet_placement.js）：圓角翻到下緣、讓開瀏海。 */
+.mobileSheet[data-position="top"] {
+  padding: var(--safe-top, 0px) 12px 0;
+  border-radius: 0 0 16px 16px;
+}
+
+/* 固定在捲動區下方（送出鍵）：內容捲動、鍵盤升起都不會把它擠出畫面。 */
+.mobileSheetFooter {
+  flex: none;
+  padding-top: 8px;
+}
+
 /* 搜尋 sheet 的輸入框要照常選字／貼上。 */
 .mobileSheet input,
 .mobileSheet textarea {

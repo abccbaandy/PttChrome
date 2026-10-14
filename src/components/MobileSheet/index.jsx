@@ -13,10 +13,16 @@ import "./MobileSheet.css";
 //      靠 modalShown 早退，才不會被當成點終端機（送鍵給 PTT）。
 //   2. 系統返回（邊緣滑動／返回鍵）＝收起 sheet：開著時向 App.registerSheetDismiss 登記，
 //      history_back_guard 在送 ← 之前先問 App.dismissTopSheet()。接住原生返回，不自己模擬。
-//   3. 拖曳把手往下拉超過 SHEET_DISMISS_DRAG_PX 收起；只有把手區接手勢，內容照常捲動。
+//   3. 拖曳把手往外（貼底＝往下、貼頂＝往上）拉超過 SHEET_DISMISS_DRAG_PX 收起；只有把手區
+//      接手勢，內容照常捲動。
+// position／maxHeight：長按選單依對象位置改貼頂並限高，不蓋住長按的那一列
+// （js/sheet_placement.js）。footer：固定在捲動區下方的列（送出鍵），內容再長、鍵盤
+// 再高都看得到，不必先收鍵盤才點得到（LongPushModal 手機版）。
 // z-index 高於底部工具列（2500）與 App Bar：sheet 開著時兩條 bar 都在遮罩下面。
 export const SHEET_Z_INDEX = 3000;
 export const SHEET_DISMISS_DRAG_PX = 80;
+// 與 MobileSheet.css .mobileSheet 的 max-height 同一式（inline maxHeight 要跟它取 min）。
+const SHEET_CSS_MAX_HEIGHT = "calc(100dvh - 48px - var(--vv-kb-inset, 0px))";
 
 export const MobileSheet = ({
   pttchrome,
@@ -25,7 +31,12 @@ export const MobileSheet = ({
   title,
   children,
   sheetKey,
+  position = "bottom",
+  maxHeight = null,
+  footer = null,
+  closeOnClickOutside = true,
 }) => {
+  const top = position === "top";
   const reduceMotion = useReducedMotion();
   const id = useId();
   const [drag, setDrag] = useState(0);
@@ -58,33 +69,51 @@ export const MobileSheet = ({
     if (e.currentTarget.setPointerCapture)
       e.currentTarget.setPointerCapture(e.pointerId);
   }, []);
-  const onPointerMove = useCallback((e) => {
-    if (startY.current == null) return;
-    setDrag(Math.max(0, e.clientY - startY.current));
-  }, []);
+  const onPointerMove = useCallback(
+    (e) => {
+      if (startY.current == null) return;
+      const dy = e.clientY - startY.current;
+      setDrag(top ? Math.min(0, dy) : Math.max(0, dy));
+    },
+    [top],
+  );
   const onPointerEnd = useCallback(
     (e) => {
       if (startY.current == null) return;
       const dy = e.clientY - startY.current;
       startY.current = null;
       setDrag(0);
-      if (dy > SHEET_DISMISS_DRAG_PX) onClose();
+      if ((top ? -dy : dy) > SHEET_DISMISS_DRAG_PX) onClose();
     },
-    [onClose],
+    [onClose, top],
+  );
+
+  const handle = (
+    <div
+      className="mobileSheetHandle"
+      data-sheet-handle
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
+    >
+      <span />
+    </div>
   );
 
   return (
     <Drawer
       opened={!!opened}
       onClose={onClose}
-      position="bottom"
+      closeOnClickOutside={closeOnClickOutside}
+      position={top ? "top" : "bottom"}
       size="auto"
       withCloseButton={false}
       zIndex={SHEET_Z_INDEX}
       lockScroll={false}
       returnFocus={false}
       transitionProps={{
-        transition: "slide-up",
+        transition: top ? "slide-down" : "slide-up",
         duration: reduceMotion ? 0 : 200,
       }}
       classNames={{
@@ -96,20 +125,22 @@ export const MobileSheet = ({
       <div
         className="mobileSheet nomouse_command"
         data-sheet={sheetKey}
-        style={drag ? { transform: `translateY(${drag}px)` } : undefined}
+        data-position={top ? "top" : "bottom"}
+        style={{
+          ...(drag ? { transform: `translateY(${drag}px)` } : null),
+          // CSS 的上限（扣鍵盤）照樣算：取兩者較小者。
+          ...(maxHeight != null
+            ? {
+                maxHeight: `min(${Math.round(maxHeight)}px, ${SHEET_CSS_MAX_HEIGHT})`,
+              }
+            : null),
+        }}
       >
-        <div
-          className="mobileSheetHandle"
-          data-sheet-handle
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerEnd}
-          onPointerCancel={onPointerEnd}
-        >
-          <span />
-        </div>
+        {top ? null : handle}
         {title ? <div className="mobileSheetTitle">{title}</div> : null}
         <div className="mobileSheetScroll">{children}</div>
+        {footer ? <div className="mobileSheetFooter">{footer}</div> : null}
+        {top ? handle : null}
       </div>
     </Drawer>
   );

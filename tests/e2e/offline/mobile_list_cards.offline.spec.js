@@ -309,4 +309,41 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await expect(items.filter({ hasText: addAuthor })).toBeVisible();
     await expect(items.filter({ hasText: addTitle })).toBeVisible();
   });
+
+  // 選單不可擋住它要作用的對象（js/sheet_placement.js）：長按畫面最下方那張卡片，
+  // 固定貼底的 sheet 會整個蓋住它 ⇒ 選中外框等於沒畫（實錄：「前已讀後未讀」）。
+  test('長按最下方的卡片 → 選單改貼頂，不蓋住那張卡片', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    // 長按事件只能手捏（同上一支的註解：桌機 Chromium 的 CDP 觸控長按不發 contextmenu）。
+    const card = await page.evaluate(() => {
+      const v = document.querySelector('#mainContainer .listBodyView');
+      const vr = v.getBoundingClientRect();
+      const cards = Array.from(v.querySelectorAll('.listCard[data-list-author]')).filter((c) => {
+        const r = c.getBoundingClientRect();
+        return r.top >= vr.top && r.bottom <= vr.bottom && r.height > 0;
+      });
+      const el = cards[cards.length - 1];
+      const r = el.getBoundingClientRect();
+      el.dispatchEvent(
+        new PointerEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: r.left + 20,
+          clientY: r.top + r.height / 2,
+          pointerType: 'touch',
+        })
+      );
+      return { top: r.top, bottom: r.bottom, vh: window.innerHeight };
+    });
+    expect(card.bottom, '要選畫面下半部的卡片才測得到').toBeGreaterThan(card.vh / 2);
+    const sheet = page.locator('[data-sheet="context"]');
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toHaveAttribute('data-position', 'top');
+    const box = await waitRectStable(page, '[data-sheet="context"]');
+    expect(box.height).toBeGreaterThan(0);
+    expect(box.top + box.height).toBeLessThanOrEqual(card.top + 0.5);
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+  });
 });

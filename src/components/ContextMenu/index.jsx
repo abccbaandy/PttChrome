@@ -61,6 +61,7 @@ import {
   menuTargetFromElement,
   setMenuTargetHighlight,
 } from "../../js/menu_target_highlight";
+import { menuAnchorRect } from "../../js/sheet_placement";
 
 function noop() {}
 
@@ -147,6 +148,9 @@ const initialState = {
   // 選單作用的那篇文章（列表列／手機卡片；js/menu_target_highlight.js）。選單開著
   // 時在畫面上標出來，避免對錯的文章操作。null ＝ 不是在文章列上開的。
   menuTarget: null,
+  // 長按的對象（那一列／卡片／觸點）的 client 矩形 { top, bottom }：手機 sheet 據此
+  // 改貼頂或限高，不蓋住它（js/sheet_placement.js）。與 highlightMenuTarget 無關。
+  menuAnchor: null,
   // 右鍵當下是不是在文章畫面（決定「複製本篇連結」出不出現）。
   articleLinkEnabled: false,
   // Quick search items shown for the current selection (already filtered by the
@@ -459,6 +463,7 @@ export const ContextMenu = ({ pttchrome }) => {
           normalEnabled && prefs.highlightMenuTarget
             ? menuTargetFromElement(target)
             : null,
+        menuAnchor: menuAnchorRect(target, event.clientY),
         quickSearchItems,
         quickSearchQuery,
         // 「複製本篇連結」只在文章畫面有意義（要按 Q 問文章資訊框）。pageState 3
@@ -505,6 +510,7 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistTitleTarget: null,
         markReadTarget: null,
         menuTarget: null,
+        menuAnchor: null,
         quickSearchItems: [],
         quickSearchQuery: "",
       });
@@ -953,6 +959,7 @@ export const ContextMenu = ({ pttchrome }) => {
     searchKind,
     searchKinds,
     liveHelperSec,
+    menuAnchor,
   } = state;
 
   // 長按／右鍵選單的外殼：手機＝bottom sheet，桌機＝游標旁的 Mantine Menu。項目清單
@@ -976,6 +983,7 @@ export const ContextMenu = ({ pttchrome }) => {
         authorBlacklistExists={blacklistAuthorExists}
         titleBlacklistText={blacklistTitleTarget}
         markReadTarget={markReadTarget}
+        menuAnchor={menuAnchor}
         articleLinkEnabled={articleLinkEnabled}
         imageUploadEnabled={imageUploadEnabled}
         inputHelperEnabled={inputHelperEnabled}
@@ -1018,6 +1026,8 @@ export const ContextMenu = ({ pttchrome }) => {
         imageUpload={pttchrome.imageUpload}
         onHide={onLongPushHide}
         onConfirm={onLongPushConfirm}
+        mobile={mobile}
+        pttchrome={pttchrome}
       />
       <LongPushProgressModal
         progress={longPushProgress}

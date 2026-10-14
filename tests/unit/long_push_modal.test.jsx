@@ -8,6 +8,8 @@
 //   2. 非 Big5 字元（emoji）要先講清楚會被略過，而且交出去的內容必須是**已過濾**的
 //      —— u2b 對它們回 '\xFF\xFD'，0xFF 是 telnet IAC 而 telnet.js 不做跳脫
 //   3. 超過 20 則要先問一次（PTT 有推文冷卻，整段可能跑好幾分鐘）
+import mantineCss from "@mantine/core/styles.css?raw";
+import { page } from "vitest/browser";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
@@ -42,6 +44,8 @@ const renderModal = (props = {}) => {
         onHide={props.onHide || (() => {})}
         onConfirm={onConfirm}
         imageUpload={props.imageUpload}
+        mobile={props.mobile}
+        pttchrome={props.pttchrome}
       />
     </MantineProvider>
   );
@@ -62,15 +66,12 @@ const fakeUpload = (over = {}) => ({
 
 const textarea = () => document.querySelector('[name="longPushText"]');
 const type = (value) => fireEvent.change(textarea(), { target: { value } });
-const submit = () =>
-  fireEvent.submit(textarea().closest("form"));
-const segmentsText = () =>
-  screen.getByTestId("longPushSegments").textContent;
+const submit = () => fireEvent.submit(textarea().closest("form"));
+const segmentsText = () => screen.getByTestId("longPushSegments").textContent;
 
 // SegmentedControl 的每個選項＝一個同名 hidden radio ＋ 一個 <label>。色塊掛在
 // label 裡面，用 data-push-type 取，不依賴 Mantine 的內部 class。
-const swatch = (value) =>
-  document.querySelector(`[data-push-type="${value}"]`);
+const swatch = (value) => document.querySelector(`[data-push-type="${value}"]`);
 
 // 型別選項比照 PTT 原生配色（bbs.c#recommend 的 ctype_attr：推 1;33 亮黃、
 // 噓 1;31 亮紅、→ 1;37 亮白）。畫在黑底小色塊上，理由是 Mantine 的亮色主題
@@ -314,7 +315,9 @@ describe("探路的事實", () => {
     renderModal({ preflight: { blocked: false, booAllowed: false } });
     expect(screen.getByTestId("longPushNoBooNote")).toBeTruthy();
     // Mantine 的 SegmentedControl 是一組同名 radio。
-    const boo = document.querySelector('input[name="longPushType"][value="boo"]');
+    const boo = document.querySelector(
+      'input[name="longPushType"][value="boo"]',
+    );
     expect(boo.disabled).toBe(true);
     expect(
       document.querySelector('input[name="longPushType"]:checked').value,
@@ -416,8 +419,9 @@ describe("鍵盤送出", () => {
       name: i18n("longPushModal_confirm"),
     });
     expect(button.getAttribute("aria-keyshortcuts")).toContain("Enter");
-    expect(screen.getByTestId("longPushSubmitHint").closest("[aria-hidden]"))
-      .toBeTruthy();
+    expect(
+      screen.getByTestId("longPushSubmitHint").closest("[aria-hidden]"),
+    ).toBeTruthy();
   });
 });
 
@@ -535,5 +539,77 @@ describe("草稿暫存", () => {
     submit();
     expect(onConfirm).toHaveBeenCalled();
     expect(readDraft()).toBe("安安");
+  });
+});
+
+// 手機：置中的 Modal 在軟鍵盤升起時，送出鍵剛好被鍵盤蓋住（實錄截圖：打完字得先收
+// 鍵盤才點得到送出）。改成 bottom sheet：整個 sheet 跟著鍵盤讓位（--vv-kb-inset），
+// 按鈕列放在不隨內容捲動的 footer ⇒ 鍵盤開著也點得到送出。
+describe("手機版：鍵盤不擋送出鍵", () => {
+  // 真版面：Mantine 的 CSS 以 ?raw 注入（Vitest 不處理套件的 CSS import；沒有它 Drawer
+  // 不是 fixed、量到的位置是假的），視窗改成手機大小（同 pref_modal_narrow.test.jsx）。
+  let style;
+  beforeAll(async () => {
+    style = document.createElement("style");
+    style.textContent = mantineCss;
+    document.head.appendChild(style);
+    await page.viewport(390, 800);
+  });
+  afterAll(async () => {
+    style.remove();
+    await page.viewport(1024, 768);
+  });
+
+  const KB = 400;
+  const fakeApp = () => ({
+    setModalOpen: vi.fn(),
+    registerSheetDismiss: () => () => {},
+  });
+  const submitButton = () =>
+    document.querySelector('[data-sheet="longPush"] button[type="submit"]');
+
+  beforeEach(() =>
+    document.documentElement.style.setProperty("--vv-kb-inset", KB + "px"),
+  );
+  afterEach(() =>
+    document.documentElement.style.removeProperty("--vv-kb-inset"),
+  );
+
+  test("送出鍵整顆落在鍵盤上緣之上（就算內容很長）", async () => {
+    renderModal({ mobile: true, pttchrome: fakeApp() });
+    await vi.waitFor(() => expect(submitButton()).not.toBeNull());
+    type("很長的一段話".repeat(80));
+    const kbTop = window.innerHeight - KB;
+    await vi.waitFor(() => {
+      const r = submitButton().getBoundingClientRect();
+      expect(r.height).toBeGreaterThan(0);
+      expect(r.bottom).toBeLessThanOrEqual(kbTop + 0.5);
+      expect(r.top).toBeGreaterThanOrEqual(0);
+    });
+    // 按鈕列不在捲動區裡：內容再長也不會被捲出去
+    expect(submitButton().closest(".mobileSheetScroll")).toBeNull();
+    expect(submitButton().closest(".mobileSheetFooter")).not.toBeNull();
+  });
+
+  test("footer 的送出鍵仍然送得出去（form 屬性指回表單），交出去的是過濾過的內容", async () => {
+    const { onConfirm } = renderModal({ mobile: true, pttchrome: fakeApp() });
+    await vi.waitFor(() => expect(submitButton()).not.toBeNull());
+    type("安安😀");
+    // 真瀏覽器的 click → form 屬性關聯的 submit（不是手動 fireEvent.submit）
+    submitButton().click();
+    expect(onConfirm).toHaveBeenCalledWith({ text: "安安", type: "push" });
+  });
+
+  test("點遮罩不收（打到一半誤觸不該整段收掉）；取消鍵收", async () => {
+    const onHide = vi.fn();
+    renderModal({ mobile: true, pttchrome: fakeApp(), onHide });
+    await vi.waitFor(() => expect(submitButton()).not.toBeNull());
+    const overlay = document.querySelector(".mantine-Drawer-overlay");
+    expect(overlay).not.toBeNull();
+    fireEvent.mouseDown(overlay);
+    fireEvent.click(overlay);
+    expect(onHide).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText(i18n("longPushModal_cancel")));
+    expect(onHide).toHaveBeenCalled();
   });
 });

@@ -22,7 +22,7 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 | `src/js/long_push_draft.js` | 草稿暫存（localStorage，**自帶 key、不進 `pttchrome.pref.v1`** ⇒ 推文內容不會被雲端同步／設定匯出帶走）：`readDraft` / `writeDraft` / `clearDraft`。單一份、不綁文章 |
 | `src/js/long_push_anchor.js` | **游標錨定**純邏輯：`articleAnchor` / `captureCursorAnchor` / `checkCursorAnchor` / `findAnchorRowNum` / `subjectMatches`。檔頭有完整的 pttbbs 推導 |
 | `src/js/long_push_session.js` | 狀態機（形狀比照 `aid_navigation.js`）：**三階段** `preflight` → `armed` → `sending`，每一步一個 `CommandQueue` command。`active`＝線路上有命令在飛、`busy`＝這個功能還握著畫面（含 armed 與冷卻倒數） |
-| `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認 ＋ 圖片上傳，見下節） |
+| `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認 ＋ 圖片上傳，見下節）。手機改 bottom sheet 外殼、按鈕列放 sheet footer（鍵盤不擋送出鍵，見 `docs/mobile.md` Phase 9） |
 | `src/components/ContextMenu/LongPushProgressModal.jsx` | 送出中／探路中的全版遮罩（真 modal，唯一出口是取消） |
 | `src/components/ContextMenu/LongPushErrorModal.jsx` | 推不出去時的錯誤框：**PTT 原文照錄** ＋ 來源標示 ＋ 已送出則數 ＋ 剩餘內容（唯讀 Textarea，按了才複製） |
 | `src/components/ContextMenu/index.jsx` | gating、handler、`modalOpen` 推導、`longPush.onChange`／`onPreflight`／`onResult`／`onSent` 掛接 |
