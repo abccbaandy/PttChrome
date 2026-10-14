@@ -312,8 +312,14 @@ async function installNameComplete(page) {
 }
 
 const lastSent = (page) => page.evaluate(() => window.__sent[window.__sent.length - 1]);
+// 只認 PTT 回來的清單：查詢在飛時彈窗會先顯示上一份篩過的過渡清單（data-board-interim），
+// 那時 Enter／空白鍵還沒有 PTT 的結論可依 ⇒ 看到過渡清單就接著動作會測到別的行為。
 const candidates = (page) =>
-  page.locator('[data-board-candidate]').evaluateAll((els) => els.map((e) => e.dataset.boardCandidate));
+  page.evaluate(() =>
+    document.querySelector('[data-board-interim]')
+      ? null
+      : [...document.querySelectorAll('[data-board-candidate]')].map((e) => e.dataset.boardCandidate)
+  );
 
 async function openBoardSearch(page) {
   await boot(page);

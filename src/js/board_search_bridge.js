@@ -121,6 +121,17 @@ export function resolvedBoardName(result, text) {
   return '';
 }
 
+// 查詢還在飛時先顯示的清單：上一份收下的清單裡以目前輸入開頭的那些（大小寫不分）。
+// 以 q 開頭的看板必定也以 q 的任何前綴開頭 ⇒ 上一份（較短前綴）篩下來不會多出錯的板；
+// 上一份若被截斷（more）可能少列，回來的結果會補上 —— 只是過渡，不拿來判送出。
+// 彈窗靠它讓清單在打字時不先清空再長回來（docs/article-search.md「彈窗版面」）。
+export function interimCandidates(last, query) {
+  if (!last || last.rejected || !query) return [];
+  const q = query.toLowerCase();
+  if (q.indexOf(last.query.toLowerCase()) !== 0 && last.query.toLowerCase().indexOf(q) !== 0) return [];
+  return (last.candidates || []).filter((c) => c.toLowerCase().indexOf(q) === 0);
+}
+
 function noop() {}
 
 // core：App（commandQueue、activeListSession、buf、searchInFlight）。

@@ -29,6 +29,7 @@ const renderModal = (props = {}) => {
         onHide={onHide}
         onConfirm={onConfirm}
         createBoardSearch={props.createBoardSearch}
+        mobile={props.mobile}
       />
     </MantineProvider>,
   );
@@ -130,6 +131,10 @@ function fakeBoardSearch() {
       query: vi.fn(),
       submit: vi.fn(() => true),
       cancel: vi.fn(),
+      setStatus(status) {
+        b.status = status;
+        act(() => onUpdate({ status: b.status, result: b.result }));
+      },
       answer(result) {
         b.result = {
           rejected: false,
@@ -249,4 +254,88 @@ test("看板：切到別的種類就取消背景的看板 prompt", () => {
   const bridge = createBoardSearch.made[0];
   fireEvent.click(screen.getByText(i18n("searchModal_kindTitle")));
   expect(bridge.cancel).toHaveBeenCalled();
+});
+
+// ---- 看板補全區的版面 ----
+// 使用者回報：按 s 叫出的看板搜尋會依清單長短改變大小，邊打字視窗邊抖。手機 sheet 貼底、
+// 桌機原本置中 ⇒ 高度一變輸入框就被推動。守的是「打字過程中表單高度不變」。
+const BOARD_NAMES = Array.from({ length: 60 }, (_, i) => "Go" + i);
+for (const mobile of [false, true]) {
+  test(`看板補全區高度固定：開啟中／查詢中／多筆／少筆／被拒／無清單，表單一樣高（${mobile ? "手機" : "桌機"}）`, () => {
+    const createBoardSearch = fakeBoardSearch();
+    const { input } = renderModal({
+      kind: "board",
+      kinds: ["board"],
+      createBoardSearch,
+      mobile,
+    });
+    const bridge = createBoardSearch.made[0];
+    const form = () => document.querySelector("[data-search-modal]");
+    const heights = [];
+    const snap = (label) =>
+      heights.push([label, Math.round(form().getBoundingClientRect().height)]);
+    bridge.setStatus("opening");
+    snap("opening");
+    bridge.setStatus("ready");
+    snap("ready, empty");
+    fireEvent.change(input, { target: { value: "go" } });
+    snap("pending");
+    bridge.answer({
+      query: "go",
+      completion: "go",
+      candidates: BOARD_NAMES,
+      more: true,
+    });
+    snap("many + more");
+    fireEvent.change(input, { target: { value: "gol" } });
+    snap("interim");
+    bridge.answer({
+      query: "gol",
+      completion: "gol",
+      candidates: ["Golf", "Golfer"],
+    });
+    snap("ambiguous, few");
+    fireEvent.change(input, { target: { value: "golx" } });
+    bridge.answer({
+      query: "golx",
+      accepted: 3,
+      rejected: true,
+      completion: "golx",
+      candidates: [],
+    });
+    snap("rejected");
+    expect(heights[0][1]).toBeGreaterThan(0);
+    for (const [label, h] of heights)
+      expect([label, h]).toEqual([label, heights[0][1]]);
+  });
+}
+
+test("看板：查詢在飛時先顯示上一份清單篩過的結果（不先清空），回來後換成 PTT 的", () => {
+  const createBoardSearch = fakeBoardSearch();
+  const { input } = renderModal({
+    kind: "board",
+    kinds: ["board"],
+    createBoardSearch,
+  });
+  const bridge = createBoardSearch.made[0];
+  const shown = () =>
+    [...document.querySelectorAll("[data-board-candidate]")].map(
+      (e) => e.dataset.boardCandidate,
+    );
+  fireEvent.change(input, { target: { value: "go" } });
+  bridge.answer({
+    query: "go",
+    completion: "go",
+    candidates: ["GO", "Golf", "Golfer", "Gossiping"],
+  });
+  fireEvent.change(input, { target: { value: "gol" } });
+  expect(shown()).toEqual(["Golf", "Golfer"]);
+  expect(document.querySelector("[data-board-interim]")).not.toBeNull();
+  bridge.answer({
+    query: "gol",
+    completion: "gol",
+    candidates: ["Golf", "Golfer", "Golfing"],
+  });
+  expect(shown()).toEqual(["Golf", "Golfer", "Golfing"]);
+  expect(document.querySelector("[data-board-interim]")).toBeNull();
 });

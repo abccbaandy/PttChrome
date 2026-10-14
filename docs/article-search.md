@@ -61,6 +61,15 @@
 
 收尾都在**同一個** prompt 上、都握 `searchInFlight` 直到 prompt 消失：送出＝`退格＋板名＋\r`（不加 `\f`，同 `submitSearch` 第二步）；取消（Esc／切種類／關彈窗）＝`Ctrl-C`＋`\f`（ESC 不是 vgetstring 的取消鍵）。prompt 還沒開出來就送出／取消 ⇒ 排在開啟之後。prompt 開不出來 ⇒ `unavailable`，送出改走 `submitSearch`；開出來後被別的擁有者 `flush`（離板、開文）⇒ 不再送任何鍵。
 
+### 彈窗版面
+
+打字時彈窗高度不可跟著補全結果變（手機 sheet 貼底、桌機彈窗，高度一變輸入框就被推動 ⇒ 邊打邊抖）：
+- 補全區固定高度（`SearchModal.css`）：狀態列恆佔一行（單行省略）、清單框恆定高度內捲（桌機 160px、手機 112px，留給軟鍵盤）、「只列出前一部分」放在框內。
+- 查詢在飛時先顯示上一份收下的清單本地篩選的結果（`interimCandidates`，淡化），不先清空再長回來；以 q 開頭的板必以 q 的前綴開頭，篩下來不會多出錯的板，只是可能少列（上一份被截斷時），不拿來判送出。
+- 桌機 Modal 貼頂（`yOffset`）不置中：切種類、刪記憶這類高度變化時輸入框也不動。
+
+守護 `search_modal.test.jsx`「看板補全區高度固定」（真 Chromium 量表單高度，桌機／手機各一）。
+
 ## 記憶（`search_history.js`）
 
 localStorage `pttchrome.searchHistory.v1` = `{title,author,push,board}`，各 MRU 去重、上限 20。**不在 `pttchrome.pref.v1`** ⇒ 不同步、不進匯出（使用者要求）。彈窗內 ↑ 從最新開始、↓ 回草稿；下方列最近 6 筆可點（手機沒有方向鍵）。刪除：每筆旁 ×（`forgetSearch`）；「全部清除」（`forgetSearchKind`）**只清目前這一類**，其他種類不動。刪除後 ↑ 游標歸零。
