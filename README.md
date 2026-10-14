@@ -1,7 +1,7 @@
 # PttChrome（增強版）
 
 [![Deploy to GitHub Pages](../../actions/workflows/deploy.yml/badge.svg?branch=dev)](../../actions/workflows/deploy.yml)
-[![CodeQL](../../actions/workflows/dynamic/github-code-scanning/codeql/badge.svg)](../../actions/workflows/dynamic/github-code-scanning/codeql)
+[![CodeQL](../../actions/workflows/codeql.yml/badge.svg?branch=dev)](../../actions/workflows/codeql.yml)
 [![Dependabot Updates](../../actions/workflows/dynamic/dependabot/dependabot-updates/badge.svg)](../../actions/workflows/dynamic/dependabot/dependabot-updates)
 
 在瀏覽器上直接連 PTT 的網頁版終端機。以 PTT 官方網頁版 [term.ptt.cc](https://term.ptt.cc) 的原始碼（[robertabcd/PttChrome](https://github.com/robertabcd/PttChrome)）為基底，加上一系列閱讀與操作的增強功能。
