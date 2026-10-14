@@ -20,6 +20,14 @@
   修法已寫進 `playwright.config.js` 的 `offline-firefox` project：`launchOptions.env` 加
   `MOZ_DISABLE_CONTENT_SANDBOX=1`（2026-08-15 實測：headless/有頭、關 WebRender、關硬體加速、
   `security.sandbox.content.level=0`、關 fission/e10s 全都無效，只有這個有用）。
+- **Firefox 每輪隨機紅幾條、子集每次不同、錯誤全是 `page.goto: NS_ERROR_CONNECTION_REFUSED`，
+  dev server 全程活著**（≠「之後整批同錯」的 server 被砍）＝Firefox happy-eyeballs 的 IPv4 備援打到
+  `127.0.0.1:8080`（Windows 上 vite 只綁 `[::1]`）。已在 `offline-firefox` 設
+  `firefoxUserPrefs['network.http.fast-fallback-to-IPv4']=false`，守護 `tests/unit/e2e_firefox_localhost.test.js`。
+  新增 Firefox project 要帶同一個 pref。
+- **Firefox teardown 偶發 `browserContext.close: Protocol error (Browser.removeBrowserContext): can't access
+  property "_maybeDontRestoreTabs"…`**：Playwright Juggler／Firefox SessionStore 內部競態（測試本體已過），
+  頻率約 1/100 條，上游查無回報。不是本專案 code，重跑該條即可。
 - **`browserType.launch: spawn UNKNOWN`（Firefox 整批 launch 即掛、零 AssertionError）＝瀏覽器被裝進
   Claude 桌面版的 MSIX 虛擬化 AppData**。CONFIRMED 機制：
   - 在 Claude 桌面 app（MSIX 套件）內跑 `yarn playwright install`，寫進 `%LOCALAPPDATA%\ms-playwright`

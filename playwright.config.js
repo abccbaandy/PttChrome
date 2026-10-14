@@ -143,6 +143,11 @@ module.exports = defineConfig({
       // 加速、`security.sandbox.content.level=0`、關 fission/e10s 全都無效，只有這個
       // 環境變數能救。測試瀏覽器只載入本機 dev server 與 fixture，關掉 content
       // sandbox 沒有實際風險。
+      //
+      // fast-fallback-to-IPv4=false：Windows 上 vite 只綁 `[::1]:8080`，Firefox 的
+      // happy-eyeballs 在多 worker 負載下會並行開 IPv4 備援打到 `127.0.0.1:8080`，
+      // refused 直接讓 page.goto 失敗（每輪隨機紅幾條、子集都不同）。守護與實測數據見
+      // tests/unit/e2e_firefox_localhost.test.js。
       name: 'offline-firefox',
       fullyParallel: true,
       use: {
@@ -150,6 +155,7 @@ module.exports = defineConfig({
         proxy: OFFLINE_NO_NETWORK,
         launchOptions: {
           env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: '1' },
+          firefoxUserPrefs: { 'network.http.fast-fallback-to-IPv4': false },
         },
       },
       testMatch: 'offline/selection.offline.spec.js',
