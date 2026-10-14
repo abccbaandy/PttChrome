@@ -196,6 +196,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   - 雲端 CI：`deploy.yml` 只在 push `dev` 觸發，`claude/*` 分支要**開 PR 後**才會跑 `pr.yml`（同一份 `test.yml`）；
     `yarn ci:status --branch <工作分支>` 查它（需 `GH_TOKEN`；沒有就明講「CI 未驗」，不可當綠）。
     **PR 綠 ≠ dev 綠**：merge 進 `dev` 後照下面「合進 dev 後」規則等 dev 的 run，不可 merge 完就結束 session。
+  - 雲端環境＝環境 Setup script 呼叫 `scripts/cloud-setup.sh`＋SessionStart hook 自動補裝過期依賴／瀏覽器（見 `docs/run-local.md`「雲端 session」）；改環境裝什麼就改那支腳本。
   - 雲端是 Linux：本文中 Windows 專屬的坑（IPv6-only 綁定、`STATUS_DLL_INIT_FAILED`、Firefox `spawn UNKNOWN`／content sandbox、無 `jq`/`gh`）不一定適用；
     live e2e 帳密（`PTT_USER`/`PTT_PASS`）通常不在雲端 env，**不要在雲端跑 live e2e**（登入預算／BOT 封鎖風險，見「測試」節），改跑 unit＋offline e2e 並在交付時註明。
 - **換行一律 LF**，由 `.gitattributes`（`* text=auto eol=lf`）強制，不依賴各機器的
