@@ -40,7 +40,7 @@ const BOTTOM_PROMPTS = {
   author: ['搜尋作者: ', '增加條件 作者: '],
   push: ['搜尋推文數高於多少', '增加條件 推文數: ']
 };
-const BOARD_PROMPT = '請輸入看板名稱(按空白鍵自動搜尋)';
+export const BOARD_PROMPT = '請輸入看板名稱(按空白鍵自動搜尋)';
 
 function startsWithAny(text, prefixes) {
   return prefixes.some((p) => text.indexOf(p) === 0);
@@ -184,7 +184,7 @@ export function buildSearchSteps(kind, text, cb) {
 // 解除點：第二步完成／任一步失敗／被 flush；保底計時器防任何一條漏掉造成永久吞鍵。
 export const SEARCH_INFLIGHT_MAX_MS = 15000;
 
-function beginInFlight(core) {
+export function beginInFlight(core) {
   core.searchInFlight = true;
   clearTimeout(core._searchInFlightTimer);
   core._searchInFlightTimer = setTimeout(function() {
@@ -192,7 +192,7 @@ function beginInFlight(core) {
   }, SEARCH_INFLIGHT_MAX_MS);
 }
 
-function endInFlight(core) {
+export function endInFlight(core) {
   core.searchInFlight = false;
   clearTimeout(core._searchInFlightTimer);
   core._searchInFlightTimer = null;

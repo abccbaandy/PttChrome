@@ -16,14 +16,39 @@ const cas = loadCassette('scn-board-note-movie');
 // 全合成的小卷（主功能表 → s → 選擇看板 prompt），接上面那卷的動畫／文章列表 recv：
 // 驗「主選單 s → 搜尋彈窗送出板名 ⏎」這條 arm 路徑（live 的 gotoBoard 走的就是它）。
 const sel = loadCassette('scn-board-note-select');
+const BIG5_LIST_TITLE = Buffer.from('acdbc3f6b8eab054a440c4fdaaed', 'hex'); // 相關資訊一覽表
+function completionRecv(board) {
+  const PROMPT_COLS = 34; // 「請輸入看板名稱(按空白鍵自動搜尋): 」的顯示寬度
+  return Buffer.concat([
+    // gnc 是 move(2,0)＋clrtobot：主選單殘留的項目要清掉，否則會被讀成補全清單。
+    Buffer.from(
+      `\x1b[2;${PROMPT_COLS + 1}H\x1b[30;47m${board.padEnd(20)}\x1b[m\x1b[3;1H\x1b[J\x1b[3;1H`,
+      'latin1'
+    ),
+    Buffer.from('-'.repeat(29) + ' ', 'latin1'),
+    BIG5_LIST_TITLE,
+    Buffer.from(
+      ' ' + '-'.repeat(29) + `\x1b[K\x1b[4;1H${board} \x1b[K\x1b[2;${PROMPT_COLS + 1 + board.length}H`,
+      'latin1'
+    ),
+  ]).toString('base64');
+}
 const selectCassette = () =>
   sel &&
   cas && {
     ...sel,
     steps: [
       ...sel.steps,
-      // 彈窗送出的是「板名＋⏎」一整串（article_search.buildSearchSteps）。
-      { on: 'raw', send: Buffer.from('Android\r').toString('base64'), recv: cas.steps[1].recv },
+      // 彈窗的看板種類比照原生補全（board_search_bridge.js）：打字即「板名＋空白鍵」查一趟，
+      // 回應是 name.c gnc_cb_peek 畫的「相關資訊一覽表」（合成：輸入欄 row1、分隔線 row2、
+      // 清單 row3 起；中文字面是 Big5）。
+      { on: 'raw', send: Buffer.from('Android ').toString('base64'), recv: completionRecv('Android') },
+      // 送出在同一個 prompt 上：退格清掉輸入欄＋板名＋⏎。
+      {
+        on: 'raw',
+        send: Buffer.from('\b'.repeat(7) + 'Android\r').toString('base64'),
+        recv: cas.steps[1].recv,
+      },
       cas.steps[2],
     ],
   };
@@ -72,7 +97,11 @@ test.describe('跳過進板畫面（scenario 重放）', () => {
     await ptt.sendKey(page, 's');
     const box = page.locator('input[name="searchKeyword"]');
     await expect(box).toBeVisible();
+    // 等背景 prompt 開好、補全清單回來再送出，卷的步驟順序才確定（prompt 開好前就按
+    // Enter 的話，橋接會跳過查詢直接送板名，那條由 article_search.offline.spec 守）。
+    await expect(page.locator('[data-board-suggest="ready"]')).toHaveCount(1);
     await box.fill('Android');
+    await expect(page.locator('[data-board-candidate="Android"]')).toBeVisible();
     await box.press('Enter');
     await waitFed(page, c.steps.length);
     await waitScreenSettled(page, { 0: '看板《Android》' });
@@ -80,7 +109,7 @@ test.describe('跳過進板畫面（scenario 重放）', () => {
 
     const s = await screenState(page);
     expect(s.active).toBe(false);
-    expect(s.sent).toEqual(['s\f', 'Android\r', ' \f']);
+    expect(s.sent).toEqual(['s\f', 'Android \f', '\b'.repeat(7) + 'Android\r', ' \f']);
   });
 
   test('pref 關 ⇒ 停在進板畫面，一個鍵都不代按', async ({ page }) => {

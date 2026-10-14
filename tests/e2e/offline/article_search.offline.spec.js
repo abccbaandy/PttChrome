@@ -154,15 +154,17 @@ test.describe('搜尋彈窗（離線）', () => {
     expect(stored.pref).not.toContain('someoneElse');
   });
 
-  test('s 也攔：開成看板搜尋，送出走「s → 等第 1 列 prompt → 板名」', async ({ page }) => {
+  test('s 也攔：開成看板搜尋；prompt 沒出現前送出，板名等 prompt 出現才送', async ({ page }) => {
     await boot(page);
     await collectSent(page);
     await ptt.sendKey(page, 's');
     await expect(modalInput(page)).toBeVisible();
-    expect(await sentText(page)).toBe('');
+    // 看板種類一開就在背景開原生 prompt（比照 PTT 補全，見下一組）
+    await expect.poll(() => sentText(page)).toBe('s\f');
     await modalInput(page).fill('C_Chat');
     await modalInput(page).press('Enter');
-    await expect.poll(() => sentText(page)).toBe('s\f');
+    await expect(modalInput(page)).toHaveCount(0);
+    expect(await sentText(page)).toBe('s\f');
     // do_select：row0 反白標題、row1 是 prompt，游標停在 row1
     await page.evaluate((src) => {
       const u2b = new Function('return ' + src)();
@@ -172,6 +174,7 @@ test.describe('搜尋彈窗（離線）', () => {
       );
     }, U2B_SRC);
     await waitScreenSettled(page, { 1: '請輸入看板名稱' });
+    // 輸入欄是空的 ⇒ 不必退格；查詢趟被送出取代（最新的勝出），直接送板名＋Enter
     await expect.poll(() => sentText(page)).toBe('s\fC_Chat\r');
   });
 
@@ -226,5 +229,148 @@ test.describe('搜尋彈窗（離線）', () => {
     await ptt.sendKey(page, 'a');
     await expect.poll(() => sentText(page)).toBe('a');
     await expect(modalInput(page)).toHaveCount(0);
+  });
+});
+
+// ---- 看板：比照 PTT 原生補全（src/js/board_search_bridge.js）----
+// 使用者回報：彈窗的看板搜尋只是普通輸入框；原生會提示後續關鍵字、沒有 bbb 這個看板就
+// 打不進 bbb。server 端用一個照 mbbsd/name.c#generalnamecomplete 規則寫的迷你模擬
+// （逐字判前綴、空白鍵延伸＋畫「相關資訊一覽表」、Enter 唯一／完全相符才進板、Ctrl-C
+// 取消、\f 整幀重繪），驗彈窗 ↔ CommandQueue ↔ 線路整條鏈。
+const BOARDS = ['Baseball', 'BabyMother', 'C_Chat', 'GO', 'Golf', 'Golfer', 'Gossiping'];
+
+async function installNameComplete(page) {
+  await page.evaluate(
+    ({ src, boards }) => {
+      const u2b = new Function('return ' + src)();
+      const app = window.__app;
+      const sorted = boards.slice().sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : 1));
+      const match = (p) => sorted.filter((b) => b.toLowerCase().indexOf(p.toLowerCase()) === 0);
+      const st = { mode: 'list', board: 'Test', field: '', listed: null, more: false };
+      const PROMPT = '請輸入看板名稱(按空白鍵自動搜尋): ';
+      const listFrame = () => {
+        const REV = '\x1b[7m';
+        const OFF = '\x1b[0m';
+        let d = '\x1b[2J';
+        d += '\x1b[1;1H' + REV + u2b(('【板主：test】看板《' + st.board + '》').padEnd(80)) + OFF;
+        d += '\x1b[3;1H' + REV + u2b('  編號    日 期 作  者       文  章  標  題'.padEnd(70)) + OFF;
+        d += '\x1b[4;1H' + u2b('   1233     9/01 testuser     □[閒聊] 測試文章');
+        d += '\x1b[24;1H' + u2b(' 文章選讀  (y)回應(X)推文(^X)轉錄 ');
+        return d + '\x1b[4;1H';
+      };
+      const promptFrame = () => {
+        let d = '\x1b[2J\x1b[1;1H\x1b[7m' + u2b('【 選擇看板 】') + '\x1b[m';
+        d += '\x1b[2;1H' + u2b(PROMPT) + '\x1b[30;47m' + st.field.padEnd(20) + '\x1b[m';
+        if (st.listed) {
+          d += '\x1b[3;1H' + u2b('-'.repeat(29) + ' 相關資訊一覽表 ' + '-'.repeat(29));
+          st.listed.forEach((name, i) => {
+            d += '\x1b[' + (4 + (i % 20)) + ';' + (1 + 22 * Math.floor(i / 20)) + 'H' + name + ' ';
+          });
+          if (st.more) d += '\x1b[24;1H' + u2b('按空白鍵可列出更多項目');
+        }
+        return d + '\x1b[2;' + (35 + st.field.length) + 'H';
+      };
+      const handle = (data) => {
+        for (const ch of data) {
+          if (st.mode === 'list') {
+            if (ch === 's') Object.assign(st, { mode: 'prompt', field: '', listed: null, more: false });
+            continue;
+          }
+          if (ch === '\b') st.field = st.field.slice(0, -1);
+          else if (ch === ' ') {
+            const m = match(st.field);
+            if (!m.length) continue;
+            let ext = m.length === 1 ? m[0] : st.field;
+            while (
+              m.length > 1 &&
+              m.every((b) => b.length > ext.length && b[ext.length].toLowerCase() === m[0][ext.length].toLowerCase())
+            )
+              ext += m[0][ext.length];
+            st.field = ext;
+            st.listed = m.slice(0, 60);
+            st.more = m.length > 60;
+          } else if (ch === '\r') {
+            const m = match(st.field);
+            const exact = m.find((b) => b.toLowerCase() === st.field.toLowerCase());
+            const target = m.length === 1 ? m[0] : exact;
+            if (st.field && target) st.board = target;
+            st.mode = 'list';
+          } else if (ch === '\x03') st.mode = 'list';
+          else if (ch > ' ' && ch <= '~' && match(st.field + ch).length) st.field += ch;
+          // 其他（被拒的字＝bell、\f）：只重畫
+        }
+        setTimeout(() => app.onData(st.mode === 'list' ? listFrame() : promptFrame()), 5);
+      };
+      window.__sent = [];
+      window.__stubWSSent = (s) => {
+        window.__sent.push(s);
+        handle(s);
+      };
+    },
+    { src: U2B_SRC, boards: BOARDS }
+  );
+}
+
+const lastSent = (page) => page.evaluate(() => window.__sent[window.__sent.length - 1]);
+const candidates = (page) =>
+  page.locator('[data-board-candidate]').evaluateAll((els) => els.map((e) => e.dataset.boardCandidate));
+
+async function openBoardSearch(page) {
+  await boot(page);
+  await installNameComplete(page);
+  await ptt.sendKey(page, 's');
+  await expect(modalInput(page)).toBeVisible();
+  await expect(page.locator('[data-board-suggest="ready"]')).toHaveCount(1);
+  await waitScreenSettled(page, { 1: '請輸入看板名稱' });
+}
+
+test.describe('搜尋彈窗：看板比照 PTT 原生補全（離線）', () => {
+  test('沒有這個開頭的看板就打不進去（字被退回＋提示），並列出符合的看板', async ({ page }) => {
+    await openBoardSearch(page);
+    await modalInput(page).pressSequentially('bbb');
+    await expect(modalInput(page)).toHaveValue('b');
+    await expect(page.locator('[data-board-status]')).toContainText('bb');
+    await expect.poll(() => candidates(page)).toEqual(['BabyMother', 'Baseball']);
+    // 繼續打合法的字照常收下
+    await modalInput(page).pressSequentially('as');
+    await expect(modalInput(page)).toHaveValue('bas');
+    await expect.poll(() => candidates(page)).toEqual(['Baseball']);
+  });
+
+  test('空白鍵自動完成，Enter 在同一個 prompt 上送出板名並進板', async ({ page }) => {
+    await openBoardSearch(page);
+    await modalInput(page).pressSequentially('goss');
+    await expect.poll(() => candidates(page)).toEqual(['Gossiping']);
+    await modalInput(page).press('Space');
+    await expect(modalInput(page)).toHaveValue('Gossiping');
+    await modalInput(page).press('Enter');
+    await expect(modalInput(page)).toHaveCount(0);
+    await waitScreenSettled(page, { 0: '看板《Gossiping》' });
+    expect(await lastSent(page)).toBe('\b'.repeat(9) + 'Gossiping\r');
+    // 整段只按過一次 s（送出不會再開一次 prompt）
+    const all = await page.evaluate(() => window.__sent.join(''));
+    expect(all.split('s\f').length).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.__app.searchInFlight)).toBe(false);
+  });
+
+  test('多個符合時 Enter 不送；點清單裡的看板直接進板', async ({ page }) => {
+    await openBoardSearch(page);
+    await modalInput(page).pressSequentially('gol');
+    await expect.poll(() => candidates(page)).toEqual(['Golf', 'Golfer']);
+    await modalInput(page).press('Enter');
+    await expect(modalInput(page)).toBeVisible();
+    await page.locator('[data-board-candidate="Golfer"]').click();
+    await waitScreenSettled(page, { 0: '看板《Golfer》' });
+  });
+
+  test('Esc 關彈窗 ⇒ 送 Ctrl-C 收掉背景的 prompt，回到列表', async ({ page }) => {
+    await openBoardSearch(page);
+    await modalInput(page).pressSequentially('go');
+    await expect.poll(() => candidates(page)).toEqual(['GO', 'Golf', 'Golfer', 'Gossiping']);
+    await page.keyboard.press('Escape');
+    await expect(modalInput(page)).toHaveCount(0);
+    await expect.poll(() => lastSent(page)).toBe('\x03\f');
+    await waitScreenSettled(page, { 0: '看板《Test》', 23: '文章選讀' });
+    await expect.poll(() => page.evaluate(() => window.__app.searchInFlight)).toBe(false);
   });
 });

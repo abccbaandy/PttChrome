@@ -278,7 +278,28 @@ export const en_US = {
     "message": "Pushes above N (negative = boos), ↑ to recall"
   },
   "searchModal_placeholderBoard": {
-    "message": "Board name, ↑ to recall"
+    "message": "Board name, Space to complete, ↑ to recall"
+  },
+  "searchModal_boardOpening": {
+    "message": "Asking PTT for boards…"
+  },
+  "searchModal_boardPending": {
+    "message": "Searching…"
+  },
+  "searchModal_boardNoMatch": {
+    "message": "No board starts with \"{0}\""
+  },
+  "searchModal_boardAmbiguous": {
+    "message": "Several boards match, keep typing or pick one below"
+  },
+  "searchModal_boardMore": {
+    "message": "Only the first part is listed, keep typing to narrow it down"
+  },
+  "searchModal_boardUnavailable": {
+    "message": "Could not get the board list from PTT, you can still type the name"
+  },
+  "searchModal_boardAscii": {
+    "message": "Board names only contain letters, digits and symbols"
   },
   "searchModal_recent": {
     "message": "Recent"

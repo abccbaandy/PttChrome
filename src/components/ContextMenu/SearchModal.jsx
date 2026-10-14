@@ -12,6 +12,10 @@ import { i18n } from "../../js/i18n";
 import MobileSheet from "../MobileSheet";
 import { normalizeSearchText } from "../../js/article_search";
 import {
+  sanitizeBoardQuery,
+  resolvedBoardName,
+} from "../../js/board_search_bridge";
+import {
   readSearchHistory,
   forgetSearch,
   forgetSearchKind,
@@ -22,7 +26,11 @@ import {
 //     輸入記憶；回到最底就還原自己打到一半的字）。
 //   - 下方列出最近幾筆可以直接點（手機軟鍵盤沒有方向鍵）；每筆旁的 × 刪那一筆，
 //     「全部清除」清掉目前這一類（其他種類的紀錄不動）。
-// 送出交給呼叫端（ContextMenu → article_search.submitSearch），這裡只管輸入。
+//   - 看板種類比照 PTT 原生補全（board_search_bridge.js）：createBoardSearch 開出背景的
+//     原生 `s` prompt，打字即查、沒有這個開頭的看板就把那個字退回並提示、空白鍵
+//     自動完成、下方列出符合的看板可直接點。沒給 createBoardSearch（或 prompt 開不出來）
+//     ＝退回普通輸入框。
+// 送出交給呼叫端（ContextMenu → bridge.submit／article_search.submitSearch），這裡只管輸入。
 const KIND_LABEL_KEY = {
   title: "searchModal_kindTitle",
   author: "searchModal_kindAuthor",
@@ -48,6 +56,7 @@ export const SearchModal = ({
   onConfirm,
   mobile,
   pttchrome,
+  createBoardSearch,
 }) => {
   const [currentKind, setCurrentKind] = useState(kind || "title");
   const [value, setValue] = useState("");
@@ -56,6 +65,11 @@ export const SearchModal = ({
   const indexRef = useRef(-1);
   const draftRef = useRef("");
   const inputRef = useRef(null);
+  // 看板補全：bridge 只在看板種類＋彈窗開著時存在；board＝它最近一次回報的
+  // { status, result }。boardRejected＝最近被 PTT 退回的那串（提示用）。
+  const bridgeRef = useRef(null);
+  const [board, setBoard] = useState(null);
+  const [boardRejected, setBoardRejected] = useState("");
 
   // 每次打開都重新讀（元件常駐，初值會過期），種類跟著觸發的按鍵。
   useEffect(() => {
@@ -67,8 +81,62 @@ export const SearchModal = ({
     draftRef.current = "";
   }, [show, kind]);
 
+  const isBoard = currentKind === "board";
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  useEffect(() => {
+    if (!show || !isBoard || !createBoardSearch) return undefined;
+    const bridge = createBoardSearch((next) => setBoard(next));
+    bridgeRef.current = bridge;
+    setBoard({ status: bridge.status, result: bridge.result });
+    setBoardRejected("");
+    bridge.query(valueRef.current);
+    return () => {
+      bridgeRef.current = null;
+      setBoard(null);
+      bridge.cancel(); // 已送出時是 noop
+    };
+  }, [show, isBoard, createBoardSearch]);
+  useEffect(() => {
+    if (bridgeRef.current) bridgeRef.current.query(value);
+  }, [value]);
+
+  const boardQuery = isBoard ? sanitizeBoardQuery(value) : "";
+  const boardResult =
+    board &&
+    board.result &&
+    board.result.query.toLowerCase() === boardQuery.toLowerCase()
+      ? board.result
+      : null;
+  // PTT 收不下的字（沒有看板以這串開頭）：退回到收得下的前綴，同原生的 bell＋丟字。
+  const latestResult = board && board.result;
+  // 使用者在回應回來前又多打了字也一樣（那些字接在被拒的字後面，一起丟）。
+  useEffect(() => {
+    if (!latestResult || !latestResult.rejected) return;
+    const cur = sanitizeBoardQuery(valueRef.current);
+    if (cur.toLowerCase().indexOf(latestResult.query.toLowerCase()) !== 0)
+      return;
+    const kept = cur.slice(0, latestResult.accepted);
+    setBoardRejected(latestResult.query.slice(0, latestResult.accepted + 1));
+    setValue(kept);
+    indexRef.current = -1;
+    draftRef.current = kept;
+  }, [latestResult]);
+
+  const boardResolved = boardResult
+    ? resolvedBoardName(boardResult, boardQuery)
+    : "";
+  // 查到了而且 Enter 進不了板（多個符合）＝擋下送出，跟原生一樣什麼都不會發生。
+  // unknown（PTT 沒回出可判的畫面）不擋：交給 PTT 自己判。
+  const boardBlocks =
+    isBoard &&
+    !!boardResult &&
+    !boardResult.unknown &&
+    !!boardQuery &&
+    !boardResolved;
+
   const list = history[currentKind] || [];
-  const valid = !!normalizeSearchText(currentKind, value);
+  const valid = !!normalizeSearchText(currentKind, value) && !boardBlocks;
 
   const onKindChange = useCallback((k) => {
     setCurrentKind(k);
@@ -78,11 +146,29 @@ export const SearchModal = ({
     if (inputRef.current) inputRef.current.focus();
   }, []);
 
-  const onChange = useCallback((event) => {
-    setValue(event.target.value);
-    indexRef.current = -1;
-    draftRef.current = event.target.value;
-  }, []);
+  const onChange = useCallback(
+    (event) => {
+      let next = event.target.value;
+      if (currentKind === "board" && /\s/.test(next)) {
+        // 空白鍵＝PTT 的「自動搜尋」：補到所有符合者的共同前綴（唯一就補完整名）。
+        // 手機軟鍵盤沒有可靠的 keydown，所以在 onChange 看結果。
+        next = next.replace(/\s+/g, "");
+        const r = bridgeRef.current && bridgeRef.current.result;
+        if (
+          r &&
+          !r.rejected &&
+          r.query.toLowerCase() === next.toLowerCase() &&
+          r.completion.length > next.length
+        )
+          next = r.completion;
+      }
+      setValue(next);
+      setBoardRejected("");
+      indexRef.current = -1;
+      draftRef.current = next;
+    },
+    [currentKind],
+  );
 
   const onKeyDown = useCallback(
     (event) => {
@@ -102,7 +188,17 @@ export const SearchModal = ({
   const submit = useCallback(
     (text) => {
       if (!normalizeSearchText(currentKind, text)) return;
-      onConfirm({ kind: currentKind, text });
+      if (currentKind !== "board")
+        return onConfirm({ kind: currentKind, text });
+      // 唯一符合時 PTT 會進那個板：記憶裡存完整板名，不存打到一半的字。
+      const bridge = bridgeRef.current;
+      const resolved = resolvedBoardName(
+        bridge && bridge.result,
+        sanitizeBoardQuery(text),
+      );
+      const payload = { kind: currentKind, text: resolved || text };
+      if (bridge) payload.bridge = bridge;
+      onConfirm(payload);
     },
     [currentKind, onConfirm],
   );
@@ -110,9 +206,10 @@ export const SearchModal = ({
   const onSubmit = useCallback(
     (event) => {
       event.preventDefault();
+      if (!valid) return; // Enter 跟停用的「搜尋」鈕同一個判準
       submit(value);
     },
-    [submit, value],
+    [submit, value, valid],
   );
 
   // 刪除後 ↑ 的游標歸零（索引會對不上），並把焦點還給輸入框（點 × 會搶走焦點）。
@@ -160,6 +257,17 @@ export const SearchModal = ({
         onChange={onChange}
         onKeyDown={onKeyDown}
       />
+      {isBoard && board && (
+        <BoardSuggestions
+          board={board}
+          query={boardQuery}
+          result={boardResult}
+          rejected={boardRejected}
+          blocks={boardBlocks}
+          ascii={!value || !!normalizeSearchText("board", value)}
+          onPick={submit}
+        />
+      )}
       {list.length > 0 && (
         <Group gap={6} mt="sm" data-search-recent>
           <Text size="xs" c="dimmed">
@@ -227,6 +335,70 @@ export const SearchModal = ({
     >
       {form}
     </Modal>
+  );
+};
+
+// 看板補全的狀態列＋符合清單（PTT「相關資訊一覽表」的第一頁）。
+const BoardSuggestions = ({
+  board,
+  query,
+  result,
+  rejected,
+  blocks,
+  ascii,
+  onPick,
+}) => {
+  let status = null;
+  if (!ascii) status = i18n("searchModal_boardAscii");
+  else if (rejected)
+    status = i18n("searchModal_boardNoMatch").replace("{0}", rejected);
+  else if (board.status === "opening")
+    status = i18n("searchModal_boardOpening");
+  else if (board.status === "unavailable")
+    status = i18n("searchModal_boardUnavailable");
+  else if (query && !result) status = i18n("searchModal_boardPending");
+  else if (blocks) status = i18n("searchModal_boardAmbiguous");
+  const names = (result && result.candidates) || [];
+  return (
+    <div data-board-suggest={board.status}>
+      {status && (
+        <Text
+          size="xs"
+          c={rejected || !ascii ? "red" : "dimmed"}
+          mt={4}
+          data-board-status
+        >
+          {status}
+        </Text>
+      )}
+      {names.length > 0 && (
+        // 一頁最多約 60 個（PTT 三欄×20 列），手機上不可把表單撐出畫面。
+        <Group
+          gap={4}
+          mt="xs"
+          mah={160}
+          style={{ overflowY: "auto" }}
+          data-board-candidates
+        >
+          {names.map((name) => (
+            <Button
+              key={name}
+              size="compact-xs"
+              variant="default"
+              data-board-candidate={name}
+              onClick={() => onPick(name)}
+            >
+              {name}
+            </Button>
+          ))}
+        </Group>
+      )}
+      {result && result.more && (
+        <Text size="xs" c="dimmed" mt={4} data-board-more>
+          {i18n("searchModal_boardMore")}
+        </Text>
+      )}
+    </div>
   );
 };
 
