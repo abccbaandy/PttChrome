@@ -37,7 +37,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/check-remote-commits.mjs\"; true"
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/check-remote-commits.mjs\"; true",
+            "timeout": 900
           }
         ]
       }

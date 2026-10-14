@@ -3,6 +3,7 @@
 //   2. remote 有新 commit ⇒ 輸出 SessionStart JSON，additionalContext 要求先 pull。
 //   3. 沒 upstream ⇒ 靜默。分岔／dirty 給對應指示。
 //   4. 依賴升版：新 commit 動 yarn.lock ⇒ 提醒 install；本地 node_modules／Playwright 瀏覽器沒跟上 ⇒ 提醒。
+//   5. 雲端 session（CLAUDE_CODE_REMOTE=true）：本地依賴缺漏直接自己裝（autoFixLocalDeps），裝不起來才提醒。
 // 用真 git repo（暫存目錄），不 mock。
 
 import { execFileSync } from 'node:child_process';
@@ -10,7 +11,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { browsersDir, buildNotice, checkLocalDeps, checkRemote } from '../../scripts/check-remote-commits.mjs';
+import {
+  autoFixLocalDeps,
+  browsersDir,
+  buildNotice,
+  checkLocalDeps,
+  checkRemote,
+  installTargets,
+} from '../../scripts/check-remote-commits.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/check-remote-commits.mjs', import.meta.url));
 const GIT_ENV = {
@@ -22,8 +30,15 @@ const GIT_ENV = {
 };
 const git = (cwd, ...args) =>
   execFileSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+// 在雲端 session 跑測試時 env 帶 CLAUDE_CODE_REMOTE=true ⇒ hook 會真的去 yarn install：一律拿掉
+const HOOK_ENV = { ...process.env };
+delete HOOK_ENV.CLAUDE_CODE_REMOTE;
 const runHook = (root) =>
-  execFileSync(process.execPath, [SCRIPT, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync(process.execPath, [SCRIPT, '--root', root], {
+    encoding: 'utf8',
+    env: HOOK_ENV,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 
 let tmp;
 let upstream;
@@ -173,13 +188,18 @@ describe('check-remote-commits', () => {
       JSON.stringify({
         browsers: [
           { name: 'chromium', revision: '1200' },
+          { name: 'chromium-headless-shell', revision: '1200' },
           { name: 'firefox', revision: '1500' },
           { name: 'webkit', revision: '2200' },
+          { name: 'ffmpeg', revision: '1013' },
         ],
       }),
     );
     const dir = path.join(tmp, 'ms-playwright');
     fs.mkdirSync(path.join(dir, 'chromium-1200'), { recursive: true });
+    // 目錄名是底線（playwright-core registry），用連字號查會永遠判成缺
+    fs.mkdirSync(path.join(dir, 'chromium_headless_shell-1200'));
+    fs.mkdirSync(path.join(dir, 'ffmpeg-1013'));
     fs.mkdirSync(path.join(dir, 'firefox-1499'));
     expect(checkLocalDeps(local, dir)).toEqual({ yarnInstall: false, missingBrowsers: ['firefox'] });
     expect(buildNotice(null, { yarnInstall: false, missingBrowsers: ['firefox'] })).toContain(
@@ -187,6 +207,79 @@ describe('check-remote-commits', () => {
     );
     fs.mkdirSync(path.join(dir, 'firefox-1500'));
     expect(checkLocalDeps(local, dir).missingBrowsers).toEqual([]);
+  });
+
+  test("本地：chromium 本體在、headless shell／ffmpeg 不在 ⇒ 也要報缺（實錄：整批 Executable doesn't exist）", () => {
+    const nm = path.join(local, 'node_modules');
+    fs.mkdirSync(path.join(nm, 'playwright-core'), { recursive: true });
+    fs.writeFileSync(path.join(local, 'yarn.lock'), '');
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(path.join(local, 'yarn.lock'), old, old);
+    fs.writeFileSync(path.join(nm, '.yarn-state.yml'), '');
+    fs.writeFileSync(
+      path.join(nm, 'playwright-core', 'browsers.json'),
+      JSON.stringify({
+        browsers: [
+          { name: 'chromium', revision: '1248' },
+          { name: 'chromium-headless-shell', revision: '1248' },
+          { name: 'ffmpeg', revision: '1013' },
+        ],
+      }),
+    );
+    const dir = path.join(tmp, 'ms-playwright');
+    fs.mkdirSync(path.join(dir, 'chromium-1248'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'ffmpeg-1011'));
+    expect(checkLocalDeps(local, dir).missingBrowsers).toEqual(['chromium-headless-shell', 'ffmpeg']);
+    // 補裝指令只要 chromium（headless shell、ffmpeg 隨它裝）
+    expect(buildNotice(null, { yarnInstall: false, missingBrowsers: ['chromium-headless-shell', 'ffmpeg'] })).toContain(
+      '`yarn playwright install chromium`',
+    );
+  });
+
+  test('installTargets：元件併成 install 目標並去重', () => {
+    expect(installTargets(['chromium-headless-shell', 'ffmpeg', 'firefox', 'chromium'])).toEqual(['chromium', 'firefox']);
+    expect(installTargets([])).toEqual([]);
+  });
+
+  describe('雲端自動補裝（autoFixLocalDeps）', () => {
+    const ok = { yarnInstall: false, missingBrowsers: [] };
+
+    test('沒缺 ⇒ 什麼都不跑', () => {
+      const run = vi.fn();
+      expect(autoFixLocalDeps('/r', ok, { run, recheck: () => ok })).toEqual({ done: [], local: ok });
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    test('lock 比 node_modules 新 ⇒ 先 install，重查後缺的瀏覽器再補裝', () => {
+      const run = vi.fn();
+      const states = [{ yarnInstall: false, missingBrowsers: ['chromium-headless-shell', 'firefox'] }, ok];
+      const r = autoFixLocalDeps('/r', { yarnInstall: true, missingBrowsers: [] }, { run, recheck: () => states.shift() });
+      expect(run.mock.calls).toEqual([
+        ['yarn', ['install', '--immutable']],
+        ['yarn', ['playwright', 'install', 'chromium', 'firefox']],
+      ]);
+      expect(r).toEqual({ done: ['yarn install', 'playwright install chromium firefox'], local: ok });
+    });
+
+    test('install 失敗 ⇒ 不裝瀏覽器，缺漏原樣留給 notice', () => {
+      const run = vi.fn(() => {
+        throw new Error('network');
+      });
+      const before = { yarnInstall: true, missingBrowsers: [] };
+      const r = autoFixLocalDeps('/r', before, { run, recheck: () => ok });
+      expect(r).toEqual({ done: [], local: before });
+      expect(buildNotice(null, r.local)).toContain('[依賴未更新]');
+    });
+
+    test('瀏覽器裝失敗 ⇒ 重查結果仍缺，照舊提醒', () => {
+      const run = vi.fn(() => {
+        throw new Error('403');
+      });
+      const missing = { yarnInstall: false, missingBrowsers: ['firefox'] };
+      const r = autoFixLocalDeps('/r', missing, { run, recheck: () => missing });
+      expect(r.done).toEqual([]);
+      expect(buildNotice(null, r.local)).toContain('yarn playwright install firefox');
+    });
   });
 
   test('browsersDir：PLAYWRIGHT_BROWSERS_PATH 優先，否則各平台預設', () => {

@@ -5,10 +5,13 @@
 //   2. 本地依賴沒跟上（不論有沒有落後；涵蓋「pull 了但忘了 install」）：
 //      - yarn.lock 比 node_modules/.yarn-state.yml 新 ⇒ `yarn install`
 //        （git 只重寫內容有變的檔，lock mtime 變新＝lock 內容在上次 install 之後改過）。
-//      - node_modules 的 playwright-core 要求的 chromium／firefox revision 不在瀏覽器目錄 ⇒
-//        `yarn playwright install chromium firefox`。
+//      - node_modules 的 playwright-core 要求的 chromium（含 headless shell、ffmpeg）／firefox
+//        revision 不在瀏覽器目錄 ⇒ `yarn playwright install chromium firefox`。
 // 有狀況 ⇒ 輸出 SessionStart JSON：`additionalContext` 給 Claude、`systemMessage` 給使用者看。
-// 只 fetch 不 pull／不 install：工作樹可能有未提交改動、或本地有未 push 的 commit，由 session 依情況處理。
+// 本機只 fetch 不 pull／不 install：工作樹可能有未提交改動、或本地有未 push 的 commit，由 session 依情況處理。
+// 雲端 session（env CLAUDE_CODE_REMOTE=true）例外：第 2 點直接自己裝（autoFixLocalDeps）。雲端環境的
+// Setup script（scripts/cloud-setup.sh）跑完會被快取，之後 dev 升了依賴，新 session 拿到的仍是舊快取
+// ⇒ 每個 session 開頭都要先花時間裝。容器是拋棄式的、沒有別人的改動要顧，裝了沒有風險。
 // 沒 upstream 的分支（worktree 的 `claude/*` 新分支）不查 remote：worktree 跟 base 同步走 ccd_host 的 sync 工具。
 //
 // 用法：
@@ -25,8 +28,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const SELF = fileURLToPath(import.meta.url);
 const FETCH_TIMEOUT_MS = 15_000;
 export const MAX_LISTED = 10;
-// e2e 用到的瀏覽器（CLAUDE.md「測試」節：chromium 必裝、offline-firefox project 要 firefox）
-const NEEDED_BROWSERS = ['chromium', 'firefox'];
+// e2e／unit-browser 用到的瀏覽器元件 → 補裝時的 `playwright install` 目標。
+// headless shell（headless 跑的是它，unit-browser 與 e2e 都靠它）與 ffmpeg（失敗錄影）隨 chromium 一起裝；
+// 只檢查 chromium 本體會漏報（實錄：chromium 在、headless shell／ffmpeg 不在，整批 `Executable doesn't exist`）。
+const INSTALL_TARGET = {
+  chromium: 'chromium',
+  'chromium-headless-shell': 'chromium',
+  ffmpeg: 'chromium',
+  firefox: 'firefox',
+};
+
+// 缺的元件 → 去重後的 install 目標（保持 chromium 在前）
+export function installTargets(missing) {
+  return [...new Set(missing.map((n) => INSTALL_TARGET[n] || n))];
+}
 
 function git(cwd, args, timeout = 10_000) {
   return execFileSync('git', args, {
@@ -120,8 +135,9 @@ export function checkLocalDeps(root, dir = browsersDir()) {
   if (yarnInstall) return { yarnInstall, missingBrowsers: [] };
   const manifest = readJson(path.join(nm, 'playwright-core', 'browsers.json'));
   const missingBrowsers = (manifest?.browsers || [])
-    .filter((b) => NEEDED_BROWSERS.includes(b.name))
-    .filter((b) => !fs.existsSync(path.join(dir, `${b.name}-${b.revision}`)))
+    .filter((b) => b.name in INSTALL_TARGET)
+    // 目錄名把 - 換成 _（playwright-core registry：chromium_headless_shell-1248）
+    .filter((b) => !fs.existsSync(path.join(dir, `${b.name.replace(/-/g, '_')}-${b.revision}`)))
     .map((b) => b.name);
   return { yarnInstall, missingBrowsers };
 }
@@ -153,20 +169,58 @@ export function buildNotice(remote, local = { yarnInstall: false, missingBrowser
   }
   if (local.missingBrowsers.length) {
     lines.push(
-      `[瀏覽器未安裝] Playwright 需要的 ${local.missingBrowsers.join('／')} 版本不在本機 ⇒ 執行 \`yarn playwright install ${local.missingBrowsers.join(' ')}\`。`,
+      `[瀏覽器未安裝] Playwright 需要的 ${local.missingBrowsers.join('／')} 版本不在本機 ⇒ 執行 \`yarn playwright install ${installTargets(local.missingBrowsers).join(' ')}\`。`,
     );
   }
   return lines.length ? lines.join('\n') : null;
 }
 
+function runCmd(root, cmd, args) {
+  execFileSync(cmd, args, { cwd: root, stdio: ['ignore', 'ignore', 'pipe'], timeout: 10 * 60_000 });
+}
+
+// 雲端 session：把 checkLocalDeps 查到的缺漏直接裝好。回傳 { done: string[], local: 裝完後重查的結果 }，
+// 裝失敗的留在 local 裡，照舊由 buildNotice 提醒。run(cmd, args) 可注入（測試用）。
+export function autoFixLocalDeps(root, local, { run = (c, a) => runCmd(root, c, a), recheck = () => checkLocalDeps(root) } = {}) {
+  const done = [];
+  if (!local.yarnInstall && !local.missingBrowsers.length) return { done, local };
+  if (local.yarnInstall) {
+    try {
+      run('yarn', ['install', '--immutable']);
+      done.push('yarn install');
+    } catch {
+      return { done, local };
+    }
+    local = recheck(); // install 後 browsers.json 才是新版
+  }
+  if (local.missingBrowsers.length) {
+    const targets = installTargets(local.missingBrowsers);
+    try {
+      run('yarn', ['playwright', 'install', ...targets]);
+      done.push(`playwright install ${targets.join(' ')}`);
+    } catch {
+      // 留給 notice
+    }
+    local = recheck();
+  }
+  return { done, local };
+}
+
 function main(argv) {
   const rootIdx = argv.indexOf('--root');
   const root = rootIdx >= 0 ? path.resolve(argv[rootIdx + 1]) : path.resolve(path.dirname(SELF), '..');
-  const notice = buildNotice(checkRemote(root), checkLocalDeps(root));
-  if (!notice) return;
+  let local = checkLocalDeps(root);
+  let done = [];
+  if (process.env.CLAUDE_CODE_REMOTE === 'true') ({ done, local } = autoFixLocalDeps(root, local));
+  const notice = buildNotice(checkRemote(root), local);
+  const fixed = done.length ? `[雲端] 開 session 時已自動補裝：${done.join('、')}。` : '';
+  if (!notice) {
+    if (fixed) process.stdout.write(JSON.stringify({ systemMessage: fixed }));
+    return;
+  }
   process.stdout.write(
     JSON.stringify({
-      systemMessage: `${notice.split('\n')[0]}（已提醒 Claude 先處理）`,
+      systemMessage: `${fixed}${notice.split('\n')[0]}（已提醒 Claude 先處理）`,
       hookSpecificOutput: {
         hookEventName: 'SessionStart',
         additionalContext: `${notice}\n在處理使用者的第一個需求前，先告知使用者並完成上述 pull／安裝。`,

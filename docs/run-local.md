@@ -33,6 +33,24 @@ yarn start
 | `node_modules` | 已存在直接用。需重裝時 `yarn install`。 |
 | 連外網 | 需能連到 `wss://ws.ptt.cc/bbs`。 |
 
+## 雲端 session（Claude Code on the web）
+
+環境由兩段接力，目標是開 session 就能直接跑 unit／offline e2e：
+
+| 階段 | 做什麼 | 在哪 |
+|---|---|---|
+| 環境 Setup script（建環境時跑一次，結果被快取） | Node 24、corepack/Yarn 4、`yarn install --immutable`、`yarn playwright install --with-deps chromium firefox`、clone `3rd_script/pttbbs`／`ptt-term` | `scripts/cloud-setup.sh` |
+| SessionStart hook（每個 session） | 快取比 dev 舊時補上：`yarn.lock` 比 `node_modules` 新 ⇒ `yarn install --immutable`；`playwright-core` 要的 chromium／headless shell／ffmpeg／firefox revision 不在 ⇒ `yarn playwright install chromium firefox`。裝不起來才退回提醒 | `scripts/check-remote-commits.mjs`（`CLAUDE_CODE_REMOTE=true` 才自己裝；本機只提醒） |
+
+環境設定的 Setup script 欄位只放下面兩行（不假設當下工作目錄就是 repo），之後改 `scripts/cloud-setup.sh` 即可，新 session 生效：
+
+```bash
+f="$(find / -maxdepth 6 -path '*/scripts/cloud-setup.sh' -not -path '*/node_modules/*' 2>/dev/null | head -1)"
+if [ -n "$f" ]; then bash "$f"; else echo "[setup] 找不到 scripts/cloud-setup.sh"; fi
+```
+
+為什麼要第二段：Setup script 的結果被快取，dev 之後升了 `@playwright/test` 時，新 session 拿到的瀏覽器 revision 是舊的，unit-browser 與 e2e 會整批 `Executable doesn't exist`。headless shell 的目錄名是底線（`chromium_headless_shell-<rev>`），只查 chromium 本體會漏報。
+
 ## 指令對照
 
 | 動作 | 指令 |
