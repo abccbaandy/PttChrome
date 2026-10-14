@@ -23,7 +23,9 @@ browserContext.close: Protocol error (Browser.removeBrowserContext): can't acces
    `BrowserGlue._beforeUIStartup` 裡、`SessionStore.init()` 之前插一段「轉 event loop N 毫秒」，
    其餘全是 Playwright 正常流程（launch → newContext → newPage → setContent → context.close），
    就會穩定命中同一句錯誤。對照組「同樣長時間卡住主執行緒但**不**轉 event loop」不命中。
-2. **原生（未 patch）Firefox 的統計重現**：見下方「原生長跑」表（跑完後補齊）。
+2. **原生（未 patch）Firefox 在 Linux 上 7569 次中命中 0 次**（4 種變體，含 CPU 加壓），
+   見下方「原生長跑」表。Linux 沒有自然觸發窗口；上游 issue 建議以 `prove-mechanism.mjs` 為主、
+   Windows 自然命中（約 2/2250）為佐證。
 
 ## 機制（讀 firefox-1555 的 omni.ja 原始碼）
 
@@ -89,16 +91,22 @@ Linux 吞吐量約 0.9 次／秒（與並行度 4／8／16 無關，CPU 4 核是
 
 | 變體 | 並行 | CPU 加壓 | 次數 | 命中 | 其他錯誤 |
 |---|---|---|---|---|---|
-| full | 8 | 0 | （進行中） | | |
-| nowait | 8 | 0 | （排隊中） | | |
-| nogoto | 16 | 3 執行緒 | （排隊中） | | |
-| full | 16 | 3 執行緒 | （排隊中） | | |
+| full | 8 | 0 | 3000 | 0 | 0 |
+| nowait | 8 | 0 | 2000 | 0 | 0 |
+| nogoto | 16 | 3 執行緒 | 2000 | 0 | 0 |
+| full | 16 | 3 執行緒 | 569（背景時限到被中止，最後一筆計數） | 0 | 0 |
+| **合計** | | | **7569** | **0** | **0** |
+
+⇒ **Linux 上原生 Firefox 7569 次中命中 0 次**。CPU 加壓（Node 端忙迴圈）放大不了這個窗口：
+它需要 Firefox 主執行緒在 `SessionStore.init()` 前**轉 event loop**，單純變慢（見上面 busy-wait 對照）不會命中。
+Windows 的 ~2/2250 推測來自 Windows 專屬、啟動期會轉 event loop 的同步路徑，尚未定位。
 
 ## 能不能再縮小
 
 - 觸發條件與頁面內容、滑鼠／鍵盤**無關**：確定性版本只用 `setContent('<p>hello</p>')`，連 goto 都不需要。
 - 給上游的最小重現就是 `prove-mechanism.mjs`（Playwright 原生 API ＋ 對 Firefox 的一行時序注入）；
-  未 patch 的原生版本命中率太低（Windows 約 1/1000，見上表 Linux 結果），只適合當佐證。
+  未 patch 的原生版本命中率太低（Windows 約 1/1000、Linux 0/7569），只適合當佐證。
+- Windows 上可直接跑同一支 `prove-mechanism.mjs`（fflate 跨平台，不需 unzip/zip）確認同一機制。
 - 上游可能的修法（給使用者決定是否開 issue）：
   1. Juggler：`Browser.newPage` 在 `SessionStore.promiseInitialized`（或 `browser-ui-startup-complete`）之前先等；
   2. Firefox：`SessionStore.maybeDontRestoreTabs` 對未追蹤的視窗判空（同檔其他方法多半已判空）。
