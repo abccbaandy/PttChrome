@@ -9,6 +9,7 @@ import { installDeepLink, claimDeepLink } from './deep_link_entry';
 import { installHistoryBackGuard } from './history_back_guard';
 import { installRipple } from './ripple';
 import { parseDeepLink } from './deep_link';
+import { installAgentTools } from './agent_tools';
 import { renderInto, unmountFrom } from './react_root';
 import { MantineRoot } from '../components/MantineRoot';
 import { setBootStage, failBootLoading, finishBootLoading } from './boot_loading';
@@ -30,6 +31,8 @@ function startApp() {
   installRipple();
 
   const app = new App();
+  // AI agent 工具（CDP 的 window.pttAgent＋有 WebMCP 時註冊），見 docs/agent-tools.md。
+  installAgentTools(app);
   // Expose the app for e2e inspection only in developer/dev builds.
   if (process.env.DEVELOPER_MODE) {
     window.__app = app;

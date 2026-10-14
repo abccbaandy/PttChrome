@@ -121,6 +121,7 @@ describe("被迫切原生／失敗的出口送錯誤級", () => {
       _view: view,
       _history: { abort() {} },
       _updateBackButton() {},
+      _endRun() {},
       _hint: AidNavigation.prototype._hint,
     }, "畫面已變更");
     expect(view.calls[0].level).toBe(HINT_ERROR);

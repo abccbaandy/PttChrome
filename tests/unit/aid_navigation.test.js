@@ -7,6 +7,8 @@ import { CommandQueue } from "../../src/js/command_queue";
 import {
   AidNavigation,
   aidSearchLanded,
+  numJumpLanded,
+  endLanded,
   STEP_PROBE_AFTER_MS,
   STEP_PROBE_WINDOW_MS,
   BOARD_PROBE_AFTER_MS
@@ -1794,5 +1796,110 @@ describe("refresh（重新整理本篇）", () => {
     vi.advanceTimersByTime(BOARD_PROBE_AFTER_MS);
     vi.advanceTimersByTime(STEP_PROBE_WINDOW_MS);
     expect(hints.at(-1)).toMatch(/^AID 跳文失敗/);
+  });
+});
+
+describe("agent 工具的跳法（startBoard／startNum）", () => {
+  const atMainMenu = h => {
+    h.termBuf.rowTexts = MAIN_MENU_SCREEN;
+  };
+  // 板尾畫面：條目在 3..10，游標停在最後一列（第 10 列），其下全空。
+  const endScreen = () => {
+    const rowTexts = new Array(24).fill("");
+    for (let r = 3; r <= 10; r++) rowTexts[r] = " 78029" + r + " + 110/14 someone      □ [問卦] t";
+    rowTexts[23] = " 文章選讀  (y)回應(X)推文";
+    return rowTexts;
+  };
+
+  test("startBoard end：s<board>⏎ → End → 停在板尾，onEnd ok，不碰返回堆疊", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    const ends = [];
+    expect(h.nav.startBoard("Gossiping", { end: true }, r => ends.push(r))).toBe(true);
+    expect(h.sent).toEqual(["sGossiping\r\f"]);
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 5 }));
+    expect(h.sent[1]).toBe("\x1b[4~\f");
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 10, rowTexts: endScreen() }));
+    expect(h.nav.active).toBe(false);
+    expect(ends).toEqual([{ ok: true }]);
+    expect(h.nav.canGoBack()).toBe(false);
+  });
+
+  test("startBoard 不帶 end：落地即結束，不送 End", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    const ends = [];
+    h.nav.startBoard("Gossiping", {}, r => ends.push(r));
+    settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+    expect(h.sent).toEqual(["sGossiping\r\f"]);
+    expect(ends).toEqual([{ ok: true }]);
+  });
+
+  test("End 的回應還不是板尾（游標下方還有條目）⇒ 不算落地", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    h.nav.startBoard("Gossiping", { end: true });
+    settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 5, rowTexts: endScreen() }));
+    expect(h.nav.active).toBe(true);
+  });
+
+  test("startNum：板跳 → <編號>⏎ → ⏎ 開文，好讀接手，onEnd ok", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    const ends = [];
+    expect(h.nav.startNum("Gossiping", 780297, r => ends.push(r))).toBe(true);
+    settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+    expect(h.sent[1]).toBe("780297\r\f");
+    // 游標停在別篇 ⇒ 還沒落地
+    settle(h.queue, facts("transient", { boardName: "gossiping", cursorRowNum: 780296, curY: 9 }));
+    expect(h.sent.length).toBe(2);
+    settle(h.queue, facts("transient", { boardName: "gossiping", cursorRowNum: 780297, curY: 10 }));
+    expect(h.sent[2]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(h.core.easyReading.ensureCalls).toBe(1);
+    expect(ends).toEqual([{ ok: true }]);
+  });
+
+  test("板名錯（落不了地）⇒ onEnd ok:false 帶原因，解鎖", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    const ends = [];
+    h.nav.startBoard("NoSuchBoard", { end: true }, r => ends.push(r));
+    vi.advanceTimersByTime(BOARD_PROBE_AFTER_MS);
+    settle(h.queue, facts("menu", { rowTexts: MAIN_MENU_SCREEN }));
+    expect(h.nav.active).toBe(false);
+    expect(ends.length).toBe(1);
+    expect(ends[0].ok).toBe(false);
+    expect(ends[0].error).toContain("NoSuchBoard");
+  });
+
+  test("進行中拒絕再開；參數不合法拒絕", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    h.nav.startBoard("Gossiping", {});
+    expect(h.nav.startNum("Gossiping", 1)).toBe(false);
+    expect(makeHarness().nav.startNum("Gossiping", 0)).toBe(false);
+    expect(makeHarness().nav.startBoard("", {})).toBe(false);
+  });
+});
+
+describe("numJumpLanded／endLanded", () => {
+  test("numJumpLanded 要編號相符且停在條目區行首", () => {
+    const f = over => facts("transient", { boardName: "x", cursorRowNum: 5, curY: 10, ...over });
+    expect(numJumpLanded(f(), 5)).toBe(true);
+    expect(numJumpLanded(f(), 6)).toBe(false);
+    expect(numJumpLanded(f({ curY: 23 }), 5)).toBe(false);
+    expect(numJumpLanded(f({ boardName: null }), 5)).toBe(false);
+  });
+
+  test("endLanded：找不到／按任意鍵的底列不算", () => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[4] = " 1 + 110/14 someone      □ t";
+    rowTexts[23] = "請按任意鍵繼續";
+    expect(endLanded(facts("transient", { boardName: "x", curY: 4, rowTexts }))).toBe(false);
+    rowTexts[23] = "";
+    expect(endLanded(facts("transient", { boardName: "x", curY: 4, rowTexts }))).toBe(true);
   });
 });

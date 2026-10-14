@@ -153,6 +153,35 @@ export function aidSearchLanded(facts) {
   return isPinnedListRow(rowTexts[facts.curY] || '');
 }
 
+// `<編號>⏎` 落地：與 list_session open-jump 同一個停靠指紋（舊 server 跳號後底列留空
+// ⇒ 不要求 clean-list，見 protocol §4 ✚）。
+export function numJumpLanded(facts, num) {
+  if (!facts || facts.boardName == null) return false;
+  return (
+    facts.cursorRowNum === num &&
+    facts.curY >= 3 &&
+    facts.curY <= facts.rows - 2 &&
+    facts.curX <= 1
+  );
+}
+
+// End 落地：游標停在條目區的**最後一個非空列**（read.c 的 End ＝ last_line，置底文
+// 排在一般文章之後，所以停在最後一篇置底或最後一篇文章）。這張畫面之後才有
+// 「最新文章」可讀。
+export function endLanded(facts) {
+  if (!facts || facts.boardName == null) return false;
+  const rows = facts.rows;
+  if (facts.curY < 3 || facts.curY > rows - 2 || facts.curX > 1) return false;
+  const rowTexts = facts.rowTexts || [];
+  const lastRow = rowTexts[rows - 1] || '';
+  if (AID_NOT_FOUND_RE.test(lastRow) || PRESS_ANY_KEY_RE.test(lastRow)) return false;
+  if (!(rowTexts[facts.curY] || '').trim()) return false;
+  for (let r = facts.curY + 1; r <= rows - 2; ++r) {
+    if ((rowTexts[r] || '').trim()) return false;
+  }
+  return true;
+}
+
 // 進板畫面 pager + its pressanykey = 2 keys; the slack absorbs a multi-page one.
 const MAX_ENTER_DISMISS = 3;
 
@@ -237,6 +266,8 @@ export function AidNavigation(core, view, termBuf, queue, history) {
   this._urlScanLen = 0;
   this._urlScanHit = null;
   this._urlScanForwarded = false; // 掃到轉錄標頭了：之後的網址都不是本篇
+  // 這一輪的結束回呼（只有 agent 工具會給，見 startBoard）。
+  this._onRunEnd = null;
 }
 
 AidNavigation.prototype = {
@@ -260,6 +291,7 @@ AidNavigation.prototype = {
     this._history.abort();
     this._updateBackButton();
     this._hint('AID 跳文失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
+    this._endRun({ ok: false, error: msg });
   },
 
   // The back affordance is a pure projection of (active, stack) — never
@@ -389,9 +421,10 @@ AidNavigation.prototype = {
   //     so the Q step captures a real anchor.
   //   - Q is skipped: with no origin anchor there is nothing to upgrade.
   // Returns whether the run was started (false = busy / bad arguments).
-  startExternal: function(aid, board) {
+  startExternal: function(aid, board, onEnd) {
     if (this.active) return false;
     if (!aid || !board) return false;
+    this._onRunEnd = onEnd || null;
     this._history.beginJump(null, { board: board, aid: aid });
     this._hint('跳至 #' + aid + ' (' + board + ')…', PROGRESS_HINT_MS);
     const run = makeRun({ board: board, kind: 'aid', aid: aid }, 'forward');
@@ -399,6 +432,38 @@ AidNavigation.prototype = {
     run.external = true;
     this._begin(run);
     return true;
+  },
+
+  // agent 工具（agent_tools.js）的兩種跳法，與 AID 跳文共用逃生前導／板跳／進板畫面
+  // 處理，只換中段：
+  //   startBoard：停在目標板的文章列表；opts.end ⇒ 再送 End 停在板尾（最新文章＋置底）。
+  //   startNum：  `<編號>⏎` 停到那一篇再 ⏎ 開文（同 list_session open-jump 的指紋）。
+  // dir 'goto'：不碰返回堆疊（沒有 Q 問原文 AID、成功就 invalidate，同使用者自己換板）。
+  // onEnd({ ok, error? }) 在 run 結束時呼叫一次（成功或 _fail）。
+  startBoard: function(board, opts, onEnd) {
+    if (this.active || !board) return false;
+    this._onRunEnd = onEnd || null;
+    const run = makeRun({ board: board, kind: 'board', aid: null, end: !!(opts && opts.end) }, 'goto');
+    run.external = true;
+    this._hint('前往 ' + board + ' 看板…', PROGRESS_HINT_MS);
+    this._begin(run);
+    return true;
+  },
+
+  startNum: function(board, num, onEnd) {
+    if (this.active || !board || !(num > 0)) return false;
+    this._onRunEnd = onEnd || null;
+    const run = makeRun({ board: board, kind: 'num', aid: null, num: num }, 'goto');
+    run.external = true;
+    this._hint('開啟 ' + board + ' 第 ' + num + ' 篇…', PROGRESS_HINT_MS);
+    this._begin(run);
+    return true;
+  },
+
+  _endRun: function(result) {
+    const cb = this._onRunEnd;
+    this._onRunEnd = null;
+    if (cb) cb(result);
   },
 
   // Back to the article the last jump started from. Deliberately NOT gated on
@@ -1038,7 +1103,79 @@ AidNavigation.prototype = {
       this._enqueueAidSearch(run);
       return;
     }
+    if (run.target.num != null) {
+      this._enqueueNumJump(run);
+      return;
+    }
+    if (run.dir === 'goto') {
+      if (run.target.end) this._enqueueEnd(run);
+      else this._finishGoto(run);
+      return;
+    }
     this._finishAtList(run);
+  },
+
+  _finishGoto: function(run) {
+    this.active = false;
+    this.opHint = null;
+    this._history.invalidate();
+    this._updateBackButton();
+    this._hint('已進入 ' + run.target.board + ' 看板', 1200);
+    this._endRun({ ok: true });
+  },
+
+  // `<編號>⏎`：落地指紋同 list_session 的 open-jump（游標停在該編號、在條目區、
+  // 行首）。fullRepaint：跳到游標已在的那列時 server 零回應（見 list_session
+  // _enqueueCursorSyncJump）。刪除文／鎖文按 ⏎ 開不出來 ⇒ 由 _enqueueOpen 逾時失敗。
+  _enqueueNumJump: function(run) {
+    const self = this;
+    const num = run.target.num;
+    this._queue.enqueue({
+      keys: String(num) + '\r',
+      kind: 'agent-num-jump',
+      fullRepaint: true,
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
+      expect: function(snapshot, facts) {
+        return numJumpLanded(facts, num);
+      },
+      onDone: function() {
+        self._enqueueOpen(run);
+      },
+      onFail: function(reason) {
+        self._fail(reason === 'miss' ? '找不到第 ' + num + ' 篇' : '跳至第 ' + num + ' 篇逾時');
+      }
+    });
+  },
+
+  // End：停在板尾（置底文之後的最後一列）。落地指紋見 endLanded。
+  _enqueueEnd: function(run) {
+    const self = this;
+    this._queue.enqueue({
+      keys: '\x1b[4~',
+      kind: 'agent-list-end',
+      // 已在板尾時原生 End 零回應（list_session jump-end 同理）。
+      fullRepaint: true,
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
+      expect: function(snapshot, facts) {
+        return endLanded(facts);
+      },
+      onDone: function() {
+        self._finishGoto(run);
+      },
+      onFail: function(reason) {
+        self._fail('移到 ' + run.target.board + ' 板尾失敗（' + reason + '）');
+      }
+    });
   },
 
   // Board-only anchor: pttbbs restored this board's cursor for us (getkeep,
@@ -1213,6 +1350,11 @@ AidNavigation.prototype = {
           if (entry && entry.lineIndex && self._core.easyReading.requestScrollRestore)
             self._core.easyReading.requestScrollRestore(entry.lineIndex);
           self._hint('已返回 ' + (entry ? entry.label : ''), 1200);
+        } else if (run.dir === 'goto') {
+          self.opHint = null;
+          self._history.invalidate();
+          self._updateBackButton();
+          self._hint('已開啟第 ' + run.target.num + ' 篇', 1200);
         } else {
           self._history.commitJump();
           self._updateBackButton();
@@ -1221,6 +1363,7 @@ AidNavigation.prototype = {
           // opened article.
           self._hint('已跳至 #' + run.target.aid, 1200);
         }
+        self._endRun({ ok: true });
       },
       onFail: function(reason) {
         self._fail('開啟文章失敗（' + reason + '）');
