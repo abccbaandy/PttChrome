@@ -44,6 +44,20 @@ export const TOOLBAR_KEYS = Object.freeze({
   end: { key: 'End' }
 });
 
+// 工具列的固定格位。**每一格的位置不隨畫面變**：按鈕依畫面有條件出現時，flex 等寬
+// 會讓同一顆按鈕在不同畫面跑到不同位置（使用者回報「搜尋／到底有時在中間有時在旁邊」）。
+//   第 1 格：主要動作 —— 文章＝推、列表／主功能表＝搜尋
+//   第 2 格：次要動作 —— 文章／信件＝回文（回信）、文章列表＝發文
+//   第 3～6 格：重整、到底、按鍵、更多，**永遠都在**；不能用時反灰（不藏）。
+// null ＝這個畫面沒有這一格的動作，畫一個空格佔位（寬度照算）。
+export const TOOLBAR_SLOT_COUNT = 6;
+export function toolbarSlots(c) {
+  const ctx = c || EMPTY_TOOLBAR_CONTEXT;
+  const first = ctx.push ? 'push' : ctx.search && ctx.search.length ? 'search' : null;
+  const second = ctx.reply ? 'reply' : ctx.post ? 'post' : null;
+  return [first, second, 'refresh', 'end', 'keys', 'more'];
+}
+
 // 「更多」裡的文章導覽（label 是 i18n key）。
 export const THREAD_NAV_KEYS = Object.freeze([
   { key: '[', label: 'mobileToolbar_threadPrev' },

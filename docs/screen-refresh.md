@@ -65,7 +65,9 @@ pref `refreshMinIntervalSec`（預設 5 秒，0 ＝不限制），只在**真的
 
 ## 手機
 
-- 工具列「重整」與「到底（End）」：`mobile_toolbar.toolbarContextFromFacts` 的 `refresh`／`end`。分享移進「更多」。
+- 工具列「重整」與「到底（End）」：`mobile_toolbar.toolbarContextFromFacts` 的 `refresh`／`end`，固定在第 3、4 格
+  （`toolbarSlots`），不能用時反灰不藏。重整冷卻中反灰＋倒數秒數（`ScreenRefresh.cooldownLeftMs`／`onCooldown`，
+  不論冷卻是工具列、F5 或下拉觸發）。分享移進「更多」。
 - 下拉重整（`pull_refresh.js`）：只在 `core.mobile`、非選取模式、無 modal、畫面重整得了、觸點底下的捲動
   視口已在頂端時起手；被動監聽、從不 `preventDefault`；位移阻尼 0.5、門檻 64px、上限 96px；放手才生效，
   拉回去或改成水平就取消。

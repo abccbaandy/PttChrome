@@ -185,6 +185,8 @@ export function refreshTargetOf(core) {
 export function ScreenRefresh(core) {
   this._core = core;
   this._lastAt = 0;
+  // 冷卻開始時通知（手機工具列的反灰＋倒數；F5／下拉觸發的冷卻也要讓按鈕知道）。
+  this._listeners = new Set();
   // 測試注入點。
   this._now = function() {
     return Date.now();
@@ -204,6 +206,25 @@ ScreenRefresh.prototype = {
     return refreshTargetOf(core);
   },
 
+  // 還要等幾毫秒才能再重整（0 ＝現在就可以）。與 refresh() 的冷卻判斷同一個式子。
+  cooldownLeftMs: function() {
+    return refreshCooldownLeftMs(
+      this._lastAt,
+      this._now(),
+      readValuesWithDefault().refreshMinIntervalSec
+    );
+  },
+
+  // fn(leftMs)：每次冷卻開始時呼叫一次（不是每秒；倒數由呼叫端自己用 cooldownLeftMs 走）。
+  // 回傳解除訂閱函式。
+  onCooldown: function(fn) {
+    this._listeners.add(fn);
+    const self = this;
+    return function() {
+      self._listeners.delete(fn);
+    };
+  },
+
   // 回 true ＝這次請求歸我們（呼叫端吞掉 F5）；false ＝這個畫面不支援，交還原生。
   // 冷卻中／線路忙碌也回 true：使用者是要重整這個畫面，不該變成整頁重新載入。
   refresh: function(source) {
@@ -218,17 +239,18 @@ ScreenRefresh.prototype = {
       this._hint(busy);
       return true;
     }
-    const now = this._now();
-    const left = refreshCooldownLeftMs(
-      this._lastAt,
-      now,
-      readValuesWithDefault().refreshMinIntervalSec
-    );
+    const left = this.cooldownLeftMs();
     if (left > 0) {
       this._hint('請稍候 ' + Math.ceil(left / 1000) + ' 秒再重新整理');
       return true;
     }
-    if (this._dispatch(target)) this._lastAt = now;
+    if (this._dispatch(target)) {
+      this._lastAt = this._now();
+      const next = this.cooldownLeftMs();
+      this._listeners.forEach(function(fn) {
+        fn(next);
+      });
+    }
     return true;
   },
 

@@ -26,15 +26,15 @@ import {
   EMPTY_TOOLBAR_CONTEXT,
   TOOLBAR_KEYS,
   THREAD_NAV_KEYS,
+  toolbarSlots,
 } from "../../js/mobile_toolbar";
 import "./MobileToolbar.css";
 
 // 手機底部導覽（docs/mobile.md「底部導覽」）。只在 pttchrome.mobile 時渲染。
 // Material 風格：icon＋小字，動作依畫面換（App.onScreenContextChange ← mobile_toolbar.js）：
-//   文章      推 X／回文 y／重整／到底 End／按鍵／更多（更多裡有分享、同主題前下首篇、列表前下篇）
-//   信件      回信 y／到底／按鍵／更多
-//   文章列表  搜尋／發文 Ctrl+P／重整／到底／按鍵／更多
-//   看板列表  搜尋／重整／到底／按鍵／更多
+//   固定 6 格（mobile_toolbar.toolbarSlots；位置不隨畫面變，不能用的反灰）：
+//     1 主要（文章＝推 X、列表／主功能表＝搜尋）  2 次要（回文 y／回信、文章列表＝發文 Ctrl+P）
+//     3 重整（冷卻中反灰＋倒數）  4 到底 End  5 按鍵  6 更多（分享、同主題前下首篇、列表前下篇…）
 //   重整  screen_refresh（列表 s<板>⏎／看板列表 /⏎／文章重開並還原位置），與 F5 同一個入口
 //   其他      搜尋（有可用種類時）／按鍵／更多
 //   搜尋  直接開搜尋彈窗（不開子選單；種類在彈窗上方切，article_search.js）
@@ -72,6 +72,9 @@ const haptic = () => {
 
 // 登出確認的自動復原時間：按了第一下之後沒動作就收回，防口袋誤觸。
 export const LOGOUT_CONFIRM_MS = 3000;
+
+// 重整倒數的重讀間隔：秒數靠 Math.ceil 取整，250ms 讓跳秒最多晚 1/4 秒。
+export const COOLDOWN_TICK_MS = 250;
 
 const ICON_PROPS = { size: 22, stroke: 1.75, "aria-hidden": true };
 
@@ -216,6 +219,29 @@ export const MobileToolbar = ({
     r.refresh("toolbar");
   }, [pttchrome]);
 
+  // 重整冷卻的倒數（秒，0 ＝可以重整）。冷卻一開始（不論從工具列、F5 或下拉）
+  // ScreenRefresh 會通知一次，之後自己每 250ms 重讀剩餘時間直到歸零。
+  const [cooldownSec, setCooldownSec] = useState(0);
+  useEffect(() => {
+    const r = pttchrome.screenRefresh;
+    if (!r || typeof r.onCooldown !== "function") return undefined;
+    let timer = null;
+    const tick = () => {
+      const sec = Math.ceil(r.cooldownLeftMs() / 1000);
+      setCooldownSec(sec);
+      timer = sec > 0 ? setTimeout(tick, COOLDOWN_TICK_MS) : null;
+    };
+    const off = r.onCooldown(() => {
+      clearTimeout(timer);
+      tick();
+    });
+    tick();
+    return () => {
+      off();
+      clearTimeout(timer);
+    };
+  }, [pttchrome]);
+
   const onSettings = useCallback(() => {
     setPanel(null);
     if (onOpenSettings) onOpenSettings();
@@ -228,6 +254,94 @@ export const MobileToolbar = ({
   }, [pttchrome]);
 
   if (!visible) return null;
+
+  // 固定格位（mobile_toolbar.toolbarSlots）：位置不隨畫面變，不能用的反灰不藏。
+  const refreshDisabled = !context.refresh || cooldownSec > 0;
+  const renderSlot = (slot, i) => {
+    switch (slot) {
+      case "push":
+        return navBtn(
+          TOOLBAR_KEYS.push.key,
+          IconThumbUp,
+          i18n("mobileToolbar_push"),
+          () => sendAction("push"),
+          { aria: i18n("mobileKeypad_push") },
+        );
+      case "search":
+        return navBtn(
+          "__search",
+          IconSearch,
+          i18n("mobileToolbar_search"),
+          onSearch,
+        );
+      case "reply":
+        return navBtn(
+          "__reply",
+          context.mail ? IconMail : IconMessageReply,
+          i18n(
+            context.mail ? "mobileToolbar_replyMail" : "mobileToolbar_reply",
+          ),
+          () => sendAction("reply"),
+        );
+      case "post":
+        return navBtn(
+          "__post",
+          IconPencilPlus,
+          i18n("mobileToolbar_post"),
+          () => sendAction("post"),
+        );
+      case "refresh":
+        // 冷卻中：反灰＋倒數秒數取代 label（倒數由 screenRefresh.cooldownLeftMs 驅動，
+        // F5／下拉觸發的冷卻一樣會顯示）。
+        return navBtn(
+          "__refresh",
+          IconRefresh,
+          cooldownSec > 0
+            ? cooldownSec + i18n("mobileToolbar_secUnit")
+            : i18n("mobileToolbar_refresh"),
+          onRefresh,
+          {
+            disabled: refreshDisabled,
+            aria: i18n("mobileToolbar_refresh"),
+            extraClass: cooldownSec > 0 ? " cooling" : "",
+          },
+        );
+      case "end":
+        return navBtn(
+          "__end",
+          IconArrowBarToDown,
+          i18n("mobileToolbar_end"),
+          () => sendAction("end"),
+          { disabled: !context.end },
+        );
+      case "keys":
+        return navBtn(
+          "__keys",
+          IconKeyboard,
+          i18n("mobileToolbar_keys"),
+          () => togglePanel("keys"),
+          { active: panel === "keys", expanded: panel === "keys" },
+        );
+      case "more":
+        return navBtn(
+          "__more",
+          IconDots,
+          i18n("mobileToolbar_more"),
+          () => togglePanel("more"),
+          { active: panel === "more", expanded: panel === "more" },
+        );
+      default:
+        // 這個畫面沒有這一格的動作：佔位，寬度照算，旁邊的按鈕才不會挪位置。
+        return (
+          <span
+            key={"__slot" + i}
+            className="mobileToolbarBtn mobileToolbarSlotEmpty"
+            data-slot-empty={i}
+            aria-hidden="true"
+          />
+        );
+    }
+  };
 
   const keyBtn = (k, extraClass) => (
     <button
@@ -250,8 +364,10 @@ export const MobileToolbar = ({
         type="button"
         className={
           "nomouse_command mobileToolbarBtn pttRipple" +
-          (o.active ? " active" : "")
+          (o.active ? " active" : "") +
+          (o.extraClass || "")
         }
+        disabled={!!o.disabled}
         aria-label={o.aria || label}
         aria-pressed={o.pressed}
         aria-expanded={o.expanded}
@@ -416,65 +532,7 @@ export const MobileToolbar = ({
       {panelEl}
       {moreSheet}
       <nav className="nomouse_command mobileToolbarBar">
-        {context.push &&
-          navBtn(
-            TOOLBAR_KEYS.push.key,
-            IconThumbUp,
-            i18n("mobileToolbar_push"),
-            () => sendAction("push"),
-            { aria: i18n("mobileKeypad_push") },
-          )}
-        {context.reply &&
-          navBtn(
-            "__reply",
-            context.mail ? IconMail : IconMessageReply,
-            i18n(
-              context.mail ? "mobileToolbar_replyMail" : "mobileToolbar_reply",
-            ),
-            () => sendAction("reply"),
-          )}
-        {context.refresh &&
-          navBtn(
-            "__refresh",
-            IconRefresh,
-            i18n("mobileToolbar_refresh"),
-            onRefresh,
-          )}
-        {context.end &&
-          navBtn("__end", IconArrowBarToDown, i18n("mobileToolbar_end"), () =>
-            sendAction("end"),
-          )}
-        {context.search.length > 0 &&
-          navBtn(
-            "__search",
-            IconSearch,
-            i18n("mobileToolbar_search"),
-            onSearch,
-          )}
-        {context.post &&
-          navBtn("__post", IconPencilPlus, i18n("mobileToolbar_post"), () =>
-            sendAction("post"),
-          )}
-        {navBtn(
-          "__keys",
-          IconKeyboard,
-          i18n("mobileToolbar_keys"),
-          () => togglePanel("keys"),
-          {
-            active: panel === "keys",
-            expanded: panel === "keys",
-          },
-        )}
-        {navBtn(
-          "__more",
-          IconDots,
-          i18n("mobileToolbar_more"),
-          () => togglePanel("more"),
-          {
-            active: panel === "more",
-            expanded: panel === "more",
-          },
-        )}
+        {toolbarSlots(context).map((slot, i) => renderSlot(slot, i))}
       </nav>
     </div>
   );

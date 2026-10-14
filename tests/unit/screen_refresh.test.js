@@ -235,6 +235,28 @@ describe("ScreenRefresh.refresh", () => {
     expect(enqueued.length).toBe(3);
   });
 
+  test("cooldownLeftMs／onCooldown：真的送出才起算並通知一次；被冷卻擋下不通知", () => {
+    const { core, enqueued } = makeCore(LIST);
+    const r = new ScreenRefresh(core);
+    let now = 50000;
+    r._now = () => now;
+    const seen = [];
+    const off = r.onCooldown((ms) => seen.push(ms));
+    expect(r.cooldownLeftMs()).toBe(0);
+    r.refresh("pull");
+    expect(seen).toEqual([5000]);
+    now += 1500;
+    expect(r.cooldownLeftMs()).toBe(3500);
+    r.refresh("key"); // 冷卻中：只提示
+    expect(seen).toEqual([5000]);
+    expect(enqueued.length).toBe(1);
+    off();
+    enqueued[0].onFlushed && enqueued[0].onFlushed();
+    now += 5000;
+    r.refresh("toolbar");
+    expect(seen).toEqual([5000]); // 已解除訂閱
+  });
+
   test("線路忙碌（AID 跳文等）⇒ 只提示", () => {
     const { core, enqueued, hints } = makeCore(LIST);
     core.aidNavigation.active = true;

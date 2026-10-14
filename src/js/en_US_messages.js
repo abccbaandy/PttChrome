@@ -808,6 +808,9 @@ export const en_US = {
   "mobileToolbar_refresh": {
     "message": "Refresh"
   },
+  "mobileToolbar_secUnit": {
+    "message": "s"
+  },
   "mobileToolbar_end": {
     "message": "End"
   },

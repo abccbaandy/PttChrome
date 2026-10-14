@@ -60,6 +60,26 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* 這個畫面不能用（或重整冷卻中）：反灰但不藏，格位才不會挪（mobile_toolbar.toolbarSlots）。 */
+.mobileToolbarBtn:disabled {
+  color: #5c5c66;
+  cursor: default;
+}
+
+.mobileToolbarBtn:disabled:active {
+  background: transparent;
+}
+
+/* 重整倒數：數字用等寬字，跳秒時 label 寬度不抖。 */
+.mobileToolbarBtn.cooling .mobileToolbarLabel {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 空格位（這個畫面沒有該格的動作）：只佔寬度。 */
+.mobileToolbarSlotEmpty {
+  pointer-events: none;
+}
+
 .mobileToolbarMenuItem:active,
 .mobileKeypadKey:active {
   background: #44444c;
