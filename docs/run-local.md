@@ -49,6 +49,8 @@ f="$(find / -maxdepth 6 -path '*/scripts/cloud-setup.sh' -not -path '*/node_modu
 if [ -n "$f" ]; then bash "$f"; else echo "[setup] 找不到 scripts/cloud-setup.sh"; fi
 ```
 
+Setup script 的輸出記在 `/root/.cache/pttchrome-cloud-setup.log`（第一行是呼叫端工作目錄、各步驟成敗），環境設定頁看不到，在 session 裡 `cat` 它查。
+
 為什麼要第二段：Setup script 的結果被快取，dev 之後升了 `@playwright/test` 時，新 session 拿到的瀏覽器 revision 是舊的，unit-browser 與 e2e 會整批 `Executable doesn't exist`。headless shell 的目錄名是底線（`chromium_headless_shell-<rev>`），只查 chromium 本體會漏報。
 
 ## 指令對照

@@ -29,6 +29,11 @@ test('拉 pttbbs 原始碼（CLAUDE.md「PTT 邏輯不准猜」）', () => {
   expect(code).toMatch(/github\.com\/ptt\/pttbbs/);
 });
 
+test('輸出記進固定 log（環境設定頁看不到 setup 的輸出），含呼叫端工作目錄', () => {
+  expect(code).toMatch(/LOG=\/root\/\.cache\/pttchrome-cloud-setup\.log/);
+  expect(code).toMatch(/\$PWD/);
+});
+
 test('非必要步驟失敗不讓 session 起不來：不開 set -e', () => {
   expect(code).not.toMatch(/^\s*set\s+-[a-z]*e/m);
 });

@@ -12,6 +12,11 @@
 set -uo pipefail
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
+# ── 全程記 log（環境設定頁看不到輸出；session 裡 `cat` 這個檔就知道 setup 當時的狀況）──
+LOG=/root/.cache/pttchrome-cloud-setup.log
+mkdir -p "$(dirname "$LOG")" 2>/dev/null && exec > >(tee "$LOG") 2>&1
+echo "[setup] $(date -u +%FT%TZ) 呼叫端工作目錄 = $PWD"
+
 # ── 找到 repo 根目錄 ──
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 if [ -z "$REPO" ] || ! grep -q '"name": "pttchrome"' "$REPO/package.json" 2>/dev/null; then
