@@ -5,6 +5,8 @@
 //  1. 項目清單與桌機 Mantine Menu 同一份（context_menu_entries.js）：同樣的條件出現同樣的項目；
 //  2. 點項目走同一個 handler（onMenuSelect 帶 key）；反灰項目不能點；
 //  3. 開著＝modal（具名來源），收起時撤銷。
+import mantineCss from "@mantine/core/styles.css?raw";
+import { page } from "vitest/browser";
 import { render, fireEvent, act } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { ContextSheet } from "../../src/components/ContextMenu/ContextSheet";
@@ -72,7 +74,10 @@ test("點項目走同一個 handler；反灰項目不能點", async () => {
   const black = document.querySelector('[data-cmenu="addAuthorBlacklist"]');
   expect(black.disabled).toBe(true);
   fireEvent.click(document.querySelector('[data-cmenu="markReadUnread"]'));
-  expect(handlers.onMenuSelect).toHaveBeenCalledWith("markReadUnread", expect.anything());
+  expect(handlers.onMenuSelect).toHaveBeenCalledWith(
+    "markReadUnread",
+    expect.anything(),
+  );
   fireEvent.click(document.querySelector('[data-cmenu="longPush"]'));
   expect(handlers.onLongPushClick).toHaveBeenCalledTimes(1);
 });
@@ -101,4 +106,72 @@ test("sheet 項目不可選字，輸入框例外", async () => {
   sheet.appendChild(input);
   expect(getComputedStyle(input).userSelect).not.toBe("none");
   input.remove();
+});
+
+// 長按畫面下方的文章（「前已讀後未讀」）：固定貼底的 sheet 會把那一列整個蓋掉，
+// 選中文章外框等於沒畫。sheet 必須避開長按的對象（js/sheet_placement.js）。
+describe("不蓋住長按的那一列", () => {
+  // 真版面：Mantine 的 CSS 以 ?raw 注入（Vitest 不處理套件的 CSS import；沒有它 Drawer
+  // 不是 fixed、量到的位置是假的），視窗改成手機大小（同 pref_modal_narrow.test.jsx）。
+  let style;
+  beforeAll(async () => {
+    style = document.createElement("style");
+    style.textContent = mantineCss;
+    document.head.appendChild(style);
+    await page.viewport(390, 800);
+  });
+  afterAll(async () => {
+    style.remove();
+    await page.viewport(1024, 768);
+  });
+
+  const sheetRect = () =>
+    document.querySelector('[data-sheet="context"]').getBoundingClientRect();
+
+  test("對象在畫面下方 ⇒ sheet 改貼頂，下緣在對象上緣之上", async () => {
+    const vh = window.innerHeight;
+    const anchor = { top: vh - 60, bottom: vh - 30 };
+    setup({ menuAnchor: anchor });
+    await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+    const sheet = document.querySelector('[data-sheet="context"]');
+    expect(sheet.getAttribute("data-position")).toBe("top");
+    await vi.waitFor(() => {
+      const r = sheetRect();
+      expect(r.height).toBeGreaterThan(0);
+      expect(r.bottom).toBeLessThanOrEqual(anchor.top + 0.5);
+    });
+  });
+
+  test("對象在畫面上方 ⇒ 照舊貼底，上緣在對象下緣之下", async () => {
+    const anchor = { top: 20, bottom: 50 };
+    setup({ menuAnchor: anchor });
+    await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+    expect(
+      document
+        .querySelector('[data-sheet="context"]')
+        .getAttribute("data-position"),
+    ).toBe("bottom");
+    await vi.waitFor(() => {
+      const r = sheetRect();
+      expect(r.height).toBeGreaterThan(0);
+      expect(r.top).toBeGreaterThanOrEqual(anchor.bottom - 0.5);
+    });
+  });
+
+  test("收起時（menuAnchor 被清掉）不翻面：退場動畫留在原本那一側", async () => {
+    const vh = window.innerHeight;
+    const { rerender, props } = setup({
+      menuAnchor: { top: vh - 60, bottom: vh - 30 },
+    });
+    await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+    act(() =>
+      rerender(
+        <MantineProvider>
+          <ContextSheet {...props} open={false} menuAnchor={null} />
+        </MantineProvider>,
+      ),
+    );
+    const sheet = document.querySelector('[data-sheet="context"]');
+    if (sheet) expect(sheet.getAttribute("data-position")).toBe("top");
+  });
 });

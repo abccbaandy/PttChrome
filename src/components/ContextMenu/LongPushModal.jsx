@@ -1,4 +1,11 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  useId,
+} from "react";
 import {
   Modal,
   Textarea,
@@ -19,6 +26,7 @@ import {
   PUSH_TYPE_COLOR,
 } from "../../js/long_push";
 import { readDraft, writeDraft, clearDraft } from "../../js/long_push_draft";
+import MobileSheet from "../MobileSheet";
 
 // 長推文輸入框：使用者打一大段話，這裡即時算出「會被切成幾則」與「有哪些字
 // PTT 顯示不出來」，按下確定後把**已過濾**的內容交給 LongPushSession 送出。
@@ -81,7 +89,13 @@ const TypeLabel = ({ type, text, disabled, selected }) =>
 // 讀回來的事實：這塊板讓不讓噓、這次會不會被降級成 →、目前在不在冷卻。**全部是
 // 讀畫面讀到的，不是猜的**，所以這裡的文案可以寫成肯定句；null（沒探過路的降級
 // 路徑）時整個區塊消失，行為與探路上線前一樣。
+//
+// mobile：手機改用 bottom sheet 外殼（同 SearchModal）。置中的 Modal 在軟鍵盤升起時
+// 下半部（送出鍵）被鍵盤蓋住，打完字得先收鍵盤才按得到送出。sheet 會跟著鍵盤讓位
+// （--vv-kb-inset），按鈕列放進 sheet 的 footer（不隨內容捲動）⇒ 鍵盤開著也點得到。
 export const LongPushModal = ({
+  mobile,
+  pttchrome,
   show,
   maxBytes,
   preflight,
@@ -257,7 +271,194 @@ export const LongPushModal = ({
 
   // 只影響提示文字；navigator 不會在 page lifetime 內變。
   const shortcutLabel = useMemo(() => modEnterShortcutLabel(), []);
+  // 手機版的按鈕列在 <form> 外面（sheet footer），送出鍵用 form 屬性指回來。
+  const formId = "longPushForm" + useId().replace(/:/g, "");
 
+  const fields = (
+    <Stack gap="xs">
+      <Textarea
+        data-autofocus
+        ref={textareaRef}
+        name="longPushText"
+        label={i18n("longPushModal_label")}
+        placeholder={i18n("longPushModal_placeholder")}
+        autosize
+        // 手機：鍵盤佔掉半個螢幕，輸入框別一開就把其他欄位擠出 sheet。
+        minRows={mobile ? 3 : 6}
+        maxRows={mobile ? 8 : 16}
+        value={value}
+        onChange={(event) => setValueAndDraft(event.target.value)}
+        onPaste={onPaste}
+      />
+      <Group gap="md" align="center">
+        <Text size="sm">{i18n("longPushModal_type")}</Text>
+        <SegmentedControl
+          name="longPushType"
+          size="xs"
+          value={type}
+          onChange={setType}
+          data={[
+            {
+              value: "push",
+              label: (
+                <TypeLabel
+                  type="push"
+                  selected={type === "push"}
+                  text={i18n("longPushModal_typePush")}
+                />
+              ),
+            },
+            {
+              value: "boo",
+              label: (
+                <TypeLabel
+                  type="boo"
+                  selected={type === "boo"}
+                  text={i18n("longPushModal_typeBoo")}
+                  disabled={!booAllowed}
+                />
+              ),
+              disabled: !booAllowed,
+            },
+            {
+              value: "arrow",
+              label: (
+                <TypeLabel
+                  type="arrow"
+                  selected={type === "arrow"}
+                  text={i18n("longPushModal_typeArrow")}
+                />
+              ),
+            },
+          ]}
+        />
+        <Text size="sm" c="dimmed" data-testid="longPushSegments">
+          {replaceI18n("longPushModal_segments", { n: count })}
+        </Text>
+      </Group>
+      {/* 探過路就用畫面上的事實取代那句「90 秒內連推會改成 →」的推測。 */}
+      {preflight && preflight.degraded ? (
+        <Alert color="yellow" variant="light" data-testid="longPushArrowNote">
+          {i18n("longPushModal_preflightArrow")}
+        </Alert>
+      ) : (
+        <Text size="xs" c="dimmed">
+          {i18n("longPushModal_typeNote")}
+        </Text>
+      )}
+      {!booAllowed && (
+        <Text size="xs" c="dimmed" data-testid="longPushNoBooNote">
+          {i18n("longPushModal_preflightNoBoo")}
+        </Text>
+      )}
+      {/* 冷卻**不算不能推**：打完字通常早就過了那幾秒，真的還沒過，送出時的
+              等待邏輯會處理。所以只提示，不擋。 */}
+      {preflight && preflight.cooldownSec > 0 && (
+        <Alert color="blue" variant="light" data-testid="longPushCooldownNote">
+          {replaceI18n("longPushModal_preflightCooldown", {
+            s: preflight.cooldownSec,
+          })}
+          {preflight.cooldownMessage && (
+            <Text size="xs" c="dimmed" mt={4}>
+              {preflight.cooldownMessage}
+            </Text>
+          )}
+        </Alert>
+      )}
+      {/* 草稿是**單一份、不綁文章**的（long_push_draft.js 檔頭）⇒ 帶回來的
+              內容可能是在別篇文章打的，一定要講一聲並給清除鍵。 */}
+      {restored && (
+        <Group gap="xs" align="center" data-testid="longPushDraftNote">
+          <Text size="xs" c="dimmed">
+            {i18n("longPushModal_draftNote")}
+          </Text>
+          <Button size="compact-xs" variant="subtle" onClick={onClearDraft}>
+            {i18n("longPushModal_draftClear")}
+          </Button>
+        </Group>
+      )}
+      {uploadEnabled && (
+        <Text size="xs" c="dimmed">
+          {i18n("longPushModal_uploadHint")}
+        </Text>
+      )}
+      {parsed.dropped.length > 0 && (
+        <Alert color="yellow" variant="light">
+          {replaceI18n("longPushModal_dropped", {
+            chars: Array.from(new Set(parsed.dropped)).join(" "),
+          })}
+        </Alert>
+      )}
+      {urlTooLong && (
+        <Alert color="yellow" variant="light">
+          {i18n("longPushModal_urlTooLong")}
+        </Alert>
+      )}
+      {confirming && (
+        <Alert color="orange" variant="light">
+          {replaceI18n("longPushModal_tooMany", { n: count })}
+        </Alert>
+      )}
+    </Stack>
+  );
+
+  const buttons = (
+    <Group justify="flex-end" mt={mobile ? 0 : "md"}>
+      {uploadEnabled && (
+        <Button
+          variant="default"
+          mr="auto"
+          onClick={() => imageUpload.openFilePicker()}
+        >
+          {i18n("longPushModal_uploadImage")}
+        </Button>
+      )}
+      <Button variant="default" onClick={onHide}>
+        {i18n("longPushModal_cancel")}
+      </Button>
+      {/* 提示一定要 aria-hidden：不然它會被算進按鈕的 accessible name，
+              所有用按鈕名稱抓元素的測試（unit 與 offline e2e）一起靜默失效。
+              輔助技術那份改由 aria-keyshortcuts 提供。 */}
+      <Button
+        type="submit"
+        form={formId}
+        disabled={!count}
+        aria-keyshortcuts="Control+Enter Meta+Enter"
+        rightSection={
+          <span
+            aria-hidden="true"
+            data-testid="longPushSubmitHint"
+            style={{ fontSize: 12, opacity: 0.75 }}
+          >
+            {shortcutLabel}
+          </span>
+        }
+      >
+        {confirming
+          ? i18n("longPushModal_confirmAnyway")
+          : i18n("longPushModal_confirm")}
+      </Button>
+    </Group>
+  );
+
+  if (mobile)
+    return (
+      <MobileSheet
+        pttchrome={pttchrome}
+        opened={show}
+        onClose={onHide}
+        // 同桌機：上傳浮層是另一個 React root，對 sheet 算「外面」；誤觸遮罩也不該
+        // 把打到一半的整段收掉。收起走取消鍵／系統返回／拖把手。
+        closeOnClickOutside={false}
+        title={i18n("longPushModal_title")}
+        sheetKey="longPush"
+        footer={buttons}
+      >
+        <form id={formId} onSubmit={onSubmit} onKeyDown={onKeyDown}>
+          {fields}
+        </form>
+      </MobileSheet>
+    );
   return (
     <Modal
       opened={show}
@@ -270,174 +471,9 @@ export const LongPushModal = ({
       // 上傳紀錄」就整段沒了。
       closeOnClickOutside={false}
     >
-      <form onSubmit={onSubmit} onKeyDown={onKeyDown}>
-        <Stack gap="xs">
-          <Textarea
-            data-autofocus
-            ref={textareaRef}
-            name="longPushText"
-            label={i18n("longPushModal_label")}
-            placeholder={i18n("longPushModal_placeholder")}
-            autosize
-            minRows={6}
-            maxRows={16}
-            value={value}
-            onChange={(event) => setValueAndDraft(event.target.value)}
-            onPaste={onPaste}
-          />
-          <Group gap="md" align="center">
-            <Text size="sm">{i18n("longPushModal_type")}</Text>
-            <SegmentedControl
-              name="longPushType"
-              size="xs"
-              value={type}
-              onChange={setType}
-              data={[
-                {
-                  value: "push",
-                  label: (
-                    <TypeLabel
-                      type="push"
-                      selected={type === "push"}
-                      text={i18n("longPushModal_typePush")}
-                    />
-                  ),
-                },
-                {
-                  value: "boo",
-                  label: (
-                    <TypeLabel
-                      type="boo"
-                      selected={type === "boo"}
-                      text={i18n("longPushModal_typeBoo")}
-                      disabled={!booAllowed}
-                    />
-                  ),
-                  disabled: !booAllowed,
-                },
-                {
-                  value: "arrow",
-                  label: (
-                    <TypeLabel
-                      type="arrow"
-                      selected={type === "arrow"}
-                      text={i18n("longPushModal_typeArrow")}
-                    />
-                  ),
-                },
-              ]}
-            />
-            <Text size="sm" c="dimmed" data-testid="longPushSegments">
-              {replaceI18n("longPushModal_segments", { n: count })}
-            </Text>
-          </Group>
-          {/* 探過路就用畫面上的事實取代那句「90 秒內連推會改成 →」的推測。 */}
-          {preflight && preflight.degraded ? (
-            <Alert
-              color="yellow"
-              variant="light"
-              data-testid="longPushArrowNote"
-            >
-              {i18n("longPushModal_preflightArrow")}
-            </Alert>
-          ) : (
-            <Text size="xs" c="dimmed">
-              {i18n("longPushModal_typeNote")}
-            </Text>
-          )}
-          {!booAllowed && (
-            <Text size="xs" c="dimmed" data-testid="longPushNoBooNote">
-              {i18n("longPushModal_preflightNoBoo")}
-            </Text>
-          )}
-          {/* 冷卻**不算不能推**：打完字通常早就過了那幾秒，真的還沒過，送出時的
-              等待邏輯會處理。所以只提示，不擋。 */}
-          {preflight && preflight.cooldownSec > 0 && (
-            <Alert
-              color="blue"
-              variant="light"
-              data-testid="longPushCooldownNote"
-            >
-              {replaceI18n("longPushModal_preflightCooldown", {
-                s: preflight.cooldownSec,
-              })}
-              {preflight.cooldownMessage && (
-                <Text size="xs" c="dimmed" mt={4}>
-                  {preflight.cooldownMessage}
-                </Text>
-              )}
-            </Alert>
-          )}
-          {/* 草稿是**單一份、不綁文章**的（long_push_draft.js 檔頭）⇒ 帶回來的
-              內容可能是在別篇文章打的，一定要講一聲並給清除鍵。 */}
-          {restored && (
-            <Group gap="xs" align="center" data-testid="longPushDraftNote">
-              <Text size="xs" c="dimmed">
-                {i18n("longPushModal_draftNote")}
-              </Text>
-              <Button size="compact-xs" variant="subtle" onClick={onClearDraft}>
-                {i18n("longPushModal_draftClear")}
-              </Button>
-            </Group>
-          )}
-          {uploadEnabled && (
-            <Text size="xs" c="dimmed">
-              {i18n("longPushModal_uploadHint")}
-            </Text>
-          )}
-          {parsed.dropped.length > 0 && (
-            <Alert color="yellow" variant="light">
-              {replaceI18n("longPushModal_dropped", {
-                chars: Array.from(new Set(parsed.dropped)).join(" "),
-              })}
-            </Alert>
-          )}
-          {urlTooLong && (
-            <Alert color="yellow" variant="light">
-              {i18n("longPushModal_urlTooLong")}
-            </Alert>
-          )}
-          {confirming && (
-            <Alert color="orange" variant="light">
-              {replaceI18n("longPushModal_tooMany", { n: count })}
-            </Alert>
-          )}
-        </Stack>
-        <Group justify="flex-end" mt="md">
-          {uploadEnabled && (
-            <Button
-              variant="default"
-              mr="auto"
-              onClick={() => imageUpload.openFilePicker()}
-            >
-              {i18n("longPushModal_uploadImage")}
-            </Button>
-          )}
-          <Button variant="default" onClick={onHide}>
-            {i18n("longPushModal_cancel")}
-          </Button>
-          {/* 提示一定要 aria-hidden：不然它會被算進按鈕的 accessible name，
-              所有用按鈕名稱抓元素的測試（unit 與 offline e2e）一起靜默失效。
-              輔助技術那份改由 aria-keyshortcuts 提供。 */}
-          <Button
-            type="submit"
-            disabled={!count}
-            aria-keyshortcuts="Control+Enter Meta+Enter"
-            rightSection={
-              <span
-                aria-hidden="true"
-                data-testid="longPushSubmitHint"
-                style={{ fontSize: 12, opacity: 0.75 }}
-              >
-                {shortcutLabel}
-              </span>
-            }
-          >
-            {confirming
-              ? i18n("longPushModal_confirmAnyway")
-              : i18n("longPushModal_confirm")}
-          </Button>
-        </Group>
+      <form id={formId} onSubmit={onSubmit} onKeyDown={onKeyDown}>
+        {fields}
+        {buttons}
       </form>
     </Modal>
   );
