@@ -29,6 +29,7 @@ import { serializedOpHint } from './serialized_op_gate';
 import { hintColors, shouldShowHint } from './status_hint';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { tryOpenSearchModal } from './article_search';
+import { isRefreshKeyEvent } from './screen_refresh';
 import { mobileCtrlKey, mobileMenuLayout, listViewportGeometry, listFillRows } from './mobile_layout';
 
 // 單獨按下修飾鍵本身（實體鍵盤按 Shift 準備打大寫）不算「下一個按鍵」，黏滯 Ctrl 不解除。
@@ -1425,6 +1426,15 @@ TermView.prototype = {
         e.key === readValuesWithDefault().deepLinkCopyKey) {
       e.preventDefault();
       this.bbscore.deepLinkController.copyCurrentPostLink();
+      return;
+    }
+    // 重新整理（F5／⌘R，pref refreshKeyIntercept）：看板列表／文章列表／文章改成重整
+    // PTT 畫面。refresh() 回 false ＝這個畫面不支援 ⇒ 不 preventDefault，瀏覽器照常
+    // 重新載入（beforeunload 會先問）。F 鍵與 ⌘ 組合本來就送不到 PTT。
+    if (this.bbscore.screenRefresh && isRefreshKeyEvent(e) &&
+        readValuesWithDefault().refreshKeyIntercept &&
+        this.bbscore.screenRefresh.refresh('key')) {
+      e.preventDefault();
       return;
     }
     // Switch-to-native is a TOGGLE: the gate below owns the key while easy reading is

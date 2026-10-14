@@ -46,10 +46,14 @@
 
     | 畫面 | 動作 |
     |---|---|
-    | 文章 pager（非信件） | 推文 X／回文 y／分享／按鍵／更多（更多內：`[` `]` `=` 同主題、`b` `f` 前後篇，`THREAD_NAV_KEYS`） |
-    | 信件 pager | 回信 y／按鍵／更多 |
-    | 文章列表（非輸入欄） | 搜尋／發文 Ctrl+P（`{key:'p',altKey}` Alt remap，避開瀏覽器列印）／按鍵／更多 |
+    | 文章 pager（非信件） | 推文 X／回文 y／重整／到底 End／按鍵／更多（更多內：分享、`[` `]` `=` 同主題、`b` `f` 前後篇，`THREAD_NAV_KEYS`） |
+    | 信件 pager | 回信 y／到底／按鍵／更多 |
+    | 文章列表（非輸入欄） | 搜尋／發文 Ctrl+P（`{key:'p',altKey}` Alt remap，避開瀏覽器列印）／重整／到底／按鍵／更多 |
+    | 看板列表 | 搜尋／重整／到底／按鍵／更多 |
     | 其他 | 搜尋（`availableSearchKinds` 非空）／按鍵／更多 |
+
+    重整＝`screenRefresh.refresh('toolbar')`，顯示與否和桌機 F5 同一個判準（`screen_refresh.refreshTargetFromFacts`）；
+    另有下拉重整（`pull_refresh.js`）。兩者見 `docs/screen-refresh.md`。分享 2026-10 移進「更多」（工具列留給高頻動作）。
 
     搜尋**直接開搜尋彈窗**（預設第一個可用種類，無子選單；見 `docs/article-search.md`）。分享＝`deep_link_controller.shareCurrentPostLink(title)`（與複製本篇連結同一條 AID 解析；`navigator.share`，AbortError＝完成，其他拒絕／無 API 退回複製；**click 內同步呼叫**）。
     更多＝bottom sheet（見「Bottom sheet」）：文章導覽／選取模式／設定／登出（inline 二段確認，`LOGOUT_CONFIRM_MS` 無動作自動收回）。

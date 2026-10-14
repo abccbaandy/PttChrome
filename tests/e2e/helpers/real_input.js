@@ -257,7 +257,22 @@ async function hoverFloatTools(page) {
   await page.locator('#floatTools .floatTools__panel').waitFor({ state: 'visible' });
 }
 
+// 單指觸控拖曳（CDP Input.dispatchTouchEvent：瀏覽器自己產生 touchstart/move/end，
+// 含捲動與 overscroll 的原生處理）。steps 個 touchMove 等距走完 from → to。
+async function touchDrag(page, from, to, steps = 8) {
+  const s = await cdp(page);
+  const pt = (x, y) => [{ x, y }];
+  await s.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(from.x, from.y) });
+  for (let i = 1; i <= steps; ++i) {
+    const x = from.x + ((to.x - from.x) * i) / steps;
+    const y = from.y + ((to.y - from.y) * i) / steps;
+    await s.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(x, y) });
+  }
+  await s.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
 module.exports = {
+  touchDrag,
   hoverFloatTools,
   cdp,
   textRect,

@@ -226,6 +226,10 @@ export function AidNavigation(core, view, termBuf, queue, history) {
   // True while the key sequence is in flight — input entry points check this
   // (term_view.onKeyDown / App.onMouse_click / wheel) and swallow everything.
   this.active = false;
+  // active 期間 serialized_op_gate 給使用者的提示字；null ＝預設的「AID 跳文中」。
+  this.opHint = null;
+  // 目前這一輪是 refresh()（失敗訊息與收尾不同於跳文）。
+  this._refreshing = false;
   // One-shot: swallow the leaveCurrentPost our own landing causes (noteLeftPost).
   this._ownedLeave = false;
   // findLocalPostAid 的增量掃描游標（見該函式）。
@@ -242,6 +246,15 @@ AidNavigation.prototype = {
 
   _fail: function(msg) {
     this.active = false;
+    this.opHint = null;
+    if (this._refreshing) {
+      // 重新整理失敗：同一套「停在原生畫面、看得到」的降級，只是措辭不同。
+      this._refreshing = false;
+      this._history.abort();
+      this._updateBackButton();
+      this._hint('重新整理失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
+      return;
+    }
     // Where we ended up is unknown, so every anchor below is suspect: drop the
     // whole stack rather than offer a back that lands somewhere wrong.
     this._history.abort();
@@ -402,6 +415,118 @@ AidNavigation.prototype = {
     this._begin(makeRun(anchor, 'back'));
   },
 
+  // 重新整理本篇（screen_refresh.js 的文章分支；docs/screen-refresh.md）。
+  //
+  // pmore 把文章整份讀進來就不再看檔案（mbbsd/pmore.c 沒有任何 reload 路徑），所以
+  // 「看新推文」只能重開。**不用 ←→**（live 文小幫手的做法）：← 回列表後游標停在
+  // 原本的 crs_ln，但列表重讀之後那個序號可能已經是別篇（置底文在新文進來時整排
+  // 往後挪、上方有文被刪…），→ 會靜默開錯篇。改走跳文同一條路：
+  //   (Q／免費網址列取 AID) → s<本板>⏎（文章內的 s，more.c → Select()，列表 NEWDIRECT
+  //   重讀索引、不顯示進板畫面）→ #<AID>⏎ → ⏎，每一步依畫面內容驗證。
+  // 落地後還原閱讀位置：原本停在文末就黏回文末（新推文就在那裡），否則回到同一列。
+  //
+  // 回 true ＝序列已開始；false ＝這個畫面不能這樣重整（呼叫端給提示）。
+  // 跟歷史堆疊無關：dir 'refresh' 不 push、不 commit（返回鈕照舊指向跳文前那篇）。
+  refresh: function() {
+    if (this.active) return false;
+    const buf = this._termBuf;
+    if (!buf || buf.pageState !== 3) return false;
+    const board = this._view && this._view._articleBoard;
+    if (!board) return false;
+    const last = buf.getRowText(buf.rows - 1, 0, buf.cols);
+    const status = parseStatusRow(last);
+    const ls = this._core.listSession;
+    const listOpened = !!(ls && ls.currentAnchor && ls.currentAnchor());
+    let context = this._pagerContext();
+    if (context === 'unknown' && listOpened && status) context = 'reading';
+    // 站內信／精華區：s 與 # 都不在（more.c 依 currstat 擋掉），沒有可驗證的重開路。
+    if (context !== 'reading') return false;
+    const er = this._core.easyReading;
+    const inEasy = !!(er && er._enabled && !er._functionMode);
+    let atBottom;
+    if (inEasy) {
+      const disp = this._view.mainDisplay;
+      const slack = (this._view.chh || 0) * 2;
+      atBottom =
+        !!er.easyReadingReachedPageEnd &&
+        !!disp &&
+        disp.scrollHeight - disp.scrollTop - disp.clientHeight <= slack;
+    } else {
+      atBottom = !!status && status.pagePercent === 100;
+    }
+    const run = makeRun({ board: board, kind: 'aid', aid: null }, 'refresh');
+    run.originLineIndex = this._currentLineIndex();
+    run.atBottom = atBottom;
+    this._refreshing = true;
+    this.opHint = '重新整理中，請稍候…';
+    this._hint('重新整理中…', PROGRESS_HINT_MS);
+    this._begin(run);
+    return true;
+  },
+
+  // 重整的第 0 步：取得本篇 AID（免費網址列優先，落空才按 Q）。
+  _enqueueRefreshAid: function(run) {
+    const self = this;
+    this.resolvePostAid({
+      kind: 'refresh-post-info',
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      onDone: function(info, meta) {
+        if (!info || !info.aid) {
+          // 這篇沒有 AID（極舊文章）。Q 已經把我們丟回列表、而且那個 FULLUPDATE
+          // 本身就重讀了索引（read.c read_apply_mode）⇒ 關框＋⏎ 重開游標下那篇，
+          // 是唯一剩下的路；序號可能已漂移，所以退到這條時明講。
+          if (!meta.boxOpen) {
+            self._fail('無法取得文章代碼');
+            return;
+          }
+          self.reopenAfterPostInfo(run.originLineIndex, {
+            onFlushed: function() {
+              self._fail('畫面已變更');
+            },
+            onDone: function() {
+              self._finishRefresh(run, '已重新整理（本篇無文章代碼，依列表位置重開）');
+            },
+            onFail: function(reason) {
+              self._fail('重開文章失敗（' + reason + '）');
+            }
+          });
+          return;
+        }
+        run.target.aid = info.aid;
+        if (info.board) {
+          run.target.board = info.board;
+          run.boardLower = String(info.board).toLowerCase();
+        }
+        self._enqueueBoardJump(run, false, meta.boxOpen);
+      },
+      onFail: function(reason) {
+        self._fail('取得文章代碼失敗（' + reason + '）');
+      }
+    });
+  },
+
+  _finishRefresh: function(run, msg) {
+    this.active = false;
+    this.opHint = null;
+    this._refreshing = false;
+    const er = this._core.easyReading;
+    if (er && er.ensureEnabledOnArticle) er.ensureEnabledOnArticle(true);
+    // _pendingEnableOnArticle：落地幀還不完整，好讀會在下一個完整幀接手（同 _enqueueOpen
+    // 對 requestScrollRestore 的用法：請求先掛著，累積到位才生效）。
+    if (er && (er._enabled || er._pendingEnableOnArticle)) {
+      if (run.atBottom && er.requestScrollToBottom) er.requestScrollToBottom();
+      else if (run.originLineIndex && er.requestScrollRestore)
+        er.requestScrollRestore(run.originLineIndex);
+    } else if (run.atBottom && this._core.sendMachineBytes) {
+      // 原生 pmore：沒有累積頁可捲，文末就用原生 End（mf_goBottom）。
+      this._core.sendMachineBytes('\x1b[4~');
+    }
+    this._updateBackButton();
+    this._hint(msg || '已重新整理', 1200);
+  },
+
   // Is a back run available right now (drives the button / the shortcut)?
   canGoBack: function() {
     return !this.active && this._history.canGoBack();
@@ -454,6 +579,11 @@ AidNavigation.prototype = {
     // at 主功能表 moves the highlight onto G)oodbye (see its own comment on
     // overshoot). The deep-link entry point lands here almost every time — the
     // link is usually opened right after logging in.
+    // 重整只從「已證明是 READING 的文章內」出發（refresh() 先驗過），走文章內 s 的快路徑。
+    if (run.dir === 'refresh') {
+      this._enqueueRefreshAid(run);
+      return;
+    }
     if (this._atMainMenu()) {
       this._enqueueBoardJump(run, true, false);
       return;
@@ -1051,6 +1181,11 @@ AidNavigation.prototype = {
         return !!parseStatusRow(lastRow);
       },
       onDone: function() {
+        if (run.dir === 'refresh') {
+          // 同下面的 ORDER INVARIANT：_finishRefresh 先解鎖 active 再交給好讀。
+          self._finishRefresh(run);
+          return;
+        }
         self.active = false;
         // ORDER INVARIANT: unlock `active` FIRST, then hand over to easy reading.
         // easy_reading._send's first gate is `if (aidNavigation.active) return`, so

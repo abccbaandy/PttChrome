@@ -121,7 +121,14 @@ const anchorFor = (key, flashKey) => ({
 
 // Checkbox adapter：保留 id={`pref-check-${name}`}（label[for=...] e2e marker，且
 // 點 label 文字才能切換）、name（input[name=...] marker）、event.target.checked 契約。
-const PrefCheckbox = ({ name, checked, disabled, onChange, children }) => (
+const PrefCheckbox = ({
+  name,
+  checked,
+  disabled,
+  onChange,
+  description,
+  children,
+}) => (
   <Checkbox
     id={`pref-check-${name}`}
     name={name}
@@ -129,6 +136,7 @@ const PrefCheckbox = ({ name, checked, disabled, onChange, children }) => (
     disabled={disabled}
     onChange={onChange}
     label={children}
+    description={description}
     mb="xs"
     {...anchorFor(name, useFlashKey())}
   />
@@ -824,6 +832,24 @@ export const PrefModal = ({
                   onKeyDown={onHotkeyCapture}
                   mb="xs"
                   {...anchor("deepLinkCopyKey")}
+                />
+                <PrefCheckbox
+                  name="refreshKeyIntercept"
+                  checked={values.refreshKeyIntercept}
+                  onChange={onCheckboxChange}
+                  description={i18n("tooltip_refreshKeyIntercept")}
+                >
+                  {i18n("options_refreshKeyIntercept")}
+                </PrefCheckbox>
+                <NumberInput
+                  label={i18n("options_refreshMinIntervalSec")}
+                  description={i18n("tooltip_refreshMinIntervalSec")}
+                  name="refreshMinIntervalSec"
+                  min={0}
+                  value={values.refreshMinIntervalSec}
+                  onChange={(val) => onNumberChange("refreshMinIntervalSec", val)}
+                  mb="xs"
+                  {...anchor("refreshMinIntervalSec")}
                 />
                 <PrefCheckbox
                   name="endTurnsOnLiveUpdate"

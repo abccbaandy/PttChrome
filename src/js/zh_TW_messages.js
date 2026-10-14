@@ -792,6 +792,24 @@
   "tooltip_deepLinkCopyKey": {
     "message": "點此後按任意鍵設定 (預設 F2)"
   },
+  "options_refreshKeyIntercept": {
+    "message": "F5／⌘R 重新整理 PTT 畫面"
+  },
+  "tooltip_refreshKeyIntercept": {
+    "message": "在看板列表、文章列表、文章裡按 F5（Mac 為 ⌘R）改成重新整理 PTT 畫面（看新文章、新推文），不重新載入網頁；其他畫面照舊。瀏覽器網址列旁的重新整理按鈕網頁攔不到。"
+  },
+  "options_refreshMinIntervalSec": {
+    "message": "重新整理最短間隔 (秒)"
+  },
+  "tooltip_refreshMinIntervalSec": {
+    "message": "兩次重新整理至少相隔幾秒，避免連按造成大量讀取。預設 5 秒，輸入 0 可停用。"
+  },
+  "mobileToolbar_refresh": {
+    "message": "重整"
+  },
+  "mobileToolbar_end": {
+    "message": "到底"
+  },
   "options_endTurnsOnLiveUpdate": {
     "message": "END 啟用推文即時更新"
   },

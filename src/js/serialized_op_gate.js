@@ -18,7 +18,7 @@
 export function serializedOpHint(core) {
   if (!core) return null;
   if (core.aidNavigation && core.aidNavigation.active)
-    return 'AID 跳文中，請稍候…';
+    return core.aidNavigation.opHint || 'AID 跳文中，請稍候…';
   // 提示字隨階段不同（探路／送出），由 session 自己給——active 為真時一定有值。
   if (core.longPush && core.longPush.active)
     return core.longPush.opHint || '長推文送出中，請稍候…';
@@ -29,6 +29,8 @@ export function serializedOpHint(core) {
   if (core.boardNoteSkip && core.boardNoteSkip.busy) return '略過進板畫面中，請稍候…';
   // 搜尋彈窗送出的兩步（搜尋鍵 → 等 prompt → 關鍵字），見 article_search.js。
   if (core.searchInFlight) return '搜尋中，請稍候…';
+  // 列表的重新整理（s<板>⏎／看板列表 /⏎），見 screen_refresh.js。
+  if (core.refreshInFlight) return '重新整理中，請稍候…';
   return null;
 }
 

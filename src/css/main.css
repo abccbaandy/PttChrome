@@ -1454,6 +1454,36 @@ span {
 body.mobile-layout .floatTools {
   z-index: 2400;
 }
+/* 手機：關掉 Chrome 原生的 pull-to-refresh（它的結果是整頁重載＝斷線），改由
+   pull_refresh.js 的下拉重整 PTT 畫面接手。**只動 y 軸**：x 軸的返回導航必須放行
+   （守護 tests/unit/native_gesture_css.test.js、tests/unit/pull_refresh.test.js）。 */
+html:has(body.mobile-layout),
+body.mobile-layout {
+  overscroll-behavior-y: contain;
+}
+.pullRefreshIndicator {
+  position: fixed;
+  left: 50%;
+  z-index: 2450;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #343a40;
+  color: #adb5bd;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+.pullRefreshIndicator.visible {
+  visibility: visible;
+}
+.pullRefreshIndicator.armed {
+  color: #4dabf7;
+}
 .floatTools__fab {
   display: block;
   width: 36px;

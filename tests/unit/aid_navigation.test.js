@@ -13,6 +13,7 @@ import {
 } from "../../src/js/aid_navigation";
 import { subjectOfListText } from "../../src/js/list_session";
 import { parseStatusRow } from "../../src/js/string_util";
+import { serializedOpHint } from "../../src/js/serialized_op_gate";
 
 vi.useFakeTimers();
 
@@ -1668,5 +1669,130 @@ describe("超長文（footer 被行號擠掉）", () => {
     expect(sent[1]).toBe(ESC_LEFT);
     settle(queue, facts("menu", { rowTexts: MAIN_MENU_SCREEN }));
     expect(sent[2]).toBe("sPttCurrent\r\f");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 重新整理本篇（screen_refresh.js 的文章分支）：跳到「同一篇」＋還原閱讀位置。
+// 不用 ←→：← 回列表後 → 開的是 crs_ln 那個序號，列表重讀後可能已是別篇（置底文
+// 在新文進來時整排後移）。docs/screen-refresh.md。
+// ---------------------------------------------------------------------------
+describe("refresh（重新整理本篇）", () => {
+  const ARTICLE_LANDING = () =>
+    facts("transient", { boardName: "C_Chat", cursorRowNum: 4321, curY: 10 });
+
+  test("Q 取 AID → s本板⏎ → #AID⏎ → ⏎；不動返回堆疊；忙碌提示是「重新整理中」", () => {
+    const { nav, queue, sent, hints, core, backButton } = makeHarness({
+      pageState: 3,
+      articleBoard: "C_Chat"
+    });
+    expect(nav.refresh()).toBe(true);
+    expect(serializedOpHint({ aidNavigation: nav })).toBe("重新整理中，請稍候…");
+    expect(sent).toEqual(["Q"]);
+    answerOriginInfo(queue, "1gKF7GO4");
+    expect(sent[1]).toBe(" sC_Chat\r\f");
+    settle(queue, facts("clean-list", { boardName: "C_Chat" }));
+    expect(sent[2]).toBe("#1gKF7GO4\r\f");
+    settle(queue, ARTICLE_LANDING());
+    expect(sent[3]).toBe("\r\f");
+    settle(queue, facts("article"));
+    expect(nav.active).toBe(false);
+    expect(nav.opHint).toBe(null);
+    expect(core.easyReading.ensureCalls).toBe(1);
+    expect(hints.at(-1)).toBe("已重新整理");
+    expect(backButton.shown).toBe(false);
+    expect(nav.canGoBack()).toBe(false);
+  });
+
+  test("畫面上有 ※ 文章網址 ⇒ 免費取得 AID，不按 Q（畫面不閃）", () => {
+    const { nav, sent } = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl()
+    });
+    nav.refresh();
+    expect(sent).toEqual(["sBrowsers\r\f"]);
+  });
+
+  test("站內信／不在文章裡／不知道看板 ⇒ 不接，什麼都不送", () => {
+    const mail = makeHarness({ pageState: 3, articleBoard: "C_Chat", footer: MAIL_STATUS_ROW });
+    expect(mail.nav.refresh()).toBe(false);
+    expect(mail.sent).toEqual([]);
+    const list = makeHarness({ pageState: 2, articleBoard: "C_Chat" });
+    expect(list.nav.refresh()).toBe(false);
+    const noBoard = makeHarness({ pageState: 3 });
+    expect(noBoard.nav.refresh()).toBe(false);
+    expect(noBoard.nav.active).toBe(false);
+  });
+
+  test("好讀：還原原本那一列；原本在文末（已讀到底）⇒ 黏回文末看新推文", () => {
+    const mid = makeHarness({ pageState: 3, articleBoard: "C_Chat", scrollTop: 400, chh: 20 });
+    mid.core.easyReading._enabled = true;
+    mid.view.mainDisplay.scrollHeight = 5000;
+    mid.view.mainDisplay.clientHeight = 600;
+    mid.nav.refresh();
+    answerOriginInfo(mid.queue, "1gKF7GO4");
+    settle(mid.queue, facts("clean-list", { boardName: "C_Chat" }));
+    settle(mid.queue, ARTICLE_LANDING());
+    settle(mid.queue, facts("article"));
+    expect(mid.core.easyReading.restoreCalls).toEqual([20]);
+
+    const end = makeHarness({ pageState: 3, articleBoard: "C_Chat", scrollTop: 4400, chh: 20 });
+    const er = end.core.easyReading;
+    er._enabled = true;
+    er.easyReadingReachedPageEnd = true;
+    er.requestScrollToBottom = vi.fn();
+    end.view.mainDisplay.scrollHeight = 5000;
+    end.view.mainDisplay.clientHeight = 600;
+    end.nav.refresh();
+    answerOriginInfo(end.queue, "1gKF7GO4");
+    settle(end.queue, facts("clean-list", { boardName: "C_Chat" }));
+    settle(end.queue, ARTICLE_LANDING());
+    settle(end.queue, facts("article"));
+    expect(er.requestScrollToBottom).toHaveBeenCalledTimes(1);
+    expect(er.restoreCalls).toEqual([]);
+  });
+
+  test("原生 pmore 停在 100% ⇒ 重開後送原生 End", () => {
+    const END_ROW = "  瀏覽 第 2/2 頁 (100%)  目前顯示: 第 24~40 行  (y)回應(X%)推文(h)說明(←)離開 ";
+    const { nav, queue, core } = makeHarness({ pageState: 3, articleBoard: "C_Chat", footer: END_ROW });
+    core.sendMachineBytes = vi.fn(() => true);
+    nav.refresh();
+    answerOriginInfo(queue, "1gKF7GO4");
+    settle(queue, facts("clean-list", { boardName: "C_Chat" }));
+    settle(queue, ARTICLE_LANDING());
+    settle(queue, facts("article"));
+    expect(core.sendMachineBytes).toHaveBeenCalledWith("\x1b[4~");
+  });
+
+  test("本篇沒有 AID ⇒ 關框＋⏎ 重開游標下那篇（Q 的 FULLUPDATE 已重讀列表），並明講", () => {
+    const { nav, queue, sent, hints } = makeHarness({ pageState: 3, articleBoard: "C_Chat" });
+    nav.refresh();
+    answerOriginInfo(queue, null);
+    expect(sent[1]).toBe(" \f");
+    settle(queue, facts("clean-list", { boardName: "C_Chat" }));
+    expect(sent[2]).toBe("\r\f");
+    settle(queue, facts("article"));
+    expect(nav.active).toBe(false);
+    expect(hints.at(-1)).toContain("依列表位置重開");
+  });
+
+  test("找不到本篇（剛被刪）⇒ 看得到的失敗，解鎖", () => {
+    const { nav, queue, hints } = makeHarness({ pageState: 3, articleBoard: "C_Chat" });
+    nav.refresh();
+    answerOriginInfo(queue, "1gKF7GO4");
+    settle(queue, facts("clean-list", { boardName: "C_Chat" }));
+    settle(queue, facts("prompt"));
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS);
+    settle(queue, facts("prompt"));
+    expect(nav.active).toBe(false);
+    expect(nav.opHint).toBe(null);
+    expect(hints.at(-1)).toMatch(/^重新整理失敗：找不到文章 #1gKF7GO4/);
+    // 下一輪跳文的失敗訊息不可以沿用「重新整理」措辭。
+    nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(queue, "1gKF7GO4");
+    vi.advanceTimersByTime(BOARD_PROBE_AFTER_MS);
+    vi.advanceTimersByTime(STEP_PROBE_WINDOW_MS);
+    expect(hints.at(-1)).toMatch(/^AID 跳文失敗/);
   });
 });

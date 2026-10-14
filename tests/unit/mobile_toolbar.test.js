@@ -72,6 +72,22 @@ describe("toolbarContextFromFacts", () => {
     for (const k of all) expect(k.length === 1 || k in KeyMap).toBe(true);
     expect(TOOLBAR_KEYS.post).toEqual({ key: "p", mods: { altKey: true } });
   });
+  test("重整：與 F5 同一個判準（screen_refresh）；沒連線不給", () => {
+    const on = { connected: true, articleBoard: "Test" };
+    expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3, on).refresh).toBe(true);
+    expect(toolbarContextFromFacts(frame(LIST), 2, on).refresh).toBe(true);
+    expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3, { articleBoard: "Test" }).refresh).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 23: MAIL_ROW }), 3, on).refresh).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1, on).refresh).toBe(false);
+  });
+  test("到底（End）：文章／信件／文章列表；主功能表與 prompt 不給", () => {
+    expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3).end).toBe(true);
+    expect(toolbarContextFromFacts(frame({ 23: MAIL_ROW }), 3).end).toBe(true);
+    expect(toolbarContextFromFacts(frame(LIST), 2).end).toBe(true);
+    expect(toolbarContextFromFacts({ ...frame(LIST), inputField: true }, 2).end).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1).end).toBe(false);
+    expect(TOOLBAR_KEYS.end).toEqual({ key: "End" });
+  });
   test("沒有 buf ⇒ 空", () => {
     expect(toolbarContextFromFacts(null, 3)).toBe(EMPTY_TOOLBAR_CONTEXT);
   });
