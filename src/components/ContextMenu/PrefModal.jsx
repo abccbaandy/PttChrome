@@ -847,7 +847,9 @@ export const PrefModal = ({
                   name="refreshMinIntervalSec"
                   min={0}
                   value={values.refreshMinIntervalSec}
-                  onChange={(val) => onNumberChange("refreshMinIntervalSec", val)}
+                  onChange={(val) =>
+                    onNumberChange("refreshMinIntervalSec", val)
+                  }
                   mb="xs"
                   {...anchor("refreshMinIntervalSec")}
                 />

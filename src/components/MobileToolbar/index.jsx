@@ -211,7 +211,8 @@ export const MobileToolbar = ({
     setConfirmLogout(false);
     const r = pttchrome.screenRefresh;
     if (!r || typeof r.refresh !== "function") return;
-    if (typeof pttchrome.noteUserAction === "function") pttchrome.noteUserAction();
+    if (typeof pttchrome.noteUserAction === "function")
+      pttchrome.noteUserAction();
     r.refresh("toolbar");
   }, [pttchrome]);
 
@@ -440,11 +441,8 @@ export const MobileToolbar = ({
             onRefresh,
           )}
         {context.end &&
-          navBtn(
-            "__end",
-            IconArrowBarToDown,
-            i18n("mobileToolbar_end"),
-            () => sendAction("end"),
+          navBtn("__end", IconArrowBarToDown, i18n("mobileToolbar_end"), () =>
+            sendAction("end"),
           )}
         {context.search.length > 0 &&
           navBtn(
