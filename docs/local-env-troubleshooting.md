@@ -26,8 +26,9 @@
   `firefoxUserPrefs['network.http.fast-fallback-to-IPv4']=false`，守護 `tests/unit/e2e_firefox_localhost.test.js`。
   新增 Firefox project 要帶同一個 pref。
 - **Firefox teardown 偶發 `browserContext.close: Protocol error (Browser.removeBrowserContext): can't access
-  property "_maybeDontRestoreTabs"…`**：Playwright Juggler／Firefox SessionStore 內部競態（測試本體已過），
-  頻率約 1/100 條，上游查無回報。不是本專案 code，重跑該條即可。機制與待辦見
+  property "_maybeDontRestoreTabs"…`**：Playwright 內建 Firefox 的 bug（新開瀏覽器的頁面視窗偶爾沒被
+  SessionStore 註冊，關閉時炸；測試本體已過）。現行設定下壓測 0/414，worker 頻繁重啟時才會成群出現，
+  上游查無回報。不是本專案 code，重跑該條即可。機制與待辦見
   `docs/handoff/playwright-firefox-ssi-teardown.md`。
 - **`browserType.launch: spawn UNKNOWN`（Firefox 整批 launch 即掛、零 AssertionError）＝瀏覽器被裝進
   Claude 桌面版的 MSIX 虛擬化 AppData**。CONFIRMED 機制：
