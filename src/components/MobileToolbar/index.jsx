@@ -9,11 +9,12 @@ import {
   IconThumbUp,
   IconMessageReply,
   IconMail,
-  IconShare2,
   IconPencilPlus,
   IconSearch,
   IconKeyboard,
   IconDots,
+  IconRefresh,
+  IconArrowBarToDown,
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
 import MobileSheet from "../MobileSheet";
@@ -30,9 +31,11 @@ import "./MobileToolbar.css";
 
 // 手機底部導覽（docs/mobile.md「底部導覽」）。只在 pttchrome.mobile 時渲染。
 // Material 風格：icon＋小字，動作依畫面換（App.onScreenContextChange ← mobile_toolbar.js）：
-//   文章      推 X／回文 y／分享／按鍵／更多（更多裡有同主題前下首篇、列表前下篇）
-//   信件      回信 y／按鍵／更多
-//   文章列表  搜尋／發文 Ctrl+P／按鍵／更多
+//   文章      推 X／回文 y／重整／到底 End／按鍵／更多（更多裡有分享、同主題前下首篇、列表前下篇）
+//   信件      回信 y／到底／按鍵／更多
+//   文章列表  搜尋／發文 Ctrl+P／重整／到底／按鍵／更多
+//   看板列表  搜尋／重整／到底／按鍵／更多
+//   重整  screen_refresh（列表 s<板>⏎／看板列表 /⏎／文章重開並還原位置），與 F5 同一個入口
 //   其他      搜尋（有可用種類時）／按鍵／更多
 //   搜尋  直接開搜尋彈窗（不開子選單；種類在彈窗上方切，article_search.js）
 //   按鍵  展開方向鍵面板（貼在工具列上方；含軟鍵盤開關與黏滯 Ctrl／Esc／Tab／Del）
@@ -202,6 +205,17 @@ export const MobileToolbar = ({
       dl.shareCurrentPostLink(context.appBar ? context.appBar.title : "");
   }, [pttchrome, context]);
 
+  // 重新整理：與桌機 F5 同一個入口（冷卻、忙碌提示都在 ScreenRefresh 裡）。
+  const onRefresh = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    const r = pttchrome.screenRefresh;
+    if (!r || typeof r.refresh !== "function") return;
+    if (typeof pttchrome.noteUserAction === "function")
+      pttchrome.noteUserAction();
+    r.refresh("toolbar");
+  }, [pttchrome]);
+
   const onSettings = useCallback(() => {
     setPanel(null);
     if (onOpenSettings) onOpenSettings();
@@ -307,6 +321,16 @@ export const MobileToolbar = ({
       sheetKey="more"
     >
       <div data-panel="more">
+        {context.share ? (
+          <button
+            type="button"
+            className="nomouse_command mobileSheetItem pttRipple"
+            data-key="__share"
+            onClick={onShare}
+          >
+            {i18n("mobileToolbar_share")}
+          </button>
+        ) : null}
         {context.threadNav ? (
           <div className="mobileToolbarNavGrid" data-key="__threadNav">
             {THREAD_NAV_KEYS.map((k) => (
@@ -409,8 +433,17 @@ export const MobileToolbar = ({
             ),
             () => sendAction("reply"),
           )}
-        {context.share &&
-          navBtn("__share", IconShare2, i18n("mobileToolbar_share"), onShare)}
+        {context.refresh &&
+          navBtn(
+            "__refresh",
+            IconRefresh,
+            i18n("mobileToolbar_refresh"),
+            onRefresh,
+          )}
+        {context.end &&
+          navBtn("__end", IconArrowBarToDown, i18n("mobileToolbar_end"), () =>
+            sendAction("end"),
+          )}
         {context.search.length > 0 &&
           navBtn(
             "__search",

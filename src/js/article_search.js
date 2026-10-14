@@ -184,24 +184,28 @@ export function buildSearchSteps(kind, text, cb) {
 // 解除點：第二步完成／任一步失敗／被 flush；保底計時器防任何一條漏掉造成永久吞鍵。
 export const SEARCH_INFLIGHT_MAX_MS = 15000;
 
-export function beginInFlight(core) {
-  core.searchInFlight = true;
-  clearTimeout(core._searchInFlightTimer);
-  core._searchInFlightTimer = setTimeout(function() {
-    endInFlight(core);
+// flag：旗標欄位名，預設 'searchInFlight'。畫面重新整理（screen_refresh.js）走同一條
+// 送出路徑、但用自己的 'refreshInFlight'（serialized_op_gate 才給得出對的提示字）。
+export function beginInFlight(core, flag) {
+  const f = flag || 'searchInFlight';
+  core[f] = true;
+  clearTimeout(core['_' + f + 'Timer']);
+  core['_' + f + 'Timer'] = setTimeout(function() {
+    endInFlight(core, f);
   }, SEARCH_INFLIGHT_MAX_MS);
 }
 
-export function endInFlight(core) {
-  core.searchInFlight = false;
-  clearTimeout(core._searchInFlightTimer);
-  core._searchInFlightTimer = null;
+export function endInFlight(core, flag) {
+  const f = flag || 'searchInFlight';
+  core[f] = false;
+  clearTimeout(core['_' + f + 'Timer']);
+  core['_' + f + 'Timer'] = null;
 }
 
 // 把旗標的解除接進每一步的終局 callback（保留呼叫端原本的 callback）。
-function trackInFlight(core, steps) {
+function trackInFlight(core, steps, flag) {
   const end = function() {
-    endInFlight(core);
+    endInFlight(core, flag);
   };
   const wrap = function(fn) {
     return function(a, b) {
@@ -225,20 +229,30 @@ function trackInFlight(core, steps) {
 export function submitSearch(core, kind, text, cb) {
   const built = buildSearchSteps(kind, text, cb);
   if (!built || !core) return false;
-  const steps = trackInFlight(core, built);
+  return submitSerializedSteps(core, built, { kind: 'search' });
+}
+
+// submitSearch 的送出半段：多步序列（每步 {keys, kind, expect, onDone, onFail}）交給
+// 「現在誰在畫列表」。opts.kind ＝ passthrough 的診斷名稱，opts.flag ＝在途旗標欄位名
+// （預設 'searchInFlight'）。回 false ＝沒送（線路被別的交易佔住／沒有佇列）。
+export function submitSerializedSteps(core, built, opts) {
+  if (!built || !built.length || !core) return false;
+  const o = opts || {};
+  const flag = o.flag || 'searchInFlight';
+  const steps = trackInFlight(core, built, flag);
   const owner = typeof core.activeListSession === 'function' ? core.activeListSession() : null;
   if (owner && typeof owner._beginPassthroughBytes === 'function') {
     // 序列化交易進行中（開文／凍結中的指令）：線路歸它，同 list_session.onFunctionKey
     // 的守門。呼叫端負責提示，不可無聲吞掉。
     if (owner.state === 'opening' || (owner.state === 'functionMode' && owner._renderMode === 'frozen'))
       return false;
-    beginInFlight(core);
-    owner._beginPassthroughBytes(steps, { kind: 'search', hint: null });
+    beginInFlight(core, flag);
+    owner._beginPassthroughBytes(steps, { kind: o.kind || 'search', hint: null });
     return true;
   }
   const queue = core.commandQueue;
   if (!queue) return false;
-  beginInFlight(core);
+  beginInFlight(core, flag);
   // 原生鏡像：文章好讀不會在列表上，這裡不必切 functionMode。
   const enqueue = function(i) {
     const step = steps[i];

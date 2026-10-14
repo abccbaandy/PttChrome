@@ -8,6 +8,9 @@
 //   push   ：pager && !mail，送 X（mbbsd/more.c pager_common_cmds 'X'）。
 //   reply  ：pager，送 y（同表 'y'＝回文；信件 pager 由 mail.c 接成回信）。
 //   share  ：pager && !mail（deep link 需要看板，見 deep_link_controller.shareCurrentPostLink）。
+//            放在「更多」裡（工具列本身留給高頻動作）。
+//   refresh：這一幀重整得了（screen_refresh.refreshTargetFromFacts，與 F5 攔截同一個判準）。
+//   end    ：pager／文章列表／看板列表，送 End（文末／最後一筆；pmore 與列表的 KEY_END）。
 //   threadNav：pager && !mail，「更多」裡的同主題前／下／首篇（[ ] =）與列表前／下篇（b f），
 //            同表 'pager_common_cmds'。
 //   post   ：文章列表（列表好讀 session 持有，或 《看板》＋文章列表 footer），送 Ctrl+P
@@ -19,13 +22,15 @@
 import { parsePagerFooterContext } from './string_util';
 import { atPagerStatusRow } from './long_push_gate';
 import { availableSearchKinds, searchGateFacts } from './article_search';
-import { boardListContextKind } from './board_list_parse';
+import { boardListContextKind, classifyBoardListScreen } from './board_list_parse';
+import { refreshTargetFromFacts } from './screen_refresh';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
 import { appBarFromFacts, sameAppBar, EMPTY_APP_BAR } from './mobile_app_bar';
 import { MOBILE_KEYPAD_PUSH_KEY } from './mobile_layout';
 
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
+  refresh: false, end: false,
   search: [], appBar: EMPTY_APP_BAR
 });
 
@@ -35,7 +40,8 @@ export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
 export const TOOLBAR_KEYS = Object.freeze({
   push: { key: MOBILE_KEYPAD_PUSH_KEY },
   reply: { key: 'y' },
-  post: { key: 'p', mods: { altKey: true } }
+  post: { key: 'p', mods: { altKey: true } },
+  end: { key: 'End' }
 });
 
 // 「更多」裡的文章導覽（label 是 i18n key）。
@@ -59,6 +65,8 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
   const pager = pageState === 3 && atPagerStatusRow(last);
   const mail = pager && parsePagerFooterContext(last) === 'mail';
   const article = pager && !mail;
+  const o = opts || {};
+  const lists = !facts.inputField && (isArticleList(facts) || !!classifyBoardListScreen(facts));
   return {
     push: article,
     reply: pager,
@@ -66,6 +74,11 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
     share: article,
     threadNav: article,
     post: !pager && isArticleList(facts),
+    refresh: !!o.connected && !!refreshTargetFromFacts(facts, pageState, {
+      articleBoard: o.articleBoard,
+      listOpened: o.listOpened
+    }),
+    end: pager || lists,
     search: availableSearchKinds(facts),
     appBar: appBarFromFacts(facts, { ...(opts || {}), pageState: pageState })
   };
@@ -75,14 +88,17 @@ export function mobileToolbarContext(core) {
   const facts = searchGateFacts(core);
   const view = (core && core.view) || {};
   const prev = core && core._screenContext && core._screenContext.appBar;
+  const ls = core && core.listSession;
   return toolbarContextFromFacts(facts, core && core.buf ? core.buf.pageState : null, {
     articleTitle: view._articleTitle,
     articleBoard: view._articleBoard,
-    prev: prev
+    prev: prev,
+    connected: !!(core && core.conn && core.conn.isConnected),
+    listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor())
   });
 }
 
-const FLAGS = ['push', 'reply', 'mail', 'share', 'threadNav', 'post'];
+const FLAGS = ['push', 'reply', 'mail', 'share', 'threadNav', 'post', 'refresh', 'end'];
 
 export function sameToolbarContext(a, b) {
   if (!a || !b) return a === b;

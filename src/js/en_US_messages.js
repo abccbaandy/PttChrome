@@ -793,6 +793,24 @@ export const en_US = {
   "tooltip_deepLinkCopyKey": {
     "message": "Click then press any key to set (default F2)"
   },
+  "options_refreshKeyIntercept": {
+    "message": "F5 / ⌘R refreshes the PTT screen"
+  },
+  "tooltip_refreshKeyIntercept": {
+    "message": "On board lists, article lists and articles, F5 (⌘R on Mac) refreshes the PTT screen (new posts, new comments) instead of reloading the page; other screens are unchanged. The browser's own reload button cannot be intercepted."
+  },
+  "options_refreshMinIntervalSec": {
+    "message": "Minimum refresh interval (sec)"
+  },
+  "tooltip_refreshMinIntervalSec": {
+    "message": "Minimum seconds between two refreshes, so repeated presses do not hammer the server. Default: 5 seconds. Input 0 to disable."
+  },
+  "mobileToolbar_refresh": {
+    "message": "Refresh"
+  },
+  "mobileToolbar_end": {
+    "message": "End"
+  },
   "options_endTurnsOnLiveUpdate": {
     "message": "Press END turns on thread live update."
   },

@@ -190,16 +190,19 @@ test.describe('手機底部工具列（離線重放）', () => {
       expect(await inputMode(page)).toBe('none');
     });
 
-    test('文章裡：回文送 y、分享鈕出現、更多裡的同主題下篇送 ]；沒有發文', async ({ page }) => {
+    test('文章裡：回文送 y、重整／到底在工具列、分享在更多裡、更多裡的同主題下篇送 ]；沒有發文', async ({ page }) => {
       await bootOffline(page, ptt);
       await ptt.applyPrefs(page, { enableEasyReading: true });
       await replayCassette(page, articles[0], { easyReading: true });
       await expect(byKey(page, '__reply')).toBeVisible();
-      await expect(byKey(page, '__share')).toBeVisible();
+      await expect(byKey(page, '__refresh')).toBeVisible();
+      await expect(byKey(page, '__end')).toBeVisible();
+      await expect(byKey(page, '__share')).toHaveCount(0);
       await expect(byKey(page, '__post')).toHaveCount(0);
 
       await collectSent(page);
       await byKey(page, '__more').tap();
+      await expect(byKey(page, '__share')).toBeVisible();
       await byKey(page, ']').tap();
       await expect.poll(() => sentText(page)).toContain(']');
       // 點了導覽項面板自動收起

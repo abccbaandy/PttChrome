@@ -154,10 +154,11 @@ describe("推／搜尋", () => {
 describe("依畫面的動作（文章／信件／文章列表）", () => {
   const ARTICLE = { push: true, reply: true, mail: false, share: true, threadNav: true, post: false, search: [] };
 
-  test("文章：推／回文／分享，回文送 y（pager_common_cmds）", () => {
+  test("文章：推／回文（分享在「更多」裡），回文送 y（pager_common_cmds）", () => {
     const core = makeCore({ context: ARTICLE });
     renderBar(core);
-    expect(["X", "__reply", "__share", "__keys", "__more"].every((k) => byKey(k))).toBe(true);
+    expect(["X", "__reply", "__keys", "__more"].every((k) => byKey(k))).toBe(true);
+    expect(byKey("__share")).toBeNull();
     expect(byKey("__post")).toBeNull();
     expect(byKey("__reply").textContent).toBe(i18n("mobileToolbar_reply"));
     fireEvent.click(byKey("__reply"));
@@ -171,14 +172,43 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(byKey("__share")).toBeNull();
   });
 
-  test("分享：同步呼叫 deepLinkController.shareCurrentPostLink（帶 App Bar 標題）", () => {
+  test("分享（在「更多」裡）：同步呼叫 deepLinkController.shareCurrentPostLink（帶 App Bar 標題）", async () => {
     const core = makeCore({
       context: { ...ARTICLE, appBar: { kind: "article", title: "[問卦] 測試", subtitle: "", newMail: false } },
     });
     core.deepLinkController = { shareCurrentPostLink: vi.fn(() => true) };
     renderBar(core);
+    expect(byKey("__share")).toBeNull();
+    await openMore();
     fireEvent.click(byKey("__share"));
     expect(core.deepLinkController.shareCurrentPostLink).toHaveBeenCalledWith("[問卦] 測試");
+    await sheetClosed();
+  });
+
+  test("更多：不是文章（share false）就沒有分享", async () => {
+    renderBar(makeCore({ context: { ...ARTICLE, share: false } }));
+    await openMore();
+    expect(byKey("__share")).toBeNull();
+  });
+
+  test("重整：context.refresh 才出現，按下走 screenRefresh.refresh('toolbar')", () => {
+    const core = makeCore({ context: { ...ARTICLE, refresh: false } });
+    core.screenRefresh = { refresh: vi.fn(() => true) };
+    renderBar(core);
+    expect(byKey("__refresh")).toBeNull();
+    act(() => core.setContext({ ...ARTICLE, refresh: true }));
+    fireEvent.click(byKey("__refresh"));
+    expect(core.screenRefresh.refresh).toHaveBeenCalledWith("toolbar");
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+  });
+
+  test("到底：context.end 才出現，送 End（走 sendKeyAsUser）", () => {
+    const core = makeCore({ context: { ...ARTICLE, end: false } });
+    renderBar(core);
+    expect(byKey("__end")).toBeNull();
+    act(() => core.setContext({ ...ARTICLE, end: true }));
+    fireEvent.click(byKey("__end"));
+    expect(core.view.sendKeyAsUser).toHaveBeenLastCalledWith("End");
   });
 
   test("文章列表：發文送 Ctrl+P（Alt remap，繞過瀏覽器的列印）", () => {

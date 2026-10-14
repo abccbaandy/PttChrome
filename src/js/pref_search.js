@@ -120,6 +120,16 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_deepLinkCopyKey",
       tooltipKey: "tooltip_deepLinkCopyKey",
     },
+    {
+      key: "refreshKeyIntercept",
+      titleKey: "options_refreshKeyIntercept",
+      tooltipKey: "tooltip_refreshKeyIntercept",
+    },
+    {
+      key: "refreshMinIntervalSec",
+      titleKey: "options_refreshMinIntervalSec",
+      tooltipKey: "tooltip_refreshMinIntervalSec",
+    },
     { key: "endTurnsOnLiveUpdate", titleKey: "options_endTurnsOnLiveUpdate" },
     { key: "copyOnSelect", titleKey: "options_copyOnSelect" },
     { key: "enableBell", titleKey: "options_enableBell" },

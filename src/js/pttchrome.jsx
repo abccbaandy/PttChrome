@@ -10,6 +10,8 @@ import { BoardListSession } from './board_list_session';
 import { OWNER_BOARD_LIST, listRenderOwnerOf } from './list_render_owner';
 import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
+import { ScreenRefresh } from './screen_refresh';
+import { installPullRefresh } from './pull_refresh';
 import { LongPushSession } from './long_push_session';
 import { LogoutSession } from './logout_session';
 import { BoardNoteSkip } from './board_note_skip';
@@ -178,6 +180,11 @@ export const App = function() {
   // 長推文一鍵發送（右鍵選單）：把一大段話切成 N 則，逐則跑完 PTT 的推文互動。
   // 與 aidNavigation 共用同一條 CommandQueue（一次只有一個鍵在線上），並同樣用
   // `active` 擋住使用者輸入。
+  // 畫面重新整理（F5／手機工具列／下拉）：列表走 s<板>⏎ 或 /⏎，文章走 aidNavigation.refresh()。
+  // 見 screen_refresh.js、docs/screen-refresh.md。
+  this.screenRefresh = new ScreenRefresh(this);
+  // 手機下拉重整（只在 mobile 版面起作用，被動監聽）。
+  this._uninstallPullRefresh = installPullRefresh(this);
   this.longPush = new LongPushSession(this, this.view, this.buf, this.commandQueue);
   // 一鍵登出（手機按鍵列）：走 Goodbye → y → 任意鍵，由 server 自己關線。同一條
   // CommandQueue、同樣以 `active` 擋使用者輸入（serialized_op_gate）。
