@@ -278,7 +278,28 @@
     "message": "推文數高於多少（負數＝噓文數），↑ 叫回之前的"
   },
   "searchModal_placeholderBoard": {
-    "message": "看板名稱，↑ 叫回之前的"
+    "message": "看板名稱，空白鍵自動完成，↑ 叫回之前的"
+  },
+  "searchModal_boardOpening": {
+    "message": "正在向 PTT 查詢看板…"
+  },
+  "searchModal_boardPending": {
+    "message": "查詢中…"
+  },
+  "searchModal_boardNoMatch": {
+    "message": "沒有以「{0}」開頭的看板"
+  },
+  "searchModal_boardAmbiguous": {
+    "message": "有多個看板符合，請繼續輸入或點選下方看板"
+  },
+  "searchModal_boardMore": {
+    "message": "只列出前一部分，繼續輸入可縮小範圍"
+  },
+  "searchModal_boardUnavailable": {
+    "message": "無法向 PTT 查詢看板清單，仍可直接輸入"
+  },
+  "searchModal_boardAscii": {
+    "message": "看板名稱只能是英文、數字與符號"
   },
   "searchModal_recent": {
     "message": "最近"

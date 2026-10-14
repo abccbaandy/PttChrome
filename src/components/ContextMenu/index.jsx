@@ -55,6 +55,7 @@ import {
   submitSearch,
 } from "../../js/article_search";
 import { rememberSearch } from "../../js/search_history";
+import { BoardSearchBridge } from "../../js/board_search_bridge";
 import { readSelectionText } from "../../render/screen_chunk";
 import { HINT_ERROR } from "../../js/status_hint";
 import {
@@ -687,17 +688,25 @@ export const ContextMenu = ({ pttchrome }) => {
     () => update({ showsSearch: false }),
     [update],
   );
+  // 看板種類的原生補全橋接（board_search_bridge.js）：彈窗切到看板時才建立。
+  const createBoardSearch = useCallback(
+    (onUpdate) => new BoardSearchBridge(pttchrome, onUpdate),
+    [pttchrome],
+  );
   const onSearchConfirm = useCallback(
-    ({ kind, text }) => {
+    ({ kind, text, bridge }) => {
       update({ showsSearch: false });
       const value = normalizeSearchText(kind, text);
       if (!value) return;
       rememberSearch(kind, value);
       const hint = (msg, level) =>
         pttchrome.view?.flashListHint?.(msg, 3000, level);
-      const sent = submitSearch(pttchrome, kind, value, {
+      const cb = {
         onFail: () => hint(i18n("searchModal_failed"), HINT_ERROR),
-      });
+      };
+      // 背景的看板 prompt 已經開著：直接在上面送出。開不出來／已丟失才走一般兩步。
+      if (bridge && bridge.submit(value, cb)) return;
+      const sent = submitSearch(pttchrome, kind, value, cb);
       if (!sent) hint(serializedOpHint(pttchrome) || i18n("searchModal_busy"));
     },
     [pttchrome, update],
@@ -1034,6 +1043,7 @@ export const ContextMenu = ({ pttchrome }) => {
         kinds={searchKinds}
         onHide={onSearchHide}
         onConfirm={onSearchConfirm}
+        createBoardSearch={createBoardSearch}
         mobile={mobile}
         pttchrome={pttchrome}
       />
