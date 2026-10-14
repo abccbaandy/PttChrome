@@ -5,6 +5,8 @@ import {
   EMPTY_TOOLBAR_CONTEXT,
   TOOLBAR_KEYS,
   THREAD_NAV_KEYS,
+  toolbarSlots,
+  TOOLBAR_SLOT_COUNT,
 } from "../../src/js/mobile_toolbar";
 import { KeyMap } from "../../src/js/term_keyboard";
 
@@ -87,6 +89,19 @@ describe("toolbarContextFromFacts", () => {
     expect(toolbarContextFromFacts({ ...frame(LIST), inputField: true }, 2).end).toBe(false);
     expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1).end).toBe(false);
     expect(TOOLBAR_KEYS.end).toEqual({ key: "End" });
+  });
+  test("toolbarSlots：固定 6 格，第 3～6 格永遠是重整／到底／按鍵／更多", () => {
+    const tail = ["refresh", "end", "keys", "more"];
+    expect(toolbarSlots(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3))).toEqual(["push", "reply", ...tail]);
+    expect(toolbarSlots(toolbarContextFromFacts(frame({ 23: MAIL_ROW }), 3))).toEqual([null, "reply", ...tail]);
+    expect(toolbarSlots(toolbarContextFromFacts(frame(LIST), 2))).toEqual(["search", "post", ...tail]);
+    expect(toolbarSlots(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1))).toEqual([
+      "search",
+      null,
+      ...tail,
+    ]);
+    expect(toolbarSlots(EMPTY_TOOLBAR_CONTEXT)).toEqual([null, null, ...tail]);
+    expect(toolbarSlots(EMPTY_TOOLBAR_CONTEXT).length).toBe(TOOLBAR_SLOT_COUNT);
   });
   test("沒有 buf ⇒ 空", () => {
     expect(toolbarContextFromFacts(null, 3)).toBe(EMPTY_TOOLBAR_CONTEXT);

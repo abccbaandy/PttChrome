@@ -191,24 +191,79 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(byKey("__share")).toBeNull();
   });
 
-  test("重整：context.refresh 才出現，按下走 screenRefresh.refresh('toolbar')", () => {
+  test("重整：永遠在，context.refresh 為假時反灰；按下走 screenRefresh.refresh('toolbar')", () => {
     const core = makeCore({ context: { ...ARTICLE, refresh: false } });
     core.screenRefresh = { refresh: vi.fn(() => true) };
     renderBar(core);
-    expect(byKey("__refresh")).toBeNull();
+    expect(byKey("__refresh").disabled).toBe(true);
+    fireEvent.click(byKey("__refresh"));
+    expect(core.screenRefresh.refresh).not.toHaveBeenCalled();
     act(() => core.setContext({ ...ARTICLE, refresh: true }));
+    expect(byKey("__refresh").disabled).toBe(false);
     fireEvent.click(byKey("__refresh"));
     expect(core.screenRefresh.refresh).toHaveBeenCalledWith("toolbar");
     expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
   });
 
-  test("到底：context.end 才出現，送 End（走 sendKeyAsUser）", () => {
+  test("到底：永遠在，context.end 為假時反灰；送 End（走 sendKeyAsUser）", () => {
     const core = makeCore({ context: { ...ARTICLE, end: false } });
     renderBar(core);
-    expect(byKey("__end")).toBeNull();
+    expect(byKey("__end").disabled).toBe(true);
     act(() => core.setContext({ ...ARTICLE, end: true }));
     fireEvent.click(byKey("__end"));
     expect(core.view.sendKeyAsUser).toHaveBeenLastCalledWith("End");
+  });
+
+  test("格位固定：重整／到底／按鍵／更多在文章、列表、主功能表都在同一格", () => {
+    const core = makeCore({ context: ARTICLE });
+    renderBar(core);
+    const slotOf = (k) => [...document.querySelector(".mobileToolbarBar").children].indexOf(byKey(k));
+    const positions = () => ["__refresh", "__end", "__keys", "__more"].map(slotOf);
+    const inArticle = positions();
+    expect(inArticle).toEqual([2, 3, 4, 5]);
+    act(() => core.setContext({ push: false, search: ["title"], post: true, refresh: true, end: true }));
+    expect(positions()).toEqual(inArticle);
+    expect(slotOf("__search")).toBe(0);
+    expect(slotOf("__post")).toBe(1);
+    act(() => core.setContext({ push: false, search: ["board"] }));
+    expect(positions()).toEqual(inArticle);
+    expect(slotOf("__search")).toBe(0);
+    // 沒有第 2 格動作 ⇒ 佔位（寬度照算），不是把後面的按鈕往前擠。
+    expect(document.querySelector('[data-slot-empty="1"]')).not.toBeNull();
+    expect(document.querySelector(".mobileToolbarBar").children.length).toBe(6);
+  });
+
+  test("冷卻：反灰＋按鈕上倒數，歸零後恢復（F5／下拉觸發的冷卻也會通知）", () => {
+    vi.useFakeTimers();
+    try {
+      let left = 0;
+      const listeners = new Set();
+      const core = makeCore({ context: { ...ARTICLE, refresh: true } });
+      core.screenRefresh = {
+        refresh: vi.fn(() => true),
+        cooldownLeftMs: () => left,
+        onCooldown: (fn) => {
+          listeners.add(fn);
+          return () => listeners.delete(fn);
+        },
+      };
+      renderBar(core);
+      expect(byKey("__refresh").disabled).toBe(false);
+      expect(byKey("__refresh").textContent).toBe(i18n("mobileToolbar_refresh"));
+      left = 4200;
+      act(() => listeners.forEach((fn) => fn(left)));
+      expect(byKey("__refresh").disabled).toBe(true);
+      expect(byKey("__refresh").textContent).toBe("5" + i18n("mobileToolbar_secUnit"));
+      left = 1500;
+      act(() => vi.advanceTimersByTime(300));
+      expect(byKey("__refresh").textContent).toBe("2" + i18n("mobileToolbar_secUnit"));
+      left = 0;
+      act(() => vi.advanceTimersByTime(300));
+      expect(byKey("__refresh").disabled).toBe(false);
+      expect(byKey("__refresh").textContent).toBe(i18n("mobileToolbar_refresh"));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("文章列表：發文送 Ctrl+P（Alt remap，繞過瀏覽器的列印）", () => {

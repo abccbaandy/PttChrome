@@ -807,6 +807,9 @@
   "mobileToolbar_refresh": {
     "message": "重整"
   },
+  "mobileToolbar_secUnit": {
+    "message": " 秒"
+  },
   "mobileToolbar_end": {
     "message": "到底"
   },

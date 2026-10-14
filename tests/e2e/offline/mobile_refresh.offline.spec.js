@@ -60,6 +60,28 @@ test.describe('手機重新整理（離線重放）', () => {
     await expect.poll(() => sentText(page)).toContain('s');
   });
 
+  test('冷卻：按下重整後按鈕反灰並倒數，格位不變', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReadingList: false, refreshMinIntervalSec: 60 });
+    await drawArticleList(page);
+    const slot = (k) =>
+      page.evaluate((key) => {
+        const bar = document.querySelector('.mobileToolbarBar');
+        return [...bar.children].indexOf(bar.querySelector(`[data-key="${key}"]`));
+      }, k);
+    const before = await slot('__refresh');
+    await byKey(page, '__refresh').tap();
+    await expect(byKey(page, '__refresh')).toBeDisabled();
+    // 單位隨語系（模擬裝置是 en ⇒「60s」；zh ⇒「60 秒」）。
+    await expect(byKey(page, '__refresh')).toContainText(/^\d+\s?(s|秒)$/);
+    // 倒數真的在走（60 秒的冷卻，過一秒多數字必變小）。
+    const first = Number((await byKey(page, '__refresh').textContent()).match(/\d+/)[0]);
+    await expect
+      .poll(async () => Number((await byKey(page, '__refresh').textContent()).match(/\d+/)[0]), { timeout: 5000 })
+      .toBeLessThan(first);
+    expect(await slot('__refresh')).toBe(before);
+  });
+
   test('下拉重整：在終端機上往下拉過門檻放手 ⇒ 送 s；拉不夠 ⇒ 不送', async ({ page }) => {
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReadingList: false, refreshMinIntervalSec: 0 });
