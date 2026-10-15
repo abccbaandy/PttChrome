@@ -67,13 +67,10 @@ export const MobileSheet = ({
     if (e.currentTarget.setPointerCapture)
       e.currentTarget.setPointerCapture(e.pointerId);
   }, []);
-  const onPointerMove = useCallback(
-    (e) => {
-      if (startY.current == null) return;
-      setDrag(Math.max(0, e.clientY - startY.current));
-    },
-    [],
-  );
+  const onPointerMove = useCallback((e) => {
+    if (startY.current == null) return;
+    setDrag(Math.max(0, e.clientY - startY.current));
+  }, []);
   const onPointerEnd = useCallback(
     (e) => {
       if (startY.current == null) return;
