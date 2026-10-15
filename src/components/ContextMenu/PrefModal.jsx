@@ -833,6 +833,16 @@ export const PrefModal = ({
                   mb="xs"
                   {...anchor("deepLinkCopyKey")}
                 />
+                <TextInput
+                  label={i18n("options_unreadJumpKey")}
+                  name="unreadJumpKey"
+                  readOnly
+                  value={values.unreadJumpKey}
+                  placeholder={i18n("tooltip_unreadJumpKey")}
+                  onKeyDown={onHotkeyCapture}
+                  mb="xs"
+                  {...anchor("unreadJumpKey")}
+                />
                 <PrefCheckbox
                   name="refreshKeyIntercept"
                   checked={values.refreshKeyIntercept}

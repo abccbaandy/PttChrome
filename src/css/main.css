@@ -540,6 +540,22 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   opacity: 0.6;
 }
 
+/* 手機列表卡片的未讀標記（render/list_card.js#articleCardMark → data-list-mark）：
+   次行縮字之後 + 與 ~ 幾乎分不出來。未讀（+／M）的標記加粗放大——transform 不佔版面，
+   卡片固定高不受影響；讀過但有新推文（~）的卡片在已讀低亮開著時調暗一階（介於未讀與
+   已讀之間），游標所在卡片不調暗（同上）。 */
+.listCard[data-list-mark="unread"] .listCardMark {
+  display: inline-block;
+  font-weight: bold;
+  transform: scale(1.6);
+}
+#mainContainer.dimReadList
+  span.listCard[data-list-mark="updated"]:not(
+    :has(> .listCardBody:not([class="listCardBody"]))
+  ) {
+  opacity: 0.8;
+}
+
 /* 列表好讀模式的 body 捲動視口。高度由 JS 設成 body 列數 × 列高，內容是整段
    緩衝（≤ MAX_LIST_ROWS 列）⇒ 有真正的可捲距離，捲動交給瀏覽器（與文章好讀
    同一套引擎）。`overflow-y` 也由 JS 控（auto／hidden，見 screen.js

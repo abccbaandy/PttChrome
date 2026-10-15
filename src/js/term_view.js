@@ -1428,6 +1428,14 @@ TermView.prototype = {
       this.bbscore.deepLinkController.copyCurrentPostLink();
       return;
     }
+    // 「跳到第一篇未讀」hotkey (pref unreadJumpKey, default F7)：同上，F 鍵送不到 PTT。
+    // start() 一律接手（不能用的畫面給提示），不交還瀏覽器。
+    if (this.bbscore.unreadJump && !e.ctrlKey && !e.altKey && !e.metaKey &&
+        e.key === readValuesWithDefault().unreadJumpKey) {
+      e.preventDefault();
+      this.bbscore.unreadJump.start();
+      return;
+    }
     // 重新整理（F5／⌘R，pref refreshKeyIntercept）：看板列表／文章列表／文章改成重整
     // PTT 畫面。refresh() 回 false ＝這個畫面不支援 ⇒ 不 preventDefault，瀏覽器照常
     // 重新載入（beforeunload 會先問）。F 鍵與 ⌘ 組合本來就送不到 PTT。

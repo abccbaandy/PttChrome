@@ -97,6 +97,16 @@ export const CARD_LAYOUT = {
   },
 };
 
+// 文章卡片的已讀標記分類（cell 8，pttbbs `mbbsd/bbs.c#readdoent` 的 type 字元）→
+// data-list-mark：'unread'（+、M：brc_unread == 1）／'updated'（~：讀過但有新推文）。
+// 次行縮了字之後 + 與 ~ 幾乎分不出來，CSS 依它放大未讀標記、把 ~ 調暗一階。
+export function articleCardMark(chars) {
+  const ch = chars && chars[8] ? chars[8].ch : "";
+  if (ch === "+" || ch === "M") return "unread";
+  if (ch === "~") return "updated";
+  return undefined;
+}
+
 // 一行裡用到的全部 cell 範圍（測試檢查不重疊用）。
 export function layoutSpans(line) {
   return [line.lead, ...line.main, ...line.end].filter(Boolean);
@@ -147,6 +157,8 @@ export function buildListCard({
         "data-list-author": listAuthor,
         "data-list-title": listTitle,
         "data-list-read": listRead ? "" : undefined,
+        "data-list-mark":
+          layout === CARD_LAYOUT.article ? articleCardMark(chars) : undefined,
       },
       el(
         "span",

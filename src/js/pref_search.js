@@ -121,6 +121,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_deepLinkCopyKey",
     },
     {
+      key: "unreadJumpKey",
+      titleKey: "options_unreadJumpKey",
+      tooltipKey: "tooltip_unreadJumpKey",
+    },
+    {
       key: "refreshKeyIntercept",
       titleKey: "options_refreshKeyIntercept",
       tooltipKey: "tooltip_refreshKeyIntercept",

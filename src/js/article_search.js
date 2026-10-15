@@ -259,7 +259,8 @@ export function submitSerializedSteps(core, built, opts) {
     queue.enqueue({
       keys: step.keys,
       kind: step.kind,
-      fullRepaint: i === 0,
+      // 預設只有第一步補 \f；步驟自己指定時照它（unread_jump 每一步都要）。
+      fullRepaint: 'fullRepaint' in step ? step.fullRepaint : i === 0,
       expect:
         step.expect ||
         function() {

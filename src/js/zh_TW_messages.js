@@ -792,6 +792,12 @@
   "tooltip_deepLinkCopyKey": {
     "message": "點此後按任意鍵設定 (預設 F2)"
   },
+  "options_unreadJumpKey": {
+    "message": "跳到第一篇未讀文章的熱鍵（文章列表）"
+  },
+  "tooltip_unreadJumpKey": {
+    "message": "點此後按任意鍵設定 (預設 F7)"
+  },
   "options_refreshKeyIntercept": {
     "message": "F5／⌘R 重新整理 PTT 畫面"
   },
@@ -1004,6 +1010,9 @@
   },
   "mobileToolbar_share": {
     "message": "分享"
+  },
+  "mobileToolbar_unreadJump": {
+    "message": "跳到第一篇未讀"
   },
   "mobileToolbar_post": {
     "message": "發文"

@@ -208,6 +208,17 @@ export const MobileToolbar = ({
       dl.shareCurrentPostLink(context.appBar ? context.appBar.title : "");
   }, [pttchrome, context]);
 
+  // 跳到第一篇未讀：與桌機快捷鍵（預設 F7）同一個入口（unread_jump.js）。
+  const onUnreadJump = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    const u = pttchrome.unreadJump;
+    if (!u || typeof u.start !== "function") return;
+    if (typeof pttchrome.noteUserAction === "function")
+      pttchrome.noteUserAction();
+    u.start();
+  }, [pttchrome]);
+
   // 重新整理：與桌機 F5 同一個入口（冷卻、忙碌提示都在 ScreenRefresh 裡）。
   const onRefresh = useCallback(() => {
     setPanel(null);
@@ -437,6 +448,16 @@ export const MobileToolbar = ({
       sheetKey="more"
     >
       <div data-panel="more">
+        {context.unreadJump ? (
+          <button
+            type="button"
+            className="nomouse_command mobileSheetItem pttRipple"
+            data-key="__unreadJump"
+            onClick={onUnreadJump}
+          >
+            {i18n("mobileToolbar_unreadJump")}
+          </button>
+        ) : null}
         {context.share ? (
           <button
             type="button"

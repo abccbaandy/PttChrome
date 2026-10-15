@@ -31,6 +31,8 @@ export function serializedOpHint(core) {
   if (core.searchInFlight) return '搜尋中，請稍候…';
   // 列表的重新整理（s<板>⏎／看板列表 /⏎），見 screen_refresh.js。
   if (core.refreshInFlight) return '重新整理中，請稍候…';
+  // 跳到第一篇未讀（End → PgUp… → 跳號），見 unread_jump.js。
+  if (core.unreadJumpInFlight) return '正在找第一篇未讀，請稍候…';
   return null;
 }
 
