@@ -1,8 +1,12 @@
 # Playwright Firefox teardown 偶發 `_maybeDontRestoreTabs`：做最小重現 → 發上游 issue
 
-狀態：**未發 issue**（上游 bug 範本：沒有最小重現一律拒收，且要求先用最新版測）。
+狀態：**已發上游 issue，等回覆**：https://github.com/microsoft/playwright/issues/43413
+（確定性重現 `prove-mechanism.mjs`、Linux 原生長跑 `repro.mjs`、`RESULT.md` 放在分支
+`claude/intelligent-bohr-f0xfzk`，issue 以 commit `840a929` 的 permalink 引用 ⇒ **該分支留到 issue 結案才刪**，
+不合進 `dev`）。
 本專案只在 `docs/local-env-troubleshooting.md` 記了症狀，**沒有**任何 workaround。
-做完（issue 發出、或升版後確認消失）就刪本檔，並同步改 local-env-troubleshooting 那條。
+上游修好（Playwright 換了含修正的 Firefox revision，升版後確認消失）或 issue 被關閉不修 ⇒ 刪本檔與上述分支，
+並同步改 local-env-troubleshooting 那條。期間維護者若要更多資訊，照下方「接手步驟」1 補量。
 
 ## 症狀（CONFIRMED）
 
@@ -51,7 +55,7 @@ test runner 的 `video: 'retain-on-failure'`＋`screenshot`）。
    跑上面的 `--repeat-each=5` 3 輪。消失 ⇒ 刪本檔＋改 troubleshooting 那條，結束。
 2. 還在 ⇒ 二分 spec：逐項移除上面的候選，直到在獨立的 `npm init playwright@latest`
    小專案（只放必要的 code，上游只跑他們信得過的 code）重現。
-3. 用 GitHub API 開 issue 到 `microsoft/playwright`（`bug.yml` 範本：Version／Steps to reproduce＝
+3. ~~開 issue~~（已完成：microsoft/playwright#43413）。原本的規格留作參考：開 issue 到 `microsoft/playwright`（`bug.yml` 範本：Version／Steps to reproduce＝
    小 repo 連結／Expected／Actual／Additional context／Environment）。
    Additional context 貼上面「機制」1–4，修法建議：Juggler 端改成
    `this.#windows[aWindow.__SSi]?.`，或 `PageTarget.close()` 用
