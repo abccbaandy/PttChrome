@@ -39,6 +39,27 @@ describe("列表卡片 CSS", () => {
   });
 });
 
+// 使用者回報：手機卡片上 + 與 ~ 亮度一樣、字也小到分不出來。
+describe("未讀標記（data-list-mark）CSS", () => {
+  test("未讀標記放大：用 transform（不佔版面，卡片固定高不變）＋加粗", () => {
+    const r = rules(/\[data-list-mark="unread"\]\s+\.listCardMark\s*$/);
+    expect(r.length).toBe(1);
+    expect(r[0].body).toMatch(/transform:\s*scale\(/);
+    expect(r[0].body).toMatch(/font-weight:\s*bold/);
+    expect(r[0].body).not.toMatch(/(^|[;\s])(font-size|height|line-height|margin|padding)/);
+  });
+  test("~ 卡片調暗一階：介於已讀低亮與未讀之間、跟著 dimReadList、排除游標卡片", () => {
+    const r = rules(/\[data-list-mark="updated"\]/);
+    expect(r.length).toBe(1);
+    expect(r[0].sel).toMatch(/#mainContainer\.dimReadList/);
+    expect(r[0].sel).toMatch(/:not\(\s*:has\(>\s*\.listCardBody/);
+    const op = Number(r[0].body.match(/opacity:\s*([\d.]+)/)[1]);
+    const readOp = Number(rules(/\[data-list-read\]/)[0].body.match(/opacity:\s*([\d.]+)/)[1]);
+    expect(op).toBeGreaterThan(readOp);
+    expect(op).toBeLessThan(1);
+  });
+});
+
 describe("已讀文章低亮 CSS", () => {
   const dim = rules(/\[data-list-read\]/);
 
@@ -53,8 +74,13 @@ describe("已讀文章低亮 CSS", () => {
   });
 
   // 回歸：卡片次行原本自帶 opacity 0.6，已讀再乘一次 ⇒ 0.27，作者／日期看不見。
+  // 例外：~ 卡片的調暗一階（data-list-mark="updated"）掛在卡片本身，~ 不是已讀
+  // （isListRowRead），兩者不會疊在同一張卡片上。
   test("卡片內各段不得自帶 opacity（避免與已讀低亮疊乘）", () => {
-    for (const r of rules(/\.listCard\b/)) expect(r.body).not.toMatch(/opacity:/);
+    for (const r of rules(/\.listCard\b/)) {
+      if (/data-list-mark="updated"/.test(r.sel)) continue;
+      expect(r.body).not.toMatch(/opacity:/);
+    }
   });
 
   test("只掛在 #mainContainer.dimReadList 下", () => {

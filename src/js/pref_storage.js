@@ -68,6 +68,9 @@ export const DEFAULT_PREFS = {
   // 「複製本篇連結」（deep link）的快捷鍵。預設 F2：上面那串被 Chrome 佔用的
   // F 鍵之外，F8/F9 又已經給了上面兩個功能，剩下的就是 F2/F4。
   deepLinkCopyKey: "F2",
+  // 「跳到第一篇未讀」（文章列表，docs/unread-jump.md）的快捷鍵。預設 F7（使用者指定）：
+  // Chrome 的 F7 是「鍵盤瀏覽模式」對話框，keydown 被 preventDefault 就不會出現。
+  unreadJumpKey: "F7",
   // 重新整理（docs/screen-refresh.md）：F5／⌘R 在看板列表、文章列表、文章裡改成
   // 重整 PTT 畫面（其他畫面照舊交給瀏覽器）。瀏覽器網址列旁的重新整理按鈕頁面攔不到。
   refreshKeyIntercept: true,

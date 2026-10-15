@@ -11,6 +11,7 @@ import { OWNER_BOARD_LIST, listRenderOwnerOf } from './list_render_owner';
 import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { ScreenRefresh } from './screen_refresh';
+import { UnreadJump } from './unread_jump';
 import { installPullRefresh } from './pull_refresh';
 import { LongPushSession } from './long_push_session';
 import { LogoutSession } from './logout_session';
@@ -183,6 +184,8 @@ export const App = function() {
   // 畫面重新整理（F5／手機工具列／下拉）：列表走 s<板>⏎ 或 /⏎，文章走 aidNavigation.refresh()。
   // 見 screen_refresh.js、docs/screen-refresh.md。
   this.screenRefresh = new ScreenRefresh(this);
+  // 跳到第一篇未讀（F7／手機工具列「更多」）：End → PgUp… → 跳號，見 unread_jump.js。
+  this.unreadJump = new UnreadJump(this);
   // 手機下拉重整（只在 mobile 版面起作用，被動監聽）。
   this._uninstallPullRefresh = installPullRefresh(this);
   this.longPush = new LongPushSession(this, this.view, this.buf, this.commandQueue);

@@ -15,6 +15,7 @@
 //            同表 'pager_common_cmds'。
 //   post   ：文章列表（列表好讀 session 持有，或 《看板》＋文章列表 footer），送 Ctrl+P
 //            （mbbsd/bbs.c 的 bbs_cmd_new_post）。游標在輸入欄（prompt 開著）時不給。
+//   unreadJump：文章列表（同 post 的判準），「更多」裡的「跳到第一篇未讀」（unread_jump.js）。
 //   search ：可開的搜尋種類，與鍵盤攔截同一個判準（article_search.availableSearchKinds）。
 //   appBar ：頂部 App Bar 的標題（mobile_app_bar.js），同一次計算、同一個通知。
 // 判準刻意不看 enableLongPush：推鈕送的是 X，長推文關掉時就是 PTT 原生推文。
@@ -30,7 +31,7 @@ import { MOBILE_KEYPAD_PUSH_KEY } from './mobile_layout';
 
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
-  refresh: false, end: false,
+  unreadJump: false, refresh: false, end: false,
   search: [], appBar: EMPTY_APP_BAR
 });
 
@@ -88,6 +89,7 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
     share: article,
     threadNav: article,
     post: !pager && isArticleList(facts),
+    unreadJump: !pager && isArticleList(facts),
     refresh: !!o.connected && !!refreshTargetFromFacts(facts, pageState, {
       articleBoard: o.articleBoard,
       listOpened: o.listOpened
@@ -112,7 +114,9 @@ export function mobileToolbarContext(core) {
   });
 }
 
-const FLAGS = ['push', 'reply', 'mail', 'share', 'threadNav', 'post', 'refresh', 'end'];
+const FLAGS = [
+  'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'refresh', 'end'
+];
 
 export function sameToolbarContext(a, b) {
   if (!a || !b) return a === b;

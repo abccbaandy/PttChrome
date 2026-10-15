@@ -69,6 +69,13 @@ describe("toolbarContextFromFacts", () => {
     expect(toolbarContextFromFacts({ ...frame(LIST), inputField: true }, 2).post).toBe(false);
     expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1).post).toBe(false);
   });
+  test("跳到第一篇未讀（更多）：只有文章列表；prompt 開著、文章、主功能表不給", () => {
+    expect(toolbarContextFromFacts(frame(LIST), 2).unreadJump).toBe(true);
+    expect(toolbarContextFromFacts({ ...frame(LIST), inputField: true }, 2).unreadJump).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3).unreadJump).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1).unreadJump).toBe(false);
+    expect(EMPTY_TOOLBAR_CONTEXT.unreadJump).toBe(false);
+  });
   test("送鍵表：具名鍵都在 term_keyboard.KeyMap；其餘是單字元", () => {
     const all = [...Object.values(TOOLBAR_KEYS).map((k) => k.key), ...THREAD_NAV_KEYS.map((k) => k.key)];
     for (const k of all) expect(k.length === 1 || k in KeyMap).toBe(true);

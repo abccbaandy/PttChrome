@@ -89,6 +89,23 @@ describe("buildListCard：文章列表", () => {
     expect(unread.hasAttribute("data-list-read")).toBe(false);
   });
 
+  // 次行縮字後 + 與 ~ 分不出來（使用者回報）：卡片依 cell 8 帶 data-list-mark，CSS 放大
+  // 未讀標記、把 ~ 調暗一階（list_card_css.test.js 鎖 CSS 那半）。
+  test("data-list-mark：+／M ＝ unread、~ ＝ updated、已讀與看板列表不帶", () => {
+    const withMark = (m) =>
+      row(seg(" 350024 "), seg(m), seg(" 5"), seg(" 6/14 "), seg("someone      "), seg("□ 測試"));
+    const mark = (m, kind = "article") =>
+      buildListCard({ chars: withMark(m), row: 1, kind, forceWidth: 16 }).node.getAttribute(
+        "data-list-mark",
+      );
+    expect(mark("+")).toBe("unread");
+    expect(mark("M")).toBe("unread");
+    expect(mark("~")).toBe("updated");
+    expect(mark(" ")).toBe(null);
+    expect(mark("m")).toBe(null);
+    expect(mark("+", "board")).toBe(null);
+  });
+
   test("空白列（短板補到 bodyRows）仍是一張卡片（固定高才對得上捲動數學）", () => {
     const { node } = buildListCard({ chars: row(seg("")), row: 9, kind: "article", forceWidth: 16 });
     expect(node.classList.contains("listCard")).toBe(true);

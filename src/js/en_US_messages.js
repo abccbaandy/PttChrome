@@ -793,6 +793,12 @@ export const en_US = {
   "tooltip_deepLinkCopyKey": {
     "message": "Click then press any key to set (default F2)"
   },
+  "options_unreadJumpKey": {
+    "message": "Hotkey to jump to the first unread article (article list)"
+  },
+  "tooltip_unreadJumpKey": {
+    "message": "Click then press any key to set (default F7)"
+  },
   "options_refreshKeyIntercept": {
     "message": "F5 / ⌘R refreshes the PTT screen"
   },
@@ -1005,6 +1011,9 @@ export const en_US = {
   },
   "mobileToolbar_share": {
     "message": "Share"
+  },
+  "mobileToolbar_unreadJump": {
+    "message": "First unread"
   },
   "mobileToolbar_post": {
     "message": "Post"
