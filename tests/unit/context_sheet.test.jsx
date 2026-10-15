@@ -6,6 +6,7 @@
 //  2. 點項目走同一個 handler（onMenuSelect 帶 key）；反灰項目不能點；
 //  3. 開著＝modal（具名來源），收起時撤銷。
 import mantineCss from "@mantine/core/styles.css?raw";
+import sheetCss from "../../src/components/MobileSheet/MobileSheet.css?raw";
 import { page } from "vitest/browser";
 import { render, fireEvent, act } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
@@ -108,15 +109,17 @@ test("sheet 項目不可選字，輸入框例外", async () => {
   input.remove();
 });
 
-// 長按畫面下方的文章（「前已讀後未讀」）：固定貼底的 sheet 會把那一列整個蓋掉，
-// 選中文章外框等於沒畫。sheet 必須避開長按的對象（js/sheet_placement.js）。
+// 長按畫面下方的文章（「前已讀後未讀」）：固定貼底的 sheet 會把那一列整個蓋掉，選中文章
+// 外框等於沒畫；改貼頂又離手指一整個畫面遠。選單要像原生浮動選單一樣貼著長按的對象浮出、
+// 不蓋住它（js/sheet_placement.js）。
 describe("不蓋住長按的那一列", () => {
   // 真版面：Mantine 的 CSS 以 ?raw 注入（Vitest 不處理套件的 CSS import；沒有它 Drawer
   // 不是 fixed、量到的位置是假的），視窗改成手機大小（同 pref_modal_narrow.test.jsx）。
   let style;
   beforeAll(async () => {
     style = document.createElement("style");
-    style.textContent = mantineCss;
+    // MobileSheet.css 一起注入：浮動選單的絕對定位在它裡面。
+    style.textContent = mantineCss + "\n" + sheetCss;
     document.head.appendChild(style);
     await page.viewport(390, 800);
   });
@@ -128,40 +131,55 @@ describe("不蓋住長按的那一列", () => {
   const sheetRect = () =>
     document.querySelector('[data-sheet="context"]').getBoundingClientRect();
 
-  test("對象在畫面下方 ⇒ sheet 改貼頂，下緣在對象上緣之上", async () => {
+  // 選單與對象的距離上限：浮動選單要貼著對象（GAP 8px），不是跑到畫面另一端。
+  const NEAR_PX = 16;
+
+  test("REGRESSION：對象在畫面最下方 ⇒ 選單浮在對象正上方（不是畫面頂端），不蓋住它", async () => {
     const vh = window.innerHeight;
-    const anchor = { top: vh - 60, bottom: vh - 30 };
+    const anchor = { top: vh - 60, bottom: vh - 30, x: 40 };
     setup({ menuAnchor: anchor });
     await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
     const sheet = document.querySelector('[data-sheet="context"]');
-    expect(sheet.getAttribute("data-position")).toBe("top");
+    expect(sheet.getAttribute("data-position")).toBe("float");
     await vi.waitFor(() => {
       const r = sheetRect();
       expect(r.height).toBeGreaterThan(0);
       expect(r.bottom).toBeLessThanOrEqual(anchor.top + 0.5);
+      expect(anchor.top - r.bottom).toBeLessThanOrEqual(NEAR_PX);
+      expect(r.left).toBeCloseTo(anchor.x, 0);
+      expect(r.right).toBeLessThanOrEqual(window.innerWidth);
     });
   });
 
-  test("對象在畫面上方 ⇒ 照舊貼底，上緣在對象下緣之下", async () => {
-    const anchor = { top: 20, bottom: 50 };
+  test("對象在畫面上方 ⇒ 選單浮在對象正下方，不蓋住它", async () => {
+    const anchor = { top: 20, bottom: 50, x: 380 };
     setup({ menuAnchor: anchor });
+    await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+    await vi.waitFor(() => {
+      const r = sheetRect();
+      expect(r.height).toBeGreaterThan(0);
+      expect(r.top).toBeGreaterThanOrEqual(anchor.bottom - 0.5);
+      expect(r.top - anchor.bottom).toBeLessThanOrEqual(NEAR_PX);
+      // 觸點靠右：選單往左推，不超出視窗
+      expect(r.right).toBeLessThanOrEqual(window.innerWidth);
+      expect(r.left).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  test("量不到對象 ⇒ 退回貼底 sheet", async () => {
+    setup({ menuAnchor: null });
     await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
     expect(
       document
         .querySelector('[data-sheet="context"]')
         .getAttribute("data-position"),
     ).toBe("bottom");
-    await vi.waitFor(() => {
-      const r = sheetRect();
-      expect(r.height).toBeGreaterThan(0);
-      expect(r.top).toBeGreaterThanOrEqual(anchor.bottom - 0.5);
-    });
   });
 
-  test("收起時（menuAnchor 被清掉）不翻面：退場動畫留在原本那一側", async () => {
+  test("收起時（menuAnchor 被清掉）不跳位：退場動畫留在原本的位置", async () => {
     const vh = window.innerHeight;
     const { rerender, props } = setup({
-      menuAnchor: { top: vh - 60, bottom: vh - 30 },
+      menuAnchor: { top: vh - 60, bottom: vh - 30, x: 40 },
     });
     await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
     act(() =>
@@ -172,6 +190,6 @@ describe("不蓋住長按的那一列", () => {
       ),
     );
     const sheet = document.querySelector('[data-sheet="context"]');
-    if (sheet) expect(sheet.getAttribute("data-position")).toBe("top");
+    if (sheet) expect(sheet.getAttribute("data-position")).toBe("float");
   });
 });

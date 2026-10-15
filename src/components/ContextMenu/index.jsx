@@ -149,8 +149,8 @@ const initialState = {
   // 選單作用的那篇文章（列表列／手機卡片；js/menu_target_highlight.js）。選單開著
   // 時在畫面上標出來，避免對錯的文章操作。null ＝ 不是在文章列上開的。
   menuTarget: null,
-  // 長按的對象（那一列／卡片／觸點）的 client 矩形 { top, bottom }：手機 sheet 據此
-  // 改貼頂或限高，不蓋住它（js/sheet_placement.js）。與 highlightMenuTarget 無關。
+  // 長按的對象（那一列／卡片／觸點）的 client 矩形 { top, bottom, x }：手機選單據此
+  // 浮在它旁邊、不蓋住它（js/sheet_placement.js）。與 highlightMenuTarget 無關。
   menuAnchor: null,
   // 右鍵當下是不是在文章畫面（決定「複製本篇連結」出不出現）。
   articleLinkEnabled: false,
@@ -464,7 +464,7 @@ export const ContextMenu = ({ pttchrome }) => {
           normalEnabled && prefs.highlightMenuTarget
             ? menuTargetFromElement(target)
             : null,
-        menuAnchor: menuAnchorRect(target, event.clientY),
+        menuAnchor: menuAnchorRect(target, event.clientY, event.clientX),
         quickSearchItems,
         quickSearchQuery,
         // 「複製本篇連結」只在文章畫面有意義（要按 Q 問文章資訊框）。pageState 3

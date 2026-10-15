@@ -13,11 +13,11 @@ import "./MobileSheet.css";
 //      靠 modalShown 早退，才不會被當成點終端機（送鍵給 PTT）。
 //   2. 系統返回（邊緣滑動／返回鍵）＝收起 sheet：開著時向 App.registerSheetDismiss 登記，
 //      history_back_guard 在送 ← 之前先問 App.dismissTopSheet()。接住原生返回，不自己模擬。
-//   3. 拖曳把手往外（貼底＝往下、貼頂＝往上）拉超過 SHEET_DISMISS_DRAG_PX 收起；只有把手區
-//      接手勢，內容照常捲動。
-// position／maxHeight：長按選單依對象位置改貼頂並限高，不蓋住長按的那一列
-// （js/sheet_placement.js）。footer：固定在捲動區下方的列（送出鍵），內容再長、鍵盤
-// 再高都看得到，不必先收鍵盤才點得到（LongPushModal 手機版）。
+//   3. 拖曳把手往下拉超過 SHEET_DISMISS_DRAG_PX 收起；只有把手區接手勢，內容照常捲動。
+// float：長按選單不貼底，改浮在長按的那一列旁邊（js/sheet_placement.js#floatMenuPlacement
+// 的結果）——手指移動距離短、也不蓋住那一列。浮動時沒有拖曳把手（遮罩／返回照樣收起）。
+// footer：固定在捲動區下方的列（送出鍵），內容再長、鍵盤再高都看得到，不必先收鍵盤
+// 才點得到（LongPushModal 手機版）。
 // z-index 高於底部工具列（2500）與 App Bar：sheet 開著時兩條 bar 都在遮罩下面。
 export const SHEET_Z_INDEX = 3000;
 export const SHEET_DISMISS_DRAG_PX = 80;
@@ -31,12 +31,10 @@ export const MobileSheet = ({
   title,
   children,
   sheetKey,
-  position = "bottom",
-  maxHeight = null,
+  float = null,
   footer = null,
   closeOnClickOutside = true,
 }) => {
-  const top = position === "top";
   const reduceMotion = useReducedMotion();
   const id = useId();
   const [drag, setDrag] = useState(0);
@@ -69,23 +67,19 @@ export const MobileSheet = ({
     if (e.currentTarget.setPointerCapture)
       e.currentTarget.setPointerCapture(e.pointerId);
   }, []);
-  const onPointerMove = useCallback(
-    (e) => {
-      if (startY.current == null) return;
-      const dy = e.clientY - startY.current;
-      setDrag(top ? Math.min(0, dy) : Math.max(0, dy));
-    },
-    [top],
-  );
+  const onPointerMove = useCallback((e) => {
+    if (startY.current == null) return;
+    setDrag(Math.max(0, e.clientY - startY.current));
+  }, []);
   const onPointerEnd = useCallback(
     (e) => {
       if (startY.current == null) return;
       const dy = e.clientY - startY.current;
       startY.current = null;
       setDrag(0);
-      if ((top ? -dy : dy) > SHEET_DISMISS_DRAG_PX) onClose();
+      if (dy > SHEET_DISMISS_DRAG_PX) onClose();
     },
-    [onClose, top],
+    [onClose],
   );
 
   const handle = (
@@ -106,41 +100,59 @@ export const MobileSheet = ({
       opened={!!opened}
       onClose={onClose}
       closeOnClickOutside={closeOnClickOutside}
-      position={top ? "top" : "bottom"}
+      position="bottom"
       size="auto"
       withCloseButton={false}
       zIndex={SHEET_Z_INDEX}
       lockScroll={false}
       returnFocus={false}
       transitionProps={{
-        transition: top ? "slide-down" : "slide-up",
-        duration: reduceMotion ? 0 : 200,
+        // 浮動選單從貼著對象的那個角長出來（像原生浮動選單），貼底 sheet 照舊往上滑。
+        transition: float
+          ? float.side === "above"
+            ? "pop-bottom-left"
+            : "pop-top-left"
+          : "slide-up",
+        duration: reduceMotion ? 0 : float ? 120 : 200,
       }}
       classNames={{
-        inner: "mobileSheetInner",
-        content: "mobileSheetContent",
+        inner: "mobileSheetInner" + (float ? " mobileSheetInnerFloat" : ""),
+        content:
+          "mobileSheetContent" + (float ? " mobileSheetContentFloat" : ""),
         body: "mobileSheetBody",
       }}
+      styles={
+        float
+          ? {
+              content: {
+                top: float.top != null ? `${float.top}px` : "auto",
+                bottom: float.bottom != null ? `${float.bottom}px` : "auto",
+                left: `${float.left}px`,
+                width: `${float.width}px`,
+              },
+            }
+          : undefined
+      }
     >
       <div
         className="mobileSheet nomouse_command"
         data-sheet={sheetKey}
-        data-position={top ? "top" : "bottom"}
+        data-position={float ? "float" : "bottom"}
+        data-float-side={float ? float.side : undefined}
         style={{
           ...(drag ? { transform: `translateY(${drag}px)` } : null),
           // CSS 的上限（扣鍵盤）照樣算：取兩者較小者。
-          ...(maxHeight != null
+          ...(float
             ? {
-                maxHeight: `min(${Math.round(maxHeight)}px, ${SHEET_CSS_MAX_HEIGHT})`,
+                maxHeight: `min(${Math.round(float.maxHeight)}px, ${SHEET_CSS_MAX_HEIGHT})`,
               }
             : null),
         }}
       >
-        {top ? null : handle}
+        {float ? null : handle}
         {title ? <div className="mobileSheetTitle">{title}</div> : null}
         <div className="mobileSheetScroll">{children}</div>
         {footer ? <div className="mobileSheetFooter">{footer}</div> : null}
-        {top ? handle : null}
       </div>
     </Drawer>
   );

@@ -333,10 +333,13 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - **原則：鍵盤、選單不可擋住畫面上要互動的東西。**
   - 有輸入框的 sheet：送出鍵放 `footer` prop（`.mobileSheetFooter`，在捲動區外）⇒ 內容再長、鍵盤再高都點得到，
     不必先收鍵盤（實錄：置中 Modal 的送出鍵被鍵盤蓋住）。守 `long_push_modal.test.jsx`「手機版」。
-  - 長按選單不可蓋住長按的那一列（選中文章外框才看得到）：`onContextMenu` 記 `menuAnchor`（`sheet_placement.menuAnchorRect`：
-    `span[type=bbsrow]`／`[data-menu-row]` 的矩形，否則觸點 ±16px），`sheetPlacement` 選上下較大的一側（同大貼底），
-    `position`＝`top` 時改貼頂（把手在下、往上拉收起）並以 `maxHeight` 限高、內容捲動。收起時沿用開著時的位置（退場不翻面）。
-    守 `sheet_placement.test.js`、`context_sheet.test.jsx`。
+  - 長按選單像原生浮動選單：**貼著長按的那一列浮出來**（手指移動距離短），且不蓋住它（選中文章外框才看得到）。
+    `onContextMenu` 記 `menuAnchor`（`sheet_placement.menuAnchorRect`：`span[type=bbsrow]`／`[data-menu-row]` 的矩形，
+    否則觸點 ±16px；另帶觸點 `x`），`floatMenuPlacement` 選上下較大的一側（同大往下），選單緣距對象 8px、左緣對齊觸點
+    （右側放不下往左推）、寬 ≤280px、高度到視窗邊為止、內容捲動。`MobileSheet` 的 `float` prop 把 Drawer 改成絕對定位
+    （`data-position="float"`、`data-float-side`），無拖曳把手（遮罩／返回照樣收）。量不到對象 ⇒ 退回貼底 sheet。
+    收起時沿用開著時的位置（退場不跳位）。舊版「對象在下半部就貼頂」離手指一整個畫面遠，已廢。
+    守 `sheet_placement.test.js`、`context_sheet.test.jsx`、`mobile_list_cards.offline.spec.js`。
   長按的 disposition／touchLongPress／清選取都在 render 前，**不動**。
 - 開著＝modal：每個實例 `setModalOpen('mobileSheet'+useId, opened)`。遮罩是一般 div、Drawer 在 portal ⇒ 點擊會到 window 的 App 滑鼠入口，
   **靠 modalShown 早退**才不會被當成點終端機。z-index 3000（蓋過工具列 2500）。
