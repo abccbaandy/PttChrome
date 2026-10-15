@@ -45,10 +45,27 @@
   -webkit-touch-callout: none;
 }
 
-/* 貼頂（長按選單的對象在畫面下半部時，js/sheet_placement.js）：圓角翻到下緣、讓開瀏海。 */
-.mobileSheet[data-position="top"] {
-  padding: var(--safe-top, 0px) 12px 0;
-  border-radius: 0 0 16px 16px;
+/* 浮動（長按選單，js/sheet_placement.js#floatMenuPlacement）：貼著長按的那一列浮出來，
+   像原生浮動選單。位置（top／bottom／left／width）由 MobileSheet 以 inline style 寫在
+   content 上；這裡把 Drawer 的貼邊 flex 版面拆掉，改絕對定位。 */
+.mobileSheetInner.mobileSheetInnerFloat {
+  display: block;
+  padding-bottom: 0;
+}
+
+.mobileSheetInnerFloat .mobileSheetContent.mobileSheetContentFloat {
+  position: absolute;
+  flex: none;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  overflow: visible;
+}
+
+.mobileSheet[data-position="float"] {
+  padding: 6px;
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* 固定在捲動區下方（送出鍵）：內容捲動、鍵盤升起都不會把它擠出畫面。 */

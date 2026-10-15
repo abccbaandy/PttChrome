@@ -310,9 +310,10 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await expect(items.filter({ hasText: addTitle })).toBeVisible();
   });
 
-  // 選單不可擋住它要作用的對象（js/sheet_placement.js）：長按畫面最下方那張卡片，
-  // 固定貼底的 sheet 會整個蓋住它 ⇒ 選中外框等於沒畫（實錄：「前已讀後未讀」）。
-  test('長按最下方的卡片 → 選單改貼頂，不蓋住那張卡片', async ({ page }) => {
+  // 選單不可擋住它要作用的對象，也要長在手指旁邊（js/sheet_placement.js）：長按畫面最下方
+  // 那張卡片，固定貼底的 sheet 會整個蓋住它（實錄：「前已讀後未讀」）；改貼頂又離手指
+  // 一整個畫面遠。現在像原生浮動選單一樣浮在那張卡片正上方。
+  test('長按最下方的卡片 → 選單浮在那張卡片正上方，不蓋住它', async ({ page }) => {
     test.setTimeout(90000);
     await engage(page);
     // 長按事件只能手捏（同上一支的註解：桌機 Chromium 的 CDP 觸控長按不發 contextmenu）。
@@ -334,15 +335,20 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
           pointerType: 'touch',
         })
       );
-      return { top: r.top, bottom: r.bottom, vh: window.innerHeight };
+      return { top: r.top, bottom: r.bottom, x: r.left + 20, vh: window.innerHeight, vw: window.innerWidth };
     });
     expect(card.bottom, '要選畫面下半部的卡片才測得到').toBeGreaterThan(card.vh / 2);
     const sheet = page.locator('[data-sheet="context"]');
     await expect(sheet).toBeVisible();
-    await expect(sheet).toHaveAttribute('data-position', 'top');
+    await expect(sheet).toHaveAttribute('data-position', 'float');
+    await expect(sheet).toHaveAttribute('data-float-side', 'above');
     const box = await waitRectStable(page, '[data-sheet="context"]');
     expect(box.height).toBeGreaterThan(0);
     expect(box.top + box.height).toBeLessThanOrEqual(card.top + 0.5);
+    // 貼著卡片（GAP 8px），不是跑到畫面頂端
+    expect(card.top - (box.top + box.height)).toBeLessThanOrEqual(16);
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.left + box.width).toBeLessThanOrEqual(card.vw);
     await page.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
   });
