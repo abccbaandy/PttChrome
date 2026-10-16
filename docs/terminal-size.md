@@ -37,14 +37,16 @@
   `do_term_init` 共用）用 `include/config.h` 的 `VALID_TERM_COLS/ROWS` 夾值，超出範圍直接被夾。
   之後 `b_lines = t_lines-1`、`p_lines = t_lines-4` —— 本專案的 `_bodyRows() = rows - 4`
   就是對著 `p_lines` 寫的。
-  - 範圍：舊版 **80–200 欄、24–100 列**；upstream `dc30d74`（2026-09「portrait mode
+  - 範圍：舊版 **80–200 欄、24–100 列**；upstream `4488584e`（2026-09「portrait mode
     terminals」）放寬為 **20–200 欄、24–150 列**。ptt.cc 是否已部署：`unknown`。
 - **窄欄 NAWS（<80）不採用，手機也一樣**：upstream 只有**列表**依 t_columns 重排（VCOL，`docs/pttbbs-screen-protocol.md`
   §3：窄於 80 欄時依 pri **整欄省略**——看板列表 79 欄就沒有編號欄、文章列表 <47 欄開始省略；寬於 80 只有標題延展）。
   `pmore` 仍在 t_columns 做 server 端換行 ⇒ 舊格式推文列尾 IP／日期折到下一列，打壞 `comment_parse`、黑名單、
   `mouse_regions`、`list_card.js` 的 cell 區間與好讀跨頁去重；列表少了編號欄則看板列表平滑捲動不 engage。
   手機的窄版面由 client 端 reflow／卡片做（`docs/mobile.md` Phase 3–4）。重新評估的觸發條件：upstream 讓**推文與內文**
-  也依 t_columns 重排（先讀那些 commit）。
+  也依 t_columns 重排（先讀那些 commit）。新格式推文標頭（§11.11）雖會依寬度右對齊，但窄欄時
+  `mf_display_comment_header` 從左逐段丟掉建立時間的字段（放不下就整段不印）⇒ 標頭不一定帶完整日期，
+  `MODERN_COMMENT_HEADER_RE` 是以 80 欄為前提寫的。
 - 列數上限跟 ptt.cc 部署版本：150 未確認前 `term_size.js#MAX_ROWS` 維持 100（送超過
   server 上限的 NAWS 會讓兩邊 rows 認知分歧）。
 - `term_resize` 只做 `redrawwin() + refresh()`：**重送既有 screen buffer**，不會叫
