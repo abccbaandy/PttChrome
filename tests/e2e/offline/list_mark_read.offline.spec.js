@@ -210,12 +210,22 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
       );
 
       // 游標列開頭是游標符號（targetRow 依序號開頭找不到）⇒ 右鍵鄰列：「全部」不看是哪一列。
-      const t = (await targetRow(page, num - 1)) || (await targetRow(page, num + 1));
-      expect(t).not.toBeNull();
-      await assertElementUnder(page, t.x, t.y, t.title, {
-        closest: '[data-list-title]',
-        attribute: 'data-list-title'
-      });
+      // 選取移動後的重畫可能還有後續幀（列節點整批換掉）⇒「標記＋量測＋確認點下去落在它上面」
+      // 整段重試到版面靜下來；舊節點被換掉時重新標記，不是放寬斷言。
+      let t = null;
+      await expect(async () => {
+        await page.evaluate(() =>
+          document
+            .querySelectorAll('[data-e2e-target]')
+            .forEach((el) => el.removeAttribute('data-e2e-target'))
+        );
+        t = (await targetRow(page, num - 1)) || (await targetRow(page, num + 1));
+        expect(t).not.toBeNull();
+        await assertElementUnder(page, t.x, t.y, t.title, {
+          closest: '[data-list-title]',
+          attribute: 'data-list-title'
+        });
+      }).toPass({ timeout: 15000 });
       await page.mouse.click(t.x, t.y, { button: 'right' });
       const item = menuItem(page, await label(page, 'cmenu_markAllRead'));
       await expect(item).toBeVisible();
