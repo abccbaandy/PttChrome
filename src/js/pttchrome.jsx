@@ -11,6 +11,7 @@ import { OWNER_BOARD_LIST, listRenderOwnerOf } from './list_render_owner';
 import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { ScreenRefresh } from './screen_refresh';
+import { ReadingRecord } from './reading_record';
 import { UnreadJump } from './unread_jump';
 import { MarkAllRead } from './mark_all_read';
 import { BoardMarkRead } from './board_mark_read';
@@ -143,6 +144,9 @@ export const App = function() {
   // why easy_reading.ensureEnabledOnArticle can rely on `_enabled` being final by
   // the time it is called (no double enterEasyReading → no duplicate PageDown/P4).
   this.easyReading = new EasyReading(this, this.view, this.buf);
+  // 閱讀紀錄：使用者眼睛看到的位置（文章讀到哪／列表視野）的唯一擁有者。會暫時改掉
+  // 畫面的功能一律 begin()／end() 交回，還原與否由決策表決定（docs/reading-record.md）。
+  this.readingRecord = new ReadingRecord(this);
   // List easy reading (v4): serialized machine keys + explicit state machine.
   // The queue only ever talks to the live connection; a dropped link makes the
   // send a no-op and the command dies by its own timeout (benign by design).

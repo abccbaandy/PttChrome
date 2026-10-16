@@ -202,6 +202,38 @@ test.describe('AID 跳文 → 返回（scenario 重放）', () => {
     expect(await page.evaluate(() => window.__app.aidNavigation.canGoBack())).toBe(false);
   });
 
+  // 閱讀紀錄（docs/reading-record.md）：文章裡的外部導覽會把身後的列表停進外部 hold、
+  // 清掉看板身分 ⇒ 退回列表一定 rebuild。整條來回走完，閱讀紀錄手上的「身後的列表」
+  // 必須還是開文前使用者看的那個視野（返回落地時由返回錨交回），退回列表時才還原得了。
+  test('跳文 → 返回之後，閱讀紀錄記著開文前的列表視野（退回列表時還原用）', async ({ page }) => {
+    test.skip(!aidBack, '缺 scn-aid-back（yarn record:scenarios）');
+    await bootScenario(page, ptt, aidBack);
+    await engageListEasyReading(page);
+    const listBefore = await page.evaluate(() => window.__app.listSession.readingPosition());
+    expect(listBefore && listBefore.topNum).toBeTruthy();
+
+    await ptt.sendKey(page, 'Enter');
+    await waitFed(page, rawIndex(aidBack, 0));
+    await waitArticleSettled(page);
+    const opened = await page.evaluate(() => window.__app.listSession._openedNum);
+
+    await page.evaluate(([a, b]) => window.__app.aidNavigation.start(a, b), [aidBack.meta.aid, aidBack.meta.board]);
+    await waitFed(page, rawIndex(aidBack, 2));
+    await waitArticleSettled(page);
+    await page.evaluate(() => window.__app.aidNavigation.back());
+    await waitFed(page, aidBack.steps.length);
+    await waitArticleSettled(page);
+
+    const behind = await page.evaluate(() => window.__app.readingRecord.peekBehindList());
+    expect(behind).toMatchObject({
+      kind: 'list',
+      board: listBefore.board,
+      mode: 'plain',
+      topNum: listBefore.topNum,
+      cursorNum: opened,
+    });
+  });
+
   // REGRESSION（使用者回報）：`/` 搜尋 → 進文章 → 點 AID → 返回 → 回不到原文。序號在
   // 搜尋清單裡會位移，修法是離開前問出本篇自己的 AID 當錨點（素材裡的返回目標就是它）。
   test('從 `/` 搜尋結果開的文章：返回走 aid 錨點，回得到原文', async ({ page }) => {

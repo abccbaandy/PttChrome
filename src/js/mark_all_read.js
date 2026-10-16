@@ -18,6 +18,7 @@ import { refreshTargetOf } from './screen_refresh';
 import { submitSerializedSteps } from './article_search';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
+import { recordFor } from './reading_record';
 
 export const MARK_ALL_READ_FLAG = 'markAllReadInFlight';
 // getdata prompt 的兩段特徵字（同一列）：只認得到這列才算進了 prompt。
@@ -63,7 +64,12 @@ MarkAllRead.prototype = {
       return false;
     }
     const self = this;
+    // 閱讀紀錄（決策表 'mark-all-read'）：只有已讀標記變了 ⇒ 不論成敗，回好讀時
+    // 視野回到原處（列表好讀 rebuild 時驗證同板＋游標仍在原處）。
+    const rr = recordFor(core);
+    const bm = rr.begin('mark-all-read');
     const fail = function() {
+      rr.end(bm, 'fail');
       self._hint('設為全部已讀失敗：沒有出現 PTT 的設定提示（已停在原生畫面）', 0, HINT_ERROR);
     };
     const steps = [
@@ -86,9 +92,11 @@ MarkAllRead.prototype = {
           return !markReadPromptShown(facts && facts.rowTexts);
         },
         onDone: function() {
+          rr.end(bm, 'done');
           self._hint('已將本板所有文章設為已讀', 3000);
         },
         onFail: function() {
+          rr.end(bm, 'fail');
           self._hint('設為全部已讀：PTT 沒有回應（已停在原生畫面）', 0, HINT_ERROR);
         }
       }

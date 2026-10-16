@@ -34,6 +34,7 @@ import { landedOnBoard } from './aid_navigation';
 import { serializedOpHint } from './serialized_op_gate';
 import { readValuesWithDefault } from './pref_storage';
 import { HINT_ERROR } from './status_hint';
+import { recordFor } from './reading_record';
 
 export const DEFAULT_REFRESH_MIN_INTERVAL_SEC = 5;
 
@@ -262,19 +263,26 @@ ScreenRefresh.prototype = {
       this._hint('這篇文章無法重新整理');
       return false;
     }
+    // 閱讀紀錄（決策表 'list-refresh'／'board-list-refresh'）：游標本來就原地
+    // （getkeep／ctx->curr），視野也要回到原處，而不是 PTT 的 20 列分頁。
+    const rr = recordFor(core);
+    const bm = rr.begin(target.kind === 'article-list' ? 'list-refresh' : 'board-list-refresh');
     const fail = function() {
+      rr.end(bm, 'fail');
       self._hint('重新整理失敗（已停在原生畫面）', 0, HINT_ERROR);
     };
     const steps =
       target.kind === 'article-list'
         ? buildArticleListRefreshSteps(target.board, {
             onDone: function() {
+              rr.end(bm, 'done');
               self._hint('已重新整理', 1200);
             },
             onFail: fail
           })
         : buildBoardListRefreshSteps({
             onDone: function(hot) {
+              rr.end(bm, 'done');
               if (hot) self._hint('熱門看板不支援重新整理（PTT 限制）');
               else self._hint('已重新整理', 1200);
             },

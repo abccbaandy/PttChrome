@@ -66,6 +66,11 @@ import { clickableColStart } from './mouse_regions';
 import { LEFT_ARROW } from './function_key_plan';
 import { readValuesWithDefault } from './pref_storage';
 import { HINT_ERROR } from './status_hint';
+import { recordFor, boardListRecordMatches } from './reading_record';
+
+// 待還原捲動錨（_pendingViewport）的壽命與往回補頁的上限（同 list_session）。
+const PENDING_VIEWPORT_MAX_MS = 10000;
+const PENDING_VIEWPORT_MAX_FILLS = 4;
 
 // 進佇列的命令一律帶 BRD_CMD_PREFIX（'brd-'）：那是兩個列表 session 共用同一條
 // CommandQueue 的所有權判準，定義在 js/list_render_owner.js（兩邊都 import 的葉子
@@ -288,6 +293,11 @@ export function BoardListSession(core, view, termBuf, queue) {
   // functionMode 的停泊理由（'passthrough' | 'external' | null）——語意與拆分的
   // 理由同 list_session._holdReason（'external' 永不自動解除，不變量 N1）。
   this._holdReason = null;
+  // 待還原的捲動錨（閱讀紀錄 reading_record.end → requestViewportRestore）：原生交易
+  // （重新整理、設為已讀、`s` 取消…）做完、靜置探針 seed 回來時，落點驗證過
+  // （同變體＋游標仍在發起的那一列）才把視野還原，而不是採用 PTT 分頁頂端。
+  // { topNum, scrollFrac, variant, cursorNum, at, adopted, fills } / null。
+  this._pendingViewport = null;
   // 靜置探針的 timer 與它的兩個時鐘來源（見 RESUME_QUIET_MS）。
   this._resumeProbe = null;
   this._lastServerActivityAt = 0;
@@ -537,6 +547,120 @@ BoardListSession.prototype = {
     this._enterNative(null, { hold: 'external' });
   },
 
+  // 外部序列收尾（reading_record.releaseExternal）：停在看板列表時把 'external'
+  // 換成 'passthrough'，交回靜置探針（同 list_session.endExternalNavigation）。
+  endExternalNavigation: function() {
+    if (this.state !== 'functionMode' || this._holdReason !== 'external') return;
+    this._holdReason = 'passthrough';
+    this._scheduleResumeProbe();
+  },
+
+  // 閱讀紀錄的看板列表量測：{ kind:'boardList', variant, topNum, scrollFrac, cursorNum }。
+  // 視口在 DOM 上 ⇒ 從 scrollTop 現場換算（不改欄位）；否則 session 手上的錨。
+  readingPosition: function() {
+    if (this.state === 'idle' || this._variant == null) return null;
+    let topNum = this._topNum;
+    let frac = this._scrollFrac || 0;
+    const screen = this._screen();
+    const nums = this._termBuf.brdListLineNums || [];
+    if (
+      this._renderMode === 'buffer' &&
+      nums.length &&
+      screen &&
+      screen.getListScrollTop &&
+      (!screen.hasListViewport || screen.hasListViewport())
+    ) {
+      const rowH = this._rowHeight();
+      if (rowH > 0) {
+        const t = topPosFromScrollTop({ scrollTop: screen.getListScrollTop(), rowH: rowH });
+        topNum = nums[Math.max(0, Math.min(t.pos, nums.length - 1))];
+        frac = Math.max(0, t.frac || 0);
+      }
+    }
+    if (topNum == null) return null;
+    return {
+      kind: 'boardList',
+      variant: this._variant,
+      topNum: topNum,
+      scrollFrac: frac,
+      cursorNum: this._selectedNum
+    };
+  },
+
+  // 閱讀紀錄要求還原：等下一次 seed（靜置探針自動回平滑捲動）驗證後套用。
+  requestViewportRestore: function(record) {
+    if (!record || record.topNum == null) return;
+    this._pendingViewport = {
+      topNum: record.topNum,
+      scrollFrac: record.scrollFrac || 0,
+      variant: record.variant,
+      cursorNum: record.cursorNum,
+      at: Date.now(),
+      adopted: false,
+      fills: 0
+    };
+    this._core.debugRecorder?.log('boardList.viewportRestore', {
+      action: 'saved',
+      topNum: record.topNum,
+      cursorNum: record.cursorNum
+    });
+  },
+
+  _dropPendingViewport: function(reason) {
+    if (!this._pendingViewport) return;
+    this._core.debugRecorder?.log('boardList.viewportRestore', {
+      action: 'dropped',
+      reason: reason,
+      topNum: this._pendingViewport.topNum
+    });
+    this._pendingViewport = null;
+  },
+
+  // seed 的落點：同變體＋游標仍停在發起的那一列 ⇒ 錨有效，等它進緩衝。
+  _adoptPendingViewport: function(facts) {
+    const p = this._pendingViewport;
+    if (!p) return;
+    const brd = facts && facts.brd;
+    const landing = brd ? { variant: brd.variant, cursorNum: brd.cursorNum } : null;
+    if (!boardListRecordMatches(p, landing)) return this._dropPendingViewport('mismatch');
+    p.adopted = true;
+    this._core.debugRecorder?.log('boardList.viewportRestore', { action: 'adopted', topNum: p.topNum });
+  },
+
+  // 每次重繪：錨進緩衝且捲得到（或已到底）⇒ 套用；逾時／到頂到底都找不到 ⇒ 丟棄。
+  _tryApplyPendingViewport: function(rowH, maxScrollTop) {
+    const p = this._pendingViewport;
+    if (!p || !p.adopted) return;
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return;
+    const pos = this._posOfNum(p.topNum);
+    if (pos !== -1 && (this._edgeDown || pos * rowH + p.scrollFrac <= maxScrollTop)) {
+      this._topNum = p.topNum;
+      this._scrollFrac = p.scrollFrac;
+      this._landingLastNum = null;
+      this._pendingViewport = null;
+      this._core.debugRecorder?.log('boardList.viewportRestore', { action: 'applied', topNum: p.topNum });
+      return;
+    }
+    if (Date.now() - p.at > PENDING_VIEWPORT_MAX_MS || p.fills >= PENDING_VIEWPORT_MAX_FILLS)
+      this._dropPendingViewport('lost');
+  },
+
+  // 待還原錨還沒進緩衝（或捲不到）時要往哪邊補：-1 上、1 下、0 不用／補不了。
+  _pendingFillDir: function() {
+    const p = this._pendingViewport;
+    if (!p || !p.adopted || p.fills >= PENDING_VIEWPORT_MAX_FILLS) return 0;
+    const nums = this._termBuf.brdListLineNums || [];
+    if (!nums.length) return 0;
+    const pos = this._posOfNum(p.topNum);
+    if (pos === -1) {
+      if (p.topNum < nums[0]) return this._edgeUp ? 0 : -1;
+      return this._edgeDown ? 0 : 1;
+    }
+    // 在緩衝裡但下方不足一個視口：往下補到捲得到為止。
+    if (!this._edgeDown && nums.length - pos < this._bodyRows()) return 1;
+    return 0;
+  },
+
   // ---- 鍵盤 -----------------------------------------------------------------
 
   onKeyDown: function(e) {
@@ -556,6 +680,8 @@ BoardListSession.prototype = {
       return;
     }
     if (this.state !== 'active') return;
+    // 使用者自己動了 ⇒ 待還原的視野作廢（不可以在他動過之後把畫面拉回去）。
+    this._dropPendingViewport('user-key');
 
     if (altRemap !== null) {
       // _classifyKey 走不到：keyEventToBytes 對 altKey 一律回 null ⇒ 判成 'ignore'。
@@ -956,6 +1082,7 @@ BoardListSession.prototype = {
     }
     const idx = renderRow - this.headerRows();
     if (idx < 0) return; // header
+    this._dropPendingViewport('user-click');
     const rangeOn = !!(this._termBuf && this._termBuf.useMouseBrowsing);
     const start = this._view && this._view.mouseListClickStart;
     // 可點起始欄的規則沿用列表那一套（`buf.pageState` 在看板列表仍是 2，
@@ -1007,6 +1134,7 @@ BoardListSession.prototype = {
 
   onWheel: function(op) {
     if (this.state !== 'active' || this._renderMode !== 'buffer') return;
+    this._dropPendingViewport('user-wheel');
     this._moveSelection(op, { repeat: true });
   },
 
@@ -1063,6 +1191,7 @@ BoardListSession.prototype = {
     this._variant = facts.brd.variant;
     this._renderMode = 'buffer';
     this._view.hideCursor();
+    this._adoptPendingViewport(facts);
     this._adoptLanding(facts);
     this._forceRedraw(); // 同步：這一趟 redraw 會把當前這頁累積進緩衝
     // 背景填充由 reducer 緊接著的 'start-fill' 動作啟動（_startFill → _maybeFill）。
@@ -1125,6 +1254,13 @@ BoardListSession.prototype = {
   _maybeFill: function() {
     if (this.state !== 'active') return;
     if (!this._queue.idle) return;
+    // 待還原的閱讀視野優先（自己的上限，不吃 _fillPages）。
+    const pendingDir = this._pendingFillDir();
+    if (pendingDir) {
+      this._pendingViewport.fills++;
+      this._enqueueFetch(pendingDir, 'fill');
+      return;
+    }
     if (this._fillPages >= FILL_MAX_PAGES) return;
     const len = this._sequenceLength();
     if (!len) return;
@@ -1410,6 +1546,9 @@ BoardListSession.prototype = {
   // 或整個編號空間（handoff I5）。回來時一律重建才安全。
   // opts.hold: 'passthrough'（預設，靜置後自動回平滑捲動）| 'external'（永不解除）。
   _enterNative: function(facts, opts) {
+    // 閱讀紀錄凍結：下面整份緩衝都會丟掉 ⇒ 先把使用者的視野交出去。
+    const pos = this.readingPosition();
+    if (pos) recordFor(this._core).freeze('boardList', pos);
     this._breakScroll();
     this._holdReason = (opts && opts.hold) || 'passthrough';
     this._setLoading(false);
@@ -1442,6 +1581,7 @@ BoardListSession.prototype = {
   // 命令」——這時 in-flight 已經是我們自己剛完成的那一條。
   _reset: function() {
     this._breakScroll();
+    this._dropPendingViewport('reset');
     this._holdReason = null;
     this._cancelResumeProbe();
     if (this._frozenWatchdog) {
@@ -1468,6 +1608,7 @@ BoardListSession.prototype = {
   // 交易 onDone 那條路**不可以** flush（in-flight 就是我們自己剛完成的那一條）。
   _suspend: function(opts) {
     this._breakScroll();
+    this._dropPendingViewport('suspend');
     this._holdReason = null;
     this._cancelResumeProbe();
     if (this._frozenWatchdog) {
@@ -1827,6 +1968,7 @@ BoardListSession.prototype = {
       rowH: rowH,
       viewportPx: viewportPx
     });
+    this._tryApplyPendingViewport(rowH, maxScrollTop);
     this._applyLandingFit();
     let pos = this._anchorPos();
     if (pos === -1) {
