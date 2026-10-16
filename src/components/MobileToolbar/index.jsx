@@ -41,7 +41,8 @@ import "./MobileToolbar.css";
 //   搜尋  直接開搜尋彈窗（不開子選單；種類在彈窗上方切，article_search.js）
 //   按鍵  展開方向鍵面板（貼在工具列上方；含軟鍵盤開關與黏滯 Ctrl／Esc／Tab／Del）
 //   更多  跳到第一篇未讀／設為全部已讀／分享／文章導覽／選取模式／全選／圖片上傳／設定／登出
-//         （全選與圖片上傳在桌機是右鍵選單項；手機長按選單不放，集中在這裡）
+//         （全選與圖片上傳在桌機是右鍵選單項；手機長按選單不放，集中在這裡；主功能表不給，
+//         見 mobile_toolbar.js 的 contentTools）
 // 沒有返回：交給系統邊緣滑動／返回鍵（history_back_guard.js）。
 //
 // 三條不可以踩的線（同舊按鍵列，守護 tests/unit/mobile_toolbar.test.jsx）：
@@ -551,15 +552,17 @@ export const MobileToolbar = ({
         >
           {i18n("mobileKeypad_select")}
         </button>
-        <button
-          type="button"
-          className="nomouse_command mobileSheetItem pttRipple"
-          data-key="__selectAll"
-          onClick={onSelectAll}
-        >
-          {i18n("cmenu_selectAll")}
-        </button>
-        {imageUploadEnabled ? (
+        {context.contentTools ? (
+          <button
+            type="button"
+            className="nomouse_command mobileSheetItem pttRipple"
+            data-key="__selectAll"
+            onClick={onSelectAll}
+          >
+            {i18n("cmenu_selectAll")}
+          </button>
+        ) : null}
+        {context.contentTools && imageUploadEnabled ? (
           <button
             type="button"
             className="nomouse_command mobileSheetItem pttRipple"
@@ -569,7 +572,7 @@ export const MobileToolbar = ({
             {i18n("cmenu_uploadImage")}
           </button>
         ) : null}
-        {imageUploadEnabled ? (
+        {context.contentTools && imageUploadEnabled ? (
           <button
             type="button"
             className="nomouse_command mobileSheetItem pttRipple"

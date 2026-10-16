@@ -83,6 +83,12 @@ describe("toolbarContextFromFacts", () => {
     expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1).markAllRead).toBe(false);
     expect(EMPTY_TOOLBAR_CONTEXT.markAllRead).toBe(false);
   });
+  test("全選／圖片上傳（更多）：主功能表不給，列表與文章給", () => {
+    expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1).contentTools).toBe(false);
+    expect(toolbarContextFromFacts(frame(LIST), 2).contentTools).toBe(true);
+    expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3).contentTools).toBe(true);
+    expect(EMPTY_TOOLBAR_CONTEXT.contentTools).toBe(false);
+  });
   test("送鍵表：具名鍵都在 term_keyboard.KeyMap；其餘是單字元", () => {
     const all = [...Object.values(TOOLBAR_KEYS).map((k) => k.key), ...THREAD_NAV_KEYS.map((k) => k.key)];
     for (const k of all) expect(k.length === 1 || k in KeyMap).toBe(true);

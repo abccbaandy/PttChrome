@@ -389,8 +389,8 @@ describe("更多（bottom sheet）", () => {
     expect(byKey("__markAllRead")).toBeNull();
   });
 
-  test("全選：常駐，按下呼叫 doSelectAll（桌機右鍵同一個入口）", async () => {
-    const core = makeCore();
+  test("全選：有內容的畫面才有（context.contentTools），按下呼叫 doSelectAll（桌機右鍵同一個入口）", async () => {
+    const core = makeCore({ context: { push: false, search: [], contentTools: true } });
     core.doSelectAll = vi.fn();
     renderBar(core);
     await openMore();
@@ -398,8 +398,18 @@ describe("更多（bottom sheet）", () => {
     expect(core.doSelectAll).toHaveBeenCalledTimes(1);
   });
 
-  test("圖片上傳兩項：跟著 enableImageUpload；按下開檔案選擇器／上傳紀錄", async () => {
+  test("主功能表（contentTools 假）：沒有全選、也沒有圖片上傳兩項", async () => {
     const core = makeCore();
+    core.imageUpload = { openFilePicker: vi.fn(), openPanel: vi.fn() };
+    renderBar(core);
+    await openMore();
+    expect(byKey("__selectAll")).toBeNull();
+    expect(byKey("__uploadImage")).toBeNull();
+    expect(byKey("__uploadHistory")).toBeNull();
+  });
+
+  test("圖片上傳兩項：跟著 enableImageUpload；按下開檔案選擇器／上傳紀錄", async () => {
+    const core = makeCore({ context: { push: false, search: [], contentTools: true } });
     core.imageUpload = { openFilePicker: vi.fn(), openPanel: vi.fn() };
     writeValues({ ...readValuesWithDefault(), enableImageUpload: false });
     try {

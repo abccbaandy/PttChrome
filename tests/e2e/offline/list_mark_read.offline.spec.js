@@ -197,6 +197,17 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
         await expect.poll(cur).not.toBe(before);
       }
       expect(await cur()).toBe(num);
+      // 選取移動後列表會重畫（列節點整批換掉）：等游標列真的畫在目標那一列，再去標記／量鄰列，
+      // 否則標記打在即將被換掉的舊節點上（CI 較慢時 waitRectStable 找不到元素）。
+      await page.waitForFunction(
+        (n) =>
+          Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"]')).some((r) => {
+            const t = (r.textContent || '').replace(/^\s+/, '');
+            return /^\D/.test(t) && new RegExp('^\\D\\s*' + n + '\\b').test(t);
+          }),
+        num,
+        { timeout: 10000 }
+      );
 
       // 游標列開頭是游標符號（targetRow 依序號開頭找不到）⇒ 右鍵鄰列：「全部」不看是哪一列。
       const t = (await targetRow(page, num - 1)) || (await targetRow(page, num + 1));
