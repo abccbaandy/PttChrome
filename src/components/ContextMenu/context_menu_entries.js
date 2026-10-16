@@ -47,6 +47,14 @@ export function buildContextMenuEntries(p) {
     item("markReadUnread", i18n("cmenu_markReadUnread"), (e) =>
       p.onMenuSelect("markReadUnread", e),
     );
+  // 看板列表「<板名> 設為已讀」：作用在右鍵／長按的那一列（board.c 的 `v` 只認游標所在
+  // 那個看板），所以桌機手機都放這裡，不放手機「更多」。判定在 board_mark_read.targetAtRow。
+  if (p.normalEnabled && p.boardMarkReadTarget)
+    item(
+      "boardMarkRead",
+      `'${p.boardMarkReadTarget.name}' ${i18n("cmenu_boardMarkRead")}`,
+      (e) => p.onMenuSelect("boardMarkRead", e),
+    );
   // 「設為全部已讀」：文章列表（列表好讀與原生都可，判定在 mark_all_read.available）。
   // 手機不放這裡：在工具列「更多」（MobileToolbar）。
   const markAllRead = p.normalEnabled && p.markAllReadEnabled && !p.mobile;
@@ -59,6 +67,7 @@ export function buildContextMenuEntries(p) {
     (p.authorBlacklistId ||
       p.titleBlacklistText ||
       p.markReadTarget ||
+      p.boardMarkReadTarget ||
       markAllRead)
   )
     divider("d-blacklist");

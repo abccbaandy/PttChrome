@@ -32,6 +32,11 @@ import {
   classifyBoardListScreen,
 } from "../../src/js/board_list_parse";
 import { boardNoteDecision } from "../../src/js/board_note_skip";
+import {
+  boardMarkReadTargetFromFacts,
+  boardJumpLanded,
+} from "../../src/js/board_mark_read";
+import { markReadPromptShown } from "../../src/js/mark_all_read";
 import { landedOnBoard } from "../../src/js/aid_navigation";
 import { functionModeExitDecision } from "../../src/js/easy_reading";
 import { parseStatusRow } from "../../src/js/string_util";
@@ -227,6 +232,54 @@ describe("看板列表指紋：認不出就不 engage", () => {
     mutate(f);
     const brd = classifyBoardListScreen(f);
     expect(!!(brd && brd.engageable)).toBe(false);
+  });
+
+  // 右鍵／長按「<板名> 設為已讀」（board_mark_read.js）：`v` 只作用在真游標那一列、沒有
+  // 確認 ⇒ 目標認不出就不給選單項；跳號落地認不出就不送 `v`。
+  test("對照組：設為已讀的目標與跳號落地都認得出", () => {
+    expect(boardMarkReadTargetFromFacts(base(), 7)).toEqual({ num: 5, name: "B5" });
+    expect(boardJumpLanded({ ...base(), curY: 7 }, { num: 5, name: "B5" })).toBe(true);
+  });
+
+  test.each([
+    ["標題改版", (f) => (f.rowTexts[0] = " 看板總覽 ")],
+    ["底列 caption 改版", (f) => (f.rowTexts[23] = " 新版選單 (a)加入 ")],
+    ["表頭改名", (f) => (f.rowTexts[2] = f.rowTexts[2].replace("編號", "序號"))],
+    ["條目格式改版", (f) => (f.rowTexts[7] = "  ＃5 某看板")],
+  ])("設為已讀目標：%s → 不給", (_n, mutate) => {
+    const f = base();
+    mutate(f);
+    expect(boardMarkReadTargetFromFacts(f, 7)).toBe(null);
+  });
+
+  test.each([
+    ["游標停在列中（prompt 疊在列表上）", (f) => (f.curX = 30)],
+    ["游標停在表頭", (f) => (f.curY = 1)],
+    ["同編號換了看板（清單變動）", (f) => (f.rowTexts[7] = brdRow(5).replace("B5 ", "XX "))],
+    ["底列還沒畫", (f) => (f.rowTexts[23] = "")],
+  ])("設為已讀跳號落地：%s → 不送 v", (_n, mutate) => {
+    const f = { ...base(), curY: 7 };
+    mutate(f);
+    expect(boardJumpLanded(f, { num: 5, name: "B5" })).toBe(false);
+  });
+});
+
+describe("文章列表「設為全部已讀」：prompt 認不出就不送第二步", () => {
+  const PROMPT = "設定所有文章 (U)未讀 (V)已讀 (W)前已讀後未讀 (Q)取消？[Q] ";
+  const rows = (prompt) => {
+    const r = new Array(24).fill("");
+    r[22] = prompt;
+    return r;
+  };
+  test("對照組：真 prompt 認得出", () => {
+    expect(markReadPromptShown(rows(PROMPT))).toBe(true);
+  });
+  test.each([
+    ["prompt 改字（沒有「設定所有文章」）", PROMPT.replace("設定所有文章", "設定文章")],
+    ["選項改版（沒有 (V)已讀）", PROMPT.replace("(V)已讀", "(R)已讀")],
+    ["prompt 還沒畫", ""],
+  ])("%s → 判否", (_n, prompt) => {
+    expect(markReadPromptShown(rows(prompt))).toBe(false);
   });
 });
 

@@ -196,3 +196,56 @@ test('搜尋看板 prompt：不破字、整個畫面不上底色、殘留列表�
     })
     .toBeGreaterThan(0);
 });
+
+// 右鍵「<板名> 設為已讀」（js/board_mark_read.js）。看板列表的 `v` 只作用在**真游標**那一列、
+// 沒有確認 ⇒ 原生路徑是「跳號 → 確認游標停在同板名 → 才送 v」。這卷的起始畫面是只有
+// 第 21 列的那一頁，錄的第一個跳號是 22 ⇒ 右鍵那一列送出的 `21⏎` 不會被餵回應，正好驗
+// 「跳號沒落地就絕不送 v」（正向序列由 unit board_mark_read.test.js 守）。
+test('右鍵看板列：選單有「<板名> 設為已讀」；跳號沒落地絕不送 v', async ({ page }) => {
+  test.skip(!smooth, '缺 scn-boardlist-class（yarn record:scenarios）');
+  await bootScenario(page, ptt, smooth);
+  const target = await page.evaluate(() => {
+    const b = window.__app.buf;
+    for (let r = 3; r < b.rows - 1; ++r) {
+      const t = b.getRowText(r, 0, b.cols);
+      // 編號在 `%7d` 欄內（board_list_parse.parseBoardListNum 的守門），之後第一個識別字是板名。
+      const m = /^([\s>]*)(\d+)[^A-Za-z0-9_]*([A-Za-z0-9_][A-Za-z0-9_-]*)/.exec(t);
+      if (m && m[1].length + m[2].length <= 7) {
+        const el = document.querySelector('#mainContainer [data-type="bbsline"][data-row="' + r + '"]');
+        if (!el) return null;
+        el.setAttribute('data-e2e-target', '1');
+        return { row: r, num: Number(m[2]), name: m[3] };
+      }
+    }
+    return null;
+  });
+  expect(target, '起始畫面找不到看板列').not.toBeNull();
+  // 前提：這一號不是卷裡錄的下一個跳號（否則會被餵回應，驗不到「沒落地」）。
+  expect(target.num).not.toBe(smooth.steps.find((s) => s.on === 'jump').num);
+  const box = await waitRectStable(page, '[data-e2e-target]');
+  const chw = await page.evaluate(() => window.__app.view.chw);
+  await page.mouse.click(box.left + 25.5 * chw, box.top + box.height / 2, { button: 'right' });
+
+  const suffix = await page.evaluate(() => window.__i18n('cmenu_boardMarkRead'));
+  const item = page
+    .locator('.DropdownMenu')
+    .first()
+    .getByRole('menuitem')
+    .filter({ hasText: suffix });
+  await expect(item).toBeVisible();
+  await expect(item).toContainText(target.name);
+
+  const before = await page.evaluate(() => window.__replay.sent.length);
+  await item.click();
+  await page.waitForFunction(
+    ({ from, num }) => window.__replay.sent.slice(from).includes(num + '\r\f'),
+    { from: before, num: target.num },
+    { timeout: 10000 }
+  );
+  // 跳號等不到落地 ⇒ 序列收手（在途旗標解除）；期間與之後都不得出現 v。
+  await page.waitForFunction(() => !window.__app.markAllReadInFlight, undefined, {
+    timeout: 20000
+  });
+  const sent = await page.evaluate((from) => window.__replay.sent.slice(from), before);
+  expect(sent.filter((d) => d.charAt(0) === 'v')).toEqual([]);
+});

@@ -900,6 +900,15 @@ server 送的是編碼後的 ANSI，client 看不到 flag，只看得到結果�
 （仍需有一篇可當 needitem），所以不送游標同步以外的跳號；沒有拒絕路徑（不像 `w` 的 `vmsg`）。
 守護 `tests/unit/mark_all_read.test.js`。
 
+**看板列表的 `v` 是另一個指令**（`board.c#board_cmd_mark_read`，`boardlist_cmds` 的 `'v'`／`'V'`）：
+沒有 prompt，直接對**游標所在那一個看板** `brc_toggle_all_read(bid, 1)`（`V`＝設為未讀），回來整頁重畫；
+`bid < 0`（最愛的目錄／分隔線）或沒權限時什麼都不做。⇒ 右鍵／長按「<板名> 設為已讀」
+（`src/js/board_mark_read.js`）必須先把真游標搬到那一列：平滑捲動接管中走 session 的凍結交易
+（與鍵盤按 `v` 同一條，`board_list_session.markBoardRead`）；原生走「`<編號>⏎` → 落地確認游標停在
+**同一個板名** → 才送 `v`」，認不出就停手。所以它放在那一列的選單，不放手機「更多」。
+守護 `tests/unit/board_mark_read.test.js`、`board_list_session.test.js`、`parse_failure_degrade.test.js`、
+`tests/e2e/offline/board_list.offline.spec.js`。
+
 進入點 `read_comms[]`：`{1, b_mark_read_unread} // 'v'`（`bbs.c:4621`）。`onekey` flag **1**
 ＝ needitem ⇒ 需要有效 `fhdr`，也就是**游標所在那一篇**；函式本身不移動游標。
 

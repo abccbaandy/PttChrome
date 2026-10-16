@@ -43,6 +43,28 @@ test("手機：全選／圖片上傳／設為全部已讀都不在長按選單",
   expect(k).toContain("settings");
 });
 
+test("看板列表「<板名> 設為已讀」：桌機與手機長按都在（要指定是哪一列）", () => {
+  const calls = [];
+  const p = {
+    ...BASE,
+    markAllReadEnabled: false,
+    boardMarkReadTarget: { num: 5, name: "C_Chat" },
+    onMenuSelect: (k) => calls.push(k),
+  };
+  for (const mobile of [false, true]) {
+    const item = buildContextMenuEntries({ ...p, mobile }).find(
+      (e) => e.key === "boardMarkRead",
+    );
+    expect(item).toBeDefined();
+    expect(item.label).toContain("C_Chat");
+    item.onClick({});
+  }
+  expect(calls).toEqual(["boardMarkRead", "boardMarkRead"]);
+  expect(keys({ ...p, boardMarkReadTarget: null })).not.toContain(
+    "boardMarkRead",
+  );
+});
+
 test("沒有連續的分隔線（手機工具段搬空時）", () => {
   for (const p of [BASE, { ...BASE, mobile: true }]) {
     const types = buildContextMenuEntries(p).map((e) => e.type);

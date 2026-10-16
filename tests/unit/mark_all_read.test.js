@@ -70,7 +70,7 @@ describe("MarkAllRead.start：v → 等 prompt → v⏎", () => {
     expect(enqueued.map((c) => c.keys)).toEqual(["v"]);
     expect(enqueued[0].fullRepaint).toBe(true);
     expect(core.markAllReadInFlight).toBe(true);
-    expect(serializedOpHint(core)).toBe("設為全部已讀中，請稍候…");
+    expect(serializedOpHint(core)).toBe("設定已讀中，請稍候…");
   });
 
   test("v 的 expect 只認 prompt；列表畫面判否", () => {

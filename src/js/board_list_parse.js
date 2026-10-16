@@ -97,6 +97,19 @@ export function parseBoardListName(text) {
   return m ? m[1] : '';
 }
 
+// 一列能不能「設為已讀」（看板列表的 `v`，board.c#board_cmd_mark_read，見 board_mark_read.js）：
+// 要有編號、有板名，而且不是分隔線／禁入／目錄（`bid < 0` 或沒權限時 server 什麼都不做，
+// 目錄設成已讀也沒有意義）。回 { num, name } 或 null。
+export function boardMarkReadTargetOfText(text) {
+  const num = parseBoardListNum(text);
+  if (num == null) return null;
+  if (isBoardListSeparatorRow(text) || isBoardListBlockedRow(text) || isBoardListFolderRow(text))
+    return null;
+  const name = parseBoardListName(text);
+  if (!name) return null;
+  return { num: num, name: name };
+}
+
 // 整頁逐列編號。與 comment_parse.pageArticleNums **刻意不共用**：那支為文章列表
 // 寫了「游標蓋住高位數字→從鄰居回推」與「單調修復」兩段補救，而看板列表的
 // `%7d` 是右對齊、`>` 只蓋前置空白 ⇒ 那些補救在這裡只會是憑空修改的風險。

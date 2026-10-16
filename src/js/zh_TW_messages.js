@@ -86,6 +86,9 @@
   "cmenu_markReadUnread": {
     "message": "此篇（含）以前設為已讀、以後設為未讀"
   },
+  "cmenu_boardMarkRead": {
+    "message": "設為已讀"
+  },
   "cmenu_markAllRead": {
     "message": "設為全部已讀"
   },

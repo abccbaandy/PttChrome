@@ -65,7 +65,8 @@
     上傳圖片＋圖片上傳紀錄（跟 `enableImageUpload`，開 sheet 時現讀）／設定／登出（inline 二段確認，`LOGOUT_CONFIRM_MS` 無動作自動收回）。
     全選、圖片上傳、設為全部已讀在桌機是右鍵選單項；手機長按選單**不放**（`ContextSheet` 傳 `mobile: true` 給
     `context_menu_entries`），集中在「更多」。設為全部已讀放這裡不必指定哪一列：`v` 的 `(V)已讀` 分支
-    （`brc_toggle_all_read`）不看游標所在那篇；要指定某一列的「前已讀後未讀」才留在長按選單。
+    （`brc_toggle_all_read`）不看游標所在那篇；要指定某一列的「前已讀後未讀」與看板列表的「<板名> 設為已讀」
+    （看板列表的 `v` 只作用在游標那個看板）留在長按選單。
     觸覺回饋 `navigator.vibrate(HAPTIC_MS)`（APK 無 VIBRATE 權限＝no-op）。
   - 送鍵只走 `view.sendKeyAsUser(keyName, mods?)`，並先 `App.noteUserAction()`（等待進度條）。不可 `view._send`（列表好讀＝在序列化交易
     中途插隊）、不可 `App.onFunctionKey`（文章好讀會先進 functionMode ⇒ PgDn 不捲動）。
