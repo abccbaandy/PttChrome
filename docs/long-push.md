@@ -3,7 +3,7 @@
 輸入一大段話 → 依 PTT 單則推文的 Big5 byte 上限自動分段 → 逐則跑完完整的推文互動
 送出。撞到冷卻自動等待，全程有進度遮罩與取消。
 
-**開輸入框之前會先探路**（2026-09）：送一個 X 問 PTT「這篇推得了嗎」，推不了就直接
+**開輸入框之前會先探路**：送一個 X 問 PTT「這篇推得了嗎」，推不了就直接
 把 PTT 的原話顯示出來，一個字都不必打。見下面「探路（preflight）」。
 
 **入口有兩個**：右鍵選單的「長推文一鍵發送」，以及**在文章裡按推文鍵（`X`／`%`）**
@@ -100,8 +100,8 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 ## 游標錨定（為什麼每次按 X 之前都要先驗）
 
 **CONFIRMED（pttbbs source）**：`read_post` 在文章內按 `X` → pmore 回
-`RET_DORECOMMEND` → `recommend(ent, fhdr, direct); return FULLUPDATE;`
-（`mbbsd/bbs.c:2471-2473`）⇒ **推完必定離開 pager 回到文章列表**。所以：
+`RET_DOCOMMENT` → `comment(ent, fhdr, direct); return FULLUPDATE;`
+（`mbbsd/bbs.c#read_post`；2026-10 前叫 `RET_DORECOMMEND`／`recommend()`，行為相同）⇒ **推完必定離開 pager 回到文章列表**。所以：
 
 - **第 1 則**的 `fhdr` 是進文章那一刻 `i_read_key` 傳給 `read_post` 的快取 ⇒ 必定推對。
 - **第 2 則起**的 `X` 是**在列表**按的，`i_read_key` 現場取 `&headers[crs_ln - top_ln]`
@@ -195,7 +195,7 @@ IME 那條非補不可：IME 開著時 keydown 的 `keyCode` 是 229，被 `keyE
 mount、已 unmount、以及 `startPreflight` 接不下來（線路上已經有別的序列化操作）都回
 falsy ⇒ 三條入口自動退回原生推文。
 
-**`true` 不等於「輸入框已經開了」**（2026-09 起）：接手之後先跑探路，輸入框或錯誤框
+**`true` 不等於「輸入框已經開了」**：接手之後先跑探路，輸入框或錯誤框
 要等答案回來才開，中間蓋一層遮罩。線路上仍然只有那一個 X。右鍵選單那條入口拿到
 falsy 時要 `flashListHint` 說一聲——吞掉動作又沒反應是這個功能最嚴重的失敗模式。
 
@@ -204,11 +204,9 @@ falsy 時要 `flashListHint` 說一聲——吞掉動作又沒反應是這個功
 
 ### 探路（preflight）
 
-**2026-09 推翻了這一節原本的結論**（舊文寫的是「接受，不做事前偵測」）。
-
 #### 為什麼問得到
 
-`mbbsd/bbs.c#recommend()`（2812-2941）的**每一種**擋人判斷都在 `getdata` 讀內容
+`mbbsd/bbs.c#comment()`（舊名 `recommend()`）的**每一種**擋人判斷都在 `getdata` 讀內容
 **之前**做完，而且一律 `vmsg`/`vmsgf` 印 ◆ 橫幅後 `return FULLUPDATE`：
 
 | 擋人條件 | 出處 | 訊息（原文） |
@@ -221,7 +219,7 @@ falsy 時要 `flashListHint` 說一聲——吞掉動作又沒反應是這個功
 | `BRD_NOFASTRECMD` | bbs.c:2894 | `本板禁止快速連續推文，請再等 N 秒` |
 | 同一分鐘 > 60 則 | bbs.c:2913 | `系統禁止短時間內大量推文` |
 | 檔案 > 5MB ／ > 100KB 的 10 秒冷卻 | bbs.c:2924 / 2931 | `檔案太大…` ／ `本文已過長, 禁止快速連續推文…` |
-| `check_cooldown` | bbs.c:4344 | `冷靜一下吧！…` ／ `您被設退文！…` ／ `間隔太近囉！…` |
+| 舊 `check_cooldown`（上游 `92228430` 已移除，PTT 私有 commit 可能仍有 ⇒ 保留相容） | 舊 bbs.c | `冷靜一下吧！…` ／ `您被設退文！…` ／ `間隔太近囉！…` |
 
 ⇒ **送一個 X 就問得到答案**，而且答案是 PTT 自己的字。
 
@@ -229,15 +227,15 @@ falsy 時要 `flashListHint` 說一聲——吞掉動作又沒反應是這個功
 
 | 事實 | 出處 |
 |---|---|
-| `lastrecommend = now` 只在**成功寫檔之後**才更新 | bbs.c:3144 |
-| `check_cooldown()` 是唯讀的（只有 `diff<0` 時清 bit） | bbs.c:4344-4376 |
+| `lastcomment = now`（舊名 `lastrecommend`）只在**成功寫檔之後**才更新 | `bbs.c#comment` |
+| 舊 `check_cooldown()` 是唯讀的（只有 `diff<0` 時清 bit） | 舊 bbs.c |
 | 唯一的足跡：`recommend_in_minute++` 在所有檢查**之前**（上限 60/分鐘） | bbs.c:2905-2914 |
 
 所以探路的 X ＋ Ctrl-C **不會**害真正送出時被降級成 →、也不會把冷卻計時器往後推。
 
-#### 舊結論為什麼不成立
+#### 為什麼不算「在使用者決定之前就動線路」
 
-舊文說「先送一次 X 再取消等於在使用者決定之前就動線路」——**使用者已經按了 X**，
+**使用者已經按了 X**，
 那個 byte 本來就要上線；攔截只是把它從「直接轉送」換成「交給 CommandQueue 送、
 並讀回答案」。線路上仍然只有那一個 X，淨效果與原生按 X 一致（原生被擋也是看到
 ◆ 橫幅並回到文章列表，我們還多按一個 ⏎ 幫他回原文章、還原閱讀位置）。
@@ -371,8 +369,7 @@ term.ptt.cc 送來的實錄（`ptt-debug-20260917-221112` t=9736，`\e[1m` 已�
     期間 queue 空著、`onIdle` 早就發過了，`busy` 卻要等到關框才翻 false ⇒ 那一刻沒有第
     二次 idle 能叫醒好讀被延後的自動翻頁。少了它的症狀：按 X 叫出長推文再取消，文章
     永遠停在當前頁、怎麼捲都不會讀到結尾（沒送鍵就沒有新幀，不會再評估第二次 ⇒ 死結，
-    只能離開文章再進）。實錄 `ptt-debug-20260917-221112`：最後三筆 `easyReading.pageDown`
-    全是 `{action:"blocked", inFlightKind:null}`。
+    只能離開文章再進；錄製檔指紋是最後幾筆 `easyReading.pageDown` 全是 `{action:"blocked", inFlightKind:null}`）。
     通知走 `easyReading.onWireIdle({ force: true })`：`force` 是因為待補送的鍵未必還在
     （取消路徑會退出文章再 ⏎ 重開，那個文章邊界的 `_resetPagingState` 就把
     `_deferredPageDownKeys` 清成 null 了），要不要真的送鍵仍由 `nextPageDownDecision` 決定。
@@ -419,7 +416,7 @@ modal 用來判斷的 `maxBytes` 是探路量到的欄寬（量不到時才是�
 `cancel()` → `queue.flush()` → 依當下底列送收尾鍵，最多 `MAX_ABORT_STEPS(4)` 次：
 
 - 輸入列／確認列 → `\x03`（Ctrl-C：`vgetstring` 清空 + abort ⇒ `getdata` 回 0 ⇒
-  `recommend()` 什麼都不寫就 return）
+  `comment()` 什麼都不寫就 return）
 - ◆ 橫幅 → `' '`
 - 已回到文章／列表 → 不送任何鍵
 
@@ -430,7 +427,7 @@ modal 用來判斷的 `maxBytes` 是探路量到的欄寬（量不到時才是�
 狀態未知，**不可以**再往下送 ⏎）。
 
 已經送出的推文收不回來——PTT 沒有這種 API，遮罩上寫明了。剩餘內容**不再自動寫進
-剪貼簿**（2026-09 使用者定案：那會無聲蓋掉他手上的東西），改由 `LongPushErrorModal`
+剪貼簿**（使用者定案：那會無聲蓋掉他手上的東西），改由 `LongPushErrorModal`
 顯示在唯讀 Textarea，要不要複製由他按。
 
 收工的每一條路（關框 `disarm`、送出失敗 `_finish`、送出取消、斷線）都會把 `busy`
@@ -438,25 +435,17 @@ modal 用來判斷的 `maxBytes` 是探路量到的欄寬（量不到時才是�
 
 ### 關框那一下的 Esc（已擋住）與多按的那一下（靠化解）
 
-**關框那一下已擋住（2026-09-24，`modal_key_gate.js`）**：Mantine Modal 的 Escape handler 掛在
+**關框那一下已擋住（`modal_key_gate.js`）**：Mantine Modal 的 Escape handler 掛在
 window capture、比 `term_view` 先跑，等 term_view 看到時 `modalShown` 已翻成 false ⇒ 讀狀態擋不住。
 改比**事件時間**：`App.setModalOpen` 在最後一個來源關閉時記 `modalClosedAt = performance.now()`，
 `term_view` 的 keydown／keypress 丟掉 `e.timeStamp <= modalClosedAt` 的事件（按給 modal 的）。
-在那之前它還有第三種症狀：**Esc 取消回不到閱讀進度、點「取消」可以**——漏網的 keydown 進
-`easyReading._onKeyDown`，把 reopen 排好的 `_pendingScrollRestore` 當成「使用者接手」清掉
-（`ptt-debug-20260919-010054.json#t=14814/14817`）。**Esc／點擊兩條取消路徑必須等價**，守護
-`tests/e2e/offline/long_push.offline.spec.js`「Esc 關長推文輸入框：那一下按鍵不落到終端機」。
+**Esc／點擊兩條取消路徑必須等價**（漏網的 keydown 會把 reopen 排好的 `_pendingScrollRestore` 當成「使用者接手」清掉，
+Esc 取消就回不到閱讀進度），守護 `tests/e2e/offline/long_push.offline.spec.js`「Esc 關長推文輸入框：那一下按鍵不落到終端機」。
 
 框關掉之後**順手多按的那一下**仍是合法終端機輸入、照送 ⇒ server 的 vtkbd 停在
-`VKSTATE_ESC` 仍會發生，下面的化解照樣必要。擋住之前的兩種症狀：
-
-1. **下一個方向鍵跳到同主題的上一篇**（2026-09-16）：方向鍵開頭的 ESC 被吃成 esc_arg，
-   `[` 與 `D` 變成字面鍵，而 `[` ＝ `RELATE_PREV`。
-2. **下一次按 X 出現「讀不到文章代碼（miss）」**（2026-09-17，本節的主角）：探路送出的
-   第一個機器 byte（`Q` 或 `X`）被吃成 esc_arg、回一個在 pager 沒有消費者的 `KEY_ESC`
-   ⇒ **畫面不動、零輸出** ⇒ CommandQueue 700ms soft timeout 送 `` 探針 ⇒ 探針幀是完整
-   文章畫面、`expect` 仍找不到 AID ⇒ 判成 `miss`。這也是「取消長推文之後立刻再按 X
-   特別容易觸發」的原因。證據樣本 `ptt-debug-20260917-012944.json#t=529/1229/1241/1326`。
+`VKSTATE_ESC` 仍會發生，下面的化解照樣必要。不化解的兩種症狀：下一個方向鍵跳到同主題的上一篇
+（`[` ＝ `RELATE_PREV`），或探路送出的第一個機器 byte 被吃成 esc_arg ⇒ 畫面零輸出 ⇒ CommandQueue
+判 `miss`（「讀不到文章代碼」，取消長推文之後立刻再按 X 特別容易觸發）。
 
 修法是把送出端守門的**預設反轉**（`vtkbd_send_state.js`）：`conn.send`／`convSend`
 （機器路徑）停在 `ESC` 態就一律補一個 ESC 化解；ESC 組合鍵的保護縮到
@@ -487,12 +476,7 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 
 ## 尚待 live 驗證
 
-1. ~~推完落在文章列表還是文章~~ → **CONFIRMED 落在文章列表**（`bbs.c:2471-2473`
-   對 `RET_DORECOMMEND` 一律 `recommend(...); return FULLUPDATE;`，2026-09 使用者
-   實測的推錯文災情也印證）。設計仍對兩者免疫；落在 clean-list 且起點是文章時，
-   **先過守門**再補 `\r` 回去。
-2. ~~反白欄顏色~~ → **CONFIRMED 推文輸入欄反白、欄寬＝`maxlength`**（2026-09-24 錄製），已改成以欄寬為準。
-3. **探路**：禁推板／未達發文限制的實際橫幅字串是否與開源碼一致（term.ptt.cc 有私有
+1. **探路**：禁推板／未達發文限制的實際橫幅字串是否與開源碼一致（term.ptt.cc 有私有
    commit，見 §12）；以及 `BRD_ANGELANONYMOUS` 板上退出推文流程實際要幾步。
 
 ## 測試

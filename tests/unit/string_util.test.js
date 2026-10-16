@@ -388,6 +388,24 @@ describe("parsePagerFooterContext（more.c#common_pmore_footer_handler）", () =
   const withStatus = part3 =>
     "  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~22 行  " + part3;
 
+  // 新版（psb.c#vs_cmd_bar inline，CONFIRMED @ pttbbs 908bb063）：項目之間沒有空白，
+  // pager_common_cmds 的 `(r)回信回文` 在三種 currstat 都可能出現。
+  test("新版 inline 指令列：READING → reading（即使後面也有「回信回文」）", () => {
+    expect(
+      parsePagerFooterContext(withStatus(" (y)回應(X)推文(r)回信回文     (←)離開(h)說明 "))
+    ).toBe("reading");
+  });
+  test("新版 inline 指令列：RMAIL → mail", () => {
+    expect(
+      parsePagerFooterContext(withStatus(" (y)回信(r)回信回文      (←)離開(h)說明 "))
+    ).toBe("mail");
+  });
+  test("新版指令列下狀態列本身照認（part3 不比對）", () => {
+    expect(
+      parseStatusRow(withStatus(" (y)回應(X)推文(s)切換看板 (←)離開(h)說明 "))
+    ).toMatchObject({ rowIndexStart: 1, rowIndexEnd: 22 });
+  });
+
   test("FOOTERMSG_READ_LONG → reading（實錄 stock-huang）", () => {
     expect(
       parsePagerFooterContext(withStatus("(y)回應(X%)推文(h)說明(←)離開 "))

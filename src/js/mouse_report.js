@@ -11,22 +11,25 @@
 //                           DRAG  = ESC[?1003l ESC[?1002h ESC[?1006h
 //                           TRACK = ESC[?1003h ESC[?1006h
 //                           關閉  = ESC[?1000l ESC[?1002l ESC[?1003l ESC[?1006l
-//   mbbsd/term.c:136      term_init() **無條件**呼叫 term_enable_mouse(CLICK)
+//   mbbsd/term.c#term_init **無條件**呼叫 term_enable_mouse（2026-10 起是 TRACK）
 //                         ⇒ 沒有 UF_MOUSE 的人（預設就是沒有）收到的是關閉四連
 //                         ⇒ 每個 session 都會收到這些序列。
 //   include/uflags.h:22   UF_MOUSE 預設關（mbbsd/user.c:452-455 的設定項）。
 //   common/sys/vtkbd.c:299-326
 //                         server 解析入站滑鼠**只認 SGR**（csi_prefix == '<'），
 //                         而且**不看 UF_MOUSE** ⇒ 只要我們送，它一定當按鍵收。
-//   include/vtkbd.h:130-131 / mbbsd/io.c:262
-//                         KEY_MOUSE 目前**沒有任何消費者**；只有 release 被
-//                         丟成 KEY_INCOMPLETE。
-//   mbbsd/io.c:231-240    任何非 KEY_INCOMPLETE 的鍵都會更新 currutmp->lastact
-//                         ⇒ 若實作 1003 motion 回報，使用者**永不 idle**。
+//   mbbsd/psb.c#cmd_dispatch_layers／psb_main（CONFIRMED @ 908bb063）
+//                         KEY_MOUSE 已有消費者：左鍵點指令列 hotspot／列表列、滾輪
+//                         移游標或捲頁（psb_wheel_cursor_key 以「座標有沒有動」分
+//                         觸控與滾輪），motion 驅動 locator 反白。release 仍丟成
+//                         KEY_INCOMPLETE。
+//   mbbsd/io.c#system_key_hook
+//                         lastact 在 switch **之前**更新 ⇒ motion 雖回 KEY_INCOMPLETE
+//                         仍算活動 ⇒ 若實作 1003 motion 回報，使用者**永不 idle**。
 //
 // ── 由上面推出的三條設計決定（別「優化」掉）──────────────────────────────
-//   1. pref `mouseServerReport` **預設 false**：PTT 端還沒有東西會用 KEY_MOUSE，
-//      預設開等於拿我們自己那套滑鼠瀏覽去換一個 server 還不會用的按鍵。
+//   1. pref `mouseServerReport` **預設 false**：開了之後滑鼠事件改由 PTT 端解讀
+//      （指令列 hotspot、列表游標），等於拿掉我們自己那套滑鼠瀏覽，要使用者自己選。
 //   2. **只實作 1000（click）+ 1006（SGR）**。1002/1003 記錄模式但**不送 motion**
 //      （否則上面的 lastact 副作用讓使用者永不 idle）。
 //   3. `sgr` **初值 false**：主機只開 1000 沒開 1006 時**不可以**送 SGR。

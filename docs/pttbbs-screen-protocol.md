@@ -1,14 +1,16 @@
 # pttbbs 畫面更新協定（server 端不變量）
 
-來源：`3rd_script/pttbbs`（官方 github.com/ptt/pttbbs，checkout `efc21a30` 2026-08-03；
-§1–§12 原以 `c1ff72df` 讀碼，2026-08 於 `efc21a30` 覆核 `pmore.c`/`more.c`/`pfterm.c` 差異純屬重構，結論不變）＝ term.ptt.cc 行為最佳近似。
+來源：`3rd_script/pttbbs`（官方 github.com/ptt/pttbbs，最近一次全面反查 `main@908bb063` 2026-10-16）＝ term.ptt.cc 行為最佳近似。
+上游 2026-10-16 把預設分支從 `master` 改名 `main`；舊文件提到的 `origin/piaip.newui` 分支已全部併入 `main`，下文「新版」即指它。
 用途：client 畫面偵測以**確定性規則**取代 timing heuristic。本檔全部 CONFIRMED（讀碼驗證；標 ✚ 者另經 `tests/e2e/cassettes/cchat-list.json` 實錄交叉驗證）；unknown 另標。行號隨 upstream 演進會漂，函式名為準。
 
-**研究方法規範（強制）**：PTT 行為邏輯**一律先讀 `3rd_script/pttbbs` 原始碼**找出真實實作，**禁止**自行猜測或從錄製素材/畫面觀察反推規則——素材只用來**驗證**對 code 的理解是否有誤。反例教訓：last-read 高亮曾從實錄反推成「作者亮白＋標題紅的單列游標」模型，連修三版仍殘紅；讀 `readdoent` 十分鐘即知是 title-match 多列高亮＋作者亮白其實是 isonline（見 §10）。
+**新舊並存是常態**：PTT 實跑的是私有 commit（§0），upstream 有的改動不代表已上線、已上線的也可能在 PTT1/PTT2 先後不同。
+畫面判定一律「新舊格式都吃」，upstream 刪掉的字串（例：§11.3 的舊冷卻訊息）保留做相容，不跟著刪。
 
-**⚠ 原始碼是 Big5，用 UTF-8 grep 中文會「查無」而不是報錯**（2026-08-25 踩坑）。
-`grep -rn "登入太頻繁" 3rd_script/pttbbs` 回空集合，很容易讓人下結論「這句不在開源碼裡」——
-實際上它就在 `mbbsd/talk.c`。同一輪誤判也差點讓「PTT 有沒有登入頻率限制」得到相反的答案。
+**研究方法規範（強制）**：PTT 行為邏輯**一律先讀 `3rd_script/pttbbs` 原始碼**找出真實實作，**禁止**自行猜測或從錄製素材/畫面觀察反推規則——素材只用來**驗證**對 code 的理解是否有誤（反例：last-read 高亮從實錄反推連修三版仍錯，讀 `readdoent` 即知是 title-match，見 §10）。
+**畫面指紋的 fixture 一律來自 pttbbs source 或線上實測位元組**，不可與被測程式共用同一個假設（否則「程式錯＋測試錯」互相背書）。
+
+**⚠ 原始碼是 Big5，用 UTF-8 grep 中文會「查無」而不是報錯**，很容易誤判成「這行為不在開源碼裡」。
 **中文字串一律先轉 Big5 再搜**：
 
 ```bash
@@ -27,13 +29,14 @@ grep -rlF "$(printf '登入太頻繁' | iconv -f UTF-8 -t BIG5)" --include=*.c 3
 | 顯示欄位 | 變數 | 產生方式 |
 |---|---|---|
 | `https://github.com/ptt/pttbbs.git` | `build_remote` | `git config --get remote.origin.url` |
-| 第 1 個 hash（如 `c1ff72df`） | `build_origin` | `git rev-parse --short origin/master`＝**build 機上的 upstream master** |
+| 第 1 個 hash（如 `c1ff72df`） | `build_origin` | `git rev-parse --short origin/main`（2026-10-16 前是 `origin/master`）＝**build 機上的 upstream 預設分支** |
 | 第 2 個 hash（如 `50372909`） | `build_hash` | `git rev-parse --short HEAD`＝PTT **私有** commit（不在公開 repo） |
 | 尾綴 `M` | 同上 | `git diff --quiet` 失敗＝working tree 有未提交改動 |
 | `編譯時間` | `build_time` | `date` |
 
 ⇒ **可公開對照的基準是第 1 個 hash（`build_origin`）**，不是第 2 個。比對前先
 `cd 3rd_script/pttbbs && git checkout <build_origin>`；`3rd_script/` 在 `.gitignore`、非 submodule，checkout 不影響主 repo。
+雲端 setup 是 `--depth 1` clone，要查歷史（`git log -S`）先 `git fetch --unshallow`。
 
 **wire 上的 ANSI ≠ source 的字面 escape**：PTT 編 `pfterm`（`mbbsd/Makefile` 的 `USE_PFTERM` 分支，
 非 `screen.c`）。pfterm 把畫面存成 attribute 陣列，輸出時由 `mbbsd/pfterm.c#fterm_chattr`
@@ -88,15 +91,14 @@ expect 餘掉）。本專案的實作見 `term_buf.js#beginSyncUpdate` 與 `docs
 
 | 事實 | 出處 |
 |---|---|
-| 三種模式的實際字串：CLICK=`?1003l?1000h?1006h`、DRAG=`?1003l?1002h?1006h`、TRACK=`?1003h?1006h`、關閉=`?1000l?1002l?1003l?1006l` | `mbbsd/term.c:79-118`（commit `f0e6df74`） |
-| `term_init()` **無條件**呼叫 `term_enable_mouse(MOUSE_MODE_CLICK)` ⇒ 沒有 `UF_MOUSE` 的人收到**關閉四連** ⇒ **每個 session 都會收到 DEC 序列** | `term.c:136` |
-| `UF_MOUSE`（`0x00004000`）**預設關**，設定項「MOUSE 啟用滑鼠支援」 | `include/uflags.h:22`、`mbbsd/user.c:452-455`（commit `5b41008d`） |
-| 改設定後會重送 | `mbbsd/mbbsd.c:527`、`mbbsd/user.c:552` |
-| 入站解析**只認 SGR**（`csi_prefix == '<'`），且**不看 `UF_MOUSE`** ⇒ 只要 client 送，server 一定當按鍵收 | `common/sys/vtkbd.c:299-326` |
-| `KEY_MOUSE`(0x0501) **目前沒有任何消費者**；只有 `KEY_MOUSE_RELEASE` 在 `io.c:262` 被丟成 `KEY_INCOMPLETE` | `include/vtkbd.h:130-131` |
-| 任何非 `KEY_INCOMPLETE` 的鍵會更新 `currutmp->lastact` ⇒ **若實作 1003 motion 回報，使用者永不 idle** | `mbbsd/io.c:231-240` |
+| 三種模式的實際字串：CLICK=`?1003l?1000h?1006h`、DRAG=`?1003l?1002h?1006h`、TRACK=`?1003h?1006h`、關閉=`?1000l?1002l?1003l?1006l` | `mbbsd/term.c#term_enable_mouse` |
+| `term_init()` **無條件**呼叫 `term_enable_mouse(MOUSE_MODE_TRACK)`（2026-10 起；之前是 CLICK）⇒ 沒有 `UF_MOUSE` 的人收到**關閉四連** ⇒ **每個 session 都會收到 DEC 序列** | `term.c#term_init` |
+| `UF_MOUSE`（`0x00004000`）**預設關**，設定項「MOUSE 啟用滑鼠支援」；改設定後會重送 | `include/uflags.h`、`mbbsd/user.c`、`mbbsd/mbbsd.c` |
+| 入站解析**只認 SGR**（`csi_prefix == '<'`），且**不看 `UF_MOUSE`** ⇒ 只要 client 送，server 一定當按鍵收 | `common/sys/vtkbd.c` CSI `<` 分支 |
+| `KEY_MOUSE`(0xDD01) **已有消費者**：`psb.c#cmd_dispatch_layers`／`psb_main` 處理左鍵點指令列 hotspot 與列表列、滾輪（`psb_wheel_cursor_key`：350ms 內座標有動＝觸控、單頁時反向）；motion 由 `io.c#system_key_hook` 交給 `vs_locator_handle_motion` 後回 `KEY_INCOMPLETE`；release 一律 `KEY_INCOMPLETE` | `mbbsd/psb.c`、`mbbsd/io.c` |
+| `system_key_hook` 在 switch **之前**更新 `currutmp->lastact`（3 秒內兩個以上 byte 才算） ⇒ motion 也算活動 ⇒ **若實作 1003 motion 回報，使用者永不 idle** | `mbbsd/io.c#system_key_hook` |
 
-⇒ client 實作回報時的三條：預設關、只實作 1000+1006（**不送 motion**）、
+⇒ client 實作回報時的三條：預設關（開了等於把滑鼠交給 server 解讀）、只實作 1000+1006（**不送 motion**）、
 `sgr` 初值必須是 false。實作見 `src/js/mouse_report.js`。
 
 ### Cursor Position Report（`ESC[6n`，2026-09-20 公告，全部 CONFIRMED）
@@ -240,22 +242,14 @@ OSC 8 的四條不變量（`src/js/osc_hyperlink.js` 檔頭）：
    （守護 `tests/unit/long_push_flow.test.js`：每一步送完 `nextSendState` 都要回 `NORMAL`）。
 
 **對本 client 的意義**：任何來源送出的裸 ESC（`term_keyboard.KeyMap['Escape']`、
-底列功能鍵 `footer_keys.js` 的 `Esc`、**浮層關閉時漏出去的那一下**）都會埋下地雷。
-兩種症狀：
+底列功能鍵 `footer_keys.js` 的 `Esc`、**浮層關閉時漏出去的那一下**）都會埋下地雷：
+下一個方向鍵被拆成字面 `[`＝跳到同主題上一篇（中間可隔很久，畫面上看不出因果），
+或下一個程式化按鍵被吃成 esc_arg、PTT 零反應（CommandQueue 判 miss）。
 
-- **下一個方向鍵跳到別篇文章**（2026-09-16），中間可以隔很久（實錄隔了 1.4 秒），
-  從畫面上完全看不出因果。證據樣本 `ptt-debug-20260916-011413.json#t=5494`（裸 ESC）、
-  `#t=6922`（`ESC [ D`）、`#t=6933`（畫面換成同主題上一篇）。
-- **下一個程式化按鍵被整個吃掉、PTT 零反應**（2026-09-17）：長推文探路的 `Q` 送出後
-  700ms 完全沒有回應（該連線 RTT 只有 12ms），CommandQueue 因此送 `` 探針、判成
-  `miss` ⇒ 使用者看到「讀不到文章代碼（miss）」。證據樣本
-  `ptt-debug-20260917-012944.json#t=529`（送 `Q`）、`#t=1229`（探針）、`#t=1241`
-  （回來的是完整文章畫面，沒有 `Q` 的資訊框）、`#t=1326`（`queue.miss`）。
-
-**浮層關閉那一下擋不住**（2026-09-17 在 offline e2e 實測，別再試「有彈窗就不送鍵」）：
+**浮層關閉那一下擋不住**（offline e2e 實測，別再試「有彈窗就不送鍵」）：
 Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，等 term_view
-那條跑到時 `modalShown` 已經翻成 `false`（window capture phase 的第一個 listener 量到的
-就是 false）⇒ 每一次用 Esc 關掉浮層都會有一個裸 ESC 上線。懸空的 ESC 態是常態不是例外。
+那條跑到時 `modalShown` 已經翻成 `false` ⇒ 每一次用 Esc 關掉浮層都會有一個裸 ESC 上線。
+懸空的 ESC 態是常態不是例外。
 
 修法＝送出端鏡像這個狀態機（`src/js/vtkbd_send_state.js`），而且**界線是送出入口不是
 位元組內容**：`conn.send`／`convSend`（CommandQueue／`setBBSCmd`／`sendData`
@@ -297,10 +291,10 @@ Mantine Modal 的 Escape handler 比 `term_view` 的 keydown listener 先跑，�
 | row | 內容 | 出處 |
 |---|---|---|
 | 0 | `showtitle()` 反白標題：`【title】` 從 col 0 起（**三段式 `vs_header`，2026-09-20 公告明文保證不變**；另兩種標題有改，見 §11.9），右端 `看板/系列/文摘《NAME》`（`title_tail_msgs[]`＝`看板`/`系列`/`文摘`，依 MODE_SELECT/MODE_DIGEST 決定）。**右段不保證在**（CONFIRMED）：`vtuikit.c#vs_draw_header` 在 `szmid + szright > w` 時 `szright = 0` 整段丟掉 ⇒ 看板描述太長（例 LoL）就沒有《NAME》。title＝`currBM`，只有 `板主:xxx`（過長截成 `..`）／`徵求中` 兩種（`bbs.c` enter_board）；mid＝看板描述，有新信時換成 `你有新信件`。client 判定走 `screen_titles.js#parseBoardKey`（有板名用板名，否則整條標題列當身分鍵） | `mbbsd/menu.c#showtitle`；由 `readtitle()` 呼叫 `mbbsd/bbs.c` |
-| 1 | 固定提示列 `[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明` | `mbbsd/bbs.c` |
+| 1 | 指令列。舊：固定字串 `[←]離開 [→]閱讀 [Ctrl-P]發表文章 …`；新：`psb.c#vs_cmd_bar(VS_SUB_HEADER)` 動態產生的 `[k]名` 串（§11.10） | `mbbsd/bbs.c`／`mbbsd/read.c#read_header` |
 | 2 | 反白表頭 `   編號    <日 期|價 格> 作  者       文  章  標  題`＋右端 `人氣:N`（vbarf ANSI_REVERSE；cassette 實測 30;47）。日期欄字樣依 LISTMODE 變動 ⇒ **只認「編號」最穩** | `mbbsd/bbs.c` vbarf |
 | 3..rows-2 | entry 列，每頁 `headers_size = p_lines` 筆（24 列＝20 筆） | `mbbsd/read.c`（PARTUPDATE 內 realloc）、游標列算式 `3 + n - top`（`cursor_pos`） |
-| rows-1 | feeter 反白 ` 文章選讀 `＋` (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面`；**RMAIL 是 ` 鴻雁往返 `＋` (R/y)回信 (x)站內轉寄 (d/D)刪信 (^P)寄發新信 \t(←/q)離開`**（不是「郵件選讀」）。新版（CONFIRMED 讀碼 @ piaip.newui `read.c#i_read_caption`）caption 改 `文章列表`／`系列文章`／`文摘列表`／`信件列表`，見 §11.10；判定一律走 `screen_captions.js` | `mbbsd/read.c` READ_REDRAW 的 `vs_footer` |
+| rows-1 | feeter 反白 ` 文章選讀 `＋` (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面`；**RMAIL 是 ` 鴻雁往返 `＋` (R/y)回信 (x)站內轉寄 (d/D)刪信 (^P)寄發新信 \t(←/q)離開`**（不是「郵件選讀」）。新版（`read.c#i_read_caption`）caption 改 `文章列表`／`系列文章`／`文摘列表`／`信件列表`，見 §11.10；判定一律走 `screen_captions.js` | `mbbsd/read.c` READ_REDRAW 的 `vs_footer` |
 
 entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推出的 0-indexed 螢幕欄位：
 
@@ -337,13 +331,15 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
   | 新（**現行**） | `STR_CURSOR ">"` | cell 0 | `%7d` 的前導空格（6 位序號完整可見） | 無（半形） |
   | 舊 | `STR_CURSOR2 "●"` | cells 0-1 | 前導空格＋**最高位數字** | 左移 1（`rowToText` 折疊 DBCS） |
 
-  切換點＝`b9a5029f` **cleanup(cursor): Always do CURSOR_ASCII**（2026-08-11）：廢除 `UF_CURSOR_ASCII` 使用者旗標，全站強制 ASCII 游標（`stuff.c#cursor_show` 一律 `outs(STR_CURSOR)`；看板列表 `psb.c#psb_default_cursor` 同步；`cursor_clear` 也從 `STR_UNCUR2`「兩格空白」改成 `STR_UNCUR`「一格」）。
+  切換點＝`b9a5029f` **cleanup(cursor): Always do CURSOR_ASCII**：廢除 `UF_CURSOR_ASCII` 使用者旗標，全站強制 ASCII 游標（`stuff.c#cursor_show` 一律 `outs(STR_CURSOR)`；看板列表 `psb.c#psb_default_cursor` 同步；`cursor_clear` 也從 `STR_UNCUR2`「兩格空白」改成 `STR_UNCUR`「一格」）。
   **client 必須兩代都認**：`tests/e2e/cassettes/*.json` 是舊 server 錄的 raw bytes（offline e2e 是 CI gate）。解析 server 畫面＝雙支援（`comment_parse.js` 的 `LIST_CURSOR_WIDE`/`LIST_CURSOR_ASCII` 區塊）；我們自己畫的假游標＝一律 `>`（`list_window.js#labelListCursor`）。
 - 同批 cleanup 對 client **無**影響：`ea31f725`（DBCS 旗標強制開，只動 server 輸入端）、`202f3324`（modmark 旗標移除，`~` 改一律顯示，col 8 type 字元集合不變）、`b6f93ffa`（LIVERIGHT）。
-- 刪除文 `iscorpse = (owner[0]=='-' && owner[1]==0)` ⇒ 作者欄是單一 `-`。
+- 刪除文 `iscorpse = (owner[0]=='-' && owner[1]==0)` ⇒ 作者欄是單一 `-`。`/` 標題搜尋自 `1f91f4bf`起也會命中刪除文。
+  `COLORIZED_SAFEDEL`（開源碼沒有任何地方定義，PTT 有沒有開未知）下刪除文另一種形狀：編號 `%7d` 塞進 6 格欄（被截成 `…`）、
+  標記推文欄全空白、標題 `╳ <title>` 整列 1;30 —— 我們的列解析對它讀不出編號 ⇒ 當不是文章列（fail-safe）。
 - **owner 欄不一定是 userid**（CONFIRMED）：`mbbsd/syspost.c#post_msg2` 直接 `STRLCPY(fhdr.owner, author)`，呼叫端傳 `"[系統]"`／`"[" BBSMNAME "法院]"`；匿名板 `bbs.c` HAVE_ANONYMOUS 分支 owner＝`real_name + "."`；列表原樣 `%-13.12s` 印出。live PttCurrent 看到的是無括號「系統」（guess：站方用 `bbs.c` 的改作者欄功能改過）。文章檔頭同源 ⇒ pmore 顯示 `作者  [系統]`，`comment_parse.js#parseArticleHeader` 對此回 `{author:null, board}`（仍算 header，清掉上一篇原PO）。
 - client 對應常數：`comment_parse.js` 的 `LIST_AUTHOR_COL_START=17` / `LIST_AUTHOR_COL_END=29`（owner 內容 end-exclusive）／`LIST_TITLE_COL_START=30`（mark 起點）。**兩者差一格 padding，別混用**。
-- **置底文只出現在板尾頁**：`get_records_and_bottom`（`mbbsd/read.c` ~1052）當 `n >= headers_size` **或 `MODE_SELECT|MODE_DIGEST`** 走純 `get_records` 不含置底。⇒ 非板尾頁、`/` 篩選清單、文摘模式**必無**置底列。newui（`.DIR.bottom` 改存 `boardheader_t.bottom[]`）CONFIRMED 同：置底是序列尾端的虛擬延伸（`read.c#read_loader` `last_line = btotal + bottom_count`、`read_renderer` 只對 `disp_num > bottom_line` 設 `FILE_BOTTOM`），MODE_SELECT/DIGEST 的 `bottom_count = 0`；★ 仍是 `bbs.c` doent 的 `"  " … "  ★ "`。
+- **置底文只出現在板尾頁**：`get_records_and_bottom`（`mbbsd/read.c` ~1052）當 `n >= headers_size` **或 `MODE_SELECT|MODE_DIGEST`** 走純 `get_records` 不含置底。⇒ 非板尾頁、`/` 篩選清單、文摘模式**必無**置底列。新版（`.DIR.bottom` 改存 `boardheader_t.bottom[]`）CONFIRMED 同：置底是序列尾端的虛擬延伸（`read.c#read_loader` `last_line = btotal + bottom_count`、`read_renderer` 只對 `disp_num > bottom_line` 設 `FILE_BOTTOM`），MODE_SELECT/DIGEST 的 `bottom_count = 0`；★ 仍是 `bbs.c` doent 的 `"  " … "  ★ "`。
 
 ## 4. burst 特徵（一次按鍵回應動了哪些列）
 
@@ -356,8 +352,8 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 | 文章內翻頁 | pmore 自管；底列狀態列 `  瀏覽 第 %d/%d 頁 (%d%%)`（單頁版 :2137）＋`目前顯示: 第 %02d~%02d 行` | `mbbsd/pmore.c:2130,2137,2166` |
 | 文章返回列表 | i_read 收 FULLUPDATE → row0-2＋row3..rows-1 全重建 | `mbbsd/read.c:1172-` |
 | prompt（`/` 搜尋、數字跳號…） | 畫在底列附近，游標 park 在輸入點；結束後 dirty 更新還原 | `mbbsd/read.c`（各 key handler）＋vget 系 |
-| **數字跳號完成後** ✚ | 舊版：prompt 行被清掉、**底列留空**（feeter「文章選讀」要到**下一個**回應才重畫）；游標 park 在目標 entry 列 col≤1。**newui：`read.c#read_cmd_num` 設 `redraw_footer_lines = 1` ⇒ 底列當場重畫成 caption（clean-list）**（看板列表 `board_cmd_num` 同，CONFIRMED 讀碼）；guess：落地頁以 clean-list 被 accumulate 無害，**上線後錄 cassette 驗** | `tests/e2e/cassettes/cchat-list-nav.json` jump step 實錄（舊版，settle 畫面末列全空）。client 端 open-jump 完成判定因此**不能**等 clean-list，改用 park＋目標序號（`list_session.js#_beginOpen`）——兩代通吃 |
-| newui 的列表重畫粒度 | `psb.c#psb_main`：同頁移動只重畫新舊游標兩列；換頁（`base` 變）＝`cmd.redraw` → `clear()` 全畫面（pfterm 只送差異 ⇒ 沒變的 row0-2 零 byte）；新信只重畫 header 3 列。client 看的是 TermBuf 全畫面 ⇒「一幀＝完整列表」不受影響 | CONFIRMED 讀碼 |
+| **數字跳號完成後** ✚ | 舊版：prompt 行被清掉、**底列留空**（feeter「文章選讀」要到**下一個**回應才重畫）；游標 park 在目標 entry 列 col≤1。**新版：`read.c#read_cmd_num` 設 `redraw_footer_lines = 1` ⇒ 底列當場重畫成 caption（clean-list）**（看板列表 `board_cmd_num` 同，CONFIRMED 讀碼）；guess：落地頁以 clean-list 被 accumulate 無害，**上線後錄 cassette 驗** | `tests/e2e/cassettes/cchat-list-nav.json` jump step 實錄（舊版，settle 畫面末列全空）。client 端 open-jump 完成判定因此**不能**等 clean-list，改用 park＋目標序號（`list_session.js#_beginOpen`）——兩代通吃 |
+| 新版 的列表重畫粒度 | `psb.c#psb_main`：同頁移動只重畫新舊游標兩列；換頁（`base` 變）＝`cmd.redraw` → `clear()` 全畫面（pfterm 只送差異 ⇒ 沒變的 row0-2 零 byte）；新信只重畫 header 3 列。client 看的是 TermBuf 全畫面 ⇒「一幀＝完整列表」不受影響 | CONFIRMED 讀碼 |
 
 ## 5. 游標 park 位置（page fingerprint）
 
@@ -375,66 +371,41 @@ entry 列欄位（`readdoent`，`mbbsd/bbs.c`）——逐欄依 printf 序列推
 ⇒ client 判別式：**游標所在格是白底黑字 ＝ 畫面正在等使用者輸入**（`term_buf.isCursorOnInputField`，
 消費端見 `docs/mouse.md`「區域決策表」的 `inputPrompt`）。
 
-**判斷必須用實際顯色（`getFg()===0 && getBg()===7`），不可以讀 `ch.invert`**：畫面不是 mbbsd 直接吐的 ANSI，
-中間隔了 `mbbsd/pfterm.c` 這層 framebuffer（自己算最省的輸出）。2026-08 實測 term.ptt.cc：搜尋看板的輸入欄送的是
-`fg=0/bg=7`（13 格 ＝ `IDLEN+1`，與 `namecomplete` 的 `len` 對得上），`invert` 旗標**從來不會被設起來** ——
-照 `vtuikit.c` 的 `ESC[0;7m` 去讀 `invert` 的第一版 unit 全綠、線上完全沒生效。同一輪實測的其他畫面：
-列表表頭／`【 搜尋全站看板 】`標題是 `fg=0/bg=7` 但**從 col 0 反白到行尾**（故要第二個條件），
-列表狀態列 `fg=4/bg=6`、pmore 文章底部狀態列 `fg=7/bg=4` ⇒ 都不會誤判。
-推文輸入欄**也是反白**（舊版本節誤記成 fg=7/bg=0，已推翻）：`ESC[30;47m` ＋ `maxlength` 格，欄內 echo 同色
-（`ptt-debug-20260924-221056.json#t=4660/17273/6148`）⇒ 欄寬可量，`term_buf.inputFieldWidth`，消費端見 §11.3 末。
-守護：`tests/e2e/offline/board_list.offline.spec.js`「搜尋看板 prompt」（素材 `scn-board-search-prompt`＝真 PTT 錄下的 bytes，含 pfterm 實際吐的 fg=0/bg=7；2026-10 前是 live `search_prompt.spec.js`）。
+**判斷必須用實際顯色（`getFg()===0 && getBg()===7`），不可以讀 `ch.invert`**：pfterm 把 reverse 攤平成 fg/bg 互換
+（§14.2），線上 `invert` 旗標**從來不會被設起來**。輸入欄寬可量（搜尋看板 13 格＝`IDLEN+1`）。
+第二個條件「該列不是從 col 0 就反白」排除列表表頭／`【 搜尋全站看板 】`這類整列反白；列表狀態列
+`fg=4/bg=6`、pmore 狀態列 `fg=7/bg=4` 不會誤判。推文輸入欄也是反白（`ESC[30;47m` ＋ `maxlength` 格，
+欄寬＝`term_buf.inputFieldWidth`，消費端見 §11.3 末）。
+守護：`tests/e2e/offline/board_list.offline.spec.js`「搜尋看板 prompt」（素材 `scn-board-search-prompt`＝真 PTT 錄下的 bytes）。
 
 **列表上叫出的 prompt 不改變 `pageState`（client 推論，CONFIRMED 讀碼）**：`mbbsd/board.c#search_local_board`
 （`s`／`Ctrl-S` 搜尋看板）只 `move(0,0); clrtoeol()` 後印兩列 prompt，下方列表整片殘留 ⇒ row 0 不再是整列
 反白、最後一列非空 ⇒ `term_buf.setPageState` 每個分支都不命中，而它**沒有 reset 分支** ⇒ 沿用前一幀的
 `pageState`（列表 2）。任何「這個畫面是不是列表／選單」的判斷都不可以只看 `pageState`，要再問 §5.1 的輸入框指紋。
 
-**同一個沿用也涵蓋「整頁被換掉」的畫面，這是實際踩過的坑**：從列表按 `Ctrl-P` 發文，分類選擇畫面
-（`發表文章於【 board 】` ＋ `種類：1.閒聊 2.問題 …`）同樣一個 `setPageState` 分支都不命中、末列又非空
-（連 `pageState = 0` 的退路也不走）⇒ 沿用列表的 2。黑名單標註因此把板規／分類提示的每一列都當成
-「一列文章」去比對，只要 col≥29 撞到使用者的標題關鍵字就整列被換成通知列（2026-09-05 錄製檔
-`ptt-debug-20260905-122522`）。修法不是給 `setPageState` 加分支（沿用是刻意的），而是在消費端加**逐列
-指紋** `comment_parse#isListShapedRow` —— 就是本節說的「要再問指紋」。細節見
-`docs/enhanced-addon.md` 踩坑 A。
+**同一個沿用也涵蓋「整頁被換掉」的畫面**：從列表按 `Ctrl-P` 的分類選擇畫面（`發表文章於【 board 】`）同樣
+一個 `setPageState` 分支都不命中、末列非空 ⇒ 沿用列表的 2。修法不是給 `setPageState` 加分支（沿用是刻意的），
+而是消費端再問**逐列指紋** `comment_parse#isListShapedRow`（細節見 `docs/enhanced-addon.md` 踩坑 A）。
 
-**沿用的另一面：子選單根本沒有分支可命中（2026-09-11 修，CONFIRMED 讀碼）**。`setPageState` 判 MENU
-只有兩條路——row0 開頭是 `【主功能表】`/`【分類看板】`/`【精華文章】`，或 `parseListRow(末列)`。而
-`menu.c#domenu` 開出來的子選單 row0 是各自的標題（`(X)yz 系統資訊區`＝`【工具程式】`、
-`(U)ser 個人設定區` 等同理），**只剩 `parseListRow` 這一條**。它的 regex 從 fork 以來比對的是
-`[%d/%d 星期XX %d:%02d] … [呼叫器]%s` —— **那個格式 pttbbs 史上不存在**
-（`git -C 3rd_script/pttbbs log -S'星期' -- mbbsd/menu.c` 零筆；`str_pager_modes` 第二項也不是「打開」
-而是「開啟」）⇒ 恆為 false 的死碼 ⇒ **所有子選單的 `pageState` 都是從主功能表繼承來的**。
-兩個使用者可見的症狀（錄製檔 `ptt-debug-20260910-171017`）：
-
-- 子選單 →「查看系統資訊」（`pressanykey` ⇒ 5）→ 關框回子選單 ⇒ **黏在 5** ⇒
-  `resolveMouseRegion` 的 `switch` 走 `default` ⇒ 滑鼠瀏覽整個失效（實錄：重畫後 9.6 秒的
-  `send` 快照仍是 5），要走到判得出來的畫面才恢復。
-- 讀完一篇按 `←` 回子選單（黏在 3）再開下一篇 ⇒ settled edge 是 `3→3`，不在
-  `nextEasyReadingState` 的來源集 `{1,2}` ⇒ 好讀「有時」不自動啟用。
-
-修法是把 `parseListRow` 校準回真實的 `show_status`（**不是**加 reset 分支，沿用仍然是刻意的）。
-
-沿用的第三個消費端：返回手勢的 `nav_key_gate`。黏住的 5 不靠猜是哪個畫面判不出來，改問
-`term_buf.isPassScreenNow()`（setPageState 兩條 5 的條件抽出的本幀事實）：已非 pass 畫面 ⇒ 殘留，照送 `←`。
-
-**2026-09-20 更新**：PTT 官方改版把 `show_status` 整列換掉（見 §11.9），上面那個「校準回真實 `show_status`」的結果因此又一次失效。現行實作是**新舊聯集**：舊、新格式各一條照 source 寫的精確指紋（新格式讀碼 @ `origin/piaip.newui`）。只照公告文字寫的那一版曾以「線上N人」當共同錨點，讀碼後才發現 80 欄子選單會把它截掉 —— 又一次印證下一段「不可與被測程式共用假設」。
+**子選單的 MENU 指紋只有底部狀態列**：`setPageState` 判 MENU 只有兩條路——row0 開頭是
+`【主功能表】`/`【分類看板】`/`【精華文章】`，或 `parseListRow(末列)`。`menu.c#domenu` 開出來的子選單
+row0 是各自的標題（`【工具程式】`、`(U)ser 個人設定區`…）⇒ **只剩 `parseListRow`**，它必須照 source
+寫 `show_status` 的新舊兩種精確格式（§11.9）。失配的症狀：子選單沿用上一幀的 pageState（黏在 5 ⇒
+滑鼠瀏覽失效；黏在 3 ⇒ 好讀不自動啟用）。返回手勢的 `nav_key_gate` 另問 `term_buf.isPassScreenNow()`
+（本幀事實）判殘留的 5。
 守護：`tests/unit/term_buf_page_state.test.js`、`tests/unit/string_util.test.js`。
-**這一輪真正的教訓是測試面的**：當時的 unit fixture 是照著同一個錯誤假設手寫的，於是
-「程式錯 ＋ 測試錯」互相背書，一條恆假的指紋全綠躺了很久。**畫面指紋的 fixture 一律要來自
-pttbbs source 或線上實測位元組，不可與被測程式共用同一個假設。**
 
 ## 6. `\f`（Ctrl+L）確定性交易依據（v5 新增，全部 CONFIRMED）
 
 - **igetch 全域熱鍵**：`Ctrl('L')` → `redrawwin()+refresh()` 後 `continue`（`mbbsd/io.c` igetch switch）——`\f` 永不回傳給呼叫者，等同「插入一幀全幅重繪」。`vkey()`＝`igetch()`（io.c `vkey`），故**所有走 vkey 的輸入點都吃這條**。
 - **getdata/vget 中途誤送安全**：`getdata` → `vgets` → `vgetstring`（`mbbsd/stuff.c:372`→`mbbsd/vtuikit.c:1154`）主迴圈 `c = vkey()` → `\f` 在 igetch 層就被攔掉，不進輸入 buffer、不炸，且照樣觸發全幅重繪（游標 park 回輸入點）。即使未被攔，content filter `c < ' '` 也只 `bell(); continue`。
 - **pmore 內安全**：pmore 主迴圈 `ch = vkey()`（`mbbsd/pmore.c:2537`）→ 同樣被 igetch 攔截全幅重繪。開文/退文交易尾附 `\f` 可行。
-- **read.c 列表層再保險**：`i_read_key` 自己也有 `case Ctrl('L'): redrawwin()+refresh()`（`mbbsd/read.c:735`）。newui 已刪（`read_nav_cmds` 無 Ctrl-L），由 `io.c#igetch` 的全域熱鍵兜住，行為不變。
+- **read.c 列表層再保險**：`i_read_key` 自己也有 `case Ctrl('L'): redrawwin()+refresh()`（`mbbsd/read.c:735`）。新版 已刪（`read_nav_cmds` 無 Ctrl-L），由 `io.c#igetch` 的全域熱鍵兜住，行為不變。
 - typeahead 交互（BePTT 實證＋§2 推論）：`指令+\f` 同送 → 中間增量重繪被跳繪吞 → client 恰見一幀全幅畫面。單獨 `\f`＝零副作用「我在哪」探針。
-- **推論（2026-08-15 live 實錯）：`\f` 關不掉任何「按任意鍵」**。`pressanykey()`＝`vmsg(NULL)` 的 `do { i = vkey(); } while (i == 0)`——`\f` 在 `system_key_hook`（`io.c:196-203`）就回 `KEY_INCOMPLETE`，`vkey()` 對它 `continue`（`io.c:432-434`），**那個 byte 根本不會成為一個「鍵」**。拿它當關框鍵的後果是**整串位移一格**：框沒關掉 → 下一個字元被拿去關框 → 剩下的字串被 pager／列表當快捷鍵逐鍵吃掉（實錯：`\f` + `sC_Chat\r` → `s` 關框、`h` 開說明、`a` 跳作者下一篇，人直接跑到別篇文章）。要關 pressanykey 一律用**空白鍵**。
-- **零回應跳號（CONFIRMED，2026-08-25 live 錄製）：跳號到真游標「已經所在」的那一列 ⇒ 畫面零增量 ⇒ server 送 0 bytes。** 證據 `ptt-debug-20260825-105701#t=12562`：t=10151 的 prefetch 錨定腿已送過 `2381\r` 把游標停在 2381，t=12562 的 open-jump 又送同一個 `2381\r` → 整整 4002ms 一個 byte 都沒有，直到 client 的軟逾時探針才問出答案。**這不是「server 偶發抽風」，是可重現的協定行為**（PTT 只送畫面差異）。⇒ client 端所有 `<數字>\r` 交易一律尾附 `\f`（見 `src/js/list_session.js` 的跳號腿與 `docs/easy-reading-list.md` 不變量 7g）；同理，任何「目標可能等於現況」的鍵（End 於底端、Home 於頂端）都屬同一類。
+- **`\f` 關不掉任何「按任意鍵」**：`pressanykey()`＝`vmsg(NULL)` 的 `do { i = vkey(); } while (i == 0)`——`\f` 在 `system_key_hook` 就回 `KEY_INCOMPLETE`，**那個 byte 根本不會成為一個「鍵」**。拿它當關框鍵的後果是**整串位移一格**：下一個字元被拿去關框，剩下的字串被 pager／列表當快捷鍵逐鍵吃掉。要關 pressanykey 一律用**空白鍵**。
+- **零回應跳號：跳號到真游標「已經所在」的那一列 ⇒ 畫面零增量 ⇒ server 不送任何格子**（PTT 只送畫面差異，可重現，不是抽風）。⇒ client 端所有 `<數字>\r` 交易一律尾附 `\f`（`src/js/list_session.js` 的跳號腿、`docs/easy-reading-list.md` 不變量 7g）；任何「目標可能等於現況」的鍵（End 於底端、Home 於頂端）都屬同一類。
 - `\f` 不取代 settle：全幅重繪仍拆包（OBUFSIZE 3072），settle 判「何時看」、`\f` 保證「必有得看」。
-- **重要限制（M1 實測，cchat-list-nav `\f` 版卷）：`redrawwin` 重繪的是 server 虛擬螢幕「現狀」，不會推進畫面狀態**——跳號完成後（舊版）server 虛擬螢幕的底列本來就空（§4 ✚：feeter 要到下一個 PARTUPDATE 才重畫；newui 當場重畫，見 §4 ✚），`跳號+\f` 的全幅重繪底列**仍空**＝classify 仍 transient、永非 clean-list。⇒ jump 落點判定必須維持 park 指紋（§4/§5），「jump 尾附 `\f` 換 clean-list expect」不成立。`\f` 的真實價值＝**零回應情境的確定性化**：timeout 探針（強制產生一幀可判定畫面）、相對命令 miss（`鍵+\f` 保證有回應）。
+- **`redrawwin` 重繪的是 server 虛擬螢幕「現狀」，不會推進畫面狀態**——舊版跳號完成後底列本來就空，`跳號+\f` 的全幅重繪底列**仍空** ⇒ jump 落點判定必須維持 park 指紋（§4/§5），不可改等 clean-list。`\f` 的真實價值＝**零回應情境的確定性化**：timeout 探針、相對命令 miss（`鍵+\f` 保證有回應）。
 
 ## 6.1 「等一個按鍵」的三種畫面：指紋與收尾鍵（2026-09 CONFIRMED）
 
@@ -517,14 +488,15 @@ client 端自動收掉見 `docs/board-note-skip.md`。
 - 已在 MODE_SELECT 再 `/`＝「增加條件」疊加篩選。
 - 其他搜尋鍵（`a` 作者、`Z` 推文數…）同走 `read.c#ask_filter_predicate`，prompt 字串表見 `docs/article-search.md`。
 - **輸入記憶（↑↓）是全 session 共用一份**（`vtuikit.c` `static InputHistory ih`，508 bytes、≥2 bytes 才存、只有 `VGET_NOECHO` 不存），跳號 ` 跳至第幾項: `（NUMECHO）也會存 ⇒ client 送的 `N\r` 會擠掉搜尋關鍵字。CONFIRMED；client 對策見 `docs/article-search.md`。
-- **newui（SR.* 換成 `search.svc`）CONFIRMED 讀碼**：`read.c#select_read` 命中 → `NEWDIRECT`、`sr_locmem` 落在末列（`read_loader` `is_newdirect`）；`total <= 0` → `READ_REDRAW`；序號＝`read_view_v2p`＝結果內 1-based（獨立空間、`bottom_count = 0`）。退出由 `read_cmd_quit` 以 `read_view_real_recno` 換回**主目錄的實體序號**當 `crs_ln`（舊版用 `refer`）⇒ 下一條「落點＝已讀進度」在 newui 是 guess，應改為落在剛才游標那篇，**上線後實測**。
-- **退出：`q`／`e`／`←`**（`read.c:712-725`；newui `read.c#read_cmd_quit`，CONFIRMED 同）→ `board_select()` 回主 directory ＋ `NEWDIRECT` 全幅重建主列表；**top=crs-p_lines+1（游標在視窗底列）**。
-- **退出落點 = 帳號已讀進度，非進 select 前位置**（live CONFIRMED 2026-07-06，C_Chat 三次重測落點恆定於同一舊序號）：`crs_ln=refer` 的 refer 解析回主列表時採該板閱讀進度。⇒ client 不得假設退回畫面含進板時取樣的最新序號（re-seed 後 fill 只向上，buffer 可能整段低於進板頁）；測試判準用「序號回到主空間（> select 清單 max）」。
-- **select 清單 row0 指紋**：板名前綴由「看板」變「**系列**《板名》」（live CONFIRMED）——可做輔助指紋，但主要區分仍靠 client 自身交易狀態。
+- **新版（SR.* 換成 `search.svc`）**：`read.c#select_read` 命中 → `NEWDIRECT`、游標落在末列；`total <= 0` → `READ_REDRAW`；序號＝結果內 1-based（獨立空間、無置底）。
+- **退出：`q`／`e`／`←`**（`read.c#read_cmd_quit`）→ `board_select()` 回主 directory ＋ `NEWDIRECT` 全幅重建主列表。
+  落點兩代不同：舊版 `crs_ln=refer` ＝**帳號已讀進度**（live CONFIRMED，非進 select 前位置）；新版以 `read_view_real_recno` 換回**剛才游標那篇在主目錄的序號**。
+  ⇒ client 不得假設退回畫面含進板時取樣的最新序號；測試判準用「序號回到主空間（> select 清單 max）」。
+- **select 清單 row0 指紋**：板名前綴由「看板」變「**系列**《板名》」——可做輔助指紋，但主要區分仍靠 client 自身交易狀態。
 
 ## 8.1 `#` AID 搜尋交易（`select_by_aid`，CONFIRMED）
 
-`mbbsd/read.c:366-481`；入口 `i_read_key` 的 `case '#'`（`read.c:766-768`；newui `read.c#read_common_cmds` → `read_cmd_aid`，成功仍 `move(b_lines)+clrtoeol`＋`DONOTHING` ⇒ 同頁落點底列留空、換頁則 psb 全幅重畫；置底改搜 `boardheader_t.bottom[]`，落點 `btotal + slot`，CONFIRMED）。**不走 `read_comms[]` onekey 表**（`bbs.c` 表中 35 號為 `{0,NULL}`）⇒ 一般/mail/man/digest 各模式一律生效。
+`mbbsd/read.c:366-481`；入口 `i_read_key` 的 `case '#'`（`read.c:766-768`；新版 `read.c#read_common_cmds` → `read_cmd_aid`，成功仍 `move(b_lines)+clrtoeol`＋`DONOTHING` ⇒ 同頁落點底列留空、換頁則 psb 全幅重畫；置底改搜 `boardheader_t.bottom[]`，落點 `btotal + slot`，CONFIRMED）。**不走 `read_comms[]` onekey 表**（`bbs.c` 表中 35 號為 `{0,NULL}`）⇒ 一般/mail/man/digest 各模式一律生效。
 
 - prompt：`getdata(b_lines, 0, "搜尋" AID_DISPLAYNAME ": #", aidc, 20, DOECHO)` ⇒ 底列全文 **`搜尋文章代碼(AID): #`**（`AID_DISPLAYNAME` 見 `include/common.h:151`）。尾端 `#` **印死在 prompt 裡**，非使用者輸入。
 - `DOECHO`＝`VGET_DEFAULT` → `vgets`/`vgetstring`（`vtuikit.c:1150`）：**Enter 收尾**；Ctrl-C 或空字串＝取消（`move(b_lines,0); clrtoeol(); return FULLUPDATE`）。**ESC 不是取消鍵**：`vgetstring` 的離開鍵只有 `KEY_ENTER`／`Ctrl('C')`，`KEY_ESC` 非可列印 ⇒ `bell()`（2026-10 讀碼更正，舊文寫「ESC＝取消」）。buffer len 20 ⇒ 實收上限 19 bytes。
@@ -535,11 +507,11 @@ client 端自動收掉見 `docs/board-note-skip.md`。
 - **跨模式跳轉會產生二段式畫面更新**：命中處與目前模式不符（一般↔文摘）時設 `*pdefault_ch = KEY_TAB; return DONOTHING;`——server **自己補按一個 TAB**，下一圈 `i_read_key` 用它跑 `board_digest()` 切模式 ⇒ client 會看到「prompt 消失」與「全幅切換清單」兩段。
 - 文章內（pmore）按 `#`：`more.c:108-112` → `RET_SELECTAID` → `read.c:1018-1024` 先退出 pmore 回列表再開同一個 prompt，收尾強制 `FULLUPDATE`（與列表內的 `DONOTHING` 不同）。
 - **死碼警告**：`mbbsd/aids.c` 的 `do_search_aid()`（支援 `AID@BOARDNAME` 跨板語法）整段包在 `#ifdef NEW_AIDS` 內，而 `NEW_AIDS` 全 repo 無任何定義 ⇒ **真正跑的只有 `read.c#select_by_aid`，不支援 `@板名`**。勿照那段實作 client。
-- **只搜 currboard**：`select_by_aid` 依序找 `<currboard>/.DIR.bottom`、`.DIR`、`fn_mandex`，全都是**目前看板**的檔案 ⇒ 跨板一定要先 `s<board>`。**`.DIR.bottom` 排在最前面 ⇒ 置底文的 `#AID` 搜尋是會中的**（游標停在該 `★` 列；`read.c:478` `*pnew_ln = n + 1`）。`read.c:404` 自帶的 FIXME 講的是另一種情況——「被標記置底但**沒列在** `.DIR.bottom`」的文章，那段搜不到，但下一段搜 `.DIR` 時仍會搜到本體。2026-09 之前本文件寫「實測 Test 板置底公告 AID 搜尋直接失敗」，那是 client 端落地判準寫死 `cursorRowNum != null`（置底列印 `★` 沒有序號）造成的誤判，非 server 行為，已修（`aid_navigation#aidSearchLanded`）。
-- **置底（★）列的落地與開文（CONFIRMED）**：命中 `.DIR.bottom` 時 `n += getbtotal(currbid)`（`read.c:411`）把它換算成合併後的行號 —— 置底區就是 `bottom_line+1..last_line` 的虛擬延伸（§3）。列表上那一列**沒有序號**（`bbs.c:843` 印 `"  " ANSI "  ★ "` 取代 `%7d`）⇒ **client 的落地判定不可要求「游標列解析得出編號」**，否則會把正確落地讀成 miss（2026-09 實際 bug：置底文 deep link 卡在列表進不了文章）。⏎ 開文在 server 端本來就支援：`read.c:999-1008` 的 `num = crs_ln - bottom_line`，`num > 0` 時把 `direct` 換成 `<board>/.DIR.bottom` 再交給 `read_post`。**live 實測 2026-09-02**（`Android` 板 `#1T3vIDTr`）：`#<aid>⏎` 落在 `>   ★  m 2 6/23 albb0920     □ [公告] 板規`（`cursorRowNum` null、底列空 ⇒ classify `transient`），再一個 `⏎` 即開文成功。
+- **只搜 currboard**：`select_by_aid` 依序找 `<currboard>/.DIR.bottom`（新版改搜 `boardheader_t.bottom[]`）、`.DIR`、`fn_mandex`，全都是**目前看板** ⇒ 跨板一定要先 `s<board>`。**置底排在最前面 ⇒ 置底文的 `#AID` 搜尋會中**（游標停在該 `★` 列）。
+- **置底（★）列的落地與開文**：置底區是 `bottom_line+1..last_line` 的虛擬延伸（§3），列表上那一列**沒有序號**（印 `★` 取代編號）⇒ **client 的落地判定不可要求「游標列解析得出編號」**（`aid_navigation#aidSearchLanded`）。⏎ 開文在 server 端本來就支援（`num = crs_ln - bottom_line > 0` 時把 `direct` 換成置底目錄再 `read_post`）。
 - **per-board 游標記憶（getkeep）＝「返回原看板」可行的根據（CONFIRMED）**：`i_read` 在 `NEWDIRECT`（第一次進入該目錄）呼叫 `getkeep(currdirect, …)`（`read.c:1171`），而 `getkeep`（`read.c:105`）以 board path 的 hash 查既有 entry，**命中就沿用舊的 `crs_ln`**（`read.c:128-139`）；儲存結構是不斷追加的 link block（`KEEPSLOT=10` 一塊，滿了 malloc 下一塊），**session 內永不淘汰**。`board.c:1976` 的 `getkeep(buf, head, tmp+1)` 只在 entry 不存在時才用未讀位置當預設值，不會覆寫既有的。⇒ `s<原板>` 回去時游標仍停在離開時那一列。
   - **推論（單一例外）**：同板的 `#<aid>` 跳轉會覆寫該板的 `crs_ln`，所以「靠 getkeep 回原文」在**原板 == 目標板**時不成立（client 端 `nav_history.chooseAnchor` 據此讓 board 級錨點作廢）。
-- client 對照：`src/js/aid_navigation.js`（點 AID 連結的四段式交易＋返回時的反向重放）、`src/js/nav_history.js`（錨點三級：aid / num＋subject 驗證 / board）與列表好讀的貼上 passthrough（`list_session.js#onPaste`）——後者刻意**不**代按 Enter、不特判 AID，讓上述原生行為原樣呈現。
+- client 對照：`src/js/aid_navigation.js`（點 AID 連結的四段式交易＋返回時的反向重放）、`src/js/nav_history.js`（錨點兩級：aid / board；刻意沒有序號級）與列表好讀的貼上 passthrough（`list_session.js#onPaste`）——後者刻意**不**代按 Enter、不特判 AID，讓上述原生行為原樣呈現。
 
 ## 8.2 `Q` 文章資訊框交易（`view_postinfo`，CONFIRMED）
 
@@ -564,11 +536,11 @@ client 端自動收掉見 `docs/board-note-skip.md`。
 
 ## 9. 水球/廣播指紋（T4 非請自來，CONFIRMED）
 
-- 路徑：SIGUSR2 → `write_request`（`mbbsd/mbbsd.c`）→ `show_call_in` → `outmsg`（`mbbsd/kaede.c`）＝ `move(b_lines - msg_occupied, 0); clrtoeol(); outs(msg)`。
+- 路徑：SIGUSR2 → `write_request` → `show_call_in` → `outmsg` ＝ `move(b_lines - msg_occupied, 0); clrtoeol(); outs(msg)`（2026-10 起在 `mbbsd/wmsg.c`，pager 改名 wmsg；之前分散在 `mbbsd.c`／`kaede.c`）。
 - source 字面（`show_call_in`）：
   - 一般 `ANSI_COLOR(1;33;46) "★%s" ANSI_COLOR(37;45) " %s " ANSI_RESET`
   - PLAY_ANGEL（MSGMODE_TOANGEL）`ANSI_COLOR(1;37;46) "★%s" …`（同結構）
-  - **字元是 `★`（Big5 `A1B9`）不是 `◆`** — 舊版本檔寫成 ◆ 是錯的；`string_util.js#parseWaterball` 用 ★ 才是對的。
+  - **字元是 `★`（Big5 `A1B9`）不是 `◆`**（`string_util.js#parseWaterball`）。
 - **wire 上的實際 byte**（經 §0 的 pfterm 重寫）：`ESC[1;33;46m★userid` `ESC[0;1;37;45m 訊息 ESC[m`。
   第二段之所以是 `0;1;37;45` 而非 source 的 `37;45`：fg 回到預設 7 觸發 `fterm_chattr` 的 reset，
   再由 `FTCONF_WORKAROUND_BOLD` 補印 `37`。尾端的 `ESC[K` 只有新訊息比前一則**短**時才會送 ⇒ 不可當必要條件。
@@ -583,25 +555,27 @@ client 端自動收掉見 `docs/board-note-skip.md`。
 - **作者欄亮色與 last-read 無關**：`isonline`（作者在線上）→ 作者名 `ANSI_COLOR(1)` 亮（bbs.c:815-823；lightbar 使用者旗標則 36 青）。
 - client 對應：`src/js/list_session.js` `_lastReadTitle`／`subjectOfListRow`／`paintLastReadListRow`；不變量見 `docs/easy-reading-list.md` #16。
 
-## 11. client parser ↔ 官方格式字串對照（2026-08 全面反查，CONFIRMED）
+## 11. client parser ↔ 官方格式字串對照（CONFIRMED，最近一次全面反查 `main@908bb063`）
 
-`src/js/` 這批「讀畫面文字反推狀態」的 parser，逐條對 `c1ff72df` 驗過。回歸守護在
-`tests/unit/string_util.test.js`（每個 case 註明出處）、`comment_parse.test.js`、
-`auto_login_logic.test.js`、`easy_reading_logic.test.js`。
+`src/js/` 這批「讀畫面文字反推狀態」的 parser 逐條對過 source。回歸守護在
+`tests/unit/string_util.test.js`（每個 case 註明出處）、`comment_parse.test.js`、`modern_comment_parse.test.js`、
+`auto_login_logic.test.js`、`auto_login_2fa.test.js`、`easy_reading_logic.test.js`。
+反查方法：把 `mbbsd`/`common`/`include`/`daemon/logind` 轉成 UTF-8 副本，再把 `src/js` 字串／regex 字面裡的中文段逐一比對是否仍在 source；查無的逐條判定是「我們自己的 UI 字」或「上游刪掉、保留做相容」。
 
 | client | 官方出處 | 契約 |
 |---|---|---|
 | `parseStatusRow` | `pmore.c#mf_display_footer` ＋ `more.c#common_pmore_footer_handler` | part1 `"  瀏覽 第 %1d[/%1d] 頁 (%3d%%) "`（頁碼**無位數上限**，實錄已見 540/540）；part2 `" 目前顯示: 第 %02d~%02d 行"`／**`" 顯示範圍: %d~%d 欄位, %02d~%02d 行"`（`mf.xpos>0` 左右捲動）**；**part3 完全不比對**——它會整段消失（見 §13 P5），要求它會讓整列失配 → 掉出 pageState 3 → 好讀累積頁被清空。兩種**沒有行號**的變體也認（回 `rowsUnknown`，行號 null）：`override_msg`（頁內有 `ESC *s` 依讀者展開碼或移位碼時 part2 換成「▲此頁內容會依閱讀者不同…」／「▲此頁內容含移位碼…」，每次畫那頁都印）與 `bpref.oldstatusbar` 的 `"  瀏覽 P.%d(%d%%)  "`；好讀在這種頁只能靠內容重疊接頁、簽章改用頁碼＋百分比（`statusSignature`）。ASCII 動畫詢問列 `PMORE_MSG_MOVIE_DETECTED` **刻意不算**狀態列（除 n／↑／←／q 外任何鍵都會開播），只在 `classifyListScreen` 當開文落地 |
-| `parseListRow` | `menu.c#show_status`（舊 CONFIRMED @ 03cdf5eb；新 CONFIRMED 讀碼 @ piaip.newui） | **兩種格式都要吃**，見 §11.9。舊：`%d/%d周X H:MM` ＋ `線上N人`（尾端 `(h)說明` 靠右，**不比對**）。新：`%d/%d 週X H:MM \| `（`線上N人` 在 80 欄子選單會被截掉，**不可當錨點**）。兩條都不錨 `^`，誤命中由 `setPageState` 的 row0 反白閘門吸收。**這是 `menu.c#domenu` 子選單唯一的指紋** |
-| `parseWaterball` | `mbbsd.c#show_call_in` | 見 §9 |
-| `parsePushInitText`（消費者：`image_upload.js`） | `bbs.c#recommend`／`angel.c` | `您覺得這篇文章 `；`FormatCommentString` 的輸入 prompt「→ id:」**無行尾時間戳** |
-| `comment_parse.COMMENT_RE` | `comments.c#FormatCommentString`＋`common/bbs/names.c#is_validuserid` | `<attr><推/噓/→><空格>ESC[33m<id>ESC[m:<msg 補到 maxlength>ESC[m<tail>`；id 長度 **2..IDLEN(12)**、首 isalpha 其餘 isalnum；`BRD_ALIGNEDCMT` 時 id 以 `%-*s` 補到 12 寬（故 `:` 前可有空格）；小天使匿名推文的 id 欄是 `<暱稱>小天使`（`bbs.c#recommend` 取 `angel_get_nick`，`angel.c`），全形字、不是合法 userid ⇒ 算樓層但標 `anonymous`，右鍵黑名單用 `isBlacklistableUserId` 擋掉；tail＝`[%15s ]MM/DD HH:MM`（`Cdate_mdHM` ＝ `"%m/%d %H:%M"`，IP 僅 `BRD_IPLOGRECMD`／guest） |
+| `parseListRow` | `menu.c#show_status`（舊 @ 03cdf5eb；新 @ main） | **兩種格式都要吃**，見 §11.9。舊：`%d/%d周X H:MM` ＋ `線上N人`（尾端 `(h)說明` 靠右，**不比對**）。新：`%d/%d 週X H:MM \| `（`線上N人` 在 80 欄子選單會被截掉，**不可當錨點**）。兩條都不錨 `^`，誤命中由 `setPageState` 的 row0 反白閘門吸收。**這是 `menu.c#domenu` 子選單唯一的指紋** |
+| `parseWaterball` | `wmsg.c#show_call_in` | 見 §9 |
+| `push_screen.classifyPushScreen`（消費者：`long_push_session.js`、`image_upload.js`） | `bbs.c#comment`（2026-10 前叫 `recommend`） | 見 §11.3；輸入 prompt「推 id:」**無行尾時間戳** |
+| `comment_parse.COMMENT_RE` | `comments.c#FormatCommentString`＋`common/bbs/names.c#is_validuserid` | `<attr><推/噓/→><空格>ESC[33m<id>ESC[m:<msg 補到 maxlength>ESC[m<tail>`；id 長度 **2..IDLEN(12)**、首 isalpha 其餘 isalnum；`BRD_ALIGNEDCMT` 時 id 以 `%-*s` 補到 12 寬（故 `:` 前可有空格）；小天使匿名推文的 id 欄是 `<暱稱>小天使`（`angel.c`），全形字、不是合法 userid ⇒ 算樓層但標 `anonymous`，右鍵黑名單用 `isBlacklistableUserId` 擋掉；tail＝`[%15s ]MM/DD HH:MM`（`Cdate_mdHM`，IP 僅 `BRD_IPLOGRECMD`／guest）。`CONFIG_OLD_RECOMMEND`（舊式「→ id:msg推」）開源碼預設關，不收 |
+| `comment_parse.parseModernCommentHeader` | `service/post/storage/engine.go#RenderFullPostText`＋`pmore.c#mf_display_comment_header` | 新格式推文（post.svc），見 §11.11。與舊格式可同篇並存 |
 | `comment_parse` 列表欄位 | `bbs.c#readdoent` | 見 §3 欄位表 |
-| `auto_login` | `mbbsd.c` 登入迴圈＋`include/common.h` | prompt `請輸入代號，或以 guest 參觀，或以 new 註冊: `(DOECHO)／`MSG_PASSWD "請輸入您的密碼: "`(NOECHO)／`您想刪除其他重複登入的連線嗎？[Y/n] `(LCECHO)／`您要刪除以上錯誤嘗試的記錄嗎? [Y/n] `(`vans`→`vgets`，**都要 `\r`**)。失敗出口＝`ERR_PASSWD "密碼不對喔！…"`、`ERR_UID "這裡沒有這個人啦！"`（`is_validuserid` 失敗，**不會再問密碼**）、`抱歉，此帳號已設定為只能使用安全連線(如ssh)登入。` |
+| `auto_login` | **WS 實際走 `daemon/logind`**（`daemon/wsproxy/wsproxy.lua` 連 `bbs_logind_addr`）；`mbbsd.c` 登入迴圈是 telnet 舊路徑。字串在 `logind.c` 的 `*_MSG` 巨集與 `include/common.h` | prompt `請輸入代號，或以 guest 參觀，或以 new 註冊: `／`MSG_PASSWD "請輸入您的密碼: "`／`您想刪除其他重複登入的連線嗎？[Y/n] `／`您要刪除以上錯誤嘗試的記錄嗎? [Y/n] `（**都要 `\r`**）。失敗出口＝`ERR_PASSWD`（現行「密碼不對或無此帳號。…」，舊「密碼不對喔！…」，一律比前綴 `密碼不對`）、`ERR_UID "這裡沒有這個人啦！"`；舊的「只能使用安全連線」上游已移除（`b12c6bb4`），保留做相容。**2FA 兩套**：logind `請輸入兩階段(2FA)驗證碼(6位限時數字 或8位救援碼):`／錯誤 `驗證碼錯誤！請確認後重新輸入。`，**錯一次 `ctx.retry++`，達 `LOGINATTEMPTS`(3) 就 `draw_goodbye` 斷線**；mbbsd `…(6位限時數字 或 8位救援碼):`／`驗證碼錯誤。請確定在時限前輸入完畢。`（5 次後鎖）⇒ 自動 2FA 最多送 2 個碼 |
 | `easy_reading.reachedPageEnd` | `pmore.c` FOOTER1 配色 | VIEWALL `ANSI_COLOR(37;44)`＝fg7/bg4（＝看完）；VIEWNONE `33;45`；一般 `34;46` |
 | `term_buf.isTextWrappedRow` | `pmore.c` `MFDISP_WRAP_INDICATOR ANSI_COLOR(0;1;37) "\\"` | 80 欄下 `maxcol = 77`（`dispw = DBCS_HEADERWIDTH(79) = 78`）⇒ indicator 落在 **col 78**（ASCII 斷行）或 **col 77**（DBCS 跨界被回退擦掉 lead byte）；顏色 fg7/bright/bg0。TRUNC 用 `>`、WNAV 用 `<`，不可混 |
-| `term_buf.setPageState` | `vtuikit.h`／`edit.c`／`angel.c` | `VMSG_PAUSE " 請按任意鍵繼續 "`；`請按 空白鍵 繼續`＝`angel.c` 的新手提示；編輯器底列＝`vs_footer(" 編輯文章 ", " (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開\t%s│%c%c%c%c%3d:%3d")`。判定只認 caption `編輯文章` ＋ 右側狀態框（`term_buf.js#EDITOR_STATUS_BOX_RE`），中段提示不比對（新版動態化，§11.10） |
-| `screen_captions.js` | 舊 `read.c:1234-1238`／`board.c:1285`／`edit.c:470`（CONFIRMED @ 03cdf5eb）＋新 `read.c#i_read_caption`／`board.c#brdlist_caption`／`edit.c#edit_msg`（CONFIRMED 讀碼 @ piaip.newui） | 最後一列**行首** token ∈ 已知 caption 集合。消費端：`classifyListScreen`、`classifyBoardListScreen`／`boardListContextKind`、`term_view` 兩個 footer 快取、`setPageState` 編輯器、`isCursorOnInputField` 例外。見 §11.10 |
+| `term_buf.setPageState` | `vtuikit.h`／`edit.c`／`angel.c` | `VMSG_PAUSE " 請按任意鍵繼續 "`；`請按 空白鍵 繼續`＝`angel.c` 的新手提示（中間夾 ANSI）；編輯器底列 caption ` 編輯文章 ` ＋ 右側狀態框，三代：`%s│%c%c%c%c%3d:%3d`（舊）→ 同（新版）→ `║%s│%c%c%c%c║%3d:%3d`。判定只認 caption ＋ `(插入\|取代).*\d+:\s*\d+$`（`term_buf.js#EDITOR_STATUS_BOX_RE`），中段提示不比對 |
+| `screen_captions.js` | 舊 `read.c:1234-1238`／`board.c:1285`／`edit.c:470`（@ 03cdf5eb）＋新 `read.c#i_read_caption`／`board.c#brdlist_caption`／`edit.c#edit_msg` | 最後一列**行首** token ∈ 已知 caption 集合（`vtuikit.c#vs_footer_draw_caption` 一律 `" %s "` 從 col 0 印）。消費端：`classifyListScreen`、`classifyBoardListScreen`／`boardListContextKind`、`term_view` 兩個 footer 快取、`setPageState` 編輯器、`isCursorOnInputField` 例外。見 §11.10 |
 | `term_keyboard` | `common/sys/vtkbd.c`＋`include/vtkbd.h` | `ESC[A/B/C/D`→`KEY_UP+(c-'A')`；`ESC[1~`→HOME、`ESC[2~`→INS、`ESC[3~/4~/5~/6~`→`KEY_DEL+(c-'3')`＝DEL/END/PGUP/PGDN（`vtkbd.h` 註明 "must follow vt220 ordering"）。全部對上 |
 | `aid_parse` | `mbbsd/aids.c#aidu2aidc` | 字母表 `0-9A-Za-z-_`（64 字），產出**恆 8 字**；反向 `aidc2aidu` 不限長度但畫面上只會出現產生端形式 |
 | `symbol_table.js` | — | **不適用**：是 client 端壞 DBCS 表（畫成 `??`；撐寬規則在 `render/color_segment.js#shouldForceWidth`），與 server 邏輯無關 |
@@ -738,18 +712,19 @@ PTT 私有 commit，不在公開 repo）。**觸發門檻無從得知**，但**�
    `tests/unit/e2e_login_budget.test.js`）。
 2. **一偵測到就整輪停手**，而不是重試——重試會無限期延長封鎖。
    `tests/e2e/helpers/bot_block.js`（偵測純函式＋跨 worker 閂鎖），守護 `tests/unit/e2e_bot_block.test.js`。
-   實測效果（2026-08-25，封鎖期間跑整輪 live）：**只送出 1 次登入嘗試、整輪 8.6 秒結束**，
-   其餘 26 條在開 browser context 之前就被閂鎖擋掉。對照沒有閂鎖時的同一情境：9 次登入嘗試、6 分鐘。
+   實測：封鎖期間跑整輪 live 只送出 1 次登入嘗試、8.6 秒結束。
 
-## 11.3 推文互動序列（`bbs.c#recommend`，2026-08-26 CONFIRMED）
+## 11.3 推文互動序列（`bbs.c#comment`，舊名 `recommend`，CONFIRMED）
 
 §11.1 只講**已完成**的推文列長什麼樣；這一節是「怎麼推」——長推文一鍵發送
 （`src/js/long_push*.js`）與圖片上傳插入位置（`src/js/image_upload.js`）的共同依據，
 兩者共用 `src/js/push_screen.js#classifyPushScreen`。消費端守護：`tests/unit/push_screen.test.js`
 （每個字串一個 case）、`long_push_flow.test.js`（鍵序）。
 
-進入點：`bbs.c` 的 `read_comms[]` `{1, recommend} // 'X'`（`'%'` 同）；文章內按 X 走
-`more.c` → `RET_DORECOMMEND` → `read_post` 的 `recommend(ent, fhdr, direct); return FULLUPDATE;`。
+進入點：`bbs.c` 的 `X`（`'%'` 同）；文章內按 X 走 `more.c#pager_cmd_comment` → `RET_DOCOMMENT`
+→ `read_post` 的 `comment(ent, fhdr, direct); return FULLUPDATE;`。2026-10 前函式叫 `recommend`、
+回傳碼叫 `RET_DORECOMMEND`，畫面序列與字串不變。新版 pager 另有 `pager_cmd_vote`（`RET_DOVOTE`，
+for 新格式「評分」），`read_post` 目前**沒有**處理它 ⇒ 還沒有作用。
 `needitem=1` ⇒ 游標必須在文章列上；`recommend()` **不移動游標**，所以列表與文章按 X
 推的是同一篇。
 
@@ -765,9 +740,9 @@ PTT 私有 commit，不在公開 repo）。**觸發門檻無從得知**，但**�
 | 4 | 確認列 …` 確定[y/N]:`（"確定"前的空格是格式的一部分） | `y\r`。`sizeof(ans)==2` ⇒ 只吃一個字元，原始碼的 `:w`／`zz` 分支**打不進去**（死碼） |
 | 5 | 寫檔 → `return FULLUPDATE` | — |
 
-**所有擋人判斷都在步驟 3 的 `getdata` 之前完成**（`bbs.c:2845-2941`：`BRD_NORECOMMEND`／
+**所有擋人判斷都在步驟 3 的 `getdata` 之前完成**（`bbs.c#comment`：`BRD_NORECOMMEND`／
 `CheckPostPerm2`／guest／`BN_ONLY_OP_CAN_ADD_COMMENT`／已刪除文／`get_board_restriction_reason`／
-`BRD_NOFASTRECMD`／同分鐘 >60 則／檔案過大／`check_cooldown`），一律 `vmsg` ＋
+`BRD_NOFASTRECMD`／同分鐘 >60 則／檔案過大；舊版另有 `check_cooldown`），一律 `vmsg` ＋
 `return FULLUPDATE` ⇒ **送一個 X 就問得到「這篇推不推得了」**，而且答案是 PTT 自己的字。
 兩個讓「白按一次」成立的事實：`lastrecommend = now` 只在**成功寫檔後**才更新
 （`bbs.c:3144`），`check_cooldown()` 唯讀（`bbs.c:4344`）⇒ 按了 X 再 Ctrl-C 取消，
@@ -786,9 +761,9 @@ PTT 私有 commit，不在公開 repo）。**觸發門檻無從得知**，但**�
 |---|---|---|
 | `本板禁止快速連續推文，請再等 %d 秒` | `BRD_NOFASTRECMD`，`bp->fastrecommend_pause` 板主可設 5–240s | ✅ 秒數在訊息裡 |
 | `本文已過長, 禁止快速連續推文, 請再等 %d 秒` | 文章 >100KiB，**固定 10 秒** | ✅ |
-| `冷靜一下吧！ (限制 %d 分 %d 秒)` | `check_cooldown`，`BRD_COOLDOWN` | ✅ |
-| `對不起，您的文章或推文間隔太近囉！ (限制 %d 分 %d 秒)` | `check_cooldown`，`REJECT_FLOOD_POST`（看板人數 vs 已發文次數，門檻表 `{4000,1, 2000,2, 1000,3, -1,10}`） | ✅ |
-| `對不起，您被設退文！ (限制 %d 分 %d 秒)` | `posttimesof(usernum)==0xf` | ❌ 懲罰狀態，等完照樣擋 |
+| `冷靜一下吧！ (限制 %d 分 %d 秒)` | 舊 `check_cooldown`，`BRD_COOLDOWN`（上游 `92228430` 2026-09-25 移除，保留相容） | ✅ |
+| `對不起，您的文章或推文間隔太近囉！ (限制 %d 分 %d 秒)` | 舊 `check_cooldown`，`REJECT_FLOOD_POST`（同上，已移除） | ✅ |
+| `對不起，您被設退文！ (限制 %d 分 %d 秒)` | 舊 `posttimesof(usernum)==0xf`（同上，已移除） | ❌ 懲罰狀態，等完照樣擋 |
 | `系統禁止短時間內大量推文` | 同一「分鐘桶」>**60** 則 | ❌ 無秒數 |
 | `抱歉, 禁止推薦` | `BRD_NORECOMMEND`／檔名首字 `L`／`FILE_MARKED&&FILE_SOLVED` | ❌ |
 | `無法推文: %s` | `!CheckPostPerm2()` 或 guest；`%s` 全集見 `cache.c#postperm_msg`（含水桶的 `使用者不可發言(尚有%d天)`） | ❌ |
@@ -802,8 +777,8 @@ PTT 私有 commit，不在公開 repo）。**觸發門檻無從得知**，但**�
 UI**，不在推文流程內。`MAX_RECOMMENDS(100)` 只影響列表上的計數顯示（`爆`／`X%d`），不擋推文。
 上游**沒有**「是否要繼續推文」之類的續推詢問。
 
-- **CONFIRMED（2026-09 修正前為 unknown）**：`read_post` 對 pmore 的 `RET_DORECOMMEND` 是
-  `recommend(ent, fhdr, direct); return FULLUPDATE;`（`bbs.c:2471-2473`）⇒ **推完必定離開 pager
+- **CONFIRMED**：`read_post` 對 pmore 的 `RET_DOCOMMENT` 是
+  `comment(ent, fhdr, direct); return FULLUPDATE;`⇒ **推完必定離開 pager
   回到文章列表**。第 1 則的 `fhdr` 是進文章那一刻 `i_read_key` 傳進來的快取，必定推對；**第 2 則
   起的 X 是在列表按的**，`i_read_key` 現場取 `&headers[crs_ln - top_ln]`（`read.c:1007`）。
 - **CONFIRMED：列表游標沒有文章身分綁定。** `crs_ln` 是 `.DIR` 的 1-based record index
@@ -823,9 +798,9 @@ UI**，不在推文流程內。`MAX_RECOMMENDS(100)` 只影響列表上的計數
   消費端與決策表見 `docs/long-push.md`「游標錨定」＋`src/js/long_push_anchor.js`。
 - 順帶：`do_add_recommend` 自己留了 race 自白（`bbs.c:2721`）——推文內容 append 到記憶體裡的
   **舊檔名**，`.DIR` 計數卻用 `ent` 行號寫，「推的時候前文被刪 → 加到後文的推文數」。
-- CONFIRMED（2026-09-24）：推文輸入欄是 `ESC[30;47m` 反白，**欄寬＝`maxlength`**。實錄同一帳號（id 10 字）
-  IP 板 36 格、非 IP 板 51 格，差 15＝IP 欄，`欄寬-1` 與 §11.1 公式逐位吻合
-  （`ptt-debug-20260924-221056.json#t=4660/17273`）。⇒ 長推文**以數反白格為準**（`term_buf.inputFieldWidth`
+- CONFIRMED：推文輸入欄是 `ESC[30;47m` 反白，**欄寬＝`maxlength`**。實錄同一帳號（id 10 字）
+  IP 板 36 格、非 IP 板 51 格，差 15＝IP 欄，`欄寬-1` 與 §11.1 公式逐位吻合。
+  ⇒ 長推文**以數反白格為準**（`term_buf.inputFieldWidth`
   → `long_push.js#pushMaxBytes({fieldWidth})`），§11.1 公式＋推文列 IP 推論降為量不到時的退路。
   確認列（`確定[y/N]:`）的線上 bytes 只有 `ESC[28;53H確定[y/N]:` ＋ 2 格欄（t=10064）——pfterm 只送差異，
   內容欄沿用輸入列那一幀；不必也不要再從確認列量。
@@ -865,19 +840,8 @@ case GRAYOUT_STANDEND:   grayout_apply(y, end, 0, FTATTR_BLINK); ft.standout=0;
 `ft.standout` 時把 `FTATTR_BLINK` 重新解讀成 `FTATTR_REVERSE` ⇒ **有底色**。
 `COLORBOLD` 走的是 `FTATTR_BOLD`（`ESC[1m`）⇒ 前景提亮一階、**背景不變**。
 
-### 時間線（六個 commit 全部驗過 `git show`）
-
-| commit | 日期 | 做的事 |
-|---|---|---|
-| `e18a7182` | 2013-01 | `Enable experimental lightbar menu system` — 加 `UF_MENU_LIGHTBAR 0x01000000`，`cursor_show()` 在該 flag 下畫 `●` ＋ `grayout(..,GRAYOUT_COLORBOLD)`＝**圓點 ＋ 無底色整列提亮**。UI 字串 `"(實驗性)啟用光棒選單系統"` |
-| `b9a5029f` | 2026-08-11 | `cleanup(cursor): Always do CURSOR_ASCII` — 「36% 使用者沒開，維護兩套 UI 太痛」；刪 `STR_CURSOR2`、廢 `UF_CURSOR_ASCII` |
-| `814adde3` | 2026-08-12 | `cleanup(menu): Remove the experimental lighbar menu` — 「只有 0.6% 使用者」；`UF_MENU_LIGHTBAR` 與那段 `COLORBOLD` 一起消失 |
-| `640a074f` | 2026-08-13 | `feat(cursor): Re-enable the legacy cursor` — 以新 flag `UF_CURSOR_LEGACY` 復活 `●`（理由：圓點可減輕閃爍游標造成的視覺疲勞）。**此時仍無整列高亮** |
-| `ebee1706` | 2026-08-14 | `feat(pfterm): Add standout() and GRAYOUT_STANDOUT` |
-| `33290148` | 2026-08-14 | `feat(user) Add UF_CURSOR_STANDOUT` — 「真正的光棒游標系統」，回收 `0x01000000` |
-
-⇒ **「無底色整列提亮」在現行 PTT 已無對應選項**（2013 的實驗品，2026-08-12 移除）。
-官方詞彙裡的「光棒」自 `33290148` 起專指**有底色**那個。
+「無底色整列提亮」（2013 年的實驗性光棒選單 `e18a7182`）已於 `814adde3`移除，現行無對應選項；
+官方詞彙裡的「光棒」自 `33290148`起專指**有底色**那個。`●` 由 `640a074f` 以 `UF_CURSOR_LEGACY` 復活。
 
 ### 對本 client 的意義
 
@@ -935,9 +899,10 @@ server 送的是編碼後的 ANSI，client 看不到 flag，只看得到結果�
 
 ## 12. 版本與未知
 
-- 以 §0 的 `build_origin`（`c1ff72df`）讀碼；PTT 實跑的是私有 commit `50372909`，差異不可見。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。
-- unknown：ws.ptt.cc 的 WS proxy 是否保留 server write 邊界（proxy 不在本 repo）。
-- unknown：私有 commit 與 upstream 的實際差異。已知線索一則——水球第二段顏色（§9）推得線上應為 `ANSI_COLOR(1;37;45)`，upstream 字面是 `ANSI_COLOR(37;45)`；推文列 `:` 與內容間的一格空白同樣是 upstream 字面（`":%-*s"`）沒有、實錄有 ⇒ client 兩種都收。
+- 以 §0 的 `build_origin` 讀碼；PTT 實跑的是私有 commit，差異不可見。`#ifdef`（COLORIZED_SAFEDEL、COLORDATE 等）影響著色不影響行列結構。
+- unknown：ws.ptt.cc 的 WS proxy 是否保留 server write 邊界（`daemon/wsproxy/wsproxy.lua` 是 nginx lua，實際部署設定不在 repo）。
+- unknown：私有 commit 與 upstream 的實際差異。已知線索——水球第二段顏色（§9）推得線上應為 `ANSI_COLOR(1;37;45)`，upstream 字面是 `ANSI_COLOR(37;45)`；推文列 `:` 與內容間的一格空白 upstream 字面（`":%-*s"`）沒有、實錄有 ⇒ client 兩種都收。
+- unknown：新格式推文（§11.11）、新版底列指令列（§11.10）、`read_cmd_num` 當場重畫底列（§4）在 PTT1／PTT2 的上線時間。
 - 大字型 term（rows≠24）：`p_lines`/`b_lines` 相對式全部成立，但 client 端規則需寫成 rows-relative；未實測。
 
 ## 13. pmore 分頁不變量（文章好讀模式的確定性依據，2026-08 全部 CONFIRMED @ efc21a30）
@@ -1085,16 +1050,15 @@ underline** ⇒ reverse 更早就被攤平成 fg/bg 互換），所以擦除條�
 
 | 畫面 | source | `KEY_HOME`（同義 `0`） | `KEY_END`（同義 `$`） |
 |---|---|---|---|
-| 文章列表 | `mbbsd/read.c:893-902`（newui `read.c#read_cmd_home/end`，CONFIRMED 同義） | `new_ln = 0; new_top = 0` | `new_ln = last_line; new_top = p_lines-1` |
-| 看板列表 | `mbbsd/board.c:1830 / 1768`（newui `board.c#board_cmd_home/end`） | `num = 0` | `num = brdnum - 1` |
-| psb 通用清單 | `mbbsd/psb.c:58-64`（newui `psb.c#psb_cmd_home/end`） | `return 0` | `return total-1` |
+| 文章列表 | `mbbsd/read.c:893-902`（新版 `read.c#read_cmd_home/end`，CONFIRMED 同義） | `new_ln = 0; new_top = 0` | `new_ln = last_line; new_top = p_lines-1` |
+| 看板列表 | `mbbsd/board.c:1830 / 1768`（新版 `board.c#board_cmd_home/end`） | `num = 0` | `num = brdnum - 1` |
+| psb 通用清單 | `mbbsd/psb.c:58-64`（新版 `psb.c#psb_cmd_home/end`） | `return 0` | `return total-1` |
 
 兩個會影響 client 設計的事實：
 
 - **`last_line` 含置底文**（read.c 的 `last_line` 是 entry 總數 - 1，置底列也在裡面）⇒ 原生 End 落在
   真正的板尾。跳號 `<很大的數字>` + `⏎` 的 `search_num(ch, last_line)`（`stuff.c:189-208`）夾到的**也是**
-  這個 `last_line` ⇒ 同樣落在最後一個 ★ 列（2026-09-25 讀碼更正：舊版本節寫「只夾到最大編號文章」是錯的，
-  舊 read.c NEWDIRECT 分支就已 `last_line += getbottomtotal`；newui `read.c#read_loader` 同）。
+  這個 `last_line` ⇒ 同樣落在最後一個 ★ 列（舊 read.c NEWDIRECT 分支 `last_line += getbottomtotal`；新版 `read.c#read_loader` 同）。
   用原生 End 的理由是少一段 prompt、少一次 `search_num` 畫面。
 - **游標已經在落點上時 PTT 一個 byte 都不送**（live-tested）。這正是舊 client 繞去跳號的理由，
   現在由 §6 的 `\f` 解決：交易送「鍵 ＋ Ctrl-L」，igetch 的全域熱鍵保證回一個完整幀。
@@ -1105,7 +1069,7 @@ underline** ⇒ reverse 更早就被攤平成 fg/bg 互換），所以擦除條�
 prefetch 的落點）。所以任何「對游標所在那一列動作」的鍵，代送前一定要先跑
 `native-sync-jump` 腿。
 
-**權威判準是 `read_comms[ch-1].needitem === 1`，不是下面這張表**（2026-09-19 修正）：
+**權威判準是 `read_comms[ch-1].needitem === 1`（新版 cmd_t 的 `need_item`），不是下面這張表**：
 `i_read_key` 的 one-key 分派（`read.c:996-1005`）只有 `needitem` 非零時才把
 `&headers[crs_ln - top_ln]` 當參數傳給命令函式（`onekey_t` 定義在
 `include/pttstruct.h:447-450`，註解自承「`needitem = 0` 表示不需要 item」）。
@@ -1113,14 +1077,14 @@ prefetch 的落點）。所以任何「對游標所在那一列動作」的鍵�
 `^A`(`show_filename`)、`^E`(`manage_post`)、`^X`(`cross_post`)、`%`(`recommend`)
 與 `C`/`D`/`E`/`F` 一整排字母鍵。
 
-手寫表必然漏（`^X` 就漏了四個月，2026-09-19「Ctrl+X 轉錄轉到別篇」）⇒ **client 端
+手寫表必然漏（`^X` 漏過，症狀「Ctrl+X 轉錄轉到別篇」）⇒ **client 端
 已不再依賴這張表**：`term_view._send`/`_convSend` 一律先問
 `list_user_bytes.decideUserBytes`，好讀緩衝期間所有使用者 byte 無條件走 sync 腿
 （`docs/easy-reading-list.md` 不變量 12e）。下表留作**查詢與推理入口**，不是白名單。
 
 ### 文章列表（`mbbsd/read.c#i_read_key`）
 
-newui 搬到 `read.c#read_common_cmds`（`read_cmd_query/edituser/tag/tag_thread/tag_prune/clear_tag`，一律取 `headers[curr - base]`），吃真游標這件事 CONFIRMED 不變。
+新版 搬到 `read.c#read_common_cmds`（`read_cmd_query/edituser/tag/tag_thread/tag_prune/clear_tag`，一律取 `headers[curr - base]`），吃真游標這件事 CONFIRMED 不變。
 
 | 鍵 | 行 | 實作 | 吃真游標？ |
 |---|---|---|---|
@@ -1128,7 +1092,7 @@ newui 搬到 `read.c#read_common_cmds`（`read_cmd_query/edituser/tag/tag_thread
 | `Ctrl-S` | :911 | `getuser(headers[crs_ln - top_ln].owner, &muser)` | **是**（使用者設定，需 `PERM_ACCOUNTS`） |
 | `Ctrl-T` | :957 | `TagThread(currdirect)`（註解自承 copy from `case 't'`） | **是** |
 | `Ctrl-D` | :970 | `TagPruner(bid)`；`MODE_SELECT` 下拒絕 | **是** |
-| `Ctrl-X` | `bbs.c:4555` | `read_comms` 的 `{ 1, cross_post }` ⇒ `cross_post(ent, fhdr, direct)`，`fhdr` 來自 `crs_ln` | **是**（轉錄；2026-09-19 補，見上方判準） |
+| `Ctrl-X` | `bbs.c:4555` | `read_comms` 的 `{ 1, cross_post }` ⇒ `cross_post(ent, fhdr, direct)`，`fhdr` 來自 `crs_ln` | **是**（轉錄） |
 | `Ctrl-A` | `bbs.c:4532` | `{ 1, show_filename }` | **是** |
 | `Ctrl-E` | `bbs.c:4536` | `{ 1, manage_post }` | **是** |
 | `%` | `bbs.c:4560` | `{ 1, recommend }`（m3itoc 式推文） | **是** |
@@ -1137,7 +1101,7 @@ newui 搬到 `read.c#read_common_cmds`（`read_cmd_query/edituser/tag/tag_thread
 
 ### 看板列表（`mbbsd/board.c`）
 
-newui 搬到 `board.c#boardlist_cmds`（`Ctrl-S` `board_cmd_search_local`、`Ctrl-W`/`Ctrl-Y` `board_cmd_whereami`、`t` `board_cmd_tag`，皆以 `ctx->curr` 為準），CONFIRMED 不變。
+新版 搬到 `board.c#boardlist_cmds`（`Ctrl-S` `board_cmd_search_local`、`Ctrl-W`/`Ctrl-Y` `board_cmd_whereami`、`t` `board_cmd_tag`，皆以 `ctx->curr` 為準），CONFIRMED 不變。
 
 | 鍵 | 行 | 實作 | 吃真游標？ |
 |---|---|---|---|
@@ -1156,8 +1120,7 @@ newui 搬到 `board.c#boardlist_cmds`（`Ctrl-S` `board_cmd_search_local`、`Ctr
 再決定要不要排 sync 腿 ⇒ 26 個字母全部自動享有。**上面兩張表是查詢入口（「為什麼
 需要 sync」），不是白名單，新增鍵不需要動它。**
 
-**2026-09-13 之前這兩類鍵都跳過 sync 腿**（症狀：搜尋作者後按 `Ctrl-Q` 查到別人，按 `←`
-退出後選取也跟著跑掉）。根因、守則與守護測試見 `docs/easy-reading-list.md` 不變量 12。
+守則與守護測試見 `docs/easy-reading-list.md` 不變量 12。
 
 ---
 
@@ -1220,7 +1183,7 @@ timeout。這正是該機制存在的理由，**不需要為它做特例**。
 
 | 環境 | 狀態 | 雙重觸發的字母 |
 |---|---|---|
-| Chrome 152 / Windows 10 | **已量**（2026-09-14） | 無 |
+| Chrome 152 / Windows 10 | **已量** | 無 |
 | Firefox / Windows | **未量** | — |
 | Chrome・Safari / macOS | **未量**（需要一台 Mac） | — |
 
@@ -1283,10 +1246,9 @@ server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複�
 * **AltGr**（Windows US-International ＝ `ctrlKey+altKey`）：被 `!ctrlKey` 排除，打出的
   字元仍走 keypress → `#t` → `onInput`。守護在 `tests/unit/alt_ctrl_remap.test.js`。
 
-## 11.9 標題列與主選單狀態列改版（CONFIRMED，讀碼 @ `origin/piaip.newui` 7e35b24e）
+## 11.9 標題列與主選單狀態列改版（CONFIRMED @ main）
 
-來源：`3rd_script/pttbbs` 分支 `origin/piaip.newui`（master b15fb6be 只併了一部分，`show_status` 仍舊版）。
-上線：PTT2 09/20、PTT1 10/04。公告文字與 source 有出入時**以 source 為準**（下表已標出）。
+公告上線：PTT2 09/20、PTT1 10/04。公告文字與 source 有出入時**以 source 為準**（下表已標出）。
 
 ### 三種標題形狀
 
@@ -1306,8 +1268,8 @@ server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複�
 舊：ESC[34;46m %d/%d周%s %d:%02d ESC[1;33;45m %-14s(today_is)
     ESC[30;47m 線上N人,我是ID,呼叫器XX  \t(h)說明
 新：VCLR_FOOTER_CAPTION " %s "(cmdtitle) ESC[1;33;45m %-14s(today_is)
-    ESC[30;47m " %d/%d 週%s %d:%02d | " ESC[31m ID ESC[30m [" | 線上" ESC[31m N ESC[30m "人"]
-    vbarlr 靠右：子選單 "(←)回到上層 (h)說明 "、主選單（M_MMENU）"(h)說明 "
+    ESC[0;30;47m " %d/%d 週%s %d:%02d | " ESC[1;31;47m ID ESC[0;30;47m [" | 線上" ESC[1;31;47m N ESC[0;30;47m "人"]
+    靠右：子選單 "(←)回到上層 (h)說明 "、主選單（M_MMENU）"(h)說明 "（2026-10 起兩者都是可點 hotspot）
 ```
 
 - **子選單在 `stream_width(lbuf)+22 > t_columns-1` 時 `lbuf[n]='\0'`，整段「 | 線上N人」被截掉**（80 欄幾乎必然）
@@ -1325,16 +1287,20 @@ server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複�
    row0 反白閘門、`isCursorOnInputField` 的 fg0/bg7、`easy_reading` 的 FOOTER1 配色 fallback 都在看顏色。
    目前都有「顏色只是閘門、內容才是判準」的結構（見 §5.1、§13 P3），暫不動。
 
-## 11.10 動態指令列與看板資訊改版（CONFIRMED，讀碼 @ `origin/piaip.newui` 7e35b24e）
+## 11.10 動態指令列與看板資訊改版（CONFIRMED @ main）
 
-上線：PTT2 09/20、PTT1 10/18（預定）。實作一律「新舊都吃」。
+公告上線：PTT2 09/20、PTT1 10/18（預定）。實作一律「新舊都吃」。
 
 ### 指令列產生器：`psb.c#vs_cmd_bar(row_type, prompt, cmd_layers)`
 
 - 候選＝各 layer 裡有 label、`prio > CMD_PRIO_NONE`、權限過、（`need_item` 時列表非空）的指令；同一鍵以先出現的 layer 為準。
   依 prio 由高到低排（`CMD_PRIO_NAV 10／LOW 30／NORM 50／HIGH 80／TOP 90／MAX 100`，`include/psb.h`）。
-- 格式（`format_cmd_for_row`／`psb_key_name`）：底列 `" (k)名"`；其他列 `"[k]名"`（首項無前導空白）。
-  鍵名：Ctrl 鍵 `^X`、方向鍵 `←→↑↓`、`Tab`／`Enter`／`DEL`／`Home`／`End`／`PgUp`／`PgDn`，其餘字元原樣。
+- 格式（`cmd_bar_draw_cmd_ex`／`psb_key_name`）：底列 `" (k)名"`；其他列 `"[k]名"`（首項無前導空白）。
+  鍵名：Ctrl 鍵 `^X`、方向鍵 `←→↑↓`、`Enter`／`Tab`／`S-Tab`／`DEL`／`Ins`／`BS`／`Home`／`End`／`PgUp`／`PgDn`／`Space`／`ESC`／`F1`…、
+  `Esc-<c>`（編輯器的 ESC 組合鍵），其餘字元原樣。`footer_keys.js` 認得能送單一序列的那些；`S-Tab`／`F<n>`／`Esc-<c>` 整組維持純文字（**不可**把 `Esc-h` 拆出一顆裸 `Esc`）。
+- **右端兩顆**：`CMD_PRIO_QUIT`（或 `KEY_LEFT`）＋`CMD_PRIO_USAGE`（或 `h`）靠右，例 `(←)離開 (h)說明`；放不下先丟離開那顆。
+- **inline 形（caption 為 NULL，pmore 用）**：從 `vgetx()` 接著印，**第一項前一格空白、其餘項目之間沒有空白**，右端兩顆也不加空白：
+  `" (y)回應(X)推文(s)切換看板…      (←)離開(h)說明 "`。
 - 兩列模式（`VS_SUB_HEADER|VS_FOOTER`，文章列表與看板列表）：`KEY_LEFT` 先放 row 1；**prio ≤ NORM 進 row 1、
   ≥ HIGH 進底列**，放不下的再溢位到任一列。底列右端 `"\t(h)說明"`；單列（`VS_FOOTER` only）且有 `KEY_LEFT` 時右端是
   `"\t(←)名 (h)說明"`。
@@ -1367,11 +1333,35 @@ server 的頁指標被移走而長頁不知道（症狀：翻頁跳格／重複�
   ⇒ `classifyListScreen` 判 `prompt`（非 clean-list）＝原生，安全。
   ⇒ `isCursorOnInputField` 已加例外：游標在最後一列且該列是 `parseStatusRow` 或已知 caption ⇒ false
   （誤判後果：返回手勢被擋、滑鼠整幀 NONE、點擊送 Ctrl-C）。
-- **pmore 底列**：part1／part2（`pmore.c` 2206-2233）不變；part3 改由 `more.c#pager_on_footer` →
-  `vs_cmd_bar(VS_FOOTER, NULL)`：READING 的 ` (y)回應 (X)推文`（HIGH，排最前）…`\t(←)離開 (h)說明`；RMAIL 是
-  ` (y)回信`。`parseStatusRow` 不比對 part3；`parsePagerFooterContext` 單向推論照舊成立（寬度不夠擠掉時退 unknown）。
+- **pmore 底列**：part1／part2（`pmore.c#mf_display_footer`）不變；part3 改由 `more.c#common_pmore_footer_handler` →
+  `vs_cmd_bar(VS_FOOTER, NULL)` 的 inline 形：READING 的 `(y)回應(X)推文`（HIGH，排最前）…`(←)離開(h)說明`；RMAIL 是
+  `(y)回信`；`pager_common_cmds` 的 `(r)回信回文` 三種模式都有 ⇒ 「回信」不證明是信箱。`parseStatusRow` 不比對 part3；
+  `parsePagerFooterContext` 單向推論（含「回應」⇒ READING）照舊成立，寬度不夠擠掉時退 unknown。
 - **`[i]` 看板資訊**：改成全螢幕可捲動列表（`board.c` 的 bconfig PSB），**必須 `q` 或 `←` 才離開**（Space／PgDn 變翻頁），
   板主熱鍵要先 `Ctrl-P` 切編輯模式。本專案沒有自動送 `i`；`aid_navigation` 逃生鍵是 ←；`screen_dismiss` 只在
   「請按任意鍵」／vmsg／輸入欄才動作 ⇒ 無需改。**日後若要自動化 `[i]`，離開一律送 ←。**
-- **滑鼠**：新版伺服器端有 locator 反白與指令列 hotspot（`vtuikit.c#vs_locator_*`、`cmd_bar_*hotspot*`），只在
-  client 送 xterm 滑鼠回報時才有作用（`psb.c#cmd_dispatch_layers` 只處理 `KEY_MOUSE`）。2026-09-25 稽核：滾輪把 `base` 移 ±1 會打破看板列表的分頁對齊；本 client 只在原生畫面（`listRenderMode === 'native'`）且使用者開了 `mouseServerReport` 才回報，正確性不受影響，細節見 `docs/board-list-smooth-scroll.md` §2.2。
+- **滑鼠**：新版伺服器端有 locator 反白、指令列／標題列（新信）hotspot、滾輪捲列表（§1.1），只在 client 送 xterm 滑鼠回報時才有作用。
+  滾輪把 `base` 移 ±1 會打破看板列表的分頁對齊；本 client 只在原生畫面（`listRenderMode === 'native'`）且使用者開了
+  `mouseServerReport` 才回報，正確性不受影響，細節見 `docs/board-list-smooth-scroll.md` §2.2。
+- **未接線的新元件**：`vtuikit.c#v_multiline_text`（多列輸入框）目前沒有呼叫端；日後若推文改用它，§11.3 的單列輸入欄假設要重查。
+
+## 11.11 新格式推文（post.svc，CONFIRMED @ main 908bb063；PTT 是否已上線未知）
+
+上游新增 `service/post`（Go 的 post.svc，2026-10）與 `mbbsd/post.c`。post.svc 寫回看板檔案時，推文改成多列一則：
+
+```
+[<Sequence>] <Author> [<IP> ]MM/DD/YYYY HH:MM     ← engine.go#RenderFullPostText／AppendCommentCache
+  <內容第一行>                                      ← 每行前縮 2 格、去 ANSI；刪除的推文內容是 "  <原因>"
+  <內容第二行>
+```
+
+pmore 只在 `comments_start`（檔案最後一個 `※ ` 開頭行之後）且 rawmode 為預設格式化時改畫
+（`pmore.c#mf_display_comment_header`）：`[N] ` ＋ id（原PO `1;36`，其他 `0;33`）＋ 右靠的 creation（`1;30`；
+塞不下從左逐段丟，全丟光就不印）；內容列的前 2 格空白換成 `│`。
+
+- **終端推文仍是舊格式**：`bbs.c#comment` → `post.c#CommentAddRecord` 寫的是 `FormatCommentString` 那一列。
+  ⇒ 一篇文章可以「上半舊格式、下半新格式」並存；兩種都要認。
+- client：`comment_parse.parseModernCommentHeader`（要求列尾 creation，80 欄下一定塞得下；id 照 `is_validuserid`）、
+  `ModernCommentThread`（黑名單連 `│` 內容列一起藏）、`agent_parse.parseModernCommentLine`（多列合成一則）。
+  新格式自帶樓號 ⇒ 不吃本地 FloorCounter、不畫樓層徽章；不參與同作者合併。守護 `tests/unit/modern_comment_parse.test.js`、
+  `screen_annotations_frontier.test.js`（含新格式的增量＝全量）。

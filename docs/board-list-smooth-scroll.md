@@ -1,6 +1,6 @@
 # 看板列表平滑捲動（`choose_board` 的好讀捲動）
 
-pref `enableBoardListSmoothScroll`（**2026-09-16 起預設 `true`**）。實作 `src/js/board_list_session.js`
+pref `enableBoardListSmoothScroll`（**預設 `true`**）。實作 `src/js/board_list_session.js`
 ＋純解析層 `src/js/board_list_parse.js`；渲染借 `src/render/screen.js` 的 `.listBodyView`
 視口（與文章列表好讀同一套）。**動這三個檔或 `term_view` 的看板列表分支前先讀本文。**
 
@@ -12,7 +12,7 @@ pref `enableBoardListSmoothScroll`（**2026-09-16 起預設 `true`**）。實作
 ## 1. 範圍（CONFIRMED，由 caption＋指令提示決定）
 
 變體由 `class_bid`／`yank_flag` 決定。舊版（03cdf5eb）靠 footer 三元式（`board.c:1279-1290`）；新版
-（`origin/piaip.newui`，PTT1 10/18 預定）caption 由 `board.c#brdlist_caption` 依 `class_bid` 給，提示由
+（上游 `main`，PTT1 10/18 預定上線）caption 由 `board.c#brdlist_caption` 依 `class_bid` 給，提示由
 `psb.c#vs_cmd_bar` 依指令表產生（prio ≥ HIGH 進底列 ` (k)名`、≤ NORM 進 row 1 `[k]名`）。細節見
 `docs/pttbbs-screen-protocol.md` §11.10。判定：`board_list_parse.js#boardListVariant`。
 
@@ -31,9 +31,8 @@ protocol §11.9）**且** footer caption 是看板列表（`src/js/screen_captio
 舊版 **`(y)只列最愛` 要先於 `(m)加入/移出最愛` 判**，兩者都以 `(m)` 開頭。
 
 **終端機列數不限 24**：engage 條件（`board_list_session._engageEligible`）只要求
-`buf.rows >= 24`（下界＝server 端 clamp，`mbbsd/term.c:55`）。2026-09-11 之前寫死
-`=== 24`，於是設定頁「BBS 終端機大小 → 固定字體大小」（列數由視窗高度反推，可視高
-> 480px 就 > 24）會讓整個功能**靜默失效**——勾了設定完全沒反應、也沒有任何提示。
+`buf.rows >= 24`（下界＝server 端 clamp，`mbbsd/term.c:55`）。**不可寫死 `=== 24`**：
+設定頁「固定字體大小」的列數由視窗高度反推，寫死會讓整個功能靜默失效。
 整條管線的幾何本來就是 `buf.rows` 推導的（`_bodyRows() = rows - 4` ＝ pttbbs 的
 `p_lines`），沒有對 24 的實質依賴。見 `docs/terminal-size.md`。
 
@@ -47,8 +46,8 @@ protocol §11.9）**且** footer caption 是看板列表（`src/js/screen_captio
 讀碼備忘：該 repo 是 **Big5**，`grep` 要加 `-a`，搜中文先 `iconv -f UTF-8 -t BIG5`，
 讀片段 `| iconv -c -f BIG5 -t UTF-8`。
 
-行號出處＝舊版（03cdf5eb）；「newui」欄＝`origin/piaip.newui` 7e35b24e 的函式（`choose_board` 已搬進
-`psb.c#psb_main`，2026-09-25 逐條重驗）。
+行號出處＝舊版（03cdf5eb）；「newui」欄＝新版（上游 `main`，原 `piaip.newui` 分支）的函式（`choose_board` 已搬進
+`psb.c#psb_main`，`main@908bb063` 覆核）。
 
 | 事實 | 出處（舊） | newui |
 |---|---|---|
@@ -158,12 +157,10 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 
 `idle` → `active` ⇄ `functionMode`；`active` → `opening`；`active` → `suspended` → `active`。
 
-**`suspended`（進板）是 2026-09-12 加的**（此前是「離開看板列表就收攤」）：進板時把畫面所有權
-交還，但**緩衝／捲動錨／變體整份留著**，退板回來原樣接上（同 `list_session` 的 suspended，
-文章列表好讀的不變量 N6）。舊行為是退板後重新 `seed`，錨變成 server 落地頁的頂列，而
-`head = (num / p_lines) * p_lines` 是 20 列分頁（board.c:1710-1716）⇒ 使用者把某個看板捲到
-視口最下面、進去再退出，它會被吸附回畫面中間（使用者回報，與文章列表好讀同一個症狀，
-錄製檔 `ptt-debug-20260911-113150`）。
+**`suspended`（進板）**：進板時把畫面所有權交還，但**緩衝／捲動錨／變體整份留著**，退板回來
+原樣接上（同 `list_session` 的 suspended，文章列表好讀的不變量 N6）。若退板後重新 `seed`，錨會
+變成 server 落地頁的頂列，而 `head = (num / p_lines) * p_lines` 是 20 列分頁（board.c:1710-1716）
+⇒ 使用者捲到視口最下面的看板進去再退出，會被吸附回畫面中間。
 
 **別名守門（承重）**：同變體的**不同清單**共用同一個編號空間形狀——分類看板的目錄列
 （`NBRD_FOLDER`）Enter 會遞迴進另一份 `choose_board`，footer 變體一模一樣（board.c:1279-1290
@@ -171,13 +168,11 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 
 1. 開板交易的落點是**另一個編號空間**（`brdlist`／`brdlist-other`／`menu`）才 `_reset()`；
    其餘（進板畫面、文章列表、prompt、落點未知）一律 `_suspend()`。
-   **這道是排除法，不可以寫回「落點是 `article-list` 才 suspend」**（2026-09-12 的修正）：
+   **這道是排除法，不可以寫回「落點是 `article-list` 才 suspend」**：
    開板的落地幀通常**不是**文章列表，而是進板畫面 —— `Read()` 在 `i_read()` 之前先跑
-   `more(<板>/notes)` ＋ `pressanykey()`（bbs.c:4646-4655，ctx 判成 `'other'`），而且它只在
+   `more(<板>/notes)` ＋ `pressanykey()`（ctx 判成 `'other'`），而且它只在
    `currbid != bnote_lastbid` 時出現（同一連線第二次進同一板就沒有）⇒ 白名單版的守門會
-   **時好時壞**：手測若進的是剛才進過的板就看不出來。實錄：錄製檔
-   `ptt-debug-20260912-015707`（build 91c6676，`boardList.transition` 的 `from` 是 `idle`
-   而不是 `suspended`）。
+   **時好時壞**：手測若進的是剛才進過的板就看不出來。
 2. 退板落地幀再過一次內容指紋 `landedSameList`：落點那一列的**板名**（`parseBoardListName`）
    要跟緩衝裡同編號那一列相同，**而且整頁掃一遍**——落地頁每一列只要在緩衝裡有同編號的
    列，板名就必須一致（緩衝沒有的編號不算證據）。有任一列矛盾就 `seed`（整份重建）。
@@ -298,20 +293,16 @@ Ctrl 組合、Alt 重映射鍵（Alt+R/T/W/V ＝ `^R/^T/^W/^V`）與其餘一切
 | unit（累積） | `tests/unit/board_list_accumulate.test.js` | 編號 key／整列覆蓋／`>` 要被 `%7d` 蓋回／跨頁零重疊／header・footer 快取不被 prompt 污染／視窗組裝與補列 |
 | unit（渲染） | `tests/unit/board_list_render.test.js` | `bodyStart:3`、header・footer 不進視口、**pageState 必須 pin 成 1**（附對照組） |
 | unit（所有權） | `tests/unit/list_render_owner.test.js`、`command_queue.test.js` | 兩個 listener 誰先跑結果相同；`flushKind` 只清自己的 |
-| offline e2e | `tests/e2e/offline/board_list.offline.spec.js`（素材 `scn-boardlist-class`：分類看板子清單，guest 可錄、不含個人最愛） | 真瀏覽器＋真 PTT 錄的往返：接管、視口建得起來、捲動只動 body、End/Home 真的移動選取、`/` 切原生鏡像後自動回來。`←` 收攤不重放（自動回復的重新 seed 次數依計時而異，bytes 對不上），由 unit 守。2026-10 前是 live `board_list_scroll.spec.js` |
+| offline e2e | `tests/e2e/offline/board_list.offline.spec.js`（素材 `scn-boardlist-class`：分類看板子清單，guest 可錄、不含個人最愛） | 真瀏覽器＋真 PTT 錄的往返：接管、視口建得起來、捲動只動 body、End/Home 真的移動選取、`/` 切原生鏡像後自動回來。`←` 收攤不重放（自動回復的重新 seed 次數依計時而異，bytes 對不上），由 unit 守 |
 
-live spec 的兩條硬規則（踩過才寫的）：
+錄 scenario 卷（`record:scenarios`）時的兩條硬規則：
 1. 主功能表的字母鍵只是**移動游標**，要 `F` 之後再 `Enter` 才進得去（menu.c 的 hotkey 語意）。
-2. 導覽類斷言前一定要等 `commandQueue.idle`，但理由已經不是「靜默 early-return」——
-   2026-09-05 起抓頁在飛時 `_requestEnd`/`_requestHome` 改成**前景優先**（丟未送出的
-   prefetch、`expedite` 縮短在飛的那筆，見 easy-reading-list.md 不變量 18）；只有
-   `hasKind('brd-jump-')`（連按去重）還會真的不排。所以要等的是「上一個跳號落地」，
-   不等就可能在「什麼都沒發生」上綠掉（2026-09-03 實測：End 按下去選取沒動，
-   斷言卻過了）。
+2. 導覽類斷言前一定要等 `commandQueue.idle`：抓頁在飛時 `_requestEnd`/`_requestHome` 是**前景優先**
+   （丟未送出的 prefetch、`expedite` 縮短在飛的那筆，見 easy-reading-list.md 不變量 18）；只有
+   `hasKind('brd-jump-')`（連按去重）會真的不排 ⇒ 要等的是「上一個跳號落地」，不等就可能在「什麼都沒發生」上綠掉。
 
-**offline e2e 尚未錄製**：`RECORD_MODE=brdlist` 只能錄「分類看板子分類」（guest 沒有
-我的最愛，§1；而我的最愛是個人偏好清單，不可入 repo）。分類子分類是站台公開內容、
-guest 可達，footer 變體與我的最愛只差一句文案 ⇒ 渲染／捲動路徑覆蓋度等價。
+**offline 素材只錄「分類看板子分類」**：guest 沒有我的最愛（§1），而我的最愛是個人偏好清單，不可入 repo。
+分類子分類是站台公開內容、guest 可達，footer 變體與我的最愛只差一句文案 ⇒ 渲染／捲動路徑覆蓋度等價。
 細節見 `docs/offline-replay-testing.md`。
 
 ---
@@ -319,7 +310,7 @@ guest 可達，footer 變體與我的最愛只差一句文案 ⇒ 渲染／捲�
 ## 7. 未做（明確的 out of scope）
 
 - 「全部看板」：上萬列，`MAX_LIST_ROWS=300` 的 evict 體感未驗。「熱門看板」舊版不 engage、新版因無法與分類子分類區分而會 engage（§1）。
-- resume 舊緩衝：目前每次進入重新 seed（`y`/`c`/`/`／進出分類都會換掉整個編號空間）。
+- 跨清單 resume：只有「進板→退板」走 `suspended` 沿用緩衝；`y`/`c`/`/`／進出分類都會換掉整個編號空間、重新 seed。
   要做的話指紋要能分辨「同一份清單」（footer 變體 ＋ row1 ＋ brdnum 推估）。
 - 背景 prefetch 的頁數上限目前寫死 3 頁（`FILL_MAX_PAGES`），與文章列表共用
   `easyReadingListPrefetchCount` 當目標列數。

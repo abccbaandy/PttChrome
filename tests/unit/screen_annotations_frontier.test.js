@@ -93,8 +93,15 @@ function makeArticle(seed, total, fullPush = false) {
       rows.push(pad80("edit reply line " + i));
     } else if (x < 0.8) {
       rows.push(...wrappedUrl(r, r() < 0.5 ? 2 : 3));
-    } else if (x < 0.9) {
+    } else if (x < 0.86) {
       rows.push(pad80(""));
+    } else if (x < 0.93) {
+      // 新格式推文（post.svc）：標頭＋`│` 內容列，黑名單要連內容列一起藏 ⇒ 跨列狀態
+      // （ModernCommentThread）跟著增量快取走，必須與全量重算一致。
+      const who = r() < 0.4 ? "badguy" : authors[Math.floor(r() * authors.length)];
+      rows.push(pad80("[" + i + "] " + who + "                     10/16/2026 13:" + mm));
+      const k = 1 + Math.floor(r() * 3);
+      for (let j = 0; j < k; ++j) rows.push(pad80("│新格式內容 " + i + "-" + j));
     } else {
       rows.push(push("推", uid, "接續 " + i, mm));
     }

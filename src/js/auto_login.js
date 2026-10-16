@@ -53,7 +53,8 @@ const MAX_DURATION_MS = 90000;
 
 // 2FA screens, from the official mbbsd/mbbsd.c#checkuser_2fa:
 //   prompt  「請輸入兩階段(2FA)驗證碼(6位限時數字 或 8位救援碼):」
-//   error   「驗證碼錯誤。請確定在時限前輸入完畢。」(5 attempts, then locked)
+//   error   「驗證碼錯誤。請確定在時限前輸入完畢。」(mbbsd: 5 attempts, then locked;
+//           logind prints「驗證碼錯誤！…」and disconnects at 3 — see OTP_SKEW_STEPS)
 //   locked  「兩階段驗證失敗次數過多。」→ back to the account prompt
 // The marker must NOT be '2FA': both the success line「2FA 兩階段驗證成功。」and
 // the self-heal notice「[系統提示] 找不到 2FA 設定檔…」contain it, and matching
@@ -71,9 +72,16 @@ const OTP_LOCKED = '兩階段驗證失敗次數過多';
 // window's code (what we used to do) can never recover. Trying the neighbouring
 // windows extends the tolerance to roughly ±90s.
 //
-// The server allows 5 tries; spending 3 still leaves the user room to type a
-// code or a recovery code by hand.
-const OTP_SKEW_STEPS = [0, -1, 1];
+// Attempt budget: the WebSocket path logs in through daemon/logind, not mbbsd
+// (daemon/wsproxy/wsproxy.lua connects to bbs_logind_addr). logind draws its own
+// 2FA prompt (TFA_PROMPT_MSG「…(6位限時數字 或8位救援碼):」, TFA_FAIL_MSG
+//「驗證碼錯誤！請確認後重新輸入。」— both still hit the markers below) and every
+// wrong code bumps ctx.retry; at LOGINATTEMPTS (3, include/config.h) it calls
+// draw_goodbye and drops the connection (logind.c#auth_user_challenge
+// AUTH_RESULT_FAIL_2FA). So at most 2 automatic codes: the third try stays
+// with the user (hand-typed code or recovery code) instead of a disconnect.
+// Only one neighbouring window fits; -1 covers a client clock that runs fast.
+const OTP_SKEW_STEPS = [0, -1];
 const MAX_OTP_ATTEMPTS = OTP_SKEW_STEPS.length;
 // Don't send a code that is about to expire (guards against a fast local
 // clock; the server itself tolerates ±30s). Only meaningful for step 0 — a
@@ -290,7 +298,7 @@ AutoLogin.prototype._handleOtp = function(screen) {
   // No usable secret → hand the keyboard back with the prompt still on screen.
   // This is the documented opt-out for people who don't want the secret stored
   // in a password manager, so it must not type anything: a stray key counts as
-  // a wrong code and burns one of the server's five attempts.
+  // a wrong code and burns one of the server's attempts (logind: 3, then disconnect).
   if (!isValidOtpSecret(this._otpSecret)) {
     console.warn(
       'auto_login: 2FA prompt but no usable OTP secret — handing over to the user'

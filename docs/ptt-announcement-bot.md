@@ -26,7 +26,7 @@ Cloudflare Worker cron（23 */6 * * * UTC）
 - 不用 feed `<updated>` 判斷修改：它是最後寫入時間，**推文也會更新**（M.1789902495.A.1C6 的 updated
   ＝唯一推文時間）。只比內文 hash。
 
-## CONFIRMED（2026-10-02）
+## CONFIRMED
 
 - feed `https://www.ptt.cc/atom/PttCurrent.xml`：20 筆、新的在前、不需 over18。本機 Node fetch 200，
   Actions runner 403，**Cloudflare Worker 200**（部署後手動入口 `dry_run=1` 實測，feed＋12 篇全文都抓得到）。`<content>` 只有前 5 行；**feed title ≠ 內文標題** ⇒ issue 標題取全文的 `標題` 行。

@@ -180,10 +180,14 @@ export const COMMENT_TIME_RE = /\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/;
 //                  "  瀏覽 第 %1d 頁 (%3d%%) "        allpages <  0（總頁未知）
 //   part2 DETAIL   " 目前顯示: 第 %02d~%02d 行"                mf.xpos == 0
 //                  " 顯示範圍: %d~%d 欄位, %02d~%02d 行"       mf.xpos >  0（左右捲動中）
-//   part3 HELP     mbbsd/more.c#common_pmore_footer_handler 依剩餘寬度五選一：
-//                  "(y)回信 (h)說明 (←/q)離開 "（RMAIL）/ "(y)回應(X%)推文(h)說明(←)離開 "
-//                  / "(y)回應(X/%)推文 (←)離開 " / "(h)說明 (←/q)離開 " / "(←q)離開 "
-//                  ——**或一種都不印**（見下）
+//   part3 HELP     mbbsd/more.c#common_pmore_footer_handler。兩代：
+//                  舊（≤ 2026-09）依剩餘寬度五選一 "(y)回信 (h)說明 (←/q)離開 "（RMAIL）/
+//                  "(y)回應(X%)推文(h)說明(←)離開 " / "(y)回應(X/%)推文 (←)離開 " /
+//                  "(h)說明 (←/q)離開 " / "(←q)離開 "；
+//                  新（CONFIRMED @ 908bb063）＝ psb.c#vs_cmd_bar(VS_FOOTER, NULL) 的 inline
+//                  形：" (y)回應(X)推文(s)切換看板…" 依 prio 排、塞到放不下為止，右端
+//                  "(←)離開(h)說明"（項目之間**沒有空白**）；RMAIL 是 "(y)回信…"
+//                  ——兩代都可能**一種都不印**（見下）
 //
 // part1 尾 1 空格 ＋ part2 首 1 空格 ⇒ 「%)」與 part2 之間恰 2 空格。
 // 頁碼/百分比用 %1d/%3d，**沒有位數上限**（實錄 stock-end 已見 540/540），所以
@@ -222,11 +226,12 @@ const STATUS_ROW_OLD_RE = /^  瀏覽 P\.(\d+)\( *(\d+)%\)  /;
 //   if (!HasUserPerm(PERM_BASIC) || currstat != READING) break;
 // 站內信是 currstat == RMAIL → 兩鍵都是 DONOTHING，送出的 "s<板名>\r" 會被 pager
 // **逐鍵當快捷鍵吃掉**（Y=回信給所有人 / X,%=推文 / T=改標題 / E=編輯…）＝誤觸。
-// part3 正好是 currstat 的直接投影（more.c#common_pmore_footer_handler:406-454）：
-//   currstat == RMAIL   → FOOTERMSG_MAIL_LONG  "(y)回信 (h)說明 (←/q)離開 "
-//   currstat == READING → FOOTERMSG_READ_LONG  "(y)回應(X%)推文(h)說明(←)離開 "
-//                       / FOOTERMSG_READ_MID   "(y)回應(X/%)推文 (←)離開 "
-//   其餘（精華區 more()、進板畫面…）→ FOOTERMSG_SHORT / VERYSHORT（兩者都沒有「回應」）
+// part3 正好是 currstat 的直接投影（more.c#common_pmore_footer_handler）：
+//   舊：RMAIL → "(y)回信 …"；READING → "(y)回應(X%)推文 …"；其餘只有說明／離開。
+//   新：layer 依 currstat 選 pager_reading_cmds（y「回應」，HIGH 排最前）／
+//       pager_mail_cmds（y「回信」）／pager_empty_cmds，再疊 pager_common_cmds
+//       （含 r「回信回文」——精華區等畫面也可能出現「回信」，'mail' 只能挑措辭）。
+//   兩代「回應」都只在 READING 出現。
 //
 // **推論只能單向**：含「回應」⇒ READING（RMAIL 分支排在最前面，不可能印出「回應」）。
 // 反向不成立——上面 part3 那段已寫明它會**整段消失**（avail <= 0 / 塞不下只填空白），

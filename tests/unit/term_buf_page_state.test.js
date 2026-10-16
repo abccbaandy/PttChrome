@@ -268,7 +268,7 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
   //   ＋靠右 "(Esc-h)… (^Z)…"，整段右對齊到 t_columns-2。
   // 以前比對的是整段中段提示 ⇒ 新版一上線 pageState 6 就失效，編輯器內的圖片上傳
   // （image_upload.js 的 pageState 6 → send）會走錯路徑。
-  const editorScreen = (mid) =>
+  const editorScreen = (mid, status = "插入│aipr  3:  5") =>
     CLEAR +
     at(0, 0) +
     "作者: someuser  看板: Test" +
@@ -276,8 +276,8 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
     "內文第一行" +
     at(ROWS - 1, 0) +
     "\x1b[34;46m 編輯文章 \x1b[30;47m" +
-    padCols(mid, COLS - width(" 編輯文章 ") - width("插入│aipr  3:  5")) +
-    "插入│aipr  3:  5" +
+    padCols(mid, COLS - width(" 編輯文章 ") - width(status)) +
+    status +
     "\x1b[m" +
     at(2, 4);
 
@@ -290,6 +290,14 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
   test("新版編輯器底列（動態指令列中段）→ 6", () => {
     const t = makeBuf();
     t.paint(editorScreen(" (^X)存檔 (^C)色碼 (^V)彩色 (Esc-h)按鍵 (^Z)說明"));
+    expect(t.buf.pageState).toBe(6);
+  });
+
+  // 2026-10 狀態框改成 "║%s│%c%c%c%c║%3d:%3d"（CONFIRMED @ pttbbs 908bb063
+  // edit.c#edit_msg 的 status_tail）；中段改由 cmd_bar_draw_cmd 逐顆畫 "(^X)存檔"…
+  test("2026-10 編輯器底列（║ 框住的狀態框）→ 6", () => {
+    const t = makeBuf();
+    t.paint(editorScreen(" (^X)存檔 (^C)色碼 (^V)彩色 (Esc-h)按鍵 (^Z)說明", "║插入│aipr║  3:  5"));
     expect(t.buf.pageState).toBe(6);
   });
 

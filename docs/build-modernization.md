@@ -37,7 +37,7 @@
 | `@tabler/icons-react` | 新增（2026-10，手機底部導覽的 icon） | Mantine 官方文件採用的 icon 庫、tree-shake（只打包有 import 的那幾顆）；不手刻 inline SVG。只被 src 深處 import ⇒ 已列進 `vitest.config.mjs` unit-browser 的 `optimizeDeps.include`（否則測試中途重新預打包、瀏覽器斷線） |
 | `@vitest/browser-playwright`、`playwright` | 新增（unit-browser project） | Vitest 官方的 Browser Mode provider；peer 是**精確**的 vitest 版本，`playwright` 必須與 `@playwright/test` 同版（Dependabot 以 group 綁一起升） |
 
-掃描結論（2026-07）：**無其他「過時陣營」殘留**。新增依賴時比照上表——先查是否已有內建／主流替代，無維護的小套件優先內聯。
+掃描結論：**無其他「過時陣營」殘留**。新增依賴時比照上表——先查是否已有內建／主流替代，無維護的小套件優先內聯。
 
 ### jsdom → happy-dom 評估（2026-10，happy-dom 20.14.5 vs jsdom 30.1.1，Vitest 5.0.2）
 
@@ -93,4 +93,4 @@
 
 ## Deprecated 瀏覽器 API
 
-已清零（2026-07）：`execCommand('copy')`→`navigator.clipboard.writeText`（正規化在純函式 `string_util.js#normalizeCopyText`，unit＋`ui_behavior.offline.spec.js` 複製冒煙測試守護）、`createEvent('MouseEvents')`→`new MouseEvent`、`touch_controller.js`＋Chrome UA sniffing 整份移除（目標＝桌機瀏覽器）。paste 攔截（`onDOMPaste`）非 deprecated，保留。**別再重複掃描這一區**。
+已清零：`execCommand('copy')`→`navigator.clipboard.writeText`（正規化在純函式 `string_util.js#normalizeCopyText`，unit＋`ui_behavior.offline.spec.js` 複製冒煙測試守護）、`createEvent('MouseEvents')`→`new MouseEvent`、`touch_controller.js`＋Chrome UA sniffing 整份移除（目標＝桌機瀏覽器）。paste 攔截（`onDOMPaste`）非 deprecated，保留。**別再重複掃描這一區**。

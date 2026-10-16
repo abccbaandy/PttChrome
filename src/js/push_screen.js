@@ -9,8 +9,9 @@
 // 「上傳完都說不在推文框」。
 //
 // ---- PTT 推文互動序列（反查 3rd_script/pttbbs，逐字比對 Big5 原始碼）----
-// 進入點 mbbsd/bbs.c:4591 `{1, recommend} // 'X'`（'%' 同）；文章內按 X 走
-// more.c:91-93 → RET_DORECOMMEND → bbs.c:2467 recommend()。畫面序列（底列＝b_lines）：
+// 進入點 bbs.c 的 `X`（'%' 同）；文章內按 X 走 more.c#pager_cmd_comment → RET_DOCOMMENT
+// → bbs.c#read_post → comment()（2026-10 前叫 recommend()／RET_DORECOMMEND，流程與字串
+// 不變，CONFIRMED @ 908bb063）。行號隨 upstream 漂，以函式名為準。畫面序列（底列＝b_lines）：
 //
 //   0  擋人橫幅   vmsg/vmsgf → " ◆ <訊息>" ＋右靠 " [按任意鍵繼續]"
 //                 （include/vtuikit.h:41-42 VMSG_MSG_PREFIX / VMSG_MSG_FLOAT）
@@ -46,15 +47,19 @@ const VMSG_FLOAT = '[按任意鍵繼續]';
 
 // 「等冷卻就會過」的訊息。秒數一律由 parseCooldownSeconds 從訊息本文取，
 // 這裡只決定「這是可以等的」還是「等了也沒用」。
+//
+// 後兩條（與下面的「您被設退文」）是 check_cooldown 的訊息，上游 92228430（2026-09-25）
+// 已整段移除；PTT 實跑的是私有 commit，舊 server 仍可能送 ⇒ 保留做新舊相容，認得到
+// 也只是多一種「可以等」的分類，不會誤判。
 const COOLDOWN_RE = [
-  /本板禁止快速連續推文/, // bbs.c:2894  板主可設 5-240 秒
-  /本文已過長, ?禁止快速連續推文/, // bbs.c:2927  >100KiB 文章固定 10 秒
-  /冷靜一下吧/, // bbs.c:4351  check_cooldown BRD_COOLDOWN
-  /間隔太近囉/ // bbs.c:4365  check_cooldown REJECT_FLOOD_POST
+  /本板禁止快速連續推文/, // bbs.c#comment  板主可設 5-240 秒
+  /本文已過長, ?禁止快速連續推文/, // bbs.c#comment  >100KiB 文章固定 10 秒
+  /冷靜一下吧/, // 舊 bbs.c#check_cooldown BRD_COOLDOWN
+  /間隔太近囉/ // 舊 bbs.c#check_cooldown REJECT_FLOOD_POST
 ];
 
-// 有秒數但**等完照樣擋**（posttimesof == 0xf 是懲罰狀態，bbs.c:4356），
-// 以及使用者定案要中止的「同一分鐘 >60 則」（bbs.c:2909）。
+// 有秒數但**等完照樣擋**（舊 check_cooldown 的 posttimesof == 0xf 懲罰狀態，見上），
+// 以及使用者定案要中止的「同一分鐘 >60 則」（bbs.c#comment）。
 const FATAL_WITH_TIME_RE = [/您被設退文/, /系統禁止短時間內大量推文/];
 
 // 內容輸入列／確認列的共同前綴：型別符 ＋ 空白 ＋ id ＋（可選補空白）＋ ':'。

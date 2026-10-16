@@ -39,20 +39,19 @@
   就是對著 `p_lines` 寫的。
   - 範圍：舊版 **80–200 欄、24–100 列**；upstream `dc30d74`（2026-09「portrait mode
     terminals」）放寬為 **20–200 欄、24–150 列**。ptt.cc 是否已部署：`unknown`。
-- **窄欄 NAWS（<80）不採用，手機也一樣**：`dc30d74` 只改 config 常數，畫面層仍照 80 欄排——
-  文章列表前綴固定 ~33 欄、標題寬 `bbs.c` 的 `t_columns-34`（40 欄時剩 6 欄）；看板列表
-  `board.c` 欄位是固定寬 printf（≈77 欄），`t_columns-68` 在 <68 欄為負值（printf 視同無
-  precision）⇒ 列照樣 ~80 欄寬、被 pfterm 截斷；`pmore` 在 t_columns 做 server 端換行 ⇒
-  推文列尾 IP／日期折到下一列，打壞 `comment_parse`、黑名單、`mouse_regions`、`list_card.js`
-  的 cell 區間與好讀跨頁去重。手機的窄版面由 client 端 reflow／卡片做（`docs/mobile.md`
-  Phase 3–4）。重新評估的觸發條件：upstream 真的讓列表／選單／推文依 t_columns 重排（先讀那些 commit）。
+- **窄欄 NAWS（<80）不採用，手機也一樣**：upstream 只有**列表**依 t_columns 重排（VCOL，`docs/pttbbs-screen-protocol.md`
+  §3：窄於 80 欄時依 pri **整欄省略**——看板列表 79 欄就沒有編號欄、文章列表 <47 欄開始省略；寬於 80 只有標題延展）。
+  `pmore` 仍在 t_columns 做 server 端換行 ⇒ 舊格式推文列尾 IP／日期折到下一列，打壞 `comment_parse`、黑名單、
+  `mouse_regions`、`list_card.js` 的 cell 區間與好讀跨頁去重；列表少了編號欄則看板列表平滑捲動不 engage。
+  手機的窄版面由 client 端 reflow／卡片做（`docs/mobile.md` Phase 3–4）。重新評估的觸發條件：upstream 讓**推文與內文**
+  也依 t_columns 重排（先讀那些 commit）。
 - 列數上限跟 ptt.cc 部署版本：150 未確認前 `term_size.js#MAX_ROWS` 維持 100（送超過
   server 上限的 NAWS 會讓兩邊 rows 認知分歧）。
 - `term_resize` 只做 `redrawwin() + refresh()`：**重送既有 screen buffer**，不會叫
   應用層用新的 `b_lines` 重畫。所以在使用中改大列數，**當下那一頁不會變多**，要等
   下一次畫面重畫（翻頁／重進看板）才看得到效果。這不是 client 的 bug。
 - 加寬欄數對閱讀**沒有收益**：文章內文本來就只有 ~78 欄，加寬只是右側留白；會變的
-  只有列表標題欄（`bbs.c:745` 的 `t_columns-34`、`board.c:1526` 的 `t_columns-68`）。
+  只有列表標題欄（VCOL 的標題欄上限 `TTLEN+1`／看板敘述 `BTLEN+1`，見協定 §3）。
 
 ## 4. LOCKED：欄數恆 80
 

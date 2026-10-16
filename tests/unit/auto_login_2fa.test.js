@@ -16,6 +16,11 @@ const SECRET = "ABCDEFGHIJKLMNOP";
 const OTP_PROMPT =
   "此帳號需要兩階段驗證。\n請輸入兩階段(2FA)驗證碼(6位限時數字 或 8位救援碼):";
 const OTP_BAD = OTP_PROMPT + "\n驗證碼錯誤。請確定在時限前輸入完畢。";
+// WebSocket 連線的登入其實由 daemon/logind 處理（daemon/wsproxy/wsproxy.lua 連
+// bbs_logind_addr）。它自己畫 2FA（logind.c TFA_PROMPT_MSG / TFA_FAIL_MSG，row 21-22），
+// 字面與 mbbsd 不同；錯一次 ctx.retry++，**達 LOGINATTEMPTS(3) 就 draw_goodbye 斷線**。
+const LOGIND_PROMPT = "請輸入兩階段(2FA)驗證碼(6位限時數字 或8位救援碼):";
+const LOGIND_BAD = "驗證碼錯誤！請確認後重新輸入。\n" + LOGIND_PROMPT;
 
 // A step boundary, so remaining-time maths in the tests is obvious.
 const STEP_START = 1_700_000_040_000;
@@ -109,7 +114,7 @@ describe("2FA prompt → sends the current TOTP", () => {
 describe("no usable secret → hands over to the user", () => {
   // This is the documented opt-out ("leave the secret empty and type the six
   // digits yourself"), not just error handling: a stray key would count as a
-  // wrong code and burn one of the server's five attempts.
+  // wrong code and burn one of the server's attempts.
   test("empty secret → stops without sending anything", async () => {
     const al = makeLogin({ _otpSecret: "", __screen: OTP_PROMPT });
     await tick(al);
@@ -156,26 +161,8 @@ describe("retries", () => {
     );
   });
 
-  test("and then the window on the other side", async () => {
-    const al = makeLogin({ __screen: OTP_PROMPT });
-    await tick(al);
-    al.__screen = OTP_BAD;
-    vi.setSystemTime(STEP_START + 2000);
-    al._lastActionAt = 0;
-    await tick(al);
-    vi.setSystemTime(STEP_START + 4000);
-    al._lastActionAt = 0;
-    await tick(al);
-    expect(al.__sent).toHaveLength(3);
-    expect(al.__sent[2]).toBe(
-      (await totpCode(SECRET, {
-        atMs: STEP_START + 4000 + TOTP_PERIOD_SEC * 1000
-      })) + "\r"
-    );
-  });
-
-  // The server allows five tries; we spend three and leave the rest for a
-  // hand-typed code or a recovery code.
+  // logind 只給 3 次（第 3 次錯就斷線）⇒ 自動最多送 2 個碼，留 1 次給手動輸入／救援碼。
+  // 三個時間窗全試會在第 3 次錯時被斷線，使用者連手動輸入的機會都沒有。
   test("gives up once every skew step has been rejected", async () => {
     const al = makeLogin({ __screen: OTP_PROMPT });
     await tick(al);
@@ -185,12 +172,26 @@ describe("retries", () => {
       al._lastActionAt = 0;
       await tick(al);
     }
-    expect(al.__sent).toHaveLength(3);
+    expect(al.__sent).toHaveLength(2);
+    expect(al.__stopped).toBe(true);
+  });
+
+  test("logind 的 2FA 畫面：照認、錯了換時間窗，且不會送到第 3 次（LOGINATTEMPTS 斷線）", async () => {
+    const al = makeLogin({ __screen: LOGIND_PROMPT });
+    await tick(al);
+    expect(al.__sent).toHaveLength(1);
+    al.__screen = LOGIND_BAD;
+    for (let i = 1; i <= 4; ++i) {
+      vi.setSystemTime(STEP_START + 2000 * i);
+      al._lastActionAt = 0;
+      await tick(al);
+    }
+    expect(al.__sent).toHaveLength(2);
     expect(al.__stopped).toBe(true);
   });
 
   // Crossing a window boundary can make the next step land on the code we just
-  // sent; burn the step rather than one of the server's five attempts.
+  // sent; burn the step rather than one of the server's attempts.
   test("never sends the same code twice in a row", async () => {
     const al = makeLogin({ __screen: OTP_PROMPT });
     await tick(al);

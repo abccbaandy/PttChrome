@@ -50,6 +50,16 @@ describe("keyBytesFor：只認單一按鍵", () => {
     expect(keyBytesFor("↓")).toBe("\x1b[B");
     expect(keyBytesFor("PgUp")).toBe("\x1b[5~");
     expect(keyBytesFor("PgDn")).toBe("\x1b[6~");
+    // 新版指令列鍵名（mbbsd/psb.c#psb_key_name）
+    expect(keyBytesFor("Space")).toBe(" ");
+    expect(keyBytesFor("Ins")).toBe("\x1b[2~");
+    expect(keyBytesFor("BS")).toBe("\b");
+    // 沒有單一序列可送的鍵名 ⇒ 不認（整組維持純文字）
+    expect(keyBytesFor("S-Tab")).toBeNull();
+    expect(keyBytesFor("Esc-h")).toBeNull();
+    // 編輯器底列的 `(Esc-h)`：不可被拆成可點的裸 `Esc`（裸 ESC 會讓 vtkbd 停在 ESC 態）
+    expect(tokenizeKeyGroup("Esc-h")).toBeNull();
+    expect(tokenizeKeyGroup("Esc-Space")).toBeNull();
     expect(keyBytesFor("Home")).toBe("\x1b[1~");
     expect(keyBytesFor("End")).toBe("\x1b[4~");
     expect(keyBytesFor("Enter")).toBe("\r");
