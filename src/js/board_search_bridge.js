@@ -26,6 +26,7 @@ import {
   beginInFlight,
   endInFlight
 } from './article_search';
+import { recordFor } from './reading_record';
 
 // IDLEN（include/pttstruct.h）：看板名稱最長 12 字元。
 export const BOARD_NAME_MAX = 12;
@@ -147,6 +148,9 @@ export function BoardSearchBridge(core, onUpdate) {
   this._queried = ''; // 最近一趟送出去查的字（prompt 開出來時輸入欄是空的）
   this._result = null;
   this._final = null; // { type: 'submit'|'cancel', text, cb }
+  // 閱讀紀錄（決策表 'board-search'）：prompt 一開，列表就切到原生鏡像；取消／開不
+  // 出來時要把視野還回去，送出（換板）則不還原。
+  this._bookmark = core ? recordFor(core).begin('board-search') : null;
   this._open();
 }
 
@@ -241,6 +245,7 @@ BoardSearchBridge.prototype = {
     this._dead = true;
     const fin = this._final;
     this._final = null;
+    this._endRecord('fail');
     if (fin) {
       endInFlight(this._core);
       // prompt 從沒開出來＝PTT 不接受 `s`（同 submitSearch 第一步的 onFail）；
@@ -331,10 +336,12 @@ BoardSearchBridge.prototype = {
       },
       onDone: function(result) {
         self._finish();
+        self._endRecord(isSubmit ? 'done' : 'cancel');
         if (fin.cb.onDone) fin.cb.onDone(result);
       },
       onFail: function() {
         self._finish();
+        self._endRecord('fail');
         if (fin.cb.onFail) fin.cb.onFail();
       },
       onFlushed: function() {
@@ -349,5 +356,13 @@ BoardSearchBridge.prototype = {
     this._dead = true;
     this._final = null;
     endInFlight(this._core);
+  },
+
+  // 書籤只交回一次（_lost 與收尾命令的 onFail 可能都會走到）。
+  _endRecord: function(outcome) {
+    const bm = this._bookmark;
+    if (!bm) return;
+    this._bookmark = null;
+    recordFor(this._core).end(bm, outcome);
   }
 };

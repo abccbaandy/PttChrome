@@ -56,6 +56,7 @@ import { aidSearchLanded } from './aid_navigation';
 // 註解都在 screen_dismiss.js，與「滑鼠點空白處關框」**共用同一份**。
 // 不要在這裡再定義第二份。
 import { KEY_ABORT, KEY_DISMISS } from './screen_dismiss';
+import { recordFor } from './reading_record';
 
 // 每一步的等待預算。推文的回應是 server 立刻重畫底列，正常在一個 round-trip 內。
 const STEP_TIMEOUT_MS = 5000;
@@ -139,8 +140,9 @@ LongPushSession.prototype = {
     this._anchor = null;
     this._relocations = 0;
     // 按 Q 會把使用者踢出文章（view_postinfo 也 return FULLUPDATE），收工回文章
-    // 時要把閱讀位置還回去。
+    // 時要把閱讀位置還回去。來源是閱讀紀錄的書籤（_bookmark，reading_record）。
     this._readLineIndex = null;
+    this._bookmark = null;
     // 最後一次 settle 的 facts。收尾鍵（_enqueueAbort）走的是自己的 enqueue，
     // 沒經過 _step，但收完之後要用**新鮮的** facts 過 _gate ⇒ 兩邊都記一次。
     this._lastFacts = null;
@@ -244,6 +246,9 @@ LongPushSession.prototype = {
   // 在唯讀 Textarea 裡，要不要複製由他按。
   _finish: function(outcome) {
     const o = outcome || {};
+    // 不論成敗：外部導覽到此結束。停在列表時交回靜置探針（否則列表好讀卡在原生
+    // 鏡像直到下一次開文），身後的列表紀錄在回到同一份列表時還原。
+    recordFor(this._core).releaseExternal();
     // _rest() 讀的是 _text/_offset，**一定要在 _reset() 之前**。
     const rest = o.keepRest ? this._rest() : '';
     const sent = this._sent;
@@ -293,9 +298,12 @@ LongPushSession.prototype = {
 
   // 能推。把 preflight 讀到的事實封進 _armed 交給輸入框，線路還給使用者。
   _preflightDone: function(facts) {
+    // 探完路（回到文章或停在列表）：外部導覽告一段落，start() 會再進一次序幕。
+    recordFor(this._core).releaseExternal();
     this._armed = {
       anchor: this._anchor,
       readLineIndex: this._readLineIndex,
+      bookmark: this._bookmark,
       startedInArticle: this._startedInArticle,
       // reopen 沒回到文章時，start() 要先送 \f 重新確認畫面（_enqueueOrient）。
       landedInArticle: !!(facts && facts.kind === 'article'),
@@ -317,6 +325,7 @@ LongPushSession.prototype = {
   // 不能推（或探路本身失敗）。
   _preflightFail: function(payload) {
     const p = payload || {};
+    recordFor(this._core).releaseExternal();
     this.active = false;
     this._clearTimer();
     this._emit(null);
@@ -393,6 +402,7 @@ LongPushSession.prototype = {
     if (armed) {
       this._anchor = armed.anchor;
       this._readLineIndex = armed.readLineIndex;
+      this._bookmark = armed.bookmark || null;
       this._startedInArticle = armed.startedInArticle;
       this._userId = (armed.screen && armed.screen.userId) || '';
       this._ipLogged =
@@ -411,24 +421,22 @@ LongPushSession.prototype = {
     }
 
     this._startedInArticle = this._termBuf.pageState === 3;
-    // ORDER INVARIANT：閱讀位置與文章標頭都必須在 _enterFunctionMode() **之前**
-    // 讀（理由見 _prologue）。
-    this._readLineIndex = this._currentLineIndex();
+    // 文章標頭必須在 _enterFunctionMode() **之前**讀（理由見 _prologue）；閱讀位置
+    // 由閱讀紀錄給（鏡像期間是凍結的那一份，順序不影響）。
+    this._takeBookmark();
     this._anchor = articleAnchor(this._articleHeadRows());
     this._prologue();
     this._enqueueResolveAid();
     return true;
   },
 
-  // 序幕：採樣 → 切到原生鏡像。**採樣一定要在 _enterFunctionMode() 之前**——
-  // 那個函式結尾的 termBuf.notify() 是同步的，term_view.redraw 的 functionMode
-  // 分支第一件事就是 mainDisplay.scrollTop = 0（同一條不變量在
-  // deep_link_controller.copyCurrentPostLink 與 aid_navigation.start 都有註解）。
-  // 錨點基準也一定要在**還在文章裡**的時候取：落回列表那一幀已經是 i_read 重讀
+  // 序幕：採樣 → 切到原生鏡像。閱讀位置來自閱讀紀錄（reading_record）：它在
+  // _enterFunctionMode() 那一刻凍結，所以鏡像之後再問也拿得到真正的位置。
+  // 錨點基準一定要在**還在文章裡**的時候取：落回列表那一幀已經是 i_read 重讀
   // headers 之後的畫面，游標列可能早就換人（long_push_anchor.js 檔頭有推導）。
   _prologue: function() {
     if (this._phase === 'preflight') {
-      this._readLineIndex = this._currentLineIndex();
+      this._takeBookmark();
       this._anchor = articleAnchor(this._articleHeadRows());
     }
     // 把**真的**原生畫面放到台面上再開始驅動它：文章好讀的 functionMode 是既有的
@@ -442,9 +450,15 @@ LongPushSession.prototype = {
       this._core.boardListSession.beginExternalNavigation();
   },
 
-  // 與 deep_link_controller._currentLineIndex / aid_navigation._currentLineIndex
-  // 同一套算法（見上面的 ORDER INVARIANT）：換算在 term_view.currentLineIndex（量 srow
-  // 節點；scrollTop/chh 會把行內預覽的高度算成列數）。
+  // 領閱讀紀錄的書籤（決策表 'long-push'）。書籤量不到文章時（unit 的假畫面）退回
+  // term_view.currentLineIndex（量 srow 節點；scrollTop/chh 會把行內預覽算成列數）。
+  _takeBookmark: function() {
+    const bm = recordFor(this._core).begin('long-push', { view: this._view, buf: this._termBuf });
+    this._bookmark = bm;
+    this._readLineIndex =
+      bm.article && bm.article.lineIndex != null ? bm.article.lineIndex : this._currentLineIndex();
+  },
+
   _currentLineIndex: function() {
     const view = this._view;
     return view && view.currentLineIndex ? view.currentLineIndex() : null;
@@ -992,14 +1006,13 @@ LongPushSession.prototype = {
     const self = this;
     const toBottom = !!(opts && opts.toBottom);
     const land = function(facts) {
-      const er = self._core.easyReading;
-      if (toBottom) {
-        if (er && er.requestScrollToBottom) er.requestScrollToBottom();
-      }
+      // 決策表 'long-push'：送完（done）落在文末；探路／被擋（cancel）回原列。
       // 按 Q 取 AID 會把使用者踢出文章（view_postinfo 也 return FULLUPDATE），
       // 不還原閱讀位置等於把他的進度吃掉。
-      else if (self._readLineIndex && er && er.requestScrollRestore)
-        er.requestScrollRestore(self._readLineIndex);
+      recordFor(self._core).end(self._bookmark || { feature: 'long-push' }, toBottom ? 'done' : 'cancel', {
+        only: 'article',
+        article: { lineIndex: self._readLineIndex }
+      });
       onLanded(facts);
     };
     this._step({

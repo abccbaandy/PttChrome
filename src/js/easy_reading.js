@@ -10,6 +10,7 @@ import { offsetTopWithin } from './scroll_anchor';
 import { renderChunksAround } from '../render/screen_chunk';
 import { isJumpParkedListScreen } from './list_session';
 import { createBottomStick } from './bottom_stick';
+import { recordFor } from './reading_record';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
 // (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
@@ -1525,6 +1526,10 @@ EasyReading.prototype._enterFunctionMode = function() {
   if (this._functionMode)
     return;
   console.log('enter function mode');
+  // 閱讀紀錄凍結：鏡像那一幀的 redraw 會把 scrollTop 歸零，之後任何人問「讀到哪」
+  // 都要拿到**這一刻**的位置（reading_record.freeze；取代各功能自己記的採樣順序）。
+  // 一定要在 _functionMode = true 之前：量的是好讀長頁。
+  recordFor(this._core).freeze('article', undefined, { view: this._view, buf: this._termBuf });
   // Drop any in-flight auto page-down so it can't fire (via _onViewUpdated) while we
   // are mirroring a native prompt.
   this.sendCommandAfterUpdate = '';

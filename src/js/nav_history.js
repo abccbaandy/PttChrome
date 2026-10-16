@@ -130,7 +130,8 @@ NavHistory.prototype = {
   // the old anchor's board is then reused. With no board at all we do NOT
   // upgrade — an aid anchor without a board cannot be navigated to (the AID
   // search only ever looks inside currboard).
-  upgradePendingOriginAid: function(board, aid, lineIndex) {
+  // list：身後的列表紀錄（reading_record），同 lineIndex 只在沒有舊錨可繼承時用。
+  upgradePendingOriginAid: function(board, aid, lineIndex, list) {
     const p = this._pending;
     if (!p || p.type !== 'jump' || !aid) return;
     const prev = p.origin;
@@ -145,6 +146,8 @@ NavHistory.prototype = {
       lineIndex: prev ? prev.lineIndex : lineIndex == null ? null : lineIndex,
       label: '#' + aid
     };
+    const keepList = prev ? prev.list : list;
+    if (keepList) p.origin.list = keepList;
   },
 
   commitJump: function() {

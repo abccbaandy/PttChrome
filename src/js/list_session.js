@@ -72,7 +72,8 @@ import {
   rowHasAnyTitle,
   rowHasTitle
 } from './screen_titles';
-import { isArticleListFooter } from './screen_captions';
+import { isArticleListFooter, footerCaption } from './screen_captions';
+import { recordFor, listRecordMatches } from './reading_record';
 import {
   windowVisibleSequence,
   LIST_HEADER_ROWS,
@@ -300,6 +301,16 @@ export function hasNumberedEntryRow(facts) {
   const nums = (facts && facts.nums) || [];
   for (let r = 3; r <= (facts.rows || 0) - 2; ++r) if (nums[r] != null) return true;
   return false;
+}
+
+// 這份清單的編號空間：'select' ＝搜尋結果（MODE_SELECT）或文摘（MODE_DIGEST），
+// 'plain' ＝完整列表。依底列 caption（read.c#i_read_caption）。舊版 caption 一律
+// 「文章選讀」分不出來 ⇒ 當 plain（已知限制，同 screen_refresh 的 LEAVES_ON_S）。
+const SELECT_CAPTIONS = ['系列文章', '文摘列表'];
+export function listModeOf(facts) {
+  const rows = (facts && (facts.rows || (facts.rowTexts || []).length)) || 0;
+  const last = (facts && facts.rowTexts && facts.rowTexts[rows - 1]) || '';
+  return SELECT_CAPTIONS.indexOf(footerCaption(last)) >= 0 ? 'select' : 'plain';
 }
 
 // ---------------------------------------------------------------------------
@@ -869,10 +880,11 @@ export function ListSession(core, view, termBuf, queue) {
   this._topNum = null; // 捲動錨：視口頂端那一列的文章編號
   // 視口頂端是置底列（無編號）時的錨。與 _topNum 互斥，同 _selectedPinnedKey。
   this._topPinnedKey = null;
-  // 待還原的捲動錨（閱讀進度）：編號空間不變的原生交易（目前只有右鍵「前已讀後
-  // 未讀」）回好讀時要還原，而不是採用 PTT 分頁的視窗頂端。
-  // { topNum, topPinnedKey, scrollFrac, boardName, cursorNum, at } / null。
-  // 見 _adoptPendingViewport / _tryApplyPendingViewport。
+  // 待還原的捲動錨（閱讀進度）：由閱讀紀錄（reading_record.end → requestViewportRestore）
+  // 或「身後的列表」（rebuild 時 takeBehindList）放進來；回好讀的 rebuild 驗證過才套用，
+  // 而不是採用 PTT 分頁的視窗頂端。
+  // { topNum, topPinnedKey, scrollFrac, boardName, mode, cursorNum, matchBoardOnly, at } / null。
+  // 見 _adoptPendingViewport / _tryApplyPendingViewport、docs/reading-record.md。
   this._pendingViewport = null;
   // 採用原生落點時那一頁的最後一列（{ num, pinnedKey }）。下一次 applyScrollAfterRender
   // 用 landingTopPos 把視口調到游標可見（手機卡片一屏放不下原生一頁）後清掉。
@@ -1225,11 +1237,124 @@ ListSession.prototype = {
   // final article settle takes the normal handoff-article path.
   beginExternalNavigation: function() {
     if (this.state === 'idle') return;
+    // 身後的列表（閱讀紀錄）：外部序列會清掉看板身分 ⇒ 之後回到列表一律 rebuild。
+    // 先把使用者的視野交給閱讀紀錄，rebuild 時驗證（同板、同編號空間、游標仍在
+    // 這一篇）才還原。看板身分已經被上一趟清掉（長推文探路後的第二次序幕）時保留
+    // 舊的那份 —— 這時量到的是空的。
+    const pos = this.readingPosition();
+    if (pos && pos.board != null) recordFor(this._core).noteBehindList(pos);
     this.state = 'functionMode';
     // 'external'：**永不自動解除**（不變量 N1）。序列途中的 clean-list 幀很多，
     // 命令與命令之間 inFlightKind 也會是 null ⇒ 讓靜置探針看到就會把別人的序列
     // 從中間截斷（deep link 跳文、長推文）。
     this._enterFunctionMode(null, { hold: 'external' });
+  },
+
+  // 外部序列收尾（reading_record.releaseExternal）：停在列表上時把 'external' hold
+  // 換成 'passthrough'，交回靜置探針自動回好讀（不變量 N1 不變：探針仍然不碰
+  // external，只有序列的擁有者自己說「我做完了」才放開）。落在文章時 handoff
+  // 已經解除 hold ⇒ 這裡什麼都不做。
+  endExternalNavigation: function() {
+    if (this.state !== 'functionMode' || this._holdReason !== 'external') return;
+    this._holdReason = 'passthrough';
+    this._diag('listSession.externalEnd', {});
+    this._scheduleResumeProbe();
+  },
+
+  // 閱讀紀錄（reading_record）的列表量測：使用者現在看到的視野。
+  //   { kind:'list', board, mode, topNum, topPinnedKey, scrollFrac, cursorNum }
+  // 視口在 DOM 上 ⇒ 從 scrollTop 現場換算（不改任何欄位；重繪前的錨可能落後於
+  // 使用者剛捲的位置）；不在（文章期間、鏡像中）⇒ session 手上的錨。
+  // 沒接管（idle）時回原生列表的身分（板＋游標），讓 deep link 的返回錨找得到板。
+  readingPosition: function() {
+    if (this.state === 'idle') return this._nativeListRecord();
+    if (this._boardName == null) return null;
+    let topNum = this._topNum;
+    let topPinnedKey = this._topPinnedKey;
+    let frac = this._scrollFrac || 0;
+    const screen = this._screen();
+    if (
+      this._renderMode === 'buffer' &&
+      screen &&
+      screen.getListScrollTop &&
+      (!screen.hasListViewport || screen.hasListViewport())
+    ) {
+      const rowH = this._rowHeight();
+      const seq = this._sequence();
+      if (rowH > 0 && seq.length) {
+        const t = topPosFromScrollTop({ scrollTop: screen.getListScrollTop(), rowH: rowH });
+        const abs = seq[Math.max(0, Math.min(t.pos, seq.length - 1))];
+        const nums = this._termBuf.listLineNums || [];
+        topNum = nums[abs];
+        topPinnedKey = topNum == null ? this._pinnedKeyAt(abs) : null;
+        frac = Math.max(0, t.frac || 0);
+      }
+    }
+    return {
+      kind: 'list',
+      board: this._boardName,
+      mode: this._selectMode ? 'select' : 'plain',
+      topNum: topNum == null ? null : topNum,
+      topPinnedKey: topPinnedKey == null ? null : topPinnedKey,
+      scrollFrac: frac,
+      cursorNum:
+        this.state === 'suspended' && this._openedNum != null ? this._openedNum : this._selectedNum
+    };
+  },
+
+  _nativeListRecord: function() {
+    const buf = this._termBuf;
+    if (!buf || !buf.getRowText || !buf.isUnicolor) return null;
+    const facts = this._collectFacts(null);
+    if (facts.kind !== 'clean-list' || facts.boardName == null) return null;
+    return {
+      kind: 'list',
+      board: facts.boardName,
+      mode: listModeOf(facts),
+      topNum: null,
+      topPinnedKey: null,
+      scrollFrac: 0,
+      cursorNum: facts.cursorRowNum,
+      native: true
+    };
+  },
+
+  // 閱讀紀錄要求還原（reading_record.restoreList）。原生交易做完、回好讀的那次
+  // rebuild 會驗證（_adoptPendingViewport）並等錨進緩衝才套用；已經在好讀上而且
+  // 是同一份清單時直接視為已驗證。原生列表（record.native）沒有視野可還原 ——
+  // pttbbs 的 getkeep 本來就把游標留在原處。
+  requestViewportRestore: function(record) {
+    if (!this._setPendingViewport(record)) return;
+    if (
+      this.state === 'active' &&
+      this._renderMode === 'buffer' &&
+      this._boardName === record.board
+    ) {
+      this._pendingViewport.adopted = true;
+      this._forceRedraw();
+    }
+  },
+
+  // 放進待還原錨（未驗證）。回 false ＝這份紀錄沒有可還原的視野。
+  _setPendingViewport: function(record) {
+    if (!record || record.native) return false;
+    if (record.topNum == null && record.topPinnedKey == null) return false;
+    this._pendingViewport = {
+      topNum: record.topNum,
+      topPinnedKey: record.topPinnedKey,
+      scrollFrac: record.scrollFrac || 0,
+      boardName: record.board,
+      mode: record.mode || null,
+      cursorNum: record.cursorNum,
+      matchBoardOnly: !!record.matchBoardOnly,
+      at: Date.now()
+    };
+    this._diag('listSession.viewportRestore', {
+      action: 'saved',
+      topNum: record.topNum,
+      cursorNum: record.cursorNum
+    });
+    return true;
   },
 
   // Read-only snapshot of "which article is open, as a list coordinate".
@@ -2356,22 +2481,11 @@ ListSession.prototype = {
     this._selectedNum = num;
     this._selectedPinnedKey = null;
     this._forceRedraw();
-    // 使用者的閱讀進度（視口頂端）。上面那次重繪的 captureScrollAnchor 剛把 DOM
-    // 捲動轉成錨，這裡存一份：切原生 → resume → rebuild 會改採 PTT 分頁的視窗頂端
-    // （_seedAnchors），不存就回不來。見 _pendingViewport 的說明。
-    this._pendingViewport = {
-      topNum: this._topNum,
-      topPinnedKey: this._topPinnedKey,
-      scrollFrac: this._scrollFrac,
-      boardName: this._boardName,
-      cursorNum: num,
-      at: Date.now()
-    };
-    this._diag('listSession.viewportRestore', {
-      action: 'saved',
-      topNum: this._topNum,
-      cursorNum: num
-    });
+    // 使用者的閱讀進度（視口頂端）交給閱讀紀錄：切原生 → resume → rebuild 會改採
+    // PTT 分頁的視窗頂端（_seedAnchors），不記就回不來。決策表 'mark-read-before'：
+    // 完成／失敗都回原處（rebuild 時 _adoptPendingViewport 驗證）。
+    const rr = recordFor(this._core);
+    const bm = rr.begin('mark-read-before', { list: this.readingPosition(), listOwner: this });
 
     const self = this;
     // 第二步的判定畫面：expect 收到的 facts 就是結論這道命令的那一幀，留著給
@@ -2389,6 +2503,7 @@ ListSession.prototype = {
             return false;
           },
           onFail: function() {
+            rr.end(bm, 'fail');
             self._degradeToNative('設定已讀未讀逾時，已切至原生模式');
           }
         },
@@ -2402,6 +2517,7 @@ ListSession.prototype = {
             return true;
           },
           onDone: function() {
+            rr.end(bm, 'done');
             if (!self._view.flashListHint) return;
             const rejected =
               !!applyFacts &&
@@ -2442,6 +2558,8 @@ ListSession.prototype = {
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
     this._boardName = facts.boardName;
+    // 編號空間（離開搜尋結果時 leave-board 靠它強制 rebuild，不變量 §8）。
+    this._selectMode = listModeOf(facts) === 'select';
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
@@ -2495,6 +2613,7 @@ ListSession.prototype = {
     this._termBuf.listLines = [];
     this._termBuf.listLineNums = [];
     this._boardName = facts ? facts.boardName : this._boardName;
+    if (facts) this._selectMode = listModeOf(facts) === 'select';
     this._edgeUp = false;
     this._edgeDown = false;
     this._fillPages = 0;
@@ -3130,6 +3249,10 @@ ListSession.prototype = {
   // internal callers) — no banner.
   // opts.hold: 'passthrough'（預設，靜置後自動回好讀）| 'external'（永不自動解除）。
   _enterFunctionMode: function(facts, opts) {
+    // 閱讀紀錄凍結：下面會清掉看板身分、鏡像期間也沒有列表視口 ⇒ 之後任何人問
+    // 「使用者在看哪裡」都拿這一刻的視野（reading_record.freeze）。
+    const pos = this.readingPosition();
+    if (pos) recordFor(this._core).freeze('list', pos);
     this._cancelScroll(); // 原生鏡像沒有捲動視口，排隊中的 reveal 要作廢
     this._holdReason = (opts && opts.hold) || 'passthrough';
     this._setLoading(false);
@@ -3291,6 +3414,8 @@ ListSession.prototype = {
     this._topPinnedKey = null;
     this._scrollFrac = 0;
     this._dropPendingViewport('cleanup');
+    // 真的離開看板了：身後的列表紀錄跟著作廢。
+    recordFor(this._core).takeBehindList();
     this._seqCache = null;
     this._edgeUp = false;
     this._edgeDown = false;
@@ -3417,15 +3542,23 @@ ListSession.prototype = {
   // 發起的那一篇 ⇒ 編號空間沒變、錨仍然有效，保留待還原；否則（使用者在原生鏡像
   // 裡自己移動過、換了板）丟棄，走 _seedAnchors 採用落點的舊行為。
   _adoptPendingViewport: function(facts) {
+    // 沒有交易留下的錨 ⇒ 看「身後的列表」（文章裡的外部導覽留下的，一次性）。
+    if (!this._pendingViewport) {
+      const behind = recordFor(this._core).takeBehindList();
+      if (behind) this._setPendingViewport(behind);
+    }
     const p = this._pendingViewport;
     if (!p) return;
-    if (
-      !facts ||
-      facts.boardName == null ||
-      facts.boardName !== p.boardName ||
-      facts.cursorRowNum !== p.cursorNum
-    )
-      this._dropPendingViewport('mismatch');
+    const record = {
+      board: p.boardName,
+      mode: p.mode,
+      cursorNum: p.cursorNum,
+      matchBoardOnly: p.matchBoardOnly
+    };
+    const landing = facts
+      ? { board: facts.boardName, mode: listModeOf(facts), cursorNum: facts.cursorRowNum }
+      : null;
+    if (!listRecordMatches(record, landing)) this._dropPendingViewport('mismatch');
     else {
       p.adopted = true;
       this._diag('listSession.viewportRestore', { action: 'adopted', topNum: p.topNum });

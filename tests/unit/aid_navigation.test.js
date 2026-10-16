@@ -3,6 +3,7 @@
 // (fake send + vitest fake timers) and feeds settle facts by hand — the same
 // harness style as command_queue.test.js / list_session.test.js.
 
+import { recordFor } from "../../src/js/reading_record";
 import { CommandQueue } from "../../src/js/command_queue";
 import {
   AidNavigation,
@@ -617,6 +618,98 @@ describe("AidNavigation 返回", () => {
     expect(h.sent.some(s => /^\d+\r/.test(s))).toBe(false);
     expect(h.hints.some(hint => hint.includes("找不到原文章 #" + ORIGIN))).toBe(true);
     expect(h.nav.canGoBack()).toBe(false);
+  });
+
+  // ---- 閱讀紀錄（reading_record）：身後的列表跟著返回錨走 ----------------------
+  // 身後列表的紀錄（list_session.readingPosition 在文章期間回的那一份）。
+  const BEHIND = {
+    kind: "list",
+    board: "C_Chat",
+    mode: "plain",
+    topNum: 353200,
+    topPinnedKey: null,
+    scrollFrac: 0,
+    cursorNum: 353218,
+  };
+  function withListRecord(h, rec) {
+    h.core.listSession.readingPosition = () => rec;
+    h.core.listSession.requestViewportRestore = vi.fn();
+    h.core.listSession.endExternalNavigation = vi.fn();
+    return h;
+  }
+
+  test("返回錨帶著身後的列表；返回落地（回到原文）後交回閱讀紀錄，按 ← 回列表時還原", () => {
+    const h = withListRecord(makeHarness({ listAnchor: LIST_ANCHOR }), BEHIND);
+    jumpForward(h);
+    expect(h.nav._history.peek().list).toEqual(BEHIND);
+    h.nav.back();
+    landBack(h);
+    settle(h.queue, facts("article"));
+    expect(recordFor(h.core).peekBehindList()).toEqual(BEHIND);
+  });
+
+  test("看板錨返回停在列表 ⇒ 列表視野交給列表好讀（只比板），外部 hold 交回探針", () => {
+    const h = withListRecord(makeHarness({ articleBoard: "C_Chat" }), BEHIND);
+    jumpForward(h, "1gIeu-3A", "Android", null);
+    h.nav.back();
+    settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
+    expect(h.nav.active).toBe(false);
+    expect(h.core.listSession.requestViewportRestore).toHaveBeenCalledWith(
+      Object.assign({}, BEHIND, { matchBoardOnly: true })
+    );
+    expect(h.core.listSession.endExternalNavigation).toHaveBeenCalled();
+  });
+
+  test("跳文失敗（停在哪不知道）⇒ 仍把外部 hold 交回探針，列表好讀不會卡在原生", () => {
+    const h = withListRecord(makeHarness({ listAnchor: LIST_ANCHOR }), BEHIND);
+    h.nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(h.queue, ORIGIN);
+    settle(h.queue, facts("prompt"));
+    vi.advanceTimersByTime(BOARD_PROBE_AFTER_MS);
+    vi.advanceTimersByTime(STEP_PROBE_WINDOW_MS);
+    settle(h.queue, facts("prompt"));
+    expect(h.nav.active).toBe(false);
+    expect(h.core.listSession.endExternalNavigation).toHaveBeenCalled();
+  });
+
+  test("deep link 從文章列表帶進來（startExternal）⇒ 有返回，回到那份列表並還原視野", () => {
+    const movie = Object.assign({}, BEHIND, { board: "movie", cursorNum: 77 });
+    const h = withListRecord(makeHarness(), movie);
+    h.termBuf.rowTexts = MAIN_MENU_SCREEN; // 走主功能表的快路徑（錨的取法與畫面無關）
+    h.nav.startExternal("1gIeu-3A", "Gossiping");
+    settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", cursorRowNum: 42, curY: 10 }));
+    settle(h.queue, facts("article"));
+    expect(h.nav.canGoBack()).toBe(true);
+    expect(h.backButton.label).toBe("movie 看板");
+    h.termBuf.rowTexts = screen({ last: STATUS_ROW, mark: "文章內文" });
+    h.sent.length = 0;
+    h.nav.back();
+    expect(h.sent[0]).toBe("smovie\r\f");
+    settle(h.queue, facts("clean-list", { boardName: "movie" }));
+    expect(h.nav.active).toBe(false);
+    expect(h.core.listSession.requestViewportRestore).toHaveBeenCalledWith(
+      Object.assign({}, movie, { matchBoardOnly: true })
+    );
+  });
+
+  test("deep link 從主功能表帶進來（沒有列表紀錄）⇒ 照舊沒有返回", () => {
+    const h = withListRecord(makeHarness(), null);
+    h.termBuf.rowTexts = MAIN_MENU_SCREEN;
+    h.nav.startExternal("1gIeu-3A", "Gossiping");
+    settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", cursorRowNum: 42, curY: 10 }));
+    settle(h.queue, facts("article"));
+    expect(h.nav.canGoBack()).toBe(false);
+  });
+
+  test("原生 pmore 讀文時收到 deep link（start 帶 inPager）⇒ 不被好讀的 gate 擋掉，照樣問 Q 記原文", () => {
+    const h = makeHarness({ articleBoard: "C_Chat" });
+    h.termBuf.startedEasyReading = false;
+    h.nav.start("1gIeu-3A", "Android");
+    expect(h.sent).toEqual([]);
+    h.nav.start("1gIeu-3A", "Android", { inPager: true });
+    expect(h.sent).toEqual(["Q"]);
   });
 
   test("board 錨點：只回到看板列表就停手，不盲開文章", () => {

@@ -16,6 +16,7 @@ import { isMainMenuRow } from './aid_navigation';
 import { buildDeepLink, stripDeepLink } from './deep_link';
 import { parseStatusRow } from './string_util';
 import { HINT_ERROR } from './status_hint';
+import { recordFor } from './reading_record';
 
 export function DeepLinkController(core, view, termBuf) {
   this._core = core;
@@ -114,13 +115,12 @@ DeepLinkController.prototype = {
     // 把畫面換成文章列表。所以「複製完回到原處」必須自己走完（reopenAfterPostInfo），
     // 順便把閱讀位置一起帶回去。
     //
-    // ORDER INVARIANT：閱讀位置必須在 _enterFunctionMode() **之前**擷取。那個函式
-    // 結尾的 termBuf.notify() 是同步的（term_buf 的 changed 分支直接呼叫
-    // view.update()），而 term_view.redraw 的 functionMode 分支第一件事就是
-    // mainDisplay.scrollTop = 0（原生 24 列畫面本來就該從頂端顯示）。順序反過來
-    // 讀到的永遠是 0 ⇒ _enqueueReopen 的 `if (lineIndex …)` 直接 falsy ⇒ 複製完
-    // 雖然回到原篇卻停在第一行。aid_navigation.start() 有同一條不變量的註解。
-    const lineIndex = this._currentLineIndex();
+    // 閱讀位置取自閱讀紀錄（決策表 'deep-link-copy'：一律回原列）。鏡像那一幀的
+    // redraw 會把 scrollTop 歸零，紀錄在 _enterFunctionMode() 那一刻凍結，所以這裡
+    // 先問後問都拿得到真正的位置。
+    const bm = recordFor(this._core).begin('deep-link-copy', { view: this._view, buf: this._termBuf });
+    const lineIndex =
+      bm.article && bm.article.lineIndex != null ? bm.article.lineIndex : this._currentLineIndex();
     // 按 Q 會蓋出一個原生資訊框：對好讀模式來說跟「r 回應」「X 推文」是同一類
     // 事件，先進 functionMode 停掉它的累積／翻頁，畫面才不會在交易途中被動。
     const er = this._core.easyReading;
@@ -143,8 +143,7 @@ DeepLinkController.prototype = {
     return true;
   },
 
-  // 閱讀位置記的是行索引不是像素：文章會被重新讀一次，pixel 值不會對得上。
-  // 與 aid_navigation._currentLineIndex 同一套算法。
+  // 書籤量不到文章時（unit 的假畫面）的退路：行索引不是像素（文章會被重新讀一次）。
   _currentLineIndex: function() {
     const view = this._view;
     return view && view.currentLineIndex ? view.currentLineIndex() : null;
@@ -271,13 +270,25 @@ DeepLinkController.prototype = {
     // 手，但我們可能比它的下一次輪詢更早離開主功能表，所以這裡明講。
     if (this._core.autoLogin && this._core.autoLogin.stop) this._core.autoLogin.stop();
     // 人正在看某篇文章（既有分頁收到連結）→ 走一般的 start()：它會按 Q 問出
-    // 本篇 AID 當錨點，跳完就有「← 返回原文」可按。冷啟動沒有原文可回，用
-    // startExternal（也不受 startedEasyReading 這道 gate 擋住）。
+    // 本篇 AID 當錨點，跳完就有「← 返回原文」可按。原生 pmore（好讀關著）也算：
+    // 狀態列證明是 pager、看得出看板。其餘（列表、主功能表…）用 startExternal：
+    // 出發點取自閱讀紀錄（文章列表 ⇒ 返回回到那份列表，見 externalOriginAnchor）。
     if (this._termBuf.startedEasyReading) {
       nav.start(target.aid, target.board);
       return nav.active;
     }
+    if (this._inNativePager()) {
+      nav.start(target.aid, target.board, { inPager: true });
+      return nav.active;
+    }
     return nav.startExternal(target.aid, target.board);
+  },
+
+  _inNativePager: function() {
+    const buf = this._termBuf;
+    if (!buf || buf.pageState !== 3 || !buf.getRowText) return false;
+    if (!this._view || !this._view._articleBoard) return false;
+    return !!parseStatusRow(buf.getRowText(buf.rows - 1, 0, buf.cols));
   },
 
   _atMainMenu: function() {

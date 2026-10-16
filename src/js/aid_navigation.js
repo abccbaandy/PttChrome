@@ -45,9 +45,11 @@
 // the only difference between a forward jump and a back run is the middle step
 // (_enqueueMiddle): #<aid>, or nothing at all (stop on the list).
 //
-// The capture ORDER is an invariant: the anchor must be read BEFORE
-// _enterFunctionMode() / beginExternalNavigation(), because the latter clears
-// list_session's _boardName/_serverNum (list_session.js#_enterFunctionMode).
+// Where the user is (article reading position, the list behind the article) comes
+// from the reading record (reading_record.js, docs/reading-record.md): it is
+// frozen the moment the mirrors go up, so the capture order no longer matters for
+// the scroll position. The ARTICLE anchor (chooseAnchor) still reads live
+// list/article state and must run before _begin().
 //
 // Only an AID ever opens an article on the way back — never an article number
 // (shifts on deletion, separate space inside a `/` search list). Opening the
@@ -65,6 +67,7 @@ import {
 import { isPinnedListRow } from './comment_parse';
 import { MAIN_MENU, boardNameFromKey, rowHasTitle } from './screen_titles';
 import { HINT_ERROR } from './status_hint';
+import { recordFor } from './reading_record';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -246,6 +249,28 @@ function makeRun(target, dir) {
   };
 }
 
+// 外部帶進來的連結（startExternal）的返回錨，取自閱讀紀錄的書籤。純函式。
+//   - 文章列表（完整列表，看得出板名）⇒ 看板錨：返回＝`s<板>` 停在列表，列表好讀
+//     依錨上的 list 還原視野（原生列表則由 pttbbs 的 getkeep 把游標留在原處）。
+//   - 搜尋結果／文摘（獨立編號空間）、主功能表、看板列表 ⇒ 沒有可回的地方（null）。
+//   - 跳往同一個板 ⇒ null：`#<aid>` 會覆寫這個板的 getkeep 游標，錨會說謊
+//     （nav_history.chooseAnchor 同一條理由）。
+export function externalOriginAnchor(bm, targetBoard) {
+  const list = bm && bm.list;
+  if (!list || list.mode !== 'plain') return null;
+  const board = boardNameFromKey(list.board);
+  if (!board) return null;
+  if (targetBoard && String(targetBoard).toLowerCase() === board.toLowerCase()) return null;
+  return {
+    kind: 'board',
+    board: board,
+    aid: null,
+    lineIndex: null,
+    label: board + ' 看板',
+    list: list
+  };
+}
+
 export function AidNavigation(core, view, termBuf, queue, history) {
   this._core = core;
   this._view = view;
@@ -278,6 +303,9 @@ AidNavigation.prototype = {
   _fail: function(msg) {
     this.active = false;
     this.opHint = null;
+    // 停在哪裡都一樣：把列表 session 的外部 hold 交回靜置探針（否則列表好讀會
+    // 卡在原生鏡像直到下一次開文）。身後的列表紀錄留著，回到同一份列表時還原。
+    recordFor(this._core).releaseExternal();
     if (this._refreshing) {
       // 重新整理失敗：同一套「停在原生畫面、看得到」的降級，只是措辭不同。
       this._refreshing = false;
@@ -377,26 +405,29 @@ AidNavigation.prototype = {
 
   // board may be null when the #AID had no suffix AND the article header was
   // never parsed — nothing to navigate to, tell the user instead of guessing.
-  start: function(aid, board) {
+  // opts.inPager：呼叫端已證明畫面是 pager（deep link 收到時人在原生 pmore 讀文），
+  // 不必等好讀開著。
+  start: function(aid, board, opts) {
     if (this.active) return;
     if (!board) {
       this._hint('AID 跳文：無法判斷目標看板', 0, HINT_ERROR);
       return;
     }
-    if (!this._termBuf.startedEasyReading) {
+    if (!this._termBuf.startedEasyReading && !(opts && opts.inPager)) {
       // AID links only render in easy reading; a click that somehow arrives
       // outside an open post (stale DOM during a transition) is ignored.
       return;
     }
-    // ORDER INVARIANT: capture where we are BEFORE _begin() parks the list
-    // session (beginExternalNavigation → _enterFunctionMode clears _boardName
-    // and _serverNum). Nothing is pushed until the run lands (commitJump).
-    const lineIndex = this._currentLineIndex();
+    // 閱讀紀錄：閱讀位置＋身後的列表（返回時一起帶回）。currentAnchor 仍要在
+    // _begin() 之前讀（beginExternalNavigation 會清掉 _openedNum）。Nothing is
+    // pushed until the run lands (commitJump).
+    const bm = recordFor(this._core).begin('aid-jump', this._ctx());
+    const lineIndex = bm.article ? bm.article.lineIndex : this._currentLineIndex();
     const ls = this._core.listSession;
     // 列表好讀自己開的這篇（currentAnchor 非 null）⇒ 是從看板文章列表進來的，
     // currstat 必為 READING。超長文 footer 被行號擠掉時（見 _begin）這是唯一的證據。
     const listOpened = !!(ls && ls.currentAnchor && ls.currentAnchor());
-    this._history.beginJump(this._captureOriginAnchor(board, lineIndex), {
+    this._history.beginJump(this._withList(this._captureOriginAnchor(board, lineIndex), bm), {
       board: board,
       aid: aid
     });
@@ -406,8 +437,20 @@ AidNavigation.prototype = {
     // built from nothing (same-board jump, 站內信): chooseAnchor returned null
     // there, so there is no previous anchor to inherit it from.
     run.originLineIndex = lineIndex;
+    run.originList = bm.list;
     run.listOpened = listOpened;
     this._begin(run);
+  },
+
+  // 閱讀紀錄量文章用的畫面（unit 的假 core 沒掛 view／buf）。
+  _ctx: function() {
+    return { view: this._view, buf: this._termBuf };
+  },
+
+  // 返回錨附上「身後的列表」：返回落地後退回列表時，列表好讀回到原本的視野。
+  _withList: function(anchor, bm) {
+    if (!anchor || !bm || !bm.list) return anchor;
+    return Object.assign({}, anchor, { list: bm.list });
   },
 
   // A jump asked for from OUTSIDE the terminal (a deep link — see
@@ -415,17 +458,20 @@ AidNavigation.prototype = {
   //   - not gated on startedEasyReading: a deep link is normally consumed right
   //     after login, at 主功能表, where no article is open at all. start()'s
   //     gate would make it silently do nothing.
-  //   - no origin anchor. beginJump(null, …) is legal (nav_history) and means
-  //     no "← 返回" pill afterwards — correct, there IS no article to go back
-  //     to. When the user IS reading something, the caller uses start() instead
-  //     so the Q step captures a real anchor.
-  //   - Q is skipped: with no origin anchor there is nothing to upgrade.
+  //   - the origin comes from the reading record (externalOriginAnchor): an
+  //     article list the user was looking at becomes a board anchor (back =
+  //     `s<board>` and the list viewport is restored); 主功能表／看板列表 have
+  //     nothing to go back to (no "← 返回" pill). When the user IS reading an
+  //     article, the caller uses start() instead so the Q step captures a real
+  //     anchor.
+  //   - Q is skipped: there is no article to ask about.
   // Returns whether the run was started (false = busy / bad arguments).
   startExternal: function(aid, board, onEnd) {
     if (this.active) return false;
     if (!aid || !board) return false;
     this._onRunEnd = onEnd || null;
-    this._history.beginJump(null, { board: board, aid: aid });
+    const bm = recordFor(this._core).begin('deep-link-jump', this._ctx());
+    this._history.beginJump(externalOriginAnchor(bm, board), { board: board, aid: aid });
     this._hint('跳至 #' + aid + ' (' + board + ')…', PROGRESS_HINT_MS);
     const run = makeRun({ board: board, kind: 'aid', aid: aid }, 'forward');
     run.originLineIndex = null;
@@ -506,22 +552,13 @@ AidNavigation.prototype = {
     if (context === 'unknown' && listOpened && status) context = 'reading';
     // 站內信／精華區：s 與 # 都不在（more.c 依 currstat 擋掉），沒有可驗證的重開路。
     if (context !== 'reading') return false;
-    const er = this._core.easyReading;
-    const inEasy = !!(er && er._enabled && !er._functionMode);
-    let atBottom;
-    if (inEasy) {
-      const disp = this._view.mainDisplay;
-      const slack = (this._view.chh || 0) * 2;
-      atBottom =
-        !!er.easyReadingReachedPageEnd &&
-        !!disp &&
-        disp.scrollHeight - disp.scrollTop - disp.clientHeight <= slack;
-    } else {
-      atBottom = !!status && status.pagePercent === 100;
-    }
+    // 閱讀位置與「在不在文末」都由閱讀紀錄量（好讀：已讀到文末且捲到底 2 列內；
+    // 原生：狀態列 100%）。
+    const bm = recordFor(this._core).begin('article-refresh', this._ctx());
     const run = makeRun({ board: board, kind: 'aid', aid: null }, 'refresh');
-    run.originLineIndex = this._currentLineIndex();
-    run.atBottom = atBottom;
+    run.bookmark = bm;
+    run.originLineIndex = bm.article ? bm.article.lineIndex : this._currentLineIndex();
+    run.atBottom = !!(bm.article && bm.article.atBottom);
     this._refreshing = true;
     this.opHint = '重新整理中，請稍候…';
     this._hint('重新整理中…', PROGRESS_HINT_MS);
@@ -578,18 +615,34 @@ AidNavigation.prototype = {
     this._refreshing = false;
     const er = this._core.easyReading;
     if (er && er.ensureEnabledOnArticle) er.ensureEnabledOnArticle(true);
-    // _pendingEnableOnArticle：落地幀還不完整，好讀會在下一個完整幀接手（同 _enqueueOpen
-    // 對 requestScrollRestore 的用法：請求先掛著，累積到位才生效）。
-    if (er && (er._enabled || er._pendingEnableOnArticle)) {
-      if (run.atBottom && er.requestScrollToBottom) er.requestScrollToBottom();
-      else if (run.originLineIndex && er.requestScrollRestore)
-        er.requestScrollRestore(run.originLineIndex);
-    } else if (run.atBottom && this._core.sendMachineBytes) {
-      // 原生 pmore：沒有累積頁可捲，文末就用原生 End（mf_goBottom）。
-      this._core.sendMachineBytes('\x1b[4~');
-    }
+    // 決策表 'article-refresh' done ＝ 'auto'：在文末就黏回文末，否則同一列；原生
+    // pmore 文末用原生 End（reading_record.restoreArticle）。好讀的還原是請求：
+    // _pendingEnableOnArticle（落地幀還不完整）時先掛著，累積到位才生效。
+    recordFor(this._core).end(
+      run.bookmark,
+      'done',
+      {
+        only: 'article',
+        article: {
+          lineIndex: run.originLineIndex,
+          atBottom: run.atBottom,
+          easy: run.bookmark && run.bookmark.article ? run.bookmark.article.easy : undefined
+        }
+      }
+    );
+    recordFor(this._core).releaseExternal();
     this._updateBackButton();
     this._hint(msg || '已重新整理', 1200);
+  },
+
+  // 返回落在列表上（看板錨 `s<板>`、或找不到原文停在列表）：把錨帶著的列表視野
+  // 交給閱讀紀錄（只比板與編號空間：server 游標是 getkeep 的，不等於本地選取），
+  // 再放開外部 hold 讓列表好讀接手。
+  _restoreListOf: function(entry) {
+    const rr = recordFor(this._core);
+    if (entry && entry.list)
+      rr.restoreList(Object.assign({}, entry.list, { matchBoardOnly: true }));
+    rr.releaseExternal();
   },
 
   // Is a back run available right now (drives the button / the shortcut)?
@@ -711,7 +764,8 @@ AidNavigation.prototype = {
           self._history.upgradePendingOriginAid(
             info.board,
             info.aid,
-            run.originLineIndex
+            run.originLineIndex,
+            run.originList
           );
           self._updateBackButton();
         }
@@ -749,7 +803,12 @@ AidNavigation.prototype = {
       },
       onDone: function(info, meta) {
         if (info) {
-          self._history.upgradePendingOriginAid(info.board, info.aid, run.originLineIndex);
+          self._history.upgradePendingOriginAid(
+            info.board,
+            info.aid,
+            run.originLineIndex,
+            run.originList
+          );
           self._updateBackButton();
         }
         if (meta.boxOpen) self._enqueueBoardJump(run, false, true);
@@ -968,9 +1027,7 @@ AidNavigation.prototype = {
         return !!parseStatusRow(facts.rowTexts[facts.rows - 1] || '');
       },
       onDone: function() {
-        const er = self._core.easyReading;
-        if (lineIndex && er && er.requestScrollRestore)
-          er.requestScrollRestore(lineIndex);
+        recordFor(self._core).restoreArticle({ lineIndex: lineIndex }, 'origin');
         if (h.onDone) h.onDone();
       },
       onFail: h.onFail || function() {}
@@ -1118,6 +1175,7 @@ AidNavigation.prototype = {
   _finishGoto: function(run) {
     this.active = false;
     this.opHint = null;
+    recordFor(this._core).releaseExternal();
     this._history.invalidate();
     this._updateBackButton();
     this._hint('已進入 ' + run.target.board + ' 看板', 1200);
@@ -1183,7 +1241,8 @@ AidNavigation.prototype = {
   // nothing here IDENTIFIES it, so the last keypress is the user's to make.
   _finishAtList: function(run) {
     this.active = false;
-    this._history.commitBack();
+    const entry = this._history.commitBack();
+    this._restoreListOf(entry);
     this._updateBackButton();
     this._hint(
       '已回到 ' + run.target.board + ' 看板，游標停在原文章（按 Enter 開啟）',
@@ -1274,6 +1333,9 @@ AidNavigation.prototype = {
         // wherever the failed search left it.)
         if (run.dir === 'back' && reason === 'miss') {
           self.active = false;
+          // 停在原文章的看板列表：列表視野回到當初離開時（只比板與編號空間，
+          // 游標停在哪由失敗的搜尋決定）。
+          self._restoreListOf(run.target);
           self._history.abort();
           self._updateBackButton();
           self._hint(
@@ -1347,8 +1409,13 @@ AidNavigation.prototype = {
           // Reading position: easy reading re-reads the article from the top
           // and grows it page by page, so this is a REQUEST that lands once
           // enough of the post has accumulated (easy_reading#requestScrollRestore).
-          if (entry && entry.lineIndex && self._core.easyReading.requestScrollRestore)
-            self._core.easyReading.requestScrollRestore(entry.lineIndex);
+          // 決策表 'aid-back' done ＝ 'origin'，列從返回錨帶。身後的列表也換回這篇
+          // 當初的那一份（使用者接著按 ← 回列表時還原）。
+          const rr = recordFor(self._core);
+          if (entry) {
+            rr.end({ feature: 'aid-back' }, 'done', { only: 'article', article: entry });
+            rr.noteBehindList(entry.list || null);
+          }
           self._hint('已返回 ' + (entry ? entry.label : ''), 1200);
         } else if (run.dir === 'goto') {
           self.opHint = null;
@@ -1363,6 +1430,7 @@ AidNavigation.prototype = {
           // opened article.
           self._hint('已跳至 #' + run.target.aid, 1200);
         }
+        recordFor(self._core).releaseExternal();
         self._endRun({ ok: true });
       },
       onFail: function(reason) {

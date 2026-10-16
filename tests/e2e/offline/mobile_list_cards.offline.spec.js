@@ -143,6 +143,34 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     expect(await topPos()).toBe(p0 - PAGE);
   });
 
+  // 閱讀紀錄（docs/reading-record.md）的列表量測在卡片模式下也要對：一筆＝CARD_ROWS 列、
+  // chh 是小數。量到的頂端那一筆必須就是視口最上面那張卡片（還原要靠它，記錯就回錯地方）。
+  test('閱讀紀錄：卡片模式量到的視野頂端＝視口最上面那張卡片', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    await page.locator('#t').focus();
+    await page.keyboard.press('PageUp');
+    await waitScrollStable(page, '#mainContainer .listBodyView');
+    const got = await page.evaluate(() => {
+      const app = window.__app;
+      const ls = app.listSession;
+      const v = document.querySelector('#mainContainer .listBodyView');
+      const vr = v.getBoundingClientRect();
+      const header = ls.headerRows();
+      const seq = ls._sequence();
+      // 視口頂端所在的那張卡片（下緣超過視口頂端的第一張）。
+      const card = Array.from(v.querySelectorAll(':scope > .listCard')).find(
+        (c) => c.getBoundingClientRect().bottom > vr.top + 0.5
+      );
+      const idx = Number(card.getAttribute('srow')) - header;
+      return {
+        domTop: app.buf.listLineNums[seq[idx]],
+        record: app.readingRecord.current().list,
+      };
+    });
+    expect(got.record).toMatchObject({ kind: 'list', mode: 'plain', topNum: got.domTop });
+  });
+
   test('tap 卡片任何位置（含左緣）＝開那一筆，不是退出', async ({ page }) => {
     test.setTimeout(90000);
     await engage(page);

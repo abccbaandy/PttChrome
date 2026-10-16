@@ -181,6 +181,23 @@ describe("已登入", () => {
     expect(h.nav.externalCalls).toEqual([]);
   });
 
+  test("原生 pmore 讀文（好讀關著）：也走 start()（帶 inPager），跳完才有「← 返回原文」", () => {
+    const h = makeHarness();
+    h.arriveAtMainMenu();
+    h.termBuf.pageState = 3;
+    h.termBuf.lastRow = "  瀏覽 第 1/3 頁 ( 30%)  目前顯示: 第 01~23 行  (y)回應(X%)推文(h)說明(←)離開 ";
+    h.termBuf.row0 = "作者  someone (某人)  看板  movie";
+    h.view._articleBoard = "movie";
+    // start() 的假版本只收 (aid, board)；第三個參數要原樣帶到。
+    h.nav.start = function(aid, board, opts) {
+      this.startCalls.push({ aid, board, opts });
+      this.active = true;
+    };
+    expect(h.ctl.request(TARGET)).toBe("navigating");
+    expect(h.nav.startCalls).toEqual([{ aid: "1gIeu-3A", board: "Gossiping", opts: { inPager: true } }]);
+    expect(h.nav.externalCalls).toEqual([]);
+  });
+
   test("跳轉派工前先關掉 AutoLogin 的輪詢", () => {
     // AutoLogin 的「看到請按任意鍵就送空白」分支會踩進板畫面，打亂
     // CommandQueue 正在等的那一幀。
