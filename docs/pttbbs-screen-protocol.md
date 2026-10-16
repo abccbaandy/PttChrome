@@ -612,7 +612,7 @@ commentd／官方 App／bot 不走 `vgetstring`，可填滿整欄）。
 | # | 事實 | 依據 |
 |---|---|---|
 | W1 | pmore **自己做 soft wrap，不靠終端機 auto-wrap**，而且刻意不用最後一欄：`headerw = MFDISP_DBCS_HEADERWIDTH(t_columns-1)`（無條件捨去成偶數，保證不切半個中文字）、`dispw = headerw - (t_columns - headerw < 2)`、`maxcol = dispw - 1`。**80 欄 ⇒ maxcol = 77**（內容佔 col 0..77 共 78 欄，不是 80） | `pmore.c:1340-1345,1447-1456,1850` |
-| W2 | `t_columns` 被 `term.c:56` crop 成 `MAX(80, MIN(200, w))` ⇒ **寬度不可能小於 80** | `term.c:56`、`var.c:300` |
+| W2 | `t_columns` 由 `term.c#term_set_size` 用 `VALID_TERM_COLS` 夾在 `MIN_TERM_COLS`..`MAX_TERM_COLS`：舊版 80–200，upstream `4488584e`（portrait mode）放寬為 **20–200** ⇒ 只要 client 送窄欄 NAWS，寬度就可能小於 80（本專案恆送 80，見 `docs/terminal-size.md`） | `config.h`、`term.c#term_set_size` |
 | W3 | 兩條放寬路徑會讓某列多吐一格：借用 indicator 那一格（`col + off <= maxcol+1`）、`PMORE_TRADITIONAL_FULLCOL`（預設開，`col + off < t_columns` 時印到底並改走 `MFDISP_NEWLINE_MOVE`，**不送 clrtoeol**）。⇒ **「這一列寫到 col 78/79」代表整行塞得下，不是折行** | `pmore.c:111,1862-1877` |
 | W4 | 折行符號預設**開**（`bpref.wrapindicator = 1`，process 全域、不做 per-user 持久化）：WRAP 印 `\`、TRUNCATE 印 `>`、左右捲動列首印 `<`，位置在 col 78（DBCS 跨界被回退時 col 77），配色 fg7/bright/bg0 | `pmore.c:556-558,1979-1987` |
 | W5 | **`ESC[K` 不可當續行訊號**。pmore 自己送的 `ESC[K` 與換行都被 pfterm 的虛擬螢幕吃掉；線上的 `ESC[K` 唯一來源是 `doupdate` 的 erase 最佳化，是 **per 螢幕列**且**只有該列尾端空白是 dirty 時才送**（`derase`）。同 §9 水球那條的原理 | `pfterm.c:954-1061,1315-1329,1646-1652,2008-2019` |
