@@ -27,9 +27,16 @@
   新增 Firefox project 要帶同一個 pref。
 - **Firefox teardown 偶發 `browserContext.close: Protocol error (Browser.removeBrowserContext): can't access
   property "_maybeDontRestoreTabs"…`**：Playwright 內建 Firefox 的 bug（新開瀏覽器的頁面視窗偶爾沒被
-  SessionStore 註冊，關閉時炸；測試本體已過）。現行設定下壓測 0/414，worker 頻繁重啟時才會成群出現，
-  已回報上游（microsoft/playwright#43413）。不是本專案 code，重跑該條即可。機制與待辦見
-  `docs/handoff/playwright-firefox-ssi-teardown.md`。
+  SessionStore 註冊，關閉時炸；測試本體已過）。不是本專案 code，**重跑該條即可，不要加 workaround**
+  （吞錯／retries）。
+  - 機制：Playwright 以 `-silent` 啟動，Juggler 在 `SessionStore.init()` 之前就收得到 `newPage`；若其間有東西轉
+    event loop，新瀏覽器的**第一個**視窗就沒被註冊，`context.close()` 關最後一個分頁時
+    `SessionStore.maybeDontRestoreTabs` 不判空而炸。macOS 不走這條；實測只在 Windows 自然命中。
+  - 頻率：現行設定下壓測 0/414；worker 頻繁重啟（新瀏覽器多）時約 1/1000、成群出現。Linux 原生 0/7569。
+  - 上游 microsoft/playwright#43413 已關閉（not planned）：維護者認同機制，但不對原版 Firefox 上觀察不到的
+    race 出修正；要重開需附原版 Firefox 的 OS／頻率／`DEBUG=pw:browser` log。確定性重現
+    `prove-mechanism.mjs` 在分支 `claude/intelligent-bohr-f0xfzk`（issue 引用其 permalink，勿刪）。
+  - 升 Playwright 且換到新的 Firefox revision（`playwright-core/browsers.json` 不再是 `firefox-1555`）時再看是否消失。
 - **`browserType.launch: spawn UNKNOWN`（Firefox 整批 launch 即掛、零 AssertionError）＝瀏覽器被裝進
   Claude 桌面版的 MSIX 虛擬化 AppData**。CONFIRMED 機制：
   - 在 Claude 桌面 app（MSIX 套件）內跑 `yarn playwright install`，寫進 `%LOCALAPPDATA%\ms-playwright`
