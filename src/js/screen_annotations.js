@@ -17,6 +17,7 @@ import {
   isListRowRead,
   blacklistNoticeText,
   FloorCounter,
+  ModernCommentThread,
 } from "./comment_parse";
 import { detectFixableUrls } from "./url_fix";
 import { detectWrappedUrls } from "./url_wrap";
@@ -391,11 +392,20 @@ export function computeAnnotations(
         : undefined,
       highlightAuthor,
       articleAuthor,
+      // 新格式推文（comment_parse.parseModernCommentHeader）的「目前這一則」：跟
+      // floorCounter 同一套只往前推的生命週期 ⇒ 增量時沿用、tail 不帶。
+      modernThread:
+        easyReading && reuse && reuse.modernThread
+          ? reuse.modernThread
+          : new ModernCommentThread(),
     };
     // tail（row ≥ J）用的 ctx：不帶計數器 ⇒ annotateComment 不編樓層、也不推進
     // head 那個計數器的狀態，所以 tail 列的 base 標註只取決於該列本身，插入新頁後
     // 可以原封沿用（位移重用的前提）。
-    const tailCtx = J != null ? { ...ctx, floorCounter: undefined } : ctx;
+    const tailCtx =
+      J != null
+        ? { ...ctx, floorCounter: undefined, modernThread: undefined }
+        : ctx;
     // 反向期間，跨列掃描的輸入只到 J 為止（head 與 tail 在文章裡並不相鄰）。
     const headTexts = J != null ? texts.slice(0, J) : texts;
     // 圖文合併（好讀限定）：先重建整篇純文字做跨行分組（per-row 的 annotateComment
@@ -897,6 +907,7 @@ export function computeAnnotations(
         texts,
         base,
         floorCounter: ctx.floorCounter,
+        modernThread: ctx.modernThread,
         hasSteamgifts,
         litRows,
         erasedRows,

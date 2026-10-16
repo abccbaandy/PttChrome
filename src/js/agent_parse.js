@@ -12,6 +12,8 @@ import {
   parseArticleHeader,
   parseArticleTitle,
   parseComment,
+  parseModernCommentHeader,
+  MODERN_COMMENT_BODY_MARK,
 } from './comment_parse';
 import { COMMENT_TIME_RE } from './string_util';
 
@@ -90,6 +92,25 @@ export function parseCommentLine(text) {
   };
 }
 
+// 新格式推文（post.svc，見 comment_parse.parseModernCommentHeader）的標頭列 →
+// { type: 'modern', seq, user, content: '', ip, time }；內容由呼叫端把緊接的 `│` 列接上。
+// 時間是 creation 原樣（`MM/DD/YYYY HH:MM`），與舊格式的 `MM/DD HH:MM` 不同形。
+const MODERN_TAIL_RE = /(?:\s(\d{1,3}(?:\.\d{1,3}){3}))?\s+(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2})\s*$/;
+export function parseModernCommentLine(text) {
+  const h = parseModernCommentHeader(text);
+  if (!h) return null;
+  const m = text.match(/^\[\d+\] (\S+)/);
+  const t = text.match(MODERN_TAIL_RE);
+  return {
+    type: 'modern',
+    seq: h.seq,
+    user: m[1],
+    content: '',
+    ip: t && t[1] ? t[1] : null,
+    time: t ? t[2] : null,
+  };
+}
+
 // 文章全文（每列一個字串）→ { author, board, title, time, content, comments }。
 // 檔頭只在前幾列（pmore 從第 1 行畫起）；沒有檔頭的特殊文章各欄回 null。
 // content＝推文以外的所有列（去掉檔頭與其下的分隔線），保留原本的換行。
@@ -119,10 +140,22 @@ export function parseArticleLines(lines) {
   }
   const body = [];
   const comments = [];
+  let modern = null; // 新格式推文：目前這一則（後面的 `│` 列是它的內容）
   for (; i < lines.length; i++) {
-    const c = parseCommentLine(lines[i]);
+    const text = lines[i];
+    if (modern && text.charAt(0) === MODERN_COMMENT_BODY_MARK) {
+      const part = text.slice(1).trimEnd();
+      modern.content = modern.content ? modern.content + '\n' + part : part;
+      continue;
+    }
+    modern = parseModernCommentLine(text);
+    if (modern) {
+      comments.push(modern);
+      continue;
+    }
+    const c = parseCommentLine(text);
     if (c) comments.push(c);
-    else body.push(lines[i]);
+    else body.push(text);
   }
   while (body.length && !body[body.length - 1].trim()) body.pop();
   return { author, board, title, time, content: body.join('\n'), comments };

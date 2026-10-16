@@ -123,7 +123,9 @@ export function groupSameAuthorRuns(anns, breakAt) {
   for (let i = 0; i < anns.length; ++i) {
     if (i === breakAt) close();
     const a = anns[i];
-    if (a && a.userid) {
+    // 新格式推文（comment_parse.parseModernCommentHeader）是多列一則、沒有內容欄，
+    // 不能用舊格式的 cell 重組合併 ⇒ 當成非推文列斷 run。
+    if (a && a.userid && !a.modern) {
       if (a.hidden) continue; // 黑名單列透明：不斷 run、不入 run
       if (current && current.userid === a.userid) current.rows.push(i);
       else {

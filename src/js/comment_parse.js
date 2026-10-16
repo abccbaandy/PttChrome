@@ -144,6 +144,43 @@ export function isBlacklistableUserId(id) {
   return typeof id === 'string' && /^[A-Za-z][0-9A-Za-z]{1,11}$/.test(id);
 }
 
+// ── 現代推文版面（post.svc，CONFIRMED @ pttbbs 908bb063）──────────────────────
+// 檔案格式（service/post/storage/engine.go#RenderFullPostText／AppendCommentCache）：
+//   "[%d] %s %s\n"（Sequence, Author, creation） ＋ 每行內容前縮 2 格 "  <content>"
+//   creation ＝ `[<IP> ]MM/DD/YYYY HH:MM`（`01/02/2006 15:04`）；刪除的推文內容列是
+//   "  <刪除原因>"。
+// 終端顯示（mbbsd/pmore.c#mf_display_comment_header，只在 comments_start 之後、
+// rawmode 為預設格式化時）：`[N] ` ＋ id（原PO 1;36，其他 0;33）＋ 右靠的 creation
+// （1;30；塞不下時從左邊逐段丟，全丟光就不印）；內容列的前 2 格空白換成 `│`。
+// comments_start ＝檔案最後一列「※ 」開頭的行（發信站／文章網址）之後。
+//
+// 認法刻意比 pmore 嚴：除了 `[N] id` 還要求列尾是 creation 的日期時間 —— 80 欄下
+// `[N] id`（≤ 20 格）＋ creation（≤ 32 格）一定塞得下，所以真的標頭列必有；內文裡
+// 「[1] 某某 說…」這類寫法沒有它。id 照 names.c#is_validuserid 的形狀，認不出就不認
+// （fail-safe：當一般內文）。
+//
+// 舊格式（推/噓/→ 單列）與新格式可以同一篇並存（舊推文留在檔案裡，post.svc 之後
+// 追加的才是新格式），所以兩條都要吃。新格式自帶樓號 ⇒ 不吃本地 FloorCounter、
+// 不畫樓層徽章；一則推文跨多列 ⇒ 黑名單要連 `│` 內容列一起藏（ModernCommentThread）。
+const MODERN_COMMENT_HEADER_RE =
+  /^\[(\d+)\] ([A-Za-z][0-9A-Za-z]{1,11}) .*\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}\s*$/;
+export const MODERN_COMMENT_BODY_MARK = '│';
+export function parseModernCommentHeader(text) {
+  if (!text || text.charCodeAt(0) !== 0x5b) return null;
+  const m = MODERN_COMMENT_HEADER_RE.exec(text);
+  if (!m) return null;
+  return { seq: parseInt(m[1], 10), userid: m[2].toLowerCase(), idCol: m[1].length + 3 };
+}
+
+// 新格式一則推文的「目前這一則」狀態：標頭列設定，緊接的 `│` 內容列沿用，其他列結束。
+// 只往前推（同 FloorCounter），由 computeAnnotations 持有生命週期。
+export class ModernCommentThread {
+  constructor() {
+    this.userid = null;
+    this.hidden = false;
+  }
+}
+
 export function parseComment(text) {
   if (!text) return null;
   const m = text.match(COMMENT_RE);
@@ -183,8 +220,9 @@ export function annotateComment(text, ctx) {
     if (ctx.showFloorNumbers && ctx.floorCounter) {
       ctx.floorCounter.nonComment(text);
     }
-    return null;
+    return annotateModernComment(text, ctx);
   }
+  if (ctx.modernThread) ctx.modernThread.userid = null;
   const floor =
     ctx.showFloorNumbers && ctx.floorCounter
       ? ctx.floorCounter.next(c.type)
@@ -205,6 +243,36 @@ export function annotateComment(text, ctx) {
       result.authorIdStart = COMMENT_USERID_COL;
       result.authorIdEnd = COMMENT_USERID_COL + c.userid.length;
     }
+  }
+  return result;
+}
+
+// 新格式推文（見 parseModernCommentHeader）。標頭列：推文者／黑名單／原PO 高亮，
+// **不給樓層**（`[N]` 就是 server 給的樓號）、不給推文可點區欄位（沒有內容欄）。
+// `modern: true` 讓 comment_merge.groupSameAuthorRuns 不把它當舊格式推文合併。
+// 內容列（`│` 開頭）：只有在該則被黑名單藏起來時才回 { hidden }，其餘回 null。
+// 沒有 ctx.modernThread（反向讀取的 tail）時內容列一律不標 ⇒ 最多少藏幾列，不會藏錯。
+function annotateModernComment(text, ctx) {
+  const thread = ctx.modernThread;
+  const h = parseModernCommentHeader(text);
+  if (!h) {
+    if (thread && thread.userid) {
+      if (text && text.charAt(0) === MODERN_COMMENT_BODY_MARK) {
+        return thread.hidden ? { hidden: true, modernBody: true } : null;
+      }
+      thread.userid = null;
+    }
+    return null;
+  }
+  const hidden = !!(ctx.blacklist && ctx.blacklist.has(h.userid));
+  if (thread) {
+    thread.userid = h.userid;
+    thread.hidden = hidden;
+  }
+  const result = { type: 'modern', modern: true, userid: h.userid, hidden, pusher: h.userid };
+  if (!hidden && ctx.highlightAuthor && ctx.articleAuthor && h.userid === ctx.articleAuthor) {
+    result.authorIdStart = h.idCol;
+    result.authorIdEnd = h.idCol + h.userid.length;
   }
   return result;
 }

@@ -50,6 +50,12 @@ const NAMED_KEYS = {
   'Esc': KeyMap['Escape'],
   'Tab': KeyMap['Tab'],
   'Del': KeyMap['Delete'],
+  // 新版指令列的鍵名表 mbbsd/psb.c#psb_key_name（vs_cmd_bar 底列 `(Space)` 這類）：
+  // `Ins`＝KEY_INS（ESC[2~）、`BS`＝KEY_BS（vtkbd.c 收 0x08／0x7F 都是它）。
+  // `S-Tab`／`F1`／`Esc-x` 沒有對應的單一 byte 序列可送 ⇒ 不收，整組維持純文字。
+  'Ins': KeyMap['Insert'],
+  'BS': KeyMap['Backspace'],
+  'Space': ' ',
   '空白鍵': ' '
 };
 
