@@ -17,6 +17,7 @@ import {
   IconArrowBarToDown,
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
+import { readValuesWithDefault } from "../../js/pref_storage";
 import MobileSheet from "../MobileSheet";
 import {
   MOBILE_KEYPAD_ROWS,
@@ -39,7 +40,8 @@ import "./MobileToolbar.css";
 //   其他      搜尋（有可用種類時）／按鍵／更多
 //   搜尋  直接開搜尋彈窗（不開子選單；種類在彈窗上方切，article_search.js）
 //   按鍵  展開方向鍵面板（貼在工具列上方；含軟鍵盤開關與黏滯 Ctrl／Esc／Tab／Del）
-//   更多  文章導覽／選取模式／設定／登出
+//   更多  跳到第一篇未讀／設為全部已讀／分享／文章導覽／選取模式／全選／圖片上傳／設定／登出
+//         （全選與圖片上傳在桌機是右鍵選單項；手機長按選單不放，集中在這裡）
 // 沒有返回：交給系統邊緣滑動／返回鍵（history_back_guard.js）。
 //
 // 三條不可以踩的線（同舊按鍵列，守護 tests/unit/mobile_toolbar.test.jsx）：
@@ -94,6 +96,9 @@ export const MobileToolbar = ({
   // null | 'keys' | 'more'：同一時間只開一個面板。
   const [panel, setPanel] = useState(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  // 「更多」裡的圖片上傳兩項跟著總開關 enableImageUpload（同桌機右鍵選單）：開 sheet
+  // 當下現讀偏好；收起時不重算，退場動畫中項目才不會跳掉。
+  const [imageUploadEnabled, setImageUploadEnabled] = useState(false);
   const keysRef = useRef(null);
 
   useEffect(() => {
@@ -163,10 +168,18 @@ export const MobileToolbar = ({
     [sendKey],
   );
 
-  const togglePanel = useCallback((p) => {
-    setConfirmLogout(false);
-    setPanel((cur) => (cur === p ? null : p));
-  }, []);
+  const togglePanel = useCallback(
+    (p) => {
+      setConfirmLogout(false);
+      if (p === "more")
+        setImageUploadEnabled(
+          !!pttchrome.imageUpload &&
+            !!readValuesWithDefault().enableImageUpload,
+        );
+      setPanel((cur) => (cur === p ? null : p));
+    },
+    [pttchrome],
+  );
 
   // 「更多」sheet 的關閉（遮罩、拖把手、系統返回）。引用穩定：MobileSheet 拿它登記
   // 系統返回的關閉函式。
@@ -217,6 +230,36 @@ export const MobileToolbar = ({
     if (typeof pttchrome.noteUserAction === "function")
       pttchrome.noteUserAction();
     u.start();
+  }, [pttchrome]);
+
+  // 設為全部已讀：與桌機右鍵選單同一個入口（mark_all_read.js）。
+  const onMarkAllRead = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    const m = pttchrome.markAllRead;
+    if (!m || typeof m.start !== "function") return;
+    if (typeof pttchrome.noteUserAction === "function")
+      pttchrome.noteUserAction();
+    m.start();
+  }, [pttchrome]);
+
+  // 全選／圖片上傳：與桌機右鍵選單同一組 App 入口（ContextMenu 的 menuHandlerByEventKey）。
+  const onSelectAll = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    if (typeof pttchrome.doSelectAll === "function") pttchrome.doSelectAll();
+  }, [pttchrome]);
+
+  const onUploadImage = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    if (pttchrome.imageUpload) pttchrome.imageUpload.openFilePicker();
+  }, [pttchrome]);
+
+  const onUploadHistory = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    if (pttchrome.imageUpload) pttchrome.imageUpload.openPanel();
   }, [pttchrome]);
 
   // 重新整理：與桌機 F5 同一個入口（冷卻、忙碌提示都在 ScreenRefresh 裡）。
@@ -458,6 +501,16 @@ export const MobileToolbar = ({
             {i18n("mobileToolbar_unreadJump")}
           </button>
         ) : null}
+        {context.markAllRead ? (
+          <button
+            type="button"
+            className="nomouse_command mobileSheetItem pttRipple"
+            data-key="__markAllRead"
+            onClick={onMarkAllRead}
+          >
+            {i18n("cmenu_markAllRead")}
+          </button>
+        ) : null}
         {context.share ? (
           <button
             type="button"
@@ -498,6 +551,34 @@ export const MobileToolbar = ({
         >
           {i18n("mobileKeypad_select")}
         </button>
+        <button
+          type="button"
+          className="nomouse_command mobileSheetItem pttRipple"
+          data-key="__selectAll"
+          onClick={onSelectAll}
+        >
+          {i18n("cmenu_selectAll")}
+        </button>
+        {imageUploadEnabled ? (
+          <button
+            type="button"
+            className="nomouse_command mobileSheetItem pttRipple"
+            data-key="__uploadImage"
+            onClick={onUploadImage}
+          >
+            {i18n("cmenu_uploadImage")}
+          </button>
+        ) : null}
+        {imageUploadEnabled ? (
+          <button
+            type="button"
+            className="nomouse_command mobileSheetItem pttRipple"
+            data-key="__uploadHistory"
+            onClick={onUploadHistory}
+          >
+            {i18n("cmenu_uploadHistory")}
+          </button>
+        ) : null}
         <button
           type="button"
           className="nomouse_command mobileSheetItem pttRipple"

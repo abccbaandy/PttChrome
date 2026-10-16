@@ -96,6 +96,8 @@ const menuHandlerByEventKey = {
   //（真游標跳號 → v → w+Enter）由 listSession 序列化，這裡只傳目標序號。
   markReadUnread: (pttchrome, { markReadTarget }) =>
     pttchrome.listSession.markReadUnreadBefore(markReadTarget.num),
+  // 設為全部已讀（v → v⏎）：序列與可用判定都在 js/mark_all_read.js。
+  markAllRead: (pttchrome) => pttchrome.markAllRead.start(),
   copy: (pttchrome, { selectedText }) => pttchrome.doCopy(selectedText),
   copyAnsi: (pttchrome) => pttchrome.doCopyAnsi(),
   paste: (pttchrome) => pttchrome.doPaste(),
@@ -146,6 +148,8 @@ const initialState = {
   // 列表好讀模式下，右鍵那一列可不可以做「前已讀後未讀」（{ num } / null）。
   // 判定全在 listSession.markReadTargetAtRow（狀態、置底文、header 列）。
   markReadTarget: null,
+  // 「設為全部已讀」出不出現（文章列表才有，markAllRead.available）。
+  markAllReadEnabled: false,
   // 選單作用的那篇文章（列表列／手機卡片；js/menu_target_highlight.js）。選單開著
   // 時在畫面上標出來，避免對錯的文章操作。null ＝ 不是在文章列上開的。
   menuTarget: null,
@@ -460,6 +464,10 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistAuthorExists,
         blacklistTitleTarget,
         markReadTarget,
+        markAllReadEnabled:
+          !!normalEnabled &&
+          !!pttchrome.markAllRead &&
+          pttchrome.markAllRead.available(),
         menuTarget:
           normalEnabled && prefs.highlightMenuTarget
             ? menuTargetFromElement(target)
@@ -510,6 +518,7 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistAuthorExists: false,
         blacklistTitleTarget: null,
         markReadTarget: null,
+        markAllReadEnabled: false,
         menuTarget: null,
         menuAnchor: null,
         quickSearchItems: [],
@@ -945,6 +954,7 @@ export const ContextMenu = ({ pttchrome }) => {
     blacklistAuthorExists,
     blacklistTitleTarget,
     markReadTarget,
+    markAllReadEnabled,
     articleLinkEnabled,
     contextArticle,
     previews,
@@ -992,6 +1002,7 @@ export const ContextMenu = ({ pttchrome }) => {
         authorBlacklistExists={blacklistAuthorExists}
         titleBlacklistText={blacklistTitleTarget}
         markReadTarget={markReadTarget}
+        markAllReadEnabled={markAllReadEnabled}
         menuAnchor={menuAnchor}
         articleLinkEnabled={articleLinkEnabled}
         imageUploadEnabled={imageUploadEnabled}

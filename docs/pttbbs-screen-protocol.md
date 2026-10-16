@@ -895,6 +895,10 @@ server 送的是編碼後的 ANSI，client 看不到 flag，只看得到結果�
 
 看板列表右鍵選單「前已讀後未讀」（`src/js/list_session.js#markReadUnreadBefore`）的依據。
 消費端守護：`tests/unit/list_mark_read.test.js`、`tests/e2e/offline/list_mark_read.offline.spec.js`。
+「設為全部已讀」（`src/js/mark_all_read.js`，右鍵選單／手機「更多」）走同一個 prompt 的 `v` 分支：
+`v` → 等 prompt → `v⏎` ⇒ `brc_toggle_all_read(currbid, 1)`。該分支**不看** `fhdr`，游標在哪一篇都一樣
+（仍需有一篇可當 needitem），所以不送游標同步以外的跳號；沒有拒絕路徑（不像 `w` 的 `vmsg`）。
+守護 `tests/unit/mark_all_read.test.js`。
 
 進入點 `read_comms[]`：`{1, b_mark_read_unread} // 'v'`（`bbs.c:4621`）。`onekey` flag **1**
 ＝ needitem ⇒ 需要有效 `fhdr`，也就是**游標所在那一篇**；函式本身不移動游標。

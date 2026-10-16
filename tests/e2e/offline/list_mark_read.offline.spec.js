@@ -179,6 +179,67 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
     }
   });
 
+  // 「設為全部已讀」（js/mark_all_read.js）：v → 等 prompt → v+Enter。同一卷 cassette
+  // 餵得動前兩步（jump → v 的 prompt）；`v\r` 沒有對應門控，只驗它在 prompt 之後才被送出。
+  test('右鍵「設為全部已讀」：prompt 出現之後才送 v+Enter，兩步絕不同批', async ({ page }) => {
+    test.setTimeout(90000);
+    const logs = ptt.attachConsole(page);
+    try {
+      await engage(page);
+      // cassette 的 v 門控排在 jump 之後 ⇒ 先用真鍵盤把選取移到錄過跳號的那一篇，
+      // passthrough 的游標同步腿就會送出那個 jump。
+      const num = (mark.steps.find((s) => s.on === 'jump') || {}).num;
+      expect(num).toBeTruthy();
+      const cur = () => page.evaluate(() => window.__app.listSession._selectedNum);
+      for (let i = 0; i < 40 && (await cur()) !== num; ++i) {
+        const before = await cur();
+        await page.keyboard.press(before > num ? 'ArrowUp' : 'ArrowDown');
+        await expect.poll(cur).not.toBe(before);
+      }
+      expect(await cur()).toBe(num);
+
+      // 游標列開頭是游標符號（targetRow 依序號開頭找不到）⇒ 右鍵鄰列：「全部」不看是哪一列。
+      const t = (await targetRow(page, num - 1)) || (await targetRow(page, num + 1));
+      expect(t).not.toBeNull();
+      await assertElementUnder(page, t.x, t.y, t.title, {
+        closest: '[data-list-title]',
+        attribute: 'data-list-title'
+      });
+      await page.mouse.click(t.x, t.y, { button: 'right' });
+      const item = menuItem(page, await label(page, 'cmenu_markAllRead'));
+      await expect(item).toBeVisible();
+
+      const before = (await dumpListState(page)).sent.length;
+      await item.click();
+      await page.waitForFunction(
+        (from) => window.__replay.sent.slice(from).includes('v\f'),
+        before,
+        { timeout: 10000 }
+      );
+      await page.waitForFunction(
+        () =>
+          Array.from(
+            document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+          ).some((el) => (el.textContent || '').includes('設定所有文章')),
+        undefined,
+        { timeout: 10000 }
+      );
+      await page.waitForFunction(
+        (from) => window.__replay.sent.slice(from).includes('v\r\f'),
+        before,
+        { timeout: 10000 }
+      );
+      const sent = (await dumpListState(page)).sent.slice(before);
+      expect(sent.indexOf('v\f')).toBeLessThan(sent.indexOf('v\r\f'));
+      const noFF = (d) => (d.charAt(d.length - 1) === '\f' ? d.slice(0, -1) : d);
+      expect(sent.filter((d) => noFF(d) === 'vv\r').length).toBe(0);
+    } catch (e) {
+      console.log('--- console tail ---');
+      for (const l of logs.slice(-25)) console.log(l);
+      throw e;
+    }
+  });
+
   test('header 列右鍵 → 該項不出現（一般選單照常）', async ({ page }) => {
     test.setTimeout(90000);
     await engage(page);

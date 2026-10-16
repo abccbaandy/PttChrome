@@ -60,7 +60,8 @@ const items = () =>
 test("項目與桌機選單同一份清單、同一個順序", async () => {
   const { props } = setup();
   await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
-  const want = buildContextMenuEntries(props)
+  // 手機版清單（mobile: true）：全選／圖片上傳／設為全部已讀改在工具列「更多」。
+  const want = buildContextMenuEntries({ ...props, mobile: true })
     .filter((e) => e.type === "item")
     .map((e) => e.key);
   expect(items().map((n) => n.getAttribute("data-cmenu"))).toEqual(want);
