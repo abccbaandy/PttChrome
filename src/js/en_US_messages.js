@@ -86,6 +86,12 @@ export const en_US = {
   "cmenu_markReadUnread": {
     "message": "Mark this post and older read, newer unread"
   },
+  "cmenu_boardMarkRead": {
+    "message": "mark as read"
+  },
+  "cmenu_markAllRead": {
+    "message": "Mark all as read"
+  },
   "titleBlacklistModal_title": {
     "message": "Add to title blacklist"
   },

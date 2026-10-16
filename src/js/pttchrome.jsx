@@ -12,6 +12,8 @@ import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { ScreenRefresh } from './screen_refresh';
 import { UnreadJump } from './unread_jump';
+import { MarkAllRead } from './mark_all_read';
+import { BoardMarkRead } from './board_mark_read';
 import { installPullRefresh } from './pull_refresh';
 import { LongPushSession } from './long_push_session';
 import { LogoutSession } from './logout_session';
@@ -186,6 +188,10 @@ export const App = function() {
   this.screenRefresh = new ScreenRefresh(this);
   // 跳到第一篇未讀（F7／手機工具列「更多」）：End → PgUp… → 跳號，見 unread_jump.js。
   this.unreadJump = new UnreadJump(this);
+  // 設為全部已讀（右鍵選單／手機工具列「更多」）：v → v⏎，見 mark_all_read.js。
+  this.markAllRead = new MarkAllRead(this);
+  // 看板列表右鍵／長按「<板名> 設為已讀」：跳號 → v，見 board_mark_read.js。
+  this.boardMarkRead = new BoardMarkRead(this);
   // 手機下拉重整（只在 mobile 版面起作用，被動監聽）。
   this._uninstallPullRefresh = installPullRefresh(this);
   this.longPush = new LongPushSession(this, this.view, this.buf, this.commandQueue);

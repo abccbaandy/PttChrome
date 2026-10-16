@@ -32,7 +32,8 @@ import {
   boardListFetchVerdict,
   isBoardListSeparatorRow,
   isBoardListBlockedRow,
-  parseBoardListName
+  parseBoardListName,
+  boardMarkReadTargetOfText
 } from './board_list_parse';
 import { bufferEdgeNum } from './list_session';
 import { rowToText } from './comment_parse';
@@ -827,7 +828,8 @@ BoardListSession.prototype = {
   // 形狀照抄 list_session._beginInplaceTransaction：凍住畫面 →（必要時）跳號同步
   // 真游標 → 送真鍵 → 等真回應 → 採用真落點。`t`/`v`/`V` 都是**對游標所在那一列**
   // 動作的（board.c:1802/1871），本地導覽零網路 ⇒ 真游標落後時必須先同步。
-  _beginInplaceTransaction: function(bytes) {
+  // opts.onDone：落地回到 buffer 之後呼叫（右鍵「設為已讀」用來說結果）。
+  _beginInplaceTransaction: function(bytes, opts) {
     const r = transitionBoardListSession(this.state, {
       type: 'key',
       keyClass: 'native-inplace'
@@ -836,7 +838,7 @@ BoardListSession.prototype = {
     this._freezeForTransaction();
     const self = this;
     const send = function() {
-      self._enqueueInplaceKey(bytes);
+      self._enqueueInplaceKey(bytes, opts && opts.onDone);
     };
     if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
       this._enqueueCursorSyncJump('inplace-sync-jump', send, function() {
@@ -847,7 +849,7 @@ BoardListSession.prototype = {
     send();
   },
 
-  _enqueueInplaceKey: function(bytes) {
+  _enqueueInplaceKey: function(bytes, onLanded) {
     const self = this;
     let landed = null;
     this._queue.enqueue({
@@ -879,6 +881,7 @@ BoardListSession.prototype = {
         // 落點不在緩衝（跳很遠）＝畫面本來就要換一份 ⇒ 整份重建。
         if (inBuf) self._resumeInPlace(landed);
         else self._rebuild(landed);
+        if (onLanded) onLanded();
       },
       onFail: function() {
         self._degradeToNative('操作逾時，已切至原生模式');
@@ -969,6 +972,35 @@ BoardListSession.prototype = {
   // 明確回 null，讓 ContextMenu 的判定維持單一真相源。
   markReadTargetAtRow: function() {
     return null;
+  },
+
+  // ---- 右鍵／長按「<板名> 設為已讀」（board.c#board_cmd_mark_read，js/board_mark_read.js）--
+
+  // 純查詢、零副作用：右鍵那一列（render row）能不能設為已讀、是哪一個看板。
+  markBoardReadTargetAtRow: function(renderRow) {
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return null;
+    const idx = renderRow - this.headerRows();
+    if (idx < 0) return null;
+    const nums = this._termBuf.brdListLineNums || [];
+    if (idx >= nums.length) return null; // 短清單補到 bodyRows 的空白列
+    const num = nums[idx];
+    if (num == null) return null;
+    return boardMarkReadTargetOfText(this._rowTextOf(num));
+  },
+
+  // 把選取移到那一列，然後走與鍵盤按 `v` **同一條**路（A 類凍結交易；pref 關掉時
+  // passthrough）——真游標落後就先跳號同步，`v` 才會作用在那一列。回 true ＝接手了。
+  markBoardRead: function(num, opts) {
+    if (this._renderMode === 'native') return false;
+    if (this._busyHint()) return true;
+    if (this.state !== 'active' || num == null || this._posOfNum(num) === -1) return false;
+    this._selectedNum = num;
+    // 先同步重畫再凍住（否則凍的是點擊前的游標位置，同 onMouseClick）。
+    this._forceRedraw();
+    const onDone = opts && opts.onDone;
+    if (this._autoResumeEnabled()) this._beginInplaceTransaction('v', { onDone: onDone });
+    else this._beginPassthroughBytes([{ keys: 'v', kind: 'native-key', onDone: onDone }]);
+    return true;
   },
 
   // ---- 滾輪／捲動 ------------------------------------------------------------

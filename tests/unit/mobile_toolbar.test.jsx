@@ -11,6 +11,7 @@ import { MantineProvider } from "@mantine/core";
 import { MobileToolbar, LOGOUT_CONFIRM_MS, HAPTIC_MS } from "../../src/components/MobileToolbar";
 import { MOBILE_TOOLBAR_PX } from "../../src/js/mobile_layout";
 import { setupI18n, i18n } from "../../src/js/i18n";
+import { readValuesWithDefault, writeValues } from "../../src/js/pref_storage";
 import toolbarCss from "../../src/components/MobileToolbar/MobileToolbar.css?raw";
 
 beforeAll(() => {
@@ -370,6 +371,66 @@ describe("更多（bottom sheet）", () => {
     expect(byKey("__select").getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(byKey("__select"));
     expect(core.setMobileSelectMode).toHaveBeenCalledWith(true);
+  });
+
+  test("設為全部已讀：只在文章列表（context.markAllRead）出現，按下走 markAllRead.start 並收起", async () => {
+    const core = makeCore({ context: { push: false, search: [], markAllRead: true } });
+    core.markAllRead = { start: vi.fn(() => true) };
+    renderBar(core);
+    await openMore();
+    fireEvent.click(byKey("__markAllRead"));
+    expect(core.markAllRead.start).toHaveBeenCalledTimes(1);
+    await sheetClosed();
+  });
+
+  test("設為全部已讀：不是文章列表就沒有", async () => {
+    renderBar(makeCore());
+    await openMore();
+    expect(byKey("__markAllRead")).toBeNull();
+  });
+
+  test("全選：有內容的畫面才有（context.contentTools），按下呼叫 doSelectAll（桌機右鍵同一個入口）", async () => {
+    const core = makeCore({ context: { push: false, search: [], contentTools: true } });
+    core.doSelectAll = vi.fn();
+    renderBar(core);
+    await openMore();
+    fireEvent.click(byKey("__selectAll"));
+    expect(core.doSelectAll).toHaveBeenCalledTimes(1);
+  });
+
+  test("主功能表（contentTools 假）：沒有全選、也沒有圖片上傳兩項", async () => {
+    const core = makeCore();
+    core.imageUpload = { openFilePicker: vi.fn(), openPanel: vi.fn() };
+    renderBar(core);
+    await openMore();
+    expect(byKey("__selectAll")).toBeNull();
+    expect(byKey("__uploadImage")).toBeNull();
+    expect(byKey("__uploadHistory")).toBeNull();
+  });
+
+  test("圖片上傳兩項：跟著 enableImageUpload；按下開檔案選擇器／上傳紀錄", async () => {
+    const core = makeCore({ context: { push: false, search: [], contentTools: true } });
+    core.imageUpload = { openFilePicker: vi.fn(), openPanel: vi.fn() };
+    writeValues({ ...readValuesWithDefault(), enableImageUpload: false });
+    try {
+      const r = renderBar(core);
+      await openMore();
+      expect(byKey("__uploadImage")).toBeNull();
+      expect(byKey("__uploadHistory")).toBeNull();
+      r.unmount();
+
+      writeValues({ ...readValuesWithDefault(), enableImageUpload: true });
+      renderBar(core);
+      await openMore();
+      fireEvent.click(byKey("__uploadImage"));
+      expect(core.imageUpload.openFilePicker).toHaveBeenCalledTimes(1);
+      await sheetClosed();
+      await openMore();
+      fireEvent.click(byKey("__uploadHistory"));
+      expect(core.imageUpload.openPanel).toHaveBeenCalledTimes(1);
+    } finally {
+      window.localStorage.clear();
+    }
   });
 
   test("設定：交給 onOpenSettings", async () => {

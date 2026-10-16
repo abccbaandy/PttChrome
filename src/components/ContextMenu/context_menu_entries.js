@@ -13,7 +13,12 @@ export function buildContextMenuEntries(p) {
   const out = [];
   const item = (key, label, onClick, extra) =>
     out.push({ type: "item", key, label, onClick, ...(extra || {}) });
-  const divider = (key) => out.push({ type: "divider", key });
+  // 連續兩條分隔線只留一條（手機把整段工具項搬去「更多」後，那段可能是空的）。
+  const divider = (key) => {
+    const last = out[out.length - 1];
+    if (last && last.type === "divider") return;
+    out.push({ type: "divider", key });
+  };
   const previews = p.previews || {};
   const quickSearchItems = p.quickSearchItems || [];
 
@@ -42,9 +47,28 @@ export function buildContextMenuEntries(p) {
     item("markReadUnread", i18n("cmenu_markReadUnread"), (e) =>
       p.onMenuSelect("markReadUnread", e),
     );
+  // 看板列表「<板名> 設為已讀」：作用在右鍵／長按的那一列（board.c 的 `v` 只認游標所在
+  // 那個看板），所以桌機手機都放這裡，不放手機「更多」。判定在 board_mark_read.targetAtRow。
+  if (p.normalEnabled && p.boardMarkReadTarget)
+    item(
+      "boardMarkRead",
+      `'${p.boardMarkReadTarget.name}' ${i18n("cmenu_boardMarkRead")}`,
+      (e) => p.onMenuSelect("boardMarkRead", e),
+    );
+  // 「設為全部已讀」：文章列表（列表好讀與原生都可，判定在 mark_all_read.available）。
+  // 手機不放這裡：在工具列「更多」（MobileToolbar）。
+  const markAllRead = p.normalEnabled && p.markAllReadEnabled && !p.mobile;
+  if (markAllRead)
+    item("markAllRead", i18n("cmenu_markAllRead"), (e) =>
+      p.onMenuSelect("markAllRead", e),
+    );
   if (
     p.normalEnabled &&
-    (p.authorBlacklistId || p.titleBlacklistText || p.markReadTarget)
+    (p.authorBlacklistId ||
+      p.titleBlacklistText ||
+      p.markReadTarget ||
+      p.boardMarkReadTarget ||
+      markAllRead)
   )
     divider("d-blacklist");
   if (p.selEnabled) {
@@ -99,14 +123,16 @@ export function buildContextMenuEntries(p) {
   }
   divider("d-main");
   if (p.normalEnabled) {
-    item(
-      "selectAll",
-      i18n("cmenu_selectAll"),
-      (e) => p.onMenuSelect("selectAll", e),
-      {
-        right: "Ctrl+A",
-      },
-    );
+    // 全選、圖片上傳兩項：手機搬到工具列「更多」（p.mobile ＝ ContextSheet 畫的）。
+    if (!p.mobile)
+      item(
+        "selectAll",
+        i18n("cmenu_selectAll"),
+        (e) => p.onMenuSelect("selectAll", e),
+        {
+          right: "Ctrl+A",
+        },
+      );
     // 複製本篇文章的 deep link（外部程式貼上後點開即跳回這篇）。只在
     // 文章畫面出現：要靠 Q 資訊框才問得出本篇的 AID。
     if (p.articleLinkEnabled)
@@ -132,7 +158,7 @@ export function buildContextMenuEntries(p) {
       );
     // 圖片上傳（urusai）。拖放與 Ctrl+V 是主要入口，這兩項給「不方便
     // 拖曳」與「想插入之前傳過的圖」的情況；跟著總開關 enableImageUpload。
-    if (p.imageUploadEnabled) {
+    if (p.imageUploadEnabled && !p.mobile) {
       item("uploadImage", i18n("cmenu_uploadImage"), (e) =>
         p.onMenuSelect("uploadImage", e),
       );

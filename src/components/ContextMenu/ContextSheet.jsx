@@ -12,7 +12,8 @@ import { floatMenuPlacement } from "../../js/sheet_placement";
 // 短、也不蓋住它（js/sheet_placement.js；選中文章外框才看得到）。量不到 ⇒ 退回貼底 sheet。
 export const ContextSheet = (props) => {
   const { pttchrome, open, onHide, menuAnchor } = props;
-  const entries = buildContextMenuEntries(props);
+  // mobile：全選／圖片上傳／設為全部已讀改放工具列「更多」（MobileToolbar）。
+  const entries = buildContextMenuEntries({ ...props, mobile: true });
   // 收起時 menuAnchor 已被清成 null：沿用開著時的位置，退場動畫才不會中途跳到底部。
   const placementRef = useRef(undefined);
   if (open || placementRef.current === undefined) {

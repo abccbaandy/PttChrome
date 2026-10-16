@@ -1012,6 +1012,113 @@ describe("A 類鍵的凍結交易（看板列表：t / v / V）", () => {
   });
 });
 
+// 右鍵／長按「<板名> 設為已讀」（js/board_mark_read.js）。board.c 的 `v` 只作用在**真游標**
+// 那一列 ⇒ 送 `v` 前一定要先把真游標搬過去；路徑與鍵盤按 `v` 是同一條凍結交易。
+describe("右鍵「設為已讀」：markBoardReadTargetAtRow／markBoardRead", () => {
+  const bodyRow = (idx) => 3 + idx;
+  const engaged = () => {
+    const h = makeSession();
+    h.termBuf.feed(brdScreenRows());
+    seedBuffer(h.termBuf, 1, 20);
+    h.s.state = "active";
+    h.s._renderMode = "buffer";
+    return h;
+  };
+
+  test("目標＝那一列的編號與板名；header／超出序列 → null", () => {
+    const h = engaged();
+    expect(h.s.markBoardReadTargetAtRow(bodyRow(4))).toEqual({ num: 5, name: "B5" });
+    expect(h.s.markBoardReadTargetAtRow(2)).toBe(null);
+    expect(h.s.markBoardReadTargetAtRow(bodyRow(20))).toBe(null);
+  });
+
+  test("分隔線／禁入列 → null（server 不會動，選單項不出現）", () => {
+    const h = engaged();
+    h.termBuf.brdListLines[1] = rowChars(lineRow(2));
+    h.termBuf.brdListLines[2] = rowChars(blockedRow(3, "SYSOP"));
+    expect(h.s.markBoardReadTargetAtRow(bodyRow(1))).toBe(null);
+    expect(h.s.markBoardReadTargetAtRow(bodyRow(2))).toBe(null);
+  });
+
+  test("非 buffer（原生鏡像／凍結中）→ null", () => {
+    const h = engaged();
+    h.s._renderMode = "native";
+    expect(h.s.markBoardReadTargetAtRow(bodyRow(4))).toBe(null);
+    h.s._renderMode = "frozen";
+    expect(h.s.markBoardReadTargetAtRow(bodyRow(4))).toBe(null);
+  });
+
+  test("真游標不在那一列 → 先跳號同步，落地後才送 v；全程凍結交易", () => {
+    const h = engaged();
+    h.s._selectedNum = 1;
+    h.s._serverNum = 1;
+    h.enqueued.length = 0;
+    const done = vi.fn();
+    expect(h.s.markBoardRead(5, { onDone: done })).toBe(true);
+    expect(h.s._selectedNum).toBe(5);
+    expect(h.s._renderMode).toBe("frozen");
+    expect(h.enqueued).toHaveLength(1);
+    expect(h.enqueued[0].keys).toBe("5\r");
+    expect(h.enqueued[0].kind).toBe(BRD_CMD_PREFIX + "inplace-sync-jump");
+    h.enqueued[0].onDone();
+    const v = h.enqueued[1];
+    expect(v.keys).toBe("v");
+    expect(v.kind).toBe(BRD_CMD_PREFIX + "native-inplace");
+    const landed = {
+      brd: { parked: true, cursorNum: 5, variant: h.s._variant, topNum: 1 },
+      rows: 24,
+      curX: 0,
+      curY: 7,
+      rowTexts: brdScreenRows(),
+    };
+    expect(v.expect(null, landed)).toBe(true);
+    v.onDone();
+    expect(h.s._renderMode).toBe("buffer");
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  test("跳號同步失敗 → 不送 v，降級原生", () => {
+    const h = engaged();
+    h.s._selectedNum = 1;
+    h.s._serverNum = 1;
+    h.enqueued.length = 0;
+    h.s.markBoardRead(5);
+    h.enqueued[0].onFail("timeout");
+    expect(h.enqueued.filter((c) => c.keys === "v")).toEqual([]);
+    expect(h.s._renderMode).toBe("native");
+  });
+
+  test("pref 關（自動回復關）→ passthrough 路徑，仍先同步再送 v", () => {
+    const h = engaged();
+    localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({
+        values: { enableBoardListSmoothScroll: true, enableListNativeAutoResume: false },
+      })
+    );
+    h.s._selectedNum = 1;
+    h.s._serverNum = 1;
+    h.enqueued.length = 0;
+    h.s.markBoardRead(5);
+    expect(h.enqueued[0].keys).toBe("5\r");
+    h.enqueued[0].onDone();
+    expect(h.enqueued[1].keys).toBe("v");
+    expect(h.enqueued[1].kind).toBe(BRD_CMD_PREFIX + "native-key");
+  });
+
+  test("交易在飛 → 提示、不排新指令；原生鏡像 → 回 false", () => {
+    const h = engaged();
+    h.s.state = "functionMode";
+    h.s._renderMode = "frozen";
+    h.enqueued.length = 0;
+    expect(h.s.markBoardRead(5)).toBe(true);
+    expect(h.enqueued).toEqual([]);
+    expect(h.hints.join()).toContain("處理中");
+    h.s._renderMode = "native";
+    expect(h.s.markBoardRead(5)).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 進板 → 退板：視野不得被 server 那一頁重新釘住
 //

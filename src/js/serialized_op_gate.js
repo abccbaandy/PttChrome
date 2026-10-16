@@ -33,6 +33,8 @@ export function serializedOpHint(core) {
   if (core.refreshInFlight) return '重新整理中，請稍候…';
   // 跳到第一篇未讀（End → PgUp… → 跳號），見 unread_jump.js。
   if (core.unreadJumpInFlight) return '正在找第一篇未讀，請稍候…';
+  // 設為已讀：文章列表 v → v⏎（mark_all_read.js）／看板列表 跳號 → v（board_mark_read.js）。
+  if (core.markAllReadInFlight) return '設定已讀中，請稍候…';
   return null;
 }
 
