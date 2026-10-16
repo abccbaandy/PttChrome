@@ -37,7 +37,7 @@
 | `mouseBackNav` | `1` | 0 關閉 / 1 左方向鍵 | 攔截瀏覽器的「返回」→ `←`。**一個 key 涵蓋所有來源**（觸控板左滑手勢／側鍵／`Alt+←`／`⌘[`／工具列），它們是同一條實作（見「手勢與瀏覽器返回」） |
 | `mouseWheelSmoothScroll` | `true` | bool | 開＝列表好讀的 body 視口走 `overflow-y:auto`，**捲動整個交給瀏覽器**（與文章好讀同一套引擎）；關＝視口改 `overflow:hidden`，滾輪退回一次一頁。**只作用於文章列表好讀模式**（其餘畫面沒有這個選擇，見下方 render 分支表） |
 
-| `mouseServerReport` | `false` | bool | 把點擊與滾輪回報給 PTT server（XTerm SGR）。開啟後我們自己那套滑鼠語意整組讓位，見「PTT server 端的滑鼠回報」。**預設關**：PTT 的 `UF_MOUSE` 預設關，且 pttbbs 目前沒有任何東西消費 `KEY_MOUSE` |
+| `mouseServerReport` | `false` | bool | 把點擊與滾輪回報給 PTT server（XTerm SGR）。開啟後我們自己那套滑鼠語意整組讓位，見「PTT server 端的滑鼠回報」。**預設關**：PTT 的 `UF_MOUSE` 預設關，開了等於把滑鼠交給 server |
 
 ### 舊 → 新 key 對照（**刻意不做遷移**）
 
@@ -163,8 +163,7 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 - 舊 key 不遷移（同「舊 → 新 key 對照」政策）：關過防誤觸的人回到預設範圍。
 - **底色不分 `lastMover`**：鍵盤游標與滑鼠 hover 共用同一個寬度。兩種光棒不一樣長
   只會讓人以為畫面壞了。
-- 2026-08 之前是「整列上底色、只有標題欄可點」，兩者刻意不一致 —— 代價是使用者
-  無從得知邊界在哪；現在那條底色本身就是「這裡點得下去」的提示。
+- 底色與可點區不可分開設計：不一致時使用者無從得知邊界在哪；那條底色本身就是「這裡點得下去」的提示。
 - **部分寬度底色的 DOM**：`highlightClass` 掛在 block 級的 `bbsline` span 上就是滿版，
   所以 `S > 0` 時改掛在一個「從第 S 欄包到行尾」的 span 上（`LinkSegmentBuilder`
   的 `_flushHighlightWrap`，比照 `.commentByAuthor` 的欄位範圍包裝）。三種範圍都是
@@ -176,32 +175,23 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
   推文 `contentCol` 緊接 `": "`），但 `S` 是**與內容無關的固定欄號**：列表上叫出的
   prompt（`s` 搜尋看板）畫面 pageState 黏在 2，col 30 剛好是「請輸入看板名稱(按空白鍵
   自動搜**尋**)」那個字的 trail ⇒ 切下去 `ColorSegmentBuilder` 待配對的 lead byte 被丟掉、
-  trail byte 被當 ASCII 畫成 `M`，該字從 2 格縮成 1 格、整段左移、游標錯位（2026-08
-  使用者回報）。修法：切點若落在 trail 上就 `+1`（整個字留在底色外）。
+  trail byte 被當 ASCII 畫成 `M`，該字從 2 格縮成 1 格、整段左移、游標錯位。
+  規則：切點若落在 trail 上就 `+1`（整個字留在底色外）。
   守護 `tests/unit/highlight_col_dbcs.test.js`。
 - `blacklistNotice` 列（原生列表的「(本文已被黑名單)」通知）**維持整列上色**：那是
   我們自己合成的文字、本來就開不了，套欄位範圍沒有意義。
 
-### 移除的舊動作
+### 刻意不做的舊動作
 
 `[`／`]`／`=` 同標題前後篇、重新整理、同標題末篇（舊 `mouseCursor` 8/9/10/12/13/14），
-以及 pageState 3 的 row 0/1/2 那幾列的左右兩欄特例。**右緣翻頁／頂列 Home／底列 End
-已於 2026-09 找回**，見下方「邊緣翻頁區」。
+以及 pageState 3 的 row 0/1/2 那幾列的左右兩欄特例（右緣翻頁／頂列 Home／底列 End 見下方「邊緣翻頁區」）。
+理由：沒有提示的動作區誤觸率高。左緣 `exit` 能留著，是因為有提示帶（`#exitHintBand`）＋ back 指標，
+而且只佔固定的左 7 欄。`mouseAction` 刻意不沿用舊 `mouseCursor`（0..14 同時兼任外觀與動作）的名字：
+漏改的地方會變 `undefined` 而不是靜默走進錯的 case。`none` 一定什麼都不做（文章裡隨手點一下不可以跳出去）。
 
-**「列表左緣離開」2026-08 重新加回**（上表的 `exit`）。當初與其他 14 種一起移除的
-理由是「誤觸率高又完全沒有提示」，而**提示問題已經解決** —— 提示帶（`#exitHintBand`）
-＋ back 指標補上之後，滑鼠靠近左緣就看得到「這裡點下去會回上一層」。誤觸率的部分
-也不同：舊版是**整個畫面每一區都有動作**，現在只有固定的左 7 欄。舊的 `mouseCursor`
-是 0..14 的數字、同時兼任「長什麼樣」與「點了做什麼」，改名 `mouseAction` 是刻意的
-（漏改的地方會變 `undefined` 而不是靜默走進錯的 case）。
+## 邊緣翻頁區（`mouseEdgePaging`，預設開）
 
-**舊 `case 0` 也送左方向鍵** —— 那就是「文章裡隨手點一下就跳出去」的來源。新版
-`none` 一定什麼都不做。
-
-## 邊緣翻頁區（`mouseEdgePaging`，預設開，2026-09 找回）
-
-term.ptt.cc 原版把畫面切成六個區域，2026-08 的重新設計只留下中間的 `enter`（後來又
-加回左緣 `exit`）。使用者要求把其餘四個找回來：**頂列 Home／底列 End／右緣上下半
+term.ptt.cc 原版把畫面切成六個區域；本 client 除了中間的 `enter` 與左緣 `exit`，另有**頂列 Home／底列 End／右緣上下半
 翻頁**，文章內沒有右緣帶、改成**整片上半／下半**翻頁＋底列 End。
 
 當初移除的理由是「誤觸率高又完全沒有提示」，兩半都處理掉才加回來：
@@ -248,7 +238,7 @@ term.ptt.cc 原版把畫面切成六個區域，2026-08 的重新設計只留下
    `#exitHintBand` 是整片高度的一條帶子，讓 End 吃掉它最底下那一格的話，帶子會在
    那裡亮著卻送出別的鍵。所以文章的 End 帶從第 7 欄才開始。
 
-### PgUp／PgDn 不畫提示帶（2026-09）
+### PgUp／PgDn 不畫提示帶
 
 使用者回報：PgUp／PgDn 區面積太大（列表右緣 16 欄的上下半、文章內整片上下半），
 半透明帶子一亮就蓋住大片內文、影響閱讀 ⇒ 這兩區**只靠自訂指標**（pageup/pagedown.png）
@@ -464,7 +454,7 @@ guard 寫進 debug 錄製檔（`backGuard.blocked {reason,pageState,cur_x,cur_y,
 `view.onKeyDown` 開頭就有且會自己 `flashListHint`，重複擋只會讓提示閃兩次。
 
 `←` 之外**沒有前進方向**：右滑 →「開文章」在 native-first 下拿不到（sentinel 被吃掉
-後我們立刻補回，forward entry 被截斷）。已於 2026-09 移除，設定頁與 README 同步改過。
+後我們立刻補回，forward entry 被截斷）。
 
 ### history sentinel 的六個坑（`history_back_guard.js`）
 
@@ -503,8 +493,8 @@ guard 寫進 debug 錄製檔（`backGuard.blocked {reason,pageState,cur_x,cur_y,
      `flashListHint(ESCAPE_HINT)`；同狀態下第二次才放行。語意＝「我們用不到的 back 就
      還給瀏覽器」。
 
-6. **自己造成的 traversal 不可以被 deep link 消費**（2026-09-05 實機回報：按側鍵／
-   `Alt+←`／觸控板左滑都會**被導回剛剛那篇文章**）。兩個功能各自都沒錯，交會處才壞：
+6. **自己造成的 traversal 不可以被 deep link 消費**（否則按側鍵／`Alt+←`／觸控板左滑
+   都會**被導回剛剛那篇文章**）。兩個功能各自都沒錯，交會處才壞：
    - 「網址列跟著現在在讀哪一篇走」（`deep_link_controller._syncAddressBar`）用
      `replaceState` 改的是**當前 entry**，而我們平常站著的那一層正是 sentinel
      ⇒ **S1 這一格帶著 `#Board/AID`**（E0 仍是站台根）。
@@ -563,15 +553,13 @@ sentinel 兜底」，改版後只會更一致。若它的整頁 snapshot 動畫�
 改成 `{passive:false}`**：那會讓 Chrome 的 wheel 變成 main-thread blocking，文章好讀
 捲動掉幀（正是 2026-08 把捲動交還瀏覽器的原因）。
 
-### 順手修掉的既有 bug（保留）
+### 水平主導的 wheel 不可落進翻頁分支
 
-`mouse_scroll` 的方向判斷是 `up = e.deltaY < 0 || e.wheelDelta > 0`，而純水平滑動
-`deltaY === 0` ⇒ `up === false` ⇒ 原生 24 列畫面 `setBBSCmd('doPageDown')`＝左滑會偷送
-一個 PageDown 給 PTT（斜滑同理誤翻頁）。水平主導的事件在進入翻頁分支前就 return
-（`isHorizontalWheel`，`swipe_gesture.js` 只剩這三個純函式）。回歸鎖
-`tests/unit/wheel_horizontal.test.js`。
+`mouse_scroll` 的方向判斷是 `up = e.deltaY < 0 || e.wheelDelta > 0`，純水平滑動 `deltaY === 0` ⇒ `up === false`
+⇒ 會被當成往下翻頁（左滑偷送 PageDown）。水平主導的事件在進入翻頁分支前就 return
+（`isHorizontalWheel`，`swipe_gesture.js`）。回歸鎖 `tests/unit/wheel_horizontal.test.js`。
 
-## 游標列標示：來源層 × 樣式層（2026-08-26）
+## 游標列標示：來源層 × 樣式層
 
 兩層**正交**，`applyCursorHighlight` 各問一次：
 
@@ -695,16 +683,12 @@ localStorage 裡已經有舊 key 的舊值，翻預設對他們**完全無效**�
 現在是退出手勢，而連結與內嵌預覽圖都可能落在那幾欄（預覽走的是 `Screen` 的事件
 委派 `onClick`，不是 `<a>` 的子孫 ⇒ 第 4 條攔不到）。
 
-**第 5 條的命中範圍＝媒體盒本身，不含左右留白（2026-09 修）**：`.inlinePreviewSlot`
-是**整列寬**的區塊（無 width 宣告，逐層繼承 `.main` 的 `chw*80+10px`），圖片卻是
-`max-width: 39em` ＋ `margin: 0.5em auto` 置中 ⇒ 直式圖／小圖左右各留下數十欄空白
-（cassette 實測：slot 1210px、圖 760px ⇒ 單側 225px ＝ **15 欄**，退出帶才 7 欄）。
-那片空白以前照樣命中 `.inlinePreviewSlot` ⇒ 第 5 條 return ⇒ 使用者回報「有圖時左側
-幾乎點不到」。而 hover 路徑（`App.onMouse_move` → `buf.onMouse_move` →
-`resolveMouseRegion`）**純看格子座標、完全不看 DOM**，兩條路各說各話：提示帶照亮、
-指標照樣是 back，點下去 0 byte —— **affordance 在說謊**。
+**第 5 條的命中範圍＝媒體盒本身，不含左右留白**：`.inlinePreviewSlot`
+是**整列寬**的區塊，圖片卻是 `max-width: 39em` ＋ `margin: 0.5em auto` 置中 ⇒ 直式圖／小圖左右各留下
+數十欄空白（單側可達 15 欄，退出帶才 7 欄）。hover 路徑（`resolveMouseRegion`）**純看格子座標、完全不看 DOM**，
+留白若算預覽，提示帶照亮、指標照樣是 back，點下去卻 0 byte —— **affordance 在說謊**。
 
-修法在 CSS 而不是這張表：`.inlinePreviewSlot { pointer-events: none }` ＋ 可互動的
+規則在 CSS 而不是這張表：`.inlinePreviewSlot { pointer-events: none }` ＋ 可互動的
 子孫（`img.easyReadingImg` / `video.easyReadingVideo` / `iframe` / `.previewLoading` /
 `.previewError` / `.previewGrayBtn`）各自取回 `auto`。`pointer-events` **是繼承屬性**，
 少取回任何一項那種媒體就連自己都點不到。順帶把 `.previewLoading`／`.previewError`
@@ -720,18 +704,16 @@ hit-test 已經到不了那裡。守護：`tests/unit/preview_pointer_events_css
 **寬圖仍是圖片優先**：達 `max-width: 39em` ≈ 78 欄的橫幅圖，左 7 欄確實有圖片像素，
 點了切換放大是刻意保留的行為，不是漏網。
 
-第 7 條的欄位條件是 2026-08 補的：`data-pusher` 掛在**整列**的 `bbsrow` span 上，
-而這一條走在滑鼠瀏覽 gate 之前 ⇒ 推文列的 cols 0-6 一律被 pusher 高亮吃掉，
-**退出手勢在整個推文區失效**（使用者回報）。修法是「命中但欄位不合就繼續往下走」，
-不是把這條往後移（連結／預覽仍必須贏過它）。
+第 7 條的欄位條件：`data-pusher` 掛在**整列**的 `bbsrow` span 上，而這一條走在滑鼠瀏覽 gate 之前
+⇒ 不看欄位的話推文列的 cols 0-6 一律被 pusher 高亮吃掉，**退出手勢在整個推文區失效**。
+規則是「命中但欄位不合就繼續往下走」，不是把這條往後移（連結／預覽仍必須贏過它）。
 
 **`closest('a')` 不可退回「只看 parentElement」**：連結內部最深可到
 `a > span > span`（`LinkSegmentBuilder` 的 `TwoColorWord` / `ForceWidthWord`，
-DBCS 雙色字），只找一層在那種字上會漏判。同一個 bug 在
-`components/ContextMenu/index.jsx` 也有一份（雙色連結按右鍵時「複製連結網址」整組
-消失），2026-08 一併修掉。
+DBCS 雙色字），只找一層在那種字上會漏判。`components/ContextMenu/index.jsx` 同理
+（否則雙色連結按右鍵時「複製連結網址」整組消失）。
 
-### 右鍵：圖片上一律放行瀏覽器原生選單（2026-09）
+### 右鍵：圖片上一律放行瀏覽器原生選單
 
 `components/ContextMenu/index.jsx#onContextMenu` 掛在 `#BBSWindow` 的 **capture**
 階段，原本第一行就無條件 `preventDefault()` ⇒ 圖片上的原生選單（另存圖片／複製
@@ -780,7 +762,7 @@ API**，唯一入口就是原生選單 ⇒ 依 CLAUDE.md「系統／瀏覽器的
 ` 文章選讀  (y)回應(X)推文(^X)轉錄 …` 變成可點的 `<a class="fnKey">`，點一下＝送出
 那個按鍵。
 
-**複合鍵逐鍵可點（2026-09）。** `(=[]<>)`（同標題前後篇）、`(/?a)`（搜尋）、
+**複合鍵逐鍵可點。** `(=[]<>)`（同標題前後篇）、`(/?a)`（搜尋）、
 `(v/V)`（已讀／未讀）、`(R/y)`、`[↑↓]`、`(X%)` 這種多鍵組拆成逐個 atom，
 各自一顆按鈕，「指哪就觸發該鍵」。**絕不可以「取第一個鍵」**：`v` 標已讀 vs `V` 標
 未讀、`d` 刪一封 vs `D` 刪範圍，語意完全相反。
@@ -940,7 +922,7 @@ API**，唯一入口就是原生選單 ⇒ 依 CLAUDE.md「系統／瀏覽器的
 `fnRows` 已在 `annotationsKey` 裡，所以這個布林翻轉時節點會正確重建；
 `_mirrorStatusRowToFooter` 每次整個 `replaceChildren`，也沒問題。
 
-## 點空白處關框（2026-09）
+## 點空白處關框
 
 PTT 停在「等一個按鍵」的畫面時，滑鼠原本**沒有任何出口**：`resolveMouseRegion` 對
 pageState 5 走 `default`、對 `inputPrompt` 更是整幀早退，使用者只能去鍵盤敲一下。
@@ -1053,20 +1035,20 @@ React 改寫以來**從未生效過**（只有 `pointer`/`default`/`auto` 有作
 可以退出」因此一直沒有任何提示。`cursorCss` 有一條括號平衡的回歸鎖
 （`tests/unit/mouse_regions.test.js`）。
 
-## PTT server 端的滑鼠回報（2026-09，XTerm SGR）
+## PTT server 端的滑鼠回報（XTerm SGR）
 
-PTT 從 2026-09 起會送 `ESC[?1000h` / `ESC[?1006h` 這類序列要求終端機回報滑鼠。
+PTT 會送 `ESC[?1003h` / `ESC[?1006h`（2026-10 起連線即要求 TRACK；之前是 1000）這類序列要求終端機回報滑鼠。
 協定事實（server 端逐條可查）見 `docs/pttbbs-screen-protocol.md` §1.1「滑鼠回報協定」。
 實作：純函式與狀態機在 `src/js/mouse_report.js`，接線在 `App.mouse_click` / `App.mouse_scroll`。
 
 ### 三條由 server 端事實推出的設計決定
 
-1. **pref `mouseServerReport` 預設 false。** `UF_MOUSE` 在 PTT 預設是關的，而且
-   pttbbs 目前**沒有任何東西消費 `KEY_MOUSE`** ⇒ 現在開啟等於拿自家滑鼠瀏覽去換一個
-   server 還不會用的按鍵。等 pttbbs 出現消費者再考慮翻預設。
-2. **只實作 1000（click）+ 1006（SGR），不送 motion。** `mbbsd/io.c:231-240` 會讓任何
-   非 `KEY_INCOMPLETE` 的鍵更新 `currutmp->lastact` ⇒ 送 1003 的 hover motion 會讓使用者
-   **永不 idle**。1002/1003 只記錄模式。
+1. **pref `mouseServerReport` 預設 false。** `UF_MOUSE` 在 PTT 預設是關的；pttbbs 已有消費者
+   （`psb.c` 的指令列 hotspot、點列表列、滾輪捲列表、locator 反白），但開了就等於把滑鼠整組交給
+   server 解讀、拿掉自家滑鼠瀏覽 ⇒ 讓使用者自己選，不翻預設。
+2. **只實作 1000（click）+ 1006（SGR），不送 motion。** `mbbsd/io.c#system_key_hook` 在分派前就更新
+   `currutmp->lastact`（motion 也算）⇒ 送 1003 的 hover motion 會讓使用者**永不 idle**。1002/1003 只記錄模式
+   （server 的 locator 反白因此在本 client 不會動，hotspot 點擊照常）。
 3. **`sgr` 初值必須是 false。** 主機只開 1000 沒開 1006 時不可以送 SGR
    （`vtkbd.c:305` 只在 `csi_prefix == '<'` 認滑鼠）。同理 `handleDECRST(1006)` 是
    **停止回報**而不是退回 X10 —— X10 送給 PTT 是廢的。
@@ -1109,8 +1091,8 @@ motion / drag 回報、中鍵與右鍵回報、水平滾輪（xterm 66/67）、D
 回覆、focus in/out（1004）、bracketed paste（2004）、X10（9）/ UTF-8（1005）/ urxvt（1015）
 編碼。
 
-已知取捨：未來 PTT 真的做出滑鼠 UI 時，好讀模式底下仍然不回報。屆時的選項是
-「tracking 期間自動停用好讀」，不在本次範圍。
+已知取捨：PTT 的滑鼠 UI（指令列 hotspot 等）在好讀模式底下用不到（不回報）。要用的話選項是
+「tracking 期間自動停用好讀」，目前不做。
 
 ## 測試
 

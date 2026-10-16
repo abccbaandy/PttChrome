@@ -143,8 +143,7 @@ deep link 的冷啟動暫存排程與「重複登入」提示，因為整輪只�
 | 「重複登入」提示 | 以前靠「共用 session 掛著時再開一條」製造；整輪只剩一條連線就做不出來 | `tests/unit/auto_login_2fa.test.js`、`auto_login_logic.test.js`（one-shot guard `_answeredDup`/`_answeredErr`） |
 | deep link「連結先到、人還沒登入」的暫存排程 | 冷啟動特有的時序 | `tests/unit/deep_link_controller.test.js`（`_hold`/`_pending`，含 handoff 通知） |
 
-（2026-08-25 之前是十幾次：`easy-reading-list.spec.js` 一支就自己登入 9 次。
-2026-08-26 之前是 3 次，那樣連跑五輪照樣被鎖 —— 實錄見下一節。）
+（每支 spec 自己登入的寫法，整輪會到十幾次，連跑幾輪就被鎖。）
 
 **另一個放大器：Playwright 在 test 失敗後會重啟 worker** ⇒ worker-scoped 的 `shared`
 fixture 重建 ⇒ 又登入一次。所以失敗多的那一輪，登入次數會遠超上表。對策有兩道：
@@ -160,7 +159,7 @@ fixture 重建 ⇒ 又登入一次。所以失敗多的那一輪，登入次數�
 ```
 
 這段文字**不在 pttbbs 開源碼裡**（已用 Big5 正確編碼查證），是 PTT 站方自有的防濫用層。
-封鎖畫面自己寫了規則（2026-08-25 實錄全文見 `docs/pttbbs-screen-protocol.md` §11.2）：
+封鎖畫面自己寫了規則（全文見 `docs/pttbbs-screen-protocol.md` §11.2）：
 
 > 本系統為獨立動態偵測連線，與BBS內帳號權限無關，**無法申請手動解除鎖定**，也不會告知暫停時限。
 > 在停止使用機器人或行為不正常的App（**部份App需要關閉自動登入**）、
@@ -172,8 +171,7 @@ fixture 重建 ⇒ 又登入一次。所以失敗多的那一輪，登入次數�
 - **重試會無限期延長**，所以這是唯一一種「再試一次」比「什麼都不做」更糟的失敗。
 - 沒有申訴管道，也不會告訴你還要等多久。
 
-2026-08-25 實測：第一輪 24 綠 2 紅，接著只重跑 `easy-reading-list.spec.js`（9 條），
-**9 條全部卡在登入閘門**，沒有一條進得到被測 code。
+
 
 已內建的自動處置（`helpers/bot_block.js`）：
 
@@ -192,25 +190,15 @@ fixture 重建 ⇒ 又登入一次。所以失敗多的那一輪，登入次數�
 
 判準：這是 PTT 端的帳號保護，與被測 code 完全無關；螢幕上就寫著結論，別往專案 code 追。
 
-踩過的坑（2026-08，`connect-login.spec.js` 偶發紅、單獨重跑 3 秒就過）：
+登入互動迴圈的兩條規則（`helpers/login_flow.js`）：
 
-- 登入互動迴圈原本只有固定 40 秒預算，且**沒有任何分支認得「正在檢查帳號與密碼」** ⇒
-  PTT 端驗證慢時撞死在該畫面，吐一則看不出是誰的問題的泛用逾時。現在這兩個「server
-  正在跑」的畫面會**從進入該畫面起算**延長預算（上限 `LOGIN_SERVER_PROGRESS_BUDGET_MS`），
-  換階段（verifying → starting）重新起算，超過才逾時並吐上表的結論。
-- 卡住的是**那條連線**而不是站台：整輪 live e2e 只有一條卡滿 46 秒紅掉，下一條 spec
-  12 秒後另開連線就登入成功。所以停在同一畫面超過 `LOGIN_SERVER_STALL_MS`（15s）就
-  **就地重連重送帳密**（短退避 2s，最多 2 次，比照節流分支的配方），換連線通常就過。
-  重連過還是卡住，逾時訊息會寫「已就地重連 N 次」——那才代表站台層級有問題。
-- 觀察到的觸發條件：卡住的**幾乎都是整輪跑到後段那次登入**（實測兩輪都卡在
-  `easy-reading-list.spec.js` 的第一條，也就是同一輪的第 4 次登入），疑似 PTT 對短時間
-  重複登入的節流，只是表現成「靜靜卡住」而不是吐「登入太頻繁」。修好之後同一條 case
-  照樣卡了一次，重連後 27.8s 內綠。**降低整輪登入次數**（共用 session fixture）仍是根治方向。
-- 同時 `connect-login.spec.js` 是**唯一沒有自訂 timeout 的 live spec**，吃 60s 全域值 ⇒
-  就算把等待策略放寬也沒有空間可用（其餘 live spec 一律 `test.setTimeout(120000)` 起跳）。
-  已補 `test.setTimeout(180000)`。**新增會呼叫 `login()` 的 spec 記得也設**。
+- 「正在檢查帳號與密碼」這類「server 正在跑」的畫面**從進入該畫面起算**延長預算（上限
+  `LOGIN_SERVER_PROGRESS_BUDGET_MS`），換階段（verifying → starting）重新起算，超過才逾時並吐結論。
+- 卡住的通常是**那條連線**而不是站台：停在同一畫面超過 `LOGIN_SERVER_STALL_MS`（15s）就
+  **就地重連重送帳密**（短退避 2s，最多 2 次）。重連過還是卡住，逾時訊息會寫「已就地重連 N 次」——那才代表站台層級有問題。
+- 會呼叫 `login()` 的 spec 要設足夠的 `test.setTimeout`（全域 60s 不夠放寬等待）。
 
-## live e2e 跑的時候**不要動工作目錄**（2026-09 實錄）
+## live e2e 跑的時候**不要動工作目錄**
 
 一輪 live 跑到一半時去改 `src/` 底下的檔案、或另外跑一次 `yarn build`，Vite dev server
 會對開著的分頁下 **full-reload** —— 頁面重開之後：
@@ -309,7 +297,7 @@ const switchKey = await getPref(page, 'easyReadingEndSwitchKey');
 await sendKey(page, switchKey);
 ```
 
-底層：dev build 由 `src/js/main.js` 暴露 `window.__readPrefs = readValuesWithDefault`（與 `window.__app` 同 gate，
+底層：dev build 由 `src/js/main.jsx` 暴露 `window.__readPrefs = readValuesWithDefault`（與 `window.__app` 同 gate，
 production 不洩漏）。**例外**：PTT 原生熱鍵（`End`/`Enter`/`Space`/`ArrowLeft`/`Slash` 等）非本 app 設定項，照常寫死。
 
 ## 規範：要測「原生模式」就自己關好讀（2026-09-16 翻預設之後）
@@ -326,7 +314,7 @@ localStorage 空 ⇒ **直接吃到好讀**；live 這邊 `resetSession` 仍把�
 | `blacklist_quick_add.offline` | 列表好讀重畫整份列表 ⇒ 標好的 `[data-e2e-target]` 連同那一列消失，錯在 `waitRectStable：找不到元素` |
 | `long_push.offline`（文章列表按 X） | 列表 session engage 後自己往線路送機器鍵 ⇒ 「只送出一個 `X`」的斷言收到多餘 bytes，錯訊息看起來是 `Expected: "X" / Received: "X"` |
 
-## 規範：瀏覽器負責的輸入一律走真輸入管線（2026-10）
+## 規範：瀏覽器負責的輸入一律走真輸入管線
 
 **由瀏覽器／OS 決定形狀或順序的輸入**（右鍵、觸控長按、滾輪、捲動、拖放、剪貼簿、IME 組字、焦點、
 全螢幕、圖片 load/error）不准在 e2e 裡手捏（`new XxxEvent`＋`dispatchEvent`、直呼 `view.onKeyDown`）。

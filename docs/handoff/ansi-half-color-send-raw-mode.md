@@ -7,6 +7,11 @@
 - 使用者回報「貼 ASCII art 的一字雙色進 PTT 之後顏色跑掉」
 公告時程：**今年底前**（2026-09-20 公告「SGR 66 一字雙色」的推進步驟 3）
 
+最近一次查證（pttbbs `main@908bb063`，2026-10-16）：觸發條件**未成立**。`edit.c` 仍有 raw mode
+（`raw_mode ^= 1`），而且 `c5e78b89`（2026-09-28）讓 `edit.c#vkey_to_mb` **明確支援**
+「lead byte ＋ `^U`／ESC 色碼 ＋ trail byte」的半字上色輸入（`edit_dbcs_half`／`edit_dbcs_half_esc`）
+⇒ 現行送法仍被接受。
+
 ## 問題
 
 `src/js/string_util.js#ansiHalfColorConv` 是送出方向的一字雙色轉換，消費端：

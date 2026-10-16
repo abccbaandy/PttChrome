@@ -5,70 +5,69 @@
 
 ## 機制（CONFIRMED）
 
-- 啟用條件：pref `enableEasyReading`(**2026-09-16 起預設 true**，`pref_storage.js` `DEFAULT_PREFS`) && `connectedUrl.easyReadingSupported`(`pttchrome.jsx` true)。使用者自己開，存 localStorage `pttchrome.pref.v1`。
+- 啟用條件：pref `enableEasyReading`(**預設 true**，`pref_storage.js` `DEFAULT_PREFS`) && `connectedUrl.easyReadingSupported`(`pttchrome.jsx` true)。使用者自己開，存 localStorage `pttchrome.pref.v1`。
 - 啟用旗標：`view.useEasyReadingMode`，由 `bindProperty` 綁成 `EasyReading._enabled`。
 - 進文章(pageState 3)後由 `_onChanged` 判斷、`_onViewUpdated` 送 PageDown(`\x1b[6~`)把整篇累積成可捲動長頁（決策落純函式 `nextEasyReadingRowState`；`_onChanged` 已抽 `_computeRowState`+`_applyRowState` 兩 helper 供快路徑與兜底共用）。PTT 端的頁指標因此幾乎一直停在文末 ⇒ 原生 `/` 搜尋的起點與使用者看的位置無關（見 functionMode 節「搜尋交給瀏覽器」）。
-- **翻頁＝單一 in-flight 交易（2026-08 重構，治「※ 發信站/※ 文章網址 那段消失」，依據 `docs/pttbbs-screen-protocol.md` §13 P1/P3/P4/P6）**：
-  - **why**：pmore 的 `refresh()` 在 client 還有按鍵在途時直接 return **不畫**（P4）⇒ 同一頁送出兩個 PageDown，中間那頁的畫面**永遠不會送出來**，該頁的字永久消失。舊版快路徑 `_onViewUpdated` 記下頁面簽章卻**從不檢查**（只有 settle 路徑有去重），任何在同一頁再出現一次的完整幀（functionMode resume 的強制 notify、水球重繪…）就再送一次 → 掉頁。
+- **翻頁＝單一 in-flight 交易（依據 `docs/pttbbs-screen-protocol.md` §13 P1/P3/P4/P6）**：
+  - **why**：pmore 的 `refresh()` 在 client 還有按鍵在途時直接 return **不畫**（P4）⇒ 同一頁送出兩個 PageDown，中間那頁的畫面**永遠不會送出來**，該頁的字永久消失。任何在同一頁再出現一次的完整幀（functionMode resume 的強制 notify、水球重繪…）都不可以再送一次。
   - **how**：`_inFlightSig`＝已送出 PageDown 的那一頁簽章（狀態列 `第 S~E 行`），ack ＝**簽章改變**。快路徑與 settle 路徑共用純函式 `nextPageDownDecision`（`send`/`wait`/`retry`/`giveup`/`done`/`none`），入口統一在 `_maybeSendPageDown`。
   - **到底判定用 `pagePercent === 100`**（P3：`progress==100` ⟺ `mf_viewedAll()`，整數除法剛好等價）。狀態列首格顏色（VIEWALL `37;44`）降為 fallback——footer 是 per-cell patch（P6），單格顏色比讀百分比脆弱。到底後再送 PageDown PTT 是**零回應**，所以絕不能靠 timeout 判斷。
-  - **bounded retry 由「送鍵後經過多久」判定，不是「畫面靜止」（2026-08 修，治超長文自動跳回第一頁）**：上限仍是 `PAGE_DOWN_MAX_RETRIES=1`，但補送的前提改成 `sinceSentMs >= PAGE_DOWN_GRACE_MS`（600ms），由 `nextPageDownDecision` 的 `recovery`＋`sinceSentMs` 決定；未達門檻回 `wait`。
-    - **why**：settle 計時器是被**送鍵之前**抵達的畫面 arm 的（`term_buf.notify` → `_armSettleTimer`）。長文累積頁 4600+ 列時 React render 很慢（實測翻頁週期從 48ms 惡化到 200ms+），callback 被延到自己送鍵之後才跑 ⇒ 它量到的「靜止」與「PTT 沒回應」無關。實錄 `ptt-debug-20260809`：t=23047 送鍵、t=23124 settle 判定掉包補送、**同一毫秒**真正的回應才到 ⇒ 兩個 PageDown 在途 ⇒ P4 吞頁 ⇒ 自癒送 Home ⇒ 4700 行整篇重讀。
+  - **bounded retry 由「送鍵後經過多久」判定，不是「畫面靜止」**：上限 `PAGE_DOWN_MAX_RETRIES=1`，補送的前提是 `sinceSentMs >= PAGE_DOWN_GRACE_MS`（600ms），由 `nextPageDownDecision` 的 `recovery`＋`sinceSentMs` 決定；未達門檻回 `wait`。
+    - **why**：settle 計時器是被**送鍵之前**抵達的畫面 arm 的（`term_buf.notify` → `_armSettleTimer`）；render 慢時 callback 被延到自己送鍵之後才跑 ⇒ 它量到的「靜止」與「PTT 沒回應」無關，拿它補送＝兩個 PageDown 在途 ⇒ P4 吞頁。
     - **必須配 watchdog，不能只加 grace**：`_armSettleTimer` **只由伺服器活動 re-arm**（`_serverActivity`／`posChanged`）。按鍵真的掉了 ⇒ PTT 零回應 ⇒ **不會再有第二次 settle**。所以重試改由 `EasyReading._armWatchdog()`（`setTimeout(grace+20)`，以自己送鍵的時刻為錨）驅動；settle 保留為第二觸發點。
     - **`_watchdogSig` 身分閘是承重的**：回應在 grace 內到達時 `_inFlightSig` 已換頁，計時器一律空轉——少了它就會在重繪途中多送一個鍵，正好製造 P4。
     - **retry 一律重送 `_inFlightKeys`，不是呼叫端傳進來的 keys**：在途的交易可能是缺頁自癒的 `:N\r` 而不是 PageDown。
-  - **交易狀態是 per-article，重置點＝文章邊界（`_resetPagingState`，2026-08）**。涵蓋 `_inFlightSig`／`_inFlightKeys`／`_inFlightSentAt`／watchdog／`_pageDownRetries`／自癒額度／`easyReadingReachedPageEnd`／`sendCommandAfterUpdate`／**`ignoreOneUpdate`**。
+  - **交易狀態是 per-article，重置點＝文章邊界（`_resetPagingState`）**。涵蓋 `_inFlightSig`／`_inFlightKeys`／`_inFlightSentAt`／watchdog／`_pageDownRetries`／自癒額度／`easyReadingReachedPageEnd`／`sendCommandAfterUpdate`／**`ignoreOneUpdate`**。
     - **`ignoreOneUpdate` 殘留是硬卡死，不是「少一幀」**：它 halt 掉的那一幀通常正是 `enterEasyReading()` 自己重播的 `notify()`，而那是**本地**重繪（沒有 `_touchRows` ⇒ `_serverActivity` false ⇒ **不 re-arm settle**）⇒ 連 `screenSettled` 兜底都沒有 ⇒ 那一篇一個 PageDown 都送不出去。`leaveCurrentPost()` 因此改成「先 `_resetPagingState()` 再視情況重新點起」，順序不可調換。
     - **`sig` 不跨文章唯一**：每篇文章第一頁都是 `1~22`。殘留的 `_inFlightSig` 會把下一篇的第一頁當成「上一篇那個還沒回應的請求」→ 快路徑永遠 `wait`、settle 用完重試上限後永遠 `giveup` ⇒ **一個 PageDown 都送不出去，卡在第一頁；換文章照樣卡**。
     - 邊界由 **settle 過的 pageState 進出 3** 判定（`_onPageStateSettled`：`1|2 → 3` 或 `3 → 1|2`）。**只認 1/2**：文章中途狀態列失配一幀而掉出 3 再回來不是換文章，重置會讓同一頁重送 PageDown（正是 P4 要防的）。
     - 不經列表的文章→文章（`[` `]` 同標題跳、`a/b/f/=/+/-`）沒有 1/2 邊緣，由 `leaveCurrentPost()` 補上；`enterEasyReading`/`exitEasyReading`/`_healFromTop` 也走同一個 helper。
   - **`_onScreenSettled` 不得被 `easyReadingReachedPageEnd` 早退否決**：settle 路徑必須對當下畫面冪等，「到底了」已由 `pagePercent` 在 `_computeRowState` 與 `nextPageDownDecision` 各算一次。
   - **使用者自救 `_kickPageDown()`**：PgDn（鍵盤與滑鼠）在累積頁**捲不動**且狀態列 `pagePercent < 100` 時，清掉交易狀態並補送一次 PageDown。自動翻頁的所有失效模式在使用者眼裡長得一模一樣（長頁停住、PgDn 毫無反應），要有一條手動出口。
-  - **debugRecorder `easyReading.pageDown` / `easyReading.pageDownKick`**：記 `retry`/`giveup`/`done`（`send`/`wait` 不記——一個看得到送出事件、一個每幀都有），payload 含 **`sinceSentMs`**（小值的 `retry`＝誤重試 bug 再現，大值＝真的掉鍵，沒有它分不出來）。沒有這些 log 時，所有卡法在素材裡都只是「進文章後零 send」，分不出是重試額度用完還是旗標殘留。
-- **累積只在「完整回應幀」（P6）**：`term_view.accumulatePageLines` 以 `buf.cur_y === rows-1 && buf.cur_x === cols-1`（pfterm 每次回應結尾才 park 游標）當閘。半畫幀的 footer 還是**上一頁的舊值**（per-cell patch，狀態列補丁與 park 排在內容之後），拿它算重疊會把舊行號寫進 `_accEndRow`，之後整條去重都建在錯基準上——舊版的 drift guard（比對率 0.5）就是在補這個。不完整的幀只重畫、不動 `pageLines`。
-- **往回跳（seekBack，2026-09，協定 §13 P9）**：functionMode 裡 `:N`／`;N`／原生搜尋把 PTT 指標移回已累積範圍，resume 那一幀 `E' < accEndRow`。
-  - **舊症狀**：`classifyPageTransition` 回 `backward` 但 `decideAccumulateBranch` 沒這個分支 → `append`；k 被夾成 maxK 所以不加列，**但 `_accEndRow` 被設成落地頁的 E（倒退）**⇒ 自動翻頁從落地處送 PageDown，每頁以倒退基準算重疊 ⇒ 已累積的內容重複接到長頁尾巴，畫面被捲走。跳回第 1 頁時舊版回 `restart`，同樣結果。
+  - **debugRecorder `easyReading.pageDown` / `easyReading.pageDownKick`**：記 `retry`/`giveup`/`done`/`sendFailed`（`send`/`wait` 不記——一個看得到送出事件、一個每幀都有），payload 含 **`sinceSentMs`**（小值的 `retry`＝誤重試，大值＝真的掉鍵）。
+- **累積只在「完整回應幀」（P6）**：`term_view.accumulatePageLines` 以 `buf.cur_y === rows-1 && buf.cur_x === cols-1`（pfterm 每次回應結尾才 park 游標）當閘。半畫幀的 footer 還是**上一頁的舊值**（per-cell patch，狀態列補丁與 park 排在內容之後），拿它算重疊會把舊行號寫進 `_accEndRow`，之後整條去重都建在錯基準上。不完整的幀只重畫、不動 `pageLines`。
+- **往回跳（seekBack，協定 §13 P9）**：functionMode 裡 `:N`／`;N`／原生搜尋把 PTT 指標移回已累積範圍，resume 那一幀 `E' < accEndRow`。**不可當 append**：把 `_accEndRow` 設成落地頁的 E（倒退）⇒ 之後每頁以倒退基準算重疊 ⇒ 已累積的內容重複接到長頁尾巴。
   - **現行**：`backward`（含 `S'==1`，排在 restart 前）→ 分支 `seekBack`（排在所有 rebuild 條件之後，換文章防線優先序不變）⇒ `pageLines`／`_accEndRow`／`_lastAccumulatedSig` 全不動。`comment_parse.locateScreenInPage` 用**文字**在長頁找落地畫面（前 min(8,畫面) 列、≥2 列非空白、取最靠近 `S'-1` 者；不假設檔案行＝顯示列）：找到 ⇒ 升 `buf.easyReadingSeekBack={row,landingStart}`；找不到 ⇒ 什麼都不做（之後的 PageDown 幀持續 backward no-op，追上 `_accEndRow` 後自然接回 continuation）。
   - **realign**：`EasyReading._realignAfterSeek` 在 `_onViewUpdated`／`_onScreenSettled` 的 gap 檢查旁處理旗標：送 goto-line `:` + `_accEndRow` + Enter（與 `_healAtLine` 共用 `_seekLine`：heal 閘、stamp-after-send、watchdog），**不吃** `HEAL_GOTO_MAX`；wire busy 延後、已有 seek 在途不疊送。已到文末則落地 100% ⇒ `done`，不會重走整篇。旗標清除點：落地 append 成功（term_view）、`_resetPagingState`、離開文章。
   - **捲動**：`_evalFunctionModeExit` resume 若有未捲過的 seekBack ⇒ `_scrollToPageRow(row)`（量 `[type=bbsrow][srow=N]` 節點的 `offsetTopWithin`，不用 row*chh；黑名單列被拿掉就往後找）；否則還原 `_savedScrollTop`（推文／回應）。同一筆只捲一次（`seek.scrolled`）。
   - 已知邊界：往**前**跳到尚未累積處 ⇒ gap 自癒，捲動維持原位（好讀很快翻到文末，實務上幾乎都是 seekBack）。
-  - 守護：`tests/unit/easy_reading_seek_back.test.js`（真 `accumulatePageLines` 逐幀；修前 6/7 紅）、`comment_parse.test.js`、`easy_reading_send_gate.test.js`（realign 交易）、live `easy-reading.spec.js`「:N 往回跳不重複累積」。
-- **掉頁偵測與自癒（P1）**：`comment_parse.classifyPageTransition` 判 `restart`/`continuation`/`gap`/`backward`。`gap`＝`statusStart > accEndRow + 1`，而 PageDown ＝ `mf_forward(dispedlines-1)` 保證 `S' == E`（末頁被 `maxdisps` 夾則更小），**`S' > E` 不可能** ⇒ 一定是中間整頁沒收到。舊版 `resolvePageOverlap` 把負重疊夾成 0 → 照常 append → 破洞無聲。現在 `accumulatePageLines` 升 `buf.easyReadingGapDetected`，由 `EasyReading._healGap()` 處理。
-  - **自癒策略順序（2026-08 改，治超長文整篇重讀）**：`HEAL_GOTO_MAX=3` 次**精準跳回缺頁行** → 1 次 Home 從頭重讀（`_healFromTop`，最後手段）→ 放手（畫面維持現狀，PgDn／切原生熱鍵都還在）。額度 per-article，由 `_resetPagingState` 重置。
+  - 守護：`tests/unit/easy_reading_seek_back.test.js`（真 `accumulatePageLines` 逐幀）、`comment_parse.test.js`、`easy_reading_send_gate.test.js`（realign 交易）、offline `er_function_mode.offline.spec.js`「:5 往回跳不重複累積」（scenario 卷）。
+- **掉頁偵測與自癒（P1）**：`comment_parse.classifyPageTransition` 判 `restart`/`continuation`/`gap`/`backward`。`gap`＝`statusStart > accEndRow + 1`，而 PageDown ＝ `mf_forward(dispedlines-1)` 保證 `S' == E`（末頁被 `maxdisps` 夾則更小），**`S' > E` 不可能** ⇒ 一定是中間整頁沒收到（不可把負重疊夾成 0 照常 append，那是無聲破洞）。`accumulatePageLines` 升 `buf.easyReadingGapDetected`，由 `EasyReading._healGap()` 處理。
+  - **自癒策略順序**：`HEAL_GOTO_MAX=3` 次**精準跳回缺頁行** → 1 次 Home 從頭重讀（`_healFromTop`，最後手段）→ 放手（畫面維持現狀，PgDn／切原生熱鍵都還在）。額度 per-article，由 `_resetPagingState` 重置。
   - **精準跳回 `_healAtLine(N)`**：送 `:` + N + `\r`。pmore `case ':'`（`pmore.c` goto 區塊）走**行號**模式（`pageMode = (ch != ':')`），`getdata_buf(PMORE_MSG_GOTO_LINE, buf, 8, DOECHO)` → `i = atoi(buf)` → `if (i-- > 0) mf_goto(i)` → `mf.disps = mf.start; mf.lineno = 0; mf_forward(N-1)` ⇒ 落地畫面 `目前顯示: 第 N~… 行`。
     - **N 取 `_accEndRow`，不是 +1**：`statusStart === accEndRow` 正是 PageDown 自己的後置條件（P1 `S' == E`），落地幀與正常翻頁**形狀完全相同** → `continuation` → `resolvePageOverlap` k=1 → `append`，零新路徑，還多一列可做內容交叉驗證。末頁被 `maxdisps` 夾住只會讓重疊變大，兩個方向都安全。
     - **不動任何累積狀態**：`pageLines`／`_accEndRow`／`_lastAccumulatedSig`／`scrollTop`／`_articleInstanceId` 全部保持——缺的那幾列在落地幀的 append 補進去。
-    - **heal 本身是一筆 in-flight 交易**（`_inFlightSig` 設成當下簽章、`_inFlightKeys = ':N\r'`、arm watchdog）。舊 `_healFromTop` 先 `_resetPagingState()` 清成 null 才送鍵 ⇒ 任何搶先抵達的完整幀都會讓決策回 `send` ⇒ 又一個 PageDown 撞 P4。
+    - **heal 本身是一筆 in-flight 交易**（`_inFlightSig` 設成當下簽章、`_inFlightKeys = ':N\r'`、arm watchdog）。不可先清交易狀態才送鍵：任何搶先抵達的完整幀都會讓決策回 `send` ⇒ 又一個 PageDown 撞 P4。
   - **`buf.easyReadingHealInFlight` 是承重的兩道閘**（goto prompt 佔住底部列，狀態列失配 ⇒ 該幀 `pageState` 可能不是 3）：
     1. `decideAccumulateBranch` 的 `healInFlight` 封住**兩條 rebuild 路徑**。`term_view.redraw` **每個渲染幀結尾都寫 `buf.prevPageState = buf.pageState`**，一幀污染就會讓落地幀命中 `prevPageState !== 3 → rebuild` ⇒ **從文章中段重建 `pageLines`、靜默刪掉上面全部內容**，比它要修的掉頁更糟。`gap` 與 P6 的 `skip` 刻意仍然生效。
     2. `_onScreenSettled` 早退，否則 `pageState !== 3 → _teardownAccumulationOffArticle()` 會呼叫 `hideEasyReadingOverlays()` 把 `pageLines` 清空。
     旗標由 `accumulatePageLines` 在 append 成功時清掉；PTT 完全沒回應時由交易的 `giveup` 清掉（有界，不會卡死）。
-  - **debugRecorder `easyReading.gapHeal`** 帶 `{mode: goto|home|exhausted|busy, accEndRow, screenStart, missingLines, targetLine, gotoCount, homeUsed}`。舊版**完全沒有 payload**，而且額度用盡那條只有 `console.log` 不進 recorder ⇒ 素材裡看到 1 筆其實可能發生過很多次。
+  - **debugRecorder `easyReading.gapHeal`** 帶 `{mode: goto|home|exhausted|busy, accEndRow, screenStart, missingLines, targetLine, gotoCount, homeUsed}`。
 - **補畫一律走 `term_buf.notify()`（`_forceRepaint`），不可直接 `view.redraw()`**：`updateCharAttr()` 只在 notify 裡跑，它是 Big5 lead byte 標上 `isLeadByte` 的地方。settle 可能落在「bytes 已到、30ms notify 計時器還沒跑」之間，直接 redraw 會把未轉碼的列 clone 進 `pageLines`，`rowToText` 得到原始 Big5（`¡°` 而非 `※`）→ 下一頁比對不上 → 重疊算成 0 → 重疊列貼兩次（離線拆幀測試抓到的重複「※ 文章網址」）。
 - **settle 兜底（`_onScreenSettled`）**：PTT「把游標停到底部狀態列」可能是**獨立的純游標 escape（只設 `posChanged` 不設 `changed`）**，落在自己的 notify 視窗 → `if(this.changed)` 區塊整段跳過 → 該回應**從沒進過 redraw/accumulate**。`screenSettled` 在「畫面真靜止（內容＋游標都停）」時比對 `view._lastAccumulatedSig`，不同就 `_forceRepaint()` 補一次（補畫會重播 change/viewUpdate，翻頁決策由快路徑接手，settle 隨即 return）。
 - **離開文章的清理改由 settle 觸發**：`term_view.redraw` 對「好讀開啟 ∧ `buf.settledPageState === 3` ∧ 有 `pageLines`」的 transient 幀**繼續畫累積頁**，不再落到會清空 `pageLines` 的 native 分支（pageState 是逐幀分類，半畫的 footer 會讓它掉出 3 一幀，舊版因此整篇累積被丟掉、下一個完整幀從當前頁重建 → 前面全沒了）。真正離開時由 `EasyReading._teardownAccumulationOffArticle`（settle，debounced 狀態已同意）做 `hideEasyReadingOverlays()`＋重繪。
-- 自動「重新啟用」（**settle 後判斷，2026-06 重構，CONFIRMED 純邏輯/手動驗**）：靠 term_buf 的**去抖動** pageState 串流，不再逐 frame 判。`term_buf` 維護 `settledPageState`/`prevSettledPageState`：`notify` 每個 `changed` **或純游標(`posChanged`)** 視窗都 re-arm 一個 `SETTLE_MS=50`(`term_buf.js` 頂常數) 計時器（抽成 `term_buf._armSettleTimer`）；資料/游標持續到達(~30ms 間隔)時一直 re-arm 不觸發，**畫面真靜止（內容＋游標都停）50ms 後**才觸發：`pageState` 改變時升 `settledPageState` 並 dispatch `'pageStateSettled'`（auto-enable 邊緣），且**每次靜止都另 dispatch `'screenSettled'`**（供 mid-article 的翻頁兜底 `_onScreenSettled`，pageState 維持 3 時也會收到）。`EasyReading._onPageStateSettled` 監聽該事件，呼叫純函式 `nextEasyReadingState({settledPageState,prevSettledPageState,enabled,enablePref,supported})`（`easy_reading.js` 頂部 export，unit test `tests/unit/easy_reading_logic.test.js`）。條件 `settledPageState==3 && (prevSettledPageState==2 || prevSettledPageState==1) && !enabled && enableEasyReading && supported`，即「**列表(2) 或選單(1) → 文章(3)**」的乾淨 settle 邊緣。enable 由**單一入口** `enterEasyReading()` 執行（見下「切換」段）。
+- 自動「重新啟用」（**settle 後判斷，CONFIRMED 純邏輯/手動驗**）：靠 term_buf 的**去抖動** pageState 串流，不再逐 frame 判。`term_buf` 維護 `settledPageState`/`prevSettledPageState`：`notify` 每個 `changed` **或純游標(`posChanged`)** 視窗都 re-arm 一個 `SETTLE_MS=50`(`term_buf.js` 頂常數) 計時器（抽成 `term_buf._armSettleTimer`）；資料/游標持續到達(~30ms 間隔)時一直 re-arm 不觸發，**畫面真靜止（內容＋游標都停）50ms 後**才觸發：`pageState` 改變時升 `settledPageState` 並 dispatch `'pageStateSettled'`（auto-enable 邊緣），且**每次靜止都另 dispatch `'screenSettled'`**（供 mid-article 的翻頁兜底 `_onScreenSettled`，pageState 維持 3 時也會收到）。`EasyReading._onPageStateSettled` 監聽該事件，呼叫純函式 `nextEasyReadingState({settledPageState,prevSettledPageState,enabled,enablePref,supported})`（`easy_reading.js` 頂部 export，unit test `tests/unit/easy_reading_logic.test.js`）。條件 `settledPageState==3 && (prevSettledPageState==2 || prevSettledPageState==1) && !enabled && enableEasyReading && supported`，即「**列表(2) 或選單(1) → 文章(3)**」的乾淨 settle 邊緣。enable 由**單一入口** `enterEasyReading()` 執行（見下「切換」段）。
 - **為何來源集含選單(1)（CONFIRMED 讀碼）——勿收緊回 `==2`**：精華區（文章列表按 `z` 進入）頂層首列 `【精華文章】`→`pageState 1`(MENU，`term_buf.js` pageState 判定)，子目錄清單落 MENU(1) 或 LIST(2)，兩者都能 Enter 直接進文章 → 只認 `==2` 時精華區的 `1→3` 邊緣不成立，切原生後卡原生直到回真看板列表。主功能表/分類看板雖也是 MENU(1) 但無法直接開文章（必先經看板 LIST(2)），故 `1→3` 實務上只來自精華區，含 1 安全。pass/edit/normal(5/6/0) 不在來源集→原生模式內看說明(5)再回文章(3) 的 `5→3` 不會誤重啟。
-- **`menu.c#domenu` 子選單（系統資訊區、個人設定區…）的 `1→3` 邊緣完全靠 `parseListRow`**：它們的 row0 標題不在 `setPageState` 的白名單裡，唯一指紋是底列的 `show_status` 狀態列。2026-09-11 以前那條 regex 比對的是 pttbbs 不存在的格式 ⇒ 恆假 ⇒ 子選單的 `pageState` 一律沿用上一幀 ⇒ 「讀完一篇按 `←` 回子選單再開下一篇」的 settled 邊緣是 `3→3`、進過「查看系統資訊」後是 `5→3`，兩者都不在來源集 ⇒ **好讀「有時」不啟用**。根因與實錄見 `docs/pttbbs-screen-protocol.md` §5.1 的踩坑段；守護 `tests/unit/term_buf_page_state.test.js`。 PTT 新版把 `show_status` 整列換掉（移除「我是」「呼叫器」、「周X」→「週X」、子選單截掉「線上N人」），`parseListRow` 是**新舊聯集**、各自照 source 的精確指紋，詳見 `docs/pttbbs-screen-protocol.md` §11.9。
+- **`menu.c#domenu` 子選單（系統資訊區、個人設定區…）的 `1→3` 邊緣完全靠 `parseListRow`**：它們的 row0 標題不在 `setPageState` 的白名單裡，唯一指紋是底列的 `show_status` 狀態列；認不出 ⇒ 子選單沿用上一幀的 pageState ⇒ 邊緣變成 `3→3`／`5→3` ⇒ 好讀「有時」不啟用。`parseListRow` 是**新舊聯集**、各自照 source 的精確指紋（`docs/pttbbs-screen-protocol.md` §5.1、§11.9）；守護 `tests/unit/term_buf_page_state.test.js`。
 - transient 0 為何不污染：half-paint frame(末列空→`pageState=0`，`term_buf.js` pageState 判定)後續一定有更晚的視窗 re-arm 計時器，故 0 永不 settle；settle 只抓「最後靜止值」(3)。**例外：列表本身可以 settle 在 0**——舊版 server 跳號（`N⏎`）後底列留空、`^L` 也補不回來（`docs/pttbbs-screen-protocol.md` §4 ✚），列表若就停在那張畫面（`/` 搜尋結果太短、補頁鏈停在跳號腿；原生下自己打號碼後停住）⇒ settled 0 ⇒ 文章踩 `0→3` 進來。**不放寬成「0→3 都算」**（文章中途 dip 會重開好讀 ⇒ P4），改認「上一張靜止畫面是跳號落點列表」：`_onScreenSettled` 每次記 `_lastSettleParkedList`（`list_session#isJumpParkedListScreen`：反白《板名》＋反白「編號」表頭＋底列全空＋游標停 entry 區列首的列表列；只在 pageState 0 時才讀畫面），同一次 settle 裡 `pageStateSettled` 先於 `screenSettled` ⇒ 邊緣判斷讀到的是前一張。判定收在 `settledFromListOrMenu`，`nextEasyReadingState` 與 `_onPageStateSettled` 的 `enteringArticle` 共用。另有一道冗餘：列表好讀自己開的文，落地時再呼叫 `ensureEnabledOnArticle(true, 'listOpen')`（`list_session` 的 `enable-article-reading`；已開時 no-op）。守護：`tests/unit/easy_reading_logic.test.js`、`tests/unit/list_session.test.js`（`isJumpParkedListScreen`／「列表好讀開文落地」）、offline e2e `easy-reading-list` 的「原生列表：跳號落點靜置後開文」與 native parity 那條。
-- **退出抑制靠 `exitEasyReading` 主動對齊 settle 快照，不是「天生正確」（2026-08 修正，治「F8 切原生卡在最後一頁」）**：舊敘述假設退出當下 `settledPageState` 已是 3、不再升級 → 不觸發邊緣。**該假設只在「這篇文章開著時至少 settle 過一次」才成立**，而自動翻頁每 ~30-40ms 重畫一次，50ms 計時器全程被 re-arm ⇒ **整篇讀完可以一次 settle 都沒有**（長文＝翻頁次數多＝更容易），`settledPageState` 仍停在**進文章前的列表(2)**。退出後的第一個安靜點（`switchToEasyReadingMode` 的 ^L 重繪）settle 成 3 ⇒ 假的 `2→3` 邊緣 ⇒ `nextEasyReadingState` 重開好讀 ⇒ 從文末那頁重新累積、footer 已 100% ⇒ 不再送 PageDown ⇒ 使用者看到的就是「F8 後卡在最後一頁」。
+- **退出抑制靠 `exitEasyReading` 主動對齊 settle 快照**：自動翻頁每 ~30-40ms 重畫一次，50ms 計時器全程被 re-arm ⇒ **整篇讀完可以一次 settle 都沒有**，`settledPageState` 仍停在**進文章前的列表(2)**；退出後第一個安靜點 settle 成 3 ⇒ 假的 `2→3` 邊緣 ⇒ 好讀被重開（症狀「F8 切原生卡在最後一頁」）。
   - 修法：`exitEasyReading()` 呼叫 `term_buf.syncSettledPageState()`（`prevSettled = settled = 當下 pageState`，**不造成邊緣**）。刻意取「當下值」而非硬寫 3：若正好落在半畫幀(0)，後續補完只會是 `0→3`，不在 `1|2→3` 來源集內，同樣安全。
-  - 證據：`ptt-debug-…-204141.json` — 進文章後每 32~43ms 一次 recv 全程無 50ms 空檔 → `easyReading.exit`(t=2035) → `easyReading.enter`(t=2135)。守護：`tests/unit/easy_reading_native_switch_settle.test.js`（用真 `TermBuf.notify/_armSettleTimer` 驅動 30ms/50ms 鏈）。
-- **第二條重啟邊緣：原生模式下換到另一篇文章（`nextEasyReadingReentry`，2026-08，治「半永久原生模式」）**。`nextEasyReadingState` 只認 settled `1|2 → 3`，而切原生後用 `[` `]` `a` `b` `f` `=` 跳下一篇**全程 pageState 都是 3**，根本不會有邊緣 ⇒ 一路卡原生直到繞回列表。
+  - 守護：`tests/unit/easy_reading_native_switch_settle.test.js`（用真 `TermBuf.notify/_armSettleTimer` 驅動 30ms/50ms 鏈）。
+- **第二條重啟邊緣：原生模式下換到另一篇文章（`nextEasyReadingReentry`）**。`nextEasyReadingState` 只認 settled `1|2 → 3`，而切原生後用 `[` `]` `a` `b` `f` `=` 跳下一篇**全程 pageState 都是 3**，根本不會有邊緣 ⇒ 一路卡原生直到繞回列表。
   - 條件：`!enabled ∧ pref on ∧ supported ∧ !functionMode ∧ pageState 3 ∧ 游標已 park ∧ statusStart === 1 ∧ articleKey **與** nativeArticleKey 皆可讀 ∧ articleKey !== nativeArticleKey`。在 `_onScreenSettled` 的 `!_enabled` 分支評估（`_maybeReenterOnNewArticle`）。
   - **刻意用文章身分而非 pageState 邊緣**：docs 上面那條明令「掉出 3 再回來不是換文章」；而唯一擋不掉的誤觸發是「使用者在原生自己按 Home/`0`/`g` 回到第 1 行」——比對 `articleKey`（畫面第 0~2 列＝作者/標題/時間，只取 row 0 會在同作者 `a` 跳文時撞號）直接擋死。
-  - **`_articleKey` 的捕捉點是 `_applyRowState`（每個 `statusStart === 1` 的幀重抓一次），不是 `enterEasyReading()`**（2026-08 修「原生下按 Home 就被切回好讀」的根因）。header 只在第一頁在畫面上，而「這篇變成當前文章」有三條路，只在 `enterEasyReading()` 抓會有兩條存到**錯的** key ⇒ 身分比對形同虛設：
+  - **`_articleKey` 的捕捉點是 `_applyRowState`（每個 `statusStart === 1` 的幀重抓一次），不是 `enterEasyReading()`**（否則原生下按 Home 會被切回好讀）。header 只在第一頁在畫面上，而「這篇變成當前文章」有三條路，只在 `enterEasyReading()` 抓會有兩條存到**錯的** key ⇒ 身分比對形同虛設：
     | 路徑 | 舊版存到什麼 |
     |---|---|
     | settle `1\|2→3` 進文章 | 正確（畫面就是第一頁） |
     | `[` `]` `a` `b` `f` `=` 跳下一篇 | **上一篇**的 key（好讀已開 ⇒ 不經 `enterEasyReading`，見 `_onPageStateSettled` 註解） |
     | F8 toggle 從中段切回好讀 | **內文**（`reenterFromTop` 先 `enterEasyReading()` 再送 Home，捕捉當下還在中段） |
     `enterEasyReading()` 改為只清成 null；`leaveCurrentPost()` 也清（跳文路徑的結構性保險）；`exitEasyReading()` 把它搬到 `_nativeArticleKey`。捕捉點受 `_enabled ∧ !_functionMode` 閘（`_onChanged` 早退），prompt/選單幀不會污染。
-  - **兩邊身分任一讀不到就不重啟**（寧可留在原生）：fail-safe，熱鍵永遠還在。舊版「`nativeArticleKey` 為 null ⇒ 視為可重啟」是 **fail-OPEN**，只要捕捉漏一次，同一篇按 Home 就會被切回好讀。這條路徑本來就只為「使用者主動切原生後跳文」存在，一般 `列表→文章` 由 `nextEasyReadingState` 負責，不靠它。
+  - **兩邊身分任一讀不到就不重啟**（寧可留在原生）：fail-safe，熱鍵永遠還在；改成「null ⇒ 可重啟」是 fail-OPEN，捕捉漏一次同一篇按 Home 就會被切回好讀。這條路徑本來就只為「使用者主動切原生後跳文」存在，一般 `列表→文章` 由 `nextEasyReadingState` 負責，不靠它。
 - **settle 不在「已寫入、未 flush」時觸發**（CONFIRMED unit `settle_gating.test.js`＋offline 高負載重現）：計時器只在 notify 時 re-arm，但 server 回應是 `onData` 先寫進 TermBuf、30ms 後才 notify（BSU 期間更久）。計時器到期時 `timerUpdate || inSyncUpdate` ⇒ 不發 settle、重新 arm。否則 listener 讀到沒跑 `updateCharAttr` 的畫面 ⇒ 狀態列 Big5 未解 ⇒ `_onScreenSettled` 判成 pageState 5、`startedEasyReading=false` ⇒ 該窗口內按的 End／PgDn 原生送出（反向讀取沒啟動、改走缺頁自癒）。CPU 忙時才放大成偶發。**新增讀畫面的 settle listener 可依賴「settle 時 buffer 已 flush」**。
 - 退化情形（guess）：連線在**畫面中途**停 >`SETTLE_MS`（網路卡）才可能 premature settle；最壞首篇自動 enable 漏一次（捲動/重進即恢復），非 crash。`SETTLE_MS` 為可調常數，slow link premature-settle 就調高。
 
-## 反向讀取（讀取中按 End，2026-09，CONFIRMED unit＋offline e2e）
+## 反向讀取（讀取中按 End，CONFIRMED unit＋offline e2e）
 
 行為：讀取中（`pagePercent<100` ∧ `!reachedPageEnd`）按 End／`$`／`G`（後兩者只在切原生 pref 沒攔走時）⇒ 保留已讀的 head，跳文末建立 tail，逐頁往上插在兩者之間，碰到 head 接合；已讀完 ⇒ 只 `_scrollBottom`。協定依據 `docs/pttbbs-screen-protocol.md` §13 P10／P11。
 
@@ -83,7 +82,7 @@
   - **`_patchInto` 走到不再需要的舊節點當場移除**（累積長頁現在走 `ChunkLayer.patch`，同一條「不搬家」規則改以塊為單位，見下方「長頁分塊」）：留在 cursor 上會把之後每個沿用節點 insertBefore 到它前面＝整段搬家 ⇒ 搬走捲動錨點 ⇒ scroll anchoring 不補償（實測 scrollTop 釘死、上方長 5 萬 px 把讀者推走）。守護 `screen_reverse_splice.test.js`「不得搬動任何沿用的節點」。
 - **插在視窗上方的內容高度必須是整數像素**：`.commentSpacing` 的間距／合併塊行高用 `round(…, 1px)`。小數像素（chh 非 20 倍數時 0.55em、1.3）⇒ scroll anchoring 補償後捲動位置被對齊 ⇒ 視窗內文字每幀 ±0.5px 震動到預讀完。守護 offline `easy_reading_longpost_perf.offline.spec.js`（每幀 paint 前追同一列，位移必須為 0；舊的 reverse spec 容許 chh 誤差且用字級 20，量不到）。**逐幀量版面一律用 `tests/e2e/helpers/layout.js#installPaintedFrameProbe`，不在 rAF／`viewUpdate` 量**：那是 rendering update 之前的中間狀態，長頁分塊下 End 落地塊尚未經過 content-visibility 判定時插頁，會量到從未畫出的 +2953／-986（CI 約 1/10，paint 前已修正）。守護 `tests/unit/e2e_layout_settle.test.js`。
 - **捲動**：tail 補完前每幀 `_scrollBottom`（`followBottom`）；之後插入在視窗上方 ⇒ 交給瀏覽器 scroll anchoring（節點沿用，錨點還在）。**接合那一幀全量重建 ⇒ 錨點消失**，由 `term_view._captureRowAnchor/_restoreRowAnchor` 以「視窗頂端那一列的**列物件**＋偏移」自己錨一次（不能用距底部距離：停在 head 讀的人會被推走）。
-- **End 之後黏在文末（`src/js/bottom_stick.js`，End 的兩條路徑都走 `EasyReading._stickBottom`）**：scroll anchoring 只保視窗**頂端**；文末那頁（視窗內、錨點下方）的行內預覽之後才載入長高 ⇒ 文末被推出視窗（實錄 ptt-debug-20260927-183720：End 落地即 100% ⇒ `followBottom` 只貼一次就放手，圖／YouTube 之後才回來；offline 重現 gap 1200px）。ResizeObserver（content＋scroller）長高就捲回底。**放手只認讀者輸入**：`wheel`／`pointerdown`／`touchstart`＋`_onKeyDownProcessUI` 非 End/$/G 鍵；**不看 scroll 事件**（接合幀 `_restoreRowAnchor`／anchoring 補償也發 scroll，且同幀 scroll 派送早於 RO ⇒ 會在補回底部前先放手）。**不在「捲到底」時自動 engage**（forward 讀者停在底部會被新頁一路拖走）。per-article：`_resetPagingState` release。offline spec 模擬讀者捲走必須派 wheel 事件，純設 `scrollTop` 會被拉回。守護 `bottom_stick.test.js`、offline reverse spec「文末有圖」。
+- **End 之後黏在文末（`src/js/bottom_stick.js`，End 的兩條路徑都走 `EasyReading._stickBottom`）**：scroll anchoring 只保視窗**頂端**；文末那頁（視窗內、錨點下方）的行內預覽之後才載入長高 ⇒ 文末被推出視窗。ResizeObserver（content＋scroller）長高就捲回底。**放手只認讀者輸入**：`wheel`／`pointerdown`／`touchstart`＋`_onKeyDownProcessUI` 非 End/$/G 鍵；**不看 scroll 事件**（接合幀 `_restoreRowAnchor`／anchoring 補償也發 scroll，且同幀 scroll 派送早於 RO ⇒ 會在補回底部前先放手）。**不在「捲到底」時自動 engage**（forward 讀者停在底部會被新頁一路拖走）。per-article：`_resetPagingState` release。offline spec 模擬讀者捲走必須派 wheel 事件，純設 `scrollTop` 會被拉回。守護 `bottom_stick.test.js`、offline reverse spec「文末有圖」。
 - **`_kickPageDown` 反向時不清交易**：讀者本來就停在底部，按 PgDn 是常態；只在超過 grace 時補一次重試額度。
 - **per-article**：`_resetPagingState` 清兩端 reverse；`hideEasyReadingOverlays` 內聯清 view 端（該函式會被當獨立函式呼叫）。
 - debugRecorder `easyReading.reverse`：`request|kick|sendEnd|sendPageUp|sendPageDown|goto|retry|giveup|cancel|done|abort`，payload 含 `headEndLine/tailStartLine/tailEndLine/line/result/sinceSentMs`。
@@ -92,7 +91,7 @@
 
 ## render 單軌（兩模式同走 `ScreenController`）
 
-> **DEC 2026 同步輸出（2026-09）不參與 settle，只擋畫面。**
+> **DEC 2026 同步輸出不參與 settle，只擋畫面。**
 > PTT 把每個 `doupdate()` 包在 `ESC[?2026h` … `ESC[?2026l` 之間。我們在
 > `term_buf.queueUpdate()` 開頭 `if (this.inSyncUpdate) return;`，讓一幀被 WebSocket
 > 切成好幾塊時不會在中途畫出半幀（撕裂）。**刻意不拿 ESU 當 settle**：一個 logical page
@@ -107,10 +106,8 @@
 
 兩模式都走 `renderScreen()`＝把 `lines` 交給 `ScreenController.update()`（`term_ui.js` → `src/render/screen.js`），**controller 單一擁有 `#mainContainer`**。差別只在傳進去的 `lines`：
 
-> **2026-08 核心渲染鏈已去 React 化**：`<Screen>`/`<Row>` 換成 `src/render/`（純 JS DOM）。
-> 週邊 UI（設定頁／右鍵選單／各種 alert／上傳浮層）與 `ImagePreviewer` 仍是 React，各自獨立 root。
-> 對外介面沒變：`term_view` 照樣呼叫 `renderScreen(...)` 與 `componentScreen.setCursorHighlight(...)`。
-> DOM 產物逐字不變，由 `tests/unit/fixtures/screen_golden/` 的整份快照守（golden 是改寫前用 React 版產生的）。
+> 核心渲染鏈是 `src/render/`（純 JS DOM）；週邊 UI 與 `ImagePreviewer` 是 React，各自獨立 root。
+> `term_view` 呼叫 `renderScreen(...)` 與 `componentScreen.setCursorHighlight(...)`。DOM 產物由 `tests/unit/fixtures/screen_golden/` 的整份快照守。
 
 | 模式 | `lines` 來源 | 黑名單列 |
 |---|---|---|
@@ -119,15 +116,15 @@
 
 - 逐列加工（blacklist/樓層/作者高亮/pusher 高亮）統一在 `src/js/screen_annotations.js#computeAnnotations` 一處（純函式、零 DOM）。好讀文章因 `lines=完整 pageLines`，`new FloorCounter()` 一次走完整篇 → 跨頁樓號自然正確（已**無** view 端持久計數器 `_floorCounter`）。
 - `dropHidden` 移除的列**不位移**其餘列 `data-row`（=pageLines 絕對索引）；`getText` 用絕對 index → 選取/複製跨缺口仍對齊。
-- pusher 高亮：`togglePusherHighlight` 設 `_selectedPusher` + `componentScreen.setSelectedPusher(id)`（兩模式同）—— renderer 逐列搬 class，**不重畫**。`selectedPusher` 因此**不在 `annotationsKey`** 裡；它在裡面的年代，點一下推文列＝整份長頁重算＋每列節點重建＋所有 `inlinePreviewSlot` 塌陷重建（症狀：合併推文空白區閃爍、雙擊選字時好時壞）。細節見 `docs/enhanced-addon.md`「點選推文者高亮」。
+- pusher 高亮：`togglePusherHighlight` 設 `_selectedPusher` + `componentScreen.setSelectedPusher(id)`（兩模式同）—— renderer 逐列搬 class，**不重畫**；`selectedPusher` **不在 `annotationsKey`**（在裡面＝點一下就整份長頁重算重建）。細節見 `docs/enhanced-addon.md`「點選推文者高亮」。
 - 好讀 footer overlay 列（`#easyReadingLastRow`）是 `BBSWin` 下獨立 div、非螢幕容器，另外單獨畫（`term_ui.renderOverlayRow` 單列），不涉所有權衝突。**它是全專案唯一不經 `computeAnnotations` 的渲染路徑**，所以「功能鍵可點」在這裡要自己接：`term_view._mirrorStatusRowToFooter` 呼叫 `footer_keys.parseFunctionKeys(chars)` 後經 `renderOverlayRow` 的第 4 參數帶進去（`docs/mouse.md`「功能鍵按鈕」）。它沒有 `pointer-events:none` ⇒ 點得到；每次都整個 `replaceChildren` 重建，listener 隨舊節點丟掉，無洩漏。（另一個 `#easyReadingReplyRow` 已隨 legacy overlay 路徑移除，見 functionMode 節。）
-- **圖片預覽（`_renderScreenLines` 的 `inlinePreview`/`hoverPreview` 兩參數，CONFIRMED e2e）**：好讀文章 `inlinePreview=true`+`hoverPreview=false`（自動行內開圖，每個連結旁掛一個延遲載入佔位盒，**不**受 `enablePicPreview` pref 約束）；原生 `inlinePreview=false`+`hoverPreview=enablePicPreview`（hover 才開）；好讀列表/選單兩者皆 false。守護：unit `image_preview.test.js`（ScreenController→buildRow→builder 接線）+ e2e `easy-reading.spec.js`「好讀模式自動行內開圖」。
-- **累積頁的每頁 render 成本必須是 O(新增列)，不是 O(文章)（2026-08，CONFIRMED unit 計次＋offline e2e 曲線）**：`term_buf.notify` → `view.update()` → `redraw()` → `_renderScreenLines(buf.pageLines)` → `renderInto` 的 **`flushSync`** ⇒ 每收到一頁就**同步**重算＋重建整份累積頁。舊版每幀對全部 n 列重跑 `rowToText`/`annotateComment`/`detectRowExtras`（五組偵測）＋對每個推文合併 run 重跑 `buildMergedCommentChars`＋重建 n 個 `<Row>`（每列 80 個 TermChar 過 `LinkSegmentBuilder`）⇒ 每頁 O(n)、整篇 O(n²)。實錄 `ptt-debug-20260809`（8512 行）翻頁週期 55ms→1196ms。**這不只是體感**：週期一旦越過 `PAGE_DOWN_GRACE_MS`(600)，watchdog 就誤判掉包 → 補送 PageDown → P4 吞頁 → 缺頁自癒 → 「讀到一半跳回第一頁」「卡住不讀」。修法兩層，都在 renderer（現為 `src/render/screen.js`）＋純函式 `src/js/screen_annotate_cache.js`：
+- **圖片預覽（`_renderScreenLines` 的 `inlinePreview`/`hoverPreview` 兩參數，CONFIRMED e2e）**：好讀文章 `inlinePreview=true`+`hoverPreview=false`（自動行內開圖，每個連結旁掛一個延遲載入佔位盒，**不**受 `enablePicPreview` pref 約束）；原生 `inlinePreview=false`+`hoverPreview=enablePicPreview`（hover 才開）；好讀列表/選單兩者皆 false。守護：unit `image_preview.test.js`（ScreenController→buildRow→builder 接線）+ live `core.spec.js`「文章：好讀不跑版／不亂碼，行內圖片載得出來」。
+- **累積頁的每頁 render 成本必須是 O(新增列)，不是 O(文章)（CONFIRMED unit 計次＋offline e2e 曲線）**：每收到一頁就**同步**重算＋重建整份累積頁的寫法是每頁 O(n)、整篇 O(n²)（8512 行長文翻頁週期 55ms→1196ms）。**這不只是體感**：週期一旦越過 `PAGE_DOWN_GRACE_MS`(600)，watchdog 就誤判掉包 → 補送 PageDown → P4 吞頁 → 缺頁自癒 → 「讀到一半跳回第一頁」「卡住不讀」。修法兩層，都在 renderer（現為 `src/render/screen.js`）＋純函式 `src/js/screen_annotate_cache.js`：
   1. **增量標註**：累積是純 append（`pageLines.concat`，舊列的 TermChar[] 參考永不變），故前綴的 `texts`/`base` 標註/`FloorCounter` 實例/AI 候選清單全部沿用，逐列偵測只跑新增的列。推文合併 run 以 `mergeRunKey`＋該 run 每列的 base 參考當快取鍵；圖文合併塊以塊座標＋base 參考當鍵。
   2. **逐列節點快取**：沿用**同一個 DOM 節點**、完全不重建那一列。重用條件＝列 chars 參考、最終 annotation 物件參考、該列高亮狀態三者皆未變。所以第 1 層必須讓沒被裝飾到的列**沿用同一個 annotation 物件**（base/result 分兩層的理由）。去 React 化之前這層是「交回同一個 React element 物件」讓 React 走 `bailoutOnAlreadyFinishedWork`，判準一字相同。
      - 原生 24 列／列表視窗沒有 `stableRows`（活 buffer），退路是「重建後比對 `outerHTML`，一字未變就沿用舊節點」⇒ 使用者的選取範圍不會每 30ms 被抽換一次。長頁走上面的參考快取，不付這個序列化成本。
-  3. **dirty-row 逐列 patch（2026-08，第 3 層）**：上面第 2 層的退路仍然付了「建節點 + 兩次 `outerHTML` 序列化」×24。這一層讓 renderer 對「這一幀沒被寫過的列」**完全不建節點**。兩個 dirty 來源，都由 `term_view.redraw` 放進 `enhance`：
-     - `changedRows`：活 buffer（`buf.lines`）這一幀 server 寫了哪幾列，來自 `buf.lineChangeds`。**`TermChar.needUpdate` 2026-08 才去 sticky**（`updateCharAttr` 消費完就清），在那之前任何寫過一次的列永遠 dirty，`lineChangeds` 等於全部列、`redraw` 裡那行逐列 `continue` 幾乎永不生效。
+  3. **dirty-row 逐列 patch（第 3 層）**：上面第 2 層的退路仍然付了「建節點 + 兩次 `outerHTML` 序列化」×24。這一層讓 renderer 對「這一幀沒被寫過的列」**完全不建節點**。兩個 dirty 來源，都由 `term_view.redraw` 放進 `enhance`：
+     - `changedRows`：活 buffer（`buf.lines`）這一幀 server 寫了哪幾列，來自 `buf.lineChangeds`（前提：`TermChar.needUpdate` 非 sticky，`updateCharAttr` 消費完就清）。
      - `rowIdentityStable`：列表好讀視窗的列是 `cloneRow` 快照（存進 `_listNumMap` 之後不再就地改寫）⇒ 列參考相同即內容相同。frozen 幀 24 列全部命中。
      - **功能鍵按鈕（`enhance.functionKeyRows`）刻意繞開這一層**：`term_view._renderScreenLines` 只在 `!ov.stableRows` 時才算它 ⇒ 累積長頁的兩條分支（帶 `STABLE_ROWS` 的）**永不拿到**這個欄位，增量快取零風險。它逐列獨立，故 `annotationsAreRowIndependent` 不必改；但**必須進 `annotationsKey`**（`functionKeyRows` ＋ `onFunctionKey`），否則列表好讀視窗的 `rowIdentityStable` 會讓切 pref 完全不生效——理由與回歸鎖見 `docs/mouse.md`。
 - **守門住在 `src/js/screen_annotations.js#annotationsAreRowIndependent`，不在 `term_view`**：`term_view` 只回報事實，「這組 enhance 能不能只重畫 dirty 列」由標註端決定（跨列耦合全長在 `computeAnnotations` 裡）。`pageState 3` 一律拒絕——functionMode 原生鏡像與防黑守門兩條分支會帶著 `easyReading:true` 把活 buffer 交進來，FloorCounter／推文合併／圖文合併全開，只重畫 dirty 列會讓樓號永久位移。
@@ -137,9 +134,9 @@
      - 守護：`tests/unit/screen_dirty_rows.test.js`（等價性一律拿「全新 controller 全量重建」當對照組逐字比 DOM）、`tests/unit/term_buf_dirty_rows.test.js`（dirty 不得漏報：真 cassette 逐步重放＋逐列內容簽章）、`tests/unit/render_dispose.test.js`（沿用的列不得被 dispose、換掉的列不得洩漏）。
   - **`enhance.stableRows` 是這整層的前提，只有累積頁那兩個 render 分支帶（`term_view.js` 的 `STABLE_ROWS`）**：那裡的列是 `cloneRow` 快照、append 後永不再被寫；原生 24 列畫面與列表視窗是 `term_buf` **就地改寫**的活 buffer，列參考一路不變而內容每幀在變，套快取會一直畫出上一幀的內容。
   - **`stableRows` 也是「推文區塊行距」容器 class 的判準**（`render/screen.js#_setCommentSpacing`，pref `commentBlockSpacing` 預設開）：純 CSS 的間距只能加在累積長頁上，functionMode 原生鏡像／防黑守門那兩條 fallback 同樣帶 `easyReading:true`＋`pageState 3`，在那裡多出任何高度就打破下面「原生鏡像期間畫面必須不可捲」的不變量 ⇒ 復發「推文時游標戳出反白輸入匡」。**別把判準放寬成 `easyReading && pageState===3`**；回歸鎖 `tests/unit/comment_spacing_class.test.js`，樣式契約見 `docs/enhanced-addon.md`。
-  - 一次性全量重算仍在（改設定、切圖文合併）：超長文會卡一幀，已知取捨。**點推文者高亮已不在此列**（2026-08 改成 class 層切換）；若日後又有互動狀態被塞進 `annotationsKey`，先看那條踩坑。
+  - 一次性全量重算仍在（改設定、切圖文合併）：超長文會卡一幀，已知取捨。**互動狀態（推文者高亮之類）不可塞進 `annotationsKey`**，一律走 class 層切換。
   - 守護：`tests/unit/screen_annotate_cache.test.js`（純判準）、`tests/unit/screen_incremental_render.test.js`（**等價**：逐頁 append 的 DOM == 一次到位的 DOM；**增量**：append 22 列後重新標註／重建的列數 < 80，舊 code 是 1311）、offline e2e `ezsoft-longpost.json` 150 頁的 head/tail 週期曲線（修好 37→43ms；關掉快取 49→224ms）。
-- **長頁分塊（超長文流暢度，2026-10，CONFIRMED unit＋offline e2e＋同機量測）**：上面三層只壓了 JS；破千頁的大頭是瀏覽器原生 layout／paint／hit test 與 TermChar 記憶體，都與 DOM／列數成正比。三根支柱：
+- **長頁分塊（超長文流暢度，CONFIRMED unit＋offline e2e＋同機量測）**：上面三層只壓了 JS；破千頁的大頭是瀏覽器原生 layout／paint／hit test 與 TermChar 記憶體，都與 DOM／列數成正比。三根支柱：
   - **A 分塊**（`src/render/screen_chunk.js#ChunkLayer`，只在 `stableRows`）：頂層節點每 `CHUNK_ROWS`(100) 個包一個 `div.screenChunk`（`content-visibility:auto`＋`contain-intrinsic-height: auto 100lh`，main.css）。DOM 仍是全文（Ctrl+F／選取／scroll anchoring 靠它）；**不做虛擬捲動**（得自己重寫那三樣）。不變量寫在該檔頭，摘要：
     1. 塊歸屬由**節點身分**決定、節點進塊後不搬家（列號會被反向讀取位移）；新節點只 append 進前一個節點的塊、插在下一個**閉塊**的開頭、或開新塊插在兩塊之間。反向讀取接合點 J（列號 ≥ J 的第一個節點；J 列可能被黑名單拿掉）一定是塊的第一個節點。
     2. 往**照常渲染中**的塊開頭插列，Chromium scroll anchoring 只補一部分（實測 1034px 只補 885px）⇒ 只插進閉塊（`_canPrepend`）。閉塊受尺寸約束，插了高度不變。
@@ -149,9 +146,9 @@
     6. 讀選取文字一律 `readSelectionText()`（term_view `^C`、copyOnSelect、右鍵選單）：Firefox 跨閉塊 `toString()` 漏字。實測 3000 行：選取當下直接讀 30556 字、同步展開＋排版後 110085（完整）、不展開過一幀又掉回 90329 ⇒ selectionchange 非同步展開（`.screenChunkOpen`）＋讀之前同步補一次。
     7. **render 後同一個 task 同步讀版面，新塊量到估計高度（CHUNK_ROWS 列）**：塊照不照常渲染由 rendering update 才判定 ⇒ scrollHeight 灌水、`scrollTop = scrollHeight` 落在假底部、插頁當下 scroll anchoring 不補償（實測 +2953，paint 前才修正，畫面不動）。新增「render 後同步量、結果拿去用」的程式碼先 `renderChunksAround`，或改到下一幀量；測試逐幀量一律 `installPaintedFrameProbe`（見上方「插在視窗上方的內容高度」條）。守護 `tests/unit/screen_chunk_sync_layout.test.js`；規則在 `screen_chunk.js` 檔頭不變量 6。
     8. 逐列量 offsetTop 找視窗頂端那一列的掃描改用 `rowsFromScrollTop`（先以塊跳過視窗上方；逐列量會強迫每個閉塊排版）。新增「從上往下量列」的地方照辦。
-    8. 推文行距的空隙事件目標是塊不是容器（`pttchrome.jsx#_pusherAt` 兩者都當空白）。
+    9. 推文行距的空隙事件目標是塊不是容器（`pttchrome.jsx#_pusherAt` 兩者都當空白）。
   - **B TermChar 共用化**（`src/js/term_char_intern.js`）：pageLines 的累積路徑用 `internRow`（取代 `cloneRow`），同字同屬性的格子共用一個物件；dev／測試下 `Object.freeze`（ES module strict ⇒ 誤寫當場 throw）。鍵＝`INTERN_FIELDS`，**TermChar 新增欄位必須同步**（守護 `tests/unit/term_char_intern.test.js` 以真 cassette 比 own key 集合）。列表的 `cloneRow` 不動（`blankRowLike` 會就地改寫）。
-  - **C 前沿快路徑**（`screen_annotations.js` 的 `fastFrom`／`annotationFrontier`）：每幀收尾算前沿 F＝之後只往後接新列時最早可能改變最終標註的列（結尾那串同作者推文的首列、還開著的內文跨行網址鏈、手機文末補白）；下一幀純 append ∧ 非反向 ∧ 圖文塊已定型（`captionScanEnd` < F）⇒ `result[0,F)` 沿用上一幀同一批物件，跨列掃描只從 F 起跑，回傳 `stablePrefix` 讓 `_buildNodes`／`ChunkLayer.patch` 只走尾段。**在 `computeAnnotations` 新增跨列邏輯必須同步 `annotationFrontier`**（同 `annotationsAreRowIndependent` 的規則）。`bodyWrapFrontier` 必須帶 skip 判準：真實推文列的時間戳最後一格落在 maxcol，不排除的話前沿一路退回第一則推文、快路徑在真實文章裡從不生效（實際踩過，e2e 抓到）。
+  - **C 前沿快路徑**（`screen_annotations.js` 的 `fastFrom`／`annotationFrontier`）：每幀收尾算前沿 F＝之後只往後接新列時最早可能改變最終標註的列（結尾那串同作者推文的首列、還開著的內文跨行網址鏈、手機文末補白）；下一幀純 append ∧ 非反向 ∧ 圖文塊已定型（`captionScanEnd` < F）⇒ `result[0,F)` 沿用上一幀同一批物件，跨列掃描只從 F 起跑，回傳 `stablePrefix` 讓 `_buildNodes`／`ChunkLayer.patch` 只走尾段。**在 `computeAnnotations` 新增跨列邏輯必須同步 `annotationFrontier`**（同 `annotationsAreRowIndependent` 的規則）；只往前推的累加狀態（FloorCounter、新格式推文的 ModernCommentThread）跟著快取走、與前沿無關。`bodyWrapFrontier` 必須帶 skip 判準：真實推文列的時間戳最後一格落在 maxcol，不排除的話前沿一路退回第一則推文、快路徑在真實文章裡從不生效。
   - 同機量測（合成推文長文，前向讀取，最後 10% 每頁）：
 
     | 指標 | 改前 22000 行 | 改後 2000／8000／22000 行 |
@@ -164,68 +161,68 @@
     | 改設定全量重算 | 1351ms | 77／243／599ms |
   - 仍是 O(n) 的（已知、未做）：改設定的全量重算；反向讀取（End）插入一頁（tail 位移後每列的合併標註帶絕對列號，12000 行時 4.6ms/頁，排版恆定）；沒有推文也沒有簽名線的長文（圖文塊未定型，快路徑不開）。
   - 守護：`tests/unit/screen_chunk.test.js`（CSS 契約、只動尾塊、全量重建沿用塊、反向接合點切塊與合併、延遲開圖、選取展開、`rowsFromScrollTop`）、`tests/unit/screen_annotations_frontier.test.js`（種子 fuzz：逐頁 append 與全量逐列相同＋快路徑真的有走；逐一弄壞前沿各元件都會紅）、`tests/unit/term_char_intern.test.js`、offline `easy_reading_longpost_perf`「前向累積」（每幀重算尾段 ≤ 3 頁、只動 ≤ 3 個塊／容器）、`selection.offline.spec.js`「長文跨分塊選取」（offline-firefox，逐行核對）、`easy_reading_reverse`／`longpost_perf` 反向的位移守護。測試要拿頂層節點時注意多一層塊（`tests/unit/screen_reverse_splice.test.js#topNodes`）。
-- **自動開圖是延遲載入的（`src/render/inline_preview_slot.js`＋`src/js/lazy_media.js`，2026-08，CONFIRMED unit＋offline e2e）**：同一篇 8512 行長文有 **287 個圖片連結**，舊行為是文章一累積到就全部解析＋下載＋解碼、到離開文章前永不釋放 —— 已解碼的點陣圖是「記憶體吃滿」的最大宗。改成兩個共用 IntersectionObserver（**root＝`.main`**；省略 root＝隱式 viewport 時 rootMargin 只擴 viewport、`.main` 的裁切照算 ⇒ 兩個 margin 實際≈0，2026-10 修，守護 `tests/e2e/offline/lazy_preview_margin.offline.spec.js`）：接近視野（`LAZY_MOUNT_MARGIN_PX` 1500）才掛 `<ImagePreviewer>`（唯一留在核心畫面裡的 React 葉子島，一個佔位盒一個小 root），遠離（`LAZY_UNMOUNT_MARGIN_PX` 6000，遲滯區避免來回重載）就卸掉。
+- **自動開圖是延遲載入的（`src/render/inline_preview_slot.js`＋`src/js/lazy_media.js`，CONFIRMED unit＋offline e2e）**：長文可有數百個圖片連結，已解碼的點陣圖是記憶體最大宗 ⇒ 兩個共用 IntersectionObserver（**root＝`.main`**；省略 root＝隱式 viewport 時 rootMargin 只擴 viewport、`.main` 的裁切照算 ⇒ 兩個 margin 實際≈0，守護 `tests/e2e/offline/lazy_preview_margin.offline.spec.js`）：接近視野（`LAZY_MOUNT_MARGIN_PX` 1500）才掛 `<ImagePreviewer>`（唯一留在核心畫面裡的 React 葉子島，一個佔位盒一個小 root），遠離（`LAZY_UNMOUNT_MARGIN_PX` 6000，遲滯區避免來回重載）就卸掉。
   - **延後的是整個元件的掛載，不是只有 `<img>` 的下載**：`requestPreview()` 一被呼叫就開始解析網址（imgur 無副檔名的還會發兩發 HEAD 探測），所以 `loading="lazy"` 攔不到它；而且現行 `<img>` 未載入時是 `display:none`，瀏覽器對 `display:none` 的元素本來就不會觸發 lazy。只加 `decoding="async"`。
   - **卸載前必須把當下 `offsetHeight` 釘進佔位盒的 `min-height`**，否則內容總高塌陷 → `scrollTop` 被夾住 → 閱讀位置整個位移（同上面放大/縮小那類問題）。
-  - **佔位高度必須綁定「圖片尺寸模式」，而且要能替沒量過的模式算出來（2026-08-15，CONFIRMED unit＋offline e2e）**。同一張圖在放大態（`width:100%`／`max-height:none`，長圖 layout 高度數千 px）與縮小態差好幾倍，只記一個值會出現**互為代價的兩個症狀**，使用者兩次回報的正是這兩個（`ptt-debug-20260815-112407`，`stock-end` 重放複現）：
+  - **佔位高度必須綁定「圖片尺寸模式」，而且要能替沒量過的模式算出來（CONFIRMED unit＋offline e2e）**。同一張圖在放大態（`width:100%`／`max-height:none`，長圖 layout 高度數千 px）與縮小態差好幾倍，只記一個值會出現**互為代價的兩個症狀**：
     1. 不分模式就套用 ⇒ 放大態釘的高度留到縮小態＝**永久假空白**（實測 slot 908px／圖 570px ⇒ 338px）。點縮小只是拿掉 `#mainContainer` 的 class，CSS 立刻生效但 inline `min-height` 不受影響。
     2. 模式不符就丟掉不套 ⇒ 佔位盒塌陷成 0，往上捲時圖一張張掛回來把**視窗上方**的內容撐開 ⇒ **跳頁**（實測 9 個圖佔位盒有 2 個整段被跳過，使用者描述「從圖3往上直接跳到圖1」）。
     - 修法兩層（`src/js/lazy_media.js` 純函式＋`inline_preview_slot.js`）：**(a) 分模式各記一組實測高度** `{ [mode]: height }`（`recordSlotHeight`／`slotMinHeight`），記錄時機除了卸載前，還多了**媒體載入完成時**（`ResizeObserver`）——只在卸載時記的話，使用者典型動線「normal 看幾張 → 點放大 → 往下捲才卸載」永遠不會替 normal 那格留值。**(b) 卸載期間放一個同比例的替身盒** `.inlinePreviewGhost`（`recordSlotAspect` 記媒體原尺寸 `naturalWidth/Height`）：它**也掛 `.easyReadingImg`**，於是 `max-width`/`max-height`/放大態 `width:100%` 全部由同一組 CSS 規則替它算高度 ⇒ 連「這個模式從沒量過」也佔得準（(a) 補不到的缺口正是這個：往下捲時那幾張圖只在放大態載入過）。JS 端因此不必複製任何 CSS 常數。
     - **替身盒的寬度走 CSS 變數 `--ghost-w` 而非 inline `width`**：inline 樣式會蓋掉放大態的 `width:100%`，變數不會（`#mainContainer.imagesEnlarged .easyReadingImg` 特異性也高於 `.inlinePreviewGhost`）。
     - 模式由 `ScreenController` 對存活中的佔位盒逐一 `setSizeMode()` 廣播（值＝`imagesEnlarged ? "enlarged" : "normal"`）。**切換模式不重建任何一列**：容器 class 決定圖片尺寸，佔位盒只需要知道現在是哪個模式。（去 React 化之前這個值走 `PreviewSizeModeContext`，理由是 `<Row>` 元素快取會讓新 prop 傳不進來。）
     - 量測兩個陷阱：載入完成前 `<img>` 已在 DOM 但 `display:none`，量到的是「讀取中…」指示器高度（要用 `offsetHeight > 0` 判斷是否真的佔到版面）；相簿一個 slot 多張圖，單一比例代表不了整盒 ⇒ 不記 aspect，退回分模式高度。
-    - **量測結果存在 module 級 memo（`inline_preview_slot.js` 的 `sizeMemo`，鍵＝`href`，LRU `SIZE_MEMO_MAX`=500，跨文章保留）**，2026-08。理由：`pinned`/`aspect` 原本只活在 slot 閉包裡，**任何會改動 `annotationsKey` 的操作都全量重建每一列**（AI 校正逐筆回填最頻繁，一篇數十次；還有圖文並排、黑名單、樓號、字級…）⇒ 新 slot 從 `null` 開始 ⇒ 整份長頁佔位盒同時塌陷再非同步撐回來（閃爍＋跳頁）。命中 memo 的 slot 在 `createInlinePreviewSlot` 內就 `applyMinHeight()`+`syncGhost()`，**第一幀**即有高度，不等 observer。
+    - **量測結果存在 module 級 memo（`inline_preview_slot.js` 的 `sizeMemo`，鍵＝`href`，LRU `SIZE_MEMO_MAX`=500，跨文章保留）**。理由：`pinned`/`aspect` 原本只活在 slot 閉包裡，**任何會改動 `annotationsKey` 的操作都全量重建每一列**（AI 校正逐筆回填最頻繁，一篇數十次；還有圖文並排、黑名單、樓號、字級…）⇒ 新 slot 從 `null` 開始 ⇒ 整份長頁佔位盒同時塌陷再非同步撐回來（閃爍＋跳頁）。命中 memo 的 slot 在 `createInlinePreviewSlot` 內就 `applyMinHeight()`+`syncGhost()`，**第一幀**即有高度，不等 observer。
       - 兩種量測的**有效範圍不同**：`aspect`（原尺寸）與版面寬度**無關**（替身盒交給 CSS 算）⇒ 無條件重用；`pinned`（分模式實測高度）只在**寬度不變**時成立。寬度改變的入口只有兩個，都收斂到 `render/screen.js#notifyLayoutChanged`：`term_view.setTermFontSize`（`chw` 變＝字級 pref／視窗 resize）與 `ScreenController._toggleMergeCaption`（`.mergedImageCol` 左欄比全寬窄）。它會 `invalidateInlinePreviewHeights()`＋對 `_liveSlots` 逐一 `invalidatePinned()`。**`_setImagesEnlarged` 不算**（那是 sizeMode，本來就分模式各記一筆）。
       - 作廢規則是**有 `aspect` 才丟 `pinned`**：替身盒能在新寬度下算出正確高度；沒有 `aspect` 的（iframe、相簿）留著舊值當最佳猜測 —— iframe 是固定 `height:450px`，本來就與寬度無關，丟掉只換來一次無謂的塌陷。
-      - **量的是內容層 `.inlinePreviewContent`（它永遠沒有 inline style）**，所以「過期偏大的高度自我增強成永久假空白」那條路徑在 B2 疊層之後結構性消失（舊碼得靠「量之前拿掉自己的 `min-height`、量完再放回」硬繞）。
+      - **量的是內容層 `.inlinePreviewContent`（它永遠沒有 inline style）**，所以「過期偏大的高度自我增強成永久假空白」那條路徑在疊層結構下不存在。
     - 守護：`tests/unit/lazy_inline_preview.test.js`（含 memo／作廢規則／疊層不變量）、`tests/unit/render_dispose.test.js`（症狀級：pref 切換全量重建後新節點第一幀就有佔位高度）、`tests/e2e/offline/lazy_preview_enlarge_blank.offline.spec.js`（同時鎖空白量、替身盒高度＝縮小態真圖高度、往上捲不得跳過任何圖佔位盒）。
   - **測試要驗預覽一律先捲到**（`tests/e2e/helpers/replay.js` 的 `mountLazyPreviewsAt` / `seekInlineMedia`）：replay 完就 `querySelector('img')` 永遠只量到空的佔位盒。同理，捲到目標後**要等版面靜下來再量座標**——先掛上的圖載入後會長高把目標推走（`blacklist_quick_add` 的右鍵座標就踩過）。
 
-- **單張圖的暫時性灰階（`inline_preview_slot.js` 的 `grayHrefs` ＋ `.previewGrayBtn`，2026-09）**：hover 圖片才浮現的切換鈕，點一下只有那張圖套上 `filter: grayscale(1)`。動線是「轉灰階 → 用瀏覽器內建的以圖找圖查」。
+- **單張圖的暫時性灰階（`inline_preview_slot.js` 的 `grayHrefs` ＋ `.previewGrayBtn`）**：hover 圖片才浮現的切換鈕，點一下只有那張圖套上 `filter: grayscale(1)`。動線是「轉灰階 → 用瀏覽器內建的以圖找圖查」。
   - **狀態：module 級 `Set`，鍵＝`href`，跨 slot 重建保留**（理由同 `sizeMemo`：改動 `annotationsKey` 的操作會整份重建 slot，存閉包裡的話灰階會在使用者眼前跳回原彩）。生命週期同 `imagesEnlarged`：同篇 page-down 保留、`articleId` 變才重置。重置的唯一入口 `render/screen.js#_resetImagesGray`＝`clearInlinePreviewGray()` ＋ 對 `_liveSlots` 逐一 `syncGray()`；**只清 Set 會漏掉已掛著、還帶著 `data-gray` 的節點**。新建的 slot 在建構期就 `syncGray()` 一次（等 `ResizeObserver` 首報會閃一下原彩）。
   - 不進 `annotationsKey`、不做成 pref（同 `imagesEnlarged`／`mergeCaption`）。**本地產不出真正灰階的位元組**：預覽圖全跨網域、帶 `referrerPolicy="no-referrer"` 且無 `crossorigin` ⇒ canvas 被 taint、`toBlob()` throw；補 `crossorigin="anonymous"` 會讓大量圖床改為載入失敗。所以只有 render-time 的 filter 這一條路。
   - **按鈕為何用 `--img-w`/`--img-top` + 百分比 margin，而不是 `getBoundingClientRect`**（踩坑）：`img.hyperLinkPreview` 身上有一條動態反向 scale（`term_view.js`，抵消 `.main` 的 `transform: scale()`），而 `.main` 本身也是 transform 過的 ⇒ viewport 座標與這裡的 layout 空間對不起來，還得自己處理捲動與 resize。改成留在同一個 layout 空間：按鈕當 slot 的第三個 grid item（同 `grid-area: stack` ⇒ 不增加 slot 高度），JS 只在既有的 `onResize` 回呼裡量 `img.offsetWidth` 與 `img.offsetTop - content.offsetTop`，寫成 CSS 變數在**按鈕自己**身上（slot/content 的 inline style 硬不變量不受影響）。`margin-right: calc((100% - var(--img-w)) / 2)` 抵掉圖片 `margin: 0.5em auto` 的置中留白。
     - **上緣差必須量，不能在 CSS 照抄 `0.5em`**：`em` 在按鈕身上以按鈕自己的 `font-size`（12px）解析，圖片那個 `0.5em` 用的是終端機字級 ⇒ 按鈕浮到圖片上緣之外（實測差 9px）。
     - **按鈕必須有自己的堆疊脈絡（`position: relative; z-index: 1`）**：`<img>` 是行內置換元素（CSS 2.1 繪製順序第 7 步），按鈕是 block-level grid item（第 4 步）⇒ 光靠 DOM 順序在後面**不夠**，圖片會蓋住按鈕 ⇒ 看得見卻點不到（Playwright 報「img … intercepts pointer events」，看起來像座標算錯）。
-  - **hover 觸發綁在真圖上，不可退回 `.inlinePreviewSlot:hover`**（2026-09 使用者回報「按鈕幾乎永遠顯示」）：slot 是**整列寬**的區塊，圖片只有 `max-width: 39em` ＋ `margin: auto` 置中 ⇒ 綁 slot 等於「捲到這張圖時滑鼠水平在任何位置都算 hover」。現行選擇器是 `.inlinePreviewSlot:has(img.easyReadingImg:hover)`，外加按鈕自己的 `:hover`（按鈕疊在圖上，指標移上去時 `img:hover` 會斷）與 `:focus-visible`。同一次改動讓 slot 整體 `pointer-events: none`、可互動子孫各自取回 `auto`，把圖片左右留白還給左側退出帶（見 `docs/mouse.md`「點擊優先權」第 5 條）。
+  - **hover 觸發綁在真圖上，不可退回 `.inlinePreviewSlot:hover`**（否則按鈕幾乎永遠顯示）：slot 是**整列寬**的區塊，圖片只有 `max-width: 39em` ＋ `margin: auto` 置中 ⇒ 綁 slot 等於「捲到這張圖時滑鼠水平在任何位置都算 hover」。現行選擇器是 `.inlinePreviewSlot:has(img.easyReadingImg:hover)`，外加按鈕自己的 `:hover`（按鈕疊在圖上，指標移上去時 `img:hover` 會斷）與 `:focus-visible`。同一次改動讓 slot 整體 `pointer-events: none`、可互動子孫各自取回 `auto`，把圖片左右留白還給左側退出帶（見 `docs/mouse.md`「點擊優先權」第 5 條）。
   - 只有「content 裡剛好一張、且已佈局（`offsetWidth > 0`）的 `img.easyReadingImg`」才配按鈕 ⇒ 非媒體 slot（`※ 文章網址`）、影片、iframe、相簿都不長；jsdom 下永不生成，`tests/unit/fixtures/screen_golden/` 不受影響。
-  - **對「以圖找圖」的實際效果（使用者手動實測 2026-09-12）**：Chrome 的 Lens 覆蓋層**初開時吃得到** CSS 灰階（它是對視窗截圖再框選）`CONFIRMED`；但在 Lens 內切換其他功能時那側會變回原彩（`guess`：改以圖片來源重新取原圖），PTT 頁面本身仍是灰階。要連那一段都灰，只能產出真正灰階的**位元組**——阻擋與唯一縫隙見 `docs/handoff/lens-grayscale-bytes.md`（未做）。
+  - **對「以圖找圖」的實際效果（使用者手動實測）**：Chrome 的 Lens 覆蓋層**初開時吃得到** CSS 灰階（它是對視窗截圖再框選）`CONFIRMED`；但在 Lens 內切換其他功能時那側會變回原彩（`guess`：改以圖片來源重新取原圖），PTT 頁面本身仍是灰階。要連那一段都灰，只能產出真正灰階的**位元組**——阻擋與唯一縫隙見 `docs/handoff/lens-grayscale-bytes.md`（未做）。
   - 守護：`tests/unit/image_gray_toggle.test.js`、`image_gray_css.test.js`、`screen_images_gray_reset.test.js`、`render_dispose.test.js`；真幾何在 `tests/e2e/offline/image_gray.offline.spec.js`。
 - **`buf.pageLines` 既是 render source 又是選取 source，clone 用 `term_view.cloneRow`**（`Object.assign(Object.create(Object.getPrototypeOf(ch)), ch)`），保留 TermChar prototype 方法（`isStartOfURL`/`getColor`…）；勿用 `JSON.parse(JSON.stringify())`（剝 prototype → render 即炸）。WHY 見 `term_view.js#cloneRow` 註解。
-- **跨頁去重 `resolvePageOverlap`（狀態列行號為主，2026-07，治「重複區塊」race，CONFIRMED unit+offline/live e2e 守護）**。2026-08 起半畫幀已被上面的「完整回應幀」閘擋在外，本節的 drift guard 因此退居第二道保險而非主力。`findPageOverlap` 取最大內文相符 `k`，在半畫好中間 frame（重疊區某列未 settle）會 lock 到偏小 `k` → 少跳 → 重複追加 → 畫面重複段落（難重現、非特定文章）。改以狀態列 `目前顯示: 第 S~E 行`（`parseStatusRow` 的 `rowIndexStart/End`）算重疊：`kStatus = accEndRow - statusStart + 1`（`accEndRow` = `pageLines` 末列文章行號＝上頁 rowIndexEnd，`term_view._accEndRow` 追蹤；首頁 seed、`hideEasyReadingOverlays` 重置）。規則：**content 為重疊下界**（`findPageOverlap` 找到的相符列確定重複、必跳，`kStatus<=kContent` 用 `kContent`；長「行」可 wrap 成 2 顯示列使 kStatus 偏小，故不得低於 content）；僅 `kStatus>kContent`（content 因 race 少算）時用 `kStatus` 補回，並過 **drift guard**（該重疊區與 accTail 非空列相符率 <0.5 視為 `accEndRow` 漂移 → 退回 `kContent`）。純函式在 `comment_parse.resolvePageOverlap`，守護 `tests/unit/comment_parse.test.js` `describe("resolvePageOverlap")` + offline `replay_fixture.test.jsx` 鏡像同路徑。
+- **跨頁去重 `resolvePageOverlap`（狀態列行號為主，CONFIRMED unit＋offline e2e）**。半畫幀已被上面的「完整回應幀」閘擋在外，本節的 drift guard 是第二道保險。`findPageOverlap` 取最大內文相符 `k`，在半畫好中間 frame（重疊區某列未 settle）會 lock 到偏小 `k` → 少跳 → 重複追加 → 畫面重複段落（難重現、非特定文章）。改以狀態列 `目前顯示: 第 S~E 行`（`parseStatusRow` 的 `rowIndexStart/End`）算重疊：`kStatus = accEndRow - statusStart + 1`（`accEndRow` = `pageLines` 末列文章行號＝上頁 rowIndexEnd，`term_view._accEndRow` 追蹤；首頁 seed、`hideEasyReadingOverlays` 重置）。規則：**content 為重疊下界**（`findPageOverlap` 找到的相符列確定重複、必跳，`kStatus<=kContent` 用 `kContent`；長「行」可 wrap 成 2 顯示列使 kStatus 偏小，故不得低於 content）；僅 `kStatus>kContent`（content 因 race 少算）時用 `kStatus` 補回，並過 **drift guard**（該重疊區與 accTail 非空列相符率 <0.5 視為 `accEndRow` 漂移 → 退回 `kContent`）。純函式在 `comment_parse.resolvePageOverlap`，守護 `tests/unit/comment_parse.test.js` `describe("resolvePageOverlap")` + offline `replay_fixture.test.jsx` 鏡像同路徑。
 - **換篇不得與舊篇串接（`decideAccumulateBranch` 雙保險，CONFIRMED unit＋replay 合成守護）**：分支決策抽純函式 `comment_parse.decideAccumulateBranch`，`accumulatePageLines` 依其三路 rebuild/append/skip 分流。**`leaveCurrentPost` 的一次性 `prevPageState=0` 不可信**——會被 redraw 每幀末的 `prevPageState=pageState` 覆寫，leave 與新文章第一頁之間夾任何 pageState 3 幀（舊文殘幀）就吃掉旗標 → 兩篇串接且此後恆串接。故：(1) **sticky 旗標 `buf.easyReadingPendingReset`**——`leaveCurrentPost`/`enterEasyReading` 設 true，只在「確認文章第一頁」（`statusStart===1`）時消費，functionMode resume 與 `hideEasyReadingOverlays` 顯式清 false；(2) **身分自癒**——續接時 `statusStart===1 ∧ kContent===0 ∧ acc 非空` ⇒ 不可能是同篇下一頁 → 強制 rebuild（未知路徑漏旗標也能復原；誤判代價僅「從第一頁重新累積」）。守護：`comment_parse.test.js` `describe("decideAccumulateBranch")`＋`replay_fixture.test.jsx` 合成 race 案例。
-- **整頁圖片倍率（`src/js/image_zoom.js`＋`.previewZoomBar`，2026-09）**：與 `imagesEnlarged` 並存、互斥（放大態優先，倍率保留）。
+- **整頁圖片倍率（`src/js/image_zoom.js`＋`.previewZoomBar`）**：與 `imagesEnlarged` 並存、互斥（放大態優先，倍率保留）。
   - 尺寸唯一入口 `render/screen.js#_syncImageSize`：容器 class `imagesEnlarged`／`imagesZoomed` 二擇一＋容器上的 `--img-zoom`，再廣播 `sizeMode` 給 `_liveSlots`。`_setImagesEnlarged`／`_setImageZoom` 都只設欄位後呼叫它。生命週期同 `imagesEnlarged`（`articleId` 變 ⇒ `_setImageZoom(1)`）。
   - `sizeMode` 字串鍵擴成 `"normal"|"enlarged"|"zoom@<z>"` ⇒ `lazy_media` 分模式記高度零修改，每個倍率各一格；100% 仍是 `"normal"`（既有 memo 不失效）。
   - 寬度公式 `min(--nat-w px, 39em, 19em×--nat-w/--nat-h) × --img-zoom`（main.css `.imagesZoomed`）＝小圖寬×倍率，`max-width:100%` 封頂。`--nat-w/--nat-h` 由 `ImagePreviewer.jsx#FallbackImage` onLoad 與替身盒 `syncGhost` 各自寫在自己身上（替身盒與真圖同一組輸入 ⇒ 佔位高度仍逐像素準）。
-  - **slot 是單欄 grid，欄寬必須釘死 `grid-template-columns: minmax(0, 1fr)`**（CONFIRMED offline e2e，ptt-debug-20260928-181323）：implicit auto 軌道會被子孫的內容貢獻撐寬。倍率態替身盒是 `<div>`、寬是絕對值、上限只剩 `max-width:100%`（對 auto 軌道是循環參照 ⇒ 貢獻照原值）⇒ 軌道被撐寬、同格真圖跟著被撐出版面、替身盒與真圖高度不一致 ⇒ 捲動時掛載／卸載來回改高度，症狀「150% 滾輪往上捲不動、畫面上下抖」＋ `ResizeObserver loop completed`。`<img>` 不受影響（百分比上限的替換元素內容貢獻算 0），放大態不受影響（`width:100%` 無絕對寬）。
+  - **slot 是單欄 grid，欄寬必須釘死 `grid-template-columns: minmax(0, 1fr)`**（CONFIRMED offline e2e）：implicit auto 軌道會被子孫的內容貢獻撐寬。倍率態替身盒是 `<div>`、寬是絕對值、上限只剩 `max-width:100%`（對 auto 軌道是循環參照 ⇒ 貢獻照原值）⇒ 軌道被撐寬、同格真圖跟著被撐出版面、替身盒與真圖高度不一致 ⇒ 捲動時掛載／卸載來回改高度，症狀「150% 滾輪往上捲不動、畫面上下抖」＋ `ResizeObserver loop completed`。`<img>` 不受影響（百分比上限的替換元素內容貢獻算 0），放大態不受影響（`width:100%` 無絕對寬）。
   - 倍率列**水平置中**於圖片上緣（不貼邊角）：倍率改變圖寬時中線不動、上緣由錨定補償釘住 ⇒ 可原地連點。
   - 倍率列按鈕派發 bubbling `previewzoom`（`detail.dir` ±1／0，`detail.img` 當捲動錨點），controller 在容器上接；錨點補償與點圖放大共用 `_withImageAnchor`。只掛單張已佈局 img（同灰階鈕條件）。守護 `tests/unit/image_zoom*.test.js`、`screen_image_zoom.test.js`、`tests/e2e/offline/image_zoom.offline.spec.js`。
-- **圖片放大/縮小的捲動錨定（2026-07-25，CONFIRMED unit＋offline e2e）**：點內嵌預覽圖切換整頁 `.imagesEnlarged`（`src/render/screen.js#_onContainerClick`）會讓內容總高驟變，而 `.main` 的 `scrollTop` 不變 → 視窗相對文章整個位移，剛在看的那張圖跑出視野（實測放大態縮小後偏 ~1700px）。修法：click 當下（套用 class 之前 ⇒ 讀到的是**舊 layout**，正是 before 值）以被點的 img 為錨點記 `{topBefore,heightBefore,scrollBefore}`，切換完成後立刻用 `scroll_anchor.computeAnchoredScrollTop` 換算並寫回 `scrollTop`（同步、無閃爍）。錨定分兩式：圖頂仍在視窗內 ⇒ 維持固定間距；圖頂已捲出視窗上方（看大圖常態）⇒ 視窗頂端維持落在圖內同一比例處（縮小後必然仍在圖範圍內）。
+- **圖片放大/縮小的捲動錨定（CONFIRMED unit＋offline e2e）**：點內嵌預覽圖切換整頁 `.imagesEnlarged`（`src/render/screen.js#_onContainerClick`）會讓內容總高驟變，而 `.main` 的 `scrollTop` 不變 → 視窗相對文章整個位移，剛在看的那張圖跑出視野（實測放大態縮小後偏 ~1700px）。修法：click 當下（套用 class 之前 ⇒ 讀到的是**舊 layout**，正是 before 值）以被點的 img 為錨點記 `{topBefore,heightBefore,scrollBefore}`，切換完成後立刻用 `scroll_anchor.computeAnchoredScrollTop` 換算並寫回 `scrollTop`（同步、無閃爍）。錨定分兩式：圖頂仍在視窗內 ⇒ 維持固定間距；圖頂已捲出視窗上方（看大圖常態）⇒ 視窗頂端維持落在圖內同一比例處（縮小後必然仍在圖範圍內）。
   - **座標系鐵則**：量測一律 `offsetTop`/`offsetHeight`，**不可用 `getBoundingClientRect()`**——`.main` 整體被 `transform: scale()`、`img.hyperLinkPreview` 另被套反向 scale（`term_view.setTermFontSize`/`updateReverseScaleCss`），rect 含 transform，與 layout 座標的 `scrollTop` 不同尺規。`offsetTopWithin` 用「兩端各自沿 offsetParent 鏈累加後相減」，因 `#mainContainer` 未設 position、鏈會跳過它（單邊累加會多算）。
   - **已知限制**：只補償同步高度變化。錨點**上方**尚未載入完成的圖（未載入時只佔一行 `LoadingOverlay`）之後撐開仍會推走位置，本次未處理（需 ResizeObserver 限時校正，與使用者捲動/自動翻頁互動難測）。
   - 守護：`tests/unit/scroll_anchor.test.js`（算式＋offsetParent 鏈）＋ offline e2e `easy-reading.offline.spec.js`「點圖縮小後被點的圖仍在視野內」（stock-end.json 圖多；舊 code 實測 visible=-908 → 紅）。
-  - **`imagesEnlarged` 的唯一寫入點是 `ScreenController._setImagesEnlarged`，禁止直接賦值 `this._imagesEnlarged` 欄位**（性質同 `pttchrome.modalShown` 那條「推導值禁止直接賦值」）：圖片尺寸由容器 class 決定，欄位只是它的鏡像，還要連帶通知存活中佔位盒換 `sizeMode`。2026-09 踩過：`update()` 的換文章重置直接寫欄位 ⇒ class 留在放大態 ⇒ **每開一篇新文章都是大圖**、新文章第一次點圖是 no-op（toggle 到已有的 class）、且放大態高度被記進 `normal` 那格造成上面第 101 行那個「永久假空白」復活。該入口的早退守衛因此同時看 DOM 現況。守護 `tests/unit/screen_images_enlarged_reset.test.js`。
-- **長頁的捲動位置交給瀏覽器內建 scroll anchoring；佔位盒是 grid 疊層（2026-09，CONFIRMED unit＋offline e2e）**。使用者回報「多圖時在讀圖，按 PgUp 捲不上去、甚至來回跳」。
-  - **根因不是捲動計算，是我們自己把補償關掉了。** 實測（Chromium＋Firefox 一致）`.main` 上的內建 scroll anchoring 涵蓋得比自己算更全面：上方變高／變矮、程式化 `scrollTop -= 22*chh`、`transform:scale()`、整批列節點重建，`shift` 全是 0。唯一會打壞它的是**對「含有捲動錨點的那個元素或其祖先」寫一個值真的改變了的 `min-height`** —— 而舊碼的 `applyMinHeight` 寫的正是 `.inlinePreviewSlot` 自己，讀者停在圖片中間時錨點就在那個 slot 裡 ⇒ 命中規格的 suppression trigger ⇒ 當幀不補償。同一幀上方又有 slot 在掛載（替身盒 494px → 「讀取中…」56px），讀者被整整推走 **438px ＝ 一次 PgUp 的 76.6%**，兩張圖就吃掉一整次 PgUp。
+  - **`imagesEnlarged` 的唯一寫入點是 `ScreenController._setImagesEnlarged`，禁止直接賦值 `this._imagesEnlarged` 欄位**（性質同 `pttchrome.modalShown` 那條「推導值禁止直接賦值」）：圖片尺寸由容器 class 決定，欄位只是它的鏡像，還要連帶通知存活中佔位盒換 `sizeMode`（直接寫欄位 ⇒ class 留在放大態、每開一篇都是大圖、放大態高度被記進 `normal` 那格）。該入口的早退守衛同時看 DOM 現況。守護 `tests/unit/screen_images_enlarged_reset.test.js`。
+- **長頁的捲動位置交給瀏覽器內建 scroll anchoring；佔位盒是 grid 疊層（CONFIRMED unit＋offline e2e）**。
+  - **不要自己算捲動補償，也不要打壞內建的。** 實測（Chromium＋Firefox 一致）`.main` 上的內建 scroll anchoring 涵蓋得比自己算更全面：上方變高／變矮、程式化 `scrollTop -= 22*chh`、`transform:scale()`、整批列節點重建，`shift` 全是 0。唯一會打壞它的是**對「含有捲動錨點的那個元素或其祖先」寫一個值真的改變了的 `min-height`**（規格的 suppression trigger ⇒ 當幀不補償）—— 讀者停在圖片中間時錨點就在 slot 裡。
   - **硬不變量：`.inlinePreviewSlot` 與 `.inlinePreviewContent` 在 runtime 一律不得被寫 inline style。** 佔位高度一律寫在兄弟節點 `.inlinePreviewSpacer` 上。同理不要在捲動期間對 `.main` 寫 `transform`（Chromium 會抑制、Firefox 不會；目前只有 `setTermFontSize` 會寫，不在捲動路徑）。
   - DOM／CSS：`.inlinePreviewSlot { display:grid; grid-template-areas:"stack"; align-items:start }`，`.inlinePreviewContent`（React root／真圖／指示器）與 `.inlinePreviewSpacer`（`min-height` ＋替身盒）疊在同一個 grid area ⇒ slot 高度 = **max**(內容, 佔位)，不是相加。`display:grid`／`grid-area` 都是靜態 stylesheet 規則，runtime 永不改寫。
-  - **替身盒改住在 spacer 裡，而且撐到真圖佔到版面為止**（判準從「有沒有掛載」改成「內容裡有沒有 `offsetHeight>0` 的媒體」）：舊碼在 `mount()` 當下就拿掉它，可是那一刻內容只有 56px 的指示器，圖還要解析網址＋下載＋解碼（imgur 台灣 stall，產品端又**沒有**載入 timeout）⇒ 那就是 438px 塌陷的來源。替身盒只在量到過 `aspect`（真的載出過媒體）時存在，所以非媒體連結與從沒載成功過的圖不會因此留下假空白。
-  - **`ResizeObserver` 改觀察 `.inlinePreviewContent` 而不是 slot**：疊層之後 slot 高度取 max，spacer 撐著時「指示器 56px → 真圖 494px」不會改變 slot 高度 ⇒ 觀察 slot 就永遠收不到那次回報，實測高度也就永遠記不進 `pinned`。
-  - **`slot.offsetHeight` 比改版前高 1em 是預期差異**：grid item 建立 BFC，`.easyReadingImg { margin:0.5em auto }` 不再 collapse 到 slot 外面。**版面總高完全沒變**（實測 `[列][slot][列]` 三種內容都逐像素相同），量到的高度語意平移 1em，寫入端（`recordSlotHeight`）與消費端（spacer）同時搬，`sizeMemo` 是 page-lifetime 不持久化 ⇒ 無相容問題。
+  - **替身盒住在 spacer 裡，而且撐到真圖佔到版面為止**（判準是「內容裡有沒有 `offsetHeight>0` 的媒體」，不是「有沒有掛載」：掛載當下內容只有 56px 的指示器，圖還要解析網址＋下載＋解碼，產品端又**沒有**載入 timeout）。替身盒只在量到過 `aspect`（真的載出過媒體）時存在，所以非媒體連結與從沒載成功過的圖不會因此留下假空白。
+  - **`ResizeObserver` 觀察 `.inlinePreviewContent` 而不是 slot**：疊層之後 slot 高度取 max，spacer 撐著時「指示器 56px → 真圖 494px」不會改變 slot 高度 ⇒ 觀察 slot 就永遠收不到那次回報，實測高度也就永遠記不進 `pinned`。
+  - `.inlinePreviewSlot` 是 grid ⇒ grid item 建立 BFC，`.easyReadingImg { margin:0.5em auto }` 不 collapse 到 slot 外面（`slot.offsetHeight` 含這 1em，寫入端與消費端一致）。
   - `.inlinePreviewSpacer` 必須 `pointer-events:none`：它疊在內容上方且 DOM 順序在後，否則會吃掉「點圖放大」的點擊。
-  - 守護：`tests/unit/lazy_inline_preview.test.js`（「slot/content 全程 `style` 屬性為 null」「掛載那一刻高度不得塌陷」「取 max 不是相加」）＋ `tests/e2e/offline/easy_reading_scroll_jump.offline.spec.js`。後者的**必現環境是 `offline-slow`**（一般 offline 走瀏覽器快取，圖的 load 事件在 mount 的下一個 task 就回來、跨不過一次排版 ⇒ 量不到中間態）；舊碼在 slow 下的實錄是 `570,65,570,65,…`（65px ＝「讀取中…」指示器），那串來回正是使用者說的「來回跳」。
-- **`_scrollBy` 的下界維持 `mainContainer.clientHeight - chh*rows`，不要「改用捲動容器自己的 `scrollHeight - clientHeight`」（2026-09 實測後放棄，勿再嘗試）**：
-  - 內容項兩式是同一個值（實測 `stock-end`：`mainContainer.clientHeight` 2700 ＝ `.main.scrollHeight` 2700）⇒ 「佔位盒塌陷會讓它低估」對兩式一樣成立，換公式治不了那件事。
-  - 差別只在**視窗項**：`.main.clientHeight` 實測 730，比 `chh*rows`（24×30＝720）多 10px ⇒ 現行下界 1980 **高於**真正的 maxScroll 1970 ⇒ 到底之後 `_scrollBy` 仍回 `true`（Space 原地不動）。換成 1969 就會在到底時回 `false` ⇒ **`Space`／`→`／`↓`／`Enter` 直接 `leaveCurrentPost()` 把文章關掉** —— live e2e `easy-reading.spec.js`「第一則推文不消失」實測就是被這個關掉、畫面退回看板列表。
+  - 守護：`tests/unit/lazy_inline_preview.test.js`（「slot/content 全程 `style` 屬性為 null」「掛載那一刻高度不得塌陷」「取 max 不是相加」）＋ `tests/e2e/offline/easy_reading_scroll_jump.offline.spec.js`。後者的**必現環境是 `offline-slow`**（一般 offline 走瀏覽器快取，圖的 load 事件在 mount 的下一個 task 就回來、跨不過一次排版 ⇒ 量不到中間態）。
+- **`_scrollBy` 的下界維持 `mainContainer.clientHeight - chh*rows`，不要「改用捲動容器自己的 `scrollHeight - clientHeight`」（實測後放棄，勿再嘗試）**：
+  - 內容項兩式是同一個值 ⇒ 「佔位盒塌陷會讓它低估」對兩式一樣成立，換公式治不了那件事。
+  - 差別只在**視窗項**：`.main.clientHeight` 比 `chh*rows` 多 10px ⇒ 現行下界**高於**真正的 maxScroll ⇒ 到底之後 `_scrollBy` 仍回 `true`（Space 原地不動）。換成真 maxScroll 就會在到底時回 `false` ⇒ **`Space`／`→`／`↓`／`Enter` 直接 `leaveCurrentPost()` 把文章關掉**、畫面退回看板列表。
   - 要動這個邊界＝獨立的產品決策（並先補 `leaveCurrentPost` 的守護），不要順手夾在別的修復裡。守護：`tests/unit/easy_reading_logic.test.js` `describe("_scrollBy 的捲動下界")`。
-- **內嵌影片（`<video class="easyReadingVideo">`，2026-07-31）**：
-  - **尺寸上限比照圖片**（`main.css` `max-height:19em`/`max-width:39em`，`width`/`height` 留 `auto`）。舊值是固定 `width:640px` 無 `max-height` → 直式影片（480×854）高度撐到 1138px 遠超視窗，且影片不像圖片能捲著看，播放控制列被推出畫面即無法操作。**影片沒有 `img.hyperLinkPreview` 那種反向 scale**，故 19em 隨 `scaleY` 一起縮放 ≒ 視窗高八成（19em×26px ÷ 24 列×26px）。守護：offline e2e「影片不得超出可視範圍」（注入刻意超高的 video 替身量 rect，舊 CSS 實測紅）。
+- **內嵌影片（`<video class="easyReadingVideo">`）**：
+  - **尺寸上限比照圖片**（`main.css` `max-height:19em`/`max-width:39em`，`width`/`height` 留 `auto`）。不可固定寬度不設 `max-height`：直式影片會撐出視窗，影片不像圖片能捲著看，播放控制列被推出畫面即無法操作。**影片沒有 `img.hyperLinkPreview` 那種反向 scale**，故 19em 隨 `scaleY` 一起縮放 ≒ 視窗高八成（19em×26px ÷ 24 列×26px）。守護：offline e2e「影片不得超出可視範圍」（注入刻意超高的 video 替身量 rect，舊 CSS 實測紅）。
   - **退出全螢幕後把影片捲回視野**（`ImagePreviewer.jsx#useFullscreenScrollRestore`）：進全螢幕時 `<video>` 被提到全螢幕層、原位高度塌陷 → 內容總高驟減、`scrollTop` 被夾到新的 maxScroll；退出後高度回來但捲動位置回不去（症狀同上面的放大/縮小，文章跳到很後面）。**不沿用 `computeAnchoredScrollTop`**：原生全螢幕鈕攔不到，退出當下已無 before 值 → 改用可預期的 `scroll_anchor.computeCenteredScrollTop`（影片置中；比視窗高則上緣對齊），並在 `requestAnimationFrame` 內量測（退出的 layout 回復可能落在 `fullscreenchange` 之後）。座標系鐵則同上（`offsetTop`/`offsetHeight`）。守護：`tests/unit/inline_video_fullscreen.test.jsx`＋`scroll_anchor.test.js`。
 - **底部 padding**：`accumulatePageLines` 開頭統一設 `mainContainer.paddingBottom='1em'`（讓位給 footer overlay）；回列表/選單由 `hideEasyReadingOverlays` 清回 ''＋`scrollTop=0`（守護 `tests/unit/easy_reading_overlay_reset.test.js`；單頁文末行不被 overlay 遮的回歸見 offline `easy-reading.offline.spec.js`「末行不被底部狀態列 overlay 遮住」）。
-- **footer 鏡像（CONFIRMED 讀碼）**：footer overlay (`#easyReadingLastRow`) **不** hardcode 文字，而是每次 `accumulatePageLines` 末由 `_mirrorStatusRowToFooter` 把**真實狀態列** `buf.lines[rows-1]`（含「瀏覽 第 X/Y 頁 (n%)…(h)說明(←)離開」、真實顏色）以 `renderOverlayRow` 畫進去（`parseStatusRow` 守門，transient 空列不洗掉）。WHY：原 hardcode `(y)回應(X%)推文(←)離開` 少「(h)說明」、頁數/% 永遠靜止，與原生不一致（原生 100%／非 100% 都有 (h)說明，差別只在頁數反白）。
+- **footer 鏡像（CONFIRMED 讀碼）**：footer overlay (`#easyReadingLastRow`) **不** hardcode 文字，而是每次 `accumulatePageLines` 末由 `_mirrorStatusRowToFooter` 把**真實狀態列** `buf.lines[rows-1]`（含頁數／百分比／指令列、真實顏色）以 `renderOverlayRow` 畫進去（`parseStatusRow` 守門，transient 空列不洗掉）。WHY：指令列新舊兩代格式不同（協定 §11.10），hardcode 必然與原生不一致。
 
-### 游標／`#t` 的錨點契約（2026-08-28，不可退回算術模型）
+### 游標／`#t` 的錨點契約（不可退回算術模型）
 
 `#cursor`（閃爍游標）與 `#t`（注音輸入匡，本專案自己畫的那個 `border:double` 小框；OS
 的候選字清單錨在它上面）的位置**一律錨在「該列真正被畫出來的 DOM 節點」**，決策純函式在
@@ -252,8 +249,7 @@
 1. 不得把位置改回 `cur_y*chh` 這類算術模型。那是「這一列**應該**在哪」，畫面上是
    layout 算出來的「**實際**在哪」，兩者之間沒有守門 ⇒ 任一列 line box 被撐大（標註、
    inline-block baseline、`#mainContainer` 的 padding、字型還沒落地…）就整批脫鉤，
-   症狀就是**推文時游標戳出反白輸入匡**。三輪修復（`cbee3f5` → `865b828` → 把 `#cursor`
-   搬進 `.main`）拆的都是補償項，這是最後一層。
+   症狀就是**推文時游標戳出反白輸入匡**。
 2. 不得再引入第二套格線原點公式。舊的 `term_view.convertMN2XYEx`（`#t` 專用，多 `+10`
    與 `bbsViewMargin`、**完全不扣 `.main.scrollTop`**、縮放分支垂直原點漏算 10px）已刪除。
 3. 不得為了統一座標系而「composition 時把 `#t` `appendChild` 進 `.main`、結束再移出」：
@@ -266,9 +262,8 @@
    `showCursor()` → 才 `_forceRedraw()`），拿它解讀**上一幀留下來的 DOM** 必有窗口期會
    說謊；而且會誤殺列表好讀那條 `windowLines == null` 的 fallback（那一幀畫的就是
    `buf.lines`，`srow` 是對的）。判準只能取自「這一幀實際餵給 `<Screen>` 的 lines」。
-   2026-08-31 之前只有 `_gridRender` 一道守門，列表好讀因此把 `#t` 錨到 `.listBodyView`
-   深處、已捲出視野的一列（`rect.top` 大負數）⇒ 框被寫到視窗外、OS 候選字清單跟著跑掉
-   ⇒ 使用者回報「切到中文輸入法打字，整個畫面就卡住」。守護 `tests/unit/row_anchor.test.js`
+   只有 `_gridRender` 一道守門時，列表好讀會把 `#t` 錨到 `.listBodyView` 深處已捲出視野的一列
+   ⇒ OS 候選字清單跑到視窗外、像整個畫面卡住。守護 `tests/unit/row_anchor.test.js`
    ＋`easy-reading-list.offline.spec.js`「中文輸入法（離線）」。
 5. `_rowAnchor` **不做跨呼叫快取**。layout 會變的時機不只重繪與改字級（延遲載入的圖片
    落地、pref 切 CSS class、webfont 落地都會），任何以幀序號為鍵的快取都有吃到過期
@@ -297,57 +292,48 @@ scaleX / scaleY / dpr / fontsReady`，另有 `cursor.geom` 取樣（游標真的
 
 對應 `EasyReading._functionMode`(=`buf.easyReadingFunctionMode`)。**原則：底部互動不 hardcode、不逐選單 parse——原生畫什麼好讀就鏡像什麼**（與列表好讀的 functionMode 同概念，文章版獨立、更單純）。
 
-- **為何需要**：文章內按 `r` 回應／`X`/`%` 推文／`y` 收暫存檔，PTT 在 row22/row23 畫出選單（pageState 仍 3），但好讀仍渲染累積長頁＋footer，**蓋住選單**。舊作法靠 `curY==22`+`parseReplyText` 偵測「回應至」設 `showReplyText`，但畫選單文字(`changed`)與移游標到 row22(`posChanged`)可能不同 notify 視窗 → `curY` 閘漏接 → 選單不顯示（且到底 `reachedPageEnd` 時 `_onScreenSettled` 提早 return，無兜底）。**該路徑已於 2026-08-21 整條刪除**（見本節末）。
+- **為何需要**：文章內按 `r` 回應／`X`/`%` 推文／`y` 收暫存檔，PTT 在 row22/row23 畫出選單（pageState 仍 3），但好讀仍渲染累積長頁＋footer，**蓋住選單**。逐選單偵測（看游標列、parse 提示字）會因「畫選單文字」與「移游標」落在不同 notify 視窗而漏接，所以一律走鏡像。
 - **進入（鍵驅動）**：`_onKeyDownProcessUI` default 分支，凡**單字元鍵**(`e.key.length===1`)且非 leave-post 鍵→`_enterFunctionMode`：清 `sendCommandAfterUpdate`、存 `mainDisplay.scrollTop`、設 `_functionMode=true`、全列 dirty+`notify()` 立即重繪。**不** preventDefault（鍵照送 PTT）。僅 leave-post 鍵(`abf=+-[]ABF`)走 `leaveCurrentPost` 不進。
-  - **搜尋交給瀏覽器（pref `easyReadingBrowserFind`，預設開，2026-09）**：下一條的唯一例外。原生 `/` 在好讀下結構性不可用（`mf_search` 從 PTT 端目前頁起找，而指標在文末；找不到還跳末頁，協定 §13 P9），網頁又沒有 API 開瀏覽器尋找列 ⇒ **Ctrl+F**（真 Ctrl，不含 Alt remap）回 `'browser'`：`term_view.onKeyDown` 就此 return，不 preventDefault、不落到 `_keyboard`（^F 會移 pmore 指標）；**`/`** 吞掉並 `flashListHint` 提示 Ctrl+F／⌘F（`platform.findShortcutLabel`）。翻頁替代鍵：空白／PgDn／Alt+F。只在好讀文章非 functionMode 生效（prompt 內 Ctrl+F 是編輯鍵）。鍵盤行為不分平台（Mac 的 Ctrl+F 也讓位）。決策純函式 `easy_reading.easyReadingFindKeyAction`，守護 `tests/unit/easy_reading_browser_find.test.js`。pref 關 ⇒ 舊行為（`/` 進 functionMode 送 PTT，其後的往回跳由 seekBack 接住）。
+  - **搜尋交給瀏覽器（pref `easyReadingBrowserFind`，預設開）**：下一條的唯一例外。原生 `/` 在好讀下結構性不可用（`mf_search` 從 PTT 端目前頁起找，而指標在文末；找不到還跳末頁，協定 §13 P9），網頁又沒有 API 開瀏覽器尋找列 ⇒ **Ctrl+F**（真 Ctrl，不含 Alt remap）回 `'browser'`：`term_view.onKeyDown` 就此 return，不 preventDefault、不落到 `_keyboard`（^F 會移 pmore 指標）；**`/`** 吞掉並 `flashListHint` 提示 Ctrl+F／⌘F（`platform.findShortcutLabel`）。翻頁替代鍵：空白／PgDn／Alt+F。只在好讀文章非 functionMode 生效（prompt 內 Ctrl+F 是編輯鍵）。鍵盤行為不分平台（Mac 的 Ctrl+F 也讓位）。決策純函式 `easy_reading.easyReadingFindKeyAction`，守護 `tests/unit/easy_reading_browser_find.test.js`。pref 關 ⇒ 舊行為（`/` 進 functionMode 送 PTT，其後的往回跳由 seekBack 接住）。
   - **pmore 功能鍵一律走 functionMode，勿再加 swallow list**：`h` 說明/`o` 選項/`/` 搜尋/`;` 指定頁/`,.<>` 左右捲等鍵由 functionMode 鏡像原生選單（守護 unit `easy_reading_logic.test.js`「pmore function keys enter functionMode」）。`Tab`(`stop=true`)與 ctrl `"@^_?"` 例外（Tab 放行涉 browser focus、不可同時 preventDefault+送鍵）。
   - **進入（貼上驅動）**：貼上不是按鍵 ⇒ 上面那條 `e.key.length===1` 規則抓不到，PTT 因應 `#`／`/`／`;` 等貼上內容畫的 prompt 會被好讀長頁蓋住（使用者看不到反應）。故 `App.onPasteDone` 在送出前補一次 `easyReading._enterFunctionMode()`（該函式自帶 `_functionMode` 早退，重複呼叫無害）。列表好讀的同源缺口見 `docs/easy-reading-list.md` 不變量 12b。
-  - **進入（文字輸入驅動＝IME，2026-08-22）**：中文 IME 開著時 keydown 的 `e.key` 是 `'Process'`（keyCode 229）⇒ 上面那條 `e.key.length===1` 規則同樣抓不到；字元改由 input 事件送出（`term_view.onInput` **不看 keyCode**，任何字元都往下走；舊碼那段 `easyReadingKeyDownKeyCode == 229 && value != 'X'` 就丟棄字元的特判已於 2026-08-31 確認為死碼並刪除 —— 唯一寫入點在 `onKeyDown` 內，而 `keyEventFilter` 第一條就把 229 擋在外面）→ `onTextInput` → `_convSend` ⇒ PTT 開了推文 prompt、好讀長頁卻原封不動 ⇒ **看不到輸入框、打字卻有效**（回報症狀「有時按 X 推文輸入框不顯示，切回原生就看得到字」；「有時」＝IME 開著時）。故 `term_view.onTextInput` 這條共用漏斗開頭一律呼叫 `easyReading.noteTextInput()`（gate：`_enabled && startedEasyReading`），keydown／IME／貼上三個入口對 functionMode 行為一致。守護 `tests/unit/easy_reading_text_input.test.js`＋`tests/unit/term_view_text_input.test.js`＋`tests/e2e/offline/pref_close_in_prompt.offline.spec.js`。**列表好讀的同源缺口 2026-08-31 才補**（`ListSession.noteTextInput`，見 `docs/easy-reading-list.md` 不變量 12d）：漏斗裡兩個 `noteTextInput` 並存，列表那條回 true 就代表它接手了，不可以再 `_convSend`。
-  - **進入（滑鼠點功能鍵驅動，2026-08-23）**：畫面底部的 `(y)回應`／`(X)推文`／`(h)按鍵說明` 現在是可點按鈕（pref `mouseFunctionKeys`，見 `docs/mouse.md`「功能鍵按鈕」），點擊同樣不是按鍵、也不是文字輸入 ⇒ 上面三條規則全部抓不到，症狀與貼上／IME 那兩次完全相同（PTT 開了 prompt、好讀長頁原封不動 ⇒ 看不到輸入框）。故送鍵漏斗 `App.onFunctionKey` 在`view._send` **之前**呼叫 `easyReading._enterFunctionMode()`，由純函式 `function_key_plan.functionKeyClickPlan({bytes, mode})` 決策。**`\x1b[D`（`[←]離開`／`[q]`）例外**：走 `stopEasyReading()`，與鍵盤 ArrowLeft 同一條路（`_onKeyDownProcessUI` 的 `case 'ArrowLeft'`），否則離開文章時會先閃一下原生 24 列。守護 `tests/unit/function_key_click_plan.test.js`＋`tests/e2e/offline/function_keys.offline.spec.js`。
+  - **進入（文字輸入驅動＝IME）**：中文 IME 開著時 keydown 的 `e.key` 是 `'Process'`（keyCode 229）⇒ 上面那條規則抓不到；字元改由 input 事件送出（`term_view.onInput` → `onTextInput` → `_convSend`）⇒ PTT 開了推文 prompt、好讀長頁卻原封不動（看不到輸入框、打字卻有效）。故 `term_view.onTextInput` 這條共用漏斗開頭一律呼叫 `easyReading.noteTextInput()`（gate：`_enabled && startedEasyReading`），keydown／IME／貼上三個入口對 functionMode 行為一致。守護 `tests/unit/easy_reading_text_input.test.js`＋`tests/unit/term_view_text_input.test.js`＋`tests/e2e/offline/pref_close_in_prompt.offline.spec.js`。列表好讀同一個漏斗有 `ListSession.noteTextInput`（`docs/easy-reading-list.md` 不變量 12d）：兩個並存，列表那條回 true 就代表它接手了，不可以再 `_convSend`。
+  - **進入（滑鼠點功能鍵驅動）**：畫面底部的 `(y)回應`／`(X)推文`／`(h)說明` 是可點按鈕（pref `mouseFunctionKeys`，見 `docs/mouse.md`「功能鍵按鈕」），點擊不是按鍵、也不是文字輸入 ⇒ 上面三條規則全部抓不到。故送鍵漏斗 `App.onFunctionKey` 在`view._send` **之前**呼叫 `easyReading._enterFunctionMode()`，由純函式 `function_key_plan.functionKeyClickPlan({bytes, mode})` 決策。**`\x1b[D`（`[←]離開`／`[q]`）例外**：走 `stopEasyReading()`，與鍵盤 ArrowLeft 同一條路（`_onKeyDownProcessUI` 的 `case 'ArrowLeft'`），否則離開文章時會先閃一下原生 24 列。守護 `tests/unit/function_key_click_plan.test.js`＋`tests/e2e/offline/function_keys.offline.spec.js`。
 - **鍵流**：`term_view.onKeyDown` gate 加 `&& !buf.easyReadingFunctionMode` → functionMode 期間全鍵直通原生（含 Enter，在原生 prompt/編輯器操作）。
 - **渲染**：`term_view.redraw` **最高優先**分支 `useEasyReadingMode && easyReadingFunctionMode` → `hideEasyReadingOverlaysKeepPage()`(藏 overlay＋清 `#mainContainer` 的 `paddingBottom`、**不清 pageLines**)＋`mainDisplay.scrollTop=0`＋`_gridRender=true`＋`_renderScreenLines(buf.lines)` 整頁原生 24 列 LIVE。**關鍵：不可用 `hideEasyReadingOverlays`**（它清 `pageLines=[]`，退出需重抓整篇、PTT 已在文末 End no-op → 不可行）。
-- **不變量：原生鏡像期間畫面必須不可捲**（`.main` 的 `scrollHeight <= clientHeight`）。`accumulatePageLines` 每頁都在 `#mainContainer` 留 `paddingBottom:1em`（替 footer overlay 讓位），原生鏡像沒有 overlay，留著它 `.main`（height=`chh*rows+10`、`overflow-y:auto`）就還有 **`chh-10` px 可捲**；而 `App.mouse_scroll` 在 `pageState==3` 時**直接 return 不 preventDefault**（推文提示畫面的 pageState 仍是 3）⇒ 滾輪真的把輸入列捲上去，絕對定位的 `#cursor` 卻不會跟著動 ⇒ **推文時閃爍游標戳出反白輸入匡**（2026-08-20；`redraw` 的 `scrollTop=0` 只在「有內容變動的幀」跑，停手不打字時偏移就停在那裡，離開文章才被 `hideEasyReadingOverlays` 清掉 → 症狀是「有時候、非特定文章、重進就好」）。故 `hideEasyReadingOverlaysKeepPage` 也要清 padding；回好讀時 `accumulatePageLines` 會設回 `1em`，且排在 `_evalFunctionModeExit('resume')` 還原 `_savedScrollTop` 之前，捲動位置照舊。守護：`tests/e2e/offline/cursor_shape.offline.spec.js`。
-  - **2026-08-21 起這條不再是游標正確性的依賴**：`#cursor` 已搬進 `.main`（見 `docs/enhanced-addon.md` 踩坑 A），與列共用同一個捲動座標系，捲了也不會脫鉤。清 padding 仍保留 —— 原生鏡像畫面本來就不該有可捲距離。
+- **不變量：原生鏡像期間畫面必須不可捲**（`.main` 的 `scrollHeight <= clientHeight`）：`accumulatePageLines` 每頁都在 `#mainContainer` 留 `paddingBottom:1em`（替 footer overlay 讓位），原生鏡像沒有 overlay，留著它就還有 `chh-10` px 可捲；`App.mouse_scroll` 在 `pageState==3` 時**直接 return 不 preventDefault** ⇒ 滾輪會把輸入列捲上去。故 `hideEasyReadingOverlaysKeepPage` 也要清 padding；回好讀時 `accumulatePageLines` 會設回 `1em`，且排在 `_evalFunctionModeExit('resume')` 還原 `_savedScrollTop` 之前。守護：`tests/e2e/offline/cursor_shape.offline.spec.js`。
   - **`view._gridRender` 語意**：這一幀的 `.main` 裝的是不是固定格線的一整螢幕（原生／functionMode 鏡像／列表好讀視窗）。好讀累積長頁為 `false`，此時 `buf.cur_y` 指不到任何一列 ⇒ `_applyCursorVisibility` **整個隱藏閃爍游標**（第三個 OR 來源）。旗標只由真的重畫畫面的 redraw 分支設定。
   - **已知洞（未修）**：`App.setBBSCmd` 的好讀分支只看 `useEasyReadingMode && startedEasyReading`、**沒有排除 functionMode**，所以理論上滾輪會去捲一個原生鏡像畫面。現行路徑走不到它（`mouse_scroll` 在 `pageState==3` 就早退），且改成在 functionMode 送 `[5~`/`[6~` 會讓 page 鍵進到 `getdata` 提示，屬行為改動，故留著。
 - **退出（內容判定，settle 驅動）**：`_onChanged` functionMode 時早退（不跑翻頁機）；`_onScreenSettled` functionMode 時走 `_evalFunctionModeExit`→純函式 `functionModeExitDecision({pageState,isStatusRow,curY,lastRowNum})`（`easy_reading.js` 頂部 export，unit 守護）：
   - `resume`：`pageState==3 && isStatusRow && curY==lastRowNum`（回乾淨文章頁）→ `_functionMode=false`、`prevPageState=3`+dirty+`notify()`（`accumulatePageLines` 接續分支、`findPageOverlap` 對同畫面去重成 no-op append → 長頁無痕恢復）、還原 `scrollTop`。
   - `leave`：`pageState==1||2`（settle 進選單/列表，使用者離篇）→ `_functionMode=false`、`startedEasyReading=false`、`leaveCurrentPost()`、重繪原生列表；下一篇由既有 settle 重啟。
   - `stay`：其餘（選單/編輯器/pass 5/6/0/transient）→ 續鏡像。
-  - **`resume` ＋剛看過 pmore 設定頁 ⇒ 改走 `reenterFromTop()`（整篇重讀），不走上面的續接**（2026-09-05）。`\` 快速設定／`o` 完整設定改的是 `bpref`（rawmode 色彩顯示方式、`w` 斷行、`l` 分隔線、`t` 傳統狀態列），**整篇文章的呈現與行數全變**，而累積模型與 rawmode 正交：離開設定頁時 pmore 只重畫「目前這一頁」，「預設格式化 ↔ 純文字」的行號又完全相同（實錄：切換前後都是 `第 33~55 行`）⇒ `resolvePageOverlap` 算出 `kStatus == maxK` ⇒ `begin === newRows.length` ⇒ **一列都不 append**⇒ `pageLines` 仍是舊 rawmode 的舊 chars ⇒ 使用者看到的是「必須重進文章才生效」。切「原始ANSI控制碼」更糟：離開後停在 66%，翻頁狀態機把新格式的推文接在舊格式的長頁尾巴後面（同一批推文出現兩次、格式還不同），`findPageOverlap` 的內容比對救不了（兩種模式的列文字根本不同）。
+  - **`resume` ＋剛看過 pmore 設定頁 ⇒ 改走 `reenterFromTop()`（整篇重讀），不走上面的續接**。`\` 快速設定／`o` 完整設定改的是 `bpref`（rawmode 色彩顯示方式、`w` 斷行、`l` 分隔線、`t` 傳統狀態列），**整篇文章的呈現與行數全變**，而累積模型與 rawmode 正交：離開設定頁時 pmore 只重畫「目前這一頁」，「預設格式化 ↔ 純文字」的行號又完全相同（實錄：切換前後都是 `第 33~55 行`）⇒ `resolvePageOverlap` 算出 `kStatus == maxK` ⇒ `begin === newRows.length` ⇒ **一列都不 append**⇒ `pageLines` 仍是舊 rawmode 的舊 chars ⇒ 使用者看到的是「必須重進文章才生效」。切「原始ANSI控制碼」更糟：離開後停在 66%，翻頁狀態機把新格式的推文接在舊格式的長頁尾巴後面（同一批推文出現兩次、格式還不同），`findPageOverlap` 的內容比對救不了（兩種模式的列文字根本不同）。
     - 判準**判畫面不判按鍵**（改 rawmode 的入口有 `\`、`|`、`1`/`2`/`3` 三組，按鍵層看不全）：`_onScreenSettled` 開頭一律 `_notePmorePrefScreen()` 掃**整個畫面**（`pmore_pref.js#pmorePrefScreenSeen`＝含 `piaip's more` 且含「設定」；說明頁標題是「瀏覽程式使用說明」⇒ 自然排除），命中且在 functionMode 就立 `_pmorePrefSeen`。**不綁死列號**：快速設定頁在 row 21、完整設定頁在 row 15，`t_lines` 一變就位移（`docs/pttbbs-screen-protocol.md` §14.1 Q7）。**也不要改用「比對切換前後的總行數／百分比」**——`預設 ↔ 純文字` 行數相同，抓不到，正是最常用的那條路。
     - `_pmorePrefSeen` 的清除點：`_evalFunctionModeExit` 的兩個分支＋`_resetPagingState`（涵蓋 `leaveCurrentPost`／`exitEasyReading`／`enterEasyReading`／文章邊界）。少一個 ⇒ 按過一次 `\` 之後，之後**每個** prompt（推文／回應／搜尋…）退出時都會誤觸整篇重讀。
     - 同一條路順手把選中的 rawmode 記進 `_rawMode`（`parseRawModeFromPrefRow`，選中項的數字後面緊接 `*`），給「開燈」按鈕的標籤用；好讀關著時也照掃（原生模式的按鈕也要跟得上）。**沒有逃生門**（不做「只有行數改變才重讀」的最佳化，理由同上）。守護 `tests/unit/easy_reading_pmore_pref.test.js`＋`pmore_pref_screen.test.js`。
 - **enter/exit/leaveCurrentPost** 皆重置 `_functionMode=false`+`_savedScrollTop=null`。
-- **但「關設定頁」不准重置（2026-08-22，全黑 bug）**：`PrefModal` 的 X／點空白／Esc 全走 `onPrefSaveImpl` → `App.switchToEasyReadingMode(view.useEasyReadingMode)`，它原本無條件 `leaveCurrentPost()`（含清 `_functionMode`）＋清 `pageLines`。使用者若正停在 prompt 上（`X` 推文／`r` 回應／編輯器）：`_functionMode` 被清 ⇒ `^L` 的整頁重繪落進好讀文章分支 ⇒ 但 prompt 幀的游標不在 `(rows-1, cols-1)` ⇒ `accumulatePageLines` 的 P6 complete gate 不成立 ⇒ `decideAccumulateBranch` 回 `skip` ⇒ `pageLines` 維持 `[]` ⇒ **渲染 0 列＝整頁全黑**；之後每一幀游標都在 prompt 上，`complete` 永遠不成立 ⇒ 只能離開文章再進（100% 複現）。修法：決策抽成純函式 `switchModePlan({doSwitch,functionMode,pageState})`（`easy_reading.js` 頂部 export），functionMode 時**只送 `^L`**——不 `leaveCurrentPost`、不清 `pageLines`、不送 `\x1b[D\x1b[C`（那在 vgets 裡是左右移輸入游標，錄檔實測回 BEL）。`^L` 一律安全：pttbbs `system_key_hook`（`mbbsd/io.c`）把 `Ctrl('L')` 攔成 `redrawwin()+refresh()` 並回 `KEY_INCOMPLETE`，prompt 底下也只是重繪。守護 `tests/unit/switch_mode_plan.test.js`＋offline e2e。
+- **但「關設定頁」不准重置（否則整頁全黑）**：`PrefModal` 的 X／點空白／Esc 全走 `onPrefSaveImpl` → `App.switchToEasyReadingMode(view.useEasyReadingMode)`，它原本無條件 `leaveCurrentPost()`（含清 `_functionMode`）＋清 `pageLines`。使用者若正停在 prompt 上（`X` 推文／`r` 回應／編輯器）：`_functionMode` 被清 ⇒ `^L` 的整頁重繪落進好讀文章分支 ⇒ 但 prompt 幀的游標不在 `(rows-1, cols-1)` ⇒ `accumulatePageLines` 的 P6 complete gate 不成立 ⇒ `decideAccumulateBranch` 回 `skip` ⇒ `pageLines` 維持 `[]` ⇒ **渲染 0 列＝整頁全黑**；之後每一幀游標都在 prompt 上，`complete` 永遠不成立 ⇒ 只能離開文章再進（100% 複現）。修法：決策抽成純函式 `switchModePlan({doSwitch,functionMode,pageState})`（`easy_reading.js` 頂部 export），functionMode 時**只送 `^L`**——不 `leaveCurrentPost`、不清 `pageLines`、不送 `\x1b[D\x1b[C`（那在 vgets 裡是左右移輸入游標，錄檔實測回 BEL）。`^L` 一律安全：pttbbs `system_key_hook`（`mbbsd/io.c`）把 `Ctrl('L')` 攔成 `redrawwin()+refresh()` 並回 `KEY_INCOMPLETE`，prompt 底下也只是重繪。守護 `tests/unit/switch_mode_plan.test.js`＋offline e2e。
 - **第二道防線（防黑守門）**：`term_view.redraw` 的好讀文章分支在 `accumulatePageLines()` 後若 `buf.pageLines` 仍為空，改鏡像原生 24 列（與 functionMode 分支同構），**不把空陣列交給 renderer**。任何路徑造成「累積為空卻還在好讀分支」都不會再全黑。
-- **舊 reply/push overlay 路徑已刪除（2026-08-21）**：`_onKeyDownProcessUI` 的 default 分支對**任何單字元鍵**先 `_enterFunctionMode()`，而 `_onChanged` 在 functionMode 下第一行就 return、`redraw` 又把 functionMode 分支排在最前面 ⇒ 那兩個旗標恆 false、分支永不觸發。已一併移除：
-  - `buf.easyReadingShowReplyText` / `easyReadingShowPushInitText` 兩旗標（`term_buf` 初始化、`easy_reading` 的 `bindProperty`）
-  - `nextEasyReadingRowState` 的 `isReqNotMetRow`/`isPushInitRow`/`isReplyRow` 輸入與對應 branch（現在只認「游標停在末列末欄」的完整幀，其餘一律 `halt`）
-  - `term_view.redraw` 兩條 overlay 分支、`updateEasyReadingReplyRow`/`updateEasyReadingPushInitRow`、`#easyReadingReplyRow` div 與其 CSS
-  - `term_view.onKeyDown`/`onInput` 兩處 `!showReplyText && !showPushInitText` gate（恆真）
-  - `string_util.parseReplyText` / `parseReqNotMetText`（唯二消費者就是這條路徑）。`parsePushInitText` 保留 —— `image_upload.js` 還要用它判斷推文輸入列。
+- **不要重新加回「逐選單 overlay」（舊 reply/push overlay 路徑已整條刪除）**：`_onKeyDownProcessUI` 對任何單字元鍵先 `_enterFunctionMode()`，`_onChanged` 在 functionMode 下第一行就 return、`redraw` 又把 functionMode 分支排在最前面 ⇒ 那種 overlay 永不觸發。推文輸入列的判讀一律走 `push_screen.classifyPushScreen`。
 
 **已到底時原生 End 是 no-op → 必附 `^L`**：好讀已自動翻頁到**底**時，實際游標在最後頁，再送原生 End(`\x1b[4~`) PTT **不回應不重繪** → 必須另送 `^L`(`\x0c`, Ctrl-L)強制全頁重繪。`switchToEasyReadingMode()`(無參數)已內含 `^L`(`pttchrome.jsx`)。
 
-## 送鍵閘門：延後，不是丟棄（CONFIRMED unit＋live 量測）
+## 送鍵閘門：延後，不是丟棄（CONFIRMED unit）
 
 好讀狀態機自己送的鍵**繞過 CommandQueue**，所以線上有序列化交易時一個 byte 都不准送（`_wireBusy()` = `aidNavigation.active || commandQueue.inFlightKind || longPush.busy`；理由與兩個實測症狀見 `easy_reading._send` 註解與 `docs/deep-link.md`）。**但「不准送」必須是延後，不能是丟棄**——
 
-- **為何丟棄一定出事**：文章落地的那一個 settle 上，執行順序是 `pageStateSettled`→好讀開機並送第一個 PageDown →`screenSettled`→好讀（同頁 sig ⇒ wait）→**最後**才是 `list_session`→`queue.onSettle`→`open-enter` 完成。這個順序是 `pttchrome.jsx` 的「ORDER MATTERS」刻意保證的（`ensureEnabledOnArticle` 要 `_enabled` 已定案），所以**好讀的第一個 PageDown 必然撞上仍在飛的 `open-enter`／`aid-open`**。舊碼在 `_send` 前就寫好 `_inFlightSig`/`_inFlightSentAt` 並 `_armWatchdog` ⇒ 留下一筆假 in-flight ⇒ 只剩 620ms（`PAGE_DOWN_GRACE_MS+20`）的 watchdog 能救。**live 量測 2026-08-17：修前 638ms，修後 20ms**（`blocked` 計數 2、`onWireIdle` 1 次）。且 `PAGE_DOWN_MAX_RETRIES=1`，那次 retry 若又撞上別的交易就直接 `giveup` ⇒ 整篇停在第一頁。
+- **為何丟棄一定出事**：文章落地的那一個 settle 上，執行順序是 `pageStateSettled`→好讀開機並送第一個 PageDown →`screenSettled`→好讀（同頁 sig ⇒ wait）→**最後**才是 `list_session`→`queue.onSettle`→`open-enter` 完成。這個順序是 `pttchrome.jsx` 的「ORDER MATTERS」刻意保證的（`ensureEnabledOnArticle` 要 `_enabled` 已定案），所以**好讀的第一個 PageDown 必然撞上仍在飛的 `open-enter`／`aid-open`**。丟棄（並先寫好 in-flight 狀態）會留下一筆假 in-flight，只剩 620ms 的 watchdog 能救；`PAGE_DOWN_MAX_RETRIES=1`，那次 retry 若又撞上別的交易就直接 `giveup` ⇒ 整篇停在第一頁。
 - **機制**：`_maybeSendPageDown` **開頭**就 `_wireBusy()` 早退（決策連跑都不跑），把 bytes 存進 `_deferredPageDownKeys` 並回傳 `'blocked'`；交易狀態三件套與 watchdog **完全不動**。線路真的空了由 `CommandQueue.onIdle`（opt-in，`pttchrome.jsx` 接到 `easyReading.onWireIdle`）叫醒補送。
 - **`onIdle` 必須在 `_maybeSendNext()` 之後判定**：`open-jump` 的 `onDone` 會接著 enqueue `open-enter`，那時線路根本沒空過；早一步通知等於補送到下一個指令頭上。`flush()` 只在原本非 idle 時才通知。
 - **補送是自我保持、不是重試迴圈**：`onWireIdle` 時若仍 busy，`_maybeSendPageDown` 會把 bytes 原封存回 deferred，等下一次通知。沒有 timer。
 - **per-article**：`_deferredPageDownKeys` 由 `_resetPagingState` 清（與 `_pendingScrollRestore`／`_pendingEnableOnArticle` 同規）——跨文章帶過去就是憑空多送一次 PageDown（P4）。
-- **閘門的每一個來源都必須有配對的喚醒事件**。`_wireBusy()` 現在是 `aidNavigation.active || commandQueue.inFlightKind || longPush.busy`，而 **`longPush.busy` 是唯一一個 queue 管不到的**：`armed`（探完路、使用者在輸入框打字）與冷卻倒數（最長 240 秒）期間 queue 空著、`onIdle` 早就發過了，`busy` 要等到關框（`disarm`）才翻 false。所以它得自己通知——`long_push_session._releaseWire()` → `onWireIdle({ force: true })`。**症狀（2026-09-17 錄製檔 `ptt-debug-20260917-221112`）：按 X 叫出長推文再取消，文章永遠停在當前頁、怎麼捲都不會讀到結尾**；指紋是最後三筆 `easyReading.pageDown` 全為 `{action:"blocked", inFlightKind:null}`（inFlightKind 已經是 null 卻還是被擋 ⇒ 擋人的是 `longPush.busy`）。死結成立的原因是沒送鍵就沒有新幀，不會再評估第二次。
+- **閘門的每一個來源都必須有配對的喚醒事件**。`_wireBusy()` 現在是 `aidNavigation.active || commandQueue.inFlightKind || longPush.busy`，而 **`longPush.busy` 是唯一一個 queue 管不到的**：`armed`（探完路、使用者在輸入框打字）與冷卻倒數（最長 240 秒）期間 queue 空著、`onIdle` 早就發過了，`busy` 要等到關框（`disarm`）才翻 false。所以它得自己通知——`long_push_session._releaseWire()` → `onWireIdle({ force: true })`；否則按 X 叫出長推文再取消，文章永遠停在當前頁（沒送鍵就沒有新幀，不會再評估第二次）。
 - **`force` 的語意**：連 `_deferredPageDownKeys` 都不需要（取消長推文會退出文章再 ⏎ 重開，那個文章邊界的 `_resetPagingState` 已經把它清掉了），直接拿 `\x1b[6~` 重新跑一次決策。安全性完全靠 `nextPageDownDecision`：`functionMode`／非完整幀／非狀態列 → `none`，`pagePercent>=100` → `done`，同頁簽章未過 grace → `wait`，所以多叫幾次不可能違反 P4。**未來若再加一個 `_wireBusy` 來源，一併問自己「它放手時誰來通知」**；**以及：`_send` 下游若有人吞掉 byte，交易狀態一格都不可以先寫**（見下一條）。
-- **閘門不只在 `_wireBusy`：機器 byte 誤入使用者出口**（2026-09-20，同症狀第 2 次，`78c276a` 引入）。
-  - **症狀**：從好讀列表進文章，第一次自動翻頁固定卡 ~620ms；另外每開一篇都閃一次假的「好讀列表：開啟文章中，請稍候…」。
-  - **根因**：`78c276a` 把**使用者按鍵**的 cursor-sync 守門（`adoptUserBytes`）掛在 `term_view._send`，而 `easy_reading._send` 這條**機器狀態機**當時也走 `view._send` ⇒ 好讀的 PageDown 被列表 session 當成使用者按鍵。窗口是**決定性**的：`queue.onSettle` → `queue.done` → `_maybeIdle` → `onWireIdle` 同步跑在 `list_session._dispatch`（`handoff-article`）**之前** ⇒ 送鍵當下 owner 仍是 `article-list`、state 仍是 `opening` ⇒ `decideUserBytes` 判 `SWALLOW` ⇒ 零 byte 上線。
-  - **錄製檔指紋**（`ptt-debug-20260920-023652`）：`blocked` 之後緊接一筆 `retry sinceSentMs≈626`，而**中間零 SEND**。`action:'send'` 刻意不記 log，所以「被下游吞掉」在捕捉裡原本完全不可見 ⇒ 新增 `action:'sendFailed'` 補這個盲點。
-  - **兩層修法**：①機器 byte 移到 `App.sendMachineBytes`（`conn.send`，不經使用者守門；出口清單見 `vtkbd_send_state.js` 檔頭）。②**stamp-after-send**：`_send` 回傳「byte 有沒有真的上線」，`_maybeSendPageDown` 只在送出成功後才寫 `_inFlightSig`/`_pageDownRetries`/`_inFlightSentAt` 並上膛 watchdog；失敗就與 `_wireBusy()` 早退逐項相同。同型改動：`_healAtLine`（失敗回滾 `easyReadingHealInFlight` 與 `_healGotoCount`）、`_healFromTop`（改成**先送再拆**，消掉「Home 被吞掉 ⇒ 只剩空白畫面且無 watchdog」那個最壞情況）、`reenterFromTop`。
-  - **為什麼②是結構性解**：a3aaa6e 只把 `_wireBusy()` 搬到函式最前面，等於列舉當時已知的閘門；②改成「送不出去就是事實」，下一次有人在線路出口加東西，最壞只是等下一次 idle 補送，不會再有 620ms 死時間，也不會燒掉 `PAGE_DOWN_MAX_RETRIES=1` 的唯一額度。
-  - **已知邊界（刻意的取捨）**：待補送的鍵只由 `CommandQueue.onIdle`／`longPush._releaseWire({force})`／後續任何一幀喚醒。若未來有閘門拒收 byte**又**不產生新幀也不發 idle，翻頁會一直等而不是 620ms 後重試。修完後唯一的拒收來源是「沒連線」（那時什麼都不會動），所以這個邊界目前不可達。
+- **閘門不只在 `_wireBusy`：機器 byte 不可走使用者出口**。
+  - **機器 byte 一律走 `App.sendMachineBytes`**（`conn.send`，不經使用者按鍵守門；出口清單見 `vtkbd_send_state.js` 檔頭）。走 `term_view._send` 會被 `list_session.decideUserBytes` 當成使用者按鍵：`queue.onSettle` → `onWireIdle` 同步跑在 `list_session._dispatch`（`handoff-article`）**之前**，送鍵當下 owner 仍是 `article-list`、state 仍是 `opening` ⇒ 判 `SWALLOW` ⇒ 零 byte 上線。
+  - **stamp-after-send**：`_send` 回傳「byte 有沒有真的上線」，`_maybeSendPageDown` 只在送出成功後才寫 `_inFlightSig`/`_pageDownRetries`/`_inFlightSentAt` 並上膛 watchdog；失敗就與 `_wireBusy()` 早退逐項相同。同型：`_healAtLine`（失敗回滾 `easyReadingHealInFlight` 與 `_healGotoCount`）、`_healFromTop`（**先送再拆**）、`reenterFromTop`。這是結構性解：下一次有人在線路出口加東西，最壞只是等下一次 idle 補送，不會燒掉唯一的重試額度。被下游吞掉在捕捉裡記 `action:'sendFailed'`。
+  - **已知邊界（刻意的取捨）**：待補送的鍵只由 `CommandQueue.onIdle`／`longPush._releaseWire({force})`／後續任何一幀喚醒。若未來有閘門拒收 byte**又**不產生新幀也不發 idle，翻頁會一直等。現行唯一的拒收來源是「沒連線」。
   - **不要改成「把 `onIdle` 延到 microtask 讓 `_dispatch` 先跑」**：那只讓症狀消失、機器 byte 仍留在使用者出口，還多一條隱性順序耦合疊在 `pttchrome.jsx` 的 ORDER MATTERS 上。
   - 守護：`tests/unit/easy_reading_send_gate.test.js`（「兩條出口」＋「送不出去就等同 blocked」兩個 describe，harness 直接呼真的 `decideUserBytes`）、`tests/unit/user_key_send_wiring.test.js`（靜態接線）。**offline e2e 覆蓋不到這條**，理由見 `docs/offline-replay-testing.md`。
 - **gap 自癒同理但更嚴**：`_healGap` 開頭 `_wireBusy()` 直接 return 且**刻意不清 `easyReadingGapDetected`**（下次 settle 重試）。`_healFromTop` 會先清 `pageLines` 才送 Home，被 `_send` 吞掉就只剩空白畫面，而它沒有 watchdog 兜底。
@@ -359,25 +345,26 @@ scaleX / scaleY / dpr / fontsReady`，另有 `cursor.geom` 取樣（游標真的
 
 導航 = 共用 `commandQueue` 的序列（每步 expect 內容判定、fullRepaint、失敗可見降級）。**前導段（僅當 pager footer 判不出 `currstat == READING`）**：`string_util.parsePagerFooterContext` 讀末列，含「回應」才敢直接送 `s`/`#`（`more.c:102-112` 把兩鍵綁死 READING；站內信 RMAIL 會**逐鍵當快捷鍵吃掉**板名）。判不出時一律降級：`\x1b[D` 一次一鍵退到 `【主功能表】`（上限 `MAX_ESCAPE_STEPS=6`，每步用整螢幕簽章確認真的退了一層），再走 `s`——只有 `menu.c:498` 的 MMENU/TMENU/XMENU 的 `s` 才真的進板（`board.c:1902` 的 s 只是搜尋看板移游標）；這條路徑會經 `Read()` → 進板畫面＋pressanykey，由 `_enqueueEnterBoardDismiss`（上限 3）化解。主序列：`s<board>\r`(expect clean-list+boardName 不分大小寫) → `#<aid>\r`(expect boardName+cursorRowNum+curY 在 entry 區——**不可要求 kind==clean-list**：# 跳文落地 footer 列空白（\f probe 後仍空）→ classify 判 transient，live 驗證 2026-07-10；找不到→vmsg 游標停底列→cursorRowNum null→probe→miss) → `\r`(expect article|statusRow)。前置：`easyReading._enterFunctionMode()`（原生 LIVE 鏡像；離篇/進新文由既有 settle 邏輯收斂）＋ `listSession.beginExternalNavigation()`（強制 functionMode+nativeHold+flush，reducer 對中途 clean-list settle 一律 stay，最後 article settle 走 handoff）。**順序不變量：先 beginExternalNavigation（含 flush）再 enqueue**。導航中 `aidNavigation.active` 於 `term_view.onKeyDown`／`App.mouse_click`／`onMouse_click`／`mouse_scroll` 入口吞輸入（有 banner）。同板也不省略 `s` 切板（單一路徑）。unit：`tests/unit/aid_parse.test.js`、`aid_navigation.test.js`、`row_render.test.js`（aidLink render）。
 
-### 返回原文（`nav_history.js`，CONFIRMED unit＋live）
+### 返回原文（`nav_history.js`，CONFIRMED unit＋offline e2e）
 
 PTT 端**沒有**跳轉來源的概念（`read.c#select_by_aid` 只在 currboard 內搜尋，跨板就是真的換板），所以返回＝**用離開前擷取的錨點再導航一次**（同 BePTT 的「每個位置存一段按鍵序列、返回時重放」，差別是這裡每步都有 expect 而非盲送）。正向與返回共用同一組 enqueue 函式，只有中段那一步不同（`_enqueueMiddle`）。
 
-**正向跳轉的第 0 步 `Q`（`_enqueueOriginAid`，2026-08）**：離開前先叫出文章資訊框，讀出**本篇自己的 AID**（協定 §8.2）當返回錨點，讓 aid 級在所有情境都拿得到。
+**正向跳轉的第 0 步 `Q`（`_enqueueOriginAid`）**：離開前先叫出文章資訊框，讀出**本篇自己的 AID**（協定 §8.2）當返回錨點，讓 aid 級在所有情境都拿得到。
 沒有它時 `/` 搜尋過的清單一定回不去：MODE_SELECT 序號空間獨立（`read.c:661-665`），返回的 `s<board>` 又會離開搜尋模式，於是那個序號落在主清單的別篇文章。
 best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原本級別），**只有 flush 才 `_fail`**。`fullRepaint` 必須是 false、關框鍵必須是**空白鍵**（`\f` 不是「鍵」，關不掉 pressanykey）——理由見協定 §6 末條與 §8.2。
 
-錨點三級（`nav_history.chooseAnchor`，純函式；aid 級另由 `upgradePendingOriginAid` 升級而來）：
+錨點兩級（`nav_history.chooseAnchor`，純函式；aid 級另由 `upgradePendingOriginAid` 升級而來）：
 
 | 級 | 來源 | 中段動作 | 備註 |
 |---|---|---|---|
-| aid | 第 0 步 `Q` 問到的本篇 AID；或 `history.landed()`（本篇自己就是上次跳來的） | `#<aid>\r` | 唯一不受刪文位移／MODE_SELECT 重新編號影響。會**保留 num/subject 當備援**：文章已刪／找錯看板時 `#` 搜尋會失手，back run 的 miss 就退回序號／停在列表，不清空 stack（置底文**不在**此列——`#` 搜尋搜得到，見 `aid_navigation#aidSearchLanded`） |
-| num | `listSession.currentAnchor()` = `_openedNum` + `_boardName`(可為 null→用 `view._articleBoard` 遞補) + `_lastReadTitle` | `<num>\r`，落地**必須** `subjectOfListText(游標列) === subject` 才送 `\r` | 序號會因刪文位移 |
+| aid | 第 0 步問到的本篇 AID（畫面上的「※ 文章網址」免費換算，否則 `Q`）；或 `history.landed()`（本篇自己就是上次跳來的） | `#<aid>\r` | **唯一會自動開文的一級**：不受刪文位移／MODE_SELECT 重新編號影響（置底文也搜得到，見 `aid_navigation#aidSearchLanded`） |
 | board | `view._articleBoard` | 無：落地列表就停手 | 靠 `getkeep` per-board 游標記憶；**同板跳轉時作廢**（正向 `#aid` 已覆寫該板 keep）——但第 0 步問到 AID 時同板也有返回鈕了 |
+
+**刻意沒有「文章序號」級**：序號會因刪文位移、`/` 搜尋清單又是獨立編號空間，序號錨點等於猜，實測會把人送到別篇。問不到 AID 就停在列表、把最後一個按鍵還給使用者。
 
 - **順序不變量**：錨點必須在 `_begin()`（`easyReading._enterFunctionMode()` + `listSession.beginExternalNavigation()`）**之前**擷取——後者會清 `_boardName`/`_serverNum`/`_openedNum`。捲動行索引同理，且要另外掛在 run 上（`run.originLineIndex`）：`chooseAnchor` 回 null 時沒有錨點可以承接它，升級成 aid 級時才補得回去。
 - **兩段式 commit**：`beginJump`/`beginBack` 只暫存，`_enqueueOpen.onDone`（文章真的開了）才 `commitJump`/`commitBack`。任一步失敗 → `abort()` **整個清空**，不 pop 不 push 不重試。
-- **`_openedNum` 而非 `_selectedNum`**（兩次 live 誤跳的根因）：置底文沒有序號、`_selectedNum` 會留著上一個數字列的殘值；原生模式（functionMode，例如按過 Q 資訊框）下方向鍵是 passthrough，`_selectedNum` 停在舊值。只有 list 好讀自己序列化開文時設的 `_openedNum` 保證對得上畫面上那篇。
+- `listSession.currentAnchor()`（`_openedNum`，列表好讀自己序列化開文時設的序號）現在只當「這篇是列表好讀開的、確實是 READING」的證據（`run.listOpened`，長文 footer 擠掉「回應」時仍可走文章內 `s` 快路徑），不當返回錨點。
 - **生命週期（三個純通知 hook，都不得改動對方狀態）**：`list_session._onScreenSettled`（**排在 `queue.onSettle` 之前**，clean-list/menu → `invalidate()`）、`easy_reading.leaveCurrentPost`（文章→文章鍵）、`App.onClose`（斷線 → `reset()`）。
   - **我方落地會自己產生一次 `leaveCurrentPost`**（functionMode 退出走 'leave' 分支，且發生在 `onDone` 清掉 `active` 之後）→ `_ownedLeave` one-shot 吞掉它，否則每次跳完都會把剛 push 的那層抹掉。
 - **UI**：返回鈕（`term_view.showBackButton`／`hideBackButton` 只寫狀態 `view.aidBack`，`(active, stack)` 的投影；畫面是 React `components/AidBackButton` 訂閱 `view.onAidBackChange`，桌機手機同一顆，上緣置中、手機在 App Bar 下方——**不可放底部**：桌機疊在 PTT 狀態列上、手機被底部工具列蓋掉）＋快捷鍵 pref `aidNavBackKey`（預設 F9；F 鍵在 `term_keyboard.KeyMap` 沒有對應、送不到 PTT，而 F8 已被 `easyReadingEndSwitchKey` 佔用）。
@@ -388,18 +375,18 @@ best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原
 好讀的進/退/離篇收斂到三個語意明確的入口（`easy_reading.js`），新路徑只呼叫入口、不各自設旗標：
 - **`enterEasyReading()`**：唯一開好讀點，由 `_onPageStateSettled` 在 settled 2→3 邊緣驅動。`_enabled=true` + `prevPageState=0`/`pageLines=[]`（強制 `populateEasyReadingPage` 新文章 clearRows 分支）+ 全列 dirty + `changed=true` + `notify()` 重播一輪 render/viewUpdate（settle 在 'change' 迴圈外觸發，故需自行重播以啟動翻頁）。
 - **`leaveCurrentPost()`**：仍在好讀、離開本篇 → 重置 per-post（`ignoreOneUpdate`、`prevPageState=0`、`_resetPagingState()`），**不改 `_enabled`**。鍵/滑鼠多處直接呼叫；`switchToEasyReadingMode`(`pttchrome.jsx`) 內部也呼叫它（**隱藏傳遞鏈**，已加註解標出）。
-  - **踩坑：per-post 狀態不可只靠這三個入口重置**（2026-08，「進文章卡在第一頁」的根因）。最常見的換文章路徑一個都不經過它們：`←` 走 `stopEasyReading()`（只設 `sendCommandAfterUpdate='skipOne'`）**不經 `leaveCurrentPost()`**；而好讀已經開著時再進下一篇**也不經 `enterEasyReading()`**（`nextEasyReadingState` 要求 `!enabled`）。凡是「每篇一份」的狀態，重置點必須掛在 settle 的文章邊界（`_onPageStateSettled`），不能掛在按鍵路徑上。
+  - **per-post 狀態不可只靠這三個入口重置**。最常見的換文章路徑一個都不經過它們：`←` 走 `stopEasyReading()`（只設 `sendCommandAfterUpdate='skipOne'`）**不經 `leaveCurrentPost()`**；而好讀已經開著時再進下一篇**也不經 `enterEasyReading()`**（`nextEasyReadingState` 要求 `!enabled`）。凡是「每篇一份」的狀態，重置點必須掛在 settle 的文章邊界（`_onPageStateSettled`），不能掛在按鍵路徑上。
 - **`exitEasyReading()`**：唯一關好讀點。`sendCommandAfterUpdate=''` + `_enabled=false` + `_core.switchToEasyReadingMode()`（還原 overlay 列/padding/pageLines+送 `^L`）。React 恆擁有 `#mainContainer`，切原生由 reconcile 把長頁收回 24 列（無 unmount）。
 
 `EasyReading.switchToNativeAtBottom`（熱鍵／`$`／`G` 與滑鼠 End）= `_send('\x1b[4~')`（原生 End 導到底）+ `exitEasyReading()`。
 
-**熱鍵是 toggle：原生下再按一次切回好讀（`tryReenterFromNative` → `reenterFromTop`，2026-08）**。
+**熱鍵是 toggle：原生下再按一次切回好讀（`tryReenterFromNative` → `reenterFromTop`）**。
 - 攔截點在 `term_view.onKeyDown`，**排在既有好讀 gate 之前**——好讀關掉後 `useEasyReadingMode` 是 false，那個 gate 不成立，鍵會直接落到原生。條件另加 `!easyReadingFunctionMode ∧ pageState === 3 ∧ !ctrl ∧ !alt`，且 `tryReenterFromNative` 內再要求真的讀得到狀態列（`term_buf.setPageState` 沒有 default 分支，prompt 幀的 pageState 可能是殘值）。
 - **只認 `easyReadingEndSwitchKey`（預設 F8），`$`／`G` 不參與**：它們在原生 pmore 是真的導覽鍵（`mf_goBottom`），語意是「跳文末」不是「切模式」。
 - `reenterFromTop()` 先 `enterEasyReading()`（唯一入口）再視情況送 Home 倒回第 1 行，**順序不可調換**：`enterEasyReading` 結尾會重播一次 `notify()`，快路徑會從文章中段送出 PageDown；先把 rewind 立成在途交易才能保持「同時只有一個鍵在途」（P4）。
 - **Home 只在 `rowIndexStart > 1` 才送**：pfterm 會 diff 畫面、`fterm_rawmove_opt` 原地不動，已經在第 1 行時送 Home 是**零回應**，交易會永遠等不到 ack。
 
-**`exitEasyReading()` 的收尾（2026-08 補三條，治 F8 後的殘留）**，全部必須排在 `_core.switchToEasyReadingMode()` **之後**（它透過 `leaveCurrentPost()` 會把 `ignoreOneUpdate` 重新點起來）：
+**`exitEasyReading()` 的收尾（三條，治 F8 後的殘留）**，全部必須排在 `_core.switchToEasyReadingMode()` **之後**（它透過 `leaveCurrentPost()` 會把 `ignoreOneUpdate` 重新點起來）：
 - `startedEasyReading = false`：唯一清除點原本是 `_applyRowState`，而 `_onChanged` 在 `!_enabled` 時早退 ⇒ 永遠跑不到。`list_session._engageEligible()` 讀它 ⇒ **F8 後回看板列表，列表好讀永遠不 engage**。
 - `ignoreOneUpdate = false`：見上面「翻頁交易」段的硬卡死說明。
 - `mainDisplay.scrollTop = 0` ＋ `_forceRepaint()`：**不依賴 `^L` 的伺服器往返**。按熱鍵時若還有 PageDown 在途，End／`^L` 的重繪會被 P4 吞掉，DOM 就一直停在數千列的長頁且捲到底 ⇒ 使用者看到「卡在最底部、PgUp 沒反應」。另外 `redraw` 的 native 分支用 `if (useEasyReadingMode)` 守住 overlay/scroll 還原，此時已是 false，沒有別人會重設捲軸。
@@ -409,14 +396,14 @@ best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原
 
 ## 鍵流（CONFIRMED）
 
-- `term_view.onKeyDown`：`if useEasyReadingMode && startedEasyReading && !reply/pushInit` → `easyReading._onKeyDown`→`_onKeyDownProcessUI`。切原生後 useEasyReadingMode=false ⇒ 走原生 `_keyboard.onKeyDown`，左鍵`\x1b[D`原生離開文章。
+- `term_view.onKeyDown`：`if useEasyReadingMode && startedEasyReading && !easyReadingFunctionMode` → `easyReading._onKeyDown`→`_onKeyDownProcessUI`。切原生後 useEasyReadingMode=false ⇒ 走原生 `_keyboard.onKeyDown`，左鍵`\x1b[D`原生離開文章。
 - 原生鍵序：`term_keyboard.js` KeyMap，End=`\x1b[4~`、Left=`\x1b[D`、PageDown=`\x1b[6~`。
 
 ## e2e 測試要點（offline：`easy-reading.offline`／`er_function_mode.offline`；live 只剩 `core.spec.js` 的好讀不跑版＋開圖）
 
-- **好讀預設 true（2026-09-16 翻預設）**：要測「原生」的 spec 反過來得自己關（live 走 `helpers/ptt.js#applyPrefs`，offline 走全新 context 的 localStorage），否則吃到的是好讀。舊約定（測試自己寫 `{values:{enableEasyReading:true}}` 才會啟動）已失效。
+- **好讀預設 true**：要測「原生」的 spec 反過來得自己關（live 走 `helpers/ptt.js#applyPrefs`，offline 走全新 context 的 localStorage），否則吃到的是好讀。
 - app 未掛全域：`main.jsx` 僅 `DEVELOPER_MODE`(dev build 有)下 `window.__app=app` 供測試讀 `view.useEasyReadingMode`/`buf.pageState`。
 - 判好讀 vs 原生：好讀 `mainContainer` 累積 >24 列且 `#easyReadingLastRow` display:block；原生 24 列、lastRow display:none、畫面含原生狀態列「瀏覽 第 N 頁…」。原生狀態列**不論 100% 或非 100% 都含「(h)說明」**（差別只在頁數指示器顏色，到底時反白）。**勿**用「mainContainer 是否含瀏覽第」分原生/好讀 footer：footer overlay 現已**即時鏡像真實狀態列**（含「瀏覽 第…(h)說明」，見 render 段「footer 鏡像」），但它是 `BBSWin` 下獨立 div、非 `#mainContainer`，故 `mc.innerText` 不含它——仍以 `useEasyReadingMode`/`mcChildren`/`lastRowDisplay` 區分。
 - 取消 PTT 搜尋提示用**空 Enter**，勿用 Escape（pmore 把 `\x1b` 當逃逸序列開頭，導覽錯亂）。好讀文章裡 `/` 預設不送 PTT（見 functionMode 節「搜尋交給瀏覽器」），要測原生搜尋先 F8 切原生或關 `easyReadingBrowserFind`。
-- 連線偶發 403/ECONNRESET（PTT 端 flake）。
+
 - 驗證序列：好讀啟動(useEasyReadingMode=true,~41列)→End(false,≤24列,lastRow none,「瀏覽 第 N 頁」+「100%」)→`/`(搜尋提示)→左鍵(pageState 2)→進下篇(true)。

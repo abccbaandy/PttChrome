@@ -319,7 +319,7 @@ lastRow=""                                    ← # prompt 清掉 footer，故 t
 ＝`'unknown'` ⇒ 舊版不按 Q、只走退出前導 ⇒ 從 `/` 搜尋清單開的文章只剩搜尋空間序號
 當返回錨點 ⇒ 返回跑到別篇。
 
-**規則（2026-10 起）：返回只認 AID，沒有序號錨點**（`nav_history` 只剩 `aid`／`board`
+**規則：返回只認 AID，沒有序號錨點**（`nav_history` 只剩 `aid`／`board`
 兩層；`aid` 也不再夾帶序號備援，返回時 `#AID` miss ⇒ 停在列表明講「找不到原文章」）。
 問不到 AID ⇒ 只回看板列表不開文；連看板都沒有（站內信）⇒ 沒有返回鈕。
 `aid_navigation._begin` 的取得順序：
@@ -472,4 +472,4 @@ lastRow=""                                    ← # prompt 清掉 footer，故 t
 | unit | `tests/unit/pref_modal_notify_permission.test.jsx`（關閉設定頁時的權限檢查） |
 | e2e offline | `tests/e2e/offline/deep_link.offline.spec.js`（cassette 是固定 byte 流，只驗解析／暫存／清網址，**不驗完整跳轉**；另含交接通知：標題閃爍→`bringToFront()`→還原，且全程 `pageerror` 為空 —— 預設 context 沒有通知權限，剛好是要守的常態路徑；前景抑制另有一條，headless 無真正背景分頁故以 `addInitScript` 蓋 `document.hasFocus`） |
 | e2e offline | `tests/e2e/offline/ui_behavior.offline.spec.js`（PrefModal 的 `deepLinkHandoffNotify` 開關） |
-| e2e offline | `tests/e2e/offline/deep_link_landing.offline.spec.js`（素材 `scn-deep-link`，真 PTT 錄的「主功能表→切板→進板畫面→跳文→落地」完整往返＋F2 複製連結；需帳號錄製）。入口是 hashchange —— 跳轉本體與冷啟動同一段 code（`consume()`→`request`→`_dispatch`→`startExternal`，前置是 `startedEasyReading === false`）。冷啟動特有的「連結先到、人還沒登入」暫存排程由 `tests/unit/deep_link_controller.test.js` 的 `_hold`/`_pending` 守。2026-10 前是 live `deep-link.spec.js` |
+| e2e offline | `tests/e2e/offline/deep_link_landing.offline.spec.js`（素材 `scn-deep-link`，真 PTT 錄的「主功能表→切板→進板畫面→跳文→落地」完整往返＋F2 複製連結；需帳號錄製）。入口是 hashchange —— 跳轉本體與冷啟動同一段 code（`consume()`→`request`→`_dispatch`→`startExternal`，前置是 `startedEasyReading === false`）。冷啟動特有的「連結先到、人還沒登入」暫存排程由 `tests/unit/deep_link_controller.test.js` 的 `_hold`/`_pending` 守 |

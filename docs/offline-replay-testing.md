@@ -67,7 +67,7 @@ offline spec 遍歷所有 article cassette 逐卷守門；End 測試自動挑帶
 - 用真實帳號登入時（guest 名額滿 "太多 guest 在站上"）：寫檔前對 recv + fixture 文字做
   **登入帳號等長 redact**（`(?<![0-9A-Za-z])id(?![0-9A-Za-z])` → `xxxx`，保 byte/欄位對齊）+ `assertNoLeak`
   把關（解碼全部 recv/文字，含帳號即拋錯不寫）。`meta.recordedAs` 只記 `guest`/`account`，不存帳號名。
-- **額外遮蔽（2026-06）**：`RECORD_REDACT_EXTRA="id1,id2"` 等長遮蔽「登入帳號以外、文章裡出現的自己其他 id」
+- **額外遮蔽**：`RECORD_REDACT_EXTRA="id1,id2"` 等長遮蔽「登入帳號以外、文章裡出現的自己其他 id」
   （典型：Fw 轉錄文「※ 轉錄者: <另一 id>」），`assertNoLeak` 一併把關；並自動等長遮蔽所有 **IPv4**
   （轉錄者/「來自: <IP>」會帶發文者個資）。`test-xmen` 卷即用此錄製（帳號 + 轉錄者 id + IP 皆已 redact 成 x）。
 - redact 是手動掃描（`redactUser`）：id 須右側非英數邊界；左側認「非英數 / 字串開頭 / Big5 尾位元組」
@@ -429,7 +429,7 @@ apply`…）當防禦，避免圖載不到就假紅。**圖改本地 fixture 後
 把現況（每個 slot 的 y／高度／有無媒體／有無釘高度）一起印出來——原版只留一句「素材太短」，
 在 CI 上看不出到底是哪一種太短。
 
-### 「走完整篇」的前置動作必須每步重讀 `scrollHeight`（2026-09-05）
+### 「走完整篇」的前置動作必須每步重讀 `scrollHeight`
 
 同一支 spec 的 `walkDown()`（讓每張圖都真的載入過一次，好把高度寫進 `lazy_media` 的
 module 級 memo）舊版只在**開頭量一次** `.main.scrollHeight` 就照那個值分段往下走。圖片是
@@ -459,7 +459,7 @@ px，被測試 2 的「一次 PgUp 不得暴衝（≤1.2 倍）」誤判成捲�
 project 名，同 `image_load_conditions.offline.spec.js`）。這樣兩個 job 跑到的都是有牙齒的版本。
 新增媒體版面測試時，先照上表做一次突變驗證再決定 profile。
 
-### 逆境桶下的捲動類斷言（2026-09-22）—— CONFIRMED
+### 逆境桶下的捲動類斷言—— CONFIRMED
 
 **逆境桶會改變「素材有多長」，不只改變載入節奏。** 圖片全 404 ⇒ 行內預覽佔位盒只剩
 `slotFloorHeight`。同一卷素材實測（`chh=30`、視窗 24 列＝720px、一次翻頁 22 列＝660px）：

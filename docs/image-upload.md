@@ -34,7 +34,7 @@ CORS **CONFIRMED**：preflight `OPTIONS` 回 `204` + `Access-Control-Allow-Origi
 | `src/js/image_upload.js` | 純決策（validate／pick／parse／decideInsertMode／format）＋ XHR 上傳 |
 | `src/js/upload_history.js` | 本機紀錄（純函式 + localStorage） |
 | `src/js/image_upload_controller.js` | 三個入口、佇列、插入分派、imperative render；`isUploadLayerTarget` |
-| `src/components/ImageUploadLayer/Overlay/Panel.jsx` + `ImageUpload.css` | 遮罩／進度／提示／紀錄面板 |
+| `src/components/ImageUploadLayer.jsx`／`ImageUploadOverlay.jsx`／`ImageUploadPanel.jsx` + `ImageUpload.css` | 遮罩／進度／提示／紀錄面板 |
 
 ## 決策表：上傳完的網址往哪去（`decideInsertMode`）
 
@@ -47,14 +47,10 @@ CORS **CONFIRMED**：preflight `OPTIONS` 回 `204` + `Access-Control-Allow-Origi
 
 **底列分類只有一套：`push_screen.js#classifyPushScreen`**（已逐字對過 `bbs.c#recommend`，
 見 `docs/pttbbs-screen-protocol.md` §11.3），長推文送出序列（`long_push_session.js`）吃的是
-同一支，不要在 `image_upload.js` 另寫 regex。
-踩過的坑（2026-08-28）：這裡原本用 `string_util.js#parsePushInitText`，它只認 `→ id:`，
-但 prompt 是 `bbs.c:3079` 的 `sprintf("%s%s%s %s:", ctype_attr[type], ctype[type], RESET, myid)`，
-`ctype = 推／噓／→` ⇒ **最常按的 `1.值得推薦` 一律判不到**，症狀是「上傳完都說不在推文框」
-（編輯文章那條走 `pageState`，所以看起來只有推文列壞）。長推文功能後來做對了分類器卻沒回頭
-換掉這裡，兩套判斷分歧就是本 bug 的成因；`parsePushInitText` 已移除，分類器也從 `long_push.js`
-抽成獨立的 `push_screen.js`（原本擺在長推文的功能模組裡，是會再長出第二套的形狀）。
-換掉後順帶擋住三種「開頭長得像輸入列、但送字會壞事」的底列：`typeMenu`（`vkey()` 只吃 1 byte
+同一支，不要在 `image_upload.js` 另寫 regex（prompt 的型別符有 推／噓／→ 三種，
+`bbs.c#comment` 的 `sprintf("%s%s%s %s:", ctype_attr[type], ctype[type], RESET, myid)`；
+兩套判斷一分歧，最常按的 `1.值得推薦` 就會被判成「不在推文框」）。
+分類器同時擋住三種「開頭長得像輸入列、但送字會壞事」的底列：`typeMenu`（`vkey()` 只吃 1 byte
 ⇒ 網址首字被當型別鍵吞掉）、`confirm`（`確定[y/N]` 的 `ans` 只吃 1 字元 ⇒ 非 `y` ＝整則靜默取消）、
 `angel`／`cooldown`／`fatal` 橫幅。
 

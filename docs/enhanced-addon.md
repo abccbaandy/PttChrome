@@ -1,18 +1,21 @@
 # Enhanced Add-on（黑名單／樓層／自動登入）
 
 原生整合自 `3rd_script/PttChrome ...Enhanced Add-on`（原為 DOM-scraping userscript）。功能改用內部
-`TermChar[]` 結構，不爬 DOM。測試：`yarn test:unit`（vitest，純邏輯+Row 渲染，不連網，見
-`tests/unit/`）；`yarn test:e2e`（Playwright，連真 PTT，需好讀模式）。
+`TermChar[]` 結構，不爬 DOM。測試：`yarn test:unit`（純邏輯＋渲染，不連網，見 `tests/unit/`）；
+畫面行為走 offline e2e（`yarn test:e2e:offline`，live 只剩核心 `core.spec.js`）。
 
 ## 純邏輯核心：`src/js/comment_parse.js`
 - `rowToText(chars)`：`TermChar[]`→Unicode（DBCS 合併，比照 `term_buf.getRowText`）。
-- `parseComment(text)`→`{type:'推'|'噓'|'→', userid(lower)}|null`，正則 `/^(推|噓|→)\s+([A-Za-z][0-9A-Za-z]+)\s*:.*<COMMENT_TIME_RE>/`。
-  **必須**結尾有時間戳 `COMMENT_TIME_RE=/\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/`（定義在 `string_util.js`，與 `parsePushInitText` 共用）。
-  用以排除「內文中的推文格式文字（無時間戳）」與「`※ 編輯: … MM/DD/YYYY HH:MM:SS`（格式不同+前綴※）」被誤計樓層。
-  userid 子樣式 `[A-Za-z][0-9A-Za-z]+`（須字母開頭、≥2 字元）依官方 `go-bbs/user_comment_record.go` 收緊，排掉 `推 1: …` 之類假推文。官方終端 byte/格式規則（型別色碼、IP iff `BRD_IPLOGRECMD`、對齊 iff `BRD_ALIGNEDCMT`、FORWARD/轉錄不計樓）內嵌 `comment_parse.js` 的「Official cross-validation」docstring；交叉驗證測試見 `comment_parse.test.js`「official cross-validation」+ fixture `IpComment_M.1621089154.txt`／`Forward_M.1644506392.txt`。背景見 `docs/ptt-official-app-research.md`。
+- `parseComment(text)`→`{type:'推'|'噓'|'→', userid(lower), contentCol, anonymous?}|null`。
+  **必須**結尾有時間戳 `COMMENT_TIME_RE=/\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/`（`string_util.js`，與 `push_screen.js` 共用），
+  用以排除「內文中的推文格式文字（無時間戳）」與「`※ 編輯: … MM/DD/YYYY HH:MM:SS`」被誤計樓層。
+  id 照 `names.c#is_validuserid`（`[A-Za-z][0-9A-Za-z]{1,11}`）或小天使匿名 `<暱稱>小天使`。官方終端格式（型別色碼、IP iff `BRD_IPLOGRECMD`、對齊 iff `BRD_ALIGNEDCMT`、FORWARD/轉錄不計樓）內嵌 `comment_parse.js` 的「Official cross-validation」docstring；交叉驗證測試見 `comment_parse.test.js`「official cross-validation」+ fixture `IpComment_M.1621089154.txt`／`Forward_M.1644506392.txt`。背景見 `docs/ptt-official-app-research.md`。
+- **新格式推文**（post.svc：`[N] id 時間` 標頭＋`│` 內容列，與舊格式可同篇並存）：`parseModernCommentHeader`＋
+  `ModernCommentThread`，自帶樓號、不吃 FloorCounter、不參與合併；黑名單連內容列一起藏。協定見
+  `docs/pttbbs-screen-protocol.md` §11.11，守護 `tests/unit/modern_comment_parse.test.js`。
 - `parseListAuthor(text)`→userid|null。**欄位常數 cols 17~28**（CONFIRMED 2026-06 對 C_Chat 校準）。
   fail-safe：非 userid→null→不隱藏。行首全形字（舊版 `●` 游標）造成位移→fall through（可接受的 under-hide）；現行游標是半形 `>`（pttbbs `b9a5029f`），不位移欄位。
-  守護測試：live `core.spec.js`「產品解析器認得列表列」（有序號的列 ≥70% 有 `data-list-author`），PTT 改版位移會先紅。
+  守護：`comment_parse.test.js`（欄位表，對 `bbs.c#readdoent`）＋ live `core.spec.js`「產品解析器認得列表列」（有序號的列 ≥70% 有 `data-list-author`，PTT 改版位移會先紅）。
 - `FloorCounter`：`seq`(總樓)、`sub`(該 type 分項)；每篇文章 reset。含 **BePTT meta-latch 規則**
   （`nonComment(text)`，演算法來源見踩坑 B「BePTT 反編譯」）：非推文列在 `※ 發信站/※ 文章網址` latch 前一律歸零計數
   → 內文/簽名檔「帶假時間戳的假推文」拿到的暫時樓號被清掉，真推文從 1 起算。
@@ -20,18 +23,15 @@
 - `parseArticleAuthor(text)`→原PO id(lower)|null，正則 `/^\s*作者\s+([0-9A-Za-z]+)/`。**僅文章首頁首行**（作者列）解析得到；翻頁後 lines[0] 是內文→null。
 - **`annotateComment(text, ctx)`→逐列判斷的單一真相**（floor/hidden/pusher/contentCol/authorId 範圍）。
   `ctx={blacklist,showFloorNumbers,floorCounter,highlightAuthor,articleAuthor}`。
-  推文者高亮**不在這裡**（2026-08 搬走）：述詞是同檔的 `isPusherHighlighted(ann, selectedPusher)`，由 renderer 現算。**單一渲染路徑
+  推文者高亮**不在這裡**：述詞是同檔的 `isPusherHighlighted(ann, selectedPusher)`，由 renderer 現算。**單一渲染路徑
   呼叫它**（`js/screen_annotations.js#computeAnnotations`，兩模式共用）；勿為某路徑另寫一份（見踩坑 A「逐列加工走單一純函式」）。
   floor 對黑名單列仍 +1（樓號絕對正確）；hidden 短路其餘高亮。回 null=非推文列。守護測試 `tests/unit/comment_parse.test.js`。
 
 ## 渲染整合（單一路徑 `ScreenController`→`buildRow`）
 
-> **2026-08 核心渲染鏈已去 React 化**：`<Screen>`/`<Row>` → `src/render/`（純 JS DOM，見
-> `docs/easy-reading.md`「render 單軌」）。以下 DOM 契約／逐列加工邏輯一字不變，只有實作檔改名：
-> `components/Screen.jsx` → `js/screen_annotations.js`（標註）＋ `render/screen.js`（控制器）、
-> `components/Row/index.jsx` → `render/row.js`、`Row/LinkSegmentBuilder.jsx` → `render/link_segment.js`、
-> `Row/ColorSegmentBuilder.js` → `render/color_segment.js`、`Row/WordSegmentBuilder/` → `render/word_segment.js`、
-> `LazyInlinePreview.jsx` → `render/inline_preview_slot.js`。`ImagePreviewer` 仍是 React。
+> 核心渲染鏈是純 JS DOM（`src/render/`，見 `docs/easy-reading.md`「render 單軌」）：標註 `js/screen_annotations.js`、
+> 控制器 `render/screen.js`、列 `render/row.js`、連結 `render/link_segment.js`、延遲預覽 `render/inline_preview_slot.js`。
+> `ImagePreviewer` 仍是 React 葉子島。
 
 - `buildRow`(`render/row.js`) 有參數 `floor`/`hidden`。`floor`→`link_segment.readChar`
   在 **col 2**（marker 與 userid 間的空格）插入 `.floorBadge`（CSS `main.css`：`display:inline-block;
@@ -87,25 +87,21 @@
   + `componentScreen.setSelectedPusher(id)` → renderer 逐列搬 `.pusherHighlight` class，**不重畫**
   （同 `setCursorHighlight` 的快路徑）。build 時的判斷由 `comment_parse.isPusherHighlighted(ann, selected)`
   現算，讀的是 controller 欄位（`update(props)` 從 `enhance.selectedPusher` 同步）而非 annotation。
-  - **踩坑（2026-08 修，勿走回頭路）**：原本是 `redraw(true)`，而 `selectedPusher` 進了 `annotationsKey`
-    ⇒ 點一下推文列＝整份好讀長頁全量重算（含每個 run 的 `buildMergedCommentChars`）＋每一列節點重建。
-    兩個使用者回報的症狀：(1) 每個 `inlinePreviewSlot` 被 `disposeNode` 收掉重建、`pinned=null` ⇒
-    `minHeight` 歸零 ⇒ 圖片佔位盒塌陷再非同步撐回來＝**合併推文的空白區閃爍、隱約看到別行推文**；
-    (2) 節點抽換落在雙擊的第二個 mousedown 之前 ⇒ **雙擊選字時好時壞**。守護：
-    `tests/e2e/offline/pusher_highlight.offline.spec.js`（點擊前替每個 bbsrow 掛 JS expando，點完必須全數存活）
-    ＋ `tests/unit/screen_incremental_render.test.js`／`screen_dirty_rows.test.js`／`screen_annotate_cache.test.js`。
+  - **勿改回 `redraw(true)`／勿讓 `selectedPusher` 進 `annotationsKey`**：那等於點一下推文列就整份好讀長頁全量重算、
+    每一列節點重建（佔位盒塌陷閃爍、雙擊選字時好時壞）。守護：`tests/e2e/offline/pusher_highlight.offline.spec.js`
+    （點擊前替每個 bbsrow 掛 JS expando，點完必須全數存活）＋ `tests/unit/screen_incremental_render.test.js`／`screen_dirty_rows.test.js`／`screen_annotate_cache.test.js`。
 - 清除：好讀新文章在 `accumulatePageLines` else（新文章）分支 reset；原生 `redraw` `pageState!==3` 時 reset。
   兩處**只設欄位**（都跑在 `_renderScreenLines` 之前，隨後那次 render 會經 `update()` 同步給 controller，
   再由 `_render()` 收尾的 `_appliedPusher` 對帳補 class）—— 在那裡呼叫 `setSelectedPusher` 只是對即將被
   丟掉的上一幀節點白做一次 O(n)。
 - 無 pref/i18n（點擊驅動、恆可用）。
 
-## 連續同作者推文合併（`src/js/comment_merge.js`，2026-08 改版）
+## 連續同作者推文合併（`src/js/comment_merge.js`）
 - 規則（使用者定案）：**連續同 userid** 的推文列合成一塊（A A A B A A → A B A）；跨型別（推/噓/→）照合
   （PTT 連推自動降 →）；hidden（黑名單）列**透明**（不斷 run、不入 run）；非推文列斷 run；≥2 才合併。
   樓層徽章**只顯示 run 首則**（`floorBadge` 單一樓號）。**FloorCounter／黑名單判定不動**
   ——合併僅 render 層。
-- 排版＝**一則一行**，**作者在第一則行首、時間在最後一則行尾且置右**（2026-08 使用者定案）：去掉
+- 排版＝**一則一行**，**作者在第一則行首、時間在最後一則行尾且置右**（使用者定案）：去掉
   第 2 則起重複的「型別符＋id」前綴與中間各則的時間戳，則間一律插換行 cell（`\n`，Object.create
   繼承來源空格 prototype 的 clone，**勿 mutate 原 buf cell**），末行補上最後一則原列
   **「內容尾 → 時間戳結束」整段**（padding＋可選 IP＋時間）原樣。
@@ -113,16 +109,15 @@
     （懸掛縮排）等於原列的 ⇒ 帶著原 padding 就落在**與原生逐列渲染完全相同的欄**（時間 col 67..77，
     整行 78 欄 < 容器 80 欄故不會換行）。勿改成「接在內容尾端」（使用者回報過）或 CSS 絕對定位。
   - 全段**沿用原列 cell** → 配色與原生模式一致、且是一般文字，`^C`（走
-    `window.getSelection().toString()`）選得到。**勿改回 React 標籤節點**：舊版 `.mergedCommentTime`
-    （淡色縮小＋`user-select:none`）不可複製，使用者已回報要改。
+    `window.getSelection().toString()`）選得到。**勿改成另外的標籤節點**（不可選取＝不可複製）。
 - DOM：`LinkSegmentBuilder` 遇 `\n` cell 就**切一個新的 bbsline span**（`_flushLine`），每個 span 後面
-  緊跟該行自己的自動開圖 div——否則整塊的預覽會全部堆到最後（使用者 2026-08 回報）。`\n` 本身不進
+  緊跟該行自己的自動開圖 div——否則整塊的預覽會全部堆到最後。`\n` 本身不進
   segment，換行改由區塊邊界表達；空的預覽 div 照樣輸出（區塊盒把下一行的 inline 內容擠到新行，
   跟單行路徑同形，不需額外包裝層）。**沒有 `\n` 的一般列走原路徑，DOM 一字不動。**
 - 懸掛縮排：`main.css` 給 bbsrow `padding-left: var(--merged-comment-indent)`，首則 bbsline 再以
   **負 `margin-left`** 拉回 0 欄；變數由 `render/screen.js` 依 `contentStart × forceWidth/2` inline 指定。
   **勿用 `text-indent`**——每則各自是 bbsline span，text-indent 會繼承下去把每行都往左拉。
-  - **縮排只管文字：`.inlinePreviewSlot` 以等量負 `margin-left` 豁免**（2026-09 使用者回報）。
+  - **縮排只管文字：`.inlinePreviewSlot` 以等量負 `margin-left` 豁免**。
     自動開圖的佔位盒住在**同一個 bbsrow 裡**且是區塊盒 ⇒ 不豁免的話 containing block 先被
     縮排扣掉一截：一般態 `margin:0.5em auto` 在變窄的盒子裡置中（左緣貼齊作者 id 欄）、
     放大態 `width:100%` 剛好少一個縮排寬。負 margin 同時拉回左緣並補回寬度
@@ -131,17 +126,9 @@
     `render/inline_preview_slot.js` 檔頭）。與 `padding-left` 那條**成對**，少一條圖就凸出容器左緣。
     守護：`tests/unit/merged_comment_image_css.test.js`、`comment_merge.offline.spec.js`
     （「自動開圖不吃懸掛縮排」「放大態…填滿整個塊寬」）。
-- **勿再加回 gap 門檻**（舊 `BREAK_GAP_COLS`，2026-08 已整組拆除）。舊版猜「這則是不是打滿被截斷的續行」
-  並把它與下一則串接；反查 pttbbs 證實此判斷**在畫面上無資訊量**：
-  | 來源 | 事實 |
-  |---|---|
-  | `bbs.c#recommend` | `maxlength = 78 - 3(lead) - 6(date) - 1(space) - 6(time) [- 15 if BRD_IPLOGRECMD/guest] - strlen(myid)` |
-  | `comments.c#FormatCommentString` | `type + " " + id + ":" + %-maxlength(msg) + tail` |
-  | `vtuikit.c#vgetstring` | 上限 `iend+1 < len`；全形另需 `len - iend >= 3` |
-  | term.ptt.cc 實測 | `':'` 後多一格 → 內容欄 `[3+len(id)+2, 66)`（IP 板 `[.., 51)`），時間戳固定 col 67..77 |
-  「作者剛好寫滿一句話」與「被輸入欄切斷」完全同形（實例：AI_Art M.1785606011 三連推第 2 則，內容
-  50 bytes ＝ 10 字 id 的理論上限），任何寬度門檻都判不出來。唯一還有訊息量的訊號是行尾時間戳
-  （真續行幾乎同分鐘送出），但仍是啟發式 → 使用者決定不猜。代價：被截斷的句子分兩行顯示（原生本來就這樣）。
+- **勿加 gap 門檻猜「這則是被截斷的續行」**：反查 pttbbs（`bbs.c#comment` 的 `maxlength`、`vtuikit.c#vgetstring` 上限）
+  證實「作者剛好寫滿」與「被輸入欄切斷」在畫面上完全同形（推導見 `docs/pttbbs-screen-protocol.md` §11.1），任何寬度
+  門檻都判不出來；使用者決定不猜。代價：被截斷的句子分兩行顯示（原生本來就這樣）。
 - 純函式：`groupSameAuthorRuns(anns)`（走 computeAnnotations 的 per-row 結果）、`commentContentCells(chars)`
   （cell 邊界 `{start,end,time,timeStart}`：前綴/內容/時間戳/可選 IPv4，全 ASCII 區掃描故無
   DBCS 對映問題）、`buildMergedCommentChars`（回 `{chars,contentStart}`）。
@@ -162,7 +149,7 @@
   offline `comment_merge.offline.spec.js`（不變量：**相鄰 bbsrow 不得同 data-pusher**；stock-end 指名：
   7→1、徽章 `\d+`、內容零遺失、**7 個 bbsline**、作者/時間位置、**時間可被 getSelection 選取**（守
   user-select 回歸）、**時間戳 x 座標＝同頁原生推文列**（Range 量子字串 rect）、**懸掛縮排幾何**
-  （jsdom 無 layout，只能真瀏覽器量）、**自動開圖跟在含連結那一行下面**、關開關還原）。
+  （只有真瀏覽器量得到）、**自動開圖跟在含連結那一行下面**、關開關還原）。
   依賴逐列斷言的既有 spec（enhance/easy-reading live+offline 樓層連號、pusher 計數）已顯式傳
   `mergeSameAuthorComments:false` 鎖舊行為。**pusher 解析勿用 textContent 正則**（樓號徽章數字會混進
   文字），一律讀 `data-pusher`。
@@ -201,12 +188,8 @@
 ## URL 結尾修剪（`src/js/url_trim.js`）
 **一條純函式、四個消費點**：結尾的句尾標點（`. , ; : ! ?`）與**不成對**的 `) ] }` 屬於句子不屬於 URL。
 
-回報現場（2026-09-10）：
-```
-          支援，(https://vt100.net/emu/ctrlseq_dec.html)，本站
-         (https://docs.frankentui.com/render/synchronized-output)
-```
-兩行的連結都把結尾的 `)` 吃進去。**不可以靠縮字元類解決**：`(` `)` 在 path 裡合法
+例：`支援，(https://vt100.net/emu/ctrlseq_dec.html)，本站` 的連結不可吃進結尾的 `)`。
+**不可以靠縮字元類解決**：`(` `)` 在 path 裡合法
 （維基百科 `戈黛娃夫人_(歌手)`，反向鎖在 `url_cjk.test.js`），而且同一組 host/path 字元類
 被複製在 **5 處**（`term_buf.uriRegEx`、`url_fix.PATH` 與 `VALID_URI_RE`、`url_cjk.PATH_ASCII`、
 `url_join.URL_CHAR_RE`）—— 所以改成「算出結尾之後再修剪一次」，規則只有一份。
@@ -268,7 +251,7 @@
   傳入 `enhance.autoFixUrl`。i18n `options_enableAutoFixUrl`。
 
 ## 跨行推文連結接合（`src/js/url_wrap.js`）
-推文輸入欄有固定寬度上限，長網址會被硬切成兩則連續推文（使用者 2026-08 回報）：
+推文輸入欄有固定寬度上限，長網址會被硬切成兩則連續推文：
 ```
 → pttuser : ...DeepMind員工 https://i.imgur.c  08/09 15:35
 → pttuser : om/Pn3XurX.jpeg                    08/09 15:35
@@ -301,14 +284,8 @@
   `tests/unit/merge_comment_render.test.js`「跨行連結接合」。
 
 ## 內文跨行連結（`src/js/body_wrap.js`）
-同一個坑換到**文章內文**（使用者 2026-08-30 回報，素材 `tests/e2e/cassettes/pttbug-body-urlwrap.json`）：
-```
-08/30/2026 06:06:19 ※ 文章網址: https://www.ptt.cc/bbs/PttBug/M.1788041180.A.
-404.html
-```
-逐列偵測兩層都只看得到殘段 ⇒ `articleTargetFromAnchor` → `parseArticleUrl` 回 `null` ⇒ 右鍵的
-**「複製文章代碼」「複製文章 deep link」整組消失**，「複製連結網址」也只複製到壞網址，
-`isImageLikeUrl` 判不出圖 ⇒ hover／行內預覽一併失效。
+同一個坑換到**文章內文**（素材 `tests/e2e/cassettes/pttbug-body-urlwrap.json`：`※ 文章網址: …/M.1788041180.A.` ／ `404.html`）：
+逐列偵測兩層都只看得到殘段 ⇒ 右鍵「複製文章代碼／deep link」消失、hover／行內預覽失效。
 
 **與 `url_fix` / `url_wrap` 的呈現方式相反**：內文這裡**不補 `↳` 修復行**，而是讓連結本身跨行
 成立 —— 兩列的殘段各自包成一個 `<a class="y">`，`href` 都是接好的完整網址。用一般連結的
@@ -381,8 +358,7 @@
   下方以 `startCol` 去重併進 `aids` → 渲染（`aidLink`）／`runCache` 全部沿用、零改動。
 - 限制同 `url_wrap`：需 `mergeSameAuthorComments`（預設開）＋好讀模式；被別人插一則而斷開
   run 的不接；文章**內文**的跨列 AID 仍 out of scope（內文沒有「輸入欄寫滿」這種訊號）。
-- 修好之前的症狀（錄製檔整段錄下）：`board` 為 null → 退回目前文章所在看板 → 送出 `sask`
-  跳到 ask 板 → `#1gU3wwNZ` 搜不到 → `queue.miss`，跳轉失敗。
+
 - 守護測試：`tests/unit/aid_wrap.test.js`（三訊號逐條＋形狀邊界＋URL fragment）、
   `tests/unit/aid_parse.test.js`「board suffix across a merged-comment newline」、
   `tests/unit/merge_comment_render.test.js`「跨行 AID 接合」、
@@ -665,10 +641,11 @@ polling**（setTimeout 每 500ms），每 tick 直接從 `buf.getRowText` 讀整
 守護：`tests/unit/auto_login_logic.test.js`（假 app 驅動 `_tick`：帳號/密碼順序、dup/err one-shot、loose「重複登入」需 `[Y/n]`/`(Y/N)`、主選單 stop、密碼錯誤 stop）；e2e shared 登入 fixture 亦間接走此路徑（需 env PTT_USER/PTT_PASS）。
 
 ### 兩階段驗證 2FA / TOTP（`_handleOtp`）
-server 端行為以 `3rd_script/pttbbs/mbbsd/mbbsd.c#checkuser_2fa` 為準（**勿從畫面反推**）：
-密碼正確後才問，最多 **5 次**；`U_2FA_NEWIP` 模式下 `lasthost` 相同就整段跳過 ⇒
-**同一帳號 2FA 提示可能不出現**。TOTP 參數見 `common/sys/2fa.c`：HMAC-SHA1 / 6 位 / 30 秒 /
-Base32（PTT 給 10 bytes＝16 字元），server 驗證 `time_window=1`（±30s）。
+server 端行為以 `3rd_script/pttbbs` 為準（**勿從畫面反推**）。**WebSocket 連線的登入走 `daemon/logind`**
+（`daemon/wsproxy/wsproxy.lua` 連 `bbs_logind_addr`），不是 `mbbsd.c#checkuser_2fa`：logind 錯一次 `ctx.retry++`，
+**達 `LOGINATTEMPTS`(3) 就斷線**（mbbsd 那條是 5 次後鎖）。密碼正確後才問；`U_2FA_NEWIP` 模式下 `lasthost`
+相同就整段跳過 ⇒ **同一帳號 2FA 提示可能不出現**。TOTP 參數見 `common/sys/2fa.c`：HMAC-SHA1 / 6 位 / 30 秒 /
+Base32（PTT 給 10 bytes＝16 字元），server 驗證 `time_window=1`（±30s）。兩邊的提示／錯誤字面不同（協定 §11 `auto_login` 列），marker 兩邊都中。
 
 - 純函式 `src/js/totp.js`：`base32Decode`（**非法字元回 `null` 不可跳過**——`0/1/8/9` 誤植會變成
   「格式看似正確、code 永遠錯」）、`normalizeOtpSecret`（吃純 base32／含空白破折號／整段
@@ -680,9 +657,9 @@ Base32（PTT 給 10 bytes＝16 字元），server 驗證 `time_window=1`（±30s
 - **後續步驟（dup／err／歡迎畫面／主選單）一律只 gate `_sentPass`，禁止加 `_sentOtp`**，
   否則 NEWIP 直接放行時整條流程卡死。
 - **沒有可用密鑰 → `stop()` 且一個鍵都不送**：這是刻意支援的降級用法（不想把密鑰交給密碼
-  管理員的人留空即可），不是錯誤處理。送空白會被當錯誤驗證碼、白燒 server 的 5 次額度。
+  管理員的人留空即可），不是錯誤處理。送空白會被當錯誤驗證碼、白燒 server 的嘗試額度。
 - 重試：需畫面出現 `驗證碼錯誤` 這個明確證據，**且必須跨 30 秒窗**（同窗重算 code 相同，重送必錯）；
-  我方最多用 `MAX_OTP_ATTEMPTS=2` 次，其餘留給人手打或 8 位救援碼（救援碼一次性，不自動填）。
+  `OTP_SKEW_STEPS=[0,-1]` ⇒ 最多 2 次，第 3 次留給人手打或 8 位救援碼（logind 第 3 次錯就斷線；救援碼一次性，不自動填）。
 - 本窗剩餘 `< OTP_MIN_REMAIN_MS(2s)` 就等下一窗；看到 prompt 才把 deadline 加 `OTP_EXTRA_MS`。
 - async 送出用 `_otpPending` 防重入，resolve 後**重驗** `_done`／`_seq`／`connectState`／prompt 還在。
   `_otpPromise` 是測試 seam。
@@ -710,9 +687,8 @@ pttchrome:v1:<BASE32_SECRET>:<password>      # 密碼永遠在最後
 
 寫入端（`PrefModal` → `pref_credential.js#credentialToStore`）：帳密齊全且支援 API →
 `credentials.store(new PasswordCredential({ password: packCredential(...) }))` 觸發瀏覽器
-「儲存／更新密碼？」提示。**localStorage 照原樣寫入，不再提早剝除**（2026-08 修）：
-`store()` 的 promise resolve **早於**使用者回答提示，舊版立刻把 `autoLoginPassword` 清成 `""`，
-使用者按「不儲存」就兩邊都沒了，且與 `_maybeMigrate` 刻意不清的設計自相矛盾。只填密鑰沒填
+「儲存／更新密碼？」提示。**localStorage 照原樣寫入，不提早剝除**：
+`store()` 的 promise resolve **早於**使用者回答提示，提早清會讓使用者按「不儲存」時兩邊都沒了。只填密鑰沒填
 密碼 → 回 `null`（組不出 credential），改由下面的 `needsStore` 補完。
 
 遷移（自我修復、不弄丟憑證）：`_maybeMigrate()` 在到主選單時觸發，條件 `_usedLegacy || _needsStore`
@@ -744,47 +720,41 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
 - **DOM scraping 容錯**（測試/外部讀畫面）：① `visibility:hidden` 列 `innerText` 回空字串（Chromium）→ 改讀 `textContent`；② floorBadge 插在 bbsline 內污染文字（`推9 userid`）→ 推文正則須容忍 `/^(推|噓|→)\d*\s+/`。app 邏輯讀 buf、複製有 `user-select:none`，皆不受影響。
 - **改樓層徽章必須守三個契約**（各有測試守護，破一個就紅）：① 對等寬格線**淨推進 0**（零寬盒 + `position:relative`/`transform` 位移，勿改用 margin/padding 撐位）；② `[data-floor]` 的 `textContent` 仍是純樓號數字（unit/e2e 皆以此讀樓號）；③ `color` 留在 `.floorBadge` 外層（上班模式 `color.css` 以 `.floorBadge` 覆寫壓灰，`ui_behavior.offline.spec.js` 直接探測該 class）。幾何回歸（不侵入 id 欄）只有真瀏覽器量得到 → 守在 `enhance.offline.spec.js`（含合成 4 位數樓號）。
 - **打字游標（`#cursor`）的顏色是 inline style，任何「用 CSS 改寫配色」的功能都必須同步它**。`term_view.updateCursorPos` 以 `cursor_color.js#cursorColorForBg(bg, workModeActive)` 設 `bbsCursor.style.color`，原生模式取的是**原生 ANSI 背景的反色**（`term_buf.termInvColors`）→ class 覆寫（`.work-mode-active` 之類）碰不到它，一脫鉤最慘的是 PTT 反白輸入列（b7/b15：推文列/標題列/搜尋列）：游標 `#3F3F3F` 畫在被壓灰的 `#374151` 上，對比 ≈1.0＝隱形。上班模式因此改回傳與 bg 無關的固定淺灰，且 `cursor_color.js#workModeBgColor` 是 `color.css` `.work-mode-active .b*` 的鏡像（**改一邊要改另一邊**，否則對比保證失效）。旗標由 `App.onPrefChange` → `view.setWorkMode` 餵。守護：`tests/unit/cursor_color.test.js`（對比 ≥4.5:1）＋ `ui_behavior.offline.spec.js` 上班模式那條（接線）。
-- **打字游標必須跟畫面共用同一個座標系；「對齊」是錯誤的解法（2026-08-21 定案，勿回頭）**。`#cursor` 現在由 `term_view` 建構子建在 **`.main` 裡面**（不在 `index.html`），位置就是 `.main` 的內容座標 `(cur_x*chw, cur_y*chh)` —— 捲動由 `.main` 帶著走、縮放由 `.main` 的 `transform` 一起套、置中／`marginTop`／捲軸讓位的 `+10` 全部自動吸收。**不可以再引入任何 `scrollTop` 或 `scale` 補償**；需要補償就代表它又被搬出 `.main` 了。
-  - 前身是掛在 `#BBSWindow`(`position:fixed`) 下、用 `convertMN2XYEx` 的格線公式算絕對座標，於是每個差異都要補一項，補兩輪（cbee3f5、865b828）仍復發。實測出兩條結構性漏洞：**(a) 純捲動不重繪** —— `updateCursorPos` 只由 `term_buf.notify` 驅動，滾輪／`scrollIntoView`／對焦捲動都不產生 buf 更新，補償永遠慢一步，游標停在原地直到下一次按鍵（＝「有時候、非特定文章、重進就好」）；**(b) 縮放模式垂直原點差 `5*(1-scaleY)` px** —— `.main` 實際高 `chh*rows+10`、`transform-origin: center`，而公式的垂直原點用 `chh*rows`，漏掉那 10px；水平方向的 `+10` 剛好在兩式間抵消，所以舊測試只守得住水平。
+- **打字游標必須跟畫面共用同一個座標系；「對齊」是錯誤的解法（勿回頭）**。`#cursor` 由 `term_view` 建構子建在 **`.main` 裡面**（不在 `index.html`），位置就是 `.main` 的內容座標 `(cur_x*chw, cur_y*chh)` —— 捲動由 `.main` 帶著走、縮放由 `.main` 的 `transform` 一起套、置中／`marginTop`／捲軸讓位的 `+10` 全部自動吸收。**不可以再引入任何 `scrollTop` 或 `scale` 補償**；需要補償就代表它又被搬出 `.main` 了（搬出去時「純捲動不重繪」與「縮放垂直原點差」兩個結構性漏洞補不完）。
   - **`.main` 必須有 `position: relative`**（`main.css`）：縮放時 `transform` 本來就會讓它成為 containing block，但未縮放時 `transform` 是 `none`，少了這行游標會退回以 `#BBSWindow` 為基準而全盤錯位。
   - **React 不可以直接 render 進 `.main`**：React 19 在 root container 首次 mount 的 commit 會執行 `container.textContent = ''`（`react-dom-client` 的 HostRoot mutation phase）⇒ 預先放進去的 `#cursor` 第一次 render 就被清光。故 `.main` 內另切 `#screenRoot` 給 React 獨佔，`#cursor` 是它的兄弟。
   - **`#t`（隱藏輸入框／注音候選）刻意留在 `#BBSWindow`**：它 `left:-10000px`，一旦成為 scroller 的子孫，瀏覽器對焦時會把 `.main` 捲過去。它仍走 `convertMN2XYEx`（那是 `convertMN2XYEx` 目前唯一的消費者）。
   - **非格線幀（好讀累積長頁）直接隱藏游標**：畫面第 N 列與格線第 N 列無關，`buf.cur_y` 指不到任何一列。文章內的輸入一律先進 functionMode 鏡像原生 24 列（`easy_reading._onKeyDownProcessUI` 對任何單字元鍵），那是格線幀，所以不影響打字。
   - 守護：`tests/e2e/offline/cursor_shape.offline.spec.js`（8 條：形狀／格內／水平／縮放／functionMode 不可捲／純捲動不脫鉤／`#cursor` 活在 `.main`／長頁隱藏）＋ `tests/unit/server_cursor_mark.test.js`（三個可見性來源 OR 合併）。
-- **「pref → 畫面」的鏈路要有測試盯著終點，不能只看到有人賦值就算接上**。實例：`mouseBrowsingHighlightColor`（游標底色）→ `view.highlightBG` 從 fork 改 React 起就是**只寫不讀**——`term_view.js` 初始化一次、`App.onPrefChange` 賦值一次，全 repo 零讀取點，真正上色的是 `LinkSegmentBuilder`/`Row` 硬寫的 `cx({ b2: … })`。使用者選任何顏色畫面永遠是 `#008000`，而且因為 pref 有正確持久化、`redraw(true)` 也有被呼叫，看起來一切正常。2026-08-15 才發現並改成 `cursor_highlight.js#highlightClass(pref)` → `b1..b15`。教訓：新增/搬動任何「設定值影響渲染」的 pref，回歸測試要斷言**渲染輸出**（DOM class/style），不是斷言中間欄位被設到。
+- **「pref → 畫面」的鏈路要有測試盯著終點，不能只看到有人賦值就算接上**：新增/搬動任何「設定值影響渲染」的 pref，回歸測試要斷言**渲染輸出**（DOM class/style），不是斷言中間欄位被設到（反例：游標底色 pref 曾只寫不讀，選任何顏色畫面都不變，持久化與 redraw 卻一切正常）。
 - **游標列標示只有一個套用入口 `term_view.applyCursorHighlight`**，決策全在純函式 `src/js/cursor_highlight.js`（`resolveHighlightRow`＝哪一列、`cursorHighlightClasses`＝畫什麼、`highlightColStart`＝從第幾欄畫起）。來源有三種（原生真游標 `buf.cur_y`／列表好讀虛擬游標／滑鼠 hover）、模式判斷靠 `buf.listRenderMode` 與 `pageState`，**勿在 render 分支各自呼叫 Screen 的命令式 API**（舊版只有原生分支呼叫 `setHighlightedRow`，所以列表好讀與 functionMode 的游標永遠沒有底色）。掛載點：redraw 的 if/else 鏈之後（統一一次）、`term_buf.setHighlight`、`updateCursorPos`（涵蓋只有游標動的幀）、pref 變更。
 - **傳給 `React.PureComponent` 的 prop 勿在 render 內現生新物件/Promise**。否則 shallow-compare 永遠不等 → PureComponent 形同失效、子樹每次重掛。實例：`ImagePreviewer` 的 `request` 曾每 render `of(href).then(resolveSrcToImageUrl)` 新 Promise → pusherHighlight 重繪時 value 重置、YouTube iframe 卸載重掛**閃爍**（img 有快取無感）；改 `ImagePreviewer.jsx#requestPreview(href)` 以 href memoize（module `Map`），同 href 同參考。核心渲染鏈去 React 化後 `ImagePreviewer` 仍是 React 葉子島，這條照樣成立。守護 `tests/unit/row_render.test.js`「same href → requestPreview 回同一個 Promise」。
 - **逐列節點快取只在 `enhance.stableRows` 為真時成立**（好讀累積長頁 `buf.pageLines`，由 `term_view.js` 的 `STABLE_ROWS` 帶）。那裡的列是 `cloneRow` 快照、append 之後永不再被寫，所以「列物件參考相同 ⇒ 內容相同」才成立。**原生 24 列畫面與列表視窗是 `term_buf` 就地改寫的活 buffer**：`buf.lines[y][x].ch = …`，列參考一路不變而內容每幀在變 —— 這兩條路徑加上 `stableRows` 就會一直畫出上一幀的內容。守護 `screen_incremental_render.test.js`「stableRows 沒帶 ⇒ 不套快取」。細節與另一半（逐列節點快取）見 `docs/easy-reading.md`「累積頁的每頁 render 成本必須是 O(新增列)」。
 - **自動開圖是延遲載入的（`render/inline_preview_slot.js`）：測試要驗預覽必先捲到，且捲完要等版面靜下來再量座標**。replay/boot 完就 `querySelector('img')` 只會量到空的佔位盒（用 `tests/e2e/helpers/replay.js` 的 `mountLazyPreviewsAt`／`seekInlineMedia`）。更隱蔽的一條：`scrollIntoView()` 之後**立刻**讀 `getBoundingClientRect()` 會拿到過期座標 —— 附近的圖這時才開始掛上、載入完又長高，把目標推走 → 後續 `page.mouse.click(x, y)` 點在別列上（`blacklist_quick_add` 的右鍵選單「查無加入黑名單」就是這樣紅的）。捲動與量測分開，中間等 `scrollHeight` 連續兩輪不變。
-- **佔位盒的塌陷補償只能給「真的有媒體」的 slot**（`lazy_media.recordSlotHeight` 的 `hasMedia`）。佔位盒卸載時會把當下高度釘進 `min-height`，本意是防真圖片卸載後內容塌陷、閱讀位置位移；但好讀對**每一個**連結都掛 slot，而每篇文章結尾都有「※ 文章網址: https://www.ptt.cc/bbs/…html」這種**非媒體**連結——它捲到附近只會顯示「讀取中…」指示器（`.previewLoading`，URL 解析中／媒體下載中共用），判定後內容消失。舊碼無條件釘住那 65px ⇒ **每篇文章的推文區前面都多出一塊假空白**，而且非媒體連結永遠不會再長出內容來填它（使用者 2026-08 回報）。判準用 `LAZY_MEDIA_SELECTOR` 查 slot 內有無真媒體元素，**刻意不含** `.previewLoading`／`.previewError`。守護：`tests/unit/lazy_inline_preview.test.js` ＋ `tests/e2e/offline/lazy_preview_blank.offline.spec.js`（素材必須夠長才會觸發卸載，見 `docs/offline-replay-testing.md`「素材選用」）。
-- **送鍵（或任何副作用）不可寫在 `console.log` 的字串運算式裡**。`easy_reading._onViewUpdated` 曾寫成 `console.log("send:" + keys + " -> " + this._maybeSendPageDown(keys, false))` —— 哪天把 log 包進 `if (TRACE)` 就會連好讀唯一的翻頁動力一起關掉。每幀日誌現由 `util.js` 的 `TRACE`（= `process.env.DEVELOPER_MODE`）在**呼叫端**包住，dev/e2e 照印、prod 由 bundler 整段消除。
-- **逐列加工走單一純函式 `comment_parse.annotateComment`**，勿為某路徑另寫一份（好讀/原生曾各複製一份而發散出 bug）。逐列狀態用每圈新物件 `const ann={}`，**勿用函式作用域 `var`**（JS `var` 不每圈重設 → 非推文列繼承前列 floor/authorId 範圍，畫出整條色塊或樓號溢出到空白/※編輯/內文）。守護 `comment_parse.test.js`。
-- **`parseListAuthor` 欄位需實機校準**（cols 17–28 @ C_Chat）；PTT 改版位移會先讓守護測試 live `core.spec.js`（解析器健康度）紅。
+- **佔位盒的塌陷補償只能給「真的有媒體」的 slot**（`lazy_media.recordSlotHeight` 的 `hasMedia`）：好讀對**每一個**連結都掛 slot，非媒體連結（每篇結尾的「※ 文章網址」）只會短暫顯示「讀取中…」，釘住它的高度＝推文區前多一塊永遠填不滿的假空白。判準用 `LAZY_MEDIA_SELECTOR`，**刻意不含** `.previewLoading`／`.previewError`。守護：`tests/unit/lazy_inline_preview.test.js` ＋ `tests/e2e/offline/lazy_preview_blank.offline.spec.js`（素材必須夠長才會觸發卸載）。
+- **送鍵（或任何副作用）不可寫在 `console.log` 的字串運算式裡**：每幀日誌由 `util.js` 的 `TRACE`（= `process.env.DEVELOPER_MODE`）在**呼叫端**包住、prod 整段消除 ⇒ 寫在 log 裡的副作用在正式版會消失。
+- **逐列加工走單一純函式 `comment_parse.annotateComment`**，勿為某路徑另寫一份。逐列狀態用每圈新物件 `const ann={}`，**勿用函式作用域 `var`**（不每圈重設 → 非推文列繼承前列 floor/authorId）。守護 `comment_parse.test.js`。
+- **`parseListAuthor` 欄位**（cols 17–28）照 `bbs.c#readdoent` 的欄位表；PTT 改版位移會先讓 live `core.spec.js`（解析器健康度）紅。
 - **Mantine 元件的 rest props 落在 `<input>`，不是整列外框**（`Checkbox.mjs:49,127`、`use-input-props.mjs`）。要標記／捲到／高亮「含 label 與說明文字的整列」一律用 `wrapperProps`；`Select` 更是只能靠它（`name` 會被渲染成 `<input type="hidden">`，沒有版面，`scrollIntoView` 對它無效）。
   - **但 `wrapperProps` 裡絕不可放 `className`**：它是在 `...getStyles("root")` **之後**展開的（`Checkbox.mjs:91` vs `111`）⇒ 會把 `mantine-Checkbox-root` 整個換掉、版面爆掉。加 class 走 `classNames={{ root }}`（Styles API 是 concat，安全）。設定搜尋的錨點／高亮就是踩過這組才定案，見「設定搜尋」節。
 - **Mantine `Combobox` 預設 `keepMounted: true` + `keepMountedMode: "display-none"`**：下拉的 DOM **永遠在**，關閉時只是被加上 inline `display:none`。⇒ 測試判斷「下拉開了沒」**不能數 `role=option` 的數量**（關閉後照樣是那幾個），要看可見性（`toBeVisible()`）或 target 上的 `data-mantine-stop-propagation`。同理，全域 `querySelectorAll("[role=option]")` 會把畫面上每一個 Mantine `Select` 的選項一起撈進來——要限定在自己的 dropdown 容器內。
 - **Mantine 的鍵盤導覽讀 `event.nativeEvent.code`，不是 `event.key`**（`use-combobox-target-props.mjs`；只有 Escape 那條用 `key`）。⇒ 測試裡 `fireEvent.keyDown(el, { key: "Enter" })` **不會有任何反應**，必須一併給 `code`。
 - **Mantine 的 `Tabs.Panel` 走 React 19 `<Activity>`**（`TabsPanel.mjs:24`，`keepMountedMode` 預設 `"activity"`）：非作用分頁整塊 `display:none`。⇒ 任何「切分頁之後量版面／捲動」的動作**必須等一個 frame**（`requestAnimationFrame`），同一個 commit 裡 `scrollIntoView` 是 no-op。這與「自動登入分頁是條件渲染」是兩個各自獨立的理由，十個分頁都適用。
 - Mantine 會**無條件**呼叫 `Element.prototype.scrollIntoView`（`useCombobox#selectOption`）與 `document.fonts.addEventListener`（Textarea autosize）。DOM 測試跑在真 Chromium（unit-browser），兩者都是真的。
-- **列表黑名單標註不可只信 `pageState`／`inListContext` —— 每一列都要先過 `comment_parse#isListShapedRow`**（2026-09-05 使用者回報「發文介面出現黑名單髒資料」，錄製檔 `ptt-debug-20260905-122522`）。兩層守門**同時都是黏的**：`term_buf.setPageState` 沒有 reset 分支（那是刻意的，見 `docs/pttbbs-screen-protocol.md` §5.1），從列表叫出來的整頁畫面（Ctrl-P 發文、板規、精華區…）會**沿用**列表的 `pageState = 2`；`term_view._inBoardListContext` 又只在 pageState 1/3 才清掉。而逐列解析本身零設防：`parseListTitleRaw` 對任何長度 > 29 的列都回傳 col≥29 的整段文字。
-  現場：發文分類列「種類：1.閒聊 2.問題 … 7.Vtub 8.自介 (1-8或不選)」的 col≥29 是「26夏 5.心得 6.情報 7.Vtub 8.自介 …」⇒ 使用者標題黑名單裡的 `vtub` 命中 ⇒ 整列被 `blacklistNoticeText` 換成「（本文已被黑名單） vtub」，把使用者正在看的分類提示蓋掉。**命中與否純看欄位對齊**（同畫面的 `[Vtub]` 板規列剛好落在 col 21 而逃過），所以症狀是「多黑名單命中的版塊最容易發生」的隨機髒資料。
-  **判準要嚴：先要求合法 userid 作者欄，再要求編號或 ★**。單用編號會漏接——`parseListArticleNumLoose` 是 `^(\d+)\b`，板規的「1. 不得…」會回 1 而放行。同一道閘門也修掉**真實列表畫面**上的同型誤命中（表頭「編號 日期 作者 標題」與 footer「文章選讀 (y)回應(X)推文(^X)轉錄」以前會被關鍵字如「轉錄」吃掉，golden 快照裡它們身上那組假的 `data-list-title` 就是證據）。`list_session#visibleListIndices` 必須同步同一道閘門（不變量 10）。守護：`comment_parse.test.js` 的 `isListShapedRow`、`screen_dropHidden.test.js` 兩個新 describe、golden `list_native_fnkeys` / `list_easy_reading_scrolled`。
-  第二層（防禦性）：`term_view._renderScreenLines` 在畫面 row2 找不到「編號」表頭時清掉 `_inBoardListContext`。**刻意不用 footer 當判準**——`v 設定已讀未讀` 那類 overlay 只重畫最後一列，表頭仍在，黏性語意才守得住。
+- **列表黑名單標註不可只信 `pageState`／`inListContext` —— 每一列都要先過 `comment_parse#isListShapedRow`**。兩層守門**同時都是黏的**：`term_buf.setPageState` 沒有 reset 分支（刻意，協定 §5.1），從列表叫出來的整頁畫面（Ctrl-P 發文分類、板規、精華區…）會**沿用** `pageState = 2`；`term_view._inBoardListContext` 又只在 pageState 1/3 才清掉。而 `parseListTitleRaw` 對任何長度 > 29 的列都回傳 col≥29 的文字 ⇒ 板規／分類提示列會被標題黑名單「命中」換成通知列。
+  **判準要嚴：先要求合法 userid 作者欄，再要求編號或 ★**（單用編號會漏接「1. 不得…」）。`list_session#visibleListIndices` 必須同步同一道閘門（不變量 10）。守護：`comment_parse.test.js` 的 `isListShapedRow`、`screen_dropHidden.test.js`、golden `list_native_fnkeys` / `list_easy_reading_scrolled`。
+  第二層（防禦性）：`term_view._renderScreenLines` 在畫面 row2 找不到「編號」表頭時清掉 `_inBoardListContext`。**刻意不用 footer 當判準**——`v 設定已讀未讀` 那類 overlay 只重畫最後一列，表頭仍在。
 - **要算「逐列欄位位置（col）」一律走 `TermChar[]`，勿掃 `rowToText` 後字串**。Big5 DBCS **trail byte 可能=0x40(`@`)**（其他 ASCII 標點同理）→ 掃字串會在中文內誤命中、且 string index ≠ TermChar col（DBCS 佔 2 cols）。逐列遇 `isLeadByte` 跳 2 格、只在單 byte ASCII 比對（同 `rowToText` 走訪）。實例：`mention_parse.detectMentions`（X @帳號），守護有「trail byte 0x40 不誤判」case。
-- **額外連結偵測器（`bare_domain`／`aid_parse`／`mention_parse`）一律要排除「已被 `uriRegEx` 標成 URL」的格子**，統一走 `src/js/term_url_flag.js` 的 `isTermUrlCell`／`rangeInTermUrl`（假 cell 沒有 `isPartOfURL` → 回 false，不影響純邏輯測試）。它們是在**同一批 cell** 上再掃一次找主偵測器看不見的形狀，一旦在 URL 內命中，`LinkSegmentBuilder` 就會在那個 col 切開 segment ⇒ 一條網址被拆成好幾個 `<a>`、中段換成別的 href。實例（使用者 2026-08 回報）：`https://…/PttChrome/#Browsers/1gU3wwNZ` 的 `#Browsers` 恰是合法 AIDc 形狀（`#` 前非 AID 字元、8 個 AID 字元、第 9 格非 AID 字元）→ 底線只畫到 `#Browsers`、尾段 `/1gU3wwNZ` 不是連結、滑鼠停在中段狀態列顯示 `…/PttChrome/#`（那是 `.aidLink` 的 `href="#"`）。同型還有 `https://x.com/@jack` 的 `@handle`。守護：`aid_parse.test.js`／`mention_parse.test.js` 的「已被 uriRegEx 標記的 URL 內不產生候選」＋ `tests/e2e/offline/url-fragment-aid.offline.spec.js`（真 uriRegEx 設旗標，unit 只能餵假旗標）。
-- **`LinkSegmentBuilder.readChar` 對 `'\n'` 提前 return，範圍型連結的關閉邊界必須在那裡一併清掉**。範圍型（`_mention`/`_aid`/`_giveaway`/`_bareDomain`）靠 `i === endCol` 關閉，而合併推文塊的 `'\n'` 分支走在那些檢查之前 ⇒ `endCol` 落在換行 cell 上時**永遠關不掉**，狀態外溢到後續每一行（整塊被畫底線、href 全是上一行那個連結；使用者 2026-08 回報 `duk.tw`）。`comment_merge` 會剝掉每則的行尾空白，所以「範圍結束＝換行前一格」是**常態不是邊角**。清空要在 `saveSegment()` **之後**（那一段仍須用當下狀態包成 `<a>`）；候選字元類都不含 `'\n'`，故無條件清空安全。守護 `row_render.test.js`「行尾裸網域不得外溢到後續行」。
-- **e2e flake 常態**：最新文章常無推文（測樓層/黑名單從 End 往舊文找）；guest 名額滿用 env `PTT_USER/PTT_PASS`；偶發 403/ECONNRESET（PTT 端）。
+- **額外連結偵測器（`bare_domain`／`aid_parse`／`mention_parse`）一律要排除「已被 `uriRegEx` 標成 URL」的格子**，統一走 `src/js/term_url_flag.js` 的 `isTermUrlCell`／`rangeInTermUrl`。在 URL 內命中會讓 `LinkSegmentBuilder` 在那個 col 切開 segment ⇒ 一條網址被拆成好幾個 `<a>`（例：`https://…/#Browsers/1gU3wwNZ` 的 `#Browsers` 恰是 AIDc 形狀、`https://x.com/@jack` 的 `@jack`）。守護：`aid_parse.test.js`／`mention_parse.test.js` 的「已被 uriRegEx 標記的 URL 內不產生候選」＋ `tests/e2e/offline/url-fragment-aid.offline.spec.js`（真 uriRegEx 設旗標）。
+- **`LinkSegmentBuilder.readChar` 對 `'\n'` 提前 return，範圍型連結的關閉邊界必須在那裡一併清掉**：範圍型（`_mention`/`_aid`/`_giveaway`/`_bareDomain`）靠 `i === endCol` 關閉，`endCol` 落在換行 cell 上（`comment_merge` 剝掉行尾空白後是常態）就永遠關不掉、外溢到後續每一行。清空要在 `saveSegment()` **之後**。守護 `row_render.test.js`「行尾裸網域不得外溢到後續行」。
+
 - **裝置端 AI（`window.LanguageModel`）的存在 ≠ 可用**：Playwright 的 Chromium 有這個 global，但沒有模型。任何「要不要顯示 AI 功能」的判斷一律以 **`availability()` 探測結果**為準，勿用 `typeof window.LanguageModel`——否則會出現一顆按下去每次都 fallback 的假按鈕。中文也**不在** Prompt API 官方支援語言（en/ja/es/de/fr）內，故 `expectedInputs` 一律不傳語言（傳了可能丟 `NotSupportedError`）。見 `docs/merge-caption-ai-assist.md`。
-  - **e2e 別斷言 Chromium 的 availability 實際回值**（2026-08 實測）：在真實 origin 下它回的是
-    **`'downloadable'`**（不是舊筆記寫的 `'unavailable'`；`about:blank` 下則整個 global 都沒有）。
+  - **e2e 別斷言 Chromium 的 availability 實際回值**：真實 origin 下它回 `'downloadable'`（`about:blank` 下整個 global 都沒有），
     這個值會隨 browser 版本漂移 → 要測「不支援／裝置不符」的分支，一律用 `addInitScript` stub
     `window.LanguageModel`（或 `delete` 它）明確驅動，見 `ui_behavior.offline.spec.js` 的 AI 分頁三條。
-- **設定頁的憑證欄位＝瀏覽器眼中的登入表單**（2026-08 實測災情）。Chrome 的密碼管理員靠
-  版面啟發式判斷，不看你的意圖：只要頁面上有 `<input type="password">`，它就會抓「最近的
-  文字輸入」當帳號欄配對。2FA 密鑰欄用 `PasswordInput`（=第二個 password 欄）時，Chrome 抓到的
-  是 `autoLoginDupConn` 那顆 Select 的內層 input → 跳出「**使用者名稱：刪除其他連線 (Y)**、
-  密碼：<密鑰>」的假儲存提示，並開始自動填入欄位——**那會直接毀掉「欄位空白＝已交給密碼
-  管理員」這條說明**（被填滿後使用者以為東西還在本機）。三條規則，動設定頁憑證區前先讀：
+- **設定頁的憑證欄位＝瀏覽器眼中的登入表單**。Chrome 的密碼管理員靠版面啟發式判斷：只要頁面上有
+  `<input type="password">`，它就會抓「最近的文字輸入」當帳號欄配對（2FA 密鑰欄若也是 password 欄，會跳出
+  「使用者名稱：刪除其他連線 (Y)」的假儲存提示並自動填入，毀掉「欄位空白＝已交給密碼管理員」這條說明）。三條規則，動設定頁憑證區前先讀：
   ① 密鑰欄用一般 `TextInput`（它本來就是 PTT 在終端機上明文印出來給人抄的東西，不是密碼）；
   ② 整頁只准有一個真正的 `type="password"`，且標 `autoComplete="new-password"`（Chrome 的
   「這是變更密碼表單，別自動填」標準訊號）；③ 整組欄位只在切到該分頁時才渲染。
@@ -796,17 +766,13 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   症狀很像「清除邏輯壞了」，實際上是快取把它短路了。守護：`pref_save_close.test.js` 與
   `auto_login_credentials.test.js`「只有設定頁編輯能填 session cache」。
 - **送機器按鍵前必須確認「這個畫面吃不吃這個鍵」——pmore 的快捷鍵被 `currstat` 綁死**。
-  `mbbsd/more.c#pmore_key_handler`：`s`(RET_SELECTBRD) 與 `#`(RET_SELECTAID) 都寫死
-  `if (!HasUserPerm(PERM_BASIC) || currstat != READING) break;`。站內信是 `RMAIL` →
-  兩鍵都是 DONOTHING，於是 AID 跳文送的 `s<板名>\r` **被 pager 逐鍵當快捷鍵吃掉**
-  （`Y`=回信給所有人、`X`/`%`=推文、`T`=改標題、`E`=編輯、`r`/`R`=回信）——不是沒作用，是**誤觸**
-  （實錄 `ptt-debug-20260813`：畫面直接跳到另一封信，6s 後才報「切換看板失敗」）。
+  `more.c` 的 `s`（切換看板）與 `#`（代碼搜尋）只在 `currstat == READING` 且有 `PERM_BASIC` 時生效
+  （新版是 `pager_reading_cmds` 只在 READING 那層）。站內信是 `RMAIL` ⇒ 兩鍵無效，AID 跳文送的 `s<板名>\r`
+  **被 pager 逐鍵當快捷鍵吃掉**（`Y`=回信給所有人、`X`/`%`=推文、`T`=改標題…）——不是沒作用，是**誤觸**。
   三件必須一起記的事實：
-  ① **判別式**：pager footer part3 就是 `currstat` 的直接投影
-     （`more.c#common_pmore_footer_handler`）——`RMAIL`→「(y)**回信**」、`READING`→「(y)**回應**」、
-     其餘→`(h)說明`/`(←q)離開`。純函式 `string_util.parsePagerFooterContext`。
-     **推論只能單向**：含「回應」⇒ READING；反向不成立，因為 part3 在寬狀態列下會**整段消失**
-     （同檔 `parseStatusRow` 上方註解），所以「沒有回應」只是**不確定**，一律降級走安全路徑。
+  ① **判別式**：pager footer part3 就是 `currstat` 的直接投影（`more.c#common_pmore_footer_handler`，新舊兩代格式見
+     協定 §11.10）——READING 才有「(y)**回應**」。純函式 `string_util.parsePagerFooterContext`。
+     **推論只能單向**：含「回應」⇒ READING；反向不成立（part3 在寬狀態列下會**整段消失**），一律降級走安全路徑。
   ② **退出終點只能是主功能表**：`menu.c:498` 只有 MMENU/TMENU/XMENU 的 `s` 走
      `ReadSelect()`→`do_select()` 真的進板；`board.c:1902`（看板列表／我的最愛／分類看板）的 `s`
      是「搜尋看板」，命中只**移動游標**不進板 → 拿它當終點會靜默失敗。
@@ -823,32 +789,19 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   「看板」欄位**（該欄只存在於看板文章檔）。舊碼 `if (parsedBoard) this._articleBoard = parsedBoard;`
   分開判斷 ⇒ 信裡沿用**上一篇看板文章**的板名 ⇒ 沒帶後綴的 `#AID` 跳到毫不相干的看板。
   改用 `comment_parse.parseArticleHeader`（回傳 `{author, board}`，非 header 列回 `null`）一次寫入。
-- **「回到原本那篇」的座標不能拿 `_selectedNum`，只能拿 `_openedNum`**（AID 返回；兩次 live 誤跳都栽在這）。
-  ① 置底（pinned）文根本沒有序號，`_selectedNum` 這時還留著**上一個數字列**的殘值 → 返回時用它跳號，
-     開到完全不相干的文章（實測：回 C_Chat 板規變成開了一篇閒聊）。
-  ② 列表以**原生**渲染時（functionMode——按一下 `Q` 文章資訊框就會進去），方向鍵是 passthrough，
-     server 游標動了而 list session 不知道，`_selectedNum` 停在它最後被告知的那一列。
-  所以 `ListSession.currentAnchor()` 只認 `_beginOpen` 設的 `_openedNum`（我方序列化開文用的序號），
-  並在 `_enterFunctionMode`／`_cleanup`／`noteLeftPost` 清掉。`_boardName` 則相反：原生插曲會清掉它
-  且回列表時不重新 seed，所以允許為 null，由 `nav_history.chooseAnchor` 用 `view._articleBoard` 遞補。
+- **「這篇是列表好讀自己開的」只認 `_openedNum`，不可拿 `_selectedNum`**（`ListSession.currentAnchor()`）：
+  置底文沒有序號、`_selectedNum` 會留著上一個數字列的殘值；列表以原生渲染時（functionMode）方向鍵是
+  passthrough，`_selectedNum` 停在舊值。`_openedNum` 由 `_beginOpen` 設，`_enterFunctionMode`／`_cleanup`／
+  `noteLeftPost` 清掉。返回錨點已不用任何序號（只認 AID，見 `docs/easy-reading.md`「返回原文」）。
   守護：`tests/unit/list_session.test.js`「currentAnchor」describe。
-- **`\f` 關不掉任何「按任意鍵」——它根本不是一個「鍵」**（2026-08-15 live 實錯，AID 返回的
-  第 0 步 `Q` 文章資訊框）。`Ctrl('L')` 在 `mbbsd/io.c#system_key_hook:196-203` 就被攔下做
-  `redrawwin()` 並回 `KEY_INCOMPLETE`，`vkey()` 對它 `continue`（`io.c:432-434`）⇒ 不會回傳給
-  任何 handler。**這正是 `\f` 能當萬用探針的原因，也正是它關不掉 `pressanykey()` 的原因**
-  （協定 §6 末條）。
-  後果不是「沒作用」而是**整串位移一格**：框沒關 → 下一個字元被拿去關框 → 剩下的字串被
-  pager／列表當快捷鍵逐鍵吃掉。實錯：送 `\f` + `sC_Chat\r` ⇒ `s` 關框、`h` 開說明、
-  `a` 跳作者下一篇，人直接跑到別篇文章，畫面看起來像「切換看板失敗」。
-  **關 pressanykey 一律用空白鍵**（外漏到列表／pager 都只是翻頁），不可用 `←`（外漏會直接
-  離板）也不可用 `Q`（`bbs.c:3774` 的特例會切成金錢排序模式）。
-  另一半同樣要記：這種「回應以 pressanykey 收尾」的交易一律 `fullRepaint: false`，判定純靠內容。
+- **`\f` 關不掉任何「按任意鍵」——它根本不是一個「鍵」**（協定 §6）：送 `\f` 關框的後果是整串位移一格，
+  剩下的字串被 pager／列表當快捷鍵逐鍵吃掉。**關 pressanykey 一律用空白鍵**（不可用 `←`：外漏會離板；不可用 `Q`：
+  `view_postinfo` 會切成金錢排序）。這種「回應以 pressanykey 收尾」的交易一律 `fullRepaint: false`，判定純靠內容。
   守護：`tests/unit/aid_navigation.test.js`「origin AID 錨點」describe 的 REGRESSION 條。
 - **AID 導航自己的落地，會觸發一次「使用者離開文章」的通知**。`_begin()` 進 `easyReading` 的
   functionMode，目標文章 settle 時 functionMode 退出走 'leave' 分支 → `leaveCurrentPost()` →
   `aidNavigation.noteLeftPost()`；而 `_enqueueOpen.onDone` **已經先把 `active` 清成 false**，
-  所以那個「導航中就略過」的守門擋不住它 → 每次跳完都會把剛 push 的返回層抹掉，返回鈕永遠不出現
-  （live 實測 2026-08-13 第一次跑就撞上）。修法是 `_ownedLeave` one-shot，在 `_begin()` 武裝、
+  所以那個「導航中就略過」的守門擋不住它 → 每次跳完都會把剛 push 的返回層抹掉。修法是 `_ownedLeave` one-shot，在 `_begin()` 武裝、
   第一次 `noteLeftPost` 消耗掉。守護：`aid_navigation.test.js`「我方落地自己會產生一次 leaveCurrentPost」。
 - **可點的 overlay 不能沿用 `flashListHint` 那一族**：它們是 `pointer-events:none`（純提示），
   照抄會做出一顆按不下去的按鈕。返回鈕（`components/AidBackButton`）要
@@ -856,25 +809,14 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   （否則滑鼠瀏覽開著時，點按鈕會連帶把游標指令送給 PTT），mousedown preventDefault（不搶 `#t` 焦點）、
   mousedown/mouseup/click `stopPropagation()`（App 的滑鼠入口掛在 window）。
   守護：`tests/unit/aid_back_button.test.jsx`、`tests/e2e/offline/aid_back_ui.offline.spec.js`、`mobile_app_bar.offline.spec.js`。
-- **live e2e 的看板選擇會互相污染**：AID 返回測試要開列表好讀（大量 prefetch）並反覆進出，
-  跑在 `C_Chat` 上會改掉該板的 server 游標（`getkeep`）與 `currtitle`，後面用 `C_Chat` 的
-  `enhance`／`easy-reading` 測試就會開到別篇文章——症狀是**單獨跑全綠、整包跑必紅**（而且紅的位置每次不同）。
-  它也不能跑在 `Test` 板：那裡幾乎只有置底公告，一般編號文章少到選不出穩定樣本
-  （置底文的 AID 搜尋本身是通的，見 `aid_navigation#aidSearchLanded`）。
-  現用 `movie`。同理，測試若改了 `enableEasyReadingList` 這種 `resetSession` 不會還原的 pref，必須自己在 finally 還原。
+
 - **在測試/工具裡直接餵 cassette 進 `TermBuf` 後讀 `getRowText`，必須先讓事件回圈跑一拍**（unit 用 `vi.advanceTimersByTime(300)`、瀏覽器用 `await sleep(120)`）：`isLeadByte` 只在 buf 的 update pass（notify 30ms + settle 50ms）才標記，沒跑完就讀會拿到**未轉碼的 Big5 位元組**（症狀：整片 `§@ªÌ` 亂碼，看起來像編碼表沒載）。
-- **終端機的任何祖先都不可有 `user-select: none`**（issue #22，2026-08 實測）。Firefox 判定
-  可選取性是沿 frame 鏈**往上**走、最外層的非 auto 值決定 ⇒ `#BBSWindow { user-select:none }`
-  會蓋掉 `.main { user-select:text }`，而且**只壞讀取端、不壞畫面**：拖曳照樣有反白、
-  `Range.toString()` 照樣拿得到字、`Selection.isCollapsed` 也是 false，唯獨
-  **`Selection.toString()` 回空字串**（它走 document encoder，被判不可選的內容整段跳過）。
-  下游全中：選取自動複製寫進空字串、右鍵快速搜尋關鍵字是空的、^C 複製空的。**Chrome 讓子層
-  覆寫成功，所以 Chromium e2e 永遠綠**——這類症狀一律先在 Firefox 量
-  `getComputedStyle(row).userSelect` 的整條祖先鏈，別往 JS 讀取端追。
-  真正不該被選到的節點（`#cursor`、好讀狀態列、樓層徽章）各自宣告 none 即可。
-  另附一條同源事實（本次實測**未**構成問題，但改焦點邏輯前要知道）：Firefox 的
-  `Element.focus()` 會收合 document selection（Chrome 不會），本 app 的 `setInputAreaFocus`
-  各呼叫點都有 `isCollapsed` 守門才沒踩到。
+- **終端機的任何祖先都不可有 `user-select: none`**（issue #22）。Firefox 判定可選取性是沿 frame 鏈**往上**走、
+  最外層的非 auto 值決定 ⇒ 祖先的 `user-select:none` 會蓋掉 `.main { user-select:text }`，而且**只壞讀取端**：
+  拖曳照樣反白，唯獨 **`Selection.toString()` 回空字串** ⇒ 自動複製／快速搜尋／^C 全拿到空字串。
+  **Chrome 讓子層覆寫成功，所以 Chromium e2e 永遠綠**——這類症狀一律先在 Firefox 量整條祖先鏈的
+  `getComputedStyle(row).userSelect`。真正不該被選到的節點（`#cursor`、好讀狀態列、樓層徽章）各自宣告 none 即可。
+  另：Firefox 的 `Element.focus()` 會收合 document selection（Chrome 不會），`setInputAreaFocus` 各呼叫點都要有 `isCollapsed` 守門。
   守護：`tests/e2e/offline/selection.offline.spec.js`（**offline-firefox** project，
   真滑鼠拖曳；程式化 `addRange` 會繞過瀏覽器選取機制 ⇒ Firefox 也會綠，測不到）
   ＋ `tests/unit/css_user_select.test.js`（沒裝 Firefox 也擋得住手滑加回去）。
@@ -886,8 +828,7 @@ axios/tippy/GM_config/國旗 IP 查詢(外部 osk2.me:9977 已失效)、滑鼠�
   **key 優先、code 補位**：Win/Linux 的非 QWERTY 佈局仍以實際打出的字母為準，且 `e.code` 缺失
   （合成事件）時不炸。假事件測試只寫 `key:'v'` 測不到這類 bug，必須同時給 Mac 風格的 `key`+`code`
   （`tests/unit/term_keyboard_paste.test.js`）。
-  - **2026-09-15 起 Alt 涵蓋全 26 字母**（Alt＝PTT 的 Ctrl，`docs/pttbbs-screen-protocol.md` §11.8），
-    於是四種 mac 形態全都會真的出現，不像當年 RTWV 只碰得到第一種：
+  - **Alt 涵蓋全 26 字母**（Alt＝PTT 的 Ctrl，`docs/pttbbs-screen-protocol.md` §11.8），四種 mac 形態都會真的出現：
     ①組字輸出；②**dead key**（`⌥E/⌥I/⌥N/⌥U` 的 `e.key === 'Dead'`，而且 keydown 回報
     **keyCode 229**，必須在 `term_view.acceptsKeyEvent` 開例外，否則事件在進到 remap 之前
     就被當成 IME 丟掉、組字還會照開讓 `é/î/ñ/ü` 漏進 PTT）；③`'ß'.toUpperCase() === 'SS'`
