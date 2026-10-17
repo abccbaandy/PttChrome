@@ -12,6 +12,7 @@ import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { ScreenRefresh } from './screen_refresh';
 import { ReadingRecord } from './reading_record';
+import { ReconnectResume } from './reconnect_resume';
 import { UnreadJump } from './unread_jump';
 import { MarkAllRead } from './mark_all_read';
 import { BoardMarkRead } from './board_mark_read';
@@ -223,6 +224,9 @@ export const App = function() {
   // Deep link (外部連結 #<Board>/<AID>) → 同一套 AID 跳轉。目標可能比登入先到，
   // 所以排程權在 controller 手上，不在 URL 解析那邊。
   this.deepLinkController = new DeepLinkController(this, this.view, this.buf);
+  // 斷線重連後回到原處（閱讀紀錄）。**要建在 deepLinkController 之後**：兩者都在
+  // 登入後的主功能表 settle 出發，deep link 的監聽要先跑（使用者剛給的連結優先）。
+  this.reconnectResume = new ReconnectResume(this, this.view, this.buf);
   this.autoLogin = new AutoLogin(this);
   // 圖片上傳（urusai）：拖放／貼上截圖／右鍵選單 → 上傳 → 網址送進推文列或編輯器。
   // 自己綁 window 的 drag* 事件；右鍵選單透過 this.imageUpload 呼叫它。
@@ -575,6 +579,10 @@ App.prototype.onClose = function() {
   // 見 onConnect：斷線當下就把 per-connection 的終端機模式清掉，別讓卡住的 BSU
   // 撐到下一條連線。
   this.buf.resetTerminalModes();
+
+  // 閱讀紀錄：記下斷線這一刻使用者在哪，重新登入後帶回去。**必須在下面的
+  // disable／reset 之前**（它們會丟掉看板身分與跳文落地的那篇）。
+  this.reconnectResume.capture(loggedOut);
 
   // Connection gone: the list buffer is stale by definition — hard reset to
   // idle/native so the reconnect starts clean.

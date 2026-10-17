@@ -291,6 +291,40 @@ describe("外部導覽的出口：序列停在列表時交回靜置探針", () =
     expectRestoredAfterFill(h, 350010);
   });
 
+  // 斷線重連後回到原處（reconnect_resume）：onClose 把 session disable 成 idle，重連後
+  // 從主功能表出發。fromIdle 讓它照樣停泊，序列收尾後 rebuild 驗證（只比板）再還原。
+  test("斷線重連：從 idle 停泊 → 收尾交回 ⇒ 回好讀，視野回到斷線前", () => {
+    const h = makeSession();
+    const before = h.s.readingPosition();
+    expect(before).toMatchObject({ board: h.boardName, topNum: 350010 });
+    h.s.disable(); // App.onClose
+    expect(h.s.state).toBe("idle");
+    h.s.beginExternalNavigation({ fromIdle: true });
+    expect(h.s.state).toBe("functionMode");
+    expect(h.s._holdReason).toBe("external");
+    const rr = recordFor(h.core);
+    rr.end(
+      { feature: "reconnect-resume", article: null, list: { ...before, matchBoardOnly: true } },
+      "done",
+      { only: "list" }
+    );
+    rr.releaseExternal();
+    expectRestoredAfterFill(h, 350010);
+  });
+
+  test("沒有 fromIdle（一般跳文）／列表好讀沒開 ⇒ idle 照舊不動", () => {
+    const h = makeSession();
+    h.s.disable();
+    h.s.beginExternalNavigation();
+    expect(h.s.state).toBe("idle");
+    window.localStorage.setItem(
+      PREF_KEY,
+      JSON.stringify({ values: { enableEasyReadingList: false } })
+    );
+    h.s.beginExternalNavigation({ fromIdle: true });
+    expect(h.s.state).toBe("idle");
+  });
+
   test("落在文章（handoff 已解除 hold）時交回是 no-op", () => {
     const h = makeSession();
     openArticle(h, 350026);

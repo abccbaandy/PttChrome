@@ -47,6 +47,7 @@
 | `board-search` `s` 看板搜尋 | 不還原（換板） | 列表、看板列表：原處 |
 | `article-search` 文章搜尋 | 不還原（搜尋結果是另一個編號空間） | 不還原（取消時零送出） |
 | `unread-jump` 跳到第一篇未讀 | 不還原（目的就是移動） | 不還原：停在翻到的那頁（使用者拍板） |
+| `reconnect-resume` 斷線重連後回到原處 | 文章：`auto`；列表：原處 | 失敗（原文找不到）：列表原處；取消：不還原 |
 
 不在表上的功能或結果，一律不動：未知就停在 PTT 給的位置。
 
@@ -85,14 +86,29 @@ N1 本身沒有變：探針仍然不碰 external，只有序列的擁有者能�
   - 搜尋結果或文摘（獨立編號空間）、主功能表、看板列表，都沒有可回的地方。
   - 跳往同一個板也沒有：`#<aid>` 會覆寫該板的 getkeep 游標（與 `nav_history.chooseAnchor` 同一條理由）。
 
+## 斷線重連
+
+`src/js/reconnect_resume.js`。PTT 的 session（含每個板的 getkeep 游標）跟著斷線一起死，重連只能重新導航，所以斷線那一刻向閱讀紀錄領書籤，登入回到主功能表後走 `aid_navigation.startResume`（AID 跳文同一套機器，dir `'resume'`，不碰返回堆疊）。
+
+- 時機：`App.onClose` 呼叫 `capture(loggedOut)`，**必須在** `listSession.disable()`、`aidNavigation.reset()` 之前：前者丟掉看板身分，後者清掉跳文落地的那篇。
+- 去哪（`resumePlanFrom`，純函式）：
+  - 在文章且知道本篇 AID（`aidNavigation.currentPostAid`：免費網址列，落空用跳文落地記下的那篇；**不按 Q**，斷線當下沒有連線可問）⇒ `s<板>` → `#<aid>` → ⏎，落地照決策表還原列。
+  - 在文章但問不到 AID ⇒ 退回那篇所在的列表（列表的板要等於文章的板）。只准用 AID 開文，編號會因刪文漂移。
+  - 文章列表 ⇒ `s<板>` → `<編號>⏎`（游標放回那篇，不開文）→ 停在列表，rebuild 時用 `matchBoardOnly` 還原視野。搜尋結果或文摘回到完整列表，不帶編號也不還原視野。
+  - 主功能表、看板列表、站內信、精華區 ⇒ 不回。
+- 列表 session 在斷線時被 disable 成 idle。`beginExternalNavigation({ fromIdle: true })` 讓它照樣停進外部 hold；否則 `s<板>` 落地那一幀 idle 會直接 seed，採用 server 的預設游標，之後的 `<編號>⏎` 就和本地選取對不上。列表好讀沒開時維持 idle。
+- 收手：自己登出不回；這條連線從沒登入過（重連失敗）就保留上一份；登入後離開主功能表、或 deep link 也在等登入（使用者剛給的連結較新）就作廢。`ReconnectResume` 要建在 `DeepLinkController` 之後，同一次 settle 讓 deep link 先跑。
+- 待回目標只在記憶體，重整就忘掉（同 deep link）。debug 錄製檔記 `reconnectResume.capture／dispatch／discard`。
+
 ## 測試
 
 | 層 | 檔案 | 守什麼 |
 |---|---|---|
 | unit | `tests/unit/reading_record.test.js` | 決策表逐格、比對規則突變、凍結語意、分派、deep link 返回錨 |
-| unit（真 Chromium） | `tests/unit/reading_record_list.test.js` | 文章列表：設全部已讀、重新整理、`s` 取消或送出、使用者移過游標、身後的列表、外部 hold 出口、編號空間 |
+| unit（真 Chromium） | `tests/unit/reading_record_list.test.js` | 文章列表：設全部已讀、重新整理、`s` 取消或送出、使用者移過游標、身後的列表、外部 hold 出口（含斷線重連從 idle 停泊）、編號空間 |
 | unit（真 Chromium） | `tests/unit/reading_record_board_list.test.js` | 看板列表：重新整理後還原、認不出、使用者按鍵作廢、外部 hold 出口 |
 | unit | `tests/unit/aid_navigation.test.js`「閱讀紀錄」各條、`deep_link_controller.test.js`「原生 pmore 讀文」 | 返回錨帶列表、看板錨返回還原、失敗交回 hold、deep link 從列表或原生 pager 出發 |
+| unit | `tests/unit/reconnect_resume.test.js`、`aid_navigation.test.js`「startResume」「currentPostAid」 | 斷線重連：去哪、何時出發、收手條件、鍵序列與落地還原 |
 | unit（真 Chromium） | `tests/unit/list_mark_read_viewport.test.js` | 前已讀後未讀（遷移後行為不變） |
 | offline e2e | `scenario_navigation.offline.spec.js`「跳文 → 返回之後，閱讀紀錄記著開文前的列表視野」 | 真 boot 鏈上身後列表的交接 |
 | offline e2e（手機） | `mobile_list_cards.offline.spec.js`「閱讀紀錄：卡片模式量到的視野頂端」 | 卡片模式的列表量測 |

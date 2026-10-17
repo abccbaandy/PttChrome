@@ -61,6 +61,10 @@ describe("決策表", () => {
     // 使用者拍板：找不到第一篇未讀時停在翻到的那頁。
     ["unread-jump", "done", "none", "none", "none"],
     ["unread-jump", "fail", "none", "none", "none"],
+    // 斷線重連：落在文章 'auto'、落在列表回原處；找不到原文停在列表也回原處。
+    ["reconnect-resume", "done", "auto", "origin", "none"],
+    ["reconnect-resume", "fail", "none", "origin", "none"],
+    ["reconnect-resume", "cancel", "none", "none", "none"],
   ])("%s / %s ⇒ 文章 %s、列表 %s、看板列表 %s", (feature, outcome, a, l, b) => {
     expect(restorePlan(feature, outcome)).toEqual({ article: a, list: l, boardList: b });
   });
