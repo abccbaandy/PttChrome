@@ -14,6 +14,7 @@ import path from "node:path";
 import { decideGate, windowStart } from "../../scripts/flaky-hunt-gate.mjs";
 import { decideWatchdog, renderStalledComment, STALLED_LABEL } from "../../scripts/flaky-hunt-watchdog.mjs";
 import { ISSUE_TITLE } from "../../scripts/flaky-hunt-report.mjs";
+import { ADVERSE_PROJECTS } from "../../scripts/run-adverse-e2e.mjs";
 
 const yaml = fs.readFileSync(path.join(__dirname, "..", "..", ".github", "workflows", "flaky-hunt.yml"), "utf8");
 
@@ -53,7 +54,12 @@ describe("workflow 靜態守護", () => {
       expect(block, name).toMatch(/needs:\s*(\[[^\]]*\bgate\b[^\]]*\]|gate\b)/);
       if (name !== "watchdog") expect(block, name).toContain("needs.gate.outputs.skip != 'true'");
     }
-    expect(all.report).toMatch(/needs:\s*\[unit-repeat, integration-repeat, e2e-offline-repeat\]/);
+    expect(all.report).toMatch(/needs:\s*\[unit-repeat, integration-repeat, e2e-offline-repeat, e2e-adverse-repeat\]/);
+    // report 的 needs 漏掉任何一個 *-repeat ⇒ 那個套件紅了也不開 issue（沒人知道）。
+    for (const name of Object.keys(all).filter((n) => n.endsWith("-repeat"))) {
+      expect(all.report, name).toContain(name);
+      expect(all.report, name).toContain(`needs.${name}.result`);
+    }
   });
 
   test("watchdog 不管紅綠都跑（always()），只在 dev", () => {
@@ -66,13 +72,37 @@ describe("workflow 靜態守護", () => {
 
   test("dispatch 可只跑單一 suite＋grep，grep 經 env 傳（不內插進 shell）", () => {
     const inputs = yaml.slice(yaml.indexOf("\n      suite:\n"), yaml.indexOf("\npermissions:"));
-    expect(inputs).toContain("options: [all, unit, integration, e2e-offline]");
+    expect(inputs).toContain("options: [all, unit, integration, e2e-offline, e2e-adverse]");
     expect(inputs).toContain("\n      grep:\n");
     expect(yaml).not.toMatch(/run:[^\n]*\$\{\{\s*(github\.event\.)?inputs\.grep/);
     const j = jobs();
     expect(j["unit-repeat"]).toContain('"all","unit"');
     expect(j["integration-repeat"]).toContain('"all","integration"');
     expect(j["e2e-offline-repeat"]).toContain('"all","e2e-offline"');
+    expect(j["e2e-adverse-repeat"]).toContain('"all","e2e-adverse"');
+  });
+
+  // 逆境情境每個 PR 都必跑（test.yml），nightly 漏掉某一桶或某一片＝那片的測試從不做重複輪測。
+  test("adverse：matrix 涵蓋 runner 的全部桶、每桶 shard 恰為 1..shards，且帶 --repeat-each", () => {
+    const job = jobs()["e2e-adverse-repeat"];
+    expect(job).toBeDefined();
+    const include = /include:\n([\s\S]*?)\n {4}container:/.exec(job);
+    expect(include, "沒有 matrix.include").not.toBeNull();
+    const cells = include[1].split(/\n\s*- (?=bucket:)/).map((chunk) => {
+      const get = (k) => (new RegExp(`\\b${k}: (\\S+)`).exec(chunk) || [])[1];
+      return { bucket: get("bucket"), shard: get("shard"), shards: get("shards") };
+    });
+    expect([...new Set(cells.map((c) => c.bucket))].sort()).toEqual([...ADVERSE_PROJECTS].sort());
+    for (const bucket of ADVERSE_PROJECTS) {
+      const mine = cells.filter((c) => c.bucket === bucket);
+      const totals = [...new Set(mine.map((c) => c.shards))];
+      expect(totals, bucket).toHaveLength(1);
+      const n = Number(totals[0]);
+      expect(mine.map((c) => Number(c.shard)).sort((a, b) => a - b)).toEqual(Array.from({ length: n }, (_, i) => i + 1));
+    }
+    expect(job).toMatch(
+      /yarn test:e2e:offline:adverse --only=\$\{\{ matrix\.bucket \}\} --shard=\$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.shards \}\} --repeat-each="\$REPEAT"/,
+    );
   });
 });
 
