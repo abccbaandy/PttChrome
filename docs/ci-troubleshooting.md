@@ -3,7 +3,7 @@
 `yarn ci:status` 紅了、但失敗的 job／step 看起來與被測 code 無關時查這裡；新增 CI job 前讀最後兩條。
 （由 CLAUDE.md「push 後必查 CI」節搬出；那邊只留一行指標。）
 
-- **nightly `Flaky Hunt`（`.github/workflows/flaky-hunt.yml`）**：每天在 dev 上把 unit／integration 各連跑 N 輪、offline e2e `--repeat-each=N`（預設 10）。它的紅＝**真的 flaky**（框架層不 retry），處置是照該 issue 找根因修，不是重跑。`yarn ci:status` 不把它算進 push 的 CI（同 sha 也排除）。完整流程：
+- **nightly `Flaky Hunt`（`.github/workflows/flaky-hunt.yml`）**：每天在 dev 上把 unit／integration 各連跑 N 輪、offline e2e 與逆境圖片 e2e（adverse 三桶）`--repeat-each=N`（預設 10）。它的紅＝**真的 flaky**（框架層不 retry），處置是照該 issue 找根因修，不是重跑。`yarn ci:status` 不把它算進 push 的 CI（同 sha 也排除）。完整流程：
   - **排程保證**：GitHub schedule 會延遲（實測天天晚 ~3h、最多 +5h）也可能被丟，所以掛三個非整點 cron（UTC 21:17／03:17／09:17＝台灣 05:17／11:17／17:17）。最前面的 `gate` job 查本 workflow 在 dev 上自最近一次 UTC 21:00 起、**比自己早**建立的 run：有 success／failure 或還在跑／排隊的 ⇒ 其餘 job 全跳過（gate-only 的短 run）；cancelled 不算。`workflow_dispatch` 永不跳過，但在 dev 上手動跑過也算「今天跑過」（`scripts/flaky-hunt-gate.mjs`）。concurrency 按 ref 分組、`cancel-in-progress: false`：後到的排隊等前一輪結束再由 gate 跳過；PR branch 的驗證 dispatch 與 dev 的 nightly 互不取消。
   - **紅了開 issue**：report job 開／續寫 issue「Nightly flaky hunt 失敗」（掛 label `flaky-hunt`，查詢走 label 不走搜尋索引；body 含 run／ref／commit）。只有 dev 上的 run 會寫；在工作分支 dispatch 用來驗修正或收證據，紅了看 run 本身。
   - **routine 修復**：**新開 issue 會觸發 Claude routine「fix Nightly flaky hunt 失敗」（trigger＝Issue opened＋標題＋作者 `github-actions[bot]`）**，session 開 PR → CI 綠 → 在 PR branch dispatch 驗證（可選 `suite`＋`grep` 只跑出事的那條、把 `repeat` 拉到 ≥50）→ merge → 關 issue。

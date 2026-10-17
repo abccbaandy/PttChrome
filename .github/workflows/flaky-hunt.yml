@@ -1,6 +1,6 @@
 name: Flaky Hunt
 
-# 每晚把 unit／integration／offline e2e 在 dev 上重複跑 N 輪，主動找出偶發紅。
+# 每晚把 unit／integration／offline e2e（含逆境圖片情境）在 dev 上重複跑 N 輪，主動找出偶發紅。
 # 單次 push 的 CI（test.yml）一輪就過，偶發紅要等它剛好擋到部署才會被看到；這裡把
 # 「機率性」換成「重複次數」，在使用者 push 前先抓到。測試框架層刻意不 retry
 # （tests/unit/no_test_retry.test.js），所以任何一輪紅＝真的 flaky。
@@ -29,7 +29,7 @@ on:
         description: "只跑哪個套件"
         type: choice
         default: all
-        options: [all, unit, integration, e2e-offline]
+        options: [all, unit, integration, e2e-offline, e2e-adverse]
       grep:
         description: "只跑名稱符合的 test（傳給 vitest -t／playwright --grep；空白＝全部）"
         default: ""
@@ -195,10 +195,69 @@ jobs:
           path: test-results/
           retention-days: 14
 
+  # 逆境圖片情境（慢／404／301／混合）：每個 PR 都必跑（test.yml 的 adverse job），所以一樣要重複輪測。
+  # matrix 比照 test.yml（slow 桶最慢再拆兩片）；一輪約 2～3 分，×10 輪仍在 timeout 內。
+  # 每桶的 shard 必須 1..shards 一個不漏（守護 tests/unit/flaky_hunt_workflow.test.js）。
+  e2e-adverse-repeat:
+    needs: [gate, playwright-version]
+    if: needs.gate.outputs.skip != 'true' && contains(fromJSON('["all","e2e-adverse"]'), inputs.suite || 'all')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - bucket: offline-slow
+            workers: 8
+            shard: 1
+            shards: 2
+          - bucket: offline-slow
+            workers: 8
+            shard: 2
+            shards: 2
+          - bucket: offline-broken
+            workers: 4
+            shard: 1
+            shards: 1
+          - bucket: offline-mixed
+            workers: 4
+            shard: 1
+            shards: 1
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
+      options: --user 1001 --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+      # 帶 grep 時同 e2e-offline-repeat：空 shard 用 --pass-with-no-tests 維持綠。
+      - name: Adverse E2E × ${{ env.REPEAT }} (${{ matrix.bucket }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
+        shell: bash
+        env:
+          E2E_WORKERS: ${{ matrix.workers }}
+        run: |
+          args=()
+          if [ -n "$GREP" ]; then args=(--grep "$GREP" --pass-with-no-tests); fi
+          yarn install --immutable
+          yarn test:e2e:offline:adverse --only=${{ matrix.bucket }} --shard=${{ matrix.shard }}/${{ matrix.shards }} --repeat-each="$REPEAT" "${args[@]}"
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flaky-hunt-adverse-${{ matrix.bucket }}-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
+
   # 紅了要讓人看得到：排程 run 的失敗通知只寄給最後改 cron 的人，很容易漏。
   # gate 跳過時上面全是 skipped（≠ failure），這裡不會被觸發。
   report:
-    needs: [unit-repeat, integration-repeat, e2e-offline-repeat]
+    needs: [unit-repeat, integration-repeat, e2e-offline-repeat, e2e-adverse-repeat]
     # 只有 dev 的紅才寫 issue：在工作分支上手動 dispatch 是拿來驗修正或收證據的
     # （常帶暫時的除錯碼），那邊的紅看 run 本身就好，開 issue 只會誤報。
     if: failure() && github.ref == 'refs/heads/dev'
@@ -219,7 +278,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          RESULTS: "unit=${{ needs.unit-repeat.result }} integration=${{ needs.integration-repeat.result }} e2e-offline=${{ needs.e2e-offline-repeat.result }}"
+          RESULTS: "unit=${{ needs.unit-repeat.result }} integration=${{ needs.integration-repeat.result }} e2e-offline=${{ needs.e2e-offline-repeat.result }} e2e-adverse=${{ needs.e2e-adverse-repeat.result }}"
         run: node scripts/flaky-hunt-report.mjs
 
   # issue 開太久（session 中途死掉）就通知人。每次 run 都跑、不管紅綠：nightly 可能連續幾天綠，

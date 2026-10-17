@@ -29,6 +29,14 @@
          150ms）。圖片本身不帶 credentials，故不加 crossorigin。 -->
     <link rel="preconnect" href="https://i.imgur.com">
 
+    <!-- 開站要等 Big5 轉碼表＋終端機字型都到才 connect（src/js/main.jsx#loadResources）。
+         不 preload 的話要等主 JS 下載、執行完才開始抓 ⇒ 冷啟動串成兩段。
+         轉碼表 as=fetch＋crossorigin 才對得上 loadTable 的 fetch()；字型 preload 一律要
+         crossorigin。守護 tests/unit/boot_preload.test.js。 -->
+    <link rel="preload" href="/src/conv/b2u_table.bin" as="fetch" crossorigin>
+    <link rel="preload" href="/src/conv/u2b_table.bin" as="fetch" crossorigin>
+    <link rel="preload" href="/src/fonts/symmingliu.woff" as="font" type="font/woff" crossorigin>
+
     <!--
       React/react-dom and every dependency are bundled by Vite (React 19
       dropped the UMD build); no runtime CDN <script> deps remain. UI components
