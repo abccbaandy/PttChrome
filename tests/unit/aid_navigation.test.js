@@ -1996,3 +1996,186 @@ describe("numJumpLanded／endLanded", () => {
     expect(endLanded(facts("transient", { boardName: "x", curY: 4, rowTexts }))).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 斷線重連後回到原處（startResume；reconnect_resume.js、docs/reading-record.md
+//「斷線重連」）。從登入後的主功能表出發，落地交給閱讀紀錄的 'reconnect-resume'。
+// ---------------------------------------------------------------------------
+describe("startResume（斷線重連後回到原處）", () => {
+  const LIST = {
+    kind: "list",
+    board: "C_Chat",
+    mode: "plain",
+    topNum: 353200,
+    topPinnedKey: null,
+    scrollFrac: 0,
+    cursorNum: 353218
+  };
+  function resumeHarness() {
+    const h = makeHarness({ listState: "idle" });
+    h.termBuf.rowTexts = MAIN_MENU_SCREEN;
+    h.core.listSession.beginExternalNavigation = vi.fn();
+    h.core.listSession.requestViewportRestore = vi.fn();
+    h.core.listSession.endExternalNavigation = vi.fn();
+    h.core.easyReading.requestScrollToBottom = vi.fn();
+    return h;
+  }
+  const articlePlan = (article, list = null) => ({
+    kind: "article",
+    board: "C_Chat",
+    aid: "1gIeu-3A",
+    bookmark: { feature: "reconnect-resume", article, list }
+  });
+  const listPlan = (num, list = LIST) => ({
+    kind: "list",
+    board: "C_Chat",
+    num,
+    bookmark: { feature: "reconnect-resume", article: null, list }
+  });
+  const ARTICLE = { kind: "article", board: "C_Chat", lineIndex: 37, atBottom: false, easy: true };
+
+  test("文章：主功能表直接 s<板> → #<aid> → ⏎，落地回到斷線前那一列；列表 session 從 idle 也停泊", () => {
+    const h = resumeHarness();
+    expect(h.nav.startResume(articlePlan(ARTICLE))).toBe(true);
+    expect(h.core.listSession.beginExternalNavigation).toHaveBeenCalledWith({ fromIdle: true });
+    expect(h.sent).toEqual(["sC_Chat\r\f"]);
+    settle(h.queue, facts("clean-list", { boardName: "c_chat" }));
+    expect(h.sent[1]).toBe("#1gIeu-3A\r\f");
+    settle(h.queue, facts("clean-list", { boardName: "c_chat", cursorRowNum: 353218, curY: 10 }));
+    expect(h.sent[2]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(h.core.easyReading.restoreCalls).toEqual([37]);
+    expect(h.core.easyReading.requestScrollToBottom).not.toHaveBeenCalled();
+    // 返回堆疊不動：斷線時已清空，回到原處不是一次跳文。
+    expect(h.nav.canGoBack()).toBe(false);
+    expect(h.hints[h.hints.length - 1]).toContain("已回到斷線前的文章");
+  });
+
+  test("一般跳文不會從 idle 停泊列表 session（fromIdle 只給回到原處）", () => {
+    const h = resumeHarness();
+    h.nav.startExternal("1gIeu-3A", "C_Chat");
+    expect(h.core.listSession.beginExternalNavigation).toHaveBeenCalledWith({ fromIdle: false });
+  });
+
+  test("文章：斷線前在文末 ⇒ 黏回文末（新推文在那裡）", () => {
+    const h = resumeHarness();
+    h.nav.startResume(articlePlan({ ...ARTICLE, atBottom: true }));
+    settle(h.queue, facts("clean-list", { boardName: "c_chat" }));
+    settle(h.queue, facts("clean-list", { boardName: "c_chat", cursorRowNum: 1, curY: 10 }));
+    settle(h.queue, facts("article"));
+    expect(h.core.easyReading.requestScrollToBottom).toHaveBeenCalledTimes(1);
+    expect(h.core.easyReading.restoreCalls).toEqual([]);
+  });
+
+  test("文章被刪（AID 找不到）⇒ 停在該板列表，列表視野回到斷線前（只比板），交回探針", () => {
+    const h = resumeHarness();
+    h.nav.startResume(articlePlan(ARTICLE, LIST));
+    settle(h.queue, facts("clean-list", { boardName: "c_chat" }));
+    // read.c:466-476：找不到 ⇒ 訊息在 rows-2、pressanykey 在末列，游標在末列。
+    const rowTexts = new Array(24).fill("");
+    rowTexts[22] = "找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了";
+    rowTexts[23] = PRESS_ANY_KEY_ROW;
+    const notFound = () => facts("transient", { boardName: "c_chat", curY: 23, rowTexts });
+    settle(h.queue, notFound());
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS);
+    settle(h.queue, notFound());
+    vi.advanceTimersByTime(STEP_PROBE_WINDOW_MS);
+    settle(h.queue, notFound());
+    expect(h.nav.active).toBe(false);
+    expect(h.sent).not.toContain("\r\f");
+    expect(h.core.listSession.requestViewportRestore).toHaveBeenCalledWith({
+      ...LIST,
+      matchBoardOnly: true
+    });
+    expect(h.core.listSession.endExternalNavigation).toHaveBeenCalled();
+    expect(h.hints[h.hints.length - 1]).toContain("找不到斷線前的文章");
+  });
+
+  test("列表：s<板> → <編號>⏎ 把游標放回斷線前那篇，不開文；視野交給列表好讀", () => {
+    const h = resumeHarness();
+    h.nav.startResume(listPlan(353218));
+    settle(h.queue, facts("clean-list", { boardName: "c_chat" }));
+    expect(h.sent[1]).toBe("353218\r\f");
+    settle(h.queue, facts("clean-list", { boardName: "c_chat", cursorRowNum: 353218, curY: 10 }));
+    expect(h.nav.active).toBe(false);
+    expect(h.sent).toHaveLength(2); // 沒有開文的 ⏎
+    expect(h.core.listSession.requestViewportRestore).toHaveBeenCalledWith({
+      ...LIST,
+      matchBoardOnly: true
+    });
+    expect(h.core.listSession.endExternalNavigation).toHaveBeenCalled();
+  });
+
+  test("列表：編號跳不到（刪文、超出）⇒ 照樣停在列表還原視野，不算失敗", () => {
+    const h = resumeHarness();
+    h.nav.startResume(listPlan(353218));
+    settle(h.queue, facts("clean-list", { boardName: "c_chat" }));
+    const off = () => facts("clean-list", { boardName: "c_chat", cursorRowNum: 353100, curY: 10 });
+    settle(h.queue, off());
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS);
+    settle(h.queue, off());
+    vi.advanceTimersByTime(STEP_PROBE_WINDOW_MS);
+    settle(h.queue, off());
+    expect(h.nav.active).toBe(false);
+    expect(h.core.listSession.requestViewportRestore).toHaveBeenCalled();
+    expect(h.hints.some(m => m.includes("失敗"))).toBe(false);
+  });
+
+  test("列表沒有編號（置底、搜尋結果）⇒ 進板就停", () => {
+    const h = resumeHarness();
+    h.nav.startResume(listPlan(null, null));
+    settle(h.queue, facts("clean-list", { boardName: "c_chat" }));
+    expect(h.nav.active).toBe(false);
+    expect(h.sent).toEqual(["sC_Chat\r\f"]);
+    expect(h.core.listSession.requestViewportRestore).not.toHaveBeenCalled();
+    expect(h.core.listSession.endExternalNavigation).toHaveBeenCalled();
+  });
+
+  test("切板失敗 ⇒ 看得到的失敗訊息，輸入解鎖", () => {
+    const h = resumeHarness();
+    const onEnd = vi.fn();
+    h.nav.startResume(articlePlan(ARTICLE), onEnd);
+    settle(h.queue, facts("prompt", { rowTexts: MAIN_MENU_SCREEN }));
+    vi.advanceTimersByTime(BOARD_PROBE_AFTER_MS);
+    settle(h.queue, facts("prompt", { rowTexts: MAIN_MENU_SCREEN }));
+    vi.advanceTimersByTime(STEP_PROBE_WINDOW_MS);
+    settle(h.queue, facts("prompt", { rowTexts: MAIN_MENU_SCREEN }));
+    vi.advanceTimersByTime(BOARD_PROBE_AFTER_MS * 4);
+    expect(h.nav.active).toBe(false);
+    expect(h.hints[h.hints.length - 1]).toContain("回到斷線前的位置失敗");
+    expect(onEnd).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+  });
+
+  test("跳文進行中 ⇒ 不開第二輪", () => {
+    const h = resumeHarness();
+    h.nav.startExternal("2AbCdEf0", "movie");
+    expect(h.nav.startResume(articlePlan(ARTICLE))).toBe(false);
+  });
+});
+
+describe("currentPostAid（斷線前記下本篇）", () => {
+  test("免費網址列讀得到 ⇒ 用它", () => {
+    const { nav } = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl()
+    });
+    expect(nav.currentPostAid()).toEqual({ board: "Browsers", aid: BROWSERS_AID });
+  });
+
+  test("讀不到網址列 ⇒ 用跳文落地記下的那篇（同板才算）", () => {
+    const h = makeHarness({ pageState: 3, articleBoard: "Android" });
+    h.nav._history.beginJump(null, { board: "Android", aid: "1gIeu-3A" });
+    h.nav._history.commitJump();
+    expect(h.nav.currentPostAid()).toEqual({ board: "Android", aid: "1gIeu-3A" });
+    h.view._articleBoard = "C_Chat";
+    expect(h.nav.currentPostAid()).toBeNull();
+  });
+
+  test("不在文章裡 ⇒ null（不按 Q：斷線當下沒有連線可問）", () => {
+    const h = makeHarness({ pageState: 2, articleBoard: "Android" });
+    expect(h.nav.currentPostAid()).toBeNull();
+    expect(h.sent).toEqual([]);
+  });
+});

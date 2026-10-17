@@ -284,6 +284,8 @@ export function AidNavigation(core, view, termBuf, queue, history) {
   this.opHint = null;
   // 目前這一輪是 refresh()（失敗訊息與收尾不同於跳文）。
   this._refreshing = false;
+  // 目前這一輪是 startResume()（斷線重連後回到原處）。
+  this._resuming = false;
   // One-shot: swallow the leaveCurrentPost our own landing causes (noteLeftPost).
   this._ownedLeave = false;
   // findLocalPostAid 的增量掃描游標（見該函式）。
@@ -312,6 +314,14 @@ AidNavigation.prototype = {
       this._history.abort();
       this._updateBackButton();
       this._hint('重新整理失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
+      return;
+    }
+    if (this._resuming) {
+      this._resuming = false;
+      this._history.abort();
+      this._updateBackButton();
+      this._hint('回到斷線前的位置失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
+      this._endRun({ ok: false, error: msg });
       return;
     }
     // Where we ended up is unknown, so every anchor below is suspect: drop the
@@ -506,6 +516,60 @@ AidNavigation.prototype = {
     return true;
   },
 
+  // 斷線重連後回到原處（reconnect_resume.js；docs/reading-record.md「斷線重連」）。
+  // plan：reconnect_resume.resumePlanFrom 的輸出，bookmark 是斷線那一刻的閱讀紀錄。
+  //   文章（plan.aid）：s<板> → #<aid> → ⏎，落地依決策表 'reconnect-resume' 還原列。
+  //   列表（plan.num 可省）：s<板> → `<編號>⏎`（游標回到斷線前那篇）→ 停在列表，
+  //     列表好讀 rebuild 時還原視野。
+  // dir 'resume'：不碰返回堆疊（斷線時 reset 已經清空，重放錨的 getkeep 也跟著死了）。
+  startResume: function(plan, onEnd) {
+    if (this.active || !plan || !plan.board) return false;
+    this._onRunEnd = onEnd || null;
+    const run = makeRun(
+      { board: plan.board, kind: plan.aid ? 'aid' : 'board', aid: plan.aid || null, num: plan.aid ? null : plan.num },
+      'resume'
+    );
+    run.external = true;
+    run.bookmark = plan.bookmark || { feature: 'reconnect-resume' };
+    this._resuming = true;
+    this.opHint = '回到斷線前的位置，請稍候…';
+    this._hint('回到斷線前的位置：' + plan.board + (plan.aid ? ' #' + plan.aid : ' 看板') + '…', PROGRESS_HINT_MS);
+    this._begin(run);
+    return true;
+  },
+
+  // 本篇是哪一篇（斷線前記下來，重連後才回得去）。免費網址列優先；落空時用 AID 跳文
+  // 落地記下的那篇（返回堆疊的 landed，使用者離開文章就會被 invalidate，所以仍是本篇）。
+  // 都沒有 ⇒ null（**不按 Q**：斷線當下已經沒有連線可問）。
+  currentPostAid: function() {
+    const local = this.findLocalPostAid();
+    if (local) return local;
+    const buf = this._termBuf;
+    const board = this._view && this._view._articleBoard;
+    if (!buf || buf.pageState !== 3 || !board) return null;
+    const landed = this._history.landed();
+    if (!landed || !landed.aid || !landed.board) return null;
+    return String(landed.board).toLowerCase() === String(board).toLowerCase() ? landed : null;
+  },
+
+  // 回到原處的列表收尾（含找不到原文、編號跳不到）：列表視野交給閱讀紀錄（只比板與
+  // 編號空間 —— 新登入的 server 游標不會等於斷線前的本地選取），放開外部 hold。
+  _finishResumeAtList: function(run, outcome, msg, level) {
+    this.active = false;
+    this.opHint = null;
+    this._resuming = false;
+    const bm = run.bookmark;
+    const rr = recordFor(this._core);
+    if (bm && bm.list)
+      rr.end(Object.assign({}, bm, { list: Object.assign({}, bm.list, { matchBoardOnly: true }) }), outcome, {
+        only: 'list'
+      });
+    rr.releaseExternal();
+    this._updateBackButton();
+    this._hint(msg || '已回到斷線前的位置：' + run.target.board + ' 看板', msg ? 6000 : 2000, level);
+    this._endRun({ ok: outcome === 'done' });
+  },
+
   _endRun: function(result) {
     const cb = this._onRunEnd;
     this._onRunEnd = null;
@@ -687,7 +751,9 @@ AidNavigation.prototype = {
     // Park an engaged list session in its functionMode (native mirror,
     // nativeHold, queue flushed) so the shared queue is empty and its reducer
     // absorbs our intermediate clean-list settles. Must run BEFORE we enqueue.
-    if (this._core.listSession) this._core.listSession.beginExternalNavigation();
+    // 回到原處從主功能表出發，列表 session 通常是 idle：也要停泊（見 fromIdle）。
+    if (this._core.listSession)
+      this._core.listSession.beginExternalNavigation({ fromIdle: run.dir === 'resume' });
     // 看板列表平滑捲動同理（AID 跳文的逃生前導會經過主功能表／看板列表）。
     if (this._core.boardListSession)
       this._core.boardListSession.beginExternalNavigation();
@@ -1169,6 +1235,10 @@ AidNavigation.prototype = {
       else this._finishGoto(run);
       return;
     }
+    if (run.dir === 'resume') {
+      this._finishResumeAtList(run, 'done');
+      return;
+    }
     this._finishAtList(run);
   },
 
@@ -1202,9 +1272,17 @@ AidNavigation.prototype = {
         return numJumpLanded(facts, num);
       },
       onDone: function() {
-        self._enqueueOpen(run);
+        // 回到原處只把游標放回那一篇，不開（編號會因刪文漂移，開錯篇比停在列表糟）。
+        if (run.dir === 'resume') self._finishResumeAtList(run, 'done');
+        else self._enqueueOpen(run);
       },
       onFail: function(reason) {
+        // 回到原處：板已經進了，編號跳不到（文章被刪、編號超出）只是游標不在原篇，
+        // 視野照樣還原（rebuild 只比板與編號空間）。
+        if (run.dir === 'resume') {
+          self._finishResumeAtList(run, 'done');
+          return;
+        }
         self._fail(reason === 'miss' ? '找不到第 ' + num + ' 篇' : '跳至第 ' + num + ' 篇逾時');
       }
     });
@@ -1345,6 +1423,16 @@ AidNavigation.prototype = {
           );
           return;
         }
+        // 回到原處：原文不見了 ⇒ 停在該板列表，列表視野回到斷線前（決策表 fail）。
+        if (run.dir === 'resume' && reason === 'miss') {
+          self._finishResumeAtList(
+            run,
+            'fail',
+            '找不到斷線前的文章 #' + aid + '（可能已被刪除），已停在 ' + run.target.board + ' 列表',
+            HINT_ERROR
+          );
+          return;
+        }
         self._fail(
           reason === 'miss' ? '找不到文章 #' + aid : 'AID 搜尋逾時'
         );
@@ -1417,6 +1505,14 @@ AidNavigation.prototype = {
             rr.noteBehindList(entry.list || null);
           }
           self._hint('已返回 ' + (entry ? entry.label : ''), 1200);
+        } else if (run.dir === 'resume') {
+          self.opHint = null;
+          self._resuming = false;
+          // 決策表 'reconnect-resume' done：文章 'auto'（斷線前在文末就黏回文末，否則
+          // 原列）。好讀的還原是請求，累積到位才套用。
+          recordFor(self._core).end(run.bookmark, 'done', { only: 'article' });
+          self._updateBackButton();
+          self._hint('已回到斷線前的文章', 1500);
         } else if (run.dir === 'goto') {
           self.opHint = null;
           self._history.invalidate();

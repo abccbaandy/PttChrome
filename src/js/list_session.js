@@ -1235,8 +1235,14 @@ ListSession.prototype = {
   // enqueuing its own commands mid-sequence. Must be called BEFORE the
   // external commands are enqueued (the flush here would drop them). The
   // final article settle takes the normal handoff-article path.
-  beginExternalNavigation: function() {
-    if (this.state === 'idle') return;
+  //
+  // opts.fromIdle：沒接管（idle）時也停泊 —— 斷線重連的回到原處（reconnect_resume）
+  // 從主功能表出發，`s<板>` 落地那一幀若讓 idle 直接 seed，游標會先採用 server 的
+  // 預設落點，之後序列的 `<編號>⏎` 就與本地選取對不上。停泊起來、序列收尾後由
+  // 靜置探針 rebuild（驗證並套用待還原的視野），與看板錨返回同一條路。
+  // 列表好讀沒開（不 eligible）就維持 idle：原生列表本來就是使用者要的畫面。
+  beginExternalNavigation: function(opts) {
+    if (this.state === 'idle' && !(opts && opts.fromIdle && this._engageEligible())) return;
     // 身後的列表（閱讀紀錄）：外部序列會清掉看板身分 ⇒ 之後回到列表一律 rebuild。
     // 先把使用者的視野交給閱讀紀錄，rebuild 時驗證（同板、同編號空間、游標仍在
     // 這一篇）才還原。看板身分已經被上一趟清掉（長推文探路後的第二次序幕）時保留
