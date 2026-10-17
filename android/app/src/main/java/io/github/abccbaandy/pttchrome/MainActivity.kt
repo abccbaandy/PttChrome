@@ -153,6 +153,12 @@ class MainActivity : ComponentActivity() {
 
         SettingsActivity.publishShortcut(this)
 
+        // 系統還原（process 被砍、從最近使用畫面重開）會把當初的啟動 intent 再交一次：那條連結早就跳過了，
+        // 不重跳（同網頁版「pending 只在記憶體」的理由，docs/deep-link.md）。
+        if (savedInstanceState == null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) {
+            handleViewIntent(intent)
+        }
+
         val intent = Intent(this, ConnectionService::class.java)
         startForegroundService(intent)
         bound = bindService(intent, connection, Context.BIND_AUTO_CREATE)
@@ -161,8 +167,15 @@ class MainActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 val wv = webView
                 // 網頁自己疊了 history sentinel 把「上一頁」轉成 PTT 的左鍵（history_back_guard.js），
-                // 所以能 goBack 就交給網頁。退到底時只把 App 丟到背景，不結束——結束就斷線了。
-                if (wv != null && wv.canGoBack()) wv.goBack() else moveTaskToBack(true)
+                // 所以能 goBack 就交給網頁。sentinel 要等使用者第一次觸碰才疊：從外部連結開 App、
+                // 自動登入＋跳文全程沒碰畫面時 canGoBack 為 false ⇒ 問網頁 pttHostBack() 要不要吃下
+                //（送 ←／收 sheet／提示）。網頁放行（或舊版網頁沒有它）才把 App 丟到背景，
+                // 不結束——結束就斷線了。
+                when {
+                    wv == null -> moveTaskToBack(true)
+                    wv.canGoBack() -> wv.goBack()
+                    else -> wv.evaluateJavascript(HOST_BACK_JS) { if (it != "true") moveTaskToBack(true) }
+                }
             }
         })
     }
@@ -321,7 +334,58 @@ class MainActivity : ComponentActivity() {
 
         root.addView(wv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         webView = wv
-        wv.loadUrl(page.url)
+        val fragment = pendingDeepLink
+        pendingDeepLink = null
+        wv.loadUrl(if (fragment != null) "${page.url}#$fragment" else page.url)
+    }
+
+    // ---- Deep link（docs/deep-link.md「Android APK」）----
+    // 外部 App 點 ptt.cc 文章或本站連結 → 換成網頁的 deep link fragment。網頁端零改動：
+    // 冷啟動＝帶 fragment 載入（開站讀網址那條），已開著＝設 location.hash（hashchange 那條，不重載、不重新登入）。
+
+    /** WebView 還沒建好（等 ConnectionService 綁定）時先收著，createWebView 時帶進網址。 */
+    private var pendingDeepLink: String? = null
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleViewIntent(intent)
+    }
+
+    private fun handleViewIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val url = intent.dataString ?: return
+        when (val r = DeepLink.classify(url)) {
+            is DeepLink.Result.Article -> deliverDeepLink(r.fragment)
+            DeepLink.Result.OpenApp -> {}
+            DeepLink.Result.NotOurs -> openInBrowserOnly(url.toUri())
+        }
+    }
+
+    private fun deliverDeepLink(fragment: String) {
+        val wv = webView
+        if (wv == null) {
+            pendingDeepLink = fragment
+            return
+        }
+        val current = wv.url?.toUri()
+        if (current != null && isAppPage(current)) {
+            wv.evaluateJavascript(DeepLink.hashNavigationJs(fragment), null)
+        } else {
+            // 載入失敗頁（data:）之類：整頁重載。
+            wv.loadUrl("${pageSource.url}#$fragment")
+        }
+    }
+
+    /**
+     * 接不住的連結交還瀏覽器。不能用一般 ACTION_VIEW：使用者把 ptt.cc 設成本 App 預設開啟時會解析回自己，
+     * 無限循環。selector 只用來挑「預設瀏覽器」這個目標，送過去的仍是原本的 VIEW intent。
+     */
+    private fun openInBrowserOnly(url: Uri) {
+        val view = Intent(Intent.ACTION_VIEW, url).apply {
+            selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER)
+        }
+        try { startActivity(view) } catch (_: Exception) {}
     }
 
     // ---- 載入失敗頁＋App 設定入口 ----
@@ -532,5 +596,7 @@ class MainActivity : ComponentActivity() {
         const val SNAPSHOT_MAX_MS = 5000L
         /** 載入失敗頁上的原生動作連結（[handleAppLink]）。 */
         const val APP_LINK_SCHEME = "pttchrome-app"
+        /** 網頁 history_back_guard.js 的原生返回入口；回傳值經 evaluateJavascript 序列化成字串 "true"／"false"。 */
+        const val HOST_BACK_JS = "typeof window.pttHostBack === 'function' ? window.pttHostBack() === true : false"
     }
 }

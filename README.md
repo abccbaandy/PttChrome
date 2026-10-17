@@ -100,7 +100,7 @@
 ### 📱 手機與 App
 
 - **手機版面（Android Chrome）** — 畫面自動塞滿螢幕，有 App 式標題列與底部導覽列，列表與推文改成好點的卡片。
-- **Android App** — 切到背景也不斷線，自動登入與 Chrome 共用同一份密碼；APK 在 [GitHub Releases](../../releases) 下載。
+- **Android App** — 切到背景也不斷線，在 LINE、Telegram 點 PTT 文章連結會直接在 App 裡開啟；APK 在 [GitHub Releases](../../releases) 下載。
 
 ### ⚙️ 設定
 

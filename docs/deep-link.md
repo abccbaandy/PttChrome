@@ -163,7 +163,7 @@ reset()       ← App.onClose：清 pending 與 _loggedIn
 
 | 限制 | 後果 |
 |---|---|
-| 外部程式點 https 連結一定開新分頁 | 網頁攔不到。唯一例外＝安裝成 PWA |
+| 外部程式點 https 連結一定開新分頁 | 網頁攔不到。例外＝安裝成 PWA，或裝 APK（下節「Android APK」） |
 | 既有分頁沒有 user activation | `window.focus()` 叫不動自己 ⇒ 只能請使用者切回去 |
 | `window.close()` 只對 script 開出來的視窗有效 | 外部開的關不掉，提示層才是主要出口 |
 
@@ -181,6 +181,32 @@ reset()       ← App.onClose：清 pending 與 _loggedIn
   「總是允許」）之後才會直接進 PWA。manifest 的 `handle_links: "preferred"` 是標準
   欄位，用來表達意圖，Chrome 尚未完全實作 —— 加著等它支援，不要以為加了就會自動攔。
 - Firefox/Safari 不支援 → 自動落回 BroadcastChannel。
+
+## Android APK（外部 App 點連結 → App 內跳文）
+
+網頁端零改動：原生把連結換成本站 fragment，走既有兩條入口。
+
+| App 狀態 | 原生動作 | 網頁入口 |
+|---|---|---|
+| WebView 未建（冷啟動，等 service 綁定） | 收進 `pendingDeepLink`，`createWebView` 載入 `<page.url>#<fragment>` | 開站讀網址（`claimDeepLink`→`installDeepLink`） |
+| 頁面已開 | `evaluateJavascript(DeepLink.hashNavigationJs)`＝`location.replace('#…')` | `hashchange`（不重載、不重新登入） |
+| 頁面是載入失敗頁（data:） | `loadUrl(<page.url>#<fragment>)` | 開站讀網址 |
+
+- 檔案：`android/.../DeepLink.kt#classify`（純函式，JVM `DeepLinkTest`）、`MainActivity#handleViewIntent`／`onNewIntent`（singleTask）、manifest 兩組 VIEW filter。
+- `classify` 三值：`Article(fragment)`／`OpenApp`（本站無文章）／`NotOurs`。
+  - ptt.cc：`/bbs/<Board>/<M|G>.<v1>.A[.<hex3>].html` → `<Board>/<檔名>`（正規形式）。Board／檔名 regex 與 `aid_codec` 同一份；query／錨點忽略。
+  - 本站：恆以 `AppConfig.PAGE_URL` 判定（dev server 模式也一樣，fragment 與頁面來源無關）；fragment 原樣轉交，`?board&aid` 改寫成 hash 的 `board=…&aid=…`。完整驗證留給網頁 `parseDeepLink`。
+- **`NotOurs` 必須用 browser selector 交還**（`openInBrowserOnly`：`selector = makeMainSelectorActivity(MAIN, APP_BROWSER)`）：一般 ACTION_VIEW 在使用者勾選 ptt.cc 後會解析回自己 ⇒ 無限循環。無預設瀏覽器時跳選擇器，只列瀏覽器（模擬器 CONFIRMED）。
+- **熱啟動必須 `location.replace`，不可 `location.hash =`**：後者每次多疊一筆 entry 蓋在返回鍵 sentinel 上 ⇒ 下一次返回落回 sentinel、被 guard 視為「沒往外退」而無聲吞掉，history 也越疊越長（手機實測 20 筆）。replace 換掉當前 entry、hashchange 照發。守護 JVM `DeepLinkTest`。
+- **返回鍵**：從連結開 App 常常全程沒碰畫面 ⇒ 沒有 sentinel。原生 `canGoBack()` 為 false 時改問網頁 `pttHostBack()`，見 `docs/mouse.md`「APK 的返回鍵」。
+- **系統還原不重跳**：`savedInstanceState != null` 或 `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY` ⇒ 忽略啟動 intent（同「pending 只在記憶體」）。
+- 本站 filter：`autoVerify=true`，path 只收 `/PttChrome`、`/PttChrome/`、`/PttChrome/index.html`（fragment 不參與比對）。網域根 assetlinks 已含 `handle_all_urls`（正式＋`.debug` 兩組），DAL API `assetlinks:check` 回 `linked:true`（CONFIRMED）。
+- ptt.cc filter：網域不是我們的，**無法自動驗證**；Android 12+ 預設不開 App，要使用者到系統「預設開啟 → 新增連結」勾 www.ptt.cc。App 設定頁「連結」區顯示狀態（`DomainVerificationManager`，API 31+）並有一鍵入口（`ACTION_APP_OPEN_BY_DEFAULT_SETTINGS`）。
+- **`pathPattern` 是簡易 glob**：`.*` 停在後面字元的第一個出現處 ⇒ `M\..*\.html` 永遠不中（模擬器 CONFIRMED，`query-activities` 只列 Chrome）。只能 `/bbs/.*/M\..*` 這種 `.*` 結尾，精確判斷交給 `classify`。
+- guess：Android 11 以下 autoVerify 會連 www.ptt.cc 一起檢查而失敗 ⇒ 本站連結也改跳選擇器（使用者選「一律」即可）。
+- guess：LINE 預設用內建瀏覽器開連結（不發 intent），需使用者改用預設瀏覽器；Telegram 行為未實測。
+- 已知窗口：頁面已載入但 `installDeepLink` 還沒裝 hashchange（開站約 1–2 秒內）時送來的連結會漏接。
+- 模擬器驗法（無對外網路也可）：`pm set-app-links --package <pkg> 2 abccbaandy.github.io`、`pm set-app-links-user-selection --user 0 --package <pkg> true www.ptt.cc` 模擬驗證／勾選；`am start -W -a VIEW -c BROWSABLE -d <url>`；debug APK 開 dev server 模式後用 WebView devtools 讀 `performance.getEntriesByType('navigation')[0].name`（冷啟動帶的 fragment）或包 `__app.deepLinkController.request` 記錄（熱啟動）。連線失敗會 `reset()` 清 `_pending`，別拿它判。
 
 ## 冷啟動跳轉的坑（2026-08 起陸續實測，全部有回歸守護）
 

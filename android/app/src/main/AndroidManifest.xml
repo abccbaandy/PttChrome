@@ -32,6 +32,33 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Deep link（docs/deep-link.md「Android APK」）。fragment 不參與比對，所以只能收頁面根路徑。
+                 本站：App Links 自動驗證（網域根的 assetlinks.json 有 handle_all_urls）。 -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="abccbaandy.github.io" />
+                <data android:path="/PttChrome" />
+                <data android:path="/PttChrome/" />
+                <data android:path="/PttChrome/index.html" />
+            </intent-filter>
+            <!-- ptt.cc 文章：網域不是我們的、驗證不了，Android 12+ 要使用者在系統「預設開啟」手動勾選
+                 （App 設定頁有入口）。Android 12+ 逐 host 驗證，本站不受它拖累；11 以下見 docs。
+                 pathPattern 比 DeepLink.classify 寬，接不住的由 App 交還瀏覽器。
+                 pathPattern 是簡易 glob：`.*` 停在後面字元的「第一個」出現處，所以 `M\..*\.html` 會卡在
+                 M.<v1> 後的第一個點而永遠不中（模擬器實測），只能以 `.*` 結尾。 -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="www.ptt.cc" />
+                <data android:pathPattern="/bbs/.*/M\\..*" />
+                <data android:pathPattern="/bbs/.*/G\\..*" />
+            </intent-filter>
         </activity>
 
         <!-- App 設定（dev server 模式等）。入口：網頁 bridge、動態捷徑、載入失敗頁，都是本 App 自己開。 -->

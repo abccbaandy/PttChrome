@@ -26,7 +26,8 @@ WebView  https://abccbaandy.github.io/PttChrome/
 | `.../CredentialBridge.kt` | Credential Manager：get/create password、雲端同步 Google 登入（ID token）／登出 |
 | `.../FileSave.kt` | bridge `saveFile` 的檔名清理（存檔流程本身在 `MainActivity`） |
 | `.../PageSource.kt` | 頁面來源（正式版／dev server）與 dev 網址白名單（JVM `PageSourceTest`） |
-| `.../AppSettings.kt`／`SettingsActivity.kt` | APK 自己的設定（SharedPreferences，不經 pref_sync）＋原生設定頁 |
+| `.../AppSettings.kt`／`SettingsActivity.kt` | APK 自己的設定（SharedPreferences，不經 pref_sync）＋原生設定頁（含 ptt.cc 連結預設開啟狀態） |
+| `.../DeepLink.kt` | 外部連結（ptt.cc 文章／本站）→ 網頁 deep link fragment（JVM `DeepLinkTest`）；流程與 manifest 坑見 `docs/deep-link.md`「Android APK」 |
 | `src/js/android_bridge.js` | 網頁端偵測＋request/reply（訊息合約在檔頭） |
 | `src/js/credential_store.js` | 密碼管理員單一入口：`PasswordCredential` 或 bridge |
 | `src/js/boot_site.js` | connect 優先序：`?site` > android > prefs proxy > default |

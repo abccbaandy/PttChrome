@@ -174,13 +174,21 @@ export function installHistoryBackGuard(app, win, opts) {
       passThrough = false;
       return;
     }
+    // 吃下 ⇒ 補回 sentinel；放行 ⇒ 不補，下一次 back 真的離站。
+    if (handleBack()) restoreSentinel();
+  }
+
+  // 一次「使用者往外退」：回 true＝吃下（畫面內處理掉或已提示），false＝放行。
+  // popstate（sentinel）與 APK 原生返回鍵（pttHostBack）共用，逃生計數也共用。
+  function handleBack() {
+    // 中途被關掉 ⇒ 放行，這一次 back 就是真的 back。
+    if (!gateOn()) return false;
     // 手機 bottom sheet 開著：返回＝收起它（Android 原生 App 的返回語意），不送 ←、
     // 不出逃生門提示。sheet 開著時 modalShown 為真，不攔的話這一下會落到「送不出去」
     // 那條而被算成第一次逃生。
     if (app.dismissTopSheet && app.dismissTopSheet()) {
       lastBlockedAt = 0;
-      restoreSentinel();
-      return;
+      return true;
     }
     const sent =!!(app.sendNavKeyAsUser && app.sendNavKeyAsUser('ArrowLeft'));
     logBack(sent);
@@ -188,21 +196,27 @@ export function installHistoryBackGuard(app, win, opts) {
       // 送得出去就不吵（畫面自己會退出文章／列表），也不算逃生門的一次——
       // 連退好幾層是正常操作，不可以因此把使用者丟出站。
       lastBlockedAt = 0;
-      restoreSentinel();
-      return;
+      return true;
     }
     // 送不出去（未連線／modal／PTT 開著輸入框／pageState 0/5/6）＝這一次 back
-    // 我們用不到。第二次就還給瀏覽器：不補 sentinel ⇒ 下一次 back 真的離站。
+    // 我們用不到。第二次就放行。
     const t = now();
     if (lastBlockedAt && t - lastBlockedAt <= DOUBLE_BACK_MS) {
       lastBlockedAt = 0;
-      return;
+      return false;
     }
     lastBlockedAt = t;
-    restoreSentinel();
     // 這一次 back 等於什麼都沒發生，得告訴使用者怎麼離站，否則就是無聲吞掉輸入。
     if (app.view && app.view.flashListHint) app.view.flashListHint(ESCAPE_HINT);
+    return true;
   }
+
+  // APK（android_bridge.js 的 __PTT_ANDROID__）：系統返回鍵由原生 MainActivity 接，能 goBack
+  // 就走上面的 sentinel；沒有 sentinel 時（從外部連結開 App、自動登入＋跳文全程沒碰過畫面
+  // ⇒ 沒有 user activation ⇒ 不疊，坑 2）canGoBack 為 false，原生改呼叫這支。
+  // **不在這裡補疊 sentinel**：原生返回不是 user activation，疊了一樣會被標成可跳過。
+  const hostBack = w.__PTT_ANDROID__ ? () => handleBack() : null;
+  if (hostBack) w.pttHostBack = hostBack;
 
   w.addEventListener('pointerdown', onActivation, true);
   w.addEventListener('keydown', onActivation, true);
@@ -219,6 +233,7 @@ export function installHistoryBackGuard(app, win, opts) {
       w.removeEventListener('popstate', onPopState);
       if (w.navigation && w.navigation.removeEventListener)
         w.navigation.removeEventListener('navigate', onNavigate);
+      if (hostBack && w.pttHostBack === hostBack) delete w.pttHostBack;
       armed = false;
     },
     isArmed() { return armed; }

@@ -456,6 +456,15 @@ guard 寫進 debug 錄製檔（`backGuard.blocked {reason,pageState,cur_x,cur_y,
 `←` 之外**沒有前進方向**：右滑 →「開文章」在 native-first 下拿不到（sentinel 被吃掉
 後我們立刻補回，forward entry 被截斷）。
 
+### APK 的返回鍵（`window.pttHostBack`）
+
+APK 的系統返回鍵由原生 `MainActivity` 接：`canGoBack()` ⇒ `goBack()`（走下面的 sentinel）；
+否則呼叫網頁 `pttHostBack()`（只在 `__PTT_ANDROID__` 存在時掛），回 `true`＝吃下，其餘
+（含舊版網頁沒有它）⇒ `moveTaskToBack`。理由＝坑 2：從外部連結開 App、自動登入＋跳文全程
+沒碰畫面 ⇒ 沒有 sentinel ⇒ 修之前左滑直接退回 LINE。`pttHostBack` 與 popstate 共用
+`handleBack()`（sheet／送 ←／逃生計數），**不補疊 sentinel**（原生返回不是 user activation）。
+守護 `tests/unit/history_back_guard.test.js`「APK 原生返回鍵」。
+
 ### history sentinel 的六個坑（`history_back_guard.js`）
 
 1. **順序**：必須排在 `installDeepLink()` 的 `consume()`（`replaceState` 清 hash）之後，

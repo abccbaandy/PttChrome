@@ -29,6 +29,13 @@
 //   APK 刻意不讓鍵盤把 WebView 縮小（那是 layout resize ⇒ 改列數、重送 NAWS，
 //   docs/mobile.md「軟鍵盤蓋住底列」），所以 visualViewport 量不到鍵盤，改由原生告知。
 //
+// 原生 → 網頁的同步呼叫（evaluateJavascript 取回傳值）：
+//   window.pttHostBack()  系統返回鍵且 WebView 不能 goBack（history sentinel 還沒疊）時呼叫；
+//                         回 true＝網頁吃下（送 ←／收 sheet／提示），否則 App 退到背景。
+//                         定義在 history_back_guard.js；舊版網頁沒有它 ⇒ 原生照舊退到背景。
+//   location.replace('#…') 外部連結 deep link（App 已開著）：replace 不新增 history entry，
+//                         仍會派發 hashchange（deep_link_entry.js）。見 docs/deep-link.md「Android APK」。
+//
 // 連線位址只在讀取端覆寫（main.jsx 的 connect 優先序），**絕不寫進 prefs**：
 // prefs 經 pref_sync 同步到桌機，寫進去桌機就會去連 127.0.0.1。
 

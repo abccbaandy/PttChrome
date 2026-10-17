@@ -19,6 +19,12 @@
     <string name="notif_title_dev">PttChrome（開發模式：%1$s）</string>
     <string name="dev_mode_toast">開發模式：載入 %1$s</string>
     <string name="settings_title">App 設定</string>
+    <string name="settings_links">連結</string>
+    <string name="settings_links_on">ptt.cc 文章連結：直接用本 App 開啟</string>
+    <string name="settings_links_off">ptt.cc 文章連結：尚未允許（會用瀏覽器開）</string>
+    <string name="settings_links_unknown">ptt.cc 文章連結：點連結時在選單選 PttChrome 並按「一律」</string>
+    <string name="settings_links_help">在 LINE、Telegram 等 App 點 ptt.cc 文章連結時，直接在本 App 跳到該篇。系統不讓 App 自己認領別人的網域，需要你在「預設開啟」→「新增連結」勾選 www.ptt.cc 一次。本站（abccbaandy.github.io/PttChrome）的連結不必設定。若 LINE 用內建瀏覽器開，請在 LINE 設定改用預設瀏覽器。</string>
+    <string name="settings_links_open">開啟「預設開啟」設定</string>
     <string name="settings_developer">開發者</string>
     <string name="settings_dev_server">載入電腦上的 dev server</string>
     <string name="settings_dev_help">改網頁程式不必推版就能在 App 內測試。電腦執行 yarn start --host，手機接 USB（或無線偵錯）後在電腦執行 adb reverse tcp:8080 tcp:8080，網址填 http://localhost:8080/。正式版只接受 localhost。</string>

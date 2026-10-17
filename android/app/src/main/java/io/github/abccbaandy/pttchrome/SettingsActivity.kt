@@ -3,8 +3,12 @@ package io.github.abccbaandy.pttchrome
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.verify.domain.DomainVerificationManager
+import android.content.pm.verify.domain.DomainVerificationUserState
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -19,16 +23,19 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.RequiresApi
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 /**
  * APK 自己的設定頁（跟網頁設定無關，存在 [AppSettings]）。入口：網頁設定頁的「App 設定」（bridge
  * `openAppSettings`）、長按 App 圖示的捷徑（網頁載不出來時也進得來）、載入失敗頁的連結。
- * 目前只有「開發者 → dev server 模式」（docs/android-app.md「debug 版並存與 dev server 模式」）。
+ * 「連結」：ptt.cc 文章連結的系統預設開啟狀態＋入口（docs/deep-link.md「Android APK」）；
+ * 「開發者 → dev server 模式」（docs/android-app.md「debug 版並存與 dev server 模式」）。
  */
 // 平台 Switch：刻意不為一個開關引入 appcompat／material 依賴。
 @SuppressLint("UseSwitchCompatOrMaterialCode")
@@ -37,6 +44,7 @@ class SettingsActivity : ComponentActivity() {
     private lateinit var devSwitch: Switch
     private lateinit var urlInput: EditText
     private lateinit var urlError: TextView
+    private lateinit var linkStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -49,6 +57,17 @@ class SettingsActivity : ComponentActivity() {
             setPadding(pad, pad, pad, pad)
         }
         content.addView(text(getString(R.string.settings_title), 22f, bold = true))
+
+        content.addView(header(getString(R.string.settings_links)))
+        linkStatus = text("", 15f)
+        content.addView(linkStatus)
+        content.addView(text(getString(R.string.settings_links_help), 14f, dim = true))
+        if (Build.VERSION.SDK_INT >= 31) {
+            content.addView(Button(this).apply {
+                text = getString(R.string.settings_links_open)
+                setOnClickListener { openLinkSettings() }
+            })
+        }
 
         content.addView(header(getString(R.string.settings_developer)))
         devSwitch = Switch(this).apply {
@@ -98,6 +117,38 @@ class SettingsActivity : ComponentActivity() {
         validate()
     }
 
+    // 使用者可能剛從系統「預設開啟」頁回來：每次回到前景都重讀。
+    override fun onResume() {
+        super.onResume()
+        linkStatus.text = getString(
+            when (pttLinkState()) {
+                true -> R.string.settings_links_on
+                false -> R.string.settings_links_off
+                null -> R.string.settings_links_unknown
+            },
+        )
+    }
+
+    /** www.ptt.cc 文章連結是否會直接開本 App；Android 11 以下查不到（null，靠點連結時的選擇器）。 */
+    private fun pttLinkState(): Boolean? {
+        if (Build.VERSION.SDK_INT < 31) return null
+        val state = getSystemService(DomainVerificationManager::class.java)
+            ?.getDomainVerificationUserState(packageName) ?: return null
+        if (!state.isLinkHandlingAllowed) return false
+        return state.hostToStateMap[PTT_HOST].let {
+            it == DomainVerificationUserState.DOMAIN_STATE_SELECTED || it == DomainVerificationUserState.DOMAIN_STATE_VERIFIED
+        }
+    }
+
+    @RequiresApi(31)
+    private fun openLinkSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, "package:$packageName".toUri()))
+        } catch (_: Exception) {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()))
+        }
+    }
+
     /** 開啟 dev 模式時網址必須合格；關閉時不檢查（值照存，下次開啟再驗）。 */
     private fun validate(): PageSource? {
         val parsed = PageSource.parseDevServer(urlInput.text.toString(), settings.allowLan)
@@ -136,6 +187,7 @@ class SettingsActivity : ComponentActivity() {
 
     companion object {
         private const val SHORTCUT_ID = "app_settings"
+        private const val PTT_HOST = "www.ptt.cc"
 
         /** 長按 App 圖示的「App 設定」。用動態捷徑：靜態 shortcuts.xml 要寫死 targetPackage，跟 debug 的 `.debug` 後綴衝突。 */
         fun publishShortcut(context: Context) {

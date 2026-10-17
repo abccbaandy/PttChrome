@@ -52,9 +52,10 @@ function makeWin() {
   return w;
 }
 
-function setup({ backNav = 1, sent = true, navigation = null } = {}) {
+function setup({ backNav = 1, sent = true, navigation = null, android = false } = {}) {
   const win = makeWin();
   if (navigation) win.navigation = navigation;
+  if (android) win.__PTT_ANDROID__ = { version: "test", site: "" };
   const hints = [];
   const keys = [];
   const app = {
@@ -487,5 +488,67 @@ describe("手機 bottom sheet", () => {
     t.activate();
     t.back();
     expect(t.keys).toEqual(["ArrowLeft"]);
+  });
+});
+
+// APK：系統返回鍵由原生接（MainActivity），能 goBack 就走 sentinel；沒有 sentinel
+// （從外部連結開 App、自動登入＋跳文全程沒碰過畫面 ⇒ 沒有 user activation ⇒ 不疊）
+// 時 canGoBack 為 false，原生改問 window.pttHostBack()：回 true＝網頁吃下，false＝讓 App 退到背景。
+// 實機症狀（修之前）：從 LINE 點連結開 App 跳到文章，左滑直接退回 LINE。
+describe("APK 原生返回鍵（pttHostBack）", () => {
+  test("只在 APK 內掛（瀏覽器沒有原生返回鍵）", () => {
+    expect(setup().win.pttHostBack).toBeUndefined();
+    expect(typeof setup({ android: true }).win.pttHostBack).toBe("function");
+  });
+
+  test("沒碰過畫面（沒有 sentinel）也能送 ← 並吃下，不讓 App 退到背景", () => {
+    const t = setup({ android: true });
+    expect(t.win.pushed).toHaveLength(0);
+    expect(t.win.pttHostBack()).toBe(true);
+    expect(t.keys).toEqual(["ArrowLeft"]);
+    expect(t.hints).toHaveLength(0);
+    // 原生返回不是 user activation：不可以趁機 pushState（那層會被 Chrome 標成可跳過）。
+    expect(t.win.pushed).toHaveLength(0);
+  });
+
+  test("連按都接得住", () => {
+    const t = setup({ android: true });
+    for (let i = 0; i < 5; ++i) expect(t.win.pttHostBack()).toBe(true);
+    expect(t.keys).toHaveLength(5);
+  });
+
+  test("送不出去：第一次提示怎麼離開，800ms 內第二次放行（App 退到背景）", () => {
+    const t = setup({ android: true, sent: false });
+    expect(t.win.pttHostBack()).toBe(true);
+    expect(t.hints).toEqual([ESCAPE_HINT]);
+    t.tick(DOUBLE_BACK_MS - 1);
+    expect(t.win.pttHostBack()).toBe(false);
+  });
+
+  test("與 sentinel 路徑共用逃生計數：popstate 擋下一次後，原生返回算第二次", () => {
+    const t = setup({ android: true, sent: false });
+    t.activate();
+    t.back();
+    expect(t.hints).toEqual([ESCAPE_HINT]);
+    expect(t.win.pttHostBack()).toBe(false);
+  });
+
+  test("pref 關閉 ⇒ 放行（原生行為）", () => {
+    const t = setup({ android: true, backNav: 0 });
+    expect(t.win.pttHostBack()).toBe(false);
+    expect(t.keys).toHaveLength(0);
+  });
+
+  test("sheet 開著：只收 sheet", () => {
+    const t = setup({ android: true });
+    t.app.dismissTopSheet = () => true;
+    expect(t.win.pttHostBack()).toBe(true);
+    expect(t.keys).toHaveLength(0);
+  });
+
+  test("uninstall 一併拿掉", () => {
+    const t = setup({ android: true });
+    t.guard.uninstall();
+    expect(t.win.pttHostBack).toBeUndefined();
   });
 });
