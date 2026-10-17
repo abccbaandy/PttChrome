@@ -1,7 +1,8 @@
 // Android APK（WebView 殼，docs/android-app.md）在模擬器上的真觸控／真按鍵。
 // 守的是只有殼才有、手機 Chrome 那組（mobile_input）測不到的原生那層：
 //   1. 系統返回鍵走 MainActivity 的 OnBackPressedCallback：WebView 能 goBack 就交給網頁
-//      （history sentinel → guard → 送鍵出口），退到底只把 App 丟到背景、不結束（結束＝斷線）；
+//      （history sentinel → guard → 送鍵出口）；不能 goBack（還沒疊 sentinel）就問網頁
+//      pttHostBack()，網頁放行才把 App 丟到背景、不結束（結束＝斷線）；
 //   2. 文章裡的網址（target=_blank）走 onCreateWindow 交給外部瀏覽器，BBS 畫面不被換掉；
 //   3. 軟鍵盤疊在 WebView 上、不縮 WebView（縮了＝改列數、重送 NAWS），高度由原生
 //      'pttandroid:ime' 告訴網頁 ⇒ 工具列與終端機底列浮在鍵盤上；鍵盤開著按返回只收鍵盤。
@@ -73,7 +74,7 @@ const taskStack = (device) =>
 test.describe('Android APK：返回鍵、外部連結、軟鍵盤（真觸控／真按鍵）', () => {
   test.skip(!article, '尚無 article cassette');
 
-  test('返回鍵：退到底只丟到背景、不斷線；疊了 sentinel 之後交給網頁的 guard', async ({ apk }) => {
+  test('返回鍵：沒有 sentinel 也先問網頁，連按兩下才丟到背景、不斷線；疊了 sentinel 之後交給網頁的 guard', async ({ apk }) => {
     test.setTimeout(150000);
     const { device, page } = apk;
     await openScreen(page, PREFS, { reload: true });
@@ -83,9 +84,24 @@ test.describe('Android APK：返回鍵、外部連結、軟鍵盤（真觸控／
     });
     expect(await resumedPackage(device)).toBe(apk.pkg);
 
-    // 還沒有任何 user activation ⇒ 沒有 sentinel ⇒ WebView 不能 goBack ⇒ moveTaskToBack。
+    // 還沒有任何 user activation ⇒ 沒有 sentinel ⇒ WebView 不能 goBack ⇒ 原生改問網頁 pttHostBack()。
+    // 從外部連結開 App、自動登入＋跳文全程沒碰畫面就是這個狀態（修之前左滑直接退回 LINE）。
+    // cassette 畫面是 pageState 0 ⇒ ← 照實被擋 ⇒ 第一下只提示怎麼離開，App 留在前景。
     expect(await page.evaluate(() => !!(history.state && history.state.pttchromeBackGuard))).toBe(false);
+    await recordBackGuard(page);
     await keyevent(device, 'KEYCODE_BACK');
+    await expect
+      .poll(() => page.evaluate(() => window.__diag.hints.length), { message: '沒有 sentinel 時返回沒有交給網頁' })
+      .toBe(1)
+      .catch(async (e) => {
+        throw new Error(`${e.message}\n現場：${await backGuardDiag(page)}，前景：${await resumedPackage(device)}`);
+      });
+    expect(await page.evaluate(() => window.__diag.navs)).toEqual(['ArrowLeft']);
+    expect(await resumedPackage(device)).toBe(apk.pkg);
+
+    // 送不出去的 back 在 800ms 內連兩下＝逃生：網頁放行 ⇒ moveTaskToBack（不結束、不斷線）。
+    // 兩下放在同一個 `input keyevent` 裡：分兩次 adb shell，在 CI 的負載下間隔會超過 800ms。
+    await keyevent(device, 'KEYCODE_BACK KEYCODE_BACK');
     await expect.poll(() => resumedPackage(device), { timeout: 15000 }).not.toBe(apk.pkg);
     await bringBack(apk);
     expect(await sameDocument(page)).toBe(true);

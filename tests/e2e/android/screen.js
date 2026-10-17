@@ -183,9 +183,12 @@ const waitOnSentinel = (page, opts) =>
   page.waitForFunction(() => !!(window.history.state && window.history.state.pttchromeBackGuard), null, opts);
 
 // 記下 guard 交給送鍵出口的每一次（sendNavKeyAsUser）與閃過的提示；失敗時的現場一併收 popstate。
+// 同一頁可以呼叫多次（每次只清空記錄）：包裝與 listener 只裝一次，否則每呼叫一次就多記一倍。
 async function recordBackGuard(page) {
   await page.evaluate(() => {
     window.__diag = { pops: [], navs: [], hints: [] };
+    if (window.__diagInstalled) return;
+    window.__diagInstalled = true;
     window.addEventListener('popstate', (e) => window.__diag.pops.push(JSON.stringify(e.state)), true);
     const app = window.__app;
     const orig = app.sendNavKeyAsUser.bind(app);

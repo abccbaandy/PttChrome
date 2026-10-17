@@ -10,7 +10,7 @@
   讓手機版面 rows 夾到下限 24（觸控座標仍 1:1，不像 setDeviceMetricsOverride 會偏），`finally` 裡 `wm size reset`。
 - 試過但沒收：「下拉不觸發 Chrome 重新整理」——拿掉 overscroll-behavior 的對照組在模擬器上也拉不出重整
   （body `overflow:hidden`），否定斷言證明不了什麼。
-- `apk`：debug APK（WebView 殼）——返回鍵退到底只丟背景不斷線、疊了 sentinel 交給網頁 guard；文章網址交給
+- `apk`：debug APK（WebView 殼）——沒有 sentinel 時返回鍵問網頁 `pttHostBack`（擋下先提示、800ms 內連兩下才丟背景，不斷線）、疊了 sentinel 交給網頁 guard；文章網址交給
   外部瀏覽器、BBS 畫面留著；軟鍵盤疊在 WebView 上不縮、原生 `pttandroid:ime` 回報高度、工具列浮在鍵盤上、
   返回只收鍵盤。APK 以 dev server 模式載 host 的 dev server（fixture 用 `run-as` 寫 `shared_prefs`），
   PTT 連線一樣離線重放（stub 也攔 APK 本機 proxy 的 `/bbs/<token>`）。執行器每輪開機前先
