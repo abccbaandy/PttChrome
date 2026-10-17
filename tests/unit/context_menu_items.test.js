@@ -198,3 +198,28 @@ describe("isTouchContextMenu", () => {
     expect(isTouchContextMenu(null)).toBe(false);
   });
 });
+
+// 手機推文卡片的「複製推文」：預覽與實際複製同源；「整段」只在合併塊（>1 則）出現。
+describe("copyComment／copyCommentAll", () => {
+  test("單則：只有「這則」，沒有「整段」", () => {
+    const state = { commentCopy: { line: "推文內容", all: "推文內容", count: 1 } };
+    expect(copyTextFor("copyComment", state, HREF)).toBe("推文內容");
+    expect(copyTextFor("copyCommentAll", state, HREF)).toBe(null);
+    expect(copyPreviews(state, HREF)).toEqual({ copyComment: "推文內容" });
+  });
+
+  test("合併塊：按在某一則上 ⇒ 兩項都有；按在標頭（line=null）⇒ 只有整段", () => {
+    const all = "第一則\n第二則";
+    expect(
+      copyPreviews({ commentCopy: { line: "第二則", all, count: 2 } }, HREF),
+    ).toEqual({ copyComment: "第二則", copyCommentAll: all });
+    expect(
+      copyPreviews({ commentCopy: { line: null, all, count: 2 } }, HREF),
+    ).toEqual({ copyCommentAll: all });
+  });
+
+  test("不在推文卡片上（commentCopy=null）⇒ 都沒有", () => {
+    expect(copyTextFor("copyComment", { commentCopy: null }, HREF)).toBe(null);
+    expect(copyTextFor("copyCommentAll", {}, HREF)).toBe(null);
+  });
+});

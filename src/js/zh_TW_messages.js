@@ -44,6 +44,12 @@
   "cmenu_copyLinkUrl": {
     "message": "複製連結網址"
   },
+  "cmenu_copyComment": {
+    "message": "複製這則推文"
+  },
+  "cmenu_copyCommentAll": {
+    "message": "複製整段推文"
+  },
   "cmenu_copyArticleLink": {
     "message": "複製本篇文章連結"
   },
@@ -362,7 +368,7 @@
     "message": "快速搜尋"
   },
   "tooltip_quickSearch": {
-    "message": "在畫面上選取文字後按右鍵，這些項目就會出現在選單裡。內建項目可以停用，但不能編輯或刪除。"
+    "message": "在畫面上選取文字後按右鍵，這些項目就會出現在選單裡（手機：長按字詞；選取模式下選好字後按工具列「更多」）。內建項目可以停用，但不能編輯或刪除。"
   },
   "options_quickSearchBuiltin": {
     "message": "內建項目"

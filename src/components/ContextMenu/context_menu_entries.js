@@ -71,6 +71,24 @@ export function buildContextMenuEntries(p) {
       markAllRead)
   )
     divider("d-blacklist");
+  // 手機推文卡片：長按就能複製整則推文（推文第一個字貼著螢幕左緣，選取把手拉不過去）。
+  // 出現與否＝預覽算不算得出來（context_menu_items 的 copyComment／copyCommentAll），
+  // 與連結／選取旗標無關：長按推文裡的網址也照樣給。
+  if (previews.copyComment)
+    item(
+      "copyComment",
+      i18n("cmenu_copyComment"),
+      (e) => p.onMenuSelect("copyComment", e),
+      { preview: previews.copyComment, copy: true },
+    );
+  if (previews.copyCommentAll)
+    item(
+      "copyCommentAll",
+      i18n("cmenu_copyCommentAll"),
+      (e) => p.onMenuSelect("copyCommentAll", e),
+      { preview: previews.copyCommentAll, copy: true },
+    );
+  if (previews.copyComment || previews.copyCommentAll) divider("d-comment");
   if (p.selEnabled) {
     item("copy", i18n("cmenu_copy"), (e) => p.onMenuSelect("copy", e), {
       right: "Ctrl+C",

@@ -161,4 +161,39 @@ export function buildCommentCard({
   };
 }
 
+// 長按選單的「複製推文」（docs/mobile.md「推文卡片」）：推文內容從卡片左緣起、第一個字
+// 貼著螢幕邊，選取把手拉不過去（還會跟系統的邊緣返回手勢搶）⇒ 不靠選取，直接讀卡片。
+// 內容每則一個 bbsline（合併塊的換行 cell 由 LinkSegmentBuilder 切行）；預覽 div 沒有
+// bbsline，不會混進來。畫面每格的空白是 &nbsp;，換回一般空白。
+//   line  手指下那一則（單則卡片＝唯一那則；合併塊按在標頭上＝null，不知道是哪一則）
+//   all   整張卡片的內容，每則一行
+//   count 則數（>1 ＝合併塊，選單多給「複製整段」）
+// 不在推文卡片上 ⇒ null（桌機沒有卡片，這個選項永遠不出現）。
+const cardLineText = (node) =>
+  node.textContent.replace(/ /g, " ").trim();
+
+export function commentCardCopyText(target) {
+  const card =
+    target && target.closest ? target.closest(".commentCard") : null;
+  if (!card) return null;
+  const body = card.querySelector(":scope > .commentCardText");
+  if (!body) return null;
+  const lineNodes = Array.from(
+    body.querySelectorAll('[data-type="bbsline"]'),
+  ).filter((n) => cardLineText(n));
+  if (!lineNodes.length) return null;
+  const hit = target.closest('[data-type="bbsline"]');
+  const line =
+    lineNodes.length === 1
+      ? cardLineText(lineNodes[0])
+      : hit && lineNodes.includes(hit)
+        ? cardLineText(hit)
+        : null;
+  return {
+    line,
+    all: lineNodes.map(cardLineText).join("\n"),
+    count: lineNodes.length,
+  };
+}
+
 export default buildCommentCard;

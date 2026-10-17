@@ -14,6 +14,7 @@ import {
   normalizeQuickSearchQuery,
   pruneQuickSearchEntries,
   quickSearchMatches,
+  quickSearchQueryFor,
   resolveQuickSearchItems,
   validateQuickSearchEntry,
   visibleQuickSearchItems,
@@ -245,5 +246,34 @@ describe("makeQuickSearchId", () => {
   test("連續產生不重複（React key／刪除定位靠它）", () => {
     const ids = new Set(Array.from({ length: 50 }, () => makeQuickSearchId()));
     expect(ids.size).toBe(50);
+  });
+});
+
+// 症狀（使用者回報）：手機上快速搜尋叫不出來。選取模式關著時長按選單會先清掉
+// Chromium 長按自動選起來的那個詞（不留把手），舊邏輯只看「現在有沒有選取」⇒
+// 永遠沒有關鍵字。改成清之前記下那個詞，當成查詢字串。
+describe("quickSearchQueryFor：選單用哪段字查", () => {
+  test("有選取 ⇒ 用選取（長按詞不看）", () => {
+    expect(
+      quickSearchQueryFor({
+        selEnabled: true,
+        selectedText: " 選取\u00a0的字 ",
+        longPressWord: "長按",
+      }),
+    ).toBe("選取 的字");
+  });
+
+  test("REGRESSION：手機長按（選取已清空）⇒ 用長按自動選起來的那個詞", () => {
+    expect(
+      quickSearchQueryFor({
+        selEnabled: false,
+        selectedText: "",
+        longPressWord: "12345678\u00a0",
+      }),
+    ).toBe("12345678");
+  });
+
+  test("都沒有 ⇒ 空字串（快速搜尋不出現）", () => {
+    expect(quickSearchQueryFor({ selEnabled: false, selectedText: "" })).toBe("");
   });
 });

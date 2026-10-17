@@ -55,7 +55,12 @@ const COPY_TEXT = {
   copyArticleLink: (s, href) =>
     s.currentArticle
       ? buildDeepLink(href, s.currentArticle.board, s.currentArticle.aid)
-      : null
+      : null,
+  // 手機推文卡片：長按那一則／整張合併塊（render/comment_card.commentCardCopyText）。
+  // 「整段」只在合併塊（count>1）才有意義，單則時與上一項重複，不給。
+  copyComment: s => (s.commentCopy && s.commentCopy.line) || null,
+  copyCommentAll: s =>
+    s.commentCopy && s.commentCopy.count > 1 ? s.commentCopy.all : null
 };
 
 // 有預覽的選項（順序無意義，只用來迭代）。

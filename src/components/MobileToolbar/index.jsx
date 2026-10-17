@@ -18,6 +18,13 @@ import {
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
 import { readValuesWithDefault } from "../../js/pref_storage";
+import {
+  normalizeQuickSearchQuery,
+  visibleQuickSearchItems,
+  buildQuickSearchUrl,
+  quickSearchLabel,
+} from "../../js/quick_search";
+import { readSelectionText } from "../../render/screen_chunk";
 import MobileSheet from "../MobileSheet";
 import {
   MOBILE_KEYPAD_ROWS,
@@ -40,7 +47,8 @@ import "./MobileToolbar.css";
 //   其他      搜尋（有可用種類時）／按鍵／更多
 //   搜尋  直接開搜尋彈窗（不開子選單；種類在彈窗上方切，article_search.js）
 //   按鍵  展開方向鍵面板（貼在工具列上方；含軟鍵盤開關與黏滯 Ctrl／Esc／Tab／Del）
-//   更多  跳到第一篇未讀／設為全部已讀／分享／文章導覽／選取模式／全選／圖片上傳／設定／登出
+//   更多  快速搜尋（選取模式下有選取時）／跳到第一篇未讀／設為全部已讀／分享／文章導覽／
+//         選取模式／全選／圖片上傳／設定／登出
 //         （全選與圖片上傳在桌機是右鍵選單項；手機長按選單不放，集中在這裡；主功能表不給，
 //         見 mobile_toolbar.js 的 contentTools）
 // 沒有返回：交給系統邊緣滑動／返回鍵（history_back_guard.js）。
@@ -100,6 +108,13 @@ export const MobileToolbar = ({
   // 「更多」裡的圖片上傳兩項跟著總開關 enableImageUpload（同桌機右鍵選單）：開 sheet
   // 當下現讀偏好；收起時不重算，退場動畫中項目才不會跳掉。
   const [imageUploadEnabled, setImageUploadEnabled] = useState(false);
+  // 「更多」裡的快速搜尋（src/js/quick_search.js）：選取模式下的長按走原生選單，我們的
+  // 長按選單（快速搜尋原本唯一的入口）出不來 ⇒ 選好字後按「更多」查。開 sheet 當下
+  // 定案 { query, items }，收起時不重算（同 imageUploadEnabled）。
+  const [quickSearch, setQuickSearch] = useState({ query: "", items: [] });
+  // 按下工具列那一刻的選取：tap 手勢收尾時瀏覽器可能先把選取清掉才發 click，所以在
+  // pointerdown（手指剛碰到、手勢還沒判定）先記下來。
+  const pressSelectionRef = useRef("");
   const keysRef = useRef(null);
 
   useEffect(() => {
@@ -172,14 +187,44 @@ export const MobileToolbar = ({
   const togglePanel = useCallback(
     (p) => {
       setConfirmLogout(false);
-      if (p === "more")
+      if (p === "more") {
+        const prefs = readValuesWithDefault();
         setImageUploadEnabled(
-          !!pttchrome.imageUpload &&
-            !!readValuesWithDefault().enableImageUpload,
+          !!pttchrome.imageUpload && !!prefs.enableImageUpload,
         );
+        // 只在選取模式：模式關著時長按選單本身就有快速搜尋（長按的那個詞），而「全選」
+        // 留下的整頁選取拿去查沒有意義。
+        const query = pttchrome.mobileSelectMode
+          ? normalizeQuickSearchQuery(
+              pressSelectionRef.current || readSelectionText(),
+            )
+          : "";
+        setQuickSearch({
+          query,
+          items: query ? visibleQuickSearchItems(prefs, query) : [],
+        });
+      }
+      pressSelectionRef.current = "";
       setPanel((cur) => (cur === p ? null : p));
     },
     [pttchrome],
+  );
+
+  const onToolbarPointerDown = useCallback(() => {
+    pressSelectionRef.current = readSelectionText();
+  }, []);
+
+  const onQuickSearch = useCallback(
+    (item) => {
+      setPanel(null);
+      setConfirmLogout(false);
+      window.open(
+        buildQuickSearchUrl(item.urlTemplate, quickSearch.query),
+        "_blank",
+        "noopener",
+      );
+    },
+    [quickSearch],
   );
 
   // 「更多」sheet 的關閉（遮罩、拖把手、系統返回）。引用穩定：MobileSheet 拿它登記
@@ -492,6 +537,21 @@ export const MobileToolbar = ({
       sheetKey="more"
     >
       <div data-panel="more">
+        {quickSearch.items.map((qs) => (
+          <button
+            key={"qs-" + qs.id}
+            type="button"
+            className="nomouse_command mobileSheetItem pttRipple"
+            data-key={"__qs-" + qs.id}
+            onClick={() => onQuickSearch(qs)}
+          >
+            <span>{quickSearchLabel(qs)}</span>
+            <span className="mobileSheetItemPreview">{quickSearch.query}</span>
+          </button>
+        ))}
+        {quickSearch.items.length ? (
+          <div className="mobileSheetDivider" role="separator" />
+        ) : null}
         {context.unreadJump ? (
           <button
             type="button"
@@ -630,6 +690,7 @@ export const MobileToolbar = ({
     <div
       id="mobileToolbar"
       className="nomouse_command mobileToolbar"
+      onPointerDownCapture={onToolbarPointerDown}
       onMouseDown={keepFocus}
       onMouseUp={swallow}
       onClick={swallow}

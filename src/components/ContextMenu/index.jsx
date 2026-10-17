@@ -26,7 +26,7 @@ import {
   isBlacklistableUserId,
 } from "../../js/comment_parse";
 import {
-  normalizeQuickSearchQuery,
+  quickSearchQueryFor,
   visibleQuickSearchItems,
   buildQuickSearchUrl,
 } from "../../js/quick_search";
@@ -57,6 +57,7 @@ import {
 import { rememberSearch } from "../../js/search_history";
 import { BoardSearchBridge } from "../../js/board_search_bridge";
 import { readSelectionText } from "../../render/screen_chunk";
+import { commentCardCopyText } from "../../render/comment_card";
 import { HINT_ERROR } from "../../js/status_hint";
 import {
   menuTargetFromElement,
@@ -119,6 +120,11 @@ const menuHandlerByEventKey = {
     pttchrome.doCopy(copyTextFor("copyArticleAid", state)),
   copyArticleDeepLink: (pttchrome, state) =>
     pttchrome.doCopy(copyTextFor("copyArticleDeepLink", state)),
+  // 手機推文卡片：長按那一則／整段合併推文（預覽與複製同源，同上）。
+  copyComment: (pttchrome, state) =>
+    pttchrome.doCopy(copyTextFor("copyComment", state)),
+  copyCommentAll: (pttchrome, state) =>
+    pttchrome.doCopy(copyTextFor("copyCommentAll", state)),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
   // 圖片上傳（urusai）：開檔案選擇器／開上傳紀錄面板。實作在
   // js/image_upload_controller.js，App 在建構時掛成 pttchrome.imageUpload。
@@ -140,6 +146,8 @@ const initialState = {
   currentArticle: null,
   // eventKey → 已截斷的預覽字串（context_menu_items.copyPreviews 算好的）。
   previews: {},
+  // 長按的推文卡片內容（render/comment_card.commentCardCopyText；null ＝ 不在卡片上）。
+  commentCopy: null,
   selectedText: "",
   urlEnabled: false,
   normalEnabled: false,
@@ -311,14 +319,19 @@ export const ContextMenu = ({ pttchrome }) => {
       event.stopPropagation();
       event.preventDefault();
       pttchrome.contextMenuShown = true;
+      // 清掉之前先記下長按自動選起來的那個詞：快速搜尋要拿它當關鍵字
+      // （quick_search.quickSearchQueryFor）。
+      let longPressWord = "";
       if (
         shouldClearTouchSelection({
           mobile: pttchrome.mobile,
           touch,
           selectMode: pttchrome.mobileSelectMode,
         })
-      )
+      ) {
+        longPressWord = readSelectionText();
         window.getSelection().removeAllRanges();
+      }
       // just in case the selection get de-selected
       if (window.getSelection().isCollapsed) {
         pttchrome.lastSelection = null;
@@ -373,18 +386,23 @@ export const ContextMenu = ({ pttchrome }) => {
           nav.findLocalPostAid &&
           nav.findLocalPostAid()) ||
         null;
+      // 手機推文卡片：長按的那則推文（不必拉選取把手到螢幕左緣）。桌機沒有卡片 ⇒ null。
+      const commentCopy = commentCardCopyText(target);
       const previews = copyPreviews({
         contextOnUrl,
         contextArticle,
         currentArticle,
+        commentCopy,
       });
 
       // 快速搜尋：每次開選單「現讀」偏好（同下面黑名單判定的手法）→ 設定改完立刻
       // 生效，不必在 pttchrome.jsx#onPrefChange 掛 case。適用條件（純數字）不符的
       // 項目在這裡就被濾掉，DropdownMenu 只負責畫。
-      const quickSearchQuery = selEnabled
-        ? normalizeQuickSearchQuery(selectedText)
-        : "";
+      const quickSearchQuery = quickSearchQueryFor({
+        selEnabled,
+        selectedText,
+        longPressWord,
+      });
       const quickSearchItems = quickSearchQuery
         ? visibleQuickSearchItems(prefs, quickSearchQuery)
         : [];
@@ -461,6 +479,7 @@ export const ContextMenu = ({ pttchrome }) => {
         contextArticle,
         currentArticle,
         previews,
+        commentCopy,
         selectedText,
         urlEnabled,
         normalEnabled,
@@ -520,6 +539,7 @@ export const ContextMenu = ({ pttchrome }) => {
         aElement: undefined,
         currentArticle: null,
         previews: {},
+        commentCopy: null,
         selectedText: "",
         urlEnabled: false,
         normalEnabled: false,
