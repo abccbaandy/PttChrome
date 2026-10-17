@@ -72,3 +72,31 @@ test("沒有連續的分隔線（手機工具段搬空時）", () => {
       expect(types[i] === "divider" && types[i - 1] === "divider").toBe(false);
   }
 });
+
+// 手機推文卡片：長按就能「複製這則推文」（推文第一個字貼著螢幕左緣，拉不到選取把手）。
+// 出現條件＝預覽算得出來，與連結旗標無關（長按推文裡的網址也要給）。
+describe("複製推文", () => {
+  test("有預覽才出現，點下去走 onMenuSelect 帶 key，預覽畫在第二行", () => {
+    const calls = [];
+    const entries = buildContextMenuEntries({
+      ...BASE,
+      mobile: true,
+      normalEnabled: false,
+      urlEnabled: true,
+      previews: { copyComment: "這則", copyCommentAll: "這則\n下一則" },
+      onMenuSelect: (k) => calls.push(k),
+    });
+    const one = entries.find((e) => e.key === "copyComment");
+    const all = entries.find((e) => e.key === "copyCommentAll");
+    expect(one.preview).toBe("這則");
+    expect(all.preview).toBe("這則\n下一則");
+    one.onClick({});
+    all.onClick({});
+    expect(calls).toEqual(["copyComment", "copyCommentAll"]);
+  });
+
+  test("沒有預覽（不在推文卡片上／桌機）⇒ 不出現", () => {
+    expect(keys({ ...BASE, previews: {} })).not.toContain("copyComment");
+    expect(keys({ ...BASE, previews: {} })).not.toContain("copyCommentAll");
+  });
+});

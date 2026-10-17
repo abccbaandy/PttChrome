@@ -135,16 +135,22 @@ test.describe('長按選單（觸控 contextmenu）', () => {
       window.__cmInstalled = true;
       window.addEventListener(
         'contextmenu',
-        (ev) => window.__cm.push({ ev, collapsed: window.getSelection().isCollapsed }),
+        (ev) =>
+          window.__cm.push({
+            ev,
+            collapsed: window.getSelection().isCollapsed,
+            text: window.getSelection().toString(),
+          }),
         true
       );
     });
   const lastContextMenu = async (page) => {
     await expect.poll(() => page.evaluate(() => window.__cm.length)).toBeGreaterThan(0);
     return page.evaluate(() => {
-      const { ev, collapsed } = window.__cm[window.__cm.length - 1];
+      const { ev, collapsed, text } = window.__cm[window.__cm.length - 1];
       return {
         collapsed,
+        text,
         defaultPrevented: ev.defaultPrevented,
         pointerType: ev.pointerType,
         collapsedAfter: window.getSelection().isCollapsed,
@@ -152,13 +158,14 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     });
   };
 
-  const targetPoint = (page) =>
-    page.evaluate(() => {
-      const el = document.querySelector('[data-e2e-target] [data-type="bbsline"]') ||
-        document.querySelector('[data-e2e-target]');
+  // sel：長按落在標記列裡的哪個元素（預設第一個 bbsline；推文卡片的第一個是標頭）。
+  const TARGET_LINE = '[data-e2e-target] [data-type="bbsline"]';
+  const targetPoint = (page, sel = TARGET_LINE) =>
+    page.evaluate((sel) => {
+      const el = document.querySelector(sel) || document.querySelector('[data-e2e-target]');
       const r = el.getBoundingClientRect();
       return { x: Math.round(r.left + Math.min(r.width - 2, 60)), y: Math.round(r.top + 4) };
-    });
+    }, sel);
 
   // 把手指下那個字選起來（Chromium 長按的第一步；也是「使用者已選取」的狀態布置）。
   const selectWordAt = (page, { x, y }) =>
@@ -178,17 +185,16 @@ test.describe('長按選單（觸控 contextmenu）', () => {
   // 皆然）只產生 pointerdown/up，**不發 contextmenu** —— 拿它斷言「選單 0 個」會是假陽性。
   // 這個 helper 只代表長按事件序列的**第一個**事件；拖選取把手後補發的那次見下方
   // ContextMenu 鍵的 REGRESSION case。
-  const longPress = async (page) => {
-    const pt = await targetPoint(page);
+  const longPress = async (page, sel = TARGET_LINE) => {
+    const pt = await targetPoint(page, sel);
     await selectWordAt(page, pt);
     await recordContextMenu(page);
-    await page.evaluate(({ x, y }) => {
-      const el = document.querySelector('[data-e2e-target] [data-type="bbsline"]') ||
-        document.querySelector('[data-e2e-target]');
+    await page.evaluate(({ x, y, sel }) => {
+      const el = document.querySelector(sel) || document.querySelector('[data-e2e-target]');
       el.dispatchEvent(
         new PointerEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerType: 'touch' })
       );
-    }, pt);
+    }, { ...pt, sel });
     return lastContextMenu(page);
   };
 
@@ -230,6 +236,59 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     // 複製類項目跟著不出現（要選字複製就開選取模式）。
     expect(collapsedAfter).toBe(true);
     await expect(menu(page).locator('[data-cmenu="copy"]')).toHaveCount(0);
+  });
+
+  // 症狀（使用者回報）：手機很難複製推文 —— 推文內容從卡片左緣起，第一個字貼著螢幕邊，
+  // 選取把手拉不過去。長按推文就給「複製這則推文」，不必選取。
+  const COMMENT_LINE = '[data-e2e-target] .commentCardText [data-type="bbsline"]';
+  test('長按推文內容：選單有「複製這則推文」（預覽＝那則內容），按下寫進剪貼簿', async ({ page }) => {
+    test.setTimeout(90000);
+    await page.addInitScript(() => {
+      window.__copied = [];
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: (t) => (window.__copied.push(String(t)), Promise.resolve()) },
+      });
+    });
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    expect(await markPusherRow(page), '找不到推文列').toBeTruthy();
+    const expected = await page.evaluate(
+      (sel) => document.querySelector(sel).textContent.replace(/\u00a0/g, ' ').trim(),
+      COMMENT_LINE
+    );
+    expect(expected.length).toBeGreaterThan(0);
+
+    await longPress(page, COMMENT_LINE);
+    const item = menu(page).locator('[data-cmenu="copyComment"]');
+    await expect(item).toBeVisible();
+    await expect(item).toContainText(await label(page, 'cmenu_copyComment'));
+    await item.click();
+    await expect.poll(() => page.evaluate(() => window.__copied)).toEqual([expected]);
+    await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
+  });
+
+  // 症狀（使用者回報）：手機叫不出快速搜尋。選取模式關時長按選到的字在開選單前就被清掉，
+  // 舊邏輯只看「現在有沒有選取」⇒ 快速搜尋永遠不出現。改用長按自動選起來的那個詞。
+  test('REGRESSION：長按（選取模式關）⇒ 快速搜尋以長按選到的詞出現', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    expect(await markPusherRow(page), '找不到推文列').toBeTruthy();
+
+    const r = await longPress(page, COMMENT_LINE);
+    const word = r.text.replace(/\s+/g, ' ').trim();
+    expect(word.length).toBeGreaterThan(0); // 前提：長按真的選到了字
+    expect(r.collapsedAfter).toBe(true); // 選取照舊清掉（不留把手）
+    const qs = menu(page).locator('[data-cmenu="qs-google"]');
+    await expect(qs).toBeVisible();
+    await expect(qs).toContainText(word);
   });
 
   test('選取模式開：長按＝一般網頁操作（不 preventDefault、不開我們的選單、選取留著）', async ({ page }) => {

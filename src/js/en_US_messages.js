@@ -44,6 +44,12 @@ export const en_US = {
   "cmenu_copyLinkUrl": {
     "message": "Copy link address"
   },
+  "cmenu_copyComment": {
+    "message": "Copy this comment"
+  },
+  "cmenu_copyCommentAll": {
+    "message": "Copy all comments in this group"
+  },
   "cmenu_copyArticleLink": {
     "message": "Copy link to this article"
   },
@@ -363,7 +369,7 @@ export const en_US = {
     "message": "Quick Search"
   },
   "tooltip_quickSearch": {
-    "message": "These entries show up in the context menu once you select some text. Built-in entries can be disabled, but not edited or removed."
+    "message": "These entries show up in the context menu once you select some text (on mobile: long-press a word, or in select mode select text and tap \"More\" in the toolbar). Built-in entries can be disabled, but not edited or removed."
   },
   "options_quickSearchBuiltin": {
     "message": "Built-in entries"

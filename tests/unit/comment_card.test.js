@@ -8,6 +8,7 @@
 import {
   buildCommentCard,
   commentCardRegions,
+  commentCardCopyText,
 } from "../../src/render/comment_card";
 import { mountScreen, unmountAll } from "./helpers/mount_screen";
 import { row, seg, color, SCENARIOS } from "./helpers/screen_fixtures";
@@ -123,5 +124,60 @@ describe("ScreenController：只在 enhance.commentCards 時畫卡片", () => {
     m.update(props(undefined));
     expect(m.container.querySelectorAll(".commentCard").length).toBe(0);
     expect(m.container.querySelectorAll(".mergedCommentBlock").length).toBe(1);
+  });
+});
+
+// 症狀（使用者回報）：手機上很難複製推文 —— 內容從卡片左緣起，第一個字貼著螢幕邊，
+// 選取把手拉不過去。長按選單直接給「複製這則推文」，文字由這支從卡片讀出來。
+describe("commentCardCopyText（長按選單的複製推文）", () => {
+  test("單則：按內容或標頭都拿到那則內容（不含 id／IP／時間、&nbsp; 換回空白）", () => {
+    const chars = row(
+      seg("推 someone: 前段 後段", color(2, 0)),
+      seg("                1.2.3.4 06/14 12:05"),
+    );
+    const { node } = buildCommentCard({
+      chars,
+      regions: commentCardRegions(chars),
+      row: 9,
+      forceWidth: 20,
+      pusher: "someone",
+      pusherContentCol: 12,
+    });
+    const inBody = node.querySelector(
+      ".commentCardText [data-type=bbsline] span",
+    );
+    const r = commentCardCopyText(inBody);
+    expect(r).toEqual({ line: "前段 後段", all: "前段 後段", count: 1 });
+    expect(commentCardCopyText(node.querySelector(".commentCardTime"))).toEqual(
+      r,
+    );
+  });
+
+  test("合併塊：按某一則＝那一則；按標頭＝不知道哪一則（line=null）；all 每則一行", () => {
+    const m = mountScreen(props(true));
+    const merged = m.container.querySelector(
+      '.commentCard[data-pusher="gooduser"]',
+    );
+    const lines = merged.querySelectorAll(
+      ".commentCardText [data-type=bbsline]",
+    );
+    expect(lines.length).toBe(2);
+    const second = commentCardCopyText(lines[1].firstElementChild || lines[1]);
+    expect(second.count).toBe(2);
+    expect(second.line).toContain("同一人第二則");
+    expect(second.line).not.toContain("第一則");
+    expect(second.all.split("\n")).toHaveLength(2);
+    expect(second.all.split("\n")[0]).toContain("第一則");
+    const head = commentCardCopyText(merged.querySelector(".commentCardHead"));
+    expect(head.line).toBe(null);
+    expect(head.all).toBe(second.all);
+  });
+
+  test("不在推文卡片上（桌機一般列）⇒ null", () => {
+    const m = mountScreen(props(undefined));
+    const pusherRow = m.container.querySelector("[data-pusher]");
+    expect(pusherRow).not.toBe(null);
+    expect(commentCardCopyText(pusherRow)).toBe(null);
+    expect(commentCardCopyText(null)).toBe(null);
   });
 });

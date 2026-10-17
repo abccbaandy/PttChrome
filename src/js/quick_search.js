@@ -41,6 +41,14 @@ export const normalizeQuickSearchQuery = text =>
     .replace(/\s+/g, ' ')
     .trim();
 
+// 選單用哪段字當查詢字串。
+//   selEnabled（真的有選取）＝使用者選的那段。
+//   否則＝手機長按時 Chromium 先自動選起來的那個詞（longPressWord）：選取模式關著時，
+//   長按的選取在開選單前就被清掉（不留把手跟選單打架），不先記下來的話手機永遠叫不出
+//   快速搜尋。長按選詞是瀏覽器的斷詞（中文走 ICU 字典、數字整串），正是要查的那個詞。
+export const quickSearchQueryFor = ({ selEnabled, selectedText, longPressWord }) =>
+  normalizeQuickSearchQuery(selEnabled ? selectedText : longPressWord);
+
 export const quickSearchMatches = (query, match) => {
   if (!query) return false;
   if (match === MATCH_DIGITS) return /^\d+$/.test(query);

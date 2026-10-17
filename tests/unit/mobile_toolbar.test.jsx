@@ -433,6 +433,79 @@ describe("更多（bottom sheet）", () => {
     }
   });
 
+  // 症狀（使用者回報）：手機叫不出快速搜尋。選取模式下長按走 Chrome 原生選單，我們的長按
+  // 選單（快速搜尋原本唯一的入口）出不來 ⇒ 選好字後從「更多」查。
+  describe("快速搜尋（選取模式下的選取）", () => {
+    let textEl;
+    const selectText = () => {
+      const range = document.createRange();
+      range.selectNodeContents(textEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    };
+    beforeEach(() => {
+      textEl = document.createElement("div");
+      textEl.textContent = "12345678";
+      document.body.appendChild(textEl);
+    });
+    afterEach(() => {
+      window.getSelection().removeAllRanges();
+      textEl.remove();
+    });
+
+    test("REGRESSION：選取模式＋有選取 ⇒ 列出快速搜尋，按下開新分頁並收起", async () => {
+      const open = vi.spyOn(window, "open").mockImplementation(() => null);
+      try {
+        const core = makeCore();
+        core.mobileSelectMode = true;
+        renderBar(core);
+        selectText();
+        await openMore();
+        // 純數字 ⇒ 內建三項（Google＋pixiv 兩項）都出現，關鍵字畫在第二行。
+        const google = byKey("__qs-google");
+        expect(google).not.toBeNull();
+        expect(byKey("__qs-pixiv-user")).not.toBeNull();
+        expect(google.textContent).toContain("12345678");
+        fireEvent.click(google);
+        expect(open).toHaveBeenCalledWith(
+          "https://www.google.com/search?q=12345678",
+          "_blank",
+          "noopener",
+        );
+        await sheetClosed();
+      } finally {
+        open.mockRestore();
+      }
+    });
+
+    test("按下「更多」的 tap 先把選取清掉也沒關係：用 pointerdown 當下記住的選取", async () => {
+      const core = makeCore();
+      core.mobileSelectMode = true;
+      renderBar(core);
+      selectText();
+      fireEvent.pointerDown(byKey("__more"));
+      window.getSelection().removeAllRanges();
+      await openMore();
+      expect(byKey("__qs-google")).not.toBeNull();
+    });
+
+    test("選取模式關（長按選單本身就有快速搜尋）／沒有選取 ⇒ 不列", async () => {
+      const core = makeCore();
+      const r = renderBar(core);
+      selectText();
+      await openMore();
+      expect(byKey("__qs-google")).toBeNull();
+      r.unmount();
+
+      core.mobileSelectMode = true;
+      window.getSelection().removeAllRanges();
+      renderBar(core);
+      await openMore();
+      expect(byKey("__qs-google")).toBeNull();
+    });
+  });
+
   test("設定：交給 onOpenSettings", async () => {
     const onOpenSettings = vi.fn();
     renderBar(makeCore(), { onOpenSettings });
