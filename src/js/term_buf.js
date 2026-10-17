@@ -2,7 +2,8 @@
 
 import { Event } from './event';
 import { ColorState } from './term_ui';
-import { u2b, b2u, parseStatusRow, parseListRow } from './string_util';
+import { b2u, textCellWidth, parseStatusRow, parseListRow } from './string_util';
+import { isWideCellCode, cellText } from './unicode_cells';
 import { cjkUrlExtension } from './url_cjk';
 import { trimUrlTailLength } from './url_trim';
 import { oscHyperlinkHref } from './osc_hyperlink';
@@ -558,7 +559,8 @@ TermBuf.prototype = {
         var ch = line[col];
         if (ch.needUpdate)
             needUpdate=true;
-        // Big5 模式下 isFullWidth() 就是「位元組 > 0x7f」（見本檔 isFullWidth）。
+        // Big5 模式下 isFullWidth() 就是「位元組 > 0x7f」（見本檔 isFullWidth；UTF-8 線路的
+        // Unicode 格另依 server 字寬判定，全形格後面固定是 WIDE_TRAIL，配對不會錯）。
         // 這是近似而非判準——Big5 的 trail byte 同樣落在 0x81..0xFE，單看一格分不出
         // 頭尾。之所以還是對的，是因為這裡**每一列都從 col 0 起逐對配對**：認出頭就
         // ++col 跳過尾，所以只要該列的高位元組成雙就不會錯。
@@ -610,11 +612,20 @@ TermBuf.prototype = {
           line.uris=null;
         }
         var s = '';
-        for (var col = 0; col < cols; ++col)
+        if (this.view.charset != 'UTF-8') {
+          // 每格一個字元的 URL 掃描字串：全形字（Big5 lead＋trail、全形 Unicode 格＋
+          // WIDE_TRAIL）換成 \xab\xcd，半形的 Unicode 格換成一個非 URL 字元。配對直接用
+          // 上面剛算好的 isLeadByte，與畫面同一套。
+          for (var col = 0; col < cols; ++col) {
+            var cell = line[col];
+            if (cell.isLeadByte) s += '\xab';
+            else if (col > 0 && line[col - 1].isLeadByte) s += '\xcd';
+            else if (cell.ch.charCodeAt(0) > 0x7f) s += '\x01';
+            else s += cell.ch;
+          }
+        } else {
+          for (var col = 0; col < cols; ++col)
             s += line[col].ch;
-        if (this.view.charset != 'UTF-8')
-          s = s.replace(/[^\x00-\x7f]./g,'\xab\xcd');
-        else {
           var str = '';
           for (var i = 0; i < s.length; ++i) {
             str += s.charAt(i);
@@ -646,7 +657,7 @@ TermBuf.prototype = {
               rawTail += line[tc].ch;
             cjkExt = cjkUrlExtension(s.charAt(uriEnd - 1), b2u(rawTail));
             if (cjkExt)
-              uriEnd += u2b(cjkExt).length; // byte count == column count
+              uriEnd += textCellWidth(cjkExt); // cells == columns
           }
           var uri = [res.index, uriEnd, cjkExt];
           uris.push(uri);
@@ -710,7 +721,7 @@ TermBuf.prototype = {
               // CJK extension: urlTemp's tail is raw Big5 bytes — swap it for
               // the percent-encoded Unicode form so the link actually opens.
               if (uri[2])
-                u = urlTemp.slice(0, urlTemp.length - u2b(uri[2]).length) +
+                u = urlTemp.slice(0, urlTemp.length - textCellWidth(uri[2])) +
                     encodeURI(uri[2]);
               line[uri[0]].fullurl = u;
             }
@@ -1318,7 +1329,7 @@ TermBuf.prototype = {
           else
             return b2u(b5);
         } else
-          return c.ch;
+          return cellText(c.ch);
       }
     }).join('');
   },
@@ -1354,7 +1365,7 @@ TermBuf.prototype = {
           else
             return b2u(b5);
         } else
-          return c.ch;
+          return cellText(c.ch);
       }
     }).join('');
 
@@ -1389,7 +1400,9 @@ TermBuf.prototype = {
   isFullWidth: function(str) {
     var code = str.charCodeAt(0);
     if (this.view.charset != 'UTF-8' || this.forceFullWidth) { // PTT support
-      if (code > 0x7f) return true;
+      // 0x80–0xFF：Big5 位元組。≥ 0x100：UTF-8 線路的 Unicode 格，寬度照 server
+      // （unicode_cells.js；半形的 Unicode 格不是 lead）。
+      if (code > 0x7f) return code <= 0xff || isWideCellCode(code);
       else return false;
     }
     if ((code >= 0x1100 && code <= 0x115f) || 
@@ -1415,7 +1428,7 @@ TermBuf.prototype = {
     var rowText = this.getRowText(row, 0, this.cols);
     var slashIndex = rowText.lastIndexOf('\\');
     if (slashIndex > 0 ) {
-      var col = u2b(rowText.substr(0, slashIndex)).length;
+      var col = textCellWidth(rowText.substr(0, slashIndex));
       if (col != 77 && col != 78) return false;
       // check the color
       var ch = this.lines[row][col];

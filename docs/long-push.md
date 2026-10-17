@@ -311,6 +311,9 @@ term.ptt.cc 送來的實錄（`ptt-debug-20260917-221112` t=9736，`\e[1m` 已�
    telnet IAC。**傳輸層已修**（`telnet.js#_sendEscaped` 對資料路徑加倍 IAC，守護
    `tests/unit/telnet_iac.test.js`）⇒ 現在濾掉的理由只剩顯示：那些字 PTT 畫不出來，
    而且使用者不會知道自己打的字被吃了，所以要濾掉**並回報濾了什麼**。
+   判準是 `string_util.isPttDrawable`：UTF-8 線路上、且已證實 server 內部是 UTF-8
+   （`unicode_cells.serverIsUnicodeNative`）時，Big5 以外的 BMP 字畫得出來就不濾；
+   emoji（BMP 以外）一律濾——pfterm 的 16-bit ftchar 會把它換成 U+FFFD。
 5. **每個 command 都要有 `onFlushed`**（`command_queue.js` 的硬性要求）：queue 被別人 flush
    時若不釋放 `active`，整頁再也收不到鍵盤。
 6. **列表上按 X 之前一律先過 `_gate`**（見上節）。這是唯一擋住「推到別篇」的東西，

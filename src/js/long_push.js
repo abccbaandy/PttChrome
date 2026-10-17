@@ -11,7 +11,7 @@
 //
 // 詳見 docs/long-push.md 與 docs/pttbbs-screen-protocol.md §11.3。
 
-import { u2b } from './string_util';
+import { isPttDrawable } from './string_util';
 import { SCHEME_RE, URL_CHAR_RE } from './url_join';
 
 // 型別選單的按鍵（bbs.c:2996-3010：vkey() 取一個 byte，'1'..'3' → RECTYPE_GOOD/
@@ -75,7 +75,8 @@ export function stripNonBig5(text) {
       ++i;
       continue;
     }
-    if (u2b(ch) === '\xff\xfd') {
+    // Big5 收不下、server 又畫不出來（UTF-8 內部的 server 畫得出，見 isPttDrawable）。
+    if (!isPttDrawable(ch)) {
       dropped.push(ch);
       continue;
     }

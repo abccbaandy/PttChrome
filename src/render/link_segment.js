@@ -8,6 +8,7 @@
 import cx from "classnames";
 import { el } from "./dom";
 import { isDBCSLead } from "../js/string_util";
+import { cellPairs } from "../js/unicode_cells";
 import ColorSegmentBuilder from "./color_segment";
 import { createInlinePreviewSlot } from "./inline_preview_slot";
 
@@ -332,7 +333,7 @@ export class LinkSegmentBuilder {
       // ⇒「按鈕點了送到上一幀的東西」，且完全看不出來。
       //
       // 這個 <a> **不得插入任何文字節點**：term_view.countCol 遞迴累加
-      // u2b(textContent).length，多一個字就讓選取／ANSI 複製的 col 反查錯位
+      // textCellWidth(textContent)，多一個字就讓選取／ANSI 複製的 col 反查錯位
       // （title 屬性不算文字節點，可以放）。
       const fnKey = this._fnKey;
       const a = el(
@@ -428,7 +429,8 @@ export class LinkSegmentBuilder {
     if (
       this.highlightColStart > 0 &&
       i === this.highlightColStart &&
-      this._prevWasLead
+      this._prevWasLead &&
+      cellPairs(this._prevLeadCh, ch.ch)
     ) {
       this.highlightColStart = i + 1;
     }
@@ -536,7 +538,10 @@ export class LinkSegmentBuilder {
     // 回報的看板列表：底色該從 col 30「火」起，卻推到「北」＝少三個字）。
     // 上一格是 lead ⇒ 這一格必是它的 trail，不可能同時是下一個字的 lead。
     // 判定與 ColorSegmentBuilder 的 `this.lead` 同一套。
-    this._prevWasLead = !this._prevWasLead && isDBCSLead(ch.ch);
+    // 全形 Unicode 格只跟 WIDE_TRAIL 配對（unicode_cells.cellPairs，與 builder 同一套）。
+    const paired = this._prevWasLead && cellPairs(this._prevLeadCh, ch.ch);
+    this._prevWasLead = !paired && isDBCSLead(ch.ch);
+    this._prevLeadCh = ch.ch;
     if (!this._wrapUrl && ch.isEndOfURL()) {
       this.saveSegment();
     }

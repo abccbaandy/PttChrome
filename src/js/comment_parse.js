@@ -8,7 +8,8 @@
 // Mirrors the DBCS handling in src/js/term_buf.js#getRowText and
 // src/render/color_segment.js.
 
-import { b2u, COMMENT_TIME_RE } from './string_util';
+import { b2u, charCells, COMMENT_TIME_RE } from './string_util';
+import { cellText } from './unicode_cells';
 
 // Reconstruct the Unicode text of a row from its TermChar[] (one screen line).
 // A DBCS character is stored as a lead byte followed by its second byte; combine
@@ -25,7 +26,7 @@ export function rowToText(chars) {
       text += b5.length === 1 ? b5 : b2u(b5);
       i++; // skip the second byte
     } else {
-      text += c.ch;
+      text += cellText(c.ch);
     }
   }
   return text;
@@ -102,7 +103,7 @@ function commentContentCol(text, userid) {
   const colon = text.indexOf(':', idAt + userid.length);
   if (colon < 0) return COMMENT_USERID_COL;
   let wide = 0;
-  for (let i = 1; i < colon; ++i) if (text.charCodeAt(i) > 0x7f) wide++;
+  for (let i = 1; i < colon; ++i) wide += charCells(text.charAt(i)) - 1;
   return colon + 2 + wide + (text[colon + 1] === ' ' ? 1 : 0);
 }
 
@@ -110,7 +111,7 @@ function commentContentCol(text, userid) {
 // 所以每多一個非 ASCII 字元欄號就多 1。
 function cellColOf(text, idx) {
   let wide = 0;
-  for (let i = 0; i < idx; ++i) if (text.charCodeAt(i) > 0x7f) wide++;
+  for (let i = 0; i < idx; ++i) wide += charCells(text.charAt(i)) - 1;
   return idx + wide;
 }
 
@@ -463,7 +464,7 @@ export function hasServerCursorMark(line, x) {
 function realignListColumns(text) {
   let pad = 0;
   for (let i = 0; i < text.length && i < LIST_AUTHOR_COL_START; ++i) {
-    if (text.charCodeAt(i) > 0x7f) pad++;
+    pad += charCells(text.charAt(i)) - 1;
   }
   return pad ? ' '.repeat(pad) + text : text;
 }
@@ -628,7 +629,7 @@ export function blacklistNoticeText(text, label) {
   const raw = text || '';
   let wide = 0;
   for (let i = 0; i < raw.length && i < LIST_AUTHOR_COL_START; ++i)
-    if (raw.charCodeAt(i) > 0x7f) wide++;
+    wide += charCells(raw.charAt(i)) - 1;
   const prefix = raw.substring(0, LIST_AUTHOR_COL_START - wide); // seq + date (+● if cursor)
   const author = realignListColumns(raw)
     .substring(LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END)

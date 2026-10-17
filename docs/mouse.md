@@ -854,7 +854,7 @@ API**，唯一入口就是原生選單 ⇒ 依 CLAUDE.md「系統／瀏覽器的
   重建出來的節點會因 outerHTML 相同而被丟棄、留下**舊閉包**（「按鈕點了送到上一幀
   的東西」，完全看不出來）。
 - **`a.fnKey` 不得插入任何文字節點**（`title` 屬性不算）：`term_view.countCol` 遞迴
-  累加 `u2b(textContent).length` 來反查選取的 col，多一個字就整列錯位。
+  累加 `textCellWidth(textContent)` 來反查選取的 col，多一個字就整列錯位。
 - **`href="#"` 一定要 `preventDefault`**：本 app 用 URL hash 做 deep link
   （`docs/deep-link.md`），漏掉會塞垃圾 hash 甚至觸發跳文解析。
 - **CSS 只能改 `background` / `text-decoration` / `outline`**：`font-weight` 或

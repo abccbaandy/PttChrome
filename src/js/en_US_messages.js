@@ -848,7 +848,7 @@ export const en_US = {
     "message": "Connection encoding (takes effect after reconnecting)"
   },
   "tooltip_connectionEncoding": {
-    "message": "The text encoding used between you and PTT. PTT currently supports both and the screen looks the same; UTF-8 is here in case PTT drops Big5 in the future. With UTF-8, characters Big5 cannot hold (e.g. emoji) are shown as question marks."
+    "message": "The text encoding used between you and PTT. PTT currently supports both and the screen looks the same; UTF-8 is here in case PTT drops Big5 in the future. With UTF-8, characters outside Big5 (e.g. Korean, Simplified Chinese) are sent and shown as-is; while PTT still handles text as Big5, PTT itself turns them into question marks."
   },
   "options_encodingBig5": {
     "message": "Big5 (default)"

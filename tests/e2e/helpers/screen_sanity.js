@@ -5,7 +5,8 @@
 //   1. text   每列 DOM 文字 ＝ buf 的同一列（buf 是真相源；渲染漏字／多字／錯列＝紅）
 //   2. grid   每列最後一個非空白字的右緣 ＝ 該字在終端機格線上的欄位 × chw
 //             （全形字寬度沒被撐成 2 格、字型 fallback 撐寬…＝格線位移＝跑版）
-//   3. decode Big5 每一對 lead/trail 都查得到 Unicode（查不到＝亂碼）；列內落單的高位元組
+//   3. decode Big5 每一對 lead/trail 都查得到 Unicode（查不到＝亂碼；UTF-8 線路的 Unicode 格
+//             要配 WIDE_TRAIL）；列內落單的高位元組
 //   4. overflow #mainContainer 沒有水平捲動
 //
 // 欄位一律由 buf 的 TermChar 推（`isLeadByte` 配對），不用 Unicode 寬度猜：Big5 的
@@ -42,7 +43,11 @@ async function screenSanity(page, opts = {}) {
           if (ch.isLeadByte && c + 1 < line.length) {
             const lead = ch.ch.charCodeAt(0);
             const trail = line[c + 1].ch.charCodeAt(0);
-            if (b2u) {
+            // ≥ 0x100 的左半格是 UTF-8 線路的 Unicode 格（src/js/unicode_cells.js），字就是它本身，
+            // 不查 Big5 表；右半必須是 WIDE_TRAIL（U+FFFF），不是就是格子配錯。
+            if (lead > 0xff) {
+              if (trail !== 0xffff) decodeFail.push(c);
+            } else if (b2u) {
               const pos = (lead << 8) | trail;
               const code = (b2u[2 * pos] << 8) | b2u[2 * pos + 1];
               if (!code) decodeFail.push(c);

@@ -104,7 +104,10 @@ export function nextSendState(state, str) {
   let s = state === VK_ESC || state === VK_CSI || state === VK_SS3 ? state : VK_NORMAL;
   const data = str || '';
   for (let i = 0; i < data.length; i++) {
-    const c = data.charCodeAt(i) & 0xff;
+    // ≥ 0x100 是 UTF-8 線路的 Unicode 格（unicode_cells.js）：上線後全是 ≥ 0x80 的位元組，
+    // 不可截低位元組（U+011B 會變成 ESC）。
+    const code = data.charCodeAt(i);
+    const c = code > 0xff ? 0x80 : code;
     switch (s) {
       case VK_ESC:
         // vtkbd.c:145-160
