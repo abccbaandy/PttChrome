@@ -13,6 +13,7 @@
 // 'D'（tag）、'!'（solved）蓋掉了未讀資訊 ⇒ 中性：不算未讀、也不算進已讀連續數。
 
 import { isDeletedListRow } from './comment_parse';
+import { charCells } from './string_util';
 import { refreshTargetOf } from './screen_refresh';
 import { submitSerializedSteps, beginInFlight, endInFlight } from './article_search';
 import { endLanded, numJumpLanded } from './aid_navigation';
@@ -38,7 +39,7 @@ export function listRowMark(text) {
   let cell = 0;
   for (const ch of text || '') {
     if (cell === MARK_CELL) return ch;
-    cell += ch.charCodeAt(0) > 0x7f ? 2 : 1;
+    cell += charCells(ch);
     if (cell > MARK_CELL) return null;
   }
   return null;

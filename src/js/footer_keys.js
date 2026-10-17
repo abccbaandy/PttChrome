@@ -33,6 +33,7 @@
 // bare_domain.js、aid_parse.js），這裡照做。
 
 import { b2u, unescapeStr } from './string_util';
+import { cellText } from './unicode_cells';
 import { KeyMap } from './term_keyboard';
 
 // 具名鍵 → 送出的 byte 序列。**一律轉接 KeyMap**（term_keyboard 的同一份表），
@@ -95,7 +96,7 @@ export function decodeRowWithCols(chars) {
       text += b5.length === 1 ? b5 : b2u(b5);
       i++; // 跳過 trail byte
     } else {
-      text += c.ch;
+      text += cellText(c.ch);
     }
   }
   colOf.push(chars.length);

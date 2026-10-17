@@ -76,6 +76,18 @@ export class WordSegmentBuilder {
     this.inner.push(forceWidthWord(textValue, forceWidth));
   }
 
+  // 半形的 Unicode 格（color_segment.appendUnicodeNarrowCell）。.hpadding 與 .wpadding
+  // 同一個契約：term_view.fixedResize() 掃 DOM 改寬度（半格）。
+  appendHalfWidthWord(textValue, halfWidth) {
+    this.inner.push(
+      el(
+        "span",
+        { class: "hpadding", style: forceWidthStyle(halfWidth) },
+        textValue,
+      ),
+    );
+  }
+
   appendTwoColorWord(textValue, colorLead, colorTail, forceWidth) {
     this.inner.push(twoColorWord(textValue, colorLead, colorTail, forceWidth));
   }

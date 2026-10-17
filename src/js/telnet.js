@@ -4,6 +4,7 @@ import { Event } from './event';
 import { u2b, ansiHalfColorConv } from './string_util';
 import { VK_NORMAL, guardEscSequence } from './vtkbd_send_state';
 import { WIRE_BIG5, WIRE_UTF8, normalizeWireCharset, createUtf8Inbound, big5ToUtf8Wire } from './wire_charset';
+import { setUnicodeCells } from './unicode_cells';
 
 // 真鍵盤／IME 路徑的守門模式（見 sendUserKey）。模組層常數，省得每次送鍵配一個物件。
 const USER_KEY = { userKey: true };
@@ -64,7 +65,8 @@ export function TelnetConnection(socket) {
 
   this.termType = 'VT100';
 
-  // 線路編碼（wire_charset.js）。app 內部恆為 Big5 位元組，UTF-8 只在這一層轉。
+  // 線路編碼（wire_charset.js）。UTF-8 時 Big5 收不下的字在格子裡存成 Unicode
+  // （unicode_cells.js），線路兩端的轉換只在這一層。
   this.wireCharset = WIRE_BIG5;
   this._inbound = null;
 
@@ -203,6 +205,8 @@ TelnetConnection.prototype._onDataAvailable = function(e) {
 TelnetConnection.prototype.setWireCharset = function(charset) {
   this.wireCharset = normalizeWireCharset(charset);
   this._inbound = this.wireCharset === WIRE_UTF8 ? createUtf8Inbound() : null;
+  // u2b 的輸出格式跟著線路走（Big5 線路仍回 '\xFF\xFD' 給「畫不出來」的判斷用）。
+  setUnicodeCells(this.wireCharset === WIRE_UTF8);
 };
 
 TelnetConnection.prototype._dispatchData = function(data) {

@@ -3,6 +3,7 @@
 // DOM 節點），註解沿用。
 import WordSegmentBuilder from "./word_segment";
 import { b2u, isDBCSLead } from "../js/string_util";
+import { WIDE_TRAIL, cellPairs } from "../js/unicode_cells";
 import { symbolTable } from "../js/symbol_table";
 
 function isBadDBCS(u) {
@@ -57,6 +58,20 @@ export class ColorSegmentBuilder {
     this.wordBuilder.appendNormalText(text);
   }
 
+  // UTF-8 線路的半形 Unicode 格（js/unicode_cells.js）：Big5 收不下的半形字（ġ、
+  // 泰文、阿拉伯文…）。終端機字型多半沒收這些字形，fallback 字型的 advance 不是半個
+  // 全形寬 ⇒ 跟全形字一樣固定寬度（半格，.hpadding）。左半被蓋掉的孤兒右半格畫成 ?
+  // （與 Big5 的半個字同一個降級；server 的 pfterm 也會補送 ?）。
+  appendUnicodeNarrowCell(ch) {
+    const color = ch.getColor();
+    if (ch.ch === WIDE_TRAIL || !this.forceWidth) {
+      this.appendNormalChar(ch.ch === WIDE_TRAIL ? "?" : ch.ch, color);
+      return;
+    }
+    if (!this.wordBuilder.isLastSegmentSameColor(color)) this.beginSegment(color);
+    this.wordBuilder.appendHalfWidthWord(ch.ch, this.forceWidth / 2);
+  }
+
   readChar(ch) {
     if (!this.lead) {
       if (isDBCSLead(ch.ch)) {
@@ -64,12 +79,21 @@ export class ColorSegmentBuilder {
         return;
       }
 
+      if (ch.ch.charCodeAt(0) > 0xff) {
+        this.appendUnicodeNarrowCell(ch);
+        return;
+      }
       this.appendNormalChar(ch.ch, ch.getColor());
       return;
     }
     const { lead } = this;
     const leadColor = lead.getColor();
     this.lead = null;
+    if (!cellPairs(lead.ch, ch.ch)) {
+      this.appendNormalChar(lead.ch, leadColor);
+      this.readChar(ch);
+      return;
+    }
     const text = b2u(lead.ch + ch.ch);
     if (text.length !== 1) {
       // Conversion error.
@@ -104,6 +128,11 @@ export class ColorSegmentBuilder {
 
   // 回傳 DOM 節點陣列（可能夾雜 null —— NullObject 的起手式，由 dom.el 跳過）。
   build() {
+    // 列尾懸著的全形 Unicode 左半格（沒有右半）照原樣畫；Big5 的半個字維持丟掉。
+    if (this.lead && !cellPairs(this.lead.ch, "")) {
+      this.appendNormalChar(this.lead.ch, this.lead.getColor());
+      this.lead = null;
+    }
     this.beginSegment();
     return this.segs;
   }

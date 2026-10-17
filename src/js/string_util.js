@@ -1,5 +1,14 @@
 
 
+import {
+  WIDE_TRAIL,
+  codePointCells,
+  encodeCodePoint,
+  isWideCellCode,
+  serverIsUnicodeNative,
+  unicodeCellsEnabled,
+} from './unicode_cells';
+
 /**
  * Only support caret notations (^C, ^H, ^U, ^[, ^?, ...)
  * If you want to show \ and ^, use \\ and \^ respectively
@@ -57,12 +66,9 @@ export function wrapText(it, maxLen, enterChar) {
   var result = '';
   var len = 0;
   for (var i = 0; i < splited.length; ++i) {
-    // Convert special characters to spaces with the same width
-    // and then we can get the width by the length of the converted string
-    var grouplen = splited[i].replace(/[^\x00-\x7f]/g,"  ")
-                             .replace(/\t/g,"    ")
-                             .replace(/\r|\n/g,"")
-                             .length;
+    // Tab = 4 cells, newline = 0, everything else by its screen width.
+    var grouplen = textCellWidth(splited[i].replace(/\t/g,"    ")
+                                           .replace(/\r|\n/g,""));
 
     if (splited[i] == '\r' || splited[i] == '\n')
       len = 0;
@@ -107,7 +113,13 @@ export function normalizePasteText(text, lineWrap) {
   return out.replace(/\x1b/g, PASTE_ESC_CHAR);
 }
 
+// Unicode → 內部格子編碼（unicode_cells.js 檔頭）。Big5 線路：收不下的字回 '\xFF\xFD'
+// （呼叫端拿它判「PTT 畫不出來」）。UTF-8 線路：收不下的字回字元本身（全形補一格
+// WIDE_TRAIL），emoji 這類 BMP 以外的字與寬 0 的組合字元原樣保留，由
+// wire_charset.big5ToUtf8Wire 轉成 UTF-8 送出。
+// 要「這段字佔幾格」用 textCellWidth，不要用 u2b(…).length（寬 0 的字、emoji 會算錯）。
 export function u2b(it) {
+  if (unicodeCellsEnabled()) return u2bUnicode(it);
   var data = '';
   for (var i = 0; i < it.length; ++i) {
     if (it.charAt(i) < '\x80') {
@@ -124,10 +136,32 @@ export function u2b(it) {
   return data;
 };
 
+function u2bUnicode(it) {
+  let data = '';
+  for (const ch of it) {
+    const cp = ch.codePointAt(0);
+    // ASCII 與 BMP 以外的字（emoji：格子存不下，但線路照送）原樣。
+    if (cp < 0x80 || cp > 0xffff) {
+      data += ch;
+      continue;
+    }
+    const cells = encodeCodePoint(cp);
+    // 寬 0 的組合字元存不進格子，一樣照送。
+    data += cells === '' ? ch : cells;
+  }
+  return data;
+}
+
+// 內部格子編碼 → Unicode：Big5 雙位元組查表；≥ 0x100 的 Unicode 格原樣，WIDE_TRAIL 丟掉。
 export function b2u(it) {
   var str = '';
   for (var i = 0; i < it.length; ++i) {
-    if (it.charAt(i) < '\x80' || i == it.length-1) {
+    var c = it.charCodeAt(i);
+    if (c > 0xff) {
+      if (it.charAt(i) !== WIDE_TRAIL) str += it.charAt(i);
+      continue;
+    }
+    if (c < 0x80 || i == it.length-1) {
       str += it.charAt(i);
       continue;
     }
@@ -144,10 +178,34 @@ export function b2u(it) {
   return str;
 };
 
+// 一格的內容是不是全形字的左半：Big5 lead byte，或全形的 Unicode 格（unicode_cells.js）。
 export function isDBCSLead(ch) {
   let code = ch.charCodeAt(0);
-  return code >= 0x81 && code <= 0xfe;
+  return (code >= 0x81 && code <= 0xfe) || isWideCellCode(code);
 };
+
+// 一個字（b2u 之後的 Unicode）在畫面上佔幾格。Big5 線路：非 ASCII 一律 2；UTF-8 線路
+// 照 server 的寬度（unicode_cells.codePointCells）。所有「文字 index → 欄號」的換算
+// 都要走這裡，自己寫 `> 0x7f ? 2 : 1` 會在 Big5 以外的半形字上差一格。
+export function charCells(ch) {
+  return codePointCells(ch.codePointAt(0));
+}
+
+export function textCellWidth(text) {
+  let n = 0;
+  for (const ch of text) n += codePointCells(ch.codePointAt(0));
+  return n;
+}
+
+// 這個字送到 PTT 之後畫得出來嗎：Big5 收得下，或 server 已證實是 UTF-8 內部。
+export function isPttDrawable(ch) {
+  const cp = ch.codePointAt(0);
+  if (cp < 0x80) return true;
+  if (serverIsUnicodeNative()) return cp <= 0xffff && codePointCells(cp) > 0;
+  const hi = lib.u2bArray[2 * cp];
+  const lo = lib.u2bArray[2 * cp + 1];
+  return cp <= 0xffff && !!(hi || lo) && !(hi === 0xff && lo === 0xfd);
+}
 
 // Clipboard text normalization for doCopy: BBS-style line endings (\r) and no
 // trailing spaces before a break. ANSI text (contains \x1b) is passed through

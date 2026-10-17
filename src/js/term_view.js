@@ -10,7 +10,7 @@ import { calcTermSize, termLayoutOffsets } from './term_size';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
-import { u2b, parseStatusRow, statusSignature, normalizePasteText } from './string_util';
+import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText } from './string_util';
 import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
@@ -2406,7 +2406,7 @@ TermView.prototype = {
 
   updateInputBufferWidth: function() {
     // change width according to input
-    var wordCounts = u2b(this.input.value).length;
+    var wordCounts = textCellWidth(this.input.value);
     // chh / 2 - 2 because border of 1
     var oneWordWidth = (this.chh/2-2);
     var width = oneWordWidth*wordCounts;
@@ -2488,6 +2488,11 @@ TermView.prototype = {
       var forceWidthElem = forceWidthElems[i];
       forceWidthElem.style.width = chh + 'px';
     }
+    // UTF-8 線路的半形 Unicode 格（render/word_segment.js#appendHalfWidthWord）。
+    var halfWidthElems = document.querySelectorAll('.hpadding');
+    for (var i = 0; i < halfWidthElems.length; ++i) {
+      halfWidthElems[i].style.width = (chh / 2) + 'px';
+    }
   },
 
   // 「固定字體大小」模式的尺寸來源。數學在 term_size.js（欄數恆 80 的理由、
@@ -2518,11 +2523,11 @@ TermView.prototype = {
     let col = 0;
     let doCount = function(cur) {
       if (cur == node) {
-        col += u2b(cur.textContent.substring(0, pos)).length;
+        col += textCellWidth(cur.textContent.substring(0, pos));
         return false;
       }
       if (cur.nodeName == '#text') {
-        col += u2b(cur.textContent).length;
+        col += textCellWidth(cur.textContent);
         return true;
       }
       for (let e of cur.childNodes) {

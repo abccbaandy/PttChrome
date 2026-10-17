@@ -167,4 +167,14 @@ describe("serializeRecording", () => {
     const s = "\xac\x4f\xff\x00A";
     expect(b64decode(b64encode(s))).toBe(s);
   });
+
+  it("UTF-8 線路的 Unicode 格不讓匯出炸掉：換成等寬佔位（全形→Big5「？」、半形→?）", () => {
+    // 한 + WIDE_TRAIL（全形）、ġ（半形）；格數不變 ⇒ 重放的格線與游標一致
+    const recv = "A한￿ġB";
+    const json = JSON.parse(
+      serializeRecording({ events: [{ t: 0, dir: "recv", data: recv }] }),
+    );
+    expect(b64decode(json.events[0].data)).toBe("A\xa1\x48?B");
+    expect(b64decode(json.cassette.steps[0].recv)).toBe("A\xa1\x48?B");
+  });
 });

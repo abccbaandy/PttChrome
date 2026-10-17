@@ -6,8 +6,19 @@
 //     findCassettes('article'/'list') 誤撿，要用時人工改 meta.mode）。
 import { scrub } from './redact';
 
+// recv 錄的是 telnet 解碼後的格子編碼（app.onData 的輸入）。UTF-8 線路上 Big5 收不下的字
+// 是 ≥ 0x100 的 Unicode 格（unicode_cells.js），btoa 會丟例外、整份錄製檔匯不出來。
+// 錄製檔與所有重放工具（replay.js、debug-screens、triage）都假設 latin1 ⇒ 換成**等寬**佔位：
+// 全形（Unicode 格＋WIDE_TRAIL）→ Big5「？」\xA1\x48、半形 → '?'。格線與游標不變，只少字形。
+export function latin1Cells(data) {
+  if (!/[^\x00-\xff]/.test(data)) return data;
+  // 解碼器一次吐出「字＋右半格」，同一個 recv event 裡一定成對。
+  return data.replace(/[^\x00-\xff]￿?/g, (m) => (m.length === 2 ? '\xa1\x48' : '?'));
+}
+
 // base64 ←→ latin1 bytes string（每 char = 1 byte）。node（jest）無 btoa 時退回 Buffer。
 export function b64encode(latin1) {
+  latin1 = latin1Cells(latin1);
   if (typeof btoa === 'function') return btoa(latin1);
   // eslint-disable-next-line no-undef
   return Buffer.from(latin1, 'latin1').toString('base64');

@@ -1427,7 +1427,7 @@ export const PrefModal = ({
                   />
                 </PrefSection>
               )}
-              {/* 線路編碼在 telnet 層轉（js/wire_charset.js），APK 的 WebView 也走同一層，
+              {/* 線路編碼在 telnet 層轉（js/wire_charset.js、js/unicode_cells.js），APK 的 WebView 也走同一層，
                 所以不放進上面的 isAndroidApp 分支。 */}
               <PrefSection legendKey="options_connectionEncoding">
                 <Select

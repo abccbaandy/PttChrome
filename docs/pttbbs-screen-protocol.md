@@ -120,14 +120,23 @@ expect 餘掉）。本專案的實作見 `term_buf.js#beginSyncUpdate` 與 `docs
 `onCursorPositionRequest`，由 `pttchrome.jsx#_attachConn` 決定掛不掛）：
 - `big5`（預設）：**不回應**。正確答案是「留在 Big5」，不回應零風險；回應時欄位算成 2 的代價是整站亂碼。
   守護 `tests/unit/ansi_parser_cpr.test.js`（斷言**零回送**）。
-- `utf8`：回報真實游標。`src/js/wire_charset.js` 在 telnet 層把 UTF-8 轉回內部 Big5 位元組，
-  探針 U+0121 不在 UAO ⇒ 半形佔位 `?` ⇒ col 2 ⇒ server 切 UTF-8。守護 `tests/unit/wire_charset.test.js`。
-  app 內部（TermBuf 格子模型、所有解析器）仍是 Big5 位元組；`term_view.charset` 維持 `'big5'`，
-  **不可改成 `'UTF-8'`**（那會啟動 term_buf 裡 PttChrome 遺留、與轉接層不相容的 Unicode 格子分支）。
-  已知限制：Big5 收不下的字顯示為 `?`／`？`（寬度依 `wire_charset.isWideCodePoint`，未逐字對齊
-  server 的 `common/sys/wcwidth.c`）；UTF-8 下送出的一字雙色降級為整字後半色。
-  上游已在做 UTF-8 化（`MB_IS_UTF8` 系統、`upgrade/convert_utf8` 站台資料遷移，2026-09 起），
-  若 server 改成內部 UTF-8，寬度表的落差與非 Big5 字元會變成實際問題，屆時要改格子模型。
+- `utf8`：回報真實游標。`src/js/wire_charset.js` 在 telnet 層把 UTF-8 轉成內部格子編碼，
+  探針 U+0121 不在 UAO ⇒ 一格半形 Unicode 格 ⇒ col 2 ⇒ server 切 UTF-8。守護 `tests/unit/wire_charset.test.js`。
+  **格子編碼**（`src/js/unicode_cells.js`，守護 `tests/unit/unicode_cells*.test.js`）：一格恆為一個
+  UTF-16 code unit；Big5 收得下的字仍存 Big5 lead／trail 位元組（與 Big5 線路逐格相同，解析器不分支），
+  收不下的字存 Unicode 本身（全形後接一格 `WIDE_TRAIL` U+FFFF）。`term_view.charset` 維持 `'big5'`，
+  **不可改成 `'UTF-8'`**（那會啟動 term_buf 裡 PttChrome 遺留、與格子編碼不相容的 Unicode 分支）。
+  格寬兩種 server（全部 CONFIRMED）：
+  | server | 格寬 | 出處 |
+  |---|---|---|
+  | 內部 Big5（`MB_IS_BIG5`，pttbbs 預設、現行站台） | Big5 字恆 2 格；**不會**送 Big5 以外的字（只送 `b2u_table` 的值或 `?`） | `mbbsd/convert.c#convert_write_utf8` |
+  | 內部 UTF-8（`MB_IS_UTF8`） | `ucs_width`＝`mk_wcwidth_cjk`（`src/js/ucs_width.js` 照抄表格）；寬 0 的字不輸出；`ftchar` 是 16 bit ⇒ BMP 以外換成 U+FFFD（寬）／`?`（窄） | `common/sys/string.c#ucs_width`、`mbbsd/pfterm.c#out_mbchar` |
+  兩邊用同一份 UAO 表（`common/sys/big5data.tar.bz2` 與 `src/conv/uao` 逐位元組相同），b2u 值域全部來回一致
+  ⇒ 收到來回不一致的字＝server 內部是 UTF-8（`unicode_cells.noteServerCodePoint` 立閂，排除探針 U+0121 與 U+FFFD），
+  之後 Big5 收得下但 `ucs_width` 1 的字（ｱ、✓、☺…）改存一格。
+  已知限制：立閂前已畫的字不回頭改；0x80–0xFF 的半形字（À 等）與 Big5 位元組同值域，存不成 Unicode 格，
+  在 UTF-8 內部的 server 上仍佔 2 格；UTF-8 下送出的一字雙色降級為整字後半色。
+  上游已在做 UTF-8 化（`MB_IS_UTF8` 系統、`upgrade/convert_utf8` 站台資料遷移，2026-09 起）。
 
 ### SGR 66 一字雙色（2026-09-20 公告，全部 CONFIRMED）
 

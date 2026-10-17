@@ -15,14 +15,14 @@ import {
   parseModernCommentHeader,
   MODERN_COMMENT_BODY_MARK,
 } from './comment_parse';
-import { COMMENT_TIME_RE } from './string_util';
+import { COMMENT_TIME_RE, charCells } from './string_util';
 
-// 字串 → 每格一個元素（全形字後補一個空字串佔第二格）。Big5 來的畫面字元 >0x7F 一律雙寬。
+// 字串 → 每格一個元素（全形字後補一個空字串佔第二格）。寬度照 string_util.charCells。
 function toCells(text) {
   const cells = [];
   for (const ch of text) {
     cells.push(ch);
-    if (ch.charCodeAt(0) > 0x7f) cells.push('');
+    if (charCells(ch) === 2) cells.push('');
   }
   return cells;
 }

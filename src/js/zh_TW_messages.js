@@ -847,7 +847,7 @@
     "message": "連線編碼 (重新連線後生效)"
   },
   "tooltip_connectionEncoding": {
-    "message": "與 PTT 之間傳輸文字用的編碼。目前 PTT 兩種都支援，顯示結果相同；UTF-8 是為 PTT 日後若停用 Big5 預先準備的選項。改用 UTF-8 時，Big5 收不下的字 (例如 emoji) 會顯示成問號。"
+    "message": "與 PTT 之間傳輸文字用的編碼。目前 PTT 兩種都支援，顯示結果相同；UTF-8 是為 PTT 日後若停用 Big5 預先準備的選項。改用 UTF-8 時，Big5 以外的字 (例如韓文、簡體字) 會照原字收送；但 PTT 若仍以 Big5 處理文字，這些字在 PTT 端還是會變成問號。"
   },
   "options_encodingBig5": {
     "message": "Big5 (預設)"
