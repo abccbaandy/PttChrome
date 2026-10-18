@@ -1,0 +1,188 @@
+/* 寬螢幕雙欄閱讀的左欄（SplitReader/index.jsx）。只放在終端機左邊的空白裡（寬度由
+   split_reader.paneWidthFor 算，放不下就不畫），不推動終端機（docs/terminal-size.md LOCKED）。
+   z-index 同首頁儀表板：低於 App Bar（150）與 Mantine overlay（200），高於終端機（≤3）。 */
+.splitReader {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 140;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-right: 1px solid #2a2a32;
+  background: #101014;
+  color: #ddd;
+  font:
+    13px/1.4 system-ui,
+    sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.splitHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2a32;
+}
+
+.splitBoard {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  font-size: 14px;
+  color: #fff;
+}
+
+.splitCollapse,
+.splitHandle {
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #1c1c22;
+  color: #ddd;
+  font: inherit;
+  cursor: pointer;
+}
+
+.splitCollapse {
+  padding: 2px 10px;
+}
+
+.splitCollapse:hover,
+.splitHandle:hover {
+  background: #26262e;
+}
+
+.splitReader[data-collapsed] {
+  border-right: none;
+  background: transparent;
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.splitHandle {
+  width: 100%;
+  height: 64px;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  font-size: 18px;
+}
+
+/* 列表本身捲；捲到頭不連帶捲頁面（只鎖縱軸，橫軸留給瀏覽器的返回手勢，見 CLAUDE.md
+   「原生行為不准模擬」）。 */
+.splitList {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.splitItem {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 5px 10px 5px 12px;
+  border: none;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.splitItem:hover {
+  background: #1c1c22;
+}
+
+.splitItem[data-current] {
+  border-left-color: #4a8fe0;
+  background: #1a2433;
+}
+
+.splitItem[data-pending] {
+  background: #222830;
+}
+
+.splitItem:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.splitItemTitle {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 左欄常常只有 ~180px：標題折兩行再截，比一行就截掉有用。 */
+.splitItemText {
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+  color: #ccc;
+}
+
+.splitUnread {
+  margin-top: 6px;
+}
+
+.splitItem[data-unread] .splitItemText,
+.splitItem[data-current] .splitItemText {
+  color: #fff;
+}
+
+.splitUnread {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e0b93a;
+}
+
+.splitRecommend {
+  flex: none;
+  min-width: 18px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.splitRecommend[data-tone="hot"] {
+  color: #ff5f5f;
+}
+
+.splitRecommend[data-tone="many"] {
+  color: #e6c84a;
+}
+
+.splitRecommend[data-tone="some"] {
+  color: #5fd35f;
+}
+
+.splitRecommend[data-tone="down"] {
+  color: #888;
+}
+
+.splitItemMeta {
+  padding-left: 0;
+  font-size: 11px;
+  color: #888;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

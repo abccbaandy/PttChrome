@@ -301,6 +301,8 @@ async function installAutoLoginPrefs(page, extra) {
           // 首頁儀表板登入後會自己送 Ctrl+Z f 抓我的最愛：live 的共用 session 不准有
           // 測試以外的按鍵（會跟 spec 的鍵搶線）。功能本身由 offline spec 守。
           enableHomeDashboard: false,
+          // 雙欄閱讀的左欄是浮層：核心 spec 的版面檢查只看終端機，不需要它。
+          enableSplitReading: false,
           autoLoginSkipWelcome: true,
         },
         extra || {}
