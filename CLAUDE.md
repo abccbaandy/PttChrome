@@ -143,6 +143,11 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 - **改寫 PTT 原生畫面行為的功能（列表好讀／看板列表捲動／文章好讀／跳過進板畫面…）必須「認不出 ⇒ 原生」**：
   指紋任一要素失配只准不接管或退回原生鏡像，不准認錯送鍵。新增或修改畫面指紋時，在
   `tests/unit/parse_failure_degrade.test.js` 的突變矩陣補對應突變（真實畫面 × 逐一破壞要素）。
+- **會改變真實 PTT 畫面的功能（替使用者送鍵、離開文章／列表、被 PTT 踢回列表…）一律經閱讀紀錄收尾**：
+  動手前 `recordFor(core).begin(feature)`，完成／取消／失敗都 `end(bm, outcome)`，在
+  `reading_record.js#RESTORE_TABLE` 補一列（`reading_record.test.js` 決策表＋`docs/reading-record.md` 表同步）。
+  被退回列表時的通則：游標仍在原文（FULLUPDATE 不動游標）⇒ 直接 ⏎ 重開＋還原原列，不靠 `#AID`
+  （搜尋結果裡被拒）。理由：使用者看到的位置只有閱讀紀錄一個擁有者，漏一條就是「操作完跳到別處」。
 - **PTT 邏輯不准猜**：PTT 行為邏輯一律先讀 `3rd_script/pttbbs` 原始碼（上游預設分支 `main`）找出真實實作，禁止自行猜測或從錄製素材/畫面觀察反推規則；素材只用來驗證對 code 的理解是否有誤。詳見 `docs/pttbbs-screen-protocol.md` 開頭「研究方法規範」。
   - **新舊並存是常態**：PTT 實跑私有 commit，upstream 有的不代表已上線、PTT1／PTT2 上線時間也不同 ⇒ 畫面判定一律新舊格式都吃，upstream 刪掉的字串保留做相容。
   - **讀 pttbbs 原始碼搜中文要先轉 Big5**（原始碼是 Big5，UTF-8 grep 會「查無」而不是報錯）：

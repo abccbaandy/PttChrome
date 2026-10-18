@@ -20,6 +20,7 @@
 | 文章列表 | `s` → 等 CompleteBoard prompt → `<本板>⏎` | `bbs.c#do_select` → `enter_board` → 回 `NEWDIRECT` ⇒ `read_apply_mode` reload；`read_exec_noitem` 先存 `crs_ln/top_ln`，`getkeep(currdirect)` 還原 ⇒ 游標原地；這條**不經 `Read()`** ⇒ 不出進板畫面 |
 | 看板列表 | `/` → 等「請輸入看板中文關鍵字」→ `⏎` | `board.c#board_cmd_search_keyword`：`getdata_buf` 以原關鍵字為預設值，⏎ 原樣送出 ⇒ `brdnum = -1; reload` ⇒ 未讀旗標與人氣重算；`ctx->curr` 保留（newflag 模式下 loader 會跳到第一個未讀，與原生一致） |
 | 文章 | `aid_navigation.refresh()`：（免費網址列或 `Q` 取 AID）→ `s<本板>⏎` → `#<AID>⏎` → `⏎` | 與 AID 跳文同一條、每步依畫面內容驗證的序列；落地後還原閱讀位置（見下） |
+| 文章（從搜尋結果／文摘開的） | 列表好讀記錄的身後列表 `mode:'select'` ⇒ `←`（pager FULLUPDATE，游標不動）→ `⏎`；`Q` 把我們丟回子列表（標題列 `系列《`／`文摘《`）⇒ 關框＋`⏎` | 子列表裡 `#` 被拒、`s<板>` 回來仍是子列表（協定 §8.1）；這兩條保住身後的搜尋結果。都不中時走上一列，`#` 前先 ← 離開子列表 |
 
 **為什麼文章不用 `←→`（live 文小幫手的做法）**：← 回列表後游標停在原本的 `crs_ln`，但列表
 重讀之後同一個序號可能已經是別篇——置底文在有新文時整排往後挪一號、上方有文被刪時所有

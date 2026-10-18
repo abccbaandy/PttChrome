@@ -350,7 +350,8 @@ scaleX / scaleY / dpr / fontsReady`，另有 `cursor.geom` 取樣（游標真的
 PTT 端**沒有**跳轉來源的概念（`read.c#select_by_aid` 只在 currboard 內搜尋，跨板就是真的換板），所以返回＝**用離開前擷取的錨點再導航一次**（同 BePTT 的「每個位置存一段按鍵序列、返回時重放」，差別是這裡每步都有 expect 而非盲送）。正向與返回共用同一組 enqueue 函式，只有中段那一步不同（`_enqueueMiddle`）。
 
 **正向跳轉的第 0 步 `Q`（`_enqueueOriginAid`）**：離開前先叫出文章資訊框，讀出**本篇自己的 AID**（協定 §8.2）當返回錨點，讓 aid 級在所有情境都拿得到。
-沒有它時 `/` 搜尋過的清單一定回不去：MODE_SELECT 序號空間獨立（`read.c:661-665`），返回的 `s<board>` 又會離開搜尋模式，於是那個序號落在主清單的別篇文章。
+沒有它時 `/` 搜尋過的清單一定回不去：MODE_SELECT 序號空間獨立（`read.c:661-665`），序號對不上主清單。
+**搜尋結果裡跳文**：pager 的 `s<board>` 不離開 MODE_SELECT（協定 §8.1），落地是目標板的子列表（可能空）、`#` 被拒 ⇒ `landedOnBoardList` 認子列表，`_enqueueMiddle` 對 `#`／跳號先 `_enqueueLeaveSubList`（← 只離開搜尋）。代價：身後的列表變完整列表。
 best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原本級別），**只有 flush 才 `_fail`**。`fullRepaint` 必須是 false、關框鍵必須是**空白鍵**（`\f` 不是「鍵」，關不掉 pressanykey）——理由見協定 §6 末條與 §8.2。
 
 錨點兩級（`nav_history.chooseAnchor`，純函式；aid 級另由 `upgradePendingOriginAid` 升級而來）：

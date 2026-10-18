@@ -365,6 +365,16 @@
   `tests/e2e/offline/aid_wrap.offline.spec.js`（真鏈重放使用者現場，含「點下去送出的是
   `sBrowsers` 不是 `sask`」）。
 
+## 無看板 AID 的看板選擇（`src/js/aid_board_choice.js`）
+- 觸發：`App.onAidClick` 收到的 board 為空（無後綴、無轉錄標頭補板）⇒ `openAidBoardChoice`（ContextMenu 注入；noop ⇒ 舊行為：遞補 `_articleBoard` 直跳）。帶板的連結一鍵直跳不問。導航中／好讀沒開不問（`needsAidBoardChoice`）。
+- 二選一（`AidBoardChoiceModal`，手機 MobileSheet）：本版＝`aidNavigation.start(aid, _articleBoard)`，`_articleBoard` 非合法板名時停用；其他看板＝`SearchModal` 看板種類＋`aidTarget`（**原樣複用 `s` 看板搜尋彈窗＋`BoardSearchBridge` 原生補全**，只換標題／送出鈕字）。
+- 順序不變量：橋接在文章裡送 `s` 那一刻就離開文章（pager 的 s＝`RET_SELECTBRD`，pager 收掉才進 `do_select`；取消也落在文章列表）⇒ 開彈窗**之前** `aidNavigation.preparePicked(aid)` 量返回錨（閱讀書籤＋`landed`＋文末網址列免費 AID；Q 用不了）。拿不到 token（導航中／不在好讀）就不開彈窗。
+- 送出：`bridge.submit` 在 prompt 上 Enter 進板（板跳就是這一步）→ onDone → `continuePicked(token, 板)`：`_begin` 的 `run.picked` 分支先送 `\f` 驗 `landedOnBoard`，才 `#AID⏎`→`⏎`。落地不符 ⇒ 可見失敗、不送 `#`。prompt 沒開出來（橋接 dead）⇒ 人還在文章 ⇒ 退回 `start(aid, 板)`。
+- 取消：原生 `s` 取消只會停在原文所在的那份列表（`do_select` 失敗回 FULLUPDATE，read loop 游標不動、搜尋結果保留）⇒ 橋接 `opts.onCancel.onDone`（Ctrl-C 收完 prompt）→ `reopenPicked(token)`：`\f` 驗 `landedOnBoardList(原板)`（含子列表）→ **一律直接 `⏎`**（不用 `#AID`：子列表裡被拒）→ 落地 `recordFor.end(bm,'cancel',{only:'article'})`，決策表 `aid-board-pick` cancel＝原列。
+- 搜尋結果裡跳文（本版／指定看板／一般帶板 AID 共用）：落地是子列表 ⇒ `#` 前先 ←，見 `docs/easy-reading.md`「返回原文」與協定 §8.1。
+- 返回堆疊：`_picking` 期間 `noteLeftPost`／`noteSettle` 不作廢（離開文章的是背景 prompt）；`endPicked(token, stillInArticle)` 收尾：prompt 沒開出來＝保留，其餘＝作廢。
+- 守護：`tests/unit/aid_board_choice.test.js`（判準＋`App.onAidClick` 分流）、`aid_navigation.test.js`「指定看板」describe、`aid_board_choice_modal.test.jsx`（真橋接＋假佇列：先 prepare 再送 `s`、落地後才 continue）、`tests/e2e/offline/aid_board_choice.offline.spec.js`（卷內 `(Browsers)` 換空白→真點擊；文章內迷你 namecomplete 模擬）。
+
 ## 裸網域自動連結（`src/js/bare_domain.js` + `url_ai*.js`）
 「無 scheme、無路徑、無空白」的網域（`indiegametw.com`、`eaigc.filtergame.com`）：`uriRegEx` 要 scheme 看不見，
 `url_fix` 的裸網域提及守門刻意跳過 → 兩層都漏（使用者 2026-08 回報）。本功能專責這塊灰色地帶。

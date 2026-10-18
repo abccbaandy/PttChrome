@@ -72,7 +72,7 @@ import {
   rowHasAnyTitle,
   rowHasTitle
 } from './screen_titles';
-import { isArticleListFooter, footerCaption } from './screen_captions';
+import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { recordFor, listRecordMatches } from './reading_record';
 import {
   windowVisibleSequence,
@@ -306,11 +306,10 @@ export function hasNumberedEntryRow(facts) {
 // 這份清單的編號空間：'select' ＝搜尋結果（MODE_SELECT）或文摘（MODE_DIGEST），
 // 'plain' ＝完整列表。依底列 caption（read.c#i_read_caption）。舊版 caption 一律
 // 「文章選讀」分不出來 ⇒ 當 plain（已知限制，同 screen_refresh 的 LEAVES_ON_S）。
-const SELECT_CAPTIONS = ['系列文章', '文摘列表'];
 export function listModeOf(facts) {
   const rows = (facts && (facts.rows || (facts.rowTexts || []).length)) || 0;
   const last = (facts && facts.rowTexts && facts.rowTexts[rows - 1]) || '';
-  return SELECT_CAPTIONS.indexOf(footerCaption(last)) >= 0 ? 'select' : 'plain';
+  return isSubListFooter(last) ? 'select' : 'plain';
 }
 
 // ---------------------------------------------------------------------------

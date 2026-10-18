@@ -10,6 +10,7 @@ import {
   aidSearchLanded,
   numJumpLanded,
   endLanded,
+  isSubListTitle,
   STEP_PROBE_AFTER_MS,
   STEP_PROBE_WINDOW_MS,
   BOARD_PROBE_AFTER_MS
@@ -2177,5 +2178,288 @@ describe("currentPostAid（斷線前記下本篇）", () => {
     const h = makeHarness({ pageState: 2, articleBoard: "Android" });
     expect(h.nav.currentPostAid()).toBeNull();
     expect(h.sent).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 搜尋結果（MODE_SELECT，底列「系列文章」）裡的 AID 跳文。
+// 錄製檔 ptt-debug-20261018-173606：作者搜尋結果開的文章 → #AID ⇒ PTT 回
+// 「此狀態下無法使用搜尋文章代碼(AID)功能」（read.c select_by_aid 對 MODE_SELECT 一律拒絕）。
+// 新版 read.c 的搜尋條件住在 read_ctx：pager 的 `s<板>` 換板後**仍是**搜尋模式（同條件
+// 篩新板，可能一篇都沒有＝「沒有文章...」），所以 # 之前要先 ←（read_cmd_quit 在
+// MODE_SELECT 只離開搜尋，游標留在同一篇的真實位置）。
+// ---------------------------------------------------------------------------
+describe("AidNavigation 搜尋結果裡跳文", () => {
+  // 搜尋結果列表：row0 標題「系列《板》」、底列 caption 系列文章。
+  const subList = (board, entries = []) => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[0] = "【板主:someone】            看板描述                  系列《" + board + "》";
+    rowTexts[2] = "   編號    日 期 作  者       文  章  標  題                    人氣:2";
+    if (!entries.length) rowTexts[3] = "    沒有文章...";
+    entries.forEach((t, i) => (rowTexts[3 + i] = t));
+    rowTexts[23] = " 系列文章  (^P)發表 (y)回應 (X)推文 (d)刪除 (→)閱讀 (b)進板  (←)離開 (h)說明 ";
+    return rowTexts;
+  };
+  const plainFooter = (rowTexts) => {
+    const r = rowTexts.slice();
+    r[23] = " 文章列表  (^P)發表 (y)回應 (X)推文 (d)刪除 (→)閱讀 (b)進板  (←)離開 (h)說明 ";
+    return r;
+  };
+  const ENTRY = "      3   6 8/29 someuser     □ [問題] term.ptt.cc的未來";
+
+  test("換板後落在空的搜尋結果（沒有文章...）⇒ 先 ← 離開搜尋，再 # aid", () => {
+    const h = makeHarness();
+    h.nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(h.queue, "1gKF7GO4");
+    expect(h.sent[1]).toBe(" sAndroid\r\f");
+    // 不是 clean-list（沒有編號列），但認得出是目標板的搜尋結果。
+    settle(h.queue, facts("transient", { boardName: "Android", rowTexts: subList("Android") }));
+    expect(h.sent[2]).toBe("\x1b[D\f");
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "Android", rowTexts: plainFooter(subList("Android", [ENTRY])) })
+    );
+    expect(h.sent[3]).toBe("#1gIeu-3A\r\f");
+  });
+
+  test("同板（本版跳轉）落在有文章的搜尋結果 ⇒ 一樣先 ←", () => {
+    const h = makeHarness();
+    h.nav.start("1gIeu-3A", "SYSOP");
+    answerOriginInfo(h.queue, null);
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "SYSOP", rowTexts: subList("SYSOP", [ENTRY, ENTRY, ENTRY]) })
+    );
+    expect(h.sent[2]).toBe("\x1b[D\f");
+  });
+
+  test("← 之後仍是搜尋結果 ⇒ 不送 #，可見失敗", () => {
+    const h = makeHarness();
+    h.nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(h.queue, null);
+    settle(h.queue, facts("transient", { boardName: "Android", rowTexts: subList("Android") }));
+    settle(h.queue, facts("transient", { boardName: "Android", rowTexts: subList("Android") }));
+    vi.advanceTimersByTime(60000);
+    expect(h.sent.some((s) => s.startsWith("#"))).toBe(false);
+    expect(h.nav.active).toBe(false);
+  });
+
+  test("完整列表（文章列表 caption）照舊直接 #，不多送 ←", () => {
+    const h = makeHarness();
+    h.nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(h.queue, null);
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "Android", rowTexts: plainFooter(subList("Android", [ENTRY])) })
+    );
+    expect(h.sent[2]).toBe("#1gIeu-3A\r\f");
+  });
+
+  test("重新整理：列表好讀從搜尋結果開的這篇 ⇒ ← 回列表 → ⏎，不走 s／#", () => {
+    const h = makeHarness({
+      pageState: 3,
+      articleBoard: "SYSOP",
+      listAnchor: { board: "SYSOP", num: 3, subject: "x" }
+    });
+    h.core.listSession.readingPosition = () => ({ kind: "list", board: "SYSOP", mode: "select" });
+    expect(h.nav.refresh()).toBe(true);
+    expect(h.sent).toEqual(["\x1b[D\f"]);
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "SYSOP", rowTexts: subList("SYSOP", [ENTRY, ENTRY, ENTRY]) })
+    );
+    expect(h.sent[1]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(h.hints.at(-1)).toBe("已重新整理");
+    expect(h.sent.join("")).not.toMatch(/sSYSOP|#/);
+  });
+
+  test("重新整理：Q 把我們丟回搜尋結果（標題列 系列《》）⇒ 關框＋⏎，不繞 s<板>", () => {
+    const h = makeHarness({ pageState: 3, articleBoard: "SYSOP" });
+    h.nav.refresh();
+    expect(h.sent).toEqual(["Q"]);
+    const rowTexts = subList("SYSOP", [ENTRY, ENTRY, ENTRY]);
+    rowTexts[19] = "│ 文章代碼(AID): #1gabdGC8 (SYSOP) [ptt.cc] [問題] term.ptt.cc的未來";
+    rowTexts[23] = PRESS_ANY_KEY_ROW;
+    h.termBuf.rowTexts = rowTexts; // Q 的框蓋在搜尋結果上（第 0 列還看得到）
+    settle(h.queue, facts("transient", { rowTexts }));
+    expect(h.sent[1]).toBe(" \f");
+    expect(h.sent.join("")).not.toContain("sSYSOP");
+  });
+
+  test("isSubListTitle：只認標題列右段的 系列《》／文摘《》", () => {
+    expect(isSubListTitle("【板主:x】   描述   系列《SYSOP》")).toBe(true);
+    expect(isSubListTitle("【板主:x】   描述   文摘《SYSOP》")).toBe(true);
+    expect(isSubListTitle("【板主:x】   描述   看板《SYSOP》")).toBe(false);
+    expect(isSubListTitle("")).toBe(false);
+  });
+
+  test("挑板取消落在搜尋結果 ⇒ 不 ←、不 #，直接 ⏎ 開游標上的原文", () => {
+    const h = makeHarness({ articleBoard: "SYSOP" });
+    const token = h.nav.preparePicked("1gabdGC8");
+    h.nav.reopenPicked(token);
+    settle(
+      h.queue,
+      facts("clean-list", { boardName: "SYSOP", rowTexts: subList("SYSOP", [ENTRY, ENTRY, ENTRY]) })
+    );
+    expect(h.sent[1]).toBe("\r\f");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 指定看板的 AID 跳文（無看板 #AID →「跳到其他看板…」）：挑板交給 `s` 看板搜尋
+// 彈窗的原生補全，它一開 `s` 就離開文章 ⇒ preparePicked 先在文章裡記返回錨，
+// 橋接進板之後 continuePicked 從目標板列表接手 #AID。
+// ---------------------------------------------------------------------------
+describe("AidNavigation 指定看板（preparePicked → continuePicked）", () => {
+  test("prepare 一個 byte 都不送；進板後先確認落地再 # aid ⏎ ⏎，沒有板跳那一步", () => {
+    const h = makeHarness({ articleBoard: "Gossiping" });
+    const token = h.nav.preparePicked("1gIeu-3A");
+    expect(token).not.toBeNull();
+    expect(h.sent).toEqual([]);
+    expect(h.nav.active).toBe(false);
+
+    // 橋接已在背景 prompt 上送出 Android⏎（不經 aidNavigation）。
+    expect(h.nav.continuePicked(token, "Android")).toBe(true);
+    expect(h.nav.active).toBe(true);
+    expect(h.sent).toEqual(["\f"]);
+    settle(h.queue, facts("clean-list", { boardName: "Android" }));
+    expect(h.sent[1]).toBe("#1gIeu-3A\r\f");
+    settle(h.queue, facts("clean-list", { boardName: "Android", cursorRowNum: 5, curY: 10 }));
+    expect(h.sent[2]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(h.sent.join("")).not.toContain("sAndroid");
+  });
+
+  test("返回錨是開彈窗前的文章：跳完可返回原文的看板", () => {
+    const h = makeHarness({ articleBoard: "Gossiping" });
+    const token = h.nav.preparePicked("1gIeu-3A");
+    // 開了 `s` 之後人已經不在文章裡：目前看板換掉也不影響錨。
+    h.view._articleBoard = null;
+    h.nav.continuePicked(token, "Android");
+    settle(h.queue, facts("clean-list", { boardName: "Android" }));
+    settle(h.queue, facts("clean-list", { boardName: "Android", cursorRowNum: 5, curY: 10 }));
+    settle(h.queue, facts("article"));
+    expect(h.nav.canGoBack()).toBe(true);
+    h.sent.length = 0;
+    h.nav.back();
+    expect(h.sent).toEqual(["sGossiping\r\f"]);
+  });
+
+  test("文末網址列讀得到本篇 AID ⇒ 返回錨升級成 #AID（Q 用不了：人已離開文章）", () => {
+    const h = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl()
+    });
+    const token = h.nav.preparePicked("1gIeu-3A");
+    h.nav.continuePicked(token, "Android");
+    expect(h.sent).toEqual(["\f"]); // 沒按 Q
+    settle(h.queue, facts("clean-list", { boardName: "Android" }));
+    settle(h.queue, facts("clean-list", { boardName: "Android", cursorRowNum: 5, curY: 10 }));
+    settle(h.queue, facts("article"));
+    const top = h.nav._history.peek();
+    expect(top.kind).toBe("aid");
+    expect(top.aid).toBe(BROWSERS_AID);
+  });
+
+  test("落在別的看板（PTT 判成別的板）⇒ 不送 #，可見失敗", () => {
+    const h = makeHarness({ articleBoard: "Gossiping" });
+    const token = h.nav.preparePicked("1gIeu-3A");
+    h.nav.continuePicked(token, "Android");
+    settle(h.queue, facts("clean-list", { boardName: "AndroidDev" }));
+    vi.advanceTimersByTime(60000);
+    expect(h.sent.some((s) => s.startsWith("#"))).toBe(false);
+    expect(h.nav.active).toBe(false);
+    expect(h.hints.some((m) => m.includes("Android"))).toBe(true);
+  });
+
+  // 在補全彈窗取消 ＝ 原生 `s` 取消 ⇒ 停在原文所在板的文章列表（游標在原文上）。
+  test("取消後重開原文：先確認是原文的看板列表 → ⏎ → 落地後還原原列", () => {
+    // 閱讀紀錄只在好讀開著、人在文章裡（pageState 3）時量得到原列。
+    const h = makeHarness({ articleBoard: "Gossiping", scrollTop: 200, pageState: 3 });
+    h.core.easyReading._enabled = true;
+    const token = h.nav.preparePicked("1gIeu-3A");
+    expect(token.bm.article.lineIndex).toBe(10);
+    expect(h.nav.reopenPicked(token)).toBe(true);
+    expect(h.sent).toEqual(["\f"]);
+    settle(h.queue, facts("clean-list", { boardName: "Gossiping", cursorRowNum: 9, curY: 10 }));
+    expect(h.sent[1]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(h.core.easyReading.restoreCalls).toEqual([10]);
+    expect(h.hints[h.hints.length - 1]).toContain("已回到原文");
+  });
+
+  // Ctrl-C 取消是 FULLUPDATE 不是 NEWDIRECT：游標本來就停在原文 ⇒ 知道 AID 也不送 #
+  // （搜尋結果裡 # 會被拒，見「搜尋結果裡跳文」）。
+  test("取消後重開原文：知道本篇 AID 也直接 ⏎（游標就在原文上）", () => {
+    const h = makeHarness({
+      pageState: 3,
+      articleBoard: "Browsers",
+      screenRows: articleScreenWithUrl()
+    });
+    const token = h.nav.preparePicked("1gIeu-3A");
+    h.nav.reopenPicked(token);
+    settle(h.queue, facts("clean-list", { boardName: "Browsers" }));
+    expect(h.sent[1]).toBe("\r\f");
+    expect(h.sent.some((s) => s.startsWith("#"))).toBe(false);
+  });
+
+  test("取消後落在別的畫面 ⇒ 不送 ⏎（可見失敗）", () => {
+    const h = makeHarness({ articleBoard: "Gossiping" });
+    const token = h.nav.preparePicked("1gIeu-3A");
+    h.nav.reopenPicked(token);
+    settle(h.queue, facts("menu"));
+    vi.advanceTimersByTime(60000);
+    expect(h.sent.some((s) => s.startsWith("\r"))).toBe(false);
+    expect(h.nav.active).toBe(false);
+  });
+
+  test("挑板期間背景 prompt 造成的離開文章／列表 settle 不清返回堆疊；取消回原文後仍可返回", () => {
+    const h = makeHarness({ articleBoard: "Gossiping" });
+    // 先跳一次，堆疊裡有一層。
+    h.nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(h.queue, null);
+    settle(h.queue, facts("clean-list", { boardName: "Android" }));
+    settle(h.queue, facts("clean-list", { boardName: "Android", cursorRowNum: 5, curY: 10 }));
+    settle(h.queue, facts("article"));
+    h.nav.noteLeftPost(); // 我方落地那一次（_ownedLeave）
+    expect(h.nav.canGoBack()).toBe(true);
+
+    h.view._articleBoard = "Android";
+    const token = h.nav.preparePicked("2AbCdEf0");
+    h.nav.noteLeftPost(); // 背景 `s` 離開文章
+    h.nav.noteSettle(facts("clean-list", { boardName: "Android" })); // Ctrl-C 落在列表
+    expect(h.nav.canGoBack()).toBe(true);
+    h.nav.reopenPicked(token);
+    settle(h.queue, facts("clean-list", { boardName: "Android", cursorRowNum: 5, curY: 10 }));
+    settle(h.queue, facts("article"));
+    expect(h.nav.canGoBack()).toBe(true);
+  });
+
+  test("endPicked：prompt 沒開出來（還在原文）堆疊保留；停在哪不確定就作廢", () => {
+    const h = makeHarness({ articleBoard: "Gossiping" });
+    h.nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(h.queue, null);
+    settle(h.queue, facts("clean-list", { boardName: "Android" }));
+    settle(h.queue, facts("clean-list", { boardName: "Android", cursorRowNum: 5, curY: 10 }));
+    settle(h.queue, facts("article"));
+    h.nav.noteLeftPost();
+    h.nav.endPicked(h.nav.preparePicked("2AbCdEf0"), true);
+    expect(h.nav.canGoBack()).toBe(true);
+    h.nav.endPicked(h.nav.preparePicked("2AbCdEf0"), false);
+    expect(h.nav.canGoBack()).toBe(false);
+  });
+
+  test("不在好讀文章裡／另一趟在跑 ⇒ prepare 回 null", () => {
+    const h = makeHarness();
+    h.termBuf.startedEasyReading = false;
+    expect(h.nav.preparePicked("1gIeu-3A")).toBeNull();
+    h.termBuf.startedEasyReading = true;
+    h.nav.start("2AbCdEf0", "C_Chat");
+    expect(h.nav.preparePicked("1gIeu-3A")).toBeNull();
   });
 });

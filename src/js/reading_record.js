@@ -52,6 +52,9 @@ export const RESTORE_TABLE = {
   // AID 跳文：目的地就是結果（不還原）；返回的列由返回堆疊的錨帶（end 的 opts）。
   'aid-jump': { done: NONE, cancel: NONE, fail: NONE },
   'aid-back': { done: cell('origin'), cancel: NONE, fail: NONE },
+  // 無看板 AID 指定看板（aid_navigation.preparePicked）：送出＝跳文（不還原）；在 `s`
+  // 補全彈窗取消 ＝ 原生取消落在文章列表 ⇒ 重開原文回原列（reopenPicked 落地時才下）。
+  'aid-board-pick': { done: NONE, cancel: cell('origin'), fail: NONE },
   // 文章重新整理：原本在文末就黏回文末（新推文在那裡），否則同一列。
   'article-refresh': { done: cell('auto'), cancel: NONE, fail: NONE },
   // 複製本篇連結（Q 路徑會被踢回列表再重開）：一律回原列。

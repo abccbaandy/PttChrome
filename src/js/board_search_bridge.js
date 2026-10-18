@@ -137,9 +137,14 @@ function noop() {}
 
 // core：App（commandQueue、activeListSession、buf、searchInFlight）。
 // onUpdate({ status, result })：status ∈ opening／ready／unavailable。
-export function BoardSearchBridge(core, onUpdate) {
+// opts.onCancel：{ onDone, onFail(reason) }，取消（彈窗關掉）的收尾回呼。onDone ＝ Ctrl-C
+// 之後 prompt 已收掉；onFail('no-prompt') ＝ prompt 從沒開出來（原畫面沒動過），其他
+// reason ＝ 收尾途中丟失（停在哪不確定）。送出過就不會再回報取消。
+export function BoardSearchBridge(core, onUpdate, opts) {
   this._core = core;
   this._onUpdate = onUpdate || noop;
+  this._cancelCb = (opts && opts.onCancel) || {};
+  this._closed = false; // submit／cancel 已經叫過（收尾只有一次）
   this._opened = false; // prompt 已開出來
   this._dead = false; // prompt 沒開出來／被 flush／已收尾
   this._busy = false; // 有一條自己的命令在飛
@@ -172,6 +177,7 @@ BoardSearchBridge.prototype = {
   // 回 false ＝ 橋接用不了（prompt 沒開出來／已收尾），呼叫端改走 submitSearch。
   submit: function(text, cb) {
     if (this._final || this._dead) return false;
+    this._closed = true;
     this._final = { type: 'submit', text: sanitizeBoardQuery(text), cb: cb || {} };
     beginInFlight(this._core);
     this._pump();
@@ -179,8 +185,15 @@ BoardSearchBridge.prototype = {
   },
 
   cancel: function() {
-    if (this._final || this._dead) return;
-    this._final = { type: 'cancel', cb: {} };
+    if (this._closed) return;
+    this._closed = true;
+    const cb = this._cancelCb;
+    if (this._dead) {
+      // prompt 沒開出來（或已丟失）：沒有東西要收。
+      if (cb.onFail) cb.onFail(this._opened ? 'lost' : 'no-prompt');
+      return;
+    }
+    this._final = { type: 'cancel', cb: cb };
     beginInFlight(this._core);
     this._pump();
   },
@@ -250,7 +263,7 @@ BoardSearchBridge.prototype = {
       endInFlight(this._core);
       // prompt 從沒開出來＝PTT 不接受 `s`（同 submitSearch 第一步的 onFail）；
       // 開出來之後才丟失＝送出途中被別的擁有者 flush。兩者都不重送。
-      if (fin.type === 'submit' && fin.cb.onFail) fin.cb.onFail(wasOpened ? 'lost' : 'no-prompt');
+      if (fin.cb.onFail) fin.cb.onFail(wasOpened ? 'lost' : 'no-prompt');
     }
     this._emit();
   },
@@ -346,6 +359,7 @@ BoardSearchBridge.prototype = {
       },
       onFlushed: function() {
         self._finish();
+        if (fin.cb.onFail) fin.cb.onFail('lost');
       }
     };
     queue.enqueue(cmd);

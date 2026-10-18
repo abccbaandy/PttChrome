@@ -512,7 +512,10 @@ client 端自動收掉見 `docs/board-note-skip.md`。
 - 輸入前處理（`read.c:394-399`）：strip 前置空白與**一個** `#` ⇒ 送 `#1gIeu-3A` 與 `1gIeu-3A` 等價。`aidc2aidu()` 遇非法字元回 0。
 - **成功（`read.c:477-481`）：`*pnew_ln = n+1; move(b_lines,0); clrtoeol(); return DONOTHING;`** ⇒ **只把游標移到目標序號、不重繪清單、不自動開文**。畫面指紋與「數字跳號」完全相同（底列留空）⇒ **client 直接沿用 §4 ✚ 的 park 判定**，不可等 clean-list。
 - 失敗（`read.c:464-475`）：`move(21,0); clrtobot(); move(22,0)` ＋ `不合法的文章代碼(AID)，請確定輸入是正確的` / `找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了` ＋ `pressanykey()` ＋ `FULLUPDATE`。
-- 拒絕分支：MODE_SELECT（搜尋清單中）或 RMAIL → `此狀態下無法使用搜尋文章代碼(AID)功能` ＋ `pressanykey()`。**推論：`/` 搜尋清單裡不可能直接 `#` 跳文，跳轉與返回都必須先用 `s<board>` 離開 MODE_SELECT**（`s` 走 `do_select()`→`enter_board()`，currmode 重來）。
+- 拒絕分支：MODE_SELECT（搜尋清單中）或 RMAIL → `此狀態下無法使用搜尋文章代碼(AID)功能` ＋ `pressanykey()`（實錄 `ptt-debug-20261018-173606`）。
+- **`s<board>` 不會離開 MODE_SELECT**（CONFIRMED 讀碼，舊文「currmode 重來」錯）：`enter_board()`（`board.c`）只換 currboard／currdirect、不碰 currmode；新版搜尋條件住在 `read_ctx`（`sr_preds`），NEWDIRECT 後 `read_loader` 以同條件 `search_predicates_window` 篩**新板** ⇒ 落地是「系列《新板》」，可能一篇都沒有（`read_empty_renderer`「    沒有文章...」，不是 clean-list），游標停子列表尾（`sr_locmem.crs_ln = last_line`）。只有主功能表的 `s`（`ReadSelect`→新的 `i_read`，開頭 `currmode &= ~MODE_SELECT`）是乾淨的。
+- **離開 MODE_SELECT＝在列表上按 ←**：`read_cmd_quit` 的 MODE_SELECT 分支 `board_select()`＋游標停同一篇的真實序號（`read_view_real_recno`）＋NEWDIRECT，不離板；MODE_DIGEST 的 ← 是 `board_digest()` 切回；完整列表的 ← 才是離板（DOQUIT）⇒ client 只在認得子列表 caption／標題時送。
+- pager ← 與 `s` 取消（Ctrl-C）都回 FULLUPDATE（非 NEWDIRECT）⇒ 停回原列表、游標仍在剛讀的那篇、搜尋結果保留 ⇒ 直接 ⏎ 即重開同一篇。client：`aid_navigation.landedOnBoardList`／`_enqueueLeaveSubList`／`reopenPicked`／`_enqueueRefreshViaList`。
 - **跨模式跳轉會產生二段式畫面更新**：命中處與目前模式不符（一般↔文摘）時設 `*pdefault_ch = KEY_TAB; return DONOTHING;`——server **自己補按一個 TAB**，下一圈 `i_read_key` 用它跑 `board_digest()` 切模式 ⇒ client 會看到「prompt 消失」與「全幅切換清單」兩段。
 - 文章內（pmore）按 `#`：`more.c:108-112` → `RET_SELECTAID` → `read.c:1018-1024` 先退出 pmore 回列表再開同一個 prompt，收尾強制 `FULLUPDATE`（與列表內的 `DONOTHING` 不同）。
 - **死碼警告**：`mbbsd/aids.c` 的 `do_search_aid()`（支援 `AID@BOARDNAME` 跨板語法）整段包在 `#ifdef NEW_AIDS` 內，而 `NEW_AIDS` 全 repo 無任何定義 ⇒ **真正跑的只有 `read.c#select_by_aid`，不支援 `@板名`**。勿照那段實作 client。

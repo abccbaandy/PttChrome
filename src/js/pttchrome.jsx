@@ -10,6 +10,7 @@ import { BoardListSession } from './board_list_session';
 import { OWNER_BOARD_LIST, listRenderOwnerOf } from './list_render_owner';
 import { CommandQueue } from './command_queue';
 import { AidNavigation } from './aid_navigation';
+import { needsAidBoardChoice } from './aid_board_choice';
 import { ScreenRefresh } from './screen_refresh';
 import { ReadingRecord } from './reading_record';
 import { ReconnectResume } from './reconnect_resume';
@@ -183,8 +184,8 @@ export const App = function() {
   // 不會把對方剛排進去的 prefetch 殺掉。
   this.boardListSession = new BoardListSession(this, this.view, this.buf, this.commandQueue);
   // AID (#文章代碼) link click → serialized native-key navigation to the target
-  // article. A boardless link falls back to the current article's board
-  // (tracked by term_view alongside articleAuthor).
+  // article. A boardless link asks first (本版／指定看板, App.onAidClick); 本版 is
+  // the current article's board (tracked by term_view alongside articleAuthor).
   this.aidNavigation = new AidNavigation(this, this.view, this.buf, this.commandQueue);
   // 長推文一鍵發送（右鍵選單）：把一大段話切成 N 則，逐則跑完 PTT 的推文互動。
   // 與 aidNavigation 共用同一條 CommandQueue（一次只有一個鍵在線上），並同樣用
@@ -214,9 +215,7 @@ export const App = function() {
   this.helpMenu = new HelpMenuController(this, this.buf);
   // 搜尋彈窗送出的兩步在途（article_search.submitSearch 寫、serialized_op_gate 讀）。
   this.searchInFlight = false;
-  this.view.onAidClick = (aid, board) => {
-    this.aidNavigation.start(aid, board || this.view._articleBoard);
-  };
+  this.view.onAidClick = (aid, board) => this.onAidClick(aid, board);
   // 功能鍵按鈕（畫面上的 `[d]刪除` / `(y)回應`）→ 送出那個按鍵。
   // **只指派這一次，引用從此不變**：annotationsKey.refs 與 render/screen.js 的
   // outerHTML 節點重用都以它的參考身分為前提（每幀新建箭頭函式會讓整份標註快取
@@ -1044,6 +1043,25 @@ App.prototype.openLongPushModal = noop;
 // 搜尋彈窗（文章列表的 / ? a Z、工具列的各類搜尋）。合約同上：noop ＝ ContextMenu
 // 未 mount ⇒ 回 undefined ⇒ 攔截入口不吞鍵，照原生送出。見 article_search.js。
 App.prototype.openSearchModal = noop;
+
+// 沒寫看板的 #AID → 看板選擇彈窗（本版跳轉／指定看板，見 aid_board_choice.js）。
+// 合約同上：noop ＝ ContextMenu 未 mount ⇒ 照舊遞補目前文章的看板直接跳。
+App.prototype.openAidBoardChoice = noop;
+
+// AID 連結點擊。board＝連結自己帶的看板（後綴／轉錄標頭），沒有就先問使用者。
+App.prototype.onAidClick = function(aid, board) {
+  const current = this.view._articleBoard;
+  if (
+    needsAidBoardChoice({
+      explicitBoard: board,
+      navigating: this.aidNavigation.active,
+      startedEasyReading: this.buf.startedEasyReading
+    }) &&
+    this.openAidBoardChoice(aid, current)
+  )
+    return;
+  this.aidNavigation.start(aid, board || current);
+};
 
 App.prototype.switchToEasyReadingMode = function(doSwitch) {
   this.debugRecorder?.log('app.switchToEasyReadingMode', { doSwitch: !!doSwitch });

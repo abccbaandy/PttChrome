@@ -335,6 +335,35 @@ export const en_US = {
     "message": "A command is in progress, please try again"
   },
 
+  // Boardless #AID (components/ContextMenu/AidBoardChoiceModal)
+  "aidBoardChoice_title": {
+    "message": "Jump to {0}"
+  },
+  "aidBoardChoice_hint": {
+    "message": "This article code names no board. Which board should it be looked up in?"
+  },
+  "aidBoardChoice_current": {
+    "message": "Jump within this board ({0})"
+  },
+  "aidBoardChoice_currentUnknown": {
+    "message": "Jump within this board (current board unknown)"
+  },
+  "aidBoardChoice_pick": {
+    "message": "Jump via another board…"
+  },
+  "aidBoardChoice_pickTitle": {
+    "message": "Which board is {0} on?"
+  },
+  "aidBoardChoice_jump": {
+    "message": "Jump"
+  },
+  "aidBoardChoice_failed": {
+    "message": "AID jump: could not switch to the chosen board"
+  },
+  "aidBoardChoice_reopenFailed": {
+    "message": "Could not return to the article; stopped at the article list"
+  },
+
   // Help menu easy reading (components/HelpMenu)
   "helpMenu_title": {
     "message": "Help"

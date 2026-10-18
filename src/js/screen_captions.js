@@ -50,6 +50,14 @@ export function footerCaption(lastRowText) {
   return KNOWN_CAPTIONS.has(m[1]) ? m[1] : null;
 }
 
+// 文章列表的子模式：搜尋結果（MODE_SELECT）與文摘（MODE_DIGEST）。獨立的編號空間、
+// `#` AID 搜尋被拒（read.c select_by_aid）；在列表上 ← 只離開子模式（read_cmd_quit）。
+// 舊版 caption 一律「文章選讀」分不出來 ⇒ 不算（已知限制）。
+export const SUB_LIST_CAPTIONS = ['系列文章', '文摘列表'];
+export function isSubListFooter(lastRowText) {
+  return SUB_LIST_CAPTIONS.indexOf(footerCaption(lastRowText)) >= 0;
+}
+
 // 文章列表（非信箱）的底列。
 export function isArticleListFooter(lastRowText) {
   return ARTICLE_LIST_CAPTIONS.indexOf(footerCaption(lastRowText)) >= 0;

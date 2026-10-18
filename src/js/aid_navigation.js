@@ -65,7 +65,8 @@ import {
   isCrossPostHeaderLine
 } from './aid_parse';
 import { isPinnedListRow } from './comment_parse';
-import { MAIN_MENU, boardNameFromKey, rowHasTitle } from './screen_titles';
+import { MAIN_MENU, boardNameFromKey, parseBoardKey, rowHasTitle } from './screen_titles';
+import { isSubListFooter } from './screen_captions';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
 
@@ -144,6 +145,28 @@ export function landedOnBoard(facts, boardLower) {
   if (!facts || facts.kind !== 'clean-list' || facts.boardName == null) return false;
   const name = boardNameFromKey(facts.boardName);
   return name == null || name.toLowerCase() === boardLower;
+}
+
+// 標題列右段 title_tail_msgs（menu.c#showtitle）：MODE_SELECT＝系列、MODE_DIGEST＝文摘。
+// 右段可能被省略（看板描述太長）⇒ 只能證明「是」，不能證明「不是」。
+export function isSubListTitle(row0Text) {
+  return /(系列|文摘)《[^》]*》\s*$/.test(row0Text || '');
+}
+
+// 文章內 `s<板>⏎` 的落地，含搜尋結果／文摘（底列 系列文章／文摘列表）：新版 read.c 的
+// 搜尋條件住在 read_ctx，從搜尋結果裡換板**仍在搜尋模式**（同條件篩新板）⇒ 可能一篇
+// 都沒有（read_empty_renderer「沒有文章...」，不是 clean-list），所以子列表只比標題列
+// 的板名（要明確寫出才認，不吃省略的身分鍵）。回 false | { sub }：sub ＝在子列表上
+// （# 被拒，要先 ← 離開，見 _enqueueLeaveSubList）。
+export function landedOnBoardList(facts, boardLower) {
+  if (!facts) return false;
+  const rowTexts = facts.rowTexts || [];
+  const rows = facts.rows || rowTexts.length;
+  const sub = isSubListFooter(rowTexts[rows - 1] || '');
+  if (landedOnBoard(facts, boardLower)) return { sub: sub };
+  if (!sub) return false;
+  const name = boardNameFromKey(parseBoardKey(rowTexts[0] || ''));
+  return name != null && name.toLowerCase() === boardLower ? { sub: true } : false;
 }
 
 export function aidSearchLanded(facts) {
@@ -288,6 +311,9 @@ export function AidNavigation(core, view, termBuf, queue, history) {
   this._resuming = false;
   // One-shot: swallow the leaveCurrentPost our own landing causes (noteLeftPost).
   this._ownedLeave = false;
+  // 指定看板挑板中的 token（preparePicked → continuePicked／reopenPicked／endPicked）：
+  // 期間背景 `s` prompt 造成的離開文章／列表 settle 不清返回堆疊。
+  this._picking = null;
   // findLocalPostAid 的增量掃描游標（見該函式）。
   this._urlScanRow = 0;
   this._urlScanLen = 0;
@@ -353,7 +379,7 @@ AidNavigation.prototype = {
   // on a list or a menu without us — they left the article by themselves, so
   // the anchors no longer describe where they are.
   noteSettle: function(facts) {
-    if (this.active || !facts) return;
+    if (this.active || this._picking || !facts) return;
     if (facts.kind !== 'clean-list' && facts.kind !== 'menu') return;
     this._history.invalidate();
     this._updateBackButton();
@@ -378,6 +404,8 @@ AidNavigation.prototype = {
       this._ownedLeave = false;
       return;
     }
+    // 指定看板挑板中（preparePicked）：離開文章的是背景 `s` prompt，不是使用者。
+    if (this._picking) return;
     this._history.invalidate();
     this._updateBackButton();
   },
@@ -450,6 +478,86 @@ AidNavigation.prototype = {
     run.originList = bm.list;
     run.listOpened = listOpened;
     this._begin(run);
+  },
+
+  // 指定看板的 AID 跳文，分兩段（無看板 #AID →「跳到其他看板…」，aid_board_choice.js）。
+  // 挑板用的是 `s` 看板搜尋彈窗的原生補全橋接（board_search_bridge），它一開 `s` 就
+  // 離開文章（pager 的 s 先收掉 pager 才進 do_select）⇒ 返回錨與閱讀位置只能在開橋接
+  // **之前**量（preparePicked）。橋接送出板名、落地目標板列表後，continuePicked 從那個
+  // 列表接手 #AID ⏎ ⏎ —— 板跳那一步就是橋接送出的那個 Enter。
+  // 回 null ＝ 現在不能跳（另一趟在跑／不在好讀文章裡）。
+  preparePicked: function(aid) {
+    if (this.active || !aid || !this._termBuf.startedEasyReading) return null;
+    // 決策表 'aid-board-pick'：送出＝跳文（不還原）；取消＝重開原文回原列（reopenPicked）。
+    const bm = recordFor(this._core).begin('aid-board-pick', this._ctx());
+    const token = {
+      aid: aid,
+      bm: bm,
+      lineIndex: bm.article ? bm.article.lineIndex : this._currentLineIndex(),
+      landed: this._history.landed(),
+      articleBoard: this._view._articleBoard,
+      // 文末網址列的免費路徑（零指令）；Q 不能用：人一離開文章就問不到本篇了。
+      localAid: this.findLocalPostAid()
+    };
+    this._picking = token;
+    return token;
+  },
+
+  // 挑板收尾但不再導航：stillInArticle ＝ prompt 根本沒開出來（人還在原文）⇒ 返回堆疊
+  // 照舊有效；否則停在哪不確定 ⇒ 同使用者自己離開文章，堆疊作廢。
+  endPicked: function(token, stillInArticle) {
+    if (!token || this._picking !== token) return;
+    this._picking = null;
+    if (stillInArticle) return;
+    this._history.invalidate();
+    this._updateBackButton();
+  },
+
+  // 挑板取消（原生 `s` prompt 收到 Ctrl-C）：pager 收掉後的 `s` 取消只會停在原文所在的
+  // 那份列表（do_select 失敗回 FULLUPDATE：不是 NEWDIRECT，read loop 的游標不動、搜尋
+  // 結果也還在）⇒ 游標就停在原文上，直接 ⏎ 開它。不用 #AID：搜尋結果裡 # 被拒
+  // （錄製檔 ptt-debug-20261018-173606），而且 ⏎ 連身後的搜尋結果都原樣保留。
+  // 落地後閱讀紀錄還原原列（'aid-board-pick' cancel）。返回堆疊不動（挑板期間有保護）。
+  reopenPicked: function(token) {
+    if (!token || this._picking !== token) return false;
+    this._picking = null;
+    if (this.active || !token.articleBoard) {
+      this._history.invalidate();
+      this._updateBackButton();
+      return false;
+    }
+    const run = makeRun({ board: token.articleBoard, kind: 'aid', aid: null }, 'reopen');
+    run.bookmark = token.bm;
+    run.picked = true;
+    this.opHint = '回到原文中';
+    this._begin(run);
+    return true;
+  },
+
+  continuePicked: function(token, board) {
+    if (this._picking === token) this._picking = null;
+    if (this.active || !token || !board) return false;
+    const anchor = chooseAnchor({
+      landed: token.landed,
+      articleBoard: token.articleBoard,
+      targetBoard: board,
+      lineIndex: token.lineIndex
+    });
+    this._history.beginJump(this._withList(anchor, token.bm), { board: board, aid: token.aid });
+    if (token.localAid)
+      this._history.upgradePendingOriginAid(
+        token.localAid.board,
+        token.localAid.aid,
+        token.lineIndex,
+        token.bm.list
+      );
+    this._hint('跳至 #' + token.aid + ' (' + board + ')…', PROGRESS_HINT_MS);
+    const run = makeRun({ board: board, kind: 'aid', aid: token.aid }, 'forward');
+    run.originLineIndex = token.lineIndex;
+    run.originList = token.bm.list;
+    run.picked = true;
+    this._begin(run);
+    return true;
   },
 
   // 閱讀紀錄量文章用的畫面（unit 的假 core 沒掛 view／buf）。
@@ -621,6 +729,10 @@ AidNavigation.prototype = {
     const bm = recordFor(this._core).begin('article-refresh', this._ctx());
     const run = makeRun({ board: board, kind: 'aid', aid: null }, 'refresh');
     run.bookmark = bm;
+    // 列表好讀從搜尋結果／文摘開的這篇：`s<板>` 回來的還是子列表（# 被拒、游標停板尾），
+    // 改走「← 回列表 → ⏎ 開游標上的這篇」——pager 的 ← 是 FULLUPDATE，游標不動，
+    // 身後的搜尋結果也原樣保留（_enqueueRefreshViaList）。
+    run.viaList = listOpened && !!(bm.list && bm.list.mode === 'select');
     run.originLineIndex = bm.article ? bm.article.lineIndex : this._currentLineIndex();
     run.atBottom = !!(bm.article && bm.article.atBottom);
     this._refreshing = true;
@@ -660,6 +772,22 @@ AidNavigation.prototype = {
           });
           return;
         }
+        // Q 把我們丟回的是搜尋結果／文摘（標題列「系列《」／「文摘《」，框蓋不到第 0 列）：
+        // 游標就在這篇上，關框＋⏎ 重開，不繞 `s<板>`（回來仍是子列表、# 被拒）。
+        if (meta.boxOpen && isSubListTitle(self._termBuf.getRowText(0, 0, self._termBuf.cols))) {
+          self.reopenAfterPostInfo(run.originLineIndex, {
+            onFlushed: function() {
+              self._fail('畫面已變更');
+            },
+            onDone: function() {
+              self._finishRefresh(run);
+            },
+            onFail: function(reason) {
+              self._fail('重開文章失敗（' + reason + '）');
+            }
+          });
+          return;
+        }
         run.target.aid = info.aid;
         if (info.board) {
           run.target.board = info.board;
@@ -669,6 +797,33 @@ AidNavigation.prototype = {
       },
       onFail: function(reason) {
         self._fail('取得文章代碼失敗（' + reason + '）');
+      }
+    });
+  },
+
+  // 重整的另一條路（run.viaList）：← 離開 pager（pager_cmd_quit 回 FULLUPDATE，read loop
+  // 游標仍在這篇）→ 確認回到這篇的看板列表 → ⏎（_enqueueOpen → _finishRefresh）。
+  _enqueueRefreshViaList: function(run) {
+    const self = this;
+    const boardLower = run.boardLower;
+    this._queue.enqueue({
+      keys: KEY_LEFT,
+      kind: 'refresh-leave-article',
+      fullRepaint: true,
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
+      expect: function(snapshot, facts) {
+        return landedOnBoardList(facts, boardLower);
+      },
+      onDone: function() {
+        self._enqueueOpen(run);
+      },
+      onFail: function(reason) {
+        self._fail('回到列表失敗（' + reason + '）');
       }
     });
   },
@@ -765,7 +920,13 @@ AidNavigation.prototype = {
     // link is usually opened right after logging in.
     // 重整只從「已證明是 READING 的文章內」出發（refresh() 先驗過），走文章內 s 的快路徑。
     if (run.dir === 'refresh') {
-      this._enqueueRefreshAid(run);
+      if (run.viaList) this._enqueueRefreshViaList(run);
+      else this._enqueueRefreshAid(run);
+      return;
+    }
+    // 指定看板（continuePicked）：橋接已經進板了，先確認真的停在目標板列表。
+    if (run.picked) {
+      this._enqueuePickedLanding(run);
       return;
     }
     if (this._atMainMenu()) {
@@ -1222,12 +1383,23 @@ AidNavigation.prototype = {
   // cursor on the target article: #<aid>, or stop on the list (board anchor —
   // see nav_history.js for why there is no article-number tier).
   _enqueueMiddle: function(run) {
+    // # 與跳號都要完整列表（子列表的 # 被拒、編號是另一個空間）。只停在列表的那幾種
+    // 收尾（看板錨、goto）與重開游標上的原文（reopen）照舊留在子列表。
+    if (run.onSubList && (run.target.aid || run.target.num != null)) {
+      this._enqueueLeaveSubList(run);
+      return;
+    }
     if (run.target.aid) {
       this._enqueueAidSearch(run);
       return;
     }
     if (run.target.num != null) {
       this._enqueueNumJump(run);
+      return;
+    }
+    // 挑板取消後重開原文：游標就停在原文上（reopenPicked）。
+    if (run.dir === 'reopen') {
+      this._enqueueOpen(run);
       return;
     }
     if (run.dir === 'goto') {
@@ -1362,17 +1534,83 @@ AidNavigation.prototype = {
       timeoutMs: BOARD_PROBE_AFTER_MS,
       probeTimeoutMs: STEP_PROBE_WINDOW_MS,
       hardTimeoutMs: BOARD_HARD_MS,
+      // 文章內的 s 從搜尋結果出發時落在目標板的搜尋結果（landedOnBoardList）；主功能表的
+      // s 走 ReadSelect→Read()，新的 i_read 不繼承搜尋模式（read.c#i_read 開頭清 MODE_SELECT）。
       expect: viaMenu
         ? this._boardLandingExpect(boardLower)
         : function(snapshot, facts) {
-            return landedOnBoard(facts, boardLower);
+            return landedOnBoardList(facts, boardLower);
           },
       onDone: function(result) {
-        if (viaMenu) self._onBoardLanding(run, result, 0);
-        else self._enqueueMiddle(run);
+        if (viaMenu) {
+          self._onBoardLanding(run, result, 0);
+          return;
+        }
+        run.onSubList = !!result.sub;
+        self._enqueueMiddle(run);
       },
       onFail: function(reason) {
         self._fail('切換看板 ' + board + ' 失敗（' + reason + '）');
+      }
+    });
+  },
+
+  // continuePicked 的第一步：只送 \f 拿一幀整畫面，確認停在目標板的乾淨列表才送 #。
+  // 不是（板名被 PTT 判成別的、進板失敗）就停手：在別的畫面送 # 會被當成別的指令。
+  _enqueuePickedLanding: function(run) {
+    const self = this;
+    const boardLower = run.boardLower;
+    this._queue.enqueue({
+      keys: '',
+      kind: 'aid-picked-landing',
+      fullRepaint: true,
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
+      expect: function(snapshot, facts) {
+        return landedOnBoardList(facts, boardLower);
+      },
+      onDone: function(result) {
+        run.onSubList = !!result.sub;
+        self._enqueueMiddle(run);
+      },
+      onFail: function(reason) {
+        self._fail('未進入看板 ' + run.target.board + '（' + reason + '）');
+      }
+    });
+  },
+
+  // 搜尋結果／文摘裡 # 被拒（read.c select_by_aid：MODE_SELECT 一律「此狀態下無法使用
+  // 搜尋文章代碼(AID)功能」），編號也是子列表自己的空間 ⇒ 先 ← 回完整列表。子列表上的 ←
+  // 是 read_cmd_quit 的「離開搜尋」分支（board_select＋游標留在同一篇的真實位置），
+  // 不會離開看板；完整列表上的 ← 才是離板，所以只在認得出子列表時送。
+  _enqueueLeaveSubList: function(run) {
+    const self = this;
+    const boardLower = run.boardLower;
+    run.onSubList = false;
+    run.leftSubList = true;
+    this._queue.enqueue({
+      keys: KEY_LEFT,
+      kind: 'aid-leave-sublist',
+      fullRepaint: true,
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
+      expect: function(snapshot, facts) {
+        const landed = landedOnBoardList(facts, boardLower);
+        return landed && !landed.sub ? landed : false;
+      },
+      onDone: function() {
+        self._enqueueMiddle(run);
+      },
+      onFail: function(reason) {
+        self._fail('離開搜尋結果失敗（' + reason + '）');
       }
     });
   },
@@ -1513,6 +1751,12 @@ AidNavigation.prototype = {
           recordFor(self._core).end(run.bookmark, 'done', { only: 'article' });
           self._updateBackButton();
           self._hint('已回到斷線前的文章', 1500);
+        } else if (run.dir === 'reopen') {
+          self.opHint = null;
+          // 決策表 'aid-board-pick' cancel：回原列（好讀的還原是請求，累積到位才套用）。
+          recordFor(self._core).end(run.bookmark, 'cancel', { only: 'article' });
+          self._updateBackButton();
+          self._hint('已回到原文', 1200);
         } else if (run.dir === 'goto') {
           self.opHint = null;
           self._history.invalidate();

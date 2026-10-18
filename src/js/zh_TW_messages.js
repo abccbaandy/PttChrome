@@ -335,6 +335,35 @@
     "message": "指令處理中，請稍候再試"
   },
 
+  // 沒寫看板的 #AID（components/ContextMenu/AidBoardChoiceModal）
+  "aidBoardChoice_title": {
+    "message": "跳至 {0}"
+  },
+  "aidBoardChoice_hint": {
+    "message": "這個文章代碼沒有寫看板，要在哪個看板找？"
+  },
+  "aidBoardChoice_current": {
+    "message": "在本版（{0}）跳轉"
+  },
+  "aidBoardChoice_currentUnknown": {
+    "message": "在本版跳轉（無法判斷目前看板）"
+  },
+  "aidBoardChoice_pick": {
+    "message": "跳到其他看板…"
+  },
+  "aidBoardChoice_pickTitle": {
+    "message": "{0} 在哪個看板？"
+  },
+  "aidBoardChoice_jump": {
+    "message": "跳轉"
+  },
+  "aidBoardChoice_failed": {
+    "message": "AID 跳文：無法切換到指定看板"
+  },
+  "aidBoardChoice_reopenFailed": {
+    "message": "無法回到原文，已停在文章列表"
+  },
+
   // 說明選單好讀（components/HelpMenu）
   "helpMenu_title": {
     "message": "操作說明"

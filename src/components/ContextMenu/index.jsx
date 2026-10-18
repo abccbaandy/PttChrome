@@ -11,6 +11,8 @@ import LongPushModal from "./LongPushModal";
 import LongPushProgressModal from "./LongPushProgressModal";
 import LongPushErrorModal from "./LongPushErrorModal";
 import SearchModal from "./SearchModal";
+import AidBoardChoiceModal from "./AidBoardChoiceModal";
+import { currentBoardOption } from "../../js/aid_board_choice";
 import DebugRecordNotice from "../DebugRecordNotice";
 import MobileToolbar from "../MobileToolbar";
 import MobileAppBar from "../MobileAppBar";
@@ -208,6 +210,10 @@ const initialState = {
   showsSearch: false,
   searchKind: "title",
   searchKinds: [],
+  // 沒寫看板的 #AID（js/aid_board_choice.js）：aidChoice＝二選一彈窗 { aid, currentBoard }；
+  // 選「指定看板」後搜尋彈窗以看板種類開啟，searchAidTarget＝{ aid } 讓它只挑板名。
+  aidChoice: null,
+  searchAidTarget: null,
   // --- LiveHelper state ---
   liveHelperEnabled: false,
   liveHelperSec: 1,
@@ -249,6 +255,7 @@ export const ContextMenu = ({ pttchrome }) => {
     state.showsTitleBlacklist ||
     state.showsLongPush ||
     state.showsSearch ||
+    !!state.aidChoice ||
     !!state.longPushProgress ||
     !!state.longPushError;
   useEffect(() => {
@@ -731,23 +738,115 @@ export const ContextMenu = ({ pttchrome }) => {
       pttchrome.openSearchModal = noop;
     };
   }, [pttchrome, openSearch]);
+  // 沒寫看板的 #AID 點擊（App.onAidClick）。合約同 openSearch：true ＝我接手了。
+  const openAidBoardChoice = useCallback(
+    (aid, currentBoard) => {
+      update({
+        ...initialState,
+        aidChoice: { aid, currentBoard: currentBoardOption(currentBoard) },
+      });
+      return true;
+    },
+    [update],
+  );
+  useEffect(() => {
+    pttchrome.openAidBoardChoice = openAidBoardChoice;
+    return () => {
+      pttchrome.openAidBoardChoice = noop;
+    };
+  }, [pttchrome, openAidBoardChoice]);
+  const onAidChoiceHide = useCallback(
+    () => update({ aidChoice: null }),
+    [update],
+  );
+  const onAidChoiceCurrent = useCallback(
+    (choice) => {
+      update({ aidChoice: null });
+      if (choice && choice.currentBoard)
+        pttchrome.aidNavigation.start(choice.aid, choice.currentBoard);
+    },
+    [pttchrome, update],
+  );
+  // 開 `s` 補全的那一刻就離開文章 ⇒ 返回錨要先記（preparePicked），記不了就不開。
+  const onAidChoicePick = useCallback(
+    (choice) => {
+      const token = pttchrome.aidNavigation.preparePicked(choice.aid);
+      if (!token) {
+        update({ aidChoice: null });
+        pttchrome.view?.flashListHint?.(
+          i18n("aidBoardChoice_failed"),
+          3000,
+          HINT_ERROR,
+        );
+        return;
+      }
+      update({
+        aidChoice: null,
+        showsSearch: true,
+        searchKind: "board",
+        searchKinds: ["board"],
+        searchAidTarget: { aid: choice.aid, token },
+      });
+    },
+    [pttchrome, update],
+  );
   const onSearchHide = useCallback(
     () => update({ showsSearch: false }),
     [update],
   );
   // 看板種類的原生補全橋接（board_search_bridge.js）：彈窗切到看板時才建立。
+  // 替 #AID 挑看板時（searchAidTarget）：取消＝原生 `s` 取消落在文章列表 ⇒ 重開原文、
+  // 閱讀紀錄還原原列（aid_navigation.reopenPicked）。
+  const pickTarget = state.searchAidTarget;
   const createBoardSearch = useCallback(
-    (onUpdate) => new BoardSearchBridge(pttchrome, onUpdate),
-    [pttchrome],
+    (onUpdate) => {
+      if (!pickTarget) return new BoardSearchBridge(pttchrome, onUpdate);
+      const nav = pttchrome.aidNavigation;
+      const token = pickTarget.token;
+      return new BoardSearchBridge(pttchrome, onUpdate, {
+        onCancel: {
+          onDone: () => {
+            if (!nav.reopenPicked(token))
+              pttchrome.view?.flashListHint?.(
+                i18n("aidBoardChoice_reopenFailed"),
+                3000,
+                HINT_ERROR,
+              );
+          },
+          onFail: (reason) => nav.endPicked(token, reason === "no-prompt"),
+        },
+      });
+    },
+    [pttchrome, pickTarget],
   );
   const onSearchConfirm = useCallback(
-    ({ kind, text, bridge }) => {
+    ({ kind, text, bridge, aidTarget }) => {
       update({ showsSearch: false });
       const value = normalizeSearchText(kind, text);
       if (!value) return;
       rememberSearch(kind, value);
       const hint = (msg, level) =>
         pttchrome.view?.flashListHint?.(msg, 3000, level);
+      // 替 #AID 挑看板：背景的 `s` prompt 照常送出進板，落地後由 aidNavigation 接手
+      // #AID（返回錨在開彈窗前已記下，aid_navigation.preparePicked）。
+      if (aidTarget) {
+        const nav = pttchrome.aidNavigation;
+        const cb = {
+          onDone: () => {
+            if (!nav.continuePicked(aidTarget.token, value))
+              hint(i18n("aidBoardChoice_failed"), HINT_ERROR);
+          },
+          onFail: (reason) => {
+            nav.endPicked(aidTarget.token, reason === "no-prompt");
+            hint(i18n("aidBoardChoice_failed"), HINT_ERROR);
+          },
+        };
+        if (bridge && bridge.submit(value, cb)) return;
+        // prompt 沒開出來 ⇒ 人還在文章裡：走一般的 AID 跳轉（s<板> 由它自己送）。
+        nav.endPicked(aidTarget.token, true);
+        nav.start(aidTarget.aid, value);
+        return;
+      }
       const cb = {
         onFail: () => hint(i18n("searchModal_failed"), HINT_ERROR),
       };
@@ -1010,6 +1109,8 @@ export const ContextMenu = ({ pttchrome }) => {
     showsSearch,
     searchKind,
     searchKinds,
+    aidChoice,
+    searchAidTarget,
     liveHelperSec,
     menuAnchor,
   } = state;
@@ -1099,6 +1200,15 @@ export const ContextMenu = ({ pttchrome }) => {
         onHide={onSearchHide}
         onConfirm={onSearchConfirm}
         createBoardSearch={createBoardSearch}
+        aidTarget={searchAidTarget}
+        mobile={mobile}
+        pttchrome={pttchrome}
+      />
+      <AidBoardChoiceModal
+        choice={aidChoice}
+        onHide={onAidChoiceHide}
+        onCurrent={onAidChoiceCurrent}
+        onPickBoard={onAidChoicePick}
         mobile={mobile}
         pttchrome={pttchrome}
       />

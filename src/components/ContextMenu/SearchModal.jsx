@@ -59,7 +59,11 @@ export const SearchModal = ({
   mobile,
   pttchrome,
   createBoardSearch,
+  aidTarget,
 }) => {
+  // aidTarget＝{ aid, token }：沒寫看板的 #AID 要跳到哪個看板（aid_board_choice.js）。
+  // 輸入與原生補全跟一般的看板搜尋完全相同，只有標題／送出鈕的字不同，送出後
+  // 由呼叫端在進板之後接著跑 AID 跳轉。
   const [currentKind, setCurrentKind] = useState(kind || "title");
   const [value, setValue] = useState("");
   const [history, setHistory] = useState(() => readSearchHistory());
@@ -206,9 +210,10 @@ export const SearchModal = ({
       );
       const payload = { kind: currentKind, text: resolved || text };
       if (bridge) payload.bridge = bridge;
+      if (aidTarget) payload.aidTarget = aidTarget;
       onConfirm(payload);
     },
-    [currentKind, onConfirm],
+    [currentKind, onConfirm, aidTarget],
   );
 
   const onSubmit = useCallback(
@@ -236,6 +241,9 @@ export const SearchModal = ({
   );
 
   const shownKinds = kinds && kinds.length ? kinds : [currentKind];
+  const title = aidTarget
+    ? i18n("aidBoardChoice_pickTitle").replace("{0}", "#" + aidTarget.aid)
+    : i18n("searchModal_title");
 
   const form = (
     <form onSubmit={onSubmit} data-search-modal>
@@ -321,7 +329,7 @@ export const SearchModal = ({
           {i18n("searchModal_cancel")}
         </Button>
         <Button type="submit" disabled={!valid}>
-          {i18n("searchModal_confirm")}
+          {i18n(aidTarget ? "aidBoardChoice_jump" : "searchModal_confirm")}
         </Button>
       </Group>
     </form>
@@ -333,7 +341,7 @@ export const SearchModal = ({
         pttchrome={pttchrome}
         opened={show}
         onClose={onHide}
-        title={i18n("searchModal_title")}
+        title={title}
         sheetKey="search"
       >
         {form}
@@ -343,7 +351,7 @@ export const SearchModal = ({
     <Modal
       opened={show}
       onClose={onHide}
-      title={i18n("searchModal_title")}
+      title={title}
       // 貼頂不置中：置中時內容一變高（切種類、刪記憶）輸入框就跟著上下跳。
       yOffset="10vh"
       size="lg"
