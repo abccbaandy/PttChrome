@@ -51,24 +51,29 @@ function commit(dir, file, msg) {
   git(dir, 'commit', '-qm', msg);
 }
 
-beforeEach(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'chkremote-'));
-  upstream = path.join(tmp, 'upstream.git');
-  author = path.join(tmp, 'author');
-  local = path.join(tmp, 'local');
-  git(tmp, 'init', '--bare', '-b', 'dev', upstream);
-  git(tmp, 'clone', '-q', upstream, author);
-  git(author, 'checkout', '-qb', 'dev');
-  commit(author, 'a.txt', 'one');
-  git(author, 'push', '-q', '-u', 'origin', 'dev');
-  git(tmp, 'clone', '-q', '-b', 'dev', upstream, local);
-});
+// 真 git repo 那組每個 case 要起十幾個 git／node 子行程：單獨跑約 1 秒，但全套 unit
+// 平行跑時 Windows 起行程會慢 5 倍以上 ⇒ 預設 5000ms 偶發逾時（單獨重跑又綠）。
+// 這組的成本本質就是子行程，給明確上限；純函式 case 放在 fixture 外面，不陪付建 repo。
+const GIT_FIXTURE_TIMEOUT_MS = 30_000;
 
-afterEach(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
-});
+describe('check-remote-commits（真 git repo）', { timeout: GIT_FIXTURE_TIMEOUT_MS }, () => {
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'chkremote-'));
+    upstream = path.join(tmp, 'upstream.git');
+    author = path.join(tmp, 'author');
+    local = path.join(tmp, 'local');
+    git(tmp, 'init', '--bare', '-b', 'dev', upstream);
+    git(tmp, 'clone', '-q', upstream, author);
+    git(author, 'checkout', '-qb', 'dev');
+    commit(author, 'a.txt', 'one');
+    git(author, 'push', '-q', '-u', 'origin', 'dev');
+    git(tmp, 'clone', '-q', '-b', 'dev', upstream, local);
+  }, GIT_FIXTURE_TIMEOUT_MS);
 
-describe('check-remote-commits', () => {
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
   test('remote 沒新 commit ⇒ stdout 完全空', () => {
     expect(checkRemote(local)).toBeNull();
     expect(runHook(local)).toBe('');
@@ -100,16 +105,17 @@ describe('check-remote-commits', () => {
     git(local, 'remote', 'set-url', 'origin', path.join(tmp, 'missing.git')); // hook 的 fetch 會失敗
     const r = checkRemote(local);
     expect(r).toMatchObject({ upstream: 'origin/dev', behind: 1, fetchFailed: true });
-    const out = JSON.parse(runHook(local));
-    const ctx = out.hookSpecificOutput.additionalContext;
-    expect(ctx).toContain('origin/dev 比本地 HEAD 多 1 個 commit');
-    expect(ctx).toContain('fetch 失敗');
+    // hook 的 stdout 組裝（checkRemote → buildNotice → JSON）已由前兩個 case 端到端守住；
+    // 這裡不再起一次 hook 子行程（它會把失敗的 fetch 整套重跑一遍）。
+    const notice = buildNotice(r);
+    expect(notice).toContain('origin/dev 比本地 HEAD 多 1 個 commit');
+    expect(notice).toContain('fetch 失敗');
   });
 
   test('fetch 失敗且本地 upstream ref 沒落後 ⇒ 靜默', () => {
     git(local, 'remote', 'set-url', 'origin', path.join(tmp, 'missing.git'));
+    // checkRemote 回 null ⇒ hook 靜默（null → 空 stdout 由第一個 case 端到端守住）
     expect(checkRemote(local)).toBeNull();
-    expect(runHook(local)).toBe('');
   });
 
   test('沒 upstream 的分支 ⇒ 靜默', () => {
@@ -235,7 +241,9 @@ describe('check-remote-commits', () => {
       '`yarn playwright install chromium`',
     );
   });
+});
 
+describe('check-remote-commits（純函式）', () => {
   test('installTargets：元件併成 install 目標並去重', () => {
     expect(installTargets(['chromium-headless-shell', 'ffmpeg', 'firefox', 'chromium'])).toEqual(['chromium', 'firefox']);
     expect(installTargets([])).toEqual([]);
