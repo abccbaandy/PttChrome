@@ -8,6 +8,7 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline } = require('../helpers/replay');
 const { startCapture, expectOnlyFence } = require('../helpers/capture');
+const { scrollIntoViewStable, waitRectStable } = require('../helpers/layout');
 const {
   drawMainMenu,
   drawUserMenu,
@@ -51,18 +52,14 @@ test.describe('手機主功能表大按鈕', () => {
 
   test('tap (M) 按鈕 ⇒ 送「↓↓＋Enter」；tap ANSI 圖什麼都不送', async ({ page }) => {
     await startCapture(page);
-    const art = page.locator('#mainContainer [type="bbsrow"][srow="6"]');
-    await art.scrollIntoViewIfNeeded();
-    const a = await art.boundingBox();
-    await page.touchscreen.tap(a.x + a.width / 2, a.y + a.height / 2);
+    const a = await scrollIntoViewStable(page, '#mainContainer [type="bbsrow"][srow="6"]');
+    await page.touchscreen.tap(a.left + a.width / 2, a.top + a.height / 2);
     await page.waitForFunction(() => !window.__app.dblclickTimer, null, { timeout: 5000 });
-    const card = page.locator(`#mainContainer [data-menu-row="${CURSOR_ROW + 2}"]`);
     await expectOnlyFence(
       page,
       async () => {
-        await card.scrollIntoViewIfNeeded();
-        const b = await card.boundingBox();
-        await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+        const b = await scrollIntoViewStable(page, `#mainContainer [data-menu-row="${CURSOR_ROW + 2}"]`);
+        await page.touchscreen.tap(b.left + b.width / 2, b.top + b.height / 2);
       },
       '\x1b[B\x1b[B\r',
       'tap (M)'
@@ -75,15 +72,14 @@ test.describe('手機主功能表大按鈕', () => {
       (n) => document.querySelectorAll('#mainContainer .menuCard').length === n,
       USER_MENU.items.length
     );
-    const card = page.locator(`#mainContainer [data-menu-row="${FIRST_ITEM_ROW + 2}"]`);
-    expect(Math.abs((await card.boundingBox()).height - MENU_CARD_PX)).toBeLessThan(1);
+    const sel = `#mainContainer [data-menu-row="${FIRST_ITEM_ROW + 2}"]`;
+    expect(Math.abs((await waitRectStable(page, sel)).height - MENU_CARD_PX)).toBeLessThan(1);
     await startCapture(page);
     await expectOnlyFence(
       page,
       async () => {
-        await card.scrollIntoViewIfNeeded();
-        const b = await card.boundingBox();
-        await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+        const b = await scrollIntoViewStable(page, sel);
+        await page.touchscreen.tap(b.left + b.width / 2, b.top + b.height / 2);
       },
       '\x1b[B\x1b[B\r',
       'tap (V)'
