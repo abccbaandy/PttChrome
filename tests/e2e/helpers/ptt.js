@@ -303,6 +303,8 @@ async function installAutoLoginPrefs(page, extra) {
           enableHomeDashboard: false,
           // 雙欄閱讀的左欄是浮層：核心 spec 的版面檢查只看終端機，不需要它。
           enableSplitReading: false,
+          // 文章工具側欄同理（好讀文章右邊的浮層）。
+          enableArticleTools: false,
           autoLoginSkipWelcome: true,
         },
         extra || {}

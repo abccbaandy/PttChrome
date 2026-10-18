@@ -19,6 +19,7 @@ import MobileToolbar from "../MobileToolbar";
 import MobileAppBar from "../MobileAppBar";
 import HomeDashboard from "../HomeDashboard";
 import SplitReader from "../SplitReader";
+import ArticleTools from "../ArticleTools";
 import AidBackButton from "../AidBackButton";
 import HelpMenu from "../HelpMenu";
 import { onPrefSaveImpl } from "./pref_save";
@@ -1385,6 +1386,7 @@ export const ContextMenu = ({ pttchrome }) => {
       <DebugRecordNotice pttchrome={pttchrome} />
       <HomeDashboard pttchrome={pttchrome} />
       <SplitReader pttchrome={pttchrome} />
+      <ArticleTools pttchrome={pttchrome} />
       <MobileAppBar pttchrome={pttchrome} />
       <AidBackButton pttchrome={pttchrome} />
       <MobileToolbar

@@ -995,6 +995,42 @@ export const en_US = {
   "split_unread": {
     "message": "Unread"
   },
+  "options_enableArticleTools": {
+    "message": "Article tools sidebar"
+  },
+  "tooltip_enableArticleTools": {
+    "message": "When the window is wide enough, reading an article in Easy Reading mode shows this post's AID, comment counts, top commenters and images on the right. Click a person to see only their comments; click a comment or an image to scroll there. It never sends keys for you."
+  },
+  "tools_title": {
+    "message": "Article tools"
+  },
+  "tools_expand": {
+    "message": "Show article tools"
+  },
+  "tools_copyUrl": {
+    "message": "Copy URL"
+  },
+  "tools_copyAid": {
+    "message": "Copy AID"
+  },
+  "tools_push": {
+    "message": "Push"
+  },
+  "tools_boo": {
+    "message": "Boo"
+  },
+  "tools_modern": {
+    "message": "Replies"
+  },
+  "tools_commenters": {
+    "message": "Top commenters"
+  },
+  "tools_op": {
+    "message": "OP"
+  },
+  "tools_images": {
+    "message": "Images ({n})"
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."
   },
