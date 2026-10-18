@@ -20,8 +20,18 @@
 //   - 選項列由 `pmore_prefEntry` 畫成 `1*預設格式化內容 |2 原始ANSI控制碼 |3 純文字`，
 //     **選中項的數字後面緊接 `*`**，未選是空白。
 //
-// 所以偵測**掃整個畫面、不綁死列號**（不同 `t_lines` 或版本都會位移）。
-// 守護：tests/unit/pmore_pref_screen.test.js。
+//   - 兩頁的標題都是 `pmore_PromptBar` 從 **col 0** 起印（caption 自帶開頭空白），
+//     選項列是 `pmore_prefEntry` 的 `" " key " " text`（` \ 色彩顯示方式:`）同樣從 col 0，
+//     等按鍵的是 `vmsg(...)` ⇒ **底列是 vmsg 橫幅**（` ◆ … [按任意鍵繼續]`）。
+//   - 1/2/3 直選只在 `pmore_QuickRawModePref` 的 switch；`pmore_Preference`（完整設定頁）
+//     沒有這三個 case，落 default ＝離開設定頁。
+//
+// 所以偵測**掃整個畫面、不綁死列號**（不同 `t_lines` 或版本都會位移），但指紋要三件
+// 都到齊：col 0 的標題列、它下面 col 0 的「色彩顯示方式」選項列、底列 vmsg。文章內文
+// 引用設定頁的字（教學文常見）時底列是 pmore 狀態列，三件湊不齊 ⇒ 認不出 ⇒ 什麼都不做。
+// 守護：tests/unit/pmore_pref_screen.test.js、parse_failure_degrade.test.js。
+
+import { parseVmsgText } from './push_screen';
 
 // bpref.rawmode 的三個值（pmore.c:525-528）。
 export const MFDISP_RAW_NA = 0; // 預設格式化內容
@@ -36,15 +46,29 @@ export function rawModeKey(mode) {
   return RAW_MODE_KEYS[mode] || null;
 }
 
+// PMORE_MSG_PREF_TITLE／PMORE_MSG_PREF_TITLE_QRAW（pmore.c:129-132）。說明頁
+// （「瀏覽程式使用說明」）不含「設定」，刻意不命中。
+const PREF_TITLE_RE = /^ piaip's more: \S+ \S+ (?:設定選項|快速設定)/;
+const QUICK_TITLE_RE = /^ piaip's more: \S+ \S+ 快速設定/;
+// pmore_prefEntry：`" " key " " text`，key 是 `\`、text 是「色彩顯示方式:」。
+const RAW_MODE_ROW_RE = /^ \\ 色彩顯示方式:/;
+
+// 設定頁的列號（標題列）；指紋不齊回 -1。titleRe 決定認哪一種設定頁。
+function prefTitleRow(rowTexts, titleRe) {
+  if (!rowTexts || !rowTexts.length) return -1;
+  if (parseVmsgText(rowTexts[rowTexts.length - 1]) === null) return -1;
+  for (let i = 0; i < rowTexts.length - 1; ++i) {
+    if (!titleRe.test(rowTexts[i] || '')) continue;
+    for (let j = i + 1; j < rowTexts.length - 1; ++j)
+      if (RAW_MODE_ROW_RE.test(rowTexts[j] || '')) return i;
+    return -1;
+  }
+  return -1;
+}
+
 // 現在停在 pmore 的「設定」畫面上嗎？（快速設定 or 完整設定；說明頁不算）
 export function pmorePrefScreenSeen(rowTexts) {
-  if (!rowTexts) return false;
-  for (let i = 0; i < rowTexts.length; ++i) {
-    const t = rowTexts[i];
-    if (t && t.indexOf("piaip's more") >= 0 && t.indexOf('設定') >= 0)
-      return true;
-  }
-  return false;
+  return prefTitleRow(rowTexts, PREF_TITLE_RE) >= 0;
 }
 
 // 選項列上目前選中的是哪一個模式（0/1/2）；不是設定頁就回 null。
@@ -57,7 +81,7 @@ export function parseRawModeFromPrefRow(rowTexts) {
   if (!rowTexts) return null;
   for (let i = 0; i < rowTexts.length; ++i) {
     const t = rowTexts[i];
-    if (!t || t.indexOf('色彩顯示方式') < 0) continue;
+    if (!t || !RAW_MODE_ROW_RE.test(t)) continue;
     if (/1\*/.test(t)) return MFDISP_RAW_NA;
     if (/2\*/.test(t)) return MFDISP_RAW_NOANSI;
     if (/3\*/.test(t)) return MFDISP_RAW_PLAIN;
@@ -66,12 +90,9 @@ export function parseRawModeFromPrefRow(rowTexts) {
   return null;
 }
 
-// 「這一幀是不是快速設定頁已經開好了」——程式化切換第一步（送 `\`）的完成判準。
-// 用選項列而不是標題：完整設定頁也有同一個選項列，兩者都可以接著送數字鍵。
+// 「這一幀是不是快速設定頁已經開好了」——程式化切換第一步（送 `\`）的完成判準，
+// 通過了才送數字鍵。只認**快速設定頁**：完整設定頁的 1/2/3 不是直選（落 default
+// 離開設定頁），文章裡的 1/2/3 更是「跳至第 N 頁」。
 export function rawModePrefRowVisible(rowTexts) {
-  if (!rowTexts) return false;
-  for (let i = 0; i < rowTexts.length; ++i) {
-    if (rowTexts[i] && rowTexts[i].indexOf('色彩顯示方式') >= 0) return true;
-  }
-  return false;
+  return prefTitleRow(rowTexts, QUICK_TITLE_RE) >= 0;
 }

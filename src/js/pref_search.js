@@ -139,6 +139,11 @@ export const PREF_SEARCH_ITEMS = [
     { key: "copyOnSelect", titleKey: "options_copyOnSelect" },
     { key: "enableBell", titleKey: "options_enableBell" },
     {
+      key: "reconnectResume",
+      titleKey: "options_reconnectResume",
+      tooltipKey: "tooltip_reconnectResume",
+    },
+    {
       key: "antiIdleTime",
       titleKey: "options_antiIdleTime",
       tooltipKey: "tooltip_antiIdleTime",

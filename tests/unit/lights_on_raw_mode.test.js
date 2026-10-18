@@ -12,8 +12,14 @@ import { App } from "../../src/js/pttchrome";
 import { CommandQueue } from "../../src/js/command_queue";
 import { MFDISP_RAW_PLAIN } from "../../src/js/pmore_pref";
 
+// 快速設定頁（pmore.c#pmore_QuickRawModePref，ystart = b_lines-2）：標題／選項列／vmsg。
+const PREF_TITLE_ROW =
+  " piaip's more: pmore 2007+ 快速設定 - 色彩(ANSI碼)顯示模式                      ";
 const PREF_OPTION_ROW =
   " \\ 色彩顯示方式:         1*預設格式化內容 |2 原始ANSI控制碼 |3 純文字           ";
+const PREF_PROMPT_ROW =
+  " ◆ 請調整設定 (1-3 可直接選定，\\可切換) 或其它任意鍵結束。     [按任意鍵繼續]  ";
+const QUICK_PREF = { 21: PREF_TITLE_ROW, 22: PREF_OPTION_ROW, 23: PREF_PROMPT_ROW };
 const ARTICLE_STATUS_ROW =
   "  瀏覽 第 1/1 頁 (100%)  目前顯示: 第 01~20 行  (y)回應(X%)推文(h)說明(←)離開  ";
 
@@ -65,7 +71,7 @@ describe("App.onLightsRawMode", () => {
   test("設定頁出現後才送 `3`，並記下目標模式（直選時 pmore 不重畫選項列）", () => {
     const h = makeApp();
     h.app.onLightsRawMode(MFDISP_RAW_PLAIN);
-    expect(settle(h, { 22: PREF_OPTION_ROW })).toBe("done");
+    expect(settle(h, QUICK_PREF)).toBe("done");
     expect(h.viewSent).toEqual(["3"]);
     expect(h.app.easyReading._rawMode).toBe(MFDISP_RAW_PLAIN);
     // 第二步刻意不是 queue 命令：線路必須在文章回來那一幀之前就空出來，
@@ -76,7 +82,7 @@ describe("App.onLightsRawMode", () => {
   test("關燈 → 送 `1`（回預設格式化）", () => {
     const h = makeApp();
     h.app.onLightsRawMode(0);
-    settle(h, { 22: PREF_OPTION_ROW });
+    settle(h, QUICK_PREF);
     expect(h.viewSent).toEqual(["1"]);
     expect(h.app.easyReading._rawMode).toBe(0);
   });
@@ -87,6 +93,14 @@ describe("App.onLightsRawMode", () => {
     expect(settle(h, { 23: ARTICLE_STATUS_ROW })).toBe(null);
     expect(h.viewSent).toEqual([]);
     expect(h.app.easyReading._rawMode).toBe(null);
+  });
+
+  // 回歸：舊判準只看「任一列含色彩顯示方式」⇒ 文章內文剛好引用選項列時被當成設定頁。
+  test("文章內文引用選項列（底列是狀態列）不算完成 → 絕不送數字鍵", () => {
+    const h = makeApp();
+    h.app.onLightsRawMode(MFDISP_RAW_PLAIN);
+    expect(settle(h, { 5: PREF_TITLE_ROW, 6: PREF_OPTION_ROW, 23: ARTICLE_STATUS_ROW })).toBe(null);
+    expect(h.viewSent).toEqual([]);
   });
 
   test("第一步失敗（probe 之後仍不是設定頁）→ 提示，且不送數字鍵", () => {

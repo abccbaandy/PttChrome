@@ -19,10 +19,17 @@
 //     重連失敗之後登入成功仍回得去。
 //   - 登入後使用者先動了（離開主功能表）、或 deep link 也在等登入（使用者剛給的連結
 //     比斷線前的位置新）⇒ 作廢。
+//   - 使用者關掉了（pref reconnectResume，預設開）：斷線時不記，重連途中才關也不出發
+//     ⇒ 停在 PTT 原生的登入落點（主功能表）。
 
 import { isMainMenuRow } from './aid_navigation';
 import { recordFor } from './reading_record';
 import { boardNameFromKey } from './screen_titles';
+import { readValuesWithDefault } from './pref_storage';
+
+function enabled() {
+  return !!readValuesWithDefault().reconnectResume;
+}
 
 // 書籤＋本篇身分 → 重連後要去哪。純函式。
 //   { kind:'article', board, aid, bookmark } ：回到那篇文章（列由書籤還原）
@@ -83,6 +90,10 @@ ReconnectResume.prototype = {
     }
     // 還沒登入就斷了：畫面是登入流程，沒有閱讀位置；保留上一份。
     if (!wasLoggedIn) return;
+    if (!enabled()) {
+      this.discard('disabled');
+      return;
+    }
     const core = this._core;
     const bm = recordFor(core).begin('reconnect-resume', { view: this._view, buf: this._termBuf });
     const nav = core.aidNavigation;
@@ -119,6 +130,10 @@ ReconnectResume.prototype = {
     if (!this._pending) return;
     const core = this._core;
     if (core.connectState !== 1) return;
+    if (!enabled()) {
+      this.discard('disabled');
+      return;
+    }
     // deep link 先登記了（同一次 settle 它會先跳，已在跑也一樣）：使用者剛給的連結
     // 比斷線前的位置新。
     const dl = core.deepLinkController;

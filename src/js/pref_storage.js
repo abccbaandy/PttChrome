@@ -36,6 +36,7 @@ export const DEFAULT_PREFS = {
   // （含動畫）由程式代按一鍵收掉，直接落在文章列表。預設開；文章列表按 `b` 看
   // 進板畫面不受影響。
   skipBoardEntryScreen: true,
+  reconnectResume: true,
   // Target number of VISIBLE (non-blacklisted) rows the background prefetch
   // accumulates before stopping; continuation is demand-driven (navigate near
   // an edge). 0 disables the background fill (current page + demand only).

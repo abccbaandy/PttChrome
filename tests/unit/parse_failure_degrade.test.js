@@ -37,6 +37,7 @@ import {
   boardJumpLanded,
 } from "../../src/js/board_mark_read";
 import { markReadPromptShown } from "../../src/js/mark_all_read";
+import { pmorePrefScreenSeen, rawModePrefRowVisible } from "../../src/js/pmore_pref";
 import { landedOnBoard } from "../../src/js/aid_navigation";
 import { functionModeExitDecision } from "../../src/js/easy_reading";
 import { parseStatusRow } from "../../src/js/string_util";
@@ -280,8 +281,38 @@ describe("文章列表「設為全部已讀」：prompt 認不出就不送第二
     ["prompt 改字（沒有「設定所有文章」）", PROMPT.replace("設定所有文章", "設定文章")],
     ["選項改版（沒有 (V)已讀）", PROMPT.replace("(V)已讀", "(R)已讀")],
     ["prompt 還沒畫", ""],
+    ["不在行首（文章標題引用了這段字）", "    123 +96 6/21 someone      [問題] " + PROMPT],
   ])("%s → 判否", (_n, prompt) => {
     expect(markReadPromptShown(rows(prompt))).toBe(false);
+  });
+});
+
+describe("pmore 設定頁：認不出 ⇒ 不整篇重讀、不送數字鍵", () => {
+  // 快速設定頁（pmore.c#pmore_QuickRawModePref）的真實三列，畫在 b_lines-2..b_lines。
+  const quick = () => {
+    const r = new Array(24).fill("");
+    r[0] = " 作者  someuser (nick)                                            看板  Test   ";
+    r[21] = " piaip's more: pmore 2007+ 快速設定 - 色彩(ANSI碼)顯示模式                      ";
+    r[22] = " \\ 色彩顯示方式:         1*預設格式化內容 |2 原始ANSI控制碼 |3 純文字           ";
+    r[23] = " ◆ 請調整設定 (1-3 可直接選定，\\可切換) 或其它任意鍵結束。     [按任意鍵繼續]  ";
+    return r;
+  };
+  test("對照組：真實畫面認得出", () => {
+    expect(pmorePrefScreenSeen(quick())).toBe(true);
+    expect(rawModePrefRowVisible(quick())).toBe(true);
+  });
+  test.each([
+    ["標題改版", (r) => (r[21] = " pmore 2026: 色彩顯示模式設定 ")],
+    ["標題不在行首（內文引用）", (r) => (r[21] = "> " + r[21])],
+    ["選項列改版", (r) => (r[22] = " [\\] 顯示模式: 1*預設 |2 原始 |3 純文字")],
+    ["選項列還沒畫", (r) => (r[22] = "")],
+    ["底列不是 vmsg（文章狀態列）", (r) => (r[23] = "  瀏覽 第 1/1 頁 (100%)  目前顯示: 第 01~20 行  (←)離開  ")],
+    ["底列還沒畫（半繪）", (r) => (r[23] = "")],
+  ])("%s → 判否", (_n, mutate) => {
+    const r = quick();
+    mutate(r);
+    expect(pmorePrefScreenSeen(r)).toBe(false);
+    expect(rawModePrefRowVisible(r)).toBe(false);
   });
 });
 
