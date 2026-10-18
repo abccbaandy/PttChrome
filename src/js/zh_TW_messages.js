@@ -920,7 +920,7 @@
     "message": "安全模式：全部用原生"
   },
   "tooltip_nativeSafeMode": {
-    "message": "PTT 改版、畫面怪怪的時候打開：好讀模式、看板列表平滑捲動、跳過進板畫面、斷線回到原處、首頁儀表板、Live 文自動到底，以及搜尋／推文／F5 的按鍵攔截全部暫停，畫面和按鍵都照 PTT 原樣。下面各項設定不會被改掉，關掉安全模式就恢復。"
+    "message": "PTT 改版、畫面怪怪的時候打開：好讀模式、看板列表平滑捲動、跳過進板畫面、斷線回到原處、首頁儀表板、寬螢幕雙欄閱讀、Live 文自動到底，以及搜尋／推文／F5 的按鍵攔截全部暫停，畫面和按鍵都照 PTT 原樣。下面各項設定不會被改掉，關掉安全模式就恢復。"
   },
   "options_skipBoardEntryScreen": {
     "message": "跳過進板畫面"
@@ -975,6 +975,24 @@
   },
   "home_hint": {
     "message": "直接打字照常操作主功能表（按任何鍵會切回原生畫面）"
+  },
+  "options_enableSplitReading": {
+    "message": "寬螢幕雙欄閱讀"
+  },
+  "tooltip_enableSplitReading": {
+    "message": "視窗夠寬時，讀文章會在左邊列出剛才那份文章列表，點一篇就直接換過去讀，不用先退回列表。左欄是你看過的那幾頁，不是即時的列表；從搜尋結果進的文章不顯示。"
+  },
+  "split_collapse": {
+    "message": "收起"
+  },
+  "split_expand": {
+    "message": "展開文章列表"
+  },
+  "split_opening": {
+    "message": "開啟中…"
+  },
+  "split_unread": {
+    "message": "未讀"
   },
   "options_easyReadingEndSwitchNative": {
     "message": "好讀模式按熱鍵跳到文末並切回原生模式"

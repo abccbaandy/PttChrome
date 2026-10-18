@@ -921,7 +921,7 @@ export const en_US = {
     "message": "Safe mode: use native PTT for everything"
   },
   "tooltip_nativeSafeMode": {
-    "message": "Turn this on when PTT changes and something looks wrong: easy reading, board list smooth scrolling, skipping the board entry screen, returning after reconnect, the home dashboard, jumping to the end of live posts, and the search / push / F5 key interception all pause, so the screen and keys behave exactly like PTT. Your other settings below are kept and come back when safe mode is turned off."
+    "message": "Turn this on when PTT changes and something looks wrong: easy reading, board list smooth scrolling, skipping the board entry screen, returning after reconnect, the home dashboard, wide-screen two-pane reading, jumping to the end of live posts, and the search / push / F5 key interception all pause, so the screen and keys behave exactly like PTT. Your other settings below are kept and come back when safe mode is turned off."
   },
   "options_skipBoardEntryScreen": {
     "message": "Skip the board entry screen"
@@ -976,6 +976,24 @@ export const en_US = {
   },
   "home_hint": {
     "message": "Typing works on the main menu as usual (any key switches back to the native screen)."
+  },
+  "options_enableSplitReading": {
+    "message": "Wide-screen two-pane reading"
+  },
+  "tooltip_enableSplitReading": {
+    "message": "When the window is wide enough, the article list you came from is shown on the left while you read; click a post to switch to it without going back to the list first. The left pane holds the pages you have seen, not a live list; it is not shown for posts opened from search results."
+  },
+  "split_collapse": {
+    "message": "Hide"
+  },
+  "split_expand": {
+    "message": "Show article list"
+  },
+  "split_opening": {
+    "message": "Opening…"
+  },
+  "split_unread": {
+    "message": "Unread"
   },
   "options_easyReadingEndSwitchNative": {
     "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."

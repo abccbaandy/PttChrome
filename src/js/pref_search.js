@@ -107,6 +107,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_enableHomeDashboard",
     },
     {
+      key: "enableSplitReading",
+      titleKey: "options_enableSplitReading",
+      tooltipKey: "tooltip_enableSplitReading",
+    },
+    {
       key: "easyReadingBrowserFind",
       titleKey: "options_easyReadingBrowserFind",
       tooltipKey: "tooltip_easyReadingBrowserFind",

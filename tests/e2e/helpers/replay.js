@@ -101,14 +101,20 @@ async function installReplay(page, opts = {}) {
   // 首頁儀表板（pref enableHomeDashboard，預設開）會蓋住主功能表、打開時自己送 Ctrl+Z f
   // 去抓我的最愛 ⇒ 畫主功能表的 spec 會被它擋住滑鼠、送出記錄多出 byte。預設關掉，
   // 只有 home_dashboard.offline.spec.js 以 opts.homeDashboard 打開。
-  if (!opts.homeDashboard) {
-    await page.addInitScript((KEY) => {
+  // 寬螢幕雙欄閱讀（pref enableSplitReading，預設開）同理：寬視窗的文章畫面左邊會多一欄
+  // 浮層、擋掉落在那裡的滑鼠 ⇒ 預設關掉，只有 split_reader.offline.spec.js 以
+  // opts.splitReader 打開。
+  const off = {};
+  if (!opts.homeDashboard) off.enableHomeDashboard = false;
+  if (!opts.splitReader) off.enableSplitReading = false;
+  if (Object.keys(off).length) {
+    await page.addInitScript(({ KEY, off }) => {
       try {
         const cur = JSON.parse(window.localStorage.getItem(KEY) || '{}');
-        const values = Object.assign({}, cur.values, { enableHomeDashboard: false });
+        const values = Object.assign({}, cur.values, off);
         window.localStorage.setItem(KEY, JSON.stringify({ values }));
       } catch (e) {}
-    }, 'pttchrome.pref.v1');
+    }, { KEY: 'pttchrome.pref.v1', off });
   }
   await page.addInitScript(({ neverOpen, openHost, isBbsSrc }) => {
     // 判准的**唯一来源**是模组里那支纯函式（有 unit 守护）；addInitScript 的
@@ -754,7 +760,7 @@ function offlineImageProfile(explicit) {
 // 第三個參數 opts.imageProfile：強制指定圖片載入情境（`image_load_conditions.offline.spec.js`
 // 用它逐條驗各情境的產品行為）。不給就依 project 名／env 推導。
 async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-unused-vars
-  await installReplay(page, { homeDashboard: !!opts.homeDashboard });
+  await installReplay(page, { homeDashboard: !!opts.homeDashboard, splitReader: !!opts.splitReader });
   await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });
   await page.goto('/');
   await waitConnected(page);

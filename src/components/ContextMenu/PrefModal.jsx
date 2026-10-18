@@ -817,6 +817,17 @@ export const PrefModal = ({
                   {i18n("tooltip_enableHomeDashboard")}
                 </Text>
                 <PrefCheckbox
+                  name="enableSplitReading"
+                  checked={values.enableSplitReading}
+                  disabled={values.nativeSafeMode}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableSplitReading")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_enableSplitReading")}
+                </Text>
+                <PrefCheckbox
                   name="easyReadingBrowserFind"
                   checked={values.easyReadingBrowserFind}
                   onChange={onCheckboxChange}
