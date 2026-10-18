@@ -49,7 +49,7 @@ import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
 import { decideKeepAlive, KEEP_ALIVE_TIMEOUT_MS } from './keep_alive';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
-import { readValuesWithDefault, writeValues } from './pref_storage';
+import { effectivePrefs, readEffectivePrefs, readValuesWithDefault, writeValues } from './pref_storage';
 import { WIRE_UTF8, cursorPositionReport } from './wire_charset';
 import * as prefSync from './pref_sync';
 import { stopDebugRecording, toggleDebugRecording } from './debug_record_control';
@@ -1253,7 +1253,7 @@ App.prototype.onFunctionKey = function(bytes, label) {
   if (isPushKey(bytes)) {
     const pushFacts = pushGateFacts(this);
     if (pushFacts && shouldInterceptPushKey({
-          key: bytes, prefs: readValuesWithDefault(),
+          key: bytes, prefs: readEffectivePrefs(),
           pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText
         }) && this.openLongPushModal()) return;
   }
@@ -1907,8 +1907,10 @@ App.prototype.resetMouseCursor = function() {
 };
 
 App.prototype.onValuesPrefChange = function(values, opts) {
-  for (var name in values) {
-    this.onPrefChange(name, values[name]);
+  // 安全模式（全部用原生）在這裡蓋掉增強功能；values 本身照存，關掉就回原設定。
+  var applied = effectivePrefs(values);
+  for (var name in applied) {
+    this.onPrefChange(name, applied[name]);
   }
 
   // Enhanced Add-on: cache the credentials for this session's reconnects, but

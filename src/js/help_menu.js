@@ -24,7 +24,7 @@
 //    caption 依呼叫端（「我的最愛」「文章閱讀」…）。
 //
 // 認不出 ⇒ 原生：指紋任一要素失配、任一項目列解析不了、第一張不是第 1 頁 ⇒ 不接管。
-import { readValuesWithDefault } from './pref_storage';
+import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 
 export const HELP_TITLE = '操作說明 (Help)';
@@ -177,7 +177,7 @@ export function HelpMenuController(core, termBuf, opts) {
   this._termBuf = termBuf;
   const o = opts || {};
   this._send = o.send || ((bytes) => core && core.view && core.view._send(bytes));
-  this._enabled = o.enabled || (() => !!readValuesWithDefault().enableEasyReading);
+  this._enabled = o.enabled || (() => !!readEffectivePrefs().enableEasyReading);
   this._now = o.now || (() => Date.now());
   this._setTimeout = o.setTimeout || ((fn, ms) => setTimeout(fn, ms));
   this._clearTimeout = o.clearTimeout || ((t) => clearTimeout(t));

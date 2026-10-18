@@ -71,6 +71,11 @@ const inSection = (tab, sectionKey, sectionTooltipKey, items) => [
 export const PREF_SEARCH_ITEMS = [
   // ── 一般 ────────────────────────────────────────────────────────
   ...inSection("general", "options_general", false, [
+    {
+      key: "nativeSafeMode",
+      titleKey: "options_nativeSafeMode",
+      tooltipKey: "tooltip_nativeSafeMode",
+    },
     { key: "enablePicPreview", titleKey: "options_enablePicPreview" },
     { key: "enableNotifications", titleKey: "options_enableNotifications" },
     { key: "deepLinkHandoffNotify", titleKey: "options_deepLinkHandoffNotify" },

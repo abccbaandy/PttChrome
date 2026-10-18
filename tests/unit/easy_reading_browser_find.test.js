@@ -6,9 +6,11 @@
 //   Ctrl+F → 不攔截、不送 PTT，交給瀏覽器（累積長頁本來就是 DOM）
 //   `/`    → 吞掉並提示改用 Ctrl+F／⌘F
 // 本檔鎖三層：純決策、EasyReading 的處理、term_view.onKeyDown 不落到 _keyboard。
-vi.mock("../../src/js/pref_storage", () => ({
-  readValuesWithDefault: vi.fn(() => ({ easyReadingBrowserFind: true }))
-}));
+vi.mock("../../src/js/pref_storage", () => {
+  const readValuesWithDefault = vi.fn(() => ({ easyReadingBrowserFind: true }));
+  // easy_reading 讀的是 readEffectivePrefs（安全模式覆寫層）；委派給同一個 mock。
+  return { readValuesWithDefault, readEffectivePrefs: () => readValuesWithDefault() };
+});
 
 import { EasyReading, easyReadingFindKeyAction } from "../../src/js/easy_reading";
 import { TermView } from "../../src/js/term_view";

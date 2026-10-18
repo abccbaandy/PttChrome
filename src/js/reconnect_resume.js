@@ -25,10 +25,10 @@
 import { isMainMenuRow } from './aid_navigation';
 import { recordFor } from './reading_record';
 import { boardNameFromKey } from './screen_titles';
-import { readValuesWithDefault } from './pref_storage';
+import { readEffectivePrefs } from './pref_storage';
 
 function enabled() {
-  return !!readValuesWithDefault().reconnectResume;
+  return !!readEffectivePrefs().reconnectResume;
 }
 
 // 書籤＋本篇身分 → 重連後要去哪。純函式。

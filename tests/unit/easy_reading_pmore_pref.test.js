@@ -16,9 +16,11 @@
 // 必須維持現行的續接路徑、一個 byte 都不送。
 import { EasyReading } from "../../src/js/easy_reading";
 
-vi.mock("../../src/js/pref_storage", () => ({
-  readValuesWithDefault: vi.fn(() => ({ enableEasyReading: true })),
-}));
+vi.mock("../../src/js/pref_storage", () => {
+  const readValuesWithDefault = vi.fn(() => ({ enableEasyReading: true }));
+  // easy_reading 讀的是 readEffectivePrefs（安全模式覆寫層）；委派給同一個 mock。
+  return { readValuesWithDefault, readEffectivePrefs: () => readValuesWithDefault() };
+});
 
 const ROWS = 24;
 const COLS = 80;

@@ -64,7 +64,7 @@ import { decideUserBytes, PASS, SWALLOW } from './list_user_bytes';
 import { u2b, ansiHalfColorConv, normalizePasteText } from './string_util';
 import { clickableColStart } from './mouse_regions';
 import { LEFT_ARROW } from './function_key_plan';
-import { readValuesWithDefault } from './pref_storage';
+import { readEffectivePrefs } from './pref_storage';
 import { HINT_ERROR } from './status_hint';
 import { recordFor, boardListRecordMatches } from './reading_record';
 
@@ -104,7 +104,7 @@ const INPLACE_KEYS = 'tvV';
 // 切原生時提示語的尾巴。自動回復開著＝「做完就回來」；關掉＝維持舊措辭（那時行為
 // 也真的是舊的）。留著舊措辭比沒提示更糟，所以每一處都走這一支。
 function nativeResumeHint() {
-  return readValuesWithDefault().enableListNativeAutoResume
+  return readEffectivePrefs().enableListNativeAutoResume
     ? '（操作完成後自動恢復）'
     : '（進入看板或回上層後恢復平滑捲動）';
 }
@@ -420,7 +420,7 @@ BoardListSession.prototype = {
 
   // pref 開著＝L1 凍結交易＋L2 自動回復生效；關掉＝逐位元回到 2026-09-03 之前。
   _autoResumeEnabled: function() {
-    return !!readValuesWithDefault().enableListNativeAutoResume;
+    return !!readEffectivePrefs().enableListNativeAutoResume;
   },
 
   // pref 開著 ∧ 終端機列數合法 ∧ 文章好讀沒有正在讀文（同 list_session 的守門，
@@ -429,7 +429,7 @@ BoardListSession.prototype = {
   // 理由與 list_session._engageEligible 完全相同（見該處長註解）。
   _engageEligible: function() {
     return (
-      !!readValuesWithDefault().enableBoardListSmoothScroll &&
+      !!readEffectivePrefs().enableBoardListSmoothScroll &&
       this._termBuf.rows >= 24 &&
       !this._termBuf.startedEasyReading
     );
@@ -1237,7 +1237,7 @@ BoardListSession.prototype = {
   },
 
   _startFill: function() {
-    this._fillTarget = readValuesWithDefault().easyReadingListPrefetchCount || 0;
+    this._fillTarget = readEffectivePrefs().easyReadingListPrefetchCount || 0;
     this._fillPages = 0;
     this._maybeFill();
   },

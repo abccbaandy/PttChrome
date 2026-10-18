@@ -99,12 +99,13 @@ const ARTICLE_PAGER = screen({
   23: "  瀏覽 第 1/8 頁 (  8%)  目前顯示: 第 01~26 行  (y)回應(X)推文(←)離開",
 });
 
-function makeHarness(initial, { prefOff = false } = {}) {
+function makeHarness(initial, { prefOff = false, stored = null } = {}) {
   vi.useFakeTimers();
-  if (prefOff) {
+  const values = stored || (prefOff ? { skipBoardEntryScreen: false } : null);
+  if (values) {
     vi.stubGlobal("window", {
       localStorage: {
-        getItem: () => JSON.stringify({ values: { skipBoardEntryScreen: false } }),
+        getItem: () => JSON.stringify({ values }),
       },
     });
   }
@@ -328,6 +329,16 @@ describe("完整流程", () => {
 describe("停手條件", () => {
   test("pref 關 ⇒ 不 arm、不送", () => {
     const h = makeHarness(BOARD_LIST, { prefOff: true });
+    h.userSend("\r");
+    expect(h.skip.active).toBe(false);
+    h.settle(MOVIE);
+    expect(h.sent).toEqual(["\r"]);
+  });
+
+  test("安全模式（全部用原生）開著 ⇒ 自己的 pref 開著也不 arm、不送", () => {
+    const h = makeHarness(BOARD_LIST, {
+      stored: { nativeSafeMode: true, skipBoardEntryScreen: true },
+    });
     h.userSend("\r");
     expect(h.skip.active).toBe(false);
     h.settle(MOVIE);

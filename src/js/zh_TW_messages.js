@@ -826,6 +826,12 @@
   "tooltip_reconnectResume": {
     "message": "斷線後重新連線、登入回到主功能表時，自動回到斷線前讀的那篇文章或文章列表。關掉＝停在主功能表。"
   },
+  "options_nativeSafeMode": {
+    "message": "安全模式：全部用原生"
+  },
+  "tooltip_nativeSafeMode": {
+    "message": "PTT 改版、畫面怪怪的時候打開：好讀模式、看板列表平滑捲動、跳過進板畫面、斷線回到原處、Live 文自動到底，以及搜尋／推文／F5 的按鍵攔截全部暫停，畫面和按鍵都照 PTT 原樣。下面各項設定不會被改掉，關掉安全模式就恢復。"
+  },
   "options_skipBoardEntryScreen": {
     "message": "跳過進板畫面"
   },

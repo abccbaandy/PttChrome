@@ -18,7 +18,7 @@ import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
 import { BOARD_LIST, isArticleListTitleRow, rowHasTitle } from './screen_titles';
 import { isArticleListFooter, isBoardListFooter } from './screen_captions';
 import { OWNER_BOARD_LIST } from './list_render_owner';
-import { readValuesWithDefault } from './pref_storage';
+import { readEffectivePrefs } from './pref_storage';
 import { cursorOffsets, paintedRowsAreBufRows } from './cursor_anchor';
 import { offsetTopWithin } from './scroll_anchor';
 import { internRow } from './term_char_intern';
@@ -1316,7 +1316,7 @@ TermView.prototype = {
     if (!isPasting && isPushKey(text)) {
       var pushFacts = pushGateFacts(this.bbscore);
       if (pushFacts && shouldInterceptPushKey({
-            key: text, prefs: readValuesWithDefault(),
+            key: text, prefs: readEffectivePrefs(),
             pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText
           }) && this.bbscore.openLongPushModal && this.bbscore.openLongPushModal())
         return;
@@ -1414,7 +1414,7 @@ TermView.prototype = {
     // reach PTT anyway (term_keyboard.keyEventToBytes returns null for them).
     // With no back stack this is a no-op hint, not a swallowed key.
     if (this.bbscore.aidNavigation && !e.ctrlKey && !e.altKey && !e.metaKey &&
-        e.key === readValuesWithDefault().aidNavBackKey) {
+        e.key === readEffectivePrefs().aidNavBackKey) {
       e.preventDefault();
       this.bbscore.aidNavigation.back();
       return;
@@ -1423,7 +1423,7 @@ TermView.prototype = {
     // the same reason as the one above: an F-key never reaches PTT anyway, and
     // it must work in easy reading as well as native.
     if (this.bbscore.deepLinkController && !e.ctrlKey && !e.altKey && !e.metaKey &&
-        e.key === readValuesWithDefault().deepLinkCopyKey) {
+        e.key === readEffectivePrefs().deepLinkCopyKey) {
       e.preventDefault();
       this.bbscore.deepLinkController.copyCurrentPostLink();
       return;
@@ -1431,7 +1431,7 @@ TermView.prototype = {
     // 「跳到第一篇未讀」hotkey (pref unreadJumpKey, default F7)：同上，F 鍵送不到 PTT。
     // start() 一律接手（不能用的畫面給提示），不交還瀏覽器。
     if (this.bbscore.unreadJump && !e.ctrlKey && !e.altKey && !e.metaKey &&
-        e.key === readValuesWithDefault().unreadJumpKey) {
+        e.key === readEffectivePrefs().unreadJumpKey) {
       e.preventDefault();
       this.bbscore.unreadJump.start();
       return;
@@ -1440,7 +1440,7 @@ TermView.prototype = {
     // PTT 畫面。refresh() 回 false ＝這個畫面不支援 ⇒ 不 preventDefault，瀏覽器照常
     // 重新載入（beforeunload 會先問）。F 鍵與 ⌘ 組合本來就送不到 PTT。
     if (this.bbscore.screenRefresh && isRefreshKeyEvent(e) &&
-        readValuesWithDefault().refreshKeyIntercept &&
+        readEffectivePrefs().refreshKeyIntercept &&
         this.bbscore.screenRefresh.refresh('key')) {
       e.preventDefault();
       return;
@@ -1474,7 +1474,7 @@ TermView.prototype = {
       var pushFacts = pushGateFacts(this.bbscore);
       if (pushFacts && shouldInterceptPushKey({
             key: e.key, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey,
-            prefs: readValuesWithDefault(),
+            prefs: readEffectivePrefs(),
             pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText
           }) && this.bbscore.openLongPushModal && this.bbscore.openLongPushModal()) {
         e.preventDefault();

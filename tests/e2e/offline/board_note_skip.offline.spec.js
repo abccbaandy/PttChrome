@@ -127,4 +127,22 @@ test.describe('跳過進板畫面（scenario 重放）', () => {
     expect(s.sent).toEqual(['\r']);
     expect(s.fed).toBe(2);
   });
+
+  test('安全模式（全部用原生）開著 ⇒ 自己的 pref 開著也停在進板畫面', async ({ page }) => {
+    test.skip(!cas, '缺 scn-board-note-movie');
+    await bootScenario(page, ptt, cas, {
+      prefs: { nativeSafeMode: true, skipBoardEntryScreen: true },
+    });
+
+    await ptt.sendKey(page, 'Enter');
+    await waitFed(page, 2);
+    await waitScreenSettled(page);
+    await expect.poll(async () => (await screenState(page)).queueIdle).toBe(true);
+
+    const s = await screenState(page);
+    expect(s.last).toContain('請按任意鍵繼續');
+    expect(s.active).toBe(false);
+    expect(s.sent).toEqual(['\r']);
+    expect(s.fed).toBe(2);
+  });
 });

@@ -1,5 +1,5 @@
 import { parseStatusRow, statusSignature } from './string_util';
-import { readValuesWithDefault } from './pref_storage';
+import { readEffectivePrefs } from './pref_storage';
 import { ACT_EXIT_ARTICLE } from './mouse_regions';
 import { TRACE } from './util';
 import { pmorePrefScreenSeen, parseRawModeFromPrefRow } from './pmore_pref';
@@ -574,7 +574,7 @@ EasyReading.prototype._onPageStateSettled = function() {
   if (enteringArticle || leavingArticle)
     this._resetPagingState();
 
-  const values = readValuesWithDefault();
+  const values = readEffectivePrefs();
   const shouldEnable = nextEasyReadingState({
     settledPageState: this._termBuf.settledPageState,
     prevSettledPageState: this._termBuf.prevSettledPageState,
@@ -603,7 +603,7 @@ EasyReading.prototype._navActive = function() {
 EasyReading.prototype._onChanged = function(e) {
   if (TRACE)
     console.log("page state: " + this._termBuf.prevPageState + "->" + this._termBuf.pageState);
-  const values = readValuesWithDefault()
+  const values = readEffectivePrefs()
   // Auto-enable is handled on the settle edge (_onPageStateSettled, see
   // nextEasyReadingState). Here we only react to the pref being turned off
   // mid-post: flipping _enabled alone would switch back to the React renderScreen
@@ -1448,7 +1448,7 @@ EasyReading.prototype._onScreenSettled = function() {
 // article identity rather than on a pageState edge.
 EasyReading.prototype._maybeReenterOnNewArticle = function() {
   const status = this._currentPageStatus();
-  const values = readValuesWithDefault();
+  const values = readEffectivePrefs();
   const articleKey = status && status.rowIndexStart === 1 ? this._readArticleKey() : null;
   const ok = nextEasyReadingReentry({
     pageState: this._termBuf.pageState,
@@ -1868,7 +1868,7 @@ EasyReading.prototype.onWireIdle = function(opts) {
 // `$` / `G` deliberately do NOT toggle back: in native pmore they are real navigation
 // (mf_goBottom), and their meaning is "jump to the end", not "switch modes".
 EasyReading.prototype.tryReenterFromNative = function(e) {
-  const prefs = readValuesWithDefault();
+  const prefs = readEffectivePrefs();
   if (!prefs.easyReadingEndSwitchNative || e.key !== prefs.easyReadingEndSwitchKey)
     return false;
   if (!prefs.enableEasyReading || !this._core.connectedUrl.easyReadingSupported)
@@ -2155,7 +2155,7 @@ export function nextScrollRestoreStep({
 // _enabled 早已是 true，nextEasyReadingExternalLanding 第一個條件就直接擋掉。
 EasyReading.prototype.ensureEnabledOnArticle = function(allowRetry, reason) {
   this._pendingEnableOnArticle = false;
-  const values = readValuesWithDefault();
+  const values = readEffectivePrefs();
   const status = this._currentPageStatus();
   const ok = nextEasyReadingExternalLanding({
     pageState: this._termBuf.pageState,
@@ -2322,7 +2322,7 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
   // vi aliases). When the pref is off we don't preventDefault, so the key falls
   // through to the native terminal (term_view.onKeyDown continues past us).
   if (!e.ctrlKey && !e.altKey) {
-    const prefs = readValuesWithDefault();
+    const prefs = readEffectivePrefs();
     if (prefs.easyReadingEndSwitchNative &&
         (e.key === prefs.easyReadingEndSwitchKey || e.key === '$' || e.key === 'G')) {
       this.switchToNativeAtBottom();
@@ -2330,7 +2330,7 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
       return;
     }
   }
-  const findAction = easyReadingFindKeyAction(e, readValuesWithDefault());
+  const findAction = easyReadingFindKeyAction(e, readEffectivePrefs());
   if (findAction === 'browser')
     return 'browser';
   if (findAction === 'hint') {
