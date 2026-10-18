@@ -52,3 +52,46 @@ test.describe('說明選單好讀（手機 bottom sheet）', () => {
     await expect(items(page)).toHaveCount(0);
   });
 });
+
+// 入口：手機的卡片／好讀文章畫面會收起底列，原生的 (h)說明 點不到 ⇒ 「更多」裡的「操作說明」。
+// 底列帶 (h)說明 的任一畫面（這裡用我的最愛的 footer，pttbbs psb.c 的 vs_footer 版型）。
+async function drawFavFooter(page) {
+  await page.evaluate(() => {
+    const u2b = (str) =>
+      [...str]
+        .map((ch) => {
+          const c = ch.charCodeAt(0);
+          return c < 0x80
+            ? ch
+            : String.fromCharCode(window.lib.u2bArray[2 * c]) +
+                String.fromCharCode(window.lib.u2bArray[2 * c + 1]);
+        })
+        .join('');
+    const rows = window.__app.buf.rows;
+    window.__app.onData(
+      '\x1b[H\x1b[2J\x1b[1;1H\x1b[7m' + u2b('【我的最愛】') + '\x1b[m' +
+        '\x1b[' + rows + ';1H\x1b[7m' + u2b(' 我的最愛  (a)增加看板 (d)刪除 (g)新增目錄    (h)說明 ') + '\x1b[m'
+    );
+  });
+  await page.waitForFunction(() => {
+    const buf = window.__app.buf;
+    return !buf.timerUpdate && !buf._settleTimer && buf.getRowText(buf.rows - 1, 0, buf.cols).includes('(h)');
+  });
+}
+
+test.describe('說明選單入口（手機「更多」）', () => {
+  test('底列有 (h)說明：更多 → 操作說明 ⇒ 送 h；PTT 畫出說明選單 ⇒ sheet 出現', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await drawFavFooter(page);
+    await startCapture(page);
+    await page.locator('[data-key="__more"]').tap();
+    const help = page.locator('[data-sheet="more"] [data-key="__help"]');
+    await expect(help).toBeVisible();
+    await help.tap();
+    await expect.poll(() => peekCapture(page)).toBe('h');
+    await takeCapture(page);
+    const { perPage } = await drawHelpPage(page, 1);
+    await expect(items(page)).toHaveCount(perPage);
+  });
+});

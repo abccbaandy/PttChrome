@@ -383,6 +383,21 @@ describe("更多（bottom sheet）", () => {
     await sheetClosed();
   });
 
+  test("操作說明：底列有 (h)說明 才出現（context.help），按下送 h（sendKeyAsUser）並收起", async () => {
+    const core = makeCore({ context: { push: false, search: [], help: true } });
+    renderBar(core);
+    await openMore();
+    fireEvent.click(byKey("__help"));
+    expect(core.view.sendKeyAsUser).toHaveBeenCalledWith("h");
+    await sheetClosed();
+  });
+
+  test("操作說明：沒有 (h)說明 的畫面就沒有", async () => {
+    renderBar(makeCore());
+    await openMore();
+    expect(byKey("__help")).toBeNull();
+  });
+
   test("設為全部已讀：不是文章列表就沒有", async () => {
     renderBar(makeCore());
     await openMore();

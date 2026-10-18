@@ -1047,6 +1047,9 @@ export const en_US = {
   "mobileToolbar_unreadJump": {
     "message": "First unread"
   },
+  "mobileToolbar_help": {
+    "message": "Help"
+  },
   "mobileToolbar_post": {
     "message": "Post"
   },

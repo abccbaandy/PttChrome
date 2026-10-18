@@ -42,6 +42,13 @@ bottom sheet（手機）一次列出**全部頁**的指令，點一下＝執行�
   q／←／Esc 離開（同原生鍵位）。開著時經 `App.setModalOpen("helpMenu")` 擋終端機鍵盤。
 - 手機：`MobileSheet`（系統返回＝離開），每項兩行、至少 44px 高，不畫鍵盤游標底色與焦點框。
 
+## 入口
+
+- 桌機：照舊按 `h`，或點底列的 `(h)說明` 功能鍵按鈕。
+- 手機：底部工具列「更多 → 操作說明」（`mobile_toolbar.js` 的 `help`：底列寫著 `(h)說明`／`(h)按鍵說明` 且游標不在輸入欄才出現；
+  主功能表不給，理由同 `contentTools`：sheet 多一列就蓋住整個選單、遮罩點不到，守護 `mobile_sheet.offline`「點遮罩」），
+  送 `h`（`sendKeyAsUser`，與實體鍵盤同一條分派）。手機的卡片／好讀文章畫面會收起底列，原生提示點不到。
+
 ## 連帶修正
 
 - `board_note_skip.boardEntryArms`：說明選單 row 0 的 `【我的最愛】` 曾被當成看板列表，在說明選單點項目

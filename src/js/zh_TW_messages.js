@@ -1046,6 +1046,9 @@
   "mobileToolbar_unreadJump": {
     "message": "跳到第一篇未讀"
   },
+  "mobileToolbar_help": {
+    "message": "操作說明"
+  },
   "mobileToolbar_post": {
     "message": "發文"
   },
