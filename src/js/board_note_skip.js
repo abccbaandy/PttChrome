@@ -76,9 +76,11 @@ const MOVIE_FOOTER_RE = /動畫播放中|暫停播放動畫/;
 // pressanykey（vtuikit.h:61 VMSG_PAUSE）。vmsg 帶訊息的「[按任意鍵繼續]」沒有「請」
 // ⇒ 不命中：進板失敗的 vmsg（「您沒有進入此看板的權限！」）要留給使用者看。
 const PRESS_ANY_KEY_RE = /請按任意鍵繼續|請按 空白鍵 繼續/;
-// CompleteBoard 的兩個 prompt 標題（include/common.h MSG_SELECT_BOARD、
-// board.c#board_cmd_search_global）。
-const BOARD_PROMPT_RE = /選擇看板|搜尋全站看板/;
+// CompleteBoard 的兩個 prompt 標題（include/common.h MSG_SELECT_BOARD「【 選擇看板 】」、
+// board.c#board_cmd_search_global「【 搜尋全站看板 】」）。必須連【】一起認：新版 UI
+// 文章列表 row 1 的指令說明列（bbs.c 指令表）就寫著「[s]選擇看板」，裸字會把文章列表的
+// ⏎（開文）誤 arm，文章被當成進板公告送 ← 退出。
+const BOARD_PROMPT_RE = /【\s*(?:選擇看板|搜尋全站看板)\s*】/;
 
 // 「已經離開進板流程」的 row 0 標題（主選單／看板列表／精華區…）。
 const LANDED_TITLES = [MAIN_MENU, CLASS_LIST, ARCHIVE_LIST, BOARD_LIST, FAVOURITE];

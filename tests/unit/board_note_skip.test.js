@@ -87,6 +87,18 @@ const ARTICLE_LIST = (() => {
   return screen(rows, { curX: 0, curY: 3, reversed: true });
 })();
 
+const NEW_UI_ARTICLE_LIST = (() => {
+  const s = screen(ARTICLE_LIST.rows.reduce((o, t, i) => ((o[i] = t), o), {}), { curX: 0, curY: 3, reversed: true });
+  s.rows[1] = "[→]閱讀 [z]精華區 [Tab]文摘 [s]選擇看板 [b]進板 [i]看板設定 [^X]轉錄 [/]搜尋";
+  return s;
+})();
+const ARTICLE_PAGER = screen({
+  0: " 作者  rick                                                         看板  Browsers",
+  1: " 標題  [-Fx-] Firefox 157.0.1 Release",
+  2: " 時間  Tue Sep 29 21:52:40 2026",
+  23: "  瀏覽 第 1/8 頁 (  8%)  目前顯示: 第 01~26 行  (y)回應(X)推文(←)離開",
+});
+
 function makeHarness(initial, { prefOff = false } = {}) {
   vi.useFakeTimers();
   if (prefOff) {
@@ -190,6 +202,23 @@ describe("純函式", () => {
     expect(boardEntryArms(MAIN_MENU.rows, "\r")).toBe(false);
     // 文章列表的 → 是開文章，不是進板
     expect(boardEntryArms(ARTICLE_LIST.rows, "\x1b[C")).toBe(false);
+  });
+
+  // 新版 UI 的文章列表 row 1 是 bbs.c 指令表生成的說明列，含「[s]選擇看板」
+  // （ptt-debug-20261018-122136：在文章列表按 ⏎ 開文被 arm，文章被當進板公告送 ← 退出）。
+  test("新版 UI 文章列表 row 1 的「[s]選擇看板」說明不算選擇看板 prompt", () => {
+    const rows = NEW_UI_ARTICLE_LIST.rows;
+    expect(boardEntryArms(rows, "\r")).toBe(false);
+    expect(boardEntryArms(rows, "\x1b[B\r")).toBe(false);
+  });
+
+  test("新版 UI 文章列表按 ⏎ 開文：文章畫面一個鍵都不代按", () => {
+    const h = makeHarness(NEW_UI_ARTICLE_LIST);
+    h.userSend("\r");
+    h.settle(ARTICLE_PAGER);
+    vi.advanceTimersByTime(5000);
+    expect(h.sent).toEqual(["\r"]);
+    expect(h.skip.active).toBe(false);
   });
 
   test("畫面決策：動畫 q、暫停中的動畫也是 q、pressanykey 空白、pager ←", () => {
