@@ -1,0 +1,217 @@
+/* 文章工具側欄（ArticleTools/index.jsx）。只放在終端機右邊的空白裡（寬度由
+   split_reader.paneWidthFor 算，放不下就不畫），不推動終端機（docs/terminal-size.md LOCKED）。
+   z-index 同雙欄閱讀的左欄：低於 App Bar（150）與 Mantine overlay（200），高於終端機（≤3）。 */
+.articleTools {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 140;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-left: 1px solid #2a2a32;
+  background: #101014;
+  color: #ddd;
+  font:
+    13px/1.4 system-ui,
+    sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.articleTools[data-collapsed] {
+  border-left: none;
+  background: transparent;
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.toolsButton {
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #1c1c22;
+  color: #ddd;
+  padding: 2px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.toolsButton:hover {
+  background: #26262e;
+}
+
+.toolsHandle {
+  width: 100%;
+  height: 64px;
+  padding: 0;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  font-size: 18px;
+}
+
+.toolsHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2a32;
+}
+
+.toolsTitle {
+  flex: 1 1 auto;
+  font-weight: 600;
+  font-size: 14px;
+  color: #fff;
+}
+
+/* 捲到頭不連帶捲頁面（只鎖縱軸，橫軸留給瀏覽器的返回手勢）。 */
+.toolsBody {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 6px 10px 12px;
+}
+
+.toolsSection {
+  margin-bottom: 12px;
+}
+
+.toolsSection h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #999;
+}
+
+.toolsAid {
+  font-family: ui-monospace, monospace;
+  color: #fff;
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.toolsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toolsStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-weight: 600;
+}
+
+.toolsStats [data-kind="push"] {
+  color: #e6c84a;
+}
+
+.toolsStats [data-kind="boo"] {
+  color: #ff5f5f;
+}
+
+.toolsStats [data-kind="arrow"],
+.toolsStats [data-kind="modern"] {
+  color: #aaa;
+}
+
+.toolsUsers {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.toolsUser {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  border-color: transparent;
+  background: transparent;
+  padding: 2px 4px;
+}
+
+.toolsUser[data-selected] {
+  border-color: #4a8fe0;
+  background: #1a2433;
+}
+
+.toolsUserName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.toolsOp {
+  margin-left: 4px;
+  font-size: 11px;
+  color: #1a1400;
+  background: #e0b93a;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.toolsCount {
+  flex: none;
+  color: #888;
+  font-size: 12px;
+}
+
+.toolsComments {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.toolsComment {
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  border-color: #2a2a32;
+  background: transparent;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.toolsSectionToggle {
+  width: 100%;
+  text-align: left;
+  border-color: transparent;
+  background: transparent;
+  padding: 2px 0;
+  color: #bbb;
+  font-weight: 600;
+}
+
+.toolsThumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.toolsThumb {
+  padding: 0;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-color: #2a2a32;
+}
+
+.toolsThumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

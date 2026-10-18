@@ -1243,6 +1243,11 @@ EasyReading.prototype._scrollToPageRow = function(row) {
   return false;
 };
 
+// 對外的跳列入口（文章工具側欄點推文／縮圖）：只捲好讀的視口，不送鍵。
+EasyReading.prototype.scrollToArticleRow = function(row) {
+  return this._scrollToPageRow(row);
+};
+
 EasyReading.prototype._needsRealign = function() {
   const seek = this._termBuf.easyReadingSeekBack;
   return !!(seek && !seek.realigned);

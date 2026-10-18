@@ -994,6 +994,42 @@
   "split_unread": {
     "message": "未讀"
   },
+  "options_enableArticleTools": {
+    "message": "文章工具側欄"
+  },
+  "tooltip_enableArticleTools": {
+    "message": "視窗夠寬時，好讀模式讀文章會在右邊列出本篇 AID、推文統計、推文最多的人和本篇圖片。點一個人只看他的推文，點一則推文或一張圖就捲到那裡。不會替你送任何按鍵。"
+  },
+  "tools_title": {
+    "message": "文章工具"
+  },
+  "tools_expand": {
+    "message": "展開文章工具"
+  },
+  "tools_copyUrl": {
+    "message": "複製網址"
+  },
+  "tools_copyAid": {
+    "message": "複製 AID"
+  },
+  "tools_push": {
+    "message": "推"
+  },
+  "tools_boo": {
+    "message": "噓"
+  },
+  "tools_modern": {
+    "message": "留言"
+  },
+  "tools_commenters": {
+    "message": "推文最多"
+  },
+  "tools_op": {
+    "message": "原PO"
+  },
+  "tools_images": {
+    "message": "本篇圖片（{n}）"
+  },
   "options_easyReadingEndSwitchNative": {
     "message": "好讀模式按熱鍵跳到文末並切回原生模式"
   },

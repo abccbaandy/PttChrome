@@ -47,6 +47,9 @@ export const DEFAULT_PREFS = {
   // 寬螢幕雙欄閱讀（js/split_reader.js）：讀文章時在終端機左邊的空白列出剛才的文章列表，
   // 點一篇會替使用者送 s<板>⏎ → <編號>⏎ → ⏎ 換文 ⇒ 在安全模式名單內。
   enableSplitReading: true,
+  // 文章工具側欄（js/article_tools.js）：好讀文章時在終端機右邊的空白放 AID／推文統計／
+  // 推文者／圖片牆。資料全取自累積頁、跳列只捲視口，一個 byte 都不送 ⇒ 不在安全模式名單內。
+  enableArticleTools: true,
   // Target number of VISIBLE (non-blacklisted) rows the background prefetch
   // accumulates before stopping; continuation is demand-driven (navigate near
   // an edge). 0 disables the background fill (current page + demand only).

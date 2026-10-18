@@ -65,6 +65,7 @@ import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
+import { ArticleTools, isArticleToolsTarget } from './article_tools';
 import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
@@ -265,6 +266,8 @@ export const App = function() {
   this.homeDashboard = new HomeDashboard(this);
   // 寬螢幕雙欄閱讀（讀文章時左邊空白列出剛才的文章列表，split_reader.js）。
   this.splitReader = new SplitReader(this);
+  // 文章工具側欄（好讀文章時右邊空白放 AID／推文統計／推文者／圖片牆，article_tools.js）。
+  this.articleTools = new ArticleTools(this);
 
   // 終端機水平置中。**不要因為 align 是 deprecated 屬性就刪掉它**：Chrome/Firefox
   // 把它算成 `text-align: -webkit-center` / `-moz-center`，那個值會連 **block
@@ -2347,9 +2350,11 @@ App.prototype.checkClass = function(cn) {
 // **capture** listener，浮層自己 stopPropagation 也攔不到 —— 少了這道，點面板的
 // 「插入」會順便在 PTT 上送出一次滑鼠動作、面板裡滾動會變成 PTT 翻頁。
 App.prototype._onUploadLayer = function(e) {
-  // 首頁儀表板、雙欄閱讀的左欄同理：點／捲面板不是點終端機（放過去會被當成滑鼠瀏覽送鍵）。
+  // 首頁儀表板、雙欄閱讀的左欄、文章工具側欄同理：點／捲面板不是點終端機（放過去會被當成滑鼠瀏覽送鍵）。
   const t = e && e.target;
-  return isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t);
+  return (
+    isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t)
+  );
 };
 
 App.prototype.mouse_click = function(e) {

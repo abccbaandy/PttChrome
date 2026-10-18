@@ -103,10 +103,12 @@ async function installReplay(page, opts = {}) {
   // 只有 home_dashboard.offline.spec.js 以 opts.homeDashboard 打開。
   // 寬螢幕雙欄閱讀（pref enableSplitReading，預設開）同理：寬視窗的文章畫面左邊會多一欄
   // 浮層、擋掉落在那裡的滑鼠 ⇒ 預設關掉，只有 split_reader.offline.spec.js 以
-  // opts.splitReader 打開。
+  // opts.splitReader 打開。文章工具側欄（pref enableArticleTools）是好讀文章右邊的
+  // 浮層，同理預設關，只有 article_tools.offline.spec.js 以 opts.articleTools 打開。
   const off = {};
   if (!opts.homeDashboard) off.enableHomeDashboard = false;
   if (!opts.splitReader) off.enableSplitReading = false;
+  if (!opts.articleTools) off.enableArticleTools = false;
   if (Object.keys(off).length) {
     await page.addInitScript(({ KEY, off }) => {
       try {
@@ -760,7 +762,11 @@ function offlineImageProfile(explicit) {
 // 第三個參數 opts.imageProfile：強制指定圖片載入情境（`image_load_conditions.offline.spec.js`
 // 用它逐條驗各情境的產品行為）。不給就依 project 名／env 推導。
 async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-unused-vars
-  await installReplay(page, { homeDashboard: !!opts.homeDashboard, splitReader: !!opts.splitReader });
+  await installReplay(page, {
+    homeDashboard: !!opts.homeDashboard,
+    splitReader: !!opts.splitReader,
+    articleTools: !!opts.articleTools,
+  });
   await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });
   await page.goto('/');
   await waitConnected(page);
