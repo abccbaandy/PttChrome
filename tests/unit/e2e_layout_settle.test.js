@@ -38,9 +38,10 @@ const read = (f) => stripComments(fs.readFileSync(path.join(OFFLINE_DIR, f), "ut
 const MEASURES_GEOMETRY = /getBoundingClientRect\(|elementFromPoint\(|\.boundingBox\(\)/;
 // 真的把指標放到那個點上。
 // 除了 page.mouse，CDP 入口（helpers/real_input.js）與帶座標的 locator 點擊／hover 一樣
-// 會把指標放到量出來的點上。
+// 會把指標放到量出來的點上。page.touchscreen.tap 也是（手機 spec：bottom sheet 還在
+// slide-up 就量座標，tap 落空 ⇒ mobile_help_menu「離開」偶發收不到 q）。
 const DRIVES_POINTER =
-  /page\.mouse\.|\b(mousePress|mouseRelease|mouseWheel|rightClickElement|rightClickPlainText|dragSelectText|hoverFloatTools)\(|\.(click|dblclick|hover)\(\s*\{[^}]*position/;
+  /page\.mouse\.|page\.touchscreen\.|\b(mousePress|mouseRelease|mouseWheel|rightClickElement|rightClickPlainText|dragSelectText|hoverFloatTools)\(|\.(click|dblclick|hover)\(\s*\{[^}]*position/;
 
 // 讀版面（位置／捲動量）。
 const READS_LAYOUT = /getBoundingClientRect\(|\.scroll(Top|Height)\b|\.offset(Top|Height)\b/;

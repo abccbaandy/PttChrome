@@ -7,6 +7,7 @@ const ptt = require('../helpers/ptt');
 const { bootOffline } = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const { ITEMS, drawHelpPage } = require('../helpers/help_menu');
+const { scrollIntoViewStable, waitRectStable } = require('../helpers/layout');
 
 const HOME = '\x1b[1~';
 const PGDN = '\x1b[6~';
@@ -33,10 +34,8 @@ test.describe('說明選單好讀（手機 bottom sheet）', () => {
     for (const h of heights) expect(h).toBeGreaterThanOrEqual(TOUCH_MIN_PX);
     const perPage = (await page.evaluate(() => window.__app.buf.rows)) - 3;
     const idx = ITEMS.length - 1;
-    const last = items(page).nth(idx);
-    await last.scrollIntoViewIfNeeded();
-    const b = await last.boundingBox();
-    await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+    const b = await scrollIntoViewStable(page, `[data-sheet="help"] [data-help-item="${idx}"]`);
+    await page.touchscreen.tap(b.left + b.width / 2, b.top + b.height / 2);
     const expected = HOME + PGDN.repeat(Math.floor(idx / perPage)) + DOWN.repeat(idx % perPage) + '\r';
     await expect.poll(() => peekCapture(page)).toBe(expected);
     expect(await takeCapture(page)).toBe(expected);
@@ -44,9 +43,9 @@ test.describe('說明選單好讀（手機 bottom sheet）', () => {
   });
 
   test('「離開」按鈕 ⇒ 送 q', async ({ page }) => {
-    const btn = page.locator('[data-sheet="help"] [data-help-close]');
-    const b = await btn.boundingBox();
-    await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+    // sheet 剛從第一頁長到全部項目、還在 slide-up：量到的是動畫中的位置，tap 會落空。
+    const b = await waitRectStable(page, '[data-sheet="help"] [data-help-close]');
+    await page.touchscreen.tap(b.left + b.width / 2, b.top + b.height / 2);
     await expect.poll(() => peekCapture(page)).toBe('q');
     expect(await takeCapture(page)).toBe('q');
     await expect(items(page)).toHaveCount(0);
