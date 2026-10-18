@@ -17,6 +17,7 @@ import { currentBoardOption } from "../../js/aid_board_choice";
 import DebugRecordNotice from "../DebugRecordNotice";
 import MobileToolbar from "../MobileToolbar";
 import MobileAppBar from "../MobileAppBar";
+import HomeDashboard from "../HomeDashboard";
 import AidBackButton from "../AidBackButton";
 import HelpMenu from "../HelpMenu";
 import { onPrefSaveImpl } from "./pref_save";
@@ -1381,6 +1382,7 @@ export const ContextMenu = ({ pttchrome }) => {
         pttchrome={pttchrome}
       />
       <DebugRecordNotice pttchrome={pttchrome} />
+      <HomeDashboard pttchrome={pttchrome} />
       <MobileAppBar pttchrome={pttchrome} />
       <AidBackButton pttchrome={pttchrome} />
       <MobileToolbar

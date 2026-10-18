@@ -114,6 +114,10 @@ export const RESTORE_TABLE = {
   },
   // 跳到第一篇未讀：目的就是移動；找不到時停在翻到的那頁（使用者拍板）。
   'unread-jump': { done: NONE, cancel: NONE, fail: NONE },
+  // 首頁儀表板（home_dashboard.js）：從主功能表出發，主功能表不是三種紀錄之一 ⇒ 不還原。
+  // 抓我的最愛＝Ctrl+Z f → 讀頁 → q 回主功能表；失敗就停在 PTT 給的畫面。開信箱＝目的地。
+  'home-favorites': { done: NONE, cancel: NONE, fail: NONE },
+  'home-mail': { done: NONE, cancel: NONE, fail: NONE },
   // 斷線重連後回到原處（reconnect_resume.js）：落在文章 ⇒ 斷線前在文末就黏回文末，
   // 否則原列；落在列表 ⇒ 原處。找不到原文（被刪）停在該板列表 ⇒ 列表回原處。
   // 取消（使用者登入後先動了、deep link 搶先）＝不動。

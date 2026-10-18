@@ -920,13 +920,61 @@
     "message": "安全模式：全部用原生"
   },
   "tooltip_nativeSafeMode": {
-    "message": "PTT 改版、畫面怪怪的時候打開：好讀模式、看板列表平滑捲動、跳過進板畫面、斷線回到原處、Live 文自動到底，以及搜尋／推文／F5 的按鍵攔截全部暫停，畫面和按鍵都照 PTT 原樣。下面各項設定不會被改掉，關掉安全模式就恢復。"
+    "message": "PTT 改版、畫面怪怪的時候打開：好讀模式、看板列表平滑捲動、跳過進板畫面、斷線回到原處、首頁儀表板、Live 文自動到底，以及搜尋／推文／F5 的按鍵攔截全部暫停，畫面和按鍵都照 PTT 原樣。下面各項設定不會被改掉，關掉安全模式就恢復。"
   },
   "options_skipBoardEntryScreen": {
     "message": "跳過進板畫面"
   },
   "tooltip_skipBoardEntryScreen": {
     "message": "從看板列表或「選擇看板」進入看板時，自動收掉進板畫面（含動畫），直接進入文章列表。在文章列表按 b 仍可查看進板畫面。"
+  },
+  "options_enableHomeDashboard": {
+    "message": "首頁儀表板"
+  },
+  "tooltip_enableHomeDashboard": {
+    "message": "主功能表上顯示我的最愛（有新文章的會標出來）、最近去過的看板和新信提示，點一下就進看板。打開時會自動到 PTT 抓一次我的最愛（5 分鐘內不重抓）。按「原生主選單」或直接打字就回到原本的主功能表。"
+  },
+  "home_title": {
+    "message": "首頁"
+  },
+  "home_favorites": {
+    "message": "我的最愛"
+  },
+  "home_recents": {
+    "message": "最近看板"
+  },
+  "home_refresh": {
+    "message": "更新"
+  },
+  "home_updating": {
+    "message": "更新中…"
+  },
+  "home_updatedAt": {
+    "message": "更新於 {time}"
+  },
+  "home_native": {
+    "message": "原生主選單"
+  },
+  "home_newMail": {
+    "message": "你有新信件"
+  },
+  "home_openMail": {
+    "message": "開信箱"
+  },
+  "home_notLoaded": {
+    "message": "還沒抓過我的最愛"
+  },
+  "home_load": {
+    "message": "載入我的最愛"
+  },
+  "home_noFavorites": {
+    "message": "我的最愛是空的"
+  },
+  "home_unread": {
+    "message": "有新文章"
+  },
+  "home_hint": {
+    "message": "直接打字照常操作主功能表（按任何鍵會切回原生畫面）"
   },
   "options_easyReadingEndSwitchNative": {
     "message": "好讀模式按熱鍵跳到文末並切回原生模式"

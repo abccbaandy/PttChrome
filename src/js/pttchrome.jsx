@@ -63,6 +63,7 @@ import { navKeyAllowed, navKeyBlockReason } from './nav_key_gate';
 import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
+import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
@@ -258,6 +259,9 @@ export const App = function() {
 
   this.inputArea = document.getElementById('t');
   this.BBSWin = document.getElementById('BBSWindow');
+  // 首頁儀表板（主功能表上的我的最愛／最近看板面板，home_dashboard.js）。要在 inputArea 之後
+  // （聽 #t 的按鍵收起面板），screenSettled 監聽也排在 deep link／斷線回到原處之後。
+  this.homeDashboard = new HomeDashboard(this);
 
   // 終端機水平置中。**不要因為 align 是 deprecated 屬性就刪掉它**：Chrome/Firefox
   // 把它算成 `text-align: -webkit-center` / `-moz-center`，那個值會連 **block
@@ -2340,7 +2344,8 @@ App.prototype.checkClass = function(cn) {
 // **capture** listener，浮層自己 stopPropagation 也攔不到 —— 少了這道，點面板的
 // 「插入」會順便在 PTT 上送出一次滑鼠動作、面板裡滾動會變成 PTT 翻頁。
 App.prototype._onUploadLayer = function(e) {
-  return isUploadLayerTarget(e && e.target);
+  // 首頁儀表板同理：點／捲面板不是點終端機（放過去會被當成滑鼠瀏覽送鍵）。
+  return isUploadLayerTarget(e && e.target) || isHomeDashboardTarget(e && e.target);
 };
 
 App.prototype.mouse_click = function(e) {

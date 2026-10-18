@@ -41,6 +41,9 @@ export const DEFAULT_PREFS = {
   // 進板畫面不受影響。
   skipBoardEntryScreen: true,
   reconnectResume: true,
+  // 首頁儀表板（js/home_dashboard.js）：主功能表上蓋一層我的最愛／最近看板／新信面板，
+  // 打開時快取過期會自己去抓一次我的最愛（Ctrl+Z f → q）⇒ 在安全模式名單內。
+  enableHomeDashboard: true,
   // Target number of VISIBLE (non-blacklisted) rows the background prefetch
   // accumulates before stopping; continuation is demand-driven (navigate near
   // an edge). 0 disables the background fill (current page + demand only).
@@ -375,6 +378,7 @@ export const NATIVE_SAFE_MODE_KEYS = Object.freeze([
   "enableListNativeAutoResume",
   "skipBoardEntryScreen",
   "reconnectResume",
+  "enableHomeDashboard",
   "endTurnsOnLiveUpdate",
   "easyReadingEndSwitchNative",
   "refreshKeyIntercept",
