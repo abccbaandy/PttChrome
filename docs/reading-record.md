@@ -46,13 +46,29 @@
 | `mark-read-before` 前已讀後未讀 | 列表：原處 | 列表：原處 |
 | `mark-all-read` 設為全部已讀 | 列表：原處 | 列表：原處 |
 | `board-search` `s` 看板搜尋 | 不還原（換板） | 列表、看板列表：原處 |
-| `article-search` 文章搜尋 | 不還原（搜尋結果是另一個編號空間） | 不還原（取消時零送出） |
+| `article-search` 文章搜尋 | 列表：原處（有結果時落在搜尋結果，編號空間比對不符自動丟棄；找不到時 PTT `vmsg` 後回原列表） | 取消：不還原（零送出）；失敗（prompt 沒開出來）：列表原處 |
+| `help-menu` 說明選單（`h`） | 不還原（執行的指令就是目的地） | 離開：列表、看板列表原處 |
 | `unread-jump` 跳到第一篇未讀 | 不還原（目的就是移動） | 不還原：停在翻到的那頁（使用者拍板） |
 | `reconnect-resume` 斷線重連後回到原處 | 文章：`auto`；列表：原處 | 失敗（原文找不到）：列表原處；取消：不還原 |
 
 不在表上的功能或結果，一律不動：未知就停在 PTT 給的位置。
 
+說明選單從畫面認出來就領書籤（不論彈窗接不接管），畫面離開說明選單時交回：在彈窗裡執行某一項或叫小天使是 done，其餘（彈窗的離開、改看原生畫面後自己按 q）都是 cancel。原生畫面裡自己按 ⏎ 執行的項目分不出來，也當 cancel，落點不符時由列表端的比對丟棄。文章裡按 `h` 不經這張表，理由同下一段。
+
 推文、回應這類 functionMode 進出不在表上：仍由 easy_reading 的 `_savedScrollTop`（像素）在同一篇文章內來回，不經過重讀，像素是對的。看板列表的「`<板>` 設為已讀」也不在表上：接管時是原地交易（`_resumeInPlace`），本來就不丟視野；沒接管時是原生畫面，pttbbs 自己會把游標留在原處。
+
+## 盤點：替使用者送鍵、卻不在表上的功能
+
+掃過所有替使用者送鍵的模組。下面這些刻意不經閱讀紀錄，新增功能時對照這份清單判斷：
+
+| 模組 | 不在表上的理由 |
+|---|---|
+| `board_note_skip.js` 跳過進板畫面 | 只收掉使用者自己進板途中的那張進板畫面，目的地就是使用者要去的文章列表 |
+| `board_mark_read.js` 看板列表「<板> 設為已讀」 | 接管時是原地交易（見上一節）；沒接管時畫面本來就是原生，沒有好讀的視野要還原 |
+| `logout_session.js` 一鍵登出 | 連線由 server 關掉，沒有可回的畫面（斷線重連也不回自己登出的） |
+| `agent_tools.js` AI agent 工具 | 高階工具走 `aid_navigation`（目的地就是結果）；低階 `send_keys` 等同使用者按鍵 |
+| `image_upload*.js` 圖片上傳 | 只把網址送進使用者自己開著的輸入欄，不離開畫面 |
+| 手機工具列、滑鼠邊緣區、功能鍵按鈕 | 走 `sendKeyAsUser`，就是使用者的按鍵；由各畫面擁有者照一般按鍵處理 |
 
 ## 列表的還原：認不出就不還原
 
@@ -106,8 +122,8 @@ N1 本身沒有變：探針仍然不碰 external，只有序列的擁有者能�
 | 層 | 檔案 | 守什麼 |
 |---|---|---|
 | unit | `tests/unit/reading_record.test.js` | 決策表逐格、比對規則突變、凍結語意、分派、deep link 返回錨 |
-| unit（真 Chromium） | `tests/unit/reading_record_list.test.js` | 文章列表：設全部已讀、重新整理、`s` 取消或送出、使用者移過游標、身後的列表、外部 hold 出口（含斷線重連從 idle 停泊）、編號空間 |
-| unit（真 Chromium） | `tests/unit/reading_record_board_list.test.js` | 看板列表：重新整理後還原、認不出、使用者按鍵作廢、外部 hold 出口 |
+| unit（真 Chromium） | `tests/unit/reading_record_list.test.js` | 文章列表：設全部已讀、重新整理、`s` 取消或送出、說明選單離開／執行、文章搜尋找不到／有結果、使用者移過游標、身後的列表、外部 hold 出口（含斷線重連從 idle 停泊）、編號空間 |
+| unit（真 Chromium） | `tests/unit/reading_record_board_list.test.js` | 看板列表：重新整理後還原、說明選單離開後還原、認不出、使用者按鍵作廢、外部 hold 出口 |
 | unit | `tests/unit/aid_navigation.test.js`「閱讀紀錄」各條、`deep_link_controller.test.js`「原生 pmore 讀文」 | 返回錨帶列表、看板錨返回還原、失敗交回 hold、deep link 從列表或原生 pager 出發 |
 | unit | `tests/unit/reconnect_resume.test.js`、`aid_navigation.test.js`「startResume」「currentPostAid」 | 斷線重連：去哪、何時出發、收手條件、鍵序列與落地還原 |
 | unit（真 Chromium） | `tests/unit/list_mark_read_viewport.test.js` | 前已讀後未讀（遷移後行為不變） |

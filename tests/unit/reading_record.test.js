@@ -60,7 +60,16 @@ describe("決策表", () => {
     ["board-search", "done", "none", "none", "none"],
     ["board-search", "cancel", "none", "origin", "origin"],
     ["board-search", "fail", "none", "origin", "origin"],
-    ["article-search", "done", "none", "none", "none"],
+    // 文章搜尋：有結果落在 MODE_SELECT（編號空間比對不符，列表端自己丟棄）；找不到／
+    // prompt 沒開＝同一份列表 ⇒ 原處。
+    ["article-search", "done", "none", "origin", "none"],
+    ["article-search", "cancel", "none", "none", "none"],
+    ["article-search", "fail", "none", "origin", "none"],
+    // 說明選單：離開回原處；執行某一項＝指令的結果就是目的地。文章裡的 h 由
+    // easy_reading 的 functionMode 來回自己保住捲動位置。
+    ["help-menu", "cancel", "none", "origin", "origin"],
+    ["help-menu", "fail", "none", "origin", "origin"],
+    ["help-menu", "done", "none", "none", "none"],
     // 使用者拍板：找不到第一篇未讀時停在翻到的那頁。
     ["unread-jump", "done", "none", "none", "none"],
     ["unread-jump", "fail", "none", "none", "none"],

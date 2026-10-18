@@ -15,6 +15,9 @@ import { MarkAllRead } from "../../src/js/mark_all_read";
 import { ScreenRefresh } from "../../src/js/screen_refresh";
 import { BoardSearchBridge } from "../../src/js/board_search_bridge";
 import { recordFor } from "../../src/js/reading_record";
+import { HelpMenuController, parseHelpMenuScreen } from "../../src/js/help_menu";
+import { submitSearch } from "../../src/js/article_search";
+import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
 
 const listRows = fixture.pageScreens[0]; // 真實 C_Chat 一頁：350024..350039＋置底
 
@@ -208,6 +211,95 @@ describe("列表上的原生交易：做完回好讀時視野回到原處", () =
     step(h, "mark-all-read-prompt").onDone(true);
     step(h, "mark-all-read-apply").onDone(true);
     h.screen.curY = 8; // 真游標跑到 350029
+    vi.advanceTimersByTime(300);
+    expect(h.s.state).toBe("active");
+    expect(h.s._pendingViewport).toBe(null);
+    expect(h.s._topNum).toBe(350024);
+  });
+});
+
+// 說明選單：按 h 是一般的原生 passthrough（切原生、清看板身分），說明選單由
+// HelpMenuController 接手；畫面離開說明選單時交回書籤。termBuf 給 null：這裡直接餵
+// 解析結果（noteScreen），不經 screenSettled。
+function openHelp(h) {
+  h.s._beginPassthroughBytes("h");
+  step(h, "native-key").onDone(true);
+  expect(h.s._renderMode).toBe("native");
+  const sent = [];
+  const hm = new HelpMenuController(h.core, null, {
+    send: (b) => sent.push(b),
+    enabled: () => true,
+  });
+  hm.noteScreen(parseHelpMenuScreen(HELP_FAV_PAGE1));
+  expect(hm.phase).toBe("open");
+  return { hm, sent };
+}
+
+describe("說明選單（h）：離開後回好讀時視野回到原處", () => {
+  test("在彈窗按離開（q）⇒ 回原處", () => {
+    const h = makeSession();
+    const { hm, sent } = openHelp(h);
+    hm.close();
+    expect(sent[sent.length - 1]).toBe("q");
+    hm.noteScreen(null); // PTT 重畫文章列表
+    expectRestoredAfterFill(h, 350010);
+  });
+
+  test("改看原生畫面、在原生說明選單裡自己離開 ⇒ 一樣回原處", () => {
+    const h = makeSession();
+    const { hm } = openHelp(h);
+    hm.showNative();
+    hm.noteScreen(parseHelpMenuScreen(HELP_FAV_PAGE1)); // 原生期間的說明幀不理
+    hm.noteScreen(null);
+    expectRestoredAfterFill(h, 350010);
+  });
+
+  test("執行說明選單的某一項 ⇒ 指令的結果就是目的地，不還原", () => {
+    const h = makeSession();
+    const { hm } = openHelp(h);
+    hm.select(0);
+    hm.noteScreen(null);
+    vi.advanceTimersByTime(300);
+    expect(h.s.state).toBe("active");
+    expect(h.s._pendingViewport).toBe(null);
+    expect(h.s._topNum).toBe(350024);
+  });
+
+  test("斷線（reset）⇒ 書籤直接作廢，不還原", () => {
+    const h = makeSession();
+    const { hm } = openHelp(h);
+    hm.reset();
+    hm.noteScreen(null);
+    vi.advanceTimersByTime(300);
+    expect(h.s._pendingViewport).toBe(null);
+  });
+});
+
+describe("文章搜尋：送出後回到同一份列表時視野回原處", () => {
+  test("找不到符合條件（vmsg 後 READ_REDRAW 回原列表）⇒ 回原處", () => {
+    const h = makeSession();
+    // 關鍵字用 ASCII：u2b 需要 Big5 轉碼表（window.lib），這裡不載。
+    expect(submitSearch(h.core, "title", "nomatch")).toBe(true);
+    step(h, "search-open").onDone(true);
+    step(h, "search-submit").onDone(true);
+    expectRestoredAfterFill(h, 350010);
+  });
+
+  test("prompt 沒開出來（關鍵字沒送）⇒ 回原處", () => {
+    const h = makeSession();
+    const onFail = vi.fn();
+    submitSearch(h.core, "author", "someone", { onFail });
+    step(h, "search-open").onFail("timeout");
+    expect(onFail).toHaveBeenCalled();
+    expectRestoredAfterFill(h, 350010);
+  });
+
+  test("有結果（落在系列文章，另一個編號空間）⇒ 認不出，不還原", () => {
+    const h = makeSession();
+    submitSearch(h.core, "title", "found");
+    step(h, "search-open").onDone(true);
+    step(h, "search-submit").onDone(true);
+    h.screen.rows[23] = "  系列文章  " + (h.screen.rows[23] || "").slice(8);
     vi.advanceTimersByTime(300);
     expect(h.s.state).toBe("active");
     expect(h.s._pendingViewport).toBe(null);

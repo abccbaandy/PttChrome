@@ -40,6 +40,7 @@
 - 否則直接 `commandQueue.enqueue`（`list_session._onScreenSettled` 驅動 onSettle）。
 - 關鍵字 `ansiHalfColorConv(u2b(text))`（queue 綁 raw `conn.send`）。
 - **在途閘門 `core.searchInFlight`**（`serialized_op_gate` 讀，期間吞鍵＋提示「搜尋中」）：少了它，搜尋鍵已上線、prompt 未到時按的 Enter 會把空 prompt 送出（＝取消），關鍵字落到列表變指令（live 錄製檔實證）。解除＝第二步 onDone／任一步 onFail／onFlushed（兩個 session 的 `_enqueuePassthroughStep` 都轉送 `onFlushed`）＋保底 `SEARCH_INFLIGHT_MAX_MS`。e2e 等搜尋完成一律等它（`core.spec.js#gotoLatestThread`），不可只看「列表＋游標不在輸入欄」。
+- **閱讀紀錄**：送出前領書籤（決策表 `article-search`；看板 `s` 走這條時是 `board-search`），prompt 沒開出來＝`fail`、第二步 onDone＝`done`。找不到符合條件時 PTT `vmsg` 後 `READ_REDRAW` 回原列表 ⇒ 列表好讀回原處；有結果時落在搜尋結果（MODE_SELECT），列表端比對編號空間不符自動丟棄。見 `docs/reading-record.md`。
 - 錄製工具（`record-cassette`／`record-scenarios` 的 aid-back-search）與重放原生 `/` 的 offline spec 明設 `searchKeyOpensModal:false`：卷裡錄的是原生 prompt 逐字打。
 
 ## 看板：原生補全橋接（`board_search_bridge.js`）

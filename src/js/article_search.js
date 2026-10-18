@@ -16,6 +16,7 @@ import { boardListContextKind } from './board_list_parse';
 import { listRenderOwnerOf, OWNER_ARTICLE_LIST } from './list_render_owner';
 import { rowHasTitle, MAIN_MENU } from './screen_titles';
 import { readValuesWithDefault } from './pref_storage';
+import { recordFor } from './reading_record';
 
 // 種類 → PTT 端的按鍵。`?` 與 `/` 是同一個指令（read.c:1430-1431），送出一律用 `/`。
 // `Z` 是推文數（大寫；小寫 z 是精華區，bbs.c:4406）。
@@ -226,10 +227,32 @@ function trackInFlight(core, steps, flag) {
 //     （cursor sync 腿、進原生鏡像、序列化都在裡面，與 `v` prompt 同一條路）。
 //   - 原生 ⇒ 直接排進共用 CommandQueue，第二步只在第一步 onDone 才排。
 // 回 false ＝ 沒送（沒有可送的內容或沒有佇列）。
+//
+// 閱讀紀錄（決策表 'article-search'；看板 `s` 走一般兩步時是 'board-search'）：送出前領
+// 書籤（列表好讀接著會切原生、丟掉緩衝）。prompt 沒開出來＝'fail'，送出後第一個回應
+// ＝'done'；回到哪裡、認不認得出來由決策表＋列表 session 的落點驗證決定。
 export function submitSearch(core, kind, text, cb) {
-  const built = buildSearchSteps(kind, text, cb);
+  const c = cb || {};
+  let bm = null;
+  const end = function(outcome) {
+    if (bm) recordFor(core).end(bm, outcome);
+    bm = null;
+  };
+  const built = buildSearchSteps(kind, text, {
+    onDone: function(a, b) {
+      end('done');
+      if (c.onDone) c.onDone(a, b);
+    },
+    onFail: function(a, b) {
+      end('fail');
+      if (c.onFail) c.onFail(a, b);
+    }
+  });
   if (!built || !core) return false;
-  return submitSerializedSteps(core, built, { kind: 'search' });
+  bm = recordFor(core).begin(kind === 'board' ? 'board-search' : 'article-search');
+  if (submitSerializedSteps(core, built, { kind: 'search' })) return true;
+  bm = null;
+  return false;
 }
 
 // submitSearch 的送出半段：多步序列（每步 {keys, kind, expect, onDone, onFail}）交給

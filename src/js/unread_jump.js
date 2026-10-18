@@ -19,6 +19,7 @@ import { submitSerializedSteps, beginInFlight, endInFlight } from './article_sea
 import { endLanded, numJumpLanded } from './aid_navigation';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
+import { recordFor } from './reading_record';
 
 export const UNREAD_JUMP_FLAG = 'unreadJumpInFlight';
 // 往上連續幾篇非未讀＝走進已讀區。
@@ -155,13 +156,20 @@ UnreadJump.prototype = {
     const end = function() {
       endInFlight(core, UNREAD_JUMP_FLAG);
     };
+    // 閱讀紀錄（決策表 'unread-jump'）：目的就是移動，找不到也停在翻到的那頁。
+    let bm = recordFor(core).begin('unread-jump');
+    const finish = function(outcome) {
+      end();
+      if (bm) recordFor(core).end(bm, outcome);
+      bm = null;
+    };
     const push = function(step) {
       // 每一步都補 \f：PgUp 已經在第一頁、跳號目標就是游標所在列時 PTT 送零 byte，
       // 沒有 settle 就只能等逾時（list_session._enqueueCursorSyncJump 同一個理由）。
       step.fullRepaint = true;
       step.timeoutMs = STEP_TIMEOUT_MS;
       step.onFail = function() {
-        end();
+        finish('fail');
         self._hint('跳到第一篇未讀失敗（已停在原生畫面）', 0, HINT_ERROR);
       };
       step.onFlushed = end;
@@ -200,13 +208,13 @@ UnreadJump.prototype = {
             return numJumpLanded(facts, next.num);
           },
           onDone: function() {
-            end();
+            finish('done');
             self._hint('已跳到第一篇未讀', 1500);
           }
         });
         return;
       }
-      end();
+      finish('done');
       if (next.action === 'none') self._hint('最新的文章都讀過了，沒有未讀');
       else self._hint('往上翻了 ' + MAX_PGUP + ' 頁仍找不到第一篇未讀，停在這裡');
     };
