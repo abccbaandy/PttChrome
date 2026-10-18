@@ -296,13 +296,20 @@ HomeDashboard.prototype = {
   },
 
   _onSettled: function() {
-    const facts = this._facts();
-    if (!facts) return;
-    const board = articleListBoard(facts.rowTexts, facts.rows);
+    const buf = this._core.buf;
+    if (!buf || typeof buf.getRowText !== 'function') return;
+    // 先只讀頭尾兩列：每次 settle 都會跑，不在主功能表時不必讀滿整頁。
+    const rows = buf.rows;
+    const row0 = buf.getRowText(0, 0, buf.cols);
+    const ends = [];
+    ends[0] = row0;
+    ends[rows - 1] = buf.getRowText(rows - 1, 0, buf.cols);
+    const board = articleListBoard(ends, rows);
     if (board) this._noteRecent(board);
     // 抓最愛的途中畫面會離開主功能表：面板留著顯示「更新中」，判定交給那條序列。
     if (this._state.fetching) return;
-    const home = enabled() && isHomeScreen(facts);
+    const facts = enabled() && rowHasTitle(row0, MAIN_MENU) ? this._facts() : null;
+    const home = !!facts && isHomeScreen(facts);
     if (!home) {
       this._atHome = false;
       this._dismissed = false;

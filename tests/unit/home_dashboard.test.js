@@ -307,6 +307,18 @@ describe("HomeDashboard：何時出現", () => {
     show(ARTICLE_LIST());
     expect(home.state.recents).toEqual(["C_Chat"]);
   });
+
+  test("不在主功能表的 settle 只讀頭尾兩列（每次 settle 都跑，不讀滿整頁）", () => {
+    const { core, home, show } = makeCore();
+    const spy = vi.spyOn(core.buf, "getRowText");
+    show(ARTICLE_LIST());
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(home.state.recents).toEqual(["C_Chat"]);
+    spy.mockClear();
+    show(mainMenu());
+    expect(spy.mock.calls.length).toBeGreaterThan(2);
+    expect(home.state.visible).toBe(true);
+  });
 });
 
 describe("HomeDashboard：自動抓我的最愛", () => {
