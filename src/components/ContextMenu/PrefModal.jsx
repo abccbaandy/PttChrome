@@ -884,6 +884,16 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableBell")}
                 </PrefCheckbox>
+                <PrefCheckbox
+                  name="reconnectResume"
+                  checked={values.reconnectResume}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_reconnectResume")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_reconnectResume")}
+                </Text>
                 <NumberInput
                   label={i18n("options_antiIdleTime")}
                   description={i18n("tooltip_antiIdleTime")}

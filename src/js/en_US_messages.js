@@ -821,6 +821,12 @@ export const en_US = {
   "tooltip_enableListNativeAutoResume": {
     "message": "When a non-navigation key is pressed in a listing (search, tag, push, mark-as-read...), switch back to the easy-reading view as soon as the action completes and the screen goes quiet. Cursor-only keys ([ ] = \\ + - < > , . { } t, and t v V in the board list) never show the native mirror at all. Turn this off to stay native until an article is opened or the board is left."
   },
+  "options_reconnectResume": {
+    "message": "Return to where you were after reconnecting"
+  },
+  "tooltip_reconnectResume": {
+    "message": "After the connection drops and you log in again, automatically go back to the article or article list you were reading. Off = stay on the main menu."
+  },
   "options_skipBoardEntryScreen": {
     "message": "Skip the board entry screen"
   },

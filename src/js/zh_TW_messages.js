@@ -820,6 +820,12 @@
   "tooltip_enableListNativeAutoResume": {
     "message": "在列表按下非導覽鍵（搜尋、標記、推文、設定已讀…）時，操作完成、畫面靜下來就自動切回好讀模式。只移動游標的鍵（[ ] = \\ + - < > , . { } t，看板列表的 t v V）更是全程不切原生。關掉＝停在原生模式，要開啟文章或離開看板才回好讀。"
   },
+  "options_reconnectResume": {
+    "message": "斷線重連後回到原處"
+  },
+  "tooltip_reconnectResume": {
+    "message": "斷線後重新連線、登入回到主功能表時，自動回到斷線前讀的那篇文章或文章列表。關掉＝停在主功能表。"
+  },
   "options_skipBoardEntryScreen": {
     "message": "跳過進板畫面"
   },

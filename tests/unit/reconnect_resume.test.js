@@ -204,6 +204,46 @@ describe("ReconnectResume（何時出發）", () => {
     expect(h.core.aidNavigation.startResume).not.toHaveBeenCalled();
   });
 
+  // 開關（pref reconnectResume，預設開）：替使用者送鍵的功能都要能關。
+  describe("關掉「斷線重連回到原處」", () => {
+    const prefs = (values) =>
+      vi.stubGlobal("window", {
+        localStorage: { getItem: () => JSON.stringify({ values }), setItem() {} }
+      });
+    afterEach(() => vi.unstubAllGlobals());
+
+    test("斷線時是關的 ⇒ 不記、重連登入後一個鍵都不送", () => {
+      prefs({ reconnectResume: false });
+      const h = harness();
+      h.settle(MAIN_MENU);
+      h.rr.capture(false);
+      expect(h.rr.hasPending()).toBe(false);
+      h.settle(MAIN_MENU);
+      expect(h.core.aidNavigation.startResume).not.toHaveBeenCalled();
+      expect(h.core.autoLogin.stop).not.toHaveBeenCalled();
+    });
+
+    test("斷線後才關（重連途中）⇒ 也不出發", () => {
+      const h = harness();
+      h.settle(MAIN_MENU);
+      h.rr.capture(false);
+      expect(h.rr.hasPending()).toBe(true);
+      prefs({ reconnectResume: false });
+      h.settle(MAIN_MENU);
+      expect(h.core.aidNavigation.startResume).not.toHaveBeenCalled();
+      expect(h.rr.hasPending()).toBe(false);
+    });
+
+    test("預設是開的", () => {
+      prefs({});
+      const h = harness();
+      h.settle(MAIN_MENU);
+      h.rr.capture(false);
+      h.settle(MAIN_MENU);
+      expect(h.core.aidNavigation.startResume).toHaveBeenCalledTimes(1);
+    });
+  });
+
   test("在主功能表斷線 ⇒ 沒有東西可回", () => {
     const h = harness({ pageState: 0 });
     h.core.listSession.readingPosition = () => null;
