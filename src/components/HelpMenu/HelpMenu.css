@@ -1,0 +1,122 @@
+/* 說明選單好讀（HelpMenu/index.jsx）。桌機三欄（鍵／名稱／說明）：欄寬由清單統一決定，
+   每一項用 subgrid 跟著對齊（各項自己算欄寬會讓鍵多的那幾列錯位）。手機兩行（鍵＋名稱／
+   說明），每項至少 48px 高（觸控目標）。 */
+.helpMenuList {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  row-gap: 2px;
+}
+
+.helpMenuItem {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  column-gap: 12px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--mantine-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--mantine-font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.helpMenuItem:hover,
+.helpMenuItem[data-active] {
+  background: var(--mantine-color-default-hover);
+}
+
+.helpMenuItem:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+
+.helpMenuKeys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.helpMenuKey {
+  padding: 0 5px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.helpMenuLabel {
+  font-weight: 600;
+}
+
+.helpMenuDesc {
+  color: var(--mantine-color-dimmed);
+}
+
+.helpMenuLoading {
+  grid-column: 1 / -1;
+  padding: 4px 8px;
+}
+
+.helpMenuFooter {
+  margin-top: 12px;
+}
+
+/* 手機：鍵＋名稱一行、說明換到下一行。沒有鍵盤游標可言：不畫「目前項」底色與
+   焦點框（sheet 開的當下焦點落在第一項，畫出來像是被選了），按下去的回饋用 :active。 */
+.helpMenuList[data-mobile] {
+  display: flex;
+  flex-direction: column;
+}
+
+.helpMenuList[data-mobile] .helpMenuItem {
+  grid-template-columns: max-content 1fr;
+  grid-template-areas:
+    "keys label"
+    "desc desc";
+  row-gap: 2px;
+  min-height: 48px;
+  padding: 6px 8px;
+  font-size: 15px;
+}
+
+.helpMenuList[data-mobile] .helpMenuItem[data-active] {
+  background: transparent;
+}
+
+.helpMenuList[data-mobile] .helpMenuItem:focus-visible {
+  outline: none;
+}
+
+.helpMenuList[data-mobile] .helpMenuItem:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.helpMenuList[data-mobile] .helpMenuKeys {
+  grid-area: keys;
+}
+
+.helpMenuList[data-mobile] .helpMenuLabel {
+  grid-area: label;
+}
+
+.helpMenuList[data-mobile] .helpMenuDesc {
+  grid-area: desc;
+  font-size: 13px;
+}
+
+/* sheet 底色固定深色（MobileSheet.css），說明字用固定灰，不跟 Mantine 主題。 */
+.mobileSheet[data-sheet="help"] .helpMenuDesc {
+  color: #9a9aa2;
+}
+
+.mobileSheet[data-sheet="help"] .helpMenuFooter {
+  margin-top: 0;
+}

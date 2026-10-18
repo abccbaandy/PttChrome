@@ -335,6 +335,26 @@
     "message": "指令處理中，請稍候再試"
   },
 
+  // 說明選單好讀（components/HelpMenu）
+  "helpMenu_title": {
+    "message": "操作說明"
+  },
+  "helpMenu_titleWith": {
+    "message": "{0} 操作說明"
+  },
+  "helpMenu_loading": {
+    "message": "載入其餘指令中…"
+  },
+  "helpMenu_native": {
+    "message": "原生畫面"
+  },
+  "helpMenu_angel": {
+    "message": "小天使"
+  },
+  "helpMenu_close": {
+    "message": "離開"
+  },
+
   // options nav
   "options_general": {
     "message": "一般"
