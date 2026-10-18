@@ -5,6 +5,10 @@
 export const DEFAULT_PREFS = {
   // general
   //dbcsDetect    : false,
+  // 安全模式「全部用原生」：PTT 改版、增強功能認錯畫面時的一鍵逃生門。開著時
+  // NATIVE_SAFE_MODE_KEYS 在**讀取端**一律當成關（effectivePrefs），各自的 pref
+  // 原封不動 ⇒ 關掉安全模式就回到使用者原本的設定。預設關。
+  nativeSafeMode: false,
   enablePicPreview: true,
   enableNotifications: true,
   // 文章好讀模式：整篇累積成一份可自由捲動的長頁（見 docs/easy-reading.md）。
@@ -355,6 +359,35 @@ export const readValuesWithDefault = () => {
     };
   }
 };
+
+// 安全模式要關掉的 pref：會改寫 PTT 原生畫面、替使用者送鍵，或攔下原本會送給 PTT
+// 的按鍵的功能。使用者自己按下去才動的（跳到未讀、設為已讀、AID 跳文、滑鼠點擊、
+// 圖片上傳）不在內，自動登入有自己的開關也不在內。
+export const NATIVE_SAFE_MODE_KEYS = Object.freeze([
+  "enableEasyReading",
+  "enableEasyReadingList",
+  "enableBoardListSmoothScroll",
+  "enableListNativeAutoResume",
+  "skipBoardEntryScreen",
+  "reconnectResume",
+  "endTurnsOnLiveUpdate",
+  "easyReadingEndSwitchNative",
+  "refreshKeyIntercept",
+  "searchKeyOpensModal",
+  "pushKeyOpensLongPush"
+]);
+
+// 功能判斷要用的「實際生效」偏好：安全模式開著時把上面那串蓋成 false。回傳新物件，
+// 不動傳入的 values。**只能拿來判斷，不可寫回**（寫回會把使用者的設定蓋掉）；要改
+// 偏好的路徑（讀出→改一個 key→writeValues）一律用 readValuesWithDefault。
+export const effectivePrefs = values => {
+  if (!values || !values.nativeSafeMode) return values;
+  const out = { ...values };
+  for (const key of NATIVE_SAFE_MODE_KEYS) out[key] = false;
+  return out;
+};
+
+export const readEffectivePrefs = () => effectivePrefs(readValuesWithDefault());
 
 export const writeValues = values => {
   try {

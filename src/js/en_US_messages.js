@@ -827,6 +827,12 @@ export const en_US = {
   "tooltip_reconnectResume": {
     "message": "After the connection drops and you log in again, automatically go back to the article or article list you were reading. Off = stay on the main menu."
   },
+  "options_nativeSafeMode": {
+    "message": "Safe mode: use native PTT for everything"
+  },
+  "tooltip_nativeSafeMode": {
+    "message": "Turn this on when PTT changes and something looks wrong: easy reading, board list smooth scrolling, skipping the board entry screen, returning after reconnect, jumping to the end of live posts, and the search / push / F5 key interception all pause, so the screen and keys behave exactly like PTT. Your other settings below are kept and come back when safe mode is turned off."
+  },
   "options_skipBoardEntryScreen": {
     "message": "Skip the board entry screen"
   },

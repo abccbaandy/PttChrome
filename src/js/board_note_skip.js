@@ -55,7 +55,7 @@ import {
   MAIN_MENU,
   rowHasAnyTitle
 } from './screen_titles';
-import { readValuesWithDefault } from './pref_storage';
+import { readEffectivePrefs } from './pref_storage';
 import { parseHelpMenuScreen } from './help_menu';
 
 export const KEY_LEFT = '\x1b[D';
@@ -190,7 +190,7 @@ BoardNoteSkip.prototype = {
   },
 
   _enabled: function() {
-    return !!readValuesWithDefault().skipBoardEntryScreen;
+    return !!readEffectivePrefs().skipBoardEntryScreen;
   },
 
   _log: function(name, info) {

@@ -61,7 +61,7 @@ import {
   shiftOnlyDelta
 } from './list_scroll';
 import { LEFT_ARROW } from './function_key_plan';
-import { readValuesWithDefault } from './pref_storage';
+import { readEffectivePrefs } from './pref_storage';
 import { HINT_ERROR } from './status_hint';
 import {
   BOARD_LIST,
@@ -837,7 +837,7 @@ const INPLACE_KEYS = '=\\]+[-<,.>{}t';
 // 行為也真的是舊的）。**留著舊措辭比沒提示更糟**，所以每一處切原生的 hint 都走
 // 這一支，不要再各自寫死字串。
 function nativeResumeHint() {
-  return readValuesWithDefault().enableListNativeAutoResume
+  return readEffectivePrefs().enableListNativeAutoResume
     ? '（操作完成後自動恢復好讀）'
     : '（開啟文章或離開看板後恢復好讀）';
 }
@@ -1082,7 +1082,7 @@ ListSession.prototype = {
   // 這是使用者拍板的逃生門（三階梯見 docs/easy-reading-list.md）：判定類功能的
   // 最後一道防線就是設定開關，全關就回到原生體驗。
   _autoResumeEnabled: function() {
-    return !!readValuesWithDefault().enableListNativeAutoResume;
+    return !!readEffectivePrefs().enableListNativeAutoResume;
   },
 
   // pref on ∧ 終端機列數合法 ∧ the article easy reading is not mid-post
@@ -1098,7 +1098,7 @@ ListSession.prototype = {
   // 出現就代表 buf 處於不該有的狀態，寧可不接管。
   _engageEligible: function() {
     return (
-      !!readValuesWithDefault().enableEasyReadingList &&
+      !!readEffectivePrefs().enableEasyReadingList &&
       this._termBuf.rows >= 24 &&
       !this._termBuf.startedEasyReading
     );
@@ -2680,7 +2680,7 @@ ListSession.prototype = {
   },
 
   _startFill: function() {
-    this._fillTarget = readValuesWithDefault().easyReadingListPrefetchCount || 0;
+    this._fillTarget = readEffectivePrefs().easyReadingListPrefetchCount || 0;
     this._fillPages = 0;
     this._maybeFill();
   },

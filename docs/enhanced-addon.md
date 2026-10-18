@@ -611,6 +611,19 @@ index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**�
   （暖機入口不偷下載／建完即毀）、`ui_behavior.offline.spec.js`（分頁切換＋三種 availability 的反灰）、
   `bare-domain-link.offline.spec.js`（總開關關閉時子選項開著也不推論）。
 
+### 安全模式：全部用原生（`nativeSafeMode`，預設關）
+
+- 用途：PTT 改版、增強功能認錯畫面時，使用者一個開關回到原生，不必逐項找。
+- 範圍＝`pref_storage.js#NATIVE_SAFE_MODE_KEYS`：會改寫原生畫面、替使用者送鍵、或攔下原本送給 PTT
+  的按鍵的功能（好讀三件、非導覽後自動回好讀、跳過進板畫面、斷線回原處、Live 文自動到底、
+  好讀 F8 切原生、F5／搜尋鍵／推文鍵攔截）。使用者主動觸發的（跳到未讀、AID 跳文、滑鼠點擊、
+  圖片上傳）與自動登入（有自己的開關）不在內。新增這類功能時要把它的開關加進名單。
+- **只在讀取端覆寫，不寫回**：判斷一律讀 `readEffectivePrefs()`／`effectivePrefs(values)`
+  （`App.onValuesPrefChange` 先過它再分派）；要改偏好的路徑（讀出→改→`writeValues`）一律用
+  `readValuesWithDefault`，否則會把使用者的設定蓋掉。設定頁上被蓋掉的項目只反灰、值原樣保留。
+- 守護：`tests/unit/native_safe_mode.test.js`（行為＋靜態掃描「讀名單內 key 的檔案不准讀原始值」）、
+  `pref_modal_safe_mode.test.jsx`（反灰、存回原值）、`board_note_skip.offline.spec.js`（完整 boot 鏈）。
+
 ### 設定搜尋（`src/js/pref_search.js` ＋ `components/ContextMenu/PrefSearchBox.jsx`）
 左欄搜尋框 → 下拉結果 → 切分頁＋捲動＋短暫高亮。**與右鍵選單的「快速搜尋」
 （`quick_search.js`）無關**，命名一律 `settingsSearch`/`prefSearch`，勿混。

@@ -21,13 +21,15 @@
 import { TermBuf } from "../../src/js/term_buf";
 import { EasyReading } from "../../src/js/easy_reading";
 
-vi.mock("../../src/js/pref_storage", () => ({
-  readValuesWithDefault: vi.fn(() => ({
+vi.mock("../../src/js/pref_storage", () => {
+  const readValuesWithDefault = vi.fn(() => ({
     enableEasyReading: true,
     easyReadingEndSwitchNative: true,
     easyReadingEndSwitchKey: "F8"
-  }))
-}));
+  }));
+  // easy_reading 讀的是 readEffectivePrefs（安全模式覆寫層）；委派給同一個 mock。
+  return { readValuesWithDefault, readEffectivePrefs: () => readValuesWithDefault() };
+});
 
 // 這些 parser 的正確性有自己的測試；這裡只驗 settle 邊緣的接線。狀態列由 `screen.status`
 // 直接給（翻頁中 = 40%，F8 跳到文末後 = 100%），不必真的畫 Big5 畫面。

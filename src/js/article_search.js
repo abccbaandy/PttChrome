@@ -15,7 +15,7 @@ import { u2b, ansiHalfColorConv } from './string_util';
 import { boardListContextKind } from './board_list_parse';
 import { listRenderOwnerOf, OWNER_ARTICLE_LIST } from './list_render_owner';
 import { rowHasTitle, MAIN_MENU } from './screen_titles';
-import { readValuesWithDefault } from './pref_storage';
+import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 
 // 種類 → PTT 端的按鍵。`?` 與 `/` 是同一個指令（read.c:1430-1431），送出一律用 `/`。
@@ -142,7 +142,7 @@ export function tryOpenSearchModal(core, key, e) {
       ctrlKey: !!(e && e.ctrlKey),
       altKey: !!(e && e.altKey),
       metaKey: !!(e && e.metaKey),
-      prefs: readValuesWithDefault(),
+      prefs: readEffectivePrefs(),
       facts: searchGateFacts(core)
     })
   )

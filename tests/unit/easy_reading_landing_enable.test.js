@@ -14,9 +14,11 @@
 import { EasyReading } from "../../src/js/easy_reading";
 import { readValuesWithDefault } from "../../src/js/pref_storage";
 
-vi.mock("../../src/js/pref_storage", () => ({
-  readValuesWithDefault: vi.fn(() => ({ enableEasyReading: true }))
-}));
+vi.mock("../../src/js/pref_storage", () => {
+  const readValuesWithDefault = vi.fn(() => ({ enableEasyReading: true }));
+  // easy_reading 讀的是 readEffectivePrefs（安全模式覆寫層）；委派給同一個 mock。
+  return { readValuesWithDefault, readEffectivePrefs: () => readValuesWithDefault() };
+});
 
 // 一篇文章第一頁的狀態列（string_util.parseStatusRow 認得的形狀，rowIndexStart = 1）。
 const FIRST_PAGE_ROW =

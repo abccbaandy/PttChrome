@@ -706,6 +706,16 @@ export const PrefModal = ({
             <Tabs.Panel value="general">
               <PrefSection legendKey="options_general">
                 <PrefCheckbox
+                  name="nativeSafeMode"
+                  checked={values.nativeSafeMode}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_nativeSafeMode")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_nativeSafeMode")}
+                </Text>
+                <PrefCheckbox
                   name="enablePicPreview"
                   checked={values.enablePicPreview}
                   onChange={onCheckboxChange}
@@ -744,6 +754,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="enableEasyReading"
                   checked={values.enableEasyReading}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableEasyReading")}
@@ -751,6 +762,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="enableEasyReadingList"
                   checked={values.enableEasyReadingList}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableEasyReadingList")}
@@ -758,6 +770,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="enableBoardListSmoothScroll"
                   checked={values.enableBoardListSmoothScroll}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableBoardListSmoothScroll")}
@@ -768,6 +781,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="enableListNativeAutoResume"
                   checked={values.enableListNativeAutoResume}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableListNativeAutoResume")}
@@ -778,6 +792,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="skipBoardEntryScreen"
                   checked={values.skipBoardEntryScreen}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_skipBoardEntryScreen")}
@@ -798,6 +813,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="easyReadingEndSwitchNative"
                   checked={values.easyReadingEndSwitchNative}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_easyReadingEndSwitchNative")}
@@ -846,6 +862,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="refreshKeyIntercept"
                   checked={values.refreshKeyIntercept}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                   description={i18n("tooltip_refreshKeyIntercept")}
                 >
@@ -866,6 +883,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="endTurnsOnLiveUpdate"
                   checked={values.endTurnsOnLiveUpdate}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_endTurnsOnLiveUpdate")}
@@ -887,6 +905,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="reconnectResume"
                   checked={values.reconnectResume}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_reconnectResume")}
@@ -944,7 +963,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="pushKeyOpensLongPush"
                   checked={values.pushKeyOpensLongPush}
-                  disabled={!values.enableLongPush}
+                  disabled={!values.enableLongPush || values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_pushKeyOpensLongPush")}
@@ -955,6 +974,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="searchKeyOpensModal"
                   checked={values.searchKeyOpensModal}
+                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_searchKeyOpensModal")}

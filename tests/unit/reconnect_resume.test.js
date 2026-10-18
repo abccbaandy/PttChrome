@@ -234,6 +234,16 @@ describe("ReconnectResume（何時出發）", () => {
       expect(h.rr.hasPending()).toBe(false);
     });
 
+    test("安全模式（全部用原生）開著 ⇒ 自己的 pref 開著也不記、不送", () => {
+      prefs({ nativeSafeMode: true, reconnectResume: true });
+      const h = harness();
+      h.settle(MAIN_MENU);
+      h.rr.capture(false);
+      expect(h.rr.hasPending()).toBe(false);
+      h.settle(MAIN_MENU);
+      expect(h.core.aidNavigation.startResume).not.toHaveBeenCalled();
+    });
+
     test("預設是開的", () => {
       prefs({});
       const h = harness();
