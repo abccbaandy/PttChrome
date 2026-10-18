@@ -131,6 +131,16 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_unreadJumpKey",
     },
     {
+      key: "enableCommandPalette",
+      titleKey: "options_enableCommandPalette",
+      tooltipKey: "tooltip_enableCommandPalette",
+    },
+    {
+      key: "commandPaletteKey",
+      titleKey: "options_commandPaletteKey",
+      tooltipKey: "tooltip_commandPaletteKey",
+    },
+    {
       key: "refreshKeyIntercept",
       titleKey: "options_refreshKeyIntercept",
       tooltipKey: "tooltip_refreshKeyIntercept",

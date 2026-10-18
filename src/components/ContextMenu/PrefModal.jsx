@@ -280,6 +280,7 @@ export const PrefModal = ({
   onReset,
   debugMode,
   onDebugModeChange,
+  jumpTarget,
 }) => {
   const [navActiveKey, setNavActiveKey] = useState("general");
   const narrow = useNarrow();
@@ -318,6 +319,10 @@ export const PrefModal = ({
     // n 遞增：連點同一筆結果也要重新觸發，所以物件 identity 必須改變。
     setPendingJump((p) => ({ key: hit.key, n: (p ? p.n : 0) + 1 }));
   }, []);
+  // 指令面板挑了某個設定項（{ tab, key, n }）：開啟時直接跳過去，同設定搜尋。
+  useEffect(() => {
+    if (show && jumpTarget) onSearchJump(jumpTarget);
+  }, [show, jumpTarget, onSearchJump]);
 
   // 切分頁 → 捲動 → 短暫高亮。
   //
@@ -858,6 +863,25 @@ export const PrefModal = ({
                   onKeyDown={onHotkeyCapture}
                   mb="xs"
                   {...anchor("unreadJumpKey")}
+                />
+                <PrefCheckbox
+                  name="enableCommandPalette"
+                  checked={values.enableCommandPalette}
+                  onChange={onCheckboxChange}
+                  description={i18n("tooltip_enableCommandPalette")}
+                >
+                  {i18n("options_enableCommandPalette")}
+                </PrefCheckbox>
+                <TextInput
+                  label={i18n("options_commandPaletteKey")}
+                  name="commandPaletteKey"
+                  readOnly
+                  disabled={!values.enableCommandPalette}
+                  value={values.commandPaletteKey}
+                  placeholder={i18n("tooltip_commandPaletteKey")}
+                  onKeyDown={onHotkeyCapture}
+                  mb="xs"
+                  {...anchor("commandPaletteKey")}
                 />
                 <PrefCheckbox
                   name="refreshKeyIntercept"

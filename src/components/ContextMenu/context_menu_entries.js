@@ -186,6 +186,16 @@ export function buildContextMenuEntries(p) {
     }
     divider("d-tools");
   }
+  // 指令面板（pref enableCommandPalette，預設開）：快捷鍵之外的入口，手機長按也有。
+  if (p.commandPaletteEnabled)
+    item(
+      "commandPalette",
+      i18n("cmenu_commandPalette"),
+      p.onCommandPaletteClick,
+      p.commandPaletteKey && !p.mobile
+        ? { right: p.commandPaletteKey }
+        : undefined,
+    );
   item("settings", i18n("cmenu_settings"), p.onSettingsClick);
   return out;
 }

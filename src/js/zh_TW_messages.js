@@ -826,6 +826,96 @@
   "tooltip_reconnectResume": {
     "message": "斷線後重新連線、登入回到主功能表時，自動回到斷線前讀的那篇文章或文章列表。關掉＝停在主功能表。"
   },
+  "options_enableCommandPalette": {
+    "message": "指令面板"
+  },
+  "tooltip_enableCommandPalette": {
+    "message": "按快捷鍵叫出一個輸入框：打板名進板、貼文章網址或 #AID (看板) 開文、打關鍵字搜標題作者、打「重整」「未讀」這類字執行功能、打設定名稱直接跳到那一項。也可以從右鍵選單開。"
+  },
+  "options_commandPaletteKey": {
+    "message": "指令面板快捷鍵"
+  },
+  "tooltip_commandPaletteKey": {
+    "message": "點這裡後按下想用的鍵（建議用 F 鍵，PTT 收不到 F 鍵，不會吃掉 PTT 的按鍵）"
+  },
+  "cmenu_commandPalette": {
+    "message": "指令面板"
+  },
+  "palette_placeholder": {
+    "message": "看板、文章網址、關鍵字或指令…"
+  },
+  "palette_empty": {
+    "message": "沒有符合的項目"
+  },
+  "palette_footer": {
+    "message": "↑↓ 選擇　Enter 執行　Esc 關閉"
+  },
+  "palette_openArticle": {
+    "message": "開啟文章 #{aid}（{board}）"
+  },
+  "palette_gotoBoard": {
+    "message": "前往看板 {board}"
+  },
+  "palette_searchTitle": {
+    "message": "搜尋標題「{q}」"
+  },
+  "palette_searchAuthor": {
+    "message": "搜尋作者「{q}」"
+  },
+  "palette_searchPush": {
+    "message": "搜尋推文數 {q} 以上"
+  },
+  "palette_refresh": {
+    "message": "重新整理"
+  },
+  "palette_unreadJump": {
+    "message": "跳到第一篇未讀"
+  },
+  "palette_markAllRead": {
+    "message": "設為全部已讀"
+  },
+  "palette_copyLink": {
+    "message": "複製本篇連結"
+  },
+  "palette_back": {
+    "message": "返回原文"
+  },
+  "palette_settings": {
+    "message": "開啟設定"
+  },
+  "palette_safeModeOn": {
+    "message": "開啟安全模式（全部用原生）"
+  },
+  "palette_safeModeOff": {
+    "message": "關閉安全模式"
+  },
+  "palette_setting": {
+    "message": "設定：{title}"
+  },
+  "palette_failed": {
+    "message": "現在沒辦法開這篇文章"
+  },
+  "palette_safeModeOnDone": {
+    "message": "已開啟安全模式：全部用原生"
+  },
+  "palette_safeModeOffDone": {
+    "message": "已關閉安全模式"
+  },
+  "palette_kindAction": {
+    "message": "動作"
+  },
+  "palette_kindSearch": {
+    "message": "搜尋"
+  },
+  "palette_kindArticle": {
+    "message": "文章"
+  },
+  "palette_kindBoard": {
+    "message": "看板"
+  },
+  "palette_kindSetting": {
+    "message": "設定"
+  },
   "options_nativeSafeMode": {
     "message": "安全模式：全部用原生"
   },

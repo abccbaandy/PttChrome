@@ -76,6 +76,11 @@ export const DEFAULT_PREFS = {
   // 「跳到第一篇未讀」（文章列表，docs/unread-jump.md）的快捷鍵。預設 F7（使用者指定）：
   // Chrome 的 F7 是「鍵盤瀏覽模式」對話框，keydown 被 preventDefault 就不會出現。
   unreadJumpKey: "F7",
+  // 指令面板（js/command_palette.js）：一個輸入框整合進板、貼網址開文、搜尋、各功能與
+  // 設定項。快捷鍵預設 F4：上面那串之外剩下的 F 鍵；Ctrl+K 不行（pttbbs 編輯器／輸入欄／
+  // pager 都在用）。只在按下快捷鍵／點右鍵選單時才動 ⇒ 不在安全模式名單內。
+  enableCommandPalette: true,
+  commandPaletteKey: "F4",
   // 重新整理（docs/screen-refresh.md）：F5／⌘R 在看板列表、文章列表、文章裡改成
   // 重整 PTT 畫面（其他畫面照舊交給瀏覽器）。瀏覽器網址列旁的重新整理按鈕頁面攔不到。
   refreshKeyIntercept: true,
