@@ -10,7 +10,7 @@
 
 | 型 | 欄位 | 量測（畫面擁有者） |
 |---|---|---|
-| 文章 | `board`、`lineIndex`（srow＋列內比例）、`atBottom`、`easy`（好讀或原生 pmore） | `term_view.currentLineIndex`：量節點，所以圖片／預覽高度、手機換行版面、收起的列都算對 |
+| 文章 | `board`、`lineIndex`（文章的絕對列索引＋列內比例）、`atBottom`、`easy`（好讀或原生 pmore） | `term_view.currentLineIndex`：量節點，所以圖片／預覽高度、手機換行版面、收起的列都算對。反向讀取（End）未接合時 tail 的 srow 換算成 `tailStartLine-1+(srow-J)`：消費端都是從頭重讀後才還原 |
 | 文章列表 | `board`（看板身分鍵）、`mode`（`plain`／`select`）、`topNum` 或 `topPinnedKey`、`scrollFrac`（px）、`cursorNum` | `list_session.readingPosition`：視口在 DOM 上就從 scrollTop 現場換算（不改欄位），否則用 session 的錨；idle 時回原生列表的身分 |
 | 看板列表 | `variant`、`topNum`、`scrollFrac`、`cursorNum` | `board_list_session.readingPosition` |
 
@@ -28,7 +28,7 @@
 
 `begin(feature, own?)` 回傳書籤，也就是當下紀錄的副本。畫面擁有者自己發起的交易，可以用 `own` 交出自己的量測（`{ list, listOwner }`）；文章端可以交 `{ view, buf }`。`end(bm, outcome, { only, article })` 依下表分派給畫面擁有者既有的還原器：
 
-- 文章：交給 `easy_reading.requestScrollRestore`／`requestScrollToBottom`，量節點並等累積到位才套用。原生 pmore 的文末改送原生 End；原列沒有入口，不還原。
+- 文章：交給 `easy_reading.requestScrollRestore`／`requestScrollToBottom`，量節點並等累積到位才套用。原生 pmore 的文末改送原生 End；原列沒有入口，不還原。debug 錄製檔 `easyReading.scrollRestore`：`request`／`apply`（target、scrollTop）／`giveup`／`drop`（key、leave）／`settled`（套用 2 秒後實際的 `now` 列）。`readingRecord.begin` 與 `settled` 另帶 `topText`（頂端列前 20 字，`term_view.topRowSnippet`，**只給錄製檔對照、還原不讀**；鏡像快照時為 null）。定位順序：`begin.topText` 不是使用者當時看的那句＝採樣錯；`begin.lineIndex`≈`settled.now` 但 `topText` 不同＝同一索引在重讀後指向別行；apply 對而 `settled.now` 偏＝套用後被推走。
 - 列表：`list_session.requestViewportRestore`，存成待還原錨，見下節。
 - 看板列表：`board_list_session.requestViewportRestore`。
 
@@ -129,5 +129,7 @@ N1 本身沒有變：探針仍然不碰 external，只有序列的擁有者能�
 | unit（真 Chromium） | `tests/unit/list_mark_read_viewport.test.js` | 前已讀後未讀（遷移後行為不變） |
 | offline e2e | `scenario_navigation.offline.spec.js`「跳文 → 返回之後，閱讀紀錄記著開文前的列表視野」 | 真 boot 鏈上身後列表的交接 |
 | offline e2e（手機） | `mobile_list_cards.offline.spec.js`「閱讀紀錄：卡片模式量到的視野頂端」 | 卡片模式的列表量測 |
+| offline e2e（手機） | `mobile_reading_restore.offline.spec.js` | 換行版面＋多分塊長文：讀到中段 → 重讀 → 還原回同一列同一處（合成文章） |
+| unit（真 Chromium） | `reading_position_preview.test.js`「反向讀取尚未接合時的採樣」 | tail 列記成絕對列索引 |
 
 列表上原生交易的完整來回（`v` → prompt → `v⏎` → 列表重畫 → 靜置探針 → rebuild → 補頁 → 還原），offline 卷做不出來：cassette 不回應 `v⏎`、`s<板>⏎` 的重讀，所以由上面兩支真 Chromium 的 unit 驅動真的 ListSession／BoardListSession 與功能模組守護。

@@ -157,6 +157,63 @@ describe("視窗頂端落在掛圖那一列的中間", () => {
   });
 });
 
+test("topRowSnippet（只給錄製檔）：視窗頂端那一列的前幾個字，空白收成一格", () => {
+  const { view, disp, mc, rowTop } = mount();
+  try {
+    mc.querySelector('[srow="40"]').firstChild.textContent = "  推 alice:   這是第四十列的推文內容";
+    disp.scrollTop = rowTop(40) + 5;
+    expect(view.topRowSnippet()).toBe("推 alice: 這是第四十列的推文內容".slice(0, 20));
+    expect(view.topRowSnippet(4)).toBe("推 al");
+  } finally {
+    disp.remove();
+  }
+});
+
+// 反向讀取（End）還沒和 head 接合：pageLines = head ++ tail，中間缺一大段。tail 的
+// srow 是 pageLines 索引，不是文章行號 ⇒ 照記的話，重讀（從頭往下累積、沒有缺口）
+// 後還原會落在缺口那麼多行之前（AID 返回、長推文、斷線重連都是重讀）。
+describe("反向讀取尚未接合時的採樣", () => {
+  // head：第 1～40 行（srow 0..39）；tail 從第 500 行起（srow 40 ⇒ 第 500 行）。
+  const J = 40;
+  const TAIL_START_LINE = 500;
+
+  test("tail 的列：記成文章的絕對列索引（第 N 行 ⇒ N-1）", () => {
+    const { view, disp, rowTop } = mount();
+    try {
+      view._reverse = { junction: J, headEndLine: J, tailStartLine: TAIL_START_LINE, tailEndLine: 600 };
+      disp.scrollTop = rowTop(J + 7);
+      expect(view.currentLineIndex()).toBe(TAIL_START_LINE - 1 + 7);
+    } finally {
+      disp.remove();
+    }
+  });
+
+  test("tail 的列內比例照帶", () => {
+    const { view, disp, rowTop } = mount();
+    try {
+      view._reverse = { junction: J, headEndLine: J, tailStartLine: TAIL_START_LINE, tailEndLine: 600 };
+      disp.scrollTop = rowTop(J + 7) + CHH / 2;
+      expect(view.currentLineIndex()).toBe(TAIL_START_LINE - 1 + 7.5);
+    } finally {
+      disp.remove();
+    }
+  });
+
+  test("head 的列、以及 tail 還沒建立（只按了 End）：照舊", () => {
+    const { view, disp, rowTop } = mount();
+    try {
+      view._reverse = { junction: J, headEndLine: J, tailStartLine: TAIL_START_LINE, tailEndLine: 600 };
+      disp.scrollTop = rowTop(12);
+      expect(view.currentLineIndex()).toBe(12);
+      view._reverse = { junction: J, headEndLine: J, tailStartLine: null, tailEndLine: null };
+      disp.scrollTop = rowTop(J + 3);
+      expect(view.currentLineIndex()).toBe(J + 3);
+    } finally {
+      disp.remove();
+    }
+  });
+});
+
 test("長頁分塊：量目標列之前先讓它所在的塊照常渲染（不以估計高度量）", () => {
   const { view, disp, mc } = mount({ chunked: true });
   try {

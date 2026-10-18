@@ -1737,6 +1737,7 @@ EasyReading.prototype.leaveCurrentPost = function() {
   this._savedScrollTop = null;
   // Leaving the post the restore was meant for: drop it (a later article must
   // never inherit someone else's reading position).
+  if (this._pendingScrollRestore) this._diagScrollRestore('drop', { reason: 'leave' });
   this._pendingScrollRestore = null;
   // Same reasoning for the external-landing one-shot: it was aimed at the post we
   // are leaving, so a later article must not inherit it.
@@ -2080,6 +2081,7 @@ EasyReading.prototype._onKeyDown = function(e) {
 
   // The user took over: a pending AID-back scroll restore must not yank the
   // view out from under them a page later.
+  if (this._pendingScrollRestore) this._diagScrollRestore('drop', { reason: 'key', key: e.key });
   this._pendingScrollRestore = null;
 
   if (this._onKeyDownProcessUI(e) === 'browser')
@@ -2180,6 +2182,33 @@ EasyReading.prototype.ensureEnabledOnArticle = function(allowRetry, reason) {
 EasyReading.prototype.requestScrollRestore = function(lineIndex) {
   if (!lineIndex) return;
   this._pendingScrollRestore = { lineIndex: lineIndex, tries: 0 };
+  this._diagScrollRestore('request', { lineIndex: lineIndex });
+};
+
+// debug 錄製檔 `easyReading.scrollRestore`：request／apply／giveup／settled。settled ＝
+// 套用後隔一段時間（預覽載完、版面靜下來）實際停在哪一列 —— 與 apply 的 lineIndex
+// 對照就知道偏差是「記錯」（request 就不對）還是「套用後被推走」。只記錄，不改行為。
+EasyReading.prototype._diagScrollRestore = function(action, info) {
+  const rec = this._core && this._core.debugRecorder;
+  if (rec && rec.log) rec.log('easyReading.scrollRestore', Object.assign({ action: action }, info));
+};
+
+const SCROLL_RESTORE_SETTLED_MS = 2000;
+
+EasyReading.prototype._diagScrollRestoreSettled = function(lineIndex) {
+  const rec = this._core && this._core.debugRecorder;
+  if (!rec || !rec.log) return;
+  const view = this._view;
+  setTimeout(() => {
+    const disp = view && view.mainDisplay;
+    this._diagScrollRestore('settled', {
+      lineIndex: lineIndex,
+      now: view && view.currentLineIndex ? view.currentLineIndex() : null,
+      topText: view && view.topRowSnippet ? view.topRowSnippet() : null,
+      scrollTop: disp ? Math.round(disp.scrollTop) : null,
+      scrollHeight: disp ? disp.scrollHeight : null
+    });
+  }, SCROLL_RESTORE_SETTLED_MS);
 };
 
 // 長推文送完回到文章：落在文末（＝按 End：捲到底黏住，讀取中則反向讀取直接跳文末）。
@@ -2223,6 +2252,16 @@ EasyReading.prototype._advanceScrollRestore = function() {
   if (step.action === 'wait') return;
   if (step.action === 'apply') disp.scrollTop = step.scrollTop;
   this._pendingScrollRestore = null;
+  this._diagScrollRestore(step.action, {
+    lineIndex: pending.lineIndex,
+    tries: pending.tries,
+    target: step.scrollTop != null ? Math.round(step.scrollTop) : null,
+    scrollTop: Math.round(disp.scrollTop),
+    scrollHeight: disp.scrollHeight,
+    clientHeight: disp.clientHeight,
+    reflow: !!this._view.reflow
+  });
+  if (step.action === 'apply') this._diagScrollRestoreSettled(pending.lineIndex);
 };
 
 // 捲動一段列數；回傳「有沒有真的還捲得動」（false ⇒ 呼叫端當作到頂/到底處理）。

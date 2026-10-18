@@ -297,9 +297,14 @@ ReadingRecord.prototype = {
       listOwner: o.listOwner || null,
       boardListOwner: o.boardListOwner || null
     };
+    const view = o.view || (this._core && this._core.view);
     this._diag('begin', {
       feature: feature,
       lineIndex: bm.article ? bm.article.lineIndex : null,
+      // 只給錄製檔對照（「記下的第 N 列」是不是使用者當時看的那句）；還原不讀它。
+      // 鏡像期間（快照）畫面上是原生 24 列，這裡量到的不是書籤那一列 ⇒ 不記。
+      topText:
+        bm.article && !this._frozen.article && view && view.topRowSnippet ? view.topRowSnippet() : null,
       listTop: bm.list ? bm.list.topNum : null,
       boardListTop: bm.boardList ? bm.boardList.topNum : null
     });

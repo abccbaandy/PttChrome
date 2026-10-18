@@ -188,6 +188,27 @@ describe("ReadingRecord：量測與凍結", () => {
     expect(rr.current().article.lineIndex).toBe(3);
   });
 
+  // 錄製檔診斷：書籤的列號旁邊記頂端那一列的字，才對得出「記下的第 N 列」是不是使用者
+  // 當時看的那句（真機偏差的定位依據）。鏡像期間畫面是原生 24 列，量到的字不是書籤那列。
+  test("begin 的錄製紀錄帶頂端列文字；鏡像期間（快照）不帶", () => {
+    const { core, view, er } = articleCore({ lineIndex: 30.5 });
+    view.topRowSnippet = vi.fn(() => "內文第 30 行");
+    core.debugRecorder = { log: vi.fn() };
+    const rr = new ReadingRecord(core);
+    rr.begin("reconnect-resume");
+    expect(core.debugRecorder.log).toHaveBeenLastCalledWith(
+      "readingRecord.begin",
+      expect.objectContaining({ lineIndex: 30.5, topText: "內文第 30 行" })
+    );
+    rr.freeze("article");
+    er._functionMode = true;
+    rr.begin("long-push");
+    expect(core.debugRecorder.log).toHaveBeenLastCalledWith(
+      "readingRecord.begin",
+      expect.objectContaining({ lineIndex: 30.5, topText: null })
+    );
+  });
+
   test("列表／看板列表的凍結只在擁有者仍處於 functionMode 時有效", () => {
     const ls = { state: "functionMode", readingPosition: () => null };
     const rr = new ReadingRecord({ listSession: ls });

@@ -1759,26 +1759,47 @@ TermView.prototype = {
   // 高度佔位，比例仍落在圖的同一處。整條傳遞鏈（nav_history／aid_navigation／
   // long_push_session）只把它當數字傳，0 仍是「在頂端」。
   // 量不到節點（假 view／還沒畫）時格線版面才退回算術。
+  // **反向讀取（End）還沒接合時換算成文章的絕對列索引**：pageLines＝head ++ tail，中間
+  // 缺一段，tail 的 srow 不是行號；消費端都是重讀（從頭累積、沒有缺口）後才還原，照記
+  // 就會落在缺口那麼多行之前。pageLines[J+k] ＝第 tailStartLine+k 行 ⇒ 索引 tailStartLine-1+k。
   currentLineIndex: function() {
     var disp = this.mainDisplay;
     if (!disp || !this.chh) return null;
     var st = disp.scrollTop;
-    var mc = this.mainContainer;
-    if (mc && typeof mc.querySelectorAll === 'function') {
-      if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
-      // 長頁分塊：先以塊跳過視窗上方（逐列量會強迫每一個閉塊排版，見 screen_chunk.js）。
-      var rows = rowsFromScrollTop(mc, disp, st);
-      for (var i = 0; i < rows.length; ++i) {
-        var top = offsetTopWithin(rows[i], disp), h = rows[i].offsetHeight;
-        if (top + h > st) {
-          var srow = Number(rows[i].getAttribute('srow')) || 0;
-          var frac = h > 0 && st > top ? (st - top) / h : 0;
-          return srow + Math.round(frac * 1000) / 1000;
-        }
-      }
+    var hit = this._topRowNode();
+    if (hit) {
+      var srow = Number(hit.el.getAttribute('srow')) || 0;
+      var frac = hit.h > 0 && st > hit.top ? (st - hit.top) / hit.h : 0;
+      var rv = this._reverse;
+      if (rv && rv.tailStartLine != null && srow >= rv.junction)
+        srow = rv.tailStartLine - 1 + (srow - rv.junction);
+      return srow + Math.round(frac * 1000) / 1000;
     }
     if (this.reflow) return null;
     return Math.round(st / this.chh);
+  },
+
+  // 視窗頂端那一列的節點：{ el, top, h }（offsetTop 系），量不到 null。
+  _topRowNode: function() {
+    var disp = this.mainDisplay, mc = this.mainContainer;
+    if (!disp || !mc || typeof mc.querySelectorAll !== 'function') return null;
+    var st = disp.scrollTop;
+    if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
+    // 長頁分塊：先以塊跳過視窗上方（逐列量會強迫每一個閉塊排版，見 screen_chunk.js）。
+    var rows = rowsFromScrollTop(mc, disp, st);
+    for (var i = 0; i < rows.length; ++i) {
+      var top = offsetTopWithin(rows[i], disp), h = rows[i].offsetHeight;
+      if (top + h > st) return { el: rows[i], top: top, h: h };
+    }
+    return null;
+  },
+
+  // **只給 debug 錄製檔用**（閱讀紀錄的採樣與還原結果）：視窗頂端那一列的前幾個字，
+  // 拿來和使用者當時眼睛看到的頂端對照。還原邏輯不讀它（還原只靠 currentLineIndex）。
+  topRowSnippet: function(maxLen) {
+    var hit = this._topRowNode();
+    if (!hit) return null;
+    return String(hit.el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, maxLen || 20);
   },
 
   // 提示帶的水平幾何。**必須與 App.clientToPos 同源**（兩者都走
