@@ -25,6 +25,7 @@
 //
 // 認不出 ⇒ 原生：指紋任一要素失配、任一項目列解析不了、第一張不是第 1 頁 ⇒ 不接管。
 import { readValuesWithDefault } from './pref_storage';
+import { recordFor } from './reading_record';
 
 export const HELP_TITLE = '操作說明 (Help)';
 export const KEY_HOME = '\x1b[1~';
@@ -166,6 +167,11 @@ export function mergeHelpPages(pages, totalPages) {
 //   leaving  送出執行／離開鍵了，等畫面離開說明選單（期間的說明幀一律不理）
 //   native   這一次說明選單交給原生（使用者選了「原生畫面」、好讀關著、認不出起點…），
 //            直到畫面離開說明選單
+//
+// 閱讀紀錄（決策表 'help-menu'）：從列表按 h 時列表好讀／看板列表已經切原生、丟掉緩衝
+// （切進去那一刻凍結了視野）。認出說明選單就領書籤（不論接不接管），畫面離開說明選單時
+// 交回：執行了某一項＝'done'（指令的結果就是目的地），其餘（q、原生畫面裡自己離開）
+// ＝'cancel' ⇒ 回到同一份列表的原處。
 export function HelpMenuController(core, termBuf, opts) {
   this._core = core;
   this._termBuf = termBuf;
@@ -194,6 +200,8 @@ HelpMenuController.prototype = {
     this._lastPage = 0;
     this._incomplete = false;
     this._leavingAt = 0;
+    this._bookmark = null;
+    this._outcome = 'cancel';
     this._clearTimers();
   },
 
@@ -257,9 +265,12 @@ HelpMenuController.prototype = {
     if (!parsed) {
       if (this.phase !== 'idle') {
         const wasOpen = this.phase === 'open';
-        this._log('end', { phase: this.phase });
+        const bm = this._bookmark;
+        const outcome = this._outcome;
+        this._log('end', { phase: this.phase, outcome: outcome });
         this._reset();
         if (wasOpen) this._emit();
+        recordFor(this._core).end(bm, outcome);
       }
       return;
     }
@@ -272,6 +283,9 @@ HelpMenuController.prototype = {
       return;
     }
     if (this.phase === 'idle') {
+      // 列表切原生那一刻凍結的視野（鏡像期間 current() 回的就是它）。
+      this._bookmark = recordFor(this._core).begin('help-menu');
+      this._outcome = 'cancel';
       // 起點必須是第 1 頁（server 恆從 curr=0 開始）；中途才看到的不接管。
       if (!this._enabled() || parsed.page !== 1) {
         this.phase = 'native';
@@ -343,6 +357,8 @@ HelpMenuController.prototype = {
     this._fetchPage = 0;
     this.phase = 'leaving';
     this._leavingAt = this._now();
+    // 閱讀紀錄：離開（q）回原處；執行某一項／小天使＝那個指令接手畫面。
+    this._outcome = reason === 'close' ? 'cancel' : 'done';
     this._log('leave', { reason: reason });
     this._send(bytes);
     this._emit();

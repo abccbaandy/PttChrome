@@ -94,8 +94,24 @@ export const RESTORE_TABLE = {
     cancel: cell(null, 'origin', 'origin'),
     fail: cell(null, 'origin', 'origin')
   },
-  // 文章搜尋：送出＝搜尋結果（另一個編號空間，不還原）；取消本來就零送出。
-  'article-search': { done: NONE, cancel: NONE, fail: NONE },
+  // 文章搜尋（article_search.submitSearch）：送出後有結果＝落在搜尋結果（MODE_SELECT，
+  // 另一個編號空間）⇒ 列表的編號空間比對不符，待還原錨自動丟棄；找不到
+  // （read.c#select_read 的 vmsg「找不到符合條件的文章。」＋READ_REDRAW）或 prompt
+  // 沒開出來（失敗，關鍵字沒送）＝回到同一份列表 ⇒ 原處。取消本來就零送出。
+  'article-search': {
+    done: cell(null, 'origin'),
+    cancel: NONE,
+    fail: cell(null, 'origin')
+  },
+  // 說明選單（help_menu.js）：從列表按 h 會切原生、丟掉緩衝；離開（q／原生畫面裡自己
+  // 離開）回到同一份列表 ⇒ 原處。執行某一項＝那個指令的結果就是目的地（不還原）。
+  // 文章裡按 h 不在這裡還原：那是 easy_reading 自己的 functionMode 來回
+  // （_savedScrollTop，同推文、回應）。
+  'help-menu': {
+    done: NONE,
+    cancel: cell(null, 'origin', 'origin'),
+    fail: cell(null, 'origin', 'origin')
+  },
   // 跳到第一篇未讀：目的就是移動；找不到時停在翻到的那頁（使用者拍板）。
   'unread-jump': { done: NONE, cancel: NONE, fail: NONE },
   // 斷線重連後回到原處（reconnect_resume.js）：落在文章 ⇒ 斷線前在文末就黏回文末，

@@ -5,6 +5,8 @@
 import { BoardListSession } from "../../src/js/board_list_session";
 import { ScreenRefresh } from "../../src/js/screen_refresh";
 import { recordFor } from "../../src/js/reading_record";
+import { HelpMenuController, parseHelpMenuScreen } from "../../src/js/help_menu";
+import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
 
 const pad7 = (n) => String(n).padStart(7, " ");
 const brdRow = (num, name) =>
@@ -208,6 +210,52 @@ describe("看板列表重新整理：回平滑捲動時視野回到原處", () =
       preventDefault() {},
     });
     expect(h.s._pendingViewport).toBe(null);
+  });
+
+  // 使用者回報：看板列表按 h 叫出說明彈窗，取消之後位置跑掉（seed 採用 PTT 分頁頂端）。
+  test("說明選單（h）：離開之後回平滑捲動，視野回到原處", () => {
+    const h = makeSession();
+    h.s.onKeyDown({
+      key: "h",
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+      shiftKey: false,
+      preventDefault() {},
+    });
+    step(h, "native-key").onDone(true);
+    expect(h.s._renderMode).toBe("native");
+    const sent = [];
+    const hm = new HelpMenuController(h.core, null, {
+      send: (b) => sent.push(b),
+      enabled: () => true,
+    });
+    hm.noteScreen(parseHelpMenuScreen(HELP_FAV_PAGE1));
+    expect(hm.phase).toBe("open");
+    hm.close();
+    hm.noteScreen(null); // q ⇒ PTT 重畫看板列表（游標仍在 25）
+    vi.advanceTimersByTime(400); // 靜置探針 → seed
+    expect(h.s.state).toBe("active");
+    expect(h.s._pendingViewport).not.toBe(null);
+    fillBuffer(h.termBuf, 1, 40);
+    h.s._seqCache = null;
+    h.s.applyScrollAfterRender();
+    expect(h.s._topNum).toBe(10);
+    expect(h.s._pendingViewport).toBe(null);
+    expect(h.scrollWrites[h.scrollWrites.length - 1]).toBe((10 - 1) * ROW_H);
+  });
+
+  test("說明選單：執行某一項 ⇒ 不還原（採用 PTT 的落點）", () => {
+    const h = makeSession();
+    h.s._beginPassthroughBytes("h");
+    const hm = new HelpMenuController(h.core, null, { send() {}, enabled: () => true });
+    hm.noteScreen(parseHelpMenuScreen(HELP_FAV_PAGE1));
+    hm.select(3);
+    hm.noteScreen(null);
+    vi.advanceTimersByTime(400);
+    expect(h.s.state).toBe("active");
+    expect(h.s._pendingViewport).toBe(null);
+    expect(h.s._topNum).toBe(21);
   });
 
   test("外部序列停在看板列表：交回（releaseExternal）後自動回平滑捲動", () => {

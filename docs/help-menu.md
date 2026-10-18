@@ -54,6 +54,12 @@ bottom sheet（手機）一次列出**全部頁**的指令，點一下＝執行�
 - `board_note_skip.boardEntryArms`：說明選單 row 0 的 `【我的最愛】` 曾被當成看板列表，在說明選單點項目
   （↓…⏎）會誤 arm 跳過進板畫面（2026-10-18 錄製檔 `boardNoteSkip.arm`）。說明選單一律不 arm。
 
+## 閱讀紀錄
+
+從文章列表／看板列表按 `h` 時，列表好讀與看板列表平滑捲動會切原生、丟掉緩衝。說明選單認出來就向閱讀紀錄領書籤
+（決策表 `help-menu`），畫面離開說明選單時交回：離開＝回到列表的原處，執行某一項＝不還原。規則見
+`docs/reading-record.md`，守護 `reading_record_list.test.js`／`reading_record_board_list.test.js`「說明選單」。
+
 ## 守護
 
 - `tests/unit/help_menu.test.js`：實錄兩頁（`fixtures/help_menu_rows.js`）解析、突變、送鍵、控制器流程、誤 arm。
