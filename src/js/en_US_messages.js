@@ -827,6 +827,96 @@ export const en_US = {
   "tooltip_reconnectResume": {
     "message": "After the connection drops and you log in again, automatically go back to the article or article list you were reading. Off = stay on the main menu."
   },
+  "options_enableCommandPalette": {
+    "message": "Command palette"
+  },
+  "tooltip_enableCommandPalette": {
+    "message": "Press the shortcut to open one input box: type a board name to enter it, paste an article URL or #AID (board) to open it, type keywords to search titles or authors, type words like \"refresh\" or \"unread\" to run a feature, or type a setting's name to jump to it. Also available from the right-click menu."
+  },
+  "options_commandPaletteKey": {
+    "message": "Command palette shortcut"
+  },
+  "tooltip_commandPaletteKey": {
+    "message": "Click here, then press the key to use (an F key is recommended: PTT never receives F keys, so no PTT key is taken)"
+  },
+  "cmenu_commandPalette": {
+    "message": "Command palette"
+  },
+  "palette_placeholder": {
+    "message": "Board, article URL, keyword or command…"
+  },
+  "palette_empty": {
+    "message": "Nothing matches"
+  },
+  "palette_footer": {
+    "message": "↑↓ select   Enter run   Esc close"
+  },
+  "palette_openArticle": {
+    "message": "Open article #{aid} ({board})"
+  },
+  "palette_gotoBoard": {
+    "message": "Go to board {board}"
+  },
+  "palette_searchTitle": {
+    "message": "Search titles for \"{q}\""
+  },
+  "palette_searchAuthor": {
+    "message": "Search author \"{q}\""
+  },
+  "palette_searchPush": {
+    "message": "Search posts with {q}+ pushes"
+  },
+  "palette_refresh": {
+    "message": "Refresh"
+  },
+  "palette_unreadJump": {
+    "message": "Jump to first unread"
+  },
+  "palette_markAllRead": {
+    "message": "Mark all as read"
+  },
+  "palette_copyLink": {
+    "message": "Copy link to this post"
+  },
+  "palette_back": {
+    "message": "Back to previous post"
+  },
+  "palette_settings": {
+    "message": "Open settings"
+  },
+  "palette_safeModeOn": {
+    "message": "Turn on safe mode (native PTT for everything)"
+  },
+  "palette_safeModeOff": {
+    "message": "Turn off safe mode"
+  },
+  "palette_setting": {
+    "message": "Setting: {title}"
+  },
+  "palette_failed": {
+    "message": "Can't open this article right now"
+  },
+  "palette_safeModeOnDone": {
+    "message": "Safe mode on: native PTT for everything"
+  },
+  "palette_safeModeOffDone": {
+    "message": "Safe mode off"
+  },
+  "palette_kindAction": {
+    "message": "Action"
+  },
+  "palette_kindSearch": {
+    "message": "Search"
+  },
+  "palette_kindArticle": {
+    "message": "Article"
+  },
+  "palette_kindBoard": {
+    "message": "Board"
+  },
+  "palette_kindSetting": {
+    "message": "Setting"
+  },
   "options_nativeSafeMode": {
     "message": "Safe mode: use native PTT for everything"
   },

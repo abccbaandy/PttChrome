@@ -11,6 +11,7 @@ import LongPushModal from "./LongPushModal";
 import LongPushProgressModal from "./LongPushProgressModal";
 import LongPushErrorModal from "./LongPushErrorModal";
 import SearchModal from "./SearchModal";
+import CommandPalette from "./CommandPalette";
 import AidBoardChoiceModal from "./AidBoardChoiceModal";
 import { currentBoardOption } from "../../js/aid_board_choice";
 import DebugRecordNotice from "../DebugRecordNotice";
@@ -91,6 +92,23 @@ const quickAddBlacklist = (pttchrome, prefKey, entry) => {
   writeValues(newValues);
   prefSync.savePrefs(newValues);
   pttchrome.onValuesPrefChange(newValues);
+};
+
+// 指令面板切換安全模式：與設定頁同一條存檔管線（localStorage → 雲端同步 →
+// onValuesPrefChange 讀取端覆寫），再照設定頁關閉時的做法重新套一次好讀模式。
+// 不走 onPrefSaveImpl：那條帶 fromPrefModal，會把 localStorage 裡的帳密填進登入快取。
+const setNativeSafeMode = (pttchrome, on) => {
+  const values = readValuesWithDefault();
+  if (!!values.nativeSafeMode === on) return;
+  const newValues = { ...values, nativeSafeMode: on };
+  writeValues(newValues);
+  prefSync.savePrefs(newValues);
+  try {
+    pttchrome.onValuesPrefChange(newValues);
+    pttchrome.switchToEasyReadingMode?.(pttchrome.view.useEasyReadingMode);
+  } catch (e) {
+    console.error("指令面板：套用安全模式時出錯", e);
+  }
 };
 
 const menuHandlerByEventKey = {
@@ -183,6 +201,9 @@ const initialState = {
   // 兩個小幫手的顯示開關（預設關），同樣開選單當下現讀。
   inputHelperEnabled: false,
   liveArticleHelperEnabled: false,
+  // 指令面板的選單項（enableCommandPalette）與它顯示在右邊的快捷鍵，開選單當下現讀。
+  commandPaletteEnabled: false,
+  commandPaletteKey: "",
   // 長推文一鍵發送：總開關（enableLongPush）＋「現在這個畫面按 X 推得了文嗎」。
   longPushEnabled: false,
   // 輸入框顯示「會分成幾則」用的**預估**上限；真正送出時由 LongPushSession 依
@@ -214,6 +235,11 @@ const initialState = {
   // 選「指定看板」後搜尋彈窗以看板種類開啟，searchAidTarget＝{ aid } 讓它只挑板名。
   aidChoice: null,
   searchAidTarget: null,
+  // 指令面板（js/command_palette.js）：paletteCtx＝開的當下量好的「這一刻能做什麼」。
+  showsPalette: false,
+  paletteCtx: null,
+  // 從指令面板挑了某個設定項：設定頁開啟後跳到那一項（PrefModal jumpTarget）。
+  prefJump: null,
   // --- LiveHelper state ---
   liveHelperEnabled: false,
   liveHelperSec: 1,
@@ -255,6 +281,7 @@ export const ContextMenu = ({ pttchrome }) => {
     state.showsTitleBlacklist ||
     state.showsLongPush ||
     state.showsSearch ||
+    state.showsPalette ||
     !!state.aidChoice ||
     !!state.longPushProgress ||
     !!state.longPushError;
@@ -527,6 +554,8 @@ export const ContextMenu = ({ pttchrome }) => {
           pageState: pttchrome.buf.pageState,
           lastRowText,
         }),
+        commandPaletteEnabled: !!prefs.enableCommandPalette,
+        commandPaletteKey: prefs.commandPaletteKey || "",
       });
     },
     [pttchrome, update],
@@ -794,6 +823,50 @@ export const ContextMenu = ({ pttchrome }) => {
     () => update({ showsSearch: false }),
     [update],
   );
+
+  // 指令面板的唯一入口（快捷鍵經 pttchrome.openCommandPalette、右鍵／長按選單）。
+  // 合約同 openSearch：true ＝我接手了這次按鍵。「這一刻能做什麼」在這裡現量，判準
+  // 與右鍵選單／手機工具列共用同一組函式（列出來就一定能按）。
+  const openPalette = useCallback(() => {
+    const prefs = readValuesWithDefault();
+    if (!prefs.enableCommandPalette) return false;
+    const busy = !!serializedOpHint(pttchrome);
+    update({
+      ...initialState,
+      showsPalette: true,
+      paletteCtx: {
+        searchKinds: busy
+          ? []
+          : availableSearchKinds(searchGateFacts(pttchrome)),
+        refresh: !!pttchrome.screenRefresh?.target?.(),
+        unreadJump: !!pttchrome.unreadJump?.available?.(),
+        markAllRead: !!pttchrome.markAllRead?.available?.(),
+        copyLink:
+          !!pttchrome.deepLinkController && pttchrome.buf?.pageState === 3,
+        back: !!pttchrome.aidNavigation?.canGoBack?.(),
+        safeMode: !!prefs.nativeSafeMode,
+      },
+    });
+    return true;
+  }, [pttchrome, update]);
+  useEffect(() => {
+    pttchrome.openCommandPalette = openPalette;
+    return () => {
+      pttchrome.openCommandPalette = noop;
+    };
+  }, [pttchrome, openPalette]);
+  const onPaletteHide = useCallback(
+    () => update({ showsPalette: false }),
+    [update],
+  );
+  const onCommandPaletteClick = useCallback(
+    (event) => {
+      event.stopPropagation();
+      pttchrome.contextMenuShown = false;
+      openPalette();
+    },
+    [pttchrome, openPalette],
+  );
   // 看板種類的原生補全橋接（board_search_bridge.js）：彈窗切到看板時才建立。
   // 替 #AID 挑看板時（searchAidTarget）：取消＝原生 `s` 取消落在文章列表 ⇒ 重開原文、
   // 閱讀紀錄還原原列（aid_navigation.reopenPicked）。
@@ -856,6 +929,76 @@ export const ContextMenu = ({ pttchrome }) => {
       if (!sent) hint(serializedOpHint(pttchrome) || i18n("searchModal_busy"));
     },
     [pttchrome, update],
+  );
+
+  // 指令面板挑了一項：每一類都接到既有入口（送鍵、閱讀紀錄、忙碌提示由它們負責）。
+  const runPaletteItem = useCallback(
+    (item) => {
+      const hint = (msg, level) =>
+        pttchrome.view?.flashListHint?.(msg, 3000, level);
+      if (item.kind === "setting" || item.action === "settings") {
+        pttchrome.onDisableLiveHelperModalState?.();
+        // 同一次 update 關面板、開設定頁：分兩次的話 modalOpen 會 true→false→true，
+        // 中間那一幀終端機把焦點搶回 #t（modal_shown_sources.test.js 守的那個坑）。
+        update({
+          showsPalette: false,
+          showsSettings: true,
+          prefJump:
+            item.kind === "setting"
+              ? { tab: item.tab, key: item.settingKey, n: Date.now() }
+              : null,
+        });
+        return;
+      }
+      update({ showsPalette: false });
+      if (typeof pttchrome.noteUserAction === "function")
+        pttchrome.noteUserAction();
+      switch (item.kind) {
+        case "article":
+          if (!pttchrome.deepLinkController?.request(item.target))
+            hint(i18n("palette_failed"), HINT_ERROR);
+          return;
+        case "board":
+          onSearchConfirm({ kind: "board", text: item.text });
+          return;
+        case "search":
+          onSearchConfirm({ kind: item.searchKind, text: item.text });
+          return;
+        default:
+          break;
+      }
+      switch (item.action) {
+        case "refresh":
+          pttchrome.screenRefresh?.refresh("palette");
+          return;
+        case "unreadJump":
+          pttchrome.unreadJump?.start();
+          return;
+        case "markAllRead":
+          pttchrome.markAllRead?.start();
+          return;
+        case "copyLink":
+          pttchrome.deepLinkController?.copyCurrentPostLink();
+          return;
+        case "back":
+          pttchrome.aidNavigation?.back();
+          return;
+        case "safeModeOn":
+        case "safeModeOff":
+          setNativeSafeMode(pttchrome, item.action === "safeModeOn");
+          hint(
+            i18n(
+              item.action === "safeModeOn"
+                ? "palette_safeModeOnDone"
+                : "palette_safeModeOffDone",
+            ),
+          );
+          return;
+        default:
+          return;
+      }
+    },
+    [pttchrome, update, onSearchConfirm],
   );
 
   const onLiveArticleHelperClick = useCallback(
@@ -1111,6 +1254,11 @@ export const ContextMenu = ({ pttchrome }) => {
     searchKinds,
     aidChoice,
     searchAidTarget,
+    showsPalette,
+    paletteCtx,
+    prefJump,
+    commandPaletteEnabled,
+    commandPaletteKey,
     liveHelperSec,
     menuAnchor,
   } = state;
@@ -1152,6 +1300,9 @@ export const ContextMenu = ({ pttchrome }) => {
         onInputHelperClick={onInputHelperClick}
         onLiveArticleHelperClick={onLiveArticleHelperClick}
         onSettingsClick={onSettingsClick}
+        commandPaletteEnabled={commandPaletteEnabled}
+        commandPaletteKey={commandPaletteKey}
+        onCommandPaletteClick={onCommandPaletteClick}
         onQuickSearchSelect={onQuickSearchSelect}
       />
       <InputHelperModal
@@ -1219,6 +1370,15 @@ export const ContextMenu = ({ pttchrome }) => {
         onReset={onPrefReset}
         debugMode={debugMode}
         onDebugModeChange={onDebugModeChange}
+        jumpTarget={showsSettings ? prefJump : null}
+      />
+      <CommandPalette
+        show={showsPalette}
+        ctx={paletteCtx}
+        onHide={onPaletteHide}
+        onRun={runPaletteItem}
+        mobile={mobile}
+        pttchrome={pttchrome}
       />
       <DebugRecordNotice pttchrome={pttchrome} />
       <MobileAppBar pttchrome={pttchrome} />

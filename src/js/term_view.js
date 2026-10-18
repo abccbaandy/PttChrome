@@ -1436,6 +1436,17 @@ TermView.prototype = {
       this.bbscore.unreadJump.start();
       return;
     }
+    // 指令面板 hotkey (pref commandPaletteKey, default F4)：同上，F 鍵送不到 PTT。
+    // openCommandPalette 回 false（ContextMenu 還沒 mount）⇒ 不吞鍵。
+    if (this.bbscore.openCommandPalette && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      var palettePrefs = readEffectivePrefs();
+      if (palettePrefs.enableCommandPalette &&
+          e.key === palettePrefs.commandPaletteKey &&
+          this.bbscore.openCommandPalette()) {
+        e.preventDefault();
+        return;
+      }
+    }
     // 重新整理（F5／⌘R，pref refreshKeyIntercept）：看板列表／文章列表／文章改成重整
     // PTT 畫面。refresh() 回 false ＝這個畫面不支援 ⇒ 不 preventDefault，瀏覽器照常
     // 重新載入（beforeunload 會先問）。F 鍵與 ⌘ 組合本來就送不到 PTT。

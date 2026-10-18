@@ -1,0 +1,53 @@
+/* 指令面板（CommandPalette.jsx）。清單框固定高度、框內捲動：打字時項目數一直變，
+   彈窗高度跟著變的話輸入框會上下跳（同 SearchModal.css 的理由）。
+   守護 tests/unit/command_palette_ui.test.jsx「清單框高度固定」。 */
+.commandPaletteList {
+  box-sizing: border-box;
+  height: 320px;
+  margin-top: 8px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+}
+
+/* 手機：軟鍵盤升起後 sheet 可用高度只剩一半左右。 */
+.commandPaletteList[data-mobile] {
+  height: 200px;
+}
+
+.commandPaletteItem {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.commandPaletteItem[data-active] {
+  background: var(--mantine-color-default-hover);
+}
+
+.commandPaletteKind {
+  flex: 0 0 3.5em;
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+}
+
+.commandPaletteText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.commandPaletteTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commandPaletteSub {
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+}
