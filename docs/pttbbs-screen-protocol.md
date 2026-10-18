@@ -997,7 +997,7 @@ goto 自癒與有界升級、補畫走 notify）、
 | Q3 | 快速設定頁按鍵：`\` 循環、`1`/`2`/`3` **直選並立即 return（不需要 Enter）**、`←`/`→` 增減、其他任意鍵 return | `pmore.c:2986-3005` |
 | Q4 | 三個標題字串：快速設定頁 `" piaip's more: pmore 2007+ 快速設定 - 色彩(ANSI碼)顯示模式 "`／完整設定頁 `" piaip's more: pmore 2007+ 設定選項 "`／說明頁 `" piaip's more: pmore 2007+ 瀏覽程式使用說明"`。**只有前兩者含「設定」** ⇒ 這是把 `h` 說明頁排除掉的判準 | `pmore.c:129-135` |
 | Q5 | 選項列＝`色彩顯示方式:` ＋ `1 預設格式化內容 \|2 原始ANSI控制碼 \|3 純文字`，**選中項的數字後面緊接 `*`**，未選是空白 | `pmore.c:149-152`、`pmore_prefEntry`(2873) |
-| Q6 | 兩個設定頁都以 `vmsg()` 收尾 ⇒ 末列右側是反白的 `[按任意鍵繼續]` ⇒ client 判成 `pageState 5` | `pmore.c:2986`、`pmore.c:3061` |
+| Q6 | 兩個設定頁都以 `vmsg()` 收尾 ⇒ 末列右側是反白的 `[按任意鍵繼續]` ⇒ client 判成 `pageState 5`。標題（`pmore_PromptBar`）與選項列（`pmore_prefEntry`）都從 col 0 起印；**client 指紋＝標題＋選項列＋底列 vmsg 三件齊備**（文章內文引用這些字時底列是狀態列）。`1`/`2`/`3` 直選只在快速設定頁，完整設定頁落 default 直接離開 | `pmore.c:2986`、`pmore.c:3061` |
 | Q7 | 快速設定頁畫在 `ystart = b_lines-2`；24 列終端 `b_lines = t_lines-1 = 23` ⇒ **0-based row 21 標題／22 選項／23 提示**。完整設定頁 `ystart = b_lines-9`＋`PMORE_SHADOW_ABOVE` 的一列 `▔` ⇒ 標題在 row 15。**client 端不得綁死列號**（`t_lines` 一變就位移） | `pmore.c:2970`、`pmore.c:3015`、`mbbsd/term.c:66` |
 | Q8 | 進設定頁前 `grayout(0, ystart-1, GRAYOUT_DARK)` ⇒ 上半畫面整片重畫成 `ESC[1;30m`（fg=0 **＋BOLD** ⇒ client 端 `getFg()` 是 **8**，不是 0） | `pmore.c:2974`、`pmore.c:3018`；§11.4 |
 | Q9 | 完整設定頁另有 `w` 斷行／`m` 斷行符號／`l` 分隔線／`t` 傳統狀態列 —— **五項全都改變整篇文章的呈現與行數** | `pmore.c:3057-3082` |

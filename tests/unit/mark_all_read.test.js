@@ -61,6 +61,14 @@ describe("markReadPromptShown", () => {
     ).toBe(false);
     expect(markReadPromptShown(null)).toBe(false);
   });
+  // 回歸：舊判準是「任一列同時含兩段字」⇒ 列表上剛好有一篇標題引用了這個 prompt，
+  // `v` 沒開出 prompt 時第二步的 `v⏎` 會落回列表按鍵。getdata 從 col 0 起印 prompt，
+  // 文章列一律以編號／游標開頭，只認行首就分得開。
+  test("文章標題引用了 prompt 的字（不在行首）→ 不算", () => {
+    const quoted =
+      "    123 +96 6/21 someone      [問題] " + PROMPT.slice(0, 30);
+    expect(markReadPromptShown(listFrame({ 10: quoted }).rowTexts)).toBe(false);
+  });
 });
 
 describe("MarkAllRead.start：v → 等 prompt → v⏎", () => {

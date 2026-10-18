@@ -477,7 +477,7 @@ PTT 慣例把「雷」用低亮度黑字寫在黑底上（`ESC[30m`），讀者�
   - 旁證：「上班模式」開啟時隱藏中文本來就隱約可見（`.work-mode-active .q0{color:#111827}` 而 `.b0`
     沒被覆寫 ⇒ 深藍灰 on 黑），隱藏英數字仍完全看不見 —— 正是上表的必然結果。
 - **軌 B 的送鍵序列（`App.onLightsRawMode`）**：`\` → 等**畫面內容**確認設定頁（`rawModePrefRowVisible`
-  ＝出現「色彩顯示方式」列）→ 才送 `3`（`pmore.c` 的 `case '3'` 直選並立即 return，**不需要 Enter**）。
+  ＝**快速設定頁**整幀：col 0 標題＋選項列＋底列 vmsg；完整設定頁沒有 1/2/3 直選，不算）→ 才送 `3`（`pmore.c` 的 `case '3'` 直選並立即 return，**不需要 Enter**）。
   - **兩個 byte 絕不可以一次送**（typeahead 會吞掉中間那一幀）；**第一步沒成功就絕不送數字鍵**
     （`3` 落回文章按鍵是 pmore 的「跳至第 N 頁」，會把使用者彈到別的地方）。
   - 第一步走 `CommandQueue`（`kind: 'lights-pref'`）；**第二步刻意不再排一條 queue 命令** ——

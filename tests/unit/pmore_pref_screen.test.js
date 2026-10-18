@@ -56,6 +56,32 @@ const screen = (...rows) => {
   return s;
 };
 
+// 真實的兩種設定頁（整幀）：快速設定 row 21..23（ystart = b_lines-2）；完整設定
+// row 14 陰影、15 標題、16 空白、17.. 選項（ystart = b_lines-9），底列是 vmsg。
+const FULL_PROMPT =
+  " ◆ 請調整設定或其它任意鍵結束。                                 [按任意鍵繼續]  ";
+const quickScreen = (sel = 0) => {
+  const s = ARTICLE_ROWS.slice(0, 3).concat(new Array(21).fill(""));
+  s[21] = QUICK_TITLE;
+  s[22] = optionRow(sel);
+  s[23] = QUICK_PROMPT;
+  return s;
+};
+const fullScreen = () => {
+  const s = ARTICLE_ROWS.slice(0, 3).concat(new Array(21).fill(""));
+  s[15] = FULL_TITLE;
+  FULL_ROWS.slice(1).forEach((r, i) => (s[17 + i] = r));
+  s[23] = FULL_PROMPT;
+  return s;
+};
+
+// 文章內文剛好引用了設定頁的字（PttNewhand／SYSOP 板教學文常見），底列仍是
+// pmore 狀態列 ⇒ 這是正在讀的文章，不是設定頁。
+const articleQuoting = (...quoted) =>
+  screen(ARTICLE_ROWS[0], ARTICLE_ROWS[1], ...quoted).map((r, i) =>
+    i === 23 ? ARTICLE_ROWS[3] : r,
+  );
+
 describe("pmorePrefScreenSeen", () => {
   test("快速設定頁 → true（不綁死列號：畫在 row 21 也認得）", () => {
     const s = new Array(24).fill("");
@@ -66,9 +92,7 @@ describe("pmorePrefScreenSeen", () => {
   });
 
   test("完整設定頁 → true（`o` 的 w/l/t 同樣改變整篇行數，必須涵蓋）", () => {
-    const s = new Array(24).fill("");
-    FULL_ROWS.forEach((r, i) => (s[15 + i] = r));
-    expect(pmorePrefScreenSeen(s)).toBe(true);
+    expect(pmorePrefScreenSeen(fullScreen())).toBe(true);
   });
 
   test("說明頁 → false（按 h 不該觸發整篇重讀）", () => {
@@ -77,6 +101,33 @@ describe("pmorePrefScreenSeen", () => {
 
   test("一般文章畫面 → false", () => {
     expect(pmorePrefScreenSeen(screen(...ARTICLE_ROWS))).toBe(false);
+  });
+
+  test("真實整幀：快速設定／完整設定都認得", () => {
+    expect(pmorePrefScreenSeen(quickScreen())).toBe(true);
+    expect(pmorePrefScreenSeen(fullScreen())).toBe(true);
+  });
+
+  // 回歸：舊判準只要某列同時有「piaip's more」與「設定」就算 ⇒ 讀到引用設定頁的
+  // 教學文時，鏡像模式一退出就整篇重讀（跳回文章開頭）。
+  test("文章內文引用設定頁標題／選項列（底列是狀態列）→ false", () => {
+    expect(pmorePrefScreenSeen(articleQuoting(FULL_TITLE, optionRow(0)))).toBe(false);
+    expect(pmorePrefScreenSeen(articleQuoting(QUICK_TITLE, optionRow(1)))).toBe(false);
+    expect(
+      pmorePrefScreenSeen(articleQuoting("推薦大家用 piaip's more 的設定頁調整斷行")),
+    ).toBe(false);
+  });
+
+  test("標題列不在 col 0（內文縮排引用）→ false，即使底列剛好是 vmsg", () => {
+    const s = quickScreen();
+    s[21] = "    >" + QUICK_TITLE;
+    expect(pmorePrefScreenSeen(s)).toBe(false);
+  });
+
+  test("標題下面沒有色彩顯示方式選項列 → false", () => {
+    const s = quickScreen();
+    s[22] = "";
+    expect(pmorePrefScreenSeen(s)).toBe(false);
   });
 
   test("空輸入不炸", () => {
@@ -104,16 +155,29 @@ describe("parseRawModeFromPrefRow", () => {
 });
 
 describe("rawModePrefRowVisible（程式化切換第一步的完成判準）", () => {
-  test("選項列出現 → true（快速設定頁與完整設定頁共用同一列）", () => {
-    expect(rawModePrefRowVisible(screen(optionRow(0)))).toBe(true);
-    const s = new Array(24).fill("");
-    FULL_ROWS.forEach((r, i) => (s[15 + i] = r));
-    expect(rawModePrefRowVisible(s)).toBe(true);
+  test("快速設定頁整幀 → true", () => {
+    expect(rawModePrefRowVisible(quickScreen(0))).toBe(true);
+    expect(rawModePrefRowVisible(quickScreen(2))).toBe(true);
+  });
+
+  // pmore.c#pmore_Preference 的 switch 沒有 '1'/'2'/'3'（落 default ⇒ 直接離開設定頁），
+  // 直選只在 pmore_QuickRawModePref ⇒ 完整設定頁不是「可以送數字鍵」的畫面。
+  test("完整設定頁 → false（那裡的 1/2/3 不是直選，只會離開設定頁）", () => {
+    expect(rawModePrefRowVisible(fullScreen())).toBe(false);
   });
 
   test("一般文章畫面 → false（沒進設定頁就絕不可以送數字鍵）", () => {
     expect(rawModePrefRowVisible(screen(...ARTICLE_ROWS))).toBe(false);
     expect(rawModePrefRowVisible(undefined)).toBe(false);
+  });
+
+  // 回歸：舊判準是「任一列含『色彩顯示方式』」⇒ `\` 沒打開設定頁時，內文剛好
+  // 有這幾個字的文章會被當成設定頁，數字鍵落進 pmore 變成「跳至第 N 頁」。
+  test("文章內文提到色彩顯示方式／引用選項列 → false", () => {
+    expect(rawModePrefRowVisible(articleQuoting("請問 pmore 的色彩顯示方式: 要去哪裡改？"))).toBe(
+      false,
+    );
+    expect(rawModePrefRowVisible(articleQuoting(QUICK_TITLE, optionRow(0)))).toBe(false);
   });
 });
 

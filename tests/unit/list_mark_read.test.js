@@ -199,6 +199,18 @@ describe("markReadUnreadBefore 的序列", () => {
     expect(v.expect(null, facts({ 23: "  文章選讀  (y)回信" }))).toBe(false);
   });
 
+  // 回歸：舊判準是「任一列含『前已讀後未讀』」⇒ 列表上有篇標題剛好問這個功能時，
+  // `v` 沒開出 prompt 也會放行第二步，`w` 落回列表按鍵（對作者送呼叫器）。
+  test("v 的 expect：文章標題含「前已讀後未讀」不算 prompt", () => {
+    const { s, enqueued } = makeSession();
+    s._serverNum = 103;
+    s.markReadUnreadBefore(103);
+    const v = stepOf(enqueued, "mark-read-prompt");
+    expect(v.expect(null, facts({ 10: "  110 + author  [問題] 前已讀後未讀是什麼意思" }))).toBe(
+      false,
+    );
+  });
+
   test("v 沒進 prompt（onFail）→ 絕不送 w，顯性降級原生", () => {
     const { s, sent, enqueued, hints } = makeSession();
     s._serverNum = 103;

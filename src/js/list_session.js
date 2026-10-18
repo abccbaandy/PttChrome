@@ -74,6 +74,7 @@ import {
 } from './screen_titles';
 import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { recordFor, listRecordMatches } from './reading_record';
+import { markReadPromptShown } from './mark_read_prompt';
 import {
   windowVisibleSequence,
   LIST_HEADER_ROWS,
@@ -843,9 +844,9 @@ function nativeResumeHint() {
 // 看板列表按 `v` ＝ b_mark_read_unread（mbbsd/bbs.c:4309）：畫面下方跳出 getdata
 // prompt「設定所有文章 (U)未讀 (V)已讀 (W)前已讀後未讀 (Q)取消？[Q] 」。
 // b_lines = t_lines-1 ⇒ 24 列終端時 prompt 畫在 **row 22**（不是最後一列），所以
-// 判定要掃整個畫面、不能只看底列。W 分支拿該篇檔名時間戳當參考點，取不到就吐
-// vmsg 那句。詳見 docs/pttbbs-screen-protocol.md §11.5。
-const MARK_READ_PROMPT = '前已讀後未讀';
+// 判定要掃整個畫面、不能只看底列（指紋與「設為全部已讀」共用 mark_read_prompt.js）。
+// W 分支拿該篇檔名時間戳當參考點，取不到就吐 vmsg 那句。詳見
+// docs/pttbbs-screen-protocol.md §11.5。
 const MARK_READ_REJECT = '請改用其它文章設定當參考點';
 // 待還原捲動錨（_pendingViewport）的壽命。涵蓋「v → w⏎ → 靜置探針（RESUME_QUIET_MS）
 // → rebuild → 往上補頁」整段；過了還沒套用就放棄，免得很久以後的某次補頁突然
@@ -2503,9 +2504,7 @@ ListSession.prototype = {
           kind: 'mark-read-prompt',
           // 掃整個畫面：prompt 在 row 22，只看底列會永遠判否。
           expect: function(snap, facts) {
-            for (let i = 0; i < facts.rowTexts.length; ++i)
-              if (facts.rowTexts[i].indexOf(MARK_READ_PROMPT) !== -1) return true;
-            return false;
+            return markReadPromptShown(facts.rowTexts);
           },
           onFail: function() {
             rr.end(bm, 'fail');

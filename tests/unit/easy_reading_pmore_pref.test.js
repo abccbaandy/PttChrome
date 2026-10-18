@@ -172,6 +172,20 @@ describe("離開 pmore 設定頁 → 整篇重讀", () => {
     expect(h.er._pmorePrefSeen).toBe(false);
   });
 
+  // 回歸：舊判準只要某列同時有「piaip's more」與「設定」就算設定頁 ⇒ 鏡像中讀到
+  // 引用設定頁的教學文，一回好讀就被 Home 送回文章開頭，「開燈」標籤也被改掉。
+  test("文章內文引用設定頁（底列是狀態列）→ 不重讀、不改 rawmode", () => {
+    const h = makeHarness();
+    showArticle(h);
+    h.rows[5] = " piaip's more: pmore 2007+ 設定選項 ";
+    h.rows[6] = PREF_OPTIONS;
+    settle(h);
+    expect(h.er._pmorePrefSeen).toBe(false);
+    expect(h.er.rawMode).toBe(null);
+    expect(h.sent).toEqual([]);
+    expect(h.buf.pageLines.length).toBe(1); // 累積長頁原封不動
+  });
+
   test("好讀關著（原生模式）也追蹤 rawmode，但不設整篇重讀的旗標", () => {
     const h = makeHarness();
     h.er._enabled = false;

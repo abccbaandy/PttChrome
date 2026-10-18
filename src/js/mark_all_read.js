@@ -19,18 +19,12 @@ import { submitSerializedSteps } from './article_search';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
+import { markReadPromptShown } from './mark_read_prompt';
+
+// prompt 指紋與列表好讀「前已讀後未讀」共用（mark_read_prompt.js）。
+export { markReadPromptShown };
 
 export const MARK_ALL_READ_FLAG = 'markAllReadInFlight';
-// getdata prompt 的兩段特徵字（同一列）：只認得到這列才算進了 prompt。
-const PROMPT_HEAD = '設定所有文章';
-const PROMPT_ALL_READ = '(V)已讀';
-
-// 畫面上有沒有 `v` 的 getdata prompt（掃整個畫面：prompt 在 row 22）。
-export function markReadPromptShown(rowTexts) {
-  return (rowTexts || []).some(function(t) {
-    return !!t && t.indexOf(PROMPT_HEAD) !== -1 && t.indexOf(PROMPT_ALL_READ) !== -1;
-  });
-}
 
 export function MarkAllRead(core) {
   this._core = core;
