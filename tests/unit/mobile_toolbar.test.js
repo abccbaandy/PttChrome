@@ -7,6 +7,7 @@ import {
   THREAD_NAV_KEYS,
   toolbarSlots,
   TOOLBAR_SLOT_COUNT,
+  hasHelpHint,
 } from "../../src/js/mobile_toolbar";
 import { KeyMap } from "../../src/js/term_keyboard";
 
@@ -68,6 +69,25 @@ describe("toolbarContextFromFacts", () => {
     expect(toolbarContextFromFacts(frame(LIST), 2).post).toBe(true);
     expect(toolbarContextFromFacts({ ...frame(LIST), inputField: true }, 2).post).toBe(false);
     expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1).post).toBe(false);
+  });
+  // 手機上卡片／好讀文章／選單大按鈕會收起底列，原生的 (h)說明 點不到（使用者 2026-10-18）。
+  test("操作說明（更多）：底列有 (h)說明／(h)按鍵說明 就給；prompt 開著、主功能表、說明選單本身不給", () => {
+    const FAV = " 我的最愛  (a)增加看板 (d)刪除 (g)新增目錄 (M)移動位置 (v)已讀/未讀    (h)說明";
+    const MENU = " 主選單   世界郵政日   10/9 週五 13:31 | someone | 線上24764人     (h)說明 ";
+    const PMORE = "  瀏覽 第 1/2 頁 ( 45%)  目前顯示: 第 1~23 行  (h)按鍵說明 ←[q]離開 ";
+    expect(toolbarContextFromFacts(frame({ 23: FAV }), 2).help).toBe(true);
+    // 主功能表：sheet 再多一列就蓋住整個選單（mobile_sheet.offline「點遮罩」那條守的版面）
+    expect(toolbarContextFromFacts(frame({ 0: "【主功能表】", 23: MENU }), 1).help).toBe(false);
+    expect(hasHelpHint(MENU)).toBe(true);
+    expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3).help).toBe(true);
+    expect(hasHelpHint(PMORE)).toBe(true);
+    expect(toolbarContextFromFacts({ ...frame({ 23: FAV }), inputField: true }, 2).help).toBe(false);
+    expect(
+      hasHelpHint(" 操作說明  [第 1/2 頁] (PgUp)上頁 (PgDn)下頁 (Enter)執行 (h)小天使  (q/←)離開")
+    ).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 23: "搜尋標題: " }), 3).help).toBe(false);
+    expect(EMPTY_TOOLBAR_CONTEXT.help).toBe(false);
+    expect(TOOLBAR_KEYS.help).toEqual({ key: "h" });
   });
   test("跳到第一篇未讀（更多）：只有文章列表；prompt 開著、文章、主功能表不給", () => {
     expect(toolbarContextFromFacts(frame(LIST), 2).unreadJump).toBe(true);

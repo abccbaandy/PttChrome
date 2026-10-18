@@ -289,6 +289,14 @@ export const MobileToolbar = ({
     m.start();
   }, [pttchrome]);
 
+  // 操作說明：送 h（與實體鍵盤同一條分派）；好讀開著時 PTT 的說明選單會變成 bottom sheet
+  // （components/HelpMenu）。
+  const onHelp = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    sendKey(TOOLBAR_KEYS.help.key);
+  }, [sendKey]);
+
   // 全選／圖片上傳：與桌機右鍵選單同一組 App 入口（ContextMenu 的 menuHandlerByEventKey）。
   const onSelectAll = useCallback(() => {
     setPanel(null);
@@ -570,6 +578,16 @@ export const MobileToolbar = ({
             onClick={onMarkAllRead}
           >
             {i18n("cmenu_markAllRead")}
+          </button>
+        ) : null}
+        {context.help ? (
+          <button
+            type="button"
+            className="nomouse_command mobileSheetItem pttRipple"
+            data-key="__help"
+            onClick={onHelp}
+          >
+            {i18n("mobileToolbar_help")}
           </button>
         ) : null}
         {context.share ? (

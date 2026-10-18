@@ -12,6 +12,7 @@
 // 雲端 session（env CLAUDE_CODE_REMOTE=true）例外：第 2 點直接自己裝（autoFixLocalDeps）。雲端環境的
 // Setup script（scripts/cloud-setup.sh）跑完會被快取，之後 dev 升了依賴，新 session 拿到的仍是舊快取
 // ⇒ 每個 session 開頭都要先花時間裝。容器是拋棄式的、沒有別人的改動要顧，裝了沒有風險。
+// 雲端另外確保字型對齊 CI（scripts/cloud-fonts.mjs：排除 DejaVu），同樣因為 Setup script 被快取。
 // 沒 upstream 的分支（worktree 的 `claude/*` 新分支）不查 remote：worktree 跟 base 同步走 ccd_host 的 sync 工具。
 //
 // 用法：
@@ -24,6 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ensureCiFontParity } from './cloud-fonts.mjs';
 
 const SELF = fileURLToPath(import.meta.url);
 const FETCH_TIMEOUT_MS = 15_000;
@@ -211,7 +213,14 @@ function main(argv) {
   const root = rootIdx >= 0 ? path.resolve(argv[rootIdx + 1]) : path.resolve(path.dirname(SELF), '..');
   let local = checkLocalDeps(root);
   let done = [];
-  if (process.env.CLAUDE_CODE_REMOTE === 'true') ({ done, local } = autoFixLocalDeps(root, local));
+  if (process.env.CLAUDE_CODE_REMOTE === 'true') {
+    ({ done, local } = autoFixLocalDeps(root, local));
+    try {
+      if (ensureCiFontParity() === 'written') done.push('字型對齊 CI（排除 DejaVu）');
+    } catch {
+      // 寫不進去（權限）：只影響 screen_sanity 格線，不擋 session
+    }
+  }
   const notice = buildNotice(checkRemote(root), local);
   const fixed = done.length ? `[雲端] 開 session 時已自動補裝：${done.join('、')}。` : '';
   if (!notice) {

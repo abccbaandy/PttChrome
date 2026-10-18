@@ -17,6 +17,11 @@
 //            （mbbsd/bbs.c 的 bbs_cmd_new_post）。游標在輸入欄（prompt 開著）時不給。
 //   unreadJump：文章列表（同 post 的判準），「更多」裡的「跳到第一篇未讀」（unread_jump.js）。
 //   markAllRead：文章列表（同 post 的判準），「更多」裡的「設為全部已讀」（mark_all_read.js）。
+//   help   ：底列寫著 `(h)說明`／`(h)按鍵說明`（看板列表／文章列表／主功能表 footer、
+//            pager 狀態列；vs_footer 與 pmore.c 的提示都在 b_lines），「更多」裡的「操作說明」送 h
+//            ⇒ 新版說明選單（好讀開著時是 help_menu.js 的 bottom sheet）。手機上這些畫面的底列
+//            常被收起（卡片／好讀文章），點不到原生的 (h)說明。游標在輸入欄時不給；主功能表（含子選單）
+//            也不給，理由同 contentTools（sheet 再多一列就把整個選單蓋住、遮罩點不到）。
 //   contentTools：「更多」裡的全選／上傳圖片／圖片上傳紀錄。主功能表（含子選單）不給：那裡沒有
 //            內容可選、上傳也只能退回複製到剪貼簿，卻會把 sheet 撐到蓋住整個選單（遮罩點不到）。
 //   search ：可開的搜尋種類，與鍵盤攔截同一個判準（article_search.availableSearchKinds）。
@@ -34,7 +39,7 @@ import { MOBILE_KEYPAD_PUSH_KEY } from './mobile_layout';
 
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
-  unreadJump: false, markAllRead: false, contentTools: false, refresh: false, end: false,
+  unreadJump: false, markAllRead: false, help: false, contentTools: false, refresh: false, end: false,
   search: [], appBar: EMPTY_APP_BAR
 });
 
@@ -45,8 +50,16 @@ export const TOOLBAR_KEYS = Object.freeze({
   push: { key: MOBILE_KEYPAD_PUSH_KEY },
   reply: { key: 'y' },
   post: { key: 'p', mods: { altKey: true } },
-  end: { key: 'End' }
+  end: { key: 'End' },
+  help: { key: 'h' }
 });
+
+// 底列有沒有「(h)說明」這顆提示（文字判準，不看 pageState：主功能表、看板列表、文章列表、
+// pager 都適用；說明選單自己的 `(h)小天使` 不算）。
+const HELP_HINT_RE = /\(h\)(?:按鍵)?說明/;
+export function hasHelpHint(lastRowText) {
+  return HELP_HINT_RE.test(lastRowText || '');
+}
 
 // 工具列的固定格位。**每一格的位置不隨畫面變**：按鈕依畫面有條件出現時，flex 等寬
 // 會讓同一顆按鈕在不同畫面跑到不同位置（使用者回報「搜尋／到底有時在中間有時在旁邊」）。
@@ -85,6 +98,7 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
   const article = pager && !mail;
   const o = opts || {};
   const lists = !facts.inputField && (isArticleList(facts) || !!classifyBoardListScreen(facts));
+  const menu = boardListContextKind(facts) === 'menu';
   return {
     push: article,
     reply: pager,
@@ -94,7 +108,8 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
     post: !pager && isArticleList(facts),
     unreadJump: !pager && isArticleList(facts),
     markAllRead: !pager && isArticleList(facts),
-    contentTools: boardListContextKind(facts) !== 'menu',
+    help: !facts.inputField && !menu && hasHelpHint(last),
+    contentTools: !menu,
     refresh: !!o.connected && !!refreshTargetFromFacts(facts, pageState, {
       articleBoard: o.articleBoard,
       listOpened: o.listOpened
@@ -120,7 +135,7 @@ export function mobileToolbarContext(core) {
 }
 
 const FLAGS = [
-  'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'contentTools', 'refresh', 'end'
+  'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'help', 'contentTools', 'refresh', 'end'
 ];
 
 export function sameToolbarContext(a, b) {

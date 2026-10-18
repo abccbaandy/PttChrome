@@ -40,6 +40,8 @@ import { markReadPromptShown } from "../../src/js/mark_all_read";
 import { landedOnBoard } from "../../src/js/aid_navigation";
 import { functionModeExitDecision } from "../../src/js/easy_reading";
 import { parseStatusRow } from "../../src/js/string_util";
+import { parseHelpMenuScreen, HelpMenuController } from "../../src/js/help_menu";
+import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
 
 const LISTS = {
   "C_Chat（24 列，有《板名》）": {
@@ -309,6 +311,30 @@ describe("文章好讀：狀態列認不出 ⇒ 不進好讀；functionMode 認�
     expect(
       functionModeExitDecision({ pageState: 3, isStatusRow: true, curY: 10, lastRowNum: 23 })
     ).toBe("stay");
+  });
+});
+
+describe("說明選單好讀：認不出 ⇒ 不開彈窗、不送鍵（原生說明選單照常可用）", () => {
+  const mutate = (i, text) => HELP_FAV_PAGE1.map((r, j) => (j === i ? text : r));
+  const last = HELP_FAV_PAGE1.length - 1;
+
+  test("對照組：真實畫面（我的最愛按 h）認得出", () => {
+    expect(parseHelpMenuScreen(HELP_FAV_PAGE1)).not.toBeNull();
+  });
+
+  test.each([
+    ["標題改版", mutate(0, "【我的最愛】                    說明 (Help)")],
+    ["欄位列改版", mutate(1, "  快捷鍵                        功能")],
+    ["footer 改版", mutate(last, " 說明  [第 1/2 頁] (Enter)執行  (q/←)離開")],
+    ["項目列格式改版", mutate(3, "  [a/i] 增加看板                輸入看板名稱加入最愛")],
+    ["半繪（底列還沒畫）", mutate(last, "")],
+  ])("%s → 不接管", (_n, rows) => {
+    expect(parseHelpMenuScreen(rows)).toBeNull();
+    const sent = [];
+    const ctrl = new HelpMenuController({}, null, { send: (b) => sent.push(b), enabled: () => true });
+    ctrl.noteScreen(parseHelpMenuScreen(rows));
+    expect(ctrl.phase).toBe("idle");
+    expect(sent).toEqual([]);
   });
 });
 

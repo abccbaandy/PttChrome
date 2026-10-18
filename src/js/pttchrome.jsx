@@ -20,6 +20,7 @@ import { installPullRefresh } from './pull_refresh';
 import { LongPushSession } from './long_push_session';
 import { LogoutSession } from './logout_session';
 import { BoardNoteSkip } from './board_note_skip';
+import { HelpMenuController } from './help_menu';
 import { DeepLinkController } from './deep_link_controller';
 import { AutoLogin } from './auto_login';
 import { LIST_TITLE_COL_START, parseBlacklist, parseTitleBlacklist, shouldClearArticleContextOnSettle } from './comment_parse';
@@ -208,6 +209,9 @@ export const App = function() {
   // 之後 ⇒ 開板命令（brd-open-board）已在同一個 settle 完成，我們的鍵才排得上線。
   // arm 由送出出口觸發（_attachConn 的 conn.onDataSent）。
   this.boardNoteSkip = new BoardNoteSkip(this, this.view, this.buf, this.commandQueue);
+  // 說明選單好讀（h 的新版游標選單 → 彈窗／bottom sheet 列出全部頁，見 help_menu.js）。
+  // listener 排在列表 session 之後：同一個 settle 裡佇列的命令先完成，補頁的 PgDn 才排得上線。
+  this.helpMenu = new HelpMenuController(this, this.buf);
   // 搜尋彈窗送出的兩步在途（article_search.submitSearch 寫、serialized_op_gate 讀）。
   this.searchInFlight = false;
   this.view.onAidClick = (aid, board) => {
@@ -592,6 +596,7 @@ App.prototype.onClose = function() {
   // rely on this session's per-board cursors (pttbbs getkeep), which die with it.
   this.aidNavigation.reset();
   this.boardNoteSkip.reset();
+  this.helpMenu.reset();
   // 長推文的探路成果同理：錨點是這條連線的列表游標（pttbbs getkeep），斷線就失效。
   // 不丟掉的話，重連後按下「送出」會拿舊錨點去比對新畫面。
   this.longPush.disarm();

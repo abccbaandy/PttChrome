@@ -335,6 +335,26 @@ export const en_US = {
     "message": "A command is in progress, please try again"
   },
 
+  // Help menu easy reading (components/HelpMenu)
+  "helpMenu_title": {
+    "message": "Help"
+  },
+  "helpMenu_titleWith": {
+    "message": "{0} Help"
+  },
+  "helpMenu_loading": {
+    "message": "Loading more commands…"
+  },
+  "helpMenu_native": {
+    "message": "Native screen"
+  },
+  "helpMenu_angel": {
+    "message": "Angel"
+  },
+  "helpMenu_close": {
+    "message": "Close"
+  },
+
   // options nav
   "options_general": {
     "message": "General"
@@ -1026,6 +1046,9 @@ export const en_US = {
   },
   "mobileToolbar_unreadJump": {
     "message": "First unread"
+  },
+  "mobileToolbar_help": {
+    "message": "Help"
   },
   "mobileToolbar_post": {
     "message": "Post"

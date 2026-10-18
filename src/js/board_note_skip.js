@@ -56,6 +56,7 @@ import {
   rowHasAnyTitle
 } from './screen_titles';
 import { readValuesWithDefault } from './pref_storage';
+import { parseHelpMenuScreen } from './help_menu';
 
 export const KEY_LEFT = '\x1b[D';
 export const KEY_ANY = ' ';
@@ -104,6 +105,10 @@ export function isBoardEntryKey(bytes) {
 export function boardEntryArms(rowTexts, bytes) {
   const rows = rowTexts || [];
   const row0 = rows[0] || '';
+  // 新版說明選單（psb.c#cmd_show_help_layers_inner）的 row 0 是「【<caption>】 … 操作說明
+  // (Help)」，caption 就是看板列表的標題（我的最愛…）⇒ 長得像看板列表。在那裡按 ⏎ 是
+  // 執行游標下的說明項（多半不是進板），不 arm。
+  if (parseHelpMenuScreen(rows)) return false;
   if (rowHasAnyTitle(row0, [BOARD_LIST, FAVOURITE, CLASS_LIST]))
     return isBoardEntryKey(bytes);
   // prompt 標題畫在 row 0（do_select 的 move(0,0)），輸入欄在 row 1。

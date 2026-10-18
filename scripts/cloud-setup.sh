@@ -58,6 +58,10 @@ yarn install --immutable || { echo "[setup] yarn install 失敗"; exit 1; }
 yarn playwright install --with-deps chromium firefox \
   || echo "[setup] WARN: Playwright 瀏覽器安裝失敗（可能是網路白名單），unit-browser／e2e 不能跑"
 
+# ── 字型對齊 CI：排除 CI image 沒有的 DejaVu（否則 monospace 落到它，screen_sanity 格線必紅）──
+# 理由與實測見 scripts/cloud-fonts.mjs 檔頭。舊環境（快取）由 SessionStart hook 補做。
+node scripts/cloud-fonts.mjs || echo "[setup] WARN: 字型對齊失敗"
+
 # ── pttbbs 原始碼（.gitignore 忽略，CLAUDE.md「PTT 邏輯不准猜」要讀它）──
 # 之後的更新由 SessionStart hook scripts/sync-3rd-script.mjs 負責。
 mkdir -p 3rd_script
