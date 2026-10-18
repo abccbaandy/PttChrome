@@ -1,0 +1,180 @@
+/* 首頁儀表板（HomeDashboard/index.jsx）。蓋在主功能表上、不是 modal：
+   z-index 低於 App Bar（150）、手機底部工具列（2500）與 Mantine overlay（200），高於終端機（≤3）。
+   手機讓開 App Bar 與底部工具列（mobile_layout.MOBILE_APPBAR_PX／MOBILE_TOOLBAR_PX＋safe-area）。 */
+.homeDashboard {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  background: #101014;
+  color: #ddd;
+  font:
+    14px/1.45 system-ui,
+    sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.homeDashboard[data-mobile] {
+  top: calc(48px + var(--safe-top, 0px));
+  bottom: calc(48px + var(--safe-bottom, 0px));
+}
+
+.homeInner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 16px 24px;
+  box-sizing: border-box;
+}
+
+.homeHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.homeTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.homeSpacer {
+  flex: 1 1 auto;
+}
+
+.homeButton {
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #1c1c22;
+  color: #ddd;
+  padding: 5px 12px;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.homeButton:hover {
+  background: #26262e;
+}
+
+.homeButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.homeMail {
+  border-color: #b33;
+  background: #4a1414;
+  color: #fff;
+}
+
+.homeSection {
+  margin-bottom: 20px;
+}
+
+.homeSectionHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.homeSectionHead h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #bbb;
+}
+
+.homeStatus {
+  flex: 1 1 auto;
+  font-size: 12px;
+  color: #888;
+}
+
+/* 一格一個看板：桌機一排約 4～5 格，資訊密度不低於原生的一列一板（板名＋敘述都在）。 */
+.homeBoardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 8px;
+}
+
+.homeBoardCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.homeBoardCard[data-unread] {
+  border-color: #c9a227;
+}
+
+.homeBoardName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-weight: 600;
+  color: #fff;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.homeUnread {
+  flex: none;
+  font-size: 11px;
+  font-weight: 500;
+  color: #1a1400;
+  background: #e0b93a;
+  border-radius: 4px;
+  padding: 0 5px;
+}
+
+.homeBoardDesc {
+  max-width: 100%;
+  font-size: 12px;
+  color: #999;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.homeChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.homeChip {
+  border-radius: 999px;
+}
+
+.homeEmpty,
+.homeHint {
+  margin: 0;
+  color: #888;
+  font-size: 13px;
+}
+
+.homeHint {
+  margin-top: 8px;
+}
+
+.homeDashboard[data-mobile] .homeBoardGrid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.homeDashboard[data-mobile] .homeButton {
+  min-height: 40px;
+}

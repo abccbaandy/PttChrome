@@ -921,13 +921,61 @@ export const en_US = {
     "message": "Safe mode: use native PTT for everything"
   },
   "tooltip_nativeSafeMode": {
-    "message": "Turn this on when PTT changes and something looks wrong: easy reading, board list smooth scrolling, skipping the board entry screen, returning after reconnect, jumping to the end of live posts, and the search / push / F5 key interception all pause, so the screen and keys behave exactly like PTT. Your other settings below are kept and come back when safe mode is turned off."
+    "message": "Turn this on when PTT changes and something looks wrong: easy reading, board list smooth scrolling, skipping the board entry screen, returning after reconnect, the home dashboard, jumping to the end of live posts, and the search / push / F5 key interception all pause, so the screen and keys behave exactly like PTT. Your other settings below are kept and come back when safe mode is turned off."
   },
   "options_skipBoardEntryScreen": {
     "message": "Skip the board entry screen"
   },
   "tooltip_skipBoardEntryScreen": {
     "message": "When entering a board from a board list or the board selector, dismiss its entry screen (including animated ones) automatically and land straight on the article list. Press b in the article list to view it anyway."
+  },
+  "options_enableHomeDashboard": {
+    "message": "Home dashboard"
+  },
+  "tooltip_enableHomeDashboard": {
+    "message": "Shows your favorite boards (boards with new posts are marked), recently visited boards and a new-mail notice on the main menu; click a card to enter the board. When it opens it fetches your favorites from PTT once (at most every 5 minutes). Press \"Native main menu\" or just start typing to get the original main menu back."
+  },
+  "home_title": {
+    "message": "Home"
+  },
+  "home_favorites": {
+    "message": "Favorites"
+  },
+  "home_recents": {
+    "message": "Recent boards"
+  },
+  "home_refresh": {
+    "message": "Refresh"
+  },
+  "home_updating": {
+    "message": "Updating…"
+  },
+  "home_updatedAt": {
+    "message": "Updated {time}"
+  },
+  "home_native": {
+    "message": "Native main menu"
+  },
+  "home_newMail": {
+    "message": "You have new mail"
+  },
+  "home_openMail": {
+    "message": "Open mailbox"
+  },
+  "home_notLoaded": {
+    "message": "Favorites not loaded yet"
+  },
+  "home_load": {
+    "message": "Load favorites"
+  },
+  "home_noFavorites": {
+    "message": "No favorite boards"
+  },
+  "home_unread": {
+    "message": "New posts"
+  },
+  "home_hint": {
+    "message": "Typing works on the main menu as usual (any key switches back to the native screen)."
   },
   "options_easyReadingEndSwitchNative": {
     "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."

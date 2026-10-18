@@ -102,6 +102,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_skipBoardEntryScreen",
     },
     {
+      key: "enableHomeDashboard",
+      titleKey: "options_enableHomeDashboard",
+      tooltipKey: "tooltip_enableHomeDashboard",
+    },
+    {
       key: "easyReadingBrowserFind",
       titleKey: "options_easyReadingBrowserFind",
       tooltipKey: "tooltip_easyReadingBrowserFind",

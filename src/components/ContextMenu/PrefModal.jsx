@@ -806,6 +806,17 @@ export const PrefModal = ({
                   {i18n("tooltip_skipBoardEntryScreen")}
                 </Text>
                 <PrefCheckbox
+                  name="enableHomeDashboard"
+                  checked={values.enableHomeDashboard}
+                  disabled={values.nativeSafeMode}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableHomeDashboard")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_enableHomeDashboard")}
+                </Text>
+                <PrefCheckbox
                   name="easyReadingBrowserFind"
                   checked={values.easyReadingBrowserFind}
                   onChange={onCheckboxChange}

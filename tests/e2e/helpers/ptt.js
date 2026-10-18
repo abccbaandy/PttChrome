@@ -298,6 +298,9 @@ async function installAutoLoginPrefs(page, extra) {
           // 上一輪殘留的連線還沒被 PTT 收掉時照樣會問（one-shot guard 的 unit 守護
           // 在 tests/unit/auto_login_2fa.test.js）。
           autoLoginDupConn: 'N',
+          // 首頁儀表板登入後會自己送 Ctrl+Z f 抓我的最愛：live 的共用 session 不准有
+          // 測試以外的按鍵（會跟 spec 的鍵搶線）。功能本身由 offline spec 守。
+          enableHomeDashboard: false,
           autoLoginSkipWelcome: true,
         },
         extra || {}

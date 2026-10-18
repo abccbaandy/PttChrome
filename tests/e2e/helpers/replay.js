@@ -98,6 +98,18 @@ async function installReplay(page, opts = {}) {
   const neverOpen = opts.neverOpen === true || !!openHost;
   const isBbsSrc = isBbsSocketUrl.toString();
   await installResizeObserverGuard(page);
+  // 首頁儀表板（pref enableHomeDashboard，預設開）會蓋住主功能表、打開時自己送 Ctrl+Z f
+  // 去抓我的最愛 ⇒ 畫主功能表的 spec 會被它擋住滑鼠、送出記錄多出 byte。預設關掉，
+  // 只有 home_dashboard.offline.spec.js 以 opts.homeDashboard 打開。
+  if (!opts.homeDashboard) {
+    await page.addInitScript((KEY) => {
+      try {
+        const cur = JSON.parse(window.localStorage.getItem(KEY) || '{}');
+        const values = Object.assign({}, cur.values, { enableHomeDashboard: false });
+        window.localStorage.setItem(KEY, JSON.stringify({ values }));
+      } catch (e) {}
+    }, 'pttchrome.pref.v1');
+  }
   await page.addInitScript(({ neverOpen, openHost, isBbsSrc }) => {
     // 判准的**唯一来源**是模组里那支纯函式（有 unit 守护）；addInitScript 的
     // callback 会被序列化送进页面、看不到模组作用域，所以把原始码一起带进来。
@@ -742,7 +754,7 @@ function offlineImageProfile(explicit) {
 // 第三個參數 opts.imageProfile：強制指定圖片載入情境（`image_load_conditions.offline.spec.js`
 // 用它逐條驗各情境的產品行為）。不給就依 project 名／env 推導。
 async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-unused-vars
-  await installReplay(page);
+  await installReplay(page, { homeDashboard: !!opts.homeDashboard });
   await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });
   await page.goto('/');
   await waitConnected(page);
