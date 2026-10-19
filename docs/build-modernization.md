@@ -91,6 +91,16 @@
 - Chromium 執行檔放在 Playwright 的共用快取，所有 checkout 共用；升 Playwright 版本時要重裝（`yarn playwright install chromium`）。
 - `screenshotFailures: false`；`.vitest/` 已列入 `.gitignore`。
 
+## 主 bundle 拆檔
+
+開站必載＝主 chunk＋它靜態 import 的共用 chunk（`dist/index.html` 的 `modulepreload` 那幾個）。量法：拿 build 出來的 `.map` 把每段產出歸回來源檔加總（`build.sourcemap` 已開）。
+
+- **已拆（React.lazy，`components/ContextMenu/index.jsx`）**：設定頁（含設定搜尋索引 `pref_search.js`、`PrefModal.css`）、指令面板、搜尋彈窗、輸入助手、即時文章助手、長推文輸入框。連帶把 Mantine 的 `NumberInput`（＋react-number-format）、`Tabs`、`SegmentedControl`、`Select`、`Switch`、`Combobox` 移出開站必載。實測（Vite 8.3）開站必載 1,313 KB → 1,167 KB（gzip 406 → 368 KB）。
+- **仍在 ContextMenu 掛載時就 render**：lazy 只把下載／解析移出關鍵路徑，chunk 在開站後背景載入，元件照舊常駐、以 `show` 開關，語意與拆檔前一致。不要改成「第一次打開才 render」：那會讓第一次打開多等一個網路往返，還得重新檢查每個彈窗靠 `show` 變化做的初始化。
+- **新增 lazy 彈窗時**要包自己的 `<Suspense fallback={null}>`（沒包就往上 suspend，整棵 ContextMenu 一起空白），並把模組加進守護 `tests/unit/lazy_modal_chunks.test.js` 的名單。守護是從 `src/entry.js` 沿靜態 import 走一遍：開站會載入的模組只要多一行 `import PrefModal …`，整包就被拉回主 bundle 而一切照常綠，只有這支測試會紅。
+- **英文語系 `en_US_messages.js`（約 49 KB）沒拆**：`i18n()` 是同步 API，`setupI18n()` 在約 40 支測試裡同步呼叫；設定搜尋還會拿另一語系做備援比對。要拆得把 i18n 改成開站前 await 載入，收益約 15 KB gzip，暫不做。
+- react-dom（約 200 KB）、Mantine 共用核心（Modal／Button／Portal 等，開站就會用到的提示框都靠它）、核心畫面模組是真的開站必載，不在拆檔範圍。
+
 ## Deprecated 瀏覽器 API
 
 已清零：`execCommand('copy')`→`navigator.clipboard.writeText`（正規化在純函式 `string_util.js#normalizeCopyText`，unit＋`ui_behavior.offline.spec.js` 複製冒煙測試守護）、`createEvent('MouseEvents')`→`new MouseEvent`、`touch_controller.js`＋Chrome UA sniffing 整份移除（目標＝桌機瀏覽器）。paste 攔截（`onDOMPaste`）非 deprecated，保留。**別再重複掃描這一區**。

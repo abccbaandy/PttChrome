@@ -1,18 +1,33 @@
-import { Fragment, useState, useRef, useCallback, useEffect } from "react";
+import {
+  Fragment,
+  Suspense,
+  lazy,
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+} from "react";
 import { i18n } from "../../js/i18n";
 import DropdownMenu from "./DropdownMenu";
 import ContextSheet from "./ContextSheet";
 import { useMobile } from "../useMobile";
-import InputHelperModal from "./InputHelperModal";
-import LiveHelperModal from "./LiveHelperModal";
-import PrefModal from "./PrefModal";
 import TitleBlacklistModal from "./TitleBlacklistModal";
-import LongPushModal from "./LongPushModal";
 import LongPushProgressModal from "./LongPushProgressModal";
 import LongPushErrorModal from "./LongPushErrorModal";
-import SearchModal from "./SearchModal";
-import CommandPalette from "./CommandPalette";
 import AidBoardChoiceModal from "./AidBoardChoiceModal";
+
+// 用到才開的大彈窗拆成獨立 chunk，不進主 bundle（手機冷啟動少解析一截）。
+// 仍在 ContextMenu 掛載時就 render ⇒ chunk 在開站時背景載入、元件照舊常駐，
+// 開關語意與拆檔前一致（PrefModal 靠 show 由 false→true 重讀 prefs 也照舊；
+// 載入前就被打開的話，掛載當下 show 已是 true，mount effect 一樣會重讀）。
+// 名單與量測見 docs/build-modernization.md「主 bundle 拆檔」，守護
+// tests/unit/lazy_modal_chunks.test.js。
+const PrefModal = lazy(() => import("./PrefModal"));
+const CommandPalette = lazy(() => import("./CommandPalette"));
+const SearchModal = lazy(() => import("./SearchModal"));
+const InputHelperModal = lazy(() => import("./InputHelperModal"));
+const LiveHelperModal = lazy(() => import("./LiveHelperModal"));
+const LongPushModal = lazy(() => import("./LongPushModal"));
 import { currentBoardOption } from "../../js/aid_board_choice";
 import DebugRecordNotice from "../DebugRecordNotice";
 import MobileToolbar from "../MobileToolbar";
@@ -1308,36 +1323,42 @@ export const ContextMenu = ({ pttchrome }) => {
         onCommandPaletteClick={onCommandPaletteClick}
         onQuickSearchSelect={onQuickSearchSelect}
       />
-      <InputHelperModal
-        show={showsInputHelper}
-        onHide={onInputHelperHide}
-        onReset={onInputHelperReset}
-        onCmdSend={onInputHelperCmdSend}
-        onConvSend={onInputHelperConvSend}
-      />
-      <LiveHelperModal
-        show={showsLiveArticleHelper}
-        onHide={onLiveHelperHide}
-        enabled={liveHelperEnabled}
-        sec={liveHelperSec}
-        onChange={onLiveHelperChange}
-      />
+      <Suspense fallback={null}>
+        <InputHelperModal
+          show={showsInputHelper}
+          onHide={onInputHelperHide}
+          onReset={onInputHelperReset}
+          onCmdSend={onInputHelperCmdSend}
+          onConvSend={onInputHelperConvSend}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <LiveHelperModal
+          show={showsLiveArticleHelper}
+          onHide={onLiveHelperHide}
+          enabled={liveHelperEnabled}
+          sec={liveHelperSec}
+          onChange={onLiveHelperChange}
+        />
+      </Suspense>
       <TitleBlacklistModal
         show={showsTitleBlacklist}
         draft={titleBlacklistDraft}
         onHide={onTitleBlacklistHide}
         onConfirm={onTitleBlacklistConfirm}
       />
-      <LongPushModal
-        show={showsLongPush}
-        maxBytes={longPushMaxBytes}
-        preflight={longPushPreflight}
-        imageUpload={pttchrome.imageUpload}
-        onHide={onLongPushHide}
-        onConfirm={onLongPushConfirm}
-        mobile={mobile}
-        pttchrome={pttchrome}
-      />
+      <Suspense fallback={null}>
+        <LongPushModal
+          show={showsLongPush}
+          maxBytes={longPushMaxBytes}
+          preflight={longPushPreflight}
+          imageUpload={pttchrome.imageUpload}
+          onHide={onLongPushHide}
+          onConfirm={onLongPushConfirm}
+          mobile={mobile}
+          pttchrome={pttchrome}
+        />
+      </Suspense>
       <LongPushProgressModal
         progress={longPushProgress}
         onCancel={onLongPushCancel}
@@ -1347,17 +1368,19 @@ export const ContextMenu = ({ pttchrome }) => {
         onHide={onLongPushErrorHide}
         onCopy={onLongPushCopyRest}
       />
-      <SearchModal
-        show={showsSearch}
-        kind={searchKind}
-        kinds={searchKinds}
-        onHide={onSearchHide}
-        onConfirm={onSearchConfirm}
-        createBoardSearch={createBoardSearch}
-        aidTarget={searchAidTarget}
-        mobile={mobile}
-        pttchrome={pttchrome}
-      />
+      <Suspense fallback={null}>
+        <SearchModal
+          show={showsSearch}
+          kind={searchKind}
+          kinds={searchKinds}
+          onHide={onSearchHide}
+          onConfirm={onSearchConfirm}
+          createBoardSearch={createBoardSearch}
+          aidTarget={searchAidTarget}
+          mobile={mobile}
+          pttchrome={pttchrome}
+        />
+      </Suspense>
       <AidBoardChoiceModal
         choice={aidChoice}
         onHide={onAidChoiceHide}
@@ -1367,22 +1390,26 @@ export const ContextMenu = ({ pttchrome }) => {
         pttchrome={pttchrome}
       />
       <HelpMenu pttchrome={pttchrome} mobile={mobile} />
-      <PrefModal
-        show={showsSettings}
-        onSave={onPrefSave}
-        onReset={onPrefReset}
-        debugMode={debugMode}
-        onDebugModeChange={onDebugModeChange}
-        jumpTarget={showsSettings ? prefJump : null}
-      />
-      <CommandPalette
-        show={showsPalette}
-        ctx={paletteCtx}
-        onHide={onPaletteHide}
-        onRun={runPaletteItem}
-        mobile={mobile}
-        pttchrome={pttchrome}
-      />
+      <Suspense fallback={null}>
+        <PrefModal
+          show={showsSettings}
+          onSave={onPrefSave}
+          onReset={onPrefReset}
+          debugMode={debugMode}
+          onDebugModeChange={onDebugModeChange}
+          jumpTarget={showsSettings ? prefJump : null}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <CommandPalette
+          show={showsPalette}
+          ctx={paletteCtx}
+          onHide={onPaletteHide}
+          onRun={runPaletteItem}
+          mobile={mobile}
+          pttchrome={pttchrome}
+        />
+      </Suspense>
       <DebugRecordNotice pttchrome={pttchrome} />
       <HomeDashboard pttchrome={pttchrome} />
       <SplitReader pttchrome={pttchrome} />
