@@ -893,6 +893,8 @@ export function ListSession(core, view, termBuf, queue) {
   this._fillPages = 0;
   this._edgeUp = false;
   this._edgeDown = false;
+  this._stallUp = false;
+  this._stallDown = false;
   // Contiguity-prune pivot override while a far jump is in flight (End/Home):
   // the jump's landing page is DISCONTIGUOUS with the buffer by design, and the
   // prune must keep the TARGET segment, not the one the cursor came from.
@@ -2566,6 +2568,8 @@ ListSession.prototype = {
     this._selectMode = listModeOf(facts) === 'select';
     this._edgeUp = false;
     this._edgeDown = false;
+    this._stallUp = false;
+    this._stallDown = false;
     this._fillPages = 0;
     this._renderMode = 'buffer';
     this._view.hideCursor();
@@ -2601,6 +2605,7 @@ ListSession.prototype = {
     if (
       seq.length < top + this._bodyRows() &&
       !this._edgeDown &&
+      !this._stallDown &&
       this._queue.idle
     )
       this._enqueuePrefetch(false, 'key');
@@ -2620,6 +2625,8 @@ ListSession.prototype = {
     if (facts) this._selectMode = listModeOf(facts) === 'select';
     this._edgeUp = false;
     this._edgeDown = false;
+    this._stallUp = false;
+    this._stallDown = false;
     this._fillPages = 0;
     this._seedAnchors(facts);
     if (edge === 'up') this._edgeUp = true;
@@ -2692,7 +2699,7 @@ ListSession.prototype = {
     if (this.state !== 'active') return;
     // 往上補把待還原的錨帶進來之後，下方可能還不夠捲到它（見 _demandDownIfWindowShort）。
     if (this._pendingViewport && this._queue.idle) this._demandDownIfWindowShort();
-    if (this._edgeUp) return;
+    if (this._edgeUp || this._stallUp) return;
     if (!this._queue.idle) return;
     // 待還原的錨還沒進緩衝：不論預抓目標是否已滿，都再往上補（上限兩頁——視口
     // 頂端離游標不到一頁，落點頁再往上一頁一定蓋得到；錨真的找不到由
@@ -2729,12 +2736,13 @@ ListSession.prototype = {
     if (!seq.length) return;
     const top = this._viewportTopPos(seq);
     const B = this._bodyRows();
-    if (direction < 0 && top < 2 * B && !this._edgeUp)
+    if (direction < 0 && top < 2 * B && !this._edgeUp && !this._stallUp)
       this._enqueuePrefetch(true, 'key');
     else if (
       direction > 0 &&
       seq.length - (top + B) < 2 * B &&
-      !this._edgeDown
+      !this._edgeDown &&
+      !this._stallDown
     )
       this._enqueuePrefetch(false, 'key');
   },
@@ -2744,9 +2752,28 @@ ListSession.prototype = {
   // edge moved under the chain → its landed reference may now be discontiguous
   // with the surviving segment: re-anchor.
   noteEvicted: function(direction) {
-    if (direction < 0) this._edgeUp = false;
-    else this._edgeDown = false;
+    if (direction < 0) {
+      this._edgeUp = false;
+      this._stallUp = false;
+    } else {
+      this._edgeDown = false;
+      this._stallDown = false;
+    }
     this._chainState = null;
+  },
+
+  // term_view.accumulateListLines：往 direction 補進來的頁被總列數硬上限整段砍回去
+  //（隱藏列連續超過 MAX_LIST_TOTAL_ROWS，evictListBuffer 註解）⇒ 這個方向再補也不會
+  // 有進展，停手（demand／fill 都不再往這邊送）。**不是**邊界：不設 _edgeUp/_edgeDown
+  //（_edgeDown 會放出置底文）。重建緩衝或那一端之後被 evict 時解除（noteEvicted）。
+  noteGrowthStalled: function(direction) {
+    if (direction < 0) this._stallUp = true;
+    else this._stallDown = true;
+    this._chainState = null;
+    this._core.debugRecorder?.log('listSession.growthStalled', {
+      dir: direction,
+      len: (this._termBuf.listLineNums || []).length
+    });
   },
 
   // Teach the last-read SUBJECT (pttbbs currtitle mirror). Called frame-taught
@@ -3423,6 +3450,8 @@ ListSession.prototype = {
     this._seqCache = null;
     this._edgeUp = false;
     this._edgeDown = false;
+    this._stallUp = false;
+    this._stallDown = false;
     this._fillPages = 0;
     this._lastReadTitle = null;
     this._prunePivotOverride = undefined;
@@ -4324,19 +4353,47 @@ export function pinnedRowKey(text) {
 // ptt-debug-20261008-020516 t≈2788 起長度卡在 222：視口上方只有幾十列，全在保護區內
 // ⇒ 退回平衡規則、又把剛補的底端砍掉）。grewDir=0（兩端都動、遠跳、不知道）＝原規則。
 //
+// **上限算的是可見列，不是原始列**（`opts.isHidden`，見 isHiddenListRow）：上限存在
+// 是為了重繪成本，而隱藏列（刪除文／黑名單）根本不渲染（term_view 只畫 seq）。
+// 用原始列數當上限時，可見列之間隔著一大段刪除文（Test 板每週清板，錄製檔
+// ptt-debug-20261019-021418：214..766 幾乎全刪）就永遠補不過去——剛補的頁離視口
+// 超過上限，一合併就被砍、demand 的水位（可見列）永遠不到 ⇒ 一路 PgUp 到第 1 篇再重來。
+// 隱藏列也不是免費的（一列 ≈16KB 的 TermChar）⇒ 另有總列數硬上限 `opts.hardCap`；
+// 撞到它而砍掉剛長出來的那一端時，由呼叫端回報成長停滯（ListSession.noteGrowthStalled）。
+// 沒給 opts ＝每列都可見、沒有硬上限（舊行為，看板列表用這個）。
+//
 // Mutates numMap in place; the pinned map is never evicted (a handful of rows at
 // most). Returns which end(s) got dropped so the session can clear the matching
 // _edgeUp/_edgeDown flag — demand must be able to re-fetch an evicted segment.
 export const EVICT_PROTECT_BELOW = 100;
 export const EVICT_PROTECT_ABOVE = 10;
-export function evictListBuffer(numMap, pivotNum, cap, grewDir) {
+export function evictListBuffer(numMap, pivotNum, cap, grewDir, opts) {
   const r = { evictedUp: false, evictedDown: false };
   if (!numMap || numMap.size <= cap) return r;
+  const isHidden = opts && opts.isHidden;
+  const hardCap = opts && opts.hardCap > 0 ? Math.max(opts.hardCap, cap) : Infinity;
   const nums = Array.from(numMap.keys()).sort((a, b) => a - b);
+  // 每列的權重：可見 1、隱藏 0。
+  const vis = new Array(nums.length);
+  let visible = 0;
+  for (let i = 0; i < nums.length; ++i) {
+    vis[i] = isHidden && isHidden(numMap.get(nums[i])) ? 0 : 1;
+    visible += vis[i];
+  }
   const sel = pivotNum == null ? Infinity : pivotNum;
   let lo = 0;
   let hi = nums.length - 1;
-  let excess = nums.length - cap;
+  const over = () => visible > cap || hi - lo + 1 > hardCap;
+  const dropLo = () => {
+    visible -= vis[lo];
+    numMap.delete(nums[lo++]);
+    r.evictedUp = true;
+  };
+  const dropHi = () => {
+    visible -= vis[hi];
+    numMap.delete(nums[hi--]);
+    r.evictedDown = true;
+  };
   if (grewDir) {
     let pivotIdx = nums.length;
     for (let i = 0; i < nums.length; ++i)
@@ -4344,27 +4401,42 @@ export function evictListBuffer(numMap, pivotNum, cap, grewDir) {
         pivotIdx = i;
         break;
       }
-    while (excess > 0) {
-      if (grewDir < 0 && hi - pivotIdx > EVICT_PROTECT_BELOW) {
-        numMap.delete(nums[hi--]);
-        r.evictedDown = true;
-      } else if (grewDir > 0 && pivotIdx - lo > EVICT_PROTECT_ABOVE) {
-        numMap.delete(nums[lo++]);
-        r.evictedUp = true;
+    // 保護區也以可見列計（視口裡的是可見列）。
+    let visBelow = 0;
+    for (let i = pivotIdx + 1; i <= hi; ++i) visBelow += vis[i];
+    let visAbove = 0;
+    for (let i = lo; i < pivotIdx && i <= hi; ++i) visAbove += vis[i];
+    while (over()) {
+      if (grewDir < 0 && visBelow > EVICT_PROTECT_BELOW) {
+        visBelow -= vis[hi];
+        dropHi();
+      } else if (grewDir > 0 && visAbove > EVICT_PROTECT_ABOVE) {
+        visAbove -= vis[lo];
+        dropLo();
       } else break;
-      --excess;
     }
   }
-  while (excess-- > 0) {
-    if (sel - nums[lo] >= nums[hi] - sel) {
-      numMap.delete(nums[lo++]);
-      r.evictedUp = true;
-    } else {
-      numMap.delete(nums[hi--]);
-      r.evictedDown = true;
-    }
+  while (over()) {
+    if (sel - nums[lo] >= nums[hi] - sel) dropLo();
+    else dropHi();
   }
   return r;
+}
+
+// 好讀列表緩衝的總列數硬上限（含隱藏列；可見列上限是 MAX_LIST_ROWS）。≈37 頁全隱藏的
+// 刪除文，記憶體 ≈ 1200 × 16KB。
+export const MAX_LIST_TOTAL_ROWS = 1200;
+
+// numMap 的序號範圍 { lo, hi }；空 map ⇒ { lo: Infinity, hi: -Infinity }。
+export function listNumRange(numMap) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  if (numMap)
+    for (const n of numMap.keys()) {
+      if (n < lo) lo = n;
+      if (n > hi) hi = n;
+    }
+  return { lo, hi };
 }
 
 // 這一頁合併進緩衝後，緩衝往哪一端長：-1＝頂端（更舊的序號，往上補頁）、1＝底端、
@@ -4372,12 +4444,9 @@ export function evictListBuffer(numMap, pivotNum, cap, grewDir) {
 // entries 是 accumulateListLines 準備合併的列（num 為 null 的置底列不算）。
 export function listGrowthDir(numMap, entries) {
   if (!numMap || !numMap.size || !entries) return 0;
-  let prevMin = Infinity;
-  let prevMax = -Infinity;
-  for (const n of numMap.keys()) {
-    if (n < prevMin) prevMin = n;
-    if (n > prevMax) prevMax = n;
-  }
+  const range = listNumRange(numMap);
+  const prevMin = range.lo;
+  const prevMax = range.hi;
   let up = false;
   let down = false;
   for (let i = 0; i < entries.length; ++i) {
@@ -4413,28 +4482,36 @@ export function visibleListIndices(rowTexts, blacklistSet, titleKeywords) {
   const hasTitle = titleKeywords && titleKeywords.length > 0;
   const out = [];
   for (let i = 0; i < rowTexts.length; ++i) {
-    const text = rowTexts[i];
-    // 不是列表形列 ⇒ 一律可見，連問都不問（與 computeAnnotations 的同一道守門
-    // 逐字對稱，不變量 10）。對累積進 listLines 的資料這是 no-op —— 那裡只收
-    // entry 區的列表列 —— 但兩份實作必須長得一樣，否則下次有人只改一邊就是
-    // 「導覽走的列」與「畫出來的列」對不上。
-    if (!isListShapedRow(text)) {
+    if (!hiddenListRowText(rowTexts[i], hasBlacklist && blacklistSet, hasTitle && titleKeywords))
       out.push(i);
-      continue;
-    }
-    // Deleted articles ((本文已被刪除) / (已被xxx刪除), author column "-") and
-    // locked articles（鎖, 推文欄 --）are hidden unconditionally: they cannot be
-    // opened (pttbbs read_post → READ_SKIP, the screen never changes, so the
-    // serialized open would wedge on them) — treated exactly like a blacklist hit.
-    let hide = isUnopenableListRow(text);
-    if (!hide && hasBlacklist) {
-      const author = parseListAuthor(text);
-      if (author && blacklistSet.has(author)) hide = true;
-    }
-    if (!hide && hasTitle) {
-      if (matchTitleBlacklist(parseListTitle(text), titleKeywords)) hide = true;
-    }
-    if (!hide) out.push(i);
   }
   return out;
+}
+
+// 單列版的 visibleListIndices 判斷（兩者共用這一份，不變量 10）。
+function hiddenListRowText(text, blacklistSet, titleKeywords) {
+  // 不是列表形列 ⇒ 一律可見，連問都不問（與 computeAnnotations 的同一道守門
+  // 逐字對稱，不變量 10）。對累積進 listLines 的資料這是 no-op —— 那裡只收
+  // entry 區的列表列 —— 但兩份實作必須長得一樣，否則下次有人只改一邊就是
+  // 「導覽走的列」與「畫出來的列」對不上。
+  if (!isListShapedRow(text)) return false;
+  // Deleted articles ((本文已被刪除) / (已被xxx刪除), author column "-") and
+  // locked articles（鎖, 推文欄 --）are hidden unconditionally: they cannot be
+  // opened (pttbbs read_post → READ_SKIP, the screen never changes, so the
+  // serialized open would wedge on them) — treated exactly like a blacklist hit.
+  if (isUnopenableListRow(text)) return true;
+  if (blacklistSet) {
+    const author = parseListAuthor(text);
+    if (author && blacklistSet.has(author)) return true;
+  }
+  if (titleKeywords && matchTitleBlacklist(parseListTitle(text), titleKeywords)) return true;
+  return false;
+}
+
+// 緩衝裡的一列（TermChar 陣列）在好讀視窗會不會被隱藏——evictListBuffer 用它把隱藏列
+// 排除在列數上限之外（見該函式註解）。
+export function isHiddenListRow(row, blacklistSet, titleKeywords) {
+  const hasBlacklist = blacklistSet && blacklistSet.size > 0;
+  const hasTitle = titleKeywords && titleKeywords.length > 0;
+  return hiddenListRowText(rowToText(row), hasBlacklist && blacklistSet, hasTitle && titleKeywords);
 }

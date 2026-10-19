@@ -805,6 +805,86 @@ describe("accumulateListLines（遠跳落點頁不得被 evict 砍掉）", () =>
   });
 });
 
+// 錄製檔 ptt-debug-20261019-021418（Test 板，每週清板）：214..766 幾乎全是
+// 「(本文已被刪除)」。好讀視窗隱藏刪除文 ⇒ 可見列只有 767 以後十幾列，demand 的水位
+// （可見列 top < 2B）永遠不到；但緩衝上限算的是**原始列數** ⇒ 往上補到第 300 列外，
+// 剛補進來的頁一合併就被砍掉（樞紐 767 以下只有 24 列，保護規則失效、退回平衡規則
+// 砍頂端）⇒ 緩衝長度卡住、_edgeUp 被清掉，鏈一路 PgUp 到第 1 篇又重來，畫面永遠只有
+// 那十幾列。
+describe("accumulateListLines（刪除文大量隱藏時往上補頁不得卡死）", () => {
+  const header = [
+    "【板主:hank2579】         [測試] 每週定期清除本板文章              看板《Test》",
+    "[→]閱讀 [z]精華區 [Tab]文摘 [s]選擇看板 [b]進板 [i]看板設定 [^X]轉錄 [/]搜尋",
+    "   編號    日 期 作  者       文  章  標  題                             人氣:3",
+  ];
+  const footer =
+    " 文章列表  (^P)發表 (y)回應 (X)推文 (d)刪除 (→)閱讀 (b)進板  (←)離開 (h)說明";
+  const deletedRow = (n) =>
+    `${String(n).padStart(7)}    10/18 -            □ (本文已被刪除)`;
+  const liveRow = (n) =>
+    `${String(n).padStart(7)} +  10/18 scottnien    □ [測試] 文章 ${n}`;
+
+  // 一頁 24 列、游標停在頁頂（PgUp 的落點）。
+  function pageTexts(lo, rowOf) {
+    const body = [];
+    for (let n = lo; n < lo + 24; ++n) body.push(rowOf(n));
+    return header.concat(body, [footer]);
+  }
+
+  function session(pivot) {
+    const ls = fakeListSession();
+    ls.evictPivot = () => pivot; // 視口頂停在 767（使用者眼前那十幾列可見列）
+    ls.noteGrowthStalled = vi.fn();
+    return ls;
+  }
+
+  function feed(v, texts) {
+    v.buf.lines = texts.map((t) => chRow(t));
+    v.buf.getRowText = (r) => texts[r];
+    v.buf.cur_y = 3;
+    v.accumulateListLines();
+  }
+
+  test("隱藏的刪除文不佔緩衝上限：補到可見列為止，剛補的頁不被砍", () => {
+    const ls = session(767);
+    // 起始緩衝＝落點頁 757..780（767 以下有可見列）。
+    const isLive = (n) => n <= 213 || [767, 769, 771, 772, 773, 775, 776, 778, 779].includes(n);
+    const rowOf = (n) => (isLive(n) ? liveRow(n) : deletedRow(n));
+    const v = fakeView(pageTexts(757, rowOf), 3, ls);
+    feed(v, pageTexts(757, rowOf));
+    // 往上一頁一頁補（PgUp）：733, 709, …, 205（最後一頁含 205..213 可見列）。
+    for (let lo = 733; lo >= 190; lo -= 24) feed(v, pageTexts(lo, rowOf));
+    const nums = v.buf.listLineNums;
+    expect(nums[0]).toBe(205);
+    // 剛補進來、使用者要看的可見列都還在。
+    expect(nums).toContain(205);
+    expect(nums).toContain(213);
+    // 眼前那一段也沒被砍。
+    expect(nums).toContain(767);
+    expect(nums).toContain(780);
+    // 頂端從沒被淘汰過 ⇒ 鏈不會被清掉 _edgeUp 重來。
+    expect(ls.noteEvicted).not.toHaveBeenCalledWith(-1);
+    expect(ls.noteGrowthStalled).not.toHaveBeenCalled();
+  });
+
+  test("隱藏列連續超過總列數硬上限：剛補的頁被砍 ⇒ 回報成長停滯（停止往上補）", () => {
+    const ls = session(5000);
+    // 4401..5023 全刪（遠超過硬上限），5000 以後可見。
+    const rowOf = (n) => (n >= 5000 ? liveRow(n) : deletedRow(n));
+    const v = fakeView(pageTexts(5000, rowOf), 3, ls);
+    feed(v, pageTexts(5000, rowOf));
+    let lo = 5000 - 24;
+    while (!ls.noteGrowthStalled.mock.calls.length && lo > 0) {
+      feed(v, pageTexts(lo, rowOf));
+      lo -= 24;
+    }
+    expect(ls.noteGrowthStalled).toHaveBeenCalledWith(-1);
+    // 眼前的可見列仍在。
+    expect(v.buf.listLineNums).toContain(5000);
+    expect(v.buf.listLineNums).toContain(5023);
+  });
+});
+
 describe("subjectOfListRow / listRowMarkFg / isonline 不误触", () => {
   // pttbbs currtitle 比对键（subject_ex 等价，common/bbs/string.c:58）。
   const row = (t) =>

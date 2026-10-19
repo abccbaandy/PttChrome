@@ -12,7 +12,7 @@ import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText } from './string_util';
 import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
-import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, pinnedRowKey, MAX_LIST_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
+import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, listNumRange, isHiddenListRow, pinnedRowKey, MAX_LIST_ROWS, MAX_LIST_TOTAL_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
 import { BOARD_LIST, isArticleListTitleRow, rowHasTitle } from './screen_titles';
@@ -3198,6 +3198,7 @@ TermView.prototype = {
     }
     // 合併前量「緩衝往哪端長」：evict 不砍剛長出來的那一端（evictListBuffer 註解）。
     var grewDir = listGrowthDir(this._listNumMap, entries);
+    var prevRange = grewDir ? listNumRange(this._listNumMap) : null;
     mergeListPage(this._listNumMap, this._listPinnedMap, entries);
     // Contiguity guard: the window must never span pages we skipped over (far
     // jumps: End / Home / open-pinned). Keep only the pivot's segment; the
@@ -3220,14 +3221,30 @@ TermView.prototype = {
     // 游標可以被捲出視野很遠，用它當樞紐會把使用者眼前那一段丟掉（見
     // evictListBuffer 的註解）。
     // The session must clear the matching edge flag — demand re-fetches later.
+    // 上限只算可見列（隱藏的刪除文／黑名單列不渲染），另有總列數硬上限
+    //（evictListBuffer 註解，錄製檔 ptt-debug-20261019-021418）。
+    var self = this;
     var ev = evictListBuffer(
       this._listNumMap,
       ls ? ls.evictPivot() : null,
       MAX_LIST_ROWS,
-      grewDir
+      grewDir,
+      {
+        isHidden: function(row) {
+          return isHiddenListRow(row, self.blacklist, self.titleBlacklist);
+        },
+        hardCap: MAX_LIST_TOTAL_ROWS
+      }
     );
     if (ls && ev.evictedUp) ls.noteEvicted(-1);
     if (ls && ev.evictedDown) ls.noteEvicted(1);
+    // 剛長出來的那一端被硬上限整段砍回去 ⇒ 這次補頁沒有任何進展；再補也一樣
+    //（隱藏列連續超過硬上限），由 session 停止往這個方向補，否則就是無限 PgUp。
+    if (ls && grewDir && (grewDir < 0 ? ev.evictedUp : ev.evictedDown)) {
+      var after = listNumRange(this._listNumMap);
+      var stalled = grewDir < 0 ? !(after.lo < prevRange.lo) : !(after.hi > prevRange.hi);
+      if (stalled && ls.noteGrowthStalled) ls.noteGrowthStalled(grewDir);
+    }
     var flat = flattenListBuffer(this._listNumMap, this._listPinnedMap);
     buf.listLines = flat.lines;
     buf.listLineNums = flat.nums;
