@@ -8,11 +8,12 @@ updates:
     #   - @vitest/browser-playwright 的 peer 是**精確**的 vitest 版本；
     #   - unit-browser 用 playwright 的瀏覽器，CI image tag 卻取自 @playwright/test
     #     （守護 tests/unit/ci_playwright_container.test.js）。
+    # 一律明列套件名，不准寫 `@scope/*`：實測吃不到 scoped 套件（`@playwright/*` 漏 @playwright/test、
+    # `@vitest/*` 漏 @vitest/browser-playwright），漏掉的會被拆進 minor-and-patch，兩支 PR 各自單升都壞。
+    # 守護 tests/unit/dependabot_groups.test.js。
     groups:
       vitest:
-        patterns: ["vitest", "@vitest/*"]
-      # 明列套件名：`@playwright/*` 實際沒吃到 @playwright/test（被拆進 minor-and-patch，
-      # 兩支 PR 各自單升都對不上 image）。
+        patterns: ["vitest", "@vitest/browser-playwright"]
       playwright:
         patterns: ["playwright", "playwright-core", "@playwright/test"]
       minor-and-patch:
@@ -23,3 +24,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # 每週一支 PR。group 只跨同一個 ecosystem，npm 與 actions 本來就各自一支。
+    groups:
+      actions:
+        patterns: ["*"]
