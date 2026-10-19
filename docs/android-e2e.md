@@ -8,6 +8,9 @@
 - `list_card_blacklist`：真長按文章列表卡片的序號・日期／作者／標題三段，都要同時給作者與標題黑名單
   （整張卡片＝同一組，`docs/mobile.md`）。列表 cassette 是 24 列 ⇒ 測試內 `wm size 1080x1400` 縮螢幕高，
   讓手機版面 rows 夾到下限 24（觸控座標仍 1:1，不像 setDeviceMetricsOverride 會偏），`finally` 裡 `wm size reset`。
+- `mobile_chrome`：真 tap 開「更多」sheet，OS 返回鍵（焦點在 Drawer 的 focus trap 裡）只收 sheet、不送 ←、
+  不出逃生提示、sentinel 補回；好讀文章換行版面（同樣 `wm size 1080x1400` 湊 24 列）在真 viewport 下不橫向溢出、
+  長列折行、終端機與第一列在 App Bar 之下、App Bar 標題＝文章標題、80 欄狀態列與檔頭分隔線收起（`docs/mobile.md` Phase 3／6／8／9）。
 - 試過但沒收：「下拉不觸發 Chrome 重新整理」——拿掉 overscroll-behavior 的對照組在模擬器上也拉不出重整
   （body `overflow:hidden`），否定斷言證明不了什麼。
 - `apk`：debug APK（WebView 殼）——沒有 sentinel 時返回鍵問網頁 `pttHostBack`（擋下先提示、800ms 內連兩下才丟背景，不斷線）、疊了 sentinel 交給網頁 guard；文章網址交給
