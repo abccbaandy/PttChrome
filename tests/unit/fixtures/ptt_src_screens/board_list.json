@@ -1,0 +1,12 @@
+{
+ "cols": 80,
+ "rows": 24,
+ "entry": "fav",
+ "frames": [
+  {
+   "name": "fav",
+   "keys": "",
+   "bytes": "\u001b[?7l\u001b[?2026h\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[1;37;46m¡i¬ÝªO¦Cªí¡j                       \u001b[33m·s§å½ð½ð\u001b[0;1;37;46m                                    \r\n\u001b[m[y]¦C¥X¥þ³¡ [¡÷]¶i¤J [s]§ä¬ÝªO [/]·j´M [c]·s¤å³¹ [S]±Æ§Ç [PgUp]¤W­¶ [PgDn]¤U­¶\r\n\u001b[30;47m   ½s¸¹   ¬Ý  ªO       Ãþ§O   ¤¤   ¤å   ±Ô   ­z                 ¡K ªO   ¥D      \r\n\u001b[m>     1 \u001b[1;31m£¾\u001b[36mTest\u001b[4;24H\u001b[0;36m´ú¸Õ \u001b[m¡·´ú¸Õ¬ÝªO\u001b[4;65H\u001b[1;33m42 \u001b[msysop\u001b[5;7H2 \u001b[1;31m£¾\u001b[36mNotes\u001b[5;24H\u001b[0;36m´ú¸Õ \u001b[m¡·¦³¶iªOµe­±ªº¬ÝªO\u001b[5;65H\u001b[1;33m42 \u001b[msysop\u001b[6;7H3   \u001b[1;36mGossip       \u001b[32mºî¦X \u001b[m¡·¤K¨ö\u001b[6;65H\u001b[1;33m42 \u001b[msysop\u001b[7;7H4   \u001b[1;36mMovie\u001b[7;24H\u001b[34m®T¼Ö \u001b[m¡·¹q¼v\u001b[7;65H\u001b[1;33m42 \u001b[msysop\r\u001b[24;1H\u001b[34;46m §Úªº³Ì·R \u001b[30;47m \u001b[31m(a)\u001b[30m¼W¥[¬ÝªO \u001b[31m(d)\u001b[30m§R°£ \u001b[31m(g)\u001b[30m·s¼W¥Ø¿ý \u001b[31m(M)\u001b[30m²¾°Ê¦ì¸m \u001b[31m(v)\u001b[30m¤wÅª/¥¼Åª    \u001b[31m(h)\u001b[30m»¡©ú \u001b[m\u001b[4;1H\u001b[?2026l"
+  }
+ ]
+}

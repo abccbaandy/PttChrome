@@ -1,13 +1,15 @@
 name: PTT Source Screens
 
 # 每天拿 upstream pttbbs（ptt/pttbbs main HEAD）的原始碼產生畫面位元組，餵給本專案的畫面判定與
-# 列表解析器（tests/unit/ptt_src_screens.test.js）。不架站、不登入：tools/ptt-src-screens/ 只編譯
-# mbbsd 物件檔，用假 SHM／使用者直接呼叫 Read()。目的是在使用者回報之前，就發現 upstream 改了畫面、
-# 讓本專案判錯（例：72718d5，upstream 10/01 在文章列表 row 1 加指令說明列，10/18 才被發現）。
+# 解析器（tests/unit/ptt_src_screens.test.js）。不架站、不登入：tools/ptt-src-screens/ 只編譯
+# mbbsd 物件檔，用假 SHM／使用者從各入口直接呼叫 upstream 的畫面函式（場景表 scenes.mjs）。
+# 目的是在使用者回報之前，就發現 upstream 改了畫面、讓本專案判錯（例：72718d5，upstream 10/01 在
+# 文章列表 row 1 加指令說明列，10/18 才被發現）。完整說明：docs/ptt-src-screens.md。
 #
-# 紅了開（或在 open 的上面留言）issue「PTT 原始碼畫面檢查失敗」（label ptt-src-screens）。
-# MVP：**不接 Claude routine**，只讓人看到。規則見 scripts/ptt-src-screens-report.mjs。
+# 紅了開（或在 open 的上面留言）issue「PTT 原始碼畫面檢查失敗」（label ptt-src-screens），
+# **新開會觸發 Claude routine** 修；去重與連鎖防護見 scripts/ptt-src-screens-report.mjs。
 # 兩段分開判：generate 紅＝upstream build／driver 壞了（環境問題）；check 紅＝解析器判錯。
+# 全綠但畫面跟 repo 的 fixture 不同 ⇒ changed job 開低優先 issue「PTT 原始碼畫面有變動」（不接 routine）。
 # `yarn ci:status` 不把 schedule／dispatch 的 run 算進 push 的 CI（scripts/ci-status.mjs#isProjectRun）。
 # 有 paths 過濾 ⇒ 不可加進 dev 的 required checks（沒動這些檔的 PR 永遠不會跑，會卡 pending）。
 on:
@@ -38,6 +40,8 @@ jobs:
     timeout-minutes: 20
     outputs:
       pttbbs-sha: ${{ steps.clone.outputs.sha }}
+      changed: ${{ steps.diff.outputs.changed }}
+      screens-hash: ${{ steps.diff.outputs.hash }}
     steps:
       - uses: actions/checkout@v7
       - id: clone
@@ -47,15 +51,27 @@ jobs:
           sha=$(git -C 3rd_script/pttbbs rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           git -C 3rd_script/pttbbs log -1 --format='upstream: %h %cd %s' --date=iso
+      # capture.mjs（逐鍵送、切幀）要 node；不需要 yarn install。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - name: Toolchain
         run: |
           clang --version | head -1
           objcopy --version | head -1
       - name: Generate screens from upstream source
         run: sh tools/ptt-src-screens/generate.sh 3rd_script/pttbbs
-      # 綠也印：畫面跟 repo 裡的 fixture 不同＝upstream 改了這個畫面（解析器仍認得）。
-      - name: Diff against committed fixture
-        run: git diff --stat -- tests/unit/fixtures/ptt_src_screens/ || true
+      # 綠也印：畫面跟 repo 裡的 fixture 不同＝upstream 改了這個畫面。changed／hash 給 changed job
+      # （全綠時開低優先 issue，以雜湊去重）與 report（紅時一併列出）。add -N：新場景也算變動。
+      - id: diff
+        name: Diff against committed fixture
+        run: |
+          d=tests/unit/fixtures/ptt_src_screens
+          git add -N "$d"
+          git diff --stat -- "$d"
+          changed=$(git diff --name-only -- "$d" | xargs -r -n1 basename | sed 's/\.json$//' | tr '\n' ' ')
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "hash=$(cat "$d"/*.json | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
           name: ptt-src-screens-fixtures
@@ -124,4 +140,28 @@ jobs:
           PTTBBS_SHA: ${{ needs.generate.outputs.pttbbs-sha }}
           GENERATE_RESULT: ${{ needs.generate.result }}
           CHECK_RESULT: ${{ needs.check.result }}
-        run: node scripts/ptt-src-screens-report.mjs
+          CHANGED: ${{ needs.generate.outputs.changed }}
+        run: node scripts/ptt-src-screens-report.mjs failure
+
+  # 全綠但 upstream 產的畫面與 repo 的 fixture 不同 ⇒ 低優先 issue（同一份畫面只講一次）。
+  changed:
+    needs: [generate, check]
+    if: success() && needs.generate.outputs.changed != '' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ptt-src-screens-report.mjs
+          sparse-checkout-cone-mode: false
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PTTBBS_SHA: ${{ needs.generate.outputs.pttbbs-sha }}
+          CHANGED: ${{ needs.generate.outputs.changed }}
+          SCREENS_HASH: ${{ needs.generate.outputs.screens-hash }}
+        run: node scripts/ptt-src-screens-report.mjs changed
