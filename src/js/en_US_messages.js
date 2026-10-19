@@ -259,6 +259,30 @@ export const en_US = {
   "tooltip_pushKeyOpensLongPush": {
     "message": "Turn off to get PTT's native single comment prompt back. X in the article list is always native."
   },
+  "options_enableCommentBar": {
+    "message": "Comment bar at the bottom of articles (easy reading)"
+  },
+  "tooltip_enableCommentBar": {
+    "message": "A \"push / boo / → + text\" bar at the bottom of easy-reading articles; press Enter to post. When PTT would turn it into →, or the text is long, the long comment box opens so you can check first."
+  },
+  "commentBar_type": {
+    "message": "Comment type"
+  },
+  "commentBar_push": {
+    "message": "Push"
+  },
+  "commentBar_boo": {
+    "message": "Boo"
+  },
+  "commentBar_arrow": {
+    "message": "→"
+  },
+  "commentBar_placeholder": {
+    "message": "Write a comment, Enter to post"
+  },
+  "commentBar_send": {
+    "message": "Post"
+  },
   "options_searchKeyOpensModal": {
     "message": "Search keys (/ ? a Z s) open the search dialog"
   },

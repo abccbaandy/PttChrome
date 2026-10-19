@@ -259,6 +259,30 @@
   "tooltip_pushKeyOpensLongPush": {
     "message": "關閉後按 X 會回到 PTT 原生的單則推文。文章列表按 X 一律維持原生。"
   },
+  "options_enableCommentBar": {
+    "message": "好讀文章底部常駐推文列"
+  },
+  "tooltip_enableCommentBar": {
+    "message": "好讀文章最下面一條「推／噓／→＋文字」輸入列，打完按 Enter 就推出去。PTT 會改成 →、或內容太長時，改開長推文輸入框讓你確認。"
+  },
+  "commentBar_type": {
+    "message": "推文類型"
+  },
+  "commentBar_push": {
+    "message": "推"
+  },
+  "commentBar_boo": {
+    "message": "噓"
+  },
+  "commentBar_arrow": {
+    "message": "→"
+  },
+  "commentBar_placeholder": {
+    "message": "寫推文，Enter 送出"
+  },
+  "commentBar_send": {
+    "message": "送出"
+  },
   "options_searchKeyOpensModal": {
     "message": "按搜尋鍵（/ ? a Z s）改開搜尋彈窗"
   },

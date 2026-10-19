@@ -66,6 +66,7 @@ import { ImageUploadController, isUploadLayerTarget } from './image_upload_contr
 import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
+import { CommentBar, isCommentBarTarget } from './comment_bar';
 import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
@@ -268,6 +269,8 @@ export const App = function() {
   this.splitReader = new SplitReader(this);
   // 文章工具側欄（好讀文章時右邊空白放 AID／推文統計／推文者／圖片牆，article_tools.js）。
   this.articleTools = new ArticleTools(this);
+  // 好讀文章底部常駐推文列（comment_bar.js；送出走長推文管線，App.openQuickPush）。
+  this.commentBar = new CommentBar(this);
 
   // 終端機水平置中。**不要因為 align 是 deprecated 屬性就刪掉它**：Chrome/Firefox
   // 把它算成 `text-align: -webkit-center` / `-moz-center`，那個值會連 **block
@@ -1049,6 +1052,10 @@ App.prototype.onDisableLiveHelperModalState = noop;
 // 等答案回來才開，中間蓋一層遮罩。線路上仍然只有那一個 X，淨效果與原生按 X 一致
 // （使用者本來就是要推文才按的）。詳見 docs/long-push.md「探路（preflight）」。
 App.prototype.openLongPushModal = noop;
+
+// 好讀文章底部常駐推文列按 Enter（comment_bar.js）：({ text, type }) → 探路 → 直接送，或
+// 退回長推文輸入框讓使用者看一眼。合約同上：noop ＝ ContextMenu 未 mount ⇒ 回 undefined。
+App.prototype.openQuickPush = noop;
 
 // 搜尋彈窗（文章列表的 / ? a Z、工具列的各類搜尋）。合約同上：noop ＝ ContextMenu
 // 未 mount ⇒ 回 undefined ⇒ 攔截入口不吞鍵，照原生送出。見 article_search.js。
@@ -2353,7 +2360,8 @@ App.prototype._onUploadLayer = function(e) {
   // 首頁儀表板、雙欄閱讀的左欄、文章工具側欄同理：點／捲面板不是點終端機（放過去會被當成滑鼠瀏覽送鍵）。
   const t = e && e.target;
   return (
-    isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t)
+    isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
+    isCommentBarTarget(t)
   );
 };
 

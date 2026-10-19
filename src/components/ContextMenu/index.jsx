@@ -35,6 +35,7 @@ import MobileAppBar from "../MobileAppBar";
 import HomeDashboard from "../HomeDashboard";
 import SplitReader from "../SplitReader";
 import ArticleTools from "../ArticleTools";
+import CommentBar from "../CommentBar";
 import AidBackButton from "../AidBackButton";
 import HelpMenu from "../HelpMenu";
 import { onPrefSaveImpl } from "./pref_save";
@@ -68,7 +69,8 @@ import {
 import { isNativeMenuTarget } from "../../js/preview_targets";
 import { pushMaxBytes } from "../../js/long_push";
 import { longPushAvailable } from "../../js/long_push_gate";
-import { clearDraft } from "../../js/long_push_draft";
+import { clearDraft, writeDraft } from "../../js/long_push_draft";
+import { quickPushPlan } from "../../js/comment_bar";
 import { serializedOpHint } from "../../js/serialized_op_gate";
 import {
   availableSearchKinds,
@@ -88,6 +90,15 @@ import {
 import { menuAnchorRect } from "../../js/sheet_placement";
 
 function noop() {}
+
+// 探路中的遮罩（LongPushProgressModal）。
+const PREFLIGHT_PROGRESS = {
+  index: 0,
+  total: 0,
+  phase: "preflight",
+  waitSec: 0,
+  message: "",
+};
 
 const EVENT_KEY_BY_HOT_KEY = {
   ["C".charCodeAt(0)]: "copy",
@@ -276,6 +287,8 @@ export const ContextMenu = ({ pttchrome }) => {
   // callbacks to avoid stale closures.
   const stateRef = useRef(state);
   stateRef.current = state;
+  // 底部推文列交給探路的那一則（{ text, type }）；onPreflight 一回來就取走清空。
+  const quickPushRef = useRef(null);
   // Shallow-merge a partial into state; undefined → no-op.
   const update = useCallback((partial) => {
     if (partial !== undefined) setState((s) => ({ ...s, ...partial }));
@@ -315,7 +328,29 @@ export const ContextMenu = ({ pttchrome }) => {
     // 探路的結果。遮罩收掉與「開輸入框／開錯誤框」**必須在同一次 update**：分兩次
     // 的話 modalOpen 會 true→false→true，中間那一幀終端機會把焦點搶回隱藏 input #t
     // （modal_shown_sources.test.js / connect_failure.offline.spec.js 守的那個坑）。
-    session.onPreflight = (result) =>
+    session.onPreflight = (result) => {
+      // 底部推文列（comment_bar.js）來的：沒有要使用者先看一眼的事就直接送，不開輸入框。
+      const quick = quickPushRef.current;
+      quickPushRef.current = null;
+      if (quick && !result.blocked) {
+        const maxBytes = result.maxBytes || stateRef.current.longPushMaxBytes;
+        const plan = quickPushPlan(result, quick, maxBytes);
+        if (plan.direct) {
+          // 遮罩不收：探路那層直接接到送出的進度（modalOpen 不閃 false，理由同上）。
+          update({
+            showsLongPush: false,
+            longPushPreflight: null,
+            longPushMaxBytes: maxBytes,
+            longPushProgress: PREFLIGHT_PROGRESS,
+          });
+          // 不在這裡同步重入 session：此刻還在它的 _preflightDone 裡。
+          setTimeout(() => {
+            if (!session.start({ text: plan.text, type: quick.type, maxBytes }))
+              update({ longPushProgress: null });
+          }, 0);
+          return;
+        }
+      }
       update(
         result.blocked
           ? {
@@ -332,6 +367,7 @@ export const ContextMenu = ({ pttchrome }) => {
                 result.maxBytes || stateRef.current.longPushMaxBytes,
             },
       );
+    };
     // 送出階段的終局（失敗／取消）。成功不走這裡（session 自己閃一則 toast）。
     session.onResult = (result) =>
       update({ longPushProgress: null, longPushError: result });
@@ -730,6 +766,35 @@ export const ContextMenu = ({ pttchrome }) => {
       pttchrome.openLongPushModal = noop;
     };
   }, [pttchrome, openLongPush]);
+  // 好讀文章底部常駐推文列按 Enter（components/CommentBar → App.openQuickPush）。
+  // 同一條探路；探路回來由 onPreflight 依 quickPushPlan 決定直接送，或退回輸入框。
+  // 內容先寫進草稿：退回輸入框時打開就是它，送到一半失敗也救得回來（整段送完才清）。
+  const openQuickPush = useCallback(
+    ({ text, type } = {}) => {
+      const body = String(text || "");
+      if (!body.trim()) return false;
+      writeDraft(body);
+      const session = pttchrome.longPush;
+      if (session && session.startPreflight)
+        quickPushRef.current = { text: body, type: type || "push" };
+      if (!openLongPush()) {
+        quickPushRef.current = null;
+        pttchrome.view?.flashListHint?.(
+          serializedOpHint(pttchrome) || i18n("longPushError_busy"),
+          3000,
+        );
+        return false;
+      }
+      return true;
+    },
+    [pttchrome, openLongPush],
+  );
+  useEffect(() => {
+    pttchrome.openQuickPush = openQuickPush;
+    return () => {
+      pttchrome.openQuickPush = noop;
+    };
+  }, [pttchrome, openQuickPush]);
   // 關掉輸入框＝這次不推了：探路成果（錨點／閱讀位置／AID）沒有用了，留著只會
   // 讓下一次 start() 拿舊錨點去比對新畫面。
   const onLongPushHide = useCallback(() => {
@@ -1414,6 +1479,7 @@ export const ContextMenu = ({ pttchrome }) => {
       <HomeDashboard pttchrome={pttchrome} />
       <SplitReader pttchrome={pttchrome} />
       <ArticleTools pttchrome={pttchrome} />
+      <CommentBar pttchrome={pttchrome} />
       <MobileAppBar pttchrome={pttchrome} />
       <AidBackButton pttchrome={pttchrome} />
       <MobileToolbar
