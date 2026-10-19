@@ -114,9 +114,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          sparse-checkout: |
-            scripts/ptt-src-screens-report.mjs
-            scripts/flaky-hunt-report.mjs
+          sparse-checkout: scripts/ptt-src-screens-report.mjs
           sparse-checkout-cone-mode: false
       - name: Open or update the issue
         env:

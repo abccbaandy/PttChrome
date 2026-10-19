@@ -70,6 +70,12 @@ describe("ptt-src-screens.yml", () => {
     expect(yml).toMatch(/^\s+workflow_dispatch:/m);
   });
 
+  test("report job 只 sparse-checkout 自己那支，所以它不准 import 任何本地檔案（否則只在真的紅時才炸）", () => {
+    const src = fs.readFileSync(path.join(__dirname, "../../scripts/ptt-src-screens-report.mjs"), "utf8");
+    expect(src).not.toMatch(/^\s*import\b[^;]*from\s+["']\.{1,2}\//m);
+    expect(yml).toMatch(/sparse-checkout: scripts\/ptt-src-screens-report\.mjs\s*$/m);
+  });
+
   test("report 只在 dev 上的紅執行（PR 驗證紅不開 issue）", () => {
     expect(yml).toMatch(/if: failure\(\) && github\.ref == 'refs\/heads\/dev'/);
   });

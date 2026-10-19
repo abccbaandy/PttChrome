@@ -8,9 +8,9 @@
 //   - workflow_dispatch（驗證 run）且沒有 open 的 ⇒ 不寫，看 run 本身。
 // 紅分兩種（body 會寫清楚）：generate 紅＝upstream build／driver 壞了（環境問題，修
 // tools/ptt-src-screens/），check 紅＝upstream 的畫面讓本專案的解析器判錯（真的不相容）。
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { gh, mergeIssues } from "./flaky-hunt-report.mjs";
 
 export const ISSUE_TITLE = "PTT 原始碼畫面檢查失敗";
 export const ISSUE_LABEL = "ptt-src-screens";
@@ -57,6 +57,17 @@ export function renderBody({ event, date, runUrl, sha, pttbbsSha, generate, chec
     `- 結果: generate=${generate} check=${check}`,
   );
   return lines.join("\n");
+}
+
+function gh(args) {
+  return execFileSync("gh", args, { encoding: "utf8" });
+}
+
+// label 與標題搜尋兩路結果依 number 去重：搜尋走索引，剛開的 issue 可能還查不到。
+function mergeIssues(...lists) {
+  const byNumber = new Map();
+  for (const list of lists) for (const i of list || []) byNumber.set(i.number, i);
+  return [...byNumber.values()];
 }
 
 function main(env) {
