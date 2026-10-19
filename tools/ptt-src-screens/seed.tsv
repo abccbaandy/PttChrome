@@ -3,4 +3,19 @@ A	alice	 9/30	5		[問題] 第一篇測試文章
 A	bob	10/01	12		Re: [問題] 第一篇測試文章
 A	carol	10/02	0	m	Fw: [新聞] 轉錄的新聞
 A	dave	10/03	100		[公告] 版規
-A	SYSOP	10/04	0	b	[公告] 置底公告
+A	erin	10/04	3		[心得] 這是一個非常非常長的標題用來測試列表欄寬不夠時會不會被截斷成刪節號
+A	SYSOP	10/05	0	b	[公告] 置底公告
+B	Notes	測試	有進板畫面的看板	sysop
+N	歡迎來到 Notes 板
+N	這是進板畫面
+A	frank	10/05	1		[閒聊] 進板畫面之後的文章
+A	grace	10/06	2		[閒聊] 第二篇
+A	heidi	10/07	3		[閒聊] 第三篇
+B	Long	測試	很多文章的看板	sysop
+G	50	ivan	[測試] 填滿一頁
+B	Gossip	綜合	八卦	sysop
+B	Movie	娛樂	電影	sysop
+F	Test
+F	Notes
+F	Gossip
+F	Movie

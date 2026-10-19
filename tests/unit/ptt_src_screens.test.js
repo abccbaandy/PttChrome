@@ -1,25 +1,51 @@
 // @unit-env browser
-// Spike：畫面位元組由 **upstream pttbbs 原始碼本身**產生（編譯 mbbsd 物件檔＋假 SHM／
-// 假使用者的 driver 直接呼叫 Read()，不架站、不登入），經 app 自己的 AnsiParser →
-// TermBuf 落格子，再跑本專案的畫面判定與列表解析器。手抄排版（ptt_vcol_list_layout）
+// 畫面位元組由 **upstream pttbbs 原始碼本身**產生（編譯 mbbsd 物件檔＋假 SHM／假使用者的
+// driver 從指定入口直接呼叫 upstream 的畫面函式，不架站、不登入），經 app 自己的
+// AnsiParser → TermBuf 落格子，再跑本專案的畫面判定與解析器。手抄排版（ptt_vcol_list_layout）
 // 的 row 1 是自己寫的，抓不到 upstream 在 row 1 加指令說明列（72718d5）這類改動；
 // 這裡的每一個位元組都是 upstream 程式碼吐的。
+//
+// fixture 由 tools/ptt-src-screens/generate.sh 重產（場景表 scenes.mjs、種子 seed.tsv）。
+// 平常跑 repo 裡那份（產自 pttbbs 3b8596b9）；nightly（.github/workflows/ptt-src-screens.yml）
+// 換成 upstream HEAD 產的。
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import { classifyListScreen } from "../../src/js/list_session";
-import { boardEntryArms } from "../../src/js/board_note_skip";
+import { boardEntryArms, boardNoteDecision } from "../../src/js/board_note_skip";
 import {
+  boardListContextKind,
+  classifyBoardListScreen,
+  parseBoardListName,
+} from "../../src/js/board_list_parse";
+import { parseHelpMenuScreen } from "../../src/js/help_menu";
+import { isHomeScreen, parseFavRow } from "../../src/js/home_dashboard";
+import { parseStatusRow } from "../../src/js/string_util";
+import { subjectMatches } from "../../src/js/long_push_anchor";
+import {
+  articleContextFromScreen,
+  isPinnedListRow,
+  pageArticleNums,
   parseListArticleNum,
   parseListAuthor,
   subjectOfListText,
 } from "../../src/js/comment_parse";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
-import articleList from "./fixtures/ptt_src_screens/article_list.json";
+import articleListFx from "./fixtures/ptt_src_screens/article_list.json";
+import articleListTallFx from "./fixtures/ptt_src_screens/article_list_tall.json";
+import articleFx from "./fixtures/ptt_src_screens/article.json";
+import helpMenuFx from "./fixtures/ptt_src_screens/help_menu.json";
+import boardNoteFx from "./fixtures/ptt_src_screens/board_note.json";
+import boardListFx from "./fixtures/ptt_src_screens/board_list.json";
+import mainMenuFx from "./fixtures/ptt_src_screens/main_menu.json";
 
 loadBig5Tables();
 
-function paint({ cols, rows, bytes }) {
-  const buf = new TermBuf(cols, rows);
+// 場景的第 0..i 幀依序餵進同一個 TermBuf（每幀只是上一幀之後 server 多吐的位元組），
+// 拍下「名為 name 的那一幀畫完」的畫面。
+function screenAt(fx, name) {
+  const idx = fx.frames.findIndex((f) => f.name === name);
+  if (idx < 0) throw new Error(`fixture 沒有名為 ${name} 的幀`);
+  const buf = new TermBuf(fx.cols, fx.rows);
   buf.setView({
     update() {},
     updateCursorPos() {},
@@ -27,51 +53,200 @@ function paint({ cols, rows, bytes }) {
     blinkOn: false,
   });
   buf.useMouseBrowsing = false;
-  new AnsiParser(buf).feed(bytes);
-  buf.updateCharAttr();
-  return buf;
-}
-
-const rowTexts = (buf) =>
-  Array.from({ length: buf.rows }, (_, y) => buf.getRowText(y, 0, buf.cols));
-
-// tools/ptt-src-screens/seed.tsv：Test 板 5 篇。fixture 由該目錄的 generate.sh 重產
-// （產自 pttbbs 3b8596b9）。置底那篇目前畫成一般編號：driver 的假 SHM 還沒設置底數。
-const SEED = [
-  { num: 1, owner: "alice", subject: "[問題] 第一篇測試文章" },
-  { num: 2, owner: "bob", subject: "[問題] 第一篇測試文章" },
-  { num: 3, owner: "carol", subject: "[新聞] 轉錄的新聞" },
-  { num: 4, owner: "dave", subject: "[公告] 版規" },
-  { num: 5, owner: "SYSOP", subject: "[公告] 置底公告" },
-];
-
-describe("upstream pttbbs 產的文章列表畫面", () => {
-  const buf = paint(articleList);
-  const texts = rowTexts(buf);
-
-  test("整幀判成文章列表", () => {
-    const cls = classifyListScreen({
-      rowTexts: texts,
+  const parser = new AnsiParser(buf);
+  for (let i = 0; i <= idx; ++i) parser.feed(fx.frames[i].bytes);
+  buf.notify(); // updateCharAttr＋pageState
+  clearTimeout(buf.timerUpdate);
+  if (buf._settleTimer) clearTimeout(buf._settleTimer);
+  const rowTexts = Array.from({ length: buf.rows }, (_, y) => buf.getRowText(y, 0, buf.cols));
+  return {
+    buf,
+    rowTexts,
+    facts: {
+      rowTexts,
       rows: buf.rows,
       curX: buf.cur_x,
       curY: buf.cur_y,
       // 同 easy_reading.js／board_note_skip.js 的呼叫端
       row0Reversed: buf.isUnicolor(0, 0, 29),
       row2Reversed: buf.isUnicolor(2, 0, buf.cols - 10),
-    });
-    expect(cls.kind).toBe("clean-list");
+    },
+  };
+}
+
+// tools/ptt-src-screens/seed.tsv 的 Test 板（依 .DIR 順序）。
+const LONG_TITLE =
+  "[心得] 這是一個非常非常長的標題用來測試列表欄寬不夠時會不會被截斷成刪節號";
+const TEST_BOARD = [
+  { num: 1, owner: "alice", subject: "[問題] 第一篇測試文章" },
+  { num: 2, owner: "bob", subject: "[問題] 第一篇測試文章" },
+  { num: 3, owner: "carol", subject: "[新聞] 轉錄的新聞" },
+  { num: 4, owner: "dave", subject: "[公告] 版規" },
+  { num: 5, owner: "erin", subject: LONG_TITLE, truncated: true },
+  { num: 6, owner: "SYSOP", subject: "[公告] 置底公告" },
+];
+
+describe("upstream pttbbs 產的文章列表畫面", () => {
+  const { buf, rowTexts, facts } = screenAt(articleListFx, "list");
+
+  test("整幀判成文章列表", () => {
+    expect(classifyListScreen(facts).kind).toBe("clean-list");
+    expect(buf.pageState).toBe(2);
   });
 
   test("列表列解析出種子資料的編號／作者／標題", () => {
-    SEED.forEach((a, i) => {
-      const t = texts[3 + i];
+    TEST_BOARD.forEach((a, i) => {
+      const t = rowTexts[3 + i];
       expect(parseListArticleNum(t)).toBe(a.num);
       expect(parseListAuthor(t)).toBe(a.owner.toLowerCase()); // 解析器刻意轉小寫
-      expect(subjectOfListText(t)).toContain(a.subject);
+      expect(isPinnedListRow(t)).toBe(false);
+      if (!a.truncated) expect(subjectOfListText(t)).toContain(a.subject);
     });
   });
 
+  test("長標題截成「…」，前綴比對仍認得原標題", () => {
+    const subject = subjectOfListText(rowTexts[3 + 4]);
+    expect(subject.endsWith("…")).toBe(true);
+    expect(subject.length).toBeLessThan(LONG_TITLE.length);
+    expect(subjectMatches(subject, LONG_TITLE)).toBe(true);
+    expect(subjectMatches(subject, "[心得] 別篇")).toBe(false);
+  });
+
+  test("置底文：列表尾端多一列 ★（沒有編號、有作者）", () => {
+    const pinned = rowTexts[3 + TEST_BOARD.length];
+    expect(pinned).toContain("★");
+    expect(isPinnedListRow(pinned)).toBe(true);
+    expect(parseListAuthor(pinned)).toBe("sysop");
+    expect(subjectOfListText(pinned)).toContain("[公告] 置底公告");
+    // ★ 列之後就沒有文章列了
+    expect(rowTexts[3 + TEST_BOARD.length + 1].trim()).toBe("");
+  });
+
   test("在文章列表按 ⏎ 開文不會被當成進板而 arm（72718d5）", () => {
-    expect(boardEntryArms(texts, "\r")).toBe(false);
+    expect(boardEntryArms(rowTexts, "\r")).toBe(false);
+  });
+});
+
+describe("upstream pttbbs 產的文章列表畫面（40 列）", () => {
+  const { facts } = screenAt(articleListTallFx, "list");
+
+  test("一頁 rows-4 列，全判成文章列表且編號連續", () => {
+    expect(facts.rows).toBe(40);
+    expect(classifyListScreen(facts).kind).toBe("clean-list");
+    const nums = pageArticleNums(facts.rowTexts, facts.curY).slice(3, facts.rows - 1);
+    expect(nums).toHaveLength(facts.rows - 4);
+    // Long 板 50 篇，進板停在最後一篇 ⇒ 最後一頁是 50-(rows-4)+1 .. 50。
+    const first = 50 - (facts.rows - 4) + 1;
+    expect(nums).toEqual(Array.from({ length: facts.rows - 4 }, (_, i) => first + i));
+    expect(facts.curY).toBe(facts.rows - 2);
+  });
+});
+
+describe("upstream pttbbs 產的文章畫面（pmore）", () => {
+  test("跳號之後游標停在第 1 篇", () => {
+    const { rowTexts, facts } = screenAt(articleFx, "list-jumped");
+    expect(classifyListScreen(facts).kind).toBe("clean-list");
+    expect(facts.curY).toBe(3);
+    expect(parseListArticleNum(rowTexts[3])).toBe(1);
+  });
+
+  test("狀態列解析出頁數與行號，整幀判成文章", () => {
+    const { buf, rowTexts, facts } = screenAt(articleFx, "article");
+    const status = parseStatusRow(rowTexts[facts.rows - 1]);
+    expect(status).toMatchObject({ pageIndex: 1, pageTotal: 1, pagePercent: 100, rowIndexStart: 1 });
+    expect(status.rowIndexEnd).toBeGreaterThanOrEqual(4);
+    expect(classifyListScreen(facts).kind).toBe("article");
+    expect(buf.pageState).toBe(3);
+  });
+
+  test("檔頭解析出作者／看板／標題", () => {
+    const { rowTexts, facts } = screenAt(articleFx, "article");
+    const status = parseStatusRow(rowTexts[facts.rows - 1]);
+    expect(articleContextFromScreen(rowTexts[0], rowTexts[1], status)).toEqual({
+      author: "alice",
+      board: "Test",
+      title: "[問題] 第一篇測試文章",
+    });
+  });
+});
+
+describe("upstream pttbbs 產的說明選單（文章列表的 h）", () => {
+  const { rowTexts } = screenAt(helpMenuFx, "help");
+  const menu = parseHelpMenuScreen(rowTexts);
+
+  test("認得出說明選單，第 1 頁、游標在第一項", () => {
+    expect(menu).not.toBeNull();
+    expect(menu.caption).toBe("文章列表");
+    expect(menu.page).toBe(1);
+    expect(menu.totalPages).toBeGreaterThanOrEqual(1);
+    expect(menu.cursorIndex).toBe(0);
+    expect(menu.items.length).toBe(rowTexts.length - 3); // 每頁 t_lines - 3 項
+  });
+
+  test("項目解析出鍵與名稱", () => {
+    const byLabel = Object.fromEntries(menu.items.map((it) => [it.label, it]));
+    expect(byLabel["發表"].keys).toEqual(["^P"]);
+    expect(byLabel["推文"].keys).toContain("X");
+    expect(byLabel["閱讀"].keys).toContain("Enter");
+  });
+
+  test("在說明選單按 ⏎ 不會被當成進板而 arm", () => {
+    expect(boardEntryArms(rowTexts, "\r")).toBe(false);
+  });
+});
+
+describe("upstream pttbbs 產的進板畫面", () => {
+  test("進板畫面（notes＋請按任意鍵繼續）判成要送鍵跳過", () => {
+    const { rowTexts, facts } = screenAt(boardNoteFx, "note");
+    expect(rowTexts[0]).toContain("歡迎來到 Notes 板");
+    expect(boardNoteDecision(facts)).toEqual({ action: "skip", key: " ", shape: "pause" });
+  });
+
+  test("按鍵之後落地文章列表 ⇒ 解除", () => {
+    const { facts } = screenAt(boardNoteFx, "list");
+    expect(classifyListScreen(facts)).toEqual({ kind: "clean-list", boardName: "Notes" });
+    expect(boardNoteDecision(facts)).toEqual({ action: "landed" });
+  });
+});
+
+describe("upstream pttbbs 產的看板列表（我的最愛）", () => {
+  const { rowTexts, facts } = screenAt(boardListFx, "fav");
+  const FAV = ["Test", "Notes", "Gossip", "Movie"];
+
+  test("判成可接手的我的最愛", () => {
+    const brd = classifyBoardListScreen(facts);
+    expect(brd).toMatchObject({
+      variant: "fav",
+      newflag: false,
+      parked: true,
+      cursorNum: 1,
+      topNum: 1,
+      engageable: true,
+    });
+    expect(boardListContextKind(facts)).toBe("brdlist");
+  });
+
+  test("逐列解析出編號／板名／未讀", () => {
+    FAV.forEach((name, i) => {
+      const t = rowTexts[3 + i];
+      expect(parseBoardListName(t)).toBe(name);
+      // seed 的 Test／Notes 有文章、Gossip／Movie 沒有
+      expect(parseFavRow(t)).toMatchObject({ num: i + 1, name, unread: i < 2 });
+    });
+    expect(parseFavRow(rowTexts[3]).desc).toBe("測試看板");
+  });
+
+  test("在看板列表按 ⏎ 是進板 ⇒ arm", () => {
+    expect(boardEntryArms(rowTexts, "\r")).toBe(true);
+  });
+});
+
+describe("upstream pttbbs 產的主功能表", () => {
+  const { buf, facts } = screenAt(mainMenuFx, "menu");
+
+  test("認得出主功能表（有 (F)avorite）", () => {
+    expect(isHomeScreen(facts)).toBe(true);
+    expect(classifyListScreen(facts).kind).toBe("menu");
+    expect(buf.pageState).toBe(1);
   });
 });

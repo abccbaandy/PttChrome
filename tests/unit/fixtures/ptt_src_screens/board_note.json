@@ -1,0 +1,17 @@
+{
+ "cols": 80,
+ "rows": 24,
+ "entry": "read:Notes",
+ "frames": [
+  {
+   "name": "note",
+   "keys": "",
+   "bytes": "\u001b[?7l\u001b[?2026h\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[H\u001b[2JÅwªï¨Ó¨ì Notes ªO\r\n³o¬O¶iªOµe­±\r\u001b[24;1H\u001b[1;34;44m ¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e\u001b[0;1;37;44m ½Ð«ö¥ô·NÁäÄ~Äò \u001b[34m¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e  \u001b[m\u001b[?2026l"
+  },
+  {
+   "name": "list",
+   "keys": " ",
+   "bytes": "\u001b[?2026h\u001b[H\u001b[1;37;46m¡iªO¥D:sysop¡j                 \u001b[33m¦³¶iªOµe­±ªº¬ÝªO\u001b[0;1;37;46m                   ¬ÝªO¡mNotes¡n\r\n\u001b[m[¡÷]¾\\Åª [z]ºëµØ°Ï [Tab]¤åºK [s]¿ï¾Ü¬ÝªO [b]¶iªO [i]¬ÝªO³]©w [^X]Âà¿ý [/]·j´M\r\n\u001b[30;47m   ½s¸¹    ¤é ´Á §@  ªÌ       ¤å  ³¹  ¼Ð  ÃD                            ¤H®ð:42 \u001b[4;7H\u001b[m1 +\u001b[1;32m 1\u001b[m10/05 frank\u001b[4;31H¡¼ [¶¢²á] ¶iªOµe­±¤§«áªº¤å³¹\u001b[5;7H2 +\u001b[1;32m 2\u001b[m10/06 grace\u001b[5;31H¡¼ [¶¢²á] ²Ä¤G½g\r\n>     3 +\u001b[1;32m 3\u001b[m10/07 heidi\u001b[6;31H¡¼ [¶¢²á] ²Ä¤T½g\r\u001b[24;1H\u001b[34;46m ¤å³¹¦Cªí \u001b[30;47m \u001b[31m(^P)\u001b[30mµoªí \u001b[31m(y)\u001b[30m¦^À³ \u001b[31m(X)\u001b[30m±À¤å \u001b[31m(d)\u001b[30m§R°£ \u001b[31m(¡÷)\u001b[30m¾\\Åª \u001b[31m(b)\u001b[30m¶iªO  \u001b[31m(¡ö)\u001b[30mÂ÷¶} \u001b[31m(h)\u001b[30m»¡©ú \u001b[m\u001b[6;1H\u001b[?2026l"
+  }
+ ]
+}
