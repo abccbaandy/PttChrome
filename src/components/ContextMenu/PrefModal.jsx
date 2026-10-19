@@ -765,6 +765,17 @@ export const PrefModal = ({
                   {i18n("options_enableEasyReading")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="enableHelpMenuPopup"
+                  checked={values.enableHelpMenuPopup}
+                  disabled={values.nativeSafeMode || !values.enableEasyReading}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableHelpMenuPopup")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_enableHelpMenuPopup")}
+                </Text>
+                <PrefCheckbox
                   name="enableEasyReadingList"
                   checked={values.enableEasyReadingList}
                   disabled={values.nativeSafeMode}

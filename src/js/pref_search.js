@@ -85,6 +85,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_showStatusHints",
     },
     { key: "enableEasyReading", titleKey: "options_enableEasyReading" },
+    {
+      key: "enableHelpMenuPopup",
+      titleKey: "options_enableHelpMenuPopup",
+      tooltipKey: "tooltip_enableHelpMenuPopup",
+    },
     { key: "enableEasyReadingList", titleKey: "options_enableEasyReadingList" },
     {
       key: "enableBoardListSmoothScroll",

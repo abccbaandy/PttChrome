@@ -806,6 +806,12 @@ export const en_US = {
   "options_enableEasyReading": {
     "message": "Enable easy reading article view. (experimental)"
   },
+  "options_enableHelpMenuPopup": {
+    "message": "Easy-reading help menu"
+  },
+  "tooltip_enableHelpMenuPopup": {
+    "message": "Show every command of the new h help menu in one list, and run one with a click. Needs easy reading article view; turn off to use PTT's own paged menu."
+  },
   "options_enableEasyReadingList": {
     "message": "Enable easy reading board list. (experimental, truly hides blacklisted rows)"
   },

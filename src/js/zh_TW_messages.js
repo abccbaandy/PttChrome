@@ -805,6 +805,12 @@
   "options_enableEasyReading": {
     "message": "啟用文章好讀模式 (實驗性)"
   },
+  "options_enableHelpMenuPopup": {
+    "message": "說明選單好讀"
+  },
+  "tooltip_enableHelpMenuPopup": {
+    "message": "按 h 開的新版說明選單改成一次列出全部指令，點一下就執行。需要先開文章好讀模式；關掉就照 PTT 原本一頁一頁的選單。"
+  },
   "options_enableEasyReadingList": {
     "message": "啟用文章列表好讀模式 (實驗性，黑名單真正隱藏)"
   },
