@@ -9,7 +9,8 @@ PTT 2026-10 起（pttbbs `main@908bb063` 的 cmd_t 系列）`h` 說明改成**�
 編輯器（`edit.c`）共用。舊版是 pmore 顯示的文字檔，文章好讀會把它當長頁接手；新版是分頁的選單
 （pageState 判不出，停在上一個值或 0），好讀完全不接手，手機上只剩縮小的 80 欄格線。
 
-好讀開著（pref `enableEasyReading`，**沿用好讀總開關**，不另開 pref）時改由彈窗（桌機）／
+好讀開著（pref `enableEasyReading`）且子開關 `enableHelpMenuPopup`（設定頁「說明選單好讀」，預設開；
+好讀關著時一律原生、設定頁該項 disabled；安全模式名單內）都開時改由彈窗（桌機）／
 bottom sheet（手機）一次列出**全部頁**的指令，點一下＝執行。
 
 ## PTT 端事實（讀碼，CONFIRMED）

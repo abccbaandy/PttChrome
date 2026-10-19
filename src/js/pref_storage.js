@@ -40,6 +40,10 @@ export const DEFAULT_PREFS = {
   // （含動畫）由程式代按一鍵收掉，直接落在文章列表。預設開；文章列表按 `b` 看
   // 進板畫面不受影響。
   skipBoardEntryScreen: true,
+  // 說明選單好讀（js/help_menu.js）：新版 h 說明選單改成一次列出全部指令的彈窗
+  // （手機 bottom sheet），會替使用者送 PgDn 補頁。是文章好讀的子開關：
+  // enableEasyReading 關著時一律原生（沿用原本的行為）。預設開。
+  enableHelpMenuPopup: true,
   reconnectResume: true,
   // 首頁儀表板（js/home_dashboard.js）：主功能表上蓋一層我的最愛／最近看板／新信面板，
   // 打開時快取過期會自己去抓一次我的最愛（Ctrl+Z f → q）⇒ 在安全模式名單內。
@@ -383,6 +387,7 @@ export const NATIVE_SAFE_MODE_KEYS = Object.freeze([
   "enableBoardListSmoothScroll",
   "enableListNativeAutoResume",
   "skipBoardEntryScreen",
+  "enableHelpMenuPopup",
   "reconnectResume",
   "enableHomeDashboard",
   "enableSplitReading",

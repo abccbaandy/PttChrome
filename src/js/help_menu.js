@@ -160,6 +160,12 @@ export function mergeHelpPages(pages, totalPages) {
   return out;
 }
 
+// 接不接管看兩個 pref：好讀總開關（沿用原本的行為）＋自己的子開關 enableHelpMenuPopup。
+// 傳入的必須是生效值（readEffectivePrefs），安全模式才會把兩者都蓋成 false。
+export function helpMenuPopupEnabled(prefs) {
+  return !!(prefs && prefs.enableEasyReading && prefs.enableHelpMenuPopup);
+}
+
 // ---- 控制器 ----
 // phase：
 //   idle     沒有說明選單
@@ -177,7 +183,7 @@ export function HelpMenuController(core, termBuf, opts) {
   this._termBuf = termBuf;
   const o = opts || {};
   this._send = o.send || ((bytes) => core && core.view && core.view._send(bytes));
-  this._enabled = o.enabled || (() => !!readEffectivePrefs().enableEasyReading);
+  this._enabled = o.enabled || (() => helpMenuPopupEnabled(readEffectivePrefs()));
   this._now = o.now || (() => Date.now());
   this._setTimeout = o.setTimeout || ((fn, ms) => setTimeout(fn, ms));
   this._clearTimeout = o.clearTimeout || ((t) => clearTimeout(t));
