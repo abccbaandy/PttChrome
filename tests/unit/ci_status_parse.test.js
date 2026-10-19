@@ -231,6 +231,13 @@ describe("isProjectRun / projectRuns", () => {
     expect(isProjectRun({ ...hunt, event: "workflow_dispatch" })).toBe(false);
   });
 
+  test("PTT Source Screens：schedule／dispatch 不算（upstream 紅另開 issue），PR 觸發的算", () => {
+    const screens = { ...deploy, name: "PTT Source Screens", event: "schedule", path: ".github/workflows/ptt-src-screens.yml" };
+    expect(isProjectRun(screens)).toBe(false);
+    expect(isProjectRun({ ...screens, event: "workflow_dispatch" })).toBe(false);
+    expect(isProjectRun({ ...screens, event: "pull_request" })).toBe(true);
+  });
+
   test("只有 CodeQL run 時 projectRuns 為空（REGRESSION：曾被當成全綠）", () => {
     expect(projectRuns([codeql])).toEqual([]);
     // 這正是誤判的現場：allSettled 對「只有 CodeQL」是成立的，所以不能只靠它。

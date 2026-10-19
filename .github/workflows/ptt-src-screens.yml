@@ -1,0 +1,129 @@
+name: PTT Source Screens
+
+# 每天拿 upstream pttbbs（ptt/pttbbs main HEAD）的原始碼產生畫面位元組，餵給本專案的畫面判定與
+# 列表解析器（tests/unit/ptt_src_screens.test.js）。不架站、不登入：tools/ptt-src-screens/ 只編譯
+# mbbsd 物件檔，用假 SHM／使用者直接呼叫 Read()。目的是在使用者回報之前，就發現 upstream 改了畫面、
+# 讓本專案判錯（例：72718d5，upstream 10/01 在文章列表 row 1 加指令說明列，10/18 才被發現）。
+#
+# 紅了開（或在 open 的上面留言）issue「PTT 原始碼畫面檢查失敗」（label ptt-src-screens）。
+# MVP：**不接 Claude routine**，只讓人看到。規則見 scripts/ptt-src-screens-report.mjs。
+# 兩段分開判：generate 紅＝upstream build／driver 壞了（環境問題）；check 紅＝解析器判錯。
+# `yarn ci:status` 不把 schedule／dispatch 的 run 算進 push 的 CI（scripts/ci-status.mjs#isProjectRun）。
+# 有 paths 過濾 ⇒ 不可加進 dev 的 required checks（沒動這些檔的 PR 永遠不會跑，會卡 pending）。
+on:
+  schedule:
+    - cron: "43 22 * * *" # 台灣時間 06:43（非整點：整點是 GitHub schedule 尖峰）
+  workflow_dispatch:
+  # workflow_dispatch 只吃預設分支上的 workflow 檔：改這套東西的 PR 靠這個觸發驗證。
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/ptt-src-screens.yml"
+      - "tools/ptt-src-screens/**"
+      - "scripts/ptt-src-screens-report.mjs"
+      - "tests/unit/ptt_src_screens.test.js"
+      - "tests/unit/fixtures/ptt_src_screens/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ptt-src-screens-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # 在 runner 上直接 build（要 clang／objcopy／iconv，ubuntu-latest 內建；Playwright image 沒有 clang）。
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      pttbbs-sha: ${{ steps.clone.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: clone
+        name: Clone upstream pttbbs (main HEAD)
+        run: |
+          git clone --depth 1 https://github.com/ptt/pttbbs.git 3rd_script/pttbbs
+          sha=$(git -C 3rd_script/pttbbs rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          git -C 3rd_script/pttbbs log -1 --format='upstream: %h %cd %s' --date=iso
+      - name: Toolchain
+        run: |
+          clang --version | head -1
+          objcopy --version | head -1
+      - name: Generate screens from upstream source
+        run: sh tools/ptt-src-screens/generate.sh 3rd_script/pttbbs
+      # 綠也印：畫面跟 repo 裡的 fixture 不同＝upstream 改了這個畫面（解析器仍認得）。
+      - name: Diff against committed fixture
+        run: git diff --stat -- tests/unit/fixtures/ptt_src_screens/ || true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ptt-src-screens-fixtures
+          path: tests/unit/fixtures/ptt_src_screens/
+          retention-days: 14
+
+  # 同 test.yml：unit-browser 要的 Playwright image 版本＝yarn.lock 裡的 @playwright/test。
+  playwright-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            yarn.lock
+            scripts/playwright-version.mjs
+          sparse-checkout-cone-mode: false
+      - id: v
+        run: node scripts/playwright-version.mjs >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: [generate, playwright-version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
+      options: --user 1001 --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+      - uses: actions/download-artifact@v7
+        with:
+          name: ptt-src-screens-fixtures
+          path: tests/unit/fixtures/ptt_src_screens/
+      - name: Check parsers against upstream screens
+        run: |
+          yarn install --immutable
+          yarn vitest run --project unit-browser tests/unit/ptt_src_screens.test.js
+
+  report:
+    needs: [generate, check]
+    # 只有 dev（schedule／在 dev 上手動跑）的紅才寫 issue；PR 上的驗證紅看 run 本身。
+    if: failure() && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/ptt-src-screens-report.mjs
+            scripts/flaky-hunt-report.mjs
+          sparse-checkout-cone-mode: false
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PTTBBS_SHA: ${{ needs.generate.outputs.pttbbs-sha }}
+          GENERATE_RESULT: ${{ needs.generate.result }}
+          CHECK_RESULT: ${{ needs.check.result }}
+        run: node scripts/ptt-src-screens-report.mjs

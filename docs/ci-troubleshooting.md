@@ -11,6 +11,10 @@
   - **watchdog**：每次 run（不管紅綠，只在 dev）檢查 open 的 flaky issue，`createdAt` 超過 3 天且沒有 label `flaky-stalled` ⇒ 加 label 並 @ repo owner 一次（session 中途結束時 issue 會一直開著、nightly 只留言，沒人知道；`actions/stale` 會被 nightly 留言重置，不能用）。見 `scripts/flaky-hunt-watchdog.mjs`。
   - 靜態守護（cron ≥2 條非整點、concurrency 含 `github.ref` 且不 cancel、gate 被所有 job needs、watchdog `always()`）＋gate／watchdog 純函式：`tests/unit/flaky_hunt_workflow.test.js`。
 
+- **nightly `PTT Source Screens`（`.github/workflows/ptt-src-screens.yml`）**：每天用 upstream pttbbs HEAD 的原始碼產生畫面
+  （`tools/ptt-src-screens/`，不架站）餵給本專案的解析器。紅了開／續寫 issue「PTT 原始碼畫面檢查失敗」（label `ptt-src-screens`，
+  **不接 routine**）。`generate` job 紅＝upstream build／driver 壞了（環境），`check` job 紅＝解析器判錯。
+  只有 PR 觸發的 run 算進 `yarn ci:status`；有 paths 過濾 ⇒ 不可加進 required checks。待做見 `docs/handoff/ptt-src-screens.md`。
 - **deploy job 偶發 `actions/deploy-pages@v5` timeout**：Pages 服務端卡在 `deployment_in_progress`，輪詢約 76s 後 `##[error]Timeout reached, aborting!` 並取消部署 → **測試/build 全綠但 run 紅、站台停在舊 commit**。屬 Pages 基礎設施問題，非本專案 code。判準：該 run 只有 `deploy` 一個 job 紅、`test-*`／`build` 全綠。處置：重跑失敗 job（`POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`；`ci:status --rerun-failed` 目前只認 integration flaky，不會自動重跑它）。**事後必須確認 `github-pages` 環境最新一筆 deployment 的 sha 是本次 commit 且 state=success**，否則站台仍是舊版。
 - **e2e job 紅在「裝瀏覽器」而不是測試**：`npx playwright install --with-deps` 會先跑 `apt-get update`，
   只要 runner image 內建的**第三方 apt 來源**處於發布中間態（`Release` 宣告的雜湊 ≠ 實際 `Packages.gz`），

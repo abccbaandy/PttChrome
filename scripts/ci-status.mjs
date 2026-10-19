@@ -106,6 +106,9 @@ export function isProjectRun(run) {
   // nightly 壓力測試跑在 dev 當下的 head sha 上，跟 push 的 run 同 sha；它答的是「有沒有
   // flaky」不是「這次 push 綠不綠」，紅了自己開 issue（.github/workflows/flaky-hunt.yml）。
   if (/(^|\/)flaky-hunt\.yml$/.test(String(run.path || ""))) return false;
+  // upstream pttbbs 畫面檢查的 schedule／dispatch run 也跑在 dev head 上，答的是「upstream 有沒有
+  // 改到讓我們判錯」，紅了自己開 issue（ptt-src-screens.yml）。只有 PR 觸發的那次算這次的 CI。
+  if (/(^|\/)ptt-src-screens\.yml$/.test(String(run.path || "")) && run.event !== "pull_request") return false;
   return true;
 }
 
