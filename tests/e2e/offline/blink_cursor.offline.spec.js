@@ -14,6 +14,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
+const { pauseClockNow } = require('../helpers/clock');
 
 // PTT 畫游標：在第 5 列列首印 '>'，游標停回同一格。
 const LIST_ROW_WITH_CURSOR =
@@ -41,8 +42,7 @@ async function bootWithClock(page) {
 }
 
 async function sampleTicks(page, ticks, read) {
-  const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 100);
+  await pauseClockNow(page);
   const out = [];
   try {
     for (let i = 0; i < ticks; i++) {
