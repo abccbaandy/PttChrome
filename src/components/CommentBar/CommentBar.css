@@ -1,0 +1,85 @@
+/* 好讀文章底部常駐推文列（CommentBar/index.jsx）。與終端機同寬、貼在終端機可見內容
+   的最下緣（位置由 js/comment_bar.js#commentBarGeometry 算，inline style 寫進來）。
+   疊在終端機上，不推動、不縮小終端機（docs/terminal-size.md LOCKED）；被它蓋住的那一截
+   由累積頁尾端的空白補回來（main.css `.commentBarShown`）。
+   z-index 同文章工具側欄：低於 App Bar（150）與 Mantine overlay（200），高於終端機（≤3）。 */
+.commentBar {
+  position: fixed;
+  z-index: 140;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border-top: 1px solid #2a2a32;
+  background: #101014;
+  color: #ddd;
+  font:
+    14px/1.2 system-ui,
+    sans-serif;
+}
+
+.commentBarTypes {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.commentBarType,
+.commentBarSend {
+  flex: none;
+  height: 30px;
+  min-width: 34px;
+  padding: 0 8px;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #1c1c22;
+  color: #bbb;
+  font: inherit;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 顏色比照 PTT 推文列：推＝亮白、噓與 →＝亮紅。 */
+.commentBarType.is-active {
+  border-color: #777;
+  background: #2c2c36;
+  color: #fff;
+  font-weight: bold;
+}
+.commentBarType--boo.is-active,
+.commentBarType--arrow.is-active {
+  color: #ff6b6b;
+}
+
+.commentBarInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #0b0b0e;
+  color: #eee;
+  /* 手機 16px 以下 iOS／部分 Android 會在聚焦時自動放大頁面。 */
+  font:
+    16px/1.2 system-ui,
+    sans-serif;
+  outline: none;
+}
+
+.commentBarInput:focus {
+  border-color: #6b8cff;
+}
+
+.commentBarSend:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.commentBarSend:not(:disabled):hover,
+.commentBarType:hover {
+  background: #26262e;
+}

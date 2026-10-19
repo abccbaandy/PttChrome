@@ -105,10 +105,14 @@ async function installReplay(page, opts = {}) {
   // 浮層、擋掉落在那裡的滑鼠 ⇒ 預設關掉，只有 split_reader.offline.spec.js 以
   // opts.splitReader 打開。文章工具側欄（pref enableArticleTools）是好讀文章右邊的
   // 浮層，同理預設關，只有 article_tools.offline.spec.js 以 opts.articleTools 打開。
+  // 底部常駐推文列（pref enableCommentBar）疊在好讀文章最下面、累積頁尾端多留一截空白
+  // ⇒ 會擋到落在底列的滑鼠、改變捲到底的位置，預設關，只有 comment_bar.offline.spec.js
+  // 以 opts.commentBar 打開。
   const off = {};
   if (!opts.homeDashboard) off.enableHomeDashboard = false;
   if (!opts.splitReader) off.enableSplitReading = false;
   if (!opts.articleTools) off.enableArticleTools = false;
+  if (!opts.commentBar) off.enableCommentBar = false;
   if (Object.keys(off).length) {
     await page.addInitScript(({ KEY, off }) => {
       try {
@@ -766,6 +770,7 @@ async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-un
     homeDashboard: !!opts.homeDashboard,
     splitReader: !!opts.splitReader,
     articleTools: !!opts.articleTools,
+    commentBar: !!opts.commentBar,
   });
   await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });
   await page.goto('/');

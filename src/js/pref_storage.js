@@ -319,6 +319,10 @@ export const DEFAULT_PREFS = {
   // 若在某個畫面誤判，關掉就回到原生推文。文章列表按 X 一律不攔。
   pushKeyOpensLongPush: true,
 
+  // 好讀文章底部常駐推文列（js/comment_bar.js）：好讀文章最下面一條「推／噓／→＋文字」，
+  // Enter 就推出去（走長推文管線）。**從屬於 enableLongPush**；會替使用者送鍵 ⇒ 在安全模式名單內。
+  enableCommentBar: true,
+
   // 按搜尋鍵（文章列表的 / ? a Z；文章列表／看板列表／主功能表的 s）時改開搜尋彈窗，
   // 不送 PTT 原生 prompt。理由：PTT 的
   // 輸入記憶被列表好讀的跳號污染（article_search.js 檔頭），彈窗自己記關鍵字（只存
@@ -395,7 +399,8 @@ export const NATIVE_SAFE_MODE_KEYS = Object.freeze([
   "easyReadingEndSwitchNative",
   "refreshKeyIntercept",
   "searchKeyOpensModal",
-  "pushKeyOpensLongPush"
+  "pushKeyOpensLongPush",
+  "enableCommentBar"
 ]);
 
 // 功能判斷要用的「實際生效」偏好：安全模式開著時把上面那串蓋成 false。回傳新物件，

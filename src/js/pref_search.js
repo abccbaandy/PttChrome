@@ -199,6 +199,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_pushKeyOpensLongPush",
     },
     {
+      key: "enableCommentBar",
+      titleKey: "options_enableCommentBar",
+      tooltipKey: "tooltip_enableCommentBar",
+    },
+    {
       key: "searchKeyOpensModal",
       titleKey: "options_searchKeyOpensModal",
       tooltipKey: "tooltip_searchKeyOpensModal",

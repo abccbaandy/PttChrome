@@ -305,6 +305,8 @@ async function installAutoLoginPrefs(page, extra) {
           enableSplitReading: false,
           // 文章工具側欄同理（好讀文章右邊的浮層）。
           enableArticleTools: false,
+          // 底部常駐推文列同理（疊在好讀文章最下面）。
+          enableCommentBar: false,
           autoLoginSkipWelcome: true,
         },
         extra || {}

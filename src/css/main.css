@@ -521,6 +521,16 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 /* 手機收起來的列（render/collapsed_row.js）：選單的空白列與標題／狀態列、列表卡片的
    header／footer、好讀文章檔頭的分隔線。不佔高度；bbsrow／data-row 契約保留。
    選擇器不綁畫面 class：只有手機分支會產生這個節點（桌機 golden 不經過）。 */
+/* 好讀文章底部常駐推文列（components/CommentBar）疊在終端機可見內容的最下面：累積頁
+   尾端多留一條列高的空白，捲到底時最後一列才會在列的上方。用 ::after 而不動
+   #mainContainer 的 paddingBottom——那個 1em 是 term_view 給好讀 footer 的（見下方
+   commentSpacing 註解第 2 點），兩者疊加互不干擾。只有列顯示中（html.commentBarShown）才有。 */
+html.commentBarShown #mainContainer::after {
+  content: "";
+  display: block;
+  height: var(--comment-bar-h, 40px);
+}
+
 #mainContainer span.mobileCollapsedRow {
   display: none;
 }

@@ -30,7 +30,8 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 | `src/js/term_view.js` | `onKeyDown`／`onTextInput` 守門 |
 | `src/js/serialized_op_gate.js` | `serializedOpHint(core)`＝**四條送字入口共用**的述詞（`aidNavigation.active` / `longPush.active` → 提示字串，否則 null）。呼叫端負責吞輸入＋`flashListHint`。守護 `tests/unit/serialized_op_gate.test.js` |
 | `src/js/long_push_gate.js` | **攔截推文鍵**的述詞：`isPushKey` / `longPushAvailable`（選單與攔截共用）/ `atPagerStatusRow` / `shouldInterceptPushKey` / `pushGateFacts` |
-| pref | `enableLongPush`（**預設 `true`**）＋ `pushKeyOpensLongPush`（**預設 `true`**，從屬於前者），設定 → 一般 → 右鍵選單 |
+| `src/js/comment_bar.js` ＋ `src/components/CommentBar/` | 好讀文章底部常駐推文列（見「底部常駐推文列」節） |
+| pref | `enableLongPush`（**預設 `true`**）＋ `pushKeyOpensLongPush`、`enableCommentBar`（**皆預設 `true`**，從屬於前者），設定 → 一般 → 右鍵選單 |
 
 ## 資料流
 
@@ -477,6 +478,23 @@ Esc 取消就回不到閱讀進度），守護 `tests/e2e/offline/long_push.offl
 `getByRole('button', { name: i18n('longPushModal_confirm') })` 這種完整字串比對（unit 與
 offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `aria-keyshortcuts` 提供。
 
+## 底部常駐推文列（`comment_bar.js`）
+
+好讀文章最下面常駐一條「推／噓／→＋文字」輸入列（`components/CommentBar`），Enter 送出。
+**送出整條沿用長推文管線**：列只負責「何時出現、畫在哪」與「探路回來要不要直接送」。
+
+| 項目 | 規則 | 理由 |
+|---|---|---|
+| 出現條件 | `enableLongPush && enableCommentBar`（`readEffectivePrefs`，安全模式名單內）＋ pageState 3 ＋好讀開著＋不在 functionMode ＋累積頁非空（同 `article_tools._inEasyArticle`） | 認不出就是原生：原生 pmore、列表、選單一律不出現；送出期間長推文切 functionMode，列自然收起 |
+| 位置 | 與終端機同寬，貼在終端機可見內容下緣（好讀 footer 顯示中就在它之上；手機＝底部導覽之上，鍵盤彈出時 `--vv-kb-inset` 把列頂上去） | 疊在終端機上，**不改列數、不送 NAWS**（`docs/terminal-size.md` LOCKED） |
+| 被蓋住的那一截 | `html.commentBarShown #mainContainer::after` 留列高的空白 | 不動 `#mainContainer` 的 `paddingBottom`（那是 term_view 給好讀 footer 的） |
+| 鍵盤／滑鼠 | 輸入框聚焦＝ modal 來源 `commentBar`；keydown 與滑鼠事件一律 `stopPropagation`；`App._onUploadLayer` 認 `#commentBar` 放過 | 打字一個 byte 都不准漏到 PTT；離開（blur／Esc／列收起）焦點回 `#t` |
+| 送出 | `App.openQuickPush({text, type})`（ContextMenu 注入）：先 `writeDraft` 再走 `openLongPush` 的探路；探路回來由 `quickPushPlan` 決定 | 內容先進草稿 ⇒ 退回輸入框或送到一半失敗都不丟字 |
+| 直接送 vs 退回輸入框 | `quickPushPlan`：PTT 會改成 →（`degraded`）、禁噓板選噓、有 Big5 收不下的字、超過 20 則 ⇒ 退回長推文輸入框（內容就是草稿）；其餘直接 `session.start` | 這幾種都是「使用者該先看一眼」；直接送時探路遮罩直接接到送出進度，`modalOpen` 不閃 false |
+
+`session.start` 不在 `onPreflight` 裡同步呼叫（`setTimeout(0)`）：那一刻還在 session 的
+`_preflightDone` 裡，同步重入會讓狀態機在收尾一半時被改掉。
+
 ## 尚待 live 驗證
 
 1. **探路**：禁推板／未達發文限制的實際橫幅字串是否與開源碼一致（term.ptt.cc 有私有
@@ -496,6 +514,8 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 | unit | `tests/unit/long_push_preflight.test.js` | **探路**：只送一個 X、各 kind 的收尾鍵序、**收尾中間幀量欄寬（型別選單／降級兩條路）並交給 `start()`**、**PTT 原文逐字照錄**（含沒看過的新訊息）、冷卻不算不能推且不倒數、逾時一個收尾鍵都不送、ORDER INVARIANT（scrollTop 歸零前採樣）、`start()` 不重採錨點也不重解 AID |
 | unit | `tests/unit/long_push_error_modal.test.jsx` | 錯誤框：原文照錄、來源標示兩態、已送出則數、剩餘內容唯讀可讀回、**按了才複製** |
 | unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告**、**型別每次開框回到推**、**草稿還原／還原提示／清除／開框不覆寫**、**鍵盤送出**（ctrl 與 meta 都收、單獨 Enter 不送、組字中不送、提示不進 accessible name） |
+| unit | `tests/unit/comment_bar.test.js` / `comment_bar_ui.test.jsx` / `comment_bar_quick_push.test.jsx` | 底部推文列：`quickPushPlan` 各條退回、出現條件與位置、Enter／IME／焦點／事件不外洩、`openQuickPush` 直接送不開輸入框與退回時內容在輸入框 |
+| offline e2e | `tests/e2e/offline/comment_bar.offline.spec.js` | 列與終端機同寬、捲到底最後一列不被蓋住、打字不送 byte、Enter 接上探路、Esc 焦點回終端機、原生 pmore／pref 關不出現 |
 | unit | `tests/unit/platform_label.test.js` | 快捷鍵提示的平台判斷（userAgentData 優先、UA 退路、拿不到 navigator 不 throw）|
 | unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值（含攔截開關的從屬關係與 disabled） |
 | unit | `tests/unit/long_push_gate.test.js` | 攔截判準：`x` 不是推文鍵、`shiftKey` 仍要攔、prompt 幀不攔、列表不攔、開關從屬 |
