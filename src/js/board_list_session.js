@@ -406,16 +406,22 @@ BoardListSession.prototype = {
     if (!buffered) return false;
     const name = parseBoardListName(facts.rowTexts[facts.curY] || '');
     if (!name || name !== parseBoardListName(buffered)) return false;
-    const nums = brd.nums || [];
+    return !this._listContradicts(facts);
+  },
+
+  // 這一頁有沒有任何一列跟緩衝裡同編號的列板名不同（＝畫面換了一份清單）。
+  // 緩衝沒有的編號、解析不出板名的列（分隔線）不算證據。
+  _listContradicts: function(facts) {
+    const nums = (facts && facts.brd && facts.brd.nums) || [];
     for (let r = 0; r < nums.length; ++r) {
       if (nums[r] == null) continue;
       const bufText = this._rowTextOf(nums[r]);
       if (!bufText) continue;
       const a = parseBoardListName(facts.rowTexts[r] || '');
       const b = parseBoardListName(bufText);
-      if (a && b && a !== b) return false;
+      if (a && b && a !== b) return true;
     }
-    return true;
+    return false;
   },
 
   // pref 開著＝L1 凍結交易＋L2 自動回復生效；關掉＝逐位元回到 2026-09-03 之前。
@@ -1382,8 +1388,19 @@ BoardListSession.prototype = {
     this._queue.enqueue({
       keys: String(num) + '\r',
       kind: BRD_CMD_PREFIX + kind,
+      // 落地除了編號對上，還得是**同一份清單**（同變體、整頁沒有跟緩衝矛盾的板名）：
+      // 同步完緊接著就送 Enter／←／A 類鍵，換了一份清單時同編號是別的看板。
+      // 認不出 ⇒ 逾時走 onFail（降級原生），不送後面的鍵。游標列不必能解析出板名
+      //（分隔線列也可能被選到），所以不用 _landedSameList 的游標列條件。
       expect: function(snap, facts) {
-        return !!(facts.brd && facts.brd.parked && facts.brd.cursorNum === num);
+        const brd = facts.brd;
+        return !!(
+          brd &&
+          brd.parked &&
+          brd.cursorNum === num &&
+          brd.variant === self._variant &&
+          !self._listContradicts(facts)
+        );
       },
       fullRepaint: true,
       timeoutMs: CMD_PROBE_AFTER_MS,
