@@ -178,6 +178,14 @@ pref `enableEasyReadingList`（**2026-09-16 起預設 on**）＋`easyReadingList
   保護區為止、其餘退回平衡規則；**保護區不對稱**（樞紐＝視口頂）：砍底端時保住樞紐以下 `EVICT_PROTECT_BELOW`=100 列，
   砍頂端時只留樞紐以上 `EVICT_PROTECT_ABOVE`=10 列（對稱 100 列時往下補照樣卡死）。守護：`list_session.test.js`「evictListBuffer」、
   `list_accumulate.test.js`「往上補頁落地：緩衝已滿且視口在中段」。
+- **文章列表的 evict 上限算可見列，不算原始列**（`evictListBuffer` 的 `opts.isHidden`＝`isHiddenListRow`，
+  與 `visibleListIndices` 同一份判斷）：上限是為了重繪成本，隱藏列（刪除文／黑名單）不渲染。CONFIRMED（Test 板
+  每週清板，214..766 幾乎全刪）：算原始列時視口頂 767 以下只有 24 列、保護區失效 ⇒ 剛補的頁離視口 >300 列一進來就被砍，
+  `_edgeUp` 被清、可見列不增 ⇒ 一路 PgUp 到第 1 篇又重來，畫面永遠只有十幾列。隱藏列一列 ≈16KB，另有總列數硬上限
+  `MAX_LIST_TOTAL_ROWS`=1200；撞到它而把剛長的那端整段砍回去（隱藏列連續超過硬上限）⇒ `noteGrowthStalled(dir)`
+  設 `_stallUp`／`_stallDown`，demand／fill 不再往那邊送（**已知限制**：好讀模式捲不過去，原生照常）。stall **不是**
+  邊界旗標（`_edgeDown` 會放出置底文），重建緩衝或那端被 evict 時解除。看板列表沒有隱藏列，維持原規則。
+  守護：`list_accumulate.test.js`「刪除文大量隱藏時往上補頁不得卡死」、`list_session.test.js`「隱藏列不計入上限」「成長停滯」。
 - **錄製檔的列表捲動 tag**（debug 錄製期間才有）：`list.scroll`／`touch`／`list.wheel`（`debug_recorder.js#_watchList`，
   document capture 層收，視口晚建也收得到；欄位見 `listViewSample` 註解）、`listView.write`（每次程式寫 scrollTop，
   `busy`＝寫入當下在捲／觸控中）、`listView.absorb`、`listView.reserve`（applied／deferred／detached）、

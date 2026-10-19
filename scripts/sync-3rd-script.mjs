@@ -62,16 +62,51 @@ function upstreamRef(dir) {
   );
 }
 
+// 上游目前的預設分支（`ls-remote --symref <remote> HEAD`）；查不到（離線等）回 ''。
+function remoteDefaultBranch(dir, remote) {
+  const out = tryGit(dir, ['ls-remote', '--symref', remote, 'HEAD']);
+  const m = /^ref: refs\/heads\/(\S+)\s+HEAD$/m.exec(out);
+  return m ? m[1] : '';
+}
+
+// 對齊的是**上游的預設分支**，不是 clone 當時的分支：ptt/pttbbs 把 master 改名成 main
+// 並刪掉 master 後，舊 clone 的 upstream（origin/master）消失、fetch 直接 fatal ⇒ 本地
+// 永遠停在舊 master（只在 .sync.log 報錯，沒人會看）。上游換預設分支時把本地分支跟著
+// 切過去；`--depth 1` 單分支 clone（cloud-setup.sh）的 fetch refspec 只寫死舊分支，要一起改。
 export function syncRepo(dir) {
   const name = path.basename(dir);
   try {
-    const target = upstreamRef(dir);
-    if (!target) return { name, status: 'skip', detail: 'no upstream' };
+    const tracked = upstreamRef(dir);
+    const remote = tracked ? tracked.split('/')[0] : 'origin';
+    const branch =
+      remoteDefaultBranch(dir, remote) || (tracked ? tracked.slice(remote.length + 1) : '');
+    if (!branch) return { name, status: 'skip', detail: 'no upstream' };
     if (git(dir, ['status', '--porcelain', '--untracked-files=no'])) {
       return { name, status: 'skip', detail: 'dirty working tree' };
     }
-    const remote = target.split('/')[0];
-    git(dir, ['fetch', '--prune', '--force', '--quiet', remote], { timeout: 5 * 60_000 });
+    const target = `${remote}/${branch}`;
+    const specs = tryGit(dir, ['config', '--get-all', `remote.${remote}.fetch`]);
+    if (!specs.includes('refs/heads/*') && !specs.includes(`refs/heads/${branch}:`)) {
+      git(dir, ['remote', 'set-branches', remote, branch]);
+    }
+    const shallow = tryGit(dir, ['rev-parse', '--is-shallow-repository']) === 'true';
+    git(dir, ['fetch', '--prune', '--force', '--quiet', ...(shallow ? ['--depth=1'] : []), remote], {
+      timeout: 5 * 60_000,
+    });
+    if (target !== tracked) {
+      const before = git(dir, ['rev-parse', 'HEAD']);
+      const oldLocal = tryGit(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+      git(dir, ['remote', 'set-head', remote, branch]);
+      git(dir, ['checkout', '-q', '-B', branch, target]);
+      git(dir, ['branch', '-q', `--set-upstream-to=${target}`, branch]);
+      if (oldLocal && oldLocal !== 'HEAD' && oldLocal !== branch) tryGit(dir, ['branch', '-q', '-D', oldLocal]);
+      const after = git(dir, ['rev-parse', 'HEAD']);
+      return {
+        name,
+        status: 'ok',
+        detail: `switched ${tracked || '(none)'} -> ${target} ${before.slice(0, 8)} -> ${after.slice(0, 8)}`,
+      };
+    }
     const before = git(dir, ['rev-parse', 'HEAD']);
     const after = git(dir, ['rev-parse', target]);
     if (before === after) return { name, status: 'ok', detail: `up-to-date ${target} ${after.slice(0, 8)}` };

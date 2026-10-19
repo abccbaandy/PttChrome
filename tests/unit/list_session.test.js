@@ -757,6 +757,38 @@ describe("evictListBuffer (total-row cap)", () => {
     evictListBuffer(m2, pivot, 300, -1);
     expect(sorted(m2)[299]).toBe(1299 - 10);
   });
+  // 錄製檔 ptt-debug-20261019-021418（Test 板清板）：上限算原始列數時，隔著一大段
+  // 隱藏的刪除文，剛補的頁一進來就被砍 ⇒ 永遠補不到下一列可見列。
+  it("隱藏列不計入上限：可見列 ≤ cap 時一列都不砍", () => {
+    const m = mapOf(range(1, 790)); // 214..766 隱藏
+    const hidden = (row) => {
+      const n = Number(row.slice(1));
+      return n >= 214 && n <= 766;
+    };
+    const r = evictListBuffer(m, 767, 300, -1, { isHidden: hidden, hardCap: 1200 });
+    expect(r).toEqual({ evictedUp: false, evictedDown: false });
+    expect(m.size).toBe(790);
+    // 對照：不帶 isHidden（舊行為）剛補進的頂端被砍。
+    const m2 = mapOf(range(1, 790));
+    evictListBuffer(m2, 767, 300, -1);
+    expect(sorted(m2)[0]).toBeGreaterThan(213);
+  });
+  it("可見列超過 cap：砍到可見列＝cap，隱藏列順手一起丟", () => {
+    const m = mapOf(range(1, 400)); // 偶數隱藏 ⇒ 可見 200
+    const hidden = (row) => Number(row.slice(1)) % 2 === 0;
+    evictListBuffer(m, 400, 150, 0, { isHidden: hidden });
+    const kept = sorted(m);
+    expect(kept.filter((n) => n % 2 === 1).length).toBe(150);
+    expect(kept[kept.length - 1]).toBe(400);
+  });
+  it("總列數超過 hardCap：即使可見列很少也砍（離樞紐最遠的一端）", () => {
+    const m = mapOf(range(1, 1500));
+    const hidden = (row) => Number(row.slice(1)) < 1490;
+    const r = evictListBuffer(m, 1490, 300, -1, { isHidden: hidden, hardCap: 1200 });
+    expect(m.size).toBe(1200);
+    expect(sorted(m)[0]).toBe(301);
+    expect(r).toEqual({ evictedUp: true, evictedDown: false });
+  });
   it("null pivot (pinned tail) is treated as bottom → evicts the top", () => {
     const m = mapOf([10, 11, 12, 13]);
     const r = evictListBuffer(m, null, 2);
@@ -967,6 +999,34 @@ describe("demand 邊距（提早預補隱藏 round-trip 延遲）", () => {
     s._edgeDown = true;
     s._maybeDemand(1);
     expect(enqueued).toEqual([]);
+  });
+  // 隱藏列連續超過總列數硬上限：剛補的頁被整段砍回去，再補也沒進展 ⇒ 停手，
+  // 不可以無限 PgUp（錄製檔 ptt-debug-20261019-021418 的極端版）。
+  test("成長停滯（noteGrowthStalled）→ 該方向的 demand／fill 都不再送；evict 那一端後解除", () => {
+    const { s, enqueued } = demandSession({ count: 80 });
+    s._topNum = 130; // top pos = 30 < 2B ⇒ 平常會往上補
+    s._selectedNum = 135;
+    s.noteGrowthStalled(-1);
+    s._maybeDemand(-1);
+    s._fillTarget = 1000;
+    s._maybeFill();
+    expect(enqueued).toEqual([]);
+    // 不是邊界：_edgeUp 不被設（_edgeDown 會放出置底文，所以兩邊都不碰）。
+    expect(s._edgeUp).toBe(false);
+    // 那一端之後被 evict（使用者往下捲走）⇒ 解除，回來時可以再補。
+    s.noteEvicted(-1);
+    s._maybeDemand(-1);
+    expect(enqueued[enqueued.length - 1].kind).toBe("prefetch-up");
+  });
+  test("往下成長停滯 → 落點短頁也不往下補，且不放出置底文", () => {
+    const { s, enqueued } = demandSession({ count: 5 });
+    s._topNum = 100;
+    s._selectedNum = 104;
+    s.noteGrowthStalled(1);
+    s._demandDownIfWindowShort();
+    s._maybeDemand(1);
+    expect(enqueued).toEqual([]);
+    expect(s._edgeDown).toBe(false);
   });
 });
 

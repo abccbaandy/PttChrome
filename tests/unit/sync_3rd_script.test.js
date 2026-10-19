@@ -81,6 +81,40 @@ describe('sync-3rd-script', () => {
     expect(syncAll(root).map((r) => r.name)).toEqual(['pttbbs']);
   }, 30000);
 
+  // ptt/pttbbs 把預設分支 master 改名成 main 並刪掉 master：舊 clone 的 upstream
+  // （origin/master）消失，fetch 直接 fatal ⇒ 本地永遠停在舊 master、只在 log 裡報錯。
+  function renameUpstreamToMain() {
+    fs.writeFileSync(path.join(author, 'a.c'), 'v3-on-main\n');
+    git(author, 'commit', '-qam', 'two');
+    git(author, 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+    git(upstream, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+    git(author, 'push', '-q', 'origin', '--delete', 'master');
+    return git(author, 'rev-parse', 'HEAD');
+  }
+
+  test('上游預設分支改名（master→main）⇒ 本地切到 main 並對齊', () => {
+    const newHead = renameUpstreamToMain();
+    const [r] = syncAll(root);
+    expect(r.status).toBe('ok');
+    expect(git(clone, 'rev-parse', 'HEAD')).toBe(newHead);
+    expect(git(clone, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+    expect(git(clone, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')).toBe('origin/main');
+    // 第二次同步就是一般的 up-to-date。
+    expect(syncAll(root)[0]).toMatchObject({ status: 'ok' });
+  }, 30000);
+
+  test('上游預設分支改名：--depth 1 單分支 clone（雲端 setup 的形狀）也跟得上', () => {
+    fs.rmSync(clone, { recursive: true, force: true });
+    git(tmp, 'clone', '-q', '--depth', '1', `file://${upstream}`, clone);
+    const newHead = renameUpstreamToMain();
+    const [r] = syncAll(root);
+    expect(r.status).toBe('ok');
+    expect(git(clone, 'rev-parse', 'HEAD')).toBe(newHead);
+    expect(git(clone, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+    // 之後純 `git fetch` 也要能用（單分支 refspec 改指 main）。
+    git(clone, 'fetch', '-q', 'origin');
+  }, 30000);
+
   test('hook 模式 stdout 為空、exit 0', () => {
     // 先放新的 stamp ⇒ 節流擋下，不真的 fork worker（避免測試留下背景進程）
     fs.writeFileSync(path.join(root, '3rd_script', '.sync-stamp'), '');
