@@ -50,6 +50,17 @@ export function decideGate({ event, runId, now, runs }) {
   return { skip: false, reason: `自 ${since.toISOString()} 起 dev 上還沒有算數的 run` };
 }
 
+// Android 模擬器那條（android-repeat job）每週只跑一次：模擬器開機＋每輪成本高，每晚跑太貴；
+// 但 test.yml 每個 PR 只跑一輪，低機率 flaky 永遠抓不到。窗起點（UTC 21:00）落在週六 ⇒
+// 台灣週日 05:00 那一輪帶上 android。看的是窗起點而不是 now：三個備援 cron 不管哪個先跑，
+// 判定都一樣。workflow_dispatch 只有明確選 suite=android 才跑。
+export const ANDROID_WEEKDAY_UTC = 6;
+
+export function decideAndroid({ event, now, suite }) {
+  if (event === "workflow_dispatch") return suite === "android";
+  return windowStart(now).getUTCDay() === ANDROID_WEEKDAY_UTC;
+}
+
 function main(env) {
   const now = new Date();
   let result;
@@ -73,8 +84,10 @@ function main(env) {
     console.log(`::warning::gate 查詢失敗，照常執行：${e.message}`);
     result = { skip: false, reason: "查詢失敗（fail-open）" };
   }
+  const android = decideAndroid({ event: env.GITHUB_EVENT_NAME, now, suite: env.SUITE });
   console.log(`skip=${result.skip}：${result.reason}`);
-  if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `skip=${result.skip}\n`);
+  console.log(`android=${android}`);
+  if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `skip=${result.skip}\nandroid=${android}\n`);
 }
 
 const invokedDirectly =
