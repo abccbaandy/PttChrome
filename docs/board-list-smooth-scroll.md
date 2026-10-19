@@ -224,7 +224,7 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 | End `brd-jump-end` | 原生 `ESC[4~` ＋ `^L` | 停在 body 且 curX≤1（board.c:1830 `KEY_END`／`$` → `num = brdnum-1` CONFIRMED） |
 | Home `brd-jump-home` | 原生 `ESC[1~` ＋ `^L` | cursorNum === 1（board.c:1768 `KEY_HOME`／`0` → `num = 0`） |
 | 跳號 `brd-jump-number` | `<n>\r` ＋ `\f` | 停在 body → `rebuild`（落點可能離緩衝很遠） |
-| 游標同步 `brd-*-sync-jump` | `<sel>\r` ＋ `\f` | cursorNum === sel |
+| 游標同步 `brd-*-sync-jump` | `<sel>\r` ＋ `\f` | `cursorNum === sel ∧ 同變體 ∧ 整頁板名不與緩衝矛盾`（`_listContradicts`；換了清單同編號是別的看板，後面緊接 Enter／←） |
 | 進看板 `brd-open-board` | `\r` | **任何 settle**；onDone → 落點是另一份清單／選單（`brdlist`／`brdlist-other`／`menu`）才 `_reset()`，其餘（進板畫面／文章列表／未知）`_suspend()`（緩衝留著）|
 | 回上層 `brd-leave` | `\x1b[D` | 同上 |
 | passthrough `brd-native-key/paste/input` | 原鍵／Big5 bytes ＋ `\f` | 同上（畫面已是原生鏡像）|

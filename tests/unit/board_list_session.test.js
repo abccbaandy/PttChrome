@@ -713,6 +713,31 @@ describe("Enter 進看板", () => {
     enqueued[0].onDone();
     expect(enqueued[1].keys).toBe("\r");
   });
+
+  test("REGRESSION：同步腿只認同一份清單 —— 換了清單同編號是別的看板，不得接著送 Enter", () => {
+    const { s, termBuf, enqueued } = ready();
+    s._serverNum = 1;
+    s._selectedNum = 7;
+    s.onKeyDown(keyEvent("Enter"));
+    const sync = enqueued[0];
+    const landedFacts = (bodyRows) => {
+      termBuf._rowTexts = brdScreenRows({ bodyRows });
+      termBuf.cur_y = 3 + 6;
+      return s._collectFacts(null);
+    };
+    const same = Array.from({ length: 20 }, (_, i) => brdRow(1 + i, "B" + (1 + i)));
+    const other = Array.from({ length: 20 }, (_, i) => brdRow(1 + i, "C" + (1 + i)));
+    expect(sync.expect(null, landedFacts(same))).toBe(true);
+    // 同變體、同編號，但板名整頁對不上（目錄看板遞迴進另一份 choose_board）
+    expect(sync.expect(null, landedFacts(other))).toBe(false);
+    // 游標列是分隔線（解析不出板名）不算矛盾
+    const withLine = same.slice();
+    withLine[6] = lineRow(7);
+    expect(sync.expect(null, landedFacts(withLine))).toBe(true);
+    // 變體換了
+    s._variant = "class";
+    expect(sync.expect(null, landedFacts(same))).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
