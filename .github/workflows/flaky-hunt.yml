@@ -9,7 +9,8 @@ name: Flaky Hunt
 # 會觸發 Claude routine 去修，所以手動 dispatch 的紅與過時紅只續寫、不新開（見 report job）。
 # issue 開超過 3 天還沒關 ⇒ watchdog job @ repo owner 一次。
 # `yarn ci:status` 不把這個 workflow 算進「這次 push 的 CI」（scripts/ci-status.mjs#isProjectRun）。
-# 不含 live e2e（PTT 登入預算）與 android（模擬器開機成本高、已有 test.yml 每次跑）。
+# 不含 live e2e（PTT 登入預算）。Android 模擬器（開機成本高）每週只跑一輪少量重複
+# （android-repeat job，哪一天由 gate 決定，見 scripts/flaky-hunt-gate.mjs#decideAndroid）。
 # 下面幾處「看起來多餘」的設定由 tests/unit/flaky_hunt_workflow.test.js 鎖住，別順手改回。
 on:
   # GitHub 的 schedule 高負載時會延遲（實測天天晚 ~3h、最多 +5h）也可能直接丟，不保證；整點是全站
@@ -29,7 +30,8 @@ on:
         description: "只跑哪個套件"
         type: choice
         default: all
-        options: [all, unit, integration, e2e-offline, e2e-adverse]
+        # android 不在 all 裡：模擬器只有明確選它才跑（排程則是每週一次）。
+        options: [all, unit, integration, e2e-offline, e2e-adverse, android]
       grep:
         description: "只跑名稱符合的 test（傳給 vitest -t／playwright --grep；空白＝全部）"
         default: ""
@@ -49,6 +51,8 @@ env:
   # 預設 10 輪：以最近部署紅率估（22 次裡 2 次是 flaky，單輪約 9%），每晚抓到的機率
   # 3 輪 25%、10 輪 61%；單輪 2% 的低頻 flaky 10 輪也有 18%。
   REPEAT: ${{ github.event.inputs.repeat || '10' }}
+  # Android 每輪約 1 分鐘、外加模擬器開機約 2 分鐘；每週 5 輪。
+  ANDROID_REPEAT: ${{ github.event.inputs.repeat || '5' }}
   GREP: ${{ github.event.inputs.grep }}
 
 jobs:
@@ -61,6 +65,7 @@ jobs:
       actions: read
     outputs:
       skip: ${{ steps.g.outputs.skip }}
+      android: ${{ steps.g.outputs.android }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,6 +75,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          SUITE: ${{ inputs.suite }}
         run: node scripts/flaky-hunt-gate.mjs
 
   # 同 test.yml：e2e／unit 的 container image 版本＝yarn.lock 裡的 @playwright/test。
@@ -254,10 +260,65 @@ jobs:
           path: test-results/
           retention-days: 14
 
+  # Android 模擬器上的真 Chrome（同 test.yml 的 test-e2e-android，步驟要跟著它改）。
+  # 每週一次（gate 的 android 輸出），--repeat-each 經 run-android-e2e.mjs 轉給 playwright。
+  # runner exit 2（模擬器環境沒準備好）一樣是紅：判讀見 docs/ci-troubleshooting.md。
+  android-repeat:
+    needs: gate
+    if: needs.gate.outputs.skip != 'true' && needs.gate.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+      - run: yarn install --immutable
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # grep 經 env 傳（不內插進 shell）；空 grep 就不帶。
+      - name: Android e2e × ${{ env.ANDROID_REPEAT }} (emulator)
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          ANDROID_E2E_APK: ${{ github.workspace }}/android/app/build/outputs/apk/debug/app-debug.apk
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          avd-name: pttchrome_e2e
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: node scripts/run-android-e2e.mjs --no-boot --repeat-each="$ANDROID_REPEAT" ${GREP:+--grep "$GREP" --pass-with-no-tests}
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flaky-hunt-android-attempt-${{ github.run_attempt }}
+          path: |
+            test-results/
+            ci-diagnostics/
+          retention-days: 14
+
   # 紅了要讓人看得到：排程 run 的失敗通知只寄給最後改 cron 的人，很容易漏。
   # gate 跳過時上面全是 skipped（≠ failure），這裡不會被觸發。
   report:
-    needs: [unit-repeat, integration-repeat, e2e-offline-repeat, e2e-adverse-repeat]
+    needs: [unit-repeat, integration-repeat, e2e-offline-repeat, e2e-adverse-repeat, android-repeat]
     # 只有 dev 的紅才寫 issue：在工作分支上手動 dispatch 是拿來驗修正或收證據的
     # （常帶暫時的除錯碼），那邊的紅看 run 本身就好，開 issue 只會誤報。
     if: failure() && github.ref == 'refs/heads/dev'
@@ -278,7 +339,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          RESULTS: "unit=${{ needs.unit-repeat.result }} integration=${{ needs.integration-repeat.result }} e2e-offline=${{ needs.e2e-offline-repeat.result }} e2e-adverse=${{ needs.e2e-adverse-repeat.result }}"
+          RESULTS: "unit=${{ needs.unit-repeat.result }} integration=${{ needs.integration-repeat.result }} e2e-offline=${{ needs.e2e-offline-repeat.result }} e2e-adverse=${{ needs.e2e-adverse-repeat.result }} android=${{ needs.android-repeat.result }}"
         run: node scripts/flaky-hunt-report.mjs
 
   # issue 開太久（session 中途死掉）就通知人。每次 run 都跑、不管紅綠：nightly 可能連續幾天綠，

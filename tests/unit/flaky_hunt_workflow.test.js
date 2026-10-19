@@ -11,7 +11,7 @@
 //   - watchdog 每次 run 都跑：放進 report（只在紅時跑）的話，連續幾天綠就永遠不提醒。
 import fs from "node:fs";
 import path from "node:path";
-import { decideGate, windowStart } from "../../scripts/flaky-hunt-gate.mjs";
+import { ANDROID_WEEKDAY_UTC, decideAndroid, decideGate, windowStart } from "../../scripts/flaky-hunt-gate.mjs";
 import { decideWatchdog, renderStalledComment, STALLED_LABEL } from "../../scripts/flaky-hunt-watchdog.mjs";
 import { ISSUE_TITLE } from "../../scripts/flaky-hunt-report.mjs";
 import { ADVERSE_PROJECTS } from "../../scripts/run-adverse-e2e.mjs";
@@ -54,7 +54,9 @@ describe("workflow 靜態守護", () => {
       expect(block, name).toMatch(/needs:\s*(\[[^\]]*\bgate\b[^\]]*\]|gate\b)/);
       if (name !== "watchdog") expect(block, name).toContain("needs.gate.outputs.skip != 'true'");
     }
-    expect(all.report).toMatch(/needs:\s*\[unit-repeat, integration-repeat, e2e-offline-repeat, e2e-adverse-repeat\]/);
+    expect(all.report).toMatch(
+      /needs:\s*\[unit-repeat, integration-repeat, e2e-offline-repeat, e2e-adverse-repeat, android-repeat\]/,
+    );
     // report 的 needs 漏掉任何一個 *-repeat ⇒ 那個套件紅了也不開 issue（沒人知道）。
     for (const name of Object.keys(all).filter((n) => n.endsWith("-repeat"))) {
       expect(all.report, name).toContain(name);
@@ -72,7 +74,7 @@ describe("workflow 靜態守護", () => {
 
   test("dispatch 可只跑單一 suite＋grep，grep 經 env 傳（不內插進 shell）", () => {
     const inputs = yaml.slice(yaml.indexOf("\n      suite:\n"), yaml.indexOf("\npermissions:"));
-    expect(inputs).toContain("options: [all, unit, integration, e2e-offline, e2e-adverse]");
+    expect(inputs).toContain("options: [all, unit, integration, e2e-offline, e2e-adverse, android]");
     expect(inputs).toContain("\n      grep:\n");
     expect(yaml).not.toMatch(/run:[^\n]*\$\{\{\s*(github\.event\.)?inputs\.grep/);
     const j = jobs();
@@ -103,6 +105,49 @@ describe("workflow 靜態守護", () => {
     expect(job).toMatch(
       /yarn test:e2e:offline:adverse --only=\$\{\{ matrix\.bucket \}\} --shard=\$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.shards \}\} --repeat-each="\$REPEAT"/,
     );
+  });
+});
+
+// Android 模擬器只在每週那一輪跑：gate 輸出 android，job 一定要同時看 skip 與 android
+// （少看 android ＝每晚都開模擬器；少看 skip ＝那天三個 cron 各跑一次）。
+describe("android-repeat（每週一次的模擬器重複輪）", () => {
+  test("job 吃 gate 的 android 輸出、帶 --repeat-each，且 gate 把 suite 傳進去", () => {
+    const all = jobs();
+    expect(all.gate).toMatch(/android:\s*\$\{\{\s*steps\.g\.outputs\.android\s*\}\}/);
+    expect(all.gate).toMatch(/SUITE:\s*\$\{\{\s*inputs\.suite\s*\}\}/);
+    const job = all["android-repeat"];
+    expect(job).toBeDefined();
+    expect(job).toContain("needs.gate.outputs.android == 'true'");
+    expect(job).toContain("node scripts/run-android-e2e.mjs --no-boot");
+    expect(job).toContain('--repeat-each="$ANDROID_REPEAT"');
+    // 同 test.yml：沒開 KVM 的模擬器開機 13–20 分鐘、adb 動不動 offline。
+    expect(job).toContain("Enable KVM");
+    expect(job).toContain("ANDROID_E2E_APK");
+  });
+
+  // 2026-10-17（週六）21:00Z 起的窗＝台灣 10/18（週日）05:00 那一輪。
+  test("排程：窗起點是週六 UTC 才跑，三個備援 cron 不管哪個先跑都一樣", () => {
+    expect(ANDROID_WEEKDAY_UTC).toBe(6);
+    for (const now of ["2026-10-17T21:17:00Z", "2026-10-18T03:17:00Z", "2026-10-18T09:17:00Z"]) {
+      expect(decideAndroid({ event: "schedule", now: new Date(now) }), now).toBe(true);
+    }
+    // 窗的前一刻（週六 20:59Z 屬於週五起的窗）與下一個窗都不跑。
+    expect(decideAndroid({ event: "schedule", now: new Date("2026-10-17T20:59:00Z") })).toBe(false);
+    expect(decideAndroid({ event: "schedule", now: new Date("2026-10-18T21:17:00Z") })).toBe(false);
+  });
+
+  test("一週恰好一天會跑", () => {
+    const days = Array.from({ length: 7 }, (_, i) =>
+      decideAndroid({ event: "schedule", now: new Date(Date.UTC(2026, 9, 12 + i, 22)) }),
+    );
+    expect(days.filter(Boolean)).toHaveLength(1);
+  });
+
+  test("workflow_dispatch 只有明確選 android 才跑（all 不含模擬器）", () => {
+    const sat = new Date("2026-10-17T21:17:00Z");
+    expect(decideAndroid({ event: "workflow_dispatch", now: sat, suite: "android" })).toBe(true);
+    expect(decideAndroid({ event: "workflow_dispatch", now: sat, suite: "all" })).toBe(false);
+    expect(decideAndroid({ event: "workflow_dispatch", now: sat, suite: "" })).toBe(false);
   });
 });
 
