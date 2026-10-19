@@ -14,7 +14,7 @@ on:
   schedule:
     - cron: "43 22 * * *" # 台灣時間 06:43（非整點：整點是 GitHub schedule 尖峰）
   workflow_dispatch:
-  # workflow_dispatch 只吃預設分支上的 workflow 檔：改這套東西的 PR 靠這個觸發驗證。
+  # 改這套東西的 PR 自動驗一次（只有這個觸發算進 yarn ci:status）；工作分支上也可手動 dispatch。
   pull_request:
     branches: [dev]
     paths:

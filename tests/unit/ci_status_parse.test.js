@@ -13,6 +13,7 @@ import {
   allSettled,
   isFullSha,
   isProjectRun,
+  isSideRun,
   projectRuns,
   runMark,
   runsFailed,
@@ -236,6 +237,17 @@ describe("isProjectRun / projectRuns", () => {
     expect(isProjectRun(screens)).toBe(false);
     expect(isProjectRun({ ...screens, event: "workflow_dispatch" })).toBe(false);
     expect(isProjectRun({ ...screens, event: "pull_request" })).toBe(true);
+  });
+
+  test("side run 連結論都不進（REGRESSION：舊版只從 isProjectRun 排除，結論仍看全部 run ⇒ 同 sha 的 nightly 紅會讓 push 判紅）", () => {
+    const hunt = { ...deploy, event: "schedule", path: ".github/workflows/flaky-hunt.yml" };
+    const screens = { ...deploy, event: "workflow_dispatch", path: ".github/workflows/ptt-src-screens.yml" };
+    expect(isSideRun(hunt)).toBe(true);
+    expect(isSideRun(screens)).toBe(true);
+    expect(isSideRun({ ...screens, event: "pull_request" })).toBe(false);
+    expect(isSideRun(deploy)).toBe(false);
+    // CodeQL 不是 side run：它的紅仍要算進結論。
+    expect(isSideRun(codeql)).toBe(false);
   });
 
   test("只有 CodeQL run 時 projectRuns 為空（REGRESSION：曾被當成全綠）", () => {

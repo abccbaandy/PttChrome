@@ -103,13 +103,20 @@ export function isProjectRun(run) {
   if (!run) return false;
   if (run.event === "dynamic") return false;
   if (/^dynamic\//.test(String(run.path || ""))) return false;
-  // nightly 壓力測試跑在 dev 當下的 head sha 上，跟 push 的 run 同 sha；它答的是「有沒有
-  // flaky」不是「這次 push 綠不綠」，紅了自己開 issue（.github/workflows/flaky-hunt.yml）。
-  if (/(^|\/)flaky-hunt\.yml$/.test(String(run.path || ""))) return false;
-  // upstream pttbbs 畫面檢查的 schedule／dispatch run 也跑在 dev head 上，答的是「upstream 有沒有
-  // 改到讓我們判錯」，紅了自己開 issue（ptt-src-screens.yml）。只有 PR 觸發的那次算這次的 CI。
-  if (/(^|\/)ptt-src-screens\.yml$/.test(String(run.path || "")) && run.event !== "pull_request") return false;
+  if (isSideRun(run)) return false;
   return true;
+}
+
+// 跑在同一個 sha 上、但答的不是「這次 push 綠不綠」的本專案 workflow：紅了自己開 issue，
+// **不進結論**（只從 isProjectRun 排除不夠：結論看的是全部 run，CodeQL 的紅仍要算）。
+//   - nightly 壓力測試（flaky-hunt.yml）跑在 dev 當下的 head sha 上，答「有沒有 flaky」；
+//   - upstream pttbbs 畫面檢查（ptt-src-screens.yml）的 schedule／dispatch 答「upstream 有沒有
+//     改到讓我們判錯」；只有 PR 觸發的那次（改了這套東西本身）算這次的 CI。
+export function isSideRun(run) {
+  const p = String((run && run.path) || "");
+  if (/(^|\/)flaky-hunt\.yml$/.test(p)) return true;
+  if (/(^|\/)ptt-src-screens\.yml$/.test(p) && run.event !== "pull_request") return true;
+  return false;
 }
 
 export function projectRuns(runs) {
@@ -232,7 +239,7 @@ async function main() {
     const all = data.workflow_runs || [];
     // 同一個 commit 可能觸發多個 workflow（deploy + CodeQL）→ 全部都要看。
     const head = sha || (all[0] && all[0].head_sha);
-    runs = all.filter((r) => r.head_sha === head);
+    runs = all.filter((r) => r.head_sha === head && !isSideRun(r));
     if (!runs.length) {
       // 剛 push 完 run 還沒建立 → 寬限期內繼續等，別把「還沒出現」當成「查不到」。
       if (wait && Date.now() < appearDeadline) {

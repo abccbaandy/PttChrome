@@ -74,7 +74,7 @@ describe("ptt-src-screens.yml", () => {
     expect(yml).toMatch(/if: failure\(\) && github\.ref == 'refs\/heads\/dev'/);
   });
 
-  test("PR 的 paths 涵蓋這套東西的每個檔案（workflow_dispatch 只吃預設分支，改它的 PR 只能靠這個驗）", () => {
+  test("PR 的 paths 涵蓋這套東西的每個檔案（改它的 PR 一定會自動驗到）", () => {
     for (const p of [
       ".github/workflows/ptt-src-screens.yml",
       "tools/ptt-src-screens/**",
