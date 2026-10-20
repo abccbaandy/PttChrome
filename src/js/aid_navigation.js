@@ -658,6 +658,22 @@ AidNavigation.prototype = {
     return true;
   },
 
+  // 搜尋結果／文摘裡的第 num 篇（next_article）：編號是子列表自己的空間（read.c MODE_SELECT
+  // 重新編號），`s<板>`、`#` 都會離開它或被拒 ⇒ 文章內 ← 回到同一份子列表（pmore 結束回
+  // i_read，搜尋條件不動），`<編號>⏎` 在子列表裡跳（read_cmd_num 的 search_num 只看目前
+  // 列表的 last_line），verify(cursorRowText) 認得游標那一列才 ⏎ 開文；認不出就停在列表，
+  // 不猜。只從已證明是 READING 的 pager 出發（← 在別的畫面意思不同）。
+  startSubNum: function(board, num, verify, onEnd) {
+    if (this.active || !board || !(num > 0) || typeof verify !== 'function') return false;
+    if (this._pagerContext() !== 'reading') return false;
+    this._onRunEnd = onEnd || null;
+    const run = makeRun({ board: board, kind: 'num', aid: null, num: num, subList: true, verify: verify }, 'goto');
+    run.external = true;
+    this._hint('開啟搜尋結果第 ' + num + ' 篇…', PROGRESS_HINT_MS);
+    this._begin(run);
+    return true;
+  },
+
   // 斷線重連後回到原處（reconnect_resume.js；docs/reading-record.md「斷線重連」）。
   // plan：reconnect_resume.resumePlanFrom 的輸出，bookmark 是斷線那一刻的閱讀紀錄。
   //   文章（plan.aid）：s<板> → #<aid> → ⏎，落地依決策表 'reconnect-resume' 還原列。
@@ -961,6 +977,11 @@ AidNavigation.prototype = {
     // 指定看板（continuePicked）：橋接已經進板了，先確認真的停在目標板列表。
     if (run.picked) {
       this._enqueuePickedLanding(run);
+      return;
+    }
+    // 子列表的編號（startSubNum 已驗過人在 pager）：← 回到同一份搜尋結果。
+    if (run.target.subList) {
+      this._enqueueBackToSubList(run);
       return;
     }
     if (this._atMainMenu()) {
@@ -1475,9 +1496,16 @@ AidNavigation.prototype = {
       probeTimeoutMs: STEP_PROBE_WINDOW_MS,
       hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
-        return numJumpLanded(facts, num);
+        if (!numJumpLanded(facts, num)) return false;
+        return { cursorRowText: (facts.rowTexts || [])[facts.curY] || '' };
       },
-      onDone: function() {
+      onDone: function(result) {
+        // 子列表（startSubNum）：游標那一列要是呼叫端要的那篇才開（搜尋結果可能已經不是
+        // 快照裡那一份）。認不出 ⇒ 停在列表。
+        if (run.target.verify && !run.target.verify(result.cursorRowText)) {
+          self._fail('第 ' + num + ' 篇已不是原本那篇');
+          return;
+        }
         // 回到原處只把游標放回那一篇，不開（編號會因刪文漂移，開錯篇比停在列表糟）。
         if (run.dir === 'resume') self._finishResumeAtList(run, 'done');
         // agent 列更舊的頁（startBoard opts.num）：停在列表，不開。
@@ -1691,6 +1719,36 @@ AidNavigation.prototype = {
       },
       onFail: function(reason) {
         self._fail('離開搜尋結果失敗（' + reason + '）');
+      }
+    });
+  },
+
+  // startSubNum 的第一步：文章內 ← 回到同一板的子列表（搜尋結果／文摘）。落在完整列表
+  // （認不出的版本差異）不算：那裡的編號是另一個空間，等到逾時、停在 PTT 給的畫面。
+  _enqueueBackToSubList: function(run) {
+    const self = this;
+    const boardLower = run.boardLower;
+    this._queue.enqueue({
+      keys: KEY_LEFT,
+      kind: 'aid-back-sublist',
+      fullRepaint: true,
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
+      expect: function(snapshot, facts) {
+        // 文章幀＝好讀自動翻頁還在線上的遲到回應（同 _enqueueEscape），繼續等。
+        if (facts.kind === 'article') return false;
+        const landed = landedOnBoardList(facts, boardLower);
+        return landed && landed.sub ? landed : false;
+      },
+      onDone: function() {
+        self._enqueueNumJump(run);
+      },
+      onFail: function(reason) {
+        self._fail('回到搜尋結果失敗（' + reason + '）');
       }
     });
   },

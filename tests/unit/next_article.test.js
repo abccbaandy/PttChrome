@@ -7,7 +7,8 @@ vi.mock("../../src/js/pref_storage", async (importOriginal) => {
   return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), ...prefOverride }) };
 });
 import { DEFAULT_PREFS, NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage";
-import { NextArticle, nextEntryAfter, landedOn } from "../../src/js/next_article";
+import { NextArticle, nextEntryAfter, landedOn, mergeSubSnapshot, sameListEntry } from "../../src/js/next_article";
+import { listPageOf } from "../../src/js/split_reader";
 import { parseBlacklist, parseTitleBlacklist } from "../../src/js/comment_parse";
 import { RESTORE_TABLE } from "../../src/js/reading_record";
 import { HINT_ERROR } from "../../src/js/status_hint";
@@ -131,6 +132,7 @@ function makeCore() {
   const listeners = {};
   const hints = [];
   const starts = [];
+  const subStarts = [];
   let queueIdle = true;
   const easyReading = { _enabled: true, _functionMode: false, _reverse: null, easyReadingReachedPageEnd: true };
   const core = {
@@ -162,6 +164,10 @@ function makeCore() {
         starts.push({ board, num, onEnd });
         return true;
       },
+      startSubNum(board, num, verify, onEnd) {
+        subStarts.push({ board, num, verify, onEnd });
+        return true;
+      },
     },
   };
   const next = new NextArticle(core);
@@ -182,7 +188,7 @@ function makeCore() {
     core.buf.pageLines = [[]];
     show(articleScreen());
   };
-  return { core, easyReading, next, hints, starts, show, read, busyQueue: (v) => (queueIdle = !v) };
+  return { core, easyReading, next, hints, starts, subStarts, show, read, busyQueue: (v) => (queueIdle = !v) };
 }
 
 describe("NextArticle：何時出現", () => {
@@ -288,13 +294,8 @@ describe("NextArticle：何時出現", () => {
     read("C_Chat", "alice", "[閒聊] 第一篇");
     expect(next.state.visible).toBe(true);
   });
-  test("從搜尋結果進的、別的板、沒看過列表、清單上找不到這篇 ⇒ 不出現", () => {
+  test("別的板、沒看過列表、清單上找不到這篇 ⇒ 不出現", () => {
     let t = makeCore();
-    t.show(PAGE({ caption: SELECT_CAPTION }));
-    t.read("C_Chat", "alice", "[閒聊] 第一篇");
-    expect(t.next.state.visible).toBe(false);
-
-    t = makeCore();
     t.show(PAGE());
     t.read("Gossiping", "alice", "[閒聊] 第一篇");
     expect(t.next.state.visible).toBe(false);
@@ -456,5 +457,106 @@ describe("NextArticle：點卡片換文", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ── 搜尋結果／文摘 ─────────────────────────────────────────────────────────
+// 錄製檔 ptt-debug-20261021-015619：C_Chat 搜標題「史萊姆」，從結果開第 317 篇、讀到文末，
+// 卡片沒出現（舊版只認完整列表的快照）。原生「看完按空白」在搜尋結果裡是結果的下一筆
+// （read.c READ_NEXT 的 crs_ln + 1 走的是子列表的 remap），編號也是結果自己的空間。
+describe("NextArticle：搜尋結果裡的下一篇", () => {
+  const SEARCH = (rows = null) =>
+    listScreen(
+      rows || [
+        listRow(316, "lity3426", "[26秋] 史萊姆邊吃邊開會 02"),
+        listRow(317, "hanx5566", "[閒聊] 持續狩獵史萊姆300年 10月最終卷", { cursor: true }),
+        listRow(318, "defenser", "[26秋] 轉生史萊姆 五期 03", { push: "12" }),
+      ],
+      { caption: SELECT_CAPTION }
+    );
+  const READ_317 = (t) => t.read("C_Chat", "hanx5566", "[閒聊] 持續狩獵史萊姆300年 10月最終卷");
+
+  test("從搜尋結果進的文章讀到文末 ⇒ 卡片是結果的下一筆", () => {
+    const t = makeCore();
+    t.show(PAGE()); // 搜尋前看過完整列表：那一份的編號不能拿來用
+    t.show(SEARCH());
+    READ_317(t);
+    expect(t.next.state.visible).toBe(true);
+    expect(t.next.state.entry).toMatchObject({ num: 318, author: "defenser", title: "[26秋] 轉生史萊姆 五期 03" });
+  });
+
+  test("點卡片走 startSubNum（不是 startNum）；verify 只認游標那列是卡片上那篇", () => {
+    const t = makeCore();
+    t.show(SEARCH());
+    READ_317(t);
+    expect(t.next.open()).toBe(true);
+    expect(t.starts).toEqual([]);
+    expect(t.subStarts).toEqual([expect.objectContaining({ board: "C_Chat", num: 318 })]);
+    const { verify, onEnd } = t.subStarts[0];
+    expect(verify(listRow(318, "defenser", "[26秋] 轉生史萊姆 五期 03", { cursor: true }))).toBe(true);
+    expect(verify(listRow(318, "someone", "[26秋] 轉生史萊姆 五期 03", { cursor: true }))).toBe(false);
+    expect(verify(listRow(318, "defenser", "[閒聊] 別篇", { cursor: true }))).toBe(false);
+    expect(verify(listRow(319, "defenser", "[26秋] 轉生史萊姆 五期 03", { cursor: true }))).toBe(false);
+    expect(verify(DELETED_ROW(318))).toBe(false);
+    // 落地：卡片那篇 ⇒ 沒有提示，接著（結果還有下一筆的話）再出現。
+    t.read("C_Chat", "defenser", "[26秋] 轉生史萊姆 五期 03");
+    onEnd({ ok: true });
+    expect(t.hints).toEqual([]);
+    expect(t.next.state.pending).toBe(false);
+  });
+
+  test("結果的最後一筆（下一筆沒看過）⇒ 不出現", () => {
+    const t = makeCore();
+    t.show(SEARCH());
+    t.read("C_Chat", "defenser", "[26秋] 轉生史萊姆 五期 03");
+    expect(t.next.state.visible).toBe(false);
+  });
+
+  test("回過完整列表之後再從那裡開文 ⇒ 用完整列表的快照（搜尋結果的那一份丟掉）", () => {
+    const t = makeCore();
+    t.show(SEARCH());
+    t.show(PAGE());
+    t.read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(t.next.state.entry.num).toBe(102);
+    t.next.open();
+    expect(t.starts).toHaveLength(1);
+    expect(t.subStarts).toEqual([]);
+  });
+
+  test("換了搜尋條件（同一個編號變成別篇）⇒ 舊結果整份丟掉，不拿舊的下一筆", () => {
+    const t = makeCore();
+    t.show(SEARCH());
+    // 增加條件後的結果：317 還在（游標）、318 沒看過；316 換成別篇。
+    t.show(
+      SEARCH([
+        listRow(316, "other", "[問題] 別的條件"),
+        listRow(317, "hanx5566", "[閒聊] 持續狩獵史萊姆300年 10月最終卷", { cursor: true }),
+      ])
+    );
+    READ_317(t);
+    expect(t.next.state.visible).toBe(false);
+  });
+});
+
+describe("mergeSubSnapshot／sameListEntry", () => {
+  const page = (rows) =>
+    listPageOf(listScreen(rows, { caption: SELECT_CAPTION }).rowTexts, null);
+  test("同一份結果的不同頁 ⇒ 併起來；推文數變了、被刪了都不算換條件", () => {
+    const a = page([listRow(1, "alice", "[閒聊] a"), listRow(2, "bob", "[問題] b")]);
+    const b = page([listRow(2, "bob", "[問題] b", { push: " 9" }), listRow(3, "carol", "[閒聊] c")]);
+    expect(mergeSubSnapshot(mergeSubSnapshot(null, a), b).entries.map((e) => e.num)).toEqual([1, 2, 3]);
+    const c = page([DELETED_ROW(1), listRow(4, "dave", "[閒聊] d")]);
+    expect(mergeSubSnapshot(mergeSubSnapshot(null, a), c).entries.map((e) => e.num)).toEqual([1, 2, 4]);
+  });
+  test("同一號不同篇 ⇒ 只留新的一頁；別的板 ⇒ 換掉", () => {
+    const a = page([listRow(1, "alice", "[閒聊] a"), listRow(2, "bob", "[問題] b")]);
+    const b = page([listRow(2, "eve", "[問題] x"), listRow(3, "carol", "[閒聊] c")]);
+    expect(mergeSubSnapshot(mergeSubSnapshot(null, a), b).entries.map((e) => e.num)).toEqual([2, 3]);
+  });
+  test("sameListEntry：作者不分大小寫＋主題（截斷的 … 也算）", () => {
+    expect(sameListEntry({ author: "Bob", subject: "[問題] 第二篇" }, { author: "bob", subject: "[問題] 第二…" })).toBe(true);
+    expect(sameListEntry({ author: "bob", subject: "[問題] 第二篇" }, { author: "bob", subject: "[問題] 第三篇" })).toBe(false);
+    expect(sameListEntry({ author: "bob", subject: null }, { author: "bob", subject: null })).toBe(false);
+    expect(sameListEntry(null, { author: "bob", subject: "x" })).toBe(false);
   });
 });
