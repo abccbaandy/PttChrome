@@ -650,6 +650,18 @@ export const en_US = {
   "options_highlightSelfComments": {
     "message": "Mark your own comments and comments mentioning you (green)"
   },
+  "options_markNewComments": {
+    "message": "Mark new comments"
+  },
+  "tooltip_markNewComments": {
+    "message": "When you reopen a post you have read, comments added since you last finished it get a gray line above them, and the tool panel at the bottom right can jump there. Remembered in this browser only."
+  },
+  "new_comments_divider": {
+    "message": "New comments below"
+  },
+  "new_comments_jump": {
+    "message": "Jump to new comments"
+  },
   "options_enableAutoFixUrl": {
     "message": "Auto-fix broken URLs (fixed link shown only in easy-reading mode)"
   },

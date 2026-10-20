@@ -403,6 +403,11 @@ export const PREF_SEARCH_ITEMS = [
       key: "highlightSelfComments",
       titleKey: "options_highlightSelfComments",
     },
+    {
+      key: "markNewComments",
+      titleKey: "options_markNewComments",
+      tooltipKey: "tooltip_markNewComments",
+    },
     { key: "enableAutoFixUrl", titleKey: "options_enableAutoFixUrl" },
     { key: "enableXMentionLink", titleKey: "options_enableXMentionLink" },
     { key: "enableBareDomainLink", titleKey: "options_enableBareDomainLink" },

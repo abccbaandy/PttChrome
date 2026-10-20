@@ -649,6 +649,18 @@
   "options_highlightSelfComments": {
     "message": "標示自己的推文與提到你的推文（綠色）"
   },
+  "options_markNewComments": {
+    "message": "標出新推文"
+  },
+  "tooltip_markNewComments": {
+    "message": "重開讀過的文章時，上次讀完之後才出現的推文前面會有一條灰線，右下角的工具面板可以一鍵跳過去。只記在這個瀏覽器。"
+  },
+  "new_comments_divider": {
+    "message": "以下是新推文"
+  },
+  "new_comments_jump": {
+    "message": "跳到新推文"
+  },
   "options_enableAutoFixUrl": {
     "message": "自動修復斷掉的連結 (需開好讀模式才會顯示修復後連結)"
   },

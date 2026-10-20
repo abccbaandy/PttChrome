@@ -120,6 +120,25 @@ export function applyFunctionKeys(result, lines, enhance) {
   }
 }
 
+// 新推文標記（js/new_comments.js）：在第一則新推文那一列標 newCommentsStart（render 在
+// 它上緣畫一條灰色細線＋小字）。被合併進同作者推文塊的列 ⇒ 標在塊的第一列（塊是一個
+// 節點）；黑名單藏起來的列看不到線 ⇒ 往後找第一則看得到的。
+//
+// **只寫 result[row]**（同 applyFunctionKeys）。跨列耦合只有「被併進哪一塊」，而
+// newCommentsRow 進了 annotationsKey、一篇文章最多翻一次 ⇒ 翻的那一幀全量重算；之後
+// 前沿快路徑沿用的前綴是已經標好的物件，前沿之後每幀重標 ⇒ annotationFrontier 與
+// annotationsAreRowIndependent（READING 本來就排除）都不必跟著改。
+export function applyNewCommentsMark(result, enhance) {
+  const target = enhance && enhance.newCommentsRow;
+  if (target == null || target < 0 || target >= result.length) return;
+  let row = target;
+  while (row < result.length && result[row] && result[row].hidden && result[row].userid) ++row;
+  if (row >= result.length || !result[row]) return;
+  if (result[row].mergedIntoComment != null) row = result[row].mergedIntoComment;
+  result.newCommentsRow = row;
+  if (!result[row].newCommentsStart) result[row] = { ...result[row], newCommentsStart: true };
+}
+
 // 每列的附加偵測（auto-fix URL / X mention / AID / Steamgifts），逐列迴圈與
 // 「連續同作者推文合併」塊共用——合併後的 chars 是重組的新序列，原列偵測到的
 // col 範圍全部失效，必須對合併 chars 重跑一次。回傳值僅含有命中的鍵。
@@ -864,6 +883,7 @@ export function computeAnnotations(
     result.fixCands = fixCands;
     result.fixCandsSig = fixCands.map(fixKey).join(",");
     applyFunctionKeys(result, lines, enhance);
+    applyNewCommentsMark(result, enhance);
     // ---- 給下一幀的前沿（見上方 fastFrom）----
     // 反向期間不算（tail 之後還會往 J 插入，前沿的前提「只往後接」不成立）。
     let frontier =

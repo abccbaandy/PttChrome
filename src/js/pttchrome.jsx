@@ -65,6 +65,7 @@ import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { MessageInbox, isMessageInboxTarget } from './message_inbox';
+import { NewComments } from './new_comments';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
 import { NextArticle, isNextArticleTarget } from './next_article';
@@ -230,6 +231,10 @@ export const App = function() {
   // 「開燈」的軌 B：把 pmore 的色彩顯示模式切成純文字（或切回預設格式化）。
   // **只指派這一次，引用從此不變**（同 onFunctionKey 的理由）。
   this.view.onLightsRawMode = (mode) => this.onLightsRawMode(mode);
+  // 浮動工具面板的「跳到新推文」：只捲好讀的視口，不送鍵（同文章工具側欄的跳列）。
+  this.view.onJumpToNewComments = (row) => {
+    if (this.easyReading) this.easyReading.scrollToArticleRow(row);
+  };
   // Deep link (外部連結 #<Board>/<AID>) → 同一套 AID 跳轉。目標可能比登入先到，
   // 所以排程權在 controller 手上，不在 URL 解析那邊。
   this.deepLinkController = new DeepLinkController(this, this.view, this.buf);
@@ -277,6 +282,9 @@ export const App = function() {
   this.nextArticle = new NextArticle(this);
   // 水球／系統訊息收件匣（這次連線收到的水球與廣播，鈴鐺打開看；message_inbox.js）。
   this.messageInbox = new MessageInbox(this);
+  // 新推文標記（重開讀過的文章，上次讀完之後的推文前面一條灰線；new_comments.js）。
+  // term_view 畫好讀累積頁時經 this.newComments.rowFor 問那一列。
+  this.newComments = new NewComments(this);
 
   // 終端機水平置中。**不要因為 align 是 deprecated 屬性就刪掉它**：Chrome/Firefox
   // 把它算成 `text-align: -webkit-center` / `-moz-center`，那個值會連 **block

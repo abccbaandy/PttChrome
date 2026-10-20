@@ -26,6 +26,7 @@ import { el } from "./dom";
 import LinkSegmentBuilder from "./link_segment";
 import { cardSegment } from "./list_card";
 import { commentContentCells } from "../js/comment_merge";
+import { i18n } from "../js/i18n";
 
 const ASCII_ID_RE = /[0-9A-Za-z]/;
 
@@ -88,6 +89,7 @@ export function buildCommentCard({
   authorIdStart,
   authorIdKind,
   mentionsSelf,
+  newCommentsStart,
   fixedUrls,
   mentions,
   aids,
@@ -158,7 +160,8 @@ export function buildCommentCard({
         srow: row,
         "data-pusher": pusher,
         "data-pusher-col": pusherContentCol,
-        class: cx("commentCard", { pusherHighlight, mentionsSelf }),
+        class: cx("commentCard", { pusherHighlight, mentionsSelf, newCommentsStart }),
+        "data-new-comments": newCommentsStart ? i18n("new_comments_divider") : undefined,
       },
       [head, el("span", { class: "commentCardText" }, builder.build())],
     ),
