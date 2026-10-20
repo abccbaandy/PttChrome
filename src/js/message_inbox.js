@@ -1,7 +1,8 @@
 // 水球／系統訊息收件匣（pref enableMessageInbox，預設開）：這次連線收到的水球與廣播
 // 留在一份清單裡，鈴鐺（components/MessageInbox）打開來看。設計見 docs/message-inbox.md。
 //
-// - 一個 byte 都不送：只看收到的資料。認不出的格式 ⇒ 不收（畫面照原生顯示）。
+// - 收只看收到的資料、一個 byte 都不送；認不出的格式 ⇒ 不收（畫面照原生顯示）。唯一會
+//   送的是使用者點「回覆」時的一下 Ctrl+R（見 reply）。
 // - 只放記憶體、跟著連線走：斷線清空（App.onClose），不寫 localStorage、不上雲。
 // - 解析：string_util.parseWaterball 的同一組格式（wmsg.c 的水球列、doupdate 的廣播列），
 //   但收件匣**每個 chunk 都解析**（失焦通知那條只在 !appFocused 時跑）。WebSocket 會在
@@ -73,6 +74,12 @@ export function isRepaint(last, msg, now) {
   );
 }
 
+// 清單裡最新一則水球的寄件人（清單新的在前；廣播不算）。
+export function latestSender(items) {
+  for (const it of items || []) if (it.kind === 'waterball') return it.from;
+  return null;
+}
+
 function enabled() {
   return readEffectivePrefs().enableMessageInbox !== false;
 }
@@ -125,7 +132,8 @@ MessageInbox.prototype = {
     let items = this._state.items;
     const added = [];
     for (const msg of r.messages) {
-      if (isRepaint(items[0], msg, now)) continue;
+      // 跟同類最新一則比（中間夾一則廣播不影響水球的重畫判定，反之亦然）。
+      if (isRepaint(items.find((i) => i.kind === msg.kind), msg, now)) continue;
       const item = { id: ++this._seq, kind: msg.kind, from: msg.from, text: msg.text, at: now };
       items = [item].concat(items).slice(0, INBOX_LIMIT);
       added.push(item);
@@ -149,6 +157,25 @@ MessageInbox.prototype = {
 
   clear: function() {
     this._set({ items: [], unread: 0, open: false });
+  },
+
+  // 點一則水球直接回覆：送的就是使用者自己會按的 Ctrl+R（view.sendKeyAsUser，跟真鍵盤
+  // 同一條、同一組序列化閘門），之後的回覆畫面全是 PTT 原生的。只有「最新一位寄件人」
+  // 的水球能這樣回：pttbbs wmsg.c 兩種水球模式的第一下 ^R 都指向他（一般模式回最後一則
+  // 的寄件人；一對一模式 ofo_my_write 預設選 swater[0]，swater_get_slot 每收一則就把寄件人
+  // 提到 [0]）。要回別人得在原生畫面裡換人，鍵位依模式不同，認不出就不代按。
+  // 回傳有沒有送出。
+  canReply: function(item) {
+    return !!item && item.kind === 'waterball' && item.from === latestSender(this._state.items);
+  },
+
+  reply: function(item) {
+    if (!this.canReply(item)) return false;
+    const view = this._core.view;
+    if (!view || typeof view.sendKeyAsUser !== 'function') return false;
+    this.setOpen(false);
+    view.sendKeyAsUser('r', { ctrlKey: true });
+    return true;
   },
 
   // App.onClose：收件匣跟著連線走。

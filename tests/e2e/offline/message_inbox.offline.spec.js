@@ -80,6 +80,27 @@ test.describe('水球收件匣', () => {
     expect(errors).toEqual([]);
   });
 
+  test('點「回覆」＝送一下 Ctrl+R（真滑鼠），只有最新一位寄件人有', async ({ page }) => {
+    await feedBig5(page, waterball('friend01', '早'));
+    await feedBig5(page, waterball('friend02', '在嗎'));
+    await page.locator('[data-inbox-bell]').click();
+    await expect(page.locator('[data-inbox-reply]')).toHaveCount(1);
+    await expect(
+      page.locator('.inboxItem', { has: page.locator('[data-inbox-reply]') }).locator('.inboxFrom')
+    ).toHaveText('friend02');
+    await startCapture(page);
+    await expectOnlyFence(
+      page,
+      async () => {
+        await page.locator('[data-inbox-reply]').click();
+        await expect(page.locator('.inboxPanel')).toHaveCount(0);
+        await page.keyboard.press('x');
+      },
+      '\x12x',
+      '回覆只送 Ctrl+R，焦點仍在終端機（對照的 x 送得出去）'
+    );
+  });
+
   test('pref 關掉就不收', async ({ page }) => {
     await ptt.applyPrefs(page, { enableMessageInbox: false });
     await feedBig5(page, waterball('friend01', '嗨'));

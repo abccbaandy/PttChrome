@@ -168,6 +168,16 @@ export const MessageInbox = ({ pttchrome, inline = false }) => {
                       : item.from}
                   </span>
                   <time className="inboxTime">{clock(item.at)}</time>
+                  {inbox.canReply(item) ? (
+                    <Button
+                      className="inboxAction"
+                      data-inbox-reply=""
+                      title={fmt("inbox_reply_title", { id: item.from })}
+                      onClick={() => inbox.reply(item)}
+                    >
+                      {i18n("inbox_reply")}
+                    </Button>
+                  ) : null}
                 </div>
                 <div className="inboxText">{item.text}</div>
               </li>

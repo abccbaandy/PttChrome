@@ -5,6 +5,7 @@
 import {
   scanMessages,
   isRepaint,
+  latestSender,
   MessageInbox,
   INBOX_LIMIT,
   REPAINT_WINDOW_MS,
@@ -81,6 +82,52 @@ describe("scanMessages", () => {
   });
 });
 
+describe("回覆（只代按使用者自己會按的 Ctrl+R）", () => {
+  const make = () => {
+    const sent = [];
+    const inbox = new MessageInbox({
+      view: { sendKeyAsUser: (key, mods) => sent.push([key, mods]) }
+    });
+    return { inbox, sent };
+  };
+
+  test("最新一位寄件人的水球：送一下 Ctrl+R、收起清單", () => {
+    const { inbox, sent } = make();
+    inbox.noteData(wire("aaa", "一"));
+    inbox.noteData(wire("bbb", "二"));
+    inbox.noteData(wire("bbb", "三"));
+    inbox.setOpen(true);
+    const [newest, older] = inbox.state.items;
+    expect(inbox.canReply(newest)).toBe(true);
+    expect(inbox.canReply(older)).toBe(true); // 同一位寄件人的舊水球也是回他
+    expect(inbox.reply(older)).toBe(true);
+    expect(sent).toEqual([["r", { ctrlKey: true }]]);
+    expect(inbox.state.open).toBe(false);
+  });
+
+  test("不是最新一位寄件人、廣播：不代按（第一下 ^R 指的不是他）", () => {
+    const { inbox, sent } = make();
+    inbox.noteData(wire("aaa", "一"));
+    inbox.noteData(broadcast("系統訊息"));
+    inbox.noteData(wire("bbb", "二"));
+    const aaa = inbox.state.items.find((i) => i.from === "aaa");
+    const sys = inbox.state.items.find((i) => i.kind === "broadcast");
+    expect(inbox.canReply(aaa)).toBe(false);
+    expect(inbox.canReply(sys)).toBe(false);
+    expect(inbox.reply(aaa)).toBe(false);
+    expect(inbox.reply(sys)).toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  test("最新一則是廣播時，最新一位寄件人仍是最後丟水球的人", () => {
+    const { inbox } = make();
+    inbox.noteData(wire("aaa", "一"));
+    inbox.noteData(broadcast("系統訊息"));
+    expect(latestSender(inbox.state.items)).toBe("aaa");
+    expect(latestSender([])).toBeNull();
+  });
+});
+
 describe("isRepaint", () => {
   const last = { kind: "waterball", from: "a", text: "嗨", at: 1000 };
   test("同人同字、時間窗內＝重畫", () => {
@@ -128,6 +175,14 @@ describe("MessageInbox", () => {
     inbox.noteData("\x1b[H\x1b[2J" + wire("aaa", "一"));
     expect(inbox.state.items).toHaveLength(1);
     expect(inbox.state.unread).toBe(1);
+  });
+
+  test("中間夾一則廣播，水球重畫仍認得（一般模式第一下 ^R 會把最新水球再畫一次）", () => {
+    const inbox = make();
+    inbox.noteData(wire("aaa", "一"));
+    inbox.noteData(broadcast("系統訊息"));
+    inbox.noteData(wire("aaa", "一"));
+    expect(inbox.state.items.map((i) => i.kind)).toEqual(["broadcast", "waterball"]);
   });
 
   test("最多留 INBOX_LIMIT 則", () => {

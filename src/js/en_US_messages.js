@@ -833,6 +833,12 @@ export const en_US = {
   "inbox_close": {
     "message": "Close"
   },
+  "inbox_reply": {
+    "message": "Reply"
+  },
+  "inbox_reply_title": {
+    "message": "Reply to {id} (same as pressing Ctrl+R; then type in PTT's reply prompt)"
+  },
   "inbox_broadcast": {
     "message": "System"
   },

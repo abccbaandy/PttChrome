@@ -16,9 +16,13 @@
 - **跟著連線走**：只放記憶體，`App.onClose` 清空（含沒收尾的半則）；不寫 localStorage、不上雲。最多 `INBOX_LIMIT` 則。pref 中途關掉 ⇒ 下一包資料進來時已收的一起收掉。
 - **位置**：桌機 fixed 右上角，文章工具側欄展開時讓到它左邊（不蓋住收合鈕）；手機由 `MobileAppBar` 以 `inline` 渲染，浮動版不畫。z-index 160：低於 Mantine overlay（200）。
 
-## 還沒做
+## 回覆
 
-點一則直接回覆（todo P8 的後半）：回覆走 pttbbs `wmsg.c` 的 ^R。水球模式不同時行為不同（`ofo_my_write` 的 ↑↓ 換人、`wmsg_handle_ctrl_r_default` 的連按 ^R），要先讀碼數出目標在名單的位置、送鍵後讀回覆提示確認對象，認不出就停手。
+- 只有**最新一位寄件人**（清單裡最新一則水球的人，廣播不算）的水球有「回覆」鈕。點了＝`view.sendKeyAsUser('r', { ctrlKey: true })`，跟使用者自己按 Ctrl+R 同一條路（含序列化閘門），清單收起，之後全是 PTT 原生的回覆畫面。
+- 為什麼只有他：pttbbs `wmsg.c` 兩種水球模式第一下 ^R 都指向最新一位寄件人 —— 一般模式（`wmsg_handle_ctrl_r_default`，watermode −1）回 `swater[0]` 最後一則的寄件人；一對一模式（`UF_PAGER_OFO`，`ofo_my_write`）預設選 `swater[0]`。`swater_get_slot` 每收一則就把寄件人提到 `swater[0]`。
+- 回別人要在原生畫面裡換人，鍵位依模式不同（一對一模式 ↑↓／^T^R；一般模式第二下 ^R 進 watermode 面板、Tab／^T 輪轉），收件匣不知道使用者是哪個模式 ⇒ 不代按。要做得先能從畫面認出模式與目前選中的人，認不出就停手。
+- 一般模式第一下 ^R 會用 `outmsg` 把「★id 上一則內容」再畫一次（同水球格式）：那正是清單最新一則 ⇒ 被重畫去重擋掉，不會多收一則。
+- 不經閱讀紀錄：`my_write`／`ofo_my_write` 前後是 `scr_dump`／`scr_restore`，回覆完原畫面原樣回來，使用者的位置沒變。
 
 ## 測試
 

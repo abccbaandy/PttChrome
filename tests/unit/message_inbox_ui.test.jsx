@@ -111,6 +111,29 @@ test("桌機只畫浮動版、手機只畫 App Bar 內嵌版", () => {
   expect(root().classList.contains("messageInboxInline")).toBe(true);
 });
 
+test("只有最新一位寄件人的水球有「回覆」，點了接到 inbox.reply", () => {
+  const sent = [];
+  const app = {
+    mobile: false,
+    messageInbox: new MessageInbox({
+      view: { sendKeyAsUser: (k, m) => sent.push([k, m]) }
+    })
+  };
+  render(<InboxView pttchrome={app} />);
+  act(() => {
+    app.messageInbox.noteData(wire("aaa", "一"));
+    app.messageInbox.noteData(wire("bbb", "二"));
+  });
+  fireEvent.click(q("[data-inbox-bell]"));
+  const replies = document.querySelectorAll("[data-inbox-reply]");
+  expect(replies).toHaveLength(1);
+  expect(replies[0].closest(".inboxItem").querySelector(".inboxFrom").textContent).toBe("bbb");
+  expect(fireEvent.mouseDown(replies[0])).toBe(false); // 不搶 #t 焦點
+  fireEvent.click(replies[0]);
+  expect(sent).toEqual([["r", { ctrlKey: true }]]);
+  expect(q(".inboxPanel")).toBeNull();
+});
+
 test("文章工具側欄展開時讓到它左邊", () => {
   let toolsFn = null;
   const app = fakeApp({

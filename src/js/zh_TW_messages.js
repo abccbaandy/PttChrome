@@ -832,6 +832,12 @@
   "inbox_close": {
     "message": "關閉"
   },
+  "inbox_reply": {
+    "message": "回覆"
+  },
+  "inbox_reply_title": {
+    "message": "回覆 {id}（等於按 Ctrl+R，接著在 PTT 的回覆畫面打字）"
+  },
   "inbox_broadcast": {
     "message": "系統訊息"
   },
