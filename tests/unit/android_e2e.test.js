@@ -310,6 +310,19 @@ describe("test.yml：test-e2e-android job", () => {
     expect(kvm).toBeGreaterThan(-1);
     expect(emu).toBeGreaterThan(kvm);
   });
+  // 系統映像每輪現抓偶爾拿到壞 zip（模擬器沒開機就紅）⇒ 開模擬器前先從 cache 還原，
+  // 且 cache 的路徑／key 要跟 emulator-runner 實際裝的映像一致，不然還原了也白還原。
+  test("開模擬器前先從 cache 還原同一個系統映像", () => {
+    const cache = body.indexOf("actions/cache@");
+    const emu = body.indexOf("android-emulator-runner@");
+    expect(cache).toBeGreaterThan(-1);
+    expect(emu).toBeGreaterThan(cache);
+    const api = /api-level: (\d+)/.exec(body)[1];
+    const target = /target: (\S+)/.exec(body)[1];
+    const arch = /arch: (\S+)/.exec(body)[1];
+    expect(body).toContain(`system-images/android-${api}/${target}/${arch}`);
+    expect(body).toMatch(new RegExp(`key: android-sysimg-${api}-${target}-${arch}-`));
+  });
   // 少了這步，apk.android.spec.js 在 CI 會以「找不到 debug APK」整輪 exit 2。
   test("開模擬器前先建 debug APK，並把路徑交給 e2e", () => {
     const build = body.indexOf("assembleDebug");
