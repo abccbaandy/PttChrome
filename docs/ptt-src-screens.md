@@ -16,7 +16,7 @@ generate.sh ── make upstream common/＋mbbsd/（clang、Big5）
    │           objcopy 把 mbbsd.o 的 main 改名 → 連 driver.c
    ├─ driver.c   假 SHM（calloc）、假使用者、暫存 BBSHOME 裡依 seed.tsv 建看板／.DIR／notes／我的最愛，
    │             依「入口」直接呼叫 upstream 的畫面函式，pfterm 吐的位元組寫到 stdout，按鍵讀 stdin
-   ├─ capture.mjs 依 scenes.mjs 逐場景 spawn driver：送鍵 → 等 stdout 靜止 → 切一幀
+   ├─ capture.mjs 依 scenes.mjs 逐場景 spawn driver：送鍵 → 收到 driver 回到等鍵的標記 → 切一幀
    └─ 產出 tests/unit/fixtures/ptt_src_screens/<場景>.json  { cols, rows, entry, frames:[{name,keys,bytes}] }
 tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的 AnsiParser → TermBuf，跑本專案的判定／解析器
 ```
@@ -62,12 +62,15 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 `sh tools/ptt-src-screens/generate.sh` → 在 test 加 describe。鍵只用 upstream 鍵表裡的鍵。
 看產出的畫面：把 fixture 轉成假的 debug 錄製檔（每幀一個 recv）丟給 `yarn debug:screens`。
 
-### 為什麼等輸出靜止才送鍵
+### 幀尾由 driver 標出來（不靠計時）
 
-pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間幀，固定睡又在機器忙時切錯幀。
-`capture.mjs`：送鍵 → 等第一個位元組（`FIRST_BYTE_MS` 內沒有＝這一步失敗，不存空幀）→ 再等
-`QUIET_MS` 沒有新位元組才算一幀；driver 非 0 結束（`die()` 也會先吐 initscr 的位元組）＝失敗。
-守護 `tests/unit/ptt_src_screens_capture.test.js`（假 driver）。
+pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間幀；用「多久沒有新位元組」猜幀尾，
+機器忙時 driver 被排程延後就切出半幀，或在 `die()` 吐完 initscr 位元組、還沒真的結束前就當成功。
+所以由 driver 自己說：`generate.sh` 以 `-Wl,--wrap=read,--wrap=select,--wrap=poll` 連結，`driver.c`
+在 upstream 要**阻塞**等 stdin 時（stdin 沒資料、且不是有逾時的等待）往 stdout 寫 `WAIT_MARK`（APC 字串）。
+同一條 stdout 保證它排在這一幀所有位元組之後。`capture.mjs`：送鍵 → 收到 `WAIT_MARK` 為止＝一幀
+（空幀＝這一步失敗）；沒等到 `WAIT_MARK` driver 就結束＝失敗；`FRAME_MAX_MS` 只是卡死保險。
+兩邊的 `WAIT_MARK` 必須同一串。守護 `tests/unit/ptt_src_screens_capture.test.js`（假 driver，含機器忙的兩種情境）。
 
 ## build 踩坑（都已寫進 generate.sh／driver.c）
 

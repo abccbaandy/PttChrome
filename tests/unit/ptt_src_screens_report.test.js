@@ -177,7 +177,7 @@ describe("tools/ptt-src-screens", () => {
     expect(gen).toContain("' T main$'");
   });
 
-  test("按鍵等輸出靜止才送（不准固定睡）", () => {
+  test("按鍵等 driver 回到等鍵才送（不准固定睡）", () => {
     expect(gen).not.toMatch(/\bsleep\b/);
     expect(gen).toContain("capture.mjs");
   });

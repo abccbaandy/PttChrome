@@ -35,8 +35,9 @@ for o in *.o; do
   OBJS="$OBJS $o"
 done
 clang -g -O0 -w -I../include -DBBSHOME='"/root"' -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
+# --wrap：driver.c 接住 upstream 等 stdin 的阻塞點，在 stdout 標出幀尾（WAIT_MARK，見 driver.c）。
 # shellcheck disable=SC2086
-clang -o "$OUT/driver" "$OUT/driver.o" "$OUT/mbbsd_nomain.o" $OBJS "$OUT/vers.o" \
+clang -o "$OUT/driver" -Wl,--wrap=read,--wrap=select,--wrap=poll "$OUT/driver.o" "$OUT/mbbsd_nomain.o" $OBJS "$OUT/vers.o" \
   -L../common/bbs -L../common/sys -L../common/osdep -lcmbbs -lcmsys -losdep -lrt -pthread || exit 2
 
 iconv -f UTF-8 -t BIG5 "$HERE/seed.tsv" >"$OUT/seed.big5" || exit 2
