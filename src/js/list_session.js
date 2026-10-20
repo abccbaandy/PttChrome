@@ -2493,6 +2493,10 @@ ListSession.prototype = {
     if (this._renderMode === 'native') return;
     if (this.state !== 'active' || this._renderMode !== 'buffer') {
       // 交易進行中（開文／leave／jump 的 frozen）：與鍵盤同樣的「吞掉但不靜默」。
+      this._core.debugRecorder?.log('listSession.clickBusy', {
+        state: this.state,
+        renderMode: this._renderMode
+      });
       if (this._view.flashListHint)
         this._view.flashListHint('好讀列表：處理中，請稍候…');
       return;

@@ -285,9 +285,8 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
   // 兩者的共同祖先）。mousemove 沒移動 hover 時（畫面上有選取 ⇒ App.mouse_move 不追
   // hover），mouseup 才把底色搬過去；卡片的底色若走重畫，手指下那張卡片被換掉 ⇒ click
   // 整個不發。選取是用 API 放的前置狀態（測的輸入是那一下真 tap，不是選字手勢）。
-  test('畫面上有選取時 tap 卡片：第一下就開那一筆（底色移動不換掉手指下的卡片）', async ({ page }) => {
-    test.setTimeout(90000);
-    await engage(page);
+  // 斷言：第一下 tap 就走了開文交易（跳號腿 `<num>\r`），不只是選取移過去。
+  async function tapCardWithSelection(page) {
     const target = await page.evaluate(() => {
       const v = document.querySelector('#mainContainer .listBodyView');
       const vr = v.getBoundingClientRect();
@@ -324,10 +323,33 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     const sentBefore = await page.evaluate(() => window.__replay.sent.length);
     await page.touchscreen.tap(target.x, target.y);
     await expect.poll(async () => (await state(page)).selectedNum).toBe(target.num);
-    // 真的走了開文交易（跳號腿 `<num>\r`），不只是選取移過去。
     await expect
       .poll(() => page.evaluate((n) => window.__replay.sent.slice(n).join(''), sentBefore))
       .toContain(String(target.num) + '\r');
+  }
+
+  test('畫面上有選取時 tap 卡片：第一下就開那一筆（底色移動不換掉手指下的卡片）', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    await tapCardWithSelection(page);
+  });
+
+  // 同上，但畫面原本**沒有任何底色**（鍵盤游標底色關掉、手指還沒點過）：mouseup 那一下
+  // 是底色「從無到有」。舊版只有 col 不變才走快路徑，從無到有（NO_HIGHLIGHT 的 col 是 0）
+  // 照樣重畫 ⇒ 底色移到那張卡片、文章沒開，再點一次才開（使用者 2026-10-20 回報）。
+  test('畫面沒有底色＋有選取時 tap 卡片：第一下就開那一筆', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    await ptt.applyPrefs(page, { keyboardCursorHighlight: false });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const h = window.__app.view.componentScreen.highlight;
+          return h.row >= 0 && !!h.cls;
+        })
+      )
+      .toBe(false);
+    await tapCardWithSelection(page);
   });
 
   // 整張卡片＝同一組點選目標：長按任一段都同時給作者與標題（作者只是第二行一小段字，

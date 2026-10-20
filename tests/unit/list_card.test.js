@@ -280,6 +280,24 @@ describe("ScreenController：只在 enhance.listCards 時畫卡片", () => {
     );
   });
 
+  // 回歸（tap 卡片偶爾落空，第二輪）：上一條只守「col 不變」。畫面原本**沒有底色**
+  // （NO_HIGHLIGHT 的 col 是 0，例如鍵盤底色關掉、游標列捲出序列）時，第一下 tap 的
+  // mouseup 把 hover 底色從無變有（col 17）⇒ 舊條件走重畫，手指下那張卡片被換掉，
+  // click 不發。斷言用 toBe 比**節點身分**（toEqual 只比結構，重建的節點也會過）。
+  test("卡片模式從「沒有底色」到有底色（col > 0）：同一個節點，不重畫", () => {
+    const m = mountScreen(props("article"));
+    const card = (r) => m.container.querySelector(`.listBodyView > .listCard[srow="${r}"]`);
+    const before = [card(3), card(4)];
+    m.controller.setCursorHighlight({ row: 4, cls: "b2", col: 17 });
+    expect(card(3)).toBe(before[0]);
+    expect(card(4)).toBe(before[1]);
+    expect(card(4).querySelector(".listCardBody").classList.contains("b2")).toBe(true);
+    // 回到沒有底色也一樣只搬 class。
+    m.controller.setCursorHighlight(null);
+    expect(card(4)).toBe(before[1]);
+    expect(m.container.querySelectorAll(".listCardBody.b2").length).toBe(0);
+  });
+
   test("同一批列物件切換卡片模式 ⇒ 節點重建（listCards 進 annotationsKey）", () => {
     const m = mountScreen(props(undefined));
     m.update(props("article"));

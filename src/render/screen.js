@@ -389,9 +389,11 @@ export class ScreenController {
   // 每一列）。col > 0 的部分底色是包在 LinkSegmentBuilder 建的 wrapper span 裡，
   // 沒有辦法只換 class，退回重畫。
   // 手機列表卡片（enhance.listCards）的底色下在整張卡片本體、不吃 col（list_card.js），
-  // col 不變就一律走快路徑。**不可以重畫**：觸控 tap 的 mouseup 會移動 hover 底色
-  // （畫面有選取時 mousemove 不追 hover），重畫換掉手指下那張卡片 ⇒ Chromium 不發
-  // click，tap 落空（gesture_manager.cc：click 發給 mousedown／mouseup 目標的共同祖先）。
+  // body 列全是卡片 ⇒ 一律走快路徑，**包含從「沒有底色」（NO_HIGHLIGHT 的 col 是 0）
+  // 開始的那一下**。**不可以重畫**：觸控 tap 的 mouseup 會移動 hover 底色（畫面有選取
+  // 時 mousemove 不追 hover），重畫換掉手指下那張卡片 ⇒ Chromium 不發 click，tap 落空
+  // （gesture_manager.cc：click 發給 mousedown／mouseup 目標的共同祖先）。症狀：底色移到
+  // 那張卡片、文章沒開，再點一次才開。
   setCursorHighlight(next) {
     const prev = this.highlight;
     const state = next || NO_HIGHLIGHT;
@@ -404,10 +406,7 @@ export class ScreenController {
     this.highlight = state;
     const enhance = this.props && this.props.enhance;
     const cards = !!(enhance && enhance.listCards);
-    if (
-      (prev.col === 0 && state.col === 0) ||
-      (cards && prev.col === state.col)
-    ) {
+    if ((prev.col === 0 && state.col === 0) || cards) {
       if (prev.row >= 0 && prev.cls)
         this._toggleRowClass(prev.row, prev.cls, false);
       if (state.row >= 0 && state.cls)
@@ -1778,9 +1777,16 @@ export class ScreenController {
       .filter(Boolean);
     if (!tokens.length) return;
     this.syncRowIndex();
-    const spans = this.container.querySelectorAll(
-      `[data-type="bbsline"][data-row="${row}"]`,
+    // 手機列表卡片：底色只下在卡片本體（與 buildListCard 的 highlightClass 同一處）；
+    // 卡片裡各欄為了選取反查也帶 data-row，不掛 ⇒ 快路徑與重畫出來的 DOM 一致。
+    const card = this.container.querySelector(
+      `.listCardBody[data-type="bbsline"][data-row="${row}"]`,
     );
+    const spans = card
+      ? [card]
+      : this.container.querySelectorAll(
+          `[data-type="bbsline"][data-row="${row}"]`,
+        );
     for (let i = 0; i < spans.length; ++i) {
       if (on) spans[i].classList.add(...tokens);
       else spans[i].classList.remove(...tokens);
