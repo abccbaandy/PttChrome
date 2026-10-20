@@ -75,27 +75,34 @@ export function listPageOf(rowTexts, curY) {
   let cursorNum = null;
   for (let r = 3; r < n - 1; r++) {
     const text = t[r];
-    const e = parseListEntry(text);
-    if (!e) continue;
-    // STR_CURSOR2「●」是全形，蓋掉序號欄的前兩格 ⇒ 嚴格的欄位解析讀不出編號，退回寬鬆的。
-    const num = e.num != null ? e.num : e.pinned ? null : parseListArticleNumLoose(text);
-    if (num == null) continue;
-    const id = listRowIdentity(text);
-    entries.push({
-      num: num,
-      title: e.title,
-      author: e.author,
-      date: e.date,
-      recommend: e.recommend,
-      deleted: !!e.deleted,
-      unread: !e.deleted && listRowUnread(text),
-      subject: id ? id.subject : null,
-      // 列原文：黑名單判定（list_row_filter）吃整列文字，用的時候才比（使用者隨時可能改名單）。
-      text: text
-    });
-    if (r === curY || (curY == null && /^[>●]/.test(text))) cursorNum = num;
+    const entry = listEntryOf(text);
+    if (!entry) continue;
+    entries.push(entry);
+    if (r === curY || (curY == null && /^[>●]/.test(text))) cursorNum = entry.num;
   }
   return { board, mode: isSubListFooter(last) ? 'select' : 'plain', entries, cursorNum };
+}
+
+// 列表的一列 → 快照條目；不是有編號的文章列（置底文、空列）⇒ null。
+export function listEntryOf(text) {
+  const e = parseListEntry(text || '');
+  if (!e) return null;
+  // STR_CURSOR2「●」是全形，蓋掉序號欄的前兩格 ⇒ 嚴格的欄位解析讀不出編號，退回寬鬆的。
+  const num = e.num != null ? e.num : e.pinned ? null : parseListArticleNumLoose(text);
+  if (num == null) return null;
+  const id = listRowIdentity(text);
+  return {
+    num: num,
+    title: e.title,
+    author: e.author,
+    date: e.date,
+    recommend: e.recommend,
+    deleted: !!e.deleted,
+    unread: !e.deleted && listRowUnread(text),
+    subject: id ? id.subject : null,
+    // 列原文：黑名單判定（list_row_filter）吃整列文字，用的時候才比（使用者隨時可能改名單）。
+    text: text
+  };
 }
 
 export function sameBoard(a, b) {

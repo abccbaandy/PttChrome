@@ -2534,3 +2534,87 @@ describe("AidNavigation 指定看板（preparePicked → continuePicked）", () 
     expect(h.nav.preparePicked("1gIeu-3A")).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// startSubNum（next_article 的搜尋結果換文）：搜尋結果的編號是子列表自己的空間
+// （read.c MODE_SELECT 重新編號），s<板>／# 都會離開它 ⇒ 文章內 ← 回到同一份結果
+// → `<編號>⏎`（read_cmd_num 只看目前列表）→ 游標那列認得出才 ⏎。
+// 錄製檔 ptt-debug-20261021-015619：C_Chat 搜「史萊姆」開第 317 篇，讀到文末沒有下一篇卡片。
+// ---------------------------------------------------------------------------
+describe("AidNavigation.startSubNum：搜尋結果裡的第 N 篇", () => {
+  const subList = (rows, cursorRow) => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[0] = "【板主:someone】[希洽] 這裡是希洽版                      系列《C_Chat》";
+    rowTexts[2] = "   編號    日 期 作  者       文  章  標  題                    人氣:2";
+    rows.forEach((t, i) => (rowTexts[3 + i] = i === cursorRow ? ">" + t.slice(1) : t));
+    rowTexts[23] = " 系列文章  (^P)發表 (y)回應 (X)推文 (d)刪除 (→)閱讀 (b)進板  (←)離開 (h)說明 ";
+    return rowTexts;
+  };
+  const ROWS = [
+    "    317   3 10/20 hanx5566     □ [閒聊] 持續狩獵史萊姆300年 10月最終卷",
+    "    318  12 10/20 someone      □ [26秋] 轉生史萊姆 五期 03"
+  ];
+  const at = (rowTexts, curY, cursorRowNum) =>
+    facts("clean-list", { boardName: "C_Chat", rowTexts, curY, cursorRowNum });
+  const verifier = (want) => {
+    const calls = [];
+    const fn = (text) => {
+      calls.push(text);
+      return text.includes(want);
+    };
+    fn.calls = calls;
+    return fn;
+  };
+
+  test("← 回搜尋結果 → 318⏎ → 游標那列認得出 → ⏎ 開文；不送 s／#", () => {
+    const h = makeHarness();
+    const ends = [];
+    const verify = verifier("轉生史萊姆 五期 03");
+    expect(h.nav.startSubNum("C_Chat", 318, verify, (r) => ends.push(r))).toBe(true);
+    expect(h.sent).toEqual(["\x1b[D\f"]);
+    settle(h.queue, at(subList(ROWS, 0), 3, 317));
+    expect(h.sent[1]).toBe("318\r\f");
+    settle(h.queue, at(subList(ROWS, 1), 4, 318));
+    expect(verify.calls).toEqual([subList(ROWS, 1)[4]]);
+    expect(h.sent[2]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(ends).toEqual([{ ok: true }]);
+    expect(h.sent.some((s) => s.startsWith("s") || s.startsWith("#"))).toBe(false);
+  });
+
+  test("游標那列不是要的那篇（搜尋結果已經不是快照那一份）⇒ 不 ⏎，停在列表、onEnd ok:false", () => {
+    const h = makeHarness();
+    const ends = [];
+    h.nav.startSubNum("C_Chat", 318, verifier("別篇"), (r) => ends.push(r));
+    settle(h.queue, at(subList(ROWS, 0), 3, 317));
+    settle(h.queue, at(subList(ROWS, 1), 4, 318));
+    expect(h.sent).toEqual(["\x1b[D\f", "318\r\f"]);
+    expect(h.nav.active).toBe(false);
+    expect(ends).toEqual([expect.objectContaining({ ok: false })]);
+  });
+
+  test("← 落在完整列表（不是搜尋結果）⇒ 不跳號（那裡的編號是另一個空間）", () => {
+    const h = makeHarness();
+    const ends = [];
+    h.nav.startSubNum("C_Chat", 318, verifier("五期"), (r) => ends.push(r));
+    const plain = subList(ROWS, 0);
+    plain[23] = " 文章選讀  (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面 ";
+    settle(h.queue, at(plain, 3, 317));
+    vi.advanceTimersByTime(60000);
+    expect(h.sent).toEqual(["\x1b[D\f", "\f"]);
+    expect(h.nav.active).toBe(false);
+    expect(ends).toEqual([expect.objectContaining({ ok: false })]);
+  });
+
+  test("不在文章 pager（站內信、footer 被擠掉）、進行中、參數不合法 ⇒ 拒絕、什麼都不送", () => {
+    expect(makeHarness({ footer: MAIL_STATUS_ROW }).nav.startSubNum("C_Chat", 1, () => true)).toBe(false);
+    expect(makeHarness({ footer: FOOTERLESS_STATUS_ROW }).nav.startSubNum("C_Chat", 1, () => true)).toBe(false);
+    expect(makeHarness().nav.startSubNum("C_Chat", 0, () => true)).toBe(false);
+    expect(makeHarness().nav.startSubNum("C_Chat", 1)).toBe(false);
+    const h = makeHarness();
+    h.nav.startSubNum("C_Chat", 318, () => true);
+    expect(h.nav.startSubNum("C_Chat", 318, () => true)).toBe(false);
+    expect(h.sent).toEqual(["\x1b[D\f"]);
+  });
+});

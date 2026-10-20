@@ -7,15 +7,17 @@
 //   1. **下一篇＝列表順序的下一列**：原生「看完按空白」是 read.c 的 crs_ln + 1，不是「下一篇
 //      新文」。所以卡片只認列表快照裡編號正好接在這篇後面的那一列（被刪的跳過）；沒看過那一
 //      列（還沒載入的頁）、或這篇是最後一篇（下一列是沒有編號的置底文）⇒ 不出現。搜尋結果／
-//      文摘是另一個編號空間 ⇒ 從那裡進的文章不出現。
-//   2. **換文＝原生鍵**：aid_navigation.startNum（與雙欄閱讀同一條：s<板>⏎ → <編號>⏎ → ⏎，
-//      每步依畫面驗證），落地後再比一次作者＋主題，不符就提示，人留在 PTT 給的畫面。
+//      文摘是另一個編號空間（read.c MODE_SELECT 重新編號）⇒ 另留一份快照，下一篇是結果的
+//      下一筆（同原生）。
+//   2. **換文＝原生鍵**：完整列表走 aid_navigation.startNum（與雙欄閱讀同一條：s<板>⏎ →
+//      <編號>⏎ → ⏎），搜尋結果走 startSubNum（← 回同一份結果 → <編號>⏎ → 游標那列認得出
+//      才 ⏎），每步依畫面驗證；落地後再比一次作者＋主題，不符就提示，人留在 PTT 給的畫面。
 //   3. **不寫 #mainContainer**：卡片是 `.main`（好讀的捲動容器）裡、#screenRoot 後面的獨立
 //      節點，跟著文末一起捲；核心渲染鏈不知道它存在。
 
 import { isArticleListTitleRow } from './screen_titles';
 import { isArticleListFooter } from './screen_captions';
-import { listPageOf, mergeSnapshot, sameBoard, findCurrentNum, cursorHintFresh } from './split_reader';
+import { listPageOf, listEntryOf, mergeSnapshot, sameBoard, findCurrentNum, cursorHintFresh } from './split_reader';
 import { subjectKey, subjectMatches } from './long_push_anchor';
 import { hiddenReason, listFilterOf } from './list_row_filter';
 import { serializedOpHint } from './serialized_op_gate';
@@ -68,6 +70,33 @@ export function landedOn(entry, article, seen) {
   );
 }
 
+// 快照裡同一個編號的兩列是不是同一篇（列表對列表：作者＋主題）。
+export function sameListEntry(a, b) {
+  return !!(
+    a &&
+    b &&
+    String(a.author).toLowerCase() === String(b.author).toLowerCase() &&
+    a.subject &&
+    b.subject &&
+    subjectMatches(a.subject, b.subject)
+  );
+}
+
+// 搜尋結果的快照：編號是這一次搜尋自己的空間，換了條件（再搜一次、增加條件）同一個編號
+// 就是別篇 ⇒ 新的一頁與舊快照有任何一號對不上（兩邊都不是被刪的）就整份換掉，不混用。
+// 畫面上看不出搜尋條件，所以只能這樣認；漏認的由換文時的 verify（游標那列）擋下。
+export function mergeSubSnapshot(prev, page) {
+  if (prev && sameBoard(prev.board, page.board)) {
+    const byNum = new Map();
+    for (const e of prev.entries) byNum.set(e.num, e);
+    for (const e of page.entries) {
+      const old = byNum.get(e.num);
+      if (old && !old.deleted && !e.deleted && !sameListEntry(old, e)) return mergeSnapshot(null, page);
+    }
+  }
+  return mergeSnapshot(prev, page);
+}
+
 function enabled() {
   return !!readEffectivePrefs().enableNextArticleCard;
 }
@@ -78,9 +107,11 @@ function enabled() {
 
 export function NextArticle(core) {
   this._core = core;
-  this._snapshot = null; // { board, entries }
+  this._snapshot = null; // { board, entries }：完整列表
+  this._subSnapshot = null; // { board, entries }：搜尋結果／文摘（mergeSubSnapshot）
   this._lastList = null; // { board, mode, cursorNum, articleKey }（articleKey 見 split_reader.cursorHintFresh）
   this._nav = null; // { entry, timer, seen }：seen＝換文途中列表上游標停在 entry.num 的那一列
+  this._pickMode = null; // 卡片上那篇取自哪份快照：'plain' | 'select'
   this._el = null;
   this._lastPickRec = null; // _logPick 的去重：同一個錄製器、同一個結果只記一次
   this._lastPickKey = null;
@@ -166,10 +197,17 @@ NextArticle.prototype = {
       const page = listPageOf(rowTexts, buf.cur_y);
       if (page) {
         this._lastList = { board: page.board, mode: page.mode, cursorNum: page.cursorNum };
-        if (page.mode === 'plain') this._snapshot = mergeSnapshot(this._snapshot, page);
+        if (page.mode === 'plain') {
+          this._snapshot = mergeSnapshot(this._snapshot, page);
+          // 離開過搜尋結果：下一次的結果可能是別的條件，不留舊的。
+          if (!this._nav) this._subSnapshot = null;
+        } else {
+          this._subSnapshot = mergeSubSnapshot(this._subSnapshot, page);
+        }
         // 換文途中：<編號>⏎ 之後游標停的那一列，落地比對用（landedOn）。
         const nav = this._nav;
-        if (nav && page.mode === 'plain' && page.cursorNum === nav.entry.num && this._snapshot && sameBoard(page.board, this._snapshot.board))
+        const snap = page.mode === 'plain' ? this._snapshot : this._subSnapshot;
+        if (nav && page.mode === this._pickMode && page.cursorNum === nav.entry.num && snap && sameBoard(page.board, snap.board))
           nav.seen = page.entries.find((e) => e.num === page.cursorNum) || null;
       }
       this._hide();
@@ -185,9 +223,9 @@ NextArticle.prototype = {
       this._hide();
       return;
     }
-    const snap = this._snapshot;
     const list = this._lastList;
-    if (!board || !snap || !list || list.mode !== 'plain' || !sameBoard(list.board, board) || !sameBoard(snap.board, board)) {
+    const snap = list && (list.mode === 'plain' ? this._snapshot : this._subSnapshot);
+    if (!board || !snap || !sameBoard(list.board, board) || !sameBoard(snap.board, board)) {
       this._hide();
       return;
     }
@@ -199,6 +237,7 @@ NextArticle.prototype = {
       this._hide();
       return;
     }
+    this._pickMode = list.mode;
     this._set({ visible: true, entry: entry, pending: false });
   },
 
@@ -206,17 +245,19 @@ NextArticle.prototype = {
     const core = this._core;
     const st = this._state;
     const entry = st.entry;
-    if (!st.visible || !entry || this._nav || !this._snapshot) return false;
+    const sub = this._pickMode === 'select';
+    const snap = sub ? this._subSnapshot : this._snapshot;
+    if (!st.visible || !entry || this._nav || !snap) return false;
     const nav = core.aidNavigation;
     const busy = serializedOpHint(core);
-    if (busy || this._wireBusy() || !nav || typeof nav.startNum !== 'function') {
+    if (busy || this._wireBusy() || !nav || typeof (sub ? nav.startSubNum : nav.startNum) !== 'function') {
       if (busy) this._hint(busy, 2500, HINT_ERROR);
       return false;
     }
     const rr = recordFor(core);
     const bm = rr.begin('next-article');
     const self = this;
-    const board = this._snapshot.board;
+    const board = snap.board;
     const done = function(result) {
       if (!self._nav || self._nav.entry !== entry) return;
       clearTimeout(self._nav.timer);
@@ -239,7 +280,16 @@ NextArticle.prototype = {
       }, NAV_WATCHDOG_MS)
     };
     this._set({ pending: true });
-    if (!nav.startNum(board, entry.num, done)) {
+    // 搜尋結果：<編號>⏎ 後游標那一列要是卡片上那篇才開（快照可能是上一次搜尋的）；
+    // 認得出就順便當落地比對的 seen。
+    const verify = function(rowText) {
+      const row = listEntryOf(rowText);
+      if (!row || row.num !== entry.num || row.deleted || !sameListEntry(row, entry)) return false;
+      if (self._nav && self._nav.entry === entry) self._nav.seen = row;
+      return true;
+    };
+    const started = sub ? nav.startSubNum(board, entry.num, verify, done) : nav.startNum(board, entry.num, done);
+    if (!started) {
       clearTimeout(this._nav.timer);
       this._nav = null;
       rr.end(bm, 'cancel');

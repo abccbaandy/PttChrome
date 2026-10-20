@@ -1,6 +1,6 @@
 // 讀完接著讀下一篇（src/js/next_article.js、docs/next-article.md）：好讀文章讀到文末 ⇒ 最後一列
 // 下面出現列表上下一篇的標題卡；點它走 aid_navigation.startNum（第一步文章內 s<板>⏎）；
-// 最後一篇、pref 關不出現。只有真瀏覽器驗得出來：卡片真的排在文末之後（不蓋字、跟著捲）、
+// 從搜尋結果進的走 startSubNum（第一步文章內 ← 回同一份結果）；最後一篇、pref 關不出現。只有真瀏覽器驗得出來：卡片真的排在文末之後（不蓋字、跟著捲）、
 // 真的滑鼠點卡片不變成點終端機（滑鼠瀏覽開著也不送 ←／Enter）、不搶 #t 焦點。
 // 畫面照 pttbbs 版面手寫，與 split_reader.offline.spec.js 同一套（各自一份，spec 之間不相依）。
 const { test, expect } = require('@playwright/test');
@@ -52,16 +52,21 @@ const ENTRIES = Array.from({ length: 20 }, (_, i) => ({
 }));
 
 // 一整幀文章列表（row0／row2 反白鋪滿、row1 不空 ⇒ pageState 2，見 long_push spec 的說明）。
-async function drawList(page, cursorIndex) {
+// sub：搜尋結果（read.c MODE_SELECT：標題列右段「系列《板》」、底列 caption「系列文章」），
+// 編號是結果自己的空間（1 起算）。
+async function drawList(page, cursorIndex, { sub = false } = {}) {
+  const caption = sub ? '系列文章' : '文章選讀';
   const map = {
-    0: { rev: true, text: '【板主：test】看板《Test》'.padEnd(80) },
+    0: { rev: true, text: ('【板主：test】' + (sub ? '系列' : '看板') + '《Test》').padEnd(80) },
     1: '[←]離開 [→]閱讀 [^P]發表文章 [b]備忘錄',
     2: { rev: true, text: '  編號    日 期 作  者       文  章  標  題'.padEnd(70) },
-    23: ' 文章選讀  (y)回應(X)推文(^X)轉錄 ',
+    23: ' ' + caption + '  (y)回應(X)推文(^X)轉錄 ',
   };
-  ENTRIES.forEach((e, i) => (map[3 + i] = listRow(e.num, e.author, e.title, e.unread ? '+' : ' ')));
+  ENTRIES.forEach(
+    (e, i) => (map[3 + i] = listRow(sub ? i + 1 : e.num, e.author, e.title, e.unread ? '+' : ' '))
+  );
   await onData(page, map, 3 + cursorIndex);
-  await waitScreenSettled(page, { 2: '編號', 23: '文章選讀' });
+  await waitScreenSettled(page, { 2: '編號', 23: caption });
 }
 
 // 文章第一頁（標頭讓 term_view 認出看板／作者／標題；100% ⇒ 好讀一頁就讀到文末、線路是閒的）。
@@ -126,6 +131,25 @@ test.describe('讀完接著讀下一篇', () => {
     // 只有板跳那一步（＋CommandQueue 的 fullRepaint \f）：沒有滑鼠瀏覽在終端機上送的 ←／Enter。
     expect(await takeCapture(page)).toBe('sTest\r\f');
     await expect(card(page)).toHaveAttribute('data-pending', '');
+    await expect(page.locator('#t')).toBeFocused();
+  });
+
+  // 錄製檔 ptt-debug-20261021-015619：從搜尋結果開的文章讀到文末，卡片沒出現。
+  test('從搜尋結果進的文章 ⇒ 卡片是結果的下一筆；點它走 ←（回同一份結果），不走 s<板>', async ({ page }) => {
+    await boot(page, { useMouseBrowsing: true, mouseLeftClick: true });
+    await drawList(page, 4, { sub: true });
+    await drawArticle(page, ENTRIES[4]);
+    await expect(card(page)).toBeVisible();
+    await expect(card(page)).toContainText(ENTRIES[5].title);
+    await startCapture(page);
+    await card(page).click();
+    await expect.poll(() => peekCapture(page)).toContain('\x1b[D');
+    expect(await takeCapture(page)).toBe('\x1b[D\f');
+    // ← 回到結果（游標在原篇）⇒ 下一步是結果裡的編號（第 6 筆），不是完整列表的 106。
+    await startCapture(page);
+    await drawList(page, 4, { sub: true });
+    await expect.poll(() => peekCapture(page)).toContain('6\r');
+    expect(await takeCapture(page)).toBe('6\r\f');
     await expect(page.locator('#t')).toBeFocused();
   });
 
