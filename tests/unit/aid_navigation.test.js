@@ -1974,8 +1974,79 @@ describe("agent 工具的跳法（startBoard／startNum）", () => {
     atMainMenu(h);
     h.nav.startBoard("Gossiping", {});
     expect(h.nav.startNum("Gossiping", 1)).toBe(false);
+    expect(h.nav.startPinned("Gossiping", 0)).toBe(false);
     expect(makeHarness().nav.startNum("Gossiping", 0)).toBe(false);
     expect(makeHarness().nav.startBoard("", {})).toBe(false);
+    expect(makeHarness().nav.startBoard("Gossiping", { num: 0 })).toBe(false);
+    expect(makeHarness().nav.startPinned("Gossiping", -1)).toBe(false);
+    expect(makeHarness().nav.startPinned("Gossiping", 1.5)).toBe(false);
+  });
+
+  test("startBoard num（agent 列更舊的頁）：板跳 → <編號>⏎ → 停在列表，不送 ⏎ 開文", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    const ends = [];
+    expect(h.nav.startBoard("Gossiping", { num: 780200 }, r => ends.push(r))).toBe(true);
+    settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+    expect(h.sent[1]).toBe("780200\r\f");
+    settle(h.queue, facts("transient", { boardName: "gossiping", cursorRowNum: 780200, curY: 8 }));
+    expect(h.sent.length).toBe(2);
+    expect(h.nav.active).toBe(false);
+    expect(h.core.easyReading.ensureCalls).toBe(0);
+    expect(ends).toEqual([{ ok: true }]);
+    expect(h.nav.canGoBack()).toBe(false);
+  });
+
+  // 板尾：一般文章 3..7，置底 8..10（★），游標停在最後一篇置底。
+  const pinnedEndScreen = () => {
+    const rowTexts = new Array(24).fill("");
+    for (let r = 3; r <= 7; r++) rowTexts[r] = " 78029" + r + " + 110/14 someone      □ [問卦] t";
+    for (let r = 8; r <= 10; r++) rowTexts[r] = "     ★  !   2/21 boardmod     □ [公告] 板規" + r;
+    rowTexts[10] = ">" + rowTexts[10].slice(1);
+    rowTexts[23] = " 文章選讀  (y)回應(X)推文";
+    return rowTexts;
+  };
+
+  test("startPinned：板跳 → End → ↑×k 到第 index 篇置底 → ⏎ 開文，onEnd ok", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    const ends = [];
+    expect(h.nav.startPinned("Gossiping", 0, r => ends.push(r))).toBe(true);
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 5 }));
+    expect(h.sent[1]).toBe("\x1b[4~\f");
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 10, rowTexts: pinnedEndScreen() }));
+    // 第 0 篇置底在第 8 列，游標在第 10 列 ⇒ ↑ 兩次
+    expect(h.sent[2]).toBe("\x1b[A\x1b[A\f");
+    // 還沒到（停在第 9 列）⇒ 不開
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 9, rowTexts: pinnedEndScreen() }));
+    expect(h.sent.length).toBe(3);
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 8, rowTexts: pinnedEndScreen() }));
+    expect(h.sent[3]).toBe("\r\f");
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(ends).toEqual([{ ok: true }]);
+  });
+
+  test("startPinned：游標已在那一篇 ⇒ 不送 ↑，直接 ⏎", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    h.nav.startPinned("Gossiping", 2);
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 5 }));
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 10, rowTexts: pinnedEndScreen() }));
+    expect(h.sent[2]).toBe("\r\f");
+  });
+
+  test("startPinned：板尾沒有那一篇置底 ⇒ 停手失敗，不送 ↑ 也不開文", () => {
+    const h = makeHarness();
+    atMainMenu(h);
+    const ends = [];
+    h.nav.startPinned("Gossiping", 3, r => ends.push(r));
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 5 }));
+    settle(h.queue, facts("clean-list", { boardName: "gossiping", curY: 10, rowTexts: pinnedEndScreen() }));
+    expect(h.sent.length).toBe(2);
+    expect(h.nav.active).toBe(false);
+    expect(ends[0].ok).toBe(false);
+    expect(ends[0].error).toContain("置底");
   });
 });
 

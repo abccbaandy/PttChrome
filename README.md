@@ -118,7 +118,7 @@
 - **安全模式：全部用原生** — PTT 改版、畫面怪怪的時候一鍵把所有改寫畫面或代按鍵的功能暫停，關掉就恢復原本設定。
 - **右鍵選單精簡** — 輸入小幫手、Live 文小幫手預設隱藏，需要時再開。
 - **Debug 錄製模式** — 錄下連線資料回報難重現的 bug，下載前自動遮蔽帳密與 IP。
-- **AI agent 操作（實驗性）** — AI agent 可透過 Chrome DevTools Protocol 或 WebMCP 列出看板最新文章、讀取整篇文章與推文。
+- **AI agent 操作（實驗性）** — AI agent 可透過 Chrome DevTools Protocol 或 WebMCP 翻閱看板文章列表、讀取整篇文章與推文（含置底文）。
 
 ---
 
