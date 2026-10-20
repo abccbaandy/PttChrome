@@ -5,6 +5,7 @@
 // 跳號輸入框（bottom:88px）被軟鍵盤蓋住，看不到自己打的字。
 // 位置來源是 App._onVisualViewport 寫的 --term-bottom-inset（＝終端機的底部 inset）。
 import { TermView } from "../../src/js/term_view";
+import "../../src/components/ImageUpload.css";
 
 const INSET = 300;
 const root = document.documentElement;
@@ -39,6 +40,20 @@ test("T2 說明列與輸入框排在底部 inset 上方", () => {
   expect(view._listOverlayEl.getBoundingClientRect().bottom).toBeLessThanOrEqual(coveredLine());
   view.promptListInput("跳到", "", () => {});
   expect(view._listInputWrap.getBoundingClientRect().bottom).toBeLessThanOrEqual(coveredLine());
+});
+
+test("圖片上傳的進度／結果卡（兩種）排在底部 inset 上方", () => {
+  for (const cls of ["ImageUploadCard", "ImageUploadCard ImageUploadCard--notice"]) {
+    const card = document.createElement("div");
+    card.className = cls;
+    card.style.height = "80px";
+    document.body.appendChild(card);
+    try {
+      expect(card.getBoundingClientRect().bottom).toBeLessThanOrEqual(coveredLine());
+    } finally {
+      card.remove();
+    }
+  }
 });
 
 test("沒有 inset（桌機）⇒ 維持原本離底的距離", () => {
