@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { i18n } from "../../js/i18n";
 import { EMPTY_APP_BAR } from "../../js/mobile_app_bar";
+import MessageInbox from "../MessageInbox";
 import "./MobileAppBar.css";
 
 // 手機頂部 App Bar（docs/mobile.md「App Bar」）。只在 pttchrome.mobile 時渲染。
@@ -69,6 +70,7 @@ export const MobileAppBar = ({ pttchrome }) => {
           {i18n("mobileAppBar_newMail")}
         </span>
       ) : null}
+      <MessageInbox pttchrome={pttchrome} inline />
       {busy ? (
         <div
           className="mobileAppBarProgress"

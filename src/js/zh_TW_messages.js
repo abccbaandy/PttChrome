@@ -814,6 +814,33 @@
   "options_enableNotifications": {
     "message": "啟用水球通知"
   },
+  "options_enableMessageInbox": {
+    "message": "水球收件匣"
+  },
+  "tooltip_enableMessageInbox": {
+    "message": "這次連線收到的水球和系統廣播會留在右上角的鈴鐺裡，漏看了也找得回來。只存在這個分頁，斷線就清空。"
+  },
+  "inbox_title": {
+    "message": "水球收件匣"
+  },
+  "inbox_open": {
+    "message": "水球收件匣（{count} 則未讀）"
+  },
+  "inbox_clear": {
+    "message": "清空"
+  },
+  "inbox_close": {
+    "message": "關閉"
+  },
+  "inbox_reply": {
+    "message": "回覆"
+  },
+  "inbox_reply_title": {
+    "message": "回覆 {id}（等於按 Ctrl+R，接著在 PTT 的回覆畫面打字）"
+  },
+  "inbox_broadcast": {
+    "message": "系統訊息"
+  },
   "options_deepLinkHandoffNotify": {
     "message": "外部連結被這個分頁接手時發出通知（分頁標題閃爍＋系統通知）"
   },

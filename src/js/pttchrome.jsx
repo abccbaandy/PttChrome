@@ -64,6 +64,7 @@ import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
+import { MessageInbox, isMessageInboxTarget } from './message_inbox';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
 import { CommentBar, isCommentBarTarget } from './comment_bar';
@@ -271,6 +272,8 @@ export const App = function() {
   this.articleTools = new ArticleTools(this);
   // 好讀文章底部常駐推文列（comment_bar.js；送出走長推文管線，App.openQuickPush）。
   this.commentBar = new CommentBar(this);
+  // 水球／系統訊息收件匣（這次連線收到的水球與廣播，鈴鐺打開看；message_inbox.js）。
+  this.messageInbox = new MessageInbox(this);
 
   // 終端機水平置中。**不要因為 align 是 deprecated 屬性就刪掉它**：Chrome/Firefox
   // 把它算成 `text-align: -webkit-center` / `-moz-center`，那個值會連 **block
@@ -569,6 +572,8 @@ App.prototype.onConnect = function() {
 App.prototype.onData = function(data) {
   this.boardNoteSkip.noteRecv();
   this.parser.feed(data);
+  // 收件匣每包都解析（跨包接續在模組裡）；下面的失焦通知照舊只在失焦時跑。
+  this.messageInbox.noteData(data);
 
   if (!this.appFocused && this.view.enableNotifications) {
     // parse received data for waterball
@@ -618,6 +623,8 @@ App.prototype.onClose = function() {
   // reconnect starts back at the login screen, and firing a jump into whatever
   // the user does next is worse than making them click the link again.
   this.deepLinkController.reset();
+  // 收件匣跟著連線走：斷線清空。
+  this.messageInbox.reset();
 
   this.cancelMbTimer();
 
@@ -2372,7 +2379,7 @@ App.prototype._onUploadLayer = function(e) {
   const t = e && e.target;
   return (
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
-    isCommentBarTarget(t)
+    isCommentBarTarget(t) || isMessageInboxTarget(t)
   );
 };
 

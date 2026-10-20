@@ -11,6 +11,9 @@ export const DEFAULT_PREFS = {
   nativeSafeMode: false,
   enablePicPreview: true,
   enableNotifications: true,
+  // 水球／系統訊息收件匣（js/message_inbox.js）：這次連線收到的水球與廣播留在鈴鐺裡。
+  // 只看收到的資料、一個 byte 都不送 ⇒ 不在安全模式名單內。
+  enableMessageInbox: true,
   // 文章好讀模式：整篇累積成一份可自由捲動的長頁（見 docs/easy-reading.md）。
   // **2026-09 起預設開**（功能已成熟，且是本專案與原版 term.ptt.cc 最主要的差異）。
   // 關掉＝逐位元回到原生的一次一頁，逃生門仍在設定頁。
