@@ -1052,6 +1052,21 @@ export const en_US = {
   "split_opening": {
     "message": "Opening…"
   },
+  "options_enableNextArticleCard": {
+    "message": "Continue to the next post"
+  },
+  "tooltip_enableNextArticleCard": {
+    "message": "When you reach the end of a post in easy-reading mode, a card for the next post in the list appears below the comments; click it to switch straight to it. It never switches on its own, and is not shown for posts opened from search results or for the last post."
+  },
+  "next_article_label": {
+    "message": "Next post"
+  },
+  "next_article_opening": {
+    "message": "Opening…"
+  },
+  "next_article_mismatch": {
+    "message": "The post that opened is not the expected next one (the list may have changed); staying where PTT put you"
+  },
   "split_unread": {
     "message": "Unread"
   },

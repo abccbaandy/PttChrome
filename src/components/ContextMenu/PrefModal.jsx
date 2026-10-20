@@ -864,6 +864,17 @@ export const PrefModal = ({
                   {i18n("tooltip_enableSplitReading")}
                 </Text>
                 <PrefCheckbox
+                  name="enableNextArticleCard"
+                  checked={values.enableNextArticleCard}
+                  disabled={values.nativeSafeMode}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableNextArticleCard")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_enableNextArticleCard")}
+                </Text>
+                <PrefCheckbox
                   name="enableArticleTools"
                   checked={values.enableArticleTools}
                   onChange={onCheckboxChange}

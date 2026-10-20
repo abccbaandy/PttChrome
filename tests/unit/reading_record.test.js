@@ -81,6 +81,9 @@ describe("決策表", () => {
     ["split-open", "done", "none", "none", "none"],
     ["split-open", "cancel", "none", "none", "none"],
     ["split-open", "fail", "none", "none", "none"],
+    ["next-article", "done", "none", "none", "none"],
+    ["next-article", "cancel", "none", "none", "none"],
+    ["next-article", "fail", "none", "none", "none"],
     // 斷線重連：落在文章 'auto'、落在列表回原處；找不到原文停在列表也回原處。
     ["reconnect-resume", "done", "auto", "origin", "none"],
     ["reconnect-resume", "fail", "none", "origin", "none"],

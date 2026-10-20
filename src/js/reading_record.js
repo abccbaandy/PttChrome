@@ -34,6 +34,15 @@ import { parseStatusRow } from './string_util';
 // 不在表上的功能／結果 ＝ 全部 'none'（未知就不動，寧可停在 PTT 給的位置）。
 const NONE = { article: 'none', list: 'none', boardList: 'none' };
 
+// 好讀文末那張「下一篇」標題卡（next_article.js）佔掉的捲動高度（含上下 margin）；沒顯示
+// ⇒ 0。「捲到文末了沒」要扣掉它：讀者停在最後一則推文、卡片還在視窗下面，也算在文末。
+export function trailingPx(view) {
+  const el = view && view.nextArticleCard;
+  if (!el || el.hidden || typeof window === 'undefined' || !window.getComputedStyle) return 0;
+  const cs = window.getComputedStyle(el);
+  return el.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+}
+
 function cell(article, list, boardList) {
   return {
     article: article || 'none',
@@ -121,6 +130,8 @@ export const RESTORE_TABLE = {
   // 寬螢幕雙欄閱讀（split_reader.js）：點左欄一篇＝aid_navigation.startNum 換文，目的地就是
   // 結果；失敗停在 PTT 給的畫面（原文已經離開，沒有入口回原列）；取消＝一個 byte 都沒送。
   'split-open': { done: NONE, cancel: NONE, fail: NONE },
+  // 讀完接著讀下一篇（next_article.js）：點文末的標題卡＝同一條 startNum 換文，理由同上。
+  'next-article': { done: NONE, cancel: NONE, fail: NONE },
   // 斷線重連後回到原處（reconnect_resume.js）：落在文章 ⇒ 斷線前在文末就黏回文末，
   // 否則原列；落在列表 ⇒ 原處。找不到原文（被刪）停在該板列表 ⇒ 列表回原處。
   // 取消（使用者登入後先動了、deep link 搶先）＝不動。
@@ -218,7 +229,7 @@ ReadingRecord.prototype = {
       atBottom =
         !!er.easyReadingReachedPageEnd &&
         !!disp &&
-        disp.scrollHeight - disp.scrollTop - disp.clientHeight <= slack;
+        disp.scrollHeight - trailingPx(view) - disp.scrollTop - disp.clientHeight <= slack;
     } else if (buf.getRowText) {
       // 原生 pmore：狀態列 100%。
       const status = parseStatusRow(buf.getRowText(buf.rows - 1, 0, buf.cols));

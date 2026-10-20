@@ -1054,6 +1054,21 @@
   "split_unread": {
     "message": "未讀"
   },
+  "options_enableNextArticleCard": {
+    "message": "讀完接著讀下一篇"
+  },
+  "tooltip_enableNextArticleCard": {
+    "message": "好讀文章讀到最後，推文下面會出現列表上下一篇的標題卡，點它就直接換過去讀。不會自己換文；從搜尋結果進的文章、最後一篇不顯示。"
+  },
+  "next_article_label": {
+    "message": "下一篇"
+  },
+  "next_article_opening": {
+    "message": "開啟中…"
+  },
+  "next_article_mismatch": {
+    "message": "開到的不是預期的下一篇（列表可能變動了），停在 PTT 給的文章"
+  },
   "options_enableArticleTools": {
     "message": "文章工具側欄"
   },
