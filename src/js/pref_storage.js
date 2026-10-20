@@ -254,6 +254,9 @@ export const DEFAULT_PREFS = {
   // ＋短邊 < 800px）；on/off 強制。手機模式本身的調整一律是 runtime 覆寫、不寫回
   // prefs（prefs 會同步到其他裝置）。
   mobileLayout: "auto",
+  // 手機版面的字級（px，文章與列表卡片；列數跟著算）。與桌機 fontSize 分開 ——
+  // 那組會跨裝置同步過來。值域與正規化見 mobile_layout.normalizeMobileFontPx。
+  mobileFontSize: 16,
   // PTT 自己畫了 '>' 游標的畫面（列表／選單）不再疊一個閃爍游標 —— 兩個游標同框是
   // 重複資訊。輸入框／編輯器不走 pttbbs 的 cursor_show，閃爍游標照舊顯示，位置資訊
   // 不會消失，所以預設開。判定見 comment_parse.js#hasServerCursorMark。

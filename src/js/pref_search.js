@@ -241,6 +241,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_mobileLayout",
       tooltipKey: "tooltip_mobileLayout",
     },
+    {
+      key: "mobileFontSize",
+      titleKey: "options_mobileFontSize",
+      tooltipKey: "tooltip_mobileFontSize",
+    },
   ]),
   ...inSection("general", "options_cursorHighlight", null, [
     {

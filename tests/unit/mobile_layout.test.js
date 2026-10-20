@@ -5,6 +5,9 @@ import {
   MOBILE_KEYPAD_ROWS,
   MOBILE_MAX_SHORT_SIDE,
   MOBILE_ROW_FONT_PX,
+  MOBILE_FONT_PX_MIN,
+  MOBILE_FONT_PX_MAX,
+  normalizeMobileFontPx,
   mobileTermGeometry,
   keyboardInset,
   overlayKeyboardInset,
@@ -150,6 +153,57 @@ describe("mobileTermGeometry surface 'article'（Phase 3：好讀文章換行）
     expect(g.chh * g.rows + 10).toBeLessThanOrEqual(390 + 1e-9);
     expect(g.chh).toBeLessThanOrEqual(MOBILE_ROW_FONT_PX);
     expect(Math.abs(g.chh * dpr - Math.round(g.chh * dpr))).toBeLessThan(1e-9);
+  });
+});
+
+describe("pref mobileFontSize（C2：手機字級可調，列數跟著算）", () => {
+  const dpr = 2.625;
+
+  test("正規化：沒給／怪值＝預設 16，夾在範圍內，奇數進位成偶數", () => {
+    expect(normalizeMobileFontPx(undefined)).toBe(MOBILE_ROW_FONT_PX);
+    expect(normalizeMobileFontPx("abc")).toBe(MOBILE_ROW_FONT_PX);
+    expect(normalizeMobileFontPx(0)).toBe(MOBILE_ROW_FONT_PX);
+    expect(normalizeMobileFontPx(-3)).toBe(MOBILE_ROW_FONT_PX);
+    expect(normalizeMobileFontPx(4)).toBe(MOBILE_FONT_PX_MIN);
+    expect(normalizeMobileFontPx(99)).toBe(MOBILE_FONT_PX_MAX);
+    expect(normalizeMobileFontPx(17)).toBe(18);
+    expect(normalizeMobileFontPx("20")).toBe(20);
+  });
+
+  test("不給 fontPx ＝原本的 16px 行為（既有使用者零改動）", () => {
+    for (const surface of ["grid", "article", "list", "menu"]) {
+      expect(mobileTermGeometry({ width: 412, height: 812, dpr, surface })).toEqual(
+        mobileTermGeometry({ width: 412, height: 812, dpr, surface, fontPx: MOBILE_ROW_FONT_PX })
+      );
+    }
+  });
+
+  test("字級變大 ⇒ 列數變少、文章與列表字變大；格線畫面仍塞滿 80 欄", () => {
+    // dpr 2：20px 剛好落在裝置像素上（2.625 時會對齊到 19.8，與這條要驗的無關）
+    const dpr = 2;
+    const small = mobileTermGeometry({ width: 412, height: 812, dpr, surface: "article", fontPx: 16 });
+    const big = mobileTermGeometry({ width: 412, height: 812, dpr, surface: "article", fontPx: 20 });
+    expect(big.rows).toBe(Math.floor(812 / 20));
+    expect(big.rows).toBeLessThan(small.rows);
+    expect(big.chh).toBe(20);
+    const list = mobileTermGeometry({ width: 412, height: 812, dpr, surface: "list", fontPx: 20 });
+    expect(list.chh).toBe(20);
+    expect(list.rows).toBe(big.rows);
+    const grid = mobileTermGeometry({ width: 412, height: 812, dpr, surface: "grid", fontPx: 20 });
+    expect(grid.rows).toBe(big.rows);
+    expect((grid.chh / 2) * 80 + 10).toBeLessThanOrEqual(412 + 1e-9);
+  });
+
+  test("字級變小 ⇒ 列數變多，.main 高仍不出視窗", () => {
+    const g = mobileTermGeometry({ width: 412, height: 812, dpr, surface: "article", fontPx: 12 });
+    expect(g.rows).toBe(Math.floor(812 / 12));
+    expect(g.chh * g.rows + 10).toBeLessThanOrEqual(812 + 1e-9);
+  });
+
+  test("大字級在矮螢幕：列數不低於 24，字級讓位給「塞得下」", () => {
+    const g = mobileTermGeometry({ width: 412, height: 500, dpr, surface: "article", fontPx: 28 });
+    expect(g.rows).toBe(24);
+    expect(g.chh * g.rows + 10).toBeLessThanOrEqual(500 + 1e-9);
   });
 });
 

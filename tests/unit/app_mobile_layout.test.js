@@ -190,6 +190,37 @@ describe('App 手機模式：終端機尺寸', () => {
     expect(app.setTermSize.mock.calls.slice(sizeCalls).every(([c, r]) => c === 80 && r === rows)).toBe(true);
   });
 
+  test('pref mobileFontSize：手機上改字級 ⇒ 列數跟著重算、文章字級跟著變；沒變不重套', () => {
+    const app = makeApp('on');
+    app.applyMobileLayout();
+    app.onValuesPrefChange({ ...synced, mobileFontSize: 16 });
+    app._applyMobileGeometry('article');
+    const usable = mobileRowsHeight(750);
+    expect(app.buf.rows).toBe(mobileTermGeometry({ width: 390, height: usable, dpr: 1, fontPx: 16 }).rows);
+    expect(app.view.fixedResize.mock.calls.at(-1)[0]).toBe(16);
+
+    app.onValuesPrefChange({ ...synced, mobileFontSize: 20 });
+    const want = mobileTermGeometry({ width: 390, height: usable, dpr: 1, fontPx: 20 });
+    expect(want.rows).toBeLessThan(mobileTermGeometry({ width: 390, height: usable, dpr: 1 }).rows);
+    expect(app.setTermSize).toHaveBeenLastCalledWith(80, want.rows);
+    // 沿用上一幀的 surface（文章）⇒ 字級就是 20
+    expect(app.view.fixedResize.mock.calls.at(-1)[0]).toBe(20);
+    expect(app.view.redraw).toHaveBeenCalled();
+
+    // 存別的設定（字級沒變）不重排
+    const n = app.view.fixedResize.mock.calls.length;
+    app.onPrefChange('mobileFontSize', 20);
+    expect(app.view.fixedResize.mock.calls.length).toBe(n);
+  });
+
+  test('pref mobileFontSize：桌機不吃它（照 fontSize 20px）', () => {
+    const app = makeApp('off');
+    app.applyMobileLayout();
+    app.onValuesPrefChange({ ...synced, mobileFontSize: 12 });
+    expect(app.view.fixedResize).toHaveBeenLastCalledWith(20);
+    expect(app.setTermSize).toHaveBeenLastCalledWith(80, 37);
+  });
+
   test('Phase 3–4：手機模式關掉 ⇒ 換行版面／卡片一併收掉', () => {
     const app = makeApp('on');
     app.applyMobileLayout();

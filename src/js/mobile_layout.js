@@ -186,6 +186,22 @@ export function inputModeFor({ mobile, softKeyboard }) {
 // 就不會重送 NAWS。
 export const MOBILE_ROW_FONT_PX = 16;
 
+// pref `mobileFontSize`：使用者可調的手機字級（與桌機 fontSize 分開，桌機那組會跨裝置
+// 同步、20px 在手機上太大）。預設＝MOBILE_ROW_FONT_PX。列數跟著它算 ⇒ 改字級會重送
+// NAWS（只在改設定那一下，畫面切換照舊不重送）。同步來的怪值一律夾回範圍；奇數進位
+// 成偶數（與 term_size.calcTermSize 同規則：半形格寬 chh/2 帶 .5px 會對不齊格線，
+// 列數也是照偶數字級算的）。
+export const MOBILE_FONT_PX_MIN = 12;
+export const MOBILE_FONT_PX_MAX = 28;
+export const MOBILE_FONT_PX_STEP = 2;
+
+export function normalizeMobileFontPx(v) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n <= 0) return MOBILE_ROW_FONT_PX;
+  const even = Math.floor((n + 1) / 2) * 2;
+  return Math.min(MOBILE_FONT_PX_MAX, Math.max(MOBILE_FONT_PX_MIN, even));
+}
+
 // 手機模式的終端機幾何。**無視 termSizeMode**（那組 pref 會跨裝置同步，桌機的
 // fixed-font-size 20px ＝ 800px 寬，手機必定被切）。
 //   rows：calcTermSize（欄數恆 80、列數夾在 24..100，見 term_size.js 的 LOCKED）
@@ -204,12 +220,14 @@ export const MOBILE_ROW_FONT_PX = 16;
 // **rows 與 surface 無關** ⇒ 畫面切換不重送 NAWS。'grid'／'menu' 的 mainWidth 為 null（照 80 欄算）。
 export const MOBILE_SURFACES = ['grid', 'article', 'list', 'menu'];
 
-export function mobileTermGeometry({ width, height, dpr, surface }) {
-  const rows = calcTermSize({ height: height, fontSizePx: MOBILE_ROW_FONT_PX }).rows;
+// fontPx：pref mobileFontSize（沒給＝MOBILE_ROW_FONT_PX），決定列數與 'article'／'list' 的字級。
+export function mobileTermGeometry({ width, height, dpr, surface, fontPx }) {
+  const font = normalizeMobileFontPx(fontPx);
+  const rows = calcTermSize({ height: height, fontSizePx: font }).rows;
   const byWidth = (2 * (width - 10)) / TERM_COLS;
   const byHeight = (height - 10) / rows;
   const wide = surface === 'article' || surface === 'list';
-  const raw = Math.max(0, Math.min(wide ? MOBILE_ROW_FONT_PX : byWidth, byHeight));
+  const raw = Math.max(0, Math.min(wide ? font : byWidth, byHeight));
   const d = dpr > 0 ? dpr : 1;
   return {
     cols: TERM_COLS,

@@ -65,8 +65,23 @@ import {
   pruneQuickSearchEntries,
   validateQuickSearchEntry,
 } from "../../js/quick_search";
+import {
+  MOBILE_FONT_PX_MAX,
+  MOBILE_FONT_PX_MIN,
+  MOBILE_FONT_PX_STEP,
+  normalizeMobileFontPx,
+} from "../../js/mobile_layout";
 import { PrefSearchBox } from "./PrefSearchBox";
 import "./PrefModal.css";
+
+const MOBILE_FONT_PX_CHOICES = [];
+for (
+  let px = MOBILE_FONT_PX_MIN;
+  px <= MOBILE_FONT_PX_MAX;
+  px += MOBILE_FONT_PX_STEP
+) {
+  MOBILE_FONT_PX_CHOICES.push({ value: String(px), label: px + " px" });
+}
 
 // 設定搜尋跳轉後「哪一項正在閃」。
 //
@@ -1186,6 +1201,21 @@ export const PrefModal = ({
                   mb="xs"
                   {...anchor("mobileLayout")}
                 />
+                {/* 手機字級：下拉選單而非數字框（手機上不必叫鍵盤，值也只有偶數）。
+                  手機版面關掉時用不到，收起來。 */}
+                {values.mobileLayout !== "off" && (
+                  <Select
+                    label={i18n("options_mobileFontSize")}
+                    description={i18n("tooltip_mobileFontSize")}
+                    name="mobileFontSize"
+                    value={String(normalizeMobileFontPx(values.mobileFontSize))}
+                    allowDeselect={false}
+                    onChange={(val) => onSelectNum("mobileFontSize", val)}
+                    data={MOBILE_FONT_PX_CHOICES}
+                    mb="xs"
+                    {...anchor("mobileFontSize")}
+                  />
+                )}
               </PrefSection>
               {/* 游標所在列：滑鼠與鍵盤共用同一條渲染管線與同一組樣式，所以獨立成
                 一區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。滑鼠那條
