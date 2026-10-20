@@ -18,18 +18,20 @@
   text-align: center;
 }
 
-/* 進度／結果卡：右下角，不擋畫面中央的終端機。 */
+/* 進度／結果卡：右下角，不擋畫面中央的終端機。底部讓開終端機的底部 inset（手機的
+   底部工具列＋軟鍵盤，App._onVisualViewport 寫 --term-bottom-inset；工具列 z-index
+   比卡片高，不讓開就蓋住卡片下緣的按鈕）。 */
 .ImageUploadCard {
   position: fixed;
   right: 16px;
-  bottom: 16px;
+  bottom: calc(var(--term-bottom-inset, 0px) + 16px);
   width: 340px;
   max-width: calc(100vw - 32px);
   z-index: 1100;
 }
 
 .ImageUploadCard--notice {
-  bottom: 16px;
+  bottom: calc(var(--term-bottom-inset, 0px) + 16px);
 }
 
 .ImageUploadCard__Urls {
