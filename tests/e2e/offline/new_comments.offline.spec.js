@@ -61,6 +61,29 @@ test.describe('新推文標記', () => {
     const rowBox = await waitRectStable(page, '#mainContainer [type="bbsrow"].newCommentsStart');
     const prevBottom = await mark.evaluate((el) => el.previousElementSibling.getBoundingClientRect().bottom);
     expect(rowBox.top - prevBottom).toBeGreaterThan(5);
+    // 小字看得清：字級不低於列字的 0.7、對黑底對比 ≥7:1，整行小字也落在留出來的空白裡
+    // （推文間距 commentSpacing 預設開：曾把留白蓋回 0.55em，小字疊到上一列的字上）。
+    const label = await mark.evaluate((el) => {
+      const s = getComputedStyle(el, '::before');
+      const ch = el.querySelector('span[class]') || el;
+      return {
+        ratio: parseFloat(s.fontSize) / parseFloat(getComputedStyle(ch).fontSize),
+        rgb: s.color.match(/\d+/g).slice(0, 3).map(Number),
+        // ::before 的尺寸是未縮放的 CSS px，gap 是畫面上的（.main 可能整體 scale）。
+        height:
+          ((parseFloat(s.height) + parseFloat(s.marginBottom) + parseFloat(s.borderBottomWidth)) *
+            el.getBoundingClientRect().height) /
+          el.offsetHeight,
+        gap: el.getBoundingClientRect().top - el.previousElementSibling.getBoundingClientRect().bottom,
+      };
+    });
+    expect(label.ratio).toBeGreaterThanOrEqual(0.7);
+    const lum = label.rgb
+      .map((c) => c / 255)
+      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    const contrast = (0.2126 * lum[0] + 0.7152 * lum[1] + 0.0722 * lum[2] + 0.05) / 0.05;
+    expect(contrast).toBeGreaterThanOrEqual(7);
+    expect(label.height).toBeLessThan(label.gap);
     // 讀完：紀錄更新成這一次的推文數，標線這一次照舊。
     await expect.poll(() => stored(page)).toBe(article.meta.commentCount);
 
