@@ -78,6 +78,14 @@ describe("列的同作者高亮", () => {
     expect(container.querySelector(".commentBySelf").textContent).toBe("wowbenny");
   });
 
+  test("提到我（mentionsSelf）→ 外層 bbsrow 掛 mentionsSelf class，不包任何文字", () => {
+    const { container } = mountRow({ chars: chars("PU wowbenny: hi"), row: 0, mentionsSelf: true });
+    expect(bbsrow(container).classList.contains("mentionsSelf")).toBe(true);
+    expect(container.querySelector(".commentBySelf")).toBeNull();
+    const plain = mountRow({ chars: chars("PU wowbenny: hi"), row: 1 });
+    expect(bbsrow(plain.container).hasAttribute("class")).toBe(false);
+  });
+
   test("no author range → no commentByAuthor span", () => {
     const { container } = mountRow({ chars: chars("PU wowbenny: hi"), row: 0 });
     expect(container.querySelector(".commentByAuthor")).toBeNull();

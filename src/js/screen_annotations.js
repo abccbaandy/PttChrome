@@ -789,6 +789,10 @@ export function computeAnnotations(
               first,
               {
                 ...firstAnn,
+                // 合併塊是一個節點：塊裡任一則提到我 ⇒ 整塊左緣標示。
+                ...(run.rows.some((r) => result[r] && result[r].mentionsSelf)
+                  ? { mentionsSelf: true }
+                  : null),
                 mergeCommentRun: {
                   chars: merged.chars,
                   contentStart: merged.contentStart,

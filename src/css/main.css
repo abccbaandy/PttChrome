@@ -1119,6 +1119,16 @@ span {
   background-color: #1d4a32;
 }
 
+/* 推文提到我：同一個綠，只在該列（合併塊／卡片＝整塊）左緣畫一條細色條，不填底色、
+   不染文字（inset shadow 不佔版面，格線不位移）。 */
+.mentionsSelf {
+  box-shadow: inset 3px 0 0 #3f9a63;
+}
+/* 手機推文卡片自己有底部分隔線（同一個 box-shadow 屬性）⇒ 兩條一起列。 */
+.main.mobileReflow #mainContainer span[type="bbsrow"].commentCard.mentionsSelf {
+  box-shadow: inset 3px 0 0 #3f9a63, inset 0 -1px 0 #333;
+}
+
 /* Pusher highlight (Enhanced Add-on): click a comment row to tint EVERY row by the
    same pusher. Applied to the whole bbsrow (#mainContainer > span is display:block
    → a full-width band); transparent char spans let the navy show through. */

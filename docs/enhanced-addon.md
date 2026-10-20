@@ -75,6 +75,10 @@
   `.commentCardId` 同 class）。「我」優先於原PO。帳號＝`view._selfId`：`_renderScreenLines` 開頭在 pageState＝選單時
   讀底列 `string_util.parseStatusUserid`（`menu.c#show_status` 新舊兩格式，手動登入也拿得到），`App.onConnect` 清空；
   開關關掉時 `enhance.selfId=null`。`selfId` 在 `annotationsKey` 裡。上班模式 `#4b5563`。
+- **提到我**（同一個開關）：內容出現自己帳號（`comment_parse.mentionsUser`：不分大小寫、前後不是英數；自己推的、
+  被藏的不算）⇒ annotation `mentionsSelf` → `bbsrow`／手機卡片掛 `.mentionsSelf`（左緣 3px 綠色 inset shadow，
+  不填底、不染字、不佔版面）。新格式推文標在含那段字的 `│` 內容列；合併塊任一則提到 ⇒ 整塊標。文章工具側欄的
+  「提到你」用同一支判準（`article_tools.analyzeArticle` 的 `mentions`）。
 
 ## 點選推文者高亮（pusher highlight，整列）
 - 左鍵點推文列的**可點區**（預設內容文字起訖，使用者可改，見 `docs/mouse.md`「點擊範圍」）→ 高亮該推文者**本篇所有推文列**
