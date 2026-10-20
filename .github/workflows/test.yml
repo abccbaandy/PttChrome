@@ -318,6 +318,16 @@ jobs:
       - name: Runner resources
         run: node scripts/ci-resource-monitor.mjs start
 
+      # 系統映像（~1 GB）每輪都由 emulator-runner 的 sdkmanager 現抓，下載回來的 zip 偶爾是壞的
+      # （`Error on ZipFile unknown archive`，模擬器根本沒開機就紅）。先從 cache 還原：sdkmanager
+      # 看到目錄裡的 package.xml 就當已安裝、不再下載。key 跟著下面的 api-level／target／arch。
+      # 路徑是 ubuntu runner 的 ANDROID_HOME（with 裡讀不到機器環境變數）。
+      - name: Cache Android system image
+        uses: actions/cache@v6
+        with:
+          path: /usr/local/lib/android/sdk/system-images/android-34/google_apis/x86_64
+          key: android-sysimg-34-google_apis-x86_64-v1
+
       # --no-boot：模擬器由 emulator-runner 開（序號 emulator-5554，pickEmulatorSerial 自己挑到）。
       - name: Android e2e (emulator)
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
