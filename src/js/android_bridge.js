@@ -28,7 +28,12 @@
 //   'badClientId'／'failed'（其餘，含 Google Cloud 沒註冊 Android OAuth client 的 developer error）。
 // googleSignOut：CredentialManager.clearCredentialState，下次登入才會重新讓使用者選帳號。
 //
+// config.restored：true ＝這一頁是 renderer 被回收（或整個 process 被砍、系統還原）後重建的，
+//   reconnect_resume.js 接回背景前存的閱讀位置。
+//
 // 原生 → 網頁的單向通知（window 上的 CustomEvent，由原生 evaluateJavascript 發出）：
+//   'pttandroid:stop'    App 切到背景（onStop）。reconnect_resume.js 趁這時把閱讀位置存進
+//                        localStorage（背景裡 renderer 被回收時網頁沒機會收尾）。
 //   'pttandroid:ime'  detail: { inset }  軟鍵盤蓋住 WebView 底部的高度（CSS px）。
 //   APK 刻意不讓鍵盤把 WebView 縮小（那是 layout resize ⇒ 改列數、重送 NAWS，
 //   docs/mobile.md「軟鍵盤蓋住底列」），所以 visualViewport 量不到鍵盤，改由原生告知。
@@ -131,6 +136,15 @@ export function androidNotify({ title, body, tag }) {
   requestAndroid('notify', { title, body, tag }).catch(() => null);
   return true;
 }
+
+// 這個頁面是 renderer 被回收／process 被砍之後換上的（原生注入 config.restored）。
+export function androidRestored() {
+  const c = config();
+  return !!(c && c.restored);
+}
+
+// App 切到背景（原生 onStop 發）：renderer 隨時可能被回收，該存的先存。
+export const STOP_EVENT = 'pttandroid:stop';
 
 export const IME_EVENT = 'pttandroid:ime';
 let imeInset = 0;

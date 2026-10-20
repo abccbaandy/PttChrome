@@ -134,4 +134,4 @@ WebView  https://abccbaandy.github.io/PttChrome/
 | 回前景黑畫面數秒 | 成因 CONFIRMED 非回收（使用者實測：恢復後停在原畫面）＝renderer 活著但出幀慢。對策 `offscreenPreRaster`＋PixelCopy 快照遮罩（`MainActivity` onPause 拍／onStart 蓋／visual state callback 後掀，上限 5s），效果 `unknown` 待實機；`adb logcat -s PttChromeApp` 看 `away=`／`firstFrame=`。真回收會跳 Toast |
 | 真機：雲端同步 Google 登入 | CONFIRMED（2026-10 實機：原生帳戶選單登入、雲端設定還原） |
 | 真機：App Check（reCAPTCHA Enterprise）在 WebView 拿得到 token | CONFIRMED（同上：Firestore 讀寫成功） |
-| renderer 被系統回收 | 已處理成「重建 WebView 重新連線」；網頁狀態會丟。未來可做「上游保留＋重接後 Ctrl+L」 |
+| renderer 被系統回收 | 重建 WebView 重新連線，登入後回到原處：`onStop` 發 `pttandroid:stop` ⇒ `reconnect_resume.saveSnapshot` 把「斷線的話要回哪」存進 localStorage（`SNAPSHOT_KEY`）；重建時 config 帶 `restored: true`（`onRenderProcessGone`，以及 process 被砍、系統還原時的 `savedInstanceState`）⇒ 開機接回、登入回主功能表後照斷線重連那條出發。不是重建的開機一律丟掉存檔；12 小時以上不接；pref `reconnectResume` 關掉不存不接。守護 `reconnect_resume_renderer.test.js`。真機 `unknown`。未來可做「上游保留＋重接後 Ctrl+L」 |
