@@ -199,6 +199,13 @@ function blankListCursorMark(row) {
   }
 }
 
+// 底部浮動提示離底的距離：讓開終端機的底部 inset（手機的底部工具列＋safe-area＋軟鍵盤，
+// App._onVisualViewport 寫 --term-bottom-inset）。工具列的 z-index 比提示高，不讓開就整個
+// 被蓋住；軟鍵盤只縮 visual viewport，position:fixed 的輸入框會落在鍵盤後面。
+function aboveBottomInset(px) {
+  return 'bottom:calc(var(--term-bottom-inset, 0px) + ' + px + 'px);';
+}
+
 export function TermView() {
   //new pref - start
   this.bbsWidth = 0;
@@ -2121,7 +2128,7 @@ TermView.prototype = {
       // 這個提示在 e2e 裡只能靠「body 底下最後一個沒有 id 的 div」定位。
       el.className = 'ListHint';
       el.style.cssText =
-        'position:fixed;left:50%;bottom:48px;transform:translateX(-50%);' +
+        'position:fixed;left:50%;' + aboveBottomInset(48) + 'transform:translateX(-50%);' +
         'padding:6px 14px;' +
         'border-radius:6px;font-size:14px;z-index:2000;pointer-events:none;' +
         'transition:opacity .4s;opacity:0;max-width:80%;';
@@ -2152,7 +2159,7 @@ TermView.prototype = {
     if (on && !el) {
       el = document.createElement('div');
       el.style.cssText =
-        'position:fixed;right:16px;bottom:16px;background:rgba(20,20,20,.85);' +
+        'position:fixed;right:16px;' + aboveBottomInset(16) + 'background:rgba(20,20,20,.85);' +
         'color:#ffd;padding:4px 12px;border-radius:12px;font-size:13px;' +
         'z-index:2000;pointer-events:none;';
       el.textContent = '讀取中…';
@@ -2170,7 +2177,7 @@ TermView.prototype = {
     if (!el) {
       el = document.createElement('div');
       el.style.cssText =
-        'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);' +
+        'position:fixed;left:50%;' + aboveBottomInset(88) + 'transform:translateX(-50%);' +
         'background:rgba(20,40,70,.92);color:#fff;padding:8px 16px;' +
         'border-radius:6px;font-size:14px;z-index:2000;pointer-events:none;' +
         'max-width:80%;';
@@ -2222,7 +2229,7 @@ TermView.prototype = {
     if (this._listInputWrap) this._listInputWrap.remove();
     var wrap = document.createElement('div');
     wrap.style.cssText =
-      'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);' +
+      'position:fixed;left:50%;' + aboveBottomInset(88) + 'transform:translateX(-50%);' +
       'background:rgba(20,40,70,.95);color:#fff;padding:10px 16px;' +
       'border-radius:6px;font-size:14px;z-index:2001;display:flex;' +
       'align-items:center;gap:8px;';

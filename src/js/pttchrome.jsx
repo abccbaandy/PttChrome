@@ -18,6 +18,7 @@ import { UnreadJump } from './unread_jump';
 import { MarkAllRead } from './mark_all_read';
 import { BoardMarkRead } from './board_mark_read';
 import { installPullRefresh } from './pull_refresh';
+import { installPullNextArticle } from './pull_next_article';
 import { LongPushSession } from './long_push_session';
 import { LogoutSession } from './logout_session';
 import { BoardNoteSkip } from './board_note_skip';
@@ -281,6 +282,8 @@ export const App = function() {
   this.commentBar = new CommentBar(this);
   // 讀完接著讀下一篇（好讀文末的下一篇標題卡，next_article.js）。
   this.nextArticle = new NextArticle(this);
+  // 手機讀到文末再往上拉過門檻 ⇒ 開下一篇（只在 mobile 版面起作用，被動監聽）。
+  this._uninstallPullNextArticle = installPullNextArticle(this);
   // 水球／系統訊息收件匣（這次連線收到的水球與廣播，鈴鐺打開看；message_inbox.js）。
   this.messageInbox = new MessageInbox(this);
   // 新推文標記（重開讀過的文章，上次讀完之後的推文前面一條灰線；new_comments.js）。
@@ -995,8 +998,11 @@ App.prototype._onVisualViewport = function() {
   document.documentElement.style.setProperty('--safe-bottom', chrome.safeBottom + 'px');
   if (this.view && this.view.setTopInset)
     this.view.setTopInset(this.mobile ? chrome.top : 0);
+  var bottomInset = this.mobile ? chrome.bottom : inset;
+  // 底部浮動提示（term_view 的 flashListHint／讀取中／T2 輸入框）靠它讓開工具列與鍵盤。
+  document.documentElement.style.setProperty('--term-bottom-inset', bottomInset + 'px');
   if (this.view && this.view.setKeyboardInset)
-    this.view.setKeyboardInset(this.mobile ? chrome.bottom : inset);
+    this.view.setKeyboardInset(bottomInset);
 };
 
 // 瀏海／手勢列的 safe-area（index.html 的 viewport-fit=cover 才會不是 0）。JS 讀不到

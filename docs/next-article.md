@@ -20,10 +20,15 @@
 - **線路忙就不送**：`serializedOpHint` 有值或 CommandQueue 不閒 ⇒ 不送；換文途中卡片顯示「開啟中…」，45 秒看門狗。
 - e2e：`installReplay` 預設把 `enableNextArticleCard` 關掉（累積頁尾端多一張卡片、改變捲到底的位置），live 的自動登入 prefs 也關掉；只有 `next_article.offline.spec.js` 以 `bootOffline(page, ptt, { nextArticle: true })` 打開。
 
-## 還沒做
+## 手機：捲到底再往上拉（`pull_next_article.js`）
 
-- 「捲到底後再往下拉過一段門檻才開」：L 同意的版本是「點標題卡**或**往下拉過門檻」，目前只有點。要做的話接原生捲動的 overscroll（`.main` 是 `overscroll-behavior-y: contain`），不准自己模擬捲動慣性。
+L 同意的版本是「點標題卡**或**拉過門檻」。手機上的「往下捲」是手指往上推，所以這裡叫「往上拉」。
+
+- **為什麼用觸控事件**：跟下拉重整（`docs/screen-refresh.md`）是同一個例外。瀏覽器的 overscroll 沒有任何入口告訴頁面「使用者在底部又拉了一段」，而觸控事件有完整相位（手指還在／放開了），所以能做到「拉過門檻、放手才生效」「拉回去就取消」。監聽是被動的（`passive`＋capture），從不 `preventDefault`，所以捲動、Android 原生的 overscroll 拉伸效果、點擊都照舊，我們只在放手那一下決定要不要開。**不碰滾輪**：WheelEvent 沒有相位（觸控板慣性的尾巴分不出使用者是不是還在拉），桌機只有點卡片。
+- **起手條件**：手機版面、不在選字模式、沒有 modal、單指、卡片顯示中且不在開啟中，而且觸控點底下的 `.main` **已經捲到底**（`atScrollBottom`，內容比視窗短也算）。從工具列、App Bar、sheet、對話框、輸入框或卡片本身起手都不算（點卡片走 click）。
+- **門檻**：直接用下拉重整的 `pullState`（阻尼 0.5、門檻 64px、斜拉取消），方向鏡像。拉的途中卡片的字跟著變：沒過門檻是「下一篇・再往上拉」，過了是「放開開啟下一篇」（`next_article.setPull`，卡片掛 `data-pull`）。放手時過門檻才 `open()`，沒過、拉回去、斜拉、中途捲離底部都只把字還原。
+- 開關沿用 `enableNextArticleCard`：卡片不出現，拉的手勢也就不存在。
 
 ## 測試
 
-unit：`next_article.test.js`（下一列的認法、何時出現、換文與失敗、落地比對、忙碌、看門狗、閱讀紀錄、預設與安全模式、搜尋結果的快照與換文）、`aid_navigation.test.js` 的 `startSubNum`、`next_article_dom.test.js`（真瀏覽器：卡片的位置、點擊不外洩、`trailingPx` 與 atBottom）。offline e2e：`next_article.offline.spec.js`（卡片排在文末之後、真滑鼠點卡片只送 `s<板>⏎`、搜尋結果的卡片送 `←` 再跳結果裡的編號、最後一篇與 pref 關不出現）。
+unit：`next_article.test.js`（下一列的認法、何時出現、換文與失敗、落地比對、忙碌、看門狗、閱讀紀錄、預設與安全模式、搜尋結果的快照與換文）、`aid_navigation.test.js` 的 `startSubNum`、`next_article_dom.test.js`（真瀏覽器：卡片的位置、點擊不外洩、`trailingPx` 與 atBottom）、`pull_next_article.test.js`（往上拉的起手條件、門檻、拉回取消、卡片字樣）。offline e2e：`next_article.offline.spec.js`（卡片排在文末之後、真滑鼠點卡片只送 `s<板>⏎`、搜尋結果的卡片送 `←` 再跳結果裡的編號、最後一篇與 pref 關不出現）、`mobile_next_article.offline.spec.js`（offline-mobile，CDP 真觸控：沒過門檻不送鍵、拉過門檻放手送 `s<板>⏎`）。

@@ -1650,6 +1650,14 @@ body.mobile-layout {
   border-color: #888;
   background: rgba(255, 255, 255, 0.04);
 }
+/* 手機往上拉（pull_next_article.js）：過門檻時框變亮，放手就開。 */
+#nextArticleCard[data-pull="armed"] {
+  border-color: #aaa;
+  background: rgba(255, 255, 255, 0.06);
+}
+#nextArticleCard[data-pull="armed"] .nextArticleLabel {
+  color: #ddd;
+}
 #nextArticleCard[data-pending] {
   cursor: progress;
   opacity: 0.6;

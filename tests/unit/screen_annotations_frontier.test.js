@@ -194,7 +194,9 @@ describe("前沿快路徑：逐頁 append 與全量重算逐列相同", () => {
         // 正向對照：快路徑真的有走到（推文區開始之後幾乎每一幀都該走）
         expect(fastFrames).toBeGreaterThan(frames * 0.5);
         expect(maxTail, "快路徑每幀重算的尾段應是常數級").toBeLessThan(120);
-      });
+        // 對照組每幀都全量重算（刻意 O(n²)）：單跑 ~1–2s，整批 unit 吃滿 CPU 時量過 6.4s，
+        // 預設 5000ms 會偶發紅。純計算、無等待，給明確預算。
+      }, 30000);
     }
   }
 });

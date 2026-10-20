@@ -300,6 +300,7 @@ describe('App 手機模式：軟鍵盤與 visualViewport', () => {
     vi.unstubAllGlobals();
     delete document.documentElement.clientHeight;
     document.documentElement.style.removeProperty('--kb-inset');
+    document.documentElement.style.removeProperty('--term-bottom-inset');
   });
 
   const makeApp = () => {
@@ -330,6 +331,22 @@ describe('App 手機模式：軟鍵盤與 visualViewport', () => {
   test('沒有軟鍵盤時終端機也排在工具列上方', () => {
     const app = makeApp();
     expect(app.view.setKeyboardInset).toHaveBeenLastCalledWith(MOBILE_TOOLBAR_PX);
+  });
+
+  // 底部浮動提示（term_view 的 flashListHint／讀取中／T2 輸入框）靠它讓開工具列與軟鍵盤
+  // （bottom_overlays_inset.test.js）。
+  test('--term-bottom-inset ＝ 終端機的底部 inset；離開手機模式歸零', () => {
+    const app = makeApp();
+    const v = () => document.documentElement.style.getPropertyValue('--term-bottom-inset');
+    expect(v()).toBe(MOBILE_TOOLBAR_PX + 'px');
+    app.toggleSoftKeyboard();
+    setVV(480);
+    expect(v()).toBe(320 + MOBILE_TOOLBAR_PX + 'px');
+    app.toggleSoftKeyboard();
+    setVV(800);
+    app.mobileLayoutMode = 'off';
+    app.applyMobileLayout();
+    expect(v()).toBe('0px');
   });
 
   test('頂部 App Bar：終端機排在它下面；離開手機模式歸零（桌機零改動）', () => {

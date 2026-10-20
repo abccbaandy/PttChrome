@@ -15,6 +15,9 @@
 import { render, screen, act, fireEvent } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import ContextMenu from "../../src/components/ContextMenu";
+// ContextMenu 以 React.lazy 載長推文輸入框：先在檔案層級載好，否則第一條開輸入框的 case
+// 要在 findByText 的 1000ms 內付冷載入（整批 unit 吃滿 CPU 時量過 >1s，偶發紅）。
+import "../../src/components/ContextMenu/LongPushModal";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
