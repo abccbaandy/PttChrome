@@ -170,20 +170,35 @@ describe("markReadUnreadBefore 的序列", () => {
     expect(enqueued[0].keys).toBe("105\r");
   });
 
-  test("跳轉落地後才切原生並送 v", () => {
+  // 回歸（錄製檔 ptt-debug-20261020-161646）：舊版跳轉一落地就切原生鏡像，v 的
+  // prompt、w⏎ 的回應全畫在使用者眼前，之後還要空等靜置探針才切回好讀。
+  test("跳轉落地後仍凍著（不切原生）才送 v", () => {
     const { s, enqueued } = makeSession();
     s.markReadUnreadBefore(105);
     enqueued[0].onDone();
-    expect(s._renderMode).toBe("native");
+    expect(s._renderMode).toBe("frozen");
+    expect(s.state).toBe("functionMode");
     expect(enqueued).toHaveLength(2);
     expect(enqueued[1].kind).toBe("mark-read-prompt");
     expect(enqueued[1].keys).toBe("v");
   });
 
-  test("真游標已在該列 → 省掉跳轉腿，直接送 v", () => {
+  // 同步腿失敗＝真游標不在目標那篇：照送 v → w⏎ 就是拿錯的文章當界線。
+  test("跳轉失敗 → 不送 v，顯性降級原生", () => {
+    const { s, sent, enqueued, hints } = makeSession();
+    s.markReadUnreadBefore(105);
+    enqueued[0].onFail("timeout");
+    expect(stepOf(enqueued, "mark-read-prompt")).toBeUndefined();
+    expect(sent).toEqual([]);
+    expect(s._renderMode).toBe("native");
+    expect(hints.join()).toContain("逾時");
+  });
+
+  test("真游標已在該列 → 省掉跳轉腿，直接送 v（照樣凍住畫面）", () => {
     const { s, enqueued } = makeSession();
     s._serverNum = 103;
     expect(s.markReadUnreadBefore(103)).toBe(true);
+    expect(s._renderMode).toBe("frozen");
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0].kind).toBe("mark-read-prompt");
     expect(enqueued[0].keys).toBe("v");
@@ -238,12 +253,26 @@ describe("markReadUnreadBefore 的序列", () => {
     s.markReadUnreadBefore(103);
     stepOf(enqueued, "mark-read-prompt").onDone(true);
     const w = stepOf(enqueued, "mark-read-apply");
-    expect(w.expect(null, facts())).toBe(true); // 任何 settle 都是回應
+    expect(w.expect(null, facts())).toBe(true); // FULLUPDATE 的列表＝落地
     w.onDone(true);
     const last = hints[hints.length - 1];
     expect(last).toContain("103");
     expect(last).toContain("已讀");
     expect(last).toContain("未讀");
+  });
+
+  // 打字回顯那一幀 prompt 還在：把它當落地，凍結交易就會在 prompt 上收尾（落點
+  // 認不出 ⇒ 白白切原生）。拒絕的 vmsg 畫在底列、prompt 那一列還留著 ⇒ 要另外認。
+  test("w 的 expect：回顯幀（prompt 還在）不算落地；拒絕句算", () => {
+    const { s, enqueued } = makeSession();
+    s._serverNum = 103;
+    s.markReadUnreadBefore(103);
+    stepOf(enqueued, "mark-read-prompt").onDone(true);
+    const w = stepOf(enqueued, "mark-read-apply");
+    expect(w.expect(null, facts({ [PROMPT_ROW]: PROMPT_TEXT + "w" }))).toBe(false);
+    expect(
+      w.expect(null, facts({ [PROMPT_ROW]: PROMPT_TEXT + "w", 23: REJECT_TEXT })),
+    ).toBe(true);
   });
 
   test("PTT 拒絕（時間戳不能當參考點）→ 提示不可謊稱已設定", () => {
@@ -259,17 +288,31 @@ describe("markReadUnreadBefore 的序列", () => {
     expect(last).not.toContain("已將第");
   });
 
-  test("完成後停在原生鏡像，hold 是 'passthrough'（＝之後由靜置探針自動回好讀）", () => {
-    // 已讀標記全變 ⇒ 累積 buffer 過時，回來本來就該 rebuild；所以這裡只驗
-    // 「落地當下仍是原生鏡像、而且掛的是可自動解除的 hold」。真正的回復由
-    // resume-probe 負責（tests/unit/list_native_resume.test.js）。
+  // 落地即回好讀的整段（真實畫面＋rebuild）在 list_mark_read_viewport.test.js；
+  // 這裡守退路：落點認不出（拒絕的 vmsg、半繪）就跟舊行為一樣停在原生鏡像，
+  // 掛可自動解除的 hold，之後交給靜置探針（tests/unit/list_native_resume.test.js）。
+  test("落點認不出 → 停在原生鏡像，hold 是 'passthrough'", () => {
+    const { s, enqueued, hints } = makeSession();
+    s._serverNum = 103;
+    s.markReadUnreadBefore(103);
+    stepOf(enqueued, "mark-read-prompt").onDone(true);
+    const w = stepOf(enqueued, "mark-read-apply");
+    w.expect(null, facts({ 23: REJECT_TEXT }));
+    w.onDone(true);
+    expect(s._renderMode).toBe("native");
+    expect(s._holdReason).toBe("passthrough");
+    // 停在原生 ⇒ 提示要說（成功落地回好讀時才省掉這句）。
+    expect(hints[hints.length - 1]).toContain("已切至原生");
+  });
+
+  test("w⏎ 沒回應（onFail）→ 不留在凍結畫面，切原生鏡像", () => {
     const { s, enqueued } = makeSession();
     s._serverNum = 103;
     s.markReadUnreadBefore(103);
     stepOf(enqueued, "mark-read-prompt").onDone(true);
-    stepOf(enqueued, "mark-read-apply").onDone(true);
+    stepOf(enqueued, "mark-read-apply").onFail("timeout");
     expect(s._renderMode).toBe("native");
-    expect(s._holdReason).toBe("passthrough");
+    expect(s.state).toBe("functionMode");
   });
 });
 

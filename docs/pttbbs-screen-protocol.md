@@ -874,6 +874,8 @@ server 送的是編碼後的 ANSI，client 看不到 flag，只看得到結果�
 「設為全部已讀」（`src/js/mark_all_read.js`，右鍵選單／手機「更多」）走同一個 prompt 的 `v` 分支：
 `v` → 等 prompt → `v⏎` ⇒ `brc_toggle_all_read(currbid, 1)`。該分支**不看** `fhdr`，游標在哪一篇都一樣
 （仍需有一篇可當 needitem），所以不送游標同步以外的跳號；沒有拒絕路徑（不像 `w` 的 `vmsg`）。
+兩者在列表好讀時都是凍結交易、step 3 的 FULLUPDATE 落地即回好讀（`docs/easy-reading-list.md`「落地即回好讀」）：
+step 2 的判定＝prompt 消失（打字回顯那一幀 prompt 還在）**或**出現 `vmsg` 拒絕句（`vmsg` 畫在底列，prompt 那一列還留著）。
 守護 `tests/unit/mark_all_read.test.js`。
 
 **看板列表的 `v` 是另一個指令**（`board.c#board_cmd_mark_read`，`boardlist_cmds` 的 `'v'`／`'V'`）：

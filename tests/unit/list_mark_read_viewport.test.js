@@ -1,10 +1,12 @@
 // @unit-env browser
 // 右鍵「前已讀後未讀」做完回到好讀列表：閱讀進度（視口頂端那一列）必須還原。
 //
-// 為什麼會丟：markReadUnreadBefore 走原生 passthrough → _enterFunctionMode 清掉
-// _boardName → 靜置探針 resume 一律 ['resume-buffer','rebuild'] → _resumeBuffer／
-// _seedAnchors 都改採 **PTT 分頁的視窗頂端** 當 _topNum。而 rebuild 後的緩衝只有
-// 落點那一頁，原本的頂端常常在上一頁 ⇒ 就算想還原也找不到，要等往上補頁。
+// 為什麼會丟：markReadUnreadBefore 落地後一律 resume-buffer + rebuild（已讀標記全變）
+// → _resumeBuffer／_seedAnchors 都改採 **PTT 分頁的視窗頂端** 當 _topNum。而 rebuild
+// 後的緩衝只有落點那一頁，原本的頂端常常在上一頁 ⇒ 就算想還原也找不到，要等往上補頁。
+//
+// 另一半（錄製檔 ptt-debug-20261020-161646）：落地當下就要回好讀。舊版完成後切原生
+// 鏡像、空等靜置探針 250ms 才切回，使用者看到畫面翻面兩次、整段體感超過一秒。
 //
 // 「前已讀後未讀」只改已讀旗標、不動編號空間與看板 ⇒ 舊錨仍然有效（同 N6「退文
 // 不得動捲動錨」）。條件：同板＋真游標仍停在發起的那一篇。
@@ -45,9 +47,13 @@ function makeSession({
   const scrollWrites = [];
   let scrollTop = 0;
   let s = null;
+  const native = { shown: 0 };
   const view = {
     hideCursor() {},
-    showCursor() {},
+    // 原生鏡像才會把終端機游標叫出來（_enterFunctionMode）⇒ 計數＝翻到原生的次數。
+    showCursor() {
+      native.shown++;
+    },
     resetListAccumulation() {},
     setListLoading() {},
     flashListHint() {},
@@ -115,17 +121,19 @@ function makeSession({
   s._selectedNum = 350026;
   s._serverNum = 350026;
   scrollTop = (topNum - 350000) * ROW_H;
-  return { s, enqueued, scrollWrites, screen, termBuf, boardName };
+  return { s, enqueued, scrollWrites, screen, termBuf, boardName, native };
 }
 
-// 走完 v → w⏎ 兩步，停在原生鏡像（hold='passthrough'）。
-function runMarkRead(h, num) {
+// 走完 v → w⏎ 兩步。w⏎ 的落地幀＝當下畫面（真實 C_Chat 列表頁，FULLUPDATE 之後）。
+// beforeLanding：在 server 回應之前改畫面（例如落點游標不在發起那篇）。
+function runMarkRead(h, num, beforeLanding) {
   expect(h.s.markReadUnreadBefore(num)).toBe(true);
   h.enqueued.find((c) => c.kind === "mark-read-prompt").onDone(true);
+  expect(h.s._renderMode).toBe("frozen");
+  if (beforeLanding) beforeLanding();
   const w = h.enqueued.find((c) => c.kind === "mark-read-apply");
-  w.expect(null, { rowTexts: [], rows: 24 });
+  expect(w.expect(null, h.s._collectFacts(null))).toBe(true);
   w.onDone(true);
-  expect(h.s._renderMode).toBe("native");
 }
 
 beforeEach(() => {
@@ -152,11 +160,40 @@ describe("前已讀後未讀 → 回好讀時還原閱讀進度", () => {
     expect(f.cursorRowNum).toBe(350026);
   });
 
+  test("w⏎ 落地當下就回好讀：全程不翻到原生、不等靜置探針", () => {
+    const h = makeSession();
+    const before = h.enqueued.length;
+    runMarkRead(h, 350026); // 沒有推進任何計時器
+    expect(h.s.state).toBe("active");
+    expect(h.s._renderMode).toBe("buffer");
+    expect(h.native.shown).toBe(0);
+    // rebuild 已經開始補頁（找回閱讀進度的那一頁）。
+    expect(h.enqueued.length).toBeGreaterThan(before + 2);
+  });
+
+  test("pref 關掉自動回好讀 ⇒ 舊行為：完成後停在原生，不自己回來", () => {
+    window.localStorage.setItem(
+      PREF_KEY,
+      JSON.stringify({
+        values: { enableEasyReadingList: true, enableListNativeAutoResume: false },
+      })
+    );
+    const h = makeSession();
+    expect(h.s.markReadUnreadBefore(350026)).toBe(true);
+    expect(h.s._renderMode).toBe("native");
+    h.enqueued.find((c) => c.kind === "mark-read-prompt").onDone(true);
+    const w = h.enqueued.find((c) => c.kind === "mark-read-apply");
+    w.expect(null, h.s._collectFacts(null));
+    w.onDone(true);
+    vi.advanceTimersByTime(1000);
+    expect(h.s._renderMode).toBe("native");
+    expect(h.s.state).toBe("functionMode");
+  });
+
   test("錨在落點頁之上：等補頁把它帶進來那一幀才還原，不被寫死成 PTT 分頁頂端", () => {
     const h = makeSession();
-    runMarkRead(h, 350026);
     const before = h.enqueued.length;
-    vi.advanceTimersByTime(300); // 靜置探針 → resume-buffer + rebuild
+    runMarkRead(h, 350026);
     expect(h.s.state).toBe("active");
     expect(h.s._renderMode).toBe("buffer");
 
@@ -195,9 +232,8 @@ describe("前已讀後未讀 → 回好讀時還原閱讀進度", () => {
     });
     h.s._selectedNum = 350031;
     h.s._serverNum = 350031;
-    runMarkRead(h, 350031);
     const before = h.enqueued.length;
-    vi.advanceTimersByTime(300);
+    runMarkRead(h, 350031);
     expect(h.s.state).toBe("active");
     expect(h.s._edgeDown).toBe(false);
     // 錨列在緩衝裡，但 20 列的緩衝捲不動 ⇒ 還不能套用。
@@ -238,7 +274,6 @@ describe("前已讀後未讀 → 回好讀時還原閱讀進度", () => {
     // resume 那一刻佇列正被一條往下的 demand 佔著（真實情況：resume-buffer 那一幀
     // 留下的舊 scrollTop 讓 rebuild 擷取到的頂端落在頁尾 ⇒ 視窗不足、先往下補）。
     q.idle = false;
-    vi.advanceTimersByTime(300);
     expect(h.s.state).toBe("active");
     expect(h.s._pendingViewport).not.toBe(null);
     q.idle = true;
@@ -257,11 +292,11 @@ describe("前已讀後未讀 → 回好讀時還原閱讀進度", () => {
     expect(ups.length).toBeGreaterThan(0);
   });
 
-  test("使用者在原生鏡像裡移動過游標 ⇒ 不還原（採用落點，舊行為）", () => {
+  test("落點的真游標不在發起那篇 ⇒ 不還原（採用落點）", () => {
     const h = makeSession();
-    runMarkRead(h, 350026);
-    h.screen.curY = 8; // 真游標跑到 350029
-    vi.advanceTimersByTime(300);
+    runMarkRead(h, 350026, () => {
+      h.screen.curY = 8; // 真游標跑到 350029
+    });
     expect(h.s.state).toBe("active");
     expect(h.s._pendingViewport).toBe(null);
     expect(h.s._topNum).toBe(350024);
@@ -270,7 +305,6 @@ describe("前已讀後未讀 → 回好讀時還原閱讀進度", () => {
   test("回好讀後使用者先動了（按鍵）⇒ 待還原作廢，補頁到了也不拉回去", () => {
     const h = makeSession();
     runMarkRead(h, 350026);
-    vi.advanceTimersByTime(300);
     expect(h.s._pendingViewport).not.toBe(null);
     h.s.onKeyDown({
       key: "ArrowDown",
@@ -286,7 +320,6 @@ describe("前已讀後未讀 → 回好讀時還原閱讀進度", () => {
   test("逾時仍找不到 ⇒ 丟棄", () => {
     const h = makeSession();
     runMarkRead(h, 350026);
-    vi.advanceTimersByTime(300);
     vi.advanceTimersByTime(11000);
     h.s.applyScrollAfterRender();
     expect(h.s._pendingViewport).toBe(null);

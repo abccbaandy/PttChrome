@@ -848,6 +848,11 @@ function nativeResumeHint() {
 // W 分支拿該篇檔名時間戳當參考點，取不到就吐 vmsg 那句。詳見
 // docs/pttbbs-screen-protocol.md §11.5。
 const MARK_READ_REJECT = '請改用其它文章設定當參考點';
+function markReadRejected(rowTexts) {
+  return (rowTexts || []).some(function(t) {
+    return !!t && t.indexOf(MARK_READ_REJECT) !== -1;
+  });
+}
 // 待還原捲動錨（_pendingViewport）的壽命。涵蓋「v → w⏎ → 靜置探針（RESUME_QUIET_MS）
 // → rebuild → 往上補頁」整段；過了還沒套用就放棄，免得很久以後的某次補頁突然
 // 把畫面拉走。
@@ -1601,6 +1606,9 @@ ListSession.prototype = {
   // opts.kind / opts.hint 只換佇列命令的診斷名稱與提示措辭；**序列本身**
   //（state transition → cursor sync 腿 → _enterFunctionMode → queue.enqueue）
   // 是不變量 12 的承重部分，三個入口一律共用這一份，勿再各自複製一遍。
+  // opts.resumeOnLanding（只對多步序列）＝改走凍結交易、最後一步落地即回好讀，
+  // 見 _beginLandingTransaction；只給「最後一步從 getdata prompt 送出、回應是
+  // FULLUPDATE 列表」的序列用（落點指紋的前提，見該函式）。
   _beginPassthroughBytes: function(bytes, opts) {
     const kind = (opts && opts.kind) || 'native-key';
     // hint === null ＝刻意不在切換當下閃提示（多步序列由最後一步自己說「做了
@@ -1615,6 +1623,8 @@ ListSession.prototype = {
     // prompt 時 'w' 會落回列表按鍵 b_call_in（對該列作者送呼叫器，有副作用），
     // '\r' 則會開文（docs/pttbbs-screen-protocol.md §11.5）。
     const steps = Array.isArray(bytes) ? bytes : [{ keys: bytes, kind: kind }];
+    if (opts && opts.resumeOnLanding && Array.isArray(bytes) && this._autoResumeEnabled())
+      return this._beginLandingTransaction(steps);
     const r = transitionListSession(this.state, { type: 'key', keyClass: 'passthrough' });
     this.state = r.next; // functionMode: absorbs settles / swallows keys meanwhile
     const self = this;
@@ -1651,11 +1661,83 @@ ListSession.prototype = {
     finish();
   },
 
+  // 多步序列的凍結版（opts.resumeOnLanding，pref enableListNativeAutoResume 開著才走）：
+  // 形狀照抄 _beginInplaceTransaction —— 畫面逐像素凍住 → （必要時）同步真游標 →
+  // 逐步送真鍵 → 最後一步落地那一幀就是結論，**全程不切原生鏡像**。
+  //
+  // 為什麼可以不等靜置探針（RESUME_QUIET_MS）：探針等的是「使用者做完了沒」與「一個
+  // 回應 settle 兩次」。前者這裡不存在（序列自己知道最後一步是哪一步）；後者靠落點
+  // 指紋擋：會 opt in 的序列最後一步都是從 getdata prompt 送出（游標停在 prompt 那一
+  // 列的行中），所以只要落地幀通過 clean-list（游標在編號列行首，N9），游標就一定是
+  // server 重畫完才 park 過來的，不會是舊位置。指紋不過（vmsg 錯誤、半繪）⇒ 照舊停
+  // 在原生鏡像，由靜置探針接手 —— 退路就是原本的行為。
+  //
+  // 錄製檔 ptt-debug-20261020-161646：右鍵「前已讀後未讀」三道命令 218ms 就做完，
+  // 之後卻是「切原生 → 空等探針 250ms → 切回來」，使用者看到畫面翻面兩次。
+  _beginLandingTransaction: function(steps) {
+    const r = transitionListSession(this.state, { type: 'key', keyClass: 'transact' });
+    this.state = r.next; // functionMode（吸收在途 settle／吞鍵），render 是 frozen
+    this._freezeForTransaction();
+    const self = this;
+    const send = function() {
+      self._enqueuePassthroughStep(steps, 0, function(landed) {
+        self._resumeFromLanding(landed);
+      });
+    };
+    // 同步腿失敗時**不送**序列（與一般 passthrough 的「照送」相反）：「前已讀後未讀」
+    // 是對真游標所在那篇動作的，游標沒對上就送 v → w⏎ 等於拿錯的文章當界線。
+    // 第一步的 onFail 一定要叫：它負責收閱讀紀錄書籤與在途旗標，漏叫就是永久卡住。
+    // 它自己多半會降級（帶自己的措辭）；沒降級的話這裡補切原生，同步驟失敗的包裝。
+    const abort = function() {
+      if (steps[0].onFail) steps[0].onFail('sync');
+      if (self.state === 'functionMode' && self._renderMode === 'frozen')
+        self._degradeToNative('游標同步逾時，已切至原生模式');
+    };
+    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+      this._enqueueCursorSyncJump('native-sync-jump', send, abort);
+      return;
+    }
+    if (this._selectedNum == null && this._canPinnedCursorSync()) {
+      this._enqueuePinnedCursorSync('native-pinned', send, abort);
+      return;
+    }
+    send();
+  },
+
+  // 凍結序列最後一步落地。條件與靜置探針（reducer 的 resume-probe 分支）逐條相同，
+  // 只差不必等靜置：合格 ⇒ resume-buffer + rebuild（已讀標記全變，累積 buffer 過時；
+  // rebuild 前先驗證閱讀紀錄留下的待還原錨，同 _runAction('rebuild')）。不合格 ⇒
+  // 停在原生鏡像（passthrough hold），之後交給靜置探針，跟沒 opt in 時一樣。
+  _resumeFromLanding: function(landed) {
+    // 落地前已經被別人接走（step 的 onDone 自己降級、cleanup、pref-off）⇒ 不碰。
+    if (this.state !== 'functionMode' || this._renderMode !== 'frozen') return;
+    if (
+      landed &&
+      landed.kind === 'clean-list' &&
+      hasNumberedEntryRow(landed) &&
+      this._engageEligible()
+    ) {
+      this.state = 'active';
+      this._resumeBuffer(landed);
+      this._runAction('rebuild', landed);
+      return;
+    }
+    this._enterFunctionMode();
+  },
+
   // 送出 passthrough 序列的第 i 步，並在它落地後才排下一步（單步序列＝原本的
   // 行為，一字未改：expect 恆真、無 onDone/onFail、NATIVE_PASSTHROUGH_MS）。
-  _enqueuePassthroughStep: function(steps, i) {
+  // onLanding（凍結序列專用）：最後一步 onDone 之後收到那一步 expect 判定的那一幀；
+  // 任一步失敗而畫面仍凍著 ⇒ 切原生鏡像（失敗必須看得見）。
+  _enqueuePassthroughStep: function(steps, i, onLanding) {
     const self = this;
     const step = steps[i];
+    let landed = null;
+    const expect =
+      step.expect ||
+      function() {
+        return true; // any settle is the response
+      };
     this._queue.enqueue({
       keys: step.keys,
       kind: step.kind || 'native-key',
@@ -1664,17 +1746,30 @@ ListSession.prototype = {
       // ⇒ 使用者要盯著原生畫面發呆 3 秒，自動回復也無從觸發。\f 保證必有一幀
       // （協定 §6：igetch 全域攔截，getdata/vgets/pmore/編輯器一律吃這條）。
       fullRepaint: 'fullRepaint' in step ? step.fullRepaint : true,
-      expect:
-        step.expect ||
-        function() {
-          return true; // any settle is the response
-        },
-      timeoutMs: step.timeoutMs || NATIVE_PASSTHROUGH_MS,
+      expect: onLanding
+        ? function(snap, facts) {
+            const ok = expect(snap, facts);
+            if (ok) landed = facts;
+            return ok;
+          }
+        : expect,
+      // 凍結序列：畫面凍著，比照其他凍結交易的快速失敗預算（不是原生鏡像那種
+      // 「反正畫面還看得到」的長窗）。
+      timeoutMs: step.timeoutMs || (onLanding ? CMD_PROBE_AFTER_MS : NATIVE_PASSTHROUGH_MS),
+      probeTimeoutMs: onLanding ? CMD_PROBE_WINDOW_MS : undefined,
+      hardTimeoutMs: onLanding ? CMD_HARD_MS : undefined,
       onDone: function(result) {
         if (step.onDone) step.onDone(result);
-        if (i + 1 < steps.length) self._enqueuePassthroughStep(steps, i + 1);
+        if (i + 1 < steps.length) self._enqueuePassthroughStep(steps, i + 1, onLanding);
+        else if (onLanding) onLanding(landed);
       },
-      onFail: step.onFail,
+      onFail: onLanding
+        ? function(reason, facts) {
+            if (step.onFail) step.onFail(reason, facts);
+            if (self.state === 'functionMode' && self._renderMode === 'frozen')
+              self._enterFunctionMode();
+          }
+        : step.onFail,
       // opt-in（command_queue cmd.onFlushed）：握著輸入閘門的呼叫端（搜尋彈窗的
       // searchInFlight）要在被 flush 時解除。
       onFlushed: step.onFlushed
@@ -2466,9 +2561,10 @@ ListSession.prototype = {
   // `w` 會落回列表按鍵 b_call_in（對該列作者送呼叫器）、`\r` 會開文。兩步一定要
   // 序列化，而且第一步的 expect 必須確認 prompt 真的出現才准送第二步。
   //
-  // 完成後停在原生鏡像（_enterFunctionMode 的 'passthrough' hold）：已讀標記改
-  // 變 ⇒ 累積 buffer 的內容全數過時，返回時本來就該走 rebuild。畫面靜下來之後
-  // 由靜置探針自動切回好讀（pref enableListNativeAutoResume；關掉就停在原生）。
+  // 全程是凍結交易（resumeOnLanding，見 _beginLandingTransaction）：不切原生鏡像，
+  // w⏎ 落回列表那一幀直接 rebuild 回好讀（已讀標記全變，累積 buffer 過時）。PTT
+  // 拒絕（vmsg 等按鍵）或落點認不出 ⇒ 停在原生鏡像，由靜置探針接手。pref
+  // enableListNativeAutoResume 關掉＝舊行為：完成後停在原生、不自動回來。
   markReadUnreadBefore: function(num) {
     if (this._renderMode === 'native') return false; // 沒接管，交給一般路徑
     if (this.state === 'opening') {
@@ -2516,36 +2612,38 @@ ListSession.prototype = {
         {
           keys: 'w\r', // getdata 是整行輸入（vgets）⇒ 必須補 Enter
           kind: 'mark-read-apply',
-          // 任何 settle 都是回應：正常是 FULLUPDATE 的列表，錯誤是 vmsg 的
-          // 等按鍵畫面 —— 兩者都停在原生鏡像讓使用者自己看（v5：失敗顯性化）。
+          // 回應有兩種：正常是 FULLUPDATE 的列表（prompt 消失），錯誤是 vmsg 的
+          // 等按鍵畫面（prompt 那一列還留著，所以要另外認拒絕句）。打字回顯那一幀
+          // prompt 還在、也沒有拒絕句 ⇒ 不算落地（同 mark_all_read 的第二步）。
           expect: function(snap, facts) {
             applyFacts = facts;
-            return true;
+            return (
+              markReadRejected(facts.rowTexts) || !markReadPromptShown(facts.rowTexts)
+            );
+          },
+          onFail: function() {
+            rr.end(bm, 'fail');
+            self._degradeToNative('設定已讀未讀逾時，已切至原生模式');
           },
           onDone: function() {
             rr.end(bm, 'done');
             if (!self._view.flashListHint) return;
-            const rejected =
-              !!applyFacts &&
-              applyFacts.rowTexts.some(function(t) {
-                return t.indexOf(MARK_READ_REJECT) !== -1;
-              });
+            const rejected = !!applyFacts && markReadRejected(applyFacts.rowTexts);
+            // 拒絕畫面（vmsg）一定停在原生；成功時只有 pref 關掉才停在原生。
+            const native = rejected || !self._autoResumeEnabled();
             self._view.flashListHint(
-              rejected
-                ? 'PTT 不接受這篇當參考點，已讀記錄沒有變動（請改用其它文章）。' +
-                    '已切至原生' + nativeResumeHint()
-                : '已將第 ' +
-                    num +
-                    ' 篇（含）以前設為已讀、以後設為未讀。' +
-                    '已切至原生' + nativeResumeHint(),
+              (rejected
+                ? 'PTT 不接受這篇當參考點，已讀記錄沒有變動（請改用其它文章）。'
+                : '已將第 ' + num + ' 篇（含）以前設為已讀、以後設為未讀。') +
+                (native ? '已切至原生' + nativeResumeHint() : ''),
               4000,
               rejected ? HINT_ERROR : undefined
             );
           }
         }
       ],
-      // 切原生當下不閃提示：結論由上面那句在落地後補（兩句連著閃會互相蓋掉）。
-      { kind: 'mark-read', hint: null }
+      // 不閃「切原生」提示：結論由上面那句在落地後補（兩句連著閃會互相蓋掉）。
+      { kind: 'mark-read', hint: null, resumeOnLanding: true }
     );
     return true;
   },
