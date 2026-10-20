@@ -67,6 +67,7 @@ import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { MessageInbox, isMessageInboxTarget } from './message_inbox';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
+import { NextArticle, isNextArticleTarget } from './next_article';
 import { CommentBar, isCommentBarTarget } from './comment_bar';
 import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
@@ -272,6 +273,8 @@ export const App = function() {
   this.articleTools = new ArticleTools(this);
   // 好讀文章底部常駐推文列（comment_bar.js；送出走長推文管線，App.openQuickPush）。
   this.commentBar = new CommentBar(this);
+  // 讀完接著讀下一篇（好讀文末的下一篇標題卡，next_article.js）。
+  this.nextArticle = new NextArticle(this);
   // 水球／系統訊息收件匣（這次連線收到的水球與廣播，鈴鐺打開看；message_inbox.js）。
   this.messageInbox = new MessageInbox(this);
 
@@ -2383,11 +2386,11 @@ App.prototype.checkClass = function(cn) {
 // **capture** listener，浮層自己 stopPropagation 也攔不到 —— 少了這道，點面板的
 // 「插入」會順便在 PTT 上送出一次滑鼠動作、面板裡滾動會變成 PTT 翻頁。
 App.prototype._onUploadLayer = function(e) {
-  // 首頁儀表板、雙欄閱讀的左欄、文章工具側欄同理：點／捲面板不是點終端機（放過去會被當成滑鼠瀏覽送鍵）。
+  // 首頁儀表板、雙欄閱讀的左欄、文章工具側欄、文末的下一篇標題卡同理：點／捲面板不是點終端機（放過去會被當成滑鼠瀏覽送鍵）。
   const t = e && e.target;
   return (
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
-    isCommentBarTarget(t) || isMessageInboxTarget(t)
+    isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t)
   );
 };
 

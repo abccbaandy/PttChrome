@@ -307,6 +307,8 @@ async function installAutoLoginPrefs(page, extra) {
           enableArticleTools: false,
           // 底部常駐推文列同理（疊在好讀文章最下面）。
           enableCommentBar: false,
+          // 文末的下一篇標題卡同理（好讀累積頁尾端多一張卡片）。
+          enableNextArticleCard: false,
           autoLoginSkipWelcome: true,
         },
         extra || {}

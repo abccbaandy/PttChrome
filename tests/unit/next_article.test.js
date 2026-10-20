@@ -1,0 +1,308 @@
+// 讀完接著讀下一篇（src/js/next_article.js、docs/next-article.md）：下一篇＝列表快照裡編號接在
+// 這篇後面的那一列（read.c 的 crs_ln + 1），只在好讀讀到文末時出現，點了才走 startNum 換文。
+// 列表列照 bbs.c#readdoent 的欄位手寫（同 split_reader.test.js）。
+const prefOverride = vi.hoisted(() => ({}));
+vi.mock("../../src/js/pref_storage", async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), ...prefOverride }) };
+});
+import { DEFAULT_PREFS, NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage";
+import { NextArticle, nextEntryAfter, landedOn } from "../../src/js/next_article";
+import { RESTORE_TABLE } from "../../src/js/reading_record";
+import { HINT_ERROR } from "../../src/js/status_hint";
+
+const ROWS = 24;
+
+function listRow(num, author, title, o = {}) {
+  const seq = o.cursor ? ">" + String(num).padStart(6) : String(num).padStart(7);
+  return (
+    seq + " " + (o.type || " ") + (o.push || "  ") + " 9/01 " + author.padEnd(13).slice(0, 13) + (o.mark || "□") + " " + title
+  );
+}
+const PINNED_ROW = "    ★ " + " " + " " + "  " + " 9/01 " + "sysop".padEnd(13) + "□ 公告";
+const DELETED_ROW = (num) => listRow(num, "-", "(本文已被刪除) [someone]");
+
+const PLAIN_CAPTION = " 文章選讀  (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面 ";
+const SELECT_CAPTION = " 系列文章  (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面 ";
+
+function listScreen(rows, { board = "C_Chat", caption = PLAIN_CAPTION } = {}) {
+  const rowTexts = Array.from({ length: ROWS }, () => "");
+  rowTexts[0] = "【板主:someone】                  看板《" + board + "》";
+  rowTexts[1] = "[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明";
+  rowTexts[2] = "   編號    日 期 作  者       文  章  標  題                       人氣:123";
+  rows.forEach((t, i) => (rowTexts[3 + i] = t));
+  rowTexts[ROWS - 1] = caption;
+  return { rowTexts, pageState: 2 };
+}
+
+function articleScreen() {
+  const rowTexts = Array.from({ length: ROWS }, () => "");
+  rowTexts[ROWS - 1] = "  瀏覽 第 3/3 頁 (100%)  目前顯示: 第 45~66 行  (y)回應(X%)推文(h)說明(←)離開 ";
+  return { rowTexts, pageState: 3 };
+}
+
+const PAGE = (opts) =>
+  listScreen(
+    [
+      listRow(101, "alice", "[閒聊] 第一篇", { type: "+" }),
+      listRow(102, "bob", "[問題] 第二篇", { push: " 5", cursor: true }),
+      DELETED_ROW(103),
+      listRow(104, "carol", "Re: [閒聊] 第一篇", { push: "爆" }),
+      PINNED_ROW,
+    ],
+    opts
+  );
+
+// ── 純判讀 ────────────────────────────────────────────────────────────────
+describe("nextEntryAfter：列表順序的下一列", () => {
+  const entries = [
+    { num: 101, title: "a" },
+    { num: 102, title: "b" },
+    { num: 103, title: "(本文已被刪除)", deleted: true },
+    { num: 104, title: "d" },
+    { num: 110, title: "z" },
+  ];
+  test("編號接著的那一篇", () => {
+    expect(nextEntryAfter(entries, 101).num).toBe(102);
+  });
+  test("被刪的跳過", () => {
+    expect(nextEntryAfter(entries, 102).num).toBe(104);
+  });
+  test("下一號沒看過（還沒載入的頁／最後一篇後面是置底文）⇒ null", () => {
+    expect(nextEntryAfter(entries, 104)).toBeNull();
+    expect(nextEntryAfter(entries, 110)).toBeNull();
+  });
+  test("沒有快照或不知道這篇 ⇒ null", () => {
+    expect(nextEntryAfter(null, 101)).toBeNull();
+    expect(nextEntryAfter(entries, null)).toBeNull();
+  });
+});
+
+test("landedOn：作者＋主題（不分大小寫、Re: 不影響主題）", () => {
+  const entry = { author: "Bob", subject: "[問題] 第二篇" };
+  expect(landedOn(entry, { author: "bob", title: "[問題] 第二篇" })).toBe(true);
+  expect(landedOn(entry, { author: "bob", title: "Re: [問題] 第二篇" })).toBe(true);
+  expect(landedOn({ author: "bob", subject: "[問題] 第二…" }, { author: "bob", title: "[問題] 第二篇" })).toBe(true);
+  expect(landedOn(entry, { author: "alice", title: "[問題] 第二篇" })).toBe(false);
+  expect(landedOn(entry, { author: "bob", title: "[問題] 第三篇" })).toBe(false);
+  expect(landedOn(entry, null)).toBe(false);
+});
+
+test("閱讀紀錄：next-article 不還原（同雙欄閱讀的換文）", () => {
+  expect(RESTORE_TABLE["next-article"]).toEqual(RESTORE_TABLE["split-open"]);
+});
+
+test("預設開，而且在安全模式名單內（會替使用者送鍵）", () => {
+  expect(DEFAULT_PREFS.enableNextArticleCard).toBe(true);
+  expect(NATIVE_SAFE_MODE_KEYS).toContain("enableNextArticleCard");
+});
+
+// ── 控制器：假 App ─────────────────────────────────────────────────────────
+function makeCore() {
+  let frame = PAGE();
+  const listeners = {};
+  const hints = [];
+  const starts = [];
+  let queueIdle = true;
+  const easyReading = { _enabled: true, _functionMode: false, _reverse: null, easyReadingReachedPageEnd: true };
+  const core = {
+    easyReading,
+    buf: {
+      rows: ROWS,
+      cols: 80,
+      cur_y: null,
+      pageLines: [],
+      get pageState() {
+        return frame.pageState;
+      },
+      getRowText: (r) => frame.rowTexts[r],
+      addEventListener: (name, fn) => (listeners[name] = fn),
+    },
+    view: {
+      _articleBoard: null,
+      _articleAuthor: null,
+      _articleTitle: null,
+      flashListHint: (m, ms, level) => hints.push({ m, level }),
+    },
+    commandQueue: {
+      get idle() {
+        return queueIdle;
+      },
+    },
+    aidNavigation: {
+      startNum(board, num, onEnd) {
+        starts.push({ board, num, onEnd });
+        return true;
+      },
+    },
+  };
+  const next = new NextArticle(core);
+  const show = (f) => {
+    frame = f;
+    if (f.pageState !== 3) {
+      core.view._articleBoard = null;
+      core.view._articleAuthor = null;
+      core.view._articleTitle = null;
+      core.buf.pageLines = [];
+    }
+    listeners.screenSettled();
+  };
+  const read = (board, author, title) => {
+    core.view._articleBoard = board;
+    core.view._articleAuthor = author;
+    core.view._articleTitle = title;
+    core.buf.pageLines = [[]];
+    show(articleScreen());
+  };
+  return { core, easyReading, next, hints, starts, show, read, busyQueue: (v) => (queueIdle = !v) };
+}
+
+describe("NextArticle：何時出現", () => {
+  test("從完整列表進文章、讀到文末 ⇒ 出現下一篇（取自快照）", () => {
+    const { next, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.visible).toBe(true);
+    expect(next.state.entry).toMatchObject({ num: 102, author: "bob", title: "[問題] 第二篇", recommend: "5" });
+  });
+  test("下一列被刪 ⇒ 跳過它", () => {
+    const { next, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "bob", "[問題] 第二篇");
+    expect(next.state.entry.num).toBe(104);
+  });
+  test("最後一篇（下一列是置底文）⇒ 不出現", () => {
+    const { next, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "carol", "Re: [閒聊] 第一篇");
+    expect(next.state.visible).toBe(false);
+  });
+  test("還沒讀到文末、反向讀取中、切原生（functionMode）、好讀關 ⇒ 不出現", () => {
+    const { next, easyReading, show, read } = makeCore();
+    show(PAGE());
+    for (const patch of [
+      { easyReadingReachedPageEnd: false },
+      { _reverse: {} },
+      { _functionMode: true },
+      { _enabled: false },
+    ]) {
+      const saved = { ...easyReading };
+      Object.assign(easyReading, patch);
+      read("C_Chat", "alice", "[閒聊] 第一篇");
+      expect(next.state.visible).toBe(false);
+      Object.assign(easyReading, saved);
+    }
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.visible).toBe(true);
+  });
+  test("從搜尋結果進的、別的板、沒看過列表、清單上找不到這篇 ⇒ 不出現", () => {
+    let t = makeCore();
+    t.show(PAGE({ caption: SELECT_CAPTION }));
+    t.read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(t.next.state.visible).toBe(false);
+
+    t = makeCore();
+    t.show(PAGE());
+    t.read("Gossiping", "alice", "[閒聊] 第一篇");
+    expect(t.next.state.visible).toBe(false);
+
+    t = makeCore();
+    t.read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(t.next.state.visible).toBe(false);
+
+    t = makeCore();
+    t.show(PAGE());
+    t.read("C_Chat", "dave", "[閒聊] 不在清單上");
+    expect(t.next.state.visible).toBe(false);
+  });
+  test("回到列表 ⇒ 收起", () => {
+    const { next, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    show(PAGE());
+    expect(next.state.visible).toBe(false);
+  });
+  test("pref 關 ⇒ 不出現", () => {
+    prefOverride.enableNextArticleCard = false;
+    try {
+      const { next, show, read } = makeCore();
+      show(PAGE());
+      read("C_Chat", "alice", "[閒聊] 第一篇");
+      expect(next.state.visible).toBe(false);
+    } finally {
+      delete prefOverride.enableNextArticleCard;
+    }
+  });
+});
+
+describe("NextArticle：點卡片換文", () => {
+  test("走 startNum(板, 下一篇的編號)；落地是那一篇 ⇒ 沒有提示", () => {
+    const { next, show, read, starts, hints } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.open()).toBe(true);
+    expect(starts).toEqual([expect.objectContaining({ board: "C_Chat", num: 102 })]);
+    expect(next.state.pending).toBe(true);
+    // 途中經過列表（游標停在 102）。
+    show(PAGE());
+    expect(next.state.visible).toBe(false);
+    read("C_Chat", "bob", "[問題] 第二篇");
+    starts[0].onEnd({ ok: true });
+    expect(next.state.pending).toBe(false);
+    expect(hints).toEqual([]);
+    // 換過去之後：卡片換成再下一篇。
+    read("C_Chat", "bob", "[問題] 第二篇");
+    expect(next.state.entry.num).toBe(104);
+  });
+  test("落地不是卡片上那篇（列表變了）⇒ 錯誤級提示，不再送任何鍵", () => {
+    const { next, show, read, starts, hints } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    next.open();
+    read("C_Chat", "eve", "[閒聊] 別篇");
+    starts[0].onEnd({ ok: true });
+    expect(hints).toEqual([expect.objectContaining({ level: HINT_ERROR })]);
+    expect(starts).toHaveLength(1);
+  });
+  test("失敗 ⇒ 清掉開啟中", () => {
+    const { next, show, read, starts } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    next.open();
+    starts[0].onEnd({ ok: false });
+    expect(next.state.pending).toBe(false);
+  });
+  test("線路忙、換文途中、沒出現 ⇒ 不送", () => {
+    const t = makeCore();
+    expect(t.next.open()).toBe(false);
+    t.show(PAGE());
+    t.read("C_Chat", "alice", "[閒聊] 第一篇");
+    t.busyQueue(true);
+    expect(t.next.open()).toBe(false);
+    t.busyQueue(false);
+    expect(t.next.open()).toBe(true);
+    expect(t.next.open()).toBe(false);
+    expect(t.starts).toHaveLength(1);
+  });
+  test("startNum 拒絕 ⇒ 不留開啟中", () => {
+    const t = makeCore();
+    t.core.aidNavigation.startNum = () => false;
+    t.show(PAGE());
+    t.read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(t.next.open()).toBe(false);
+    expect(t.next.state.pending).toBe(false);
+  });
+  test("看門狗：結束回呼一直沒來 ⇒ 清掉開啟中", () => {
+    vi.useFakeTimers();
+    try {
+      const t = makeCore();
+      t.show(PAGE());
+      t.read("C_Chat", "alice", "[閒聊] 第一篇");
+      t.next.open();
+      vi.advanceTimersByTime(45000);
+      expect(t.next.state.pending).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -57,6 +57,9 @@ export const DEFAULT_PREFS = {
   // 文章工具側欄（js/article_tools.js）：好讀文章時在終端機右邊的空白放 AID／推文統計／
   // 推文者／圖片牆。資料全取自累積頁、跳列只捲視口，一個 byte 都不送 ⇒ 不在安全模式名單內。
   enableArticleTools: true,
+  // 讀完接著讀下一篇（js/next_article.js）：好讀文末放下一篇的標題卡，點了才替使用者送
+  // s<板>⏎ → <編號>⏎ → ⏎ 換文 ⇒ 在安全模式名單內。
+  enableNextArticleCard: true,
   // Target number of VISIBLE (non-blacklisted) rows the background prefetch
   // accumulates before stopping; continuation is demand-driven (navigate near
   // an edge). 0 disables the background fill (current page + demand only).
@@ -403,6 +406,7 @@ export const NATIVE_SAFE_MODE_KEYS = Object.freeze([
   "reconnectResume",
   "enableHomeDashboard",
   "enableSplitReading",
+  "enableNextArticleCard",
   "endTurnsOnLiveUpdate",
   "easyReadingEndSwitchNative",
   "refreshKeyIntercept",

@@ -122,6 +122,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_enableSplitReading",
     },
     {
+      key: "enableNextArticleCard",
+      titleKey: "options_enableNextArticleCard",
+      tooltipKey: "tooltip_enableNextArticleCard",
+    },
+    {
       key: "enableArticleTools",
       titleKey: "options_enableArticleTools",
       tooltipKey: "tooltip_enableArticleTools",
