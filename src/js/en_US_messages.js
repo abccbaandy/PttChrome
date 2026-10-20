@@ -648,7 +648,7 @@ export const en_US = {
     "message": "Highlight comments by the original poster"
   },
   "options_highlightSelfComments": {
-    "message": "Mark your own comments (your ID in green)"
+    "message": "Mark your own comments and comments mentioning you (green)"
   },
   "options_enableAutoFixUrl": {
     "message": "Auto-fix broken URLs (fixed link shown only in easy-reading mode)"
@@ -1090,6 +1090,9 @@ export const en_US = {
   },
   "tools_images": {
     "message": "Images ({n})"
+  },
+  "tools_mentions": {
+    "message": "Mentions you ({n})"
   },
   "options_easyReadingEndSwitchNative": {
     "message": "In easy reading, the hotkey jumps to the post bottom and switches back to native mode."

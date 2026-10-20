@@ -647,7 +647,7 @@
     "message": "高亮原PO本人的推文"
   },
   "options_highlightSelfComments": {
-    "message": "標示自己的推文（帳號染綠）"
+    "message": "標示自己的推文與提到你的推文（綠色）"
   },
   "options_enableAutoFixUrl": {
     "message": "自動修復斷掉的連結 (需開好讀模式才會顯示修復後連結)"
@@ -1089,6 +1089,9 @@
   },
   "tools_images": {
     "message": "本篇圖片（{n}）"
+  },
+  "tools_mentions": {
+    "message": "提到你（{n}）"
   },
   "options_easyReadingEndSwitchNative": {
     "message": "好讀模式按熱鍵跳到文末並切回原生模式"

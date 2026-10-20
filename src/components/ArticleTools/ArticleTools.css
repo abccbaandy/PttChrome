@@ -185,6 +185,14 @@
   overflow: hidden;
 }
 
+/* 提到你：每則左緣同推文列的那條綠（.mentionsSelf），推文者帳號淡一階。 */
+[data-tools-mentions] .toolsComment {
+  box-shadow: inset 3px 0 0 #3f9a63;
+}
+.toolsMentionUser {
+  color: #9a9aa0;
+}
+
 .toolsSectionToggle {
   width: 100%;
   text-align: left;

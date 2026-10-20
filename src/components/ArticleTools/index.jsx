@@ -148,6 +148,25 @@ export const ArticleTools = ({ pttchrome }) => {
             )}
           </div>
         </section>
+        {state.mentions && state.mentions.length > 0 && (
+          <section className="toolsSection" data-tools-mentions>
+            <h3>{fmt("tools_mentions", { n: state.mentions.length })}</h3>
+            <ol className="toolsComments">
+              {state.mentions.map((c) => (
+                <li key={c.row}>
+                  <Button
+                    className="toolsComment"
+                    data-tools-mention={c.row}
+                    onClick={() => jump(c.row)}
+                  >
+                    <span className="toolsMentionUser">{c.user}</span>{" "}
+                    {c.content || "…"}
+                  </Button>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
         {state.users.length > 0 && (
           <section className="toolsSection">
             <h3>{i18n("tools_commenters")}</h3>
@@ -157,15 +176,15 @@ export const ArticleTools = ({ pttchrome }) => {
                   key={u.user}
                   className="toolsUser"
                   data-tools-user={u.user}
-                  data-selected={
-                    u.user === state.selectedUser ? "" : undefined
-                  }
+                  data-selected={u.user === state.selectedUser ? "" : undefined}
                   data-op={u.op ? "" : undefined}
                   onClick={() => tools.selectUser(u.user)}
                 >
                   <span className="toolsUserName">
                     {u.user}
-                    {u.op && <span className="toolsOp">{i18n("tools_op")}</span>}
+                    {u.op && (
+                      <span className="toolsOp">{i18n("tools_op")}</span>
+                    )}
                   </span>
                   <span className="toolsCount">{u.count}</span>
                 </Button>

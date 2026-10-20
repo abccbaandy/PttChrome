@@ -212,7 +212,8 @@ export function parseComment(text) {
 //   selfId:         lower id | null   (登入者自己；null ＝不標示，開關由 term_view 決定)
 // }
 // Result: { type, userid, floor?, hidden, pusher, contentCol, contentEnd?, dateEnd?,
-//           authorIdStart?, authorIdEnd?, authorIdKind? }
+//           authorIdStart?, authorIdEnd?, authorIdKind?, mentionsSelf? }
+// mentionsSelf：內容提到我（mentionsUser），render 在該列左緣畫一條細色條、不染文字。
 // authorIdKind：'self' ＝自己的推文（同一個 id 格、換一個顏色）；我同時是原PO 時以
 // 「我」為準。沒有 ＝原PO。
 // contentCol／contentEnd／dateEnd ＝內容起始／內容結尾／日期結尾欄 → Row 輸出成
@@ -244,8 +245,19 @@ export function annotateComment(text, ctx) {
   if (!hidden) {
     // 原PO comment → highlight only the user-id columns [start, end).
     markAuthorId(result, c.userid, COMMENT_USERID_COL, ctx);
+    // 推文者帳號之後的第一個冒號起才是內容（帳號只有英數，不會有冒號）。
+    if (c.userid !== ctx.selfId && mentionsUser(text.slice(text.indexOf(':') + 1), ctx.selfId)) {
+      result.mentionsSelf = true;
+    }
   }
   return result;
+}
+
+// 「提到我」：內容裡出現 userid（不分大小寫、前後不是英數 ⇒ 不會把 abc 認成 abcd 的
+// 一部分）。帳號字元只有英數（names.c#is_validuserid），不必跳脫。自己推的不算（呼叫端擋）。
+export function mentionsUser(content, userid) {
+  if (!content || !userid) return false;
+  return new RegExp('(?:^|[^0-9A-Za-z])' + userid + '(?![0-9A-Za-z])', 'i').test(content);
 }
 
 // 推文者 id 格的標示（原PO／自己）。「我」優先：自己的推文不管我是不是原PO，都畫成「我」。
@@ -261,7 +273,8 @@ function markAuthorId(result, userid, idCol, ctx) {
 // 新格式推文（見 parseModernCommentHeader）。標頭列：推文者／黑名單／原PO 高亮，
 // **不給樓層**（`[N]` 就是 server 給的樓號）、不給推文可點區欄位（沒有內容欄）。
 // `modern: true` 讓 comment_merge.groupSameAuthorRuns 不把它當舊格式推文合併。
-// 內容列（`│` 開頭）：只有在該則被黑名單藏起來時才回 { hidden }，其餘回 null。
+// 內容列（`│` 開頭）：該則被黑名單藏起來時回 { hidden }；內容提到我（ctx.selfId）時回
+// { mentionsSelf }；其餘回 null。
 // 沒有 ctx.modernThread（反向讀取的 tail）時內容列一律不標 ⇒ 最多少藏幾列，不會藏錯。
 function annotateModernComment(text, ctx) {
   const thread = ctx.modernThread;
@@ -269,7 +282,12 @@ function annotateModernComment(text, ctx) {
   if (!h) {
     if (thread && thread.userid) {
       if (text && text.charAt(0) === MODERN_COMMENT_BODY_MARK) {
-        return thread.hidden ? { hidden: true, modernBody: true } : null;
+        if (thread.hidden) return { hidden: true, modernBody: true };
+        // 提到我：標在含那段字的 │ 內容列（標頭列只有帳號與時間）。
+        if (thread.userid !== ctx.selfId && mentionsUser(text.slice(1), ctx.selfId)) {
+          return { hidden: false, modernBody: true, mentionsSelf: true };
+        }
+        return null;
       }
       thread.userid = null;
     }

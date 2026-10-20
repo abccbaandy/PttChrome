@@ -108,6 +108,24 @@ describe("analyzeArticle", () => {
     ]);
     expect(a.images[0].row).toBe(4);
   });
+  test("提到你：內容提到自己帳號的推文（不分大小寫、英數邊界、自己推的不算）", () => {
+    const lines = [
+      ...HEADER,
+      push("推", "bob", "樓上 Carol 說得對"),
+      push("→", "bob", "carolyn 不是你"),
+      push("推", "carol", "我 carol 自己提自己"),
+      "[1] dave                                   1.2.3.4 09/01/2025 12:00",
+      "│ 回 @carol：",
+      "│ 第二段",
+    ];
+    const a = analyzeArticle(lines, {}, "Carol");
+    expect(a.mentions.map((c) => [c.user, c.row])).toEqual([
+      ["bob", HEADER.length],
+      ["dave", HEADER.length + 3],
+    ]);
+    expect(analyzeArticle(lines, {}).mentions).toEqual([]);
+  });
+
   test("新格式推文另計，`│` 內容列接到同一則", () => {
     const lines = [
       ...HEADER,

@@ -10,7 +10,7 @@
 //   3. **只用空白處**：與雙欄閱讀的左欄同一套（split_reader.paneWidthFor），放不下就不出現，
 //      不推動終端機（docs/terminal-size.md LOCKED）。
 
-import { parseArticleHeader } from './comment_parse';
+import { parseArticleHeader, mentionsUser } from './comment_parse';
 import { parseCommentLine, parseModernCommentLine } from './agent_parse';
 import { MODERN_COMMENT_BODY_MARK } from './comment_parse';
 import { RE_IMAGE_EXT, RE_IMGUR_SINGLE, RE_TWIMG, RE_TENOR } from './image_url_detect';
@@ -66,7 +66,9 @@ export function thumbCandidates(url, config) {
 //   comments：[{ row, type, user, content }]（user 小寫）
 //   users：[{ user, count, op }] 依則數多到少（同數照第一次出現）
 //   images：[{ url, row, thumbs }]（同網址只收第一次，最多 IMAGE_LIMIT 張）
-export function analyzeArticle(lines, config) {
+//   mentions：內容提到 selfId 的推文（同 comments 的形狀；自己推的不算；沒有 selfId ⇒ []）。
+//     判準與推文列左緣的標示同一支（comment_parse.mentionsUser）。
+export function analyzeArticle(lines, config, selfId) {
   const t = lines || [];
   const header = parseArticleHeader(t[0] || '');
   const author = header && header.author ? header.author : null;
@@ -111,7 +113,9 @@ export function analyzeArticle(lines, config) {
   }
   const users = Array.from(counts, ([user, count]) => ({ user, count, op: user === author }));
   users.sort((a, b) => b.count - a.count);
-  return { author, stats, comments, users, images };
+  const me = selfId ? String(selfId).toLowerCase() : null;
+  const mentions = me ? comments.filter((c) => c.user !== me && mentionsUser(c.content, me)) : [];
+  return { author, stats, comments, users, images, mentions };
 }
 
 // 本篇的 ptt.cc 網址（AID → 檔名，aid_codec）。
@@ -141,7 +145,7 @@ function writeCollapsed(v) {
   }
 }
 
-const EMPTY = { author: null, stats: { push: 0, boo: 0, arrow: 0, modern: 0 }, comments: [], users: [], images: [] };
+const EMPTY = { author: null, stats: { push: 0, boo: 0, arrow: 0, modern: 0 }, comments: [], users: [], images: [], mentions: [] };
 
 // ---------------------------------------------------------------------------
 // 控制器
@@ -166,6 +170,7 @@ export function ArticleTools(core) {
     stats: EMPTY.stats,
     users: [],
     images: [],
+    mentions: [],
     selectedUser: null,
     selectedComments: []
   };
@@ -257,8 +262,11 @@ ArticleTools.prototype = {
     const patch = { visible: true, width: width };
     const view = core.view || {};
     const board = view._articleBoard || null;
-    if (changed || board !== this._state.board) {
-      const a = (this._analysis = analyzeArticle(this._lines, getImageProxyConfig()));
+    // 自己的帳號：與推文列的「我」標示同一個來源與同一個開關（term_view._selfId）。
+    const selfId = view.highlightSelfComments ? view._selfId || null : null;
+    if (changed || board !== this._state.board || selfId !== this._selfId) {
+      this._selfId = selfId;
+      const a = (this._analysis = analyzeArticle(this._lines, getImageProxyConfig(), selfId));
       const nav = core.aidNavigation;
       const local = nav && typeof nav.findLocalPostAid === 'function' ? nav.findLocalPostAid() : null;
       const aid = local ? local.aid : null;
@@ -269,7 +277,8 @@ ArticleTools.prototype = {
         author: a.author,
         stats: a.stats,
         users: a.users.slice(0, TOP_USERS),
-        images: a.images
+        images: a.images,
+        mentions: a.mentions
       });
       // 換文章 ⇒ 篩選作廢；同一篇長出新推文 ⇒ 重算這個人的清單。
       if (this._state.selectedUser && !a.users.some((u) => u.user === this._state.selectedUser)) {

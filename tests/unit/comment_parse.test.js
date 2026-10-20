@@ -38,6 +38,7 @@ import {
   matchTitleBlacklist,
   FloorCounter,
   annotateComment,
+  mentionsUser,
   commentTailCols,
   isPusherHighlighted,
   findPageOverlap,
@@ -985,6 +986,31 @@ describe("annotateComment", () => {
     // 黑名單藏起來的不標
     const hidden = annotateComment(ts("推 hsiung9: yo"), { ...ctx, blacklist: new Set(["hsiung9"]) });
     expect(hidden.authorIdStart).toBeUndefined();
+  });
+
+  test("提到我：內容出現自己的帳號（不分大小寫、英數邊界）⇒ mentionsSelf；自己推的、被藏的不算", () => {
+    const ctx = { ...baseCtx(), selfId: "hsiung9" };
+    expect(annotateComment(ts("推 bob: 樓上 HSIUNG9 說得對"), ctx).mentionsSelf).toBe(true);
+    expect(annotateComment(ts("推 bob: @hsiung9 看這"), ctx).mentionsSelf).toBe(true);
+    expect(annotateComment(ts("推 bob: hsiung99 不是你"), ctx).mentionsSelf).toBeUndefined();
+    expect(annotateComment(ts("推 bob: xhsiung9 也不是"), ctx).mentionsSelf).toBeUndefined();
+    expect(annotateComment(ts("推 hsiung9: 我 hsiung9 自己"), ctx).mentionsSelf).toBeUndefined();
+    const hidden = { ...ctx, blacklist: new Set(["bob"]) };
+    expect(annotateComment(ts("推 bob: hsiung9"), hidden).mentionsSelf).toBeUndefined();
+    expect(annotateComment(ts("推 bob: hsiung9"), baseCtx()).mentionsSelf).toBeUndefined();
+    // 推文者帳號本身（冒號前）不算內容
+    expect(annotateComment(ts("推 hsiung9x: 嗨"), ctx).mentionsSelf).toBeUndefined();
+  });
+
+  test("mentionsUser：邊界與大小寫", () => {
+    expect(mentionsUser("hi Abc", "abc")).toBe(true);
+    expect(mentionsUser("abc", "abc")).toBe(true);
+    expect(mentionsUser("(abc)", "abc")).toBe(true);
+    expect(mentionsUser("中文abc中文", "abc")).toBe(true);
+    expect(mentionsUser("abcd", "abc")).toBe(false);
+    expect(mentionsUser("zabc", "abc")).toBe(false);
+    expect(mentionsUser("", "abc")).toBe(false);
+    expect(mentionsUser("abc", null)).toBe(false);
   });
 
   test("highlightAuthor off → no author range", () => {

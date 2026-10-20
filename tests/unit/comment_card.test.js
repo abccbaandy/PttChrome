@@ -80,6 +80,13 @@ describe("buildCommentCard（單一推文列）", () => {
     expect([plain.contains("commentByAuthor"), plain.contains("commentBySelf")]).toEqual([false, false]);
   });
 
+  test("提到我 ⇒ 整張卡片掛 mentionsSelf", () => {
+    const card = (over) =>
+      buildCommentCard({ chars, regions: commentCardRegions(chars), row: 9, forceWidth: 20, pusher: "someone", ...over }).node;
+    expect(card({ mentionsSelf: true }).classList.contains("mentionsSelf")).toBe(true);
+    expect(card({}).classList.contains("mentionsSelf")).toBe(false);
+  });
+
   test("外部契約：bbsrow/srow、data-pusher(-col)、每一行都有 bbsline/data-row", () => {
     const { node } = buildCommentCard({
       chars,

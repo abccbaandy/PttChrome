@@ -81,11 +81,12 @@ function makeArticle(seed, total, fullPush = false) {
     if (fullPush) {
       // 整段都是真實形狀的推文（含黑名單）：最接近一般熱門文的推文區。
       if (r() < 0.4) uid = authors[Math.floor(r() * authors.length)];
-      rows.push(pushFull(r() < 0.8 ? "推" : "→", uid, "留言 " + i, mm));
+      // 每 7 則提到一次自己（enhance.selfId）：不多抽亂數，種子序列不變。
+      rows.push(pushFull(r() < 0.8 ? "推" : "→", uid, (i % 7 ? "留言 " : "@gamma3 留言 ") + i, mm));
     } else if (x < 0.55) {
       // 同作者機率高 ⇒ run 會跨頁
       if (r() < 0.4) uid = authors[Math.floor(r() * authors.length)];
-      const t = r() < 0.08 ? "看 example.org 吧" : r() < 0.05 ? "https: //i.imgur.com/fx" + i + ".png" : "留言 " + i;
+      const t = r() < 0.08 ? "看 example.org 吧" : r() < 0.05 ? "https: //i.imgur.com/fx" + i + ".png" : (i % 7 ? "留言 " : "gamma3 你看 ") + i;
       rows.push((fullPush || r() < 0.5 ? pushFull : push)(r() < 0.8 ? "推" : "→", uid, t, mm));
     } else if (x < 0.62) {
       rows.push(push("推", "badguy", "黑名單 " + i, mm));
@@ -101,7 +102,7 @@ function makeArticle(seed, total, fullPush = false) {
       const who = r() < 0.4 ? "badguy" : authors[Math.floor(r() * authors.length)];
       rows.push(pad80("[" + i + "] " + who + "                     10/16/2026 13:" + mm));
       const k = 1 + Math.floor(r() * 3);
-      for (let j = 0; j < k; ++j) rows.push(pad80("│新格式內容 " + i + "-" + j));
+      for (let j = 0; j < k; ++j) rows.push(pad80("│新格式內容 " + i + "-" + j + (j === 1 ? " GAMMA3" : "")));
     } else {
       rows.push(push("推", uid, "接續 " + i, mm));
     }
@@ -115,6 +116,8 @@ const enhanceFor = (o) => ({
   showFloorNumbers: true,
   highlightAuthor: true,
   articleAuthor: "poster",
+  // 自己的推文／提到我（P12）：逐列判斷，跨列只經過新格式的 thread 與合併塊。
+  selfId: "gamma3",
   autoFixUrl: o.autoFixUrl,
   bareDomainLink: true,
   enableXMention: true,
@@ -226,6 +229,21 @@ describe("前沿的邊界情形", () => {
     const first = head.length;
     expect(out.annotations[first].mergeCommentRun).toBeTruthy();
     for (let i = 1; i < 6; ++i) expect(out.annotations[first + i].mergedIntoComment).toBe(first);
+  });
+
+  test("合併塊裡任一則提到我 ⇒ 整塊（run 首列）mentionsSelf；都沒提到 ⇒ 沒有", () => {
+    const head = makeArticle(5, 40).slice(0, 19);
+    const tail = [
+      push("推", "zeta99", "第一則", "01"),
+      push("推", "zeta99", "叫一下 gamma3", "02"),
+      push("推", "zeta99", "第三則", "03"),
+      push("推", "omega1", "別人", "04"),
+    ];
+    const out = run(head.concat(tail), [head.length + tail.length]);
+    const first = head.length;
+    expect(out.annotations[first].mergeCommentRun).toBeTruthy();
+    expect(out.annotations[first].mentionsSelf).toBe(true);
+    expect(out.annotations[first + 3].mentionsSelf).toBeUndefined();
   });
 
   test("跨行網址鏈跨頁：左片段在上一頁最後一列 ⇒ 下一頁接上後三列同一條連結", () => {

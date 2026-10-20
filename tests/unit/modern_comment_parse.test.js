@@ -82,6 +82,17 @@ describe('annotateComment：新格式', () => {
     expect([a.authorIdStart, a.authorIdEnd, a.authorIdKind]).toEqual([4, 12, 'self']);
   });
 
+  test('提到我（新格式）：標在含那段字的 │ 內容列；自己那一則的內容不算', () => {
+    const ctx = ctxOf({ selfId: 'meuser' });
+    const rows = [H1, '│第一行沒有', '│第二行 @MeUser 看這', ''];
+    const anns = rows.map((t) => annotateComment(t, ctx));
+    expect(anns[0].mentionsSelf).toBeUndefined();
+    expect(anns[1]).toBeNull();
+    expect(anns[2]).toEqual({ hidden: false, modernBody: true, mentionsSelf: true });
+    const own = ctxOf({ selfId: 'someuser' });
+    expect([H1, '│someuser 自己'].map((t) => annotateComment(t, own))[1]).toBeNull();
+  });
+
   test('黑名單：標頭與其後的 │ 內容列一起藏，遇到非內容列就停', () => {
     const ctx = ctxOf();
     const rows = [H2_IP, '│第一行', '│第二行', H1, '│別人的內容', ''];
