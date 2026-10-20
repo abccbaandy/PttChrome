@@ -165,7 +165,9 @@ export const MessageInbox = ({ pttchrome, inline = false }) => {
                   <span className="inboxFrom">
                     {item.kind === "broadcast"
                       ? i18n("inbox_broadcast")
-                      : item.from}
+                      : item.kind === "mail"
+                        ? i18n("inbox_mail")
+                        : item.from}
                   </span>
                   <time className="inboxTime">{clock(item.at)}</time>
                   {inbox.canReply(item) ? (

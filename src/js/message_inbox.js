@@ -9,8 +9,12 @@
 //   任意位元組切塊 ⇒ 一則水球可能跨兩包：沒收尾的開頭留到下一包再接（carry）。
 // - 重畫去重：^L 重繪會把還在畫面上的水球列再送一次 ⇒ 跟最後一則一模一樣（同人同字）
 //   且在 REPAINT_WINDOW_MS 內就當成重畫。
+// - 新信提示：標題列中段的「你有新信件」由無變有時收一則（noteScreen，見 newMailOnScreen）。
 import { b2u, WATERBALL_SCAN_RE, BROADCAST_SCAN_RE } from './string_util';
 import { readEffectivePrefs } from './pref_storage';
+import { parseBoardName, parseHeaderTitle } from './screen_titles';
+import { NEW_MAIL_MARK } from './mobile_app_bar';
+import { i18n } from './i18n';
 
 export const MESSAGE_INBOX_ID = 'messageInbox';
 export const INBOX_LIMIT = 100;
@@ -80,6 +84,17 @@ export function latestSender(items) {
   return null;
 }
 
+// 這個畫面看不看得出「有沒有新信」：mbbsd/menu.c#redraw_title 在 ISNEWMAIL 時把標題列中段
+// 換成「你有新信件」（主選單、看板列表、文章列表共用這條標題列）。true／false 只在 row 0
+// 認得出是標題列（【X】或看板標題）時給；文章、prompt、編輯器這類沒有標題列的畫面回 null
+// ＝不知道（看不到不代表沒有新信）。
+export function newMailOnScreen(row0, pageState) {
+  if (pageState === 3) return null;
+  const r = row0 || '';
+  if (!parseHeaderTitle(r) && !parseBoardName(r)) return null;
+  return r.indexOf(NEW_MAIL_MARK) >= 0;
+}
+
 function enabled() {
   return readEffectivePrefs().enableMessageInbox !== false;
 }
@@ -90,7 +105,15 @@ export function MessageInbox(core, opts) {
   this._listeners = new Set();
   this._carry = '';
   this._seq = 0;
+  this._mail = false;
   this._state = { items: [], unread: 0, open: false };
+  const buf = core && core.buf;
+  if (buf && buf.addEventListener) {
+    const self = this;
+    buf.addEventListener('screenSettled', function() {
+      self.noteScreen(buf.getRowText(0), buf.pageState);
+    });
+  }
 }
 
 MessageInbox.prototype = {
@@ -139,11 +162,29 @@ MessageInbox.prototype = {
       added.push(item);
     }
     if (!added.length) return [];
+    this._add(items, added.length);
+    return added;
+  },
+
+  _add: function(items, count) {
     this._set({
       items,
-      unread: this._state.open ? 0 : this._state.unread + added.length
+      unread: this._state.open ? 0 : this._state.unread + count
     });
-    return added;
+  },
+
+  // screenSettled：標題列的新信提示由無變有 ⇒ 收一則（看得出沒有新信時才重新武裝，
+  // 讀完信再來一封會再收一則）。認不出標題列的畫面不動狀態。回傳新收的那則或 null。
+  noteScreen: function(row0, pageState) {
+    if (!enabled()) return null;
+    const mail = newMailOnScreen(row0, pageState);
+    if (mail === null) return null;
+    const was = this._mail;
+    this._mail = mail;
+    if (!mail || was) return null;
+    const item = { id: ++this._seq, kind: 'mail', from: '', text: i18n('inbox_newMail'), at: this._now() };
+    this._add([item].concat(this._state.items).slice(0, INBOX_LIMIT), 1);
+    return item;
   },
 
   setOpen: function(open) {
@@ -181,6 +222,7 @@ MessageInbox.prototype = {
   // App.onClose：收件匣跟著連線走。
   reset: function() {
     this._carry = '';
+    this._mail = false;
     this.clear();
   }
 };
