@@ -255,6 +255,31 @@ describe("ScreenController：只在 enhance.listCards 時畫卡片", () => {
     expect(m.container.textContent).toContain("看板《Test》");
   });
 
+  // 回歸（tap 卡片偶爾落空）：卡片的底色下在整張卡片本體、不吃 col，所以點擊範圍讓
+  // col > 0 時也只能搬 class，不准重畫。重畫會換掉手指下那張卡片，而觸控 tap 的
+  // mouseup 會移動 hover 底色 ⇒ Chromium 不發 click。真 tap 的守護見
+  // tests/e2e/offline/mobile_list_cards.offline.spec.js「畫面上有選取時 tap 卡片」。
+  test("卡片模式移動游標底色（col > 0）：不換任何卡片節點，class 搬到新卡片", () => {
+    const m = mountScreen(props("article"));
+    const nodes = () =>
+      Array.from(m.container.querySelectorAll('.listBodyView > .listCard, .listBodyView .listCardBody'));
+    const lit = () =>
+      Array.from(m.container.querySelectorAll(".listCardBody.b2")).map((n) => n.getAttribute("data-row"));
+    const before = nodes();
+    m.controller.setCursorHighlight({ row: 3, cls: "b2", col: 17 });
+    expect(lit()).toEqual(["3"]);
+    m.controller.setCursorHighlight({ row: 4, cls: "b2", col: 17 });
+    expect(lit()).toEqual(["4"]);
+    expect(nodes()).toEqual(before);
+    // 快取與 DOM 同步：同一批列重畫一次，DOM 與從頭畫的一致。
+    m.update(props("article"));
+    const fresh = mountScreen(props("article"));
+    fresh.controller.setCursorHighlight({ row: 4, cls: "b2", col: 17 });
+    expect(m.container.querySelector(".listBodyView").innerHTML).toBe(
+      fresh.container.querySelector(".listBodyView").innerHTML
+    );
+  });
+
   test("同一批列物件切換卡片模式 ⇒ 節點重建（listCards 進 annotationsKey）", () => {
     const m = mountScreen(props(undefined));
     m.update(props("article"));

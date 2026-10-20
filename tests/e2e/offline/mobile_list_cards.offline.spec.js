@@ -279,6 +279,57 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await expect.poll(async () => (await state(page)).selectedNum).toBe(target.num);
   });
 
+  // 回歸：tap 卡片偶爾不開文、但游標底色已經移到那一張，再點一次才開。
+  // 成因：觸控 tap 的相容事件是 mousemove → mousedown → mouseup → click，Chromium 的
+  // click 只發給「mousedown／mouseup 期間還在 DOM 上」的節點（gesture_manager.cc：
+  // 兩者的共同祖先）。mousemove 沒移動 hover 時（畫面上有選取 ⇒ App.mouse_move 不追
+  // hover），mouseup 才把底色搬過去；卡片的底色若走重畫，手指下那張卡片被換掉 ⇒ click
+  // 整個不發。選取是用 API 放的前置狀態（測的輸入是那一下真 tap，不是選字手勢）。
+  test('畫面上有選取時 tap 卡片：第一下就開那一筆（底色移動不換掉手指下的卡片）', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    const target = await page.evaluate(() => {
+      const v = document.querySelector('#mainContainer .listBodyView');
+      const vr = v.getBoundingClientRect();
+      const cards = Array.from(v.querySelectorAll(':scope > .listCard'));
+      const seq = window.__app.listSession._sequence();
+      const header = window.__app.listSession.headerRows();
+      const ok = [];
+      for (const c of cards) {
+        const r = c.getBoundingClientRect();
+        if (r.top < vr.top + 2 || r.bottom > vr.bottom - 2) continue;
+        const idx = Number(c.getAttribute('srow')) - header;
+        const num = window.__app.buf.listLineNums[seq[idx]];
+        if (num == null || num === window.__app.listSession._selectedNum) continue;
+        ok.push({ c, num });
+      }
+      if (ok.length < 2) return null;
+      ok[0].c.setAttribute('data-e2e-tap-card', '1');
+      ok[1].c.setAttribute('data-e2e-select-card', '1');
+      return { num: ok[0].num };
+    });
+    expect(target).not.toBeNull();
+    await waitRectStable(page, '[data-e2e-tap-card]');
+    Object.assign(
+      target,
+      await page.evaluate(() => {
+        const b = document.querySelector('[data-e2e-tap-card] .listCardBody').getBoundingClientRect();
+        return { x: b.left + b.width / 2, y: (b.top + b.bottom) / 2 };
+      })
+    );
+    await page.evaluate(() => {
+      getSelection().selectAllChildren(document.querySelector('[data-e2e-select-card] .listCardMain'));
+    });
+    expect(await page.evaluate(() => getSelection().isCollapsed)).toBe(false);
+    const sentBefore = await page.evaluate(() => window.__replay.sent.length);
+    await page.touchscreen.tap(target.x, target.y);
+    await expect.poll(async () => (await state(page)).selectedNum).toBe(target.num);
+    // 真的走了開文交易（跳號腿 `<num>\r`），不只是選取移過去。
+    await expect
+      .poll(() => page.evaluate((n) => window.__replay.sent.slice(n).join(''), sentBefore))
+      .toContain(String(target.num) + '\r');
+  });
+
   // 整張卡片＝同一組點選目標：長按任一段都同時給作者與標題（作者只是第二行一小段字，
   // 依落點分段的舊做法手指按不中，選項就都不出現）。
   test('長按卡片任一處 → 選單同時有「加入黑名單」與「加入標題黑名單」', async ({ page }) => {

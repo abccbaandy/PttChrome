@@ -387,6 +387,10 @@ export class ScreenController {
   // ——舊版走 useState 會讓整個 Screen re-render（靠元素快取 bailout 才不致於重建
   // 每一列）。col > 0 的部分底色是包在 LinkSegmentBuilder 建的 wrapper span 裡，
   // 沒有辦法只換 class，退回重畫。
+  // 手機列表卡片（enhance.listCards）的底色下在整張卡片本體、不吃 col（list_card.js），
+  // col 不變就一律走快路徑。**不可以重畫**：觸控 tap 的 mouseup 會移動 hover 底色
+  // （畫面有選取時 mousemove 不追 hover），重畫換掉手指下那張卡片 ⇒ Chromium 不發
+  // click，tap 落空（gesture_manager.cc：click 發給 mousedown／mouseup 目標的共同祖先）。
   setCursorHighlight(next) {
     const prev = this.highlight;
     const state = next || NO_HIGHLIGHT;
@@ -397,7 +401,12 @@ export class ScreenController {
     )
       return;
     this.highlight = state;
-    if (prev.col === 0 && state.col === 0) {
+    const enhance = this.props && this.props.enhance;
+    const cards = !!(enhance && enhance.listCards);
+    if (
+      (prev.col === 0 && state.col === 0) ||
+      (cards && prev.col === state.col)
+    ) {
       if (prev.row >= 0 && prev.cls)
         this._toggleRowClass(prev.row, prev.cls, false);
       if (state.row >= 0 && state.cls)

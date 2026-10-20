@@ -286,6 +286,11 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   不做退出帶／邊緣翻頁，點卡片本體＝ `onMouseClick(row, LIST_TITLE_COL_START)`（走 session 的列點擊開文
   合約）；**只有點在卡片本體才開**（`mobile_layout.isListCardBodyTarget`）：間距防誤點、視口外的 `.main` 留白
   （footer 收起後）不落回列號換算；`clientToPos` 的 footer 分支在 listCards 下關閉。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵面板的 ←。
+- **卡片的游標底色變動只搬 class、不准重畫**（`render/screen.js#setCursorHighlight`：listCards 下 col 不變即走快路徑，
+  卡片本體不吃 col）。理由：tap 的相容事件是 mousemove→mousedown→mouseup→click，Chromium 的 click 只發給
+  mousedown／mouseup 期間還在 DOM 上的節點；mousemove 沒追到 hover 時（例：畫面有選取）改由 `App.mouse_up` 搬底色 ⇒
+  重畫換掉手指下的卡片 ⇒ click 不發（症狀：底色移過去了卻沒開文，再點一次才開）。守護 `list_card.test.js`、
+  `mobile_list_cards`「畫面上有選取時 tap 卡片」。
 - 長按選單的黑名單在 listCards 下**不分區域**：整張卡片＝同一組，作者與標題選項一起給
   （`context_menu_items.listBlacklistTargets`；依落點分段時作者那一小段手指按不中，選項全不出現）；「前已讀後
   未讀」用 `clientToPos` 的列號（已是卡片座標）。
