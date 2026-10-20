@@ -7,6 +7,8 @@
 //   2) 第一步永遠是把 server 真游標搬到目標列的序號跳轉。
 // cchat-list-mark cassette 剛好錄了 jump → 'v' → prompt 畫面，兩步都餵得動；
 // `w\r` 沒有對應的門控（真 server 才會回應），所以只驗它**被送出**、不驗結果。
+// 另外守「全程凍結」：兩步都在凍結交易裡跑（docs/easy-reading-list.md「落地即回好讀」），
+// 使用者看不到原生鏡像、也看不到 PTT 的 prompt——送出第二步那一刻量畫面。
 //
 // live e2e 刻意不加：這個操作會真的改寫測試帳號的看板已讀記錄且不可逆
 //（brc_trunc），而且有登入預算硬規範。
@@ -41,6 +43,26 @@ async function dumpListState(page) {
       sent: (window.__replay && window.__replay.sent.slice()) || []
     };
   });
+}
+
+// 第二步（keys）被送出的那一刻的畫面狀態。cassette 不回應第二步，命令至少等滿
+// 軟逾時（250ms）才會降級，rAF 輪詢一定量得到送出當下的樣子。
+async function stateWhenSent(page, keys, from) {
+  const h = await page.waitForFunction(
+    ({ k, i }) => {
+      if (!window.__replay.sent.slice(i).includes(k)) return false;
+      const lines = Array.from(
+        document.querySelectorAll('#mainContainer [data-type="bbsline"]')
+      ).map((el) => el.textContent || '');
+      return {
+        renderMode: window.__app.buf.listRenderMode,
+        promptPainted: lines.some((t) => t.includes('設定所有文章'))
+      };
+    },
+    { k: keys, i: from },
+    { timeout: 10000, polling: 'raf' }
+  );
+  return h.jsonValue();
 }
 
 async function waitState(page, pred, timeout = 15000) {
@@ -142,30 +164,18 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
         { n: num, from: before },
         { timeout: 10000 }
       );
-      // 第二步：跳號落地後才切原生鏡像並代送 'v'（cassette 餵回 prompt 畫面）。
+      // 第二步：跳號落地後才代送 'v'（cassette 餵回 prompt 畫面）。
       await page.waitForFunction(
         (from) => window.__replay.sent.slice(from).includes('v\f'),
         before,
         { timeout: 10000 }
       );
-      await waitState(page, (s) => s.renderMode === 'native', 10000);
-      // 原生鏡像的切換發生在「送出 v」的當下，PTT 畫的 prompt 要等回應才上畫面
-      // ⇒ 等內容條件，不可在切到 native 的瞬間就量。
-      await page.waitForFunction(
-        () =>
-          Array.from(
-            document.querySelectorAll('#mainContainer [data-type="bbsline"]')
-          ).some((el) => (el.textContent || '').includes('前已讀後未讀')),
-        undefined,
-        { timeout: 10000 }
-      );
 
-      // 第三步：prompt 出現之後才送 'w\r'（getdata 是整行輸入，少了 Enter 不會動）。
-      await page.waitForFunction(
-        (from) => window.__replay.sent.slice(from).includes('w\r\f'),
-        before,
-        { timeout: 10000 }
-      );
+      // 第三步：prompt 出現（expect 判定）之後才送 'w\r'（getdata 是整行輸入，少了
+      // Enter 不會動）。那一刻畫面仍凍著：沒翻到原生、PTT 的 prompt 沒畫給使用者看
+      // （回歸：錄製檔 ptt-debug-20261020-161646 的畫面翻面兩次）。
+      const atApply = await stateWhenSent(page, 'w\r\f', before);
+      expect(atApply).toEqual({ renderMode: 'frozen', promptPainted: false });
       const sent = (await dumpListState(page)).sent.slice(before);
       expect(sent.indexOf('v\f')).toBeLessThan(sent.indexOf('w\r\f')); // 順序不可顛倒
       // 'w' 絕不可以在 prompt 之前就跟著跳號／'v' 一起出去（那會變成 b_call_in）。
@@ -237,19 +247,9 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
         before,
         { timeout: 10000 }
       );
-      await page.waitForFunction(
-        () =>
-          Array.from(
-            document.querySelectorAll('#mainContainer [data-type="bbsline"]')
-          ).some((el) => (el.textContent || '').includes('設定所有文章')),
-        undefined,
-        { timeout: 10000 }
-      );
-      await page.waitForFunction(
-        (from) => window.__replay.sent.slice(from).includes('v\r\f'),
-        before,
-        { timeout: 10000 }
-      );
+      // prompt 出現（expect 判定）才送 v+Enter；同「前已讀後未讀」全程凍結。
+      const atApply = await stateWhenSent(page, 'v\r\f', before);
+      expect(atApply).toEqual({ renderMode: 'frozen', promptPainted: false });
       const sent = (await dumpListState(page)).sent.slice(before);
       expect(sent.indexOf('v\f')).toBeLessThan(sent.indexOf('v\r\f'));
       const noFF = (d) => (d.charAt(d.length - 1) === '\f' ? d.slice(0, -1) : d);

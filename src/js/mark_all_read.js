@@ -11,8 +11,8 @@
 // ⇒ 掃整個畫面。
 //
 // 送出路徑與「跳到第一篇未讀」相同（article_search.submitSerializedSteps）：列表好讀時走
-// list_session 的 passthrough（完成後停在原生鏡像，靜置探針自動回好讀並 rebuild——已讀標記
-// 全變，累積 buffer 本來就過時），原生時走 CommandQueue。
+// list_session 的凍結交易（resumeOnLanding：全程不切原生，v⏎ 落回列表那一幀直接 rebuild
+// 回好讀——已讀標記全變，累積 buffer 本來就過時），原生時走 CommandQueue。
 
 import { refreshTargetOf } from './screen_refresh';
 import { submitSerializedSteps } from './article_search';
@@ -95,7 +95,13 @@ MarkAllRead.prototype = {
         }
       }
     ];
-    if (!submitSerializedSteps(core, steps, { kind: 'mark-all-read', flag: MARK_ALL_READ_FLAG })) {
+    if (
+      !submitSerializedSteps(core, steps, {
+        kind: 'mark-all-read',
+        flag: MARK_ALL_READ_FLAG,
+        resumeOnLanding: true
+      })
+    ) {
       this._hint('指令處理中，請稍候再試');
       return false;
     }

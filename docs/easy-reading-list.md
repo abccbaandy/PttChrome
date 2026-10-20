@@ -24,7 +24,7 @@
 | T2 列表內交易 | 開文（Enter／**左鍵單擊該列**）、數字跳號、End/Home 邊界確認、`←`/q/e 離板 | 腳本交易（CommandQueue 序列化） |
 | **T3-A 原地重繪（凍結交易，全程不切原生）** | `INPLACE_KEYS`＝`=` `\` `]` `+` `[` `-` `<` `,` `.` `>` `{` `}` `t`（read.c#i_read_key 的 `thread()`／`search_read()`／`ToggleTagItem` 三組 case，**枚舉即合約**，不得改成「猜會不會開 prompt」的啟發式）| `_beginInplaceTransaction`：state→functionMode（吸收 settle／吞鍵）但 **render=frozen**，選取≠`_serverNum` 時先 `inplace-sync-jump` → `native-inplace` 命令（尾附 `\f`）→ expect＝**park 指紋**（`curX<=1 ∧ 3<=curY<=rows-2 ∧ (cursorRowNum≠null ∨ kind='clean-list')`；**不可寫成 `kind==='clean-list'`**：跳號腿之後底列本來就空，`redrawwin` 重繪的是現狀，協定 §4✚/§6）→ `_resumeInPlace`：採用落點當選取／`_serverNum`，**錨（`_topNum`/`_scrollFrac`）一律不動**、只 reveal（不變量 N6）。`_boardName` 全程保留 ⇒ 不丟 cache。落點不在緩衝→退回 `_resumeBuffer`+`rebuild`。失敗＝`_degradeToNative`（banner＋原生）。**Ctrl-C（ClearTagList）不在此組**：FULLUPDATE 只重畫當前頁，緩衝其他頁的 tag 標記會殘留 ⇒ 歸 B 類 |
 | T3-B 一鍵切原生 passthrough | `v`、`/`、`s`、`a`、`Z`、Ctrl-P、Ctrl-Q、Alt+任一字母、`z`……**其餘一切未列鍵** | 單按即生效：有序號選取且 `_serverNum` 未同步→先 `native-sync-jump`（frozen＋吞鍵）→ `enter-function-mode`（原生 excursion，不變量 15 拋 cache）→ 代送原鍵（`native-key` 佇列命令，**尾附 `\f`**：PTT 完全忽略某鍵時零 byte 零 settle，沒有它只能等滿 3s）＋提示「已切至原生（操作完成後自動恢復好讀）」。**Ctrl 組合與 Alt remap（`Alt+A~Z`，全 26 字母）一律代送**（2026-09-13 修，見不變量 12）；只有算不出 bytes 的鍵（Ctrl+Shift／`CtrlShiftMap` 無對應）才不代送、事件放行原生鍵盤路徑。**hold＝`'passthrough'`**：clean-list settle **本身**一律 stay（settle 不解除 hold），由靜置探針決定何時回好讀；article／menu 情境切換照舊立即解除 |
-| T3a 右鍵「前已讀後未讀」 | 右鍵選單項（只在列表好讀、游標下是**有序號**的文章列時出現） | 同 T3 的序列，但 payload 是**兩步**：`v`（expect＝畫面上出現 getdata prompt「…(W)前已讀後未讀…」，**掃整個畫面**，prompt 在 row 22 不是底列）→ 落地後才送 `w\r`。第二步只在第一步的 `onDone` 裡 enqueue —— `v` 沒進 prompt 時 `w` 會落回列表按鍵 `b_call_in`（對該列作者送呼叫器），協定見 `docs/pttbbs-screen-protocol.md` §11.5。`markReadTargetAtRow(renderRow)` 是零副作用的可行性查詢（React 端不重複判斷）；完成後照 T3-B 停在原生鏡像（已讀標記變了＝累積 buffer 過時，返回時走 rebuild），畫面靜下來由靜置探針自動回好讀 |
+| T3a 右鍵「前已讀後未讀」 | 右鍵選單項（只在列表好讀、游標下是**有序號**的文章列時出現） | 同 T3 的序列，但 payload 是**兩步**：`v`（expect＝畫面上出現 getdata prompt「…(W)前已讀後未讀…」，**掃整個畫面**，prompt 在 row 22 不是底列）→ 落地後才送 `w\r`。第二步只在第一步的 `onDone` 裡 enqueue —— `v` 沒進 prompt 時 `w` 會落回列表按鍵 `b_call_in`（對該列作者送呼叫器），協定見 `docs/pttbbs-screen-protocol.md` §11.5。`markReadTargetAtRow(renderRow)` 是零副作用的可行性查詢（React 端不重複判斷）。**全程是凍結交易**（`resumeOnLanding` → `_beginLandingTransaction`，見下方「落地即回好讀」）：不切原生鏡像，`w⏎` 落回列表那一幀直接 `resume-buffer`+`rebuild`（已讀標記變了＝累積 buffer 過時）；sync 腿失敗**不送** `v`（游標沒對上＝拿錯的文章當界線）；PTT 拒絕（`vmsg`）或落點認不出 ⇒ 停原生鏡像交給靜置探針。「設為全部已讀」同一條（`mark_all_read.js`）。pref 關掉＝舊行為（照 T3-B 停在原生） |
 | T3b 貼上 | Shift+Insert／右鍵選單「貼上」／中鍵貼上 | 同 T3，但 payload 是整串：`App.onPasteDone` → `ListSession.onPaste(text)`（回 true＝已接手）→ 需要時 `native-sync-jump` → `enter-function-mode` → `native-paste` 佇列命令送出 `ansiHalfColorConv(u2b(normalizePasteText(...)))`。**PTT 收到後完全原生**：不代按 Enter、不特判 AID（`#` 仍要 Enter 才跳且只移游標不開文，協定 §8.1）；貼上內容自帶換行則照送 Enter。交易在途（opening／frozen）吞掉＋提示 |
 | T3c 文字輸入（IME） | 中文輸入法組完字送出（compositionend） | 同 T3b，只是**不套 `normalizePasteText`**（那是貼上專屬的換行／折行正規化，IME 送的是剛組完的一段字）、佇列命令 kind 為 `native-input`。入口是 `term_view.onTextInput` 這條共用漏斗 → `ListSession.noteTextInput(text)`（回 true＝已接手）。**按鍵路徑抓不到它**：IME 的 keydown keyCode 是 229，被 `keyEventFilter` 擋在 `onKeyDown` 之外 ⇒ 走不到 `_classifyKey`。見不變量 12d |
 | T4 非請自來 | 水球/廣播（server 主動寫入） | 唯一自動切原生路徑：banner 明示（水球專屬措辭）＋停在原生（`'passthrough'` hold ⇒ 畫面靜下來後靜置探針自動回好讀；pref 關掉時才是 article/menu 才恢復）|
@@ -260,6 +260,20 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 - suspended：clean-list ∧ 落點在緩衝 ∧ 板名同→**`resume-in-place`**（只採用落地幀的游標，**捲動錨一律不動**——文章期間視口不在 DOM 上，錨本來就是使用者離開前的那一個，不變量 N6）；否則 `resume-buffer`＋`rebuild`（畫面要換一份，重新錨定）；menu→idle。
 - 任意：pref-off/斷線→cleanup。
 
+### 落地即回好讀（`resumeOnLanding`；pref `enableListNativeAutoResume`）
+
+多步序列（`_beginPassthroughBytes(steps, { resumeOnLanding: true })`，經 `submitSerializedSteps` 的 `opts.resumeOnLanding` 傳入）
+改走 `_beginLandingTransaction`：形狀同 A 類凍結交易（frozen＋可選 sync 腿＋逐步送真鍵，步驟改用凍結交易的快速失敗預算），
+最後一步的 expect 判定的那一幀交給 `_resumeFromLanding`：條件與 `resume-probe` 逐條相同（clean-list ∧ hasNumberedRow ∧ engageEligible），
+**只差不等 `RESUME_QUIET_MS`** ⇒ `resume-buffer`+`rebuild`（rebuild 前照樣 `_adoptPendingViewport`）；不合格 ⇒ `_enterFunctionMode`（passthrough hold，退回探針）。
+任一步 onFail 而畫面仍凍著 ⇒ 切原生（N8）。
+
+可以不等靜置的前提＝**最後一步從 getdata prompt 送出**：送出前游標停在 prompt 那一列的行中，落地幀要過 clean-list
+就得游標在編號列行首（N9）⇒ 必是 server 重畫完才 park 的，洞 3（settle 兩次、游標還在舊位置）不成立。
+**不符合這個前提的序列不要 opt in**（例：游標本來就在列表上的多步翻頁）。目前用的：右鍵「前已讀後未讀」、「設為全部已讀」。
+來源：錄製檔 `ptt-debug-20261020-161646`——三道命令 218ms 就做完，舊流程卻是「切原生 → 空等探針 250ms → 切回」，
+使用者看到畫面翻面兩次。
+
 ### 靜置探針（`resume-probe`，2026-09-03；pref `enableListNativeAutoResume`）
 
 `holdReason === 'passthrough'` 期間維護一個計時器（`_scheduleResumeProbe`）：
@@ -451,8 +465,8 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
   「退文回列表：視野停在使用者自己捲到的位置」。**落點不在緩衝／板名異仍走 `resume-buffer`+`rebuild`**
   （畫面本來就要換一份，重新錨定才是對的）。
 - **N6b 編號空間不變的原生交易回好讀時還原捲動錨**（2026-10 起泛化：由閱讀紀錄 `reading_record` 的決策表決定哪些交易還原，涵蓋設已讀、重新整理、`s` 取消、身後的列表——**模型與決策表見 `docs/reading-record.md`**；下面是執行端的細節）：
-  它是 B 類（切原生 → 靜置探針 → `resume-buffer`+`rebuild`），而 `_resumeBuffer`／`_seedAnchors` 會改採
-  PTT 分頁頂端 ⇒ 閱讀進度丟失。`markReadUnreadBefore` 在切原生前存 `_pendingViewport`；`rebuild` 之前
+  落地一律 `resume-buffer`+`rebuild`（「前已讀後未讀」是落地即回好讀，其餘是靜置探針），而 `_resumeBuffer`／`_seedAnchors` 會改採
+  PTT 分頁頂端 ⇒ 閱讀進度丟失。閱讀紀錄在交易收尾時存 `_pendingViewport`；`rebuild` 之前
   `_adoptPendingViewport` 驗證「同板∧落點游標＝發起那篇」（否則丟棄＝舊行為）；`applyScrollAfterRender`
   裡 `_tryApplyPendingViewport` 等**錨列進緩衝且捲得到**（`pos*rowH+frac<=maxScrollTop` 或 `_edgeDown`）
   才套用——rebuild 後緩衝只有一頁，捲不到時 capture 會把錨改寫成被夾住的那列。期間 `_maybeFill` 無視預抓

@@ -257,7 +257,9 @@ export function submitSearch(core, kind, text, cb) {
 
 // submitSearch 的送出半段：多步序列（每步 {keys, kind, expect, onDone, onFail}）交給
 // 「現在誰在畫列表」。opts.kind ＝ passthrough 的診斷名稱，opts.flag ＝在途旗標欄位名
-// （預設 'searchInFlight'）。回 false ＝沒送（線路被別的交易佔住／沒有佇列）。
+// （預設 'searchInFlight'），opts.resumeOnLanding ＝列表好讀時走凍結交易、落地即回好讀
+// （list_session._beginLandingTransaction 寫了誰能用）。回 false ＝沒送（線路被別的交易
+// 佔住／沒有佇列）。
 export function submitSerializedSteps(core, built, opts) {
   if (!built || !built.length || !core) return false;
   const o = opts || {};
@@ -270,7 +272,11 @@ export function submitSerializedSteps(core, built, opts) {
     if (owner.state === 'opening' || (owner.state === 'functionMode' && owner._renderMode === 'frozen'))
       return false;
     beginInFlight(core, flag);
-    owner._beginPassthroughBytes(steps, { kind: o.kind || 'search', hint: null });
+    owner._beginPassthroughBytes(steps, {
+      kind: o.kind || 'search',
+      hint: null,
+      resumeOnLanding: !!o.resumeOnLanding
+    });
     return true;
   }
   const queue = core.commandQueue;
