@@ -110,6 +110,7 @@ describe("annotationsKey / sameKey", () => {
     ["showFloorNumbers", e => (e.showFloorNumbers = false)],
     ["highlightAuthor", e => (e.highlightAuthor = false)],
     ["articleAuthor", e => (e.articleAuthor = "other")],
+    ["selfId", e => (e.selfId = "me")],
     ["pageState", e => (e.pageState = 2)],
     ["autoFixUrl", e => (e.autoFixUrl = false)],
     ["bareDomainLink", e => (e.bareDomainLink = false)],

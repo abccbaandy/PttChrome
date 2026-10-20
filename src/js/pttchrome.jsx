@@ -552,6 +552,8 @@ App.prototype.onConnect = function() {
   // 一次，所以新連線一定要從乾淨狀態開始，否則上一條連線若斷在一幀中間
   // （收到 BSU 沒收到 ESU），新連線的畫面會被壓到保險絲才動。
   this.buf.resetTerminalModes();
+  // 自己的帳號是 per-connection（換帳號登入）：等新連線的選單狀態列再讀。
+  this.view.resetSelfId?.();
   console.info("pttchrome onConnect");
   this.debugRecorder?.log('app.onConnect');
   this.connectState = 1;
@@ -2253,6 +2255,10 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     case 'highlightAuthorComments':
       this.view.highlightAuthorComments = value;
+      this.view.redraw(true);
+      break;
+    case 'highlightSelfComments':
+      this.view.highlightSelfComments = value;
       this.view.redraw(true);
       break;
     case 'enableAutoFixUrl':

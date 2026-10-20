@@ -77,6 +77,11 @@ describe('annotateComment：新格式', () => {
     expect([a.authorIdStart, a.authorIdEnd]).toEqual([4, 12]);
   });
 
+  test('自己的推文（新格式標頭）⇒ authorIdKind self，同一個 id 欄', () => {
+    const a = annotateComment(H1, ctxOf({ articleAuthor: 'other', selfId: 'someuser' }));
+    expect([a.authorIdStart, a.authorIdEnd, a.authorIdKind]).toEqual([4, 12, 'self']);
+  });
+
   test('黑名單：標頭與其後的 │ 內容列一起藏，遇到非內容列就停', () => {
     const ctx = ctxOf();
     const rows = [H2_IP, '│第一行', '│第二行', H1, '│別人的內容', ''];

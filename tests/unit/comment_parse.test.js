@@ -968,6 +968,25 @@ describe("annotateComment", () => {
     expect(other.authorIdEnd).toBeUndefined();
   });
 
+  test("自己的推文 → 同一個 id 範圍、authorIdKind self；我同時是原PO 時以「我」為準", () => {
+    const ctx = { ...baseCtx(), selfId: "hsiung9" };
+    const mine = annotateComment(ts("推 hsiung9: yo"), ctx);
+    expect([mine.authorIdStart, mine.authorIdEnd, mine.authorIdKind]).toEqual([3, 10, "self"]);
+    const op = annotateComment(ts("→ wowbenny: hi"), ctx);
+    expect(op.authorIdKind).toBeUndefined();
+    expect(op.authorIdStart).toBe(3);
+    const both = annotateComment(ts("→ wowbenny: hi"), { ...baseCtx(), selfId: "wowbenny" });
+    expect(both.authorIdKind).toBe("self");
+    // 原PO 高亮關掉也照樣標自己
+    const off = annotateComment(ts("推 hsiung9: yo"), { ...ctx, highlightAuthor: false });
+    expect(off.authorIdKind).toBe("self");
+    // 沒有自己的帳號（未登入／開關關掉 ⇒ term_view 給 null）⇒ 不標
+    expect(annotateComment(ts("推 hsiung9: yo"), baseCtx()).authorIdStart).toBeUndefined();
+    // 黑名單藏起來的不標
+    const hidden = annotateComment(ts("推 hsiung9: yo"), { ...ctx, blacklist: new Set(["hsiung9"]) });
+    expect(hidden.authorIdStart).toBeUndefined();
+  });
+
   test("highlightAuthor off → no author range", () => {
     const ctx = baseCtx();
     ctx.highlightAuthor = false;

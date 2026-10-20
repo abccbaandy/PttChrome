@@ -733,6 +733,7 @@
    舊式 .linkurl 紫紅連結。 */
 .work-mode-active .floorBadge{color:#9ca3af;}
 .work-mode-active .commentByAuthor{background-color:#374151;}
+.work-mode-active .commentBySelf{background-color:#4b5563;}
 .work-mode-active .pusherHighlight{background-color:#1f2937;}
 .work-mode-active .linkurl{color:#6b7280;}
 

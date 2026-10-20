@@ -647,6 +647,9 @@ export const en_US = {
   "options_highlightAuthorComments": {
     "message": "Highlight comments by the original poster"
   },
+  "options_highlightSelfComments": {
+    "message": "Mark your own comments (your ID in green)"
+  },
   "options_enableAutoFixUrl": {
     "message": "Auto-fix broken URLs (fixed link shown only in easy-reading mode)"
   },

@@ -95,6 +95,8 @@ export class LinkSegmentBuilder {
     // undefined → not a 原PO comment, skip all wrap logic.
     this.authorIdStart = authorIdStart;
     this.authorIdEnd = authorIdEnd;
+    // 自己的推文改用 commentBySelf（row.js 依 annotation 的 authorIdKind 設）。
+    this.authorIdClass = "commentByAuthor";
     this._inAuthor = false;
     this._authorWrap = null;
     // X(Twitter) @handle auto-links: cols [startCol, endCol) of each mention
@@ -243,7 +245,7 @@ export class LinkSegmentBuilder {
   _flushAuthorWrap() {
     if (this._authorWrap && this._authorWrap.length) {
       this.segs.push(
-        el("span", { class: "commentByAuthor" }, this._authorWrap),
+        el("span", { class: this.authorIdClass }, this._authorWrap),
       );
     }
     this._authorWrap = null;

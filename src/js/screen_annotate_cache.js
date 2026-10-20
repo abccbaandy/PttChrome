@@ -112,6 +112,7 @@ export function annotationsKey(input) {
     stable(e.showFloorNumbers),
     stable(e.highlightAuthor),
     stable(e.articleAuthor),
+    stable(e.selfId),
     stable(e.pageState),
     stable(e.autoFixUrl),
     stable(e.bareDomainLink),

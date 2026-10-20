@@ -209,9 +209,12 @@ export function parseComment(text) {
 //   floorCounter:   FloorCounter   (mutated; caller owns its lifetime/reset)
 //   highlightAuthor: bool
 //   articleAuthor:  lower id | null   (原PO)
+//   selfId:         lower id | null   (登入者自己；null ＝不標示，開關由 term_view 決定)
 // }
 // Result: { type, userid, floor?, hidden, pusher, contentCol, contentEnd?, dateEnd?,
-//           authorIdStart?, authorIdEnd? }
+//           authorIdStart?, authorIdEnd?, authorIdKind? }
+// authorIdKind：'self' ＝自己的推文（同一個 id 格、換一個顏色）；我同時是原PO 時以
+// 「我」為準。沒有 ＝原PO。
 // contentCol／contentEnd／dateEnd ＝內容起始／內容結尾／日期結尾欄 → Row 輸出成
 // data-pusher-col／-end／-date-end，滑鼠的推文可點區（使用者自選起訖，
 // mouse_regions.pusherClickRange）據此判斷這一點落在哪一段（App.mouse_click）。
@@ -240,12 +243,19 @@ export function annotateComment(text, ctx) {
   };
   if (!hidden) {
     // 原PO comment → highlight only the user-id columns [start, end).
-    if (ctx.highlightAuthor && ctx.articleAuthor && c.userid === ctx.articleAuthor) {
-      result.authorIdStart = COMMENT_USERID_COL;
-      result.authorIdEnd = COMMENT_USERID_COL + c.userid.length;
-    }
+    markAuthorId(result, c.userid, COMMENT_USERID_COL, ctx);
   }
   return result;
+}
+
+// 推文者 id 格的標示（原PO／自己）。「我」優先：自己的推文不管我是不是原PO，都畫成「我」。
+function markAuthorId(result, userid, idCol, ctx) {
+  const self = !!ctx.selfId && userid === ctx.selfId;
+  const author = ctx.highlightAuthor && ctx.articleAuthor && userid === ctx.articleAuthor;
+  if (!self && !author) return;
+  result.authorIdStart = idCol;
+  result.authorIdEnd = idCol + userid.length;
+  if (self) result.authorIdKind = 'self';
 }
 
 // 新格式推文（見 parseModernCommentHeader）。標頭列：推文者／黑名單／原PO 高亮，
@@ -271,10 +281,7 @@ function annotateModernComment(text, ctx) {
     thread.hidden = hidden;
   }
   const result = { type: 'modern', modern: true, userid: h.userid, hidden, pusher: h.userid };
-  if (!hidden && ctx.highlightAuthor && ctx.articleAuthor && h.userid === ctx.articleAuthor) {
-    result.authorIdStart = h.idCol;
-    result.authorIdEnd = h.idCol + h.userid.length;
-  }
+  if (!hidden) markAuthorId(result, h.userid, h.idCol, ctx);
   return result;
 }
 

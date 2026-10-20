@@ -10,7 +10,7 @@ import { calcTermSize, termLayoutOffsets } from './term_size';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
-import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText } from './string_util';
+import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText, parseStatusUserid } from './string_util';
 import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, listNumRange, isHiddenListRow, pinnedRowKey, MAX_LIST_ROWS, MAX_LIST_TOTAL_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
@@ -404,6 +404,10 @@ export function TermView() {
   // Existence verification is currently off — see Screen.js / docs/enhanced-addon.md.
   this.enableXMention = true;
   this._articleAuthor = null;
+  // 自己的推文標示：登入者帳號（小寫）取自選單底部狀態列（string_util.parseStatusUserid，
+  // 只在 pageState＝選單時讀 ⇒ 手動登入也拿得到）；換連線由 App 呼叫 resetSelfId 清掉。
+  this.highlightSelfComments = true;
+  this._selfId = null;
   // Board of the article being read (same header line); fallback board for a
   // boardless #AID link. Assigned by the App like flashListHint etc.
   this._articleBoard = null;
@@ -1024,7 +1028,19 @@ TermView.prototype = {
   // (native, per enablePicPreview). The per-row enhance logic (blacklist / floor /
   // author / pusher highlight) lives entirely in Screen#computeAnnotations now,
   // shared by both modes.
+  // 選單畫面的底列 → 登入者帳號（見建構子的 _selfId）。只讀一列、只在選單。
+  _noteSelfId: function() {
+    if (this.buf.pageState !== 1) return;
+    var id = parseStatusUserid(this.buf.getRowText(this.buf.rows - 1, 0, this.buf.cols));
+    if (id) this._selfId = id;
+  },
+
+  resetSelfId: function() {
+    this._selfId = null;
+  },
+
   _renderScreenLines: function(lines, dropHidden, inlinePreview, hoverPreview, enhanceOverrides) {
+    this._noteSelfId();
     // 手機畫面類型的對帳（每條分支都先設好 _gridRender 才走到這裡）。
     this._syncMobileSurface(this._frameSurface(enhanceOverrides));
     // 列表視口高度＝body 列數 × **對帳後**的 chh（呼叫端只給列數），卡片模式也一樣：
@@ -1132,6 +1148,7 @@ TermView.prototype = {
           onDebugRecord: this.onDebugRecord,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,
+          selfId: this.highlightSelfComments ? this._selfId : null,
           // 高亮本身**不由這條路生效**（它不進 annotationsKey，見
           // js/screen_annotate_cache.js）。這裡帶進去是給 ScreenController 當
           // 新建時的種子＋每幀對帳的來源；即時切換走 setSelectedPusher。

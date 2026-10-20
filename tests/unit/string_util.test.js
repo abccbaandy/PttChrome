@@ -21,6 +21,7 @@ import {
   isMoviePromptRow,
   parsePagerFooterContext,
   parseListRow,
+  parseStatusUserid,
   parseWaterball,
   isDBCSLead,
   unescapeStr,
@@ -488,6 +489,34 @@ describe("parsePagerFooterContext（more.c#common_pmore_footer_handler）", () =
 //   4. 呼叫器狀態取自 mbbsd/var.c:118-125#str_pager_modes[PAGER_MODES]，共 **5** 種：
 //      關閉 / 開啟 / 拔掉 / 防水 / 好友（**不是**「打開」）。
 // ---------------------------------------------------------------------------
+// 自己的帳號（P12 自己的推文標示）。新格式依 mbbsd/menu.c#show_status：
+//   VCLR_FOOTER_CAPTION " %s "(cmdtitle) "%-14s"(today_is) " %d/%d 週%s %d:%02d | " "%s"(cuser.userid)
+//   再接 " | 線上%d人"（子選單 80 欄常被截掉）。舊格式見下面 parseListRow 的 fixture。
+describe("parseStatusUserid（選單狀態列裡的登入者帳號）", () => {
+  test("新格式：主功能表（含「 | 線上N人」）", () => {
+    expect(
+      parseStatusUserid(" 主功能表 [ 射手時 ]     10/20 週二 6:40 | SomeUser1 | 線上25809人   (h)說明 ")
+    ).toBe("someuser1");
+  });
+  test("新格式：子選單「 | 線上N人」被截掉，帳號後面直接是空白／結尾", () => {
+    expect(parseStatusUserid(" 個人設定 今日主題       1/2 週一 9:05 | ab (←)回到上層 (h)說明 ")).toBe("ab");
+    expect(parseStatusUserid(" 個人設定 今日主題       1/2 週一 9:05 | abcdefghijkl")).toBe("abcdefghijkl");
+  });
+  test("舊格式：人,我是<id>,呼叫器", () => {
+    expect(
+      parseStatusUserid("9/10周四 17:09 [ 射手時 ]    線上25809人,我是bbsuser001,呼叫器開啟          (h)說明")
+    ).toBe("bbsuser001");
+  });
+  test("不合 is_validuserid（數字開頭、超過 12 字、1 字）或不是狀態列 ⇒ null", () => {
+    expect(parseStatusUserid(" 主功能表 x 10/20 週二 6:40 | 1abc | 線上1人")).toBe(null);
+    expect(parseStatusUserid(" 主功能表 x 10/20 週二 6:40 | abcdefghijklm | 線上1人")).toBe(null);
+    expect(parseStatusUserid(" 主功能表 x 10/20 週二 6:40 | a | 線上1人")).toBe(null);
+    expect(parseStatusUserid(" 文章選讀 (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面  ")).toBe(null);
+    expect(parseStatusUserid("推 user1: 人,我是someone,呼叫器")).toBe(null);
+    expect(parseStatusUserid("")).toBe(null);
+  });
+});
+
 describe("parseListRow（主選單狀態列, menu.c#show_status）", () => {
   // %-14s 補的是位元組寬度：Big5 一個中文字 2 bytes。
   const b5len = (s) => {

@@ -72,6 +72,12 @@ describe("列的同作者高亮", () => {
     expect(authorSpan.textContent).toBe("wowbenny"); // not "PU ", not the content
   });
 
+  test("自己的推文（authorIdKind self）→ 同一段 id 改包 commentBySelf", () => {
+    const { container } = mountRow({ chars: chars("PU wowbenny: hi"), row: 0, authorIdStart: 3, authorIdEnd: 11, authorIdKind: "self" });
+    expect(container.querySelector(".commentByAuthor")).toBeNull();
+    expect(container.querySelector(".commentBySelf").textContent).toBe("wowbenny");
+  });
+
   test("no author range → no commentByAuthor span", () => {
     const { container } = mountRow({ chars: chars("PU wowbenny: hi"), row: 0 });
     expect(container.querySelector(".commentByAuthor")).toBeNull();

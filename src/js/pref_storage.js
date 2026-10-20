@@ -293,6 +293,8 @@ export const DEFAULT_PREFS = {
   // data-list-read，這個 pref 只 toggle #mainContainer.dimReadList。預設開。
   dimReadArticles: true,
   highlightAuthorComments: true,
+  // 自己的推文：只染 id 格（綠），帳號取自選單底部狀態列（term_view._selfId）。
+  highlightSelfComments: true,
   enableAutoFixUrl: true, // detect & show a repaired link below a broken URL
   // 裸網域（無 scheme、無路徑，如 indiegametw.com）原位變成可點連結。
   enableBareDomainLink: true,

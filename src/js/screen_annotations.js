@@ -284,6 +284,7 @@ export function computeAnnotations(
     showFloorNumbers,
     highlightAuthor,
     articleAuthor,
+    selfId,
     pageState,
     autoFixUrl,
     bareDomainLink,
@@ -392,6 +393,7 @@ export function computeAnnotations(
         : undefined,
       highlightAuthor,
       articleAuthor,
+      selfId,
       // 新格式推文（comment_parse.parseModernCommentHeader）的「目前這一則」：跟
       // floorCounter 同一套只往前推的生命週期 ⇒ 增量時沿用、tail 不帶。
       modernThread:
