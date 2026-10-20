@@ -12,6 +12,10 @@
 // 那篇所在的列表。
 //
 // 待回目標只在記憶體（同 deep link 的 pending）：重整頁面就該忘掉。
+// 唯一例外是 Android APK 被系統回收（docs/android-app.md「renderer 被回收」）：那不是使用者
+// 重整，網頁也沒機會收尾 ⇒ App 切到背景（'pttandroid:stop'）時先把待回目標存進
+// localStorage（SNAPSHOT_KEY），重建的頁面（config.restored）開機時接回來，之後照常走登入
+// 回主功能表 → 出發。其他情況開機一律丟掉存檔（不會在下一次正常開 App 時突然跳走）。
 //
 // 收手條件（未知就不動，寧可停在 PTT 給的位置）：
 //   - 自己登出（logout）不算斷線，不回去。
@@ -26,6 +30,32 @@ import { isMainMenuRow } from './aid_navigation';
 import { recordFor } from './reading_record';
 import { boardNameFromKey } from './screen_titles';
 import { readEffectivePrefs } from './pref_storage';
+import { isAndroidApp, androidRestored, STOP_EVENT } from './android_bridge';
+
+export const SNAPSHOT_KEY = 'pttchrome.rendererResume.v1';
+// 回收後多久內回來還接得回去。再久的位置使用者多半不記得了，跳過去反而突兀。
+export const SNAPSHOT_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+function readSnapshot() {
+  try {
+    const raw = window.localStorage.getItem(SNAPSHOT_KEY);
+    window.localStorage.removeItem(SNAPSHOT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 存檔 → 待回目標。純函式：太舊、形狀不對都回 null。
+export function planFromSnapshot(snap, now) {
+  if (!snap || typeof snap !== 'object' || typeof snap.at !== 'number') return null;
+  if (!(now - snap.at >= 0 && now - snap.at <= SNAPSHOT_MAX_AGE_MS)) return null;
+  const plan = snap.plan;
+  if (!plan || typeof plan.board !== 'string' || !plan.board) return null;
+  if (plan.kind !== 'article' && plan.kind !== 'list') return null;
+  if (plan.kind === 'article' && !plan.aid) return null;
+  return plan;
+}
 
 function enabled() {
   return !!readEffectivePrefs().reconnectResume;
@@ -70,6 +100,15 @@ export function ReconnectResume(core, view, termBuf) {
   this._loggedIn = false;
   if (termBuf && termBuf.addEventListener)
     termBuf.addEventListener('screenSettled', this._onSettled.bind(this));
+  if (isAndroidApp() && typeof window !== 'undefined') {
+    // 開機：只有原生說「這頁是回收後重建的」才接回；否則把舊存檔丟掉。
+    const snap = readSnapshot();
+    if (androidRestored() && enabled()) {
+      this._pending = planFromSnapshot(snap, Date.now());
+      this._diag('restoreSnapshot', { kind: this._pending ? this._pending.kind : null });
+    }
+    window.addEventListener(STOP_EVENT, this.saveSnapshot.bind(this));
+  }
 }
 
 ReconnectResume.prototype = {
@@ -102,6 +141,34 @@ ReconnectResume.prototype = {
     this._diag('capture', this._pending
       ? { kind: this._pending.kind, board: this._pending.board, aid: this._pending.aid || null, num: this._pending.num || null }
       : { kind: null });
+  },
+
+  // APK 切到背景：把「現在斷線的話要回哪」存起來（不動 _pending、不算斷線）。
+  // 沒登入、關掉了、沒有可回的地方 ⇒ 清掉存檔。
+  saveSnapshot: function() {
+    let plan = null;
+    if (this._loggedIn && enabled() && this._core && this._core.connectState === 1) {
+      const core = this._core;
+      const bm = recordFor(core).begin('reconnect-resume', { view: this._view, buf: this._termBuf });
+      const nav = core.aidNavigation;
+      const post = bm.article && nav && nav.currentPostAid ? nav.currentPostAid() : null;
+      plan = resumePlanFrom(bm, post);
+    }
+    try {
+      if (plan) {
+        // 書籤裡的畫面擁有者是物件參照，存不下也用不到（還原走 core 上的現役擁有者）。
+        const bookmark = Object.assign({}, plan.bookmark, { listOwner: null, boardListOwner: null });
+        window.localStorage.setItem(
+          SNAPSHOT_KEY,
+          JSON.stringify({ at: Date.now(), plan: Object.assign({}, plan, { bookmark: bookmark }) })
+        );
+      } else {
+        window.localStorage.removeItem(SNAPSHOT_KEY);
+      }
+    } catch (e) {
+      // 存不下（被擋／滿了）：回收後就回不去，跟以前一樣。
+    }
+    this._diag('saveSnapshot', { kind: plan ? plan.kind : null });
   },
 
   discard: function(reason) {

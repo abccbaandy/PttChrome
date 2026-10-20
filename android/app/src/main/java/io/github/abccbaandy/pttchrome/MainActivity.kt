@@ -124,6 +124,8 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState != null) {
             Log.w(TAG, "activity restored after process death")
             Toast.makeText(this, R.string.process_restored, Toast.LENGTH_LONG).show()
+            // 同 renderer 被回收：網頁接回背景前存的閱讀位置（localStorage 跟著 App 資料活著）。
+            restoringRenderer = true
         }
         root = FrameLayout(this)
         setContentView(root)
@@ -211,9 +213,13 @@ class MainActivity : ComponentActivity() {
         pageSource = page
         if (page.isDev) Toast.makeText(this, getString(R.string.dev_mode_toast, page.origin), Toast.LENGTH_LONG).show()
         val origins = setOf(page.origin)
+        // restored：這個 WebView 是 renderer 被回收後換上的（網頁據此接回背景前存的閱讀位置，
+        // reconnect_resume.js#loadRendererSnapshot）。只給這一次，之後重載（換頁面來源）不算。
         val config = JSONObject()
             .put("version", BuildConfig.VERSION_NAME)
             .put("site", site)
+            .put("restored", restoringRenderer)
+        restoringRenderer = false
         WebViewCompat.addDocumentStartJavaScript(
             wv, "window.__PTT_ANDROID__ = Object.freeze($config);", origins
         )
@@ -288,6 +294,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     rendererRecreated = true
                 }
+                restoringRenderer = true
                 recreateWebView()
                 return true
             }
@@ -482,6 +489,7 @@ class MainActivity : ComponentActivity() {
     // renderer／process 若真的被回收（重新載入＋自動登入）則跳 Toast；時間寫進 logcat
     //（adb logcat -s PttChromeApp：away＝離開多久、firstFrame＝回來到出幀）。
     private var rendererRecreated = false
+    private var restoringRenderer = false
     private var stoppedAt = 0L
     private var snapshot: Bitmap? = null
     private var snapshotView: ImageView? = null
@@ -495,6 +503,9 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         stoppedAt = SystemClock.elapsedRealtime()
         Log.i(TAG, "onStop")
+        // 背景裡 renderer 隨時可能被回收、網頁來不及收尾：先讓網頁把閱讀位置存起來
+        //（reconnect_resume.js 聽 'pttandroid:stop'）。
+        webView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('pttandroid:stop'))", null)
     }
 
     @SuppressLint("RequiresFeature") // VISUAL_STATE_CALLBACK 是 androidx.webkit 內建 fallback，WebView 23+ 都有
