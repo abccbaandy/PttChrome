@@ -1,5 +1,5 @@
 ﻿import { App } from './pttchrome';
-import { setupI18n, i18n } from './i18n';
+import { setupI18n, loadI18n, i18n } from './i18n';
 import { getQueryVariable } from './util';
 import { bootSite } from './boot_site';
 import { readValuesWithDefault } from './pref_storage';
@@ -147,7 +147,9 @@ function loadResources() {
   Promise.all([
     loadTable(b2uTableUrl),
     loadTable(u2bTableUrl),
-    loadTerminalFont()
+    loadTerminalFont(),
+    // 英文語系是 lazy chunk（i18n.js 檔頭）；setupI18n() 在 startApp 同步呼叫。
+    loadI18n()
   ]).then(function(binData) {
     window.lib = window.lib || {};
     window.lib.b2uArray = new Uint8Array(binData[0]);

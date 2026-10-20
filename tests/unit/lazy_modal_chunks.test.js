@@ -23,6 +23,8 @@ const LAZY_ONLY = [
   "components/ContextMenu/LongPushModal.jsx",
   "js/pref_search.js",
   "js/command_palette.js",
+  // 英文語系：i18n.js 用 dynamic import 載，main.jsx 開站前 await（中文使用者不下載）。
+  "js/en_US_messages.js",
 ];
 
 // 只有上面那些彈窗用到的 Mantine 元件：主 bundle 引用任何一個，就會把它（和它
