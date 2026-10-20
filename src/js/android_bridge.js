@@ -16,6 +16,10 @@
 //     WebView 不支援 a[download]／blob: 下載（util.js#downloadAsFile 的 APK 分支）。原生跳系統
 //     「儲存檔案」對話框（SAF CreateDocument），使用者選位置後寫入 UTF-8。error：'cancelled'／'busy'
 //    （上一個還沒選完）／'failed'。舊版 APK 回 'unknown op'。
+//   → { id, op: 'notify', title, body, tag }              ← { id, ok }
+//     水球的系統通知（WebView 沒有 Web Notification）。網頁每則都送，**前景與否由原生判斷**
+//     （App 在前景 ⇒ 不跳、ok:false；回到前景時把跳過的收掉，MessageNotifier.kt）。tag＝寄件人，
+//     同一人只留最新一則。舊版 APK 不回覆這個 op ⇒ 呼叫端不等結果。
 // ok:false ＝使用者取消／沒有存任何密碼／原生出錯，一律當「沒有」處理。
 // googleSignIn（雲端同步登入，google_sign_in.js）：原生 Credential Manager
 //   GetSignInWithGoogleOption 取 Google ID token；serverClientId ＝ Firebase Google provider
@@ -119,6 +123,13 @@ export function requestAndroid(op, payload = {}) {
 // 不影響網頁，呼叫端不必處理。
 export function openAppSettings() {
   return requestAndroid('openAppSettings').catch(() => null);
+}
+
+// 水球系統通知（見檔頭 'notify'）。不等回覆：舊版 APK 不認得就靜默沒效果。
+export function androidNotify({ title, body, tag }) {
+  if (!androidBridgeAvailable()) return false;
+  requestAndroid('notify', { title, body, tag }).catch(() => null);
+  return true;
 }
 
 export const IME_EVENT = 'pttandroid:ime';

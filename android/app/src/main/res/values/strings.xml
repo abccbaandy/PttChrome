@@ -6,6 +6,7 @@
     <string name="notif_title">PttChrome</string>
     <string name="notif_connected">已連線到 PTT，切到背景也會保持連線</string>
     <string name="notif_idle">未連線</string>
+    <string name="notif_messages_channel">水球</string>
     <string name="notif_disconnect">中斷連線並關閉</string>
     <string name="webview_unsupported">系統的 Android System WebView 太舊，請到 Play 商店更新後再開啟。</string>
     <string name="renderer_recreated">在背景時畫面程序被系統回收，已重新載入並重新連線</string>

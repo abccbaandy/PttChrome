@@ -251,3 +251,45 @@ describe("notifyDeepLinkHandoff", () => {
     expect(() => call("notifyDeepLinkHandoff", ctx, TARGET)).not.toThrow();
   });
 });
+
+describe("showWaterballNotification 的 APK 分支（WebView 沒有 Web Notification）", () => {
+  afterEach(() => {
+    delete window.__PTT_ANDROID__;
+    delete window.PttAndroid;
+  });
+
+  function waterballCtx() {
+    const ctx = ctxFor();
+    ctx.enableNotifications = true;
+    ctx.bbscore.waterball = { userId: "friend01", message: "在嗎" };
+    return ctx;
+  }
+
+  test("APK：交給原生 notify（寄件人當 tag），不閃標題、不建 Web Notification", () => {
+    const sent = [];
+    window.__PTT_ANDROID__ = { version: "1", site: "x" };
+    window.PttAndroid = {
+      postMessage: (s) => sent.push(JSON.parse(s)),
+      addEventListener() {}
+    };
+    const made = installNotification();
+    const ctx = waterballCtx();
+    call("showWaterballNotification", ctx);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ op: "notify", body: "在嗎", tag: "friend01" });
+    expect(sent[0].title).toContain("friend01");
+    expect(ctx.titleTimer).toBeNull();
+    expect(made).toEqual([]);
+  });
+
+  test("瀏覽器：照舊走標題閃爍＋Web Notification", () => {
+    vi.useFakeTimers();
+    const made = installNotification();
+    const ctx = waterballCtx();
+    call("showWaterballNotification", ctx);
+    expect(made).toHaveLength(1);
+    expect(made[0].options.tag).toBe("friend01");
+    expect(ctx.titleTimer).not.toBeNull();
+    call("stopTitleFlash", ctx);
+  });
+});
