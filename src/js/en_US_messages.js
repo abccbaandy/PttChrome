@@ -1068,10 +1068,16 @@ export const en_US = {
     "message": "Continue to the next post"
   },
   "tooltip_enableNextArticleCard": {
-    "message": "When you reach the end of a post in easy-reading mode, a card for the next post in the list appears below the comments; click it to switch straight to it. It never switches on its own, and is not shown for posts opened from search results or for the last post."
+    "message": "When you reach the end of a post in easy-reading mode, a card for the next post in the list appears below the comments; click it to switch straight to it; on a phone, scrolling to the bottom and pulling up a bit further, then letting go, opens it too. It never switches on its own, and is not shown for the last post."
   },
   "next_article_label": {
     "message": "Next post"
+  },
+  "next_article_pull": {
+    "message": "Next post · keep pulling up"
+  },
+  "next_article_release": {
+    "message": "Release to open the next post"
   },
   "next_article_opening": {
     "message": "Opening…"

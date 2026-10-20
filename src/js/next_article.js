@@ -115,7 +115,8 @@ export function NextArticle(core) {
   this._el = null;
   this._lastPickRec = null; // _logPick 的去重：同一個錄製器、同一個結果只記一次
   this._lastPickKey = null;
-  this._state = { visible: false, entry: null, pending: false };
+  // pull：手機往上拉的進度（pull_next_article.js），null｜'pull'｜'armed'，只改卡片的字。
+  this._state = { visible: false, entry: null, pending: false, pull: null };
   const self = this;
   if (core.buf && core.buf.addEventListener)
     core.buf.addEventListener('screenSettled', function() {
@@ -141,7 +142,14 @@ NextArticle.prototype = {
   },
 
   _hide: function() {
-    if (this._state.visible) this._set({ visible: false });
+    if (this._state.visible) this._set({ visible: false, pull: null });
+  },
+
+  // 手機往上拉的進度（pull_next_article.js）：卡片的字改成「再往上拉」／「放開開啟」。
+  setPull: function(pull) {
+    const p = pull === 'pull' || pull === 'armed' ? pull : null;
+    if (p && !this._state.visible) return;
+    this._set({ pull: p });
   },
 
   _wireBusy: function() {
@@ -347,7 +355,15 @@ NextArticle.prototype = {
     if (!el) return;
     const e = st.entry;
     const [label, title, meta] = el.children;
-    label.textContent = st.pending ? i18n('next_article_opening') : i18n('next_article_label');
+    label.textContent = st.pending
+      ? i18n('next_article_opening')
+      : st.pull === 'armed'
+        ? i18n('next_article_release')
+        : st.pull === 'pull'
+          ? i18n('next_article_pull')
+          : i18n('next_article_label');
+    if (st.pull && !st.pending) el.setAttribute('data-pull', st.pull);
+    else el.removeAttribute('data-pull');
     title.textContent = (e.recommend ? e.recommend + ' ' : '') + e.title;
     const date = (e.date || '').trim();
     meta.textContent = e.author + (date ? ' · ' + date : '');

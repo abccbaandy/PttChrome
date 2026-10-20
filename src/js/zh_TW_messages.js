@@ -1070,10 +1070,16 @@
     "message": "讀完接著讀下一篇"
   },
   "tooltip_enableNextArticleCard": {
-    "message": "好讀文章讀到最後，推文下面會出現列表上下一篇的標題卡，點它就直接換過去讀。不會自己換文；從搜尋結果進的文章、最後一篇不顯示。"
+    "message": "好讀文章讀到最後，推文下面會出現列表上下一篇的標題卡，點它就直接換過去讀；手機上捲到底再往上拉一段、放手也會開。不會自己換文；最後一篇不顯示。"
   },
   "next_article_label": {
     "message": "下一篇"
+  },
+  "next_article_pull": {
+    "message": "下一篇・再往上拉"
+  },
+  "next_article_release": {
+    "message": "放開開啟下一篇"
   },
   "next_article_opening": {
     "message": "開啟中…"
