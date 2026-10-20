@@ -1244,6 +1244,12 @@ export const en_US = {
   "options_mobileLayoutAuto": {
     "message": "Auto"
   },
+  "options_mobileFontSize": {
+    "message": "Mobile font size"
+  },
+  "tooltip_mobileFontSize": {
+    "message": "Font size for articles and lists in the mobile layout, set separately from the desktop font size. Larger text means fewer rows per page."
+  },
   "options_mobileLayoutOn": {
     "message": "On"
   },

@@ -1243,6 +1243,12 @@
   "options_mobileLayoutAuto": {
     "message": "自動"
   },
+  "options_mobileFontSize": {
+    "message": "手機字級"
+  },
+  "tooltip_mobileFontSize": {
+    "message": "手機版面的文章與列表字級，跟桌機的字體大小分開設定。字越大一頁的列數越少。"
+  },
   "options_mobileLayoutOn": {
     "message": "開啟"
   },

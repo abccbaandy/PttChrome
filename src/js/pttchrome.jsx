@@ -67,7 +67,7 @@ import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
 import { CommentBar, isCommentBarTarget } from './comment_bar';
-import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets } from './mobile_layout';
+import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
 import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown } from './mobile_busy';
@@ -303,6 +303,8 @@ export const App = function() {
   //   mobile          ：推導值，唯一寫入點 applyMobileLayout
   //   softKeyboard    ：使用者用按鍵列的鍵盤鈕叫出了軟鍵盤
   this.mobileLayoutMode = 'auto';
+  //   mobileFontPx    ：pref mobileFontSize（onPrefChange 寫，已正規化）
+  this.mobileFontPx = MOBILE_ROW_FONT_PX;
   this.mobile = false;
   this.softKeyboard = false;
   //   mobileSelectMode：按鍵列的「選取模式」（長按＝原生選字複製，不開我們的選單）。
@@ -1978,7 +1980,8 @@ App.prototype._applyMobileGeometry = function(surface) {
     // 把兩條 bar 併進 view 的上／下 inset。
     height: mobileRowsHeight(b.height, this._readSafeInsets()),
     dpr: window.devicePixelRatio || 1,
-    surface: s
+    surface: s,
+    fontPx: this.mobileFontPx
   });
   if (!(g.chh > 0)) return false;
   this.setTermSize(g.cols, g.rows);
@@ -2057,6 +2060,14 @@ App.prototype.onPrefChange = function(name, value) {
     case 'mobileLayout':
       this.mobileLayoutMode = value;
       this.applyMobileLayout();
+      break;
+    // 手機字級（列數跟著算）。桌機不吃它；沒變就不重套（onValuesPrefChange 每次
+    // 把全部 pref 掃一遍，別讓無關設定的儲存觸發一次重排）。
+    case 'mobileFontSize':
+      var mobileFontPx = normalizeMobileFontPx(value);
+      if (mobileFontPx === this.mobileFontPx) break;
+      this.mobileFontPx = mobileFontPx;
+      if (this.mobile && this.view) this.applyTermSize();
       break;
     case 'autoHideBlinkCursor':
       // 純顯示切換：只影響 #cursor 的 display，不需 redraw。

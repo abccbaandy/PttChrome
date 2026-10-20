@@ -86,7 +86,7 @@
     `@[\]^_?` 走 `ctrlKey`，其他字元解除不轉。用一次就解除。守護 `mobile_ctrl.test.js`。
 - `index.html` viewport **不鎖** `user-scalable`（原生雙指縮放是後援）。
 - **尺寸（Phase 2）**：`App.applyTermSize` 是唯一套用點；手機分支無視 `termSizeMode`，用
-  `mobile_layout.mobileTermGeometry`：rows ＝ 高度 / `MOBILE_ROW_FONT_PX`(16)（`calcTermSize`，欄數恆 80），
+  `mobile_layout.mobileTermGeometry`：rows ＝ 高度 / 手機字級（pref `mobileFontSize`，預設 `MOBILE_ROW_FONT_PX`=16；`calcTermSize`，欄數恆 80），
   chh ＝ min(80 欄塞滿寬, rows 列塞滿高) 再對齊裝置像素。**不用 transform scale**：縮小時 layout box
   比視窗寬，`align=center` 置中失效，`mouse_geometry` 縮放分支的前提不成立。
   `onValuesPrefChange` 把尺寸 prefs 存進 `_termSizeValues`，手機模式切換時用同一組值重套（桌機規則還原）；
@@ -289,7 +289,10 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - 長按選單的黑名單在 listCards 下**不分區域**：整張卡片＝同一組，作者與標題選項一起給
   （`context_menu_items.listBlacklistTargets`；依落點分段時作者那一小段手指按不中，選項全不出現）；「前已讀後
   未讀」用 `clientToPos` 的列號（已是卡片座標）。
-- 字級可調時再開 pref `mobileFontSize`（與桌機 `fontSize` 分開），且 rows 要跟著它算。
+- 手機字級＝pref `mobileFontSize`（預設 16，與桌機 `fontSize` 分開；設定頁「手機字級」下拉 12～28 偶數）。
+  `mobileTermGeometry({ fontPx })` 用它取代 `MOBILE_ROW_FONT_PX` 算 rows 與 article／list 的 chh；
+  `normalizeMobileFontPx` 把同步來的怪值夾回範圍、奇數進位成偶數（同 `calcTermSize`）。只有改這個設定那一下
+  會重送 NAWS（`onPrefChange` 值沒變就不重套）；選單大按鈕（`MENU_CARD_PX`）寫死 px，不跟它走。
 
 ## Phase 5：選單大按鈕（`term_view.menuCards`）
 
