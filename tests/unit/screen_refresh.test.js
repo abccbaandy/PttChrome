@@ -95,6 +95,11 @@ describe("refreshTargetFromFacts — 哪些畫面接手", () => {
     expect(refreshTargetFromFacts(frame({}), 0)).toBeNull();
     expect(refreshTargetFromFacts(null, 3)).toBeNull();
   });
+  test("首頁儀表板畫著 ⇒ home（重抓我的最愛）；收起後的原生主功能表仍不接", () => {
+    const menu = frame({ 0: "【主功能表】    批踢踢實業坊" });
+    expect(refreshTargetFromFacts(menu, 1, { home: true })).toEqual({ kind: "home" });
+    expect(refreshTargetFromFacts(menu, 1, { home: false })).toBeNull();
+  });
 });
 
 describe("isRefreshKeyEvent", () => {
@@ -263,6 +268,33 @@ describe("ScreenRefresh.refresh", () => {
     expect(new ScreenRefresh(core).refresh("key")).toBe(true);
     expect(enqueued).toEqual([]);
     expect(hints.at(-1)).toMatch(/請稍候/);
+  });
+
+  test("首頁儀表板 ⇒ 交給 homeDashboard.fetchFavorites()；與其他畫面同一道冷卻", () => {
+    const { core, hints, enqueued } = makeCore({ 0: "【主功能表】    批踢踢實業坊" }, { pageState: 1 });
+    core.homeDashboard = { state: { visible: true }, fetchFavorites: vi.fn(() => true) };
+    const r = new ScreenRefresh(core);
+    r._now = () => 5000;
+    expect(r.target()).toEqual({ kind: "home" });
+    expect(r.refresh("pull")).toBe(true);
+    expect(core.homeDashboard.fetchFavorites).toHaveBeenCalledTimes(1);
+    expect(enqueued).toEqual([]);
+    r._now = () => 6000;
+    expect(r.refresh("button")).toBe(true);
+    expect(core.homeDashboard.fetchFavorites).toHaveBeenCalledTimes(1);
+    expect(hints).toEqual(["請稍候 4 秒再重新整理"]);
+    // 面板收起 ⇒ 原生主功能表，F5 交還瀏覽器。
+    core.homeDashboard.state.visible = false;
+    expect(r.target()).toBeNull();
+  });
+
+  test("首頁儀表板：抓不了（線路被佔）⇒ 提示、不記冷卻", () => {
+    const { core, hints } = makeCore({ 0: "【主功能表】    批踢踢實業坊" }, { pageState: 1 });
+    core.homeDashboard = { state: { visible: true }, fetchFavorites: vi.fn(() => false) };
+    const r = new ScreenRefresh(core);
+    expect(r.refresh("toolbar")).toBe(true);
+    expect(r._lastAt).toBe(0);
+    expect(hints).toEqual(["指令處理中，請稍候再重新整理"]);
   });
 
   test("文章 ⇒ 交給 aidNavigation.refresh()；拒絕時不記冷卻", () => {

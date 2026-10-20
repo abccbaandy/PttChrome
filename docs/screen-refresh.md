@@ -1,4 +1,4 @@
-# 重新整理（看板列表／文章列表／文章）
+# 重新整理（看板列表／文章列表／文章／首頁儀表板）
 
 入口：桌機 F5／⌘R（`term_view.onKeyDown` → `App.screenRefresh.refresh('key')`）、手機工具列「重整」
 （`'toolbar'`）、手機下拉（`pull_refresh.js`，`'pull'`）。三個入口同一個判準與同一道冷卻：
@@ -20,6 +20,7 @@
 | 文章列表 | `s` → 等 CompleteBoard prompt → `<本板>⏎` | `bbs.c#do_select` → `enter_board` → 回 `NEWDIRECT` ⇒ `read_apply_mode` reload；`read_exec_noitem` 先存 `crs_ln/top_ln`，`getkeep(currdirect)` 還原 ⇒ 游標原地；這條**不經 `Read()`** ⇒ 不出進板畫面 |
 | 看板列表 | `/` → 等「請輸入看板中文關鍵字」→ `⏎` | `board.c#board_cmd_search_keyword`：`getdata_buf` 以原關鍵字為預設值，⏎ 原樣送出 ⇒ `brdnum = -1; reload` ⇒ 未讀旗標與人氣重算；`ctx->curr` 保留（newflag 模式下 loader 會跳到第一個未讀，與原生一致） |
 | 文章 | `aid_navigation.refresh()`：（免費網址列或 `Q` 取 AID）→ `s<本板>⏎` → `#<AID>⏎` → `⏎` | 與 AID 跳文同一條、每步依畫面內容驗證的序列；落地後還原閱讀位置（見下） |
+| 首頁儀表板（主功能表上的面板畫著） | `home_dashboard.fetchFavorites`：`Ctrl+Z f` → 讀頁 →（跳號翻頁）→ 回游標 → `q` | 面板本來就靠這條抓我的最愛；面板的「更新」鈕也改走這個入口（同一道冷卻），見 `docs/home-dashboard.md` |
 | 文章（從搜尋結果／文摘開的） | 列表好讀記錄的身後列表 `mode:'select'` ⇒ `←`（pager FULLUPDATE，游標不動）→ `⏎`；`Q` 把我們丟回子列表（標題列 `系列《`／`文摘《`）⇒ 關框＋`⏎` | 子列表裡 `#` 被拒、`s<板>` 回來仍是子列表（協定 §8.1）；這兩條保住身後的搜尋結果。都不中時走上一列，`#` 前先 ← 離開子列表 |
 
 **為什麼文章不用 `←→`（live 文小幫手的做法）**：← 回列表後游標停在原本的 `crs_ln`，但列表
@@ -45,7 +46,8 @@
   搜尋結果 ⇒ 那種畫面重整會回到完整列表。
 - 看板列表：`classifyBoardListScreen` 認得的畫面。熱門看板與分類子層畫面完全相同分不出，`/` 在
   熱門看板會被 vmsg 拒絕 ⇒ 第二步的 ⏎ 正好關掉訊息，提示「熱門看板不支援重新整理」。
-- 其他（主功能表、信箱列表、prompt 開著、編輯器…）：不接。F5 交還瀏覽器（連線中 beforeunload 會先問），
+- 首頁儀表板：`home_dashboard` 的 `state.visible`（它自己認主功能表）。最先判定；抓最愛途中畫面在我的最愛上也算首頁 ⇒ 送出被忙碌提示擋下。
+- 其他（面板收起後的原生主功能表、信箱列表、prompt 開著、編輯器…）：不接。F5 交還瀏覽器（連線中 beforeunload 會先問），
   工具列不顯示「重整」。
 
 ## 鍵盤（F5 攔截）
@@ -92,4 +94,5 @@ pref `refreshMinIntervalSec`（預設 5 秒，0 ＝不限制），只在**真的
 - unit：`screen_refresh.test.js`（判準、按鍵、冷卻、送出序列、忙碌）、`aid_navigation.test.js`「refresh」
   （序列、免費路徑、站內信不接、位置還原、無 AID 退路、失敗訊息）、`mobile_toolbar.test.js(x)`、`pull_refresh.test.js`。
 - offline e2e：`screen_refresh.offline.spec.js`（真 F5：預設動作被擋、冷卻提示、關 pref 交還）、
-  `mobile_refresh.offline.spec.js`（工具列鈕、CDP 觸控下拉）、`mobile_toolbar.offline.spec.js`（分享在更多裡）。
+  `mobile_refresh.offline.spec.js`（工具列鈕、CDP 觸控下拉）、`mobile_toolbar.offline.spec.js`（分享在更多裡）、
+  `home_dashboard.offline.spec.js`「F5」、`mobile_home_dashboard.offline.spec.js`（首頁的下拉與工具列重整）。

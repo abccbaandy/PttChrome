@@ -32,7 +32,7 @@ import { parsePagerFooterContext } from './string_util';
 import { atPagerStatusRow } from './long_push_gate';
 import { availableSearchKinds, searchGateFacts } from './article_search';
 import { boardListContextKind, classifyBoardListScreen } from './board_list_parse';
-import { refreshTargetFromFacts } from './screen_refresh';
+import { refreshTargetFromFacts, homeDashboardShown } from './screen_refresh';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
 import { appBarFromFacts, sameAppBar, EMPTY_APP_BAR } from './mobile_app_bar';
 import { MOBILE_KEYPAD_PUSH_KEY } from './mobile_layout';
@@ -112,7 +112,8 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
     contentTools: !menu,
     refresh: !!o.connected && !!refreshTargetFromFacts(facts, pageState, {
       articleBoard: o.articleBoard,
-      listOpened: o.listOpened
+      listOpened: o.listOpened,
+      home: o.home
     }),
     end: pager || lists,
     search: availableSearchKinds(facts),
@@ -130,7 +131,8 @@ export function mobileToolbarContext(core) {
     articleBoard: view._articleBoard,
     prev: prev,
     connected: !!(core && core.conn && core.conn.isConnected),
-    listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor())
+    listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor()),
+    home: homeDashboardShown(core)
   });
 }
 

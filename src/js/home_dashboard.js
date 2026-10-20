@@ -9,10 +9,17 @@
 //      輸入欄」時出現；抓我的最愛的任何一步落地不符就停手，人留在 PTT 給的畫面上。
 //   3. **每個動作都是原生鍵**：抓最愛＝Ctrl+Z f（menu.c#ZA_Select 的「我的最愛」）→ 讀頁
 //      →（跳號翻頁）→ 跳回原游標 → q；開看板＝搜尋彈窗同一條 s<板>⏎（submitSearch）；
-//      開信箱＝Ctrl+Z m。抓最愛只在面板打開、快取過期時做一次。
+//      開信箱＝Ctrl+Z m。抓最愛只在面板打開、快取過期時做一次；手動更新（按鈕、F5、
+//      手機工具列、下拉）一律經 screen_refresh。
+//
+// 進看板之後的「有新文章」不重抓：文章列表看得到最新一篇的已讀標記就照它改
+// （newestArticleUnread），使用者自己開原生我的最愛時照抄那一頁的 ˇ —— 一個 byte 都不送。
+// 面板的捲動位置是閱讀紀錄的 home 紀錄（readingPosition／requestViewportRestore）。
 
-import { rowHasTitle, MAIN_MENU, parseBoardName, isArticleListTitleRow } from './screen_titles';
-import { isArticleListFooter } from './screen_captions';
+import { rowHasTitle, MAIN_MENU, BOARD_LIST, parseBoardName, isArticleListTitleRow } from './screen_titles';
+import { isArticleListFooter, isSubListFooter } from './screen_captions';
+import { parseListEntry } from './agent_parse';
+import { listRowMark } from './unread_jump';
 import { parseMenuItemRow } from './menu_items';
 import {
   BRD_HEADER_ROWS,
@@ -26,6 +33,7 @@ import {
 import { charCells } from './string_util';
 import { submitSerializedSteps, beginInFlight, endInFlight, searchGateFacts, submitSearch } from './article_search';
 import { serializedOpHint } from './serialized_op_gate';
+import { isRefreshKeyEvent } from './screen_refresh';
 import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { HINT_ERROR } from './status_hint';
@@ -180,9 +188,131 @@ export function articleListBoard(rowTexts, rows) {
   return parseBoardName(row0);
 }
 
-// 使用者按的這個鍵要不要收起面板。純修飾鍵、F 鍵（我們自己的快捷鍵，送不到 PTT）不算。
+// 看板的「有新文章」（board.c#check_newpost）＝ brc_unread_time(lastposttime) ——
+// lastposttime 是 .DIR 最後一筆（最新一篇、不含置底）的建立時間（cache.c#setbtotal）。
+// 所以「這個板還有沒有新文章」只看最新那一篇，與讀過其他哪幾篇無關。
+//
+// 這一幀文章列表 → true（最新一篇未讀）| false（已讀）| null（這幀看不出來）。
+// 認得出「最新一篇」的前提：它下面接著置底文（★）或空白列（板尾那頁）；最新一篇剛好
+// 在條目區最後一列時分不出後面還有沒有 ⇒ null。搜尋結果／文摘（獨立編號空間）⇒ null。
+// 已讀標記（bbs.c#readdoent cell 8）：'+'、'M' ＝ brc_unread == 1（未讀）；' '、'm'、'~'、
+// '='、's'、'*' ＝ 0 或 2（check_newpost 傳 modified 0，有新推文不算）⇒ 已讀；'S'、'#'
+// 分不出 1 或 2、'!'、'D' 蓋掉了未讀資訊、刪除文 ⇒ null。
+const BOARD_UNREAD_MARKS = '+M';
+const BOARD_READ_MARKS = ' m~=s*';
+export function newestArticleUnread(rowTexts, rows) {
+  const t = rowTexts || [];
+  const n = rows || t.length;
+  if (isSubListFooter(t[n - 1] || '')) return null;
+  let tail = false;
+  for (let r = n - 2; r >= 3; --r) {
+    const text = t[r] || '';
+    if (!text.trim()) {
+      tail = true;
+      continue;
+    }
+    const e = parseListEntry(text);
+    if (!e) return null;
+    if (e.pinned) {
+      tail = true;
+      continue;
+    }
+    if (e.num == null || !tail || e.deleted) return null;
+    const mark = listRowMark(text);
+    if (mark == null) return null;
+    if (BOARD_UNREAD_MARKS.indexOf(mark) >= 0) return true;
+    if (BOARD_READ_MARKS.indexOf(mark) >= 0) return false;
+    return null;
+  }
+  return null;
+}
+
+// 我的最愛清單裡某個板的未讀改成 unread（不分大小寫）。沒有這個板、或本來就一樣 ⇒
+// 回原陣列（呼叫端用 === 判斷有沒有變）。
+export function withBoardUnread(boards, name, unread) {
+  if (!Array.isArray(boards) || !name) return boards;
+  const key = String(name).toLowerCase();
+  let changed = false;
+  const next = boards.map(function(b) {
+    if (String(b.name).toLowerCase() !== key || !!b.unread === !!unread) return b;
+    changed = true;
+    return Object.assign({}, b, { unread: !!unread });
+  });
+  return changed ? next : boards;
+}
+
+// 使用者自己開著原生的我的最愛：那一頁的 ˇ 就是 PTT 剛算的（check_newpost 在載入清單、
+// 從看板退回時都會重算）⇒ 照抄進快取。只改清單裡已有的板，不增不減（只看到一頁）。
+export function withFavPageUnread(boards, entries) {
+  let out = boards;
+  (entries || []).forEach(function(e) {
+    out = withBoardUnread(out, e.name, e.unread);
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// 閱讀紀錄：面板的捲動位置（reading_record 的 home 紀錄，docs/reading-record.md）
+// ---------------------------------------------------------------------------
+//
+// 首頁紀錄：{ kind:'home', key, offset, scrollTop }。key ＝ 視窗頂端那張卡片
+// （'board:<板>'／'recent:<板>'），offset ＝ 它的上緣離面板上緣幾 px。只存身分＋列錨：
+// 清單更新後順序、張數會變，視窗寬度不同時一列放幾張也不同，像素對不上。
+const ANCHOR_SELECTOR = '[data-home-board], [data-home-recent]';
+
+function anchorKeyOf(el) {
+  const b = el.getAttribute('data-home-board');
+  if (b != null) return 'board:' + b;
+  return 'recent:' + el.getAttribute('data-home-recent');
+}
+
+function anchorSelector(key) {
+  const i = key.indexOf(':');
+  const attr = key.slice(0, i) === 'board' ? 'data-home-board' : 'data-home-recent';
+  const v = key.slice(i + 1);
+  const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(v) : v.replace(/["\\]/g, '\\$&');
+  return '[' + attr + '="' + esc + '"]';
+}
+
+export function homeAnchorOf(container) {
+  if (!container || !container.getBoundingClientRect) return null;
+  const top = container.getBoundingClientRect().top;
+  const record = { kind: 'home', key: null, offset: 0, scrollTop: container.scrollTop };
+  if (!container.scrollTop) return record;
+  const items = container.querySelectorAll(ANCHOR_SELECTOR);
+  for (let i = 0; i < items.length; ++i) {
+    const r = items[i].getBoundingClientRect();
+    if (r.bottom > top + 1) {
+      record.key = anchorKeyOf(items[i]);
+      record.offset = r.top - top;
+      return record;
+    }
+  }
+  return record;
+}
+
+// 認不出（那張卡片不在了）⇒ 不動，回 false。key 為 null ＝ 量的時候還在卡片之上
+// （標題列附近）⇒ 回原 scrollTop。
+export function applyHomeAnchor(container, record) {
+  if (!container || !record) return false;
+  if (record.key == null) {
+    container.scrollTop = record.scrollTop || 0;
+    return true;
+  }
+  const el = container.querySelector(anchorSelector(record.key));
+  if (!el) return false;
+  const delta =
+    el.getBoundingClientRect().top - container.getBoundingClientRect().top - (record.offset || 0);
+  container.scrollTop += delta;
+  return true;
+}
+
+// 使用者按的這個鍵要不要收起面板。純修飾鍵、F 鍵（我們自己的快捷鍵，送不到 PTT）不算；
+// 重新整理鍵（⌘R）也不算——它要由 screen_refresh 認成首頁（重抓我的最愛），面板先收起
+// 的話就認不出來、交還瀏覽器整頁重載（＝斷線）。
 export function keyDismissesHome(e) {
   if (!e || !e.key) return false;
+  if (isRefreshKeyEvent(e)) return false;
   if (/^(Shift|Control|Alt|Meta|CapsLock|Dead|Process|Unidentified)$/.test(e.key)) return false;
   if (/^F\d{1,2}$/.test(e.key)) return false;
   return true;
@@ -219,6 +349,8 @@ export function HomeDashboard(core) {
   this._atHome = false;
   this._dismissed = false;
   this._autoTimer = null;
+  // 閱讀紀錄交回的待還原錨（面板下一次畫出來時套用，見 applyPendingViewport）。
+  this._pendingViewport = null;
   const fav = readJson(HOME_FAV_CACHE_KEY);
   const recent = readJson(HOME_RECENT_KEY);
   this._state = {
@@ -305,9 +437,13 @@ HomeDashboard.prototype = {
     ends[0] = row0;
     ends[rows - 1] = buf.getRowText(rows - 1, 0, buf.cols);
     const board = articleListBoard(ends, rows);
-    if (board) this._noteRecent(board);
+    if (board) {
+      this._noteRecent(board);
+      this._noteBoardUnread(board);
+    }
     // 抓最愛的途中畫面會離開主功能表：面板留著顯示「更新中」，判定交給那條序列。
     if (this._state.fetching) return;
+    if (this._state.boards && rowHasTitle(row0, BOARD_LIST)) this._noteFavPage();
     const facts = enabled() && rowHasTitle(row0, MAIN_MENU) ? this._facts() : null;
     const home = !!facts && isHomeScreen(facts);
     if (!home) {
@@ -332,6 +468,61 @@ HomeDashboard.prototype = {
     this._set({ recents: next });
   },
 
+  // 進了看板：看得到最新一篇的已讀標記就更新那個板的「有新文章」（newestArticleUnread）。
+  // 只在它是我的最愛時才讀滿整頁——每次 settle 都會跑。
+  _noteBoardUnread: function(name) {
+    const boards = this._state.boards;
+    if (!boards || !boards.length) return;
+    const key = name.toLowerCase();
+    if (!boards.some((b) => String(b.name).toLowerCase() === key)) return;
+    const facts = this._facts();
+    if (!facts) return;
+    const unread = newestArticleUnread(facts.rowTexts, facts.rows);
+    if (unread != null) this._setBoards(withBoardUnread(boards, name, unread));
+  },
+
+  // 使用者自己開著原生的我的最愛（不是我們在抓）：照抄這一頁的 ˇ。
+  _noteFavPage: function() {
+    const p = favPage(this._facts());
+    if (p) this._setBoards(withFavPageUnread(this._state.boards, p.entries));
+  },
+
+  _setBoards: function(boards) {
+    if (boards === this._state.boards) return;
+    // 「幾點更新」仍是上次整份抓的時間：這裡只改了個別板的未讀。
+    writeJson(HOME_FAV_CACHE_KEY, { at: this._state.savedAt, boards: boards });
+    this._set({ boards: boards });
+  },
+
+  // ---- 閱讀紀錄（reading_record 的 home 紀錄）----
+
+  // 面板畫著時，視窗頂端是哪張卡片；沒畫 ⇒ null（主功能表收起時不是首頁紀錄）。
+  readingPosition: function() {
+    if (!this._state.visible || typeof document === 'undefined') return null;
+    return homeAnchorOf(document.getElementById(HOME_DASHBOARD_ID));
+  },
+
+  // 閱讀紀錄交回來的錨：面板下一次畫出來（或這次更新完重畫）時套用。
+  requestViewportRestore: function(record) {
+    this._pendingViewport = record ? Object.assign({}, record) : null;
+    this._diag('saved', record);
+  },
+
+  // 外殼每次畫完呼叫（useLayoutEffect）：有待還原錨就套用，一次性。
+  applyPendingViewport: function(container) {
+    const r = this._pendingViewport;
+    if (!r || !container || !this._state.visible || this._state.fetching) return false;
+    this._pendingViewport = null;
+    const ok = applyHomeAnchor(container, r);
+    this._diag(ok ? 'applied' : 'dropped', { key: r.key });
+    return ok;
+  },
+
+  _diag: function(event, info) {
+    const rec = this._core.debugRecorder;
+    if (rec && rec.log) rec.log('homeDashboard.viewportRestore', Object.assign({ event: event }, info));
+  },
+
   _clearAutoTimer: function() {
     clearTimeout(this._autoTimer);
     this._autoTimer = null;
@@ -353,8 +544,17 @@ HomeDashboard.prototype = {
   dismiss: function() {
     if (!this._state.visible || this._state.fetching) return;
     this._dismissed = true;
+    this._pendingViewport = null;
     this._clearAutoTimer();
     this._set({ visible: false });
+  },
+
+  // 面板的「更新」鈕：與 F5／手機工具列／下拉同一個入口（screen_refresh 的 'home'
+  // target：同一道冷卻、同一套忙碌提示），最後落到 fetchFavorites。
+  refresh: function(source) {
+    const sr = this._core.screenRefresh;
+    if (sr && typeof sr.refresh === 'function') return sr.refresh(source || 'button');
+    return this.fetchFavorites();
   },
 
   // 點卡片：與搜尋彈窗的「前往看板」同一條（s<板>⏎、閱讀紀錄 board-search）。

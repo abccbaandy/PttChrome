@@ -11,6 +11,9 @@ import {
   pushRecentBoard,
   articleListBoard,
   keyDismissesHome,
+  newestArticleUnread,
+  withBoardUnread,
+  withFavPageUnread,
   HomeDashboard,
   FAV_TTL_MS,
   FAV_MAX_PAGES,
@@ -79,6 +82,31 @@ const ARTICLE_LIST = () => {
   rowTexts[0] = "【板主:someone】                  看板《C_Chat》";
   rowTexts[ROWS - 1] = " 文章選讀  (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面 ";
   return { rowTexts, rows: ROWS, curX: 0, curY: 3 };
+};
+
+// ── 文章列表（bbs.c#readdoent：%7d 序號、空白、type（cell 8）、推文數、日期、作者、標題）──
+// entries 由舊到新排在 rows 3..；[num, mark] 或 { pinned, mark }；author "-" ＝刪除文。
+const LIST_FOOT = " 文章選讀  (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面 ";
+const lrow = (num, mark, { cursor = false, author = "someone" } = {}) =>
+  (cursor ? ">" + String(num).padStart(6, " ") : pad7(num)) + " " + mark + " 5 6/21 " + author.padEnd(13, " ") + "□ [閒聊] 測試";
+const PIN = (mark = "m") => "    ★  " + mark + "爆 7/30 boardmod     □ [公告] 板規";
+function listFrame(board, entries, { foot = LIST_FOOT, cursorAt } = {}) {
+  const rowTexts = Array.from({ length: ROWS }, () => "");
+  rowTexts[0] = "【板主:someone】                  看板《" + board + "》";
+  rowTexts[1] = "[←]離開 [→]閱讀 [Ctrl-P]發表文章 [d]刪除 [z]精華區 [i]看板資訊/設定 [h]說明";
+  rowTexts[2] = "   編號    日 期 作  者       文  章  標  題                           人氣:99";
+  entries.forEach((e, i) => {
+    rowTexts[3 + i] = Array.isArray(e)
+      ? lrow(e[0], e[1], { cursor: i === cursorAt, author: e[2] })
+      : PIN(e.mark);
+  });
+  rowTexts[ROWS - 1] = foot;
+  return { rowTexts, rows: ROWS, curX: 0, curY: 3 + (cursorAt == null ? 0 : cursorAt) };
+}
+const fullPage = (board, mark) => {
+  const out = [];
+  for (let n = 101; n <= 120; ++n) out.push([n, n === 120 ? mark : " "]);
+  return listFrame(board, out);
 };
 
 describe("isHomeScreen：主功能表＋(F)avorite＋不在輸入欄", () => {
@@ -200,12 +228,77 @@ test("articleListBoard：文章列表才算（看板列表的標題列也有《�
   expect(articleListBoard(fav.rowTexts, fav.rows)).toBeNull();
 });
 
+describe("newestArticleUnread：看板的有新文章＝最新一篇未讀（board.c#check_newpost）", () => {
+  const nu = (f) => newestArticleUnread(f.rowTexts, f.rows);
+  test("板尾那頁（最新一篇下面是空白列）：'+'／'M' ⇒ 未讀；' '／'m' ⇒ 已讀", () => {
+    expect(nu(listFrame("C_Chat", [[1, " "], [2, "+"]]))).toBe(true);
+    expect(nu(listFrame("C_Chat", [[1, "+"], [2, "M"]]))).toBe(true);
+    // 中間還有沒讀的不算：看板的未讀只看最新一篇。
+    expect(nu(listFrame("C_Chat", [[1, "+"], [2, " "]]))).toBe(false);
+    expect(nu(listFrame("C_Chat", [[1, "+"], [2, "m"]]))).toBe(false);
+  });
+  test("有新推文（'~'、'='）不算有新文章：check_newpost 傳 modified 0", () => {
+    expect(nu(listFrame("C_Chat", [[1, " "], [2, "~"]]))).toBe(false);
+    expect(nu(listFrame("C_Chat", [[1, " "], [2, "="]]))).toBe(false);
+  });
+  test("置底文（★）不是最新一篇，但它證明上面那篇就是最後一筆", () => {
+    expect(nu(listFrame("C_Chat", [[1, " "], [2, " "], { mark: "M" }, { mark: "+" }]))).toBe(false);
+    expect(nu(listFrame("C_Chat", [[1, " "], [2, "+"], { mark: "m" }]))).toBe(true);
+  });
+  test("游標停在最新一篇（> 蓋掉序號前緣）照樣讀得到", () => {
+    expect(nu(listFrame("C_Chat", [[1, " "], [2, " "]], { cursorAt: 1 }))).toBe(false);
+    expect(nu(listFrame("C_Chat", [[1, " "], [2, "+"]], { cursorAt: 1 }))).toBe(true);
+  });
+  test("最新一篇剛好在條目區最後一列（後面還有沒有分不出來）⇒ 看不出來", () => {
+    expect(nu(fullPage("C_Chat", "+"))).toBeNull();
+    expect(nu(fullPage("C_Chat", " "))).toBeNull();
+  });
+  test("標記蓋掉未讀資訊（D、!）或分不出 1／2（S、#）、刪除文 ⇒ 看不出來", () => {
+    for (const m of ["D", "!", "S", "#"]) expect(nu(listFrame("C_Chat", [[1, " "], [2, m]]))).toBeNull();
+    expect(nu(listFrame("C_Chat", [[1, " "], [2, " ", "-"]]))).toBeNull();
+  });
+  test("搜尋結果／文摘（獨立編號空間）、空板 ⇒ 看不出來", () => {
+    const sub = listFrame("C_Chat", [[1, " "], [2, " "]], { foot: " 系列文章  (y)回應 " });
+    expect(nu(sub)).toBeNull();
+    expect(nu(listFrame("C_Chat", []))).toBeNull();
+  });
+});
+
+test("withBoardUnread／withFavPageUnread：只改清單裡已有的板；沒變回同一個陣列", () => {
+  const list = [
+    { name: "C_Chat", desc: "", unread: true },
+    { name: "Stock", desc: "", unread: false },
+  ];
+  expect(withBoardUnread(list, "c_chat", true)).toBe(list);
+  expect(withBoardUnread(list, "NoSuch", true)).toBe(list);
+  const next = withBoardUnread(list, "c_chat", false);
+  expect(next).not.toBe(list);
+  expect(next[0]).toEqual({ name: "C_Chat", desc: "", unread: false });
+  expect(next[1]).toBe(list[1]);
+  expect(withBoardUnread(null, "C_Chat", false)).toBeNull();
+  const fav = withFavPageUnread(list, [
+    { name: "Stock", unread: true },
+    { name: "Gossiping", unread: true },
+  ]);
+  expect(fav.map((b) => [b.name, b.unread])).toEqual([
+    ["C_Chat", true],
+    ["Stock", true],
+  ]);
+});
+
 test("keyDismissesHome：純修飾鍵與 F 鍵不收起面板", () => {
   expect(keyDismissesHome({ key: "a" })).toBe(true);
   expect(keyDismissesHome({ key: "ArrowDown" })).toBe(true);
   expect(keyDismissesHome({ key: "Shift" })).toBe(false);
   expect(keyDismissesHome({ key: "F4" })).toBe(false);
   expect(keyDismissesHome(null)).toBe(false);
+});
+
+test("重新整理鍵（⌘R）不收起面板：面板先收起的話 screen_refresh 認不出首頁，⌘R 會變成整頁重載＝斷線", () => {
+  expect(keyDismissesHome({ key: "r", metaKey: true })).toBe(false);
+  expect(keyDismissesHome({ key: "R", metaKey: true })).toBe(false);
+  // 強制重新載入（⌘⇧R）本來就交給瀏覽器；一般的 r 照樣收起。
+  expect(keyDismissesHome({ key: "r" })).toBe(true);
 });
 
 // ── 控制器：假 App（buf 讀目前的 frame，CommandQueue 只收集命令）──────────────────
@@ -308,12 +401,47 @@ describe("HomeDashboard：何時出現", () => {
     expect(home.state.recents).toEqual(["C_Chat"]);
   });
 
+  test("進了我的最愛裡的看板、最新一篇讀過了 ⇒ 該板不再標有新文章；一個 byte 都不送", () => {
+    const { home, show, enqueued } = makeCore();
+    home._set({ boards: [{ name: "C_Chat", desc: "", unread: true }, { name: "Stock", desc: "", unread: true }] });
+    show(listFrame("C_Chat", [[1, " "], [2, "+"]]));
+    expect(home.state.boards[0].unread).toBe(true);
+    // 讀完最新一篇退回列表（FULLUPDATE 重畫這一頁）。
+    show(listFrame("C_Chat", [[1, " "], [2, " "]], { cursorAt: 1 }));
+    show(mainMenu());
+    expect(home.state.boards.map((b) => b.unread)).toEqual([false, true]);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  test("逛的時候來了新文章（最新一篇變 +）⇒ 標回有新文章；看不出來的幀不動", () => {
+    const { home, show } = makeCore();
+    home._set({ boards: [{ name: "C_Chat", desc: "", unread: false }] });
+    show(fullPage("C_Chat", "+"));
+    expect(home.state.boards[0].unread).toBe(false);
+    show(listFrame("C_Chat", [[1, " "], [2, " "], [3, "+"]]));
+    expect(home.state.boards[0].unread).toBe(true);
+    show(listFrame("C_Chat", [[1, " "], [2, " "], [3, " "]], { foot: " 系列文章  (y)回應 " }));
+    expect(home.state.boards[0].unread).toBe(true);
+  });
+
+  test("使用者自己開原生的我的最愛 ⇒ 照抄這一頁的 ˇ", () => {
+    const { home, show } = makeCore();
+    home._set({ boards: [{ name: "Board1", desc: "", unread: true }, { name: "Board2", desc: "", unread: false }] });
+    show(favScreen(boards(1, 2, (n) => n === 2)));
+    expect(home.state.boards.map((b) => b.unread)).toEqual([false, true]);
+  });
+
   test("不在主功能表的 settle 只讀頭尾兩列（每次 settle 都跑，不讀滿整頁）", () => {
     const { core, home, show } = makeCore();
     const spy = vi.spyOn(core.buf, "getRowText");
     show(ARTICLE_LIST());
     expect(spy).toHaveBeenCalledTimes(2);
     expect(home.state.recents).toEqual(["C_Chat"]);
+    // 有我的最愛、但這個板不在裡面：也不必讀滿。
+    home._set({ boards: [{ name: "Stock", desc: "", unread: true }] });
+    spy.mockClear();
+    show(ARTICLE_LIST());
+    expect(spy).toHaveBeenCalledTimes(2);
     spy.mockClear();
     show(mainMenu());
     expect(spy.mock.calls.length).toBeGreaterThan(2);
@@ -457,6 +585,28 @@ describe("HomeDashboard：動作都接到原生鍵", () => {
     show(mainMenu());
     expect(home.openBoard("C_Chat")).toBe(true);
     expect(enqueued[0].keys).toBe("s");
+  });
+
+  test("面板的「更新」＝ screen_refresh 同一個入口（冷卻、忙碌提示）；沒有它才直接抓", () => {
+    const { core, home, show, enqueued } = makeCore();
+    show(mainMenu());
+    core.screenRefresh = { refresh: vi.fn(() => true) };
+    expect(home.refresh()).toBe(true);
+    expect(core.screenRefresh.refresh).toHaveBeenCalledWith("button");
+    expect(enqueued).toHaveLength(0);
+    delete core.screenRefresh;
+    expect(home.refresh()).toBe(true);
+    expect(enqueued[0].keys).toBe(ZA_FAV);
+  });
+
+  test("閱讀紀錄：待還原錨收起（原生主選單）就作廢；面板沒畫著量不到", () => {
+    const { home, show } = makeCore();
+    show(ARTICLE_LIST());
+    expect(home.readingPosition()).toBeNull();
+    show(mainMenu());
+    home.requestViewportRestore({ kind: "home", key: "board:C_Chat", offset: 0, scrollTop: 100 });
+    home.dismiss();
+    expect(home._pendingViewport).toBeNull();
   });
 
   test("開信箱 ＝ Ctrl+Z m，落地離開主功能表才算完成", () => {

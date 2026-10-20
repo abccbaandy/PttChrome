@@ -14,6 +14,8 @@
 //             ⇒ 未讀旗標（check_newpost 只在載入時算）與人氣一起重算，ctx->curr 保留。
 //             熱門看板不收 /（vmsg「熱門看板模式下不支援…」）⇒ 第二步的 ⏎ 正好關掉訊息，明講不支援。
 //   文章：    aid_navigation.refresh()（取 AID → s<板>⏎ → #AID⏎ → ⏎，還原閱讀位置）。
+//   首頁儀表板（主功能表上的面板畫著時）：重抓我的最愛（home_dashboard.fetchFavorites：
+//             Ctrl+Z f → 讀頁 → q）。面板收起後的原生主功能表不接。
 // 認不出畫面 ⇒ 不接管（F5 交還瀏覽器、工具列不顯示按鈕）。
 //
 // 頻率：pttbbs 開源碼查無「同文章讀取頻率」限制（讀碼見 docs），仍給一道可調的冷卻
@@ -49,10 +51,13 @@ const HOT_BOARD_REJECT = '熱門看板模式下不支援';
 // 這一幀能重整成什麼。純函式（facts 同 article_search.searchGateFacts）。
 //   opts.articleBoard：目前文章的看板（term_view._articleBoard）
 //   opts.listOpened：列表好讀自己開的這篇（超長文 footer 被擠掉時的 READING 證據）
-// 回 { kind:'article'|'article-list'|'board-list', board? } 或 null。
+//   opts.home：首頁儀表板畫著（home_dashboard 的 state.visible；它自己認主功能表，
+//             抓最愛途中畫面在我的最愛上也算——那時送出會被忙碌提示擋下）
+// 回 { kind:'article'|'article-list'|'board-list'|'home', board? } 或 null。
 export function refreshTargetFromFacts(facts, pageState, opts) {
   if (!facts) return null;
   const o = opts || {};
+  if (o.home) return { kind: 'home' };
   const rowTexts = facts.rowTexts || [];
   const rows = facts.rows || rowTexts.length;
   const last = rowTexts[rows - 1] || '';
@@ -179,8 +184,14 @@ export function refreshTargetOf(core) {
   const ls = core.listSession;
   return refreshTargetFromFacts(searchGateFacts(core), core.buf.pageState, {
     articleBoard: view._articleBoard,
-    listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor())
+    listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor()),
+    home: homeDashboardShown(core)
   });
+}
+
+export function homeDashboardShown(core) {
+  const hd = core && core.homeDashboard;
+  return !!(hd && hd.state && hd.state.visible);
 }
 
 export function ScreenRefresh(core) {
@@ -261,6 +272,12 @@ ScreenRefresh.prototype = {
     if (target.kind === 'article') {
       if (core.aidNavigation && core.aidNavigation.refresh()) return true;
       this._hint('這篇文章無法重新整理');
+      return false;
+    }
+    // 首頁儀表板：面板自己顯示「更新中」與結果（閱讀紀錄 'home-favorites' 在它裡面）。
+    if (target.kind === 'home') {
+      if (core.homeDashboard && core.homeDashboard.fetchFavorites()) return true;
+      this._hint('指令處理中，請稍候再重新整理');
       return false;
     }
     // 閱讀紀錄（決策表 'list-refresh'／'board-list-refresh'）：游標本來就原地

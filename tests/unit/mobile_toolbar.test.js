@@ -121,6 +121,8 @@ describe("toolbarContextFromFacts", () => {
     expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3, { articleBoard: "Test" }).refresh).toBe(false);
     expect(toolbarContextFromFacts(frame({ 23: MAIL_ROW }), 3, on).refresh).toBe(false);
     expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1, on).refresh).toBe(false);
+    // 主功能表上畫著首頁儀表板 ⇒ 重整＝重抓我的最愛。
+    expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1, { ...on, home: true }).refresh).toBe(true);
   });
   test("到底（End）：文章／信件／文章列表；主功能表與 prompt 不給", () => {
     expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3).end).toBe(true);

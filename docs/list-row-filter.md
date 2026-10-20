@@ -32,5 +32,5 @@
 ## 守護
 
 - `tests/unit/list_row_filter.test.js`：各層判準，以及 `visibleListIndices` 用的是同一份。
-- `tests/unit/list_row_filter_usage.test.js`（靜態掃描）：只有 `list_row_filter.js`／`comment_parse.js` 能拿東西比對黑名單；解析文章列表條目（`parseListEntry`／`listEntriesFromScreen`／`listPageOf`）的模組必須 import 本模組，否則要列進 `EXEMPT` 並寫理由（目前只有 `aid_navigation`：它只用來辨認畫面，不挑文章給人看）。
+- `tests/unit/list_row_filter_usage.test.js`（靜態掃描）：只有 `list_row_filter.js`／`comment_parse.js` 能拿東西比對黑名單；解析文章列表條目（`parseListEntry`／`listEntriesFromScreen`／`listPageOf`）的模組必須 import 本模組，否則要列進 `EXEMPT` 並寫理由（目前有 `aid_navigation`：它只用來辨認畫面；`home_dashboard`：只讀最新一篇的已讀標記來鏡像 PTT 的看板未讀旗標。兩者都不挑文章給人看）。
 - 各功能的行為測試在 `next_article.test.js`、`split_reader.test.js`、`unread_jump.test.js`、`agent_tools.test.js`、`debug_recorder.test.js`。

@@ -38,6 +38,9 @@ const EXEMPT = {
   "js/agent_parse.js": "parseListEntry／listEntriesFromScreen 的定義處",
   // 落地驗證：認「畫面上哪一列是置底文／游標停在哪篇」，送鍵前後比對用，不挑文章給人看。
   "js/aid_navigation.js": "只用來認畫面（置底文位置、落地那列），不挑文章給人看",
+  // 首頁儀表板的「有新文章」＝PTT 的看板旗標（check_newpost 只看最新一篇讀了沒），與使用者的
+  // 黑名單無關：讀最新一篇的已讀標記來鏡像 PTT，不挑文章給人看。
+  "js/home_dashboard.js": "只讀最新一篇的已讀標記鏡像 PTT 的看板未讀旗標，不挑文章給人看",
 };
 
 test("黑名單比對只在 list_row_filter／comment_parse", () => {

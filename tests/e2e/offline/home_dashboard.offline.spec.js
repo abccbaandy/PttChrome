@@ -1,49 +1,16 @@
 // 首頁儀表板（src/js/home_dashboard.js、docs/home-dashboard.md）：主功能表上蓋面板 → 自動送
 // Ctrl+Z f 抓我的最愛 → q 回主功能表 → 畫出卡片；點卡片走 s<板>；真鍵盤打字收起面板、鍵照送。
-// server 的回應由測試照 pttbbs 版面畫（主功能表＝helpers/main_menu，我的最愛＝board.c#brdlist_renderer）。
+// 進看板讀完最新一篇回來 ⇒ 該板不再標有新文章（不重抓）；F5 ＝重抓我的最愛。
+// server 的回應由測試照 pttbbs 版面畫（主功能表＝helpers/main_menu，我的最愛／文章列表＝helpers/home_screens）。
 // 焦點留在 #t、點面板不變成點終端機、面板開著打字照常送 PTT，只有真瀏覽器驗得出來。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, waitScreenSettled } = require('../helpers/replay');
+const { bootOffline } = require('../helpers/replay');
 const { drawMainMenu } = require('../helpers/main_menu');
-const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
+const { drawFavorites, drawArticleList } = require('../helpers/home_screens');
+const { startCapture, peekCapture, takeCapture, expectOnlyFence } = require('../helpers/capture');
 
 const ZA_FAV = '\x1af';
-
-// 一頁我的最愛：%7d%c%s（未讀是全形ˇ）＋板名(13)＋類別＋◎＋敘述(34)＋人氣＋板主。
-async function drawFavorites(page, boards) {
-  await page.evaluate((boards) => {
-    const u2b = (str) => {
-      let out = '';
-      for (const ch of str) {
-        const c = ch.charCodeAt(0);
-        if (c < 0x80) {
-          out += ch;
-          continue;
-        }
-        out += String.fromCharCode(window.lib.u2bArray[2 * c]) + String.fromCharCode(window.lib.u2bArray[2 * c + 1]);
-      }
-      return out;
-    };
-    const width = (s) => [...s].reduce((w, ch) => w + (ch.charCodeAt(0) < 0x80 ? 1 : 2), 0);
-    const padCells = (s, n) => s + ' '.repeat(Math.max(0, n - width(s)));
-    const REV = '\x1b[7m';
-    const OFF = '\x1b[0m';
-    let d = '\x1b[H\x1b[2J';
-    d += '\x1b[1;1H' + REV + u2b(padCells('【看板列表】                     批踢踢實業坊', 80)) + OFF;
-    d += '\x1b[2;1H' + u2b('[←][q]回上層 [→][r]閱讀 [↑↓]選擇 [PgUp][PgDn]翻頁 [c]新文章 [/]搜尋 [h]求助');
-    d += '\x1b[3;1H' + REV + u2b(padCells('   編號   看  板       類別   中   文   敘   述               人氣 板   主', 80)) + OFF;
-    boards.forEach((b, i) => {
-      const head = String(i + 1).padStart(7, ' ') + ' ' + (b.unread ? 'ˇ' : '  ');
-      const row = (i === 0 ? '>' + head.slice(1) : head) + b.name.padEnd(13, ' ') + '綜合 ◎' + padCells(b.desc, 34) + 'HOT someone';
-      d += '\x1b[' + (4 + i) + ';1H' + u2b(row);
-    });
-    d += '\x1b[24;1H' + REV + u2b(padCells('  選擇看板    (a)增加看板 (s)進入已知板名 (y)列出全部 (v/V)已讀/未讀', 79)) + OFF;
-    d += '\x1b[4;1H';
-    window.__app.onData(d);
-  }, boards);
-  await waitScreenSettled(page, { 0: '看板列表', 23: '(a)增加看板' });
-}
 
 const FAVS = [
   { name: 'C_Chat', desc: '[希洽] 閒聊', unread: true },
@@ -106,6 +73,43 @@ test.describe('首頁儀表板', () => {
     await page.locator('[data-home-native]').click();
     await expect(dashboard(page)).toHaveCount(0);
     expect(await page.evaluate(() => window.__app.buf.getRowText(0, 0, 80))).toContain('主功能表');
+  });
+
+  test('進了看板、最新一篇讀過 ⇒ 回首頁時不再標有新文章，一個 byte 都不送', async ({ page }) => {
+    await bootHome(page, { enableEasyReadingList: false });
+    await fetchFlow(page);
+    await expect(page.locator('[data-home-board="C_Chat"]')).toHaveAttribute('data-unread', '');
+    // 使用者自己逛進 C_Chat、讀完最新一篇退回列表（最新一篇的標記從 + 變成空白）。
+    await drawArticleList(page, 'C_Chat', [[1, ' '], [2, '+']]);
+    await expect(dashboard(page)).toHaveCount(0);
+    await drawArticleList(page, 'C_Chat', [[1, ' '], [2, ' ']]);
+    await drawMainMenu(page);
+    await expect(dashboard(page)).toBeVisible();
+    await expect(page.locator('[data-home-board="C_Chat"]')).not.toHaveAttribute('data-unread', '');
+    await expect(page.locator('[data-home-board="Stock"]')).not.toHaveAttribute('data-unread', '');
+    // 快取也寫回去了（重新整理頁面先畫出來的就是對的）。
+    const cached = await page.evaluate(() => JSON.parse(localStorage.getItem('pttchrome.homeFavorites.v1')));
+    expect(cached.boards.find((b) => b.name === 'C_Chat').unread).toBe(false);
+    // 不重抓：沒排自動抓（TTL 內），逛看板到回來整段只有柵欄那一鍵。
+    expect(await page.evaluate(() => window.__app.homeDashboard._autoTimer)).toBeNull();
+    await expectOnlyFence(page, () => page.keyboard.press('ArrowDown'), '\x1b[B');
+  });
+
+  test('F5 ＝ 重抓我的最愛（與文章列表同一個重新整理入口），不重載網頁', async ({ page }) => {
+    await bootHome(page, { refreshMinIntervalSec: 0 });
+    await fetchFlow(page);
+    await page.evaluate(() => (window.__notReloaded = true));
+    await page.keyboard.press('F5');
+    await expect.poll(() => peekCapture(page)).toContain(ZA_FAV);
+    await expect(dashboard(page)).toBeVisible();
+    await expect(page.locator('[data-home-status]')).toHaveText(/更新中|Updating/);
+    await drawFavorites(page, [{ name: 'Stock', desc: '[股票] 今天漲了', unread: true }]);
+    await expect.poll(() => peekCapture(page)).toContain('q');
+    expect(await takeCapture(page)).toBe(ZA_FAV + '\fq\f');
+    await drawMainMenu(page);
+    await expect(page.locator('[data-home-board]')).toHaveCount(1);
+    await expect(page.locator('[data-home-board="Stock"]')).toHaveAttribute('data-unread', '');
+    expect(await page.evaluate(() => window.__notReloaded)).toBe(true);
   });
 
   test('pref 關 ⇒ 不蓋面板、不排自動抓', async ({ page }) => {
