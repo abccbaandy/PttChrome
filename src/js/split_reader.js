@@ -17,6 +17,7 @@ import { isArticleListTitleRow, parseBoardName } from './screen_titles';
 import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { parseListEntry } from './agent_parse';
 import { parseListArticleNumLoose } from './comment_parse';
+import { blacklistHit, listFilterOf } from './list_row_filter';
 import { listRowIdentity, subjectKey, subjectMatches } from './long_push_anchor';
 import { charCells } from './string_util';
 import { serializedOpHint } from './serialized_op_gate';
@@ -88,7 +89,9 @@ export function listPageOf(rowTexts, curY) {
       recommend: e.recommend,
       deleted: !!e.deleted,
       unread: !e.deleted && listRowUnread(text),
-      subject: id ? id.subject : null
+      subject: id ? id.subject : null,
+      // 列原文：黑名單判定（list_row_filter）吃整列文字，用的時候才比（使用者隨時可能改名單）。
+      text: text
     });
     if (r === curY || (curY == null && /^[>●]/.test(text))) cursorNum = num;
   }
@@ -116,6 +119,17 @@ export function mergeSnapshot(prev, page, limit) {
       .sort((a, b) => a.num - b.num);
   }
   return { board: page.board, entries };
+}
+
+// 左欄顯示的條目：黑名單命中的不列（list_row_filter，跟列表上看到的一樣）；正在讀的那篇
+// （keepNum）就算命中也留著，「目前這篇」的標記才不會不見。刪除文照舊列出、不能點。
+// 沒有任何一列被拿掉 ⇒ 回傳原陣列（state 比參照，不觸發重畫）。
+export function shownEntries(entries, filter, keepNum) {
+  if (!entries || !filter || (!filter.blacklist && !filter.titleKeywords)) return entries;
+  const out = entries.filter(
+    (e) => e.num === keepNum || e.deleted || !blacklistHit(e.text, filter.blacklist, filter.titleKeywords)
+  );
+  return out.length === entries.length ? entries : out;
 }
 
 // 正在讀的這篇是清單上哪一篇：作者＋主題（列表主題可能被截成 …）。同主題的回文很多，
@@ -191,6 +205,7 @@ export function SplitReader(core) {
   this._snapshot = null; // { board, entries }
   this._lastList = null; // { board, mode, cursorNum, articleKey }：上一次看到的文章列表（articleKey 見 cursorHintFresh）
   this._nav = null; // { num, timer }：自己發起的換文
+  this._shownCache = null; // _shown 的上一次結果
   this._state = {
     visible: false,
     board: null,
@@ -238,6 +253,17 @@ SplitReader.prototype = {
   _hint: function(msg, ms, level) {
     const view = this._core.view;
     if (view && view.flashListHint) view.flashListHint(msg, ms || 3000, level);
+  },
+
+  // 左欄條目（shownEntries）。快照、黑名單、目前這篇都沒變 ⇒ 回上次那個陣列：每次文章
+  // settle 都會跑，新陣列會讓左欄整個重畫。
+  _shown: function(entries, keepNum) {
+    const f = listFilterOf(this._core.view);
+    const c = this._shownCache;
+    if (c && c.src === entries && c.bl === f.blacklist && c.tk === f.titleKeywords && c.keep === keepNum) return c.out;
+    const out = shownEntries(entries, f, keepNum);
+    this._shownCache = { src: entries, bl: f.blacklist, tk: f.titleKeywords, keep: keepNum, out: out };
+    return out;
   },
 
   // 終端機左邊有多少空白。量 #mainContainer（終端機本體，置中由 align=center 做）。
@@ -315,7 +341,7 @@ SplitReader.prototype = {
     this._set({
       visible: true,
       board: snap.board,
-      entries: snap.entries,
+      entries: this._shown(snap.entries, current),
       currentNum: current,
       width: width
     });
@@ -359,7 +385,7 @@ SplitReader.prototype = {
             board: self._snapshot.board,
             entries: self._snapshot.entries.map((e) => (e.num === num && e.unread ? Object.assign({}, e, { unread: false }) : e))
           };
-          patch.entries = self._snapshot.entries;
+          patch.entries = self._shown(self._snapshot.entries, num);
         }
         // 落地的這篇就是「看過列表後的第一篇」（cursorHintFresh 重新記）。
         if (self._lastList) self._lastList = Object.assign({}, self._lastList, { cursorNum: num, articleKey: null });

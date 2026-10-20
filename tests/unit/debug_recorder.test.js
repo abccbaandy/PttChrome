@@ -165,6 +165,21 @@ describe("DebugRecorder", () => {
     expect(out.cassette.steps.length).toBeGreaterThan(0);
   });
 
+  // 「這篇為什麼沒出現／為什麼出現了」只看 bytes 判斷不了：起點記一筆黑名單設定。
+  it("start 記下黑名單設定（list.filter），序列化後還在", () => {
+    const { app } = makeApp();
+    app.view.blacklist = new Set(["bob", "carol"]);
+    app.view.titleBlacklist = ["抽獎"];
+    const rec = new DebugRecorder(app);
+    rec.start();
+    const out = JSON.parse(rec.stop());
+    expect(out.events.find((e) => e.tag === "list.filter").info).toEqual({
+      authors: ["bob", "carol"],
+      titleKeywords: ["抽獎"],
+    });
+    expect(out.meta.warning).toContain("黑名單");
+  });
+
   it("stop 套 prefs redact（autoLoginUser/Password）", () => {
     const { app } = makeApp();
     const rec = new DebugRecorder(app);

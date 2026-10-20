@@ -51,11 +51,12 @@ export function parseListEntry(text) {
 }
 
 // 整張列表畫面 → 條目陣列（只掃條目區 rows 3..rows-2，表頭兩列與底列不碰）。
+// text＝列原文（黑名單判定 list_row_filter 吃整列；回給 agent 前由呼叫端拿掉）。
 export function listEntriesFromScreen(rowTexts) {
   const out = [];
   for (let r = 3; r < rowTexts.length - 1; r++) {
     const e = parseListEntry(rowTexts[r]);
-    if (e) out.push(e);
+    if (e) out.push(Object.assign(e, { text: rowTexts[r] }));
   }
   return out;
 }

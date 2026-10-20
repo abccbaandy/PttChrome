@@ -12,7 +12,7 @@
 // M 標記的未讀是 'M'。這裡的「未讀」＝ '+' 與 'M'（兩者都是 brc_unread == 1）。
 // 'D'（tag）、'!'（solved）蓋掉了未讀資訊 ⇒ 中性：不算未讀、也不算進已讀連續數。
 
-import { isDeletedListRow } from './comment_parse';
+import { isHiddenListText, listFilterOf } from './list_row_filter';
 import { charCells } from './string_util';
 import { refreshTargetOf } from './screen_refresh';
 import { submitSerializedSteps, beginInFlight, endInFlight } from './article_search';
@@ -47,15 +47,18 @@ export function listRowMark(text) {
 }
 
 // 一頁畫面 → 有編號的文章 [{ num, mark }]，由新到舊。置底（★，無編號）不算；
-// 刪除文的標記是中性。nums ＝ list_session facts.nums（游標列的編號已補回）。
-export function pageUnreadEntries(rowTexts, nums, rows) {
+// 列表好讀會藏起來的列（刪除文、鎖文、黑名單：list_row_filter#isHiddenListText）標記是
+// 中性——不會跳到使用者在列表上看不到的那篇。nums ＝ list_session facts.nums（游標列的
+// 編號已補回）；filter ＝ listFilterOf(view)。
+export function pageUnreadEntries(rowTexts, nums, rows, filter) {
   const out = [];
   const last = (rows || rowTexts.length) - 2;
+  const f = filter || {};
   for (let r = 3; r <= last; ++r) {
     const num = nums ? nums[r] : null;
     if (num == null) continue;
     const text = rowTexts[r] || '';
-    const mark = isDeletedListRow(text) ? null : listRowMark(text);
+    const mark = isHiddenListText(text, f.blacklist, f.titleKeywords) ? null : listRowMark(text);
     out.push({ num: num, mark: mark });
   }
   out.sort(function(a, b) {
@@ -189,7 +192,7 @@ UnreadJump.prototype = {
     };
     const onPage = function() {
       const f = landed || {};
-      state = scanUnreadPage(state, pageUnreadEntries(f.rowTexts || [], f.nums, f.rows));
+      state = scanUnreadPage(state, pageUnreadEntries(f.rowTexts || [], f.nums, f.rows, listFilterOf(core.view)));
       const next = nextUnreadAction(state, pgups);
       if (next.action === 'pgup') {
         pgups++;

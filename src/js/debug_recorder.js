@@ -5,6 +5,7 @@
 import { serializeRecording } from './debug_recorder_logic';
 import { setDiagSink } from './diag';
 import { OWNER_BOARD_LIST } from './list_render_owner';
+import { filterSummary } from './list_row_filter';
 
 // 輕量狀態快照：純讀取，不深拷貝 buf。欄位缺就缺（防呆）。
 //
@@ -201,6 +202,9 @@ export class DebugRecorder {
       title: view._articleTitle || null,
     });
     if (app._screenContext && app._screenContext.appBar) this.log('appBar', app._screenContext.appBar);
+    // 黑名單設定（作者／標題關鍵字）：「這篇為什麼沒出現／為什麼出現了」只看 bytes 判斷不了。
+    // 之後改設定時 App.applyPref 會再記一筆（同 tag）。
+    this.log('list.filter', filterSummary(view));
   }
 
   // 好讀長頁的捲動軌跡：使用者的滾輪輸入（main.wheel）對照實際捲動位置

@@ -8,6 +8,7 @@ vi.mock("../../src/js/pref_storage", async (importOriginal) => {
 });
 import { DEFAULT_PREFS, NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage";
 import { NextArticle, nextEntryAfter, landedOn } from "../../src/js/next_article";
+import { parseBlacklist, parseTitleBlacklist } from "../../src/js/comment_parse";
 import { RESTORE_TABLE } from "../../src/js/reading_record";
 import { HINT_ERROR } from "../../src/js/status_hint";
 
@@ -75,6 +76,22 @@ describe("nextEntryAfter：列表順序的下一列", () => {
   test("沒有快照或不知道這篇 ⇒ null", () => {
     expect(nextEntryAfter(null, 101)).toBeNull();
     expect(nextEntryAfter(entries, null)).toBeNull();
+  });
+  test("黑名單命中的（看列原文）跟被刪的一樣跳過，並回報跳過了誰、為什麼", () => {
+    const withText = [
+      { num: 101, text: listRow(101, "alice", "[閒聊] a") },
+      { num: 102, text: listRow(102, "bob", "[問題] b") },
+      { num: 103, text: listRow(103, "carol", "[公告] 抽獎") },
+      { num: 104, text: listRow(104, "dave", "[閒聊] d") },
+    ];
+    const filter = { blacklist: parseBlacklist("Bob"), titleKeywords: parseTitleBlacklist("抽獎") };
+    const skipped = [];
+    expect(nextEntryAfter(withText, 101, filter, skipped).num).toBe(104);
+    expect(skipped).toEqual([
+      { num: 102, why: "author" },
+      { num: 103, why: "title" },
+    ]);
+    expect(nextEntryAfter(withText, 101, { blacklist: null, titleKeywords: null }).num).toBe(102);
   });
 });
 
@@ -181,6 +198,71 @@ describe("NextArticle：何時出現", () => {
     show(PAGE());
     read("C_Chat", "bob", "[問題] 第二篇");
     expect(next.state.entry.num).toBe(104);
+  });
+  // 錄製檔：C_Chat 351368 讀到文末，卡片顯示 351369（作者在黑名單裡）。列表好讀把黑名單列藏起來
+  // （list_session#visibleListIndices），卡片要跟使用者在列表上看到的一樣：跳過它，接著找下一列。
+  test("下一列的作者在黑名單 ⇒ 跳過它（不分大小寫）", () => {
+    const { core, next, show, read } = makeCore();
+    core.view.blacklist = parseBlacklist("Bob");
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.entry.num).toBe(104);
+  });
+  test("下一列的標題命中標題黑名單 ⇒ 跳過它", () => {
+    const { core, next, show, read } = makeCore();
+    core.view.titleBlacklist = parseTitleBlacklist("第二篇");
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.entry.num).toBe(104);
+  });
+  test("黑名單是讀到文末那一刻的設定（看過列表之後才加的也算）", () => {
+    const { core, next, show, read } = makeCore();
+    show(PAGE());
+    core.view.blacklist = parseBlacklist("bob");
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.entry.num).toBe(104);
+  });
+  test("後面看過的列全被擋 ⇒ 不出現（不知道再下一列是什麼）", () => {
+    const { core, next, show, read } = makeCore();
+    core.view.blacklist = parseBlacklist("bob\ncarol");
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.visible).toBe(false);
+  });
+  test("錄製中 ⇒ 記下挑了哪篇、跳過誰（結果沒變不重記）", () => {
+    const { core, next, show, read } = makeCore();
+    const logs = [];
+    core.debugRecorder = { log: (tag, info) => logs.push({ tag, info }) };
+    core.view.blacklist = parseBlacklist("bob");
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.entry.num).toBe(104);
+    expect(logs.filter((l) => l.tag === "nextArticle.pick")).toEqual([
+      {
+        tag: "nextArticle.pick",
+        info: {
+          current: 101,
+          next: 104,
+          skipped: [
+            { num: 102, why: "author" },
+            { num: 103, why: "deleted" },
+          ],
+        },
+      },
+    ]);
+  });
+  test("下一列是鎖文（開不了）⇒ 跳過它", () => {
+    const { next, show, read } = makeCore();
+    show(
+      listScreen([
+        listRow(101, "alice", "[閒聊] 第一篇", { cursor: true }),
+        listRow(102, "bob", "[問題] 鎖起來", { push: "--", mark: "鎖" }),
+        listRow(103, "carol", "[閒聊] 第三篇"),
+      ])
+    );
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.entry.num).toBe(103);
   });
   test("最後一篇（下一列是置底文）⇒ 不出現", () => {
     const { next, show, read } = makeCore();

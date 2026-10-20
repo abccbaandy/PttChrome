@@ -13,16 +13,14 @@
 // Misclassification always degrades toward NATIVE (functionMode mirrors the raw
 // screen), never toward a stale buffer.
 import { listRowSpan, listFillRows } from './mobile_layout';
+import { isHiddenListText } from './list_row_filter';
 import {
   parseListAuthor,
   parseListTitle,
-  matchTitleBlacklist,
   pageArticleNums,
   parseListArticleNumLoose,
   isPinnedListRow,
   isDeletedListRow,
-  isUnopenableListRow,
-  isListShapedRow,
   rowToText,
   parseListTitleRaw,
   subjectOfListRow,
@@ -4586,24 +4584,12 @@ export function visibleListIndices(rowTexts, blacklistSet, titleKeywords) {
   return out;
 }
 
-// 單列版的 visibleListIndices 判斷（兩者共用這一份，不變量 10）。
+// 單列版的 visibleListIndices 判斷（兩者共用這一份，不變量 10）。判準本身在
+// list_row_filter#isHiddenListText（所有功能共用的唯一一份）：不是列表形的列一律可見
+// （與 computeAnnotations 的同一道守門對稱）；刪除文與鎖文開不了（pttbbs read_post →
+// READ_SKIP，序列化開文會卡住）⇒ 跟黑名單命中一樣藏。
 function hiddenListRowText(text, blacklistSet, titleKeywords) {
-  // 不是列表形列 ⇒ 一律可見，連問都不問（與 computeAnnotations 的同一道守門
-  // 逐字對稱，不變量 10）。對累積進 listLines 的資料這是 no-op —— 那裡只收
-  // entry 區的列表列 —— 但兩份實作必須長得一樣，否則下次有人只改一邊就是
-  // 「導覽走的列」與「畫出來的列」對不上。
-  if (!isListShapedRow(text)) return false;
-  // Deleted articles ((本文已被刪除) / (已被xxx刪除), author column "-") and
-  // locked articles（鎖, 推文欄 --）are hidden unconditionally: they cannot be
-  // opened (pttbbs read_post → READ_SKIP, the screen never changes, so the
-  // serialized open would wedge on them) — treated exactly like a blacklist hit.
-  if (isUnopenableListRow(text)) return true;
-  if (blacklistSet) {
-    const author = parseListAuthor(text);
-    if (author && blacklistSet.has(author)) return true;
-  }
-  if (titleKeywords && matchTitleBlacklist(parseListTitle(text), titleKeywords)) return true;
-  return false;
+  return isHiddenListText(text, blacklistSet, titleKeywords);
 }
 
 // 緩衝裡的一列（TermChar 陣列）在好讀視窗會不會被隱藏——evictListBuffer 用它把隱藏列

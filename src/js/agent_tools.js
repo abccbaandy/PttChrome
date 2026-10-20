@@ -22,6 +22,7 @@ import { parseStatusRow, statusSignature } from './string_util';
 import { findPageOverlap } from './comment_parse';
 import { parseArticleUrlLine, isCrossPostHeaderLine } from './aid_parse';
 import { listEntriesFromScreen, parseArticleLines } from './agent_parse';
+import { blacklistHit, listFilterOf } from './list_row_filter';
 
 const KEY_ALIASES = { Esc: 'Escape', PgUp: 'PageUp', PgDn: 'PageDown', Return: 'Enter' };
 const KEY_PAGE_DOWN = KeyMap.PageDown;
@@ -241,6 +242,7 @@ export function createAgentTools(core, opts = {}) {
         '列出 PTT 某看板最新的文章（約一頁，含置底文）。回傳 articles（一般文章，編號由新到舊）' +
         '與 pinned（置底文）。每篇有 num（編號，給 ptt_read_article 用）、date、author、title、' +
         'recommend（推文數，「爆」=100 以上、X 開頭為噓）、deleted。看板名稱用英文（如 Gossiping）。' +
+        '使用者黑名單（作者／標題關鍵字）裡的文章不會列出，所以編號可能不連續。' +
         '要更舊的文章：把上次回傳的 nextBefore 當 before 再呼叫一次（只回編號小於 before 的那一頁，' +
         '不含置底文）；nextBefore 為 null 表示已經到第一篇。置底文用 pinned 的 index 給 ptt_read_article 讀。',
       inputSchema: {
@@ -264,16 +266,25 @@ export function createAgentTools(core, opts = {}) {
         const opts = hasBefore ? { num: before - 1 } : { end: true };
         await runNav((cb) => nav.startBoard(board, opts, cb), (args && args.timeoutMs) || 30000);
         const entries = listEntriesFromScreen(screenRows(core.buf));
-        const strip = ({ cursor, ...e }) => e;
-        const articles = entries
+        const strip = ({ cursor, text, ...e }) => e;
+        // 使用者黑名單命中的不給 agent（list_row_filter，跟列表上看到的一樣）。翻頁的 nextBefore
+        // 與置底文的 index 都照畫面算（index 是畫面上第幾篇置底，ptt_read_article 靠它找）。
+        const filter = listFilterOf(core.view);
+        const shown = (e) => !blacklistHit(e.text, filter.blacklist, filter.titleKeywords);
+        const all = entries
           .filter((e) => !e.pinned && e.num != null && (!hasBefore || e.num < before))
-          .sort((a, b) => b.num - a.num)
-          .map(strip);
-        const oldest = articles.length ? articles[articles.length - 1].num : null;
+          .sort((a, b) => b.num - a.num);
+        const oldest = all.length ? all[all.length - 1].num : null;
         return {
           board,
-          articles,
-          pinned: hasBefore ? [] : entries.filter((e) => e.pinned).map(strip).map((e, index) => ({ ...e, index })),
+          articles: all.filter(shown).map(strip),
+          pinned: hasBefore
+            ? []
+            : entries
+                .filter((e) => e.pinned)
+                .map((e, index) => ({ ...strip(e), index, keep: shown(e) }))
+                .filter((e) => e.keep)
+                .map(({ keep, ...e }) => e),
           nextBefore: oldest != null && oldest > 1 ? oldest : null,
         };
       },

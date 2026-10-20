@@ -67,6 +67,7 @@ import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { MessageInbox, isMessageInboxTarget } from './message_inbox';
 import { NewComments } from './new_comments';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
+import { filterSummary } from './list_row_filter';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
 import { NextArticle, isNextArticleTarget } from './next_article';
 import { CommentBar, isCommentBarTarget } from './comment_bar';
@@ -2290,10 +2291,12 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     case 'blacklist':
       this.view.blacklist = parseBlacklist(value);
+      this.debugRecorder?.log('list.filter', filterSummary(this.view));
       this.view.redraw(true);
       break;
     case 'titleBlacklist':
       this.view.titleBlacklist = parseTitleBlacklist(value);
+      this.debugRecorder?.log('list.filter', filterSummary(this.view));
       this.view.redraw(true);
       break;
     case 'enableEasyReading':

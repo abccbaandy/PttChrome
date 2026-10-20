@@ -7,6 +7,7 @@ vi.mock("../../src/js/pref_storage", async (importOriginal) => {
   return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), ...prefOverride }) };
 });
 import { DEFAULT_PREFS, NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage";
+import { parseBlacklist, parseTitleBlacklist } from "../../src/js/comment_parse";
 import {
   listRowUnread,
   listPageOf,
@@ -284,6 +285,32 @@ describe("SplitReader：何時出現", () => {
     expect(split.state).toMatchObject({ visible: true, board: "C_Chat", currentNum: 103 });
     expect(split.state.entries.map((e) => e.num)).toEqual([101, 102, 103, 104]);
     expect(split.state.width).toBe(SPLIT_MAX_PANE_PX);
+  });
+  // 列表好讀把黑名單列藏起來；左欄要跟列表上看到的一樣（list_row_filter#blacklistHit）。
+  test("黑名單（作者／標題）命中的不列；正在讀的那篇就算命中也留著；刪除文照舊列出", () => {
+    const { core, split, show, read } = makeCore();
+    core.view.blacklist = parseBlacklist("Bob");
+    core.view.titleBlacklist = parseTitleBlacklist("第一篇");
+    show(PAGE());
+    read("C_Chat", "carol", "[閒聊] 第三篇");
+    expect(split.state.entries.map((e) => e.num)).toEqual([103, 104]);
+    // 讀的就是被擋的那篇（例如從別處直接開）⇒「目前這篇」不能不見。
+    show(PAGE());
+    read("C_Chat", "bob", "[問題] 第二篇");
+    expect(split.state.currentNum).toBe(102);
+    expect(split.state.entries.map((e) => e.num)).toEqual([102, 103, 104]);
+  });
+  test("快照、黑名單都沒變 ⇒ 左欄條目是同一個陣列（不重畫）", () => {
+    const { core, split, show, read } = makeCore();
+    core.view.blacklist = parseBlacklist("bob");
+    show(PAGE());
+    read("C_Chat", "carol", "[閒聊] 第三篇");
+    const first = split.state.entries;
+    read("C_Chat", "carol", "[閒聊] 第三篇");
+    expect(split.state.entries).toBe(first);
+    core.view.blacklist = parseBlacklist("bob\nalice");
+    read("C_Chat", "carol", "[閒聊] 第三篇");
+    expect(split.state.entries.map((e) => e.num)).toEqual([103, 104]);
   });
   test("回到列表 ⇒ 收起（列表本身就在畫面上）", () => {
     const { split, show, read } = makeCore();

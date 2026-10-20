@@ -10,7 +10,7 @@ import {
   READ_RUN,
   MAX_PGUP,
 } from "../../src/js/unread_jump";
-import { pageArticleNums } from "../../src/js/comment_parse";
+import { pageArticleNums, parseBlacklist, parseTitleBlacklist } from "../../src/js/comment_parse";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
 import { HINT_ERROR } from "../../src/js/status_hint";
 
@@ -97,6 +97,23 @@ describe("scanUnreadPage／nextUnreadAction：從新往舊找", () => {
     expect(READ_RUN).toBe(5);
   });
 
+  // 列表好讀把黑名單列藏起來 ⇒ 跳過去游標會停在看不到的列。判準同 list_row_filter#isHiddenListText。
+  test("黑名單（作者／標題）命中的未讀 ⇒ 中性，不會跳到看不到的那篇", () => {
+    const marks = { 10: "+", 9: "+", 8: " ", 7: " ", 6: " ", 5: " ", 4: " " };
+    const f = page(range(4, 10, (n) => marks[n]));
+    const r9 = f.rowTexts.findIndex((t) => t.startsWith(pad7(9)));
+    f.rowTexts[r9] = f.rowTexts[r9].replace("gary861226", "Spammer   ");
+    const scan = (filter) => scanUnreadPage(initialScanState(), pageUnreadEntries(f.rowTexts, f.nums, f.rows, filter));
+    expect(nextUnreadAction(scan(undefined), 0)).toEqual({ action: "jump", num: 9 });
+    const s = scan({ blacklist: parseBlacklist("spammer"), titleKeywords: null });
+    expect(s.done).toBe(true);
+    expect(nextUnreadAction(s, 0)).toEqual({ action: "jump", num: 10 });
+    // 整頁都被擋 ⇒ 沒有判斷依據，繼續往上找（不是「沒有未讀」）。
+    expect(nextUnreadAction(scan({ blacklist: null, titleKeywords: parseTitleBlacklist("台灣牛奶") }), 0)).toEqual({
+      action: "pgup",
+    });
+  });
+
   test("翻到第 1 篇（PgUp 不再往上）⇒ 最上面那篇未讀就是答案", () => {
     const f = page(range(1, 20, () => "+"), 0);
     const s = scanUnreadPage(initialScanState(), pageUnreadEntries(f.rowTexts, f.nums, f.rows));
@@ -169,6 +186,17 @@ describe("UnreadJump.start：End → PgUp… → 跳號", () => {
     land(enqueued[2], jumped);
     expect(core.unreadJumpInFlight).toBe(false);
     expect(hints.at(-1).m).toBe("已跳到第一篇未讀");
+  });
+
+  test("黑名單取 view 當下的設定：作者被擋的未讀不是答案", () => {
+    const { core, enqueued } = makeCore();
+    core.view.blacklist = parseBlacklist("spammer");
+    new UnreadJump(core).start();
+    const f = page(range(81, 100, (n) => (n >= 90 ? "+" : " ")));
+    // 90～99 的未讀都是黑名單作者 ⇒ 中性；100 之下接著連續已讀 ⇒ 答案是 100（不是 90）。
+    for (let n = 90; n <= 99; ++n) f.rowTexts[3 + n - 81] = f.rowTexts[3 + n - 81].replace("gary861226", "Spammer   ");
+    land(enqueued[0], f);
+    expect(enqueued.at(-1).keys).toBe("100\r");
   });
 
   test("End 的 expect 不吃還沒捲到底的畫面（游標下面還有文章）", () => {

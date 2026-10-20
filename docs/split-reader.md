@@ -13,6 +13,7 @@
 - **認不出 ⇒ 原生**：只在「pageState 3＋`view._articleBoard` 有值＋上一次看到的文章列表是同一板的完整列表」時出現。搜尋結果與文摘（底列「系列文章」／「文摘列表」，read.c MODE_SELECT／MODE_DIGEST）是另一個編號空間，拿那裡的編號去 `startNum` 會開錯篇 ⇒ 從那裡進的文章不出現。從沒看過列表（deep link、斷線回到原處直接開文）也不出現。
 - **這篇是哪一篇**：作者＋主題（`long_push_anchor.listRowIdentity`／`subjectMatches`，列表主題被截成 `…` 也認得）。同一串的回文很多，所以先信開文前的游標（`curY` 那一列），再信唯一的符合者，都不成就不標，左欄照樣出現。改過標題的文章（`T`＝bbs.c `edit_title` 只改 `.DIR`、不改檔頭）主題永遠比不上 ⇒ 游標可信（`cursorHintFresh`：看過列表後的第一篇）時作者對得上就信游標。
 - **列的讀法**：`agent_parse.parseListEntry`（bbs.c#readdoent 欄位）；第 8 格是未讀欄（`+ ~ M = S #`）。游標列看終端機游標的 `curY`；STR_CURSOR2「●」（全形，蓋掉序號前兩格）讀不出嚴格的編號，退回 `parseListArticleNumLoose`。置底文沒有編號，`startNum` 跳不到，不收。
+- **黑名單**：命中黑名單（作者／標題，`list_row_filter#blacklistHit`，見 `docs/list-row-filter.md`）的列不顯示，跟列表上看到的一致；正在讀的那篇就算命中也留著。快照存的是全部的列（含列原文 `text`），只在顯示時過濾（`shownEntries`），黑名單取當下的設定。刪除文照舊列出、不能點。
 - **只用空白處**：終端機恆 80 欄、`align=center` 置中（`docs/terminal-size.md` LOCKED），左欄只放在 `view.mainDisplay` 左緣到視窗左緣之間，`paneWidthFor` 放不下就不出現，不推動、不縮小終端機。預設「固定終端機大小」把字放大到撐滿高度，實測常見視窗左邊只剩約 150～200px（數字在 `SPLIT_MIN_PANE_PX` 的註解），所以標題折兩行。手機不出現。
 - **不是 modal**：焦點留在 `#t`，鍵盤照常操作文章。滑鼠：左欄在 `#BBSWindow` 外，`_onUploadLayer` 認 `#splitReader` 放過（滾輪捲左欄，不變成文章翻頁）；按鈕 mousedown `preventDefault`＋stopPropagation。
 - **線路忙就不送**：`serializedOpHint` 有值或 CommandQueue 不閒 ⇒ 不送，給提示。換文途中左欄留著，那一篇顯示「開啟中」；`startNum` 的結束回呼每輪恰好一次，另有 45 秒看門狗。

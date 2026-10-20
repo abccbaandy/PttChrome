@@ -13,7 +13,7 @@
 
 | 工具 | 參數 | 回傳 | 實作 |
 |---|---|---|---|
-| `ptt_list_articles` | `board`＋選填 `before` | `{board, articles[] 由新到舊, pinned[], nextBefore}`，每篇 `num/date/author/title/recommend/deleted/locked`，置底另帶 `index` | 最新頁：`startBoard(board, {end:true})`；`before`：`startBoard(board, {num: before-1})`（`<編號>⏎` 停在列表不開文，只回編號 < before、不含置底）→ `agent_parse.listEntriesFromScreen` |
+| `ptt_list_articles` | `board`＋選填 `before` | `{board, articles[] 由新到舊, pinned[], nextBefore}`，每篇 `num/date/author/title/recommend/deleted/locked`，置底另帶 `index` | 最新頁：`startBoard(board, {end:true})`；`before`：`startBoard(board, {num: before-1})`（`<編號>⏎` 停在列表不開文，只回編號 < before、不含置底）→ `agent_parse.listEntriesFromScreen`；使用者黑名單命中的不回傳（`list_row_filter`），置底 `index`／`nextBefore` 照畫面算 |
 | `ptt_read_article` | `board`＋`num`／`aid`／`pinned` | `{author, board, title, time, content, comments[{type,user,content,ip,time}], aid, url, complete}` | `startNum`／`startExternal`／`startPinned`（End → ↑ 到板尾畫面第 index 篇置底 → ⏎；置底判準與列表回傳同一支 `parseListEntry`，畫面上沒有那篇就停手）→ `collectArticle` → `agent_parse.parseArticleLines` |
 | `ptt_read_screen` | — | 原生畫面列文字＋`page` 種類 | 低階逃生口 |
 | `ptt_send_keys` | `keys`（`{Enter}` 等，`parseKeySpec`） | 送鍵後等一次 settle 的畫面 | 低階逃生口 |

@@ -5,6 +5,7 @@ import {
   installAgentTools,
   findArticleUrl,
 } from '../../src/js/agent_tools';
+import { parseBlacklist, parseTitleBlacklist } from '../../src/js/comment_parse';
 
 const MAIN_MENU = ['【主功能表】                     批踢踢實業坊', '', ''];
 
@@ -141,6 +142,34 @@ describe('ptt_list_articles', () => {
     const r = await tool(core, 'ptt_list_articles').execute({ board: 'Gossiping' });
     expect(r.pinned.map((a) => [a.index, a.title])).toEqual([[0, '[公告] 板規']]);
     expect(r.nextBefore).toBe(780296);
+  });
+
+  test('使用者黑名單（作者／標題）命中的不給 agent；置底 index 與 nextBefore 照畫面算', async () => {
+    const PAGE = [
+      LIST[0],
+      LIST[1],
+      LIST[2],
+      ' 780295 + 110/14 Spammer      □ [問卦] 被擋的作者',
+      ' 780296 + 110/14 someone1     □ [問卦] 較舊',
+      ' 780297 +1610/14 someone2     □ [新聞] 抽獎活動',
+      '    ★  !   2/21 boardmod     □ [公告] 抽獎辦法',
+      '>   ★  !   2/21 boardmod     □ [公告] 板規',
+      LIST[6],
+    ];
+    const core = fakeCore();
+    core.view.blacklist = parseBlacklist('spammer');
+    core.view.titleBlacklist = parseTitleBlacklist('抽獎');
+    core.aidNavigation.onStart = () => {
+      core.buf.lines = PAGE;
+      core.buf.rows = PAGE.length;
+    };
+    const r = await tool(core, 'ptt_list_articles').execute({ board: 'Gossiping' });
+    expect(r.articles.map((a) => a.num)).toEqual([780296]);
+    expect(r.articles[0]).not.toHaveProperty('text');
+    // 板規是畫面上第 2 篇置底（index 1）：ptt_read_article 照畫面位置找。
+    expect(r.pinned.map((a) => [a.index, a.title])).toEqual([[1, '[公告] 板規']]);
+    expect(r.pinned[0]).not.toHaveProperty('keep');
+    expect(r.nextBefore).toBe(780295);
   });
 
   test('before：跳到 before-1 停在列表（不開文），只回編號小於 before 的、不含置底', async () => {

@@ -134,7 +134,8 @@ export function serializeRecording({ events, meta = {}, cols = 80, rows = 24, re
         recordedAt: new Date().toISOString(),
         redacted: { ids: ids.length > 0, secrets: secrets.length > 0, ips: true },
         warning:
-          'send 事件含使用者鍵入的所有按鍵；手動輸入的密碼無法自動偵測，分享前請自行檢查敏感資訊。',
+          'send 事件含使用者鍵入的所有按鍵；手動輸入的密碼無法自動偵測，分享前請自行檢查敏感資訊。' +
+          'list.filter 事件含黑名單設定（作者 id／標題關鍵字）。',
       },
       meta
     ),

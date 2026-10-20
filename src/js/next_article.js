@@ -17,6 +17,7 @@ import { isArticleListTitleRow } from './screen_titles';
 import { isArticleListFooter } from './screen_captions';
 import { listPageOf, mergeSnapshot, sameBoard, findCurrentNum, cursorHintFresh } from './split_reader';
 import { subjectKey, subjectMatches } from './long_push_anchor';
+import { hiddenReason, listFilterOf } from './list_row_filter';
 import { serializedOpHint } from './serialized_op_gate';
 import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
@@ -32,14 +33,19 @@ const NAV_WATCHDOG_MS = 45000;
 // ---------------------------------------------------------------------------
 
 // 快照裡接在 num 後面的那一篇：編號要連續（中間缺一號＝那一列沒看過，不知道是什麼），
-// 被刪的跳過。找不到 ⇒ null。
-export function nextEntryAfter(entries, num) {
+// 列表好讀會藏起來的列（被刪、鎖文、黑名單：list_row_filter#hiddenReason，判準同列表上
+// 看到的）跳過。filter＝listFilterOf(view)；skipped 有給就把跳過的 { num, why } 推進去
+// （錄製檔 log 用）。找不到 ⇒ null。
+export function nextEntryAfter(entries, num, filter, skipped) {
   if (!entries || !entries.length || num == null) return null;
   const byNum = new Map();
   for (const e of entries) byNum.set(e.num, e);
+  const f = filter || {};
   for (let n = num + 1; byNum.has(n); n++) {
     const e = byNum.get(n);
-    if (!e.deleted) return e;
+    const why = e.deleted ? 'deleted' : e.text ? hiddenReason(e.text, f.blacklist, f.titleKeywords) : null;
+    if (!why) return e;
+    if (skipped) skipped.push({ num: n, why: why });
   }
   return null;
 }
@@ -76,6 +82,8 @@ export function NextArticle(core) {
   this._lastList = null; // { board, mode, cursorNum, articleKey }（articleKey 見 split_reader.cursorHintFresh）
   this._nav = null; // { entry, timer, seen }：seen＝換文途中列表上游標停在 entry.num 的那一列
   this._el = null;
+  this._lastPickRec = null; // _logPick 的去重：同一個錄製器、同一個結果只記一次
+  this._lastPickKey = null;
   this._state = { visible: false, entry: null, pending: false };
   const self = this;
   if (core.buf && core.buf.addEventListener)
@@ -110,6 +118,19 @@ NextArticle.prototype = {
     if (serializedOpHint(core)) return true;
     if (core.commandQueue && !core.commandQueue.idle) return true;
     return false;
+  },
+
+  // 錄製檔：卡片挑了哪一篇、跳過了哪些（why＝list_row_filter#hiddenReason）。每次文章 settle
+  // 都會走到 ⇒ 結果沒變就不重記。
+  _logPick: function(current, entry, skipped) {
+    const rec = this._core.debugRecorder;
+    if (!rec) return;
+    const info = { current: current, next: entry ? entry.num : null, skipped: skipped };
+    const key = JSON.stringify(info);
+    if (rec === this._lastPickRec && key === this._lastPickKey) return;
+    this._lastPickRec = rec;
+    this._lastPickKey = key;
+    rec.log('nextArticle.pick', info);
   },
 
   _inEasyArticleEnd: function() {
@@ -171,7 +192,9 @@ NextArticle.prototype = {
       return;
     }
     const current = findCurrentNum(snap.entries, article, list.cursorNum, hintFresh);
-    const entry = current == null ? null : nextEntryAfter(snap.entries, current);
+    const skipped = [];
+    const entry = current == null ? null : nextEntryAfter(snap.entries, current, listFilterOf(view), skipped);
+    this._logPick(current, entry, skipped);
     if (!entry) {
       this._hide();
       return;

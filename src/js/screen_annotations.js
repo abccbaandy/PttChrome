@@ -11,7 +11,6 @@ import {
   annotateComment,
   parseListAuthor,
   parseListTitleRaw,
-  matchTitleBlacklist,
   isDeletedListRow,
   isListShapedRow,
   isListRowRead,
@@ -19,6 +18,7 @@ import {
   FloorCounter,
   ModernCommentThread,
 } from "./comment_parse";
+import { blacklistHit } from "./list_row_filter";
 import { detectFixableUrls } from "./url_fix";
 import { detectWrappedUrls } from "./url_wrap";
 import {
@@ -980,21 +980,16 @@ export function computeAnnotations(
       // exposed via Row as data-list-author / data-list-title.
       const listAuthor = deleted ? null : parseListAuthor(text);
       const listTitle = deleted ? "" : parseListTitleRaw(text);
-      let blacklisted = false;
+      // 黑名單判準只有一份（list_row_filter#blacklistHit，所有功能共用）。
       // Title-keyword hit → the matched keyword; notice line shows it instead of
       // the author so the user knows WHICH rule fired. Author hit → null (the
       // notice's default author display already names the reason).
-      let hitKeyword = null;
-      if (!deleted && hasBlacklist) {
-        if (listAuthor && blacklist.has(listAuthor)) blacklisted = true;
-      }
-      if (!deleted && !blacklisted && hasTitleBlacklist) {
-        hitKeyword = matchTitleBlacklist(
-          listTitle.toLowerCase(),
-          titleBlacklist,
-        );
-        if (hitKeyword) blacklisted = true;
-      }
+      const hit =
+        deleted || (!hasBlacklist && !hasTitleBlacklist)
+          ? null
+          : blacklistHit(text, blacklist, titleBlacklist);
+      const blacklisted = !!hit;
+      const hitKeyword = hit && hit.by === "title" ? hit.keyword : null;
       if (listEasyReading) {
         if (deleted || blacklisted) {
           result[row] = { hidden: true };
