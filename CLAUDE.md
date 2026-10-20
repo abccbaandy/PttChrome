@@ -105,6 +105,9 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   適用 `term_view.js`、`term_ui.js`、`src/render/**`、`src/components/**`、`easy_reading.js`、`pttchrome.jsx` 渲染/切換路徑、`term_buf.js` 渲染相關等。
   理由：unit 只掛單一元件，**不跑真 WebSocket/完整 boot 鏈**，捕捉不到「一進文章即炸」這類 runtime 崩潰
   （例：TermChar 被 `JSON` 克隆剝掉 prototype 方法）。不可只靠 unit + build 綠就交付。
+- **UI 做完必截圖自我驗證**（Playwright `page.screenshot` 後用 Read 看圖；截圖放 scratchpad 或 gitignored 目錄，不 commit）：
+  至少①文字清楚可辨（對比、字級）②不跑版（溢出、重疊、截斷、錯位）③顏色不突兀（跟暗色主題協調）。
+  涉及手機版面加一張窄視窗截圖。理由：測試只斷言結構，看不出「字灰到看不見」「卡片壓到終端機」這類問題。
 - **離線重放（不連真實 PTT 也能驗依賴特定文章的 case）**：`yarn test:e2e:offline`（stub WebSocket 重放 byte cassette，
   真瀏覽器/真渲染）；Layer2 `tests/unit/replay_fixture.test.jsx` 用真實 `findPageOverlap` 純 node 重建跨頁去重。
   - **offline e2e 不接受 flaky：不是時序問題，是斷言不夠嚴謹。** 量元素座標一律走
@@ -175,6 +178,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
     「改渲染提交前必跑 e2e」在 worktree 以 CI 的 offline＋adverse 代替，交付時註明 live 未跑。
   - **雲端 session**：以 session 指定的工作分支（通常 `claude/*`）為準，**不要切回或直推 `dev`**；
     做完**要自己 commit＋push 到該分支**（雲端容器結束即銷毀，沒 push＝工作全丟），需要時開 PR 到 `dev`。
+    **雲端 session 授權自行 merge PR**：PR 的 CI 全綠後自己 merge（不必等使用者），merge 後照「合進 dev 後」等 dev 綠。
     上面兩條本機規則在雲端**不適用**；其餘 commit 前檢查（隱私 `git diff` 自查、`--stat` 行數相稱、補測試、README 新功能列表）照舊。
   - 雲端 CI：`deploy.yml` 只在 push `dev` 觸發，`claude/*` 分支要**開 PR 後**才會跑 `pr.yml`（同一份 `test.yml`）；
     `yarn ci:status --branch <工作分支>` 查它（需 `GH_TOKEN`；沒有就明講「CI 未驗」，不可當綠）。
