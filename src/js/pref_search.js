@@ -80,6 +80,11 @@ export const PREF_SEARCH_ITEMS = [
     { key: "enableNotifications", titleKey: "options_enableNotifications" },
     { key: "deepLinkHandoffNotify", titleKey: "options_deepLinkHandoffNotify" },
     {
+      key: "enableMessageInbox",
+      titleKey: "options_enableMessageInbox",
+      tooltipKey: "tooltip_enableMessageInbox",
+    },
+    {
       key: "showStatusHints",
       titleKey: "options_showStatusHints",
       tooltipKey: "tooltip_showStatusHints",

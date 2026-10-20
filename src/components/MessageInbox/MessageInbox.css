@@ -1,0 +1,156 @@
+/* 水球收件匣（MessageInbox/index.jsx）。
+   桌機：視窗右上角浮動（文章工具側欄展開時 right 由 JS 讓開）。z-index 同 AID 返回鈕：
+   高於終端機（≤3）與側欄（140），低於 Mantine overlay（200）⇒ 對話框開著時被遮罩蓋住。
+   手機：App Bar 裡的一顆按鈕（.messageInboxInline），清單從 App Bar 下緣展開。
+   user-select: none 只在這個浮層上，不影響終端機選取（終端機的祖先不可有它）。 */
+.messageInbox {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 160;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  font-family: system-ui, sans-serif;
+}
+
+.messageInboxInline {
+  position: static;
+  flex: 0 0 auto;
+}
+
+.inboxBell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #3a3a44;
+  border-radius: 50%;
+  background: rgba(20, 20, 24, 0.92);
+  color: #ddd;
+  cursor: pointer;
+}
+
+.messageInboxInline .inboxBell {
+  border-color: transparent;
+  background: transparent;
+}
+
+.inboxBell:hover {
+  color: #fff;
+  background: #2a2a32;
+}
+
+.inboxBadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: #c92a2a;
+  color: #fff;
+  font:
+    600 11px/18px system-ui,
+    sans-serif;
+  text-align: center;
+}
+
+.inboxPanel {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  width: min(360px, calc(100vw - 16px));
+  max-height: min(60vh, 480px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: 1px solid #3a3a44;
+  border-radius: 8px;
+  background: #16161b;
+  color: #ddd;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  font-size: 14px;
+}
+
+.messageInboxInline .inboxPanel {
+  position: fixed;
+  top: calc(48px + var(--safe-top, 0px));
+  right: 8px;
+}
+
+.inboxHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2a32;
+}
+
+.inboxTitle {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.inboxAction {
+  padding: 2px 8px;
+  border: 1px solid #3a3a44;
+  border-radius: 4px;
+  background: transparent;
+  color: #ccc;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.inboxAction:hover {
+  background: #2a2a32;
+}
+
+.inboxList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.inboxItem {
+  padding: 8px 10px;
+  border-bottom: 1px solid #22222a;
+}
+
+.inboxItem:last-child {
+  border-bottom: none;
+}
+
+.inboxMeta {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: #999;
+}
+
+.inboxFrom {
+  flex: 1 1 auto;
+  color: #f0c060;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inboxItem[data-inbox-kind="broadcast"] .inboxFrom {
+  color: #b0b0ff;
+}
+
+.inboxText {
+  margin-top: 2px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}

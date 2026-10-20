@@ -37,6 +37,7 @@ import SplitReader from "../SplitReader";
 import ArticleTools from "../ArticleTools";
 import CommentBar from "../CommentBar";
 import AidBackButton from "../AidBackButton";
+import MessageInbox from "../MessageInbox";
 import HelpMenu from "../HelpMenu";
 import { onPrefSaveImpl } from "./pref_save";
 import { readValuesWithDefault, writeValues } from "../../js/pref_storage";
@@ -1482,6 +1483,7 @@ export const ContextMenu = ({ pttchrome }) => {
       <CommentBar pttchrome={pttchrome} />
       <MobileAppBar pttchrome={pttchrome} />
       <AidBackButton pttchrome={pttchrome} />
+      <MessageInbox pttchrome={pttchrome} />
       <MobileToolbar
         pttchrome={pttchrome}
         hidden={modalOpen}

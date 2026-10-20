@@ -815,6 +815,27 @@ export const en_US = {
   "options_enableNotifications": {
     "message": "Enable notifications when a message is received."
   },
+  "options_enableMessageInbox": {
+    "message": "Message inbox"
+  },
+  "tooltip_enableMessageInbox": {
+    "message": "Messages and system broadcasts received during this connection stay in the bell at the top right, so a missed one can still be read. Kept only in this tab and cleared on disconnect."
+  },
+  "inbox_title": {
+    "message": "Messages"
+  },
+  "inbox_open": {
+    "message": "Messages ({count} unread)"
+  },
+  "inbox_clear": {
+    "message": "Clear"
+  },
+  "inbox_close": {
+    "message": "Close"
+  },
+  "inbox_broadcast": {
+    "message": "System"
+  },
   "options_deepLinkHandoffNotify": {
     "message": "Notify when this tab picks up an external link (tab title flash + system notification)."
   },

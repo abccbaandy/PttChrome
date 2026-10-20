@@ -435,18 +435,18 @@ export function parseListRow(str) {
 //     \u2192 \u8a0a\u606f\u8b8a\u9577\u7684\u90a3\u4e00\u5247\u6574\u500b\u6f0f\u6293
 // \u767c\u9001\u8005\u6b04\u4e0d\u53ea\u662f ASCII \u5e33\u865f\uff1a\u81ea\u5df1\u7684\u5c0f\u5929\u4f7f\u56de\u7684\u6c34\u7403\uff0cmbbsd/wmsg.c\uff08WATERBALL_ANSWER\uff09\u628a
 // from_id \u63db\u6210 angel_load_my_fullnick \u7684\u300c<\u66b1\u7a31>\u5c0f\u5929\u4f7f\u300d\uff08\u53ef\u4ee5\u662f\u4e2d\u6587\uff09\u21d2 \u4e0d\u80fd\u7528 \w\u3002
-const WATERBALL_RE =
+export const WATERBALL_SCAN_RE =
   /\x1b\[1;3[37];46m\u2605([^\x1b\s]+)\x1b\[(?:0;1;)?37;45m (.+?) \x1b\[m/;
 // \u5ee3\u64ad\uff0f\u7cfb\u7d71\u8a0a\u606f\uff1adoupdate \u7684 rel_move \u5148\u628a\u6e38\u6a19\u5b9a\u4f4d\u5230\u5e95\u5217\u518d\u4e0a\u8272\u3002
-const BROADCAST_RE =
+export const BROADCAST_SCAN_RE =
   /\x1b\[24;\d{2}H\x1b\[1;37;45m([^\x1b]+)(?:\x1b\[24;18H)?\x1b\[m/;
 
 export function parseWaterball(str) {
-  var result = WATERBALL_RE.exec(str);
+  var result = WATERBALL_SCAN_RE.exec(str);
   if (result && result.length == 3) {
     return { userId: result[1], message: result[2] };
   } else {
-    result = BROADCAST_RE.exec(str);
+    result = BROADCAST_SCAN_RE.exec(str);
     if (result && result.length == 2) {
       return { message: result[1] };
     }
