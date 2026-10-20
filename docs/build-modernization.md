@@ -98,7 +98,7 @@
 - **已拆（React.lazy，`components/ContextMenu/index.jsx`）**：設定頁（含設定搜尋索引 `pref_search.js`、`PrefModal.css`）、指令面板、搜尋彈窗、輸入助手、即時文章助手、長推文輸入框。連帶把 Mantine 的 `NumberInput`（＋react-number-format）、`Tabs`、`SegmentedControl`、`Select`、`Switch`、`Combobox` 移出開站必載。實測（Vite 8.3）開站必載 1,313 KB → 1,167 KB（gzip 406 → 368 KB）。
 - **仍在 ContextMenu 掛載時就 render**：lazy 只把下載／解析移出關鍵路徑，chunk 在開站後背景載入，元件照舊常駐、以 `show` 開關，語意與拆檔前一致。不要改成「第一次打開才 render」：那會讓第一次打開多等一個網路往返，還得重新檢查每個彈窗靠 `show` 變化做的初始化。
 - **新增 lazy 彈窗時**要包自己的 `<Suspense fallback={null}>`（沒包就往上 suspend，整棵 ContextMenu 一起空白），並把模組加進守護 `tests/unit/lazy_modal_chunks.test.js` 的名單。守護是從 `src/entry.js` 沿靜態 import 走一遍：開站會載入的模組只要多一行 `import PrefModal …`，整包就被拉回主 bundle 而一切照常綠，只有這支測試會紅。
-- **英文語系 `en_US_messages.js`（約 49 KB）沒拆**：`i18n()` 是同步 API，`setupI18n()` 在約 40 支測試裡同步呼叫；設定搜尋還會拿另一語系做備援比對。要拆得把 i18n 改成開站前 await 載入，收益約 15 KB gzip，暫不做。
+- **英文語系 `en_US_messages.js`（約 51 KB）是 lazy chunk**：`i18n()` 仍是同步 API，改由 `main.jsx#loadResources` 跟 Big5 表、字型一起先 await `loadI18n()`（只有瀏覽器偏好英文才下載，平行載入不多一個往返），`startApp` 裡的 `setupI18n()` 照舊同步。測試由 `tests/unit/setup.js` 預先 `registerLocale('en_us', …)`，約 40 支同步呼叫 `setupI18n()` 的測試不用改。設定搜尋（`pref_search.js`，本來就在 lazy chunk）照舊靜態 import 英文做備援比對。實測（Vite 8.3）開站必載 1,212 KB → 1,160 KB（gzip 374 → 357 KB）。守護 `i18n_lazy_locale.test.js`＋`lazy_modal_chunks.test.js`。
 - react-dom（約 200 KB）、Mantine 共用核心（Modal／Button／Portal 等，開站就會用到的提示框都靠它）、核心畫面模組是真的開站必載，不在拆檔範圍。
 
 ## Deprecated 瀏覽器 API
