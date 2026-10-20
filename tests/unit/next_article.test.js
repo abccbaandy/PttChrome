@@ -88,6 +88,17 @@ test("landedOn：作者＋主題（不分大小寫、Re: 不影響主題）", ()
   expect(landedOn(entry, null)).toBe(false);
 });
 
+test("landedOn：檔頭主題對不上（T 只改 .DIR）⇒ 改比途中列表上游標那列（列表對列表）", () => {
+  const entry = { author: "bob", subject: "[問題] 第二篇(已解決)" };
+  const article = { author: "bob", title: "[問題] 第二篇" };
+  expect(landedOn(entry, article)).toBe(false);
+  expect(landedOn(entry, article, { author: "Bob", subject: "[問題] 第二篇(已解決)" })).toBe(true);
+  expect(landedOn(entry, article, { author: "bob", subject: "[問題] 別篇" })).toBe(false);
+  expect(landedOn(entry, article, { author: "eve", subject: "[問題] 第二篇(已解決)" })).toBe(false);
+  // 檔頭作者對不上 ⇒ 列表列再像也不算。
+  expect(landedOn(entry, { author: "eve", title: "[問題] 第二篇" }, { author: "bob", subject: entry.subject })).toBe(false);
+});
+
 test("閱讀紀錄：next-article 不還原（同雙欄閱讀的換文）", () => {
   expect(RESTORE_TABLE["next-article"]).toEqual(RESTORE_TABLE["split-open"]);
 });
@@ -215,6 +226,31 @@ describe("NextArticle：何時出現", () => {
     t.read("C_Chat", "dave", "[閒聊] 不在清單上");
     expect(t.next.state.visible).toBe(false);
   });
+  // 錄製檔：Android 板 48405，列表「[請益] Pokemon GO一直更新失敗無法安裝」、檔頭「[請益] Pokemon
+  // GO一直更新」。PTT 的 T（bbs.c edit_title）只改 .DIR、不改文章檔頭 ⇒ 主題永遠比不上。
+  test("改過標題的文章（列表≠檔頭）從列表游標進 ⇒ 照樣出現下一篇", () => {
+    const { next, show, read } = makeCore();
+    show(PAGE()); // 游標在 102（bob）
+    read("C_Chat", "bob", "[問題] 第二");
+    expect(next.state.visible).toBe(true);
+    expect(next.state.entry.num).toBe(104);
+  });
+  test("看過列表之後在文章裡換到別篇（原生鍵，沒經過列表）⇒ 舊游標不可信，主題又對不上 ⇒ 不出現", () => {
+    const { next, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "bob", "[問題] 第二");
+    read("C_Chat", "bob", "[問題] 我的另一篇");
+    expect(next.state.visible).toBe(false);
+  });
+  test("第一篇沒讀到文末就換篇，第二篇讀到底 ⇒ 仍認得出游標不可信", () => {
+    const { next, easyReading, show, read } = makeCore();
+    show(PAGE());
+    easyReading.easyReadingReachedPageEnd = false;
+    read("C_Chat", "bob", "[問題] 第二");
+    easyReading.easyReadingReachedPageEnd = true;
+    read("C_Chat", "bob", "[問題] 我的另一篇");
+    expect(next.state.visible).toBe(false);
+  });
   test("回到列表 ⇒ 收起", () => {
     const { next, show, read } = makeCore();
     show(PAGE());
@@ -263,6 +299,40 @@ describe("NextArticle：點卡片換文", () => {
     starts[0].onEnd({ ok: true });
     expect(hints).toEqual([expect.objectContaining({ level: HINT_ERROR })]);
     expect(starts).toHaveLength(1);
+  });
+  // 錄製檔：Browsers 板 24967 → 24968，列表「[-GC-] YOUTUBE影片會瞬間卡頓(更新GPU驅動)」、檔頭
+  // 「[-GC-] YOUTUBE影片會瞬間卡頓」：開對了卻跳「不是卡片上那篇」。
+  test("下一篇改過標題（列表≠檔頭）：途中列表游標停的那列就是卡片那篇 ⇒ 沒有提示，接著出現再下一篇", () => {
+    const { next, show, read, starts, hints } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    next.open();
+    // 途中經過列表：<編號>⏎ 之後游標停在 102。
+    show(PAGE());
+    read("C_Chat", "bob", "[問題] 第二");
+    starts[0].onEnd({ ok: true });
+    expect(hints).toEqual([]);
+    read("C_Chat", "bob", "[問題] 第二");
+    expect(next.state).toMatchObject({ visible: true, entry: expect.objectContaining({ num: 104 }) });
+  });
+  test("途中列表上 102 已經換成別篇（列表變了）⇒ 錯誤級提示", () => {
+    const { next, show, read, starts, hints } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    next.open();
+    show(listScreen([listRow(101, "alice", "[閒聊] 第一篇"), listRow(102, "bob", "[問題] 別的", { cursor: true })]));
+    read("C_Chat", "bob", "[問題] 別的");
+    starts[0].onEnd({ ok: true });
+    expect(hints).toEqual([expect.objectContaining({ level: HINT_ERROR })]);
+  });
+  test("落地主題對不上、途中也沒看到列表 ⇒ 錯誤級提示（不猜）", () => {
+    const { next, show, read, starts, hints } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    next.open();
+    read("C_Chat", "bob", "[問題] 第二");
+    starts[0].onEnd({ ok: true });
+    expect(hints).toEqual([expect.objectContaining({ level: HINT_ERROR })]);
   });
   test("失敗 ⇒ 清掉開啟中", () => {
     const { next, show, read, starts } = makeCore();
