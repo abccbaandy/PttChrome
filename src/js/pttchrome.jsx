@@ -345,6 +345,8 @@ export const App = function() {
     this._refreshScreenContext();
     this._busyEvent({ type: 'settled' });
   });
+  // 首頁儀表板收起／出現不一定伴隨 settle（打字收起是 keydown）：工具列的「重整」跟著它。
+  this.homeDashboard.onChange(() => this._refreshScreenContext());
   //   _busy           ：手機 App Bar 的等待進度條（mobile_busy.js），唯一寫入點 _busyEvent。
   this._busy = BUSY_IDLE;
   this._busyListeners = new Set();

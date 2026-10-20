@@ -24,6 +24,7 @@ describe("決策表", () => {
         expect(ARTICLE_MODES).toContain(p.article);
         expect(LIST_MODES).toContain(p.list);
         expect(LIST_MODES).toContain(p.boardList);
+        expect(LIST_MODES).toContain(p.home);
       }
     }
   });
@@ -33,6 +34,7 @@ describe("決策表", () => {
       article: "none",
       list: "none",
       boardList: "none",
+      home: "none",
     });
     expect(restorePlan("long-push", "weird").article).toBe("none");
   });
@@ -89,7 +91,16 @@ describe("決策表", () => {
     ["reconnect-resume", "fail", "none", "origin", "none"],
     ["reconnect-resume", "cancel", "none", "none", "none"],
   ])("%s / %s ⇒ 文章 %s、列表 %s、看板列表 %s", (feature, outcome, a, l, b) => {
-    expect(restorePlan(feature, outcome)).toEqual({ article: a, list: l, boardList: b });
+    const { home, ...rest } = restorePlan(feature, outcome);
+    expect(rest).toEqual({ article: a, list: l, boardList: b });
+  });
+
+  // 首頁儀表板的捲動位置：從面板出發的交易（點看板＝board-search、抓最愛、開信箱）不論
+  // 結果，回到首頁時捲回原處。其餘功能都不碰它（面板沒畫著時本來就量不到）。
+  const HOME_ORIGIN = ["board-search", "home-favorites", "home-mail"];
+  test.each(Object.keys(RESTORE_TABLE))("%s ⇒ 首頁紀錄", (feature) => {
+    for (const outcome of OUTCOMES)
+      expect(restorePlan(feature, outcome).home).toBe(HOME_ORIGIN.includes(feature) ? "origin" : "none");
   });
 
   test("'auto'：書籤記著在文末 ⇒ 文末，否則原列", () => {
@@ -235,7 +246,7 @@ describe("ReadingRecord：量測與凍結", () => {
     expect(a).toBeInstanceOf(ReadingRecord);
     expect(recordFor(core)).toBe(a);
     const none = recordFor(null);
-    expect(none.current()).toEqual({ article: null, list: null, boardList: null });
+    expect(none.current()).toEqual({ article: null, list: null, boardList: null, home: null });
     expect(() => none.releaseExternal()).not.toThrow();
   });
 });
@@ -270,6 +281,28 @@ describe("ReadingRecord：交易分派", () => {
     const rr = new ReadingRecord(nat.core);
     rr.end(rr.begin("deep-link-copy"), "done");
     expect(nat.er.requestScrollRestore).not.toHaveBeenCalled();
+  });
+
+  test("首頁紀錄：面板畫著時量得到；從面板點看板，不論結果都交回首頁的待還原錨", () => {
+    const anchor = { kind: "home", key: "board:C_Chat", offset: -12, scrollTop: 300 };
+    const hd = { readingPosition: vi.fn(() => anchor), requestViewportRestore: vi.fn() };
+    const rr = new ReadingRecord({ homeDashboard: hd });
+    expect(rr.current().home).toEqual(anchor);
+    for (const outcome of OUTCOMES) {
+      rr.end(rr.begin("board-search"), outcome);
+      expect(hd.requestViewportRestore).toHaveBeenLastCalledWith(anchor);
+    }
+    expect(hd.requestViewportRestore).toHaveBeenCalledTimes(3);
+  });
+
+  test("首頁紀錄：面板沒畫著（量到 null）⇒ 不交；不在表上的功能不交", () => {
+    const hd = { readingPosition: vi.fn(() => null), requestViewportRestore: vi.fn() };
+    const rr = new ReadingRecord({ homeDashboard: hd });
+    rr.end(rr.begin("board-search"), "done");
+    expect(hd.requestViewportRestore).not.toHaveBeenCalled();
+    hd.readingPosition.mockReturnValue({ kind: "home", key: null, offset: 0, scrollTop: 0 });
+    rr.end(rr.begin("unread-jump"), "done");
+    expect(hd.requestViewportRestore).not.toHaveBeenCalled();
   });
 
   test("列表交易：決策表說 origin 才交給擁有者，送出（換板）不還原", () => {

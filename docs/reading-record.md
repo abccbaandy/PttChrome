@@ -13,6 +13,7 @@
 | 文章 | `board`、`lineIndex`（文章的絕對列索引＋列內比例）、`atBottom`、`easy`（好讀或原生 pmore） | `term_view.currentLineIndex`：量節點，所以圖片／預覽高度、手機換行版面、收起的列都算對。反向讀取（End）未接合時 tail 的 srow 換算成 `tailStartLine-1+(srow-J)`：消費端都是從頭重讀後才還原 |
 | 文章列表 | `board`（看板身分鍵）、`mode`（`plain`／`select`）、`topNum` 或 `topPinnedKey`、`scrollFrac`（px）、`cursorNum` | `list_session.readingPosition`：視口在 DOM 上就從 scrollTop 現場換算（不改欄位），否則用 session 的錨；idle 時回原生列表的身分 |
 | 看板列表 | `variant`、`topNum`、`scrollFrac`、`cursorNum` | `board_list_session.readingPosition` |
+| 首頁儀表板 | `key`（面板頂端那張卡片：`board:<板>`／`recent:<板>`）、`offset`（它離面板上緣幾 px）、`scrollTop` | `home_dashboard.readingPosition`：面板畫著才有；不切原生，不凍結 |
 
 `mode`：底列 caption 是「系列文章」或「文摘列表」時為 `select`（MODE_SELECT／MODE_DIGEST，獨立的編號空間，見 `docs/pttbbs-screen-protocol.md` §8）。舊版 caption 一律是「文章選讀」，分不出來，當成 `plain`（已知限制，與重新整理相同）。
 
@@ -31,6 +32,7 @@
 - 文章：交給 `easy_reading.requestScrollRestore`／`requestScrollToBottom`，量節點並等累積到位才套用。原生 pmore 的文末改送原生 End；原列沒有入口，不還原。debug 錄製檔 `easyReading.scrollRestore`：`request`／`apply`（target、scrollTop）／`giveup`／`drop`（key、leave）／`settled`（套用 2 秒後實際的 `now` 列）。`readingRecord.begin` 與 `settled` 另帶 `topText`（頂端列前 20 字，`term_view.topRowSnippet`，**只給錄製檔對照、還原不讀**；鏡像快照時為 null）。定位順序：`begin.topText` 不是使用者當時看的那句＝採樣錯；`begin.lineIndex`≈`settled.now` 但 `topText` 不同＝同一索引在重讀後指向別行；apply 對而 `settled.now` 偏＝套用後被推走。
 - 列表：`list_session.requestViewportRestore`，存成待還原錨，見下節。
 - 看板列表：`board_list_session.requestViewportRestore`。
+- 首頁儀表板：`home_dashboard.requestViewportRestore`，存成待還原錨，面板下一次畫出來（或更新完重畫）時套用，那張卡片不在了就不動；收起面板（原生主選單、打字）作廢。
 
 | 功能（feature） | 完成 done | 取消 cancel／失敗 fail |
 |---|---|---|
@@ -45,12 +47,12 @@
 | `board-list-refresh` 看板列表重新整理 | 看板列表：原處 | 看板列表：原處 |
 | `mark-read-before` 前已讀後未讀 | 列表：原處 | 列表：原處 |
 | `mark-all-read` 設為全部已讀 | 列表：原處 | 列表：原處 |
-| `board-search` `s` 看板搜尋 | 不還原（換板） | 列表、看板列表：原處 |
+| `board-search` `s` 看板搜尋（含首頁點看板） | 首頁：原處（回到首頁時）；其餘不還原（換板） | 列表、看板列表、首頁：原處 |
 | `article-search` 文章搜尋 | 列表：原處（有結果時落在搜尋結果，編號空間比對不符自動丟棄；找不到時 PTT `vmsg` 後回原列表） | 取消：不還原（零送出）；失敗（prompt 沒開出來）：列表原處 |
 | `help-menu` 說明選單（`h`） | 不還原（執行的指令就是目的地） | 離開：列表、看板列表原處 |
 | `unread-jump` 跳到第一篇未讀 | 不還原（目的就是移動） | 不還原：停在翻到的那頁（使用者拍板） |
-| `home-favorites` 首頁抓我的最愛 | 不還原（從主功能表出發、q 回主功能表） | 不還原：停在 PTT 給的畫面 |
-| `home-mail` 首頁開信箱 | 不還原（目的地就是結果） | 不還原 |
+| `home-favorites` 首頁抓我的最愛（含重新整理／下拉） | 首頁：原處（清單換新後停在同一張卡片） | 首頁：原處（停在 PTT 給的畫面，回到首頁時） |
+| `home-mail` 首頁開信箱 | 首頁：原處（從信箱回到首頁時） | 首頁：原處 |
 | `split-open` 雙欄閱讀點左欄換文 | 不還原（目的地就是結果） | 不還原：取消＝零送出；失敗停在 PTT 給的畫面（原文已離開） |
 | `next-article` 好讀文末點下一篇標題卡 | 不還原（目的地就是結果） | 不還原：同 `split-open` |
 | `reconnect-resume` 斷線重連後回到原處 | 文章：`auto`；列表：原處 | 失敗（原文找不到）：列表原處；取消：不還原 |
@@ -126,7 +128,9 @@ N1 本身沒有變：探針仍然不碰 external，只有序列的擁有者能�
 
 | 層 | 檔案 | 守什麼 |
 |---|---|---|
-| unit | `tests/unit/reading_record.test.js` | 決策表逐格、比對規則突變、凍結語意、分派、deep link 返回錨 |
+| unit | `tests/unit/reading_record.test.js` | 決策表逐格（含首頁欄）、比對規則突變、凍結語意、分派、deep link 返回錨 |
+| unit（真 Chromium） | `tests/unit/home_dashboard_ui.test.jsx`「閱讀紀錄」 | 首頁：捲到中段點看板、離開、清單變了回來仍停在同一張卡片；卡片不在了不動 |
+| offline e2e（手機） | `mobile_home_dashboard.offline.spec.js`「閱讀紀錄」 | 真觸控捲動 → 點卡片 → 進板 → 回首頁捲回原處 |
 | unit（真 Chromium） | `tests/unit/reading_record_list.test.js` | 文章列表：設全部已讀、重新整理、`s` 取消或送出、說明選單離開／執行、文章搜尋找不到／有結果、使用者移過游標、身後的列表、外部 hold 出口（含斷線重連從 idle 停泊）、編號空間 |
 | unit（真 Chromium） | `tests/unit/reading_record_board_list.test.js` | 看板列表：重新整理後還原、說明選單離開後還原、認不出、使用者按鍵作廢、外部 hold 出口 |
 | unit | `tests/unit/aid_navigation.test.js`「閱讀紀錄」各條、`deep_link_controller.test.js`「原生 pmore 讀文」 | 返回錨帶列表、看板錨返回還原、失敗交回 hold、deep link 從列表或原生 pager 出發 |

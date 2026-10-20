@@ -8,6 +8,7 @@
 // 一個功能做對。這裡把三件事收成一處：
 //
 //   1. 模型：三種畫面各一型紀錄（文章／文章列表／看板列表），**只存身分與列錨**，
+//      外加首頁儀表板的捲動位置（面板頂端那張卡片），
 //      不存像素（文章重讀後預覽高度會變；列表補頁、刪頁之後像素對不上）。
 //   2. 凍結：畫面擁有者切進原生鏡像那一刻交一份快照進來（鏡像期間畫面不可捲，
 //      量到的值沒有意義）。鏡像期間任何人問「現在在哪」都拿到那份快照 ⇒ 呼叫端
@@ -26,13 +27,14 @@ import { parseStatusRow } from './string_util';
 // 決策表（純資料，tests/unit/reading_record.test.js 逐格守護）
 // ---------------------------------------------------------------------------
 //
-// 每格：{ article, list, boardList }
+// 每格：{ article, list, boardList, home }
 //   article   'origin' 回到書籤的列（列索引＋比例） | 'bottom' 文末 |
 //             'auto'   書籤記著「在文末」就文末，否則原列 | 'none' 不動
 //   list      'origin' 回到書籤的列表視野 | 'none'
 //   boardList 'origin' | 'none'
+//   home      'origin' 回到首頁儀表板的捲動位置（面板下一次畫出來時） | 'none'
 // 不在表上的功能／結果 ＝ 全部 'none'（未知就不動，寧可停在 PTT 給的位置）。
-const NONE = { article: 'none', list: 'none', boardList: 'none' };
+const NONE = { article: 'none', list: 'none', boardList: 'none', home: 'none' };
 
 // 好讀文末那張「下一篇」標題卡（next_article.js）佔掉的捲動高度（含上下 margin）；沒顯示
 // ⇒ 0。「捲到文末了沒」要扣掉它：讀者停在最後一則推文、卡片還在視窗下面，也算在文末。
@@ -43,11 +45,12 @@ export function trailingPx(view) {
   return el.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
 }
 
-function cell(article, list, boardList) {
+function cell(article, list, boardList, home) {
   return {
     article: article || 'none',
     list: list || 'none',
-    boardList: boardList || 'none'
+    boardList: boardList || 'none',
+    home: home || 'none'
   };
 }
 
@@ -97,11 +100,12 @@ export const RESTORE_TABLE = {
     cancel: cell(null, 'origin'),
     fail: cell(null, 'origin')
   },
-  // `s` 看板搜尋：送出＝換板（不還原）；取消／開不出來＝回原處。
+  // `s` 看板搜尋：送出＝換板（不還原）；取消／開不出來＝回原處。從首頁儀表板點看板
+  // 也走這條（home_dashboard.openBoard）：不論結果，回到首頁時面板捲回點的那裡。
   'board-search': {
-    done: NONE,
-    cancel: cell(null, 'origin', 'origin'),
-    fail: cell(null, 'origin', 'origin')
+    done: cell(null, null, null, 'origin'),
+    cancel: cell(null, 'origin', 'origin', 'origin'),
+    fail: cell(null, 'origin', 'origin', 'origin')
   },
   // 文章搜尋（article_search.submitSearch）：送出後有結果＝落在搜尋結果（MODE_SELECT，
   // 另一個編號空間）⇒ 列表的編號空間比對不符，待還原錨自動丟棄；找不到
@@ -123,10 +127,19 @@ export const RESTORE_TABLE = {
   },
   // 跳到第一篇未讀：目的就是移動；找不到時停在翻到的那頁（使用者拍板）。
   'unread-jump': { done: NONE, cancel: NONE, fail: NONE },
-  // 首頁儀表板（home_dashboard.js）：從主功能表出發，主功能表不是三種紀錄之一 ⇒ 不還原。
-  // 抓我的最愛＝Ctrl+Z f → 讀頁 → q 回主功能表；失敗就停在 PTT 給的畫面。開信箱＝目的地。
-  'home-favorites': { done: NONE, cancel: NONE, fail: NONE },
-  'home-mail': { done: NONE, cancel: NONE, fail: NONE },
+  // 首頁儀表板（home_dashboard.js）：抓我的最愛＝Ctrl+Z f → 讀頁 → q 回主功能表，清單
+  // 換新之後面板仍停在同一張卡片；失敗停在 PTT 給的畫面，回到首頁時一樣捲回原處。
+  // 開信箱＝目的地，從信箱回到首頁時捲回原處。
+  'home-favorites': {
+    done: cell(null, null, null, 'origin'),
+    cancel: cell(null, null, null, 'origin'),
+    fail: cell(null, null, null, 'origin')
+  },
+  'home-mail': {
+    done: cell(null, null, null, 'origin'),
+    cancel: cell(null, null, null, 'origin'),
+    fail: cell(null, null, null, 'origin')
+  },
   // 寬螢幕雙欄閱讀（split_reader.js）：點左欄一篇＝aid_navigation.startNum 換文，目的地就是
   // 結果；失敗停在 PTT 給的畫面（原文已經離開，沒有入口回原列）；取消＝一個 byte 都沒送。
   'split-open': { done: NONE, cancel: NONE, fail: NONE },
@@ -254,6 +267,13 @@ ReadingRecord.prototype = {
     return bs && typeof bs.readingPosition === 'function' ? bs.readingPosition() : null;
   },
 
+  // 首頁儀表板：面板畫著時才有（home_dashboard.readingPosition）。沒有鏡像可言（面板
+  // 是蓋在主功能表上的一層，不切原生）⇒ 不凍結。
+  _liveHome: function() {
+    const hd = this._core && this._core.homeDashboard;
+    return hd && typeof hd.readingPosition === 'function' ? hd.readingPosition() : null;
+  },
+
   // 擁有者「仍在原生鏡像中」嗎？快照只在這段期間有效。
   _mirroring: function(surface) {
     const core = this._core || {};
@@ -283,7 +303,8 @@ ReadingRecord.prototype = {
     return {
       article: this._surface('article', ctx),
       list: this._surface('list'),
-      boardList: this._surface('boardList')
+      boardList: this._surface('boardList'),
+      home: this._liveHome()
     };
   },
 
@@ -312,6 +333,7 @@ ReadingRecord.prototype = {
       article: cur.article,
       list: o.list !== undefined ? copy(o.list) : cur.list,
       boardList: o.boardList !== undefined ? copy(o.boardList) : cur.boardList,
+      home: cur.home,
       listOwner: o.listOwner || null,
       boardListOwner: o.boardListOwner || null
     };
@@ -343,7 +365,8 @@ ReadingRecord.prototype = {
       outcome: outcome,
       article: plan.article,
       list: plan.list,
-      boardList: plan.boardList
+      boardList: plan.boardList,
+      home: plan.home
     });
     if (!o.only || o.only === 'article') {
       const art = o.article !== undefined ? o.article : bm.article;
@@ -354,6 +377,7 @@ ReadingRecord.prototype = {
       this.restoreList(bm.list, bm.listOwner);
     if ((!o.only || o.only === 'boardList') && plan.boardList === 'origin' && bm.boardList)
       this.restoreBoardList(bm.boardList, bm.boardListOwner);
+    if ((!o.only || o.only === 'home') && plan.home === 'origin' && bm.home) this.restoreHome(bm.home);
   },
 
   // 文章還原。mode 'origin'｜'bottom'。
@@ -395,6 +419,13 @@ ReadingRecord.prototype = {
     const bs = owner || (this._core && this._core.boardListSession);
     if (!record || !bs || typeof bs.requestViewportRestore !== 'function') return false;
     bs.requestViewportRestore(record);
+    return true;
+  },
+
+  restoreHome: function(record) {
+    const hd = this._core && this._core.homeDashboard;
+    if (!record || !hd || typeof hd.requestViewportRestore !== 'function') return false;
+    hd.requestViewportRestore(record);
     return true;
   },
 

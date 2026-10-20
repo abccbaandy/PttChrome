@@ -15,6 +15,8 @@
 // 只在手機版面、畫面重整得了（screenRefresh.target()）、捲動視口已在頂端時才開始追蹤；
 // 被動監聽、從不 preventDefault ⇒ 捲動與點擊完全不受影響。
 
+import { HOME_DASHBOARD_ID } from './home_dashboard';
+
 // 拉動阻尼（指示器位移 = 手指位移 × RESISTANCE），門檻與上限都以指示器位移計。
 export const PULL_RESISTANCE = 0.5;
 export const PULL_THRESHOLD_PX = 64;
@@ -49,8 +51,10 @@ export function scrollParentOf(el, win) {
 }
 
 // 不該起手的觸控：工具列／App Bar／sheet／對話框裡的東西，以及多指。
+// 首頁儀表板整片都是卡片按鈕：在它上面拉照樣算（點一下不會走出 slop，不影響點擊）。
 function ignoredTarget(t) {
   if (!t || !t.closest) return true;
+  if (t.closest('#' + HOME_DASHBOARD_ID)) return !!t.closest('input, textarea, select');
   return !!t.closest(
     '#mobileToolbar, #mobileAppBar, .mantine-Modal-root, .mantine-Drawer-root, ' +
       '.mobileSheet, input, textarea, select, button, [role="dialog"]'

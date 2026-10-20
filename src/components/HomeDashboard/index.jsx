@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { i18n } from "../../js/i18n";
 import { HOME_DASHBOARD_ID } from "../../js/home_dashboard";
 import "./HomeDashboard.css";
@@ -9,6 +9,7 @@ import "./HomeDashboard.css";
 // 事件規則同 AidBackButton／MobileToolbar：mousedown preventDefault（不搶 #t 焦點 ⇒
 // 打字照常送 PTT）、mousedown／mouseup／click stopPropagation（App 的滑鼠入口在 window）。
 // 滾輪由 App._onUploadLayer 放過（它認 #homeDashboard），面板自己捲。
+// 捲動位置屬於閱讀紀錄（home 紀錄）：每次畫完交給 applyPendingViewport 套用待還原錨。
 const keepFocus = (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -50,6 +51,7 @@ export const HomeDashboard = ({ pttchrome }) => {
   const home = pttchrome && pttchrome.homeDashboard;
   const [state, setState] = useState(() => (home ? home.state : null));
   const [mobile, setMobile] = useState(() => !!(pttchrome && pttchrome.mobile));
+  const rootRef = useRef(null);
 
   useEffect(() => {
     if (!home || typeof home.onChange !== "function") return undefined;
@@ -60,6 +62,11 @@ export const HomeDashboard = ({ pttchrome }) => {
       return undefined;
     return pttchrome.onMobileChange((m) => setMobile(!!m));
   }, [pttchrome]);
+
+  useLayoutEffect(() => {
+    if (rootRef.current && home && typeof home.applyPendingViewport === "function")
+      home.applyPendingViewport(rootRef.current);
+  }, [home, state]);
 
   if (!state || !state.visible) return null;
   const boards = state.boards;
@@ -106,6 +113,7 @@ export const HomeDashboard = ({ pttchrome }) => {
   return (
     <div
       id={HOME_DASHBOARD_ID}
+      ref={rootRef}
       className="homeDashboard"
       data-mobile={mobile ? "" : undefined}
       onMouseDown={keepFocus}
@@ -138,7 +146,7 @@ export const HomeDashboard = ({ pttchrome }) => {
             <Button
               data-home-refresh
               disabled={state.fetching}
-              onClick={() => home.fetchFavorites()}
+              onClick={() => home.refresh("button")}
             >
               {boards ? i18n("home_refresh") : i18n("home_load")}
             </Button>
