@@ -646,6 +646,9 @@
   "options_highlightAuthorComments": {
     "message": "高亮原PO本人的推文"
   },
+  "options_highlightSelfComments": {
+    "message": "標示自己的推文（帳號染綠）"
+  },
   "options_enableAutoFixUrl": {
     "message": "自動修復斷掉的連結 (需開好讀模式才會顯示修復後連結)"
   },

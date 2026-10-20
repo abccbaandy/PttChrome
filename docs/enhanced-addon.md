@@ -70,6 +70,11 @@
 - 逐列判斷由 `annotateComment` 統一（見上）。render 只負責「把回傳值畫出來」：`screen_annotations#computeAnnotations`
   →`ann.authorIdStart/End`→`buildRow` 參數（兩模式同走 `ScreenController`→`buildRow`，無第二條接線）。
 - pref `highlightAuthorComments`(true)；`pttchrome.onPrefChange`→`view.*`+`redraw(true)`。i18n `options_highlightAuthorComments`。
+- **自己的推文**（pref `highlightSelfComments`，預設開）：同一個 id 格、同一條 wrap，annotation 多帶
+  `authorIdKind:'self'` → `LinkSegmentBuilder.authorIdClass='commentBySelf'`（低彩度綠 `#1d4a32`；手機卡片
+  `.commentCardId` 同 class）。「我」優先於原PO。帳號＝`view._selfId`：`_renderScreenLines` 開頭在 pageState＝選單時
+  讀底列 `string_util.parseStatusUserid`（`menu.c#show_status` 新舊兩格式，手動登入也拿得到），`App.onConnect` 清空；
+  開關關掉時 `enhance.selfId=null`。`selfId` 在 `annotationsKey` 裡。上班模式 `#4b5563`。
 
 ## 點選推文者高亮（pusher highlight，整列）
 - 左鍵點推文列的**可點區**（預設內容文字起訖，使用者可改，見 `docs/mouse.md`「點擊範圍」）→ 高亮該推文者**本篇所有推文列**

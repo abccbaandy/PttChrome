@@ -102,6 +102,7 @@ export function buildRow({
   pusherHighlight,
   authorIdStart,
   authorIdEnd,
+  authorIdKind,
   fixedUrls,
   mentions,
   aids,
@@ -153,6 +154,7 @@ export function buildRow({
     fnKeys,
     wrapUrls,
   );
+  if (authorIdKind === "self") builder.authorIdClass = "commentBySelf";
   for (let i = 0; i < chars.length; ++i) builder.readChar(chars[i], i);
 
   return {

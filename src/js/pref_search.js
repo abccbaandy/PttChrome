@@ -394,6 +394,10 @@ export const PREF_SEARCH_ITEMS = [
       key: "highlightAuthorComments",
       titleKey: "options_highlightAuthorComments",
     },
+    {
+      key: "highlightSelfComments",
+      titleKey: "options_highlightSelfComments",
+    },
     { key: "enableAutoFixUrl", titleKey: "options_enableAutoFixUrl" },
     { key: "enableXMentionLink", titleKey: "options_enableXMentionLink" },
     { key: "enableBareDomainLink", titleKey: "options_enableBareDomainLink" },

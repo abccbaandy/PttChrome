@@ -1113,6 +1113,12 @@ span {
   background-color: #103a5c;
 }
 
+/* 自己的推文：同一個形狀（只染 id 格）、換低彩度綠，跟原PO的藍分得開又不搶眼
+   （annotation authorIdKind 'self'，我同時是原PO 時以「我」為準）。 */
+.commentBySelf {
+  background-color: #1d4a32;
+}
+
 /* Pusher highlight (Enhanced Add-on): click a comment row to tint EVERY row by the
    same pusher. Applied to the whole bbsrow (#mainContainer > span is display:block
    → a full-width band); transparent char spans let the navy show through. */

@@ -86,6 +86,7 @@ export function buildCommentCard({
   pusherContentCol,
   pusherHighlight,
   authorIdStart,
+  authorIdKind,
   fixedUrls,
   mentions,
   aids,
@@ -115,7 +116,10 @@ export function buildCommentCard({
       seg(
         3,
         idEnd,
-        cx("commentCardId", { commentByAuthor: authorIdStart !== undefined }),
+        cx("commentCardId", {
+          commentByAuthor: authorIdStart !== undefined && authorIdKind !== "self",
+          commentBySelf: authorIdKind === "self",
+        }),
       ),
       floor ? floorBadge(floor) : null,
       meta,

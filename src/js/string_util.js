@@ -414,6 +414,22 @@ export function parseListRow(str) {
   return LIST_ROW_OLD_DATE_RE.test(str) && LIST_ROW_OLD_ONLINE_RE.test(str);
 };
 
+// 同一列裡登入者自己的帳號（cuser.userid），兩種格式都吃（格式見上）：
+//   新：`… 週X H:MM | <userid> | 線上…`（子選單「 | 線上N人」可能被截掉 ⇒ 帳號後面
+//       只要求字界，不要求「 | 」）
+//   舊：`人,我是<userid>,呼叫器`
+// 帳號字元照 common/bbs/names.c#is_validuserid：英文字母開頭、其餘英數、2..IDLEN(12)。
+// 回小寫（與推文 userid、黑名單同一個比對空間）；認不出 ⇒ null。
+const STATUS_USERID_NEW_RE =
+  /\d{1,2}\/\d{1,2} 週[日一二三四五六] \d{1,2}:\d{2} \| ([A-Za-z][A-Za-z0-9]{1,11})(?![A-Za-z0-9])/;
+const STATUS_USERID_OLD_RE = /人,我是([A-Za-z][A-Za-z0-9]{1,11}),呼叫器/;
+
+export function parseStatusUserid(str) {
+  if (!str) return null;
+  const m = STATUS_USERID_NEW_RE.exec(str) || (LIST_ROW_OLD_DATE_RE.test(str) && STATUS_USERID_OLD_RE.exec(str));
+  return m ? m[1].toLowerCase() : null;
+}
+
 // \u6c34\u7403\uff0f\u5ee3\u64ad\u3002\u5403\u7684\u662f b2u(\u539f\u59cb WS bytes)\uff08pttchrome.jsx\uff09\uff0c\u4e0d\u662f\u6e32\u67d3\u5f8c\u7684\u756b\u9762\u3002
 // \u5b98\u65b9 mbbsd/mbbsd.c#show_call_in \u2192 mbbsd/kaede.c#outmsg\uff1a
 //   \u4e00\u822c        ANSI_COLOR(1;33;46) "\u2605%s" ANSI_COLOR(37;45) " %s " ANSI_RESET

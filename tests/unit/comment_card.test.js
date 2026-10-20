@@ -61,6 +61,25 @@ describe("buildCommentCard（單一推文列）", () => {
     expect(body).not.toContain("someone");
   });
 
+  test("id 格：原PO＝commentByAuthor、自己＝commentBySelf（兩者不並存）", () => {
+    const build = (over) =>
+      buildCommentCard({
+        chars,
+        regions: commentCardRegions(chars),
+        row: 9,
+        forceWidth: 20,
+        pusher: "someone",
+        pusherContentCol: 12,
+        ...over,
+      }).node.querySelector(".commentCardId").classList;
+    const op = build({ authorIdStart: 3 });
+    expect([op.contains("commentByAuthor"), op.contains("commentBySelf")]).toEqual([true, false]);
+    const mine = build({ authorIdStart: 3, authorIdKind: "self" });
+    expect([mine.contains("commentByAuthor"), mine.contains("commentBySelf")]).toEqual([false, true]);
+    const plain = build({});
+    expect([plain.contains("commentByAuthor"), plain.contains("commentBySelf")]).toEqual([false, false]);
+  });
+
   test("外部契約：bbsrow/srow、data-pusher(-col)、每一行都有 bbsline/data-row", () => {
     const { node } = buildCommentCard({
       chars,
