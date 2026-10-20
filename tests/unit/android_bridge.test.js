@@ -8,6 +8,7 @@ import {
   androidBridgeAvailable,
   requestAndroid,
   openAppSettings,
+  androidNotify,
   androidImeInset,
   onAndroidIme,
   IME_EVENT,
@@ -116,6 +117,19 @@ describe("openAppSettings", () => {
   // 網頁設定頁的按鈕直接呼叫它：不在 APK 裡（或 bridge 壞了）不能變成 unhandled rejection。
   test("never rejects without a bridge", async () => {
     await expect(openAppSettings()).resolves.toBeNull();
+  });
+});
+
+describe("androidNotify（水球系統通知）", () => {
+  test("APK：送 notify，不等回覆", () => {
+    const { sent } = installAndroid();
+    expect(androidNotify({ title: "a 說", body: "嗨", tag: "a" })).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ op: "notify", title: "a 說", body: "嗨", tag: "a" });
+  });
+
+  test("不是 APK：什麼都不送", () => {
+    expect(androidNotify({ title: "a", body: "b", tag: "c" })).toBe(false);
   });
 });
 

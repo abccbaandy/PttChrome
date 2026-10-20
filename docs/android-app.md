@@ -48,7 +48,7 @@ WebView  https://abccbaandy.github.io/PttChrome/
 ## APK 內刻意關掉的網頁功能
 - 設定「連線 → BBS proxy」：不生效，改顯示說明（`options_androidProxyNote`）。
 - 連線失敗提示不做 Origin／proxy 診斷（`pttchrome.jsx` onClose：`isAndroidApp()` 時不給 `diagnose`）。
-- 已知不支援（未處理）：Web Notification。
+- Web Notification（WebView 沒有）：水球通知改走 bridge `notify` → `MessageNotifier.kt`（獨立頻道「水球」，使用者可在系統設定單獨關）。WebView 切到背景不一定有 blur ⇒ 網頁在 APK 每則都送（`App.onData` 閘門），**前景與否由原生判斷**（`Lifecycle.State.STARTED`），回到前景（`onStart`）把跳過的收掉。仍受網頁「水球通知」開關控制。守護：`android_bridge.test.js`、`background_notification.test.js`、`waterball_notify_gate.test.js`、JVM `MessageNotifierTest`。真機 `unknown`。
 
 ## 檔案下載（錄製檔／設定備份匯出）
 - WebView 不處理 `a[download]`／`blob:` 下載：點了靜默無反應（原生端也讀不到 `blob:` 網址，裝 `DownloadListener` 沒用）。

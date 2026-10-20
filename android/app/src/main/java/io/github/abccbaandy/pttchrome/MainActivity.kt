@@ -230,6 +230,16 @@ class MainActivity : ComponentActivity() {
                     saveFile(request) { reply.postMessage(it.toString()) }
                     return@addWebMessageListener
                 }
+                "notify" -> {
+                    // 水球系統通知（MessageNotifier.kt）：App 在前景就不跳，使用者正看著畫面。
+                    val notice = parseNotice(request)
+                    val background = !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                    if (notice != null && background) MessageNotifier.post(this, notice)
+                    reply.postMessage(
+                        JSONObject().put("id", request.optInt("id")).put("ok", notice != null && background).toString()
+                    )
+                    return@addWebMessageListener
+                }
             }
             lifecycleScope.launch { reply.postMessage(credentials.handle(request)) }
         }
@@ -490,6 +500,8 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("RequiresFeature") // VISUAL_STATE_CALLBACK 是 androidx.webkit 內建 fallback，WebView 23+ 都有
     override fun onStart() {
         super.onStart()
+        // 回到前景：背景時跳的水球通知收掉（內容在畫面／收件匣裡都看得到）。
+        MessageNotifier.cancelAll(this)
         if (rendererRecreated) {
             rendererRecreated = false
             Toast.makeText(this, R.string.renderer_recreated, Toast.LENGTH_LONG).show()

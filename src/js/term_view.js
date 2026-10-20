@@ -37,6 +37,7 @@ var MODIFIER_KEY_NAMES = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGra
 import { keyEventPredatesModalClose } from './modal_key_gate';
 import icon128 from '../icon/icon_128.png';
 import { MOUSE_CURSOR_URLS } from './mouse_cursors';
+import { isAndroidApp, androidNotify } from './android_bridge';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
 
@@ -2665,6 +2666,11 @@ TermView.prototype = {
     }
     var app = this.bbscore;
     var title = app.waterball.userId + ' ' + i18n('notification_said');
+    // APK：交給原生系統通知（WebView 沒有 Web Notification）；標題閃爍在 App 裡看不到，不做。
+    if (isAndroidApp()) {
+      androidNotify({ title: title, body: app.waterball.message, tag: app.waterball.userId });
+      return;
+    }
     this.showBackgroundNotification({
       title: title,
       titleText: title + ' ' + app.waterball.message,

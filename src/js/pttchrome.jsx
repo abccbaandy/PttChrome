@@ -575,7 +575,9 @@ App.prototype.onData = function(data) {
   // 收件匣每包都解析（跨包接續在模組裡）；下面的失焦通知照舊只在失焦時跑。
   this.messageInbox.noteData(data);
 
-  if (!this.appFocused && this.view.enableNotifications) {
+  // APK：WebView 切到背景不一定有 blur ⇒ 每則都交給原生，前景與否由原生判斷
+  // （android_bridge.js 'notify'）。
+  if ((!this.appFocused || isAndroidApp()) && this.view.enableNotifications) {
     // parse received data for waterball
     var wb = parseWaterball(b2u(data));
     if (wb) {
