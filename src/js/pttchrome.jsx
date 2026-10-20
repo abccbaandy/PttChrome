@@ -2407,14 +2407,30 @@ App.prototype._onUploadLayer = function(e) {
   );
 };
 
+// 手機列表卡片的 tap 留痕（debug 錄製才寫）：「點了沒開文」不好重現（使用者回報
+// 2026-10-20），錄製檔要看得出這一下在哪裡被擋掉。只記卡片模式，桌機不加噪音。
+App.prototype._traceListTap = function(outcome, e) {
+  if (!this.debugRecorder || !this.view.listCards) return;
+  var t = e && e.target;
+  this.debugRecorder.log('listTap', {
+    outcome: outcome,
+    target: t ? String((typeof t.className === 'string' && t.className) || t.tagName || '') : '',
+    renderMode: this.buf.listRenderMode,
+    state: this.listSession ? this.listSession.state : null
+  });
+};
+
 App.prototype.mouse_click = function(e) {
-  if (this.modalShown)
+  if (this.modalShown) {
+    this._traceListTap('modal', e);
     return;
+  }
   if (this._onUploadLayer(e))
     return;
   // AID navigation in flight: mouse-browsing must not inject keys. (The
   // initiating link click never reaches here — anchors early-return below.)
   if (this.aidNavigation.active) {
+    this._traceListTap('aid-navigation', e);
     e.preventDefault();
     return;
   }
@@ -2539,8 +2555,11 @@ App.prototype.mouse_click = function(e) {
           // footer 已收起）什麼都不是。見 mobile_layout.isListCardBodyTarget。
           if (this.view.listCards) {
             if (isListCardBodyTarget(e.target)) {
+              this._traceListTap('card', e);
               this.noteUserAction();
               clickOwner.onMouseClick(lpos.row, LIST_TITLE_COL_START);
+            } else {
+              this._traceListTap('not-card', e);
             }
           }
           else if (ledge)
@@ -2596,6 +2615,8 @@ App.prototype.mouse_click = function(e) {
           this.setInputAreaFocus();
         }
       }
+    } else {
+      this._traceListTap('selection', e);
     }
   } else if (e.button == 1) { //middle button
   } else {
