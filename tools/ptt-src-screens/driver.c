@@ -1,7 +1,7 @@
 // 用 upstream pttbbs 原始碼產生畫面位元組（不架站、不登入）：連結 mbbsd 的物件檔
 // （main 改名成 ptt_main），自己假造 SHM／使用者狀態，從指定入口直接呼叫 upstream 的
 // 畫面函式，畫面由 upstream 自己的 readdoent／psb／pfterm 畫出來，寫到 stdout。
-// 按鍵從 stdin 進來（由 capture.mjs 等輸出靜止後逐鍵送）。
+// 按鍵從 stdin 進來（capture.mjs 等到 WAIT_MARK 才送下一個鍵）。
 //
 // 用法：driver <bbshome 絕對路徑> <seed 檔絕對路徑> <入口> [列數]
 // 入口：
@@ -15,10 +15,58 @@
 //   N <text>                                              一列進板畫面（notes）
 //   F <brdname>                                           加進我的最愛
 #include "bbs.h"
+#include <poll.h>
+#include <sys/select.h>
+#include <unistd.h>
 
 int ptt_main(int argc, char *argv[], char *envp[]);
 
 static void die(const char *m) { fprintf(stderr, "driver: %s\n", m); exit(2); }
+
+// 幀尾：upstream 要阻塞等 stdin（＝這一幀畫完、pfterm 已 flush）時，在 stdout 寫 WAIT_MARK，
+// capture.mjs 收到它才切幀、送下一個鍵；沒等到它就結束＝失敗。以前靠「多久沒輸出」猜，機器忙時
+// 會切出半幀、或把還沒死透的 die() 當成功。APC 字串 pfterm 不會吐；capture.mjs 的 WAIT_MARK 要同一串。
+// generate.sh 以 -Wl,--wrap=read,--wrap=select,--wrap=poll 連結：igetch.c 直接 read(0)，
+// 有 attached_fd 時先 select(NULL)，nios.c 則 poll(INFTIM)；三條都經過這裡。
+// 只在「真的會阻塞」時寫：stdin 已有資料（typeahead／prefetch）或有逾時的等待都不是幀尾。
+#define WAIT_MARK "\x1b_ptt-src-screens:wait\x1b\\"
+int __real_poll(struct pollfd *fds, nfds_t n, int timeout);
+ssize_t __real_read(int fd, void *buf, size_t n);
+int __real_select(int n, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv);
+
+static void mark_wait(void)
+{
+    struct pollfd p = { .fd = 0, .events = POLLIN };
+    if (__real_poll(&p, 1, 0) > 0)
+        return;
+    if (write(1, WAIT_MARK, sizeof(WAIT_MARK) - 1) < 0)
+        die("write wait mark");
+}
+
+ssize_t __wrap_read(int fd, void *buf, size_t n)
+{
+    if (fd == 0)
+        mark_wait();
+    return __real_read(fd, buf, n);
+}
+
+int __wrap_select(int n, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
+{
+    if (!tv && r && n > 0 && FD_ISSET(0, r))
+        mark_wait();
+    return __real_select(n, r, w, e, tv);
+}
+
+int __wrap_poll(struct pollfd *fds, nfds_t n, int timeout)
+{
+    if (timeout < 0)
+        for (nfds_t i = 0; i < n; i++)
+            if (fds[i].fd == 0 && (fds[i].events & POLLIN)) {
+                mark_wait();
+                break;
+            }
+    return __real_poll(fds, n, timeout);
+}
 
 // 輸出要可重現（fixture 進 repo，有 diff＝upstream 改了畫面）：時間釘死。
 // 執行檔自己定義的 time() 會蓋過 libc 的（動態連結的符號解析先找執行檔）。
