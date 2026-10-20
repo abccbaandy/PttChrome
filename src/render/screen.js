@@ -35,6 +35,7 @@ import {
   createMergeImageCaptionButton,
   createMergeImageCaptionAiButton,
   createLightsOnButton,
+  createJumpNewCommentsButton,
   createDebugRecordButton,
   createFloatingTools,
 } from "./merge_buttons";
@@ -1010,6 +1011,7 @@ export class ScreenController {
         authorIdEnd: ann.authorIdEnd,
         authorIdKind: ann.authorIdKind,
         mentionsSelf: ann.mentionsSelf,
+        newCommentsStart: ann.newCommentsStart,
         fixedUrls: m.fixedUrls,
         mentions: m.mentions,
         aids: m.aids,
@@ -1167,6 +1169,7 @@ export class ScreenController {
       authorIdEnd: ann && ann.authorIdEnd,
       authorIdKind: ann && ann.authorIdKind,
       mentionsSelf: ann && ann.mentionsSelf,
+      newCommentsStart: ann && ann.newCommentsStart,
       fixedUrls: ann && ann.fixedUrls,
       mentions: ann && ann.mentions,
       aids: ann && ann.aids,
@@ -1209,6 +1212,7 @@ export class ScreenController {
       authorIdStart: ann.authorIdStart,
       authorIdKind: ann.authorIdKind,
       mentionsSelf: ann.mentionsSelf,
+      newCommentsStart: ann.newCommentsStart,
       fixedUrls: links.fixedUrls,
       mentions: links.mentions,
       aids: links.aids,
@@ -1585,6 +1589,25 @@ export class ScreenController {
       }
       this._lightsButton.update(this._lightsActive());
       tools.push(this._lightsButton.el);
+    }
+    // 跳到新推文（js/new_comments.js）：好讀文章、標註層認出第一則新推文那一列才出現。
+    this._newCommentsRow = annotations.newCommentsRow;
+    const showJumpNew = !!(
+      enhance &&
+      enhance.easyReading &&
+      enhance.pageState === PAGE_READING &&
+      typeof enhance.onJumpToNewComments === "function" &&
+      annotations.newCommentsRow != null
+    );
+    if (showJumpNew) {
+      if (!this._jumpNewButton) {
+        this._jumpNewButton = createJumpNewCommentsButton(() => {
+          const enh = this.props && this.props.enhance;
+          if (enh && enh.onJumpToNewComments && this._newCommentsRow != null)
+            enh.onJumpToNewComments(this._newCommentsRow);
+        });
+      }
+      tools.push(this._jumpNewButton.el);
     }
     // 錄製狀態的真相在 App（app.debugRecorder），每次都經 enhance.isDebugRecording
     // **現問**；點擊時以 onDebugRecord 的回傳值立即更新（不必等下一幀）。

@@ -1196,7 +1196,17 @@ TermView.prototype = {
           // 手機推文卡片（render/comment_card.js，docs/mobile.md「推文卡片」）：換行版面
           // （reflow）且畫的是好讀長頁（stableRows）才開。寫在這個 base 物件而**不是**
           // enhanceOverrides：好讀分支傳進來的是凍結的 STABLE_ROWS。進 annotationsKey。
-          commentCards: !!(this.reflow && enhanceOverrides && enhanceOverrides.stableRows)
+          commentCards: !!(this.reflow && enhanceOverrides && enhanceOverrides.stableRows),
+          // 新推文標記（js/new_comments.js）：第一則新推文在累積頁的哪一列。只在畫好讀
+          // 累積頁（stableRows＋pageLines）時問 —— functionMode 的原生鏡像餵的是 24 列活
+          // buffer，拿去問會把掃描狀態洗掉。進 annotationsKey（一篇文章最多翻一次）。
+          newCommentsRow:
+            enhanceOverrides && enhanceOverrides.stableRows && lines === this.buf.pageLines &&
+            this.bbscore && this.bbscore.newComments
+              ? this.bbscore.newComments.rowFor(lines)
+              : null,
+          // 浮動工具面板的「跳到新推文」：引用必須穩定（App 指派一次）。不進 annotationsKey。
+          onJumpToNewComments: this.onJumpToNewComments
         },
         // List easy reading pins pageState:2 so computeAnnotations applies list
         // blacklist rules to the accumulated buffer even on transient frames.

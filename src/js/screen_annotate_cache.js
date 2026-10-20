@@ -136,6 +136,8 @@ export function annotationsKey(input) {
     stable(e.listCards),
     // 手機推文卡片：同理（同一批列物件在換行版面切換時改畫成卡片），整批重建。
     stable(e.commentCards),
+    // 新推文標記的列（js/new_comments.js）：一篇文章裡從 null 翻成某一列最多一次。
+    stable(e.newCommentsRow),
     // 手機主功能表大按鈕：同理（同一批列物件改畫成按鈕），整批重建。
     stable(e.menuCards),
     stable(input.mergeCaption),

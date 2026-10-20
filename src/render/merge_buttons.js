@@ -278,6 +278,15 @@ export function createLightsOnButton(onToggle) {
   };
 }
 
+// 「跳到新推文」鈕（js/new_comments.js）：重開讀過的文章、有上次讀完之後才出現的推文
+// 時出現。只有一個狀態，中性灰（推文區的新推文分隔線也是灰的）。
+export function createJumpNewCommentsButton(onClick) {
+  const button = floatingButton("jumpNewCommentsBtn", onClick);
+  restyle(button, "#495057", "2px solid #ced4da");
+  button.textContent = i18n("new_comments_jump");
+  return { el: button };
+}
+
 // Debug 錄製鈕（面板裡排最後，debug 模式開著時任何畫面都出現）。開始／停止與下載
 // 由 App 負責（js/debug_record_control.js），這裡只畫狀態。
 export function createDebugRecordButton(onToggle) {

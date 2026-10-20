@@ -1727,6 +1727,16 @@ export const PrefModal = ({
                   {i18n("options_highlightSelfComments")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="markNewComments"
+                  checked={values.markNewComments}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_markNewComments")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_markNewComments")}
+                </Text>
+                <PrefCheckbox
                   name="enableAutoFixUrl"
                   checked={values.enableAutoFixUrl}
                   onChange={onCheckboxChange}

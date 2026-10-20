@@ -10,6 +10,7 @@
 // 動它們之前先看 CLAUDE.md 與 tests/unit/fixtures/screen_golden/。
 import cx from "classnames";
 import { el } from "./dom";
+import { i18n } from "../js/i18n";
 import LinkSegmentBuilder from "./link_segment";
 import { shouldForceWidth } from "./color_segment";
 import { forceWidthStyle } from "./word_segment";
@@ -104,6 +105,7 @@ export function buildRow({
   authorIdEnd,
   authorIdKind,
   mentionsSelf,
+  newCommentsStart,
   fixedUrls,
   mentions,
   aids,
@@ -171,7 +173,9 @@ export function buildRow({
         "data-list-author": listAuthor,
         "data-list-title": listTitle,
         "data-list-read": listRead ? "" : undefined,
-        class: cx({ pusherHighlight, mentionsSelf }) || undefined,
+        class: cx({ pusherHighlight, mentionsSelf, newCommentsStart }) || undefined,
+        // 新推文分隔線的小字（css .newCommentsStart::before 讀它）。
+        "data-new-comments": newCommentsStart ? i18n("new_comments_divider") : undefined,
         style: hidden ? { visibility: "hidden" } : undefined,
       },
       builder.build(),

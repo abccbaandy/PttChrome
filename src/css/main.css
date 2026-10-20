@@ -1129,6 +1129,29 @@ span {
   box-shadow: inset 3px 0 0 #3f9a63, inset 0 -1px 0 #333;
 }
 
+/* 新推文標記（js/new_comments.js）：第一則新推文那一列（或它所在的合併塊／手機推文卡片）
+   上緣留一段空，畫一條中性灰細線＋右邊一行小字。刻意不用彩色：推文區已經有原PO藍、
+   自己綠、樓層黃（L 要求推文區不要花花綠綠）。小字是 ::before（不會被選取／複製）。 */
+#mainContainer span[type="bbsrow"].newCommentsStart {
+  position: relative;
+  margin-top: 1.4em;
+}
+#mainContainer span[type="bbsrow"].newCommentsStart::before {
+  content: attr(data-new-comments);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 0.2em;
+  border-bottom: 1px solid #4a4a4a;
+  font-size: 0.5em;
+  line-height: 1.6;
+  color: #8a8a8a;
+  text-align: right;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Pusher highlight (Enhanced Add-on): click a comment row to tint EVERY row by the
    same pusher. Applied to the whole bbsrow (#mainContainer > span is display:block
    → a full-width band); transparent char spans let the navy show through. */
