@@ -42,6 +42,9 @@
     **常駐 ⇒ 從列數扣**：`App._applyMobileGeometry` 用 `mobile_layout.mobileRowsHeight(h, safe)`（扣 App Bar＋工具列＋safe-area）算 rows；
     位置由 `_onVisualViewport` 經 `mobileChromeInsets` 寫 `view.setTopInset`／`setKeyboardInset`（下＝軟鍵盤＋工具列＋展開中的按鍵面板＋safeBottom，鍵盤升起時 safeBottom＝0）。
     `--kb-inset` 只算軟鍵盤。`innerBounds` 本身不扣（測試以 `Object.create(App.prototype)` 直接塞它）。
+    同一個底部 inset 也寫進 `--term-bottom-inset`：term_view 的底部浮動提示（`flashListHint`、「讀取中…」、T2 說明列與輸入框）
+    都從它往上算（`aboveBottomInset`）。工具列 z-index 比提示高，沒讓開就整個被蓋住；軟鍵盤只縮 visual viewport，
+    fixed 的輸入框會落在鍵盤後面（守護 `bottom_overlays_inset.test.js`）。新增貼底的浮動元件一律照這個辦法。
   - 動作依畫面（`mobile_toolbar.toolbarContextFromFacts`，App 在 `screenSettled` 重算、`onScreenContextChange(fn)` 有變才通知；鍵出處 `mbbsd/more.c pager_common_cmds`、`bbs.c` Ctrl('P')）：
 
     **固定 6 格**（`mobile_toolbar.toolbarSlots`）：按鈕位置不隨畫面變——有條件出現＋flex 等寬會讓同一顆按鈕

@@ -998,8 +998,11 @@ App.prototype._onVisualViewport = function() {
   document.documentElement.style.setProperty('--safe-bottom', chrome.safeBottom + 'px');
   if (this.view && this.view.setTopInset)
     this.view.setTopInset(this.mobile ? chrome.top : 0);
+  var bottomInset = this.mobile ? chrome.bottom : inset;
+  // 底部浮動提示（term_view 的 flashListHint／讀取中／T2 輸入框）靠它讓開工具列與鍵盤。
+  document.documentElement.style.setProperty('--term-bottom-inset', bottomInset + 'px');
   if (this.view && this.view.setKeyboardInset)
-    this.view.setKeyboardInset(this.mobile ? chrome.bottom : inset);
+    this.view.setKeyboardInset(bottomInset);
 };
 
 // 瀏海／手勢列的 safe-area（index.html 的 viewport-fit=cover 才會不是 0）。JS 讀不到
