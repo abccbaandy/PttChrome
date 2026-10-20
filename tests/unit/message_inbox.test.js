@@ -7,6 +7,7 @@ import {
   isRepaint,
   latestSender,
   MessageInbox,
+  newMailOnScreen,
   INBOX_LIMIT,
   REPAINT_WINDOW_MS,
   CARRY_LIMIT
@@ -14,6 +15,7 @@ import {
 import { u2b } from "../../src/js/string_util";
 import { DEFAULT_PREFS, writeValues } from "../../src/js/pref_storage";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
+import { setupI18n, i18n } from "../../src/js/i18n";
 
 beforeAll(() => loadBig5Tables());
 
@@ -226,5 +228,101 @@ describe("MessageInbox", () => {
     const inbox = make();
     inbox.noteData(wire("aaa", "一"));
     expect(inbox.state.items).toHaveLength(1);
+  });
+});
+
+// 新信提示：mbbsd/menu.c#redraw_title 在 ISNEWMAIL 時把標題列中段換成「你有新信件」。
+describe("新信提示", () => {
+  const MENU = "【主功能表】                    批踢踢實業坊";
+  const MENU_MAIL = "【主功能表】        你有新信件        批踢踢實業坊";
+  const LIST_MAIL = "【板主:someone】      你有新信件      看板《Test》";
+  let now;
+  let settled;
+  let row0;
+  let pageState;
+  const make = () =>
+    new MessageInbox(
+      {
+        buf: {
+          getRowText: () => row0,
+          get pageState() {
+            return pageState;
+          },
+          addEventListener: (name, fn) => name === "screenSettled" && (settled = fn)
+        }
+      },
+      { now: () => now }
+    );
+  const show = (text, ps = 1) => {
+    row0 = text;
+    pageState = ps;
+    settled();
+  };
+  beforeAll(() => setupI18n());
+  beforeEach(() => {
+    now = 1000;
+  });
+
+  test("認得出的標題列", () => {
+    expect(newMailOnScreen(MENU_MAIL, 1)).toBe(true);
+    expect(newMailOnScreen(LIST_MAIL, 2)).toBe(true);
+    expect(newMailOnScreen(MENU, 1)).toBe(false);
+    // 文章（pageState 3）、沒有標題列的畫面 ⇒ 不知道。
+    expect(newMailOnScreen(MENU_MAIL, 3)).toBe(null);
+    expect(newMailOnScreen("請按任意鍵繼續    你有新信件", 0)).toBe(null);
+    expect(newMailOnScreen("", 0)).toBe(null);
+  });
+
+  test("由無變有收一則；一直亮著不重收；中間看不到標題列也不重收", () => {
+    const inbox = make();
+    show(MENU);
+    expect(inbox.state.items).toEqual([]);
+    show(MENU_MAIL);
+    expect(inbox.state.items).toEqual([
+      expect.objectContaining({ kind: "mail", text: i18n("inbox_newMail"), at: 1000 })
+    ]);
+    expect(inbox.state.unread).toBe(1);
+    show("作者  someone 看板 Test", 3);
+    show(LIST_MAIL, 2);
+    show(MENU_MAIL);
+    expect(inbox.state.items).toHaveLength(1);
+  });
+
+  test("讀完信（提示消失）再來一封 ⇒ 再收一則", () => {
+    const inbox = make();
+    show(MENU_MAIL);
+    show(MENU);
+    now += 60000;
+    show(MENU_MAIL);
+    expect(inbox.state.items.map((i) => i.at)).toEqual([61000, 1000]);
+  });
+
+  test("登入時就有新信 ⇒ 第一個看得到標題列的畫面收一則", () => {
+    const inbox = make();
+    show(MENU_MAIL);
+    expect(inbox.state.items).toHaveLength(1);
+  });
+
+  test("不算最新寄件人（回覆鈕只給水球）", () => {
+    const inbox = make();
+    inbox.noteData(wire("aaa", "一"));
+    show(MENU_MAIL);
+    expect(latestSender(inbox.state.items)).toBe("aaa");
+    expect(inbox.canReply(inbox.state.items[0])).toBe(false);
+  });
+
+  test("斷線清空後，還亮著的提示在新連線再收一則", () => {
+    const inbox = make();
+    show(MENU_MAIL);
+    inbox.reset();
+    show(MENU_MAIL);
+    expect(inbox.state.items).toHaveLength(1);
+  });
+
+  test("pref 關掉就不收", () => {
+    setPrefs({ enableMessageInbox: false });
+    const inbox = make();
+    show(MENU_MAIL);
+    expect(inbox.state.items).toEqual([]);
   });
 });

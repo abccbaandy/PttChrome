@@ -14,7 +14,7 @@ import {
   isMessageInboxTarget
 } from "../../src/js/message_inbox";
 import { u2b } from "../../src/js/string_util";
-import { setupI18n } from "../../src/js/i18n";
+import { setupI18n, i18n } from "../../src/js/i18n";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 beforeAll(() => {
@@ -50,6 +50,22 @@ test("沒收到就不畫；收到後鈴鐺帶未讀數，點開列出、未讀�
   ]);
   expect(items[0].querySelector(".inboxText").textContent).toBe("第二則");
   expect(q("[data-inbox-unread]")).toBeNull();
+});
+
+test("新信提示：寄件人欄寫「信箱」、沒有回覆鈕", () => {
+  const app = fakeApp();
+  render(<InboxView pttchrome={app} />);
+  act(() => {
+    app.messageInbox.noteData(wire("aaa", "嗨"));
+    app.messageInbox.noteScreen("【主功能表】    你有新信件    批踢踢實業坊", 1);
+  });
+  fireEvent.click(q("[data-inbox-bell]"));
+  const mail = q('.inboxItem[data-inbox-kind="mail"]');
+  expect(mail.querySelector(".inboxFrom").textContent).toBe(i18n("inbox_mail"));
+  expect(mail.querySelector(".inboxText").textContent).toBe(i18n("inbox_newMail"));
+  expect(mail.querySelector("[data-inbox-reply]")).toBeNull();
+  // 水球那則照舊可以回。
+  expect(q('.inboxItem[data-inbox-kind="waterball"] [data-inbox-reply]')).not.toBeNull();
 });
 
 test("不搶焦點、滑鼠事件不外洩；#messageInbox 被 App 的滑鼠入口認得", () => {

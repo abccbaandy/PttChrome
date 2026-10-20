@@ -101,6 +101,19 @@ test.describe('水球收件匣', () => {
     );
   });
 
+  // 新信提示走 screenSettled（App 的 TermBuf 接線），不是 onData 的位元組掃描。
+  test('標題列出現「你有新信件」→ 收一則新信提示，不送鍵', async ({ page }) => {
+    await startCapture(page);
+    await feedBig5(page, '\x1b[2J\x1b[H【主功能表】        你有新信件        批踢踢實業坊');
+    await waitScreenSettled(page, { 0: '你有新信件' });
+    await expect(page.locator('[data-inbox-unread]')).toHaveText('1');
+    await page.locator('[data-inbox-bell]').click();
+    const label = await page.evaluate(() => window.__i18n('inbox_newMail'));
+    await expect(page.locator('.inboxItem[data-inbox-kind="mail"] .inboxText')).toHaveText(label);
+    await expect(page.locator('[data-inbox-reply]')).toHaveCount(0);
+    await expectOnlyFence(page, async () => page.keyboard.press('x'), 'x', '沒送任何鍵（只有對照的 x）');
+  });
+
   test('pref 關掉就不收', async ({ page }) => {
     await ptt.applyPrefs(page, { enableMessageInbox: false });
     await feedBig5(page, waterball('friend01', '嗨'));

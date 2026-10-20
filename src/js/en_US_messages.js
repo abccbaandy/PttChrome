@@ -834,7 +834,7 @@ export const en_US = {
     "message": "Message inbox"
   },
   "tooltip_enableMessageInbox": {
-    "message": "Messages and system broadcasts received during this connection stay in the bell at the top right, so a missed one can still be read. Kept only in this tab and cleared on disconnect."
+    "message": "Messages, system broadcasts and new-mail notices received during this connection stay in the bell at the top right, so a missed one can still be read. Kept only in this tab and cleared on disconnect."
   },
   "inbox_title": {
     "message": "Messages"
@@ -856,6 +856,12 @@ export const en_US = {
   },
   "inbox_broadcast": {
     "message": "System"
+  },
+  "inbox_mail": {
+    "message": "Mail"
+  },
+  "inbox_newMail": {
+    "message": "You have new mail"
   },
   "options_deepLinkHandoffNotify": {
     "message": "Notify when this tab picks up an external link (tab title flash + system notification)."

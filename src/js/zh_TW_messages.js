@@ -833,7 +833,7 @@
     "message": "水球收件匣"
   },
   "tooltip_enableMessageInbox": {
-    "message": "這次連線收到的水球和系統廣播會留在右上角的鈴鐺裡，漏看了也找得回來。只存在這個分頁，斷線就清空。"
+    "message": "這次連線收到的水球、系統廣播和新信提示會留在右上角的鈴鐺裡，漏看了也找得回來。只存在這個分頁，斷線就清空。"
   },
   "inbox_title": {
     "message": "水球收件匣"
@@ -855,6 +855,12 @@
   },
   "inbox_broadcast": {
     "message": "系統訊息"
+  },
+  "inbox_mail": {
+    "message": "信箱"
+  },
+  "inbox_newMail": {
+    "message": "你有新信件"
   },
   "options_deepLinkHandoffNotify": {
     "message": "外部連結被這個分頁接手時發出通知（分頁標題閃爍＋系統通知）"

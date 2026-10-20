@@ -4,7 +4,7 @@
 
 ## 是什麼
 
-這次連線收到的水球與系統廣播留在一份清單裡。還沒收到任何一則時畫面上什麼都不多；收到後桌機右上角（手機在 App Bar 右端）出現鈴鐺，帶未讀數，點開列出寄件人、時間、內容（新的在前）。開關 `enableMessageInbox`（預設開）。
+這次連線收到的水球、系統廣播與新信提示留在一份清單裡。還沒收到任何一則時畫面上什麼都不多；收到後桌機右上角（手機在 App Bar 右端）出現鈴鐺，帶未讀數，點開列出寄件人、時間、內容（新的在前）。開關 `enableMessageInbox`（預設開）。
 
 ## 規則
 
@@ -16,6 +16,12 @@
 - **跟著連線走**：只放記憶體，`App.onClose` 清空（含沒收尾的半則）；不寫 localStorage、不上雲。最多 `INBOX_LIMIT` 則。pref 中途關掉 ⇒ 下一包資料進來時已收的一起收掉。
 - **位置**：桌機 fixed 右上角，文章工具側欄展開時讓到它左邊（不蓋住收合鈕）；手機由 `MobileAppBar` 以 `inline` 渲染，浮動版不畫。z-index 160：低於 Mantine overlay（200）。
 
+## 新信提示
+
+- 依據：`mbbsd/menu.c#redraw_title` 在 `ISNEWMAIL` 時把標題列中段換成「你有新信件」（主選單、看板列表、文章列表共用這條標題列；手機 App Bar 的新信點也讀它，`mobile_app_bar.NEW_MAIL_MARK`）。
+- 收法：`screenSettled` 只讀 row 0（`noteScreen`）。row 0 認得出是標題列（`【X】`或看板標題）、且不是文章時才更新「有沒有新信」；文章、prompt、編輯器這類沒有標題列的畫面不動狀態（看不到不代表沒有新信）。由無變有時收一則（`kind: 'mail'`，寄件人欄寫「信箱」，沒有回覆鈕），一直亮著不重收；看得出提示消失（讀完信）才重新武裝，再來一封會再收一則。登入時就有新信 ⇒ 第一個看得到標題列的畫面收一則。斷線清空時一起歸零。
+- 一個 byte 都不送：不幫使用者開信箱（那要送 Ctrl+Z m，畫面會被換掉）。
+
 ## 回覆
 
 - 只有**最新一位寄件人**（清單裡最新一則水球的人，廣播不算）的水球有「回覆」鈕。點了＝`view.sendKeyAsUser('r', { ctrlKey: true })`，跟使用者自己按 Ctrl+R 同一條路（含序列化閘門），清單收起，之後全是 PTT 原生的回覆畫面。
@@ -26,4 +32,4 @@
 
 ## 測試
 
-unit：`message_inbox.test.js`（解析、跨包、去重、上限、斷線清空、pref）、`message_inbox_ui.test.jsx`（照 state 畫、不搶焦點、點外面收起、桌機／手機只畫一個、讓開側欄）。offline e2e：`message_inbox.offline.spec.js`（真 onData → 鈴鐺、真滑鼠點開不送鍵、點終端機收起、斷線清空、pref 關）。
+unit：`message_inbox.test.js`（解析、跨包、去重、上限、斷線清空、pref、新信提示的認法與由無變有）、`message_inbox_ui.test.jsx`（照 state 畫、不搶焦點、點外面收起、桌機／手機只畫一個、讓開側欄、新信那則的寫法）。offline e2e：`message_inbox.offline.spec.js`（真 onData → 鈴鐺、真滑鼠點開不送鍵、點終端機收起、斷線清空、pref 關）。
