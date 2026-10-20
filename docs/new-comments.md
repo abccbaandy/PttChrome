@@ -14,7 +14,7 @@
 - **反向讀取（End）**：新頁插在中間、列號會位移 ⇒ 掃描作廢、不標不記，接合完成後從頭重掃。
 - **標註層**：term_view 只在畫好讀累積頁（`stableRows` 且 `lines === buf.pageLines`）時呼叫 `newComments.rowFor(lines)`，結果放 `enhance.newCommentsRow`（進 `annotationsKey`，一篇文章從 null 翻成某一列最多一次 ⇒ 那一幀全量重算）。`applyNewCommentsMark` 只寫 `result[row]`：被合併進同作者推文塊的列標在塊的第一列；黑名單藏起來的列往後找第一則看得到的。之後前沿快路徑沿用的前綴是已經標好的物件，前沿之後每幀重標 ⇒ `annotationFrontier`／`annotationsAreRowIndependent` 不必改。
 - **渲染**：`row.js`／`comment_card.js` 在那一列加 class `newCommentsStart` 與 `data-new-comments`（小字，i18n `new_comments_divider`）；CSS 用列的 `margin-top` 留空、`::before` 畫線＋小字（不會被選取／複製）。golden 快照不受影響（沒有標的列輸出不變）。
-- **設計**：中性灰，不用彩色（推文區已經有原PO藍、自己綠、樓層黃，L 要求推文區不要花花綠綠）。
+- **設計**：中性灰，不用彩色（推文區已經有原PO藍、自己綠、樓層黃，L 要求推文區不要花花綠綠）。小字要看得清：字級 ≥ 列字的 0.7、淺灰對黑底對比 ≥7:1、整行落在列的 `margin-top` 留白裡。推文間距（`.commentSpacing`）的 `margin-top` 選擇器比較具體，`.newCommentsStart` 要有一條同等具體的選擇器壓過它，否則留白被蓋回 0.55em、小字疊到上一列（offline e2e 守）。
 
 ## 測試
 

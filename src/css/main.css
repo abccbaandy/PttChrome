@@ -1131,10 +1131,14 @@ span {
 
 /* 新推文標記（js/new_comments.js）：第一則新推文那一列（或它所在的合併塊／手機推文卡片）
    上緣留一段空，畫一條中性灰細線＋右邊一行小字。刻意不用彩色：推文區已經有原PO藍、
-   自己綠、樓層黃（L 要求推文區不要花花綠綠）。小字是 ::before（不會被選取／複製）。 */
-#mainContainer span[type="bbsrow"].newCommentsStart {
+   自己綠、樓層黃（L 要求推文區不要花花綠綠）。小字是 ::before（不會被選取／複製）。
+   小字要看得清：字級不低於列字的 0.7、淺灰對黑底對比 ≥7:1（offline e2e 守）。
+   第二個選擇器是為了壓過推文間距（.commentSpacing）的 margin-top：被它蓋回 0.55em 時
+   留白不夠，小字會疊到上一列的字上。整數像素理由同推文間距第 4 條。 */
+#mainContainer span[type="bbsrow"].newCommentsStart,
+#mainContainer.commentSpacing > .screenChunk > span[type="bbsrow"][data-pusher].newCommentsStart {
   position: relative;
-  margin-top: 1.4em;
+  margin-top: round(1.6em, 1px);
 }
 #mainContainer span[type="bbsrow"].newCommentsStart::before {
   content: attr(data-new-comments);
@@ -1143,10 +1147,10 @@ span {
   right: 0;
   bottom: 100%;
   margin-bottom: 0.2em;
-  border-bottom: 1px solid #4a4a4a;
-  font-size: 0.5em;
-  line-height: 1.6;
-  color: #8a8a8a;
+  border-bottom: 1px solid #666;
+  font-size: 0.75em;
+  line-height: 1.25;
+  color: #b4b4b4;
   text-align: right;
   white-space: nowrap;
   pointer-events: none;
