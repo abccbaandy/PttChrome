@@ -15,7 +15,7 @@
 
 import { isArticleListTitleRow } from './screen_titles';
 import { isArticleListFooter } from './screen_captions';
-import { listPageOf, mergeSnapshot, sameBoard, findCurrentNum } from './split_reader';
+import { listPageOf, mergeSnapshot, sameBoard, findCurrentNum, cursorHintFresh } from './split_reader';
 import { subjectKey, subjectMatches } from './long_push_anchor';
 import { serializedOpHint } from './serialized_op_gate';
 import { readEffectivePrefs } from './pref_storage';
@@ -44,12 +44,22 @@ export function nextEntryAfter(entries, num) {
   return null;
 }
 
-// 落地的文章是不是卡片上那一篇（作者＋主題，列表主題可能被截成 …）。
-export function landedOn(entry, article) {
+// 落地的文章是不是卡片上那一篇（作者＋主題，列表主題可能被截成 …）。檔頭主題對不上也
+// 可能是同一篇：PTT 的 T（bbs.c edit_title）只改 .DIR、不改文章檔頭 ⇒ 這時改比 seen（換文
+// 途中 `<編號>⏎` 之後列表上游標停的那一列）：列表對列表，改過的標題兩邊一樣。
+export function landedOn(entry, article, seen) {
   if (!entry || !article || !article.author) return false;
-  if (String(entry.author).toLowerCase() !== String(article.author).toLowerCase()) return false;
+  const author = String(entry.author).toLowerCase();
+  if (author !== String(article.author).toLowerCase()) return false;
   const subject = subjectKey(article.title);
-  return !!(subject && entry.subject && subjectMatches(entry.subject, subject));
+  if (subject && entry.subject && subjectMatches(entry.subject, subject)) return true;
+  return !!(
+    seen &&
+    String(seen.author).toLowerCase() === author &&
+    seen.subject &&
+    entry.subject &&
+    subjectMatches(seen.subject, entry.subject)
+  );
 }
 
 function enabled() {
@@ -63,8 +73,8 @@ function enabled() {
 export function NextArticle(core) {
   this._core = core;
   this._snapshot = null; // { board, entries }
-  this._lastList = null; // { board, mode, cursorNum }
-  this._nav = null; // { entry, timer }
+  this._lastList = null; // { board, mode, cursorNum, articleKey }（articleKey 見 split_reader.cursorHintFresh）
+  this._nav = null; // { entry, timer, seen }：seen＝換文途中列表上游標停在 entry.num 的那一列
   this._el = null;
   this._state = { visible: false, entry: null, pending: false };
   const self = this;
@@ -136,23 +146,31 @@ NextArticle.prototype = {
       if (page) {
         this._lastList = { board: page.board, mode: page.mode, cursorNum: page.cursorNum };
         if (page.mode === 'plain') this._snapshot = mergeSnapshot(this._snapshot, page);
+        // 換文途中：<編號>⏎ 之後游標停的那一列，落地比對用（landedOn）。
+        const nav = this._nav;
+        if (nav && page.mode === 'plain' && page.cursorNum === nav.entry.num && this._snapshot && sameBoard(page.board, this._snapshot.board))
+          nav.seen = page.entries.find((e) => e.num === page.cursorNum) || null;
       }
-      this._hide();
-      return;
-    }
-    if (this._nav || !this._inEasyArticleEnd()) {
       this._hide();
       return;
     }
     const view = core.view || {};
     const board = view._articleBoard;
+    const article = { board: board, author: view._articleAuthor, title: view._articleTitle };
+    // 每次文章 settle 都要記（不只讀到文末那幾次）：中途在文章裡換篇再讀到底，也要認得出
+    // 游標已經不可信。換文途中不記（落地後 done 會重來）。
+    const hintFresh = !this._nav && buf.pageState === 3 && cursorHintFresh(this._lastList, article);
+    if (this._nav || !this._inEasyArticleEnd()) {
+      this._hide();
+      return;
+    }
     const snap = this._snapshot;
     const list = this._lastList;
     if (!board || !snap || !list || list.mode !== 'plain' || !sameBoard(list.board, board) || !sameBoard(snap.board, board)) {
       this._hide();
       return;
     }
-    const current = findCurrentNum(snap.entries, { author: view._articleAuthor, title: view._articleTitle }, list.cursorNum);
+    const current = findCurrentNum(snap.entries, article, list.cursorNum, hintFresh);
     const entry = current == null ? null : nextEntryAfter(snap.entries, current);
     if (!entry) {
       this._hide();
@@ -179,14 +197,16 @@ NextArticle.prototype = {
     const done = function(result) {
       if (!self._nav || self._nav.entry !== entry) return;
       clearTimeout(self._nav.timer);
+      const seen = self._nav.seen;
       self._nav = null;
       const ok = !!(result && result.ok);
       rr.end(bm, ok ? 'done' : 'fail');
       self._set({ pending: false });
       if (!ok) return;
-      if (self._lastList) self._lastList = Object.assign({}, self._lastList, { cursorNum: entry.num });
+      // 落地的這篇就是「看過列表後的第一篇」（cursorHintFresh 重新記）。
+      if (self._lastList) self._lastList = Object.assign({}, self._lastList, { cursorNum: entry.num, articleKey: null });
       const view = core.view || {};
-      if (!landedOn(entry, { author: view._articleAuthor, title: view._articleTitle }))
+      if (!landedOn(entry, { author: view._articleAuthor, title: view._articleTitle }, seen))
         self._hint(i18n('next_article_mismatch'), 4000, HINT_ERROR);
     };
     this._nav = {

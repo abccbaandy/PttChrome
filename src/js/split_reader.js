@@ -120,17 +120,37 @@ export function mergeSnapshot(prev, page, limit) {
 
 // 正在讀的這篇是清單上哪一篇：作者＋主題（列表主題可能被截成 …）。同主題的回文很多，
 // 所以先信「開文前游標停的那篇」，再信唯一的符合者，都不成就不標（null）。
-export function findCurrentNum(entries, article, hintNum) {
+// 主題對不上也可能是同一篇：PTT 的 T（bbs.c edit_title）只改 .DIR 的標題（modify_dir_lite），
+// 文章檔頭不動 ⇒ 改過標題的文章，列表與檔頭永遠不一樣。hintFresh（cursorHintFresh）時，
+// 游標那篇作者對得上就信它。
+export function findCurrentNum(entries, article, hintNum, hintFresh) {
   if (!entries || !article || !article.author) return null;
-  const subject = subjectKey(article.title);
-  if (!subject) return null;
   const author = String(article.author).toLowerCase();
-  const hits = entries.filter(
-    (e) => e.subject && !e.deleted && String(e.author).toLowerCase() === author && subjectMatches(e.subject, subject)
-  );
-  if (!hits.length) return null;
-  if (hintNum != null) for (const e of hits) if (e.num === hintNum) return e.num;
+  const subject = subjectKey(article.title);
+  const hits = subject
+    ? entries.filter(
+        (e) => e.subject && !e.deleted && String(e.author).toLowerCase() === author && subjectMatches(e.subject, subject)
+      )
+    : [];
+  if (hintNum != null) {
+    for (const e of hits) if (e.num === hintNum) return e.num;
+    if (hintFresh) {
+      const e = entries.find((x) => x.num === hintNum);
+      if (e && !e.deleted && String(e.author).toLowerCase() === author) return e.num;
+    }
+  }
   return hits.length === 1 ? hits[0].num : null;
+}
+
+// 「開文前游標停的那篇」（list.cursorNum）只對看過列表之後打開的第一篇可信：之後在文章裡
+// 用原生鍵換文（pmore 讀完按空白＝read.c READ_NEXT、]／+ 同主題）不經過列表，游標早就不是
+// 那篇了。第一次看到的檔頭記在 list 上（每次列表 settle 都換一個新的 list 物件），之後檔頭
+// 不同 ⇒ 不可信。
+export function cursorHintFresh(list, article) {
+  if (!list || !article || !article.author) return false;
+  const key = [article.board, article.author, article.title].map((s) => String(s || '').toLowerCase()).join('\n');
+  if (list.articleKey == null) list.articleKey = key;
+  return list.articleKey === key;
 }
 
 // 左邊空白（終端機左緣到視窗左緣）→ 左欄寬度；放不下 ⇒ 0。
@@ -169,7 +189,7 @@ export function SplitReader(core) {
   this._core = core;
   this._listeners = new Set();
   this._snapshot = null; // { board, entries }
-  this._lastList = null; // { board, mode, cursorNum }：上一次看到的文章列表
+  this._lastList = null; // { board, mode, cursorNum, articleKey }：上一次看到的文章列表（articleKey 見 cursorHintFresh）
   this._nav = null; // { num, timer }：自己發起的換文
   this._state = {
     visible: false,
@@ -279,6 +299,9 @@ SplitReader.prototype = {
     }
     const snap = this._snapshot;
     const list = this._lastList;
+    const article = { board: board, author: view._articleAuthor, title: view._articleTitle };
+    // 每次文章 settle 都記（左欄放不下的時候也是）：換篇之後才認得出游標已經不可信。
+    const hintFresh = !this._nav && cursorHintFresh(list, article);
     if (!snap || !list || list.mode !== 'plain' || !sameBoard(list.board, board) || !sameBoard(snap.board, board)) {
       this._hide();
       return;
@@ -288,9 +311,7 @@ SplitReader.prototype = {
       this._hide();
       return;
     }
-    const current = this._nav
-      ? this._state.currentNum
-      : findCurrentNum(snap.entries, { author: view._articleAuthor, title: view._articleTitle }, list.cursorNum);
+    const current = this._nav ? this._state.currentNum : findCurrentNum(snap.entries, article, list.cursorNum, hintFresh);
     this._set({
       visible: true,
       board: snap.board,
@@ -340,7 +361,8 @@ SplitReader.prototype = {
           };
           patch.entries = self._snapshot.entries;
         }
-        if (self._lastList) self._lastList = Object.assign({}, self._lastList, { cursorNum: num });
+        // 落地的這篇就是「看過列表後的第一篇」（cursorHintFresh 重新記）。
+        if (self._lastList) self._lastList = Object.assign({}, self._lastList, { cursorNum: num, articleKey: null });
       }
       self._set(patch);
     };

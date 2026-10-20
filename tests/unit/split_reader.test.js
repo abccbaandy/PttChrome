@@ -12,6 +12,7 @@ import {
   listPageOf,
   mergeSnapshot,
   findCurrentNum,
+  cursorHintFresh,
   paneWidthFor,
   sameBoard,
   SplitReader,
@@ -162,6 +163,35 @@ describe("findCurrentNum：作者＋主題，先信開文前的游標", () => {
     expect(findCurrentNum(entries, { author: "eve", title: "[閒聊] 同一串" }, 1)).toBeNull();
     expect(findCurrentNum(entries, { author: null, title: "[閒聊] 同一串" }, 1)).toBeNull();
   });
+  // PTT 的 T（bbs.c edit_title）只改 .DIR 的標題（modify_dir_lite），文章檔頭不動 ⇒ 改過標題的
+  // 文章，列表與檔頭的主題永遠對不上。
+  test("改過標題（列表≠檔頭）：游標可信、作者對得上 ⇒ 信游標", () => {
+    const edited = { author: "bob", title: "[閒聊] 改標題前" };
+    expect(findCurrentNum(entries, edited, 2, true)).toBe(2);
+    // 游標不可信（看過列表之後已經在文章裡換過篇）⇒ 不猜。
+    expect(findCurrentNum(entries, edited, 2, false)).toBeNull();
+    expect(findCurrentNum(entries, edited, 2)).toBeNull();
+    // 游標那篇是別人寫的 ⇒ 不是它。
+    expect(findCurrentNum(entries, edited, 1, true)).toBeNull();
+  });
+});
+
+describe("cursorHintFresh：開文前的游標只對看過列表後的第一篇可信", () => {
+  test("第一篇記下來；同一篇一直可信；換成別篇（原生鍵換文，沒經過列表）⇒ 不可信", () => {
+    const list = { board: "C_Chat", mode: "plain", cursorNum: 2 };
+    const a = { board: "C_Chat", author: "bob", title: "[閒聊] 改標題前" };
+    expect(cursorHintFresh(list, a)).toBe(true);
+    expect(cursorHintFresh(list, { ...a })).toBe(true);
+    expect(cursorHintFresh(list, { board: "C_Chat", author: "alice", title: "[閒聊] 下一篇" })).toBe(false);
+    // 換回第一篇：游標記的就是它，照樣可信。
+    expect(cursorHintFresh(list, a)).toBe(true);
+  });
+  test("沒有列表、沒有作者 ⇒ 不可信（也不記）", () => {
+    expect(cursorHintFresh(null, { author: "bob", title: "x" })).toBe(false);
+    const list = { cursorNum: 2 };
+    expect(cursorHintFresh(list, { author: null, title: "x" })).toBe(false);
+    expect(cursorHintFresh(list, { board: "C_Chat", author: "bob", title: "x" })).toBe(true);
+  });
 });
 
 test("paneWidthFor：放得下才給寬度，有上限", () => {
@@ -305,6 +335,14 @@ describe("SplitReader：何時出現", () => {
   test("預設開，而且在安全模式名單內", () => {
     expect(DEFAULT_PREFS.enableSplitReading).toBe(true);
     expect(NATIVE_SAFE_MODE_KEYS).toContain("enableSplitReading");
+  });
+  test("改過標題的文章（列表≠檔頭）從列表進 ⇒ 照樣標出來；在文章裡換到別篇 ⇒ 不再信舊游標", () => {
+    const { split, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "carol", "[閒聊] 第三篇改標題前");
+    expect(split.state.currentNum).toBe(103);
+    read("C_Chat", "carol", "[閒聊] 另一篇");
+    expect(split.state.currentNum).toBeNull();
   });
   test("清單上找不到這篇 ⇒ 照樣出現，只是不標", () => {
     const { split, show, read } = makeCore();
