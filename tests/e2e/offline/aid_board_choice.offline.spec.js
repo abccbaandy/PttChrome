@@ -45,6 +45,43 @@ async function boardlessLink(page) {
   return links.first();
 }
 
+// 點彈窗裡的選項，並斷言彈窗真的收起（兩個選項的 handler 第一件事都是收彈窗）。
+// CI 偶發過「點了、彈窗一直開著、零送鍵」（docs 待查項 aid_board_choice），本機重現不出。
+// 所以點的同時在 document 捕獲階段記下 pointer／mouse／click 落在哪、按鈕節點有沒有被換掉；
+// 再發生時錯誤訊息直接帶出這份紀錄，不必再猜。
+async function chooseAid(page, which) {
+  const sel = `[data-aid-choice="${which}"]`;
+  await page.evaluate((s) => {
+    const btn = document.querySelector(s);
+    const trace = [];
+    window.__aidChoiceTrace = trace;
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      document.addEventListener(
+        type,
+        (e) => {
+          const t = e.target instanceof Element ? e.target : null;
+          trace.push({
+            type,
+            onButton: !!(t && t.closest(s) === btn),
+            target: t ? t.tagName + (t.className ? '.' + String(t.className).split(' ')[0] : '') : String(e.target),
+            buttonConnected: btn.isConnected,
+            sameNode: document.querySelector(s) === btn,
+            prevented: e.defaultPrevented,
+          });
+        },
+        { capture: true }
+      );
+    }
+  }, sel);
+  await page.locator(sel).click();
+  try {
+    await expect(page.locator('[data-aid-board-choice]')).toHaveCount(0, { timeout: 5000 });
+  } catch (e) {
+    const trace = await page.evaluate(() => window.__aidChoiceTrace);
+    throw new Error(`點「${which}」後彈窗沒收起；事件紀錄：${JSON.stringify(trace)}\n${e.message}`);
+  }
+}
+
 test.describe('無看板 AID 的看板選擇（離線重放）', () => {
   test.skip(!cassette, `缺 cassette ${CASSETTE}.json`);
 
@@ -65,7 +102,7 @@ test.describe('無看板 AID 的看板選擇（離線重放）', () => {
 
     const current = await page.evaluate(() => window.__app.view._articleBoard);
     expect(current).toBeTruthy();
-    await page.locator('[data-aid-choice="current"]').click();
+    await chooseAid(page, 'current');
     await expect
       .poll(
         async () => (await page.evaluate(() => window.__replay.sent)).slice(before).join(''),
@@ -82,7 +119,7 @@ test.describe('無看板 AID 的看板選擇（離線重放）', () => {
     await installNameComplete(page);
     const before = await page.evaluate(() => window.__replay.sent.length);
     await link.click();
-    await page.locator('[data-aid-choice="pick"]').click();
+    await chooseAid(page, 'pick');
     const input = page.locator('input[name="searchKeyword"]');
     await expect(input).toBeVisible();
     // 背景 prompt 開出來了（補全可用），而且是從文章裡按的那一個 s。
@@ -121,7 +158,7 @@ test.describe('無看板 AID 的看板選擇（離線重放）', () => {
     await installNameComplete(page);
     const before = await page.evaluate(() => window.__replay.sent.length);
     await link.click();
-    await page.locator('[data-aid-choice="pick"]').click();
+    await chooseAid(page, 'pick');
     await expect(page.locator('[data-board-suggest="ready"]')).toHaveCount(1);
     await page.keyboard.press('Escape');
     await expect(page.locator('input[name="searchKeyword"]')).toHaveCount(0);
@@ -160,7 +197,7 @@ test.describe('搜尋結果開的文章裡跳文（離線重放）', () => {
     await installNameComplete(page, { sub: true });
     const before = await page.evaluate(() => window.__replay.sent.length);
     await link.click();
-    await page.locator('[data-aid-choice="current"]').click();
+    await chooseAid(page, 'current');
     await expect.poll(() => sentSince(page, before), { timeout: 20000 }).toContain('#' + AID + '\r');
     const sent = await sentSince(page, before);
     expect(sent.indexOf('\x1b[D')).toBeGreaterThan(sent.indexOf('ask\r'));
@@ -173,7 +210,7 @@ test.describe('搜尋結果開的文章裡跳文（離線重放）', () => {
     await installNameComplete(page, { sub: true });
     const before = await page.evaluate(() => window.__replay.sent.length);
     await link.click();
-    await page.locator('[data-aid-choice="pick"]').click();
+    await chooseAid(page, 'pick');
     const input = page.locator('input[name="searchKeyword"]');
     await expect(page.locator('[data-board-suggest="ready"]')).toHaveCount(1);
     await input.pressSequentially('Browsers');
@@ -198,7 +235,7 @@ test.describe('搜尋結果開的文章裡跳文（離線重放）', () => {
     await installNameComplete(page, { sub: true });
     const before = await page.evaluate(() => window.__replay.sent.length);
     await link.click();
-    await page.locator('[data-aid-choice="pick"]').click();
+    await chooseAid(page, 'pick');
     await expect(page.locator('[data-board-suggest="ready"]')).toHaveCount(1);
     await page.keyboard.press('Escape');
     await expect
