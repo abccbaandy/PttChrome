@@ -51,6 +51,9 @@ function fakeCore(overrides = {}) {
       startNum(board, num, cb) {
         return this._go('startNum', [board, num], cb);
       },
+      startPinned(board, index, cb) {
+        return this._go('startPinned', [board, index], cb);
+      },
       startExternal(aid, board, cb) {
         return this._go('startExternal', [aid, board], cb);
       },
@@ -127,6 +130,57 @@ describe('ptt_list_articles', () => {
     ]);
     expect(r.pinned.map((a) => a.title)).toEqual(['[公告] 板規']);
     expect(r.articles[0]).not.toHaveProperty('cursor');
+  });
+
+  test('置底文帶 index（給 ptt_read_article 的 pinned），最新頁給 nextBefore', async () => {
+    const core = fakeCore();
+    core.aidNavigation.onStart = () => {
+      core.buf.lines = LIST;
+      core.buf.rows = LIST.length;
+    };
+    const r = await tool(core, 'ptt_list_articles').execute({ board: 'Gossiping' });
+    expect(r.pinned.map((a) => [a.index, a.title])).toEqual([[0, '[公告] 板規']]);
+    expect(r.nextBefore).toBe(780296);
+  });
+
+  test('before：跳到 before-1 停在列表（不開文），只回編號小於 before 的、不含置底', async () => {
+    const OLD = [
+      LIST[0],
+      LIST[1],
+      LIST[2],
+      ' 780293 + 110/13 someone1     □ [問卦] 第三舊',
+      '>780294 + 110/13 someone2     □ [問卦] 第二舊',
+      ' 780295 + 110/14 someone3     □ [問卦] 第一舊',
+      ' 780296 + 110/14 someone4     □ [問卦] 不該出現',
+      LIST[6],
+    ];
+    const core = fakeCore();
+    core.aidNavigation.onStart = () => {
+      core.buf.lines = OLD;
+      core.buf.rows = OLD.length;
+    };
+    const r = await tool(core, 'ptt_list_articles').execute({ board: 'Gossiping', before: 780296 });
+    expect(core.aidNavigation.calls).toEqual([['startBoard', 'Gossiping', { num: 780295 }]]);
+    expect(r.articles.map((a) => a.num)).toEqual([780295, 780294, 780293]);
+    expect(r.pinned).toEqual([]);
+    expect(r.nextBefore).toBe(780293);
+  });
+
+  test('before 到第一篇 ⇒ nextBefore null；不合法的 before 拒絕、不開導航', async () => {
+    const FIRST = [LIST[0], LIST[1], LIST[2], '>     1 + 1 1/01 someone1     □ [公告] 開板', LIST[6]];
+    const core = fakeCore();
+    core.aidNavigation.onStart = () => {
+      core.buf.lines = FIRST;
+      core.buf.rows = FIRST.length;
+    };
+    const r = await tool(core, 'ptt_list_articles').execute({ board: 'Gossiping', before: 2 });
+    expect(r.articles.map((a) => a.num)).toEqual([1]);
+    expect(r.nextBefore).toBe(null);
+    for (const before of [1, 0, -5, 2.5, 'abc']) {
+      const c = fakeCore();
+      await expect(tool(c, 'ptt_list_articles').execute({ board: 'Gossiping', before })).rejects.toThrow('before');
+      expect(c.aidNavigation.calls).toEqual([]);
+    }
   });
 
   test('導航失敗 ⇒ 帶原因 reject', async () => {
@@ -241,8 +295,30 @@ describe('ptt_read_article', () => {
     expect(r.comments.length).toBe(1);
   });
 
-  test('num／aid 都沒給 ⇒ 拒絕', async () => {
+  test('num／aid／pinned 都沒給 ⇒ 拒絕', async () => {
     await expect(tool(fakeCore(), 'ptt_read_article').execute({ board: 'Gossiping' })).rejects.toThrow('擇一');
+  });
+
+  test('pinned：走 startPinned 開置底文，num 回 null、aid 取自全文網址', async () => {
+    const core = fakeCore();
+    core.aidNavigation.onStart = () => {
+      core.buf.lines = [...ARTICLE, STATUS(1, 1, 100, 1, 7)];
+      core.buf.rows = ARTICLE.length + 1;
+      core.buf.pageState = 3;
+    };
+    const r = await tool(core, 'ptt_read_article').execute({ board: 'Gossiping', pinned: 0 });
+    expect(core.aidNavigation.calls).toEqual([['startPinned', 'Gossiping', 0]]);
+    expect(r.num).toBe(null);
+    expect(r.url).toContain('M.1760446800');
+    expect(r.complete).toBe(true);
+  });
+
+  test('pinned 不是 0 起整數 ⇒ 拒絕、不開導航', async () => {
+    for (const pinned of [-1, 1.5, 'x']) {
+      const core = fakeCore();
+      await expect(tool(core, 'ptt_read_article').execute({ board: 'Gossiping', pinned })).rejects.toThrow('pinned');
+      expect(core.aidNavigation.calls).toEqual([]);
+    }
   });
 });
 

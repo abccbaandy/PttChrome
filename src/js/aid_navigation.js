@@ -65,6 +65,7 @@ import {
   isCrossPostHeaderLine
 } from './aid_parse';
 import { isPinnedListRow } from './comment_parse';
+import { parseListEntry } from './agent_parse';
 import { MAIN_MENU, boardNameFromKey, parseBoardKey, rowHasTitle } from './screen_titles';
 import { isSubListFooter } from './screen_captions';
 import { HINT_ERROR } from './status_hint';
@@ -194,6 +195,19 @@ export function numJumpLanded(facts, num) {
 // End 落地：游標停在條目區的**最後一個非空列**（read.c 的 End ＝ last_line，置底文
 // 排在一般文章之後，所以停在最後一篇置底或最後一篇文章）。這張畫面之後才有
 // 「最新文章」可讀。
+// 板尾畫面上置底文所在的螢幕列（由上而下）。判準與 agent_parse.parseListEntry 的
+// pinned 同一支 ⇒ agent 列表回傳的 pinned[index] 與這裡的第 index 列是同一篇。
+export function pinnedRowsOnScreen(facts) {
+  const out = [];
+  if (!facts) return out;
+  const rowTexts = facts.rowTexts || [];
+  for (let r = 3; r <= facts.rows - 2; ++r) {
+    const e = parseListEntry(rowTexts[r] || '');
+    if (e && e.pinned) out.push(r);
+  }
+  return out;
+}
+
 export function endLanded(facts) {
   if (!facts || facts.boardName == null) return false;
   const rows = facts.rows;
@@ -600,16 +614,36 @@ AidNavigation.prototype = {
 
   // agent 工具（agent_tools.js）的兩種跳法，與 AID 跳文共用逃生前導／板跳／進板畫面
   // 處理，只換中段：
-  //   startBoard：停在目標板的文章列表；opts.end ⇒ 再送 End 停在板尾（最新文章＋置底）。
+  //   startBoard：停在目標板的文章列表；opts.end ⇒ 再送 End 停在板尾（最新文章＋置底）；
+  //               opts.num ⇒ 改送 `<編號>⏎` 停在那一篇所在的列表頁，不開文（列更舊的頁）。
   //   startNum：  `<編號>⏎` 停到那一篇再 ⏎ 開文（同 list_session open-jump 的指紋）。
   // dir 'goto'：不碰返回堆疊（沒有 Q 問原文 AID、成功就 invalidate，同使用者自己換板）。
   // onEnd({ ok, error? }) 在 run 結束時呼叫一次（成功或 _fail）。
   startBoard: function(board, opts, onEnd) {
     if (this.active || !board) return false;
+    const num = opts && opts.num != null ? Number(opts.num) : null;
+    if (num != null && !(num > 0)) return false;
     this._onRunEnd = onEnd || null;
-    const run = makeRun({ board: board, kind: 'board', aid: null, end: !!(opts && opts.end) }, 'goto');
+    const run = makeRun(
+      num != null
+        ? { board: board, kind: 'board', aid: null, num: num, listOnly: true }
+        : { board: board, kind: 'board', aid: null, end: !!(opts && opts.end) },
+      'goto'
+    );
     run.external = true;
     this._hint('前往 ' + board + ' 看板…', PROGRESS_HINT_MS);
+    this._begin(run);
+    return true;
+  },
+
+  // 置底文開文（agent ptt_read_article 的 pinned）：板跳 → End（游標停在最後一篇置底）
+  // → ↑ 移到板尾畫面第 index 篇置底 → ⏎。置底文沒有編號、跳號跳不到，只能這樣走。
+  startPinned: function(board, index, onEnd) {
+    if (this.active || !board || !(Number.isInteger(index) && index >= 0)) return false;
+    this._onRunEnd = onEnd || null;
+    const run = makeRun({ board: board, kind: 'board', aid: null, end: true, pinnedIndex: index }, 'goto');
+    run.external = true;
+    this._hint('開啟 ' + board + ' 置底文…', PROGRESS_HINT_MS);
     this._begin(run);
     return true;
   },
@@ -1446,6 +1480,8 @@ AidNavigation.prototype = {
       onDone: function() {
         // 回到原處只把游標放回那一篇，不開（編號會因刪文漂移，開錯篇比停在列表糟）。
         if (run.dir === 'resume') self._finishResumeAtList(run, 'done');
+        // agent 列更舊的頁（startBoard opts.num）：停在列表，不開。
+        else if (run.target.listOnly) self._finishGoto(run);
         else self._enqueueOpen(run);
       },
       onFail: function(reason) {
@@ -1475,13 +1511,57 @@ AidNavigation.prototype = {
       probeTimeoutMs: STEP_PROBE_WINDOW_MS,
       hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
-        return endLanded(facts);
+        if (!endLanded(facts)) return false;
+        run.endFacts = facts;
+        return true;
       },
       onDone: function() {
-        self._finishGoto(run);
+        if (run.target.pinnedIndex != null) self._enqueuePinnedPick(run);
+        else self._finishGoto(run);
       },
       onFail: function(reason) {
         self._fail('移到 ' + run.target.board + ' 板尾失敗（' + reason + '）');
+      }
+    });
+  },
+
+  // 板尾 → 第 pinnedIndex 篇置底：游標在最後一個非空列（endLanded），置底文排在一般
+  // 文章之後（read.c 的 .DIR.bottom 接在 last_line 之後）⇒ 往上數 k 列就到。認不出
+  // （畫面上沒有那一篇、游標不在它下方）就停手，不猜。
+  _enqueuePinnedPick: function(run) {
+    const self = this;
+    const facts = run.endFacts;
+    const rows = pinnedRowsOnScreen(facts);
+    const target = rows[run.target.pinnedIndex];
+    if (target == null || !facts || target > facts.curY) {
+      this._fail('找不到 ' + run.target.board + ' 第 ' + (run.target.pinnedIndex + 1) + ' 篇置底文');
+      return;
+    }
+    const steps = facts.curY - target;
+    if (steps === 0) {
+      this._enqueueOpen(run);
+      return;
+    }
+    this._queue.enqueue({
+      keys: '\x1b[A'.repeat(steps),
+      kind: 'agent-pinned-pick',
+      fullRepaint: true,
+      onFlushed: function() {
+        self._fail('畫面已變更');
+      },
+      timeoutMs: STEP_PROBE_AFTER_MS,
+      probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+      hardTimeoutMs: STEP_HARD_MS,
+      expect: function(snapshot, f) {
+        if (!f || f.curY !== target || f.curX > 1) return false;
+        const e = parseListEntry((f.rowTexts || [])[target] || '');
+        return !!(e && e.pinned);
+      },
+      onDone: function() {
+        self._enqueueOpen(run);
+      },
+      onFail: function(reason) {
+        self._fail('移到置底文失敗（' + reason + '）');
       }
     });
   },

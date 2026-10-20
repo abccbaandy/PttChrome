@@ -13,12 +13,12 @@
 
 | 工具 | 參數 | 回傳 | 實作 |
 |---|---|---|---|
-| `ptt_list_articles` | `board` | `{board, articles[] 由新到舊, pinned[]}`，每篇 `num/date/author/title/recommend/deleted/locked` | `aidNavigation.startBoard(board, {end:true})` → `agent_parse.listEntriesFromScreen` |
-| `ptt_read_article` | `board`＋`num`／`aid` | `{author, board, title, time, content, comments[{type,user,content,ip,time}], aid, url, complete}` | `startNum`／`startExternal` → `collectArticle` → `agent_parse.parseArticleLines` |
+| `ptt_list_articles` | `board`＋選填 `before` | `{board, articles[] 由新到舊, pinned[], nextBefore}`，每篇 `num/date/author/title/recommend/deleted/locked`，置底另帶 `index` | 最新頁：`startBoard(board, {end:true})`；`before`：`startBoard(board, {num: before-1})`（`<編號>⏎` 停在列表不開文，只回編號 < before、不含置底）→ `agent_parse.listEntriesFromScreen` |
+| `ptt_read_article` | `board`＋`num`／`aid`／`pinned` | `{author, board, title, time, content, comments[{type,user,content,ip,time}], aid, url, complete}` | `startNum`／`startExternal`／`startPinned`（End → ↑ 到板尾畫面第 index 篇置底 → ⏎；置底判準與列表回傳同一支 `parseListEntry`，畫面上沒有那篇就停手）→ `collectArticle` → `agent_parse.parseArticleLines` |
 | `ptt_read_screen` | — | 原生畫面列文字＋`page` 種類 | 低階逃生口 |
 | `ptt_send_keys` | `keys`（`{Enter}` 等，`parseKeySpec`） | 送鍵後等一次 settle 的畫面 | 低階逃生口 |
 
-只回一頁列表（約 20 篇）；更舊的頁、置底文開文（沒有編號，要用 aid）尚未支援。
+翻更舊的頁：把回傳的 `nextBefore` 當下一次的 `before`（null＝已到第 1 篇）。一頁的篇數不固定（取決於 before-1 落在 PTT 列表頁的哪個位置），agent 照 nextBefore 往下翻即可。
 
 ## 不變量
 
@@ -38,6 +38,5 @@
 
 ## 待辦
 
-- 列表翻頁（更舊的文章）、置底文開文。
 - 寫入類（推文、發文）要使用者確認；送鍵節流。
 - 設定頁開關（目前恆開）。

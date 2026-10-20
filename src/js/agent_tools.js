@@ -240,11 +240,14 @@ export function createAgentTools(core, opts = {}) {
       description:
         '列出 PTT 某看板最新的文章（約一頁，含置底文）。回傳 articles（一般文章，編號由新到舊）' +
         '與 pinned（置底文）。每篇有 num（編號，給 ptt_read_article 用）、date、author、title、' +
-        'recommend（推文數，「爆」=100 以上、X 開頭為噓）、deleted。看板名稱用英文（如 Gossiping）。',
+        'recommend（推文數，「爆」=100 以上、X 開頭為噓）、deleted。看板名稱用英文（如 Gossiping）。' +
+        '要更舊的文章：把上次回傳的 nextBefore 當 before 再呼叫一次（只回編號小於 before 的那一頁，' +
+        '不含置底文）；nextBefore 為 null 表示已經到第一篇。置底文用 pinned 的 index 給 ptt_read_article 讀。',
       inputSchema: {
         type: 'object',
         properties: {
           board: { type: 'string', description: '看板英文名，如 Gossiping' },
+          before: { type: 'number', description: '只列編號小於它的文章（翻更舊的頁），用上次的 nextBefore' },
           timeoutMs: { type: 'number', description: '上限，預設 30000' },
         },
         required: ['board'],
@@ -252,18 +255,26 @@ export function createAgentTools(core, opts = {}) {
       execute: async (args) => {
         const board = String((args && args.board) || '').trim();
         if (!/^[0-9A-Za-z_-]+$/.test(board)) throw new Error('board 必須是看板英文名');
+        const hasBefore = args && args.before != null;
+        const before = hasBefore ? Number(args.before) : null;
+        if (hasBefore && !(Number.isInteger(before) && before > 1)) throw new Error('before 必須是大於 1 的文章編號');
         assertReady();
         const nav = core.aidNavigation;
-        await runNav((cb) => nav.startBoard(board, { end: true }, cb), (args && args.timeoutMs) || 30000);
+        // 更舊的頁：跳到 before-1 那篇（停在列表、不開），畫面就是它所在的那一頁。
+        const opts = hasBefore ? { num: before - 1 } : { end: true };
+        await runNav((cb) => nav.startBoard(board, opts, cb), (args && args.timeoutMs) || 30000);
         const entries = listEntriesFromScreen(screenRows(core.buf));
         const strip = ({ cursor, ...e }) => e;
+        const articles = entries
+          .filter((e) => !e.pinned && e.num != null && (!hasBefore || e.num < before))
+          .sort((a, b) => b.num - a.num)
+          .map(strip);
+        const oldest = articles.length ? articles[articles.length - 1].num : null;
         return {
           board,
-          articles: entries
-            .filter((e) => !e.pinned && e.num != null)
-            .sort((a, b) => b.num - a.num)
-            .map(strip),
-          pinned: entries.filter((e) => e.pinned).map(strip),
+          articles,
+          pinned: hasBefore ? [] : entries.filter((e) => e.pinned).map(strip).map((e, index) => ({ ...e, index })),
+          nextBefore: oldest != null && oldest > 1 ? oldest : null,
         };
       },
     },
@@ -271,7 +282,8 @@ export function createAgentTools(core, opts = {}) {
       name: 'ptt_read_article',
       description:
         '讀取一篇 PTT 文章的全文（自動翻完所有頁）。用 board＋num（ptt_list_articles 的編號）' +
-        '或 board＋aid（文章代碼，如 1gIeu-3A）指定。回傳 author、title、time、content（內文）、' +
+        '或 board＋aid（文章代碼，如 1gIeu-3A）或 board＋pinned（置底文，ptt_list_articles 的 pinned[].index）' +
+        '指定。回傳 author、title、time、content（內文）、' +
         'comments（推文：type 推/噓/→、user、content、time）、aid、url、complete（是否讀到結尾）。',
       inputSchema: {
         type: 'object',
@@ -279,6 +291,7 @@ export function createAgentTools(core, opts = {}) {
           board: { type: 'string', description: '看板英文名' },
           num: { type: 'number', description: '文章編號（ptt_list_articles 的 num）' },
           aid: { type: 'string', description: '文章代碼，可含開頭的 #' },
+          pinned: { type: 'number', description: '置底文序號（ptt_list_articles 的 pinned[].index，從 0 起）' },
           timeoutMs: { type: 'number', description: '讀全文的上限，預設 60000' },
         },
         required: ['board'],
@@ -287,17 +300,25 @@ export function createAgentTools(core, opts = {}) {
         const board = String((args && args.board) || '').trim();
         const aid = String((args && args.aid) || '').trim().replace(/^#/, '');
         const num = Number(args && args.num);
+        const hasPinned = args && args.pinned != null;
+        const pinned = hasPinned ? Number(args.pinned) : null;
         if (!/^[0-9A-Za-z_-]+$/.test(board)) throw new Error('board 必須是看板英文名');
-        if (!aid && !(num > 0)) throw new Error('num 或 aid 必須擇一');
+        if (hasPinned && !(Number.isInteger(pinned) && pinned >= 0)) throw new Error('pinned 必須是 0 起的整數');
+        if (!aid && !(num > 0) && !hasPinned) throw new Error('num、aid、pinned 必須擇一');
         assertReady();
         const nav = core.aidNavigation;
         await runNav(
-          (cb) => (aid ? nav.startExternal(aid, board, cb) : nav.startNum(board, num, cb)),
+          (cb) =>
+            aid
+              ? nav.startExternal(aid, board, cb)
+              : hasPinned
+                ? nav.startPinned(board, pinned, cb)
+                : nav.startNum(board, num, cb),
           30000
         );
         const { lines, complete } = await collectArticle((args && args.timeoutMs) || 60000);
         const found = findArticleUrl(lines, board);
-        return Object.assign({ board, num: aid ? null : num }, parseArticleLines(lines), {
+        return Object.assign({ board, num: aid || hasPinned ? null : num }, parseArticleLines(lines), {
           aid: found ? found.aid : aid || null,
           url: found ? found.url : null,
           complete,
