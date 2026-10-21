@@ -196,6 +196,11 @@ class MainActivity : ComponentActivity() {
             allowFileAccess = false
             // 不在畫面上時也保留已畫好的 tiles：切背景再回來不必整頁重新 raster（回前景黑畫面）。
             offscreenPreRaster = true
+            // 雙指縮放：WebView 預設 builtInZoomControls=false ⇒ 手勢被吞掉，viewport 沒鎖也放不大
+            //（Chrome 可以、APK 不行）。開內建縮放、隱藏 +/- 按鈕，行為才與 Chrome 一致（docs/mobile.md）。
+            setSupportZoom(true)
+            builtInZoomControls = true
+            displayZoomControls = false
             // target=_blank／window.open 要走 onCreateWindow 才接得住（見下方 openInExternalBrowser）。
             // 關掉多視窗時它們會改成「在本頁導航」：網頁的 beforeunload 先跑、跳出「離開這個網站？」，
             // 選離開就把 BBS 畫面換掉。
