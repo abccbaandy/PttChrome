@@ -49,7 +49,9 @@ import { classifyPushScreen, detectIpLogged } from "../../src/js/push_screen";
 import pushFlowFx from "./fixtures/ptt_src_screens/push_flow.json";
 import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
 import { pushGateFacts, shouldInterceptPushKey } from "../../src/js/long_push_gate";
-import { isSearchPromptFrame } from "../../src/js/article_search";
+import { isSearchPromptFrame, searchGateFacts } from "../../src/js/article_search";
+import { toolbarContextFromFacts } from "../../src/js/mobile_toolbar";
+import { refreshTargetFromFacts } from "../../src/js/screen_refresh";
 import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
 import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
@@ -226,6 +228,27 @@ describe("upstream pttbbs 產的 pmore prompt（pmore.c#pmore_do_goto、pmore_se
     expect(intercepts("search")).toBe(false);
     expect(intercepts("search-typed")).toBe(false);
     expect(intercepts("landed")).toBe(true);
+  });
+
+  test("手機工具列：prompt 開著時不給推／回文／到底／文章導覽（點了只會打進 prompt）", () => {
+    const ctx = (name) => {
+      const { buf } = at(name);
+      return toolbarContextFromFacts(searchGateFacts({ buf }), buf.pageState, {});
+    };
+    expect(ctx("article")).toMatchObject({ push: true, reply: true, end: true, threadNav: true });
+    for (const name of ["goto", "search", "search-typed"])
+      expect(ctx(name)).toMatchObject({ push: false, reply: false, end: false, threadNav: false, share: false });
+    expect(ctx("landed")).toMatchObject({ push: true, reply: true, end: true });
+  });
+
+  test("重新整理：prompt 開著時不重整（重開文章的鍵會打進 prompt）", () => {
+    const target = (name) => {
+      const { buf } = at(name);
+      return refreshTargetFromFacts(searchGateFacts({ buf }), buf.pageState, { articleBoard: "Test" });
+    };
+    expect(target("article")).toEqual({ kind: "article", board: "Test" });
+    for (const name of ["goto", "search", "search-typed"]) expect(target(name)).toBe(null);
+    expect(target("landed")).toEqual({ kind: "article", board: "Test" });
   });
 });
 
