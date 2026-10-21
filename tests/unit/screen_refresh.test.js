@@ -13,6 +13,7 @@ import {
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
 import { OWNER_ARTICLE_LIST } from "../../src/js/list_render_owner";
+import { SLOW_STEP_BUDGET } from "../../src/js/aid_navigation";
 
 const ROWS = 24;
 const frame = (rows, extra) => {
@@ -148,6 +149,9 @@ describe("送出序列", () => {
     expect(steps[1].expect(null, { kind: "clean-list", boardName: "Test" })).toBe(true);
     expect(steps[1].expect(null, { kind: "clean-list", boardName: "Other" })).toBe(false);
     expect(steps[1].expect(null, { kind: "prompt", boardName: "Test" })).toBe(false);
+    // 第二步是進板（enter_board 讀 .DIR）：預算同 AID 跳文的進板那一步。凍結交易預設的
+    // 250/600/1200 會讓伺服器靜默 850ms 就被判逾時。
+    expect(steps[1]).toMatchObject(SLOW_STEP_BUDGET);
   });
 
   test("看板列表：/ → 關鍵字 prompt → ⏎；熱門看板的拒絕訊息也接得住並回報 hot", () => {
@@ -221,6 +225,27 @@ describe("ScreenRefresh.refresh", () => {
     enqueued[1].onDone(true);
     expect(core.refreshInFlight).toBe(false);
     expect(hints).toContain("已重新整理");
+  });
+
+  // 列表好讀／看板列表接管中：凍結交易、落地即回（最後一步從 prompt 送出）。少了它就是
+  // 「切原生 → prompt 畫給使用者看 → 空等靜置探針 → 切回」（真 session 的整段在
+  // reading_record_list.test.js／reading_record_board_list.test.js）。
+  test.each([
+    ["文章列表", LIST, ["s", "Test\r"]],
+    ["看板列表", BRD, ["/", "\r"]],
+  ])("%s：交給接管中的 session，並要求落地即回", (_, rows, keys) => {
+    const { core, enqueued } = makeCore(rows);
+    const calls = [];
+    core.activeListSession = () => ({
+      state: "active",
+      _renderMode: "buffer",
+      _beginPassthroughBytes: (steps, opts) => calls.push({ steps, opts }),
+    });
+    expect(new ScreenRefresh(core).refresh("key")).toBe(true);
+    expect(enqueued).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].steps.map((s) => s.keys)).toEqual(keys);
+    expect(calls[0].opts.resumeOnLanding).toBe(true);
   });
 
   test("冷卻：5 秒內再按只得到提示、不送鍵；過了才再送", () => {

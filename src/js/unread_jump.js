@@ -1,7 +1,7 @@
 // 跳到第一篇未讀（桌機快捷鍵 pref unreadJumpKey，預設 F7；手機工具列「更多」）。
 // 設計與 pttbbs 讀碼依據見 docs/unread-jump.md。
 //
-// 流程（全程原生鍵，畫面照實反應）：End → 從最新往回讀這一頁的已讀標記 → 還沒到已讀區
+// 流程（全程原生鍵；列表好讀時畫面凍著、落地即回好讀）：End → 從最新往回讀這一頁的已讀標記 → 還沒到已讀區
 // 就 PgUp 再讀一頁 …… 最多 MAX_PGUP 次；找到就送 `<編號>⏎` 把游標停在那一篇。
 //
 // 「第一篇未讀」要**從新往舊**判斷：最新的文章是未讀、往上連續出現 READ_RUN 篇非未讀
@@ -29,7 +29,6 @@ export const MAX_PGUP = 20;
 
 const KEY_END = '\x1b[4~';
 const KEY_PGUP = '\x1b[5~';
-const STEP_TIMEOUT_MS = 3000;
 
 const UNREAD_MARKS = '+M';
 const NEUTRAL_MARKS = 'D!';
@@ -170,7 +169,6 @@ UnreadJump.prototype = {
       // 每一步都補 \f：PgUp 已經在第一頁、跳號目標就是游標所在列時 PTT 送零 byte，
       // 沒有 settle 就只能等逾時（list_session._enqueueCursorSyncJump 同一個理由）。
       step.fullRepaint = true;
-      step.timeoutMs = STEP_TIMEOUT_MS;
       step.onFail = function() {
         finish('fail');
         self._hint('跳到第一篇未讀失敗（已停在原生畫面）', 0, HINT_ERROR);
@@ -178,10 +176,15 @@ UnreadJump.prototype = {
       step.onFlushed = end;
       steps.push(step);
     };
-    const pageStep = function(keys, kind, landedFn) {
+    // trust ＝這一步的落點指紋能不能自證游標（列表好讀落地即回好讀的前提，見
+    // list_session._beginLandingTransaction）：End 的 endLanded 要求游標＝最後一列非空列，
+    // 舊游標能過就跟真落點同一列；PgUp 的 pageLanded 只看「在條目區」，做不到 ⇒ 它若是
+    // 最後一步（翻到上限放棄）就照舊交給靜置探針。
+    const pageStep = function(keys, kind, landedFn, trust) {
       push({
         keys: keys,
         kind: kind,
+        trustLanding: trust,
         expect: function(snap, facts) {
           if (!landedFn(facts)) return false;
           landed = facts;
@@ -199,7 +202,7 @@ UnreadJump.prototype = {
         // 第一步的 onDone 被 submitSerializedSteps 包過、會先解除旗標 ⇒ 接續時重新掛上
         //（同步執行，中間沒有使用者按鍵插得進來）。
         beginInFlight(core, UNREAD_JUMP_FLAG);
-        pageStep(KEY_PGUP, 'unread-pgup', pageLanded);
+        pageStep(KEY_PGUP, 'unread-pgup', pageLanded, false);
         return;
       }
       if (next.action === 'jump') {
@@ -221,8 +224,16 @@ UnreadJump.prototype = {
       if (next.action === 'none') self._hint('最新的文章都讀過了，沒有未讀');
       else self._hint('往上翻了 ' + MAX_PGUP + ' 頁仍找不到第一篇未讀，停在這裡');
     };
-    pageStep(KEY_END, 'unread-end', endLanded);
-    if (!submitSerializedSteps(core, steps, { kind: 'unread-jump', flag: UNREAD_JUMP_FLAG }))
+    pageStep(KEY_END, 'unread-end', endLanded, true);
+    // 列表好讀接管中：凍結交易，翻頁過程不畫給使用者看，跳號落地那一幀直接回好讀
+    // （跳號從「跳至第幾項」prompt 送出、numJumpLanded 要求游標列＝目標編號）。
+    if (
+      !submitSerializedSteps(core, steps, {
+        kind: 'unread-jump',
+        flag: UNREAD_JUMP_FLAG,
+        resumeOnLanding: true
+      })
+    )
       this._hint('指令處理中，請稍候再試');
     return true;
   }

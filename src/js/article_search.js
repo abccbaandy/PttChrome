@@ -17,6 +17,7 @@ import { listRenderOwnerOf, OWNER_ARTICLE_LIST } from './list_render_owner';
 import { rowHasTitle, MAIN_MENU } from './screen_titles';
 import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
+import { SLOW_STEP_BUDGET } from './aid_navigation';
 
 // 種類 → PTT 端的按鍵。`?` 與 `/` 是同一個指令（read.c:1430-1431），送出一律用 `/`。
 // `Z` 是推文數（大寫；小寫 z 是精華區，bbs.c:4406）。
@@ -173,6 +174,15 @@ export function buildSearchSteps(kind, text, cb) {
       // list_session._beginTextPassthrough）。
       keys: ansiHalfColorConv(u2b(value)) + '\r',
       kind: 'search-submit',
+      // 搜尋要等 server 的搜尋服務（read.c#select_read → search_predicates_window）、
+      // 看板搜尋是進板 ⇒ 不是一般按鍵的回應速度。
+      ...SLOW_STEP_BUDGET,
+      // 落地＝prompt 消失：結果列表（NEWDIRECT）、找不到的 vmsg、進板都會蓋掉它
+      // （getdata／namecomplete 收到 Enter 一定返回，name.c#nc_cb_peek）。打字回顯的
+      // 那一幀 prompt 還在，不能當落地——列表好讀的落地即回好讀就是拿這一幀判落點。
+      expect: function(snapshot, facts) {
+        return !isSearchPromptFrame(kind, facts || {});
+      },
       onDone: c.onDone
     }
   ];
@@ -250,7 +260,10 @@ export function submitSearch(core, kind, text, cb) {
   });
   if (!built || !core) return false;
   bm = recordFor(core).begin(kind === 'board' ? 'board-search' : 'article-search');
-  if (submitSerializedSteps(core, built, { kind: 'search' })) return true;
+  // 列表好讀接管中：凍結交易、結果列表一落地就回好讀（最後一步從 prompt 送出，
+  // 見 list_session._beginLandingTransaction）。認不出（找不到的 vmsg、進板畫面）
+  // 照舊停在原生鏡像。
+  if (submitSerializedSteps(core, built, { kind: 'search', resumeOnLanding: true })) return true;
   bm = null;
   return false;
 }
@@ -290,6 +303,10 @@ export function submitSerializedSteps(core, built, opts) {
       kind: step.kind,
       // 預設只有第一步補 \f；步驟自己指定時照它（unread_jump 每一步都要）。
       fullRepaint: 'fullRepaint' in step ? step.fullRepaint : i === 0,
+      // 步驟自帶的預算（沒給＝佇列預設）。
+      timeoutMs: step.timeoutMs,
+      probeTimeoutMs: step.probeTimeoutMs,
+      hardTimeoutMs: step.hardTimeoutMs,
       expect:
         step.expect ||
         function() {

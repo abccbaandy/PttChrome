@@ -244,7 +244,15 @@ const STEP_HARD_MS = 3000; // absolute cap from send (never re-armed)
 // The board jump is heavier than the rest: the server opens the board's .DIR and
 // may paint a whole 進板畫面 before anything comes back. One notch more slack.
 export const BOARD_PROBE_AFTER_MS = 1500;
-const BOARD_HARD_MS = 5000;
+export const BOARD_HARD_MS = 5000;
+// 同一組預算給其他「伺服器要做事才回得來」的一步（列表重新整理的 s<本板>⏎、
+// 搜尋送出：search_predicates_window 要等搜尋服務）。凍結交易預設的 250/600/1200
+// 對它們太短：伺服器靜默 850ms 就會被判逾時。
+export const SLOW_STEP_BUDGET = {
+  timeoutMs: BOARD_PROBE_AFTER_MS,
+  probeTimeoutMs: STEP_PROBE_WINDOW_MS,
+  hardTimeoutMs: BOARD_HARD_MS
+};
 // Progress banner lifetime. Sized to the worst-case run above (~9s) so it never
 // outlives the transaction it describes; success/failure replaces it anyway.
 const PROGRESS_HINT_MS = 8000;

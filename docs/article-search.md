@@ -36,7 +36,7 @@
 ## 送出（`submitSearch`）
 
 兩步，第二步只在第一步 `expect`（prompt 幀）成立後才排；prompt 沒出現 ⇒ `onFail`，關鍵字**絕不送**（字母會落回列表按鍵）。
-- `activeListSession()` 有值 ⇒ `session._beginPassthroughBytes(steps, {kind:'search'})`（cursor sync 腿＋進原生鏡像；看板列表 session 2026-10 起也收陣列，kind 自動帶 `brd-` 前綴＝佇列所有權）。session `opening`／`functionMode+frozen` ⇒ 回 false，呼叫端提示。
+- `activeListSession()` 有值 ⇒ `session._beginPassthroughBytes(steps, {kind:'search', resumeOnLanding:true})`（列表好讀：凍結交易＋cursor sync 腿，結果列表一落地就回好讀，找不到的 vmsg／進板畫面認不出 ⇒ 停原生鏡像交給探針，見 `docs/easy-reading-list.md`「落地即回好讀」；看板列表 session 2026-10 起也收陣列，kind 自動帶 `brd-` 前綴＝佇列所有權）。第二步的落地＝prompt 消失（打字回顯那一幀 prompt 還在，不算），預算 `aid_navigation.SLOW_STEP_BUDGET`（要等 server 的搜尋服務／進板）。session `opening`／`functionMode+frozen` ⇒ 回 false，呼叫端提示。
 - 否則直接 `commandQueue.enqueue`（`list_session._onScreenSettled` 驅動 onSettle）。
 - 關鍵字 `ansiHalfColorConv(u2b(text))`（queue 綁 raw `conn.send`）。
 - **在途閘門 `core.searchInFlight`**（`serialized_op_gate` 讀，期間吞鍵＋提示「搜尋中」）：少了它，搜尋鍵已上線、prompt 未到時按的 Enter 會把空 prompt 送出（＝取消），關鍵字落到列表變指令（live 錄製檔實證）。解除＝第二步 onDone／任一步 onFail／onFlushed（兩個 session 的 `_enqueuePassthroughStep` 都轉送 `onFlushed`）＋保底 `SEARCH_INFLIGHT_MAX_MS`。e2e 等搜尋完成一律等它（`core.spec.js#gotoLatestThread`），不可只看「列表＋游標不在輸入欄」。

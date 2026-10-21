@@ -32,7 +32,7 @@ import {
   searchGateFacts,
   submitSerializedSteps
 } from './article_search';
-import { landedOnBoard } from './aid_navigation';
+import { landedOnBoard, SLOW_STEP_BUDGET } from './aid_navigation';
 import { serializedOpHint } from './serialized_op_gate';
 import { readValuesWithDefault } from './pref_storage';
 import { HINT_ERROR } from './status_hint';
@@ -105,7 +105,7 @@ export function refreshCooldownLeftMs(lastAt, now, minSec) {
 
 // 文章列表：s → 等 CompleteBoard prompt → 板名⏎ → 等落回同板的乾淨列表。
 // 分兩步的理由同 article_search.buildSearchSteps：s 沒被接受時，板名的每個字母都會
-// 落回列表變成指令。
+// 落回列表變成指令。第二步是進板（enter_board 讀 .DIR），預算同 AID 跳文的進板那一步。
 export function buildArticleListRefreshSteps(board, cb) {
   const c = cb || {};
   const boardLower = String(board).toLowerCase();
@@ -121,7 +121,7 @@ export function buildArticleListRefreshSteps(board, cb) {
     {
       keys: board + '\r',
       kind: 'refresh-submit',
-      timeoutMs: 5000,
+      ...SLOW_STEP_BUDGET,
       expect: function(snapshot, facts) {
         return landedOnBoard(facts, boardLower);
       },
@@ -305,7 +305,16 @@ ScreenRefresh.prototype = {
             },
             onFail: fail
           });
-    if (submitSerializedSteps(core, steps, { kind: 'refresh', flag: 'refreshInFlight' }))
+    // 列表好讀／看板列表接管中走凍結交易、落地即回（resumeOnLanding）：兩條的最後一步
+    // 都從 prompt 送出（CompleteBoard／關鍵字 prompt），落點是重畫完的列表。少了它就是
+    // 「切原生 → prompt 畫給使用者看 → 空等靜置探針 → 切回」，畫面翻面兩次。
+    if (
+      submitSerializedSteps(core, steps, {
+        kind: 'refresh',
+        flag: 'refreshInFlight',
+        resumeOnLanding: true
+      })
+    )
       return true;
     this._hint('指令處理中，請稍候再重新整理');
     return false;

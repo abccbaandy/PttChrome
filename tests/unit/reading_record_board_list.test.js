@@ -47,10 +47,14 @@ function makeSession() {
   let s = null;
   // 落地頁：21..40（PTT 的 20 列分頁），游標停在 25（curY = 3 + 4）。
   let landing = [21, 40];
+  // 原生鏡像才會把終端機游標叫出來（_enterNative）⇒ 計數＝翻到原生的次數。
+  const native = { shown: 0 };
   const view = {
     chh: ROW_H,
     hideCursor() {},
-    showCursor() {},
+    showCursor() {
+      native.shown++;
+    },
     resetBoardListAccumulation() {},
     flashListHint() {},
     promptListInput: null,
@@ -133,6 +137,7 @@ function makeSession() {
     termBuf,
     enqueued,
     scrollWrites,
+    native,
     setLanding: (a, b) => (landing = [a, b]),
   };
 }
@@ -267,5 +272,52 @@ describe("看板列表重新整理：回平滑捲動時視野回到原處", () =
     recordFor(h.core).releaseExternal();
     vi.advanceTimersByTime(400);
     expect(h.s.state).toBe("active");
+  });
+});
+
+// 同「前已讀後未讀」那條優化（錄製檔 ptt-debug-20261020-161646）：`/` → ⏎ 兩步早就
+// 做完，舊流程卻是「切原生（關鍵字 prompt 畫給使用者看）→ 空等靜置探針 → seed 回來」，
+// 畫面翻面兩次。改走凍結交易，落地那一幀就 seed（board_list_session._beginLandingTransaction）。
+// 不推進計時器就斷言：等探針的舊行為在這裡必紅。
+describe("看板列表重新整理：落地即回平滑捲動（不切原生、不等探針）", () => {
+  function refreshToLanding(h) {
+    const sr = new ScreenRefresh(h.core);
+    expect(sr._dispatch({ kind: "board-list" })).toBe(true);
+    expect(h.s._renderMode).toBe("frozen");
+    step(h, "refresh-open").onDone(true);
+    expect(h.s._renderMode).toBe("frozen"); // 關鍵字 prompt 沒畫給使用者看
+    return step(h, "refresh-submit");
+  }
+
+  test("落地當下回平滑捲動，全程沒切原生；視野回原處", () => {
+    const h = makeSession();
+    const submit = refreshToLanding(h);
+    expect(submit.expect(null, h.s._collectFacts(null))).toBe(true);
+    submit.onDone(true);
+    expect(h.s.state).toBe("active");
+    expect(h.s._renderMode).toBe("buffer");
+    expect(h.native.shown).toBe(0);
+    expect(h.s._pendingViewport).not.toBe(null);
+    fillBuffer(h.termBuf, 1, 40);
+    h.s._seqCache = null;
+    h.s.applyScrollAfterRender();
+    expect(h.s._topNum).toBe(10);
+  });
+
+  test("PTT 沒回應（onFail）⇒ 不留在凍結畫面，切原生鏡像交給探針", () => {
+    const h = makeSession();
+    refreshToLanding(h).onFail("timeout");
+    expect(h.s._renderMode).toBe("native");
+    expect(h.s._holdReason).toBe("passthrough");
+  });
+
+  test("pref 自動回復關掉 ⇒ 舊行為：一開始就切原生鏡像", () => {
+    const h = makeSession();
+    window.localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({ values: { enableBoardListSmoothScroll: true, enableListNativeAutoResume: false } })
+    );
+    new ScreenRefresh(h.core)._dispatch({ kind: "board-list" });
+    expect(h.s._renderMode).toBe("native");
   });
 });
