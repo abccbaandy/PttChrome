@@ -1622,7 +1622,10 @@ body.mobile-layout {
 
 /* 讀完接著讀下一篇（js/next_article.js）：好讀文末、最後一則推文下面的標題卡。住在 .main
    （捲動容器）裡 #screenRoot 後面，跟著文末一起捲。中性灰、不搶推文區的顏色（推文區已經
-   有原PO藍、自己綠、樓層黃）。字級用 em 跟著終端機字級走。 */
+   有原PO藍、自己綠、樓層黃）。字級用 em 跟著終端機字級走。
+   上下 margin 吃 next_article.js#_layout 量的兩個變數：--next-pull-up（累積頁尾端的空白列＋
+   footer／推文列的保留空白，卡片往上蓋住它，接在最後一列內容下面）、--next-bottom-inset
+   （疊在 .main 下緣的好讀 footer＋底部推文列，捲到底時卡片在它們上面）。還沒量 ⇒ 舊位置。 */
 #nextArticleCard {
   position: relative;
   overflow: hidden;
@@ -1632,7 +1635,7 @@ body.mobile-layout {
   gap: 0.25em;
   box-sizing: border-box;
   width: calc(100% - 2ch);
-  margin: 2.5em 1ch 3em;
+  margin: calc(2.5em - var(--next-pull-up, 0px)) 1ch calc(1.5em + var(--next-bottom-inset, 1.5em));
   padding: 0.6em 0.8em;
   font-size: 0.7em;
   line-height: 1.35;

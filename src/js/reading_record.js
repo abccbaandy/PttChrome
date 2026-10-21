@@ -38,11 +38,12 @@ const NONE = { article: 'none', list: 'none', boardList: 'none', home: 'none' };
 
 // 好讀文末那張「下一篇」標題卡（next_article.js）佔掉的捲動高度（含上下 margin）；沒顯示
 // ⇒ 0。「捲到文末了沒」要扣掉它：讀者停在最後一則推文、卡片還在視窗下面，也算在文末。
+// 卡片的上 margin 可以是負的（往上蓋住文末的空白列）：整張縮進空白裡就不佔捲動高度 ⇒ 0。
 export function trailingPx(view) {
   const el = view && view.nextArticleCard;
   if (!el || el.hidden || typeof window === 'undefined' || !window.getComputedStyle) return 0;
   const cs = window.getComputedStyle(el);
-  return el.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+  return Math.max(0, el.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0));
 }
 
 function cell(article, list, boardList, home) {

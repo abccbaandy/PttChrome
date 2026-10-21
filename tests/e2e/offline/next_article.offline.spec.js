@@ -74,28 +74,51 @@ async function drawList(page, cursorIndex, { sub = false, pinned = false } = {})
 }
 
 // 文章第一頁（標頭讓 term_view 認出看板／作者／標題；100% ⇒ 好讀一頁就讀到文末、線路是閒的）。
-async function drawArticle(page, entry) {
-  await onData(
-    page,
-    {
-      0: '作者  ' + entry.author + ' (暱稱) 看板 Test',
-      1: '標題  ' + entry.title,
-      2: '時間  Mon Sep  1 12:00:00 2025',
-      4: '內文第一行',
-      23: '  瀏覽 第 1/1 頁 (100%)  目前顯示: 第 01~05 行  (y)回應(X%)推文(h)說明(←)離開 ',
-    },
-    23,
-    80
-  );
+// 預設只有一行內文：pmore 把文章後面剩下的列畫成空白（推文很少的文章就是這樣）。full：內文
+// 填滿整頁（卡片在視窗外，要捲到底才看得到）。
+async function drawArticle(page, entry, { full = false } = {}) {
+  const map = {
+    0: '作者  ' + entry.author + ' (暱稱) 看板 Test',
+    1: '標題  ' + entry.title,
+    2: '時間  Mon Sep  1 12:00:00 2025',
+    4: '內文第一行',
+    23: '  瀏覽 第 1/1 頁 (100%)  目前顯示: 第 01~' + (full ? 23 : '05') + ' 行  (y)回應(X%)推文(h)說明(←)離開 ',
+  };
+  if (full) for (let r = 5; r < 23; r++) map[r] = '內文第 ' + (r - 3) + ' 行';
+  await onData(page, map, 23, 80);
   await waitScreenSettled(page, { 0: '作者', 23: '瀏覽' });
+}
+
+// 最後一列有內容的列的下緣（卡片的頂端要在它下面：不蓋字）。
+async function lastTextBottom(page, text) {
+  const r = await page
+    .locator('#mainContainer span[type="bbsrow"]', { hasText: text })
+    .last()
+    .evaluate((el) => el.getBoundingClientRect());
+  return r.top + r.height;
+}
+
+async function scrollToEnd(page) {
+  await page.evaluate(() => {
+    const m = document.querySelector('.main');
+    m.scrollTop = m.scrollHeight;
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const m = document.querySelector('.main');
+        return m.scrollTop + m.clientHeight >= m.scrollHeight - 1;
+      })
+    )
+    .toBe(true);
 }
 
 const card = (page) => page.locator('#nextArticleCard');
 const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
-async function boot(page, prefs) {
+async function boot(page, prefs, { commentBar = false } = {}) {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await bootOffline(page, ptt, { nextArticle: true });
+  await bootOffline(page, ptt, { nextArticle: true, commentBar });
   // 好讀列表會自己補頁、改送鍵：這裡只測文末的卡片，用原生列表。
   await ptt.applyPrefs(page, Object.assign({ enableEasyReadingList: false }, prefs || {}));
   await page.evaluate(() => window.__app.setInputAreaFocus());
@@ -115,15 +138,46 @@ test.describe('讀完接著讀下一篇', () => {
     await expect(card(page)).toBeVisible();
     await expect(card(page)).toContainText(ENTRIES[5].title);
     await expect(card(page)).toContainText(ENTRIES[5].author);
-    // 排在文末之後：卡片頂端在最後一列（#mainContainer）底下，而且在捲動容器裡。
+    // 排在文末之後：卡片頂端在最後一列內容底下（蓋住的只有 PTT 補的空白列），而且在捲動容器裡。
     const cardBox = await waitRectStable(page, '#nextArticleCard');
-    const textBox = await waitRectStable(page, '#mainContainer');
-    expect(cardBox.top).toBeGreaterThanOrEqual(textBox.top + textBox.height);
+    expect(cardBox.top).toBeGreaterThanOrEqual(await lastTextBottom(page, '內文第一行'));
     expect(await card(page).evaluate((el) => el.parentElement.classList.contains('main'))).toBe(true);
     await expect(page.locator('#t')).toBeFocused();
     // 回列表 ⇒ 收起。
     await drawList(page, 4);
     await expect(card(page)).toBeHidden();
+  });
+
+  // 錄製檔 ptt-debug-20261021-171601：推文很少的文章，卡片排在 PTT 補的空白列後面，要捲一段
+  // 才看得到；捲下去之後底部推文列又壓在卡片上。
+  test('推文列開著、推文很少 ⇒ 不用捲就看到整張卡片，推文列不蓋卡片', async ({ page }) => {
+    await boot(page, {}, { commentBar: true });
+    await openFromList(page, 4);
+    await expect(card(page)).toBeVisible();
+    await expect(page.locator('#commentBar')).toBeVisible();
+    const cardBox = await waitRectStable(page, '#nextArticleCard');
+    const barBox = await waitRectStable(page, '#commentBar');
+    expect(await page.evaluate(() => document.querySelector('.main').scrollTop)).toBe(0);
+    expect(cardBox.top + cardBox.height).toBeLessThanOrEqual(barBox.top);
+    expect(cardBox.top).toBeGreaterThanOrEqual(await lastTextBottom(page, '內文第一行'));
+  });
+
+  test('推文列開著、長文章捲到底 ⇒ 卡片在推文列上面，點得到', async ({ page }) => {
+    await boot(page, {}, { commentBar: true });
+    await drawList(page, 4);
+    await drawArticle(page, ENTRIES[4], { full: true });
+    await expect(card(page)).toBeVisible();
+    await scrollToEnd(page);
+    const cardBox = await waitRectStable(page, '#nextArticleCard');
+    const barBox = await waitRectStable(page, '#commentBar');
+    expect(cardBox.top + cardBox.height).toBeLessThanOrEqual(barBox.top);
+    expect(cardBox.top).toBeGreaterThanOrEqual(await lastTextBottom(page, '內文第 19 行'));
+    expect(
+      await elementUnder(page, cardBox.left + cardBox.width / 2, cardBox.top + cardBox.height - 2, {
+        closest: '#nextArticleCard',
+        attribute: 'id',
+      })
+    ).toBe('nextArticleCard');
   });
 
   test('點卡片 ⇒ 走 s<板>⏎（startNum 的第一步），不變成點終端機、不搶焦點', async ({ page }) => {
@@ -228,18 +282,7 @@ test.describe('讀完接著讀下一篇', () => {
     const box = await waitRectStable(page, '.main');
     await page.mouse.move(box.left + box.width / 2, box.top + box.height / 2);
     // 讀到最底（卡片也進到視窗裡）。
-    await page.evaluate(() => {
-      const m = document.querySelector('.main');
-      m.scrollTop = m.scrollHeight;
-    });
-    await expect
-      .poll(() =>
-        page.evaluate(() => {
-          const m = document.querySelector('.main');
-          return m.scrollTop + m.clientHeight >= m.scrollHeight - 1;
-        })
-      )
-      .toBe(true);
+    await scrollToEnd(page);
     await startCapture(page);
     await page.mouse.wheel(0, 100);
     await expect(card(page)).toHaveAttribute('data-pull', 'wheel');

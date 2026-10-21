@@ -29,6 +29,8 @@ import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
+import { COMMENT_BAR_HEIGHT } from './comment_bar';
+import { CHUNK_CLASS } from '../render/screen_chunk';
 
 export const NEXT_ARTICLE_ID = 'nextArticleCard';
 export const NEXT_ARTICLE_VEIL_ID = 'nextArticleVeil';
@@ -118,6 +120,40 @@ export function mergeSubSnapshot(prev, page) {
   return mergeSnapshot(prev, page);
 }
 
+// ---------------------------------------------------------------------------
+// 卡片的位置（tests/unit/next_article_layout.test.js）
+// ---------------------------------------------------------------------------
+
+// 空白列：row.js 的外層 bbsrow，只有空白字、沒有圖、色段全是預設底色（b0）。有底色的空白
+// （色塊、分隔帶）是內容。
+const BG_CLASS = /^b\d/;
+const MEDIA = 'img, video, iframe, canvas, svg, picture';
+function isBlankRow(el) {
+  if (el.tagName !== 'SPAN' || el.getAttribute('type') !== 'bbsrow' || /\S/.test(el.textContent)) return false;
+  if (el.querySelector(MEDIA)) return false;
+  for (const d of el.querySelectorAll('[class]'))
+    for (const c of d.classList) if (BG_CLASS.test(c) && c !== 'b0') return false;
+  return true;
+}
+
+// 好讀累積頁尾端的空白有多高：最後一個有內容的節點（列、合併推文塊、預覽…）的下緣量到
+// #mainContainer 的下緣。這段包含 PTT 畫面補的空白列（文章不滿一頁時 pmore 把後面的列畫成
+// 空白）、給好讀 footer 的 paddingBottom、給底部推文列的 ::after。卡片往上蓋住這一段 ⇒
+// 推文少的文章不用捲就看得到卡片。量的是畫出來的版面，所以讀 DOM（不是讀畫面文字）。
+export function trailingBlankPx(container) {
+  if (!container || typeof container.getBoundingClientRect !== 'function') return 0;
+  const bottom = container.getBoundingClientRect().bottom;
+  for (let n = container.lastElementChild; n; n = n.previousElementSibling) {
+    const nodes = n.classList.contains(CHUNK_CLASS) ? n.children : [n];
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const el = nodes[i];
+      if (isBlankRow(el) || !el.getClientRects().length) continue;
+      return Math.max(0, bottom - el.getBoundingClientRect().bottom);
+    }
+  }
+  return 0;
+}
+
 function enabled() {
   return !!readEffectivePrefs().enableNextArticleCard;
 }
@@ -139,6 +175,7 @@ export function NextArticle(core) {
   this._veil = null; // 遮罩 DOM（第一次換文時才建）
   this._veilWait = null; // 換文成功、等新文章畫出來再拿掉遮罩：{ timer }
   this._veilFade = null; // 淡出中的 timer
+  this._layoutRaf = 0; // _scheduleLayout
   // entry：下一篇；null 而 visible ⇒ 終點卡，end＝'last'（列表到底）｜'unknown'（下一篇沒看過）。
   // pull／progress：往下拉的進度（pull_next_article.js），pull＝null｜'pull'｜'armed'（手機
   // 觸控）｜'wheel'（桌機滾輪），progress＝0..1；只改卡片的字與進度條。
@@ -221,6 +258,7 @@ NextArticle.prototype = {
     const buf = core.buf;
     if (!buf || typeof buf.getRowText !== 'function') return;
     this._maybeReleaseVeil();
+    this._scheduleLayout();
     if (!enabled()) {
       this._hide();
       return;
@@ -503,7 +541,51 @@ NextArticle.prototype = {
     // reading_record 量「捲到文末了沒」要扣掉這張卡（trailingPx）。
     view.nextArticleCard = el;
     this._el = el;
+    // 版面跟著變：累積頁長高變矮（補頁、預覽載入、字級）、推文列出現收起（它的 ::after 由
+    // React effect 晚一步加上，靠 ResizeObserver 接）。
+    const mc = this._mainContainer();
+    if (mc && typeof ResizeObserver === 'function') new ResizeObserver(() => self._layout()).observe(mc);
+    const bar = this._core.commentBar;
+    if (bar && typeof bar.onChange === 'function') bar.onChange(() => self._layout());
     return el;
+  },
+
+  _mainContainer: function() {
+    const view = this._core.view || {};
+    if (view.mainContainer) return view.mainContainer;
+    const main = view.mainDisplay;
+    return main && typeof main.querySelector === 'function' ? main.querySelector('#mainContainer') : null;
+  },
+
+  // 卡片的上下 margin 由 CSS 算（main.css #nextArticleCard），這裡只量兩個事實寫成 CSS 變數：
+  //   --next-pull-up       累積頁尾端的空白（trailingBlankPx）：卡片往上蓋住它，接在最後一列
+  //                        內容下面，推文少的文章不用捲就看得到；
+  //   --next-bottom-inset  疊在 .main 下緣的 fixed 層（好讀 footer＋底部推文列）：捲到底時
+  //                        卡片要在它們上面，不被蓋住。
+  _layout: function() {
+    const el = this._el;
+    if (!el || el.hidden || typeof window === 'undefined') return;
+    const core = this._core;
+    const view = core.view || {};
+    let inset = 0;
+    const footer = view.lastRowDiv;
+    if (footer && typeof footer.getBoundingClientRect === 'function' && window.getComputedStyle(footer).display !== 'none')
+      inset += footer.getBoundingClientRect().height;
+    const bar = core.commentBar;
+    if (bar && bar.state && bar.state.visible) inset += COMMENT_BAR_HEIGHT;
+    el.style.setProperty('--next-pull-up', Math.round(trailingBlankPx(this._mainContainer())) + 'px');
+    el.style.setProperty('--next-bottom-inset', Math.round(inset) + 'px');
+  },
+
+  // settle 之後列的內容可能變了而高度沒變（一頁的文章多了一則推文，填掉一列空白）⇒
+  // ResizeObserver 不會叫，等這一幀畫完再量一次。
+  _scheduleLayout: function() {
+    if (this._layoutRaf || !this._el || typeof requestAnimationFrame !== 'function') return;
+    const self = this;
+    this._layoutRaf = requestAnimationFrame(function() {
+      self._layoutRaf = 0;
+      self._layout();
+    });
   },
 
   _render: function() {
@@ -528,6 +610,7 @@ NextArticle.prototype = {
       title.textContent = i18n(st.end === 'last' ? 'next_article_last' : 'next_article_unknown');
       meta.textContent = i18n(st.end === 'last' ? 'next_article_last_meta' : 'next_article_unknown_meta');
       el.hidden = false;
+      this._layout();
       return;
     }
     el.removeAttribute('data-end');
@@ -554,6 +637,7 @@ NextArticle.prototype = {
     if (st.pending) el.setAttribute('data-pending', '');
     else el.removeAttribute('data-pending');
     el.hidden = false;
+    this._layout();
   }
 };
 
