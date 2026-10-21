@@ -2,7 +2,7 @@
 // 留在一份清單裡，鈴鐺（components/MessageInbox）打開來看。設計見 docs/message-inbox.md。
 //
 // - 收只看收到的資料、一個 byte 都不送；認不出的格式 ⇒ 不收（畫面照原生顯示）。唯一會
-//   送的是使用者點「回覆」時的一下 Ctrl+R（見 reply）。
+//   送的是使用者點「回覆」時的 Ctrl+R（見 reply；回別人時會再按幾下換對象，waterball_reply.js）。
 // - 只放記憶體、跟著連線走：斷線清空（App.onClose），不寫 localStorage、不上雲。
 // - 解析：string_util.parseWaterball 的同一組格式（wmsg.c 的水球列、doupdate 的廣播列），
 //   但收件匣**每個 chunk 都解析**（失焦通知那條只在 !appFocused 時跑）。WebSocket 會在
@@ -15,6 +15,7 @@ import { readEffectivePrefs } from './pref_storage';
 import { parseBoardName, parseHeaderTitle } from './screen_titles';
 import { NEW_MAIL_MARK } from './mobile_app_bar';
 import { i18n } from './i18n';
+import { startWaterballReply } from './waterball_reply';
 
 export const MESSAGE_INBOX_ID = 'messageInbox';
 export const INBOX_LIMIT = 100;
@@ -201,26 +202,40 @@ MessageInbox.prototype = {
   },
 
   // 點一則水球直接回覆：送的就是使用者自己會按的 Ctrl+R（view.sendKeyAsUser，跟真鍵盤
-  // 同一條、同一組序列化閘門），之後的回覆畫面全是 PTT 原生的。只有「最新一位寄件人」
-  // 的水球能這樣回：pttbbs wmsg.c 兩種水球模式的第一下 ^R 都指向他（一般模式回最後一則
-  // 的寄件人；一對一模式 ofo_my_write 預設選 swater[0]，swater_get_slot 每收一則就把寄件人
-  // 提到 [0]）。要回別人得在原生畫面裡換人，鍵位依模式不同，認不出就不代按。
-  // 回傳有沒有送出。
+  // 同一條、同一組序列化閘門），之後的回覆畫面全是 PTT 原生的。pttbbs wmsg.c 兩種水球模式
+  // 的第一下 ^R 都指向「最新一位寄件人」（一般模式回最後一則的寄件人；一對一模式
+  // ofo_my_write 預設選 swater[0]，swater_get_slot 每收一則就把寄件人提到 [0]）⇒ 回他只按一下。
+  // 回別人：在原生回覆畫面裡再按 ^R 換到他為止，每一下都要從畫面認出模式與目前的對象，
+  // 認不出就停手（waterball_reply.js）。回傳有沒有開始。
   canReply: function(item) {
-    return !!item && item.kind === 'waterball' && item.from === latestSender(this._state.items);
+    return !!item && item.kind === 'waterball' && !!item.from;
   },
 
   reply: function(item) {
     if (!this.canReply(item)) return false;
-    const view = this._core.view;
+    const core = this._core;
+    const view = core.view;
     if (!view || typeof view.sendKeyAsUser !== 'function') return false;
     this.setOpen(false);
-    view.sendKeyAsUser('r', { ctrlKey: true });
+    const latest = latestSender(this._state.items);
+    if (item.from === latest) {
+      view.sendKeyAsUser('r', { ctrlKey: true });
+      return true;
+    }
+    if (!core.buf || typeof core.buf.addEventListener !== 'function') return false;
+    if (this._cancelReply) this._cancelReply();
+    const self = this;
+    this._cancelReply = startWaterballReply(core, item.from, latest, {
+      onEnd: function() {
+        self._cancelReply = null;
+      }
+    });
     return true;
   },
 
   // App.onClose：收件匣跟著連線走。
   reset: function() {
+    if (this._cancelReply) this._cancelReply();
     this._carry = '';
     this._mail = false;
     this.clear();

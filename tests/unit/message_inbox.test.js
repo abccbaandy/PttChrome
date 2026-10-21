@@ -107,18 +107,45 @@ describe("回覆（只代按使用者自己會按的 Ctrl+R）", () => {
     expect(inbox.state.open).toBe(false);
   });
 
-  test("不是最新一位寄件人、廣播：不代按（第一下 ^R 指的不是他）", () => {
+  test("廣播不能回；不是最新一位的寄件人也能回（換人交給 waterball_reply）", () => {
     const { inbox, sent } = make();
     inbox.noteData(wire("aaa", "一"));
     inbox.noteData(broadcast("系統訊息"));
     inbox.noteData(wire("bbb", "二"));
     const aaa = inbox.state.items.find((i) => i.from === "aaa");
     const sys = inbox.state.items.find((i) => i.kind === "broadcast");
-    expect(inbox.canReply(aaa)).toBe(false);
+    expect(inbox.canReply(aaa)).toBe(true);
     expect(inbox.canReply(sys)).toBe(false);
-    expect(inbox.reply(aaa)).toBe(false);
     expect(inbox.reply(sys)).toBe(false);
+    // 沒有 buf 就認不了畫面 ⇒ 不開始、一個鍵都不送
+    expect(inbox.reply(aaa)).toBe(false);
     expect(sent).toEqual([]);
+  });
+
+  test("回不是最新一位的寄件人：按 ^R 直到原生回覆畫面選中他", () => {
+    const sent = [];
+    const buf = Object.assign(new EventTarget(), { rows: 24, screen: [] });
+    buf.getRowText = (i) => buf.screen[i] || "";
+    const show = (rows) => {
+      buf.screen = rows;
+      buf.dispatchEvent(new CustomEvent("screenSettled"));
+    };
+    const inbox = new MessageInbox({
+      buf,
+      view: { sendKeyAsUser: (key, mods) => sent.push([key, mods]) }
+    });
+    inbox.noteData(wire("aaa", "一"));
+    inbox.noteData(wire("bbb", "二"));
+    inbox.setOpen(true);
+    expect(inbox.reply(inbox.state.items.find((i) => i.from === "aaa"))).toBe(true);
+    expect(inbox.state.open).toBe(false);
+    expect(sent).toHaveLength(1);
+    // 一對一模式：第一下停在 bbb ⇒ 再按一下；換到 aaa ⇒ 停手
+    show(["丟bbb:", "                             ↑反擊對象↓ "]);
+    expect(sent).toHaveLength(2);
+    show(["丟aaa:", "                             ↑反擊對象↓ "]);
+    show(["丟bbb:", "                             ↑反擊對象↓ "]);
+    expect(sent).toEqual([["r", { ctrlKey: true }], ["r", { ctrlKey: true }]]);
   });
 
   test("最新一則是廣播時，最新一位寄件人仍是最後丟水球的人", () => {
