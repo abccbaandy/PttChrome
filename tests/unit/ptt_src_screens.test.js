@@ -37,6 +37,9 @@ import helpMenuFx from "./fixtures/ptt_src_screens/help_menu.json";
 import boardNoteFx from "./fixtures/ptt_src_screens/board_note.json";
 import boardListFx from "./fixtures/ptt_src_screens/board_list.json";
 import mainMenuFx from "./fixtures/ptt_src_screens/main_menu.json";
+import waterballDefaultFx from "./fixtures/ptt_src_screens/waterball_default.json";
+import waterballOfoFx from "./fixtures/ptt_src_screens/waterball_ofo.json";
+import { classifyReplyScreen, nextReplyStep } from "../../src/js/waterball_reply";
 
 loadBig5Tables();
 
@@ -248,5 +251,44 @@ describe("upstream pttbbs 產的主功能表", () => {
     expect(isHomeScreen(facts)).toBe(true);
     expect(classifyListScreen(facts).kind).toBe("menu");
     expect(buf.pageState).toBe(1);
+  });
+});
+
+// seed.tsv 的 W 列：依序收 alice、bob、carol ⇒ 最新一位是 carol（swater_get_slot 把最新的
+// 寄件人提到 swater[0]）。收件匣的解析不在這裡測：pfterm 只在等鍵前送出最後的畫面，一次收三顆
+// 時前兩顆的底列早被蓋掉，跟真的連線上一顆一包不同。
+
+describe("upstream pttbbs 產的回水球畫面（一般模式）", () => {
+  const step = (name) => classifyReplyScreen(screenAt(waterballDefaultFx, name).rowTexts);
+
+  test("第一下 ^R：訊息傳過去 prompt，對象是最新一位 ⇒ 回 carol 直接交給使用者", () => {
+    const s = step("prompt");
+    expect(s).toEqual({ mode: "default", selected: null, panel: false });
+    expect(nextReplyStep(s, "carol", "carol", 1)).toBe("done");
+    expect(nextReplyStep(s, "alice", "carol", 1)).toBe("next");
+  });
+
+  test("再按 ^R：訊息回顧，選中那則由新往舊（carol → bob → alice）", () => {
+    expect(step("panel-1")).toEqual({ mode: "default", selected: "carol", panel: true });
+    expect(step("panel-2")).toEqual({ mode: "default", selected: "bob", panel: true });
+    expect(step("panel-3")).toEqual({ mode: "default", selected: "alice", panel: true });
+    expect(nextReplyStep(step("panel-2"), "bob", "carol", 3)).toBe("done");
+    expect(nextReplyStep(step("panel-2"), "alice", "carol", 3)).toBe("next");
+  });
+});
+
+describe("upstream pttbbs 產的回水球畫面（一對一模式）", () => {
+  const step = (name) => classifyReplyScreen(screenAt(waterballOfoFx, name).rowTexts);
+
+  test("^R 開名單，預設選最新一位，每按一下換下一位", () => {
+    expect(step("ofo-1")).toEqual({ mode: "ofo", selected: "carol", panel: false });
+    expect(step("ofo-2")).toEqual({ mode: "ofo", selected: "bob", panel: false });
+    expect(step("ofo-3")).toEqual({ mode: "ofo", selected: "alice", panel: false });
+    expect(nextReplyStep(step("ofo-1"), "carol", "carol", 1)).toBe("done");
+    expect(nextReplyStep(step("ofo-1"), "alice", "carol", 1)).toBe("next");
+  });
+
+  test("主功能表那一幀不是回覆畫面 ⇒ 認不出（不送鍵）", () => {
+    expect(step("menu")).toBe(null);
   });
 });

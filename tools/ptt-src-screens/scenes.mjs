@@ -61,4 +61,31 @@ export const SCENES = [
     rows: 24,
     steps: [{ name: 'menu' }],
   },
+  {
+    // 一般水球模式回水球（wmsg.c#wmsg_handle_ctrl_r_default）：收了 alice、bob、carol 三顆，
+    // 第一下 ^R 回最新一位（carol）的 prompt，再按 ^R 出訊息回顧、每按一下往舊的選一則。
+    file: 'waterball_default',
+    entry: 'wmsg:default',
+    rows: 24,
+    steps: [
+      { name: 'menu' },
+      { keys: '\x12', name: 'prompt' },
+      { keys: '\x12', name: 'panel-1' },
+      { keys: '\x12', name: 'panel-2' },
+      { keys: '\x12', name: 'panel-3' },
+    ],
+  },
+  {
+    // 一對一模式（UF_PAGER_OFO，wmsg.c#ofo_my_write）：^R 開「↑反擊對象↓」名單，
+    // 預設選最新一位，每按一下 ^R 換下一位（ofo_switch_user(1)）。
+    file: 'waterball_ofo',
+    entry: 'wmsg:ofo',
+    rows: 24,
+    steps: [
+      { name: 'menu' },
+      { keys: '\x12', name: 'ofo-1' },
+      { keys: '\x12', name: 'ofo-2' },
+      { keys: '\x12', name: 'ofo-3' },
+    ],
+  },
 ];
