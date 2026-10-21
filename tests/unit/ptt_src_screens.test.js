@@ -51,7 +51,12 @@ import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
 import { pushGateFacts, shouldInterceptPushKey } from "../../src/js/long_push_gate";
 import { isSearchPromptFrame, searchGateFacts } from "../../src/js/article_search";
 import { toolbarContextFromFacts } from "../../src/js/mobile_toolbar";
-import { refreshTargetFromFacts } from "../../src/js/screen_refresh";
+import {
+  refreshTargetFromFacts,
+  buildBoardListRefreshSteps,
+  isBoardKeywordPromptFrame,
+} from "../../src/js/screen_refresh";
+import boardListRefreshFx from "./fixtures/ptt_src_screens/board_list_refresh.json";
 import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
 import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
@@ -470,6 +475,27 @@ describe("upstream pttbbs 產的推文流程（bbs.c#recommend 輸入 → 確認
     expect(row).toBeTruthy();
     expect(classifyPushScreen([row])).toEqual({ kind: "other" });
     expect(detectIpLogged(rowTexts)).toBe(false);
+  });
+});
+
+describe("upstream pttbbs 產的看板列表重新整理（board.c 的 / 關鍵字 prompt）", () => {
+  const [open, submit] = buildBoardListRefreshSteps({});
+  const facts = (name) => screenAt(boardListRefreshFx, name).facts;
+
+  test("重整目標是看板列表；/ 開出關鍵字 prompt 才算第一步落地", () => {
+    expect(refreshTargetFromFacts(facts("fav"), 0, {})).toEqual({ kind: "board-list" });
+    expect(isBoardKeywordPromptFrame(facts("fav"))).toBe(false);
+    expect(isBoardKeywordPromptFrame(facts("keyword"))).toBe(true);
+    expect(open.keys).toBe("/");
+    expect(open.expect(null, facts("keyword"))).toBe(true);
+    expect(open.expect(null, facts("fav"))).toBe(false);
+  });
+
+  test("⏎ 送出後回到看板列表，第二步落地；prompt 那一幀游標不在列上 ⇒ 平滑捲動不接管", () => {
+    expect(submit.expect(null, facts("reloaded"))).toBe(true);
+    expect(classifyBoardListScreen(facts("reloaded"))).toMatchObject({ parked: true, engageable: true });
+    // prompt 畫在倒數第二列，列表與 footer 都還在 ⇒ 仍認得是看板列表，但游標停在輸入欄。
+    expect(classifyBoardListScreen(facts("keyword"))).toMatchObject({ parked: false, engageable: false });
   });
 });
 

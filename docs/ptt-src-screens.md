@@ -62,6 +62,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `board_list` | `fav`／24 | — | `classifyBoardListScreen` fav＋engageable、`parseBoardListName`／`parseFavRow`、⏎ arm |
 | `main_menu` | `menu`／24 | — | `isHomeScreen`、`classifyListScreen`→menu |
 | `board_list_toggles` | `fav`／24 | `y` `y` `c` | `y` 全部看板（caption 不變）→ all、不接管；再 `y` 回 fav；`c` → newflag、不接管 |
+| `board_list_refresh` | `fav`／24 | `/` `⏎` | 看板列表重整的兩步 expect（`isBoardKeywordPromptFrame`、回到列表）；prompt 幀游標不在列上 ⇒ 不接管 |
 | `main_menu_newmail` | `menu:newmail`／24 | — | 「你有新信件」：`newMailOnScreen`、`hasNewMail`、`appBarFromFacts` newMail；沒新信的 `main_menu` 三者皆 false |
 | `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`→inputPrompt（`→ tester:`） |
 | `push_flow` | `read:Test`／24 | `X` `hello⏎` `y⏎` `⏎` | 確定[y/N]→confirm、寫入後→other；開文的推文列帶時間戳不是輸入列，`detectIpLogged`→false |

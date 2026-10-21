@@ -85,6 +85,14 @@ export const SCENES = [
     ],
   },
   {
+    // 看板列表的重新整理（screen_refresh.buildBoardListRefreshSteps）：/ 開「請輸入看板中文關鍵字」
+    // prompt（board.c），⏎ 用原關鍵字送出＝重讀列表。
+    file: 'board_list_refresh',
+    entry: 'fav',
+    rows: 24,
+    steps: [{ name: 'fav' }, { keys: '/', name: 'keyword' }, { keys: '\r', name: 'reloaded' }],
+  },
+  {
     // 主功能表。
     file: 'main_menu',
     entry: 'menu',
