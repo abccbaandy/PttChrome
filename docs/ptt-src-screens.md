@@ -33,6 +33,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `read:<板名>` | `enter_board`＋`Read()` | 文章列表；看板有 notes 就先畫進板畫面（`bbs.c#Read` 的 `board_note_time`＝`bupdate`） |
 | `fav` | `fav_load`＋`fav_add_board`（seed 的 F 列）＋`Favorite()` | 看板列表（我的最愛） |
 | `menu` | `main_menu()` | 主功能表 |
+| `menu:newmail` | `currutmp->alerts \|= ALERT_NEW_MAIL`＋`main_menu()` | 有新信的主功能表 |
 | `wmsg:default`／`wmsg:ofo` | 收下 seed 的 W 列水球（`write_request`）＋`main_menu()`；ofo 加 `UF_PAGER_OFO` | 回水球畫面（之後送 ^R）。寄件人各佔一個在線的 `SHM->uinfo`，訊息照 `write_message_full` 的欄位直接填進 `currutmp->msgs`（呼叫它會對自己送 SIGUSR2） |
 
 第 4 個參數是列數（欄數恆 80，見下「寬終端」）。
@@ -59,6 +60,8 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `board_note` | `read:Notes`／24 | 空白 | `boardNoteDecision`：進板畫面→skip、文章列表→landed |
 | `board_list` | `fav`／24 | — | `classifyBoardListScreen` fav＋engageable、`parseBoardListName`／`parseFavRow`、⏎ arm |
 | `main_menu` | `menu`／24 | — | `isHomeScreen`、`classifyListScreen`→menu |
+| `main_menu_newmail` | `menu:newmail`／24 | — | 「你有新信件」：`newMailOnScreen`、`hasNewMail`、`appBarFromFacts` newMail；沒新信的 `main_menu` 三者皆 false |
+| `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`→inputPrompt（`→ tester:`） |
 | `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
 | `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
 

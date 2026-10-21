@@ -8,6 +8,7 @@
 //   read:<板名>  enter_board＋Read()（文章列表；看板有進板畫面就先畫進板畫面）
 //   fav          我的最愛（Favorite()，內容＝seed 的 F 列）
 //   menu         主功能表（main_menu()）
+//   menu:newmail 同上，但有新信（ALERT_NEW_MAIL）
 //   wmsg:<模式>  先收下 seed 的 W 列水球（write_request），再進主功能表；模式 default＝一般
 //                水球、ofo＝一對一（UF_PAGER_OFO）。之後送 ^R 就是 upstream 的回水球畫面。
 // seed 檔（Big5，tab 分隔）：
@@ -286,6 +287,10 @@ int main(int argc, char *argv[])
         }
         Favorite();
     } else if (strcmp(entry, "menu") == 0) {
+        main_menu();
+    } else if (strcmp(entry, "menu:newmail") == 0) {
+        // 有新信：menu.c#redraw_title 看 ISNEWMAIL 把標題列中段換成「你有新信件」。
+        currutmp->alerts |= ALERT_NEW_MAIL;
         main_menu();
     } else if (strncmp(entry, "wmsg:", 5) == 0) {
         if (strcmp(entry + 5, "ofo") == 0)

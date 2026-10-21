@@ -62,6 +62,20 @@ export const SCENES = [
     steps: [{ name: 'menu' }],
   },
   {
+    // 有新信的主功能表（標題列中段「你有新信件」）。
+    file: 'main_menu_newmail',
+    entry: 'menu:newmail',
+    rows: 24,
+    steps: [{ name: 'menu' }],
+  },
+  {
+    // 文章列表按 X 推文（bbs.c#recommend）。
+    file: 'push',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [{ name: 'list' }, { keys: 'X', name: 'push-1' }, { keys: '1', name: 'push-2' }],
+  },
+  {
     // 一般水球模式回水球（wmsg.c#wmsg_handle_ctrl_r_default）：收了 alice、bob、carol 三顆，
     // 第一下 ^R 回最新一位（carol）的 prompt，再按 ^R 出訊息回顧、每按一下往舊的選一則。
     file: 'waterball_default',

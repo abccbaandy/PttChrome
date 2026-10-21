@@ -39,7 +39,13 @@ import boardListFx from "./fixtures/ptt_src_screens/board_list.json";
 import mainMenuFx from "./fixtures/ptt_src_screens/main_menu.json";
 import waterballDefaultFx from "./fixtures/ptt_src_screens/waterball_default.json";
 import waterballOfoFx from "./fixtures/ptt_src_screens/waterball_ofo.json";
+import mainMenuNewMailFx from "./fixtures/ptt_src_screens/main_menu_newmail.json";
+import pushFx from "./fixtures/ptt_src_screens/push.json";
 import { classifyReplyScreen, nextReplyStep } from "../../src/js/waterball_reply";
+import { newMailOnScreen } from "../../src/js/message_inbox";
+import { hasNewMail } from "../../src/js/home_dashboard";
+import { appBarFromFacts } from "../../src/js/mobile_app_bar";
+import { classifyPushScreen } from "../../src/js/push_screen";
 
 loadBig5Tables();
 
@@ -251,6 +257,44 @@ describe("upstream pttbbs 產的主功能表", () => {
     expect(isHomeScreen(facts)).toBe(true);
     expect(classifyListScreen(facts).kind).toBe("menu");
     expect(buf.pageState).toBe(1);
+  });
+});
+
+describe("upstream pttbbs 產的新信提示（menu.c#redraw_title）", () => {
+  const plain = screenAt(mainMenuFx, "menu");
+  const mail = screenAt(mainMenuNewMailFx, "menu");
+
+  test("有新信：收件匣、首頁儀表板、手機 App Bar 都看得出來；主功能表照樣認得", () => {
+    expect(newMailOnScreen(mail.rowTexts[0], mail.buf.pageState)).toBe(true);
+    expect(hasNewMail(mail.rowTexts[0])).toBe(true);
+    expect(appBarFromFacts(mail.facts, { pageState: mail.buf.pageState })).toMatchObject({
+      kind: "menu",
+      newMail: true,
+    });
+    expect(isHomeScreen(mail.facts)).toBe(true);
+  });
+
+  test("沒有新信：三處都是 false", () => {
+    expect(newMailOnScreen(plain.rowTexts[0], plain.buf.pageState)).toBe(false);
+    expect(hasNewMail(plain.rowTexts[0])).toBe(false);
+    expect(appBarFromFacts(plain.facts, { pageState: plain.buf.pageState })).toMatchObject({
+      kind: "menu",
+      newMail: false,
+    });
+  });
+});
+
+describe("upstream pttbbs 產的推文畫面（bbs.c#recommend）", () => {
+  test("文章列表按 X ⇒ 推文輸入列（→ 自己的 id:），打字後仍是輸入列", () => {
+    expect(classifyPushScreen(screenAt(pushFx, "push-1").rowTexts)).toEqual({
+      kind: "inputPrompt",
+      type: "→",
+      userId: "tester",
+    });
+    expect(classifyPushScreen(screenAt(pushFx, "push-2").rowTexts)).toMatchObject({
+      kind: "inputPrompt",
+      userId: "tester",
+    });
   });
 });
 
