@@ -486,7 +486,7 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 | 項目 | 規則 | 理由 |
 |---|---|---|
 | 出現條件 | `enableLongPush && enableCommentBar`（`readEffectivePrefs`，安全模式名單內）＋ pageState 3 ＋好讀開著＋不在 functionMode ＋累積頁非空（同 `article_tools._inEasyArticle`） | 認不出就是原生：原生 pmore、列表、選單一律不出現；送出期間長推文切 functionMode，列自然收起 |
-| 位置 | 與終端機同寬，貼在終端機可見內容下緣（好讀 footer 顯示中就在它之上；手機＝底部導覽之上，鍵盤彈出時 `--vv-kb-inset` 把列頂上去） | 疊在終端機上，**不改列數、不送 NAWS**（`docs/terminal-size.md` LOCKED） |
+| 位置 | 與終端機同寬，貼在終端機可見內容下緣（好讀 footer 顯示中就在它之上；手機＝底部導覽之上，鍵盤彈出時 `--vv-kb-inset` 把列頂上去）。至少讓出 `view.keyboardInset`（`commentBarGeometry` 的 `bottomInset`）：手機的 `.main` 因列高取整會延伸到導覽列後面幾 px，只看 `.main` 下緣會壓在導覽列上（e2e `mobile_bottom_overlay`） | 疊在終端機上，**不改列數、不送 NAWS**（`docs/terminal-size.md` LOCKED） |
 | 被蓋住的那一截 | `html.commentBarShown #mainContainer::after` 留列高的空白 | 不動 `#mainContainer` 的 `paddingBottom`（那是 term_view 給好讀 footer 的） |
 | 鍵盤／滑鼠 | 輸入框聚焦＝ modal 來源 `commentBar`；keydown 與滑鼠事件一律 `stopPropagation`；`App._onUploadLayer` 認 `#commentBar` 放過 | 打字一個 byte 都不准漏到 PTT；離開（blur／Esc／列收起）焦點回 `#t` |
 | 送出 | `App.openQuickPush({text, type})`（ContextMenu 注入）：先 `writeDraft` 再走 `openLongPush` 的探路；探路回來由 `quickPushPlan` 決定 | 內容先進草稿 ⇒ 退回輸入框或送到一半失敗都不丟字 |

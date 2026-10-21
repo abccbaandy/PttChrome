@@ -108,6 +108,8 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 - **UI 做完必截圖自我驗證**（Playwright `page.screenshot` 後用 Read 看圖；截圖放 scratchpad 或 gitignored 目錄，不 commit）：
   至少①文字清楚可辨（對比、字級）②不跑版（溢出、重疊、截斷、錯位）③顏色不突兀（跟暗色主題協調）。
   涉及手機版面加一張窄視窗截圖。理由：測試只斷言結構，看不出「字灰到看不見」「卡片壓到終端機」這類問題。
+- **新增會疊在畫面上的功能（新的 `bootOffline` opt）要加進 `bottom_overlay`／`mobile_bottom_overlay` 兩支 spec 的 `COMBOS`**：
+  各功能 spec 預設關掉別的功能，疊在一起才壞的只有這個矩陣抓得到（浮層自動偵測，見 `tests/e2e/README.md`「浮層不蓋文末」）。
 - **離線重放（不連真實 PTT 也能驗依賴特定文章的 case）**：`yarn test:e2e:offline`（stub WebSocket 重放 byte cassette，
   真瀏覽器/真渲染）；Layer2 `tests/unit/replay_fixture.test.jsx` 用真實 `findPageOverlap` 純 node 重建跨頁去重。
   - **offline e2e 不接受 flaky：不是時序問題，是斷言不夠嚴謹。** 量元素座標一律走
