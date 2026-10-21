@@ -184,7 +184,7 @@ LongPushSession.prototype = {
   // armed（使用者在輸入框打字）與冷卻倒數（最長 240 秒）期間 queue 空著、onIdle
   // 早就發過了，busy 卻要等到這裡才翻 false。少了這一行的症狀：按 X 叫出長推文再
   // 取消，文章就永遠停在當前頁、怎麼捲都不會讀到結尾（沒送鍵就沒有新幀，不會再
-  // 評估第二次 ⇒ 死結，只能離開文章再進）。實錄：ptt-debug-20260917-221112 的最後
+  // 評估第二次 ⇒ 死結，只能離開文章再進）。實錄：最後
   // 三筆 easyReading.pageDown 全是 {action:"blocked", inFlightKind:null}。
   //
   // force：待補送的鍵未必還在 —— 取消路徑會退出文章再 ⏎ 重開，那個文章邊界的

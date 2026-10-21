@@ -210,7 +210,7 @@ test.describe('好讀反向讀取（End，離線）', () => {
     expect(Math.max(...r.gaps), JSON.stringify(r.gaps)).toBeLessThanOrEqual(r.chh);
   });
 
-  // 回歸實錄 ptt-debug-20260927-183720：End 落地那一頁就是文末（100%）⇒ tail 第一幀
+  // End 落地那一頁就是文末（100%）⇒ tail 第一幀
   // 就補完、followBottom 只貼底一次就放手；可是文末那頁有圖片推文，佔位盒之後才載入長高
   // （在視窗內、錨點下方）⇒ scroll anchoring 保住的是視窗頂端，文末被推出視窗下緣。
   // 使用者症狀：「按 End 沒到底，離底部有點距離」。slow 情境讓圖在接合之後才回來。

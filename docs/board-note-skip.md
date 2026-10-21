@@ -12,7 +12,7 @@ unit `tests/unit/board_note_skip.test.js`，offline e2e `tests/e2e/offline/board
   prompt ∧ bytes 以 `\r` 結尾）。
 - arm 後**先收到 server 資料（`App.onData → noteRecv`）才判畫面**：進板鍵常在某個 settle 的處理途中送出
   （平滑捲動的 sync-jump `queue.done` → 同輪送開板 `\r`），同一個 settle 輪到我們時看到的是送鍵前的舊看板列表
-  （ptt-debug-20261008-215452：arm／disarm 同一毫秒）。
+  （arm／disarm 同一毫秒）。
 - 之後每個 settle（listener 排在 listSession／boardListSession 之後）跑 `boardNoteDecision`：
 
 | 畫面 | 動作 |

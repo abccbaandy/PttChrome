@@ -1,7 +1,7 @@
 // @unit-env browser
 // TelnetConnection 的裸 ESC 守門（送出端鏡像 pttbbs vtkbd 的狀態機）。
 //
-// 重現的真實症狀（錄製檔 ptt-debug-20260916-011413.json#t=5494,6922,6933）：
+// 重現的真實症狀：
 // 關掉長推文輸入框之後那一下 Esc 送出**裸 ESC**（t=5494），1.4 秒後使用者按 ←
 // 想離開文章（t=6922），畫面卻變成同主題的上一篇（t=6933）。原因是 server 的
 // vtkbd 停在 VKSTATE_ESC，← 的開頭 ESC 被當成 esc_arg 吃掉，`[` 與 `D` 以字面鍵
@@ -124,7 +124,7 @@ describe("不可誤傷的路徑", () => {
 // 而那兩個只有 term_view._send／_convSend 會叫（守護
 // tests/unit/user_key_send_wiring.test.js）。
 describe("機器送出一律化解懸空的 ESC 態", () => {
-  it("Esc 漏出去之後，探路的 Q 仍到得了 PTT（ptt-debug-20260917-012944.json#t=529）", () => {
+  it("Esc 漏出去之後，探路的 Q 仍到得了 PTT", () => {
     const { conn, wire } = makeConn();
     conn.sendUserKey("\x1b"); // 使用者關掉長推文輸入框後多按的那一下
     conn.send("Q"); // CommandQueue 的 longpush-aid

@@ -13,7 +13,7 @@
 // 假設，只在「翻頁途中至少 settle 過一次」時成立；長文章翻頁久，整段沒有 50ms 空檔的機率
 // 更高，所以更容易中。
 //
-// 實錄：ptt-debug-20260815-204141.json — t=1231..2021 每 32~43ms 一次 recv（自動翻頁，
+// 實錄：t=1231..2021 每 32~43ms 一次 recv（自動翻頁，
 // 全程無 50ms 空檔）→ t=2035 easyReading.exit → t=2135 easyReading.enter。
 //
 // 用真的 TermBuf.prototype.notify/_armSettleTimer/_touchRows 驅動 30ms notify + 50ms

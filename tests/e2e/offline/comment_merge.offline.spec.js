@@ -170,7 +170,7 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     }
   });
 
-  // 使用者 2026-09 回報（ptt-debug-20260910-010711）：合併塊裡的自動開圖沒滿版 ——
+  // 使用者 2026-09 回報：合併塊裡的自動開圖沒滿版 ——
   // 左緣貼齊作者 id 欄，放大後仍少掉整個縮排寬。成因是上一條測的那個懸掛縮排：
   // 佔位盒 .inlinePreviewSlot 住在**同一個 bbsrow 裡**且是區塊盒 ⇒ containing block
   // 先被 padding-left 扣掉一截。修法是 main.css 給它等量負 margin-left

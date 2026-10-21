@@ -114,7 +114,7 @@ describe("MarkAllRead.start：v → 等 prompt → v⏎", () => {
 
 // 列表好讀接管中：交給列表 session 的凍結交易（落地即回好讀，不切原生鏡像）。
 // 少了 resumeOnLanding 就退回「切原生 → 空等靜置探針 → 切回」，畫面翻面兩次
-// （錄製檔 ptt-debug-20261020-161646 那條體感延遲）。
+// （體感延遲）。
 describe("列表好讀接管中", () => {
   test("交給列表 session，並要求落地即回好讀", () => {
     const { core, enqueued } = makeCore();

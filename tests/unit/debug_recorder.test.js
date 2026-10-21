@@ -213,7 +213,7 @@ describe("DebugRecorder", () => {
     expect(decoded).toBe("code xxxxxxxxxxxxxxxx end");
   });
 
-  // ptt-debug-20260928-181323：「150% 滾輪往上捲不動、畫面上下抖」的錄製檔在開文後
+  // 「150% 滾輪往上捲不動、畫面上下抖」的錄製檔在開文後
   // 23 秒一筆事件都沒有 —— 捲動軌跡、倍率切換、佔位盒高度全都沒錄到。
   it("錄製期間收進渲染鏈的診斷 log（diag），停止後不再收", () => {
     const { app } = makeApp();
@@ -262,7 +262,7 @@ describe("DebugRecorder", () => {
   });
 
   // 列表好讀的捲動視口在 render 層、可能在錄製開始後才建立 ⇒ 必須在 document capture
-  // 層收（scroll 不冒泡）。錄製檔 ptt-debug-20261008-003701 就是少了這段，「往上捲卡住」
+  // 層收（scroll 不冒泡）。少了這段，「往上捲卡住」
   // 只剩 bytes 可看。
   it("列表視口 .listBodyView 的 scroll／觸控／滾輪寫進錄製檔（視口晚於 start 建立也收得到）", () => {
     const { app } = makeApp();

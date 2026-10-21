@@ -509,7 +509,7 @@ export function transitionListSession(state, event) {
             // 的遲到回應，不是使用者開了文章：好讀自動翻頁的最後一個 PageUp/PageDown
             // 與序列第一個鍵同時在線上（超長文的背景載入一跑好幾秒，點 AID 幾乎
             // 必撞）。handoff-article 會 queue.flush() ⇒ 序列第一步就被 onFlushed
-            // 殺掉（錄製檔 ptt-debug-20261012-230148：三次跳文全死在這裡）。
+            // 殺掉（三次跳文全死在這裡）。
             // 與下面 menu 的守門同型：等序列自己收尾（最後那個文章 settle 的
             // inFlightKind 已是 null，照常 handoff）。
             if (event.inFlightKind && event.holdReason === 'external') return stay;
@@ -568,7 +568,7 @@ export function transitionListSession(state, event) {
             // 文章期間視口不在 DOM 上 ⇒ 錨與緩衝原封不動（不變量 6c），使用者
             // 捲到哪裡、回來就該還在哪裡。舊行為（採用 server 落點的視窗頂列）
             // 把畫面釘回 read.c 的分頁：把某篇捲到視口最下面、進去再退出，那篇
-            // 會跳回畫面中間（使用者回報，錄製檔 ptt-debug-20260911-113150）。
+            // 會跳回畫面中間。
             // Same rule as functionMode: landed outside the buffer (pinned
             // cursor parses null num) or board changed → rebuild（畫面本來就要
             // 換一份，那時重新錨定才是對的）。
@@ -793,8 +793,8 @@ const FROZEN_WATCHDOG_MAX_MS = 10000;
 // term_buf needs another SETTLE_MS (50ms) to settle, so anything past ~250ms of
 // silence is already abnormal: ask the deterministic question (the queue's
 // zero-side-effect \f probe) instead of sitting on a second-scale timeout with
-// the list render frozen. 寧可降級回原生，不要凍畫面空等（錄製檔
-// ptt-debug-20260825-105701#t=12562：open-jump 空等 4002ms）.
+// the list render frozen. 寧可降級回原生，不要凍畫面空等（實測
+// open-jump 空等 4002ms）.
 const CMD_PROBE_AFTER_MS = 250; // soft: triggers the probe, never a failure
 const CMD_PROBE_WINDOW_MS = 600; // how long the probed full frame gets
 const CMD_HARD_MS = 1200; // absolute cap from send (never re-armed)
@@ -1572,7 +1572,7 @@ ListSession.prototype = {
   // 分支不經過 _beginPassthroughBytes ⇒ **跳過 sync 腿**。read.c:904 的 Ctrl('Q') 是
   // `my_query(headers[crs_ln - top_ln].owner)`，對**真游標那一列**動作；好讀列表的
   // T1 導覽零網路，真游標通常停在背景 prefetch 的落點 ⇒ 查到別人，退出後選取也被
-  // re-seed 帶走（錄製檔 ptt-debug-20260913-184532#t=5926 裸送 ^Q、#t=5940 是別人的
+  // re-seed 帶走（實測裸送 ^Q 後回的是別人的
   // my_query）。同類 cursor-relative 鍵：read.c Ctrl-S/T/D。keyEventToBytes 的
   // ctrlKey 分支本來就算得出 bytes（CtrlShiftMap），舊註解「can't serialize a key we
   // don't own」的前提早就不成立了。
@@ -1680,7 +1680,7 @@ ListSession.prototype = {
   // `trustLanding: false`，它若是最後一步就照舊交給探針。指紋不過（vmsg 錯誤、半繪）
   // ⇒ 照舊停在原生鏡像，由靜置探針接手 —— 退路就是原本的行為。
   //
-  // 錄製檔 ptt-debug-20261020-161646：右鍵「前已讀後未讀」三道命令 218ms 就做完，
+  // 右鍵「前已讀後未讀」三道命令 218ms 就做完，
   // 之後卻是「切原生 → 空等探針 250ms → 切回來」，使用者看到畫面翻面兩次。
   _beginLandingTransaction: function(steps) {
     const r = transitionListSession(this.state, { type: 'key', keyClass: 'transact' });
@@ -1978,7 +1978,7 @@ ListSession.prototype = {
       // row the real cursor is ALREADY on produces zero screen delta, so PTT
       // sends ZERO bytes — and term_buf only arms its settle timer on server
       // activity, so no settle ever reaches the expect and the command can only
-      // die by timeout (錄製檔 ptt-debug-20260825-105701#t=12562: prefetch had
+      // die by timeout (prefetch had
       // just parked the cursor on 2381, the open jumped to 2381 again, 4002ms
       // of frozen screen followed). The appended \f forces one full frame, so
       // the landing is always judgeable. The expect stays the PARK fingerprint:
@@ -2832,8 +2832,8 @@ ListSession.prototype = {
     // 待還原的錨還沒進緩衝：不論預抓目標是否已滿，都再往上補（上限兩頁——視口
     // 頂端離游標不到一頁，落點頁再往上一頁一定蓋得到；錨真的找不到由
     // _tryApplyPendingViewport 的逾時／到頂丟棄）。上限**自己計數**（upFills），
-    // 不可以看 _fillPages：往下的 demand 每頁也會累加它，錄製檔
-    // ptt-debug-20260924-004016.json 往下補了 4 頁 ⇒ 共用計數就永遠不往上補。
+    // 不可以看 _fillPages：往下的 demand 每頁也會累加它，實測
+    // 往下補了 4 頁 ⇒ 共用計數就永遠不往上補。
     const pv = this._pendingViewport;
     const wantAnchor =
       !!pv && pv.adopted && this._pendingTopPos(this._sequence()) === -1 &&
@@ -2927,8 +2927,7 @@ ListSession.prototype = {
   //
   // 但**遠跳期間例外**，而且這個例外是使用者回報的 bug：「跳之前的視口頂」距離
   // 落點極遠 ⇒ evictListBuffer 的「砍離樞紐最遠的那一端」正好就是剛落地的那一頁。
-  // 實錄（2026-09-10 回報「Home/End 有時失效、體感只是移到列表頂/底部」，錄製檔
-  // ptt-debug-20260910-021827）：落點頁正確（End → 真板尾 351832..351846），但約
+  // 實錄（2026-09-10 回報「Home/End 有時失效、體感只是移到列表頂/底部」）：落點頁正確（End → 真板尾 351832..351846），但約
   // 兩百毫秒後 prefetch 用**舊**緩衝邊界當 anchor 跳號（送 340111 + CR），把 server
   // 游標一起拉回舊位置 ⇒ 整個跳躍被抹平。條件是緩衝已吃滿 MAX_LIST_ROWS=300，
   // 所以症狀是「有時」——剛進板列少時 evict 不觸發，prune 的覆寫就能正常留住落點。
@@ -3019,7 +3018,7 @@ ListSession.prototype = {
       self._forceRedraw();
       // 待還原的閱讀進度還在等往上補：rebuild 當下佇列被往下的 demand 佔住，
       // _maybeFill 那時直接返回了，而到邊的鏈不會自己交回背景補頁 ⇒ 錨在落點頁
-      // 之上時永遠等不到（錄製檔 ptt-debug-20260924-004016.json#t=13891..18324）。
+      // 之上時永遠等不到。
       if (self._pendingViewport) self._maybeFill();
     };
     if (!chained) {
@@ -4344,8 +4343,7 @@ ListSession.prototype = {
 
   // 遠跳（Home/End）落地後的保險：落點頁根本不在緩衝裡就整份重建。
   //
-  // 為什麼需要這一道（2026-09-10 回報「Home/End 有時失效」，錯製檔
-  // ptt-debug-20260910-021827）：遠跳落地時緩衝裡會同時存在「舊段」與「落點段」，
+  // 為什麼需要這一道（2026-09-10 回報「Home/End 有時失效」）：遠跳落地時緩衝裡會同時存在「舊段」與「落點段」，
   // 而落點段的存活完全依賴 accumulateListLines 裡 prune/evict 兩道的樞紐都算對。
   // 一旦算錯（當時是 evict 的樞紐用了**跳之前**的視口頂，緩衝吃滿 300 列時
   // 把剛落地的那一頁砍掉），下面的 `_setCursorPos(seq, seq.length - 1)` 就落在**舊緩衝**
@@ -4473,18 +4471,18 @@ export function pinnedRowKey(text) {
 // 該丟的是另一端。只看「離樞紐的序號距離」會在樞紐落在中段時把剛補進來的那一頁
 // 原樣砍掉 ⇒ 緩衝不長、demand 的水位（**可見**列數 top < 2B）永遠不到 ⇒ 每 ~90ms
 // 再補一頁、停不下來。序號距離與可見列數的落差來自刪文／黑名單隱藏列（C_Chat 刪文
-// 多就容易踩到）；錄製檔 ptt-debug-20261008-014654（t≈5169 起長度卡在 230 不再增加，
-// 進一篇文章重建緩衝才恢復）。另一端只砍到保護區為止，再多的才退回下面的平衡規則。
+// 多就容易踩到）；實測長度卡在 230 不再增加，
+// 進一篇文章重建緩衝才恢復。另一端只砍到保護區為止，再多的才退回下面的平衡規則。
 // **保護區兩邊不對稱**：樞紐＝視口**頂**，視口在它下方 ⇒ 往上長（砍底端）要保住樞紐
 // 以下 EVICT_PROTECT_BELOW 列（視口＋餘裕）；往下長（砍頂端）時樞紐以上根本不在畫面
-// 裡，只留 EVICT_PROTECT_ABOVE 列餘裕。對稱保護 100 列時往下補照樣卡死（錄製檔
-// ptt-debug-20261008-020516 t≈2788 起長度卡在 222：視口上方只有幾十列，全在保護區內
+// 裡，只留 EVICT_PROTECT_ABOVE 列餘裕。對稱保護 100 列時往下補照樣卡死（實測
+// 長度卡在 222：視口上方只有幾十列，全在保護區內
 // ⇒ 退回平衡規則、又把剛補的底端砍掉）。grewDir=0（兩端都動、遠跳、不知道）＝原規則。
 //
 // **上限算的是可見列，不是原始列**（`opts.isHidden`，見 isHiddenListRow）：上限存在
 // 是為了重繪成本，而隱藏列（刪除文／黑名單）根本不渲染（term_view 只畫 seq）。
-// 用原始列數當上限時，可見列之間隔著一大段刪除文（Test 板每週清板，錄製檔
-// ptt-debug-20261019-021418：214..766 幾乎全刪）就永遠補不過去——剛補的頁離視口
+// 用原始列數當上限時，可見列之間隔著一大段刪除文（Test 板每週清板，
+// 214..766 幾乎全刪）就永遠補不過去——剛補的頁離視口
 // 超過上限，一合併就被砍、demand 的水位（可見列）永遠不到 ⇒ 一路 PgUp 到第 1 篇再重來。
 // 隱藏列也不是免費的（一列 ≈16KB 的 TermChar）⇒ 另有總列數硬上限 `opts.hardCap`；
 // 撞到它而砍掉剛長出來的那一端時，由呼叫端回報成長停滯（ListSession.noteGrowthStalled）。

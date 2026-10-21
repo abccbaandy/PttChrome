@@ -1548,7 +1548,7 @@ BoardListSession.prototype = {
   // 不是文章列表：`Read()` 在 `i_read()` 之前先跑 `more(<板>/notes)` ＋
   // `pressanykey()`（bbs.c:4646-4655），也就是進板畫面（ctx 'other'）。它只在
   // `currbid != bnote_lastbid` 時出現（同一連線第二次進同一板就沒有）⇒ 白名單版
-  // 的守門會時好時壞，實錄見錄製檔 ptt-debug-20260912-015707。
+  // 的守門會時好時壞。
   // 落點未知（facts 缺）同樣保留緩衝，交給退板落地幀的 `landedSameList` 指紋。
   _enqueueLandingKey: function(keys, kind, failMsg, opts) {
     const self = this;
@@ -1997,8 +1997,7 @@ BoardListSession.prototype = {
   },
 
   // 告知 render 層頂端保留區的目標（screen.js#absorbListShift）。**到頂一定要是 0**：
-  // 保留區是視口頂端的空白，到頂還留著就捲得進去（錄製檔 ptt-debug-20261008-024024：
-  // 我的最愛從第 1 項進來，滾輪往上捲出 3072px 空白）。上緣在沒有重繪的路徑上確認
+  // 保留區是視口頂端的空白，到頂還留著就捲得進去（我的最愛從第 1 項進來，滾輪往上捲出 3072px 空白）。上緣在沒有重繪的路徑上確認
   // （_enqueueFetch 的「已在第 1 項」、抓頁失敗）時也要呼叫，不能只靠下一幀。
   _syncReserveTarget: function() {
     const screen = this._screen();

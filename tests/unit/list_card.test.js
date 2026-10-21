@@ -345,7 +345,7 @@ describe.each([
     expect(Session.prototype._bodyRows.call(fake(true))).toBe(20);
   });
 
-  // 實錄 ptt-debug-20261011-000540.json（47 列、chh≈15.62、我的最愛 27 個看板）：短清單
+  // 實錄（47 列、chh≈15.62、我的最愛 27 個看板）：短清單
   // 補白照桌機補到 bodyRows（43 筆）⇒ 卡片 43×39≈1677px ≫ 視口 734px ⇒ 清單下面一大塊
   // 空白也捲得到（scrollHeight 1679、maxScrollTop 945）。卡片只補到一個視口放得下的筆數。
   test("_maxScrollTop：短清單卡片不因補白多出可捲距離", () => {

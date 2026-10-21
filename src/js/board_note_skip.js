@@ -260,7 +260,7 @@ BoardNoteSkip.prototype = {
     // 進板鍵常常是在**某個 settle 的處理途中**送出的（看板列表平滑捲動：sync-jump 的
     // queue.done → 同一輪排出開板命令 → 送 `\r` → arm），而我們的 listener 排在同一個
     // settle 的最後 ⇒ 會看到送鍵前的舊看板列表，判成「已落地」立刻解除
-    // （ptt-debug-20261008-215452：arm 與 disarm 同一毫秒）。回應到了才判。
+    // （arm 與 disarm 同一毫秒）。回應到了才判。
     if (!this._sawResponse) return;
     if (this._armExpired()) {
       this._disarm('expired');

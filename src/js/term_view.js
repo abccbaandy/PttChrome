@@ -1798,10 +1798,10 @@ TermView.prototype = {
   // 像素值對不上）。**兩種版面都量節點**，取視窗頂端那一列的 srow：好讀長頁的列高並不
   // 一致 —— 行內預覽佔位盒（連結卡／圖片）、推文間距、合併塊，手機換行版面一列還會折成
   // 好幾行。舊版格線用 scrollTop/chh，把視窗上方所有預覽的高度都算成列數 ⇒ 返回落點
-  // 往下偏（ptt-debug-20261013-005651：上方一張圖＋數張連結卡，偏了 30 多列）。
+  // 往下偏（上方一張圖＋數張連結卡，偏了 30 多列）。
   // **帶小數＝視窗頂端落在該列內的比例**：掛圖的那一列連圖一起是一個節點（文字 1 列＋
   // 圖 550px），只記 srow 會在還原時貼齊列頂 ⇒ 停在圖中間離開的人被拉回圖的上緣
-  // （ptt-debug-20261013-213914：偏 220px）。用比例而非 px：還原時那張圖若是以不同
+  // （偏 220px）。用比例而非 px：還原時那張圖若是以不同
   // 高度佔位，比例仍落在圖的同一處。整條傳遞鏈（nav_history／aid_navigation／
   // long_push_session）只把它當數字傳，0 仍是「在頂端」。
   // 量不到節點（假 view／還沒畫）時格線版面才退回算術。
@@ -3185,7 +3185,7 @@ TermView.prototype = {
     // list_session 各掃描點同範圍）。標題列會通過 isPinnedListRow：PttCurrent 的
     // 「【板主:wens】 … Current Ptt …」前 17 字有 4 個全形，realign 後作者欄 [17,29)
     // 切到「Current」的 C ＝合法 userid ⇒ 整列被收成置底文，排在序列最尾
-    // （錄製檔 ptt-debug-20260924-013612；守護 list_accumulate.test.js）。
+    // （守護 list_accumulate.test.js）。
     for (var i = LIST_HEADER_ROWS; i <= buf.rows - 2; ++i) {
       if (nums[i] != null) {
         var row = cloneRow(buf.lines[i]);
@@ -3248,8 +3248,7 @@ TermView.prototype = {
     // 舊的那段已經不相干、落點那段才是使用者要的。舊順序（evict 在前）下，evict 的
     // 樞紐是**跳之前**的視口頂，而它砍的是「離樞紐最遠的那一端」⇒ 緩衝吃滿
     // MAX_LIST_ROWS 時正好把剛落地的那一頁砍掉，而且是在遠跳專用的 prunePivot
-    // 覆寫輪到之前（使用者回報的「Home/End 有時失效」，錯製檔
-    // ptt-debug-20260910-021827，守護 tests/unit/list_accumulate.test.js）。
+    // 覆寫輪到之前（使用者回報的「Home/End 有時失效」，守護 tests/unit/list_accumulate.test.js）。
     // prune 先把舊段整段丟掉，evict 才量到對的列數（遠跳時通常直接變 no-op）。
     // 換序安全：無洞時 prune 是 early-return，evict 只剔兩端（不可能製造洞）
     // ⇒ 非遠跳路徑逆位元不變。
@@ -3262,7 +3261,7 @@ TermView.prototype = {
     // evictListBuffer 的註解）。
     // The session must clear the matching edge flag — demand re-fetches later.
     // 上限只算可見列（隱藏的刪除文／黑名單列不渲染），另有總列數硬上限
-    //（evictListBuffer 註解，錄製檔 ptt-debug-20261019-021418）。
+    //（evictListBuffer 註解）。
     var self = this;
     var ev = evictListBuffer(
       this._listNumMap,

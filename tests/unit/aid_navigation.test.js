@@ -1643,7 +1643,7 @@ describe("正向跳轉走免費路徑", () => {
 // 超長文（行號四位數以上）：more.c#common_pmore_footer_handler 依剩餘寬度挑
 // footer，放不下「(y)回應」那段時退成「(h)說明 (←/q)離開」——跟站內信／精華區的
 // 短版一字不差 ⇒ parsePagerFooterContext 只能說 'unknown'。
-// 錄製檔 ptt-debug-20261012-235048：從 `/` 搜尋清單開的超長文點 AID → 不按 Q →
+// 從 `/` 搜尋清單開的超長文點 AID → 不按 Q →
 // 返回錨點只剩搜尋空間的序號 45 → 返回跑到主清單第 45 篇（別篇）。
 // ---------------------------------------------------------------------------
 describe("超長文（footer 被行號擠掉）", () => {
@@ -1745,7 +1745,7 @@ describe("超長文（footer 被行號擠掉）", () => {
     expect(h.backButton.label).toBe("#" + BROWSERS_AID);
   });
 
-  // 錄製檔 ptt-debug-20261012-230148：好讀自動翻頁的 PageUp 回應晚於第一個 ← 才到。
+  // 好讀自動翻頁的 PageUp 回應晚於第一個 ← 才到。
   test("REGRESSION：退出途中的文章幀（遲到的翻頁回應）不算退了一層", () => {
     const { nav, queue, sent } = makeHarness({ footer: SQUEEZED_ROW });
     nav.start("1ghhUROp", "PttCurrent");
@@ -2254,7 +2254,7 @@ describe("currentPostAid（斷線前記下本篇）", () => {
 
 // ---------------------------------------------------------------------------
 // 搜尋結果（MODE_SELECT，底列「系列文章」）裡的 AID 跳文。
-// 錄製檔 ptt-debug-20261018-173606：作者搜尋結果開的文章 → #AID ⇒ PTT 回
+// 作者搜尋結果開的文章 → #AID ⇒ PTT 回
 // 「此狀態下無法使用搜尋文章代碼(AID)功能」（read.c select_by_aid 對 MODE_SELECT 一律拒絕）。
 // 新版 read.c 的搜尋條件住在 read_ctx：pager 的 `s<板>` 換板後**仍是**搜尋模式（同條件
 // 篩新板，可能一篇都沒有＝「沒有文章...」），所以 # 之前要先 ←（read_cmd_quit 在
@@ -2539,7 +2539,7 @@ describe("AidNavigation 指定看板（preparePicked → continuePicked）", () 
 // startSubNum（next_article 的搜尋結果換文）：搜尋結果的編號是子列表自己的空間
 // （read.c MODE_SELECT 重新編號），s<板>／# 都會離開它 ⇒ 文章內 ← 回到同一份結果
 // → `<編號>⏎`（read_cmd_num 只看目前列表）→ 游標那列認得出才 ⏎。
-// 錄製檔 ptt-debug-20261021-015619：C_Chat 搜「史萊姆」開第 317 篇，讀到文末沒有下一篇卡片。
+// C_Chat 搜「史萊姆」開第 317 篇，讀到文末沒有下一篇卡片。
 // ---------------------------------------------------------------------------
 describe("AidNavigation.startSubNum：搜尋結果裡的第 N 篇", () => {
   const subList = (rows, cursorRow) => {

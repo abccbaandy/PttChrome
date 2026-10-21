@@ -537,8 +537,8 @@ AidNavigation.prototype = {
 
   // 挑板取消（原生 `s` prompt 收到 Ctrl-C）：pager 收掉後的 `s` 取消只會停在原文所在的
   // 那份列表（do_select 失敗回 FULLUPDATE：不是 NEWDIRECT，read loop 的游標不動、搜尋
-  // 結果也還在）⇒ 游標就停在原文上，直接 ⏎ 開它。不用 #AID：搜尋結果裡 # 被拒
-  // （錄製檔 ptt-debug-20261018-173606），而且 ⏎ 連身後的搜尋結果都原樣保留。
+  // 結果也還在）⇒ 游標就停在原文上，直接 ⏎ 開它。不用 #AID：搜尋結果裡 # 被拒，
+  // 而且 ⏎ 連身後的搜尋結果都原樣保留。
   // 落地後閱讀紀錄還原原列（'aid-board-pick' cancel）。返回堆疊不動（挑板期間有保護）。
   reopenPicked: function(token) {
     if (!token || this._picking !== token) return false;
@@ -1003,7 +1003,7 @@ AidNavigation.prototype = {
     // 有另一份證據（見 start()）；仍要求末列是 pager 狀態列，免得拿陳舊證據
     // 去認一張根本不是 pager 的畫面。有這份證據就能走文章內 `s` 的快路徑；
     // 沒有的話下面的 _enqueueOriginAidUnproven 照樣問 AID，只是改繞主功能表
-    // （錄製檔 ptt-debug-20261012-235048：舊版在這裡不按 Q，返回跑到別篇）。
+    // （舊版在這裡不按 Q，返回跑到別篇）。
     if (
       context === 'unknown' &&
       run.listOpened &&

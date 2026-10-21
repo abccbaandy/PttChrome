@@ -607,7 +607,7 @@ test.describe('長推文一鍵發送（離線）', () => {
     expect(await page.evaluate(() => window.__app.longPush.busy)).toBe(false);
   });
 
-  // Esc 取消與點「取消」必須等價（錄製檔 ptt-debug-20260919-010054.json）。
+  // Esc 取消與點「取消」必須等價。
   //
   // Mantine 的 Escape handler 掛在 window capture，比 term_view 先跑，關框後
   // modalShown 已翻成 false ⇒ 同一個 keydown 以前會落到 term_view.onKeyDown：
@@ -646,7 +646,7 @@ test.describe('長推文一鍵發送（離線）', () => {
     await expect.poll(() => page.evaluate(() => window.__termKeys)).toEqual(['Escape']);
   });
 
-  // 「讀不到文章代碼（miss）」的根因回歸（錄製檔 ptt-debug-20260917-012944.json）。
+  // 「讀不到文章代碼（miss）」的根因回歸。
   //
   // 使用者關掉長推文輸入框後順手多按一下 Esc：那時畫面上已經沒有任何彈窗，
   // modalShown 是 false ⇒ 那一下是**合法的終端機輸入**，源頭擋不住（想靠「有彈窗
@@ -705,7 +705,7 @@ test.describe('長推文一鍵發送（離線）', () => {
     await expect.poll(() => sentText(page)).toBe('X');
   });
 
-  // REGRESSION（使用者回報 + 錄製檔 ptt-debug-20260917-221112）：按 X 叫出長推文
+  // REGRESSION：按 X 叫出長推文
   // 輸入框、然後**取消**，文章就再也不會往下讀到結尾。
   //
   // 根因是通知只有單向：好讀的自動翻頁被 easy_reading._wireBusy() 擋下時是延後

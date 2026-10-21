@@ -15,7 +15,7 @@
 // 關框**之後**才按的鍵（timeStamp 晚於關閉）照常送 —— 那時畫面上真的沒有彈窗，
 // Esc 是合法的終端機輸入；它留下的懸空 ESC 態由 vtkbd_send_state 化解。
 //
-// 實錄：ptt-debug-20260919-010054.json —— 長推文輸入框按 Esc 取消，一個裸 ESC
+// 實錄：長推文輸入框按 Esc 取消，一個裸 ESC
 // 上線，而且 easyReading._onKeyDown 把待還原的閱讀位置當成「使用者接手」清掉；
 // 點「取消」則兩者都不會發生。守護：tests/unit/modal_key_gate.test.js、
 // tests/e2e/offline/long_push.offline.spec.js。

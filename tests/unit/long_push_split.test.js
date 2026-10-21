@@ -242,7 +242,7 @@ describe("splitPushSegments：URL 保護", () => {
 });
 
 describe("pushMaxBytes：輸入欄寬優先", () => {
-  // 欄寬＝vgetstring 的 len＝maxlength（ptt-debug-20260924-221056.json#t=4660/17273）
+  // 欄寬＝vgetstring 的 len＝maxlength
   // ⇒ 可輸入 maxlength-1。欄寬已涵蓋 IP、id 長度、對齊推文、小天使暱稱。
   test("有欄寬 ⇒ 欄寬 - 1，無視 userId／ipLogged", () => {
     expect(pushMaxBytes({ fieldWidth: 51, userId: "x", ipLogged: true })).toBe(50);

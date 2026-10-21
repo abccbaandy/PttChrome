@@ -1,8 +1,7 @@
 import { keyEventPredatesModalClose } from '../../src/js/modal_key_gate';
 import { App } from '../../src/js/pttchrome';
 
-// 關掉 modal 的那一下按鍵不可以漏到終端機（錄製檔 ptt-debug-20260919-010054.json：
-// 長推文輸入框用 Esc 取消 ⇒ 一個裸 ESC 上線、好讀待還原的閱讀位置被清掉；點「取消」
+// 關掉 modal 的那一下按鍵不可以漏到終端機（長推文輸入框用 Esc 取消 ⇒ 一個裸 ESC 上線、好讀待還原的閱讀位置被清掉；點「取消」
 // 則不會）。Mantine 的 Escape handler 掛在 window capture，比 term_view 先跑，
 // modalShown 在 term_view 看到時已經是 false ⇒ 只能比「事件產生的時間」。
 describe('keyEventPredatesModalClose', () => {

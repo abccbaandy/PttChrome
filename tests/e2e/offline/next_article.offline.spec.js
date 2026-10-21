@@ -148,7 +148,7 @@ test.describe('讀完接著讀下一篇', () => {
     await expect(card(page)).toBeHidden();
   });
 
-  // 錄製檔 ptt-debug-20261021-171601：推文很少的文章，卡片排在 PTT 補的空白列後面，要捲一段
+  // 推文很少的文章，卡片排在 PTT 補的空白列後面，要捲一段
   // 才看得到；捲下去之後底部推文列又壓在卡片上。
   test('推文列開著、推文很少 ⇒ 不用捲就看到整張卡片，推文列不蓋卡片', async ({ page }) => {
     await boot(page, {}, { commentBar: true });
@@ -193,7 +193,7 @@ test.describe('讀完接著讀下一篇', () => {
     await expect(page.locator('#t')).toBeFocused();
   });
 
-  // 錄製檔 ptt-debug-20261021-015619：從搜尋結果開的文章讀到文末，卡片沒出現。
+  // 從搜尋結果開的文章讀到文末，卡片沒出現。
   test('從搜尋結果進的文章 ⇒ 卡片是結果的下一筆；點它走 ←（回同一份結果），不走 s<板>', async ({ page }) => {
     await boot(page, { useMouseBrowsing: true, mouseLeftClick: true });
     await drawList(page, 4, { sub: true });

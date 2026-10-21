@@ -376,7 +376,7 @@ describe("isPinnedListRow", () => {
   });
 });
 
-// REGRESSION 2026-09-05（錄製檔 ptt-debug-20260905-122522）：在文章列表按 Ctrl-P
+// REGRESSION 2026-09-05：在文章列表按 Ctrl-P
 // 發文，分類畫面上出現「（本文已被黑名單） vtub」通知列。setPageState 沒有 reset
 // 分支 ⇒ 發文畫面沿用列表的 pageState 2，逐列解析又不驗證列的形狀。
 describe("isListShapedRow（黑名單標註的逐列守門）", () => {
@@ -396,7 +396,7 @@ describe("isListShapedRow（黑名單標註的逐列守門）", () => {
     ).toBe(true);
   });
 
-  // REGRESSION 2026-10-08（錄製檔 ptt-debug-20261008-203421，PttCurrent 板）：作者欄
+  // REGRESSION（PttCurrent 板）：作者欄
   // 「系統」不是合法 userid ⇒ 整列被當成非列表列，已讀低亮（listRead）永遠不標。
   // 作者不是 userid 時改用日期欄（%-6.5s，col 11-15）認列表形。
   test("作者欄不是 userid（系統公告）→ 仍是列表列", () => {

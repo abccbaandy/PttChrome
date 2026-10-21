@@ -1994,8 +1994,7 @@ EasyReading.prototype.exitEasyReading = function() {
   // on. The user sees the F8 land on the post's last page and freeze there: easy
   // reading re-accumulates from the bottom page, whose footer already reads 100%, so
   // no further PageDown is ever sent. That is the 「F8 切原生卡在最後一頁」 report
-  // (recorded: ptt-debug-20260815-204141.json, easyReading.exit t=2035 →
-  // easyReading.enter t=2135).
+  // (easyReading.exit → easyReading.enter 100ms later).
   this._termBuf.syncSettledPageState();
   // Remember which post we are leaving behind, so the settle re-entry route can tell a
   // genuinely different post from a native Home back to this one's line 1.

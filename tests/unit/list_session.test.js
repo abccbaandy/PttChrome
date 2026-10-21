@@ -712,7 +712,7 @@ describe("evictListBuffer (total-row cap)", () => {
     expect(r).toEqual({ evictedUp: true, evictedDown: true });
     expect(Array.from(m.keys()).sort((a, b) => a - b)).toEqual([3, 4, 5]);
   });
-  // 錄製檔 ptt-debug-20261008-014654：緩衝滿、視口在中段時，往上補進來的那一頁被
+  // 緩衝滿、視口在中段時，往上補進來的那一頁被
   // 原樣砍掉（樞紐上下序號距離已平衡），緩衝不長 ⇒ demand 水位永遠不到 ⇒ 無限補頁。
   const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
   const sorted = (m) => Array.from(m.keys()).sort((a, b) => a - b);
@@ -733,7 +733,7 @@ describe("evictListBuffer (total-row cap)", () => {
     expect(sorted(m)[299]).toBe(1345);
     expect(r).toEqual({ evictedUp: true, evictedDown: false });
   });
-  // 錄製檔 ptt-debug-20261008-020516：往下補時視口頂上方只有幾十列，對稱保護 100 列
+  // 往下補時視口頂上方只有幾十列，對稱保護 100 列
   // 讓頂端一列都砍不了 ⇒ 退回平衡規則、剛補的底端被砍 ⇒ 長度卡住、無限往下補。
   it("往下補頁、視口頂上方只有幾十列：仍砍頂端（上方只留 EVICT_PROTECT_ABOVE 列）", () => {
     const m = mapOf(range(1000, 1345)); // 舊 1000..1299 ＋ 新頁 1300..1345
@@ -757,7 +757,7 @@ describe("evictListBuffer (total-row cap)", () => {
     evictListBuffer(m2, pivot, 300, -1);
     expect(sorted(m2)[299]).toBe(1299 - 10);
   });
-  // 錄製檔 ptt-debug-20261019-021418（Test 板清板）：上限算原始列數時，隔著一大段
+  // Test 板清板：上限算原始列數時，隔著一大段
   // 隱藏的刪除文，剛補的頁一進來就被砍 ⇒ 永遠補不到下一列可見列。
   it("隱藏列不計入上限：可見列 ≤ cap 時一列都不砍", () => {
     const m = mapOf(range(1, 790)); // 214..766 隱藏
@@ -1001,7 +1001,7 @@ describe("demand 邊距（提早預補隱藏 round-trip 延遲）", () => {
     expect(enqueued).toEqual([]);
   });
   // 隱藏列連續超過總列數硬上限：剛補的頁被整段砍回去，再補也沒進展 ⇒ 停手，
-  // 不可以無限 PgUp（錄製檔 ptt-debug-20261019-021418 的極端版）。
+  // 不可以無限 PgUp（Test 板清板的極端版）。
   test("成長停滯（noteGrowthStalled）→ 該方向的 demand／fill 都不再送；evict 那一端後解除", () => {
     const { s, enqueued } = demandSession({ count: 80 });
     s._topNum = 130; // top pos = 30 < 2B ⇒ 平常會往上補
@@ -1147,8 +1147,8 @@ describe("v5 確定性交易（timeout=探針觸發，非訊號；jump 腿維持
   // expect 必須維持 park 指紋（不得改成等 clean-list）。
   // 但跳號腿本身一律掛 fullRepaint：「裸跳號必回應」是錯的——跳到真游標
   // 已經所在的那一列，畫面零差異 ⇒ server 送 0 bytes ⇒ term_buf 永不 settle
-  // ⇒ expect 永不被評估，只能苦等軟逾時（錄製檔
-  // ptt-debug-20260825-105701#t=12562：open-jump 空等 4002ms）。
+  // ⇒ expect 永不被評估，只能苦等軟逾時（實測
+  // open-jump 空等 4002ms）。
   test("錨定 jump 腿：fullRepaint＋park 指紋（transient 落點即完成）", () => {
     const { s, enqueued } = demandSession({ count: 60 });
     s._topNum = 110;
@@ -1421,8 +1421,7 @@ describe("被完成指令消費的 settle 不得誤降級（2026-07-14 錄製檔
   });
 });
 
-// REGRESSION 2026-09-26（使用者回報「文章好讀偶爾失效，進文章停在原生」，錄製檔
-// ptt-debug-20260926-201535）：看板裡 `/` 搜標題 → 搜尋結果只有 6 篇 → 列表好讀
+// REGRESSION 2026-09-26（使用者回報「文章好讀偶爾失效，進文章停在原生」）：看板裡 `/` 搜標題 → 搜尋結果只有 6 篇 → 列表好讀
 // 背景補頁送 `6⏎^L` 後就沒有下一腿了。舊版 server 跳號後底列留空（協定 §4 ✚，
 // ^L 也補不回來）⇒ term_buf 判 pageState 0，列表在那張畫面靜置 ⇒ settled = 0。
 // 使用者開 1 號文 ⇒ 文章踩 settled 0→3 進來，文章好讀只認 1|2→3 edge ⇒ 永遠不開。
@@ -1465,7 +1464,7 @@ describe("列表好讀開文落地：補開文章好讀，不依賴 settled 2→
 // idle 就把整個按鍵靜默丟掉：零 byte、零重繪、零提示，也不排隊重試。
 // 觸發窗口極寬，因為 _moveSelection 尾端必定 _maybeDemand → _enqueuePrefetch，
 // 剛按過任何導覽鍵佇列通常就非 idle；進板頭幾秒的鏈式補頁更是必中
-// （錄製檔 ptt-debug-20260905-122522 的 t=4480~4962 就是連續 4 筆 prefetch）。
+// （實測進板後 0.5 秒內連續 4 筆 prefetch）。
 describe("Home/End 不得因佇列忙碌而靜默丟棄", () => {
   // 有 in-flight（＋一筆排隊中）prefetch 的佇列。
   function busySession() {
@@ -1602,7 +1601,7 @@ describe("讀取中指示與凍結的收尾（旗標洩漏）", () => {
 });
 
 // 遠跳落地後落點頁不在緩衝裡 ⇒ 整份重建（使用者回報「Home/End 有時失效、
-// 體感只是移到列表頂/底部」，錄製檔 ptt-debug-20260910-021827）。
+// 體感只是移到列表頂/底部」）。
 //
 // 落點頁被 evict/prune 丟掉時，onDone 的 `_setCursorPos(seq, seq.length - 1)` 會落在
 // **舊緩衝**的末列，接著 demand prefetch 用舊邊界當 anchor 跳號，連 server 游標一起
@@ -2374,7 +2373,7 @@ describe("錨定還原（不變量 6 的原生捲動形式）", () => {
 // _resumeBuffer＝「從原生鏡像回來、畫面本來就是 server 那一頁」那條路（reducer 的
 // functionMode/rebuild 分支）。退文回列表**不走這裡**（見下一個 describe）。
 //
-// 症狀（錄製檔 ptt-debug-20260830-221107）：緩衝往上長過幾頁之後回到 buffer，
+// 症狀：緩衝往上長過幾頁之後回到 buffer，
 // 視野跳到緩衝最舊那一列。根因：_resumeBuffer 採用 server 落地幀的視窗頂列當錨，
 // 但緊接著的 _forceRedraw 那一幀 captureScrollAnchor 會從 **detached 視口**
 //（scrollTop 恆 0）把它覆寫掉 —— 與 _requestEnd/_requestHome 同一個坑，那兩處
@@ -2526,8 +2525,7 @@ describe("手機卡片：採用原生落點時游標必須在視口內", () => {
 });
 
 // 平滑捲動動畫（PgUp/Home/End/把游標拉回視野）與**背景補頁**必然重疊：實測每次
-// PgUp 都會觸發 prefetch，回應約 110ms 後落地，而動畫要 200~400ms
-//（錄製檔 ptt-debug-20260830-175318 / -175419）。
+// PgUp 都會觸發 prefetch，回應約 110ms 後落地，而動畫要 200~400ms。
 //
 // 重疊時的正確行為有兩半，缺一就是使用者回報的「回捲」：
 //   1. **補償**：prepend 在上方插入 N 列，DOM 內容整體下移 ⇒ scrollTop 必須 +N 列
@@ -2887,7 +2885,7 @@ describe("_sequence 記憶化", () => {
 // 退出文章回到列表（reducer: suspended --clean-list--> active，action
 // resume-in-place）。
 //
-// 使用者回報（錄製檔 ptt-debug-20260911-113150）：把某篇用滑鼠捲到視口最下面、
+// 使用者回報：把某篇用滑鼠捲到視口最下面、
 // 進去再退出，那篇會跳回畫面中間。根因：舊的 resume-buffer 採用 server 落地幀
 // （READ_REDRAW，read.c 的 20 列分頁）的視窗頂列當錨 ⇒ 使用者自己捲出來的位置
 // 被丟掉，畫面被釘回 server 的分頁。
@@ -3016,7 +3014,7 @@ describe("退文回列表：視野停在使用者自己捲到的位置", () => {
   });
 });
 
-// 錄製檔 ptt-debug-20261008-003701（APK，列表往上甩）：6.5 秒連送約 50 次 PgUp、畫面卡住。
+// APK，列表往上甩：6.5 秒連送約 50 次 PgUp、畫面卡住。
 // 真 Android Chrome 實測：慣性甩動進行中，JS 寫進捲動容器的 scrollTop 會被 compositor
 // 蓋回去 ⇒ 補頁後的「寫 scrollTop 補償」遺失 ⇒ 下一幀錨從 DOM 讀成「快到頂」⇒ 又補一頁。
 // 替身照真瀏覽器的行為：flinging 時寫入被丟掉；頂端保留區（absorbListShift）不需寫入。

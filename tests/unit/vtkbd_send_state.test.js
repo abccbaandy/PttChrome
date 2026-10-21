@@ -1,6 +1,6 @@
 // 送出端鏡像 pttbbs vtkbd 的 ESC 狀態機。
 //
-// 守的是這個真實症狀（2026-09-16 錄製檔 ptt-debug-20260916-011413.json）：
+// 守的是這個真實症狀：
 // 關掉長推文輸入框後多按的那一下 Esc 送出**裸 ESC** → server 停在 VKSTATE_ESC →
 // 接下來的 ← 的開頭 ESC 被當成 esc_arg 吃掉 → `[` 與 `D` 變成字面鍵 →
 // `[` ＝ RELATE_PREV（more.c:130-136）⇒ 畫面跳到同主題的上一篇。
@@ -109,7 +109,7 @@ describe("guardEscSequence（userKey：真鍵盤／IME 才有的 ESC 組合鍵�
 // 那些位元組永遠不是使用者的 ESC 組合鍵的第二個位元組（組合鍵的 Esc 走真鍵盤、
 // 不經過這些路徑），所以懸空的 ESC 態一律化解。
 //
-// 守的症狀（錄製檔 ptt-debug-20260917-012944.json#t=529）：使用者關掉長推文輸入框
+// 守的症狀：使用者關掉長推文輸入框
 // 後多按一下 Esc ⇒ server 停在 VKSTATE_ESC ⇒ 下一次按 X 探路送出的 `Q` 被吃成
 // esc_arg、回一個在 pager 沒有消費者的 KEY_ESC ⇒ **畫面不動、零輸出** ⇒ 700ms 後
 // CommandQueue 送 \f 探針 ⇒ 判成 miss ⇒「讀不到文章代碼（miss）」。

@@ -131,7 +131,7 @@ yarn test:e2e           # 仍連真實 PTT 的 live e2e（共存，--project=liv
 | `scn-aid-back`／`scn-aid-back-search` | AID 跳文 → 返回（列表好讀開文／`/` 搜尋結果開文） | `scenario_navigation.offline` |
 | `scn-deep-link` | hashchange deep link 完整落地＋F2（需帳號） | `deep_link_landing.offline` |
 | `scn-boardlist-class`／`scn-board-search-prompt` | 分類看板子清單平滑捲動、按 s 搜尋 prompt | `board_list.offline` |
-| `scn-board-note-movie` | 看板列表 ⏎ → Android 動畫進板畫面＋pressanykey → 文章列表（80×48；ptt-debug-20261008-105506 轉出，**首幀合成**：原檔首幀是使用者的我的最愛）；`scn-board-note-select` 全合成（主功能表→s→選擇看板 prompt），spec 把它接在前者的 recv 前面 | `board_note_skip.offline` |
+| `scn-board-note-movie` | 看板列表 ⏎ → Android 動畫進板畫面＋pressanykey → 文章列表（80×48，**首幀合成**：原檔首幀是使用者的我的最愛）；`scn-board-note-select` 全合成（主功能表→s→選擇看板 prompt），spec 把它接在前者的 recv 前面 | `board_note_skip.offline` |
 
 ## live 錄製檔分流（`yarn triage:recordings`）
 live 核心只驗幾個畫面；這個工具把整卷 live 錄製檔**每一幀**都驗一次，紅幀自動切成待轉素材。
@@ -180,22 +180,22 @@ live 核心只驗幾個畫面；這個工具把整卷 live 錄製檔**每一幀*
 - 存進 `cassettes/` 後**必須補齊 golden meta**（`commentCount`／`firstCommentAuthor`，
   article 卷）：逐卷測試 `easy-reading.offline.spec.js` 直接拿它們當斷言基準，缺了會
   `expect(undefined)` 紅。
-- 實例：`ask-urlline-blank.json`（ptt-debug-20260812-010606 轉出，2 頁 5 推）——
+- 實例：`ask-urlline-blank.json`（2 頁 5 推）——
   唯一能重現「非媒體連結佔位盒留下假高度」的素材，見下方「素材選用」。
-- 實例：`ask-aid-wrap.json`（ptt-debug-20260828-002500 轉出，2 頁 10 推）——守護
+- 實例：`ask-aid-wrap.json`（2 頁 10 推）——守護
   「跨行 AID 接合」：末兩則同作者推文是 `#1gU3wwNZ` ＋ 下一則開頭的 `(Browsers)`。
   **刻意保留 `mode:'debug-derived'`**（不改成 `article`）⇒ `findCassettes('article')`
   不會撿它、逐卷 spec 一律不受影響，只由 `aid_wrap.offline.spec.js` 以
   `loadCassette('ask-aid-wrap')` 指名載入。裁剪方式：丟掉列表 step 與跳轉失敗留下的
   `on:'raw'` step（`replay.js` 不認得 raw），把文章第一頁那步的 `on` 改成 `start`。
-- 實例：`pttbug-body-urlwrap.json`（ptt-debug-20260830-110548 轉出，1 頁 7 推）——守護
+- 實例：`pttbug-body-urlwrap.json`（1 頁 7 推）——守護
   「內文跨行連結」（`src/js/body_wrap.js`）：`※ 文章網址` 那行被切成兩列（左列收在
   col 77、右列 `404.html` 從 col 0 起）。這裡**改成 `mode:'article'`**（與 `ask-aid-wrap`
   相反）：它是乾淨的單頁文章，讓逐卷 spec 一起跑得到，等於多一份免費覆蓋。裁剪方式：
   丟掉列表那個 `on:'jump'` step，只留文章頁並把 `on` 改成 `start`（文章頁自己就是整屏
   首繪 —— `ESC[H` 起、每列都有 clrtoeol，單獨餵就是乾淨的一頁）。
   **那個版面是 PTT 端寫檔的 bug，不是新 spec**（依據見 `docs/pttbbs-screen-protocol.md` §11.1.1）。
-- 實例：`cchat-many-images.json`（ptt-debug-20261004-012553 轉出，4 頁 10 推、30 張 imgur 圖，
+- 實例：`cchat-many-images.json`（4 頁 10 推、30 張 imgur 圖，
   好讀 normal 總高約 2.4 萬 px）——**28 列終端機**錄的。`replayCassette`／`replayListCassette`
   會先依 `cassette.rows`／`cols` 設定終端機大小（`helpers/replay.js#applyCassetteTermSize`，
   走 `onValuesPrefChange` 整組套用；80×24 不動作），`splitFrames` 的狀態列切點也跟著列數走。

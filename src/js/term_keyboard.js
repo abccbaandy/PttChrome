@@ -176,8 +176,7 @@ export function isAltRemapEvent(e) {
 //   'v' → 本檔 _onKeyDown 的 `return false`（讓給瀏覽器原生貼上 → App.onDOMPaste）
 //   Shift+Insert → 同上（app 的 i18n alert_pasteShortcutText 就是叫使用者用它）
 //
-// **'x' 不在裡面，別加回去**（2026-09-19「Ctrl+X 轉錄轉到別篇」，錄製檔
-// ptt-debug-20260919-190640#t=7645）：終端機畫面不可編輯、focus 停在恆空的隱藏
+// **'x' 不在裡面，別加回去**（2026-09-19「Ctrl+X 轉錄轉到別篇」）：終端機畫面不可編輯、focus 停在恆空的隱藏
 // input #t ⇒ 瀏覽器「剪下」沒有作用對象，**沒有任何 handler 接它**。舊碼把 'x'
 // 列進來的後果是三不管地帶：不剪下、又因為早退而跳過列表好讀的 cursor-sync 腿，
 // 直接落到 _onKeyDown 的 CtrlShiftMap['x'] = 24 裸送 ^X。而 ^X 在文章列表是

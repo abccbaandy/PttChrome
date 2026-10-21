@@ -327,7 +327,7 @@ describe("accumulateListLines（置底文收录）", () => {
   });
 
   test("看板標題列不得被當成置底文收錄（PttCurrent：列表最底下多一列標題列）", () => {
-    // 錄製檔 ptt-debug-20260924-013612（PttCurrent 板尾短頁）。row 0 前 17 字有 4 個
+    // PttCurrent 板尾短頁。row 0 前 17 字有 4 個
     // 全形 ⇒ realign 補 4 格 ⇒ 作者欄 [17,29) 切到敘述「Current」的 C ⇒ 合法 userid、
     // 又沒有編號 ⇒ isPinnedListRow 為真。標題列若被收進 pinned map 就會排在序列最尾，
     // 點它還會走 open-pinned 交易然後 timeout 降級。累積只准掃 entry 區 [3, rows-2]。
@@ -484,7 +484,7 @@ describe("accumulateListLines（置底文收录）", () => {
   });
 
   test("partial repaint 帧：author 栏 plain、仅标题亮红 → 仍须命中去红＋教学", () => {
-    // debug 录制 20260717（ptt-debug-20260717-001556.json t=3477 / 015048 t=7008）：
+    // 實錄：
     // pttbbs 差分重绘的 partial 帧只重画标题区 1;31，author 栏维持 plain fg7。
     // 真实逻辑（bbs.c readdoent:830）高亮本来就只涂 mark→行尾、不含 author 栏
     // ——author 亮白其实是 isonline。单条件（标题区亮色）即须命中。
@@ -684,7 +684,7 @@ describe("buildListWindowLines（last-read title-match decorate-on-render）", (
 // 遠跳（Home/End）落地的落點頁不得被緩衝上限砍掉。
 //
 // 2026-09-10 回報「好讀列表 Home/End 有時失效，體感只是移到列表頂/底部」。
-// 錯製檔 ptt-debug-20260910-021827：End 送得出去、server 也回真板尾
+// End 送得出去、server 也回真板尾
 //（351832..351846），但約兩百毫秒後 prefetch 用**舊**緩衝邊界當 anchor 跳號
 //（送 340111 + CR）把 server 游標拉回舊位置 ⇒ 跳躍被抹平。
 //
@@ -752,7 +752,7 @@ describe("accumulateListLines（遠跳落點頁不得被 evict 砍掉）", () =>
     expect(ls.noteEvicted).toHaveBeenCalledWith(1);
   });
 
-  // 錄製檔 ptt-debug-20261008-014654：緩衝已滿、視口在中段，往上補的那頁每次都被
+  // 緩衝已滿、視口在中段，往上補的那頁每次都被
   // evict 原樣砍掉 ⇒ 緩衝不長、demand 一直補（約每 90ms 一頁），進文章重建才恢復。
   test("往上補頁落地：緩衝已滿且視口在中段，新頁留下、改砍底端", () => {
     const ls = fakeListSession();
@@ -770,7 +770,7 @@ describe("accumulateListLines（遠跳落點頁不得被 evict 砍掉）", () =>
     expect(ls.noteEvicted).not.toHaveBeenCalledWith(-1);
   });
 
-  // 錄製檔 ptt-debug-20261008-020516：往下補時視口頂上方只有幾十列，新頁照樣被砍。
+  // 往下補時視口頂上方只有幾十列，新頁照樣被砍。
   test("往下補頁落地：緩衝已滿、視口頂上方只有 60 列，新頁留下、改砍頂端", () => {
     const ls = fakeListSession();
     ls._selectedNum = OLD_LO + 60;
@@ -805,7 +805,7 @@ describe("accumulateListLines（遠跳落點頁不得被 evict 砍掉）", () =>
   });
 });
 
-// 錄製檔 ptt-debug-20261019-021418（Test 板，每週清板）：214..766 幾乎全是
+// Test 板（每週清板）：214..766 幾乎全是
 // 「(本文已被刪除)」。好讀視窗隱藏刪除文 ⇒ 可見列只有 767 以後十幾列，demand 的水位
 // （可見列 top < 2B）永遠不到；但緩衝上限算的是**原始列數** ⇒ 往上補到第 300 列外，
 // 剛補進來的頁一合併就被砍掉（樞紐 767 以下只有 24 列，保護規則失效、退回平衡規則

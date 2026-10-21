@@ -21,7 +21,7 @@
 //                no "article number" tier (removed 2026-10): numbers shift on
 //                every deletion and live in a separate space inside a `/`
 //                search list, so a number anchor is a guess — live it sent the
-//                user to another post (ptt-debug-20261012-235048). When the AID
+//                user to another post . When the AID
 //                cannot be learned, the back run stops on the list instead.
 //   kind 'board' board only: replay `s<board>` and stop on the list. pttbbs
 //                keeps a per-board cursor (getkeep, mbbsd/read.c:105/1171 — an

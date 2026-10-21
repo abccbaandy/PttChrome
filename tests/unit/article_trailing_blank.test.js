@@ -1,7 +1,7 @@
 // @unit-env browser
 // 手機好讀文章：PTT 補在文末之後的空白列要收起（docs/mobile.md「文末補白收起」）。
 // 文章比一頁短（或末頁）時 pmore 把 EOF 之後的列清成空白（`\x1b[K`），好讀長頁照收
-// ⇒ 手機推文區最下面一大塊空白（實錄 ptt-debug-20261010-232349.json：33 列內容＋13 列補白）。
+// ⇒ 手機推文區最下面一大塊空白（33 列內容＋13 列補白）。
 // 鎖：只收「最後一列非空白之後」的空白列、內文中間的空白列不動、外部契約保留、
 // 桌機（沒有 commentCards）一列都不收、文章長出新內容後原本收起的列要放回來。
 import { mountScreen, unmountAll } from "./helpers/mount_screen";

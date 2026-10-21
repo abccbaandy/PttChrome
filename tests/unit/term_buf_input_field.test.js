@@ -179,7 +179,7 @@ describe("isCursorOnInputField — 游標停在狀態列右下角", () => {
 });
 
 // 推文輸入欄的反白寬度＝vgetstring 的 len＝maxlength（長推文單則上限的權威來源）。
-// bytes 取自 ptt-debug-20260924-221056.json#t=4660（IP 板）／t=17273（非 IP 板），
+// bytes 取自實錄（IP 板／非 IP 板各一），
 // 帳號換成同長度（10 字）的佔位 id。
 describe("inputFieldWidth", () => {
   const pushPrompt = (len) =>

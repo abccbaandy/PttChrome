@@ -280,7 +280,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 重新整理（文章列表 `s<本板>⏎`）、搜尋彈窗送出（`/` `a` `Z` `s` → 關鍵字⏎；第二步 expect＝prompt 消失，回顯幀不算）、
 跳到第一篇未讀（End → PgUp… → `<編號>⏎`，PgUp 標 `trustLanding:false`）。看板列表的重新整理（`/` → ⏎）走
 `board_list_session._beginLandingTransaction`，同一個合約，落地 ⇒ `seed`＋`start-fill`。
-來源：錄製檔 `ptt-debug-20261020-161646`——三道命令 218ms 就做完，舊流程卻是「切原生 → 空等探針 250ms → 切回」，
+實測三道命令 218ms 就做完，舊流程卻是「切原生 → 空等探針 250ms → 切回」，
 使用者看到畫面翻面兩次。守護：`reading_record_list.test.js`／`reading_record_board_list.test.js`「落地即回」兩組
 （不推進計時器就斷言回到好讀）、offline `list_landing_resume.offline.spec.js`（真 F5：送出板名時仍凍著、全程沒有原生幀）。
 
@@ -349,8 +349,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
      （`_topNum`/`_topPinnedKey`/`_scrollFrac`）一律一起重設，同 `_seedAnchors`。
    漏掉任一道的症狀＝**退出文章後視野跑掉**：`_resumeBuffer` 剛採用的 server 落點
    被緊接著的 `_forceRedraw` 那一幀覆寫成序列位置 0，畫面跳到緩衝最舊那一列、剛讀
-   的文章捲出視野（緩衝只有一頁時 0 剛好正確 ⇒ 症狀「有時候」；錄製檔
-   ptt-debug-20260830-221107）。另一半：程式化定位（補償寫入／instant reveal）必須
+   的文章捲出視野（緩衝只有一頁時 0 剛好正確 ⇒ 症狀「有時候」）。另一半：程式化定位（補償寫入／instant reveal）必須
    同步 `_lastScrollTop`，否則它引發的 scroll 事件會被 `_onScrollFrame` 讀成
    「使用者往下捲」而偷送一次反方向 demand（違反不變量 4）。
    守護：`list_session.test.js`「退文回列表：視野停在 server 落點那一頁」三條＋
@@ -483,7 +482,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
   目標往上補（≤2 頁，**自己的 `upFills` 計數，不可共用 `_fillPages`**——往下的 demand 每頁也累加它）、
   `_demandDownIfWindowShort` 以待還原錨為頂往下補，而且**往下的鏈到邊（`markEdge`）時要把工作交回 `_maybeFill`**：
   rebuild 當下佇列常被往下的 demand 佔住、`_maybeFill` 直接返回，到邊的鏈不會自己回頭 ⇒ 錨在落點頁之上時
-  永遠等不到（`ptt-debug-20260924-004016.json#t=13891..18324`，只往下補 4 頁、4.4 秒零往上）。
+  永遠等不到（實測只往下補 4 頁、4.4 秒零往上）。
   生命週期進 debug 錄製檔：`listSession.viewportRestore`（saved／adopted／applied／dropped＋reason）。作廢：使用者按鍵／滾輪／點擊、
   `_seed`／`_handoffArticle`／`_cleanup`、到頂仍找不到、逾時 `PENDING_VIEWPORT_MAX_MS`。
   **只對決策表上的交易開**：`/` 搜尋、`s` 換板等會改編號空間，舊錨不可信（驗證另含編號空間 `mode`）。守護 `tests/unit/list_mark_read_viewport.test.js`、`tests/unit/reading_record_list.test.js`。

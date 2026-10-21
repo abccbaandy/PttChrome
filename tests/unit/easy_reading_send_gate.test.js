@@ -301,7 +301,7 @@ describe("線路忙時的自動翻頁：延後而非丟棄", () => {
 
 // 長推文放手（disarm）那一刻的補送。
 //
-// REGRESSION（ptt-debug-20260917-221112）：按 X 叫出長推文輸入框再取消，文章就
+// REGRESSION：按 X 叫出長推文輸入框再取消，文章就
 // 永遠停在當前頁、不會讀到結尾。錄製檔裡最後三筆全是
 // `easyReading.pageDown {action:"blocked", inFlightKind:null}` —— 擋人的不是
 // CommandQueue，是 _wireBusy 的 longPush.busy（探路成功後 _armed 一直活著）。
@@ -406,7 +406,7 @@ test("換文章時清掉待補送的鍵", () => {
 //   queue.onSettle → queue.done → _maybeIdle → onWireIdle 同步跑在
 //   list_session._dispatch **之前** ⇒ 送鍵當下 owner 還是 article-list、state 還是
 //   'opening' ⇒ decideUserBytes 回 SWALLOW ⇒ term_view._send 靜默 return。
-// 實錄 ptt-debug-20260920-023652：t=1187 決策送出、t=1187~1813 零 SEND、
+// t=1187 決策送出、t=1187~1813 零 SEND、
 // t=1813 才 `retry sinceSentMs:626`（＝PAGE_DOWN_GRACE_MS+20 的 watchdog）。
 //
 // **為什麼舊測試沒攔到**：上面兩個 harness 的 _view._send 都是

@@ -4,7 +4,7 @@
 //
 // 為什麼有它：觸控捲動／慣性甩動進行中，JS 寫進捲動容器的 scrollTop 會被 compositor
 // 蓋回去（真 Android Chrome 實測），往上補頁的「寫 scrollTop 補償」因此遺失 ⇒ 補頁
-// 停不下來（ptt-debug-20261008-003701）。保留區讓補頁在**不寫 scrollTop** 的前提下
+// 停不下來。保留區讓補頁在**不寫 scrollTop** 的前提下
 // 維持畫面不動。甩動本身 unit 做不出來；這裡鎖的是「沒有寫入、畫面照樣不動」這個
 // 不變量，以及保留區不能把視口撐高（border-box 下 padding 超過高度會撐開，踩過）。
 // session 端的對應守護在 tests/unit/list_session.test.js「甩動中補頁」。
@@ -180,7 +180,7 @@ describe("列表視口頂端保留區", () => {
     expect(pos[2][1]).toMatchObject({ d: Math.round(10 * h), res: 3000, ok: true });
   });
 
-  // 錄製檔 ptt-debug-20261008-014654 t=1106..2111：按下的那一列在觸控中被重畫換掉，
+  // 按下的那一列在觸控中被重畫換掉，
   // touchend 發到脫離 DOM 的舊節點、傳不到視口 ⇒ 舊版的觸控計數卡在 1，保留區一路
   // deferred、永遠不回補。
   test("按下的那一列被重畫換掉（touchend 收不到）：保留區照樣在靜止後回補", async () => {

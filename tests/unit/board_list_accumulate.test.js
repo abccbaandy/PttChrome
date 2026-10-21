@@ -215,7 +215,7 @@ describe("buildBoardListWindowLines", () => {
     expect(textOf(lines[lines.length - 1])).toContain("選擇看板");
   });
 
-  // 實錄 ptt-debug-20261011-000540.json：手機卡片照 bodyRows（rows-4）補白，卡片高 LIST_CARD_ROWS 列
+  // 手機卡片照 bodyRows（rows-4）補白，卡片高 LIST_CARD_ROWS 列
   // ⇒ 補白比視口高出一大截，清單下方一大塊捲得到的空白。卡片只補到一屏放得下的張數；
   // 判準取「這一幀」是不是手機，不讀上一幀的 listCards（從選單進來那一幀還是 false）。
   test("手機卡片：短清單只補到一屏放得下的張數（listFillRows）", () => {

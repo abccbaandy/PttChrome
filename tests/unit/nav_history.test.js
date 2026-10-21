@@ -21,7 +21,7 @@ describe("chooseAnchor 優先序", () => {
   });
 
   // 2026-10 起沒有序號層：序號會因刪文位移，`/` 搜尋清單裡又是另一套編號空間
-  // （read.c:661-665）——錄製檔 ptt-debug-20261012-235048 返回跑到別篇。
+  // （read.c:661-665）——實測返回跑到別篇。
   test("REGRESSION 列表序號絕不成為錨點（呼叫端就算多給 list 也一樣）", () => {
     const a = chooseAnchor({ list: list, articleBoard: "C_Chat", targetBoard: "movie" });
     expect(a.kind).toBe("board");

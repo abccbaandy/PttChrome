@@ -173,7 +173,7 @@ test.describe('列表好讀 · 右鍵「前已讀後未讀」（離線重放）'
 
       // 第三步：prompt 出現（expect 判定）之後才送 'w\r'（getdata 是整行輸入，少了
       // Enter 不會動）。那一刻畫面仍凍著：沒翻到原生、PTT 的 prompt 沒畫給使用者看
-      // （回歸：錄製檔 ptt-debug-20261020-161646 的畫面翻面兩次）。
+      // （回歸：畫面翻面兩次）。
       const atApply = await stateWhenSent(page, 'w\r\f', before);
       expect(atApply).toEqual({ renderMode: 'frozen', promptPainted: false });
       const sent = (await dumpListState(page)).sent.slice(before);

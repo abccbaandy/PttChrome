@@ -7,7 +7,7 @@ import { parseStatusRow } from "../../src/js/string_util";
 // term_view 的「目前這篇」事實（_articleAuthor／_articleBoard／_articleTitle：App Bar
 // 標題、#AID 遞補看板、同作者高亮）。原本只有讀到檔頭才覆寫 ⇒ 沒有檔頭的特殊文章
 // （進站的系統公告、pmore 動畫…）會沿用上一篇的標題（手機 App Bar 顯示舊文章標題，
-// 錄製檔 ptt-debug-20261009-231630：「站內信箱僅供…」公告頁）。
+// 「站內信箱僅供…」公告頁）。
 describe("articleContextFromScreen（每幀：設定／清空／沿用）", () => {
   const top = parseStatusRow(
     "  瀏覽 第 1/1 頁 (100%)  目前顯示: 第 01~03 行              (h)說明 (←/q)離開  "

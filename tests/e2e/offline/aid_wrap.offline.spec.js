@@ -1,12 +1,12 @@
 // 跨行推文 AID 接合 —— 離線重放守門（真瀏覽器 / 真渲染 / 零網路）。
 //
-// 回歸來源（使用者 2026-08-27 的除錯錄製檔 ptt-debug-20260828-002500）：ask 板
+// 回歸來源：ask 板
 // M.1787109393 第 2 頁的末兩則同作者推文
 //   推 abccbaandy: 我仿照這樣式實作了一版，有興趣可到  #1gU3wwNZ      08/26 22:17
 //   →  abccbaandy: (Browsers) 體驗(懷舊?)                             08/26 22:17
 // AID 打在一則的結尾、看板打在下一則的開頭。修好之前 aid_parse.parseBoardSuffix 一
-// 撞到合併塊的 '\n' cell 就放棄 ⇒ board 為 null ⇒ 退回「目前文章所在看板」，錄製檔
-// 把後果整段錄下來了：送出 `sask` 跳到 ask 板 → `#1gU3wwNZ` 搜不到 → queue.miss。
+// 撞到合併塊的 '\n' cell 就放棄 ⇒ board 為 null ⇒ 退回「目前文章所在看板」，
+// 後果：送出 `sask` 跳到 ask 板 → `#1gU3wwNZ` 搜不到 → queue.miss。
 //
 // 為什麼要 e2e 而不只是 unit：判準橫跨三層 —— term_buf 造出的真 TermChar（含 Big5
 // 雙位元組與 partOfURL 旗標）、comment_merge 對真實推文列切出的內容邊界、

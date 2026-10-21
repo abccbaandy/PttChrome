@@ -206,7 +206,7 @@ describe("純函式", () => {
   });
 
   // 新版 UI 的文章列表 row 1 是 bbs.c 指令表生成的說明列，含「[s]選擇看板」
-  // （ptt-debug-20261018-122136：在文章列表按 ⏎ 開文被 arm，文章被當進板公告送 ← 退出）。
+  // （在文章列表按 ⏎ 開文被 arm，文章被當進板公告送 ← 退出）。
   test("新版 UI 文章列表 row 1 的「[s]選擇看板」說明不算選擇看板 prompt", () => {
     const rows = NEW_UI_ARTICLE_LIST.rows;
     expect(boardEntryArms(rows, "\r")).toBe(false);
@@ -285,7 +285,7 @@ describe("完整流程", () => {
     expect(h.sent).toEqual(["\r", " \f"]);
   });
 
-  // ptt-debug-20261008-215452：看板列表平滑捲動的開板 `\r` 是在 sync-jump 回應的
+  // 看板列表平滑捲動的開板 `\r` 是在 sync-jump 回應的
   // settle 裡（queue.done → 排下一個命令）送出的，我們的 listener 排在同一個 settle 的
   // 最後 ⇒ 看到的還是舊的看板列表，曾被判成已落地而立刻解除（arm 與 disarm 同一毫秒）。
   test("在 settle 裡送出的進板鍵：同一個 settle 的舊畫面不算落地", () => {

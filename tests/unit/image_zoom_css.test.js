@@ -82,7 +82,7 @@ describe("main.css：整頁圖片倍率", () => {
     expect(hidden).toBeTruthy();
   });
 
-  // 「150% 滾輪往上捲不動、畫面上下抖」的根因（ptt-debug-20260928-181323）：slot 的
+  // 「150% 滾輪往上捲不動、畫面上下抖」的根因：slot 的
   // implicit auto 軌道被替身盒（<div>，絕對寬＝小圖寬×倍率）撐寬 ⇒ max-width:100% 失效。
   // 真幾何在 tests/e2e/offline/image_zoom.offline.spec.js「替身盒與真圖同尺寸」。
   test("slot 的欄寬釘死在 slot 寬，不隨內容長（倍率態替身盒才不會撐破版面）", () => {

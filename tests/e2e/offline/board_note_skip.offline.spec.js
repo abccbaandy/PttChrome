@@ -4,8 +4,8 @@
 // 送出出口（telnet._sendEscaped → onDataSent）真的 arm 得起來、settle listener 的順序讓代按的鍵
 // 排得上同一條 CommandQueue、好讀沒有把進板公告當文章開。
 //
-// 素材：tests/e2e/cassettes/scn-board-note-movie.json —— 由使用者錄製檔
-// ptt-debug-20261008-105506 轉出（Android 板的動畫進板畫面，播完是「請按任意鍵繼續」），
+// 素材：tests/e2e/cassettes/scn-board-note-movie.json ——
+// 真實錄製轉出（Android 板的動畫進板畫面，播完是「請按任意鍵繼續」），
 // 首幀改成合成的單列看板列表（原檔首幀是使用者的我的最愛，不入 repo）。重放時整段動畫
 // 一次餵完 ⇒ 落在 pressanykey；動畫中送 q 的分支由 unit 守。
 const { test, expect } = require('@playwright/test');

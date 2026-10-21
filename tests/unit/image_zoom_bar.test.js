@@ -185,7 +185,7 @@ describe("內嵌預覽圖的倍率列", () => {
     expect(btn(slot, "previewZoomLabel").textContent).toBe("150%");
   });
 
-  // 錄製檔要看得到佔位盒的高度軌跡（ptt-debug-20260928-181323 什麼都沒錄到）。
+  // 錄製檔要看得到佔位盒的高度軌跡（舊版什麼都沒錄到）。
   test("錄製中：尺寸回報記一筆 preview.slot（含 href、模式與各層高度）", () => {
     const got = [];
     setDiagSink((tag, info) => got.push({ tag, info }));

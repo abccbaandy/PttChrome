@@ -1,7 +1,7 @@
 // @unit-env browser
 // 閱讀位置的採樣（term_view.currentLineIndex）與還原（easy_reading._advanceScrollRestore
 // → term_view.pageRowTop）在「視窗上方有行內預覽」時必須以 srow 節點為準。
-// 症狀（若退回，ptt-debug-20261013-005651）：格線版面用 scrollTop/chh 採樣，把上方
+// 症狀（若退回）：格線版面用 scrollTop/chh 採樣，把上方
 // 連結卡／圖片佔位盒的高度算成列數 ⇒ AID 跳轉返回後落點往下偏 30 多列；還原端用
 // lineIndex*chh 又不認預覽高度、也沒先把閉塊照常渲染，落點再偏一次。
 import { TermView } from "../../src/js/term_view";
@@ -95,7 +95,7 @@ describe("格線版面、視窗上方有行內預覽", () => {
   });
 });
 
-// ptt-debug-20261013-213914：掛圖的那一列（文字＋圖）是一個 bbsrow 節點。停在圖中間
+// 掛圖的那一列（文字＋圖）是一個 bbsrow 節點。停在圖中間
 // 離開，只記 srow 的話還原會貼齊列頂 ⇒ 往上偏「離開時已捲進圖裡的那段」（實錄 220px）。
 describe("視窗頂端落在掛圖那一列的中間", () => {
   function restoreTo(view, lineIndex) {

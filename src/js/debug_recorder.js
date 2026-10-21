@@ -209,7 +209,7 @@ export class DebugRecorder {
 
   // 好讀長頁的捲動軌跡：使用者的滾輪輸入（main.wheel）對照實際捲動位置
   // （main.scroll）。「滾輪往上捲不動、畫面上下抖」這類問題只看 bytes 完全看不出來
-  // （2026-09 的 ptt-debug-20260928-181323：開文後 23 秒一筆事件都沒有）。
+  // （實例：開文後 23 秒一筆事件都沒有）。
   // 只在錄製期間掛 listener；scroll 事件本身一幀最多一次，量 scrollHeight 的 reflow
   // 成本只有錄製時才付。
   _watchScroller(scroller) {

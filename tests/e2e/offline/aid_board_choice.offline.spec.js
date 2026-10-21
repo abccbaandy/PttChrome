@@ -177,7 +177,7 @@ test.describe('無看板 AID 的看板選擇（離線重放）', () => {
   });
 });
 
-// 錄製檔 ptt-debug-20261018-173606：作者搜尋結果開的文章裡跳文 ⇒ PTT 回「此狀態下無法
+// 作者搜尋結果開的文章裡跳文 ⇒ PTT 回「此狀態下無法
 // 使用搜尋文章代碼(AID)功能」。
 test.describe('搜尋結果開的文章裡跳文（離線重放）', () => {
   test.skip(!cassette, `缺 cassette ${CASSETTE}.json`);

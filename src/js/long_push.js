@@ -99,7 +99,7 @@ export function big5ByteLength(text) {
 // **權威來源是畫面**：推文輸入列的反白欄寬就是 maxlength（vgetstring 的 len，
 // term_buf.inputFieldWidth 量），有它就直接用——IP 欄、id 長度、BRD_ALIGNEDCMT 的
 // id 補寬、小天使暱稱、term.ptt.cc 私有的格式差異全都已經算進去了。
-// 實測 ptt-debug-20260924-221056.json#t=4660/17273：IP 板 36 格、非 IP 板 51 格
+// IP 板 36 格、非 IP 板 51 格
 // （id 10 字），與下面公式逐位吻合。
 //
 // 量不到欄寬時才退回公式（bbs.c:3043-3078）：

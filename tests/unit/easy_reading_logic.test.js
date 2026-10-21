@@ -1379,7 +1379,7 @@ describe("nextPageDownDecision（單一 in-flight 交易, P3/P4）", () => {
     expect(d.action).toBe("giveup");
   });
 
-  // 回歸：ptt-debug-20260809-135157（4700 行超長文）的真實時序。
+  // 回歸：4700 行超長文的真實時序。
   //   t=23047 送 PageDown（sig 4620~4642）
   //   t=23124 settle 觸發 → 舊版判「同一頁 ⇒ 掉了」→ retry ⇒ 第二個 PageDown
   //   t=23124 真正的回應（4642~4664）同一毫秒才到

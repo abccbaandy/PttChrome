@@ -1391,7 +1391,7 @@ export class ScreenController {
   // scrollBy、先切 overflow:hidden、改開 overflow-anchor 全部一樣）。往上補頁把列
   // 插在視口上方，舊做法靠寫 scrollTop 把畫面推回原處 ⇒ 甩動中補償遺失，視口留在
   // 新內容的頂端附近 ⇒ 下一幀的錨從 DOM 讀成「快到頂」⇒ 又補一頁 ⇒ 停不下來
-  //（錄製檔 ptt-debug-20261008-003701：6.5 秒連送約 50 次 PgUp，畫面卡住）。
+  //（6.5 秒連送約 50 次 PgUp，畫面卡住）。
   //
   // 做法：視口頂端留一段空白（css `.listBodyView::before`）。補進 n 列的同一幀把它縮 n 列高 ⇒ 舊列的 DOM
   // 位置一格不動，完全不必寫 scrollTop，甩動照常跑完。保留區耗盡才退回寫入。
@@ -1433,8 +1433,8 @@ export class ScreenController {
   }
 
   // **不追蹤觸控**：手指按下的那一列若在觸控中被重畫換掉，touchend 會發到已脫離 DOM
-  // 的舊節點，傳不到視口（也傳不到 document）⇒ 計數卡住、保留區永遠不回補（錄製檔
-  // ptt-debug-20261008-014654 t=1106..2111 `touches:1` 一路 deferred）。手指按著不動時
+  // 的舊節點，傳不到視口（也傳不到 document）⇒ 計數卡住、保留區永遠不回補（實測
+  // `touches:1` 一路 deferred）。手指按著不動時
   // 沒有進行中的捲動，寫入不會被蓋掉；之後再拖是以當下位置加位移繼續捲。
   _listScrollBusy() {
     return performance.now() - this._listScrollAt < LIST_RESERVE_IDLE_MS;

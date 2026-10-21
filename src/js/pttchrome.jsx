@@ -713,7 +713,7 @@ App.prototype.sendData = function(str) {
 // 列表 session 當成使用者按鍵：文章落地那一瞬間 owner 還是 article-list、state 還是
 // `opening` ⇒ 判 SWALLOW ⇒ **零 byte 上線**，好讀卻已經記下「送出去了」 ⇒ 只剩
 // 620ms 的 watchdog 能救 ⇒ 每篇文章開頭固定卡 0.5 秒＋閃一次假的
-// 「開啟文章中，請稍候…」。實錄 ptt-debug-20260920-023652，完整推導見
+// 「開啟文章中，請稍候…」。完整推導見
 // `docs/easy-reading.md`「送鍵閘門」。機器 byte 去跑 cursor-sync 腿本身也毫無意義。
 //
 // 走 `conn.send`（機器變體）而非 `sendUserKey`：界線是**送出入口**不是位元組內容

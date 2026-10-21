@@ -40,7 +40,7 @@
 //   a) 從好讀列表進文章，第一次自動翻頁固定卡 ~620ms＋每篇閃一次假的
 //      「開啟文章中，請稍候…」。文章落地那一瞬間 owner 還是 article-list、state 還是
 //      `opening` ⇒ 判 SWALLOW ⇒ 好讀的 PageDown 零 byte 上線，只剩 watchdog 能救。
-//      實錄 ptt-debug-20260920-023652，完整推導見 `docs/easy-reading.md`「送鍵閘門」。
+//      完整推導見 `docs/easy-reading.md`「送鍵閘門」。
 //   b) 在好讀列表上開設定頁再關掉 ⇒ 被踢到原生鏡像。`switchToEasyReadingMode` 末尾
 //      那個 `^L` 整頁重繪是無條件的，在 `active` + `buffer` 下判 ADOPT ⇒
 //      `_beginPassthroughBytes` ⇒ `_enterFunctionMode()`（連 cache 一起丟，不變量 15）。

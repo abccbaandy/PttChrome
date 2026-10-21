@@ -170,7 +170,7 @@ describe("markReadUnreadBefore 的序列", () => {
     expect(enqueued[0].keys).toBe("105\r");
   });
 
-  // 回歸（錄製檔 ptt-debug-20261020-161646）：舊版跳轉一落地就切原生鏡像，v 的
+  // 回歸：舊版跳轉一落地就切原生鏡像，v 的
   // prompt、w⏎ 的回應全畫在使用者眼前，之後還要空等靜置探針才切回好讀。
   test("跳轉落地後仍凍著（不切原生）才送 v", () => {
     const { s, enqueued } = makeSession();

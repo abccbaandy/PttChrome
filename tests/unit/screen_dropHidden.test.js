@@ -183,7 +183,7 @@ describe("畫面 board-list native mode (無 listEasyReading → 黑名單通知
   });
 });
 
-// REGRESSION 2026-09-05（錄製檔 ptt-debug-20260905-122522 ＋ 使用者截圖）：
+// REGRESSION：
 // 在文章列表按 Ctrl-P 發文，分類畫面上冒出「（本文已被黑名單） vtub」通知列。
 // setPageState 沒有 reset 分支 ⇒ 發文畫面**沿用**列表的 pageState 2，
 // term_view 的 inListContext 又是黏的 ⇒ 標註層兩個輸入都指向「這是列表」。

@@ -61,8 +61,8 @@ export function anchorScrollTop({ pos, frac, rowH, maxScrollTop }) {
 // bodyRows 筆），到頂＝0。每補一頁吃掉一頁；甩動中連補幾頁都不必寫 scrollTop，
 // 停下來才回補。保留區在視野裡時是空白（內容補進來就原地出現）。
 // rowsAbove：已知上方最多還能補進幾列（看板列表＝緩衝第一項編號 − 1）。保留區不准比它
-// 大：收掉多出來的部分要寫 scrollTop、捲動中只能延後，補到頂時剩下的就是捲得進去的空白
-//（錄製檔 ptt-debug-20261013-005604）。以它為上限，補到頂時正好吸收完。
+// 大：收掉多出來的部分要寫 scrollTop、捲動中只能延後，補到頂時剩下的就是捲得進去的空白。
+// 以它為上限，補到頂時正好吸收完。
 export const LIST_RESERVE_PAGES = 4;
 export function listReservePx({ edgeUp, bodyRows, rowH, rowsAbove }) {
   if (edgeUp) return 0;
