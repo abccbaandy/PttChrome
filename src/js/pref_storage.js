@@ -152,6 +152,11 @@ export const DEFAULT_PREFS = {
   imageProxyCatbox: true,
   imageProxyTenor: true,
 
+  // 開站快取（public/sw.js、js/open_cache.js、docs/open-cache.md）：Service Worker 讓帶 hash
+  // 的程式檔直接用這台裝置存的那份，開站只問網頁本身一次。預設開；關掉＝unregister＋清 cache，
+  // 回到瀏覽器自己逐檔確認。一個 byte 都不送 PTT ⇒ 不在安全模式名單。
+  enableOpenCache: true,
+
   // 滑鼠（設定頁的「滑鼠」分頁）。決策層是純函式 js/mouse_regions.js，合約與
   // 舊→新 key 對照見 docs/mouse.md。
   //

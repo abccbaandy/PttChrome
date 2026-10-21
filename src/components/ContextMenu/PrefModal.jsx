@@ -1668,6 +1668,16 @@ export const PrefModal = ({
                   {...anchor("imgurProxyUrl")}
                 />
               </PrefSection>
+              <PrefSection legendKey="options_openCache">
+                <PrefCheckbox
+                  name="enableOpenCache"
+                  checked={values.enableOpenCache}
+                  onChange={onCheckboxChange}
+                  description={i18n("tooltip_enableOpenCache")}
+                >
+                  {i18n("options_enableOpenCache")}
+                </PrefCheckbox>
+              </PrefSection>
             </Tabs.Panel>
             <Tabs.Panel value="enhance">
               <PrefSection legendKey="options_enhance">
