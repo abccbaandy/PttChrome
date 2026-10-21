@@ -18,7 +18,7 @@ import { UnreadJump } from './unread_jump';
 import { MarkAllRead } from './mark_all_read';
 import { BoardMarkRead } from './board_mark_read';
 import { installPullRefresh } from './pull_refresh';
-import { installPullNextArticle } from './pull_next_article';
+import { installPullNextArticle, installWheelNextArticle } from './pull_next_article';
 import { LongPushSession } from './long_push_session';
 import { LogoutSession } from './logout_session';
 import { BoardNoteSkip } from './board_note_skip';
@@ -284,6 +284,8 @@ export const App = function() {
   this.nextArticle = new NextArticle(this);
   // 手機讀到文末再往上拉過門檻 ⇒ 開下一篇（只在 mobile 版面起作用，被動監聽）。
   this._uninstallPullNextArticle = installPullNextArticle(this);
+  // 桌機：讀到文末、停一下、再往下捲過門檻 ⇒ 開下一篇（被動監聽，pull_next_article.js）。
+  this._uninstallWheelNextArticle = installWheelNextArticle(this);
   // 水球／系統訊息收件匣（這次連線收到的水球與廣播，鈴鐺打開看；message_inbox.js）。
   this.messageInbox = new MessageInbox(this);
   // 新推文標記（重開讀過的文章，上次讀完之後的推文前面一條灰線；new_comments.js）。

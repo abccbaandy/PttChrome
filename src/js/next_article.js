@@ -13,7 +13,11 @@
 //      <編號>⏎ → ⏎），搜尋結果走 startSubNum（← 回同一份結果 → <編號>⏎ → 游標那列認得出
 //      才 ⏎），每步依畫面驗證；落地後再比一次作者＋主題，不符就提示，人留在 PTT 給的畫面。
 //   3. **不寫 #mainContainer**：卡片是 `.main`（好讀的捲動容器）裡、#screenRoot 後面的獨立
-//      節點，跟著文末一起捲；核心渲染鏈不知道它存在。
+//      節點，跟著文末一起捲；核心渲染鏈不知道它存在。換文途中蓋住原生鏡像的遮罩
+//      （#nextArticleVeil）也一樣：body 底下 fixed 對齊 `.main`，不碰終端機的任何節點。
+//
+// 認得出這篇、卻沒有下一篇時，卡片換成「已無下一篇」（列表到底了）或「已到文末」（下一篇
+// 在還沒看過的列表頁），不能點 —— 讓人知道功能還在，只是這裡沒得接。
 
 import { isArticleListTitleRow } from './screen_titles';
 import { isArticleListFooter } from './screen_captions';
@@ -27,8 +31,14 @@ import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
 
 export const NEXT_ARTICLE_ID = 'nextArticleCard';
+export const NEXT_ARTICLE_VEIL_ID = 'nextArticleVeil';
 // 換文整段的上限（同雙欄閱讀）。
 const NAV_WATCHDOG_MS = 45000;
+// 換文成功後，遮罩最多等好讀把新文章畫出來這麼久（ensureEnabledOnArticle 可能延到下一次
+// settle 才接手）；逾時照樣拿掉，寧可閃一下原生也不要蓋著畫面。
+const VEIL_RELEASE_MAX_MS = 2500;
+// 遮罩淡出的時間（CSS transition 同值）。
+const VEIL_FADE_MS = 180;
 
 // ---------------------------------------------------------------------------
 // 純判讀（tests/unit/next_article.test.js）
@@ -50,6 +60,17 @@ export function nextEntryAfter(entries, num, filter, skipped) {
     if (skipped) skipped.push({ num: n, why: why });
   }
   return null;
+}
+
+// nextEntryAfter 找不到時，是不是因為這篇之後列表就結束了（endNum＝快照看到的列表盡頭，
+// split_reader#listPageOf）：從下一號到盡頭每一號都看過（而且都被跳過）⇒ 真的沒有下一篇。
+// 中間缺號、或沒看過盡頭 ⇒ false（不知道，是還沒載入的頁）。
+export function listEndsAfter(entries, num, endNum) {
+  if (!entries || num == null || endNum == null || num > endNum) return false;
+  const seen = new Set();
+  for (const e of entries) seen.add(e.num);
+  for (let n = num + 1; n <= endNum; n++) if (!seen.has(n)) return false;
+  return true;
 }
 
 // 落地的文章是不是卡片上那一篇（作者＋主題，列表主題可能被截成 …）。檔頭主題對不上也
@@ -115,8 +136,13 @@ export function NextArticle(core) {
   this._el = null;
   this._lastPickRec = null; // _logPick 的去重：同一個錄製器、同一個結果只記一次
   this._lastPickKey = null;
-  // pull：手機往上拉的進度（pull_next_article.js），null｜'pull'｜'armed'，只改卡片的字。
-  this._state = { visible: false, entry: null, pending: false, pull: null };
+  this._veil = null; // 遮罩 DOM（第一次換文時才建）
+  this._veilWait = null; // 換文成功、等新文章畫出來再拿掉遮罩：{ timer }
+  this._veilFade = null; // 淡出中的 timer
+  // entry：下一篇；null 而 visible ⇒ 終點卡，end＝'last'（列表到底）｜'unknown'（下一篇沒看過）。
+  // pull／progress：往下拉的進度（pull_next_article.js），pull＝null｜'pull'｜'armed'（手機
+  // 觸控）｜'wheel'（桌機滾輪），progress＝0..1；只改卡片的字與進度條。
+  this._state = { visible: false, entry: null, end: null, pending: false, pull: null, progress: null };
   const self = this;
   if (core.buf && core.buf.addEventListener)
     core.buf.addEventListener('screenSettled', function() {
@@ -142,14 +168,16 @@ NextArticle.prototype = {
   },
 
   _hide: function() {
-    if (this._state.visible) this._set({ visible: false, pull: null });
+    if (this._state.visible) this._set({ visible: false, pull: null, progress: null });
   },
 
-  // 手機往上拉的進度（pull_next_article.js）：卡片的字改成「再往上拉」／「放開開啟」。
-  setPull: function(pull) {
-    const p = pull === 'pull' || pull === 'armed' ? pull : null;
-    if (p && !this._state.visible) return;
-    this._set({ pull: p });
+  // 往下拉的進度（pull_next_article.js）：卡片的字改成「再往上拉」／「放開開啟」／「繼續往下
+  // 捲」，progress（0..1）畫成卡片底下的進度條。終點卡（沒有下一篇）不接。
+  setPull: function(pull, progress) {
+    const p = pull === 'pull' || pull === 'armed' || pull === 'wheel' ? pull : null;
+    if (p && (!this._state.visible || !this._state.entry)) return;
+    const n = p && typeof progress === 'number' ? Math.round(Math.max(0, Math.min(1, progress)) * 100) / 100 : null;
+    this._set({ pull: p, progress: n });
   },
 
   _wireBusy: function() {
@@ -192,6 +220,7 @@ NextArticle.prototype = {
     const core = this._core;
     const buf = core.buf;
     if (!buf || typeof buf.getRowText !== 'function') return;
+    this._maybeReleaseVeil();
     if (!enabled()) {
       this._hide();
       return;
@@ -238,15 +267,21 @@ NextArticle.prototype = {
       return;
     }
     const current = findCurrentNum(snap.entries, article, list.cursorNum, hintFresh);
-    const skipped = [];
-    const entry = current == null ? null : nextEntryAfter(snap.entries, current, listFilterOf(view), skipped);
-    this._logPick(current, entry, skipped);
-    if (!entry) {
+    if (current == null) {
       this._hide();
       return;
     }
+    const skipped = [];
+    const entry = nextEntryAfter(snap.entries, current, listFilterOf(view), skipped);
+    this._logPick(current, entry, skipped);
+    if (!entry) {
+      // 認得出這篇、卻接不下去：終點卡（不能點），讓人知道是到底了，不是功能壞了。
+      const end = listEndsAfter(snap.entries, current, snap.endNum) ? 'last' : 'unknown';
+      this._set({ visible: true, entry: null, end: end, pending: false, pull: null, progress: null });
+      return;
+    }
     this._pickMode = list.mode;
-    this._set({ visible: true, entry: entry, pending: false });
+    this._set({ visible: true, entry: entry, end: null, pending: false });
   },
 
   open: function() {
@@ -274,7 +309,13 @@ NextArticle.prototype = {
       const ok = !!(result && result.ok);
       rr.end(bm, ok ? 'done' : 'fail');
       self._set({ pending: false });
-      if (!ok) return;
+      // 失敗：馬上拿掉遮罩，人看得到 PTT 給的原生畫面與錯誤提示（認不出 ⇒ 原生）。
+      // 成功：等好讀把新文章畫出來才拿（_maybeReleaseVeil）。
+      if (!ok) {
+        self._dropVeil(true);
+        return;
+      }
+      self._awaitVeilRelease();
       // 落地的這篇就是「看過列表後的第一篇」（cursorHintFresh 重新記）。
       if (self._lastList) self._lastList = Object.assign({}, self._lastList, { cursorNum: entry.num, articleKey: null });
       const view = core.view || {};
@@ -287,7 +328,9 @@ NextArticle.prototype = {
         done({ ok: false });
       }, NAV_WATCHDOG_MS)
     };
-    this._set({ pending: true });
+    this._set({ pending: true, pull: null, progress: null });
+    // 遮罩一定要在 start 之前：start 同步就進 functionMode 鏡像原生畫面，先蓋上才不會閃。
+    this._showVeil(entry);
     // 搜尋結果：<編號>⏎ 後游標那一列要是卡片上那篇才開（快照可能是上一次搜尋的）；
     // 認得出就順便當落地比對的 seen。
     const verify = function(rowText) {
@@ -302,9 +345,127 @@ NextArticle.prototype = {
       this._nav = null;
       rr.end(bm, 'cancel');
       this._set({ pending: false });
+      this._dropVeil(true);
       return false;
     }
     return true;
+  },
+
+  // ── 換文遮罩 ────────────────────────────────────────────────────────────
+  // 換文是真的走一趟原生鍵（s<板>⏎ → 列表 → <編號>⏎ → ⏎），aid_navigation 途中讓好讀進
+  // functionMode 鏡像原生畫面 ⇒ 不蓋住的話會閃過原生的文章頁與列表。遮罩是 body 底下
+  // fixed、對齊 `.main` 的不透明層，上面放下一篇的標題（從卡片目前的位置滑到頂端，像把
+  // 下一篇捲上來），新文章由好讀畫好後淡出。不碰 #mainContainer、不攔任何渲染。
+
+  _showVeil: function(entry) {
+    const view = this._core.view;
+    const main = view && view.mainDisplay;
+    if (!main || typeof document === 'undefined' || !main.getBoundingClientRect) return;
+    const r = main.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    this._clearVeilTimers();
+    const veil = this._ensureVeil();
+    veil.style.left = r.left + 'px';
+    veil.style.top = r.top + 'px';
+    veil.style.width = r.width + 'px';
+    veil.style.height = r.height + 'px';
+    const fs = typeof getComputedStyle === 'function' ? getComputedStyle(main).fontSize : '';
+    if (fs) veil.style.fontSize = fs;
+    const [label, title, meta] = veil.firstChild.children;
+    label.textContent = i18n('next_article_opening');
+    title.textContent = (entry.recommend ? entry.recommend + ' ' : '') + entry.title;
+    const date = (entry.date || '').trim();
+    meta.textContent = entry.author + (date ? ' · ' + date : '');
+    // 標題列從卡片現在的位置出發，滑到頂端（CSS transition；prefers-reduced-motion 不滑）。
+    const head = veil.firstChild;
+    const card = this._el && !this._el.hidden ? this._el.getBoundingClientRect() : null;
+    const from = card ? Math.max(0, Math.min(card.top - r.top, r.height - card.height)) : 0;
+    head.style.transition = 'none';
+    head.style.transform = from ? 'translateY(' + Math.round(from) + 'px)' : '';
+    veil.removeAttribute('data-leaving');
+    veil.hidden = false;
+    void head.offsetHeight; // 先落地起點，下一行的 transform 才會有 transition
+    head.style.transition = '';
+    head.style.transform = '';
+  },
+
+  _ensureVeil: function() {
+    if (this._veil) return this._veil;
+    const veil = document.createElement('div');
+    veil.id = NEXT_ARTICLE_VEIL_ID;
+    veil.hidden = true;
+    veil.setAttribute('role', 'status');
+    const head = document.createElement('div');
+    head.className = 'nextArticleVeilHead';
+    for (const cls of ['nextArticleLabel', 'nextArticleTitle', 'nextArticleMeta', 'nextArticleVeilBar']) {
+      const s = document.createElement('span');
+      s.className = cls;
+      head.appendChild(s);
+    }
+    veil.appendChild(head);
+    // 同卡片：不搶 #t 焦點、滑鼠不往 window 傳（App 的滑鼠入口會把它當成點終端機）。
+    for (const t of ['mousedown', 'mouseup', 'click']) {
+      veil.addEventListener(t, function(e) {
+        if (t === 'mousedown') e.preventDefault();
+        e.stopPropagation();
+      });
+    }
+    document.body.appendChild(veil);
+    this._veil = veil;
+    return veil;
+  },
+
+  _clearVeilTimers: function() {
+    if (this._veilWait) clearTimeout(this._veilWait.timer);
+    this._veilWait = null;
+    if (this._veilFade) clearTimeout(this._veilFade);
+    this._veilFade = null;
+  },
+
+  // 換文成功：等好讀把新文章畫出來（_maybeReleaseVeil，每次 settle 也會問），逾時照樣拿掉。
+  _awaitVeilRelease: function() {
+    if (!this._veil || this._veil.hidden) return;
+    const self = this;
+    this._clearVeilTimers();
+    this._veilWait = {
+      timer: setTimeout(function() {
+        self._dropVeil(false);
+      }, VEIL_RELEASE_MAX_MS)
+    };
+    this._maybeReleaseVeil();
+  },
+
+  _maybeReleaseVeil: function() {
+    if (!this._veilWait || this._nav) return;
+    const core = this._core;
+    const er = core.easyReading;
+    const buf = core.buf;
+    if (!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode)) return;
+    clearTimeout(this._veilWait.timer);
+    this._veilWait = null;
+    const self = this;
+    // 等這一幀畫完再淡出（好讀的 redraw 與這裡在同一個 task 裡）。
+    const later = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
+    later(function() {
+      self._dropVeil(false);
+    });
+  },
+
+  // immediate：馬上拿掉（失敗、取消）；否則淡出。
+  _dropVeil: function(immediate) {
+    const veil = this._veil;
+    this._clearVeilTimers();
+    if (!veil || veil.hidden) return;
+    if (immediate) {
+      veil.hidden = true;
+      veil.removeAttribute('data-leaving');
+      return;
+    }
+    veil.setAttribute('data-leaving', '');
+    this._veilFade = setTimeout(function() {
+      veil.hidden = true;
+      veil.removeAttribute('data-leaving');
+    }, VEIL_FADE_MS);
   },
 
   // 卡片 DOM：第一次要顯示時才建，放在 .main 裡 #screenRoot 的後面。
@@ -355,15 +516,38 @@ NextArticle.prototype = {
     if (!el) return;
     const e = st.entry;
     const [label, title, meta] = el.children;
+    if (!e) {
+      // 終點卡：不能點（open 要 entry），也不接往下拉。
+      el.setAttribute('data-end', st.end || 'unknown');
+      el.setAttribute('aria-disabled', 'true');
+      el.removeAttribute('data-pull');
+      el.removeAttribute('data-pending');
+      el.removeAttribute('title');
+      el.style.removeProperty('--next-pull');
+      label.textContent = i18n('next_article_label');
+      title.textContent = i18n(st.end === 'last' ? 'next_article_last' : 'next_article_unknown');
+      meta.textContent = i18n(st.end === 'last' ? 'next_article_last_meta' : 'next_article_unknown_meta');
+      el.hidden = false;
+      return;
+    }
+    el.removeAttribute('data-end');
+    el.removeAttribute('aria-disabled');
+    // 桌機的入口說明（手機沒有 hover）。
+    if (this._core.mobile) el.removeAttribute('title');
+    else el.title = i18n('next_article_desktop_hint');
     label.textContent = st.pending
       ? i18n('next_article_opening')
       : st.pull === 'armed'
         ? i18n('next_article_release')
         : st.pull === 'pull'
           ? i18n('next_article_pull')
-          : i18n('next_article_label');
+          : st.pull === 'wheel'
+            ? i18n('next_article_wheel')
+            : i18n('next_article_label');
     if (st.pull && !st.pending) el.setAttribute('data-pull', st.pull);
     else el.removeAttribute('data-pull');
+    if (st.pull && !st.pending && st.progress != null) el.style.setProperty('--next-pull', String(st.progress));
+    else el.style.removeProperty('--next-pull');
     title.textContent = (e.recommend ? e.recommend + ' ' : '') + e.title;
     const date = (e.date || '').trim();
     meta.textContent = e.author + (date ? ' · ' + date : '');
@@ -374,7 +558,11 @@ NextArticle.prototype = {
 };
 
 export function isNextArticleTarget(el) {
-  return !!(el && typeof el.closest === 'function' && el.closest('#' + NEXT_ARTICLE_ID));
+  return !!(
+    el &&
+    typeof el.closest === 'function' &&
+    el.closest('#' + NEXT_ARTICLE_ID + ', #' + NEXT_ARTICLE_VEIL_ID)
+  );
 }
 
 export default NextArticle;
