@@ -2,7 +2,7 @@
 // App 在每次 screenSettled 算一次、有變才通知元件（App.onScreenContextChange）。
 //
 //   pager  ：pageState 3 且**這一幀**底列真的是 pager 狀態列（prompt 幀會沿用舊的
-//            pageState，見 long_push_gate.atPagerStatusRow）。
+//            pageState，見 long_push_gate.atPagerStatusRow），且游標不在輸入欄。
 //   mail   ：pager 是站內信（parsePagerFooterContext）。信件的 X 是別的鍵、沒有看板 ⇒
 //            不給推／分享／同主題；y 的 label 是「回信」（mail.c 的 pager）。
 //   push   ：pager && !mail，送 X（mbbsd/more.c pager_common_cmds 'X'）。
@@ -93,7 +93,9 @@ function isArticleList(facts) {
 export function toolbarContextFromFacts(facts, pageState, opts) {
   if (!facts) return EMPTY_TOOLBAR_CONTEXT;
   const last = (facts.rowTexts || [])[facts.rows - 1] || '';
-  const pager = pageState === 3 && atPagerStatusRow(last);
+  // 游標在輸入欄＝pmore 自己的 prompt（`/` 搜尋、`:` 跳行…）開著：它畫在倒數第二列、
+  // 狀態列留著，光看底列還是 pager；這時推／回文／到底按下去只會打進 prompt。
+  const pager = pageState === 3 && !facts.inputField && atPagerStatusRow(last);
   const mail = pager && parsePagerFooterContext(last) === 'mail';
   const article = pager && !mail;
   const o = opts || {};

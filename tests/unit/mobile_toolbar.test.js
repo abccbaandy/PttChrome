@@ -34,6 +34,12 @@ describe("toolbarContextFromFacts", () => {
   test("prompt 幀沿用舊 pageState 3 ⇒ 不給推", () => {
     expect(toolbarContextFromFacts(frame({ 23: "搜尋標題: " }), 3).push).toBe(false);
   });
+  // pmore 的 `/` 搜尋、`:` 跳行畫在倒數第二列，狀態列還在（upstream 畫面見 ptt_src_screens 的
+  // article_prompts）：只剩游標在輸入欄分得出來。
+  test("pmore prompt 開著（狀態列還在、游標在輸入欄）⇒ 不給推／回文／到底", () => {
+    const f = { ...frame({ 22: "[搜尋]關鍵字:", 23: READ_ROW }), inputField: true };
+    expect(toolbarContextFromFacts(f, 3)).toMatchObject({ push: false, reply: false, end: false, threadNav: false });
+  });
   test("文章列表 ⇒ 四種搜尋，沒有推", () => {
     expect(toolbarContextFromFacts(frame(LIST), 2)).toMatchObject({
       push: false,
