@@ -45,7 +45,8 @@ import { classifyReplyScreen, nextReplyStep } from "../../src/js/waterball_reply
 import { newMailOnScreen } from "../../src/js/message_inbox";
 import { hasNewMail } from "../../src/js/home_dashboard";
 import { appBarFromFacts } from "../../src/js/mobile_app_bar";
-import { classifyPushScreen } from "../../src/js/push_screen";
+import { classifyPushScreen, detectIpLogged } from "../../src/js/push_screen";
+import pushFlowFx from "./fixtures/ptt_src_screens/push_flow.json";
 import { isSearchPromptFrame } from "../../src/js/article_search";
 import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
@@ -389,6 +390,24 @@ describe("upstream pttbbs 產的回水球畫面（一對一模式）", () => {
 
   test("主功能表那一幀不是回覆畫面 ⇒ 認不出（不送鍵）", () => {
     expect(step("menu")).toBe(null);
+  });
+});
+
+describe("upstream pttbbs 產的推文流程（bbs.c#recommend 輸入 → 確認 → 寫入）", () => {
+  const kind = (name) => classifyPushScreen(screenAt(pushFlowFx, name).rowTexts);
+
+  test("打完內容 ⏎ ⇒ 確定[y/N]；y⏎ 之後離開推文畫面", () => {
+    expect(kind("input")).toMatchObject({ kind: "inputPrompt", userId: "tester" });
+    expect(kind("confirm")).toEqual({ kind: "confirm" });
+    expect(kind("done")).toEqual({ kind: "other" });
+  });
+
+  test("寫進文章的推文列帶時間戳 ⇒ 不是輸入列；Test 板不記 IP ⇒ detectIpLogged 為 false（不是 null）", () => {
+    const { rowTexts } = screenAt(pushFlowFx, "article");
+    const row = rowTexts.find((t) => /^→ tester *:hello/.test(t));
+    expect(row).toBeTruthy();
+    expect(classifyPushScreen([row])).toEqual({ kind: "other" });
+    expect(detectIpLogged(rowTexts)).toBe(false);
   });
 });
 

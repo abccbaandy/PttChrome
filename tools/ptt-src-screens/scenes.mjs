@@ -89,6 +89,19 @@ export const SCENES = [
     steps: [{ name: 'list' }, { keys: 'X', name: 'push-1' }, { keys: '1', name: 'push-2' }],
   },
   {
+    // 推文走完：輸入 → 確定[y/N] → y⏎ 寫進文章 → 開文看到那一則推文列（帶時間戳，long_push 判 IP 記錄板用）。
+    file: 'push_flow',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: 'X', name: 'input' },
+      { keys: 'hello\r', name: 'confirm' },
+      { keys: 'y\r', name: 'done' },
+      { keys: '\r', name: 'article' },
+    ],
+  },
+  {
     // 文章列表的搜尋 prompt（read.c#ask_filter_predicate、bbs.c#do_select）：每種開一次，
     // 空白 ⏎ 取消回列表再開下一種；最後 s 選看板停在兩段式 prompt。
     file: 'search_prompts',
