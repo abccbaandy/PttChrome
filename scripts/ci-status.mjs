@@ -123,6 +123,14 @@ export function projectRuns(runs) {
   return (runs || []).filter(isProjectRun);
 }
 
+// 本專案的 CI 開始了沒：至少要有一顆本專案 run 不是 skipped。dependabot-auto-merge.yml
+// 用 pull_request_target 觸發、對非 dependabot 的 PR 一定 skipped，而且 push 完它往往比
+// PR Test／CodeQL 先被建立 ⇒ 只看「有沒有本專案 run」的話，那一瞬間 allSettled 成立、
+// runsFailed（沒有任何 success）成立，還沒開始的 CI 被回報成紅（exit 1）。
+export function ciRunsStarted(runs) {
+  return projectRuns(runs).some((r) => r.conclusion !== "skipped");
+}
+
 // 全部 run 都完成才算完成（有 run 還在跑就要繼續等）。
 export function allSettled(runs) {
   return (runs || []).length > 0 && runs.every((r) => r.status === "completed");
@@ -258,11 +266,10 @@ async function main() {
     }
     // runs 非空、但裡面沒有本專案的 workflow run（只有 CodeQL / Dependabot 的
     // default setup）＝本專案 CI 還沒被建立。**絕不可**因為那些 run 已完成就判全綠。
-    const mine = projectRuns(runs);
-    if (!mine.length) {
+    if (!ciRunsStarted(runs)) {
       if (wait && Date.now() < projectAppearDeadline) {
         console.log(
-          `  …只查到 default setup 的 run（${runs.map((r) => r.name).join(", ")}），` +
+          `  …只查到 default setup 或 skipped 的 run（${runs.map((r) => r.name).join(", ")}），` +
             "本專案 workflow run 尚未建立，等待中",
         );
         await sleep(POLL_MS);
@@ -270,7 +277,7 @@ async function main() {
       }
       console.error(
         `查無**本專案**的 workflow run（${sha ? sha : branch}）。` +
-          `只有 GitHub default setup 的 run：${runs.map((r) => r.name).join(", ")}。` +
+          `只有 GitHub default setup 或 skipped 的 run：${runs.map((r) => r.name).join(", ")}。` +
           (wait
             ? `已等 ${Math.round(PROJECT_RUN_APPEAR_GRACE_MS / 60000)} 分鐘仍未建立。`
             : "（--no-wait：只看當下，未等待建立。）") +

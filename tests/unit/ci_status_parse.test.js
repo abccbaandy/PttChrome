@@ -15,6 +15,7 @@ import {
   isProjectRun,
   isSideRun,
   projectRuns,
+  ciRunsStarted,
   runMark,
   runsFailed,
   DEFAULT_DEADLINE_MS,
@@ -268,6 +269,32 @@ describe("isProjectRun / projectRuns", () => {
     // path 欄位缺席時只能靠 event 判斷。
     expect(isProjectRun({ name: "x", event: "push" })).toBe(true);
     expect(isProjectRun({ name: "x", event: "dynamic" })).toBe(false);
+  });
+});
+
+describe("ciRunsStarted", () => {
+  const autoMerge = {
+    name: "Dependabot auto-merge",
+    event: "pull_request_target",
+    path: ".github/workflows/dependabot-auto-merge.yml",
+    status: "completed",
+    conclusion: "skipped",
+  };
+  const prTest = { name: "PR Test", event: "pull_request", path: ".github/workflows/pr.yml", status: "queued", conclusion: null };
+
+  test("push 完只出現 skipped 的 Dependabot auto-merge：本專案 CI 還沒開始（REGRESSION：曾直接回 exit 1）", () => {
+    expect(isProjectRun(autoMerge)).toBe(true);
+    expect(allSettled([autoMerge])).toBe(true);
+    expect(ciRunsStarted([autoMerge])).toBe(false);
+  });
+
+  test("PR Test 出現就算開始（還在排隊也算）", () => {
+    expect(ciRunsStarted([autoMerge, prTest])).toBe(true);
+  });
+
+  test("default setup 的 run 不算", () => {
+    expect(ciRunsStarted([{ name: "CodeQL", event: "dynamic", path: "dynamic/github-code-scanning/codeql", status: "completed", conclusion: "success" }])).toBe(false);
+    expect(ciRunsStarted(undefined)).toBe(false);
   });
 });
 
