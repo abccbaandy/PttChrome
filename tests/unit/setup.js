@@ -8,5 +8,8 @@ import "@testing-library/jest-dom";
 // setupI18n() 是同步呼叫，所以先註冊好。
 import { registerLocale } from "../../src/js/i18n";
 import { en_US } from "../../src/js/en_US_messages";
+import { resetBrowserStorage } from "./helpers/browser_storage";
 
 registerLocale("en_us", en_US);
+// 前一個測試檔留下的 storage 不能漏到這個檔（helpers/browser_storage.js）。
+if (typeof window !== "undefined") resetBrowserStorage(window);
