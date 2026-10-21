@@ -61,13 +61,15 @@ export function refreshTargetFromFacts(facts, pageState, opts) {
   const rowTexts = facts.rowTexts || [];
   const rows = facts.rows || rowTexts.length;
   const last = rowTexts[rows - 1] || '';
+  // 游標在輸入欄＝有 prompt 開著（含 pmore 的 `/` 搜尋、`:` 跳行：畫在倒數第二列、狀態列
+  // 留著，光看底列還是 pager），重整送的鍵會打進 prompt。
+  if (facts.inputField) return null;
   if (pageState === 3 && atPagerStatusRow(last)) {
     let ctx = parsePagerFooterContext(last);
     if (ctx === 'unknown' && o.listOpened) ctx = 'reading';
     if (ctx !== 'reading' || !o.articleBoard) return null;
     return { kind: 'article', board: o.articleBoard };
   }
-  if (facts.inputField) return null;
   if (
     facts.listOwner === OWNER_ARTICLE_LIST ||
     boardListContextKind(facts) === 'article-list'

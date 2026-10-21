@@ -51,6 +51,7 @@ import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
 import { pushGateFacts, shouldInterceptPushKey } from "../../src/js/long_push_gate";
 import { isSearchPromptFrame, searchGateFacts } from "../../src/js/article_search";
 import { toolbarContextFromFacts } from "../../src/js/mobile_toolbar";
+import { refreshTargetFromFacts } from "../../src/js/screen_refresh";
 import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
 import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
@@ -238,6 +239,16 @@ describe("upstream pttbbs 產的 pmore prompt（pmore.c#pmore_do_goto、pmore_se
     for (const name of ["goto", "search", "search-typed"])
       expect(ctx(name)).toMatchObject({ push: false, reply: false, end: false, threadNav: false, share: false });
     expect(ctx("landed")).toMatchObject({ push: true, reply: true, end: true });
+  });
+
+  test("重新整理：prompt 開著時不重整（重開文章的鍵會打進 prompt）", () => {
+    const target = (name) => {
+      const { buf } = at(name);
+      return refreshTargetFromFacts(searchGateFacts({ buf }), buf.pageState, { articleBoard: "Test" });
+    };
+    expect(target("article")).toEqual({ kind: "article", board: "Test" });
+    for (const name of ["goto", "search", "search-typed"]) expect(target(name)).toBe(null);
+    expect(target("landed")).toEqual({ kind: "article", board: "Test" });
   });
 });
 
