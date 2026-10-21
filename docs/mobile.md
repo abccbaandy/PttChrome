@@ -88,6 +88,8 @@
     `mobile_layout.mobileCtrlKey`：字母走 **Alt remap**（`altKey`；byte 同 Ctrl，但繞過 Ctrl+A/C/V 的全選／複製／貼上），
     `@[\]^_?` 走 `ctrlKey`，其他字元解除不轉。用一次就解除。守護 `mobile_ctrl.test.js`。
 - `index.html` viewport **不鎖** `user-scalable`（原生雙指縮放是後援）。
+  APK 另需 WebView 開 `builtInZoomControls`（預設關 ⇒ pinch 被吞，只剩 `#mainContainer` 小幅捲動），
+  `displayZoomControls=false` 藏 +/- 鈕；守護 `tests/unit/android_webview_zoom.test.js`。
 - **尺寸（Phase 2）**：`App.applyTermSize` 是唯一套用點；手機分支無視 `termSizeMode`，用
   `mobile_layout.mobileTermGeometry`：rows ＝ 高度 / 手機字級（pref `mobileFontSize`，預設 `MOBILE_ROW_FONT_PX`=16；`calcTermSize`，欄數恆 80），
   chh ＝ min(80 欄塞滿寬, rows 列塞滿高) 再對齊裝置像素。**不用 transform scale**：縮小時 layout box
