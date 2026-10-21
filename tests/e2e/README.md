@@ -358,6 +358,16 @@ window 失焦（Playwright 1.62 實測，`isTrusted`／`document.hasFocus()`）�
   （`long_push_image_upload.offline.spec.js#openLongPushModal`）。
 - contextmenu 時機依 OS：Windows 在 mouseup 發、Linux／macOS 在 mousedown 發 ⇒「按住右鍵滾輪」類斷言要依實際觀察到的時機分支，不寫死平台。
 
+## 規範：會疊在畫面上的功能要進「浮層不蓋文末」矩陣
+
+各功能的 offline spec 預設把別的功能關掉（`helpers/replay.js#bootOffline`），單獨看都對、疊在一起才壞
+（實例：底部推文列壓在下一篇卡片上；手機推文列壓在底部導覽列上 5px）。`bottom_overlay.offline.spec.js`
+（桌機，含視窗尺寸維度：em 間距與 px 浮層只在某些字級才撞）與 `mobile_bottom_overlay.offline.spec.js`
+（手機）把功能一起打開，捲到文末後用 `helpers/overlay_guard.js#bottomOverlayViolations` 檢查：最後一則推文與
+`.main` 裡接在文末的東西整個看得到、不被任何 `position: fixed／sticky` 浮層蓋住，浮層之間也不互疊。浮層是
+自動偵測的，不用登記；**新增會佔畫面邊緣的功能（新的 bootOffline opt）時，把它加進兩支 spec 的 `COMBOS`**。
+刻意浮在內容上的東西（例：換文遮罩）才放 `overlay_guard.js` 的 `ALLOWED` 並寫理由。
+
 ## 規範：evaluate 內點擊後不可同步讀 React 產物
 
 React 19 起，`el.click()` 觸發的 setState 在事件 task **之後**才 commit——同一個 `page.evaluate`

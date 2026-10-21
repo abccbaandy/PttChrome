@@ -59,13 +59,16 @@ export function quickPushPlan(result, quick, maxBytes) {
 
 // 列的位置：與終端機同寬、貼在終端機可見內容的最下緣（桌機在好讀 footer 那一列之上，
 // 手機換行版面 footer 收起，就是終端機底＝底部導覽上緣）。bottom 是距視窗底的距離。
-export function commentBarGeometry({ mainRect, footerHeight, innerHeight }) {
+// bottomInset：疊在視窗底的浮層（手機底部導覽列＋軟鍵盤＋safe-area，view.keyboardInset）。
+// 手機的 .main 會因列高取整比可用高度高幾 px、延伸到導覽列後面 ⇒ 至少要讓出它，不然推文
+// 列壓在導覽列上（e2e mobile_bottom_overlay）。
+export function commentBarGeometry({ mainRect, footerHeight, innerHeight, bottomInset }) {
   if (!mainRect || !mainRect.width) return null;
   const contentBottom = mainRect.bottom - (footerHeight || 0);
   return {
     left: Math.round(mainRect.left),
     width: Math.round(mainRect.width),
-    bottom: Math.max(0, Math.round(innerHeight - contentBottom)),
+    bottom: Math.max(0, Math.round(innerHeight - contentBottom), Math.round(bottomInset || 0)),
   };
 }
 
@@ -129,6 +132,7 @@ CommentBar.prototype = {
       mainRect: main.getBoundingClientRect(),
       footerHeight: footerHeight,
       innerHeight: window.innerHeight,
+      bottomInset: view.keyboardInset,
     });
   },
 

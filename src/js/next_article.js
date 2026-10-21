@@ -560,19 +560,27 @@ NextArticle.prototype = {
   // 卡片的上下 margin 由 CSS 算（main.css #nextArticleCard），這裡只量兩個事實寫成 CSS 變數：
   //   --next-pull-up       累積頁尾端的空白（trailingBlankPx）：卡片往上蓋住它，接在最後一列
   //                        內容下面，推文少的文章不用捲就看得到；
-  //   --next-bottom-inset  疊在 .main 下緣的 fixed 層（好讀 footer＋底部推文列）：捲到底時
-  //                        卡片要在它們上面，不被蓋住。
+  //   --next-bottom-inset  .main 下緣被疊在上面的東西蓋掉多高：好讀 footer、底部推文列（位置
+  //                        取它自己的 state.bottom）、手機底部導覽列＋軟鍵盤（view.keyboardInset；
+  //                        手機的 .main 會延伸到導覽列後面幾 px）。捲到底時卡片要在它們上面。
   _layout: function() {
     const el = this._el;
     if (!el || el.hidden || typeof window === 'undefined') return;
     const core = this._core;
     const view = core.view || {};
+    const main = view.mainDisplay;
     let inset = 0;
-    const footer = view.lastRowDiv;
-    if (footer && typeof footer.getBoundingClientRect === 'function' && window.getComputedStyle(footer).display !== 'none')
-      inset += footer.getBoundingClientRect().height;
-    const bar = core.commentBar;
-    if (bar && bar.state && bar.state.visible) inset += COMMENT_BAR_HEIGHT;
+    if (main && typeof main.getBoundingClientRect === 'function') {
+      const bottom = main.getBoundingClientRect().bottom;
+      let clear = Math.min(bottom, window.innerHeight - (view.keyboardInset || 0));
+      const footer = view.lastRowDiv;
+      if (footer && typeof footer.getBoundingClientRect === 'function' && window.getComputedStyle(footer).display !== 'none')
+        clear = Math.min(clear, footer.getBoundingClientRect().top);
+      const bar = core.commentBar;
+      if (bar && bar.state && bar.state.visible)
+        clear = Math.min(clear, window.innerHeight - (bar.state.bottom || 0) - COMMENT_BAR_HEIGHT);
+      inset = Math.max(0, bottom - clear);
+    }
     el.style.setProperty('--next-pull-up', Math.round(trailingBlankPx(this._mainContainer())) + 'px');
     el.style.setProperty('--next-bottom-inset', Math.round(inset) + 'px');
   },

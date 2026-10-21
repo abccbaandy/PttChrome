@@ -9,7 +9,7 @@
 import mainCss from "../../src/css/main.css?raw";
 import { NextArticle, NEXT_ARTICLE_ID, trailingBlankPx } from "../../src/js/next_article";
 import { trailingPx } from "../../src/js/reading_record";
-import { COMMENT_BAR_HEIGHT } from "../../src/js/comment_bar";
+import { COMMENT_BAR_HEIGHT, commentBarGeometry } from "../../src/js/comment_bar";
 import { setupI18n } from "../../src/js/i18n";
 
 const ROWS = 24;
@@ -69,7 +69,7 @@ afterEach(() => {
 });
 
 // lines：累積頁每一列的文字（"" ＝ 空白列）；bgRows：有底色的列號。
-function setup(lines, { bar = true, bgRows = [] } = {}) {
+function setup(lines, { bar = true, bgRows = [], mobile = false } = {}) {
   host = document.createElement("div");
   document.body.appendChild(host);
   const main = document.createElement("div");
@@ -93,15 +93,28 @@ function setup(lines, { bar = true, bgRows = [] } = {}) {
 
   // 底部推文列（components/CommentBar）：累積頁尾端多留列高（main.css html.commentBarShown）。
   const barListeners = new Set();
+  // mobile：footer 收起、底部導覽列（view.keyboardInset）蓋住 .main 最下面 25px（手機的 .main
+  // 因列高取整延伸到導覽列後面）。
+  if (mobile) footer.style.display = "none";
+  const mainRect = main.getBoundingClientRect();
+  const keyboardInset = mobile ? Math.round(window.innerHeight - (mainRect.bottom - 25)) : 0;
+  // 推文列的位置照產品算（commentBarGeometry）。
+  const barBottom = () =>
+    commentBarGeometry({
+      mainRect: main.getBoundingClientRect(),
+      footerHeight: mobile ? 0 : footer.getBoundingClientRect().height,
+      innerHeight: window.innerHeight,
+      bottomInset: keyboardInset,
+    }).bottom;
   const commentBar = {
-    state: { visible: bar },
+    state: { visible: bar, bottom: barBottom() },
     onChange(fn) {
       barListeners.add(fn);
       fn(this.state);
       return () => barListeners.delete(fn);
     },
     set(visible) {
-      this.state = { visible };
+      this.state = { visible, bottom: barBottom() };
       document.documentElement.classList.toggle("commentBarShown", visible);
       for (const fn of barListeners) fn(this.state);
     },
@@ -124,7 +137,15 @@ function setup(lines, { bar = true, bgRows = [] } = {}) {
       getRowText: (r) => frame.t[r],
       addEventListener: (name, fn) => name === "screenSettled" && (settled = fn),
     },
-    view: { mainDisplay: main, screenRoot, mainContainer: mc, lastRowDiv: footer, chh: ROW_PX, _articleBoard: null },
+    view: {
+      mainDisplay: main,
+      screenRoot,
+      mainContainer: mc,
+      lastRowDiv: footer,
+      keyboardInset,
+      chh: ROW_PX,
+      _articleBoard: null,
+    },
     commentBar,
     commandQueue: { idle: true },
     aidNavigation: { startNum: () => true },
@@ -137,16 +158,17 @@ function setup(lines, { bar = true, bgRows = [] } = {}) {
   const card = document.getElementById(NEXT_ARTICLE_ID);
   expect(next.state.visible).toBe(true);
   expect(card.hidden).toBe(false);
-  return { core, next, main, mc, footer, card, commentBar };
+  return { core, next, main, mc, footer, card, commentBar, keyboardInset };
 }
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 const content = (n) => Array.from({ length: n }, (_, i) => "第 " + (i + 1) + " 列內容");
 
-// .main 可見範圍裡沒被 footer／推文列蓋住的下緣。
-function clearBottom({ main, footer, commentBar }) {
-  const bar = commentBar.state.visible ? COMMENT_BAR_HEIGHT : 0;
-  return main.getBoundingClientRect().bottom - footer.getBoundingClientRect().height - bar;
+// .main 可見範圍裡沒被 footer／推文列／底部導覽列蓋住的下緣。
+function clearBottom({ main, footer, commentBar, keyboardInset }) {
+  if (commentBar.state.visible) return window.innerHeight - commentBar.state.bottom - COMMENT_BAR_HEIGHT;
+  const footerH = footer.style.display === "none" ? 0 : footer.getBoundingClientRect().height;
+  return Math.min(main.getBoundingClientRect().bottom - footerH, window.innerHeight - keyboardInset);
 }
 
 test("推文很少（內容 8 列＋PTT 補的 12 列空白）⇒ 不用捲就看得到整張卡片", async () => {
@@ -178,6 +200,18 @@ test("推文列收起／出現 ⇒ 卡片的下緣跟著讓位", async () => {
   await nextFrame();
   s.main.scrollTop = s.main.scrollHeight;
   expect(s.card.getBoundingClientRect().bottom).toBeLessThanOrEqual(clearBottom(s));
+});
+
+// e2e mobile_bottom_overlay：手機的 .main 延伸到底部導覽列後面幾 px，推文列跟著讓位之後，
+// 卡片也要讓到推文列上面（只扣固定的列高會差那幾 px）。
+test("手機：.main 延伸到導覽列後面 ⇒ 捲到底卡片仍在推文列與導覽列上面", async () => {
+  for (const bar of [true, false]) {
+    const s = setup(content(40), { bar, mobile: true });
+    await nextFrame();
+    s.main.scrollTop = s.main.scrollHeight;
+    expect(s.card.getBoundingClientRect().bottom).toBeLessThanOrEqual(clearBottom(s) + 0.5);
+    host.remove();
+  }
 });
 
 test("有底色的空白列算內容：卡片不蓋在它上面", async () => {

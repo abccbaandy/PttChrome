@@ -70,6 +70,14 @@ describe("commentBarGeometry", () => {
     // 手機換行版面 footer 收起：貼在終端機底（＝底部導覽上緣）
     expect(commentBarGeometry({ mainRect, footerHeight: 0, innerHeight: 1000 }).bottom).toBe(40);
   });
+  // e2e mobile_bottom_overlay 抓到的：手機的 .main 因列高取整比可用高度高 5px，延伸到底部
+  // 導覽列後面 ⇒ 只看 .main 下緣，推文列就壓在導覽列上 5px（按鈕下緣被切掉）。
+  test("終端機延伸到底部浮層（導覽列／軟鍵盤）後面 ⇒ 推文列仍在浮層上面", () => {
+    const mainRect = { left: 0, width: 412, bottom: 347 };
+    expect(commentBarGeometry({ mainRect, footerHeight: 0, innerHeight: 390, bottomInset: 48 }).bottom).toBe(48);
+    // 浮層比終端機下緣低 ⇒ 照舊貼終端機。
+    expect(commentBarGeometry({ mainRect, footerHeight: 0, innerHeight: 390, bottomInset: 10 }).bottom).toBe(43);
+  });
   test("量不到終端機 ⇒ null", () => {
     expect(commentBarGeometry({ mainRect: null, innerHeight: 1000 })).toBeNull();
     expect(commentBarGeometry({ mainRect: { left: 0, width: 0, bottom: 0 }, innerHeight: 1000 })).toBeNull();
