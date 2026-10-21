@@ -563,6 +563,22 @@ describe("落地即回好讀：重新整理／搜尋／跳到未讀不切原生�
     expect(h.s._renderMode).toBe("native");
   });
 
+  // CodeQL js/resource-exhaustion：步驟帶進來的預算決定後盾的 setTimeout 長度。
+  // 預算再離譜（或被帶錯），凍結畫面也有絕對上限，不可以變成永久凍結＋吞鍵。
+  test("步驟預算再大，凍結後盾也有絕對上限（10s）", () => {
+    const h = makeSession();
+    h.s._beginPassthroughBytes(
+      [{ keys: "x\r", kind: "slow", hardTimeoutMs: 1e9, probeTimeoutMs: 1e9 }],
+      { kind: "slow", hint: null, resumeOnLanding: true }
+    );
+    const c = step(h, "slow");
+    if (c.onSend) c.onSend();
+    vi.advanceTimersByTime(9900);
+    expect(h.s._renderMode).toBe("frozen");
+    vi.advanceTimersByTime(200);
+    expect(h.s._renderMode).toBe("native");
+  });
+
   test("pref 自動回復關掉 ⇒ 舊行為：一開始就切原生鏡像", () => {
     const h = makeSession();
     window.localStorage.setItem(

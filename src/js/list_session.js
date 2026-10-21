@@ -786,6 +786,9 @@ export const MAX_LIST_ROWS = 300;
 // every completed leg, so this is "nothing has advanced for 2.5s", NOT a cap on
 // a whole multi-leg transaction (_beginOpenPinned can run a dozen legs).
 const FROZEN_WATCHDOG_MS = 2500;
+// 在飛那一步自帶長預算時（_frozenStepBudgetMs）後盾跟著撐長，但不超過這個絕對上限
+// （＝佇列預設的 hard timeout）：預算再離譜也不能變成永久凍結＋吞鍵。
+const FROZEN_WATCHDOG_MAX_MS = 10000;
 // Fast-fail budgets for the serialized machine keys. PTT answers in ~90ms and
 // term_buf needs another SETTLE_MS (50ms) to settle, so anything past ~250ms of
 // silence is already abnormal: ask the deterministic question (the queue's
@@ -2267,11 +2270,14 @@ ListSession.prototype = {
   _armFrozenWatchdog: function() {
     const self = this;
     if (this._frozenWatchdog) clearTimeout(this._frozenWatchdog);
+    let ms = FROZEN_WATCHDOG_MS;
+    const budget = this._frozenStepBudgetMs;
+    if (budget > ms) ms = budget <= FROZEN_WATCHDOG_MAX_MS ? budget : FROZEN_WATCHDOG_MAX_MS;
     this._frozenWatchdog = setTimeout(function() {
       self._frozenWatchdog = null;
       if (self._renderMode === 'frozen' || self.state === 'opening')
         self._degradeToNative('指令逾時，已切至原生模式');
-    }, Math.max(FROZEN_WATCHDOG_MS, this._frozenStepBudgetMs || 0));
+    }, ms);
   },
 
   // Number jump: digits collected locally (overlay input), one serialized
