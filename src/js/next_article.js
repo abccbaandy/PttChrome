@@ -136,6 +136,14 @@ function isBlankRow(el) {
   return true;
 }
 
+// 不在文章流裡的節點：render/screen.js 把浮動工具（合併圖說，main.css position: fixed）跟列
+// 放在同一層，它的位置是視窗座標，跟文章尾端無關（被當成
+// 最後一個有內容的節點，卡片被拉到文章中間）。
+function outOfFlow(el) {
+  const pos = window.getComputedStyle(el).position;
+  return pos === 'fixed' || pos === 'absolute';
+}
+
 // 好讀累積頁尾端的空白有多高：最後一個有內容的節點（列、合併推文塊、預覽…）的下緣量到
 // #mainContainer 的下緣。這段包含 PTT 畫面補的空白列（文章不滿一頁時 pmore 把後面的列畫成
 // 空白）、給好讀 footer 的 paddingBottom、給底部推文列的 ::after。卡片往上蓋住這一段 ⇒
@@ -147,7 +155,7 @@ export function trailingBlankPx(container) {
     const nodes = n.classList.contains(CHUNK_CLASS) ? n.children : [n];
     for (let i = nodes.length - 1; i >= 0; i--) {
       const el = nodes[i];
-      if (isBlankRow(el) || !el.getClientRects().length) continue;
+      if (isBlankRow(el) || !el.getClientRects().length || outOfFlow(el)) continue;
       return Math.max(0, bottom - el.getBoundingClientRect().bottom);
     }
   }

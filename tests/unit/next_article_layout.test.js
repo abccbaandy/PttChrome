@@ -2,10 +2,16 @@
 // 「下一篇」標題卡的位置（src/js/next_article.js、docs/next-article.md「卡片的位置」），真版面＋
 // main.css 真樣式：
 //   1. 推文很少的文章：PTT 畫面把文章後面剩下的列畫成空白，卡片要往上蓋住這段空白，不用捲就
-//      看得到（錄製檔 ptt-debug-20261021-171601：28 列內容＋10 列空白，卡片排在空白後面要捲）；
+//      看得到（28 列內容＋10 列空白，卡片排在空白後面要捲）；
 //   2. 底部常駐推文列（fixed，疊在 .main 最下面）＋好讀 footer：捲到底時卡片要在它們上面，
-//      不能被蓋住（同一份錄製檔：推文列壓在卡片上）；
+//      不能被蓋住（舊版：推文列壓在卡片上）；
 //   3. 不蓋字：卡片頂端永遠在最後一列有內容的列下面（有底色的空白列也算內容）。
+// 卡片開關固定為開：真瀏覽器的 localStorage 跟同一個 worker 的其他測試共用，讀真 prefs
+// 會因執行順序時紅時綠。
+vi.mock("../../src/js/pref_storage", async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), enableNextArticleCard: true }) };
+});
 import mainCss from "../../src/css/main.css?raw";
 import { NextArticle, NEXT_ARTICLE_ID, trailingBlankPx } from "../../src/js/next_article";
 import { trailingPx } from "../../src/js/reading_record";
@@ -69,7 +75,9 @@ afterEach(() => {
 });
 
 // lines：累積頁每一列的文字（"" ＝ 空白列）；bgRows：有底色的列號。
-function setup(lines, { bar = true, bgRows = [], mobile = false } = {}) {
+// floatTools：#mainContainer 最後面掛浮動工具（render/screen.js 把它跟列放在一起，main.css
+// position: fixed 釘在視窗上，不在文章的流裡）。
+function setup(lines, { bar = true, bgRows = [], mobile = false, floatTools = false } = {}) {
   host = document.createElement("div");
   document.body.appendChild(host);
   const main = document.createElement("div");
@@ -80,6 +88,12 @@ function setup(lines, { bar = true, bgRows = [], mobile = false } = {}) {
   const mc = document.createElement("div");
   mc.id = "mainContainer";
   lines.forEach((text, i) => mc.appendChild(row(i, text || "    ", bgRows.includes(i) ? 4 : 0)));
+  if (floatTools) {
+    const tools = document.createElement("div");
+    tools.className = "floatTools";
+    tools.style.cssText = "top:10px;right:10px;width:36px;height:36px";
+    mc.appendChild(tools);
+  }
   // term_view.accumulatePageLines：給好讀 footer 的 1em。
   mc.style.paddingBottom = "1em";
   screenRoot.appendChild(mc);
@@ -218,6 +232,20 @@ test("有底色的空白列算內容：卡片不蓋在它上面", async () => {
   const s = setup([...content(5), "", ...Array(14).fill("")], { bgRows: [5] });
   await nextFrame();
   expect(s.card.getBoundingClientRect().top).toBeGreaterThanOrEqual(s.mc.children[5].getBoundingClientRect().bottom);
+});
+
+// 有圖說的文章 #mainContainer 最後面是浮動工具（合併圖說），
+// 它釘在視窗上方，被當成「最後一個有內容的節點」⇒ 卡片被往上拉到文章中間。
+test("#mainContainer 尾端的浮動工具（position: fixed）不算內容：卡片仍接在最後一列內容下面", async () => {
+  const s = setup([...content(8), ...Array(12).fill("")], { floatTools: true });
+  await nextFrame();
+  expect(s.card.getBoundingClientRect().top).toBeGreaterThanOrEqual(s.mc.children[7].getBoundingClientRect().bottom);
+  expect(s.card.getBoundingClientRect().bottom).toBeLessThanOrEqual(clearBottom(s));
+  host.remove();
+  const l = setup(content(40), { floatTools: true });
+  await nextFrame();
+  l.main.scrollTop = l.main.scrollHeight;
+  expect(l.card.getBoundingClientRect().top).toBeGreaterThanOrEqual(l.mc.children[39].getBoundingClientRect().bottom);
 });
 
 test("trailingBlankPx：從最後一列有內容的列量到 #mainContainer 下緣（含 paddingBottom）", () => {
