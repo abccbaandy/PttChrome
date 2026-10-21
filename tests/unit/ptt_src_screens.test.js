@@ -50,6 +50,7 @@ import { isSearchPromptFrame } from "../../src/js/article_search";
 import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
 import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
+import boardListTogglesFx from "./fixtures/ptt_src_screens/board_list_toggles.json";
 
 loadBig5Tables();
 
@@ -261,6 +262,25 @@ describe("upstream pttbbs 產的主功能表", () => {
     expect(isHomeScreen(facts)).toBe(true);
     expect(classifyListScreen(facts).kind).toBe("menu");
     expect(buf.pageState).toBe(1);
+  });
+});
+
+describe("upstream pttbbs 產的看板列表切換（y 全部看板、c 文章總數）", () => {
+  const at = (name) => screenAt(boardListTogglesFx, name).facts;
+
+  test("y 列出全部看板：caption 不變但認成 all，不接管", () => {
+    expect(classifyBoardListScreen(at("all"))).toMatchObject({ variant: "all", engageable: false });
+    expect(boardListContextKind(at("all"))).toBe("brdlist-other");
+  });
+
+  test("再按 y 回我的最愛：認回 fav、可接管", () => {
+    expect(classifyBoardListScreen(at("fav-again"))).toMatchObject({ variant: "fav", engageable: true });
+    expect(boardListContextKind(at("fav-again"))).toBe("brdlist");
+  });
+
+  test("c 切成文章總數：newflag、不接管（編號欄印的是總數）", () => {
+    expect(classifyBoardListScreen(at("newflag"))).toMatchObject({ newflag: true, engageable: false });
+    expect(boardListContextKind(at("newflag"))).toBe("brdlist-other");
   });
 });
 

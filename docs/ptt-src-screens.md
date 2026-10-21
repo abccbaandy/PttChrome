@@ -60,6 +60,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `board_note` | `read:Notes`／24 | 空白 | `boardNoteDecision`：進板畫面→skip、文章列表→landed |
 | `board_list` | `fav`／24 | — | `classifyBoardListScreen` fav＋engageable、`parseBoardListName`／`parseFavRow`、⏎ arm |
 | `main_menu` | `menu`／24 | — | `isHomeScreen`、`classifyListScreen`→menu |
+| `board_list_toggles` | `fav`／24 | `y` `y` `c` | `y` 全部看板（caption 不變）→ all、不接管；再 `y` 回 fav；`c` → newflag、不接管 |
 | `main_menu_newmail` | `menu:newmail`／24 | — | 「你有新信件」：`newMailOnScreen`、`hasNewMail`、`appBarFromFacts` newMail；沒新信的 `main_menu` 三者皆 false |
 | `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`→inputPrompt（`→ tester:`） |
 | `search_prompts` | `read:Test`／24 | `/` ⏎ `a` ⏎ `Z` ⏎ `s` | `isSearchPromptFrame`：title／author／push／board 各自只認自己那一種（空白 ⏎ 取消回列表） |

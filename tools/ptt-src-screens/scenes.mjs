@@ -55,6 +55,19 @@ export const SCENES = [
     steps: [{ name: 'fav' }],
   },
   {
+    // 我的最愛按 y 列出全部看板（caption 不變，只能靠提示分 fav／all）、再按 y 回最愛，
+    // c 切成顯示文章總數（row 2「總數」）。
+    file: 'board_list_toggles',
+    entry: 'fav',
+    rows: 24,
+    steps: [
+      { name: 'fav' },
+      { keys: 'y', name: 'all' },
+      { keys: 'y', name: 'fav-again' },
+      { keys: 'c', name: 'newflag' },
+    ],
+  },
+  {
     // 主功能表。
     file: 'main_menu',
     entry: 'menu',
