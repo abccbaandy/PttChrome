@@ -57,6 +57,8 @@ import {
   isBoardKeywordPromptFrame,
 } from "../../src/js/screen_refresh";
 import boardListRefreshFx from "./fixtures/ptt_src_screens/board_list_refresh.json";
+import aidMissFx from "./fixtures/ptt_src_screens/aid_miss.json";
+import { AID_NOT_FOUND_RE } from "../../src/js/aid_navigation";
 import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
 import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
@@ -475,6 +477,34 @@ describe("upstream pttbbs 產的推文流程（bbs.c#recommend 輸入 → 確認
     expect(row).toBeTruthy();
     expect(classifyPushScreen([row])).toEqual({ kind: "other" });
     expect(detectIpLogged(rowTexts)).toBe(false);
+  });
+});
+
+describe("upstream pttbbs 產的 #AID 找不到（read.c 的 AID 搜尋）", () => {
+  const at = (name) => {
+    const { buf, rowTexts, facts } = screenAt(aidMissFx, name);
+    return { rowTexts, facts, last: rowTexts[buf.rows - 1] };
+  };
+  const hit = (rowTexts) => rowTexts.some((t) => AID_NOT_FOUND_RE.test(t));
+
+  test("找不到／不合法兩種訊息都認得，而且是按任意鍵（送空白收掉）", () => {
+    for (const [name, text] of [
+      ["not-found", "找不到這個文章代碼"],
+      ["invalid", "不合法的文章代碼"],
+    ]) {
+      // 訊息印在 prompt 那一列，底列是 pressanykey 的「請按任意鍵繼續」橫幅。
+      const { rowTexts, last } = at(name);
+      expect(rowTexts.some((t) => t.includes(text))).toBe(true);
+      expect(hit(rowTexts)).toBe(true);
+      expect(resolveDismiss({ lastRowText: last, cursorOnInputField: false })).toMatchObject({ bytes: " " });
+    }
+  });
+
+  test("列表本身與收掉訊息後的列表不會被當成找不到", () => {
+    expect(hit(at("list").rowTexts)).toBe(false);
+    const back = at("back");
+    expect(hit(back.rowTexts)).toBe(false);
+    expect(classifyListScreen(back.facts).kind).toBe("clean-list");
   });
 });
 

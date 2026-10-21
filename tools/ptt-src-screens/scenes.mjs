@@ -144,6 +144,21 @@ export const SCENES = [
     ],
   },
   {
+    // 文章列表的 #AID 跳文找不到（read.c 的 AID 搜尋）：格式對但沒有這篇 ⇒「找不到這個文章代碼」，
+    // 格式錯 ⇒「不合法的文章代碼」；兩者都是 vmsg（按任意鍵）。aid_navigation／long_push_session 認這兩句。
+    file: 'aid_miss',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '#', name: 'prompt' },
+      { keys: '1AAAAAAA\r', name: 'not-found' },
+      { keys: ' ', name: 'back' },
+      { keys: '#' },
+      { keys: '!!\r', name: 'invalid' },
+    ],
+  },
+  {
     // 已在搜尋結果裡（MODE_SELECT）再搜 ⇒「增加條件 …」。
     file: 'search_refine',
     entry: 'read:Test',
