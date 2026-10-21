@@ -1352,7 +1352,8 @@ describe("decideAccumulateBranch", () => {
   });
 
   // healInFlight：好讀正在用 pmore 的 goto-line（送 `:N\r`）補讀被吞掉的那一頁。
-  // 期間底部是「跳至第幾行:」prompt，狀態列失配 ⇒ 那一幀的 pageState 可能不是 3，而
+  // 期間有「跳至此行:」prompt（upstream 畫在倒數第二列、狀態列還在；prompt 蓋掉狀態列的
+  // server 上狀態列失配）⇒ 那一幀的 pageState 可能不是 3，而
   // term_view.redraw **每個渲染幀結尾都寫 buf.prevPageState = buf.pageState** ⇒ 落地幀
   // 會命中 `prevPageState !== 3 → rebuild`，**從文章中段重建 pageLines、把上面累積的
   // 全部靜默刪掉**——比它要修的掉頁還糟。所以 heal 在途時兩條 rebuild 路徑都要封住。

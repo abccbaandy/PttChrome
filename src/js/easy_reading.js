@@ -1059,7 +1059,7 @@ EasyReading.prototype._maybeSendReverse = function(recovery) {
       this._abortReverse();
       return d.action;
     case 'goto':
-      // _seekLine 自帶 stamp-after-send 與 heal 閘門（「跳至第幾行:」提示幀可能讓
+      // _seekLine 自帶 stamp-after-send 與 heal 閘門（「跳至此行:」提示幀可能讓
       // pageState 掉出 3，見那裡的註解）。送不出去 ⇒ 留一個待補送的觸發，等 idle。
       if (!this._seekLine(d.line)) {
         this._deferredPageDownKeys = '\x1b[6~';
@@ -1280,8 +1280,12 @@ EasyReading.prototype._realignAfterSeek = function() {
 // 送 pmore goto-line（`:N\r`）當成一筆 in-flight 交易。回傳 byte 有沒有真的上線；
 // 送不出去時交易狀態一格都不寫（stamp-after-send）。_healAtLine／_realignAfterSeek 共用。
 EasyReading.prototype._seekLine = function(line) {
-  // Two separate gates, both needed while the prompt row is up (the bottom row shows
-  // 「跳至第幾行:」 so parseStatusRow fails and pageState can drop out of 3):
+  // Two separate gates, both needed while the prompt row is up. Upstream pmore draws
+  // 「跳至此行: 」 on b_lines-1 and leaves the status row alone (pmore.c#pmore_do_goto,
+  // pinned by tests/unit/ptt_src_screens.test.js), and the prompt frame's cursor sits in
+  // the input field, so term_view's cursor-park `complete` gate already keeps it out of
+  // accumulation. These gates stay for servers whose prompt does cover the status row
+  // (parseStatusRow fails, pageState can drop out of 3):
   //   buf.easyReadingHealInFlight — term_view.redraw writes buf.prevPageState on EVERY
   //     rendered frame, so one prompt frame classified as non-3 would make the landing
   //     frame take decideAccumulateBranch's `prevPageState !== 3 → rebuild` path and
@@ -1376,8 +1380,9 @@ EasyReading.prototype._onScreenSettled = function() {
     this._evalFunctionModeExit();
     return;
   }
-  // A gap seek (':N\r') is in flight: PTT is showing its 「跳至第幾行:」 prompt, which
-  // has no status row, so pageState may momentarily leave 3. The teardown below would
+  // A gap seek (':N\r') is in flight: PTT is showing its 「跳至此行:」 prompt. Upstream
+  // keeps the status row under it, but a server whose prompt covers it would make
+  // pageState momentarily leave 3 (see _seekLine). The teardown below would
   // read that as "the user left the article" and empty the accumulated page. The screen
   // WILL come back to 3 — and if it doesn't, the transaction watchdog gives up and
   // clears the flag, so this cannot wedge. See _healAtLine.

@@ -63,6 +63,10 @@ export function shouldInterceptPushKey(opts) {
   if (!prefs.pushKeyOpensLongPush) return false;
   if (!longPushAvailable({ prefs, pageState: o.pageState, lastRowText: o.lastRowText }))
     return false;
+  // pmore 自己的 prompt（`/` 搜尋、`:`／`;`／數字跳行跳頁，pmore.c#pmore_do_goto 等）畫在
+  // b_lines-1，**狀態列留在底列** ⇒ 上一條照樣成立，使用者在 prompt 裡打的 X 會被吞去開
+  // 長推文。游標在反白輸入欄＝正在打字，一律不攔。
+  if (o.cursorOnInputField) return false;
   return atPagerStatusRow(o.lastRowText);
 }
 
@@ -75,6 +79,7 @@ export function pushGateFacts(core) {
   if (!buf || typeof buf.getRowText !== 'function') return null;
   return {
     pageState: buf.pageState,
-    lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols)
+    lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
+    cursorOnInputField: typeof buf.isCursorOnInputField === 'function' && buf.isCursorOnInputField()
   };
 }

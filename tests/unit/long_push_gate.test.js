@@ -146,6 +146,13 @@ describe("shouldInterceptPushKey", () => {
     expect(shouldInterceptPushKey(base({ lastRowText: PROMPT_ROW }))).toBe(false);
   });
 
+  // pmore 的 `/` 搜尋、`:` 跳行 prompt 畫在倒數第二列、狀態列還在（upstream 原始碼畫面見
+  // ptt_src_screens.test.js 的 article_prompts）：只剩「游標在輸入欄」分得出來。
+  test("pmore prompt 開著（狀態列還在、游標在輸入欄）→ 不攔", () => {
+    expect(shouldInterceptPushKey(base({ cursorOnInputField: true }))).toBe(false);
+    expect(shouldInterceptPushKey(base({ cursorOnInputField: false }))).toBe(true);
+  });
+
   test("文章列表（畫得出 (X)推文，但不是 pmore 狀態列）→ 不攔", () => {
     expect(
       shouldInterceptPushKey(base({ pageState: 2, lastRowText: LIST_ROW }))
@@ -181,8 +188,11 @@ describe("pushGateFacts", () => {
     expect(pushGateFacts({ buf })).toEqual({
       pageState: 3,
       lastRowText: READ_ROW,
+      cursorOnInputField: false,
     });
     expect(buf.getRowText).toHaveBeenCalledWith(23, 0, 80);
+    buf.isCursorOnInputField = () => true;
+    expect(pushGateFacts({ buf }).cursorOnInputField).toBe(true);
   });
 
   // 假 ctx（既有測試）與尚未連線的 App 都會落在這裡：回 null ＝ 不攔截，
