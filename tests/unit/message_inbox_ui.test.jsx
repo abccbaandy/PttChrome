@@ -127,7 +127,7 @@ test("桌機只畫浮動版、手機只畫 App Bar 內嵌版", () => {
   expect(root().classList.contains("messageInboxInline")).toBe(true);
 });
 
-test("只有最新一位寄件人的水球有「回覆」，點了接到 inbox.reply", () => {
+test("每則水球都有「回覆」；最新一位寄件人點了只送一下 Ctrl+R", () => {
   const sent = [];
   const app = {
     mobile: false,
@@ -142,7 +142,7 @@ test("只有最新一位寄件人的水球有「回覆」，點了接到 inbox.r
   });
   fireEvent.click(q("[data-inbox-bell]"));
   const replies = document.querySelectorAll("[data-inbox-reply]");
-  expect(replies).toHaveLength(1);
+  expect(replies).toHaveLength(2);
   expect(replies[0].closest(".inboxItem").querySelector(".inboxFrom").textContent).toBe("bbb");
   expect(fireEvent.mouseDown(replies[0])).toBe(false); // 不搶 #t 焦點
   fireEvent.click(replies[0]);

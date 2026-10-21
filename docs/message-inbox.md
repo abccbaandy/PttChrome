@@ -24,12 +24,15 @@
 
 ## 回覆
 
-- 只有**最新一位寄件人**（清單裡最新一則水球的人，廣播不算）的水球有「回覆」鈕。點了＝`view.sendKeyAsUser('r', { ctrlKey: true })`，跟使用者自己按 Ctrl+R 同一條路（含序列化閘門），清單收起，之後全是 PTT 原生的回覆畫面。
-- 為什麼只有他：pttbbs `wmsg.c` 兩種水球模式第一下 ^R 都指向最新一位寄件人 —— 一般模式（`wmsg_handle_ctrl_r_default`，watermode −1）回 `swater[0]` 最後一則的寄件人；一對一模式（`UF_PAGER_OFO`，`ofo_my_write`）預設選 `swater[0]`。`swater_get_slot` 每收一則就把寄件人提到 `swater[0]`。
-- 回別人要在原生畫面裡換人，鍵位依模式不同（一對一模式 ↑↓／^T^R；一般模式第二下 ^R 進 watermode 面板、Tab／^T 輪轉），收件匣不知道使用者是哪個模式 ⇒ 不代按。要做得先能從畫面認出模式與目前選中的人，認不出就停手。
+- 每一則水球都有「回覆」鈕（廣播、新信提示沒有）。送的都是 `view.sendKeyAsUser('r', { ctrlKey: true })`，跟使用者自己按 Ctrl+R 同一條路（含序列化閘門），清單收起，之後全是 PTT 原生的回覆畫面。
+- **最新一位寄件人**（清單裡最新一則水球的人，廣播不算）：只按一下。pttbbs `wmsg.c` 兩種水球模式第一下 ^R 都指向他 —— 一般模式（`wmsg_handle_ctrl_r_default`，watermode −1）回 `swater[0]` 最後一則的寄件人；一對一模式（`UF_PAGER_OFO`，`ofo_my_write`）預設選 `swater[0]`。`swater_get_slot` 每收一則就把寄件人提到 `swater[0]`。
+- **其他寄件人**（`waterball_reply.js`）：按第一下後，每次畫面停下都認一次畫面，沒對上就再按一下 ^R —— 兩種模式換人都是 ^R：
+  - 一對一模式：row 0 `丟<id>:`（`PROMPT_OFO`）＋row 1「↑反擊對象↓」名單（`ofo_init_screen`，最多 5 人）；^R＝`ofo_switch_user(1)`，row 0 換成下一位。
+  - 一般模式：第一下 row 0 `訊息傳過去: `（`PROMPT_TO`）；再按 ^R 在 row 1 畫「訊息回顧」面板（`wmsg_show_panel_new`），row 3 起最近 `MAX_REVIEW`=7 則，選中那則行首 `>`＋寄件人；每按一下往舊的選一則，送出時對象是選中那則的寄件人（`my_write_get_input` 的 watermode > 0 分支）。
+  - 對上就停手，交給使用者打字。**認不出 ⇒ 不送鍵**：等下一次畫面停下（按第一下時好讀切原生鏡像會先停一次舊畫面），3 秒內一直認不出就收手（小天使提示等）；換滿 8 下還沒對上（對方不在名單、超過回顧則數）也收手。收手時使用者停在 PTT 原生回覆畫面，可以自己換人或 ← 取消。
 - 一般模式第一下 ^R 會用 `outmsg` 把「★id 上一則內容」再畫一次（同水球格式）：那正是清單最新一則 ⇒ 被重畫去重擋掉，不會多收一則。
 - 不經閱讀紀錄：`my_write`／`ofo_my_write` 前後是 `scr_dump`／`scr_restore`，回覆完原畫面原樣回來，使用者的位置沒變。
 
 ## 測試
 
-unit：`message_inbox.test.js`（解析、跨包、去重、上限、斷線清空、pref、新信提示的認法與由無變有）、`message_inbox_ui.test.jsx`（照 state 畫、不搶焦點、點外面收起、桌機／手機只畫一個、讓開側欄、新信那則的寫法）。offline e2e：`message_inbox.offline.spec.js`（真 onData → 鈴鐺、真滑鼠點開不送鍵、點終端機收起、斷線清空、pref 關）。
+unit：`waterball_reply.test.js`（兩種模式的畫面認法、換人、認不出等待／逾時、換滿收手）、`message_inbox.test.js`（解析、跨包、去重、上限、斷線清空、pref、新信提示的認法與由無變有）、`message_inbox_ui.test.jsx`（照 state 畫、不搶焦點、點外面收起、桌機／手機只畫一個、讓開側欄、新信那則的寫法）。offline e2e：`message_inbox.offline.spec.js`（真 onData → 鈴鐺、真滑鼠點開不送鍵、點終端機收起、斷線清空、pref 關；回較早寄件人時模擬一對一模式的回覆畫面，只送兩下 ^R 就停手）。

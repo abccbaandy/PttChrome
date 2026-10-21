@@ -80,25 +80,64 @@ test.describe('水球收件匣', () => {
     expect(errors).toEqual([]);
   });
 
-  test('點「回覆」＝送一下 Ctrl+R（真滑鼠），只有最新一位寄件人有', async ({ page }) => {
+  const replyOf = (page, from) =>
+    page.locator('.inboxItem', { has: page.locator('.inboxFrom', { hasText: from }) }).locator('[data-inbox-reply]');
+
+  test('點最新一位寄件人的「回覆」＝只送一下 Ctrl+R（真滑鼠）', async ({ page }) => {
     await feedBig5(page, waterball('friend01', '早'));
     await feedBig5(page, waterball('friend02', '在嗎'));
     await page.locator('[data-inbox-bell]').click();
-    await expect(page.locator('[data-inbox-reply]')).toHaveCount(1);
-    await expect(
-      page.locator('.inboxItem', { has: page.locator('[data-inbox-reply]') }).locator('.inboxFrom')
-    ).toHaveText('friend02');
+    await expect(page.locator('[data-inbox-reply]')).toHaveCount(2);
     await startCapture(page);
     await expectOnlyFence(
       page,
       async () => {
-        await page.locator('[data-inbox-reply]').click();
+        await replyOf(page, 'friend02').click();
         await expect(page.locator('.inboxPanel')).toHaveCount(0);
         await page.keyboard.press('x');
       },
       '\x12x',
       '回覆只送 Ctrl+R，焦點仍在終端機（對照的 x 送得出去）'
     );
+  });
+
+  // 回不是最新一位的寄件人：在原生回覆畫面裡按 ^R 換人。這裡模擬一對一模式的 ofo_my_write
+  //（mbbsd/wmsg.c：row 0「丟<id>:」、row 1「↑反擊對象↓」，^R 換下一位），驗真鍵盤路徑送出的
+  // 位元組、真 TermBuf 的 screenSettled 接線，以及換到對象就停手。
+  test('點較早寄件人的「回覆」：^R 換到他為止就停手', async ({ page }) => {
+    await feedBig5(page, waterball('friend01', '早'));
+    await feedBig5(page, waterball('friend02', '在嗎'));
+    await page.evaluate(() => {
+      const big5 = (t) =>
+        [...t]
+          .map((ch) => {
+            const c = ch.charCodeAt(0);
+            return c < 0x80
+              ? ch
+              : String.fromCharCode(window.lib.u2bArray[2 * c]) + String.fromCharCode(window.lib.u2bArray[2 * c + 1]);
+          })
+          .join('');
+      const order = ['friend02', 'friend01'];
+      let at = -1;
+      window.__sentLog = [];
+      window.__stubWSSent = (sent) => {
+        window.__sentLog.push(sent);
+        if (sent !== '\x12') return;
+        at = (at + 1) % order.length;
+        const screen =
+          '\x1b[1;1H\x1b[K丟' + order[at] + ':\x1b[2;30H\x1b[1;33;46m ↑反擊對象↓ \x1b[m';
+        setTimeout(() => window.__app.onData(big5(screen)), 30);
+      };
+    });
+    await page.locator('[data-inbox-bell]').click();
+    await replyOf(page, 'friend01').click();
+    await expect(page.locator('.inboxPanel')).toHaveCount(0);
+    // waitScreenSettled 等到這一幀的 settle 跑完：要多送第三下（把對象換回 friend02）就是在
+    // 那一刻送的。之後的對照鍵 x 證明前面只有兩下 ^R，而且焦點還在終端機、使用者可以直接打字。
+    await waitScreenSettled(page, { 0: '丟friend01:' });
+    await page.keyboard.press('x');
+    await expect.poll(() => page.evaluate(() => window.__sentLog.join(''))).toContain('x');
+    expect(await page.evaluate(() => window.__sentLog.join(''))).toBe('\x12\x12x');
   });
 
   // 新信提示走 screenSettled（App 的 TermBuf 接線），不是 onData 的位元組掃描。
