@@ -1,13 +1,15 @@
 // 讀完接著讀下一篇（src/js/next_article.js、docs/next-article.md）：好讀文章讀到文末 ⇒ 最後一列
 // 下面出現列表上下一篇的標題卡；點它走 aid_navigation.startNum（第一步文章內 s<板>⏎）；
-// 從搜尋結果進的走 startSubNum（第一步文章內 ← 回同一份結果）；最後一篇、pref 關不出現。只有真瀏覽器驗得出來：卡片真的排在文末之後（不蓋字、跟著捲）、
-// 真的滑鼠點卡片不變成點終端機（滑鼠瀏覽開著也不送 ←／Enter）、不搶 #t 焦點。
+// 從搜尋結果進的走 startSubNum（第一步文章內 ← 回同一份結果）；沒有下一篇 ⇒ 終點卡（不能點）；
+// pref 關不出現。只有真瀏覽器驗得出來：卡片真的排在文末之後（不蓋字、跟著捲）、
+// 真的滑鼠點卡片不變成點終端機（滑鼠瀏覽開著也不送 ←／Enter）、不搶 #t 焦點、換文途中遮罩
+// 真的蓋在原生鏡像上面、真滾輪（page.mouse.wheel）停一下再捲過門檻才開。
 // 畫面照 pttbbs 版面手寫，與 split_reader.offline.spec.js 同一套（各自一份，spec 之間不相依）。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline, waitScreenSettled } = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
-const { waitRectStable } = require('../helpers/layout');
+const { waitRectStable, elementUnder } = require('../helpers/layout');
 
 // col：游標停的欄（1 起算）。好讀只收「PTT 畫完、游標停在末列末欄」的完整文章幀
 // （pmore 不變量 P6，docs/pttbbs-screen-protocol.md §13）⇒ 文章幀給 80。
@@ -54,7 +56,8 @@ const ENTRIES = Array.from({ length: 20 }, (_, i) => ({
 // 一整幀文章列表（row0／row2 反白鋪滿、row1 不空 ⇒ pageState 2，見 long_push spec 的說明）。
 // sub：搜尋結果（read.c MODE_SELECT：標題列右段「系列《板》」、底列 caption「系列文章」），
 // 編號是結果自己的空間（1 起算）。
-async function drawList(page, cursorIndex, { sub = false } = {}) {
+// pinned：最後一列換成置底文（read.c：置底恆排在所有編號文章後面 ⇒ 看得到列表盡頭）。
+async function drawList(page, cursorIndex, { sub = false, pinned = false } = {}) {
   const caption = sub ? '系列文章' : '文章選讀';
   const map = {
     0: { rev: true, text: ('【板主：test】' + (sub ? '系列' : '看板') + '《Test》').padEnd(80) },
@@ -65,6 +68,7 @@ async function drawList(page, cursorIndex, { sub = false } = {}) {
   ENTRIES.forEach(
     (e, i) => (map[3 + i] = listRow(sub ? i + 1 : e.num, e.author, e.title, e.unread ? '+' : ' '))
   );
+  if (pinned) map[3 + ENTRIES.length - 1] = '    ★ ' + '    ' + ' 9/01 ' + 'sysop'.padEnd(13) + '□ [公告] 置底';
   await onData(page, map, 3 + cursorIndex);
   await waitScreenSettled(page, { 2: '編號', 23: caption });
 }
@@ -87,6 +91,7 @@ async function drawArticle(page, entry) {
 }
 
 const card = (page) => page.locator('#nextArticleCard');
+const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
 async function boot(page, prefs) {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -153,11 +158,100 @@ test.describe('讀完接著讀下一篇', () => {
     await expect(page.locator('#t')).toBeFocused();
   });
 
-  test('最後一篇（下一列是置底文／沒看過）⇒ 不出現', async ({ page }) => {
+  // 使用者回報：最後一篇讀到底什麼都沒有，以為功能壞了。
+  test('最後一篇（下一列是置底文）⇒ 卡片寫「已無下一篇」，點了不送鍵', async ({ page }) => {
+    await boot(page);
+    await drawList(page, ENTRIES.length - 2, { pinned: true });
+    await drawArticle(page, ENTRIES[ENTRIES.length - 2]);
+    await expect(card(page)).toBeVisible();
+    await expect(card(page)).toHaveAttribute('data-end', 'last');
+    await expect(card(page)).toContainText(await label(page, 'next_article_last'));
+    await startCapture(page);
+    // aria-disabled ⇒ Playwright 的可點檢查會一直等；這裡就是要驗「真的點下去也不送鍵」。
+    await card(page).click({ force: true });
+    await expect(card(page)).not.toHaveAttribute('data-pending', '');
+    expect(await takeCapture(page)).toBe('');
+    await expect(page.locator('#nextArticleVeil')).toHaveCount(0);
+  });
+
+  test('這篇在列表頁的最底一列（下一號沒看過）⇒ 卡片寫「已到文末」', async ({ page }) => {
     await boot(page);
     await openFromList(page, ENTRIES.length - 1);
-    expect(await page.evaluate(() => window.__app.view._articleBoard)).toBe('Test');
-    await expect(card(page)).toHaveCount(0);
+    await expect(card(page)).toBeVisible();
+    await expect(card(page)).toHaveAttribute('data-end', 'unknown');
+    await expect(card(page)).toContainText(await label(page, 'next_article_unknown'));
+  });
+
+  // 使用者回報：開下一篇的過程會短暫切回原生（換文是真的走一趟原生鍵，途中鏡像原生畫面）。
+  test('換文途中遮罩蓋著，原生列表一幀都看不到；新文章畫好後遮罩拿掉', async ({ page }) => {
+    await boot(page);
+    await openFromList(page, 4);
+    await expect(card(page)).toBeVisible();
+    const veil = page.locator('#nextArticleVeil');
+    // .main 中央那一點最上面是誰：遮罩（或它裡面的東西）才算蓋住。
+    const veilOnTop = async () => {
+      const r = await waitRectStable(page, '.main');
+      return elementUnder(page, r.left + r.width / 2, r.top + r.height / 2, {
+        closest: '#nextArticleVeil',
+        attribute: 'id',
+      });
+    };
+    await startCapture(page);
+    await card(page).click();
+    await expect(veil).toBeVisible();
+    await expect(veil).toContainText(ENTRIES[5].title);
+    await expect.poll(() => peekCapture(page)).toContain('sTest\r');
+    expect(await takeCapture(page)).toBe('sTest\r\f');
+    // 板跳落地：原生列表進了 #mainContainer（鏡像），但被蓋著。
+    await startCapture(page);
+    await drawList(page, 4);
+    await expect.poll(() => page.evaluate(() => document.getElementById('mainContainer').innerText)).toContain('編號');
+    expect(await veilOnTop()).toBe('nextArticleVeil');
+    await expect.poll(() => peekCapture(page)).toContain(ENTRIES[5].num + '\r');
+    expect(await takeCapture(page)).toBe(ENTRIES[5].num + '\r\f');
+    // 跳號落地（游標在下一篇）⇒ ⏎ 開文。
+    await startCapture(page);
+    await drawList(page, 5);
+    expect(await veilOnTop()).toBe('nextArticleVeil');
+    await expect.poll(() => peekCapture(page)).toContain('\r');
+    await drawArticle(page, ENTRIES[5]);
+    await expect(veil).toBeHidden();
+    await expect(page.locator('#mainContainer')).toContainText(ENTRIES[5].title);
+    // 新文章也讀到文末了：卡片換成再下一篇。
+    await expect(card(page)).toContainText(ENTRIES[6].title);
+  });
+
+  test('桌機：讀到文末停住後再往下捲過門檻 ⇒ 開下一篇；只捲一格不開', async ({ page }) => {
+    await boot(page);
+    await openFromList(page, 4);
+    await expect(card(page)).toBeVisible();
+    const box = await waitRectStable(page, '.main');
+    await page.mouse.move(box.left + box.width / 2, box.top + box.height / 2);
+    // 讀到最底（卡片也進到視窗裡）。
+    await page.evaluate(() => {
+      const m = document.querySelector('.main');
+      m.scrollTop = m.scrollHeight;
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const m = document.querySelector('.main');
+          return m.scrollTop + m.clientHeight >= m.scrollHeight - 1;
+        })
+      )
+      .toBe(true);
+    await startCapture(page);
+    await page.mouse.wheel(0, 100);
+    await expect(card(page)).toHaveAttribute('data-pull', 'wheel');
+    await expect(card(page)).toContainText(await label(page, 'next_article_wheel'));
+    // 停住 ⇒ 字樣還原、沒送鍵。
+    await expect(card(page)).not.toHaveAttribute('data-pull', 'wheel');
+    expect(await peekCapture(page)).toBe('');
+    // 一口氣捲過門檻（WHEEL_THRESHOLD_PX 480）。
+    for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 100);
+    await expect.poll(() => peekCapture(page)).toContain('sTest\r');
+    expect(await takeCapture(page)).toBe('sTest\r\f');
+    await expect(page.locator('#nextArticleVeil')).toBeVisible();
   });
 
   test('pref 關 ⇒ 不出現', async ({ page }) => {

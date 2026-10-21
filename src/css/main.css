@@ -1624,6 +1624,8 @@ body.mobile-layout {
    （捲動容器）裡 #screenRoot 後面，跟著文末一起捲。中性灰、不搶推文區的顏色（推文區已經
    有原PO藍、自己綠、樓層黃）。字級用 em 跟著終端機字級走。 */
 #nextArticleCard {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1661,6 +1663,108 @@ body.mobile-layout {
 #nextArticleCard[data-pending] {
   cursor: progress;
   opacity: 0.6;
+}
+/* 往下拉的進度（手機往上拉、桌機在文末繼續往下捲）：卡片底下一條細線，--next-pull 0..1。 */
+#nextArticleCard[data-pull]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: calc(var(--next-pull, 0) * 100%);
+  background: #999;
+  transition: width 0.08s linear;
+}
+#nextArticleCard[data-pull="wheel"] {
+  border-color: #777;
+}
+/* 終點卡（沒有下一篇）：虛線框、不能點。 */
+#nextArticleCard[data-end] {
+  cursor: default;
+  border-style: dashed;
+  border-color: #444;
+}
+#nextArticleCard[data-end]:hover {
+  border-color: #444;
+  background: transparent;
+}
+#nextArticleCard[data-end] .nextArticleTitle {
+  color: #9a9a9a;
+}
+
+/* 換文遮罩（next_article.js#_showVeil）：body 底下 fixed、對齊 .main，蓋住換文途中的原生
+   鏡像。上面的標題從卡片的位置滑到頂端（像把下一篇捲上來），新文章畫好後淡出。z-index 在
+   提示列（2000）、浮動工具（3000）、手機工具列底下。 */
+#nextArticleVeil {
+  position: fixed;
+  z-index: 1000;
+  overflow: hidden;
+  background: black;
+  font-family: MingLiu, monospace;
+  opacity: 1;
+  transition: opacity 0.18s ease-out;
+}
+#nextArticleVeil[hidden] {
+  display: none;
+}
+#nextArticleVeil[data-leaving] {
+  opacity: 0;
+}
+#nextArticleVeil .nextArticleVeilHead {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25em;
+  width: calc(100% - 2ch);
+  margin: 0.5em 1ch 0;
+  padding: 0.6em 0.8em;
+  overflow: hidden;
+  font-size: 0.7em;
+  line-height: 1.35;
+  color: #c8c8c8;
+  border: 1px solid #555;
+  border-radius: 6px;
+  transition: transform 0.28s ease-out;
+}
+#nextArticleVeil .nextArticleLabel,
+#nextArticleVeil .nextArticleMeta {
+  font-size: 0.8em;
+  color: #8a8a8a;
+}
+#nextArticleVeil .nextArticleTitle {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#nextArticleVeil .nextArticleVeilBar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 30%;
+  height: 2px;
+  background: #888;
+  animation: nextArticleVeilBar 1s ease-in-out infinite;
+}
+@keyframes nextArticleVeilBar {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #nextArticleVeil,
+  #nextArticleVeil .nextArticleVeilHead {
+    transition: none;
+  }
+  #nextArticleVeil .nextArticleVeilBar {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
 }
 #nextArticleCard .nextArticleLabel,
 #nextArticleCard .nextArticleMeta {

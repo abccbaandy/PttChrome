@@ -3,9 +3,9 @@
 // #mainContainer）、點擊不外洩到 App 在 window 的滑鼠入口、「捲到文末了沒」扣掉卡片的高度
 // （reading_record.trailingPx）。
 // real-input: tests/e2e/offline/next_article.offline.spec.js
-import { NextArticle, NEXT_ARTICLE_ID, isNextArticleTarget } from "../../src/js/next_article";
+import { NextArticle, NEXT_ARTICLE_ID, NEXT_ARTICLE_VEIL_ID, isNextArticleTarget } from "../../src/js/next_article";
 import { ReadingRecord, trailingPx } from "../../src/js/reading_record";
-import { setupI18n } from "../../src/js/i18n";
+import { setupI18n, i18n } from "../../src/js/i18n";
 
 const ROWS = 24;
 function listRow(num, author, title) {
@@ -27,9 +27,15 @@ function articleScreen() {
 
 let host;
 beforeAll(() => setupI18n());
-afterEach(() => host && host.remove());
+afterEach(() => {
+  if (host) host.remove();
+  // 遮罩掛在 body（不在 host 裡），每個 NextArticle 一份。
+  for (const el of document.querySelectorAll("#" + NEXT_ARTICLE_VEIL_ID)) el.remove();
+});
 
-function setup() {
+const READ_ALICE = { _articleBoard: "C_Chat", _articleAuthor: "alice", _articleTitle: "[閒聊] 第一篇" };
+
+function setup(read = READ_ALICE) {
   host = document.createElement("div");
   document.body.appendChild(host);
   const main = document.createElement("div");
@@ -75,10 +81,13 @@ function setup() {
   settled();
   frame = articleScreen();
   core.buf.pageLines = [[]];
-  Object.assign(core.view, { _articleBoard: "C_Chat", _articleAuthor: "alice", _articleTitle: "[閒聊] 第一篇" });
+  Object.assign(core.view, read);
   settled();
-  return { core, next, main, screenRoot, mc, starts };
+  return { core, next, main, screenRoot, mc, starts, settled };
 }
+
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test("卡片放在 .main 裡 #screenRoot 後面，不進 #mainContainer；內容取自快照", () => {
   const { next, main, screenRoot, mc } = setup();
@@ -133,4 +142,107 @@ test("捲到最後一則推文（卡片還在視窗下面）也算在文末", ()
   expect(new ReadingRecord(core).current().article.atBottom).toBe(false);
   el.hidden = true;
   expect(trailingPx(core.view)).toBe(0);
+});
+
+// ── 沒有下一篇：終點卡 ─────────────────────────────────────────────────────
+test("最後一篇 ⇒ 卡片寫「已無下一篇」、標成不能點；點了不送鍵", () => {
+  const { starts } = setup({ _articleBoard: "C_Chat", _articleAuthor: "bob", _articleTitle: "[問題] 第二篇" });
+  const el = document.getElementById(NEXT_ARTICLE_ID);
+  expect(el.hidden).toBe(false);
+  expect(el.getAttribute("data-end")).toBe("last");
+  expect(el.getAttribute("aria-disabled")).toBe("true");
+  expect(el.querySelector(".nextArticleTitle").textContent).toBe(i18n("next_article_last"));
+  el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(starts).toEqual([]);
+  expect(document.getElementById(NEXT_ARTICLE_VEIL_ID)).toBeNull();
+});
+
+test("終點卡之後讀到有下一篇的文章 ⇒ 卡片換回一般樣子", () => {
+  const { core, next } = setup({ _articleBoard: "C_Chat", _articleAuthor: "bob", _articleTitle: "[問題] 第二篇" });
+  Object.assign(core.view, READ_ALICE);
+  next._onSettled();
+  const el = document.getElementById(NEXT_ARTICLE_ID);
+  expect(el.hasAttribute("data-end")).toBe(false);
+  expect(el.hasAttribute("aria-disabled")).toBe(false);
+  expect(el.textContent).toContain("[問題] 第二篇");
+});
+
+// ── 換文遮罩：換文途中不閃原生畫面 ─────────────────────────────────────────
+// 使用者回報：開下一篇的過程會短暫切回原生（aid_navigation 讓好讀進 functionMode 鏡像原生）。
+test("點卡片 ⇒ 在 start 之前就蓋上遮罩：對齊 .main、不在 #mainContainer／.main 裡、寫著下一篇", () => {
+  const { core, main, mc } = setup();
+  let veilAtStart = null;
+  core.aidNavigation.startNum = () => {
+    const v = document.getElementById(NEXT_ARTICLE_VEIL_ID);
+    veilAtStart = !!v && !v.hidden;
+    return true;
+  };
+  document.getElementById(NEXT_ARTICLE_ID).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(veilAtStart).toBe(true);
+  const veil = document.getElementById(NEXT_ARTICLE_VEIL_ID);
+  expect(veil.parentNode).toBe(document.body);
+  expect(main.contains(veil)).toBe(false);
+  expect(mc.contains(veil)).toBe(false);
+  const r = main.getBoundingClientRect();
+  expect(parseFloat(veil.style.top)).toBeCloseTo(r.top);
+  expect(parseFloat(veil.style.left)).toBeCloseTo(r.left);
+  expect(parseFloat(veil.style.width)).toBeCloseTo(r.width);
+  expect(parseFloat(veil.style.height)).toBeCloseTo(r.height);
+  expect(veil.textContent).toContain("[問題] 第二篇");
+  expect(isNextArticleTarget(veil.firstChild)).toBe(true);
+});
+
+test("換文失敗 ⇒ 遮罩馬上拿掉（看得到 PTT 給的原生畫面）", () => {
+  const { starts } = setup();
+  document.getElementById(NEXT_ARTICLE_ID).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  const veil = document.getElementById(NEXT_ARTICLE_VEIL_ID);
+  expect(veil.hidden).toBe(false);
+  starts[0].onEnd({ ok: false });
+  expect(veil.hidden).toBe(true);
+});
+
+test("start 沒接（線路忙等）⇒ 遮罩不留", () => {
+  const { core } = setup();
+  core.aidNavigation.startNum = () => false;
+  document.getElementById(NEXT_ARTICLE_ID).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(document.getElementById(NEXT_ARTICLE_VEIL_ID).hidden).toBe(true);
+});
+
+test("換文成功 ⇒ 等好讀接手新文章才淡出（還在鏡像原生就繼續蓋著）", async () => {
+  const { core, starts, settled } = setup();
+  document.getElementById(NEXT_ARTICLE_ID).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  const veil = document.getElementById(NEXT_ARTICLE_VEIL_ID);
+  core.easyReading._functionMode = true; // 落地那一刻好讀還沒接手
+  starts[0].onEnd({ ok: true });
+  await nextFrame();
+  await nextFrame();
+  expect(veil.hidden).toBe(false);
+  expect(veil.hasAttribute("data-leaving")).toBe(false);
+  core.easyReading._functionMode = false; // 下一次 settle：好讀畫好新文章
+  core.easyReading.easyReadingReachedPageEnd = false;
+  settled();
+  await nextFrame();
+  await nextFrame();
+  expect(veil.hasAttribute("data-leaving")).toBe(true);
+  await sleep(400);
+  expect(veil.hidden).toBe(true);
+});
+
+test("遮罩上的滑鼠事件不外洩到 window、不搶焦點", () => {
+  setup();
+  document.getElementById(NEXT_ARTICLE_ID).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  const veil = document.getElementById(NEXT_ARTICLE_VEIL_ID);
+  const seen = [];
+  const spy = (e) => seen.push(e.type);
+  for (const t of ["mousedown", "mouseup", "click"]) window.addEventListener(t, spy);
+  try {
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    veil.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    veil.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    veil.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  } finally {
+    for (const t of ["mousedown", "mouseup", "click"]) window.removeEventListener(t, spy);
+  }
+  expect(seen).toEqual([]);
 });

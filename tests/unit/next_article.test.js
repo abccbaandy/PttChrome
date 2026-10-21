@@ -7,7 +7,14 @@ vi.mock("../../src/js/pref_storage", async (importOriginal) => {
   return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), ...prefOverride }) };
 });
 import { DEFAULT_PREFS, NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage";
-import { NextArticle, nextEntryAfter, landedOn, mergeSubSnapshot, sameListEntry } from "../../src/js/next_article";
+import {
+  NextArticle,
+  nextEntryAfter,
+  landedOn,
+  mergeSubSnapshot,
+  sameListEntry,
+  listEndsAfter,
+} from "../../src/js/next_article";
 import { listPageOf } from "../../src/js/split_reader";
 import { parseBlacklist, parseTitleBlacklist } from "../../src/js/comment_parse";
 import { RESTORE_TABLE } from "../../src/js/reading_record";
@@ -93,6 +100,25 @@ describe("nextEntryAfter：列表順序的下一列", () => {
       { num: 103, why: "title" },
     ]);
     expect(nextEntryAfter(withText, 101, { blacklist: null, titleKeywords: null }).num).toBe(102);
+  });
+});
+
+describe("列表盡頭：listPageOf.endNum／listEndsAfter", () => {
+  test("最後一列有編號的文章下面是置底文或空列 ⇒ 它就是最後一篇；排到畫面最底 ⇒ 看不出來", () => {
+    expect(listPageOf(PAGE().rowTexts, null).endNum).toBe(104);
+    expect(listPageOf(listScreen([listRow(7, "a", "[閒聊] x")]).rowTexts, null).endNum).toBe(7);
+    const full = Array.from({ length: ROWS - 4 }, (_, i) => listRow(1 + i, "a", "[閒聊] " + i));
+    expect(listPageOf(listScreen(full).rowTexts, null).endNum).toBeNull();
+    // 整頁都是置底文（沒有編號文章）⇒ 不知道。
+    expect(listPageOf(listScreen([PINNED_ROW]).rowTexts, null).endNum).toBeNull();
+  });
+  test("listEndsAfter：下一號到盡頭每一號都看過才算到底", () => {
+    const e = [{ num: 1 }, { num: 2 }, { num: 3 }, { num: 5 }];
+    expect(listEndsAfter(e, 3, 3)).toBe(true);
+    expect(listEndsAfter(e, 2, 3)).toBe(true); // 3 看過（被跳過）
+    expect(listEndsAfter(e, 3, 5)).toBe(false); // 缺 4
+    expect(listEndsAfter(e, 3, null)).toBe(false);
+    expect(listEndsAfter(e, 6, 5)).toBe(false);
   });
 });
 
@@ -228,12 +254,24 @@ describe("NextArticle：何時出現", () => {
     read("C_Chat", "alice", "[閒聊] 第一篇");
     expect(next.state.entry.num).toBe(104);
   });
-  test("後面看過的列全被擋 ⇒ 不出現（不知道再下一列是什麼）", () => {
-    const { core, next, show, read } = makeCore();
+  test("後面看過的列全被擋、接著就是置底文 ⇒ 終點卡「已無下一篇」（不能點）", () => {
+    const { core, next, show, read, starts } = makeCore();
     core.view.blacklist = parseBlacklist("bob\ncarol");
     show(PAGE());
     read("C_Chat", "alice", "[閒聊] 第一篇");
-    expect(next.state.visible).toBe(false);
+    expect(next.state).toMatchObject({ visible: true, entry: null, end: "last" });
+    expect(next.open()).toBe(false);
+    expect(starts).toEqual([]);
+  });
+  test("後面看過的列全被擋，但列表排到畫面最底（看不出盡頭）⇒ 終點卡「已到文末」", () => {
+    const { core, next, show, read } = makeCore();
+    core.view.blacklist = parseBlacklist("bob");
+    const rows = Array.from({ length: ROWS - 4 }, (_, i) =>
+      listRow(101 + i, i === 0 ? "alice" : "bob", "[閒聊] 第 " + (101 + i) + " 篇", { cursor: i === 0 })
+    );
+    show(listScreen(rows));
+    read("C_Chat", "alice", "[閒聊] 第 101 篇");
+    expect(next.state).toMatchObject({ visible: true, entry: null, end: "unknown" });
   });
   test("錄製中 ⇒ 記下挑了哪篇、跳過誰（結果沒變不重記）", () => {
     const { core, next, show, read } = makeCore();
@@ -270,11 +308,51 @@ describe("NextArticle：何時出現", () => {
     read("C_Chat", "alice", "[閒聊] 第一篇");
     expect(next.state.entry.num).toBe(103);
   });
-  test("最後一篇（下一列是置底文）⇒ 不出現", () => {
-    const { next, show, read } = makeCore();
+  // 使用者回報：最後一篇讀到底什麼都沒有，以為功能壞了 ⇒ 改成明講「已無下一篇」。
+  test("最後一篇（下一列是置底文）⇒ 終點卡「已無下一篇」，點了不送鍵", () => {
+    const { next, show, read, starts } = makeCore();
     show(PAGE());
     read("C_Chat", "carol", "Re: [閒聊] 第一篇");
-    expect(next.state.visible).toBe(false);
+    expect(next.state).toMatchObject({ visible: true, entry: null, end: "last" });
+    expect(next.open()).toBe(false);
+    expect(starts).toEqual([]);
+  });
+  test("最後一篇（下面是空列，沒有置底文）⇒ 也是「已無下一篇」", () => {
+    const { next, show, read } = makeCore();
+    show(listScreen([listRow(101, "alice", "[閒聊] 第一篇", { cursor: true })]));
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state).toMatchObject({ visible: true, entry: null, end: "last" });
+  });
+  test("這頁最底一列就是這篇（下一號在還沒看過的頁）⇒「已到文末」；回列表翻過下一頁 ⇒ 換成下一篇", () => {
+    const { next, show, read } = makeCore();
+    const page1 = Array.from({ length: ROWS - 4 }, (_, i) =>
+      listRow(101 + i, "u" + i, "[閒聊] 第 " + (101 + i) + " 篇", { cursor: i === ROWS - 5 })
+    );
+    show(listScreen(page1));
+    read("C_Chat", "u19", "[閒聊] 第 120 篇");
+    expect(next.state).toMatchObject({ visible: true, entry: null, end: "unknown" });
+    show(listScreen([listRow(121, "zed", "[閒聊] 第 121 篇", { cursor: true }), PINNED_ROW]));
+    show(listScreen(page1));
+    read("C_Chat", "u19", "[閒聊] 第 120 篇");
+    expect(next.state).toMatchObject({ visible: true, end: null });
+    expect(next.state.entry.num).toBe(121);
+  });
+  test("看過列表盡頭之後有新文章進來（快照出現更大的編號）⇒ 舊的盡頭作廢", () => {
+    const { next, show, read } = makeCore();
+    show(PAGE()); // 盡頭 104
+    // 新文 105 進來：這一頁 105 排到最底一列，看不出盡頭。
+    const rows = Array.from({ length: 15 }, (_, i) => listRow(86 + i, "u" + i, "[閒聊] 第 " + (86 + i) + " 篇"));
+    rows.push(
+      listRow(101, "alice", "[閒聊] 第一篇"),
+      listRow(102, "bob", "[問題] 第二篇"),
+      DELETED_ROW(103),
+      listRow(104, "carol", "Re: [閒聊] 第一篇"),
+      listRow(105, "dave", "[閒聊] 新文")
+    );
+    expect(rows).toHaveLength(ROWS - 4);
+    show(listScreen(rows));
+    read("C_Chat", "carol", "Re: [閒聊] 第一篇");
+    expect(next.state.entry.num).toBe(105);
   });
   test("還沒讀到文末、反向讀取中、切原生（functionMode）、好讀關 ⇒ 不出現", () => {
     const { next, easyReading, show, read } = makeCore();
@@ -505,11 +583,13 @@ describe("NextArticle：搜尋結果裡的下一篇", () => {
     expect(t.next.state.pending).toBe(false);
   });
 
-  test("結果的最後一筆（下一筆沒看過）⇒ 不出現", () => {
+  test("結果的最後一筆（下面是空列）⇒ 終點卡「已無下一篇」，不送鍵", () => {
     const t = makeCore();
     t.show(SEARCH());
     t.read("C_Chat", "defenser", "[26秋] 轉生史萊姆 五期 03");
-    expect(t.next.state.visible).toBe(false);
+    expect(t.next.state).toMatchObject({ visible: true, entry: null, end: "last" });
+    expect(t.next.open()).toBe(false);
+    expect(t.subStarts).toEqual([]);
   });
 
   test("回過完整列表之後再從那裡開文 ⇒ 用完整列表的快照（搜尋結果的那一份丟掉）", () => {
@@ -534,7 +614,10 @@ describe("NextArticle：搜尋結果裡的下一篇", () => {
       ])
     );
     READ_317(t);
-    expect(t.next.state.visible).toBe(false);
+    // 新結果到 317 就結束（下面是空列）：不拿舊結果的 318。
+    expect(t.next.state).toMatchObject({ entry: null, end: "last" });
+    expect(t.next.open()).toBe(false);
+    expect(t.subStarts).toEqual([]);
   });
 });
 

@@ -1074,7 +1074,7 @@ export const en_US = {
     "message": "Continue to the next post"
   },
   "tooltip_enableNextArticleCard": {
-    "message": "When you reach the end of a post in easy-reading mode, a card for the next post in the list appears below the comments; click it to switch straight to it; on a phone, scrolling to the bottom and pulling up a bit further, then letting go, opens it too. It never switches on its own, and is not shown for the last post."
+    "message": "When you reach the end of a post in easy-reading mode, a card for the next post in the list appears below the comments; click it to switch straight to it. On a computer, scroll to the bottom, pause, then keep scrolling down; on a phone, scroll to the bottom and pull up a bit further, then let go — both open it too. It never switches just because you reached the bottom; when there is no next post the card says so."
   },
   "next_article_label": {
     "message": "Next post"
@@ -1084,6 +1084,24 @@ export const en_US = {
   },
   "next_article_release": {
     "message": "Release to open the next post"
+  },
+  "next_article_wheel": {
+    "message": "Keep scrolling to open the next post"
+  },
+  "next_article_desktop_hint": {
+    "message": "Click, or pause at the end and keep scrolling down"
+  },
+  "next_article_last": {
+    "message": "No next post"
+  },
+  "next_article_last_meta": {
+    "message": "This is the last post in the list"
+  },
+  "next_article_unknown": {
+    "message": "End of post"
+  },
+  "next_article_unknown_meta": {
+    "message": "The next post is on a list page you have not viewed yet; page down in the list and it will show up here"
   },
   "next_article_opening": {
     "message": "Opening…"

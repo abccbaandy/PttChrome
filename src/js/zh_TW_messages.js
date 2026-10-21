@@ -1076,7 +1076,7 @@
     "message": "讀完接著讀下一篇"
   },
   "tooltip_enableNextArticleCard": {
-    "message": "好讀文章讀到最後，推文下面會出現列表上下一篇的標題卡，點它就直接換過去讀；手機上捲到底再往上拉一段、放手也會開。不會自己換文；最後一篇不顯示。"
+    "message": "好讀文章讀到最後，推文下面會出現列表上下一篇的標題卡，點它就直接換過去讀；電腦上捲到底、停一下再繼續往下捲，手機上捲到底再往上拉一段、放手，也會開。不會一捲到底就自己換文；沒有下一篇時卡片會寫「已無下一篇」。"
   },
   "next_article_label": {
     "message": "下一篇"
@@ -1086,6 +1086,24 @@
   },
   "next_article_release": {
     "message": "放開開啟下一篇"
+  },
+  "next_article_wheel": {
+    "message": "繼續往下捲開啟下一篇"
+  },
+  "next_article_desktop_hint": {
+    "message": "點一下，或在文末停一下再繼續往下捲"
+  },
+  "next_article_last": {
+    "message": "已無下一篇"
+  },
+  "next_article_last_meta": {
+    "message": "這是列表上的最後一篇"
+  },
+  "next_article_unknown": {
+    "message": "已到文末"
+  },
+  "next_article_unknown_meta": {
+    "message": "下一篇在還沒看過的列表頁，回列表往下翻過後，這裡就會出現"
   },
   "next_article_opening": {
     "message": "開啟中…"

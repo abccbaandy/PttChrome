@@ -16,7 +16,7 @@
 import { isArticleListTitleRow, parseBoardName } from './screen_titles';
 import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { parseListEntry } from './agent_parse';
-import { parseListArticleNumLoose } from './comment_parse';
+import { parseListArticleNumLoose, isPinnedListRow } from './comment_parse';
 import { blacklistHit, listFilterOf } from './list_row_filter';
 import { listRowIdentity, subjectKey, subjectMatches } from './long_push_anchor';
 import { charCells } from './string_util';
@@ -58,9 +58,13 @@ export function listRowUnread(text) {
   return false;
 }
 
-// 一張文章列表畫面 → { board, mode, entries[], cursorNum }；不是文章列表 ⇒ null。
+// 一張文章列表畫面 → { board, mode, entries[], cursorNum, endNum }；不是文章列表 ⇒ null。
 // mode：'plain' 完整列表、'select' 搜尋結果／文摘（底列 caption，read.c#i_read_caption）。
 // 置底文（★，沒有編號）不收：startNum 跳不到它。
+// endNum：這一頁看得到列表的盡頭 ⇒ 最後一篇的編號，否則 null。read.c 的列表是捲動視窗
+// （read_move_cursor 的 base），置底文（bottom_count）恆排在所有編號文章後面，超過
+// last_line 的列畫成空白 ⇒ 最後一列有編號的文章下面緊接著置底文或空列，它就是最後一篇。
+// 編號文章排到畫面最底一列 ⇒ 看不出後面還有沒有，null。
 // 游標列：curY（終端機游標停在那一列，cursor_show 之後）優先；給不出來才看列首的
 // STR_CURSOR「>」或 STR_CURSOR2「●」（include/common.h，使用者可選）。
 export function listPageOf(rowTexts, curY) {
@@ -73,14 +77,21 @@ export function listPageOf(rowTexts, curY) {
   if (!board) return null;
   const entries = [];
   let cursorNum = null;
+  let lastRow = -1;
   for (let r = 3; r < n - 1; r++) {
     const text = t[r];
     const entry = listEntryOf(text);
     if (!entry) continue;
     entries.push(entry);
+    lastRow = r;
     if (r === curY || (curY == null && /^[>●]/.test(text))) cursorNum = entry.num;
   }
-  return { board, mode: isSubListFooter(last) ? 'select' : 'plain', entries, cursorNum };
+  let endNum = null;
+  if (lastRow >= 0 && lastRow + 1 < n - 1) {
+    const after = t[lastRow + 1] || '';
+    if (!after.trim() || isPinnedListRow(after)) endNum = entries[entries.length - 1].num;
+  }
+  return { board, mode: isSubListFooter(last) ? 'select' : 'plain', entries, cursorNum, endNum };
 }
 
 // 列表的一列 → 快照條目；不是有編號的文章列（置底文、空列）⇒ null。
@@ -110,6 +121,8 @@ export function sameBoard(a, b) {
 }
 
 // 把一頁併進快照（照編號排序）。換板就整份換掉；超過上限丟離 pivot 最遠的。
+// endNum（列表盡頭，見 listPageOf）：這一頁看得到盡頭就用它；沒看到就沿用舊的，但快照裡
+// 出現比它大的編號（有新文章進來）⇒ 作廢。
 export function mergeSnapshot(prev, page, limit) {
   const cap = limit || SPLIT_SNAPSHOT_LIMIT;
   const map = new Map();
@@ -125,7 +138,10 @@ export function mergeSnapshot(prev, page, limit) {
       .slice(0, cap)
       .sort((a, b) => a.num - b.num);
   }
-  return { board: page.board, entries };
+  const same = prev && sameBoard(prev.board, page.board);
+  let endNum = page.endNum != null ? page.endNum : same && prev.endNum != null ? prev.endNum : null;
+  if (endNum != null && entries.length && entries[entries.length - 1].num > endNum) endNum = null;
+  return { board: page.board, entries, endNum };
 }
 
 // 左欄顯示的條目：黑名單命中的不列（list_row_filter，跟列表上看到的一樣）；正在讀的那篇

@@ -101,6 +101,14 @@ test("在底部往上拉過門檻、放手 ⇒ 開下一篇；途中卡片顯示
   expect(card.hasAttribute("data-pull")).toBe(false);
 });
 
+test("拉的途中卡片底下的進度條跟著走（--next-pull＝拉的距離／門檻）", () => {
+  const { card, drag } = setup();
+  drag(ARM / 2, { release: false });
+  expect(Number(card.style.getPropertyValue("--next-pull"))).toBeCloseTo(0.5, 1);
+  drag(ARM + 40, { release: false });
+  expect(Number(card.style.getPropertyValue("--next-pull"))).toBe(1);
+});
+
 test("沒拉過門檻就放手 ⇒ 不開，卡片的字回原樣", () => {
   const { card, starts, drag, fire } = setup();
   drag(ARM - 20, { release: false });
