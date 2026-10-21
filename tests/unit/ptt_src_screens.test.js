@@ -51,6 +51,11 @@ import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
 import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
 import boardListTogglesFx from "./fixtures/ptt_src_screens/board_list_toggles.json";
+import markReadPromptFx from "./fixtures/ptt_src_screens/mark_read_prompt.json";
+import goodbyeFx from "./fixtures/ptt_src_screens/goodbye.json";
+import { markReadPromptShown } from "../../src/js/mark_read_prompt";
+import { resolveDismiss, DISMISS_INPUT } from "../../src/js/screen_dismiss";
+import { isGoodbyeConfirm, isAnyKeyPause, logoutEscapeKey } from "../../src/js/logout_session";
 
 loadBig5Tables();
 
@@ -384,5 +389,49 @@ describe("upstream pttbbs 產的回水球畫面（一對一模式）", () => {
 
   test("主功能表那一幀不是回覆畫面 ⇒ 認不出（不送鍵）", () => {
     expect(step("menu")).toBe(null);
+  });
+});
+
+describe("upstream pttbbs 產的文章列表 v prompt（bbs.c#b_mark_read_unread）", () => {
+  test("v 開出的 getdata prompt 認得、列表那一幀不認", () => {
+    const prompt = screenAt(markReadPromptFx, "prompt");
+    expect(markReadPromptShown(prompt.rowTexts)).toBe(true);
+    expect(markReadPromptShown(screenAt(markReadPromptFx, "list").rowTexts)).toBe(false);
+  });
+
+  test("prompt 是輸入欄 ⇒ 關閉／逃生送 ^C，不是空白", () => {
+    const { buf, rowTexts } = screenAt(markReadPromptFx, "prompt");
+    expect(buf.isCursorOnInputField()).toBe(true);
+    const d = resolveDismiss({ lastRowText: rowTexts[buf.rows - 1], cursorOnInputField: true });
+    expect(d.kind).toBe(DISMISS_INPUT);
+  });
+});
+
+describe("upstream pttbbs 產的離站流程（xyz.c#Goodbye）", () => {
+  const facts = (name) => {
+    const { buf, rowTexts } = screenAt(goodbyeFx, name);
+    return {
+      buf,
+      rowTexts,
+      screen: { row0: rowTexts[0], lastRowText: rowTexts[buf.rows - 1], cursorOnInputField: buf.isCursorOnInputField() },
+    };
+  };
+
+  test("主功能表 ⇒ 不送逃生鍵，直接 G⏎", () => {
+    expect(logoutEscapeKey(facts("menu").screen)).toEqual({ menu: true });
+    expect(isGoodbyeConfirm(facts("menu").rowTexts)).toBe(false);
+  });
+
+  test("G⏎ 開出確認 prompt", () => {
+    const { rowTexts, screen } = facts("confirm");
+    expect(isGoodbyeConfirm(rowTexts)).toBe(true);
+    expect(isAnyKeyPause(screen.lastRowText)).toBe(false);
+    expect(screen.cursorOnInputField).toBe(true);
+  });
+
+  test("y⏎ 之後的停留時間是 pressanykey ⇒ 送空白讓 server 關線", () => {
+    const { screen, rowTexts } = facts("pause");
+    expect(isAnyKeyPause(screen.lastRowText)).toBe(true);
+    expect(isGoodbyeConfirm(rowTexts)).toBe(false);
   });
 });

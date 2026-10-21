@@ -118,6 +118,21 @@ export const SCENES = [
     ],
   },
   {
+    // 文章列表的 v（bbs.c#b_mark_read_unread）：getdata prompt「設定所有文章 (U)未讀 (V)已讀 …」。
+    file: 'mark_read_prompt',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [{ name: 'list' }, { keys: 'v', name: 'prompt' }],
+  },
+  {
+    // 主功能表 G⏎ 離站（xyz.c#Goodbye）：確認 getdata，y⏎ 之後 vmsg 停留時間（pressanykey）。
+    // 再按一鍵就 u_exit 關線，所以停在 pressanykey。
+    file: 'goodbye',
+    entry: 'menu',
+    rows: 24,
+    steps: [{ name: 'menu' }, { keys: 'G\r', name: 'confirm' }, { keys: 'y\r', name: 'pause' }],
+  },
+  {
     // 主功能表的 s：同一個選看板 prompt。
     file: 'menu_search',
     entry: 'menu',

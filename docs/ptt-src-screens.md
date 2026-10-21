@@ -66,6 +66,8 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `search_prompts` | `read:Test`／24 | `/` ⏎ `a` ⏎ `Z` ⏎ `s` | `isSearchPromptFrame`：title／author／push／board 各自只認自己那一種（空白 ⏎ 取消回列表） |
 | `search_refine` | `read:Test`／24 | `/` `Re⏎` `/` | 搜尋結果裡再搜「增加條件 標題:」認成 title；結果列表本身不是 prompt |
 | `menu_search` | `menu`／24 | `s` | 主功能表的 s ⇒ 選看板 prompt（board） |
+| `mark_read_prompt` | `read:Test`／24 | `v` | 文章列表 v 的「設定所有文章 …」prompt（`markReadPromptShown`）；是輸入欄 ⇒ 逃生送 ^C |
+| `goodbye` | `menu`／24 | `G⏎` `y⏎` | 一鍵登出：主功能表不送逃生鍵、確認 prompt（`isGoodbyeConfirm`）、停留時間是 pressanykey（`isAnyKeyPause`） |
 | `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
 | `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
 

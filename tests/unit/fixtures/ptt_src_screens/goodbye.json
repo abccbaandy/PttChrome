@@ -1,0 +1,22 @@
+{
+ "cols": 80,
+ "rows": 24,
+ "entry": "menu",
+ "frames": [
+  {
+   "name": "menu",
+   "keys": "",
+   "bytes": "\u001b[?7l\u001b[?2026h\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[1;37;46m¡i¥D¥\\¯àªí¡j                       \u001b[33m·s§å½ð½ð\u001b[0;1;37;46m                                    \u001b[13;23H\u001b[m(\u001b[1;36mA\u001b[m)nnounce     ¡i ºëµØ¤½§GÄæ ¡j\u001b[14;23H(\u001b[1;36mF\u001b[m)avorite     ¡i §Ú ªº ³Ì·R ¡j\u001b[15;21H> (\u001b[1;36mC\u001b[m)lass\u001b[15;38H¡i ¤À²Õ°Q½×°Ï ¡j\u001b[16;23H(\u001b[1;36mM\u001b[m)ail\u001b[16;38H¡i ¨p¤H«H¥ó°Ï ¡j\u001b[17;23H(\u001b[1;36mT\u001b[m)alk\u001b[17;38H¡i ¥ð¶¢²á¤Ñ°Ï ¡j\u001b[18;23H(\u001b[1;36mU\u001b[m)ser\u001b[18;38H¡i ­Ó¤H³]©w°Ï ¡j\u001b[19;23H(\u001b[1;36mX\u001b[m)yz\u001b[19;38H¡i ¨t²Î¸ê°T°Ï ¡j\u001b[20;23H(\u001b[1;36mP\u001b[m)lay\u001b[20;38H¡i ®T¼Ö»P¥ð¶¢ ¡j\u001b[21;23H(\u001b[1;36mN\u001b[m)amelist     ¡i ½s¯S§O¦W³æ ¡j\u001b[22;23H(\u001b[1;36mG\u001b[m)oodbye\u001b[22;41HÂ÷¶}¡A¦A¨£¡K\r\n\n\u001b[34;46m ¥D¿ï³æ \u001b[1;33;45m              \u001b[0;30;47m 9/27 ¶g¤é 9:06 | \u001b[1;31mtester\u001b[0;30;47m | ½u¤W\u001b[1;31m0\u001b[0;30;47m¤H               \u001b[31m(h)\u001b[30m»¡©ú \u001b[m\u001b[15;21H\u001b[?2026l"
+  },
+  {
+   "name": "confirm",
+   "keys": "G\r",
+   "bytes": "\u001b[?2026h \u001b[22;21H>\r\n±z½T©w­nÂ÷¶}¡i ·s§å½ð½ð ¡j¶Ü(Y/N)¡H[N] \u001b[30;47m  \u001b[m\b\b\u001b[?2026l"
+  },
+  {
+   "name": "pause",
+   "keys": "y\r",
+   "bytes": "\u001b[?2026h\u001b[H\u001b[K\u001b[13;1H\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[1;36;44m ¡» ¦¹¦¸°±¯d®É¶¡: 0 ¤p®É  0 ¤À                                 \u001b[33;46m [«ö¥ô·NÁäÄ~Äò] \u001b[m\u001b[?2026l"
+  }
+ ]
+}
