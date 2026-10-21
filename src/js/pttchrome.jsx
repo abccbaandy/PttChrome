@@ -93,6 +93,7 @@ import { renderInto, unmountFrom } from './react_root';
 import { setBellEnabled } from './bell';
 import { MantineRoot } from '../components/MantineRoot';
 import { isScreenChunk, readSelectionText } from '../render/screen_chunk';
+import { applyOpenCache } from './open_cache';
 import logoIcon from '../icon/logo.png';
 import logoConnectIcon from '../icon/logo_connect.png';
 import logoDisconnectIcon from '../icon/logo_disconnect.png';
@@ -2089,6 +2090,9 @@ App.prototype.onPrefChange = function(name, value) {
       // class) and is derived from the NATIVE bg palette — it has to be told,
       // or it goes invisible on the grayed-out reverse-video input rows.
       if (this.view) this.view.setWorkMode(!!value);
+      break;
+    case 'enableOpenCache':
+      applyOpenCache(value);
       break;
     case 'mobileLayout':
       this.mobileLayoutMode = value;

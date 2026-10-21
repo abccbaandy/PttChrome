@@ -376,6 +376,13 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_imgurProxyUrl",
     },
   ]),
+  ...inSection("connection", "options_openCache", null, [
+    {
+      key: "enableOpenCache",
+      titleKey: "options_enableOpenCache",
+      tooltipKey: "tooltip_enableOpenCache",
+    },
+  ]),
 
   // ── 增強 ────────────────────────────────────────────────────────
   ...inSection("enhance", "options_enhance", false, [

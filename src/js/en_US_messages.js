@@ -1226,6 +1226,15 @@ export const en_US = {
   "options_connectionEncoding": {
     "message": "Connection encoding (takes effect after reconnecting)"
   },
+  "options_openCache": {
+    "message": "Startup cache"
+  },
+  "options_enableOpenCache": {
+    "message": "Load the app's files from this device on startup"
+  },
+  "tooltip_enableOpenCache": {
+    "message": "On startup only the page itself is checked with the server; the other app files are reused until a new version replaces them, so startup is faster on slow networks. You always get the latest version. Off = clear this cache and go back to the browser's default behavior."
+  },
   "tooltip_connectionEncoding": {
     "message": "The text encoding used between you and PTT. PTT currently supports both and the screen looks the same; UTF-8 is here in case PTT drops Big5 in the future. With UTF-8, characters outside Big5 (e.g. Korean, Simplified Chinese) are sent and shown as-is; while PTT still handles text as Big5, PTT itself turns them into question marks."
   },
