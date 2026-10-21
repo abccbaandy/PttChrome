@@ -37,6 +37,26 @@ import helpMenuFx from "./fixtures/ptt_src_screens/help_menu.json";
 import boardNoteFx from "./fixtures/ptt_src_screens/board_note.json";
 import boardListFx from "./fixtures/ptt_src_screens/board_list.json";
 import mainMenuFx from "./fixtures/ptt_src_screens/main_menu.json";
+import waterballDefaultFx from "./fixtures/ptt_src_screens/waterball_default.json";
+import waterballOfoFx from "./fixtures/ptt_src_screens/waterball_ofo.json";
+import mainMenuNewMailFx from "./fixtures/ptt_src_screens/main_menu_newmail.json";
+import pushFx from "./fixtures/ptt_src_screens/push.json";
+import { classifyReplyScreen, nextReplyStep } from "../../src/js/waterball_reply";
+import { newMailOnScreen } from "../../src/js/message_inbox";
+import { hasNewMail } from "../../src/js/home_dashboard";
+import { appBarFromFacts } from "../../src/js/mobile_app_bar";
+import { classifyPushScreen, detectIpLogged } from "../../src/js/push_screen";
+import pushFlowFx from "./fixtures/ptt_src_screens/push_flow.json";
+import { isSearchPromptFrame } from "../../src/js/article_search";
+import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
+import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
+import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
+import boardListTogglesFx from "./fixtures/ptt_src_screens/board_list_toggles.json";
+import markReadPromptFx from "./fixtures/ptt_src_screens/mark_read_prompt.json";
+import goodbyeFx from "./fixtures/ptt_src_screens/goodbye.json";
+import { markReadPromptShown } from "../../src/js/mark_read_prompt";
+import { resolveDismiss, DISMISS_INPUT } from "../../src/js/screen_dismiss";
+import { isGoodbyeConfirm, isAnyKeyPause, logoutEscapeKey } from "../../src/js/logout_session";
 
 loadBig5Tables();
 
@@ -248,5 +268,189 @@ describe("upstream pttbbs 產的主功能表", () => {
     expect(isHomeScreen(facts)).toBe(true);
     expect(classifyListScreen(facts).kind).toBe("menu");
     expect(buf.pageState).toBe(1);
+  });
+});
+
+describe("upstream pttbbs 產的看板列表切換（y 全部看板、c 文章總數）", () => {
+  const at = (name) => screenAt(boardListTogglesFx, name).facts;
+
+  test("y 列出全部看板：caption 不變但認成 all，不接管", () => {
+    expect(classifyBoardListScreen(at("all"))).toMatchObject({ variant: "all", engageable: false });
+    expect(boardListContextKind(at("all"))).toBe("brdlist-other");
+  });
+
+  test("再按 y 回我的最愛：認回 fav、可接管", () => {
+    expect(classifyBoardListScreen(at("fav-again"))).toMatchObject({ variant: "fav", engageable: true });
+    expect(boardListContextKind(at("fav-again"))).toBe("brdlist");
+  });
+
+  test("c 切成文章總數：newflag、不接管（編號欄印的是總數）", () => {
+    expect(classifyBoardListScreen(at("newflag"))).toMatchObject({ newflag: true, engageable: false });
+    expect(boardListContextKind(at("newflag"))).toBe("brdlist-other");
+  });
+});
+
+describe("upstream pttbbs 產的新信提示（menu.c#redraw_title）", () => {
+  const plain = screenAt(mainMenuFx, "menu");
+  const mail = screenAt(mainMenuNewMailFx, "menu");
+
+  test("有新信：收件匣、首頁儀表板、手機 App Bar 都看得出來；主功能表照樣認得", () => {
+    expect(newMailOnScreen(mail.rowTexts[0], mail.buf.pageState)).toBe(true);
+    expect(hasNewMail(mail.rowTexts[0])).toBe(true);
+    expect(appBarFromFacts(mail.facts, { pageState: mail.buf.pageState })).toMatchObject({
+      kind: "menu",
+      newMail: true,
+    });
+    expect(isHomeScreen(mail.facts)).toBe(true);
+  });
+
+  test("沒有新信：三處都是 false", () => {
+    expect(newMailOnScreen(plain.rowTexts[0], plain.buf.pageState)).toBe(false);
+    expect(hasNewMail(plain.rowTexts[0])).toBe(false);
+    expect(appBarFromFacts(plain.facts, { pageState: plain.buf.pageState })).toMatchObject({
+      kind: "menu",
+      newMail: false,
+    });
+  });
+});
+
+describe("upstream pttbbs 產的推文畫面（bbs.c#recommend）", () => {
+  test("文章列表按 X ⇒ 推文輸入列（→ 自己的 id:），打字後仍是輸入列", () => {
+    expect(classifyPushScreen(screenAt(pushFx, "push-1").rowTexts)).toEqual({
+      kind: "inputPrompt",
+      type: "→",
+      userId: "tester",
+    });
+    expect(classifyPushScreen(screenAt(pushFx, "push-2").rowTexts)).toMatchObject({
+      kind: "inputPrompt",
+      userId: "tester",
+    });
+  });
+});
+
+describe("upstream pttbbs 產的搜尋 prompt（read.c#ask_filter_predicate、do_select）", () => {
+  const KINDS = ["title", "author", "push", "board"];
+  const only = (fx, name, kind) => {
+    const { facts } = screenAt(fx, name);
+    for (const k of KINDS) expect(isSearchPromptFrame(k, facts), `${name} 當成 ${k}`).toBe(k === kind);
+  };
+
+  test("文章列表的 / a Z s 各自認成對的那一種，其他種不認", () => {
+    only(searchPromptsFx, "title", "title");
+    only(searchPromptsFx, "author", "author");
+    only(searchPromptsFx, "push", "push");
+    only(searchPromptsFx, "board", "board");
+  });
+
+  test("已在搜尋結果裡再按 /：「增加條件 標題:」也認得", () => {
+    only(searchRefineFx, "title", "title");
+  });
+
+  test("列表本身、主功能表都不是 prompt；主功能表的 s 是選看板 prompt", () => {
+    only(searchPromptsFx, "list", null);
+    only(searchRefineFx, "result", null);
+    only(menuSearchFx, "menu", null);
+    only(menuSearchFx, "board", "board");
+  });
+});
+
+// seed.tsv 的 W 列：依序收 alice、bob、carol ⇒ 最新一位是 carol（swater_get_slot 把最新的
+// 寄件人提到 swater[0]）。收件匣的解析不在這裡測：pfterm 只在等鍵前送出最後的畫面，一次收三顆
+// 時前兩顆的底列早被蓋掉，跟真的連線上一顆一包不同。
+
+describe("upstream pttbbs 產的回水球畫面（一般模式）", () => {
+  const step = (name) => classifyReplyScreen(screenAt(waterballDefaultFx, name).rowTexts);
+
+  test("第一下 ^R：訊息傳過去 prompt，對象是最新一位 ⇒ 回 carol 直接交給使用者", () => {
+    const s = step("prompt");
+    expect(s).toEqual({ mode: "default", selected: null, panel: false });
+    expect(nextReplyStep(s, "carol", "carol", 1)).toBe("done");
+    expect(nextReplyStep(s, "alice", "carol", 1)).toBe("next");
+  });
+
+  test("再按 ^R：訊息回顧，選中那則由新往舊（carol → bob → alice）", () => {
+    expect(step("panel-1")).toEqual({ mode: "default", selected: "carol", panel: true });
+    expect(step("panel-2")).toEqual({ mode: "default", selected: "bob", panel: true });
+    expect(step("panel-3")).toEqual({ mode: "default", selected: "alice", panel: true });
+    expect(nextReplyStep(step("panel-2"), "bob", "carol", 3)).toBe("done");
+    expect(nextReplyStep(step("panel-2"), "alice", "carol", 3)).toBe("next");
+  });
+});
+
+describe("upstream pttbbs 產的回水球畫面（一對一模式）", () => {
+  const step = (name) => classifyReplyScreen(screenAt(waterballOfoFx, name).rowTexts);
+
+  test("^R 開名單，預設選最新一位，每按一下換下一位", () => {
+    expect(step("ofo-1")).toEqual({ mode: "ofo", selected: "carol", panel: false });
+    expect(step("ofo-2")).toEqual({ mode: "ofo", selected: "bob", panel: false });
+    expect(step("ofo-3")).toEqual({ mode: "ofo", selected: "alice", panel: false });
+    expect(nextReplyStep(step("ofo-1"), "carol", "carol", 1)).toBe("done");
+    expect(nextReplyStep(step("ofo-1"), "alice", "carol", 1)).toBe("next");
+  });
+
+  test("主功能表那一幀不是回覆畫面 ⇒ 認不出（不送鍵）", () => {
+    expect(step("menu")).toBe(null);
+  });
+});
+
+describe("upstream pttbbs 產的推文流程（bbs.c#recommend 輸入 → 確認 → 寫入）", () => {
+  const kind = (name) => classifyPushScreen(screenAt(pushFlowFx, name).rowTexts);
+
+  test("打完內容 ⏎ ⇒ 確定[y/N]；y⏎ 之後離開推文畫面", () => {
+    expect(kind("input")).toMatchObject({ kind: "inputPrompt", userId: "tester" });
+    expect(kind("confirm")).toEqual({ kind: "confirm" });
+    expect(kind("done")).toEqual({ kind: "other" });
+  });
+
+  test("寫進文章的推文列帶時間戳 ⇒ 不是輸入列；Test 板不記 IP ⇒ detectIpLogged 為 false（不是 null）", () => {
+    const { rowTexts } = screenAt(pushFlowFx, "article");
+    const row = rowTexts.find((t) => /^→ tester *:hello/.test(t));
+    expect(row).toBeTruthy();
+    expect(classifyPushScreen([row])).toEqual({ kind: "other" });
+    expect(detectIpLogged(rowTexts)).toBe(false);
+  });
+});
+
+describe("upstream pttbbs 產的文章列表 v prompt（bbs.c#b_mark_read_unread）", () => {
+  test("v 開出的 getdata prompt 認得、列表那一幀不認", () => {
+    const prompt = screenAt(markReadPromptFx, "prompt");
+    expect(markReadPromptShown(prompt.rowTexts)).toBe(true);
+    expect(markReadPromptShown(screenAt(markReadPromptFx, "list").rowTexts)).toBe(false);
+  });
+
+  test("prompt 是輸入欄 ⇒ 關閉／逃生送 ^C，不是空白", () => {
+    const { buf, rowTexts } = screenAt(markReadPromptFx, "prompt");
+    expect(buf.isCursorOnInputField()).toBe(true);
+    const d = resolveDismiss({ lastRowText: rowTexts[buf.rows - 1], cursorOnInputField: true });
+    expect(d.kind).toBe(DISMISS_INPUT);
+  });
+});
+
+describe("upstream pttbbs 產的離站流程（xyz.c#Goodbye）", () => {
+  const facts = (name) => {
+    const { buf, rowTexts } = screenAt(goodbyeFx, name);
+    return {
+      buf,
+      rowTexts,
+      screen: { row0: rowTexts[0], lastRowText: rowTexts[buf.rows - 1], cursorOnInputField: buf.isCursorOnInputField() },
+    };
+  };
+
+  test("主功能表 ⇒ 不送逃生鍵，直接 G⏎", () => {
+    expect(logoutEscapeKey(facts("menu").screen)).toEqual({ menu: true });
+    expect(isGoodbyeConfirm(facts("menu").rowTexts)).toBe(false);
+  });
+
+  test("G⏎ 開出確認 prompt", () => {
+    const { rowTexts, screen } = facts("confirm");
+    expect(isGoodbyeConfirm(rowTexts)).toBe(true);
+    expect(isAnyKeyPause(screen.lastRowText)).toBe(false);
+    expect(screen.cursorOnInputField).toBe(true);
+  });
+
+  test("y⏎ 之後的停留時間是 pressanykey ⇒ 送空白讓 server 關線", () => {
+    const { screen, rowTexts } = facts("pause");
+    expect(isAnyKeyPause(screen.lastRowText)).toBe(true);
+    expect(isGoodbyeConfirm(rowTexts)).toBe(false);
   });
 });

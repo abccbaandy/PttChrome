@@ -33,13 +33,16 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `read:<板名>` | `enter_board`＋`Read()` | 文章列表；看板有 notes 就先畫進板畫面（`bbs.c#Read` 的 `board_note_time`＝`bupdate`） |
 | `fav` | `fav_load`＋`fav_add_board`（seed 的 F 列）＋`Favorite()` | 看板列表（我的最愛） |
 | `menu` | `main_menu()` | 主功能表 |
+| `menu:newmail` | `currutmp->alerts \|= ALERT_NEW_MAIL`＋`main_menu()` | 有新信的主功能表 |
+| `wmsg:default`／`wmsg:ofo` | 收下 seed 的 W 列水球（`write_request`）＋`main_menu()`；ofo 加 `UF_PAGER_OFO` | 回水球畫面（之後送 ^R）。寄件人各佔一個在線的 `SHM->uinfo`，訊息照 `write_message_full` 的欄位直接填進 `currutmp->msgs`（呼叫它會對自己送 SIGUSR2） |
 
 第 4 個參數是列數（欄數恆 80，見下「寬終端」）。
 
 ### seed.tsv（UTF-8，generate.sh 轉 Big5；tab 分隔）
 
 `B` 開看板（之後的 A／G／N 屬於它）、`A` 一篇文章（flags `m` 標記、`b` 置底）、`G <count> <owner> <title>`
-批次產生、`N` 一列進板畫面、`F` 加進我的最愛。格式細節在 `driver.c` 檔頭。
+批次產生、`N` 一列進板畫面、`F` 加進我的最愛、`W <userid> <text>` 一顆水球（只有 `wmsg` 入口會送進
+`currutmp`，其他場景的畫面不受影響）。格式細節在 `driver.c` 檔頭。
 
 - **置底**：upstream 現行的置底是 `boardheader_t.bottom[]` 裡的 AID 參照（指回 `.DIR` 裡掛
   `FILE_BOTTOM` 的原文，`common/bbs/cache.c#resolve_board_bottoms`），列表尾端另畫一列 ★；原文仍以
@@ -57,6 +60,17 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `board_note` | `read:Notes`／24 | 空白 | `boardNoteDecision`：進板畫面→skip、文章列表→landed |
 | `board_list` | `fav`／24 | — | `classifyBoardListScreen` fav＋engageable、`parseBoardListName`／`parseFavRow`、⏎ arm |
 | `main_menu` | `menu`／24 | — | `isHomeScreen`、`classifyListScreen`→menu |
+| `board_list_toggles` | `fav`／24 | `y` `y` `c` | `y` 全部看板（caption 不變）→ all、不接管；再 `y` 回 fav；`c` → newflag、不接管 |
+| `main_menu_newmail` | `menu:newmail`／24 | — | 「你有新信件」：`newMailOnScreen`、`hasNewMail`、`appBarFromFacts` newMail；沒新信的 `main_menu` 三者皆 false |
+| `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`→inputPrompt（`→ tester:`） |
+| `push_flow` | `read:Test`／24 | `X` `hello⏎` `y⏎` `⏎` | 確定[y/N]→confirm、寫入後→other；開文的推文列帶時間戳不是輸入列，`detectIpLogged`→false |
+| `search_prompts` | `read:Test`／24 | `/` ⏎ `a` ⏎ `Z` ⏎ `s` | `isSearchPromptFrame`：title／author／push／board 各自只認自己那一種（空白 ⏎ 取消回列表） |
+| `search_refine` | `read:Test`／24 | `/` `Re⏎` `/` | 搜尋結果裡再搜「增加條件 標題:」認成 title；結果列表本身不是 prompt |
+| `menu_search` | `menu`／24 | `s` | 主功能表的 s ⇒ 選看板 prompt（board） |
+| `mark_read_prompt` | `read:Test`／24 | `v` | 文章列表 v 的「設定所有文章 …」prompt（`markReadPromptShown`）；是輸入欄 ⇒ 逃生送 ^C |
+| `goodbye` | `menu`／24 | `G⏎` `y⏎` | 一鍵登出：主功能表不送逃生鍵、確認 prompt（`isGoodbyeConfirm`）、停留時間是 pressanykey（`isAnyKeyPause`） |
+| `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
+| `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
 
 **加場景**：`scenes.mjs` 加一筆（第一步不送鍵；要斷言的幀取 name）→ 必要時 seed／driver 入口 →
 `sh tools/ptt-src-screens/generate.sh` → 在 test 加 describe。鍵只用 upstream 鍵表裡的鍵。

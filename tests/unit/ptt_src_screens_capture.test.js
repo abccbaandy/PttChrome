@@ -64,7 +64,7 @@ test("場景表：第一步不送鍵、幀名在場景內不重複、入口是 d
     expect(s.steps[0].keys || "").toBe("");
     const names = s.steps.map((st) => st.name).filter(Boolean);
     expect(new Set(names).size).toBe(names.length);
-    expect(s.entry).toMatch(/^(read:[A-Za-z0-9_-]+|fav|menu)$/);
+    expect(s.entry).toMatch(/^(read:[A-Za-z0-9_-]+|fav|menu|menu:newmail|wmsg:(default|ofo))$/);
     expect(s.rows).toBeGreaterThanOrEqual(24);
   }
 });

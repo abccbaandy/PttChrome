@@ -35,4 +35,4 @@
 
 ## 測試
 
-unit：`waterball_reply.test.js`（兩種模式的畫面認法、換人、認不出等待／逾時、換滿收手）、`message_inbox.test.js`（解析、跨包、去重、上限、斷線清空、pref、新信提示的認法與由無變有）、`message_inbox_ui.test.jsx`（照 state 畫、不搶焦點、點外面收起、桌機／手機只畫一個、讓開側欄、新信那則的寫法）。offline e2e：`message_inbox.offline.spec.js`（真 onData → 鈴鐺、真滑鼠點開不送鍵、點終端機收起、斷線清空、pref 關；回較早寄件人時模擬一對一模式的回覆畫面，只送兩下 ^R 就停手）。
+unit：`waterball_reply.test.js`（兩種模式的畫面認法、換人、認不出等待／逾時、換滿收手）、`message_inbox.test.js`（解析、跨包、去重、上限、斷線清空、pref、新信提示的認法與由無變有）、`message_inbox_ui.test.jsx`（照 state 畫、不搶焦點、點外面收起、桌機／手機只畫一個、讓開側欄、新信那則的寫法）。回覆畫面的認法另由 upstream 原始碼產的畫面守（`ptt_src_screens.test.js` 的 `waterball_default`／`waterball_ofo`，見 `docs/ptt-src-screens.md`）。offline e2e：`message_inbox.offline.spec.js`（真 onData → 鈴鐺、真滑鼠點開不送鍵、點終端機收起、斷線清空、pref 關；回較早寄件人時模擬一對一模式的回覆畫面，只送兩下 ^R 就停手）。

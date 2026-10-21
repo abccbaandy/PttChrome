@@ -8,12 +8,16 @@
 //   read:<板名>  enter_board＋Read()（文章列表；看板有進板畫面就先畫進板畫面）
 //   fav          我的最愛（Favorite()，內容＝seed 的 F 列）
 //   menu         主功能表（main_menu()）
+//   menu:newmail 同上，但有新信（ALERT_NEW_MAIL）
+//   wmsg:<模式>  先收下 seed 的 W 列水球（write_request），再進主功能表；模式 default＝一般
+//                水球、ofo＝一對一（UF_PAGER_OFO）。之後送 ^R 就是 upstream 的回水球畫面。
 // seed 檔（Big5，tab 分隔）：
 //   B <brdname> <class> <desc> <BM>                       開一個看板（之後的 A／N 屬於它）
 //   A <owner> <date> <recommend> <flags> <title>          一篇文章；flags: m=marked b=置底
 //   G <count> <owner> <title>                             批次 count 篇「<title> <i>」（無內文）
 //   N <text>                                              一列進板畫面（notes）
 //   F <brdname>                                           加進我的最愛
+//   W <userid> <text>                                     一顆水球（依序收，只有 wmsg 入口用）
 #include "bbs.h"
 #include <poll.h>
 #include <sys/select.h>
@@ -81,6 +85,39 @@ time_t time(time_t *t)
 #define MAX_FAV 16
 static char fav_names[MAX_FAV][IDLEN + 1];
 static int fav_count = 0;
+
+// 水球只在 wmsg 入口才送進 currutmp：其他場景的畫面不能被它改到（fixture 要逐位元組不變）。
+#define MAX_WB MAX_MSGS
+static char wb_from[MAX_WB][IDLEN + 1];
+static char wb_text[MAX_WB][76];
+static int wb_count = 0;
+
+// 寄件人各佔一個 SHM->uinfo（在線），訊息照 common/bbs/message.c#write_message_full 填進
+// currutmp->msgs —— 不直接呼叫它：它會對收件人（＝自己）送 SIGUSR2。
+static void inject_waterballs(void)
+{
+    int users = 0;
+    for (int i = 0; i < wb_count; i++) {
+        int slot = 0;
+        for (int u = 1; u <= users; u++)
+            if (strcmp(SHM->uinfo[u].userid, wb_from[i]) == 0)
+                slot = u;
+        if (!slot) {
+            slot = ++users;
+            userinfo_t *u = &SHM->uinfo[slot];
+            STRLCPY(u->userid, wb_from[i]);
+            u->pid = 10000 + slot;
+            u->pager = PAGER_ON;
+        }
+        msgque_t *m = &currutmp->msgs[i];
+        m->pid = SHM->uinfo[slot].pid;
+        STRLCPY(m->userid, wb_from[i]);
+        m->msgmode = MSGMODE_WRITE;
+        STRLCPY(m->last_call_in, wb_text[i]);
+        m->uslot = slot;
+        currutmp->msgcount = i + 1;
+    }
+}
 
 static void seed(const char *path)
 {
@@ -184,6 +221,11 @@ static void seed(const char *path)
             if (fav_count >= MAX_FAV) die("too many favs");
             STRLCPY(fav_names[fav_count], f[1]);
             fav_count++;
+        } else if (f[0][0] == 'W' && n >= 3) {
+            if (wb_count >= MAX_WB) die("too many waterballs");
+            STRLCPY(wb_from[wb_count], f[1]);
+            STRLCPY(wb_text[wb_count], f[2]);
+            wb_count++;
         }
     }
     fclose(fp);
@@ -245,6 +287,19 @@ int main(int argc, char *argv[])
         }
         Favorite();
     } else if (strcmp(entry, "menu") == 0) {
+        main_menu();
+    } else if (strcmp(entry, "menu:newmail") == 0) {
+        // 有新信：menu.c#redraw_title 看 ISNEWMAIL 把標題列中段換成「你有新信件」。
+        currutmp->alerts |= ALERT_NEW_MAIL;
+        main_menu();
+    } else if (strncmp(entry, "wmsg:", 5) == 0) {
+        if (strcmp(entry + 5, "ofo") == 0)
+            pwcuser.uflag |= UF_PAGER_OFO;
+        else if (strcmp(entry + 5, "default") != 0)
+            die("wmsg mode");
+        currutmp->pager = PAGER_ON;
+        inject_waterballs();
+        write_request(0);
         main_menu();
     } else {
         die("entry");

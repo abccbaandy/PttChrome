@@ -55,10 +55,128 @@ export const SCENES = [
     steps: [{ name: 'fav' }],
   },
   {
+    // 我的最愛按 y 列出全部看板（caption 不變，只能靠提示分 fav／all）、再按 y 回最愛，
+    // c 切成顯示文章總數（row 2「總數」）。
+    file: 'board_list_toggles',
+    entry: 'fav',
+    rows: 24,
+    steps: [
+      { name: 'fav' },
+      { keys: 'y', name: 'all' },
+      { keys: 'y', name: 'fav-again' },
+      { keys: 'c', name: 'newflag' },
+    ],
+  },
+  {
     // 主功能表。
     file: 'main_menu',
     entry: 'menu',
     rows: 24,
     steps: [{ name: 'menu' }],
+  },
+  {
+    // 有新信的主功能表（標題列中段「你有新信件」）。
+    file: 'main_menu_newmail',
+    entry: 'menu:newmail',
+    rows: 24,
+    steps: [{ name: 'menu' }],
+  },
+  {
+    // 文章列表按 X 推文（bbs.c#recommend）。
+    file: 'push',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [{ name: 'list' }, { keys: 'X', name: 'push-1' }, { keys: '1', name: 'push-2' }],
+  },
+  {
+    // 推文走完：輸入 → 確定[y/N] → y⏎ 寫進文章 → 開文看到那一則推文列（帶時間戳，long_push 判 IP 記錄板用）。
+    file: 'push_flow',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: 'X', name: 'input' },
+      { keys: 'hello\r', name: 'confirm' },
+      { keys: 'y\r', name: 'done' },
+      { keys: '\r', name: 'article' },
+    ],
+  },
+  {
+    // 文章列表的搜尋 prompt（read.c#ask_filter_predicate、bbs.c#do_select）：每種開一次，
+    // 空白 ⏎ 取消回列表再開下一種；最後 s 選看板停在兩段式 prompt。
+    file: 'search_prompts',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '/', name: 'title' },
+      { keys: '\r' },
+      { keys: 'a', name: 'author' },
+      { keys: '\r' },
+      { keys: 'Z', name: 'push' },
+      { keys: '\r' },
+      { keys: 's', name: 'board' },
+    ],
+  },
+  {
+    // 已在搜尋結果裡（MODE_SELECT）再搜 ⇒「增加條件 …」。
+    file: 'search_refine',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '/' },
+      { keys: 'Re\r', name: 'result' },
+      { keys: '/', name: 'title' },
+    ],
+  },
+  {
+    // 文章列表的 v（bbs.c#b_mark_read_unread）：getdata prompt「設定所有文章 (U)未讀 (V)已讀 …」。
+    file: 'mark_read_prompt',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [{ name: 'list' }, { keys: 'v', name: 'prompt' }],
+  },
+  {
+    // 主功能表 G⏎ 離站（xyz.c#Goodbye）：確認 getdata，y⏎ 之後 vmsg 停留時間（pressanykey）。
+    // 再按一鍵就 u_exit 關線，所以停在 pressanykey。
+    file: 'goodbye',
+    entry: 'menu',
+    rows: 24,
+    steps: [{ name: 'menu' }, { keys: 'G\r', name: 'confirm' }, { keys: 'y\r', name: 'pause' }],
+  },
+  {
+    // 主功能表的 s：同一個選看板 prompt。
+    file: 'menu_search',
+    entry: 'menu',
+    rows: 24,
+    steps: [{ name: 'menu' }, { keys: 's', name: 'board' }],
+  },
+  {
+    // 一般水球模式回水球（wmsg.c#wmsg_handle_ctrl_r_default）：收了 alice、bob、carol 三顆，
+    // 第一下 ^R 回最新一位（carol）的 prompt，再按 ^R 出訊息回顧、每按一下往舊的選一則。
+    file: 'waterball_default',
+    entry: 'wmsg:default',
+    rows: 24,
+    steps: [
+      { name: 'menu' },
+      { keys: '\x12', name: 'prompt' },
+      { keys: '\x12', name: 'panel-1' },
+      { keys: '\x12', name: 'panel-2' },
+      { keys: '\x12', name: 'panel-3' },
+    ],
+  },
+  {
+    // 一對一模式（UF_PAGER_OFO，wmsg.c#ofo_my_write）：^R 開「↑反擊對象↓」名單，
+    // 預設選最新一位，每按一下 ^R 換下一位（ofo_switch_user(1)）。
+    file: 'waterball_ofo',
+    entry: 'wmsg:ofo',
+    rows: 24,
+    steps: [
+      { name: 'menu' },
+      { keys: '\x12', name: 'ofo-1' },
+      { keys: '\x12', name: 'ofo-2' },
+      { keys: '\x12', name: 'ofo-3' },
+    ],
   },
 ];
