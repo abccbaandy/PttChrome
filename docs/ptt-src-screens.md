@@ -56,6 +56,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `article_list` | `read:Test`／24 | — | clean-list、逐列編號／作者／標題、長標題「…」＋`subjectMatches`、置底 ★ `isPinnedListRow`、⏎ 不 arm 進板 |
 | `article_list_tall` | `read:Long`／40 | — | clean-list、一頁 rows-4 列編號連續 |
 | `article` | `read:Test`／24 | `1` `⏎` `⏎` | 跳號落點、pmore 狀態列 `parseStatusRow`、`classifyListScreen`→article、檔頭 `articleContextFromScreen` |
+| `article_prompts` | `read:Test`／24 | `1` `⏎` `⏎` `:` `2⏎` `/` `X` | pmore 的跳行／搜尋 prompt 畫在倒數第二列、狀態列照樣認得；游標在輸入欄、不在右下角；`shouldInterceptPushKey` 在 prompt 裡不攔 X |
 | `help_menu` | `read:Test`／24 | `h` | `parseHelpMenuScreen`（caption／頁數／游標／項目鍵）、⏎ 不 arm |
 | `board_note` | `read:Notes`／24 | 空白 | `boardNoteDecision`：進板畫面→skip、文章列表→landed |
 | `board_list` | `fav`／24 | — | `classifyBoardListScreen` fav＋engageable、`parseBoardListName`／`parseFavRow`、⏎ arm |

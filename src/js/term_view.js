@@ -1352,7 +1352,8 @@ TermView.prototype = {
       var pushFacts = pushGateFacts(this.bbscore);
       if (pushFacts && shouldInterceptPushKey({
             key: text, prefs: readEffectivePrefs(),
-            pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText
+            pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText,
+            cursorOnInputField: pushFacts.cursorOnInputField
           }) && this.bbscore.openLongPushModal && this.bbscore.openLongPushModal())
         return;
     }
@@ -1521,7 +1522,8 @@ TermView.prototype = {
       if (pushFacts && shouldInterceptPushKey({
             key: e.key, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey,
             prefs: readEffectivePrefs(),
-            pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText
+            pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText,
+            cursorOnInputField: pushFacts.cursorOnInputField
           }) && this.bbscore.openLongPushModal && this.bbscore.openLongPushModal()) {
         e.preventDefault();
         return;
@@ -3025,7 +3027,7 @@ TermView.prototype = {
   _accumulateReverse: function(result, newRows) {
     var rv = this._reverse;
     var S = result.rowIndexStart, E = result.rowIndexEnd;
-    // 完整的狀態列幀：goto 的「跳至第幾行:」提示已經不在了 ⇒ 放下 heal 閘門
+    // 完整的狀態列幀（游標停回右下角）：goto 的「跳至此行:」提示已經收掉 ⇒ 放下 heal 閘門
     // （反向的重新對準也走 _seekLine，見 EasyReading._maybeSendReverse）。
     this.buf.easyReadingHealInFlight = false;
     this.buf.easyReadingSeekBack = null;

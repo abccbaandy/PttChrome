@@ -34,6 +34,23 @@ export const SCENES = [
     steps: [{ name: 'list' }, { keys: '1' }, { keys: '\r', name: 'list-jumped' }, { keys: '\r', name: 'article' }],
   },
   {
+    // pmore 自己的 getdata prompt（pmore.c#pmore_do_goto、pmore_search_keyword）畫在 b_lines-1，
+    // **狀態列留在底列**：`:` 跳行 → 2⏎ 落地 → `/` 搜尋 → 打 X。
+    file: 'article_prompts',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '1' },
+      { keys: '\r' },
+      { keys: '\r', name: 'article' },
+      { keys: ':', name: 'goto' },
+      { keys: '2\r', name: 'landed' },
+      { keys: '/', name: 'search' },
+      { keys: 'X', name: 'search-typed' },
+    ],
+  },
+  {
     // 文章列表的 h：新版說明選單（psb.c#cmd_show_help_layers_inner）。
     file: 'help_menu',
     entry: 'read:Test',

@@ -47,6 +47,8 @@ import { hasNewMail } from "../../src/js/home_dashboard";
 import { appBarFromFacts } from "../../src/js/mobile_app_bar";
 import { classifyPushScreen, detectIpLogged } from "../../src/js/push_screen";
 import pushFlowFx from "./fixtures/ptt_src_screens/push_flow.json";
+import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
+import { pushGateFacts, shouldInterceptPushKey } from "../../src/js/long_push_gate";
 import { isSearchPromptFrame } from "../../src/js/article_search";
 import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
@@ -187,6 +189,43 @@ describe("upstream pttbbs 產的文章畫面（pmore）", () => {
       board: "Test",
       title: "[問題] 第一篇測試文章",
     });
+  });
+});
+
+describe("upstream pttbbs 產的 pmore prompt（pmore.c#pmore_do_goto、pmore_search_keyword）", () => {
+  const at = (name) => {
+    const { buf, rowTexts, facts } = screenAt(articlePromptsFx, name);
+    return { buf, rowTexts, facts, last: rowTexts[facts.rows - 1] };
+  };
+  const LONG_PUSH_ON = { enableLongPush: true, pushKeyOpensLongPush: true };
+  const intercepts = (name) => {
+    const f = pushGateFacts({ buf: at(name).buf });
+    return shouldInterceptPushKey(Object.assign({ key: "X", prefs: LONG_PUSH_ON }, f));
+  };
+
+  test("prompt 畫在倒數第二列，狀態列留在底列照樣認得", () => {
+    for (const name of ["goto", "search"]) {
+      const { rowTexts, facts, last } = at(name);
+      expect(rowTexts[facts.rows - 2]).toContain(name === "goto" ? "跳至此行" : "關鍵字");
+      expect(parseStatusRow(last)).toMatchObject({ pageIndex: 1, pageTotal: 1, rowIndexStart: 1 });
+    }
+  });
+
+  test("prompt 幀游標停在輸入欄、沒停回右下角 ⇒ 好讀累積的 complete 閘門擋得住；落地幀才停回去", () => {
+    const g = at("goto");
+    expect(g.buf.isCursorOnInputField()).toBe(true);
+    expect([g.facts.curY, g.facts.curX]).not.toEqual([g.facts.rows - 1, g.buf.cols - 1]);
+    const l = at("landed");
+    expect(l.buf.isCursorOnInputField()).toBe(false);
+    expect([l.facts.curY, l.facts.curX]).toEqual([l.facts.rows - 1, l.buf.cols - 1]);
+  });
+
+  test("在 pmore 搜尋／跳行 prompt 裡打 X 是在打字，不改開長推文", () => {
+    expect(intercepts("article")).toBe(true);
+    expect(intercepts("goto")).toBe(false);
+    expect(intercepts("search")).toBe(false);
+    expect(intercepts("search-typed")).toBe(false);
+    expect(intercepts("landed")).toBe(true);
   });
 });
 

@@ -167,7 +167,7 @@ IME 那條非補不可：IME 開著時 keydown 的 `keyCode` 是 229，被 `keyE
 ### 判準（`shouldInterceptPushKey`）
 
 `isPushKey` ∧ 無 ctrl/alt/meta ∧ `pushKeyOpensLongPush` ∧ `longPushAvailable` ∧
-`atPagerStatusRow`。四個容易踩的點：
+`atPagerStatusRow` ∧ 游標不在輸入欄。五個容易踩的點：
 
 1. **`X` 與 `%` 都要攔，小寫 `x` 不可以**。`more.c:90-93` 只有這兩個 case 回
    `RET_DORECOMMEND`；`x` 在 pager 沒綁定、在文章列表是 NULL、在信件列表是轉寄。
@@ -180,7 +180,11 @@ IME 那條非補不可：IME 開著時 keydown 的 `keyCode` 是 229，被 `keyE
    同一個 `parseStatusRow`，不是第二套判準），否則按 `s` 打 `XBOX` 的第一個字會被
    吞去開輸入框。**不可**改用 `parsePagerFooterContext === 'reading'`：那個推論只能
    單向（part3 會整段消失）。
-4. **文章列表（`pageState 2`）刻意不攔**，即使 `bbs.c:4595` 那裡按 X 也是推文：
+4. **pmore 自己的 prompt 不蓋狀態列**：`/` 搜尋、`:`／`;`／數字跳行跳頁都是
+   `getdata(b_lines-1)`，底列的 footer 留著 ⇒ 第 3 點照樣成立。所以再加「游標不在反白
+   輸入欄」（`buf.isCursorOnInputField()`，經 `pushGateFacts` 帶進來），否則在文章裡
+   搜尋 `XBOX` 的第一個字會被吞。
+5. **文章列表（`pageState 2`）刻意不攔**，即使 `bbs.c:4595` 那裡按 X 也是推文：
    `start()` 的錨點要從**文章標頭**取（見上一節），在列表上取不到 ⇒ 攔了等於拆掉
    唯一擋住「推到別篇」的機制。
 

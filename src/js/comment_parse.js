@@ -1033,9 +1033,10 @@ export function classifyPageTransition({ accEndRow, statusStart, statusEnd }) {
 // violated (a whole screen was lost) — the caller must self-heal rather than append a
 // hole. Checked after the first-page rebuild so a genuine restart still wins.
 // `healInFlight` (buf.easyReadingHealInFlight) — easy reading is seeking back to a
-// swallowed page with pmore's goto-line (`:N\r`, see EasyReading._healAtLine). While
-// the 「跳至第幾行:」 prompt occupies the bottom row there is no status row, so that
-// frame can classify as a non-article pageState — and term_view.redraw writes
+// swallowed page with pmore's goto-line (`:N\r`, see EasyReading._healAtLine). Upstream
+// draws the 「跳至此行:」 prompt on b_lines-1 and keeps the status row; on a server whose
+// prompt covers the status row that frame can classify as a non-article pageState —
+// and term_view.redraw writes
 // buf.prevPageState on EVERY rendered frame, so the landing frame would then take the
 // `prevPageState !== 3 → rebuild` route and restart pageLines from the MIDDLE of the
 // article, silently discarding everything above it. Both rebuild routes are therefore
