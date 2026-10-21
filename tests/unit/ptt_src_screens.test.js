@@ -46,6 +46,10 @@ import { newMailOnScreen } from "../../src/js/message_inbox";
 import { hasNewMail } from "../../src/js/home_dashboard";
 import { appBarFromFacts } from "../../src/js/mobile_app_bar";
 import { classifyPushScreen } from "../../src/js/push_screen";
+import { isSearchPromptFrame } from "../../src/js/article_search";
+import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
+import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
+import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
 
 loadBig5Tables();
 
@@ -295,6 +299,32 @@ describe("upstream pttbbs 產的推文畫面（bbs.c#recommend）", () => {
       kind: "inputPrompt",
       userId: "tester",
     });
+  });
+});
+
+describe("upstream pttbbs 產的搜尋 prompt（read.c#ask_filter_predicate、do_select）", () => {
+  const KINDS = ["title", "author", "push", "board"];
+  const only = (fx, name, kind) => {
+    const { facts } = screenAt(fx, name);
+    for (const k of KINDS) expect(isSearchPromptFrame(k, facts), `${name} 當成 ${k}`).toBe(k === kind);
+  };
+
+  test("文章列表的 / a Z s 各自認成對的那一種，其他種不認", () => {
+    only(searchPromptsFx, "title", "title");
+    only(searchPromptsFx, "author", "author");
+    only(searchPromptsFx, "push", "push");
+    only(searchPromptsFx, "board", "board");
+  });
+
+  test("已在搜尋結果裡再按 /：「增加條件 標題:」也認得", () => {
+    only(searchRefineFx, "title", "title");
+  });
+
+  test("列表本身、主功能表都不是 prompt；主功能表的 s 是選看板 prompt", () => {
+    only(searchPromptsFx, "list", null);
+    only(searchRefineFx, "result", null);
+    only(menuSearchFx, "menu", null);
+    only(menuSearchFx, "board", "board");
   });
 });
 

@@ -62,6 +62,9 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `main_menu` | `menu`／24 | — | `isHomeScreen`、`classifyListScreen`→menu |
 | `main_menu_newmail` | `menu:newmail`／24 | — | 「你有新信件」：`newMailOnScreen`、`hasNewMail`、`appBarFromFacts` newMail；沒新信的 `main_menu` 三者皆 false |
 | `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`→inputPrompt（`→ tester:`） |
+| `search_prompts` | `read:Test`／24 | `/` ⏎ `a` ⏎ `Z` ⏎ `s` | `isSearchPromptFrame`：title／author／push／board 各自只認自己那一種（空白 ⏎ 取消回列表） |
+| `search_refine` | `read:Test`／24 | `/` `Re⏎` `/` | 搜尋結果裡再搜「增加條件 標題:」認成 title；結果列表本身不是 prompt |
+| `menu_search` | `menu`／24 | `s` | 主功能表的 s ⇒ 選看板 prompt（board） |
 | `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
 | `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
 

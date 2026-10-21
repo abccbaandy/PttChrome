@@ -76,6 +76,42 @@ export const SCENES = [
     steps: [{ name: 'list' }, { keys: 'X', name: 'push-1' }, { keys: '1', name: 'push-2' }],
   },
   {
+    // 文章列表的搜尋 prompt（read.c#ask_filter_predicate、bbs.c#do_select）：每種開一次，
+    // 空白 ⏎ 取消回列表再開下一種；最後 s 選看板停在兩段式 prompt。
+    file: 'search_prompts',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '/', name: 'title' },
+      { keys: '\r' },
+      { keys: 'a', name: 'author' },
+      { keys: '\r' },
+      { keys: 'Z', name: 'push' },
+      { keys: '\r' },
+      { keys: 's', name: 'board' },
+    ],
+  },
+  {
+    // 已在搜尋結果裡（MODE_SELECT）再搜 ⇒「增加條件 …」。
+    file: 'search_refine',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '/' },
+      { keys: 'Re\r', name: 'result' },
+      { keys: '/', name: 'title' },
+    ],
+  },
+  {
+    // 主功能表的 s：同一個選看板 prompt。
+    file: 'menu_search',
+    entry: 'menu',
+    rows: 24,
+    steps: [{ name: 'menu' }, { keys: 's', name: 'board' }],
+  },
+  {
     // 一般水球模式回水球（wmsg.c#wmsg_handle_ctrl_r_default）：收了 alice、bob、carol 三顆，
     // 第一下 ^R 回最新一位（carol）的 prompt，再按 ^R 出訊息回顧、每按一下往舊的選一則。
     file: 'waterball_default',
