@@ -197,6 +197,7 @@ pin 1 只跑 `applyFunctionKeys`，而 `functionKeyRows(1,n) === functionKeyRows
 | active | key nav / open / leave / passthrough / native-inplace | move-selection / opening+begin-open / opening+begin-leave / functionMode（passthrough＝原生鏡像；native-inplace＝**凍結交易，全程不切原生**）|
 | functionMode | settle `article-list` / `menu` | idle：`cleanup` |
 | functionMode | **`resume-probe`**（靜置探針）| `holdReason==='passthrough'` ∧ 無 in-flight ∧ `ctx==='brdlist'` ∧ engageEligible → active：`seed`＋`start-fill`。**不可以走「回 idle 等下一個 settle」**——畫面靜止時不會再有 settle，那會卡死 |
+| functionMode（frozen） | 凍結落地交易的最後一步落地（`_beginLandingTransaction`，`resumeOnLanding`：重新整理 `/`→⏎）| 同探針的條件、不等靜置 → active：`seed`＋`start-fill`；認不出 → `_enterNative`（交給探針）。合約見 `docs/easy-reading-list.md`「落地即回好讀」 |
 | functionMode | 其他 settle | stay（繼續鏡像；settle 本身永不解除 hold）|
 | suspended | settle `brdlist` ∧ 同變體 ∧ `landedSameList` ∧ engageEligible | active：`resume-in-place`（採用落點游標，**捲動錨不動**） |
 | suspended | settle `brdlist`，但換了一份清單 | active：`seed`＋`start-fill`（整份重建） |

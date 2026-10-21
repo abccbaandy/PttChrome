@@ -263,16 +263,26 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 ### 落地即回好讀（`resumeOnLanding`；pref `enableListNativeAutoResume`）
 
 多步序列（`_beginPassthroughBytes(steps, { resumeOnLanding: true })`，經 `submitSerializedSteps` 的 `opts.resumeOnLanding` 傳入）
-改走 `_beginLandingTransaction`：形狀同 A 類凍結交易（frozen＋可選 sync 腿＋逐步送真鍵，步驟改用凍結交易的快速失敗預算），
+改走 `_beginLandingTransaction`：形狀同 A 類凍結交易（frozen＋可選 sync 腿＋逐步送真鍵，步驟改用凍結交易的快速失敗預算；
+比一般按鍵慢的步驟自帶 `timeoutMs`／`probeTimeoutMs`／`hardTimeoutMs`，例：進板與搜尋送出用 `aid_navigation.SLOW_STEP_BUDGET`，
+在飛那一步的 hard＋probe 會撐長凍結後盾 `_frozenStepBudgetMs`，否則後盾 2.5s 會比命令自己的逾時先把畫面降級），
 最後一步的 expect 判定的那一幀交給 `_resumeFromLanding`：條件與 `resume-probe` 逐條相同（clean-list ∧ hasNumberedRow ∧ engageEligible），
 **只差不等 `RESUME_QUIET_MS`** ⇒ `resume-buffer`+`rebuild`（rebuild 前照樣 `_adoptPendingViewport`）；不合格 ⇒ `_enterFunctionMode`（passthrough hold，退回探針）。
 任一步 onFail 而畫面仍凍著 ⇒ 切原生（N8）。
 
-可以不等靜置的前提＝**最後一步從 getdata prompt 送出**：送出前游標停在 prompt 那一列的行中，落地幀要過 clean-list
-就得游標在編號列行首（N9）⇒ 必是 server 重畫完才 park 的，洞 3（settle 兩次、游標還在舊位置）不成立。
-**不符合這個前提的序列不要 opt in**（例：游標本來就在列表上的多步翻頁）。目前用的：右鍵「前已讀後未讀」、「設為全部已讀」。
+可以不等靜置的前提＝**最後一步的落點能證明游標是 server 這次 park 的**，二選一：
+- 最後一步從 prompt 送出（getdata、CompleteBoard、跳號的「跳至第幾項」）：送出前游標停在 prompt 那一列的行中，落地幀要過
+  clean-list 就得游標在編號列行首（N9）⇒ 必是 server 重畫完才 park 的，洞 3（settle 兩次、游標還在舊位置）不成立；
+- 最後一步的 expect 本身自證游標：舊位置能過指紋就代表跟真落點同一列（End 的 `endLanded`＝游標在最後一列非空列）。
+
+做不到的步驟（PgUp 的 `pageLanded` 只看「在條目區」）標 `trustLanding: false`：它若成了最後一步，落地幀當 null ⇒ 退回探針。
+**整條序列都不符合的不要 opt in**（例：游標本來就在列表上的多步翻頁）。目前用的：右鍵「前已讀後未讀」、「設為全部已讀」、
+重新整理（文章列表 `s<本板>⏎`）、搜尋彈窗送出（`/` `a` `Z` `s` → 關鍵字⏎；第二步 expect＝prompt 消失，回顯幀不算）、
+跳到第一篇未讀（End → PgUp… → `<編號>⏎`，PgUp 標 `trustLanding:false`）。看板列表的重新整理（`/` → ⏎）走
+`board_list_session._beginLandingTransaction`，同一個合約，落地 ⇒ `seed`＋`start-fill`。
 來源：錄製檔 `ptt-debug-20261020-161646`——三道命令 218ms 就做完，舊流程卻是「切原生 → 空等探針 250ms → 切回」，
-使用者看到畫面翻面兩次。
+使用者看到畫面翻面兩次。守護：`reading_record_list.test.js`／`reading_record_board_list.test.js`「落地即回」兩組
+（不推進計時器就斷言回到好讀）、offline `list_landing_resume.offline.spec.js`（真 F5：送出板名時仍凍著、全程沒有原生幀）。
 
 ### 靜置探針（`resume-probe`，2026-09-03；pref `enableListNativeAutoResume`）
 
@@ -465,7 +475,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
   「退文回列表：視野停在使用者自己捲到的位置」。**落點不在緩衝／板名異仍走 `resume-buffer`+`rebuild`**
   （畫面本來就要換一份，重新錨定才是對的）。
 - **N6b 編號空間不變的原生交易回好讀時還原捲動錨**（2026-10 起泛化：由閱讀紀錄 `reading_record` 的決策表決定哪些交易還原，涵蓋設已讀、重新整理、`s` 取消、身後的列表——**模型與決策表見 `docs/reading-record.md`**；下面是執行端的細節）：
-  落地一律 `resume-buffer`+`rebuild`（「前已讀後未讀」是落地即回好讀，其餘是靜置探針），而 `_resumeBuffer`／`_seedAnchors` 會改採
+  落地一律 `resume-buffer`+`rebuild`（opt in 的序列是落地即回好讀，其餘是靜置探針），而 `_resumeBuffer`／`_seedAnchors` 會改採
   PTT 分頁頂端 ⇒ 閱讀進度丟失。閱讀紀錄在交易收尾時存 `_pendingViewport`；`rebuild` 之前
   `_adoptPendingViewport` 驗證「同板∧落點游標＝發起那篇」（否則丟棄＝舊行為）；`applyScrollAfterRender`
   裡 `_tryApplyPendingViewport` 等**錨列進緩衝且捲得到**（`pos*rowH+frac<=maxScrollTop` 或 `_edgeDown`）

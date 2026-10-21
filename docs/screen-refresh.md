@@ -30,6 +30,11 @@
 本篇沒有 AID（極舊文章）時：`Q` 的資訊框已經把我們丟回列表、且那個 `FULLUPDATE` 本身就 reload
 了列表 ⇒ 關框＋⏎ 重開游標下那篇（`reopenAfterPostInfo`），提示「依列表位置重開」講明。
 
+**列表好讀／看板列表平滑捲動接管中**：兩種列表的重整都是凍結交易、**落地即回**（`resumeOnLanding`，
+`docs/easy-reading-list.md`「落地即回好讀」）——最後一步從 prompt 送出（CompleteBoard／關鍵字 prompt），
+重畫完的列表那一幀直接回好讀，不切原生（prompt 不畫給使用者看）、不等靜置探針。`s<本板>⏎` 那一步是進板，
+預算用 `aid_navigation.SLOW_STEP_BUDGET`（同 AID 跳文的進板）。
+
 ### 閱讀位置
 
 - 好讀模式：原本已讀到文末（`easyReadingReachedPageEnd` 且捲到底 2 列內）⇒ `requestScrollToBottom()`

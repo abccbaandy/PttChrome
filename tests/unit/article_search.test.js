@@ -21,6 +21,7 @@ import {
 } from "../../src/js/article_search";
 import { CommandQueue } from "../../src/js/command_queue";
 import { BoardListSession } from "../../src/js/board_list_session";
+import { SLOW_STEP_BUDGET } from "../../src/js/aid_navigation";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
 import { writeValues, readValuesWithDefault } from "../../src/js/pref_storage";
 
@@ -194,6 +195,28 @@ describe("buildSearchSteps", () => {
     // 問卦 的 Big5，不是 UTF-16 原字
     expect(steps[1].keys).toBe("\xb0\xdd\xa8\xf6\r");
   });
+  // 列表好讀的落地即回好讀拿第二步的落地幀判落點：打字回顯那一幀 prompt 還在，
+  // 把它當落地就會在 prompt 上收尾（認不出 ⇒ 白白切原生）。
+  test("第二步的落地＝prompt 消失（結果列表／找不到的 vmsg）；回顯幀不算", () => {
+    const steps = buildSearchSteps("title", "abc");
+    expect(steps[1].expect(null, promptFrame(23, "搜尋標題: abc", 23))).toBe(false);
+    expect(steps[1].expect(null, articleList())).toBe(true);
+    expect(
+      steps[1].expect(null, promptFrame(23, "找不到符合條件的文章。 請按任意鍵繼續", 23)),
+    ).toBe(true);
+    const board = buildSearchSteps("board", "C_Chat");
+    expect(
+      board[1].expect(null, promptFrame(1, "請輸入看板名稱(按空白鍵自動搜尋): C_Chat", 1)),
+    ).toBe(false);
+    expect(board[1].expect(null, articleList())).toBe(true);
+  });
+  // 搜尋要等 server 的搜尋服務、看板搜尋是進板：凍結交易預設的 250/600/1200 會讓
+  // 伺服器靜默 850ms 就被判逾時（誤報「搜尋失敗」）。
+  test("第二步自帶慢步驟預算（同 AID 跳文的進板那一步）", () => {
+    const steps = buildSearchSteps("title", "abc");
+    expect(steps[1]).toMatchObject(SLOW_STEP_BUDGET);
+    expect(steps[0].hardTimeoutMs).toBeUndefined();
+  });
   test.each([
     ["author", "a"],
     ["push", "Z"],
@@ -227,6 +250,8 @@ describe("submitSearch（原生：共用 CommandQueue）", () => {
     expect(sent).toEqual(["a\f"]);
     queue.onSettle(null, promptFrame(23, "搜尋作者: ", 23));
     expect(sent).toEqual(["a\f", "someone\r"]);
+    // 步驟自帶的預算原生路徑也照用（以前只有列表 session 那條吃得到）。
+    expect(queue._inFlight.hardTimeoutMs).toBe(SLOW_STEP_BUDGET.hardTimeoutMs);
   });
 
   test("prompt 一直沒出現（探針幀也不是）⇒ 關鍵字絕不送、回報失敗", () => {
@@ -316,6 +341,8 @@ describe("submitSearch（列表 session 接管中）", () => {
     const [steps, opts] = session._beginPassthroughBytes.mock.calls[0];
     expect(steps.map((s) => s.keys)).toEqual(["/", "abc\r"]);
     expect(opts.kind).toBe("search");
+    // 凍結交易、結果一落地就回好讀；少了它就是「切原生 → 空等靜置探針 → 切回」。
+    expect(opts.resumeOnLanding).toBe(true);
   });
   test("session 正在開文 ⇒ 回 false（呼叫端提示），不送", () => {
     const session = { state: "opening", _beginPassthroughBytes: vi.fn() };

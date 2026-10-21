@@ -949,6 +949,10 @@ export function ListSession(core, view, termBuf, queue) {
   this._selectMode = false;
   // Absolute frozen-render backstop (see _armFrozenWatchdog). null = disarmed.
   this._frozenWatchdog = null;
+  // 這一次凍結裡在飛的那一步自帶的預算（hard + probe 窗，ms；0 ＝沒有）。比
+  // FROZEN_WATCHDOG_MS 長的步驟（落地交易裡的進板／搜尋）由它撐長後盾，否則畫面
+  // 會在命令自己的逾時之前就被後盾降級。每次凍結歸零。
+  this._frozenStepBudgetMs = 0;
   // ---- 捲動（瀏覽器原生；我們只維護錨）----
   // 畫面是「整段序列畫進一個 overflow-y:auto 的視口」，捲動由瀏覽器負責。session
   // 這邊只保存**內容錨**：(_topNum | _topPinnedKey, _scrollFrac) ＝ 視口頂端是哪
@@ -1605,8 +1609,8 @@ ListSession.prototype = {
   //（state transition → cursor sync 腿 → _enterFunctionMode → queue.enqueue）
   // 是不變量 12 的承重部分，三個入口一律共用這一份，勿再各自複製一遍。
   // opts.resumeOnLanding（只對多步序列）＝改走凍結交易、最後一步落地即回好讀，
-  // 見 _beginLandingTransaction；只給「最後一步從 getdata prompt 送出、回應是
-  // FULLUPDATE 列表」的序列用（落點指紋的前提，見該函式）。
+  // 見 _beginLandingTransaction；只給「最後一步從 prompt 送出（或 expect 能自證
+  // 游標）、回應是列表」的序列用（落點指紋的前提，見該函式）。
   _beginPassthroughBytes: function(bytes, opts) {
     const kind = (opts && opts.kind) || 'native-key';
     // hint === null ＝刻意不在切換當下閃提示（多步序列由最後一步自己說「做了
@@ -1665,10 +1669,13 @@ ListSession.prototype = {
   //
   // 為什麼可以不等靜置探針（RESUME_QUIET_MS）：探針等的是「使用者做完了沒」與「一個
   // 回應 settle 兩次」。前者這裡不存在（序列自己知道最後一步是哪一步）；後者靠落點
-  // 指紋擋：會 opt in 的序列最後一步都是從 getdata prompt 送出（游標停在 prompt 那一
-  // 列的行中），所以只要落地幀通過 clean-list（游標在編號列行首，N9），游標就一定是
-  // server 重畫完才 park 過來的，不會是舊位置。指紋不過（vmsg 錯誤、半繪）⇒ 照舊停
-  // 在原生鏡像，由靜置探針接手 —— 退路就是原本的行為。
+  // 指紋擋：會 opt in 的序列最後一步都是從 prompt 送出（getdata／CompleteBoard／跳號
+  // 的「跳至第幾項」，游標停在 prompt 那一列的行中），所以只要落地幀通過 clean-list
+  // （游標在編號列行首，N9），游標就一定是 server 重畫完才 park 過來的，不會是舊位置。
+  // 不是從 prompt 送出的步驟，expect 本身要能自證游標（End 的 endLanded：游標＝最後
+  // 一列非空列，舊位置能過就代表跟真落點同一列）；做不到的（PgUp）標
+  // `trustLanding: false`，它若是最後一步就照舊交給探針。指紋不過（vmsg 錯誤、半繪）
+  // ⇒ 照舊停在原生鏡像，由靜置探針接手 —— 退路就是原本的行為。
   //
   // 錄製檔 ptt-debug-20261020-161646：右鍵「前已讀後未讀」三道命令 218ms 就做完，
   // 之後卻是「切原生 → 空等探針 250ms → 切回來」，使用者看到畫面翻面兩次。
@@ -1707,6 +1714,8 @@ ListSession.prototype = {
   // rebuild 前先驗證閱讀紀錄留下的待還原錨，同 _runAction('rebuild')）。不合格 ⇒
   // 停在原生鏡像（passthrough hold），之後交給靜置探針，跟沒 opt in 時一樣。
   _resumeFromLanding: function(landed) {
+    // 這筆交易收尾了：它的長預算不可以留給之後不經 _freezeForTransaction 的凍結（開文）。
+    this._frozenStepBudgetMs = 0;
     // 落地前已經被別人接走（step 的 onDone 自己降級、cleanup、pref-off）⇒ 不碰。
     if (this.state !== 'functionMode' || this._renderMode !== 'frozen') return;
     if (
@@ -1725,8 +1734,11 @@ ListSession.prototype = {
 
   // 送出 passthrough 序列的第 i 步，並在它落地後才排下一步（單步序列＝原本的
   // 行為，一字未改：expect 恆真、無 onDone/onFail、NATIVE_PASSTHROUGH_MS）。
-  // onLanding（凍結序列專用）：最後一步 onDone 之後收到那一步 expect 判定的那一幀；
+  // onLanding（凍結序列專用）：最後一步 onDone 之後收到那一步 expect 判定的那一幀
+  // （step.trustLanding === false ＝那一幀不能自證游標，給 null ⇒ 退回探針）；
   // 任一步失敗而畫面仍凍著 ⇒ 切原生鏡像（失敗必須看得見）。
+  // step.timeoutMs／probeTimeoutMs／hardTimeoutMs：比一般按鍵慢的步驟（進板、搜尋
+  // 服務）自帶預算；沒給就吃預設。
   _enqueuePassthroughStep: function(steps, i, onLanding) {
     const self = this;
     const step = steps[i];
@@ -1747,15 +1759,23 @@ ListSession.prototype = {
       expect: onLanding
         ? function(snap, facts) {
             const ok = expect(snap, facts);
-            if (ok) landed = facts;
+            if (ok) landed = step.trustLanding === false ? null : facts;
             return ok;
           }
         : expect,
       // 凍結序列：畫面凍著，比照其他凍結交易的快速失敗預算（不是原生鏡像那種
       // 「反正畫面還看得到」的長窗）。
       timeoutMs: step.timeoutMs || (onLanding ? CMD_PROBE_AFTER_MS : NATIVE_PASSTHROUGH_MS),
-      probeTimeoutMs: onLanding ? CMD_PROBE_WINDOW_MS : undefined,
-      hardTimeoutMs: onLanding ? CMD_HARD_MS : undefined,
+      probeTimeoutMs: step.probeTimeoutMs || (onLanding ? CMD_PROBE_WINDOW_MS : undefined),
+      hardTimeoutMs: step.hardTimeoutMs || (onLanding ? CMD_HARD_MS : undefined),
+      // 凍結後盾要撐得過這一步自己的預算（進板／搜尋可以超過 FROZEN_WATCHDOG_MS）。
+      onSend: onLanding
+        ? function() {
+            self._frozenStepBudgetMs =
+              (step.hardTimeoutMs || CMD_HARD_MS) + (step.probeTimeoutMs || CMD_PROBE_WINDOW_MS);
+            if (self._renderMode === 'frozen') self._armFrozenWatchdog();
+          }
+        : undefined,
       onDone: function(result) {
         if (step.onDone) step.onDone(result);
         if (i + 1 < steps.length) self._enqueuePassthroughStep(steps, i + 1, onLanding);
@@ -1763,6 +1783,7 @@ ListSession.prototype = {
       },
       onFail: onLanding
         ? function(reason, facts) {
+            self._frozenStepBudgetMs = 0;
             if (step.onFail) step.onFail(reason, facts);
             if (self.state === 'functionMode' && self._renderMode === 'frozen')
               self._enterFunctionMode();
@@ -2216,6 +2237,7 @@ ListSession.prototype = {
     this._expediteBackground();
     this._renderMode = 'frozen';
     this._setLoading(true);
+    this._frozenStepBudgetMs = 0;
     this._armFrozenWatchdog();
     this._view.hideCursor();
     this._forceRedraw();
@@ -2249,7 +2271,7 @@ ListSession.prototype = {
       self._frozenWatchdog = null;
       if (self._renderMode === 'frozen' || self.state === 'opening')
         self._degradeToNative('指令逾時，已切至原生模式');
-    }, FROZEN_WATCHDOG_MS);
+    }, Math.max(FROZEN_WATCHDOG_MS, this._frozenStepBudgetMs || 0));
   },
 
   // Number jump: digits collected locally (overlay input), one serialized

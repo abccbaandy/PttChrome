@@ -44,9 +44,13 @@ function makeSession({ curY = 5, topNum = 350010, landing = [350024, 350039], ro
   const scrollWrites = [];
   let scrollTop = 0;
   let s = null;
+  // 原生鏡像才會把終端機游標叫出來（_enterFunctionMode）⇒ 計數＝翻到原生的次數。
+  const native = { shown: 0 };
   const view = {
     hideCursor() {},
-    showCursor() {},
+    showCursor() {
+      native.shown++;
+    },
     resetListAccumulation() {},
     setListLoading() {},
     flashListHint() {},
@@ -120,7 +124,7 @@ function makeSession({ curY = 5, topNum = 350010, landing = [350024, 350039], ro
   s._selectedNum = 350026;
   s._serverNum = 350026;
   scrollTop = (topNum - 350000) * ROW_H;
-  return { s, core, enqueued, scrollWrites, screen, termBuf, boardName };
+  return { s, core, enqueued, scrollWrites, screen, termBuf, boardName, native };
 }
 
 function step(h, kind) {
@@ -445,5 +449,127 @@ describe("編號空間：搜尋結果（系列文章）", () => {
     h.s._rebuild(h.s._collectFacts(null));
     expect(h.s._selectMode).toBe(false);
     expect(h.s.readingPosition().mode).toBe("plain");
+  });
+});
+
+// 「前已讀後未讀」那條優化（錄製檔 ptt-debug-20261020-161646）的同型延遲：兩步序列
+// 早就做完，舊流程卻是「切原生（PTT 的 prompt 畫給使用者看）→ 空等靜置探針 250ms →
+// rebuild 切回好讀」，畫面翻面兩次。最後一步從 prompt 送出的序列改走凍結交易，落地
+// 那一幀就回好讀（list_session._beginLandingTransaction）。
+// 下面每一條都**不推進計時器**就斷言回到好讀：等探針的舊行為在這裡必紅。
+describe("落地即回好讀：重新整理／搜尋／跳到未讀不切原生、不等探針", () => {
+  // 落地幀＝當下畫面（真實 C_Chat 列表，游標停在發起的 350026）。
+  const landOn = (h, kind) => {
+    const c = step(h, kind);
+    expect(c.expect(null, h.s._collectFacts(null))).toBeTruthy();
+    c.onDone(true);
+  };
+
+  test("列表重新整理：s → 板名⏎ 全程凍著，落地當下回好讀，視野回原處", () => {
+    const h = makeSession();
+    const sr = new ScreenRefresh(h.core);
+    expect(sr._dispatch({ kind: "article-list", board: "C_Chat" })).toBe(true);
+    expect(h.s._renderMode).toBe("frozen");
+    step(h, "refresh-open").onDone(true);
+    expect(h.s._renderMode).toBe("frozen"); // CompleteBoard prompt 沒畫給使用者看
+    landOn(h, "refresh-submit");
+    expect(h.s.state).toBe("active");
+    expect(h.s._renderMode).toBe("buffer");
+    expect(h.native.shown).toBe(0);
+    expect(h.s._pendingViewport).not.toBe(null);
+    fillBuffer(h.termBuf, 350004, 350039);
+    h.s._seqCache = null;
+    h.s.applyScrollAfterRender();
+    expect(h.s._topNum).toBe(350010);
+  });
+
+  test("文章搜尋：打字回顯那一幀（prompt 還在）不算落地；結果列表一到就回好讀", () => {
+    const h = makeSession();
+    expect(submitSearch(h.core, "title", "found")).toBe(true);
+    step(h, "search-open").onDone(true);
+    expect(h.s._renderMode).toBe("frozen");
+    const submit = step(h, "search-submit");
+    const list = { rows: h.screen.rows.slice(), curY: h.screen.curY };
+    h.screen.rows[23] = "搜尋標題: found";
+    h.screen.curY = 23;
+    expect(submit.expect(null, h.s._collectFacts(null))).toBe(false);
+    h.screen.rows = list.rows;
+    h.screen.curY = list.curY;
+    h.screen.rows[23] = "  系列文章  " + (h.screen.rows[23] || "").slice(8);
+    landOn(h, "search-submit");
+    expect(h.s.state).toBe("active");
+    expect(h.s._renderMode).toBe("buffer");
+    expect(h.native.shown).toBe(0);
+    expect(h.s._selectMode).toBe(true); // 搜尋結果＝另一個編號空間，rebuild 有認出來
+  });
+
+  test("文章搜尋：找不到（vmsg）⇒ 停在原生鏡像讓使用者看，交給靜置探針", () => {
+    const h = makeSession();
+    submitSearch(h.core, "title", "nomatch");
+    step(h, "search-open").onDone(true);
+    h.screen.rows[23] = "            找不到符合條件的文章。      請按任意鍵繼續";
+    h.screen.curY = 23;
+    h.screen.curX = 60;
+    landOn(h, "search-submit");
+    expect(h.s._renderMode).toBe("native");
+    expect(h.s._holdReason).toBe("passthrough");
+  });
+
+  test("最後一步標 trustLanding:false（落點不能自證游標）⇒ 照舊交給探針", () => {
+    const h = makeSession();
+    h.s._beginPassthroughBytes(
+      [{ keys: "\x1b[5~", kind: "unread-pgup", trustLanding: false, expect: () => true }],
+      { kind: "unread-jump", hint: null, resumeOnLanding: true }
+    );
+    expect(h.s._renderMode).toBe("frozen");
+    landOn(h, "unread-pgup");
+    expect(h.s._renderMode).toBe("native");
+    expect(h.s._holdReason).toBe("passthrough");
+  });
+
+  test("跳到第一篇未讀的跳號（numJumpLanded 自證游標）⇒ 落地即回好讀", () => {
+    const h = makeSession();
+    h.s._beginPassthroughBytes(
+      [
+        { keys: "\x1b[5~", kind: "unread-pgup", trustLanding: false, expect: () => true },
+        { keys: "350026\r", kind: "unread-jump", expect: () => true },
+      ],
+      { kind: "unread-jump", hint: null, resumeOnLanding: true }
+    );
+    landOn(h, "unread-pgup");
+    expect(h.s._renderMode).toBe("frozen"); // 中間步驟不翻原生
+    landOn(h, "unread-jump");
+    expect(h.s.state).toBe("active");
+    expect(h.s._renderMode).toBe("buffer");
+    expect(h.native.shown).toBe(0);
+  });
+
+  // 進板／搜尋服務比一般按鍵慢，步驟自帶 5s 預算：凍結後盾（2.5s）不可以搶先把畫面
+  // 降級成原生（＋「指令逾時」紅字），命令自己的逾時才是結論。
+  test("步驟自帶較長預算 ⇒ 照用，凍結後盾撐得過它", () => {
+    const h = makeSession();
+    h.s._beginPassthroughBytes(
+      [{ keys: "x\r", kind: "slow", timeoutMs: 1500, probeTimeoutMs: 700, hardTimeoutMs: 5000 }],
+      { kind: "slow", hint: null, resumeOnLanding: true }
+    );
+    const c = step(h, "slow");
+    expect(c.hardTimeoutMs).toBe(5000);
+    expect(c.probeTimeoutMs).toBe(700);
+    if (c.onSend) c.onSend();
+    vi.advanceTimersByTime(3000);
+    expect(h.s._renderMode).toBe("frozen");
+    // hard 5000 + probe 700 之後後盾才降級（再晚 250ms 靜置探針就會把它接回好讀）。
+    vi.advanceTimersByTime(2800);
+    expect(h.s._renderMode).toBe("native");
+  });
+
+  test("pref 自動回復關掉 ⇒ 舊行為：一開始就切原生鏡像", () => {
+    const h = makeSession();
+    window.localStorage.setItem(
+      PREF_KEY,
+      JSON.stringify({ values: { enableEasyReadingList: true, enableListNativeAutoResume: false } })
+    );
+    new ScreenRefresh(h.core)._dispatch({ kind: "article-list", board: "C_Chat" });
+    expect(h.s._renderMode).toBe("native");
   });
 });

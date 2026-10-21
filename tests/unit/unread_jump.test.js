@@ -253,6 +253,32 @@ describe("UnreadJump.start：End → PgUp… → 跳號", () => {
     expect(hints.at(-1).m).toBe("只有在文章列表才能跳到第一篇未讀");
   });
 
+  // 列表好讀接管中：凍結交易，翻頁過程不畫給使用者看、跳號落地那一幀直接回好讀（少了
+  // resumeOnLanding 就是「切原生 → 看著 End／PgUp 翻頁 → 空等靜置探針 → 切回」）。
+  // PgUp 的落地指紋（pageLanded）不能自證游標 ⇒ 它若是最後一步（翻到上限放棄）就不可以
+  // 直接回好讀，標 trustLanding:false；End（endLanded）與跳號（numJumpLanded）自證得了。
+  test("列表好讀接管中：要求落地即回好讀；只有 PgUp 標 trustLanding:false", () => {
+    const { core } = makeCore();
+    const calls = [];
+    core.activeListSession = () => ({
+      state: "active",
+      _renderMode: "buffer",
+      _beginPassthroughBytes: (steps, opts) => calls.push({ steps, opts }),
+    });
+    const mark = (n) => (n >= 202614 ? "+" : n === 202613 ? "~" : " ");
+    expect(new UnreadJump(core).start()).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].opts.resumeOnLanding).toBe(true);
+    const steps = calls[0].steps;
+    land(steps[0], page(range(202611, 202630, mark)));
+    land(steps[1], page(range(202591, 202610, mark), 0));
+    expect(steps.map((s) => [s.keys, s.trustLanding !== false])).toEqual([
+      [END, true],
+      [PGUP, false],
+      ["202614\r", true],
+    ]);
+  });
+
   test("線路忙碌（別的序列化操作在途）⇒ 不送鍵、給該操作的提示", () => {
     const { core, enqueued, hints } = makeCore();
     core.refreshInFlight = true;

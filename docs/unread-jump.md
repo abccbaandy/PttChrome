@@ -23,14 +23,17 @@
 | 翻到第 1 篇（PgUp 不再往上：`read_move_cursor` 夾在 1） | 跳到最上面那篇未讀 |
 | 翻了 `MAX_PGUP`（20）頁還沒走進已讀區 | 放棄，停在原地 |
 
-## 送什麼鍵（全程原生，畫面照實反應）
+## 送什麼鍵（全程原生鍵）
 
 `End` → 讀這頁 → 還沒結論就 `PgUp` → 讀這頁 …… → `<編號>⏎`。
 
 - `End`／`PgUp`：`read.c#read_cmd_end`／`read_cmd_pgup`。PgUp 把游標移到 `top_ln - p_lines`，新頁從游標開始，頁與頁不重疊。
 - `<編號>⏎`：`read.c#read_cmd_num` → `stuff.c#search_num`（「跳至第幾項」），不受「目標在不在這頁」影響。
 - 序列**邊走邊長**：每讀完一頁才 push 下一步；送出路徑是 `article_search.submitSerializedSteps`
-  （列表好讀時走 list_session 的 passthrough、原生時走 CommandQueue），兩條都在第 i 步 onDone 之後才讀第 i+1 步。
+  （列表好讀時走 list_session 的凍結交易、原生時走 CommandQueue），兩條都在第 i 步 onDone 之後才讀第 i+1 步。
+- 列表好讀時是**落地即回好讀**（`resumeOnLanding`，`docs/easy-reading-list.md` 同名節）：翻頁過程不畫給使用者看，
+  跳號落地那一幀直接回好讀，不切原生、不等靜置探針。End（`endLanded`）與跳號（`numJumpLanded`）的指紋自證游標；
+  PgUp（`pageLanded`）不能 ⇒ 標 `trustLanding:false`，翻到上限放棄時照舊停原生交給探針。
 - 每一步都補 `\f`（`fullRepaint`）：PgUp 已在第一頁、跳號目標就是游標列時 PTT 送零 byte，沒有 settle 只能等逾時。
 - 落地判定：End 用 `aid_navigation.endLanded`、PgUp 用 `pageLanded`（同板、游標在條目區、有編號）、跳號用 `numJumpLanded`。
 - 在途旗標 `unreadJumpInFlight`（`serialized_op_gate`）：期間使用者的鍵一律吞掉＋提示。

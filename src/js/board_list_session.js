@@ -899,21 +899,25 @@ BoardListSession.prototype = {
   // passthrough 的共用序列：真游標落後就先跳號同步（`v`/`m`/`t`/`D` 這些鍵都是
   // **對游標所在那一列**動作的），再切原生鏡像，最後才把鍵送出去。
   // 兩步一定要序列化：同一 tick 送 "N\r" + 鍵會踩 pttbbs 的 typeahead（協定 §2）。
+  // opts.resumeOnLanding（只對多步序列）＝凍結交易、最後一步落地即回平滑捲動，
+  // 見 _beginLandingTransaction。
   _beginPassthroughBytes: function(bytes, opts) {
     const kind = (opts && opts.kind) || 'native-key';
     const hint =
       opts && 'hint' in opts
         ? opts.hint
         : '已切至原生操作' + nativeResumeHint();
+    // bytes 是字串 ＝ 一步；是陣列 ＝ 多步序列（每步 {keys, kind, expect, onDone,
+    // onFail}），合約同 list_session._beginPassthroughBytes：第 n+1 步只在第 n 步的
+    // onDone 裡 enqueue（搜尋彈窗的「s → 等 prompt → 板名」靠它，article_search.js）。
+    const steps = Array.isArray(bytes) ? bytes : [{ keys: bytes, kind: kind }];
+    if (opts && opts.resumeOnLanding && Array.isArray(bytes) && this._autoResumeEnabled())
+      return this._beginLandingTransaction(steps);
     const r = transitionBoardListSession(this.state, {
       type: 'key',
       keyClass: 'passthrough'
     });
     this.state = r.next;
-    // bytes 是字串 ＝ 一步；是陣列 ＝ 多步序列（每步 {keys, kind, expect, onDone,
-    // onFail}），合約同 list_session._beginPassthroughBytes：第 n+1 步只在第 n 步的
-    // onDone 裡 enqueue（搜尋彈窗的「s → 等 prompt → 板名」靠它，article_search.js）。
-    const steps = Array.isArray(bytes) ? bytes : [{ keys: bytes, kind: kind }];
     const self = this;
     const finish = function() {
       self._enterNative();
@@ -928,9 +932,61 @@ BoardListSession.prototype = {
     finish();
   },
 
-  _enqueuePassthroughStep: function(steps, i) {
+  // 多步序列的凍結版（opts.resumeOnLanding，pref enableListNativeAutoResume 開著才走）：
+  // 形狀與理由同 list_session._beginLandingTransaction —— 畫面凍住 →（必要時）跳號
+  // 同步真游標 → 逐步送真鍵 → 最後一步落地那一幀就 seed 回平滑捲動，**全程不切原生
+  // 鏡像**、不等靜置探針。前提同樣是最後一步從 prompt 送出（游標原在 prompt 那一列），
+  // 落地幀游標 park 在看板列＝server 重畫完才停過來的。認不出 ⇒ 停原生鏡像交給探針。
+  // 用的：看板列表重新整理（`/` → ⏎，screen_refresh.js）。
+  _beginLandingTransaction: function(steps) {
+    const r = transitionBoardListSession(this.state, { type: 'key', keyClass: 'transact' });
+    this.state = r.next; // functionMode（吸收在途 settle／吞鍵），render 是 frozen
+    this._freezeForTransaction();
+    const self = this;
+    const send = function() {
+      self._enqueuePassthroughStep(steps, 0, function(landed) {
+        self._resumeFromLanding(landed);
+      });
+    };
+    // 同步腿失敗不送序列（同 list_session）；第一步的 onFail 一定要叫（收閱讀紀錄
+    // 書籤與在途旗標）。
+    const abort = function() {
+      if (steps[0].onFail) steps[0].onFail('sync');
+      if (self.state === 'functionMode' && self._renderMode === 'frozen')
+        self._degradeToNative('游標同步逾時，已切至原生模式');
+    };
+    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+      this._enqueueCursorSyncJump('native-sync-jump', send, abort);
+      return;
+    }
+    send();
+  },
+
+  // 凍結序列最後一步落地：條件同靜置探針（reducer 的 resume-probe 分支），只差不必
+  // 等靜置 ⇒ seed + start-fill（重新整理改寫了未讀旗標與人氣，緩衝整份過時；seed 會
+  // 先驗證閱讀紀錄留下的待還原錨）。不合格 ⇒ 停在原生鏡像，交給靜置探針。
+  _resumeFromLanding: function(landed) {
+    // 落地前已經被別人接走（step 的 onDone 自己降級、cleanup、pref-off）⇒ 不碰。
+    if (this.state !== 'functionMode' || this._renderMode !== 'frozen') return;
+    if (landed && landed.ctx === 'brdlist' && this._engageEligible()) {
+      this.state = 'active';
+      this._seed(landed);
+      this._startFill();
+      return;
+    }
+    this._enterNative();
+  },
+
+  // onLanding（凍結序列專用）：合約同 list_session._enqueuePassthroughStep。
+  _enqueuePassthroughStep: function(steps, i, onLanding) {
     const self = this;
     const step = steps[i];
+    let landed = null;
+    const expect =
+      step.expect ||
+      function() {
+        return true; // 任何 settle 都是回應（畫面已經是原生鏡像，畫什麼都對）
+      };
     this._queue.enqueue({
       keys: step.keys,
       kind: BRD_CMD_PREFIX + (step.kind || 'native-key'),
@@ -940,17 +996,29 @@ BoardListSession.prototype = {
       // 「操作完成後自動回平滑捲動」也無從觸發。協定 §6：igetch 全域攔截，
       // getdata/vgets/pmore/編輯器一律吃這條，零副作用。
       fullRepaint: 'fullRepaint' in step ? step.fullRepaint : true,
-      expect:
-        step.expect ||
-        function() {
-          return true; // 任何 settle 都是回應（畫面已經是原生鏡像，畫什麼都對）
-        },
-      timeoutMs: step.timeoutMs || NATIVE_PASSTHROUGH_MS,
+      expect: onLanding
+        ? function(snap, facts) {
+            const ok = expect(snap, facts);
+            if (ok) landed = step.trustLanding === false ? null : facts;
+            return ok;
+          }
+        : expect,
+      // 凍結序列：畫面凍著 ⇒ 快速失敗預算（同其他凍結交易）。
+      timeoutMs: step.timeoutMs || (onLanding ? CMD_PROBE_AFTER_MS : NATIVE_PASSTHROUGH_MS),
+      probeTimeoutMs: step.probeTimeoutMs || (onLanding ? CMD_PROBE_WINDOW_MS : undefined),
+      hardTimeoutMs: step.hardTimeoutMs || (onLanding ? CMD_HARD_MS : undefined),
       onDone: function(result) {
         if (step.onDone) step.onDone(result);
-        if (i + 1 < steps.length) self._enqueuePassthroughStep(steps, i + 1);
+        if (i + 1 < steps.length) self._enqueuePassthroughStep(steps, i + 1, onLanding);
+        else if (onLanding) onLanding(landed);
       },
-      onFail: step.onFail,
+      onFail: onLanding
+        ? function(reason, facts) {
+            if (step.onFail) step.onFail(reason, facts);
+            if (self.state === 'functionMode' && self._renderMode === 'frozen')
+              self._enterNative();
+          }
+        : step.onFail,
       onFlushed: step.onFlushed
     });
   },
