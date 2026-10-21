@@ -99,6 +99,7 @@
 - **仍在 ContextMenu 掛載時就 render**：lazy 只把下載／解析移出關鍵路徑，chunk 在開站後背景載入，元件照舊常駐、以 `show` 開關，語意與拆檔前一致。不要改成「第一次打開才 render」：那會讓第一次打開多等一個網路往返，還得重新檢查每個彈窗靠 `show` 變化做的初始化。
 - **新增 lazy 彈窗時**要包自己的 `<Suspense fallback={null}>`（沒包就往上 suspend，整棵 ContextMenu 一起空白），並把模組加進守護 `tests/unit/lazy_modal_chunks.test.js` 的名單。守護是從 `src/entry.js` 沿靜態 import 走一遍：開站會載入的模組只要多一行 `import PrefModal …`，整包就被拉回主 bundle 而一切照常綠，只有這支測試會紅。
 - **英文語系 `en_US_messages.js`（約 51 KB）是 lazy chunk**：`i18n()` 仍是同步 API，改由 `main.jsx#loadResources` 跟 Big5 表、字型一起先 await `loadI18n()`（只有瀏覽器偏好英文才下載，平行載入不多一個往返），`startApp` 裡的 `setupI18n()` 照舊同步。測試由 `tests/unit/setup.js` 預先 `registerLocale('en_us', …)`，約 40 支同步呼叫 `setupI18n()` 的測試不用改。設定搜尋（`pref_search.js`，本來就在 lazy chunk）照舊靜態 import 英文做備援比對。實測（Vite 8.3）開站必載 1,212 KB → 1,160 KB（gzip 374 → 357 KB）。守護 `i18n_lazy_locale.test.js`＋`lazy_modal_chunks.test.js`。
+- **Mantine 樣式只載用得到的元件**（`src/css/mantine.css`，`@mantine/core/styles/<元件>.css` 逐一 `@import`）：整份 `styles.css` 約 295 KB、是擋第一次繪製的 CSS，換成用到的 35 個檔後約 130 KB。實測（Vite 8.3）開站 CSS 326 → 189 KB（gzip 49 → 30 KB）；拆前後各頁截圖逐像素比對（設定頁每個分頁、右鍵選單、設定搜尋、指令面板、連線失敗提示、手機選單／更多／搜尋 sheet）除閃爍游標與 build 時間字串外完全相同。名單由 `tests/unit/mantine_css_subset.test.js` 守：從 src 的 `import { … } from '@mantine/core'` 沿 Mantine esm import 圖收集用得到的 class，缺哪個檔就紅並列出檔名，順序要照整份 `styles.css`。新用一個 Mantine 元件時照它的訊息補一行。unit 測試要真版面的仍注入整份 `styles.css?raw`（`?inline` 在 Vitest 裡不展開 `@import`），同一個元件的規則兩邊相同。
 - react-dom（約 200 KB）、Mantine 共用核心（Modal／Button／Portal 等，開站就會用到的提示框都靠它）、核心畫面模組是真的開站必載，不在拆檔範圍。
 
 ## Deprecated 瀏覽器 API

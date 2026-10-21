@@ -1,0 +1,43 @@
+/*
+ * Mantine 樣式只載用得到的元件（不載整份 @mantine/core/styles.css，約 295 KB → 130 KB）。
+ * 開站必載的 CSS 會擋住第一次繪製，整份裡大半是沒用到的元件。
+ *
+ * 名單由 tests/unit/mantine_css_subset.test.js 守：從 src 裡 import 的 @mantine/core 元件
+ * 沿 Mantine 的 esm import 圖走一遍，收集用得到的 class，這裡少一個檔就紅並列出要補哪個。
+ * 順序照整份 styles.css（前三個是基底：reset、CSS 變數、全域 class），新增時插在對的位置。
+ */
+@import '@mantine/core/styles/baseline.css';
+@import '@mantine/core/styles/default-css-variables.css';
+@import '@mantine/core/styles/global.css';
+@import '@mantine/core/styles/ScrollArea.css';
+@import '@mantine/core/styles/UnstyledButton.css';
+@import '@mantine/core/styles/VisuallyHidden.css';
+@import '@mantine/core/styles/Paper.css';
+@import '@mantine/core/styles/Overlay.css';
+@import '@mantine/core/styles/Popover.css';
+@import '@mantine/core/styles/Loader.css';
+@import '@mantine/core/styles/ActionIcon.css';
+@import '@mantine/core/styles/CloseButton.css';
+@import '@mantine/core/styles/Group.css';
+@import '@mantine/core/styles/ModalBase.css';
+@import '@mantine/core/styles/Input.css';
+@import '@mantine/core/styles/FloatingIndicator.css';
+@import '@mantine/core/styles/Alert.css';
+@import '@mantine/core/styles/Text.css';
+@import '@mantine/core/styles/Anchor.css';
+@import '@mantine/core/styles/Combobox.css';
+@import '@mantine/core/styles/InlineInput.css';
+@import '@mantine/core/styles/CheckboxCard.css';
+@import '@mantine/core/styles/CheckboxIndicator.css';
+@import '@mantine/core/styles/Checkbox.css';
+@import '@mantine/core/styles/Button.css';
+@import '@mantine/core/styles/Drawer.css';
+@import '@mantine/core/styles/Menu.css';
+@import '@mantine/core/styles/Modal.css';
+@import '@mantine/core/styles/NumberInput.css';
+@import '@mantine/core/styles/Progress.css';
+@import '@mantine/core/styles/SegmentedControl.css';
+@import '@mantine/core/styles/Stack.css';
+@import '@mantine/core/styles/Switch.css';
+@import '@mantine/core/styles/Tabs.css';
+@import '@mantine/core/styles/Title.css';
