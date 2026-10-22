@@ -1601,7 +1601,6 @@ export const PrefModal = ({
                 所以不放進上面的 isAndroidApp 分支。 */}
               <PrefSection legendKey="options_connectionEncoding">
                 <Select
-                  label={i18n("options_connectionEncoding")}
                   aria-label={i18n("options_connectionEncoding")}
                   description={i18n("tooltip_connectionEncoding")}
                   name="connectionEncoding"
