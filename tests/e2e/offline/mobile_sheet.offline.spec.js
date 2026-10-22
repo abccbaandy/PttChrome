@@ -99,6 +99,50 @@ test.describe('手機 bottom sheet', () => {
     expect(await activeOutline()).toBe('none');
   });
 
+  // 手機的 sheet 外殼恆為暗色（同 App Bar／底部導覽），但淺色主題時裡面的 Mantine 元件
+  // 跟著 <html data-mantine-color-scheme="light"> 變淺：指令面板選中項變成淺灰底＋sheet
+  // 繼承的淺色字，幾乎看不見；搜尋框是一塊白。sheet 內一律照暗色畫（MobileSheet）。
+  test('淺色主題：sheet 裡的 Mantine 元件照暗色畫，選中項的字看得清楚', async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('mantine-color-scheme-value', 'light');
+      } catch (e) {}
+    });
+    await bootMenu(page);
+    expect(await page.evaluate(() => document.documentElement.getAttribute('data-mantine-color-scheme'))).toBe('light');
+
+    // 相對亮度（WCAG）與對比；背景透明就往上找第一個不透明的祖先。
+    const contrastOf = (sel) =>
+      page.evaluate((sel) => {
+        const parse = (c) => (c.match(/[\d.]+/g) || []).map(Number);
+        const lum = ([r, g, b]) => {
+          const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+          return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+        };
+        const el = document.querySelector(sel);
+        let bgEl = el;
+        let bg = null;
+        while (bgEl) {
+          const v = parse(getComputedStyle(bgEl).backgroundColor);
+          if (v.length >= 3 && (v.length < 4 || v[3] > 0.5)) {
+            bg = v;
+            break;
+          }
+          bgEl = bgEl.parentElement;
+        }
+        const fg = parse(getComputedStyle(el).color);
+        const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x);
+        return { ratio: (a + 0.05) / (b + 0.05), bgLum: lum(bg) };
+      }, sel);
+
+    await page.keyboard.press('F4');
+    const active = '[data-sheet="commandPalette"] .commandPaletteItem[data-active] .commandPaletteTitle';
+    await expect(page.locator(active)).toBeVisible();
+    expect((await contrastOf(active)).ratio).toBeGreaterThanOrEqual(4.5);
+    // 輸入框不是暗色 sheet 上的一塊白
+    expect((await contrastOf('[data-sheet="commandPalette"] input')).bgLum).toBeLessThan(0.2);
+  });
+
   test('拖曳把手往下拉＝收起', async ({ page }) => {
     await bootMenu(page);
     await byKey(page, '__more').tap();
