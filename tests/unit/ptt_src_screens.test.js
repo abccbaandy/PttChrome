@@ -56,6 +56,8 @@ import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
 import articlePrefFx from "./fixtures/ptt_src_screens/article_pref.json";
 import boardCompleteFx from "./fixtures/ptt_src_screens/board_complete.json";
+import editorFx from "./fixtures/ptt_src_screens/editor.json";
+import { decideInsertMode } from "../../src/js/image_upload";
 import {
   boardQueryResult,
   parseBoardPromptFrame,
@@ -368,6 +370,33 @@ describe("upstream pttbbs 產的 pmore 設定頁（o 完整設定、\\ 快速設
       const { rowTexts, facts } = screenAt(articlePrefFx, name);
       expect(parseStatusRow(rowTexts[facts.rows - 1]), name).not.toBeNull();
     }
+  });
+});
+
+describe("upstream pttbbs 產的編輯器（edit.c，自己的文章按 E）", () => {
+  test("底列「編輯文章」＋狀態框 ⇒ pageState 6", () => {
+    const { buf, rowTexts, facts } = screenAt(editorFx, "edit");
+    expect(rowTexts[facts.rows - 1]).toMatch(/^ 編輯文章 /);
+    expect(buf.pageState).toBe(6);
+  });
+
+  // 上傳完的網址插到哪：image_upload.decideInsertMode（底列分類共用 classifyPushScreen）。
+  test("圖片上傳插入位置：編輯器與推文內容列送字，型別選單／確定／列表一律剪貼簿", () => {
+    const mode = (fx, name) => {
+      const { buf, rowTexts, facts } = screenAt(fx, name);
+      return decideInsertMode({
+        pageState: buf.pageState,
+        lastRowText: rowTexts[facts.rows - 1],
+        hasTextTarget: false,
+      });
+    };
+    expect(mode(editorFx, "edit")).toBe("send");
+    expect(mode(pushFx, "push-2")).toBe("send");
+    expect(mode(pushAgainFx, "too-close")).toBe("send");
+    expect(mode(pushFx, "push-1")).toBe("clipboard"); // vkey 只吃 1 byte
+    expect(mode(pushFlowFx, "confirm")).toBe("clipboard");
+    expect(mode(editorFx, "list")).toBe("clipboard");
+    expect(mode(articleFx, "article")).toBe("clipboard");
   });
 });
 

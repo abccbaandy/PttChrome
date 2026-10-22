@@ -276,6 +276,14 @@ export const SCENES = [
     steps: [{ name: 'menu' }, { keys: 's', name: 'board' }],
   },
   {
+    // 編輯器（edit.c）：在自己的文章上按 E ⇒ vedit，底列「 編輯文章 」caption＋右側狀態框
+    // （插入／取代、旗標、行:欄）。term_buf.setPageState 靠它認 pageState 6。
+    file: 'editor',
+    entry: 'read:Mine',
+    rows: 24,
+    steps: [{ name: 'list' }, { keys: 'E', name: 'edit' }],
+  },
+  {
     // 選看板 prompt 的自動完成（namecomplete）：打 M 再按空白 ⇒ Mine／Movie 兩個候選，列出清單；
     // x 沒有看板以 Mx 開頭 ⇒ bell、字被丟掉；再打 o、空白 ⇒ 唯一的 Movie 補完。
     // board_search_bridge.parseBoardPromptFrame 讀輸入欄與候選。

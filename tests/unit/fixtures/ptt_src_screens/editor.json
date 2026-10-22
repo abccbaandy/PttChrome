@@ -1,0 +1,17 @@
+{
+ "cols": 80,
+ "rows": 24,
+ "entry": "read:Mine",
+ "frames": [
+  {
+   "name": "list",
+   "keys": "",
+   "bytes": "\u001b[?7l\u001b[?2026h\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[1;37;46m¡iªO¥D:sysop¡j                    \u001b[33m¦Û¤vªº¤å³¹\u001b[0;1;37;46m                       ¬ÝªO¡mMine¡n\r\n\u001b[m[¡÷]¾\\Åª [z]ºëµØ°Ï [Tab]¤åºK [s]¿ï¾Ü¬ÝªO [b]¶iªO [i]¬ÝªO³]©w [^X]Âà¿ý [/]·j´M\r\n\u001b[30;47m   ½s¸¹    ¤é ´Á §@  ªÌ       ¤å  ³¹  ¼Ð  ÃD                            ¤H®ð:42 \r\n\u001b[m>     1 +\u001b[1;30m  \u001b[m10/06 tester       ¡¼ [¶¢²á] ¦Û¤vµoªº¤å\r\u001b[24;1H\u001b[34;46m ¤å³¹¦Cªí \u001b[30;47m \u001b[31m(^P)\u001b[30mµoªí \u001b[31m(y)\u001b[30m¦^À³ \u001b[31m(X)\u001b[30m±À¤å \u001b[31m(d)\u001b[30m§R°£ \u001b[31m(¡÷)\u001b[30m¾\\Åª \u001b[31m(b)\u001b[30m¶iªO  \u001b[31m(¡ö)\u001b[30mÂ÷¶} \u001b[31m(h)\u001b[30m»¡©ú \u001b[m\u001b[4;1H\u001b[?2026l"
+  },
+  {
+   "name": "edit",
+   "keys": "E",
+   "bytes": "\u001b[?2026h\u001b[H\u001b[1;30m¡iªO¥D:sysop¡j                    ¦Û¤vªº¤å³¹                       ¬ÝªO¡mMine¡n \r\n[¡÷]¾\\Åª [z]ºëµØ°Ï [Tab]¤åºK [s]¿ï¾Ü¬ÝªO [b]¶iªO [i]¬ÝªO³]©w [^X]Âà¿ý [/]·j´M   \r\n   ½s¸¹    ¤é ´Á §@  ªÌ       ¤å  ³¹  ¼Ð  ÃD                            ¤H®ð:42 \r\n>     1 +  10/06 tester       ¡¼ [¶¢²á] ¦Û¤vµoªº¤å                              \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n\u001b[m¥¿¦b¸ü¤JÀÉ®×...\u001b[?2026l\u001b[?2026h\u001b[H§@ªÌ: tester (tester) ¬ÝªO: Mine\u001b[K\r\n¼ÐÃD: [¶¢²á] ¦Û¤vµoªº¤å\u001b[K\r\n®É¶¡: Sun Sep 27 12:00:00 2026\u001b[K\r\n\u001b[K\nbody\u001b[K\r\n\u001b[K\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\r\n~\u001b[K\n\u001b[34;46m½s¿è¤å³¹\u001b[24;14H\u001b[31;47mX)\u001b[30m¦sÀÉ\u001b[24;22H\u001b[31m^C)\u001b[30m¦â½X         \u001b[31m(Esc-h)\u001b[30m«öÁä \u001b[31m(^Z)\u001b[30m»¡©úùø´¡¤J¢xaiprùø  1:  1\u001b[m\u001b[H\u001b[?2026l"
+  }
+ ]
+}
