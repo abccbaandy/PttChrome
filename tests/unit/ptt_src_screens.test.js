@@ -55,6 +55,19 @@ import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
 import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
 import articlePrefFx from "./fixtures/ptt_src_screens/article_pref.json";
+import boardCompleteFx from "./fixtures/ptt_src_screens/board_complete.json";
+import editorFx from "./fixtures/ptt_src_screens/editor.json";
+import mailListFx from "./fixtures/ptt_src_screens/mail_list.json";
+import { footerCaption, isArticleListFooter, MAIL_LIST_CAPTIONS } from "../../src/js/screen_captions";
+import { decideInsertMode } from "../../src/js/image_upload";
+import {
+  boardQueryResult,
+  parseBoardPromptFrame,
+  resolvedBoardName,
+} from "../../src/js/board_search_bridge";
+import { isSubListTitle } from "../../src/js/aid_navigation";
+import { isSubListFooter } from "../../src/js/screen_captions";
+import { listModeOf } from "../../src/js/list_session";
 import {
   MFDISP_RAW_NA,
   MFDISP_RAW_NOANSI,
@@ -359,6 +372,106 @@ describe("upstream pttbbs 產的 pmore 設定頁（o 完整設定、\\ 快速設
       const { rowTexts, facts } = screenAt(articlePrefFx, name);
       expect(parseStatusRow(rowTexts[facts.rows - 1]), name).not.toBeNull();
     }
+  });
+});
+
+describe("upstream pttbbs 產的信件列表（主功能表 Ctrl+Z m）", () => {
+  const { rowTexts, facts } = screenAt(mailListFx, "mail");
+
+  test("底列 caption「信件列表」：不是文章列表、也不是看板列表 ⇒ 列表好讀／看板列表都不接管", () => {
+    expect(footerCaption(rowTexts[facts.rows - 1])).toBe("信件列表");
+    expect(MAIL_LIST_CAPTIONS).toContain(footerCaption(rowTexts[facts.rows - 1]));
+    expect(isArticleListFooter(rowTexts[facts.rows - 1])).toBe(false);
+    expect(classifyListScreen(facts).kind).not.toBe("clean-list");
+    expect(classifyBoardListScreen(facts)).toBeNull();
+  });
+
+  test("首頁儀表板的「新信」落地判準：已離開主功能表", () => {
+    expect(isHomeScreen(screenAt(mailListFx, "menu").facts)).toBe(true);
+    expect(isHomeScreen(facts)).toBe(false);
+  });
+});
+
+describe("upstream pttbbs 產的編輯器（edit.c，自己的文章按 E）", () => {
+  test("底列「編輯文章」＋狀態框 ⇒ pageState 6", () => {
+    const { buf, rowTexts, facts } = screenAt(editorFx, "edit");
+    expect(rowTexts[facts.rows - 1]).toMatch(/^ 編輯文章 /);
+    expect(buf.pageState).toBe(6);
+  });
+
+  // 上傳完的網址插到哪：image_upload.decideInsertMode（底列分類共用 classifyPushScreen）。
+  test("圖片上傳插入位置：編輯器與推文內容列送字，型別選單／確定／列表一律剪貼簿", () => {
+    const mode = (fx, name) => {
+      const { buf, rowTexts, facts } = screenAt(fx, name);
+      return decideInsertMode({
+        pageState: buf.pageState,
+        lastRowText: rowTexts[facts.rows - 1],
+        hasTextTarget: false,
+      });
+    };
+    expect(mode(editorFx, "edit")).toBe("send");
+    expect(mode(pushFx, "push-2")).toBe("send");
+    expect(mode(pushAgainFx, "too-close")).toBe("send");
+    expect(mode(pushFx, "push-1")).toBe("clipboard"); // vkey 只吃 1 byte
+    expect(mode(pushFlowFx, "confirm")).toBe("clipboard");
+    expect(mode(editorFx, "list")).toBe("clipboard");
+    expect(mode(articleFx, "article")).toBe("clipboard");
+  });
+});
+
+describe("upstream pttbbs 產的選看板自動完成（name.c#generalnamecomplete）", () => {
+  const frame = (name) => parseBoardPromptFrame(screenAt(boardCompleteFx, name).facts);
+
+  test("剛開 prompt／打字還沒按空白：讀得出輸入欄、沒有清單", () => {
+    expect(frame("board")).toEqual({ field: "", candidates: null, more: false });
+    expect(frame("typed")).toEqual({ field: "M", candidates: null, more: false });
+  });
+
+  test("空白 ⇒ 清單依板名排序；查 M 的結論是兩個候選、Enter 進不了板", () => {
+    const f = frame("candidates");
+    expect(f).toEqual({ field: "M", candidates: ["Mine", "Movie"], more: false });
+    const r = boardQueryResult("M", f);
+    expect(r).toMatchObject({ rejected: false, completion: "M", candidates: ["Mine", "Movie"] });
+    expect(resolvedBoardName(r, "M")).toBe("");
+  });
+
+  test("打 x 沒有看板以 Mx 開頭 ⇒ 輸入欄不變，查 Mx 判成被拒", () => {
+    const f = frame("rejected");
+    expect(f.field).toBe("M");
+    expect(boardQueryResult("Mx", f)).toMatchObject({ accepted: 1, rejected: true, candidates: [] });
+  });
+
+  test("Mo 再空白 ⇒ 唯一的 Movie 補完，Enter 會進 Movie", () => {
+    // 中間幀：輸入欄已是 Mo，清單還是上一趟的（Mine 不以 Mo 開頭，不能拿來當 Mo 的結論）
+    expect(frame("typed-2")).toMatchObject({ field: "Mo", candidates: ["Mine", "Movie"] });
+    const f = frame("completed");
+    expect(f).toEqual({ field: "Movie", candidates: ["Movie"], more: false });
+    expect(resolvedBoardName(boardQueryResult("Mo", f), "Mo")).toBe("Movie");
+  });
+
+  test("主功能表本身不是 prompt", () => {
+    expect(frame("menu")).toBeNull();
+  });
+});
+
+describe("upstream pttbbs 產的搜尋結果列表（系列文章）", () => {
+  test("標題列「系列《板》」、底列「系列文章」⇒ 認成子列表（select 編號空間）", () => {
+    for (const [fx, name] of [
+      [searchRefineFx, "result"],
+      [pushSearchFx, "result"],
+    ]) {
+      const { rowTexts, facts } = screenAt(fx, name);
+      expect(isSubListTitle(rowTexts[0])).toBe(true);
+      expect(isSubListFooter(rowTexts[facts.rows - 1])).toBe(true);
+      expect(listModeOf(facts)).toBe("select");
+    }
+  });
+
+  test("一般文章列表不是子列表", () => {
+    const { rowTexts, facts } = screenAt(articleListFx, "list");
+    expect(isSubListTitle(rowTexts[0])).toBe(false);
+    expect(isSubListFooter(rowTexts[facts.rows - 1])).toBe(false);
+    expect(listModeOf(facts)).toBe("plain");
   });
 });
 

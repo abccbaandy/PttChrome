@@ -24,3 +24,6 @@ F	Movie
 W	alice	第一顆水球
 W	bob	第二顆水球
 W	carol	第三顆水球
+L	alice	10/01	第一封信
+L	bob	10/02	Re: 第一封信
+L	carol	10/03	站方通知
