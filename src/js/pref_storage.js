@@ -271,6 +271,8 @@ export const DEFAULT_PREFS = {
   // 手機版面的字級（px，文章與列表卡片；列數跟著算）。與桌機 fontSize 分開 ——
   // 那組會跨裝置同步過來。值域與正規化見 mobile_layout.normalizeMobileFontPx。
   mobileFontSize: 16,
+  // 手機 App Bar：點標題捲回頂端（app_bar_scroll_top.js）。只捲畫面、不送鍵 ⇒ 不在安全模式清單。
+  mobileAppBarScrollTop: true,
   // PTT 自己畫了 '>' 游標的畫面（列表／選單）不再疊一個閃爍游標 —— 兩個游標同框是
   // 重複資訊。輸入框／編輯器不走 pttbbs 的 cursor_show，閃爍游標照舊顯示，位置資訊
   // 不會消失，所以預設開。判定見 comment_parse.js#hasServerCursorMark。

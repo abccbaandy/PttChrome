@@ -7,6 +7,8 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
 const { drawMainMenu } = require('../helpers/main_menu');
+const { touchDrag, nextFrames } = require('../helpers/real_input');
+const { waitRectStable, waitScrollStable } = require('../helpers/layout');
 
 const article = findCassette('article');
 const title = (page) => page.locator('#mobileAppBar [data-key="__title"]');
@@ -75,6 +77,38 @@ test.describe('手機頂部 App Bar', () => {
     expect(await page.evaluate(() => (window.__sent || []).join(''))).toBe('');
     expect(await page.evaluate(() => document.activeElement === document.getElementById('t'))).toBe(true);
   });
+
+  // 點標題捲回頂端（app_bar_scroll_top.js）：真觸控往上滑到文章中段 → tap 標題 → 回到頂端、不送鍵。
+  // 關掉 pref ⇒ tap 標題不捲。
+  for (const on of [true, false]) {
+    test(`好讀文章：tap 標題${on ? '捲回頂端' : '（開關關掉）不捲'}，不送鍵`, async ({ page }) => {
+      await bootOffline(page, ptt);
+      await replayCassette(page, article, { easyReading: true });
+      await page.waitForFunction(() => window.__app.view.reflow === true);
+      await ptt.applyPrefs(page, { mobileAppBarScrollTop: on });
+      const box = await waitRectStable(page, '.main');
+      const x = box.left + box.width / 2;
+      await touchDrag(page, { x, y: box.top + box.height - 20 }, { x, y: box.top + 20 });
+      await expect
+        .poll(() => page.evaluate(() => window.__app.view.mainDisplay.scrollTop))
+        .toBeGreaterThan(100);
+      // 甩動的慣性停下來才量（慣性中 tap 會先把甩動停住）。
+      const scrolled = await waitScrollStable(page, '.main');
+      await page.evaluate(() => {
+        window.__sent = [];
+        window.__stubWSSent = (s) => window.__sent.push(s);
+      });
+      await title(page).tap();
+      if (on) {
+        await expect.poll(() => page.evaluate(() => window.__app.view.mainDisplay.scrollTop)).toBe(0);
+      } else {
+        // 平滑捲動從下一幀開始動：幾幀後還在原位＝沒有捲。
+        await nextFrames(page, 6);
+        expect(await page.evaluate(() => window.__app.view.mainDisplay.scrollTop)).toBe(scrolled);
+      }
+      expect(await page.evaluate(() => (window.__sent || []).join(''))).toBe('');
+    });
+  }
 
   // REGRESSION（使用者回報）：手機上 AID 跳文後的「返回原文」不見了。舊版固定在左下角
   // （bottom:16px），被常駐的底部工具列（z-index 2500）整顆蓋住 ⇒ 看不到也按不到。

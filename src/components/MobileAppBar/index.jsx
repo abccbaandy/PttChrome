@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { i18n } from "../../js/i18n";
 import { EMPTY_APP_BAR } from "../../js/mobile_app_bar";
+import { scrollContentToTop } from "../../js/app_bar_scroll_top";
+import { readEffectivePrefs } from "../../js/pref_storage";
 import MessageInbox from "../MessageInbox";
 import "./MobileAppBar.css";
 
@@ -44,6 +46,19 @@ export const MobileAppBar = ({ pttchrome }) => {
     return pttchrome.onBusyChange((b) => setBusy(!!b));
   }, [pttchrome]);
 
+  // 點標題捲回頂端（app_bar_scroll_top.js）。新信徽章、收件匣不在這塊裡，點它們不捲。
+  const onTitleClick = () => {
+    if (!readEffectivePrefs().mobileAppBarScrollTop) return;
+    const reduced =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scrollContentToTop({
+      doc: document,
+      view: pttchrome.view,
+      reducedMotion: reduced,
+    });
+  };
+
   if (!mobile) return null;
 
   return (
@@ -55,7 +70,7 @@ export const MobileAppBar = ({ pttchrome }) => {
       onMouseUp={swallow}
       onClick={swallow}
     >
-      <div className="mobileAppBarText">
+      <div className="mobileAppBarText" onClick={onTitleClick}>
         <div className="mobileAppBarTitle" data-key="__title">
           {appBar.title || i18n("mobileAppBar_defaultTitle")}
         </div>

@@ -354,6 +354,16 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
 
   // 整張卡片＝同一組點選目標：長按任一段都同時給作者與標題（作者只是第二行一小段字，
   // 依落點分段的舊做法手指按不中，選項就都不出現）。
+  // App Bar 點標題捲回頂端（app_bar_scroll_top.js）：列表走 screen.scrollListTo，回到已載入的第一筆。
+  test('點 App Bar 標題 ⇒ 列表捲回已載入的最上面', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    const listTop = () => page.evaluate(() => window.__app.view.componentScreen.getListScrollTop());
+    expect(await listTop()).toBeGreaterThan(100);
+    await page.locator('#mobileAppBar [data-key="__title"]').tap();
+    await expect.poll(listTop).toBeLessThan(1);
+  });
+
   test('長按卡片任一處 → 選單同時有「加入黑名單」與「加入標題黑名單」', async ({ page }) => {
     test.setTimeout(90000);
     await engage(page);

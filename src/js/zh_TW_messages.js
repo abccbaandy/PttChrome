@@ -1354,6 +1354,12 @@
   "options_mobileLayoutAuto": {
     "message": "自動"
   },
+  "options_mobileAppBarScrollTop": {
+    "message": "點手機標題列捲回頂端"
+  },
+  "tooltip_mobileAppBarScrollTop": {
+    "message": "手機版面點最上面的標題，文章、列表或首頁就捲回最上面。只捲畫面，不會送任何按鍵。"
+  },
   "options_mobileFontSize": {
     "message": "手機字級"
   },

@@ -11,7 +11,7 @@ const { drawMainMenu } = require('../helpers/main_menu');
 const { drawFavorites, drawArticleList, drawBoardPrompt } = require('../helpers/home_screens');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const { touchDrag } = require('../helpers/real_input');
-const { waitRectStable } = require('../helpers/layout');
+const { waitRectStable, waitScrollStable } = require('../helpers/layout');
 
 const ZA_FAV = '\x1af';
 // 18 個：一頁不滿（不走跳號翻頁），兩欄排起來比面板高、捲得動。
@@ -90,6 +90,19 @@ test.describe('手機首頁儀表板（離線重放）', () => {
     await expect(refresh).toBeEnabled();
     await refresh.tap();
     await answerFetch(page);
+  });
+
+  test('點 App Bar 標題 ⇒ 面板捲回頂端，不送鍵', async ({ page }) => {
+    await bootHome(page);
+    await drawMainMenu(page);
+    await answerFetch(page);
+    const box = await waitRectStable(page, '#homeDashboard');
+    const x = box.left + box.width / 2;
+    await touchDrag(page, { x, y: box.top + box.height - 30 }, { x, y: box.top + 30 });
+    expect(await waitScrollStable(page, '#homeDashboard')).toBeGreaterThan(20);
+    await page.locator('#mobileAppBar [data-key="__title"]').tap();
+    await expect.poll(() => page.evaluate(() => document.getElementById('homeDashboard').scrollTop)).toBe(0);
+    expect(await takeCapture(page)).toBe('');
   });
 
   test('閱讀紀錄：捲到中段點看板 → 進板 → 回首頁時捲回同一張卡片', async ({ page }) => {
