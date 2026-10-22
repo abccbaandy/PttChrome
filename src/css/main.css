@@ -632,8 +632,15 @@ html.commentBarShown #mainContainer::after {
   background-color: transparent;
 }
 
+/* footer 疊在格線最後一列（＝原生 pmore 狀態列的位置），不是 `.main` 最下緣：`.main` 高是
+   chh*rows+10（term_view.setTermFontSize，那 10px 是 easy_reading._scrollBy 下界的前提），
+   桌機字級只保證 chh*rows 放得進視窗 ⇒ 貼最下緣時狀態列會掉出視窗最多 10px。下面那 10px 由
+   陰影蓋住（不用 border／padding：縮放模式的 transform-origin 是按 footer 高度的百分比算的）；
+   #mainContainer 的 paddingBottom 同步讓出 1em+10px（term_view.accumulatePageLines）。
+   守護 e2e easy_reading_footer.offline.spec.js。 */
 #easyReadingLastRow {
-  margin-top: -1em;
+  margin-top: calc(-1em - 10px);
+  box-shadow: 0 10px 0 black;
 }
 
 #fbSharing {
@@ -804,8 +811,8 @@ html.commentBarShown #mainContainer::after {
       靜默壞掉：term_view.fixedResize（直接掃 DOM 改 .wpadding 的 width）、
       mouse_geometry.colFromClientX（推文列點擊的可點區欄位判定）、.floorBadge 的
       零寬盒契約。同 .lightsOn / .fnKey 的既有禁令。
-   2. 不得用 margin-bottom —— #easyReadingLastRow 以 margin-top:-1em 疊在
-      #mainContainer 的 paddingBottom:1em 上，尾端多出的 margin 會把 footer overlay 推離。
+   2. 不得用 margin-bottom —— #easyReadingLastRow 以 margin-top:-(1em+10px) 疊在
+      #mainContainer 的 paddingBottom（1em+10px）上，尾端多出的 margin 會把 footer overlay 推離。
    3. 不得改 .main 或全域的 line-height —— 那是 term_view.setTermFontSize 的 inline
       style（= chh px）在管，原生 24 列的整套座標建立在 line-height === chh 上。
       這裡只覆寫合併塊自己的 bbsrow。

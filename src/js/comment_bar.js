@@ -62,9 +62,11 @@ export function quickPushPlan(result, quick, maxBytes) {
 // bottomInset：疊在視窗底的浮層（手機底部導覽列＋軟鍵盤＋safe-area，view.keyboardInset）。
 // 手機的 .main 會因列高取整比可用高度高幾 px、延伸到導覽列後面 ⇒ 至少要讓出它，不然推文
 // 列壓在導覽列上（e2e mobile_bottom_overlay）。
-export function commentBarGeometry({ mainRect, footerHeight, innerHeight, bottomInset }) {
+// footerTop：好讀 footer 的上緣（顯示中才給）。footer 疊在格線最後一列、不在 `.main` 最下緣
+// （`.main` 比格線高 10px，main.css #easyReadingLastRow），所以量它的上緣，不用 `.main` 下緣扣高度。
+export function commentBarGeometry({ mainRect, footerTop, innerHeight, bottomInset }) {
   if (!mainRect || !mainRect.width) return null;
-  const contentBottom = mainRect.bottom - (footerHeight || 0);
+  const contentBottom = footerTop != null ? Math.min(mainRect.bottom, footerTop) : mainRect.bottom;
   return {
     left: Math.round(mainRect.left),
     width: Math.round(mainRect.width),
@@ -119,18 +121,18 @@ CommentBar.prototype = {
     return !!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode && (buf.pageLines || []).length);
   },
 
-  // 終端機可見內容的下緣：.main 的下緣扣掉疊在上面的好讀 footer（顯示中才扣）。
+  // 終端機可見內容的下緣：好讀 footer 顯示中＝它的上緣，否則 .main 的下緣。
   _geometry: function() {
     const view = this._core.view;
     const main = view && view.mainDisplay;
     if (!main || typeof main.getBoundingClientRect !== 'function' || typeof window === 'undefined') return null;
     const footer = view.lastRowDiv;
-    let footerHeight = 0;
+    let footerTop = null;
     if (footer && typeof footer.getBoundingClientRect === 'function' && window.getComputedStyle(footer).display !== 'none')
-      footerHeight = footer.getBoundingClientRect().height;
+      footerTop = footer.getBoundingClientRect().top;
     return commentBarGeometry({
       mainRect: main.getBoundingClientRect(),
-      footerHeight: footerHeight,
+      footerTop: footerTop,
       innerHeight: window.innerHeight,
       bottomInset: view.keyboardInset,
     });

@@ -98,7 +98,7 @@ function setup(lines, { bar = true, bgRows = [], mobile = false, floatTools = fa
   mc.style.paddingBottom = "1em";
   screenRoot.appendChild(mc);
   main.appendChild(screenRoot);
-  // 好讀 footer：.main 的兄弟、margin-top:-1em 疊在 .main 最下面一列（main.css）。
+  // 好讀 footer：.main 的兄弟、margin-top:-(1em+10px) 疊在格線最後一列（main.css）。
   const footer = document.createElement("div");
   footer.id = "easyReadingLastRow";
   footer.style.cssText = `display:block;font-size:${ROW_PX}px`;
