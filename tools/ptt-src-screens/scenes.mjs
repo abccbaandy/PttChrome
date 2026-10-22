@@ -68,6 +68,26 @@ export const SCENES = [
     ],
   },
   {
+    // pmore 的設定頁（pmore.c#pmore_Preference／pmore_QuickRawModePref）：o 完整設定頁、\ 在頁上
+    // 循環色彩模式（→ 原始ANSI控制碼）、q 離開；再 \ 開快速設定（選中的是 2）、1 直選回預設。
+    // 完整設定頁的選項沒有數字熱鍵（「 *預設格式化內容 | …」），快速設定頁有（「1*預設格式化內容 |2 …」）。
+    // pmore_pref.js 靠它決定要不要整篇重讀、記下目前的色彩模式（開燈按鈕的狀態）。
+    file: 'article_pref',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '1' },
+      { keys: '\r' },
+      { keys: '\r', name: 'article' },
+      { keys: 'o', name: 'pref' },
+      { keys: '\\', name: 'pref-cycled' },
+      { keys: 'q', name: 'pref-closed' },
+      { keys: '\\', name: 'quick' },
+      { keys: '1', name: 'back' },
+    ],
+  },
+  {
     // 文章列表的 Q：文章資訊（bbs.c#view_postinfo）——AID／網址，aid_navigation 讀它落地。
     file: 'post_info',
     entry: 'read:Test',

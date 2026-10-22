@@ -54,6 +54,14 @@ import { pushMaxBytes } from "../../src/js/long_push";
 import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
 import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
+import articlePrefFx from "./fixtures/ptt_src_screens/article_pref.json";
+import {
+  MFDISP_RAW_NA,
+  MFDISP_RAW_NOANSI,
+  parseRawModeFromPrefRow,
+  pmorePrefScreenSeen,
+  rawModePrefRowVisible,
+} from "../../src/js/pmore_pref";
 import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
 import { pushGateFacts, shouldInterceptPushKey } from "../../src/js/long_push_gate";
 import { isSearchPromptFrame, searchGateFacts } from "../../src/js/article_search";
@@ -324,6 +332,33 @@ describe("upstream pttbbs 產的說明選單（文章裡的 h）", () => {
     const back = at("back");
     expect(parseHelpMenuScreen(back.rowTexts)).toBeNull();
     expect(classifyListScreen(back.facts).kind).toBe("article");
+  });
+});
+
+describe("upstream pttbbs 產的 pmore 設定頁（o 完整設定、\\ 快速設定）", () => {
+  const rows = (name) => screenAt(articlePrefFx, name).rowTexts;
+
+  test("兩種設定頁都認得；文章本身不是設定頁", () => {
+    for (const name of ["pref", "pref-cycled", "quick"]) expect(pmorePrefScreenSeen(rows(name)), name).toBe(true);
+    for (const name of ["article", "pref-closed", "back"]) expect(pmorePrefScreenSeen(rows(name)), name).toBe(false);
+  });
+
+  test("只有快速設定頁算「可以直選 1-3」", () => {
+    expect(rawModePrefRowVisible(rows("quick"))).toBe(true);
+    expect(rawModePrefRowVisible(rows("pref"))).toBe(false);
+  });
+
+  test("讀得出選中的色彩模式：完整設定頁沒有數字熱鍵（「 *預設格式化內容 | …」）也要讀得出", () => {
+    expect(parseRawModeFromPrefRow(rows("pref"))).toBe(MFDISP_RAW_NA);
+    expect(parseRawModeFromPrefRow(rows("pref-cycled"))).toBe(MFDISP_RAW_NOANSI);
+    expect(parseRawModeFromPrefRow(rows("quick"))).toBe(MFDISP_RAW_NOANSI);
+  });
+
+  test("回到文章（含原始ANSI模式的檔頭）pmore 狀態列照樣認得", () => {
+    for (const name of ["pref-closed", "back"]) {
+      const { rowTexts, facts } = screenAt(articlePrefFx, name);
+      expect(parseStatusRow(rowTexts[facts.rows - 1]), name).not.toBeNull();
+    }
   });
 });
 

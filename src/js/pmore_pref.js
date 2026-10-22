@@ -17,8 +17,9 @@
 //   - 完整設定頁標題 `" piaip's more: pmore 2007+ 設定選項 "`，畫在 `b_lines-9`＋
 //     `PMORE_SHADOW_ABOVE` 的一列 `▔` ⇒ row 15；
 //   - 說明頁標題是「瀏覽程式使用說明」，**不含「設定」** ⇒ 按 `h` 不會誤觸整篇重讀；
-//   - 選項列由 `pmore_prefEntry` 畫成 `1*預設格式化內容 |2 原始ANSI控制碼 |3 純文字`，
-//     **選中項的數字後面緊接 `*`**，未選是空白。
+//   - 選項列由 `pmore_prefEntry` 畫：快速設定頁 `1*預設格式化內容 |2 原始ANSI控制碼 |3 純文字`，
+//     完整設定頁沒有數字熱鍵 ` *預設格式化內容 | 原始ANSI控制碼 | 純文字`；**選中項前面緊接 `*`**，
+//     未選是空白（upstream 原始碼產的兩頁：tests/unit/ptt_src_screens.test.js「pmore 設定頁」）。
 //
 //   - 兩頁的標題都是 `pmore_PromptBar` 從 **col 0** 起印（caption 自帶開頭空白），
 //     選項列是 `pmore_prefEntry` 的 `" " key " " text`（` \ 色彩顯示方式:`）同樣從 col 0，
@@ -77,15 +78,23 @@ export function pmorePrefScreenSeen(rowTexts) {
 // 但使用者按 `1`/`2`/`3` 直選時 pmore 直接 return、**不重畫選項列** ⇒ 這裡讀到的
 // 仍是按鍵前的值。程式化切換因此要自己記下目標值（見 pttchrome.jsx#onLightsRawMode），
 // 不能只靠這條路。
+//
+// 兩頁的選項寫法不同（pmore.c#pmore_prefEntry：選項字串帶 `N.` 才印數字熱鍵）：
+//   快速設定  `1*預設格式化內容 |2 原始ANSI控制碼 |3 純文字`
+//   完整設定  ` *預設格式化內容 | 原始ANSI控制碼 | 純文字`（沒有數字）
+// ⇒ 以「第幾段選項帶 `*`」為準，不看數字。段數不是 3、或 `*` 不是恰好一個 ⇒ 認不出回 null。
 export function parseRawModeFromPrefRow(rowTexts) {
   if (!rowTexts) return null;
   for (let i = 0; i < rowTexts.length; ++i) {
     const t = rowTexts[i];
     if (!t || !RAW_MODE_ROW_RE.test(t)) continue;
-    if (/1\*/.test(t)) return MFDISP_RAW_NA;
-    if (/2\*/.test(t)) return MFDISP_RAW_NOANSI;
-    if (/3\*/.test(t)) return MFDISP_RAW_PLAIN;
-    return null;
+    const options = t.replace(RAW_MODE_ROW_RE, '').split('|');
+    if (options.length !== 3) return null;
+    const marked = [];
+    options.forEach((o, idx) => {
+      if (o.indexOf('*') >= 0) marked.push(idx);
+    });
+    return marked.length === 1 ? marked[0] : null;
   }
   return null;
 }

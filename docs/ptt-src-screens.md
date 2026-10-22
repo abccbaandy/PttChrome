@@ -59,6 +59,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `article_prompts` | `read:Test`／24 | `1` `⏎` `⏎` `:` `2⏎` `/` `X` | pmore 的跳行／搜尋 prompt 畫在倒數第二列、狀態列照樣認得；游標在輸入欄、不在右下角；`shouldInterceptPushKey` 在 prompt 裡不攔 X |
 | `help_menu` | `read:Test`／24 | `h` | `parseHelpMenuScreen`（caption／頁數／游標／項目鍵）、⏎ 不 arm |
 | `article_help` | `read:Test`／24 | `1` `⏎` `⏎` `h` 空白 空白 `q` | 文章裡的 h 是同一套 psb 說明選單（caption「文章閱讀」、3 頁，有只有鍵沒名稱的項目）；不是文章、不 arm；q 回文章 |
+| `article_pref` | `read:Test`／24 | `1` `⏎` `⏎` `o` `\` `q` `\` `1` | pmore 完整設定頁／快速設定頁都認得（`pmorePrefScreenSeen`）、只有快速設定算可直選、兩種選項列都讀得出選中的色彩模式（完整設定頁沒有數字熱鍵，曾經讀成 null ⇒ 開燈按鈕狀態錯） |
 | `post_info` | `read:Test`／24 | `Q` | 文章資訊框：`parsePostInfoAid` 讀出 AID＋看板、底列 pressanykey；列表列不誤認 |
 | `board_note` | `read:Notes`／24 | 空白 | `boardNoteDecision`：進板畫面→skip、文章列表→landed |
 | `board_list` | `fav`／24 | — | `classifyBoardListScreen` fav＋engageable、`parseBoardListName`／`parseFavRow`、⏎ arm |
