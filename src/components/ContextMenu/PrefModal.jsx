@@ -963,6 +963,15 @@ export const PrefModal = ({
                   {...anchor("commandPaletteKey")}
                 />
                 <PrefCheckbox
+                  name="paletteQuickBoards"
+                  checked={values.paletteQuickBoards}
+                  disabled={!values.enableCommandPalette}
+                  onChange={onCheckboxChange}
+                  description={i18n("tooltip_paletteQuickBoards")}
+                >
+                  {i18n("options_paletteQuickBoards")}
+                </PrefCheckbox>
+                <PrefCheckbox
                   name="refreshKeyIntercept"
                   checked={values.refreshKeyIntercept}
                   disabled={values.nativeSafeMode}

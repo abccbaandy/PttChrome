@@ -461,6 +461,16 @@ HomeDashboard.prototype = {
     if (this._state.visible) this._scheduleAutoFetch();
   },
 
+  // 指令面板的「最近去過／我的最愛」（command_palette.quickBoardItems）：只讀現成資料。
+  quickBoards: function() {
+    return {
+      recent: this._state.recents.slice(),
+      favorites: (this._state.boards || []).map(function(b) {
+        return { name: b.name, desc: b.desc };
+      })
+    };
+  },
+
   _noteRecent: function(name) {
     if (this._state.recents[0] === name) return;
     const next = pushRecentBoard(this._state.recents, name);

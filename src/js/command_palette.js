@@ -16,6 +16,32 @@ import { searchPrefSettings } from "./pref_search";
 // 面板一次最多列幾筆設定項（設定搜尋只是其中一類，不該把指令擠出畫面）。
 export const PALETTE_SETTING_LIMIT = 4;
 
+// 最近去過／我的最愛的看板（pref paletteQuickBoards）：空白時最多列幾個、打字時最多幾個。
+export const PALETTE_QUICK_BOARD_LIMIT = 12;
+export const PALETTE_QUICK_MATCH_LIMIT = 5;
+
+// 最近去過的看板與我的最愛 → 「前往看板」項目（kind 'board'，執行跟打板名同一條路）。
+// 資料是首頁儀表板現成的（最近看板、我的最愛快取），面板一個 byte 都不多送。
+// 最近的在前、最愛在後，不分大小寫去重；q 非空 ⇒ 只留板名以 q 開頭的。
+export function quickBoardItems(q, quick, limit) {
+  const src = quick || {};
+  const seen = new Set();
+  const out = [];
+  const add = (name, source, desc) => {
+    const n = String(name || "");
+    if (!n || !BOARD_RE.test(n)) return;
+    const key = n.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (q && key.indexOf(q) !== 0) return;
+    if (out.length >= limit) return;
+    out.push({ id: "quick:" + key, kind: "board", text: n, source, desc: desc || "" });
+  };
+  (src.recent || []).forEach((n) => add(n, "recent"));
+  (src.favorites || []).forEach((b) => b && add(b.name, "favorite", b.desc));
+  return out;
+}
+
 // 動作：id ＝ 執行端的分派鍵；when ＝ ctx 的哪個旗標為真才列；keywords 兩語系都放
 // （面板以目前語系顯示，但打另一種語言也找得到）。
 export const PALETTE_ACTIONS = [
@@ -68,6 +94,7 @@ function actionMatch(action, q, title) {
  *   safeMode: boolean（目前安全模式開著嗎）
  *   title(key): string —— 動作標題（i18n；比對用，可省）
  *   lang: 設定搜尋用的語系（可省）
+ *   quickBoards: { recent: string[], favorites: {name, desc}[] } | null（可省）
  * @returns {Array<{id, kind, ...}>} 依顯示順序。kind ∈ article｜board｜search｜action｜setting
  */
 export function buildPaletteItems(query, ctx) {
@@ -79,6 +106,17 @@ export function buildPaletteItems(query, ctx) {
 
   const target = parseArticleTarget(raw);
   if (target) out.push({ id: "article", kind: "article", target });
+
+  // 最近／最愛的看板排在動作前面：空白時 F4 → ↓ → Enter 就回到剛剛的板。
+  const quick =
+    !target && c.quickBoards && kinds.indexOf("board") >= 0
+      ? quickBoardItems(
+          q,
+          c.quickBoards,
+          q ? PALETTE_QUICK_MATCH_LIMIT : PALETTE_QUICK_BOARD_LIMIT,
+        )
+      : [];
+  out.push(...quick);
 
   const flags = {
     refresh: !!c.refresh,
@@ -102,7 +140,11 @@ export function buildPaletteItems(query, ctx) {
   out.push(...strong);
 
   if (!target && raw) {
-    if (kinds.indexOf("board") >= 0 && BOARD_RE.test(raw))
+    if (
+      kinds.indexOf("board") >= 0 &&
+      BOARD_RE.test(raw) &&
+      !quick.some((it) => it.text.toLowerCase() === q)
+    )
       out.push({ id: "board", kind: "board", text: raw });
     if (kinds.indexOf("title") >= 0)
       out.push({ id: "search:title", kind: "search", searchKind: "title", text: raw });

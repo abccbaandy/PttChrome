@@ -3,6 +3,8 @@
 import {
   PALETTE_ACTIONS,
   PALETTE_SETTING_LIMIT,
+  PALETTE_QUICK_BOARD_LIMIT,
+  PALETTE_QUICK_MATCH_LIMIT,
   buildPaletteItems,
   movePaletteIndex,
   parseArticleTarget,
@@ -124,6 +126,71 @@ describe("buildPaletteItems", () => {
     expect(settings.length).toBeGreaterThan(0);
     expect(settings.length).toBeLessThanOrEqual(PALETTE_SETTING_LIMIT);
     expect(settings[0]).toMatchObject({ settingKey: expect.any(String), tab: expect.any(String) });
+  });
+});
+
+describe("最近去過／我的最愛的看板", () => {
+  const QUICK = {
+    recent: ["C_Chat", "Gossiping", "Stock"],
+    favorites: [
+      { name: "gossiping", desc: "八卦" },
+      { name: "Baseball", desc: "棒球" },
+      { name: "Beauty", desc: "表特" },
+    ],
+  };
+  const quickIds = (items) => items.filter((it) => it.id.startsWith("quick:")).map((it) => it.text);
+
+  test("空白 ⇒ 最近的在前、最愛在後、不分大小寫去重，排在動作前面", () => {
+    const items = buildPaletteItems("", { ...LIST, quickBoards: QUICK, refresh: true });
+    expect(quickIds(items)).toEqual(["C_Chat", "Gossiping", "Stock", "Baseball", "Beauty"]);
+    expect(items[0].id).toBe("quick:c_chat");
+    expect(items[1]).toMatchObject({ kind: "board", text: "Gossiping", source: "recent" });
+    expect(items.findIndex((it) => it.kind === "action")).toBe(5);
+    expect(items.find((it) => it.text === "Baseball")).toMatchObject({ source: "favorite", desc: "棒球" });
+  });
+
+  test("打板名開頭 ⇒ 符合的最近／最愛排最前；打的字等於板名就不再另列「前往看板」", () => {
+    const b = buildPaletteItems("b", { ...LIST, quickBoards: QUICK });
+    expect(quickIds(b)).toEqual(["Baseball", "Beauty"]);
+    expect(b[0].text).toBe("Baseball");
+    // 打的字不是完整板名 ⇒ 照樣有「前往看板 be」（也許是別的 be 開頭的板）。
+    const be = buildPaletteItems("be", { ...LIST, quickBoards: QUICK });
+    expect(be[0].text).toBe("Beauty");
+    expect(ids(be)).toContain("board");
+
+    const exact = buildPaletteItems("baseball", { ...LIST, quickBoards: QUICK });
+    expect(exact[0]).toMatchObject({ id: "quick:baseball", text: "Baseball" });
+    expect(ids(exact)).not.toContain("board");
+    expect(ids(exact)).toContain("search:title");
+  });
+
+  test("只有板名「開頭」符合才列（中間含有不算）", () => {
+    expect(quickIds(buildPaletteItems("chat", { ...LIST, quickBoards: QUICK }))).toEqual([]);
+  });
+
+  test("不能選看板的畫面（文章裡）⇒ 不列", () => {
+    expect(quickIds(buildPaletteItems("", { searchKinds: [], quickBoards: QUICK }))).toEqual([]);
+  });
+
+  test("沒給資料（開關關掉）⇒ 跟原本一樣", () => {
+    expect(ids(buildPaletteItems("", { ...LIST, quickBoards: null }))).toEqual(
+      ids(buildPaletteItems("", LIST)),
+    );
+  });
+
+  test("文章網址 ⇒ 不列看板", () => {
+    const items = buildPaletteItems(`https://www.ptt.cc/bbs/Gossiping/${FN}.html`, { ...LIST, quickBoards: QUICK });
+    expect(quickIds(items)).toEqual([]);
+  });
+
+  test("數量上限：空白 PALETTE_QUICK_BOARD_LIMIT、打字 PALETTE_QUICK_MATCH_LIMIT；不合法的板名不列", () => {
+    const many = {
+      recent: ["bad name", ""],
+      favorites: Array.from({ length: 30 }, (_, i) => ({ name: "Board" + i })),
+    };
+    expect(quickIds(buildPaletteItems("", { ...LIST, quickBoards: many }))).toHaveLength(PALETTE_QUICK_BOARD_LIMIT);
+    expect(quickIds(buildPaletteItems("board", { ...LIST, quickBoards: many }))).toHaveLength(PALETTE_QUICK_MATCH_LIMIT);
+    expect(quickIds(buildPaletteItems("", { ...LIST, quickBoards: many }))).not.toContain("bad name");
   });
 });
 

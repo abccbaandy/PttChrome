@@ -33,7 +33,17 @@ export function paletteItemLabel(item) {
     case "article":
       return { title: fmt("palette_openArticle", item.target) };
     case "board":
-      return { title: fmt("palette_gotoBoard", { board: item.text }) };
+      return {
+        title: fmt("palette_gotoBoard", { board: item.text }),
+        subtitle:
+          item.source === "recent"
+            ? i18n("palette_recentBoard")
+            : item.source === "favorite"
+              ? [i18n("palette_favoriteBoard"), item.desc]
+                  .filter(Boolean)
+                  .join(" · ")
+              : undefined,
+      };
     case "search":
       return {
         title: fmt(SEARCH_TITLE_KEY[item.searchKind], { q: item.text }),

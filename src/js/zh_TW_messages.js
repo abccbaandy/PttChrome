@@ -928,6 +928,18 @@
   "tooltip_commandPaletteKey": {
     "message": "點這裡後按下想用的鍵（建議用 F 鍵，PTT 收不到 F 鍵，不會吃掉 PTT 的按鍵）"
   },
+  "options_paletteQuickBoards": {
+    "message": "指令面板列出最近的看板和我的最愛"
+  },
+  "tooltip_paletteQuickBoards": {
+    "message": "打開指令面板還沒打字時，先列出最近去過的看板和我的最愛；打板名的前幾個字時，這些板排在最前面。在主功能表、看板列表、文章列表能用。"
+  },
+  "palette_recentBoard": {
+    "message": "最近去過"
+  },
+  "palette_favoriteBoard": {
+    "message": "我的最愛"
+  },
   "cmenu_commandPalette": {
     "message": "指令面板"
   },
