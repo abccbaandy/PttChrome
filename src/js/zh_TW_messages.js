@@ -271,6 +271,12 @@
   "tooltip_commentReplyMenu": {
     "message": "長按（桌機右鍵）一則推文，選單多一項「回覆」：推文列切成 →、先填好對方帳號，接著打字按 Enter 送出。"
   },
+  "options_mobileCommentBarFold": {
+    "message": "手機推文列收進底部導覽"
+  },
+  "tooltip_mobileCommentBarFold": {
+    "message": "手機平常不顯示推文列，點底部導覽的「推文」才滑出來並叫出鍵盤；送出、收鍵盤或按返回就收回。關掉＝推文列常駐顯示。"
+  },
   "tooltip_enableCommentBar": {
     "message": "好讀文章最下面一條「推／噓／→＋文字」輸入列，打完按 Enter 就推出去。PTT 會改成 →、或內容太長時，改開長推文輸入框讓你確認。"
   },

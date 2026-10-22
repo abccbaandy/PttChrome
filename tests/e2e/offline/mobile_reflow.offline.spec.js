@@ -274,14 +274,16 @@ test.describe('長按選單（觸控 contextmenu）', () => {
   // 「回覆這則」（長按推文）：推文列切成 →、預填帳號、輸入框拿到焦點；不送鍵。
   test('長按推文：選單「回覆 帳號」⇒ 推文列預填 → 與帳號', async ({ page }) => {
     test.setTimeout(90000);
-    await bootOffline(page, ptt, { commentBar: true });
+    // 手機預設：推文列收進底部導覽（收著），回覆時先展開。
+    await bootOffline(page, ptt, { commentBar: true, commentBarFold: true });
     await ptt.applyPrefs(page, { enableEasyReading: true });
     await replayCassette(page, article, { easyReading: true });
     await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
     await waitPreviewsSettled(page);
     const pusher = await markPusherRow(page);
     expect(pusher, '找不到推文列').toBeTruthy();
-    await expect(page.locator('#commentBar')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.__app.commentBar.state.available)).toBe(true);
+    await expect(page.locator('#commentBar')).toHaveCount(0);
     await page.evaluate(() => {
       window.__sent = [];
       window.__stubWSSent = (s) => window.__sent.push(s);

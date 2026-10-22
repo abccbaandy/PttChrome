@@ -74,8 +74,27 @@ export function commentBarGeometry({ mainRect, footerTop, innerHeight, bottomIns
   };
 }
 
+// 手機收合（pref mobileCommentBarFold，預設開）：平常只留底部導覽，點導覽的「推文」才
+// 展開列並叫出鍵盤；送出、離開輸入框、收鍵盤、系統返回就收回。桌機不收合。
+export function commentBarFolded(prefs, mobile) {
+  return !!(mobile && prefs && prefs.mobileCommentBarFold);
+}
+
+// available：出現條件成立（好讀文章＋開關開著）；visible：列真的畫出來（收合時要 expanded）。
 // prefill：「回覆這則」之類的預填請求 { type, text, n }（n 每次遞增，元件靠它分辨新請求）。
-const HIDDEN = { visible: false, left: 0, width: 0, bottom: 0, mobile: false, prefill: null };
+// focusN：展開時要聚焦輸入框的請求序號（同上，元件靠它分辨新請求）。
+const HIDDEN = {
+  visible: false,
+  available: false,
+  folded: false,
+  expanded: false,
+  left: 0,
+  width: 0,
+  bottom: 0,
+  mobile: false,
+  prefill: null,
+  focusN: 0,
+};
 
 export function CommentBar(core) {
   this._core = core;
@@ -115,12 +134,48 @@ CommentBar.prototype = {
     });
   },
 
-  // 預填推文列（類型＋文字）並叫出輸入框。列沒出現就不做（回 false）——不替使用者開別的東西。
+  // 預填推文列（類型＋文字）並叫出輸入框。不在好讀文章（列不該出現）就不做（回 false）——
+  // 不替使用者開別的東西。手機收合中會先展開。
   prefill: function(req) {
-    if (!this._state.visible || !req) return false;
+    if (!req || !this.expand({ focus: false })) return false;
     const n = ((this._state.prefill && this._state.prefill.n) || 0) + 1;
     this._set({ prefill: { type: req.type || 'push', text: String(req.text || ''), n: n } });
     return true;
+  },
+
+  // 展開列並聚焦輸入框（手機收合時底部導覽的「推文」走這裡）。不在好讀文章回 false。
+  // 沒收合（桌機、手機常駐）就只聚焦。展開期間登記成 bottom sheet：系統返回先收它。
+  expand: function(opts) {
+    if (!this._state.available) return false;
+    const patch = { visible: true };
+    if (this._state.folded && !this._state.expanded) {
+      patch.expanded = true;
+      const core = this._core;
+      if (core.registerSheetDismiss && !this._unregisterBack)
+        this._unregisterBack = core.registerSheetDismiss(() => this.collapse());
+    }
+    if (!opts || opts.focus !== false) patch.focusN = this._state.focusN + 1;
+    this._set(patch);
+    return true;
+  },
+
+  // 收回展開的列（收合模式才有作用）。
+  collapse: function() {
+    this._releaseBack();
+    if (!this._state.expanded) return;
+    this._set({ expanded: false, visible: this._state.available && !this._state.folded });
+  },
+
+  _releaseBack: function() {
+    const off = this._unregisterBack;
+    this._unregisterBack = null;
+    if (off) off();
+  },
+
+  _hide: function() {
+    this._releaseBack();
+    if (this._state.visible || this._state.available || this._state.expanded)
+      this._set({ visible: false, available: false, expanded: false });
   },
 
   _inEasyArticle: function() {
@@ -149,16 +204,24 @@ CommentBar.prototype = {
 
   refresh: function() {
     const core = this._core;
-    if (!commentBarEnabled(readEffectivePrefs()) || !this._inEasyArticle()) {
-      if (this._state.visible) this._set({ visible: false });
-      return;
-    }
+    const prefs = readEffectivePrefs();
+    if (!commentBarEnabled(prefs) || !this._inEasyArticle()) return this._hide();
     const g = this._geometry();
-    if (!g) {
-      if (this._state.visible) this._set({ visible: false });
-      return;
-    }
-    this._set({ visible: true, left: g.left, width: g.width, bottom: g.bottom, mobile: !!core.mobile });
+    if (!g) return this._hide();
+    const folded = commentBarFolded(prefs, core.mobile);
+    // 收合關掉（設定改了、轉成桌機）⇒ 展開狀態沒有意義了。
+    if (!folded && this._state.expanded) this._releaseBack();
+    const expanded = folded && this._state.expanded;
+    this._set({
+      visible: !folded || expanded,
+      available: true,
+      folded: folded,
+      expanded: expanded,
+      left: g.left,
+      width: g.width,
+      bottom: g.bottom,
+      mobile: !!core.mobile,
+    });
   },
 };
 

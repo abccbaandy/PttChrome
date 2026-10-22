@@ -123,6 +123,22 @@ describe("推／搜尋", () => {
     expect(core.view.sendKeyAsUser).toHaveBeenCalledWith("X");
   });
 
+  test("推文列收進底部導覽（收合模式）⇒ 推＝展開推文列，不送 X；收合關掉或列不可用 ⇒ 照送 X", () => {
+    const core = makeCore({ context: { push: true, search: [] } });
+    core.commentBar = { state: { available: true, folded: true }, expand: vi.fn(() => true) };
+    renderBar(core);
+    fireEvent.click(byKey("X"));
+    expect(core.commentBar.expand).toHaveBeenCalledTimes(1);
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+    core.commentBar.state = { available: true, folded: false };
+    fireEvent.click(byKey("X"));
+    expect(core.view.sendKeyAsUser).toHaveBeenLastCalledWith("X");
+    core.commentBar.state = { available: false, folded: true };
+    fireEvent.click(byKey("X"));
+    expect(core.commentBar.expand).toHaveBeenCalledTimes(1);
+    expect(core.view.sendKeyAsUser).toHaveBeenCalledTimes(2);
+  });
+
   // 使用者定案：不要子選單，直接開彈窗（種類在彈窗上方切）。
   test("搜尋直接開彈窗：文章列表預設標題，不出現子選單", () => {
     const core = makeCore({ context: { push: false, search: ["title", "author", "push", "board"] } });

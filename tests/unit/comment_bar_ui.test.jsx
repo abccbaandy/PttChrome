@@ -19,7 +19,8 @@ beforeAll(() => {
 function fakeBar(state) {
   const listeners = new Set();
   return {
-    state: { visible: true, left: 12, width: 640, bottom: 30, mobile: false, ...state },
+    state: { visible: true, left: 12, width: 640, bottom: 30, mobile: false, focusN: 0, ...state },
+    collapse: vi.fn(),
     onChange(fn) {
       listeners.add(fn);
       fn(this.state);
@@ -123,6 +124,56 @@ describe("CommentBar UI", () => {
     fireEvent.focus(input());
     act(() => bar.emit({ visible: false }));
     expect(pttchrome.setModalOpen).toHaveBeenLastCalledWith("commentBar", false);
+  });
+
+  test("展開請求（focusN 遞增）⇒ 聚焦輸入框", async () => {
+    const { input, bar } = setup({ folded: true, expanded: true, mobile: true });
+    expect(document.activeElement).not.toBe(input());
+    act(() => bar.emit({ focusN: 1 }));
+    await act(() => new Promise((r) => requestAnimationFrame(() => r())));
+    expect(document.activeElement).toBe(input());
+  });
+
+  test("收合模式展開中：離開輸入框 ⇒ 收回；常駐模式 blur 不收", () => {
+    const folded = setup({ folded: true, expanded: true, mobile: true });
+    expect(folded.root().classList.contains("commentBar--unfolded")).toBe(true);
+    fireEvent.focus(folded.input());
+    fireEvent.blur(folded.input());
+    expect(folded.bar.collapse).toHaveBeenCalledTimes(1);
+    folded.unmount();
+    const pinned = setup({ mobile: true });
+    expect(pinned.root().classList.contains("commentBar--unfolded")).toBe(false);
+    fireEvent.focus(pinned.input());
+    fireEvent.blur(pinned.input());
+    expect(pinned.bar.collapse).not.toHaveBeenCalled();
+  });
+
+  test("收合模式展開中：送出（接手）⇒ 輸入框 blur ⇒ 收回", () => {
+    const { input, bar } = setup({ folded: true, expanded: true, mobile: true });
+    input().focus();
+    fireEvent.change(input(), { target: { value: "推推" } });
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(bar.collapse).toHaveBeenCalled();
+  });
+
+  test("收合模式展開中：鍵盤出現過、之後收起（--vv-kb-inset 歸零）⇒ 收回", () => {
+    const vv = window.visualViewport;
+    const root = document.documentElement;
+    const { bar } = setup({ folded: true, expanded: true, mobile: true });
+    try {
+      // 鍵盤還沒升起（inset 0）不算收起。
+      root.style.setProperty("--vv-kb-inset", "0px");
+      vv.dispatchEvent(new Event("resize"));
+      expect(bar.collapse).not.toHaveBeenCalled();
+      root.style.setProperty("--vv-kb-inset", "300px");
+      vv.dispatchEvent(new Event("resize"));
+      expect(bar.collapse).not.toHaveBeenCalled();
+      root.style.setProperty("--vv-kb-inset", "0px");
+      vv.dispatchEvent(new Event("resize"));
+      expect(bar.collapse).toHaveBeenCalledTimes(1);
+    } finally {
+      root.style.removeProperty("--vv-kb-inset");
+    }
   });
 
   test("按鍵與滑鼠事件不外洩到 window；列被 App 的滑鼠入口認得", () => {

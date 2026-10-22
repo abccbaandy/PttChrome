@@ -271,6 +271,12 @@ export const en_US = {
   "tooltip_commentReplyMenu": {
     "message": "Long-press (right-click on desktop) a comment to get a \"Reply\" item: the comment bar switches to → with that user's ID filled in, so you just type and press Enter."
   },
+  "options_mobileCommentBarFold": {
+    "message": "Tuck the comment bar into the bottom nav on mobile"
+  },
+  "tooltip_mobileCommentBarFold": {
+    "message": "On mobile the comment bar stays hidden until you tap \"Push\" in the bottom nav; it slides up with the keyboard and tucks away after sending, closing the keyboard, or pressing Back. Turn off to keep it always shown."
+  },
   "tooltip_enableCommentBar": {
     "message": "A \"push / boo / → + text\" bar at the bottom of easy-reading articles; press Enter to post. When PTT would turn it into →, or the text is long, the long comment box opens so you can check first."
   },

@@ -12,6 +12,9 @@ import "./CommentBar.css";
 //
 // 焦點：輸入框拿到焦點時登記成 modal 來源 "commentBar"，終端機不會把焦點搶回隱藏的
 // #t；離開（blur、Esc、列被收起）就解除，App.setModalOpen 會把焦點還給 #t。
+// 手機收合（state.folded）：列平常不畫，底部導覽的「推文」呼叫 bar.expand() 才出現並聚焦；
+// 送出、離開輸入框、收鍵盤（Android 收鍵盤不會 blur，看 --vv-kb-inset 歸零）就 bar.collapse()，
+// 系統返回由 bar 登記的 sheet dismiss 收。
 // 滑鼠：App 的滑鼠入口在 window ⇒ 列上的事件一律 stopPropagation，且 App._onUploadLayer
 // 認 #commentBar 放過（不會被當成點終端機）。
 const TYPES = [
@@ -35,6 +38,7 @@ export const CommentBar = ({ pttchrome }) => {
   const inputRef = useRef(null);
   const visible = !!(state && state.visible);
   const prefill = state && state.prefill;
+  const foldedOpen = !!(state && state.folded && state.expanded);
 
   useEffect(() => {
     if (!bar || typeof bar.onChange !== "function") return undefined;
@@ -80,6 +84,36 @@ export const CommentBar = ({ pttchrome }) => {
     // 只看請求序號：同一個請求不重填（使用者改了字之後重畫不可以被蓋回去）。
   }, [prefillN]);
 
+  // 展開時聚焦（等一幀：列這一幀才 mount）。手機會叫出鍵盤。
+  const focusN = state ? state.focusN : 0;
+  useEffect(() => {
+    if (!focusN) return undefined;
+    const id = requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) el.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [focusN]);
+
+  const collapse = useCallback(() => {
+    if (bar && typeof bar.collapse === "function") bar.collapse();
+  }, [bar]);
+
+  // 收合模式展開中：鍵盤看過出現、之後收起 ⇒ 收回列（Android 返回鍵先收鍵盤，不會 blur）。
+  useEffect(() => {
+    const vv = typeof window !== "undefined" && window.visualViewport;
+    if (!foldedOpen || !vv) return undefined;
+    const root = document.documentElement;
+    let seen = false;
+    const onResize = () => {
+      const inset = parseFloat(root.style.getPropertyValue("--vv-kb-inset")) || 0;
+      if (inset > 0) seen = true;
+      else if (seen) collapse();
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, [foldedOpen, collapse]);
+
   const submit = useCallback(() => {
     if (!text.trim() || !pttchrome || !pttchrome.openQuickPush) return;
     if (pttchrome.openQuickPush({ text, type })) {
@@ -111,7 +145,11 @@ export const CommentBar = ({ pttchrome }) => {
   return (
     <div
       id={COMMENT_BAR_ID}
-      className={"commentBar" + (state.mobile ? " commentBar--mobile" : "")}
+      className={
+        "commentBar" +
+        (state.mobile ? " commentBar--mobile" : "") +
+        (foldedOpen ? " commentBar--unfolded" : "")
+      }
       style={{
         left: state.left,
         width: state.width,
@@ -164,7 +202,10 @@ export const CommentBar = ({ pttchrome }) => {
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
         onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onBlur={() => {
+          setFocused(false);
+          if (foldedOpen) collapse();
+        }}
       />
       <button
         type="button"

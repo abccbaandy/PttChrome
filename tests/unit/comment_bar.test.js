@@ -10,6 +10,7 @@ import { DEFAULT_PREFS, NATIVE_SAFE_MODE_KEYS, effectivePrefs } from "../../src/
 import {
   CommentBar,
   commentBarEnabled,
+  commentBarFolded,
   commentBarGeometry,
   quickPushPlan,
   QUICK_PUSH_MAX_SEGMENTS,
@@ -94,8 +95,17 @@ function makeCore(opts = {}) {
   const listeners = {};
   let pageState = opts.pageState == null ? 3 : opts.pageState;
   let lines = opts.lines || [[], []];
+  const sheets = [];
   const core = {
     mobile: !!opts.mobile,
+    // 同 App.registerSheetDismiss／dismissTopSheet（系統返回先收最上面的 sheet）。
+    registerSheetDismiss: (fn) => {
+      sheets.push(fn);
+      return () => {
+        const i = sheets.lastIndexOf(fn);
+        if (i >= 0) sheets.splice(i, 1);
+      };
+    },
     buf: {
       get pageState() {
         return pageState;
@@ -118,6 +128,8 @@ function makeCore(opts = {}) {
     settle: () => listeners.screenSettled(),
     setPageState: (s) => (pageState = s),
     setFunctionMode: (v) => (core.easyReading._functionMode = v),
+    sheets,
+    back: () => (sheets.length ? (sheets[sheets.length - 1](), true) : false),
   };
 }
 
@@ -143,12 +155,28 @@ describe("CommentBar：何時出現、畫在哪", () => {
   test("好讀文章 ⇒ 出現，同終端機寬、貼在 footer 上面", () => {
     const { bar, settle } = makeCore();
     settle();
-    expect(bar.state).toEqual({ visible: true, left: 10, width: 640, bottom: 140, mobile: false, prefill: null });
+    expect(bar.state).toEqual({
+      visible: true,
+      available: true,
+      folded: false,
+      expanded: false,
+      left: 10,
+      width: 640,
+      bottom: 140,
+      mobile: false,
+      prefill: null,
+      focusN: 0,
+    });
   });
-  test("手機也出現（底部導覽上方）", () => {
-    const { bar, settle } = makeCore({ mobile: true });
-    settle();
-    expect(bar.state).toMatchObject({ visible: true, mobile: true });
+  test("手機收合關掉 ⇒ 手機也常駐（底部導覽上方）", () => {
+    prefOverride.mobileCommentBarFold = false;
+    try {
+      const { bar, settle } = makeCore({ mobile: true });
+      settle();
+      expect(bar.state).toMatchObject({ visible: true, mobile: true, folded: false });
+    } finally {
+      delete prefOverride.mobileCommentBarFold;
+    }
   });
   test.each([
     ["原生 pmore（好讀關）＝認不出 ⇒ 原生", { easy: false }],
@@ -205,5 +233,86 @@ describe("CommentBar：何時出現、畫在哪", () => {
     t.settle();
     t.settle();
     expect(seen).toEqual([false, true]);
+  });
+});
+
+describe("手機收合：推文列收進底部導覽（pref mobileCommentBarFold）", () => {
+  test("預設開；只在手機收合，桌機不受影響", () => {
+    expect(DEFAULT_PREFS.mobileCommentBarFold).toBe(true);
+    expect(commentBarFolded({ mobileCommentBarFold: true }, true)).toBe(true);
+    expect(commentBarFolded({ mobileCommentBarFold: true }, false)).toBe(false);
+    expect(commentBarFolded({ mobileCommentBarFold: false }, true)).toBe(false);
+    // 只決定列怎麼出現、不送鍵 ⇒ 不在安全模式名單。
+    expect(NATIVE_SAFE_MODE_KEYS).not.toContain("mobileCommentBarFold");
+  });
+  test("手機好讀文章：平常收著（available 但不畫）；桌機照常駐", () => {
+    const m = makeCore({ mobile: true });
+    m.settle();
+    expect(m.bar.state).toMatchObject({ visible: false, available: true, folded: true, expanded: false });
+    const d = makeCore();
+    d.settle();
+    expect(d.bar.state).toMatchObject({ visible: true, folded: false });
+  });
+  test("expand ⇒ 展開並要求聚焦；之後的 settle 不會把它收回去", () => {
+    const t = makeCore({ mobile: true });
+    t.settle();
+    expect(t.bar.expand()).toBe(true);
+    expect(t.bar.state).toMatchObject({ visible: true, expanded: true, focusN: 1 });
+    t.settle();
+    expect(t.bar.state).toMatchObject({ visible: true, expanded: true });
+  });
+  test("collapse（送出／離開輸入框／收鍵盤）⇒ 收回", () => {
+    const t = makeCore({ mobile: true });
+    t.settle();
+    t.bar.expand();
+    t.bar.collapse();
+    expect(t.bar.state).toMatchObject({ visible: false, expanded: false, available: true });
+    expect(t.sheets).toHaveLength(0);
+  });
+  test("系統返回 ⇒ 先收推文列（不送 ←）；收起後返回就不再被它吃掉", () => {
+    const t = makeCore({ mobile: true });
+    t.settle();
+    t.bar.expand();
+    expect(t.back()).toBe(true);
+    expect(t.bar.state).toMatchObject({ visible: false, expanded: false });
+    expect(t.back()).toBe(false);
+  });
+  test("離開文章（列表）⇒ 收回、返回登記解除；回到文章時仍是收著", () => {
+    const t = makeCore({ mobile: true });
+    t.settle();
+    t.bar.expand();
+    t.setPageState(2);
+    t.settle();
+    expect(t.bar.state).toMatchObject({ visible: false, available: false, expanded: false });
+    expect(t.sheets).toHaveLength(0);
+    t.setPageState(3);
+    t.settle();
+    expect(t.bar.state).toMatchObject({ visible: false, available: true, expanded: false });
+  });
+  test("不在好讀文章 ⇒ expand 回 false、不登記返回（導覽的推文照原生送 X）", () => {
+    const t = makeCore({ mobile: true, pageState: 2 });
+    t.settle();
+    expect(t.bar.expand()).toBe(false);
+    expect(t.bar.state.visible).toBe(false);
+    expect(t.sheets).toHaveLength(0);
+  });
+  test("預填（回覆這則）在收合中 ⇒ 先展開再填", () => {
+    const t = makeCore({ mobile: true });
+    t.settle();
+    expect(t.bar.prefill({ type: "arrow", text: "abc " })).toBe(true);
+    expect(t.bar.state).toMatchObject({ visible: true, expanded: true, prefill: { type: "arrow", text: "abc ", n: 1 } });
+  });
+  test("展開中把收合關掉（設定改了）⇒ 常駐，返回登記解除", () => {
+    const t = makeCore({ mobile: true });
+    t.settle();
+    t.bar.expand();
+    prefOverride.mobileCommentBarFold = false;
+    try {
+      t.settle();
+      expect(t.bar.state).toMatchObject({ visible: true, folded: false, expanded: false });
+      expect(t.sheets).toHaveLength(0);
+    } finally {
+      delete prefOverride.mobileCommentBarFold;
+    }
   });
 });
