@@ -295,6 +295,14 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   }
 }
 
+/* 焦點框只在鍵盤操作時畫（src/js/focus_ring.js）：點／觸控打開對話框時，焦點從 #t
+   被搬進去會繼承 :focus-visible。最後一次輸入是指標 ⇒ 拿掉 outline（Mantine 的
+   .mantine-focus-auto 與各元件自己的 :focus-visible 都靠 outline 畫框；輸入框的
+   聚焦邊框是 :focus 的 border，不受影響）。 */
+:root[data-input-modality="pointer"] :focus-visible {
+  outline: none;
+}
+
 /* 手機好讀文章的檔頭卡片（render/article_meta_card.js）：作者／完整標題／時間，取代
    80 欄反白的檔頭列；分隔線收起（.mobileCollapsedRow）。只在換行版面出現。
    不宣告 user-select（css_user_select.test.js）；不用 margin-bottom（會推開

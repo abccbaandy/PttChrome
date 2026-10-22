@@ -395,3 +395,7 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - 點擊波紋 `src/js/ripple.js#installRipple`（main.jsx 開站一次）：document capture-passive pointerdown 委派，只處理 `.pttRipple`，
   **`#mainContainer` 內一律跳過**；Mantine `Button`／`ActionIcon`／`Menu.Item` 由 `MantineRoot` theme classNames 掛（桌機也有）；
   手機底部導覽、sheet 項目手動掛。核心畫面卡片只用 CSS `:active`。工具列／App Bar 關掉 `-webkit-tap-highlight-color`。
+- 焦點框只在鍵盤操作時畫 `src/js/focus_ring.js#installFocusRing`（桌機也適用）：`#t` 是文字輸入框、恆為 `:focus-visible`，
+  focus trap 把焦點搬進 sheet／對話框時新焦點會**繼承** `:focus-visible` ⇒ 點開就有焦點框。改記最後一次輸入
+  （capture 的 pointerdown／keydown → `<html data-input-modality>`），`main.css` 在 `pointer` 時拿掉 `:focus-visible` 的 outline。
+  守護 `focus_ring.test.js`、`mobile_sheet.offline.spec.js`。

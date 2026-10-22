@@ -8,6 +8,7 @@ import { registerOnCloudValues, startIfPreviouslySignedIn } from './pref_sync';
 import { installDeepLink, claimDeepLink } from './deep_link_entry';
 import { installHistoryBackGuard } from './history_back_guard';
 import { installRipple } from './ripple';
+import { installFocusRing } from './focus_ring';
 import { parseDeepLink } from './deep_link';
 import { installAgentTools } from './agent_tools';
 import { renderInto, unmountFrom } from './react_root';
@@ -29,6 +30,8 @@ function startApp() {
   setupI18n();
   // 按下的波紋回饋（全站一個委派；核心畫面 #mainContainer 內一律跳過）。
   installRipple();
+  // 焦點框只在鍵盤操作時畫（點／觸控打開對話框不該出現焦點框）。
+  installFocusRing();
 
   const app = new App();
   // AI agent 工具（CDP 的 window.pttAgent＋有 WebMCP 時註冊），見 docs/agent-tools.md。
