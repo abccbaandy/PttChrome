@@ -118,7 +118,10 @@ WebView  https://abccbaandy.github.io/PttChrome/
 - 已完成：keystore（`~/.android-keys/pttchrome/`，不入 repo，**遺失＝之後無法更新 App**，須另行備份）、4 個 secrets、assetlinks。本機 release 簽章：把同目錄的 `keystore.properties` 複製到 `android/`（gitignored）。
 1. 使用者本機產 keystore（**不入 repo**）：`keytool -genkeypair -v -keystore release.jks -alias pttchrome -keyalg RSA -keysize 4096 -validity 36500`
 2. GitHub secrets：`ANDROID_KEYSTORE_B64`（`base64 -w0 release.jks`）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。
-3. push tag `android-v<版本>` → CI 建 Release 附 `pttchrome.apk`。versionCode ＝ `github.run_number`。
+3. **自動發版**（`android.yml`＋`scripts/android-release.mjs`，守護 `tests/unit/android_release.test.js`）：push dev 且上個 `android-v*` tag 之後有碰 `android/`（不含 `android/app/src/test`）的非 merge commit ⇒ 建 tag＋Release 附 `pttchrome.apk`；沒有就只產 artifact。手動 `workflow_dispatch`（dev）一律發。PR 不發。不要再手推 tag。
+   - 版號：有列出 feat ⇒ minor+1，否則 patch+1。versionCode ＝ `github.run_number`。
+   - release note＝給一般使用者看：feat→「新功能」、fix／perf→「修正與改進」，其餘 type 不列，條目＝標題去掉 `type(scope):`；尾段固定安裝／更新步驟（腳本 `INSTALL_SECTION`）。
+   - **改 `android/` 的 commit 標題要寫成使用者看得懂的一句**；標題太技術就在內文加 `Release-Note: <一句話>` 取代，純開發用（debug APK、dev server 模式）加 `Release-Note: -` 不列。發出去的 note 要改就直接到 GitHub Release 頁編輯。
 4. 首次發佈後用該 keystore 的 SHA-256 產 assetlinks.json（上一節）。
 
 ## 狀態
