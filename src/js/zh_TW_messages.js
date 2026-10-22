@@ -910,6 +910,12 @@
   "tooltip_reconnectResume": {
     "message": "斷線後重新連線、登入回到主功能表時，自動回到斷線前讀的那篇文章或文章列表。關掉＝停在主功能表。"
   },
+  "options_resumeLastPlace": {
+    "message": "開站回到上次的地方"
+  },
+  "tooltip_resumeLastPlace": {
+    "message": "關掉分頁或被手機系統回收後再打開，登入後自動回到上次讀的那篇文章或文章列表；出發前有提示可以取消。只記在這個瀏覽器。關掉＝停在主功能表。"
+  },
   "options_enableCommandPalette": {
     "message": "指令面板"
   },

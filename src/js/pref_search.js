@@ -189,6 +189,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_reconnectResume",
     },
     {
+      key: "resumeLastPlace",
+      titleKey: "options_resumeLastPlace",
+      tooltipKey: "tooltip_resumeLastPlace",
+    },
+    {
       key: "antiIdleTime",
       titleKey: "options_antiIdleTime",
       tooltipKey: "tooltip_antiIdleTime",

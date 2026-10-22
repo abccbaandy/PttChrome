@@ -1179,6 +1179,43 @@ span {
   pointer-events: none;
 }
 
+/* 開站回到上次的地方的倒數提示（js/reconnect_resume.js）：底部置中，跟狀態提示同一個
+   深灰底；「取消」是真按鈕。手機要讓開終端機的底部 inset（--term-bottom-inset，同 term_view#aboveBottomInset）。 */
+#resumeLastPlace {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--term-bottom-inset, 0px) + 48px);
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* left: 50% 的 shrink-to-fit 只剩半個視窗寬：手機上會被擠成好幾行。 */
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  padding: 8px 8px 8px 14px;
+  border-radius: 6px;
+  background: rgba(20, 20, 20, 0.92);
+  box-shadow: 0 0 0 1px #444;
+  color: #eee;
+  font: 14px/1.4 sans-serif;
+}
+#resumeLastPlace[hidden] {
+  display: none;
+}
+#resumeLastPlace .resumeLastPlaceCancel {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid #777;
+  border-radius: 4px;
+  background: #333;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
 /* Pusher highlight (Enhanced Add-on): click a comment row to tint EVERY row by the
    same pusher. Applied to the whole bbsrow (#mainContainer > span is display:block
    → a full-width band); transparent char spans let the navy show through. */

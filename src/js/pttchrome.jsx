@@ -13,7 +13,7 @@ import { AidNavigation } from './aid_navigation';
 import { needsAidBoardChoice } from './aid_board_choice';
 import { ScreenRefresh } from './screen_refresh';
 import { ReadingRecord } from './reading_record';
-import { ReconnectResume } from './reconnect_resume';
+import { ReconnectResume, isResumeToastTarget } from './reconnect_resume';
 import { UnreadJump } from './unread_jump';
 import { MarkAllRead } from './mark_all_read';
 import { BoardMarkRead } from './board_mark_read';
@@ -2416,7 +2416,7 @@ App.prototype._onUploadLayer = function(e) {
   const t = e && e.target;
   return (
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
-    isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t)
+    isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t) || isResumeToastTarget(t)
   );
 };
 

@@ -106,7 +106,7 @@ describe("切到背景時存檔", () => {
     expect(window.localStorage.getItem(SNAPSHOT_KEY)).toBeNull();
 
     h.core.connectState = 1;
-    writeValues({ ...DEFAULT_PREFS, reconnectResume: false });
+    writeValues({ ...DEFAULT_PREFS, reconnectResume: false, resumeLastPlace: false });
     h.rr.saveSnapshot();
     expect(window.localStorage.getItem(SNAPSHOT_KEY)).toBeNull();
   });
@@ -137,8 +137,9 @@ describe("重建後開機接回", () => {
     });
   });
 
-  test("一般開 App（不是重建）⇒ 不接回，舊存檔丟掉", () => {
+  test("一般開 App（不是重建）、開站回到上次的地方關著 ⇒ 不接回，舊存檔丟掉", () => {
     saveFromOldPage();
+    writeValues({ ...DEFAULT_PREFS, resumeLastPlace: false });
     asApk({ restored: false });
     const h = harness();
     expect(h.rr.hasPending()).toBe(false);
@@ -147,15 +148,16 @@ describe("重建後開機接回", () => {
 
   test("功能關掉 ⇒ 重建也不接回", () => {
     saveFromOldPage();
-    writeValues({ ...DEFAULT_PREFS, reconnectResume: false });
+    writeValues({ ...DEFAULT_PREFS, reconnectResume: false, resumeLastPlace: false });
     asApk({ restored: true });
     expect(harness().rr.hasPending()).toBe(false);
   });
 
-  test("不是 APK（瀏覽器）⇒ 完全不碰存檔", () => {
-    window.localStorage.setItem(SNAPSHOT_KEY, "{}");
-    harness();
-    expect(window.localStorage.getItem(SNAPSHOT_KEY)).toBe("{}");
+  test("不是 APK（瀏覽器）、開站回到上次的地方關著 ⇒ 不接回、讀過的存檔丟掉", () => {
+    writeValues({ ...DEFAULT_PREFS, resumeLastPlace: false });
+    window.localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ at: Date.now(), plan: { kind: "list", board: "C_Chat" } }));
+    expect(harness().rr.hasPending()).toBe(false);
+    expect(window.localStorage.getItem(SNAPSHOT_KEY)).toBeNull();
   });
 });
 

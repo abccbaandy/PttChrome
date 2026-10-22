@@ -309,6 +309,8 @@ async function installAutoLoginPrefs(page, extra) {
           enableCommentBar: false,
           // 文末的下一篇標題卡同理（好讀累積頁尾端多一張卡片）。
           enableNextArticleCard: false,
+          // 開站回到上次的地方：live 的共用 session 不准有測試以外的按鍵。
+          resumeLastPlace: false,
           autoLoginSkipWelcome: true,
         },
         extra || {}

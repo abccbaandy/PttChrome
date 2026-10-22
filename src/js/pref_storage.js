@@ -48,6 +48,9 @@ export const DEFAULT_PREFS = {
   // enableEasyReading 關著時一律原生（沿用原本的行為）。預設開。
   enableHelpMenuPopup: true,
   reconnectResume: true,
+  // 開站回到上次的地方（js/reconnect_resume.js）：分頁切到背景／關掉時存書籤（本機、不上雲），
+  // 下次開站登入後倒數、可取消，再替使用者送鍵回去 ⇒ 在安全模式名單內。預設開。
+  resumeLastPlace: true,
   // 首頁儀表板（js/home_dashboard.js）：主功能表上蓋一層我的最愛／最近看板／新信面板，
   // 打開時快取過期會自己去抓一次我的最愛（Ctrl+Z f → q）⇒ 在安全模式名單內。
   enableHomeDashboard: true,
@@ -415,6 +418,7 @@ export const NATIVE_SAFE_MODE_KEYS = Object.freeze([
   "skipBoardEntryScreen",
   "enableHelpMenuPopup",
   "reconnectResume",
+  "resumeLastPlace",
   "enableHomeDashboard",
   "enableSplitReading",
   "enableNextArticleCard",

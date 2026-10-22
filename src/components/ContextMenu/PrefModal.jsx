@@ -1016,6 +1016,17 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_reconnectResume")}
                 </Text>
+                <PrefCheckbox
+                  name="resumeLastPlace"
+                  checked={values.resumeLastPlace}
+                  disabled={values.nativeSafeMode}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_resumeLastPlace")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_resumeLastPlace")}
+                </Text>
                 <NumberInput
                   label={i18n("options_antiIdleTime")}
                   description={i18n("tooltip_antiIdleTime")}

@@ -11,11 +11,15 @@
 // 沒有連線可以按 Q 問，只能用免費路徑（網址列／跳文落地記下的那篇）；問不到就退回
 // 那篇所在的列表。
 //
-// 待回目標只在記憶體（同 deep link 的 pending）：重整頁面就該忘掉。
-// 唯一例外是 Android APK 被系統回收（docs/android-app.md「renderer 被回收」）：那不是使用者
-// 重整，網頁也沒機會收尾 ⇒ App 切到背景（'pttandroid:stop'）時先把待回目標存進
-// localStorage（SNAPSHOT_KEY），重建的頁面（config.restored）開機時接回來，之後照常走登入
-// 回主功能表 → 出發。其他情況開機一律丟掉存檔（不會在下一次正常開 App 時突然跳走）。
+// 待回目標平常只在記憶體（同 deep link 的 pending）。存檔（localStorage SNAPSHOT_KEY）兩種：
+//   - Android APK 被系統回收（docs/android-app.md「renderer 被回收」）：App 切到背景
+//     （'pttandroid:stop'）時存，重建的頁面（config.restored）開機接回（pref reconnectResume）。
+//   - 開站回到上次的地方（pref resumeLastPlace，預設開；docs/reading-record.md「開站回到上次的
+//     地方」）：分頁切到背景／關掉（visibilitychange hidden、pagehide）時存，下一次開站接回。
+//     手機瀏覽器回收分頁、使用者關掉再開，都像原生 App 一樣回到上次讀的文章或列表。出發前
+//     有一段倒數提示可以取消；deep link 進來時以 deep link 為準（同一套 superseded）。
+//   兩者都要求「存的那一刻已登入、連線中」，否則清掉存檔（登出後關掉不會在下次跳走）；
+//   開機讀一次就刪，太舊（SNAPSHOT_MAX_AGE_MS）不接。
 //
 // 收手條件（未知就不動，寧可停在 PTT 給的位置）：
 //   - 自己登出（logout）不算斷線，不回去。
@@ -31,6 +35,10 @@ import { recordFor } from './reading_record';
 import { boardNameFromKey } from './screen_titles';
 import { readEffectivePrefs } from './pref_storage';
 import { isAndroidApp, androidRestored, STOP_EVENT } from './android_bridge';
+
+// 開站接回時，登入回到主功能表後先倒數這麼久（提示上有「取消」）才出發。
+export const OPEN_RESUME_DELAY_MS = 2500;
+export const RESUME_TOAST_ID = 'resumeLastPlace';
 
 export const SNAPSHOT_KEY = 'pttchrome.rendererResume.v1';
 // 回收後多久內回來還接得回去。再久的位置使用者多半不記得了，跳過去反而突兀。
@@ -59,6 +67,23 @@ export function planFromSnapshot(snap, now) {
 
 function enabled() {
   return !!readEffectivePrefs().reconnectResume;
+}
+
+function openEnabled() {
+  return !!readEffectivePrefs().resumeLastPlace;
+}
+
+// 開機要不要接回存檔。純函式：APK 回收重建且 reconnectResume 開著 ⇒ 'restored'（照舊直接
+// 出發）；其餘（一般開站、APK 正常開啟、重建但只開了 resumeLastPlace）⇒ resumeLastPlace
+// 開著才 'open'（倒數、可取消）；都關 ⇒ null。
+export function bootResumeMode(restored, prefs) {
+  const p = prefs || {};
+  if (restored && p.reconnectResume) return 'restored';
+  return p.resumeLastPlace ? 'open' : null;
+}
+
+export function isResumeToastTarget(el) {
+  return !!(el && el.closest && el.closest('#' + RESUME_TOAST_ID));
 }
 
 // 書籤＋本篇身分 → 重連後要去哪。純函式。
@@ -100,14 +125,27 @@ export function ReconnectResume(core, view, termBuf) {
   this._loggedIn = false;
   if (termBuf && termBuf.addEventListener)
     termBuf.addEventListener('screenSettled', this._onSettled.bind(this));
-  if (isAndroidApp() && typeof window !== 'undefined') {
-    // 開機：只有原生說「這頁是回收後重建的」才接回；否則把舊存檔丟掉。
+  // 倒數中的出發（開站接回）：{ timer, plan } | null。
+  this._countdown = null;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    // 開機讀一次就刪：APK 回收重建或開站接回（各自的開關）才用，否則丟掉。
     const snap = readSnapshot();
-    if (androidRestored() && enabled()) {
-      this._pending = planFromSnapshot(snap, Date.now());
-      this._diag('restoreSnapshot', { kind: this._pending ? this._pending.kind : null });
+    const mode = bootResumeMode(isAndroidApp() && androidRestored(), readEffectivePrefs());
+    if (mode) {
+      const plan = planFromSnapshot(snap, Date.now());
+      this._pending = plan && mode === 'open' ? Object.assign({}, plan, { fromOpen: true }) : plan;
+      this._diag('restoreSnapshot', { mode: mode, kind: this._pending ? this._pending.kind : null });
     }
-    window.addEventListener(STOP_EVENT, this.saveSnapshot.bind(this));
+    const save = this.saveSnapshot.bind(this);
+    if (typeof window.addEventListener === 'function') {
+      if (isAndroidApp()) window.addEventListener(STOP_EVENT, save);
+      // 分頁切到背景／關掉：手機瀏覽器回收分頁之前一定先經過 hidden。
+      window.addEventListener('pagehide', save);
+    }
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function')
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') save();
+      });
   }
 }
 
@@ -121,6 +159,8 @@ ReconnectResume.prototype = {
   // disable 會丟掉看板身分，aidNavigation.reset 會清掉跳文落地的那篇）。
   // loggedOut：這次斷線是使用者自己登出。
   capture: function(loggedOut) {
+    // 倒數中斷線：那份計畫作廢（重連後照斷線這一刻的位置重新算）。
+    this._cancelCountdown();
     const wasLoggedIn = this._loggedIn;
     this._loggedIn = false;
     if (loggedOut) {
@@ -147,7 +187,8 @@ ReconnectResume.prototype = {
   // 沒登入、關掉了、沒有可回的地方 ⇒ 清掉存檔。
   saveSnapshot: function() {
     let plan = null;
-    if (this._loggedIn && enabled() && this._core && this._core.connectState === 1) {
+    const want = openEnabled() || (isAndroidApp() && enabled());
+    if (this._loggedIn && want && this._core && this._core.connectState === 1) {
       const core = this._core;
       const bm = recordFor(core).begin('reconnect-resume', { view: this._view, buf: this._termBuf });
       const nav = core.aidNavigation;
@@ -172,13 +213,99 @@ ReconnectResume.prototype = {
   },
 
   discard: function(reason) {
+    this._cancelCountdown();
     if (!this._pending) return;
     this._diag('discard', { reason: reason });
     this._pending = null;
   },
 
   hasPending: function() {
-    return !!this._pending;
+    return !!(this._pending || this._countdown);
+  },
+
+  // 開站接回的倒數：提示＋「取消」。倒數完再確認一次還在主功能表才出發。
+  _startCountdown: function(plan) {
+    const self = this;
+    const timer = setTimeout(function() {
+      if (!self._countdown || self._countdown.timer !== timer) return;
+      self._countdown = null;
+      self._hideToast();
+      self._dispatch(plan);
+    }, OPEN_RESUME_DELAY_MS);
+    this._countdown = { timer: timer, plan: plan };
+    this._showToast(plan);
+    this._diag('countdown', { kind: plan.kind, board: plan.board });
+  },
+
+  _cancelCountdown: function() {
+    if (!this._countdown) return;
+    clearTimeout(this._countdown.timer);
+    this._countdown = null;
+    this._hideToast();
+  },
+
+  // 使用者按了「取消」：停在主功能表，這次不回去。
+  cancel: function() {
+    if (!this._countdown && !this._pending) return;
+    this._diag('cancel', {});
+    this._cancelCountdown();
+    this._pending = null;
+  },
+
+  _showToast: function(plan) {
+    if (typeof document === 'undefined') return;
+    let el = document.getElementById(RESUME_TOAST_ID);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = RESUME_TOAST_ID;
+      el.setAttribute('role', 'status');
+      const text = document.createElement('span');
+      text.className = 'resumeLastPlaceText';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'resumeLastPlaceCancel';
+      btn.textContent = '取消';
+      const self = this;
+      // App 的滑鼠入口在 window：不搶 #t 焦點、不外傳成點終端機（App._onUploadLayer 也認它）。
+      el.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      el.addEventListener('mouseup', function(e) {
+        e.stopPropagation();
+      });
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.cancel();
+      });
+      el.appendChild(text);
+      el.appendChild(btn);
+      document.body.appendChild(el);
+    }
+    el.querySelector('.resumeLastPlaceText').textContent =
+      '即將回到上次的地方：' + plan.board + (plan.kind === 'article' ? ' 的文章' : ' 看板');
+    el.hidden = false;
+  },
+
+  _hideToast: function() {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById(RESUME_TOAST_ID);
+    if (el) el.hidden = true;
+  },
+
+  _dispatch: function(plan) {
+    const core = this._core;
+    const nav = core.aidNavigation;
+    const dl = core.deepLinkController;
+    if (core.connectState !== 1 || !this._atMainMenu() || !nav || nav.active || (dl && dl.hasPending && dl.hasPending())) {
+      this._diag('discard', { reason: 'superseded' });
+      return;
+    }
+    // 同 deep_link_controller._dispatch：AutoLogin 的「請按任意鍵 ⇒ 送空白」會踩到
+    // 進板畫面，打亂序列正在等的那一幀。
+    if (core.autoLogin && core.autoLogin.stop) core.autoLogin.stop();
+    this._diag('dispatch', { kind: plan.kind, board: plan.board, fromOpen: !!plan.fromOpen });
+    nav.startResume(plan);
   },
 
   _atMainMenu: function() {
@@ -197,7 +324,7 @@ ReconnectResume.prototype = {
     if (!this._pending) return;
     const core = this._core;
     if (core.connectState !== 1) return;
-    if (!enabled()) {
+    if (!(this._pending.fromOpen ? openEnabled() : enabled())) {
       this.discard('disabled');
       return;
     }
@@ -211,11 +338,13 @@ ReconnectResume.prototype = {
     }
     const plan = this._pending;
     this._pending = null;
-    // 同 deep_link_controller._dispatch：AutoLogin 的「請按任意鍵 ⇒ 送空白」會踩到
-    // 進板畫面，打亂序列正在等的那一幀。
-    if (core.autoLogin && core.autoLogin.stop) core.autoLogin.stop();
-    this._diag('dispatch', { kind: plan.kind, board: plan.board });
-    nav.startResume(plan);
+    if (plan.fromOpen) {
+      // 開站接回：使用者可能根本不想回去 ⇒ 先倒數、可取消。
+      if (core.autoLogin && core.autoLogin.stop) core.autoLogin.stop();
+      this._startCountdown(plan);
+      return;
+    }
+    this._dispatch(plan);
   }
 };
 
