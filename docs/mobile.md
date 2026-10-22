@@ -343,6 +343,10 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   依 `shouldClearArticleContextOnSettle` 整組清空（例外：functionMode／跳行修補／pageState 5）。守護 `tests/unit/article_context.test.js`。
   debug 錄製有 `article.context`／`appBar` log（起點補一筆、之後只記變動；info 字串照樣 redact）。
 - **無返回鍵**（使用者定案）。AID 跳文的「返回原文」不屬 App Bar：是浮在 App Bar 正下方置中的 `components/AidBackButton`（桌機共用，見 `docs/easy-reading.md`「返回原文」UI）；**不可放底部**（會被工具列蓋掉，回歸守 `mobile_app_bar.offline.spec.js`）。事件規則同工具列（mousedown preventDefault＋stopPropagation）。z-index 150（低於 Mantine overlay 200）。
+- **點標題捲回頂端**（pref `mobileAppBarScrollTop`，預設開）：`app_bar_scroll_top.scrollContentToTop`，只綁在標題塊
+  （新信徽章、收件匣不算）。捲動對象：首頁儀表板開著 ⇒ 它的容器；卡片列表視口在 DOM 上 ⇒ `screen.scrollListTo(0)`
+  （**不可直接寫列表視口的 scrollTop**：頂端保留區會被算進去，平滑動畫也會被保留區重設殺掉）；其餘 ⇒ `view.mainDisplay`。
+  自己不送鍵；列表捲到頂後照平常往上捲的規則補頁。reduced-motion 直接跳。守護 unit `app_bar_scroll_top`、offline e2e `mobile_app_bar`。
 - 幾何：高 `MOBILE_APPBAR_PX`(48)＋`--safe-top`，**全畫面常駐** ⇒ rows 與 surface 無關（不重送 NAWS）。上緣經
   `term_size.termLayoutOffsets({topInset})`（0＝桌機舊值）、`mobileMenuLayout({topInset})`、`view.setTopInset`。`.main` 高公式不動。
   `PageTopAlert` 手機下 margin-top 讓開 48px。

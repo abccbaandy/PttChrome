@@ -1248,6 +1248,20 @@ export const PrefModal = ({
                     {...anchor("mobileFontSize")}
                   />
                 )}
+                {values.mobileLayout !== "off" && (
+                  <>
+                    <PrefCheckbox
+                      name="mobileAppBarScrollTop"
+                      checked={values.mobileAppBarScrollTop}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobileAppBarScrollTop")}
+                    </PrefCheckbox>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_mobileAppBarScrollTop")}
+                    </Text>
+                  </>
+                )}
               </PrefSection>
               {/* 游標所在列：滑鼠與鍵盤共用同一條渲染管線與同一組樣式，所以獨立成
                 一區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。滑鼠那條

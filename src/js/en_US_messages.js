@@ -1355,6 +1355,12 @@ export const en_US = {
   "options_mobileLayoutAuto": {
     "message": "Auto"
   },
+  "options_mobileAppBarScrollTop": {
+    "message": "Tap the mobile title bar to scroll to top"
+  },
+  "tooltip_mobileAppBarScrollTop": {
+    "message": "In the mobile layout, tapping the title at the top scrolls the article, list or home page back to the top. It only scrolls; no keys are sent."
+  },
   "options_mobileFontSize": {
     "message": "Mobile font size"
   },
