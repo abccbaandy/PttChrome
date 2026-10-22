@@ -37,7 +37,7 @@ import {
   boardJumpLanded,
 } from "../../src/js/board_mark_read";
 import { markReadPromptShown } from "../../src/js/mark_all_read";
-import { pmorePrefScreenSeen, rawModePrefRowVisible } from "../../src/js/pmore_pref";
+import { parseRawModeFromPrefRow, pmorePrefScreenSeen, rawModePrefRowVisible } from "../../src/js/pmore_pref";
 import { landedOnBoard } from "../../src/js/aid_navigation";
 import { functionModeExitDecision } from "../../src/js/easy_reading";
 import { parseStatusRow } from "../../src/js/string_util";
@@ -313,6 +313,24 @@ describe("pmore 設定頁：認不出 ⇒ 不整篇重讀、不送數字鍵", ()
     mutate(r);
     expect(pmorePrefScreenSeen(r)).toBe(false);
     expect(rawModePrefRowVisible(r)).toBe(false);
+  });
+
+  // 選中的色彩模式（開燈按鈕的狀態來源）：選項列認不出 ⇒ null（不更新記住的模式）。
+  test("對照組：快速設定與完整設定的選項列都讀得出選中項", () => {
+    expect(parseRawModeFromPrefRow(quick())).toBe(0);
+    const full = quick();
+    full[22] = " \\ 色彩顯示方式:          預設格式化內容 | 原始ANSI控制碼 |*純文字              ";
+    expect(parseRawModeFromPrefRow(full)).toBe(2);
+  });
+  test.each([
+    ["兩個都打星（半繪）", " \\ 色彩顯示方式:         1*預設格式化內容 |2*原始ANSI控制碼 |3 純文字"],
+    ["沒有星號（還沒畫到）", " \\ 色彩顯示方式:         1 預設格式化內容 |2 原始ANSI控制碼 |3 純文字"],
+    ["多一個選項（改版）", " \\ 色彩顯示方式:         1*預設 |2 原始 |3 純文字 |4 新模式"],
+    ["少一個選項（截斷）", " \\ 色彩顯示方式:         1*預設格式化內容 |2 原始ANSI控制碼"],
+  ])("選項列%s → null", (_n, row) => {
+    const r = quick();
+    r[22] = row;
+    expect(parseRawModeFromPrefRow(r)).toBeNull();
   });
 });
 
