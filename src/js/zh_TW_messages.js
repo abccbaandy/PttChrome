@@ -658,6 +658,12 @@
   "new_comments_divider": {
     "message": "以下是新推文"
   },
+  "options_listNewPushCount": {
+    "message": "文章列表顯示讀過之後多的推文數"
+  },
+  "tooltip_listNewPushCount": {
+    "message": "讀完過的文章，在文章列表上會多一個「+N」：推文數比你上次讀完時多了 N。只認得這個瀏覽器讀完的文章，推文數是「爆」或對不上是哪一篇時不顯示。"
+  },
   "new_comments_jump": {
     "message": "跳到新推文"
   },

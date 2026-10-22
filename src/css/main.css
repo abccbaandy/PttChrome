@@ -1156,6 +1156,29 @@ span {
   pointer-events: none;
 }
 
+/* 文章列表的「+N」（js/new_comments.js#listNewPush）：讀完之後推文數多了幾分。字在
+   data-new-push，::after 畫（不會被選取／複製）。中性灰小框，不搶 PTT 推文數的顏色。
+   原生／桌機列：疊在列尾的留白上（render/row.js 只在最後幾格是空白時才放），static
+   position 落在第 80 格之後、往左平移自己的寬，不佔格線、不撐寬。手機卡片：標題前面。 */
+#mainContainer .listNewPush::after {
+  content: attr(data-new-push);
+  display: inline-block;
+  padding: 0 0.3em;
+  border: 1px solid #666;
+  border-radius: 0.4em;
+  font-size: 0.75em;
+  line-height: 1.2;
+  color: #d0d0d0;
+  font-weight: normal;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+#mainContainer span[data-type="bbsline"] > .listNewPush {
+  position: absolute;
+  transform: translateX(calc(-100% - 0.5em));
+  pointer-events: none;
+}
+
 /* Pusher highlight (Enhanced Add-on): click a comment row to tint EVERY row by the
    same pusher. Applied to the whole bbsrow (#mainContainer > span is display:block
    → a full-width band); transparent char spans let the navy show through. */

@@ -1007,11 +1007,18 @@ export function computeAnnotations(
       // 的 cell ⇒ 逐列獨立，annotationsAreRowIndependent 不必跟著改。刪除列在上面
       // 就 continue／不標（本來就是灰的）。
       const listRead = !deleted && isListRowRead(lines[row]);
-      if (listAuthor || listTitle || listRead) {
+      // 列表的「+N」（new_comments.listNewPush）：只看該列自己的文字＋本機紀錄
+      // ⇒ 逐列獨立；紀錄一變 listNewPushKey 就換（進 annotationsKey）。
+      const listNewPush =
+        !deleted && enhance && typeof enhance.listNewPushFor === "function"
+          ? enhance.listNewPushFor(text)
+          : null;
+      if (listAuthor || listTitle || listRead || listNewPush) {
         result[row] = {
           listAuthor: listAuthor || undefined,
           listTitle: listTitle || undefined,
           listRead: listRead || undefined,
+          listNewPush: listNewPush || undefined,
         };
       }
     }

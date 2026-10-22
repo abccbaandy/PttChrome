@@ -12,6 +12,7 @@ import cx from "classnames";
 import { el } from "./dom";
 import { i18n } from "../js/i18n";
 import LinkSegmentBuilder from "./link_segment";
+import { listNewPushBadge } from "./list_card";
 import { shouldForceWidth } from "./color_segment";
 import { forceWidthStyle } from "./word_segment";
 
@@ -100,6 +101,7 @@ export function buildRow({
   listAuthor,
   listTitle,
   listRead,
+  listNewPush,
   pusherHighlight,
   authorIdStart,
   authorIdEnd,
@@ -159,6 +161,13 @@ export function buildRow({
   );
   if (authorIdKind === "self") builder.authorIdClass = "commentBySelf";
   for (let i = 0; i < chars.length; ++i) builder.readChar(chars[i], i);
+  const content = builder.build();
+  // 列表的「+N」（new_comments.listNewPush）：80 欄格線裡沒有空位，只在列尾留白夠
+  // （標題沒寫到最後 NEW_PUSH_TAIL_CELLS 格）時疊在列尾；放不下就不顯示。
+  if (listNewPush && tailIsBlank(chars, NEW_PUSH_TAIL_CELLS)) {
+    const line = findBbsLine(content);
+    if (line) line.appendChild(listNewPushBadge(listNewPush));
+  }
 
   return {
     node: el(
@@ -178,10 +187,33 @@ export function buildRow({
         "data-new-comments": newCommentsStart ? i18n("new_comments_divider") : undefined,
         style: hidden ? { visibility: "hidden" } : undefined,
       },
-      builder.build(),
+      content,
     ),
     slots: builder.slots,
   };
+}
+
+// 「+N」最多三個字（+99）＋左右各留一格。
+export const NEW_PUSH_TAIL_CELLS = 5;
+
+function tailIsBlank(chars, n) {
+  if (!chars || chars.length < n) return false;
+  for (let i = chars.length - n; i < chars.length; ++i) {
+    const ch = chars[i];
+    if (ch && ((ch.ch !== " " && ch.ch !== "") || ch.isLeadByte)) return false;
+  }
+  return true;
+}
+
+function findBbsLine(content) {
+  const nodes = Array.isArray(content) ? content : [content];
+  for (const n of nodes) {
+    if (!n || typeof n.querySelector !== "function") continue;
+    if (n.getAttribute && n.getAttribute("data-type") === "bbsline") return n;
+    const hit = n.querySelector('[data-type="bbsline"]');
+    if (hit) return hit;
+  }
+  return null;
 }
 
 export default buildRow;
