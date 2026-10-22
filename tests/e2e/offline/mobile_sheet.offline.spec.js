@@ -75,6 +75,30 @@ test.describe('手機 bottom sheet', () => {
       .toBe(true);
   });
 
+  // 焦點從隱藏 input #t（文字輸入框恆為 :focus-visible）被 focus trap 搬進 sheet ⇒ Chromium
+  // 讓新焦點繼承 :focus-visible ⇒ 觸控打開就有一圈焦點框，「選取模式」看起來像被選中。
+  // 焦點框只該在鍵盤操作時出現（src/js/focus_ring.js）。
+  test('觸控打開 sheet／設定：沒有焦點框；按 Tab 之後才畫', async ({ page }) => {
+    await bootMenu(page);
+    const activeOutline = () =>
+      page.evaluate(() => {
+        const a = document.activeElement;
+        return a && a !== document.body ? getComputedStyle(a).outlineStyle : 'no-focus';
+      });
+    await byKey(page, '__more').tap();
+    await expect(sheet(page, 'more')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => !!document.activeElement.closest('[data-sheet="more"]'))).toBe(true);
+    expect(await activeOutline()).toBe('none');
+
+    await page.keyboard.press('Tab');
+    await expect.poll(activeOutline).not.toBe('none');
+
+    await byKey(page, '__settings').tap();
+    const close = page.locator('.mantine-Modal-close');
+    await expect(close).toBeFocused();
+    expect(await activeOutline()).toBe('none');
+  });
+
   test('拖曳把手往下拉＝收起', async ({ page }) => {
     await bootMenu(page);
     await byKey(page, '__more').tap();
