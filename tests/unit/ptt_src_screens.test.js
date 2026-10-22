@@ -55,6 +55,15 @@ import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
 import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
 import articlePrefFx from "./fixtures/ptt_src_screens/article_pref.json";
+import boardCompleteFx from "./fixtures/ptt_src_screens/board_complete.json";
+import {
+  boardQueryResult,
+  parseBoardPromptFrame,
+  resolvedBoardName,
+} from "../../src/js/board_search_bridge";
+import { isSubListTitle } from "../../src/js/aid_navigation";
+import { isSubListFooter } from "../../src/js/screen_captions";
+import { listModeOf } from "../../src/js/list_session";
 import {
   MFDISP_RAW_NA,
   MFDISP_RAW_NOANSI,
@@ -359,6 +368,62 @@ describe("upstream pttbbs 產的 pmore 設定頁（o 完整設定、\\ 快速設
       const { rowTexts, facts } = screenAt(articlePrefFx, name);
       expect(parseStatusRow(rowTexts[facts.rows - 1]), name).not.toBeNull();
     }
+  });
+});
+
+describe("upstream pttbbs 產的選看板自動完成（name.c#generalnamecomplete）", () => {
+  const frame = (name) => parseBoardPromptFrame(screenAt(boardCompleteFx, name).facts);
+
+  test("剛開 prompt／打字還沒按空白：讀得出輸入欄、沒有清單", () => {
+    expect(frame("board")).toEqual({ field: "", candidates: null, more: false });
+    expect(frame("typed")).toEqual({ field: "M", candidates: null, more: false });
+  });
+
+  test("空白 ⇒ 清單依板名排序；查 M 的結論是兩個候選、Enter 進不了板", () => {
+    const f = frame("candidates");
+    expect(f).toEqual({ field: "M", candidates: ["Mine", "Movie"], more: false });
+    const r = boardQueryResult("M", f);
+    expect(r).toMatchObject({ rejected: false, completion: "M", candidates: ["Mine", "Movie"] });
+    expect(resolvedBoardName(r, "M")).toBe("");
+  });
+
+  test("打 x 沒有看板以 Mx 開頭 ⇒ 輸入欄不變，查 Mx 判成被拒", () => {
+    const f = frame("rejected");
+    expect(f.field).toBe("M");
+    expect(boardQueryResult("Mx", f)).toMatchObject({ accepted: 1, rejected: true, candidates: [] });
+  });
+
+  test("Mo 再空白 ⇒ 唯一的 Movie 補完，Enter 會進 Movie", () => {
+    // 中間幀：輸入欄已是 Mo，清單還是上一趟的（Mine 不以 Mo 開頭，不能拿來當 Mo 的結論）
+    expect(frame("typed-2")).toMatchObject({ field: "Mo", candidates: ["Mine", "Movie"] });
+    const f = frame("completed");
+    expect(f).toEqual({ field: "Movie", candidates: ["Movie"], more: false });
+    expect(resolvedBoardName(boardQueryResult("Mo", f), "Mo")).toBe("Movie");
+  });
+
+  test("主功能表本身不是 prompt", () => {
+    expect(frame("menu")).toBeNull();
+  });
+});
+
+describe("upstream pttbbs 產的搜尋結果列表（系列文章）", () => {
+  test("標題列「系列《板》」、底列「系列文章」⇒ 認成子列表（select 編號空間）", () => {
+    for (const [fx, name] of [
+      [searchRefineFx, "result"],
+      [pushSearchFx, "result"],
+    ]) {
+      const { rowTexts, facts } = screenAt(fx, name);
+      expect(isSubListTitle(rowTexts[0])).toBe(true);
+      expect(isSubListFooter(rowTexts[facts.rows - 1])).toBe(true);
+      expect(listModeOf(facts)).toBe("select");
+    }
+  });
+
+  test("一般文章列表不是子列表", () => {
+    const { rowTexts, facts } = screenAt(articleListFx, "list");
+    expect(isSubListTitle(rowTexts[0])).toBe(false);
+    expect(isSubListFooter(rowTexts[facts.rows - 1])).toBe(false);
+    expect(listModeOf(facts)).toBe("plain");
   });
 });
 

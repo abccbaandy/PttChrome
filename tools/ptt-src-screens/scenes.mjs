@@ -276,6 +276,23 @@ export const SCENES = [
     steps: [{ name: 'menu' }, { keys: 's', name: 'board' }],
   },
   {
+    // 選看板 prompt 的自動完成（namecomplete）：打 M 再按空白 ⇒ Mine／Movie 兩個候選，列出清單；
+    // x 沒有看板以 Mx 開頭 ⇒ bell、字被丟掉；再打 o、空白 ⇒ 唯一的 Movie 補完。
+    // board_search_bridge.parseBoardPromptFrame 讀輸入欄與候選。
+    file: 'board_complete',
+    entry: 'menu',
+    rows: 24,
+    steps: [
+      { name: 'menu' },
+      { keys: 's', name: 'board' },
+      { keys: 'M', name: 'typed' },
+      { keys: ' ', name: 'candidates' },
+      { keys: 'x', name: 'rejected' },
+      { keys: 'o', name: 'typed-2' },
+      { keys: ' ', name: 'completed' },
+    ],
+  },
+  {
     // 一般水球模式回水球（wmsg.c#wmsg_handle_ctrl_r_default）：收了 alice、bob、carol 三顆，
     // 第一下 ^R 回最新一位（carol）的 prompt，再按 ^R 出訊息回顧、每按一下往舊的選一則。
     file: 'waterball_default',
