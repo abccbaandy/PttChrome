@@ -102,7 +102,9 @@ export function searchGateFacts(core) {
     curY: buf.cur_y,
     // 游標停在反白輸入欄＝已經有一個 prompt 開著（使用者在打字），搜尋鍵是內容。
     inputField: typeof buf.isCursorOnInputField === 'function' && buf.isCursorOnInputField(),
-    listOwner: listRenderOwnerOf(buf)
+    listOwner: listRenderOwnerOf(buf),
+    // pager 是看板精華區開的（TermBuf.pagerContext）：footer 跟看板文章一樣，按鍵卻不通
+    pagerFromEssence: !!buf.pagerFromEssence
   };
 }
 

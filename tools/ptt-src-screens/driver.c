@@ -13,9 +13,10 @@
 //                水球、ofo＝一對一（UF_PAGER_OFO）。之後送 ^R 就是 upstream 的回水球畫面。
 // seed 檔（Big5，tab 分隔）：
 //   B <brdname> <class> <desc> <BM>                       開一個看板（之後的 A／N 屬於它）
-//   A <owner> <date> <recommend> <flags> <title>          一篇文章；flags: m=marked b=置底
+//   A <owner> <date> <recommend> <flags> <title>          一篇文章；flags: m=marked b=置底 g=收入文摘
 //   G <count> <owner> <title>                             批次 count 篇「<title> <i>」（無內文）
 //   N <text>                                              一列進板畫面（notes）
+//   E <owner> <title>                                     看板精華區的一個檔案項目
 //   F <brdname>                                           加進我的最愛
 //   L <owner> <date> <title>                              tester 信箱裡的一封信（只有列表）
 //   W <userid> <text>                                     一顆水球（依序收，只有 wmsg 入口用）
@@ -23,6 +24,7 @@
 #include <poll.h>
 #include <sys/select.h>
 #include <unistd.h>
+#include <utime.h>
 
 int ptt_main(int argc, char *argv[], char *envp[]);
 
@@ -206,8 +208,49 @@ static void seed(const char *path)
                 fprintf(af, "\nbody\n");
                 fclose(af);
             }
+            // 收入文摘：同 bbs.c#good_post——檔名首字換成 G 複製一份、filemode 清零後
+            // append 到看板的 fn_mandex（文摘模式的 .DIR，stuff.c#setbdir），原文掛 FILE_DIGEST。
+            if (strchr(f[4], 'g')) {
+                fileheader_t digest = fh;
+                digest.filename[0] = 'G';
+                digest.filemode = 0;
+                char gpath[PATHLEN];
+                setbfile(gpath, bname, digest.filename);
+                if (Copy(fpath, gpath) < 0) die("digest copy");
+                setbfile(dir, bname, fn_mandex);
+                if (append_record(dir, &digest, sizeof(digest)) < 0) die("append_record digest");
+                fh.filemode |= FILE_DIGEST;
+            }
             setbdir(dir, bname);
             if (append_record(dir, &fh, sizeof(fh)) < 0) die("append_record");
+        } else if (f[0][0] == 'E' && n >= 3) {
+            // 精華區一個檔案項目（man/boards/<c>/<板>/.DIR，bbs.c#b_man 的 setapath）。
+            // 標題照 a_copyitem 的慣例帶「◇ 」前綴，寫在 seed 裡。
+            if (!bid) die("E before B");
+            char apath[PATHLEN], fpath[PATHLEN], cmd[PATHLEN * 2];
+            setapath(apath, bname);
+            snprintf(cmd, sizeof(cmd), "mkdir -p %s", apath);
+            if (system(cmd)) die("mkdir man");
+            fileheader_t fh;
+            memset(&fh, 0, sizeof(fh));
+            snprintf(fh.filename, sizeof(fh.filename), "M.%d.A.%03X", 1790000000 + serial, serial);
+            serial++;
+            STRLCPY(fh.owner, f[1]);
+            STRLCPY(fh.title, f[2]);
+            snprintf(fpath, sizeof(fpath), "%s/%s", apath, fh.filename);
+            FILE *ef = fopen(fpath, "w");
+            if (!ef) die("man file");
+            fprintf(ef, STR_AUTHOR1 " %s (%s) " STR_POST1 " %s\n", fh.owner, fh.owner, bname);
+            fprintf(ef, "\xbc\xd0\xc3" "D: %s\n", fh.title);
+            fprintf(ef, "\xae\xc9\xb6\xa1: Sun Sep 27 12:00:00 2026\n");
+            fprintf(ef, "\nbody\n");
+            fclose(ef);
+            // 精華區列表的日期欄是檔案 mtime（announce.c 的 dasht → a_timestamp），不釘死的話
+            // fixture 每天都不一樣。
+            struct utimbuf ut = { FIXED_NOW, FIXED_NOW };
+            if (utime(fpath, &ut) < 0) die("utime man");
+            snprintf(dir, sizeof(dir), "%s/" FN_DIR, apath);
+            if (append_record(dir, &fh, sizeof(fh)) < 0) die("append_record man");
         } else if (f[0][0] == 'N' && n >= 2) {
             if (!bid) die("N before B");
             char fpath[PATHLEN];

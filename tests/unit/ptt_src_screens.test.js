@@ -65,7 +65,11 @@ import {
   parseBoardPromptFrame,
   resolvedBoardName,
 } from "../../src/js/board_search_bridge";
-import { isSubListTitle } from "../../src/js/aid_navigation";
+import { isSubListTitle, landedOnBoardList } from "../../src/js/aid_navigation";
+import digestFx from "./fixtures/ptt_src_screens/digest.json";
+import essenceFx from "./fixtures/ptt_src_screens/essence.json";
+import { aidToFn } from "../../src/js/aid_codec";
+import { parsePagerFooterContext } from "../../src/js/string_util";
 import { isSubListFooter } from "../../src/js/screen_captions";
 import { listModeOf } from "../../src/js/list_session";
 import {
@@ -100,8 +104,9 @@ import { isGoodbyeConfirm, isAnyKeyPause, logoutEscapeKey } from "../../src/js/l
 loadBig5Tables();
 
 // 場景的第 0..i 幀依序餵進同一個 TermBuf（每幀只是上一幀之後 server 多吐的位元組），
-// 拍下「名為 name 的那一幀畫完」的畫面。
-function screenAt(fx, name) {
+// 拍下「名為 name 的那一幀畫完」的畫面。opts.perFrame：每幀之後都 notify（跟 app 一樣
+// 每幀跑一次 setPageState）——要驗「前面某一幀留下的狀態」時用。
+function screenAt(fx, name, opts) {
   const idx = fx.frames.findIndex((f) => f.name === name);
   if (idx < 0) throw new Error(`fixture 沒有名為 ${name} 的幀`);
   const buf = new TermBuf(fx.cols, fx.rows);
@@ -113,7 +118,10 @@ function screenAt(fx, name) {
   });
   buf.useMouseBrowsing = false;
   const parser = new AnsiParser(buf);
-  for (let i = 0; i <= idx; ++i) parser.feed(fx.frames[i].bytes);
+  for (let i = 0; i <= idx; ++i) {
+    parser.feed(fx.frames[i].bytes);
+    if (opts && opts.perFrame && i < idx) buf.notify();
+  }
   buf.notify(); // updateCharAttr＋pageState
   clearTimeout(buf.timerUpdate);
   if (buf._settleTimer) clearTimeout(buf._settleTimer);
@@ -475,6 +483,105 @@ describe("upstream pttbbs 產的搜尋結果列表（系列文章）", () => {
   });
 });
 
+describe("upstream pttbbs 產的文摘（Tab，bbs.c#board_digest）", () => {
+  test("標題列「文摘《板》」、底列「文摘列表」⇒ 子列表，重新整理不接手（s 會離開文摘）", () => {
+    const { buf, rowTexts, facts } = screenAt(digestFx, "digest");
+    expect(rowTexts[0]).toMatch(/文摘《Gossip》/);
+    expect(isSubListTitle(rowTexts[0])).toBe(true);
+    expect(isSubListFooter(rowTexts[facts.rows - 1])).toBe(true);
+    expect(listModeOf(facts)).toBe("select");
+    expect(buf.pageState).toBe(2);
+    expect(refreshTargetFromFacts(facts, buf.pageState, {})).toBeNull();
+  });
+
+  test("文摘的編號是自己的：只有收進文摘的兩篇，從 1 重新編", () => {
+    const { rowTexts } = screenAt(digestFx, "digest");
+    const rows = rowTexts.filter((t) => parseListArticleNum(t) != null);
+    expect(rows.map((t) => [parseListArticleNum(t), subjectOfListText(t)])).toEqual([
+      [1, "[爆卦] 收進文摘的文章"],
+      [2, "[新聞] 第二篇文摘"],
+    ]);
+  });
+
+  test("文摘裡的 Q：AID 是 G 檔名（type 1），換得回 G.<時間>.A.<hex>", () => {
+    const { rowTexts } = screenAt(digestFx, "info");
+    const found = rowTexts.map(parsePostInfoAid).filter(Boolean);
+    expect(found).toHaveLength(1);
+    expect(found[0].board).toBe("Gossip");
+    expect(aidToFn(found[0].aid)).toMatch(/^G\.\d+\.A\.[0-9A-F]{3}$/);
+  });
+
+  test("文摘裡開的文章是 READING；← 回文摘（子列表），文摘上再 ← 回完整列表（不是離板）", () => {
+    const article = screenAt(digestFx, "article");
+    expect(article.buf.pageState).toBe(3);
+    expect(parsePagerFooterContext(article.rowTexts[article.facts.rows - 1])).toBe("reading");
+
+    const back = screenAt(digestFx, "back");
+    const backFacts = { ...back.facts, ...classifyListScreen(back.facts) };
+    expect(landedOnBoardList(backFacts, "gossip")).toEqual({ sub: true });
+
+    const plain = screenAt(digestFx, "plain");
+    const plainFacts = { ...plain.facts, ...classifyListScreen(plain.facts) };
+    expect(listModeOf(plain.facts)).toBe("plain");
+    expect(landedOnBoardList(plainFacts, "gossip")).toEqual({ sub: false });
+  });
+});
+
+describe("upstream pttbbs 產的看板精華區（z，bbs.c#b_man → announce.c#a_menu）", () => {
+  const PREFS = { enableLongPush: true, pushKeyOpensLongPush: true };
+
+  test("精華區選單：標題列【精華文章】、pageState 1；不是文章列表／看板列表，重新整理不接手", () => {
+    const { buf, rowTexts, facts } = screenAt(essenceFx, "menu", { perFrame: true });
+    expect(rowTexts[0]).toMatch(/^【精華文章】/);
+    expect(buf.pageState).toBe(1);
+    expect(classifyListScreen(facts).kind).not.toBe("clean-list");
+    expect(classifyBoardListScreen(facts)).toBeNull();
+    expect(refreshTargetFromFacts(searchGateFacts({ buf }), buf.pageState, {})).toBeNull();
+  });
+
+  // b_man 不 setutmpmode（只有主功能表的 Announce() 設 ANNOUNCE）⇒ currstat 還是 READING，
+  // more.c#common_pmore_footer_handler 照樣疊 pager_reading_cmds，footer 跟看板文章一字不差。
+  // 但這時 pager 回傳的 s／#／Q／X／y 都只會讓 announce_cmd_select 的迴圈 break 回精華區選單，
+  // 後面送的字全打進選單 ⇒ 只看 footer 會認錯。
+  test("從精華區開的文章：footer 跟 READING 一字不差，但不得當成看板文章", () => {
+    const { buf, rowTexts, facts } = screenAt(essenceFx, "article", { perFrame: true });
+    expect(buf.pageState).toBe(3);
+    expect(parsePagerFooterContext(rowTexts[facts.rows - 1])).toBe("reading");
+
+    const gate = searchGateFacts({ buf });
+    expect(
+      refreshTargetFromFacts(gate, buf.pageState, { articleBoard: "Gossip", listOpened: true }),
+    ).toBeNull();
+    expect(toolbarContextFromFacts(gate, buf.pageState, { articleBoard: "Gossip" })).toMatchObject({
+      push: false,
+      reply: false,
+      share: false,
+      threadNav: false,
+      end: true,
+    });
+    const push = pushGateFacts({ buf });
+    expect(shouldInterceptPushKey({ key: "X", prefs: PREFS, ...push })).toBe(false);
+    // aid_navigation（重新整理／返回／跳文）問的也是這個
+    expect(buf.pagerContext()).toBe("essence");
+  });
+
+  test("回到文章列表後再開的文章是看板文章（精華區的標記不殘留）", () => {
+    const list = screenAt(essenceFx, "list-again", { perFrame: true });
+    expect(list.buf.pagerFromEssence).toBe(false);
+
+    const { buf } = screenAt(digestFx, "article", { perFrame: true });
+    expect(buf.pagerContext()).toBe("reading");
+    const gate = searchGateFacts({ buf });
+    expect(refreshTargetFromFacts(gate, buf.pageState, { articleBoard: "Gossip" })).toEqual({
+      kind: "article",
+      board: "Gossip",
+    });
+    expect(toolbarContextFromFacts(gate, buf.pageState, {})).toMatchObject({ push: true, share: true });
+    const push = pushGateFacts({ buf });
+    expect(shouldInterceptPushKey({ key: "X", prefs: PREFS, ...push })).toBe(true);
+  });
+});
+
 describe("upstream pttbbs 產的文章資訊框（文章列表的 Q）", () => {
   const { rowTexts, facts } = screenAt(postInfoFx, "info");
 
@@ -526,8 +633,8 @@ describe("upstream pttbbs 產的看板列表（我的最愛）", () => {
     FAV.forEach((name, i) => {
       const t = rowTexts[3 + i];
       expect(parseBoardListName(t)).toBe(name);
-      // seed 的 Test／Notes 有文章、Gossip／Movie 沒有
-      expect(parseFavRow(t)).toMatchObject({ num: i + 1, name, unread: i < 2 });
+      // seed 的 Test／Notes／Gossip 有文章、Movie 沒有
+      expect(parseFavRow(t)).toMatchObject({ num: i + 1, name, unread: name !== "Movie" });
     });
     expect(parseFavRow(rowTexts[3]).desc).toBe("測試看板");
   });

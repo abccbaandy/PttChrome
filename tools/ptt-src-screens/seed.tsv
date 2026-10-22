@@ -16,6 +16,10 @@ G	50	ivan	[測試] 填滿一頁
 B	Mine	測試	自己的文章	sysop
 A	tester	10/06	0		[閒聊] 自己發的文
 B	Gossip	綜合	八卦	sysop
+A	judy	10/07	8	g	[爆卦] 收進文摘的文章
+A	kevin	10/08	0		[問卦] 沒收進文摘
+A	lucy	10/09	30	g	[新聞] 第二篇文摘
+E	judy	◇ [爆卦] 收進精華區的文章
 B	Movie	娛樂	電影	sysop
 F	Test
 F	Notes

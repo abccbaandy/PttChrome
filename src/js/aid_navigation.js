@@ -458,8 +458,11 @@ AidNavigation.prototype = {
   // 'reading' → s/# are live in this pager; anything else → escape preamble.
   // Deliberately single-directional (see string_util.parsePagerFooterContext):
   // 'unknown' (footer squeezed out) degrades to the SLOW path, never the fast one.
+  // 'essence'＝看板精華區開的文章（footer 跟 READING 一樣，見 TermBuf.pagerContext），
+  // 跟 'unknown' 不同的是不能被「列表好讀開的」證據升級成 'reading'。
   _pagerContext: function() {
     const buf = this._termBuf;
+    if (typeof buf.pagerContext === 'function') return buf.pagerContext();
     return parsePagerFooterContext(buf.getRowText(buf.rows - 1, 0, buf.cols));
   },
 
@@ -781,7 +784,8 @@ AidNavigation.prototype = {
     const listOpened = !!(ls && ls.currentAnchor && ls.currentAnchor());
     let context = this._pagerContext();
     if (context === 'unknown' && listOpened && status) context = 'reading';
-    // 站內信／精華區：s 與 # 都不在（more.c 依 currstat 擋掉），沒有可驗證的重開路。
+    // 站內信：s 與 # 都不在（more.c 依 currstat 擋掉）；看板精華區：footer 有，但按下去只會
+    // 退回精華區選單（'essence'）。都沒有可驗證的重開路。
     if (context !== 'reading') return false;
     // 閱讀位置與「在不在文末」都由閱讀紀錄量（好讀：已讀到文末且捲到底 2 列內；
     // 原生：狀態列 100%）。
@@ -1700,9 +1704,11 @@ AidNavigation.prototype = {
     });
   },
 
-  // 搜尋結果／文摘裡 # 被拒（read.c select_by_aid：MODE_SELECT 一律「此狀態下無法使用
-  // 搜尋文章代碼(AID)功能」），編號也是子列表自己的空間 ⇒ 先 ← 回完整列表。子列表上的 ←
-  // 是 read_cmd_quit 的「離開搜尋」分支（board_select＋游標留在同一篇的真實位置），
+  // 搜尋結果裡 # 被拒（read.c select_by_aid：MODE_SELECT 一律「此狀態下無法使用
+  // 搜尋文章代碼(AID)功能」）；文摘裡 # 不被拒，但找到一般文章時是塞一顆 Tab 切回完整列表
+  // 再落點（同函式的 MODE_DIGEST 分支），落地幀不好認。兩者的編號也都是子列表自己的空間
+  // ⇒ 一律先 ← 回完整列表。子列表上的 ← 是 read_cmd_quit 的「離開搜尋」分支
+  // （board_select＋游標留在同一篇的真實位置）或文摘的 board_digest（切回完整列表），
   // 不會離開看板；完整列表上的 ← 才是離板，所以只在認得出子列表時送。
   _enqueueLeaveSubList: function(run) {
     const self = this;

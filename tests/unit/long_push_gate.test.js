@@ -189,10 +189,24 @@ describe("pushGateFacts", () => {
       pageState: 3,
       lastRowText: READ_ROW,
       cursorOnInputField: false,
+      pagerFromEssence: false,
     });
     expect(buf.getRowText).toHaveBeenCalledWith(23, 0, 80);
     buf.isCursorOnInputField = () => true;
     expect(pushGateFacts({ buf }).cursorOnInputField).toBe(true);
+    buf.pagerFromEssence = true;
+    expect(pushGateFacts({ buf }).pagerFromEssence).toBe(true);
+  });
+
+  test("看板精華區開的文章（footer 一樣有推文）→ 不給長推文、不攔 X", () => {
+    const prefs = { enableLongPush: true, pushKeyOpensLongPush: true };
+    expect(longPushAvailable({ prefs, pageState: 3, lastRowText: READ_ROW })).toBe(true);
+    expect(
+      longPushAvailable({ prefs, pageState: 3, lastRowText: READ_ROW, pagerFromEssence: true }),
+    ).toBe(false);
+    expect(
+      shouldInterceptPushKey({ key: "X", prefs, pageState: 3, lastRowText: READ_ROW, pagerFromEssence: true }),
+    ).toBe(false);
   });
 
   // 假 ctx（既有測試）與尚未連線的 App 都會落在這裡：回 null ＝ 不攔截，

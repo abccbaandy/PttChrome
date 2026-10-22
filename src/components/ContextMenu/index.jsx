@@ -624,8 +624,10 @@ export const ContextMenu = ({ pttchrome }) => {
         quickSearchItems,
         quickSearchQuery,
         // 「複製本篇連結」只在文章畫面有意義（要按 Q 問文章資訊框）。pageState 3
-        // = READING，與 term_view 判「可切回好讀模式」用的是同一個值。
-        articleLinkEnabled: pttchrome.buf.pageState === 3,
+        // = READING，與 term_view 判「可切回好讀模式」用的是同一個值。看板精華區的
+        // 文章按 Q 只會退回精華區選單（TermBuf.pagerContext）⇒ 不給。
+        articleLinkEnabled:
+          pttchrome.buf.pageState === 3 && !pttchrome.buf.pagerFromEssence,
         // 圖片上傳與兩個小幫手的選項各自跟著自己的開關走（同樣是現讀）。
         imageUploadEnabled: !!prefs.enableImageUpload,
         inputHelperEnabled: !!prefs.enableInputHelper,
@@ -637,6 +639,7 @@ export const ContextMenu = ({ pttchrome }) => {
           prefs,
           pageState: pttchrome.buf.pageState,
           lastRowText,
+          pagerFromEssence: !!pttchrome.buf.pagerFromEssence,
         }),
         commandPaletteEnabled: !!prefs.enableCommandPalette,
         commandPaletteKey: prefs.commandPaletteKey || "",
