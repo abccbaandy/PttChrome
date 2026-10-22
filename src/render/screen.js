@@ -99,6 +99,21 @@ function shiftRowIndex(node, delta) {
   for (let i = 0; i < inner.length; ++i) bump(inner[i]);
 }
 
+// 列物件 → 它在 lines 裡的 index；出現不只一次的列物件不收（認不出哪一份是哪一列）。
+function uniqueLineIndex(lines) {
+  const at = new Map();
+  const dup = new Set();
+  for (let i = 0; i < lines.length; ++i) {
+    const line = lines[i];
+    if (!line || dup.has(line)) continue;
+    if (at.has(line)) {
+      at.delete(line);
+      dup.add(line);
+    } else at.set(line, i);
+  }
+  return at;
+}
+
 // 游標底色的「沒有」值。凍結成模組常數讓「已經是不上色」的重複呼叫在比較階段就
 // 被吃掉。col＝底色從第幾欄畫起（0＝整列），與可點區同源
 // （js/mouse_regions.clickableColStart）。
@@ -859,6 +874,17 @@ export class ScreenController {
     const rowIdentityStable = !!(
       this.props.enhance && this.props.enhance.rowIdentityStable
     );
+    // 列表視窗的「位移重用」：body 是整段序列，往上補頁（PTT 看板從最新那頁進、往上
+    // 捲是常態）在前面插入列、達上限 evict 頂端列，之後每一列都換了 index ⇒ 上面的
+    // index 條件全部不成立，舊做法是整份序列（≈300 張卡片）逐列重建＋序列化比對。
+    // 快照列（rowIdentityStable）的參考在別的 index 出現 ＝ 同一列搬家：沿用舊節點，
+    // 只把 srow／data-row 改成新 index（與反向讀取的 shiftRowIndex 同一招）。
+    // 只收上一幀**只出現一次**的列物件（共用的 blank 列會出現很多次，認不出誰是誰）；
+    // used 擋同一個舊節點被兩列拿走（index 路徑與位移路徑都登記）。
+    const movedFrom =
+      frameReuse && rowIdentityStable ? uniqueLineIndex(prevLines) : null;
+    const used = movedFrom ? new Set() : null;
+    if (movedFrom) this.syncRowIndex();
 
     const shape = frame.shape;
     const insFrom = shape ? shape.prefix : prevNodes ? prevNodes.length : 0;
@@ -917,12 +943,28 @@ export class ScreenController {
         oldNodes[row] &&
         prevLines[row] === lines[row] &&
         (frameHighlightRow === row) === (this.highlight.row === row) &&
-        (rowIdentityStable || (changedRows && !changedRows.has(row)))
+        (rowIdentityStable || (changedRows && !changedRows.has(row))) &&
+        !(used && used.has(oldNodes[row]))
       ) {
         // 沿用的節點會被下面的 keep 集合收錄 ⇒ 不會被誤 dispose
         // （守護：tests/unit/render_dispose.test.js）。
         nodes[row] = oldNodes[row];
+        if (used) used.add(oldNodes[row]);
         continue;
+      }
+      if (movedFrom) {
+        const p = movedFrom.get(lines[row]);
+        const node = p != null && p !== row ? oldNodes[p] : null;
+        if (
+          node &&
+          !used.has(node) &&
+          (frameHighlightRow === p) === (this.highlight.row === row)
+        ) {
+          shiftRowIndex(node, row - p);
+          nodes[row] = node;
+          used.add(node);
+          continue;
+        }
       }
       const built = this._buildRowNode(row, lines, annotations);
       if (built && ann && ann.reverseJunction)
@@ -930,11 +972,17 @@ export class ScreenController {
       // 原生／列表（非 stableRows）每幀都要重算，但畫面內容往往一字未變。序列化
       // 比對後沿用舊節點，可以省掉整列的 DOM 抽換——選取範圍與捲動位置因此不會
       // 每 30ms 被打斷一次。長頁走上面的參考快取，不必付這個序列化成本。
-      if (!stableRows && built && oldNodes[row]) {
+      if (
+        !stableRows &&
+        built &&
+        oldNodes[row] &&
+        !(used && used.has(oldNodes[row]))
+      ) {
         const have = oldNodes[row];
         if (have.outerHTML === built.outerHTML) {
           disposeNode(built);
           nodes[row] = have;
+          if (used) used.add(have);
           continue;
         }
       }

@@ -298,6 +298,27 @@ describe("ScreenController：只在 enhance.listCards 時畫卡片", () => {
     expect(m.container.querySelectorAll(".listCardBody.b2").length).toBe(0);
   });
 
+  // 往上補頁在序列前面插入卡片：已經在畫面上的卡片（可能正在手指下）不准被換掉。
+  test("卡片模式往上補頁：既有卡片同一個節點，列號跟著位移", () => {
+    const older = listRow("zed", "□ 更早的一篇");
+    const stable = (lines) => {
+      const p = props("article");
+      return { ...p, lines, enhance: { ...p.enhance, rowIdentityStable: true } };
+    };
+    const m = mountScreen(stable(LINES));
+    const card = (r) => m.container.querySelector(`.listBodyView > .listCard[srow="${r}"]`);
+    const before = [card(3), card(4)];
+    const grown = [...LINES.slice(0, 3), older, ...LINES.slice(3)];
+    m.update(stable(grown));
+    expect(card(4)).toBe(before[0]);
+    expect(card(5)).toBe(before[1]);
+    expect(card(4).querySelector(".listCardBody").getAttribute("data-row")).toBe("4");
+    const fresh = mountScreen(stable(grown));
+    expect(m.container.querySelector(".listBodyView").innerHTML).toBe(
+      fresh.container.querySelector(".listBodyView").innerHTML
+    );
+  });
+
   test("同一批列物件切換卡片模式 ⇒ 節點重建（listCards 進 annotationsKey）", () => {
     const m = mountScreen(props(undefined));
     m.update(props("article"));

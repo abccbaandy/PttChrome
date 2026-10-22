@@ -277,20 +277,73 @@ describe("rowIdentityStable（列表好讀視窗的快照列）", () => {
     expect(counters.rowRender).toBe(0);
   });
 
-  test("重用是 index-keyed：視窗捲動後每一列都要重畫", () => {
-    // 天真實作（「這個列物件上一幀出現過就重用」）會讓 data-row 與內容錯位。
+  // 列表 body 是整段序列：往上補頁在前面插列、達上限從頂端 evict，之後每一列都換了
+  // index。同一個列物件搬到別的 index ＝ 同一列搬家 ⇒ 沿用節點、只改 srow／data-row
+  // （天真地「出現過就重用」而不改列號，data-row 會跟內容錯位——對照組逐字比對擋它）。
+  // 舊做法整份序列逐列重建：≈300 張卡片每補一頁全換一次，手指下的卡片也跟著被換掉。
+  test("往上補頁（前面插入）：舊列沿用同一個節點，只建新插入的列", () => {
     const pool = listLines();
-    const s = mount(winProps(pool.slice(0, 4)));
+    const s = mount(winProps(pool.slice(2)));
+    const before = Array.from(s.container.children);
 
-    const shifted = pool.slice(1, 5);
+    counters.rowRender = 0;
+    s.update(winProps(pool.slice()));
+
+    expect(counters.rowRender).toBe(2);
+    const after = Array.from(s.container.children);
+    for (let i = 0; i < before.length; ++i) expect(after[i + 2]).toBe(before[i]);
+    expectMatchesFullRebuild(s, pool.slice(), {
+      listEasyReading: true,
+      easyReading: true,
+    });
+  });
+
+  test("頂端 evict（整段往上位移）：留下的列沿用節點，列號跟著改", () => {
+    const pool = listLines();
+    const s = mount(winProps(pool.slice(0, 5)));
+    const before = Array.from(s.container.children);
+
+    const shifted = pool.slice(1, 6);
     counters.rowRender = 0;
     s.update(winProps(shifted));
 
-    expect(counters.rowRender).toBe(4);
+    expect(counters.rowRender).toBe(1);
+    const after = Array.from(s.container.children);
+    for (let i = 0; i < 4; ++i) expect(after[i]).toBe(before[i + 1]);
     expectMatchesFullRebuild(s, shifted, {
       listEasyReading: true,
       easyReading: true,
     });
+  });
+
+  test("同一個列物件出現多次（共用的 blank 列）不走位移重用，畫面仍與全量重建相同", () => {
+    const pool = listLines();
+    const blank = row(seg(""));
+    const first = [pool[0], blank, pool[1], blank];
+    const s = mount(winProps(first));
+    const next = [blank, pool[0], blank, pool[1], blank];
+    s.update(winProps(next));
+    expectMatchesFullRebuild(s, next, {
+      listEasyReading: true,
+      easyReading: true,
+    });
+    // 一個節點只會出現在一個位置。
+    const kids = Array.from(s.container.children);
+    expect(new Set(kids).size).toBe(kids.length);
+  });
+
+  test("位移時游標底色跟著 index 走：搬到底色列的舊節點不沿用", () => {
+    const pool = listLines();
+    const s = mount(winProps(pool.slice(1)));
+    s.controller.setCursorHighlight({ row: 2, cls: "b2", col: 0 });
+    s.update(winProps(pool.slice()));
+    const lit = Array.from(s.container.querySelectorAll(".b2")).map((n) =>
+      n.closest("[srow]").getAttribute("srow"),
+    );
+    expect(lit).toEqual(["2"]);
+    const full = mount(winProps(pool.slice()));
+    full.controller.setCursorHighlight({ row: 2, cls: "b2", col: 0 });
+    expect(normalizeHtml(s.container)).toBe(normalizeHtml(full.container));
   });
 });
 
