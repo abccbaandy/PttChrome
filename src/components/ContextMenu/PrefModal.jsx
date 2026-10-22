@@ -768,7 +768,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableMessageInbox")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableMessageInbox")}
                 </Text>
                 <PrefCheckbox
@@ -778,7 +778,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_showStatusHints")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_showStatusHints")}
                 </Text>
                 <PrefCheckbox
@@ -797,7 +797,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableHelpMenuPopup")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableHelpMenuPopup")}
                 </Text>
                 <PrefCheckbox
@@ -816,7 +816,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableBoardListSmoothScroll")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableBoardListSmoothScroll")}
                 </Text>
                 <PrefCheckbox
@@ -827,7 +827,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableListNativeAutoResume")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableListNativeAutoResume")}
                 </Text>
                 <PrefCheckbox
@@ -838,7 +838,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_skipBoardEntryScreen")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_skipBoardEntryScreen")}
                 </Text>
                 <PrefCheckbox
@@ -849,7 +849,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableHomeDashboard")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableHomeDashboard")}
                 </Text>
                 <PrefCheckbox
@@ -860,7 +860,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableSplitReading")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableSplitReading")}
                 </Text>
                 <PrefCheckbox
@@ -871,7 +871,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableNextArticleCard")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableNextArticleCard")}
                 </Text>
                 <PrefCheckbox
@@ -881,7 +881,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableArticleTools")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableArticleTools")}
                 </Text>
                 <PrefCheckbox
@@ -891,7 +891,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_easyReadingBrowserFind")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_easyReadingBrowserFind")}
                 </Text>
                 <PrefCheckbox
@@ -1013,7 +1013,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_reconnectResume")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_reconnectResume")}
                 </Text>
                 <PrefCheckbox
@@ -1024,7 +1024,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_resumeLastPlace")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_resumeLastPlace")}
                 </Text>
                 <NumberInput
@@ -1753,7 +1753,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_markNewComments")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_markNewComments")}
                 </Text>
                 <PrefCheckbox
@@ -1763,7 +1763,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_listNewPushCount")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_listNewPushCount")}
                 </Text>
                 <PrefCheckbox
