@@ -121,6 +121,7 @@ export function buildListCard({
   listAuthor,
   listTitle,
   listRead,
+  listNewPush,
 }) {
   const layout = CARD_LAYOUT[kind] || CARD_LAYOUT.article;
   // 游標記號（labelListCursor 的半形 `>`，舊 server 的全形 ● 佔兩格）蓋在 cell 0：
@@ -134,11 +135,16 @@ export function buildListCard({
   const part = ([a, b, cls]) =>
     cardSegment(chars, Math.max(a, cursorCells), b, forceWidth, row, cls);
   // 游標欄兩行都有（第二行空白）⇒ 左欄上下對齊。
-  const line = (spec, cls, cursor) =>
+  // 讀過之後多了幾分（new_comments.listNewPush）：標題行最前面一個小徽章。
+  const badge =
+    listNewPush && layout === CARD_LAYOUT.article
+      ? listNewPushBadge(listNewPush)
+      : null;
+  const line = (spec, cls, cursor, lead) =>
     el("span", { class: cx("listCardLine", cls) }, [
       el("span", { class: "listCardCursor" }, cursor),
       el("span", { class: "listCardLead" }, spec.lead ? part(spec.lead) : null),
-      el("span", { class: "listCardMain" }, spec.main.map(part)),
+      el("span", { class: "listCardMain" }, [lead, ...spec.main.map(part)]),
       spec.end.length
         ? el(
             "span",
@@ -168,13 +174,18 @@ export function buildListCard({
           "data-row": row,
         },
         [
-          line(layout.title, "listCardTitle", cursorCells ? ">" : " "),
+          line(layout.title, "listCardTitle", cursorCells ? ">" : " ", badge),
           line(layout.meta, "listCardMeta", " "),
         ],
       ),
     ),
     slots: [],
   };
+}
+
+// 「+N」徽章：字放在 data-new-push，CSS ::after 畫（不會被選取／複製）。
+export function listNewPushBadge(n) {
+  return el("span", { class: "listNewPush", "data-new-push": "+" + n });
 }
 
 export default buildListCard;

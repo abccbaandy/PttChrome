@@ -167,15 +167,17 @@ describe("NewComments：讀完才記，重開時標第一則新推文", () => {
     show(withComments(3), true);
     expect(loadSeen(st, "test/1ABCDEFG")).toBeNull();
   });
-  test("pref 關 ⇒ 不標也不記", () => {
+  test("pref 關 ⇒ 不標也不記（列表 +N 也關著時；那邊開著就照記，見 list_new_push.test.js）", () => {
     const st = memStorage();
     saveSeen(st, "test/1ABCDEFG", 1, 1);
     prefOverride.markNewComments = false;
+    prefOverride.listNewPushCount = false;
     try {
       expect(makeCore(st).show(withComments(3), true)).toBeNull();
       expect(loadSeen(st, "test/1ABCDEFG")).toBe(1);
     } finally {
       delete prefOverride.markNewComments;
+      delete prefOverride.listNewPushCount;
     }
   });
 });

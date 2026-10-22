@@ -41,6 +41,9 @@ const EXEMPT = {
   // 首頁儀表板的「有新文章」＝PTT 的看板旗標（check_newpost 只看最新一篇讀了沒），與使用者的
   // 黑名單無關：讀最新一篇的已讀標記來鏡像 PTT，不挑文章給人看。
   "js/home_dashboard.js": "只讀最新一篇的已讀標記鏡像 PTT 的看板未讀旗標，不挑文章給人看",
+  // 列表的「+N」：只是在列表那一列上加註，被黑名單擋的列在標註層（screen_annotations 的
+  // 列表分支）先換成通知列／藏起來、continue，輪不到它。
+  "js/new_comments.js": "只替列表上那一列加註 +N，黑名單列在標註層先處理掉，不挑文章給人看",
 };
 
 test("黑名單比對只在 list_row_filter／comment_parse", () => {

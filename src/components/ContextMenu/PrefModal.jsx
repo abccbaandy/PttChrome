@@ -1747,6 +1747,16 @@ export const PrefModal = ({
                   {i18n("tooltip_markNewComments")}
                 </Text>
                 <PrefCheckbox
+                  name="listNewPushCount"
+                  checked={values.listNewPushCount}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_listNewPushCount")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed">
+                  {i18n("tooltip_listNewPushCount")}
+                </Text>
+                <PrefCheckbox
                   name="enableAutoFixUrl"
                   checked={values.enableAutoFixUrl}
                   onChange={onCheckboxChange}

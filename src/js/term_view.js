@@ -15,7 +15,7 @@ import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverla
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, listNumRange, isHiddenListRow, pinnedRowKey, MAX_LIST_ROWS, MAX_LIST_TOTAL_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
-import { BOARD_LIST, isArticleListTitleRow, rowHasTitle } from './screen_titles';
+import { BOARD_LIST, isArticleListTitleRow, rowHasTitle, parseBoardName } from './screen_titles';
 import { isArticleListFooter, isBoardListFooter } from './screen_captions';
 import { OWNER_BOARD_LIST } from './list_render_owner';
 import { readEffectivePrefs } from './pref_storage';
@@ -1075,6 +1075,13 @@ TermView.prototype = {
     // 「游標／#t 的錨點契約」）。呼叫端只餵 lines，判準在這裡一次算完 —— 七條分支
     // 各自宣告一個旗標的話，漏掉任何一條都是靜默畫錯。
     this._srowIsBufRow = paintedRowsAreBufRows(lines, this.buf.lines, this.buf.rows);
+    // 文章列表的「+N」：只在文章列表（pageState 2，看板列表 override 成 1）問。看板名取
+    // 活 buffer 的標題列；認不出（描述太長擠掉《板名》）⇒ 不標。
+    var listBadge = null;
+    var effPageState = enhanceOverrides && enhanceOverrides.pageState != null ? enhanceOverrides.pageState : this.buf.pageState;
+    if (effPageState === 2 && this.bbscore && this.bbscore.newComments &&
+        typeof this.bbscore.newComments.listBadge === 'function')
+      listBadge = this.bbscore.newComments.listBadge(parseBoardName(this.buf.getRowText(0, 0, this.buf.cols)));
     // Maintain the sticky board-list context (see constructor). LIST enters it,
     // MENU/READING leave it, everything else (overlay prompts, transient frames)
     // keeps the previous value so blacklist hiding persists across e.g. the v prompt.
@@ -1213,7 +1220,11 @@ TermView.prototype = {
               ? this.bbscore.newComments.rowFor(lines)
               : null,
           // 浮動工具面板的「跳到新推文」：引用必須穩定（App 指派一次）。不進 annotationsKey。
-          onJumpToNewComments: this.onJumpToNewComments
+          onJumpToNewComments: this.onJumpToNewComments,
+          // 文章列表的「+N」（new_comments.listBadge）：key 進 annotationsKey（紀錄或
+          // 看板一變就整批重算），fn 不進（逐列查表，列表分支才用）。
+          listNewPushKey: listBadge ? listBadge.key : null,
+          listNewPushFor: listBadge ? listBadge.fn : null
         },
         // List easy reading pins pageState:2 so computeAnnotations applies list
         // blacklist rules to the accumulated buffer even on transient frames.

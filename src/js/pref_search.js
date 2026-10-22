@@ -415,6 +415,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_markNewComments",
       tooltipKey: "tooltip_markNewComments",
     },
+    {
+      key: "listNewPushCount",
+      titleKey: "options_listNewPushCount",
+      tooltipKey: "tooltip_listNewPushCount",
+    },
     { key: "enableAutoFixUrl", titleKey: "options_enableAutoFixUrl" },
     { key: "enableXMentionLink", titleKey: "options_enableXMentionLink" },
     { key: "enableBareDomainLink", titleKey: "options_enableBareDomainLink" },
