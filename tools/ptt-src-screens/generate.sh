@@ -13,8 +13,10 @@ trap 'rm -rf "$OUT"' EXIT
 # upstream 的 sample conf 補上 PTT 實跑、sample 沒開的兩項：
 #   USE_PFTERM：vtuikit 無條件呼叫 pfterm 的 grayout_rect；
 #   USE_PMORE：沒開時 more() 是 more.c 的 minimore，狀態列「瀏覽 P.1」不是 PTT 的 pmore 狀態列。
+# 並關掉 sample 開著、PTT 沒開的 CONFIG_OLD_RECOMMEND（舊式推文：只有 →、沒有型別選單，推文列
+# 是「→ id:msg推 日期」）：PTT 實跑的是推／噓／→ 三種，開著的話推文場景測的是 PTT 不會送的畫面。
 cp "$P/sample/pttbbs.conf" "$P/pttbbs.conf" &&
-  printf '\n#define USE_PFTERM\n#define USE_PMORE\n' >> "$P/pttbbs.conf" || exit 2
+  printf '\n#define USE_PFTERM\n#define USE_PMORE\n#undef CONFIG_OLD_RECOMMEND\n' >> "$P/pttbbs.conf" || exit 2
 # clang＋-finput-charset=big5 才不會把 Big5 尾碼 0x5C 當跳脫字元（gcc 會弄壞字串）；
 # upstream HEAD 在 -Werror 下常有 unused 警告編不過，關掉 -Werror。
 X='EXT_CFLAGS=-finput-charset=big5 -fexec-charset=big5 -Wno-error'

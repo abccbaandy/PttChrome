@@ -22,7 +22,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 ```
 
 - 不架站、不登入、不需要 logind／Go 服務。`generate.sh` exit 2＝build／driver／場景問題（不是解析器壞）。
-- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs 3b8596b9）；nightly 換成 upstream HEAD 產的。
+- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs 8afe4a4）；nightly 換成 upstream HEAD 產的。
 - **輸出可重現**：driver 定義自己的 `time()`（執行檔的符號蓋過 libc），時間釘在 `FIXED_NOW`；同一份
   upstream 跑兩次 fixture 逐位元組相同。所以 fixture 有 diff＝upstream 改了畫面。
 
@@ -58,6 +58,8 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `article` | `read:Test`／24 | `1` `⏎` `⏎` | 跳號落點、pmore 狀態列 `parseStatusRow`、`classifyListScreen`→article、檔頭 `articleContextFromScreen` |
 | `article_prompts` | `read:Test`／24 | `1` `⏎` `⏎` `:` `2⏎` `/` `X` | pmore 的跳行／搜尋 prompt 畫在倒數第二列、狀態列照樣認得；游標在輸入欄、不在右下角；`shouldInterceptPushKey` 在 prompt 裡不攔 X |
 | `help_menu` | `read:Test`／24 | `h` | `parseHelpMenuScreen`（caption／頁數／游標／項目鍵）、⏎ 不 arm |
+| `article_help` | `read:Test`／24 | `1` `⏎` `⏎` `h` 空白 空白 `q` | 文章裡的 h 是同一套 psb 說明選單（caption「文章閱讀」、3 頁，有只有鍵沒名稱的項目）；不是文章、不 arm；q 回文章 |
+| `post_info` | `read:Test`／24 | `Q` | 文章資訊框：`parsePostInfoAid` 讀出 AID＋看板、底列 pressanykey；列表列不誤認 |
 | `board_note` | `read:Notes`／24 | 空白 | `boardNoteDecision`：進板畫面→skip、文章列表→landed |
 | `board_list` | `fav`／24 | — | `classifyBoardListScreen` fav＋engageable、`parseBoardListName`／`parseFavRow`、⏎ arm |
 | `main_menu` | `menu`／24 | — | `isHomeScreen`、`classifyListScreen`→menu |
@@ -65,8 +67,11 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `aid_miss` | `read:Test`／24 | `#` `1AAAAAAA⏎` 空白 `#` `!!⏎` | #AID 找不到／不合法兩句都中 `AID_NOT_FOUND_RE`，底列是 pressanykey（送空白）；列表與收掉後的列表不中 |
 | `board_list_refresh` | `fav`／24 | `/` `⏎` | 看板列表重整的兩步 expect（`isBoardKeywordPromptFrame`、回到列表）；prompt 幀游標不在列上 ⇒ 不接管 |
 | `main_menu_newmail` | `menu:newmail`／24 | — | 「你有新信件」：`newMailOnScreen`、`hasNewMail`、`appBarFromFacts` newMail；沒新信的 `main_menu` 三者皆 false |
-| `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`→inputPrompt（`→ tester:`） |
-| `push_flow` | `read:Test`／24 | `X` `hello⏎` `y⏎` `⏎` | 確定[y/N]→confirm、寫入後→other；開文的推文列帶時間戳不是輸入列，`detectIpLogged`→false |
+| `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`：型別選單→typeMenu（可噓）、`1`→inputPrompt（`推 tester:`）；`inputFieldWidth`＝maxlength（62-strlen(id)）、`pushMaxBytes` |
+| `push_flow` | `read:Test`／24 | `X` `1` `hello⏎` `y⏎` `⏎` | typeMenu→inputPrompt→確定[y/N] confirm、寫入後→other；開文的推文列帶時間戳不是輸入列，`detectIpLogged`→false |
+| `push_again` | `read:Test`／24 | `X` `1` `hello⏎` `y⏎` `X` `world⏎` | 長推文續推：90 秒內再按 X ⇒ 倒數第二列「時間太近」、沒有型別選單、直接 `→ tester:` 輸入列（欄寬同上） |
+| `push_owner` | `read:Mine`／24 | `X` | 推自己的文章：「作者本人」＋`→ tester:` 輸入列 |
+| `push_search` | `read:Test`／24 | `/` `Re⏎` `X` `1` | 系列文章裡推文：型別選單→輸入列（upstream 搜尋是 .DIR 過濾視圖，不印「◆您正在搜尋」警告） |
 | `search_prompts` | `read:Test`／24 | `/` ⏎ `a` ⏎ `Z` ⏎ `s` | `isSearchPromptFrame`：title／author／push／board 各自只認自己那一種（空白 ⏎ 取消回列表） |
 | `search_refine` | `read:Test`／24 | `/` `Re⏎` `/` | 搜尋結果裡再搜「增加條件 標題:」認成 title；結果列表本身不是 prompt |
 | `menu_search` | `menu`／24 | `s` | 主功能表的 s ⇒ 選看板 prompt（board） |
@@ -93,7 +98,9 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
 
 - sample conf 要補 PTT 實跑、sample 沒開的兩項：`USE_PFTERM`（vtuikit 無條件呼叫 `grayout_rect`）、
   `USE_PMORE`（沒開時 `more()` 是 `more.c` 的 minimore，狀態列「瀏覽 P.1」不是 PTT 的 pmore 狀態列，
-  文章場景會測錯東西）。
+  文章場景會測錯東西）。另外要**關掉** sample 開著、PTT 沒開的 `CONFIG_OLD_RECOMMEND`（舊式推文：按 X 直接
+  `→ id:`、沒有型別選單，推文列是「→ id:msg推 日期」）；開著時推文場景測的是 PTT 不會送的畫面，型別選單
+  從沒被驗過。
 - 必須 clang＋`-finput-charset=big5`（gcc 把 Big5 尾碼 0x5C 當跳脫字元，字串壞掉）；upstream HEAD 在
   `-Werror` 下常編不過 ⇒ `-Wno-error`。
 - 連結的物件檔：排除 `mbbsd.o`（用改名過的那份）、`vers.o`（重編）、`screen.o`（非 pfterm 畫面層），

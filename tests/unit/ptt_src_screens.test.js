@@ -6,7 +6,7 @@
 // 這裡的每一個位元組都是 upstream 程式碼吐的。
 //
 // fixture 由 tools/ptt-src-screens/generate.sh 重產（場景表 scenes.mjs、種子 seed.tsv）。
-// 平常跑 repo 裡那份（產自 pttbbs 3b8596b9）；nightly（.github/workflows/ptt-src-screens.yml）
+// 平常跑 repo 裡那份（產自 pttbbs 8afe4a4）；nightly（.github/workflows/ptt-src-screens.yml）
 // 換成 upstream HEAD 產的。
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
@@ -47,6 +47,13 @@ import { hasNewMail } from "../../src/js/home_dashboard";
 import { appBarFromFacts } from "../../src/js/mobile_app_bar";
 import { classifyPushScreen, detectIpLogged } from "../../src/js/push_screen";
 import pushFlowFx from "./fixtures/ptt_src_screens/push_flow.json";
+import pushAgainFx from "./fixtures/ptt_src_screens/push_again.json";
+import pushOwnerFx from "./fixtures/ptt_src_screens/push_owner.json";
+import pushSearchFx from "./fixtures/ptt_src_screens/push_search.json";
+import { pushMaxBytes } from "../../src/js/long_push";
+import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
+import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
+import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
 import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
 import { pushGateFacts, shouldInterceptPushKey } from "../../src/js/long_push_gate";
 import { isSearchPromptFrame, searchGateFacts } from "../../src/js/article_search";
@@ -284,6 +291,58 @@ describe("upstream pttbbs 產的說明選單（文章列表的 h）", () => {
   });
 });
 
+describe("upstream pttbbs 產的說明選單（文章裡的 h）", () => {
+  const at = (name) => screenAt(articleHelpFx, name);
+
+  test("同一套 psb 說明選單：caption「文章閱讀」、3 頁，第 1 頁游標在第一項", () => {
+    const menu = parseHelpMenuScreen(at("help").rowTexts);
+    expect(menu).not.toBeNull();
+    expect(menu.caption).toBe("文章閱讀");
+    expect(menu.page).toBe(1);
+    expect(menu.totalPages).toBe(3);
+    expect(menu.cursorIndex).toBe(0);
+  });
+
+  test("只有鍵、沒有名稱的項目（(Space)、(→)）也解析得出來，不會讓整頁認不出", () => {
+    const { items } = parseHelpMenuScreen(at("help").rowTexts);
+    expect(items.length).toBe(at("help").rowTexts.length - 3);
+    expect(items.some((it) => it.keys.includes("Space"))).toBe(true);
+    expect(items.find((it) => it.label === "推文").keys).toContain("X");
+  });
+
+  test("空白翻到第 2、3 頁（最後一頁只有一項）", () => {
+    expect(parseHelpMenuScreen(at("help-2").rowTexts)).toMatchObject({ page: 2, totalPages: 3 });
+    expect(parseHelpMenuScreen(at("help-3").rowTexts)).toMatchObject({ page: 3, totalPages: 3 });
+    expect(parseHelpMenuScreen(at("help-3").rowTexts).items).toHaveLength(1);
+  });
+
+  test("說明選單不是文章：沒有 pmore 狀態列、不判成 article；q 回到文章", () => {
+    const { rowTexts, facts } = at("help");
+    expect(parseStatusRow(rowTexts[facts.rows - 1])).toBeNull();
+    expect(classifyListScreen(facts).kind).not.toBe("article");
+    expect(boardEntryArms(rowTexts, "\r")).toBe(false);
+    const back = at("back");
+    expect(parseHelpMenuScreen(back.rowTexts)).toBeNull();
+    expect(classifyListScreen(back.facts).kind).toBe("article");
+  });
+});
+
+describe("upstream pttbbs 產的文章資訊框（文章列表的 Q）", () => {
+  const { rowTexts, facts } = screenAt(postInfoFx, "info");
+
+  test("框裡讀得出 AID 與看板；底列是 pressanykey", () => {
+    const found = rowTexts.map(parsePostInfoAid).filter(Boolean);
+    expect(found).toEqual([{ aid: expect.stringMatching(/^[0-9A-Za-z_-]{8}$/), board: "Test" }]);
+    expect(rowTexts[facts.rows - 1]).toMatch(/請按任意鍵繼續/);
+  });
+
+  test("列表列本身不會被當成文章資訊", () => {
+    const list = screenAt(postInfoFx, "list").rowTexts;
+    expect(list.map(parsePostInfoAid).filter(Boolean)).toEqual([]);
+    expect(list.map(parsePostInfoUrl).filter(Boolean)).toEqual([]);
+  });
+});
+
 describe("upstream pttbbs 產的進板畫面", () => {
   test("進板畫面（notes＋請按任意鍵繼續）判成要送鍵跳過", () => {
     const { rowTexts, facts } = screenAt(boardNoteFx, "note");
@@ -383,15 +442,60 @@ describe("upstream pttbbs 產的新信提示（menu.c#redraw_title）", () => {
   });
 });
 
-describe("upstream pttbbs 產的推文畫面（bbs.c#recommend）", () => {
-  test("文章列表按 X ⇒ 推文輸入列（→ 自己的 id:），打字後仍是輸入列", () => {
+// generate.sh 關掉 sample conf 的 CONFIG_OLD_RECOMMEND（PTT 實跑推／噓／→）。以前開著產的 fixture
+// 按 X 直接是「→ id:」，型別選單從沒被 upstream 畫面驗過。
+// 非 IP 板的輸入欄寬＝bbs.c#comment 的 maxlength：78-3-6-1-6 - strlen("tester")。
+const PUSH_FIELD = 62 - "tester".length;
+
+describe("upstream pttbbs 產的推文畫面（bbs.c#comment）", () => {
+  test("文章列表按 X ⇒ 型別選單（可噓），按 1 ⇒「推 自己的 id:」輸入列", () => {
     expect(classifyPushScreen(screenAt(pushFx, "push-1").rowTexts)).toEqual({
-      kind: "inputPrompt",
-      type: "→",
-      userId: "tester",
+      kind: "typeMenu",
+      booAllowed: true,
     });
-    expect(classifyPushScreen(screenAt(pushFx, "push-2").rowTexts)).toMatchObject({
+    const { buf, rowTexts } = screenAt(pushFx, "push-2");
+    expect(classifyPushScreen(rowTexts)).toEqual({ kind: "inputPrompt", type: "推", userId: "tester" });
+    expect(buf.inputFieldWidth()).toBe(PUSH_FIELD);
+    expect(pushMaxBytes({ fieldWidth: buf.inputFieldWidth() })).toBe(PUSH_FIELD - 1);
+  });
+
+  test("型別選單不是輸入欄（vkey 單鍵）⇒ 量不到欄寬", () => {
+    expect(screenAt(pushFx, "push-1").buf.inputFieldWidth()).toBeNull();
+  });
+});
+
+describe("upstream pttbbs 產的長推文續推（90 秒內再按 X）", () => {
+  const at = (name) => screenAt(pushAgainFx, name);
+
+  test("推完回到列表；再按 X 沒有型別選單，倒數第二列「時間太近」＋直接是 → 輸入列", () => {
+    expect(classifyPushScreen(at("done").rowTexts)).toEqual({ kind: "other" });
+    const { buf, rowTexts } = at("too-close");
+    expect(rowTexts[22]).toMatch(/^時間太近, 使用 → 加註方式/);
+    expect(classifyPushScreen(rowTexts)).toEqual({ kind: "inputPrompt", type: "→", userId: "tester" });
+    expect(buf.inputFieldWidth()).toBe(PUSH_FIELD);
+  });
+
+  test("續推的內容 ⏎ 一樣到確定[y/N]", () => {
+    expect(classifyPushScreen(at("confirm").rowTexts)).toEqual({ kind: "confirm" });
+  });
+});
+
+describe("upstream pttbbs 產的推自己的文章", () => {
+  test("沒有型別選單，倒數第二列「作者本人」＋→ 輸入列", () => {
+    const { buf, rowTexts } = screenAt(pushOwnerFx, "owner");
+    expect(rowTexts[22]).toMatch(/^作者本人, 使用 → 加註方式/);
+    expect(classifyPushScreen(rowTexts)).toEqual({ kind: "inputPrompt", type: "→", userId: "tester" });
+    expect(buf.inputFieldWidth()).toBe(PUSH_FIELD);
+  });
+});
+
+describe("upstream pttbbs 產的搜尋結果裡推文", () => {
+  test("系列文章列表按 X ⇒ 型別選單，1 ⇒ 推 輸入列", () => {
+    expect(classifyPushScreen(screenAt(pushSearchFx, "result").rowTexts)).toEqual({ kind: "other" });
+    expect(classifyPushScreen(screenAt(pushSearchFx, "menu").rowTexts)).toMatchObject({ kind: "typeMenu" });
+    expect(classifyPushScreen(screenAt(pushSearchFx, "input").rowTexts)).toEqual({
       kind: "inputPrompt",
+      type: "推",
       userId: "tester",
     });
   });
@@ -462,18 +566,19 @@ describe("upstream pttbbs 產的回水球畫面（一對一模式）", () => {
   });
 });
 
-describe("upstream pttbbs 產的推文流程（bbs.c#recommend 輸入 → 確認 → 寫入）", () => {
+describe("upstream pttbbs 產的推文流程（bbs.c#comment 型別 → 輸入 → 確認 → 寫入）", () => {
   const kind = (name) => classifyPushScreen(screenAt(pushFlowFx, name).rowTexts);
 
   test("打完內容 ⏎ ⇒ 確定[y/N]；y⏎ 之後離開推文畫面", () => {
-    expect(kind("input")).toMatchObject({ kind: "inputPrompt", userId: "tester" });
+    expect(kind("menu")).toMatchObject({ kind: "typeMenu" });
+    expect(kind("input")).toMatchObject({ kind: "inputPrompt", type: "推", userId: "tester" });
     expect(kind("confirm")).toEqual({ kind: "confirm" });
     expect(kind("done")).toEqual({ kind: "other" });
   });
 
   test("寫進文章的推文列帶時間戳 ⇒ 不是輸入列；Test 板不記 IP ⇒ detectIpLogged 為 false（不是 null）", () => {
     const { rowTexts } = screenAt(pushFlowFx, "article");
-    const row = rowTexts.find((t) => /^→ tester *:hello/.test(t));
+    const row = rowTexts.find((t) => /^推 tester *:hello/.test(t));
     expect(row).toBeTruthy();
     expect(classifyPushScreen([row])).toEqual({ kind: "other" });
     expect(detectIpLogged(rowTexts)).toBe(false);

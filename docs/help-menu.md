@@ -21,7 +21,7 @@ bottom sheet（手機）一次列出**全部頁**的指令，點一下＝執行�
 | 每頁項數 | `t_lines - 3`；起始 `curr = 0`（恆從第 1 頁開始） | 同上 |
 | 分頁對齊 | 鍵盤路徑 `base = (curr / rows) * rows`；唯一例外是 server 端滾輪 `base ± 1`（client 送 SGR 才有，pref `mouseServerReport` 預設關） | 同上 |
 | 執行 | Enter／→ 回傳 `items[curr].keys[0]`，`bbs_cmd_help` 把它當使用者按的鍵重新派送（`ctx->redispatch`） | `psb.c#bbs_cmd_help` |
-| 其餘鍵 | ↑↓（k/p/^P、j/n/^N）、PgUp/PgDn（±rows，夾在範圍內）、Home/`0`、End/`$`、`h`＝小天使、`q`/←＝離開；其他鍵忽略 | 同上 |
+| 其餘鍵 | ↑↓（k/p/^P、j/n/^N）、PgUp/PgDn（±rows，夾在範圍內；空白＝PgDn）、Home/`0`、End/`$`、`h`＝小天使、`q`/←＝離開；其他鍵忽略 | 同上 |
 | caption | 呼叫端給的（「我的最愛」「文章閱讀」…）⇒ row 0 開頭就是 `【我的最愛】`，**長得像看板列表標題** | `psb.c`、`more.c:166` |
 
 ## 流程（`HelpMenuController`，phase：idle／open／leaving／native）

@@ -31,7 +31,7 @@
   {
    "name": "push",
    "keys": "Z",
-   "bytes": "\u001b[24;1H·j´M±À¤å¼Æ°ª©ó¦h¤Öªº¤å³¹: \u001b[30;47m       \u001b[m\u001b[K\b\b\b\b\b\b\b"
+   "bytes": "\u001b[?2026h\u001b[24;1H·j´M±À¤å¼Æ°ª©ó¦h¤Ö (<0«h·j¼N¤å¼Æ) ªº¤å³¹: \u001b[30;47m       \u001b[m\u001b[K\b\b\b\b\b\b\b\u001b[?2026l"
   },
   {
    "name": null,
