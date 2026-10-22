@@ -929,6 +929,18 @@ export const en_US = {
   "tooltip_commandPaletteKey": {
     "message": "Click here, then press the key to use (an F key is recommended: PTT never receives F keys, so no PTT key is taken)"
   },
+  "options_paletteQuickBoards": {
+    "message": "Command palette lists recent boards and favorites"
+  },
+  "tooltip_paletteQuickBoards": {
+    "message": "Before you type anything, the command palette lists the boards you visited recently and your favorites; when you type the start of a board name, those boards come first. Available on the main menu, board lists and article lists."
+  },
+  "palette_recentBoard": {
+    "message": "Recently visited"
+  },
+  "palette_favoriteBoard": {
+    "message": "Favorites"
+  },
   "cmenu_commandPalette": {
     "message": "Command palette"
   },

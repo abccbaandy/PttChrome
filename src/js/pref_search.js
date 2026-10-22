@@ -171,6 +171,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_commandPaletteKey",
     },
     {
+      key: "paletteQuickBoards",
+      titleKey: "options_paletteQuickBoards",
+      tooltipKey: "tooltip_paletteQuickBoards",
+    },
+    {
       key: "refreshKeyIntercept",
       titleKey: "options_refreshKeyIntercept",
       tooltipKey: "tooltip_refreshKeyIntercept",

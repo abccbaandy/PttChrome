@@ -68,7 +68,10 @@ test.describe('指令面板（F4）', () => {
     await expect(paletteInput(page)).toBeFocused();
     expect(await page.evaluate(() => window.__f4Prevented)).toBe(true);
 
-    await page.keyboard.type('Test');
+    // 空白時先列最近去過的看板（這個列表的板，首頁儀表板進板就記下）。
+    await expect(page.locator('[data-palette-item="quick:test"]')).toBeVisible();
+    // 不用 Test：打的字等於最近去過的板名時，不再另列一個「前往看板」。
+    await page.keyboard.type('Gossiping');
     await expect(page.locator('[data-palette-item="board"]')).toBeVisible();
     await expect(page.locator('[data-palette-item="search:title"]')).toBeVisible();
     await page.keyboard.press('Escape');

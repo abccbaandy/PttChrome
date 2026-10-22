@@ -103,6 +103,8 @@ export const DEFAULT_PREFS = {
   // pager 都在用）。只在按下快捷鍵／點右鍵選單時才動 ⇒ 不在安全模式名單內。
   enableCommandPalette: true,
   commandPaletteKey: "F4",
+  // 指令面板空白時列出最近去過的看板與我的最愛、打板名開頭時排最前（command_palette.quickBoardItems）。
+  paletteQuickBoards: true,
   // 重新整理（docs/screen-refresh.md）：F5／⌘R 在看板列表、文章列表、文章裡改成
   // 重整 PTT 畫面（其他畫面照舊交給瀏覽器）。瀏覽器網址列旁的重新整理按鈕頁面攔不到。
   refreshKeyIntercept: true,

@@ -929,6 +929,9 @@ export const ContextMenu = ({ pttchrome }) => {
           !!pttchrome.deepLinkController && pttchrome.buf?.pageState === 3,
         back: !!pttchrome.aidNavigation?.canGoBack?.(),
         safeMode: !!prefs.nativeSafeMode,
+        quickBoards: prefs.paletteQuickBoards
+          ? pttchrome.homeDashboard?.quickBoards?.() || null
+          : null,
       },
     });
     return true;

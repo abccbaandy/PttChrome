@@ -145,6 +145,42 @@ test("↓ 移到下一項再 Enter；點一下也能執行", async () => {
   expect(pttchrome.aidNavigation.back).toHaveBeenCalledTimes(1);
 });
 
+// 主功能表（能選看板）＋首頁儀表板的現成資料 ⇒ 空白時先列最近／最愛的看板。
+const atMainMenu = (pttchrome) => {
+  pttchrome.buf = { pageState: 0, rows: 24, cols: 80, getRowText: (r) => (r === 0 ? "【主功能表】" : "") };
+  pttchrome.homeDashboard = {
+    quickBoards: () => ({ recent: ["C_Chat", "Stock"], favorites: [{ name: "Baseball", desc: "棒球" }] }),
+  };
+  return pttchrome;
+};
+
+test("最近／最愛的看板：空白時排最前，↓ Enter 前往剛剛的板", async () => {
+  const pttchrome = atMainMenu(makePttchrome());
+  mount(pttchrome);
+  openPalette(pttchrome);
+  await waitFor(() => expect(input()).not.toBeNull());
+  expect(itemIds().slice(0, 3)).toEqual(["quick:c_chat", "quick:stock", "quick:baseball"]);
+  const fav = document.querySelector('[data-palette-item="quick:baseball"]');
+  expect(fav.textContent).toContain("Baseball");
+  expect(fav.textContent).toContain("棒球");
+  key("ArrowDown");
+  key("Enter");
+  await waitFor(() => expect(pttchrome.commandQueue.enqueue).toHaveBeenCalled());
+  // 跟打板名一樣走看板搜尋的送出：第一步開 s prompt，板名記進搜尋紀錄（search_history）。
+  expect(pttchrome.commandQueue.enqueue.mock.calls[0][0]).toMatchObject({ keys: "s", kind: "search-open" });
+  const stored = Object.keys(window.localStorage).map((k) => window.localStorage.getItem(k)).join("\n");
+  expect(stored).toContain("Stock");
+  expect(stored).not.toContain("C_Chat");
+});
+
+test("最近／最愛的看板：開關關掉就不列", async () => {
+  const pttchrome = atMainMenu(makePttchrome());
+  mount(pttchrome, { paletteQuickBoards: false });
+  openPalette(pttchrome);
+  await waitFor(() => expect(input()).not.toBeNull());
+  expect(itemIds().some((id) => id.startsWith("quick:"))).toBe(false);
+});
+
 test("設定項 ⇒ 開設定頁並跳到那一項", async () => {
   const pttchrome = makePttchrome();
   mount(pttchrome);
