@@ -64,7 +64,11 @@ export const HomeDashboard = ({ pttchrome }) => {
   }, [pttchrome]);
 
   useLayoutEffect(() => {
-    if (rootRef.current && home && typeof home.applyPendingViewport === "function")
+    if (
+      rootRef.current &&
+      home &&
+      typeof home.applyPendingViewport === "function"
+    )
       home.applyPendingViewport(rootRef.current);
   }, [home, state]);
 
@@ -121,22 +125,28 @@ export const HomeDashboard = ({ pttchrome }) => {
       onClick={swallow}
     >
       <div className="homeInner">
-        <div className="homeHeader">
-          <h2 className="homeTitle">{i18n("home_title")}</h2>
-          {state.newMail && (
-            <Button
-              className="homeMail"
-              data-home-mail
-              onClick={() => home.openMail()}
-            >
-              {i18n("home_newMail")} · {i18n("home_openMail")}
-            </Button>
-          )}
-          <span className="homeSpacer" />
-          <Button data-home-native onClick={() => home.dismiss()}>
-            {i18n("home_native")}
-          </Button>
-        </div>
+        {/* 手機：標題「首頁」與「原生主選單」都在 App Bar（MobileAppBar），這一行只在有新信時
+          出現（放「開信箱」鈕）。桌機照舊。 */}
+        {(!mobile || state.newMail) && (
+          <div className="homeHeader">
+            {!mobile && <h2 className="homeTitle">{i18n("home_title")}</h2>}
+            {state.newMail && (
+              <Button
+                className="homeMail"
+                data-home-mail
+                onClick={() => home.openMail()}
+              >
+                {i18n("home_newMail")} · {i18n("home_openMail")}
+              </Button>
+            )}
+            <span className="homeSpacer" />
+            {!mobile && (
+              <Button data-home-native onClick={() => home.dismiss()}>
+                {i18n("home_native")}
+              </Button>
+            )}
+          </div>
+        )}
         <section className="homeSection">
           <div className="homeSectionHead">
             <h3>{i18n("home_favorites")}</h3>

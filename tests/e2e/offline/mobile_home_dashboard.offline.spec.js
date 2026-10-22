@@ -92,6 +92,31 @@ test.describe('手機首頁儀表板（離線重放）', () => {
     await answerFetch(page);
   });
 
+  // 手機的標題只有一行：App Bar 寫「首頁」、「原生主選單」在 App Bar 右邊，面板不再畫大標題。
+  test('App Bar 標題＝首頁；「原生主選單」在 App Bar，tap 收起面板、不送鍵', async ({ page }) => {
+    await bootHome(page);
+    await drawMainMenu(page);
+    await answerFetch(page);
+    const label = (k) => page.evaluate((key) => window.__i18n(key), k);
+    await expect(page.locator('#mobileAppBar [data-key="__title"]')).toHaveText(await label('home_title'));
+    await expect(page.locator('#homeDashboard .homeTitle')).toHaveCount(0);
+    await expect(page.locator('#homeDashboard [data-home-native]')).toHaveCount(0);
+    // 第一排卡片緊接在 App Bar 下面（中間不再隔一行標題）：只隔「我的最愛」那一行。
+    const gap = await page.evaluate(() => {
+      const bar = document.getElementById('mobileAppBar').getBoundingClientRect();
+      const card = document.querySelector('[data-home-board]').getBoundingClientRect();
+      return card.top - bar.bottom;
+    });
+    expect(gap).toBeLessThan(80);
+    const native = page.locator('#mobileAppBar [data-key="__homeNative"]');
+    await expect(native).toHaveText(await label('home_native'));
+    await native.tap();
+    await expect(dashboard(page)).toHaveCount(0);
+    await expect(page.locator('#mobileAppBar [data-key="__homeNative"]')).toHaveCount(0);
+    await expect(page.locator('#mobileAppBar [data-key="__title"]')).toHaveText('主功能表');
+    expect(await takeCapture(page)).toBe('');
+  });
+
   test('點 App Bar 標題 ⇒ 面板捲回頂端，不送鍵', async ({ page }) => {
     await bootHome(page);
     await drawMainMenu(page);

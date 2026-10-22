@@ -68,8 +68,33 @@ test("標題／副標／新信件跟著畫面走；空標題顯示預設名", ()
   expect(bar().querySelector('[data-key="__newMail"]')).not.toBeNull();
 });
 
-test("沒有任何按鈕（不放返回鍵：返回交給系統手勢）", () => {
+test("沒有返回鍵（返回交給系統手勢）：首頁以外沒有任何按鈕", () => {
   render(<MobileAppBar pttchrome={makeCore()} />);
+  expect(bar().querySelectorAll("button")).toHaveLength(0);
+});
+
+// 首頁儀表板開著：標題換成「首頁」（不是 row 0 的「主功能表」）、右邊一顆「原生主選單」，
+// 點下去收起面板；面板收起 ⇒ 標題與按鈕都回到原本的樣子。
+test("首頁儀表板開著 ⇒ 標題＝首頁、右邊有「原生主選單」，點了收起面板", () => {
+  const core = makeCore();
+  const homeListeners = new Set();
+  core.homeDashboard = {
+    onChange(fn) {
+      homeListeners.add(fn);
+      fn({ visible: true });
+      return () => homeListeners.delete(fn);
+    },
+    dismiss: vi.fn(),
+  };
+  render(<MobileAppBar pttchrome={core} />);
+  expect(bar().querySelector('[data-key="__title"]').textContent).toBe(i18n("home_title"));
+  expect(bar().getAttribute("data-kind")).toBe("home");
+  const native = bar().querySelector('[data-key="__homeNative"]');
+  expect(native.textContent).toBe(i18n("home_native"));
+  fireEvent.click(native);
+  expect(core.homeDashboard.dismiss).toHaveBeenCalledTimes(1);
+  act(() => homeListeners.forEach((fn) => fn({ visible: false })));
+  expect(bar().querySelector('[data-key="__title"]').textContent).toBe("主功能表");
   expect(bar().querySelectorAll("button")).toHaveLength(0);
 });
 

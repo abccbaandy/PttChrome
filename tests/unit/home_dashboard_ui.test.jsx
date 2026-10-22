@@ -148,6 +148,18 @@ test("手機：讓開 App Bar 與底部工具列，不顯示桌機打字提示",
   expect(window.innerHeight - rect.bottom).toBeGreaterThanOrEqual(48);
 });
 
+test("手機：不畫大標題與「原生主選單」（都在 App Bar）；有新信才留一行放「開信箱」", () => {
+  const home = fakeHome({});
+  const { unmount } = render(<HomeDashboard pttchrome={{ homeDashboard: home, mobile: true }} />);
+  expect(root().querySelector(".homeTitle")).toBeNull();
+  expect(root().querySelector("[data-home-native]")).toBeNull();
+  expect(root().querySelector(".homeHeader")).toBeNull();
+  unmount();
+  render(<HomeDashboard pttchrome={{ homeDashboard: fakeHome({ newMail: true }), mobile: true }} />);
+  expect(root().querySelector(".homeHeader [data-home-mail]")).not.toBeNull();
+  expect(root().querySelector(".homeTitle")).toBeNull();
+});
+
 // ── 閱讀紀錄：真控制器＋真版面 ─────────────────────────────────────────────────
 const ROWS = 24;
 function menuFrame() {

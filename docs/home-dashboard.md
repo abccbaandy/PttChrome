@@ -16,6 +16,7 @@
 - **逛完看板回來的「有新文章」不重抓**（`newestArticleUnread`）：看板的未讀旗標是 `board.c#check_newpost` ＝ `brc_unread_time(lastposttime)`，`lastposttime` 是 `.DIR` 最後一筆（最新一篇、不含置底）的建立時間（`cache.c#setbtotal`）⇒ **只看最新一篇讀了沒**，與讀過其他哪幾篇無關。文章列表 settle 時，最新一篇看得出來（它下面接置底 ★ 或空白列）就讀 cell 8 的已讀標記（`bbs.c#readdoent`）：`+`／`M` 未讀；` `／`m`／`~`／`=`／`s`／`*` 已讀（`check_newpost` 傳 modified 0，有新推文不算）；`S`／`#`（分不出 1／2）、`!`／`D`（蓋掉未讀資訊）、刪除文、最新一篇剛好在條目區最後一列、搜尋結果／文摘 ⇒ 看不出來，不動。只在那個板是我的最愛時才讀滿整頁（每次 settle 都跑）。使用者自己開原生我的最愛時照抄那一頁的 ˇ（`withFavPageUnread`，只改已有的板）。兩者都寫回快取、一個 byte 都不送。
 - **列的讀法**（`parseFavRow`，board.c#brdlist_renderer）：編號（`%6d`／舊版 `%7d`）→ 未讀「ˇ」→ 板名 → 類別 → `◎Σ☆` → 中文敘述 34 格。未讀看「編號與板名之間有沒有 ˇ」，不靠欄位位置。分隔線、目錄、禁入不收。按 `y` 列全部看板（variant `all`）不收；按 `c` 的新文章模式（row2「總數」）只收那一頁、不翻。
 - **進看板**＝搜尋彈窗的「前往看板」同一條（`submitSearch(core, 'board', name)`，`s<板>⏎`，閱讀紀錄 `board-search`）。**開信箱**＝`Ctrl+Z m`。
+- **手機**：標題「首頁」與「原生主選單」都放在 App Bar（`MobileAppBar` 訂 `homeDashboard.onChange`，面板開著就把標題換成「首頁」、右邊多一顆「原生主選單」）；面板自己不再畫那一行大標題，只有新信時留一行放「開信箱」。理由：App Bar 寫「主功能表」、底下又一行「首頁」，兩行標題吃掉一排卡片。桌機照舊。
 - 閱讀紀錄：面板的捲動位置是 `home` 紀錄（`readingPosition`：面板頂端那張卡片＋離上緣幾 px，只存身分不存像素）。從面板出發的交易——點看板／最近看板（`board-search`）、抓最愛（`home-favorites`）、開信箱（`home-mail`）——不論結果都交回待還原錨，面板下一次畫出來（或更新完重畫）時由外殼的 `useLayoutEffect` 呼叫 `applyPendingViewport` 套用；那張卡片不在了就不動。按「原生主選單」或打字收起面板 ⇒ 作廢。debug 錄製檔 `homeDashboard.viewportRestore`（saved／applied／dropped）。
 - 快取：`pttchrome.homeFavorites.v1`（清單＋時間，跨重整保留只為了先畫出來；已讀標記只對這次登入有意義，所以「新鮮」只算這一頁抓過的）、`pttchrome.homeRecentBoards.v1`（最近看板，文章列表 settle 時記）。
 - 滑鼠：面板在 `#BBSWindow` 外。App 的滑鼠入口在 window（滾輪是 capture），`_onUploadLayer` 認 `#homeDashboard` 放過；按鈕 mousedown `preventDefault`（不搶 `#t` 焦點）＋ stopPropagation。
@@ -23,4 +24,4 @@
 
 ## 測試
 
-unit：`home_dashboard.test.js`（主功能表指紋、列的讀法、最新一篇的已讀標記、送鍵序列與翻頁／夾回、收起與自動抓時機、逛完看板更新未讀、更新鈕接 screen_refresh）、`home_dashboard_ui.test.jsx`（外殼照 state 畫、按鈕接到控制器、不搶焦點、滑鼠不外洩、真版面的捲動位置還原）、`screen_refresh.test.js`／`mobile_toolbar.test.js`（`home` target）、`reading_record.test.js`（`home` 欄）。offline e2e：`home_dashboard.offline.spec.js`（自動抓 → 卡片、點卡片送 `s`、真鍵盤打字收起且鍵照送、原生主選單、pref 關、逛完看板不再標有新文章、F5 重抓）、`mobile_home_dashboard.offline.spec.js`（在卡片上下拉重抓、工具列重整、捲到中段點看板回來捲回原處）。
+unit：`home_dashboard.test.js`（主功能表指紋、列的讀法、最新一篇的已讀標記、送鍵序列與翻頁／夾回、收起與自動抓時機、逛完看板更新未讀、更新鈕接 screen_refresh）、`home_dashboard_ui.test.jsx`（外殼照 state 畫、按鈕接到控制器、不搶焦點、滑鼠不外洩、真版面的捲動位置還原）、`screen_refresh.test.js`／`mobile_toolbar.test.js`（`home` target）、`reading_record.test.js`（`home` 欄）。offline e2e：`home_dashboard.offline.spec.js`（自動抓 → 卡片、點卡片送 `s`、真鍵盤打字收起且鍵照送、原生主選單、pref 關、逛完看板不再標有新文章、F5 重抓）、`mobile_home_dashboard.offline.spec.js`（在卡片上下拉重抓、工具列重整、捲到中段點看板回來捲回原處、App Bar 標題＝首頁且「原生主選單」在 App Bar）。

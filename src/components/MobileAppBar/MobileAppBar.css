@@ -91,6 +91,25 @@
   }
 }
 
+/* App Bar 右邊的文字鈕（首頁的「原生主選單」）。 */
+.mobileAppBarAction {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid #555;
+  border-radius: 16px;
+  background: transparent;
+  color: #ddd;
+  font: inherit;
+  font-size: 13px;
+  line-height: 22px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobileAppBarAction:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .mobileAppBarBadge {
   flex: none;
   padding: 2px 8px;
