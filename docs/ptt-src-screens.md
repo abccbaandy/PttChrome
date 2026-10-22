@@ -42,7 +42,8 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 
 `B` 開看板（之後的 A／G／N 屬於它）、`A` 一篇文章（flags `m` 標記、`b` 置底）、`G <count> <owner> <title>`
 批次產生、`N` 一列進板畫面、`F` 加進我的最愛、`W <userid> <text>` 一顆水球（只有 `wmsg` 入口會送進
-`currutmp`，其他場景的畫面不受影響）。格式細節在 `driver.c` 檔頭。
+`currutmp`，其他場景的畫面不受影響）、`L <owner> <date> <title>` tester 信箱裡的一封信（只有列表）。
+格式細節在 `driver.c` 檔頭。
 
 - **置底**：upstream 現行的置底是 `boardheader_t.bottom[]` 裡的 AID 參照（指回 `.DIR` 裡掛
   `FILE_BOTTOM` 的原文，`common/bbs/cache.c#resolve_board_bottoms`），列表尾端另畫一列 ★；原文仍以
@@ -76,6 +77,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `search_prompts` | `read:Test`／24 | `/` ⏎ `a` ⏎ `Z` ⏎ `s` | `isSearchPromptFrame`：title／author／push／board 各自只認自己那一種（空白 ⏎ 取消回列表） |
 | `search_refine` | `read:Test`／24 | `/` `Re⏎` `/` | 搜尋結果裡再搜「增加條件 標題:」認成 title；結果列表本身不是 prompt，是子列表（`isSubListTitle`／`isSubListFooter`／`listModeOf` select） |
 | `menu_search` | `menu`／24 | `s` | 主功能表的 s ⇒ 選看板 prompt（board） |
+| `mail_list` | `menu`／24 | `^Z m` | 信件列表：caption「信件列表」⇒ 列表好讀／看板列表不接管；首頁儀表板「新信」的落地（離開主功能表）。表頭右側綠色「(大小:N篇)」讓 row 2 不是單色 ⇒ `pageState` 不是 2（新舊版都一樣，未改） |
 | `editor` | `read:Mine`／24 | `E` | 編輯器底列「編輯文章」＋狀態框 ⇒ `pageState` 6；`image_upload.decideInsertMode`：編輯器／推文內容列送字，型別選單／確定／列表／文章走剪貼簿 |
 | `board_complete` | `menu`／24 | `s` `M` 空白 `x` `o` 空白 | 選看板自動完成：`parseBoardPromptFrame` 讀輸入欄／候選（依板名排序）、被拒的字輸入欄不變（`boardQueryResult` rejected）、中間幀的舊清單、唯一補完 `resolvedBoardName` |
 | `mark_read_prompt` | `read:Test`／24 | `v` | 文章列表 v 的「設定所有文章 …」prompt（`markReadPromptShown`）；是輸入欄 ⇒ 逃生送 ^C |
@@ -110,6 +112,8 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   以及**任何自帶 `main` 的物件**（`nm` 偵測；upstream 的 `test_*.o`／`testsz.o` 這類小程式，新增的也自動排除）。
 - driver 要先 `init_io()`（否則 pfterm 沒輸出緩衝）、`currboard` 先清空再 `enter_board`（`brc_initial_board`
   同名會走捷徑不設 `currbid`）。
+- driver 要設 `is_login_ready = 1`（登入流程最後才設）：沒有它 Ctrl+Z 快速切換（`menu.c#ZA_Select`）、
+  Ctrl+U 等全域鍵一律不理，^Z m 會變成「主功能表游標移到 (M)ail」。
 - driver.c 本身是 UTF-8：要寫 Big5 字串用跳脫序列，且拆開寫（`"\xc3" "D"`，否則 `\xc3D` 被吃成一個跳脫）。
 
 upstream 再弄壞 build（新的必要 conf、新的需要排除的物件）時 generate 會紅（exit 2）：修法補進

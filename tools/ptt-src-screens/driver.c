@@ -17,6 +17,7 @@
 //   G <count> <owner> <title>                             批次 count 篇「<title> <i>」（無內文）
 //   N <text>                                              一列進板畫面（notes）
 //   F <brdname>                                           加進我的最愛
+//   L <owner> <date> <title>                              tester 信箱裡的一封信（只有列表）
 //   W <userid> <text>                                     一顆水球（依序收，只有 wmsg 入口用）
 #include "bbs.h"
 #include <poll.h>
@@ -221,6 +222,17 @@ static void seed(const char *path)
             if (fav_count >= MAX_FAV) die("too many favs");
             STRLCPY(fav_names[fav_count], f[1]);
             fav_count++;
+        } else if (f[0][0] == 'L' && n >= 4) {
+            // 一封信（tester 的信箱 .DIR，只要列表畫得出來，不寫信件內容）。
+            fileheader_t fh;
+            memset(&fh, 0, sizeof(fh));
+            snprintf(fh.filename, sizeof(fh.filename), "M.%d.A.%03X", 1790000000 + serial, serial);
+            serial++;
+            STRLCPY(fh.owner, f[1]);
+            STRLCPY(fh.date, f[2]);
+            STRLCPY(fh.title, f[3]);
+            sethomedir(dir, "tester");
+            if (append_record(dir, &fh, sizeof(fh)) < 0) die("append_record mail");
         } else if (f[0][0] == 'W' && n >= 3) {
             if (wb_count >= MAX_WB) die("too many waterballs");
             STRLCPY(wb_from[wb_count], f[1]);
@@ -253,7 +265,10 @@ int main(int argc, char *argv[])
     currutmp = &SHM->uinfo[0];
     STRLCPY(pwcuser.userid, "tester");
     STRLCPY(currutmp->userid, "tester");
-    pwcuser.userlevel = PERM_BASIC | PERM_CHAT | PERM_PAGE | PERM_POST | PERM_LOGINOK;
+    pwcuser.userlevel = PERM_BASIC | PERM_CHAT | PERM_PAGE | PERM_POST | PERM_LOGINOK | PERM_READMAIL;
+    // 登入流程走完的旗標（mbbsd.c#user_login 最後才設）：Ctrl+Z 快速切換（menu.c#ZA_Select）、
+    // Ctrl+U 等全域鍵沒有它一律不理。
+    is_login_ready = 1;
     currutmp->pid = getpid();
     now = FIXED_NOW;
     login_start_time = FIXED_NOW;

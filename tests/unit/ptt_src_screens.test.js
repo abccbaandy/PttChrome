@@ -57,6 +57,8 @@ import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
 import articlePrefFx from "./fixtures/ptt_src_screens/article_pref.json";
 import boardCompleteFx from "./fixtures/ptt_src_screens/board_complete.json";
 import editorFx from "./fixtures/ptt_src_screens/editor.json";
+import mailListFx from "./fixtures/ptt_src_screens/mail_list.json";
+import { footerCaption, isArticleListFooter, MAIL_LIST_CAPTIONS } from "../../src/js/screen_captions";
 import { decideInsertMode } from "../../src/js/image_upload";
 import {
   boardQueryResult,
@@ -370,6 +372,23 @@ describe("upstream pttbbs 產的 pmore 設定頁（o 完整設定、\\ 快速設
       const { rowTexts, facts } = screenAt(articlePrefFx, name);
       expect(parseStatusRow(rowTexts[facts.rows - 1]), name).not.toBeNull();
     }
+  });
+});
+
+describe("upstream pttbbs 產的信件列表（主功能表 Ctrl+Z m）", () => {
+  const { rowTexts, facts } = screenAt(mailListFx, "mail");
+
+  test("底列 caption「信件列表」：不是文章列表、也不是看板列表 ⇒ 列表好讀／看板列表都不接管", () => {
+    expect(footerCaption(rowTexts[facts.rows - 1])).toBe("信件列表");
+    expect(MAIL_LIST_CAPTIONS).toContain(footerCaption(rowTexts[facts.rows - 1]));
+    expect(isArticleListFooter(rowTexts[facts.rows - 1])).toBe(false);
+    expect(classifyListScreen(facts).kind).not.toBe("clean-list");
+    expect(classifyBoardListScreen(facts)).toBeNull();
+  });
+
+  test("首頁儀表板的「新信」落地判準：已離開主功能表", () => {
+    expect(isHomeScreen(screenAt(mailListFx, "menu").facts)).toBe(true);
+    expect(isHomeScreen(facts)).toBe(false);
   });
 });
 

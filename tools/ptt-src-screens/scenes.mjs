@@ -276,6 +276,15 @@ export const SCENES = [
     steps: [{ name: 'menu' }, { keys: 's', name: 'board' }],
   },
   {
+    // 主功能表 Ctrl+Z m（menu.c#ZA_Select 的信箱）：信件列表。caption「信件列表」⇒ 列表好讀不得接管
+    // （classifyListScreen 只認文章列表 caption）。首頁儀表板的「新信」走這條。
+    file: 'mail_list',
+    entry: 'menu',
+    rows: 24,
+    // ^Z 本身不畫東西（等第二鍵），所以跟 m 一起送（同 home_dashboard 的 ZA_MAIL）。
+    steps: [{ name: 'menu' }, { keys: '\x1am', name: 'mail' }],
+  },
+  {
     // 編輯器（edit.c）：在自己的文章上按 E ⇒ vedit，底列「 編輯文章 」caption＋右側狀態框
     // （插入／取代、旗標、行:欄）。term_buf.setPageState 靠它認 pageState 6。
     file: 'editor',
