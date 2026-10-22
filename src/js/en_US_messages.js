@@ -911,6 +911,12 @@ export const en_US = {
   "tooltip_reconnectResume": {
     "message": "After the connection drops and you log in again, automatically go back to the article or article list you were reading. Off = stay on the main menu."
   },
+  "options_resumeLastPlace": {
+    "message": "Return to where you left off when opening the site"
+  },
+  "tooltip_resumeLastPlace": {
+    "message": "After closing the tab, or the phone reclaiming it, the next time you open the site and log in you go back to the article or article list you were reading; a notice lets you cancel first. Remembered in this browser only. Off = stay on the main menu."
+  },
   "options_enableCommandPalette": {
     "message": "Command palette"
   },

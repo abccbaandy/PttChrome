@@ -698,8 +698,9 @@ AidNavigation.prototype = {
     run.external = true;
     run.bookmark = plan.bookmark || { feature: 'reconnect-resume' };
     this._resuming = true;
-    this.opHint = '回到斷線前的位置，請稍候…';
-    this._hint('回到斷線前的位置：' + plan.board + (plan.aid ? ' #' + plan.aid : ' 看板') + '…', PROGRESS_HINT_MS);
+    const label = plan.fromOpen ? '回到上次的地方' : '回到斷線前的位置';
+    this.opHint = label + '，請稍候…';
+    this._hint(label + '：' + plan.board + (plan.aid ? ' #' + plan.aid : ' 看板') + '…', PROGRESS_HINT_MS);
     this._begin(run);
     return true;
   },

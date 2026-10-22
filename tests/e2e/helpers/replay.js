@@ -115,6 +115,9 @@ async function installReplay(page, opts = {}) {
   if (!opts.articleTools) off.enableArticleTools = false;
   if (!opts.commentBar) off.enableCommentBar = false;
   if (!opts.nextArticle) off.enableNextArticleCard = false;
+  // 開站回到上次的地方（pref resumeLastPlace）：同一個 context 裡重整／重開時會自己送鍵
+  // 回上次的地方 ⇒ 預設關（行為由 unit reconnect_resume_open.test.js 守）。
+  if (!opts.resumeLastPlace) off.resumeLastPlace = false;
   if (Object.keys(off).length) {
     await page.addInitScript(({ KEY, off }) => {
       try {
