@@ -131,9 +131,12 @@
 
 ## 設定頁窄版（`PrefModal.jsx` `PREF_NARROW_QUERY` = max-width 640px）
 
-看視窗寬、不看 App 的 mobile 旗標（桌機拉窄同樣適用）。`fullScreen`＋Tabs `horizontal`＋content class `PrefModal--narrow`
-（CSS：左欄變頂端一條、分頁列橫向捲動、右欄滿寬）；標題移到 Modal header；「重設」移到右欄最底。
-守護 `pref_modal_narrow.test.jsx`（真版面，CSS 以 `?raw` 注入）、offline-mobile `mobile_float_tools.offline.spec.js`。
+看視窗寬、不看 App 的 mobile 旗標（桌機拉窄同樣適用）。`fullScreen`＋content class `PrefModal--narrow`；標題移到 Modal header；「重設」移到右欄最底。
+**分類清單**（像 Android 系統設定）：不畫橫向分頁列（10 個分頁時後半段一開始看不到），先列 `PREF_CATEGORIES`
+（每項＝分類名＋一行說明 `optionsDesc_<分類>`，class `PrefModal--categoryList` 時右欄 `display:none`）；點進去才是該分類的設定，
+上方「‹ 分類名」與系統返回回清單（在分類裡時經 `registerBack`＝`App.registerSheetDismiss` 登記，返回不送 ←）。搜尋框留在最上面；
+設定搜尋與指令面板跳轉直接進分類。每次打開都從清單開始。桌機維持左欄分頁。
+守護 `pref_modal_narrow.test.jsx`（真版面，CSS 以 `?raw` 注入）、offline-mobile `mobile_float_tools.offline.spec.js`（真 tap＋真 popstate）。
 
 ## 測試
 

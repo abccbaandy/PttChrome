@@ -290,6 +290,14 @@ export const ContextMenu = ({ pttchrome }) => {
   // 路徑會 update(initialState) 全量 reset，混進去會被誤關。runtime-only：不進
   // pref_storage/pref_sync，重新整理即重設為關閉。
   const [debugMode, setDebugMode] = useState(false);
+  // 設定頁窄版在某個分類裡時登記：系統返回先回分類清單（App.dismissTopSheet）。
+  const registerSettingsBack = useCallback(
+    (fn) =>
+      typeof pttchrome.registerSheetDismiss === "function"
+        ? pttchrome.registerSheetDismiss(fn)
+        : undefined,
+    [pttchrome],
+  );
   // 手機版面：長按選單與搜尋改成 bottom sheet（components/MobileSheet）。
   const mobile = useMobile(pttchrome);
   // Several handlers both read state for a side-effect AND set it, so we mirror
@@ -1490,6 +1498,7 @@ export const ContextMenu = ({ pttchrome }) => {
           debugMode={debugMode}
           onDebugModeChange={onDebugModeChange}
           jumpTarget={showsSettings ? prefJump : null}
+          registerBack={registerSettingsBack}
         />
       </Suspense>
       <Suspense fallback={null}>

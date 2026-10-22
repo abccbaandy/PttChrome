@@ -121,7 +121,7 @@ const openTerminalContextMenu = (page) =>
     .first()
     .click({ button: 'right', position: { x: 40, y: 2 } });
 
-test('手機：設定頁全螢幕、分頁在頂端、內容佔滿寬度', async ({ page }) => {
+test('手機：設定頁全螢幕、先列分類清單；點進分類內容佔滿寬度，系統返回回清單', async ({ page }) => {
   await bootOffline(page, ptt);
   await feedRaw(page, `${ESC}[2J${ESC}[H  MOBILE PREF TEST LINE  `);
   await waitScreenSettled(page);
@@ -136,17 +136,34 @@ test('手機：設定頁全螢幕、分頁在頂端、內容佔滿寬度', async
   const vw = page.viewportSize().width;
   const box = await waitRectStable(page, '.PrefModal');
   expect(box.width).toBeGreaterThanOrEqual(vw - 2);
+  // 分類清單：10 個分類都在、沒有橫向分頁列、設定內容還沒畫。
+  await expect(page.locator('.PrefModal [data-pref-category]')).toHaveCount(10);
+  await expect(page.locator('.PrefModal [role="tablist"]')).toHaveCount(0);
+  await expect(page.locator('.PrefModal__Grid__Col--right')).toBeHidden();
+
+  await page.locator('.PrefModal [data-pref-category="enhance"]').tap();
+  await expect(page.locator('.PrefModal input[name="showLightsOnButton"]')).toBeVisible();
   const right = await waitRectStable(page, '.PrefModal__Grid__Col--right');
   expect(right.width).toBeGreaterThanOrEqual(vw * 0.9);
-  const tabs = await page.locator('.PrefModal [role="tablist"]').boundingBox();
-  expect(tabs.y + tabs.height).toBeLessThanOrEqual(right.top + 1);
+  const back = page.locator('.PrefModal [data-pref-category-back]');
+  await expect(back).toContainText(await label(page, 'options_enhance'));
 
-  // 切到其他分頁仍正常（橫向分頁列可點）
-  await page
-    .locator('.PrefModal [role="tablist"]')
-    .getByText(await label(page, 'options_enhance'), { exact: true })
-    .click();
-  await expect(page.locator('.PrefModal input[name="showLightsOnButton"]')).toBeVisible();
+  // 系統返回（真 popstate）＝回分類清單，設定頁不關、不送 ←。
+  await page.waitForFunction(() => !!(window.history.state && window.history.state.pttchromeBackGuard));
+  await page.evaluate(() => {
+    window.__sent = [];
+    window.__stubWSSent = (s) => window.__sent.push(s);
+  });
+  await page.goBack();
+  await expect(page.locator('.PrefModal [data-pref-category="enhance"]')).toBeVisible();
+  await expect(page.locator('.PrefModal')).toBeVisible();
+  expect(await page.evaluate(() => (window.__sent || []).join(''))).not.toContain('\x1b[D');
+
+  // 「‹ 分類名」也回清單。
+  await page.locator('.PrefModal [data-pref-category="about"]').tap();
+  await expect(back).toBeVisible();
+  await back.tap();
+  await expect(page.locator('.PrefModal [data-pref-category="about"]')).toBeVisible();
 });
 
 // 回歸：debug 錄製鈕原本是獨立的 fixed 按鈕（right/bottom 16），手機上疊在底部工具列
@@ -160,10 +177,7 @@ test('手機：debug 錄製鈕收在「⋯」裡，不與底部工具列重疊',
   await expect(menu).toBeVisible();
   await menu.getByText(await label(page, 'cmenu_settings'), { exact: true }).click();
   await expect(page.locator('.PrefModal')).toBeVisible();
-  await page
-    .locator('.PrefModal [role="tablist"]')
-    .getByText(await label(page, 'options_about'), { exact: true })
-    .click();
+  await page.locator('.PrefModal [data-pref-category="about"]').click();
   await page.locator('#pref-debug-mode').check();
   await page.locator('.PrefModal [aria-label="Close"]').first().click();
   await expect(page.locator('.PrefModal')).toBeHidden();

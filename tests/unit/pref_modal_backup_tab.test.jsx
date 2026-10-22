@@ -77,8 +77,11 @@ const importJson = async (json, filename = "backup.json") => {
     "options_backupErrorBadJson",
     "options_backupErrorBadFormat",
   ].map(i18n);
-  await waitFor(() =>
-    expect(messages.some((m) => screen.queryByText(m))).toBe(true),
+  // 讀檔（File.text()）是真的非同步 I/O：機器忙時 waitFor 預設的 1000ms 不夠
+  // （整輪 unit 與 e2e 同時跑時實測紅過）⇒ 放寬到 testTimeout 以內。
+  await waitFor(
+    () => expect(messages.some((m) => screen.queryByText(m))).toBe(true),
+    { timeout: 4000 },
   );
 };
 

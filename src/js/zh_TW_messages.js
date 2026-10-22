@@ -424,6 +424,39 @@
   },
 
   // options nav
+  "optionsDesc_general": {
+    "message": "好讀模式、首頁、推文列、快捷鍵、外觀與手機版面"
+  },
+  "optionsDesc_mouse": {
+    "message": "滑鼠瀏覽、點擊範圍、滾輪與返回手勢"
+  },
+  "optionsDesc_connection": {
+    "message": "Proxy、編碼、圖片代理與開站快取"
+  },
+  "optionsDesc_enhance": {
+    "message": "樓層、推文合併與高亮、連結、圖片上傳、黑名單"
+  },
+  "optionsDesc_quicksearch": {
+    "message": "選字或長按後的外部搜尋清單"
+  },
+  "optionsDesc_autologin": {
+    "message": "帳號密碼與登入時的選項"
+  },
+  "optionsDesc_ai": {
+    "message": "裝置端 AI 輔助"
+  },
+  "optionsDesc_local": {
+    "message": "只存在這台裝置的設定"
+  },
+  "optionsDesc_backup": {
+    "message": "匯出／匯入設定、雲端同步"
+  },
+  "optionsDesc_about": {
+    "message": "版本、除錯模式與更新內容"
+  },
+  "options_categoryBack": {
+    "message": "回設定分類"
+  },
   "options_general": {
     "message": "一般"
   },

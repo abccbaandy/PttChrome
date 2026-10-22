@@ -72,6 +72,7 @@ import {
   normalizeMobileFontPx,
 } from "../../js/mobile_layout";
 import { PrefSearchBox } from "./PrefSearchBox";
+import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import "./PrefModal.css";
 
 const MOBILE_FONT_PX_CHOICES = [];
@@ -114,6 +115,21 @@ const subscribeNarrow = (cb) => {
 };
 const getNarrow = () => window.matchMedia(PREF_NARROW_QUERY).matches;
 const useNarrow = () => useSyncExternalStore(subscribeNarrow, getNarrow);
+
+// 設定分類（＝分頁）。寬版是左欄分頁；窄版（手機）先列分類清單（各附一行說明），
+// 點進去才是該分類的設定，返回鍵／上方「‹」回清單（像 Android 系統設定）。
+export const PREF_CATEGORIES = [
+  { value: "general", labelKey: "options_general" },
+  { value: "mouse", labelKey: "options_mouse" },
+  { value: "connection", labelKey: "options_connection" },
+  { value: "enhance", labelKey: "options_enhance" },
+  { value: "quicksearch", labelKey: "options_quickSearch" },
+  { value: "autologin", labelKey: "options_autoLoginTab" },
+  { value: "ai", labelKey: "options_ai" },
+  { value: "local", labelKey: "options_local" },
+  { value: "backup", labelKey: "options_backup" },
+  { value: "about", labelKey: "options_about" },
+].map((c) => ({ ...c, descKey: "optionsDesc_" + c.value }));
 
 export const PREF_FLASH_CLASS = "PrefModal__Anchor--flash";
 // 略長於 PrefModal.css 的 animation duration，讓動畫跑完才移除 class。
@@ -296,9 +312,13 @@ export const PrefModal = ({
   debugMode,
   onDebugModeChange,
   jumpTarget,
+  registerBack,
 }) => {
   const [navActiveKey, setNavActiveKey] = useState("general");
   const narrow = useNarrow();
+  // 窄版：true＝分類清單，false＝某個分類的設定。每次打開都從清單開始。
+  const [categoryList, setCategoryList] = useState(true);
+  const rightColRef = useRef(null);
   const [values, setValues] = useState(readValuesWithDefault);
   // What localStorage held when the dialog opened. `values` follows the user's
   // typing, so only this can answer "is there still a plaintext copy here?".
@@ -329,8 +349,27 @@ export const PrefModal = ({
 
   const anchor = useCallback((key) => anchorFor(key, flashKey), [flashKey]);
 
+  // 要排在指令面板跳轉的 effect 前面：打開＝回清單，有跳轉目標時再被它改成直接進分類。
+  useEffect(() => {
+    if (show) setCategoryList(true);
+  }, [show]);
+
+  const openCategory = useCallback((value) => {
+    setNavActiveKey(value);
+    setCategoryList(false);
+    if (rightColRef.current) rightColRef.current.scrollTop = 0;
+  }, []);
+
+  // 窄版在分類裡：系統返回（history_back_guard → App.dismissTopSheet）＝回分類清單。
+  const inCategory = !!(show && narrow && !categoryList);
+  useEffect(() => {
+    if (!inCategory || typeof registerBack !== "function") return undefined;
+    return registerBack(() => setCategoryList(true));
+  }, [inCategory, registerBack]);
+
   const onSearchJump = useCallback((hit) => {
     setNavActiveKey(hit.tab);
+    setCategoryList(false);
     // n 遞增：連點同一筆結果也要重新觸發，所以物件 identity 必須改變。
     setPendingJump((p) => ({ key: hit.key, n: (p ? p.n : 0) + 1 }));
   }, []);
@@ -668,7 +707,10 @@ export const PrefModal = ({
       // marker 放在 content（可見的對話框本體）而非 mantine-Modal-root（外層 0 尺寸
       // wrapper，Playwright 會判定 hidden）。
       classNames={{
-        content: narrow ? "PrefModal PrefModal--narrow" : "PrefModal",
+        content: narrow
+          ? "PrefModal PrefModal--narrow" +
+            (categoryList ? " PrefModal--categoryList" : "")
+          : "PrefModal",
       }}
       withCloseButton
       closeButtonProps={{ "aria-label": "Close" }}
@@ -694,24 +736,64 @@ export const PrefModal = ({
           <div className="PrefModal__Grid__Col--left">
             {!narrow && <Title order={3}>{i18n("menu_settings")}</Title>}
             <PrefSearchBox onJump={onSearchJump} resetToken={show} />
-            <Tabs.List>
-              <Tabs.Tab value="general">{i18n("options_general")}</Tabs.Tab>
-              <Tabs.Tab value="mouse">{i18n("options_mouse")}</Tabs.Tab>
-              <Tabs.Tab value="connection">
-                {i18n("options_connection")}
-              </Tabs.Tab>
-              <Tabs.Tab value="enhance">{i18n("options_enhance")}</Tabs.Tab>
-              <Tabs.Tab value="quicksearch">
-                {i18n("options_quickSearch")}
-              </Tabs.Tab>
-              <Tabs.Tab value="autologin">
-                {i18n("options_autoLoginTab")}
-              </Tabs.Tab>
-              <Tabs.Tab value="ai">{i18n("options_ai")}</Tabs.Tab>
-              <Tabs.Tab value="local">{i18n("options_local")}</Tabs.Tab>
-              <Tabs.Tab value="backup">{i18n("options_backup")}</Tabs.Tab>
-              <Tabs.Tab value="about">{i18n("options_about")}</Tabs.Tab>
-            </Tabs.List>
+            {!narrow && (
+              <Tabs.List>
+                {PREF_CATEGORIES.map((c) => (
+                  <Tabs.Tab key={c.value} value={c.value}>
+                    {i18n(c.labelKey)}
+                  </Tabs.Tab>
+                ))}
+              </Tabs.List>
+            )}
+            {narrow && categoryList && (
+              <nav
+                className="PrefModal__Categories"
+                aria-label={i18n("menu_settings")}
+              >
+                {PREF_CATEGORIES.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    className="PrefModal__Category"
+                    data-pref-category={c.value}
+                    onClick={() => openCategory(c.value)}
+                  >
+                    <span className="PrefModal__Category__Text">
+                      <span className="PrefModal__Category__Title">
+                        {i18n(c.labelKey)}
+                      </span>
+                      <span className="PrefModal__Category__Desc">
+                        {i18n(c.descKey)}
+                      </span>
+                    </span>
+                    <IconChevronRight
+                      className="PrefModal__Category__Chevron"
+                      size={18}
+                      aria-hidden
+                    />
+                  </button>
+                ))}
+              </nav>
+            )}
+            {narrow && !categoryList && (
+              <button
+                type="button"
+                className="PrefModal__CategoryBack"
+                data-pref-category-back=""
+                aria-label={i18n("options_categoryBack")}
+                onClick={() => setCategoryList(true)}
+              >
+                <IconChevronLeft size={20} aria-hidden />
+                <span>
+                  {i18n(
+                    (
+                      PREF_CATEGORIES.find((c) => c.value === navActiveKey) ||
+                      PREF_CATEGORIES[0]
+                    ).labelKey,
+                  )}
+                </span>
+              </button>
+            )}
             {!narrow && (
               <Button
                 variant="default"
@@ -722,7 +804,7 @@ export const PrefModal = ({
               </Button>
             )}
           </div>
-          <div className="PrefModal__Grid__Col--right">
+          <div className="PrefModal__Grid__Col--right" ref={rightColRef}>
             <Tabs.Panel value="general">
               <PrefSection legendKey="options_general">
                 <PrefCheckbox
