@@ -224,6 +224,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_enableCommentBar",
     },
     {
+      key: "commentReplyMenu",
+      titleKey: "options_commentReplyMenu",
+      tooltipKey: "tooltip_commentReplyMenu",
+    },
+    {
       key: "searchKeyOpensModal",
       titleKey: "options_searchKeyOpensModal",
       tooltipKey: "tooltip_searchKeyOpensModal",

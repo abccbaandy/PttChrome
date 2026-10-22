@@ -44,6 +44,9 @@ export const en_US = {
   "cmenu_copyLinkUrl": {
     "message": "Copy link address"
   },
+  "cmenu_replyComment": {
+    "message": "Reply to"
+  },
   "cmenu_copyComment": {
     "message": "Copy this comment"
   },
@@ -261,6 +264,12 @@ export const en_US = {
   },
   "options_enableCommentBar": {
     "message": "Comment bar at the bottom of articles (easy reading)"
+  },
+  "options_commentReplyMenu": {
+    "message": "\"Reply\" in the comment menu"
+  },
+  "tooltip_commentReplyMenu": {
+    "message": "Long-press (right-click on desktop) a comment to get a \"Reply\" item: the comment bar switches to → with that user's ID filled in, so you just type and press Enter."
   },
   "tooltip_enableCommentBar": {
     "message": "A \"push / boo / → + text\" bar at the bottom of easy-reading articles; press Enter to post. When PTT would turn it into →, or the text is long, the long comment box opens so you can check first."

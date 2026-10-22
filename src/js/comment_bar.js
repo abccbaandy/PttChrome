@@ -74,7 +74,8 @@ export function commentBarGeometry({ mainRect, footerTop, innerHeight, bottomIns
   };
 }
 
-const HIDDEN = { visible: false, left: 0, width: 0, bottom: 0, mobile: false };
+// prefill：「回覆這則」之類的預填請求 { type, text, n }（n 每次遞增，元件靠它分辨新請求）。
+const HIDDEN = { visible: false, left: 0, width: 0, bottom: 0, mobile: false, prefill: null };
 
 export function CommentBar(core) {
   this._core = core;
@@ -112,6 +113,14 @@ CommentBar.prototype = {
     this._listeners.forEach(function(fn) {
       fn(next);
     });
+  },
+
+  // 預填推文列（類型＋文字）並叫出輸入框。列沒出現就不做（回 false）——不替使用者開別的東西。
+  prefill: function(req) {
+    if (!this._state.visible || !req) return false;
+    const n = ((this._state.prefill && this._state.prefill.n) || 0) + 1;
+    this._set({ prefill: { type: req.type || 'push', text: String(req.text || ''), n: n } });
+    return true;
   },
 
   _inEasyArticle: function() {

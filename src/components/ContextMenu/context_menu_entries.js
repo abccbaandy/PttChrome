@@ -71,6 +71,14 @@ export function buildContextMenuEntries(p) {
       markAllRead)
   )
     divider("d-blacklist");
+  // 回覆這則推文（推文列預填 → 與帳號）：放在推文那一段的最前面。出現條件在 index.jsx
+  //（推文列看得到＋開關＋是帳號）。
+  if (p.replyCommentTarget)
+    item(
+      "replyComment",
+      `${i18n("cmenu_replyComment")} '${p.replyCommentTarget}'`,
+      (e) => p.onMenuSelect("replyComment", e),
+    );
   // 手機推文卡片：長按就能複製整則推文（推文第一個字貼著螢幕左緣，選取把手拉不過去）。
   // 出現與否＝預覽算不算得出來（context_menu_items 的 copyComment／copyCommentAll），
   // 與連結／選取旗標無關：長按推文裡的網址也照樣給。
@@ -88,7 +96,8 @@ export function buildContextMenuEntries(p) {
       (e) => p.onMenuSelect("copyCommentAll", e),
       { preview: previews.copyCommentAll, copy: true },
     );
-  if (previews.copyComment || previews.copyCommentAll) divider("d-comment");
+  if (p.replyCommentTarget || previews.copyComment || previews.copyCommentAll)
+    divider("d-comment");
   if (p.selEnabled) {
     item("copy", i18n("cmenu_copy"), (e) => p.onMenuSelect("copy", e), {
       right: "Ctrl+C",

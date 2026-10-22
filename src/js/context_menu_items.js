@@ -154,3 +154,14 @@ export function listBlacklistTargets({ cards, region, listAuthor, listTitle }) {
     title: region === "title" ? title : null,
   };
 }
+
+// 「回覆這則」要填的帳號：data-pusher 是小寫過的（黑名單比對用），回覆時照推文上顯示的
+// 大小寫填（PTT 帳號不分大小寫，但看起來要跟推文一樣）。推文列一開頭就是推文者，第一個
+// 不分大小寫相符的位置就是它；找不到就用 data-pusher 原值。
+export function replyTargetId(rowText, pusher) {
+  const id = String(pusher || "");
+  if (!id) return null;
+  const text = String(rowText || "");
+  const i = text.toLowerCase().indexOf(id.toLowerCase());
+  return i >= 0 ? text.substr(i, id.length) : id;
+}

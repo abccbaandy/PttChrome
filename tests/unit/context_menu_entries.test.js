@@ -65,6 +65,24 @@ test("看板列表「<板名> 設為已讀」：桌機與手機長按都在（�
   );
 });
 
+test("回覆這則：有目標才出現（推文段最前面），標題帶帳號，點下去走 onMenuSelect('replyComment')", () => {
+  const calls = [];
+  const entries = buildContextMenuEntries({
+    ...BASE,
+    mobile: true,
+    replyCommentTarget: "abc123",
+    previews: { copyComment: "abc123: 推文" },
+    onMenuSelect: (k) => calls.push(k),
+  });
+  const ks = entries.map((e) => e.key);
+  expect(ks.indexOf("replyComment")).toBe(ks.indexOf("copyComment") - 1);
+  const item = entries.find((e) => e.key === "replyComment");
+  expect(item.label).toContain("abc123");
+  item.onClick({});
+  expect(calls).toEqual(["replyComment"]);
+  expect(keys(BASE)).not.toContain("replyComment");
+});
+
 test("沒有連續的分隔線（手機工具段搬空時）", () => {
   for (const p of [BASE, { ...BASE, mobile: true }]) {
     const types = buildContextMenuEntries(p).map((e) => e.type);

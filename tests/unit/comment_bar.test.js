@@ -143,7 +143,7 @@ describe("CommentBar：何時出現、畫在哪", () => {
   test("好讀文章 ⇒ 出現，同終端機寬、貼在 footer 上面", () => {
     const { bar, settle } = makeCore();
     settle();
-    expect(bar.state).toEqual({ visible: true, left: 10, width: 640, bottom: 140, mobile: false });
+    expect(bar.state).toEqual({ visible: true, left: 10, width: 640, bottom: 140, mobile: false, prefill: null });
   });
   test("手機也出現（底部導覽上方）", () => {
     const { bar, settle } = makeCore({ mobile: true });
@@ -184,6 +184,20 @@ describe("CommentBar：何時出現、畫在哪", () => {
       for (const k of Object.keys(override)) delete prefOverride[k];
     }
   });
+  test("預填（回覆這則）：列出現時才收，每次請求序號遞增；列沒出現 ⇒ 不收、回 false", () => {
+    const t = makeCore({ pageState: 2 });
+    t.settle();
+    expect(t.bar.prefill({ type: "arrow", text: "abc " })).toBe(false);
+    expect(t.bar.state.prefill).toBe(null);
+    t.setPageState(3);
+    t.settle();
+    expect(t.bar.prefill({ type: "arrow", text: "abc " })).toBe(true);
+    expect(t.bar.state.prefill).toEqual({ type: "arrow", text: "abc ", n: 1 });
+    // 同一個人再按一次也要重新填（使用者可能改過字）⇒ 序號不同。
+    t.bar.prefill({ type: "arrow", text: "abc " });
+    expect(t.bar.state.prefill.n).toBe(2);
+  });
+
   test("onChange 先給一次現況，之後只在變了才通知", () => {
     const t = makeCore();
     const seen = [];
