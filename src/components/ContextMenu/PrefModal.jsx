@@ -1106,6 +1106,21 @@ export const PrefModal = ({
                   {i18n("tooltip_enableCommentBar")}
                 </Text>
                 <PrefCheckbox
+                  name="commentReplyMenu"
+                  checked={values.commentReplyMenu}
+                  disabled={
+                    !values.enableLongPush ||
+                    !values.enableCommentBar ||
+                    values.nativeSafeMode
+                  }
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_commentReplyMenu")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_commentReplyMenu")}
+                </Text>
+                <PrefCheckbox
                   name="searchKeyOpensModal"
                   checked={values.searchKeyOpensModal}
                   disabled={values.nativeSafeMode}

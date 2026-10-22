@@ -44,6 +44,9 @@
   "cmenu_copyLinkUrl": {
     "message": "複製連結網址"
   },
+  "cmenu_replyComment": {
+    "message": "回覆"
+  },
   "cmenu_copyComment": {
     "message": "複製這則推文"
   },
@@ -261,6 +264,12 @@
   },
   "options_enableCommentBar": {
     "message": "好讀文章底部常駐推文列"
+  },
+  "options_commentReplyMenu": {
+    "message": "推文選單的「回覆這則」"
+  },
+  "tooltip_commentReplyMenu": {
+    "message": "長按（桌機右鍵）一則推文，選單多一項「回覆」：推文列切成 →、先填好對方帳號，接著打字按 Enter 送出。"
   },
   "tooltip_enableCommentBar": {
     "message": "好讀文章最下面一條「推／噓／→＋文字」輸入列，打完按 Enter 就推出去。PTT 會改成 →、或內容太長時，改開長推文輸入框讓你確認。"

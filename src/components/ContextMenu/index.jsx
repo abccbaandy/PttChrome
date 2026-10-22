@@ -66,6 +66,7 @@ import {
   listBlacklistTargets,
   copyTextFor,
   copyPreviews,
+  replyTargetId,
 } from "../../js/context_menu_items";
 import { isNativeMenuTarget } from "../../js/preview_targets";
 import { pushMaxBytes } from "../../js/long_push";
@@ -176,6 +177,12 @@ const menuHandlerByEventKey = {
     pttchrome.doCopy(copyTextFor("copyComment", state)),
   copyCommentAll: (pttchrome, state) =>
     pttchrome.doCopy(copyTextFor("copyCommentAll", state)),
+  // 回覆這則推文：推文列切成 →、預填「帳號 」並叫出輸入框。只是預填，送出照推文列。
+  replyComment: (pttchrome, { replyCommentTarget }) =>
+    pttchrome.commentBar?.prefill?.({
+      type: "arrow",
+      text: replyCommentTarget + " ",
+    }),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
   // 圖片上傳（urusai）：開檔案選擇器／開上傳紀錄面板。實作在
   // js/image_upload_controller.js，App 在建構時掛成 pttchrome.imageUpload。
@@ -207,6 +214,8 @@ const initialState = {
   blacklistAuthorTarget: null,
   blacklistAuthorExists: false,
   blacklistTitleTarget: null,
+  // 長按／右鍵的推文是誰推的（「回覆這則」；推文列沒出現或開關關掉 ⇒ null）。
+  replyCommentTarget: null,
   // 列表好讀模式下，右鍵那一列可不可以做「前已讀後未讀」（{ num } / null）。
   // 判定全在 listSession.markReadTargetAtRow（狀態、置底文、header 列）。
   markReadTarget: null,
@@ -551,6 +560,17 @@ export const ContextMenu = ({ pttchrome }) => {
           );
         }
       }
+      // 「回覆這則」：整列推文都算（一列只有一個推文者）；推文列要看得到才給（它在
+      // 好讀文章、推文列開關與安全模式都過了才出現 ⇒ 不另判）。小天使匿名推文不是帳號。
+      const replyPusher = rowElement && rowElement.getAttribute("data-pusher");
+      const replyCommentTarget =
+        normalEnabled &&
+        prefs.commentReplyMenu &&
+        replyPusher &&
+        isBlacklistableUserId(replyPusher) &&
+        pttchrome.commentBar?.state?.visible
+          ? replyTargetId(rowElement.textContent, replyPusher)
+          : null;
 
       // 「前已讀後未讀」（列表好讀）：只要列號，可行與否由 listSession 判定
       // ——它一併擋掉非 active／非 buffer、header 列、空白列與置底文。
@@ -577,6 +597,7 @@ export const ContextMenu = ({ pttchrome }) => {
         blacklistAuthorTarget,
         blacklistAuthorExists,
         blacklistTitleTarget,
+        replyCommentTarget,
         markReadTarget,
         boardMarkReadTarget:
           (normalEnabled &&
@@ -1317,6 +1338,7 @@ export const ContextMenu = ({ pttchrome }) => {
     markReadTarget,
     markAllReadEnabled,
     boardMarkReadTarget,
+    replyCommentTarget,
     articleLinkEnabled,
     contextArticle,
     previews,
@@ -1370,6 +1392,7 @@ export const ContextMenu = ({ pttchrome }) => {
         authorBlacklistId={blacklistAuthorTarget}
         authorBlacklistExists={blacklistAuthorExists}
         titleBlacklistText={blacklistTitleTarget}
+        replyCommentTarget={replyCommentTarget}
         markReadTarget={markReadTarget}
         markAllReadEnabled={markAllReadEnabled}
         boardMarkReadTarget={boardMarkReadTarget}

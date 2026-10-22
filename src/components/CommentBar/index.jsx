@@ -34,6 +34,7 @@ export const CommentBar = ({ pttchrome }) => {
   const [type, setType] = useState("push");
   const inputRef = useRef(null);
   const visible = !!(state && state.visible);
+  const prefill = state && state.prefill;
 
   useEffect(() => {
     if (!bar || typeof bar.onChange !== "function") return undefined;
@@ -60,6 +61,24 @@ export const CommentBar = ({ pttchrome }) => {
     if (!visible) setFocused(false);
   }, [visible, setFocused]);
   useEffect(() => () => setFocused(false), [setFocused]);
+
+  // 「回覆這則」之類的預填：換類型、填字、游標放到最後並聚焦（手機會叫出鍵盤）。
+  // 等一幀再聚焦：選單關掉時會把焦點還給終端機，要排在它後面。
+  const prefillN = prefill ? prefill.n : 0;
+  useEffect(() => {
+    if (!prefill) return undefined;
+    setType(prefill.type);
+    setText(prefill.text);
+    const id = requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+    });
+    return () => cancelAnimationFrame(id);
+    // 只看請求序號：同一個請求不重填（使用者改了字之後重畫不可以被蓋回去）。
+  }, [prefillN]);
 
   const submit = useCallback(() => {
     if (!text.trim() || !pttchrome || !pttchrome.openQuickPush) return;

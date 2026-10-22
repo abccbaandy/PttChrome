@@ -271,6 +271,38 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
   });
 
+  // 「回覆這則」（長按推文）：推文列切成 →、預填帳號、輸入框拿到焦點；不送鍵。
+  test('長按推文：選單「回覆 帳號」⇒ 推文列預填 → 與帳號', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt, { commentBar: true });
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    const pusher = await markPusherRow(page);
+    expect(pusher, '找不到推文列').toBeTruthy();
+    await expect(page.locator('#commentBar')).toBeVisible();
+    await page.evaluate(() => {
+      window.__sent = [];
+      window.__stubWSSent = (s) => window.__sent.push(s);
+    });
+    await longPress(page, COMMENT_LINE);
+    const item = menu(page).locator('[data-cmenu="replyComment"]');
+    // data-pusher 是小寫過的；選單與預填照推文上顯示的大小寫。
+    const shown = await page.evaluate((id) => {
+      const t = document.querySelector('[data-e2e-target]').textContent;
+      return t.substr(t.toLowerCase().indexOf(id), id.length);
+    }, pusher);
+    await expect(item).toContainText(shown);
+    await item.tap();
+    await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
+    const input = page.locator('#commentBar [name="commentBarText"]');
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue(shown + ' ');
+    await expect(page.locator('#commentBar [data-comment-type="arrow"]')).toHaveAttribute('aria-checked', 'true');
+    expect(await page.evaluate(() => (window.__sent || []).join(''))).toBe('');
+  });
+
   // 症狀（使用者回報）：手機叫不出快速搜尋。選取模式關時長按選到的字在開選單前就被清掉，
   // 舊邏輯只看「現在有沒有選取」⇒ 快速搜尋永遠不出現。改用長按自動選起來的那個詞。
   test('REGRESSION：長按（選取模式關）⇒ 快速搜尋以長按選到的詞出現', async ({ page }) => {

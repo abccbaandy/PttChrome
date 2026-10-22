@@ -9,6 +9,7 @@ const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayCassette } = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const { waitPreviewsSettled, waitRectStable, waitScrollStable } = require('../helpers/layout');
+const { rightClickElement } = require('../helpers/real_input');
 
 const article = loadCassette('stock-huang');
 const VIEWPORT = { width: 1280, height: 800 };
@@ -87,6 +88,44 @@ test.describe('底部常駐推文列', () => {
     expect(await page.evaluate(() => window.__app.buf.pageState)).toBe(3);
     await expect(bar(page)).toHaveCount(0);
   });
+
+  // 「回覆這則」：真右鍵推文列 → 選單「回覆 'id'」→ 推文列切成 →、預填「id 」、游標在框裡。
+  // 只是預填：一個 byte 都不送。開關關掉 ⇒ 選單沒有這一項。
+  for (const on of [true, false]) {
+    test(`右鍵推文「回覆」${on ? '⇒ 推文列預填 → 與帳號、不送鍵' : '（開關關掉）不出現'}`, async ({ page }) => {
+      test.setTimeout(90000);
+      await boot(page, { commentReplyMenu: on });
+      await expect(bar(page)).toBeVisible();
+      // data-pusher 是小寫過的；回覆照推文上顯示的大小寫填。
+      const pusher = await page.evaluate(() => {
+        const el = document.querySelector('#mainContainer [type="bbsrow"][data-pusher]');
+        el.setAttribute('data-e2e-reply', '1');
+        const id = el.getAttribute('data-pusher');
+        const i = el.textContent.toLowerCase().indexOf(id);
+        return el.textContent.substr(i, id.length);
+      });
+      expect(pusher).toBeTruthy();
+      await startCapture(page);
+      await rightClickElement(page, '[data-e2e-reply]');
+      const menu = page.locator('.DropdownMenu').first();
+      await expect(menu).toBeVisible();
+      const label = await page.evaluate(() => window.__i18n('cmenu_replyComment'));
+      const reply = menu.getByText(`${label} '${pusher}'`, { exact: true });
+      if (!on) {
+        await expect(menu.getByText(await page.evaluate(() => window.__i18n('cmenu_paste')))).toBeVisible();
+        await expect(reply).toHaveCount(0);
+        return;
+      }
+      await reply.click();
+      await expect(input(page)).toBeFocused();
+      await expect(input(page)).toHaveValue(pusher + ' ');
+      await expect(page.locator('#commentBar [data-comment-type="arrow"]')).toHaveAttribute('aria-checked', 'true');
+      // 接著打字：游標在最後（接在帳號後面），終端機沒有把焦點搶回去。
+      await page.keyboard.type('ok');
+      await expect(input(page)).toHaveValue(pusher + ' ok');
+      expect(await takeCapture(page)).toBe('');
+    });
+  }
 
   test('pref 關 ⇒ 不出現', async ({ page }) => {
     test.setTimeout(90000);

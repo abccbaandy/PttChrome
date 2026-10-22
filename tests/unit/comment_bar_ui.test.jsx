@@ -78,6 +78,21 @@ describe("CommentBar UI", () => {
     expect(root().querySelector('[data-comment-type="push"]').getAttribute("aria-checked")).toBe("true");
   });
 
+  test("預填（回覆這則）⇒ 換類型、填字、聚焦且游標在最後；之後改字不會被同一個請求蓋回去", async () => {
+    const { root, input, bar } = setup();
+    act(() => bar.emit({ prefill: { type: "arrow", text: "abc ", n: 1 } }));
+    expect(input().value).toBe("abc ");
+    expect(root().querySelector('[data-comment-type="arrow"]').getAttribute("aria-checked")).toBe("true");
+    await act(() => new Promise((r) => requestAnimationFrame(() => r())));
+    expect(document.activeElement).toBe(input());
+    expect(input().selectionStart).toBe(4);
+    fireEvent.change(input(), { target: { value: "abc 同意" } });
+    act(() => bar.emit({ left: 20 }));
+    expect(input().value).toBe("abc 同意");
+    act(() => bar.emit({ prefill: { type: "arrow", text: "xyz ", n: 2 } }));
+    expect(input().value).toBe("xyz ");
+  });
+
   test("沒接手（回 false）⇒ 字留著", () => {
     const { input, pttchrome } = setup({}, false);
     fireEvent.change(input(), { target: { value: "推推" } });

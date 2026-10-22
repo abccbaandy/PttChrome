@@ -351,6 +351,9 @@ export const DEFAULT_PREFS = {
   // 好讀文章底部常駐推文列（js/comment_bar.js）：好讀文章最下面一條「推／噓／→＋文字」，
   // Enter 就推出去（走長推文管線）。**從屬於 enableLongPush**；會替使用者送鍵 ⇒ 在安全模式名單內。
   enableCommentBar: true,
+  // 長按／右鍵推文的選單多一項「回覆這則」：推文列切成 →、預填「帳號 」。只預填、不送鍵
+  // ⇒ 不在安全模式名單（安全模式下推文列不出現，這一項也跟著不出現）。
+  commentReplyMenu: true,
 
   // 按搜尋鍵（文章列表的 / ? a Z；文章列表／看板列表／主功能表的 s）時改開搜尋彈窗，
   // 不送 PTT 原生 prompt。理由：PTT 的

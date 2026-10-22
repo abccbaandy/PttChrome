@@ -10,8 +10,19 @@ import {
   copyTextFor,
   copyPreviews,
   truncateMiddle,
-  listBlacklistTargets
+  listBlacklistTargets,
+  replyTargetId
 } from "../../src/js/context_menu_items";
+
+describe("replyTargetId", () => {
+  test("照推文上顯示的大小寫（data-pusher 是小寫過的）", () => {
+    expect(replyTargetId("推 BigCat: 應該不是你的問題 bigcat 08/12 00:21", "bigcat")).toBe("BigCat");
+  });
+  test("找不到 ⇒ 用原值；沒有帳號 ⇒ null", () => {
+    expect(replyTargetId("", "abc")).toBe("abc");
+    expect(replyTargetId("推 x", null)).toBe(null);
+  });
+});
 
 // 回歸：手機卡片上只有長按正好落在作者那一小段／標題那一行才給黑名單選項，
 // 實際手指幾乎按不中 ⇒ 兩個選項都不出現。卡片改成整張同一組、作者與標題一起給。
