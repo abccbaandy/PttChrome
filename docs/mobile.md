@@ -374,6 +374,11 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
     收起時沿用開著時的位置（退場不跳位）。舊版「對象在下半部就貼頂」離手指一整個畫面遠，已廢。
     守 `sheet_placement.test.js`、`context_sheet.test.jsx`、`mobile_list_cards.offline.spec.js`。
   長按的 disposition／touchLongPress／清選取都在 render 前，**不動**。
+- **外殼恆為暗色**（同 App Bar／底部導覽），裡面的 Mantine 元件也照暗色畫，不跟淺色主題：`.mobileSheet` 掛
+  `data-mantine-color-scheme="dark"`，`MobileSheet#sheetDarkVarsCss` 用 Mantine 產 `:root` 變數的同一組函式
+  （`defaultCssVariablesResolver`＋`convertCssVariables`）把暗色變數掛在 `.mobileSheet[data-mantine-color-scheme="dark"]`。
+  元件 CSS 的明暗兩條規則特異度相同、先淺後暗 ⇒ 子樹裡暗色勝出（`mobile_sheet_dark_scope.test.js` 守順序）。
+  沒有這層時淺色主題的指令面板選中項＝淺灰底配淺色字，看不見（`mobile_sheet.offline.spec.js`「淺色主題」）。
 - 開著＝modal：每個實例 `setModalOpen('mobileSheet'+useId, opened)`。遮罩是一般 div、Drawer 在 portal ⇒ 點擊會到 window 的 App 滑鼠入口，
   **靠 modalShown 早退**才不會被當成點終端機。z-index 3000（蓋過工具列 2500）。
 - 系統返回＝收起：開著時 `App.registerSheetDismiss(onClose)`；`history_back_guard#onPopState` 在送 ← 之前問

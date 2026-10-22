@@ -1,5 +1,17 @@
-import { useEffect, useId, useRef, useState, useCallback } from "react";
-import { Drawer } from "@mantine/core";
+import {
+  useEffect,
+  useId,
+  useInsertionEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
+import {
+  Drawer,
+  convertCssVariables,
+  defaultCssVariablesResolver,
+  useMantineTheme,
+} from "@mantine/core";
 import { useReducedMotion } from "@mantine/hooks";
 import "./MobileSheet.css";
 
@@ -21,6 +33,26 @@ import "./MobileSheet.css";
 // z-index 高於底部工具列（2500）與 App Bar：sheet 開著時兩條 bar 都在遮罩下面。
 export const SHEET_Z_INDEX = 3000;
 export const SHEET_DISMISS_DRAG_PX = 80;
+// sheet 外殼恆為暗色（同 App Bar／底部導覽列，MobileSheet.css），裡面的 Mantine 元件（搜尋框、
+// 指令面板、按鈕…）也要照暗色畫：淺色主題時它們跟著 <html data-mantine-color-scheme="light">
+// 變淺，選中項成了淺灰底配 sheet 繼承的淺色字，幾乎看不見。做法：.mobileSheet 掛
+// data-mantine-color-scheme="dark"，並把 Mantine 的暗色 CSS 變數掛在這個選擇器上（Mantine 自己
+// 產 :root 那份的同一組函式）。元件 CSS 的明暗兩條規則特異度相同、一律先淺後暗 ⇒ 子樹裡暗色勝出；
+// 這個順序由 tests/unit/mobile_sheet_dark_scope.test.js 守。
+export const SHEET_DARK_VARS_ID = "mobileSheetDarkVars";
+export function sheetDarkVarsCss(theme) {
+  const { dark } = defaultCssVariablesResolver(theme);
+  return convertCssVariables({ variables: {}, dark, light: {} }, ".mobileSheet");
+}
+function ensureSheetDarkVars(theme) {
+  if (typeof document === "undefined" || document.getElementById(SHEET_DARK_VARS_ID))
+    return;
+  const style = document.createElement("style");
+  style.id = SHEET_DARK_VARS_ID;
+  style.textContent = sheetDarkVarsCss(theme);
+  document.head.appendChild(style);
+}
+
 // 與 MobileSheet.css .mobileSheet 的 max-height 同一式（inline maxHeight 要跟它取 min）。
 const SHEET_CSS_MAX_HEIGHT = "calc(100dvh - 48px - var(--vv-kb-inset, 0px))";
 
@@ -36,6 +68,8 @@ export const MobileSheet = ({
   closeOnClickOutside = true,
 }) => {
   const reduceMotion = useReducedMotion();
+  const theme = useMantineTheme();
+  useInsertionEffect(() => ensureSheetDarkVars(theme), [theme]);
   const id = useId();
   const [drag, setDrag] = useState(0);
   const startY = useRef(null);
@@ -136,6 +170,7 @@ export const MobileSheet = ({
     >
       <div
         className="mobileSheet nomouse_command"
+        data-mantine-color-scheme="dark"
         data-sheet={sheetKey}
         data-position={float ? "float" : "bottom"}
         data-float-side={float ? float.side : undefined}

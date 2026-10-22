@@ -34,6 +34,8 @@
   border-radius: 16px 16px 0 0;
   background: #1d1d22;
   color: #eee;
+  /* 恆為暗色：原生表單控制項／捲軸也照暗色畫（Mantine 元件見 index.jsx 的 sheetDarkVarsCss）。 */
+  color-scheme: dark;
   font-family: system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
   transition: transform 120ms ease-out;
