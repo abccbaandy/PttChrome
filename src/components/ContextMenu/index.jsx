@@ -568,7 +568,7 @@ export const ContextMenu = ({ pttchrome }) => {
         prefs.commentReplyMenu &&
         replyPusher &&
         isBlacklistableUserId(replyPusher) &&
-        pttchrome.commentBar?.state?.visible
+        pttchrome.commentBar?.state?.available
           ? replyTargetId(rowElement.textContent, replyPusher)
           : null;
 

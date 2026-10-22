@@ -109,12 +109,15 @@ async function installReplay(page, opts = {}) {
   // ⇒ 會擋到落在底列的滑鼠、改變捲到底的位置，預設關，只有 comment_bar.offline.spec.js
   // 以 opts.commentBar 打開。好讀文末的下一篇標題卡（pref enableNextArticleCard）讓累積頁
   // 尾端多一張卡片、改變捲到底的位置，同理預設關，只有 next_article.offline.spec.js 打開。
+  // 手機推文列收進底部導覽（pref mobileCommentBarFold，預設開）：打開推文列的 spec 多半在驗
+  // 「列在畫面上」的版面 ⇒ 預設關（手機也常駐），只有 opts.commentBarFold 打開。
   const off = {};
   if (!opts.homeDashboard) off.enableHomeDashboard = false;
   if (!opts.splitReader) off.enableSplitReading = false;
   if (!opts.articleTools) off.enableArticleTools = false;
   if (!opts.commentBar) off.enableCommentBar = false;
   if (!opts.nextArticle) off.enableNextArticleCard = false;
+  if (!opts.commentBarFold) off.mobileCommentBarFold = false;
   // 開站回到上次的地方（pref resumeLastPlace）：同一個 context 裡重整／重開時會自己送鍵
   // 回上次的地方 ⇒ 預設關（行為由 unit reconnect_resume_open.test.js 守）。
   if (!opts.resumeLastPlace) off.resumeLastPlace = false;
@@ -776,6 +779,7 @@ async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-un
     splitReader: !!opts.splitReader,
     articleTools: !!opts.articleTools,
     commentBar: !!opts.commentBar,
+    commentBarFold: !!opts.commentBarFold,
     nextArticle: !!opts.nextArticle,
   });
   await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });

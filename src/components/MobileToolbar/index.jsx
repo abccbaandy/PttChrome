@@ -184,6 +184,19 @@ export const MobileToolbar = ({
     [sendKey],
   );
 
+  // 推文：推文列收進底部導覽（js/comment_bar.js 收合模式）時展開它並叫出鍵盤，不送 X；
+  // 其他情況（不在好讀文章、收合關掉）照原生送 X。
+  const pushAction = useCallback(() => {
+    const bar = pttchrome.commentBar;
+    const s = bar && bar.state;
+    if (s && s.available && s.folded && bar.expand()) {
+      setPanel(null);
+      setConfirmLogout(false);
+      return;
+    }
+    sendAction("push");
+  }, [pttchrome, sendAction]);
+
   const togglePanel = useCallback(
     (p) => {
       setConfirmLogout(false);
@@ -372,7 +385,7 @@ export const MobileToolbar = ({
           TOOLBAR_KEYS.push.key,
           IconThumbUp,
           i18n("mobileToolbar_push"),
-          () => sendAction("push"),
+          pushAction,
           { aria: i18n("mobileKeypad_push") },
         );
       case "search":

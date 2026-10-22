@@ -83,3 +83,19 @@
 .commentBarType:hover {
   background: #26262e;
 }
+
+/* 手機收合模式：從底部導覽上緣滑出（像 App 的留言列）。 */
+.commentBar--unfolded {
+  animation: commentBarSlideUp 0.16s ease-out;
+}
+@keyframes commentBarSlideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .commentBar--unfolded {
+    animation: none;
+  }
+}
