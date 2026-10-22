@@ -39,6 +39,15 @@ export const MobileAppBar = ({ pttchrome }) => {
     );
   }, [pttchrome]);
 
+  // 首頁儀表板開著 ⇒ 標題＝「首頁」，「原生主選單」放在 App Bar 右邊（面板自己就不再畫
+  // 一行大標題，docs/home-dashboard.md「手機」）。
+  const home = pttchrome.homeDashboard;
+  const [homeVisible, setHomeVisible] = useState(false);
+  useEffect(() => {
+    if (!home || typeof home.onChange !== "function") return undefined;
+    return home.onChange((s) => setHomeVisible(!!(s && s.visible)));
+  }, [home]);
+
   // 等待 PTT 回應的進度條（App._busyEvent ← mobile_busy.js）。
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -65,16 +74,18 @@ export const MobileAppBar = ({ pttchrome }) => {
     <header
       id="mobileAppBar"
       className="nomouse_command mobileAppBar"
-      data-kind={appBar.kind}
+      data-kind={homeVisible ? "home" : appBar.kind}
       onMouseDown={keepFocus}
       onMouseUp={swallow}
       onClick={swallow}
     >
       <div className="mobileAppBarText" onClick={onTitleClick}>
         <div className="mobileAppBarTitle" data-key="__title">
-          {appBar.title || i18n("mobileAppBar_defaultTitle")}
+          {homeVisible
+            ? i18n("home_title")
+            : appBar.title || i18n("mobileAppBar_defaultTitle")}
         </div>
-        {appBar.subtitle ? (
+        {!homeVisible && appBar.subtitle ? (
           <div className="mobileAppBarSubtitle" data-key="__subtitle">
             {appBar.subtitle}
           </div>
@@ -84,6 +95,19 @@ export const MobileAppBar = ({ pttchrome }) => {
         <span className="mobileAppBarBadge" data-key="__newMail" role="status">
           {i18n("mobileAppBar_newMail")}
         </span>
+      ) : null}
+      {homeVisible ? (
+        <button
+          type="button"
+          className="mobileAppBarAction"
+          data-key="__homeNative"
+          onClick={(e) => {
+            e.stopPropagation();
+            home.dismiss();
+          }}
+        >
+          {i18n("home_native")}
+        </button>
       ) : null}
       <MessageInbox pttchrome={pttchrome} inline />
       {busy ? (
