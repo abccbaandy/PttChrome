@@ -97,13 +97,16 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
   // 狀態列留著，光看底列還是 pager；這時推／回文／到底按下去只會打進 prompt。
   const pager = pageState === 3 && !facts.inputField && atPagerStatusRow(last);
   const mail = pager && parsePagerFooterContext(last) === 'mail';
-  const article = pager && !mail;
+  // 看板精華區的文章：footer 跟看板文章一樣，但推／回／Q／翻同主題都只會退回精華區選單
+  // （TermBuf.pagerContext）。
+  const essence = pager && !!facts.pagerFromEssence;
+  const article = pager && !mail && !essence;
   const o = opts || {};
   const lists = !facts.inputField && (isArticleList(facts) || !!classifyBoardListScreen(facts));
   const menu = boardListContextKind(facts) === 'menu';
   return {
     push: article,
-    reply: pager,
+    reply: pager && !essence,
     mail: mail,
     share: article,
     threadNav: article,

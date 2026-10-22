@@ -22,10 +22,12 @@ import {
   isJumpParkedListScreen,
 } from "../../src/js/list_session";
 import {
+  ARCHIVE_LIST,
   boardNameFromKey,
   isArticleListTitleRow,
   parseBoardKey,
   parseBoardName,
+  rowHasTitle,
 } from "../../src/js/screen_titles";
 import {
   boardListContextKind,
@@ -521,4 +523,24 @@ describe("列表好讀 session：認不出 ⇒ 原生", () => {
       }
     );
   }
+});
+
+// 方向跟上面相反：認得出精華區 ⇒ 少接管（重新整理／推文／Q 都不給），認不出 ⇒ 回到只看 footer
+// 的舊判準。所以突變只要求「不會把別的畫面認成精華區」（那會讓看板文章的功能憑空消失）。
+// 整條鏈（setPageState → pagerContext → 各閘門）在 ptt_src_screens.test.js 的精華區場景。
+describe("看板精華區指紋（TermBuf.pagerFromEssence）：只認 col 0 的【精華文章】", () => {
+  const REAL = "【精華文章】                        Gossip                       看板《Gossip》 ";
+
+  test("對照組：upstream 精華區標題列", () => {
+    expect(rowHasTitle(REAL, ARCHIVE_LIST)).toBe(true);
+  });
+
+  test.each([
+    ["文章列表", "【板主:sysop】                       八卦                        看板《Gossip》 "],
+    ["主功能表", "【主功能表】                        批踢踢實業坊                 看板《Gossip》 "],
+    ["文章標題裡有【精華文章】（不在 col 0）", "  標題  【精華文章】整理 "],
+    ["半繪", "【精華"],
+  ])("%s → 不是精華區", (_n, row) => {
+    expect(rowHasTitle(row, ARCHIVE_LIST)).toBe(false);
+  });
 });

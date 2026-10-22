@@ -30,12 +30,15 @@ export function isPushKey(key) {
 // 站內信（currstat == RMAIL）的 pager 把 X 當別的快捷鍵，送過去等於亂按。
 // parsePagerFooterContext 只能單向推論，所以用「不是 mail」而非「是 reading」——
 // footer 會因為寬度不夠整段消失（string_util.js 的說明）。
+// 看板精華區開的文章（pagerFromEssence，TermBuf.pagerContext）footer 有「推文」，
+// 但 X 只會退回精華區選單 ⇒ 同樣不給。
 export function longPushAvailable(opts) {
   const o = opts || {};
   const prefs = o.prefs || {};
   return (
     !!prefs.enableLongPush &&
     o.pageState === 3 &&
+    !o.pagerFromEssence &&
     parsePagerFooterContext(o.lastRowText) !== 'mail'
   );
 }
@@ -61,7 +64,9 @@ export function shouldInterceptPushKey(opts) {
   // 新開關從屬於 enableLongPush：longPushAvailable 第一項就是總開關，關掉總開關時
   // 攔截必定失效，不靠兩處各記一次。
   if (!prefs.pushKeyOpensLongPush) return false;
-  if (!longPushAvailable({ prefs, pageState: o.pageState, lastRowText: o.lastRowText }))
+  if (!longPushAvailable({
+    prefs, pageState: o.pageState, lastRowText: o.lastRowText, pagerFromEssence: o.pagerFromEssence
+  }))
     return false;
   // pmore 自己的 prompt（`/` 搜尋、`:`／`;`／數字跳行跳頁，pmore.c#pmore_do_goto 等）畫在
   // b_lines-1，**狀態列留在底列** ⇒ 上一條照樣成立，使用者在 prompt 裡打的 X 會被吞去開
@@ -80,6 +85,7 @@ export function pushGateFacts(core) {
   return {
     pageState: buf.pageState,
     lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
-    cursorOnInputField: typeof buf.isCursorOnInputField === 'function' && buf.isCursorOnInputField()
+    cursorOnInputField: typeof buf.isCursorOnInputField === 'function' && buf.isCursorOnInputField(),
+    pagerFromEssence: !!buf.pagerFromEssence
   };
 }

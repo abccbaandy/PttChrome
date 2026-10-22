@@ -356,6 +356,8 @@ lastRow=""                                    ← # prompt 清掉 footer，故 t
   Q 各 context 的行為（讀碼 CONFIRMED）：READING 出資訊框（`bbs.c:2381`）＝證明
   READING ⇒ 關框＋列表上 `s`；精華區 `more()` 回 997、`announce.c:1185-1218` 的迴圈
   `break` 回目錄、不出框 ⇒ probe→miss→退出前導；站內信 header 沒有看板 ⇒ 不按 Q。
+  看板精華區（`z`）的 footer 其實是完整的 READING 版（`b_man` 不 `setutmpmode`），所以
+  context 由 `TermBuf.pagerContext()` 給 `'essence'`，不看 footer，也不被 `listOpened` 升級。
 
 ### 8. 好讀背景載入的遲到回應（AID 點擊跳文）
 

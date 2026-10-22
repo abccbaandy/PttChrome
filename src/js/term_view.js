@@ -1364,7 +1364,8 @@ TermView.prototype = {
       if (pushFacts && shouldInterceptPushKey({
             key: text, prefs: readEffectivePrefs(),
             pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText,
-            cursorOnInputField: pushFacts.cursorOnInputField
+            cursorOnInputField: pushFacts.cursorOnInputField,
+            pagerFromEssence: pushFacts.pagerFromEssence
           }) && this.bbscore.openLongPushModal && this.bbscore.openLongPushModal())
         return;
     }
@@ -1534,7 +1535,8 @@ TermView.prototype = {
             key: e.key, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey,
             prefs: readEffectivePrefs(),
             pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText,
-            cursorOnInputField: pushFacts.cursorOnInputField
+            cursorOnInputField: pushFacts.cursorOnInputField,
+            pagerFromEssence: pushFacts.pagerFromEssence
           }) && this.bbscore.openLongPushModal && this.bbscore.openLongPushModal()) {
         e.preventDefault();
         return;

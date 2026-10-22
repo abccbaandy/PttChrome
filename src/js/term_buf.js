@@ -2,7 +2,7 @@
 
 import { Event } from './event';
 import { ColorState } from './term_ui';
-import { b2u, textCellWidth, parseStatusRow, parseListRow } from './string_util';
+import { b2u, textCellWidth, parseStatusRow, parseListRow, parsePagerFooterContext } from './string_util';
 import { isWideCellCode, cellText } from './unicode_cells';
 import { cjkUrlExtension } from './url_cjk';
 import { trimUrlTailLength } from './url_trim';
@@ -23,6 +23,7 @@ import { resolveDismiss } from './screen_dismiss';
 import { parseMenuItemRow, isMenuScreen } from './menu_items';
 import { EDITOR_CAPTION, footerCaption } from './screen_captions';
 import {
+  ARCHIVE_LIST,
   BOARD_LIST,
   MENU_TITLES,
   rowHasAnyTitle,
@@ -322,6 +323,9 @@ export function TermBuf(cols, rows) {
   this.changed = false;
   this.posChanged = false;
   this.pageState = 0;
+  // 最近一張認得出的選單／列表畫面是精華區（標題列【精華文章】）⇒ 之後開的 pager 是精華區
+  // 文章，不是看板文章（見 pagerContext）。只在 setPageState 判出 1／2 的那一幀改寫。
+  this.pagerFromEssence = false;
   this.forceFullWidth = false;
 
   this.startedEasyReading = false;
@@ -1456,6 +1460,16 @@ TermBuf.prototype = {
     return this._isPauseRow(this.getRowText(this.rows - 1, 0, this.cols)) || this._isAnsiPassFrame();
   },
 
+  // pager 現在是誰的：string_util.parsePagerFooterContext 讀底列，再加一條底列看不出來的：
+  // 看板精華區（文章列表的 z，bbs.c#b_man）不 setutmpmode，currstat 還是 READING ⇒
+  // footer 照印 pager_reading_cmds，跟看板文章一字不差；但那裡 s／#／Q／X／y 都只會讓
+  // announce_cmd_select 的迴圈 break 回精華區選單，後面送的字全打進選單。所以從精華區
+  // 開的 pager 一律回 'essence'（呼叫端照「不是 reading」走安全路徑，不會被升級）。
+  pagerContext: function() {
+    if (this.pagerFromEssence) return 'essence';
+    return parsePagerFooterContext(this.getRowText(this.rows - 1, 0, this.cols));
+  },
+
   setPageState: function() {
     let lastRowNum = this.rows - 1;
     let cols = this.cols;
@@ -1483,9 +1497,11 @@ TermBuf.prototype = {
         parseListRow(lastRowText)) {
         //console.log('pageState = 1 (MENU)');
         this.pageState = 1; // MENU
+        this.pagerFromEssence = rowHasTitle(firstRowText, ARCHIVE_LIST);
       } else if (this.isUnicolor(2, 0, cols-10) && !this.isLineEmpty(1) && (this.cur_x < 19 || this.cur_y == lastRowNum)) {
         //console.log('pageState = 2 (LIST)');
         this.pageState = 2; // LIST
+        this.pagerFromEssence = rowHasTitle(firstRowText, ARCHIVE_LIST);
       }
     } else if (this._isAnsiPassFrame()) {
       //console.log('pageState = 5 (PASS)');

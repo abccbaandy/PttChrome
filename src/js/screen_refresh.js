@@ -65,6 +65,8 @@ export function refreshTargetFromFacts(facts, pageState, opts) {
   // 留著，光看底列還是 pager），重整送的鍵會打進 prompt。
   if (facts.inputField) return null;
   if (pageState === 3 && atPagerStatusRow(last)) {
+    // 看板精華區的文章：footer 跟看板文章一字不差，但 s／# 都只會退回精華區選單。
+    if (facts.pagerFromEssence) return null;
     let ctx = parsePagerFooterContext(last);
     if (ctx === 'unknown' && o.listOpened) ctx = 'reading';
     if (ctx !== 'reading' || !o.articleBoard) return null;

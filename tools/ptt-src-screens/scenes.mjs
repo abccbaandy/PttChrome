@@ -310,6 +310,37 @@ export const SCENES = [
     ],
   },
   {
+    // 文摘（Tab，bbs.c#board_digest）：MODE_DIGEST 讀看板的 fn_mandex，標題列「文摘《板》」、
+    // 底列「文摘列表」，編號是文摘自己的（跟搜尋結果一樣是另一個編號空間）。Q 看 AID，開一篇
+    // 再 ← 回文摘，文摘上再 ← 是 read_cmd_quit 的 board_digest ⇒ 回完整列表（不是離板）。
+    file: 'digest',
+    entry: 'read:Gossip',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '\t', name: 'digest' },
+      { keys: 'Q', name: 'info' },
+      { keys: ' ' },
+      { keys: '\r', name: 'article' },
+      { keys: '\x1b[D', name: 'back' },
+      { keys: '\x1b[D', name: 'plain' },
+    ],
+  },
+  {
+    // 精華區（z，bbs.c#b_man → announce.c#a_menu）：row 0 是【板主】的選單畫面，開一篇是
+    // 精華區文章（pmore，currstat 不是 READING：s／#／推文都不在），← 回精華區、再 ← 回列表。
+    file: 'essence',
+    entry: 'read:Gossip',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: 'z', name: 'menu' },
+      { keys: '\r', name: 'article' },
+      { keys: '\x1b[D', name: 'back' },
+      { keys: '\x1b[D', name: 'list-again' },
+    ],
+  },
+  {
     // 一般水球模式回水球（wmsg.c#wmsg_handle_ctrl_r_default）：收了 alice、bob、carol 三顆，
     // 第一下 ^R 回最新一位（carol）的 prompt，再按 ^R 出訊息回顧、每按一下往舊的選一則。
     file: 'waterball_default',

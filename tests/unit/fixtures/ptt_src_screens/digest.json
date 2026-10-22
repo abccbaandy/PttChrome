@@ -1,0 +1,42 @@
+{
+ "cols": 80,
+ "rows": 24,
+ "entry": "read:Gossip",
+ "frames": [
+  {
+   "name": "list",
+   "keys": "",
+   "bytes": "\u001b[?7l\u001b[?2026h\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[1;37;46m¡iªO¥D:sysop¡j                       \u001b[33m¤K¨ö\u001b[0;1;37;46m                        ¬ÝªO¡mGossip¡n\r\n\u001b[m[¡÷]¾\\Åª [z]ºëµØ°Ï [Tab]¤åºK [s]¿ï¾Ü¬ÝªO [b]¶iªO [i]¬ÝªO³]©w [^X]Âà¿ý [/]·j´M\r\n\u001b[30;47m   ½s¸¹    ¤é ´Á §@  ªÌ       ¤å  ³¹  ¼Ð  ÃD                            ¤H®ð:42 \u001b[4;7H\u001b[m1 +\u001b[1;32m 8\u001b[m10/07 judy\u001b[4;31H¡¼ [Ãz¨ö] ¦¬¶i¤åºKªº¤å³¹\u001b[5;7H2 +\u001b[1;30m  \u001b[m10/08 kevin\u001b[5;31H¡¼ [°Ý¨ö] ¨S¦¬¶i¤åºK\r\n>     3 +\u001b[1;33m30\u001b[m10/09 lucy\u001b[6;31H¡¼ [·s»D] ²Ä¤G½g¤åºK\r\u001b[24;1H\u001b[34;46m ¤å³¹¦Cªí \u001b[30;47m \u001b[31m(^P)\u001b[30mµoªí \u001b[31m(y)\u001b[30m¦^À³ \u001b[31m(X)\u001b[30m±À¤å \u001b[31m(d)\u001b[30m§R°£ \u001b[31m(¡÷)\u001b[30m¾\\Åª \u001b[31m(b)\u001b[30m¶iªO  \u001b[31m(¡ö)\u001b[30mÂ÷¶} \u001b[31m(h)\u001b[30m»¡©ú \u001b[m\u001b[6;1H\u001b[?2026l"
+  },
+  {
+   "name": "digest",
+   "keys": "\t",
+   "bytes": "\u001b[?2026h\u001b[1;66H\u001b[1;36;46m¤åºK¡mGossip¡n\r\n\n\n\n\u001b[m>\u001b[5;10H\u001b[1;33m30\u001b[5;16H\u001b[m9 lucy \u001b[5;35H·s»D] ²Ä¤G½g\r\n\u001b[K\u001b[24;4H\u001b[34;46mºK\u001b[m\u001b[5;1H\u001b[?2026l"
+  },
+  {
+   "name": "info",
+   "keys": "Q",
+   "bytes": "\u001b[?2026h\u001b[H\u001b[1;30m¡iªO¥D:sysop¡j                       ¤K¨ö                        ¤åºK¡mGossip¡n \r\n[¡÷]¾\\Åª [z]ºëµØ°Ï [Tab]¤åºK [s]¿ï¾Ü¬ÝªO [b]¶iªO [i]¬ÝªO³]©w [^X]Âà¿ý [/]·j´M   \r\n   ½s¸¹    ¤é ´Á §@  ªÌ       ¤å  ³¹  ¼Ð  ÃD                            ¤H®ð:42 \r\n\u001b[m\u001b[K\n\u001b[1;37m>     2 +3010/09 lucy         ¡¼ [·s»D] ²Ä¤G½g¤åºK                              \r\n\u001b[m¢z¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢{\r\n¢x ¤å³¹¥N½X(AID): \u001b[1;37m#5giJk-0- \u001b[m(Gossip) [ptt2.cc] [·s»D] ²Ä¤G½g¤åºK\u001b[7;77H¢x\r\n¢x ³o¤@½g¤å³¹­È 0 Ptt¹ô\u001b[8;77H¢x\r\n¢|¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w [¦A«ö Q ¤Á´«»ù®æ¦Cªí]  ¢w¢}\r\n\n\u001b[1;30m                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n                                                                                \r\n\u001b[34;44m ¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e\u001b[0;1;37;44m ½Ð«ö¥ô·NÁäÄ~Äò \u001b[34m¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e¢e  \u001b[m\u001b[?2026l"
+  },
+  {
+   "name": null,
+   "keys": " ",
+   "bytes": "\u001b[?2026h\u001b[H\u001b[1;37;46m¡iªO¥D:sysop¡j                       \u001b[33m¤K¨ö\u001b[0;1;37;46m                        \u001b[36m¤åºK¡mGossip¡n\u001b[m\u001b[K\r\n[¡÷]¾\\Åª [z]ºëµØ°Ï [Tab]¤åºK [s]¿ï¾Ü¬ÝªO [b]¶iªO [i]¬ÝªO³]©w [^X]Âà¿ý [/]·j´M\u001b[K\r\n\u001b[30;47m   ½s¸¹    ¤é ´Á §@  ªÌ       ¤å  ³¹  ¼Ð  ÃD                            ¤H®ð:42 \u001b[4;7H\u001b[m1 +\u001b[1;32m 8\u001b[m10/07 judy\u001b[4;31H¡¼ [Ãz¨ö] ¦¬¶i¤åºKªº¤å³¹\r\n>     2 +\u001b[1;33m30\u001b[m10/09 lucy         ¡¼ [·s»D] ²Ä¤G½g¤åºK\u001b[K\r\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[34;46m ¤åºK¦Cªí \u001b[30;47m \u001b[31m(^P)\u001b[30mµoªí \u001b[31m(y)\u001b[30m¦^À³ \u001b[31m(X)\u001b[30m±À¤å \u001b[31m(d)\u001b[30m§R°£ \u001b[31m(¡÷)\u001b[30m¾\\Åª \u001b[31m(b)\u001b[30m¶iªO  \u001b[31m(¡ö)\u001b[30mÂ÷¶} \u001b[31m(h)\u001b[30m»¡©ú \u001b[m\u001b[5;1H\u001b[?2026l"
+  },
+  {
+   "name": "article",
+   "keys": "\r",
+   "bytes": "\u001b[?2026h\u001b[H\u001b[34;47m §@ªÌ \u001b[0;44m lucy (lucy)                                              \u001b[34;47m ¬ÝªO \u001b[0;44m Gossip \u001b[m\u001b[K\r\n\u001b[34;47m ¼ÐÃD \u001b[0;44m [·s»D] ²Ä¤G½g¤åºK                                                      \r\n\u001b[34;47m ®É¶¡ \u001b[0;44m Sun Sep 27 12:00:00 2026                                               \u001b[m\u001b[K\r\n\u001b[36m¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w\r\n\u001b[m\u001b[K\nbody\r\u001b[24;1H\u001b[44m  ÂsÄý ²Ä 1/1 ­¶ (100%) \u001b[1;30;47m ¥Ø«eÅã¥Ü: ²Ä 01~05 ¦æ\u001b[0;30;47m \u001b[31m(y)\u001b[30m¦^À³\u001b[31m(X)\u001b[30m±À¤å  \u001b[31m(¡ö)\u001b[30mÂ÷¶}\u001b[m\u001b[24;80H\u001b[?2026l"
+  },
+  {
+   "name": "back",
+   "keys": "\u001b[D",
+   "bytes": "\u001b[?2026h\u001b[H\u001b[1;37;46m¡iªO¥D:sysop¡j                       \u001b[33m¤K¨ö\u001b[0;1;37;46m                        \u001b[36m¤åºK¡mGossip¡n\r\n\u001b[m[¡÷]¾\\Åª [z]ºëµØ°Ï [Tab]¤åºK [s]¿ï¾Ü¬ÝªO [b]¶iªO [i]¬ÝªO³]©w [^X]Âà¿ý [/]·j´M\u001b[K\r\n\u001b[30;47m   ½s¸¹    ¤é ´Á §@  ªÌ       ¤å  ³¹  ¼Ð  ÃD                            ¤H®ð:42 \r\n\u001b[m      1 +\u001b[1;32m 8\u001b[m10/07 judy         ¡¼ [Ãz¨ö] ¦¬¶i¤åºKªº¤å³¹\u001b[K\r\n>     2  \u001b[1;33m30\u001b[m10/09 lucy\u001b[5;31H\u001b[1;31m¡¼ [·s»D] ²Ä¤G½g¤åºK\r\n\u001b[m\u001b[K\u001b[24;1H\u001b[34;46m ¤åºK¦Cªí \u001b[30;47m \u001b[31m(^P)\u001b[30mµoªí \u001b[31m(y)\u001b[30m¦^À³ \u001b[31m(X)\u001b[30m±À¤å \u001b[31m(d)\u001b[30m§R°£ \u001b[31m(¡÷)\u001b[30m¾\\Åª \u001b[31m(b)\u001b[30m¶iªO  \u001b[31m(¡ö)\u001b[30mÂ÷¶} \u001b[m\u001b[5;1H\u001b[?2026l"
+  },
+  {
+   "name": "plain",
+   "keys": "\u001b[D",
+   "bytes": "\u001b[?2026h\u001b[1;66H\u001b[1;37;46m¬ÝªO¡mGossip¡n\r\n\n\n\n\u001b[m      2 +\u001b[1;30m  \u001b[5;16H\u001b[m8 kevin\u001b[5;31H¡¼ [°Ý¨ö] ¨S¦¬¶i¤åºK\r\n>     3  \u001b[1;33m30\u001b[m10/09 lucy\u001b[6;31H\u001b[1;31m¡¼ [·s»D] ²Ä¤G½g¤åºK\u001b[24;4H\u001b[0;34;46m³¹\u001b[m\u001b[6;1H\u001b[?2026l"
+  }
+ ]
+}

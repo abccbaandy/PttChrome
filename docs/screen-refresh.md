@@ -45,7 +45,12 @@
 ## 什麼畫面接手（`refreshTargetFromFacts`，認不出 ⇒ 不接）
 
 - 文章：pager 狀態列＋footer 證明 READING（`parsePagerFooterContext`；超長文 footer 被擠掉時，
-  列表好讀自己開的這篇算數）＋已知看板。**站內信／精華區不接**（`more.c` 依 currstat 擋掉 `s` 與 `#`）。
+  列表好讀自己開的這篇算數）＋已知看板。**站內信／精華區不接**：站內信是 `more.c` 依 currstat 擋掉
+  `s` 與 `#`；看板精華區（文章列表的 `z`，`bbs.c#b_man`）不 `setutmpmode`，currstat 還是 READING ⇒
+  footer 跟看板文章一字不差，但 `s`／`#`／`Q` 都只會讓 `announce_cmd_select` 的迴圈 break 回精華區
+  選單 ⇒ 靠「最近一張選單／列表是【精華文章】」認（`TermBuf.pagerFromEssence`／`pagerContext()`
+  回 `'essence'`，不會被列表好讀的證據升級）。同一個旗標也關掉推文鍵攔截、右鍵長推文與複製本篇
+  連結、手機工具列的推／回／分享／同主題。
 - 文章列表：非輸入欄、標題列讀得到 ASCII 板名；caption 是「系列文章」（搜尋結果 MODE_SELECT）或
   「文摘列表」⇒ 不接（`s` 會離開那個模式）。**已知限制**：舊版 caption 一律「文章選讀」，分不出
   搜尋結果 ⇒ 那種畫面重整會回到完整列表。

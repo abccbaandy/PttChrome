@@ -1308,7 +1308,8 @@ App.prototype.onFunctionKey = function(bytes, label) {
     if (pushFacts && shouldInterceptPushKey({
           key: bytes, prefs: readEffectivePrefs(),
           pageState: pushFacts.pageState, lastRowText: pushFacts.lastRowText,
-          cursorOnInputField: pushFacts.cursorOnInputField
+          cursorOnInputField: pushFacts.cursorOnInputField,
+          pagerFromEssence: pushFacts.pagerFromEssence
         }) && this.openLongPushModal()) return;
   }
   // 列表好讀：封閉互動（v5）。回 true ＝它接手了，不可以再送一次。
