@@ -72,6 +72,15 @@ rewrite: https://abccbaandy.github.io/PttChrome/#$1
 > `※ 文章網址:` 那行是 ptt.cc 私有 patch，不在開源 pttbbs 快照裡 ⇒ 一律當
 > best-effort，取不到就退回按 Q（行為與這條路徑不存在時完全相同）。
 
+**文摘的 AID 是 G 檔名**：文摘（Tab）裡按 Q 拿到的是 `bbs.c#good_post` 複製出來的 G 檔
+（type 1，短碼開頭 4～7），不是原文的 M。完整列表上 `#<G>` 在新版 `read.c` 是**靜默失敗**
+（`select_by_aid` 在 `fn_mandex` 找到後只設 `default_ch=Tab`，`read_cmd_aid` 沒用它 ⇒
+不切文摘、游標不動、沒有錯誤，`aidSearchLanded` 照樣過 ⇒ 開到游標原本那篇），舊版則會切進
+文摘。G 與 M 只差檔名首字 ⇒ 送 `#`（`aid_navigation._enqueueAidSearch`、
+`long_push_session` 的重定位）與組分享網址（`buildDeepLink`）前一律
+`aid_codec.toPostAid` 換回 M，兩版都落在原文。upstream 畫面守護：`ptt-src-screens` 的
+`digest_aid` 場景。
+
 ## 網址列同步（`_syncAddressBar`）
 
 - `pageState === 3`（READING）且 `findLocalPostAid()` 算得出來 ⇒ 寫入正規形式連結。

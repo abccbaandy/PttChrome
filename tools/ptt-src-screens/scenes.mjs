@@ -327,6 +327,23 @@ export const SCENES = [
     ],
   },
   {
+    // 完整列表上 # 文摘的 AID（G 檔名，type 1）：select_by_aid 在 fn_mandex 找到後只設
+    // default_ch=Tab，但 read.c#read_cmd_aid 沒用它 ⇒ 不切文摘、游標不動、也沒有錯誤訊息。
+    // 換回原文的 AID（M，toPostAid）才落在原文上。游標先停到 1，看得出有沒有動。
+    file: 'digest_aid',
+    entry: 'read:Gossip',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '1' },
+      { keys: '\r', name: 'at-1' },
+      { keys: '#' },
+      { keys: '5giJk-0-\r', name: 'g-aid' },
+      { keys: '#' },
+      { keys: '1giJk-0-\r', name: 'm-aid' },
+    ],
+  },
+  {
     // 精華區（z，bbs.c#b_man → announce.c#a_menu）：row 0 是【板主】的選單畫面，開一篇是
     // 精華區文章（pmore，currstat 不是 READING：s／#／推文都不在），← 回精華區、再 ← 回列表。
     file: 'essence',

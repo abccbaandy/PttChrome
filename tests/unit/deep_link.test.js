@@ -5,6 +5,7 @@
 // 原樣送進 `s<board>\r` / `#<aid>\r`。
 
 import { parseDeepLink, buildDeepLink, stripDeepLink } from "../../src/js/deep_link";
+import { fnToAid } from "../../src/js/aid_codec";
 
 const BASE = "https://example.github.io/pttchrome/";
 const AID = "1gIeu-3A";
@@ -186,6 +187,12 @@ describe("buildDeepLink", () => {
     expect(buildDeepLink(BASE, "Gossiping", AID)).toBe(
       BASE + "#Gossiping/" + FN
     );
+  });
+
+  test("文摘的 G AID（文摘裡按 Q 拿到的）換回原文的 M 檔名", () => {
+    const g = fnToAid("G" + FN.slice(1).replace(/\.html$/, ""));
+    expect(g).not.toBe(AID);
+    expect(buildDeepLink(BASE, "Gossiping", g)).toBe(BASE + "#Gossiping/" + FN);
   });
 
   test("不再產出短碼形式", () => {

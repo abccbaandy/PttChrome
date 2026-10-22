@@ -94,6 +94,17 @@ export function aidToFn(aid) {
   return (type === 0 ? "M" : "G") + "." + v1 + ".A." + hex;
 }
 
+// 文摘 AID（G 檔名，type 1）→ 原文 AID（M，type 0）；其他原樣交回。
+// 文摘裡按 Q 拿到的是 G：bbs.c#good_post 只把原文檔名首字換成 G 複製一份，時間戳與 hex
+// 都一樣。完整列表上 `#<G>` 在新版 read.c 是靜默失敗（select_by_aid 在 fn_mandex 找到後
+// 只設 default_ch=Tab，read_cmd_aid 沒用它 ⇒ 不切文摘、游標不動、沒有錯誤訊息），舊版則會
+// 切進文摘；`#<M>` 兩版都落在原文。所以送 `#` 或組網址前一律換成 M。
+export function toPostAid(aid) {
+  const fn = aidToFn(aid);
+  if (!fn || fn.charAt(0) !== "G") return aid;
+  return fnToAid("M" + fn.slice(1));
+}
+
 // https://www.ptt.cc/bbs/<Board>/M.<v1>.A.<v2>.html → { board, aid } | null。
 // 也吃 pttbbs USE_AID_URL 那種尾段直接是 AIDc、且沒有 .html 的形式（aids/bbs.c:395-417）。
 export function parseArticleUrl(href) {
