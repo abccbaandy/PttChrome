@@ -23,7 +23,7 @@
 // 內部表示一律是 { board, aid }：檔名只是外觀，aid_codec 兩邊可逆，所以
 // deep_link_entry / deep_link_controller / aid_navigation 全都不必知道這件事。
 
-import { BOARD_RE, aidToFn, fnToAid, isAidc } from "./aid_codec";
+import { BOARD_RE, aidToFn, fnToAid, isAidc, toPostAid } from "./aid_codec";
 
 // #<Board>/<AID 或檔名>，允許前導斜線（#/Gossiping/1abcDEFG 也吃）
 const PATH_FORM_RE = /^\/?([^/]+)\/([^/]+)\/?$/;
@@ -91,7 +91,9 @@ export function parseDeepLink(href) {
 // 短碼形式改為只吃不產。parseDeepLink 兩種都解得回同一個 { board, aid }。
 export function buildDeepLink(baseHref, board, aid) {
   if (!isValid(board, aid)) return null;
-  const fn = aidToFn(aid);
+  // 文摘裡 Q 拿到的 G AID 換回原文（toPostAid）：收到連結的人在完整列表上 # 才找得到，
+  // ptt.cc 網頁版也只有 M 檔名的網址。
+  const fn = aidToFn(toPostAid(aid));
   if (!fn) return null;
   let url;
   try {

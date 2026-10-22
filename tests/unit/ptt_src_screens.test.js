@@ -65,10 +65,11 @@ import {
   parseBoardPromptFrame,
   resolvedBoardName,
 } from "../../src/js/board_search_bridge";
-import { isSubListTitle, landedOnBoardList } from "../../src/js/aid_navigation";
+import { aidSearchLanded, isSubListTitle, landedOnBoardList } from "../../src/js/aid_navigation";
 import digestFx from "./fixtures/ptt_src_screens/digest.json";
+import digestAidFx from "./fixtures/ptt_src_screens/digest_aid.json";
 import essenceFx from "./fixtures/ptt_src_screens/essence.json";
-import { aidToFn } from "../../src/js/aid_codec";
+import { aidToFn, toPostAid } from "../../src/js/aid_codec";
 import { parsePagerFooterContext } from "../../src/js/string_util";
 import { isSubListFooter } from "../../src/js/screen_captions";
 import { listModeOf } from "../../src/js/list_session";
@@ -509,6 +510,31 @@ describe("upstream pttbbs 產的文摘（Tab，bbs.c#board_digest）", () => {
     expect(found).toHaveLength(1);
     expect(found[0].board).toBe("Gossip");
     expect(aidToFn(found[0].aid)).toMatch(/^G\.\d+\.A\.[0-9A-F]{3}$/);
+  });
+
+  // read.c#select_by_aid 在 fn_mandex 找到 type 1 的 AID 時只設 default_ch=Tab，
+  // read_cmd_aid 卻沒用它 ⇒ 不切文摘、游標不動、也沒有「找不到」⇒ 落地檢查照樣過，
+  // 接著 ⏎ 開的是游標原本那篇。所以送 # 之前一律換回原文的 M（toPostAid）。
+  test("完整列表上 # 文摘的 G AID：游標不動、沒有錯誤 ⇒ 落地檢查會誤判；換成 M 才落在原文", () => {
+    const g = screenAt(digestFx, "info").rowTexts.map(parsePostInfoAid).filter(Boolean)[0].aid;
+    expect(g).toBe("5giJk-0-");
+
+    const at1 = screenAt(digestAidFx, "at-1");
+    const miss = screenAt(digestAidFx, "g-aid");
+    expect(miss.facts.curY).toBe(at1.facts.curY); // 游標沒動
+    // 同 list_session 組給 command queue 的 facts（kind／boardName／cursorRowNum）
+    const nums = pageArticleNums(miss.rowTexts, miss.facts.curY);
+    const missFacts = {
+      ...miss.facts,
+      ...classifyListScreen(miss.facts),
+      cursorRowNum: nums[miss.facts.curY],
+    };
+    expect(aidSearchLanded(missFacts)).toBe(true); // 畫面上分不出來
+    expect(subjectOfListText(miss.rowTexts[miss.facts.curY])).toBe("[爆卦] 收進文摘的文章");
+
+    expect(toPostAid(g)).toBe("1giJk-0-");
+    const hit = screenAt(digestAidFx, "m-aid");
+    expect(subjectOfListText(hit.rowTexts[hit.facts.curY])).toBe("[新聞] 第二篇文摘");
   });
 
   test("文摘裡開的文章是 READING；← 回文摘（子列表），文摘上再 ← 回完整列表（不是離板）", () => {

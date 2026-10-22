@@ -52,6 +52,7 @@ import {
   findAnchorRowNum
 } from './long_push_anchor';
 import { aidSearchLanded } from './aid_navigation';
+import { toPostAid } from './aid_codec';
 // 收尾鍵（Ctrl-C 取消輸入列／確認列，空白鍵收掉 vmsg 橫幅）與完整的 pttbbs 出處
 // 註解都在 screen_dismiss.js，與「滑鼠點空白處關框」**共用同一份**。
 // 不要在這裡再定義第二份。
@@ -939,7 +940,8 @@ LongPushSession.prototype = {
     const self = this;
     this._step({
       kind: 'longpush-relocate-aid',
-      keys: '#' + this._anchor.aid + '\r',
+      // 文摘的 G AID 在完整列表上 # 會靜默停在原處（aid_codec.toPostAid）。
+      keys: '#' + toPostAid(this._anchor.aid) + '\r',
       fullRepaint: true,
       failMsg: '找不到原本那篇文章',
       accept: function(c, facts) {

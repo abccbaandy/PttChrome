@@ -70,6 +70,7 @@ import { MAIN_MENU, boardNameFromKey, parseBoardKey, rowHasTitle } from './scree
 import { isSubListFooter } from './screen_captions';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
+import { toPostAid } from './aid_codec';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -1772,7 +1773,8 @@ AidNavigation.prototype = {
   // the ★pinned case) lives in aidSearchLanded, shared with long_push_session.
   _enqueueAidSearch: function(run) {
     const self = this;
-    const aid = run.target.aid;
+    // 文摘的 G AID 在完整列表上 # 會靜默停在原處（aid_codec.toPostAid）。
+    const aid = toPostAid(run.target.aid);
     this._queue.enqueue({
       keys: '#' + aid + '\r',
       kind: 'aid-search',

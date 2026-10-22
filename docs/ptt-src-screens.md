@@ -81,6 +81,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `mail_list` | `menu`／24 | `^Z m` | 信件列表：caption「信件列表」⇒ 列表好讀／看板列表不接管；首頁儀表板「新信」的落地（離開主功能表）。表頭右側綠色「(大小:N篇)」讓 row 2 不是單色 ⇒ `pageState` 不是 2（新舊版都一樣，未改） |
 | `editor` | `read:Mine`／24 | `E` | 編輯器底列「編輯文章」＋狀態框 ⇒ `pageState` 6；`image_upload.decideInsertMode`：編輯器／推文內容列送字，型別選單／確定／列表／文章走剪貼簿 |
 | `board_complete` | `menu`／24 | `s` `M` 空白 `x` `o` 空白 | 選看板自動完成：`parseBoardPromptFrame` 讀輸入欄／候選（依板名排序）、被拒的字輸入欄不變（`boardQueryResult` rejected）、中間幀的舊清單、唯一補完 `resolvedBoardName` |
+| `digest_aid` | `read:Gossip`／24 | `1⏎` `#5giJk-0-⏎` `#1giJk-0-⏎` | 完整列表上 # 文摘的 G AID：新版 `read_cmd_aid` 丟掉 `select_by_aid` 設的 default_ch=Tab ⇒ 不切文摘、游標不動、沒有錯誤，`aidSearchLanded` 照樣過；換成原文的 M（`aid_codec.toPostAid`）才落在原文 |
 | `essence` | `read:Gossip`／24 | `z` `⏎` `←` `←` | 看板精華區：標題列【精華文章】、pageState 1；開的文章 footer 跟看板文章一字不差（`b_man` 不 `setutmpmode`，currstat 還是 READING）⇒ `TermBuf.pagerContext()` 回 `'essence'`，重新整理／推文攔截／手機工具列推回分享都不給；回文章列表後旗標清掉 |
 | `digest` | `read:Gossip`／24 | `Tab` `Q` 空白 `⏎` `←` `←` | 文摘：標題列「文摘《板》」＋底列「文摘列表」⇒ 子列表（`listModeOf` select、重新整理不接手）、自己的編號空間；文摘裡 Q 的 AID 是 G 檔名（type 1）；文章是 READING；文章裡 ← 回文摘、文摘上 ← 是 `board_digest` 回完整列表不是離板（`landedOnBoardList` 的 sub；`_enqueueLeaveSubList` 的依據） |
 | `mark_read_prompt` | `read:Test`／24 | `v` | 文章列表 v 的「設定所有文章 …」prompt（`markReadPromptShown`）；是輸入欄 ⇒ 逃生送 ^C |

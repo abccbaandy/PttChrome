@@ -15,6 +15,7 @@ import {
   aidToFn,
   isAidc,
   parseArticleUrl,
+  toPostAid,
   BOARD_RE
 } from "../../src/js/aid_codec";
 
@@ -165,5 +166,22 @@ describe("BOARD_RE（與 deep_link.js 共用同一份）", () => {
   test("送進 `s<board>\\r` 前必須擋掉的東西", () => {
     for (const b of ["", "a", "-abc", "a b", "a\rb", "a/b"])
       expect(BOARD_RE.test(b)).toBe(false);
+  });
+});
+
+// 文摘裡按 Q 拿到的是 G 檔名的 AID（bbs.c#good_post 只把檔名首字換成 G）。
+describe("toPostAid：文摘 AID（G）換回原文 AID（M）", () => {
+  test("G ⇒ 同一個時間戳／hex 的 M", () => {
+    for (const [fn, aid] of PAIRS) {
+      const g = fnToAid("G" + fn.slice(1));
+      expect(g).not.toBe(aid);
+      expect(toPostAid(g)).toBe(aid);
+    }
+  });
+
+  test("M 原樣；不合法的原樣交回（給呼叫端自己判）", () => {
+    for (const [, aid] of PAIRS) expect(toPostAid(aid)).toBe(aid);
+    expect(toPostAid("!!")).toBe("!!");
+    expect(toPostAid(null)).toBe(null);
   });
 });
