@@ -8,8 +8,8 @@
 //  (3) 整段不含 letter-spacing / padding / font-weight —— 等寬格線一位移，
 //      term_view.fixedResize 的 .wpadding 寬度契約、mouse_geometry.colFromClientX
 //      的推文列點擊欄位判定、.floorBadge 的零寬盒全部跟著壞；
-//  (4) 不得用 margin-bottom —— #easyReadingLastRow 以 margin-top:-1em 疊在
-//      #mainContainer 的 paddingBottom:1em 上，尾端多出的 margin 會把它推離；
+//  (4) 不得用 margin-bottom —— #easyReadingLastRow 以 margin-top:-(1em+10px) 疊在
+//      #mainContainer 的 paddingBottom（1em+10px）上，尾端多出的 margin 會把它推離；
 //  (5) 兩個值都要 round(…, 1px) 成整數像素 —— 字級不是 20 的倍數時 0.55em／1.3
 //      是小數像素，反向讀取（End）每在視窗上方插入一頁推文，scroll anchoring
 //      補償後視窗內文字就差半個像素 ⇒ 整段預讀期間文字細微震動。

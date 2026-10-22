@@ -210,10 +210,10 @@ test.describe('游標與畫面共用同一個垂直座標系（離線）', () =>
     await page.evaluate(() => window.__app.easyReading.enterEasyReading());
     await waitScreenSettled(page);
 
-    // 前提：好讀累積頁替 footer overlay 保留了一列底部 padding。
+    // 前提：好讀累積頁替 footer overlay 保留了底部 padding（1em＋.main 多出的 10px）。
     expect(
       await page.evaluate(() => document.getElementById('mainContainer').style.paddingBottom)
-    ).toBe('1em');
+    ).toBe('calc(1em + 10px)');
 
     // 按 X 推文 → functionMode，畫面換成原生 24 列鏡像。
     await page.evaluate(() => window.__app.easyReading._enterFunctionMode());

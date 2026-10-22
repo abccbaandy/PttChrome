@@ -2761,15 +2761,16 @@ TermView.prototype = {
   // with row-CONTENT comparison (findPageOverlap) as cross-check / fallback — see
   // comment_parse.resolvePageOverlap and docs/enhanced-addon.md.
   accumulatePageLines: function() {
-    // The bottom status-row overlay (#easyReadingLastRow, margin-top:-1em) sits over the
-    // last viewport row. Reserve one line of bottom padding so the article's last line can
+    // The bottom status-row overlay (#easyReadingLastRow) sits over the last grid row
+    // (main.css: margin-top -(1em+10px), since `.main` is chh*rows+10 tall). Reserve one line of bottom padding so the article's last line can
     // scroll clear of it. Critical for a SHORT (single PTT-page) article whose RENDERED
     // height still exceeds the viewport — e.g. an inline image makes it scrollable — which
     // only ever takes the first-page branch below: without padding its last line stays
     // hidden behind the overlay (user sees the final line/最後一行 "disappear", though it
     // IS in pageLines). Both branches are article pages that show the overlay;
     // hideEasyReadingOverlays clears the padding again when we return to a list/menu.
-    if (this.mainContainer) this.mainContainer.style.paddingBottom = '1em';
+    // 1em＋10px：footer 疊在格線最後一列，下面還有 `.main` 多出的 10px（main.css #easyReadingLastRow）。
+    if (this.mainContainer) this.mainContainer.style.paddingBottom = 'calc(1em + 10px)';
     // parseStatusRow gates this to an article reading page AND supplies the absolute
     // row numbers (rowIndexStart/End) that drive de-duplication — see resolvePageOverlap.
     var lastRowText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
