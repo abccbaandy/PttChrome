@@ -131,6 +131,15 @@ export function ciRunsStarted(runs) {
   return projectRuns(runs).some((r) => r.conclusion !== "skipped");
 }
 
+// 這一輪查不到任何 run 時要繼續等（"wait"）還是放棄（"fail"，exit 2）。
+// 之前已經看過 run（sawRuns）＝ run 確實存在，這一輪空的是 API 的暫時性空回應
+// （head_sha 篩選實測會在 run 進行中突然回 0 筆）⇒ 照 CI 逾時繼續等，不可在
+// 「run 建立寬限期」過後就判「查無 run」—— 那會把跑到一半的 CI 報成工具錯誤。
+export function noRunAction({ wait, sawRuns, now, appearDeadline, deadline }) {
+  if (!wait) return "fail";
+  return now < (sawRuns ? deadline : appearDeadline) ? "wait" : "fail";
+}
+
 // 全部 run 都完成才算完成（有 run 還在跑就要繼續等）。
 export function allSettled(runs) {
   return (runs || []).length > 0 && runs.every((r) => r.status === "completed");
@@ -237,6 +246,7 @@ async function main() {
   // deadline 只剩 4 分鐘，於是 run 一出現就馬上被判「等 CI 逾時」。
   let deadline = Date.now() + Number(arg("timeout-ms", DEFAULT_DEADLINE_MS));
   let sawProjectRun = false;
+  let sawRuns = false;
   for (;;) {
     // 指定 sha 一定要走 API 的 head_sha 參數：只抓最新 N 筆再自己過濾的話，
     // 稍舊的 commit 永遠落在頁外 → 誤報「查無 run」。
@@ -250,8 +260,13 @@ async function main() {
     runs = all.filter((r) => r.head_sha === head && !isSideRun(r));
     if (!runs.length) {
       // 剛 push 完 run 還沒建立 → 寬限期內繼續等，別把「還沒出現」當成「查不到」。
-      if (wait && Date.now() < appearDeadline) {
-        console.log(`  …run 尚未建立，等待中（${sha ? sha.slice(0, 7) : branch}）`);
+      // 看過 run 之後的空回應是 API 暫時性的 → 照 CI 逾時繼續等（noRunAction）。
+      if (noRunAction({ wait, sawRuns, now: Date.now(), appearDeadline, deadline }) === "wait") {
+        console.log(
+          sawRuns
+            ? `  …這一輪 API 沒回任何 run（之前看過），重查中（${sha ? sha.slice(0, 7) : branch}）`
+            : `  …run 尚未建立，等待中（${sha ? sha.slice(0, 7) : branch}）`,
+        );
         await sleep(POLL_MS);
         continue;
       }
@@ -264,6 +279,7 @@ async function main() {
       );
       return 2;
     }
+    sawRuns = true;
     // runs 非空、但裡面沒有本專案的 workflow run（只有 CodeQL / Dependabot 的
     // default setup）＝本專案 CI 還沒被建立。**絕不可**因為那些 run 已完成就判全綠。
     if (!ciRunsStarted(runs)) {

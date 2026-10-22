@@ -18,6 +18,7 @@ import {
   ciRunsStarted,
   runMark,
   runsFailed,
+  noRunAction,
   DEFAULT_DEADLINE_MS,
 } from "../../scripts/ci-status.mjs";
 
@@ -269,6 +270,21 @@ describe("isProjectRun / projectRuns", () => {
     // path 欄位缺席時只能靠 event 判斷。
     expect(isProjectRun({ name: "x", event: "push" })).toBe(true);
     expect(isProjectRun({ name: "x", event: "dynamic" })).toBe(false);
+  });
+});
+
+describe("noRunAction：這一輪查不到 run 要等還是放棄", () => {
+  const base = { wait: true, now: 1000, appearDeadline: 500, deadline: 5000 };
+  test("還沒看過 run：寬限期內等、過了就放棄", () => {
+    expect(noRunAction({ ...base, sawRuns: false, now: 400 })).toBe("wait");
+    expect(noRunAction({ ...base, sawRuns: false })).toBe("fail");
+  });
+  test("REGRESSION：看過 run 之後 API 暫時回 0 筆 ⇒ 照 CI 逾時繼續等，不報「查無 run」", () => {
+    expect(noRunAction({ ...base, sawRuns: true })).toBe("wait");
+    expect(noRunAction({ ...base, sawRuns: true, now: 6000 })).toBe("fail");
+  });
+  test("--no-wait 一律只看當下", () => {
+    expect(noRunAction({ ...base, wait: false, sawRuns: true })).toBe("fail");
   });
 });
 
