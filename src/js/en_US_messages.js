@@ -424,6 +424,39 @@ export const en_US = {
   },
 
   // options nav
+  "optionsDesc_general": {
+    "message": "Easy reading, home, comment bar, shortcuts, look and mobile layout"
+  },
+  "optionsDesc_mouse": {
+    "message": "Mouse browsing, click areas, wheel and back gestures"
+  },
+  "optionsDesc_connection": {
+    "message": "Proxy, encoding, image proxy and startup cache"
+  },
+  "optionsDesc_enhance": {
+    "message": "Floors, comment merging and highlights, links, image upload, blacklist"
+  },
+  "optionsDesc_quicksearch": {
+    "message": "External searches for selected or long-pressed text"
+  },
+  "optionsDesc_autologin": {
+    "message": "Account, password and login options"
+  },
+  "optionsDesc_ai": {
+    "message": "On-device AI assistance"
+  },
+  "optionsDesc_local": {
+    "message": "Settings kept only on this device"
+  },
+  "optionsDesc_backup": {
+    "message": "Export / import settings, cloud sync"
+  },
+  "optionsDesc_about": {
+    "message": "Version, debug mode and what's new"
+  },
+  "options_categoryBack": {
+    "message": "Back to categories"
+  },
   "options_general": {
     "message": "General"
   },

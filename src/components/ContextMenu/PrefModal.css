@@ -107,6 +107,87 @@
   padding: 12px;
 }
 
+/* 窄版分類清單（PREF_CATEGORIES）：清單佔滿整頁、設定內容不畫；點進分類後左欄只剩
+   搜尋框＋「‹ 分類名」返回列。 */
+.PrefModal--categoryList .PrefModal__Grid__Col--right {
+  display: none;
+}
+
+.PrefModal--categoryList .PrefModal__Grid__Col--left {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border-bottom: none;
+}
+
+.PrefModal__Categories {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 12px;
+}
+
+.PrefModal__Category {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 4px;
+  border: none;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.PrefModal__Category:active,
+.PrefModal__CategoryBack:active {
+  background: light-dark(
+    var(--mantine-color-gray-2),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.PrefModal__Category__Text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.PrefModal__Category__Title {
+  font-size: var(--mantine-font-size-md);
+  font-weight: 500;
+}
+
+.PrefModal__Category__Desc {
+  font-size: var(--mantine-font-size-sm);
+  color: var(--mantine-color-dimmed);
+}
+
+.PrefModal__Category__Chevron {
+  flex: none;
+  color: var(--mantine-color-dimmed);
+}
+
+.PrefModal__CategoryBack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--mantine-font-size-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .PrefModal__Grid__Col--right__Reset {
   margin-top: 8px;
 }
