@@ -137,7 +137,7 @@ test('手機：設定頁全螢幕、先列分類清單；點進分類內容佔�
   const box = await waitRectStable(page, '.PrefModal');
   expect(box.width).toBeGreaterThanOrEqual(vw - 2);
   // 分類清單：10 個分類都在、沒有橫向分頁列、設定內容還沒畫。
-  await expect(page.locator('.PrefModal [data-pref-category]')).toHaveCount(10);
+  await expect(page.locator('.PrefModal [data-pref-category]')).toHaveCount(11);
   await expect(page.locator('.PrefModal [role="tablist"]')).toHaveCount(0);
   await expect(page.locator('.PrefModal__Grid__Col--right')).toBeHidden();
 
