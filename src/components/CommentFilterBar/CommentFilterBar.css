@@ -1,0 +1,57 @@
+/* 推文篩選橫幅（CommentFilterBar/index.jsx）。上緣置中、不是 modal。
+   桌機往下讓一排（AID「返回原文」也在上緣置中）；手機讓開 App Bar。
+   z-index 同搜尋狀態列：高於終端機（≤3），低於 Mantine overlay（200）。 */
+.commentFilterBar {
+  position: fixed;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 160;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(460px, calc(100vw - 24px));
+  box-sizing: border-box;
+  padding: 2px 3px 2px 12px;
+  border: 1px solid rgba(120, 170, 255, 0.6);
+  border-radius: 999px;
+  background: #16233a;
+  color: #cfe0ff;
+  font:
+    600 13px/22px system-ui,
+    sans-serif;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.commentFilterBar[data-mobile] {
+  top: calc(48px + var(--safe-top, 0px) + 8px);
+}
+
+.commentFilterLabel {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commentFilterClose {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: #24365a;
+  color: #fff;
+  font: inherit;
+  line-height: 24px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.commentFilterClose:hover {
+  background: #33507f;
+}

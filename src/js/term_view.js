@@ -365,6 +365,11 @@ export function TermView() {
   this.followAuthors = new Set();
   this.followTitleKeywords = [];
   this.enableFollowList = true;
+  // 推文篩選（P29，docs/comment-filter.md）：{ userid, op, articleId } | null。只活在設定當下
+  // 那一篇（articleId ＝ _articleInstanceId），換文就清掉。只改顯示、不送鍵。
+  this._commentFilter = null;
+  this._commentFilterListeners = new Set();
+  this._emittedCommentFilter = null;
   this.showFloorNumbers = true;
   // 好讀「連續同作者推文合併」：render 層合併（Screen#computeAnnotations +
   // comment_merge.js），僅好讀文章頁生效。Set via App.onPrefChange.
@@ -1050,8 +1055,87 @@ TermView.prototype = {
     this._selfId = null;
   },
 
+  // ---- 推文篩選（P29，docs/comment-filter.md）----
+  // 目前生效的篩選（好讀文章、同一篇），否則 null。
+  activeCommentFilter: function() {
+    var f = this._commentFilter;
+    if (!f || f.articleId !== this._articleInstanceId) return null;
+    if (!this.useEasyReadingMode || this.buf.pageState !== 3) return null;
+    return f;
+  },
+
+  onCommentFilterChange: function(fn) {
+    var set = this._commentFilterListeners;
+    set.add(fn);
+    fn(this.activeCommentFilter());
+    return function() {
+      set.delete(fn);
+    };
+  },
+
+  // 這篇的原PO（「只看原 PO」用；好讀標頭解析出來的小寫帳號，沒有就 null）。
+  articleAuthorId: function() {
+    return this._articleAuthor || null;
+  },
+
+  _emitCommentFilter: function() {
+    var f = this.activeCommentFilter();
+    this._emittedCommentFilter = f;
+    this._commentFilterListeners.forEach(function(fn) {
+      fn(f);
+    });
+  },
+
+  // 只留 userid（小寫）的推文。op＝「只看原 PO」（只影響橫幅文字）。anchorRow＝使用者點的那一列
+  // （pageLines 絕對索引），重畫後把它（或它之後最近一列看得到的）放回原本的螢幕位置。
+  setCommentFilter: function(userid, op, anchorRow) {
+    if (!userid || !this.useEasyReadingMode || this.buf.pageState !== 3) return false;
+    var anchor = this._filterAnchor(anchorRow);
+    this._commentFilter = { userid: String(userid).toLowerCase(), op: !!op, articleId: this._articleInstanceId };
+    this.redraw(true);
+    this._restoreFilterAnchor(anchor);
+    this._emitCommentFilter();
+    return true;
+  },
+
+  clearCommentFilter: function() {
+    if (!this._commentFilter) return;
+    var top = this._topRowNode();
+    var anchor = top ? this._filterAnchor(Number(top.el.getAttribute('srow'))) : null;
+    this._commentFilter = null;
+    this.redraw(true);
+    this._restoreFilterAnchor(anchor);
+    this._emitCommentFilter();
+  },
+
+  // { row, offset }：該列節點距捲動容器可視頂端的距離（量不到 null）。
+  _filterAnchor: function(row) {
+    var disp = this.mainDisplay, mc = this.mainContainer;
+    if (row == null || isNaN(row) || !disp || !mc || typeof mc.querySelector !== 'function') return null;
+    var el = mc.querySelector('[type="bbsrow"][srow="' + row + '"]');
+    if (!el) return null;
+    return { row: row, offset: offsetTopWithin(el, disp) - disp.scrollTop };
+  },
+
+  _restoreFilterAnchor: function(anchor) {
+    var disp = this.mainDisplay, mc = this.mainContainer;
+    if (!anchor || !disp || !mc) return;
+    if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
+    var n = (this.buf.pageLines || []).length;
+    // 那一列被篩掉了（「只看原 PO」時點的是別人的推文）⇒ 往後找最近一列看得到的。
+    for (var r = anchor.row; r < n; ++r) {
+      var el = mc.querySelector('[type="bbsrow"][srow="' + r + '"]');
+      if (!el) continue;
+      renderChunksAround(el);
+      disp.scrollTop = Math.max(0, offsetTopWithin(el, disp) - anchor.offset);
+      return;
+    }
+  },
+
   _renderScreenLines: function(lines, dropHidden, inlinePreview, hoverPreview, enhanceOverrides) {
     this._noteSelfId();
+    // 推文篩選的橫幅跟著「現在生效與否」走（離開文章、切回原生 ⇒ 收起；回來同一篇 ⇒ 再出現）。
+    if (this._commentFilter && this.activeCommentFilter() !== this._emittedCommentFilter) this._emitCommentFilter();
     // 手機畫面類型的對帳（每條分支都先設好 _gridRender 才走到這裡）。
     this._syncMobileSurface(this._frameSurface(enhanceOverrides));
     // 列表視口高度＝body 列數 × **對帳後**的 chh（呼叫端只給列數），卡片模式也一樣：
@@ -1153,6 +1237,8 @@ TermView.prototype = {
           // 關注名單（進 annotationsKey）：開關關掉就當名單是空的。
           followAuthors: this.enableFollowList ? this.followAuthors : null,
           followTitleKeywords: this.enableFollowList ? this.followTitleKeywords : null,
+          // 推文篩選（進 annotationsKey；標註層只在好讀文章用它）。
+          commentFilter: this.activeCommentFilter() ? this._commentFilter.userid : null,
           showFloorNumbers: this.showFloorNumbers,
           mergeSameAuthorComments: this.mergeSameAuthorComments,
           // 推文區塊行距。**刻意不進 annotationsKey**（js/screen_annotate_cache.js
@@ -2946,6 +3032,11 @@ TermView.prototype = {
         this.buf.easyReadingPendingReset = false;
       // 同 redraw 的清空點：只設欄位，由隨後的 render 同步給 ScreenController。
       this._selectedPusher = null;
+      // 推文篩選只活在那一篇（換文、重進同一篇都清掉；這一幀的 render 已經不帶它）。
+      if (this._commentFilter) {
+        this._commentFilter = null;
+        this._emitCommentFilter();
+      }
       // New article (or re-entry into the same article): bump the instance id so
       // Screen resets the enlarge-images toggle back to default small images.
       ++this._articleInstanceId;

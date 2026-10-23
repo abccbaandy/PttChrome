@@ -120,6 +120,33 @@ export function applyFunctionKeys(result, lines, enhance) {
   }
 }
 
+// 推文篩選（P29，enhance.commentFilter）：連續被藏的列收成一條「略過 N 則」——標在那串的
+// 第一列（filterSkip: N，N ＝其中被篩掉的推文則數，不含續行；黑名單藏的不算），render 在
+// dropHidden 時把那一列畫成一條細線而不是整列移除。
+//
+// **只寫 result[row]**（同 applyNewCommentsMark）。跨列 ⇒ 只在 PAGE_READING
+// （annotationsAreRowIndependent 本來就排除）；commentFilter 進 annotationsKey ⇒ 切換的那一幀
+// 全量重算；尾端那串由 annotationFrontier 的 filter 選項留給下一幀重算。
+export function applyCommentFilterSkips(result) {
+  const n = result.length;
+  let row = 0;
+  while (row < n) {
+    if (!(result[row] && result[row].hidden)) {
+      ++row;
+      continue;
+    }
+    const start = row;
+    let count = 0;
+    while (row < n && result[row] && result[row].hidden) {
+      if (result[row].filtered && result[row].pusher !== undefined) ++count;
+      ++row;
+    }
+    // 已經是這個數就不換物件：前沿快路徑沿用的前綴要保持同一批物件（stablePrefix）。
+    if (count > 0 && result[start].filterSkip !== count)
+      result[start] = { ...result[start], filterSkip: count };
+  }
+}
+
 // 新推文標記（js/new_comments.js）：在第一則新推文那一列標 newCommentsStart（render 在
 // 它上緣畫一條灰色細線＋小字）。被合併進同作者推文塊的列 ⇒ 標在塊的第一列（塊是一個
 // 節點）；黑名單藏起來的列看不到線 ⇒ 往後找第一則看得到的。
@@ -267,6 +294,13 @@ function annotationFrontier(lines, texts, result, opts) {
     };
     f = Math.min(f, bodyWrapFrontier(lines, skip));
   }
+  if (opts.filter) {
+    // 推文篩選的「略過 N 則」標在一串被藏列的第一列、數的是整串 ⇒ 尾端那串下一頁
+    // 還會變長，要整串留給下一幀重算。
+    let r = n;
+    while (r > 0 && ((result[r - 1] && result[r - 1].hidden) || !texts[r - 1].trim())) --r;
+    f = Math.min(f, r);
+  }
   if (opts.blank) {
     let r = n;
     while (r > 0 && !texts[r - 1].trim()) --r;
@@ -315,6 +349,7 @@ export function computeAnnotations(
     onAidClick,
     followAuthors,
     followTitleKeywords,
+    commentFilter,
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
@@ -421,6 +456,8 @@ export function computeAnnotations(
       selfId,
       followAuthors:
         followAuthors && followAuthors.size > 0 ? followAuthors : undefined,
+      // 推文篩選（P29）：只在好讀（長捲頁會 dropHidden）。進 annotationsKey。
+      commentFilter: easyReading && commentFilter ? commentFilter : null,
       // 新格式推文（comment_parse.parseModernCommentHeader）的「目前這一則」：跟
       // floorCounter 同一套只往前推的生命週期 ⇒ 增量時沿用、tail 不帶。
       modernThread:
@@ -697,7 +734,8 @@ export function computeAnnotations(
     // 這一幀分組到的 run 與它們的快取項目（逐一對齊），收尾算前沿時用。
     let runs = [];
     const runEntries = [];
-    if (easyReading && mergeSameAuthorComments) {
+    // 推文篩選中不合併：留下來的全是同一個人，會被併成一整塊，「略過 N 則」也會被跨過去。
+    if (easyReading && mergeSameAuthorComments && !commentFilter) {
       const prevRuns = reuse ? reuse.runCache : null;
       const prevRunsByFirst = reuse ? reuse.runByFirstBase : null;
       if (fastFrom) {
@@ -892,14 +930,16 @@ export function computeAnnotations(
     result.fixCandsSig = fixCands.map(fixKey).join(",");
     applyFunctionKeys(result, lines, enhance);
     applyNewCommentsMark(result, enhance);
+    if (easyReading && commentFilter) applyCommentFilterSkips(result);
     // ---- 給下一幀的前沿（見上方 fastFrom）----
     // 反向期間不算（tail 之後還會往 J 插入，前沿的前提「只往後接」不成立）。
     let frontier =
       J == null
         ? annotationFrontier(lines, texts, result, {
-            runs: !!(easyReading && mergeSameAuthorComments),
+            runs: !!(easyReading && mergeSameAuthorComments && !commentFilter),
             wrap: !!autoFixUrl,
             blank: !!enhance.commentCards,
+            filter: !!(easyReading && commentFilter),
           })
         : null;
     // 前沿只會往後走（推導見 annotationFrontier）。萬一沒有，下一幀走全量——寧可慢

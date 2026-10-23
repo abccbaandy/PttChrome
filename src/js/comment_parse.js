@@ -211,6 +211,7 @@ export function parseComment(text) {
 //   articleAuthor:  lower id | null   (原PO)
 //   selfId:         lower id | null   (登入者自己；null ＝不標示，開關由 term_view 決定)
 //   followAuthors:  Set<lower id> | undefined   (關注名單；黑名單優先：被藏的不標)
+//   commentFilter:  lower id | null   (推文篩選 P29：只留這個人的推文，其餘 hidden＋filtered)
 // }
 // Result: { type, userid, floor?, hidden, pusher, contentCol, contentEnd?, dateEnd?,
 //           authorIdStart?, authorIdEnd?, authorIdKind?, mentionsSelf? }
@@ -233,7 +234,9 @@ export function annotateComment(text, ctx) {
     ctx.showFloorNumbers && ctx.floorCounter
       ? ctx.floorCounter.next(c.type)
       : undefined;
-  const hidden = !!(ctx.blacklist && ctx.blacklist.has(c.userid));
+  const blocked = !!(ctx.blacklist && ctx.blacklist.has(c.userid));
+  const filtered = !blocked && isFilteredOut(c.userid, ctx);
+  const hidden = blocked || filtered;
   const result = {
     type: c.type,
     userid: c.userid,
@@ -243,6 +246,7 @@ export function annotateComment(text, ctx) {
     contentCol: c.contentCol,
     ...commentTailCols(text, c.contentCol)
   };
+  if (filtered) result.filtered = true;
   if (!hidden) {
     // 原PO comment → highlight only the user-id columns [start, end).
     markAuthorId(result, c.userid, COMMENT_USERID_COL, ctx);
@@ -259,6 +263,13 @@ export function annotateComment(text, ctx) {
 export function mentionsUser(content, userid) {
   if (!content || !userid) return false;
   return new RegExp('(?:^|[^0-9A-Za-z])' + userid + '(?![0-9A-Za-z])', 'i').test(content);
+}
+
+// 推文篩選（P29，好讀文章「只看這個人／只看原 PO」）：設了篩選時，不是那個人的推文
+// 一律藏起來（跟黑名單同一套 hidden ⇒ 好讀 dropHidden 整列移除），另標 filtered 讓
+// 標註層把連續被藏的幾則收成一條「略過 N 則」。只改顯示、不送任何鍵。
+function isFilteredOut(userid, ctx) {
+  return !!ctx.commentFilter && userid !== ctx.commentFilter;
 }
 
 // 推文者 id 格的標示（原PO／自己／關注的人）。優先序：「我」＞原PO＞關注（ctx.followAuthors，
@@ -286,7 +297,10 @@ function annotateModernComment(text, ctx) {
   if (!h) {
     if (thread && thread.userid) {
       if (text && text.charAt(0) === MODERN_COMMENT_BODY_MARK) {
-        if (thread.hidden) return { hidden: true, modernBody: true };
+        if (thread.hidden)
+          return thread.filtered
+            ? { hidden: true, modernBody: true, filtered: true }
+            : { hidden: true, modernBody: true };
         // 提到我：標在含那段字的 │ 內容列（標頭列只有帳號與時間）。
         if (thread.userid !== ctx.selfId && mentionsUser(text.slice(1), ctx.selfId)) {
           return { hidden: false, modernBody: true, mentionsSelf: true };
@@ -297,12 +311,16 @@ function annotateModernComment(text, ctx) {
     }
     return null;
   }
-  const hidden = !!(ctx.blacklist && ctx.blacklist.has(h.userid));
+  const blocked = !!(ctx.blacklist && ctx.blacklist.has(h.userid));
+  const filtered = !blocked && isFilteredOut(h.userid, ctx);
+  const hidden = blocked || filtered;
   if (thread) {
     thread.userid = h.userid;
     thread.hidden = hidden;
+    thread.filtered = filtered;
   }
   const result = { type: 'modern', modern: true, userid: h.userid, hidden, pusher: h.userid };
+  if (filtered) result.filtered = true;
   if (!hidden) markAuthorId(result, h.userid, h.idCol, ctx);
   return result;
 }

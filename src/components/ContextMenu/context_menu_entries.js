@@ -106,7 +106,24 @@ export function buildContextMenuEntries(p) {
       (e) => p.onMenuSelect("copyCommentAll", e),
       { preview: previews.copyCommentAll, copy: true },
     );
-  if (p.replyCommentTarget || previews.copyComment || previews.copyCommentAll)
+  // 推文篩選（P29）：生效中只給「顯示全部推文」；否則「只看這個人」＋（解析得到原PO 時）「只看原 PO」。
+  const cf = p.commentFilterTarget;
+  if (cf && cf.active)
+    item("clearCommentFilter", i18n("cmenu_clearCommentFilter"), (e) =>
+      p.onMenuSelect("clearCommentFilter", e),
+    );
+  else if (cf) {
+    item(
+      "filterCommentUser",
+      `${i18n("cmenu_filterCommentUser")} '${cf.pusher}'`,
+      (e) => p.onMenuSelect("filterCommentUser", e),
+    );
+    if (cf.op)
+      item("filterCommentOp", i18n("cmenu_filterCommentOp"), (e) =>
+        p.onMenuSelect("filterCommentOp", e),
+      );
+  }
+  if (p.replyCommentTarget || cf || previews.copyComment || previews.copyCommentAll)
     divider("d-comment");
   if (p.selEnabled) {
     item("copy", i18n("cmenu_copy"), (e) => p.onMenuSelect("copy", e), {

@@ -255,6 +255,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_commentReplyMenu",
     },
     {
+      key: "enableCommentFilter",
+      titleKey: "options_enableCommentFilter",
+      tooltipKey: "tooltip_enableCommentFilter",
+    },
+    {
       key: "mobileCommentBarFold",
       titleKey: "options_mobileCommentBarFold",
       tooltipKey: "tooltip_mobileCommentBarFold",
