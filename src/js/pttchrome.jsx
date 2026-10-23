@@ -89,6 +89,7 @@ import {
   normalizeImgurProxyBase,
   setImageProxyConfig
 } from './image_proxy';
+import { setImageFitEnabled } from './image_fit';
 import PasteShortcutAlert from '../components/PasteShortcutAlert';
 import ConnectionAlert from '../components/ConnectionAlert';
 import ContextMenu from '../components/ContextMenu';
@@ -2239,6 +2240,10 @@ App.prototype.onPrefChange = function(name, value) {
     // 圖片快取代理（useImgurProxy＝總開關）：只更新 image_proxy.js 的模組 config，**不 redraw**。已解析過的
     // 預覽有 module cache（requestPreview 以 href 為鍵、probeCache 以 id 為鍵），切換
     // 只對之後新解析的連結生效 ⇒ 設定 UI 的文案標「重新整理後生效」。
+    case 'imageFitScreen':
+      // 同 useImgurProxy：只改模組 config、不 redraw，對之後新解析的預覽生效。
+      setImageFitEnabled(value);
+      break;
     case 'useImgurProxy':
       setImageProxyConfig({ enabled: value });
       break;

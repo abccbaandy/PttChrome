@@ -73,6 +73,7 @@ import {
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import { ChunkLayer } from "./screen_chunk";
 import { imageSizeMode, stepImageZoom } from "../js/image_zoom";
+import { setFullResWanted } from "../js/image_fit";
 import { diag, diagActive } from "../js/diag";
 import {
   annotationsKey,
@@ -666,6 +667,8 @@ export class ScreenController {
     if (zoomed)
       this.container.style.setProperty("--img-zoom", String(this._imageZoom));
     else this.container.style.removeProperty("--img-zoom");
+    // 顯示框比「剛好夠用的縮圖」大 ⇒ 預覽換回原圖（js/image_fit.js）。縮小（倍率 < 100%）不用。
+    setFullResWanted(enlarged || (zoomed && this._imageZoom > 1));
     const mode = this._sizeMode();
     diag("image.size", { mode, slots: this._liveSlots.size });
     for (const slot of this._liveSlots) slot.setSizeMode(mode);

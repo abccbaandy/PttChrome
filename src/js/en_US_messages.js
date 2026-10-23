@@ -923,6 +923,12 @@ export const en_US = {
   "options_enablePicPreview": {
     "message": "Enable preview when hover on image URLs."
   },
+  "options_imageFitScreen": {
+    "message": "Load preview images at a size that fits the screen"
+  },
+  "tooltip_imageFitScreen": {
+    "message": "Images from X (Twitter) load at just the size your screen shows: they look the same but appear faster and use less data. The original is loaded when you click to enlarge or zoom in. Off = always load the original. Takes effect after reload."
+  },
   "options_enableNotifications": {
     "message": "Enable notifications when a message is received."
   },

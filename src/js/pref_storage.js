@@ -10,6 +10,9 @@ export const DEFAULT_PREFS = {
   // 原封不動 ⇒ 關掉安全模式就回到使用者原本的設定。預設關。
   nativeSafeMode: false,
   enablePicPreview: true,
+  // 預覽圖載「剛好夠用」的縮圖（目前只有 X／twimg，js/image_fit.js）。關＝一律原圖。
+  // 一個 byte 都不送 PTT ⇒ 不在安全模式名單。重新整理後生效（預覽有 module cache）。
+  imageFitScreen: true,
   enableNotifications: true,
   // 水球／系統訊息收件匣（js/message_inbox.js）：這次連線收到的水球與廣播留在鈴鐺裡。
   // 只看收到的資料、一個 byte 都不送 ⇒ 不在安全模式名單內。

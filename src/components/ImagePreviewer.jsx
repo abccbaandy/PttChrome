@@ -16,8 +16,17 @@ import {
   imgurCandidates,
   twimgCandidates,
   twimgOrigFormat,
+  twimgSizedCandidates,
+  TWIMG_FIT_SIZES,
   catboxCandidates,
 } from "../js/image_proxy";
+import {
+  isImageFitEnabled,
+  isFullResWanted,
+  measurePreviewNeededPx,
+  pickFitSize,
+  subscribeFullRes,
+} from "../js/image_fit";
 import { tenorResolveUrl, tenorMediaDescriptor } from "../js/tenor";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 
@@ -183,11 +192,80 @@ const needsReferer = (src) => {
 const MAX_RETRIES_PER_CANDIDATE = 2;
 const RETRY_BASE_MS = 300; // 退避：300ms, 600ms（每候選 1+2 次嘗試）
 
+// 縮圖 → 原圖（image_fit.js）：已經顯示縮圖、且使用者放大（點圖放大／倍率 > 100%）時，
+// 在背景依序試 fullCandidates，第一個載好的才換上去 —— 同一個 <img> 換 src、而且已在快取，
+// 畫面不會先變空白（不重設 loaded，讀取動畫也不會再出現）。換上之後就不再換回縮圖。
+// 全部載不到就留在縮圖。換上的原圖之後若出錯（極少見）就退回縮圖，不再試。
+const useFullResUpgrade = (fullCandidates, ready) => {
+  const wantFull = React.useSyncExternalStore(
+    subscribeFullRes,
+    isFullResWanted,
+    isFullResWanted,
+  );
+  const [full, setFull] = React.useState({ src: null, gaveUp: false });
+  const active = !!fullCandidates && ready && wantFull && !full.src && !full.gaveUp;
+  React.useEffect(() => {
+    if (!active) return undefined;
+    let cancelled = false;
+    let probe = null;
+    let i = 0;
+    const tryNext = () => {
+      if (cancelled) return;
+      const url = fullCandidates[i++];
+      if (url == null) {
+        setFull((f) => ({ ...f, gaveUp: true }));
+        return;
+      }
+      probe = new Image();
+      if (!needsReferer(url)) probe.referrerPolicy = "no-referrer";
+      probe.onload = () => {
+        if (!cancelled) setFull({ src: url, gaveUp: false });
+      };
+      probe.onerror = tryNext;
+      probe.src = url;
+    };
+    tryNext();
+    return () => {
+      cancelled = true;
+      if (probe) probe.onload = probe.onerror = null;
+    };
+  }, [active, fullCandidates]);
+  const drop = React.useCallback(() => setFull({ src: null, gaveUp: true }), []);
+  return [full.src, drop];
+};
+
+// 掛載當下量顯示框、挑一次候選清單（之後不再換，避免 FallbackImage 的 index 套到別串）。
+// descriptor 沒帶 fit（功能關、或不是 twimg）＝原本的 srcset。
+const pickInlineCandidates = (descriptor) => {
+  const full = descriptor.srcset || [descriptor.src];
+  if (!descriptor.fit) return { candidates: full, fullCandidates: null };
+  const name = pickFitSize(
+    measurePreviewNeededPx(),
+    descriptor.fit.map(([n, box]) => [n, box]),
+  );
+  const hit = name && descriptor.fit.find(([n]) => n === name);
+  return hit
+    ? { candidates: hit[2], fullCandidates: full }
+    : { candidates: full, fullCandidates: null };
+};
+
+const InlineImage = function InlineImage({ descriptor }) {
+  const [pick] = React.useState(() => pickInlineCandidates(descriptor));
+  return (
+    <FallbackImage
+      className="easyReadingImg hyperLinkPreview"
+      candidates={pick.candidates}
+      fullCandidates={pick.fullCandidates}
+    />
+  );
+};
+
 // <img> that walks a list of candidate URLs. Each candidate is retried a few
 // times with backoff before advancing; one candidate (the resolved src) is the
 // common case, twitter/meee supply fallbacks (:orig → .png:orig → :large → plain).
 const FallbackImage = React.memo(function FallbackImage({
   candidates,
+  fullCandidates,
   ...rest
 }) {
   // attempt 只用來換 <img> 的 key 觸發重掛（瀏覽器重發請求），不竄改 URL，
@@ -272,7 +350,11 @@ const FallbackImage = React.memo(function FallbackImage({
   }, []);
 
   const { index, loaded, attempt, failed, nat } = state;
-  const src = candidates[index];
+  const [fullSrc, dropFull] = useFullResUpgrade(
+    fullCandidates,
+    loaded && !failed,
+  );
+  const src = fullSrc || candidates[index];
   if (failed || src == null) {
     return (
       <div className="previewError" onClick={handleRetry} title="點擊重試">
@@ -294,7 +376,7 @@ const FallbackImage = React.memo(function FallbackImage({
         decoding="async"
         src={src}
         onLoad={handleLoad}
-        onError={handleError}
+        onError={fullSrc ? dropFull : handleError}
         style={
           loaded
             ? nat
@@ -398,11 +480,7 @@ const InlineIframe = React.memo(function InlineIframe({ src }) {
 });
 
 const inlineImage = (descriptor, key) => (
-  <FallbackImage
-    key={key}
-    className="easyReadingImg hyperLinkPreview"
-    candidates={descriptor.srcset || [descriptor.src]}
-  />
+  <InlineImage key={key} descriptor={descriptor} />
 );
 
 const inlineVideo = (descriptor, key) => (
@@ -594,8 +672,19 @@ const imageUrlResolvers = [
     request(src) {
       const [, id, dotExt, queryExt] = this.regex.exec(src);
       const ext = twimgOrigFormat(dotExt || queryExt);
-      const srcset = twimgCandidates(id, ext, getImageProxyConfig());
-      return Promise.resolve({ type: "image", src: srcset[0], srcset });
+      const cfg = getImageProxyConfig();
+      const srcset = twimgCandidates(id, ext, cfg);
+      const out = { type: "image", src: srcset[0], srcset };
+      // 預覽載剛好夠用的縮圖（image_fit.js）：各尺寸的候選先備好，掛載時量顯示框挑一個。
+      // src／srcset 仍是原圖（hover 預覽、放大後換原圖都用它）；關掉時 descriptor 與以前逐字相同。
+      if (isImageFitEnabled()) {
+        out.fit = TWIMG_FIT_SIZES.map(([name, box]) => [
+          name,
+          box,
+          twimgSizedCandidates(id, ext, name, cfg),
+        ]);
+      }
+      return Promise.resolve(out);
     },
   },
   {
