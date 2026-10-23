@@ -18,6 +18,7 @@
 // 沒有這兩層，8000 列的累積頁每頁都要重建 8000 列（長文「越讀越慢」的來源，
 // 見 screen_annotate_cache.js 檔頭的實測）。
 import { el } from "./dom";
+import { i18n } from "../js/i18n";
 import { buildRow } from "./row";
 import { buildListCard } from "./list_card";
 import { buildMenuCard, buildMenuBlankRow, isBlankRow } from "./menu_card";
@@ -133,6 +134,17 @@ function disposeNode(node) {
   if (!slots) return;
   for (let i = 0; i < slots.length; ++i) slots[i].destroy();
   node.__slots = null;
+}
+
+// 推文篩選（P29）：連續被篩掉的推文收成的一條細線「略過 N 則」（screen_annotations
+// #applyCommentFilterSkips）。不是 bbsrow（不帶 type／srow／data-row）⇒ 選取複製、閱讀紀錄、
+// 版面量測這些找 bbsrow 的消費端都直接略過它。
+function buildFilterSkipNode(row, count) {
+  return el(
+    "div",
+    { class: "commentFilterSkip", "data-filter-skip": row },
+    String(i18n("commentFilter_skipped") || "").replace("{n}", String(count)),
+  );
 }
 
 export class ScreenController {
@@ -1016,7 +1028,8 @@ export class ScreenController {
     // 位移其餘列的 row/data-row（絕對 pageLines index），跨缺口的選取複製才不會錯位。
     const dropHidden = !!(enhance && enhance.dropHidden);
     const ann = annotations[row];
-    if (dropHidden && ann && ann.hidden) return null;
+    if (dropHidden && ann && ann.hidden)
+      return ann.filterSkip ? buildFilterSkipNode(row, ann.filterSkip) : null;
     // 說明行已併入所屬圖行的右欄；連續同作者推文的後續列已併進 run 首列。
     if (ann && ann.mergedInto !== undefined) return null;
     if (ann && ann.mergedIntoComment !== undefined) return null;

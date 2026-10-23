@@ -1933,3 +1933,18 @@ body.mobile-layout {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* 推文篩選（P29）：連續被篩掉的推文收成的一條細線「略過 N 則」（render/screen.js
+   buildFilterSkipNode）。不是 bbsrow：不吃終端機的字級／列高。 */
+#mainContainer .commentFilterSkip {
+  display: block;
+  margin: 2px 0;
+  padding: 0 1em;
+  border-top: 1px dashed #3a4660;
+  color: #7f8aa3;
+  font-family: system-ui, sans-serif;
+  font-size: max(12px, 0.55em);
+  line-height: 1.8;
+  user-select: none;
+  -webkit-user-select: none;
+}

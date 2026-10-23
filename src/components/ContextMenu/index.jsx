@@ -34,6 +34,7 @@ import MobileToolbar from "../MobileToolbar";
 import MobileAppBar from "../MobileAppBar";
 import HomeDashboard from "../HomeDashboard";
 import WhatsNewCard from "../WhatsNew";
+import CommentFilterBar from "../CommentFilterBar";
 import SplitReader from "../SplitReader";
 import ArticleTools from "../ArticleTools";
 import CommentBar from "../CommentBar";
@@ -190,12 +191,37 @@ const menuHandlerByEventKey = {
       type: "arrow",
       text: replyCommentTarget + " ",
     }),
+  // 推文篩選（P29）：只改顯示，view 負責重畫與把點的那一列放回原位。
+  filterCommentUser: (pttchrome, { commentFilterTarget: t }) =>
+    t && pttchrome.view.setCommentFilter(t.pusher, false, t.row),
+  filterCommentOp: (pttchrome, { commentFilterTarget: t }) =>
+    t && t.op && pttchrome.view.setCommentFilter(t.op, true, t.row),
+  clearCommentFilter: (pttchrome) => pttchrome.view.clearCommentFilter(),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
   // 圖片上傳（urusai）：開檔案選擇器／開上傳紀錄面板。實作在
   // js/image_upload_controller.js，App 在建構時掛成 pttchrome.imageUpload。
   uploadImage: (pttchrome) => pttchrome.imageUpload.openFilePicker(),
   uploadHistory: (pttchrome) => pttchrome.imageUpload.openPanel(),
 };
+
+// 推文篩選（P29）的選單目標：好讀文章裡的推文列（帳號、不是小天使）。篩選生效中 ⇒ 只給
+// 「顯示全部推文」（active）。op＝這篇的原PO（解析不到就不給「只看原 PO」）。
+function commentFilterTargetOf(pttchrome, prefs, normalEnabled, rowElement) {
+  const view = pttchrome.view;
+  if (!normalEnabled || !prefs.enableCommentFilter || !view) return null;
+  if (!view.useEasyReadingMode || !view.buf || view.buf.pageState !== 3) return null;
+  if (typeof view.activeCommentFilter !== "function") return null;
+  if (view.activeCommentFilter()) return { active: true };
+  const pusher = rowElement && rowElement.getAttribute("data-pusher");
+  if (!pusher || !isBlacklistableUserId(pusher)) return null;
+  const row = Number(rowElement.getAttribute("srow"));
+  return {
+    pusher: pusher.toLowerCase(),
+    op: view.articleAuthorId() || null,
+    row: isNaN(row) ? null : row,
+    active: false,
+  };
+}
 
 const initialState = {
   // --- Menu state ---
@@ -225,6 +251,8 @@ const initialState = {
   blacklistTitleTarget: null,
   // 長按／右鍵的推文是誰推的（「回覆這則」；推文列沒出現或開關關掉 ⇒ null）。
   replyCommentTarget: null,
+  // 推文篩選（P29）：{ pusher, op, row, active } | null。
+  commentFilterTarget: null,
   // 列表好讀模式下，右鍵那一列可不可以做「前已讀後未讀」（{ num } / null）。
   // 判定全在 listSession.markReadTargetAtRow（狀態、置底文、header 列）。
   markReadTarget: null,
@@ -621,6 +649,7 @@ export const ContextMenu = ({ pttchrome }) => {
         followAuthorExists,
         blacklistTitleTarget,
         replyCommentTarget,
+        commentFilterTarget: commentFilterTargetOf(pttchrome, prefs, normalEnabled, rowElement),
         markReadTarget,
         boardMarkReadTarget:
           (normalEnabled &&
@@ -1370,6 +1399,7 @@ export const ContextMenu = ({ pttchrome }) => {
     markAllReadEnabled,
     boardMarkReadTarget,
     replyCommentTarget,
+    commentFilterTarget,
     articleLinkEnabled,
     contextArticle,
     previews,
@@ -1426,6 +1456,7 @@ export const ContextMenu = ({ pttchrome }) => {
         authorFollowExists={followAuthorExists}
         titleBlacklistText={blacklistTitleTarget}
         replyCommentTarget={replyCommentTarget}
+        commentFilterTarget={commentFilterTarget}
         markReadTarget={markReadTarget}
         markAllReadEnabled={markAllReadEnabled}
         boardMarkReadTarget={boardMarkReadTarget}
@@ -1539,6 +1570,7 @@ export const ContextMenu = ({ pttchrome }) => {
       <DebugRecordNotice pttchrome={pttchrome} />
       <HomeDashboard pttchrome={pttchrome} />
       <WhatsNewCard pttchrome={pttchrome} />
+      <CommentFilterBar pttchrome={pttchrome} />
       <SplitReader pttchrome={pttchrome} />
       <ArticleTools pttchrome={pttchrome} />
       <CommentBar pttchrome={pttchrome} />

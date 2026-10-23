@@ -128,6 +128,8 @@ const enhanceFor = (o) => ({
   dropHidden: true,
   stableRows: true,
   articleId: 1,
+  // 推文篩選（P29）：「略過 N 則」是跨列的累計，尾端那串由前沿的 filter 選項留給下一幀。
+  commentFilter: o.filter || null,
 });
 
 // 序列化：函式（onClick 閉包、TermChar 方法）略過，其餘逐欄比。
@@ -150,6 +152,8 @@ const OPTION_SETS = [
   { merge: false, autoFixUrl: true, cards: true, mergeCaption: null },
   { merge: true, autoFixUrl: false, cards: false, mergeCaption: "captionFirst" },
   { merge: true, autoFixUrl: true, cards: false, mergeCaption: null, fullPush: true },
+  { merge: true, autoFixUrl: true, cards: false, mergeCaption: null, filter: "alpha1" },
+  { merge: false, autoFixUrl: false, cards: true, mergeCaption: null, filter: "poster" },
 ];
 
 describe("前沿快路徑：逐頁 append 與全量重算逐列相同", () => {

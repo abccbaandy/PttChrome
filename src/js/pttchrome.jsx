@@ -66,6 +66,7 @@ import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { WhatsNew, isWhatsNewTarget } from './whats_new';
+import { isCommentFilterBarTarget } from './comment_filter';
 import { MessageInbox, isMessageInboxTarget } from './message_inbox';
 import { NewComments } from './new_comments';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
@@ -2332,6 +2333,10 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     // 關注名單（P33）：只改顯示（列表標色、推文 id 上色），不送任何鍵。
     // 更新後的新功能小卡：關掉時正在顯示的那張一起收起。
+    // 推文篩選：關掉時正在生效的篩選一起取消（推文全部回來）。
+    case 'enableCommentFilter':
+      if (!value && this.view.clearCommentFilter) this.view.clearCommentFilter();
+      break;
     case 'showWhatsNew':
       if (!value && this.whatsNew) this.whatsNew.dismiss();
       break;
@@ -2450,7 +2455,8 @@ App.prototype._onUploadLayer = function(e) {
   return (
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
     isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t) || isResumeToastTarget(t) ||
-    isSearchStatusTarget(t) || isArticleNavTarget(t) || isBoardTabsTarget(t) || isWhatsNewTarget(t)
+    isSearchStatusTarget(t) || isArticleNavTarget(t) || isBoardTabsTarget(t) || isWhatsNewTarget(t) ||
+    isCommentFilterBarTarget(t)
   );
 };
 

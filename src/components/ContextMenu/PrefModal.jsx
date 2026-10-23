@@ -1261,6 +1261,16 @@ export const PrefModal = ({
                   {i18n("tooltip_commentReplyMenu")}
                 </Text>
                 <PrefCheckbox
+                  name="enableCommentFilter"
+                  checked={values.enableCommentFilter}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableCommentFilter")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_enableCommentFilter")}
+                </Text>
+                <PrefCheckbox
                   name="mobileCommentBarFold"
                   checked={values.mobileCommentBarFold}
                   disabled={

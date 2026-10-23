@@ -265,6 +265,33 @@ export const en_US = {
   "options_enableCommentBar": {
     "message": "Comment bar at the bottom of articles (easy reading)"
   },
+  "options_enableCommentFilter": {
+    "message": "Comment filter: only this user / only the OP"
+  },
+  "tooltip_enableCommentFilter": {
+    "message": "In easy reading, long-press (right-click on desktop) a comment for \"Only this user's comments\" and \"Only the OP's comments\": other comments collapse into a thin \"N skipped\" line; press ✕ on the banner at the top to show everything again. Only affects the current post."
+  },
+  "cmenu_filterCommentUser": {
+    "message": "Only comments by"
+  },
+  "cmenu_filterCommentOp": {
+    "message": "Only the OP's comments"
+  },
+  "cmenu_clearCommentFilter": {
+    "message": "Show all comments"
+  },
+  "commentFilter_banner": {
+    "message": "Only showing comments by {id}"
+  },
+  "commentFilter_bannerOp": {
+    "message": "Only showing the OP's ({id}) comments"
+  },
+  "commentFilter_clear": {
+    "message": "Show all comments"
+  },
+  "commentFilter_skipped": {
+    "message": "{n} skipped"
+  },
   "options_commentReplyMenu": {
     "message": "\"Reply\" in the comment menu"
   },

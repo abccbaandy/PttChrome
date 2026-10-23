@@ -265,6 +265,33 @@
   "options_enableCommentBar": {
     "message": "好讀文章底部常駐推文列"
   },
+  "options_enableCommentFilter": {
+    "message": "推文篩選：只看這個人／只看原 PO"
+  },
+  "tooltip_enableCommentFilter": {
+    "message": "好讀文章裡長按（桌機右鍵）推文，選單多「只看這個人的推文」「只看原 PO」：推文區只留那個人的推文，其他的收成一條「略過 N 則」，上方橫幅按 ✕ 還原。只影響這一篇、換文章就恢復。"
+  },
+  "cmenu_filterCommentUser": {
+    "message": "只看這個人的推文"
+  },
+  "cmenu_filterCommentOp": {
+    "message": "只看原 PO 的推文"
+  },
+  "cmenu_clearCommentFilter": {
+    "message": "顯示全部推文"
+  },
+  "commentFilter_banner": {
+    "message": "只顯示 {id} 的推文"
+  },
+  "commentFilter_bannerOp": {
+    "message": "只顯示原 PO（{id}）的推文"
+  },
+  "commentFilter_clear": {
+    "message": "顯示全部推文"
+  },
+  "commentFilter_skipped": {
+    "message": "略過 {n} 則"
+  },
   "options_commentReplyMenu": {
     "message": "推文選單的「回覆這則」"
   },
