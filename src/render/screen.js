@@ -1195,6 +1195,7 @@ export class ScreenController {
         listTitle: ann && ann.listTitle,
         listRead: ann && ann.listRead,
         listNewPush: ann && ann.listNewPush,
+        listFollowed: ann && ann.listFollowed,
       }).node;
     }
     const built = buildRow({
@@ -1216,6 +1217,7 @@ export class ScreenController {
       listTitle: ann && ann.listTitle,
       listRead: ann && ann.listRead,
       listNewPush: ann && ann.listNewPush,
+      listFollowed: ann && ann.listFollowed,
       pusherHighlight: isPusherHighlighted(ann, this._selectedPusher),
       authorIdStart: ann && ann.authorIdStart,
       authorIdEnd: ann && ann.authorIdEnd,

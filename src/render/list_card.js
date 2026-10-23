@@ -122,6 +122,7 @@ export function buildListCard({
   listTitle,
   listRead,
   listNewPush,
+  listFollowed,
 }) {
   const layout = CARD_LAYOUT[kind] || CARD_LAYOUT.article;
   // 游標記號（labelListCursor 的半形 `>`，舊 server 的全形 ● 佔兩格）蓋在 cell 0：
@@ -163,6 +164,7 @@ export function buildListCard({
         "data-list-author": listAuthor,
         "data-list-title": listTitle,
         "data-list-read": listRead ? "" : undefined,
+        "data-list-followed": listFollowed ? "" : undefined,
         "data-list-mark":
           layout === CARD_LAYOUT.article ? articleCardMark(chars) : undefined,
       },

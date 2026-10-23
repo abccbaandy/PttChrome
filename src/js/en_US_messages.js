@@ -776,6 +776,30 @@ export const en_US = {
   "tooltip_blacklist": {
     "message": "One user id per line; hides their comments and board-list posts"
   },
+  "options_enableFollowList": {
+    "message": "Follow list"
+  },
+  "tooltip_enableFollowList": {
+    "message": "The opposite of the blacklist: posts by followed users or with followed title keywords get an amber stripe in the list, and followed users' ids are colored in comments. Right-click (long-press on phones) an author or commenter to add them. The blacklist wins when both match."
+  },
+  "options_followList": {
+    "message": "Followed users (one id per line)"
+  },
+  "tooltip_followList": {
+    "message": "One id per line; their posts are marked in the list and their comment ids colored"
+  },
+  "options_followTitleList": {
+    "message": "Followed titles (one keyword per line)"
+  },
+  "tooltip_followTitleList": {
+    "message": "One keyword per line; marks list posts whose title contains it"
+  },
+  "cmenu_addAuthorFollow": {
+    "message": "Follow"
+  },
+  "cmenu_authorFollowExists": {
+    "message": "is already followed"
+  },
   "options_title_blacklist": {
     "message": "Title blacklist (one keyword per line)"
   },

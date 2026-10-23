@@ -24,6 +24,16 @@
 | 跳到第一篇未讀 | 當作中性（不算未讀，也不算進「連續已讀」的篇數），所以不會跳到看不到的那篇 |
 | agent `ptt_list_articles` | 不回傳；置底文的 `index` 與 `nextBefore` 照畫面算（`ptt_read_article` 照畫面位置找文章） |
 
+## 關注名單（反向黑名單）
+
+pref `followList`（作者 id，一行一個）／`followTitleList`（標題關鍵字）／`enableFollowList`（總開關，預設開，名單預設空）。判準是 `followHit`，跟 `blacklistHit` 同一套。**只改顯示，不送任何鍵、不影響任何挑文章的功能**。
+
+- 文章列表：命中的列帶 `data-list-followed`（格線列與手機卡片都帶），`main.css` 在左緣畫一條色條。**黑名單優先**：被黑名單擋掉的列在 `screen_annotations` 已經先 `continue`，不會被標成關注；刪除列不標。
+- 推文：關注的人的 id 格包 `commentByFollow`（`comment_parse#markAuthorId`，`authorIdKind: 'follow'`）。優先序「我」＞原PO＞關注，跟黑名單同時中 ⇒ 照黑名單藏起來。
+- 只看該列自己的文字 ⇒ 逐列獨立，`annotationsAreRowIndependent` 不用改；名單本身進 `annotationsKey`。開關關掉時 `term_view` 給 `null`。
+- 右鍵「加入關注」跟「加入作者黑名單」同一個目標，走同一條存檔管線（`quickAddBlacklist(pttchrome, "followList", …)`）。
+- 守護：`tests/unit/follow_list.test.js`。
+
 ## 錄製檔
 
 - `list.filter {authors, titleKeywords}`：錄製開始時記一筆，之後改黑名單設定再記一筆（`App.onPrefChange`）。作者 id 不遮蔽：錄製檔本來就含整個列表畫面上的作者 id；`meta.warning` 有註明這點。

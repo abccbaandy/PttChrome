@@ -41,6 +41,13 @@ export function blacklistHit(text, blacklistSet, titleKeywords) {
   return null;
 }
 
+// 關注名單（P33，pref followList／followTitleList）：判準跟黑名單同一套（作者 id 精確、標題
+// 關鍵字子字串，都已轉小寫），回傳同形狀。**黑名單優先**：呼叫端只對沒被擋的列問這個。
+// 只改顯示（列表整列標色、推文 id 上色），不影響任何送鍵或挑文章的功能。
+export function followHit(text, followSet, titleKeywords) {
+  return blacklistHit(text, followSet, titleKeywords);
+}
+
 // 列表好讀會藏起來的列（list_session#visibleListIndices、screen_annotations 的
 // listEasyReading 分支、next_article 的下一篇都吃這一份）。不是列表形的列一律可見。
 export function isHiddenListText(text, blacklistSet, titleKeywords) {

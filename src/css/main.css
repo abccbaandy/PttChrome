@@ -1134,6 +1134,23 @@ span {
   background-color: #1d4a32;
 }
 
+/* 關注名單（P33，annotation authorIdKind 'follow'）：同一個形狀（只染 id 格）、低彩度琥珀。
+   優先序：我＞原PO＞關注（comment_parse#markAuthorId）。 */
+.commentByFollow {
+  background-color: #4a3a12;
+}
+
+/* 關注名單命中的文章列（data-list-followed，格線列與手機卡片都有）：左緣一條琥珀色條＋很淡
+   的底色。用 background-image 畫：不佔版面（格線不位移）、不跟卡片分隔線的 box-shadow 打架；
+   字的色段是 b0（透明）才透得出來，游標底色照樣蓋在上面。 */
+#mainContainer span[type="bbsrow"][data-list-followed] {
+  background-image: linear-gradient(
+    to right,
+    #d9a441 0 3px,
+    rgba(217, 164, 65, 0.1) 3px
+  );
+}
+
 /* 推文提到我：同一個綠，只在該列（合併塊／卡片＝整塊）左緣畫一條細色條，不填底色、
    不染文字（inset shadow 不佔版面，格線不位移）。 */
 .mentionsSelf {
