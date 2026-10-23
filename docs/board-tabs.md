@@ -11,7 +11,7 @@
 
 | 項目 | 規則 | 理由 |
 |---|---|---|
-| 出現 | 這一幀是文章列表（`articleListBoardOf`：底列文章列表 caption＋標題列有《板名》，搜尋結果也算）且分頁至少兩個。看板列表、文章、信箱、prompt 都不出現 | 認不出 ⇒ 不顯示；只有一個板沒有東西可切 |
+| 出現 | 這一幀是完整的文章列表（`articleListBoardOf`：底列文章列表 caption＋標題列有《板名》；且 `search_status.searchListMode` 為 `plain`）且分頁至少兩個。看板列表、文章、信箱、prompt 都不出現；搜尋結果／文摘照記但不出現，舊版 caption 看不出是不是子列表也不出現 | 認不出 ⇒ 不顯示；只有一個板沒有東西可切；`bbs.c#do_select` 不清 `MODE_SELECT`／`MODE_DIGEST` ⇒ 子列表裡 `s<板>` 落地仍是子列表（協定 §8.1），點分頁會進到別板的搜尋結果／文摘 |
 | 記錄 | 文章列表 settle 就 `visitBoard`：已有只更新時間（位置不動，像瀏覽器分頁）；沒有接在最後；超過 `BOARD_TABS_MAX`（6）丟最久沒去的（不丟剛到的）。存 localStorage `pttchrome.boardTabs.v1`，不同步、壞掉就從空的開始 | 分頁跳來跳去很難點；只對這台裝置有意義 |
 | 切板 | `submitSearch(core, 'board', name)`＝原生 `s<板>⏎`（同首頁儀表板的看板卡片、搜尋彈窗的「前往看板」，閱讀紀錄 `board-search`）。現在這個板點了不送 | 不另開送鍵路 |
 | 回到上次看到的位置 | **PTT 自己記**：`read.c#getkeep` 依看板目錄記游標與頂列（整個登入 session，`keeplist`），進板時還原；列表好讀接著在那個游標上 engage。這裡不另記視野 | 閱讀紀錄只記一個列表視野，per-board 視野不必重做一份 |
