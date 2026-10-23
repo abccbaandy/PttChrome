@@ -118,6 +118,9 @@ async function installReplay(page, opts = {}) {
   if (!opts.commentBar) off.enableCommentBar = false;
   if (!opts.nextArticle) off.enableNextArticleCard = false;
   if (!opts.commentBarFold) off.mobileCommentBarFold = false;
+  // 文章導覽軸（pref enableArticleNav）疊在好讀文章終端機的最右一欄、會接走落在那裡的
+  // 滑鼠與觸控 ⇒ 預設關，只有 article_nav.offline.spec.js 與浮層矩陣以 opts.articleNav 打開。
+  if (!opts.articleNav) off.enableArticleNav = false;
   // 搜尋狀態列（pref enableSearchStatus）浮在搜尋結果的右上角、擋掉落在那裡的滑鼠 ⇒
   // 預設關，只有 search_status.offline.spec.js 以 opts.searchStatus 打開。
   if (!opts.searchStatus) off.enableSearchStatus = false;
@@ -785,6 +788,7 @@ async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-un
     commentBarFold: !!opts.commentBarFold,
     nextArticle: !!opts.nextArticle,
     searchStatus: !!opts.searchStatus,
+    articleNav: !!opts.articleNav,
   });
   await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });
   await page.goto('/');

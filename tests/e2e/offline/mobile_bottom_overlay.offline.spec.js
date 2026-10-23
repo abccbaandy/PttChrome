@@ -72,7 +72,13 @@ async function openArticle(page, { full }) {
 
 // 會佔畫面邊緣的功能（bootOffline 的 opts）；手機的底部導覽列與 App Bar 一律在。
 // commentBarFold＝推文列收進底部導覽、點導覽的「推文」展開之後的樣子。
-const COMBOS = [[], ['nextArticle'], ['commentBar', 'nextArticle'], ['commentBarFold', 'nextArticle']];
+const COMBOS = [
+  [],
+  ['nextArticle'],
+  ['commentBar', 'nextArticle'],
+  ['commentBarFold', 'nextArticle'],
+  ['commentBar', 'nextArticle', 'articleNav'],
+];
 
 test.describe('手機：浮層不蓋住文末', () => {
   for (const combo of COMBOS) {

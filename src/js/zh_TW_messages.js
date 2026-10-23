@@ -1225,6 +1225,30 @@
   "next_article_mismatch": {
     "message": "開到的不是預期的下一篇（列表可能變動了），停在 PTT 給的文章"
   },
+  "options_enableArticleNav": {
+    "message": "好讀文章的導覽軸"
+  },
+  "tooltip_enableArticleNav": {
+    "message": "好讀文章右緣一條細軸，標出推文從哪開始（點「推」直接跳過去）、新推文、提到你的推文、圖片的位置和目前看到哪；點或拖就捲過去。只標已經讀進來的部分。"
+  },
+  "articleNav_label": {
+    "message": "文章導覽軸"
+  },
+  "articleNav_comments": {
+    "message": "跳到推文"
+  },
+  "articleNav_commentsShort": {
+    "message": "推"
+  },
+  "articleNav_new": {
+    "message": "新推文"
+  },
+  "articleNav_mention": {
+    "message": "提到你的推文"
+  },
+  "articleNav_image": {
+    "message": "圖片"
+  },
   "options_enableArticleTools": {
     "message": "文章工具側欄"
   },

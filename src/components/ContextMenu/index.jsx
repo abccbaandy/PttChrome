@@ -36,6 +36,7 @@ import HomeDashboard from "../HomeDashboard";
 import SplitReader from "../SplitReader";
 import ArticleTools from "../ArticleTools";
 import CommentBar from "../CommentBar";
+import ArticleNav from "../ArticleNav";
 import SearchStatus from "../SearchStatus";
 import AidBackButton from "../AidBackButton";
 import MessageInbox from "../MessageInbox";
@@ -1523,6 +1524,7 @@ export const ContextMenu = ({ pttchrome }) => {
       <SplitReader pttchrome={pttchrome} />
       <ArticleTools pttchrome={pttchrome} />
       <CommentBar pttchrome={pttchrome} />
+      <ArticleNav pttchrome={pttchrome} />
       <SearchStatus pttchrome={pttchrome} />
       <MobileAppBar pttchrome={pttchrome} />
       <AidBackButton pttchrome={pttchrome} />

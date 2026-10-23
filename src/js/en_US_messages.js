@@ -1226,6 +1226,30 @@ export const en_US = {
   "split_unread": {
     "message": "Unread"
   },
+  "options_enableArticleNav": {
+    "message": "Article navigation rail"
+  },
+  "tooltip_enableArticleNav": {
+    "message": "A thin rail on the right edge of easy-reading articles marks where comments start (click it to jump), new comments, comments mentioning you, images and where you are; click or drag to scroll. Only the part already loaded is shown."
+  },
+  "articleNav_label": {
+    "message": "Article navigation"
+  },
+  "articleNav_comments": {
+    "message": "Jump to comments"
+  },
+  "articleNav_commentsShort": {
+    "message": "C"
+  },
+  "articleNav_new": {
+    "message": "New comments"
+  },
+  "articleNav_mention": {
+    "message": "Mentions you"
+  },
+  "articleNav_image": {
+    "message": "Image"
+  },
   "options_enableArticleTools": {
     "message": "Article tools sidebar"
   },

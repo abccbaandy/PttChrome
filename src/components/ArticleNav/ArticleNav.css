@@ -1,0 +1,93 @@
+/* 文章導覽軸（ArticleNav/index.jsx）。疊在終端機最右一欄上（像捲軸），位置由
+   js/article_nav.js#articleNavGeometry 算、inline style 寫進來。可點範圍 14px，看得到的只有
+   中間一條細線＋目前看到哪的滑塊＋標記。
+   z-index：高於終端機（≤3），低於推文列／文章工具側欄（140）。 */
+.articleNav {
+  position: fixed;
+  z-index: 130;
+  width: 14px;
+  box-sizing: border-box;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 手機平常隱藏（見 index.jsx 的 IDLE_MS），隱藏時也不接觸控：推文時間照常點得到。 */
+.articleNav--mobile {
+  transition: opacity 0.2s;
+}
+.articleNav--idle {
+  opacity: 0;
+  pointer-events: none;
+}
+.articleNav--idle .articleNavMark--comments {
+  pointer-events: none;
+}
+
+.articleNavTrack {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.articleNavThumb {
+  position: absolute;
+  left: 4px;
+  width: 6px;
+  border-radius: 3px;
+  background: rgba(168, 199, 250, 0.45);
+  pointer-events: none;
+}
+
+.articleNav:hover .articleNavThumb {
+  background: rgba(168, 199, 250, 0.7);
+}
+
+.articleNavMark {
+  position: absolute;
+  left: 2px;
+  width: 10px;
+  height: 3px;
+  margin-top: -1px;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* 顏色比照既有標示：新推文＝新推文標線的橘、提到我＝推文列左緣的綠、圖片＝連結藍。 */
+.articleNavMark--new {
+  background: #f0b45a;
+}
+.articleNavMark--mention {
+  background: #4cd07d;
+}
+.articleNavMark--image {
+  background: #6b9cff;
+  opacity: 0.8;
+}
+
+/* 第一則推文：一格「推」，點它精準跳過去。 */
+.articleNavMark--comments {
+  left: 0;
+  width: 14px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 4px;
+  background: #3a3a44;
+  color: #fff;
+  font:
+    600 10px/16px system-ui,
+    sans-serif;
+  text-align: center;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.articleNavMark--comments:hover {
+  background: #50505e;
+}
