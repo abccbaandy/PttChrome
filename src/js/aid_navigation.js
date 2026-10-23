@@ -71,6 +71,7 @@ import { isSubListFooter } from './screen_captions';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
 import { toPostAid } from './aid_codec';
+import { serializedOpHint } from './serialized_op_gate';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -472,7 +473,12 @@ AidNavigation.prototype = {
   // opts.inPager：呼叫端已證明畫面是 pager（deep link 收到時人在原生 pmore 讀文），
   // 不必等好讀開著。
   start: function(aid, board, opts) {
-    if (this.active) return;
+    if (this.active) {
+      // 另一趟還在跑（例：跳轉途中又點了一個 AID 連結）：不排隊，但吞掉點擊不得無聲
+      // （serialized_op_gate），提示跟其他送鍵入口同一句。
+      this._hint(serializedOpHint({ aidNavigation: this }));
+      return;
+    }
     if (!board) {
       this._hint('AID 跳文：無法判斷目標看板', 0, HINT_ERROR);
       return;

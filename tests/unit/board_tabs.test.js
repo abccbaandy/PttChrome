@@ -142,6 +142,25 @@ describe("BoardTabs 控制器", () => {
     expect(tabs.state).toMatchObject({ visible: true, tabs: ["Stock", "C_Chat"] });
   });
 
+  test("搜尋結果／文摘（新舊 caption）⇒ 照記、但不顯示也不送：子列表裡 s<板> 落地仍是子列表", () => {
+    // bbs.c#do_select 不清 MODE_SELECT／MODE_DIGEST ⇒ 從子列表點分頁會進到別板的搜尋結果／文摘，
+    // 不是那個板的列表、也不回 getkeep 記的位置（docs/pttbbs-screen-protocol.md §8.1）。
+    const { tabs, show } = makeCore(memoryStorage([{ name: "Stock", at: 1 }]));
+    show(listScreen("C_Chat", " 系列文章  (y)回應"));
+    expect(tabs.state.visible).toBe(false);
+    expect(tabs.state.tabs).toEqual(["Stock", "C_Chat"]);
+    show(listScreen("C_Chat", " 文摘列表  (y)回應"));
+    expect(tabs.state.visible).toBe(false);
+    const oldSelect = listScreen("C_Chat");
+    oldSelect[0] = "【板主:someone】 中文描述                系列《C_Chat》";
+    show(oldSelect);
+    expect(tabs.state.visible).toBe(false);
+    expect(tabs.open("Stock")).toBe(false);
+    expect(submitted).toEqual([]);
+    show(listScreen("C_Chat", " 文章列表  (y)回應"));
+    expect(tabs.state.visible).toBe(true);
+  });
+
   test("點別的板 ⇒ 原生 s<板>⏎（submitSearch board）；點現在這個板不送", () => {
     const { tabs, show } = makeCore(memoryStorage([{ name: "Stock", at: 1 }]));
     show(listScreen("C_Chat"));

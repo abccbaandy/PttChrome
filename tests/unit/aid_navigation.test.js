@@ -230,11 +230,14 @@ describe("AidNavigation", () => {
     expect(sent).toEqual([]);
   });
 
-  test("re-entrant start while active is ignored", () => {
-    const { nav, sent } = makeHarness();
+  test("re-entrant start while active is ignored, but not silently", () => {
+    const { nav, sent, hints } = makeHarness();
     nav.start("1gIeu-3A", "Android");
+    hints.length = 0;
     nav.start("2AbCdEf0", "C_Chat");
     expect(sent).toEqual(["Q"]);
+    // 第二下點擊被吞掉：吞掉使用者的輸入不得無聲（serialized_op_gate），提示跟其他入口同一句。
+    expect(hints).toEqual([serializedOpHint({ aidNavigation: nav })]);
   });
 
   test("idle list session is not disturbed", () => {

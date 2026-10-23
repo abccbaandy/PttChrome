@@ -8,13 +8,16 @@
 //      是 PTT 自己記的：read.c#getkeep 依看板目錄記游標與頂列（整個登入 session），進板時
 //      還原 ⇒ 列表好讀接著在那個游標上 engage。這裡不另記視野。
 //   2. **認不出 ⇒ 不顯示**：只在「標題列有《板名》＋底列是文章列表 caption」的畫面出現，
-//      而且至少要有兩個分頁（只有現在這個板就沒有東西可切）。
+//      而且至少要有兩個分頁（只有現在這個板就沒有東西可切）。搜尋結果／文摘照記但不顯示：
+//      bbs.c#do_select 不清 MODE_SELECT／MODE_DIGEST ⇒ 子列表裡 s<板> 落地仍是子列表
+//      （別板的搜尋結果／文摘，也不回 getkeep 記的位置）。看不出是不是子列表也不顯示。
 //   3. 分頁清單只存本機（localStorage `pttchrome.boardTabs.v1`），不同步。順序照第一次去的
 //      先後（像瀏覽器分頁，不跟著 MRU 跳動）；滿了丟掉最久沒去的那個（不丟現在這個）。
 import { readEffectivePrefs } from './pref_storage';
 import { parseBoardName } from './screen_titles';
 import { isArticleListFooter } from './screen_captions';
 import { submitSearch } from './article_search';
+import { searchListMode } from './search_status';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
 
@@ -163,7 +166,7 @@ BoardTabs.prototype = {
     this._commit(tabs);
     const names = tabs.map((t) => t.name);
     const g = this._geometry();
-    if (!g || names.length < 2) {
+    if (!g || names.length < 2 || searchListMode(rows) !== 'plain') {
       this._set({ visible: false, tabs: names, current: board });
       return;
     }
@@ -189,7 +192,8 @@ BoardTabs.prototype = {
   // 點分頁：原生 s<板>⏎（submitSearch，同首頁儀表板的看板卡片）。現在這個板不送。
   open: function(name) {
     const core = this._core;
-    if (!name || (this._state.current && name.toLowerCase() === this._state.current.toLowerCase())) return false;
+    if (!name || !this._state.visible) return false;
+    if (this._state.current && name.toLowerCase() === this._state.current.toLowerCase()) return false;
     const sent = submitSearch(core, 'board', name, {
       onFail: () => this._hint('開不了看板 ' + name + '（已停在原生畫面）', 0, HINT_ERROR),
     });
