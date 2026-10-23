@@ -65,6 +65,7 @@ import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
+import { WhatsNew, isWhatsNewTarget } from './whats_new';
 import { MessageInbox, isMessageInboxTarget } from './message_inbox';
 import { NewComments } from './new_comments';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
@@ -279,6 +280,8 @@ export const App = function() {
   // 首頁儀表板（主功能表上的我的最愛／最近看板面板，home_dashboard.js）。要在 inputArea 之後
   // （聽 #t 的按鍵收起面板），screenSettled 監聽也排在 deep link／斷線回到原處之後。
   this.homeDashboard = new HomeDashboard(this);
+  // 更新後的新功能小卡（主功能表右下角，whats_new.js）。
+  this.whatsNew = new WhatsNew(this);
   // 寬螢幕雙欄閱讀（讀文章時左邊空白列出剛才的文章列表，split_reader.js）。
   this.splitReader = new SplitReader(this);
   // 文章工具側欄（好讀文章時右邊空白放 AID／推文統計／推文者／圖片牆，article_tools.js）。
@@ -2328,6 +2331,10 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.redraw(true);
       break;
     // 關注名單（P33）：只改顯示（列表標色、推文 id 上色），不送任何鍵。
+    // 更新後的新功能小卡：關掉時正在顯示的那張一起收起。
+    case 'showWhatsNew':
+      if (!value && this.whatsNew) this.whatsNew.dismiss();
+      break;
     case 'followList':
       this.view.followAuthors = parseBlacklist(value);
       this.view.redraw(true);
@@ -2443,7 +2450,7 @@ App.prototype._onUploadLayer = function(e) {
   return (
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
     isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t) || isResumeToastTarget(t) ||
-    isSearchStatusTarget(t) || isArticleNavTarget(t) || isBoardTabsTarget(t)
+    isSearchStatusTarget(t) || isArticleNavTarget(t) || isBoardTabsTarget(t) || isWhatsNewTarget(t)
   );
 };
 

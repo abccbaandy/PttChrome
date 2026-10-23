@@ -304,3 +304,38 @@
     outline-offset: 2px;
   }
 }
+
+/* 快捷鍵分頁（shortcut_list.js）：左欄按鍵、右欄說明。 */
+.PrefModal__shortcuts {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--mantine-font-size-sm);
+}
+
+.PrefModal__shortcuts td {
+  padding: 6px 4px;
+  border-top: 1px solid var(--mantine-color-dark-4);
+  vertical-align: top;
+}
+
+.PrefModal__shortcuts tr:first-child td {
+  border-top: 0;
+}
+
+.PrefModal__shortcuts td:first-child {
+  white-space: nowrap;
+  width: 1%;
+  padding-right: 12px;
+}
+
+.PrefModal__shortcuts kbd {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--mantine-color-dark-3);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--mantine-color-dark-6);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}

@@ -1165,6 +1165,66 @@
   "boardTabs_closeTip": {
     "message": "關掉 {0}"
   },
+  "options_showWhatsNew": {
+    "message": "更新後顯示新功能"
+  },
+  "tooltip_showWhatsNew": {
+    "message": "換新版後第一次回到主功能表時，右下角一張小卡列出這次多了哪些功能，按 ✕ 或離開主功能表就收起，同一批只出現一次。不會擋住打字。"
+  },
+  "whatsNew_title": {
+    "message": "這次更新"
+  },
+  "whatsNew_close": {
+    "message": "關閉"
+  },
+  "whatsNew_sep": {
+    "message": "、"
+  },
+  "whatsNew_more": {
+    "message": " 等 {n} 項"
+  },
+  "whatsNew_showAll": {
+    "message": "看全部"
+  },
+  "options_shortcuts": {
+    "message": "快捷鍵"
+  },
+  "optionsDesc_shortcuts": {
+    "message": "本站自己加的按鍵一覽"
+  },
+  "tooltip_shortcuts": {
+    "message": "這裡只列本站加的按鍵（PTT 自己的按鍵請在 PTT 裡按 h 看說明）。可以改的鍵在「一般」分頁設定；功能關掉的不會列出。"
+  },
+  "shortcut_commandPalette": {
+    "message": "指令面板：進板、開文章網址、搜尋、執行各種功能"
+  },
+  "shortcut_refresh": {
+    "message": "重新整理看板列表、文章列表、文章"
+  },
+  "shortcut_unreadJump": {
+    "message": "文章列表：跳到第一篇未讀"
+  },
+  "shortcut_deepLinkCopy": {
+    "message": "複製本篇文章的分享連結"
+  },
+  "shortcut_aidNavBack": {
+    "message": "從文章代碼跳過去之後，回到原文原位置"
+  },
+  "shortcut_easyReadingEnd": {
+    "message": "好讀文章：直接從文末讀起"
+  },
+  "shortcut_easyReadingEndSwitch": {
+    "message": "好讀文章：跳到文末並切回原生模式"
+  },
+  "shortcut_browserFind": {
+    "message": "好讀文章：用瀏覽器的尋找搜整篇"
+  },
+  "shortcut_backNav": {
+    "message": "退出文章／回上一層（同瀏覽器的上一頁）"
+  },
+  "shortcut_altAsCtrl": {
+    "message": "當成 PTT 的 Ctrl 組合送出（被瀏覽器攔走的 Ctrl 鍵改按這個）"
+  },
   "options_enableHomeDashboard": {
     "message": "首頁儀表板"
   },
