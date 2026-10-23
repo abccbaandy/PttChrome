@@ -72,6 +72,9 @@ export const DEFAULT_PREFS = {
   // 讀完接著讀下一篇（js/next_article.js）：好讀文末放下一篇的標題卡，點了才替使用者送
   // s<板>⏎ → <編號>⏎ → ⏎ 換文 ⇒ 在安全模式名單內。
   enableNextArticleCard: true,
+  // 它的子開關：卡片下面再列同主題的上一篇／下一篇（next_article.js#sameSubjectEntryFrom，P28）。
+  // 母開關關掉（含安全模式）時卡片整個不出現，這列也就不存在。
+  nextArticleSameSubject: true,
   // Target number of VISIBLE (non-blacklisted) rows the background prefetch
   // accumulates before stopping; continuation is demand-driven (navigate near
   // an edge). 0 disables the background fill (current page + demand only).

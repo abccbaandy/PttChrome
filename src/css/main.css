@@ -1770,6 +1770,67 @@ body.mobile-layout {
   color: #9a9a9a;
 }
 
+/* 同主題上一篇／下一篇（next_article.js#_renderRow，P28）：卡片下面一列、兩顆小按鈕。
+   有這一列時，捲到底要讓位（--next-bottom-inset）的是它，卡片的下 margin 改小。字級、左右
+   留白跟卡片一樣（同為 0.7em，em／ch 才對得上）。 */
+#nextArticleCard[data-thread] {
+  margin-bottom: 0.6em;
+}
+#nextThreadRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  box-sizing: border-box;
+  width: calc(100% - 2ch);
+  margin: 0 1ch calc(1.5em + var(--next-bottom-inset, 1.5em));
+  font-size: 0.7em;
+  line-height: 1.35;
+}
+#nextThreadRow[hidden],
+#nextThreadRow .nextThreadCard[hidden] {
+  display: none;
+}
+#nextThreadRow .nextThreadCard {
+  flex: 1 1 14em;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2em;
+  padding: 0.45em 0.8em;
+  font: inherit;
+  text-align: left;
+  color: #c8c8c8;
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#nextThreadRow .nextThreadCard[data-dir="next"] {
+  align-items: flex-end;
+  text-align: right;
+}
+#nextThreadRow .nextThreadCard:hover {
+  border-color: #888;
+  background: rgba(255, 255, 255, 0.04);
+}
+#nextThreadRow .nextThreadCard[data-pending] {
+  cursor: progress;
+  opacity: 0.6;
+}
+#nextThreadRow .nextArticleLabel {
+  font-size: 0.8em;
+  color: #8a8a8a;
+}
+#nextThreadRow .nextArticleTitle {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* 換文遮罩（next_article.js#_showVeil）：body 底下 fixed、對齊 .main，蓋住換文途中的原生
    鏡像。上面的標題從卡片的位置滑到頂端（像把下一篇捲上來），新文章畫好後淡出。z-index 在
    提示列（2000）、浮動工具（3000）、手機工具列底下。 */

@@ -10,10 +10,10 @@
 // 會因執行順序時紅時綠。
 vi.mock("../../src/js/pref_storage", async (importOriginal) => {
   const real = await importOriginal();
-  return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), enableNextArticleCard: true }) };
+  return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), enableNextArticleCard: true, nextArticleSameSubject: true }) };
 });
 import mainCss from "../../src/css/main.css?raw";
-import { NextArticle, NEXT_ARTICLE_ID, trailingBlankPx } from "../../src/js/next_article";
+import { NextArticle, NEXT_ARTICLE_ID, NEXT_THREAD_ROW_ID, trailingBlankPx } from "../../src/js/next_article";
 import { trailingPx } from "../../src/js/reading_record";
 import { COMMENT_BAR_HEIGHT, commentBarGeometry } from "../../src/js/comment_bar";
 import { setupI18n } from "../../src/js/i18n";
@@ -25,11 +25,13 @@ const VIEW_ROWS = 20;
 function listRow(num, author, title) {
   return String(num).padStart(7) + "    " + " 9/01 " + author.padEnd(13) + "□ " + title;
 }
-function listScreen() {
+function listScreen(thread = false) {
   const t = Array.from({ length: ROWS }, () => "");
   t[0] = "【板主:someone】                  看板《C_Chat》";
   t[3] = listRow(101, "alice", "[閒聊] 第一篇");
   t[4] = listRow(102, "bob", "[問題] 第二篇");
+  // thread：同主題下一篇（卡片下面多一列，P28）。
+  if (thread) t[5] = listRow(103, "carol", "Re: [閒聊] 第一篇");
   t[ROWS - 1] = " 文章選讀  (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面 ";
   return { t, pageState: 2 };
 }
@@ -77,7 +79,7 @@ afterEach(() => {
 // lines：累積頁每一列的文字（"" ＝ 空白列）；bgRows：有底色的列號。
 // floatTools：#mainContainer 最後面掛浮動工具（render/screen.js 把它跟列放在一起，main.css
 // position: fixed 釘在視窗上，不在文章的流裡）。
-function setup(lines, { bar = true, bgRows = [], mobile = false, floatTools = false } = {}) {
+function setup(lines, { bar = true, bgRows = [], mobile = false, floatTools = false, thread = false } = {}) {
   host = document.createElement("div");
   document.body.appendChild(host);
   const main = document.createElement("div");
@@ -136,7 +138,7 @@ function setup(lines, { bar = true, bgRows = [], mobile = false, floatTools = fa
   document.documentElement.classList.toggle("commentBarShown", bar);
   document.documentElement.style.setProperty("--comment-bar-h", COMMENT_BAR_HEIGHT + "px");
 
-  let frame = listScreen();
+  let frame = listScreen(thread);
   let settled = null;
   const core = {
     easyReading: { _enabled: true, _functionMode: false, _reverse: null, easyReadingReachedPageEnd: true },
@@ -253,4 +255,35 @@ test("trailingBlankPx：從最後一列有內容的列量到 #mainContainer 下�
   // 2 列空白＋1em paddingBottom。
   expect(trailingBlankPx(s.mc)).toBeCloseTo(3 * ROW_PX, 0);
   expect(trailingBlankPx(null)).toBe(0);
+});
+
+// ── 同主題那一列（P28）：捲到底要讓位的是它，卡片的下緣改接它 ──────────────────────
+const threadRow = () => document.getElementById(NEXT_THREAD_ROW_ID);
+
+test("同主題那一列：推文很少不用捲就看得到；長文捲到底在推文列與 footer 上面", async () => {
+  let s = setup([...content(8), ...Array(12).fill("")], { thread: true });
+  await nextFrame();
+  expect(threadRow().hidden).toBe(false);
+  expect(s.main.scrollTop).toBe(0);
+  expect(threadRow().getBoundingClientRect().bottom).toBeLessThanOrEqual(clearBottom(s));
+  expect(threadRow().getBoundingClientRect().top).toBeGreaterThanOrEqual(s.card.getBoundingClientRect().bottom);
+  host.remove();
+
+  s = setup(content(40), { thread: true });
+  await nextFrame();
+  s.main.scrollTop = s.main.scrollHeight;
+  const row = threadRow().getBoundingClientRect();
+  expect(row.bottom).toBeLessThanOrEqual(clearBottom(s));
+  expect(row.top).toBeGreaterThanOrEqual(s.card.getBoundingClientRect().bottom);
+  expect(s.card.getBoundingClientRect().top).toBeGreaterThanOrEqual(s.mc.children[39].getBoundingClientRect().bottom);
+});
+
+test("同主題那一列：手機捲到底仍在推文列與導覽列上面", async () => {
+  for (const bar of [true, false]) {
+    const s = setup(content(40), { bar, mobile: true, thread: true });
+    await nextFrame();
+    s.main.scrollTop = s.main.scrollHeight;
+    expect(threadRow().getBoundingClientRect().bottom).toBeLessThanOrEqual(clearBottom(s) + 0.5);
+    host.remove();
+  }
 });

@@ -14,6 +14,7 @@ import {
   mergeSubSnapshot,
   sameListEntry,
   listEndsAfter,
+  sameSubjectEntryFrom,
 } from "../../src/js/next_article";
 import { listPageOf } from "../../src/js/split_reader";
 import { parseBlacklist, parseTitleBlacklist } from "../../src/js/comment_parse";
@@ -641,5 +642,98 @@ describe("mergeSubSnapshot／sameListEntry", () => {
     expect(sameListEntry({ author: "bob", subject: "[問題] 第二篇" }, { author: "bob", subject: "[問題] 第三篇" })).toBe(false);
     expect(sameListEntry({ author: "bob", subject: null }, { author: "bob", subject: null })).toBe(false);
     expect(sameListEntry(null, { author: "bob", subject: "x" })).toBe(false);
+  });
+});
+
+// ── 同主題上一篇／下一篇（P28）──────────────────────────────────────────────
+describe("sameSubjectEntryFrom：同主題（read.c#thread RELATE_NEXT／PREV 的快照版）", () => {
+  const E = (num, subject, o = {}) => ({ num, subject, ...o });
+  const entries = [
+    E(1, "[閒聊] A"),
+    E(2, "[問題] B"),
+    E(3, "[閒聊] A", { deleted: true }),
+    E(4, "[閒聊] A"),
+    E(6, "[閒聊] A"),
+  ];
+  test("往後找主題相同的第一篇，被刪的跳過", () => {
+    expect(sameSubjectEntryFrom(entries, 1, 1).num).toBe(4);
+  });
+  test("往前找", () => {
+    expect(sameSubjectEntryFrom(entries, 4, -1).num).toBe(1);
+  });
+  test("中間缺號（那一列沒看過，可能就是同主題）⇒ 停手", () => {
+    expect(sameSubjectEntryFrom(entries, 4, 1)).toBeNull();
+    expect(sameSubjectEntryFrom(entries, 6, -1)).toBeNull();
+  });
+  test("列表主題被截斷（…）也算同主題", () => {
+    expect(sameSubjectEntryFrom([E(1, "[閒聊] 很長的標題"), E(2, "[閒聊] 很長…")], 1, 1).num).toBe(2);
+  });
+  test("黑名單擋的跳過；這篇自己不在快照、沒有主題 ⇒ null", () => {
+    const withText = [
+      E(1, "[閒聊] A", { text: listRow(1, "alice", "[閒聊] A") }),
+      E(2, "[閒聊] A", { text: listRow(2, "bob", "Re: [閒聊] A") }),
+      E(3, "[閒聊] A", { text: listRow(3, "carol", "Re: [閒聊] A") }),
+    ];
+    expect(sameSubjectEntryFrom(withText, 1, 1, { blacklist: parseBlacklist("bob") }).num).toBe(3);
+    expect(sameSubjectEntryFrom(entries, 5, 1)).toBeNull();
+    expect(sameSubjectEntryFrom([E(1, null), E(2, null)], 1, 1)).toBeNull();
+  });
+});
+
+describe("NextArticle：同主題上一篇／下一篇", () => {
+  afterEach(() => {
+    delete prefOverride.nextArticleSameSubject;
+  });
+  test("預設開；跟「下一篇」不同篇才列", () => {
+    expect(DEFAULT_PREFS.nextArticleSameSubject).toBe(true);
+    const { next, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.entry.num).toBe(102);
+    expect(next.state.threadNext).toMatchObject({ num: 104, author: "carol" });
+    expect(next.state.threadPrev).toBeNull();
+  });
+  test("同主題下一篇正好就是下一篇 ⇒ 不重複列；回頭看得到原文 ⇒ 同主題上一篇", () => {
+    const { next, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "carol", "Re: [閒聊] 第一篇");
+    expect(next.state.threadNext).toBeNull();
+    expect(next.state.threadPrev).toMatchObject({ num: 101, author: "alice" });
+  });
+  test("終點卡（沒有下一篇）也照樣列同主題上一篇", () => {
+    const { next, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "carol", "Re: [閒聊] 第一篇");
+    expect(next.state.entry).toBeNull();
+    expect(next.state.end).toBe("last");
+    expect(next.state.threadPrev.num).toBe(101);
+  });
+  test("子開關關掉 ⇒ 不列", () => {
+    prefOverride.nextArticleSameSubject = false;
+    const { next, show, read } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.entry.num).toBe(102);
+    expect(next.state.threadNext).toBeNull();
+  });
+  test("點同主題下一篇 ⇒ startNum(板, 那篇的編號)，落地比對也比那篇", () => {
+    const { next, show, read, starts, hints } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.open(next.state.threadNext)).toBe(true);
+    expect(starts).toEqual([expect.objectContaining({ board: "C_Chat", num: 104 })]);
+    read("C_Chat", "carol", "Re: [閒聊] 第一篇");
+    starts[0].onEnd({ ok: true });
+    expect(hints).toEqual([]);
+    // 落在 104 ⇒ 回頭的同主題上一篇是 101。
+    read("C_Chat", "carol", "Re: [閒聊] 第一篇");
+    expect(next.state.threadPrev.num).toBe(101);
+  });
+  test("不是卡片上列的那篇 ⇒ 不送", () => {
+    const { next, show, read, starts } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.open({ num: 103, author: "x", title: "y" })).toBe(false);
+    expect(starts).toEqual([]);
   });
 });

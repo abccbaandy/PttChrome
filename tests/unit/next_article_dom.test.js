@@ -3,7 +3,13 @@
 // #mainContainer）、點擊不外洩到 App 在 window 的滑鼠入口、「捲到文末了沒」扣掉卡片的高度
 // （reading_record.trailingPx）。
 // real-input: tests/e2e/offline/next_article.offline.spec.js
-import { NextArticle, NEXT_ARTICLE_ID, NEXT_ARTICLE_VEIL_ID, isNextArticleTarget } from "../../src/js/next_article";
+import {
+  NextArticle,
+  NEXT_ARTICLE_ID,
+  NEXT_ARTICLE_VEIL_ID,
+  NEXT_THREAD_ROW_ID,
+  isNextArticleTarget,
+} from "../../src/js/next_article";
 import { ReadingRecord, trailingPx } from "../../src/js/reading_record";
 import { setupI18n, i18n } from "../../src/js/i18n";
 
@@ -35,7 +41,7 @@ afterEach(() => {
 
 const READ_ALICE = { _articleBoard: "C_Chat", _articleAuthor: "alice", _articleTitle: "[閒聊] 第一篇" };
 
-function setup(read = READ_ALICE) {
+function setup(read = READ_ALICE, list = listScreen()) {
   host = document.createElement("div");
   document.body.appendChild(host);
   const main = document.createElement("div");
@@ -52,7 +58,7 @@ function setup(read = READ_ALICE) {
   main.append(screenRoot, cursor);
   host.appendChild(main);
 
-  let frame = listScreen();
+  let frame = list;
   let settled = null;
   const starts = [];
   const core = {
@@ -245,4 +251,66 @@ test("遮罩上的滑鼠事件不外洩到 window、不搶焦點", () => {
     for (const t of ["mousedown", "mouseup", "click"]) window.removeEventListener(t, spy);
   }
   expect(seen).toEqual([]);
+});
+
+// ── 同主題上一篇／下一篇（P28）──────────────────────────────────────────────
+function threadList() {
+  const l = listScreen();
+  l.t[5] = listRow(103, "carol", "Re: [閒聊] 第一篇");
+  return l;
+}
+
+test("同主題那一列：卡片後面、.main 裡、不進 #mainContainer；點了送那篇的編號、不外洩", () => {
+  const { main, mc, starts, next } = setup(READ_ALICE, threadList());
+  const card = document.getElementById(NEXT_ARTICLE_ID);
+  const row = document.getElementById(NEXT_THREAD_ROW_ID);
+  expect(row).not.toBeNull();
+  expect(row.parentNode).toBe(main);
+  expect(card.nextSibling).toBe(row);
+  expect(mc.contains(row)).toBe(false);
+  expect(row.hidden).toBe(false);
+  expect(card.hasAttribute("data-thread")).toBe(true);
+  const nextBtn = row.querySelector('[data-dir="next"]');
+  const prevBtn = row.querySelector('[data-dir="prev"]');
+  expect(prevBtn.hidden).toBe(true);
+  expect(nextBtn.hidden).toBe(false);
+  expect(nextBtn.textContent).toContain(i18n("next_article_thread_next"));
+  expect(nextBtn.textContent).toContain("Re: [閒聊] 第一篇");
+  expect(isNextArticleTarget(nextBtn.firstChild)).toBe(true);
+
+  const seen = [];
+  const spy = (e) => seen.push(e.type);
+  for (const t of ["mousedown", "mouseup", "click"]) window.addEventListener(t, spy);
+  try {
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    nextBtn.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    nextBtn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    nextBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  } finally {
+    for (const t of ["mousedown", "mouseup", "click"]) window.removeEventListener(t, spy);
+  }
+  expect(seen).toEqual([]);
+  expect(starts).toEqual([expect.objectContaining({ board: "C_Chat", num: 103 })]);
+  expect(next.state.pending).toBe(true);
+  expect(nextBtn.hasAttribute("data-pending")).toBe(true);
+});
+
+test("「捲到文末了沒」連同主題那一列一起扣（trailingPx）", () => {
+  const { core } = setup(READ_ALICE, threadList());
+  const card = document.getElementById(NEXT_ARTICLE_ID);
+  const row = document.getElementById(NEXT_THREAD_ROW_ID);
+  const outer = (n) => {
+    const cs = getComputedStyle(n);
+    return n.offsetHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom);
+  };
+  expect(row.offsetHeight).toBeGreaterThan(0);
+  expect(trailingPx(core.view)).toBeCloseTo(Math.max(0, outer(card) + outer(row)), 0);
+});
+
+test("沒有同主題的文章 ⇒ 那一列不出現、卡片不標 data-thread", () => {
+  setup();
+  const row = document.getElementById(NEXT_THREAD_ROW_ID);
+  expect(row === null || row.hidden).toBe(true);
+  expect(document.getElementById(NEXT_ARTICLE_ID).hasAttribute("data-thread")).toBe(false);
 });

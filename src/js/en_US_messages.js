@@ -1214,6 +1214,18 @@ export const en_US = {
   "next_article_label": {
     "message": "Next post"
   },
+  "next_article_thread_next": {
+    "message": "Next in thread ›"
+  },
+  "next_article_thread_prev": {
+    "message": "‹ Previous in thread"
+  },
+  "options_nextArticleSameSubject": {
+    "message": "Also show the previous / next post in the same thread"
+  },
+  "tooltip_nextArticleSameSubject": {
+    "message": "When following a discussion (post → Re: → Re:), the card also lists the previous and next posts with the same subject; click to switch to them, like PTT's [ and ]. Only posts you have already seen in the list are shown."
+  },
   "next_article_pull": {
     "message": "Next post · keep pulling up"
   },
