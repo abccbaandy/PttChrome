@@ -9,6 +9,7 @@
 | 輸入 | 列出 | 接到哪個既有入口 |
 |---|---|---|
 | ptt.cc 文章網址、本站 deep link、`#AID (看板)`、`看板 #AID`、`看板/AID` | 開啟文章 | `deepLinkController.request`（登入前暫存、AID 跳轉、閱讀紀錄 `deep-link-jump`） |
+| 空白，或標題／板名含輸入（pref `enableRecentArticles`） | 稍後再讀＋最近讀過的文章（最多 5 篇，稍後再讀在前，排在看板後面） | 同上一列「開啟文章」（`recent_articles.js`，見 `docs/recent-articles.md`） |
 | 空白，或板名開頭 | 最近去過的看板＋我的最愛（空白最多 12 個、打字最多 5 個，最近的在前） | 同下一列「前往看板」 |
 | 板名（`BOARD_RE`） | 前往看板 | 搜尋彈窗的送出（`onSearchConfirm` kind `board` → `submitSearch`，閱讀紀錄 `board-search`） |
 | 任意字／帳號字元／數字 | 搜標題／作者／推文數 | 同上（kind `title`／`author`／`push`） |

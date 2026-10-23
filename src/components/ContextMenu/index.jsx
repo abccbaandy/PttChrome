@@ -8,6 +8,7 @@ import {
   useEffect,
 } from "react";
 import { i18n } from "../../js/i18n";
+import { recentKey } from "../../js/recent_articles";
 import DropdownMenu from "./DropdownMenu";
 import ContextSheet from "./ContextSheet";
 import { useMobile } from "../useMobile";
@@ -197,6 +198,14 @@ const menuHandlerByEventKey = {
   filterCommentOp: (pttchrome, { commentFilterTarget: t }) =>
     t && t.op && pttchrome.view.setCommentFilter(t.op, true, t.row),
   clearCommentFilter: (pttchrome) => pttchrome.view.clearCommentFilter(),
+  // 稍後再讀（P34）：收進／移出清單（recent_articles.js），一個 byte 都不送。
+  readLater: (pttchrome, { readLaterTarget: t }) => {
+    if (t && pttchrome.recentArticles?.toggleLater(t) === true)
+      pttchrome.view?.flashListHint?.(i18n("recent_added"), 2000);
+  },
+  removeReadLater: (pttchrome, { readLaterTarget: t }) => {
+    if (t) pttchrome.recentArticles?.toggleLater(t);
+  },
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
   // 圖片上傳（urusai）：開檔案選擇器／開上傳紀錄面板。實作在
   // js/image_upload_controller.js，App 在建構時掛成 pttchrome.imageUpload。
@@ -204,12 +213,36 @@ const menuHandlerByEventKey = {
   uploadHistory: (pttchrome) => pttchrome.imageUpload.openPanel(),
 };
 
+// 稍後再讀（P34）的選單目標：游標下的文章連結優先，否則「本篇」（findLocalPostAid）。
+// saved＝已經在稍後再讀裡（選單改給「從稍後再讀移除」）。關掉／不是文章 ⇒ null。
+export function readLaterTargetOf(
+  pttchrome,
+  prefs,
+  contextArticle,
+  currentArticle,
+) {
+  const ra = pttchrome.recentArticles;
+  if (!prefs.enableRecentArticles || !ra) return null;
+  const a = contextArticle
+    ? { board: contextArticle.board, aid: contextArticle.aid, title: "" }
+    : currentArticle
+      ? {
+          board: currentArticle.board,
+          aid: currentArticle.aid,
+          title: pttchrome.view?._articleTitle || "",
+        }
+      : null;
+  if (!a || !a.board || !a.aid) return null;
+  return { ...a, saved: ra.isLater(recentKey(a.board, a.aid)) };
+}
+
 // 推文篩選（P29）的選單目標：好讀文章裡的推文列（帳號、不是小天使）。篩選生效中 ⇒ 只給
 // 「顯示全部推文」（active）。op＝這篇的原PO（解析不到就不給「只看原 PO」）。
 function commentFilterTargetOf(pttchrome, prefs, normalEnabled, rowElement) {
   const view = pttchrome.view;
   if (!normalEnabled || !prefs.enableCommentFilter || !view) return null;
-  if (!view.useEasyReadingMode || !view.buf || view.buf.pageState !== 3) return null;
+  if (!view.useEasyReadingMode || !view.buf || view.buf.pageState !== 3)
+    return null;
   if (typeof view.activeCommentFilter !== "function") return null;
   if (view.activeCommentFilter()) return { active: true };
   const pusher = rowElement && rowElement.getAttribute("data-pusher");
@@ -248,6 +281,8 @@ const initialState = {
   blacklistAuthorExists: false,
   followEnabled: false,
   followAuthorExists: false,
+  // 稍後再讀（P34，readLaterTargetOf）：{ board, aid, title, saved } | null。
+  readLaterTarget: null,
   blacklistTitleTarget: null,
   // 長按／右鍵的推文是誰推的（「回覆這則」；推文列沒出現或開關關掉 ⇒ null）。
   replyCommentTarget: null,
@@ -649,7 +684,18 @@ export const ContextMenu = ({ pttchrome }) => {
         followAuthorExists,
         blacklistTitleTarget,
         replyCommentTarget,
-        commentFilterTarget: commentFilterTargetOf(pttchrome, prefs, normalEnabled, rowElement),
+        commentFilterTarget: commentFilterTargetOf(
+          pttchrome,
+          prefs,
+          normalEnabled,
+          rowElement,
+        ),
+        readLaterTarget: readLaterTargetOf(
+          pttchrome,
+          prefs,
+          contextArticle,
+          currentArticle,
+        ),
         markReadTarget,
         boardMarkReadTarget:
           (normalEnabled &&
@@ -1007,6 +1053,9 @@ export const ContextMenu = ({ pttchrome }) => {
         safeMode: !!prefs.nativeSafeMode,
         quickBoards: prefs.paletteQuickBoards
           ? pttchrome.homeDashboard?.quickBoards?.() || null
+          : null,
+        recentArticles: prefs.enableRecentArticles
+          ? pttchrome.recentArticles?.state || null
           : null,
       },
     });
@@ -1400,6 +1449,7 @@ export const ContextMenu = ({ pttchrome }) => {
     boardMarkReadTarget,
     replyCommentTarget,
     commentFilterTarget,
+    readLaterTarget,
     articleLinkEnabled,
     contextArticle,
     previews,
@@ -1457,6 +1507,7 @@ export const ContextMenu = ({ pttchrome }) => {
         titleBlacklistText={blacklistTitleTarget}
         replyCommentTarget={replyCommentTarget}
         commentFilterTarget={commentFilterTarget}
+        readLaterTarget={readLaterTarget}
         markReadTarget={markReadTarget}
         markAllReadEnabled={markAllReadEnabled}
         boardMarkReadTarget={boardMarkReadTarget}

@@ -1193,6 +1193,33 @@ export const en_US = {
   "boardTabs_closeTip": {
     "message": "Close {0}"
   },
+  "options_enableRecentArticles": {
+    "message": "Recently read / Read later"
+  },
+  "tooltip_enableRecentArticles": {
+    "message": "Remembers the last 30 articles you read (once the article URL line at the end has loaded). Right-click or long-press an article to save it for later. The home dashboard and the command palette (F4) list them; click to reopen. Stored only in this browser, never synced."
+  },
+  "recent_later": {
+    "message": "Read later"
+  },
+  "recent_recent": {
+    "message": "Recently read"
+  },
+  "recent_remove": {
+    "message": "Remove"
+  },
+  "recent_failed": {
+    "message": "Can't open this article right now, please try again"
+  },
+  "cmenu_readLater": {
+    "message": "Read later"
+  },
+  "cmenu_removeReadLater": {
+    "message": "Remove from read later"
+  },
+  "recent_added": {
+    "message": "Saved to read later (find it on the home dashboard or with F4)"
+  },
   "options_showWhatsNew": {
     "message": "Show new features after an update"
   },
