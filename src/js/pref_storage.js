@@ -57,6 +57,9 @@ export const DEFAULT_PREFS = {
   // 首頁儀表板（js/home_dashboard.js）：主功能表上蓋一層我的最愛／最近看板／新信面板，
   // 打開時快取過期會自己去抓一次我的最愛（Ctrl+Z f → q）⇒ 在安全模式名單內。
   enableHomeDashboard: true,
+  // 更新後的新功能小卡（js/whats_new.js）：換新版後第一次看到主功能表時右下角列出新功能。
+  // 只改顯示、不送鍵 ⇒ 不在安全模式名單內。
+  showWhatsNew: true,
   // 看板分頁（js/board_tabs.js）：文章列表上方一排最近去過的看板，點一下替使用者送
   // s<板>⏎ 切板 ⇒ 在安全模式名單內。
   enableBoardTabs: true,

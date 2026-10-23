@@ -36,6 +36,7 @@ export const PREF_SEARCH_TABS = {
   ai: "options_ai",
   local: "options_local",
   backup: "options_backup",
+  shortcuts: "options_shortcuts",
   about: "options_about",
 };
 
@@ -120,6 +121,11 @@ export const PREF_SEARCH_ITEMS = [
       key: "enableHomeDashboard",
       titleKey: "options_enableHomeDashboard",
       tooltipKey: "tooltip_enableHomeDashboard",
+    },
+    {
+      key: "showWhatsNew",
+      titleKey: "options_showWhatsNew",
+      tooltipKey: "tooltip_showWhatsNew",
     },
     {
       key: "enableBoardTabs",

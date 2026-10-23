@@ -1166,6 +1166,66 @@ export const en_US = {
   "boardTabs_closeTip": {
     "message": "Close {0}"
   },
+  "options_showWhatsNew": {
+    "message": "Show new features after an update"
+  },
+  "tooltip_showWhatsNew": {
+    "message": "The first time you're back at the main menu after an update, a small card at the bottom right lists the new features. Close it with ✕ or by leaving the main menu; each batch shows only once. It never blocks typing."
+  },
+  "whatsNew_title": {
+    "message": "What's new"
+  },
+  "whatsNew_close": {
+    "message": "Close"
+  },
+  "whatsNew_sep": {
+    "message": ", "
+  },
+  "whatsNew_more": {
+    "message": " and {n} more"
+  },
+  "whatsNew_showAll": {
+    "message": "Show all"
+  },
+  "options_shortcuts": {
+    "message": "Shortcuts"
+  },
+  "optionsDesc_shortcuts": {
+    "message": "Keys added by this client"
+  },
+  "tooltip_shortcuts": {
+    "message": "Only keys added by this client are listed (for PTT's own keys press h inside PTT). Customizable keys are set in the General tab; features that are turned off are not listed."
+  },
+  "shortcut_commandPalette": {
+    "message": "Command palette: go to a board, open a post URL, search, run features"
+  },
+  "shortcut_refresh": {
+    "message": "Refresh the board list, post list or post"
+  },
+  "shortcut_unreadJump": {
+    "message": "Post list: jump to the first unread post"
+  },
+  "shortcut_deepLinkCopy": {
+    "message": "Copy a share link to this post"
+  },
+  "shortcut_aidNavBack": {
+    "message": "After jumping via a post ID, go back to where you were"
+  },
+  "shortcut_easyReadingEnd": {
+    "message": "Easy reading: start from the end of the post"
+  },
+  "shortcut_easyReadingEndSwitch": {
+    "message": "Easy reading: jump to the end and switch to native mode"
+  },
+  "shortcut_browserFind": {
+    "message": "Easy reading: search the whole post with the browser's Find"
+  },
+  "shortcut_backNav": {
+    "message": "Leave the post / go up one level (same as browser Back)"
+  },
+  "shortcut_altAsCtrl": {
+    "message": "Sent to PTT as Ctrl+key (use it for Ctrl combos the browser takes)"
+  },
   "options_enableHomeDashboard": {
     "message": "Home dashboard"
   },

@@ -72,6 +72,7 @@ import {
   normalizeMobileFontPx,
 } from "../../js/mobile_layout";
 import { PrefSearchBox } from "./PrefSearchBox";
+import { shortcutList, isMacPlatform } from "../../js/shortcut_list";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import "./PrefModal.css";
 
@@ -128,6 +129,7 @@ export const PREF_CATEGORIES = [
   { value: "ai", labelKey: "options_ai" },
   { value: "local", labelKey: "options_local" },
   { value: "backup", labelKey: "options_backup" },
+  { value: "shortcuts", labelKey: "options_shortcuts" },
   { value: "about", labelKey: "options_about" },
 ].map((c) => ({ ...c, descKey: "optionsDesc_" + c.value }));
 
@@ -943,6 +945,16 @@ export const PrefModal = ({
                 </PrefCheckbox>
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableHomeDashboard")}
+                </Text>
+                <PrefCheckbox
+                  name="showWhatsNew"
+                  checked={values.showWhatsNew}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_showWhatsNew")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_showWhatsNew")}
                 </Text>
                 <PrefCheckbox
                   name="enableBoardTabs"
@@ -2493,6 +2505,28 @@ export const PrefModal = ({
                     )}
                   </Text>
                 )}
+              </PrefSection>
+            </Tabs.Panel>
+            {/* 快捷鍵一覽（js/shortcut_list.js）：只列本站自己加的鍵，跟著目前的設定值走。 */}
+            <Tabs.Panel value="shortcuts">
+              <PrefSection legendKey="options_shortcuts">
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_shortcuts")}
+                </Text>
+                <table className="PrefModal__shortcuts">
+                  <tbody>
+                    {shortcutList(values, isMacPlatform()).map((s) => (
+                      <tr key={s.labelKey}>
+                        <td>
+                          {s.keys.map((k) => (
+                            <kbd key={k}>{k}</kbd>
+                          ))}
+                        </td>
+                        <td>{i18n(s.labelKey)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </PrefSection>
             </Tabs.Panel>
             <Tabs.Panel value="about" className="PrefModal__about-selectable">

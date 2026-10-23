@@ -72,7 +72,7 @@ describe("設定頁：窄螢幕（手機直向）", () => {
     expect(c.classList.contains("PrefModal--narrow")).toBe(true);
     expect(c.getBoundingClientRect().width).toBeGreaterThanOrEqual(388);
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(PREF_CATEGORIES).toHaveLength(10);
+    expect(PREF_CATEGORIES).toHaveLength(11);
     for (const cat of PREF_CATEGORIES) {
       const el = category(cat.value);
       expect(el, cat.value).not.toBeNull();

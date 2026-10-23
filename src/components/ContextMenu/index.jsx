@@ -33,6 +33,7 @@ import DebugRecordNotice from "../DebugRecordNotice";
 import MobileToolbar from "../MobileToolbar";
 import MobileAppBar from "../MobileAppBar";
 import HomeDashboard from "../HomeDashboard";
+import WhatsNewCard from "../WhatsNew";
 import SplitReader from "../SplitReader";
 import ArticleTools from "../ArticleTools";
 import CommentBar from "../CommentBar";
@@ -1537,6 +1538,7 @@ export const ContextMenu = ({ pttchrome }) => {
       </Suspense>
       <DebugRecordNotice pttchrome={pttchrome} />
       <HomeDashboard pttchrome={pttchrome} />
+      <WhatsNewCard pttchrome={pttchrome} />
       <SplitReader pttchrome={pttchrome} />
       <ArticleTools pttchrome={pttchrome} />
       <CommentBar pttchrome={pttchrome} />

@@ -65,7 +65,7 @@ describe("設定搜尋索引 ↔ PrefModal.jsx", () => {
   test("抽得到東西（掃描本身沒壞掉）", () => {
     expect(staticNames.length).toBeGreaterThan(50);
     expect(legendKeys.length).toBeGreaterThan(20);
-    expect(panelTabs.length).toBe(10);
+    expect(panelTabs.length).toBe(11);
   });
 
   test("每個 name= 的設定項都在索引或豁免名單裡", () => {

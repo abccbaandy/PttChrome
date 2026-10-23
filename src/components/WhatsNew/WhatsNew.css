@@ -1,0 +1,95 @@
+/* 更新後的新功能小卡（WhatsNew/index.jsx）。右下角、不是 modal：
+   z-index 高於首頁儀表板（140），低於 App Bar（150）、手機底部工具列（2500）與 Mantine overlay（200）。
+   手機讓開底部工具列（mobile_layout.MOBILE_TOOLBAR_PX＋safe-area）。 */
+.whatsNewCard {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 145;
+  width: min(340px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 10px 12px 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #3a3a46;
+  background: #1c1c24;
+  color: #ddd;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font:
+    14px/1.45 system-ui,
+    sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.whatsNewCard[data-mobile] {
+  bottom: calc(48px + 12px + var(--safe-bottom, 0px));
+}
+
+.whatsNewHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.whatsNewTitle {
+  flex: 1;
+  font-weight: 600;
+  color: #f0c060;
+}
+
+.whatsNewClose,
+.whatsNewAll {
+  border: 0;
+  background: none;
+  color: #aaa;
+  cursor: pointer;
+  font: inherit;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.whatsNewClose:hover,
+.whatsNewAll:hover {
+  background: #2c2c38;
+  color: #fff;
+}
+
+.whatsNewNames {
+  color: #ccc;
+}
+
+.whatsNewAll {
+  margin-top: 4px;
+  margin-left: -6px;
+  color: #7cb4ff;
+}
+
+.whatsNewList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.whatsNewList li {
+  padding: 4px 0;
+  border-top: 1px solid #2c2c38;
+}
+
+.whatsNewList li:first-child {
+  border-top: 0;
+}
+
+.whatsNewList b {
+  display: block;
+  color: #eee;
+}
+
+.whatsNewList span {
+  color: #aaa;
+  font-size: 13px;
+}
