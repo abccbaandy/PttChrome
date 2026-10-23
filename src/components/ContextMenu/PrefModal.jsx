@@ -977,6 +977,21 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_enableNextArticleCard")}
                 </Text>
+                <div className="PrefModal__SubOptions">
+                  <PrefCheckbox
+                    name="nextArticleSameSubject"
+                    checked={values.nextArticleSameSubject}
+                    disabled={
+                      values.nativeSafeMode || !values.enableNextArticleCard
+                    }
+                    onChange={onCheckboxChange}
+                  >
+                    {i18n("options_nextArticleSameSubject")}
+                  </PrefCheckbox>
+                  <Text size="xs" c="dimmed" mb="xs">
+                    {i18n("tooltip_nextArticleSameSubject")}
+                  </Text>
+                </div>
                 <PrefCheckbox
                   name="enableArticleTools"
                   checked={values.enableArticleTools}

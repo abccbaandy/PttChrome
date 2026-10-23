@@ -34,6 +34,8 @@ import { CHUNK_CLASS } from '../render/screen_chunk';
 
 export const NEXT_ARTICLE_ID = 'nextArticleCard';
 export const NEXT_ARTICLE_VEIL_ID = 'nextArticleVeil';
+// 同主題上一篇／下一篇的兩顆按鈕（卡片下面一列）。
+export const NEXT_THREAD_ROW_ID = 'nextThreadRow';
 // 換文整段的上限（同雙欄閱讀）。
 const NAV_WATCHDOG_MS = 45000;
 // 換文成功後，遮罩最多等好讀把新文章畫出來這麼久（ensureEnabledOnArticle 可能延到下一次
@@ -60,6 +62,28 @@ export function nextEntryAfter(entries, num, filter, skipped) {
     const why = e.deleted ? 'deleted' : e.text ? hiddenReason(e.text, f.blacklist, f.titleKeywords) : null;
     if (!why) return e;
     if (skipped) skipped.push({ num: n, why: why });
+  }
+  return null;
+}
+
+// 同主題的下一篇／上一篇（P28，pref nextArticleSameSubject）：把 pmore 的 `]`／`[` 變成看得到的卡片。
+// 原生是 read.c#thread(RELATE_NEXT/PREV)：從這篇往後（往前）逐列找 subject() 相同的第一篇
+// （subject() 去掉 Re:／Fw:，置底文當 EOF）。這裡只認快照：從這篇往 dir 方向**連續**看過的
+// 列裡找主題相同（subjectMatches，列表主題可能被截成 …）的第一篇；中間缺一號＝那一列沒看過、
+// 可能就是同主題 ⇒ 停手回 null（不憑空送 `]`）。被刪的、列表好讀會藏的列（hiddenReason）
+// 跳過，判準同 nextEntryAfter。這篇自己在快照裡沒有主題 ⇒ null。
+export function sameSubjectEntryFrom(entries, num, dir, filter) {
+  if (!entries || !entries.length || num == null || (dir !== 1 && dir !== -1)) return null;
+  const byNum = new Map();
+  for (const e of entries) byNum.set(e.num, e);
+  const cur = byNum.get(num);
+  if (!cur || cur.deleted || !cur.subject) return null;
+  const f = filter || {};
+  for (let n = num + dir; byNum.has(n); n += dir) {
+    const e = byNum.get(n);
+    if (e.deleted || !e.subject || !subjectMatches(e.subject, cur.subject)) continue;
+    if (e.text && hiddenReason(e.text, f.blacklist, f.titleKeywords)) continue;
+    return e;
   }
   return null;
 }
@@ -166,6 +190,10 @@ function enabled() {
   return !!readEffectivePrefs().enableNextArticleCard;
 }
 
+function sameSubjectEnabled() {
+  return !!readEffectivePrefs().nextArticleSameSubject;
+}
+
 // ---------------------------------------------------------------------------
 // 控制器
 // ---------------------------------------------------------------------------
@@ -187,7 +215,9 @@ export function NextArticle(core) {
   // entry：下一篇；null 而 visible ⇒ 終點卡，end＝'last'（列表到底）｜'unknown'（下一篇沒看過）。
   // pull／progress：往下拉的進度（pull_next_article.js），pull＝null｜'pull'｜'armed'（手機
   // 觸控）｜'wheel'（桌機滾輪），progress＝0..1；只改卡片的字與進度條。
-  this._state = { visible: false, entry: null, end: null, pending: false, pull: null, progress: null };
+  // threadNext／threadPrev：同主題的下一篇／上一篇（sameSubjectEntryFrom），沒有＝null。
+  this._state = { visible: false, entry: null, end: null, pending: false, pull: null, progress: null, threadNext: null, threadPrev: null };
+  this._row = null; // 同主題那一列的 DOM（第一次要顯示時才建）
   const self = this;
   if (core.buf && core.buf.addEventListener)
     core.buf.addEventListener('screenSettled', function() {
@@ -318,22 +348,33 @@ NextArticle.prototype = {
       return;
     }
     const skipped = [];
-    const entry = nextEntryAfter(snap.entries, current, listFilterOf(view), skipped);
+    const filter = listFilterOf(view);
+    const entry = nextEntryAfter(snap.entries, current, filter, skipped);
     this._logPick(current, entry, skipped);
+    // 同主題：跟「下一篇」是同一篇就不重複列。
+    let threadNext = null;
+    let threadPrev = null;
+    if (sameSubjectEnabled()) {
+      threadNext = sameSubjectEntryFrom(snap.entries, current, 1, filter);
+      if (threadNext && entry && threadNext.num === entry.num) threadNext = null;
+      threadPrev = sameSubjectEntryFrom(snap.entries, current, -1, filter);
+    }
+    this._pickMode = list.mode;
     if (!entry) {
       // 認得出這篇、卻接不下去：終點卡（不能點），讓人知道是到底了，不是功能壞了。
       const end = listEndsAfter(snap.entries, current, snap.endNum) ? 'last' : 'unknown';
-      this._set({ visible: true, entry: null, end: end, pending: false, pull: null, progress: null });
+      this._set({ visible: true, entry: null, end: end, pending: false, pull: null, progress: null, threadNext: threadNext, threadPrev: threadPrev });
       return;
     }
-    this._pickMode = list.mode;
-    this._set({ visible: true, entry: entry, end: null, pending: false });
+    this._set({ visible: true, entry: entry, end: null, pending: false, threadNext: threadNext, threadPrev: threadPrev });
   },
 
-  open: function() {
+  // target：要開的那篇（同主題按鈕傳 threadNext／threadPrev）；不給＝卡片上的下一篇。
+  open: function(target) {
     const core = this._core;
     const st = this._state;
-    const entry = st.entry;
+    const entry = target || st.entry;
+    if (target && target !== st.threadNext && target !== st.threadPrev && target !== st.entry) return false;
     const sub = this._pickMode === 'select';
     const snap = sub ? this._subSnapshot : this._snapshot;
     if (!st.visible || !entry || this._nav || !snap) return false;
@@ -591,6 +632,8 @@ NextArticle.prototype = {
     }
     el.style.setProperty('--next-pull-up', Math.round(trailingBlankPx(this._mainContainer())) + 'px');
     el.style.setProperty('--next-bottom-inset', Math.round(inset) + 'px');
+    // 同主題那一列排在卡片後面時，捲到底要讓位的是它（卡片的下 margin 改小，見 main.css）。
+    if (this._row) this._row.style.setProperty('--next-bottom-inset', Math.round(inset) + 'px');
   },
 
   // settle 之後列的內容可能變了而高度沒變（一頁的文章多了一則推文，填掉一列空白）⇒
@@ -604,14 +647,87 @@ NextArticle.prototype = {
     });
   },
 
+  // ── 同主題上一篇／下一篇（P28）────────────────────────────────────────
+  // 卡片下面一列、兩顆按鈕（各自可有可無）。點了走同一條 open（換文、遮罩、落地比對、閱讀
+  // 紀錄全部共用）。跟卡片一樣住在 .main 裡、不寫 #mainContainer。
+  _ensureRow: function() {
+    if (this._row) return this._row;
+    const el = this._el;
+    if (!el || !el.parentNode || typeof document === 'undefined') return null;
+    const row = document.createElement('div');
+    row.id = NEXT_THREAD_ROW_ID;
+    row.hidden = true;
+    const self = this;
+    for (const dir of ['prev', 'next']) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'nextThreadCard';
+      b.setAttribute('data-dir', dir);
+      b.hidden = true;
+      const label = document.createElement('span');
+      label.className = 'nextArticleLabel';
+      const title = document.createElement('span');
+      title.className = 'nextArticleTitle';
+      b.append(label, title);
+      // 同卡片：不搶 #t 焦點、滑鼠不往 window 傳。
+      b.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      b.addEventListener('mouseup', function(e) {
+        e.stopPropagation();
+      });
+      b.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const st = self._state;
+        const target = dir === 'next' ? st.threadNext : st.threadPrev;
+        if (target && !st.pending) self.open(target);
+      });
+      row.appendChild(b);
+    }
+    el.parentNode.insertBefore(row, el.nextSibling);
+    this._core.view.nextThreadRow = row;
+    this._row = row;
+    return row;
+  },
+
+  _renderRow: function() {
+    const st = this._state;
+    const items = { prev: st.visible ? st.threadPrev : null, next: st.visible ? st.threadNext : null };
+    const any = !!(items.prev || items.next);
+    if (!any) {
+      if (this._row) this._row.hidden = true;
+      if (this._el) this._el.removeAttribute('data-thread');
+      return;
+    }
+    const row = this._ensureRow();
+    if (!row) return;
+    for (const b of row.children) {
+      const dir = b.getAttribute('data-dir');
+      const e = items[dir];
+      b.hidden = !e;
+      if (!e) continue;
+      const [label, title] = b.children;
+      label.textContent = i18n(dir === 'next' ? 'next_article_thread_next' : 'next_article_thread_prev');
+      title.textContent = (e.recommend ? e.recommend + ' ' : '') + e.title;
+      b.title = e.author + ((e.date || '').trim() ? ' · ' + e.date.trim() : '');
+      if (st.pending) b.setAttribute('data-pending', '');
+      else b.removeAttribute('data-pending');
+    }
+    row.hidden = false;
+    this._el.setAttribute('data-thread', '');
+  },
+
   _render: function() {
     const st = this._state;
     if (!st.visible) {
       if (this._el) this._el.hidden = true;
+      this._renderRow();
       return;
     }
     const el = this._ensureEl();
     if (!el) return;
+    this._renderRow();
     const e = st.entry;
     const [label, title, meta] = el.children;
     if (!e) {
@@ -661,7 +777,7 @@ export function isNextArticleTarget(el) {
   return !!(
     el &&
     typeof el.closest === 'function' &&
-    el.closest('#' + NEXT_ARTICLE_ID + ', #' + NEXT_ARTICLE_VEIL_ID)
+    el.closest('#' + NEXT_ARTICLE_ID + ', #' + NEXT_ARTICLE_VEIL_ID + ', #' + NEXT_THREAD_ROW_ID)
   );
 }
 

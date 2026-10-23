@@ -137,6 +137,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_enableNextArticleCard",
     },
     {
+      key: "nextArticleSameSubject",
+      titleKey: "options_nextArticleSameSubject",
+      tooltipKey: "tooltip_nextArticleSameSubject",
+    },
+    {
       key: "enableArticleTools",
       titleKey: "options_enableArticleTools",
       tooltipKey: "tooltip_enableArticleTools",

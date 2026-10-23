@@ -1216,6 +1216,18 @@
   "next_article_label": {
     "message": "下一篇"
   },
+  "next_article_thread_next": {
+    "message": "同主題下一篇 ›"
+  },
+  "next_article_thread_prev": {
+    "message": "‹ 同主題上一篇"
+  },
+  "options_nextArticleSameSubject": {
+    "message": "也顯示同主題的上一篇／下一篇"
+  },
+  "tooltip_nextArticleSameSubject": {
+    "message": "追一串討論（原文 → Re: → Re:）時，卡片下面多列出列表上同主題的上一篇、下一篇，點了直接換過去，等於 PTT 的 [ 與 ]。只列已經在列表上看過的文章。"
+  },
   "next_article_pull": {
     "message": "下一篇・再往上拉"
   },

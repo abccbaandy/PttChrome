@@ -26,6 +26,12 @@
 - **線路忙就不送**：`serializedOpHint` 有值或 CommandQueue 不閒 ⇒ 不送；換文途中卡片顯示「開啟中…」，45 秒看門狗。
 - e2e：`installReplay` 預設把 `enableNextArticleCard` 關掉（累積頁尾端多一張卡片、改變捲到底的位置），live 的自動登入 prefs 也關掉；只有 `next_article.offline.spec.js` 以 `bootOffline(page, ptt, { nextArticle: true })` 打開。
 
+## 同主題的上一篇／下一篇（P28，子開關 `nextArticleSameSubject`，預設開）
+
+- **是什麼**：卡片下面一列（`#nextThreadRow`，卡片的下一個兄弟節點，同樣住在 `.main`、不寫 `#mainContainer`），最多兩顆按鈕「‹ 同主題上一篇」「同主題下一篇 ›」。把 pmore 的 `[`／`]` 變成看得到的卡片；**不送 `[`／`]`**，換文跟卡片走同一條 `open(target)`（startNum／startSubNum、遮罩、落地比對、閱讀紀錄 `next-article`）。
+- **認法（`sameSubjectEntryFrom`）**：原生是 read.c`#thread(RELATE_NEXT／PREV)`：從這篇往後（往前）逐列找 `subject()`（去掉 Re:／Fw:）相同的第一篇，置底文當 EOF。這裡只看同一份快照（完整列表或搜尋結果，跟卡片同一份）：從這篇往該方向**連續看過**的列裡找主題相同（`subjectMatches`，列表主題可能被截成 …）的第一篇；中間缺一號＝那一列沒看過、可能就是同主題 ⇒ 不列（不憑空送 `]`）。被刪的、`list_row_filter#hiddenReason` 擋的跳過。同主題下一篇正好就是「下一篇」⇒ 不重複列。終點卡照樣可以列同主題上一篇。
+- **版面**：有這一列時卡片掛 `data-thread`，下 margin 改小；捲到底要讓位（`--next-bottom-inset`）的改由這一列吃（`_layout` 兩邊都寫）。`reading_record.trailingPx` 連這一列一起扣（`view.nextThreadRow`）。手機往上拉不從這一列起手（`pull_next_article#ignoredTarget`）。
+
 ## 往下拉：手機往上拉、桌機停一下再往下捲（`pull_next_article.js`）
 
 L 同意的版本是「點標題卡**或**拉過門檻」，而且**一捲到底不能就換文**。手機上的「往下捲」是手指往上推，所以那邊叫「往上拉」。兩條入口都只改卡片的字與底下的進度條（`next_article.setPull(pull, progress)`，卡片掛 `data-pull`＋CSS 變數 `--next-pull`），終點卡不接。

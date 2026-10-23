@@ -57,7 +57,7 @@ const ENTRIES = Array.from({ length: 20 }, (_, i) => ({
 // sub：搜尋結果（read.c MODE_SELECT：標題列右段「系列《板》」、底列 caption「系列文章」），
 // 編號是結果自己的空間（1 起算）。
 // pinned：最後一列換成置底文（read.c：置底恆排在所有編號文章後面 ⇒ 看得到列表盡頭）。
-async function drawList(page, cursorIndex, { sub = false, pinned = false } = {}) {
+async function drawList(page, cursorIndex, { sub = false, pinned = false, entries = ENTRIES } = {}) {
   const caption = sub ? '系列文章' : '文章選讀';
   const map = {
     0: { rev: true, text: ('【板主：test】' + (sub ? '系列' : '看板') + '《Test》').padEnd(80) },
@@ -65,10 +65,10 @@ async function drawList(page, cursorIndex, { sub = false, pinned = false } = {})
     2: { rev: true, text: '  編號    日 期 作  者       文  章  標  題'.padEnd(70) },
     23: ' ' + caption + '  (y)回應(X)推文(^X)轉錄 ',
   };
-  ENTRIES.forEach(
+  entries.forEach(
     (e, i) => (map[3 + i] = listRow(sub ? i + 1 : e.num, e.author, e.title, e.unread ? '+' : ' '))
   );
-  if (pinned) map[3 + ENTRIES.length - 1] = '    ★ ' + '    ' + ' 9/01 ' + 'sysop'.padEnd(13) + '□ [公告] 置底';
+  if (pinned) map[3 + entries.length - 1] = '    ★ ' + '    ' + ' 9/01 ' + 'sysop'.padEnd(13) + '□ [公告] 置底';
   await onData(page, map, 3 + cursorIndex);
   await waitScreenSettled(page, { 2: '編號', 23: caption });
 }
@@ -295,6 +295,30 @@ test.describe('讀完接著讀下一篇', () => {
     await expect.poll(() => peekCapture(page)).toContain('sTest\r');
     expect(await takeCapture(page)).toBe('sTest\r\f');
     await expect(page.locator('#nextArticleVeil')).toBeVisible();
+  });
+
+  // P28：列表上同主題的下一篇（不是緊接的下一篇）⇒ 卡片下面多一顆「同主題下一篇」，真滑鼠點它
+  // 走同一條 startNum（第一步 s<板>⏎），不變成點終端機、不搶焦點。
+  test('同主題下一篇：卡片下面多一顆按鈕，點它走 s<板>⏎', async ({ page }) => {
+    const entries = ENTRIES.map((e, i) => (i === 8 ? Object.assign({}, e, { title: 'Re: ' + ENTRIES[4].title }) : e));
+    await boot(page, { useMouseBrowsing: true, mouseLeftClick: true });
+    await drawList(page, 4, { entries });
+    await drawArticle(page, entries[4]);
+    await expect(card(page)).toBeVisible();
+    const btn = page.locator('#nextThreadRow .nextThreadCard[data-dir="next"]');
+    await expect(btn).toBeVisible();
+    await expect(btn).toContainText(await label(page, 'next_article_thread_next'));
+    await expect(btn).toContainText(entries[8].title);
+    await expect(page.locator('#nextThreadRow .nextThreadCard[data-dir="prev"]')).toBeHidden();
+    const box = await waitRectStable(page, '#nextThreadRow .nextThreadCard[data-dir="next"]');
+    const cardBox = await waitRectStable(page, '#nextArticleCard');
+    expect(box.top).toBeGreaterThanOrEqual(cardBox.top + cardBox.height);
+    await startCapture(page);
+    await btn.click();
+    await expect.poll(() => peekCapture(page)).toContain('sTest\r');
+    expect(await takeCapture(page)).toBe('sTest\r\f');
+    await expect(btn).toHaveAttribute('data-pending', '');
+    await expect(page.locator('#t')).toBeFocused();
   });
 
   test('pref 關 ⇒ 不出現', async ({ page }) => {

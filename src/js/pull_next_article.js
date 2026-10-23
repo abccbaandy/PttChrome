@@ -14,7 +14,7 @@
 // 一定要停下來再捲。同樣被動監聽、從不 preventDefault。
 
 import { pullState, PULL_THRESHOLD_PX } from './pull_refresh';
-import { NEXT_ARTICLE_ID } from './next_article';
+import { NEXT_ARTICLE_ID, NEXT_THREAD_ROW_ID } from './next_article';
 import { isHorizontalWheel, wheelDeltaYPx } from './swipe_gesture';
 
 // 相隔這麼久的 wheel 事件才算新的手勢（觸控板慣性、連續轉滾輪的間隔都遠小於它）。
@@ -68,7 +68,7 @@ function ignoredTarget(t) {
   if (!t || !t.closest) return true;
   return !!t.closest(
     '#mobileToolbar, #mobileAppBar, .mantine-Modal-root, .mantine-Drawer-root, ' +
-      '.mobileSheet, input, textarea, select, [role="dialog"], #' + NEXT_ARTICLE_ID
+      '.mobileSheet, input, textarea, select, [role="dialog"], #' + NEXT_ARTICLE_ID + ', #' + NEXT_THREAD_ROW_ID
   );
 }
 
