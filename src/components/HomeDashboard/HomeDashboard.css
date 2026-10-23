@@ -160,6 +160,50 @@
   border-radius: 999px;
 }
 
+/* 最近讀過／稍後再讀（P34）：一列一篇，標題一行截斷＋板名小字；桌機兩欄。 */
+.homeArticles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 6px 8px;
+}
+
+.homeArticleRow {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.homeArticle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.homeArticleTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #eee;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.homeArticleBoard {
+  flex: none;
+  font-size: 12px;
+  color: #999;
+}
+
+.homeArticleRemove {
+  flex: none;
+  padding: 5px 10px;
+  color: #aaa;
+}
+
 .homeEmpty,
 .homeHint {
   margin: 0;
@@ -177,4 +221,8 @@
 
 .homeDashboard[data-mobile] .homeButton {
   min-height: 40px;
+}
+
+.homeDashboard[data-mobile] .homeArticles {
+  grid-template-columns: 1fr;
 }

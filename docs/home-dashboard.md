@@ -8,6 +8,8 @@
 
 ## 規則
 
+- **稍後再讀／最近讀過兩區**（`recent_articles.js`，見 `docs/recent-articles.md`）：清單在 `pttchrome.recentArticles`，面板只照畫；點一列走 deep link、✕ 只移出清單。
+
 - **不是 modal**：焦點留在 `#t`，鍵盤照常送 PTT。面板開著時打任何鍵（純修飾鍵、F 鍵、⌘R 除外；⌘R 要讓 screen_refresh 認成首頁，面板先收起就變整頁重載）⇒ 面板收起、那個鍵照原生走。這一趟留在主功能表期間不再出現，離開主功能表再回來才出現。
 - **認不出 ⇒ 原生**：只在「標題列是主功能表＋畫面上有 `(F)avorite` 選單項＋游標不在輸入欄」時出現（`isHomeScreen`）。
 - **抓我的最愛＝原生鍵**（`fetchFavorites`）：`Ctrl+Z f`（menu.c#ZA_Select 的「我的最愛」，任何畫面都能進根目錄、不動主功能表的游標）→ 讀頁 →（進來不在第 1 頁就跳 `1⏎`）→ 一頁滿 20 個就跳 `<最後一號+1>⏎`，被夾回同一頁＝沒有下一頁（stuff.c#search_num）→ 跳回進來時的游標 → `q`。最多 `FAV_MAX_PAGES` 頁。每一步落地不符就停手（`fail`），人留在 PTT 給的畫面上。

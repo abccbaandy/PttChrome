@@ -1192,6 +1192,33 @@
   "boardTabs_closeTip": {
     "message": "關掉 {0}"
   },
+  "options_enableRecentArticles": {
+    "message": "最近讀過／稍後再讀"
+  },
+  "tooltip_enableRecentArticles": {
+    "message": "記下最近讀過的 30 篇文章（讀到文末的文章網址那一行才記），右鍵或長按文章可以「稍後再讀」。首頁和指令面板（F4）列出來，點了直接開回那篇。只存在這個瀏覽器，不上雲。"
+  },
+  "recent_later": {
+    "message": "稍後再讀"
+  },
+  "recent_recent": {
+    "message": "最近讀過"
+  },
+  "recent_remove": {
+    "message": "移除"
+  },
+  "recent_failed": {
+    "message": "現在開不了這篇，請稍候再試"
+  },
+  "cmenu_readLater": {
+    "message": "稍後再讀"
+  },
+  "cmenu_removeReadLater": {
+    "message": "從稍後再讀移除"
+  },
+  "recent_added": {
+    "message": "已加入稍後再讀（首頁、F4 指令面板找得到）"
+  },
   "options_showWhatsNew": {
     "message": "更新後顯示新功能"
   },

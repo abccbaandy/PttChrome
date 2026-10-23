@@ -60,6 +60,9 @@ export const DEFAULT_PREFS = {
   // 更新後的新功能小卡（js/whats_new.js）：換新版後第一次看到主功能表時右下角列出新功能。
   // 只改顯示、不送鍵 ⇒ 不在安全模式名單內。
   showWhatsNew: true,
+  // 最近讀過／稍後再讀（js/recent_articles.js）：記下讀過的文章（只讀文末網址列）、右鍵收進
+  // 稍後再讀，首頁儀表板與指令面板點了開回去。記的時候不送鍵；開回去是使用者按的 ⇒ 不在安全模式名單內。
+  enableRecentArticles: true,
   // 看板分頁（js/board_tabs.js）：文章列表上方一排最近去過的看板，點一下替使用者送
   // s<板>⏎ 切板 ⇒ 在安全模式名單內。
   enableBoardTabs: true,

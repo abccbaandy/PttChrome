@@ -31,6 +31,15 @@ const SEARCH_TITLE_KEY = {
 export function paletteItemLabel(item) {
   switch (item.kind) {
     case "article":
+      // 最近讀過／稍後再讀：標題＋「稍後再讀 · 看板」（沒有標題的退回 #AID 寫法）。
+      if (item.source)
+        return {
+          title: item.title || fmt("palette_openArticle", item.target),
+          subtitle: [
+            i18n(item.source === "later" ? "recent_later" : "recent_recent"),
+            item.target.board,
+          ].join(" · "),
+        };
       return { title: fmt("palette_openArticle", item.target) };
     case "board":
       return {

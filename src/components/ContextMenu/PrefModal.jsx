@@ -957,6 +957,16 @@ export const PrefModal = ({
                   {i18n("tooltip_showWhatsNew")}
                 </Text>
                 <PrefCheckbox
+                  name="enableRecentArticles"
+                  checked={values.enableRecentArticles}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableRecentArticles")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_enableRecentArticles")}
+                </Text>
+                <PrefCheckbox
                   name="enableBoardTabs"
                   checked={values.enableBoardTabs}
                   disabled={values.nativeSafeMode}

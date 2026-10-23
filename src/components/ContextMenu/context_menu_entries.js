@@ -123,7 +123,12 @@ export function buildContextMenuEntries(p) {
         p.onMenuSelect("filterCommentOp", e),
       );
   }
-  if (p.replyCommentTarget || cf || previews.copyComment || previews.copyCommentAll)
+  if (
+    p.replyCommentTarget ||
+    cf ||
+    previews.copyComment ||
+    previews.copyCommentAll
+  )
     divider("d-comment");
   if (p.selEnabled) {
     item("copy", i18n("cmenu_copy"), (e) => p.onMenuSelect("copy", e), {
@@ -173,6 +178,14 @@ export function buildContextMenuEntries(p) {
       i18n("cmenu_copyArticleDeepLink"),
       (e) => p.onMenuSelect("copyArticleDeepLink", e),
       { preview: previews.copyArticleDeepLink, copy: true },
+    );
+  }
+  // 稍後再讀（P34）：游標下的文章連結或本篇。已經收了就改給「移除」。
+  if (p.readLaterTarget) {
+    const saved = p.readLaterTarget.saved;
+    const key = saved ? "removeReadLater" : "readLater";
+    item(key, i18n(saved ? "cmenu_removeReadLater" : "cmenu_readLater"), (e) =>
+      p.onMenuSelect(key, e),
     );
   }
   divider("d-main");

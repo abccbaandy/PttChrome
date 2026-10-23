@@ -12,6 +12,7 @@
 import { parseDeepLink } from "./deep_link";
 import { BOARD_RE, isAidc, parseArticleUrl } from "./aid_codec";
 import { searchPrefSettings } from "./pref_search";
+import { articleMatches } from "./recent_articles";
 
 // 面板一次最多列幾筆設定項（設定搜尋只是其中一類，不該把指令擠出畫面）。
 export const PALETTE_SETTING_LIMIT = 4;
@@ -19,6 +20,21 @@ export const PALETTE_SETTING_LIMIT = 4;
 // 最近去過／我的最愛的看板（pref paletteQuickBoards）：空白時最多列幾個、打字時最多幾個。
 export const PALETTE_QUICK_BOARD_LIMIT = 12;
 export const PALETTE_QUICK_MATCH_LIMIT = 5;
+
+// 最近讀過／稍後再讀（pref enableRecentArticles）：空白時最多列幾篇、打字時最多幾篇。
+export const PALETTE_RECENT_ARTICLE_LIMIT = 5;
+
+// 最近讀過／稍後再讀 → 「開啟文章」項目（kind 'article'，執行跟貼文章網址同一條 deep link）。
+// 資料是 recent_articles 現成的清單，面板一個 byte 都不多送。
+export function recentArticleItems(q, data, limit) {
+  return articleMatches(data || {}, q, limit).map((e) => ({
+    id: "recent:" + e.key,
+    kind: "article",
+    target: { board: e.board, aid: e.aid },
+    title: e.title,
+    source: e.source,
+  }));
+}
 
 // 最近去過的看板與我的最愛 → 「前往看板」項目（kind 'board'，執行跟打板名同一條路）。
 // 資料是首頁儀表板現成的（最近看板、我的最愛快取），面板一個 byte 都不多送。
@@ -95,6 +111,7 @@ function actionMatch(action, q, title) {
  *   title(key): string —— 動作標題（i18n；比對用，可省）
  *   lang: 設定搜尋用的語系（可省）
  *   quickBoards: { recent: string[], favorites: {name, desc}[] } | null（可省）
+ *   recentArticles: { recent, later }（recent_articles 的 state）| null（可省）
  * @returns {Array<{id, kind, ...}>} 依顯示順序。kind ∈ article｜board｜search｜action｜setting
  */
 export function buildPaletteItems(query, ctx) {
@@ -117,6 +134,10 @@ export function buildPaletteItems(query, ctx) {
         )
       : [];
   out.push(...quick);
+
+  // 稍後再讀／最近讀過的文章：排在看板後面、動作前面（空白時看板優先，理由同上）。
+  if (!target && c.recentArticles)
+    out.push(...recentArticleItems(q, c.recentArticles, PALETTE_RECENT_ARTICLE_LIMIT));
 
   const flags = {
     refresh: !!c.refresh,

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { i18n } from "../../js/i18n";
 import { HOME_DASHBOARD_ID } from "../../js/home_dashboard";
+import { recentKey } from "../../js/recent_articles";
 import "./HomeDashboard.css";
 
 // 首頁儀表板的外殼（邏輯與送鍵在 js/home_dashboard.js，設計見 docs/home-dashboard.md）。
@@ -47,16 +48,73 @@ function Button({ className, onClick, children, ...rest }) {
   );
 }
 
+// 儀表板上「稍後再讀」「最近讀過」各列幾篇（完整清單在指令面板 F4 打字找）。
+export const HOME_ARTICLE_LIMIT = 8;
+
+// 最近讀過／稍後再讀（P34，js/recent_articles.js）的一區。點一列 ＝ deep link 開回那篇；
+// 稍後再讀的每一列多一顆 ✕（只移出清單，不送鍵）。
+function ArticleSection({ titleKey, list, source, recent, onFail }) {
+  if (!list.length) return null;
+  return (
+    <section className="homeSection">
+      <div className="homeSectionHead">
+        <h3>{i18n(titleKey)}</h3>
+      </div>
+      <div className="homeArticles" data-home-articles={source}>
+        {list.slice(0, HOME_ARTICLE_LIMIT).map((e) => {
+          const key = recentKey(e.board, e.aid);
+          return (
+            <div key={key} className="homeArticleRow">
+              <Button
+                className="homeArticle"
+                data-home-article={key}
+                title={e.title || "#" + e.aid}
+                onClick={() => {
+                  if (!recent.open(e)) onFail();
+                }}
+              >
+                <span className="homeArticleTitle">
+                  {e.title || "#" + e.aid}
+                </span>
+                <span className="homeArticleBoard">{e.board}</span>
+              </Button>
+              {source === "later" && (
+                <Button
+                  className="homeArticleRemove"
+                  data-home-article-remove={key}
+                  aria-label={i18n("recent_remove")}
+                  title={i18n("recent_remove")}
+                  onClick={() => recent.removeLater(key)}
+                >
+                  ✕
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export const HomeDashboard = ({ pttchrome }) => {
   const home = pttchrome && pttchrome.homeDashboard;
   const [state, setState] = useState(() => (home ? home.state : null));
   const [mobile, setMobile] = useState(() => !!(pttchrome && pttchrome.mobile));
+  const recent = pttchrome && pttchrome.recentArticles;
+  const [articles, setArticles] = useState(() =>
+    recent ? recent.state : null,
+  );
   const rootRef = useRef(null);
 
   useEffect(() => {
     if (!home || typeof home.onChange !== "function") return undefined;
     return home.onChange((s) => setState(s));
   }, [home]);
+  useEffect(() => {
+    if (!recent || typeof recent.onChange !== "function") return undefined;
+    return recent.onChange((s) => setArticles(s));
+  }, [recent]);
   useEffect(() => {
     if (!pttchrome || typeof pttchrome.onMobileChange !== "function")
       return undefined;
@@ -73,6 +131,11 @@ export const HomeDashboard = ({ pttchrome }) => {
   }, [home, state]);
 
   if (!state || !state.visible) return null;
+  // 每次畫都重讀一次（storage 原文沒變就是同一份）：別的分頁寫的、這一頁讀過的都跟得上。
+  const showArticles = !!recent && recent.enabled();
+  const articleData = showArticles ? recent.state : articles;
+  const onArticleFail = () =>
+    pttchrome.view?.flashListHint?.(i18n("recent_failed"), 3000);
   const boards = state.boards;
   const status = state.fetching
     ? i18n("home_updating")
@@ -181,6 +244,24 @@ export const HomeDashboard = ({ pttchrome }) => {
               ))}
             </div>
           </section>
+        )}
+        {showArticles && (
+          <ArticleSection
+            titleKey="recent_later"
+            list={articleData.later}
+            source="later"
+            recent={recent}
+            onFail={onArticleFail}
+          />
+        )}
+        {showArticles && (
+          <ArticleSection
+            titleKey="recent_recent"
+            list={articleData.recent}
+            source="recent"
+            recent={recent}
+            onFail={onArticleFail}
+          />
         )}
         {!mobile && <p className="homeHint">{i18n("home_hint")}</p>}
       </div>

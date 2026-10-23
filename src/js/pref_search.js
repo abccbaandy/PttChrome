@@ -128,6 +128,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_showWhatsNew",
     },
     {
+      key: "enableRecentArticles",
+      titleKey: "options_enableRecentArticles",
+      tooltipKey: "tooltip_enableRecentArticles",
+    },
+    {
       key: "enableBoardTabs",
       titleKey: "options_enableBoardTabs",
       tooltipKey: "tooltip_enableBoardTabs",
