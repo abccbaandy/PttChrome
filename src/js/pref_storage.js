@@ -357,6 +357,9 @@ export const DEFAULT_PREFS = {
   // 手機把推文列收進底部導覽：平常不佔畫面，點導覽的「推文」才滑出來並叫出鍵盤；
   // 送出／收鍵盤／返回就收回。關掉＝手機也常駐。桌機不受影響。不送鍵 ⇒ 不在安全模式名單。
   mobileCommentBarFold: true,
+  // 推文列打字時右邊顯示「剩 N 字」／「會分成 N 則」（comment_bar.js#commentBarCounter）。
+  // 只算字、不送鍵 ⇒ 不在安全模式名單。
+  commentBarCounter: true,
 
   // 按搜尋鍵（文章列表的 / ? a Z；文章列表／看板列表／主功能表的 s）時改開搜尋彈窗，
   // 不送 PTT 原生 prompt。理由：PTT 的

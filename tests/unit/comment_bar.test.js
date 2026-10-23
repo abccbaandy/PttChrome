@@ -12,6 +12,8 @@ import {
   commentBarEnabled,
   commentBarFolded,
   commentBarGeometry,
+  commentBarCounter,
+  commentBarMaxBytes,
   quickPushPlan,
   QUICK_PUSH_MAX_SEGMENTS,
 } from "../../src/js/comment_bar";
@@ -91,6 +93,44 @@ describe("commentBarGeometry", () => {
   });
 });
 
+describe("commentBarCounter：推文列打字時的「剩 N 字／會分成 N 則」", () => {
+  test("空的（含只有空白）⇒ 不顯示", () => {
+    expect(commentBarCounter("", MAX)).toBeNull();
+    expect(commentBarCounter("   ", MAX)).toBeNull();
+  });
+  test("一則放得下 ⇒ 還能打幾個全形字（半形算半個，捨去）", () => {
+    // MAX = 37 byte（IP 板、帳號 8 字）
+    expect(MAX).toBe(37);
+    expect(commentBarCounter("推推", MAX)).toEqual({ segments: 1, remaining: 16 });
+    expect(commentBarCounter("abc", MAX)).toEqual({ segments: 1, remaining: 17 });
+    expect(commentBarCounter("a".repeat(37), MAX)).toEqual({ segments: 1, remaining: 0 });
+  });
+  test("放不下 ⇒ 會分成幾則，則數與長推文送出時的分段同一支", () => {
+    expect(commentBarCounter("a".repeat(38), MAX)).toEqual({ segments: 2, remaining: 0 });
+    expect(commentBarCounter("好".repeat(40), MAX).segments).toBe(3);
+  });
+  test("PTT 畫不出來的字（emoji）不算：送出前本來就會被濾掉", () => {
+    expect(commentBarCounter("😀", MAX)).toBeNull();
+    expect(commentBarCounter("推😀", MAX)).toEqual({ segments: 1, remaining: 17 });
+  });
+});
+
+describe("commentBarMaxBytes：從這篇的推文列認 IP 欄／對齊推文", () => {
+  const ip = "推 someone: 好文 1.2.3.4 10/23 12:34";
+  const noIp = "推 someone: 好文 10/23 12:34";
+  const aligned = "推 someone     : 好文 10/23 12:34";
+  test("沒有推文 ⇒ 同長推文輸入框的保守預估（當 IP 板）", () => {
+    expect(commentBarMaxBytes([], "testuser")).toBe(pushMaxBytes({ userId: "testuser" }));
+  });
+  test("非 IP 板 ⇒ 多 15 byte（不會把一則顯示成兩則）", () => {
+    expect(commentBarMaxBytes([noIp], "testuser")).toBe(52);
+    expect(commentBarMaxBytes([noIp, ip], "testuser")).toBe(37);
+  });
+  test("對齊推文板 ⇒ 帳號一律扣 12", () => {
+    expect(commentBarMaxBytes([aligned], "testuser")).toBe(48);
+  });
+});
+
 function makeCore(opts = {}) {
   const listeners = {};
   let pageState = opts.pageState == null ? 3 : opts.pageState;
@@ -113,10 +153,13 @@ function makeCore(opts = {}) {
       get pageLines() {
         return lines;
       },
+      cols: 80,
+      getRowText: (r, s, e, acc) => String((acc || lines)[r]),
       addEventListener: (name, fn) => (listeners[name] = fn),
     },
     easyReading: { _enabled: opts.easy !== false, _functionMode: !!opts.functionMode },
     view: {
+      _selfId: opts.selfId || null,
       mainDisplay: { getBoundingClientRect: () => ({ left: 10, width: 640, bottom: 480 }) },
       lastRowDiv: { getBoundingClientRect: () => ({ top: 460, height: 20 }) },
     },
@@ -164,6 +207,7 @@ describe("CommentBar：何時出現、畫在哪", () => {
       width: 640,
       bottom: 140,
       mobile: false,
+      counter: true,
       prefill: null,
       focusN: 0,
     });
@@ -233,6 +277,32 @@ describe("CommentBar：何時出現、畫在哪", () => {
     t.settle();
     t.settle();
     expect(seen).toEqual([false, true]);
+  });
+});
+
+describe("推文列計數（pref commentBarCounter）", () => {
+  test("預設開、不送鍵 ⇒ 不在安全模式名單；關掉 ⇒ state.counter 為 false", () => {
+    expect(DEFAULT_PREFS.commentBarCounter).toBe(true);
+    expect(NATIVE_SAFE_MODE_KEYS).not.toContain("commentBarCounter");
+    const { bar, settle } = makeCore();
+    settle();
+    expect(bar.state.counter).toBe(true);
+    prefOverride.commentBarCounter = false;
+    try {
+      settle();
+      expect(bar.state.counter).toBe(false);
+    } finally {
+      delete prefOverride.commentBarCounter;
+    }
+  });
+  test("maxBytes 用自己的帳號＋這篇推文列認出的 IP 欄；累積頁長了才重掃", () => {
+    const lines = ["標題", "內文", "推 someone: 好文 10/23 12:34"];
+    const { bar, core } = makeCore({ lines, selfId: "testuser" });
+    expect(bar.maxBytes()).toBe(52);
+    lines.push("推 other: 嗯 1.2.3.4 10/23 12:35");
+    expect(bar.maxBytes()).toBe(37);
+    core.view._selfId = "ab";
+    expect(bar.maxBytes()).toBe(43);
   });
 });
 

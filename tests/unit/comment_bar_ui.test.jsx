@@ -10,10 +10,12 @@
 import { render, fireEvent, act } from "@testing-library/react";
 import { CommentBar } from "../../src/components/CommentBar";
 import { isCommentBarTarget, COMMENT_BAR_ID } from "../../src/js/comment_bar";
-import { setupI18n } from "../../src/js/i18n";
+import { setupI18n, i18n } from "../../src/js/i18n";
+import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 beforeAll(() => {
   setupI18n();
+  loadBig5Tables();
 });
 
 function fakeBar(state) {
@@ -21,6 +23,7 @@ function fakeBar(state) {
   return {
     state: { visible: true, left: 12, width: 640, bottom: 30, mobile: false, focusN: 0, ...state },
     collapse: vi.fn(),
+    maxBytes: () => 37,
     onChange(fn) {
       listeners.add(fn);
       fn(this.state);
@@ -51,6 +54,23 @@ afterEach(() => {
 });
 
 describe("CommentBar UI", () => {
+  test("計數：空的不顯示；一則放得下 ⇒「剩 N 字」；放不下 ⇒「會分成 N 則」", () => {
+    const { root, input } = setup({ counter: true });
+    const counter = () => root().querySelector("[data-comment-counter]");
+    expect(counter()).toBeNull();
+    fireEvent.change(input(), { target: { value: "推推" } });
+    expect(counter().textContent).toBe(i18n("commentBar_remaining").replace("{0}", "16"));
+    fireEvent.change(input(), { target: { value: "a".repeat(38) } });
+    expect(counter().textContent).toBe(i18n("commentBar_segments").replace("{0}", "2"));
+    expect(counter().classList.contains("commentBarCounter--split")).toBe(true);
+  });
+
+  test("計數關掉（state.counter false）⇒ 不顯示", () => {
+    const { root, input } = setup({ counter: false });
+    fireEvent.change(input(), { target: { value: "推推" } });
+    expect(root().querySelector("[data-comment-counter]")).toBeNull();
+  });
+
   test("不可見 ⇒ 不畫，也不留空白", () => {
     const { root } = setup({ visible: false });
     expect(root()).toBeNull();

@@ -496,6 +496,7 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 | 送出 | `App.openQuickPush({text, type})`（ContextMenu 注入）：先 `writeDraft` 再走 `openLongPush` 的探路；探路回來由 `quickPushPlan` 決定 | 內容先進草稿 ⇒ 退回輸入框或送到一半失敗都不丟字 |
 | 回覆這則（pref `commentReplyMenu`） | 長按／右鍵推文列（`data-pusher`，整列都算；小天使匿名不給）且推文列可用（`state.available`，收合中也算） ⇒ 選單「回覆 'id'」。按下 `commentBar.prefill({type:'arrow', text:'id '})`：列切成 →、填字、下一幀聚焦且游標在最後（選單關掉會把焦點還給 `#t`，要排在它後面） | 只預填、不送鍵 ⇒ 不在安全模式名單（安全模式下推文列不出現，這項跟著不出現）。請求帶遞增序號：同一個請求重畫不會把使用者改過的字蓋回去 |
 | 手機收合（pref `mobileCommentBarFold`，預設開） | 手機（`core.mobile`）上 state 分 `available`（出現條件成立）與 `visible`（真的畫）。收合時平常不畫，底部導覽的「推」呼叫 `commentBar.expand()`（不送 X）：列滑出、下一幀聚焦叫出鍵盤，並以 `App.registerSheetDismiss` 登記成 sheet。收回：送出（輸入框 blur）、離開輸入框（blur／Esc）、收鍵盤（看過 `--vv-kb-inset`>0 後歸零；Android 返回鍵先收鍵盤，不會 blur）、系統返回（`dismissTopSheet`，不送 ←）、離開文章。回覆這則的 `prefill` 會先展開。關掉＝手機也常駐、導覽的「推」照舊送 X | 手機畫面小，常駐列吃掉一列內容；像 App 的留言列，要推才出來。只決定列怎麼出現、不送鍵 ⇒ 不在安全模式名單 |
+| 打字計數（pref `commentBarCounter`，預設開） | 輸入框與送出鈕之間顯示「剩 N 字」（全形字，半形算半個）或「會分成 N 則」（`commentBarCounter`，分段與送出同一支 `splitPushSegments`）。上限 `commentBar.maxBytes()`＝帳號（`view._selfId`，退回 `autoLoginUser`）＋累積頁最後 200 列已完成推文認出的 IP 欄／對齊推文（`commentBarMaxBytes`），依累積頁長度快取 | 只算字、不送鍵 ⇒ 不在安全模式名單。不認 IP 欄的話非 IP 板少算 15 byte，一則會顯示成兩則；真正送出時仍由畫面欄寬校正，所以文案只是預估 |
 | 直接送 vs 退回輸入框 | `quickPushPlan`：PTT 會改成 →（`degraded`）、禁噓板選噓、有 Big5 收不下的字、超過 20 則 ⇒ 退回長推文輸入框（內容就是草稿）；其餘直接 `session.start` | 這幾種都是「使用者該先看一眼」；直接送時探路遮罩直接接到送出進度，`modalOpen` 不閃 false |
 
 `session.start` 不在 `onPreflight` 裡同步呼叫（`setTimeout(0)`）：那一刻還在 session 的
@@ -520,8 +521,8 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 | unit | `tests/unit/long_push_preflight.test.js` | **探路**：只送一個 X、各 kind 的收尾鍵序、**收尾中間幀量欄寬（型別選單／降級兩條路）並交給 `start()`**、**PTT 原文逐字照錄**（含沒看過的新訊息）、冷卻不算不能推且不倒數、逾時一個收尾鍵都不送、ORDER INVARIANT（scrollTop 歸零前採樣）、`start()` 不重採錨點也不重解 AID |
 | unit | `tests/unit/long_push_error_modal.test.jsx` | 錯誤框：原文照錄、來源標示兩態、已送出則數、剩餘內容唯讀可讀回、**按了才複製** |
 | unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告**、**型別每次開框回到推**、**草稿還原／還原提示／清除／開框不覆寫**、**鍵盤送出**（ctrl 與 meta 都收、單獨 Enter 不送、組字中不送、提示不進 accessible name） |
-| unit | `tests/unit/comment_bar.test.js` / `comment_bar_ui.test.jsx` / `comment_bar_quick_push.test.jsx` | 底部推文列：`quickPushPlan` 各條退回、出現條件與位置、Enter／IME／焦點／事件不外洩、`openQuickPush` 直接送不開輸入框與退回時內容在輸入框 |
-| offline e2e | `tests/e2e/offline/comment_bar.offline.spec.js` | 列與終端機同寬、捲到底最後一列不被蓋住、打字不送 byte、Enter 接上探路、Esc 焦點回終端機、原生 pmore／pref 關不出現 |
+| unit | `tests/unit/comment_bar.test.js` / `comment_bar_ui.test.jsx` / `comment_bar_quick_push.test.jsx` | 底部推文列：`quickPushPlan` 各條退回、打字計數（`commentBarCounter`／`commentBarMaxBytes`）、出現條件與位置、Enter／IME／焦點／事件不外洩、`openQuickPush` 直接送不開輸入框與退回時內容在輸入框 |
+| offline e2e | `tests/e2e/offline/comment_bar.offline.spec.js` | 列與終端機同寬、捲到底最後一列不被蓋住、打字計數兩態且不把送出鈕擠出列外、打字不送 byte、Enter 接上探路、Esc 焦點回終端機、原生 pmore／pref 關不出現 |
 | unit | `tests/unit/platform_label.test.js` | 快捷鍵提示的平台判斷（userAgentData 優先、UA 退路、拿不到 navigator 不 throw）|
 | unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值（含攔截開關的從屬關係與 disabled） |
 | unit | `tests/unit/long_push_gate.test.js` | 攔截判準：`x` 不是推文鍵、`shiftKey` 仍要攔、prompt 幀不攔、列表不攔、開關從屬 |

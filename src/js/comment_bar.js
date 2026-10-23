@@ -11,7 +11,8 @@
 // functionMode＋累積頁非空。原生 pmore、列表、選單都不出現 ⇒ 認不出就是原生。
 // 送出期間長推文會切進 functionMode（原生鏡像），列跟著收起，送完回到好讀再出現。
 import { readEffectivePrefs } from './pref_storage';
-import { stripNonBig5, splitPushSegments } from './long_push';
+import { stripNonBig5, splitPushSegments, big5ByteLength, pushMaxBytes } from './long_push';
+import { detectIpLogged, detectAlignedComments } from './push_screen';
 
 export const COMMENT_BAR_ID = 'commentBar';
 // 列高（CSS px）。終端機累積頁尾端要多留這麼高的空白，最後一列才捲得出列的下面
@@ -57,6 +58,33 @@ export function quickPushPlan(result, quick, maxBytes) {
   return { direct: true, reason: 'ok', text };
 }
 
+// 推文列打字時右邊的計數（pref commentBarCounter）：一則放得下 ⇒ 還能打幾個字（全形字；
+// 半形算半個，無條件捨去）；放不下 ⇒ 會分成幾則。分段與長推文送出時是**同一支**
+// splitPushSegments，所以「會分成 N 則」就是按下去之後真的會送出的則數（maxBytes 是預估，
+// 送出時會再被畫面校正，見 commentBarMaxBytes）。空字串不顯示（回 null）。
+// PTT 畫不出來的字（emoji）先濾掉再算：它們送出前本來就會被濾掉。
+export function commentBarCounter(text, maxBytes) {
+  const clean = stripNonBig5(text).text;
+  if (!clean.trim()) return null;
+  const limit = Math.max(2, maxBytes | 0);
+  const segments = splitPushSegments(clean, limit).length;
+  if (segments > 1) return { segments, remaining: 0 };
+  return { segments: 1, remaining: Math.max(0, Math.floor((limit - big5ByteLength(clean.trim())) / 2)) };
+}
+
+// 推文列計數用的單則上限預估：同長推文輸入框的預估（帳號長度），再從這篇已完成的推文列
+// 認 IP 欄與對齊推文——不認的話非 IP 板會被當成 IP 板少算 15 byte，一則的話顯示成兩則。
+// rows：這篇的推文列文字（只要尾端那幾列就夠）。
+export function commentBarMaxBytes(rows, userId) {
+  return pushMaxBytes({
+    userId: userId || '',
+    ipLogged: detectIpLogged(rows),
+    alignedCmt: detectAlignedComments(rows),
+  });
+}
+// 認 IP 欄／對齊推文只看累積頁的最後這麼多列（推文在文末，幾千則的文章不用整份掃）。
+const COUNTER_SCAN_ROWS = 200;
+
 // 列的位置：與終端機同寬、貼在終端機可見內容的最下緣（桌機在好讀 footer 那一列之上，
 // 手機換行版面 footer 收起，就是終端機底＝底部導覽上緣）。bottom 是距視窗底的距離。
 // bottomInset：疊在視窗底的浮層（手機底部導覽列＋軟鍵盤＋safe-area，view.keyboardInset）。
@@ -92,6 +120,7 @@ const HIDDEN = {
   width: 0,
   bottom: 0,
   mobile: false,
+  counter: false,
   prefill: null,
   focusN: 0,
 };
@@ -178,6 +207,24 @@ CommentBar.prototype = {
       this._set({ visible: false, available: false, expanded: false });
   },
 
+  // 推文列計數用的單則上限（commentBarMaxBytes）。依累積頁長度快取：同一篇沒長新列就不重掃。
+  maxBytes: function() {
+    const core = this._core;
+    const buf = core.buf;
+    const acc = (buf && buf.pageLines) || [];
+    const view = core.view || {};
+    const userId = view._selfId || readEffectivePrefs().autoLoginUser || '';
+    const key = acc.length + ':' + userId;
+    if (this._maxBytesKey === key) return this._maxBytesVal;
+    const rows = [];
+    if (buf && typeof buf.getRowText === 'function')
+      for (let r = Math.max(0, acc.length - COUNTER_SCAN_ROWS); r < acc.length; ++r)
+        rows.push(buf.getRowText(r, 0, buf.cols, acc));
+    this._maxBytesKey = key;
+    this._maxBytesVal = commentBarMaxBytes(rows, userId);
+    return this._maxBytesVal;
+  },
+
   _inEasyArticle: function() {
     const core = this._core;
     const er = core.easyReading;
@@ -221,6 +268,7 @@ CommentBar.prototype = {
       width: g.width,
       bottom: g.bottom,
       mobile: !!core.mobile,
+      counter: !!prefs.commentBarCounter,
     });
   },
 };
