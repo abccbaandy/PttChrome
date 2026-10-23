@@ -234,6 +234,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileCommentBarFold",
     },
     {
+      key: "commentBarCounter",
+      titleKey: "options_commentBarCounter",
+      tooltipKey: "tooltip_commentBarCounter",
+    },
+    {
       key: "searchKeyOpensModal",
       titleKey: "options_searchKeyOpensModal",
       tooltipKey: "tooltip_searchKeyOpensModal",

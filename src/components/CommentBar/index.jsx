@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { i18n } from "../../js/i18n";
-import { COMMENT_BAR_HEIGHT, COMMENT_BAR_ID } from "../../js/comment_bar";
+import {
+  COMMENT_BAR_HEIGHT,
+  COMMENT_BAR_ID,
+  commentBarCounter,
+} from "../../js/comment_bar";
 import "./CommentBar.css";
 
 // 好讀文章底部常駐推文列（邏輯在 js/comment_bar.js，設計見 docs/long-push.md
@@ -39,6 +43,12 @@ export const CommentBar = ({ pttchrome }) => {
   const visible = !!(state && state.visible);
   const prefill = state && state.prefill;
   const foldedOpen = !!(state && state.folded && state.expanded);
+  // 打字時右邊的「剩 N 字／會分成 N 則」（只算字，不送鍵）。上限問 bar（有快取）。
+  const counter = useMemo(() => {
+    if (!state || !state.counter || !bar || typeof bar.maxBytes !== "function")
+      return null;
+    return commentBarCounter(text, bar.maxBytes());
+  }, [state, bar, text]);
 
   useEffect(() => {
     if (!bar || typeof bar.onChange !== "function") return undefined;
@@ -207,6 +217,20 @@ export const CommentBar = ({ pttchrome }) => {
           if (foldedOpen) collapse();
         }}
       />
+      {counter && (
+        <span
+          className={
+            "commentBarCounter" +
+            (counter.segments > 1 ? " commentBarCounter--split" : "")
+          }
+          data-comment-counter=""
+          aria-live="polite"
+        >
+          {counter.segments > 1
+            ? i18n("commentBar_segments").replace("{0}", counter.segments)
+            : i18n("commentBar_remaining").replace("{0}", counter.remaining)}
+        </span>
+      )}
       <button
         type="button"
         className="commentBarSend"

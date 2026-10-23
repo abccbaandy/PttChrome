@@ -1218,6 +1218,21 @@ export const PrefModal = ({
                   {i18n("tooltip_mobileCommentBarFold")}
                 </Text>
                 <PrefCheckbox
+                  name="commentBarCounter"
+                  checked={values.commentBarCounter}
+                  disabled={
+                    !values.enableLongPush ||
+                    !values.enableCommentBar ||
+                    values.nativeSafeMode
+                  }
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_commentBarCounter")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_commentBarCounter")}
+                </Text>
+                <PrefCheckbox
                   name="searchKeyOpensModal"
                   checked={values.searchKeyOpensModal}
                   disabled={values.nativeSafeMode}

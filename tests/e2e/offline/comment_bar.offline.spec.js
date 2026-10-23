@@ -73,6 +73,25 @@ test.describe('底部常駐推文列', () => {
     expect(await page.evaluate(() => window.__app.longPush.active)).toBe(true);
   });
 
+  test('打字時列的右邊顯示剩幾個字；打長了改成會分成幾則', async ({ page }) => {
+    test.setTimeout(90000);
+    await boot(page);
+    await input(page).click();
+    const counter = page.locator('#commentBar [data-comment-counter]');
+    await expect(counter).toHaveCount(0);
+    await page.keyboard.insertText('推推');
+    const max = await page.evaluate(() => window.__app.commentBar.maxBytes());
+    const remaining = Math.floor((max - 4) / 2);
+    const fmt = (key, n) => page.evaluate(([k, v]) => window.__i18n(k).replace('{0}', v), [key, String(n)]);
+    await expect(counter).toHaveText(await fmt('commentBar_remaining', remaining));
+    await page.keyboard.insertText('好'.repeat(remaining + 1));
+    await expect(counter).toHaveText(await fmt('commentBar_segments', 2));
+    // 計數擠在輸入框與送出鈕之間，不可以把送出鈕推出列外。
+    const barBox = await waitRectStable(page, '#commentBar');
+    const send = await waitRectStable(page, '#commentBar [data-comment-send]');
+    expect(send.left + send.width).toBeLessThanOrEqual(barBox.left + barBox.width + 1);
+  });
+
   test('Esc ⇒ 離開列，焦點回終端機', async ({ page }) => {
     test.setTimeout(90000);
     await boot(page);

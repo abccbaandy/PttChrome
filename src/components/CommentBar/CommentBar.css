@@ -74,6 +74,18 @@
   border-color: #6b8cff;
 }
 
+/* 打字時的「剩 N 字／會分成 N 則」：小字、不搶輸入框的寬度；會分則時轉成提醒色。 */
+.commentBarCounter {
+  flex: none;
+  color: #9a9aa6;
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.commentBarCounter--split {
+  color: #f0b45a;
+}
+
 .commentBarSend:disabled {
   opacity: 0.4;
   cursor: default;

@@ -280,6 +280,18 @@ export const en_US = {
   "tooltip_enableCommentBar": {
     "message": "A \"push / boo / → + text\" bar at the bottom of easy-reading articles; press Enter to post. When PTT would turn it into →, or the text is long, the long comment box opens so you can check first."
   },
+  "options_commentBarCounter": {
+    "message": "Show remaining length in the comment bar"
+  },
+  "tooltip_commentBarCounter": {
+    "message": "While typing, the comment bar shows how many characters still fit in one comment, or how many comments the text will be split into. The count is an estimate; the PTT input width decides when sending."
+  },
+  "commentBar_remaining": {
+    "message": "{0} left"
+  },
+  "commentBar_segments": {
+    "message": "{0} comments"
+  },
   "commentBar_type": {
     "message": "Comment type"
   },

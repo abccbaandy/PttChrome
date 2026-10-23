@@ -280,6 +280,18 @@
   "tooltip_enableCommentBar": {
     "message": "好讀文章最下面一條「推／噓／→＋文字」輸入列，打完按 Enter 就推出去。PTT 會改成 →、或內容太長時，改開長推文輸入框讓你確認。"
   },
+  "options_commentBarCounter": {
+    "message": "推文列顯示剩餘字數與分則"
+  },
+  "tooltip_commentBarCounter": {
+    "message": "推文列打字時右邊顯示還能打幾個字；超過一則時改成顯示會分成幾則。字數是預估，實際以送出時 PTT 的推文欄寬為準。"
+  },
+  "commentBar_remaining": {
+    "message": "剩 {0} 字"
+  },
+  "commentBar_segments": {
+    "message": "會分成 {0} 則"
+  },
   "commentBar_type": {
     "message": "推文類型"
   },
