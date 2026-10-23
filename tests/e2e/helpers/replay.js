@@ -121,6 +121,10 @@ async function installReplay(page, opts = {}) {
   // 文章導覽軸（pref enableArticleNav）疊在好讀文章終端機的最右一欄、會接走落在那裡的
   // 滑鼠與觸控 ⇒ 預設關，只有 article_nav.offline.spec.js 與浮層矩陣以 opts.articleNav 打開。
   if (!opts.articleNav) off.enableArticleNav = false;
+  // 看板分頁（pref enableBoardTabs）蓋在文章列表第 1 列上、會接走落在那裡的滑鼠，而且分頁
+  // 清單存在 localStorage 跨 spec 不相依也會長出來 ⇒ 預設關，只有 board_tabs spec 以
+  // opts.boardTabs 打開。
+  if (!opts.boardTabs) off.enableBoardTabs = false;
   // 搜尋狀態列（pref enableSearchStatus）浮在搜尋結果的右上角、擋掉落在那裡的滑鼠 ⇒
   // 預設關，只有 search_status.offline.spec.js 以 opts.searchStatus 打開。
   if (!opts.searchStatus) off.enableSearchStatus = false;
@@ -789,6 +793,7 @@ async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-un
     nextArticle: !!opts.nextArticle,
     searchStatus: !!opts.searchStatus,
     articleNav: !!opts.articleNav,
+    boardTabs: !!opts.boardTabs,
   });
   await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });
   await page.goto('/');

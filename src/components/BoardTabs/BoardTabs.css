@@ -1,0 +1,115 @@
+/* 看板分頁（BoardTabs/index.jsx）。
+   桌機：疊在終端機第 1 列（文章列表的按鍵提示列「[←]離開 [→]閱讀…」）上，與終端機同寬、
+   列高同終端機（位置由 js/board_tabs.js 量好、inline style 寫進來）；底色同終端機把那一列蓋掉。
+   手機：App Bar 右邊（高度同 MobileAppBar.css），橫向可捲。
+   z-index：高於終端機（≤3）與 App Bar（150），低於 Mantine overlay（200）。 */
+.boardTabs {
+  position: fixed;
+  z-index: 155;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: #000;
+  font:
+    600 13px/1 system-ui,
+    sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.boardTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.boardTab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #1a1a20;
+  color: #c8c8d0;
+}
+
+.boardTab.is-active {
+  border-color: #6b8cff;
+  background: #22304f;
+  color: #fff;
+}
+
+.boardTabName {
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.boardTab.is-active .boardTabName {
+  cursor: default;
+}
+
+.boardTabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: #8a8a96;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.boardTab:hover .boardTabClose,
+.boardTabClose:focus-visible {
+  opacity: 1;
+}
+
+.boardTabClose:hover {
+  background: #33333d;
+  color: #fff;
+}
+
+.boardTab:not(.is-active):hover {
+  background: #24242c;
+}
+
+.boardTabName:focus-visible {
+  outline: 2px solid #a8c7fa;
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* 手機：App Bar 右邊（標題在左）。 */
+.boardTabs--mobile {
+  top: calc(var(--safe-top, 0px) + 8px);
+  right: 8px;
+  height: 32px;
+  max-width: 62vw;
+  padding: 0;
+  background: none;
+  font-size: 14px;
+}
+
+.boardTabs--mobile .boardTab {
+  height: 30px;
+  border-radius: 15px;
+}
+
+.boardTabs--mobile .boardTabName {
+  padding: 0 12px;
+}

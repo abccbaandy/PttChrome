@@ -73,6 +73,7 @@ import { ArticleTools, isArticleToolsTarget } from './article_tools';
 import { NextArticle, isNextArticleTarget } from './next_article';
 import { CommentBar, isCommentBarTarget } from './comment_bar';
 import { ArticleNav, isArticleNavTarget } from './article_nav';
+import { BoardTabs, isBoardTabsTarget } from './board_tabs';
 import { SearchStatus, isSearchStatusTarget } from './search_status';
 import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
@@ -297,6 +298,7 @@ export const App = function() {
   this.newComments = new NewComments(this);
   // 排在推文列之後：導覽軸的下緣要扣掉推文列（同一個 screenSettled，推文列先更新）。
   this.articleNav = new ArticleNav(this);
+  this.boardTabs = new BoardTabs(this);
 
   // 終端機水平置中。**不要因為 align 是 deprecated 屬性就刪掉它**：Chrome/Firefox
   // 把它算成 `text-align: -webkit-center` / `-moz-center`，那個值會連 **block
@@ -2423,7 +2425,7 @@ App.prototype._onUploadLayer = function(e) {
   return (
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
     isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t) || isResumeToastTarget(t) ||
-    isSearchStatusTarget(t) || isArticleNavTarget(t)
+    isSearchStatusTarget(t) || isArticleNavTarget(t) || isBoardTabsTarget(t)
   );
 };
 

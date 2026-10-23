@@ -54,6 +54,9 @@ export const DEFAULT_PREFS = {
   // 首頁儀表板（js/home_dashboard.js）：主功能表上蓋一層我的最愛／最近看板／新信面板，
   // 打開時快取過期會自己去抓一次我的最愛（Ctrl+Z f → q）⇒ 在安全模式名單內。
   enableHomeDashboard: true,
+  // 看板分頁（js/board_tabs.js）：文章列表上方一排最近去過的看板，點一下替使用者送
+  // s<板>⏎ 切板 ⇒ 在安全模式名單內。
+  enableBoardTabs: true,
   // 寬螢幕雙欄閱讀（js/split_reader.js）：讀文章時在終端機左邊的空白列出剛才的文章列表，
   // 點一篇會替使用者送 s<板>⏎ → <編號>⏎ → ⏎ 換文 ⇒ 在安全模式名單內。
   enableSplitReading: true,
@@ -439,6 +442,7 @@ export const NATIVE_SAFE_MODE_KEYS = Object.freeze([
   "reconnectResume",
   "resumeLastPlace",
   "enableHomeDashboard",
+  "enableBoardTabs",
   "enableSplitReading",
   "enableNextArticleCard",
   "endTurnsOnLiveUpdate",
