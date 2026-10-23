@@ -1120,6 +1120,21 @@
   "tooltip_skipBoardEntryScreen": {
     "message": "從看板列表或「選擇看板」進入看板時，自動收掉進板畫面（含動畫），直接進入文章列表。在文章列表按 b 仍可查看進板畫面。"
   },
+  "options_enableBoardTabs": {
+    "message": "看板分頁"
+  },
+  "tooltip_enableBoardTabs": {
+    "message": "文章列表上方（手機在頂端標題列右邊）列出最近去過的看板，點一下切過去，回到那個板上次看到的地方。右鍵（手機長按）關掉分頁。"
+  },
+  "boardTabs_label": {
+    "message": "看板分頁"
+  },
+  "boardTabs_openTip": {
+    "message": "切到 {0}"
+  },
+  "boardTabs_closeTip": {
+    "message": "關掉 {0}"
+  },
   "options_enableHomeDashboard": {
     "message": "首頁儀表板"
   },

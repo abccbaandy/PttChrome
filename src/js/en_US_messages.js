@@ -1121,6 +1121,21 @@ export const en_US = {
   "tooltip_skipBoardEntryScreen": {
     "message": "When entering a board from a board list or the board selector, dismiss its entry screen (including animated ones) automatically and land straight on the article list. Press b in the article list to view it anyway."
   },
+  "options_enableBoardTabs": {
+    "message": "Board tabs"
+  },
+  "tooltip_enableBoardTabs": {
+    "message": "Article lists show recently visited boards as tabs at the top (on phones, at the right of the top bar). Click one to switch back to where you were on that board. Right-click (long-press on phones) to close a tab."
+  },
+  "boardTabs_label": {
+    "message": "Board tabs"
+  },
+  "boardTabs_openTip": {
+    "message": "Switch to {0}"
+  },
+  "boardTabs_closeTip": {
+    "message": "Close {0}"
+  },
   "options_enableHomeDashboard": {
     "message": "Home dashboard"
   },
