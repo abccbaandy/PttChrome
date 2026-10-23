@@ -106,6 +106,31 @@ export const twimgCandidates = (id, ext, config) => {
   return uniq([`${normalizeImgurProxyBase(config.base)}/twimg/orig/${id}.${e}`, ...direct]);
 };
 
+// 「剛好夠用」的縮圖尺寸（pref imageFitScreen，挑法見 image_fit.js）。twimg 的具名尺寸是
+// **框**（長邊不超過 N），而且只縮不放：原圖比框小時回原尺寸（實測 1482×2048 要
+// 4096x4096 回 1482×2048）⇒ 縮圖永遠不會比原圖大，也不會被放大糊掉。
+// 同一張 2627 px 的圖：orig 2.38 MB、large 402 KB、medium 176 KB、small 72 KB。
+export const TWIMG_FIT_SIZES = [
+  ["small", 680],
+  ["medium", 1200],
+  ["large", 2048],
+];
+
+// 縮圖候選：代理的該尺寸 → 直連該尺寸（`.jpg:medium` 寫法，offline e2e 的攔截層認得）
+// → 整串原圖候選墊底（縮圖都載不到時退回現況）。
+export const twimgSizedCandidates = (id, ext, size, config) => {
+  const e = (ext || "").toLowerCase();
+  const proxied =
+    siteProxyEnabled(config, "twimg") && RE_TWIMG_ID.test(id) && TWIMG_EXT.has(e)
+      ? [`${normalizeImgurProxyBase(config.base)}/twimg/${size}/${id}.${e}`]
+      : [];
+  return uniq([
+    ...proxied,
+    `https://pbs.twimg.com/media/${id}.${e}:${size}`,
+    ...twimgCandidates(id, e, config),
+  ]);
+};
+
 // ---- catbox --------------------------------------------------------------
 // 對齊 Worker 的 RE_CATBOX_ASSET：/catbox/<name>.<jpg|jpeg|png|gif|webp>（影片不收）。
 const RE_CATBOX_NAME = /^[A-Za-z0-9]{1,16}$/;

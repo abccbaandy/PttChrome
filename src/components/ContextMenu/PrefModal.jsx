@@ -825,6 +825,16 @@ export const PrefModal = ({
                   {i18n("options_enablePicPreview")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="imageFitScreen"
+                  checked={values.imageFitScreen}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_imageFitScreen")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_imageFitScreen")}
+                </Text>
+                <PrefCheckbox
                   name="enableNotifications"
                   checked={values.enableNotifications}
                   onChange={onCheckboxChange}

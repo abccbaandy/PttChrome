@@ -156,6 +156,20 @@ Worker **只回位址不代理影片位元組**（Cloudflare ToS 排除影片檔
 守護測試：`tests/unit/tenor.test.js`、`tests/unit/tenor_resolver.test.jsx`、
 `proxy/imgur-worker/test/tenor.test.js`。
 
+## 預覽載縮圖（pref `imageFitScreen`，CONFIRMED 2026-10-24；curl＋PIL 量尺寸）
+
+預覽的顯示框是 `.easyReadingImg` 的 39em×19em（手機好讀是螢幕寬×19em），原圖動輒 2000～4000 px。
+實作在 `src/js/image_fit.js`（挑尺寸）＋ `image_proxy.js#twimgSizedCandidates`＋ ImagePreviewer 的
+`InlineImage`／`useFullResUpgrade`（放大或倍率 > 100% 時背景載好原圖再換）。
+
+| 圖床 | 縮圖 | 只縮不放？ | 透明 | 結論 |
+|---|---|---|---|---|
+| twimg | `name=small/medium/large`（框 680／1200／2048，`.jpg:medium` 寫法也收；Worker `/twimg/<size>/` 已支援） | **是**（1482×2048 要 4096x4096 回原尺寸） | 照 `format` | **採用**。2627 px 那張：orig 2.38 MB → medium 176 KB |
+| imgur | `<id>h.jpg`／`h.webp`（框 1024） | **否**：923×906 → 1024×1006（放大，還比 webp 原圖大） | RGBA PNG → RGB | **不採用**：小圖會被放大顯示、透明底變色，換了看起來不一樣。`?maxwidth=` 之類 query 一律被忽略 |
+
+挑法：縮圖框 N ≥ 顯示框長邊（CSS px × DPR）才用 ⇒ 任何長寬比下縮圖都不小於實際顯示尺寸，
+看起來跟原圖一樣；量不到顯示框就載原圖。imgur 已經改載 webp（約原圖 1/5，見上面 imgur 節）。
+
 ## referer 規則（本專案已沿用，改動前先讀）
 
 - imgur 系一律 `referrerPolicy="no-referrer"`（否則被 referer 封鎖擋圖，403 實證見上節）。

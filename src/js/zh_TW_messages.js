@@ -922,6 +922,12 @@
   "options_enablePicPreview": {
     "message": "當滑鼠在圖片連結上時顯示圖片預覽"
   },
+  "options_imageFitScreen": {
+    "message": "預覽圖載入適合螢幕的尺寸"
+  },
+  "tooltip_imageFitScreen": {
+    "message": "X（Twitter）的圖先載剛好夠螢幕顯示的尺寸，看起來一樣、出得更快也更省流量；點圖放大或調高倍率時才換原圖。關掉＝一律載原圖。重新整理後生效。"
+  },
   "options_enableNotifications": {
     "message": "啟用水球通知"
   },

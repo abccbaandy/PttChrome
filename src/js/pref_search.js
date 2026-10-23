@@ -77,6 +77,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_nativeSafeMode",
     },
     { key: "enablePicPreview", titleKey: "options_enablePicPreview" },
+    {
+      key: "imageFitScreen",
+      titleKey: "options_imageFitScreen",
+      tooltipKey: "tooltip_imageFitScreen",
+    },
     { key: "enableNotifications", titleKey: "options_enableNotifications" },
     { key: "deepLinkHandoffNotify", titleKey: "options_deepLinkHandoffNotify" },
     {
