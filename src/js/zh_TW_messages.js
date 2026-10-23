@@ -310,6 +310,36 @@
   "commentBar_send": {
     "message": "送出"
   },
+  "options_enableSearchStatus": {
+    "message": "搜尋結果顯示搜尋狀態列"
+  },
+  "tooltip_enableSearchStatus": {
+    "message": "停在搜尋結果（系列文章）時，右上角顯示目前的搜尋條件，✕ 回完整列表、＋條件 再加一個條件。用 PTT 原生搜尋進去的只顯示「搜尋結果」。"
+  },
+  "searchStatus_searching": {
+    "message": "搜尋中："
+  },
+  "searchStatus_unknown": {
+    "message": "搜尋結果"
+  },
+  "searchStatus_title": {
+    "message": "標題"
+  },
+  "searchStatus_author": {
+    "message": "作者"
+  },
+  "searchStatus_push": {
+    "message": "推文數"
+  },
+  "searchStatus_add": {
+    "message": "條件"
+  },
+  "searchStatus_addTip": {
+    "message": "再加一個搜尋條件"
+  },
+  "searchStatus_leaveTip": {
+    "message": "回完整列表"
+  },
   "options_searchKeyOpensModal": {
     "message": "按搜尋鍵（/ ? a Z s）改開搜尋彈窗"
   },

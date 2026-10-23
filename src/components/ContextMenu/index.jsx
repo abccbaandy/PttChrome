@@ -36,6 +36,7 @@ import HomeDashboard from "../HomeDashboard";
 import SplitReader from "../SplitReader";
 import ArticleTools from "../ArticleTools";
 import CommentBar from "../CommentBar";
+import SearchStatus from "../SearchStatus";
 import AidBackButton from "../AidBackButton";
 import MessageInbox from "../MessageInbox";
 import HelpMenu from "../HelpMenu";
@@ -1039,7 +1040,10 @@ export const ContextMenu = ({ pttchrome }) => {
         nav.start(aidTarget.aid, value);
         return;
       }
+      // 搜尋狀態列：送出前記下在完整列表還是搜尋結果，PTT 收下了才記條件。
+      const noted = pttchrome.searchStatus?.beginSearch?.(kind, value);
       const cb = {
+        onDone: () => noted && noted(),
         onFail: () => hint(i18n("searchModal_failed"), HINT_ERROR),
       };
       // 背景的看板 prompt 已經開著：直接在上面送出。開不出來／已丟失才走一般兩步。
@@ -1519,6 +1523,7 @@ export const ContextMenu = ({ pttchrome }) => {
       <SplitReader pttchrome={pttchrome} />
       <ArticleTools pttchrome={pttchrome} />
       <CommentBar pttchrome={pttchrome} />
+      <SearchStatus pttchrome={pttchrome} />
       <MobileAppBar pttchrome={pttchrome} />
       <AidBackButton pttchrome={pttchrome} />
       <MessageInbox pttchrome={pttchrome} />
