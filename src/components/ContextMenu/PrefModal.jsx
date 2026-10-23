@@ -967,6 +967,16 @@ export const PrefModal = ({
                   {i18n("tooltip_enableArticleTools")}
                 </Text>
                 <PrefCheckbox
+                  name="enableArticleNav"
+                  checked={values.enableArticleNav}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableArticleNav")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_enableArticleNav")}
+                </Text>
+                <PrefCheckbox
                   name="easyReadingBrowserFind"
                   checked={values.easyReadingBrowserFind}
                   onChange={onCheckboxChange}

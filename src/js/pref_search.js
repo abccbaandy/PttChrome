@@ -132,6 +132,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_enableArticleTools",
     },
     {
+      key: "enableArticleNav",
+      titleKey: "options_enableArticleNav",
+      tooltipKey: "tooltip_enableArticleNav",
+    },
+    {
       key: "easyReadingBrowserFind",
       titleKey: "options_easyReadingBrowserFind",
       tooltipKey: "tooltip_easyReadingBrowserFind",

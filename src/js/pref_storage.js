@@ -60,6 +60,9 @@ export const DEFAULT_PREFS = {
   // 文章工具側欄（js/article_tools.js）：好讀文章時在終端機右邊的空白放 AID／推文統計／
   // 推文者／圖片牆。資料全取自累積頁、跳列只捲視口，一個 byte 都不送 ⇒ 不在安全模式名單內。
   enableArticleTools: true,
+  // 文章導覽軸（js/article_nav.js）：好讀文章終端機右緣的細軸，標出推文開始／新推文／提到我／
+  // 圖片與目前看到哪，點或拖就捲過去。只捲視口、一個 byte 都不送 ⇒ 不在安全模式名單內。
+  enableArticleNav: true,
   // 讀完接著讀下一篇（js/next_article.js）：好讀文末放下一篇的標題卡，點了才替使用者送
   // s<板>⏎ → <編號>⏎ → ⏎ 換文 ⇒ 在安全模式名單內。
   enableNextArticleCard: true,

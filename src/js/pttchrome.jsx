@@ -72,6 +72,7 @@ import { filterSummary } from './list_row_filter';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
 import { NextArticle, isNextArticleTarget } from './next_article';
 import { CommentBar, isCommentBarTarget } from './comment_bar';
+import { ArticleNav, isArticleNavTarget } from './article_nav';
 import { SearchStatus, isSearchStatusTarget } from './search_status';
 import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
@@ -294,6 +295,8 @@ export const App = function() {
   // 新推文標記（重開讀過的文章，上次讀完之後的推文前面一條灰線；new_comments.js）。
   // term_view 畫好讀累積頁時經 this.newComments.rowFor 問那一列。
   this.newComments = new NewComments(this);
+  // 排在推文列之後：導覽軸的下緣要扣掉推文列（同一個 screenSettled，推文列先更新）。
+  this.articleNav = new ArticleNav(this);
 
   // 終端機水平置中。**不要因為 align 是 deprecated 屬性就刪掉它**：Chrome/Firefox
   // 把它算成 `text-align: -webkit-center` / `-moz-center`，那個值會連 **block
@@ -2420,7 +2423,7 @@ App.prototype._onUploadLayer = function(e) {
   return (
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
     isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t) || isResumeToastTarget(t) ||
-    isSearchStatusTarget(t)
+    isSearchStatusTarget(t) || isArticleNavTarget(t)
   );
 };
 
