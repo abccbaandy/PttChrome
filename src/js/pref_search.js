@@ -243,6 +243,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_searchKeyOpensModal",
       tooltipKey: "tooltip_searchKeyOpensModal",
     },
+    {
+      key: "enableSearchStatus",
+      titleKey: "options_enableSearchStatus",
+      tooltipKey: "tooltip_enableSearchStatus",
+    },
   ]),
   ...inSection("general", "options_appearance", null, [
     {

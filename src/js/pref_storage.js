@@ -366,6 +366,9 @@ export const DEFAULT_PREFS = {
   // 輸入記憶被列表好讀的跳號污染（article_search.js 檔頭），彈窗自己記關鍵字（只存
   // 本機）。預設開；關掉＝逃生門，回到原生 prompt。手機工具列的搜尋鈕不受它影響。
   searchKeyOpensModal: true,
+  // 停在搜尋結果（系列文章）時右上角的搜尋狀態列（js/search_status.js）：顯示搜尋條件、
+  // ✕ 回完整列表、＋條件。按鈕只是替使用者按 ← 與 / ⇒ 不在安全模式名單。
+  enableSearchStatus: true,
 
   blacklist: "", // newline-separated user ids
   titleBlacklist: "", // newline-separated title keywords (board-list only)

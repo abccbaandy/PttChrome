@@ -1243,6 +1243,16 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_searchKeyOpensModal")}
                 </Text>
+                <PrefCheckbox
+                  name="enableSearchStatus"
+                  checked={values.enableSearchStatus}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableSearchStatus")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_enableSearchStatus")}
+                </Text>
               </PrefSection>
               <PrefSection legendKey="options_appearance">
                 <PrefCheckbox

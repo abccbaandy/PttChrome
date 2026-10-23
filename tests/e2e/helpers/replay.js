@@ -118,6 +118,9 @@ async function installReplay(page, opts = {}) {
   if (!opts.commentBar) off.enableCommentBar = false;
   if (!opts.nextArticle) off.enableNextArticleCard = false;
   if (!opts.commentBarFold) off.mobileCommentBarFold = false;
+  // 搜尋狀態列（pref enableSearchStatus）浮在搜尋結果的右上角、擋掉落在那裡的滑鼠 ⇒
+  // 預設關，只有 search_status.offline.spec.js 以 opts.searchStatus 打開。
+  if (!opts.searchStatus) off.enableSearchStatus = false;
   // 開站回到上次的地方（pref resumeLastPlace）：同一個 context 裡重整／重開時會自己送鍵
   // 回上次的地方 ⇒ 預設關（行為由 unit reconnect_resume_open.test.js 守）。
   if (!opts.resumeLastPlace) off.resumeLastPlace = false;
@@ -781,6 +784,7 @@ async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-un
     commentBar: !!opts.commentBar,
     commentBarFold: !!opts.commentBarFold,
     nextArticle: !!opts.nextArticle,
+    searchStatus: !!opts.searchStatus,
   });
   await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });
   await page.goto('/');

@@ -71,6 +71,23 @@
 
 守護 `search_modal.test.jsx`「看板補全區高度固定」（真 Chromium 量表單高度，桌機／手機各一）。
 
+## 搜尋狀態列（`search_status.js`）
+
+停在搜尋結果時，終端機右上角（蓋在標題列右段「系列《板》」上；手機在 App Bar 下方靠右）浮一條
+「搜尋中：標題「Re」・作者「abc」 ＋條件 ✕」（`components/SearchStatus`，pref `enableSearchStatus` 預設開）。
+
+| 項目 | 規則 | 理由 |
+|---|---|---|
+| 出現 | `searchListMode`＝'select'：底列 caption「系列文章」；舊版 caption「文章選讀」靠標題列右段「系列《板》」（只能證明「是」）。文摘、完整列表、認不出、文章裡（pageState 3）都不出現 | 認不出 ⇒ 不顯示 |
+| 條件 | 只記搜尋彈窗送出、PTT 收下（第二步 onDone）的：送出前那一幀是完整列表＝新的一串，是搜尋結果＝增加條件（`rememberSubmitted`）。看到完整列表就忘（剛記下的那一刻不算，見 `nextSearchMemory` 的 fresh）；原生搜尋 prompt 出現且不是彈窗送的（`searchInFlight` 沒握著）⇒ 只顯示「搜尋結果」 | PTT 畫面上沒有搜尋條件；顯示不完整的條件比不顯示更誤導 |
+| 換板 | 從搜尋結果 `s` 換板仍在搜尋模式、條件照舊（新版 read_ctx 帶著走）⇒ 不比對板名 | 同 `aid_navigation.landedOnBoardList` |
+| ✕ | `view.sendKeyAsUser('ArrowLeft')`：列表上 ← 是 read_cmd_quit，只離開子模式 | 走鍵盤同一條分派（列表好讀、閘門照舊） |
+| ＋條件 | `view.sendKeyAsUser('/')`：攔截開著是搜尋彈窗（在搜尋結果送出＝「增加條件 標題:」），關著是原生 prompt | 同上；不另開一條送鍵路 |
+| 篇數 | 不顯示 | PTT 不給總數，列表好讀累積的只是看過的部分 |
+
+只替使用者按鍵 ⇒ 不在安全模式名單。e2e 預設關（`bootOffline` 的 `opts.searchStatus` 才開，浮層會擋右上角的滑鼠）。
+守護：`search_status.test.js`（認法、記憶、控制器）、`search_status.offline.spec.js`（彈窗搜尋 → 狀態列寫條件、✕ 送 ←、原生進去只說「搜尋結果」、＋條件開彈窗不送鍵、pref 關）。
+
 ## 記憶（`search_history.js`）
 
 localStorage `pttchrome.searchHistory.v1` = `{title,author,push,board}`，各 MRU 去重、上限 20。**不在 `pttchrome.pref.v1`** ⇒ 不同步、不進匯出（使用者要求）。彈窗內 ↑ 從最新開始、↓ 回草稿；下方列最近 6 筆可點（手機沒有方向鍵）。刪除：每筆旁 ×（`forgetSearch`）；「全部清除」（`forgetSearchKind`）**只清目前這一類**，其他種類不動。刪除後 ↑ 游標歸零。

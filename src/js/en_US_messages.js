@@ -310,6 +310,36 @@ export const en_US = {
   "commentBar_send": {
     "message": "Post"
   },
+  "options_enableSearchStatus": {
+    "message": "Show a search status bar in search results"
+  },
+  "tooltip_enableSearchStatus": {
+    "message": "In search results, the top right shows the current search conditions; the close button returns to the full list and the plus button adds a condition. Searches made with the native PTT prompt show only Search results."
+  },
+  "searchStatus_searching": {
+    "message": "Searching: "
+  },
+  "searchStatus_unknown": {
+    "message": "Search results"
+  },
+  "searchStatus_title": {
+    "message": "Title"
+  },
+  "searchStatus_author": {
+    "message": "Author"
+  },
+  "searchStatus_push": {
+    "message": "Pushes"
+  },
+  "searchStatus_add": {
+    "message": "Filter"
+  },
+  "searchStatus_addTip": {
+    "message": "Add another search condition"
+  },
+  "searchStatus_leaveTip": {
+    "message": "Back to the full list"
+  },
   "options_searchKeyOpensModal": {
     "message": "Search keys (/ ? a Z s) open the search dialog"
   },

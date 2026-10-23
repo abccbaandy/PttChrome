@@ -1,0 +1,77 @@
+/* 搜尋狀態列（SearchStatus/index.jsx）。桌機：終端機右上角，蓋在標題列右段「系列《板》」上
+   （那一格說的就是「在搜尋結果裡」，這條把它說清楚）；位置由 js/search_status.js 量好、
+   inline style 寫進來。手機：App Bar 正下方靠右（高度同 MobileAppBar.css）。
+   z-index 同 AidBackButton：高於終端機（≤3），低於 Mantine overlay（200）。
+   AID「返回原文」也在上緣置中，兩個同時出現時往下讓一排。 */
+.searchStatus {
+  position: fixed;
+  z-index: 160;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(420px, calc(100vw - 24px));
+  box-sizing: border-box;
+  padding: 2px 3px 2px 10px;
+  border: 1px solid rgba(240, 180, 90, 0.6);
+  border-radius: 999px;
+  background: #2b2414;
+  color: #f3d9a4;
+  font:
+    600 13px/20px system-ui,
+    sans-serif;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.searchStatus svg {
+  flex: none;
+}
+
+.searchStatusLabel {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.searchStatusBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(240, 180, 90, 0.45);
+  border-radius: 999px;
+  background: #3a3020;
+  color: #fbe7c0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.searchStatusBtn--close {
+  padding: 0;
+  justify-content: center;
+}
+
+.searchStatusBtn:hover {
+  background: #4a3d27;
+}
+
+.searchStatusBtn:focus-visible {
+  outline: 2px solid #f0b45a;
+  outline-offset: 1px;
+}
+
+.searchStatus--mobile {
+  top: calc(48px + var(--safe-top, 0px) + 8px);
+  right: 8px;
+}
+
+body:has(#aidBackButton) .searchStatus {
+  margin-top: 44px;
+}
