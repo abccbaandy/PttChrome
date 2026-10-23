@@ -489,6 +489,21 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_title_blacklist",
       tooltipKey: "tooltip_title_blacklist",
     },
+    {
+      key: "enableFollowList",
+      titleKey: "options_enableFollowList",
+      tooltipKey: "tooltip_enableFollowList",
+    },
+    {
+      key: "followList",
+      titleKey: "options_followList",
+      tooltipKey: "tooltip_followList",
+    },
+    {
+      key: "followTitleList",
+      titleKey: "options_followTitleList",
+      tooltipKey: "tooltip_followTitleList",
+    },
   ]),
 
   // ── 快速搜尋（右鍵選單的那個功能，非本搜尋框）────────────────────

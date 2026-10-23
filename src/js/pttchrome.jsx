@@ -2327,6 +2327,19 @@ App.prototype.onPrefChange = function(name, value) {
       this.debugRecorder?.log('list.filter', filterSummary(this.view));
       this.view.redraw(true);
       break;
+    // 關注名單（P33）：只改顯示（列表標色、推文 id 上色），不送任何鍵。
+    case 'followList':
+      this.view.followAuthors = parseBlacklist(value);
+      this.view.redraw(true);
+      break;
+    case 'followTitleList':
+      this.view.followTitleKeywords = parseTitleBlacklist(value);
+      this.view.redraw(true);
+      break;
+    case 'enableFollowList':
+      this.view.enableFollowList = !!value;
+      this.view.redraw(true);
+      break;
     case 'enableEasyReading':
       /*if (this.connectedUrl.site == 'ptt.cc') {
         this.view.useEasyReadingMode = value;

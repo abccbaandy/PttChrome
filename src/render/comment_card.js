@@ -120,8 +120,12 @@ export function buildCommentCard({
         3,
         idEnd,
         cx("commentCardId", {
-          commentByAuthor: authorIdStart !== undefined && authorIdKind !== "self",
+          commentByAuthor:
+            authorIdStart !== undefined &&
+            authorIdKind !== "self" &&
+            authorIdKind !== "follow",
           commentBySelf: authorIdKind === "self",
+          commentByFollow: authorIdKind === "follow",
         }),
       ),
       floor ? floorBadge(floor) : null,

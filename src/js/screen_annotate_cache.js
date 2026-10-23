@@ -109,6 +109,9 @@ export function annotationsKey(input) {
   const sig = [
     stable(e.blacklist),
     stable(e.titleBlacklist),
+    // 關注名單（P33）：列表整列標色、推文 id 上色都看它。
+    stable(e.followAuthors),
+    stable(e.followTitleKeywords),
     stable(e.showFloorNumbers),
     stable(e.highlightAuthor),
     stable(e.articleAuthor),

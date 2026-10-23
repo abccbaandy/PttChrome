@@ -361,6 +361,10 @@ export function TermView() {
   // Title keyword blacklist (lower-cased keyword array). Board-list only: hides any
   // post whose title contains one of the keywords. Set via App.onPrefChange.
   this.titleBlacklist = [];
+  // 關注名單（P33，pref followList／followTitleList／enableFollowList）：只改顯示。
+  this.followAuthors = new Set();
+  this.followTitleKeywords = [];
+  this.enableFollowList = true;
   this.showFloorNumbers = true;
   // 好讀「連續同作者推文合併」：render 層合併（Screen#computeAnnotations +
   // comment_merge.js），僅好讀文章頁生效。Set via App.onPrefChange.
@@ -1146,6 +1150,9 @@ TermView.prototype = {
         {
           blacklist: this.blacklist,
           titleBlacklist: this.titleBlacklist,
+          // 關注名單（進 annotationsKey）：開關關掉就當名單是空的。
+          followAuthors: this.enableFollowList ? this.followAuthors : null,
+          followTitleKeywords: this.enableFollowList ? this.followTitleKeywords : null,
           showFloorNumbers: this.showFloorNumbers,
           mergeSameAuthorComments: this.mergeSameAuthorComments,
           // 推文區塊行距。**刻意不進 annotationsKey**（js/screen_annotate_cache.js

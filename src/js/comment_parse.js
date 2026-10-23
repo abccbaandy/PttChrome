@@ -210,6 +210,7 @@ export function parseComment(text) {
 //   highlightAuthor: bool
 //   articleAuthor:  lower id | null   (原PO)
 //   selfId:         lower id | null   (登入者自己；null ＝不標示，開關由 term_view 決定)
+//   followAuthors:  Set<lower id> | undefined   (關注名單；黑名單優先：被藏的不標)
 // }
 // Result: { type, userid, floor?, hidden, pusher, contentCol, contentEnd?, dateEnd?,
 //           authorIdStart?, authorIdEnd?, authorIdKind?, mentionsSelf? }
@@ -260,14 +261,17 @@ export function mentionsUser(content, userid) {
   return new RegExp('(?:^|[^0-9A-Za-z])' + userid + '(?![0-9A-Za-z])', 'i').test(content);
 }
 
-// 推文者 id 格的標示（原PO／自己）。「我」優先：自己的推文不管我是不是原PO，都畫成「我」。
+// 推文者 id 格的標示（原PO／自己／關注的人）。優先序：「我」＞原PO＞關注（ctx.followAuthors，
+// P33 關注名單）：自己的推文不管我是不是原PO，都畫成「我」；原PO 本來就標了，不再改色。
 function markAuthorId(result, userid, idCol, ctx) {
   const self = !!ctx.selfId && userid === ctx.selfId;
   const author = ctx.highlightAuthor && ctx.articleAuthor && userid === ctx.articleAuthor;
-  if (!self && !author) return;
+  const follow = !self && !author && !!ctx.followAuthors && ctx.followAuthors.has(userid);
+  if (!self && !author && !follow) return;
   result.authorIdStart = idCol;
   result.authorIdEnd = idCol + userid.length;
   if (self) result.authorIdKind = 'self';
+  else if (follow) result.authorIdKind = 'follow';
 }
 
 // 新格式推文（見 parseModernCommentHeader）。標頭列：推文者／黑名單／原PO 高亮，

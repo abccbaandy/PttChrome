@@ -775,6 +775,30 @@
   "tooltip_blacklist": {
     "message": "一行一個帳號；隱藏其推文與看板列表發文"
   },
+  "options_enableFollowList": {
+    "message": "關注名單"
+  },
+  "tooltip_enableFollowList": {
+    "message": "黑名單的反面：關注的帳號或標題關鍵字，文章在列表上整列標一條琥珀色，關注的人的推文帳號也上色。右鍵（手機長按）作者或推文者可直接加入。跟黑名單衝突時黑名單優先。"
+  },
+  "options_followList": {
+    "message": "關注帳號 (一行一個帳號)"
+  },
+  "tooltip_followList": {
+    "message": "一行一個帳號；列表標出這些人的文章、推文帳號上色"
+  },
+  "options_followTitleList": {
+    "message": "關注標題 (一行一個關鍵字)"
+  },
+  "tooltip_followTitleList": {
+    "message": "一行一個關鍵字；列表標出標題含此關鍵字的文章"
+  },
+  "cmenu_addAuthorFollow": {
+    "message": "加入關注"
+  },
+  "cmenu_authorFollowExists": {
+    "message": "已在關注"
+  },
   "options_title_blacklist": {
     "message": "標題黑名單 (一行一個關鍵字)"
   },

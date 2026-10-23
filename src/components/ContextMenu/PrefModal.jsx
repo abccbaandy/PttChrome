@@ -2024,6 +2024,40 @@ export const PrefModal = ({
                   mb="xs"
                   {...anchor("titleBlacklist")}
                 />
+                <PrefCheckbox
+                  name="enableFollowList"
+                  checked={values.enableFollowList}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableFollowList")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_enableFollowList")}
+                </Text>
+                <Textarea
+                  label={i18n("options_followList")}
+                  name="followList"
+                  autosize
+                  minRows={3}
+                  disabled={!values.enableFollowList}
+                  value={values.followList}
+                  placeholder={i18n("tooltip_followList")}
+                  onChange={onTextInputChange}
+                  mb="xs"
+                  {...anchor("followList")}
+                />
+                <Textarea
+                  label={i18n("options_followTitleList")}
+                  name="followTitleList"
+                  autosize
+                  minRows={3}
+                  disabled={!values.enableFollowList}
+                  value={values.followTitleList}
+                  placeholder={i18n("tooltip_followTitleList")}
+                  onChange={onTextInputChange}
+                  mb="xs"
+                  {...anchor("followTitleList")}
+                />
               </PrefSection>
             </Tabs.Panel>
             {/* 快速搜尋分頁：右鍵選單（選取文字後）的搜尋項目清單。內建項目只能停用

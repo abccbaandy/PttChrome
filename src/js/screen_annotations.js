@@ -18,7 +18,7 @@ import {
   FloorCounter,
   ModernCommentThread,
 } from "./comment_parse";
-import { blacklistHit } from "./list_row_filter";
+import { blacklistHit, followHit } from "./list_row_filter";
 import { detectFixableUrls } from "./url_fix";
 import { detectWrappedUrls } from "./url_wrap";
 import {
@@ -313,9 +313,15 @@ export function computeAnnotations(
     inListContext,
     listEasyReading,
     onAidClick,
+    followAuthors,
+    followTitleKeywords,
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
+  // 關注名單（P33）：空的就完全不比（預設空 ⇒ 輸出與以前逐字相同）。
+  const hasFollow =
+    (followAuthors && followAuthors.size > 0) ||
+    (followTitleKeywords && followTitleKeywords.length > 0);
   if (pageState === PAGE_READING) {
     // ---- 增量重算的起點（見 screen_annotate_cache.js 檔頭）----
     // reuse 非 null ⇒ 這一幀只是把新的一頁接在後面：前綴的 texts / base 標註 /
@@ -413,6 +419,8 @@ export function computeAnnotations(
       highlightAuthor,
       articleAuthor,
       selfId,
+      followAuthors:
+        followAuthors && followAuthors.size > 0 ? followAuthors : undefined,
       // 新格式推文（comment_parse.parseModernCommentHeader）的「目前這一則」：跟
       // floorCounter 同一套只往前推的生命週期 ⇒ 增量時沿用、tail 不帶。
       modernThread:
@@ -1013,12 +1021,19 @@ export function computeAnnotations(
         !deleted && enhance && typeof enhance.listNewPushFor === "function"
           ? enhance.listNewPushFor(text)
           : null;
-      if (listAuthor || listTitle || listRead || listNewPush) {
+      // 關注名單（P33）：黑名單擋掉的列上面已經 continue。只看該列自己的文字 ⇒ 逐列獨立，
+      // annotationsAreRowIndependent 不必跟著改；名單本身進 annotationsKey。
+      const listFollowed =
+        !deleted &&
+        hasFollow &&
+        !!followHit(text, followAuthors, followTitleKeywords);
+      if (listAuthor || listTitle || listRead || listNewPush || listFollowed) {
         result[row] = {
           listAuthor: listAuthor || undefined,
           listTitle: listTitle || undefined,
           listRead: listRead || undefined,
           listNewPush: listNewPush || undefined,
+          listFollowed: listFollowed || undefined,
         };
       }
     }

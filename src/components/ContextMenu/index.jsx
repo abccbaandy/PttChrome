@@ -148,6 +148,9 @@ const setNativeSafeMode = (pttchrome, on) => {
 const menuHandlerByEventKey = {
   addAuthorBlacklist: (pttchrome, { blacklistAuthorTarget }) =>
     quickAddBlacklist(pttchrome, "blacklist", blacklistAuthorTarget),
+  // 關注名單（P33）：同一條存檔管線，目標同黑名單（游標下的作者／推文者）。
+  addAuthorFollow: (pttchrome, { blacklistAuthorTarget }) =>
+    quickAddBlacklist(pttchrome, "followList", blacklistAuthorTarget),
   // 列表好讀模式：把游標下那一列設成「以前已讀、以後未讀」的分界。整條序列
   //（真游標跳號 → v → w+Enter）由 listSession 序列化，這裡只傳目標序號。
   markReadUnread: (pttchrome, { markReadTarget }) =>
@@ -216,6 +219,8 @@ const initialState = {
   // Quick-add blacklist targets under the right-click cursor (null → item hidden).
   blacklistAuthorTarget: null,
   blacklistAuthorExists: false,
+  followEnabled: false,
+  followAuthorExists: false,
   blacklistTitleTarget: null,
   // 長按／右鍵的推文是誰推的（「回覆這則」；推文列沒出現或開關關掉 ⇒ null）。
   replyCommentTarget: null,
@@ -532,6 +537,7 @@ export const ContextMenu = ({ pttchrome }) => {
         : null;
       let blacklistAuthorTarget = null;
       let blacklistAuthorExists = false;
+      let followAuthorExists = false;
       let blacklistTitleTarget = null;
       const rowElement =
         target.closest &&
@@ -567,6 +573,9 @@ export const ContextMenu = ({ pttchrome }) => {
         }
         if (blacklistAuthorTarget) {
           blacklistAuthorExists = parseBlacklist(prefs.blacklist).has(
+            blacklistAuthorTarget.toLowerCase(),
+          );
+          followAuthorExists = parseBlacklist(prefs.followList).has(
             blacklistAuthorTarget.toLowerCase(),
           );
         }
@@ -607,6 +616,8 @@ export const ContextMenu = ({ pttchrome }) => {
         selEnabled,
         blacklistAuthorTarget,
         blacklistAuthorExists,
+        followEnabled: !!prefs.enableFollowList,
+        followAuthorExists,
         blacklistTitleTarget,
         replyCommentTarget,
         markReadTarget,
@@ -1351,6 +1362,8 @@ export const ContextMenu = ({ pttchrome }) => {
     selEnabled,
     blacklistAuthorTarget,
     blacklistAuthorExists,
+    followEnabled,
+    followAuthorExists,
     blacklistTitleTarget,
     markReadTarget,
     markAllReadEnabled,
@@ -1408,6 +1421,8 @@ export const ContextMenu = ({ pttchrome }) => {
         quickSearchQuery={quickSearchQuery}
         authorBlacklistId={blacklistAuthorTarget}
         authorBlacklistExists={blacklistAuthorExists}
+        authorFollowEnabled={followEnabled}
+        authorFollowExists={followAuthorExists}
         titleBlacklistText={blacklistTitleTarget}
         replyCommentTarget={replyCommentTarget}
         markReadTarget={markReadTarget}

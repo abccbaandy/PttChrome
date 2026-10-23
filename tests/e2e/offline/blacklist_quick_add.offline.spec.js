@@ -186,6 +186,43 @@ test.describe('黑名單快速新增 · 看板列表（離線重放）', () => {
     await expect(item).toBeDisabled();
   });
 
+  // 關注名單（P33）：同一個右鍵目標，只改顯示（列左緣色條），不藏列。
+  test('作者欄右鍵 → 加入關注 → 該作者的列帶 data-list-followed 且 pref 落地', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
+    await replayCassette(page, list, { easyReading: false });
+
+    const t = await targetAt(page, 'data-list-author', 20);
+    expect(t).not.toBeNull();
+    await rightClickTarget(page, t);
+
+    const item = menuItem(page, await label(page, 'cmenu_addAuthorFollow'));
+    await expect(item).toBeVisible();
+    await expect(item).toContainText(t.value);
+    await item.click();
+
+    const followed = () =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"][data-list-followed]')).map(
+          (el) => el.getAttribute('data-list-author')
+        )
+      );
+    await expect.poll(followed).toContain(t.value);
+    expect((await followed()).every((a) => a.toLowerCase() === t.value.toLowerCase())).toBe(true);
+    await expect
+      .poll(async () => (await readPref(page, 'followList')).toLowerCase())
+      .toContain(t.value.toLowerCase());
+    // 只改顯示：沒有任何列被換成黑名單提示
+    const notices = await page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll('#mainContainer > span[type="bbsrow"]')).filter((el) =>
+          (el.textContent || '').includes('（本文已被黑名單）')
+        ).length
+    );
+    expect(notices).toBe(0);
+  });
+
   test('非作者/標題區塊（序號欄）右鍵 → 無快速新增項目、一般選單正常', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
@@ -245,6 +282,36 @@ test.describe('黑名單快速新增 · 文章推文列（離線重放）', () =
       .toBe(0);
     await expect
       .poll(async () => (await readPref(page, 'blacklist')).toLowerCase())
+      .toContain(t.value.toLowerCase());
+  });
+
+  test(`推文者 id 右鍵 → 加入關注 → 該 pusher 的 id 上色、推文照常顯示 [${article && article.__file}]`, async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true, showFloorNumbers: false });
+    await replayCassette(page, article, { easyReading: true });
+
+    const t = await targetAt(page, 'data-pusher', 4);
+    expect(t).not.toBeNull();
+    await rightClickTarget(page, t);
+
+    const item = menuItem(page, await label(page, 'cmenu_addAuthorFollow'));
+    await expect(item).toBeVisible();
+    await item.click();
+
+    const marked = () =>
+      page.evaluate(
+        (p) =>
+          Array.from(document.querySelectorAll(`#mainContainer span[type="bbsrow"][data-pusher="${p}"]`)).map(
+            (el) => !!el.querySelector('.commentByFollow, .commentByAuthor, .commentBySelf')
+          ),
+        t.value
+      );
+    // 每一則都還在，而且 id 格有標示（原PO 本身維持原PO 樣式）。
+    await expect.poll(async () => (await marked()).length).toBeGreaterThan(0);
+    await expect.poll(async () => (await marked()).every(Boolean)).toBe(true);
+    await expect
+      .poll(async () => (await readPref(page, 'followList')).toLowerCase())
       .toContain(t.value.toLowerCase());
   });
 });

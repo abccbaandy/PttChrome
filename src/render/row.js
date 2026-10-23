@@ -69,6 +69,8 @@ function noticeSegments(text, forceWidth) {
 //   under the cursor.
 // listRead: 已讀文章列（comment_parse#isListRowRead）→ data-list-read。低亮與否由
 //   容器 class #mainContainer.dimReadList 決定（pref dimReadArticles），不在這裡。
+// listFollowed: 關注名單命中的文章列（list_row_filter#followHit，P33）→ data-list-followed，
+//   main.css 在左緣畫一條色條。
 // pusherHighlight: true → this comment is by the currently selected pusher; tint
 //   the WHOLE row via .pusherHighlight (char spans are b0/transparent, so the
 //   tint shows through without overriding any ANSI colours).
@@ -102,6 +104,7 @@ export function buildRow({
   listTitle,
   listRead,
   listNewPush,
+  listFollowed,
   pusherHighlight,
   authorIdStart,
   authorIdEnd,
@@ -160,6 +163,7 @@ export function buildRow({
     wrapUrls,
   );
   if (authorIdKind === "self") builder.authorIdClass = "commentBySelf";
+  else if (authorIdKind === "follow") builder.authorIdClass = "commentByFollow";
   for (let i = 0; i < chars.length; ++i) builder.readChar(chars[i], i);
   const content = builder.build();
   // 列表的「+N」（new_comments.listNewPush）：80 欄格線裡沒有空位，只在列尾留白夠
@@ -182,6 +186,7 @@ export function buildRow({
         "data-list-author": listAuthor,
         "data-list-title": listTitle,
         "data-list-read": listRead ? "" : undefined,
+        "data-list-followed": listFollowed ? "" : undefined,
         class: cx({ pusherHighlight, mentionsSelf, newCommentsStart }) || undefined,
         // 新推文分隔線的小字（css .newCommentsStart::before 讀它）。
         "data-new-comments": newCommentsStart ? i18n("new_comments_divider") : undefined,

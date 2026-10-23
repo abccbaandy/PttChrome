@@ -384,6 +384,11 @@ export const DEFAULT_PREFS = {
 
   blacklist: "", // newline-separated user ids
   titleBlacklist: "", // newline-separated title keywords (board-list only)
+  // 關注名單（P33，黑名單的反面）：符合的文章在列表整列標色、關注的人的推文 id 上色。
+  // 格式同黑名單；黑名單優先。只改顯示 ⇒ 不在安全模式名單。名單空的就沒有任何變化。
+  enableFollowList: true,
+  followList: "",
+  followTitleList: "",
 
   // 快速搜尋（右鍵選單）。內建項目定義在 quick_search.js#BUILTIN_QUICK_SEARCH，
   // 這裡只存「被停用的內建 id」而不是整份清單：陣列 pref 走 readValuesWithDefault

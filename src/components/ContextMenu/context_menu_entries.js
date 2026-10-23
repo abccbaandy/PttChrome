@@ -34,6 +34,16 @@ export function buildContextMenuEntries(p) {
       (e) => p.onMenuSelect("addAuthorBlacklist", e),
       { disabled: !!p.authorBlacklistExists },
     );
+  // 關注名單（P33）：跟「加入作者黑名單」同一個目標；已在關注 ⇒ 反灰（同上的理由）。
+  if (p.normalEnabled && p.authorBlacklistId && p.authorFollowEnabled)
+    item(
+      "addAuthorFollow",
+      p.authorFollowExists
+        ? `'${p.authorBlacklistId}' ${i18n("cmenu_authorFollowExists")}`
+        : `${i18n("cmenu_addAuthorFollow")} '${p.authorBlacklistId}'`,
+      (e) => p.onMenuSelect("addAuthorFollow", e),
+      { disabled: !!p.authorFollowExists },
+    );
   if (p.normalEnabled && p.titleBlacklistText)
     item(
       "addTitleBlacklist",
