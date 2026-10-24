@@ -30,6 +30,7 @@
 | base58 | 已內聯成 `image_url_detect.js#flickrBase58Decode` | 2014 年後無維護。**不可換 bs58**：Bitcoin 字母表順序不同會解錯（回歸 test 鎖字母表） |
 | `resolutions` 區塊 | 已整塊刪除，**勿再加 pin** | 全為舊鏈 transitive dep 而設，`yarn why` 零 consumer |
 | `@grpc/grpc-js`（firestore transitive，`~1.9.0`） | Dependabot alert 以 `not_used` dismiss，**不加 resolutions** | 只在 firestore 的 Node entry（`index.node.mjs`）；瀏覽器 entry `index.esm.js` 不含。Node 端只有 integration 當 client，已知 CVE（getAuthContext、server 錯誤訊息外洩）都是 server 端。等 firebase 自己放寬範圍 |
+| `undici`（proxy/*-worker 經 wrangler→miniflare，**精確 pin** `7.29.1`） | 不加 `overrides`，等 miniflare 自己升 | 只在本機 `wrangler dev`／deploy 的工具鏈裡（Worker 執行時不含）；已知 CVE（EventSource 記憶體、SRI 大小寫、content-encoding DoS）都要連到惡意 server。miniflare 精確 pin，`npm audit fix` 只會給出降版 wrangler 的錯答案。root 的 undici（node-gyp 的 `^6.25.0`）在範圍內，`yarn up -R undici` 就修得掉 |
 | classnames | 保留 | 仍維護、React 生態常青；clsx 更小但收益微小，不值得動 |
 | firebase／`@mantine/*`／react／react-dom | 保留 | 皆現行主流大版本 |
 | `@playwright/test`、`@testing-library/*`、husky、lint-staged、prettier、postcss 系 | 保留 | 現代且活躍；postcss-preset-mantine + postcss-simple-vars 是 Mantine 官方建議鏈 |
