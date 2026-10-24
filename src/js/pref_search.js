@@ -248,6 +248,11 @@ export const PREF_SEARCH_ITEMS = [
       key: "enableLiveArticleHelper",
       titleKey: "options_enableLiveArticleHelper",
     },
+    {
+      key: "enableEditorInput",
+      titleKey: "options_enableEditorInput",
+      tooltipKey: "tooltip_enableEditorInput",
+    },
     { key: "enableLongPush", titleKey: "options_enableLongPush" },
     {
       key: "pushKeyOpensLongPush",

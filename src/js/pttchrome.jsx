@@ -80,6 +80,7 @@ import { BoardTabs, isBoardTabsTarget } from './board_tabs';
 import { SearchStatus, isSearchStatusTarget } from './search_status';
 import { FollowOnly, isFollowOnlyTarget } from './follow_only';
 import { ListFastScroll, isListFastScrollTarget } from './list_fast_scroll';
+import { EditorInput, isEditorInputTarget } from './editor_input';
 import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
@@ -299,6 +300,8 @@ export const App = function() {
   this.followOnly = new FollowOnly(this);
   // 列表快速捲動把手（P30，js/list_fast_scroll.js）：捲動列表好讀時右緣出現，拖動不送鍵、放開跳號。
   this.listFastScroll = new ListFastScroll(this);
+  // 編輯器輸入框（P27，js/editor_input.js）：PTT 編輯器畫面用一般文字框打字，按插入走貼上漏斗。
+  this.editorInput = new EditorInput(this);
   // 讀完接著讀下一篇（好讀文末的下一篇標題卡，next_article.js）。
   this.nextArticle = new NextArticle(this);
   // 手機讀到文末再往上拉過門檻 ⇒ 開下一篇（只在 mobile 版面起作用，被動監聽）。
@@ -2367,6 +2370,9 @@ App.prototype.onPrefChange = function(name, value) {
     case 'enableListFastScroll':
       if (this.listFastScroll) this.listFastScroll.refresh();
       break;
+    case 'enableEditorInput':
+      if (this.editorInput) this.editorInput.refresh();
+      break;
     // 只看關注（P36）：關掉＝列表回到全部、切換鈕收起（切換狀態本身留著，再打開時照舊）。
     case 'enableFollowOnly':
       this.view.enableFollowOnly = !!value;
@@ -2477,7 +2483,8 @@ App.prototype._onUploadLayer = function(e) {
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
     isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t) || isResumeToastTarget(t) ||
     isSearchStatusTarget(t) || isArticleNavTarget(t) || isBoardTabsTarget(t) || isWhatsNewTarget(t) ||
-    isCommentFilterBarTarget(t) || isFollowOnlyTarget(t) || isListFastScrollTarget(t)
+    isCommentFilterBarTarget(t) || isFollowOnlyTarget(t) || isListFastScrollTarget(t) ||
+    isEditorInputTarget(t)
   );
 };
 

@@ -359,6 +359,10 @@ export const DEFAULT_PREFS = {
   // 預設開：不點就不會作用，而且 PTT 本來就沒有「一次推一長串」的辦法。
   enableLongPush: true,
 
+  // 編輯器輸入框（P27，js/editor_input.js）：PTT 編輯器畫面多一個入口，用一般文字框打字、按插入
+  // 送進編輯器游標處（走貼上漏斗）。會替使用者送字 ⇒ 在安全模式名單內。
+  enableEditorInput: true,
+
   // 在文章裡按推文鍵（X／%）時，改開長推文輸入框而不是 PTT 原生的單則推文 prompt。
   // 三條入口（鍵盤／底列功能鍵按鈕／IME）共用判準，見 long_push_gate.js。
   // **從屬於 enableLongPush**（那個關掉時這個必定失效）。預設開：長推文本來就能送
@@ -475,7 +479,8 @@ export const NATIVE_SAFE_MODE_KEYS = Object.freeze([
   "refreshKeyIntercept",
   "searchKeyOpensModal",
   "pushKeyOpensLongPush",
-  "enableCommentBar"
+  "enableCommentBar",
+  "enableEditorInput"
 ]);
 
 // 功能判斷要用的「實際生效」偏好：安全模式開著時把上面那串蓋成 false。回傳新物件，

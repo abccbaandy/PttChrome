@@ -850,6 +850,39 @@
   "tooltip_enableListFastScroll": {
     "message": "列表好讀捲動時，右緣出現一個把手：拖動時旁邊顯示編號（拖動中不送鍵），放開才跳到那個編號，適合在大看板一次往回翻很遠。"
   },
+  "options_enableEditorInput": {
+    "message": "發文／回文／寄信時用一般輸入框打字"
+  },
+  "tooltip_enableEditorInput": {
+    "message": "PTT 編輯器畫面多一個「輸入框」（桌機在右下角，手機在底部導覽）：用系統的鍵盤、輸入法、選字、貼上打字，按「插入」把整段送進編輯器游標處，可以打一段插一段。存檔、離開照舊用 Ctrl+X。"
+  },
+  "editorInput_open": {
+    "message": "輸入框"
+  },
+  "editorInput_tip": {
+    "message": "用一般輸入框打字，插入到編輯器游標處"
+  },
+  "editorInput_title": {
+    "message": "插入文字到編輯器"
+  },
+  "editorInput_label": {
+    "message": "要插入的文字"
+  },
+  "editorInput_placeholder": {
+    "message": "打一段字，按「插入」送進編輯器游標處"
+  },
+  "editorInput_hint": {
+    "message": "換行會照樣送出。顏色請用原生 Ctrl+C；存檔、離開用 Ctrl+X。"
+  },
+  "editorInput_insert": {
+    "message": "插入"
+  },
+  "editorInput_cancel": {
+    "message": "取消"
+  },
+  "editorInput_notEditor": {
+    "message": "目前不在編輯器畫面，沒有送出（內容還留著）。"
+  },
   "listFastScroll_label": {
     "message": "快速捲動：拖動選編號，放開跳過去"
   },
