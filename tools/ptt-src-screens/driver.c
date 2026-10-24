@@ -185,7 +185,7 @@ static void seed(const char *path)
             serial++;
             STRLCPY(fh.owner, f[1]);
             STRLCPY(fh.date, f[2]);
-            fh.recommend = atoi(f[3]);
+            fh.FH_RATING = atoi(f[3]); // generate.sh 依 header 給 rating（新）或 recommend（舊）
             if (strchr(f[4], 'm')) fh.filemode |= FILE_MARKED;
             STRLCPY(fh.title, f[5]);
             // 置底：upstream 的置底是 boardheader_t.bottom[] 裡的 AID 參照（指回 .DIR 裡

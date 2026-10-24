@@ -50,6 +50,19 @@ test("driver.c 的 WAIT_MARK 跟 capture.mjs 同一串，且 generate.sh 用 --w
   expect(gen).toContain("--wrap=read,--wrap=select,--wrap=poll");
 });
 
+test("fileheader_t 推文數欄位新舊 header 都編得過：driver.c 只經 FH_RATING 寫，generate.sh 依 header 選 rating／recommend", () => {
+  const dir = path.join(__dirname, "../../tools/ptt-src-screens");
+  const c = fs.readFileSync(path.join(dir, "driver.c"), "utf8");
+  expect(c).not.toMatch(/\.(recommend|rating)\b/);
+  expect(c).toContain("fh.FH_RATING =");
+  const gen = fs.readFileSync(path.join(dir, "generate.sh"), "utf8");
+  expect(gen).toContain('-DFH_RATING="$FH_RATING"');
+  const re = new RegExp(gen.match(/^RATING_RE='([^']*)'$/m)[1].replaceAll("[[:space:]]", "\\s"), "m");
+  // upstream b500faf 前後的 fileheader_t
+  expect(re.test("    time4_t modified;\n    int16_t rating;                  /* was pad + recommend */\n")).toBe(true);
+  expect(re.test("    char    pad;\t\t     /* padding */\n    char    recommend;               /* important level */\n")).toBe(false);
+});
+
 test("送鍵之後沒有任何輸出 ⇒ CaptureError（鍵在 upstream 失效，不存空幀）", async () => {
   await expect(runScene(FAKE, "seed", scene("mute", [{ name: "a" }, { keys: "h", name: "b" }]), TIMING)).rejects.toThrow(
     /第 1 步/,
