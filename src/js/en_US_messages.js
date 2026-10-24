@@ -830,6 +830,21 @@ export const en_US = {
   "options_enableFollowList": {
     "message": "Follow list"
   },
+  "options_enableFollowOnly": {
+    "message": "\"Following only\" toggle on the article list"
+  },
+  "tooltip_enableFollowOnly": {
+    "message": "In easy-reading list mode, a \"Following only\" button appears at the top right of the article list: turn it on to show only posts by followed IDs or title keywords; press again to show everything. Sends no keys."
+  },
+  "followOnly_label": {
+    "message": "Following only"
+  },
+  "followOnly_empty": {
+    "message": "Following only: none here"
+  },
+  "followOnly_tip": {
+    "message": "Show only posts from your follow list (press again to show all)"
+  },
   "tooltip_enableFollowList": {
     "message": "The opposite of the blacklist: posts by followed users or with followed title keywords get an amber stripe in the list, and followed users' ids are colored in comments. Right-click (long-press on phones) an author or commenter to add them. The blacklist wins when both match."
   },

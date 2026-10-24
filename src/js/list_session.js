@@ -13,7 +13,7 @@
 // Misclassification always degrades toward NATIVE (functionMode mirrors the raw
 // screen), never toward a stale buffer.
 import { listRowSpan, listFillRows } from './mobile_layout';
-import { isHiddenListText } from './list_row_filter';
+import { isHiddenListText, isFollowOnlyHidden } from './list_row_filter';
 import {
   parseListAuthor,
   parseListTitle,
@@ -4424,11 +4424,17 @@ ListSession.prototype = {
     }
   },
 
+  // 緩衝裡看得到幾列（只看關注的「這一段沒有」提示用，js/follow_only.js）。
+  visibleRowCount: function() {
+    return this._visibleIndices().length;
+  },
+
   _visibleIndices: function() {
     const lines = this._termBuf.listLines || [];
     const texts = [];
     for (let i = 0; i < lines.length; ++i) texts.push(rowToText(lines[i]));
-    return visibleListIndices(texts, this._view.blacklist, this._view.titleBlacklist);
+    const v = this._view;
+    return visibleListIndices(texts, v.blacklist, v.titleBlacklist, typeof v.listFollowOnly === 'function' ? v.listFollowOnly() : null);
   },
 
   // ---- misc -------------------------------------------------------------------
@@ -4603,12 +4609,13 @@ export function bufferEdgeNum(nums, direction) {
 // author hit on the parsed author column, else a title-keyword hit. Kept here as
 // a pure text function so local navigation can walk exactly the rows the user
 // sees. `rowTexts` = listLines mapped through rowToText.
-export function visibleListIndices(rowTexts, blacklistSet, titleKeywords) {
+// followOnly（P36「只看關注」，view.listFollowOnly()）：開著時沒命中關注名單的列也藏。
+export function visibleListIndices(rowTexts, blacklistSet, titleKeywords, followOnly) {
   const hasBlacklist = blacklistSet && blacklistSet.size > 0;
   const hasTitle = titleKeywords && titleKeywords.length > 0;
   const out = [];
   for (let i = 0; i < rowTexts.length; ++i) {
-    if (!hiddenListRowText(rowTexts[i], hasBlacklist && blacklistSet, hasTitle && titleKeywords))
+    if (!hiddenListRowText(rowTexts[i], hasBlacklist && blacklistSet, hasTitle && titleKeywords, followOnly))
       out.push(i);
   }
   return out;
@@ -4618,14 +4625,14 @@ export function visibleListIndices(rowTexts, blacklistSet, titleKeywords) {
 // list_row_filter#isHiddenListText（所有功能共用的唯一一份）：不是列表形的列一律可見
 // （與 computeAnnotations 的同一道守門對稱）；刪除文與鎖文開不了（pttbbs read_post →
 // READ_SKIP，序列化開文會卡住）⇒ 跟黑名單命中一樣藏。
-function hiddenListRowText(text, blacklistSet, titleKeywords) {
-  return isHiddenListText(text, blacklistSet, titleKeywords);
+function hiddenListRowText(text, blacklistSet, titleKeywords, followOnly) {
+  return isHiddenListText(text, blacklistSet, titleKeywords) || isFollowOnlyHidden(text, followOnly);
 }
 
 // 緩衝裡的一列（TermChar 陣列）在好讀視窗會不會被隱藏——evictListBuffer 用它把隱藏列
 // 排除在列數上限之外（見該函式註解）。
-export function isHiddenListRow(row, blacklistSet, titleKeywords) {
+export function isHiddenListRow(row, blacklistSet, titleKeywords, followOnly) {
   const hasBlacklist = blacklistSet && blacklistSet.size > 0;
   const hasTitle = titleKeywords && titleKeywords.length > 0;
-  return hiddenListRowText(rowToText(row), hasBlacklist && blacklistSet, hasTitle && titleKeywords);
+  return hiddenListRowText(rowToText(row), hasBlacklist && blacklistSet, hasTitle && titleKeywords, followOnly);
 }

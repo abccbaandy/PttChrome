@@ -302,6 +302,19 @@ export const MobileToolbar = ({
     m.start();
   }, [pttchrome]);
 
+  // 只看關注（P36，js/follow_only.js）：手機的切換入口在「更多」（右上角的浮動鈕在手機會蓋到
+  // 第一張卡片，只在整段都被收起時才浮出來提示）。只改顯示、不送鍵。
+  const followOnlyState =
+    pttchrome.followOnly && pttchrome.followOnly.state
+      ? pttchrome.followOnly.state
+      : null;
+  const onFollowOnly = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    const f = pttchrome.followOnly;
+    if (f && typeof f.toggle === "function") f.toggle();
+  }, [pttchrome]);
+
   // 操作說明：送 h（與實體鍵盤同一條分派）；好讀開著時 PTT 的說明選單會變成 bottom sheet
   // （components/HelpMenu）。
   const onHelp = useCallback(() => {
@@ -581,6 +594,20 @@ export const MobileToolbar = ({
             onClick={onUnreadJump}
           >
             {i18n("mobileToolbar_unreadJump")}
+          </button>
+        ) : null}
+        {followOnlyState && followOnlyState.visible ? (
+          <button
+            type="button"
+            className={
+              "nomouse_command mobileSheetItem pttRipple" +
+              (followOnlyState.on ? " active" : "")
+            }
+            aria-pressed={followOnlyState.on ? "true" : "false"}
+            data-key="__followOnly"
+            onClick={onFollowOnly}
+          >
+            {i18n("followOnly_label")}
           </button>
         ) : null}
         {context.markAllRead ? (

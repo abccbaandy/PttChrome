@@ -78,6 +78,7 @@ import { CommentBar, isCommentBarTarget } from './comment_bar';
 import { ArticleNav, isArticleNavTarget } from './article_nav';
 import { BoardTabs, isBoardTabsTarget } from './board_tabs';
 import { SearchStatus, isSearchStatusTarget } from './search_status';
+import { FollowOnly, isFollowOnlyTarget } from './follow_only';
 import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
@@ -293,6 +294,8 @@ export const App = function() {
   // 好讀文章底部常駐推文列（comment_bar.js；送出走長推文管線，App.openQuickPush）。
   this.commentBar = new CommentBar(this);
   this.searchStatus = new SearchStatus(this);
+  // 只看關注（文章列表右上角的切換鈕，follow_only.js）。
+  this.followOnly = new FollowOnly(this);
   // 讀完接著讀下一篇（好讀文末的下一篇標題卡，next_article.js）。
   this.nextArticle = new NextArticle(this);
   // 手機讀到文末再往上拉過門檻 ⇒ 開下一篇（只在 mobile 版面起作用，被動監聽）。
@@ -2346,14 +2349,23 @@ App.prototype.onPrefChange = function(name, value) {
     case 'followList':
       this.view.followAuthors = parseBlacklist(value);
       this.view.redraw(true);
+      if (this.followOnly) this.followOnly.refresh();
       break;
     case 'followTitleList':
       this.view.followTitleKeywords = parseTitleBlacklist(value);
       this.view.redraw(true);
+      if (this.followOnly) this.followOnly.refresh();
       break;
     case 'enableFollowList':
       this.view.enableFollowList = !!value;
       this.view.redraw(true);
+      if (this.followOnly) this.followOnly.refresh();
+      break;
+    // 只看關注（P36）：關掉＝列表回到全部、切換鈕收起（切換狀態本身留著，再打開時照舊）。
+    case 'enableFollowOnly':
+      this.view.enableFollowOnly = !!value;
+      this.view.redraw(true);
+      if (this.followOnly) this.followOnly.refresh();
       break;
     case 'enableEasyReading':
       /*if (this.connectedUrl.site == 'ptt.cc') {
@@ -2459,7 +2471,7 @@ App.prototype._onUploadLayer = function(e) {
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
     isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t) || isResumeToastTarget(t) ||
     isSearchStatusTarget(t) || isArticleNavTarget(t) || isBoardTabsTarget(t) || isWhatsNewTarget(t) ||
-    isCommentFilterBarTarget(t)
+    isCommentFilterBarTarget(t) || isFollowOnlyTarget(t)
   );
 };
 

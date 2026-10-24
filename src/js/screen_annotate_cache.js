@@ -112,6 +112,7 @@ export function annotationsKey(input) {
     // 關注名單（P33）：列表整列標色、推文 id 上色都看它。
     stable(e.followAuthors),
     stable(e.followTitleKeywords),
+    stable(e.listFollowOnly),
     stable(e.commentFilter),
     stable(e.commentFilterExpanded),
     stable(e.showFloorNumbers),

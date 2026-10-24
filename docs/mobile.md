@@ -69,7 +69,8 @@
     搜尋**直接開搜尋彈窗**（預設第一個可用種類，無子選單；見 `docs/article-search.md`）。分享＝`deep_link_controller.shareCurrentPostLink(title)`（與複製本篇連結同一條 AID 解析；`navigator.share`，AbortError＝完成，其他拒絕／無 API 退回複製；**click 內同步呼叫**）。
     更多＝bottom sheet（見「Bottom sheet」）：快速搜尋（**選取模式開＋有選取**才列；選取模式下長按走原生選單，
     我們的長按選單出不來。選取在工具列 `pointerdown` 當下記住——tap 收尾時瀏覽器可能先清選取才發 click）／
-    跳到第一篇未讀／設為全部已讀（文章列表才有）／操作說明（底列有 `(h)說明` 才有、主功能表不給（同 `contentTools`），送 h；底列在卡片／好讀文章
+    跳到第一篇未讀／只看關注（列表好讀的文章列表＋關注名單不空才有，`aria-pressed` 標開關；桌機的右上角浮動鈕在手機會蓋到第一張卡片，
+    手機只在整段都被收起時浮出「這一段沒有」，見 `docs/list-row-filter.md`「只看關注」）／設為全部已讀（文章列表才有）／操作說明（底列有 `(h)說明` 才有、主功能表不給（同 `contentTools`），送 h；底列在卡片／好讀文章
     畫面被收起、點不到原生提示，見 `docs/help-menu.md`）／分享／文章導覽／選取模式／全選／
     上傳圖片＋圖片上傳紀錄（跟 `enableImageUpload`，開 sheet 時現讀；全選與這兩項主功能表不給＝`contentTools`，
     那裡沒內容可選、上傳只能退回剪貼簿，卻會把 sheet 撐到蓋住整個選單）／設定／登出（inline 二段確認，`LOGOUT_CONFIRM_MS` 無動作自動收回）。

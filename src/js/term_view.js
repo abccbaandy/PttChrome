@@ -365,6 +365,11 @@ export function TermView() {
   this.followAuthors = new Set();
   this.followTitleKeywords = [];
   this.enableFollowList = true;
+  // 只看關注（P36，js/follow_only.js）：followOnly＝切換鈕（使用者按的，存 localStorage），
+  // enableFollowOnly＝功能開關（pref）。生效條件見 listFollowOnly。
+  this.followOnly = false;
+  this.enableFollowOnly = true;
+  this._followOnlyCache = null;
   // 推文篩選（P29，docs/comment-filter.md）：{ userid, op, articleId } | null。只活在設定當下
   // 那一篇（articleId ＝ _articleInstanceId），換文就清掉。只改顯示、不送鍵。
   this._commentFilter = null;
@@ -1076,6 +1081,18 @@ TermView.prototype = {
   },
 
   // 這篇的原PO（「只看原 PO」用；好讀標頭解析出來的小寫帳號，沒有就 null）。
+  // ---- 只看關注（P36，docs/list-row-filter.md「只看關注」）----
+  // 生效中 ⇒ { authors, keywords }（列表好讀藏起沒命中關注名單的列），否則 null。
+  // 切換鈕開著＋功能開關＋關注名單開關都開＋名單不是空的才算；同一份名單回傳同一個物件。
+  listFollowOnly: function() {
+    if (!this.followOnly || !this.enableFollowOnly || !this.enableFollowList) return null;
+    var a = this.followAuthors, k = this.followTitleKeywords;
+    if (!(a && a.size > 0) && !(k && k.length > 0)) return null;
+    var c = this._followOnlyCache;
+    if (!c || c.authors !== a || c.keywords !== k) c = this._followOnlyCache = { authors: a, keywords: k };
+    return c;
+  },
+
   articleAuthorId: function() {
     return this._articleAuthor || null;
   },
@@ -1263,6 +1280,8 @@ TermView.prototype = {
           // 關注名單（進 annotationsKey）：開關關掉就當名單是空的。
           followAuthors: this.enableFollowList ? this.followAuthors : null,
           followTitleKeywords: this.enableFollowList ? this.followTitleKeywords : null,
+          // 只看關注（P36，進 annotationsKey；標註層只在列表好讀視窗用它）。
+          listFollowOnly: !!this.listFollowOnly(),
           // 推文篩選（進 annotationsKey；標註層只在好讀文章用它）。
           commentFilter: this.activeCommentFilter() ? this._commentFilter.userid : null,
           // 「略過 N 則」展開了哪幾串（P38，進 annotationsKey）；點細線的入口給 render 層。
@@ -3406,6 +3425,7 @@ TermView.prototype = {
     // 上限只算可見列（隱藏的刪除文／黑名單列不渲染），另有總列數硬上限
     //（evictListBuffer 註解）。
     var self = this;
+    var followOnly = this.listFollowOnly();
     var ev = evictListBuffer(
       this._listNumMap,
       ls ? ls.evictPivot() : null,
@@ -3413,7 +3433,7 @@ TermView.prototype = {
       grewDir,
       {
         isHidden: function(row) {
-          return isHiddenListRow(row, self.blacklist, self.titleBlacklist);
+          return isHiddenListRow(row, self.blacklist, self.titleBlacklist, followOnly);
         },
         hardCap: MAX_LIST_TOTAL_ROWS
       }

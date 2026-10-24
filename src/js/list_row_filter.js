@@ -48,6 +48,14 @@ export function followHit(text, followSet, titleKeywords) {
   return blacklistHit(text, followSet, titleKeywords);
 }
 
+// 只看關注（P36，view.listFollowOnly()：{ authors, keywords } | null）：開著時，列表形但沒命中
+// 關注名單的列在**列表好讀**也藏起來。只管顯示（列表好讀的視窗、游標移動、緩衝列數），
+// 挑文章的功能（下一篇、跳到第一篇未讀、agent）照舊只看黑名單。
+export function isFollowOnlyHidden(text, followOnly) {
+  if (!followOnly || !isListShapedRow(text)) return false;
+  return !followHit(text, followOnly.authors, followOnly.keywords);
+}
+
 // 列表好讀會藏起來的列（list_session#visibleListIndices、screen_annotations 的
 // listEasyReading 分支、next_article 的下一篇都吃這一份）。不是列表形的列一律可見。
 export function isHiddenListText(text, blacklistSet, titleKeywords) {

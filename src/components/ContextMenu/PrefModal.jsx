@@ -2090,6 +2090,17 @@ export const PrefModal = ({
                   mb="xs"
                   {...anchor("followTitleList")}
                 />
+                <PrefCheckbox
+                  name="enableFollowOnly"
+                  checked={values.enableFollowOnly}
+                  disabled={!values.enableFollowList}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableFollowOnly")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_enableFollowOnly")}
+                </Text>
               </PrefSection>
             </Tabs.Panel>
             {/* 快速搜尋分頁：右鍵選單（選取文字後）的搜尋項目清單。內建項目只能停用

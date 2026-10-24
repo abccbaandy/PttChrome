@@ -63,6 +63,7 @@ function fakeView(texts, curY, listSession = null) {
     _listNumMap: null,
     _listPinnedMap: null,
     accumulateListLines: TermView.prototype.accumulateListLines,
+    listFollowOnly: TermView.prototype.listFollowOnly,
     resetListAccumulation: TermView.prototype.resetListAccumulation,
   };
 }
