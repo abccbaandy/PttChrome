@@ -127,23 +127,50 @@ export function applyFunctionKeys(result, lines, enhance) {
 // **只寫 result[row]**（同 applyNewCommentsMark）。跨列 ⇒ 只在 PAGE_READING
 // （annotationsAreRowIndependent 本來就排除）；commentFilter 進 annotationsKey ⇒ 切換的那一幀
 // 全量重算；尾端那串由 annotationFrontier 的 filter 選項留給下一幀重算。
-export function applyCommentFilterSkips(result) {
+//
+// 點細線就地展開（P38，enhance.commentFilterExpanded）：那串的 key＝第一列的文字
+// （filterSkipKey；不用列號：反向讀取會往中間插列）。展開的串裡被篩掉的列改回看得到
+// （hidden: false＋filterShown，黑名單照藏），第一列標 filterExpanded: N，render 在它上面
+// 畫「收起 N 則」。filterShown 的列仍算同一串（下一幀前沿快路徑沿用的前綴已經展開過）。
+export function applyCommentFilterSkips(result, expanded, texts) {
   const n = result.length;
+  const inRun = (a) => !!(a && (a.hidden || a.filterShown));
   let row = 0;
   while (row < n) {
-    if (!(result[row] && result[row].hidden)) {
+    if (!inRun(result[row])) {
       ++row;
       continue;
     }
     const start = row;
     let count = 0;
-    while (row < n && result[row] && result[row].hidden) {
+    while (row < n && inRun(result[row])) {
       if (result[row].filtered && result[row].pusher !== undefined) ++count;
       ++row;
     }
+    if (count === 0) continue;
+    const key = texts ? texts[start] : undefined;
+    const open = !!(expanded && key !== undefined && expanded.includes(key));
+    if (open) {
+      for (let r = start; r < row; ++r) {
+        const a = result[r];
+        if (a.filtered && a.hidden) result[r] = { ...a, hidden: false, filterShown: true };
+      }
+    }
     // 已經是這個數就不換物件：前沿快路徑沿用的前綴要保持同一批物件（stablePrefix）。
-    if (count > 0 && result[start].filterSkip !== count)
-      result[start] = { ...result[start], filterSkip: count };
+    const a = result[start];
+    const skip = open ? undefined : count;
+    const exp = open ? count : undefined;
+    if (a.filterSkip !== skip || a.filterExpanded !== exp || a.filterSkipKey !== key) {
+      const next = { ...a, filterSkipKey: key };
+      if (open) {
+        delete next.filterSkip;
+        next.filterExpanded = count;
+      } else {
+        delete next.filterExpanded;
+        next.filterSkip = count;
+      }
+      result[start] = next;
+    }
   }
 }
 
@@ -298,7 +325,9 @@ function annotationFrontier(lines, texts, result, opts) {
     // 推文篩選的「略過 N 則」標在一串被藏列的第一列、數的是整串 ⇒ 尾端那串下一頁
     // 還會變長，要整串留給下一幀重算。
     let r = n;
-    while (r > 0 && ((result[r - 1] && result[r - 1].hidden) || !texts[r - 1].trim())) --r;
+    // 展開過的串（filterShown）也是同一串。
+    const a = (row) => result[row] && (result[row].hidden || result[row].filterShown);
+    while (r > 0 && (a(r - 1) || !texts[r - 1].trim())) --r;
     f = Math.min(f, r);
   }
   if (opts.blank) {
@@ -350,6 +379,7 @@ export function computeAnnotations(
     followAuthors,
     followTitleKeywords,
     commentFilter,
+    commentFilterExpanded,
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
@@ -930,7 +960,7 @@ export function computeAnnotations(
     result.fixCandsSig = fixCands.map(fixKey).join(",");
     applyFunctionKeys(result, lines, enhance);
     applyNewCommentsMark(result, enhance);
-    if (easyReading && commentFilter) applyCommentFilterSkips(result);
+    if (easyReading && commentFilter) applyCommentFilterSkips(result, commentFilterExpanded, texts);
     // ---- 給下一幀的前沿（見上方 fastFrom）----
     // 反向期間不算（tail 之後還會往 J 插入，前沿的前提「只往後接」不成立）。
     let frontier =

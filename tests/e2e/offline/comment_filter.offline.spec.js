@@ -3,7 +3,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassettes, bootOffline, replayCassette } = require('../helpers/replay');
-const { assertElementUnder, scrollIntoViewStable } = require('../helpers/layout');
+const { assertElementUnder, scrollIntoViewStable, waitRectStable } = require('../helpers/layout');
 const { startCapture, takeCapture } = require('../helpers/capture');
 
 const article = findCassettes('article')[0];
@@ -54,6 +54,19 @@ test.describe('推文篩選（離線重放）', () => {
     await expect.poll(async () => [...new Set(await visiblePushers(page))]).toEqual([target]);
     await expect(page.locator('#mainContainer .commentFilterSkip').first()).toBeAttached();
     await expect(page.locator('#commentFilterBar')).toContainText(target);
+
+    // P38：點「略過 N 則」⇒ 就地展開那幾則（細線變「收起」、留在手指下）；再點收回去。
+    const SKIP = '#mainContainer .commentFilterSkip';
+    const before = await scrollIntoViewStable(page, SKIP);
+    await page.mouse.click(before.left + before.width / 2, before.top + before.height / 2);
+    await expect(page.locator(SKIP).first()).toHaveAttribute('aria-expanded', 'true');
+    await expect.poll(async () => (await visiblePushers(page)).some((p) => p !== target)).toBe(true);
+    await expect(page.locator('#mainContainer .commentFilterShown').first()).toBeAttached();
+    const after = await waitRectStable(page, SKIP);
+    expect(Math.abs(after.top - before.top)).toBeLessThan(2);
+    await page.mouse.click(after.left + after.width / 2, after.top + after.height / 2);
+    await expect(page.locator(SKIP).first()).toHaveAttribute('aria-expanded', 'false');
+    await expect.poll(async () => [...new Set(await visiblePushers(page))]).toEqual([target]);
 
     await page.locator('#commentFilterBar .commentFilterClose').click();
     await expect(page.locator('#commentFilterBar')).toHaveCount(0);

@@ -113,6 +113,7 @@ export function annotationsKey(input) {
     stable(e.followAuthors),
     stable(e.followTitleKeywords),
     stable(e.commentFilter),
+    stable(e.commentFilterExpanded),
     stable(e.showFloorNumbers),
     stable(e.highlightAuthor),
     stable(e.articleAuthor),

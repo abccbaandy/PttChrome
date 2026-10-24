@@ -7,6 +7,7 @@ pref `enableCommentFilter`，預設開。只改顯示、一個 byte 都不送 �
 好讀文章裡長按（桌機右鍵）一則推文，選單多兩項：「只看這個人的推文 'id'」「只看原 PO 的推文」（解析不到原PO 就只有前者）。生效後：
 
 - 推文區只留那個人的推文；其他連續的推文收成一條細線「略過 N 則」。
+- 點「略過 N 則」⇒ 就地展開那幾則（淡色顯示，黑名單照藏），細線變成「收起 N 則」留在原位（手指下不跳）；再點收回。展開狀態跟著篩選走：換篩選、清掉、換文章都歸零。
 - 上緣置中一條橫幅「只顯示 xxx 的推文 ✕」，按 ✕ 還原；篩選生效時選單只給「顯示全部推文」。
 - 內文不受影響；樓號照原本的數（不重編）。
 - 只活在那一篇：換文章、重進同一篇（`_articleInstanceId` 變了）就清掉；離開文章或切回原生時不生效，橫幅收起。
@@ -18,6 +19,7 @@ pref `enableCommentFilter`，預設開。只改顯示、一個 byte 都不送 �
 | 狀態 | `term_view.js` `setCommentFilter`／`clearCommentFilter`／`activeCommentFilter`／`onCommentFilterChange` | `{ userid, op, articleId }`；只在 `useEasyReadingMode && pageState === 3` 且 articleId 相同時生效。enhance 帶 `commentFilter: userid \| null`（進 `annotationsKey`） |
 | 判定 | `comment_parse.js#isFilteredOut` | 不是那個人的推文 ⇒ `hidden: true, filtered: true`（跟黑名單同一套 hidden ⇒ 好讀 `dropHidden` 整列移除）。黑名單照黑名單（不帶 filtered）。新格式推文的 `│` 續行跟著標頭 |
 | 收成細線 | `screen_annotations.js#applyCommentFilterSkips` | 一串連續 hidden 列的第一列標 `filterSkip: N`（N＝被篩掉的則數，不含續行、不含黑名單）。只寫 `result[row]`，已經是同一個數就不換物件 |
+| 展開 | `applyCommentFilterSkips(result, expanded, texts)`＋`term_view.toggleCommentFilterSkip` | 一串的 key＝第一列文字（`filterSkipKey`；不用列號，反向讀取會往中間插列）。enhance `commentFilterExpanded`（進 `annotationsKey`）列出點開的 key；展開的串裡被篩掉的列改成 `hidden: false, filterShown: true`（仍算同一串），第一列標 `filterExpanded: N`。render 把第一列包進 `div.commentFilterExpandedHead`（細線＋列本身，佔位盒掛外層），`filterShown` 的節點加 `.commentFilterShown`（淡色）。細線是 `<button>`（App 滑鼠入口的 `isOwnControlTarget` 擋掉推文高亮／邊緣翻頁），不寫 `type` 屬性（消費端用 `[type]` 認 bbsrow） |
 | 前沿 | `annotationFrontier` 的 `filter` 選項 | 尾端那串被藏列（含空白列）下一頁還會變長 ⇒ 整串留給下一幀重算。`annotationsAreRowIndependent` 不用改（READING 本來就排除） |
 | 合併 | `computeAnnotations` | 篩選中不做「連續同作者推文合併」：留下來的全是同一人，會被併成一整塊、而且跨過「略過」 |
 | 畫面 | `render/screen.js#buildFilterSkipNode` | `dropHidden` 時 `filterSkip` 那一列畫成 `div.commentFilterSkip`（**不是 bbsrow**：選取複製、閱讀紀錄、量測找 bbsrow 的都直接略過） |

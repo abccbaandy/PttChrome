@@ -292,6 +292,9 @@ export const en_US = {
   "commentFilter_skipped": {
     "message": "{n} skipped"
   },
+  "commentFilter_collapse": {
+    "message": "Hide {n}"
+  },
   "options_commentReplyMenu": {
     "message": "\"Reply\" in the comment menu"
   },
