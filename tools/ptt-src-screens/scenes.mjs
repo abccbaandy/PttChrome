@@ -116,6 +116,14 @@ export const SCENES = [
     steps: [{ name: 'fav' }],
   },
   {
+    // 分類看板：主功能表游標預設就在 (C)lass，⏎ 進根（class_bid 1，只列 gid＝1 的群組），
+    // 再 ⏎ 進群組（class_bid>1，看板列表的 class 變體）。
+    file: 'class_list',
+    entry: 'menu',
+    rows: 24,
+    steps: [{ name: 'menu' }, { keys: '\r', name: 'root' }, { keys: '\r', name: 'group' }],
+  },
+  {
     // 我的最愛按 y 列出全部看板（caption 不變，只能靠提示分 fav／all）、再按 y 回最愛，
     // c 切成顯示文章總數（row 2「總數」）。
     file: 'board_list_toggles',

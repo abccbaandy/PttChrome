@@ -50,6 +50,9 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
   `FILE_BOTTOM` 的原文，`common/bbs/cache.c#resolve_board_bottoms`），列表尾端另畫一列 ★；原文仍以
   一般編號出現在列表裡。舊版另存 `.DIR.bottom` 副本的做法已移除。
 - 多個看板時 `getbnum` 對 `SHM->bsorted` 二分搜尋 ⇒ seed 完呼叫 upstream 自己的 `sort_bcache()`。
+- **分類看板**：`B` 列第 6 欄 `G`＝群組（`BRD_GROUPBOARD`）、第 7 欄＝所屬群組板名（填 `gid`，
+  `cache.c#resolve_board_group` 依它串子清單）。主功能表 C 的根固定是 bid 1（`board.c#Class` 設
+  `class_bid = 1`）⇒ seed 第一列就是根群組 `1...........`；沒有它，C ⏎ 是空清單、什麼都不畫。
 
 ### 場景（`scenes.mjs`）
 
@@ -90,6 +93,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
 | `reply_prompt` | `read:Test`／24 | `1⏎` `⏎` `y` | 文章裡 y 的「回應至 (F)看板 (M)作者信箱…」畫在倒數第二列：狀態列照樣認得（pageState 3）、游標在輸入欄、不攔 X、上傳網址走剪貼簿、編輯器輸入框不出現 |
 | `post_flow` | `read:Test`／24 | `^P` | 發文的種類 prompt：不是 clean-list、不是編輯器（pageState 不是 6）、上傳網址走剪貼簿 |
+| `class_list` | `menu`／24 | `⏎` `⏎` | 分類根（row 0【分類看板】）不是可接管的看板列表；進群組後認成 `class` 變體、可接管、列解析得出板名 |
 
 **加場景**：`scenes.mjs` 加一筆（第一步不送鍵；要斷言的幀取 name）→ 必要時 seed／driver 入口 →
 `sh tools/ptt-src-screens/generate.sh` → 在 test 加 describe。鍵只用 upstream 鍵表裡的鍵。

@@ -1,3 +1,4 @@
+B	1...........	....	◎分類看板		G
 B	Test	測試	測試看板	sysop
 A	alice	 9/30	5		[問題] 第一篇測試文章
 A	bob	10/01	12		Re: [問題] 第一篇測試文章
@@ -31,3 +32,6 @@ W	carol	第三顆水球
 L	alice	10/01	第一封信
 L	bob	10/02	Re: 第一封信
 L	carol	10/03	站方通知
+B	Group	分類	◎測試群組		G	1...........
+B	Child	測試	群組裡的看板	sysop		Group
+A	mike	10/10	0		[閒聊] 群組裡的文章

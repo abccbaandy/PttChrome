@@ -12,7 +12,8 @@
 //   wmsg:<模式>  先收下 seed 的 W 列水球（write_request），再進主功能表；模式 default＝一般
 //                水球、ofo＝一對一（UF_PAGER_OFO）。之後送 ^R 就是 upstream 的回水球畫面。
 // seed 檔（Big5，tab 分隔）：
-//   B <brdname> <class> <desc> <BM>                       開一個看板（之後的 A／N 屬於它）
+//   B <brdname> <class> <desc> <BM> [flags] [parent]      開一個看板（之後的 A／N 屬於它）；
+//                                                         flags G＝群組，parent＝所屬群組板名
 //   A <owner> <date> <recommend> <flags> <title>          一篇文章；flags: m=marked b=置底 g=收入文摘
 //   G <count> <owner> <title>                             批次 count 篇「<title> <i>」（無內文）
 //   N <text>                                              一列進板畫面（notes）
@@ -149,6 +150,16 @@ static void seed(const char *path)
             STRLCPY(bh->desc, f[3]);
             STRLCPY(bh->BM, f[4]);
             bh->nuser = 42;
+            // 分類看板：G＝群組（目錄，BRD_GROUPBOARD）；parent＝所屬群組（gid，
+            // cache.c#resolve_board_group 依它串子清單）。主功能表 C 的根是 bid 1。
+            if (n >= 6 && strchr(f[5], 'G'))
+                bh->brdattr |= BRD_GROUPBOARD;
+            if (n >= 7 && f[6][0]) {
+                for (int i = 0; i < bid; i++)
+                    if (!strcasecmp(SHM->bcache[i].brdname, f[6]))
+                        bh->gid = i + 1;
+                if (!bh->gid) die("parent before B");
+            }
             bid++;
             SHM->Bnumber = bid;
             bottoms = 0;
