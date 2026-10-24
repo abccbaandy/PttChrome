@@ -833,7 +833,7 @@
     "message": "文章列表的「只看關注」切換鈕"
   },
   "tooltip_enableFollowOnly": {
-    "message": "列表好讀時，文章列表右上角多一顆「只看關注」：打開後列表只留關注的帳號或標題關鍵字的文章，其他收起；再按一下回到全部。不送任何鍵。"
+    "message": "列表好讀時，文章列表右上角多一顆「只看關注」：打開後列表只留關注的帳號或標題關鍵字的文章，其他收起；再按一下回到全部。切換本身不送鍵（收起後不夠看時照常補頁）。"
   },
   "followOnly_label": {
     "message": "只看關注"
@@ -843,6 +843,18 @@
   },
   "followOnly_tip": {
     "message": "只顯示關注名單的文章（再按一下顯示全部）"
+  },
+  "options_enableListFastScroll": {
+    "message": "文章列表快速捲動把手"
+  },
+  "tooltip_enableListFastScroll": {
+    "message": "列表好讀捲動時，右緣出現一個把手：拖動時旁邊顯示編號（拖動中不送鍵），放開才跳到那個編號，適合在大看板一次往回翻很遠。"
+  },
+  "listFastScroll_label": {
+    "message": "快速捲動：拖動選編號，放開跳過去"
+  },
+  "listFastScroll_num": {
+    "message": "編號 {n}"
   },
   "tooltip_enableFollowList": {
     "message": "黑名單的反面：關注的帳號或標題關鍵字，文章在列表上整列標一條琥珀色，關注的人的推文帳號也上色。右鍵（手機長按）作者或推文者可直接加入。跟黑名單衝突時黑名單優先。"

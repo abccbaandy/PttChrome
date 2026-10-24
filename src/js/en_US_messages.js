@@ -834,7 +834,7 @@ export const en_US = {
     "message": "\"Following only\" toggle on the article list"
   },
   "tooltip_enableFollowOnly": {
-    "message": "In easy-reading list mode, a \"Following only\" button appears at the top right of the article list: turn it on to show only posts by followed IDs or title keywords; press again to show everything. Sends no keys."
+    "message": "In easy-reading list mode, a \"Following only\" button appears at the top right of the article list: turn it on to show only posts by followed IDs or title keywords; press again to show everything. Toggling sends no keys (more pages load as usual when too few remain)."
   },
   "followOnly_label": {
     "message": "Following only"
@@ -844,6 +844,18 @@ export const en_US = {
   },
   "followOnly_tip": {
     "message": "Show only posts from your follow list (press again to show all)"
+  },
+  "options_enableListFastScroll": {
+    "message": "Fast-scroll handle on the article list"
+  },
+  "tooltip_enableListFastScroll": {
+    "message": "While scrolling the easy-reading list, a handle appears at the right edge: drag it to pick a post number (nothing is sent while dragging) and release to jump there. Handy for going far back on big boards."
+  },
+  "listFastScroll_label": {
+    "message": "Fast scroll: drag to pick a number, release to jump"
+  },
+  "listFastScroll_num": {
+    "message": "No. {n}"
   },
   "tooltip_enableFollowList": {
     "message": "The opposite of the blacklist: posts by followed users or with followed title keywords get an amber stripe in the list, and followed users' ids are colored in comments. Right-click (long-press on phones) an author or commenter to add them. The blacklist wins when both match."

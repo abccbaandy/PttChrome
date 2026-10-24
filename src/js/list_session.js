@@ -2295,7 +2295,10 @@ ListSession.prototype = {
     });
   },
 
-  _beginJumpNumber: function(num) {
+  // opts.onDone／onFail：外部入口（列表快速捲動把手，js/list_fast_scroll.js）收閱讀紀錄用；
+  // 鍵盤跳號不帶。
+  _beginJumpNumber: function(num, opts) {
+    const hooks = opts || {};
     this._freezeForTransaction();
     this._prunePivotOverride = null; // far jump: keep the landing segment
     const self = this;
@@ -2327,12 +2330,52 @@ ListSession.prototype = {
         self._setLoading(false);
         self._view.hideCursor();
         self._rebuild(landed);
+        if (hooks.onDone) hooks.onDone();
       },
       onFail: function() {
         self._prunePivotOverride = undefined;
         self._degradeToNative('跳號逾時，已切至原生模式');
+        if (hooks.onFail) hooks.onFail();
       }
     });
+  },
+
+  // 列表快速捲動把手（P30，js/list_fast_scroll.js）讀的現況。只在列表好讀緩衝、閒著、
+  // 完整列表（搜尋結果／文摘是另一個編號空間，跳號會跳錯）時給；其餘 null ⇒ 把手不出現。
+  //   lo／hi：緩衝裡最小／最大的編號；topNum：視口頂端那一篇；edgeDown：已補到板尾。
+  fastScrollInfo: function() {
+    if (this.state !== 'active' || this._renderMode !== 'buffer' || this._selectMode) return null;
+    if (this._boardName == null) return null;
+    const nums = this._termBuf.listLineNums || [];
+    let lo = null;
+    let hi = null;
+    for (let i = 0; i < nums.length; ++i) {
+      const n = nums[i];
+      if (typeof n !== 'number') continue;
+      if (lo == null || n < lo) lo = n;
+      if (hi == null || n > hi) hi = n;
+    }
+    if (lo == null) return null;
+    const pos = this.readingPosition();
+    return {
+      board: this._boardName,
+      lo: lo,
+      hi: hi,
+      topNum: pos && pos.topNum != null ? pos.topNum : lo,
+      edgeDown: !!this._edgeDown
+    };
+  },
+
+  // 外部入口的跳號（快速捲動把手放開）：與鍵盤數字跳號同一條交易（_beginJumpNumber）。
+  // 不在列表好讀緩衝、交易進行中 ⇒ 回 false、零送出。
+  jumpToNumber: function(num, opts) {
+    if (this.state !== 'active' || this._renderMode !== 'buffer') return false;
+    if (!(num > 0)) return false;
+    this._dropPendingViewport('user-key');
+    const r = transitionListSession(this.state, { type: 'key', keyClass: 'transact' });
+    this.state = r.next;
+    this._beginJumpNumber(Math.floor(num), opts);
+    return true;
   },
 
   // Key → whitelist class (the enumeration IS the contract —

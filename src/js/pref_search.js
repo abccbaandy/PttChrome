@@ -103,6 +103,11 @@ export const PREF_SEARCH_ITEMS = [
     },
     { key: "enableEasyReadingList", titleKey: "options_enableEasyReadingList" },
     {
+      key: "enableListFastScroll",
+      titleKey: "options_enableListFastScroll",
+      tooltipKey: "tooltip_enableListFastScroll",
+    },
+    {
       key: "enableBoardListSmoothScroll",
       titleKey: "options_enableBoardListSmoothScroll",
       tooltipKey: "tooltip_enableBoardListSmoothScroll",
