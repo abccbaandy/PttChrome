@@ -382,6 +382,11 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
     （右側放不下往左推）、寬 ≤280px、高度到視窗邊為止、內容捲動。`MobileSheet` 的 `float` prop 把 Drawer 改成絕對定位
     （`data-position="float"`、`data-float-side`），無拖曳把手（遮罩／返回照樣收）。量不到對象 ⇒ 退回貼底 sheet。
     收起時沿用開著時的位置（退場不跳位）。舊版「對象在下半部就貼頂」離手指一整個畫面遠，已廢。
+  - 長按推文時，常用項目收成選單最上面一排圖示鈕（`ContextMenu/context_sheet_quick.js#splitQuickActions`：
+    回覆／複製／只看他／只看原PO（篩選中換「看全部」）／關注／黑名單，依序取前 5 顆，畫面上是短字、完整的字在
+    `aria-label`），其餘照舊列在下面，少捲一次。只在有推文項目且 ≥3 顆時收（列表卡片長按的黑名單／關注照舊一列一項）。
+    項目本身（出現條件、handler、反灰）仍只來自 `context_menu_entries.js`，這裡只重新分組。守 `context_sheet_quick.test.js`、
+    `context_sheet.test.jsx`。
     守 `sheet_placement.test.js`、`context_sheet.test.jsx`、`mobile_list_cards.offline.spec.js`。
   長按的 disposition／touchLongPress／清選取都在 render 前，**不動**。
 - **外殼恆為暗色**（同 App Bar／底部導覽），裡面的 Mantine 元件也照暗色畫，不跟淺色主題：`.mobileSheet` 掛

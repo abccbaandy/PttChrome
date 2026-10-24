@@ -265,8 +265,9 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     await longPress(page, COMMENT_LINE);
     const item = menu(page).locator('[data-cmenu="copyComment"]');
     await expect(item).toBeVisible();
-    await expect(item).toContainText(await label(page, 'cmenu_copyComment'));
-    await item.click();
+    // P37：長按推文的常用項目在最上面一排圖示鈕（短字在畫面上，完整的字在 aria-label）。
+    await expect(menu(page).locator('.mobileSheetQuickRow [data-cmenu="copyComment"]')).toBeVisible();
+    await expect(item).toHaveAttribute('aria-label', await label(page, 'cmenu_copyComment'));    await item.click();
     await expect.poll(() => page.evaluate(() => window.__copied)).toEqual([expected]);
     await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
   });
@@ -295,7 +296,7 @@ test.describe('長按選單（觸控 contextmenu）', () => {
       const t = document.querySelector('[data-e2e-target]').textContent;
       return t.substr(t.toLowerCase().indexOf(id), id.length);
     }, pusher);
-    await expect(item).toContainText(shown);
+    await expect(item).toHaveAttribute('aria-label', new RegExp("'" + shown + "'"));
     await item.tap();
     await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
     const input = page.locator('#commentBar [name="commentBarText"]');

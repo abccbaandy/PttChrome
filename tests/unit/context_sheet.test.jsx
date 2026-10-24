@@ -12,7 +12,7 @@ import { render, fireEvent, act } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { ContextSheet } from "../../src/components/ContextMenu/ContextSheet";
 import { buildContextMenuEntries } from "../../src/components/ContextMenu/context_menu_entries";
-import { setupI18n } from "../../src/js/i18n";
+import { setupI18n, i18n } from "../../src/js/i18n";
 
 beforeAll(() => setupI18n());
 
@@ -192,5 +192,95 @@ describe("不蓋住長按的那一列", () => {
     );
     const sheet = document.querySelector('[data-sheet="context"]');
     if (sheet) expect(sheet.getAttribute("data-position")).toBe("float");
+  });
+});
+
+// P37：長按推文的選單，常用的幾項收成最上面一排圖示鈕（context_sheet_quick.js），其餘照舊。
+describe("長按推文：常用項目收成一排圖示鈕", () => {
+  const COMMENT = {
+    ...PROPS,
+    markReadTarget: null,
+    authorBlacklistId: "friend",
+    authorFollowEnabled: true,
+    replyCommentTarget: "Friend",
+    previews: {
+      copyComment: "推 Friend: 嗨",
+      copyCommentAll: "推 Friend: 嗨 06/14 10:01",
+    },
+    commentFilterTarget: {
+      pusher: "friend",
+      op: "opuser",
+      row: 4,
+      active: false,
+    },
+  };
+  const quickKeys = () =>
+    Array.from(
+      document.querySelectorAll(
+        '[data-sheet="context"] .mobileSheetQuickRow [data-cmenu]',
+      ),
+    ).map((n) => n.getAttribute("data-cmenu"));
+
+  test("最多 5 顆、照優先序；短字在畫面上、完整的字在 aria-label；其餘項目照舊、一個都沒少", async () => {
+    const { props, handlers } = setup(COMMENT);
+    await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+    expect(quickKeys()).toEqual([
+      "replyComment",
+      "copyComment",
+      "filterCommentUser",
+      "filterCommentOp",
+      "addAuthorFollow",
+    ]);
+    const reply = document.querySelector(
+      '.mobileSheetQuickRow [data-cmenu="replyComment"]',
+    );
+    expect(reply.textContent).toBe(i18n("cmenuShort_replyComment"));
+    expect(reply.getAttribute("aria-label")).toContain("'Friend'");
+    // 跟桌機同一份清單：每一項都還在（圖示列＋下面的清單），只是重新分組
+    const want = buildContextMenuEntries({ ...props, mobile: true })
+      .filter((e) => e.type === "item")
+      .map((e) => e.key)
+      .sort();
+    expect(
+      items()
+        .map((n) => n.getAttribute("data-cmenu"))
+        .sort(),
+    ).toEqual(want);
+    // 下面的清單不重複列出已經在圖示列的
+    const listed = Array.from(
+      document.querySelectorAll('[data-sheet="context"] .mobileSheetItem'),
+    ).map((n) => n.getAttribute("data-cmenu"));
+    expect(listed).toContain("addAuthorBlacklist");
+    expect(listed).not.toContain("replyComment");
+    // 開頭不是分隔線
+    const scroll = document.querySelector(
+      '[data-sheet="context"] .mobileSheetQuickRow',
+    ).parentElement;
+    const afterRow = scroll.querySelector(
+      ".mobileSheetQuickRow",
+    ).nextElementSibling;
+    expect(afterRow.classList.contains("mobileSheetDivider")).toBe(false);
+    fireEvent.click(
+      document.querySelector(
+        '.mobileSheetQuickRow [data-cmenu="filterCommentUser"]',
+      ),
+    );
+    expect(handlers.onMenuSelect).toHaveBeenCalledWith(
+      "filterCommentUser",
+      expect.anything(),
+    );
+  });
+
+  test("篩選生效中 ⇒ 圖示列給「看全部」", async () => {
+    setup({ ...COMMENT, commentFilterTarget: { active: true } });
+    await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+    expect(quickKeys()).toContain("clearCommentFilter");
+    expect(quickKeys()).not.toContain("filterCommentUser");
+  });
+
+  test("不是長按推文（列表卡片的黑名單／關注）⇒ 不收，照舊一列一項", async () => {
+    setup({ ...PROPS, authorFollowEnabled: true });
+    await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+    expect(document.querySelector(".mobileSheetQuickRow")).toBeNull();
   });
 });
