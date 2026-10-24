@@ -338,6 +338,22 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - 守護：unit `menu_items`／`menu_card`／`main_menu_mouse`／`mouse_regions`；offline e2e `main_menu`（桌機 hover／點擊）、
   `mobile_main_menu`（按鈕高、真 tap 送鍵）。素材是合成畫面 `tests/e2e/helpers/main_menu.js`。
 
+### 信件列表卡片（P31，`render/mail_card.js`）
+
+- 信件列表（Ctrl+Z m／主選單 (M)ail）**共用 Phase 5 的 `'menu'` 版面**（幾何、`data-menu-row` 點擊取列、
+  `_sendRowEnter`、`#cursor` 隱藏、`resolveMouseRegion` 早退全部沿用），只差列怎麼畫：`term_view._frameSurface`
+  在 `buf.isMailListScreen()` 時也回 `'menu'`，`enhance.menuCards` 傳 `'mail'`（主功能表／子選單是 `true`，
+  進 `annotationsKey`）。
+- 判定 `js/mail_list.js`（依 `mbbsd/mail.c#maildoent`／`mail_coldefs`，檔頭）：底列 caption ∈
+  `MAIL_LIST_CAPTIONS`（便宜的第一關）＋第 0～3 列有「編號 日期 作者 信件標題」欄位標題列。**不看 pageState**：
+  `setPageState` 對信件列表沒有分支，pageState 沿用上一個畫面的值（主功能表進來＝1、單獨重放＝0）。
+  信件列不靠欄寬，認「編號 狀態? 日期 作者 ◇／R:／轉 標題」的順序；認不出的列照舊格線，整個畫面認不出照舊格線。
+- 渲染：信件列 → 兩行卡片（標題；寄件人・日期；未讀＝`+`／`M`／`R` 粗體＋圓點，高 `MAIL_CARD_PX`=60）；
+  欄位標題列、第 0 列、末列收起；按鍵說明列（第 1 列，功能鍵可點）照舊縮小格線。
+- 第一版只做卡片＋點開；不做累積捲動與背景預讀（信箱不接列表好讀），讀信接不接好讀照舊。
+- 守護：unit `mail_card`（upstream 產的畫面＋各種狀態＋DOM）、`parse_failure_degrade`（突變）；offline e2e
+  `mobile_mail_cards`（卡片高、真 tap 送「↑↑＋⏎」、認不出 ⇒ 格線）。
+
 ## Phase 6：App Bar（`components/MobileAppBar`）
 
 - 標題純函式 `mobile_app_bar.appBarFromFacts(facts, {pageState, articleTitle, articleBoard, prev})`，與底部導覽同一次計算

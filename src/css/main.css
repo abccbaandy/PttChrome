@@ -526,6 +526,50 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   color: #00ffff;
   font-weight: bold;
 }
+/* 信件列表卡片（P31，render/mail_card.js）：同一套大按鈕版面，兩行（標題／寄件人・日期）。
+   高度＝MAIL_CARD_PX（守護 tests/unit/mail_card.test.js）。 */
+.main.mobileMenu #mainContainer > span.menuCard.mailCard {
+  height: 60px;
+}
+.menuCard .mailCardBody {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+.mailCard .mailCardTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mailCard .mailCardSubject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mailCard .mailCardTag {
+  flex: none;
+  color: #ffff55;
+  font-size: 13px;
+}
+.mailCard .mailCardDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #55ffff;
+}
+.mailCard.mailCardUnread .mailCardSubject {
+  color: #ffffff;
+  font-weight: bold;
+}
+.mailCard .mailCardMeta {
+  font-size: 13px;
+  color: #909090;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* 手機收起來的列（render/collapsed_row.js）：選單的空白列與標題／狀態列、列表卡片的
    header／footer、好讀文章檔頭的分隔線。不佔高度；bbsrow／data-row 契約保留。
    選擇器不綁畫面 class：只有手機分支會產生這個節點（桌機 golden 不經過）。 */

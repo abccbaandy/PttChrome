@@ -45,6 +45,8 @@ import { functionModeExitDecision } from "../../src/js/easy_reading";
 import { parseStatusRow } from "../../src/js/string_util";
 import { parseHelpMenuScreen, HelpMenuController } from "../../src/js/help_menu";
 import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
+import { isMailListRows, parseMailRow } from "../../src/js/mail_list";
+import { MAIL_LIST_ROWS, MAIL_HEADER_ROW, MAIL_ITEM_ROWS } from "./fixtures/mail_list_rows";
 
 const LISTS = {
   "C_Chat（24 列，有《板名》）": {
@@ -386,6 +388,34 @@ describe("說明選單好讀：認不出 ⇒ 不開彈窗、不送鍵（原生�
     ctrl.noteScreen(parseHelpMenuScreen(rows));
     expect(ctrl.phase).toBe("idle");
     expect(sent).toEqual([]);
+  });
+});
+
+describe("手機信件列表卡片：認不出 ⇒ 照舊格線（不畫卡片、點擊照原生）", () => {
+  const mutate = (i, text) => MAIL_LIST_ROWS.map((r, j) => (j === i ? text : r));
+  const last = MAIL_LIST_ROWS.length - 1;
+
+  test("對照組：upstream 產的信件列表認得出、三封信都解得出", () => {
+    expect(isMailListRows(MAIL_LIST_ROWS)).toBe(true);
+    for (const y of MAIL_ITEM_ROWS) expect(parseMailRow(MAIL_LIST_ROWS[y])).not.toBeNull();
+  });
+
+  test.each([
+    ["底列 caption 改版", mutate(last, " 郵件  (^P)寄信 (y)回信 (x)轉寄 (d)刪信       (←)離開 (h)說明  ")],
+    ["欄位標題列改版", mutate(MAIL_HEADER_ROW, "  #      Date  From           Subject")],
+    ["欄位標題列不見", mutate(MAIL_HEADER_ROW, " ".repeat(80))],
+    ["半繪（底列還沒畫）", mutate(last, "")],
+  ])("畫面指紋：%s → 不是信件列表", (_n, rows) => {
+    expect(isMailListRows(rows)).toBe(false);
+  });
+
+  test.each([
+    ["標題標記改版（□）", "     1 + 10/01 alice          □ 第一封信"],
+    ["日期欄改版（沒有 /）", "     1 + 1001  alice          ◇ 第一封信"],
+    ["編號欄不是數字", "     - + 10/01 alice          ◇ 第一封信"],
+    ["沒有標題", "     1 + 10/01 alice"],
+  ])("信件列：%s → 這一列不畫卡片", (_n, row) => {
+    expect(parseMailRow(row)).toBeNull();
   });
 });
 

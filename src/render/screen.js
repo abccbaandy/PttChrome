@@ -22,6 +22,8 @@ import { i18n } from "../js/i18n";
 import { buildRow } from "./row";
 import { buildListCard } from "./list_card";
 import { buildMenuCard, buildMenuBlankRow, isBlankRow } from "./menu_card";
+import { buildMailCard } from "./mail_card";
+import { MAIL_HEADER_RE } from "../js/mail_list";
 import { buildCollapsedRow } from "./collapsed_row";
 import {
   buildArticleMetaRow,
@@ -53,7 +55,7 @@ import {
   computeAnnotations,
   annotationsAreRowIndependent,
 } from "../js/screen_annotations";
-import { isPusherHighlighted } from "../js/comment_parse";
+import { isPusherHighlighted, rowToText } from "../js/comment_parse";
 import { spanKey, spanNeedsAi } from "../js/caption_ai_logic";
 import {
   captionAiAvailability,
@@ -1221,14 +1223,29 @@ export class ScreenController {
     if (enhance && enhance.menuCards) {
       if (row === 0 || row === lines.length - 1)
         return buildCollapsedRow(row, "menuChromeRow");
-      const card = buildMenuCard({
-        chars: lines[row],
-        row,
-        highlightClass:
-          this.highlight.row === row ? this.highlight.cls : undefined,
-      });
-      if (card) return card.node;
-      if (isBlankRow(lines[row])) return buildMenuBlankRow(row);
+      // 信件列表（P31，render/mail_card.js）：信件列畫成卡片，欄位標題列收起（卡片自己
+      // 帶寄件人／日期）；按鍵說明列照舊縮小格線（功能鍵可點）。
+      if (enhance.menuCards === "mail") {
+        if (MAIL_HEADER_RE.test(rowToText(lines[row])))
+          return buildCollapsedRow(row, "menuChromeRow");
+        const mail = buildMailCard({
+          chars: lines[row],
+          row,
+          highlightClass:
+            this.highlight.row === row ? this.highlight.cls : undefined,
+        });
+        if (mail) return mail.node;
+        if (isBlankRow(lines[row])) return buildMenuBlankRow(row);
+      } else {
+        const card = buildMenuCard({
+          chars: lines[row],
+          row,
+          highlightClass:
+            this.highlight.row === row ? this.highlight.cls : undefined,
+        });
+        if (card) return card.node;
+        if (isBlankRow(lines[row])) return buildMenuBlankRow(row);
+      }
     }
     const ls = enhance && enhance.listScroll;
     // 手機列表卡片：header（看板名、按鍵說明、欄位標題）與 footer 收起 —— 看板名在
