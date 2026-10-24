@@ -6,7 +6,7 @@
 // 這裡的每一個位元組都是 upstream 程式碼吐的。
 //
 // fixture 由 tools/ptt-src-screens/generate.sh 重產（場景表 scenes.mjs、種子 seed.tsv）。
-// 平常跑 repo 裡那份（產自 pttbbs 8afe4a4）；nightly（.github/workflows/ptt-src-screens.yml）
+// 平常跑 repo 裡那份（產自 pttbbs f3e3093）；nightly（.github/workflows/ptt-src-screens.yml）
 // 換成 upstream HEAD 產的。
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
@@ -101,6 +101,9 @@ import goodbyeFx from "./fixtures/ptt_src_screens/goodbye.json";
 import { markReadPromptShown } from "../../src/js/mark_read_prompt";
 import { resolveDismiss, DISMISS_INPUT } from "../../src/js/screen_dismiss";
 import { isGoodbyeConfirm, isAnyKeyPause, logoutEscapeKey } from "../../src/js/logout_session";
+import replyPromptFx from "./fixtures/ptt_src_screens/reply_prompt.json";
+import postFlowFx from "./fixtures/ptt_src_screens/post_flow.json";
+import { editorInputAvailable } from "../../src/js/editor_input";
 
 loadBig5Tables();
 
@@ -398,6 +401,61 @@ describe("upstream pttbbs 產的信件列表（主功能表 Ctrl+Z m）", () => 
   test("首頁儀表板的「新信」落地判準：已離開主功能表", () => {
     expect(isHomeScreen(screenAt(mailListFx, "menu").facts)).toBe(true);
     expect(isHomeScreen(facts)).toBe(false);
+  });
+});
+
+describe("upstream pttbbs 產的回文 prompt（bbs.c#do_reply，文章裡按 y）", () => {
+  const LONG_PUSH_ON = { enableLongPush: true, pushKeyOpensLongPush: true };
+  const at = (name) => screenAt(replyPromptFx, name, { perFrame: true });
+
+  test("prompt 畫在倒數第二列，狀態列照樣認得、還是文章（pageState 3）", () => {
+    const { buf, rowTexts, facts } = at("reply");
+    expect(rowTexts[facts.rows - 2]).toMatch(/回應至/);
+    expect(parseStatusRow(rowTexts[facts.rows - 1])).not.toBeNull();
+    expect(buf.pageState).toBe(3);
+  });
+
+  test("prompt 幀游標在輸入欄 ⇒ 好讀累積的 complete 閘門擋得住；文章幀停在右下角", () => {
+    expect(at("reply").buf.isCursorOnInputField()).toBe(true);
+    expect(at("article").buf.isCursorOnInputField()).toBe(false);
+  });
+
+  test("在回文 prompt 裡打 X 是在回答 prompt，不改開長推文；文章幀照常攔", () => {
+    const intercepts = (name) =>
+      shouldInterceptPushKey(Object.assign({ key: "X", prefs: LONG_PUSH_ON }, pushGateFacts({ buf: at(name).buf })));
+    expect(intercepts("article")).toBe(true);
+    expect(intercepts("reply")).toBe(false);
+  });
+
+  test("上傳完的網址：prompt 只收一個字 ⇒ 走剪貼簿；編輯器輸入框不出現", () => {
+    const { buf, rowTexts, facts } = at("reply");
+    expect(decideInsertMode({ pageState: buf.pageState, lastRowText: rowTexts[facts.rows - 1], hasTextTarget: false })).toBe(
+      "clipboard",
+    );
+    expect(editorInputAvailable({ enabled: true, safeMode: false, pageState: buf.pageState })).toBe(false);
+  });
+});
+
+describe("upstream pttbbs 產的發文 prompt（bbs.c#do_post，文章列表 ^P）", () => {
+  const at = (name) => screenAt(postFlowFx, name, { perFrame: true });
+
+  test("種類 prompt：不是文章列表、不是編輯器 ⇒ 列表好讀不接管、編輯器輸入框不出現", () => {
+    const { buf, rowTexts, facts } = at("post");
+    expect(rowTexts.join("\n")).toMatch(/種類：1\.問題/);
+    expect(classifyListScreen(facts).kind).not.toBe("clean-list");
+    expect(buf.pageState).not.toBe(6);
+    expect(editorInputAvailable({ enabled: true, safeMode: false, pageState: buf.pageState })).toBe(false);
+  });
+
+  test("上傳完的網址：種類 prompt 只收一個字 ⇒ 走剪貼簿，不送字", () => {
+    const { buf, rowTexts, facts } = at("post");
+    expect(decideInsertMode({ pageState: buf.pageState, lastRowText: rowTexts[facts.rows - 1], hasTextTarget: false })).toBe(
+      "clipboard",
+    );
+  });
+
+  test("列表幀是 clean-list（對照組）", () => {
+    expect(classifyListScreen(at("list").facts).kind).toBe("clean-list");
   });
 });
 

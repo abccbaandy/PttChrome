@@ -22,7 +22,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 ```
 
 - 不架站、不登入、不需要 logind／Go 服務。`generate.sh` exit 2＝build／driver／場景問題（不是解析器壞）。
-- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs 8afe4a4）；nightly 換成 upstream HEAD 產的。
+- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs f3e3093）；nightly 換成 upstream HEAD 產的。
 - **輸出可重現**：driver 定義自己的 `time()`（執行檔的符號蓋過 libc），時間釘在 `FIXED_NOW`；同一份
   upstream 跑兩次 fixture 逐位元組相同。所以 fixture 有 diff＝upstream 改了畫面。
 
@@ -88,6 +88,8 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `goodbye` | `menu`／24 | `G⏎` `y⏎` | 一鍵登出：主功能表不送逃生鍵、確認 prompt（`isGoodbyeConfirm`）、停留時間是 pressanykey（`isAnyKeyPause`） |
 | `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
 | `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
+| `reply_prompt` | `read:Test`／24 | `1⏎` `⏎` `y` | 文章裡 y 的「回應至 (F)看板 (M)作者信箱…」畫在倒數第二列：狀態列照樣認得（pageState 3）、游標在輸入欄、不攔 X、上傳網址走剪貼簿、編輯器輸入框不出現 |
+| `post_flow` | `read:Test`／24 | `^P` | 發文的種類 prompt：不是 clean-list、不是編輯器（pageState 不是 6）、上傳網址走剪貼簿 |
 
 **加場景**：`scenes.mjs` 加一筆（第一步不送鍵；要斷言的幀取 name）→ 必要時 seed／driver 入口 →
 `sh tools/ptt-src-screens/generate.sh` → 在 test 加 describe。鍵只用 upstream 鍵表裡的鍵。

@@ -384,4 +384,18 @@ export const SCENES = [
       { keys: '\x12', name: 'ofo-3' },
     ],
   },
+  {
+    // 文章裡按 y（bbs.c#do_reply）：「回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消」之類的 getdata。
+    file: 'reply_prompt',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [{ name: 'list' }, { keys: '1\r' }, { keys: '\r', name: 'article' }, { keys: 'y', name: 'reply' }],
+  },
+  {
+    // 文章列表 ^P（bbs.c#do_post）：發文前的種類／標題 prompt。
+    file: 'post_flow',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [{ name: 'list' }, { keys: '\x10', name: 'post' }],
+  },
 ];
