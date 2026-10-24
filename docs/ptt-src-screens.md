@@ -118,6 +118,9 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   同名會走捷徑不設 `currbid`）。
 - driver 要設 `is_login_ready = 1`（登入流程最後才設）：沒有它 Ctrl+Z 快速切換（`menu.c#ZA_Select`）、
   Ctrl+U 等全域鍵一律不理，^Z m 會變成「主功能表游標移到 (M)ail」。
+- driver.c 碰到的 upstream struct 欄位被改名時，新舊都要編得過：`generate.sh` 看 header 決定、用 `-D` 傳給
+  driver。例：b500faf 把 `fileheader_t` 的 `char pad`＋`char recommend` 併成 `int16_t rating`（畫面不變）⇒
+  `FH_RATING`＝`rating`／`recommend`（守護 `ptt_src_screens_capture.test.js`）。
 - driver.c 本身是 UTF-8：要寫 Big5 字串用跳脫序列，且拆開寫（`"\xc3" "D"`，否則 `\xc3D` 被吃成一個跳脫）。
 
 upstream 再弄壞 build（新的必要 conf、新的需要排除的物件）時 generate 會紅（exit 2）：修法補進

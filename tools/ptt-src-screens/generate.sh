@@ -36,7 +36,11 @@ for o in *.o; do
   nm "$o" 2>/dev/null | grep -q ' T main$' && continue
   OBJS="$OBJS $o"
 done
-clang -g -O0 -w -I../include -DBBSHOME='"/root"' -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
+# fileheader_t 的推文數欄位：upstream b500faf 把 char pad＋char recommend 併成 int16_t rating（畫面不變）。
+# 新舊 upstream 都要編得過 ⇒ 看 header 決定 driver 寫哪個欄位。
+RATING_RE='^[[:space:]]*int16_t[[:space:]]+rating;'
+if grep -Eq "$RATING_RE" ../include/pttstruct.h; then FH_RATING=rating; else FH_RATING=recommend; fi
+clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
 # --wrap：driver.c 接住 upstream 等 stdin 的阻塞點，在 stdout 標出幀尾（WAIT_MARK，見 driver.c）。
 # shellcheck disable=SC2086
 clang -o "$OUT/driver" -Wl,--wrap=read,--wrap=select,--wrap=poll "$OUT/driver.o" "$OUT/mbbsd_nomain.o" $OBJS "$OUT/vers.o" \
