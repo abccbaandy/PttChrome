@@ -21,6 +21,7 @@ import {
 import { MouseReportState } from './mouse_report';
 import { resolveDismiss } from './screen_dismiss';
 import { parseMenuItemRow, isMenuScreen } from './menu_items';
+import { isMailListFooter, isMailListRows } from './mail_list';
 import { EDITOR_CAPTION, footerCaption } from './screen_captions';
 import {
   ARCHIVE_LIST,
@@ -1632,6 +1633,16 @@ TermBuf.prototype = {
       this.getRowText(0, 0, this.cols),
       this.getRowText(this.rows - 1, 0, this.cols)
     );
+  },
+
+  // 信件列表（mbbsd/mail.c，判定見 mail_list.js）。**不看 pageState**：setPageState 對信件
+  // 列表沒有分支（標題不在 MENU_TITLES、底列不是狀態列、欄位標題列不是單色），pageState
+  // 沿用上一個畫面的值（從主功能表進來＝1、讀完信回來可能是別的）⇒ 只靠畫面指紋。
+  isMailListScreen: function() {
+    if (!isMailListFooter(this.getRowText(this.rows - 1, 0, this.cols))) return false;
+    var texts = [];
+    for (var y = 0; y < this.rows; ++y) texts.push(this.getRowText(y, 0, this.cols));
+    return isMailListRows(texts);
   },
 
   // 滑鼠移到 (tcol, trow)：算出這一格的語意、更新游標底色列、換滑鼠指標、開關

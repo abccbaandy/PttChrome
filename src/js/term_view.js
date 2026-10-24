@@ -1337,7 +1337,10 @@ TermView.prototype = {
           onFunctionKey: this.onFunctionKey,
           // 手機主功能表大按鈕（render/menu_card.js）。旗標已由本函式開頭的
           // _syncMobileSurface 對帳成這一幀的值。進 annotationsKey。
-          menuCards: this.menuCards || undefined,
+          // 信件列表時是 'mail'（render/mail_card.js，P31），主功能表／子選單是 true。
+          menuCards: this.menuCards ?
+            (this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen() ? 'mail' : true) :
+            undefined,
           // 「開燈」的軌 B：目前的 pmore 色彩顯示模式（0/1/2，null＝還沒看過設定
           // 頁）＋切換入口。App 在啟動時指派 onLightsRawMode，**引用必須穩定**
           // （同 onFunctionKey/onAidClick 的 view-optional callback 慣例）。
@@ -1905,6 +1908,10 @@ TermView.prototype = {
     if (!this._gridRender) return 'article';
     if (enhanceOverrides && enhanceOverrides.listScroll) return 'list';
     if (this.buf && this.buf.isMenuScreen && this.buf.isMenuScreen())
+      return 'menu';
+    // 信件列表（P31）：同一個 'menu' 版面（幾何、點擊取列、游標都共用），列改畫成信件卡片
+    // （enhance.menuCards === 'mail'，render/mail_card.js）。
+    if (this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen())
       return 'menu';
     return 'grid';
   },
