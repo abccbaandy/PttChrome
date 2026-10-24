@@ -166,6 +166,58 @@
   opacity: 0.55;
 }
 
+/* 長按推文的常用項目（P37）：一排圖示鈕＋短字，平分寬度；觸控目標最小 48px。 */
+.mobileSheetQuickRow {
+  display: flex;
+  gap: 2px;
+  padding: 2px 0 6px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 4px;
+}
+
+.mobileSheetQuickItem {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 2px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mobileSheetQuickItem:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mobileSheetQuickItem:focus {
+  outline: none;
+}
+
+.mobileSheetQuickItem:focus-visible {
+  outline: 2px solid #a8c7fa;
+  outline-offset: -2px;
+}
+
+.mobileSheetQuickItem:disabled {
+  opacity: 0.45;
+}
+
+.mobileSheetQuickLabel {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 .mobileSheetDivider {
   height: 1px;
   margin: 4px 8px;

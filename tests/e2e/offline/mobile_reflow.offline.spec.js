@@ -229,9 +229,12 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     expect(pointerType).toBe('touch');
     expect(collapsed).toBe(false); // 前提：事件發生時真的有選取（Chromium 長按的現場）
     const add = await label(page, 'cmenu_addAuthorBlacklist');
-    const item = items(page).filter({ hasText: add });
+    // 推文長按的常用項目收成最上面一排圖示鈕（P37）：完整文字（含 ID）在 aria-label
+    const item = items(page).and(menu(page).locator('[data-cmenu="addAuthorBlacklist"]'));
     await expect(item).toBeVisible();
-    await expect(item).toContainText(pusher, { ignoreCase: true });
+    const aria = ((await item.getAttribute('aria-label')) || '').toLowerCase();
+    expect(aria).toContain(add.toLowerCase());
+    expect(aria).toContain(pusher.toLowerCase());
     // 選取模式關（預設）：長按選到的字被收掉，不留原生選取把手跟選單打架；
     // 複製類項目跟著不出現（要選字複製就開選取模式）。
     expect(collapsedAfter).toBe(true);
@@ -265,8 +268,9 @@ test.describe('長按選單（觸控 contextmenu）', () => {
     await longPress(page, COMMENT_LINE);
     const item = menu(page).locator('[data-cmenu="copyComment"]');
     await expect(item).toBeVisible();
-    await expect(item).toContainText(await label(page, 'cmenu_copyComment'));
-    await item.click();
+    // P37：長按推文的常用項目在最上面一排圖示鈕（短字在畫面上，完整的字在 aria-label）。
+    await expect(menu(page).locator('.mobileSheetQuickRow [data-cmenu="copyComment"]')).toBeVisible();
+    await expect(item).toHaveAttribute('aria-label', await label(page, 'cmenu_copyComment'));    await item.click();
     await expect.poll(() => page.evaluate(() => window.__copied)).toEqual([expected]);
     await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
   });
@@ -295,7 +299,7 @@ test.describe('長按選單（觸控 contextmenu）', () => {
       const t = document.querySelector('[data-e2e-target]').textContent;
       return t.substr(t.toLowerCase().indexOf(id), id.length);
     }, pusher);
-    await expect(item).toContainText(shown);
+    await expect(item).toHaveAttribute('aria-label', new RegExp("'" + shown + "'"));
     await item.tap();
     await expect(page.locator(CONTEXT_SHEET)).toHaveCount(0);
     const input = page.locator('#commentBar [name="commentBarText"]');

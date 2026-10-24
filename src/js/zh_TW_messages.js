@@ -50,6 +50,27 @@
   "cmenu_copyComment": {
     "message": "複製這則推文"
   },
+  "cmenuShort_replyComment": {
+    "message": "回覆"
+  },
+  "cmenuShort_copyComment": {
+    "message": "複製"
+  },
+  "cmenuShort_filterCommentUser": {
+    "message": "只看他"
+  },
+  "cmenuShort_filterCommentOp": {
+    "message": "只看原PO"
+  },
+  "cmenuShort_clearCommentFilter": {
+    "message": "看全部"
+  },
+  "cmenuShort_addAuthorFollow": {
+    "message": "關注"
+  },
+  "cmenuShort_addAuthorBlacklist": {
+    "message": "黑名單"
+  },
   "cmenu_copyCommentAll": {
     "message": "複製整段推文"
   },

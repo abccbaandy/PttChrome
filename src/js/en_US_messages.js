@@ -50,6 +50,27 @@ export const en_US = {
   "cmenu_copyComment": {
     "message": "Copy this comment"
   },
+  "cmenuShort_replyComment": {
+    "message": "Reply"
+  },
+  "cmenuShort_copyComment": {
+    "message": "Copy"
+  },
+  "cmenuShort_filterCommentUser": {
+    "message": "This ID"
+  },
+  "cmenuShort_filterCommentOp": {
+    "message": "Only OP"
+  },
+  "cmenuShort_clearCommentFilter": {
+    "message": "Show all"
+  },
+  "cmenuShort_addAuthorFollow": {
+    "message": "Follow"
+  },
+  "cmenuShort_addAuthorBlacklist": {
+    "message": "Block"
+  },
   "cmenu_copyCommentAll": {
     "message": "Copy all comments in this group"
   },
