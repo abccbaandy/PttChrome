@@ -1,0 +1,22 @@
+{
+ "cols": 80,
+ "rows": 24,
+ "entry": "menu",
+ "frames": [
+  {
+   "name": "menu",
+   "keys": "",
+   "bytes": "\u001b[?7l\u001b[?2026h\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[1;37;46m¡i¥D¥\\¯àªí¡j                       \u001b[33m·s§å½ð½ð\u001b[0;1;37;46m                                    \u001b[13;23H\u001b[m(\u001b[1;36mA\u001b[m)nnounce     ¡i ºëµØ¤½§GÄæ ¡j\u001b[14;23H(\u001b[1;36mF\u001b[m)avorite     ¡i §Ú ªº ³Ì·R ¡j\u001b[15;21H> (\u001b[1;36mC\u001b[m)lass\u001b[15;38H¡i ¤À²Õ°Q½×°Ï ¡j\u001b[16;23H(\u001b[1;36mM\u001b[m)ail\u001b[16;38H¡i ¨p¤H«H¥ó°Ï ¡j\u001b[17;23H(\u001b[1;36mT\u001b[m)alk\u001b[17;38H¡i ¥ð¶¢²á¤Ñ°Ï ¡j\u001b[18;23H(\u001b[1;36mU\u001b[m)ser\u001b[18;38H¡i ­Ó¤H³]©w°Ï ¡j\u001b[19;23H(\u001b[1;36mX\u001b[m)yz\u001b[19;38H¡i ¨t²Î¸ê°T°Ï ¡j\u001b[20;23H(\u001b[1;36mP\u001b[m)lay\u001b[20;38H¡i ®T¼Ö»P¥ð¶¢ ¡j\u001b[21;23H(\u001b[1;36mN\u001b[m)amelist     ¡i ½s¯S§O¦W³æ ¡j\u001b[22;23H(\u001b[1;36mG\u001b[m)oodbye\u001b[22;41HÂ÷¶}¡A¦A¨£¡K\r\n\n\u001b[34;46m ¥D¿ï³æ \u001b[1;33;45m              \u001b[0;30;47m 9/27 ¶g¤é 9:06 | \u001b[1;31mtester\u001b[0;30;47m | ½u¤W\u001b[1;31m0\u001b[0;30;47m¤H               \u001b[31m(h)\u001b[30m»¡©ú \u001b[m\u001b[15;21H\u001b[?2026l"
+  },
+  {
+   "name": "root",
+   "keys": "\r",
+   "bytes": "\u001b[?2026h\u001b[1;3H\u001b[1;37;46m¤ÀÃþ¬ÝªO\u001b[2;63H\u001b[m¢©  ¢~¡X\u001b[33m¡´\r\n                                                    ùá¡X   \u001b[m¢¨¢i\u001b[47m¡ó\u001b[m¢i¢i¢©ùç\u001b[4;3H\u001b[44m   ¡s¡s¡s¡s¡s¡s¡s¡s                               \u001b[33mùø\u001b[0;44m ¢©¢¨¢i¢i¢i¡¿¡¿¡¿ùø \u001b[5;3H                                                  \u001b[33m  \u001b[0;44m ¢«¢ª¢i¢i¢i¡¶¡¶¡¶ ùø\u001b[6;35H\u001b[m¡s¡s¡s¡s¡s¡s¡s¡s    \u001b[33m¢x   \u001b[m¢ª¢i¢i¢i¢i¢« ùø\u001b[7;55H\u001b[33mùó¡X¡X  \u001b[m¢«      ¡X¡Ï\u001b[8;11H>     1   ¡·´ú¸Õ¸s²Õ\r\n\n\n\n\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\u001b[24;2H\u001b[34;46m¤ÀÃþ¬ÝªO \u001b[30;47m \u001b[31m(m)\u001b[30m¥[¤J³Ì·R \u001b[31m(v)\u001b[30m¤wÅª/¥¼Åª \u001b[31m(t)\u001b[30m¼Ð°O \u001b[31m(y)\u001b[30m¥u¦C³Ì·R     \u001b[31m(¡ö)\u001b[30m¦^¤W¼h\u001b[m\u001b[8;11H\u001b[?2026l"
+  },
+  {
+   "name": "group",
+   "keys": "\r",
+   "bytes": "\u001b[?2026h\u001b[1;3H\u001b[1;37;46m¬ÝªO¦Cªí\r\n\u001b[m[y]¥u¦C³Ì·R [¡÷]¶i¤J [s]§ä¬ÝªO [/]·j´M [c]·s¤å³¹ [S]±Æ§Ç [PgUp]¤W­¶ [PgDn]¤U­¶\r\n\u001b[30;47m   ½s¸¹   ¬Ý  ªO       Ãþ§O   ¤¤   ¤å   ±Ô   ­z                 ¡K ªO   ¥D      \r\n\u001b[m>     1 \u001b[1;31m£¾\u001b[mChild        \u001b[36m´ú¸Õ \u001b[m¡·¸s²Õ¸Ìªº¬ÝªO                      \u001b[1;33m42\u001b[m sysop\u001b[K\r\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\u001b[24;2H\u001b[34;46m¬ÝªO¦Cªí\u001b[24;45H\u001b[30;47m           \u001b[m\u001b[4;1H\u001b[?2026l"
+  }
+ ]
+}

@@ -103,6 +103,7 @@ import { resolveDismiss, DISMISS_INPUT } from "../../src/js/screen_dismiss";
 import { isGoodbyeConfirm, isAnyKeyPause, logoutEscapeKey } from "../../src/js/logout_session";
 import replyPromptFx from "./fixtures/ptt_src_screens/reply_prompt.json";
 import postFlowFx from "./fixtures/ptt_src_screens/post_flow.json";
+import classListFx from "./fixtures/ptt_src_screens/class_list.json";
 import { editorInputAvailable } from "../../src/js/editor_input";
 
 loadBig5Tables();
@@ -754,6 +755,30 @@ describe("upstream pttbbs 產的看板列表切換（y 全部看板、c 文章�
   test("c 切成文章總數：newflag、不接管（編號欄印的是總數）", () => {
     expect(classifyBoardListScreen(at("newflag"))).toMatchObject({ newflag: true, engageable: false });
     expect(boardListContextKind(at("newflag"))).toBe("brdlist-other");
+  });
+});
+
+describe("upstream pttbbs 產的分類看板（主功能表 C，board.c#Class）", () => {
+  const at = (name) => screenAt(classListFx, name);
+
+  test("分類根（class_bid 1）：不是可接管的看板列表、也不是文章列表", () => {
+    const { facts } = at("root");
+    expect(facts.rowTexts[0]).toContain("分類看板");
+    expect(classifyBoardListScreen(facts)).toBeNull();
+    expect(classifyListScreen(facts).kind).not.toBe("clean-list");
+  });
+
+  test("進群組（class_bid>1）：認成 class 變體、可接管，列解析得出板名", () => {
+    const { facts, rowTexts } = at("group");
+    expect(classifyBoardListScreen(facts)).toMatchObject({
+      variant: "class",
+      newflag: false,
+      cursorNum: 1,
+      topNum: 1,
+      engageable: true,
+    });
+    expect(boardListContextKind(facts)).toBe("brdlist");
+    expect(parseBoardListName(rowTexts[3])).toBe("Child");
   });
 });
 
