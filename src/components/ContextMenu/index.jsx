@@ -42,6 +42,7 @@ import CommentBar from "../CommentBar";
 import ArticleNav from "../ArticleNav";
 import BoardTabs from "../BoardTabs";
 import SearchStatus from "../SearchStatus";
+import FollowOnly from "../FollowOnly";
 import AidBackButton from "../AidBackButton";
 import MessageInbox from "../MessageInbox";
 import HelpMenu from "../HelpMenu";
@@ -1628,6 +1629,7 @@ export const ContextMenu = ({ pttchrome }) => {
       <ArticleNav pttchrome={pttchrome} />
       <BoardTabs pttchrome={pttchrome} />
       <SearchStatus pttchrome={pttchrome} />
+      <FollowOnly pttchrome={pttchrome} />
       <MobileAppBar pttchrome={pttchrome} />
       <AidBackButton pttchrome={pttchrome} />
       <MessageInbox pttchrome={pttchrome} />

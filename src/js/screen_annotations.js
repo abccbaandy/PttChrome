@@ -18,7 +18,11 @@ import {
   FloorCounter,
   ModernCommentThread,
 } from "./comment_parse";
-import { blacklistHit, followHit } from "./list_row_filter";
+import {
+  blacklistHit,
+  followHit,
+  isFollowOnlyHidden,
+} from "./list_row_filter";
 import { detectFixableUrls } from "./url_fix";
 import { detectWrappedUrls } from "./url_wrap";
 import {
@@ -380,6 +384,7 @@ export function computeAnnotations(
     followTitleKeywords,
     commentFilter,
     commentFilterExpanded,
+    listFollowOnly,
   } = enhance;
   const hasBlacklist = blacklist && blacklist.size > 0;
   const hasTitleBlacklist = titleBlacklist && titleBlacklist.length > 0;
@@ -1068,8 +1073,19 @@ export function computeAnnotations(
           : blacklistHit(text, blacklist, titleBlacklist);
       const blacklisted = !!hit;
       const hitKeyword = hit && hit.by === "title" ? hit.keyword : null;
+      // 只看關注（P36）：列表好讀視窗裡沒命中關注名單的列也藏（同 visibleListIndices 的
+      // followOnly，不變量 10）。只看該列自己的文字 ⇒ 逐列獨立；開關進 annotationsKey。
+      const followOnlyHidden =
+        listEasyReading &&
+        listFollowOnly &&
+        !deleted &&
+        !blacklisted &&
+        isFollowOnlyHidden(text, {
+          authors: followAuthors,
+          keywords: followTitleKeywords,
+        });
       if (listEasyReading) {
-        if (deleted || blacklisted) {
+        if (deleted || blacklisted || followOnlyHidden) {
           result[row] = { hidden: true };
           continue;
         }

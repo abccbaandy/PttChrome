@@ -520,6 +520,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_followTitleList",
       tooltipKey: "tooltip_followTitleList",
     },
+    {
+      key: "enableFollowOnly",
+      titleKey: "options_enableFollowOnly",
+      tooltipKey: "tooltip_enableFollowOnly",
+    },
   ]),
 
   // ── 快速搜尋（右鍵選單的那個功能，非本搜尋框）────────────────────

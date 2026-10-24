@@ -34,6 +34,18 @@ pref `followList`（作者 id，一行一個）／`followTitleList`（標題關�
 - 右鍵「加入關注」跟「加入作者黑名單」同一個目標，走同一條存檔管線（`quickAddBlacklist(pttchrome, "followList", …)`）。
 - 守護：`tests/unit/follow_list.test.js`。
 
+## 只看關注（P36）
+
+列表好讀的文章列表右上角一顆切換鈕「★ 只看關注」（`follow_only.js`＋`components/FollowOnly`；手機在工具列「更多」）。開著時列表只留命中關注名單的列，其他列收起。
+
+- **判準**：`list_row_filter#isFollowOnlyHidden`＝列表形的列、沒命中 `followHit` ⇒ 藏。表頭、說明列這類不是列表形的列一律留著。黑名單照擋（兩者是「或」）。
+- **藏列跟黑名單同一條**（`docs/easy-reading-list.md` 不變量 10）：`list_session#visibleListIndices`／`isHiddenListRow` 與 `screen_annotations` 的 `listEasyReading` 分支都多吃一個 `followOnly`；evict 的 `isHidden` 回呼也帶。開關 `listFollowOnly` 進 `annotationsKey`。
+- **只在列表好讀**：原生 24 列格線收不起列 ⇒ 鈕不出現、也不生效（原生鏡像那條 render 不帶 `listEasyReading`）。看板列表、文章裡都不出現。
+- **切換本身不送鍵**；收起後不夠看時照列表好讀原本的規則補頁（藏掉的列不算進「補到夠看」的列數，有頁數上限，跟黑名單命中率高的板一樣）⇒ 只會有補頁腿，不會開文、跳號、游標同步。e2e 斷言的就是這點。
+- 整段都被收起時鈕上寫「這一段沒有」（`visibleRowCount() === 0`），不會只剩一片空白卻不知道為什麼。
+- 狀態只存本機（localStorage `pttchrome.followOnly`），不同步；功能開關 pref `enableFollowOnly`（預設開）。名單空的或 `enableFollowList` 關著 ⇒ 不出現。
+- 守護：`tests/unit/follow_only.test.js`（判準、兩處藏列同一份、出現條件）、`tests/e2e/offline/follow_only.offline.spec.js`、`mobile_follow_only.offline.spec.js`。
+
 ## 錄製檔
 
 - `list.filter {authors, titleKeywords}`：錄製開始時記一筆，之後改黑名單設定再記一筆（`App.onPrefChange`）。作者 id 不遮蔽：錄製檔本來就含整個列表畫面上的作者 id；`meta.warning` 有註明這點。
