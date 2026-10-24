@@ -2863,6 +2863,15 @@ describe("_sequence 記憶化", () => {
     expect(s._sequence()).not.toBe(before);
   });
 
+  test("只看關注切換（view.listFollowOnly 換物件）→ 快取失效（重算）", () => {
+    const { s } = demandSession({ count: 30 });
+    let follow = null;
+    s._view.listFollowOnly = () => follow;
+    const before = s._sequence();
+    follow = { authors: new Set(["nobody"]), keywords: [] };
+    expect(s._sequence()).not.toBe(before);
+  });
+
   test("標題黑名單換新陣列 → 快取失效（重算）", () => {
     const { s } = demandSession({ count: 30 });
     const before = s._sequence();

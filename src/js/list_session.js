@@ -3621,6 +3621,8 @@ ListSession.prototype = {
     const lines = buf.listLines || [];
     const bl = this._view.blacklist;
     const tbl = this._view.titleBlacklist;
+    // 只看關注：listFollowOnly 開著時回快取的同一個物件、關著回 null ⇒ 參考比對就夠。
+    const fo = typeof this._view.listFollowOnly === 'function' ? this._view.listFollowOnly() : null;
     const c = this._seqCache;
     if (
       c &&
@@ -3630,7 +3632,8 @@ ListSession.prototype = {
       c.numLen === nums.length &&
       c.edgeDown === this._edgeDown &&
       c.blacklist === bl &&
-      c.titleBlacklist === tbl
+      c.titleBlacklist === tbl &&
+      c.followOnly === fo
     )
       return c.seq;
     const seq = windowVisibleSequence(this._visibleIndices(), nums, this._edgeDown);
@@ -3644,6 +3647,7 @@ ListSession.prototype = {
       edgeDown: this._edgeDown,
       blacklist: bl,
       titleBlacklist: tbl,
+      followOnly: fo,
       seq: seq
     };
     return seq;
